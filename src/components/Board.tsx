@@ -1,137 +1,269 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { BUILDINGS, GRID_SIZE } from "../game/buildings";
 import { useGame } from "../game/store";
-import { accruedFor, formatDuration, formatNumber, now } from "../game/logic";
-import type { PlacedBuilding } from "../game/types";
+import { accruedFor, canPlace, formatDuration, formatNumber, now } from "../game/logic";
 import { useUi } from "../ui";
+import {
+  buildDecorations,
+  buildingHit,
+  drawBuilding,
+  drawGround,
+  makeView,
+  project,
+  unproject,
+  type BuildingDraw,
+  type IsoView,
+} from "../render/iso";
 
-function useElementSize<T extends HTMLElement>() {
-  const ref = useRef<T | null>(null);
-  const [size, setSize] = useState(0);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => {
-      const r = el.getBoundingClientRect();
-      setSize(Math.min(r.width, r.height));
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-  return { ref, size };
+interface DragState {
+  id: string;
+  size: number;
+  constructing: boolean;
+  startX: number;
+  startY: number;
+  moved: boolean;
+}
+
+interface Ghost {
+  id: string;
+  x: number;
+  y: number;
+  valid: boolean;
 }
 
 export function Board() {
-  const buildings = useGame((s) => s.buildings);
-  const moveBuilding = useGame((s) => s.moveBuilding);
-  const { ref, size } = useElementSize<HTMLDivElement>();
-  const cell = size / GRID_SIZE;
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const viewRef = useRef<IsoView | null>(null);
+  const dprRef = useRef(1);
+  const dragRef = useRef<DragState | null>(null);
+  const ghostRef = useRef<Ghost | null>(null);
+  const decoKeyRef = useRef("");
+  const decoRef = useRef<ReturnType<typeof buildDecorations>>([]);
 
-  return (
-    <div className="board-wrap" ref={ref}>
-      <div className="board" style={{ width: size, height: size }}>
-        {buildings.map((b) => (
-          <Tile key={b.id} b={b} cell={cell} onMove={moveBuilding} />
-        ))}
-      </div>
-    </div>
-  );
-}
+  useEffect(() => {
+    const canvas = canvasRef.current!;
+    const ctx = canvas.getContext("2d")!;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    dprRef.current = dpr;
+    let raf = 0;
 
-interface TileProps {
-  b: PlacedBuilding;
-  cell: number;
-  onMove: (id: string, x: number, y: number) => boolean;
-}
+    const resize = () => {
+      const r = canvas.getBoundingClientRect();
+      canvas.width = Math.max(1, Math.round(r.width * dpr));
+      canvas.height = Math.max(1, Math.round(r.height * dpr));
+    };
+    resize();
+    const ro = new ResizeObserver(resize);
+    ro.observe(canvas);
 
-function Tile({ b, cell, onMove }: TileProps) {
-  const def = BUILDINGS[b.type];
-  const select = useUi((s) => s.select);
-  const selectedId = useUi((s) => s.selectedId);
-  const collect = useGame((s) => s.collect);
-  const showToast = useUi((s) => s.showToast);
+    const frame = () => {
+      const W = canvas.width;
+      const H = canvas.height;
+      const v = makeView(W, H);
+      viewRef.current = v;
+      const t = performance.now() / 1000;
+      const tNow = now();
+      const buildings = useGame.getState().buildings;
+      const selectedId = useUi.getState().selectedId;
 
-  const drag = useRef<{ startX: number; startY: number; moved: boolean } | null>(null);
-  const [ghost, setGhost] = useState<{ x: number; y: number } | null>(null);
+      // occupied cells for terrain decoration (stable until layout changes)
+      const occupied = new Set<string>();
+      for (const b of buildings) {
+        const sz = BUILDINGS[b.type].size;
+        for (let yy = 0; yy < sz; yy++)
+          for (let xx = 0; xx < sz; xx++) occupied.add(`${b.x + xx},${b.y + yy}`);
+      }
+      const key = buildings.map((b) => `${b.x},${b.y},${b.type}`).join("|");
+      if (key !== decoKeyRef.current) {
+        decoKeyRef.current = key;
+        decoRef.current = buildDecorations(occupied);
+      }
 
-  const constructing = !!b.upgradeDoneAt;
-  const accrued = def.production ? accruedFor(b, now()) : 0;
-  const fullPct = def.production ? accrued / def.production.cap(b.level) : 0;
+      ctx.clearRect(0, 0, W, H);
+      drawGround(ctx, v);
 
-  const x = ghost?.x ?? b.x;
-  const y = ghost?.y ?? b.y;
+      // depth-sorted render list: decorations + buildings
+      type Item = { depth: number; draw: () => void };
+      const items: Item[] = [];
+      for (const deco of decoRef.current) {
+        items.push({ depth: deco.depth, draw: () => deco.draw(ctx, v) });
+      }
+      const ghost = ghostRef.current;
+      for (const b of buildings) {
+        const def = BUILDINGS[b.type];
+        const isGhost = ghost?.id === b.id;
+        const x = isGhost ? ghost!.x : b.x;
+        const y = isGhost ? ghost!.y : b.y;
+        const accrued = def.production ? accruedFor(b, tNow) : 0;
+        const cap = def.production ? def.production.cap(b.level) : 0;
+        const draw: BuildingDraw = {
+          type: b.type,
+          level: b.level,
+          x,
+          y,
+          size: def.size,
+          time: t,
+          selected: selectedId === b.id,
+          constructing: !!b.upgradeDoneAt,
+          remainingLabel: b.upgradeDoneAt
+            ? formatDuration((b.upgradeDoneAt - tNow) / 1000)
+            : undefined,
+          collect:
+            def.production && accrued >= 1
+              ? { kind: def.production.resource, full: accrued >= cap * 0.999 }
+              : null,
+          showLevel: true,
+        };
+        items.push({
+          depth: x + y + def.size, // front corner depth
+          draw: () => {
+            if (isGhost) {
+              drawGhostFootprint(ctx, v, x, y, def.size, ghost!.valid);
+              ctx.save();
+              ctx.globalAlpha = 0.85;
+              drawBuilding(ctx, v, draw);
+              ctx.restore();
+            } else {
+              drawBuilding(ctx, v, draw);
+            }
+          },
+        });
+      }
+      items.sort((a, b) => a.depth - b.depth);
+      for (const it of items) it.draw();
 
-  const pct = (v: number) => `${(v / GRID_SIZE) * 100}%`;
+      raf = requestAnimationFrame(frame);
+    };
+    raf = requestAnimationFrame(frame);
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+    };
+  }, []);
+
+  const toDevice = (e: React.PointerEvent) => {
+    const canvas = canvasRef.current!;
+    const r = canvas.getBoundingClientRect();
+    const dpr = dprRef.current;
+    return { x: (e.clientX - r.left) * dpr, y: (e.clientY - r.top) * dpr };
+  };
+
+  const topmostAt = (sx: number, sy: number) => {
+    const v = viewRef.current;
+    if (!v) return null;
+    const buildings = useGame.getState().buildings;
+    let best: (typeof buildings)[number] | null = null;
+    let bestDepth = -Infinity;
+    for (const b of buildings) {
+      const def = BUILDINGS[b.type];
+      if (buildingHit(v, { type: b.type, x: b.x, y: b.y, size: def.size }, sx, sy)) {
+        const depth = b.x + b.y + def.size;
+        if (depth > bestDepth) {
+          bestDepth = depth;
+          best = b;
+        }
+      }
+    }
+    return best;
+  };
 
   const onPointerDown = (e: React.PointerEvent) => {
-    if (constructing) return;
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    drag.current = { startX: e.clientX, startY: e.clientY, moved: false };
+    const { x, y } = toDevice(e);
+    const b = topmostAt(x, y);
+    if (!b) {
+      dragRef.current = null;
+      return;
+    }
+    dragRef.current = {
+      id: b.id,
+      size: BUILDINGS[b.type].size,
+      constructing: !!b.upgradeDoneAt,
+      startX: x,
+      startY: y,
+      moved: false,
+    };
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
-    if (!drag.current || !cell) return;
-    const dx = e.clientX - drag.current.startX;
-    const dy = e.clientY - drag.current.startY;
-    if (!drag.current.moved && Math.hypot(dx, dy) < 8) return;
-    drag.current.moved = true;
-    const board = (e.currentTarget as HTMLElement).parentElement!.getBoundingClientRect();
-    let nx = Math.round((e.clientX - board.left) / cell - def.size / 2);
-    let ny = Math.round((e.clientY - board.top) / cell - def.size / 2);
-    nx = Math.max(0, Math.min(GRID_SIZE - def.size, nx));
-    ny = Math.max(0, Math.min(GRID_SIZE - def.size, ny));
-    setGhost({ x: nx, y: ny });
+    const drag = dragRef.current;
+    const v = viewRef.current;
+    if (!drag || !v || drag.constructing) return;
+    const { x, y } = toDevice(e);
+    if (!drag.moved && Math.hypot(x - drag.startX, y - drag.startY) < 10 * dprRef.current) return;
+    drag.moved = true;
+    const g = unproject(v, x, y);
+    let nx = Math.round(g.gx - drag.size / 2);
+    let ny = Math.round(g.gy - drag.size / 2);
+    nx = Math.max(0, Math.min(GRID_SIZE - drag.size, nx));
+    ny = Math.max(0, Math.min(GRID_SIZE - drag.size, ny));
+    const valid = canPlace(useGame.getState().buildings, nx, ny, drag.size, drag.id);
+    ghostRef.current = { id: drag.id, x: nx, y: ny, valid };
   };
 
   const onPointerUp = () => {
-    const d = drag.current;
-    drag.current = null;
-    if (d?.moved && ghost) {
-      const ok = onMove(b.id, ghost.x, ghost.y);
-      if (!ok) showToast("Can't place there");
-      setGhost(null);
+    const drag = dragRef.current;
+    dragRef.current = null;
+    const ghost = ghostRef.current;
+    ghostRef.current = null;
+    if (!drag) {
+      useUi.getState().select(null);
       return;
     }
-    setGhost(null);
-    // treat as a tap
-    if (accrued >= 1) {
-      collect(b.id);
-      const r = def.production!.resource;
-      showToast(`+${formatNumber(accrued)} ${r === "gold" ? "🪙" : "🧪"}`);
+    const game = useGame.getState();
+    const ui = useUi.getState();
+    if (drag.moved && ghost && ghost.id === drag.id) {
+      const ok = game.moveBuilding(drag.id, ghost.x, ghost.y);
+      if (!ok) ui.showToast("そこには置けません");
+      return;
+    }
+    // tap
+    const b = game.buildings.find((x) => x.id === drag.id);
+    if (!b) return;
+    const def = BUILDINGS[b.type];
+    const accrued = def.production ? accruedFor(b, now()) : 0;
+    if (accrued >= 1 && def.production) {
+      game.collect(b.id);
+      ui.showToast(`+${formatNumber(accrued)} ${def.production.resource === "gold" ? "🪙" : "🧪"}`);
     } else {
-      select(b.id);
+      ui.select(b.id);
     }
   };
 
   return (
-    <div
-      className={`tile ${b.type === "wall" ? "wall" : ""} ${selectedId === b.id ? "selected" : ""}`}
-      style={{
-        left: pct(x),
-        top: pct(y),
-        width: pct(def.size),
-        height: pct(def.size),
-        fontSize: cell * def.size * 0.5,
-        zIndex: ghost ? 5 : undefined,
-        opacity: ghost ? 0.85 : 1,
-      }}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-    >
-      {b.type !== "wall" && <span className="emoji">{def.emoji}</span>}
-      {!constructing && <span className="level-badge">{b.level}</span>}
-      {!constructing && def.production && accrued >= 1 && (
-        <span className={`collect-badge ${def.production.resource}`}>
-          {fullPct >= 0.999 ? "FULL" : formatNumber(accrued)}
-        </span>
-      )}
-      {constructing && (
-        <div className="build-progress">
-          <span className="clock">🔨</span>
-          <span>{formatDuration((b.upgradeDoneAt! - now()) / 1000)}</span>
-        </div>
-      )}
+    <div className="board-wrap">
+      <canvas
+        ref={canvasRef}
+        className="board-canvas"
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+      />
     </div>
   );
+}
+
+function drawGhostFootprint(
+  ctx: CanvasRenderingContext2D,
+  v: IsoView,
+  x: number,
+  y: number,
+  size: number,
+  valid: boolean,
+) {
+  const T = project(v, x, y);
+  const R = project(v, x + size, y);
+  const B = project(v, x + size, y + size);
+  const L = project(v, x, y + size);
+  ctx.beginPath();
+  ctx.moveTo(T.x, T.y);
+  ctx.lineTo(R.x, R.y);
+  ctx.lineTo(B.x, B.y);
+  ctx.lineTo(L.x, L.y);
+  ctx.closePath();
+  ctx.fillStyle = valid ? "rgba(95,211,95,0.35)" : "rgba(224,74,74,0.35)";
+  ctx.fill();
+  ctx.strokeStyle = valid ? "#5fd35f" : "#e04a4a";
+  ctx.lineWidth = v.tw * 0.05;
+  ctx.stroke();
 }

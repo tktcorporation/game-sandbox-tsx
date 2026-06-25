@@ -1,15 +1,24 @@
 import { useEffect, useRef, useState } from "react";
-import { GRID_SIZE, BUILDINGS, TROOPS, TROOP_ORDER } from "../game/buildings";
+import { TROOPS, TROOP_ORDER } from "../game/buildings";
 import { Battle, type EnemyBase } from "../game/battle";
 import type { BattleStats } from "../game/battle";
 import { useGame } from "../game/store";
 import { formatNumber } from "../game/logic";
 import type { TroopType } from "../game/types";
 import { useUi } from "../ui";
-
-const EMOJI: Record<string, string> = Object.fromEntries(
-  Object.values(BUILDINGS).map((d) => [d.type, d.emoji]),
-);
+import {
+  buildDecorations,
+  drawBuilding,
+  drawGround,
+  drawTroop,
+  Fx,
+  makeView,
+  project,
+  unproject,
+  GRID,
+  type BuildingDraw,
+  type IsoView,
+} from "../render/iso";
 
 export function BattleView({ base, onExit }: { base: EnemyBase; onExit: () => void }) {
   const army = useGame((s) => s.army);
@@ -17,6 +26,8 @@ export function BattleView({ base, onExit }: { base: EnemyBase; onExit: () => vo
   const showToast = useUi((s) => s.showToast);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const viewRef = useRef<IsoView | null>(null);
+  const dprRef = useRef(1);
   const battleRef = useRef<Battle>(new Battle(base));
   const [selected, setSelected] = useState<TroopType>(
     TROOP_ORDER.find((t) => army[t] > 0) ?? "barbarian",
@@ -33,105 +44,146 @@ export function BattleView({ base, onExit }: { base: EnemyBase; onExit: () => vo
     let raf = 0;
     let last = performance.now();
     const dpr = Math.min(2, window.devicePixelRatio || 1);
+    dprRef.current = dpr;
 
     const resize = () => {
       const r = canvas.getBoundingClientRect();
-      canvas.width = r.width * dpr;
-      canvas.height = r.height * dpr;
+      canvas.width = Math.max(1, Math.round(r.width * dpr));
+      canvas.height = Math.max(1, Math.round(r.height * dpr));
     };
     resize();
     const ro = new ResizeObserver(resize);
     ro.observe(canvas);
 
-    const frame = (t: number) => {
-      const dt = Math.min(0.05, (t - last) / 1000);
-      last = t;
-      const battle = battleRef.current;
+    const battle = battleRef.current;
+    const fx = new Fx();
+    fx.onImpact = (gx, gy, kind) => {
+      fx.spark(gx, gy, kind === "ball" ? "#ffcaa0" : "#fff2a0");
+      if (kind === "ball") fx.shake(3);
+    };
+
+    // static occupied set + decorations for the hostile field
+    const occupied = new Set<string>();
+    for (const b of base.buildings) {
+      for (let yy = 0; yy < b.size; yy++)
+        for (let xx = 0; xx < b.size; xx++) occupied.add(`${b.x + xx},${b.y + yy}`);
+    }
+    const decos = buildDecorations(occupied, true);
+
+    const prevHp = new Map<number, number>();
+    for (const t of battle.targets) prevHp.set(t.id, t.hp);
+    const prevFlash = new Map<number, number>();
+    const shotTimer = new Map<number, number>();
+
+    const frame = (time: number) => {
+      const dt = Math.min(0.05, (time - last) / 1000);
+      last = time;
+      const t = time / 1000;
       if (!finishedRef.current) battle.step(dt);
 
+      // ---- cosmetic combat events (decoupled from logic) ----
+      // building destruction -> explosion
+      for (const tg of battle.targets) {
+        const prev = prevHp.get(tg.id) ?? tg.hp;
+        if (prev > 0 && tg.hp <= 0) {
+          fx.boom(tg.cx, tg.cy, tg.type === "wall" ? "#9a8e74" : "#b08a55");
+        }
+        prevHp.set(tg.id, tg.hp);
+      }
+      // defenses fire visible projectiles at the nearest unit in range
+      for (const tg of battle.targets) {
+        if (tg.hp <= 0 || !tg.isDefense) continue;
+        let timer = (shotTimer.get(tg.id) ?? 0) - dt;
+        let best: { x: number; y: number } | null = null;
+        let bestD = Infinity;
+        for (const u of battle.units) {
+          if (u.hp <= 0) continue;
+          const d = Math.hypot(tg.cx - u.x, tg.cy - u.y);
+          if (d <= tg.range && d < bestD) {
+            bestD = d;
+            best = { x: u.x, y: u.y };
+          }
+        }
+        if (best && timer <= 0) {
+          const kind = tg.type === "archertower" ? "arrow" : "ball";
+          fx.shoot(kind, tg.cx, tg.cy, best.x, best.y);
+          fx.muzzle(tg.cx, tg.cy);
+          timer = kind === "arrow" ? 0.55 : 1.0;
+        }
+        shotTimer.set(tg.id, timer);
+      }
+      // melee sparks on troop hits
+      for (const u of battle.units) {
+        const pf = prevFlash.get(u.id) ?? 0;
+        if (u.hp > 0 && pf <= 0 && u.attackFlash > 0) fx.spark(u.x, u.y - 0.3, "#ffe49a");
+        prevFlash.set(u.id, u.attackFlash);
+      }
+      fx.update(dt);
+
+      // ---- render ----
       const W = canvas.width;
       const H = canvas.height;
-      const side = Math.min(W, H);
-      const cell = side / GRID_SIZE;
-      const ox = (W - side) / 2;
-      const oy = (H - side) / 2;
-      const gx = (v: number) => ox + v * cell;
-      const gy = (v: number) => oy + v * cell;
+      const v = makeView(W, H);
+      viewRef.current = v;
 
       ctx.clearRect(0, 0, W, H);
-      // board
-      ctx.fillStyle = "#5e9c48";
-      ctx.fillRect(ox, oy, side, side);
-      ctx.strokeStyle = "rgba(0,0,0,0.12)";
-      ctx.lineWidth = 1;
-      for (let i = 0; i <= GRID_SIZE; i++) {
+      fx.beginShake(ctx, t);
+      drawGround(ctx, v, { hostile: true });
+
+      // defense range rings (ground decal)
+      for (const tg of battle.targets) {
+        if (tg.hp <= 0 || !tg.isDefense) continue;
+        const c = project(v, tg.cx, tg.cy);
+        ctx.fillStyle = "rgba(255,80,80,0.06)";
+        ctx.strokeStyle = "rgba(255,80,80,0.18)";
+        ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.moveTo(gx(i), oy);
-        ctx.lineTo(gx(i), oy + side);
-        ctx.moveTo(ox, gy(i));
-        ctx.lineTo(ox + side, gy(i));
+        ctx.ellipse(c.x, c.y, tg.range * v.tw * 0.707, tg.range * v.th * 0.707, 0, 0, Math.PI * 2);
+        ctx.fill();
         ctx.stroke();
       }
 
-      // defense ranges
-      for (const tg of battle.targets) {
-        if (tg.hp <= 0 || !tg.isDefense) continue;
-        ctx.beginPath();
-        ctx.fillStyle = "rgba(255,80,80,0.06)";
-        ctx.arc(gx(tg.cx), gy(tg.cy), tg.range * cell, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      // buildings
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
+      // depth-sorted scene: decorations + buildings + units
+      type Item = { depth: number; draw: () => void };
+      const items: Item[] = [];
+      for (const d of decos) items.push({ depth: d.depth, draw: () => d.draw(ctx, v) });
       for (const tg of battle.targets) {
         if (tg.hp <= 0) continue;
-        const px = gx(tg.cx - tg.size / 2);
-        const py = gy(tg.cy - tg.size / 2);
-        const s = tg.size * cell;
-        ctx.fillStyle = tg.type === "wall" ? "#7a542f" : "rgba(20,40,15,0.35)";
-        roundRect(ctx, px + 2, py + 2, s - 4, s - 4, 5);
-        ctx.fill();
-        if (tg.type !== "wall") {
-          ctx.font = `${s * 0.5}px serif`;
-          ctx.fillText(EMOJI[tg.type] ?? "❓", gx(tg.cx), gy(tg.cy));
-        }
-        // hp bar
-        const hpFrac = tg.hp / tg.maxHp;
-        if (hpFrac < 1) {
-          ctx.fillStyle = "#000";
-          ctx.fillRect(px + 4, py - 2, s - 8, 4);
-          ctx.fillStyle = hpFrac > 0.4 ? "#5fd35f" : "#e04a4a";
-          ctx.fillRect(px + 4, py - 2, (s - 8) * hpFrac, 4);
-        }
+        const x = tg.cx - tg.size / 2;
+        const y = tg.cy - tg.size / 2;
+        const draw: BuildingDraw = {
+          type: tg.type,
+          level: tg.level,
+          x,
+          y,
+          size: tg.size,
+          time: t,
+          hpFrac: tg.hp / tg.maxHp,
+        };
+        items.push({ depth: tg.cx + tg.cy, draw: () => drawBuilding(ctx, v, draw) });
       }
-
-      // units
       for (const u of battle.units) {
         if (u.hp <= 0) continue;
-        const px = gx(u.x);
-        const py = gy(u.y);
-        ctx.beginPath();
-        ctx.fillStyle = u.attackFlash > 0 ? "#fff3a0" : "rgba(40,90,200,0.85)";
-        ctx.arc(px, py, cell * 0.42, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.font = `${cell * 0.6}px serif`;
-        ctx.fillText(TROOPS[u.type].emoji, px, py);
-        const hpFrac = u.hp / u.maxHp;
-        if (hpFrac < 1) {
-          ctx.fillStyle = "#000";
-          ctx.fillRect(px - cell * 0.4, py - cell * 0.55, cell * 0.8, 3);
-          ctx.fillStyle = "#5fd35f";
-          ctx.fillRect(px - cell * 0.4, py - cell * 0.55, cell * 0.8 * hpFrac, 3);
-        }
+        items.push({
+          depth: u.x + u.y,
+          draw: () =>
+            drawTroop(ctx, v, {
+              type: u.type,
+              gx: u.x,
+              gy: u.y,
+              hpFrac: u.hp / u.maxHp,
+              flash: u.attackFlash > 0,
+              time: t,
+              seed: u.id,
+            }),
+        });
       }
+      items.sort((a, b) => a.depth - b.depth);
+      for (const it of items) it.draw();
 
-      // explosions
-      for (const e of battle.explosionList) {
-        ctx.font = `${cell * (1.2 - e.t)}px serif`;
-        ctx.fillText("💥", gx(e.x), gy(e.y));
-      }
+      // effects on top of the scene
+      fx.draw(ctx, v);
+      fx.endShake(ctx);
 
       const s = battle.stats();
       setStats(s);
@@ -154,23 +206,20 @@ export function BattleView({ base, onExit }: { base: EnemyBase; onExit: () => vo
       showToast("No more " + TROOPS[selected].name + "s");
       return;
     }
+    const v = viewRef.current;
     const canvas = canvasRef.current!;
+    if (!v) return;
     const r = canvas.getBoundingClientRect();
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const W = canvas.width;
-    const H = canvas.height;
-    const side = Math.min(W, H);
-    const cell = side / GRID_SIZE;
-    const ox = (W - side) / 2;
-    const oy = (H - side) / 2;
+    const dpr = dprRef.current;
     const px = (e.clientX - r.left) * dpr;
     const py = (e.clientY - r.top) * dpr;
-    const tx = (px - ox) / cell;
-    const ty = (py - oy) / cell;
-    if (tx < 0 || ty < 0 || tx > GRID_SIZE || ty > GRID_SIZE) return;
-    battleRef.current.spawn(selected, tx, ty);
-    remainingRef.current = { ...remainingRef.current, [selected]: remainingRef.current[selected] - 1 };
-    // force re-render of dock counts
+    const g = unproject(v, px, py);
+    if (g.gx < 0 || g.gy < 0 || g.gx > GRID || g.gy > GRID) return;
+    battleRef.current.spawn(selected, g.gx, g.gy);
+    remainingRef.current = {
+      ...remainingRef.current,
+      [selected]: remainingRef.current[selected] - 1,
+    };
     setStats(battleRef.current.stats());
   };
 
@@ -263,14 +312,4 @@ export function BattleView({ base, onExit }: { base: EnemyBase; onExit: () => vo
       )}
     </div>
   );
-}
-
-function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.arcTo(x + w, y, x + w, y + h, r);
-  ctx.arcTo(x + w, y + h, x, y + h, r);
-  ctx.arcTo(x, y + h, x, y, r);
-  ctx.arcTo(x, y, x + w, y, r);
-  ctx.closePath();
 }
