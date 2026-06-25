@@ -65,7 +65,7 @@ export default function App() {
           <span className="ai">🛠️</span>
           Build
         </button>
-        <button className="action-btn shop" onClick={collectAll}>
+        <button className="action-btn collect" onClick={collectAll}>
           <span className="ai">💰</span>
           Collect
         </button>
@@ -77,7 +77,7 @@ export default function App() {
           <span className="ai">{finding ? "⏳" : "🗡️"}</span>
           {finding ? "Finding…" : "Attack"}
         </button>
-        <button className="action-btn shop" style={{ flex: 0.6 }} onClick={() => setSheet("settings")}>
+        <button className="action-btn more" style={{ flex: 0.6 }} onClick={() => setSheet("settings")}>
           <span className="ai">⚙️</span>
           More
         </button>
