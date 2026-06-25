@@ -7,11 +7,13 @@ import {
   buildDecorations,
   buildingHit,
   dayLight,
+  drawAtmosphere,
   drawBuilding,
   drawGround,
   drawNightOverlay,
   drawSky,
   drawVignette,
+  postProcess,
   Fx,
   makeView,
   project,
@@ -208,8 +210,10 @@ export function Board() {
       for (const it of items) it.draw();
 
       fx.draw(ctx, v);
+      drawAtmosphere(ctx, W, H, `rgba(150,178,205,${(0.16 + dl.night * 0.1).toFixed(3)})`);
       drawNightOverlay(ctx, W, H, dl);
       drawVignette(ctx, W, H);
+      postProcess(ctx, W, H);
 
       raf = requestAnimationFrame(frame);
     };

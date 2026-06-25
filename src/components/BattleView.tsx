@@ -9,6 +9,7 @@ import { useUi } from "../ui";
 import {
   buildDecorations,
   dayLight,
+  drawAtmosphere,
   drawBuilding,
   drawDeployZone,
   drawGround,
@@ -16,6 +17,7 @@ import {
   drawSky,
   drawTroop,
   drawVignette,
+  postProcess,
   Fx,
   inDeployZone,
   makeView,
@@ -226,8 +228,10 @@ export function BattleView({ base, onExit }: { base: EnemyBase; onExit: () => vo
       // effects on top of the scene
       fx.draw(ctx, v);
       fx.endShake(ctx);
+      drawAtmosphere(ctx, W, H, "rgba(122,98,150,0.26)");
       drawNightOverlay(ctx, W, H, RAID_LIGHT);
       drawVignette(ctx, W, H);
+      postProcess(ctx, W, H);
 
       const s = battle.stats();
       setStats(s);

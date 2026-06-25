@@ -56,11 +56,49 @@ export function makeView(
 
 /** soft dark vignette over the whole frame — cheap cinematic depth. */
 export function drawVignette(ctx: CanvasRenderingContext2D, W: number, H: number): void {
-  const g = ctx.createRadialGradient(W / 2, H * 0.42, Math.min(W, H) * 0.3, W / 2, H * 0.5, Math.max(W, H) * 0.75);
+  const g = ctx.createRadialGradient(W / 2, H * 0.42, Math.min(W, H) * 0.3, W / 2, H * 0.5, Math.max(W, H) * 0.78);
   g.addColorStop(0, "rgba(0,0,0,0)");
-  g.addColorStop(1, "rgba(0,0,0,0.34)");
+  g.addColorStop(0.7, "rgba(6,10,20,0.12)");
+  g.addColorStop(1, "rgba(4,7,16,0.42)");
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, W, H);
+}
+
+/** atmospheric perspective: a soft haze that thickens toward the far (top)
+ *  edge so distance reads, the way fog grounds an Unreal scene. */
+export function drawAtmosphere(
+  ctx: CanvasRenderingContext2D,
+  W: number,
+  H: number,
+  haze: string,
+): void {
+  const g = ctx.createLinearGradient(0, 0, 0, H * 0.5);
+  g.addColorStop(0, haze);
+  g.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H * 0.5);
+}
+
+/** cheap cinematic post: a bloom pass (additive blurred highlights) plus a
+ *  filmic colour grade (punchier contrast + saturation). Two full-frame
+ *  drawImages — all GPU-composited, so it stays light. */
+export function postProcess(ctx: CanvasRenderingContext2D, W: number, H: number): void {
+  const canvas = ctx.canvas;
+  // bloom: add a blurred, brightened copy of the frame back over itself.
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  ctx.globalAlpha = 0.26;
+  ctx.filter = "blur(7px) brightness(1.32)";
+  ctx.drawImage(canvas, 0, 0, W, H);
+  ctx.restore();
+  ctx.filter = "none";
+  // filmic grade: replace the frame with a contrast/saturation-graded copy.
+  ctx.save();
+  ctx.globalCompositeOperation = "copy";
+  ctx.filter = "contrast(1.08) saturate(1.18) brightness(1.01)";
+  ctx.drawImage(canvas, 0, 0, W, H);
+  ctx.restore();
+  ctx.filter = "none";
 }
 
 // ---------------------------------------------------------------------------
@@ -524,6 +562,12 @@ function drawBox(ctx: CanvasRenderingContext2D, g: BoxGeom, color: string, lw = 
   ctx.fillStyle = "rgba(255,238,198,0.08)"; // warm key light
   ctx.fillRect(x0, roofTop, w, roofH);
   grain(ctx, x0, roofTop, w, roofH, 0.55);
+  // glossy specular sheen near the sunlit far edge
+  const spec = ctx.createLinearGradient(0, roofTop, 0, roofTop + roofH * 0.6);
+  spec.addColorStop(0, "rgba(255,255,255,0.18)");
+  spec.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = spec;
+  ctx.fillRect(x0, roofTop, w, roofH * 0.6);
 
   // --- front (south) wall: shadowed, cool, grain, contact AO ---
   const wallGrad = ctx.createLinearGradient(0, wallTop, 0, yNear);
@@ -582,14 +626,26 @@ export function drawBuilding(ctx: CanvasRenderingContext2D, v: IsoView, d: Build
   const g = boxGeom(v, d.x, d.y, d.size, h, 0, FOOT_INSET);
   const w = g.x1 - g.x0;
 
-  // ground shadow
+  // directional cast shadow on the ground (sun from the upper-left), softened
+  const sx = h * 0.52;
+  const sy = h * 0.32;
   ctx.save();
-  ctx.globalAlpha = 0.22;
-  ctx.fillStyle = "#000";
-  ctx.beginPath();
-  ctx.ellipse(g.cx + v.tw * 0.08, g.yNear + v.th * 0.05, w * 0.52, v.th * d.size * 0.32, 0, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.globalAlpha = 0.3;
+  ctx.filter = `blur(${Math.max(1, v.tw * 0.06)}px)`;
+  fillPoly(
+    ctx,
+    [
+      { x: g.x0, y: g.yFar },
+      { x: g.x1, y: g.yFar },
+      { x: g.x1 + sx, y: g.yFar + sy },
+      { x: g.x1 + sx, y: g.yNear + sy },
+      { x: g.x0 + sx, y: g.yNear + sy },
+      { x: g.x0, y: g.yNear },
+    ],
+    "#070f06",
+  );
   ctx.restore();
+  ctx.filter = "none";
 
   drawBox(ctx, g, sp.color, lw);
 
