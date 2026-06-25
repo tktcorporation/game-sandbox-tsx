@@ -4,15 +4,15 @@ import type { BuildingDef, BuildingType, TroopDef, TroopType } from "./types";
 const scale = (base: number, mult: number) => (level: number) =>
   Math.round(base * Math.pow(mult, level - 1));
 
-// Mobile-first portrait field: deeper (front→back) than it is wide, so the
-// base reads as a vertical column and you attack from the near front toward
-// the far back. `GRID_W` is the width (left↔right), `GRID_H` the depth
-// (near/手前 ↔ far). The far corner (0,0) renders at the top of the screen,
-// the near corner (GRID_W, GRID_H) at the bottom where the player deploys.
-export const GRID_W = 13;
-export const GRID_H = 19;
-/** number of diagonal "rows" nearest the player reserved as the deploy beach */
-export const DEPLOY_DEPTH = 8;
+// Mobile-first portrait field. The map is an axis-aligned rectangle that fills
+// the whole screen: `GRID_W` columns run left↔right across the width, `GRID_H`
+// rows recede up the screen. Row 0 is the far (top) edge where the enemy Town
+// Hall sits; the highest rows are the near (手前/bottom) edge where the player
+// deploys and attacks upward.
+export const GRID_W = 10;
+export const GRID_H = 18;
+/** number of near rows reserved as the player's deploy beach (battle) */
+export const DEPLOY_DEPTH = 5;
 /** legacy square-grid alias — prefer GRID_W / GRID_H */
 export const GRID_SIZE = Math.max(GRID_W, GRID_H);
 

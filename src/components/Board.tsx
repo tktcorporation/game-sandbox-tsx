@@ -190,7 +190,7 @@ export function Board() {
           showLevel: true,
         };
         items.push({
-          depth: x + y + def.size,
+          depth: y + def.size,
           draw: () => {
             if (isGhost) {
               drawGhostFootprint(ctx, v, x, y, def.size, ghost!.valid);
@@ -257,7 +257,7 @@ export function Board() {
     for (const b of buildings) {
       const def = BUILDINGS[b.type];
       if (buildingHit(v, { type: b.type, x: b.x, y: b.y, size: def.size }, sx, sy)) {
-        const depth = b.x + b.y + def.size;
+        const depth = b.y + def.size;
         if (depth > bestDepth) {
           bestDepth = depth;
           best = b;

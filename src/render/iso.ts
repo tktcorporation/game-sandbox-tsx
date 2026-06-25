@@ -11,9 +11,10 @@ export { GRID_H, GRID_W, DEPLOY_DEPTH };
 /** legacy alias: largest grid dimension */
 export const GRID = Math.max(GRID_W, GRID_H);
 
-/** vertical:horizontal tile ratio (th/tw). Steeper than the classic 0.5 flat
- *  iso so the field stands up taller — friendlier to a portrait phone. */
-export const TILE_RATIO = 0.62;
+/** fraction of the viewport height kept clear above the far row, so tall
+ *  structures on the back edge have somewhere to rise into (and a sliver of
+ *  sky reads as a horizon). */
+const HEADROOM = 0.14;
 
 export interface IsoView {
   ox: number; // screen-x of grid origin (gx=gy=0 maps here, offset by ox)
@@ -33,30 +34,23 @@ export interface Camera {
   panY: number;
 }
 
-/** Fit the whole GRID_W x GRID_H diamond (plus headroom for tall buildings)
- *  inside W x H, centred. The far corner (0,0) sits up-screen, the near
- *  corner (GRID_W, GRID_H) down-screen — a vertical front→back field. */
+/** Lay the GRID_W x GRID_H map out as an axis-aligned rectangle that fills the
+ *  whole W x H viewport: columns span the full width, rows fill the height
+ *  below a small headroom band. `tw` is a tile's screen width, `th` its screen
+ *  depth (vertical distance between rows). Row 0 is far (top), the last row is
+ *  near (bottom). Camera zoom/pan let the village be explored. */
 export function makeView(
   W: number,
   H: number,
   opts?: { lift?: number; cam?: Camera },
 ): IsoView {
-  const margin = 0.94;
-  // diamond bounding box (in tile-width units): horizontal half-spans are
-  // GRID_W/2 (right) and GRID_H/2 (left); vertical span is (GRID_W+GRID_H)*ratio/2.
-  const halfW = (GRID_W + GRID_H) / 2;
-  const twByW = (W * margin) / halfW;
-  // reserve ~2 tiles of vertical headroom for tall structures rising up.
-  const twByH = (H * margin) / (halfW * TILE_RATIO + 2);
   const zoom = opts?.cam?.zoom ?? 1;
-  const tw = Math.min(twByW, twByH) * zoom;
-  const th = tw * TILE_RATIO;
-  // horizontally centre the bounding box around the origin corner (0,0):
-  // leftmost x = -GRID_H*tw/2, rightmost x = +GRID_W*tw/2.
-  const cx = ((GRID_W - GRID_H) * tw) / 4;
-  const diamondH = (GRID_W + GRID_H) * th * 0.5;
-  const ox = W / 2 - cx + (opts?.cam?.panX ?? 0);
-  const oy = (H - diamondH) / 2 + tw * (opts?.lift ?? 0.85) + (opts?.cam?.panY ?? 0);
+  const top = H * HEADROOM;
+  const tw = (W / GRID_W) * zoom;
+  const th = ((H - top) / GRID_H) * zoom;
+  const fieldW = GRID_W * tw;
+  const ox = (W - fieldW) / 2 + (opts?.cam?.panX ?? 0);
+  const oy = top + (opts?.cam?.panY ?? 0);
   return { ox, oy, tw, th };
 }
 
@@ -159,13 +153,11 @@ export function drawNightOverlay(ctx: CanvasRenderingContext2D, W: number, H: nu
 }
 
 export function project(v: IsoView, gx: number, gy: number): Pt {
-  return { x: v.ox + (gx - gy) * (v.tw / 2), y: v.oy + (gx + gy) * (v.th / 2) };
+  return { x: v.ox + gx * v.tw, y: v.oy + gy * v.th };
 }
 
 export function unproject(v: IsoView, sx: number, sy: number): { gx: number; gy: number } {
-  const a = (sx - v.ox) / (v.tw / 2);
-  const b = (sy - v.oy) / (v.th / 2);
-  return { gx: (a + b) / 2, gy: (b - a) / 2 };
+  return { gx: (sx - v.ox) / v.tw, gy: (sy - v.oy) / v.th };
 }
 
 /** deterministic 0..1 hash from two integers (stable terrain decoration). */
@@ -214,16 +206,6 @@ function roundRect(
   ctx.closePath();
 }
 
-function centroid(pts: Pt[]): Pt {
-  let x = 0;
-  let y = 0;
-  for (const p of pts) {
-    x += p.x;
-    y += p.y;
-  }
-  return { x: x / pts.length, y: y / pts.length };
-}
-
 // ---------------------------------------------------------------------------
 // Ground / terrain
 // ---------------------------------------------------------------------------
@@ -236,121 +218,98 @@ export function drawGround(
   const hostile = opts?.hostile ?? false;
   const lightG = hostile ? "#6f9a4e" : "#7cc15a";
   const darkG = hostile ? "#5d8741" : "#69ad49";
-  const edge = hostile ? "#3f5e2c" : "#4f7d32";
-  const edgeDark = hostile ? "#2c4420" : "#37571f";
 
-  // floating-island base: extrude the whole plate downward for depth
-  const T = project(v, 0, 0);
-  const R = project(v, GRID_W, 0);
-  const B = project(v, GRID_W, GRID_H);
-  const L = project(v, 0, GRID_H);
-  const depth = v.tw * 0.55;
-  const down = (p: Pt): Pt => ({ x: p.x, y: p.y + depth });
-  fillPoly(ctx, [L, B, down(B), down(L)], edgeDark);
-  fillPoly(ctx, [B, R, down(R), down(B)], edge);
+  const TL = project(v, 0, 0);
+  const BR = project(v, GRID_W, GRID_H);
 
-  // grass checker
+  // grass checker — each tile is an axis-aligned rectangle; far rows (small gy)
+  // are tinted slightly darker for a touch of aerial depth.
   for (let gy = 0; gy < GRID_H; gy++) {
+    const depthShade = 0.9 + (gy / GRID_H) * 0.16;
     for (let gx = 0; gx < GRID_W; gx++) {
       const a = project(v, gx, gy);
-      const b = project(v, gx + 1, gy);
       const c = project(v, gx + 1, gy + 1);
-      const d = project(v, gx, gy + 1);
       const base = (gx + gy) % 2 === 0 ? lightG : darkG;
       const jitter = hash2(gx, gy) * 0.08 - 0.04;
-      fillPoly(ctx, [a, b, c, d], shade(base, 1 + jitter));
+      fillPoly(
+        ctx,
+        [a, { x: c.x, y: a.y }, c, { x: a.x, y: c.y }],
+        shade(base, depthShade + jitter),
+      );
     }
   }
 
   // subtle grid lines
-  ctx.strokeStyle = "rgba(0,0,0,0.06)";
+  ctx.strokeStyle = "rgba(0,0,0,0.07)";
   ctx.lineWidth = 1;
   for (let i = 0; i <= GRID_W; i++) {
-    const p0 = project(v, i, 0);
-    const p1 = project(v, i, GRID_H);
+    const x = TL.x + i * v.tw;
     ctx.beginPath();
-    ctx.moveTo(p0.x, p0.y);
-    ctx.lineTo(p1.x, p1.y);
+    ctx.moveTo(x, TL.y);
+    ctx.lineTo(x, BR.y);
     ctx.stroke();
   }
   for (let i = 0; i <= GRID_H; i++) {
-    const q0 = project(v, 0, i);
-    const q1 = project(v, GRID_W, i);
+    const y = TL.y + i * v.th;
     ctx.beginPath();
-    ctx.moveTo(q0.x, q0.y);
-    ctx.lineTo(q1.x, q1.y);
+    ctx.moveTo(TL.x, y);
+    ctx.lineTo(BR.x, y);
     ctx.stroke();
   }
 
-  // bright top rim of the plate
-  ctx.strokeStyle = "rgba(255,255,255,0.18)";
-  ctx.lineWidth = 2;
-  poly(ctx, [T, R, B, L]);
-  ctx.stroke();
+  // soft shaded band along the far (top) edge — reads as a horizon ridge
+  const grad = ctx.createLinearGradient(0, TL.y - v.th, 0, TL.y + v.th * 1.5);
+  grad.addColorStop(0, "rgba(0,0,0,0.22)");
+  grad.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = grad;
+  ctx.fillRect(TL.x, TL.y - v.th, GRID_W * v.tw, v.th * 2.5);
 }
 
 // ---------------------------------------------------------------------------
 // Deploy zone (battle) — the front wedge nearest the player where troops land.
 // ---------------------------------------------------------------------------
 
-/** smallest gx+gy that still counts as the player's front deploy beach. */
-export const DEPLOY_MIN_SUM = GRID_W + GRID_H - DEPLOY_DEPTH;
+/** first (near) row that counts as the player's front deploy beach. */
+export const DEPLOY_MIN_ROW = GRID_H - DEPLOY_DEPTH;
 
-/** is a (continuous) grid point inside the player's front deploy wedge? */
+/** is a (continuous) grid point inside the player's near deploy band? */
 export function inDeployZone(gx: number, gy: number): boolean {
-  return (
-    gx >= 0 &&
-    gy >= 0 &&
-    gx <= GRID_W &&
-    gy <= GRID_H &&
-    gx + gy >= DEPLOY_MIN_SUM
-  );
+  return gx >= 0 && gx <= GRID_W && gy >= DEPLOY_MIN_ROW && gy <= GRID_H;
 }
 
-/** highlight the front deploy wedge with a pulsing tint + up-arrows. */
+/** highlight the near deploy band with a pulsing tint, front line + up-arrows. */
 export function drawDeployZone(ctx: CanvasRenderingContext2D, v: IsoView, time: number): void {
   const pulse = 0.16 + Math.sin(time * 2.2) * 0.06;
-  for (let gy = 0; gy < GRID_H; gy++) {
-    for (let gx = 0; gx < GRID_W; gx++) {
-      if (gx + gy + 1 < DEPLOY_MIN_SUM) continue;
-      const a = project(v, gx, gy);
-      const b = project(v, gx + 1, gy);
-      const c = project(v, gx + 1, gy + 1);
-      const d = project(v, gx, gy + 1);
-      fillPoly(ctx, [a, b, c, d], `rgba(96,210,128,${pulse.toFixed(3)})`);
-    }
-  }
-  // bright dashed front line where the deploy wedge meets enemy ground
-  const line: Pt[] = [];
-  for (let gx = 0; gx <= GRID_W; gx++) {
-    const gy = DEPLOY_MIN_SUM - gx;
-    if (gy < 0 || gy > GRID_H) continue;
-    line.push(project(v, gx, gy));
-  }
-  if (line.length >= 2) {
-    ctx.save();
-    ctx.setLineDash([v.tw * 0.25, v.tw * 0.2]);
-    ctx.strokeStyle = "rgba(120,240,150,0.75)";
-    ctx.lineWidth = Math.max(1.5, v.tw * 0.05);
-    ctx.beginPath();
-    ctx.moveTo(line[0].x, line[0].y);
-    for (let i = 1; i < line.length; i++) ctx.lineTo(line[i].x, line[i].y);
-    ctx.stroke();
-    ctx.restore();
-  }
-  // a couple of upward chevrons reminding which way to push
-  const bob = Math.sin(time * 3) * v.tw * 0.08;
-  const mid = project(v, GRID_W / 2, GRID_H - DEPLOY_DEPTH / 2);
+  const top = project(v, 0, DEPLOY_MIN_ROW);
+  const bot = project(v, GRID_W, GRID_H);
+  ctx.fillStyle = `rgba(96,210,128,${pulse.toFixed(3)})`;
+  ctx.fillRect(top.x, top.y, bot.x - top.x, bot.y - top.y);
+
+  // bright dashed front line where the deploy band meets enemy ground
   ctx.save();
-  ctx.strokeStyle = "rgba(170,255,190,0.8)";
-  ctx.lineWidth = Math.max(2, v.tw * 0.06);
+  ctx.setLineDash([v.tw * 0.28, v.tw * 0.22]);
+  ctx.strokeStyle = "rgba(120,240,150,0.8)";
+  ctx.lineWidth = Math.max(1.5, v.th * 0.06);
+  ctx.beginPath();
+  ctx.moveTo(top.x, top.y);
+  ctx.lineTo(bot.x, top.y);
+  ctx.stroke();
+  ctx.restore();
+
+  // upward chevrons reminding which way to push
+  const bob = Math.sin(time * 3) * v.th * 0.1;
+  const mx = top.x + (bot.x - top.x) / 2;
+  const my = (top.y + bot.y) / 2;
+  ctx.save();
+  ctx.strokeStyle = "rgba(180,255,200,0.85)";
+  ctx.lineWidth = Math.max(2, v.tw * 0.05);
   ctx.lineCap = "round";
   for (let k = 0; k < 2; k++) {
-    const yy = mid.y - bob - k * v.tw * 0.34;
+    const yy = my - bob - k * v.th * 0.42;
     ctx.beginPath();
-    ctx.moveTo(mid.x - v.tw * 0.22, yy + v.tw * 0.16);
-    ctx.lineTo(mid.x, yy - v.tw * 0.04);
-    ctx.lineTo(mid.x + v.tw * 0.22, yy + v.tw * 0.16);
+    ctx.moveTo(mx - v.tw * 0.34, yy + v.tw * 0.22);
+    ctx.lineTo(mx, yy - v.tw * 0.06);
+    ctx.lineTo(mx + v.tw * 0.34, yy + v.tw * 0.22);
     ctx.stroke();
   }
   ctx.restore();
@@ -376,7 +335,7 @@ export function buildDecorations(occupied: Set<string>, hostile = false): Deco[]
       out.push({
         gx: gx + 0.5,
         gy: gy + 0.5,
-        depth: gx + gy + 0.5,
+        depth: gy + 0.5,
         draw: (ctx, v) => drawDeco(ctx, v, gx + 0.5, gy + 0.5, kind, hostile),
       });
     }
@@ -479,36 +438,69 @@ export interface BuildingDraw {
   night?: number;
 }
 
-/** corners of a box: ground + lifted-top, given footprint + height in px. */
-type BaseCorners = { T: Pt; R: Pt; B: Pt; L: Pt; Tt: Pt; Rt: Pt; Bt: Pt; Lt: Pt };
-type Corners = BaseCorners & { tlw: () => number };
+const HEIGHT_UNIT = 0.9; // building extrusion height per `h`, in tile-depths
+const FOOT_INSET = 0.08; // gap (in tiles) left around a building so neighbours read apart
 
-function boxCorners(v: IsoView, x: number, y: number, size: number, hPx: number, lift = 0): BaseCorners {
-  const g = (gx: number, gy: number): Pt => {
-    const p = project(v, gx, gy);
-    return { x: p.x, y: p.y - lift };
-  };
-  const T = g(x, y);
-  const R = g(x + size, y);
-  const B = g(x + size, y + size);
-  const L = g(x, y + size);
-  const up = (p: Pt): Pt => ({ x: p.x, y: p.y - hPx });
-  return { T, R, B, L, Tt: up(T), Rt: up(R), Bt: up(B), Lt: up(L) };
+/** Screen geometry of an extruded box. Its footprint maps to an axis-aligned
+ *  rect (x0..x1 wide, yFar..yNear deep) and it rises `h` px toward the camera.
+ *  Only the front (south) wall and the top face show — a clean, screen-filling
+ *  2.5D look. `baseLift` stacks a smaller box on top of a bigger one. */
+interface BoxGeom {
+  x0: number;
+  x1: number;
+  yFar: number;
+  yNear: number;
+  h: number;
+  cx: number;
+  cyTop: number;
 }
 
-function drawBox(
-  ctx: CanvasRenderingContext2D,
-  c: Corners,
-  color: string,
-  outline = true,
-): void {
-  fillPoly(ctx, [c.L, c.B, c.Bt, c.Lt], shade(color, 0.7)); // left wall
-  fillPoly(ctx, [c.B, c.R, c.Rt, c.Bt], shade(color, 0.84)); // right wall
-  fillPoly(ctx, [c.Tt, c.Rt, c.Bt, c.Lt], shade(color, 1.12)); // top
+function boxGeom(
+  v: IsoView,
+  x: number,
+  y: number,
+  size: number,
+  h: number,
+  baseLift = 0,
+  inset = 0,
+): BoxGeom {
+  const x0 = v.ox + (x + inset) * v.tw;
+  const x1 = v.ox + (x + size - inset) * v.tw;
+  const yFar = v.oy + (y + inset) * v.th - baseLift;
+  const yNear = v.oy + (y + size - inset) * v.th - baseLift;
+  return { x0, x1, yFar, yNear, h, cx: (x0 + x1) / 2, cyTop: (yFar + yNear) / 2 - h };
+}
+
+function drawBox(ctx: CanvasRenderingContext2D, g: BoxGeom, color: string, lw = 1.2, outline = true): void {
+  const { x0, x1, yFar, yNear, h } = g;
+  const roofTop = yFar - h;
+  const wallTop = yNear - h;
+  const w = x1 - x0;
+  // top (roof) face — lighter, easing toward the far edge
+  const topGrad = ctx.createLinearGradient(0, roofTop, 0, wallTop);
+  topGrad.addColorStop(0, shade(color, 1.02));
+  topGrad.addColorStop(1, shade(color, 1.2));
+  ctx.fillStyle = topGrad;
+  ctx.fillRect(x0, roofTop, w, yNear - yFar);
+  // front (south) wall — darker, shading down
+  const wallGrad = ctx.createLinearGradient(0, wallTop, 0, yNear);
+  wallGrad.addColorStop(0, shade(color, 0.86));
+  wallGrad.addColorStop(1, shade(color, 0.6));
+  ctx.fillStyle = wallGrad;
+  ctx.fillRect(x0, wallTop, w, h);
   if (outline) {
-    ctx.strokeStyle = "rgba(0,0,0,0.32)";
-    ctx.lineWidth = Math.max(1, c.tlw());
-    poly(ctx, [c.Tt, c.Rt, c.R, c.B, c.L, c.Lt]);
+    ctx.strokeStyle = "rgba(0,0,0,0.34)";
+    ctx.lineWidth = Math.max(1, lw);
+    ctx.beginPath();
+    ctx.moveTo(x0, roofTop);
+    ctx.lineTo(x1, roofTop);
+    ctx.lineTo(x1, yNear);
+    ctx.lineTo(x0, yNear);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x0, wallTop);
+    ctx.lineTo(x1, wallTop);
     ctx.stroke();
   }
 }
@@ -516,89 +508,79 @@ function drawBox(
 export function drawBuilding(ctx: CanvasRenderingContext2D, v: IsoView, d: BuildingDraw): void {
   const sp = SPRITES[d.type] ?? FALLBACK;
   const levelScale = 1 + (Math.min(d.level, 10) - 1) * 0.05;
-  const baseH = sp.h * v.tw * levelScale * (1 + (d.squash ?? 0));
-  const lw = v.tw * 0.03;
+  const unit = v.th * HEIGHT_UNIT;
+  const h = sp.h * unit * levelScale * (1 + (d.squash ?? 0));
+  const lw = Math.max(1, v.tw * 0.04);
+  const g = boxGeom(v, d.x, d.y, d.size, h, 0, FOOT_INSET);
+  const w = g.x1 - g.x0;
 
   // ground shadow
-  const sh = boxCorners(v, d.x, d.y, d.size, 0);
   ctx.save();
   ctx.globalAlpha = 0.22;
-  fillPoly(
-    ctx,
-    [
-      { x: sh.T.x + v.tw * 0.12, y: sh.T.y + v.th * 0.18 },
-      { x: sh.R.x + v.tw * 0.18, y: sh.R.y + v.th * 0.18 },
-      { x: sh.B.x + v.tw * 0.18, y: sh.B.y + v.th * 0.22 },
-      { x: sh.L.x + v.tw * 0.12, y: sh.L.y + v.th * 0.22 },
-    ],
-    "#000",
-  );
+  ctx.fillStyle = "#000";
+  ctx.beginPath();
+  ctx.ellipse(g.cx + v.tw * 0.08, g.yNear + v.th * 0.05, w * 0.52, v.th * d.size * 0.32, 0, 0, Math.PI * 2);
+  ctx.fill();
   ctx.restore();
 
-  const c = Object.assign(boxCorners(v, d.x, d.y, d.size, baseH), { tlw: () => lw }) as Corners;
-  drawBox(ctx, c, sp.color);
+  drawBox(ctx, g, sp.color, lw);
 
-  // night windows: warm glowing panes on the two front walls
+  // night windows on the front wall
   if (d.night && d.night > 0.32 && !d.constructing && sp.fam !== "wall" && sp.fam !== "tent") {
-    drawWindows(ctx, c, v, d.night);
+    drawWindows(ctx, g, v, d.night);
   }
 
-  // family-specific structure on the top face
-  drawStructure(ctx, v, d, sp, baseH);
+  // family-specific structure on top
+  drawStructure(ctx, v, d, sp, g, lw);
 
-  // tier studs: little gold rivets on the top edge for higher levels
+  // tier studs: gold rivets along the roof's near edge for higher levels
   if (d.level >= 4) {
     ctx.fillStyle = "#f5c518";
-    for (const p of [c.Tt, c.Rt, c.Lt]) {
+    const y = g.yNear - h;
+    for (const fx of [0.2, 0.5, 0.8]) {
       ctx.beginPath();
-      ctx.arc(p.x, p.y, v.tw * 0.035, 0, Math.PI * 2);
+      ctx.arc(g.x0 + w * fx, y, v.tw * 0.04, 0, Math.PI * 2);
       ctx.fill();
     }
   }
 
-  // ambient idle: chimney smoke on halls/barracks
+  // ambient chimney smoke for halls
   if (d.ambient && sp.fam === "hall") {
-    const tc = boxCorners(v, d.x, d.y, d.size, baseH);
-    const cc = centroid([tc.Tt, tc.Rt, tc.Bt, tc.Lt]);
-    drawSmoke(ctx, cc.x + v.tw * 0.16, cc.y - v.tw * 0.18, v.tw, d.time, d.x * 7 + d.y * 13);
+    drawSmoke(ctx, g.cx + v.tw * 0.2, g.cyTop - h * 0.1, v.tw, d.time, d.x * 7 + d.y * 13);
   }
 
   // selection highlight (village)
   if (d.selected) {
     ctx.strokeStyle = "#ffe06a";
     ctx.lineWidth = v.tw * 0.06;
-    poly(ctx, [c.T, c.R, c.B, c.L]);
-    ctx.stroke();
+    ctx.strokeRect(g.x0, g.yFar - h, w, g.yNear - (g.yFar - h));
   }
 
   // hp bar (battle)
   if (d.hpFrac !== undefined && d.hpFrac < 1) {
-    drawBar(ctx, c.Tt, v.tw * d.size * 0.6, d.hpFrac);
+    drawBar(ctx, { x: g.cx, y: g.yFar - h - 6 }, w * 0.9, d.hpFrac);
   }
 
   // level badge (village)
   if (d.showLevel && !d.constructing) {
-    drawBadge(ctx, c.B, String(d.level), v.tw);
+    drawBadge(ctx, { x: g.x1 - v.tw * 0.12, y: g.yNear - v.th * 0.12 }, String(d.level), v.tw);
   }
 
   // collect icon bobbing above
   if (d.collect && !d.constructing) {
-    const top = centroid([c.Tt, c.Rt, c.Bt, c.Lt]);
     const bob = Math.sin(d.time * 3) * v.tw * 0.07;
-    drawCollect(ctx, top.x, top.y - v.tw * 0.35 + bob, v.tw, d.collect);
+    drawCollect(ctx, g.cx, g.yFar - h - v.tw * 0.3 + bob, v.tw, d.collect);
   }
 
   // construction overlay
   if (d.constructing) {
     ctx.save();
     ctx.globalAlpha = 0.5;
-    fillPoly(ctx, [c.Tt, c.Rt, c.Bt, c.Lt], "#0b1410");
-    fillPoly(ctx, [c.L, c.B, c.Bt, c.Lt], "#0b1410");
-    fillPoly(ctx, [c.B, c.R, c.Rt, c.Bt], "#0b1410");
+    ctx.fillStyle = "#0b1410";
+    ctx.fillRect(g.x0, g.yFar - h, w, g.yNear - (g.yFar - h));
     ctx.restore();
-    const top = centroid([c.Tt, c.Rt, c.Bt, c.Lt]);
-    drawHammer(ctx, top.x, top.y - v.tw * 0.1, v.tw, d.time);
-    if (d.remainingLabel) drawLabel(ctx, top.x, top.y + v.tw * 0.18, d.remainingLabel, v.tw);
+    drawHammer(ctx, g.cx, g.cyTop, v.tw, d.time);
+    if (d.remainingLabel) drawLabel(ctx, g.cx, g.yNear - h * 0.5, d.remainingLabel, v.tw);
   }
 }
 
@@ -607,127 +589,107 @@ function drawStructure(
   v: IsoView,
   d: BuildingDraw,
   sp: SpriteDef,
-  baseH: number,
+  g: BoxGeom,
+  lw: number,
 ): void {
-  const lw = v.tw * 0.03;
-  const tlw = () => lw;
-  const top = (x: number, y: number, size: number, h: number) =>
-    Object.assign(boxCorners(v, x, y, size, h, baseH), { tlw }) as Corners;
-
+  const tw = v.tw;
+  const w = g.x1 - g.x0;
   switch (sp.fam) {
     case "hall": {
-      // pitched roof prism
       const ins = d.size * 0.16;
-      const r = top(d.x + ins, d.y + ins, d.size - ins * 2, baseH * 0.45);
-      drawBox(ctx, r, sp.roof);
+      const r = boxGeom(v, d.x + ins, d.y + ins, d.size - ins * 2, g.h * 0.45, g.h);
+      drawBox(ctx, r, sp.roof, lw);
       if (sp.trim) {
-        // golden ridge dot + flag
-        const c = centroid([r.Tt, r.Rt, r.Bt, r.Lt]);
+        // gold knob + waving flag on a pole
         ctx.fillStyle = sp.trim;
         ctx.beginPath();
-        ctx.arc(c.x, c.y, v.tw * 0.07, 0, Math.PI * 2);
+        ctx.arc(r.cx, r.cyTop, tw * 0.07, 0, Math.PI * 2);
         ctx.fill();
         ctx.strokeStyle = "#6b4a2a";
-        ctx.lineWidth = v.tw * 0.03;
+        ctx.lineWidth = tw * 0.03;
         ctx.beginPath();
-        ctx.moveTo(c.x, c.y);
-        ctx.lineTo(c.x, c.y - v.tw * 0.34);
+        ctx.moveTo(r.cx, r.cyTop);
+        ctx.lineTo(r.cx, r.cyTop - tw * 0.4);
         ctx.stroke();
-        const wave = Math.sin(d.time * 4) * v.tw * 0.03;
+        const wave = Math.sin(d.time * 4) * tw * 0.03;
         fillPoly(ctx, [
-          { x: c.x, y: c.y - v.tw * 0.34 },
-          { x: c.x + v.tw * 0.18, y: c.y - v.tw * 0.3 + wave },
-          { x: c.x, y: c.y - v.tw * 0.24 },
+          { x: r.cx, y: r.cyTop - tw * 0.4 },
+          { x: r.cx + tw * 0.2, y: r.cyTop - tw * 0.34 + wave },
+          { x: r.cx, y: r.cyTop - tw * 0.28 },
         ], "#e23b3b");
       }
       break;
     }
     case "tower": {
-      // battlement cap: smaller box + notches
       const ins = d.size * 0.2;
-      const cap = top(d.x + ins, d.y + ins, d.size - ins * 2, baseH * 0.22);
-      drawBox(ctx, cap, sp.roof);
-      // arrow slit on front-right wall
-      const m = centroid([cap.B, cap.R, cap.Rt, cap.Bt]);
+      const cap = boxGeom(v, d.x + ins, d.y + ins, d.size - ins * 2, g.h * 0.3, g.h);
+      drawBox(ctx, cap, sp.roof, lw);
+      // arrow slit on the front wall
       ctx.fillStyle = "rgba(0,0,0,0.5)";
-      ctx.fillRect(m.x - v.tw * 0.02, m.y - v.tw * 0.18, v.tw * 0.04, v.tw * 0.18);
+      ctx.fillRect(g.cx - tw * 0.03, g.yNear - g.h * 0.72, tw * 0.06, g.h * 0.45);
       break;
     }
     case "tent": {
-      const ins = d.size * 0.1;
-      const r = top(d.x + ins, d.y + ins, d.size - ins * 2, baseH * 0.7);
-      drawBox(ctx, r, sp.roof);
+      const ins = d.size * 0.08;
+      const roof = boxGeom(v, d.x + ins, d.y + ins, d.size - ins * 2, g.h * 0.55, g.h);
+      drawBox(ctx, roof, sp.roof, lw);
       break;
     }
     case "cannon": {
-      // pivot dome + barrel pointing up-right
-      const tc = boxCorners(v, d.x, d.y, d.size, baseH);
-      const cen = centroid([tc.Tt, tc.Bt, tc.Rt, tc.Lt]);
+      // pivot dome + barrel aimed up-field toward the enemy
       ctx.fillStyle = "#2c2c33";
       ctx.beginPath();
-      ctx.arc(cen.x, cen.y, v.tw * 0.16, 0, Math.PI * 2);
+      ctx.arc(g.cx, g.cyTop, tw * 0.2 * d.size, 0, Math.PI * 2);
       ctx.fill();
       ctx.strokeStyle = "#1a1a1f";
       ctx.lineCap = "round";
-      ctx.lineWidth = v.tw * 0.13;
+      ctx.lineWidth = tw * 0.16 * d.size;
       ctx.beginPath();
-      ctx.moveTo(cen.x, cen.y);
-      ctx.lineTo(cen.x + v.tw * 0.34, cen.y - v.tw * 0.2);
+      ctx.moveTo(g.cx, g.cyTop);
+      ctx.lineTo(g.cx, g.cyTop - g.h * 0.55 - tw * 0.1);
       ctx.stroke();
       ctx.lineCap = "butt";
       break;
     }
     case "tank": {
-      const tc = boxCorners(v, d.x, d.y, d.size, baseH);
-      const cen = centroid([tc.Tt, tc.Bt, tc.Rt, tc.Lt]);
-      // domed liquid top
       ctx.fillStyle = shade(sp.roof, 1.05);
       ctx.beginPath();
-      ctx.ellipse(cen.x, cen.y, v.tw * d.size * 0.32, v.tw * d.size * 0.17, 0, 0, Math.PI * 2);
+      ctx.ellipse(g.cx, g.cyTop, w * 0.34, v.th * d.size * 0.3, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = "rgba(255,255,255,0.35)";
       ctx.beginPath();
-      ctx.ellipse(cen.x - v.tw * 0.07, cen.y - v.tw * 0.03, v.tw * 0.07, v.tw * 0.035, 0, 0, Math.PI * 2);
+      ctx.ellipse(g.cx - w * 0.1, g.cyTop - v.th * 0.06, w * 0.1, v.th * 0.06, 0, 0, Math.PI * 2);
       ctx.fill();
       break;
     }
     case "mine": {
-      const tc = boxCorners(v, d.x, d.y, d.size, baseH);
-      const cen = centroid([tc.Tt, tc.Bt, tc.Rt, tc.Lt]);
-      // ore pile
       fillPoly(ctx, [
-        { x: cen.x - v.tw * 0.2, y: cen.y + v.tw * 0.04 },
-        { x: cen.x, y: cen.y - v.tw * 0.2 },
-        { x: cen.x + v.tw * 0.2, y: cen.y + v.tw * 0.04 },
+        { x: g.cx - w * 0.3, y: g.cyTop + v.th * 0.18 },
+        { x: g.cx, y: g.cyTop - v.th * 0.34 },
+        { x: g.cx + w * 0.3, y: g.cyTop + v.th * 0.18 },
       ], sp.roof);
       ctx.fillStyle = "#fff2b0";
       ctx.beginPath();
-      ctx.arc(cen.x - v.tw * 0.05, cen.y - v.tw * 0.04, v.tw * 0.03, 0, Math.PI * 2);
-      ctx.arc(cen.x + v.tw * 0.06, cen.y, v.tw * 0.025, 0, Math.PI * 2);
+      ctx.arc(g.cx - w * 0.07, g.cyTop, tw * 0.04, 0, Math.PI * 2);
+      ctx.arc(g.cx + w * 0.08, g.cyTop + v.th * 0.06, tw * 0.03, 0, Math.PI * 2);
       ctx.fill();
       break;
     }
     case "storage": {
-      const tc = boxCorners(v, d.x, d.y, d.size, baseH);
-      const cen = centroid([tc.Tt, tc.Bt, tc.Rt, tc.Lt]);
       ctx.fillStyle = sp.roof;
       for (let i = 0; i < 3; i++) {
         ctx.beginPath();
-        ctx.ellipse(cen.x, cen.y - i * v.tw * 0.07, v.tw * 0.16, v.tw * 0.07, 0, 0, Math.PI * 2);
+        ctx.ellipse(g.cx, g.cyTop - i * v.th * 0.12, w * 0.26, v.th * 0.12, 0, 0, Math.PI * 2);
         ctx.fill();
       }
       break;
     }
     case "wall": {
-      const cn = Object.assign(boxCorners(v, d.x, d.y, d.size, baseH), { tlw }) as Corners;
-      // brick groove line across the top
       ctx.strokeStyle = "rgba(0,0,0,0.25)";
-      ctx.lineWidth = v.tw * 0.02;
-      const a = centroid([cn.Tt, cn.Lt]);
-      const b = centroid([cn.Rt, cn.Bt]);
+      ctx.lineWidth = tw * 0.04;
       ctx.beginPath();
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
+      ctx.moveTo(g.x0 + w * 0.15, g.cyTop);
+      ctx.lineTo(g.x1 - w * 0.15, g.cyTop);
       ctx.stroke();
       break;
     }
@@ -756,31 +718,27 @@ function drawSmoke(
   ctx.globalAlpha = 1;
 }
 
-function lerpPt(a: Pt, b: Pt, t: number): Pt {
-  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
-}
-
-function drawWindows(ctx: CanvasRenderingContext2D, c: Corners, v: IsoView, night: number): void {
+function drawWindows(ctx: CanvasRenderingContext2D, g: BoxGeom, v: IsoView, night: number): void {
   const glow = Math.min(1, night);
-  const s = v.tw * 0.055;
-  const pane = (p: Pt) => {
-    const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, s * 2.6);
-    g.addColorStop(0, `rgba(255,212,128,${0.5 * glow})`);
-    g.addColorStop(1, "rgba(255,200,120,0)");
-    ctx.fillStyle = g;
+  const s = v.tw * 0.08;
+  const wallTop = g.yNear - g.h;
+  const w = g.x1 - g.x0;
+  const pane = (px: number, py: number) => {
+    const grd = ctx.createRadialGradient(px, py, 0, px, py, s * 2.4);
+    grd.addColorStop(0, `rgba(255,212,128,${0.5 * glow})`);
+    grd.addColorStop(1, "rgba(255,200,120,0)");
+    ctx.fillStyle = grd;
     ctx.beginPath();
-    ctx.arc(p.x, p.y, s * 2.6, 0, Math.PI * 2);
+    ctx.arc(px, py, s * 2.4, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = `rgba(255,226,156,${0.92 * glow})`;
-    ctx.fillRect(p.x - s / 2, p.y - s / 2, s, s);
+    ctx.fillRect(px - s / 2, py - s / 2, s, s);
   };
-  // right wall [B,R,Rt,Bt], left wall [L,B,Bt,Lt]
-  const onWall = (g0: Pt, g1: Pt, t1: Pt, t0: Pt, u: number, w: number) =>
-    lerpPt(lerpPt(g0, g1, u), lerpPt(t0, t1, u), w);
-  pane(onWall(c.B, c.R, c.Rt, c.Bt, 0.34, 0.5));
-  pane(onWall(c.B, c.R, c.Rt, c.Bt, 0.66, 0.5));
-  pane(onWall(c.L, c.B, c.Bt, c.Lt, 0.34, 0.5));
-  pane(onWall(c.L, c.B, c.Bt, c.Lt, 0.66, 0.5));
+  for (const cx of [0.3, 0.7]) {
+    for (const ry of [0.42, 0.74]) {
+      pane(g.x0 + w * cx, wallTop + g.h * ry);
+    }
+  }
 }
 
 function drawBar(ctx: CanvasRenderingContext2D, top: Pt, w: number, frac: number): void {
@@ -889,20 +847,12 @@ export function buildingHit(
   sy: number,
 ): boolean {
   const sp = SPRITES[b.type] ?? FALLBACK;
-  const c = boxCorners(v, b.x, b.y, b.size, sp.h * v.tw);
-  return pointInPoly(sx, sy, [c.Tt, c.Rt, c.R, c.B, c.L, c.Lt]);
-}
-
-function pointInPoly(px: number, py: number, pts: Pt[]): boolean {
-  let inside = false;
-  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-    const xi = pts[i].x;
-    const yi = pts[i].y;
-    const xj = pts[j].x;
-    const yj = pts[j].y;
-    if (yi > py !== yj > py && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi) inside = !inside;
-  }
-  return inside;
+  const h = sp.h * v.th * HEIGHT_UNIT;
+  const x0 = v.ox + b.x * v.tw;
+  const x1 = v.ox + (b.x + b.size) * v.tw;
+  const yTop = v.oy + b.y * v.th - h;
+  const yBot = v.oy + (b.y + b.size) * v.th;
+  return sx >= x0 && sx <= x1 && sy >= yTop && sy <= yBot;
 }
 
 // ---------------------------------------------------------------------------

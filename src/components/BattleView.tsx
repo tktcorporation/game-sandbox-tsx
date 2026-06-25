@@ -178,7 +178,7 @@ export function BattleView({ base, onExit }: { base: EnemyBase; onExit: () => vo
         ctx.strokeStyle = "rgba(255,80,80,0.18)";
         ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.ellipse(c.x, c.y, tg.range * v.tw * 0.707, tg.range * v.th * 0.707, 0, 0, Math.PI * 2);
+        ctx.ellipse(c.x, c.y, tg.range * v.tw, tg.range * v.th, 0, 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
       }
@@ -202,12 +202,12 @@ export function BattleView({ base, onExit }: { base: EnemyBase; onExit: () => vo
           ambient: true,
           night: RAID_LIGHT.night,
         };
-        items.push({ depth: tg.cx + tg.cy, draw: () => drawBuilding(ctx, v, draw) });
+        items.push({ depth: tg.cy + tg.size / 2, draw: () => drawBuilding(ctx, v, draw) });
       }
       for (const u of battle.units) {
         if (u.hp <= 0) continue;
         items.push({
-          depth: u.x + u.y,
+          depth: u.y,
           draw: () =>
             drawTroop(ctx, v, {
               type: u.type,
