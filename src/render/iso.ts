@@ -546,7 +546,26 @@ function boxGeom(
   return { x0, x1, yFar, yNear, h, cx: (x0 + x1) / 2, cyTop: (yFar + yNear) / 2 - h };
 }
 
-function drawBox(ctx: CanvasRenderingContext2D, g: BoxGeom, color: string, lw = 1.2, outline = true): void {
+const GLOSS: Record<string, number> = {
+  hall: 0.42,
+  tower: 0.5,
+  tent: 0.26,
+  cannon: 0.88,
+  tank: 0.92,
+  mine: 0.72,
+  storage: 0.74,
+  wall: 0.32,
+};
+const glossOf = (fam: string): number => GLOSS[fam] ?? 0.42;
+
+function drawBox(
+  ctx: CanvasRenderingContext2D,
+  g: BoxGeom,
+  color: string,
+  lw = 1.2,
+  outline = true,
+  gloss = 0.42,
+): void {
   const { x0, x1, yFar, yNear, h } = g;
   const roofTop = yFar - h;
   const wallTop = yNear - h;
@@ -562,12 +581,25 @@ function drawBox(ctx: CanvasRenderingContext2D, g: BoxGeom, color: string, lw = 
   ctx.fillStyle = "rgba(255,238,198,0.08)"; // warm key light
   ctx.fillRect(x0, roofTop, w, roofH);
   grain(ctx, x0, roofTop, w, roofH, 0.55);
-  // glossy specular sheen near the sunlit far edge
+  // glossy specular sheen near the sunlit far edge, scaled by material gloss
   const spec = ctx.createLinearGradient(0, roofTop, 0, roofTop + roofH * 0.6);
-  spec.addColorStop(0, "rgba(255,255,255,0.18)");
+  spec.addColorStop(0, `rgba(255,255,255,${(0.08 + gloss * 0.3).toFixed(3)})`);
   spec.addColorStop(1, "rgba(255,255,255,0)");
   ctx.fillStyle = spec;
   ctx.fillRect(x0, roofTop, w, roofH * 0.6);
+  // tight specular hotspot for shiny materials (metal / liquid / gold)
+  if (gloss > 0.55) {
+    const hx = x0 + w * 0.64;
+    const hy = roofTop + roofH * 0.28;
+    const hr = w * 0.4;
+    const hot = ctx.createRadialGradient(hx, hy, 0, hx, hy, hr);
+    hot.addColorStop(0, `rgba(255,255,255,${(gloss * 0.34).toFixed(3)})`);
+    hot.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = hot;
+    ctx.beginPath();
+    ctx.ellipse(hx, hy, hr, hr * 0.55, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
 
   // --- front (south) wall: shadowed, cool, grain, contact AO ---
   const wallGrad = ctx.createLinearGradient(0, wallTop, 0, yNear);
@@ -647,7 +679,7 @@ export function drawBuilding(ctx: CanvasRenderingContext2D, v: IsoView, d: Build
   ctx.restore();
   ctx.filter = "none";
 
-  drawBox(ctx, g, sp.color, lw);
+  drawBox(ctx, g, sp.color, lw, true, glossOf(sp.fam));
 
   // night windows on the front wall
   if (d.night && d.night > 0.32 && !d.constructing && sp.fam !== "wall" && sp.fam !== "tent") {
@@ -722,7 +754,7 @@ function drawStructure(
     case "hall": {
       const ins = d.size * 0.16;
       const r = boxGeom(v, d.x + ins, d.y + ins, d.size - ins * 2, g.h * 0.45, g.h);
-      drawBox(ctx, r, sp.roof, lw);
+      drawBox(ctx, r, sp.roof, lw, true, glossOf(sp.fam));
       if (sp.trim) {
         // gold knob + waving flag on a pole
         ctx.fillStyle = sp.trim;
@@ -747,7 +779,7 @@ function drawStructure(
     case "tower": {
       const ins = d.size * 0.2;
       const cap = boxGeom(v, d.x + ins, d.y + ins, d.size - ins * 2, g.h * 0.3, g.h);
-      drawBox(ctx, cap, sp.roof, lw);
+      drawBox(ctx, cap, sp.roof, lw, true, glossOf(sp.fam));
       // arrow slit on the front wall
       ctx.fillStyle = "rgba(0,0,0,0.5)";
       ctx.fillRect(g.cx - tw * 0.03, g.yNear - g.h * 0.72, tw * 0.06, g.h * 0.45);
@@ -756,7 +788,7 @@ function drawStructure(
     case "tent": {
       const ins = d.size * 0.08;
       const roof = boxGeom(v, d.x + ins, d.y + ins, d.size - ins * 2, g.h * 0.55, g.h);
-      drawBox(ctx, roof, sp.roof, lw);
+      drawBox(ctx, roof, sp.roof, lw, true, glossOf(sp.fam));
       break;
     }
     case "cannon": {
