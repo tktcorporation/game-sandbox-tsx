@@ -188,6 +188,58 @@ function fillPoly(ctx: CanvasRenderingContext2D, pts: Pt[], fill: string): void 
   ctx.fill();
 }
 
+// ---------------------------------------------------------------------------
+// Texture grain — the cheap-but-not-cheap-looking trick. A single chunky
+// pixel-noise tile is baked once into an offscreen canvas, then overlaid on
+// flat fills with `soft-light` so every surface gets a consistent, crafted
+// "texel" grain instead of dead-flat colour. One extra fillRect per face.
+// ---------------------------------------------------------------------------
+
+let _noise: CanvasPattern | null = null;
+let _noiseTried = false;
+
+function noisePattern(ctx: CanvasRenderingContext2D): CanvasPattern | null {
+  if (_noiseTried) return _noise;
+  _noiseTried = true;
+  if (typeof document === "undefined") return null;
+  const size = 72;
+  const texel = 3; // chunky, Minecraft-ish texels
+  const c = document.createElement("canvas");
+  c.width = c.height = size;
+  const g = c.getContext("2d");
+  if (!g) return null;
+  for (let y = 0; y < size; y += texel) {
+    for (let x = 0; x < size; x += texel) {
+      const n = hash2(x * 12.9 + 1, y * 78.2 + 7); // 0..1, stable
+      const d = n - 0.5;
+      const a = Math.abs(d) * 0.85;
+      g.fillStyle = d >= 0 ? `rgba(255,255,255,${a})` : `rgba(0,0,0,${a})`;
+      g.fillRect(x, y, texel, texel);
+    }
+  }
+  _noise = ctx.createPattern(c, "repeat");
+  return _noise;
+}
+
+/** overlay baked grain onto a rect to lift flat fills out of "cheap" territory. */
+function grain(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  alpha = 1,
+): void {
+  const pat = noisePattern(ctx);
+  if (!pat) return;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.globalCompositeOperation = "soft-light";
+  ctx.fillStyle = pat;
+  ctx.fillRect(x, y, w, h);
+  ctx.restore();
+}
+
 function roundRect(
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -216,46 +268,31 @@ export function drawGround(
   opts?: { hostile?: boolean },
 ): void {
   const hostile = opts?.hostile ?? false;
-  const lightG = hostile ? "#6f9a4e" : "#7cc15a";
-  const darkG = hostile ? "#5d8741" : "#69ad49";
+  const grass = hostile ? "#6b9a48" : "#77ba55";
 
   const TL = project(v, 0, 0);
-  const BR = project(v, GRID_W, GRID_H);
+  const fieldW = GRID_W * v.tw;
+  const fieldH = GRID_H * v.th;
 
-  // grass checker — each tile is an axis-aligned rectangle; far rows (small gy)
-  // are tinted slightly darker for a touch of aerial depth.
+  // one continuous grassy field, only faint per-tile value drift + a gentle
+  // far→near light gradient. The baked grain carries the fine texture and
+  // masks tile seams, the way Minecraft's per-texel noise hides block edges.
   for (let gy = 0; gy < GRID_H; gy++) {
-    const depthShade = 0.9 + (gy / GRID_H) * 0.16;
+    const depthShade = 0.94 + (gy / GRID_H) * 0.11;
     for (let gx = 0; gx < GRID_W; gx++) {
       const a = project(v, gx, gy);
       const c = project(v, gx + 1, gy + 1);
-      const base = (gx + gy) % 2 === 0 ? lightG : darkG;
-      const jitter = hash2(gx, gy) * 0.08 - 0.04;
+      const jitter = hash2(gx * 7 + 3, gy * 11 + 5) * 0.05 - 0.025;
       fillPoly(
         ctx,
         [a, { x: c.x, y: a.y }, c, { x: a.x, y: c.y }],
-        shade(base, depthShade + jitter),
+        shade(grass, depthShade + jitter),
       );
     }
   }
 
-  // subtle grid lines
-  ctx.strokeStyle = "rgba(0,0,0,0.07)";
-  ctx.lineWidth = 1;
-  for (let i = 0; i <= GRID_W; i++) {
-    const x = TL.x + i * v.tw;
-    ctx.beginPath();
-    ctx.moveTo(x, TL.y);
-    ctx.lineTo(x, BR.y);
-    ctx.stroke();
-  }
-  for (let i = 0; i <= GRID_H; i++) {
-    const y = TL.y + i * v.th;
-    ctx.beginPath();
-    ctx.moveTo(TL.x, y);
-    ctx.lineTo(BR.x, y);
-    ctx.stroke();
-  }
+  // baked fine texel grain — masks tile seams and gives the turf its texture.
+  grain(ctx, TL.x, TL.y, fieldW, fieldH, 0.6);
 
   // soft shaded band along the far (top) edge — reads as a horizon ridge
   const grad = ctx.createLinearGradient(0, TL.y - v.th, 0, TL.y + v.th * 1.5);
@@ -476,20 +513,43 @@ function drawBox(ctx: CanvasRenderingContext2D, g: BoxGeom, color: string, lw = 
   const roofTop = yFar - h;
   const wallTop = yNear - h;
   const w = x1 - x0;
-  // top (roof) face — lighter, easing toward the far edge
+  const roofH = yNear - yFar;
+
+  // --- top (roof) face: lit, warm sunlight, grain ---
   const topGrad = ctx.createLinearGradient(0, roofTop, 0, wallTop);
-  topGrad.addColorStop(0, shade(color, 1.02));
-  topGrad.addColorStop(1, shade(color, 1.2));
+  topGrad.addColorStop(0, shade(color, 1.06));
+  topGrad.addColorStop(1, shade(color, 1.24));
   ctx.fillStyle = topGrad;
-  ctx.fillRect(x0, roofTop, w, yNear - yFar);
-  // front (south) wall — darker, shading down
+  ctx.fillRect(x0, roofTop, w, roofH);
+  ctx.fillStyle = "rgba(255,238,198,0.08)"; // warm key light
+  ctx.fillRect(x0, roofTop, w, roofH);
+  grain(ctx, x0, roofTop, w, roofH, 0.55);
+
+  // --- front (south) wall: shadowed, cool, grain, contact AO ---
   const wallGrad = ctx.createLinearGradient(0, wallTop, 0, yNear);
-  wallGrad.addColorStop(0, shade(color, 0.86));
-  wallGrad.addColorStop(1, shade(color, 0.6));
+  wallGrad.addColorStop(0, shade(color, 0.84));
+  wallGrad.addColorStop(1, shade(color, 0.56));
   ctx.fillStyle = wallGrad;
   ctx.fillRect(x0, wallTop, w, h);
+  ctx.fillStyle = "rgba(44,58,98,0.07)"; // cool shadow tint
+  ctx.fillRect(x0, wallTop, w, h);
+  grain(ctx, x0, wallTop, w, h, 0.75);
+  // ambient occlusion pooling at the base
+  const aoH = Math.min(h * 0.45, h);
+  const ao = ctx.createLinearGradient(0, yNear - aoH, 0, yNear);
+  ao.addColorStop(0, "rgba(0,0,0,0)");
+  ao.addColorStop(1, "rgba(0,0,0,0.26)");
+  ctx.fillStyle = ao;
+  ctx.fillRect(x0, yNear - aoH, w, aoH);
+  // soft inner shade on the left edge / highlight on the right gives roundness
+  ctx.fillStyle = "rgba(0,0,0,0.12)";
+  ctx.fillRect(x0, wallTop, Math.max(1, w * 0.06), h);
+  ctx.fillStyle = "rgba(255,255,255,0.06)";
+  ctx.fillRect(x1 - Math.max(1, w * 0.06), wallTop, Math.max(1, w * 0.06), h);
+
   if (outline) {
-    ctx.strokeStyle = "rgba(0,0,0,0.34)";
+    // crisp dark silhouette
+    ctx.strokeStyle = "rgba(0,0,0,0.4)";
     ctx.lineWidth = Math.max(1, lw);
     ctx.beginPath();
     ctx.moveTo(x0, roofTop);
@@ -498,9 +558,17 @@ function drawBox(ctx: CanvasRenderingContext2D, g: BoxGeom, color: string, lw = 
     ctx.lineTo(x0, yNear);
     ctx.closePath();
     ctx.stroke();
+    // roof / wall seam
     ctx.beginPath();
     ctx.moveTo(x0, wallTop);
     ctx.lineTo(x1, wallTop);
+    ctx.stroke();
+    // bright rim along the sunlit top-far edge
+    ctx.strokeStyle = "rgba(255,252,236,0.32)";
+    ctx.lineWidth = Math.max(1, lw * 0.7);
+    ctx.beginPath();
+    ctx.moveTo(x0, roofTop + 0.5);
+    ctx.lineTo(x1, roofTop + 0.5);
     ctx.stroke();
   }
 }
