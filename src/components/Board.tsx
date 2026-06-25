@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { BUILDINGS, GRID_SIZE } from "../game/buildings";
+import { BUILDINGS, GRID_H, GRID_W } from "../game/buildings";
 import { useGame } from "../game/store";
 import { accruedFor, canPlace, formatDuration, formatNumber, now } from "../game/logic";
 import { useUi } from "../ui";
@@ -341,8 +341,8 @@ export function Board() {
       const g = unproject(v, x, y);
       let nx = Math.round(g.gx - drag.size / 2);
       let ny = Math.round(g.gy - drag.size / 2);
-      nx = clamp(nx, 0, GRID_SIZE - drag.size);
-      ny = clamp(ny, 0, GRID_SIZE - drag.size);
+      nx = clamp(nx, 0, GRID_W - drag.size);
+      ny = clamp(ny, 0, GRID_H - drag.size);
       const valid = canPlace(useGame.getState().buildings, nx, ny, drag.size, drag.id);
       ghostRef.current = { id: drag.id, x: nx, y: ny, valid };
       return;

@@ -5,9 +5,15 @@
 // All coordinates are in *device pixels* (callers size the canvas with dpr and
 // draw without ctx.scale, matching the project's existing convention).
 
-import { GRID_SIZE } from "../game/buildings";
+import { DEPLOY_DEPTH, GRID_H, GRID_W } from "../game/buildings";
 
-export const GRID = GRID_SIZE;
+export { GRID_H, GRID_W, DEPLOY_DEPTH };
+/** legacy alias: largest grid dimension */
+export const GRID = Math.max(GRID_W, GRID_H);
+
+/** vertical:horizontal tile ratio (th/tw). Steeper than the classic 0.5 flat
+ *  iso so the field stands up taller — friendlier to a portrait phone. */
+export const TILE_RATIO = 0.62;
 
 export interface IsoView {
   ox: number; // screen-x of grid origin (gx=gy=0 maps here, offset by ox)
@@ -27,22 +33,29 @@ export interface Camera {
   panY: number;
 }
 
-/** Fit the whole grid (plus headroom for tall buildings) inside W x H. */
+/** Fit the whole GRID_W x GRID_H diamond (plus headroom for tall buildings)
+ *  inside W x H, centred. The far corner (0,0) sits up-screen, the near
+ *  corner (GRID_W, GRID_H) down-screen — a vertical front→back field. */
 export function makeView(
   W: number,
   H: number,
   opts?: { lift?: number; cam?: Camera },
 ): IsoView {
   const margin = 0.94;
-  const twByW = (W * margin) / GRID;
-  // diamond height is GRID*th = GRID*tw/2; reserve ~1.7 tiles of vertical
-  // headroom for tall structures rising above the back row.
-  const twByH = (H * margin) / (GRID / 2 + 1.7);
+  // diamond bounding box (in tile-width units): horizontal half-spans are
+  // GRID_W/2 (right) and GRID_H/2 (left); vertical span is (GRID_W+GRID_H)*ratio/2.
+  const halfW = (GRID_W + GRID_H) / 2;
+  const twByW = (W * margin) / halfW;
+  // reserve ~2 tiles of vertical headroom for tall structures rising up.
+  const twByH = (H * margin) / (halfW * TILE_RATIO + 2);
   const zoom = opts?.cam?.zoom ?? 1;
   const tw = Math.min(twByW, twByH) * zoom;
-  const th = tw / 2;
-  const diamondH = GRID * th;
-  const ox = W / 2 + (opts?.cam?.panX ?? 0);
+  const th = tw * TILE_RATIO;
+  // horizontally centre the bounding box around the origin corner (0,0):
+  // leftmost x = -GRID_H*tw/2, rightmost x = +GRID_W*tw/2.
+  const cx = ((GRID_W - GRID_H) * tw) / 4;
+  const diamondH = (GRID_W + GRID_H) * th * 0.5;
+  const ox = W / 2 - cx + (opts?.cam?.panX ?? 0);
   const oy = (H - diamondH) / 2 + tw * (opts?.lift ?? 0.85) + (opts?.cam?.panY ?? 0);
   return { ox, oy, tw, th };
 }
@@ -228,17 +241,17 @@ export function drawGround(
 
   // floating-island base: extrude the whole plate downward for depth
   const T = project(v, 0, 0);
-  const R = project(v, GRID, 0);
-  const B = project(v, GRID, GRID);
-  const L = project(v, 0, GRID);
+  const R = project(v, GRID_W, 0);
+  const B = project(v, GRID_W, GRID_H);
+  const L = project(v, 0, GRID_H);
   const depth = v.tw * 0.55;
   const down = (p: Pt): Pt => ({ x: p.x, y: p.y + depth });
   fillPoly(ctx, [L, B, down(B), down(L)], edgeDark);
   fillPoly(ctx, [B, R, down(R), down(B)], edge);
 
   // grass checker
-  for (let gy = 0; gy < GRID; gy++) {
-    for (let gx = 0; gx < GRID; gx++) {
+  for (let gy = 0; gy < GRID_H; gy++) {
+    for (let gx = 0; gx < GRID_W; gx++) {
       const a = project(v, gx, gy);
       const b = project(v, gx + 1, gy);
       const c = project(v, gx + 1, gy + 1);
@@ -252,14 +265,18 @@ export function drawGround(
   // subtle grid lines
   ctx.strokeStyle = "rgba(0,0,0,0.06)";
   ctx.lineWidth = 1;
-  for (let i = 0; i <= GRID; i++) {
+  for (let i = 0; i <= GRID_W; i++) {
     const p0 = project(v, i, 0);
-    const p1 = project(v, i, GRID);
+    const p1 = project(v, i, GRID_H);
     ctx.beginPath();
     ctx.moveTo(p0.x, p0.y);
     ctx.lineTo(p1.x, p1.y);
+    ctx.stroke();
+  }
+  for (let i = 0; i <= GRID_H; i++) {
     const q0 = project(v, 0, i);
-    const q1 = project(v, GRID, i);
+    const q1 = project(v, GRID_W, i);
+    ctx.beginPath();
     ctx.moveTo(q0.x, q0.y);
     ctx.lineTo(q1.x, q1.y);
     ctx.stroke();
@@ -272,6 +289,74 @@ export function drawGround(
   ctx.stroke();
 }
 
+// ---------------------------------------------------------------------------
+// Deploy zone (battle) — the front wedge nearest the player where troops land.
+// ---------------------------------------------------------------------------
+
+/** smallest gx+gy that still counts as the player's front deploy beach. */
+export const DEPLOY_MIN_SUM = GRID_W + GRID_H - DEPLOY_DEPTH;
+
+/** is a (continuous) grid point inside the player's front deploy wedge? */
+export function inDeployZone(gx: number, gy: number): boolean {
+  return (
+    gx >= 0 &&
+    gy >= 0 &&
+    gx <= GRID_W &&
+    gy <= GRID_H &&
+    gx + gy >= DEPLOY_MIN_SUM
+  );
+}
+
+/** highlight the front deploy wedge with a pulsing tint + up-arrows. */
+export function drawDeployZone(ctx: CanvasRenderingContext2D, v: IsoView, time: number): void {
+  const pulse = 0.16 + Math.sin(time * 2.2) * 0.06;
+  for (let gy = 0; gy < GRID_H; gy++) {
+    for (let gx = 0; gx < GRID_W; gx++) {
+      if (gx + gy + 1 < DEPLOY_MIN_SUM) continue;
+      const a = project(v, gx, gy);
+      const b = project(v, gx + 1, gy);
+      const c = project(v, gx + 1, gy + 1);
+      const d = project(v, gx, gy + 1);
+      fillPoly(ctx, [a, b, c, d], `rgba(96,210,128,${pulse.toFixed(3)})`);
+    }
+  }
+  // bright dashed front line where the deploy wedge meets enemy ground
+  const line: Pt[] = [];
+  for (let gx = 0; gx <= GRID_W; gx++) {
+    const gy = DEPLOY_MIN_SUM - gx;
+    if (gy < 0 || gy > GRID_H) continue;
+    line.push(project(v, gx, gy));
+  }
+  if (line.length >= 2) {
+    ctx.save();
+    ctx.setLineDash([v.tw * 0.25, v.tw * 0.2]);
+    ctx.strokeStyle = "rgba(120,240,150,0.75)";
+    ctx.lineWidth = Math.max(1.5, v.tw * 0.05);
+    ctx.beginPath();
+    ctx.moveTo(line[0].x, line[0].y);
+    for (let i = 1; i < line.length; i++) ctx.lineTo(line[i].x, line[i].y);
+    ctx.stroke();
+    ctx.restore();
+  }
+  // a couple of upward chevrons reminding which way to push
+  const bob = Math.sin(time * 3) * v.tw * 0.08;
+  const mid = project(v, GRID_W / 2, GRID_H - DEPLOY_DEPTH / 2);
+  ctx.save();
+  ctx.strokeStyle = "rgba(170,255,190,0.8)";
+  ctx.lineWidth = Math.max(2, v.tw * 0.06);
+  ctx.lineCap = "round";
+  for (let k = 0; k < 2; k++) {
+    const yy = mid.y - bob - k * v.tw * 0.34;
+    ctx.beginPath();
+    ctx.moveTo(mid.x - v.tw * 0.22, yy + v.tw * 0.16);
+    ctx.lineTo(mid.x, yy - v.tw * 0.04);
+    ctx.lineTo(mid.x + v.tw * 0.22, yy + v.tw * 0.16);
+    ctx.stroke();
+  }
+  ctx.restore();
+  ctx.lineCap = "butt";
+}
+
 /** scattered decorations (trees/rocks/bushes) on free tiles, depth-sortable. */
 export interface Deco {
   gx: number;
@@ -282,8 +367,8 @@ export interface Deco {
 
 export function buildDecorations(occupied: Set<string>, hostile = false): Deco[] {
   const out: Deco[] = [];
-  for (let gy = 0; gy < GRID; gy++) {
-    for (let gx = 0; gx < GRID; gx++) {
+  for (let gy = 0; gy < GRID_H; gy++) {
+    for (let gx = 0; gx < GRID_W; gx++) {
       if (occupied.has(`${gx},${gy}`)) continue;
       const r = hash2(gx * 7 + 1, gy * 13 + 3);
       if (r > 0.12) continue; // sparse

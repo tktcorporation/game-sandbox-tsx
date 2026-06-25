@@ -10,16 +10,19 @@ import {
   buildDecorations,
   dayLight,
   drawBuilding,
+  drawDeployZone,
   drawGround,
   drawNightOverlay,
   drawSky,
   drawTroop,
   drawVignette,
   Fx,
+  inDeployZone,
   makeView,
   project,
   unproject,
-  GRID,
+  GRID_H,
+  GRID_W,
   type BuildingDraw,
   type IsoView,
 } from "../render/iso";
@@ -165,6 +168,7 @@ export function BattleView({ base, onExit }: { base: EnemyBase; onExit: () => vo
       drawSky(ctx, W, H, RAID_LIGHT);
       fx.beginShake(ctx, t);
       drawGround(ctx, v, { hostile: true });
+      if (!finishedRef.current) drawDeployZone(ctx, v, t);
 
       // defense range rings (ground decal)
       for (const tg of battle.targets) {
@@ -254,7 +258,12 @@ export function BattleView({ base, onExit }: { base: EnemyBase; onExit: () => vo
     const px = (e.clientX - r.left) * dpr;
     const py = (e.clientY - r.top) * dpr;
     const g = unproject(v, px, py);
-    if (g.gx < 0 || g.gy < 0 || g.gx > GRID || g.gy > GRID) return;
+    if (g.gx < 0 || g.gy < 0 || g.gx > GRID_W || g.gy > GRID_H) return;
+    // troops may only land on the player's front beach, then march up-field
+    if (!inDeployZone(g.gx, g.gy)) {
+      showToast("手前の緑のゾーンから出撃！");
+      return;
+    }
     battleRef.current.spawn(selected, g.gx, g.gy);
     remainingRef.current = {
       ...remainingRef.current,
@@ -284,6 +293,10 @@ export function BattleView({ base, onExit }: { base: EnemyBase; onExit: () => vo
         <div className="chip stars">{"★".repeat(stats.stars)}{"☆".repeat(3 - stats.stars)}</div>
         <div className="chip">💥 {Math.round(stats.destructionPct * 100)}%</div>
       </div>
+
+      {!finished && (
+        <div className="deploy-hint">⬆ 手前から出撃して上の敵を攻めろ</div>
+      )}
 
       <div className="troop-dock">
         {TROOP_ORDER.map((type) => {

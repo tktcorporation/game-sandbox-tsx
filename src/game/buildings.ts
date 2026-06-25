@@ -4,7 +4,17 @@ import type { BuildingDef, BuildingType, TroopDef, TroopType } from "./types";
 const scale = (base: number, mult: number) => (level: number) =>
   Math.round(base * Math.pow(mult, level - 1));
 
-export const GRID_SIZE = 16;
+// Mobile-first portrait field: deeper (front→back) than it is wide, so the
+// base reads as a vertical column and you attack from the near front toward
+// the far back. `GRID_W` is the width (left↔right), `GRID_H` the depth
+// (near/手前 ↔ far). The far corner (0,0) renders at the top of the screen,
+// the near corner (GRID_W, GRID_H) at the bottom where the player deploys.
+export const GRID_W = 13;
+export const GRID_H = 19;
+/** number of diagonal "rows" nearest the player reserved as the deploy beach */
+export const DEPLOY_DEPTH = 8;
+/** legacy square-grid alias — prefer GRID_W / GRID_H */
+export const GRID_SIZE = Math.max(GRID_W, GRID_H);
 
 export const BUILDINGS: Record<BuildingType, BuildingDef> = {
   townhall: {

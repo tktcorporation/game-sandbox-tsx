@@ -389,6 +389,24 @@ body {
 }
 .stars { font-size: 26px; letter-spacing: 4px; }
 
+.deploy-hint {
+  position: absolute;
+  left: 50%;
+  bottom: calc(96px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  background: rgba(12, 40, 20, 0.78);
+  border: 1px solid rgba(120, 240, 150, 0.6);
+  color: #d6ffe0;
+  padding: 5px 14px;
+  border-radius: 16px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 6;
+  animation: bob 1.6s ease-in-out infinite;
+}
+
 .troop-dock {
   display: flex;
   gap: 8px;
