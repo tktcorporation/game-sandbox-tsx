@@ -11,6 +11,7 @@ import {
   drawBuilding,
   drawGround,
   drawTroop,
+  drawVignette,
   Fx,
   makeView,
   project,
@@ -159,6 +160,7 @@ export function BattleView({ base, onExit }: { base: EnemyBase; onExit: () => vo
           size: tg.size,
           time: t,
           hpFrac: tg.hp / tg.maxHp,
+          ambient: true,
         };
         items.push({ depth: tg.cx + tg.cy, draw: () => drawBuilding(ctx, v, draw) });
       }
@@ -184,6 +186,7 @@ export function BattleView({ base, onExit }: { base: EnemyBase; onExit: () => vo
       // effects on top of the scene
       fx.draw(ctx, v);
       fx.endShake(ctx);
+      drawVignette(ctx, W, H);
 
       const s = battle.stats();
       setStats(s);

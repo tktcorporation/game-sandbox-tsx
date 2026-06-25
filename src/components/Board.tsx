@@ -8,10 +8,13 @@ import {
   buildingHit,
   drawBuilding,
   drawGround,
+  drawVignette,
+  Fx,
   makeView,
   project,
   unproject,
   type BuildingDraw,
+  type Camera,
   type IsoView,
 } from "../render/iso";
 
@@ -31,14 +34,47 @@ interface Ghost {
   valid: boolean;
 }
 
+interface PanState {
+  startX: number;
+  startY: number;
+  camX: number;
+  camY: number;
+  moved: boolean;
+}
+
+interface PinchState {
+  dist: number;
+  zoom: number;
+  midX: number;
+  midY: number;
+  camX: number;
+  camY: number;
+}
+
+const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
+
 export function Board() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const viewRef = useRef<IsoView | null>(null);
   const dprRef = useRef(1);
+  const camRef = useRef<Camera>({ zoom: 1, panX: 0, panY: 0 });
   const dragRef = useRef<DragState | null>(null);
   const ghostRef = useRef<Ghost | null>(null);
+  const panRef = useRef<PanState | null>(null);
+  const pinchRef = useRef<PinchState | null>(null);
+  const pointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const bounceRef = useRef<Map<string, number>>(new Map());
+  const seenRef = useRef<Set<string>>(new Set());
+  const firstRef = useRef(true);
+  const fxRef = useRef<Fx>(new Fx());
   const decoKeyRef = useRef("");
   const decoRef = useRef<ReturnType<typeof buildDecorations>>([]);
+
+  const clampCam = (cam: Camera, W: number, H: number) => {
+    cam.zoom = clamp(cam.zoom, 0.7, 2.4);
+    cam.panX = clamp(cam.panX, -W * 0.6, W * 0.6);
+    cam.panY = clamp(cam.panY, -H * 0.65, H * 0.65);
+  };
 
   useEffect(() => {
     const canvas = canvasRef.current!;
@@ -46,6 +82,7 @@ export function Board() {
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     dprRef.current = dpr;
     let raf = 0;
+    let last = performance.now();
 
     const resize = () => {
       const r = canvas.getBoundingClientRect();
@@ -56,15 +93,32 @@ export function Board() {
     const ro = new ResizeObserver(resize);
     ro.observe(canvas);
 
-    const frame = () => {
+    const frame = (time: number) => {
+      const dt = Math.min(0.05, (time - last) / 1000);
+      last = time;
       const W = canvas.width;
       const H = canvas.height;
-      const v = makeView(W, H);
+      const v = makeView(W, H, { cam: camRef.current });
       viewRef.current = v;
-      const t = performance.now() / 1000;
+      const t = time / 1000;
       const tNow = now();
       const buildings = useGame.getState().buildings;
       const selectedId = useUi.getState().selectedId;
+      const fx = fxRef.current;
+      fx.update(dt);
+
+      // detect newly added buildings -> placement bounce
+      if (firstRef.current) {
+        firstRef.current = false;
+        for (const b of buildings) seenRef.current.add(b.id);
+      } else {
+        for (const b of buildings) {
+          if (!seenRef.current.has(b.id)) {
+            seenRef.current.add(b.id);
+            bounceRef.current.set(b.id, t);
+          }
+        }
+      }
 
       // occupied cells for terrain decoration (stable until layout changes)
       const occupied = new Set<string>();
@@ -96,6 +150,15 @@ export function Board() {
         const y = isGhost ? ghost!.y : b.y;
         const accrued = def.production ? accruedFor(b, tNow) : 0;
         const cap = def.production ? def.production.cap(b.level) : 0;
+
+        let squash = 0;
+        const bs = bounceRef.current.get(b.id);
+        if (bs !== undefined) {
+          const e = t - bs;
+          if (e > 0.6) bounceRef.current.delete(b.id);
+          else squash = Math.cos(e * 20) * 0.22 * Math.exp(-e * 5);
+        }
+
         const draw: BuildingDraw = {
           type: b.type,
           level: b.level,
@@ -105,6 +168,8 @@ export function Board() {
           time: t,
           selected: selectedId === b.id,
           constructing: !!b.upgradeDoneAt,
+          ambient: !b.upgradeDoneAt,
+          squash,
           remainingLabel: b.upgradeDoneAt
             ? formatDuration((b.upgradeDoneAt - tNow) / 1000)
             : undefined,
@@ -115,7 +180,7 @@ export function Board() {
           showLevel: true,
         };
         items.push({
-          depth: x + y + def.size, // front corner depth
+          depth: x + y + def.size,
           draw: () => {
             if (isGhost) {
               drawGhostFootprint(ctx, v, x, y, def.size, ghost!.valid);
@@ -132,12 +197,36 @@ export function Board() {
       items.sort((a, b) => a.depth - b.depth);
       for (const it of items) it.draw();
 
+      fx.draw(ctx, v);
+      drawVignette(ctx, W, H);
+
       raf = requestAnimationFrame(frame);
     };
     raf = requestAnimationFrame(frame);
+
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const W = canvas.width;
+      const H = canvas.height;
+      const r = canvas.getBoundingClientRect();
+      const cx = (e.clientX - r.left) * dprRef.current;
+      const cy = (e.clientY - r.top) * dprRef.current;
+      const cam = camRef.current;
+      const v0 = makeView(W, H, { cam });
+      const g = unproject(v0, cx, cy);
+      cam.zoom = clamp(cam.zoom * Math.exp(-e.deltaY * 0.0012), 0.7, 2.4);
+      const v1 = makeView(W, H, { cam: { zoom: cam.zoom, panX: 0, panY: 0 } });
+      const p = project(v1, g.gx, g.gy);
+      cam.panX = cx - p.x;
+      cam.panY = cy - p.y;
+      clampCam(cam, W, H);
+    };
+    canvas.addEventListener("wheel", onWheel, { passive: false });
+
     return () => {
       cancelAnimationFrame(raf);
       ro.disconnect();
+      canvas.removeEventListener("wheel", onWheel);
     };
   }, []);
 
@@ -170,64 +259,140 @@ export function Board() {
   const onPointerDown = (e: React.PointerEvent) => {
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
     const { x, y } = toDevice(e);
-    const b = topmostAt(x, y);
-    if (!b) {
+    pointersRef.current.set(e.pointerId, { x, y });
+
+    if (pointersRef.current.size >= 2) {
+      // start pinch — cancel any single-pointer interaction
       dragRef.current = null;
+      ghostRef.current = null;
+      panRef.current = null;
+      const pts = [...pointersRef.current.values()];
+      const a = pts[0];
+      const b = pts[1];
+      const cam = camRef.current;
+      pinchRef.current = {
+        dist: Math.hypot(a.x - b.x, a.y - b.y) || 1,
+        zoom: cam.zoom,
+        midX: (a.x + b.x) / 2,
+        midY: (a.y + b.y) / 2,
+        camX: cam.panX,
+        camY: cam.panY,
+      };
       return;
     }
-    dragRef.current = {
-      id: b.id,
-      size: BUILDINGS[b.type].size,
-      constructing: !!b.upgradeDoneAt,
-      startX: x,
-      startY: y,
-      moved: false,
-    };
+
+    const b = topmostAt(x, y);
+    if (b) {
+      dragRef.current = {
+        id: b.id,
+        size: BUILDINGS[b.type].size,
+        constructing: !!b.upgradeDoneAt,
+        startX: x,
+        startY: y,
+        moved: false,
+      };
+    } else {
+      const cam = camRef.current;
+      panRef.current = { startX: x, startY: y, camX: cam.panX, camY: cam.panY, moved: false };
+    }
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
+    if (!pointersRef.current.has(e.pointerId)) return;
+    const { x, y } = toDevice(e);
+    pointersRef.current.set(e.pointerId, { x, y });
+    const canvas = canvasRef.current!;
+    const W = canvas.width;
+    const H = canvas.height;
+
+    // pinch zoom + pan
+    if (pointersRef.current.size >= 2 && pinchRef.current) {
+      const pts = [...pointersRef.current.values()];
+      const a = pts[0];
+      const b = pts[1];
+      const dist = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+      const midX = (a.x + b.x) / 2;
+      const midY = (a.y + b.y) / 2;
+      const cam = camRef.current;
+      const pin = pinchRef.current;
+      cam.zoom = clamp((pin.zoom * dist) / pin.dist, 0.7, 2.4);
+      cam.panX = pin.camX + (midX - pin.midX);
+      cam.panY = pin.camY + (midY - pin.midY);
+      clampCam(cam, W, H);
+      return;
+    }
+
     const drag = dragRef.current;
     const v = viewRef.current;
-    if (!drag || !v || drag.constructing) return;
-    const { x, y } = toDevice(e);
-    if (!drag.moved && Math.hypot(x - drag.startX, y - drag.startY) < 10 * dprRef.current) return;
-    drag.moved = true;
-    const g = unproject(v, x, y);
-    let nx = Math.round(g.gx - drag.size / 2);
-    let ny = Math.round(g.gy - drag.size / 2);
-    nx = Math.max(0, Math.min(GRID_SIZE - drag.size, nx));
-    ny = Math.max(0, Math.min(GRID_SIZE - drag.size, ny));
-    const valid = canPlace(useGame.getState().buildings, nx, ny, drag.size, drag.id);
-    ghostRef.current = { id: drag.id, x: nx, y: ny, valid };
+    if (drag && v && !drag.constructing) {
+      if (!drag.moved && Math.hypot(x - drag.startX, y - drag.startY) < 10 * dprRef.current) return;
+      drag.moved = true;
+      const g = unproject(v, x, y);
+      let nx = Math.round(g.gx - drag.size / 2);
+      let ny = Math.round(g.gy - drag.size / 2);
+      nx = clamp(nx, 0, GRID_SIZE - drag.size);
+      ny = clamp(ny, 0, GRID_SIZE - drag.size);
+      const valid = canPlace(useGame.getState().buildings, nx, ny, drag.size, drag.id);
+      ghostRef.current = { id: drag.id, x: nx, y: ny, valid };
+      return;
+    }
+
+    const pan = panRef.current;
+    if (pan) {
+      const dx = x - pan.startX;
+      const dy = y - pan.startY;
+      if (!pan.moved && Math.hypot(dx, dy) < 8 * dprRef.current) return;
+      pan.moved = true;
+      const cam = camRef.current;
+      cam.panX = pan.camX + dx;
+      cam.panY = pan.camY + dy;
+      clampCam(cam, W, H);
+    }
   };
 
-  const onPointerUp = () => {
+  const onPointerUp = (e: React.PointerEvent) => {
+    pointersRef.current.delete(e.pointerId);
+    if (pointersRef.current.size < 2) pinchRef.current = null;
+    if (pointersRef.current.size > 0) {
+      // still multi-touch; don't resolve taps yet
+      dragRef.current = null;
+      panRef.current = null;
+      ghostRef.current = null;
+      return;
+    }
+
     const drag = dragRef.current;
+    const pan = panRef.current;
     dragRef.current = null;
+    panRef.current = null;
     const ghost = ghostRef.current;
     ghostRef.current = null;
-    if (!drag) {
-      useUi.getState().select(null);
-      return;
-    }
     const game = useGame.getState();
     const ui = useUi.getState();
-    if (drag.moved && ghost && ghost.id === drag.id) {
-      const ok = game.moveBuilding(drag.id, ghost.x, ghost.y);
-      if (!ok) ui.showToast("そこには置けません");
+
+    if (drag) {
+      if (drag.moved && ghost && ghost.id === drag.id) {
+        const ok = game.moveBuilding(drag.id, ghost.x, ghost.y);
+        if (ok) bounceRef.current.set(drag.id, performance.now() / 1000);
+        else ui.showToast("そこには置けません");
+        return;
+      }
+      const b = game.buildings.find((x) => x.id === drag.id);
+      if (!b) return;
+      const def = BUILDINGS[b.type];
+      const accrued = def.production ? accruedFor(b, now()) : 0;
+      if (accrued >= 1 && def.production) {
+        game.collect(b.id);
+        fxRef.current.coinBurst(b.x + def.size / 2, b.y + def.size / 2, def.production.resource);
+        ui.showToast(`+${formatNumber(accrued)} ${def.production.resource === "gold" ? "🪙" : "🧪"}`);
+      } else {
+        ui.select(b.id);
+      }
       return;
     }
-    // tap
-    const b = game.buildings.find((x) => x.id === drag.id);
-    if (!b) return;
-    const def = BUILDINGS[b.type];
-    const accrued = def.production ? accruedFor(b, now()) : 0;
-    if (accrued >= 1 && def.production) {
-      game.collect(b.id);
-      ui.showToast(`+${formatNumber(accrued)} ${def.production.resource === "gold" ? "🪙" : "🧪"}`);
-    } else {
-      ui.select(b.id);
-    }
+
+    // tap on empty ground (no pan movement) -> deselect
+    if (pan && !pan.moved) ui.select(null);
   };
 
   return (
@@ -238,6 +403,7 @@ export function Board() {
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
       />
     </div>
   );

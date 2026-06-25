@@ -21,19 +21,39 @@ export interface Pt {
   y: number;
 }
 
+export interface Camera {
+  zoom: number;
+  panX: number;
+  panY: number;
+}
+
 /** Fit the whole grid (plus headroom for tall buildings) inside W x H. */
-export function makeView(W: number, H: number, opts?: { lift?: number }): IsoView {
+export function makeView(
+  W: number,
+  H: number,
+  opts?: { lift?: number; cam?: Camera },
+): IsoView {
   const margin = 0.94;
   const twByW = (W * margin) / GRID;
   // diamond height is GRID*th = GRID*tw/2; reserve ~1.7 tiles of vertical
   // headroom for tall structures rising above the back row.
   const twByH = (H * margin) / (GRID / 2 + 1.7);
-  const tw = Math.min(twByW, twByH);
+  const zoom = opts?.cam?.zoom ?? 1;
+  const tw = Math.min(twByW, twByH) * zoom;
   const th = tw / 2;
   const diamondH = GRID * th;
-  const ox = W / 2;
-  const oy = (H - diamondH) / 2 + tw * (opts?.lift ?? 0.85);
+  const ox = W / 2 + (opts?.cam?.panX ?? 0);
+  const oy = (H - diamondH) / 2 + tw * (opts?.lift ?? 0.85) + (opts?.cam?.panY ?? 0);
   return { ox, oy, tw, th };
+}
+
+/** soft dark vignette over the whole frame — cheap cinematic depth. */
+export function drawVignette(ctx: CanvasRenderingContext2D, W: number, H: number): void {
+  const g = ctx.createRadialGradient(W / 2, H * 0.42, Math.min(W, H) * 0.3, W / 2, H * 0.5, Math.max(W, H) * 0.75);
+  g.addColorStop(0, "rgba(0,0,0,0)");
+  g.addColorStop(1, "rgba(0,0,0,0.34)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
 }
 
 export function project(v: IsoView, gx: number, gy: number): Pt {
@@ -277,6 +297,10 @@ export interface BuildingDraw {
   remainingLabel?: string;
   collect?: { kind: "gold" | "elixir"; full: boolean } | null;
   showLevel?: boolean;
+  /** transient placement bounce: extra vertical scale, eases back to 0 */
+  squash?: number;
+  /** enable ambient idle animation (chimney smoke / water shimmer) */
+  ambient?: boolean;
 }
 
 /** corners of a box: ground + lifted-top, given footprint + height in px. */
@@ -315,7 +339,8 @@ function drawBox(
 
 export function drawBuilding(ctx: CanvasRenderingContext2D, v: IsoView, d: BuildingDraw): void {
   const sp = SPRITES[d.type] ?? FALLBACK;
-  const baseH = sp.h * v.tw;
+  const levelScale = 1 + (Math.min(d.level, 10) - 1) * 0.05;
+  const baseH = sp.h * v.tw * levelScale * (1 + (d.squash ?? 0));
   const lw = v.tw * 0.03;
 
   // ground shadow
@@ -339,6 +364,13 @@ export function drawBuilding(ctx: CanvasRenderingContext2D, v: IsoView, d: Build
 
   // family-specific structure on the top face
   drawStructure(ctx, v, d, sp, baseH);
+
+  // ambient idle: chimney smoke on halls/barracks
+  if (d.ambient && sp.fam === "hall") {
+    const tc = boxCorners(v, d.x, d.y, d.size, baseH);
+    const cc = centroid([tc.Tt, tc.Rt, tc.Bt, tc.Lt]);
+    drawSmoke(ctx, cc.x + v.tw * 0.16, cc.y - v.tw * 0.18, v.tw, d.time, d.x * 7 + d.y * 13);
+  }
 
   // selection highlight (village)
   if (d.selected) {
@@ -509,6 +541,28 @@ function drawStructure(
       break;
     }
   }
+}
+
+function drawSmoke(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  tw: number,
+  time: number,
+  seed: number,
+): void {
+  const n = 3;
+  for (let i = 0; i < n; i++) {
+    const phase = (time * 0.35 + i / n + (seed % 10) / 10) % 1;
+    const rise = phase * tw * 0.95;
+    const size = tw * 0.05 + phase * tw * 0.11;
+    ctx.globalAlpha = (1 - phase) * 0.32;
+    ctx.fillStyle = "#dadada";
+    ctx.beginPath();
+    ctx.arc(x + Math.sin(phase * 6 + seed) * tw * 0.06, y - rise, size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
 }
 
 function drawBar(ctx: CanvasRenderingContext2D, top: Pt, w: number, frac: number): void {
@@ -693,7 +747,7 @@ export function drawTroop(ctx: CanvasRenderingContext2D, v: IsoView, t: TroopDra
 // Effects: particles, projectiles, screen shake
 // ---------------------------------------------------------------------------
 
-type PKind = "smoke" | "debris" | "spark" | "flash" | "ring";
+type PKind = "smoke" | "debris" | "spark" | "flash" | "ring" | "coin";
 
 interface Particle {
   x: number;
@@ -760,6 +814,29 @@ export class Fx {
     this.parts.push({ x: gx, y: gy, z: 6, vx: 0, vy: 0, vz: 0, life: 0.12, max: 0.12, kind: "flash", size: 0.7, color: "#ffd27a", rot: 0, vrot: 0 });
   }
 
+  /** celebratory burst of coins/elixir blobs when a producer is collected. */
+  coinBurst(gx: number, gy: number, res: "gold" | "elixir", n = 7): void {
+    const color = res === "gold" ? "#f5c518" : "#c45cff";
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + hash2(i, (gx * 13) | 0);
+      this.parts.push({
+        x: gx,
+        y: gy,
+        z: 10,
+        vx: Math.cos(a) * 0.7,
+        vy: Math.sin(a) * 0.7,
+        vz: 11 + hash2(i, gy | 0) * 6,
+        life: 0.85,
+        max: 0.85,
+        kind: "coin",
+        size: 0.09,
+        color,
+        rot: 0,
+        vrot: 0,
+      });
+    }
+  }
+
   shoot(kind: "ball" | "arrow", fx: number, fy: number, tx: number, ty: number): void {
     const dist = Math.hypot(tx - fx, ty - fy);
     this.shots.push({ kind, fx, fy, tx, ty, t: 0, dur: Math.max(0.15, dist / (kind === "ball" ? 11 : 16)) });
@@ -780,6 +857,7 @@ export class Fx {
         p.size += dt * 0.5;
         p.vz *= 0.96;
       }
+      if (p.kind === "coin") p.vz -= GRAV * 0.6 * dt;
     }
     this.parts = this.parts.filter((p) => p.life > 0);
 
@@ -841,6 +919,18 @@ export class Fx {
         ctx.fillStyle = p.color;
         ctx.beginPath();
         ctx.arc(sp.x, py, p.size * v.tw, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      } else if (p.kind === "coin") {
+        const r = p.size * v.tw;
+        ctx.globalAlpha = Math.min(1, a * 1.4);
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(sp.x, py, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "rgba(255,255,255,0.5)";
+        ctx.beginPath();
+        ctx.arc(sp.x - r * 0.3, py - r * 0.3, r * 0.35, 0, Math.PI * 2);
         ctx.fill();
         ctx.globalAlpha = 1;
       } else if (p.kind === "debris") {
