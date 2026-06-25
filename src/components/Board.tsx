@@ -6,8 +6,11 @@ import { useUi } from "../ui";
 import {
   buildDecorations,
   buildingHit,
+  dayLight,
   drawBuilding,
   drawGround,
+  drawNightOverlay,
+  drawSky,
   drawVignette,
   Fx,
   makeView,
@@ -17,6 +20,9 @@ import {
   type Camera,
   type IsoView,
 } from "../render/iso";
+
+/** real seconds for one full in-game day */
+const DAY_LENGTH = 150;
 
 interface DragState {
   id: string;
@@ -133,7 +139,10 @@ export function Board() {
         decoRef.current = buildDecorations(occupied);
       }
 
+      const dl = dayLight((t / DAY_LENGTH) % 1);
+
       ctx.clearRect(0, 0, W, H);
+      drawSky(ctx, W, H, dl);
       drawGround(ctx, v);
 
       // depth-sorted render list: decorations + buildings
@@ -169,6 +178,7 @@ export function Board() {
           selected: selectedId === b.id,
           constructing: !!b.upgradeDoneAt,
           ambient: !b.upgradeDoneAt,
+          night: dl.night,
           squash,
           remainingLabel: b.upgradeDoneAt
             ? formatDuration((b.upgradeDoneAt - tNow) / 1000)
@@ -198,6 +208,7 @@ export function Board() {
       for (const it of items) it.draw();
 
       fx.draw(ctx, v);
+      drawNightOverlay(ctx, W, H, dl);
       drawVignette(ctx, W, H);
 
       raf = requestAnimationFrame(frame);
@@ -383,8 +394,27 @@ export function Board() {
       const accrued = def.production ? accruedFor(b, now()) : 0;
       if (accrued >= 1 && def.production) {
         game.collect(b.id);
-        fxRef.current.coinBurst(b.x + def.size / 2, b.y + def.size / 2, def.production.resource);
-        ui.showToast(`+${formatNumber(accrued)} ${def.production.resource === "gold" ? "🪙" : "🧪"}`);
+        const res = def.production.resource;
+        const cx = b.x + def.size / 2;
+        const cy = b.y + def.size / 2;
+        fxRef.current.coinBurst(cx, cy, res, 4);
+        const v = viewRef.current;
+        const canvas = canvasRef.current;
+        if (v && canvas) {
+          const src = project(v, cx, cy);
+          const cr = canvas.getBoundingClientRect();
+          const dpr = dprRef.current;
+          const chip = document.querySelector(`.res.${res}`) as HTMLElement | null;
+          let tx = cr.width * dpr * (res === "gold" ? 0.18 : 0.42);
+          let ty = -24 * dpr;
+          if (chip) {
+            const r = chip.getBoundingClientRect();
+            tx = (r.left + r.width / 2 - cr.left) * dpr;
+            ty = (r.top + r.height / 2 - cr.top) * dpr;
+          }
+          fxRef.current.flyToBar(src.x, src.y - v.tw * 0.4, tx, ty, res);
+        }
+        ui.showToast(`+${formatNumber(accrued)} ${res === "gold" ? "🪙" : "🧪"}`);
       } else {
         ui.select(b.id);
       }

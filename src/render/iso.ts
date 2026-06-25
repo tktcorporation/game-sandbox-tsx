@@ -56,6 +56,95 @@ export function drawVignette(ctx: CanvasRenderingContext2D, W: number, H: number
   ctx.fillRect(0, 0, W, H);
 }
 
+// ---------------------------------------------------------------------------
+// Day / night cycle
+// ---------------------------------------------------------------------------
+
+function lerp(a: number, b: number, t: number): number {
+  return a + (b - a) * t;
+}
+function mix3(a: number[], b: number[], t: number): string {
+  return `rgb(${Math.round(lerp(a[0], b[0], t))},${Math.round(lerp(a[1], b[1], t))},${Math.round(lerp(a[2], b[2], t))})`;
+}
+
+export interface DayLight {
+  day: number; // 0 night .. 1 noon
+  night: number;
+  horizonGlow: number;
+  sun: number; // -1..1 height
+  skyTop: string;
+  skyBot: string;
+  overlay: { r: number; g: number; b: number; a: number };
+}
+
+/** t01 in [0,1): a full day. ~half day, half night with dawn/dusk warmth. */
+export function dayLight(t01: number): DayLight {
+  const phase = t01 * Math.PI * 2;
+  const sun = Math.sin(phase);
+  const day = clamp01(sun * 1.7 + 0.28);
+  const night = 1 - day;
+  const horizonGlow = clamp01(1 - Math.abs(sun) * 2.3);
+  const skyTop = mix3([18, 22, 48], [78, 138, 188], day);
+  let skyBot = mix3([34, 36, 66], [158, 206, 224], day);
+  skyBot = mix3sShim(skyBot, [242, 150, 86], horizonGlow * 0.75);
+  return {
+    day,
+    night,
+    horizonGlow,
+    sun,
+    skyTop,
+    skyBot,
+    overlay: { r: 12, g: 16, b: 42, a: night * 0.42 },
+  };
+}
+
+function clamp01(n: number): number {
+  return Math.max(0, Math.min(1, n));
+}
+// lerp between an existing "rgb(r,g,b)" string and a target rgb array
+function mix3sShim(rgb: string, target: number[], t: number): string {
+  const m = rgb.match(/\d+/g)!;
+  return mix3([+m[0], +m[1], +m[2]], target, t);
+}
+
+export function drawSky(ctx: CanvasRenderingContext2D, W: number, H: number, dl: DayLight): void {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, dl.skyTop);
+  g.addColorStop(1, dl.skyBot);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+
+  // sun / moon riding an arc; horizontal position tracks sun height
+  const t = Math.asin(Math.max(-1, Math.min(1, dl.sun))) / Math.PI + 0.5; // 0..1
+  const cx = W * (0.15 + 0.7 * t);
+  const cy = H * (0.5 - dl.sun * 0.34);
+  const r = Math.min(W, H) * 0.06;
+  if (dl.sun > -0.25) {
+    const sg = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * 2.4);
+    sg.addColorStop(0, mix3sShim("rgb(255,240,200)", [255, 180, 120], dl.horizonGlow));
+    sg.addColorStop(1, "rgba(255,220,150,0)");
+    ctx.fillStyle = sg;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * 2.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = mix3sShim("rgb(255,247,224)", [255, 170, 110], dl.horizonGlow);
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    ctx.fillStyle = "rgba(225,228,240,0.9)";
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * 0.8, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+export function drawNightOverlay(ctx: CanvasRenderingContext2D, W: number, H: number, dl: DayLight): void {
+  if (dl.overlay.a <= 0.01) return;
+  ctx.fillStyle = `rgba(${dl.overlay.r},${dl.overlay.g},${dl.overlay.b},${dl.overlay.a})`;
+  ctx.fillRect(0, 0, W, H);
+}
+
 export function project(v: IsoView, gx: number, gy: number): Pt {
   return { x: v.ox + (gx - gy) * (v.tw / 2), y: v.oy + (gx + gy) * (v.th / 2) };
 }
@@ -301,6 +390,8 @@ export interface BuildingDraw {
   squash?: number;
   /** enable ambient idle animation (chimney smoke / water shimmer) */
   ambient?: boolean;
+  /** 0..1 nighttime factor — lights up windows */
+  night?: number;
 }
 
 /** corners of a box: ground + lifted-top, given footprint + height in px. */
@@ -362,8 +453,23 @@ export function drawBuilding(ctx: CanvasRenderingContext2D, v: IsoView, d: Build
   const c = Object.assign(boxCorners(v, d.x, d.y, d.size, baseH), { tlw: () => lw }) as Corners;
   drawBox(ctx, c, sp.color);
 
+  // night windows: warm glowing panes on the two front walls
+  if (d.night && d.night > 0.32 && !d.constructing && sp.fam !== "wall" && sp.fam !== "tent") {
+    drawWindows(ctx, c, v, d.night);
+  }
+
   // family-specific structure on the top face
   drawStructure(ctx, v, d, sp, baseH);
+
+  // tier studs: little gold rivets on the top edge for higher levels
+  if (d.level >= 4) {
+    ctx.fillStyle = "#f5c518";
+    for (const p of [c.Tt, c.Rt, c.Lt]) {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, v.tw * 0.035, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
 
   // ambient idle: chimney smoke on halls/barracks
   if (d.ambient && sp.fam === "hall") {
@@ -565,6 +671,33 @@ function drawSmoke(
   ctx.globalAlpha = 1;
 }
 
+function lerpPt(a: Pt, b: Pt, t: number): Pt {
+  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+}
+
+function drawWindows(ctx: CanvasRenderingContext2D, c: Corners, v: IsoView, night: number): void {
+  const glow = Math.min(1, night);
+  const s = v.tw * 0.055;
+  const pane = (p: Pt) => {
+    const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, s * 2.6);
+    g.addColorStop(0, `rgba(255,212,128,${0.5 * glow})`);
+    g.addColorStop(1, "rgba(255,200,120,0)");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, s * 2.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = `rgba(255,226,156,${0.92 * glow})`;
+    ctx.fillRect(p.x - s / 2, p.y - s / 2, s, s);
+  };
+  // right wall [B,R,Rt,Bt], left wall [L,B,Bt,Lt]
+  const onWall = (g0: Pt, g1: Pt, t1: Pt, t0: Pt, u: number, w: number) =>
+    lerpPt(lerpPt(g0, g1, u), lerpPt(t0, t1, u), w);
+  pane(onWall(c.B, c.R, c.Rt, c.Bt, 0.34, 0.5));
+  pane(onWall(c.B, c.R, c.Rt, c.Bt, 0.66, 0.5));
+  pane(onWall(c.L, c.B, c.Bt, c.Lt, 0.34, 0.5));
+  pane(onWall(c.L, c.B, c.Bt, c.Lt, 0.66, 0.5));
+}
+
 function drawBar(ctx: CanvasRenderingContext2D, top: Pt, w: number, frac: number): void {
   const x = top.x - w / 2;
   const y = top.y - 8;
@@ -747,7 +880,7 @@ export function drawTroop(ctx: CanvasRenderingContext2D, v: IsoView, t: TroopDra
 // Effects: particles, projectiles, screen shake
 // ---------------------------------------------------------------------------
 
-type PKind = "smoke" | "debris" | "spark" | "flash" | "ring" | "coin";
+type PKind = "smoke" | "debris" | "spark" | "flash" | "ring" | "coin" | "text";
 
 interface Particle {
   x: number;
@@ -763,6 +896,20 @@ interface Particle {
   color: string;
   rot: number;
   vrot: number;
+  label?: string;
+}
+
+/** screen-space coin that homes toward the resource bar (collect feedback). */
+interface Flyer {
+  x: number;
+  y: number;
+  tx: number;
+  ty: number;
+  t: number;
+  dur: number;
+  delay: number;
+  color: string;
+  lift: number;
 }
 
 interface Shot {
@@ -780,13 +927,58 @@ const GRAV = 14; // grid units / s^2 for debris z
 export class Fx {
   private parts: Particle[] = [];
   private shots: Shot[] = [];
+  private flyers: Flyer[] = [];
   private shakeMag = 0;
   private shakeT = 0;
+  private flashT = 0;
   onImpact?: (gx: number, gy: number, kind: "ball" | "arrow") => void;
 
   shake(mag: number): void {
     this.shakeMag = Math.max(this.shakeMag, mag);
     this.shakeT = Math.max(this.shakeT, 0.35);
+  }
+
+  /** full-frame white flash, e.g. when the town hall falls. */
+  bang(): void {
+    this.flashT = 0.5;
+  }
+
+  /** floating combat text that rises and fades. */
+  damageNumber(gx: number, gy: number, label: string, color = "#ffd0d0"): void {
+    this.parts.push({
+      x: gx,
+      y: gy,
+      z: 8,
+      vx: 0,
+      vy: 0,
+      vz: 7,
+      life: 0.7,
+      max: 0.7,
+      kind: "text",
+      size: 0.34,
+      color,
+      rot: 0,
+      vrot: 0,
+      label,
+    });
+  }
+
+  /** spawn coins that fly from a world point to a screen-space UI target. */
+  flyToBar(sx: number, sy: number, tx: number, ty: number, res: "gold" | "elixir", n = 6): void {
+    const color = res === "gold" ? "#f5c518" : "#c45cff";
+    for (let i = 0; i < n; i++) {
+      this.flyers.push({
+        x: sx,
+        y: sy,
+        tx,
+        ty,
+        t: 0,
+        dur: 0.5 + hash2(i, (sx * 7) | 0) * 0.18,
+        delay: i * 0.05,
+        color,
+        lift: 40 + hash2(i, (sy * 3) | 0) * 50,
+      });
+    }
   }
 
   boom(gx: number, gy: number, color = "#9a7b4a"): void {
@@ -858,8 +1050,14 @@ export class Fx {
         p.vz *= 0.96;
       }
       if (p.kind === "coin") p.vz -= GRAV * 0.6 * dt;
+      if (p.kind === "text") p.vz *= 0.92;
     }
     this.parts = this.parts.filter((p) => p.life > 0);
+
+    for (const f of this.flyers) f.t += dt;
+    this.flyers = this.flyers.filter((f) => f.t < f.delay + f.dur);
+
+    if (this.flashT > 0) this.flashT -= dt;
 
     for (const s of this.shots) {
       s.t += dt;
@@ -943,6 +1141,17 @@ export class Fx {
         ctx.fillRect(-s / 2, -s / 2, s, s);
         ctx.restore();
         ctx.globalAlpha = 1;
+      } else if (p.kind === "text") {
+        ctx.globalAlpha = Math.min(1, a * 1.6);
+        ctx.font = `800 ${Math.round(p.size * v.tw)}px "Trebuchet MS", sans-serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.lineWidth = v.tw * 0.03;
+        ctx.strokeStyle = "rgba(0,0,0,0.6)";
+        ctx.strokeText(p.label ?? "", sp.x, py);
+        ctx.fillStyle = p.color;
+        ctx.fillText(p.label ?? "", sp.x, py);
+        ctx.globalAlpha = 1;
       } else {
         // spark
         ctx.globalAlpha = a;
@@ -984,6 +1193,34 @@ export class Fx {
         ctx.lineTo(p.x - (dx / len) * v.tw * 0.3, py - (dy / len) * v.tw * 0.3);
         ctx.stroke();
       }
+    }
+
+    // screen-space coins homing toward the resource bar
+    for (const f of this.flyers) {
+      const k = clamp01((f.t - f.delay) / f.dur);
+      if (f.t < f.delay) continue;
+      const ease = k * k * (3 - 2 * k);
+      const x = f.x + (f.tx - f.x) * ease;
+      const y = f.y + (f.ty - f.y) * ease - Math.sin(k * Math.PI) * f.lift;
+      const r = v.tw * 0.09 * (1 - k * 0.35);
+      ctx.globalAlpha = 1 - k * k;
+      ctx.fillStyle = f.color;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,0.55)";
+      ctx.beginPath();
+      ctx.arc(x - r * 0.3, y - r * 0.3, r * 0.35, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+
+    // full-frame white flash (town hall destruction etc.)
+    if (this.flashT > 0) {
+      ctx.globalAlpha = Math.min(0.7, this.flashT);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+      ctx.globalAlpha = 1;
     }
   }
 }

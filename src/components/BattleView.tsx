@@ -8,8 +8,11 @@ import type { TroopType } from "../game/types";
 import { useUi } from "../ui";
 import {
   buildDecorations,
+  dayLight,
   drawBuilding,
   drawGround,
+  drawNightOverlay,
+  drawSky,
   drawTroop,
   drawVignette,
   Fx,
@@ -20,6 +23,9 @@ import {
   type BuildingDraw,
   type IsoView,
 } from "../render/iso";
+
+/** raids happen at a dramatic sunset */
+const RAID_LIGHT = dayLight(0.49);
 
 export function BattleView({ base, onExit }: { base: EnemyBase; onExit: () => void }) {
   const army = useGame((s) => s.army);
@@ -75,21 +81,49 @@ export function BattleView({ base, onExit }: { base: EnemyBase; onExit: () => vo
     for (const t of battle.targets) prevHp.set(t.id, t.hp);
     const prevFlash = new Map<number, number>();
     const shotTimer = new Map<number, number>();
+    const dmgHp = new Map<number, number>();
+    const dmgTimer = new Map<number, number>();
+    let slowmo = 0;
 
     const frame = (time: number) => {
-      const dt = Math.min(0.05, (time - last) / 1000);
+      const realDt = Math.min(0.05, (time - last) / 1000);
       last = time;
       const t = time / 1000;
+      if (slowmo > 0) slowmo -= realDt;
+      const dt = slowmo > 0 ? realDt * 0.4 : realDt;
       if (!finishedRef.current) battle.step(dt);
 
       // ---- cosmetic combat events (decoupled from logic) ----
-      // building destruction -> explosion
+      // building destruction -> explosion (town hall: flash + slow-mo)
       for (const tg of battle.targets) {
         const prev = prevHp.get(tg.id) ?? tg.hp;
         if (prev > 0 && tg.hp <= 0) {
           fx.boom(tg.cx, tg.cy, tg.type === "wall" ? "#9a8e74" : "#b08a55");
+          if (tg.type === "townhall") {
+            fx.bang();
+            fx.shake(14);
+            slowmo = 0.6;
+          }
         }
         prevHp.set(tg.id, tg.hp);
+      }
+      // periodic damage numbers on buildings taking hits
+      for (const tg of battle.targets) {
+        if (tg.hp <= 0) continue;
+        const base = dmgHp.get(tg.id);
+        if (base === undefined) {
+          dmgHp.set(tg.id, tg.hp);
+          dmgTimer.set(tg.id, 0.4);
+          continue;
+        }
+        let timer = (dmgTimer.get(tg.id) ?? 0.4) - dt;
+        if (timer <= 0) {
+          const delta = base - tg.hp;
+          if (delta >= 1) fx.damageNumber(tg.cx, tg.cy, `-${Math.round(delta)}`);
+          dmgHp.set(tg.id, tg.hp);
+          timer = 0.4;
+        }
+        dmgTimer.set(tg.id, timer);
       }
       // defenses fire visible projectiles at the nearest unit in range
       for (const tg of battle.targets) {
@@ -128,6 +162,7 @@ export function BattleView({ base, onExit }: { base: EnemyBase; onExit: () => vo
       viewRef.current = v;
 
       ctx.clearRect(0, 0, W, H);
+      drawSky(ctx, W, H, RAID_LIGHT);
       fx.beginShake(ctx, t);
       drawGround(ctx, v, { hostile: true });
 
@@ -161,6 +196,7 @@ export function BattleView({ base, onExit }: { base: EnemyBase; onExit: () => vo
           time: t,
           hpFrac: tg.hp / tg.maxHp,
           ambient: true,
+          night: RAID_LIGHT.night,
         };
         items.push({ depth: tg.cx + tg.cy, draw: () => drawBuilding(ctx, v, draw) });
       }
@@ -186,6 +222,7 @@ export function BattleView({ base, onExit }: { base: EnemyBase; onExit: () => vo
       // effects on top of the scene
       fx.draw(ctx, v);
       fx.endShake(ctx);
+      drawNightOverlay(ctx, W, H, RAID_LIGHT);
       drawVignette(ctx, W, H);
 
       const s = battle.stats();
