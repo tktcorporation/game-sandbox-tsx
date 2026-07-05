@@ -5,9 +5,16 @@
 // All coordinates are in *device pixels* (callers size the canvas with dpr and
 // draw without ctx.scale, matching the project's existing convention).
 
-import { GRID_SIZE } from "../game/buildings";
+import { DEPLOY_DEPTH, GRID_H, GRID_W } from "../game/buildings";
 
-export const GRID = GRID_SIZE;
+export { GRID_H, GRID_W, DEPLOY_DEPTH };
+/** legacy alias: largest grid dimension */
+export const GRID = Math.max(GRID_W, GRID_H);
+
+/** fraction of the viewport height kept clear above the far row, so tall
+ *  structures on the back edge have somewhere to rise into (and a sliver of
+ *  sky reads as a horizon). */
+const HEADROOM = 0.14;
 
 export interface IsoView {
   ox: number; // screen-x of grid origin (gx=gy=0 maps here, offset by ox)
@@ -27,33 +34,71 @@ export interface Camera {
   panY: number;
 }
 
-/** Fit the whole grid (plus headroom for tall buildings) inside W x H. */
+/** Lay the GRID_W x GRID_H map out as an axis-aligned rectangle that fills the
+ *  whole W x H viewport: columns span the full width, rows fill the height
+ *  below a small headroom band. `tw` is a tile's screen width, `th` its screen
+ *  depth (vertical distance between rows). Row 0 is far (top), the last row is
+ *  near (bottom). Camera zoom/pan let the village be explored. */
 export function makeView(
   W: number,
   H: number,
   opts?: { lift?: number; cam?: Camera },
 ): IsoView {
-  const margin = 0.94;
-  const twByW = (W * margin) / GRID;
-  // diamond height is GRID*th = GRID*tw/2; reserve ~1.7 tiles of vertical
-  // headroom for tall structures rising above the back row.
-  const twByH = (H * margin) / (GRID / 2 + 1.7);
   const zoom = opts?.cam?.zoom ?? 1;
-  const tw = Math.min(twByW, twByH) * zoom;
-  const th = tw / 2;
-  const diamondH = GRID * th;
-  const ox = W / 2 + (opts?.cam?.panX ?? 0);
-  const oy = (H - diamondH) / 2 + tw * (opts?.lift ?? 0.85) + (opts?.cam?.panY ?? 0);
+  const top = H * HEADROOM;
+  const tw = (W / GRID_W) * zoom;
+  const th = ((H - top) / GRID_H) * zoom;
+  const fieldW = GRID_W * tw;
+  const ox = (W - fieldW) / 2 + (opts?.cam?.panX ?? 0);
+  const oy = top + (opts?.cam?.panY ?? 0);
   return { ox, oy, tw, th };
 }
 
 /** soft dark vignette over the whole frame — cheap cinematic depth. */
 export function drawVignette(ctx: CanvasRenderingContext2D, W: number, H: number): void {
-  const g = ctx.createRadialGradient(W / 2, H * 0.42, Math.min(W, H) * 0.3, W / 2, H * 0.5, Math.max(W, H) * 0.75);
+  const g = ctx.createRadialGradient(W / 2, H * 0.42, Math.min(W, H) * 0.3, W / 2, H * 0.5, Math.max(W, H) * 0.78);
   g.addColorStop(0, "rgba(0,0,0,0)");
-  g.addColorStop(1, "rgba(0,0,0,0.34)");
+  g.addColorStop(0.7, "rgba(6,10,20,0.12)");
+  g.addColorStop(1, "rgba(4,7,16,0.42)");
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, W, H);
+}
+
+/** atmospheric perspective: a soft haze that thickens toward the far (top)
+ *  edge so distance reads, the way fog grounds an Unreal scene. */
+export function drawAtmosphere(
+  ctx: CanvasRenderingContext2D,
+  W: number,
+  H: number,
+  haze: string,
+): void {
+  const g = ctx.createLinearGradient(0, 0, 0, H * 0.5);
+  g.addColorStop(0, haze);
+  g.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H * 0.5);
+}
+
+/** cheap cinematic post: a bloom pass (additive blurred highlights) plus a
+ *  filmic colour grade (punchier contrast + saturation). Two full-frame
+ *  drawImages — all GPU-composited, so it stays light. */
+export function postProcess(ctx: CanvasRenderingContext2D, W: number, H: number): void {
+  const canvas = ctx.canvas;
+  // bloom: add a blurred, brightened copy of the frame back over itself.
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  ctx.globalAlpha = 0.26;
+  ctx.filter = "blur(7px) brightness(1.32)";
+  ctx.drawImage(canvas, 0, 0, W, H);
+  ctx.restore();
+  ctx.filter = "none";
+  // filmic grade: replace the frame with a contrast/saturation-graded copy.
+  ctx.save();
+  ctx.globalCompositeOperation = "copy";
+  ctx.filter = "contrast(1.08) saturate(1.18) brightness(1.01)";
+  ctx.drawImage(canvas, 0, 0, W, H);
+  ctx.restore();
+  ctx.filter = "none";
 }
 
 // ---------------------------------------------------------------------------
@@ -146,13 +191,11 @@ export function drawNightOverlay(ctx: CanvasRenderingContext2D, W: number, H: nu
 }
 
 export function project(v: IsoView, gx: number, gy: number): Pt {
-  return { x: v.ox + (gx - gy) * (v.tw / 2), y: v.oy + (gx + gy) * (v.th / 2) };
+  return { x: v.ox + gx * v.tw, y: v.oy + gy * v.th };
 }
 
 export function unproject(v: IsoView, sx: number, sy: number): { gx: number; gy: number } {
-  const a = (sx - v.ox) / (v.tw / 2);
-  const b = (sy - v.oy) / (v.th / 2);
-  return { gx: (a + b) / 2, gy: (b - a) / 2 };
+  return { gx: (sx - v.ox) / v.tw, gy: (sy - v.oy) / v.th };
 }
 
 /** deterministic 0..1 hash from two integers (stable terrain decoration). */
@@ -183,6 +226,58 @@ function fillPoly(ctx: CanvasRenderingContext2D, pts: Pt[], fill: string): void 
   ctx.fill();
 }
 
+// ---------------------------------------------------------------------------
+// Texture grain — the cheap-but-not-cheap-looking trick. A single chunky
+// pixel-noise tile is baked once into an offscreen canvas, then overlaid on
+// flat fills with `soft-light` so every surface gets a consistent, crafted
+// "texel" grain instead of dead-flat colour. One extra fillRect per face.
+// ---------------------------------------------------------------------------
+
+let _noise: CanvasPattern | null = null;
+let _noiseTried = false;
+
+function noisePattern(ctx: CanvasRenderingContext2D): CanvasPattern | null {
+  if (_noiseTried) return _noise;
+  _noiseTried = true;
+  if (typeof document === "undefined") return null;
+  const size = 72;
+  const texel = 3; // chunky, Minecraft-ish texels
+  const c = document.createElement("canvas");
+  c.width = c.height = size;
+  const g = c.getContext("2d");
+  if (!g) return null;
+  for (let y = 0; y < size; y += texel) {
+    for (let x = 0; x < size; x += texel) {
+      const n = hash2(x * 12.9 + 1, y * 78.2 + 7); // 0..1, stable
+      const d = n - 0.5;
+      const a = Math.abs(d) * 0.85;
+      g.fillStyle = d >= 0 ? `rgba(255,255,255,${a})` : `rgba(0,0,0,${a})`;
+      g.fillRect(x, y, texel, texel);
+    }
+  }
+  _noise = ctx.createPattern(c, "repeat");
+  return _noise;
+}
+
+/** overlay baked grain onto a rect to lift flat fills out of "cheap" territory. */
+function grain(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  alpha = 1,
+): void {
+  const pat = noisePattern(ctx);
+  if (!pat) return;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.globalCompositeOperation = "soft-light";
+  ctx.fillStyle = pat;
+  ctx.fillRect(x, y, w, h);
+  ctx.restore();
+}
+
 function roundRect(
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -201,16 +296,6 @@ function roundRect(
   ctx.closePath();
 }
 
-function centroid(pts: Pt[]): Pt {
-  let x = 0;
-  let y = 0;
-  for (const p of pts) {
-    x += p.x;
-    y += p.y;
-  }
-  return { x: x / pts.length, y: y / pts.length };
-}
-
 // ---------------------------------------------------------------------------
 // Ground / terrain
 // ---------------------------------------------------------------------------
@@ -221,55 +306,89 @@ export function drawGround(
   opts?: { hostile?: boolean },
 ): void {
   const hostile = opts?.hostile ?? false;
-  const lightG = hostile ? "#6f9a4e" : "#7cc15a";
-  const darkG = hostile ? "#5d8741" : "#69ad49";
-  const edge = hostile ? "#3f5e2c" : "#4f7d32";
-  const edgeDark = hostile ? "#2c4420" : "#37571f";
+  const grass = hostile ? "#6b9a48" : "#77ba55";
 
-  // floating-island base: extrude the whole plate downward for depth
-  const T = project(v, 0, 0);
-  const R = project(v, GRID, 0);
-  const B = project(v, GRID, GRID);
-  const L = project(v, 0, GRID);
-  const depth = v.tw * 0.55;
-  const down = (p: Pt): Pt => ({ x: p.x, y: p.y + depth });
-  fillPoly(ctx, [L, B, down(B), down(L)], edgeDark);
-  fillPoly(ctx, [B, R, down(R), down(B)], edge);
+  const TL = project(v, 0, 0);
+  const fieldW = GRID_W * v.tw;
+  const fieldH = GRID_H * v.th;
 
-  // grass checker
-  for (let gy = 0; gy < GRID; gy++) {
-    for (let gx = 0; gx < GRID; gx++) {
+  // one continuous grassy field, only faint per-tile value drift + a gentle
+  // far→near light gradient. The baked grain carries the fine texture and
+  // masks tile seams, the way Minecraft's per-texel noise hides block edges.
+  for (let gy = 0; gy < GRID_H; gy++) {
+    const depthShade = 0.94 + (gy / GRID_H) * 0.11;
+    for (let gx = 0; gx < GRID_W; gx++) {
       const a = project(v, gx, gy);
-      const b = project(v, gx + 1, gy);
       const c = project(v, gx + 1, gy + 1);
-      const d = project(v, gx, gy + 1);
-      const base = (gx + gy) % 2 === 0 ? lightG : darkG;
-      const jitter = hash2(gx, gy) * 0.08 - 0.04;
-      fillPoly(ctx, [a, b, c, d], shade(base, 1 + jitter));
+      const jitter = hash2(gx * 7 + 3, gy * 11 + 5) * 0.05 - 0.025;
+      fillPoly(
+        ctx,
+        [a, { x: c.x, y: a.y }, c, { x: a.x, y: c.y }],
+        shade(grass, depthShade + jitter),
+      );
     }
   }
 
-  // subtle grid lines
-  ctx.strokeStyle = "rgba(0,0,0,0.06)";
-  ctx.lineWidth = 1;
-  for (let i = 0; i <= GRID; i++) {
-    const p0 = project(v, i, 0);
-    const p1 = project(v, i, GRID);
+  // baked fine texel grain — masks tile seams and gives the turf its texture.
+  grain(ctx, TL.x, TL.y, fieldW, fieldH, 0.6);
+
+  // soft shaded band along the far (top) edge — reads as a horizon ridge
+  const grad = ctx.createLinearGradient(0, TL.y - v.th, 0, TL.y + v.th * 1.5);
+  grad.addColorStop(0, "rgba(0,0,0,0.22)");
+  grad.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = grad;
+  ctx.fillRect(TL.x, TL.y - v.th, GRID_W * v.tw, v.th * 2.5);
+}
+
+// ---------------------------------------------------------------------------
+// Deploy zone (battle) — the front wedge nearest the player where troops land.
+// ---------------------------------------------------------------------------
+
+/** first (near) row that counts as the player's front deploy beach. */
+export const DEPLOY_MIN_ROW = GRID_H - DEPLOY_DEPTH;
+
+/** is a (continuous) grid point inside the player's near deploy band? */
+export function inDeployZone(gx: number, gy: number): boolean {
+  return gx >= 0 && gx <= GRID_W && gy >= DEPLOY_MIN_ROW && gy <= GRID_H;
+}
+
+/** highlight the near deploy band with a pulsing tint, front line + up-arrows. */
+export function drawDeployZone(ctx: CanvasRenderingContext2D, v: IsoView, time: number): void {
+  const pulse = 0.16 + Math.sin(time * 2.2) * 0.06;
+  const top = project(v, 0, DEPLOY_MIN_ROW);
+  const bot = project(v, GRID_W, GRID_H);
+  ctx.fillStyle = `rgba(96,210,128,${pulse.toFixed(3)})`;
+  ctx.fillRect(top.x, top.y, bot.x - top.x, bot.y - top.y);
+
+  // bright dashed front line where the deploy band meets enemy ground
+  ctx.save();
+  ctx.setLineDash([v.tw * 0.28, v.tw * 0.22]);
+  ctx.strokeStyle = "rgba(120,240,150,0.8)";
+  ctx.lineWidth = Math.max(1.5, v.th * 0.06);
+  ctx.beginPath();
+  ctx.moveTo(top.x, top.y);
+  ctx.lineTo(bot.x, top.y);
+  ctx.stroke();
+  ctx.restore();
+
+  // upward chevrons reminding which way to push
+  const bob = Math.sin(time * 3) * v.th * 0.1;
+  const mx = top.x + (bot.x - top.x) / 2;
+  const my = (top.y + bot.y) / 2;
+  ctx.save();
+  ctx.strokeStyle = "rgba(180,255,200,0.85)";
+  ctx.lineWidth = Math.max(2, v.tw * 0.05);
+  ctx.lineCap = "round";
+  for (let k = 0; k < 2; k++) {
+    const yy = my - bob - k * v.th * 0.42;
     ctx.beginPath();
-    ctx.moveTo(p0.x, p0.y);
-    ctx.lineTo(p1.x, p1.y);
-    const q0 = project(v, 0, i);
-    const q1 = project(v, GRID, i);
-    ctx.moveTo(q0.x, q0.y);
-    ctx.lineTo(q1.x, q1.y);
+    ctx.moveTo(mx - v.tw * 0.34, yy + v.tw * 0.22);
+    ctx.lineTo(mx, yy - v.tw * 0.06);
+    ctx.lineTo(mx + v.tw * 0.34, yy + v.tw * 0.22);
     ctx.stroke();
   }
-
-  // bright top rim of the plate
-  ctx.strokeStyle = "rgba(255,255,255,0.18)";
-  ctx.lineWidth = 2;
-  poly(ctx, [T, R, B, L]);
-  ctx.stroke();
+  ctx.restore();
+  ctx.lineCap = "butt";
 }
 
 /** scattered decorations (trees/rocks/bushes) on free tiles, depth-sortable. */
@@ -282,8 +401,8 @@ export interface Deco {
 
 export function buildDecorations(occupied: Set<string>, hostile = false): Deco[] {
   const out: Deco[] = [];
-  for (let gy = 0; gy < GRID; gy++) {
-    for (let gx = 0; gx < GRID; gx++) {
+  for (let gy = 0; gy < GRID_H; gy++) {
+    for (let gx = 0; gx < GRID_W; gx++) {
       if (occupied.has(`${gx},${gy}`)) continue;
       const r = hash2(gx * 7 + 1, gy * 13 + 3);
       if (r > 0.12) continue; // sparse
@@ -291,7 +410,7 @@ export function buildDecorations(occupied: Set<string>, hostile = false): Deco[]
       out.push({
         gx: gx + 0.5,
         gy: gy + 0.5,
-        depth: gx + gy + 0.5,
+        depth: gy + 0.5,
         draw: (ctx, v) => drawDeco(ctx, v, gx + 0.5, gy + 0.5, kind, hostile),
       });
     }
@@ -394,36 +513,138 @@ export interface BuildingDraw {
   night?: number;
 }
 
-/** corners of a box: ground + lifted-top, given footprint + height in px. */
-type BaseCorners = { T: Pt; R: Pt; B: Pt; L: Pt; Tt: Pt; Rt: Pt; Bt: Pt; Lt: Pt };
-type Corners = BaseCorners & { tlw: () => number };
+const HEIGHT_UNIT = 0.9; // building extrusion height per `h`, in tile-depths
+const FOOT_INSET = 0.08; // gap (in tiles) left around a building so neighbours read apart
 
-function boxCorners(v: IsoView, x: number, y: number, size: number, hPx: number, lift = 0): BaseCorners {
-  const g = (gx: number, gy: number): Pt => {
-    const p = project(v, gx, gy);
-    return { x: p.x, y: p.y - lift };
-  };
-  const T = g(x, y);
-  const R = g(x + size, y);
-  const B = g(x + size, y + size);
-  const L = g(x, y + size);
-  const up = (p: Pt): Pt => ({ x: p.x, y: p.y - hPx });
-  return { T, R, B, L, Tt: up(T), Rt: up(R), Bt: up(B), Lt: up(L) };
+/** Screen geometry of an extruded box. Its footprint maps to an axis-aligned
+ *  rect (x0..x1 wide, yFar..yNear deep) and it rises `h` px toward the camera.
+ *  Only the front (south) wall and the top face show — a clean, screen-filling
+ *  2.5D look. `baseLift` stacks a smaller box on top of a bigger one. */
+interface BoxGeom {
+  x0: number;
+  x1: number;
+  yFar: number;
+  yNear: number;
+  h: number;
+  cx: number;
+  cyTop: number;
 }
+
+function boxGeom(
+  v: IsoView,
+  x: number,
+  y: number,
+  size: number,
+  h: number,
+  baseLift = 0,
+  inset = 0,
+): BoxGeom {
+  const x0 = v.ox + (x + inset) * v.tw;
+  const x1 = v.ox + (x + size - inset) * v.tw;
+  const yFar = v.oy + (y + inset) * v.th - baseLift;
+  const yNear = v.oy + (y + size - inset) * v.th - baseLift;
+  return { x0, x1, yFar, yNear, h, cx: (x0 + x1) / 2, cyTop: (yFar + yNear) / 2 - h };
+}
+
+const GLOSS: Record<string, number> = {
+  hall: 0.42,
+  tower: 0.5,
+  tent: 0.26,
+  cannon: 0.88,
+  tank: 0.92,
+  mine: 0.72,
+  storage: 0.74,
+  wall: 0.32,
+};
+const glossOf = (fam: string): number => GLOSS[fam] ?? 0.42;
 
 function drawBox(
   ctx: CanvasRenderingContext2D,
-  c: Corners,
+  g: BoxGeom,
   color: string,
+  lw = 1.2,
   outline = true,
+  gloss = 0.42,
 ): void {
-  fillPoly(ctx, [c.L, c.B, c.Bt, c.Lt], shade(color, 0.7)); // left wall
-  fillPoly(ctx, [c.B, c.R, c.Rt, c.Bt], shade(color, 0.84)); // right wall
-  fillPoly(ctx, [c.Tt, c.Rt, c.Bt, c.Lt], shade(color, 1.12)); // top
+  const { x0, x1, yFar, yNear, h } = g;
+  const roofTop = yFar - h;
+  const wallTop = yNear - h;
+  const w = x1 - x0;
+  const roofH = yNear - yFar;
+
+  // --- top (roof) face: lit, warm sunlight, grain ---
+  const topGrad = ctx.createLinearGradient(0, roofTop, 0, wallTop);
+  topGrad.addColorStop(0, shade(color, 1.06));
+  topGrad.addColorStop(1, shade(color, 1.24));
+  ctx.fillStyle = topGrad;
+  ctx.fillRect(x0, roofTop, w, roofH);
+  ctx.fillStyle = "rgba(255,238,198,0.08)"; // warm key light
+  ctx.fillRect(x0, roofTop, w, roofH);
+  grain(ctx, x0, roofTop, w, roofH, 0.55);
+  // glossy specular sheen near the sunlit far edge, scaled by material gloss
+  const spec = ctx.createLinearGradient(0, roofTop, 0, roofTop + roofH * 0.6);
+  spec.addColorStop(0, `rgba(255,255,255,${(0.08 + gloss * 0.3).toFixed(3)})`);
+  spec.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = spec;
+  ctx.fillRect(x0, roofTop, w, roofH * 0.6);
+  // tight specular hotspot for shiny materials (metal / liquid / gold)
+  if (gloss > 0.55) {
+    const hx = x0 + w * 0.64;
+    const hy = roofTop + roofH * 0.28;
+    const hr = w * 0.4;
+    const hot = ctx.createRadialGradient(hx, hy, 0, hx, hy, hr);
+    hot.addColorStop(0, `rgba(255,255,255,${(gloss * 0.34).toFixed(3)})`);
+    hot.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = hot;
+    ctx.beginPath();
+    ctx.ellipse(hx, hy, hr, hr * 0.55, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // --- front (south) wall: shadowed, cool, grain, contact AO ---
+  const wallGrad = ctx.createLinearGradient(0, wallTop, 0, yNear);
+  wallGrad.addColorStop(0, shade(color, 0.84));
+  wallGrad.addColorStop(1, shade(color, 0.56));
+  ctx.fillStyle = wallGrad;
+  ctx.fillRect(x0, wallTop, w, h);
+  ctx.fillStyle = "rgba(44,58,98,0.07)"; // cool shadow tint
+  ctx.fillRect(x0, wallTop, w, h);
+  grain(ctx, x0, wallTop, w, h, 0.75);
+  // ambient occlusion pooling at the base
+  const aoH = Math.min(h * 0.45, h);
+  const ao = ctx.createLinearGradient(0, yNear - aoH, 0, yNear);
+  ao.addColorStop(0, "rgba(0,0,0,0)");
+  ao.addColorStop(1, "rgba(0,0,0,0.26)");
+  ctx.fillStyle = ao;
+  ctx.fillRect(x0, yNear - aoH, w, aoH);
+  // soft inner shade on the left edge / highlight on the right gives roundness
+  ctx.fillStyle = "rgba(0,0,0,0.12)";
+  ctx.fillRect(x0, wallTop, Math.max(1, w * 0.06), h);
+  ctx.fillStyle = "rgba(255,255,255,0.06)";
+  ctx.fillRect(x1 - Math.max(1, w * 0.06), wallTop, Math.max(1, w * 0.06), h);
+
   if (outline) {
-    ctx.strokeStyle = "rgba(0,0,0,0.32)";
-    ctx.lineWidth = Math.max(1, c.tlw());
-    poly(ctx, [c.Tt, c.Rt, c.R, c.B, c.L, c.Lt]);
+    // crisp dark silhouette
+    ctx.strokeStyle = "rgba(0,0,0,0.4)";
+    ctx.lineWidth = Math.max(1, lw);
+    ctx.beginPath();
+    ctx.moveTo(x0, roofTop);
+    ctx.lineTo(x1, roofTop);
+    ctx.lineTo(x1, yNear);
+    ctx.lineTo(x0, yNear);
+    ctx.closePath();
+    ctx.stroke();
+    // roof / wall seam
+    ctx.beginPath();
+    ctx.moveTo(x0, wallTop);
+    ctx.lineTo(x1, wallTop);
+    ctx.stroke();
+    // bright rim along the sunlit top-far edge
+    ctx.strokeStyle = "rgba(255,252,236,0.32)";
+    ctx.lineWidth = Math.max(1, lw * 0.7);
+    ctx.beginPath();
+    ctx.moveTo(x0, roofTop + 0.5);
+    ctx.lineTo(x1, roofTop + 0.5);
     ctx.stroke();
   }
 }
@@ -431,89 +652,91 @@ function drawBox(
 export function drawBuilding(ctx: CanvasRenderingContext2D, v: IsoView, d: BuildingDraw): void {
   const sp = SPRITES[d.type] ?? FALLBACK;
   const levelScale = 1 + (Math.min(d.level, 10) - 1) * 0.05;
-  const baseH = sp.h * v.tw * levelScale * (1 + (d.squash ?? 0));
-  const lw = v.tw * 0.03;
+  const unit = v.th * HEIGHT_UNIT;
+  const h = sp.h * unit * levelScale * (1 + (d.squash ?? 0));
+  const lw = Math.max(1, v.tw * 0.04);
+  const g = boxGeom(v, d.x, d.y, d.size, h, 0, FOOT_INSET);
+  const w = g.x1 - g.x0;
 
-  // ground shadow
-  const sh = boxCorners(v, d.x, d.y, d.size, 0);
+  // directional cast shadow on the ground (sun from the upper-left), softened
+  const sx = h * 0.52;
+  const sy = h * 0.32;
   ctx.save();
-  ctx.globalAlpha = 0.22;
+  ctx.globalAlpha = 0.3;
+  ctx.filter = `blur(${Math.max(1, v.tw * 0.06)}px)`;
   fillPoly(
     ctx,
     [
-      { x: sh.T.x + v.tw * 0.12, y: sh.T.y + v.th * 0.18 },
-      { x: sh.R.x + v.tw * 0.18, y: sh.R.y + v.th * 0.18 },
-      { x: sh.B.x + v.tw * 0.18, y: sh.B.y + v.th * 0.22 },
-      { x: sh.L.x + v.tw * 0.12, y: sh.L.y + v.th * 0.22 },
+      { x: g.x0, y: g.yFar },
+      { x: g.x1, y: g.yFar },
+      { x: g.x1 + sx, y: g.yFar + sy },
+      { x: g.x1 + sx, y: g.yNear + sy },
+      { x: g.x0 + sx, y: g.yNear + sy },
+      { x: g.x0, y: g.yNear },
     ],
-    "#000",
+    "#070f06",
   );
   ctx.restore();
+  ctx.filter = "none";
 
-  const c = Object.assign(boxCorners(v, d.x, d.y, d.size, baseH), { tlw: () => lw }) as Corners;
-  drawBox(ctx, c, sp.color);
+  drawBox(ctx, g, sp.color, lw, true, glossOf(sp.fam));
 
-  // night windows: warm glowing panes on the two front walls
+  // night windows on the front wall
   if (d.night && d.night > 0.32 && !d.constructing && sp.fam !== "wall" && sp.fam !== "tent") {
-    drawWindows(ctx, c, v, d.night);
+    drawWindows(ctx, g, v, d.night);
   }
 
-  // family-specific structure on the top face
-  drawStructure(ctx, v, d, sp, baseH);
+  // family-specific structure on top
+  drawStructure(ctx, v, d, sp, g, lw);
 
-  // tier studs: little gold rivets on the top edge for higher levels
+  // tier studs: gold rivets along the roof's near edge for higher levels
   if (d.level >= 4) {
     ctx.fillStyle = "#f5c518";
-    for (const p of [c.Tt, c.Rt, c.Lt]) {
+    const y = g.yNear - h;
+    for (const fx of [0.2, 0.5, 0.8]) {
       ctx.beginPath();
-      ctx.arc(p.x, p.y, v.tw * 0.035, 0, Math.PI * 2);
+      ctx.arc(g.x0 + w * fx, y, v.tw * 0.04, 0, Math.PI * 2);
       ctx.fill();
     }
   }
 
-  // ambient idle: chimney smoke on halls/barracks
+  // ambient chimney smoke for halls
   if (d.ambient && sp.fam === "hall") {
-    const tc = boxCorners(v, d.x, d.y, d.size, baseH);
-    const cc = centroid([tc.Tt, tc.Rt, tc.Bt, tc.Lt]);
-    drawSmoke(ctx, cc.x + v.tw * 0.16, cc.y - v.tw * 0.18, v.tw, d.time, d.x * 7 + d.y * 13);
+    drawSmoke(ctx, g.cx + v.tw * 0.2, g.cyTop - h * 0.1, v.tw, d.time, d.x * 7 + d.y * 13);
   }
 
   // selection highlight (village)
   if (d.selected) {
     ctx.strokeStyle = "#ffe06a";
     ctx.lineWidth = v.tw * 0.06;
-    poly(ctx, [c.T, c.R, c.B, c.L]);
-    ctx.stroke();
+    ctx.strokeRect(g.x0, g.yFar - h, w, g.yNear - (g.yFar - h));
   }
 
   // hp bar (battle)
   if (d.hpFrac !== undefined && d.hpFrac < 1) {
-    drawBar(ctx, c.Tt, v.tw * d.size * 0.6, d.hpFrac);
+    drawBar(ctx, { x: g.cx, y: g.yFar - h - 6 }, w * 0.9, d.hpFrac);
   }
 
   // level badge (village)
   if (d.showLevel && !d.constructing) {
-    drawBadge(ctx, c.B, String(d.level), v.tw);
+    drawBadge(ctx, { x: g.x1 - v.tw * 0.12, y: g.yNear - v.th * 0.12 }, String(d.level), v.tw);
   }
 
   // collect icon bobbing above
   if (d.collect && !d.constructing) {
-    const top = centroid([c.Tt, c.Rt, c.Bt, c.Lt]);
     const bob = Math.sin(d.time * 3) * v.tw * 0.07;
-    drawCollect(ctx, top.x, top.y - v.tw * 0.35 + bob, v.tw, d.collect);
+    drawCollect(ctx, g.cx, g.yFar - h - v.tw * 0.3 + bob, v.tw, d.collect);
   }
 
   // construction overlay
   if (d.constructing) {
     ctx.save();
     ctx.globalAlpha = 0.5;
-    fillPoly(ctx, [c.Tt, c.Rt, c.Bt, c.Lt], "#0b1410");
-    fillPoly(ctx, [c.L, c.B, c.Bt, c.Lt], "#0b1410");
-    fillPoly(ctx, [c.B, c.R, c.Rt, c.Bt], "#0b1410");
+    ctx.fillStyle = "#0b1410";
+    ctx.fillRect(g.x0, g.yFar - h, w, g.yNear - (g.yFar - h));
     ctx.restore();
-    const top = centroid([c.Tt, c.Rt, c.Bt, c.Lt]);
-    drawHammer(ctx, top.x, top.y - v.tw * 0.1, v.tw, d.time);
-    if (d.remainingLabel) drawLabel(ctx, top.x, top.y + v.tw * 0.18, d.remainingLabel, v.tw);
+    drawHammer(ctx, g.cx, g.cyTop, v.tw, d.time);
+    if (d.remainingLabel) drawLabel(ctx, g.cx, g.yNear - h * 0.5, d.remainingLabel, v.tw);
   }
 }
 
@@ -522,127 +745,107 @@ function drawStructure(
   v: IsoView,
   d: BuildingDraw,
   sp: SpriteDef,
-  baseH: number,
+  g: BoxGeom,
+  lw: number,
 ): void {
-  const lw = v.tw * 0.03;
-  const tlw = () => lw;
-  const top = (x: number, y: number, size: number, h: number) =>
-    Object.assign(boxCorners(v, x, y, size, h, baseH), { tlw }) as Corners;
-
+  const tw = v.tw;
+  const w = g.x1 - g.x0;
   switch (sp.fam) {
     case "hall": {
-      // pitched roof prism
       const ins = d.size * 0.16;
-      const r = top(d.x + ins, d.y + ins, d.size - ins * 2, baseH * 0.45);
-      drawBox(ctx, r, sp.roof);
+      const r = boxGeom(v, d.x + ins, d.y + ins, d.size - ins * 2, g.h * 0.45, g.h);
+      drawBox(ctx, r, sp.roof, lw, true, glossOf(sp.fam));
       if (sp.trim) {
-        // golden ridge dot + flag
-        const c = centroid([r.Tt, r.Rt, r.Bt, r.Lt]);
+        // gold knob + waving flag on a pole
         ctx.fillStyle = sp.trim;
         ctx.beginPath();
-        ctx.arc(c.x, c.y, v.tw * 0.07, 0, Math.PI * 2);
+        ctx.arc(r.cx, r.cyTop, tw * 0.07, 0, Math.PI * 2);
         ctx.fill();
         ctx.strokeStyle = "#6b4a2a";
-        ctx.lineWidth = v.tw * 0.03;
+        ctx.lineWidth = tw * 0.03;
         ctx.beginPath();
-        ctx.moveTo(c.x, c.y);
-        ctx.lineTo(c.x, c.y - v.tw * 0.34);
+        ctx.moveTo(r.cx, r.cyTop);
+        ctx.lineTo(r.cx, r.cyTop - tw * 0.4);
         ctx.stroke();
-        const wave = Math.sin(d.time * 4) * v.tw * 0.03;
+        const wave = Math.sin(d.time * 4) * tw * 0.03;
         fillPoly(ctx, [
-          { x: c.x, y: c.y - v.tw * 0.34 },
-          { x: c.x + v.tw * 0.18, y: c.y - v.tw * 0.3 + wave },
-          { x: c.x, y: c.y - v.tw * 0.24 },
+          { x: r.cx, y: r.cyTop - tw * 0.4 },
+          { x: r.cx + tw * 0.2, y: r.cyTop - tw * 0.34 + wave },
+          { x: r.cx, y: r.cyTop - tw * 0.28 },
         ], "#e23b3b");
       }
       break;
     }
     case "tower": {
-      // battlement cap: smaller box + notches
       const ins = d.size * 0.2;
-      const cap = top(d.x + ins, d.y + ins, d.size - ins * 2, baseH * 0.22);
-      drawBox(ctx, cap, sp.roof);
-      // arrow slit on front-right wall
-      const m = centroid([cap.B, cap.R, cap.Rt, cap.Bt]);
+      const cap = boxGeom(v, d.x + ins, d.y + ins, d.size - ins * 2, g.h * 0.3, g.h);
+      drawBox(ctx, cap, sp.roof, lw, true, glossOf(sp.fam));
+      // arrow slit on the front wall
       ctx.fillStyle = "rgba(0,0,0,0.5)";
-      ctx.fillRect(m.x - v.tw * 0.02, m.y - v.tw * 0.18, v.tw * 0.04, v.tw * 0.18);
+      ctx.fillRect(g.cx - tw * 0.03, g.yNear - g.h * 0.72, tw * 0.06, g.h * 0.45);
       break;
     }
     case "tent": {
-      const ins = d.size * 0.1;
-      const r = top(d.x + ins, d.y + ins, d.size - ins * 2, baseH * 0.7);
-      drawBox(ctx, r, sp.roof);
+      const ins = d.size * 0.08;
+      const roof = boxGeom(v, d.x + ins, d.y + ins, d.size - ins * 2, g.h * 0.55, g.h);
+      drawBox(ctx, roof, sp.roof, lw, true, glossOf(sp.fam));
       break;
     }
     case "cannon": {
-      // pivot dome + barrel pointing up-right
-      const tc = boxCorners(v, d.x, d.y, d.size, baseH);
-      const cen = centroid([tc.Tt, tc.Bt, tc.Rt, tc.Lt]);
+      // pivot dome + barrel aimed up-field toward the enemy
       ctx.fillStyle = "#2c2c33";
       ctx.beginPath();
-      ctx.arc(cen.x, cen.y, v.tw * 0.16, 0, Math.PI * 2);
+      ctx.arc(g.cx, g.cyTop, tw * 0.2 * d.size, 0, Math.PI * 2);
       ctx.fill();
       ctx.strokeStyle = "#1a1a1f";
       ctx.lineCap = "round";
-      ctx.lineWidth = v.tw * 0.13;
+      ctx.lineWidth = tw * 0.16 * d.size;
       ctx.beginPath();
-      ctx.moveTo(cen.x, cen.y);
-      ctx.lineTo(cen.x + v.tw * 0.34, cen.y - v.tw * 0.2);
+      ctx.moveTo(g.cx, g.cyTop);
+      ctx.lineTo(g.cx, g.cyTop - g.h * 0.55 - tw * 0.1);
       ctx.stroke();
       ctx.lineCap = "butt";
       break;
     }
     case "tank": {
-      const tc = boxCorners(v, d.x, d.y, d.size, baseH);
-      const cen = centroid([tc.Tt, tc.Bt, tc.Rt, tc.Lt]);
-      // domed liquid top
       ctx.fillStyle = shade(sp.roof, 1.05);
       ctx.beginPath();
-      ctx.ellipse(cen.x, cen.y, v.tw * d.size * 0.32, v.tw * d.size * 0.17, 0, 0, Math.PI * 2);
+      ctx.ellipse(g.cx, g.cyTop, w * 0.34, v.th * d.size * 0.3, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = "rgba(255,255,255,0.35)";
       ctx.beginPath();
-      ctx.ellipse(cen.x - v.tw * 0.07, cen.y - v.tw * 0.03, v.tw * 0.07, v.tw * 0.035, 0, 0, Math.PI * 2);
+      ctx.ellipse(g.cx - w * 0.1, g.cyTop - v.th * 0.06, w * 0.1, v.th * 0.06, 0, 0, Math.PI * 2);
       ctx.fill();
       break;
     }
     case "mine": {
-      const tc = boxCorners(v, d.x, d.y, d.size, baseH);
-      const cen = centroid([tc.Tt, tc.Bt, tc.Rt, tc.Lt]);
-      // ore pile
       fillPoly(ctx, [
-        { x: cen.x - v.tw * 0.2, y: cen.y + v.tw * 0.04 },
-        { x: cen.x, y: cen.y - v.tw * 0.2 },
-        { x: cen.x + v.tw * 0.2, y: cen.y + v.tw * 0.04 },
+        { x: g.cx - w * 0.3, y: g.cyTop + v.th * 0.18 },
+        { x: g.cx, y: g.cyTop - v.th * 0.34 },
+        { x: g.cx + w * 0.3, y: g.cyTop + v.th * 0.18 },
       ], sp.roof);
       ctx.fillStyle = "#fff2b0";
       ctx.beginPath();
-      ctx.arc(cen.x - v.tw * 0.05, cen.y - v.tw * 0.04, v.tw * 0.03, 0, Math.PI * 2);
-      ctx.arc(cen.x + v.tw * 0.06, cen.y, v.tw * 0.025, 0, Math.PI * 2);
+      ctx.arc(g.cx - w * 0.07, g.cyTop, tw * 0.04, 0, Math.PI * 2);
+      ctx.arc(g.cx + w * 0.08, g.cyTop + v.th * 0.06, tw * 0.03, 0, Math.PI * 2);
       ctx.fill();
       break;
     }
     case "storage": {
-      const tc = boxCorners(v, d.x, d.y, d.size, baseH);
-      const cen = centroid([tc.Tt, tc.Bt, tc.Rt, tc.Lt]);
       ctx.fillStyle = sp.roof;
       for (let i = 0; i < 3; i++) {
         ctx.beginPath();
-        ctx.ellipse(cen.x, cen.y - i * v.tw * 0.07, v.tw * 0.16, v.tw * 0.07, 0, 0, Math.PI * 2);
+        ctx.ellipse(g.cx, g.cyTop - i * v.th * 0.12, w * 0.26, v.th * 0.12, 0, 0, Math.PI * 2);
         ctx.fill();
       }
       break;
     }
     case "wall": {
-      const cn = Object.assign(boxCorners(v, d.x, d.y, d.size, baseH), { tlw }) as Corners;
-      // brick groove line across the top
       ctx.strokeStyle = "rgba(0,0,0,0.25)";
-      ctx.lineWidth = v.tw * 0.02;
-      const a = centroid([cn.Tt, cn.Lt]);
-      const b = centroid([cn.Rt, cn.Bt]);
+      ctx.lineWidth = tw * 0.04;
       ctx.beginPath();
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
+      ctx.moveTo(g.x0 + w * 0.15, g.cyTop);
+      ctx.lineTo(g.x1 - w * 0.15, g.cyTop);
       ctx.stroke();
       break;
     }
@@ -671,31 +874,27 @@ function drawSmoke(
   ctx.globalAlpha = 1;
 }
 
-function lerpPt(a: Pt, b: Pt, t: number): Pt {
-  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
-}
-
-function drawWindows(ctx: CanvasRenderingContext2D, c: Corners, v: IsoView, night: number): void {
+function drawWindows(ctx: CanvasRenderingContext2D, g: BoxGeom, v: IsoView, night: number): void {
   const glow = Math.min(1, night);
-  const s = v.tw * 0.055;
-  const pane = (p: Pt) => {
-    const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, s * 2.6);
-    g.addColorStop(0, `rgba(255,212,128,${0.5 * glow})`);
-    g.addColorStop(1, "rgba(255,200,120,0)");
-    ctx.fillStyle = g;
+  const s = v.tw * 0.08;
+  const wallTop = g.yNear - g.h;
+  const w = g.x1 - g.x0;
+  const pane = (px: number, py: number) => {
+    const grd = ctx.createRadialGradient(px, py, 0, px, py, s * 2.4);
+    grd.addColorStop(0, `rgba(255,212,128,${0.5 * glow})`);
+    grd.addColorStop(1, "rgba(255,200,120,0)");
+    ctx.fillStyle = grd;
     ctx.beginPath();
-    ctx.arc(p.x, p.y, s * 2.6, 0, Math.PI * 2);
+    ctx.arc(px, py, s * 2.4, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = `rgba(255,226,156,${0.92 * glow})`;
-    ctx.fillRect(p.x - s / 2, p.y - s / 2, s, s);
+    ctx.fillRect(px - s / 2, py - s / 2, s, s);
   };
-  // right wall [B,R,Rt,Bt], left wall [L,B,Bt,Lt]
-  const onWall = (g0: Pt, g1: Pt, t1: Pt, t0: Pt, u: number, w: number) =>
-    lerpPt(lerpPt(g0, g1, u), lerpPt(t0, t1, u), w);
-  pane(onWall(c.B, c.R, c.Rt, c.Bt, 0.34, 0.5));
-  pane(onWall(c.B, c.R, c.Rt, c.Bt, 0.66, 0.5));
-  pane(onWall(c.L, c.B, c.Bt, c.Lt, 0.34, 0.5));
-  pane(onWall(c.L, c.B, c.Bt, c.Lt, 0.66, 0.5));
+  for (const cx of [0.3, 0.7]) {
+    for (const ry of [0.42, 0.74]) {
+      pane(g.x0 + w * cx, wallTop + g.h * ry);
+    }
+  }
 }
 
 function drawBar(ctx: CanvasRenderingContext2D, top: Pt, w: number, frac: number): void {
@@ -804,20 +1003,12 @@ export function buildingHit(
   sy: number,
 ): boolean {
   const sp = SPRITES[b.type] ?? FALLBACK;
-  const c = boxCorners(v, b.x, b.y, b.size, sp.h * v.tw);
-  return pointInPoly(sx, sy, [c.Tt, c.Rt, c.R, c.B, c.L, c.Lt]);
-}
-
-function pointInPoly(px: number, py: number, pts: Pt[]): boolean {
-  let inside = false;
-  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-    const xi = pts[i].x;
-    const yi = pts[i].y;
-    const xj = pts[j].x;
-    const yj = pts[j].y;
-    if (yi > py !== yj > py && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi) inside = !inside;
-  }
-  return inside;
+  const h = sp.h * v.th * HEIGHT_UNIT;
+  const x0 = v.ox + b.x * v.tw;
+  const x1 = v.ox + (b.x + b.size) * v.tw;
+  const yTop = v.oy + b.y * v.th - h;
+  const yBot = v.oy + (b.y + b.size) * v.th;
+  return sx >= x0 && sx <= x1 && sy >= yTop && sy <= yBot;
 }
 
 // ---------------------------------------------------------------------------

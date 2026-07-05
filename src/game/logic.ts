@@ -1,4 +1,4 @@
-import { BUILDINGS, GRID_SIZE, TROOPS } from "./buildings";
+import { BUILDINGS, GRID_H, GRID_W, TROOPS } from "./buildings";
 import type {
   BuildingType,
   Cost,
@@ -76,7 +76,7 @@ export function canPlace(
   size: number,
   ignoreId?: string,
 ): boolean {
-  if (x < 0 || y < 0 || x + size > GRID_SIZE || y + size > GRID_SIZE) return false;
+  if (x < 0 || y < 0 || x + size > GRID_W || y + size > GRID_H) return false;
   for (const b of buildings) {
     if (b.id === ignoreId) continue;
     const bs = BUILDINGS[b.type].size;
@@ -92,8 +92,8 @@ export function findFreeCell(
   buildings: PlacedBuilding[],
   size: number,
 ): { x: number; y: number } | null {
-  for (let y = 0; y <= GRID_SIZE - size; y++) {
-    for (let x = 0; x <= GRID_SIZE - size; x++) {
+  for (let y = 0; y <= GRID_H - size; y++) {
+    for (let x = 0; x <= GRID_W - size; x++) {
       if (canPlace(buildings, x, y, size)) return { x, y };
     }
   }

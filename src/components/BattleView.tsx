@@ -9,17 +9,22 @@ import { useUi } from "../ui";
 import {
   buildDecorations,
   dayLight,
+  drawAtmosphere,
   drawBuilding,
+  drawDeployZone,
   drawGround,
   drawNightOverlay,
   drawSky,
   drawTroop,
   drawVignette,
+  postProcess,
   Fx,
+  inDeployZone,
   makeView,
   project,
   unproject,
-  GRID,
+  GRID_H,
+  GRID_W,
   type BuildingDraw,
   type IsoView,
 } from "../render/iso";
@@ -165,6 +170,7 @@ export function BattleView({ base, onExit }: { base: EnemyBase; onExit: () => vo
       drawSky(ctx, W, H, RAID_LIGHT);
       fx.beginShake(ctx, t);
       drawGround(ctx, v, { hostile: true });
+      if (!finishedRef.current) drawDeployZone(ctx, v, t);
 
       // defense range rings (ground decal)
       for (const tg of battle.targets) {
@@ -174,7 +180,7 @@ export function BattleView({ base, onExit }: { base: EnemyBase; onExit: () => vo
         ctx.strokeStyle = "rgba(255,80,80,0.18)";
         ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.ellipse(c.x, c.y, tg.range * v.tw * 0.707, tg.range * v.th * 0.707, 0, 0, Math.PI * 2);
+        ctx.ellipse(c.x, c.y, tg.range * v.tw, tg.range * v.th, 0, 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
       }
@@ -198,12 +204,12 @@ export function BattleView({ base, onExit }: { base: EnemyBase; onExit: () => vo
           ambient: true,
           night: RAID_LIGHT.night,
         };
-        items.push({ depth: tg.cx + tg.cy, draw: () => drawBuilding(ctx, v, draw) });
+        items.push({ depth: tg.cy + tg.size / 2, draw: () => drawBuilding(ctx, v, draw) });
       }
       for (const u of battle.units) {
         if (u.hp <= 0) continue;
         items.push({
-          depth: u.x + u.y,
+          depth: u.y,
           draw: () =>
             drawTroop(ctx, v, {
               type: u.type,
@@ -222,8 +228,10 @@ export function BattleView({ base, onExit }: { base: EnemyBase; onExit: () => vo
       // effects on top of the scene
       fx.draw(ctx, v);
       fx.endShake(ctx);
+      drawAtmosphere(ctx, W, H, "rgba(122,98,150,0.26)");
       drawNightOverlay(ctx, W, H, RAID_LIGHT);
       drawVignette(ctx, W, H);
+      postProcess(ctx, W, H);
 
       const s = battle.stats();
       setStats(s);
@@ -254,7 +262,12 @@ export function BattleView({ base, onExit }: { base: EnemyBase; onExit: () => vo
     const px = (e.clientX - r.left) * dpr;
     const py = (e.clientY - r.top) * dpr;
     const g = unproject(v, px, py);
-    if (g.gx < 0 || g.gy < 0 || g.gx > GRID || g.gy > GRID) return;
+    if (g.gx < 0 || g.gy < 0 || g.gx > GRID_W || g.gy > GRID_H) return;
+    // troops may only land on the player's front beach, then march up-field
+    if (!inDeployZone(g.gx, g.gy)) {
+      showToast("手前の緑のゾーンから出撃！");
+      return;
+    }
     battleRef.current.spawn(selected, g.gx, g.gy);
     remainingRef.current = {
       ...remainingRef.current,
@@ -284,6 +297,10 @@ export function BattleView({ base, onExit }: { base: EnemyBase; onExit: () => vo
         <div className="chip stars">{"★".repeat(stats.stars)}{"☆".repeat(3 - stats.stars)}</div>
         <div className="chip">💥 {Math.round(stats.destructionPct * 100)}%</div>
       </div>
+
+      {!finished && (
+        <div className="deploy-hint">⬆ 手前から出撃して上の敵を攻めろ</div>
+      )}
 
       <div className="troop-dock">
         {TROOP_ORDER.map((type) => {

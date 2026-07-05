@@ -4,7 +4,14 @@ interface Env {
   ASSETS: Fetcher;
 }
 
-const GRID = 16;
+// Mirror of src/game/buildings.ts grid constants (coupled over the wire — keep
+// in sync). Portrait field filling the screen: GRID_W columns, GRID_H rows.
+const GRID_W = 10;
+const GRID_H = 18;
+const DEPLOY_DEPTH = 5;
+// Enemy buildings stay in the far rows so the near rows remain a clear landing
+// beach for the attacker.
+const MAX_ENEMY_ROW = GRID_H - DEPLOY_DEPTH;
 
 type EnemyBuilding = {
   type: string;
@@ -45,9 +52,11 @@ function tryPlace(
   size: number,
   rand: () => number,
 ): { x: number; y: number } | null {
-  for (let attempt = 0; attempt < 40; attempt++) {
-    const x = Math.floor(rand() * (GRID - size));
-    const y = Math.floor(rand() * (GRID - size));
+  for (let attempt = 0; attempt < 60; attempt++) {
+    const x = Math.floor(rand() * (GRID_W - size + 1));
+    const y = Math.floor(rand() * (MAX_ENEMY_ROW - size + 1));
+    // keep the front beach clear: the building must stay in the far rows.
+    if (y + size > MAX_ENEMY_ROW) continue;
     const overlap = buildings.some((b) => {
       return x < b.x + b.size && x + size > b.x && y < b.y + b.size && y + size > b.y;
     });
@@ -66,13 +75,14 @@ function generateBase(seed: number, playerTh: number): EnemyBase {
     if (cell) buildings.push({ type, level, x: cell.x, y: cell.y, size });
   };
 
-  // Town hall in the middle-ish
+  // Town hall sits at the far (top) end, horizontally centred — the prize the
+  // attacker pushes toward from the near front.
   const thLvl = thLevel;
   buildings.push({
     type: "townhall",
     level: thLvl,
-    x: Math.floor(GRID / 2) - 1,
-    y: Math.floor(GRID / 2) - 1,
+    x: Math.floor(GRID_W / 2) - 1,
+    y: 1,
     size: 3,
   });
 
