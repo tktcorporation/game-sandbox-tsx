@@ -25,6 +25,16 @@ export type MusicMode = "village" | "battle" | null;
 
 const MUTE_KEY = "cos-muted";
 
+/** storage can be blocked entirely (sandboxed iframe, opaque origin) — a
+ *  throwing read at module load would blank the app before React mounts. */
+function readMutePref(): boolean {
+  try {
+    return typeof localStorage !== "undefined" && localStorage.getItem(MUTE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
 /** tiny haptic tick on supporting devices; silently no-ops elsewhere. */
 export function buzz(ms: number | number[]): void {
   try {
@@ -52,7 +62,7 @@ class Sound {
   private musicTimer: number | null = null;
   private beat = 0;
   private mode: MusicMode = null;
-  private _muted = typeof localStorage !== "undefined" && localStorage.getItem(MUTE_KEY) === "1";
+  private _muted = readMutePref();
 
   get muted(): boolean {
     return this._muted;
