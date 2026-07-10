@@ -1,5 +1,24 @@
+import { useState } from "react";
 import { useGame } from "../game/store";
 import { capacityOf, formatNumber } from "../game/logic";
+import { sound } from "../game/sfx";
+
+export function MuteButton() {
+  const [muted, setMuted] = useState(sound.muted);
+  return (
+    <button
+      className="mute-btn"
+      aria-label={muted ? "Unmute" : "Mute"}
+      onClick={() => {
+        sound.unlock();
+        setMuted(sound.toggleMuted());
+        if (!sound.muted) sound.play("tap");
+      }}
+    >
+      {muted ? "🔇" : "🔊"}
+    </button>
+  );
+}
 
 export function ResourceBar() {
   const { gold, elixir, gems, trophies, buildings } = useGame();
@@ -35,6 +54,7 @@ export function ResourceBar() {
         <span className="icon">🏆</span>
         <span className="val">{formatNumber(trophies)}</span>
       </div>
+      <MuteButton />
     </div>
   );
 }

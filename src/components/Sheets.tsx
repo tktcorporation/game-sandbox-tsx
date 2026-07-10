@@ -1,15 +1,18 @@
 import type { ReactNode } from "react";
 import { BUILD_ORDER, BUILDINGS, TROOP_ORDER, TROOPS } from "../game/buildings";
-import { useGame } from "../game/store";
+import { gemCostForFinish, useGame } from "../game/store";
 import {
+  accruedFor,
   armyHousing,
   capacityOf,
   countOfType,
   formatDuration,
   formatNumber,
   limitForType,
+  now,
   townHallLevel,
 } from "../game/logic";
+import { sound } from "../game/sfx";
 import type { Cost } from "../game/types";
 import { useUi } from "../ui";
 
@@ -60,8 +63,13 @@ export function Shop({ onClose }: { onClose: () => void }) {
               disabled={locked}
               onClick={() => {
                 const r = placeBuilding(type);
-                if (!r.ok) showToast(r.reason ?? "Cannot build");
-                else showToast(`${def.name} placed!`);
+                if (!r.ok) {
+                  sound.play("error");
+                  showToast(r.reason ?? "Cannot build");
+                } else {
+                  sound.play("place");
+                  showToast(`${def.name} placed!`);
+                }
               }}
             >
               <div className="big">{def.emoji}</div>
@@ -104,7 +112,12 @@ export function Army({ onClose }: { onClose: () => void }) {
               disabled={!hasBarracks}
               onClick={() => {
                 const r = trainTroop(type);
-                if (!r.ok) showToast(r.reason ?? "Cannot train");
+                if (!r.ok) {
+                  sound.play("error");
+                  showToast(r.reason ?? "Cannot train");
+                } else {
+                  sound.play("train");
+                }
               }}
             >
               <div className="big">{t.emoji}</div>
@@ -125,7 +138,10 @@ export function Army({ onClose }: { onClose: () => void }) {
 
 export function BuildingInfo({ id, onClose }: { id: string; onClose: () => void }) {
   const buildings = useGame((s) => s.buildings);
+  const gems = useGame((s) => s.gems);
+  useGame((s) => s.clock); // re-render each second while timers run
   const upgradeBuilding = useGame((s) => s.upgradeBuilding);
+  const finishNow = useGame((s) => s.finishNow);
   const showToast = useUi((s) => s.showToast);
   const b = buildings.find((x) => x.id === id);
   if (!b) return null;
@@ -133,6 +149,7 @@ export function BuildingInfo({ id, onClose }: { id: string; onClose: () => void 
   const maxed = b.level >= def.maxLevel;
   const next = b.level + 1;
   const cost = maxed ? null : def.cost(next);
+  const gemCost = b.upgradeDoneAt ? gemCostForFinish(b.upgradeDoneAt) : 0;
 
   return (
     <Sheet title={`${def.emoji} ${def.name}`} onClose={onClose}>
@@ -152,8 +169,16 @@ export function BuildingInfo({ id, onClose }: { id: string; onClose: () => void 
             </span>
           </div>
           <div className="info-row">
-            <span>Capacity</span>
-            <span>{formatNumber(def.production.cap(b.level))}</span>
+            <span>Holding</span>
+            <span>
+              {formatNumber(accruedFor(b, now()))} / {formatNumber(def.production.cap(b.level))}
+              {accruedFor(b, now()) < def.production.cap(b.level) && !b.upgradeDoneAt
+                ? ` · full in ${formatDuration(
+                    ((def.production.cap(b.level) - accruedFor(b, now())) /
+                      def.production.perMin(b.level)) * 60,
+                  )}`
+                : ""}
+            </span>
           </div>
         </>
       )}
@@ -187,7 +212,26 @@ export function BuildingInfo({ id, onClose }: { id: string; onClose: () => void 
       )}
 
       {b.upgradeDoneAt ? (
-        <p className="hint">🔨 Under construction…</p>
+        <>
+          <p className="hint">
+            🔨 Under construction — {formatDuration((b.upgradeDoneAt - now()) / 1000)} left
+          </p>
+          <button
+            className="btn gold"
+            onClick={() => {
+              const r = finishNow(b.id);
+              if (!r.ok) {
+                sound.play("error");
+                showToast(r.reason ?? "Cannot finish");
+              } else {
+                onClose();
+              }
+            }}
+            disabled={gems < gemCost}
+          >
+            Finish now · 💎 {gemCost}
+          </button>
+        </>
       ) : maxed ? (
         <button className="btn ghost" disabled>
           Max level reached
@@ -197,8 +241,11 @@ export function BuildingInfo({ id, onClose }: { id: string; onClose: () => void 
           className="btn gold"
           onClick={() => {
             const r = upgradeBuilding(b.id);
-            if (!r.ok) showToast(r.reason ?? "Cannot upgrade");
-            else {
+            if (!r.ok) {
+              sound.play("error");
+              showToast(r.reason ?? "Cannot upgrade");
+            } else {
+              sound.play("build");
               showToast(`Upgrading to level ${next}`);
               onClose();
             }

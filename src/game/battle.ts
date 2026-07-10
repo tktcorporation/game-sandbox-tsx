@@ -72,6 +72,9 @@ export class Battle {
   units: Unit[] = [];
   time = 0;
   maxTime = 90;
+  /** troops the attacker still holds in reserve (not yet deployed) — the
+   *  battle must not end "all troops lost" while any of these remain. */
+  reserves = 0;
   private idSeq = 1;
   private totalBuildings: number;
   private armyUsed: Record<TroopType, number> = { barbarian: 0, archer: 0, giant: 0 };
@@ -138,14 +141,37 @@ export class Battle {
   private pickTarget(u: Unit): Target | null {
     const alive = this.targets.filter((t) => t.hp > 0);
     if (alive.length === 0) return null;
-    let pool = alive;
+    // walls are never sought out — they're only attacked when they block a path
+    let pool = alive.filter((t) => t.type !== "wall");
+    if (pool.length === 0) pool = alive;
     if (u.prefersDefense) {
-      const defenses = alive.filter((t) => t.isDefense);
+      const defenses = pool.filter((t) => t.isDefense);
       if (defenses.length) pool = defenses;
     }
     let best: Target | null = null;
     let bestD = Infinity;
     for (const t of pool) {
+      const d = this.gap(u, t);
+      if (d < bestD) {
+        bestD = d;
+        best = t;
+      }
+    }
+    return best;
+  }
+
+  /** a standing wall directly in the unit's way toward (dx,dy)? Walls act as
+   *  obstacles: units bash through the nearest blocking segment instead of
+   *  walking over it. */
+  private blockingWall(u: Unit, dirX: number, dirY: number): Target | null {
+    const aheadX = u.x + dirX * 0.7;
+    const aheadY = u.y + dirY * 0.7;
+    let best: Target | null = null;
+    let bestD = Infinity;
+    for (const t of this.targets) {
+      if (t.hp <= 0 || t.type !== "wall") continue;
+      // wall tiles are 1x1 centred on (cx, cy)
+      if (Math.abs(t.cx - aheadX) > 0.75 || Math.abs(t.cy - aheadY) > 0.75) continue;
       const d = this.gap(u, t);
       if (d < bestD) {
         bestD = d;
@@ -168,7 +194,19 @@ export class Battle {
         u.targetId = target?.id ?? null;
       }
       if (!target) continue;
-      const gap = this.gap(u, target);
+      let gap = this.gap(u, target);
+      if (gap > u.range) {
+        const dx = target.cx - u.x;
+        const dy = target.cy - u.y;
+        const len = Math.hypot(dx, dy) || 1;
+        // a wall in the way becomes the target until it's smashed through
+        const wall = this.blockingWall(u, dx / len, dy / len);
+        if (wall) {
+          target = wall;
+          u.targetId = wall.id;
+          gap = this.gap(u, wall);
+        }
+      }
       if (gap > u.range) {
         const dx = target.cx - u.x;
         const dy = target.cy - u.y;
@@ -219,7 +257,8 @@ export class Battle {
     if (destructionPct >= 1) stars++;
     const troopsAlive = this.units.filter((u) => u.hp > 0).length;
     const timeLeft = Math.max(0, this.maxTime - this.time);
-    const noTroopsLeftToFight = troopsAlive === 0 && this.units.length > 0;
+    const noTroopsLeftToFight =
+      troopsAlive === 0 && this.units.length > 0 && this.reserves <= 0;
     const over =
       destructionPct >= 1 || timeLeft <= 0 || noTroopsLeftToFight;
     return { destructionPct, stars, townHallDestroyed, troopsAlive, timeLeft, over };

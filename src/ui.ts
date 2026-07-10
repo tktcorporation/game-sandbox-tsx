@@ -1,5 +1,7 @@
 import { useEffect } from "react";
 import { create } from "zustand";
+import { BUILDINGS } from "./game/buildings";
+import { sound } from "./game/sfx";
 import { useGame } from "./game/store";
 
 export type Mode = "home" | "battle";
@@ -40,4 +42,26 @@ export function useGameLoop() {
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [tick]);
+
+  // celebrate constructions the moment they finish (timer or gem skip)
+  useEffect(() => {
+    return useGame.subscribe((s, prev) => {
+      if (s.buildings === prev.buildings) return;
+      for (const pb of prev.buildings) {
+        if (!pb.upgradeDoneAt) continue;
+        const nb = s.buildings.find((b) => b.id === pb.id);
+        if (nb && !nb.upgradeDoneAt) {
+          sound.play("finish");
+          useUi.getState().showToast(`🔨 ${BUILDINGS[nb.type].name} Lv${nb.level} completed!`);
+        }
+      }
+    });
+  }, []);
+
+  // the AudioContext needs one user gesture before it may make noise
+  useEffect(() => {
+    const unlock = () => sound.unlock();
+    window.addEventListener("pointerdown", unlock, { once: true });
+    return () => window.removeEventListener("pointerdown", unlock);
+  }, []);
 }

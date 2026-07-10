@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { BUILDINGS, GRID_H, GRID_W } from "../game/buildings";
 import { useGame } from "../game/store";
 import { accruedFor, canPlace, formatDuration, formatNumber, now } from "../game/logic";
+import { buzz, sound } from "../game/sfx";
 import { useUi } from "../ui";
 import {
   buildDecorations,
@@ -388,8 +389,14 @@ export function Board() {
     if (drag) {
       if (drag.moved && ghost && ghost.id === drag.id) {
         const ok = game.moveBuilding(drag.id, ghost.x, ghost.y);
-        if (ok) bounceRef.current.set(drag.id, performance.now() / 1000);
-        else ui.showToast("そこには置けません");
+        if (ok) {
+          bounceRef.current.set(drag.id, performance.now() / 1000);
+          sound.play("place");
+          buzz(10);
+        } else {
+          sound.play("error");
+          ui.showToast("そこには置けません");
+        }
         return;
       }
       const b = game.buildings.find((x) => x.id === drag.id);
@@ -418,8 +425,11 @@ export function Board() {
           }
           fxRef.current.flyToBar(src.x, src.y - v.tw * 0.4, tx, ty, res);
         }
+        sound.play(res === "gold" ? "coin" : "elixir");
+        buzz(12);
         ui.showToast(`+${formatNumber(accrued)} ${res === "gold" ? "🪙" : "🧪"}`);
       } else {
+        sound.play("tap");
         ui.select(b.id);
       }
       return;

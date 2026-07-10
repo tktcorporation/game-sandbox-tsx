@@ -4,6 +4,7 @@ import { Battle, type EnemyBase } from "../game/battle";
 import type { BattleStats } from "../game/battle";
 import { useGame } from "../game/store";
 import { formatNumber } from "../game/logic";
+import { buzz, sound } from "../game/sfx";
 import type { TroopType } from "../game/types";
 import { useUi } from "../ui";
 import {
@@ -49,6 +50,17 @@ export function BattleView({ base, onExit }: { base: EnemyBase; onExit: () => vo
   const finishedRef = useRef(false);
   const remainingRef = useRef<Record<TroopType, number>>({ ...army });
 
+  const finish = () => {
+    if (finishedRef.current) return;
+    finishedRef.current = true;
+    setFinished(true);
+    const s = battleRef.current.stats();
+    sound.play(s.stars > 0 ? "victory" : "defeat");
+    buzz(s.stars > 0 ? [20, 30, 20, 30, 60] : 40);
+  };
+  const finishRef = useRef(finish);
+  finishRef.current = finish;
+
   // main render + simulation loop
   useEffect(() => {
     const canvas = canvasRef.current!;
@@ -68,6 +80,7 @@ export function BattleView({ base, onExit }: { base: EnemyBase; onExit: () => vo
     ro.observe(canvas);
 
     const battle = battleRef.current;
+    battle.reserves = TROOP_ORDER.reduce((n, t) => n + remainingRef.current[t], 0);
     const fx = new Fx();
     fx.onImpact = (gx, gy, kind) => {
       fx.spark(gx, gy, kind === "ball" ? "#ffcaa0" : "#fff2a0");
@@ -89,6 +102,7 @@ export function BattleView({ base, onExit }: { base: EnemyBase; onExit: () => vo
     const dmgHp = new Map<number, number>();
     const dmgTimer = new Map<number, number>();
     let slowmo = 0;
+    let prevStars = 0;
 
     const frame = (time: number) => {
       const realDt = Math.min(0.05, (time - last) / 1000);
@@ -108,6 +122,11 @@ export function BattleView({ base, onExit }: { base: EnemyBase; onExit: () => vo
             fx.bang();
             fx.shake(14);
             slowmo = 0.6;
+            sound.play("bigboom");
+            buzz([30, 40, 80]);
+          } else {
+            sound.play("boom");
+            buzz(15);
           }
         }
         prevHp.set(tg.id, tg.hp);
@@ -148,6 +167,7 @@ export function BattleView({ base, onExit }: { base: EnemyBase; onExit: () => vo
           const kind = tg.type === "archertower" ? "arrow" : "ball";
           fx.shoot(kind, tg.cx, tg.cy, best.x, best.y);
           fx.muzzle(tg.cx, tg.cy);
+          sound.play(kind === "arrow" ? "arrow" : "shot");
           timer = kind === "arrow" ? 0.55 : 1.0;
         }
         shotTimer.set(tg.id, timer);
@@ -234,11 +254,12 @@ export function BattleView({ base, onExit }: { base: EnemyBase; onExit: () => vo
       postProcess(ctx, W, H);
 
       const s = battle.stats();
-      setStats(s);
-      if (s.over && !finishedRef.current) {
-        finishedRef.current = true;
-        setFinished(true);
+      if (s.stars > prevStars) {
+        sound.play("star");
+        prevStars = s.stars;
       }
+      setStats(s);
+      if (s.over && !finishedRef.current) finishRef.current();
       raf = requestAnimationFrame(frame);
     };
     raf = requestAnimationFrame(frame);
@@ -273,6 +294,12 @@ export function BattleView({ base, onExit }: { base: EnemyBase; onExit: () => vo
       ...remainingRef.current,
       [selected]: remainingRef.current[selected] - 1,
     };
+    battleRef.current.reserves = TROOP_ORDER.reduce(
+      (n, t) => n + remainingRef.current[t],
+      0,
+    );
+    sound.play("deploy");
+    buzz(8);
     setStats(battleRef.current.stats());
   };
 
@@ -297,6 +324,21 @@ export function BattleView({ base, onExit }: { base: EnemyBase; onExit: () => vo
         <div className="chip stars">{"★".repeat(stats.stars)}{"☆".repeat(3 - stats.stars)}</div>
         <div className="chip">💥 {Math.round(stats.destructionPct * 100)}%</div>
       </div>
+      <div className="battle-hud sub">
+        <div className="chip loot">
+          🪙 +{formatNumber(base.loot.gold * stats.destructionPct)}
+        </div>
+        <div className="chip loot">
+          🧪 +{formatNumber(base.loot.elixir * stats.destructionPct)}
+        </div>
+      </div>
+
+      <div className="battle-banner">
+        ⚔️ {base.name}
+        <span className="sub-line">
+          Loot: 🪙 {formatNumber(base.loot.gold)} · 🧪 {formatNumber(base.loot.elixir)}
+        </span>
+      </div>
 
       {!finished && (
         <div className="deploy-hint">⬆ 手前から出撃して上の敵を攻めろ</div>
@@ -318,13 +360,7 @@ export function BattleView({ base, onExit }: { base: EnemyBase; onExit: () => vo
             </button>
           );
         })}
-        <button
-          className="troop-btn"
-          onClick={() => {
-            finishedRef.current = true;
-            setFinished(true);
-          }}
-        >
+        <button className="troop-btn" onClick={finish}>
           <span className="big">🏁</span>
           <span className="nm">End</span>
         </button>
@@ -347,10 +383,19 @@ export function BattleView({ base, onExit }: { base: EnemyBase; onExit: () => vo
           <div className="result-card">
             <h2>{stats.stars > 0 ? "Victory!" : "Defeated"}</h2>
             <div className="big-stars">
-              {"★".repeat(stats.stars)}
-              {"☆".repeat(3 - stats.stars)}
+              {[0, 1, 2].map((i) => (
+                <span
+                  key={i}
+                  className={i < stats.stars ? "star earned" : "star"}
+                  style={i < stats.stars ? { animationDelay: `${0.25 + i * 0.3}s` } : undefined}
+                >
+                  {i < stats.stars ? "★" : "☆"}
+                </span>
+              ))}
             </div>
-            <p>{Math.round(stats.destructionPct * 100)}% destroyed</p>
+            <p>
+              {base.name} — {Math.round(stats.destructionPct * 100)}% destroyed
+            </p>
             <div className="loot-row">
               <span className="ct gold">🪙 +{formatNumber(res.loot.gold)}</span>
               <span className="ct elixir">🧪 +{formatNumber(res.loot.elixir)}</span>

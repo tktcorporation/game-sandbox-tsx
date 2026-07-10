@@ -157,6 +157,28 @@ body {
 
 .spacer { flex: 1; }
 
+/* round wooden speaker knob at the end of the top bar */
+.mute-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 2px solid var(--wood-edge);
+  background: linear-gradient(180deg, #d2a86c, #97683a);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  box-shadow: inset 0 2px 0 rgba(255, 236, 200, 0.55), inset 0 -3px 4px rgba(0, 0, 0, 0.3),
+    0 2px 0 var(--wood-edge), 0 4px 6px rgba(0, 0, 0, 0.32);
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+.mute-btn:active {
+  transform: translateY(2px);
+  box-shadow: inset 0 2px 0 rgba(255, 236, 200, 0.55), 0 0 0 var(--wood-edge),
+    0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
 /* ---------- Board ---------- */
 .board-wrap {
   flex: 1;
@@ -478,6 +500,55 @@ body {
 }
 .stars { letter-spacing: 3px; color: var(--gold-deep); text-shadow: 0 1px 0 rgba(255, 255, 255, 0.4); }
 
+/* second HUD row: loot gained so far, smaller and centred */
+.battle-hud.sub {
+  top: calc(52px + env(safe-area-inset-top));
+  justify-content: center;
+  gap: 8px;
+}
+.battle-hud .chip.loot {
+  font-size: 12px;
+  padding: 4px 10px;
+  background: linear-gradient(180deg, #f3e6c1, #d9bd84);
+}
+
+/* raid banner: enemy base name + loot on parchment, fades away by itself */
+.battle-banner {
+  position: absolute;
+  top: 26%;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 19px;
+  color: var(--ink);
+  text-align: center;
+  background: radial-gradient(130% 90% at 50% 0%, #fbf0d3, var(--parch-1) 55%, var(--parch-2) 100%);
+  border: 3px solid var(--wood-2);
+  border-radius: 15px;
+  padding: 10px 22px 11px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 8;
+  box-shadow: inset 0 0 0 2px var(--gold-deep), 0 8px 24px rgba(0, 0, 0, 0.5);
+  animation: banner 3.2s ease forwards;
+}
+.battle-banner .sub-line {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink-soft);
+}
+@keyframes banner {
+  0% { opacity: 0; transform: translateX(-50%) scale(0.85); }
+  10% { opacity: 1; transform: translateX(-50%) scale(1); }
+  80% { opacity: 1; }
+  100% { opacity: 0; transform: translateX(-50%) translateY(-14px); visibility: hidden; }
+}
+
 .deploy-hint {
   position: absolute;
   left: 50%;
@@ -590,6 +661,16 @@ body {
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.55);
 }
 .result-card .big-stars { font-size: 46px; letter-spacing: 6px; margin: 8px 0; color: var(--gold); text-shadow: 0 2px 0 var(--gold-deep), 0 0 14px rgba(245, 189, 43, 0.5); }
+.big-stars .star { display: inline-block; }
+.big-stars .star.earned {
+  transform: scale(0);
+  animation: starpop 0.55s cubic-bezier(0.2, 1.5, 0.4, 1) forwards;
+}
+@keyframes starpop {
+  0% { transform: scale(0) rotate(-40deg); opacity: 0; }
+  60% { transform: scale(1.4) rotate(8deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0deg); opacity: 1; }
+}
 .loot-row {
   display: flex;
   justify-content: center;

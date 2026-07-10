@@ -31,8 +31,11 @@ interface Store extends GameState {
   moveBuilding: (id: string, x: number, y: number) => boolean;
   upgradeBuilding: (id: string) => { ok: boolean; reason?: string };
   collect: (id: string) => void;
-  collectAll: () => void;
+  /** collect every producer; returns how much was actually banked */
+  collectAll: () => { gold: number; elixir: number };
   trainTroop: (type: TroopType) => { ok: boolean; reason?: string };
+  /** spend gems to complete a running construction instantly */
+  finishNow: (id: string) => { ok: boolean; reason?: string };
   applyBattleResult: (r: BattleResult) => void;
   finishConstructions: () => void;
   tick: () => void;
@@ -42,28 +45,30 @@ interface Store extends GameState {
 
 function createInitialState(): GameState {
   const buildings: PlacedBuilding[] = [];
-  const place = (type: BuildingType, level = 1) => {
+  // hand-placed starter village: town hall centred, storages behind it,
+  // producers on the flanks, cannon guarding the front approach.
+  const place = (type: BuildingType, x: number, y: number) => {
     const def = BUILDINGS[type];
-    const cell = findFreeCell(buildings, def.size);
+    const cell = canPlace(buildings, x, y, def.size) ? { x, y } : findFreeCell(buildings, def.size);
     if (!cell) return;
     buildings.push({
       id: newId(),
       type,
-      level,
+      level: 1,
       x: cell.x,
       y: cell.y,
       lastCollect: now(),
       stored: 0,
     });
   };
-  place("townhall");
-  place("goldmine");
-  place("elixircollector");
-  place("goldstorage");
-  place("elixirstorage");
-  place("cannon");
-  place("armycamp");
-  place("barracks");
+  place("townhall", 3, 6);
+  place("goldstorage", 2, 3);
+  place("elixirstorage", 6, 3);
+  place("goldmine", 0, 7);
+  place("elixircollector", 8, 7);
+  place("cannon", 4, 10);
+  place("barracks", 1, 11);
+  place("armycamp", 7, 11);
 
   return {
     gold: 600,
@@ -166,13 +171,18 @@ export const useGame = create<Store>()(
 
       collectAll: () => {
         let state = get();
+        const total = { gold: 0, elixir: 0 };
         for (const b of state.buildings) {
-          if (BUILDINGS[b.type].production) {
+          const production = BUILDINGS[b.type].production;
+          if (production) {
             const cur = state.buildings.find((x) => x.id === b.id)!;
-            state = collectInto(state, cur).state;
+            const r = collectInto(state, cur);
+            state = r.state;
+            total[production.resource] += r.amount;
           }
         }
         set(state);
+        return total;
       },
 
       trainTroop: (type) => {
@@ -186,6 +196,29 @@ export const useGame = create<Store>()(
         set({
           ...payCost(state, troop.cost),
           army: { ...state.army, [type]: state.army[type] + 1 },
+        });
+        return { ok: true };
+      },
+
+      finishNow: (id) => {
+        const state = get();
+        const b = state.buildings.find((bb) => bb.id === id);
+        if (!b || !b.upgradeDoneAt) return { ok: false, reason: "Nothing to finish" };
+        const cost = gemCostForFinish(b.upgradeDoneAt);
+        if (state.gems < cost) return { ok: false, reason: "Not enough gems" };
+        set({
+          gems: state.gems - cost,
+          buildings: state.buildings.map((bb) =>
+            bb.id === id
+              ? {
+                  ...bb,
+                  level: bb.pendingLevel ?? bb.level,
+                  pendingLevel: undefined,
+                  upgradeDoneAt: undefined,
+                  lastCollect: now(),
+                }
+              : bb,
+          ),
         });
         return { ok: true };
       },
@@ -249,6 +282,11 @@ export const useGame = create<Store>()(
     },
   ),
 );
+
+/** gem price to skip the remainder of a construction: 1 gem per started minute */
+export function gemCostForFinish(doneAt: number): number {
+  return Math.max(1, Math.ceil((doneAt - now()) / 60000));
+}
 
 function collectInto<T extends GameState>(state: T, b: PlacedBuilding): { state: T; amount: number } {
   const def = BUILDINGS[b.type];

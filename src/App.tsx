@@ -4,8 +4,10 @@ import { ResourceBar } from "./components/ResourceBar";
 import { Army, BuildingInfo, HelpReset, Shop } from "./components/Sheets";
 import { BattleView } from "./components/BattleView";
 import type { EnemyBase } from "./game/battle";
+import { TROOP_ORDER } from "./game/buildings";
+import { sound } from "./game/sfx";
 import { useGame } from "./game/store";
-import { townHallLevel } from "./game/logic";
+import { formatNumber, townHallLevel } from "./game/logic";
 import { useGameLoop, useUi } from "./ui";
 
 type Sheet = "shop" | "army" | "settings" | null;
@@ -19,13 +21,26 @@ export default function App() {
   const toast = useUi((s) => s.toast);
 
   const buildings = useGame((s) => s.buildings);
+  const army = useGame((s) => s.army);
   const collectAll = useGame((s) => s.collectAll);
 
   const [sheet, setSheet] = useState<Sheet>(null);
   const [base, setBase] = useState<EnemyBase | null>(null);
   const [finding, setFinding] = useState(false);
 
+  // background music follows the current scene
+  useEffect(() => {
+    sound.music(mode === "battle" ? "battle" : "village");
+  }, [mode]);
+
   const findMatch = async () => {
+    if (TROOP_ORDER.every((t) => army[t] <= 0)) {
+      sound.play("error");
+      useUi.getState().showToast("兵士がいない！Armyで訓練しよう");
+      setSheet("army");
+      return;
+    }
+    sound.play("tap");
     setFinding(true);
     const th = townHallLevel(buildings);
     const seed = Math.floor(Math.random() * 1_000_000_000);
@@ -39,6 +54,19 @@ export default function App() {
     } finally {
       setFinding(false);
     }
+  };
+
+  const onCollectAll = () => {
+    const got = collectAll();
+    const parts: string[] = [];
+    if (got.gold >= 1) parts.push(`+${formatNumber(got.gold)} 🪙`);
+    if (got.elixir >= 1) parts.push(`+${formatNumber(got.elixir)} 🧪`);
+    if (parts.length === 0) {
+      useUi.getState().showToast("Nothing to collect yet");
+      return;
+    }
+    sound.play(got.gold >= got.elixir ? "coin" : "elixir");
+    useUi.getState().showToast(parts.join("  "));
   };
 
   if (mode === "battle" && base) {
@@ -61,15 +89,15 @@ export default function App() {
       <Board />
 
       <div className="actionbar">
-        <button className="action-btn shop" onClick={() => setSheet("shop")}>
+        <button className="action-btn shop" onClick={() => { sound.play("tap"); setSheet("shop"); }}>
           <span className="ai">🛠️</span>
           Build
         </button>
-        <button className="action-btn collect" onClick={collectAll}>
+        <button className="action-btn collect" onClick={onCollectAll}>
           <span className="ai">💰</span>
           Collect
         </button>
-        <button className="action-btn army" onClick={() => setSheet("army")}>
+        <button className="action-btn army" onClick={() => { sound.play("tap"); setSheet("army"); }}>
           <span className="ai">⚔️</span>
           Army
         </button>
