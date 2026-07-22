@@ -18,12 +18,14 @@ CREATE TABLE IF NOT EXISTS squads (
   updated_at INTEGER NOT NULL
 );
 
--- A server-issued, single-use ticket for one specific /api/opponent match: it pins the
--- opponent squad, opponent rating, and combat rng seed at the moment they were shown to the
--- player, so /api/battle/result can resolve the fight from data the client never controls.
+-- A server-issued, single-use ticket for one specific /api/opponent match: it pins both
+-- squads (so a player can't see the opponent and then re-sync a counter-pick), the opponent
+-- rating, and the combat rng seed at the moment they were shown to the player, so
+-- /api/battle/result can resolve the fight entirely from data the client never controls.
 CREATE TABLE IF NOT EXISTS matches (
   id TEXT PRIMARY KEY,
   player_id TEXT NOT NULL REFERENCES players(id),
+  player_monsters TEXT NOT NULL,
   opponent_id TEXT NOT NULL,
   opponent_rating INTEGER NOT NULL,
   opponent_monsters TEXT NOT NULL,
@@ -36,3 +38,6 @@ CREATE TABLE IF NOT EXISTS matches (
 CREATE INDEX IF NOT EXISTS idx_players_rating ON players(rating DESC);
 CREATE INDEX IF NOT EXISTS idx_squads_power ON squads(power DESC);
 CREATE INDEX IF NOT EXISTS idx_matches_player ON matches(player_id);
+-- At most one unresolved ticket per player at a time — makes "mint several tickets in parallel,
+-- submit only the winners" impossible: a second concurrent mint attempt hits this constraint.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_matches_one_pending_per_player ON matches(player_id) WHERE used_at IS NULL;

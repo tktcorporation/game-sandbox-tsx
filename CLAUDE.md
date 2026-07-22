@@ -110,14 +110,16 @@ A Worker backed by D1 (binding `DB`, schema in `worker/schema.sql`). Routes:
   a query param) — closest-rating real squad, or a synthetic AI squad if none exists yet
   (`generateAiSquad(rating, seed)`). First force-resolves any still-pending match ticket of the
   caller's *as a loss* (see gotcha below), then mints a fresh single-use **match ticket** in the
-  `matches` table pinning that exact opponent snapshot + a server-chosen `battleSeed`, and returns
-  `{..., matchId, battleSeed}`
+  `matches` table pinning that exact opponent snapshot + the caller's *own current squad snapshot*
+  + a server-chosen `battleSeed`, and returns `{..., matchId, battleSeed, mySquad}`. A partial
+  unique index (`matches(player_id) WHERE used_at IS NULL`) enforces at most one live ticket per
+  player, so two concurrent calls can't both mint a ticket to cherry-pick from
 - `POST /api/battle/result` — auth'd; client sends only `{matchId}`. The Worker atomically claims
   the ticket (`UPDATE ... WHERE used_at IS NULL AND expires_at > now`, rejecting anything already
-  used/expired/unknown), then re-simulates the battle itself from the ticket's pinned opponent +
-  seed and the caller's own last-synced squad, and derives the Elo update from that — a client can't
-  claim a fabricated win, pick its own opponent/seed to brute-force a favorable outcome, or replay a
-  match twice
+  used/expired/unknown), then re-simulates the battle itself from the ticket's pinned *both* squads
+  + seed — never re-reading `squads` at submission time — and derives the Elo update from that. A
+  client can't claim a fabricated win, pick its own opponent/seed to brute-force a favorable
+  outcome, replay a match twice, or re-sync a counter-pick after seeing the opponent
 - `GET /api/leaderboard` — top players by rating
 
 Everything else falls through to the `ASSETS` binding (SPA fallback configured in `wrangler.jsonc`).
@@ -141,6 +143,18 @@ Everything else falls through to the `ASSETS` binding (SPA fallback configured i
   that ticket and the caller's *last-synced* squad. If you touch any of these endpoints, keep it
   that way — don't reintroduce a field that lets the client assert its own stats, outcome,
   opponent, seed, or rating.
+- **A match ticket pins both squads, not just the opponent's.** Early match-ticket drafts still
+  re-read the caller's *current* `squads` row at `/api/battle/result` time — a client could call
+  `/api/opponent`, see the opponent's composition, then call `/api/player/sync` again with a squad
+  chosen to counter it before submitting the result. `player_monsters` is now captured into the
+  `matches` row at mint time and always replayed from there, so nothing synced after seeing the
+  opponent can affect an already-minted ticket.
+- **Concurrent-safe by construction, not by convention.** The abandoned-ticket forfeit loop and the
+  match claim in `/api/battle/result` both use a conditional `UPDATE ... WHERE used_at IS NULL`
+  and only act when `meta.changes` shows the row actually changed — never read-then-write without
+  that guard, or two racing requests can double-apply a rating change. Minting is guarded the same
+  way at the database level: a partial unique index rejects a second concurrent ticket for a player
+  who already has one pending, and `/api/opponent` catches that failure and returns 409.
 - **Peeking at a match before deciding whether to submit it must not be free.** Because
   `simulateBattle` is deterministic and the opponent + seed are fully disclosed to the client the
   moment `/api/opponent` mints a ticket, a client could otherwise run the battle locally, and only
@@ -148,6 +162,15 @@ Everything else falls through to the `ASSETS` binding (SPA fallback configured i
   nothing on its own. `/api/opponent` closes this by resolving any of the caller's still-pending
   tickets *as a loss* before minting a new one, so declining to submit an unfavorable match costs
   exactly as much as losing it for real.
+- **Known gap: `/api/player/sync` doesn't verify a species was actually discovered, or that
+  `count` reflects a real colony.** The server validates `speciesId` against the real species table
+  and recomputes stats from it (so a bad id can't crash another player and stats can't be sent
+  directly), but it has no independent record of which species a given player has actually evolved
+  into or how many they own — that lives only in the client's `localStorage`, by design (see below).
+  A client can currently claim any discovered-looking species with an inflated `count` for a
+  stronger-than-earned squad. Closing this fully would mean making the server authoritative for
+  colonies/dex too, which cuts against the "idle progress lives in the browser" design pillar — this
+  is an open decision, not yet resolved one way or the other.
 - **`useGameLoop`'s first tick must wait for persist hydration.** `tick()` reads `state.lastTick`
   and writes straight back to the store; if it ran before `zustand/persist` finished loading
   `localStorage`, it would stamp the fresh default state over real saved progress before hydration

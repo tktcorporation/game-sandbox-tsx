@@ -153,6 +153,7 @@ export default {
         .bind(playerId)
         .first<{ rating: number; monsters: string | null }>();
       if (!me || !me.monsters) return json({ error: "sync a squad before battling" }, { status: 400 });
+      const mySquad = JSON.parse(me.monsters) as SquadMonster[];
 
       const now = Date.now();
       let myRating = me.rating;
@@ -211,22 +212,26 @@ export default {
         };
       }
 
-      // Mint a single-use match ticket pinning this exact opponent + a server-chosen combat
-      // seed, so the client can never pick its own opponent/seed combination to farm a win.
+      // Mint a single-use match ticket pinning both squads + a server-chosen combat seed, so the
+      // client can never pick its own opponent/seed, and can't counter-pick its own squad after
+      // seeing the opponent by re-syncing before submitting the result.
       const matchId = crypto.randomUUID();
       const battleSeed = Math.floor(Math.random() * 1_000_000_000);
       await env.DB.prepare("DELETE FROM matches WHERE player_id = ? AND expires_at < ?").bind(playerId, now).run();
-      await env.DB.prepare(
-        `INSERT INTO matches (id, player_id, opponent_id, opponent_rating, opponent_monsters, battle_seed, created_at, expires_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-        .bind(matchId, playerId, opponent.id, opponent.rating, JSON.stringify(opponent.monsters), battleSeed, now, now + MATCH_TTL_MS)
-        .run();
+      try {
+        await env.DB.prepare(
+          `INSERT INTO matches (id, player_id, player_monsters, opponent_id, opponent_rating, opponent_monsters, battle_seed, created_at, expires_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+          .bind(matchId, playerId, JSON.stringify(mySquad), opponent.id, opponent.rating, JSON.stringify(opponent.monsters), battleSeed, now, now + MATCH_TTL_MS)
+          .run();
+      } catch {
+        // The partial unique index on (player_id) WHERE used_at IS NULL rejects a second
+        // concurrent mint for the same player — this can only happen if another /api/opponent
+        // request for this player raced this one and won.
+        return json({ error: "a match is already being set up — try again" }, { status: 409 });
+      }
 
-      // Echo back the exact squad snapshot this ticket is pinned against (not the caller's
-      // live, possibly-since-changed colonies) so the client's local instant simulation always
-      // matches what /api/battle/result will replay server-side.
-      const mySquad = JSON.parse(me.monsters) as SquadMonster[];
       return json({ ...opponent, matchId, battleSeed, mySquad });
     }
 
@@ -251,29 +256,23 @@ export default {
         return json({ error: "invalid or expired match" }, { status: 400 });
       }
       const match = await env.DB.prepare(
-        "SELECT opponent_rating, opponent_monsters, battle_seed FROM matches WHERE id = ?",
+        "SELECT player_monsters, opponent_rating, opponent_monsters, battle_seed FROM matches WHERE id = ?",
       )
         .bind(matchId)
-        .first<{ opponent_rating: number; opponent_monsters: string; battle_seed: number }>();
+        .first<{ player_monsters: string; opponent_rating: number; opponent_monsters: string; battle_seed: number }>();
       // match is guaranteed non-null: the UPDATE above only succeeds against an existing row.
+      const mySquad = JSON.parse(match!.player_monsters) as SquadMonster[];
       const opponentRating = match!.opponent_rating;
       const opponentSquad = JSON.parse(match!.opponent_monsters) as SquadMonster[];
       const battleSeed = match!.battle_seed;
 
-      // The battle outcome and the rating delta are always derived server-side — from the
-      // caller's own last-synced squad and the pinned match ticket, never from anything the
-      // client claims — so a client can't fabricate a win or pick a favorable opponent/seed.
-      const me = await env.DB.prepare(
-        `SELECT p.rating as rating, s.monsters as monsters FROM players p
-         LEFT JOIN squads s ON s.player_id = p.id WHERE p.id = ?`,
-      )
+      // Both squads and the seed replay exactly what the ticket pinned at mint time — not
+      // anything re-read from `squads` now — so a client can't see the opponent and then
+      // re-sync a counter-pick before submitting the result.
+      const me = await env.DB.prepare("SELECT rating FROM players WHERE id = ?")
         .bind(playerId)
-        .first<{ rating: number; monsters: string | null }>();
-      if (!me || !me.monsters) {
-        return json({ error: "sync a squad before battling" }, { status: 400 });
-      }
-      const myRating = me.rating;
-      const mySquad = JSON.parse(me.monsters) as SquadMonster[];
+        .first<{ rating: number }>();
+      const myRating = me?.rating ?? 1000;
 
       const result = simulateBattle(mySquad, opponentSquad, battleSeed);
       const newRating = Math.max(0, myRating + eloDelta(myRating, opponentRating, result.won ? 1 : 0));
