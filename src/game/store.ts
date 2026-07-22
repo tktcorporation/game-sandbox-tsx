@@ -60,7 +60,13 @@ async function api(state: GameState, path: string, init?: RequestInit) {
     headers["x-player-token"] = state.playerToken;
   }
   const res = await fetch(path, { ...init, headers });
-  if (!res.ok) throw new Error(`${path} failed: ${res.status}`);
+  if (!res.ok) {
+    // Attach the status so callers can tell "server reached us and rejected this" (a real
+    // response, e.g. an expired match) apart from a genuine network failure (no response at all).
+    const err = new Error(`${path} failed: ${res.status}`) as Error & { status?: number };
+    err.status = res.status;
+    throw err;
+  }
   return res.json();
 }
 
@@ -158,7 +164,7 @@ export const useGame = create<Store>()(
         // records as a loss.
         const result = simulateBattle(opponent.mySquad, opponent.monsters, opponent.battleSeed);
         const reward = result.won ? 40 + Math.round(opponent.rating / 40) : 10;
-        const finalResult: BattleResult = { ...result, reward };
+        let finalResult: BattleResult = { ...result, reward };
         set({ shineStones: state.shineStones + reward, lastBattleResult: finalResult });
         try {
           // The server re-simulates the battle itself from the matchId's pinned opponent/seed
@@ -168,8 +174,15 @@ export const useGame = create<Store>()(
             body: JSON.stringify({ matchId: opponent.matchId }),
           });
           if (typeof data.rating === "number") set({ rating: data.rating });
-        } catch {
-          // offline / no backend reachable — local reward still applies
+        } catch (err) {
+          if ((err as { status?: number } | undefined)?.status !== undefined) {
+            // The server was reached and explicitly rejected this match (expired/already used) —
+            // it never counted, so claw back the reward this attempt would otherwise have kept.
+            finalResult = { ...finalResult, reward: 0 };
+            set((s) => ({ shineStones: s.shineStones - reward, lastBattleResult: finalResult }));
+          }
+          // else: genuinely offline/unreachable — keep the local reward so idle play still
+          // progresses without a backend.
         }
         return finalResult;
       },
