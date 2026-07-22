@@ -41,7 +41,9 @@ function def(
     baseStats: stats(tier, boost),
     evolveThreshold: EVOLVE_THRESHOLD[tier],
     maturitySeconds: MATURITY_SECONDS[tier],
-    baseCap: BASE_CAP[tier] * (boost ? 0.7 : 1),
+    // 0.7 here used to round below EVOLVE_THRESHOLD[2] (70*0.7 = 49 < 50) for boosted tier-2
+    // species, stranding them just short of their own evolution threshold at nestLevel 0.
+    baseCap: BASE_CAP[tier] * (boost ? 0.85 : 1),
     growthRate: GROWTH_RATE[tier] * (boost ? 0.8 : 1),
     evolveBatch: EVOLVE_BATCH[tier],
     evolvesTo,
