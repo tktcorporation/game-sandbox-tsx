@@ -7,6 +7,16 @@
     "binding": "ASSETS",
     "not_found_handling": "single-page-application"
   },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "game-sandbox-tsx-db",
+      // Placeholder — replace with the id printed by `wrangler d1 create game-sandbox-tsx-db`
+      // before deploying. Local `npm run dev` / `wrangler dev` work fine with this placeholder
+      // since local D1 is an on-disk SQLite emulation keyed by binding name.
+      "database_id": "00000000-0000-0000-0000-000000000000"
+    }
+  ],
   "observability": {
     "enabled": true
   }

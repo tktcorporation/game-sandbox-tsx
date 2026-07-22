@@ -4,7 +4,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-**Clash of Sandboxes** — a Clash of Clans–style base-building & raiding game. React 19 + TypeScript SPA, with a single Cloudflare Worker that both serves the static assets *and* exposes `/api/raid` to procedurally generate enemy bases. No database; player state lives entirely in the browser via `localStorage`.
+**Monster Nest** — a breeding/collection idle game with async multiplayer battles. Small monsters
+multiply in your nest, mature, and once a species+stage colony crosses its population threshold it
+rolls a weighted-random evolution into a new species — a branching dex to discover over many idle
+sessions. Trained squads (up to 5 monsters) fight other players asynchronously: you battle a
+snapshot of their squad (or a synthetic AI opponent if none is available), Elo-style rating updates
+server-side, and a leaderboard ranks everyone.
+
+React 19 + TypeScript SPA, with a single Cloudflare Worker that serves the static assets *and*
+exposes the multiplayer API, backed by Cloudflare D1 (SQLite). Per-player idle progress (colonies,
+dex, squad) lives entirely in the browser via `localStorage`; only the squad snapshot, rating, and
+leaderboard are server-side.
 
 ## Commands
 
@@ -16,33 +26,112 @@ npm run deploy   # build + wrangler deploy
 npm run cf-typegen   # regenerate Worker types from wrangler.jsonc
 ```
 
-There is **no test runner and no linter** configured. The only verification gate is `npm run build` (the `tsc -b` step type-checks `src` via `tsconfig.app.json` and the Worker via `tsconfig.worker.json`). Always run it after changes.
+There is **no test runner and no linter** configured. The only verification gate is `npm run build`
+(the `tsc -b` step type-checks `src` via `tsconfig.app.json` and the Worker via
+`tsconfig.worker.json`, and the Worker project transitively pulls in and type-checks whatever it
+imports from `src/game`). Always run it after changes.
+
+### D1 setup (one-time, needed before a real deploy)
+
+`wrangler.jsonc` ships with a placeholder `database_id` — local dev works with it as-is (local D1 is
+an on-disk SQLite emulation keyed by binding name, no Cloudflare account needed), but a real deploy
+needs a provisioned database:
+
+```bash
+npx wrangler d1 create game-sandbox-tsx-db        # paste the returned id into wrangler.jsonc
+npx wrangler d1 execute game-sandbox-tsx-db --local  --file=worker/schema.sql   # local dev
+npx wrangler d1 execute game-sandbox-tsx-db --remote --file=worker/schema.sql   # before deploy
+```
 
 ## Architecture
 
-The codebase splits into three independent layers; understanding their boundaries is the key to working here.
+The codebase splits into three independent layers; understanding their boundaries is the key to
+working here.
 
 ### 1. Pure game logic (`src/game/`) — no React
 
-- `types.ts` — the data model. `BuildingDef` describes a building *kind* (cost/buildTime/production/storage/defense curves as functions of level); `PlacedBuilding` is an instance on the grid. `GameState` is the persisted shape.
-- `buildings.ts` — `BUILDINGS` and `TROOPS` lookup tables plus all balance curves and `GRID_SIZE`. **This is the single source of truth for game balance.** Editing a curve here changes costs/HP/production everywhere.
-- `logic.ts` — pure helpers (capacity, placement collision, accrued production, town-hall gating, formatting). No state mutation; takes state in, returns values.
-- `store.ts` — the Zustand store (`useGame`), wrapped in `persist` (key `clash-of-sandboxes-v1`). All gameplay mutations (place/move/upgrade/collect/train/applyBattleResult) live here. `partialize` controls exactly which fields persist — **if you add a field to `GameState` that must survive reload, add it to `partialize` too.**
-- `battle.ts` — the real-time battle engine as a plain `Battle` class (no React). `step(dt)` advances the sim; `stats()`/`result()` derive stars, loot, and trophies.
+- `types.ts` — the data model. `SpeciesDef` describes a monster *species* (base stats, growth/cap/
+  threshold curves, weighted `evolvesTo` options); `Colony` is a population bucket the player
+  actually owns (`speciesId` + `count` + `growth` maturity + `updatedAt`). `GameState` is the
+  persisted shape.
+- `species.ts` — `SPECIES` (the full evolution tree, ~27 species across 4 tiers) and the pacing
+  curves (`EVOLVE_THRESHOLD`, `MATURITY_SECONDS`, `BASE_CAP`, `GROWTH_RATE`, `EVOLVE_BATCH`),
+  `typeMultiplier` (the water/fire/earth triangle + light), `capOf`, `swarmBonus`,
+  `nestUpgradeCost`. **This is the single source of truth for game balance.** Editing a curve here
+  changes growth speed, evolution pacing, and combat stats everywhere. `GROWTH_RATE` is a
+  continuous-compounding per-second rate — small changes have an outsized effect (see the comment
+  above it for the doubling-time math); don't tune it by feel without recomputing that.
+- `logic.ts` — `advanceColonies`, the idle simulation core. Given a colony list and an elapsed
+  `dtSeconds`, it grows each population toward its cap, advances maturity, and cascades weighted
+  evolutions once a colony is mature and past its threshold — run in bounded fixed-size steps so a
+  1s UI tick and a multi-hour offline gap use the exact same code path (long gaps just get coarser
+  per-step resolution, capped at `MAX_STEPS` so cost stays bounded). Population inflow from an
+  evolution event is clamped to the target's cap same as organic growth — never let a species
+  exceed `capOf(...)` regardless of source. Also: `squadMonsterStats` (base stats + capped swarm
+  bonus), `dexProgress`, `formatNumber`/`formatDuration`.
+- `store.ts` — the Zustand store (`useGame`), wrapped in `persist` (key `clash-of-sandboxes-v1`).
+  `partialize` controls exactly which fields persist — **if you add a field to `GameState` that
+  must survive reload, add it to `partialize` too.** `tick()` calls `advanceColonies` and writes the
+  result straight back to the store, so it must never run before the persisted save has finished
+  loading (see the `useGameLoop` gotcha below). Multiplayer actions (`registerPlayer`,
+  `ensurePlayer`, `syncSquad`, `fetchOpponent`, `resolveBattle`, `fetchLeaderboard`) call the Worker
+  API with `x-player-id`/`x-player-token` headers; `ensurePlayer()` lazily registers an anonymous
+  player+token on first use so nothing requires an explicit sign-up step.
+- `battle.ts` — `simulateBattle`, a seeded deterministic lane battle (front fighters from each squad
+  trade blows until one falls, next steps up) producing a `BattleLogEntry[]` for playback plus a
+  win/loss verdict. `squadPower` is the same power formula the Worker uses server-side for the
+  leaderboard — keep them in sync if you change it (see gotcha below).
 
 ### 2. React UI (`src/components/`, `src/App.tsx`, `src/ui.ts`)
 
-- `ui.ts` holds **ephemeral** UI state (`useUi`: mode home/battle, selection, toasts) — deliberately *not* persisted, separate store from `useGame`. It also exports `useGameLoop`, which ticks `useGame.tick()` once per second to finalize construction timers and refresh production counters (and re-ticks on tab `visibilitychange`).
-- The game has no real-time server tick. Resource production is computed lazily: `accruedFor` calculates how much a building produced since its `lastCollect` timestamp whenever you collect or open the store. The 1s loop only drives UI re-renders and finishes timed constructions.
-- `App.tsx` is the root switch between **home** (village) and **battle** views. It calls `GET /api/raid?th=<level>&seed=<n>` to fetch an enemy base, then renders `BattleView`, which instantiates a `Battle` and drives it with `requestAnimationFrame` onto a `<canvas>`.
+- `ui.ts` holds **ephemeral** UI state (`useUi`: mode home/battle, active sheet, toast queue) —
+  deliberately *not* persisted, separate store from `useGame`. It also exports `useGameLoop`, which
+  ticks `useGame.tick()` once per second (and on tab `visibilitychange`) and turns any evolution
+  events the tick returns into grouped toasts.
+- The game has no real-time server tick for idle progress — everything is lazy/closed-form via
+  `advanceColonies`, called from `tick()`.
+- `App.tsx` is the root switch between **home** (nest/colony view) and **battle** views, plus the
+  sheet overlays (`Dex`, `SquadBuilder`, `Leaderboard`, `Settings` from `Sheets.tsx`).
+- `BattleView.tsx` fetches an opponent, lets the player start the fight, then reveals
+  `simulateBattle`'s log line-by-line before showing the win/loss result and reward.
 
 ### 3. Cloudflare Worker (`worker/index.ts`)
 
-A stateless Worker. `fetch` routes `/api/raid` and `/api/health`; everything else falls through to the `ASSETS` binding (SPA fallback configured in `wrangler.jsonc`). `/api/raid` uses a seeded `mulberry32` RNG so a given `seed` deterministically reproduces the same base.
+A Worker backed by D1 (binding `DB`, schema in `worker/schema.sql`). Routes:
+
+- `GET /api/health`
+- `POST /api/player/register` — creates an anonymous player (`crypto.randomUUID()` id + token)
+- `POST /api/player/sync` — auth'd; upserts the caller's squad snapshot + computed power
+- `GET /api/opponent` — closest-rating real squad, or a synthetic AI squad if none exists yet
+- `POST /api/battle/result` — auth'd; Elo-style rating update
+- `GET /api/leaderboard` — top players by rating
+
+Everything else falls through to the `ASSETS` binding (SPA fallback configured in `wrangler.jsonc`).
 
 ## Cross-cutting gotchas
 
-- **The enemy-base type is duplicated.** `worker/index.ts` defines its own `EnemyBuilding`/`EnemyBase` (using plain `string` building types) and `src/game/battle.ts` defines matching ones. They are coupled by the JSON shape over the wire — change one side and you must change the other. The battle engine looks up the worker's `type` strings against `BUILDINGS`, so the Worker must only emit types present there.
-- **Town Hall gates everything.** Building counts (`limitByTh`) and upgrade levels are capped by the current Town Hall level; the Town Hall is the only building not gated by itself. Check `townHallLevel()` / `limitForType()` when touching progression.
-- **Walls don't count** toward destruction percentage in battle scoring (matching Clash of Clans) — see `Battle.stats()` and `totalBuildings`.
-- Resource collection is clamped to storage `capacityOf(...)`; upgrading a producer first collects pending production so it isn't lost.
+- **The Worker imports directly from `src/game/`** (`species.ts`, `logic.ts`, `types.ts`) rather
+  than duplicating species data — `tsconfig.worker.json` only lists `worker` in `include`, but
+  TypeScript still follows and type-checks imports outside that glob, and Vite bundles by import
+  graph, not by tsconfig project boundaries, so this works. The wire coupling that *does* exist is
+  the `SquadMonster` JSON shape and the `squadPower` formula, which is hand-duplicated in
+  `worker/index.ts` (kept deliberately simple/inline rather than imported, since the Worker needs
+  its own copy to score squads it never runs `simulateBattle` on) — change one side and check the
+  other.
+- **`useGameLoop`'s first tick must wait for persist hydration.** `tick()` reads `state.lastTick`
+  and writes straight back to the store; if it ran before `zustand/persist` finished loading
+  `localStorage`, it would stamp the fresh default state over real saved progress before hydration
+  got a chance to restore it. `useGameLoop` guards this with
+  `useGame.persist.hasHydrated()` / `onFinishHydration`. Don't add another place that calls
+  `tick()` (or otherwise reads/writes `lastTick`) without the same guard.
+- **Evolution inflow must respect the population cap.** When a colony cascades into a new species,
+  the target bucket's count is clamped with `Math.min(capOf(target, nestLevel), ...)` in
+  `advanceColonies` — without that clamp a source colony that cascades many times in one offline
+  catch-up can push its target far past its intended cap.
+- **Cap must stay above threshold.** Each tier's `BASE_CAP` in `species.ts` is set comfortably above
+  that tier's own `EVOLVE_THRESHOLD` so a colony can actually reach the threshold at `nestLevel` 0 —
+  nest upgrades (`upgradeNest`, paid in `shineStones`) add headroom, they aren't required to
+  progress. If you rebalance one, check the other.
+- **No real login** — `ensurePlayer()` mints an anonymous id+token pair stored in `localStorage`
+  alongside the rest of `GameState`; there's no password/email, so losing localStorage loses the
+  account. This is an intentional MVP simplification, not an oversight.

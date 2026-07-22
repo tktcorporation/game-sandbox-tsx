@@ -1,56 +1,23 @@
-import { useEffect, useState } from "react";
-import { Board } from "./components/Board";
-import { ResourceBar } from "./components/ResourceBar";
-import { Army, BuildingInfo, HelpReset, Shop } from "./components/Sheets";
+import { useEffect } from "react";
 import { BattleView } from "./components/BattleView";
-import type { EnemyBase } from "./game/battle";
-import { useGame } from "./game/store";
-import { townHallLevel } from "./game/logic";
+import { ColonyView } from "./components/ColonyView";
+import { ResourceBar } from "./components/ResourceBar";
+import { Dex, Leaderboard, Settings, SquadBuilder } from "./components/Sheets";
 import { useGameLoop, useUi } from "./ui";
-
-type Sheet = "shop" | "army" | "settings" | null;
 
 export default function App() {
   useGameLoop();
   const mode = useUi((s) => s.mode);
   const setMode = useUi((s) => s.setMode);
-  const selectedId = useUi((s) => s.selectedId);
-  const select = useUi((s) => s.select);
-  const toast = useUi((s) => s.toast);
+  const sheet = useUi((s) => s.sheet);
+  const setSheet = useUi((s) => s.setSheet);
+  const toasts = useUi((s) => s.toasts);
+  const dismissToast = useUi((s) => s.dismissToast);
 
-  const buildings = useGame((s) => s.buildings);
-  const collectAll = useGame((s) => s.collectAll);
-
-  const [sheet, setSheet] = useState<Sheet>(null);
-  const [base, setBase] = useState<EnemyBase | null>(null);
-  const [finding, setFinding] = useState(false);
-
-  const findMatch = async () => {
-    setFinding(true);
-    const th = townHallLevel(buildings);
-    const seed = Math.floor(Math.random() * 1_000_000_000);
-    try {
-      const res = await fetch(`/api/raid?th=${th}&seed=${seed}`);
-      const data = (await res.json()) as EnemyBase;
-      setBase(data);
-      setMode("battle");
-    } catch {
-      useUi.getState().showToast("Could not find a match — try again");
-    } finally {
-      setFinding(false);
-    }
-  };
-
-  if (mode === "battle" && base) {
+  if (mode === "battle") {
     return (
       <div className="app">
-        <BattleView
-          base={base}
-          onExit={() => {
-            setMode("home");
-            setBase(null);
-          }}
-        />
+        <BattleView onExit={() => setMode("home")} />
       </div>
     );
   }
@@ -58,67 +25,48 @@ export default function App() {
   return (
     <div className="app">
       <ResourceBar />
-      <Board />
+      <ColonyView />
 
       <div className="actionbar">
-        <button className="action-btn shop" onClick={() => setSheet("shop")}>
-          <span className="ai">🛠️</span>
-          Build
+        <button className="action-btn" onClick={() => setSheet("dex")}>
+          <span className="ai">📖</span>
+          図鑑
         </button>
-        <button className="action-btn collect" onClick={collectAll}>
-          <span className="ai">💰</span>
-          Collect
-        </button>
-        <button className="action-btn army" onClick={() => setSheet("army")}>
+        <button className="action-btn" onClick={() => setSheet("squad")}>
           <span className="ai">⚔️</span>
-          Army
+          編成
         </button>
-        <button className="action-btn attack" onClick={findMatch} disabled={finding}>
-          <span className="ai">{finding ? "⏳" : "🗡️"}</span>
-          {finding ? "Finding…" : "Attack"}
+        <button className="action-btn attack" onClick={() => setMode("battle")}>
+          <span className="ai">🗡️</span>
+          対戦
+        </button>
+        <button className="action-btn" onClick={() => setSheet("leaderboard")}>
+          <span className="ai">🏆</span>
+          ランク
         </button>
         <button className="action-btn more" style={{ flex: 0.6 }} onClick={() => setSheet("settings")}>
           <span className="ai">⚙️</span>
-          More
         </button>
       </div>
 
-      {sheet === "shop" && <Shop onClose={() => setSheet(null)} />}
-      {sheet === "army" && <Army onClose={() => setSheet(null)} />}
-      {sheet === "settings" && (
-        <SettingsSheet onClose={() => setSheet(null)} />
-      )}
-      {selectedId && <BuildingInfo id={selectedId} onClose={() => select(null)} />}
+      {sheet === "dex" && <Dex onClose={() => setSheet(null)} />}
+      {sheet === "squad" && <SquadBuilder onClose={() => setSheet(null)} />}
+      {sheet === "leaderboard" && <Leaderboard onClose={() => setSheet(null)} />}
+      {sheet === "settings" && <Settings onClose={() => setSheet(null)} />}
 
-      {toast && <ToastView key={toast.id} msg={toast.msg} />}
-    </div>
-  );
-}
-
-function SettingsSheet({ onClose }: { onClose: () => void }) {
-  return (
-    <div className="sheet-backdrop" onClick={onClose}>
-      <div className="sheet" onClick={(e) => e.stopPropagation()}>
-        <h2>
-          ⚙️ More
-          <button onClick={onClose}>✕</button>
-        </h2>
-        <p className="hint">
-          Clash of Sandboxes — a tiny Clash of Clans–style base builder. Built with React + Vite,
-          served from a Cloudflare Worker that also generates the enemy bases you raid.
-        </p>
-        <HelpReset />
+      <div className="toast-stack">
+        {toasts.map((t) => (
+          <ToastView key={t.id} id={t.id} msg={t.msg} onDone={dismissToast} />
+        ))}
       </div>
     </div>
   );
 }
 
-function ToastView({ msg }: { msg: string }) {
-  const clearToast = useUi((s) => s.clearToast);
+function ToastView({ id, msg, onDone }: { id: number; msg: string; onDone: (id: number) => void }) {
   useEffect(() => {
-    const t = setTimeout(clearToast, 1600);
+    const t = setTimeout(() => onDone(id), 3200);
     return () => clearTimeout(t);
-  }, [msg, clearToast]);
-  if (!msg) return null;
+  }, [id, onDone]);
   return <div className="toast">{msg}</div>;
 }

@@ -1,113 +1,119 @@
-import { BUILDINGS, GRID_H, GRID_W, TROOPS } from "./buildings";
-import type {
-  BuildingType,
-  Cost,
-  GameState,
-  PlacedBuilding,
-  Resource,
-  TroopType,
-} from "./types";
+import { SPECIES, SPECIES_LIST, capOf, swarmBonus } from "./species";
+import type { Colony, EvolutionEvent, SpeciesId, SquadMonster } from "./types";
 
 export const now = () => Date.now();
 
-export function townHallLevel(buildings: PlacedBuilding[]): number {
-  const th = buildings.find((b) => b.type === "townhall");
-  return th ? th.level : 1;
+/** Coarse step size for the offline/live catch-up simulation, in seconds. */
+const STEP_SECONDS = 30;
+/** Bounds simulation cost for very long offline gaps (~16.7h at full resolution). */
+const MAX_STEPS = 2000;
+/** Safety bound on same-step evolution cascades per colony. */
+const MAX_CASCADES_PER_STEP = 5;
+
+function pickWeighted(options: { target: SpeciesId; weight: number }[]): SpeciesId {
+  const total = options.reduce((sum, o) => sum + o.weight, 0);
+  let r = Math.random() * total;
+  for (const o of options) {
+    r -= o.weight;
+    if (r <= 0) return o.target;
+  }
+  return options[options.length - 1].target;
 }
 
-/** total storage capacity for a resource (town hall provides a base too) */
-export function capacityOf(buildings: PlacedBuilding[], resource: Resource): number {
-  const base = 1000;
-  return buildings.reduce((sum, b) => {
-    const def = BUILDINGS[b.type];
-    if (def.storage && def.storage.resource === resource && !b.upgradeDoneAt) {
-      return sum + def.storage.capacity(b.level);
+/**
+ * Advances every colony by `dtSeconds`: population grows toward its cap, individuals mature,
+ * and mature colonies past their evolution threshold convert a batch into a weighted-random
+ * next species. Runs in fixed-size steps so both a 1s UI tick and a multi-hour offline gap
+ * are simulated the same way (long gaps just get coarser per-step resolution, capped at
+ * MAX_STEPS so the cost stays bounded).
+ */
+export function advanceColonies(
+  colonies: Colony[],
+  dex: SpeciesId[],
+  nestLevel: number,
+  dtSeconds: number,
+): { colonies: Colony[]; dex: SpeciesId[]; events: EvolutionEvent[] } {
+  if (dtSeconds <= 0) {
+    return { colonies, dex, events: [] };
+  }
+
+  const buckets = new Map<SpeciesId, { count: number; growth: number }>(
+    colonies.map((c) => [c.speciesId, { count: c.count, growth: c.growth }]),
+  );
+  const dexSet = new Set(dex);
+  const events: EvolutionEvent[] = [];
+
+  const steps = Math.min(MAX_STEPS, Math.max(1, Math.ceil(dtSeconds / STEP_SECONDS)));
+  const stepDt = dtSeconds / steps;
+
+  for (let i = 0; i < steps; i++) {
+    for (const [speciesId, bucket] of buckets) {
+      const def = SPECIES[speciesId];
+      const cap = capOf(speciesId, nestLevel);
+      if (bucket.count <= 0) {
+        bucket.count = 1; // a discovered species never fully dies out
+      } else if (bucket.count < cap) {
+        bucket.count = Math.min(cap, bucket.count * Math.exp(def.growthRate * stepDt));
+      }
+      if (Number.isFinite(def.maturitySeconds)) {
+        bucket.growth = Math.min(1, bucket.growth + stepDt / def.maturitySeconds);
+      }
     }
-    return sum;
-  }, base);
+
+    for (const [speciesId, bucket] of Array.from(buckets.entries())) {
+      const def = SPECIES[speciesId];
+      if (def.evolvesTo.length === 0) continue;
+      let cascades = 0;
+      while (
+        bucket.growth >= 1 &&
+        bucket.count >= def.evolveThreshold &&
+        cascades < MAX_CASCADES_PER_STEP
+      ) {
+        const batch = Math.min(def.evolveBatch, bucket.count - 1);
+        if (batch <= 0) break;
+        cascades += 1;
+        const target = pickWeighted(def.evolvesTo);
+        bucket.count -= batch;
+        const targetBucket = buckets.get(target) ?? { count: 0, growth: 0 };
+        targetBucket.count = Math.min(capOf(target, nestLevel), targetBucket.count + batch);
+        buckets.set(target, targetBucket);
+        dexSet.add(target);
+        events.push({ from: speciesId, to: target, amount: Math.round(batch), at: 0 });
+      }
+    }
+  }
+
+  const outColonies: Colony[] = Array.from(buckets.entries())
+    .map(([speciesId, b]) => ({
+      speciesId,
+      count: Math.round(b.count * 100) / 100,
+      growth: b.growth,
+      updatedAt: 0,
+    }))
+    .filter((c) => c.count > 0);
+
+  return { colonies: outColonies, dex: Array.from(dexSet), events };
 }
 
-/** total army housing space and how much is occupied by the trained army */
-export function armyHousing(state: GameState): { used: number; total: number } {
-  const total = state.buildings.reduce((sum, b) => {
-    const def = BUILDINGS[b.type];
-    if (def.housing && !b.upgradeDoneAt) return sum + def.housing(b.level);
-    return sum;
-  }, 0);
-  const used = (Object.keys(state.army) as TroopType[]).reduce(
-    (sum, t) => sum + state.army[t] * TROOPS[t].housing,
-    0,
-  );
-  return { used, total };
+export function colonyOf(colonies: Colony[], speciesId: SpeciesId): Colony | undefined {
+  return colonies.find((c) => c.speciesId === speciesId);
 }
 
-export function countOfType(buildings: PlacedBuilding[], type: BuildingType): number {
-  return buildings.filter((b) => b.type === type).length;
-}
-
-/** how many of a building type the player is allowed at the current town hall level */
-export function limitForType(buildings: PlacedBuilding[], type: BuildingType): number {
-  const th = townHallLevel(buildings);
-  const def = BUILDINGS[type];
-  return def.limitByTh[Math.min(th, def.limitByTh.length - 1)] ?? 0;
-}
-
-export function canAfford(state: GameState, cost: Cost): boolean {
-  return (
-    state.gold >= (cost.gold ?? 0) &&
-    state.elixir >= (cost.elixir ?? 0) &&
-    state.gems >= 0
-  );
-}
-
-export function payCost<T extends GameState>(state: T, cost: Cost): T {
+/** Combat stats for a species as fielded in a squad: base stats plus a capped swarm bonus. */
+export function squadMonsterStats(speciesId: SpeciesId, ownedCount: number): SquadMonster {
+  const def = SPECIES[speciesId];
+  const bonus = 1 + swarmBonus(ownedCount);
   return {
-    ...state,
-    gold: state.gold - (cost.gold ?? 0),
-    elixir: state.elixir - (cost.elixir ?? 0),
+    speciesId,
+    hp: Math.round(def.baseStats.hp * bonus),
+    atk: Math.round(def.baseStats.atk * bonus),
+    def: Math.round(def.baseStats.def * bonus),
+    element: def.element,
   };
 }
 
-/** does a `size`x`size` footprint at (x,y) fit on the grid without overlapping anything? */
-export function canPlace(
-  buildings: PlacedBuilding[],
-  x: number,
-  y: number,
-  size: number,
-  ignoreId?: string,
-): boolean {
-  if (x < 0 || y < 0 || x + size > GRID_W || y + size > GRID_H) return false;
-  for (const b of buildings) {
-    if (b.id === ignoreId) continue;
-    const bs = BUILDINGS[b.type].size;
-    const overlap =
-      x < b.x + bs && x + size > b.x && y < b.y + bs && y + size > b.y;
-    if (overlap) return false;
-  }
-  return true;
-}
-
-/** find the first free cell that fits a footprint of `size`, scanning row by row */
-export function findFreeCell(
-  buildings: PlacedBuilding[],
-  size: number,
-): { x: number; y: number } | null {
-  for (let y = 0; y <= GRID_H - size; y++) {
-    for (let x = 0; x <= GRID_W - size; x++) {
-      if (canPlace(buildings, x, y, size)) return { x, y };
-    }
-  }
-  return null;
-}
-
-/** accrued (uncollected) resources for a producing building, capped */
-export function accruedFor(b: PlacedBuilding, atMs: number): number {
-  const def = BUILDINGS[b.type];
-  if (!def.production || b.upgradeDoneAt) return b.stored ?? 0;
-  const since = (atMs - (b.lastCollect ?? atMs)) / 60000; // minutes
-  const produced = since * def.production.perMin(b.level);
-  const cap = def.production.cap(b.level);
-  return Math.min(cap, (b.stored ?? 0) + produced);
+export function dexProgress(dex: SpeciesId[]): { discovered: number; total: number } {
+  return { discovered: dex.length, total: SPECIES_LIST.length };
 }
 
 export function formatNumber(n: number): string {
@@ -122,10 +128,4 @@ export function formatDuration(seconds: number): string {
   if (s >= 3600) return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
   if (s >= 60) return `${Math.floor(s / 60)}m ${s % 60}s`;
   return `${s}s`;
-}
-
-let idCounter = 0;
-export function newId(): string {
-  idCounter += 1;
-  return `b${now().toString(36)}_${idCounter}`;
 }

@@ -1,243 +1,80 @@
-import { BUILDINGS } from "./buildings";
-import { TROOPS } from "./buildings";
-import type { TroopType } from "./types";
+import { SPECIES, typeMultiplier } from "./species";
+import type { BattleLogEntry, BattleResult, SquadMonster } from "./types";
 
-export interface EnemyBuilding {
-  type: string;
-  level: number;
-  x: number;
-  y: number;
-  size: number;
+function mulberry32(seed: number) {
+  let a = seed >>> 0;
+  return () => {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 }
 
-export interface EnemyBase {
-  name: string;
-  thLevel: number;
-  buildings: EnemyBuilding[];
-  loot: { gold: number; elixir: number };
-  trophyReward: number;
-  seed: number;
+function name(m: SquadMonster): string {
+  return `${SPECIES[m.speciesId].emoji}${SPECIES[m.speciesId].name}`;
 }
 
-interface Target {
-  id: number;
-  type: string;
-  level: number;
-  cx: number;
-  cy: number;
-  size: number;
-  hp: number;
-  maxHp: number;
-  isDefense: boolean;
-  dps: number;
-  range: number;
-  cooldown: number;
+export function squadPower(squad: SquadMonster[]): number {
+  return squad.reduce((sum, m) => sum + m.hp + m.atk * 3 + m.def * 2, 0);
 }
 
-interface Unit {
-  id: number;
-  type: TroopType;
-  x: number;
-  y: number;
-  hp: number;
-  maxHp: number;
-  dps: number;
-  speed: number;
-  range: number;
-  prefersDefense: boolean;
-  targetId: number | null;
-  attackFlash: number;
-}
+/**
+ * Deterministic lane battle: front fighters from each side trade blows until one falls,
+ * then the next steps up. Seeded so a battle can be replayed identically from its seed.
+ */
+export function simulateBattle(mySquad: SquadMonster[], theirSquad: SquadMonster[], seed: number): BattleResult {
+  const rand = mulberry32(seed);
+  const mine = mySquad.map((m) => ({ ...m, curHp: m.hp }));
+  const theirs = theirSquad.map((m) => ({ ...m, curHp: m.hp }));
+  const log: BattleLogEntry[] = [];
+  const MAX_ROUNDS = 200;
 
-export interface BattleStats {
-  destructionPct: number;
-  stars: number;
-  townHallDestroyed: boolean;
-  troopsAlive: number;
-  timeLeft: number;
-  over: boolean;
-}
+  let mi = 0;
+  let ti = 0;
+  let rounds = 0;
 
-function buildingMaxHp(type: string, level: number): number {
-  const def = BUILDINGS[type as keyof typeof BUILDINGS];
-  if (!def) return 200;
-  if (def.defense) return def.defense.hp(level);
-  if (def.hp) return def.hp(level);
-  return 300;
-}
+  log.push({ text: "対戦開始!", side: "system" });
 
-export class Battle {
-  base: EnemyBase;
-  targets: Target[] = [];
-  units: Unit[] = [];
-  time = 0;
-  maxTime = 90;
-  private idSeq = 1;
-  private totalBuildings: number;
-  private armyUsed: Record<TroopType, number> = { barbarian: 0, archer: 0, giant: 0 };
-  private explosions: { x: number; y: number; t: number }[] = [];
+  while (mi < mine.length && ti < theirs.length && rounds < MAX_ROUNDS) {
+    rounds += 1;
+    const a = mine[mi];
+    const b = theirs[ti];
 
-  constructor(base: EnemyBase) {
-    this.base = base;
-    for (const b of base.buildings) {
-      const def = BUILDINGS[b.type as keyof typeof BUILDINGS];
-      const maxHp = buildingMaxHp(b.type, b.level);
-      this.targets.push({
-        id: this.idSeq++,
-        type: b.type,
-        level: b.level,
-        cx: b.x + b.size / 2,
-        cy: b.y + b.size / 2,
-        size: b.size,
-        hp: maxHp,
-        maxHp,
-        isDefense: !!def?.defense && def.defense.range > 0,
-        dps: def?.defense ? def.defense.dps(b.level) : 0,
-        range: def?.defense?.range ?? 0,
-        cooldown: 0,
-      });
-    }
-    // walls don't count toward destruction percentage (as in Clash of Clans)
-    this.totalBuildings = this.targets.filter((t) => t.type !== "wall").length;
-  }
-
-  get explosionList() {
-    return this.explosions;
-  }
-
-  get used() {
-    return this.armyUsed;
-  }
-
-  /** deploy a troop at tile coordinates */
-  spawn(type: TroopType, x: number, y: number) {
-    const t = TROOPS[type];
-    this.armyUsed[type] += 1;
-    this.units.push({
-      id: this.idSeq++,
-      type,
-      x,
-      y,
-      hp: t.hp,
-      maxHp: t.hp,
-      dps: t.dps,
-      speed: t.speed,
-      range: t.range,
-      prefersDefense: t.prefersDefense,
-      targetId: null,
-      attackFlash: 0,
-    });
-  }
-
-  private gap(u: Unit, t: Target): number {
-    const dx = t.cx - u.x;
-    const dy = t.cy - u.y;
-    return Math.hypot(dx, dy) - t.size / 2;
-  }
-
-  private pickTarget(u: Unit): Target | null {
-    const alive = this.targets.filter((t) => t.hp > 0);
-    if (alive.length === 0) return null;
-    let pool = alive;
-    if (u.prefersDefense) {
-      const defenses = alive.filter((t) => t.isDefense);
-      if (defenses.length) pool = defenses;
-    }
-    let best: Target | null = null;
-    let bestD = Infinity;
-    for (const t of pool) {
-      const d = this.gap(u, t);
-      if (d < bestD) {
-        bestD = d;
-        best = t;
-      }
-    }
-    return best;
-  }
-
-  step(dt: number) {
-    this.time += dt;
-
-    // units act
-    for (const u of this.units) {
-      if (u.hp <= 0) continue;
-      u.attackFlash = Math.max(0, u.attackFlash - dt);
-      let target = u.targetId ? this.targets.find((t) => t.id === u.targetId && t.hp > 0) ?? null : null;
-      if (!target) {
-        target = this.pickTarget(u);
-        u.targetId = target?.id ?? null;
-      }
-      if (!target) continue;
-      const gap = this.gap(u, target);
-      if (gap > u.range) {
-        const dx = target.cx - u.x;
-        const dy = target.cy - u.y;
-        const len = Math.hypot(dx, dy) || 1;
-        const move = Math.min(u.speed * dt, gap);
-        u.x += (dx / len) * move;
-        u.y += (dy / len) * move;
-      } else {
-        target.hp -= u.dps * dt;
-        u.attackFlash = 0.12;
-        if (target.hp <= 0) {
-          this.explosions.push({ x: target.cx, y: target.cy, t: 0.5 });
-          u.targetId = null;
-        }
-      }
+    const dmgToB = Math.max(
+      1,
+      Math.round(a.atk * typeMultiplier(a.element, b.element) * (0.85 + rand() * 0.3) - b.def * 0.5),
+    );
+    b.curHp -= dmgToB;
+    log.push({ text: `${name(a)} の攻撃! ${name(b)} に ${dmgToB} ダメージ`, side: "mine" });
+    if (b.curHp <= 0) {
+      log.push({ text: `${name(b)} は倒れた…`, side: "system" });
+      ti += 1;
+      continue;
     }
 
-    // defenses fire at nearest unit in range
-    for (const t of this.targets) {
-      if (t.hp <= 0 || !t.isDefense) continue;
-      t.cooldown = Math.max(0, t.cooldown - dt);
-      let best: Unit | null = null;
-      let bestD = Infinity;
-      for (const u of this.units) {
-        if (u.hp <= 0) continue;
-        const d = Math.hypot(t.cx - u.x, t.cy - u.y);
-        if (d <= t.range && d < bestD) {
-          bestD = d;
-          best = u;
-        }
-      }
-      if (best) best.hp -= t.dps * dt;
+    const dmgToA = Math.max(
+      1,
+      Math.round(b.atk * typeMultiplier(b.element, a.element) * (0.85 + rand() * 0.3) - a.def * 0.5),
+    );
+    a.curHp -= dmgToA;
+    log.push({ text: `${name(b)} の反撃! ${name(a)} に ${dmgToA} ダメージ`, side: "theirs" });
+    if (a.curHp <= 0) {
+      log.push({ text: `${name(a)} は倒れた…`, side: "system" });
+      mi += 1;
     }
-
-    // age explosions
-    for (const e of this.explosions) e.t -= dt;
-    this.explosions = this.explosions.filter((e) => e.t > 0);
   }
 
-  stats(): BattleStats {
-    const destroyed = this.targets.filter((t) => t.hp <= 0 && t.type !== "wall").length;
-    const destructionPct = this.totalBuildings ? destroyed / this.totalBuildings : 0;
-    const th = this.targets.find((t) => t.type === "townhall");
-    const townHallDestroyed = th ? th.hp <= 0 : false;
-    let stars = 0;
-    if (destructionPct >= 0.5) stars++;
-    if (townHallDestroyed) stars++;
-    if (destructionPct >= 1) stars++;
-    const troopsAlive = this.units.filter((u) => u.hp > 0).length;
-    const timeLeft = Math.max(0, this.maxTime - this.time);
-    const noTroopsLeftToFight = troopsAlive === 0 && this.units.length > 0;
-    const over =
-      destructionPct >= 1 || timeLeft <= 0 || noTroopsLeftToFight;
-    return { destructionPct, stars, townHallDestroyed, troopsAlive, timeLeft, over };
-  }
+  const myRemainingHp = mine.slice(mi).reduce((s, m) => s + Math.max(0, m.curHp), 0);
+  const theirRemainingHp = theirs.slice(ti).reduce((s, m) => s + Math.max(0, m.curHp), 0);
 
-  result(): { loot: { gold: number; elixir: number }; trophies: number } {
-    const s = this.stats();
-    const loot = {
-      gold: Math.round(this.base.loot.gold * s.destructionPct),
-      elixir: Math.round(this.base.loot.elixir * s.destructionPct),
-    };
-    // trophy math: gain on win (>=1 star), small loss on total failure
-    let trophies: number;
-    if (s.stars >= 1) {
-      trophies = Math.round((this.base.trophyReward * s.stars) / 3) + s.stars;
-    } else {
-      trophies = -Math.round(this.base.trophyReward / 3);
-    }
-    return { loot, trophies };
-  }
+  let won: boolean;
+  if (mi < mine.length && ti >= theirs.length) won = true;
+  else if (ti < theirs.length && mi >= mine.length) won = false;
+  else won = myRemainingHp >= theirRemainingHp;
+
+  log.push({ text: won ? "勝利!" : "敗北…", side: "system" });
+
+  return { won, log, myRemainingHp, theirRemainingHp, reward: 0 };
 }

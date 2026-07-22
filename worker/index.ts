@@ -1,124 +1,53 @@
 /// <reference types="@cloudflare/workers-types" />
+import { squadMonsterStats } from "../src/game/logic";
+import { SPECIES_LIST } from "../src/game/species";
+import type { SquadMonster } from "../src/game/types";
 
 interface Env {
   ASSETS: Fetcher;
+  DB: D1Database;
 }
 
-// Mirror of src/game/buildings.ts grid constants (coupled over the wire — keep
-// in sync). Portrait field filling the screen: GRID_W columns, GRID_H rows.
-const GRID_W = 10;
-const GRID_H = 18;
-const DEPLOY_DEPTH = 5;
-// Enemy buildings stay in the far rows so the near rows remain a clear landing
-// beach for the attacker.
-const MAX_ENEMY_ROW = GRID_H - DEPLOY_DEPTH;
-
-type EnemyBuilding = {
-  type: string;
-  level: number;
-  x: number;
-  y: number;
-  size: number;
-};
-
-interface EnemyBase {
-  name: string;
-  thLevel: number;
-  buildings: EnemyBuilding[];
-  loot: { gold: number; elixir: number };
-  trophyReward: number;
-  seed: number;
-}
-
-// Lightweight seeded RNG (mulberry32) so a given seed reproduces the same base.
-function rng(seed: number) {
-  let a = seed >>> 0;
-  return () => {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-const NAMES = [
-  "Goblin Outpost", "Rival Hold", "Barbarian Camp", "Iron Keep", "Ash Village",
-  "Stone Bastion", "Wolf Den", "Frost March", "Sand Fort", "Ember Reach",
+const AI_NAMES = [
+  "野生の群れ", "さすらいの調教師", "森のライバル", "岩場の使い手", "月夜の挑戦者",
+  "波止場のトレーナー", "旅の収集家", "洞窟の番人", "草原の遣い手", "北風の使者",
 ];
 
-function tryPlace(
-  buildings: EnemyBuilding[],
-  size: number,
-  rand: () => number,
-): { x: number; y: number } | null {
-  for (let attempt = 0; attempt < 60; attempt++) {
-    const x = Math.floor(rand() * (GRID_W - size + 1));
-    const y = Math.floor(rand() * (MAX_ENEMY_ROW - size + 1));
-    // keep the front beach clear: the building must stay in the far rows.
-    if (y + size > MAX_ENEMY_ROW) continue;
-    const overlap = buildings.some((b) => {
-      return x < b.x + b.size && x + size > b.x && y < b.y + b.size && y + size > b.y;
-    });
-    if (!overlap) return { x, y };
-  }
-  return null;
+function squadPower(monsters: SquadMonster[]): number {
+  return monsters.reduce((sum, m) => sum + m.hp + m.atk * 3 + m.def * 2, 0);
 }
 
-function generateBase(seed: number, playerTh: number): EnemyBase {
-  const rand = rng(seed);
-  const thLevel = Math.max(1, Math.min(6, playerTh + (rand() < 0.4 ? 1 : 0) - (rand() < 0.2 ? 1 : 0)));
-  const buildings: EnemyBuilding[] = [];
+/** Synthetic opponent used whenever no other player's squad is available to match against. */
+function generateAiSquad(targetRating: number): SquadMonster[] {
+  const tierBias = Math.min(3, Math.max(0, Math.round((targetRating - 1000) / 300)));
+  const pool = SPECIES_LIST.filter((s) => Math.abs(s.tier - tierBias) <= 1);
+  const source = pool.length > 0 ? pool : SPECIES_LIST;
+  const count = 3 + Math.floor(Math.random() * 3);
+  const monsters: SquadMonster[] = [];
+  for (let i = 0; i < count; i++) {
+    const species = source[Math.floor(Math.random() * source.length)];
+    const pretendOwned = 5 + Math.floor(Math.random() * 40);
+    monsters.push(squadMonsterStats(species.id, pretendOwned));
+  }
+  return monsters;
+}
 
-  const add = (type: string, size: number, level: number) => {
-    const cell = tryPlace(buildings, size, rand);
-    if (cell) buildings.push({ type, level, x: cell.x, y: cell.y, size });
-  };
+function json(data: unknown, init?: ResponseInit): Response {
+  return Response.json(data, { headers: { "cache-control": "no-store" }, ...init });
+}
 
-  // Town hall sits at the far (top) end, horizontally centred — the prize the
-  // attacker pushes toward from the near front.
-  const thLvl = thLevel;
-  buildings.push({
-    type: "townhall",
-    level: thLvl,
-    x: Math.floor(GRID_W / 2) - 1,
-    y: 1,
-    size: 3,
-  });
+function sanitizeName(raw: unknown): string {
+  const s = typeof raw === "string" ? raw.trim().slice(0, 24) : "";
+  return s || `トレーナー${Math.floor(Math.random() * 9000 + 1000)}`;
+}
 
-  const defLevel = () => 1 + Math.floor(rand() * thLevel);
-  const cannons = 1 + Math.floor(rand() * (thLevel + 1));
-  const archers = Math.floor(rand() * thLevel);
-  const mines = 1 + Math.floor(rand() * thLevel);
-  const collectors = 1 + Math.floor(rand() * thLevel);
-  const storages = Math.floor(rand() * 2) + 1;
-  const walls = thLevel * 3 + Math.floor(rand() * 5);
-
-  for (let i = 0; i < cannons; i++) add("cannon", 2, defLevel());
-  for (let i = 0; i < archers; i++) add("archertower", 2, defLevel());
-  for (let i = 0; i < mines; i++) add("goldmine", 2, defLevel());
-  for (let i = 0; i < collectors; i++) add("elixircollector", 2, defLevel());
-  for (let i = 0; i < storages; i++) add("goldstorage", 2, defLevel());
-  for (let i = 0; i < storages; i++) add("elixirstorage", 2, defLevel());
-  add("barracks", 2, defLevel());
-  add("armycamp", 2, defLevel());
-  for (let i = 0; i < walls; i++) add("wall", 1, Math.min(thLevel, 4));
-
-  const lootBase = 800 * thLevel;
-  const loot = {
-    gold: Math.round(lootBase * (0.7 + rand() * 0.9)),
-    elixir: Math.round(lootBase * (0.7 + rand() * 0.9)),
-  };
-  const trophyReward = 12 + thLevel * 4 + Math.floor(rand() * 12);
-
-  return {
-    name: NAMES[seed % NAMES.length],
-    thLevel,
-    buildings,
-    loot,
-    trophyReward,
-    seed,
-  };
+async function authenticate(env: Env, request: Request): Promise<string | null> {
+  const id = request.headers.get("x-player-id");
+  const token = request.headers.get("x-player-token");
+  if (!id || !token) return null;
+  const row = await env.DB.prepare("SELECT token FROM players WHERE id = ?").bind(id).first<{ token: string }>();
+  if (!row || row.token !== token) return null;
+  return id;
 }
 
 export default {
@@ -126,16 +55,114 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === "/api/health") {
-      return Response.json({ ok: true, time: Date.now() });
+      return json({ ok: true, time: Date.now() });
     }
 
-    if (url.pathname === "/api/raid") {
-      const th = Math.max(1, Math.min(6, Number(url.searchParams.get("th") ?? "1")));
-      const seed = Number(url.searchParams.get("seed")) || Math.floor(Math.random() * 1e9);
-      const base = generateBase(seed, th);
-      return Response.json(base, {
-        headers: { "cache-control": "no-store" },
+    if (url.pathname === "/api/player/register" && request.method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      const name = sanitizeName((body as { name?: string }).name);
+      const id = crypto.randomUUID();
+      const token = crypto.randomUUID();
+      const now = Date.now();
+      await env.DB.prepare(
+        "INSERT INTO players (id, token, name, rating, created_at, updated_at) VALUES (?, ?, ?, 1000, ?, ?)",
+      )
+        .bind(id, token, name, now, now)
+        .run();
+      return json({ id, token, name, rating: 1000 });
+    }
+
+    if (url.pathname === "/api/player/sync" && request.method === "POST") {
+      const playerId = await authenticate(env, request);
+      if (!playerId) return json({ error: "unauthorized" }, { status: 401 });
+      const body = (await request.json().catch(() => ({}))) as {
+        name?: string;
+        dexCount?: number;
+        monsters?: SquadMonster[];
+      };
+      const monsters = Array.isArray(body.monsters) ? body.monsters.slice(0, 5) : [];
+      const power = squadPower(monsters);
+      const now = Date.now();
+      if (body.name) {
+        await env.DB.prepare("UPDATE players SET name = ?, updated_at = ? WHERE id = ?")
+          .bind(sanitizeName(body.name), now, playerId)
+          .run();
+      }
+      await env.DB.prepare(
+        `INSERT INTO squads (player_id, dex_count, monsters, power, updated_at) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(player_id) DO UPDATE SET dex_count = excluded.dex_count, monsters = excluded.monsters,
+           power = excluded.power, updated_at = excluded.updated_at`,
+      )
+        .bind(playerId, body.dexCount ?? 0, JSON.stringify(monsters), power, now)
+        .run();
+      return json({ power });
+    }
+
+    if (url.pathname === "/api/opponent" && request.method === "GET") {
+      const playerId = url.searchParams.get("playerId") ?? "";
+      const rating = Number(url.searchParams.get("rating")) || 1000;
+      const rows = await env.DB.prepare(
+        `SELECT s.player_id as id, p.name as name, p.rating as rating, s.monsters as monsters
+         FROM squads s JOIN players p ON p.id = s.player_id
+         WHERE s.player_id != ?
+         ORDER BY ABS(p.rating - ?) ASC
+         LIMIT 5`,
+      )
+        .bind(playerId, rating)
+        .all<{ id: string; name: string; rating: number; monsters: string }>();
+
+      const candidates = rows.results ?? [];
+      if (candidates.length > 0) {
+        const pick = candidates[Math.floor(Math.random() * candidates.length)];
+        return json({
+          id: pick.id,
+          name: pick.name,
+          rating: pick.rating,
+          monsters: JSON.parse(pick.monsters) as SquadMonster[],
+        });
+      }
+
+      const monsters = generateAiSquad(rating);
+      return json({
+        id: `ai-${Math.floor(Math.random() * 1e9)}`,
+        name: AI_NAMES[Math.floor(Math.random() * AI_NAMES.length)],
+        rating,
+        monsters,
       });
+    }
+
+    if (url.pathname === "/api/battle/result" && request.method === "POST") {
+      const playerId = await authenticate(env, request);
+      if (!playerId) return json({ error: "unauthorized" }, { status: 401 });
+      const body = (await request.json().catch(() => ({}))) as {
+        opponentRating?: number;
+        won?: boolean;
+      };
+      const me = await env.DB.prepare("SELECT rating FROM players WHERE id = ?")
+        .bind(playerId)
+        .first<{ rating: number }>();
+      const myRating = me?.rating ?? 1000;
+      const opponentRating = body.opponentRating ?? myRating;
+      const expected = 1 / (1 + Math.pow(10, (opponentRating - myRating) / 400));
+      const K = 24;
+      const delta = Math.round(K * ((body.won ? 1 : 0) - expected));
+      const newRating = Math.max(0, myRating + delta);
+      await env.DB.prepare("UPDATE players SET rating = ?, updated_at = ? WHERE id = ?")
+        .bind(newRating, Date.now(), playerId)
+        .run();
+      return json({ rating: newRating });
+    }
+
+    if (url.pathname === "/api/leaderboard" && request.method === "GET") {
+      const limit = Math.max(1, Math.min(50, Number(url.searchParams.get("limit")) || 20));
+      const rows = await env.DB.prepare(
+        `SELECT p.id as id, p.name as name, p.rating as rating, COALESCE(s.power, 0) as power
+         FROM players p LEFT JOIN squads s ON s.player_id = p.id
+         ORDER BY p.rating DESC LIMIT ?`,
+      )
+        .bind(limit)
+        .all();
+      return json({ entries: rows.results ?? [] });
     }
 
     // Everything else: serve the built SPA (with SPA fallback configured in wrangler).

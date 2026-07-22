@@ -1,16 +1,8 @@
-import type { ReactNode } from "react";
-import { BUILD_ORDER, BUILDINGS, TROOP_ORDER, TROOPS } from "../game/buildings";
+import { type ReactNode, useEffect, useState } from "react";
 import { useGame } from "../game/store";
-import {
-  armyHousing,
-  capacityOf,
-  countOfType,
-  formatDuration,
-  formatNumber,
-  limitForType,
-  townHallLevel,
-} from "../game/logic";
-import type { Cost } from "../game/types";
+import { colonyOf, formatNumber } from "../game/logic";
+import { SPECIES, SPECIES_LIST, nestUpgradeCost } from "../game/species";
+import type { SpeciesId } from "../game/types";
 import { useUi } from "../ui";
 
 function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
@@ -27,212 +19,182 @@ function Sheet({ title, onClose, children }: { title: string; onClose: () => voi
   );
 }
 
-function CostLabel({ cost }: { cost: Cost }) {
+export function Dex({ onClose }: { onClose: () => void }) {
+  const dex = useGame((s) => s.dex);
+  const colonies = useGame((s) => s.colonies);
+  const discovered = new Set(dex);
+  const sorted = [...SPECIES_LIST].sort((a, b) => (a.tier !== b.tier ? a.tier - b.tier : a.name.localeCompare(b.name)));
+
   return (
-    <span className="cost-line">
-      {cost.gold ? <span className="ct gold">🪙 {formatNumber(cost.gold)}</span> : null}
-      {cost.elixir ? <span className="ct elixir">🧪 {formatNumber(cost.elixir)}</span> : null}
-    </span>
+    <Sheet title={`📖 図鑑 (${dex.length}/${SPECIES_LIST.length})`} onClose={onClose}>
+      <div className="dex-grid">
+        {sorted.map((def) => {
+          const known = discovered.has(def.id);
+          const owned = colonyOf(colonies, def.id)?.count ?? 0;
+          return (
+            <div key={def.id} className={`dex-card ${known ? "" : "locked"}`}>
+              <div className="big">{known ? def.emoji : "❓"}</div>
+              <div className="nm">{known ? def.name : "???"}</div>
+              {known && (
+                <div className="lim">
+                  ❤️{def.baseStats.hp} ⚔️{def.baseStats.atk} 🛡️{def.baseStats.def}
+                  <br />
+                  所有 {formatNumber(owned)}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </Sheet>
   );
 }
 
-export function Shop({ onClose }: { onClose: () => void }) {
-  const buildings = useGame((s) => s.buildings);
-  const placeBuilding = useGame((s) => s.placeBuilding);
+export function SquadBuilder({ onClose }: { onClose: () => void }) {
+  const dex = useGame((s) => s.dex);
+  const colonies = useGame((s) => s.colonies);
+  const squad = useGame((s) => s.squad);
+  const setSquad = useGame((s) => s.setSquad);
+  const syncSquad = useGame((s) => s.syncSquad);
   const showToast = useUi((s) => s.showToast);
-  const th = townHallLevel(buildings);
+  const [draft, setDraft] = useState<SpeciesId[]>(squad);
+
+  const owned = dex.filter((id) => (colonyOf(colonies, id)?.count ?? 0) >= 1);
+
+  const toggle = (id: SpeciesId) => {
+    setDraft((cur) => {
+      if (cur.includes(id)) return cur.filter((x) => x !== id);
+      if (cur.length >= 5) return cur;
+      return [...cur, id];
+    });
+  };
 
   return (
-    <Sheet title="🛠️ Build" onClose={onClose}>
-      <p className="hint">Buildings are placed automatically — drag them around on the map.</p>
-      <div className="shop-grid">
-        {BUILD_ORDER.filter((t) => t !== "townhall").map((type) => {
-          const def = BUILDINGS[type];
-          const locked = def.requiredTh > th;
-          const count = countOfType(buildings, type);
-          const limit = limitForType(buildings, type);
-          const atLimit = count >= limit;
-          const cost = def.cost(1);
+    <Sheet title={`⚔️ チーム編成 (${draft.length}/5)`} onClose={onClose}>
+      <p className="hint">対戦に出す仲間を最大5体まで選んでください。</p>
+      <div className="dex-grid">
+        {owned.map((id) => {
+          const def = SPECIES[id];
+          const selected = draft.includes(id);
           return (
             <button
-              key={type}
-              className={`shop-card ${locked || atLimit ? "locked" : ""}`}
-              disabled={locked}
-              onClick={() => {
-                const r = placeBuilding(type);
-                if (!r.ok) showToast(r.reason ?? "Cannot build");
-                else showToast(`${def.name} placed!`);
-              }}
+              key={id}
+              className={`dex-card selectable ${selected ? "selected" : ""}`}
+              onClick={() => toggle(id)}
             >
               <div className="big">{def.emoji}</div>
               <div className="nm">{def.name}</div>
-              {locked ? (
-                <div className="lim">🔒 Town Hall {def.requiredTh}</div>
-              ) : (
-                <>
-                  <CostLabel cost={cost} />
-                  <div className="lim">
-                    {count}/{limit}
-                  </div>
-                </>
-              )}
-            </button>
-          );
-        })}
-      </div>
-    </Sheet>
-  );
-}
-
-export function Army({ onClose }: { onClose: () => void }) {
-  const state = useGame();
-  const trainTroop = useGame((s) => s.trainTroop);
-  const showToast = useUi((s) => s.showToast);
-  const housing = armyHousing(state);
-  const hasBarracks = state.buildings.some((b) => b.type === "barracks" && !b.upgradeDoneAt);
-
-  return (
-    <Sheet title={`⚔️ Train Army (${housing.used}/${housing.total})`} onClose={onClose}>
-      {!hasBarracks && <p className="hint">Build & finish a Barracks to train troops.</p>}
-      <div className="shop-grid">
-        {TROOP_ORDER.map((type) => {
-          const t = TROOPS[type];
-          return (
-            <button
-              key={type}
-              className="shop-card"
-              disabled={!hasBarracks}
-              onClick={() => {
-                const r = trainTroop(type);
-                if (!r.ok) showToast(r.reason ?? "Cannot train");
-              }}
-            >
-              <div className="big">{t.emoji}</div>
-              <div className="nm">
-                {t.name} ×{state.army[type]}
-              </div>
-              <CostLabel cost={t.cost} />
               <div className="lim">
-                ❤️ {t.hp} · ⚔️ {t.dps} · 🏠 {t.housing}
+                ❤️{def.baseStats.hp} ⚔️{def.baseStats.atk} 🛡️{def.baseStats.def}
               </div>
             </button>
           );
         })}
       </div>
-    </Sheet>
-  );
-}
-
-export function BuildingInfo({ id, onClose }: { id: string; onClose: () => void }) {
-  const buildings = useGame((s) => s.buildings);
-  const upgradeBuilding = useGame((s) => s.upgradeBuilding);
-  const showToast = useUi((s) => s.showToast);
-  const b = buildings.find((x) => x.id === id);
-  if (!b) return null;
-  const def = BUILDINGS[b.type];
-  const maxed = b.level >= def.maxLevel;
-  const next = b.level + 1;
-  const cost = maxed ? null : def.cost(next);
-
-  return (
-    <Sheet title={`${def.emoji} ${def.name}`} onClose={onClose}>
-      <div className="info-row">
-        <span>Level</span>
-        <span>
-          {b.level}
-          {!maxed ? ` → ${next}` : " (MAX)"}
-        </span>
-      </div>
-      {def.production && (
-        <>
-          <div className="info-row">
-            <span>Produces</span>
-            <span>
-              {def.production.perMin(b.level)}/min {def.production.resource === "gold" ? "🪙" : "🧪"}
-            </span>
-          </div>
-          <div className="info-row">
-            <span>Capacity</span>
-            <span>{formatNumber(def.production.cap(b.level))}</span>
-          </div>
-        </>
-      )}
-      {def.storage && (
-        <div className="info-row">
-          <span>Stores</span>
-          <span>
-            {formatNumber(def.storage.capacity(b.level))} {def.storage.resource === "gold" ? "🪙" : "🧪"}
-          </span>
-        </div>
-      )}
-      {def.defense && def.defense.range > 0 && (
-        <>
-          <div className="info-row">
-            <span>Damage</span>
-            <span>{def.defense.dps(b.level)} dps</span>
-          </div>
-          <div className="info-row">
-            <span>Hitpoints / Range</span>
-            <span>
-              {def.defense.hp(b.level)} ❤️ · {def.defense.range} tiles
-            </span>
-          </div>
-        </>
-      )}
-      {def.housing && (
-        <div className="info-row">
-          <span>Housing space</span>
-          <span>🏠 {def.housing(b.level)}</span>
-        </div>
-      )}
-
-      {b.upgradeDoneAt ? (
-        <p className="hint">🔨 Under construction…</p>
-      ) : maxed ? (
-        <button className="btn ghost" disabled>
-          Max level reached
-        </button>
-      ) : (
-        <button
-          className="btn gold"
-          onClick={() => {
-            const r = upgradeBuilding(b.id);
-            if (!r.ok) showToast(r.reason ?? "Cannot upgrade");
-            else {
-              showToast(`Upgrading to level ${next}`);
-              onClose();
-            }
-          }}
-        >
-          Upgrade · <span style={{ marginLeft: 4 }} />
-          {cost && <CostLabel cost={cost} />}
-          <span style={{ opacity: 0.8, marginLeft: 6 }}>({formatDuration(def.buildTime(next))})</span>
-        </button>
-      )}
-    </Sheet>
-  );
-}
-
-export function HelpReset() {
-  const reset = useGame((s) => s.reset);
-  const grantGems = useGame((s) => s.grantGems);
-  const buildings = useGame((s) => s.buildings);
-  return (
-    <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
       <button
-        className="btn ghost"
-        onClick={() => {
-          if (confirm("Reset your village? This cannot be undone.")) reset();
+        className="btn gold"
+        style={{ marginTop: 12 }}
+        onClick={async () => {
+          setSquad(draft);
+          await syncSquad();
+          showToast("チームを保存しました");
+          onClose();
         }}
       >
-        ♻️ Reset village
+        保存
       </button>
-      <button className="btn ghost" onClick={() => grantGems(250)}>
-        💎 +250 gems
+    </Sheet>
+  );
+}
+
+export function Leaderboard({ onClose }: { onClose: () => void }) {
+  const leaderboard = useGame((s) => s.leaderboard);
+  const fetchLeaderboard = useGame((s) => s.fetchLeaderboard);
+  const playerId = useGame((s) => s.playerId);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchLeaderboard().finally(() => setLoading(false));
+  }, [fetchLeaderboard]);
+
+  return (
+    <Sheet title="🏆 ランキング" onClose={onClose}>
+      {loading && <p className="hint">読み込み中…</p>}
+      {!loading && leaderboard.length === 0 && <p className="hint">まだ誰もランクインしていません。</p>}
+      <div className="leaderboard-list">
+        {leaderboard.map((e, i) => (
+          <div key={e.id} className={`leaderboard-row ${e.id === playerId ? "me" : ""}`}>
+            <span className="rank">#{i + 1}</span>
+            <span className="nm">{e.name}</span>
+            <span className="rating">🏆 {formatNumber(e.rating)}</span>
+            <span className="power">⚔️ {formatNumber(e.power)}</span>
+          </div>
+        ))}
+      </div>
+    </Sheet>
+  );
+}
+
+export function Settings({ onClose }: { onClose: () => void }) {
+  const playerName = useGame((s) => s.playerName);
+  const setPlayerName = useGame((s) => s.setPlayerName);
+  const syncSquad = useGame((s) => s.syncSquad);
+  const reset = useGame((s) => s.reset);
+  const nestLevel = useGame((s) => s.nestLevel);
+  const shineStones = useGame((s) => s.shineStones);
+  const upgradeNest = useGame((s) => s.upgradeNest);
+  const showToast = useUi((s) => s.showToast);
+  const [name, setName] = useState(playerName);
+  const cost = nestUpgradeCost(nestLevel);
+
+  return (
+    <Sheet title="⚙️ 設定" onClose={onClose}>
+      <div className="info-row">
+        <span>巣のレベル</span>
+        <span>{nestLevel}</span>
+      </div>
+      <button
+        className="btn gold"
+        onClick={() => {
+          const r = upgradeNest();
+          showToast(r.ok ? "巣を拡張しました!" : (r.reason ?? "拡張できません"));
+        }}
+        disabled={shineStones < cost}
+      >
+        巣を拡張 (✨{formatNumber(cost)})
       </button>
-      <span style={{ alignSelf: "center", opacity: 0.5, fontSize: 11 }}>
-        Cap 🪙 {formatNumber(capacityOf(buildings, "gold"))}
-      </span>
-    </div>
+
+      <p className="hint" style={{ marginTop: 14 }}>
+        トレーナー名
+      </p>
+      <div style={{ display: "flex", gap: 8 }}>
+        <input
+          className="text-input"
+          value={name}
+          maxLength={24}
+          onChange={(e) => setName(e.target.value)}
+        />
+        <button
+          className="btn ghost"
+          onClick={async () => {
+            setPlayerName(name);
+            await syncSquad();
+            showToast("プレイヤー情報を更新しました");
+          }}
+        >
+          保存
+        </button>
+      </div>
+
+      <button
+        className="btn ghost"
+        style={{ marginTop: 16 }}
+        onClick={() => {
+          if (confirm("最初からやり直しますか?この操作は取り消せません。")) reset();
+        }}
+      >
+        ♻️ 最初からやり直す
+      </button>
+    </Sheet>
   );
 }

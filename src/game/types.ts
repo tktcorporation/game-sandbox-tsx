@@ -1,102 +1,129 @@
-export type Resource = "gold" | "elixir";
+export type Element = "neutral" | "water" | "fire" | "earth" | "light";
 
-export type BuildingType =
-  | "townhall"
-  | "goldmine"
-  | "elixircollector"
-  | "goldstorage"
-  | "elixirstorage"
-  | "barracks"
-  | "armycamp"
-  | "cannon"
-  | "archertower"
-  | "wall";
+export type SpeciesId =
+  | "slime"
+  | "aqua_slime"
+  | "ember_slime"
+  | "rock_slime"
+  | "prism_slime"
+  | "aqua_newt"
+  | "tide_serpent"
+  | "moon_jelly"
+  | "cinder_pup"
+  | "salamander"
+  | "sun_hatchling"
+  | "pebble_golem"
+  | "mossback"
+  | "gleam_stone"
+  | "prism_fox"
+  | "starlit_owl"
+  | "leviathan_spawn"
+  | "abyss_serpent"
+  | "lunar_jelly"
+  | "ember_wolf"
+  | "inferno_drake"
+  | "solar_phoenix"
+  | "iron_golem"
+  | "ancient_tortoise"
+  | "crystal_titan"
+  | "celestial_fox"
+  | "astral_owl";
 
-export type BuildingCategory = "core" | "resource" | "storage" | "army" | "defense" | "wall";
-
-export interface Cost {
-  gold?: number;
-  elixir?: number;
+export interface SpeciesEvolutionOption {
+  target: SpeciesId;
+  weight: number;
 }
 
-export interface BuildingDef {
-  type: BuildingType;
+export interface SpeciesDef {
+  id: SpeciesId;
   name: string;
   emoji: string;
-  category: BuildingCategory;
-  /** footprint in grid cells (size x size) */
-  size: number;
-  maxLevel: number;
-  /** town hall level required to build / unlock at given count */
-  requiredTh: number;
-  /** how many of this building you may own at each town hall level (index = th level) */
-  limitByTh: number[];
-  cost: (level: number) => Cost;
-  /** seconds to build / upgrade to `level` */
-  buildTime: (level: number) => number;
-  production?: {
-    resource: Resource;
-    /** resources produced per minute at `level` */
-    perMin: (level: number) => number;
-    /** max the building can hold before it must be collected */
-    cap: (level: number) => number;
-  };
-  storage?: {
-    resource: Resource;
-    capacity: (level: number) => number;
-  };
-  defense?: {
-    hp: (level: number) => number;
-    dps: (level: number) => number;
-    range: number;
-  };
-  /** army camp housing space contributed */
-  housing?: (level: number) => number;
-  /** base hitpoints for non-defensive buildings (used as battle targets) */
-  hp?: (level: number) => number;
+  element: Element;
+  /** 0 = starter, higher = deeper into the evolution tree (rarer, stronger) */
+  tier: number;
+  /** base combat stats before swarm bonus */
+  baseStats: { hp: number; atk: number; def: number };
+  /** population needed (once mature) before an evolution roll can trigger */
+  evolveThreshold: number;
+  /** seconds for a fresh individual to reach maturity (eligible to evolve) */
+  maturitySeconds: number;
+  /** population cap before the nest-level multiplier */
+  baseCap: number;
+  /** population growth rate per second (continuous compounding) */
+  growthRate: number;
+  /** how many individuals convert away when an evolution roll fires */
+  evolveBatch: number;
+  /** weighted possible next species; empty = final form */
+  evolvesTo: SpeciesEvolutionOption[];
 }
 
-export interface PlacedBuilding {
-  id: string;
-  type: BuildingType;
-  level: number;
-  x: number;
-  y: number;
-  /** epoch ms when an in-progress build/upgrade finishes; undefined = idle */
-  upgradeDoneAt?: number;
-  /** level the building becomes once the current construction completes */
-  pendingLevel?: number;
-  /** for resource buildings: epoch ms of last production accounting */
-  lastCollect?: number;
-  /** for resource buildings: uncollected resources waiting in the building */
-  stored?: number;
+/** One population bucket: all individuals of a species currently in a player's nest. */
+export interface Colony {
+  speciesId: SpeciesId;
+  count: number;
+  /** 0..1, individuals below 1 are not yet eligible to trigger an evolution roll */
+  growth: number;
+  /** epoch ms of last accrual computation */
+  updatedAt: number;
 }
 
-export type TroopType = "barbarian" | "archer" | "giant";
+export interface EvolutionEvent {
+  from: SpeciesId;
+  to: SpeciesId;
+  amount: number;
+  at: number;
+}
 
-export interface TroopDef {
-  type: TroopType;
-  name: string;
-  emoji: string;
-  cost: Cost;
-  housing: number;
-  trainTime: number;
+export interface SquadMonster {
+  speciesId: SpeciesId;
   hp: number;
-  dps: number;
-  /** tiles per second */
-  speed: number;
-  range: number;
-  /** prefers defenses (giant) vs nearest (others) */
-  prefersDefense: boolean;
+  atk: number;
+  def: number;
+  element: Element;
+}
+
+export interface Opponent {
+  id: string;
+  name: string;
+  rating: number;
+  monsters: SquadMonster[];
+}
+
+export interface BattleLogEntry {
+  text: string;
+  side: "mine" | "theirs" | "system";
+}
+
+export interface BattleResult {
+  won: boolean;
+  log: BattleLogEntry[];
+  myRemainingHp: number;
+  theirRemainingHp: number;
+  reward: number;
+}
+
+export interface LeaderboardEntry {
+  id: string;
+  name: string;
+  rating: number;
+  power: number;
 }
 
 export interface GameState {
-  gold: number;
-  elixir: number;
-  gems: number;
-  trophies: number;
-  buildings: PlacedBuilding[];
-  /** trained troops ready in the army camp, keyed by type */
-  army: Record<TroopType, number>;
-  lastSaved: number;
+  playerId: string | null;
+  playerToken: string | null;
+  playerName: string;
+  rating: number;
+
+  colonies: Colony[];
+  /** discovered species, in order of first discovery */
+  dex: SpeciesId[];
+
+  shineStones: number;
+  nestLevel: number;
+
+  /** up to 5 species chosen to represent the player in battle */
+  squad: SpeciesId[];
+
+  lastTick: number;
 }

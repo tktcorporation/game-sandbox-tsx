@@ -1,39 +1,28 @@
 import { useGame } from "../game/store";
-import { capacityOf, formatNumber } from "../game/logic";
+import { dexProgress, formatNumber } from "../game/logic";
 
 export function ResourceBar() {
-  const { gold, elixir, gems, trophies, buildings } = useGame();
-  const goldCap = capacityOf(buildings, "gold");
-  const elixirCap = capacityOf(buildings, "elixir");
+  const shineStones = useGame((s) => s.shineStones);
+  const rating = useGame((s) => s.rating);
+  const dex = useGame((s) => s.dex);
+  const { discovered, total } = dexProgress(dex);
 
   return (
     <div className="topbar">
-      <div className="res gold">
-        <span className="icon">🪙</span>
-        <div className="bar">
-          <span className="val">{formatNumber(gold)}</span>
-          <div className="track">
-            <div className="fill gold" style={{ width: `${Math.min(100, (gold / goldCap) * 100)}%` }} />
-          </div>
-        </div>
+      <div className="res shine">
+        <span className="icon">✨</span>
+        <span className="val">{formatNumber(shineStones)}</span>
       </div>
-      <div className="res elixir">
-        <span className="icon">🧪</span>
-        <div className="bar">
-          <span className="val">{formatNumber(elixir)}</span>
-          <div className="track">
-            <div className="fill elixir" style={{ width: `${Math.min(100, (elixir / elixirCap) * 100)}%` }} />
-          </div>
-        </div>
+      <div className="res dex">
+        <span className="icon">📖</span>
+        <span className="val">
+          {discovered}/{total}
+        </span>
       </div>
       <div className="spacer" />
-      <div className="res gem">
-        <span className="icon">💎</span>
-        <span className="val">{formatNumber(gems)}</span>
-      </div>
-      <div className="res trophy">
+      <div className="res rating">
         <span className="icon">🏆</span>
-        <span className="val">{formatNumber(trophies)}</span>
+        <span className="val">{formatNumber(rating)}</span>
       </div>
     </div>
   );
