@@ -106,10 +106,12 @@ A Worker backed by D1 (binding `DB`, schema in `worker/schema.sql`). Routes:
 - `POST /api/player/sync` — auth'd; client sends `{speciesId, count}[]`, the Worker looks up each
   `speciesId` against the real `SPECIES` table and calls `squadMonsterStats` itself to compute the
   stored stats/power — never trusts client-supplied combat stats (`buildValidatedSquad`)
-- `GET /api/opponent` — auth'd; closest-rating real squad, or a synthetic AI squad if none exists
-  yet (`generateAiSquad(rating, seed)`). Mints a single-use **match ticket** in the `matches` table
-  pinning that exact opponent snapshot + a server-chosen `battleSeed`, and returns `{..., matchId,
-  battleSeed}`
+- `GET /api/opponent` — auth'd; matchmaking always uses the caller's own server-side rating (never
+  a query param) — closest-rating real squad, or a synthetic AI squad if none exists yet
+  (`generateAiSquad(rating, seed)`). First force-resolves any still-pending match ticket of the
+  caller's *as a loss* (see gotcha below), then mints a fresh single-use **match ticket** in the
+  `matches` table pinning that exact opponent snapshot + a server-chosen `battleSeed`, and returns
+  `{..., matchId, battleSeed}`
 - `POST /api/battle/result` — auth'd; client sends only `{matchId}`. The Worker atomically claims
   the ticket (`UPDATE ... WHERE used_at IS NULL AND expires_at > now`, rejecting anything already
   used/expired/unknown), then re-simulates the battle itself from the ticket's pinned opponent +
@@ -130,13 +132,22 @@ Everything else falls through to the `ASSETS` binding (SPA fallback configured i
   the other.
 - **The Worker never trusts client-reported battle outcomes, combat stats, or match parameters.**
   Earlier drafts trusted whatever the client sent (`monsters` stats, `won`, `opponentRating`, even
-  a client-chosen `opponentId`/`battleSeed`) — that let a client crash other players via an unknown
-  `speciesId`, inflate its own stats, or brute-force a winning seed/opponent combination locally
-  before submitting just that one to farm Elo. The fix: sync only accepts `{speciesId, count}` and
-  recomputes stats server-side; `/api/opponent` mints a single-use match ticket pinning the exact
-  opponent + seed, and `/api/battle/result` only accepts `{matchId}`, re-simulating from that ticket
-  and the caller's *last-synced* squad. If you touch any of these endpoints, keep it that way —
-  don't reintroduce a field that lets the client assert its own stats, outcome, opponent, or seed.
+  a client-chosen `opponentId`/`battleSeed`, and later a client-chosen matchmaking `rating` query
+  param) — that let a client crash other players via an unknown `speciesId`, inflate its own stats,
+  claim a fabricated win, or claim a higher rating than it actually has to inflate Elo credit. The
+  fix: sync only accepts `{speciesId, count}` and recomputes stats server-side; matchmaking always
+  reads the caller's own `players.rating`; `/api/opponent` mints a single-use match ticket pinning
+  the exact opponent + seed, and `/api/battle/result` only accepts `{matchId}`, re-simulating from
+  that ticket and the caller's *last-synced* squad. If you touch any of these endpoints, keep it
+  that way — don't reintroduce a field that lets the client assert its own stats, outcome,
+  opponent, seed, or rating.
+- **Peeking at a match before deciding whether to submit it must not be free.** Because
+  `simulateBattle` is deterministic and the opponent + seed are fully disclosed to the client the
+  moment `/api/opponent` mints a ticket, a client could otherwise run the battle locally, and only
+  ever call `/api/battle/result` for the tickets it would win — silently abandoning the rest costs
+  nothing on its own. `/api/opponent` closes this by resolving any of the caller's still-pending
+  tickets *as a loss* before minting a new one, so declining to submit an unfavorable match costs
+  exactly as much as losing it for real.
 - **`useGameLoop`'s first tick must wait for persist hydration.** `tick()` reads `state.lastTick`
   and writes straight back to the store; if it ran before `zustand/persist` finished loading
   `localStorage`, it would stamp the fresh default state over real saved progress before hydration

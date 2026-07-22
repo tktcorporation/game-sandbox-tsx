@@ -138,7 +138,9 @@ export const useGame = create<Store>()(
           // Sync first so the match the server mints is pinned to the squad actually fielded.
           await get().syncSquad();
           const state = get();
-          const data = await api(state, `/api/opponent?rating=${state.rating}`);
+          // Matchmaking rating is derived server-side from the authenticated player, not a
+          // query param — nothing to pass here.
+          const data = await api(state, "/api/opponent");
           set({ opponent: data });
           return data as Opponent;
         } catch {

@@ -85,6 +85,12 @@ function buildValidatedSquad(raw: unknown): SquadMonster[] {
 
 /** How long a minted match ticket stays claimable before it's considered abandoned. */
 const MATCH_TTL_MS = 10 * 60 * 1000;
+const K_FACTOR = 24;
+
+function eloDelta(myRating: number, opponentRating: number, score: 0 | 1): number {
+  const expected = 1 / (1 + Math.pow(10, (opponentRating - myRating) / 400));
+  return Math.round(K_FACTOR * (score - expected));
+}
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -140,7 +146,38 @@ export default {
     if (url.pathname === "/api/opponent" && request.method === "GET") {
       const playerId = await authenticate(env, request);
       if (!playerId) return json({ error: "unauthorized" }, { status: 401 });
-      const rating = Number(url.searchParams.get("rating")) || 1000;
+      const me = await env.DB.prepare(
+        `SELECT p.rating as rating, s.monsters as monsters FROM players p
+         LEFT JOIN squads s ON s.player_id = p.id WHERE p.id = ?`,
+      )
+        .bind(playerId)
+        .first<{ rating: number; monsters: string | null }>();
+      if (!me || !me.monsters) return json({ error: "sync a squad before battling" }, { status: 400 });
+
+      const now = Date.now();
+      let myRating = me.rating;
+
+      // The battle sim is deterministic and the opponent/seed are now pinned at mint time, so a
+      // client could otherwise run it locally, see it would lose, and simply never submit that
+      // ticket — cherry-picking only wins to farm Elo for free. Close that by charging exactly
+      // a real loss for any still-pending ticket the moment a new one is requested, whether or
+      // not it ever got submitted.
+      const pending = await env.DB.prepare("SELECT id, opponent_rating FROM matches WHERE player_id = ? AND used_at IS NULL")
+        .bind(playerId)
+        .all<{ id: string; opponent_rating: number }>();
+      for (const p of pending.results ?? []) {
+        myRating = Math.max(0, myRating + eloDelta(myRating, p.opponent_rating, 0));
+        await env.DB.prepare("UPDATE matches SET used_at = ? WHERE id = ?").bind(now, p.id).run();
+      }
+      if ((pending.results ?? []).length > 0) {
+        await env.DB.prepare("UPDATE players SET rating = ?, updated_at = ? WHERE id = ?")
+          .bind(myRating, now, playerId)
+          .run();
+      }
+
+      // Matchmaking always uses the player's own current server-side rating — never a
+      // client-supplied value — so a client can't claim a higher rating than it actually has to
+      // inflate the Elo credit for beating a tougher opponent it never legitimately earned.
       const rows = await env.DB.prepare(
         `SELECT s.player_id as id, p.name as name, p.rating as rating, s.monsters as monsters
          FROM squads s JOIN players p ON p.id = s.player_id
@@ -148,7 +185,7 @@ export default {
          ORDER BY ABS(p.rating - ?) ASC
          LIMIT 5`,
       )
-        .bind(playerId, rating)
+        .bind(playerId, myRating)
         .all<{ id: string; name: string; rating: number; monsters: string }>();
 
       let opponent: { id: string; name: string; rating: number; monsters: SquadMonster[] };
@@ -159,10 +196,10 @@ export default {
       } else {
         const squadSeed = Math.floor(Math.random() * 1e9);
         opponent = {
-          id: `ai:${squadSeed}:${rating}`,
+          id: `ai:${squadSeed}:${myRating}`,
           name: AI_NAMES[Math.floor(Math.random() * AI_NAMES.length)],
-          rating,
-          monsters: generateAiSquad(rating, squadSeed),
+          rating: myRating,
+          monsters: generateAiSquad(myRating, squadSeed),
         };
       }
 
@@ -170,7 +207,6 @@ export default {
       // seed, so the client can never pick its own opponent/seed combination to farm a win.
       const matchId = crypto.randomUUID();
       const battleSeed = Math.floor(Math.random() * 1_000_000_000);
-      const now = Date.now();
       await env.DB.prepare("DELETE FROM matches WHERE player_id = ? AND expires_at < ?").bind(playerId, now).run();
       await env.DB.prepare(
         `INSERT INTO matches (id, player_id, opponent_id, opponent_rating, opponent_monsters, battle_seed, created_at, expires_at)
@@ -228,10 +264,7 @@ export default {
       const mySquad = JSON.parse(me.monsters) as SquadMonster[];
 
       const result = simulateBattle(mySquad, opponentSquad, battleSeed);
-      const expected = 1 / (1 + Math.pow(10, (opponentRating - myRating) / 400));
-      const K = 24;
-      const delta = Math.round(K * ((result.won ? 1 : 0) - expected));
-      const newRating = Math.max(0, myRating + delta);
+      const newRating = Math.max(0, myRating + eloDelta(myRating, opponentRating, result.won ? 1 : 0));
       await env.DB.prepare("UPDATE players SET rating = ?, updated_at = ? WHERE id = ?")
         .bind(newRating, now, playerId)
         .run();
