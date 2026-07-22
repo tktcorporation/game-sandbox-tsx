@@ -121,7 +121,9 @@ export const useGame = create<Store>()(
         try {
           await get().ensurePlayer();
           const fresh = get();
-          const monsters = fresh.squad.map((id) => squadMonsterStats(id, colonyOf(fresh.colonies, id)?.count ?? 0));
+          // Send only {speciesId, count} — the Worker recomputes stats from the real species
+          // table server-side, so it never has to trust client-reported combat stats.
+          const monsters = fresh.squad.map((id) => ({ speciesId: id, count: colonyOf(fresh.colonies, id)?.count ?? 0 }));
           await api(fresh, "/api/player/sync", {
             method: "POST",
             body: JSON.stringify({ name: fresh.playerName, dexCount: fresh.dex.length, monsters }),
@@ -155,10 +157,13 @@ export const useGame = create<Store>()(
         const finalResult: BattleResult = { ...result, reward };
         set({ shineStones: state.shineStones + reward, lastBattleResult: finalResult });
         try {
-          await get().ensurePlayer();
+          // Sync first so the server's authoritative squad matches what was just fielded, then
+          // let it re-simulate the battle itself from that squad + the same seed — the server
+          // never trusts a client-claimed win or opponent rating (see worker/index.ts).
+          await get().syncSquad();
           const data = await api(get(), "/api/battle/result", {
             method: "POST",
-            body: JSON.stringify({ opponentId: opponent.id, opponentRating: opponent.rating, won: result.won }),
+            body: JSON.stringify({ opponentId: opponent.id, battleSeed: seed }),
           });
           if (typeof data.rating === "number") set({ rating: data.rating });
         } catch {

@@ -79,8 +79,10 @@ working here.
   player+token on first use so nothing requires an explicit sign-up step.
 - `battle.ts` — `simulateBattle`, a seeded deterministic lane battle (front fighters from each squad
   trade blows until one falls, next steps up) producing a `BattleLogEntry[]` for playback plus a
-  win/loss verdict. `squadPower` is the same power formula the Worker uses server-side for the
-  leaderboard — keep them in sync if you change it (see gotcha below).
+  win/loss verdict. The client runs it locally for the instant log/result animation; the Worker
+  imports the same function to independently re-derive the real outcome before touching ratings
+  (see the Worker section and gotcha below) — it is the single source of truth for combat math,
+  don't fork it.
 
 ### 2. React UI (`src/components/`, `src/App.tsx`, `src/ui.ts`)
 
@@ -101,23 +103,37 @@ A Worker backed by D1 (binding `DB`, schema in `worker/schema.sql`). Routes:
 
 - `GET /api/health`
 - `POST /api/player/register` — creates an anonymous player (`crypto.randomUUID()` id + token)
-- `POST /api/player/sync` — auth'd; upserts the caller's squad snapshot + computed power
-- `GET /api/opponent` — closest-rating real squad, or a synthetic AI squad if none exists yet
-- `POST /api/battle/result` — auth'd; Elo-style rating update
+- `POST /api/player/sync` — auth'd; client sends `{speciesId, count}[]`, the Worker looks up each
+  `speciesId` against the real `SPECIES` table and calls `squadMonsterStats` itself to compute the
+  stored stats/power — never trusts client-supplied combat stats (`buildValidatedSquad`)
+- `GET /api/opponent` — closest-rating real squad, or a synthetic AI squad if none exists yet. AI
+  squads are seeded (`generateAiSquad(rating, seed)`) and the opponent id encodes that seed as
+  `ai:<seed>:<rating>` so `/api/battle/result` can regenerate the identical squad later
+- `POST /api/battle/result` — auth'd; client sends only `{opponentId, battleSeed}`. The Worker reads
+  *its own* last-synced squad for the caller, resolves the opponent's squad (from `squads` for a
+  real player, or by regenerating the AI squad from the id), runs `simulateBattle` itself, and
+  derives the Elo update from that — a client can't claim a fabricated win or an inflated opponent
+  rating
 - `GET /api/leaderboard` — top players by rating
 
 Everything else falls through to the `ASSETS` binding (SPA fallback configured in `wrangler.jsonc`).
 
 ## Cross-cutting gotchas
 
-- **The Worker imports directly from `src/game/`** (`species.ts`, `logic.ts`, `types.ts`) rather
-  than duplicating species data — `tsconfig.worker.json` only lists `worker` in `include`, but
-  TypeScript still follows and type-checks imports outside that glob, and Vite bundles by import
-  graph, not by tsconfig project boundaries, so this works. The wire coupling that *does* exist is
-  the `SquadMonster` JSON shape and the `squadPower` formula, which is hand-duplicated in
-  `worker/index.ts` (kept deliberately simple/inline rather than imported, since the Worker needs
-  its own copy to score squads it never runs `simulateBattle` on) — change one side and check the
-  other.
+- **The Worker imports directly from `src/game/`** (`species.ts`, `logic.ts`, `types.ts`,
+  `battle.ts`) rather than duplicating game logic — `tsconfig.worker.json` only lists `worker` in
+  `include`, but TypeScript still follows and type-checks imports outside that glob, and Vite
+  bundles by import graph, not by tsconfig project boundaries, so this works. `squadPower` is still
+  hand-duplicated in `worker/index.ts` (kept deliberately simple/inline) — change one side and check
+  the other.
+- **The Worker never trusts client-reported battle outcomes or combat stats.** Both
+  `/api/player/sync` and `/api/battle/result` were originally written to trust whatever the client
+  sent (`monsters` stats, `won`, `opponentRating`) — that let a client crash other players via an
+  unknown `speciesId`, inflate its own stats, or POST a fabricated win to farm Elo. The fix: sync
+  only accepts `{speciesId, count}` and recomputes stats server-side; battle results only accept
+  `{opponentId, battleSeed}` and the Worker re-simulates the battle itself from each side's
+  *last-synced* squad. If you touch either endpoint, keep it that way — don't reintroduce a field
+  that lets the client assert its own stats or outcome.
 - **`useGameLoop`'s first tick must wait for persist hydration.** `tick()` reads `state.lastTick`
   and writes straight back to the store; if it ran before `zustand/persist` finished loading
   `localStorage`, it would stamp the fresh default state over real saved progress before hydration

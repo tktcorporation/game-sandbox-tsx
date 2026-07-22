@@ -1,7 +1,8 @@
 /// <reference types="@cloudflare/workers-types" />
+import { simulateBattle } from "../src/game/battle";
 import { squadMonsterStats } from "../src/game/logic";
-import { SPECIES_LIST } from "../src/game/species";
-import type { SquadMonster } from "../src/game/types";
+import { SPECIES, SPECIES_LIST } from "../src/game/species";
+import type { SpeciesId, SquadMonster } from "../src/game/types";
 
 interface Env {
   ASSETS: Fetcher;
@@ -13,20 +14,36 @@ const AI_NAMES = [
   "波止場のトレーナー", "旅の収集家", "洞窟の番人", "草原の遣い手", "北風の使者",
 ];
 
+function mulberry32(seed: number) {
+  let a = seed >>> 0;
+  return () => {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 function squadPower(monsters: SquadMonster[]): number {
   return monsters.reduce((sum, m) => sum + m.hp + m.atk * 3 + m.def * 2, 0);
 }
 
-/** Synthetic opponent used whenever no other player's squad is available to match against. */
-function generateAiSquad(targetRating: number): SquadMonster[] {
+/**
+ * Synthetic opponent used whenever no other player's squad is available to match against.
+ * Seeded so `/api/battle/result` can regenerate the exact same squad to verify a battle
+ * against an AI opponent, without persisting anything for it.
+ */
+function generateAiSquad(targetRating: number, seed: number): SquadMonster[] {
+  const rand = mulberry32(seed);
   const tierBias = Math.min(3, Math.max(0, Math.round((targetRating - 1000) / 300)));
   const pool = SPECIES_LIST.filter((s) => Math.abs(s.tier - tierBias) <= 1);
   const source = pool.length > 0 ? pool : SPECIES_LIST;
-  const count = 3 + Math.floor(Math.random() * 3);
+  const count = 3 + Math.floor(rand() * 3);
   const monsters: SquadMonster[] = [];
   for (let i = 0; i < count; i++) {
-    const species = source[Math.floor(Math.random() * source.length)];
-    const pretendOwned = 5 + Math.floor(Math.random() * 40);
+    const species = source[Math.floor(rand() * source.length)];
+    const pretendOwned = 5 + Math.floor(rand() * 40);
     monsters.push(squadMonsterStats(species.id, pretendOwned));
   }
   return monsters;
@@ -48,6 +65,32 @@ async function authenticate(env: Env, request: Request): Promise<string | null> 
   const row = await env.DB.prepare("SELECT token FROM players WHERE id = ?").bind(id).first<{ token: string }>();
   if (!row || row.token !== token) return null;
   return id;
+}
+
+/** Builds the authoritative SquadMonster list server-side — never trust client-supplied stats. */
+function buildValidatedSquad(raw: unknown): SquadMonster[] {
+  if (!Array.isArray(raw)) return [];
+  const monsters: SquadMonster[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const speciesId = (entry as { speciesId?: unknown }).speciesId;
+    const count = (entry as { count?: unknown }).count;
+    if (typeof speciesId !== "string" || !(speciesId in SPECIES)) continue;
+    if (typeof count !== "number" || !Number.isFinite(count)) continue;
+    monsters.push(squadMonsterStats(speciesId as SpeciesId, Math.max(0, count)));
+    if (monsters.length >= 5) break;
+  }
+  return monsters;
+}
+
+/** Parses the `ai:<squadSeed>:<rating>` synthetic-opponent id minted by /api/opponent. */
+function parseAiOpponentId(id: string): { seed: number; rating: number } | null {
+  const parts = id.split(":");
+  if (parts.length !== 3 || parts[0] !== "ai") return null;
+  const seed = Number(parts[1]);
+  const rating = Number(parts[2]);
+  if (!Number.isFinite(seed) || !Number.isFinite(rating)) return null;
+  return { seed, rating };
 }
 
 export default {
@@ -78,9 +121,12 @@ export default {
       const body = (await request.json().catch(() => ({}))) as {
         name?: string;
         dexCount?: number;
-        monsters?: SquadMonster[];
+        monsters?: unknown;
       };
-      const monsters = Array.isArray(body.monsters) ? body.monsters.slice(0, 5) : [];
+      // Client sends only {speciesId, count} — stats are always recomputed here from the real
+      // species table so a malicious client can neither crash other players with an unknown
+      // speciesId nor inflate its own combat stats.
+      const monsters = buildValidatedSquad(body.monsters);
       const power = squadPower(monsters);
       const now = Date.now();
       if (body.name) {
@@ -122,9 +168,10 @@ export default {
         });
       }
 
-      const monsters = generateAiSquad(rating);
+      const squadSeed = Math.floor(Math.random() * 1e9);
+      const monsters = generateAiSquad(rating, squadSeed);
       return json({
-        id: `ai-${Math.floor(Math.random() * 1e9)}`,
+        id: `ai:${squadSeed}:${rating}`,
         name: AI_NAMES[Math.floor(Math.random() * AI_NAMES.length)],
         rating,
         monsters,
@@ -135,22 +182,57 @@ export default {
       const playerId = await authenticate(env, request);
       if (!playerId) return json({ error: "unauthorized" }, { status: 401 });
       const body = (await request.json().catch(() => ({}))) as {
-        opponentRating?: number;
-        won?: boolean;
+        opponentId?: string;
+        battleSeed?: number;
       };
-      const me = await env.DB.prepare("SELECT rating FROM players WHERE id = ?")
+      const opponentId = body.opponentId;
+      const battleSeed = Number(body.battleSeed);
+      if (typeof opponentId !== "string" || !Number.isFinite(battleSeed)) {
+        return json({ error: "invalid request" }, { status: 400 });
+      }
+
+      // The battle outcome and the rating delta are always derived server-side — from each
+      // side's own last-synced squad (never from client-claimed stats or a claimed win/loss) —
+      // so a client can't fabricate a win or inflate the opponent's rating to farm Elo.
+      const me = await env.DB.prepare(
+        `SELECT p.rating as rating, s.monsters as monsters FROM players p
+         LEFT JOIN squads s ON s.player_id = p.id WHERE p.id = ?`,
+      )
         .bind(playerId)
-        .first<{ rating: number }>();
-      const myRating = me?.rating ?? 1000;
-      const opponentRating = body.opponentRating ?? myRating;
+        .first<{ rating: number; monsters: string | null }>();
+      if (!me || !me.monsters) {
+        return json({ error: "sync a squad before battling" }, { status: 400 });
+      }
+      const myRating = me.rating;
+      const mySquad = JSON.parse(me.monsters) as SquadMonster[];
+
+      let opponentSquad: SquadMonster[];
+      let opponentRating: number;
+      const ai = parseAiOpponentId(opponentId);
+      if (ai) {
+        opponentRating = ai.rating;
+        opponentSquad = generateAiSquad(ai.rating, ai.seed);
+      } else {
+        const opp = await env.DB.prepare(
+          `SELECT p.rating as rating, s.monsters as monsters FROM players p
+           JOIN squads s ON s.player_id = p.id WHERE p.id = ?`,
+        )
+          .bind(opponentId)
+          .first<{ rating: number; monsters: string }>();
+        if (!opp) return json({ error: "opponent not found" }, { status: 400 });
+        opponentRating = opp.rating;
+        opponentSquad = JSON.parse(opp.monsters) as SquadMonster[];
+      }
+
+      const result = simulateBattle(mySquad, opponentSquad, battleSeed);
       const expected = 1 / (1 + Math.pow(10, (opponentRating - myRating) / 400));
       const K = 24;
-      const delta = Math.round(K * ((body.won ? 1 : 0) - expected));
+      const delta = Math.round(K * ((result.won ? 1 : 0) - expected));
       const newRating = Math.max(0, myRating + delta);
       await env.DB.prepare("UPDATE players SET rating = ?, updated_at = ? WHERE id = ?")
         .bind(newRating, Date.now(), playerId)
         .run();
-      return json({ rating: newRating });
+      return json({ rating: newRating, won: result.won });
     }
 
     if (url.pathname === "/api/leaderboard" && request.method === "GET") {
