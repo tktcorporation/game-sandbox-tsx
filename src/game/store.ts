@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { simulateBattle, squadPower } from "./battle";
-import { advanceColonies, colonyOf, now, squadMonsterStats } from "./logic";
+import { advanceColonies, colonyOf, now } from "./logic";
 import { STARTER_SPECIES, nestUpgradeCost } from "./species";
 import type {
   BattleResult,
@@ -150,10 +150,11 @@ export const useGame = create<Store>()(
 
       resolveBattle: async (opponent) => {
         const state = get();
-        const mySquad = state.squad.map((id) => squadMonsterStats(id, colonyOf(state.colonies, id)?.count ?? 0));
-        // battleSeed is server-issued (minted alongside this opponent in fetchOpponent) — the
-        // client can't pick its own seed to brute-force a favorable outcome.
-        const result = simulateBattle(mySquad, opponent.monsters, opponent.battleSeed);
+        // Use the squad snapshot the ticket was pinned against, not live colonies — the idle
+        // loop keeps growing colonies while the player sits on the preview, and simulating with
+        // fresher counts here could show a win the server (replaying the synced snapshot) then
+        // records as a loss.
+        const result = simulateBattle(opponent.mySquad, opponent.monsters, opponent.battleSeed);
         const reward = result.won ? 40 + Math.round(opponent.rating / 40) : 10;
         const finalResult: BattleResult = { ...result, reward };
         set({ shineStones: state.shineStones + reward, lastBattleResult: finalResult });

@@ -165,11 +165,19 @@ export default {
       const pending = await env.DB.prepare("SELECT id, opponent_rating FROM matches WHERE player_id = ? AND used_at IS NULL")
         .bind(playerId)
         .all<{ id: string; opponent_rating: number }>();
+      let forfeited = false;
       for (const p of pending.results ?? []) {
-        myRating = Math.max(0, myRating + eloDelta(myRating, p.opponent_rating, 0));
-        await env.DB.prepare("UPDATE matches SET used_at = ? WHERE id = ?").bind(now, p.id).run();
+        // Claim conditionally so two concurrent /api/opponent calls can't both charge the same
+        // abandoned ticket — only the request whose UPDATE actually changes a row applies the loss.
+        const claim = await env.DB.prepare("UPDATE matches SET used_at = ? WHERE id = ? AND used_at IS NULL")
+          .bind(now, p.id)
+          .run();
+        if (claim.meta.changes) {
+          myRating = Math.max(0, myRating + eloDelta(myRating, p.opponent_rating, 0));
+          forfeited = true;
+        }
       }
-      if ((pending.results ?? []).length > 0) {
+      if (forfeited) {
         await env.DB.prepare("UPDATE players SET rating = ?, updated_at = ? WHERE id = ?")
           .bind(myRating, now, playerId)
           .run();
@@ -215,7 +223,11 @@ export default {
         .bind(matchId, playerId, opponent.id, opponent.rating, JSON.stringify(opponent.monsters), battleSeed, now, now + MATCH_TTL_MS)
         .run();
 
-      return json({ ...opponent, matchId, battleSeed });
+      // Echo back the exact squad snapshot this ticket is pinned against (not the caller's
+      // live, possibly-since-changed colonies) so the client's local instant simulation always
+      // matches what /api/battle/result will replay server-side.
+      const mySquad = JSON.parse(me.monsters) as SquadMonster[];
+      return json({ ...opponent, matchId, battleSeed, mySquad });
     }
 
     if (url.pathname === "/api/battle/result" && request.method === "POST") {

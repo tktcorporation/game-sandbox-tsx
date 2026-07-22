@@ -91,6 +91,9 @@ export interface Opponent {
   matchId: string;
   /** Server-chosen combat rng seed for this match; the client can't pick its own. */
   battleSeed: number;
+  /** The caller's own squad snapshot this ticket is pinned against — use this, not live
+   * colonies, so the local instant simulation always matches the server's replay. */
+  mySquad: SquadMonster[];
 }
 
 export interface BattleLogEntry {

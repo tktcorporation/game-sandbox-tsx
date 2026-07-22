@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { useGame } from "../game/store";
-import { colonyOf, squadMonsterStats } from "../game/logic";
 import { SPECIES } from "../game/species";
 import type { BattleResult, SquadMonster } from "../game/types";
 
@@ -20,8 +19,6 @@ function MonsterChip({ m }: { m: SquadMonster }) {
 }
 
 export function BattleView({ onExit }: { onExit: () => void }) {
-  const squad = useGame((s) => s.squad);
-  const colonies = useGame((s) => s.colonies);
   const fetchOpponent = useGame((s) => s.fetchOpponent);
   const resolveBattle = useGame((s) => s.resolveBattle);
   const opponent = useGame((s) => s.opponent);
@@ -31,7 +28,10 @@ export function BattleView({ onExit }: { onExit: () => void }) {
   const [visibleLines, setVisibleLines] = useState(0);
   const logRef = useRef<HTMLDivElement | null>(null);
 
-  const mySquad = squad.map((id) => squadMonsterStats(id, colonyOf(colonies, id)?.count ?? 0));
+  // The squad snapshot the match ticket is pinned against — not live colonies, which keep
+  // growing via the idle loop while the player sits on this preview. Showing anything else here
+  // could display a different squad than the one resolveBattle/the server will actually use.
+  const mySquad = opponent?.mySquad ?? [];
 
   useEffect(() => {
     let cancelled = false;
