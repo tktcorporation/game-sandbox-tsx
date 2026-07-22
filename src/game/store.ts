@@ -141,7 +141,9 @@ export const useGame = create<Store>()(
           // Matchmaking rating is derived server-side from the authenticated player, not a
           // query param — nothing to pass here.
           const data = await api(state, "/api/opponent");
-          set({ opponent: data });
+          // Abandoning a previous ticket may have just forfeited it server-side (a real rating
+          // drop) — apply myRating so the UI never shows a stale value.
+          set({ opponent: data, ...(typeof data.myRating === "number" ? { rating: data.myRating } : {}) });
           return data as Opponent;
         } catch {
           return null;

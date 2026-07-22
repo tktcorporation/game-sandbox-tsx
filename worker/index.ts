@@ -71,12 +71,17 @@ async function authenticate(env: Env, request: Request): Promise<string | null> 
 function buildValidatedSquad(raw: unknown): SquadMonster[] {
   if (!Array.isArray(raw)) return [];
   const monsters: SquadMonster[] = [];
+  const seen = new Set<string>();
   for (const entry of raw) {
     if (!entry || typeof entry !== "object") continue;
     const speciesId = (entry as { speciesId?: unknown }).speciesId;
     const count = (entry as { count?: unknown }).count;
     if (typeof speciesId !== "string" || !(speciesId in SPECIES)) continue;
     if (typeof count !== "number" || !Number.isFinite(count)) continue;
+    // The squad builder UI only allows one slot per species — enforce that here too, so a raw
+    // API call can't bypass it and field several copies of a single strong species.
+    if (seen.has(speciesId)) continue;
+    seen.add(speciesId);
     monsters.push(squadMonsterStats(speciesId as SpeciesId, Math.max(0, count)));
     if (monsters.length >= 5) break;
   }
@@ -232,7 +237,10 @@ export default {
         return json({ error: "a match is already being set up — try again" }, { status: 409 });
       }
 
-      return json({ ...opponent, matchId, battleSeed, mySquad });
+      // Include the caller's own current rating as `myRating` (distinct from `rating`, the
+      // opponent's) — abandoning a previous ticket may have just forfeited it above, and the
+      // client has no other way to learn its rating dropped.
+      return json({ ...opponent, matchId, battleSeed, mySquad, myRating });
     }
 
     if (url.pathname === "/api/battle/result" && request.method === "POST") {

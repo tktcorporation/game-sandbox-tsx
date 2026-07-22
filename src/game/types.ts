@@ -94,6 +94,9 @@ export interface Opponent {
   /** The caller's own squad snapshot this ticket is pinned against — use this, not live
    * colonies, so the local instant simulation always matches the server's replay. */
   mySquad: SquadMonster[];
+  /** The caller's own current rating (distinct from `rating`, the opponent's) — may already
+   * reflect a forfeit applied server-side for an abandoned prior ticket. */
+  myRating: number;
 }
 
 export interface BattleLogEntry {
