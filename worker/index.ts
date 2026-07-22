@@ -83,15 +83,8 @@ function buildValidatedSquad(raw: unknown): SquadMonster[] {
   return monsters;
 }
 
-/** Parses the `ai:<squadSeed>:<rating>` synthetic-opponent id minted by /api/opponent. */
-function parseAiOpponentId(id: string): { seed: number; rating: number } | null {
-  const parts = id.split(":");
-  if (parts.length !== 3 || parts[0] !== "ai") return null;
-  const seed = Number(parts[1]);
-  const rating = Number(parts[2]);
-  if (!Number.isFinite(seed) || !Number.isFinite(rating)) return null;
-  return { seed, rating };
-}
+/** How long a minted match ticket stays claimable before it's considered abandoned. */
+const MATCH_TTL_MS = 10 * 60 * 1000;
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -145,7 +138,8 @@ export default {
     }
 
     if (url.pathname === "/api/opponent" && request.method === "GET") {
-      const playerId = url.searchParams.get("playerId") ?? "";
+      const playerId = await authenticate(env, request);
+      if (!playerId) return json({ error: "unauthorized" }, { status: 401 });
       const rating = Number(url.searchParams.get("rating")) || 1000;
       const rows = await env.DB.prepare(
         `SELECT s.player_id as id, p.name as name, p.rating as rating, s.monsters as monsters
@@ -157,43 +151,70 @@ export default {
         .bind(playerId, rating)
         .all<{ id: string; name: string; rating: number; monsters: string }>();
 
+      let opponent: { id: string; name: string; rating: number; monsters: SquadMonster[] };
       const candidates = rows.results ?? [];
       if (candidates.length > 0) {
         const pick = candidates[Math.floor(Math.random() * candidates.length)];
-        return json({
-          id: pick.id,
-          name: pick.name,
-          rating: pick.rating,
-          monsters: JSON.parse(pick.monsters) as SquadMonster[],
-        });
+        opponent = { id: pick.id, name: pick.name, rating: pick.rating, monsters: JSON.parse(pick.monsters) };
+      } else {
+        const squadSeed = Math.floor(Math.random() * 1e9);
+        opponent = {
+          id: `ai:${squadSeed}:${rating}`,
+          name: AI_NAMES[Math.floor(Math.random() * AI_NAMES.length)],
+          rating,
+          monsters: generateAiSquad(rating, squadSeed),
+        };
       }
 
-      const squadSeed = Math.floor(Math.random() * 1e9);
-      const monsters = generateAiSquad(rating, squadSeed);
-      return json({
-        id: `ai:${squadSeed}:${rating}`,
-        name: AI_NAMES[Math.floor(Math.random() * AI_NAMES.length)],
-        rating,
-        monsters,
-      });
+      // Mint a single-use match ticket pinning this exact opponent + a server-chosen combat
+      // seed, so the client can never pick its own opponent/seed combination to farm a win.
+      const matchId = crypto.randomUUID();
+      const battleSeed = Math.floor(Math.random() * 1_000_000_000);
+      const now = Date.now();
+      await env.DB.prepare("DELETE FROM matches WHERE player_id = ? AND expires_at < ?").bind(playerId, now).run();
+      await env.DB.prepare(
+        `INSERT INTO matches (id, player_id, opponent_id, opponent_rating, opponent_monsters, battle_seed, created_at, expires_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+        .bind(matchId, playerId, opponent.id, opponent.rating, JSON.stringify(opponent.monsters), battleSeed, now, now + MATCH_TTL_MS)
+        .run();
+
+      return json({ ...opponent, matchId, battleSeed });
     }
 
     if (url.pathname === "/api/battle/result" && request.method === "POST") {
       const playerId = await authenticate(env, request);
       if (!playerId) return json({ error: "unauthorized" }, { status: 401 });
-      const body = (await request.json().catch(() => ({}))) as {
-        opponentId?: string;
-        battleSeed?: number;
-      };
-      const opponentId = body.opponentId;
-      const battleSeed = Number(body.battleSeed);
-      if (typeof opponentId !== "string" || !Number.isFinite(battleSeed)) {
+      const body = (await request.json().catch(() => ({}))) as { matchId?: string };
+      const matchId = body.matchId;
+      if (typeof matchId !== "string") {
         return json({ error: "invalid request" }, { status: 400 });
       }
 
-      // The battle outcome and the rating delta are always derived server-side — from each
-      // side's own last-synced squad (never from client-claimed stats or a claimed win/loss) —
-      // so a client can't fabricate a win or inflate the opponent's rating to farm Elo.
+      // Claim the match ticket atomically — a client can't resubmit the same match twice,
+      // and can't fight anything but the exact opponent + seed the server showed it earlier.
+      const now = Date.now();
+      const claim = await env.DB.prepare(
+        `UPDATE matches SET used_at = ? WHERE id = ? AND player_id = ? AND used_at IS NULL AND expires_at > ?`,
+      )
+        .bind(now, matchId, playerId, now)
+        .run();
+      if (!claim.meta.changes) {
+        return json({ error: "invalid or expired match" }, { status: 400 });
+      }
+      const match = await env.DB.prepare(
+        "SELECT opponent_rating, opponent_monsters, battle_seed FROM matches WHERE id = ?",
+      )
+        .bind(matchId)
+        .first<{ opponent_rating: number; opponent_monsters: string; battle_seed: number }>();
+      // match is guaranteed non-null: the UPDATE above only succeeds against an existing row.
+      const opponentRating = match!.opponent_rating;
+      const opponentSquad = JSON.parse(match!.opponent_monsters) as SquadMonster[];
+      const battleSeed = match!.battle_seed;
+
+      // The battle outcome and the rating delta are always derived server-side — from the
+      // caller's own last-synced squad and the pinned match ticket, never from anything the
+      // client claims — so a client can't fabricate a win or pick a favorable opponent/seed.
       const me = await env.DB.prepare(
         `SELECT p.rating as rating, s.monsters as monsters FROM players p
          LEFT JOIN squads s ON s.player_id = p.id WHERE p.id = ?`,
@@ -206,31 +227,13 @@ export default {
       const myRating = me.rating;
       const mySquad = JSON.parse(me.monsters) as SquadMonster[];
 
-      let opponentSquad: SquadMonster[];
-      let opponentRating: number;
-      const ai = parseAiOpponentId(opponentId);
-      if (ai) {
-        opponentRating = ai.rating;
-        opponentSquad = generateAiSquad(ai.rating, ai.seed);
-      } else {
-        const opp = await env.DB.prepare(
-          `SELECT p.rating as rating, s.monsters as monsters FROM players p
-           JOIN squads s ON s.player_id = p.id WHERE p.id = ?`,
-        )
-          .bind(opponentId)
-          .first<{ rating: number; monsters: string }>();
-        if (!opp) return json({ error: "opponent not found" }, { status: 400 });
-        opponentRating = opp.rating;
-        opponentSquad = JSON.parse(opp.monsters) as SquadMonster[];
-      }
-
       const result = simulateBattle(mySquad, opponentSquad, battleSeed);
       const expected = 1 / (1 + Math.pow(10, (opponentRating - myRating) / 400));
       const K = 24;
       const delta = Math.round(K * ((result.won ? 1 : 0) - expected));
       const newRating = Math.max(0, myRating + delta);
       await env.DB.prepare("UPDATE players SET rating = ?, updated_at = ? WHERE id = ?")
-        .bind(newRating, Date.now(), playerId)
+        .bind(newRating, now, playerId)
         .run();
       return json({ rating: newRating, won: result.won });
     }

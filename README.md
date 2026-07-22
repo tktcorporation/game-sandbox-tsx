@@ -73,9 +73,11 @@ a D1 binding (`DB`) for player accounts, squad snapshots, and the leaderboard.
 ## API
 
 - `POST /api/player/register` `{ name }` → `{ id, token, name, rating }`
-- `POST /api/player/sync` (auth) `{ name, dexCount, monsters }` → `{ power }`
-- `GET /api/opponent?playerId=&rating=` → a matched squad (real player or synthetic AI)
-- `POST /api/battle/result` (auth) `{ opponentId, opponentRating, won }` → `{ rating }`
+- `POST /api/player/sync` (auth) `{ name, dexCount, monsters: {speciesId, count}[] }` → `{ power }`
+- `GET /api/opponent?rating=` (auth) → a matched squad (real player or synthetic AI) plus a
+  single-use `{ matchId, battleSeed }` ticket
+- `POST /api/battle/result` (auth) `{ matchId }` → `{ rating, won }` — the server re-simulates the
+  battle itself from the ticket and the caller's last-synced squad; it never trusts a claimed outcome
 - `GET /api/leaderboard?limit=` → `{ entries }`
 - `GET /api/health` → liveness check
 

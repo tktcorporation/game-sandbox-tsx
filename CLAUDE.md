@@ -106,14 +106,16 @@ A Worker backed by D1 (binding `DB`, schema in `worker/schema.sql`). Routes:
 - `POST /api/player/sync` — auth'd; client sends `{speciesId, count}[]`, the Worker looks up each
   `speciesId` against the real `SPECIES` table and calls `squadMonsterStats` itself to compute the
   stored stats/power — never trusts client-supplied combat stats (`buildValidatedSquad`)
-- `GET /api/opponent` — closest-rating real squad, or a synthetic AI squad if none exists yet. AI
-  squads are seeded (`generateAiSquad(rating, seed)`) and the opponent id encodes that seed as
-  `ai:<seed>:<rating>` so `/api/battle/result` can regenerate the identical squad later
-- `POST /api/battle/result` — auth'd; client sends only `{opponentId, battleSeed}`. The Worker reads
-  *its own* last-synced squad for the caller, resolves the opponent's squad (from `squads` for a
-  real player, or by regenerating the AI squad from the id), runs `simulateBattle` itself, and
-  derives the Elo update from that — a client can't claim a fabricated win or an inflated opponent
-  rating
+- `GET /api/opponent` — auth'd; closest-rating real squad, or a synthetic AI squad if none exists
+  yet (`generateAiSquad(rating, seed)`). Mints a single-use **match ticket** in the `matches` table
+  pinning that exact opponent snapshot + a server-chosen `battleSeed`, and returns `{..., matchId,
+  battleSeed}`
+- `POST /api/battle/result` — auth'd; client sends only `{matchId}`. The Worker atomically claims
+  the ticket (`UPDATE ... WHERE used_at IS NULL AND expires_at > now`, rejecting anything already
+  used/expired/unknown), then re-simulates the battle itself from the ticket's pinned opponent +
+  seed and the caller's own last-synced squad, and derives the Elo update from that — a client can't
+  claim a fabricated win, pick its own opponent/seed to brute-force a favorable outcome, or replay a
+  match twice
 - `GET /api/leaderboard` — top players by rating
 
 Everything else falls through to the `ASSETS` binding (SPA fallback configured in `wrangler.jsonc`).
@@ -126,14 +128,15 @@ Everything else falls through to the `ASSETS` binding (SPA fallback configured i
   bundles by import graph, not by tsconfig project boundaries, so this works. `squadPower` is still
   hand-duplicated in `worker/index.ts` (kept deliberately simple/inline) — change one side and check
   the other.
-- **The Worker never trusts client-reported battle outcomes or combat stats.** Both
-  `/api/player/sync` and `/api/battle/result` were originally written to trust whatever the client
-  sent (`monsters` stats, `won`, `opponentRating`) — that let a client crash other players via an
-  unknown `speciesId`, inflate its own stats, or POST a fabricated win to farm Elo. The fix: sync
-  only accepts `{speciesId, count}` and recomputes stats server-side; battle results only accept
-  `{opponentId, battleSeed}` and the Worker re-simulates the battle itself from each side's
-  *last-synced* squad. If you touch either endpoint, keep it that way — don't reintroduce a field
-  that lets the client assert its own stats or outcome.
+- **The Worker never trusts client-reported battle outcomes, combat stats, or match parameters.**
+  Earlier drafts trusted whatever the client sent (`monsters` stats, `won`, `opponentRating`, even
+  a client-chosen `opponentId`/`battleSeed`) — that let a client crash other players via an unknown
+  `speciesId`, inflate its own stats, or brute-force a winning seed/opponent combination locally
+  before submitting just that one to farm Elo. The fix: sync only accepts `{speciesId, count}` and
+  recomputes stats server-side; `/api/opponent` mints a single-use match ticket pinning the exact
+  opponent + seed, and `/api/battle/result` only accepts `{matchId}`, re-simulating from that ticket
+  and the caller's *last-synced* squad. If you touch any of these endpoints, keep it that way —
+  don't reintroduce a field that lets the client assert its own stats, outcome, opponent, or seed.
 - **`useGameLoop`'s first tick must wait for persist hydration.** `tick()` reads `state.lastTick`
   and writes straight back to the store; if it ran before `zustand/persist` finished loading
   `localStorage`, it would stamp the fresh default state over real saved progress before hydration

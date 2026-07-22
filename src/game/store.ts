@@ -135,12 +135,10 @@ export const useGame = create<Store>()(
 
       fetchOpponent: async () => {
         try {
-          await get().ensurePlayer();
+          // Sync first so the match the server mints is pinned to the squad actually fielded.
+          await get().syncSquad();
           const state = get();
-          const data = await api(
-            state,
-            `/api/opponent?playerId=${encodeURIComponent(state.playerId ?? "")}&rating=${state.rating}`,
-          );
+          const data = await api(state, `/api/opponent?rating=${state.rating}`);
           set({ opponent: data });
           return data as Opponent;
         } catch {
@@ -151,19 +149,18 @@ export const useGame = create<Store>()(
       resolveBattle: async (opponent) => {
         const state = get();
         const mySquad = state.squad.map((id) => squadMonsterStats(id, colonyOf(state.colonies, id)?.count ?? 0));
-        const seed = Math.floor(Math.random() * 1_000_000_000);
-        const result = simulateBattle(mySquad, opponent.monsters, seed);
+        // battleSeed is server-issued (minted alongside this opponent in fetchOpponent) — the
+        // client can't pick its own seed to brute-force a favorable outcome.
+        const result = simulateBattle(mySquad, opponent.monsters, opponent.battleSeed);
         const reward = result.won ? 40 + Math.round(opponent.rating / 40) : 10;
         const finalResult: BattleResult = { ...result, reward };
         set({ shineStones: state.shineStones + reward, lastBattleResult: finalResult });
         try {
-          // Sync first so the server's authoritative squad matches what was just fielded, then
-          // let it re-simulate the battle itself from that squad + the same seed — the server
-          // never trusts a client-claimed win or opponent rating (see worker/index.ts).
-          await get().syncSquad();
+          // The server re-simulates the battle itself from the matchId's pinned opponent/seed
+          // and the caller's own last-synced squad — it never trusts a client-claimed outcome.
           const data = await api(get(), "/api/battle/result", {
             method: "POST",
-            body: JSON.stringify({ opponentId: opponent.id, battleSeed: seed }),
+            body: JSON.stringify({ matchId: opponent.matchId }),
           });
           if (typeof data.rating === "number") set({ rating: data.rating });
         } catch {

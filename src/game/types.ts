@@ -87,6 +87,10 @@ export interface Opponent {
   name: string;
   rating: number;
   monsters: SquadMonster[];
+  /** Server-issued single-use match ticket — required to submit /api/battle/result. */
+  matchId: string;
+  /** Server-chosen combat rng seed for this match; the client can't pick its own. */
+  battleSeed: number;
 }
 
 export interface BattleLogEntry {

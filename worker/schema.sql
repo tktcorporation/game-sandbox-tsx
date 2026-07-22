@@ -18,5 +18,21 @@ CREATE TABLE IF NOT EXISTS squads (
   updated_at INTEGER NOT NULL
 );
 
+-- A server-issued, single-use ticket for one specific /api/opponent match: it pins the
+-- opponent squad, opponent rating, and combat rng seed at the moment they were shown to the
+-- player, so /api/battle/result can resolve the fight from data the client never controls.
+CREATE TABLE IF NOT EXISTS matches (
+  id TEXT PRIMARY KEY,
+  player_id TEXT NOT NULL REFERENCES players(id),
+  opponent_id TEXT NOT NULL,
+  opponent_rating INTEGER NOT NULL,
+  opponent_monsters TEXT NOT NULL,
+  battle_seed INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  used_at INTEGER
+);
+
 CREATE INDEX IF NOT EXISTS idx_players_rating ON players(rating DESC);
 CREATE INDEX IF NOT EXISTS idx_squads_power ON squads(power DESC);
+CREATE INDEX IF NOT EXISTS idx_matches_player ON matches(player_id);
