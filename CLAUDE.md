@@ -16,6 +16,7 @@ Current cabinets:
 
 - **Clash of Sandboxes** (`src/games/clash/`) — Clash of Clans–style base builder & raider
 - **Tiny Foundry** (`src/games/factory/`) — visual port of Tiny Factory from cli-sim-game-escape
+- **モンスターサバイバル** (`src/games/tata/`) — collect 120 tatas, evolve, house, fight zombies
 
 ## Commands
 
@@ -65,6 +66,19 @@ Port of cli-sim-game-escape's Tiny Factory simulation, with a canvas view.
 - `FactoryCanvas.tsx` — pan/zoom, drag-paint belts, interpolated items, particles
 
 Core loop: miner → belt → smelter → (assembler / fabricator) → exporter.
+
+### モンスターサバイバル (`src/games/tata/`)
+
+Collect-evolve-battle-build. Pure logic in `logic.ts` / `battle.ts` / `species.ts`.
+
+- `species.ts` — 120 tata species, 6 elements, 4 evo names. **Single source of truth for Tata identity.**
+- `logic.ts` — stamina stroll, feed/evolve, furniture placement, party, nest berries
+- `battle.ts` — real-time 3-slot formation vs zombie waves. Element wheel: fire>grass>earth>water>fire, light↔dark
+- `store.ts` — Zustand persist key `tata-survival-v1`. New persisted fields go in `partialize`
+- `TataSprite.tsx` — SVG felt bodies by shape/stage/shiny
+- Four screens: おうち (yard), おさんぽ (stroll catch), たたかい (formation + waves), ずかん (dex)
+
+Starters are フルッグ / ヒノマル / ネコオリ; ナンモナイシ always tags along. Putting ネコオリ on the pool is a real bonus. Shiny (`ピカ`) can roll on catch or on the stage-3 evolution.
 
 ### Cloudflare Worker (`worker/index.ts`)
 

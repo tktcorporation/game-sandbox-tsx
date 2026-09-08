@@ -8,7 +8,7 @@ export function Hub({ onPlay }: { onPlay: (id: GameId) => void }) {
         <p className="arcade-stamp">Sandbox Arcade</p>
         <h1>Pick a cabinet.</h1>
         <p className="arcade-lead">
-          Two games. One browser. Progress stays on this device.
+          {GAMES.length} games. One browser. Progress stays on this device.
         </p>
       </header>
       <div className="cabinet-row">
@@ -25,7 +25,13 @@ function Cabinet({ game, onPlay }: { game: GameEntry; onPlay: (id: GameId) => vo
     <article className={`cabinet cabinet-${game.id}`}>
       <div className="cabinet-bezel">
         <div className="cabinet-screen" aria-hidden>
-          {game.id === "clash" ? <ClashPreview /> : <FoundryPreview />}
+          {game.id === "clash" ? (
+            <ClashPreview />
+          ) : game.id === "factory" ? (
+            <FoundryPreview />
+          ) : (
+            <TataPreview />
+          )}
         </div>
       </div>
       <div className="cabinet-plaque">
@@ -79,6 +85,40 @@ function FoundryPreview() {
       <circle cx="44" cy="55" r="3" fill="#9aa8b8" />
       <circle cx="90" cy="55" r="3" fill="#e07a3a" />
       <rect x="112" y="44" width="12" height="8" fill="#e6c200" />
+    </svg>
+  );
+}
+
+function TataPreview() {
+  return (
+    <svg className="preview-svg" viewBox="0 0 160 110" role="img">
+      <defs>
+        <linearGradient id="tata-dusk" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#f4c78a" />
+          <stop offset="42%" stopColor="#e8a05a" />
+          <stop offset="100%" stopColor="#3d6b3a" />
+        </linearGradient>
+      </defs>
+      <rect width="160" height="110" fill="url(#tata-dusk)" />
+      <circle cx="128" cy="22" r="12" fill="#f0b030" />
+      <ellipse cx="80" cy="96" rx="70" ry="16" fill="#2a4a28" />
+      <ellipse cx="46" cy="78" rx="18" ry="14" fill="#4aa090" stroke="#3a2414" strokeWidth="2" />
+      <circle cx="40" cy="70" r="3" fill="#2a1810" />
+      <circle cx="52" cy="70" r="3" fill="#2a1810" />
+      <path d="M 40 80 Q 46 84 52 80" fill="none" stroke="#3a2414" strokeWidth="1.5" />
+      <path d="M 48 82 Q 54 90 50 96" fill="none" stroke="#9ad4e8" strokeWidth="2" strokeLinecap="round" />
+      <path
+        d="M 86 86 Q 80 70 96 64 Q 112 70 108 86 Q 98 94 92 90 Z"
+        fill="#8a6a48"
+        stroke="#3a2414"
+        strokeWidth="2"
+      />
+      <circle cx="92" cy="76" r="2.4" fill="#2a1810" />
+      <circle cx="102" cy="76" r="2.4" fill="#2a1810" />
+      <path d="M 92 84 Q 97 81 102 84" fill="none" stroke="#3a2414" strokeWidth="1.4" />
+      <ellipse cx="70" cy="88" rx="14" ry="8" fill="#3a7ca8" stroke="#3a2414" strokeWidth="2" />
+      <ellipse cx="118" cy="72" rx="10" ry="9" fill="#6cb238" stroke="#3a2414" strokeWidth="2" />
+      <path d="M 112 64 L 110 54 L 116 62 M 124 64 L 128 54 L 122 62" fill="#6cb238" stroke="#3a2414" strokeWidth="1.4" />
     </svg>
   );
 }

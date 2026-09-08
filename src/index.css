@@ -16,7 +16,7 @@
   --ticket: #e24c16;
   --ticket-deep: #9c2808;
   --clash-glow: #f5bd2b;
-  --foundry-glow: #2f6b32;
+  --tata-glow: #e85d2c;
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -58,8 +58,8 @@ body:has(.clash-root) {
   background: radial-gradient(circle at 50% 24%, #294a2a, #122017 72%);
 }
 
-body:has(.foundry-root) {
-  background: #c4bfb2;
+body:has(.tata-root) {
+  background: linear-gradient(180deg, #f4c78a 0%, #e8a05a 28%, #3d6b3a 100%);
 }
 
 /* ---------- Arcade back (shared by games) ---------- */
@@ -100,6 +100,7 @@ body:has(.foundry-root) {
     radial-gradient(ellipse 80% 50% at 50% -10%, var(--arcade-spot), transparent 70%),
     radial-gradient(circle at 18% 80%, rgba(245, 189, 43, 0.08), transparent 28%),
     radial-gradient(circle at 82% 78%, rgba(47, 107, 50, 0.12), transparent 30%),
+    radial-gradient(circle at 50% 92%, rgba(232, 93, 44, 0.1), transparent 26%),
     var(--arcade-void);
 }
 
@@ -160,7 +161,7 @@ body:has(.foundry-root) {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: var(--space-5);
-  max-width: 880px;
+  max-width: 1080px;
   margin: 0 auto;
 }
 
@@ -193,8 +194,8 @@ body:has(.foundry-root) {
 .cabinet-clash .cabinet-screen {
   box-shadow: inset 0 0 0 2px #5a4018, 0 0 28px rgba(245, 189, 43, 0.28);
 }
-.cabinet-factory .cabinet-screen {
-  box-shadow: inset 0 0 0 2px #6e7268, 0 0 28px rgba(47, 107, 50, 0.28);
+.cabinet-tata .cabinet-screen {
+  box-shadow: inset 0 0 0 2px #8a3a18, 0 0 28px rgba(232, 93, 44, 0.28);
 }
 
 .preview-svg {
@@ -233,6 +234,7 @@ body:has(.foundry-root) {
 
 .cabinet-clash .cabinet-plaque h2 { color: var(--clash-glow); }
 .cabinet-factory .cabinet-plaque h2 { color: var(--foundry-glow); }
+.cabinet-tata .cabinet-plaque h2 { color: var(--tata-glow); }
 
 .cabinet-tag {
   margin: 0 0 8px;
@@ -282,6 +284,15 @@ body:has(.foundry-root) {
 }
 .cabinet-factory .cabinet-play:active {
   box-shadow: inset 0 2px 0 rgba(255, 255, 210, 0.55), 0 1px 0 #8a7600;
+}
+
+.cabinet-tata .cabinet-play {
+  color: #f6ead0;
+  background: linear-gradient(180deg, #ff7a3a, var(--ticket));
+  box-shadow: inset 0 2px 0 rgba(255, 220, 170, 0.4), 0 5px 0 #a83812;
+}
+.cabinet-tata .cabinet-play:active {
+  box-shadow: inset 0 2px 0 rgba(255, 220, 170, 0.4), 0 1px 0 #a83812;
 }
 
 @media (max-width: 560px) {
