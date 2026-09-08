@@ -125,7 +125,7 @@ function SettingsSheet({ onClose }: { onClose: () => void }) {
         </p>
         <HelpReset />
         <p className="hint attrib">
-          HUD icons from{" "}
+          HUD glyphs from{" "}
           <a href="https://game-icons.net/" target="_blank" rel="noreferrer">
             Game-icons.net
           </a>{" "}
@@ -133,7 +133,11 @@ function SettingsSheet({ onClose }: { onClose: () => void }) {
           <a href="https://react-icons.github.io/react-icons/" target="_blank" rel="noreferrer">
             react-icons
           </a>
-          .
+          . Pixel sprites from{" "}
+          <a href="https://kenney.nl/assets" target="_blank" rel="noreferrer">
+            Kenney.nl
+          </a>{" "}
+          Tiny Dungeon / Tiny Town (CC0).
         </p>
       </div>
     </div>
