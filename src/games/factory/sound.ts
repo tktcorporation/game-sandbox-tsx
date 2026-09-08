@@ -51,4 +51,9 @@ export const foundrySound = {
     tone("triangle", base, 0.08, 0.08);
     tone("sine", base * 1.5, 0.12, 0.05, 0.05);
   },
+  honor() {
+    tone("triangle", 520, 0.1, 0.09);
+    tone("sine", 780, 0.12, 0.06, 0.07);
+    tone("sine", 1040, 0.18, 0.05, 0.12);
+  },
 };

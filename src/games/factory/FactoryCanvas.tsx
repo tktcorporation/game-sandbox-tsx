@@ -1,6 +1,14 @@
 import { useEffect, useRef } from "react";
 import { factoryCanPlace, useFactory } from "./store";
 import { foundrySound } from "./sound";
+import { floorIsEmpty } from "./progress";
+import {
+  ITEM_LOOK,
+  MACHINE_SPEC,
+  machineStatus,
+  machineTouchesItem,
+  recipeLine,
+} from "./recipes";
 import {
   GRID_H,
   GRID_W,
@@ -13,6 +21,7 @@ import {
   type PlacementTool,
   dirDelta,
   inBounds,
+  machineAtCell,
   machineCost,
   recipeTime,
 } from "./types";
@@ -57,6 +66,7 @@ export function FactoryCanvas() {
     const popups: Popup[] = [];
     let lastTickAt = performance.now();
     let prevExport = useFactory.getState().totalExported;
+    let prevHonor = useFactory.getState().contractsCompleted;
     let raf = 0;
     let running = true;
     let dpr = 1;
@@ -69,6 +79,7 @@ export function FactoryCanvas() {
     let paint = false;
     let panned = false;
     let lastPaintKey = "";
+    let lastBelt: { x: number; y: number } | null = null;
     let pinch0: number | null = null;
     const down = { x: 0, y: 0, cx: 0, cy: 0 };
 
@@ -106,9 +117,12 @@ export function FactoryCanvas() {
         s.selectCell(x, y);
         return;
       }
-      const ok = s.place(x, y);
-      if (ok) foundrySound.place();
-      else if (s.tool !== "delete") foundrySound.error();
+      const from = s.tool === "belt" ? (lastBelt ?? undefined) : undefined;
+      const ok = s.place(x, y, from);
+      if (ok) {
+        foundrySound.place();
+        if (s.tool === "belt") lastBelt = { x, y };
+      } else if (s.tool !== "delete") foundrySound.error();
     };
 
     const onDown = (e: PointerEvent) => {
@@ -122,6 +136,7 @@ export function FactoryCanvas() {
       down.cy = cam.y;
       panned = false;
       lastPaintKey = "";
+      lastBelt = null;
       const tool = useFactory.getState().tool;
       paint = tool === "belt" || tool === "delete";
       if (paint) tryPlace(hitCell(down.x, down.y).x, hitCell(down.x, down.y).y);
@@ -167,6 +182,7 @@ export function FactoryCanvas() {
       if (pointers.size < 2) pinch0 = null;
       if (panned || paint) {
         paint = false;
+        lastBelt = null;
         return;
       }
       const rect = canvas.getBoundingClientRect();
@@ -229,6 +245,24 @@ export function FactoryCanvas() {
       }
     };
 
+    const spawnHonor = (text: string) => {
+      const cx = cam.x;
+      const cy = cam.y;
+      for (let i = 0; i < 28; i++) {
+        particles.push({
+          x: cx + (Math.random() - 0.5) * 80,
+          y: cy,
+          vx: (Math.random() - 0.5) * 120,
+          vy: -50 - Math.random() * 90,
+          life: 700,
+          max: 700,
+          size: 3 + Math.random() * 3,
+          color: i % 2 ? "#e6c200" : "#fff3a0",
+        });
+      }
+      popups.push({ x: cx, y: cy - 20, text: text.slice(0, 28) || "ORDER PAID", life: 1100 });
+    };
+
     const sparkWorking = () => {
       const s = useFactory.getState();
       for (let y = 0; y < GRID_H; y++) {
@@ -265,6 +299,11 @@ export function FactoryCanvas() {
           spawnExport(s.lastExportValue);
           foundrySound.export(s.lastExportValue);
           prevExport = s.totalExported;
+        }
+        if (s.contractsCompleted > prevHonor) {
+          spawnHonor("ORDER PAID");
+          foundrySound.honor();
+          prevHonor = s.contractsCompleted;
         }
         sparkWorking();
       }
@@ -326,11 +365,13 @@ function paintFrame(
   const frac = Math.min(1, (now - lastTickAt) / TICK_MS);
   const vis = visibleRange(cam, w, h);
   drawFloor(ctx, vis);
+  drawStencil(ctx, s);
   drawBelts(ctx, s.grid, vis, now);
-  drawMachines(ctx, s.grid, vis, now);
+  drawMachines(ctx, s.grid, vis, now, s.focusItem);
   drawItems(ctx, s.grid, vis, frac, now);
-  drawGhost(ctx, s.tool, s.hover, s.money);
+  drawGhost(ctx, s.tool, s.hover, s.money, s.grid);
   drawSelection(ctx, s.selected, s.grid);
+  drawFocusRings(ctx, s.grid, vis, s.focusItem);
 
   for (const p of particles) {
     ctx.globalAlpha = Math.max(0, p.life / p.max);
@@ -360,6 +401,10 @@ function paintFrame(
 
   if (s.exportFlash > 0) {
     ctx.fillStyle = `rgba(230, 194, 0, ${0.12 * (s.exportFlash / 12)})`;
+    ctx.fillRect(0, 0, w, h);
+  }
+  if (s.honorFlash > 0) {
+    ctx.fillStyle = `rgba(230, 194, 0, ${0.16 * (s.honorFlash / 28)})`;
     ctx.fillRect(0, 0, w, h);
   }
 }
@@ -407,17 +452,7 @@ function drawFloor(ctx: CanvasRenderingContext2D, vis: { x0: number; y0: number;
 
 function beltDir(grid: Cell[][], x: number, y: number): Direction {
   const cell = grid[y][x];
-  if (cell.t === "belt" && cell.belt.itemFrom) {
-    const from = cell.belt.itemFrom;
-    if (from === "left") return "right";
-    if (from === "right") return "left";
-    if (from === "up") return "down";
-    return "up";
-  }
-  for (const dir of ["right", "down", "left", "up"] as Direction[]) {
-    const [dx, dy] = dirDelta(dir);
-    if (grid[y + dy]?.[x + dx]?.t === "belt") return dir;
-  }
+  if (cell.t === "belt") return cell.belt.facing ?? "right";
   return "right";
 }
 
@@ -454,6 +489,14 @@ function drawBelts(
       ctx.fillStyle = "#6e6a62";
       roundRect(ctx, px + 8, py + 8, CELL - 16, CELL - 16, 2);
       ctx.fill();
+      const cargo = cell.belt.item ?? cell.belt.trailItem;
+      if (cargo) {
+        ctx.globalAlpha = 0.35;
+        ctx.fillStyle = ITEM_LOOK[cargo].fill;
+        roundRect(ctx, px + 10, py + 10, CELL - 20, CELL - 20, 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
       ctx.strokeStyle = "#3a3832";
       ctx.lineWidth = 1.5;
       ctx.stroke();
@@ -488,6 +531,7 @@ function drawBelts(
         }
       }
       ctx.restore();
+      drawBeltChevron(ctx, px, py, dir);
       if (cell.belt.trailItem && cell.belt.trailTicks > 0) {
         ctx.globalAlpha = 0.2 * (cell.belt.trailTicks / 3);
         drawItemGlyph(ctx, px + CELL / 2, py + CELL / 2, cell.belt.trailItem, 0.7, now);
@@ -502,20 +546,29 @@ function drawMachines(
   grid: Cell[][],
   vis: { x0: number; y0: number; x1: number; y1: number },
   now: number,
+  focus: ItemKind | null,
 ) {
   for (let y = vis.y0; y < vis.y1; y++) {
     for (let x = vis.x0; x < vis.x1; x++) {
       const cell = grid[y][x];
-      if (cell.t === "machine") drawMachineBody(ctx, x, y, cell.machine, now);
+      if (cell.t === "machine") drawMachineBody(ctx, x, y, cell.machine, now, focus);
     }
   }
 }
 
-function drawMachineBody(ctx: CanvasRenderingContext2D, x: number, y: number, m: Machine, now: number) {
+function drawMachineBody(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  m: Machine,
+  now: number,
+  focus: ItemKind | null,
+) {
   const px = x * CELL;
   const py = y * CELL;
   const size = CELL * 2;
   const pal = machinePalette(m.kind);
+  const hot = focus && machineTouchesItem(m.kind, focus, m.mode);
   ctx.fillStyle = "rgba(58,56,50,0.28)";
   roundRect(ctx, px + 6, py + 8, size - 8, size - 8, 2);
   ctx.fill();
@@ -525,8 +578,8 @@ function drawMachineBody(ctx: CanvasRenderingContext2D, x: number, y: number, m:
   ctx.fillStyle = pal.top;
   roundRect(ctx, px + 4, py + 4, size - 8, 22, 2);
   ctx.fill();
-  ctx.strokeStyle = pal.edge;
-  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = hot ? "#e6c200" : pal.edge;
+  ctx.lineWidth = hot ? 3 : 1.5;
   roundRect(ctx, px + 4, py + 4, size - 8, size - 10, 2);
   ctx.stroke();
 
@@ -555,6 +608,18 @@ function drawMachineBody(ctx: CanvasRenderingContext2D, x: number, y: number, m:
     ctx.fillText(m.mode === "iron" ? "IRON" : "COPPER", px + size / 2, py + size - 22);
   }
   drawMachineGlyph(ctx, px + size / 2, py + 50, m.kind, now, busy);
+  drawMachinePorts(ctx, x, y, m, now);
+  const status = machineStatus(m);
+  if (status.id === "starved" || status.id === "jammed" || status.id === "need") {
+    ctx.fillStyle = status.id === "jammed" ? "#e6c200" : "#b42318";
+    ctx.fillRect(px + 10, py + 58, size - 20, 14);
+    ctx.fillStyle = status.id === "jammed" ? "#2a2800" : "#f4f1ea";
+    ctx.font = "700 9px Oswald, sans-serif";
+    ctx.fillText(status.label, px + size / 2, py + 68);
+  }
+  if (m.kind === "fabricator") {
+    drawHopper(ctx, px, py, size, m);
+  }
   const buf = m.kind === "exporter" ? m.inputBuffer.length : m.outputBuffer.length;
   if (buf > 0) {
     ctx.fillStyle = "#2a2800";
@@ -702,6 +767,7 @@ function drawGhost(
   tool: PlacementTool,
   hover: { x: number; y: number } | null,
   money: number,
+  grid: Cell[][],
 ) {
   if (!hover || tool === "none" || !inBounds(hover.x, hover.y)) return;
   const ok = factoryCanPlace(hover.x, hover.y);
@@ -709,12 +775,18 @@ function drawGhost(
   if (tool === "belt" || tool === "delete") {
     ctx.fillStyle = ok ? "#e6c200" : "#b42318";
     ctx.fillRect(hover.x * CELL + 6, hover.y * CELL + 6, CELL - 12, CELL - 12);
+    ctx.globalAlpha = 1;
+    if (tool === "belt") drawBeltNeighborHint(ctx, grid, hover.x, hover.y);
   } else {
     ctx.fillStyle = ok && money >= machineCost(tool) ? "#2f6b32" : "#b42318";
     roundRect(ctx, hover.x * CELL + 4, hover.y * CELL + 4, CELL * 2 - 8, CELL * 2 - 8, 2);
     ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = "#1a1c18";
+    ctx.font = "700 11px Oswald, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(recipeLine(tool), hover.x * CELL + CELL, hover.y * CELL + CELL * 2 - 14);
   }
-  ctx.globalAlpha = 1;
 }
 
 function drawSelection(
@@ -782,5 +854,150 @@ function shortName(kind: MachineKind): string {
       return "DOCK";
     case "fabricator":
       return "BENCH";
+  }
+}
+
+function drawBeltChevron(
+  ctx: CanvasRenderingContext2D,
+  px: number,
+  py: number,
+  dir: Direction,
+) {
+  const cx = px + CELL / 2;
+  const cy = py + CELL / 2;
+  ctx.save();
+  ctx.translate(cx, cy);
+  const rot =
+    dir === "right" ? 0 : dir === "down" ? Math.PI / 2 : dir === "left" ? Math.PI : -Math.PI / 2;
+  ctx.rotate(rot);
+  ctx.fillStyle = "#1a1c18";
+  ctx.beginPath();
+  ctx.moveTo(10, 0);
+  ctx.lineTo(-6, -8);
+  ctx.lineTo(-6, 8);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#e6c200";
+  ctx.beginPath();
+  ctx.moveTo(8, 0);
+  ctx.lineTo(-4, -6);
+  ctx.lineTo(-4, 6);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawMachinePorts(ctx: CanvasRenderingContext2D, ax: number, ay: number, m: Machine, now: number) {
+  const spec = MACHINE_SPEC[m.kind];
+  const pulse = 0.55 + 0.35 * Math.sin(now / 140);
+  const status = machineStatus(m);
+  const inColor =
+    status.id === "starved" || status.id === "need" ? `rgba(180,35,24,${pulse})` : "#3a3832";
+  const outColor = status.id === "jammed" ? `rgba(230,194,0,${pulse})` : "#e6c200";
+  const size = CELL * 2;
+  const px = ax * CELL;
+  const py = ay * CELL;
+  const nubs: { x: number; y: number; w: number; h: number; label: string }[] = [
+    { x: px + 28, y: py - 3, w: size - 56, h: 8, label: "top" },
+    { x: px + 28, y: py + size - 5, w: size - 56, h: 8, label: "bot" },
+    { x: px - 3, y: py + 28, w: 8, h: size - 56, label: "left" },
+    { x: px + size - 5, y: py + 28, w: 8, h: size - 56, label: "right" },
+  ];
+  for (const nub of nubs) {
+    if (spec.inPorts && spec.outPorts) {
+      ctx.fillStyle = inColor;
+      ctx.fillRect(nub.x, nub.y, nub.w / 2, nub.h);
+      ctx.fillStyle = outColor;
+      ctx.fillRect(nub.x + nub.w / 2, nub.y, nub.w / 2, nub.h);
+    } else if (spec.inPorts) {
+      ctx.fillStyle = inColor;
+      ctx.fillRect(nub.x, nub.y, nub.w, nub.h);
+    } else if (spec.outPorts) {
+      ctx.fillStyle = outColor;
+      ctx.fillRect(nub.x, nub.y, nub.w, nub.h);
+    }
+  }
+}
+
+function drawHopper(ctx: CanvasRenderingContext2D, px: number, py: number, size: number, m: Machine) {
+  const iron = m.inputBuffer.filter((i) => i === "ironPlate").length;
+  const copper = m.inputBuffer.filter((i) => i === "copperPlate").length;
+  ctx.fillStyle = ITEM_LOOK.ironPlate.fill;
+  ctx.fillRect(px + 12, py + 72, 20, 10);
+  ctx.fillStyle = "#1a1c18";
+  ctx.font = "700 8px 'IBM Plex Mono', monospace";
+  ctx.textAlign = "center";
+  ctx.fillText(String(iron), px + 22, py + 80);
+  ctx.fillStyle = ITEM_LOOK.copperPlate.fill;
+  ctx.fillRect(px + size - 32, py + 72, 20, 10);
+  ctx.fillStyle = "#1a1c18";
+  ctx.fillText(String(copper), px + size - 22, py + 80);
+}
+
+function drawStencil(ctx: CanvasRenderingContext2D, s: ReturnType<typeof useFactory.getState>) {
+  if (!floorIsEmpty(s)) return;
+  const x = 8;
+  const y = 8;
+  ctx.save();
+  ctx.globalAlpha = 0.38;
+  ctx.setLineDash([5, 4]);
+  ctx.strokeStyle = "#3a3832";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x * CELL + 4, y * CELL + 4, CELL * 2 - 8, CELL * 2 - 8);
+  ctx.strokeRect((x + 5) * CELL + 4, y * CELL + 4, CELL * 2 - 8, CELL * 2 - 8);
+  ctx.setLineDash([]);
+  ctx.fillStyle = "#6e6a62";
+  for (let i = 0; i < 3; i++) {
+    roundRect(ctx, (x + 2 + i) * CELL + 10, y * CELL + 14, CELL - 20, CELL - 28, 2);
+    ctx.fill();
+    drawBeltChevron(ctx, (x + 2 + i) * CELL, y * CELL, "right");
+  }
+  ctx.fillStyle = "#1a1c18";
+  ctx.font = "700 13px Oswald, sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("1 MINER", (x + 1) * CELL, y * CELL - 6);
+  ctx.fillText("2 BELT", (x + 3.5) * CELL, y * CELL - 6);
+  ctx.fillText("3 DOCK", (x + 6) * CELL, y * CELL - 6);
+  ctx.restore();
+}
+
+function drawFocusRings(
+  ctx: CanvasRenderingContext2D,
+  grid: Cell[][],
+  vis: { x0: number; y0: number; x1: number; y1: number },
+  focus: ItemKind | null,
+) {
+  if (!focus) return;
+  ctx.strokeStyle = ITEM_LOOK[focus].rim;
+  ctx.lineWidth = 3;
+  for (let y = vis.y0; y < vis.y1; y++) {
+    for (let x = vis.x0; x < vis.x1; x++) {
+      const cell = grid[y][x];
+      if (cell.t === "machine" && machineTouchesItem(cell.machine.kind, focus, cell.machine.mode)) {
+        ctx.strokeRect(x * CELL + 1, y * CELL + 1, CELL * 2 - 2, CELL * 2 - 2);
+      }
+      if (cell.t === "belt" && (cell.belt.item === focus || cell.belt.trailItem === focus)) {
+        ctx.strokeRect(x * CELL + 8, y * CELL + 8, CELL - 16, CELL - 16);
+      }
+    }
+  }
+}
+
+function drawBeltNeighborHint(ctx: CanvasRenderingContext2D, grid: Cell[][], x: number, y: number) {
+  const dirs: Direction[] = ["up", "down", "left", "right"];
+  ctx.font = "700 10px Oswald, sans-serif";
+  ctx.textAlign = "center";
+  for (const dir of dirs) {
+    const [dx, dy] = dirDelta(dir);
+    const machine = machineAtCell(grid, x + dx, y + dy);
+    if (!machine) continue;
+    const spec = MACHINE_SPEC[machine.kind];
+    const label = spec.outPorts && !spec.inPorts ? "OUT" : spec.inPorts && !spec.outPorts ? "IN" : "IN/OUT";
+    const tx = x * CELL + CELL / 2;
+    const ty = y * CELL + (dir === "up" ? 12 : dir === "down" ? CELL - 8 : CELL / 2);
+    ctx.fillStyle = "#e6c200";
+    ctx.fillRect(tx - 22, ty - 8, 44, 14);
+    ctx.fillStyle = "#1a1c18";
+    ctx.fillText(label, tx, ty + 3);
   }
 }
