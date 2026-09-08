@@ -519,14 +519,11 @@ function inferBeltFacing(
 }
 
 function hasAdjacentBelt(state: FactoryState, x: number, y: number): boolean {
-  return perimeter2x2(x, y).some(([px, py]) => state.grid[py][px].t === "belt");
+  return cardinalRimCells(x, y).some(([px, py]) => state.grid[py][px].t === "belt");
 }
 
-export function machineRimCells(ax: number, ay: number): [number, number][] {
-  return perimeter2x2(ax, ay);
-}
-
-function perimeter2x2(ax: number, ay: number): [number, number][] {
+/** Cardinal rim only — `tickBelts` never feeds a machine from a diagonal. */
+export function cardinalRimCells(ax: number, ay: number): [number, number][] {
   const cells: [number, number][] = [];
   if (ay > 0) {
     cells.push([ax, ay - 1], [ax + 1, ay - 1]);
@@ -540,6 +537,11 @@ function perimeter2x2(ax: number, ay: number): [number, number][] {
   if (ax + 2 < GRID_W) {
     cells.push([ax + 2, ay], [ax + 2, ay + 1]);
   }
+  return cells;
+}
+
+function perimeter2x2(ax: number, ay: number): [number, number][] {
+  const cells = cardinalRimCells(ax, ay);
   if (ay > 0 && ax > 0) cells.push([ax - 1, ay - 1]);
   if (ay > 0 && ax + 2 < GRID_W) cells.push([ax + 2, ay - 1]);
   if (ay + 2 < GRID_H && ax > 0) cells.push([ax - 1, ay + 2]);
