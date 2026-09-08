@@ -12,6 +12,7 @@ Inspired by the game-catalog pattern in [cli-sim-game-escape](https://github.com
 | --- | --- |
 | **Clash of Sandboxes** | Clash of Clans–style village builder & raider (the original game in this repo) |
 | **Tiny Foundry** | Visual port of Tiny Factory. Lay miners, belts and furnaces, then watch ore flow |
+| **モンスターサバイバル** | Collect 120 felt tatas, feed them through four evolutions, house them, and fight zombie waves |
 
 Tiny Foundry keeps the original simulation (2×2 machines, auto-routing belts, iron/copper
 lines, circuits) and rebuilds the view: interpolated items, rolling belts, furnace sparks,
@@ -56,11 +57,12 @@ Kenney publishes dozens of matching Tiny packs (Battle, Farm, RPG, …) — same
 ## Project layout
 
 ```
-src/App.tsx                 hash router: lobby / clash / factory
+src/App.tsx                 hash router: lobby / clash / factory / tata
 src/catalog.ts              game list (add an entry here to register a game)
 src/hub/Hub.tsx             arcade lobby
 src/games/clash/            Clash of Sandboxes
 src/games/factory/          Tiny Foundry (logic + canvas)
+src/games/tata/             モンスターサバイバル (collect / evolve / house / raid)
 src/ui/icons.tsx            Game-icons.net catalog (react-icons/gi) used by Clash HUD
 src/assets/kenney.ts        tree-shakeable Kenney Tiny URL exports (CC0)
 src/assets/gameSprites.ts   troop/resource picks actually used by Clash
@@ -69,7 +71,7 @@ src/assets/Pixel.tsx        <Pixel src={coin} /> / <PixelText>
 worker/index.ts             SPA + /api/raid, /api/health
 ```
 
-Hash routes: `#/clash`, `#/factory`. Empty hash is the lobby.
+Hash routes: `#/clash`, `#/factory`, `#/tata`. Empty hash is the lobby.
 
 ## Develop
 
@@ -88,7 +90,7 @@ npx wrangler login   # one-time
 npm run deploy
 ```
 
-No database. Clash progress uses `clash-of-sandboxes-v1`; Foundry uses `tiny-foundry-v1`.
+No database. Clash progress uses `clash-of-sandboxes-v1`; Foundry uses `tiny-foundry-v1`; Tata uses `tata-survival-v1`.
 
 ## API
 

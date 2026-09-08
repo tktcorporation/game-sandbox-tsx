@@ -3,6 +3,7 @@ import { isGameId, type GameId } from "./catalog";
 import { Hub } from "./hub/Hub";
 import ClashApp from "./games/clash/App";
 import FactoryApp from "./games/factory/FactoryApp";
+import TataApp from "./games/tata/App";
 
 function parseHash(): GameId | null {
   const raw = location.hash.replace(/^#\/?/, "").split("/")[0] ?? "";
@@ -28,5 +29,6 @@ export default function App() {
 
   if (game === "clash") return <ClashApp onLeave={leave} />;
   if (game === "factory") return <FactoryApp onLeave={leave} />;
+  if (game === "tata") return <TataApp onLeave={leave} />;
   return <Hub onPlay={play} />;
 }

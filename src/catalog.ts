@@ -1,4 +1,4 @@
-export const GAME_IDS = ["clash", "factory"] as const;
+export const GAME_IDS = ["clash", "factory", "tata"] as const;
 export type GameId = (typeof GAME_IDS)[number];
 
 export function isGameId(value: string): value is GameId {
@@ -34,5 +34,14 @@ export const GAMES: GameEntry[] = [
       "A visual port of Tiny Factory from cli-sim-game-escape. Lay miners, belts and furnaces, then follow ore as it melts, meshes, and ships.",
     playLabel: "Clock in",
     origin: "cli-sim-game-escape",
+  },
+  {
+    id: "tata",
+    title: "モンスターサバイバル",
+    kicker: "Felt ranch",
+    tagline: "Collect tatas. House them. Dunk zombies.",
+    blurb:
+      "Over 100 plump tatas hide in the dusk meadow. Feed them through four evolutions, set a three-slot formation against zombie waves, and build a felt garden they actually want to live in.",
+    playLabel: "Pick a tata",
   },
 ];
