@@ -306,6 +306,7 @@ export function startAdventure(state: TataGameState, starterId: string): TataGam
   starter.stage = 1;
   starter.partySlot = 0;
   const stone = hatchTata("nanmonaishi", false);
+  stone.stage = 1;
   stone.partySlot = 1;
   return {
     ...state,

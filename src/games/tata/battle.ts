@@ -67,7 +67,7 @@ function buildWaves(seed: number): WaveSpawn[] {
   const spawns: WaveSpawn[] = [];
   let t = 0.4;
   for (let wave = 1; wave <= MAX_WAVES; wave++) {
-    const count = 3 + wave;
+        const count = 2 + wave;
     for (let i = 0; i < count; i++) {
       const lane = (i * 37 + wave * 13 + seed) % 5;
       const y = 18 + lane * 16;
