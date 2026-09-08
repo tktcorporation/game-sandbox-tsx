@@ -1,13 +1,15 @@
+import type { ReactNode } from "react";
 import { useGame } from "../game/store";
 import { capacityOf, formatNumber } from "../game/logic";
 
-export function ResourceBar() {
+export function ResourceBar({ leading }: { leading?: ReactNode }) {
   const { gold, elixir, gems, trophies, buildings } = useGame();
   const goldCap = capacityOf(buildings, "gold");
   const elixirCap = capacityOf(buildings, "elixir");
 
   return (
     <div className="topbar">
+      {leading}
       <div className="res gold">
         <span className="icon">🪙</span>
         <div className="bar">

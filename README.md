@@ -1,24 +1,21 @@
-# ⚔️ Clash of Sandboxes
+# Sandbox Arcade
 
-A tiny **Clash of Clans–style** base-building & raiding game, built with **React + TypeScript + Vite**
-and deployed to **Cloudflare Workers**. The same Worker serves the SPA *and* procedurally generates
-the enemy villages you raid.
+A tiny **multi-game** React sandbox. Pick a cabinet in the lobby, play, and jump back.
+Player state lives in the browser (`localStorage`). A Cloudflare Worker serves the SPA
+and generates enemy villages for Clash of Sandboxes.
 
-![stack](https://img.shields.io/badge/stack-Vite%20%2B%20React%20%2B%20Cloudflare%20Workers-orange)
+Inspired by the game-catalog pattern in [cli-sim-game-escape](https://github.com/tktcorporation/cli-sim-game-escape).
 
-## Gameplay
+## Games
 
-- **Build your village** on a 16×16 grid: Town Hall, Gold Mines, Elixir Collectors, storages,
-  defenses (Cannons, Archer Towers), Walls, Barracks and Army Camps.
-- **Gather resources** — mines & collectors fill up over real time; tap to collect (capped by storage).
-- **Upgrade everything** — each building has multiple levels with rising costs and build timers,
-  gated by your Town Hall level.
-- **Train an army** — Barbarians, Archers and Giants, limited by Army Camp housing space.
-- **Raid!** — tap **Attack** and the Worker generates a fresh enemy base scaled to your Town Hall.
-  Deploy troops by tapping the battlefield; they path to the nearest building (Giants prefer
-  defenses) while Cannons and Archer Towers shoot back. Earn **stars**, **loot** and **trophies**
-  based on how much you destroy (destroying the Town Hall earns a star — walls don't count toward %).
-- Progress is saved automatically to `localStorage`.
+| Cabinet | What it is |
+| --- | --- |
+| **Clash of Sandboxes** | Clash of Clans–style village builder & raider (the original game in this repo) |
+| **Tiny Foundry** | Visual port of Tiny Factory. Lay miners, belts and furnaces, then watch ore flow |
+
+Tiny Foundry keeps the original simulation (2×2 machines, auto-routing belts, iron/copper
+lines, circuits) and rebuilds the view: interpolated items, rolling belts, furnace sparks,
+and export bursts instead of terminal cells.
 
 ## Tech
 
@@ -26,23 +23,22 @@ the enemy villages you raid.
 | ------------ | ------------------------------------------------------------------- |
 | UI           | React 19 + TypeScript, plain CSS                                    |
 | State        | [Zustand](https://github.com/pmndrs/zustand) with `persist`         |
-| Battle       | Custom real-time simulation rendered on `<canvas>` via `rAF`        |
+| Battle / factory | Custom simulations rendered on `<canvas>` via `rAF`             |
 | Build        | Vite 6 + `@cloudflare/vite-plugin`                                  |
-| Backend/host | A single Cloudflare Worker (`worker/index.ts`) serving static assets + a `/api/raid` enemy-base generator |
+| Backend/host | A single Cloudflare Worker serving static assets + `/api/raid`      |
 
 ## Project layout
 
 ```
-worker/index.ts          Cloudflare Worker: serves the SPA + /api/raid, /api/health
-src/game/                pure game logic (no React)
-  ├─ types.ts            data model
-  ├─ buildings.ts        building & troop definitions + balance curves
-  ├─ logic.ts            helpers (capacity, placement, production, formatting)
-  ├─ store.ts            Zustand store (place / upgrade / collect / train / battle result)
-  └─ battle.ts           real-time battle engine
-src/components/          React components (Board, ResourceBar, Sheets, BattleView)
-src/ui.ts                ephemeral UI state (mode, selection, toasts) + game loop hook
+src/App.tsx                 hash router: lobby / clash / factory
+src/catalog.ts              game list (add an entry here to register a game)
+src/hub/Hub.tsx             arcade lobby
+src/games/clash/            Clash of Sandboxes
+src/games/factory/          Tiny Foundry (logic + canvas)
+worker/index.ts             SPA + /api/raid, /api/health
 ```
+
+Hash routes: `#/clash`, `#/factory`. Empty hash is the lobby.
 
 ## Develop
 
@@ -56,14 +52,12 @@ Open http://localhost:5173.
 ## Deploy to Cloudflare Workers
 
 ```bash
-npm run build        # type-checks, builds the client + Worker bundle
+npm run build
 npx wrangler login   # one-time
-npm run deploy       # build + wrangler deploy
+npm run deploy
 ```
 
-The app is configured in `wrangler.jsonc` with Static Assets (SPA fallback) bound as `ASSETS`.
-No database is required — game state lives in the browser; the Worker is stateless and only
-generates enemy bases on demand.
+No database. Clash progress uses `clash-of-sandboxes-v1`; Foundry uses `tiny-foundry-v1`.
 
 ## API
 

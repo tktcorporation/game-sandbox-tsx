@@ -4,7 +4,7 @@ interface Env {
   ASSETS: Fetcher;
 }
 
-// Mirror of src/game/buildings.ts grid constants (coupled over the wire — keep
+// Mirror of src/games/clash/game/buildings.ts grid constants (coupled over the wire — keep
 // in sync). Portrait field filling the screen: GRID_W columns, GRID_H rows.
 const GRID_W = 10;
 const GRID_H = 18;

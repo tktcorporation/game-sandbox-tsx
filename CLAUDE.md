@@ -4,7 +4,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-**Clash of Sandboxes** — a Clash of Clans–style base-building & raiding game. React 19 + TypeScript SPA, with a single Cloudflare Worker that both serves the static assets *and* exposes `/api/raid` to procedurally generate enemy bases. No database; player state lives entirely in the browser via `localStorage`.
+**Sandbox Arcade** — a multi-game React 19 + TypeScript SPA. A single Cloudflare Worker
+serves the static assets *and* exposes `/api/raid` for Clash of Sandboxes. No database;
+player state lives in the browser via `localStorage`.
+
+The lobby (`src/hub/Hub.tsx`) is the catalog, same idea as `cli-sim-game-escape`'s
+`Game` trait + `create_game`. Register a game in `src/catalog.ts` and mount it from
+`src/App.tsx` (hash route `#/<id>`).
+
+Current cabinets:
+
+- **Clash of Sandboxes** (`src/games/clash/`) — Clash of Clans–style base builder & raider
+- **Tiny Foundry** (`src/games/factory/`) — visual port of Tiny Factory from cli-sim-game-escape
 
 ## Commands
 
@@ -16,33 +27,55 @@ npm run deploy   # build + wrangler deploy
 npm run cf-typegen   # regenerate Worker types from wrangler.jsonc
 ```
 
-There is **no test runner and no linter** configured. The only verification gate is `npm run build` (the `tsc -b` step type-checks `src` via `tsconfig.app.json` and the Worker via `tsconfig.worker.json`). Always run it after changes.
+There is **no test runner and no linter** configured. The only verification gate is `npm run build`.
+Always run it after changes.
 
 ## Architecture
 
-The codebase splits into three independent layers; understanding their boundaries is the key to working here.
+### Catalog / shell
 
-### 1. Pure game logic (`src/game/`) — no React
+- `src/catalog.ts` — `GameId`, copy, play labels. Adding a game starts here.
+- `src/App.tsx` — reads `location.hash`, renders Hub or a game, `onLeave` clears the hash.
+- `src/shell/ArcadeBack.tsx` — shared “back to arcade” control.
+- Each game owns its CSS, Zustand store, and canvas/DOM view. Do not leak Clash tokens
+  into Foundry or vice versa.
 
-- `types.ts` — the data model. `BuildingDef` describes a building *kind* (cost/buildTime/production/storage/defense curves as functions of level); `PlacedBuilding` is an instance on the grid. `GameState` is the persisted shape.
-- `buildings.ts` — `BUILDINGS` and `TROOPS` lookup tables plus all balance curves and `GRID_SIZE`. **This is the single source of truth for game balance.** Editing a curve here changes costs/HP/production everywhere.
-- `logic.ts` — pure helpers (capacity, placement collision, accrued production, town-hall gating, formatting). No state mutation; takes state in, returns values.
-- `store.ts` — the Zustand store (`useGame`), wrapped in `persist` (key `clash-of-sandboxes-v1`). All gameplay mutations (place/move/upgrade/collect/train/applyBattleResult) live here. `partialize` controls exactly which fields persist — **if you add a field to `GameState` that must survive reload, add it to `partialize` too.**
-- `battle.ts` — the real-time battle engine as a plain `Battle` class (no React). `step(dt)` advances the sim; `stats()`/`result()` derive stars, loot, and trophies.
+### Clash of Sandboxes (`src/games/clash/`)
 
-### 2. React UI (`src/components/`, `src/App.tsx`, `src/ui.ts`)
+Pure game logic (`game/`) has no React.
 
-- `ui.ts` holds **ephemeral** UI state (`useUi`: mode home/battle, selection, toasts) — deliberately *not* persisted, separate store from `useGame`. It also exports `useGameLoop`, which ticks `useGame.tick()` once per second to finalize construction timers and refresh production counters (and re-ticks on tab `visibilitychange`).
-- The game has no real-time server tick. Resource production is computed lazily: `accruedFor` calculates how much a building produced since its `lastCollect` timestamp whenever you collect or open the store. The 1s loop only drives UI re-renders and finishes timed constructions.
-- `App.tsx` is the root switch between **home** (village) and **battle** views. It calls `GET /api/raid?th=<level>&seed=<n>` to fetch an enemy base, then renders `BattleView`, which instantiates a `Battle` and drives it with `requestAnimationFrame` onto a `<canvas>`.
+- `game/types.ts` — `BuildingDef`, `PlacedBuilding`, `GameState`
+- `game/buildings.ts` — `BUILDINGS` / `TROOPS` + balance curves. **Single source of truth for Clash balance.**
+- `game/logic.ts` — capacity, placement, production, town-hall gating
+- `game/store.ts` — Zustand persist key `clash-of-sandboxes-v1`. If you add a persisted
+  `GameState` field, add it to `partialize` too.
+- `game/battle.ts` — real-time battle engine
+- `ui.ts` — ephemeral UI (mode, selection, toasts) + 1s `useGameLoop`
 
-### 3. Cloudflare Worker (`worker/index.ts`)
+Resource production is lazy (`accruedFor`). The 1s loop only drives UI and finishes constructions.
 
-A stateless Worker. `fetch` routes `/api/raid` and `/api/health`; everything else falls through to the `ASSETS` binding (SPA fallback configured in `wrangler.jsonc`). `/api/raid` uses a seeded `mulberry32` RNG so a given `seed` deterministically reproduces the same base.
+### Tiny Foundry (`src/games/factory/`)
+
+Port of cli-sim-game-escape's Tiny Factory simulation, with a canvas view.
+
+- `types.ts` — grid, machines, belts, items. Machines occupy 2×2; belts auto-route.
+- `logic.ts` — pure tick / place / miner-mode. 10 ticks/sec. Keep behaviour aligned with
+  the Rust original unless you are changing balance on purpose.
+- `store.ts` — Zustand persist key `tiny-foundry-v1`
+- `FactoryCanvas.tsx` — pan/zoom, drag-paint belts, interpolated items, particles
+
+Core loop: miner → belt → smelter → (assembler / fabricator) → exporter.
+
+### Cloudflare Worker (`worker/index.ts`)
+
+Stateless. `fetch` routes `/api/raid` and `/api/health`; everything else falls through to
+`ASSETS` (SPA fallback in `wrangler.jsonc`). `/api/raid` uses seeded `mulberry32`.
 
 ## Cross-cutting gotchas
 
-- **The enemy-base type is duplicated.** `worker/index.ts` defines its own `EnemyBuilding`/`EnemyBase` (using plain `string` building types) and `src/game/battle.ts` defines matching ones. They are coupled by the JSON shape over the wire — change one side and you must change the other. The battle engine looks up the worker's `type` strings against `BUILDINGS`, so the Worker must only emit types present there.
-- **Town Hall gates everything.** Building counts (`limitByTh`) and upgrade levels are capped by the current Town Hall level; the Town Hall is the only building not gated by itself. Check `townHallLevel()` / `limitForType()` when touching progression.
-- **Walls don't count** toward destruction percentage in battle scoring (matching Clash of Clans) — see `Battle.stats()` and `totalBuildings`.
-- Resource collection is clamped to storage `capacityOf(...)`; upgrading a producer first collects pending production so it isn't lost.
+- **The enemy-base type is duplicated.** `worker/index.ts` and `src/games/clash/game/battle.ts`
+  share a JSON shape. The battle engine looks up `type` strings against `BUILDINGS`.
+- **Town Hall gates Clash.** Building counts and upgrade levels cap on TH level.
+- **Walls don't count** toward Clash destruction percentage.
+- Foundry belts are undirected: items remember `itemFrom` and refuse to backtrack.
+- Foundry machines that are not miners/exporters need belts on the 2×2 rim to receive input.
