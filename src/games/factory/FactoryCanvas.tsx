@@ -980,10 +980,13 @@ function drawRimHighlights(
       if (cell.t !== "machine") continue;
       const status = machineStatus(cell.machine);
       const hungry = status.id === "jammed" || status.id === "starved" || status.id === "need";
-      if (tool !== "belt" && !hungry) continue;
+      const hasBelt = machineRimCells(x, y).some(([px, py]) => grid[py]?.[px]?.t === "belt");
+      if (!hungry && !(tool === "belt" && !hasBelt)) continue;
       ctx.font = "700 10px Oswald, sans-serif";
       ctx.textAlign = "center";
       for (const [px, py] of machineRimCells(x, y)) {
+        const side = (px < x || px >= x + 2 ? 1 : 0) + (py < y || py >= y + 2 ? 1 : 0);
+        if (side !== 1) continue;
         if (grid[py]?.[px]?.t !== "empty") continue;
         ctx.globalAlpha = tool === "belt" ? 0.55 : pulse;
         ctx.fillStyle = hungry ? "#e6c200" : "#c8d46a";
