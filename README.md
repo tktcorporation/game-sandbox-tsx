@@ -17,6 +17,32 @@ Tiny Foundry keeps the original simulation (2×2 machines, auto-routing belts, i
 lines, circuits) and rebuilds the view: interpolated items, rolling belts, furnace sparks,
 and export bursts instead of terminal cells.
 
+## Assets
+
+Two catalogs, both Font-Awesome-style (`import` a name, use it):
+
+| Layer | Pack | License | Where |
+| --- | --- | --- | --- |
+| **HUD glyphs** (buttons, chrome) | [Game-icons.net](https://game-icons.net/) via [`react-icons/gi`](https://react-icons.github.io/react-icons/icons/gi/) | CC BY 3.0 | `src/ui/icons.tsx` |
+| **Pixel sprites** (warriors, coins, potions) | [Kenney](https://kenney.nl/assets) Tiny Dungeon + Tiny Town | CC0 | `src/assets/kenney.ts` |
+
+Village / battle *buildings* are still drawn procedurally (`src/games/clash/render/iso.ts`). Troops, loot pops and resource chips use Kenney 16×16 sprites.
+
+Named imports are tree-shaken — only the tiles you import land in the bundle:
+
+```ts
+import { barbarian, coin } from "./assets/kenney";
+import { Pixel } from "./assets/Pixel";
+import { drawKenney } from "./assets/drawPixel";
+
+<Pixel src={barbarian} size={48} />
+drawKenney(ctx, coin, x, y, 24);
+```
+
+Add another pixel: drop a PNG into `src/assets/kenney/`, add one `export { default as myTile } from "./kenney/my-tile.png"` in `src/assets/kenney.ts`, then import `myTile`. Do not `import * as Kenney`.
+
+Kenney publishes dozens of matching Tiny packs (Battle, Farm, RPG, …) — same 16×16 style, all CC0.
+
 ## Tech
 
 | Layer        | Choice                                                              |
@@ -35,6 +61,11 @@ src/catalog.ts              game list (add an entry here to register a game)
 src/hub/Hub.tsx             arcade lobby
 src/games/clash/            Clash of Sandboxes
 src/games/factory/          Tiny Foundry (logic + canvas)
+src/ui/icons.tsx            Game-icons.net catalog (react-icons/gi) used by Clash HUD
+src/assets/kenney.ts        tree-shakeable Kenney Tiny URL exports (CC0)
+src/assets/gameSprites.ts   troop/resource picks actually used by Clash
+src/assets/drawPixel.ts     canvas blit for imported sprite URLs
+src/assets/Pixel.tsx        <Pixel src={coin} /> / <PixelText>
 worker/index.ts             SPA + /api/raid, /api/health
 ```
 

@@ -8,6 +8,7 @@ import type { EnemyBase } from "./game/battle";
 import { useGame } from "./game/store";
 import { townHallLevel } from "./game/logic";
 import { useGameLoop, useUi } from "./ui";
+import { GameIcon } from "../../ui/icons";
 import "./clash.css";
 
 type Sheet = "shop" | "army" | "settings" | null;
@@ -64,23 +65,33 @@ export default function ClashApp({ onLeave }: { onLeave: () => void }) {
 
       <div className="actionbar">
         <button className="action-btn shop" onClick={() => setSheet("shop")}>
-          <span className="ai">🛠️</span>
+          <span className="ai">
+            <GameIcon name="build" size={20} />
+          </span>
           Build
         </button>
         <button className="action-btn collect" onClick={collectAll}>
-          <span className="ai">💰</span>
+          <span className="ai">
+            <GameIcon name="collect" size={20} />
+          </span>
           Collect
         </button>
         <button className="action-btn army" onClick={() => setSheet("army")}>
-          <span className="ai">⚔️</span>
+          <span className="ai">
+            <GameIcon name="army" size={20} />
+          </span>
           Army
         </button>
         <button className="action-btn attack" onClick={findMatch} disabled={finding}>
-          <span className="ai">{finding ? "⏳" : "🗡️"}</span>
+          <span className="ai">
+            <GameIcon name={finding ? "wait" : "attack"} size={20} />
+          </span>
           {finding ? "Finding…" : "Attack"}
         </button>
         <button className="action-btn more" style={{ flex: 0.6 }} onClick={() => setSheet("settings")}>
-          <span className="ai">⚙️</span>
+          <span className="ai">
+            <GameIcon name="more" size={20} />
+          </span>
           More
         </button>
       </div>
@@ -102,8 +113,13 @@ function SettingsSheet({ onClose, onLeave }: { onClose: () => void; onLeave: () 
     <div className="sheet-backdrop" onClick={onClose}>
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
         <h2>
-          ⚙️ More
-          <button onClick={onClose}>✕</button>
+          <span className="sheet-title">
+            <GameIcon name="more" size={22} tone="ink" />
+            More
+          </span>
+          <button onClick={onClose} aria-label="Close">
+            <GameIcon name="close" size={16} tone="cream" />
+          </button>
         </h2>
         <p className="hint">
           Clash of Sandboxes — a tiny Clash of Clans–style base builder. Built with React + Vite,
@@ -113,6 +129,21 @@ function SettingsSheet({ onClose, onLeave }: { onClose: () => void; onLeave: () 
           Return to Arcade
         </button>
         <HelpReset />
+        <p className="hint attrib">
+          HUD glyphs from{" "}
+          <a href="https://game-icons.net/" target="_blank" rel="noreferrer">
+            Game-icons.net
+          </a>{" "}
+          (Lorc, Delapouite &amp; contributors, CC BY 3.0) via{" "}
+          <a href="https://react-icons.github.io/react-icons/" target="_blank" rel="noreferrer">
+            react-icons
+          </a>
+          . Pixel sprites from{" "}
+          <a href="https://kenney.nl/assets" target="_blank" rel="noreferrer">
+            Kenney.nl
+          </a>{" "}
+          Tiny Dungeon / Tiny Town (CC0).
+        </p>
       </div>
     </div>
   );
