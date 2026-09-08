@@ -1,10 +1,7 @@
-// Isometric procedural renderer — zero external assets.
-// Projects the 16x16 grid into a 2.5D diamond and draws every building / troop
-// as a shaded extruded prism with per-type structure, lighting and effects.
-//
-// All coordinates are in *device pixels* (callers size the canvas with dpr and
-// draw without ctx.scale, matching the project's existing convention).
+// 2.5D village / battle renderer. Buildings are procedural extruded prisms;
+// troops, loot and collect chips are Kenney Tiny 16×16 sprites (see src/assets/kenney.ts).
 
+import { drawKenney, RESOURCE_PIXEL, TROOP_PIXEL } from "../assets/kenney";
 import { DEPLOY_DEPTH, GRID_H, GRID_W } from "../game/buildings";
 
 export { GRID_H, GRID_W, DEPLOY_DEPTH };
@@ -930,7 +927,6 @@ function drawCollect(
   c: { kind: "gold" | "elixir"; full: boolean },
 ): void {
   const r = tw * 0.16;
-  // soft glow
   const grd = ctx.createRadialGradient(x, y, 0, x, y, r * 2.2);
   grd.addColorStop(0, c.kind === "gold" ? "rgba(245,197,24,0.5)" : "rgba(196,92,255,0.5)");
   grd.addColorStop(1, "rgba(0,0,0,0)");
@@ -938,6 +934,9 @@ function drawCollect(
   ctx.beginPath();
   ctx.arc(x, y, r * 2.2, 0, Math.PI * 2);
   ctx.fill();
+
+  const size = Math.max(tw * 0.42, 16);
+  if (drawKenney(ctx, RESOURCE_PIXEL[c.kind], x, y, size)) return;
 
   if (c.kind === "gold") {
     ctx.fillStyle = "#f5c518";
@@ -947,11 +946,6 @@ function drawCollect(
     ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
-    ctx.fillStyle = "#b8860b";
-    ctx.font = `800 ${Math.round(tw * 0.2)}px "Trebuchet MS", sans-serif`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText("$", x, y + 0.5);
   } else {
     ctx.fillStyle = "#c45cff";
     ctx.strokeStyle = "#6a2a9a";
@@ -970,17 +964,20 @@ function drawHammer(ctx: CanvasRenderingContext2D, x: number, y: number, tw: num
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(-0.6 + swing);
-  ctx.strokeStyle = "#6b4a2a";
-  ctx.lineWidth = tw * 0.05;
-  ctx.lineCap = "round";
-  ctx.beginPath();
-  ctx.moveTo(0, 0);
-  ctx.lineTo(0, tw * 0.28);
-  ctx.stroke();
-  ctx.fillStyle = "#9a9a9a";
-  ctx.fillRect(-tw * 0.12, -tw * 0.06, tw * 0.24, tw * 0.12);
+  const size = Math.max(tw * 0.36, 16);
+  if (!drawKenney(ctx, "hammer", 0, 0, size)) {
+    ctx.strokeStyle = "#6b4a2a";
+    ctx.lineWidth = tw * 0.05;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(0, tw * 0.28);
+    ctx.stroke();
+    ctx.fillStyle = "#9a9a9a";
+    ctx.fillRect(-tw * 0.12, -tw * 0.06, tw * 0.24, tw * 0.12);
+    ctx.lineCap = "butt";
+  }
   ctx.restore();
-  ctx.lineCap = "butt";
 }
 
 function drawLabel(ctx: CanvasRenderingContext2D, x: number, y: number, text: string, tw: number): void {
@@ -1037,6 +1034,8 @@ export function drawTroop(ctx: CanvasRenderingContext2D, v: IsoView, t: TroopDra
   const r = st.r * v.tw;
   const bob = Math.abs(Math.sin(t.time * 8 + t.seed)) * v.tw * 0.08;
   const cy = p.y - r * 0.7 - bob;
+  const sprite = TROOP_PIXEL[t.type as keyof typeof TROOP_PIXEL];
+  const pixelSize = r * 2.6;
 
   // shadow
   ctx.fillStyle = "rgba(0,0,0,0.25)";
@@ -1044,26 +1043,39 @@ export function drawTroop(ctx: CanvasRenderingContext2D, v: IsoView, t: TroopDra
   ctx.ellipse(p.x, p.y, r * 0.7, r * 0.32, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // body
-  ctx.fillStyle = t.flash ? "#fff4b0" : st.body;
-  ctx.beginPath();
-  ctx.ellipse(p.x, cy, r * 0.6, r * 0.78, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = t.flash ? "#fff" : st.dark;
-  ctx.beginPath();
-  ctx.arc(p.x, cy - r * 0.7, r * 0.42, 0, Math.PI * 2); // head
-  ctx.fill();
-  ctx.strokeStyle = "rgba(0,0,0,0.3)";
-  ctx.lineWidth = v.tw * 0.02;
-  ctx.beginPath();
-  ctx.ellipse(p.x, cy, r * 0.6, r * 0.78, 0, 0, Math.PI * 2);
-  ctx.stroke();
+  if (t.flash) {
+    ctx.fillStyle = "rgba(255,244,176,0.75)";
+    ctx.beginPath();
+    ctx.ellipse(p.x, p.y - pixelSize * 0.45 - bob, r * 0.85, r, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  const drew = sprite
+    ? drawKenney(ctx, sprite, p.x, p.y - bob, pixelSize, { anchor: "feet" })
+    : false;
+
+  if (!drew) {
+    ctx.fillStyle = t.flash ? "#fff4b0" : st.body;
+    ctx.beginPath();
+    ctx.ellipse(p.x, cy, r * 0.6, r * 0.78, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = t.flash ? "#fff" : st.dark;
+    ctx.beginPath();
+    ctx.arc(p.x, cy - r * 0.7, r * 0.42, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(0,0,0,0.3)";
+    ctx.lineWidth = v.tw * 0.02;
+    ctx.beginPath();
+    ctx.ellipse(p.x, cy, r * 0.6, r * 0.78, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
 
   if (t.hpFrac < 1) {
+    const barY = drew ? p.y - pixelSize - 6 - bob : cy - r * 1.4;
     ctx.fillStyle = "rgba(0,0,0,0.6)";
-    ctx.fillRect(p.x - r * 0.6, cy - r * 1.4, r * 1.2, 4);
+    ctx.fillRect(p.x - r * 0.6, barY, r * 1.2, 4);
     ctx.fillStyle = t.hpFrac > 0.4 ? "#5fd35f" : "#e04a4a";
-    ctx.fillRect(p.x - r * 0.6, cy - r * 1.4, r * 1.2 * t.hpFrac, 4);
+    ctx.fillRect(p.x - r * 0.6, barY, r * 1.2 * t.hpFrac, 4);
   }
 }
 
@@ -1088,6 +1100,7 @@ interface Particle {
   rot: number;
   vrot: number;
   label?: string;
+  loot?: "gold" | "elixir";
 }
 
 /** screen-space coin that homes toward the resource bar (collect feedback). */
@@ -1101,6 +1114,7 @@ interface Flyer {
   delay: number;
   color: string;
   lift: number;
+  loot: "gold" | "elixir";
 }
 
 interface Shot {
@@ -1168,6 +1182,7 @@ export class Fx {
         delay: i * 0.05,
         color,
         lift: 40 + hash2(i, (sy * 3) | 0) * 50,
+        loot: res,
       });
     }
   }
@@ -1216,6 +1231,7 @@ export class Fx {
         color,
         rot: 0,
         vrot: 0,
+        loot: res,
       });
     }
   }
@@ -1311,16 +1327,22 @@ export class Fx {
         ctx.fill();
         ctx.globalAlpha = 1;
       } else if (p.kind === "coin") {
-        const r = p.size * v.tw;
+        const size = Math.max(p.size * v.tw * 4.2, 14);
         ctx.globalAlpha = Math.min(1, a * 1.4);
-        ctx.fillStyle = p.color;
-        ctx.beginPath();
-        ctx.arc(sp.x, py, r, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = "rgba(255,255,255,0.5)";
-        ctx.beginPath();
-        ctx.arc(sp.x - r * 0.3, py - r * 0.3, r * 0.35, 0, Math.PI * 2);
-        ctx.fill();
+        const drew = p.loot
+          ? drawKenney(ctx, RESOURCE_PIXEL[p.loot], sp.x, py, size, { alpha: Math.min(1, a * 1.4) })
+          : false;
+        if (!drew) {
+          const r = p.size * v.tw;
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.arc(sp.x, py, r, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = "rgba(255,255,255,0.5)";
+          ctx.beginPath();
+          ctx.arc(sp.x - r * 0.3, py - r * 0.3, r * 0.35, 0, Math.PI * 2);
+          ctx.fill();
+        }
         ctx.globalAlpha = 1;
       } else if (p.kind === "debris") {
         ctx.save();
@@ -1393,17 +1415,21 @@ export class Fx {
       const ease = k * k * (3 - 2 * k);
       const x = f.x + (f.tx - f.x) * ease;
       const y = f.y + (f.ty - f.y) * ease - Math.sin(k * Math.PI) * f.lift;
-      const r = v.tw * 0.09 * (1 - k * 0.35);
-      ctx.globalAlpha = 1 - k * k;
-      ctx.fillStyle = f.color;
-      ctx.beginPath();
-      ctx.arc(x, y, r, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = "rgba(255,255,255,0.55)";
-      ctx.beginPath();
-      ctx.arc(x - r * 0.3, y - r * 0.3, r * 0.35, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.globalAlpha = 1;
+      const size = Math.max(v.tw * 0.28 * (1 - k * 0.25), 12);
+      const alpha = 1 - k * k;
+      if (!drawKenney(ctx, RESOURCE_PIXEL[f.loot], x, y, size, { alpha })) {
+        const r = v.tw * 0.09 * (1 - k * 0.35);
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = f.color;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "rgba(255,255,255,0.55)";
+        ctx.beginPath();
+        ctx.arc(x - r * 0.3, y - r * 0.3, r * 0.35, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
     }
 
     // full-frame white flash (town hall destruction etc.)

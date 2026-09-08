@@ -1,3 +1,5 @@
+import { Pixel } from "../assets/Pixel";
+import { RESOURCE_PIXEL } from "../assets/kenney";
 import { useGame } from "../game/store";
 import { capacityOf, formatNumber } from "../game/logic";
 import { GameIcon } from "../ui/icons";
@@ -11,7 +13,7 @@ export function ResourceBar() {
     <div className="topbar">
       <div className="res gold">
         <span className="icon">
-          <GameIcon name="gold" size={18} tone="gold" />
+          <Pixel name={RESOURCE_PIXEL.gold} size={22} />
         </span>
         <div className="bar">
           <span className="val">{formatNumber(gold)}</span>
@@ -22,7 +24,7 @@ export function ResourceBar() {
       </div>
       <div className="res elixir">
         <span className="icon">
-          <GameIcon name="elixir" size={18} tone="elixir" />
+          <Pixel name={RESOURCE_PIXEL.elixir} size={22} />
         </span>
         <div className="bar">
           <span className="val">{formatNumber(elixir)}</span>
@@ -34,7 +36,7 @@ export function ResourceBar() {
       <div className="spacer" />
       <div className="res gem">
         <span className="icon">
-          <GameIcon name="gems" size={18} tone="gem" />
+          <Pixel name="ring" size={22} />
         </span>
         <span className="val">{formatNumber(gems)}</span>
       </div>

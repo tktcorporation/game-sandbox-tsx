@@ -22,15 +22,26 @@ the enemy villages you raid.
 
 ## Assets
 
-HUD glyphs come from **[Game-icons.net](https://game-icons.net/)** (Lorc, Delapouite & contributors,
-[CC BY 3.0](https://creativecommons.org/licenses/by/3.0/)), imported through
-[`react-icons/gi`](https://react-icons.github.io/react-icons/icons/gi/) — the closest thing to
-Font Awesome for game UI. Semantic names live in `src/ui/icons.tsx`; add another icon by importing
-it from `react-icons/gi` and wiring it into the catalog.
+Two catalogs, both Font-Awesome-style (`import` a name, use it):
 
-Village / battle sprites on the canvas are still drawn procedurally (`src/render/iso.ts`). For
-painted tiles and characters, [Kenney.nl](https://kenney.nl/assets) packs are the CC0 counterpart
-(download + drop into `public/`, not an npm icon font).
+| Layer | Pack | License | Where |
+| --- | --- | --- | --- |
+| **HUD glyphs** (buttons, chrome) | [Game-icons.net](https://game-icons.net/) via [`react-icons/gi`](https://react-icons.github.io/react-icons/icons/gi/) | CC BY 3.0 | `src/ui/icons.tsx` |
+| **Pixel sprites** (warriors, coins, potions) | [Kenney](https://kenney.nl/assets) Tiny Dungeon + Tiny Town | CC0 | `src/assets/kenney.ts` |
+
+Village / battle *buildings* are still drawn procedurally (`src/render/iso.ts`). Troops, loot pops and resource chips use Kenney 16×16 sprites.
+
+Add another pixel: drop a PNG into `src/assets/kenney/`, import it in `src/assets/kenney.ts`, add one line to `KENNEY`, then:
+
+```ts
+import { Pixel } from "./assets/Pixel";
+import { drawKenney } from "./assets/kenney";
+
+<Pixel name="barbarian" size={48} />
+drawKenney(ctx, "coin", x, y, 24);
+```
+
+Kenney publishes dozens of matching Tiny packs (Battle, Farm, RPG, …) — same 16×16 style, all CC0.
 
 ## Tech
 
@@ -55,6 +66,8 @@ src/game/                pure game logic (no React)
 src/components/          React components (Board, ResourceBar, Sheets, BattleView)
 src/ui.ts                ephemeral UI state (mode, selection, toasts) + game loop hook
 src/ui/icons.tsx         Game-icons.net catalog (react-icons/gi) used by the HUD
+src/assets/kenney.ts     Kenney Tiny pixel catalog (CC0) + canvas blit
+src/assets/Pixel.tsx     <Pixel name="coin" /> / <PixelText>
 ```
 
 ## Develop
