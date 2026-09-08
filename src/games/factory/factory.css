@@ -87,27 +87,27 @@
   justify-content: center;
   min-width: 72px;
   padding: 4px 10px 5px;
-  background: #1f211c;
-  border: 1px solid #0e100c;
+  background: #ece8db;
+  border: 1px solid #3a3e36;
   border-radius: var(--radius-sm);
-  box-shadow: inset 0 0 0 1px #3a3c34;
+  box-shadow: inset 0 1px 0 #f7f4ea, 1px 2px 0 #8a8e82;
 }
 .foundry-stat .k {
   font-family: var(--display);
   font-size: 11px;
   letter-spacing: 1.6px;
   text-transform: uppercase;
-  color: #9aa08e;
+  color: var(--mute);
 }
 .foundry-stat strong {
   font-family: var(--mono);
   font-size: 16px;
   font-weight: 600;
   line-height: 1.15;
-  color: #d7f08a;
+  color: var(--ink);
 }
 .foundry-stat.coin strong {
-  color: var(--hazard);
+  color: #7a6a00;
 }
 
 .foundry-goal {

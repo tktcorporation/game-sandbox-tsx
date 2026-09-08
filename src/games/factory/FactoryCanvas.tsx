@@ -462,23 +462,29 @@ function drawBelts(
       ctx.beginPath();
       roundRect(ctx, px + 10, py + 10, CELL - 20, CELL - 20, 1);
       ctx.clip();
-      ctx.strokeStyle = "#d4c430";
-      ctx.lineWidth = 2;
       if (dir === "left" || dir === "right") {
-        for (let i = -1; i < 4; i++) {
-          const ox = px + ((slide + i * 14) % (CELL + 8)) - 4;
+        for (let i = -1; i < 5; i++) {
+          const ox = px + ((slide + i * 14) % (CELL + 8)) - 2;
+          ctx.fillStyle = "#d4c430";
           ctx.beginPath();
-          ctx.moveTo(ox, py + 12);
-          ctx.lineTo(ox + 8, py + CELL - 12);
-          ctx.stroke();
+          ctx.arc(ox, py + CELL / 2, 5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = "#f4ecc0";
+          ctx.beginPath();
+          ctx.arc(ox - 1.5, py + CELL / 2 - 1.5, 1.8, 0, Math.PI * 2);
+          ctx.fill();
         }
       } else {
-        for (let i = -1; i < 4; i++) {
-          const oy = py + ((slide + i * 14) % (CELL + 8)) - 4;
+        for (let i = -1; i < 5; i++) {
+          const oy = py + ((slide + i * 14) % (CELL + 8)) - 2;
+          ctx.fillStyle = "#d4c430";
           ctx.beginPath();
-          ctx.moveTo(px + 12, oy);
-          ctx.lineTo(px + CELL - 12, oy + 8);
-          ctx.stroke();
+          ctx.arc(px + CELL / 2, oy, 5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = "#f4ecc0";
+          ctx.beginPath();
+          ctx.arc(px + CELL / 2 - 1.5, oy - 1.5, 1.8, 0, Math.PI * 2);
+          ctx.fill();
         }
       }
       ctx.restore();
