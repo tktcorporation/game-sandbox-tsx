@@ -32,7 +32,7 @@ export const GAMES: GameEntry[] = [
     tagline: "Watch the line come alive.",
     blurb:
       "A visual port of Tiny Factory from cli-sim-game-escape. Lay miners, belts and furnaces, then follow ore as it melts, meshes, and ships.",
-    playLabel: "Light the furnace",
+    playLabel: "Clock in",
     origin: "cli-sim-game-escape",
   },
 ];

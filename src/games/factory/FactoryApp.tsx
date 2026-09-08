@@ -27,6 +27,7 @@ export default function FactoryApp({ onLeave }: { onLeave: () => void }) {
     <div className="foundry-root">
       <header className="foundry-top">
         <ArcadeBack onLeave={onLeave} />
+        <p className="foundry-bay">Bay A</p>
         <div className="foundry-stat coin">
           <span className="k">Coin</span>
           <strong>${money}</strong>
@@ -41,7 +42,7 @@ export default function FactoryApp({ onLeave }: { onLeave: () => void }) {
         </div>
         <p className="foundry-goal">{goal}</p>
         <button type="button" className="foundry-reset" onClick={reset}>
-          Reset line
+          Reset floor
         </button>
       </header>
 

@@ -66,15 +66,19 @@ function ClashPreview() {
 function FoundryPreview() {
   return (
     <svg className="preview-svg" viewBox="0 0 160 110" role="img">
-      <rect width="160" height="110" fill="#14110e" />
-      <rect x="12" y="18" width="136" height="74" fill="#1c1814" stroke="#3a3028" />
-      <rect x="24" y="48" width="48" height="10" fill="#3a3228" />
-      <rect x="72" y="48" width="28" height="10" fill="#ff7a1a" opacity="0.85" />
-      <rect x="28" y="28" width="28" height="22" fill="#6a3a1e" stroke="#c47832" />
-      <rect x="104" y="36" width="28" height="28" fill="#3a2a22" stroke="#8a5a32" />
-      <circle cx="44" cy="53" r="3" fill="#cfd6de" />
-      <circle cx="86" cy="53" r="3" fill="#e07a3a" />
-      <circle cx="118" cy="64" r="4" fill="#ffb020" />
+      <rect width="160" height="110" fill="#8e8a80" />
+      <rect x="12" y="18" width="136" height="74" fill="#c9c4b8" stroke="#3a3832" />
+      <rect x="24" y="50" width="52" height="10" fill="#6e6a62" />
+      <rect x="28" y="52" width="6" height="6" fill="#e6c200" />
+      <rect x="40" y="52" width="6" height="6" fill="#e6c200" />
+      <rect x="52" y="52" width="6" height="6" fill="#e6c200" />
+      <rect x="76" y="50" width="28" height="10" fill="#6e6a62" />
+      <rect x="80" y="52" width="6" height="6" fill="#e6c200" />
+      <rect x="28" y="26" width="28" height="22" fill="#6a7a52" stroke="#2a3228" />
+      <rect x="104" y="34" width="28" height="28" fill="#2a6a68" stroke="#163832" />
+      <circle cx="44" cy="55" r="3" fill="#9aa8b8" />
+      <circle cx="90" cy="55" r="3" fill="#e07a3a" />
+      <rect x="112" y="44" width="12" height="8" fill="#e6c200" />
     </svg>
   );
 }

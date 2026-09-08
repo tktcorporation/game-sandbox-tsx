@@ -221,7 +221,7 @@ export function FactoryCanvas() {
               life: 520,
               max: 520,
               size: 2.5 + Math.random() * 2,
-              color: "#ffb020",
+              color: "#e6c200",
             });
           }
           popups.push({ x: cx, y: cy - 8, text: `+$${value}`, life: 700 });
@@ -245,7 +245,7 @@ export function FactoryCanvas() {
             life: fire ? 420 : 260,
             max: 420,
             size: fire ? 2.4 : 1.5,
-            color: fire ? (Math.random() > 0.5 ? "#ff7a1a" : "#ffd060") : "#c9b48a",
+            color: fire ? (Math.random() > 0.5 ? "#ff7a1a" : "#ffd060") : "#8aa070",
           });
         }
       }
@@ -315,7 +315,7 @@ function paintFrame(
   const s = useFactory.getState();
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, w, h);
-  ctx.fillStyle = "#14110e";
+  ctx.fillStyle = "#8e8a80";
   ctx.fillRect(0, 0, w, h);
 
   ctx.save();
@@ -340,18 +340,26 @@ function paintFrame(
     ctx.fill();
   }
   ctx.globalAlpha = 1;
-  ctx.font = "800 16px Teko, sans-serif";
   ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
   for (const pop of popups) {
-    ctx.globalAlpha = Math.max(0, pop.life / 700);
-    ctx.fillStyle = "#ffd060";
+    const a = Math.max(0, pop.life / 700);
+    ctx.globalAlpha = a;
+    ctx.fillStyle = "#e6c200";
+    ctx.fillRect(pop.x - 30, pop.y - 11, 60, 18);
+    ctx.strokeStyle = "#1a1a16";
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(pop.x - 30, pop.y - 11, 60, 18);
+    ctx.fillStyle = "#1a1a16";
+    ctx.font = "700 12px Oswald, sans-serif";
     ctx.fillText(pop.text, pop.x, pop.y);
   }
   ctx.globalAlpha = 1;
+  ctx.textBaseline = "alphabetic";
   ctx.restore();
 
   if (s.exportFlash > 0) {
-    ctx.fillStyle = `rgba(255, 122, 26, ${0.07 * (s.exportFlash / 12)})`;
+    ctx.fillStyle = `rgba(230, 194, 0, ${0.12 * (s.exportFlash / 12)})`;
     ctx.fillRect(0, 0, w, h);
   }
 }
@@ -367,21 +375,34 @@ function visibleRange(c: Cam, w: number, h: number) {
 }
 
 function drawFloor(ctx: CanvasRenderingContext2D, vis: { x0: number; y0: number; x1: number; y1: number }) {
-  ctx.fillStyle = "#1b1612";
+  ctx.fillStyle = "#c9c4b8";
   ctx.fillRect(0, 0, GRID_W * CELL, GRID_H * CELL);
   for (let y = vis.y0; y < vis.y1; y++) {
     for (let x = vis.x0; x < vis.x1; x++) {
       const px = x * CELL;
       const py = y * CELL;
-      ctx.fillStyle = (x + y) % 2 === 0 ? "#1e1915" : "#181410";
+      ctx.fillStyle = (x + y) % 2 === 0 ? "#d4cfc2" : "#c4bfb2";
+      if ((x + y) % 7 === 0) ctx.fillStyle = "#bbb6aa";
       ctx.fillRect(px, py, CELL, CELL);
-      ctx.strokeStyle = "rgba(70, 58, 44, 0.35)";
+      ctx.strokeStyle = "rgba(90, 86, 78, 0.16)";
       ctx.strokeRect(px + 0.5, py + 0.5, CELL - 1, CELL - 1);
     }
   }
-  ctx.strokeStyle = "rgba(255, 122, 26, 0.18)";
-  ctx.lineWidth = 3;
-  ctx.strokeRect(1.5, 1.5, GRID_W * CELL - 3, GRID_H * CELL - 3);
+  ctx.strokeStyle = "rgba(70, 66, 58, 0.28)";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (let x = 0; x <= GRID_W; x += 5) {
+    ctx.moveTo(x * CELL, 0);
+    ctx.lineTo(x * CELL, GRID_H * CELL);
+  }
+  for (let y = 0; y <= GRID_H; y += 5) {
+    ctx.moveTo(0, y * CELL);
+    ctx.lineTo(GRID_W * CELL, y * CELL);
+  }
+  ctx.stroke();
+  ctx.strokeStyle = "#3a3832";
+  ctx.lineWidth = 4;
+  ctx.strokeRect(2, 2, GRID_W * CELL - 4, GRID_H * CELL - 4);
 }
 
 function beltDir(grid: Cell[][], x: number, y: number): Direction {
@@ -430,18 +451,18 @@ function drawBelts(
       if (cell.t !== "belt") continue;
       const px = x * CELL;
       const py = y * CELL;
-      ctx.fillStyle = "#2a241c";
-      roundRect(ctx, px + 8, py + 8, CELL - 16, CELL - 16, 6);
+      ctx.fillStyle = "#6e6a62";
+      roundRect(ctx, px + 8, py + 8, CELL - 16, CELL - 16, 2);
       ctx.fill();
-      ctx.strokeStyle = "#4a3c2c";
-      ctx.lineWidth = 2;
+      ctx.strokeStyle = "#3a3832";
+      ctx.lineWidth = 1.5;
       ctx.stroke();
       const dir = beltDir(grid, x, y);
       ctx.save();
       ctx.beginPath();
-      roundRect(ctx, px + 10, py + 10, CELL - 20, CELL - 20, 4);
+      roundRect(ctx, px + 10, py + 10, CELL - 20, CELL - 20, 1);
       ctx.clip();
-      ctx.strokeStyle = "rgba(255, 168, 72, 0.28)";
+      ctx.strokeStyle = "#d4c430";
       ctx.lineWidth = 2;
       if (dir === "left" || dir === "right") {
         for (let i = -1; i < 4; i++) {
@@ -489,28 +510,28 @@ function drawMachineBody(ctx: CanvasRenderingContext2D, x: number, y: number, m:
   const py = y * CELL;
   const size = CELL * 2;
   const pal = machinePalette(m.kind);
-  ctx.fillStyle = "rgba(0,0,0,0.45)";
-  roundRect(ctx, px + 6, py + 10, size - 8, size - 8, 10);
+  ctx.fillStyle = "rgba(58,56,50,0.28)";
+  roundRect(ctx, px + 6, py + 8, size - 8, size - 8, 2);
   ctx.fill();
   ctx.fillStyle = pal.body;
-  roundRect(ctx, px + 4, py + 4, size - 8, size - 10, 10);
+  roundRect(ctx, px + 4, py + 4, size - 8, size - 10, 2);
   ctx.fill();
   ctx.fillStyle = pal.top;
-  roundRect(ctx, px + 4, py + 4, size - 8, 22, 10);
+  roundRect(ctx, px + 4, py + 4, size - 8, 22, 2);
   ctx.fill();
   ctx.strokeStyle = pal.edge;
-  ctx.lineWidth = 2.5;
-  roundRect(ctx, px + 4, py + 4, size - 8, size - 10, 10);
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, px + 4, py + 4, size - 8, size - 10, 2);
   ctx.stroke();
 
   const busy = m.progress > 0;
   const heat = busy ? 0.38 + 0.22 * Math.sin(now / 120) : 0.08;
-  ctx.fillStyle = "rgba(0,0,0,0.45)";
-  roundRect(ctx, px + 18, py + 32, size - 36, 36, 6);
+  ctx.fillStyle = "rgba(26,28,24,0.28)";
+  roundRect(ctx, px + 18, py + 32, size - 36, 36, 2);
   ctx.fill();
   const n = parseInt(pal.glow.slice(1), 16);
   ctx.fillStyle = `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${heat})`;
-  roundRect(ctx, px + 20, py + 34, size - 40, 32, 5);
+  roundRect(ctx, px + 20, py + 34, size - 40, 32, 2);
   ctx.fill();
 
   if (busy) {
@@ -519,19 +540,19 @@ function drawMachineBody(ctx: CanvasRenderingContext2D, x: number, y: number, m:
     ctx.fillRect(px + 16, py + size - 18, (size - 32) * p, 5);
   }
 
-  ctx.fillStyle = "#f3e6c8";
-  ctx.font = "700 11px Karla, sans-serif";
+  ctx.fillStyle = "#1a1c18";
+  ctx.font = "600 12px Oswald, sans-serif";
   ctx.textAlign = "center";
   ctx.fillText(shortName(m.kind), px + size / 2, py + 20);
   if (m.kind === "miner") {
-    ctx.fillStyle = m.mode === "iron" ? "#9aa8b8" : "#e07a3a";
+    ctx.fillStyle = m.mode === "iron" ? "#4a5868" : "#a05a22";
     ctx.fillText(m.mode === "iron" ? "IRON" : "COPPER", px + size / 2, py + size - 22);
   }
   drawMachineGlyph(ctx, px + size / 2, py + 50, m.kind, now, busy);
   const buf = m.kind === "exporter" ? m.inputBuffer.length : m.outputBuffer.length;
   if (buf > 0) {
-    ctx.fillStyle = "#ffb020";
-    ctx.font = "700 10px Karla, sans-serif";
+    ctx.fillStyle = "#2a2800";
+    ctx.font = "600 9px 'IBM Plex Mono', monospace";
     ctx.fillText(`${buf} queued`, px + size / 2, py + size - 8);
   }
 }
@@ -563,20 +584,20 @@ function drawMachineGlyph(
     ctx.closePath();
     ctx.fill();
   } else if (kind === "assembler") {
-    ctx.strokeStyle = "#e8c15a";
+    ctx.strokeStyle = "#3a3e3c";
     ctx.lineWidth = 3;
     ctx.strokeRect(-12, -8, 24, 16);
-    ctx.fillStyle = "#e8c15a";
+    ctx.fillStyle = "#e6c200";
     ctx.fillRect(-2, -14 + (busy ? Math.sin(now / 90) * 4 : 0), 4, 10);
   } else if (kind === "exporter") {
-    ctx.fillStyle = "#6cb238";
+    ctx.fillStyle = "#2a6a68";
     ctx.fillRect(-14, -4, 28, 12);
     ctx.fillRect(6, -10, 10, 8);
   } else {
-    ctx.strokeStyle = "#7ad0a0";
+    ctx.strokeStyle = "#2f6b32";
     ctx.lineWidth = 2;
     ctx.strokeRect(-12, -8, 24, 16);
-    ctx.fillStyle = "#ffb020";
+    ctx.fillStyle = "#e6c200";
     ctx.fillRect(-6, -3, 4, 4);
     ctx.fillRect(2, -2, 5, 2);
   }
@@ -642,7 +663,7 @@ function drawItemGlyph(ctx: CanvasRenderingContext2D, x: number, y: number, item
       }
       ctx.closePath();
       ctx.fill();
-      ctx.fillStyle = "#2a2118";
+      ctx.fillStyle = "#3a3832";
       ctx.beginPath();
       ctx.arc(0, 0, 2.4, 0, Math.PI * 2);
       ctx.fill();
@@ -651,7 +672,7 @@ function drawItemGlyph(ctx: CanvasRenderingContext2D, x: number, y: number, item
     case "circuit":
       ctx.fillStyle = "#1f6a44";
       ctx.fillRect(-9, -6, 18, 12);
-      ctx.fillStyle = "#ffb020";
+      ctx.fillStyle = "#e6c200";
       ctx.fillRect(-6, -3, 3, 3);
       ctx.fillRect(2, -2, 5, 2);
       break;
@@ -680,11 +701,11 @@ function drawGhost(
   const ok = factoryCanPlace(hover.x, hover.y);
   ctx.globalAlpha = 0.42;
   if (tool === "belt" || tool === "delete") {
-    ctx.fillStyle = ok ? "#ffb020" : "#c44";
+    ctx.fillStyle = ok ? "#e6c200" : "#b42318";
     ctx.fillRect(hover.x * CELL + 6, hover.y * CELL + 6, CELL - 12, CELL - 12);
   } else {
-    ctx.fillStyle = ok && money >= machineCost(tool) ? "#6cb238" : "#c44";
-    roundRect(ctx, hover.x * CELL + 4, hover.y * CELL + 4, CELL * 2 - 8, CELL * 2 - 8, 10);
+    ctx.fillStyle = ok && money >= machineCost(tool) ? "#2f6b32" : "#b42318";
+    roundRect(ctx, hover.x * CELL + 4, hover.y * CELL + 4, CELL * 2 - 8, CELL * 2 - 8, 2);
     ctx.fill();
   }
   ctx.globalAlpha = 1;
@@ -711,8 +732,8 @@ function drawSelection(
     w = CELL * 2;
     h = CELL * 2;
   }
-  ctx.strokeStyle = "#ffb020";
-  ctx.lineWidth = 2;
+  ctx.strokeStyle = "#c9a800";
+  ctx.lineWidth = 2.5;
   ctx.setLineDash([6, 4]);
   ctx.strokeRect(x * CELL + 2, y * CELL + 2, w - 4, h - 4);
   ctx.setLineDash([]);
@@ -731,15 +752,15 @@ function machineAt(grid: Cell[][], x: number, y: number): Machine | null {
 function machinePalette(kind: MachineKind) {
   switch (kind) {
     case "miner":
-      return { body: "#3a4650", top: "#5a6a78", edge: "#1c242c", glow: "#9aa8b8" };
+      return { body: "#6a7a52", top: "#8a9a6a", edge: "#2a3228", glow: "#c8d4a8" };
     case "smelter":
-      return { body: "#5a2a16", top: "#8a3a18", edge: "#2a1208", glow: "#ff7a1a" };
+      return { body: "#8a5a42", top: "#b07050", edge: "#4a2818", glow: "#ff7a1a" };
     case "assembler":
-      return { body: "#4a3a18", top: "#7a5a20", edge: "#2a1c08", glow: "#e8c15a" };
+      return { body: "#6e7270", top: "#8a8e8c", edge: "#3a3e3c", glow: "#e6c200" };
     case "exporter":
-      return { body: "#243820", top: "#3a5a32", edge: "#102010", glow: "#6cb238" };
+      return { body: "#2a6a68", top: "#3a8a72", edge: "#163832", glow: "#4ec9a0" };
     case "fabricator":
-      return { body: "#1c3a32", top: "#2a5a4a", edge: "#0c2018", glow: "#7ad0a0" };
+      return { body: "#4a7a62", top: "#6aa882", edge: "#204032", glow: "#8ad4a8" };
   }
 }
 
