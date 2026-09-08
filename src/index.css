@@ -118,7 +118,10 @@ body {
     0 2px 0 var(--wood-edge), 0 4px 6px rgba(0, 0, 0, 0.32);
 }
 .res .icon {
-  font-size: 19px;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
   line-height: 1;
   filter: drop-shadow(0 1px 1px rgba(110, 70, 20, 0.5));
 }
@@ -231,7 +234,7 @@ body {
   border-radius: 50%;
   display: grid;
   place-items: center;
-  font-size: 19px;
+  color: var(--wood-1);
   background: linear-gradient(180deg, #d2a86c, #97683a);
   border: 2px solid var(--wood-edge);
   box-shadow: inset 0 2px 0 rgba(255, 236, 200, 0.55), inset 0 -3px 4px rgba(0, 0, 0, 0.3);
@@ -311,6 +314,13 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
+}
+.sheet-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 .sheet h2 button {
   font-family: var(--font-display);
@@ -322,6 +332,9 @@ body {
   width: 34px;
   height: 34px;
   cursor: pointer;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
   box-shadow: inset 0 2px 0 var(--wood-hi), 0 2px 0 var(--wood-edge);
 }
 .sheet h2 button:active { transform: translateY(2px); box-shadow: inset 0 2px 0 var(--wood-hi); }
@@ -350,12 +363,24 @@ body {
     0 3px 0 #c2a36a, 0 6px 12px rgba(70, 45, 15, 0.35);
 }
 .shop-card.locked { filter: grayscale(0.5) opacity(0.6); cursor: not-allowed; }
-.shop-card .big { font-size: 31px; filter: drop-shadow(0 2px 2px rgba(110, 75, 25, 0.45)); }
+.shop-card .big {
+  display: grid;
+  place-items: center;
+  height: 36px;
+  filter: drop-shadow(0 2px 2px rgba(110, 75, 25, 0.45));
+}
 .shop-card .nm { font-family: var(--font-display); font-size: 13px; font-weight: 700; margin: 5px 0 3px; }
 .shop-card .ct { font-family: var(--font-display); font-size: 12px; font-weight: 700; }
 .shop-card .ct.gold { color: #9a6510; }
 .shop-card .ct.elixir { color: #6f31b3; }
-.shop-card .lim { font-size: 10px; color: var(--ink-soft); }
+.shop-card .lim {
+  font-size: 10px;
+  color: var(--ink-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
 
 .cost-line { display: inline-flex; gap: 8px; align-items: center; }
 
@@ -384,6 +409,11 @@ body {
   margin-top: 14px;
   color: var(--cream);
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 4px;
   transition: transform 0.1s ease, box-shadow 0.1s ease, filter 0.1s ease;
 }
 .btn:active { transform: translateY(4px); filter: brightness(1.06); }
@@ -494,8 +524,14 @@ body {
   white-space: nowrap;
   pointer-events: none;
   z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.6), 0 4px 0 #4f7a2a, 0 7px 12px rgba(0, 0, 0, 0.4);
   animation: bob 1.6s ease-in-out infinite;
+}
+.hint-north {
+  transform: rotate(-90deg);
 }
 @keyframes bob {
   0%, 100% { transform: translateX(-50%) translateY(0); }
@@ -530,7 +566,14 @@ body {
   transition: transform 0.1s ease, box-shadow 0.1s ease;
 }
 .troop-btn:active { transform: translateY(3px); box-shadow: inset 0 2px 0 var(--wood-hi), 0 1px 0 var(--wood-edge); }
-.troop-btn .big { font-size: 25px; filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.5)); }
+.troop-btn .big {
+  display: grid;
+  place-items: center;
+  height: 28px;
+  color: var(--parch-1);
+  filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.5));
+}
+.troop-btn.active .big { color: var(--gold-hi); }
 .troop-btn .nm { font-size: 11px; font-weight: 700; }
 .troop-btn.active {
   border-color: var(--gold);
@@ -606,6 +649,41 @@ body {
   color: var(--ink-soft);
   padding: 6px;
 }
+.hint.attrib {
+  margin-top: 16px;
+  line-height: 1.45;
+}
+.hint a {
+  color: var(--gold-deep);
+  font-weight: 700;
+}
+.cap-note {
+  align-self: center;
+  opacity: 0.55;
+  font-size: 11px;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+/* Game-icons.net glyphs — currentColor so tones/surfaces tint them */
+.gicon {
+  display: block;
+  flex-shrink: 0;
+}
+.icon-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  vertical-align: middle;
+}
+.tone-gold { color: #9a6510; }
+.tone-elixir { color: #6f31b3; }
+.tone-gem { color: #1f7d4e; }
+.tone-trophy { color: #b9530f; }
+.tone-ink { color: var(--ink); }
+.tone-cream { color: var(--cream); }
+.tone-ember { color: var(--ember-deep); }
+.tone-leaf { color: var(--leaf-deep); }
 
 .empty-army {
   text-align: center;

@@ -418,7 +418,7 @@ export function Board() {
           }
           fxRef.current.flyToBar(src.x, src.y - v.tw * 0.4, tx, ty, res);
         }
-        ui.showToast(`+${formatNumber(accrued)} ${res === "gold" ? "🪙" : "🧪"}`);
+        ui.showToast(`+${formatNumber(accrued)} ${res}`);
       } else {
         ui.select(b.id);
       }

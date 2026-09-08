@@ -6,6 +6,7 @@ import { useGame } from "../game/store";
 import { formatNumber } from "../game/logic";
 import type { TroopType } from "../game/types";
 import { useUi } from "../ui";
+import { GameIcon, IconText, TROOP_ICON } from "../ui/icons";
 import {
   buildDecorations,
   dayLight,
@@ -293,13 +294,24 @@ export function BattleView({ base, onExit }: { base: EnemyBase; onExit: () => vo
     <div className="battle-root">
       <canvas ref={canvasRef} className="battle-canvas" onPointerDown={deploy} />
       <div className="battle-hud">
-        <div className="chip">⏱ {Math.ceil(stats.timeLeft)}s</div>
+        <div className="chip">
+          <IconText icon="timer" size={14}>
+            {Math.ceil(stats.timeLeft)}s
+          </IconText>
+        </div>
         <div className="chip stars">{"★".repeat(stats.stars)}{"☆".repeat(3 - stats.stars)}</div>
-        <div className="chip">💥 {Math.round(stats.destructionPct * 100)}%</div>
+        <div className="chip">
+          <IconText icon="destruction" size={14}>
+            {Math.round(stats.destructionPct * 100)}%
+          </IconText>
+        </div>
       </div>
 
       {!finished && (
-        <div className="deploy-hint">⬆ 手前から出撃して上の敵を攻めろ</div>
+        <div className="deploy-hint">
+          <GameIcon name="north" size={14} className="hint-north" />
+          手前から出撃して上の敵を攻めろ
+        </div>
       )}
 
       <div className="troop-dock">
@@ -313,7 +325,9 @@ export function BattleView({ base, onExit }: { base: EnemyBase; onExit: () => vo
               onClick={() => setSelected(type)}
             >
               <span className="cnt">{remaining}</span>
-              <span className="big">{TROOPS[type].emoji}</span>
+              <span className="big">
+                <GameIcon name={TROOP_ICON[type]} size={26} />
+              </span>
               <span className="nm">{TROOPS[type].name}</span>
             </button>
           );
@@ -325,7 +339,9 @@ export function BattleView({ base, onExit }: { base: EnemyBase; onExit: () => vo
             setFinished(true);
           }}
         >
-          <span className="big">🏁</span>
+          <span className="big">
+            <GameIcon name="end" size={26} tone="gold" />
+          </span>
           <span className="nm">End</span>
         </button>
       </div>
@@ -352,13 +368,23 @@ export function BattleView({ base, onExit }: { base: EnemyBase; onExit: () => vo
             </div>
             <p>{Math.round(stats.destructionPct * 100)}% destroyed</p>
             <div className="loot-row">
-              <span className="ct gold">🪙 +{formatNumber(res.loot.gold)}</span>
-              <span className="ct elixir">🧪 +{formatNumber(res.loot.elixir)}</span>
+              <span className="ct gold">
+                <IconText icon="gold" tone="gold" size={16}>
+                  +{formatNumber(res.loot.gold)}
+                </IconText>
+              </span>
+              <span className="ct elixir">
+                <IconText icon="elixir" tone="elixir" size={16}>
+                  +{formatNumber(res.loot.elixir)}
+                </IconText>
+              </span>
             </div>
             <div className="loot-row">
-              <span style={{ color: res.trophies >= 0 ? "#ff9d3c" : "#e04a4a" }}>
-                🏆 {res.trophies >= 0 ? "+" : ""}
-                {res.trophies}
+              <span style={{ color: res.trophies >= 0 ? "#b9530f" : "#e04a4a" }}>
+                <IconText icon="trophies" tone="trophy" size={16}>
+                  {res.trophies >= 0 ? "+" : ""}
+                  {res.trophies}
+                </IconText>
               </span>
             </div>
             <button className="btn primary" onClick={endBattle}>

@@ -20,7 +20,6 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
   townhall: {
     type: "townhall",
     name: "Town Hall",
-    emoji: "🏛️",
     category: "core",
     size: 3,
     maxLevel: 6,
@@ -33,7 +32,6 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
   goldmine: {
     type: "goldmine",
     name: "Gold Mine",
-    emoji: "⛏️",
     category: "resource",
     size: 2,
     maxLevel: 8,
@@ -51,7 +49,6 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
   elixircollector: {
     type: "elixircollector",
     name: "Elixir Collector",
-    emoji: "🧪",
     category: "resource",
     size: 2,
     maxLevel: 8,
@@ -69,7 +66,6 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
   goldstorage: {
     type: "goldstorage",
     name: "Gold Storage",
-    emoji: "🏦",
     category: "storage",
     size: 2,
     maxLevel: 8,
@@ -83,7 +79,6 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
   elixirstorage: {
     type: "elixirstorage",
     name: "Elixir Storage",
-    emoji: "🛢️",
     category: "storage",
     size: 2,
     maxLevel: 8,
@@ -97,7 +92,6 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
   barracks: {
     type: "barracks",
     name: "Barracks",
-    emoji: "⚔️",
     category: "army",
     size: 2,
     maxLevel: 6,
@@ -110,7 +104,6 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
   armycamp: {
     type: "armycamp",
     name: "Army Camp",
-    emoji: "⛺",
     category: "army",
     size: 2,
     maxLevel: 6,
@@ -124,7 +117,6 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
   cannon: {
     type: "cannon",
     name: "Cannon",
-    emoji: "💣",
     category: "defense",
     size: 2,
     maxLevel: 8,
@@ -137,7 +129,6 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
   archertower: {
     type: "archertower",
     name: "Archer Tower",
-    emoji: "🏹",
     category: "defense",
     size: 2,
     maxLevel: 8,
@@ -150,7 +141,6 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
   wall: {
     type: "wall",
     name: "Wall",
-    emoji: "🧱",
     category: "wall",
     size: 1,
     maxLevel: 6,
@@ -179,7 +169,6 @@ export const TROOPS: Record<TroopType, TroopDef> = {
   barbarian: {
     type: "barbarian",
     name: "Barbarian",
-    emoji: "🪓",
     cost: { elixir: 25 },
     housing: 1,
     trainTime: 5,
@@ -192,7 +181,6 @@ export const TROOPS: Record<TroopType, TroopDef> = {
   archer: {
     type: "archer",
     name: "Archer",
-    emoji: "🏹",
     cost: { elixir: 50 },
     housing: 1,
     trainTime: 8,
@@ -205,7 +193,6 @@ export const TROOPS: Record<TroopType, TroopDef> = {
   giant: {
     type: "giant",
     name: "Giant",
-    emoji: "🗿",
     cost: { elixir: 250 },
     housing: 5,
     trainTime: 30,

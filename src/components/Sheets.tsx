@@ -12,14 +12,25 @@ import {
 } from "../game/logic";
 import type { Cost } from "../game/types";
 import { useUi } from "../ui";
+import {
+  BUILDING_ICON,
+  BUILDING_TONE,
+  GameIcon,
+  IconText,
+  RESOURCE_ICON,
+  TROOP_ICON,
+  TROOP_TONE,
+} from "../ui/icons";
 
-function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+function Sheet({ title, onClose, children }: { title: ReactNode; onClose: () => void; children: ReactNode }) {
   return (
     <div className="sheet-backdrop" onClick={onClose}>
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
         <h2>
-          {title}
-          <button onClick={onClose}>✕</button>
+          <span className="sheet-title">{title}</span>
+          <button onClick={onClose} aria-label="Close">
+            <GameIcon name="close" size={16} tone="cream" />
+          </button>
         </h2>
         {children}
       </div>
@@ -30,8 +41,20 @@ function Sheet({ title, onClose, children }: { title: string; onClose: () => voi
 function CostLabel({ cost }: { cost: Cost }) {
   return (
     <span className="cost-line">
-      {cost.gold ? <span className="ct gold">🪙 {formatNumber(cost.gold)}</span> : null}
-      {cost.elixir ? <span className="ct elixir">🧪 {formatNumber(cost.elixir)}</span> : null}
+      {cost.gold ? (
+        <span className="ct gold">
+          <IconText icon="gold" tone="gold" size={13}>
+            {formatNumber(cost.gold)}
+          </IconText>
+        </span>
+      ) : null}
+      {cost.elixir ? (
+        <span className="ct elixir">
+          <IconText icon="elixir" tone="elixir" size={13}>
+            {formatNumber(cost.elixir)}
+          </IconText>
+        </span>
+      ) : null}
     </span>
   );
 }
@@ -43,7 +66,15 @@ export function Shop({ onClose }: { onClose: () => void }) {
   const th = townHallLevel(buildings);
 
   return (
-    <Sheet title="🛠️ Build" onClose={onClose}>
+    <Sheet
+      title={
+        <>
+          <GameIcon name="build" size={22} tone="gold" />
+          Build
+        </>
+      }
+      onClose={onClose}
+    >
       <p className="hint">Buildings are placed automatically — drag them around on the map.</p>
       <div className="shop-grid">
         {BUILD_ORDER.filter((t) => t !== "townhall").map((type) => {
@@ -64,10 +95,16 @@ export function Shop({ onClose }: { onClose: () => void }) {
                 else showToast(`${def.name} placed!`);
               }}
             >
-              <div className="big">{def.emoji}</div>
+              <div className="big">
+                <GameIcon name={BUILDING_ICON[type]} size={32} tone={BUILDING_TONE[type]} />
+              </div>
               <div className="nm">{def.name}</div>
               {locked ? (
-                <div className="lim">🔒 Town Hall {def.requiredTh}</div>
+                <div className="lim">
+                  <IconText icon="lock" size={11}>
+                    Town Hall {def.requiredTh}
+                  </IconText>
+                </div>
               ) : (
                 <>
                   <CostLabel cost={cost} />
@@ -92,7 +129,15 @@ export function Army({ onClose }: { onClose: () => void }) {
   const hasBarracks = state.buildings.some((b) => b.type === "barracks" && !b.upgradeDoneAt);
 
   return (
-    <Sheet title={`⚔️ Train Army (${housing.used}/${housing.total})`} onClose={onClose}>
+    <Sheet
+      title={
+        <>
+          <GameIcon name="army" size={22} tone="ember" />
+          Train Army ({housing.used}/{housing.total})
+        </>
+      }
+      onClose={onClose}
+    >
       {!hasBarracks && <p className="hint">Build & finish a Barracks to train troops.</p>}
       <div className="shop-grid">
         {TROOP_ORDER.map((type) => {
@@ -107,13 +152,25 @@ export function Army({ onClose }: { onClose: () => void }) {
                 if (!r.ok) showToast(r.reason ?? "Cannot train");
               }}
             >
-              <div className="big">{t.emoji}</div>
+              <div className="big">
+                <GameIcon name={TROOP_ICON[type]} size={32} tone={TROOP_TONE[type]} />
+              </div>
               <div className="nm">
                 {t.name} ×{state.army[type]}
               </div>
               <CostLabel cost={t.cost} />
               <div className="lim">
-                ❤️ {t.hp} · ⚔️ {t.dps} · 🏠 {t.housing}
+                <IconText icon="hp" size={11}>
+                  {t.hp}
+                </IconText>
+                <span>·</span>
+                <IconText icon="dps" size={11}>
+                  {t.dps}
+                </IconText>
+                <span>·</span>
+                <IconText icon="housing" size={11}>
+                  {t.housing}
+                </IconText>
               </div>
             </button>
           );
@@ -135,7 +192,15 @@ export function BuildingInfo({ id, onClose }: { id: string; onClose: () => void 
   const cost = maxed ? null : def.cost(next);
 
   return (
-    <Sheet title={`${def.emoji} ${def.name}`} onClose={onClose}>
+    <Sheet
+      title={
+        <>
+          <GameIcon name={BUILDING_ICON[b.type]} size={22} tone={BUILDING_TONE[b.type]} />
+          {def.name}
+        </>
+      }
+      onClose={onClose}
+    >
       <div className="info-row">
         <span>Level</span>
         <span>
@@ -148,7 +213,9 @@ export function BuildingInfo({ id, onClose }: { id: string; onClose: () => void 
           <div className="info-row">
             <span>Produces</span>
             <span>
-              {def.production.perMin(b.level)}/min {def.production.resource === "gold" ? "🪙" : "🧪"}
+              <IconText icon={RESOURCE_ICON[def.production.resource]} tone={def.production.resource} size={14}>
+                {def.production.perMin(b.level)}/min
+              </IconText>
             </span>
           </div>
           <div className="info-row">
@@ -161,7 +228,9 @@ export function BuildingInfo({ id, onClose }: { id: string; onClose: () => void 
         <div className="info-row">
           <span>Stores</span>
           <span>
-            {formatNumber(def.storage.capacity(b.level))} {def.storage.resource === "gold" ? "🪙" : "🧪"}
+            <IconText icon={RESOURCE_ICON[def.storage.resource]} tone={def.storage.resource} size={14}>
+              {formatNumber(def.storage.capacity(b.level))}
+            </IconText>
           </span>
         </div>
       )}
@@ -174,7 +243,10 @@ export function BuildingInfo({ id, onClose }: { id: string; onClose: () => void 
           <div className="info-row">
             <span>Hitpoints / Range</span>
             <span>
-              {def.defense.hp(b.level)} ❤️ · {def.defense.range} tiles
+              <IconText icon="hp" size={14}>
+                {def.defense.hp(b.level)}
+              </IconText>
+              <span> · {def.defense.range} tiles</span>
             </span>
           </div>
         </>
@@ -182,12 +254,20 @@ export function BuildingInfo({ id, onClose }: { id: string; onClose: () => void 
       {def.housing && (
         <div className="info-row">
           <span>Housing space</span>
-          <span>🏠 {def.housing(b.level)}</span>
+          <span>
+            <IconText icon="housing" size={14}>
+              {def.housing(b.level)}
+            </IconText>
+          </span>
         </div>
       )}
 
       {b.upgradeDoneAt ? (
-        <p className="hint">🔨 Under construction…</p>
+        <p className="hint">
+          <IconText icon="constructing" size={14}>
+            Under construction…
+          </IconText>
+        </p>
       ) : maxed ? (
         <button className="btn ghost" disabled>
           Max level reached
@@ -204,8 +284,15 @@ export function BuildingInfo({ id, onClose }: { id: string; onClose: () => void 
             }
           }}
         >
-          Upgrade · <span style={{ marginLeft: 4 }} />
-          {cost && <CostLabel cost={cost} />}
+          <IconText icon="upgrade" size={16}>
+            Upgrade
+          </IconText>
+          {cost && (
+            <>
+              <span style={{ marginLeft: 4 }} />
+              <CostLabel cost={cost} />
+            </>
+          )}
           <span style={{ opacity: 0.8, marginLeft: 6 }}>({formatDuration(def.buildTime(next))})</span>
         </button>
       )}
@@ -225,13 +312,20 @@ export function HelpReset() {
           if (confirm("Reset your village? This cannot be undone.")) reset();
         }}
       >
-        ♻️ Reset village
+        <IconText icon="reset" size={14}>
+          Reset village
+        </IconText>
       </button>
       <button className="btn ghost" onClick={() => grantGems(250)}>
-        💎 +250 gems
+        <IconText icon="gems" tone="gem" size={14}>
+          +250 gems
+        </IconText>
       </button>
-      <span style={{ alignSelf: "center", opacity: 0.5, fontSize: 11 }}>
-        Cap 🪙 {formatNumber(capacityOf(buildings, "gold"))}
+      <span className="cap-note">
+        Cap{" "}
+        <IconText icon="gold" tone="gold" size={12}>
+          {formatNumber(capacityOf(buildings, "gold"))}
+        </IconText>
       </span>
     </div>
   );
