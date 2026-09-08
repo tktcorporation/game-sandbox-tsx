@@ -1,20 +1,19 @@
 import type { ReactNode } from "react";
-import { KENNEY, type KenneyName } from "./kenney";
 
 export function Pixel({
-  name,
+  src,
   size = 32,
   title,
   className,
 }: {
-  name: KenneyName;
+  src: string;
   size?: number;
   title?: string;
   className?: string;
 }) {
   return (
     <img
-      src={KENNEY[name]}
+      src={src}
       width={size}
       height={size}
       className={["pixel", className].filter(Boolean).join(" ")}
@@ -26,19 +25,19 @@ export function Pixel({
 }
 
 export function PixelText({
-  name,
+  src,
   size = 16,
   children,
   className,
 }: {
-  name: KenneyName;
+  src: string;
   size?: number;
   children?: ReactNode;
   className?: string;
 }) {
   return (
     <span className={["pixel-text", className].filter(Boolean).join(" ")}>
-      <Pixel name={name} size={size} />
+      <Pixel src={src} size={size} />
       {children}
     </span>
   );

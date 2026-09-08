@@ -1,125 +1,39 @@
 /**
- * Kenney Tiny series — the Font Awesome of pixel sprites.
+ * Kenney Tiny sprites — named, tree-shakeable URL exports (CC0).
  *
- * CC0 (public domain): drop another 16×16 PNG into `src/assets/kenney/`,
- * import it below, and add one line to `KENNEY`. Then:
+ * Import only the tiles you use (same idea as `react-icons/gi`):
  *
- *   import { Pixel, KENNEY } from "../assets/kenney";
- *   <Pixel name="barbarian" size={48} />
- *   drawKenney(ctx, "coin", x, y, 24);
+ *   import { barbarian, coin } from "../assets/kenney";
+ *   <Pixel src={barbarian} size={48} />
+ *   drawKenney(ctx, coin, x, y, 24);
  *
- * Browse the rest of the packs at https://kenney.nl/assets (Tiny Dungeon,
- * Tiny Town, Tiny Battle, …). Attribution is optional but appreciated.
+ * `import * as Kenney from "..."` pulls the whole pack and defeats shaking.
+ * Drop another 16×16 PNG in this folder and add one re-export below.
+ *
+ * https://kenney.nl/assets/tiny-dungeon
+ * https://kenney.nl/assets/tiny-town
  */
-
-import type { Resource, TroopType } from "../game/types";
-
-import axeUrl from "./kenney/axe.png";
-import barbarianUrl from "./kenney/barbarian.png";
-import battleaxeUrl from "./kenney/battleaxe.png";
-import bombUrl from "./kenney/bomb.png";
-import bowUrl from "./kenney/bow.png";
-import chestUrl from "./kenney/chest.png";
-import coinUrl from "./kenney/coin.png";
-import dwarfUrl from "./kenney/dwarf.png";
-import fighterUrl from "./kenney/fighter.png";
-import giantUrl from "./kenney/giant.png";
-import hammerUrl from "./kenney/hammer.png";
-import keyUrl from "./kenney/key.png";
-import knightUrl from "./kenney/knight.png";
-import pickaxeUrl from "./kenney/pickaxe.png";
-import potionBlueUrl from "./kenney/potion-blue.png";
-import potionGreenUrl from "./kenney/potion-green.png";
-import potionRedUrl from "./kenney/potion-red.png";
-import rangerUrl from "./kenney/ranger.png";
-import ringUrl from "./kenney/ring.png";
-import shieldUrl from "./kenney/shield.png";
-import soldierUrl from "./kenney/soldier.png";
-import swordUrl from "./kenney/sword.png";
-import villagerUrl from "./kenney/villager.png";
-import wizardUrl from "./kenney/wizard.png";
-
-export const KENNEY = {
-  barbarian: barbarianUrl,
-  ranger: rangerUrl,
-  giant: giantUrl,
-  wizard: wizardUrl,
-  fighter: fighterUrl,
-  villager: villagerUrl,
-  knight: knightUrl,
-  dwarf: dwarfUrl,
-  soldier: soldierUrl,
-  coin: coinUrl,
-  potionBlue: potionBlueUrl,
-  potionGreen: potionGreenUrl,
-  potionRed: potionRedUrl,
-  ring: ringUrl,
-  chest: chestUrl,
-  shield: shieldUrl,
-  sword: swordUrl,
-  hammer: hammerUrl,
-  axe: axeUrl,
-  battleaxe: battleaxeUrl,
-  bow: bowUrl,
-  pickaxe: pickaxeUrl,
-  bomb: bombUrl,
-  key: keyUrl,
-} as const;
-
-export type KenneyName = keyof typeof KENNEY;
-
-export const TROOP_PIXEL: Record<TroopType, KenneyName> = {
-  barbarian: "barbarian",
-  archer: "ranger",
-  giant: "giant",
-};
-
-export const RESOURCE_PIXEL: Record<Resource, KenneyName> = {
-  gold: "coin",
-  elixir: "potionBlue",
-};
-
-const images = new Map<KenneyName, HTMLImageElement>();
-
-function imageOf(name: KenneyName): HTMLImageElement | null {
-  if (typeof Image === "undefined") return null;
-  let img = images.get(name);
-  if (!img) {
-    img = new Image();
-    img.src = KENNEY[name];
-    images.set(name, img);
-  }
-  return img.complete && img.naturalWidth > 0 ? img : null;
-}
-
-/** Kick off decoding so the first canvas frame isn't empty. */
-export function preloadKenney(): void {
-  for (const name of Object.keys(KENNEY) as KenneyName[]) imageOf(name);
-}
-
-export function kenneyReady(name: KenneyName): boolean {
-  return imageOf(name) !== null;
-}
-
-/** Draw a named 16×16 sprite, nearest-neighbour, centred (or feet-anchored). */
-export function drawKenney(
-  ctx: CanvasRenderingContext2D,
-  name: KenneyName,
-  x: number,
-  y: number,
-  size: number,
-  opts?: { alpha?: number; anchor?: "center" | "feet" },
-): boolean {
-  const img = imageOf(name);
-  if (!img) return false;
-  const w = size;
-  const h = size;
-  const dx = x - w / 2;
-  const dy = (opts?.anchor ?? "center") === "feet" ? y - h : y - h / 2;
-  ctx.save();
-  ctx.imageSmoothingEnabled = false;
-  ctx.globalAlpha = opts?.alpha ?? 1;
-  ctx.drawImage(img, dx, dy, w, h);
-  ctx.restore();
-  return true;
-}
+export { default as axe } from "./kenney/axe.png";
+export { default as barbarian } from "./kenney/barbarian.png";
+export { default as battleaxe } from "./kenney/battleaxe.png";
+export { default as bomb } from "./kenney/bomb.png";
+export { default as bow } from "./kenney/bow.png";
+export { default as chest } from "./kenney/chest.png";
+export { default as coin } from "./kenney/coin.png";
+export { default as dwarf } from "./kenney/dwarf.png";
+export { default as fighter } from "./kenney/fighter.png";
+export { default as giant } from "./kenney/giant.png";
+export { default as hammer } from "./kenney/hammer.png";
+export { default as key } from "./kenney/key.png";
+export { default as knight } from "./kenney/knight.png";
+export { default as pickaxe } from "./kenney/pickaxe.png";
+export { default as potionBlue } from "./kenney/potion-blue.png";
+export { default as potionGreen } from "./kenney/potion-green.png";
+export { default as potionRed } from "./kenney/potion-red.png";
+export { default as ranger } from "./kenney/ranger.png";
+export { default as ring } from "./kenney/ring.png";
+export { default as shield } from "./kenney/shield.png";
+export { default as soldier } from "./kenney/soldier.png";
+export { default as sword } from "./kenney/sword.png";
+export { default as villager } from "./kenney/villager.png";
+export { default as wizard } from "./kenney/wizard.png";

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Pixel, PixelText } from "../assets/Pixel";
-import { RESOURCE_PIXEL, TROOP_PIXEL } from "../assets/kenney";
+import { RESOURCE_PIXEL, TROOP_PIXEL } from "../assets/gameSprites";
+import { ring } from "../assets/kenney";
 import { BUILD_ORDER, BUILDINGS, TROOP_ORDER, TROOPS } from "../game/buildings";
 import { useGame } from "../game/store";
 import {
@@ -42,14 +43,14 @@ function CostLabel({ cost }: { cost: Cost }) {
     <span className="cost-line">
       {cost.gold ? (
         <span className="ct gold">
-          <PixelText name={RESOURCE_PIXEL.gold} size={14}>
+          <PixelText src={RESOURCE_PIXEL.gold} size={14}>
             {formatNumber(cost.gold)}
           </PixelText>
         </span>
       ) : null}
       {cost.elixir ? (
         <span className="ct elixir">
-          <PixelText name={RESOURCE_PIXEL.elixir} size={14}>
+          <PixelText src={RESOURCE_PIXEL.elixir} size={14}>
             {formatNumber(cost.elixir)}
           </PixelText>
         </span>
@@ -152,7 +153,7 @@ export function Army({ onClose }: { onClose: () => void }) {
               }}
             >
               <div className="big">
-                <Pixel name={TROOP_PIXEL[type]} size={32} />
+                <Pixel src={TROOP_PIXEL[type]} size={32} />
               </div>
               <div className="nm">
                 {t.name} ×{state.army[type]}
@@ -212,7 +213,7 @@ export function BuildingInfo({ id, onClose }: { id: string; onClose: () => void 
           <div className="info-row">
             <span>Produces</span>
             <span>
-              <PixelText name={RESOURCE_PIXEL[def.production.resource]} size={16}>
+              <PixelText src={RESOURCE_PIXEL[def.production.resource]} size={16}>
                 {def.production.perMin(b.level)}/min
               </PixelText>
             </span>
@@ -227,7 +228,7 @@ export function BuildingInfo({ id, onClose }: { id: string; onClose: () => void 
         <div className="info-row">
           <span>Stores</span>
           <span>
-            <PixelText name={RESOURCE_PIXEL[def.storage.resource]} size={16}>
+            <PixelText src={RESOURCE_PIXEL[def.storage.resource]} size={16}>
               {formatNumber(def.storage.capacity(b.level))}
             </PixelText>
           </span>
@@ -316,13 +317,13 @@ export function HelpReset() {
         </IconText>
       </button>
       <button className="btn ghost" onClick={() => grantGems(250)}>
-        <PixelText name="ring" size={14}>
+        <PixelText src={ring} size={14}>
           +250 gems
         </PixelText>
       </button>
       <span className="cap-note">
         Cap{" "}
-        <PixelText name={RESOURCE_PIXEL.gold} size={14}>
+        <PixelText src={RESOURCE_PIXEL.gold} size={14}>
           {formatNumber(capacityOf(buildings, "gold"))}
         </PixelText>
       </span>

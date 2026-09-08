@@ -8,7 +8,7 @@ import type { TroopType } from "../game/types";
 import { useUi } from "../ui";
 import { GameIcon, IconText } from "../ui/icons";
 import { Pixel, PixelText } from "../assets/Pixel";
-import { RESOURCE_PIXEL, TROOP_PIXEL } from "../assets/kenney";
+import { RESOURCE_PIXEL, TROOP_PIXEL } from "../assets/gameSprites";
 import {
   buildDecorations,
   dayLight,
@@ -328,7 +328,7 @@ export function BattleView({ base, onExit }: { base: EnemyBase; onExit: () => vo
             >
               <span className="cnt">{remaining}</span>
               <span className="big">
-                <Pixel name={TROOP_PIXEL[type]} size={28} />
+                <Pixel src={TROOP_PIXEL[type]} size={28} />
               </span>
               <span className="nm">{TROOPS[type].name}</span>
             </button>
@@ -371,12 +371,12 @@ export function BattleView({ base, onExit }: { base: EnemyBase; onExit: () => vo
             <p>{Math.round(stats.destructionPct * 100)}% destroyed</p>
             <div className="loot-row">
               <span className="ct gold">
-                <PixelText name={RESOURCE_PIXEL.gold} size={16}>
+                <PixelText src={RESOURCE_PIXEL.gold} size={16}>
                   +{formatNumber(res.loot.gold)}
                 </PixelText>
               </span>
               <span className="ct elixir">
-                <PixelText name={RESOURCE_PIXEL.elixir} size={16}>
+                <PixelText src={RESOURCE_PIXEL.elixir} size={16}>
                   +{formatNumber(res.loot.elixir)}
                 </PixelText>
               </span>

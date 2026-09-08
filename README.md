@@ -31,15 +31,18 @@ Two catalogs, both Font-Awesome-style (`import` a name, use it):
 
 Village / battle *buildings* are still drawn procedurally (`src/render/iso.ts`). Troops, loot pops and resource chips use Kenney 16×16 sprites.
 
-Add another pixel: drop a PNG into `src/assets/kenney/`, import it in `src/assets/kenney.ts`, add one line to `KENNEY`, then:
+Named imports are tree-shaken — only the tiles you import land in the bundle:
 
 ```ts
+import { barbarian, coin } from "./assets/kenney";
 import { Pixel } from "./assets/Pixel";
-import { drawKenney } from "./assets/kenney";
+import { drawKenney } from "./assets/drawPixel";
 
-<Pixel name="barbarian" size={48} />
-drawKenney(ctx, "coin", x, y, 24);
+<Pixel src={barbarian} size={48} />
+drawKenney(ctx, coin, x, y, 24);
 ```
+
+Add another pixel: drop a PNG into `src/assets/kenney/`, add one `export { default as myTile } from "./kenney/my-tile.png"` in `src/assets/kenney.ts`, then import `myTile`. Do not `import * as Kenney`.
 
 Kenney publishes dozens of matching Tiny packs (Battle, Farm, RPG, …) — same 16×16 style, all CC0.
 
@@ -66,8 +69,10 @@ src/game/                pure game logic (no React)
 src/components/          React components (Board, ResourceBar, Sheets, BattleView)
 src/ui.ts                ephemeral UI state (mode, selection, toasts) + game loop hook
 src/ui/icons.tsx         Game-icons.net catalog (react-icons/gi) used by the HUD
-src/assets/kenney.ts     Kenney Tiny pixel catalog (CC0) + canvas blit
-src/assets/Pixel.tsx     <Pixel name="coin" /> / <PixelText>
+src/assets/kenney.ts     tree-shakeable Kenney Tiny URL exports (CC0)
+src/assets/gameSprites.ts  troop/resource picks actually used by the game
+src/assets/drawPixel.ts  canvas blit for imported sprite URLs
+src/assets/Pixel.tsx     <Pixel src={coin} /> / <PixelText>
 ```
 
 ## Develop
