@@ -20,6 +20,18 @@ the enemy villages you raid.
   based on how much you destroy (destroying the Town Hall earns a star — walls don't count toward %).
 - Progress is saved automatically to `localStorage`.
 
+## Assets
+
+HUD glyphs come from **[Game-icons.net](https://game-icons.net/)** (Lorc, Delapouite & contributors,
+[CC BY 3.0](https://creativecommons.org/licenses/by/3.0/)), imported through
+[`react-icons/gi`](https://react-icons.github.io/react-icons/icons/gi/) — the closest thing to
+Font Awesome for game UI. Semantic names live in `src/ui/icons.tsx`; add another icon by importing
+it from `react-icons/gi` and wiring it into the catalog.
+
+Village / battle sprites on the canvas are still drawn procedurally (`src/render/iso.ts`). For
+painted tiles and characters, [Kenney.nl](https://kenney.nl/assets) packs are the CC0 counterpart
+(download + drop into `public/`, not an npm icon font).
+
 ## Tech
 
 | Layer        | Choice                                                              |
@@ -42,6 +54,7 @@ src/game/                pure game logic (no React)
   └─ battle.ts           real-time battle engine
 src/components/          React components (Board, ResourceBar, Sheets, BattleView)
 src/ui.ts                ephemeral UI state (mode, selection, toasts) + game loop hook
+src/ui/icons.tsx         Game-icons.net catalog (react-icons/gi) used by the HUD
 ```
 
 ## Develop

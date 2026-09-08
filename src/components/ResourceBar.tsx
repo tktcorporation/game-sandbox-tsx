@@ -1,5 +1,6 @@
 import { useGame } from "../game/store";
 import { capacityOf, formatNumber } from "../game/logic";
+import { GameIcon } from "../ui/icons";
 
 export function ResourceBar() {
   const { gold, elixir, gems, trophies, buildings } = useGame();
@@ -9,7 +10,9 @@ export function ResourceBar() {
   return (
     <div className="topbar">
       <div className="res gold">
-        <span className="icon">🪙</span>
+        <span className="icon">
+          <GameIcon name="gold" size={18} tone="gold" />
+        </span>
         <div className="bar">
           <span className="val">{formatNumber(gold)}</span>
           <div className="track">
@@ -18,7 +21,9 @@ export function ResourceBar() {
         </div>
       </div>
       <div className="res elixir">
-        <span className="icon">🧪</span>
+        <span className="icon">
+          <GameIcon name="elixir" size={18} tone="elixir" />
+        </span>
         <div className="bar">
           <span className="val">{formatNumber(elixir)}</span>
           <div className="track">
@@ -28,11 +33,15 @@ export function ResourceBar() {
       </div>
       <div className="spacer" />
       <div className="res gem">
-        <span className="icon">💎</span>
+        <span className="icon">
+          <GameIcon name="gems" size={18} tone="gem" />
+        </span>
         <span className="val">{formatNumber(gems)}</span>
       </div>
       <div className="res trophy">
-        <span className="icon">🏆</span>
+        <span className="icon">
+          <GameIcon name="trophies" size={18} tone="trophy" />
+        </span>
         <span className="val">{formatNumber(trophies)}</span>
       </div>
     </div>

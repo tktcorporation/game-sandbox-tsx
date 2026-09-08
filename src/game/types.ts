@@ -22,7 +22,6 @@ export interface Cost {
 export interface BuildingDef {
   type: BuildingType;
   name: string;
-  emoji: string;
   category: BuildingCategory;
   /** footprint in grid cells (size x size) */
   size: number;
@@ -77,7 +76,6 @@ export type TroopType = "barbarian" | "archer" | "giant";
 export interface TroopDef {
   type: TroopType;
   name: string;
-  emoji: string;
   cost: Cost;
   housing: number;
   trainTime: number;
