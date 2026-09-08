@@ -101,7 +101,7 @@ export function Shop({ onClose }: { onClose: () => void }) {
               <div className="nm">{def.name}</div>
               {locked ? (
                 <div className="lim">
-                  <IconText icon="lock" size={11}>
+                  <IconText icon="lock" size={13}>
                     Town Hall {def.requiredTh}
                   </IconText>
                 </div>
@@ -160,15 +160,15 @@ export function Army({ onClose }: { onClose: () => void }) {
               </div>
               <CostLabel cost={t.cost} />
               <div className="lim">
-                <IconText icon="hp" size={11}>
+                <IconText icon="hp" size={12}>
                   {t.hp}
                 </IconText>
                 <span>·</span>
-                <IconText icon="dps" size={11}>
+                <IconText icon="dps" size={12}>
                   {t.dps}
                 </IconText>
                 <span>·</span>
-                <IconText icon="housing" size={11}>
+                <IconText icon="housing" size={12}>
                   {t.housing}
                 </IconText>
               </div>
