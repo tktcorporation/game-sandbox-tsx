@@ -1,5 +1,8 @@
+import { creditOrder, isToolUnlocked, unlockHint } from "./progress";
+import { smeltProduct } from "./recipes";
 import {
   BELT_COST,
+  DIRECTIONS,
   EXPORT_FLASH_TICKS,
   GRID_H,
   GRID_W,
@@ -13,10 +16,12 @@ import {
   type PlacementTool,
   anchorOf,
   dirDelta,
+  dirFromTo,
   dirOpposite,
   exportValue,
   inBounds,
   itemIndex,
+  machineAtCell,
   machineCost,
   machineName,
   newBelt,
@@ -37,31 +42,10 @@ export function tickN(state: FactoryState, n: number): void {
   for (let i = 0; i < n; i++) tick(state);
   state.animFrame = (state.animFrame + n) >>> 0;
   if (state.exportFlash > 0) state.exportFlash = Math.max(0, state.exportFlash - n);
+  if (state.honorFlash > 0) state.honorFlash = Math.max(0, state.honorFlash - n);
 }
 
-export function nextBuildGoal(state: FactoryState): string {
-  let miners = 0;
-  let belts = 0;
-  let smelters = 0;
-  let exporters = 0;
-  for (const row of state.grid) {
-    for (const cell of row) {
-      if (cell.t === "machine") {
-        if (cell.machine.kind === "miner") miners += 1;
-        if (cell.machine.kind === "smelter") smelters += 1;
-        if (cell.machine.kind === "exporter") exporters += 1;
-      } else if (cell.t === "belt") {
-        belts += 1;
-      }
-    }
-  }
-  if (miners === 0) return "Next: plant a miner";
-  if (belts === 0) return "Next: lay a belt beside it";
-  if (smelters === 0) return "Next: add a smelter";
-  if (exporters === 0) return "Next: dock an exporter";
-  if (state.totalExported === 0) return "Next: connect the line and ship";
-  return "Stretch the flow";
-}
+export { floorHint as nextBuildGoal } from "./progress";
 
 export function addLog(state: FactoryState, text: string): void {
   state.log.push(text);
@@ -129,8 +113,7 @@ function tickMachines(state: FactoryState): void {
             continue;
           }
           const inputItem = m.inputBuffer[0];
-          const outputItem: ItemKind | null =
-            inputItem === "ironOre" ? "ironPlate" : inputItem === "copperOre" ? "copperPlate" : null;
+          const outputItem = smeltProduct(inputItem);
           if (!outputItem) continue;
           const next = m.progress + 1;
           if (next >= recipeTime(kind)) {
@@ -147,6 +130,11 @@ function tickMachines(state: FactoryState): void {
         case "assembler": {
           if (inputEmpty || outputFull) {
             if (inputEmpty) m.progress = 0;
+            m.statTotalTicks += 1;
+            continue;
+          }
+          if (m.inputBuffer[0] !== "ironPlate") {
+            m.progress = 0;
             m.statTotalTicks += 1;
             continue;
           }
@@ -207,6 +195,7 @@ function tickMachines(state: FactoryState): void {
             state.recentExportTicks.push(state.totalTicks);
             m.statProduced += 1;
             m.statRevenue += value;
+            creditOrder(state, item);
           } else {
             m.progress = next;
           }
@@ -224,12 +213,13 @@ function bumpProduced(state: FactoryState, item: ItemKind): void {
   state.producedCount[itemIndex(item)] += 1;
 }
 
-function preferredDirections(itemFrom: Direction | null): Direction[] {
-  if (!itemFrom) return ["right", "down", "left", "up"];
-  const forward = dirOpposite(itemFrom);
+function preferredDirections(itemFrom: Direction | null, facing: Direction): Direction[] {
   const [p1, p2]: [Direction, Direction] =
-    itemFrom === "up" || itemFrom === "down" ? ["right", "left"] : ["down", "up"];
-  return [forward, p1, p2];
+    facing === "up" || facing === "down" ? ["right", "left"] : ["down", "up"];
+  const dirs = [facing, p1, p2];
+  if (!itemFrom) return dirs;
+  const filtered = dirs.filter((d) => d !== itemFrom);
+  return filtered.length > 0 ? filtered : [facing];
 }
 
 function machineAccepts(grid: Cell[][], ax: number, ay: number, item: ItemKind): boolean {
@@ -253,6 +243,7 @@ function machineAccepts(grid: Cell[][], ax: number, ay: number, item: ItemKind):
       return same < perType;
     }
   }
+  return false;
 }
 
 function sourceDirFromMachine(ax: number, ay: number, bx: number, by: number): Direction | null {
@@ -283,7 +274,7 @@ function tickBelts(state: FactoryState): void {
       const cell = state.grid[y][x];
       if (cell.t !== "belt" || !cell.belt.item) continue;
       const item = cell.belt.item;
-      const directions = preferredDirections(cell.belt.itemFrom);
+      const directions = preferredDirections(cell.belt.itemFrom, cell.belt.facing ?? "right");
       let fed = false;
       for (const dir of directions) {
         const [dx, dy] = dirDelta(dir);
@@ -368,13 +359,7 @@ function tryPushToBelt(state: FactoryState, ax: number, ay: number): void {
   for (const [px, py] of perimeter2x2(ax, ay)) {
     const cell = state.grid[py][px];
     if (cell.t !== "belt" || cell.belt.item !== null) continue;
-    if (cell.belt.itemFrom) {
-      const forward = dirOpposite(cell.belt.itemFrom);
-      const [fdx, fdy] = dirDelta(forward);
-      const tx = px + fdx;
-      const ty = py + fdy;
-      if (tx >= ax && tx < ax + 2 && ty >= ay && ty < ay + 2) continue;
-    }
+    if (pointsIntoMachine(px, py, cell.belt.facing, ax, ay)) continue;
     const machineCell = state.grid[ay][ax];
     if (machineCell.t !== "machine" || machineCell.machine.outputBuffer.length === 0) continue;
     const item = machineCell.machine.outputBuffer.shift()!;
@@ -382,6 +367,13 @@ function tryPushToBelt(state: FactoryState, ax: number, ay: number): void {
     cell.belt.itemFrom = sourceDirFromMachine(ax, ay, px, py);
     return;
   }
+}
+
+function pointsIntoMachine(px: number, py: number, facing: Direction, ax: number, ay: number): boolean {
+  const [dx, dy] = dirDelta(facing);
+  const tx = px + dx;
+  const ty = py + dy;
+  return tx >= ax && tx < ax + 2 && ty >= ay && ty < ay + 2;
 }
 
 function canPlace2x2(state: FactoryState, x: number, y: number): boolean {
@@ -416,6 +408,7 @@ function remove2x2(state: FactoryState, ax: number, ay: number): MachineKind | n
 export function canPlaceTool(state: FactoryState, tool: PlacementTool, x: number, y: number): boolean {
   if (!inBounds(x, y)) return false;
   if (tool === "none") return false;
+  if (!isToolUnlocked(state, tool)) return false;
   if (tool === "delete") return state.grid[y][x].t !== "empty";
   if (tool === "belt") return state.grid[y][x].t === "empty" && state.money >= BELT_COST;
   return canPlace2x2(state, x, y) && state.money >= machineCost(tool);
@@ -426,9 +419,14 @@ export function placeAt(
   tool: PlacementTool,
   x: number,
   y: number,
+  from?: { x: number; y: number },
 ): { ok: boolean; beltAdvance?: Direction } {
   if (!inBounds(x, y)) return { ok: false };
   if (tool === "none") return { ok: false };
+  if (tool !== "delete" && !isToolUnlocked(state, tool)) {
+    addLog(state, unlockHint(tool));
+    return { ok: false };
+  }
 
   if (tool === "delete") {
     const cell = state.grid[y][x];
@@ -460,8 +458,13 @@ export function placeAt(
       return { ok: false };
     }
     state.money -= BELT_COST;
-    state.grid[y][x] = { t: "belt", belt: newBelt() };
-    return { ok: true, beltAdvance: "right" };
+    const facing = inferBeltFacing(state, x, y, from);
+    if (from && isCardinalNeighbor(from.x, from.y, x, y)) {
+      const prev = state.grid[from.y]?.[from.x];
+      if (prev?.t === "belt") prev.belt.facing = dirFromTo(from.x, from.y, x, y);
+    }
+    state.grid[y][x] = { t: "belt", belt: newBelt(facing) };
+    return { ok: true, beltAdvance: facing };
   }
 
   const kind = tool;
@@ -478,16 +481,49 @@ export function placeAt(
   place2x2(state, x, y, kind);
   addLog(state, `Set ${machineName(kind)} (−$${cost})`);
   if (!hasAdjacentBelt(state, x, y)) {
-    addLog(state, "Tip: belts on the rim carry the flow.");
+    addLog(state, "Tip: paint a belt on the rim. Yellow arrows are the flow.");
   }
   return { ok: true };
 }
 
-function hasAdjacentBelt(state: FactoryState, x: number, y: number): boolean {
-  return perimeter2x2(x, y).some(([px, py]) => state.grid[py][px].t === "belt");
+function isCardinalNeighbor(ax: number, ay: number, bx: number, by: number): boolean {
+  return Math.abs(ax - bx) + Math.abs(ay - by) === 1;
 }
 
-function perimeter2x2(ax: number, ay: number): [number, number][] {
+function inferBeltFacing(
+  state: FactoryState,
+  x: number,
+  y: number,
+  from?: { x: number; y: number },
+): Direction {
+  if (from && isCardinalNeighbor(from.x, from.y, x, y)) {
+    return dirFromTo(from.x, from.y, x, y);
+  }
+  for (const dir of DIRECTIONS) {
+    const [dx, dy] = dirDelta(dir);
+    const neighbor = state.grid[y + dy]?.[x + dx];
+    if (neighbor?.t === "belt" && neighbor.belt.facing === dirOpposite(dir)) {
+      return neighbor.belt.facing;
+    }
+  }
+  let towardDock: Direction | null = null;
+  let awayFromMachine: Direction | null = null;
+  for (const dir of DIRECTIONS) {
+    const [dx, dy] = dirDelta(dir);
+    const machine = machineAtCell(state.grid, x + dx, y + dy);
+    if (!machine) continue;
+    if (machine.kind === "exporter") towardDock = dir;
+    else awayFromMachine = dirOpposite(dir);
+  }
+  return towardDock ?? awayFromMachine ?? "right";
+}
+
+function hasAdjacentBelt(state: FactoryState, x: number, y: number): boolean {
+  return cardinalRimCells(x, y).some(([px, py]) => state.grid[py][px].t === "belt");
+}
+
+/** Cardinal rim only — `tickBelts` never feeds a machine from a diagonal. */
+export function cardinalRimCells(ax: number, ay: number): [number, number][] {
   const cells: [number, number][] = [];
   if (ay > 0) {
     cells.push([ax, ay - 1], [ax + 1, ay - 1]);
@@ -501,6 +537,11 @@ function perimeter2x2(ax: number, ay: number): [number, number][] {
   if (ax + 2 < GRID_W) {
     cells.push([ax + 2, ay], [ax + 2, ay + 1]);
   }
+  return cells;
+}
+
+function perimeter2x2(ax: number, ay: number): [number, number][] {
+  const cells = cardinalRimCells(ax, ay);
   if (ay > 0 && ax > 0) cells.push([ax - 1, ay - 1]);
   if (ay > 0 && ax + 2 < GRID_W) cells.push([ax + 2, ay - 1]);
   if (ay + 2 < GRID_H && ax > 0) cells.push([ax - 1, ay + 2]);
@@ -513,6 +554,10 @@ export function toggleMinerMode(state: FactoryState, x: number, y: number): bool
   if (!anchor) return false;
   const cell = state.grid[anchor[1]][anchor[0]];
   if (cell.t !== "machine" || cell.machine.kind !== "miner") return false;
+  if (!state.copperUnlocked) {
+    addLog(state, "Copper vein is still on the next ticket.");
+    return false;
+  }
   cell.machine.mode = cell.machine.mode === "iron" ? "copper" : "iron";
   addLog(state, `Miner now pulls ${cell.machine.mode === "iron" ? "iron" : "copper"}.`);
   return true;
@@ -520,11 +565,11 @@ export function toggleMinerMode(state: FactoryState, x: number, y: number): bool
 
 export const TOOL_ORDER: PlacementTool[] = [
   "miner",
+  "belt",
+  "exporter",
   "smelter",
   "assembler",
-  "exporter",
   "fabricator",
-  "belt",
   "delete",
 ];
 
@@ -535,7 +580,7 @@ export function toolLabel(tool: PlacementTool): string {
     case "miner":
       return "Miner";
     case "smelter":
-      return "Smelter";
+      return "Furnace";
     case "assembler":
       return "Press";
     case "exporter":
@@ -554,17 +599,17 @@ export function toolHint(tool: PlacementTool): string {
     case "none":
       return "Tap a machine to inspect. Drag the floor to pan.";
     case "miner":
-      return "2×2 drill. Tap again on it to switch iron / copper.";
+      return "OUT ore. Place it, then paint a belt off the rim.";
     case "smelter":
-      return "Ore in, plate out. $25";
+      return "IN ore → OUT plate. Belt must kiss the rim.";
     case "assembler":
-      return "Iron plate → gear. $50";
+      return "IN iron plate → OUT gear. Copper plate will not go in.";
     case "exporter":
-      return "Sells whatever the belt feeds it.";
+      return "IN anything. Sells at the price on the spec plate.";
     case "fabricator":
-      return "Iron + copper plate → circuit. $75";
+      return "IN iron plate + copper plate → OUT circuit.";
     case "belt":
-      return "Drag to paint a line. Items find their own way.";
+      return "Drag toward the next machine. Arrows are the flow.";
     case "delete":
       return "Drag to scrap. Half the coin comes back.";
   }

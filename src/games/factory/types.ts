@@ -39,6 +39,13 @@ export function dirOpposite(dir: Direction): Direction {
   }
 }
 
+export function dirFromTo(fromX: number, fromY: number, toX: number, toY: number): Direction {
+  if (toX > fromX) return "right";
+  if (toX < fromX) return "left";
+  if (toY > fromY) return "down";
+  return "up";
+}
+
 export type ItemKind =
   | "ironOre"
   | "ironPlate"
@@ -84,6 +91,7 @@ export interface Belt {
   itemFrom: Direction | null;
   trailItem: ItemKind | null;
   trailTicks: number;
+  facing: Direction;
 }
 
 export type Cell =
@@ -113,8 +121,8 @@ export function newMachine(kind: MachineKind): Machine {
   };
 }
 
-export function newBelt(): Belt {
-  return { item: null, itemFrom: null, trailItem: null, trailTicks: 0 };
+export function newBelt(facing: Direction = "right"): Belt {
+  return { item: null, itemFrom: null, trailItem: null, trailTicks: 0, facing };
 }
 
 export function machineCost(kind: MachineKind): number {
@@ -169,13 +177,13 @@ export function machineName(kind: MachineKind): string {
     case "miner":
       return "Miner";
     case "smelter":
-      return "Smelter";
+      return "Furnace";
     case "assembler":
-      return "Assembler";
+      return "Press";
     case "exporter":
-      return "Exporter";
+      return "Dock";
     case "fabricator":
-      return "Fabricator";
+      return "Bench";
   }
 }
 
@@ -208,6 +216,12 @@ export interface FactoryState {
   totalTicks: number;
   recentExportTicks: number[];
   animFrame: number;
+  unlocked: MachineKind[];
+  copperUnlocked: boolean;
+  contractsCompleted: number;
+  contractProgress: number;
+  honorFlash: number;
+  lastHonor: string;
 }
 
 export function initialFactoryState(): FactoryState {
@@ -216,13 +230,19 @@ export function initialFactoryState(): FactoryState {
     money: STARTING_MONEY,
     totalExported: 0,
     producedCount: [0, 0, 0, 0, 0, 0],
-    log: ["Furnace is cold. Drop a miner to start the line."],
+    log: ["Ticket on the board. Plant a miner, belt, dock."],
     exportFlash: 0,
     lastExportValue: 0,
     totalMoneyEarned: 0,
     totalTicks: 0,
     recentExportTicks: [],
     animFrame: 0,
+    unlocked: [],
+    copperUnlocked: false,
+    contractsCompleted: 0,
+    contractProgress: 0,
+    honorFlash: 0,
+    lastHonor: "",
   };
 }
 
@@ -235,7 +255,7 @@ export function cloneCell(cell: Cell): Cell {
     case "belt":
       return {
         t: "belt",
-        belt: { ...cell.belt },
+        belt: { ...cell.belt, facing: cell.belt.facing ?? "right" },
       };
     case "machine":
       return {

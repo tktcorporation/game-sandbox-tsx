@@ -29,9 +29,9 @@ export const GAMES: GameEntry[] = [
     id: "factory",
     title: "Tiny Foundry",
     kicker: "Flow factory",
-    tagline: "Watch the line come alive.",
+    tagline: "Fill the ticket. Stretch the line.",
     blurb:
-      "A visual port of Tiny Factory from cli-sim-game-escape. Lay miners, belts and furnaces, then follow ore as it melts, meshes, and ships.",
+      "Take dock orders, unlock the next machine, and climb the value chain — ore to plate to gear to circuit.",
     playLabel: "Clock in",
     origin: "cli-sim-game-escape",
   },
