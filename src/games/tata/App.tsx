@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { ArcadeBack } from "../../shell/ArcadeBack";
 import { ELEMENT_LABEL, STARTERS, speciesOf } from "./species";
-import { currentStamina, dexCount } from "./logic";
+import { currentStamina } from "./logic";
 import { STAMINA_MAX } from "./types";
 import { useTata, type Screen } from "./store";
 import { TataSprite } from "./TataSprite";
@@ -15,21 +15,22 @@ export default function TataApp({ onLeave }: { onLeave: () => void }) {
   const started = useTata((s) => s.started);
   const screen = useTata((s) => s.screen);
   const toast = useTata((s) => s.toast);
-  const tick = useTata((s) => s.tick);
   const setScreen = useTata((s) => s.setScreen);
   const berries = useTata((s) => s.berries);
   const shards = useTata((s) => s.shards);
   const scrap = useTata((s) => s.scrap);
   const stamina = useTata((s) => currentStamina(s));
   const clock = useTata((s) => s.clock);
-  const dex = useTata((s) => dexCount(s));
+  const dexOwned = useTata((s) => new Set(s.tatas.map((t) => t.speciesId)).size);
   void clock;
 
   useEffect(() => {
-    tick();
-    const id = window.setInterval(tick, 1000);
+    if (!started) return;
+    const pulse = () => useTata.getState().tick();
+    pulse();
+    const id = window.setInterval(pulse, 1000);
     return () => window.clearInterval(id);
-  }, [tick]);
+  }, [started]);
 
   useEffect(() => {
     if (!toast) return;
@@ -82,7 +83,7 @@ export default function TataApp({ onLeave }: { onLeave: () => void }) {
         <DockBtn id="home" label="おうち" on={screen === "home"} onPick={setScreen} />
         <DockBtn id="stroll" label="おさんぽ" on={screen === "stroll"} onPick={setScreen} />
         <DockBtn id="battle" label="たたかい" on={screen === "battle"} onPick={setScreen} />
-        <DockBtn id="album" label={`ずかん ${dex.owned}`} on={screen === "album"} onPick={setScreen} />
+        <DockBtn id="album" label={`ずかん ${dexOwned}`} on={screen === "album"} onPick={setScreen} />
       </nav>
     </div>
   );

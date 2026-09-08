@@ -183,7 +183,7 @@ export const useTata = create<TataStore>()(
         const s = get();
         const nest = collectNests(s);
         if (nest.amount > 0) {
-          set({ ...nest.state, clock: now() });
+          set({ berries: nest.state.berries, nestAt: nest.state.nestAt, clock: now() });
           get().showToast(`ベッドできのみ +${nest.amount}`);
           return;
         }
