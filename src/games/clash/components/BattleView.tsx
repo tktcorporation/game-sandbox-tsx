@@ -6,9 +6,9 @@ import { useGame } from "../game/store";
 import { formatNumber } from "../game/logic";
 import type { TroopType } from "../game/types";
 import { useUi } from "../ui";
-import { GameIcon, IconText } from "../ui/icons";
-import { Pixel, PixelText } from "../assets/Pixel";
-import { RESOURCE_PIXEL, TROOP_PIXEL } from "../assets/gameSprites";
+import { GameIcon, IconText } from "../../../ui/icons";
+import { Pixel, PixelText } from "../../../assets/Pixel";
+import { RESOURCE_PIXEL, TROOP_PIXEL } from "../../../assets/gameSprites";
 import {
   buildDecorations,
   dayLight,

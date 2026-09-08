@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
-import { Pixel, PixelText } from "../assets/Pixel";
-import { RESOURCE_PIXEL, TROOP_PIXEL } from "../assets/gameSprites";
-import { ring } from "../assets/kenney";
+import { Pixel, PixelText } from "../../../assets/Pixel";
+import { RESOURCE_PIXEL, TROOP_PIXEL } from "../../../assets/gameSprites";
+import { ring } from "../../../assets/kenney";
 import { BUILD_ORDER, BUILDINGS, TROOP_ORDER, TROOPS } from "../game/buildings";
 import { useGame } from "../game/store";
 import {
@@ -20,7 +20,7 @@ import {
   BUILDING_TONE,
   GameIcon,
   IconText,
-} from "../ui/icons";
+} from "../../../ui/icons";
 
 function Sheet({ title, onClose, children }: { title: ReactNode; onClose: () => void; children: ReactNode }) {
   return (

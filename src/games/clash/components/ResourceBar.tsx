@@ -1,17 +1,19 @@
-import { Pixel } from "../assets/Pixel";
-import { RESOURCE_PIXEL } from "../assets/gameSprites";
-import { ring } from "../assets/kenney";
+import type { ReactNode } from "react";
+import { Pixel } from "../../../assets/Pixel";
+import { RESOURCE_PIXEL } from "../../../assets/gameSprites";
+import { ring } from "../../../assets/kenney";
 import { useGame } from "../game/store";
 import { capacityOf, formatNumber } from "../game/logic";
-import { GameIcon } from "../ui/icons";
+import { GameIcon } from "../../../ui/icons";
 
-export function ResourceBar() {
+export function ResourceBar({ leading }: { leading?: ReactNode }) {
   const { gold, elixir, gems, trophies, buildings } = useGame();
   const goldCap = capacityOf(buildings, "gold");
   const elixirCap = capacityOf(buildings, "elixir");
 
   return (
     <div className="topbar">
+      {leading}
       <div className="res gold">
         <span className="icon">
           <Pixel src={RESOURCE_PIXEL.gold} size={22} />

@@ -37,7 +37,7 @@ import {
   GiUpgrade,
   GiWatchtower,
 } from "react-icons/gi";
-import type { BuildingType, Resource, TroopType } from "../game/types";
+import type { BuildingType, Resource, TroopType } from "../games/clash/game/types";
 
 /**
  * Game-icons.net via react-icons — the Font Awesome of game UI.

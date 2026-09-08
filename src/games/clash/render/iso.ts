@@ -1,9 +1,9 @@
 // 2.5D village / battle renderer. Buildings are procedural extruded prisms;
 // troops, loot and collect chips are Kenney Tiny 16×16 sprites (see src/assets/kenney.ts).
 
-import { drawKenney, preloadPixels } from "../assets/drawPixel";
-import { RESOURCE_PIXEL, TROOP_PIXEL } from "../assets/gameSprites";
-import { hammer } from "../assets/kenney";
+import { drawKenney, preloadPixels } from "../../../assets/drawPixel";
+import { RESOURCE_PIXEL, TROOP_PIXEL } from "../../../assets/gameSprites";
+import { hammer } from "../../../assets/kenney";
 import { DEPLOY_DEPTH, GRID_H, GRID_W } from "../game/buildings";
 
 preloadPixels([...Object.values(TROOP_PIXEL), ...Object.values(RESOURCE_PIXEL), hammer]);
