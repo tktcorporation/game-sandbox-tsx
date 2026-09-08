@@ -213,10 +213,10 @@ function ItemChip({
       className={`foundry-chip ${on ? "on" : ""} ${locked ? "lock" : ""}`}
       style={locked ? undefined : { background: look.fill, color: look.ink, borderColor: look.rim }}
       onClick={() => setFocusItem(focusItem === item ? null : item)}
-      title={locked ? "Still locked" : `${itemLabel(item)} sells for $${exportValue(item)}`}
+      title={locked ? `Unlocks later · sells for $${exportValue(item)}` : `${itemLabel(item)} sells for $${exportValue(item)}`}
     >
-      <span className="nm">{locked ? "???" : look.short}</span>
-      <span className="pr">${locked ? "?" : exportValue(item)}</span>
+      <span className="nm">{look.short}</span>
+      <span className="pr">${exportValue(item)}</span>
     </button>
   );
 }
@@ -234,7 +234,7 @@ function MachNode({ kind, locked }: { kind: MachineKind; locked: boolean }) {
         tryTool(kind);
       }}
     >
-      {locked ? "Locked" : machineName(kind)}
+      {machineName(kind)}
     </button>
   );
 }

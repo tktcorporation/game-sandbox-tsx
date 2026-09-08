@@ -482,6 +482,16 @@
   color: var(--mute);
   box-shadow: none;
 }
+.foundry-node.lock::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 4px;
+  border: 1.5px solid var(--mute);
+  border-radius: 1px 1px 0 0;
+  transform: translateY(1px);
+}
 .foundry-node.dock {
   font-family: var(--display);
   font-size: 12px;

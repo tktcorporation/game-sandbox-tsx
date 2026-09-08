@@ -521,6 +521,10 @@ function hasAdjacentBelt(state: FactoryState, x: number, y: number): boolean {
   return perimeter2x2(x, y).some(([px, py]) => state.grid[py][px].t === "belt");
 }
 
+export function machineRimCells(ax: number, ay: number): [number, number][] {
+  return perimeter2x2(ax, ay);
+}
+
 function perimeter2x2(ax: number, ay: number): [number, number][] {
   const cells: [number, number][] = [];
   if (ay > 0) {

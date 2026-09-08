@@ -98,12 +98,27 @@ export const useFactory = create<FactoryStore>()(
           set({ log: draft.log, money: draft.money });
           return false;
         }
-        set({
+        const next: {
+          grid: Cell[][];
+          money: number;
+          log: string[];
+          selected: { x: number; y: number };
+          tool?: PlacementTool;
+        } = {
           grid: draft.grid,
           money: draft.money,
           log: draft.log,
           selected: { x, y },
-        });
+        };
+        if (state.tool === "miner") {
+          const hasBelt = draft.grid.some((row) => row.some((c) => c.t === "belt"));
+          if (!hasBelt) {
+            addLog(draft, "Belt in hand. Paint the yellow cells on the rim.");
+            next.tool = "belt";
+            next.log = draft.log;
+          }
+        }
+        set(next);
         return true;
       },
       toggleMiner: (x, y) => {

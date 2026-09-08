@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { factoryCanPlace, useFactory } from "./store";
 import { foundrySound } from "./sound";
 import { floorIsEmpty } from "./progress";
+import { machineRimCells } from "./logic";
 import {
   ITEM_LOOK,
   MACHINE_SPEC,
@@ -366,6 +367,7 @@ function paintFrame(
   const vis = visibleRange(cam, w, h);
   drawFloor(ctx, vis);
   drawStencil(ctx, s);
+  drawRimHighlights(ctx, s.grid, vis, s.tool, now);
   drawBelts(ctx, s.grid, vis, now);
   drawMachines(ctx, s.grid, vis, now, s.focusItem);
   drawItems(ctx, s.grid, vis, frac, now);
@@ -486,24 +488,24 @@ function drawBelts(
       if (cell.t !== "belt") continue;
       const px = x * CELL;
       const py = y * CELL;
-      ctx.fillStyle = "#6e6a62";
-      roundRect(ctx, px + 8, py + 8, CELL - 16, CELL - 16, 2);
+      ctx.fillStyle = "#5c5a58";
+      roundRect(ctx, px + 4, py + 4, CELL - 8, CELL - 8, 3);
       ctx.fill();
       const cargo = cell.belt.item ?? cell.belt.trailItem;
       if (cargo) {
-        ctx.globalAlpha = 0.35;
+        ctx.globalAlpha = 0.4;
         ctx.fillStyle = ITEM_LOOK[cargo].fill;
-        roundRect(ctx, px + 10, py + 10, CELL - 20, CELL - 20, 2);
+        roundRect(ctx, px + 6, py + 6, CELL - 12, CELL - 12, 2);
         ctx.fill();
         ctx.globalAlpha = 1;
       }
-      ctx.strokeStyle = "#3a3832";
-      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = "#1a1c18";
+      ctx.lineWidth = 2;
       ctx.stroke();
       const dir = beltDir(grid, x, y);
       ctx.save();
       ctx.beginPath();
-      roundRect(ctx, px + 10, py + 10, CELL - 20, CELL - 20, 1);
+      roundRect(ctx, px + 6, py + 6, CELL - 12, CELL - 12, 1);
       ctx.clip();
       if (dir === "left" || dir === "right") {
         for (let i = -1; i < 5; i++) {
@@ -872,16 +874,16 @@ function drawBeltChevron(
   ctx.rotate(rot);
   ctx.fillStyle = "#1a1c18";
   ctx.beginPath();
-  ctx.moveTo(10, 0);
-  ctx.lineTo(-6, -8);
-  ctx.lineTo(-6, 8);
+  ctx.moveTo(14, 0);
+  ctx.lineTo(-8, -11);
+  ctx.lineTo(-8, 11);
   ctx.closePath();
   ctx.fill();
   ctx.fillStyle = "#e6c200";
   ctx.beginPath();
-  ctx.moveTo(8, 0);
-  ctx.lineTo(-4, -6);
-  ctx.lineTo(-4, 6);
+  ctx.moveTo(12, 0);
+  ctx.lineTo(-6, -8);
+  ctx.lineTo(-6, 8);
   ctx.closePath();
   ctx.fill();
   ctx.restore();
@@ -939,26 +941,59 @@ function drawStencil(ctx: CanvasRenderingContext2D, s: ReturnType<typeof useFact
   const x = 8;
   const y = 8;
   ctx.save();
-  ctx.globalAlpha = 0.38;
+  ctx.globalAlpha = 0.42;
   ctx.setLineDash([5, 4]);
   ctx.strokeStyle = "#3a3832";
   ctx.lineWidth = 2;
   ctx.strokeRect(x * CELL + 4, y * CELL + 4, CELL * 2 - 8, CELL * 2 - 8);
-  ctx.strokeRect((x + 5) * CELL + 4, y * CELL + 4, CELL * 2 - 8, CELL * 2 - 8);
+  ctx.strokeRect((x + 3) * CELL + 4, y * CELL + 4, CELL * 2 - 8, CELL * 2 - 8);
   ctx.setLineDash([]);
-  ctx.fillStyle = "#6e6a62";
-  for (let i = 0; i < 3; i++) {
-    roundRect(ctx, (x + 2 + i) * CELL + 10, y * CELL + 14, CELL - 20, CELL - 28, 2);
+  ctx.fillStyle = "#5c5a58";
+  for (const [bx, by] of [
+    [x + 2, y],
+    [x + 2, y + 1],
+  ] as const) {
+    roundRect(ctx, bx * CELL + 4, by * CELL + 4, CELL - 8, CELL - 8, 3);
     ctx.fill();
-    drawBeltChevron(ctx, (x + 2 + i) * CELL, y * CELL, "right");
+    drawBeltChevron(ctx, bx * CELL, by * CELL, "right");
   }
   ctx.fillStyle = "#1a1c18";
   ctx.font = "700 13px Oswald, sans-serif";
   ctx.textAlign = "center";
-  ctx.fillText("1 MINER", (x + 1) * CELL, y * CELL - 6);
-  ctx.fillText("2 BELT", (x + 3.5) * CELL, y * CELL - 6);
-  ctx.fillText("3 DOCK", (x + 6) * CELL, y * CELL - 6);
+  ctx.fillText("1 MINER", (x + 1) * CELL, y * CELL - 8);
+  ctx.fillText("2 BELT", (x + 2.5) * CELL, y * CELL - 8);
+  ctx.fillText("3 DOCK", (x + 4) * CELL, y * CELL - 8);
   ctx.restore();
+}
+
+function drawRimHighlights(
+  ctx: CanvasRenderingContext2D,
+  grid: Cell[][],
+  vis: { x0: number; y0: number; x1: number; y1: number },
+  tool: PlacementTool,
+  now: number,
+) {
+  const pulse = 0.22 + 0.18 * Math.sin(now / 160);
+  for (let y = vis.y0; y < vis.y1; y++) {
+    for (let x = vis.x0; x < vis.x1; x++) {
+      const cell = grid[y][x];
+      if (cell.t !== "machine") continue;
+      const status = machineStatus(cell.machine);
+      const hungry = status.id === "jammed" || status.id === "starved" || status.id === "need";
+      if (tool !== "belt" && !hungry) continue;
+      ctx.font = "700 10px Oswald, sans-serif";
+      ctx.textAlign = "center";
+      for (const [px, py] of machineRimCells(x, y)) {
+        if (grid[py]?.[px]?.t !== "empty") continue;
+        ctx.globalAlpha = tool === "belt" ? 0.55 : pulse;
+        ctx.fillStyle = hungry ? "#e6c200" : "#c8d46a";
+        ctx.fillRect(px * CELL + 6, py * CELL + 6, CELL - 12, CELL - 12);
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = "#2a2800";
+        ctx.fillText("BELT", px * CELL + CELL / 2, py * CELL + CELL / 2 + 3);
+      }
+    }
+  }
 }
 
 function drawFocusRings(
