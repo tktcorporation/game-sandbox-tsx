@@ -359,13 +359,7 @@ function tryPushToBelt(state: FactoryState, ax: number, ay: number): void {
   for (const [px, py] of perimeter2x2(ax, ay)) {
     const cell = state.grid[py][px];
     if (cell.t !== "belt" || cell.belt.item !== null) continue;
-    if (cell.belt.itemFrom) {
-      const forward = dirOpposite(cell.belt.itemFrom);
-      const [fdx, fdy] = dirDelta(forward);
-      const tx = px + fdx;
-      const ty = py + fdy;
-      if (tx >= ax && tx < ax + 2 && ty >= ay && ty < ay + 2) continue;
-    }
+    if (pointsIntoMachine(px, py, cell.belt.facing, ax, ay)) continue;
     const machineCell = state.grid[ay][ax];
     if (machineCell.t !== "machine" || machineCell.machine.outputBuffer.length === 0) continue;
     const item = machineCell.machine.outputBuffer.shift()!;
@@ -373,6 +367,13 @@ function tryPushToBelt(state: FactoryState, ax: number, ay: number): void {
     cell.belt.itemFrom = sourceDirFromMachine(ax, ay, px, py);
     return;
   }
+}
+
+function pointsIntoMachine(px: number, py: number, facing: Direction, ax: number, ay: number): boolean {
+  const [dx, dy] = dirDelta(facing);
+  const tx = px + dx;
+  const ty = py + dy;
+  return tx >= ax && tx < ax + 2 && ty >= ay && ty < ay + 2;
 }
 
 function canPlace2x2(state: FactoryState, x: number, y: number): boolean {
