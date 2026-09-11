@@ -1,6 +1,6 @@
 import { speciesOf } from "./species";
-import { elementMod, tataAtk, tataHp } from "./logic";
-import type { Element, OwnedTata, Stage } from "./types";
+import { elementMod, mulberry32, tataAtk, tataHp } from "./logic";
+import { ELEMENTS, type Element, type OwnedTata, type Stage } from "./types";
 
 export type ZombieKind = "walker" | "runner" | "brute" | "boss";
 
@@ -24,6 +24,7 @@ export interface BattleActor {
   speciesId?: string;
   kind?: ZombieKind;
   slot?: number;
+  wave?: number;
 }
 
 export interface BattleFlash {
@@ -38,6 +39,7 @@ export interface BattleSnapshot {
   zombies: BattleActor[];
   flashes: BattleFlash[];
   wave: number;
+  wavesCleared: number;
   maxWaves: number;
   time: number;
   over: boolean;
@@ -45,42 +47,91 @@ export interface BattleSnapshot {
   incoming: number;
 }
 
-const MAX_WAVES = 5;
+export const MAX_WAVES = 5;
+/** seconds a wave may drag on before the next one opens anyway */
+const WAVE_GRACE = 14;
 const FIELD_W = 100;
 const FIELD_H = 100;
 
-interface WaveSpawn {
+export interface WaveSpawn {
+  wave: number;
+  /** seconds after the wave opens */
   at: number;
   kind: ZombieKind;
+  element: Element;
   y: number;
 }
 
-function zombieStats(kind: ZombieKind, wave: number): { hp: number; atk: number; speed: number; range: number; cd: number; element: Element; name: string } {
-  const w = 1 + (wave - 1) * 0.22;
-  if (kind === "walker") return { hp: 28 * w, atk: 6 * w, speed: 11, range: 8, cd: 0.9, element: "dark", name: "よたゾンビ" };
-  if (kind === "runner") return { hp: 18 * w, atk: 7 * w, speed: 20, range: 7, cd: 0.7, element: "dark", name: "はしりゾンビ" };
-  if (kind === "brute") return { hp: 55 * w, atk: 10 * w, speed: 8, range: 9, cd: 1.15, element: "earth", name: "よろいゾンビ" };
-  return { hp: 120 * w, atk: 14 * w, speed: 9, range: 10, cd: 1.05, element: "dark", name: "おおゾンビ" };
+/**
+ * A raid is decided before the fight starts so the prep screen can show the
+ * roster. The player's real decision is "which three tatas answer this roster";
+ * the two-element theme is what makes that decision have a right-ish answer.
+ */
+export interface Raid {
+  seed: number;
+  primary: Element;
+  secondary: Element;
+  spawns: WaveSpawn[];
 }
 
-function buildWaves(seed: number): WaveSpawn[] {
+export interface WaveRoster {
+  wave: number;
+  counts: Partial<Record<Element, number>>;
+  boss: boolean;
+}
+
+function zombieStats(kind: ZombieKind, wave: number): { hp: number; atk: number; speed: number; range: number; cd: number; name: string } {
+  const w = 1 + (wave - 1) * 0.45;
+  if (kind === "walker") return { hp: 24 * w, atk: 6 * w, speed: 11, range: 8, cd: 0.9, name: "よたゾンビ" };
+  if (kind === "runner") return { hp: 15 * w, atk: 6 * w, speed: 20, range: 7, cd: 0.7, name: "はしりゾンビ" };
+  if (kind === "brute") return { hp: 52 * w, atk: 10 * w, speed: 8, range: 9, cd: 1.15, name: "よろいゾンビ" };
+  return { hp: 95 * w, atk: 12 * w, speed: 9, range: 10, cd: 1.05, name: "おおゾンビ" };
+}
+
+export function buildRaid(seed: number): Raid {
+  const rng = mulberry32(seed);
+  const primary = ELEMENTS[Math.floor(rng() * ELEMENTS.length)]!;
+  let secondary = ELEMENTS[Math.floor(rng() * ELEMENTS.length)]!;
+  while (secondary === primary) secondary = ELEMENTS[Math.floor(rng() * ELEMENTS.length)]!;
   const spawns: WaveSpawn[] = [];
-  let t = 0.4;
   for (let wave = 1; wave <= MAX_WAVES; wave++) {
-        const count = 2 + wave;
+    const count = 2 + wave;
+    let t = 0.4;
     for (let i = 0; i < count; i++) {
-      const lane = (i * 37 + wave * 13 + seed) % 5;
+      const lane = Math.floor(rng() * 5);
       const y = 18 + lane * 16;
       let kind: ZombieKind = "walker";
       if (wave >= 2 && i % 3 === 0) kind = "runner";
       if (wave >= 3 && i % 4 === 1) kind = "brute";
       if (wave === MAX_WAVES && i === count - 1) kind = "boss";
-      spawns.push({ at: t, kind, y });
+      const roll = rng();
+      const element: Element =
+        roll < 0.62 ? primary : roll < 0.9 ? secondary : ELEMENTS[Math.floor(rng() * ELEMENTS.length)]!;
+      spawns.push({ wave, at: t, kind, element, y });
       t += 0.55 - wave * 0.04;
     }
-    t += 1.8;
   }
-  return spawns;
+  return { seed, primary, secondary, spawns };
+}
+
+export function raidRoster(raid: Raid): WaveRoster[] {
+  const out: WaveRoster[] = [];
+  for (let wave = 1; wave <= MAX_WAVES; wave++) {
+    const counts: Partial<Record<Element, number>> = {};
+    let boss = false;
+    for (const s of raid.spawns) {
+      if (s.wave !== wave) continue;
+      counts[s.element] = (counts[s.element] ?? 0) + 1;
+      if (s.kind === "boss") boss = true;
+    }
+    out.push({ wave, counts, boss });
+  }
+  return out;
+}
+
+/** which elements hit the raid's theme for 1.5x (attacker element → its prey) */
+export function countersOf(raid: Raid): Element[] {
+  return ELEMENTS.filter((e) => elementMod(e, raid.primary) > 1 || elementMod(e, raid.secondary) > 1);
 }
 
 export class TataBattle {
@@ -88,15 +139,24 @@ export class TataBattle {
   zombies: BattleActor[] = [];
   flashes: BattleFlash[] = [];
   wave = 1;
+  wavesCleared = 0;
   maxWaves = MAX_WAVES;
   time = 0;
   over = false;
   won = false;
+  readonly raid: Raid;
   private seq = 1;
-  private spawns: WaveSpawn[];
   private spawnI = 0;
+  private rng: () => number;
+  private deadByWave: number[] = new Array(MAX_WAVES + 1).fill(0);
+  private sizeByWave: number[] = new Array(MAX_WAVES + 1).fill(0);
+  /** when the current wave opened; the next opens once it is dead or WAVE_GRACE passed */
+  private waveOpenedAt = 0;
 
-  constructor(party: OwnedTata[], lantern: boolean, seed: number) {
+  constructor(party: OwnedTata[], lantern: boolean, raid: Raid) {
+    this.raid = raid;
+    this.rng = mulberry32(raid.seed ^ 0x5bd1e995);
+    for (const s of raid.spawns) this.sizeByWave[s.wave] += 1;
     const slots = [0, 1, 2];
     const positions = [
       { x: 22, y: 32 },
@@ -130,7 +190,6 @@ export class TataBattle {
         slot,
       });
     });
-    this.spawns = buildWaves(seed);
   }
 
   private id(): string {
@@ -138,12 +197,12 @@ export class TataBattle {
   }
 
   private spawn(s: WaveSpawn) {
-    const st = zombieStats(s.kind, this.wave);
+    const st = zombieStats(s.kind, s.wave);
     this.zombies.push({
       id: this.id(),
       side: "zombie",
       name: st.name,
-      element: st.element,
+      element: s.element,
       x: 98,
       y: s.y,
       hp: st.hp,
@@ -155,17 +214,26 @@ export class TataBattle {
       maxCd: st.cd,
       flash: 0,
       kind: s.kind,
+      wave: s.wave,
     });
   }
 
   tick(dt: number) {
     if (this.over) return;
     this.time += dt;
-    const currentWave = Math.min(MAX_WAVES, 1 + Math.floor(this.time / 9));
-    if (currentWave !== this.wave && !this.over) this.wave = currentWave;
+    const spawns = this.raid.spawns;
 
-    while (this.spawnI < this.spawns.length && this.spawns[this.spawnI]!.at <= this.time) {
-      this.spawn(this.spawns[this.spawnI]!);
+    while (this.spawnI < spawns.length) {
+      const next = spawns[this.spawnI]!;
+      if (next.wave !== this.wave) {
+        const prevDead = this.deadByWave[this.wave] >= this.sizeByWave[this.wave];
+        const overdue = this.time - this.waveOpenedAt >= WAVE_GRACE;
+        if (!prevDead && !overdue) break;
+        this.wave = next.wave;
+        this.waveOpenedAt = this.time;
+      }
+      if (next.at > this.time - this.waveOpenedAt) break;
+      this.spawn(next);
       this.spawnI += 1;
     }
 
@@ -207,24 +275,36 @@ export class TataBattle {
       }
     }
 
+    for (const z of this.zombies) {
+      if (z.hp <= 0 && z.wave !== undefined) this.deadByWave[z.wave] += 1;
+    }
     this.tatas = this.tatas.filter((a) => a.hp > 0);
     this.zombies = this.zombies.filter((a) => a.hp > 0);
+
+    let cleared = 0;
+    for (let w = 1; w <= MAX_WAVES; w++) {
+      if (this.deadByWave[w] >= this.sizeByWave[w]) cleared = w;
+      else break;
+    }
+    this.wavesCleared = cleared;
 
     if (this.tatas.length === 0) {
       this.over = true;
       this.won = false;
       return;
     }
-    if (this.spawnI >= this.spawns.length && this.zombies.length === 0) {
+    if (this.spawnI >= spawns.length && this.zombies.length === 0) {
       this.over = true;
       this.won = true;
       this.wave = MAX_WAVES;
+      this.wavesCleared = MAX_WAVES;
     }
   }
 
   private hit(from: BattleActor, to: BattleActor) {
     const mod = elementMod(from.element, to.element);
-    const dmg = Math.max(1, Math.round(from.atk * mod));
+    const swing = 0.85 + this.rng() * 0.3;
+    const dmg = Math.max(1, Math.round(from.atk * mod * swing));
     to.hp -= dmg;
     to.flash = 0.18;
     from.flash = 0.12;
@@ -232,7 +312,7 @@ export class TataBattle {
       x: (from.x + to.x) / 2,
       y: (from.y + to.y) / 2,
       t: 0.22,
-      tint: from.side === "tata" ? "persimmon" : "rot",
+      tint: from.side === "tata" ? (mod > 1 ? "super" : "persimmon") : "rot",
     });
     if (to.hp <= 0) to.hp = 0;
   }
@@ -243,11 +323,12 @@ export class TataBattle {
       zombies: this.zombies.map((a) => ({ ...a })),
       flashes: this.flashes.map((f) => ({ ...f })),
       wave: this.wave,
+      wavesCleared: this.wavesCleared,
       maxWaves: this.maxWaves,
       time: this.time,
       over: this.over,
       won: this.won,
-      incoming: this.spawns.length - this.spawnI + this.zombies.filter((z) => z.hp > 0).length,
+      incoming: this.raid.spawns.length - this.spawnI + this.zombies.filter((z) => z.hp > 0).length,
     };
   }
 }
@@ -273,7 +354,5 @@ function nearest(from: BattleActor, pool: BattleActor[]): BattleActor | null {
 }
 
 export function wavesClearedOf(b: TataBattle): number {
-  if (b.won) return MAX_WAVES;
-  return Math.max(0, b.wave - 1);
+  return b.wavesCleared;
 }
-

@@ -27,6 +27,8 @@ export interface StrollEncounter {
 
 interface TataStore extends TataGameState {
   clock: number;
+  /** seed of the raid waiting on the battle screen; fixed until it is fought */
+  raidSeed: number;
   screen: Screen;
   selectedUid: string | null;
   buildId: FurnitureId | null;
@@ -47,6 +49,7 @@ interface TataStore extends TataGameState {
   catchWild: () => void;
   shooWild: () => void;
   applyRewards: (berries: number, shards: number, scrap: number, waves: number) => void;
+  rerollRaid: () => void;
   tick: () => void;
   reset: () => void;
   showToast: (msg: string) => void;
@@ -54,11 +57,16 @@ interface TataStore extends TataGameState {
 
 let toastSeq = 0;
 
+function newSeed(): number {
+  return (Math.random() * 1e9) | 0;
+}
+
 export const useTata = create<TataStore>()(
   persist(
     (set, get) => ({
       ...initialState(),
       clock: now(),
+      raidSeed: newSeed(),
       screen: "home",
       selectedUid: null,
       buildId: null,
@@ -174,10 +182,13 @@ export const useTata = create<TataStore>()(
           stamina: Math.min(8, currentStamina(s) + 2),
           staminaAt: now(),
           waveBest: Math.max(s.waveBest, waves),
+          raidSeed: newSeed(),
           screen: "home",
         });
         get().showToast(`おかえり。きのみ+${berries} かけら+${shards} くず+${scrap}`);
       },
+
+      rerollRaid: () => set({ raidSeed: newSeed() }),
 
       tick: () => {
         const s = get();

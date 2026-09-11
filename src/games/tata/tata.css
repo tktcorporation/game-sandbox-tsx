@@ -532,6 +532,59 @@
   color: var(--cream);
   text-shadow: 0 1px 0 var(--chocolate);
 }
+.raid-card {
+  background: var(--cream);
+  border: 2px solid var(--chocolate);
+  border-radius: 12px;
+  padding: 6px 8px;
+  margin: 0 0 8px;
+  box-shadow: 2px 3px 0 var(--chocolate);
+}
+.raid-card header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 700;
+}
+.raid-card header span { display: flex; gap: 4px; align-items: center; color: var(--ink-soft); }
+.raid-waves {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.raid-waves li { display: flex; gap: 4px; align-items: center; font-size: 11px; }
+.raid-waves .wave-no { width: 28px; font-weight: 700; color: var(--ink-soft); }
+.raid-waves .el-chip { font-size: 10px; padding: 0 6px 1px; }
+.boss-mark {
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--persimmon-deep);
+}
+.match {
+  display: inline-block;
+  margin-top: 2px;
+  padding: 0 5px;
+  border-radius: 6px;
+  font-size: 9px;
+  color: var(--cream);
+}
+.match.good { background: var(--persimmon); }
+.match.bad { background: #4a3058; }
+.el-dot {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  padding: 0 4px;
+  border-radius: 999px;
+  font-size: 9px;
+  color: var(--cream);
+  border: 1px solid var(--chocolate);
+}
 .prep-slots {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
@@ -564,6 +617,7 @@
   overflow: auto;
   display: flex;
   flex-wrap: wrap;
+  align-content: flex-start;
   gap: 6px;
   padding: 8px 0;
 }
@@ -584,9 +638,11 @@
 }
 .prep-actions .btn-hero { flex: 1; }
 
-.battle-hud {
+.tata-battle .battle-hud {
+  position: relative;
   display: flex;
   justify-content: space-between;
+  gap: 12px;
   margin: 0 0 6px;
   font-family: var(--display);
   color: var(--cream);
@@ -629,6 +685,12 @@
   box-shadow: 0 0 0 4px rgba(232, 93, 44, 0.4);
 }
 .b-flash.rot { background: #8aaa4a; }
+.b-flash.super {
+  width: 22px;
+  height: 22px;
+  background: #fff;
+  box-shadow: 0 0 0 5px rgba(255, 220, 60, 0.7);
+}
 
 /* ---------- dock ---------- */
 .tata-dock {
