@@ -360,16 +360,20 @@ function weightedPick(pool: Species[], rng: () => number): Species {
   return weighted[Math.floor(rng() * weighted.length)]!;
 }
 
+/** the pool itself, or just its unowned members most of the time, so the dex keeps filling */
+function preferMissing(pool: Species[], ownedIds: Set<string>, rng: () => number): Species[] {
+  const missing = pool.filter((s) => !ownedIds.has(s.id));
+  return missing.length > 0 && rng() < 0.72 ? missing : pool;
+}
+
 export function pickWildSpecies(ownedIds: Set<string>, rng: () => number, bias?: Element): string {
-  const missing = SPECIES.filter((s) => !ownedIds.has(s.id));
-  const pool = missing.length > 0 && rng() < 0.72 ? missing : SPECIES;
   if (bias) {
-    const inElement = pool.filter((s) => s.element === bias);
-    const rest = pool.filter((s) => s.element !== bias);
-    if (inElement.length > 0 && (rest.length === 0 || rng() < PATCH_SHARE)) return weightedPick(inElement, rng).id;
-    if (rest.length > 0) return weightedPick(rest, rng).id;
+    const inElement = SPECIES.filter((s) => s.element === bias);
+    const rest = SPECIES.filter((s) => s.element !== bias);
+    const pool = rng() < PATCH_SHARE ? inElement : rest;
+    return weightedPick(preferMissing(pool, ownedIds, rng), rng).id;
   }
-  return weightedPick(pool, rng).id;
+  return weightedPick(preferMissing(SPECIES, ownedIds, rng), rng).id;
 }
 
 export function stroll(state: TataGameState, seed: number, patch: number): { state: TataGameState; find: StrollFind; reason?: string } {

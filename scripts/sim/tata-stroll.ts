@@ -12,9 +12,9 @@ import { SPECIES, speciesOf } from "../../src/games/tata/species";
 const runs = Number(process.argv[2] ?? 2000);
 const rng = mulberry32(99);
 
-function rate(ownedCount: number): string {
+function rate(ownedIds: string[]): string {
   const base = initialState();
-  const owned = SPECIES.slice(0, ownedCount).map((s) => ({
+  const owned = SPECIES.filter((s) => ownedIds.includes(s.id)).map((s) => ({
     uid: s.id,
     speciesId: s.id,
     stage: 0 as const,
@@ -40,5 +40,8 @@ function rate(ownedCount: number): string {
 }
 
 console.log(`share of encounters matching the patch element (${runs} strolls per patch)`);
-console.log(`empty dex : ${rate(0)}`);
-console.log(`60 owned  : ${rate(60)}`);
+const ids = (n: number) => SPECIES.slice(0, n).map((s) => s.id);
+const allOf = (el: string) => SPECIES.filter((s) => s.element === el).map((s) => s.id);
+console.log(`empty dex      : ${rate([])}`);
+console.log(`60 owned       : ${rate(ids(60))}`);
+console.log(`all fire owned : ${rate(allOf("fire"))}`);

@@ -61,7 +61,7 @@ late (st3 x3, pw6)
 
 ## おさんぽの目標
 
-草むらを選ぶと、その属性のタタが出る割合が 7 割前後になる。属性ごとの種族数の違いで割合がぶれないこと。`npx tsx scripts/sim/tata-stroll.ts` で確認する。
+草むらを選ぶと、その属性のタタが出る割合が 7 割前後になる。属性ごとの種族数の違いや、その属性を全部集めた後でも割合がぶれないこと（偏りを先に決め、未所持優先はその中で適用する）。`npx tsx scripts/sim/tata-stroll.ts` で確認する。
 
 ### サイクル 2：草むらに属性を持たせる
 
@@ -69,6 +69,7 @@ late (st3 x3, pw6)
 
 ```
 share of encounters matching the patch element (2000 strolls per patch)
-empty dex : fire   72%  water  70%  grass  69%  earth  73%  light  69%  dark   69%
-60 owned  : fire   70%  water  71%  grass  70%  earth  68%  light  72%  dark   69%
+empty dex      : fire   69%  water  71%  grass  71%  earth  68%  light  71%  dark   69%
+60 owned       : fire   68%  water  71%  grass  70%  earth  68%  light  70%  dark   67%
+all fire owned : fire   69%  water  70%  grass  71%  earth  68%  light  69%  dark   71%
 ```
