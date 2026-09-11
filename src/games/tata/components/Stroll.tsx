@@ -1,17 +1,10 @@
+import { useMemo } from "react";
+import { buildRaid, countersOf } from "../battle";
 import { ELEMENT_LABEL, RARITY_LABEL, speciesOf } from "../species";
-import { catchCost, currentStamina } from "../logic";
+import { catchCost, currentStamina, STROLL_PATCHES } from "../logic";
 import { STAMINA_MAX } from "../types";
 import { useTata } from "../store";
 import { TataSprite } from "../TataSprite";
-
-const PATCHES = [
-  { x: 12, y: 58, rot: -8 },
-  { x: 32, y: 42, rot: 6 },
-  { x: 52, y: 62, rot: -4 },
-  { x: 70, y: 38, rot: 10 },
-  { x: 84, y: 64, rot: -12 },
-  { x: 44, y: 78, rot: 3 },
-];
 
 export function Stroll() {
   const stamina = useTata((s) => currentStamina(s));
@@ -23,23 +16,35 @@ export function Stroll() {
   const catchWild = useTata((s) => s.catchWild);
   const shoo = useTata((s) => s.shooWild);
   const berries = useTata((s) => s.berries);
+  const raidSeed = useTata((s) => s.raidSeed);
+  const counters = useMemo(() => countersOf(buildRaid(raidSeed)), [raidSeed]);
 
   return (
     <div className="tata-stroll">
+      <p className="stroll-lead">
+        つぎの襲撃にゆうり:
+        {counters.map((e) => (
+          <i key={e} className={`el-chip el-${e}`}>
+            {ELEMENT_LABEL[e]}
+          </i>
+        ))}
+      </p>
       <div className="stroll-meadow">
         <span className="stroll-sun" />
-        {PATCHES.map((p, i) => (
+        {STROLL_PATCHES.map((p, i) => (
           <button
-            key={i}
+            key={p.element}
             type="button"
-            className="tuft"
+            className={`tuft${counters.includes(p.element) ? " want" : ""}`}
             style={{ left: `${p.x}%`, top: `${p.y}%`, transform: `rotate(${p.rot}deg)` }}
-            onClick={go}
+            onClick={() => go(i)}
+            aria-label={`${p.name}（${ELEMENT_LABEL[p.element]}のタタが多い）`}
           >
             <svg viewBox="0 0 64 40" width="72" height="44" aria-hidden>
               <path d="M 4 36 Q 16 4 32 28 Q 40 6 60 36 Z" fill="#3d7a38" stroke="#2a3a14" strokeWidth="2" />
               <path d="M 12 36 Q 24 12 36 34" fill="#4e9444" />
             </svg>
+            <b className={`el-chip el-${p.element}`}>{ELEMENT_LABEL[p.element]}</b>
           </button>
         ))}
       </div>

@@ -31,6 +31,20 @@ npm run cf-typegen   # regenerate Worker types from wrangler.jsonc
 There is **no test runner and no linter** configured. The only verification gate is `npm run build`.
 Always run it after changes.
 
+```bash
+npm run sim:tata -- 150   # headless balance sim for モンスターサバイバル battles
+```
+
+## Designing or improving a game
+
+Use the `game-design-loop` skill (`.claude/skills/game-design-loop/SKILL.md`) before touching
+game logic, balance numbers, or a game screen. It defines a game as a loop of
+information → decision → verb → feedback, checks that the decision is real, and requires a
+headless sim (`scripts/sim/`) plus a target curve
+(`.claude/skills/game-design-loop/references/<game>-targets.md`) before any number changes.
+Each cycle ends by appending a generalized lesson to
+`.claude/skills/game-design-loop/references/lessons.md`; the skill grows from those.
+
 ## Architecture
 
 ### Catalog / shell
@@ -73,7 +87,10 @@ Collect-evolve-battle-build. Pure logic in `logic.ts` / `battle.ts` / `species.t
 
 - `species.ts` — 120 tata species, 6 elements, 4 evo names. **Single source of truth for Tata identity.**
 - `logic.ts` — stamina stroll, feed/evolve, furniture placement, party, nest berries
-- `battle.ts` — real-time 3-slot formation vs zombie waves. Element wheel: fire>grass>earth>water>fire, light↔dark
+- `battle.ts` — real-time 3-slot formation vs zombie waves. A raid (`buildRaid(seed)`) is fixed
+  before the fight so the prep screen can show the roster; it has a primary/secondary element
+  theme, waves open only after the previous one dies (or a grace period), and damage has a
+  small seeded swing. Element wheel: fire>grass>earth>water>fire, light↔dark
 - `store.ts` — Zustand persist key `tata-survival-v1`. New persisted fields go in `partialize`
 - `TataSprite.tsx` — SVG felt bodies by shape/stage/shiny
 - Four screens: おうち (yard), おさんぽ (stroll catch), たたかい (formation + waves), ずかん (dex)

@@ -1,6 +1,7 @@
 import { FURNITURE } from "./furniture";
 import { displayName, elementMod, speciesOf, SPECIES } from "./species";
 import type {
+  Element,
   FurnitureId,
   OwnedTata,
   PartySlot,
@@ -326,25 +327,64 @@ export type StrollFind =
   | { kind: "scrap"; n: number }
   | { kind: "wind" };
 
-export function pickWildSpecies(ownedIds: Set<string>, rng: () => number): string {
-  const missing = SPECIES.filter((s) => !ownedIds.has(s.id));
-  const pool = missing.length > 0 && rng() < 0.72 ? missing : SPECIES;
+/**
+ * One patch of grass per element. Walking a patch is the player's way to hunt
+ * the element that counters the next raid, so the choice of patch matters.
+ */
+export interface StrollPatch {
+  element: Element;
+  name: string;
+  x: number;
+  y: number;
+  rot: number;
+}
+
+export const STROLL_PATCHES: StrollPatch[] = [
+  { element: "fire", name: "ひなた", x: 12, y: 58, rot: -8 },
+  { element: "water", name: "みずべ", x: 32, y: 42, rot: 6 },
+  { element: "grass", name: "しげみ", x: 52, y: 62, rot: -4 },
+  { element: "earth", name: "いわば", x: 70, y: 38, rot: 10 },
+  { element: "light", name: "ひだまり", x: 84, y: 64, rot: -12 },
+  { element: "dark", name: "こかげ", x: 44, y: 78, rot: 3 },
+];
+
+/** share of encounters on a patch that belong to the patch's element */
+const PATCH_SHARE = 0.7;
+
+function weightedPick(pool: Species[], rng: () => number): Species {
   const weighted: Species[] = [];
   for (const s of pool) {
     const w = s.rarity === 1 ? 10 : s.rarity === 2 ? 5 : s.rarity === 3 ? 2 : 1;
     for (let i = 0; i < w; i++) weighted.push(s);
   }
-  return weighted[Math.floor(rng() * weighted.length)]!.id;
+  return weighted[Math.floor(rng() * weighted.length)]!;
 }
 
-export function stroll(state: TataGameState, seed: number): { state: TataGameState; find: StrollFind; reason?: string } {
+/** the pool itself, or just its unowned members most of the time, so the dex keeps filling */
+function preferMissing(pool: Species[], ownedIds: Set<string>, rng: () => number): Species[] {
+  const missing = pool.filter((s) => !ownedIds.has(s.id));
+  return missing.length > 0 && rng() < 0.72 ? missing : pool;
+}
+
+export function pickWildSpecies(ownedIds: Set<string>, rng: () => number, bias?: Element): string {
+  if (bias) {
+    const inElement = SPECIES.filter((s) => s.element === bias);
+    const rest = SPECIES.filter((s) => s.element !== bias);
+    const pool = rng() < PATCH_SHARE ? inElement : rest;
+    return weightedPick(preferMissing(pool, ownedIds, rng), rng).id;
+  }
+  return weightedPick(preferMissing(SPECIES, ownedIds, rng), rng).id;
+}
+
+export function stroll(state: TataGameState, seed: number, patch: number): { state: TataGameState; find: StrollFind; reason?: string } {
   const spent = spendStamina(state);
   if (!spent) return { state, find: { kind: "wind" }, reason: "つかれた。すこし待って" };
   const rng = mulberry32(seed);
   const roll = rng();
   const owned = new Set(spent.tatas.map((t) => t.speciesId));
+  const bias = STROLL_PATCHES[patch]?.element;
   if (roll < 0.48) {
-    const speciesId = pickWildSpecies(owned, rng);
+    const speciesId = pickWildSpecies(owned, rng, bias);
     const shiny = rng() < 1 / 28;
     const seen = spent.seen.includes(speciesId) ? spent.seen : [...spent.seen, speciesId];
     return { state: { ...spent, seen }, find: { kind: "tata", speciesId, shiny } };

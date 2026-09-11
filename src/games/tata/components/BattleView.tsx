@@ -1,10 +1,10 @@
-import { useEffect, useState } from "react";
-import { TataBattle, wavesClearedOf, type BattleSnapshot } from "../battle";
+import { useEffect, useMemo, useState } from "react";
+import { buildRaid, countersOf, matchupOf, raidRoster, TataBattle, wavesClearedOf, type BattleSnapshot, type Raid } from "../battle";
 import { ELEMENT_LABEL, speciesOf } from "../species";
 import { battleRewards, hasFurniture, labelTata, partyOf, tataAtk, tataHp } from "../logic";
 import { useTata } from "../store";
 import { TataSprite, ZombieSprite } from "../TataSprite";
-import type { OwnedTata, PartySlot } from "../types";
+import { ELEMENTS, type Element, type OwnedTata, type PartySlot } from "../types";
 
 export function BattleView() {
   const tatas = useTata((s) => s.tatas);
@@ -16,6 +16,8 @@ export function BattleView() {
   const fillParty = useTata((s) => s.fillParty);
   const setParty = useTata((s) => s.setParty);
   const applyRewards = useTata((s) => s.applyRewards);
+  const raidSeed = useTata((s) => s.raidSeed);
+  const raid = useMemo(() => buildRaid(raidSeed), [raidSeed]);
 
   useEffect(() => {
     if (!fight) return;
@@ -39,6 +41,7 @@ export function BattleView() {
           <p>
             波 {snap.wave}/{snap.maxWaves}
           </p>
+          <p>とっぱ {snap.wavesCleared}</p>
           <p>のこり {snap.incoming}</p>
         </header>
         <div className="battle-field">
@@ -61,6 +64,7 @@ export function BattleView() {
               style={{ left: `${z.x}%`, top: `${z.y}%` }}
             >
               <ZombieSprite kind={z.kind ?? "walker"} size={z.kind === "boss" ? 64 : 48} />
+              <b className={`el-dot el-${z.element}`}>{ELEMENT_LABEL[z.element]}</b>
               <i className="hp z" style={{ width: `${(z.hp / z.maxHp) * 100}%` }} />
             </div>
           ))}
@@ -72,7 +76,9 @@ export function BattleView() {
           <div className="tata-sheet encounter">
             <h3>{snap.won ? "ゾンビ、たいさん！" : "タタたちが倒れた…"}</h3>
             <p className="sheet-blurb">
-              {snap.won ? "陣形と相性が光った。" : "おうちに帰って、えさをあげよう。"}
+              {snap.won
+                ? "陣形と相性が光った。"
+                : `波${snap.wave}で倒れた。${snap.wavesCleared >= 2 ? "相性を変えるか、えさで育てよう。" : "おうちに帰って、えさをあげよう。"}`}
             </p>
             <button
               type="button"
@@ -91,9 +97,10 @@ export function BattleView() {
     );
   }
 
+  const counters = countersOf(raid);
   return (
     <div className="tata-prep">
-      <p className="prep-lead">3ひきのじんけい。まえが盾、うしろが遠距離。火は草に強い。</p>
+      <RaidCard raid={raid} counters={counters} />
       <div className="prep-slots">
         {([0, 1, 2] as PartySlot[]).map((slot) => {
           const t = tatas.find((x) => x.partySlot === slot);
@@ -119,6 +126,7 @@ export function BattleView() {
           >
             <TataSprite speciesId={t.speciesId} stage={t.stage} shiny={t.shiny} size={44} />
             <em>{labelTata(t)}</em>
+            <MatchTag element={speciesOf(t.speciesId).element} raid={raid} />
           </button>
         ))}
       </div>
@@ -133,8 +141,7 @@ export function BattleView() {
           onClick={() => {
             const live = partyOf(useTata.getState());
             if (live.length === 0) return;
-            const seed = (Math.random() * 1e9) | 0;
-            const b = new TataBattle(live, lantern, seed);
+            const b = new TataBattle(live, lantern, raid);
             setFight(b);
             setSnap(b.snapshot());
           }}
@@ -146,6 +153,46 @@ export function BattleView() {
   );
 }
 
+function RaidCard({ raid, counters }: { raid: Raid; counters: Element[] }) {
+  const roster = raidRoster(raid);
+  return (
+    <section className="raid-card" aria-label="つぎの襲撃">
+      <header>
+        <strong>つぎの襲撃</strong>
+        <span>
+          ゆうり:
+          {counters.map((e) => (
+            <i key={e} className={`el-chip el-${e}`}>
+              {ELEMENT_LABEL[e]}
+            </i>
+          ))}
+        </span>
+      </header>
+      <ol className="raid-waves">
+        {roster.map((w) => (
+          <li key={w.wave}>
+            <span className="wave-no">波{w.wave}</span>
+            {ELEMENTS.filter((e) => (w.counts[e] ?? 0) > 0).map((e) => (
+              <i key={e} className={`el-chip el-${e}`}>
+                {ELEMENT_LABEL[e]}×{w.counts[e]}
+              </i>
+            ))}
+            {w.boss ? <i className="boss-mark">おおゾンビ</i> : null}
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+/** how this tata's element fares against the raid theme: 有利 / 不利 / nothing */
+function MatchTag({ element, raid }: { element: Element; raid: Raid }) {
+  const m = matchupOf(element, raid);
+  if (m === "strong") return <b className="match good">ゆうり</b>;
+  if (m === "weak") return <b className="match bad">ふり</b>;
+  return null;
+}
+
 function TataCard({ tata, lantern }: { tata: OwnedTata; lantern: boolean }) {
   const spec = speciesOf(tata.speciesId);
   return (
@@ -154,7 +201,8 @@ function TataCard({ tata, lantern }: { tata: OwnedTata; lantern: boolean }) {
       <p>
         {labelTata(tata)}
         <small>
-          {ELEMENT_LABEL[spec.element]} HP{tataHp(tata)} ATK{tataAtk(tata, lantern)}
+          <i className={`el-chip el-${spec.element}`}>{ELEMENT_LABEL[spec.element]}</i> HP{tataHp(tata)} ATK
+          {tataAtk(tata, lantern)}
         </small>
       </p>
     </div>
