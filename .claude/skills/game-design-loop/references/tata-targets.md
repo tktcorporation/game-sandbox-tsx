@@ -56,3 +56,17 @@ late (st3 x3, pw6)
 | ダメージに 0.85〜1.15 の幅                               | 結果が決定的で再挑戦の余地が無かった                   |
 | wave 倍率 0.22 → 0.45、ボス HP 120 → 95、よた HP 28 → 24 | 直列化で易しくなった分を戻し、終盤の段差を均す         |
 | 突破数を「全滅させた wave の数」で数える                 | 時間経過で数えると生き残るだけで突破扱いになっていた   |
+
+## おさんぽの目標
+
+草むらを選ぶと、その属性のタタが出る割合が 7 割前後になる。属性ごとの種族数の違いで割合がぶれないこと。`npx tsx scripts/sim/tata-stroll.ts` で確認する。
+
+### サイクル 2：草むらに属性を持たせる
+
+変更前は 6 つの草むらが同じ処理を呼び、選択に差が無かった。草むらを属性ごとに 1 つずつにし、次の襲撃に有利な属性を画面に出して、対策を狙って歩けるようにした。
+
+```
+share of encounters matching the patch element (2000 strolls per patch)
+empty dex : fire   72%  water  70%  grass  69%  earth  73%  light  69%  dark   69%
+60 owned  : fire   70%  water  71%  grass  70%  earth  68%  light  72%  dark   69%
+```

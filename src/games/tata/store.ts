@@ -45,7 +45,7 @@ interface TataStore extends TataGameState {
   setParty: (uid: string, slot: PartySlot | null) => void;
   fillParty: () => void;
   place: (x: number, y: number) => void;
-  goStroll: () => void;
+  goStroll: (patch: number) => void;
   catchWild: () => void;
   shooWild: () => void;
   applyRewards: (berries: number, shards: number, scrap: number, waves: number) => void;
@@ -131,9 +131,9 @@ export const useTata = create<TataStore>()(
         get().showToast("おいた！");
       },
 
-      goStroll: () => {
+      goStroll: (patch) => {
         const seed = (Math.random() * 1e9) | 0;
-        const r = stroll(get(), seed);
+        const r = stroll(get(), seed, patch);
         if (r.reason) {
           get().showToast(r.reason);
           return;
