@@ -9,8 +9,8 @@
  * .claude/skills/game-design-loop/references/tata-targets.md before and after
  * touching any number in src/games/tata/{logic,battle,species}.ts.
  */
-import { buildRaid, TataBattle, wavesClearedOf, type Raid } from "../../src/games/tata/battle";
-import { elementMod, hatchTata, mulberry32 } from "../../src/games/tata/logic";
+import { buildRaid, matchupOf, TataBattle, wavesClearedOf, type Raid } from "../../src/games/tata/battle";
+import { hatchTata, mulberry32 } from "../../src/games/tata/logic";
 import { SPECIES } from "../../src/games/tata/species";
 import { ELEMENTS, type Element, type OwnedTata, type PartySlot, type Role, type Species, type Stage } from "../../src/games/tata/types";
 
@@ -38,10 +38,9 @@ type Matchup = "matched" | "neutral" | "weak";
 
 /** elements the player would pick for this raid under each matchup */
 function elementsFor(raid: Raid, m: Matchup): Element[] {
-  const theme: Element[] = [raid.primary, raid.secondary];
-  if (m === "matched") return ELEMENTS.filter((e) => elementMod(e, raid.primary) > 1);
-  if (m === "weak") return ELEMENTS.filter((e) => elementMod(raid.primary, e) > 1);
-  return ELEMENTS.filter((e) => theme.every((z) => elementMod(e, z) === 1 && elementMod(z, e) === 1));
+  const want = m === "matched" ? "strong" : m === "weak" ? "weak" : "even";
+  const els = ELEMENTS.filter((e) => matchupOf(e, raid) === want);
+  return els.length > 0 ? els : ELEMENTS.filter((e) => matchupOf(e, raid) === "even");
 }
 
 /** cheapest common species of the wanted element and role (rarity 1 first) */
@@ -123,4 +122,4 @@ function main() {
   }
 }
 
-main();
+if (process.argv[1]?.endsWith("tata-battle.ts")) main();

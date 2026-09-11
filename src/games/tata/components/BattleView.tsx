@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { buildRaid, countersOf, raidRoster, TataBattle, wavesClearedOf, type BattleSnapshot, type Raid } from "../battle";
+import { buildRaid, countersOf, matchupOf, raidRoster, TataBattle, wavesClearedOf, type BattleSnapshot, type Raid } from "../battle";
 import { ELEMENT_LABEL, speciesOf } from "../species";
-import { battleRewards, elementMod, hasFurniture, labelTata, partyOf, tataAtk, tataHp } from "../logic";
+import { battleRewards, hasFurniture, labelTata, partyOf, tataAtk, tataHp } from "../logic";
 import { useTata } from "../store";
 import { TataSprite, ZombieSprite } from "../TataSprite";
 import { ELEMENTS, type Element, type OwnedTata, type PartySlot } from "../types";
@@ -78,7 +78,7 @@ export function BattleView() {
             <p className="sheet-blurb">
               {snap.won
                 ? "陣形と相性が光った。"
-                : `波${snap.wavesCleared + 1}で倒れた。${snap.wavesCleared >= 2 ? "相性を変えるか、えさで育てよう。" : "おうちに帰って、えさをあげよう。"}`}
+                : `波${snap.wave}で倒れた。${snap.wavesCleared >= 2 ? "相性を変えるか、えさで育てよう。" : "おうちに帰って、えさをあげよう。"}`}
             </p>
             <button
               type="button"
@@ -187,11 +187,9 @@ function RaidCard({ raid, counters }: { raid: Raid; counters: Element[] }) {
 
 /** how this tata's element fares against the raid theme: 有利 / 不利 / nothing */
 function MatchTag({ element, raid }: { element: Element; raid: Raid }) {
-  const theme = [raid.primary, raid.secondary];
-  const strong = theme.some((z) => elementMod(element, z) > 1);
-  const weak = theme.some((z) => elementMod(z, element) > 1);
-  if (strong && !weak) return <b className="match good">ゆうり</b>;
-  if (weak && !strong) return <b className="match bad">ふり</b>;
+  const m = matchupOf(element, raid);
+  if (m === "strong") return <b className="match good">ゆうり</b>;
+  if (m === "weak") return <b className="match bad">ふり</b>;
   return null;
 }
 

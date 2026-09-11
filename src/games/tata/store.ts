@@ -49,7 +49,6 @@ interface TataStore extends TataGameState {
   catchWild: () => void;
   shooWild: () => void;
   applyRewards: (berries: number, shards: number, scrap: number, waves: number) => void;
-  rerollRaid: () => void;
   tick: () => void;
   reset: () => void;
   showToast: (msg: string) => void;
@@ -188,8 +187,6 @@ export const useTata = create<TataStore>()(
         get().showToast(`おかえり。きのみ+${berries} かけら+${shards} くず+${scrap}`);
       },
 
-      rerollRaid: () => set({ raidSeed: newSeed() }),
-
       tick: () => {
         const s = get();
         const nest = collectNests(s);
@@ -205,6 +202,7 @@ export const useTata = create<TataStore>()(
         set({
           ...initialState(),
           clock: now(),
+          raidSeed: newSeed(),
           screen: "home",
           selectedUid: null,
           buildId: null,
@@ -228,6 +226,7 @@ export const useTata = create<TataStore>()(
         seen: s.seen,
         waveBest: s.waveBest,
         nestAt: s.nestAt,
+        raidSeed: s.raidSeed,
       }),
     },
   ),

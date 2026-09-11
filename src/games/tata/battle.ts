@@ -129,9 +129,25 @@ export function raidRoster(raid: Raid): WaveRoster[] {
   return out;
 }
 
-/** which elements hit the raid's theme for 1.5x (attacker element → its prey) */
+export type Matchup = "strong" | "weak" | "even";
+
+/**
+ * How an element fares against the raid's two-element theme. "strong" means it
+ * preys on at least one theme element and neither theme element preys on it;
+ * "weak" means a theme element preys on it and it preys on none.
+ */
+export function matchupOf(element: Element, raid: Raid): Matchup {
+  const theme = [raid.primary, raid.secondary];
+  const strong = theme.some((z) => elementMod(element, z) > 1);
+  const weak = theme.some((z) => elementMod(z, element) > 1);
+  if (strong && !weak) return "strong";
+  if (weak && !strong) return "weak";
+  return "even";
+}
+
+/** elements worth bringing against this raid */
 export function countersOf(raid: Raid): Element[] {
-  return ELEMENTS.filter((e) => elementMod(e, raid.primary) > 1 || elementMod(e, raid.secondary) > 1);
+  return ELEMENTS.filter((e) => matchupOf(e, raid) === "strong");
 }
 
 export class TataBattle {
