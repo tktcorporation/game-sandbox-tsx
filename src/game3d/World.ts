@@ -421,7 +421,7 @@ export class World3D {
 
   private buildRoom() {
     for (const c of [...this.roomGroup.children]) this.roomGroup.remove(c);
-    for (const v of this.enemyViews.values()) this.scene.remove(v.group);
+    for (const v of this.enemyViews.values()) this.scene.remove(v.group, v.lane);
     this.enemyViews.clear();
     const s = this.state;
     const W = WORLD.w / M;
