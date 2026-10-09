@@ -379,7 +379,44 @@ export function endTurn(s0: State): { state: State; fx: Fx[] }[] {
 
 // --------------------------------------------------------------- creation
 
+/**
+ * Island 0 is the lesson: one harpoon, one crab, two houses, one tide. The
+ * only way to save the house is to push the crab so its arrow points at water.
+ */
+function practiceIsland(): State {
+  const W = "water" as const;
+  const G = "ground" as const;
+  const H = "house" as const;
+  const tiles: Terrain[] = [
+    W, W, G, W, W,
+    G, H, G, G, G,
+    G, G, G, G, G,
+    G, G, G, G, G,
+    G, G, G, H, G,
+  ];
+  return {
+    rng: 7,
+    w: 5,
+    h: 5,
+    tiles,
+    actors: [
+      { id: 1, side: "ally", kind: "harpoon", x: 2, y: 3, hp: 3, maxHp: 3, moved: false, acted: false },
+      { id: 2, side: "enemy", kind: "crab", x: 2, y: 1, hp: 3, maxHp: 3, intent: 3 },
+    ],
+    spawns: [],
+    round: 1,
+    rounds: 1,
+    island: 0,
+    power: 2,
+    maxPower: 2,
+    kills: 0,
+    nextId: 3,
+    phase: "player",
+  };
+}
+
 export function newIsland(island: number, seed: number): State {
+  if (island === 0) return practiceIsland();
   const w = 7;
   const h = 8;
   const s: State = {

@@ -1,22 +1,21 @@
 import { CABINETS, type Cabinet } from "./cabinets";
-import { Marquee } from "./Marquee";
+import { Preview } from "./Previews";
 
 export function Lobby() {
   return (
     <main className="lobby">
       <header className="lobby-head">
-        <p className="lobby-kicker">SANDBOX ARCADE</p>
+        <p className="eyebrow">SANDBOX ARCADE · 3 CABINETS</p>
         <h1>
-          判断ひとつで、
+          迷う場面が
           <br />
-          勝ち負けが変わる。
+          ひとつだけある。
         </h1>
-        <p className="lobby-lede">3 台のゲーム機。どれも、迷う場面がひとつだけ用意してある。</p>
       </header>
       <ol className="lobby-list">
-        {CABINETS.map((c, i) => (
+        {CABINETS.map((c) => (
           <li key={c.id}>
-            <CabinetCard c={c} n={i + 1} />
+            <CabinetCard c={c} />
           </li>
         ))}
       </ol>
@@ -25,24 +24,23 @@ export function Lobby() {
   );
 }
 
-function CabinetCard({ c, n }: { c: Cabinet; n: number }) {
+function CabinetCard({ c }: { c: Cabinet }) {
   return (
-    <a className="cab" href={`#/${c.id}`} style={{ "--bg": c.hue.bg, "--ink": c.hue.ink, "--accent": c.hue.accent } as React.CSSProperties}>
-      <div className="cab-art">
-        <Marquee id={c.id} />
-        <span className="cab-no">{String(n).padStart(2, "0")}</span>
+    <a className="cab panel" href={`#/${c.id}`} style={{ "--world": c.hue.bg, "--sig": c.hue.accent } as React.CSSProperties}>
+      <div className="cab-screen">
+        <Preview id={c.id} />
       </div>
       <div className="cab-body">
-        <div className="cab-title">
-          <h2>{c.title}</h2>
-          <span>{c.reading}</span>
-        </div>
+        <h2>{c.title}</h2>
         <p className="cab-decision">{c.decision}</p>
-        <ul className="cab-tags">
-          {c.tags.map((t) => (
-            <li key={t}>{t}</li>
-          ))}
-        </ul>
+        <div className="cab-foot">
+          <ul className="cab-tags">
+            {c.tags.map((t) => (
+              <li key={t}>{t}</li>
+            ))}
+          </ul>
+          <span className="btn primary small">遊ぶ</span>
+        </div>
       </div>
     </a>
   );

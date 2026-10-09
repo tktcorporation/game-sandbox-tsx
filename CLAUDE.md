@@ -27,6 +27,18 @@ target curve and latest sim output live in
 `.claude/skills/game-design-loop/references/<game>-targets.md`; change a number only together
 with a re-run of its sim and an update to that file.
 
+## Design principles
+
+`docs/game-essence.md` holds 12 principles distilled from ~30 modern games (Into the Breach,
+Mini Metro, Balatro, Frostpunk, Marvel Snap, …) and how each cabinet applies them. Read it before
+changing a game's UI or feel. Shared rules that follow from it:
+
+- Five signal colours in `src/styles.css` (`--threat`, `--ally`, `--act`, `--gain`, `--push`) mean
+  the same thing in every game and are never used for decoration; the world stays desaturated.
+- Show the result before commit (diff overlays), resolve step by step with tap-to-skip, scale shake
+  and sound with outcome size (`src/arcade/juice.ts`, `src/arcade/sfx.ts`).
+- No rule paragraphs on screen: one-line coaching on the first level only.
+
 ## Architecture
 
 - `src/arcade/cabinets.ts` is the only registry: id, copy, colours, and a `React.lazy` import.

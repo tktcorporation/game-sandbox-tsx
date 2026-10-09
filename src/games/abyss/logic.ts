@@ -46,7 +46,7 @@ export interface Run extends Seeded {
   removed: Record<Hazard, number>;
   owned: Record<Item, number>;
   current: Dive | null;
-  history: { carry: number; end: Dive["end"]; depth: number }[];
+  history: { carry: number; end: Dive["end"]; depth: number; cards: Card["kind"][] }[];
 }
 
 export const BASE_O2 = 12;
@@ -145,7 +145,7 @@ function bank(r: Run) {
 
 function close(r: Run) {
   const d = r.current!;
-  r.history.push({ carry: d.carry, end: d.end, depth: d.drawn.length });
+  r.history.push({ carry: d.carry, end: d.end, depth: d.drawn.length, cards: d.drawn.map((c) => c.kind) });
 }
 
 export function useLantern(r0: Run): Run {
@@ -185,4 +185,13 @@ export function remaining(d: Dive) {
 export function newSeed(): number {
   const s = { rng: Date.now() >>> 0 };
   return Math.floor(rand(s) * 2 ** 31);
+}
+
+/** Spoiler-free result, one line per dive, no link (Wordle). */
+export function shareText(r: Run, label: string): string {
+  const lines = r.history.map((h) => {
+    const cards = h.cards.map((k, i) => (k === "gem" ? "💎" : i === h.cards.length - 1 && h.end === "bust" ? "💥" : "⚠️")).join("");
+    return `${cards}${h.end === "bust" ? "" : "⬆️"} ${h.carry}`;
+  });
+  return [`深淵採掘 ${label} ${r.bank}`, ...lines].join("\n");
 }

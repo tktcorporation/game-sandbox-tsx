@@ -254,3 +254,41 @@ export function stars(s: State): number {
   if (v.alive * 2 >= v.total) return 1;
   return 0;
 }
+
+/**
+ * Wind-weighted estimate of how many ticks until fire reaches each cell
+ * (Infinity if it cannot). Uses the forecast wind once the change is close,
+ * because that is the wind the fire will be travelling in.
+ */
+export function arrival(s: State, blocked = -1): Float64Array {
+  const dist = new Float64Array(s.w * s.h).fill(Infinity);
+  const open: number[] = [];
+  s.cells.forEach((c, i) => {
+    if (c.fire > 0) {
+      dist[i] = 0;
+      open.push(i);
+    }
+  });
+  const wind = s.windIn <= 5 ? s.nextWind : s.wind;
+  while (open.length) {
+    let bi = 0;
+    for (let k = 1; k < open.length; k++) if (dist[open[k]] < dist[open[bi]]) bi = k;
+    const i = open.splice(bi, 1)[0];
+    const x = i % s.w;
+    const y = Math.floor(i / s.w);
+    for (const d of [0, 1, 2, 3] as Dir[]) {
+      const nx = x + DX[d];
+      const ny = y + DY[d];
+      if (!inBounds(s, nx, ny)) continue;
+      const j = idx(s, nx, ny);
+      const c = s.cells[j];
+      if (j === blocked || c.burnt || c.dug || c.kind === "water" || c.kind === "rock") continue;
+      const cost = (d === wind ? 1 : (d + 2) % 4 === wind ? 6 : 2.5) * (c.kind === "grass" ? 0.8 : 1.2);
+      if (dist[i] + cost < dist[j]) {
+        dist[j] = dist[i] + cost;
+        open.push(j);
+      }
+    }
+  }
+  return dist;
+}
