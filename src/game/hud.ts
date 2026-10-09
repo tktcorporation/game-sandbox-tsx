@@ -10,7 +10,7 @@ import { rank, totalTime } from "../sim/step";
 export class Hud {
   onRestart = () => {};
   onDash = () => {};
-  onStart = () => {};
+  onStart = (_mode: "2d" | "3d") => {};
   private el = (id: string) => document.getElementById(id)!;
   private bannerTimer = 0;
   private last = { remaining: -1, mag: -1, hp: -1, room: -1 };
@@ -21,7 +21,8 @@ export class Hud {
       e.preventDefault();
       this.onDash();
     });
-    this.el("start").addEventListener("click", () => this.onStart());
+    this.el("start").addEventListener("click", () => this.onStart("2d"));
+    this.el("start3d").addEventListener("click", () => this.onStart("3d"));
   }
 
   title(show: boolean) {

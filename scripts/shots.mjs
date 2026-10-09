@@ -27,8 +27,9 @@ await mkdir("shots", { recursive: true });
 
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH ?? "/opt/pw-browsers/chromium" });
 const errors = [];
-const sizes = [{ name: "desktop", width: 1280, height: 720 }];
 const until = Number(process.argv[2] ?? 2);
+const modes = (process.argv[3] ?? "3d,2d").split(",");
+const sizes = modes.map((mode) => ({ name: mode, mode, width: 1280, height: 720 }));
 
 for (const size of sizes) {
   const page = await browser.newPage({ viewport: size, deviceScaleFactor: 1 });
@@ -36,7 +37,10 @@ for (const size of sizes) {
   page.on("console", (m) => m.type() === "error" && !/fonts\.g/.test(m.text()) && errors.push(`console: ${m.text()}`));
   await page.goto(`http://localhost:${port}/`, { waitUntil: "networkidle" });
   await page.screenshot({ path: `shots/${size.name}-0-title.png` });
-  await page.click("#start");
+  await page.click(size.mode === "3d" ? "#start3d" : "#start");
+  await page.waitForFunction(() => JSON.parse(window.render_game_to_text()).phase !== "title");
+  await page.waitForSelector("canvas");
+  await page.waitForTimeout(300);
 
   const box = await page.locator("canvas").boundingBox();
   const toPage = (x, y) => ({ x: box.x + (x / 960) * box.width, y: box.y + (y / 540) * box.height });
@@ -62,8 +66,13 @@ for (const size of sizes) {
       await page.screenshot({ path: `shots/${size.name}-r3-threat.png` });
     }
     if (target && !holdFire) {
-      const p = toPage(target.x, target.y);
-      await page.mouse.move(p.x, p.y);
+      if (size.mode === "3d") {
+        await page.evaluate(([x, y]) => window.aimAt(x, y), [target.x, target.y]);
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      } else {
+        const p = toPage(target.x, target.y);
+        await page.mouse.move(p.x, p.y);
+      }
       await page.mouse.down();
     } else await page.mouse.up();
     // Strafe in a slow circle so the player is not a sitting target.

@@ -83,9 +83,17 @@ body.touch #dash-btn { display: block; }
 .keys { display: flex; flex-wrap: wrap; gap: 8px 18px; list-style: none; margin: 0 0 30px; padding: 0; font-size: 14px; font-weight: 500; }
 .keys li { display: flex; align-items: center; gap: 8px; }
 kbd { font-family: var(--display); font-weight: 700; font-size: 15px; padding: 3px 8px; background: var(--ink); color: var(--white); }
-#start, #restart { align-self: flex-start; padding: 16px 34px; border: 0; background: var(--hot); color: var(--ink); font-size: 20px; font-weight: 800; box-shadow: 6px 7px 0 var(--ink); transition: transform 0.08s, box-shadow 0.08s; }
-#start:hover, #restart:hover { transform: translate(-2px, -2px); box-shadow: 8px 9px 0 var(--ink); }
-#start:active, #restart:active { transform: translate(4px, 5px); box-shadow: 2px 2px 0 var(--ink); }
+.modes { display: flex; flex-wrap: wrap; gap: 14px; }
+.modes button { display: grid; justify-items: start; gap: 2px; padding: 14px 26px 14px 22px; border: 0; color: var(--ink); box-shadow: 6px 7px 0 var(--ink); transition: transform 0.08s, box-shadow 0.08s; }
+.modes button b { font-family: var(--display); font-weight: 900; font-size: 34px; line-height: 0.9; }
+.modes button span { font-size: 14px; font-weight: 800; }
+#start3d { background: var(--hot); }
+#start { background: var(--white); }
+.modes button:hover { transform: translate(-2px, -2px); box-shadow: 8px 9px 0 var(--ink); }
+.modes button:active { transform: translate(4px, 5px); box-shadow: 2px 2px 0 var(--ink); }
+#restart { align-self: flex-start; padding: 16px 34px; border: 0; background: var(--hot); color: var(--ink); font-size: 20px; font-weight: 800; box-shadow: 6px 7px 0 var(--ink); transition: transform 0.08s, box-shadow 0.08s; }
+#restart:hover { transform: translate(-2px, -2px); box-shadow: 8px 9px 0 var(--ink); }
+#restart:active { transform: translate(4px, 5px); box-shadow: 2px 2px 0 var(--ink); }
 .touch-note { margin: 18px 0 0; font-size: 12px; opacity: 0.75; }
 
 #results { gap: 18px; background: rgba(32, 52, 214, 0.96); }
@@ -109,3 +117,25 @@ kbd { font-family: var(--display); font-weight: 700; font-size: 15px; padding: 3
 
 #rotate { display: none; position: fixed; inset: 0; z-index: 20; place-items: center; background: var(--ground); font-size: 18px; font-weight: 800; }
 @media (orientation: portrait) and (pointer: coarse) { #rotate { display: grid; } }
+
+/* ---------------------------------------------------------------- 3D overlays */
+#xhair { display: none; position: fixed; left: 50%; top: 50%; width: 0; height: 0; --gap: 8px; }
+body.fps #xhair { display: block; }
+#xhair i { position: absolute; background: var(--white); box-shadow: 0 0 0 2px var(--ink); }
+#xhair i:nth-child(1) { width: 10px; height: 2px; right: var(--gap); top: -1px; }
+#xhair i:nth-child(2) { width: 10px; height: 2px; left: var(--gap); top: -1px; }
+#xhair i:nth-child(3) { width: 2px; height: 10px; left: -1px; bottom: var(--gap); }
+#xhair i:nth-child(4) { width: 2px; height: 10px; left: -1px; top: var(--gap); }
+#xhair b { position: absolute; left: -14px; top: -14px; width: 28px; height: 28px; opacity: 0;
+  background:
+    linear-gradient(45deg, transparent 44%, var(--c, #fff) 44% 56%, transparent 56%) no-repeat,
+    linear-gradient(-45deg, transparent 44%, var(--c, #fff) 44% 56%, transparent 56%) no-repeat;
+  -webkit-mask: radial-gradient(circle, transparent 6px, #000 6.5px); mask: radial-gradient(circle, transparent 6px, #000 6.5px); }
+#xhair.hit b { opacity: 1; }
+#xhair.crit b { --c: var(--hot); opacity: 1; transform: scale(1.3); }
+#xhair.on-target i { background: var(--enemy); }
+#arrows, #dmgdir { position: fixed; inset: 0; pointer-events: none; }
+#arrows i { position: absolute; width: 0; height: 0; border-left: 13px solid transparent; border-right: 13px solid transparent; border-bottom: 22px solid var(--enemy); filter: drop-shadow(2px 3px 0 var(--ink)); }
+#arrows i.tele { border-bottom-color: var(--white); animation: blink 0.2s steps(2) infinite; }
+#dmgdir i { position: absolute; left: 50%; top: 50%; width: 220px; height: 220px; margin: -110px; border-radius: 50%; border-top: 10px solid var(--enemy); opacity: 0; transition: opacity 0.5s; }
+#dmgdir i.on { opacity: 0.95; transition: none; }

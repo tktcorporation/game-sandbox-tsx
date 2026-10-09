@@ -1,7 +1,8 @@
 # CLAUDE.md
 
-HITMARK: a single-player top-down shooter for people who love FPS gunfeel but do not enjoy PvP.
-Phaser 4 + TypeScript + Vite, served by a Cloudflare Worker. The brief, mood, and banned looks are
+HITMARK: a single-player shooter for people who love FPS gunfeel but do not enjoy PvP. One
+simulation, two views: top-down 2D (Phaser 4) and first-person 3D (three.js), chosen on the title
+screen and lazy-loaded. TypeScript + Vite, served by a Cloudflare Worker. The brief, mood, and banned looks are
 in `docs/brief.md`; read it before changing anything visual.
 
 ## Commands
@@ -20,8 +21,11 @@ A feature is done only when all three gates pass and the screenshots have been l
 - `src/sim/` is the game: pure TypeScript, no Phaser, no DOM. `step(state, input)` advances one
   fixed 1/60 s tick. RNG state lives inside the state. Tuning numbers live in `src/sim/config.ts`.
 - `src/game/` renders the state with Phaser and turns `state.events` into feel (shake, hit-stop,
-  particles, sound). It never changes game rules.
-- `src/main.ts` exposes `window.render_game_to_text()` and `window.advanceTime(ms)` for automation.
+  particles, sound). It never changes game rules. `hud.ts` and `audio.ts` are shared by both views.
+- `src/game3d/World.ts` renders the same state in first person: camera yaw is the sim's aim angle
+  (1 m = 40 sim px), and 3D-only aids (edge arrows, damage direction) live in the DOM overlay.
+- `src/main.ts` exposes `window.render_game_to_text()`, `window.advanceTime(ms)` and
+  `window.aimAt(x, y)` (3D) for automation. `npm run shots -- <rooms> 3d,2d` plays both views.
 
 ## Dependencies
 

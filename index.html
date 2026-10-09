@@ -15,6 +15,9 @@
     <div id="vignette"></div>
 
     <div id="hud" hidden>
+      <div id="xhair" aria-hidden="true"><i></i><i></i><i></i><i></i><b></b></div>
+      <div id="arrows" aria-hidden="true"></div>
+      <div id="dmgdir" aria-hidden="true"></div>
       <div class="top">
         <div class="room"><b id="room">ROOM 1/6</b><span id="timer">0.0</span><span id="par"></span></div>
         <div class="remaining"><span>残り</span><b id="remaining-n">0</b></div>
@@ -35,12 +38,15 @@
       <p class="lede">対人なし。撃って、当てて、全部倒す。</p>
       <ul class="keys">
         <li><kbd>WASD</kbd>移動</li>
-        <li><kbd>マウス</kbd>狙う</li>
+        <li><kbd>マウス</kbd>狙う / 見回す</li>
         <li><kbd>左クリック</kbd>撃つ</li>
         <li><kbd>Space</kbd>ダッシュ</li>
       </ul>
-      <button id="start" type="button">出撃する</button>
-      <p class="touch-note">スマホ: 左半分をなぞって移動、右半分を押して撃つ</p>
+      <div class="modes">
+        <button id="start3d" type="button"><b>3D</b><span>一人称で出撃</span></button>
+        <button id="start" type="button"><b>2D</b><span>見下ろしで出撃</span></button>
+      </div>
+      <p class="touch-note">スマホ: 左半分をなぞって移動、右半分で狙って撃つ。3D はマウス推奨</p>
     </section>
 
     <section id="results" hidden>

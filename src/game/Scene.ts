@@ -71,8 +71,11 @@ export class GameScene extends Phaser.Scene {
     super("game");
   }
 
-  init(data: { hud: Hud }) {
+  private onReady: (scene: GameScene) => void = () => {};
+
+  init(data: { hud: Hud; onReady?: (scene: GameScene) => void }) {
     this.hud = data.hud;
+    if (data.onReady) this.onReady = data.onReady;
   }
 
   create() {
@@ -100,12 +103,9 @@ export class GameScene extends Phaser.Scene {
     });
     this.hud.onRestart = () => this.restart();
     this.hud.onDash = () => (this.dashQueued = true);
-    this.hud.onStart = () => {
-      unlock();
-      this.begin();
-    };
     this.drawFloor();
-    this.hud.title(true);
+    this.begin();
+    this.onReady(this);
   }
 
   // ---------------------------------------------------------------- flow
