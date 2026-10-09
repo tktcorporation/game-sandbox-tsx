@@ -2,11 +2,57 @@
 <html lang="ja">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>game-sandbox-tsx</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0b1240" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;900&family=M+PLUS+1p:wght@500;800&display=swap" rel="stylesheet" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 fill=%27%232034d6%27/%3E%3Cpath d=%27M7 7l6 6M25 7l-6 6M7 25l6-6M25 25l-6-6%27 stroke=%27%23ffe23d%27 stroke-width=%274%27/%3E%3C/svg%3E" />
+    <title>HITMARK</title>
   </head>
   <body>
-    <div id="app"></div>
+    <div id="stage"></div>
+    <div id="vignette"></div>
+
+    <div id="hud" hidden>
+      <div class="top">
+        <div class="room"><b id="room">ROOM 1/6</b><span id="timer">0.0</span><span id="par"></span></div>
+        <div class="remaining"><span>残り</span><b id="remaining-n">0</b></div>
+        <div class="streak" id="streak"></div>
+      </div>
+      <p id="hint"></p>
+      <div class="bottom">
+        <div id="hp"></div>
+        <div id="ammo"><b id="mag">30</b><i><span id="mag-bar"></span></i><small>R リロード</small></div>
+      </div>
+      <button id="dash-btn" type="button" aria-label="ダッシュ">DASH</button>
+    </div>
+
+    <div id="banner" aria-live="polite"><b id="banner-head"></b><span id="banner-sub"></span></div>
+
+    <section id="title">
+      <h1>HITMARK</h1>
+      <p class="lede">対人なし。撃って、当てて、全部倒す。</p>
+      <ul class="keys">
+        <li><kbd>WASD</kbd>移動</li>
+        <li><kbd>マウス</kbd>狙う</li>
+        <li><kbd>左クリック</kbd>撃つ</li>
+        <li><kbd>Space</kbd>ダッシュ</li>
+      </ul>
+      <button id="start" type="button">出撃する</button>
+      <p class="touch-note">スマホ: 左半分をなぞって移動、右半分を押して撃つ</p>
+    </section>
+
+    <section id="results" hidden>
+      <p class="label">RUN COMPLETE</p>
+      <div class="rank-row"><b id="rank">S</b><div><span>合計</span><strong id="total"></strong></div></div>
+      <div id="rooms"></div>
+      <div id="stats"></div>
+      <button id="restart" type="button">もう一周</button>
+    </section>
+
+    <div id="rotate">横向きにすると遊べます</div>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
