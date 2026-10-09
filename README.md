@@ -1,98 +1,38 @@
 # Sandbox Arcade
 
-A tiny **multi-game** React sandbox. Pick a cabinet in the lobby, play, and jump back.
-Player state lives in the browser (`localStorage`). A Cloudflare Worker serves the SPA
-and generates enemy villages for Clash of Sandboxes.
+判断をひとつずつ中心に据えた、3 台のブラウザゲーム。React 19 + TypeScript の SPA を、1 つの Cloudflare Worker が配信する。進行はブラウザの `localStorage` にだけ保存する。
 
-Inspired by the game-catalog pattern in [cli-sim-game-escape](https://github.com/tktcorporation/cli-sim-game-escape).
+| ゲーム | 中心の判断 | 形式 |
+| --- | --- | --- |
+| **防波堤** | 予告された攻撃の矢印を、押し出しでどこへ逸らすか | ターン制の戦術パズル。島ごとに 5 ターン守る |
+| **延焼線** | 風が変わる前に、どの森を諦めて防火帯を掘るか | リアルタイム（一時停止可）。1 面約 1 分 |
+| **深淵採掘** | あと一歩潜るか、引き返して持ち帰るか | 押し引き。6 回潜った合計が得点 |
 
-## Games
-
-| Cabinet | What it is |
-| --- | --- |
-| **Clash of Sandboxes** | Clash of Clans–style village builder & raider (the original game in this repo) |
-| **Tiny Foundry** | Visual port of Tiny Factory. Lay miners, belts and furnaces, then watch ore flow |
-| **モンスターサバイバル** | Collect 120 felt tatas, feed them through four evolutions, house them, and fight zombie waves |
-
-Tiny Foundry keeps the original simulation (2×2 machines, auto-routing belts, iron/copper
-lines, circuits) and rebuilds the view: interpolated items, rolling belts, furnace sparks,
-and export bursts instead of terminal cells.
-
-## Assets
-
-Two catalogs, both Font-Awesome-style (`import` a name, use it):
-
-| Layer | Pack | License | Where |
-| --- | --- | --- | --- |
-| **HUD glyphs** (buttons, chrome) | [Game-icons.net](https://game-icons.net/) via [`react-icons/gi`](https://react-icons.github.io/react-icons/icons/gi/) | CC BY 3.0 | `src/ui/icons.tsx` |
-| **Pixel sprites** (warriors, coins, potions) | [Kenney](https://kenney.nl/assets) Tiny Dungeon + Tiny Town | CC0 | `src/assets/kenney.ts` |
-
-Village / battle *buildings* are still drawn procedurally (`src/games/clash/render/iso.ts`). Troops, loot pops and resource chips use Kenney 16×16 sprites.
-
-Named imports are tree-shaken — only the tiles you import land in the bundle:
-
-```ts
-import { barbarian, coin } from "./assets/kenney";
-import { Pixel } from "./assets/Pixel";
-import { drawKenney } from "./assets/drawPixel";
-
-<Pixel src={barbarian} size={48} />
-drawKenney(ctx, coin, x, y, 24);
-```
-
-Add another pixel: drop a PNG into `src/assets/kenney/`, add one `export { default as myTile } from "./kenney/my-tile.png"` in `src/assets/kenney.ts`, then import `myTile`. Do not `import * as Kenney`.
-
-Kenney publishes dozens of matching Tiny packs (Battle, Farm, RPG, …) — same 16×16 style, all CC0.
-
-## Tech
-
-| Layer        | Choice                                                              |
-| ------------ | ------------------------------------------------------------------- |
-| UI           | React 19 + TypeScript, plain CSS                                    |
-| State        | [Zustand](https://github.com/pmndrs/zustand) with `persist`         |
-| Battle / factory | Custom simulations rendered on `<canvas>` via `rAF`             |
-| Build        | Vite 6 + `@cloudflare/vite-plugin`                                  |
-| Backend/host | A single Cloudflare Worker serving static assets + `/api/raid`      |
-
-## Project layout
-
-```
-src/App.tsx                 hash router: lobby / clash / factory / tata
-src/catalog.ts              game list (add an entry here to register a game)
-src/hub/Hub.tsx             arcade lobby
-src/games/clash/            Clash of Sandboxes
-src/games/factory/          Tiny Foundry (logic + canvas)
-src/games/tata/             モンスターサバイバル (collect / evolve / house / raid)
-src/ui/icons.tsx            Game-icons.net catalog (react-icons/gi) used by Clash HUD
-src/assets/kenney.ts        tree-shakeable Kenney Tiny URL exports (CC0)
-src/assets/gameSprites.ts   troop/resource picks actually used by Clash
-src/assets/drawPixel.ts     canvas blit for imported sprite URLs
-src/assets/Pixel.tsx        <Pixel src={coin} /> / <PixelText>
-worker/index.ts             SPA + /api/raid, /api/health
-```
-
-Hash routes: `#/clash`, `#/factory`, `#/tata`. Empty hash is the lobby.
-
-## Develop
+## 開発
 
 ```bash
 npm install
-npm run dev          # vite dev server with the Worker running locally
+npm run dev                      # http://localhost:5173
+npm run build                    # 型チェック + ビルド。変更の検証ゲート
+npm run sim -- breakwater 30     # ヘッドレスシム（breakwater | wildfire | abyss）
+npm run deploy                   # build + wrangler deploy
 ```
 
-Open http://localhost:5173.
+テストランナーは無い。各ゲームのロジックは React を含まない純粋関数で、`scripts/sim/` のシムが数値の回帰確認を兼ねる。
 
-## Deploy to Cloudflare Workers
+## 構成
 
-```bash
-npm run build
-npx wrangler login   # one-time
-npm run deploy
+```
+src/App.tsx                 ハッシュルーター（#/ がロビー、#/<id> がゲーム）
+src/arcade/cabinets.ts      ゲームの登録簿。ゲームを足すときはここに 1 件足す
+src/arcade/Lobby.tsx        ロビー
+src/arcade/Frame.tsx        各ゲーム共通の戻るボタンと見出し
+src/arcade/rng.ts           状態に 1 つの整数で持てるシード付き乱数
+src/arcade/save.ts          localStorage の読み書き（使えない環境でも動く）
+src/games/<id>/logic.ts     ゲームのルール（純粋関数）
+src/games/<id>/Game.tsx     画面
+scripts/sim/<id>.ts         ヘッドレスシム
+worker/index.ts             静的配信と /api/health
 ```
 
-No database. Clash progress uses `clash-of-sandboxes-v1`; Foundry uses `tiny-foundry-v1`; Tata uses `tata-survival-v1`.
-
-## API
-
-- `GET /api/raid?th=<1-6>&seed=<n>` → a procedurally generated enemy base (deterministic per seed).
-- `GET /api/health` → liveness check.
+各ゲームは `React.lazy` で読み込むので、ロビーを開いた時点では遊ばないゲームのコードを読まない。

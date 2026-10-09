@@ -1,34 +1,26 @@
-import { useEffect, useState } from "react";
-import { isGameId, type GameId } from "./catalog";
-import { Hub } from "./hub/Hub";
-import ClashApp from "./games/clash/App";
-import FactoryApp from "./games/factory/FactoryApp";
-import TataApp from "./games/tata/App";
+import { Suspense, useEffect, useState } from "react";
+import { CABINETS } from "./arcade/cabinets";
+import { Lobby } from "./arcade/Lobby";
 
-function parseHash(): GameId | null {
-  const raw = location.hash.replace(/^#\/?/, "").split("/")[0] ?? "";
-  return isGameId(raw) ? raw : null;
-}
+const routeOf = () => location.hash.replace(/^#\/?/, "");
 
-export default function App() {
-  const [game, setGame] = useState<GameId | null>(parseHash);
-
+/** Hash routing keeps the build a static SPA: `#/` is the lobby, `#/<cabinet id>` a game. */
+export function App() {
+  const [route, setRoute] = useState(routeOf);
   useEffect(() => {
-    const sync = () => setGame(parseHash());
-    window.addEventListener("hashchange", sync);
-    return () => window.removeEventListener("hashchange", sync);
+    const on = () => {
+      setRoute(routeOf());
+      window.scrollTo(0, 0);
+    };
+    window.addEventListener("hashchange", on);
+    return () => window.removeEventListener("hashchange", on);
   }, []);
 
-  const play = (id: GameId) => {
-    location.hash = `#/${id}`;
-  };
-
-  const leave = () => {
-    location.hash = "";
-  };
-
-  if (game === "clash") return <ClashApp onLeave={leave} />;
-  if (game === "factory") return <FactoryApp onLeave={leave} />;
-  if (game === "tata") return <TataApp onLeave={leave} />;
-  return <Hub onPlay={play} />;
+  const cab = CABINETS.find((c) => c.id === route);
+  if (!cab) return <Lobby />;
+  return (
+    <Suspense fallback={<div className="loading" style={{ background: cab.hue.bg, color: cab.hue.ink }}>{cab.title}</div>}>
+      <cab.Game />
+    </Suspense>
+  );
 }
