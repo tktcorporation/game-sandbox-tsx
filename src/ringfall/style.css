@@ -714,3 +714,247 @@ kbd {
 #pois {
   grid-template-columns: repeat(5, auto);
 }
+
+/* --- touch controls (body.touch is set when the device has a touch screen) */
+#touch,
+#rotate,
+.touch-help {
+  display: none;
+}
+body.touch .keys,
+body.touch .sens {
+  display: none;
+}
+body.touch .touch-help {
+  display: block;
+  margin: 0;
+  max-width: 34em;
+  font-weight: 800;
+  font-size: 15px;
+}
+body.touch.playing #touch {
+  display: block;
+}
+#touch {
+  position: fixed;
+  inset: 0;
+  touch-action: none;
+  -webkit-touch-callout: none;
+}
+#t-zone-move,
+#t-zone-look {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  touch-action: none;
+}
+#t-zone-move {
+  left: 0;
+  width: 45%;
+}
+#t-zone-look {
+  right: 0;
+  width: 55%;
+}
+#t-stick-base {
+  display: none;
+  position: absolute;
+  width: 124px;
+  height: 124px;
+  margin: -62px 0 0 -62px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.55);
+  background: rgba(20, 26, 51, 0.25);
+  pointer-events: none;
+}
+#t-stick-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.85);
+  transform: translate(-50%, -50%);
+}
+.tb {
+  position: absolute;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.75);
+  background: rgba(20, 26, 51, 0.45);
+  color: var(--white);
+  font-family: var(--jp);
+  font-weight: 800;
+  font-size: 12px;
+  padding: 0;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.tb.small {
+  width: 50px;
+  height: 50px;
+  font-size: 11px;
+}
+.tb.down {
+  background: rgba(255, 255, 255, 0.85);
+  color: var(--ink);
+}
+#t-fire {
+  right: max(24px, env(safe-area-inset-right));
+  bottom: 96px;
+  width: 92px;
+  height: 92px;
+  border-color: var(--ring);
+  background: rgba(255, 90, 42, 0.35);
+  font-size: 15px;
+}
+#t-fire.down {
+  background: var(--ring);
+  color: var(--white);
+}
+#t-fire2 {
+  left: max(24px, env(safe-area-inset-left));
+  top: 40%;
+  border-color: var(--ring);
+  background: rgba(255, 90, 42, 0.3);
+}
+#t-jump {
+  right: max(24px, env(safe-area-inset-right));
+  bottom: 18px;
+}
+#t-crouch {
+  right: 128px;
+  bottom: 18px;
+}
+#t-ads {
+  right: 132px;
+  bottom: 100px;
+}
+#t-reload {
+  right: 132px;
+  bottom: 166px;
+}
+#t-tac {
+  right: 210px;
+  bottom: 18px;
+}
+#t-ult {
+  right: 210px;
+  bottom: 92px;
+}
+.ab-btn {
+  background: conic-gradient(rgba(255, 255, 255, 0.35) calc(var(--p, 1) * 360deg), rgba(20, 26, 51, 0.5) 0);
+}
+.ab-btn.ult {
+  background: conic-gradient(rgba(255, 201, 58, 0.6) calc(var(--p, 0) * 360deg), rgba(20, 26, 51, 0.5) 0);
+}
+.ab-btn.ready {
+  border-color: var(--hot);
+}
+.ab-btn.ult.ready {
+  background: var(--r3);
+  color: var(--ink);
+}
+#t-battery {
+  left: max(24px, env(safe-area-inset-left));
+  top: calc(40% + 72px);
+  border-color: var(--r1);
+}
+#t-use {
+  right: 290px;
+  bottom: 170px;
+  width: auto;
+  height: 44px;
+  border-radius: 22px;
+  padding: 0 16px;
+  font-size: 14px;
+  background: rgba(255, 226, 61, 0.9);
+  color: var(--ink);
+  border-color: var(--hot);
+}
+#t-use[hidden] {
+  display: none;
+}
+#t-pause {
+  left: 50%;
+  top: 46px;
+  margin-left: 180px;
+  width: 40px;
+  height: 40px;
+}
+
+/* HUD rearranged around the thumbs. */
+body.touch #abilities,
+body.touch #cells {
+  display: none;
+}
+body.touch #vitals {
+  top: 92px;
+  bottom: auto;
+  left: max(12px, env(safe-area-inset-left));
+  width: 190px;
+  padding: 6px 8px;
+}
+body.touch #objective {
+  left: max(12px, env(safe-area-inset-left));
+  top: 10px;
+}
+body.touch #weapons {
+  top: 10px;
+  bottom: auto;
+  right: max(12px, env(safe-area-inset-right));
+  flex-direction: column-reverse;
+  pointer-events: auto;
+}
+body.touch .slot,
+body.touch .slot.active {
+  min-width: 150px;
+  padding: 4px 10px;
+}
+body.touch .slot.active .ammo b {
+  font-size: 26px;
+}
+body.touch .slot .name,
+body.touch .slot.active .name {
+  font-size: 16px;
+}
+body.touch #toasts {
+  margin: 6px 0 0;
+}
+body.touch #compass {
+  width: 300px;
+  margin-left: -150px;
+}
+body.touch #prompt {
+  top: auto;
+  bottom: 230px;
+}
+body.touch #banner b {
+  font-size: 30px;
+}
+body.touch #banner span {
+  font-size: 15px;
+}
+body.touch .title-inner {
+  gap: 10px;
+}
+body.touch #title h1 {
+  font-size: clamp(54px, 13vh, 110px);
+}
+
+@media (orientation: portrait) {
+  body.touch #rotate {
+    display: grid;
+    place-items: center;
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    background: var(--ink);
+    color: var(--white);
+    font-family: var(--jp);
+    font-weight: 800;
+    font-size: 20px;
+  }
+}

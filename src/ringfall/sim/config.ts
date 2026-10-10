@@ -61,6 +61,11 @@ export const ASSIST = {
   /** Fraction of the angle to the target closed per second while moving and firing or ADS. */
   pull: 1.6,
   ultPull: 9,
+  /**
+   * Touch aiming: pull also works while standing still, and this much faster.
+   * A thumb cannot track and strafe at once the way a mouse hand and WASD can.
+   */
+  touchPull: 1.6,
   pullCone: 12,
   range: 70,
 };

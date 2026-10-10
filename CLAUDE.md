@@ -28,6 +28,10 @@ npm run shots:ringfall   # gate 3: the build played to the end in Chromium; scre
   step-up height. Tuning numbers are in `config.ts`. `npm run sim:ringfall` first checks that every
   authored point (entries, bins, loot, spawns) stands on a floor and not inside a box.
 - `nav.ts` is ground path finding for the bot only; the game never reads it.
+- `src/ringfall/touch.ts` is the phone layout (landscape): a floating stick on the left half, view
+  drag on the right half, buttons under the right thumb. It feeds the same `Input` as the keyboard,
+  with `input.touch` set so the sim applies `ASSIST.touchPull`. `npm run shots:ringfall` drives it with
+  real touch events in a phone-sized viewport before the desktop run.
 - `src/ringfall/view/` renders and never changes rules: `world.ts` (three.js), `hud.ts` (DOM),
   `audio.ts` (synthesized). `src/ringfall/main.ts` wires input and the fixed-step loop, and exposes
   `window.render_game_to_text()`, `window.advanceTime(ms)` and `window.ringfallBot(skill)`.

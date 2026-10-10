@@ -57,14 +57,15 @@ export function assistTarget(s: State, coneDeg: number): { e: Enemy; angle: numb
 }
 
 /** Turn the player's view toward the assist target by a fraction of the remaining angle. */
-export function applyPull(s: State, moving: boolean, firing: boolean) {
+export function applyPull(s: State, moving: boolean, firing: boolean, touch = false) {
   const p = s.player;
   const strong = p.ultTime > 0;
-  if (!strong && !(moving && (firing || p.ads > 0.5))) return;
+  const engaged = firing || p.ads > 0.5;
+  if (!strong && !(engaged && (moving || touch))) return;
   const t = assistTarget(s, ASSIST.pullCone * (strong ? 1.6 : 1));
   if (!t) return;
   const want = lookAngles(eyePos(s), bodyCenter(t.e));
-  const k = Math.min(1, (strong ? ASSIST.ultPull : ASSIST.pull) * TICK);
+  const k = Math.min(1, (strong ? ASSIST.ultPull : ASSIST.pull * (touch ? ASSIST.touchPull : 1)) * TICK);
   p.yaw += wrapAngle(want.yaw - p.yaw) * k;
   p.pitch += (want.pitch - p.pitch) * k;
 }

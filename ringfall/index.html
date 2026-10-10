@@ -44,12 +44,31 @@
       <div id="battery"><span>シールド充電中</span><i><span id="battery-bar"></span></i></div>
     </div>
 
+    <div id="touch">
+      <div id="t-zone-move"></div>
+      <div id="t-zone-look"></div>
+      <div id="t-stick-base"><i id="t-stick-knob"></i></div>
+      <button type="button" class="tb" id="t-fire" data-act="fire" aria-label="撃つ"><b>撃つ</b></button>
+      <button type="button" class="tb small" id="t-fire2" data-act="fire" aria-label="撃つ"><b>撃つ</b></button>
+      <button type="button" class="tb" id="t-jump" data-act="Space" aria-label="ジャンプ"><b>ジャンプ</b></button>
+      <button type="button" class="tb" id="t-crouch" data-act="crouch" aria-label="スライディング"><b>しゃがむ</b></button>
+      <button type="button" class="tb small" id="t-ads" data-act="ads" aria-label="覗く"><b>覗く</b></button>
+      <button type="button" class="tb small" id="t-reload" data-act="KeyR" aria-label="リロード"><b>リロード</b></button>
+      <button type="button" class="tb ab-btn" id="t-tac" data-act="KeyQ" aria-label="アーク"><b>アーク</b></button>
+      <button type="button" class="tb ab-btn ult" id="t-ult" data-act="KeyZ" aria-label="オーバードライブ"><b id="t-ult-pct">0%</b></button>
+      <button type="button" class="tb small" id="t-battery" data-act="KeyH" aria-label="シールドバッテリー"><b>充電 <span id="t-cells">0</span></b></button>
+      <button type="button" class="tb pill" id="t-use" data-act="KeyE" hidden><b>拾う・開ける</b></button>
+      <button type="button" class="tb small" id="t-pause" data-act="pause" aria-label="一時停止"><b>II</b></button>
+    </div>
+    <div id="rotate">横向きにすると遊べます</div>
+
     <div id="banner" aria-live="polite"><b id="banner-head"></b><span id="banner-sub"></span></div>
 
     <section id="title" class="screen">
       <div class="title-inner">
         <h1>RINGFALL</h1>
         <p class="lede">降りて、拾って、撃ちまくれ。相手はロボットだけ。</p>
+        <p class="touch-help">左半分を押してスティック移動、右半分をなぞって視点。撃つボタンは押したまま動かすと狙いも動く。</p>
         <ul class="keys">
           <li><kbd>WASD</kbd>移動（前進で自動ダッシュ）</li>
           <li><kbd>左クリック</kbd>撃つ <kbd>右</kbd>覗く</li>
@@ -59,7 +78,7 @@
         </ul>
         <button id="start" type="button">降下する</button>
         <label class="sens">マウス感度 <input id="sens" type="range" min="0.4" max="2.5" step="0.05" value="1" /></label>
-        <p class="note">マウスとキーボードで遊ぶ PC 向けゲーム。<a href="/">HITMARK に戻る</a></p>
+        <p class="note">マウスとキーボード、またはスマホを横向きにして遊ぶ。<a href="/">HITMARK に戻る</a></p>
       </div>
     </section>
 

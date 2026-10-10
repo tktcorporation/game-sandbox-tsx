@@ -42,7 +42,7 @@ export function stepPlayer(s: State, input: Input, prevCrouch: boolean) {
   p.yaw += input.lookX * sens;
   p.pitch = Math.max(-1.45, Math.min(1.45, p.pitch + input.lookY * sens));
   const moving = Math.abs(input.moveX) + Math.abs(input.moveZ) > 0.1;
-  if (p.downed <= 0) applyPull(s, moving, input.fire);
+  if (p.downed <= 0) applyPull(s, moving, input.fire, input.touch);
   p.recoil *= Math.exp(-TICK / 0.12);
 
   if (p.downed > 0) {

@@ -6,6 +6,7 @@ import { step } from "./sim/step";
 import { setWind, sfx, unlock } from "./view/audio";
 import { Hud } from "./view/hud";
 import { World } from "./view/world";
+import { setupTouch } from "./touch";
 import "./style.css";
 
 /*
@@ -15,7 +16,9 @@ import "./style.css";
 
 const $ = (id: string) => document.getElementById(id)!;
 const stage = $("stage");
-const world = new World(stage);
+/** Phones and tablets: touch controls, stronger aim pull, lighter rendering. */
+let touchMode = matchMedia("(pointer: coarse)").matches;
+const world = new World(stage, { lowPower: touchMode });
 const hud = new Hud();
 
 let state: State = newRun(Date.now() & 0xffff);
@@ -33,8 +36,30 @@ let sens = 1;
 const keys = new Set<string>();
 const edges = new Set<string>();
 const look = { x: 0, y: 0 };
+const stick = { x: 0, z: 0 };
 let fire = false;
 let ads = false;
+/** Touch drag pixels are worth this many mouse pixels of turning. */
+const TOUCH_LOOK = 2.6;
+
+function enableTouch() {
+  touchMode = true;
+  document.body.classList.add("touch");
+}
+if (touchMode) enableTouch();
+addEventListener("pointerdown", (e) => e.pointerType === "touch" && !touchMode && enableTouch());
+setupTouch({
+  move: stick,
+  look: (dx, dy) => {
+    look.x += dx * TOUCH_LOOK * sens;
+    look.y += dy * TOUCH_LOOK * sens;
+  },
+  press: (code) => edges.add(code),
+  hold: (code, on) => (on ? keys.add(code) : keys.delete(code)),
+  fire: (on) => (fire = on && running && !paused),
+  toggleAds: () => (ads = !ads),
+  pause: () => setPaused(true),
+});
 
 addEventListener("keydown", (e) => {
   if (e.repeat) return;
@@ -66,8 +91,9 @@ addEventListener("blur", () => {
 
 function readInput(): Input {
   const inp = idleInput();
-  inp.moveZ = (keys.has("KeyW") ? 1 : 0) - (keys.has("KeyS") ? 1 : 0);
-  inp.moveX = (keys.has("KeyD") ? 1 : 0) - (keys.has("KeyA") ? 1 : 0);
+  inp.moveZ = (keys.has("KeyW") ? 1 : 0) - (keys.has("KeyS") ? 1 : 0) + stick.z;
+  inp.moveX = (keys.has("KeyD") ? 1 : 0) - (keys.has("KeyA") ? 1 : 0) + stick.x;
+  inp.touch = touchMode;
   const k = 0.0022 * sens;
   inp.lookX = look.x * k;
   inp.lookY = -look.y * k;
@@ -257,7 +283,7 @@ requestAnimationFrame(frame);
 
 // --- screens
 function lock() {
-  if (bot || manual) return;
+  if (bot || manual || touchMode) return;
   try {
     const r = stage.requestPointerLock() as unknown as Promise<void> | undefined;
     r?.catch?.(() => undefined);
@@ -268,6 +294,12 @@ function lock() {
 
 function start() {
   unlock();
+  if (touchMode) {
+    // Full screen and landscape where the browser allows it; the game runs either way.
+    document.documentElement.requestFullscreen?.().catch(() => undefined);
+    (screen.orientation as unknown as { lock?: (o: string) => Promise<void> }).lock?.("landscape").catch(() => undefined);
+  }
+  document.body.classList.add("playing");
   world.reset();
   state = newRun(Date.now() & 0xffff);
   acc = hitstop = slowmo = 0;
@@ -277,12 +309,14 @@ function start() {
   $("results").hidden = true;
   $("pause").hidden = true;
   hud.show(true);
-  hud.banner("降下", "WASD で着地点を選ぶ。黄色の目印が最初の拠点");
+  hud.banner("降下", `${touchMode ? "スティック" : "WASD"}で着地点を選ぶ。黄色の目印が最初の拠点`);
   lock();
 }
 
 function finish() {
   running = false;
+  document.body.classList.remove("playing");
+  fire = ads = false;
   $("banner").className = "";
   hud.show(false);
   hud.results(state);
@@ -308,7 +342,7 @@ $("resume").addEventListener("click", () => {
   setPaused(false);
   lock();
 });
-stage.addEventListener("click", () => running && !paused && document.pointerLockElement !== stage && lock());
+stage.addEventListener("click", () => !touchMode && running && !paused && document.pointerLockElement !== stage && lock());
 for (const id of ["sens", "sens2"]) {
   const el = $(id) as HTMLInputElement;
   el.addEventListener("input", () => {
@@ -324,6 +358,7 @@ declare global {
     render_game_to_text: () => string;
     advanceTime: (ms: number) => void;
     ringfallBot: (skill: string) => void;
+    ringfallYaw: () => number;
     ringfallCamera: (x?: number, y?: number, z?: number, yaw?: number, pitch?: number) => void;
   }
 }
@@ -360,6 +395,9 @@ window.ringfallCamera = (x, y, z, yaw, pitch) => {
   world.cameraOverride = x === undefined ? null : { x, y: y ?? 2, z: z ?? 0, yaw: yaw ?? 0, pitch: pitch ?? 0 };
   world.render(state, 0.016);
 };
+
+/** The player's exact view yaw (render_game_to_text rounds it away). */
+window.ringfallYaw = () => state.player.yaw;
 
 window.ringfallBot = (skill: string) => {
   bot = new Bot(SKILLS.find((k) => k.name === skill) ?? SKILLS[1], 31);

@@ -35,6 +35,68 @@ const browser = await chromium.launch({
   args: ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"],
 });
 const errors = [];
+
+/*
+ * Phone in landscape: real touch events (through the DevTools protocol) must move
+ * the player with the stick, turn the view, and fire. Then the bot plays to the
+ * first fight so the touch layout is captured with enemies on screen.
+ */
+{
+  const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+  const page = await ctx.newPage();
+  page.on("pageerror", (e) => errors.push(`mobile pageerror: ${e.message}`));
+  page.on("console", (m) => m.type() === "error" && !/fonts\.g|ERR_TUNNEL|net::/.test(m.text()) && errors.push(`mobile console: ${m.text()}`));
+  await page.goto(`http://localhost:${port}/ringfall/`, { waitUntil: "load" });
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: `${out}/m0-title.png` });
+  await page.tap("#start");
+  if (!(await page.evaluate(() => document.body.classList.contains("touch")))) errors.push("mobile: touch mode did not turn on");
+  const cdp = await ctx.newCDPSession(page);
+  const touch = (type, points) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints: points });
+  const read = async () => JSON.parse(await page.evaluate(() => window.render_game_to_text()));
+  const step = (ms) => page.evaluate((t) => window.advanceTime(t), ms);
+
+  // Stick: press on the left, push up -> forward.
+  const s0 = await read();
+  await touch("touchStart", [{ x: 150, y: 260, id: 1 }]);
+  await touch("touchMove", [{ x: 150, y: 200, id: 1 }]);
+  await step(600);
+  await page.screenshot({ path: `${out}/m1-stick.png` });
+  await touch("touchEnd", []);
+  const s1 = await read();
+  if (!(s1.player.z < s0.player.z - 3)) errors.push(`mobile: stick did not move the player (${s0.player.z} -> ${s1.player.z})`);
+
+  // Land, then turn the view by dragging on the right half.
+  for (let i = 0; i < 60 && (await read()).phase === "drop"; i++) await step(100);
+  const yaw0 = await page.evaluate(() => window.ringfallYaw());
+  await touch("touchStart", [{ x: 560, y: 120, id: 2 }]);
+  for (let k = 1; k <= 5; k++) await touch("touchMove", [{ x: 560 + k * 20, y: 120, id: 2 }]);
+  await step(50);
+  await touch("touchEnd", []);
+  const yaw1 = await page.evaluate(() => window.ringfallYaw());
+  if (!(yaw1 > yaw0 + 0.2)) errors.push(`mobile: dragging did not turn the view (${yaw0.toFixed(2)} -> ${yaw1.toFixed(2)})`);
+
+  // Fire button: hold for half a second.
+  const shots0 = (await read()).stats.shots;
+  const fb = await page.locator("#t-fire").boundingBox();
+  await touch("touchStart", [{ x: fb.x + fb.width / 2, y: fb.y + fb.height / 2, id: 3 }]);
+  await step(500);
+  await touch("touchEnd", []);
+  const shots1 = (await read()).stats.shots;
+  if (!(shots1 > shots0)) errors.push(`mobile: the fire button did not shoot (${shots0} -> ${shots1})`);
+
+  // The bot plays to the first fight for a screenshot of the touch layout.
+  await page.evaluate((s) => window.ringfallBot(s), skill);
+  for (let i = 0; i < 900; i++) {
+    await step(100);
+    const st = await read();
+    if (st.poiActive && st.enemies.filter((e) => e.mode !== "spawning").length >= 3 && st.orbs >= 1) break;
+  }
+  await page.screenshot({ path: `${out}/m2-fight.png` });
+  console.log(`mobile: stick ${s0.player.z} -> ${s1.player.z}, yaw ${yaw0.toFixed(2)} -> ${yaw1.toFixed(2)}, shots ${shots0} -> ${shots1}`);
+  await ctx.close();
+}
+
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
 page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
 page.on("console", (m) => m.type() === "error" && !/fonts\.g|ERR_TUNNEL|net::/.test(m.text()) && errors.push(`console: ${m.text()}`));

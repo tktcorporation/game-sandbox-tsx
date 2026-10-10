@@ -79,9 +79,9 @@ export class World {
   private time = 0;
   private recoilView = 0;
 
-  constructor(container: HTMLElement) {
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  constructor(container: HTMLElement, opts: { lowPower?: boolean } = {}) {
+    this.renderer = new THREE.WebGLRenderer({ antialias: !opts.lowPower, powerPreference: "high-performance" });
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio, opts.lowPower ? 1.5 : 2));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.autoClear = false;
@@ -92,7 +92,8 @@ export class World {
     this.scene.add(new THREE.HemisphereLight(0xcfe9ff, 0xb98a55, 1.15));
     this.sun.position.set(-40, 80, 30);
     this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(2048, 2048);
+    const shadowSize = opts.lowPower ? 1024 : 2048;
+    this.sun.shadow.mapSize.set(shadowSize, shadowSize);
     const sc = this.sun.shadow.camera;
     sc.left = sc.bottom = -55;
     sc.right = sc.top = 55;

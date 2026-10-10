@@ -222,6 +222,8 @@ export interface Input {
   swap: boolean;
   slot: number; // -1 none, 0 / 1 select
   battery: boolean;
+  /** The input comes from a touch screen (stronger aim assist, see ASSIST.touchPull). */
+  touch: boolean;
 }
 
 export const idleInput = (): Input => ({
@@ -240,6 +242,7 @@ export const idleInput = (): Input => ({
   swap: false,
   slot: -1,
   battery: false,
+  touch: false,
 });
 
 export function newRun(seed = 1): State {

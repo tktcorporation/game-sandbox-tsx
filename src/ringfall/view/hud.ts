@@ -14,6 +14,9 @@ import type { World } from "./world";
  */
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
+/** Wording follows the controls in use: keys on a PC, on-screen buttons on a phone. */
+const isTouch = () => document.body.classList.contains("touch");
+const key = (k: string) => (isTouch() ? "" : `<kbd>${k}</kbd> `);
 
 interface DmgNum {
   el: HTMLElement;
@@ -138,7 +141,7 @@ export class Hud {
         this.toast("前方に敵がいない", 0);
         break;
       case "ultReady":
-        this.toast("オーバードライブ 準備完了（Z）", 3);
+        this.toast(isTouch() ? "オーバードライブ 準備完了" : "オーバードライブ 準備完了（Z）", 3);
         break;
     }
   }
@@ -150,7 +153,7 @@ export class Hud {
     const poi = POIS[s.poi];
     const remaining = s.poiActive ? s.enemies.filter((e) => e.poi === s.poi).length + POIS[s.poi].waves.slice(s.wave).reduce((a, wv) => a + wv.length, 0) : 0;
     let text = "";
-    if (s.phase === "drop") text = "降下中：WASD で着地点を選ぶ";
+    if (s.phase === "drop") text = isTouch() ? "降下中：スティックで着地点を選ぶ" : "降下中：WASD で着地点を選ぶ";
     else if (s.phase === "extract") text = "ドロップシップに乗れ";
     else if (s.phase === "done") text = "生還";
     else if (poi && s.poiActive) text = poi.boss ? "タイタンを倒せ" : `${poi.name}のロボットを倒せ`;
@@ -183,12 +186,13 @@ export class Hud {
 
     // Compass: 2 px per degree, centred on the current heading.
     const heading = ((((p.yaw * 180) / Math.PI) % 360) + 360) % 360;
-    $("compass-strip").style.transform = `translateX(${210 - (heading + 360) * 2}px)`;
+    const half = $("compass").clientWidth / 2;
+    $("compass-strip").style.transform = `translateX(${half - (heading + 360) * 2}px)`;
     if (obj) {
       const bearing = (Math.atan2(obj.x - p.pos.x, -(obj.z - p.pos.z)) * 180) / Math.PI;
       let rel = ((bearing - heading + 540) % 360) - 180;
       rel = Math.max(-100, Math.min(100, rel));
-      $("compass-obj").style.left = `${210 + rel * 2}px`;
+      $("compass-obj").style.left = `${half + rel * 2}px`;
     }
 
     // Vitals.
@@ -222,6 +226,15 @@ export class Hud {
     ult.className = p.ult >= 1 ? "ab ult ready" : "ab ult";
     $("ult-pct").textContent = p.ultTime > 0 ? `${Math.ceil(p.ultTime)}s` : `${Math.floor(p.ult * 100)}%`;
     $("fx-ult").style.opacity = p.ultTime > 0 ? "1" : "0";
+    // The same charge on the touch buttons.
+    const tTac = $("t-tac");
+    tTac.style.setProperty("--p", String(1 - p.tactical / TACTICAL.cooldown));
+    tTac.classList.toggle("ready", p.tactical <= 0);
+    const tUlt = $("t-ult");
+    tUlt.style.setProperty("--p", String(p.ultTime > 0 ? p.ultTime / ULT.duration : p.ult));
+    tUlt.classList.toggle("ready", p.ult >= 1);
+    $("t-ult-pct").textContent = $("ult-pct").textContent;
+    $("t-cells").textContent = String(p.batteries);
 
     // Weapons.
     p.weapons.forEach((wpn, i) => {
@@ -256,7 +269,9 @@ export class Hud {
     $("hitmark").style.opacity = this.hitT > 0 ? "1" : "0";
 
     // Interaction prompt.
-    $("prompt").innerHTML = this.prompt(s);
+    const prompt = this.prompt(s);
+    $("prompt").innerHTML = prompt;
+    $("t-use").hidden = prompt === "";
 
     // Damage numbers.
     this.nums = this.nums.filter((n) => {
@@ -357,14 +372,14 @@ export class Hud {
     if (p.downed > 0 || (s.phase !== "play" && s.phase !== "extract")) return "";
     const r = PLAYER.interactRange;
     const bin = s.bins.find((b) => !b.open && dist2d(b, p.pos) < r && Math.abs(b.y - p.pos.y) < 1.5);
-    if (bin) return "<kbd>E</kbd> 補給箱を開ける";
-    if (s.care && s.care.landed && !s.care.open && dist2d(s.care, p.pos) < r + 0.6) return "<kbd>E</kbd> 補給ポッドを開ける";
+    if (bin) return `${key("E")}補給箱を開ける`;
+    if (s.care && s.care.landed && !s.care.open && dist2d(s.care, p.pos) < r + 0.6) return `${key("E")}補給ポッドを開ける`;
     const wl = s.loot
       .filter((l) => l.kind === "weapon" && l.weapon && l.age > 0.4 && dist2d(l.pos, p.pos) < r + 0.3 && Math.abs(l.pos.y - p.pos.y) < 1.5)
       .sort((a, b) => dist2d(a.pos, p.pos) - dist2d(b.pos, p.pos))[0];
     if (wl?.weapon) {
       const swap = p.weapons.includes(null) ? "" : `（${WEAPONS[p.weapons[p.slot]!.kind].name} と交換）`;
-      return `<kbd>E</kbd> <span class="r" style="color:${RARITY_CSS[wl.rarity]}">${WEAPONS[wl.weapon.kind].name}</span> ${RARITY.names[wl.rarity]}を拾う${swap}`;
+      return `${key("E")}<span class="r" style="color:${RARITY_CSS[wl.rarity]}">${WEAPONS[wl.weapon.kind].name}</span> ${RARITY.names[wl.rarity]}を拾う${swap}`;
     }
     return "";
   }
