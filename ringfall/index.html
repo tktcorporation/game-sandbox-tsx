@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#7ec8e3" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@600;800&family=M+PLUS+1p:wght@500;800&display=swap" rel="stylesheet" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 fill=%27%237ec8e3%27/%3E%3Ccircle cx=%2716%27 cy=%2716%27 r=%2710%27 fill=%27none%27 stroke=%27%23ff5a2a%27 stroke-width=%274%27/%3E%3Ccircle cx=%2716%27 cy=%2716%27 r=%273%27 fill=%27%23262d52%27/%3E%3C/svg%3E" />
+    <title>RINGFALL</title>
+  </head>
+  <body>
+    <div id="stage"></div>
+    <div id="fx-ring" aria-hidden="true"></div>
+    <div id="fx-hurt" aria-hidden="true"></div>
+    <div id="fx-ult" aria-hidden="true"></div>
+
+    <div id="hud" hidden>
+      <div id="compass"><div id="compass-strip"></div><i id="compass-obj"></i><b id="compass-deg">0</b></div>
+      <div id="objective"><span id="obj-text"></span><b id="obj-count"></b><small id="obj-ring"></small></div>
+      <div id="marker" aria-hidden="true"><i></i><span id="marker-dist"></span></div>
+      <div id="enemy-bars" aria-hidden="true"></div>
+      <div id="dmg-layer" aria-hidden="true"></div>
+      <div id="dmgdir" aria-hidden="true"></div>
+      <div id="xhair" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+      <div id="hitmark" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+      <p id="prompt"></p>
+      <div id="vitals">
+        <div id="shield-cells"></div>
+        <div id="hp"><span id="hp-fill"></span></div>
+        <div id="cells"><kbd>H</kbd><span>バッテリー</span><b id="cells-n">0</b></div>
+      </div>
+      <div id="abilities">
+        <div class="ab" id="ab-tac"><kbd>Q</kbd><div class="ring"><span>アーク</span></div></div>
+        <div class="ab ult" id="ab-ult"><kbd>Z</kbd><div class="ring"><span id="ult-pct">0%</span></div></div>
+      </div>
+      <div id="weapons">
+        <div id="toasts"></div>
+        <div class="slot" id="slot-0"><span class="name"></span><span class="ammo"><b></b><small></small></span></div>
+        <div class="slot" id="slot-1"><span class="name"></span><span class="ammo"><b></b><small></small></span></div>
+      </div>
+      <div id="downed"><b>ダウン</b><span>自己蘇生中</span><i><span id="downed-bar"></span></i></div>
+      <div id="battery"><span>シールド充電中</span><i><span id="battery-bar"></span></i></div>
+    </div>
+
+    <div id="banner" aria-live="polite"><b id="banner-head"></b><span id="banner-sub"></span></div>
+
+    <section id="title" class="screen">
+      <div class="title-inner">
+        <h1>RINGFALL</h1>
+        <p class="lede">降りて、拾って、撃ちまくれ。相手はロボットだけ。</p>
+        <ul class="keys">
+          <li><kbd>WASD</kbd>移動（前進で自動ダッシュ）</li>
+          <li><kbd>左クリック</kbd>撃つ <kbd>右</kbd>覗く</li>
+          <li><kbd>Space</kbd>ジャンプ <kbd>C</kbd>スライディング</li>
+          <li><kbd>E</kbd>開ける・拾う <kbd>R</kbd>リロード <kbd>1</kbd><kbd>2</kbd>持ち替え</li>
+          <li><kbd>Q</kbd>アーク（自動で狙う） <kbd>Z</kbd>オーバードライブ <kbd>H</kbd>バッテリー</li>
+        </ul>
+        <button id="start" type="button">降下する</button>
+        <label class="sens">マウス感度 <input id="sens" type="range" min="0.4" max="2.5" step="0.05" value="1" /></label>
+        <p class="note">マウスとキーボードで遊ぶ PC 向けゲーム。<a href="/">HITMARK に戻る</a></p>
+      </div>
+    </section>
+
+    <section id="pause" class="screen" hidden>
+      <div class="title-inner">
+        <h2>一時停止</h2>
+        <button id="resume" type="button">クリックで再開</button>
+        <label class="sens">マウス感度 <input id="sens2" type="range" min="0.4" max="2.5" step="0.05" value="1" /></label>
+      </div>
+    </section>
+
+    <section id="results" class="screen" hidden>
+      <div class="title-inner">
+        <p class="label">生還</p>
+        <div class="rank-row"><b id="rank">S</b><div><span>合計タイム</span><strong id="total"></strong></div></div>
+        <div id="stats"></div>
+        <div id="pois"></div>
+        <button id="restart" type="button">もう一度降下する</button>
+      </div>
+    </section>
+
+    <script type="module" src="/src/ringfall/main.ts"></script>
+  </body>
+</html>

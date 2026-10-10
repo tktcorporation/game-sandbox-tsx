@@ -1,5 +1,37 @@
 # CLAUDE.md
 
+Two single-player PvE shooters share this Vite project and Cloudflare Worker. Each has its own
+page, simulation and gates; they share only `three` and the build.
+
+| Game | Page | Code | Brief |
+| --- | --- | --- | --- |
+| HITMARK | `/` (`index.html`) | `src/sim`, `src/game`, `src/game3d` | `docs/brief.md` |
+| RINGFALL | `/ringfall/` (`ringfall/index.html`) | `src/ringfall/` | `docs/ringfall/brief.md` |
+
+Read the game's brief before changing anything visual. A new page needs an entry in
+`environments.client.build.rollupOptions.input` in `vite.config.ts`.
+
+## RINGFALL
+
+A battle-royale-shaped run against robots only: skydive onto an island, clear three POIs while the
+ring closes toward the next one, beat the titan, extract. First person on three.js.
+
+```bash
+npm run sim:ringfall     # gate 2: bots of three skills play the whole run headless
+npm run shots:ringfall   # gate 3: the build played to the end in Chromium; screenshots in shots/ringfall/
+```
+
+- `src/ringfall/sim/` is the game: pure TypeScript, metres and seconds, `step(state, input, prevCrouch)`
+  per 1/60 s tick. Aim assist (slowdown, pull, the hit cone) lives here, so bots and people get the
+  same help. Every solid is an axis-aligned box in `map.ts`; tuning numbers are in `config.ts`.
+- `src/ringfall/view/` renders and never changes rules: `world.ts` (three.js), `hud.ts` (DOM),
+  `audio.ts` (synthesized). `src/ringfall/main.ts` wires input and the fixed-step loop, and exposes
+  `window.render_game_to_text()`, `window.advanceTime(ms)` and `window.ringfallBot(skill)`.
+- `docs/ringfall/balance.md` holds the target curve and the latest `npm run sim:ringfall -- 30` output.
+  Change a number in `config.ts` or `map.ts` only together with a re-run and an update to that file.
+
+## HITMARK
+
 HITMARK: a single-player shooter for people who love FPS gunfeel but do not enjoy PvP. One
 simulation, two views: top-down 2D (Phaser 4) and first-person 3D (three.js), chosen on the title
 screen and lazy-loaded. TypeScript + Vite, served by a Cloudflare Worker. The brief, mood, and banned looks are
