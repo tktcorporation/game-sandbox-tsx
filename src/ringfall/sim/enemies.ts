@@ -352,7 +352,9 @@ function titan(s: State, e: Enemy, d: number) {
 export function stepOrbs(s: State) {
   const p = s.player;
   const c = chest(s);
-  s.orbs = s.orbs.filter((o) => {
+  // A hit can wipe the squad, and wipe() clears the air; do not write the old list back over it.
+  const wipes = s.stats.wipes;
+  const kept = s.orbs.filter((o) => {
     if (o.homing) {
       // Turn the velocity toward the player a little each tick.
       const sp = Math.hypot(o.vel.x, o.vel.y, o.vel.z);
@@ -379,11 +381,13 @@ export function stepOrbs(s: State) {
     }
     return true;
   });
+  if (s.stats.wipes === wipes) s.orbs = kept;
 }
 
 export function stepWaves(s: State) {
   const p = s.player;
-  s.waves = s.waves.filter((w) => {
+  const wipes = s.stats.wipes;
+  const kept = s.waves.filter((w) => {
     w.r += TITAN.stompSpeed * TICK;
     const d = Math.hypot(p.pos.x - w.x, p.pos.z - w.z);
     if (!w.hit && Math.abs(d - w.r) < 0.9 && p.pos.y < w.y + TITAN.stompHeight) {
@@ -392,6 +396,7 @@ export function stepWaves(s: State) {
     }
     return w.r < TITAN.stompRange;
   });
+  if (s.stats.wipes === wipes) s.waves = kept;
 }
 
 export function spawnWave(s: State) {

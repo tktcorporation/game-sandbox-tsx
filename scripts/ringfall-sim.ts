@@ -9,7 +9,8 @@ import { TICK, WORLD } from "../src/ringfall/sim/config";
 import { BOXES, EXTRA_BINS, EXTRACT, POIS } from "../src/ringfall/sim/map";
 import { collide, groundAt, solidAt } from "../src/ringfall/sim/geom";
 import { Bot, SKILLS } from "../src/ringfall/sim/bot";
-import { newRun, type State } from "../src/ringfall/sim/state";
+import { idleInput, newRun, type GameEvent, type State } from "../src/ringfall/sim/state";
+import { spawnEnemy } from "../src/ringfall/sim/enemies";
 import { step } from "../src/ringfall/sim/step";
 import { rank } from "../src/ringfall/sim/results";
 
@@ -64,6 +65,55 @@ if (layout.length) {
   process.exit(1);
 }
 console.log(`layout ok: ${BOXES.length} boxes`);
+
+/** A wipe clears everything in the air; a projectile still in flight must not follow the player to the entry. */
+function checkWipeClearsAir(): string | null {
+  const s = newRun(5);
+  s.phase = "play";
+  const p = s.player;
+  p.pos = { x: 0, y: 0, z: 30 };
+  p.onGround = true;
+  p.hp = 1;
+  p.shield = 0;
+  p.selfRevive = 0;
+  s.orbs.push({ id: 900, pos: { x: 0, y: 1.1, z: 30.3 }, vel: { x: 0, y: 0, z: -1 }, r: 0.4, dmg: 10, life: 5, homing: false });
+  s.orbs.push({ id: 901, pos: { x: 0, y: 3, z: 50 }, vel: { x: 0, y: 0, z: -5 }, r: 0.4, dmg: 10, life: 5, homing: true });
+  s.waves.push({ x: 0, z: 60, y: 0, r: 3, hit: false });
+  step(s, idleInput(), false);
+  if (s.stats.wipes !== 1) return `wipe scenario: expected a wipe, got ${s.stats.wipes}`;
+  if (s.orbs.length || s.waves.length) return `wipe scenario: ${s.orbs.length} orbs and ${s.waves.length} shockwaves survived the wipe`;
+  return null;
+}
+/** The arc finishing the titan also takes its summons; none of them may be killed twice. */
+function checkArcOnTitan(): string | null {
+  const s = newRun(5);
+  s.phase = "play";
+  s.poi = 3;
+  s.poiActive = true;
+  s.wave = 1;
+  const p = s.player;
+  p.pos = { x: 0, y: 0, z: -40 };
+  p.onGround = true;
+  p.yaw = 0;
+  spawnEnemy(s, "titan", 0, -52, 3);
+  spawnEnemy(s, "drone", 3, -60, 3);
+  for (const e of s.enemies) e.mode = "move";
+  s.enemies[0].hp = 1;
+  s.enemies[0].shield = 0;
+  s.enemies[1].hp = 10; // low enough that a second hit from the arc would kill it again
+  const inp = idleInput();
+  inp.tactical = true;
+  step(s, inp, false);
+  const kills = s.events.filter((e): e is Extract<GameEvent, { t: "kill" }> => e.t === "kill").map((e) => e.id);
+  if (new Set(kills).size !== kills.length || s.stats.kills !== 2) return `arc scenario: kills ${JSON.stringify(kills)}, stats ${s.stats.kills}`;
+  return null;
+}
+for (const err of [checkWipeClearsAir(), checkArcOnTitan()]) {
+  if (err) {
+    console.error(err);
+    process.exit(1);
+  }
+}
 
 const median = (xs: number[]) => {
   const a = [...xs].sort((x, y) => x - y);

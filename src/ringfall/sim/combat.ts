@@ -135,6 +135,8 @@ export function shoot(s: State, w: Weapon) {
 }
 
 export function damageEnemy(s: State, e: Enemy, raw: number, crit: boolean, at: Vec3) {
+  // Callers may hold a list taken before a kill removed this robot (the titan takes its summons with it).
+  if (!s.enemies.includes(e)) return;
   const k = ENEMIES[e.kind];
   const before = e.hp + e.shield;
   const hadShield = e.shield > 0;
