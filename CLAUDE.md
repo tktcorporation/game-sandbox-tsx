@@ -36,3 +36,7 @@ published less than 14 days ago unless it fixes a known vulnerability, and say s
 
 `docs/balance.md` holds the target curve and the latest `npm run sim` output. Change a number in
 `src/sim/config.ts` or `ROOMS` only together with a re-run and an update to that file.
+
+## New games
+
+To start a new game or rebuild this one, use the `game-brief` skill (`.claude/skills/game-brief/`): it turns the request into `docs/brief.md` before any code is written.
