@@ -1,7 +1,7 @@
 import { ASSIST, DEG, DROP, PLAYER, RARITY, SEMI_HOLD, TACTICAL, TICK, ULT, WEAPONS, WORLD } from "./config";
 import { POIS } from "./map";
 import { applyPull, assistTarget, bodyCenter, damageEnemy, eyePos, magSize, shoot } from "./combat";
-import { collide, groundAt, los } from "./geom";
+import { ceilingAt, collide, groundAt, los } from "./geom";
 import type { Input, State } from "./state";
 
 /*
@@ -156,6 +156,14 @@ function move(s: State, input: Input, prevCrouch: boolean) {
     }
   }
   p.pos.y += p.vel.y * TICK;
+  // Bump the head on floors and roofs above.
+  if (p.vel.y > 0) {
+    const c = ceilingAt(p.pos.x, p.pos.z, PLAYER.radius, p.pos.y + 1.75, p.pos.y - p.vel.y * TICK);
+    if (p.pos.y + 1.75 > c) {
+      p.pos.y = c - 1.75;
+      p.vel.y = 0;
+    }
+  }
   const g = groundAt(p.pos.x, p.pos.z, PLAYER.radius, Math.max(p.pos.y, p.pos.y - p.vel.y * TICK));
   if (p.pos.y <= g) {
     if (!p.onGround && p.vel.y < -5) s.events.push({ t: "land", speed: -p.vel.y });

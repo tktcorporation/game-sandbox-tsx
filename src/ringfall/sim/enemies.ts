@@ -1,5 +1,9 @@
 import { CHARGER, ENEMIES, PLAYER, TICK, TITAN, WORLD, type EnemyKind } from "./config";
 import { collide, groundAt, los, lookAngles, wrapAngle } from "./geom";
+
+/** Walkers refuse to step off a ledge higher than this, so rooftop robots stay on their roof. */
+const LEDGE = 1.0;
+const bodyHeight = (k: { bodyY: number; radius: number }) => k.bodyY + k.radius;
 import { POIS } from "./map";
 import { bodyCenter, weakPoint } from "./combat";
 import { hurtPlayer } from "./player";
@@ -10,11 +14,11 @@ import { rand, type Enemy, type State, type Vec3 } from "./state";
  * move -> telegraph (eye glows, aim locks near the end) -> fire -> move.
  */
 
-export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi: number) {
+export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi: number, floor = 0) {
   const k = ENEMIES[kind];
-  const pos = { x, y: 0, z };
-  collide(pos, k.radius);
-  pos.y = k.fly > 0 ? k.fly : groundAt(pos.x, pos.z, k.radius, 0.5);
+  const pos = { x, y: floor, z };
+  collide(pos, k.radius, bodyHeight(k));
+  pos.y = k.fly > 0 ? flyHeight(pos.x, pos.z) : groundAt(pos.x, pos.z, k.radius, floor + 0.3);
   const p = s.player;
   const e: Enemy = {
     id: s.nextId++,
@@ -68,6 +72,11 @@ function lockAim(s: State, e: Enemy) {
   e.aimPitch = a.pitch;
 }
 
+/** Drones keep their hover height above whatever is under them. */
+function flyHeight(x: number, z: number): number {
+  return Math.max(ENEMIES.drone.fly, groundAt(x, z, 1.2, 99) + 2.4);
+}
+
 function moveBody(e: Enemy, vx: number, vz: number) {
   const k = ENEMIES[e.kind];
   e.vel.x += (vx - e.vel.x) * Math.min(1, TICK * 8);
@@ -77,14 +86,31 @@ function moveBody(e: Enemy, vx: number, vz: number) {
   e.pos.x += e.vel.x * TICK;
   e.pos.z += e.vel.z * TICK;
   if (k.fly > 0) {
-    e.pos.y += (k.fly - e.pos.y) * Math.min(1, TICK * 2);
+    e.pos.y += (flyHeight(e.pos.x, e.pos.z) - e.pos.y) * Math.min(1, TICK * 2.5);
     const lim = WORLD.half - 1;
     e.pos.x = Math.max(-lim, Math.min(lim, e.pos.x));
     e.pos.z = Math.max(-lim, Math.min(lim, e.pos.z));
     return false;
   }
-  const blocked = collide(e.pos, k.radius);
-  e.pos.y = groundAt(e.pos.x, e.pos.z, k.radius, e.pos.y);
+  const blocked = collide(e.pos, k.radius, bodyHeight(k));
+  const here = groundAt(bx, bz, k.radius, e.pos.y);
+  const there = groundAt(e.pos.x, e.pos.z, k.radius, e.pos.y);
+  if (there < here - LEDGE) {
+    // A drop ahead: stay on this floor.
+    e.pos.x = bx;
+    e.pos.z = bz;
+    e.vel.x = e.vel.z = 0;
+    return true;
+  }
+  // Walk up steps at once; fall down with gravity.
+  if (there >= e.pos.y) {
+    e.pos.y = there;
+    e.vel.y = 0;
+  } else {
+    e.vel.y -= WORLD.gravity * TICK;
+    e.pos.y = Math.max(there, e.pos.y + e.vel.y * TICK);
+    if (e.pos.y === there) e.vel.y = 0;
+  }
   // Moved much less than asked: the way is blocked.
   return blocked && Math.hypot(e.pos.x - bx, e.pos.z - bz) < Math.hypot(vx, vz) * TICK * 0.4;
 }
@@ -370,6 +396,6 @@ export function stepWaves(s: State) {
 
 export function spawnWave(s: State) {
   const poi = POIS[s.poi];
-  for (const sp of poi.waves[s.wave]) spawnEnemy(s, sp.kind, poi.x + sp.dx, poi.z + sp.dz, s.poi);
+  for (const sp of poi.waves[s.wave]) spawnEnemy(s, sp.kind, poi.x + sp.dx, poi.z + sp.dz, s.poi, sp.y ?? 0);
   s.wave++;
 }

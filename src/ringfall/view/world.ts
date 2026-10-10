@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { ENEMIES, PLAYER, TITAN, WEAPONS, WORLD, type EnemyKind } from "../sim/config";
 import { BOXES, EXTRACT, POIS } from "../sim/map";
 import type { GameEvent, State, Vec3 } from "../sim/state";
-import { PAL, RARITY_COLOR, buildBin, buildBox, buildCare, buildDropship, buildEnemy, buildGun, buildLootItem, flat, glow, haloSprite, type EnemyModel } from "./models";
+import { PAL, RARITY_COLOR, buildBin, buildBox, mergeStatic, buildCare, buildDropship, buildEnemy, buildGun, buildLootItem, flat, glow, haloSprite, type EnemyModel } from "./models";
 
 /*
  * Renders a State in first person. It reads the state and the tick's events and
@@ -66,6 +66,9 @@ export class World {
   private clouds: THREE.Sprite[] = [];
   private dummy = new THREE.Object3D();
 
+  /** Automation only: a fixed camera that replaces the player's view. */
+  cameraOverride: { x: number; y: number; z: number; yaw: number; pitch: number } | null = null;
+
   // Feel state.
   private eyeY = PLAYER.eye;
   private shake = 0;
@@ -98,7 +101,9 @@ export class World {
     this.sun.shadow.bias = -0.0006;
     this.scene.add(this.sun, this.sun.target);
     this.scene.add(this.terrain());
-    BOXES.forEach((b, i) => this.scene.add(buildBox(b, i)));
+    const statics = new THREE.Group();
+    BOXES.forEach((b, i) => statics.add(buildBox(b, i)));
+    this.scene.add(mergeStatic(statics));
     this.scatterRocks();
     this.addClouds();
 
@@ -241,17 +246,18 @@ export class World {
     let r = 11;
     const rnd = () => ((r = (r * 16807) % 2147483647) / 2147483647);
     const geo = new THREE.DodecahedronGeometry(1, 0);
-    for (let i = 0; i < 70; i++) {
+    // Boulders along the foot of the canyon walls, just outside the playable square.
+    for (let i = 0; i < 90; i++) {
       const side = Math.floor(rnd() * 4);
-      const along = (rnd() - 0.5) * 230;
-      const out = WORLD.half + 8 + rnd() * 50;
+      const along = (rnd() - 0.5) * 210;
+      const out = WORLD.half + 2 + rnd() * 6;
       const x = side === 0 ? out : side === 1 ? -out : along;
       const z = side === 2 ? out : side === 3 ? -out : along;
       const m = new THREE.Mesh(geo, flat(rnd() < 0.5 ? PAL.rock : PAL.rockDark));
-      const s = 3 + rnd() * 6;
+      const s = 1.5 + rnd() * 3.5;
       m.scale.set(s, s * (0.6 + rnd() * 0.9), s);
       m.rotation.set(rnd(), rnd() * 6, rnd());
-      m.position.set(x, this.height(x, z) - s * 0.45, z);
+      m.position.set(x, this.height(x, z) - s * 0.3, z);
       m.castShadow = true;
       this.scene.add(m);
     }
@@ -449,11 +455,18 @@ export class World {
       this.camera.fov += (fov - this.camera.fov) * Math.min(1, dt * 14);
       this.camera.updateProjectionMatrix();
     }
+    const cam = this.cameraOverride;
+    if (cam) {
+      this.camera.position.set(cam.x, cam.y, cam.z);
+      this.camera.rotation.set(cam.pitch, -cam.yaw, 0, "YXZ");
+    }
     this.camera.updateMatrixWorld();
 
-    // Shadows follow the player.
-    this.sun.position.set(p.pos.x - 40, 80, p.pos.z + 30);
-    this.sun.target.position.set(p.pos.x, 0, p.pos.z);
+    // Shadows follow the camera.
+    const fx = this.camera.position.x;
+    const fz = this.camera.position.z;
+    this.sun.position.set(fx - 40, 80, fz + 30);
+    this.sun.target.position.set(fx, 0, fz);
 
     // --- ring
     const r = s.ring;
@@ -598,7 +611,7 @@ export class World {
       let v = this.bins.get(b.id);
       if (!v) {
         v = buildBin();
-        v.root.position.set(b.x, 0, b.z);
+        v.root.position.set(b.x, b.y, b.z);
         this.bins.set(b.id, v);
         this.scene.add(v.root);
       }

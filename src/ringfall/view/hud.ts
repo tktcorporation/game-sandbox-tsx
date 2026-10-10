@@ -356,11 +356,11 @@ export class Hud {
     const p = s.player;
     if (p.downed > 0 || (s.phase !== "play" && s.phase !== "extract")) return "";
     const r = PLAYER.interactRange;
-    const bin = s.bins.find((b) => !b.open && dist2d(b, p.pos) < r);
+    const bin = s.bins.find((b) => !b.open && dist2d(b, p.pos) < r && Math.abs(b.y - p.pos.y) < 1.5);
     if (bin) return "<kbd>E</kbd> 補給箱を開ける";
     if (s.care && s.care.landed && !s.care.open && dist2d(s.care, p.pos) < r + 0.6) return "<kbd>E</kbd> 補給ポッドを開ける";
     const wl = s.loot
-      .filter((l) => l.kind === "weapon" && l.weapon && l.age > 0.4 && dist2d(l.pos, p.pos) < r + 0.3)
+      .filter((l) => l.kind === "weapon" && l.weapon && l.age > 0.4 && dist2d(l.pos, p.pos) < r + 0.3 && Math.abs(l.pos.y - p.pos.y) < 1.5)
       .sort((a, b) => dist2d(a.pos, p.pos) - dist2d(b.pos, p.pos))[0];
     if (wl?.weapon) {
       const swap = p.weapons.includes(null) ? "" : `（${WEAPONS[p.weapons[p.slot]!.kind].name} と交換）`;

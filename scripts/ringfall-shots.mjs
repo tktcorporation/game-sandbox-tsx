@@ -53,6 +53,28 @@ const after = await read();
 if (!(after.player.z < before.player.z - 3)) errors.push(`keyboard: W did not move the player (${before.player.z} -> ${after.player.z})`);
 await page.screenshot({ path: `${out}/01-drop.png` });
 
+// A tour of the island's buildings and high ground, from fixed cameras.
+await page.evaluate(() => {
+  document.getElementById("hud").hidden = true;
+  document.getElementById("banner").className = "";
+});
+await page.waitForTimeout(400);
+const tour = [
+  ["tour-1-supply-office", -8, 2.2, 60, -0.98, -0.02],
+  ["tour-2-quarry-catwalk", -30, 5.5, -1, -0.86, -0.12],
+  ["tour-3-village", 17, 2.0, -12, -0.75, 0.0],
+  ["tour-4-relay-tower", 25, 5.0, -9, 0.73, -0.02],
+  ["tour-5-pad-gantry", 0, 3.5, -48, 0, -0.08],
+];
+for (const [name, x, y, z, yaw, pitch] of tour) {
+  await page.evaluate(([x, y, z, yaw, pitch]) => window.ringfallCamera(x, y, z, yaw, pitch), [x, y, z, yaw, pitch]);
+  await page.screenshot({ path: `${out}/${name}.png` });
+}
+await page.evaluate(() => {
+  window.ringfallCamera();
+  document.getElementById("hud").hidden = false;
+});
+
 await page.evaluate((s) => window.ringfallBot(s), skill);
 const taken = new Set();
 const shot = async (name) => {

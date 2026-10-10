@@ -1,5 +1,5 @@
 import { DROP, ENEMIES, PLAYER, ULT, type EnemyKind, type Rarity, type WeaponKind } from "./config";
-import { POIS, SPAWN } from "./map";
+import { EXTRA_BINS, POIS, SPAWN } from "./map";
 
 export interface Vec3 {
   x: number;
@@ -99,6 +99,7 @@ export interface Loot {
 export interface Bin {
   id: number;
   x: number;
+  y: number;
   z: number;
   poi: number;
   open: boolean;
@@ -244,11 +245,12 @@ export const idleInput = (): Input => ({
 export function newRun(seed = 1): State {
   const bins: Bin[] = [];
   let id = 1;
-  POIS.forEach((p, poi) => p.bins.forEach((b) => bins.push({ id: id++, x: b.x, z: b.z, poi, open: false })));
+  POIS.forEach((p, poi) => p.bins.forEach((b) => bins.push({ id: id++, x: b.x, y: b.y ?? 0, z: b.z, poi, open: false })));
+  for (const b of EXTRA_BINS) bins.push({ id: id++, x: b.x, y: 0, z: b.z, poi: b.table, open: false });
   const loot: Loot[] = [];
   POIS.forEach((p) =>
     p.floor.forEach((f) => {
-      const pos = { x: f.x, y: 0, z: f.z };
+      const pos = { x: f.x, y: f.y ?? 0, z: f.z };
       const vel = { x: 0, y: 0, z: 0 };
       if (f.weapon) loot.push({ id: id++, kind: "weapon", rarity: f.weapon[1], weapon: { kind: f.weapon[0], rarity: f.weapon[1], mag: -1 }, pos, vel, age: 99 });
       if (f.armor !== undefined) loot.push({ id: id++, kind: "armor", rarity: f.armor, pos, vel, age: 99 });

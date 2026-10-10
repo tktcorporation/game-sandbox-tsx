@@ -2,6 +2,7 @@ import { DEG, TICK } from "./config";
 import { bodyCenter, eyePos, magSize, weakPoint } from "./combat";
 import { dist2d, los, lookAngles, wrapAngle } from "./geom";
 import { EXTRACT, POIS } from "./map";
+import { clearLine, findPath } from "./nav";
 import { idleInput, type Enemy, type Input, type State } from "./state";
 
 /**
@@ -46,6 +47,12 @@ export class Bot {
   private dodged = new Set<number>();
   private interactT = 0;
   private swapT = 0;
+  private lootKey = "";
+  private lootT = 0;
+  private skip = new Set<string>();
+  private path: { x: number; z: number }[] = [];
+  private pathGoal = { x: 1e9, z: 1e9 };
+  private pathT = 0;
   crouch = false;
 
   constructor(
@@ -110,7 +117,8 @@ export class Bot {
       const aimAt = sk.heads ? weakPoint(tgt) : bodyCenter(tgt);
       want = lookAngles(eye, aimAt);
     } else if (goal) {
-      want = { yaw: lookAngles(p.pos, { x: goal.x, y: 0, z: goal.z }).yaw, pitch: s.phase === "drop" ? -0.6 : 0 };
+      const step = s.phase === "drop" ? goal : this.via(s, goal);
+      want = { yaw: lookAngles(p.pos, { x: step.x, y: 0, z: step.z }).yaw, pitch: s.phase === "drop" ? -0.6 : 0 };
     } else want = { yaw: p.yaw, pitch: 0 };
     const reacting = fight && this.tracking < sk.react;
     const turn = reacting ? sk.turn * 0.3 : sk.turn;
@@ -145,8 +153,22 @@ export class Bot {
         }
       }
       const sees = los(eye, bodyCenter(tgt));
-      inp.moveZ = !sees ? 1 : d > pref + 3 ? 1 : d < pref - 3 ? -0.8 : 0;
-      inp.moveX = this.dodgeT > 0 ? this.side : this.side * (sk.dodge > 0.5 ? 0.9 : 0.5);
+      if (!sees && p.pos.y < 0.6) {
+        // Walk a ground path toward it. A robot up high is hidden by its own roof edge
+        // from close below, so back off to about 14 m to get an angle on it instead.
+        let to = { x: tgt.pos.x, z: tgt.pos.z };
+        if (tgt.pos.y > p.pos.y + 1.5) {
+          const k = 14 / Math.max(d, 0.1);
+          to = { x: tgt.pos.x + (p.pos.x - tgt.pos.x) * k, z: tgt.pos.z + (p.pos.z - tgt.pos.z) * k };
+        }
+        const step = this.via(s, to);
+        const rel = lookAngles(p.pos, { x: step.x, y: 0, z: step.z }).yaw - p.yaw;
+        inp.moveZ = Math.cos(rel);
+        inp.moveX = Math.sin(rel);
+      } else {
+        inp.moveZ = !sees ? 1 : d > pref + 3 ? 1 : d < pref - 3 ? -0.8 : 0;
+        inp.moveX = this.dodgeT > 0 ? this.side : this.side * (sk.dodge > 0.5 ? 0.9 : 0.5);
+      }
       this.dodgeT -= TICK;
 
       const aimDir = Math.hypot(wrapAngle(want.yaw - p.yaw), want.pitch - p.pitch);
@@ -195,7 +217,8 @@ export class Bot {
     const ring = s.ring;
     const out = dist2d(p.pos, ring) - (ring.r - 4);
     if (out > 0 && this.unstick <= 0) {
-      const toward = lookAngles(p.pos, { x: ring.x, y: 0, z: ring.z }).yaw - p.yaw;
+      const inward = this.via(s, { x: ring.x, z: ring.z });
+      const toward = lookAngles(p.pos, { x: inward.x, y: 0, z: inward.z }).yaw - p.yaw;
       inp.moveZ = Math.cos(toward);
       inp.moveX = Math.sin(toward);
     }
@@ -226,20 +249,51 @@ export class Bot {
     return inp;
   }
 
+  /**
+   * The point to walk toward on the way to `goal`: the goal itself when the way is
+   * clear, otherwise the next waypoint of a ground path around walls.
+   */
+  private via(s: State, goal: { x: number; z: number }): { x: number; z: number } {
+    const p = s.player;
+    // Up on a roof or platform the ground grid does not apply: walk straight (and drop off).
+    if ((p.onGround && p.pos.y > 0.6) || clearLine(p.pos.x, p.pos.z, goal.x, goal.z)) {
+      this.path = [];
+      return goal;
+    }
+    this.pathT -= TICK;
+    // Re-plan when the goal moved or every 2 s; an unreachable goal is not retried every tick.
+    if (dist2d(goal, this.pathGoal) > 3 || this.pathT <= 0) {
+      this.path = findPath(p.pos.x, p.pos.z, goal.x, goal.z) ?? [];
+      this.pathGoal = { ...goal };
+      this.pathT = 2;
+    }
+    while (this.path.length > 1 && dist2d(this.path[0], p.pos) < 0.8) this.path.shift();
+    return this.path[0] ?? goal;
+  }
+
   /** Unopened bins and better weapons nearby, when nothing is shooting. */
   private lootGoal(s: State): { x: number; z: number; weapon?: true } | null {
     const p = s.player;
     const worst = Math.min(...p.weapons.map((w) => (w ? w.rarity : -1)));
+    // Skip anything above our floor (roofs, platforms) and anything we failed to reach for 10 s.
+    const reachable = (c: { x: number; z: number; y?: number }) => (c.y ?? 0) < p.pos.y + 1 && !this.skip.has(`${Math.round(c.x)},${Math.round(c.z)}`);
+
     const cands: { x: number; z: number; d: number; weapon?: true }[] = [];
-    for (const b of s.bins) if (!b.open && dist2d(b, p.pos) < 26) cands.push({ x: b.x, z: b.z, d: dist2d(b, p.pos) });
+    for (const b of s.bins) if (!b.open && dist2d(b, p.pos) < 26 && reachable(b)) cands.push({ x: b.x, z: b.z, d: dist2d(b, p.pos) });
     if (s.care && s.care.landed && !s.care.open) cands.push({ x: s.care.x, z: s.care.z, d: dist2d(s.care, p.pos) });
     for (const l of s.loot) {
-      if (l.age < 0.6 || dist2d(l.pos, p.pos) > 22) continue;
+      if (l.age < 0.6 || dist2d(l.pos, p.pos) > 22 || !reachable(l.pos)) continue;
       if (l.kind === "weapon" && l.weapon && l.rarity > worst) cands.push({ x: l.pos.x, z: l.pos.z, d: dist2d(l.pos, p.pos), weapon: true });
       if (l.kind === "armor" && l.rarity > p.armor) cands.push({ x: l.pos.x, z: l.pos.z, d: dist2d(l.pos, p.pos) });
       if (l.kind === "battery" && p.batteries < 4) cands.push({ x: l.pos.x, z: l.pos.z, d: dist2d(l.pos, p.pos) });
     }
     const inRing = (c: { x: number; z: number }) => dist2d(c, s.ring) < s.ring.r - 5 && dist2d(c, s.ring) < s.ring.toR + dist2d(s.ring, { x: s.ring.toX, z: s.ring.toZ }) - 5;
-    return cands.filter(inRing).sort((a, b) => a.d - b.d)[0] ?? null;
+    const best = cands.filter(inRing).sort((a, b) => a.d - b.d)[0] ?? null;
+    const k = best ? `${Math.round(best.x)},${Math.round(best.z)}` : "";
+    if (k !== this.lootKey) {
+      this.lootKey = k;
+      this.lootT = 0;
+    } else if (best && (this.lootT += TICK) > 10) this.skip.add(k);
+    return best;
   }
 }

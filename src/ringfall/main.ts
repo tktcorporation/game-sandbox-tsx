@@ -324,6 +324,7 @@ declare global {
     render_game_to_text: () => string;
     advanceTime: (ms: number) => void;
     ringfallBot: (skill: string) => void;
+    ringfallCamera: (x?: number, y?: number, z?: number, yaw?: number, pitch?: number) => void;
   }
 }
 
@@ -352,6 +353,12 @@ window.advanceTime = (ms: number) => {
   for (let i = 0; i < n && running; i++) tick();
   world.render(state, ms / 1000);
   if (running) hud.frame(state, world, ms / 1000, dims.w, dims.h);
+};
+
+/** Look from a fixed point without touching the run (for screenshots of the island). No arguments: back to the player. */
+window.ringfallCamera = (x, y, z, yaw, pitch) => {
+  world.cameraOverride = x === undefined ? null : { x, y: y ?? 2, z: z ?? 0, yaw: yaw ?? 0, pitch: pitch ?? 0 };
+  world.render(state, 0.016);
 };
 
 window.ringfallBot = (skill: string) => {

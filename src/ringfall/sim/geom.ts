@@ -2,22 +2,63 @@ import { WORLD } from "./config";
 import { BOXES, type Box } from "./map";
 import type { Vec3 } from "./state";
 
-/** Height of the surface under a circle at (x, z) that a body with feet at `feet` can stand on. */
+/*
+ * Boxes span y0..h, so floors, roofs and bridges can float above open space.
+ * A coarse grid finds the boxes near a point; rays still scan every box.
+ */
+const CELL = 8;
+const grid = new Map<number, Box[]>();
+const key = (cx: number, cz: number) => (cx + 1000) * 4096 + (cz + 1000);
+for (const b of BOXES) {
+  for (let cx = Math.floor(b.x0 / CELL); cx <= Math.floor(b.x1 / CELL); cx++)
+    for (let cz = Math.floor(b.z0 / CELL); cz <= Math.floor(b.z1 / CELL); cz++) {
+      const k = key(cx, cz);
+      const list = grid.get(k);
+      if (list) list.push(b);
+      else grid.set(k, [b]);
+    }
+}
+const scratch = new Set<Box>();
+function near(x: number, z: number, r: number): Iterable<Box> {
+  scratch.clear();
+  for (let cx = Math.floor((x - r) / CELL); cx <= Math.floor((x + r) / CELL); cx++)
+    for (let cz = Math.floor((z - r) / CELL); cz <= Math.floor((z + r) / CELL); cz++) {
+      const list = grid.get(key(cx, cz));
+      if (list) for (const b of list) scratch.add(b);
+    }
+  return scratch;
+}
+
+/** Height of the highest surface under a circle at (x, z) that a body with feet at `feet` can stand on. */
 export function groundAt(x: number, z: number, r: number, feet: number): number {
   let g = 0;
-  for (const b of BOXES) {
-    if (b.h > feet + WORLD.stepUp) continue;
+  for (const b of near(x, z, r)) {
+    if (b.h > feet + WORLD.stepUp || b.h <= g) continue;
     if (x + r * 0.7 < b.x0 || x - r * 0.7 > b.x1 || z + r * 0.7 < b.z0 || z - r * 0.7 > b.z1) continue;
-    if (b.h > g) g = b.h;
+    g = b.h;
   }
   return g;
 }
 
-/** Push a circle out of every box taller than it can step onto. Returns true if it touched one. */
-export function collide(p: Vec3, r: number): boolean {
+/** Lowest underside of a box above a circle's head, or Infinity. */
+export function ceilingAt(x: number, z: number, r: number, head: number, feet: number): number {
+  let c = Infinity;
+  for (const b of near(x, z, r)) {
+    if (b.y0 <= feet + WORLD.stepUp || b.y0 > head + 0.5 || b.y0 >= c) continue;
+    if (x + r * 0.7 < b.x0 || x - r * 0.7 > b.x1 || z + r * 0.7 < b.z0 || z - r * 0.7 > b.z1) continue;
+    c = b.y0;
+  }
+  return c;
+}
+
+/**
+ * Push a circle out of every box that overlaps its body (feet + step .. feet + height).
+ * Returns true if it touched one.
+ */
+export function collide(p: Vec3, r: number, height = 1.75): boolean {
   let touched = false;
-  for (const b of BOXES) {
-    if (b.h <= p.y + WORLD.stepUp) continue;
+  for (const b of near(p.x, p.z, r)) {
+    if (b.h <= p.y + WORLD.stepUp || b.y0 >= p.y + height) continue;
     const cx = Math.max(b.x0, Math.min(p.x, b.x1));
     const cz = Math.max(b.z0, Math.min(p.z, b.z1));
     const dx = p.x - cx;
@@ -45,12 +86,18 @@ export function collide(p: Vec3, r: number): boolean {
   return touched;
 }
 
+/** True if a point is inside any box. */
+export function solidAt(x: number, y: number, z: number): boolean {
+  for (const b of near(x, z, 0)) if (x > b.x0 && x < b.x1 && z > b.z0 && z < b.z1 && y > b.y0 && y < b.h) return true;
+  return false;
+}
+
 function rayBox(o: Vec3, d: Vec3, b: Box, maxT: number): number {
   let t0 = 0;
   let t1 = maxT;
   const axes: [number, number, number, number][] = [
     [o.x, d.x, b.x0, b.x1],
-    [o.y, d.y, 0, b.h],
+    [o.y, d.y, b.y0, b.h],
     [o.z, d.z, b.z0, b.z1],
   ];
   for (const [oo, dd, lo, hi] of axes) {

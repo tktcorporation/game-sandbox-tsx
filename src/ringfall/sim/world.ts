@@ -73,10 +73,12 @@ export function stepRing(s: State) {
   }
 }
 
-function spill(s: State, x: number, z: number, item: Omit<Loot, "id" | "pos" | "vel" | "age">) {
+function spill(s: State, x: number, y: number, z: number, item: Omit<Loot, "id" | "pos" | "vel" | "age">) {
   const p = s.player;
   const a = Math.atan2(p.pos.z - z, p.pos.x - x) + (rand(s) - 0.5) * 1.6;
-  s.loot.push({ ...item, id: s.nextId++, pos: { x, y: 1.0, z }, vel: { x: Math.cos(a) * 2.6, y: 4.2, z: Math.sin(a) * 2.6 }, age: 0 });
+  // Gentle toss so loot from a roof bin stays on the roof.
+  const sp = y > 0.5 ? 1.2 : 2.6;
+  s.loot.push({ ...item, id: s.nextId++, pos: { x, y: y + 1.0, z }, vel: { x: Math.cos(a) * sp, y: 4.2, z: Math.sin(a) * sp }, age: 0 });
 }
 
 function openBin(s: State, binIndex: number) {
@@ -86,10 +88,10 @@ function openBin(s: State, binIndex: number) {
   const nth = s.bins.filter((o) => o.poi === b.poi).indexOf(b);
   if (table.weapon.length) {
     const [kind, rarity] = table.weapon[Math.floor(rand(s) * table.weapon.length)];
-    spill(s, b.x, b.z, { kind: "weapon", rarity, weapon: { kind, rarity, mag: -1 } });
+    spill(s, b.x, b.y, b.z, { kind: "weapon", rarity, weapon: { kind, rarity, mag: -1 } });
   }
-  if (table.armor.length && nth !== 0) spill(s, b.x, b.z, { kind: "armor", rarity: table.armor[nth % table.armor.length] });
-  if (nth !== 1 && table.batteries > 0) spill(s, b.x, b.z, { kind: "battery", rarity: 1 });
+  if (table.armor.length && nth !== 0) spill(s, b.x, b.y, b.z, { kind: "armor", rarity: table.armor[nth % table.armor.length] });
+  if (nth !== 1 && table.batteries > 0) spill(s, b.x, b.y, b.z, { kind: "battery", rarity: 1 });
   s.events.push({ t: "binOpen", id: b.id });
 }
 
@@ -156,21 +158,22 @@ export function stepLoot(s: State, input: Input) {
   // Interact: the closest of bin, care package, or weapon within reach.
   type Pick = { d: number; act: () => void };
   const picks: Pick[] = [];
+  const level = (y: number) => Math.abs(y - p.pos.y) < 1.5;
   s.bins.forEach((b, i) => {
-    if (!b.open) picks.push({ d: dist2d(b, p.pos), act: () => openBin(s, i) });
+    if (!b.open && level(b.y)) picks.push({ d: dist2d(b, p.pos), act: () => openBin(s, i) });
   });
   const care = s.care;
-  if (care && care.landed && !care.open)
+  if (care && care.landed && !care.open && level(0))
     picks.push({
       d: dist2d(care, p.pos) - 0.6,
       act: () => {
         care.open = true;
-        spill(s, care.x, care.z, { kind: "weapon", rarity: care.weapon.rarity, weapon: care.weapon });
+        spill(s, care.x, 0, care.z, { kind: "weapon", rarity: care.weapon.rarity, weapon: care.weapon });
         s.events.push({ t: "binOpen", id: -1 });
       },
     });
   for (const l of s.loot) {
-    if (l.kind !== "weapon" || !l.weapon || l.age < 0.4) continue;
+    if (l.kind !== "weapon" || !l.weapon || l.age < 0.4 || !level(l.pos.y)) continue;
     picks.push({ d: dist2d(l.pos, p.pos) - 0.3, act: () => takeWeapon(s, l) });
   }
   const best = picks.filter((k) => k.d < PLAYER.interactRange).sort((a, b) => a.d - b.d)[0];

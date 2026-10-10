@@ -6,7 +6,8 @@
  *   npm run sim:ringfall -- [runsPerSkill]
  */
 import { TICK, WORLD } from "../src/ringfall/sim/config";
-import { BOXES, POIS } from "../src/ringfall/sim/map";
+import { BOXES, EXTRA_BINS, EXTRACT, POIS } from "../src/ringfall/sim/map";
+import { collide, groundAt, solidAt } from "../src/ringfall/sim/geom";
 import { Bot, SKILLS } from "../src/ringfall/sim/bot";
 import { newRun, type State } from "../src/ringfall/sim/state";
 import { step } from "../src/ringfall/sim/step";
@@ -19,7 +20,8 @@ function check(s: State, where: string) {
   const p = s.player.pos;
   if (![p.x, p.y, p.z, s.player.hp, s.player.shield].every(Number.isFinite)) throw new Error(`${where}: player NaN`);
   for (const b of BOXES) {
-    const inside = p.x > b.x0 + 0.05 && p.x < b.x1 - 0.05 && p.z > b.z0 + 0.05 && p.z < b.z1 - 0.05 && p.y < b.h - 0.5;
+    const body = p.y + 0.9;
+    const inside = p.x > b.x0 + 0.05 && p.x < b.x1 - 0.05 && p.z > b.z0 + 0.05 && p.z < b.z1 - 0.05 && body > b.y0 && body < b.h;
     if (inside) throw new Error(`${where}: player inside a ${b.kind} at ${p.x.toFixed(1)},${p.z.toFixed(1)}`);
   }
   for (const e of s.enemies) {
@@ -27,6 +29,41 @@ function check(s: State, where: string) {
     if (Math.abs(e.pos.x) > WORLD.half + 1 || Math.abs(e.pos.z) > WORLD.half + 1) throw new Error(`${where}: enemy off the island`);
   }
 }
+
+/** Static layout check: every authored point must be standable, not inside a wall. */
+function checkLayout(): string[] {
+  const bad: string[] = [];
+  const point = (what: string, x: number, z: number, y = 0) => {
+    const g = groundAt(x, z, 0.3, y + 0.3);
+    if (Math.abs(g - y) > 0.3) bad.push(`${what} at ${x},${z} expects floor ${y}, finds ${g.toFixed(2)}`);
+    for (const h of [0.3, 1.0, 1.6]) if (solidAt(x, g + h, z)) bad.push(`${what} at ${x},${z} is inside a box (height ${h})`);
+  };
+  POIS.forEach((p, i) => {
+    point(`POI ${i} entry`, p.entry.x, p.entry.z);
+    p.bins.forEach((b) => point(`POI ${i} bin`, b.x, b.z, b.y ?? 0));
+    p.floor.forEach((f) => point(`POI ${i} floor loot`, f.x, f.z, f.y ?? 0));
+    // Spawns are pushed out of walls the same way spawnEnemy does, then checked.
+    p.waves.forEach((w, wi) =>
+      w.forEach((sp) => {
+        if (sp.kind === "drone" || sp.kind === "titan") return;
+        const pos = { x: p.x + sp.dx, y: sp.y ?? 0, z: p.z + sp.dz };
+        collide(pos, 0.7, 2);
+        point(`POI ${i} wave ${wi} ${sp.kind}`, +pos.x.toFixed(1), +pos.z.toFixed(1), sp.y ?? groundAt(pos.x, pos.z, 0.3, 0.3));
+      }),
+    );
+    if (p.carePackage) point(`POI ${i} care package`, p.carePackage.x, p.carePackage.z);
+  });
+  EXTRA_BINS.forEach((b) => point("extra bin", b.x, b.z));
+  point("extract", EXTRACT.x, EXTRACT.z, 0.25);
+  return bad;
+}
+
+const layout = checkLayout();
+if (layout.length) {
+  console.error(layout.join("\n"));
+  process.exit(1);
+}
+console.log(`layout ok: ${BOXES.length} boxes`);
 
 const median = (xs: number[]) => {
   const a = [...xs].sort((x, y) => x - y);

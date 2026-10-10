@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { ENEMIES, type EnemyKind, type Rarity, type WeaponKind } from "../sim/config";
 import type { Box } from "../sim/map";
 
@@ -82,16 +83,22 @@ export function haloSprite(color: number, size: number, opacity = 0.9): THREE.Sp
   return s;
 }
 
-/** Deterministic jitter so rocks look chipped but never poke outside their collision box. */
+/**
+ * Deterministic jitter so rocks look chipped but never poke outside their collision
+ * box. The offset depends only on the vertex position, so corners shared by several
+ * faces move together and the surface stays closed.
+ */
 function chip(geo: THREE.BufferGeometry, seed: number, amount: number, w: number, h: number, d: number) {
   const pos = geo.attributes.position;
-  let r = seed * 9301 + 49297;
-  const rnd = () => ((r = (r * 9301 + 49297) % 233280) / 233280);
+  const hash = (x: number, y: number, z: number) => {
+    const v = Math.sin(Math.round(x * 100) * 12.9898 + Math.round(y * 100) * 78.233 + Math.round(z * 100) * 37.719 + seed * 4.1) * 43758.5453;
+    return v - Math.floor(v);
+  };
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i);
     const y = pos.getY(i);
     const z = pos.getZ(i);
-    const k = amount * rnd();
+    const k = amount * hash(x, y, z);
     pos.setXYZ(i, x - Math.sign(x) * k * w * 0.5, y > 0 ? y - k * h * 0.4 : y, z - Math.sign(z) * k * d * 0.5);
   }
   geo.computeVertexNormals();
@@ -100,41 +107,53 @@ function chip(geo: THREE.BufferGeometry, seed: number, amount: number, w: number
 export function buildBox(b: Box, i: number): THREE.Object3D {
   const w = b.x1 - b.x0;
   const d = b.z1 - b.z0;
+  const h = b.h - b.y0;
+  const mid = b.y0 + h / 2;
   const g = new THREE.Group();
   g.position.set((b.x0 + b.x1) / 2, 0, (b.z0 + b.z1) / 2);
   switch (b.kind) {
     case "crate": {
-      g.add(mesh(new THREE.BoxGeometry(w, b.h, d), flat(PAL.crate), 0, b.h / 2, 0));
+      g.add(mesh(new THREE.BoxGeometry(w, h, d), flat(PAL.crate), 0, mid, 0));
       // Dark bands read as a crate, not a block.
       for (let y = 0.45; y < b.h; y += 0.9) g.add(mesh(new THREE.BoxGeometry(w + 0.03, 0.1, d + 0.03), flat(PAL.ochre), 0, y, 0, false));
       break;
     }
     case "container": {
       const color = [PAL.rust, PAL.teal, PAL.ochre][b.tint % 3];
-      g.add(mesh(new THREE.BoxGeometry(w, b.h, d), flat(color), 0, b.h / 2, 0));
+      g.add(mesh(new THREE.BoxGeometry(w, h, d), flat(color), 0, mid, 0));
       const long = w > d;
       const len = long ? w : d;
       const ribMat = flat(new THREE.Color(color).multiplyScalar(0.78).getHex());
       for (let t = -len / 2 + 0.4; t < len / 2; t += 0.55) {
-        const rib = new THREE.BoxGeometry(long ? 0.12 : w + 0.08, b.h - 0.2, long ? d + 0.08 : 0.12);
-        g.add(mesh(rib, ribMat, long ? t : 0, b.h / 2, long ? 0 : t, false));
+        const rib = new THREE.BoxGeometry(long ? 0.12 : w + 0.08, h - 0.2, long ? d + 0.08 : 0.12);
+        g.add(mesh(rib, ribMat, long ? t : 0, mid, long ? 0 : t, false));
       }
       g.add(mesh(new THREE.BoxGeometry(w + 0.1, 0.12, d + 0.1), flat(PAL.concreteDark), 0, b.h, 0, false));
       break;
     }
     case "wall": {
-      g.add(mesh(new THREE.BoxGeometry(w, b.h, d), flat(PAL.concrete), 0, b.h / 2, 0));
-      g.add(mesh(new THREE.BoxGeometry(w + 0.04, 0.5, d + 0.04), flat(PAL.concreteDark), 0, 0.25, 0, false));
+      // tint 1: the low parapet around a roof.
+      g.add(mesh(new THREE.BoxGeometry(w, h, d), flat(b.tint === 1 ? PAL.concreteDark : PAL.concrete), 0, mid, 0));
+      if (b.y0 === 0) g.add(mesh(new THREE.BoxGeometry(w + 0.04, Math.min(0.5, h), d + 0.04), flat(PAL.concreteDark), 0, Math.min(0.5, h) / 2, 0, false));
+      break;
+    }
+    case "slab": {
+      g.add(mesh(new THREE.BoxGeometry(w, h, d), flat(PAL.concreteDark), 0, mid, 0));
+      g.add(mesh(new THREE.BoxGeometry(w + 0.06, 0.08, d + 0.06), flat(PAL.rust), 0, b.y0 + 0.04, 0, false));
+      break;
+    }
+    case "step": {
+      g.add(mesh(new THREE.BoxGeometry(w, h, d), flat(b.tint === 1 ? PAL.rockDark : PAL.concreteDark), 0, mid, 0));
       break;
     }
     case "rock": {
-      const geo = new THREE.BoxGeometry(w, b.h, d, 3, 2, 3).toNonIndexed();
-      chip(geo, i + 3, 0.18, w, b.h, d);
-      g.add(mesh(geo, flat(PAL.rock), 0, b.h / 2, 0));
+      const geo = new THREE.BoxGeometry(w, h, d, 3, 2, 3).toNonIndexed();
+      chip(geo, i + 3, 0.18, w, h, d);
+      g.add(mesh(geo, flat(PAL.rock), 0, mid, 0));
       break;
     }
     case "pad": {
-      g.add(mesh(new THREE.BoxGeometry(w, b.h, d), flat(0x5b5f66), 0, b.h / 2, 0));
+      g.add(mesh(new THREE.BoxGeometry(w, h, d), flat(0x5b5f66), 0, mid, 0));
       const ring = new THREE.Mesh(new THREE.RingGeometry(3.2, 3.6, 40), glow(PAL.hot));
       ring.rotation.x = -Math.PI / 2;
       ring.position.y = b.h + 0.02;
@@ -142,20 +161,48 @@ export function buildBox(b: Box, i: number): THREE.Object3D {
       break;
     }
     case "tower": {
-      g.add(mesh(new THREE.BoxGeometry(w, b.h, d), flat(PAL.concrete), 0, b.h / 2, 0));
+      g.add(mesh(new THREE.BoxGeometry(w, h, d), flat(PAL.concrete), 0, mid, 0));
       g.add(mesh(new THREE.BoxGeometry(w + 0.2, 0.2, d + 0.2), flat(PAL.rust), 0, b.h, 0, false));
-      const mast = mesh(new THREE.CylinderGeometry(0.08, 0.14, 9, 6), flat(PAL.gunLight), w / 2 - 0.4, b.h + 4.5, -d / 2 + 0.4);
-      g.add(mast);
-      const dish = mesh(new THREE.CylinderGeometry(0.9, 0.2, 0.4, 10, 1, true), flat(PAL.concrete), w / 2 - 0.4, b.h + 6.5, -d / 2 + 0.4);
-      dish.rotation.x = 0.8;
-      g.add(dish);
-      const light = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), glow(PAL.eye));
-      light.position.set(w / 2 - 0.4, b.h + 9.1, -d / 2 + 0.4);
-      g.add(light);
+      if (b.tint === 1) {
+        // The relay mast.
+        g.add(mesh(new THREE.CylinderGeometry(0.08, 0.14, 9, 6), flat(PAL.gunLight), w / 2 - 0.4, b.h + 4.5, -d / 2 + 0.4));
+        const dish = mesh(new THREE.CylinderGeometry(0.9, 0.2, 0.4, 10, 1, true), flat(PAL.concrete), w / 2 - 0.4, b.h + 6.5, -d / 2 + 0.4);
+        dish.rotation.x = 0.8;
+        g.add(dish);
+        const light = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), glow(PAL.eye));
+        light.position.set(w / 2 - 0.4, b.h + 9.1, -d / 2 + 0.4);
+        g.add(light);
+      }
       break;
     }
   }
   return g;
+}
+
+/**
+ * Merge every mesh under `root` into one mesh per material. The island is a few
+ * hundred static boxes; drawn one by one they cost a draw call each.
+ */
+export function mergeStatic(root: THREE.Object3D): THREE.Group {
+  root.updateMatrixWorld(true);
+  const byMat = new Map<THREE.Material, THREE.BufferGeometry[]>();
+  root.traverse((o) => {
+    if (!(o instanceof THREE.Mesh)) return;
+    const geo = (o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone()).applyMatrix4(o.matrixWorld);
+    for (const name of Object.keys(geo.attributes)) if (!["position", "normal"].includes(name)) geo.deleteAttribute(name);
+    const list = byMat.get(o.material as THREE.Material);
+    if (list) list.push(geo);
+    else byMat.set(o.material as THREE.Material, [geo]);
+  });
+  const out = new THREE.Group();
+  for (const [mat, geos] of byMat) {
+    const merged = mergeGeometries(geos, false);
+    if (!merged) continue;
+    const m = new THREE.Mesh(merged, mat);
+    m.castShadow = m.receiveShadow = !(mat instanceof THREE.MeshBasicMaterial);
+    out.add(m);
+  }
+  return out;
 }
 
 export interface EnemyModel {
