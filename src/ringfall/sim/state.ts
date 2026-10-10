@@ -1,4 +1,4 @@
-import { DROP, ENEMIES, PLAYER, ULT, type EnemyKind, type Rarity, type WeaponKind } from "./config";
+import { DROP, ENEMIES, PLAYER, ULT, type EnemyKind, type Flank, type Rarity, type WeaponKind } from "./config";
 import { EXTRA_BINS, POIS, SPAWN } from "./map";
 import { populate } from "./enemies";
 
@@ -169,7 +169,7 @@ export type GameEvent =
   | { t: "shot"; weapon: WeaponKind; rarity: Rarity }
   | { t: "tracer"; from: Vec3; to: Vec3; hit: boolean }
   | { t: "impact"; pos: Vec3 }
-  | { t: "hit"; id: number; pos: Vec3; dmg: number; crit: boolean; shield: boolean; tier: Rarity }
+  | { t: "hit"; id: number; pos: Vec3; dmg: number; crit: boolean; shield: boolean; tier: Rarity; flank: Flank }
   | { t: "shieldBreak"; id: number; pos: Vec3; tier: Rarity }
   | { t: "kill"; id: number; kind: EnemyKind; pos: Vec3; crit: boolean; last: boolean }
   | { t: "hurt"; dmg: number; fromX: number; fromZ: number; shieldBroke: boolean; shield: boolean }
@@ -217,6 +217,8 @@ export interface Stats {
   shots: number;
   hits: number;
   crits: number;
+  /** Hits from behind a robot or before it noticed the player. */
+  flankHits: number;
   downs: number;
   wipes: number;
   poiTimes: number[];
@@ -348,7 +350,7 @@ export function newRun(seed = 1): State {
     poiStart: 0,
     extractTime: 0,
     events: [],
-    stats: { kills: 0, damage: 0, shots: 0, hits: 0, crits: 0, downs: 0, wipes: 0, poiTimes: [] },
+    stats: { kills: 0, damage: 0, shots: 0, hits: 0, crits: 0, flankHits: 0, downs: 0, wipes: 0, poiTimes: [] },
   };
   populate(s);
   return s;

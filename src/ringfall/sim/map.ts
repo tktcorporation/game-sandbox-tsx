@@ -407,7 +407,8 @@ export const EXTRA_BINS: { x: number; z: number; y?: number; table: number }[] =
   { x: -114, z: -71, y: STOREY, table: 1 },
 ];
 
-export const BOXES: Box[] = [
+/** Everything placed by hand: POIs, districts, landmarks. */
+const AUTHORED: Box[] = [
   // --- 補給所: containers, an office with a roof, a two-storey warehouse, a lookout platform, a loading deck
   ...place(AT[0][0], AT[0][1], [
     box(-9, 46, 6.2, 2.5, 2.6, "container", 0),
@@ -577,3 +578,109 @@ export const BOXES: Box[] = [
   box(110, -90, 5, 5, 3, "rock"),
   box(-90, -100, 6, 6, 3, "rock"),
 ];
+
+/**
+ * Cover scattered over the open ground so that a fight is mostly about breaking
+ * line of sight and coming back from another side. Pieces are placed on a jittered
+ * grid from a fixed seed, and a candidate is dropped when it would crowd a building,
+ * another piece, or any authored point (robot posts, patrol routes, bins, entries).
+ */
+function scatterCover(authored: Box[]): Box[] {
+  let seed = 7_331;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const pick = <T,>(xs: readonly T[]) => xs[Math.floor(rnd() * xs.length)];
+
+  const points: { x: number; z: number; r: number }[] = [];
+  const segments: { ax: number; az: number; bx: number; bz: number }[] = [];
+  const squadArea = (sq: Squad) => {
+    for (const m of sq.members) points.push({ x: m.x, z: m.z, r: 3 });
+    const loop = sq.patrol ?? [];
+    loop.forEach((a, i) => {
+      const b = loop[(i + 1) % loop.length];
+      segments.push({ ax: a.x, az: a.z, bx: b.x, bz: b.z });
+    });
+  };
+  for (const p of POIS) {
+    points.push({ x: p.entry.x, z: p.entry.z, r: 5 });
+    p.squads.forEach(squadArea);
+    for (const b of p.bins) points.push({ x: b.x, z: b.z, r: 2.5 });
+    for (const f of p.floor) points.push({ x: f.x, z: f.z, r: 2.5 });
+    if (p.carePackage) points.push({ x: p.carePackage.x, z: p.carePackage.z, r: 4 });
+    if (p.boss) points.push({ x: p.x, z: p.z, r: 26 }); // the titan's arena stays open
+  }
+  ROAMERS.forEach(squadArea);
+  for (const b of EXTRA_BINS) points.push({ x: b.x, z: b.z, r: 2.5 });
+  points.push({ x: EXTRACT.x, z: EXTRACT.z, r: 10 });
+
+  const pieceAt = (x: number, z: number): Box[] => {
+    const alongX = rnd() < 0.5;
+    const len = (a: number, b: number) => a + rnd() * (b - a);
+    const kind = rnd();
+    if (kind < 0.24) {
+      // A low wall: hides a crouching player, a standing one shoots over it.
+      const l = len(4, 6.5);
+      return [alongX ? box(x, z, l, 0.5, 1.15, "wall", 1) : box(x, z, 0.5, l, 1.15, "wall", 1)];
+    }
+    if (kind < 0.42) {
+      // An L of full-height wall.
+      const a = len(3, 5);
+      const b = len(2.5, 4);
+      const sx = rnd() < 0.5 ? 1 : -1;
+      const sz = rnd() < 0.5 ? 1 : -1;
+      return [box(x + (sx * a) / 2, z, a, 0.4, 2.4, "wall"), box(x, z + (sz * b) / 2, 0.4, b, 2.4, "wall")];
+    }
+    if (kind < 0.58) {
+      // A stack of crates.
+      const n = 2 + Math.floor(rnd() * 2);
+      const out: Box[] = [];
+      for (let i = 0; i < n; i++) {
+        const ox = alongX ? i * 1.25 : (rnd() - 0.5) * 0.4;
+        const oz = alongX ? (rnd() - 0.5) * 0.4 : i * 1.25;
+        out.push(box(x + ox, z + oz, 1.2, 1.2, pick([0.9, 1.8, 1.8]), "crate"));
+      }
+      return out;
+    }
+    if (kind < 0.67) return [alongX ? box(x, z, 6.2, 2.5, 2.6, "container", Math.floor(rnd() * 3)) : box(x, z, 2.5, 6.2, 2.6, "container", Math.floor(rnd() * 3))];
+    if (kind < 0.8) return [box(x, z, len(2.5, 5), len(2.5, 5), len(1.4, 3.2), "rock", Math.floor(rnd() * 2))];
+    if (kind < 0.9) {
+      // A sandbag ring, open on one side.
+      const open = pick(SIDES);
+      return SIDES.filter((s) => s !== open).map((s) =>
+        s === "n" ? box(x, z - 1.5, 3.4, 0.5, 1.15, "wall", 1) : s === "s" ? box(x, z + 1.5, 3.4, 0.5, 1.15, "wall", 1) : s === "e" ? box(x + 1.5, z, 0.5, 3.4, 1.15, "wall", 1) : box(x - 1.5, z, 0.5, 3.4, 1.15, "wall", 1),
+      );
+    }
+    // A roofless ruin with two ways in.
+    const doors: Side[] = rnd() < 0.5 ? ["n", "s"] : ["e", "w"];
+    return walls(x, z, 6, 6, 0, 2.4, doors, doors[0] === "n" ? ["e"] : ["n"]);
+  };
+
+  const clear = (b: Box, gap: number) => (o: Box) => b.x1 + gap <= o.x0 || o.x1 + gap <= b.x0 || b.z1 + gap <= o.z0 || o.z1 + gap <= b.z0;
+  const distToBox = (b: Box, x: number, z: number) => Math.hypot(Math.max(b.x0 - x, 0, x - b.x1), Math.max(b.z0 - z, 0, z - b.z1));
+  const placed: Box[] = [];
+  const edge = 140;
+  for (let gx = -edge; gx <= edge; gx += 12)
+    for (let gz = -edge; gz <= edge; gz += 12) {
+      const x = gx + (rnd() - 0.5) * 7;
+      const z = gz + (rnd() - 0.5) * 7;
+      const piece = pieceAt(x, z);
+      const ok = piece.every(
+        (b) =>
+          authored.every(clear(b, 3)) &&
+          placed.every(clear(b, 2.5)) &&
+          points.every((q) => distToBox(b, q.x, q.z) > q.r) &&
+          segments.every((sg) => {
+            const n = Math.ceil(Math.hypot(sg.bx - sg.ax, sg.bz - sg.az));
+            for (let k = 0; k <= n; k++) if (distToBox(b, sg.ax + ((sg.bx - sg.ax) * k) / n, sg.az + ((sg.bz - sg.az) * k) / n) < 2.5) return false;
+            return true;
+          }) &&
+          Math.max(Math.abs(b.x0), Math.abs(b.x1), Math.abs(b.z0), Math.abs(b.z1)) < WORLD_EDGE,
+      );
+      if (ok) placed.push(...piece);
+    }
+  return placed;
+}
+
+/** Scattered cover stays this far inside the playable square. */
+const WORLD_EDGE = 146;
+
+export const BOXES: Box[] = [...AUTHORED, ...scatterCover(AUTHORED)];

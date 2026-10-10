@@ -188,6 +188,9 @@ kbd {
 #obj-stealth.engaged {
   color: #ff6b5a;
 }
+#obj-stealth.lost {
+  color: #ff9a3c;
+}
 
 /* What each robot knows: a filling ring while it is noticing you, "?" while it
    searches, "!" when its squad engages, a red diamond while revealed. */
@@ -220,6 +223,11 @@ kbd {
   background: #ff3b2f;
   box-shadow: 0 0 0 2px var(--ink);
   font-size: 22px;
+}
+.aw.lost {
+  color: var(--white);
+  background: rgba(20, 26, 51, 0.55);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.55);
 }
 .aw.reveal {
   width: 14px;
@@ -287,6 +295,20 @@ kbd {
 .dmg.crit {
   font-size: 30px;
   color: var(--hot);
+}
+/* Shots into a robot's back or before it noticed: the reward for going round. */
+.dmg.flank {
+  font-size: 30px;
+  color: #ff9a3c !important;
+}
+.dmg small {
+  display: block;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-align: center;
+}
+.dmg.front {
+  opacity: 0.7;
 }
 
 #dmgdir {

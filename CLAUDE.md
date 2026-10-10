@@ -29,12 +29,16 @@ npm run shots:ringfall   # gate 3: the build played to the end in Chromium; scre
   float); build structures with its `building()` (one storey), `tower()` (several storeys with stairs
   inside), `bridge()` and `stairs()` helpers, whose risers stay under the step-up height. Each POI is
   written in its own frame and moved into place by `AT`; the districts between them use island
-  coordinates (300 m square, `WORLD.half`). Tuning numbers are in `config.ts`. `npm run sim:ringfall` first checks that every
+  coordinates (300 m square, `WORLD.half`). `scatterCover()` then fills the open ground with low walls,
+  crates, containers and ruins from a fixed seed, keeping clear of authored points and patrol routes. Tuning numbers are in `config.ts`. `npm run sim:ringfall` first checks that every
   authored point (entries, bins, loot, squad posts, patrols) stands on a floor and not inside a box.
 - `awareness.ts` decides who knows about the player: sight cones fill a detection meter, noise
   (shots, sprinting) sends squads to look, and at most `AWARE.maxSquads` squads fight at once.
+  A fighting squad tracks the player only while a member sees them (`knownSpot()`), turns at `TURN`
+  and fires only ahead, and takes more damage from behind (`FLANK`): going round is the intended play.
   `cover.ts` precomputes the spots grunts hide behind. The sim gate's `crowd` column is the most
-  squads / robots fighting at once; keep it within the target in `docs/ringfall/balance.md`.
+  squads / robots fighting at once, and `flank` the share of hits from behind or by ambush; keep them
+  within the targets in `docs/ringfall/balance.md`.
 - `nav.ts` is ground path finding for the bot only; the game never reads it.
 - `src/ringfall/touch.ts` is the phone layout (landscape): a floating stick on the left half, view
   drag on the right half, buttons under the right thumb. It feeds the same `Input` as the keyboard,

@@ -161,6 +161,7 @@ const shot = async (name) => {
   await page.screenshot({ path: `${out}/${name}.png` });
 };
 let prevKey = "";
+let prevFlank = 0;
 let lastProgress = 0;
 let s = after;
 for (let i = 0; i < 25 * 60 * 10; i++) {
@@ -183,6 +184,9 @@ for (let i = 0; i < 25 * 60 * 10; i++) {
   if (s.poi === 2 && live.some((e) => e.kind === "heavy") && s.orbs >= 2) await shot("08-relay-heavy");
   if (!live.length && s.enemies.some((e) => (e.aware === "alert" || e.detect > 0.3) && near(e) < 45)) await shot("14-noticed");
   if (s.player.reveal > 2) await shot("15-reveal");
+  if (s.stats.flankHits > prevFlank && s.stats.flankHits >= 3) await shot("16-flank-hit");
+  prevFlank = s.stats.flankHits;
+  if (s.squads.some((q) => q.lost && q.poi === s.poi) && live.length) await shot("17-lost-track");
   if (s.poi === 3 && live.some((e) => e.kind === "titan") && s.orbs >= 2) await shot("09-titan");
   if (s.waves > 0) await shot("10-stomp");
   if (s.player.downed) await shot("11-downed");

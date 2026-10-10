@@ -98,7 +98,9 @@ export const sfx = {
     GUN[kind]();
     if (overdrive) tone(1400, 0.05, { type: "square", vol: 0.04, to: 2200 });
   },
-  hit(crit: boolean, shield: boolean) {
+  hit(crit: boolean, shield: boolean, flank = false) {
+    // A hit from behind rings a little brighter on top of the usual sound.
+    if (flank) tone(1760, 0.07, { type: "triangle", vol: 0.12, to: 2640 });
     if (crit) {
       tone(2350, 0.11, { type: "sine", vol: 0.24 });
       tone(3520, 0.08, { type: "sine", vol: 0.1, at: 0.01 });

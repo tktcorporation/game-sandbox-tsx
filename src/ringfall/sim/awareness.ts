@@ -86,11 +86,11 @@ export function sense(s: State, e: Enemy): boolean {
     const d = Math.hypot(target.x - eye.x, target.y - eye.y, target.z - eye.z);
     const sight = SIGHT[e.kind];
     const engaged = e.aware === "engaged";
-    const range = sight.range * (engaged ? 1.6 : low ? AWARE.crouchRange : 1);
+    const range = sight.range * (engaged ? AWARE.engagedRange : low ? AWARE.crouchRange : 1);
     let inView = d < AWARE.closeSense;
     if (!inView && d < range) {
-      if (engaged) inView = true;
-      else inView = Math.abs(wrapAngle(lookAngles(e.pos, target).yaw - e.yaw)) < (sight.fov / 2) * DEG;
+      const fov = sight.fov * (engaged ? AWARE.engagedFov : 1);
+      inView = Math.abs(wrapAngle(lookAngles(e.pos, target).yaw - e.yaw)) < (fov / 2) * DEG;
     }
     seen = inView && los(eye, target);
     if (seen && !engaged) {
@@ -111,6 +111,16 @@ export function sense(s: State, e: Enemy): boolean {
   }
   if (!seen && e.aware !== "engaged") e.detect = Math.max(0, e.detect - AWARE.decay * TICK);
   return seen;
+}
+
+/**
+ * Where a fighting robot believes the player is: the true position while its squad
+ * has eyes on them, else the last place they were seen.
+ */
+export function knownSpot(s: State, e: Enemy): { x: number; z: number; live: boolean } {
+  const sq = s.squads[e.squad];
+  if (!sq || sq.sinceSeen < AWARE.trackTime) return { x: s.player.pos.x, z: s.player.pos.z, live: true };
+  return { x: sq.last.x, z: sq.last.z, live: false };
 }
 
 /** A squad that lost the player for long enough goes back to searching where it was last seen. */

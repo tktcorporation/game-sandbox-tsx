@@ -1,4 +1,4 @@
-import { ASSIST, DEG, ENEMIES, NOISE, PLAYER, RARITY, TICK, ULT, WEAPONS, type WeaponSpec } from "./config";
+import { ASSIST, DEG, ENEMIES, FLANK, NOISE, PLAYER, RARITY, TICK, ULT, WEAPONS, type Flank, type WeaponSpec } from "./config";
 import { engageSquad, makeNoise } from "./awareness";
 import { POIS } from "./map";
 import { los, lookAngles, norm, rayWorld, raySphere, wrapAngle } from "./geom";
@@ -145,10 +145,21 @@ export function shoot(s: State, w: Weapon) {
   makeNoise(s, p.pos.x, p.pos.z, NOISE[w.kind]);
 }
 
+/** Which way a shot from the player meets this robot (see FLANK). */
+export function flankOf(s: State, e: Enemy): Flank {
+  if (e.kind === "titan") return "none";
+  if (e.aware !== "engaged") return "ambush";
+  const off = Math.abs(wrapAngle(lookAngles(e.pos, s.player.pos).yaw - e.yaw)) / DEG;
+  return off < FLANK.frontArc ? "front" : off > FLANK.backArc ? "back" : "side";
+}
+
 export function damageEnemy(s: State, e: Enemy, raw: number, crit: boolean, at: Vec3) {
   // Callers may hold a list taken before a kill removed this robot (the titan takes its summons with it).
   if (!s.enemies.includes(e)) return;
   const k = ENEMIES[e.kind];
+  const flank = flankOf(s, e);
+  raw *= FLANK.mult[flank];
+  if (flank === "back" || flank === "ambush") s.stats.flankHits++;
   // Being shot gives the player away to the whole squad.
   engageSquad(s, e.squad, e);
   const before = e.hp + e.shield;
@@ -159,7 +170,7 @@ export function damageEnemy(s: State, e: Enemy, raw: number, crit: boolean, at: 
   const dealt = before - Math.max(0, e.hp) - e.shield;
   e.lastHit = 0;
   s.stats.damage += dealt;
-  s.events.push({ t: "hit", id: e.id, pos: at, dmg: Math.round(raw), crit, shield: toShield > 0, tier: k.shieldTier });
+  s.events.push({ t: "hit", id: e.id, pos: at, dmg: Math.round(raw), crit, shield: toShield > 0, tier: k.shieldTier, flank });
   if (hadShield && e.shield <= 0) s.events.push({ t: "shieldBreak", id: e.id, pos: at, tier: k.shieldTier });
   const p = s.player;
   if (p.ultTime <= 0 && p.ult < 1) {

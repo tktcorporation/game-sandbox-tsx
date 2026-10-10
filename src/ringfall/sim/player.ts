@@ -150,8 +150,7 @@ function move(s: State, input: Input, prevCrouch: boolean) {
   p.vel.y -= WORLD.gravity * TICK;
   p.pos.x += p.vel.x * TICK;
   p.pos.z += p.vel.z * TICK;
-  collide(p.pos, PLAYER.radius);
-  // Robots are solid too.
+  // Robots are solid too. Walls go last so a robot cannot shove the player into one.
   for (const e of s.enemies) {
     if (e.pos.y > p.pos.y + 1.6 || e.pos.y + 2 < p.pos.y) continue;
     const r = PLAYER.radius + Math.min(1.2, e.kind === "titan" ? 2 : 0.5);
@@ -163,6 +162,7 @@ function move(s: State, input: Input, prevCrouch: boolean) {
       p.pos.z = e.pos.z + (dz / d) * r;
     }
   }
+  collide(p.pos, PLAYER.radius);
   p.pos.y += p.vel.y * TICK;
   // Bump the head on floors and roofs above.
   if (p.vel.y > 0) {

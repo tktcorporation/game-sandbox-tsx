@@ -126,8 +126,9 @@ const median = (xs: number[]) => {
 };
 
 let failed = false;
-const head = ["skill    ", ...POIS.map((p, i) => `P${i + 1} ${p.name}`.padEnd(14)), "extract", "finish", "total(med)", "downs", "wipes", "acc", "crit", "ult", "crowd", "rank"];
+const head = ["skill    ", ...POIS.map((p, i) => `P${i + 1} ${p.name}`.padEnd(14)), "extract", "finish", "total(med)", "downs", "wipes", "acc", "crit", "ult", "crowd", "flank", "rank"];
 console.log(`${runs} runs per skill. per POI: median seconds from the previous objective, downs+wipes per run`);
+console.log("flank: share of hits from behind a robot or before it noticed the player");
 console.log("crowd: median over runs of the most squads / robots fighting the player at once outside the titan fight");
 console.log(head.join(" "));
 for (const skill of SKILLS) {
@@ -141,6 +142,7 @@ for (const skill of SKILLS) {
   let shots = 0;
   let hits = 0;
   let crits = 0;
+  let flanks = 0;
   let ults = 0;
   const crowdSq: number[] = [];
   const crowdBots: number[] = [];
@@ -191,6 +193,7 @@ for (const skill of SKILLS) {
     shots += s.stats.shots;
     hits += s.stats.hits;
     crits += s.stats.crits;
+    flanks += s.stats.flankHits;
   }
   const n = Math.max(finished, 1);
   console.log(
@@ -206,6 +209,7 @@ for (const skill of SKILLS) {
       `${Math.round((crits / Math.max(hits, 1)) * 100)}%`.padEnd(4),
       (ults / n).toFixed(1).padEnd(3),
       `${median(crowdSq)}/${median(crowdBots)}`.padEnd(5),
+      `${Math.round((flanks / Math.max(hits, 1)) * 100)}%`.padEnd(5),
       `S${ranks.S} A${ranks.A} B${ranks.B} C${ranks.C}`,
     ].join(" "),
   );

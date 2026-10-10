@@ -1,4 +1,4 @@
-import { ENEMIES, PLAYER, RARITY, REVEAL, RING, TACTICAL, ULT, WEAPONS } from "../sim/config";
+import { AWARE, ENEMIES, PLAYER, RARITY, REVEAL, RING, TACTICAL, ULT, WEAPONS, type Flank } from "../sim/config";
 import { magSize } from "../sim/combat";
 import { dist2d } from "../sim/geom";
 import { POIS } from "../sim/map";
@@ -26,7 +26,13 @@ interface DmgNum {
   age: number;
   life: number; // total seconds since the first hit merged into this number
   crit: boolean;
+  /** The best angle among the hits merged into this number. */
+  flank: Flank;
 }
+
+/** Tag shown with a damage number, by how the shot met the robot. */
+const FLANK_TAG: Partial<Record<Flank, string>> = { back: "背後", ambush: "奇襲" };
+const FLANK_RANK: Record<Flank, number> = { front: 0, none: 1, side: 1, back: 2, ambush: 3 };
 
 export class Hud {
   private root = $("hud");
@@ -90,15 +96,17 @@ export class Hud {
           n.age = 0;
           n.pos = e.pos;
           n.crit = n.crit || e.crit;
+          if (FLANK_RANK[e.flank] > FLANK_RANK[n.flank]) n.flank = e.flank;
         } else {
           const el = document.createElement("div");
           el.className = "dmg";
           this.dmgLayer.appendChild(el);
-          this.nums.push({ el, id: e.id, pos: e.pos, value: e.dmg, age: 0, life: 0, crit: e.crit });
+          this.nums.push({ el, id: e.id, pos: e.pos, value: e.dmg, age: 0, life: 0, crit: e.crit, flank: e.flank });
         }
         const cur = this.nums.find((x) => x.id === e.id && x.age === 0)!;
-        cur.el.textContent = String(Math.round(cur.value));
-        cur.el.className = cur.crit ? "dmg crit" : "dmg";
+        const tag = FLANK_TAG[cur.flank];
+        cur.el.innerHTML = `${tag ? `<small>${tag}</small>` : ""}${Math.round(cur.value)}`;
+        cur.el.className = `dmg${cur.crit ? " crit" : ""}${tag ? " flank" : ""}${cur.flank === "front" ? " front" : ""}`;
         cur.el.style.color = cur.crit ? "" : e.shield ? RARITY_CSS[e.tier] : "#ffffff";
         break;
       }
@@ -392,6 +400,8 @@ export class Hud {
     const seen = new Set<number>();
     let worst = 0; // 0 none, 1 noticing, 2 alert, 3 engaged
     let near = false;
+    let tracked = false; // some fighting squad sees the player right now
+    let anyLost = false; // some fighting squad has lost them
     for (const [id, t] of this.spotted) if (t - dt <= 0) this.spotted.delete(id);
     else this.spotted.set(id, t - dt);
     if (s.phase === "play") {
@@ -399,12 +409,17 @@ export class Hud {
         if (e.mode === "spawning") continue;
         const d = dist2d(e.pos, p.pos);
         if (d < 50) near = true;
+        // An engaged robot whose squad has lost sight of the player is looking at the wrong place.
+        const lost = e.aware === "engaged" && (s.squads[e.squad]?.sinceSeen ?? 0) >= AWARE.trackTime;
+        if (e.aware === "engaged" && !lost) tracked = true;
+        if (lost) anyLost = true;
         const level = e.aware === "engaged" ? 3 : e.aware === "alert" ? 2 : e.detect > 0.02 ? 1 : 0;
         worst = Math.max(worst, level);
         const revealed = p.reveal > 0 && d < REVEAL.range;
         const bang = this.spotted.has(e.id);
         let cls = "";
         if (bang) cls = "engaged";
+        else if (lost) cls = "lost";
         else if (level === 2) cls = "alert";
         else if (level === 1) cls = "sense";
         else if (revealed) cls = "reveal";
@@ -433,7 +448,7 @@ export class Hud {
         x = Math.max(30, Math.min(w - 30, x));
         y = Math.max(off ? 150 : 40, Math.min(h - 150, y));
         el.className = `aw ${cls}${off ? " edge" : ""}`;
-        el.textContent = cls === "engaged" ? "!" : cls === "alert" ? "?" : "";
+        el.textContent = cls === "engaged" ? "!" : cls === "alert" || cls === "lost" ? "?" : "";
         el.style.setProperty("--p", e.detect.toFixed(2));
         el.style.display = "";
         el.style.left = `${x}px`;
@@ -451,7 +466,9 @@ export class Hud {
     const text =
       s.phase !== "play" || !near
         ? ""
-        : worst === 3
+        : worst === 3 && !tracked && anyLost
+          ? "見失わせた：回り込め"
+          : worst === 3
           ? "交戦中：遮蔽物を使え"
           : worst === 2
             ? "警戒中：先手を取れ"
@@ -461,7 +478,7 @@ export class Hud {
                 ? "未発見・しゃがみ中"
                 : "未発見";
     st.textContent = text;
-    st.className = worst === 3 ? "engaged" : worst === 2 ? "alert" : "";
+    st.className = worst === 3 && !tracked && anyLost ? "lost" : worst === 3 ? "engaged" : worst === 2 ? "alert" : "";
   }
 
   private prompt(s: State): string {

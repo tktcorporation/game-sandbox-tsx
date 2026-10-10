@@ -1,4 +1,4 @@
-import { TICK } from "./sim/config";
+import { AWARE, TICK } from "./sim/config";
 import { Bot, SKILLS } from "./sim/bot";
 import { dist2d } from "./sim/geom";
 import { idleInput, newRun, type GameEvent, type Input, type State } from "./sim/state";
@@ -123,7 +123,7 @@ function onEvent(e: GameEvent, s: State) {
       sfx.shot(e.weapon, p.ultTime > 0);
       break;
     case "hit":
-      sfx.hit(e.crit, e.shield);
+      sfx.hit(e.crit, e.shield, e.flank === "back" || e.flank === "ambush");
       break;
     case "shieldBreak":
       sfx.shieldBreak(e.tier);
@@ -381,7 +381,7 @@ window.render_game_to_text = () => {
     poiActive: s.poiActive,
     player: { x: +p.pos.x.toFixed(1), y: +p.pos.y.toFixed(1), z: +p.pos.z.toFixed(1), hp: Math.round(p.hp), shield: Math.round(p.shield), armor: p.armor, downed: p.downed > 0, weapons: p.weapons.map((w) => w && `${w.kind}${w.rarity}:${w.mag}`), ult: +p.ult.toFixed(2), ultTime: +p.ultTime.toFixed(1), reveal: +p.reveal.toFixed(1), crouch: p.crouch },
     enemies: s.enemies.map((e) => ({ kind: e.kind, x: Math.round(e.pos.x), z: Math.round(e.pos.z), y: +e.pos.y.toFixed(1), hp: Math.round(e.hp + e.shield), mode: e.mode, aware: e.aware, detect: +e.detect.toFixed(2), squad: e.squad })),
-    squads: s.squads.map((q) => ({ name: q.name, poi: q.poi, engaged: q.engaged })),
+    squads: s.squads.map((q) => ({ name: q.name, poi: q.poi, engaged: q.engaged, lost: q.engaged && q.sinceSeen >= AWARE.trackTime })),
     orbs: s.orbs.length,
     waves: s.waves.length,
     loot: s.loot.length,

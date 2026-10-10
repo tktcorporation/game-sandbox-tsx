@@ -1,6 +1,6 @@
-import { AWARE, CHARGER, COVER, ENEMIES, PLAYER, TICK, TITAN, WORLD, type EnemyKind } from "./config";
+import { AWARE, CHARGER, COVER, DEG, ENEMIES, PLAYER, TICK, TITAN, TURN, WORLD, type EnemyKind } from "./config";
 import { collide, dist2d, groundAt, los, lookAngles, solidAt, wrapAngle } from "./geom";
-import { engageSquad, sense, stepSquads } from "./awareness";
+import { engageSquad, knownSpot, sense, stepSquads } from "./awareness";
 import { COVERS } from "./cover";
 
 /** Walkers refuse to step off a ledge higher than this, so rooftop robots stay on their roof. */
@@ -183,23 +183,28 @@ export function stepEnemies(s: State) {
         continue;
       }
     }
-    const dx = p.pos.x - e.pos.x;
-    const dz = p.pos.z - e.pos.z;
-    const d = Math.hypot(dx, dz) || 1e-3;
-    const toward = lookAngles(e.pos, p.pos).yaw;
-    if (e.mode !== "lunge") e.yaw += wrapAngle(toward - e.yaw) * Math.min(1, TICK * (e.kind === "titan" ? 1.5 : 5));
     if (e.kind === "titan") {
+      const d = dist2d(e.pos, p.pos);
+      e.yaw += wrapAngle(lookAngles(e.pos, p.pos).yaw - e.yaw) * Math.min(1, TICK * 1.5);
       titan(s, e, d);
       continue;
     }
-    if (e.kind === "grunt" && e.pos.y < 0.6 && fromCover(s, e)) continue;
+    // It acts on what its squad knows: the player while seen, else the last sighting.
+    const known = knownSpot(s, e);
+    const dx = known.x - e.pos.x;
+    const dz = known.z - e.pos.z;
+    const d = Math.hypot(dx, dz) || 1e-3;
+    if (e.mode !== "lunge" && d > 0.5) turnAt(e, Math.atan2(dx, -dz), TURN[e.kind]);
+    if (e.kind === "grunt" && e.pos.y < 0.6 && fromCover(s, e, known)) continue;
     switch (e.mode) {
       case "move": {
-        const sees = los(muzzle(e), chest(s));
+        const sees = known.live && facing(e, p.pos) && los(muzzle(e), chest(s));
         const ux = dx / d;
         const uz = dz / d;
         let along = 0;
-        if (!sees || d > k.range + 4) along = 1;
+        // At the last sighting with nobody in view, it stands and turns: the squad's search begins.
+        if (!sees && !known.live && d < 2) along = 0;
+        else if (!sees || d > k.range + 4) along = 1;
         else if (d < k.range - 4) along = -0.7;
         const side = sees || e.kind === "charger" ? 0.55 : 0.8;
         const vx = (ux * along - uz * e.strafe * side) * k.speed;
@@ -288,6 +293,18 @@ export function stepEnemies(s: State) {
   separate(s);
 }
 
+/** Turn toward a yaw at no more than `rate` radians per second. */
+function turnAt(e: Enemy, yaw: number, rate: number) {
+  const diff = wrapAngle(yaw - e.yaw);
+  const max = rate * TICK;
+  e.yaw += Math.max(-max, Math.min(max, diff));
+}
+
+/** Whether the point is inside the cone a robot can fire into. */
+function facing(e: Enemy, at: { x: number; z: number }): boolean {
+  return Math.abs(wrapAngle(lookAngles(e.pos, { x: at.x, y: 0, z: at.z }).yaw - e.yaw)) < AWARE.fireCone * DEG;
+}
+
 /** Turn toward a yaw at a robot's turning speed. */
 function turnTo(e: Enemy, yaw: number, rate = 3) {
   e.yaw += wrapAngle(yaw - e.yaw) * Math.min(1, TICK * rate);
@@ -352,8 +369,8 @@ function calm(s: State, e: Enemy) {
 }
 
 /** Find a spot near this grunt that hides it from the player, with a spot beside it to shoot from. */
-function findCover(s: State, e: Enemy): { cover: Point; peek: Point } | null {
-  const p = s.player;
+function findCover(s: State, e: Enemy, threat: Point): { cover: Point; peek: Point } | null {
+  const p = { pos: { x: threat.x, y: s.player.pos.y, z: threat.z } };
   const head = { x: p.pos.x, y: p.pos.y + 1.5, z: p.pos.z };
   const chestP = { x: p.pos.x, y: p.pos.y + 1.1, z: p.pos.z };
   const taken = s.enemies.filter((o) => o !== e && o.cover).map((o) => o.cover!);
@@ -376,13 +393,13 @@ function findCover(s: State, e: Enemy): { cover: Point; peek: Point } | null {
  * An engaged grunt on the ground: hide behind cover, step out to shoot, step
  * back. Returns false when it has no cover and should fight in the open.
  */
-function fromCover(s: State, e: Enemy): boolean {
+function fromCover(s: State, e: Enemy, known: { x: number; z: number; live: boolean }): boolean {
   const k = ENEMIES.grunt;
   if (e.mode !== "move") return false; // telegraph and fire run as usual
   e.coverT -= TICK;
   // Re-think the spot every few seconds, and at once when hit (flanked).
   if (e.coverT <= 0 || e.lastHit < TICK * 1.5) {
-    const found = findCover(s, e);
+    const found = findCover(s, e, known);
     e.cover = found?.cover ?? null;
     e.peek = found?.peek ?? null;
     e.coverT = 2.5;
@@ -392,7 +409,7 @@ function fromCover(s: State, e: Enemy): boolean {
   const out = e.cooldown <= 0;
   const there = walkTo(e, out ? e.peek : e.cover, k.speed, false);
   if (out && there) {
-    if (los({ ...e.pos, y: e.pos.y + k.weakY }, { x: s.player.pos.x, y: s.player.pos.y + 1.1, z: s.player.pos.z }) && s.player.downed <= 0) {
+    if (known.live && facing(e, s.player.pos) && los({ ...e.pos, y: e.pos.y + k.weakY }, { x: s.player.pos.x, y: s.player.pos.y + 1.1, z: s.player.pos.z }) && s.player.downed <= 0) {
       e.mode = "telegraph";
       e.timer = k.telegraph;
       e.aimYaw = e.yaw;

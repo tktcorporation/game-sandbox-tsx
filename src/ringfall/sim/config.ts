@@ -154,7 +154,7 @@ export interface EnemySpec {
 
 export const ENEMIES: Record<EnemyKind, EnemySpec> = {
   drone: { hp: 55, shield: 0, shieldTier: 0, radius: 0.55, bodyY: 0, weakY: 0, weakR: 0.24, weakFwd: 0.42, speed: 4.2, fly: 3.4, range: 14, telegraph: 0.55, cooldown: 1.6, shots: 1, shotGap: 0, spread: 0, orbSpeed: 19, orbDmg: 13, orbR: 0.32, ult: 1 },
-  grunt: { hp: 100, shield: 50, shieldTier: 1, radius: 0.6, bodyY: 1.1, weakY: 1.86, weakR: 0.27, weakFwd: 0.08, speed: 3.2, fly: 0, range: 15, telegraph: 0.6, cooldown: 1.5, shots: 3, shotGap: 0.16, spread: 0, orbSpeed: 23, orbDmg: 11, orbR: 0.3, ult: 1 },
+  grunt: { hp: 100, shield: 50, shieldTier: 1, radius: 0.6, bodyY: 1.1, weakY: 1.86, weakR: 0.27, weakFwd: 0.08, speed: 3.2, fly: 0, range: 15, telegraph: 0.6, cooldown: 1.8, shots: 3, shotGap: 0.16, spread: 0, orbSpeed: 23, orbDmg: 11, orbR: 0.3, ult: 1 },
   charger: { hp: 90, shield: 40, shieldTier: 0, radius: 0.72, bodyY: 0.75, weakY: 0.95, weakR: 0.3, weakFwd: 0.62, speed: 6.4, fly: 0, range: 0, telegraph: 0.6, cooldown: 1.2, shots: 0, shotGap: 0, spread: 0, orbSpeed: 0, orbDmg: 28, orbR: 0, ult: 1 },
   heavy: { hp: 220, shield: 125, shieldTier: 2, radius: 0.95, bodyY: 1.4, weakY: 2.35, weakR: 0.36, weakFwd: 0.1, speed: 2.0, fly: 0, range: 18, telegraph: 0.85, cooldown: 3.2, shots: 5, shotGap: 0, spread: 9, orbSpeed: 17, orbDmg: 11, orbR: 0.42, ult: 1 },
   titan: { hp: 3200, shield: 1000, shieldTier: 3, radius: 2.3, bodyY: 3.2, weakY: 3.4, weakR: 0.75, weakFwd: 2.1, speed: 1.6, fly: 0, range: 20, telegraph: 1.0, cooldown: 3.0, shots: 6, shotGap: 0.16, spread: 0, orbSpeed: 13, orbDmg: 9, orbR: 0.48, ult: 0.5 },
@@ -218,7 +218,39 @@ export const AWARE = {
    * `joinClose` metres or shoots it. This keeps a POI a series of fights, not a crowd.
    */
   maxSquads: 2,
-  joinClose: 8,
+  joinClose: 5,
+  /** A fighting robot looks wider and further than a calm one, but never behind itself. */
+  engagedFov: 1.2,
+  engagedRange: 1.25,
+  /** A squad tracks the player's true position only this long after a member last saw them. */
+  trackTime: 0.4,
+  /** A robot fires only when the player is within this many degrees of where it faces. */
+  fireCone: 25,
+};
+
+/**
+ * Turning speed in radians per second while fighting. A robot cannot snap round,
+ * so circling to its side or back while it faces the last known position works.
+ */
+export const TURN: Record<EnemyKind, number> = {
+  drone: 3.0,
+  grunt: 2.4,
+  charger: 3.2,
+  heavy: 1.3,
+  titan: 1.2,
+};
+
+export type Flank = "front" | "side" | "back" | "ambush" | "none";
+
+/**
+ * Damage by where the shot comes from, measured from the way the robot faces. The
+ * first hit on a robot that has not noticed the player is an ambush. The titan
+ * takes plain damage from every side.
+ */
+export const FLANK = {
+  frontArc: 55, // degrees either side of facing
+  backArc: 115, // beyond this many degrees from facing
+  mult: { front: 0.75, side: 1, back: 2, ambush: 2.5, none: 1 } satisfies Record<Flank, number>,
 };
 
 /** How far a sound carries, in metres. Robots inside it come to look. */
