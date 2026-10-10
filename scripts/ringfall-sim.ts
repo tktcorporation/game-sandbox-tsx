@@ -50,7 +50,7 @@ function checkLayout(): string[] {
     p.squads.forEach((sq) => squad(`POI ${i} ${sq.name}`, sq));
     if (p.carePackage) point(`POI ${i} care package`, p.carePackage.x, p.carePackage.z);
   });
-  EXTRA_BINS.forEach((b) => point("extra bin", b.x, b.z));
+  EXTRA_BINS.forEach((b) => point("extra bin", b.x, b.z, b.y ?? 0));
   ROAMERS.forEach((sq) => squad(`roamer ${sq.name}`, sq));
   point("extract", EXTRACT.x, EXTRACT.z, 0.25);
   return bad;
@@ -69,14 +69,17 @@ function checkWipeClearsAir(): string | null {
   s.enemies = [];
   s.phase = "play";
   const p = s.player;
-  p.pos = { x: 0, y: 0, z: 30 };
+  // Open ground east of the old town, with nothing between the player and the projectiles.
+  const x = 100;
+  const z = 70;
+  p.pos = { x, y: 0, z };
   p.onGround = true;
   p.hp = 1;
   p.shield = 0;
   p.selfRevive = 0;
-  s.orbs.push({ id: 900, pos: { x: 0, y: 1.1, z: 30.3 }, vel: { x: 0, y: 0, z: -1 }, r: 0.4, dmg: 10, life: 5, homing: false });
-  s.orbs.push({ id: 901, pos: { x: 0, y: 3, z: 50 }, vel: { x: 0, y: 0, z: -5 }, r: 0.4, dmg: 10, life: 5, homing: true });
-  s.waves.push({ x: 0, z: 60, y: 0, r: 3, hit: false });
+  s.orbs.push({ id: 900, pos: { x, y: 1.1, z: z + 0.3 }, vel: { x: 0, y: 0, z: -1 }, r: 0.4, dmg: 10, life: 5, homing: false });
+  s.orbs.push({ id: 901, pos: { x, y: 3, z: z + 20 }, vel: { x: 0, y: 0, z: -5 }, r: 0.4, dmg: 10, life: 5, homing: true });
+  s.waves.push({ x, z: z + 30, y: 0, r: 3, hit: false });
   step(s, idleInput(), false);
   if (s.stats.wipes !== 1) return `wipe scenario: expected a wipe, got ${s.stats.wipes}`;
   if (s.orbs.length || s.waves.length) return `wipe scenario: ${s.orbs.length} orbs and ${s.waves.length} shockwaves survived the wipe`;
@@ -90,7 +93,8 @@ function checkArcOnTitan(): string | null {
   const boss = s.enemies.filter((e) => e.poi === 3);
   s.enemies = boss;
   const p = s.player;
-  p.pos = { x: 0, y: 0, z: -62 };
+  const pad = POIS[3];
+  p.pos = { x: pad.x, y: 0, z: pad.z + 6 };
   p.onGround = true;
   p.yaw = 0; // facing north, at the titan
   const titan = boss.find((e) => e.kind === "titan")!;
@@ -98,7 +102,7 @@ function checkArcOnTitan(): string | null {
   titan.shield = 0;
   // Its drones stand behind it, so the arc reaches the titan first.
   boss.filter((e) => e.kind === "drone").forEach((d, i) => {
-    d.pos = { x: i ? 3 : -3, y: 3.4, z: -86 };
+    d.pos = { x: pad.x + (i ? 3 : -3), y: 3.4, z: pad.z - 18 };
     d.hp = 10; // low enough that a second hit from the arc would kill it again
     d.shield = 0;
   });

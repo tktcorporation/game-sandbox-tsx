@@ -4,7 +4,7 @@ import type { Vec3 } from "./state";
 
 /*
  * Boxes span y0..h, so floors, roofs and bridges can float above open space.
- * A coarse grid finds the boxes near a point; rays still scan every box.
+ * A coarse grid finds the boxes near a point, and rays walk the cells they cross.
  */
 const CELL = 8;
 const grid = new Map<number, Box[]>();
@@ -18,6 +18,9 @@ for (const b of BOXES) {
       else grid.set(k, [b]);
     }
 }
+const indexOf = new Map(BOXES.map((b, i) => [b, i]));
+const seenBy = new Int32Array(BOXES.length);
+let rayId = 0;
 const scratch = new Set<Box>();
 function near(x: number, z: number, r: number): Iterable<Box> {
   scratch.clear();
@@ -119,11 +122,38 @@ function rayBox(o: Vec3, d: Vec3, b: Box, maxT: number): number {
 export function rayWorld(o: Vec3, d: Vec3, maxT: number): number {
   let t = maxT;
   if (d.y < -1e-6) t = Math.min(t, -o.y / d.y);
-  for (const b of BOXES) {
-    const bt = rayBox(o, d, b, t);
-    if (bt < t) t = bt;
+  // Walk the grid cells under the ray in order. A box in a cell entered beyond the
+  // nearest hit so far cannot be nearer, so the walk stops there.
+  rayId++;
+  let cx = Math.floor(o.x / CELL);
+  let cz = Math.floor(o.z / CELL);
+  const ax = Math.abs(d.x);
+  const az = Math.abs(d.z);
+  const stepX = d.x > 0 ? 1 : -1;
+  const stepZ = d.z > 0 ? 1 : -1;
+  const dtX = ax > 1e-9 ? CELL / ax : Infinity;
+  const dtZ = az > 1e-9 ? CELL / az : Infinity;
+  let nextX = ax > 1e-9 ? (d.x > 0 ? (cx + 1) * CELL - o.x : o.x - cx * CELL) / ax : Infinity;
+  let nextZ = az > 1e-9 ? (d.z > 0 ? (cz + 1) * CELL - o.z : o.z - cz * CELL) / az : Infinity;
+  for (;;) {
+    const list = grid.get(key(cx, cz));
+    if (list)
+      for (const b of list) {
+        const i = indexOf.get(b) ?? 0;
+        if (seenBy[i] === rayId) continue;
+        seenBy[i] = rayId;
+        const bt = rayBox(o, d, b, t);
+        if (bt < t) t = bt;
+      }
+    if (Math.min(nextX, nextZ) > t) return t;
+    if (nextX < nextZ) {
+      cx += stepX;
+      nextX += dtX;
+    } else {
+      cz += stepZ;
+      nextZ += dtZ;
+    }
   }
-  return t;
 }
 
 export function los(a: Vec3, b: Vec3): boolean {

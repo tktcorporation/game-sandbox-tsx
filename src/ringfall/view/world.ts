@@ -248,9 +248,9 @@ export class World {
     const rnd = () => ((r = (r * 16807) % 2147483647) / 2147483647);
     const geo = new THREE.DodecahedronGeometry(1, 0);
     // Boulders along the foot of the canyon walls, just outside the playable square.
-    for (let i = 0; i < 90; i++) {
+    for (let i = 0; i < 160; i++) {
       const side = Math.floor(rnd() * 4);
-      const along = (rnd() - 0.5) * 210;
+      const along = (rnd() - 0.5) * (WORLD.half * 2 + 20);
       const out = WORLD.half + 2 + rnd() * 6;
       const x = side === 0 ? out : side === 1 ? -out : along;
       const z = side === 2 ? out : side === 3 ? -out : along;
@@ -268,7 +268,7 @@ export class World {
     for (let i = 0; i < 26; i++) {
       const s = haloSprite(0xffffff, 30 + (i % 5) * 9, 0.55);
       s.material.blending = THREE.NormalBlending;
-      s.position.set(Math.sin(i * 2.4) * 120, 55 + (i % 7) * 9, 40 + Math.cos(i * 1.7) * 110);
+      s.position.set(Math.sin(i * 2.4) * 180, 60 + (i % 7) * 9, Math.cos(i * 1.7) * 180);
       this.clouds.push(s);
       this.scene.add(s);
     }

@@ -122,11 +122,12 @@ await page.evaluate(() => {
 });
 await page.waitForTimeout(400);
 const tour = [
-  ["tour-1-supply-office", -8, 2.2, 60, -0.98, -0.02],
-  ["tour-2-quarry-catwalk", -30, 5.5, -1, -0.86, -0.12],
-  ["tour-3-village", 17, 2.0, -12, -0.75, 0.0],
-  ["tour-4-relay-tower", 25, 5.0, -9, 0.73, -0.02],
-  ["tour-5-pad-gantry", 0, 3.5, -48, 0, -0.08],
+  ["tour-1-town-bridges", -17, 8.4, 14, 1.57, -0.12],
+  ["tour-2-town-street", 0, 1.6, 42, 0, 0.05],
+  ["tour-3-plateau-top", -52, 8.8, -52, 2.45, -0.1],
+  ["tour-4-factory-catwalk", 46, 4.9, 39.3, 1.57, -0.15],
+  ["tour-5-canyon-bridge", 52, 1.6, -78, 0, 0.12],
+  ["tour-6-quarry-terraces", -100, 1.6, 30, -0.61, 0.05],
 ];
 for (const [name, x, y, z, yaw, pitch] of tour) {
   await page.evaluate(([x, y, z, yaw, pitch]) => window.ringfallCamera(x, y, z, yaw, pitch), [x, y, z, yaw, pitch]);

@@ -287,7 +287,7 @@ export function newRun(seed = 1): State {
   const bins: Bin[] = [];
   let id = 1;
   POIS.forEach((p, poi) => p.bins.forEach((b) => bins.push({ id: id++, x: b.x, y: b.y ?? 0, z: b.z, poi, open: false })));
-  for (const b of EXTRA_BINS) bins.push({ id: id++, x: b.x, y: 0, z: b.z, poi: b.table, open: false });
+  for (const b of EXTRA_BINS) bins.push({ id: id++, x: b.x, y: b.y ?? 0, z: b.z, poi: b.table, open: false });
   const loot: Loot[] = [];
   POIS.forEach((p) =>
     p.floor.forEach((f) => {
@@ -342,7 +342,7 @@ export function newRun(seed = 1): State {
     loot,
     bins,
     care: null,
-    ring: { x: 0, z: 0, r: 150, fromX: 0, fromZ: 0, fromR: 150, toX: 0, toZ: 0, toR: 150, t: 1, shrinking: false },
+    ring: { x: 0, z: 0, r: 230, fromX: 0, fromZ: 0, fromR: 230, toX: 0, toZ: 0, toR: 230, t: 1, shrinking: false },
     poi: 0,
     poiActive: false,
     poiStart: 0,

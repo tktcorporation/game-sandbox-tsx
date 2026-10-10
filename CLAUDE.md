@@ -26,8 +26,10 @@ npm run shots:ringfall   # gate 3: the build played to the end in Chromium; scre
 - `src/ringfall/sim/` is the game: pure TypeScript, metres and seconds, `step(state, input, prevCrouch)`
   per 1/60 s tick. Aim assist (slowdown, pull, the hit cone) lives here, so bots and people get the
   same help. Every solid is an axis-aligned box spanning `y0..h` in `map.ts` (floors, roofs and bridges
-  float); build structures with its `building()` and `stairs()` helpers, whose risers stay under the
-  step-up height. Tuning numbers are in `config.ts`. `npm run sim:ringfall` first checks that every
+  float); build structures with its `building()` (one storey), `tower()` (several storeys with stairs
+  inside), `bridge()` and `stairs()` helpers, whose risers stay under the step-up height. Each POI is
+  written in its own frame and moved into place by `AT`; the districts between them use island
+  coordinates (300 m square, `WORLD.half`). Tuning numbers are in `config.ts`. `npm run sim:ringfall` first checks that every
   authored point (entries, bins, loot, squad posts, patrols) stands on a floor and not inside a box.
 - `awareness.ts` decides who knows about the player: sight cones fill a detection meter, noise
   (shots, sprinting) sends squads to look, and at most `AWARE.maxSquads` squads fight at once.

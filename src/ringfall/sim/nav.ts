@@ -118,7 +118,7 @@ export function findPath(
   gScore[start] = 0;
   push(h(s[0], s[1]), start);
   let expanded = 0;
-  while (heap.length && expanded < 150000) {
+  while (heap.length && expanded < 400000) {
     const cur = pop();
     if (closed[cur]) continue;
     closed[cur] = 1;
