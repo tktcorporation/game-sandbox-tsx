@@ -117,19 +117,27 @@ export function sense(s: State, e: Enemy): boolean {
 export function stepSquads(s: State) {
   s.squads.forEach((sq, i) => {
     if (!sq.engaged) return;
+    const members = s.enemies.filter((e) => e.squad === i);
+    // A squad with no one left is simply over, not searching.
+    if (!members.length) {
+      sq.engaged = false;
+      return;
+    }
+    // The titan's squad never stands down once woken.
+    if (members.some((e) => e.kind === "titan")) {
+      sq.sinceSeen = 0;
+      return;
+    }
     sq.sinceSeen += TICK;
     if (sq.sinceSeen < AWARE.loseTime) return;
     sq.engaged = false;
-    for (const e of s.enemies) {
-      if (e.squad !== i || e.kind === "titan") continue;
+    for (const e of members) {
       e.aware = "alert";
       e.detect = AWARE.suspicious;
       e.goal = { ...sq.last };
       e.searchT = AWARE.searchTime;
       e.cover = e.peek = null;
     }
-    // The titan never stands down once woken.
-    if (s.enemies.some((e) => e.squad === i && e.kind === "titan")) sq.engaged = true;
-    else s.events.push({ t: "calm", squad: i });
+    s.events.push({ t: "calm", squad: i });
   });
 }

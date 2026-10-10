@@ -346,17 +346,19 @@ export function wipe(s: State) {
   p.iframes = 2.5;
   s.orbs = [];
   s.waves = [];
-  // Robots lose track of the player and go back to their posts; damage stays.
+  // Robots lose track of the player and go back to their posts; damage stays. The
+  // titan's squad, once woken, keeps fighting.
+  const boss = new Set(s.enemies.filter((e) => e.kind === "titan").map((e) => e.squad));
   for (const e of s.enemies) {
     if (e.mode !== "spawning") e.mode = "move";
     e.cooldown = 2.5;
-    if (e.kind === "titan") continue;
+    if (boss.has(e.squad)) continue;
     e.aware = "idle";
     e.detect = 0;
     e.goal = e.cover = e.peek = null;
   }
   s.squads.forEach((sq, i) => {
-    if (!s.enemies.some((e) => e.squad === i && e.kind === "titan")) sq.engaged = false;
+    if (!boss.has(i)) sq.engaged = false;
   });
   s.events.push({ t: "wipe" });
 }
