@@ -6,11 +6,10 @@
  *   npm run sim:ringfall -- [runsPerSkill]
  */
 import { TICK, WORLD } from "../src/ringfall/sim/config";
-import { BOXES, EXTRA_BINS, EXTRACT, POIS } from "../src/ringfall/sim/map";
-import { collide, groundAt, solidAt } from "../src/ringfall/sim/geom";
+import { BOXES, EXTRA_BINS, EXTRACT, POIS, ROAMERS, type Squad } from "../src/ringfall/sim/map";
+import { groundAt, solidAt } from "../src/ringfall/sim/geom";
 import { Bot, SKILLS } from "../src/ringfall/sim/bot";
 import { idleInput, newRun, type GameEvent, type State } from "../src/ringfall/sim/state";
-import { spawnEnemy } from "../src/ringfall/sim/enemies";
 import { step } from "../src/ringfall/sim/step";
 import { rank } from "../src/ringfall/sim/results";
 
@@ -39,22 +38,20 @@ function checkLayout(): string[] {
     if (Math.abs(g - y) > 0.3) bad.push(`${what} at ${x},${z} expects floor ${y}, finds ${g.toFixed(2)}`);
     for (const h of [0.3, 1.0, 1.6]) if (solidAt(x, g + h, z)) bad.push(`${what} at ${x},${z} is inside a box (height ${h})`);
   };
+  // Robots stand exactly where they are placed (walkers), and patrols run over open ground.
+  const squad = (what: string, sq: Squad) => {
+    for (const m of sq.members) if (m.kind !== "drone") point(`${what} ${m.kind}`, m.x, m.z, m.y ?? 0);
+    for (const w of sq.patrol ?? []) if (sq.members.some((m) => m.kind !== "drone")) point(`${what} patrol`, w.x, w.z);
+  };
   POIS.forEach((p, i) => {
     point(`POI ${i} entry`, p.entry.x, p.entry.z);
     p.bins.forEach((b) => point(`POI ${i} bin`, b.x, b.z, b.y ?? 0));
     p.floor.forEach((f) => point(`POI ${i} floor loot`, f.x, f.z, f.y ?? 0));
-    // Spawns are pushed out of walls the same way spawnEnemy does, then checked.
-    p.waves.forEach((w, wi) =>
-      w.forEach((sp) => {
-        if (sp.kind === "drone" || sp.kind === "titan") return;
-        const pos = { x: p.x + sp.dx, y: sp.y ?? 0, z: p.z + sp.dz };
-        collide(pos, 0.7, 2);
-        point(`POI ${i} wave ${wi} ${sp.kind}`, +pos.x.toFixed(1), +pos.z.toFixed(1), sp.y ?? groundAt(pos.x, pos.z, 0.3, 0.3));
-      }),
-    );
+    p.squads.forEach((sq) => squad(`POI ${i} ${sq.name}`, sq));
     if (p.carePackage) point(`POI ${i} care package`, p.carePackage.x, p.carePackage.z);
   });
   EXTRA_BINS.forEach((b) => point("extra bin", b.x, b.z));
+  ROAMERS.forEach((sq) => squad(`roamer ${sq.name}`, sq));
   point("extract", EXTRACT.x, EXTRACT.z, 0.25);
   return bad;
 }
@@ -69,6 +66,7 @@ console.log(`layout ok: ${BOXES.length} boxes`);
 /** A wipe clears everything in the air; a projectile still in flight must not follow the player to the entry. */
 function checkWipeClearsAir(): string | null {
   const s = newRun(5);
+  s.enemies = [];
   s.phase = "play";
   const p = s.player;
   p.pos = { x: 0, y: 0, z: 30 };
@@ -84,28 +82,31 @@ function checkWipeClearsAir(): string | null {
   if (s.orbs.length || s.waves.length) return `wipe scenario: ${s.orbs.length} orbs and ${s.waves.length} shockwaves survived the wipe`;
   return null;
 }
-/** The arc finishing the titan also takes its summons; none of them may be killed twice. */
+/** The arc finishing the titan also takes its squad's drones; none of them may be killed twice. */
 function checkArcOnTitan(): string | null {
   const s = newRun(5);
   s.phase = "play";
   s.poi = 3;
-  s.poiActive = true;
-  s.wave = 1;
+  const boss = s.enemies.filter((e) => e.poi === 3);
+  s.enemies = boss;
   const p = s.player;
-  p.pos = { x: 0, y: 0, z: -40 };
+  p.pos = { x: 0, y: 0, z: -62 };
   p.onGround = true;
-  p.yaw = 0;
-  spawnEnemy(s, "titan", 0, -52, 3);
-  spawnEnemy(s, "drone", 3, -60, 3);
-  for (const e of s.enemies) e.mode = "move";
-  s.enemies[0].hp = 1;
-  s.enemies[0].shield = 0;
-  s.enemies[1].hp = 10; // low enough that a second hit from the arc would kill it again
+  p.yaw = 0; // facing north, at the titan
+  const titan = boss.find((e) => e.kind === "titan")!;
+  titan.hp = 1;
+  titan.shield = 0;
+  // Its drones stand behind it, so the arc reaches the titan first.
+  boss.filter((e) => e.kind === "drone").forEach((d, i) => {
+    d.pos = { x: i ? 3 : -3, y: 3.4, z: -86 };
+    d.hp = 10; // low enough that a second hit from the arc would kill it again
+    d.shield = 0;
+  });
   const inp = idleInput();
   inp.tactical = true;
   step(s, inp, false);
   const kills = s.events.filter((e): e is Extract<GameEvent, { t: "kill" }> => e.t === "kill").map((e) => e.id);
-  if (new Set(kills).size !== kills.length || s.stats.kills !== 2) return `arc scenario: kills ${JSON.stringify(kills)}, stats ${s.stats.kills}`;
+  if (new Set(kills).size !== kills.length || s.stats.kills !== boss.length) return `arc scenario: kills ${JSON.stringify(kills)}, stats ${s.stats.kills} of ${boss.length}`;
   return null;
 }
 for (const err of [checkWipeClearsAir(), checkArcOnTitan()]) {
@@ -121,8 +122,9 @@ const median = (xs: number[]) => {
 };
 
 let failed = false;
-const head = ["skill    ", ...POIS.map((p, i) => `P${i + 1} ${p.name}`.padEnd(14)), "extract", "finish", "total(med)", "downs", "wipes", "acc", "crit", "ult", "rank"];
+const head = ["skill    ", ...POIS.map((p, i) => `P${i + 1} ${p.name}`.padEnd(14)), "extract", "finish", "total(med)", "downs", "wipes", "acc", "crit", "ult", "crowd", "rank"];
 console.log(`${runs} runs per skill. per POI: median seconds from the previous objective, downs+wipes per run`);
+console.log("crowd: median over runs of the most squads / robots fighting the player at once outside the titan fight");
 console.log(head.join(" "));
 for (const skill of SKILLS) {
   const per: number[][] = POIS.map(() => []);
@@ -136,11 +138,15 @@ for (const skill of SKILLS) {
   let hits = 0;
   let crits = 0;
   let ults = 0;
+  const crowdSq: number[] = [];
+  const crowdBots: number[] = [];
   const ranks: Record<string, number> = { S: 0, A: 0, B: 0, C: 0 };
   for (let r = 0; r < runs; r++) {
     const s = newRun(1000 + r * 7919);
     const bot = new Bot(skill, 31 + r);
     let prevCrouch = false;
+    let peakSq = 0;
+    let peakBots = 0;
     try {
       while (s.phase !== "done" && s.time < LIMIT) {
         const inp = bot.input(s);
@@ -149,6 +155,11 @@ for (const skill of SKILLS) {
         for (const e of s.events) {
           if (e.t === "ultStart") ults++;
           if (e.t === "down" || e.t === "wipe") perDowns[Math.min(s.poi, POIS.length - 1)] += e.t === "wipe" ? 1 : 1;
+        }
+        if (!POIS[s.poi]?.boss) {
+          const fighting = s.enemies.filter((e) => e.aware === "engaged" && e.mode !== "spawning");
+          peakBots = Math.max(peakBots, fighting.length);
+          peakSq = Math.max(peakSq, new Set(fighting.map((e) => e.squad)).size);
         }
         if (Math.round(s.time / TICK) % 30 === 0) check(s, `${skill.name}#${r} t=${s.time.toFixed(1)} poi=${s.poi}`);
       }
@@ -160,10 +171,12 @@ for (const skill of SKILLS) {
     if (s.phase !== "done") {
       failed = true;
       const p = s.player.pos;
-      console.error(`${skill.name}#${r}: stuck at poi ${s.poi} wave ${s.wave} enemies ${s.enemies.map((e) => `${e.kind}@${e.pos.x.toFixed(0)},${e.pos.z.toFixed(0)}:${e.mode}`).join(" ")} player ${p.x.toFixed(1)},${p.y.toFixed(1)},${p.z.toFixed(1)}`);
+      console.error(`${skill.name}#${r}: stuck at poi ${s.poi} enemies ${s.enemies.map((e) => `${e.kind}@${e.pos.x.toFixed(0)},${e.pos.z.toFixed(0)}:${e.mode}:${e.aware}`).join(" ")} player ${p.x.toFixed(1)},${p.y.toFixed(1)},${p.z.toFixed(1)}`);
       continue;
     }
     finished++;
+    crowdSq.push(peakSq);
+    crowdBots.push(peakBots);
     s.stats.poiTimes.slice(0, POIS.length).forEach((t, i) => per[i].push(t));
     ext.push(s.stats.poiTimes[POIS.length] ?? NaN);
     const rk = rank(s);
@@ -188,6 +201,7 @@ for (const skill of SKILLS) {
       `${Math.round((hits / Math.max(shots, 1)) * 100)}%`.padEnd(3),
       `${Math.round((crits / Math.max(hits, 1)) * 100)}%`.padEnd(4),
       (ults / n).toFixed(1).padEnd(3),
+      `${median(crowdSq)}/${median(crowdBots)}`.padEnd(5),
       `S${ranks.S} A${ranks.A} B${ranks.B} C${ranks.C}`,
     ].join(" "),
   );

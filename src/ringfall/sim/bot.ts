@@ -83,8 +83,14 @@ export class Bot {
 
     const eye = eyePos(s);
     const live = s.enemies.filter((e) => e.mode !== "spawning");
-    const visible = live.filter((e) => dist2d(e.pos, p.pos) < 60 && los(eye, bodyCenter(e)));
-    const pool = visible.length ? visible : live;
+    // Only fight robots that are after us or stand at the current objective; leave the rest alone.
+    const relevant = live.filter((e) => e.aware === "engaged" || e.poi === s.poi);
+    const sees = (e: Enemy) => dist2d(e.pos, p.pos) < 60 && los(eye, bodyCenter(e));
+    // Finish the squads already fighting before opening on a new one, as a careful player would.
+    const engaged = relevant.filter((e) => e.aware === "engaged");
+    const objective = relevant.filter((e) => e.poi === s.poi);
+    const engagedSeen = engaged.filter(sees);
+    const pool = engagedSeen.length ? engagedSeen : engaged.length ? engaged : objective.filter(sees).length ? objective.filter(sees) : objective;
     const tgt = pool.sort((a, b) => dist2d(a.pos, p.pos) - dist2d(b.pos, p.pos))[0] as Enemy | undefined;
     if (!tgt || tgt.id !== this.target) {
       this.target = tgt?.id ?? -1;
@@ -263,7 +269,7 @@ export class Bot {
     this.pathT -= TICK;
     // Re-plan when the goal moved or every 2 s; an unreachable goal is not retried every tick.
     if (dist2d(goal, this.pathGoal) > 3 || this.pathT <= 0) {
-      this.path = findPath(p.pos.x, p.pos.z, goal.x, goal.z) ?? [];
+      this.path = findPath(p.pos.x, p.pos.z, goal.x, goal.z, { x: s.ring.x, z: s.ring.z, r: s.ring.r - 6 }) ?? [];
       this.pathGoal = { ...goal };
       this.pathT = 2;
     }

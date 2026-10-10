@@ -1,7 +1,6 @@
 import { PLAYER, RING, TICK, WORLD } from "./config";
 import { dist2d, groundAt } from "./geom";
 import { EXTRACT, POIS } from "./map";
-import { spawnWave } from "./enemies";
 import { hurtPlayer } from "./player";
 import { rand, type Input, type Loot, type State, type Weapon } from "./state";
 
@@ -21,24 +20,19 @@ export function stepPoi(s: State) {
   if (s.poi >= POIS.length) return;
   const poi = POIS[s.poi];
   const p = s.player;
-  if (!s.poiActive) {
-    if (dist2d(p.pos, poi) < poi.trigger) {
-      s.poiActive = true;
-      s.wave = 0;
-      spawnWave(s);
-      s.events.push({ t: "poiStart", poi: s.poi });
-    }
-    return;
+  if (!s.poiActive && dist2d(p.pos, poi) < poi.trigger) {
+    s.poiActive = true;
+    s.events.push({ t: "poiStart", poi: s.poi });
   }
+  // The care package drops once the fight at its POI has started.
+  if (poi.carePackage && !s.care && s.squads.some((sq) => sq.poi === s.poi && sq.engaged)) {
+    const c = poi.carePackage;
+    s.care = { x: c.x, z: c.z, y: 70, landed: false, open: false, weapon: { kind: c.weapon[0], rarity: c.weapon[1], mag: -1 } };
+    s.events.push({ t: "careDrop", x: c.x, z: c.z });
+  }
+  // Squads are on the island from the start, so a POI can be cleared before the player arrives.
   const alive = s.enemies.filter((e) => e.poi === s.poi).length;
-  if (s.wave < poi.waves.length && alive <= 1) {
-    if (poi.carePackage && s.wave === 1 && !s.care) {
-      const c = poi.carePackage;
-      s.care = { x: c.x, z: c.z, y: 70, landed: false, open: false, weapon: { kind: c.weapon[0], rarity: c.weapon[1], mag: -1 } };
-      s.events.push({ t: "careDrop", x: c.x, z: c.z });
-    }
-    spawnWave(s);
-  } else if (s.wave >= poi.waves.length && alive === 0) {
+  if (alive === 0) {
     s.events.push({ t: "poiClear", poi: s.poi });
     s.stats.poiTimes.push(s.time - s.poiStart);
     s.poiStart = s.time;

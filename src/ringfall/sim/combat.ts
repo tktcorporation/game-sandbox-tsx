@@ -1,4 +1,5 @@
-import { ASSIST, DEG, ENEMIES, PLAYER, RARITY, TICK, ULT, WEAPONS, type WeaponSpec } from "./config";
+import { ASSIST, DEG, ENEMIES, NOISE, PLAYER, RARITY, TICK, ULT, WEAPONS, type WeaponSpec } from "./config";
+import { engageSquad, makeNoise } from "./awareness";
 import { POIS } from "./map";
 import { los, lookAngles, norm, rayWorld, raySphere, wrapAngle } from "./geom";
 import { forward, rand, type Enemy, type State, type Vec3, type Weapon } from "./state";
@@ -49,12 +50,20 @@ export function assistTarget(s: State, coneDeg: number): { e: Enemy; angle: numb
     const ang = Math.acos(Math.max(-1, Math.min(1, (v.x * dir.x + v.y * dir.y + v.z * dir.z) / d)));
     const pad = Math.atan(ENEMIES[e.kind].radius / Math.max(d, 1));
     if (ang - pad > coneDeg * DEG) continue;
-    if (best && ang >= best.angle) continue;
+    const rank = assistRank(e, ang);
+    if (best && rank >= best.angle) continue;
     if (!los(eye, c)) continue;
-    best = { e, angle: ang };
+    best = { e, angle: rank };
   }
   return best;
 }
+
+/**
+ * Sort key for aim assist: the angle off the crosshair, with robots that have not
+ * noticed the player ranked after every one that has. A near miss in a fight then
+ * lands on the fight, not on a sleeping squad behind it (a direct hit still does).
+ */
+const assistRank = (e: Enemy, angle: number) => (e.aware === "idle" ? angle + 10 : angle);
 
 /** Turn the player's view toward the assist target by a fraction of the remaining angle. */
 export function applyPull(s: State, moving: boolean, firing: boolean, touch = false) {
@@ -98,9 +107,10 @@ export function fireRay(s: State, w: Weapon, dir: Vec3) {
     if (d > ASSIST.range) continue;
     const ang = Math.acos(Math.max(-1, Math.min(1, (v.x * dir.x + v.y * dir.y + v.z * dir.z) / d)));
     if (ang > coneAt(s, d, pelletScale) + Math.atan(k.radius / Math.max(d, 1))) continue;
-    if (assisted && ang >= assisted.angle) continue;
+    const rank = assistRank(e, ang);
+    if (assisted && rank >= assisted.angle) continue;
     if (!los(eye, c)) continue;
-    assisted = { e, t: d - k.radius * 0.5, angle: ang };
+    assisted = { e, t: d - k.radius * 0.5, angle: rank };
   }
   const hit = raw ?? (assisted ? { e: assisted.e, t: assisted.t, crit: false } : null);
   const muzzle = { x: eye.x, y: eye.y - 0.15, z: eye.z };
@@ -132,12 +142,15 @@ export function shoot(s: State, w: Weapon) {
   }
   p.recoil += spec.recoil * (1 - 0.5 * p.ads);
   s.events.push({ t: "shot", weapon: w.kind, rarity: w.rarity });
+  makeNoise(s, p.pos.x, p.pos.z, NOISE[w.kind]);
 }
 
 export function damageEnemy(s: State, e: Enemy, raw: number, crit: boolean, at: Vec3) {
   // Callers may hold a list taken before a kill removed this robot (the titan takes its summons with it).
   if (!s.enemies.includes(e)) return;
   const k = ENEMIES[e.kind];
+  // Being shot gives the player away to the whole squad.
+  engageSquad(s, e.squad, e);
   const before = e.hp + e.shield;
   const hadShield = e.shield > 0;
   const toShield = Math.min(e.shield, raw);
@@ -172,8 +185,7 @@ export function kill(s: State, e: Enemy, crit: boolean) {
   if (e.kind !== "titan" && rand(s) < 0.12) {
     s.loot.push({ id: s.nextId++, kind: "battery", rarity: 1, pos: { ...c }, vel: { x: 0, y: 5, z: 0 }, age: 0 });
   }
-  const poi = POIS[s.poi];
-  const last = s.poiActive && e.poi === s.poi && s.wave >= poi.waves.length && !s.enemies.some((o) => o.poi === s.poi);
+  const last = e.poi === s.poi && s.poi < POIS.length && !s.enemies.some((o) => o.poi === s.poi);
   s.events.push({ t: "kill", id: e.id, kind: e.kind, pos: c, crit, last });
   if (e.kind === "titan") {
     // The titan's fall takes its summons and everything in the air with it.

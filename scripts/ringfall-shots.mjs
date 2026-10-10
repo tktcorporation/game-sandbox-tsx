@@ -90,7 +90,7 @@ const errors = [];
   for (let i = 0; i < 900; i++) {
     await step(100);
     const st = await read();
-    if (st.poiActive && st.enemies.filter((e) => e.mode !== "spawning").length >= 3 && st.orbs >= 1) break;
+    if (st.enemies.filter((e) => e.aware === "engaged" && e.mode !== "spawning").length >= 2 && st.orbs >= 1) break;
   }
   await page.screenshot({ path: `${out}/m2-fight.png` });
   console.log(`mobile: stick ${s0.player.z} -> ${s1.player.z}, yaw ${yaw0.toFixed(2)} -> ${yaw1.toFixed(2)}, shots ${shots0} -> ${shots1}`);
@@ -156,14 +156,17 @@ for (let i = 0; i < 25 * 60 * 10; i++) {
     lastProgress = s.time;
   }
   if (s.time - lastProgress > 90) throw new Error(`no progress for 90 s: ${JSON.stringify(s).slice(0, 600)}`);
-  const live = s.enemies.filter((e) => e.mode !== "spawning");
+  const live = s.enemies.filter((e) => e.mode !== "spawning" && e.aware === "engaged");
+  const near = (e) => Math.hypot(e.x - s.player.x, e.z - s.player.z);
   if (s.phase === "play") await shot("02-landed");
-  if (s.poi === 0 && s.poiActive && live.length >= 3 && s.orbs >= 2) await shot("03-fight-supply");
+  if (s.poi === 0 && live.length >= 2 && s.orbs >= 1) await shot("03-fight-supply");
   if (s.stats.kills >= 3 && s.enemies.some((e) => e.mode !== "spawning" && e.hp < 60)) await shot("04-damage-numbers");
-  if (s.poi >= 1 && !s.poiActive && s.enemies.length === 0 && s.loot >= 3) await shot("05-loot");
+  if (s.stats.poiTimes.length >= 2 && !live.length && s.loot >= 3) await shot("05-loot");
   if (s.care && !s.care.landed) await shot("06-care-package");
   if (s.player.ultTime > 4) await shot("07-overdrive");
-  if (s.poi === 2 && s.poiActive && live.some((e) => e.kind === "heavy") && s.orbs >= 3) await shot("08-relay-heavy");
+  if (s.poi === 2 && live.some((e) => e.kind === "heavy") && s.orbs >= 2) await shot("08-relay-heavy");
+  if (!live.length && s.enemies.some((e) => (e.aware === "alert" || e.detect > 0.3) && near(e) < 45)) await shot("14-noticed");
+  if (s.player.reveal > 2) await shot("15-reveal");
   if (s.poi === 3 && live.some((e) => e.kind === "titan") && s.orbs >= 2) await shot("09-titan");
   if (s.waves > 0) await shot("10-stomp");
   if (s.player.downed) await shot("11-downed");

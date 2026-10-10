@@ -167,6 +167,66 @@ kbd {
   display: none;
 }
 
+#obj-stealth {
+  grid-column: 1 / -1;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--muted);
+}
+#obj-stealth:empty {
+  display: none;
+}
+#obj-stealth.alert {
+  color: var(--hot);
+}
+#obj-stealth.engaged {
+  color: #ff6b5a;
+}
+
+/* What each robot knows: a filling ring while it is noticing you, "?" while it
+   searches, "!" when its squad engages, a red diamond while revealed. */
+.aw {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  font-family: var(--num);
+  font-weight: 800;
+  font-size: 20px;
+  line-height: 1;
+  border-radius: 50%;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+}
+.aw.sense {
+  background: conic-gradient(var(--white) calc(var(--p) * 360deg), rgba(20, 26, 51, 0.45) 0);
+  -webkit-mask: radial-gradient(circle, transparent 7px, #000 8px);
+  mask: radial-gradient(circle, transparent 7px, #000 8px);
+}
+.aw.alert {
+  color: var(--hot);
+  background: var(--plate);
+  box-shadow: 0 0 0 2px var(--hot);
+}
+.aw.engaged {
+  color: var(--white);
+  background: #ff3b2f;
+  box-shadow: 0 0 0 2px var(--ink);
+  font-size: 22px;
+}
+.aw.reveal {
+  width: 14px;
+  height: 14px;
+  border-radius: 0;
+  transform: translate(-50%, -50%) rotate(45deg);
+  border: 2px solid #ff3b2f;
+  box-shadow: 0 0 6px rgba(255, 59, 47, 0.8);
+}
+.aw.edge {
+  opacity: 0.85;
+}
+
 #marker {
   position: absolute;
   transform: translate(-50%, -100%);

@@ -52,8 +52,18 @@ function nearestFree(x: number, z: number): [number, number] | null {
   return null;
 }
 
-/** Waypoints (world x, z) from a to b, or null if unreachable. */
-export function findPath(ax: number, az: number, bx: number, bz: number): { x: number; z: number }[] | null {
+/**
+ * Waypoints (world x, z) from a to b, or null if unreachable. Steps outside `keepIn`
+ * (the safe ring, shrunk by a margin) cost extra, so routes around a building stay
+ * inside the ring when a way inside exists.
+ */
+export function findPath(
+  ax: number,
+  az: number,
+  bx: number,
+  bz: number,
+  keepIn?: { x: number; z: number; r: number },
+): { x: number; z: number }[] | null {
   const s = nearestFree(ax, az);
   const g = nearestFree(bx, bz);
   if (!s || !g) return null;
@@ -124,7 +134,9 @@ export function findPath(ax: number, az: number, bx: number, bz: number): { x: n
         if (!free(ni, nj)) continue;
         if (di && dj && (!free(ci + di, cj) || !free(ci, cj + dj))) continue; // no corner cutting
         const nIdx = nj * N + ni;
-        const ng = gScore[cur] + (di && dj ? 1.414 : 1);
+        let cost = di && dj ? 1.414 : 1;
+        if (keepIn && Math.hypot(center(ni) - keepIn.x, center(nj) - keepIn.z) > keepIn.r) cost += 6;
+        const ng = gScore[cur] + cost;
         if (ng < gScore[nIdx]) {
           gScore[nIdx] = ng;
           came[nIdx] = cur;

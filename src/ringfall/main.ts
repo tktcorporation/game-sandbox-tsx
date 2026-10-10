@@ -200,6 +200,12 @@ function onEvent(e: GameEvent, s: State) {
     case "stomp":
       sfx.stomp();
       break;
+    case "suspect":
+      sfx.suspect();
+      break;
+    case "engage":
+      sfx.engage();
+      break;
     case "poiStart":
     case "poiClear":
     case "landed":
@@ -372,8 +378,9 @@ window.render_game_to_text = () => {
     time: +s.time.toFixed(1),
     poi: s.poi,
     poiActive: s.poiActive,
-    player: { x: +p.pos.x.toFixed(1), y: +p.pos.y.toFixed(1), z: +p.pos.z.toFixed(1), hp: Math.round(p.hp), shield: Math.round(p.shield), armor: p.armor, downed: p.downed > 0, weapons: p.weapons.map((w) => w && `${w.kind}${w.rarity}:${w.mag}`), ult: +p.ult.toFixed(2), ultTime: +p.ultTime.toFixed(1) },
-    enemies: s.enemies.map((e) => ({ kind: e.kind, x: Math.round(e.pos.x), z: Math.round(e.pos.z), hp: Math.round(e.hp + e.shield), mode: e.mode })),
+    player: { x: +p.pos.x.toFixed(1), y: +p.pos.y.toFixed(1), z: +p.pos.z.toFixed(1), hp: Math.round(p.hp), shield: Math.round(p.shield), armor: p.armor, downed: p.downed > 0, weapons: p.weapons.map((w) => w && `${w.kind}${w.rarity}:${w.mag}`), ult: +p.ult.toFixed(2), ultTime: +p.ultTime.toFixed(1), reveal: +p.reveal.toFixed(1), crouch: p.crouch },
+    enemies: s.enemies.map((e) => ({ kind: e.kind, x: Math.round(e.pos.x), z: Math.round(e.pos.z), y: +e.pos.y.toFixed(1), hp: Math.round(e.hp + e.shield), mode: e.mode, aware: e.aware, detect: +e.detect.toFixed(2), squad: e.squad })),
+    squads: s.squads.map((q) => ({ name: q.name, poi: q.poi, engaged: q.engaged })),
     orbs: s.orbs.length,
     waves: s.waves.length,
     loot: s.loot.length,

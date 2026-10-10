@@ -1,4 +1,4 @@
-import { ENEMIES, PLAYER, RARITY, RING, TACTICAL, ULT, WEAPONS } from "../sim/config";
+import { ENEMIES, PLAYER, RARITY, REVEAL, RING, TACTICAL, ULT, WEAPONS } from "../sim/config";
 import { magSize } from "../sim/combat";
 import { dist2d } from "../sim/geom";
 import { POIS } from "../sim/map";
@@ -40,6 +40,9 @@ export class Hud {
   private dirs: { el: HTMLElement; x: number; z: number; t: number }[] = [];
   private shieldCells: HTMLElement[] = [];
   private lastCells = -1;
+  private awareLayer = $("aware-layer");
+  private awEls = new Map<number, HTMLElement>();
+  private spotted = new Map<number, number>(); // robot id -> seconds left to show "!"
 
   constructor() {
     const strip = $("compass-strip");
@@ -137,6 +140,14 @@ export class Hud {
       case "bossPhase":
         this.banner("タイタン 怒り状態", "攻撃が速くなる");
         break;
+      case "engage":
+        if (!s.squads[e.squad]?.engaged) break;
+        for (const r of s.enemies) if (r.squad === e.squad) this.spotted.set(r.id, 2.5);
+        if (s.poi < POIS.length && !POIS[s.poi].boss) this.toast(`発見された：${s.squads[e.squad].name}`, 0);
+        break;
+      case "calm":
+        this.toast("見失わせた：部隊が捜索に移った", 1);
+        break;
       case "tacticalMiss":
         this.toast("前方に敵がいない", 0);
         break;
@@ -151,15 +162,17 @@ export class Hud {
 
     // Objective card.
     const poi = POIS[s.poi];
-    const remaining = s.poiActive ? s.enemies.filter((e) => e.poi === s.poi).length + POIS[s.poi].waves.slice(s.wave).reduce((a, wv) => a + wv.length, 0) : 0;
+    const remaining = s.enemies.filter((e) => e.poi === s.poi).length;
+    // A fight with this POI's robots counts as being there, even short of its area.
+    const active = s.poiActive || s.enemies.some((e) => e.poi === s.poi && e.aware === "engaged");
     let text = "";
     if (s.phase === "drop") text = isTouch() ? "降下中：スティックで着地点を選ぶ" : "降下中：WASD で着地点を選ぶ";
     else if (s.phase === "extract") text = "ドロップシップに乗れ";
     else if (s.phase === "done") text = "生還";
-    else if (poi && s.poiActive) text = poi.boss ? "タイタンを倒せ" : `${poi.name}のロボットを倒せ`;
+    else if (poi && active) text = poi.boss ? "タイタンを倒せ" : `${poi.name}のロボット部隊を倒せ`;
     else if (poi) text = `${poi.name}へ向かえ`;
     $("obj-text").textContent = text;
-    $("obj-count").textContent = s.poiActive ? `残り ${remaining}` : "";
+    $("obj-count").textContent = active ? `残り ${remaining}` : "";
     const ring = s.ring;
     const outside = dist2d(p.pos, ring) > ring.r && s.phase !== "drop";
     $("obj-ring").textContent = outside ? "リングの外：内側へ戻れ" : ring.shrinking ? `リング縮小中 ${Math.ceil((1 - ring.t) * RING.shrinkTime)} 秒` : "";
@@ -315,8 +328,8 @@ export class Hud {
       (sh.parentElement as HTMLElement).style.display = k.shield > 0 ? "" : "none";
       hp.style.width = `${(Math.max(0, e.hp) / k.hp) * 100}%`;
     }
-    // The titan's bar sits at the top of the screen like a boss bar.
-    const titan = s.enemies.find((e) => e.kind === "titan" && e.mode !== "spawning");
+    // The titan's bar sits at the top of the screen like a boss bar, once it wakes.
+    const titan = s.enemies.find((e) => e.kind === "titan" && e.mode !== "spawning" && e.aware === "engaged");
     let boss = this.barEls.get(-1);
     if (titan) {
       if (!boss) {
@@ -340,6 +353,8 @@ export class Hud {
         el.remove();
         this.barEls.delete(id);
       }
+
+    this.awareness(s, view, dt, w, h);
 
     // Damage direction arcs.
     this.dirs = this.dirs.filter((d) => {
@@ -365,6 +380,88 @@ export class Hud {
 
     this.bannerT -= dt;
     if (this.bannerT <= 0) $("banner").className = "";
+  }
+
+  /**
+   * A mark over each robot that knows something, pinned to the screen edge when it
+   * is off screen, so the player always sees who is about to spot them. While the
+   * arc reveal runs, every robot in range gets a red diamond, walls or not.
+   */
+  private awareness(s: State, view: World, dt: number, w: number, h: number) {
+    const p = s.player;
+    const seen = new Set<number>();
+    let worst = 0; // 0 none, 1 noticing, 2 alert, 3 engaged
+    let near = false;
+    for (const [id, t] of this.spotted) if (t - dt <= 0) this.spotted.delete(id);
+    else this.spotted.set(id, t - dt);
+    if (s.phase === "play") {
+      for (const e of s.enemies) {
+        if (e.mode === "spawning") continue;
+        const d = dist2d(e.pos, p.pos);
+        if (d < 50) near = true;
+        const level = e.aware === "engaged" ? 3 : e.aware === "alert" ? 2 : e.detect > 0.02 ? 1 : 0;
+        worst = Math.max(worst, level);
+        const revealed = p.reveal > 0 && d < REVEAL.range;
+        const bang = this.spotted.has(e.id);
+        let cls = "";
+        if (bang) cls = "engaged";
+        else if (level === 2) cls = "alert";
+        else if (level === 1) cls = "sense";
+        else if (revealed) cls = "reveal";
+        if (!cls || e.kind === "titan" || d > 80) continue;
+        seen.add(e.id);
+        let el = this.awEls.get(e.id);
+        if (!el) {
+          el = document.createElement("div");
+          this.awareLayer.appendChild(el);
+          this.awEls.set(e.id, el);
+        }
+        const top = cls === "reveal" ? ENEMIES[e.kind].weakY : ENEMIES[e.kind].weakY + 1.4;
+        const sp = view.project({ x: e.pos.x, y: e.pos.y + top, z: e.pos.z }, w, h);
+        let x = sp.x;
+        let y = sp.y;
+        // Off screen: noticing and searching marks stick to the edge; the rest hide.
+        const off = sp.behind || x < 0 || x > w || y < 0 || y > h;
+        if (off && cls === "reveal") {
+          el.style.display = "none";
+          continue;
+        }
+        if (sp.behind) {
+          x = w - x;
+          y = h - 60;
+        }
+        x = Math.max(30, Math.min(w - 30, x));
+        y = Math.max(off ? 150 : 40, Math.min(h - 150, y));
+        el.className = `aw ${cls}${off ? " edge" : ""}`;
+        el.textContent = cls === "engaged" ? "!" : cls === "alert" ? "?" : "";
+        el.style.setProperty("--p", e.detect.toFixed(2));
+        el.style.display = "";
+        el.style.left = `${x}px`;
+        el.style.top = `${y}px`;
+      }
+    }
+    for (const [id, el] of this.awEls)
+      if (!seen.has(id)) {
+        el.remove();
+        this.awEls.delete(id);
+      }
+
+    // One line under the objective: how hidden the player is right now.
+    const st = $("obj-stealth");
+    const text =
+      s.phase !== "play" || !near
+        ? ""
+        : worst === 3
+          ? "交戦中：遮蔽物を使え"
+          : worst === 2
+            ? "警戒中：先手を取れ"
+            : worst === 1
+              ? "見られている：視線を切れ"
+              : p.crouch
+                ? "未発見・しゃがみ中"
+                : "未発見";
+    st.textContent = text;
+    st.className = worst === 3 ? "engaged" : worst === 2 ? "alert" : "";
   }
 
   private prompt(s: State): string {

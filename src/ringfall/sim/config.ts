@@ -36,7 +36,7 @@ export const PLAYER = {
   downedTime: 3,
   reviveHp: 60,
   reviveIframes: 1.5,
-  shardShield: 12,
+  shardShield: 8,
   shardMagnet: 7,
   pickupRange: 2.6,
   interactRange: 2.4,
@@ -153,8 +153,8 @@ export interface EnemySpec {
 }
 
 export const ENEMIES: Record<EnemyKind, EnemySpec> = {
-  drone: { hp: 55, shield: 0, shieldTier: 0, radius: 0.55, bodyY: 0, weakY: 0, weakR: 0.24, weakFwd: 0.42, speed: 4.2, fly: 3.4, range: 14, telegraph: 0.55, cooldown: 1.6, shots: 1, shotGap: 0, spread: 0, orbSpeed: 19, orbDmg: 11, orbR: 0.32, ult: 1 },
-  grunt: { hp: 100, shield: 50, shieldTier: 1, radius: 0.6, bodyY: 1.1, weakY: 1.86, weakR: 0.27, weakFwd: 0.08, speed: 3.2, fly: 0, range: 15, telegraph: 0.6, cooldown: 1.8, shots: 3, shotGap: 0.16, spread: 0, orbSpeed: 23, orbDmg: 9, orbR: 0.3, ult: 1 },
+  drone: { hp: 55, shield: 0, shieldTier: 0, radius: 0.55, bodyY: 0, weakY: 0, weakR: 0.24, weakFwd: 0.42, speed: 4.2, fly: 3.4, range: 14, telegraph: 0.55, cooldown: 1.6, shots: 1, shotGap: 0, spread: 0, orbSpeed: 19, orbDmg: 13, orbR: 0.32, ult: 1 },
+  grunt: { hp: 100, shield: 50, shieldTier: 1, radius: 0.6, bodyY: 1.1, weakY: 1.86, weakR: 0.27, weakFwd: 0.08, speed: 3.2, fly: 0, range: 15, telegraph: 0.6, cooldown: 1.8, shots: 3, shotGap: 0.16, spread: 0, orbSpeed: 23, orbDmg: 11, orbR: 0.3, ult: 1 },
   charger: { hp: 90, shield: 40, shieldTier: 0, radius: 0.72, bodyY: 0.75, weakY: 0.95, weakR: 0.3, weakFwd: 0.62, speed: 6.4, fly: 0, range: 0, telegraph: 0.6, cooldown: 1.2, shots: 0, shotGap: 0, spread: 0, orbSpeed: 0, orbDmg: 28, orbR: 0, ult: 1 },
   heavy: { hp: 220, shield: 125, shieldTier: 2, radius: 0.95, bodyY: 1.4, weakY: 2.35, weakR: 0.36, weakFwd: 0.1, speed: 2.0, fly: 0, range: 18, telegraph: 0.85, cooldown: 3.2, shots: 5, shotGap: 0, spread: 9, orbSpeed: 17, orbDmg: 11, orbR: 0.42, ult: 1 },
   titan: { hp: 3200, shield: 1000, shieldTier: 3, radius: 2.3, bodyY: 3.2, weakY: 3.4, weakR: 0.75, weakFwd: 2.1, speed: 1.6, fly: 0, range: 20, telegraph: 1.0, cooldown: 3.0, shots: 6, shotGap: 0.16, spread: 0, orbSpeed: 13, orbDmg: 9, orbR: 0.48, ult: 0.5 },
@@ -182,3 +182,70 @@ export const RANK = {
   parSeconds: 240, // total run time that earns full time score
   steps: ["S", "A", "B", "C"] as const,
 };
+
+/**
+ * How robots notice the player. Each robot has a view cone; while it sees the
+ * player its detection fills (faster up close), and at full the whole squad
+ * engages. Crouching shrinks the range and slows the fill.
+ */
+export const SIGHT: Record<EnemyKind, { range: number; fov: number }> = {
+  drone: { range: 30, fov: 150 },
+  grunt: { range: 36, fov: 110 },
+  charger: { range: 22, fov: 120 },
+  heavy: { range: 32, fov: 100 },
+  titan: { range: 34, fov: 160 },
+};
+
+export const AWARE = {
+  /** Within this distance a robot senses the player in any direction. */
+  closeSense: 4.5,
+  crouchRange: 0.55,
+  crouchRate: 0.6,
+  /** Seconds to fill detection at point-blank, plus this much more at the edge of sight. */
+  fillNear: 0.35,
+  fillFar: 1.5,
+  /** Detection at which a robot turns to look (the "?" state). */
+  suspicious: 0.3,
+  decay: 0.25,
+  /** An alerted robot searches this long before going back to its post. */
+  searchTime: 9,
+  /** An engaged squad that has not seen the player this long goes back to searching. */
+  loseTime: 8,
+  idleSpeed: 0.45, // fraction of combat speed while patrolling or searching
+  /**
+   * At most this many squads fight at once. Another squad that spots the player
+   * keeps searching ("?") until one of them is down, unless the player comes within
+   * `joinClose` metres or shoots it. This keeps a POI a series of fights, not a crowd.
+   */
+  maxSquads: 2,
+  joinClose: 8,
+};
+
+/** How far a sound carries, in metres. Robots inside it come to look. */
+export const NOISE = {
+  pike: 26,
+  hornet: 22,
+  maul: 24,
+  lance: 34,
+  arc: 16,
+  sprintStep: 8,
+  slide: 10,
+  /** Within this fraction of a sound's radius, a robot that can see the spot engages at once. */
+  engageInside: 0.35,
+};
+
+export const COVER = {
+  /** Gap between a cover point and the box face. */
+  offset: 0.9,
+  spacing: 1.6,
+  /** How far sideways a robot steps out of cover to shoot. */
+  peek: 1.4,
+  search: 14,
+  minFromPlayer: 6,
+  maxFromPlayer: 34,
+  /** Seconds a robot stays behind cover between shots. */
+  hide: [1.4, 2.4] as const,
+};
+
+/** Seconds the arc shows every robot within range through walls. */
+export const REVEAL = { time: 5, range: 40 };

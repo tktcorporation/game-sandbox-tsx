@@ -1,5 +1,6 @@
 import { DROP, ENEMIES, PLAYER, ULT, type EnemyKind, type Rarity, type WeaponKind } from "./config";
 import { EXTRA_BINS, POIS, SPAWN } from "./map";
+import { populate } from "./enemies";
 
 export interface Vec3 {
   x: number;
@@ -36,6 +37,8 @@ export interface Player {
   tactical: number; // cooldown left
   ult: number; // charge 0..1
   ultTime: number; // seconds of overdrive left
+  reveal: number; // seconds left of seeing robots through walls
+  stepNoise: number; // seconds until the next sprint footstep sound
   batteries: number;
   battery: number; // channel time left, 0 = not using
   sinceHurt: number;
@@ -45,6 +48,17 @@ export interface Player {
 }
 
 export type EnemyMode = "spawning" | "move" | "telegraph" | "fire" | "lunge" | "recover" | "stomp" | "stunned";
+
+/**
+ * What a robot knows. idle: at its post or on patrol. alert: heard or glimpsed
+ * something and is looking ("?"). engaged: fighting, with its whole squad ("!").
+ */
+export type Awareness = "idle" | "alert" | "engaged";
+
+export interface Point {
+  x: number;
+  z: number;
+}
 
 export interface Enemy {
   id: number;
@@ -64,6 +78,27 @@ export interface Enemy {
   aimYaw: number;
   aimPitch: number;
   summoned: number; // titan: how many summons used
+  squad: number; // index into State.squads
+  aware: Awareness;
+  detect: number; // 0..1, full = engage
+  home: Vec3; // post to return to
+  face: number; // yaw watched at the post
+  lookT: number; // idle head-turn phase
+  goal: Point | null; // alert: where to search
+  searchT: number;
+  cover: Point | null; // engaged grunt: where it hides
+  peek: Point | null; // and where it steps out to shoot
+  coverT: number; // seconds until it re-checks its cover
+}
+
+export interface SquadState {
+  name: string;
+  poi: number; // -1 for optional squads between POIs
+  patrol: Point[];
+  leg: number; // next patrol waypoint
+  engaged: boolean;
+  sinceSeen: number; // seconds since any member saw the player while engaged
+  last: Point; // where the squad last saw the player
 }
 
 export interface Orb {
@@ -160,6 +195,9 @@ export type GameEvent =
   | { t: "enemyFire"; id: number; pos: Vec3 }
   | { t: "lunge"; id: number }
   | { t: "spawn"; id: number; pos: Vec3 }
+  | { t: "suspect"; id: number }
+  | { t: "engage"; squad: number; id: number }
+  | { t: "calm"; squad: number }
   | { t: "poiStart"; poi: number }
   | { t: "poiClear"; poi: number }
   | { t: "ringClose"; poi: number }
@@ -191,6 +229,7 @@ export interface State {
   nextId: number;
   player: Player;
   enemies: Enemy[];
+  squads: SquadState[];
   orbs: Orb[];
   waves: Shockwave[];
   loot: Loot[];
@@ -198,8 +237,7 @@ export interface State {
   care: CarePackage | null;
   ring: Ring;
   poi: number; // index of the current objective POI
-  poiActive: boolean;
-  wave: number; // next wave index within the POI
+  poiActive: boolean; // the player is inside the current POI's area
   poiStart: number;
   extractTime: number;
   events: GameEvent[];
@@ -260,7 +298,7 @@ export function newRun(seed = 1): State {
       if (f.battery) loot.push({ id: id++, kind: "battery", rarity: 1, pos, vel, age: 99 });
     }),
   );
-  return {
+  const s: State = {
     time: 0,
     phase: "drop",
     rng: seed >>> 0 || 1,
@@ -288,6 +326,8 @@ export function newRun(seed = 1): State {
       tactical: 0,
       ult: ULT.startCharge,
       ultTime: 0,
+      reveal: 0,
+      stepNoise: 0,
       batteries: 1,
       battery: 0,
       sinceHurt: 99,
@@ -296,6 +336,7 @@ export function newRun(seed = 1): State {
       iframes: 0,
     },
     enemies: [],
+    squads: [],
     orbs: [],
     waves: [],
     loot,
@@ -304,12 +345,13 @@ export function newRun(seed = 1): State {
     ring: { x: 0, z: 0, r: 150, fromX: 0, fromZ: 0, fromR: 150, toX: 0, toZ: 0, toR: 150, t: 1, shrinking: false },
     poi: 0,
     poiActive: false,
-    wave: 0,
     poiStart: 0,
     extractTime: 0,
     events: [],
     stats: { kills: 0, damage: 0, shots: 0, hits: 0, crits: 0, downs: 0, wipes: 0, poiTimes: [] },
   };
+  populate(s);
+  return s;
 }
 
 /** Deterministic xorshift; the state is the seed so runs replay exactly. */

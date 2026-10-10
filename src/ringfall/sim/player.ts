@@ -1,4 +1,5 @@
-import { ASSIST, DEG, DROP, PLAYER, RARITY, SEMI_HOLD, TACTICAL, TICK, ULT, WEAPONS, WORLD } from "./config";
+import { ASSIST, DEG, DROP, NOISE, PLAYER, RARITY, REVEAL, SEMI_HOLD, TACTICAL, TICK, ULT, WEAPONS, WORLD } from "./config";
+import { makeNoise } from "./awareness";
 import { POIS } from "./map";
 import { applyPull, assistTarget, bodyCenter, damageEnemy, eyePos, magSize, shoot } from "./combat";
 import { ceilingAt, collide, groundAt, los } from "./geom";
@@ -81,6 +82,12 @@ function move(s: State, input: Input, prevCrouch: boolean) {
   if (input.moveZ > 0.5 && !input.fire && p.ads < 0.1 && p.battery <= 0) p.forwardHeld += TICK;
   else p.forwardHeld = 0;
   p.sprinting = p.onGround && !p.sliding && !input.crouch && p.downed <= 0 && p.forwardHeld > PLAYER.autoSprintAfter;
+  // Running footsteps carry a little way; walking and crouching are silent.
+  p.stepNoise -= TICK;
+  if (p.sprinting && p.stepNoise <= 0) {
+    p.stepNoise = 0.35;
+    makeNoise(s, p.pos.x, p.pos.z, NOISE.sprintStep);
+  }
 
   if (input.crouch && !prevCrouch && p.onGround && !p.sliding && speed > PLAYER.walk + 0.3 && p.downed <= 0) {
     p.sliding = true;
@@ -88,6 +95,7 @@ function move(s: State, input: Input, prevCrouch: boolean) {
     p.vel.x *= k;
     p.vel.z *= k;
     s.events.push({ t: "slide" });
+    makeNoise(s, p.pos.x, p.pos.z, NOISE.slide);
   }
   p.crouch = input.crouch && !p.sliding;
 
@@ -246,8 +254,13 @@ function abilities(s: State, input: Input) {
       .filter(({ c }) => los(eye, c))
       .sort((a, b) => Math.hypot(a.c.x - eye.x, a.c.z - eye.z) - Math.hypot(b.c.x - eye.x, b.c.z - eye.z))
       .slice(0, TACTICAL.maxTargets);
-    if (!targets.length) s.events.push({ t: "tacticalMiss" });
-    else {
+    // The arc also shows every robot nearby through walls for a few seconds.
+    p.reveal = REVEAL.time;
+    makeNoise(s, p.pos.x, p.pos.z, NOISE.arc);
+    if (!targets.length) {
+      p.tactical = TACTICAL.cooldown * 0.5;
+      s.events.push({ t: "tacticalMiss" });
+    } else {
       p.tactical = TACTICAL.cooldown;
       s.events.push({ t: "tactical", targets: targets.map((t) => t.c) });
       for (const { e, c } of targets) {
@@ -291,6 +304,10 @@ function abilities(s: State, input: Input) {
   }
 }
 
+export function tickReveal(s: State) {
+  s.player.reveal = Math.max(0, s.player.reveal - TICK);
+}
+
 export function hurtPlayer(s: State, dmg: number, fromX: number, fromZ: number, ring = false) {
   const p = s.player;
   if (s.phase !== "play" && s.phase !== "extract") return;
@@ -329,10 +346,17 @@ export function wipe(s: State) {
   p.iframes = 2.5;
   s.orbs = [];
   s.waves = [];
+  // Robots lose track of the player and go back to their posts; damage stays.
   for (const e of s.enemies) {
-    if (e.mode === "spawning") continue;
-    e.mode = "move";
+    if (e.mode !== "spawning") e.mode = "move";
     e.cooldown = 2.5;
+    if (e.kind === "titan") continue;
+    e.aware = "idle";
+    e.detect = 0;
+    e.goal = e.cover = e.peek = null;
   }
+  s.squads.forEach((sq, i) => {
+    if (!s.enemies.some((e) => e.squad === i && e.kind === "titan")) sq.engaged = false;
+  });
   s.events.push({ t: "wipe" });
 }

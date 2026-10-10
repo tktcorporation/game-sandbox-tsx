@@ -213,6 +213,15 @@ export const sfx = {
     tone(70, 0.5, { type: "sine", to: 35, vol: 0.6 });
     hiss(0.5, { freq: 300, vol: 0.3 });
   },
+  /** A robot heard or glimpsed you and starts looking. */
+  suspect() {
+    tone(660, 0.12, { type: "triangle", vol: 0.07, to: 990 });
+  },
+  /** A squad spotted you: everyone in it is now fighting. */
+  engage() {
+    tone(880, 0.09, { type: "square", vol: 0.07 });
+    tone(1320, 0.14, { type: "square", vol: 0.07, at: 0.09 });
+  },
   down() {
     tone(330, 0.6, { type: "sawtooth", to: 80, vol: 0.18 });
   },

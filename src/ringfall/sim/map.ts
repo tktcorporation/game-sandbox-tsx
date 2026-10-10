@@ -116,13 +116,26 @@ function building(cx: number, cz: number, w: number, d: number, H: number, o: Bu
   return out;
 }
 
-export interface WaveSpawn {
+/** One robot of a squad, placed on the island from the start. */
+export interface Member {
   kind: EnemyKind;
-  /** Offset from the POI centre. */
-  dx: number;
-  dz: number;
-  /** Height of the floor it spawns on (a roof, a platform); 0 = ground. */
+  x: number;
+  z: number;
+  /** Floor height it stands on (a roof, a platform); 0 = ground. */
   y?: number;
+  /** Direction it watches while idle (yaw, 0 = north / -z). */
+  face?: number;
+}
+
+/**
+ * A squad notices and fights together: when one member engages, all do. Other
+ * squads come only if they hear the shooting.
+ */
+export interface Squad {
+  name: string;
+  members: Member[];
+  /** Waypoints walked in a loop while nothing is wrong. Without it the squad holds its posts. */
+  patrol?: { x: number; z: number }[];
 }
 
 export type LootTable = { weapon: [WeaponKind, Rarity][]; armor: Rarity[]; batteries: number };
@@ -131,13 +144,14 @@ export interface Poi {
   name: string;
   x: number;
   z: number;
-  /** The fight starts when the player comes this close. */
+  /** The objective banner shows when the player comes this close. */
   trigger: number;
   /** The ring closes to this radius around the POI. */
   ring: number;
   /** Where the player restarts after a wipe here. */
   entry: { x: number; z: number; yaw: number };
-  waves: WaveSpawn[][];
+  /** Clearing the POI means beating every one of these squads. */
+  squads: Squad[];
   bins: { x: number; z: number; y?: number }[];
   loot: LootTable;
   floor: { x: number; z: number; y?: number; weapon?: [WeaponKind, Rarity]; armor?: Rarity; battery?: true }[];
@@ -145,11 +159,13 @@ export interface Poi {
   boss?: true;
 }
 
-const ring = (n: number, r: number, start: number, kinds: EnemyKind[]): WaveSpawn[] =>
-  kinds.slice(0, n).map((kind, i) => {
-    const a = start + (i / n) * Math.PI * 2;
-    return { kind, dx: Math.cos(a) * r, dz: Math.sin(a) * r };
-  });
+/** Facing directions for idle robots (yaw). */
+const N = 0;
+const E = Math.PI / 2;
+const S = Math.PI;
+const W = -Math.PI / 2;
+const SE = (3 * Math.PI) / 4;
+const SW = (-3 * Math.PI) / 4;
 
 export const POIS: Poi[] = [
   {
@@ -159,10 +175,11 @@ export const POIS: Poi[] = [
     trigger: 24,
     ring: 60,
     entry: { x: 0, z: 74, yaw: 0 },
-    waves: [
-      ring(4, 13, -2.4, ["grunt", "drone", "grunt", "drone"]),
-      ring(5, 15, -0.6, ["charger", "drone", "grunt", "charger", "drone"]),
-      [...ring(4, 14, 0.9, ["grunt", "drone", "charger", "drone"]), { kind: "grunt", dx: 18, dz: 13, y: 3 }],
+    squads: [
+      { name: "コンテナ前", members: [{ kind: "grunt", x: -8, z: 50, face: S }, { kind: "grunt", x: -2, z: 48, face: S }] },
+      { name: "巡回ドローン", members: [{ kind: "drone", x: 6, z: 48 }, { kind: "drone", x: 4, z: 46 }], patrol: [{ x: 6, z: 48 }, { x: 6, z: 64 }, { x: -6, z: 64 }, { x: -6, z: 50 }] },
+      { name: "見張り台", members: [{ kind: "grunt", x: 18, z: 63, y: 3, face: S }, { kind: "charger", x: 14, z: 66, face: S }] },
+      { name: "管理棟", members: [{ kind: "grunt", x: -24, z: 46, face: E }, { kind: "grunt", x: -21, z: 50, face: E }, { kind: "charger", x: -25, z: 51, face: E }] },
     ],
     bins: [
       { x: -2, z: 54 },
@@ -184,10 +201,11 @@ export const POIS: Poi[] = [
     trigger: 26,
     ring: 42,
     entry: { x: -18, z: 30, yaw: -0.8 },
-    waves: [
-      ring(5, 14, -1.2, ["grunt", "drone", "grunt", "grunt", "drone"]),
-      [...ring(5, 15, 0.3, ["charger", "grunt", "charger", "drone", "charger"]), { kind: "grunt", dx: 8, dz: -17, y: 4 }],
-      [...ring(5, 13, 1.5, ["grunt", "drone", "charger", "grunt", "drone"]), { kind: "grunt", dx: -17, dz: -10, y: 2.4 }],
+    squads: [
+      { name: "鉄骨の足場", members: [{ kind: "grunt", x: -52, z: -15, y: 4, face: SE }, { kind: "grunt", x: -38, z: -15, y: 4, face: SE }] },
+      { name: "採掘穴", members: [{ kind: "charger", x: -46, z: 4, face: SE }, { kind: "charger", x: -48, z: -4, face: SE }, { kind: "grunt", x: -42, z: 2, face: SE }] },
+      { name: "段丘", members: [{ kind: "grunt", x: -63, z: -8, y: 2.4, face: E }, { kind: "drone", x: -58, z: -2 }], patrol: [{ x: -58, z: -2 }, { x: -50, z: -8 }, { x: -58, z: -12 }] },
+      { name: "作業小屋", members: [{ kind: "grunt", x: -63, z: 25, face: E }, { kind: "charger", x: -61, z: 22.5, face: E }] },
     ],
     bins: [
       { x: -37, z: 8 },
@@ -205,10 +223,11 @@ export const POIS: Poi[] = [
     trigger: 27,
     ring: 40,
     entry: { x: 22, z: -6, yaw: -0.85 },
-    waves: [
-      ring(6, 15, 2.4, ["grunt", "drone", "heavy", "grunt", "drone", "grunt"]),
-      ring(7, 15, 1.2, ["charger", "drone", "heavy", "charger", "drone", "grunt", "charger"]),
-      [...ring(6, 14, 0.2, ["heavy", "drone", "grunt", "drone", "charger", "grunt"]), { kind: "grunt", dx: -0.5, dz: -1, y: 5 }, { kind: "grunt", dx: -12, dz: 10, y: 3.4 }],
+    squads: [
+      { name: "中継塔", members: [{ kind: "grunt", x: 41.5, z: -29, y: 5, face: SW }, { kind: "grunt", x: 43.8, z: -28, y: 3.4, face: SW }] },
+      { name: "コンテナ置き場", members: [{ kind: "heavy", x: 36, z: -36, face: SW }, { kind: "grunt", x: 34, z: -26, face: SW }, { kind: "grunt", x: 46, z: -36, face: SW }] },
+      { name: "西の小屋", members: [{ kind: "grunt", x: 30, z: -18, y: 3.4, face: SW }, { kind: "charger", x: 29, z: -18, face: E }, { kind: "charger", x: 31, z: -17.5, face: E }] },
+      { name: "東の小屋", members: [{ kind: "grunt", x: 57, z: -36, face: W }, { kind: "grunt", x: 56, z: -38.5, face: W }, { kind: "drone", x: 50, z: -46 }], patrol: [{ x: 50, z: -46 }, { x: 60, z: -30 }, { x: 48, z: -30 }] },
     ],
     bins: [
       { x: 33, z: -22 },
@@ -225,7 +244,7 @@ export const POIS: Poi[] = [
     trigger: 28,
     ring: 42,
     entry: { x: 12, z: -40, yaw: 0.35 },
-    waves: [[{ kind: "titan", dx: 0, dz: -8 }]],
+    squads: [{ name: "タイタン", members: [{ kind: "titan", x: 0, z: -76, face: S }, { kind: "drone", x: -8, z: -70 }, { kind: "drone", x: 8, z: -70 }] }],
     bins: [
       { x: -16, z: -56 },
       { x: 16, z: -56 },
@@ -238,6 +257,13 @@ export const POIS: Poi[] = [
 
 
 export const EXTRACT = { x: 0, z: -84, radius: 5 };
+
+/** Squads between the POIs. Beating them is optional; they guard loot and high ground. */
+export const ROAMERS: Squad[] = [
+  { name: "高台の狙撃手", members: [{ kind: "grunt", x: -27, z: 21, y: 3.6, face: E }] },
+  { name: "集落", members: [{ kind: "grunt", x: -5, z: -23, face: N }, { kind: "grunt", x: 3, z: -35, face: N }, { kind: "drone", x: 10, z: -15 }], patrol: [{ x: 10, z: -15 }, { x: -9, z: -15 }, { x: -9, z: -31 }, { x: 13, z: -31 }] },
+  { name: "道沿いの小屋", members: [{ kind: "grunt", x: 19, z: 23, face: W }] },
+];
 export const SPAWN = { x: 0, z: 100, yaw: 0 };
 
 /** Bins in buildings off the main route. `table` is the POI whose loot table they use. */

@@ -14,7 +14,9 @@ Read the game's brief before changing anything visual. A new page needs an entry
 ## RINGFALL
 
 A battle-royale-shaped run against robots only: skydive onto an island, clear three POIs while the
-ring closes toward the next one, beat the titan, extract. First person on three.js.
+ring closes toward the next one, beat the titan, extract. First person on three.js. Robots are
+squads placed on the island from the start (`POIS[].squads` and `ROAMERS` in `map.ts`), not waves:
+the player finds them and takes them one squad at a time.
 
 ```bash
 npm run sim:ringfall     # gate 2: bots of three skills play the whole run headless
@@ -26,7 +28,11 @@ npm run shots:ringfall   # gate 3: the build played to the end in Chromium; scre
   same help. Every solid is an axis-aligned box spanning `y0..h` in `map.ts` (floors, roofs and bridges
   float); build structures with its `building()` and `stairs()` helpers, whose risers stay under the
   step-up height. Tuning numbers are in `config.ts`. `npm run sim:ringfall` first checks that every
-  authored point (entries, bins, loot, spawns) stands on a floor and not inside a box.
+  authored point (entries, bins, loot, squad posts, patrols) stands on a floor and not inside a box.
+- `awareness.ts` decides who knows about the player: sight cones fill a detection meter, noise
+  (shots, sprinting) sends squads to look, and at most `AWARE.maxSquads` squads fight at once.
+  `cover.ts` precomputes the spots grunts hide behind. The sim gate's `crowd` column is the most
+  squads / robots fighting at once; keep it within the target in `docs/ringfall/balance.md`.
 - `nav.ts` is ground path finding for the bot only; the game never reads it.
 - `src/ringfall/touch.ts` is the phone layout (landscape): a floating stick on the left half, view
   drag on the right half, buttons under the right thumb. It feeds the same `Input` as the keyboard,

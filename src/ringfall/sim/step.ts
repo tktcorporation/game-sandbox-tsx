@@ -1,5 +1,5 @@
 import { stepEnemies, stepOrbs, stepWaves } from "./enemies";
-import { stepDrop, stepPlayer } from "./player";
+import { stepDrop, stepPlayer, tickReveal } from "./player";
 import { closeRingTo, stepExtract, stepLoot, stepPoi, stepRing } from "./world";
 import { TICK } from "./config";
 import type { Input, State } from "./state";
@@ -14,6 +14,7 @@ export function step(s: State, input: Input, prevCrouch: boolean) {
     return;
   }
   stepPlayer(s, input, prevCrouch);
+  tickReveal(s);
   stepEnemies(s);
   stepOrbs(s);
   stepWaves(s);

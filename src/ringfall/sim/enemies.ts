@@ -1,35 +1,48 @@
-import { CHARGER, ENEMIES, PLAYER, TICK, TITAN, WORLD, type EnemyKind } from "./config";
-import { collide, groundAt, los, lookAngles, wrapAngle } from "./geom";
+import { AWARE, CHARGER, COVER, ENEMIES, PLAYER, TICK, TITAN, WORLD, type EnemyKind } from "./config";
+import { collide, dist2d, groundAt, los, lookAngles, solidAt, wrapAngle } from "./geom";
+import { engageSquad, sense, stepSquads } from "./awareness";
+import { COVERS } from "./cover";
 
 /** Walkers refuse to step off a ledge higher than this, so rooftop robots stay on their roof. */
 const LEDGE = 1.0;
 const bodyHeight = (k: { bodyY: number; radius: number }) => k.bodyY + k.radius;
-import { POIS } from "./map";
+import { POIS, ROAMERS, type Squad } from "./map";
 import { bodyCenter, weakPoint } from "./combat";
 import { hurtPlayer } from "./player";
-import { rand, type Enemy, type State, type Vec3 } from "./state";
+import { rand, type Enemy, type Point, type State, type Vec3 } from "./state";
 
 /*
- * Robot behaviour. Every attack follows the same readable rhythm:
- * move -> telegraph (eye glows, aim locks near the end) -> fire -> move.
+ * Robot behaviour. Out of combat a robot holds its post or walks its squad's
+ * patrol, and searches where it heard or glimpsed something. In combat every
+ * attack follows the same readable rhythm: move -> telegraph (eye glows, aim
+ * locks near the end) -> fire -> move. Grunts on the ground hide behind cover
+ * between shots and step out sideways to fire.
  */
 
-export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi: number, floor = 0) {
+interface SpawnOpts {
+  floor?: number;
+  face?: number;
+  /** Beam in with the spawn animation (titan summons) instead of standing there from the start. */
+  appear?: boolean;
+}
+
+export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi: number, squad: number, o: SpawnOpts = {}): Enemy {
   const k = ENEMIES[kind];
+  const floor = o.floor ?? 0;
   const pos = { x, y: floor, z };
   collide(pos, k.radius, bodyHeight(k));
   pos.y = k.fly > 0 ? flyHeight(pos.x, pos.z) : groundAt(pos.x, pos.z, k.radius, floor + 0.3);
-  const p = s.player;
+  const face = o.face ?? rand(s) * Math.PI * 2;
   const e: Enemy = {
     id: s.nextId++,
     kind,
     pos,
     vel: { x: 0, y: 0, z: 0 },
-    yaw: lookAngles(pos, p.pos).yaw,
+    yaw: face,
     hp: k.hp,
     shield: k.shield,
-    mode: "spawning",
-    timer: kind === "titan" ? 2.2 : 0.9,
+    mode: o.appear ? "spawning" : "move",
+    timer: o.appear ? 0.9 : 0,
     cooldown: 0,
     shotsLeft: 0,
     strafe: rand(s) < 0.5 ? -1 : 1,
@@ -38,9 +51,32 @@ export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi:
     aimYaw: 0,
     aimPitch: 0,
     summoned: 0,
+    squad,
+    aware: "idle",
+    detect: 0,
+    home: { ...pos },
+    face,
+    lookT: rand(s) * 10,
+    goal: null,
+    searchT: 0,
+    cover: null,
+    peek: null,
+    coverT: 0,
   };
   s.enemies.push(e);
-  s.events.push({ t: "spawn", id: e.id, pos: { ...pos } });
+  if (o.appear) s.events.push({ t: "spawn", id: e.id, pos: { ...pos } });
+  return e;
+}
+
+/** Put every squad on the island at the start of a run. */
+export function populate(s: State) {
+  const add = (sq: Squad, poi: number) => {
+    const index = s.squads.length;
+    s.squads.push({ name: sq.name, poi, patrol: sq.patrol ?? [], leg: 0, engaged: false, sinceSeen: 0, last: { x: 0, z: 0 } });
+    for (const m of sq.members) spawnEnemy(s, m.kind, m.x, m.z, poi, index, { floor: m.y ?? 0, face: m.face });
+  };
+  POIS.forEach((p, i) => p.squads.forEach((sq) => add(sq, i)));
+  ROAMERS.forEach((sq) => add(sq, -1));
 }
 
 const chest = (s: State): Vec3 => ({ x: s.player.pos.x, y: s.player.pos.y + 1.1, z: s.player.pos.z });
@@ -117,6 +153,7 @@ function moveBody(e: Enemy, vx: number, vz: number) {
 
 export function stepEnemies(s: State) {
   const p = s.player;
+  stepSquads(s);
   for (const e of [...s.enemies]) {
     const k = ENEMIES[e.kind];
     e.lastHit += TICK;
@@ -128,6 +165,7 @@ export function stepEnemies(s: State) {
       }
       continue;
     }
+    sense(s, e);
     if (e.mode === "stunned") {
       e.timer -= TICK;
       moveBody(e, 0, 0);
@@ -136,6 +174,14 @@ export function stepEnemies(s: State) {
         e.cooldown = Math.max(e.cooldown, 0.6);
       }
       continue;
+    }
+    if (e.aware !== "engaged") {
+      // The titan wakes when the player walks into its arena.
+      if (e.kind === "titan" && dist2d(e.pos, p.pos) < 24 && p.downed <= 0 && s.phase === "play") engageSquad(s, e.squad, e);
+      else {
+        calm(s, e);
+        continue;
+      }
     }
     const dx = p.pos.x - e.pos.x;
     const dz = p.pos.z - e.pos.z;
@@ -146,6 +192,7 @@ export function stepEnemies(s: State) {
       titan(s, e, d);
       continue;
     }
+    if (e.kind === "grunt" && e.pos.y < 0.6 && fromCover(s, e)) continue;
     switch (e.mode) {
       case "move": {
         const sees = los(muzzle(e), chest(s));
@@ -241,6 +288,124 @@ export function stepEnemies(s: State) {
   separate(s);
 }
 
+/** Turn toward a yaw at a robot's turning speed. */
+function turnTo(e: Enemy, yaw: number, rate = 3) {
+  e.yaw += wrapAngle(yaw - e.yaw) * Math.min(1, TICK * rate);
+}
+
+/** Walk toward a point; returns true once there. */
+function walkTo(e: Enemy, to: Point, speed: number, face = true): boolean {
+  const dx = to.x - e.pos.x;
+  const dz = to.z - e.pos.z;
+  const d = Math.hypot(dx, dz);
+  if (d < 0.35) {
+    moveBody(e, 0, 0);
+    return true;
+  }
+  if (face) turnTo(e, Math.atan2(dx, -dz), 4);
+  if (moveBody(e, (dx / d) * speed, (dz / d) * speed)) e.strafe = -e.strafe;
+  return false;
+}
+
+/** Out of combat: hold the post or walk the patrol; when alerted, go and look. */
+function calm(s: State, e: Enemy) {
+  const k = ENEMIES[e.kind];
+  const slow = k.speed * AWARE.idleSpeed;
+  e.lookT += TICK;
+  if (e.aware === "alert" && e.poi === POIS.length - 1) {
+    // The boss arena holds its ground: it looks, but does not leave.
+    e.searchT -= TICK;
+    if (e.goal) turnTo(e, Math.atan2(e.goal.x - e.pos.x, -(e.goal.z - e.pos.z)), 2);
+    if (dist2d(e.pos, e.home) > 0.8) walkTo(e, e.home, slow, false);
+    else moveBody(e, 0, 0);
+    if (e.searchT <= 0) e.aware = "idle";
+    return;
+  }
+  if (e.aware === "alert") {
+    e.searchT -= TICK;
+    if (e.goal && dist2d(e.pos, e.goal) > 2.5) walkTo(e, e.goal, slow * 1.4);
+    else {
+      moveBody(e, 0, 0);
+      e.yaw += Math.sin(e.lookT * 1.3) * TICK * 1.6; // looking around
+    }
+    if (e.searchT <= 0) {
+      e.aware = "idle";
+      e.goal = null;
+    }
+    return;
+  }
+  const sq = s.squads[e.squad];
+  if (sq && sq.patrol.length && e.kind !== "titan") {
+    // The first living member leads; the others follow at an offset.
+    const members = s.enemies.filter((o) => o.squad === e.squad);
+    const slot = members.indexOf(e);
+    const wp = sq.patrol[sq.leg % sq.patrol.length];
+    const to = { x: wp.x + (slot % 2 ? 1.6 : -1.6) * Math.min(slot, 1), z: wp.z + slot * 1.4 };
+    if (walkTo(e, to, slow) && slot === 0) sq.leg++;
+    return;
+  }
+  if (dist2d(e.pos, e.home) > 0.8) walkTo(e, e.home, slow);
+  else {
+    moveBody(e, 0, 0);
+    turnTo(e, e.face + Math.sin(e.lookT * 0.45) * 0.7, 1.5);
+  }
+}
+
+/** Find a spot near this grunt that hides it from the player, with a spot beside it to shoot from. */
+function findCover(s: State, e: Enemy): { cover: Point; peek: Point } | null {
+  const p = s.player;
+  const head = { x: p.pos.x, y: p.pos.y + 1.5, z: p.pos.z };
+  const chestP = { x: p.pos.x, y: p.pos.y + 1.1, z: p.pos.z };
+  const taken = s.enemies.filter((o) => o !== e && o.cover).map((o) => o.cover!);
+  const cands = COVERS.map((c) => ({ c, d: dist2d(c, e.pos), dp: dist2d(c, p.pos) }))
+    .filter(({ c, d, dp }) => d < COVER.search && dp > COVER.minFromPlayer && dp < COVER.maxFromPlayer && !taken.some((t) => dist2d(t, c) < 1.5))
+    .sort((a, b) => a.d + Math.abs(a.dp - 16) * 0.3 - (b.d + Math.abs(b.dp - 16) * 0.3))
+    .slice(0, 14);
+  for (const { c } of cands) {
+    if (los({ x: c.x, y: 1.3, z: c.z }, head)) continue;
+    for (const sign of [1, -1]) {
+      const peek = { x: c.x + c.tx * sign * COVER.peek, z: c.z + c.tz * sign * COVER.peek };
+      if (solidAt(peek.x, 1.0, peek.z)) continue;
+      if (los({ x: peek.x, y: 1.6, z: peek.z }, chestP)) return { cover: { x: c.x, z: c.z }, peek };
+    }
+  }
+  return null;
+}
+
+/**
+ * An engaged grunt on the ground: hide behind cover, step out to shoot, step
+ * back. Returns false when it has no cover and should fight in the open.
+ */
+function fromCover(s: State, e: Enemy): boolean {
+  const k = ENEMIES.grunt;
+  if (e.mode !== "move") return false; // telegraph and fire run as usual
+  e.coverT -= TICK;
+  // Re-think the spot every few seconds, and at once when hit (flanked).
+  if (e.coverT <= 0 || e.lastHit < TICK * 1.5) {
+    const found = findCover(s, e);
+    e.cover = found?.cover ?? null;
+    e.peek = found?.peek ?? null;
+    e.coverT = 2.5;
+  }
+  if (!e.cover || !e.peek) return false;
+  e.cooldown -= TICK;
+  const out = e.cooldown <= 0;
+  const there = walkTo(e, out ? e.peek : e.cover, k.speed, false);
+  if (out && there) {
+    if (los({ ...e.pos, y: e.pos.y + k.weakY }, { x: s.player.pos.x, y: s.player.pos.y + 1.1, z: s.player.pos.z }) && s.player.downed <= 0) {
+      e.mode = "telegraph";
+      e.timer = k.telegraph;
+      e.aimYaw = e.yaw;
+      s.events.push({ t: "telegraph", id: e.id });
+    } else {
+      // The player moved out of that angle: find another spot.
+      e.coverT = 0;
+      e.cooldown = 0.4;
+    }
+  }
+  return true;
+}
+
 /** Keep walkers from stacking into one blob. */
 function separate(s: State) {
   const list = s.enemies.filter((e) => ENEMIES[e.kind].fly === 0 && e.mode !== "spawning");
@@ -275,7 +440,9 @@ function titan(s: State, e: Enemy, d: number) {
       e.summoned |= bit;
       for (let j = 0; j < 3; j++) {
         const a = e.yaw + (j - 1) * 1.1;
-        spawnEnemy(s, "drone", e.pos.x + Math.sin(a) * 9, e.pos.z - Math.cos(a) * 9, e.poi);
+        const d = spawnEnemy(s, "drone", e.pos.x + Math.sin(a) * 9, e.pos.z - Math.cos(a) * 9, e.poi, e.squad, { appear: true });
+        d.aware = "engaged";
+        d.detect = 1;
       }
     }
   });
@@ -399,8 +566,3 @@ export function stepWaves(s: State) {
   if (s.stats.wipes === wipes) s.waves = kept;
 }
 
-export function spawnWave(s: State) {
-  const poi = POIS[s.poi];
-  for (const sp of poi.waves[s.wave]) spawnEnemy(s, sp.kind, poi.x + sp.dx, poi.z + sp.dz, s.poi, sp.y ?? 0);
-  s.wave++;
-}
