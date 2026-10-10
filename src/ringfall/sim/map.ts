@@ -669,7 +669,7 @@ function scatterCover(authored: Box[]): Box[] {
           placed.every(clear(b, 2.5)) &&
           points.every((q) => distToBox(b, q.x, q.z) > q.r) &&
           segments.every((sg) => {
-            const n = Math.ceil(Math.hypot(sg.bx - sg.ax, sg.bz - sg.az));
+            const n = Math.max(1, Math.ceil(Math.hypot(sg.bx - sg.ax, sg.bz - sg.az)));
             for (let k = 0; k <= n; k++) if (distToBox(b, sg.ax + ((sg.bx - sg.ax) * k) / n, sg.az + ((sg.bz - sg.az) * k) / n) < 2.5) return false;
             return true;
           }) &&

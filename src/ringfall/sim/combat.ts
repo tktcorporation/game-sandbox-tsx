@@ -160,8 +160,11 @@ export function damageEnemy(s: State, e: Enemy, raw: number, crit: boolean, at: 
   const flank = flankOf(s, e);
   raw *= FLANK.mult[flank];
   if (flank === "back" || flank === "ambush") s.stats.flankHits++;
-  // Being shot gives the player away to the whole squad.
+  // Being shot gives the player away to the whole squad. A squad already fighting
+  // learns where the shot came from and turns there, at its usual turning speed.
   engageSquad(s, e.squad, e);
+  const sq = s.squads[e.squad];
+  if (sq) sq.last = { x: s.player.pos.x, z: s.player.pos.z };
   const before = e.hp + e.shield;
   const hadShield = e.shield > 0;
   const toShield = Math.min(e.shield, raw);

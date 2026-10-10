@@ -131,8 +131,9 @@ function moveBody(e: Enemy, vx: number, vz: number) {
   const blocked = collide(e.pos, k.radius, bodyHeight(k));
   const here = groundAt(bx, bz, k.radius, e.pos.y);
   const there = groundAt(e.pos.x, e.pos.z, k.radius, e.pos.y);
-  if (there < here - LEDGE) {
-    // A drop ahead: stay on this floor.
+  // A drop ahead stays on this floor. A robot posted up high (a roof, a tower tier)
+  // never leaves its floor at all: it could not find the way back up.
+  if (there < here - LEDGE || (e.home.y > 0.6 && Math.abs(there - e.home.y) > 0.3)) {
     e.pos.x = bx;
     e.pos.z = bz;
     e.vel.x = e.vel.z = 0;
@@ -225,7 +226,8 @@ export function stepEnemies(s: State) {
         moveBody(e, 0, 0);
         e.timer -= TICK;
         // Aim follows the player until the last 35% of the wind-up, then locks: moving dodges.
-        if (e.timer > k.telegraph * 0.35) lockAim(s, e);
+        // It can only aim where it faces: a player who slips out of its cone is shot at where they were.
+        if (e.timer > k.telegraph * 0.35 && facing(e, p.pos)) lockAim(s, e);
         if (e.timer <= 0) {
           if (e.kind === "charger") {
             e.mode = "lunge";
@@ -434,13 +436,26 @@ function separate(s: State) {
       const dx = b.pos.x - a.pos.x;
       const dz = b.pos.z - a.pos.z;
       const d = Math.hypot(dx, dz);
-      if (d >= r || d < 1e-4) continue;
+      // Robots on different floors (a tower's tiers) do not touch.
+      if (d >= r || d < 1e-4 || Math.abs(a.pos.y - b.pos.y) > 1) continue;
       const push = (r - d) / 2;
-      a.pos.x -= (dx / d) * push;
-      a.pos.z -= (dz / d) * push;
-      b.pos.x += (dx / d) * push;
-      b.pos.z += (dz / d) * push;
+      nudge(a, (-dx / d) * push, (-dz / d) * push);
+      nudge(b, (dx / d) * push, (dz / d) * push);
     }
+}
+
+/** Shift a walker sideways, but never into a wall or off the floor it stands on. */
+function nudge(e: Enemy, dx: number, dz: number) {
+  const k = ENEMIES[e.kind];
+  const bx = e.pos.x;
+  const bz = e.pos.z;
+  e.pos.x += dx;
+  e.pos.z += dz;
+  collide(e.pos, k.radius, bodyHeight(k));
+  if (Math.abs(groundAt(e.pos.x, e.pos.z, k.radius, e.pos.y) - e.pos.y) > 0.3) {
+    e.pos.x = bx;
+    e.pos.z = bz;
+  }
 }
 
 function titan(s: State, e: Enemy, d: number) {
