@@ -85,6 +85,21 @@ const errors = [];
   const shots1 = (await read()).stats.shots;
   if (!(shots1 > shots0)) errors.push(`mobile: the fire button did not shoot (${shots0} -> ${shots1})`);
 
+  // The page never zooms: browser gestures are off on the root (touch-action
+  // narrows down the tree, so the HUD and menus are covered too), and iOS Safari's
+  // pinch events, which ignore the viewport meta, are cancelled.
+  const zoom = await page.evaluate(() => {
+    const pinch = new Event("gesturestart", { bubbles: true, cancelable: true });
+    document.getElementById("objective").dispatchEvent(pinch);
+    return {
+      meta: document.querySelector('meta[name="viewport"]').content,
+      body: getComputedStyle(document.body).touchAction,
+      pinchCancelled: pinch.defaultPrevented,
+    };
+  });
+  if (!/user-scalable=no/.test(zoom.meta) || !/maximum-scale=1/.test(zoom.meta) || zoom.body !== "none" || !zoom.pinchCancelled)
+    errors.push(`mobile: the page can still zoom (${JSON.stringify(zoom)})`);
+
   // The bot plays to the first fight for a screenshot of the touch layout.
   await page.evaluate((s) => window.ringfallBot(s), skill);
   for (let i = 0; i < 900; i++) {

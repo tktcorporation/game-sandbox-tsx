@@ -6,7 +6,7 @@ import { step } from "./sim/step";
 import { setWind, sfx, unlock } from "./view/audio";
 import { Hud } from "./view/hud";
 import { World } from "./view/world";
-import { setupTouch } from "./touch";
+import { blockPageZoom, setupTouch } from "./touch";
 import "./style.css";
 
 /*
@@ -48,6 +48,7 @@ function enableTouch() {
 }
 if (touchMode) enableTouch();
 addEventListener("pointerdown", (e) => e.pointerType === "touch" && !touchMode && enableTouch());
+blockPageZoom();
 setupTouch({
   move: stick,
   look: (dx, dy) => {

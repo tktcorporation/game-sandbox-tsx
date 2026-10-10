@@ -31,6 +31,12 @@ body {
   font-family: var(--jp);
   user-select: none;
   -webkit-user-select: none;
+  /* Nothing on the page scrolls, so the browser's own gestures (pinch and
+     double-tap zoom, pull to refresh) only get in the way of play. */
+  touch-action: none;
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
 }
 
 #stage,

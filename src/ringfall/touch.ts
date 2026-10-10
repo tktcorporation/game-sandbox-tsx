@@ -20,6 +20,16 @@ export interface TouchSink {
 
 const STICK_RADIUS = 56;
 
+/**
+ * Keep the page at 1:1 on phones. iOS Safari ignores `user-scalable=no` and
+ * still zooms on a pinch, so its gesture events are cancelled here; `touch-action`
+ * in the stylesheet covers double-tap zoom and the other browsers.
+ */
+export function blockPageZoom() {
+  for (const type of ["gesturestart", "gesturechange", "gestureend"]) document.addEventListener(type, (e) => e.preventDefault(), { passive: false });
+  document.addEventListener("dblclick", (e) => e.preventDefault(), { passive: false });
+}
+
 export function setupTouch(sink: TouchSink) {
   const $ = (id: string) => document.getElementById(id)!;
   const root = $("touch");
