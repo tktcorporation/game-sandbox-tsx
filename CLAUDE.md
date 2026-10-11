@@ -29,8 +29,9 @@ npm run shots:ringfall   # gate 3: the build played to the end in Chromium; scre
   float); build structures with its `building()` (one storey), `tower()` (several storeys with stairs
   inside), `bridge()` and `stairs()` helpers, whose risers stay under the step-up height. Each POI is
   written in its own frame and moved into place by `AT`; the districts between them use island
-  coordinates. The ground is a height field (`terrain.ts`): hills, mesas with cliffs and one ramp,
-  a canyon, and cliffs round the island; ground steeper than `STEEP` is a wall. It is pressed flat
+  coordinates. The ground is a height field (`terrain.ts`): unclimbable high ground with the POIs
+  and districts in basins cut into it (`BASINS`), joined by valley roads (`ROADS`), shelves inside
+  the POI basins, a canyon, and cliffs round the island; ground steeper than `STEEP` is a wall. It is pressed flat
   near every authored box and point, so hand-built places keep the heights they were written with.
   `scatterCover()` then fills the open ground with low walls,
   crates, containers and ruins from a fixed seed, keeping clear of authored points and patrol routes. Tuning numbers are in `config.ts`. `npm run sim:ringfall` first checks that every

@@ -1,7 +1,8 @@
 /**
  * Writes a top-down picture of the island (terrain shaded by height, cliffs dark,
  * boxes grey, POIs, robots, spawn and extract) to the path given, for checking a
- * layout by eye: `npx tsx scripts/ringfall-topdown.ts out.png`.
+ * layout by eye: `npx tsx scripts/ringfall-topdown.ts out.png [x z size]` (the optional
+ * square, centre and side in metres, zooms in on one place).
  */
 import { writeFileSync } from "node:fs";
 import { deflateSync } from "node:zlib";
@@ -9,20 +10,23 @@ import { WORLD } from "../src/ringfall/sim/config";
 import { BOXES, EXTRACT, POIS, ROAMERS, SPAWN } from "../src/ringfall/sim/map";
 import { terrainHeight, steepAt } from "../src/ringfall/sim/terrain";
 
-const PX = 2; // pixels per metre
-const span = WORLD.half * 2;
+const [cx, cz, size] = process.argv.slice(3).map(Number);
+const span = size || WORLD.half * 2;
+const ox = size ? cx - span / 2 : -WORLD.half;
+const oz = size ? cz - span / 2 : -WORLD.half;
+const PX = Math.max(1, Math.round(860 / span)); // pixels per metre
 const W = span * PX;
 const img = new Uint8Array(W * W * 3);
 const put = (x: number, z: number, c: [number, number, number]) => {
-  const i = Math.floor((x + WORLD.half) * PX);
-  const j = Math.floor((z + WORLD.half) * PX);
+  const i = Math.floor((x - ox) * PX);
+  const j = Math.floor((z - oz) * PX);
   if (i < 0 || j < 0 || i >= W || j >= W) return;
   img.set(c, (j * W + i) * 3);
 };
 for (let j = 0; j < W; j++)
   for (let i = 0; i < W; i++) {
-    const x = i / PX - WORLD.half;
-    const z = j / PX - WORLD.half;
+    const x = i / PX + ox;
+    const z = j / PX + oz;
     const h = terrainHeight(x, z);
     const k = Math.max(0, Math.min(1, (h + 8) / 40));
     let c: [number, number, number] = [Math.round(200 * (0.55 + 0.45 * k)), Math.round(165 * (0.55 + 0.45 * k)), Math.round(110 * (0.55 + 0.45 * k))];
@@ -31,9 +35,9 @@ for (let j = 0; j < W; j++)
     img.set(c, (j * W + i) * 3);
   }
 for (const b of BOXES)
-  for (let x = b.x0; x <= b.x1; x += 0.5) for (let z = b.z0; z <= b.z1; z += 0.5) put(x, z, b.y0 > 0.5 && b.y0 > terrainHeight(x, z) + 0.5 ? [150, 150, 170] : [90, 90, 100]);
+  for (let x = b.x0; x <= b.x1; x += 1 / PX) for (let z = b.z0; z <= b.z1; z += 1 / PX) put(x, z, b.y0 > 0.5 && b.y0 > terrainHeight(x, z) + 0.5 ? [150, 150, 170] : [90, 90, 100]);
 const dot = (x: number, z: number, r: number, c: [number, number, number]) => {
-  for (let a = -r; a <= r; a += 0.5) for (let b = -r; b <= r; b += 0.5) if (a * a + b * b <= r * r) put(x + a, z + b, c);
+  for (let a = -r; a <= r; a += 1 / PX) for (let b = -r; b <= r; b += 1 / PX) if (a * a + b * b <= r * r) put(x + a, z + b, c);
 };
 for (const p of POIS) {
   for (let a = 0; a < Math.PI * 2; a += 0.01) put(p.x + Math.cos(a) * p.ring, p.z + Math.sin(a) * p.ring, [255, 90, 40]);

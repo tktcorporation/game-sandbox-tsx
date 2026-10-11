@@ -588,22 +588,6 @@ const AUTHORED: Box[] = [
   ...building(-95, -68, 6, 6, 3.4, { doors: ["n", "w"], windows: ["e"] }),
   box(-100, -80, 7, 0.6, 1.6, "wall"),
   box(-118, -58, 0.6, 6, 1.2, "wall"),
-
-  // --- open ground: rocks for cover on the long walks
-  box(-60, -10, 6, 4, 2.2, "rock"),
-  box(-35, 5, 5, 5, 3, "rock"),
-  box(35, -10, 4, 6, 1.8, "rock"),
-  box(30, 15, 5, 3, 2.4, "rock"),
-  box(-25, 45, 3, 6, 1.6, "rock"),
-  box(25, 70, 4, 3, 1.4, "rock"),
-  box(-20, -30, 6, 5, 3.2, "rock"),
-  box(20, -60, 5, 4, 2.6, "rock"),
-  box(-30, -90, 6, 5, 3, "rock"),
-  box(80, 5, 5, 5, 3, "rock"),
-  box(-100, 60, 5, 4, 2.4, "rock"),
-  box(-110, -40, 6, 4, 2.6, "rock"),
-  box(110, -90, 5, 5, 3, "rock"),
-  box(-90, -100, 6, 6, 3, "rock"),
 ];
 
 /**
@@ -693,7 +677,7 @@ function scatterCover(authored: Box[], { points, segments }: Keep): Box[] {
 
   const clear = (b: Box, gap: number) => (o: Box) => b.x1 + gap <= o.x0 || o.x1 + gap <= b.x0 || b.z1 + gap <= o.z0 || o.z1 + gap <= b.z0;
   const distToBox = (b: Box, x: number, z: number) => Math.hypot(Math.max(b.x0 - x, 0, x - b.x1), Math.max(b.z0 - z, 0, z - b.z1));
-  // A piece goes only on ground that is not a cliff. It starts at the lowest ground
+  // A piece goes only on low ground that is not a cliff. It starts at the lowest ground
   // under it and keeps its full height above the highest, so it never floats or sinks.
   const groundUnder = (piece: Box[]): { lo: number; hi: number } | null => {
     let lo = Infinity;
@@ -701,6 +685,7 @@ function scatterCover(authored: Box[], { points, segments }: Keep): Box[] {
     for (const b of piece)
       for (const [x, z] of [[b.x0, b.z0], [b.x1, b.z0], [b.x0, b.z1], [b.x1, b.z1], [(b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2]]) {
         if (steepAt(x, z) || Math.hypot(x, z) > rimRadius(x, z) - 4) return null;
+        if (terrainHeight(x, z) > 3) return null; // cover belongs on the low ground people walk
         const h = terrainHeight(x, z);
         lo = Math.min(lo, h);
         hi = Math.max(hi, h);
@@ -751,14 +736,8 @@ buildTerrain([
   }),
 ]);
 
-// The high ground and the canyon floor pay for the climb: a bin on each mesa top and one in the canyon.
-for (const [x, z, table] of [
-  [-134, 110, 1],
-  [-144, -111, 2],
-  [152, -69, 2],
-  [104, 124, 0],
-  [62, -138, 2],
-] as const)
+// The canyon floor pays for the detour: a bin under the bridge's north side.
+for (const [x, z, table] of [[55, -112, 2]] as const)
   EXTRA_BINS.push({ x, z, y: terrainHeight(x, z), table });
 
 export const BOXES: Box[] = [...AUTHORED, ...scatterCover(AUTHORED, KEEP)];

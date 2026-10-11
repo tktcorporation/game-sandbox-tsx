@@ -1,14 +1,16 @@
 import { WORLD } from "./config";
 
 /*
- * The ground. A height field under the boxes: rolling hills, mesas with cliffs and
- * one ramp up, a canyon with a walkable floor, and cliffs round the island's edge.
- * Ground steeper than STEEP is a cliff: bodies cannot walk up it, so cliffs, the
- * canyon walls and the rim shape the routes between the POIs.
+ * The ground. Most of the island is high ground with cliff sides that cannot be
+ * climbed; the places people fight in are basins cut into it, joined by valley
+ * roads. So each POI is entered from a few directions only: its main road and one
+ * or two side roads, and the way between two POIs is a choice between roads, not
+ * a straight walk. A dry canyon cuts the north-east, crossed by the canyon bridge.
+ * Ground steeper than STEEP is a cliff: bodies cannot walk up it, only fall down.
  *
  * Everything built by hand stands on flat ground: the field is pressed to 0 near
  * every authored box and point (see buildTerrain), so buildings, posts and paths
- * keep the heights they were written with.
+ * keep the heights they were written with. Basins are laid out to hold them.
  */
 
 /** Rise per metre above which ground is a cliff (45°). */
@@ -24,7 +26,7 @@ function toPolyline(x: number, z: number, pts: readonly P[]): { d: number; along
   let along = 0;
   let total = 0;
   const lens = pts.slice(1).map((b, i) => Math.hypot(b[0] - pts[i][0], b[1] - pts[i][1]));
-  const sum = lens.reduce((a, b) => a + b, 0);
+  const sum = lens.reduce((a, b) => a + b, 0) || 1;
   for (let i = 0; i < lens.length; i++) {
     const [ax, az] = pts[i];
     const [bx, bz] = pts[i + 1];
@@ -48,21 +50,11 @@ const along = (vals: readonly number[], t: number) => {
   return vals[i] + (vals[i + 1] - vals[i]) * (f - i);
 };
 
-/** A raised shape: flat on top within `top` metres of its line, falling `slope` per metre beyond. */
-interface Rise {
+/** Low ground: everything within `half` metres of the line is at ground level. */
+interface Open {
+  name: string;
   line: readonly P[];
-  top: number;
-  height: number;
-  slope: number;
-}
-
-/** A walkway of ground from height `from` at its first point to `to` at its last, with cliff sides. */
-interface Ramp {
-  a: P;
-  b: P;
-  width: number;
-  from: number;
-  to: number;
+  half: number;
 }
 
 /** A trench with a flat floor `floor` metres either side of its line; `depth` varies along it. */
@@ -73,58 +65,84 @@ interface Cut {
   slope: number;
 }
 
-const CLIFF = 2.6;
+/** Height of the high ground, and how steeply its cliffs fall to the low ground. */
+const HIGH = 9;
+const CLIFF = 2.4;
 
-/** Hills: smooth bumps, walkable all over. */
-const HILLS: { x: number; z: number; r: number; h: number }[] = [
-  { x: 125, z: 95, r: 38, h: 7 },
-  { x: 92, z: 150, r: 26, h: 5 },
-  { x: -62, z: 150, r: 30, h: 6 },
-  { x: -158, z: -18, r: 30, h: 8 },
-  { x: 155, z: 45, r: 26, h: 6 },
-  { x: -165, z: 65, r: 22, h: 5 },
-  { x: 20, z: 170, r: 30, h: 4 },
-  { x: -120, z: -160, r: 30, h: 7 },
+/** Basins: the POIs and the districts. Each holds everything built there. */
+const BASINS: Open[] = [
+  { name: "補給所", line: [[0, 86], [0, 130]], half: 32 },
+  { name: "採掘場", line: [[-116, 8], [-86, 24]], half: 30 },
+  { name: "中継塔", line: [[78, -36], [102, -28]], half: 27 },
+  { name: "発着場", line: [[-8, -118], [10, -118]], half: 34 },
+  { name: "旧市街", line: [[0, -12], [0, 30]], half: 25 },
+  { name: "尾根", line: [[-64, 70], [-36, 70]], half: 13 },
+  { name: "台地", line: [[-54, -50], [-36, -50]], half: 18 },
+  { name: "工場", line: [[54, 42], [60, 58]], half: 18 },
+  { name: "住宅地", line: [[104, 26], [122, 2]], half: 15 },
+  { name: "廃村", line: [[-114, -68], [-96, -60]], half: 17 },
 ];
 
 /**
- * Mesas and ridges with cliff sides. Each mesa has a ramp (RAMPS) so its top is a
- * vantage point reached one way; the spine in the north cannot be crossed except
- * over its saddle ramp, which splits the run to the landing pad into a west and an
- * east approach.
+ * Valley roads between basins, 12 to 16 m wide. Every POI has a main road toward
+ * the next one and at least one side road, so the player picks the approach.
  */
-const RISES: Rise[] = [
-  // 西の高台: high ground south-west of the quarry.
-  { line: [[-128, 102], [-140, 118]], top: 16, height: 9, slope: CLIFF },
-  // 北の尾根: the spine between the plateau district and the canyon.
-  { line: [[-8, -40], [-14, -62], [-12, -86]], top: 2.5, height: 11, slope: CLIFF },
-  // 東の岩山: a lookout over the relay tower from the north-east.
-  { line: [[148, -64], [156, -74]], top: 10, height: 8, slope: CLIFF },
-  // 北西の岩山: a lookout over the ruined village and the landing pad.
-  { line: [[-150, -104], [-138, -118]], top: 12, height: 10, slope: CLIFF },
-  // 南東の岩棚: a low shelf near the drop zone.
-  { line: [[96, 120], [112, 128]], top: 8, height: 5, slope: CLIFF },
-];
-
-const RAMPS: Ramp[] = [
-  { a: [-100, 92], b: [-118, 100], width: 3.5, from: 0, to: 9 },
-  { a: [14, -64], b: [-10, -62], width: 3.5, from: 0, to: 11 },
-  { a: [-38, -66], b: [-16, -64], width: 3.5, from: 0, to: 11 },
-  { a: [128, -54], b: [142, -62], width: 3.5, from: 0, to: 8 },
-  { a: [-120, -92], b: [-136, -104], width: 3.5, from: 0, to: 10 },
-  { a: [80, 112], b: [92, 118], width: 3, from: 0, to: 5 },
+const ROADS: Open[] = [
+  // 補給所 -> 採掘場: the ridge road (main) and the old-town road (side).
+  { name: "尾根道", line: [[-26, 100], [-46, 80], [-66, 52], [-80, 36]], half: 7 },
+  { name: "南北道", line: [[0, 58], [0, 36]], half: 7 },
+  { name: "旧市街の西道", line: [[-22, 16], [-48, 16], [-68, 20]], half: 6 },
+  // 採掘場 -> 中継塔: through the old town (main), or round by the factory (side).
+  { name: "旧市街の東道", line: [[22, 8], [44, -6], [58, -22]], half: 6 },
+  { name: "工場道", line: [[26, 106], [44, 76], [52, 58]], half: 6 },
+  { name: "住宅道", line: [[72, 50], [92, 38], [104, 28]], half: 6 },
+  { name: "中継塔の南道", line: [[114, 8], [104, -8]], half: 6 },
+  // 採掘場 -> north: the plateau road and the village road.
+  { name: "台地道", line: [[-96, -16], [-74, -36], [-56, -48]], half: 6 },
+  { name: "台地の北道", line: [[-38, -64], [-28, -86], [-20, -96]], half: 6 },
+  { name: "廃村道", line: [[-112, -18], [-110, -50]], half: 6 },
+  { name: "廃村の北道", line: [[-96, -74], [-62, -98], [-38, -112]], half: 6 },
+  // 旧市街 -> 発着場: the straight road north.
+  { name: "北道", line: [[0, -34], [2, -60], [6, -86]], half: 7 },
+  // 中継塔 -> 発着場: over the canyon bridge (west bank to the landing pad, east bank to the relay tower).
+  { name: "橋の西道", line: [[4, -64], [26, -84], [42, -94]], half: 6 },
+  { name: "橋の東道", line: [[62, -96], [76, -78], [86, -58]], half: 6 },
 ];
 
 /**
- * 涸れ谷: a dry riverbed from the north edge south past the canyon bridge, fading
- * out in the middle of the island. Its far end is a gentle slope, so its floor is a
- * hidden way north, entered from the middle and left by the same way.
+ * Rock shelves along a basin's wall, inside it: a band `width` metres deep and
+ * `height` high, `span` radians either side of the bearing `at` from the basin's
+ * middle. One end is a ramp up from the floor; the inner edge is a cliff. They
+ * give each POI a high way round its side, reached from one end only.
+ */
+interface Shelf {
+  basin: string;
+  at: number;
+  span: number;
+  width: number;
+  height: number;
+  ramp: number;
+  /** Which end the ramp is at: -1 the lower bearing, 1 the higher. */
+  rampEnd: -1 | 1;
+}
+
+const SHELVES: Shelf[] = [
+  { basin: "補給所", at: Math.PI, span: 0.5, width: 8, height: 3.4, ramp: 14, rampEnd: 1 },
+  { basin: "採掘場", at: -2.4, span: 0.45, width: 8, height: 3.4, ramp: 14, rampEnd: -1 },
+  { basin: "中継塔", at: -0.9, span: 0.5, width: 8, height: 3.4, ramp: 14, rampEnd: 1 },
+  { basin: "発着場", at: Math.PI, span: 0.45, width: 8, height: 3.4, ramp: 14, rampEnd: -1 },
+];
+
+/**
+ * 涸れ谷: a dry riverbed from the old town's north-east to the landing pad's east
+ * side, 6 m deep under the canyon bridge. Its ends slope gently to ground level, so
+ * its floor is a hidden road between the two; the bridge crosses it east to west.
  */
 const CUTS: Cut[] = [
   {
-    line: [[70, -215], [66, -150], [56, -115], [52, -95], [48, -75], [36, -55], [20, -42]],
+    line: [[20, -40], [36, -55], [48, -75], [52, -95], [56, -115], [48, -132], [36, -128]],
     floor: 5,
-    depth: [8, 8, 7, 6.5, 6, 5, 0],
+    depth: [0, 3, 5, 6, 6, 3, 0],
     slope: CLIFF,
   },
 ];
@@ -153,23 +171,32 @@ function vnoise(x: number, z: number): number {
   return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
 }
 
+function shelfAt(sh: Shelf, x: number, z: number): number {
+  const basin = BASINS.find((o) => o.name === sh.basin)!;
+  const [a0, b0] = [basin.line[0], basin.line[basin.line.length - 1]];
+  const cx = (a0[0] + b0[0]) / 2;
+  const cz = (a0[1] + b0[1]) / 2;
+  const off = Math.atan2(Math.sin(Math.atan2(z - cz, x - cx) - sh.at), Math.cos(Math.atan2(z - cz, x - cx) - sh.at));
+  if (Math.abs(off) > sh.span) return -Infinity;
+  const d = toPolyline(x, z, basin.line).d;
+  const inner = basin.half - sh.width;
+  if (d > basin.half + 1) return -Infinity;
+  // Rise from the floor along the ramp end, then flat to the far end.
+  const fromRampEnd = (sh.span - off * sh.rampEnd) * (basin.half - sh.width / 2);
+  const top = sh.height * Math.min(1, fromRampEnd / sh.ramp);
+  return top - Math.max(0, inner - d) * CLIFF;
+}
+
 /** The shaped ground before anything is flattened for buildings. */
 function natural(x: number, z: number): number {
-  let h = (vnoise(x / 38, z / 38) - 0.5) * 2.4;
-  for (const k of HILLS) h += k.h * Math.exp((-2 * ((x - k.x) ** 2 + (z - k.z) ** 2)) / (k.r * k.r));
-  for (const r of RISES) {
-    const { d } = toPolyline(x, z, r.line);
-    h = Math.max(h, r.height - Math.max(0, d - r.top) * r.slope);
-  }
-  for (const r of RAMPS) {
-    const { d, along: t } = toPolyline(x, z, [r.a, r.b]);
-    const top = r.from + (r.to - r.from) * t;
-    h = Math.max(h, top - Math.max(0, d - r.width) * CLIFF);
-  }
+  // Distance outside the nearest low ground (0 inside it).
+  let out = Infinity;
+  for (const o of [...BASINS, ...ROADS]) out = Math.min(out, Math.max(0, toPolyline(x, z, o.line).d - o.half));
+  const top = HIGH + vnoise(x / 30, z / 30) * 3.5;
+  let h = Math.min(top, out * CLIFF) + (vnoise(x / 9, z / 9) - 0.5) * 0.5;
   for (const c of CUTS) {
     const { d, along: t } = toPolyline(x, z, c.line);
-    const depth = along(c.depth, t);
-    h = Math.min(h, -depth + Math.max(0, d - c.floor) * c.slope);
+    h = Math.min(h, -along(c.depth, t) + Math.max(0, d - c.floor) * c.slope);
   }
   return h;
 }
@@ -237,7 +264,12 @@ export function buildTerrain(flat: FlatShape[]) {
     for (let i = 0; i < N; i++) {
       const x = i * RES - WORLD.half;
       const z = j * RES - WORLD.half;
-      field[j * N + i] = natural(x, z) * smooth(3, 10, dist[j * N + i]) + rim(x, z);
+      // Shelves stand right up to hand-built things (a 1 m gap); other shapes leave them room to blend.
+      const dd = dist[j * N + i];
+      let shelf = -Infinity;
+      for (const sh of SHELVES) shelf = Math.max(shelf, shelfAt(sh, x, z));
+      const base = natural(x, z) * smooth(3, 10, dd);
+      field[j * N + i] = (shelf > base ? base + (shelf - base) * smooth(1, 2, dd) : base) + rim(x, z);
     }
   steep = new Uint8Array(N * N);
   for (let j = 1; j < N - 1; j++)

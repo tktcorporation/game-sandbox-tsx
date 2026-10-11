@@ -6,6 +6,8 @@ import { COVERS } from "./cover";
 
 /** Walkers refuse to step off a ledge higher than this, so rooftop robots stay on their roof. */
 const LEDGE = 1.0;
+/** Walkers posted on the ground climb no higher than this above the terrain (stairs onto a roof). */
+const CLIMB = 1.2;
 const bodyHeight = (k: { bodyY: number; radius: number }) => k.bodyY + k.radius;
 import { POIS, ROAMERS, type Squad } from "./map";
 import { bodyCenter, weakPoint } from "./combat";
@@ -133,8 +135,11 @@ function moveBody(e: Enemy, vx: number, vz: number) {
   const here = groundAt(bx, bz, k.radius, e.pos.y);
   const there = groundAt(e.pos.x, e.pos.z, k.radius, e.pos.y);
   // A drop ahead stays on this floor. A robot posted up high (a roof, a tower tier)
-  // never leaves its floor at all: it could not find the way back up.
-  if (there < here - LEDGE || (e.home.y > 0.6 && Math.abs(there - e.home.y) > 0.3)) {
+  // never leaves its floor at all: it could not find the way back up. A robot posted
+  // on the ground does not climb stairs onto roofs or upper floors either.
+  const homeHigh = e.home.y > terrainHeight(e.home.x, e.home.z) + 0.6;
+  const climbsUp = !homeHigh && there > terrainHeight(e.pos.x, e.pos.z) + CLIMB;
+  if (there < here - LEDGE || (homeHigh && Math.abs(there - e.home.y) > 0.3) || climbsUp) {
     e.pos.x = bx;
     e.pos.z = bz;
     e.vel.x = e.vel.z = 0;

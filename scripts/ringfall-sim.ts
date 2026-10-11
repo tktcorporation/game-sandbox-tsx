@@ -70,9 +70,9 @@ function checkWipeClearsAir(): string | null {
   s.enemies = [];
   s.phase = "play";
   const p = s.player;
-  // Open ground east of the old town, with nothing between the player and the projectiles.
-  const x = 100;
-  const z = 70;
+  // The landing pad, kept open for the titan, with nothing between the player and the projectiles.
+  const x = POIS[3].x;
+  const z = POIS[3].z;
   p.pos = { x, y: 0, z };
   p.onGround = true;
   p.hp = 1;
