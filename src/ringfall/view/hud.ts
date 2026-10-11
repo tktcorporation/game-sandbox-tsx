@@ -2,7 +2,7 @@ import { ALLY, AWARE, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, RING, 
 import { magSize } from "../sim/combat";
 import { dist2d } from "../sim/geom";
 import { EXTRACTS, POIS } from "../sim/map";
-import { extractReady } from "../sim/world";
+import { extractReady, useTarget } from "../sim/world";
 import type { GameEvent, State, Vec3 } from "../sim/state";
 import { rank } from "../sim/results";
 import { pickHeal } from "../sim/player";
@@ -662,7 +662,6 @@ export class Hud {
   private prompt(s: State): string {
     const p = s.player;
     if (p.downed > 0 || (s.phase !== "play" && s.phase !== "extract")) return "";
-    const r = PLAYER.interactRange;
     if (s.phase === "extract") {
       const x = EXTRACTS.find((e) => dist2d(e, p.pos) < e.radius);
       if (x) {
@@ -672,21 +671,15 @@ export class Hud {
         return `脱出中 ${hold}%`;
       }
     }
-    const a = s.ally;
-    if (a.active && a.down > 0 && dist2d(a.pos, p.pos) < r + 1 && Math.abs(a.pos.y - p.pos.y) < 1.5) {
-      return a.helped > 0 ? `${ALLY.name}を起こしている…（撃つ・離れると中断）` : `${key("E")}${ALLY.name}を起こす`;
-    }
-    const bin = s.bins.find((b) => !b.open && dist2d(b, p.pos) < r && Math.abs(b.y - p.pos.y) < 1.5);
-    if (bin) return `${key("E")}補給箱を開ける`;
-    if (s.care && s.care.landed && !s.care.open && dist2d(s.care, p.pos) < r + 0.6) return `${key("E")}補給ポッドを開ける`;
-    const wl = s.loot
-      .filter((l) => l.kind === "weapon" && l.weapon && l.age > 0.4 && dist2d(l.pos, p.pos) < r + 0.3 && Math.abs(l.pos.y - p.pos.y) < 1.5)
-      .sort((a, b) => dist2d(a.pos, p.pos) - dist2d(b.pos, p.pos))[0];
-    if (wl?.weapon) {
-      const swap = p.weapons.includes(null) ? "" : `（${WEAPONS[p.weapons[p.slot]!.kind].name} と交換）`;
-      return `${key("E")}<span class="r" style="color:${RARITY_CSS[wl.rarity]}">${WEAPONS[wl.weapon.kind].name}</span> ${RARITY.names[wl.rarity]}を拾う${swap}`;
-    }
-    return "";
+    // The same choice the use key acts on (sim/world.ts useTarget), so the prompt never promises something else.
+    const t = useTarget(s);
+    if (!t) return "";
+    if (t.kind === "ally") return s.ally.helped > 0 ? `${ALLY.name}を起こしている…（撃つ・離れると中断）` : `${key("E")}${ALLY.name}を起こす`;
+    if (t.kind === "bin") return `${key("E")}補給箱を開ける`;
+    if (t.kind === "care") return `${key("E")}補給ポッドを開ける`;
+    const wl = t.loot;
+    const swap = p.weapons.includes(null) ? "" : `（${WEAPONS[p.weapons[p.slot]!.kind].name} と交換）`;
+    return `${key("E")}<span class="r" style="color:${RARITY_CSS[wl.rarity]}">${WEAPONS[wl.weapon!.kind].name}</span> ${RARITY.names[wl.rarity]}を拾う${swap}`;
   }
 
   results(s: State) {

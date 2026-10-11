@@ -14,7 +14,7 @@ import { step } from "../src/ringfall/sim/step";
 import { hurtPlayer } from "../src/ringfall/sim/player";
 import { hurtAlly, placeAlly } from "../src/ringfall/sim/ally";
 import { rank } from "../src/ringfall/sim/results";
-import { eyePos, fireRay, magSize, weakPoint } from "../src/ringfall/sim/combat";
+import { bodyCenter, damageEnemy, eyePos, fireRay, magSize, weakPoint } from "../src/ringfall/sim/combat";
 import { lookAngles } from "../src/ringfall/sim/geom";
 import { forward } from "../src/ringfall/sim/state";
 
@@ -343,6 +343,21 @@ function checkHelpBeforeLoot(): string | null {
   if (bin.open || s.ally.helped <= 0) return `help-before-loot scenario: bin open ${bin.open}, help ${s.ally.helped.toFixed(2)}`;
   return null;
 }
+/** The teammate's finishing hit on the titan credits it with the drones that fall with the titan, too. */
+function checkAllyTitanKill(): string | null {
+  const s = newRun(5);
+  s.phase = "play";
+  s.poi = 3;
+  s.enemies = s.enemies.filter((e) => e.poi === 3);
+  const titan = s.enemies.find((e) => e.kind === "titan")!;
+  const count = s.enemies.length;
+  titan.hp = 1;
+  titan.shield = 0;
+  damageEnemy(s, titan, 10, false, bodyCenter(titan), "none", "ally");
+  const kills = s.events.filter((e): e is Extract<GameEvent, { t: "kill" }> => e.t === "kill");
+  if (s.stats.allyKills !== count || kills.some((k) => !k.ally)) return `ally titan scenario: ${s.stats.allyKills} of ${count} kills credited to the teammate`;
+  return null;
+}
 /** The teammate never opens fire on robots that have not noticed anyone. */
 function checkAllyHoldsFire(): string | null {
   const s = newRun(5);
@@ -363,7 +378,7 @@ function checkAllyHoldsFire(): string | null {
   if (shots) return `hold fire scenario: the teammate fired ${shots} shots at an idle robot`;
   return null;
 }
-for (const err of [checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkWipeMidClimb(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkAllySelfUp(), checkStompHeight(), checkNothingHitsAfterWipe(), checkWeakPointBehindBody(), checkHelpBeforeLoot()]) {
+for (const err of [checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkWipeMidClimb(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkAllySelfUp(), checkStompHeight(), checkNothingHitsAfterWipe(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill()]) {
   if (err) {
     console.error(err);
     process.exit(1);

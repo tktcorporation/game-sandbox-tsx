@@ -219,6 +219,6 @@ export function kill(s: State, e: Enemy, crit: boolean, by: "player" | "ally" = 
     // The titan's fall takes its summons and everything in the air with it.
     s.orbs = [];
     s.waves = [];
-    for (const o of [...s.enemies]) if (o.poi === e.poi) kill(s, o, false);
+    for (const o of [...s.enemies]) if (o.poi === e.poi) kill(s, o, false, by);
   }
 }

@@ -167,36 +167,44 @@ export function stepLoot(s: State, input: Input) {
   });
 
   if (!input.interact || !alive) return;
-  // Interact: the closest of bin, care package, or weapon within reach.
-  type Pick = { d: number; act: () => void };
-  const picks: Pick[] = [];
+  const t = useTarget(s);
+  if (t?.kind === "ally") startHelp(s);
+  else if (t?.kind === "bin") openBin(s, t.index);
+  else if (t?.kind === "care") openCare(s);
+  else if (t?.kind === "weapon") takeWeapon(s, t.loot);
+}
+
+/** What one press of the use key acts on. The HUD shows its prompt from the same choice. */
+export type UseTarget = { kind: "ally" } | { kind: "bin"; index: number } | { kind: "care" } | { kind: "weapon"; loot: Loot };
+
+/**
+ * A downed teammate within reach comes first, however close any loot is; otherwise
+ * the closest of bin, care package or weapon within reach.
+ */
+export function useTarget(s: State): UseTarget | null {
+  const p = s.player;
   const level = (y: number) => Math.abs(y - p.pos.y) < 1.5;
-  // A downed teammate within reach comes before any loot, however close the loot is (the
-  // HUD offers the revive over everything else at the same reach).
   const a = s.ally;
-  if (a.active && a.down > 0 && dist2d(a.pos, p.pos) < PLAYER.interactRange + 1 && level(a.pos.y)) {
-    startHelp(s);
-    return;
-  }
-  s.bins.forEach((b, i) => {
-    if (!b.open && level(b.y)) picks.push({ d: dist2d(b, p.pos), act: () => openBin(s, i) });
+  if (a.active && a.down > 0 && dist2d(a.pos, p.pos) < PLAYER.interactRange + 1 && level(a.pos.y)) return { kind: "ally" };
+  const picks: { d: number; t: UseTarget }[] = [];
+  s.bins.forEach((b, index) => {
+    if (!b.open && level(b.y)) picks.push({ d: dist2d(b, p.pos), t: { kind: "bin", index } });
   });
   const care = s.care;
-  if (care && care.landed && !care.open && level(0))
-    picks.push({
-      d: dist2d(care, p.pos) - 0.6,
-      act: () => {
-        care.open = true;
-        spill(s, care.x, 0, care.z, { kind: "weapon", rarity: care.weapon.rarity, weapon: care.weapon });
-        s.events.push({ t: "binOpen", id: -1 });
-      },
-    });
+  if (care && care.landed && !care.open && level(care.y)) picks.push({ d: dist2d(care, p.pos) - 0.6, t: { kind: "care" } });
   for (const l of s.loot) {
     if (l.kind !== "weapon" || !l.weapon || l.age < 0.4 || !level(l.pos.y)) continue;
-    picks.push({ d: dist2d(l.pos, p.pos) - 0.3, act: () => takeWeapon(s, l) });
+    picks.push({ d: dist2d(l.pos, p.pos) - 0.3, t: { kind: "weapon", loot: l } });
   }
-  const best = picks.filter((k) => k.d < PLAYER.interactRange).sort((a, b) => a.d - b.d)[0];
-  best?.act();
+  return picks.filter((k) => k.d < PLAYER.interactRange).sort((x, y) => x.d - y.d)[0]?.t ?? null;
+}
+
+function openCare(s: State) {
+  const care = s.care;
+  if (!care) return;
+  care.open = true;
+  spill(s, care.x, care.y, care.z, { kind: "weapon", rarity: care.weapon.rarity, weapon: care.weapon });
+  s.events.push({ t: "binOpen", id: -1 });
 }
 
 export function takeWeapon(s: State, l: Loot) {
