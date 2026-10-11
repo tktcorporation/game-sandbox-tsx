@@ -3,6 +3,7 @@ import { makeNoise } from "./awareness";
 import { POIS } from "./map";
 import { applyPull, assistTarget, bodyCenter, damageEnemy, eyePos, magSize, shoot } from "./combat";
 import { ceilingAt, collide, groundAt, los } from "./geom";
+import { terrainGrad, terrainHeight } from "./terrain";
 import type { Input, State } from "./state";
 
 /*
@@ -156,8 +157,14 @@ function move(s: State, input: Input, prevCrouch: boolean) {
   p.crouch = input.crouch && !p.sliding;
 
   if (p.sliding) {
+    // Sliding down a slope gathers speed; up one loses it.
+    if (p.onGround && p.pos.y < terrainHeight(p.pos.x, p.pos.z) + 0.05) {
+      const g = terrainGrad(p.pos.x, p.pos.z);
+      p.vel.x -= g.x * WORLD.gravity * PLAYER.slideSlope * TICK;
+      p.vel.z -= g.z * WORLD.gravity * PLAYER.slideSlope * TICK;
+    }
     const sp = Math.hypot(p.vel.x, p.vel.z);
-    const ns = Math.max(0, sp - PLAYER.slideFriction * TICK);
+    const ns = Math.min(PLAYER.slideMax, Math.max(0, sp - PLAYER.slideFriction * TICK));
     if (sp > 0) {
       p.vel.x = (p.vel.x / sp) * ns + wx * 3 * TICK;
       p.vel.z = (p.vel.z / sp) * ns + wz * 3 * TICK;
@@ -203,6 +210,7 @@ function move(s: State, input: Input, prevCrouch: boolean) {
     s.events.push({ t: "jump" });
   }
 
+  const wasOnGround = p.onGround;
   p.vel.y -= WORLD.gravity * TICK;
   p.pos.x += p.vel.x * TICK;
   p.pos.z += p.vel.z * TICK;
@@ -234,6 +242,10 @@ function move(s: State, input: Input, prevCrouch: boolean) {
     p.pos.y = g;
     p.vel.y = 0;
     p.onGround = true;
+  } else if (wasOnGround && p.vel.y <= 0 && p.pos.y - g < 0.45) {
+    // Keep the feet on the ground walking down a slope or a step.
+    p.pos.y = g;
+    p.vel.y = 0;
   } else if (p.pos.y > g + 0.02) {
     p.onGround = false;
   }
@@ -421,7 +433,7 @@ export function wipe(s: State) {
   const p = s.player;
   const poi = POIS[Math.min(s.poi, POIS.length - 1)];
   s.stats.wipes++;
-  p.pos = { x: poi.entry.x, y: 0, z: poi.entry.z };
+  p.pos = { x: poi.entry.x, y: groundAt(poi.entry.x, poi.entry.z, PLAYER.radius, 99), z: poi.entry.z };
   p.vel = { x: 0, y: 0, z: 0 };
   p.yaw = poi.entry.yaw;
   p.pitch = 0;

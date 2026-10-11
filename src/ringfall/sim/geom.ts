@@ -1,5 +1,6 @@
 import { WORLD } from "./config";
 import { BOXES, type Box } from "./map";
+import { steepAt, terrainGrad, terrainHeight } from "./terrain";
 import type { Vec3 } from "./state";
 
 /*
@@ -32,15 +33,20 @@ function near(x: number, z: number, r: number): Iterable<Box> {
   return scratch;
 }
 
-/** Height of the highest surface under a circle at (x, z) that a body with feet at `feet` can stand on. */
+/**
+ * Height of the highest surface under a circle at (x, z) that a body with feet at
+ * `feet` can stand on: a box top or the terrain. Terrain above reach (a cliff face)
+ * does not count, unless nothing else is there to stand on.
+ */
 export function groundAt(x: number, z: number, r: number, feet: number): number {
-  let g = 0;
+  const t = terrainHeight(x, z);
+  let g = t <= feet + WORLD.stepUp ? t : -Infinity;
   for (const b of near(x, z, r)) {
     if (b.h > feet + WORLD.stepUp || b.h <= g) continue;
     if (x + r * 0.7 < b.x0 || x - r * 0.7 > b.x1 || z + r * 0.7 < b.z0 || z - r * 0.7 > b.z1) continue;
     g = b.h;
   }
-  return g;
+  return g === -Infinity ? t : g;
 }
 
 /** Lowest underside of a box above a circle's head, or Infinity. */
@@ -83,14 +89,33 @@ export function collide(p: Vec3, r: number, height = 1.75): boolean {
       else p.z = b.z1 + r;
     }
   }
+  if (pushOffCliff(p)) touched = true;
   const lim = WORLD.half - r;
   p.x = Math.max(-lim, Math.min(lim, p.x));
   p.z = Math.max(-lim, Math.min(lim, p.z));
   return touched;
 }
 
-/** True if a point is inside any box. */
+/**
+ * A cliff is a wall: a body whose feet are below the ground of a cliff cell is
+ * moved back downhill until it stands clear. Walking down a cliff is a fall.
+ */
+function pushOffCliff(p: Vec3): boolean {
+  let moved = false;
+  for (let k = 0; k < 16; k++) {
+    if (terrainHeight(p.x, p.z) <= p.y + WORLD.stepUp || !steepAt(p.x, p.z)) break;
+    const g = terrainGrad(p.x, p.z);
+    const l = Math.hypot(g.x, g.z) || 1;
+    p.x -= (g.x / l) * 0.12;
+    p.z -= (g.z / l) * 0.12;
+    moved = true;
+  }
+  return moved;
+}
+
+/** True if a point is inside any box or under the ground. */
 export function solidAt(x: number, y: number, z: number): boolean {
+  if (y < terrainHeight(x, z) - 0.05) return true;
   for (const b of near(x, z, 0)) if (x > b.x0 && x < b.x1 && z > b.z0 && z < b.z1 && y > b.y0 && y < b.h) return true;
   return false;
 }
@@ -121,7 +146,6 @@ function rayBox(o: Vec3, d: Vec3, b: Box, maxT: number): number {
 /** Distance along a unit ray to the first box or the ground, capped at maxT. */
 export function rayWorld(o: Vec3, d: Vec3, maxT: number): number {
   let t = maxT;
-  if (d.y < -1e-6) t = Math.min(t, -o.y / d.y);
   // Walk the grid cells under the ray in order. A box in a cell entered beyond the
   // nearest hit so far cannot be nearer, so the walk stops there.
   rayId++;
@@ -145,7 +169,7 @@ export function rayWorld(o: Vec3, d: Vec3, maxT: number): number {
         const bt = rayBox(o, d, b, t);
         if (bt < t) t = bt;
       }
-    if (Math.min(nextX, nextZ) > t) return t;
+    if (Math.min(nextX, nextZ) > t) return rayTerrain(o, d, t);
     if (nextX < nextZ) {
       cx += stepX;
       nextX += dtX;
@@ -154,6 +178,33 @@ export function rayWorld(o: Vec3, d: Vec3, maxT: number): number {
       nextZ += dtZ;
     }
   }
+}
+
+/**
+ * Distance along a unit ray to the ground, capped at maxT. Marches in steps no
+ * longer than the gap above the ground allows, then bisects the crossing.
+ */
+function rayTerrain(o: Vec3, d: Vec3, maxT: number): number {
+  let prev = 0;
+  let t = 0;
+  for (let n = 0; n < 400 && t < maxT; n++) {
+    const gap = o.y + d.y * t - terrainHeight(o.x + d.x * t, o.z + d.z * t);
+    if (gap < 0) {
+      let lo = prev;
+      let hi = t;
+      for (let k = 0; k < 6; k++) {
+        const m = (lo + hi) / 2;
+        if (o.y + d.y * m < terrainHeight(o.x + d.x * m, o.z + d.z * m)) hi = m;
+        else lo = m;
+      }
+      return Math.min(maxT, hi);
+    }
+    prev = t;
+    t = Math.min(maxT, t + Math.max(0.4, Math.min(4, gap * 0.8)));
+    if (t === prev) break;
+  }
+  const end = o.y + d.y * maxT - terrainHeight(o.x + d.x * maxT, o.z + d.z * maxT);
+  return end < 0 ? Math.max(prev, maxT - 0.4) : maxT;
 }
 
 export function los(a: Vec3, b: Vec3): boolean {
@@ -177,6 +228,9 @@ export function raySphere(o: Vec3, d: Vec3, c: Vec3, r: number): number {
   const t = -b - Math.sqrt(disc);
   return t >= 0 ? t : cc < 0 ? 0 : Infinity;
 }
+
+/** True for a body standing on the terrain rather than up on a roof, a floor or a box. */
+export const onTerrain = (p: Vec3) => p.y < terrainHeight(p.x, p.z) + 0.6;
 
 export const dist2d = (a: { x: number; z: number }, b: { x: number; z: number }) => Math.hypot(a.x - b.x, a.z - b.z);
 

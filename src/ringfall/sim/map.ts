@@ -1,4 +1,5 @@
 import type { EnemyKind, HealKind, Rarity, WeaponKind } from "./config";
+import { buildTerrain, rimRadius, steepAt, terrainHeight } from "./terrain";
 
 /**
  * The island. Everything solid is an axis-aligned box, so collision, line of sight
@@ -567,8 +568,8 @@ const AUTHORED: Box[] = [
   box(53, 63, 1.2, 1.2, 0.9, "crate"),
 
   // --- 峡谷の橋: two rock pillars joined by a bridge at 6 m
-  box(42, -95, 6, 6, 6, "rock"),
-  box(62, -95, 6, 6, 6, "rock", 1),
+  box(42, -95, 6, 6, 6, "rock", 0, -9),
+  box(62, -95, 6, 6, 6, "rock", 1, -9),
   bridge(45, -96.2, 59, -93.8, 6),
   ...stairs(42, -92, "s", 2, 6, 1),
   ...stairs(62, -98, "n", 2, 6, 1),
@@ -611,13 +612,15 @@ const AUTHORED: Box[] = [
  * grid from a fixed seed, and a candidate is dropped when it would crowd a building,
  * another piece, or any authored point (robot posts, patrol routes, bins, entries).
  */
-function scatterCover(authored: Box[]): Box[] {
-  let seed = 7_331;
-  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-  const pick = <T,>(xs: readonly T[]) => xs[Math.floor(rnd() * xs.length)];
+interface Keep {
+  points: { x: number; z: number; r: number }[];
+  segments: { ax: number; az: number; bx: number; bz: number }[];
+}
 
-  const points: { x: number; z: number; r: number }[] = [];
-  const segments: { ax: number; az: number; bx: number; bz: number }[] = [];
+/** Every authored point (with the room it needs) and patrol leg. */
+function authoredKeep(): Keep {
+  const points: Keep["points"] = [];
+  const segments: Keep["segments"] = [];
   const squadArea = (sq: Squad) => {
     for (const m of sq.members) points.push({ x: m.x, z: m.z, r: 3 });
     const loop = sq.patrol ?? [];
@@ -637,6 +640,14 @@ function scatterCover(authored: Box[]): Box[] {
   ROAMERS.forEach(squadArea);
   for (const b of EXTRA_BINS) points.push({ x: b.x, z: b.z, r: 2.5 });
   points.push({ x: EXTRACT.x, z: EXTRACT.z, r: 10 });
+  points.push({ x: SPAWN.x, z: SPAWN.z, r: 6 });
+  return { points, segments };
+}
+
+function scatterCover(authored: Box[], { points, segments }: Keep): Box[] {
+  let seed = 7_331;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const pick = <T,>(xs: readonly T[]) => xs[Math.floor(rnd() * xs.length)];
 
   const pieceAt = (x: number, z: number): Box[] => {
     const alongX = rnd() < 0.5;
@@ -682,13 +693,33 @@ function scatterCover(authored: Box[]): Box[] {
 
   const clear = (b: Box, gap: number) => (o: Box) => b.x1 + gap <= o.x0 || o.x1 + gap <= b.x0 || b.z1 + gap <= o.z0 || o.z1 + gap <= b.z0;
   const distToBox = (b: Box, x: number, z: number) => Math.hypot(Math.max(b.x0 - x, 0, x - b.x1), Math.max(b.z0 - z, 0, z - b.z1));
+  // A piece goes only on ground that is not a cliff. It starts at the lowest ground
+  // under it and keeps its full height above the highest, so it never floats or sinks.
+  const groundUnder = (piece: Box[]): { lo: number; hi: number } | null => {
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const b of piece)
+      for (const [x, z] of [[b.x0, b.z0], [b.x1, b.z0], [b.x0, b.z1], [b.x1, b.z1], [(b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2]]) {
+        if (steepAt(x, z) || Math.hypot(x, z) > rimRadius(x, z) - 4) return null;
+        const h = terrainHeight(x, z);
+        lo = Math.min(lo, h);
+        hi = Math.max(hi, h);
+      }
+    return hi - lo > 1.2 ? null : { lo, hi };
+  };
   const placed: Box[] = [];
-  const edge = 140;
+  const edge = 204;
   for (let gx = -edge; gx <= edge; gx += 12)
     for (let gz = -edge; gz <= edge; gz += 12) {
       const x = gx + (rnd() - 0.5) * 7;
       const z = gz + (rnd() - 0.5) * 7;
       const piece = pieceAt(x, z);
+      const base = groundUnder(piece);
+      if (base === null) continue;
+      for (const b of piece) {
+        b.y0 += base.lo;
+        b.h += base.hi;
+      }
       const ok = piece.every(
         (b) =>
           authored.every(clear(b, 3)) &&
@@ -698,15 +729,36 @@ function scatterCover(authored: Box[]): Box[] {
             const n = Math.max(1, Math.ceil(Math.hypot(sg.bx - sg.ax, sg.bz - sg.az)));
             for (let k = 0; k <= n; k++) if (distToBox(b, sg.ax + ((sg.bx - sg.ax) * k) / n, sg.az + ((sg.bz - sg.az) * k) / n) < 2.5) return false;
             return true;
-          }) &&
-          Math.max(Math.abs(b.x0), Math.abs(b.x1), Math.abs(b.z0), Math.abs(b.z1)) < WORLD_EDGE,
+          }),
       );
       if (ok) placed.push(...piece);
     }
   return placed;
 }
 
-/** Scattered cover stays this far inside the playable square. */
-const WORLD_EDGE = 146;
+const KEEP = authoredKeep();
+// Hand-built things keep flat ground around them; the canyon bridge's pillars stand in the canyon.
+buildTerrain([
+  ...AUTHORED.filter((b) => b.y0 >= 0),
+  ...KEEP.points.map((q) => ({ x0: q.x - q.r, z0: q.z - q.r, x1: q.x + q.r, z1: q.z + q.r })),
+  ...KEEP.segments.flatMap((sg) => {
+    const n = Math.max(1, Math.ceil(Math.hypot(sg.bx - sg.ax, sg.bz - sg.az) / 2));
+    return Array.from({ length: n + 1 }, (_, k) => {
+      const x = sg.ax + ((sg.bx - sg.ax) * k) / n;
+      const z = sg.az + ((sg.bz - sg.az) * k) / n;
+      return { x0: x - 1, z0: z - 1, x1: x + 1, z1: z + 1 };
+    });
+  }),
+]);
 
-export const BOXES: Box[] = [...AUTHORED, ...scatterCover(AUTHORED)];
+// The high ground and the canyon floor pay for the climb: a bin on each mesa top and one in the canyon.
+for (const [x, z, table] of [
+  [-134, 110, 1],
+  [-144, -111, 2],
+  [152, -69, 2],
+  [104, 124, 0],
+  [62, -138, 2],
+] as const)
+  EXTRA_BINS.push({ x, z, y: terrainHeight(x, z), table });
+
+export const BOXES: Box[] = [...AUTHORED, ...scatterCover(AUTHORED, KEEP)];

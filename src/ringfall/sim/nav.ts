@@ -1,5 +1,6 @@
 import { PLAYER, WORLD } from "./config";
 import { BOXES } from "./map";
+import { steepAt, terrainHeight } from "./terrain";
 
 /*
  * Ground-level path finding for the bot only (the game never uses it). A 0.5 m grid
@@ -19,7 +20,8 @@ const center = (i: number) => -WORLD.half + (i + 0.5) * RES;
   const r = PLAYER.radius + 0.02;
   for (const b of BOXES) {
     // Only what stops a body standing on the ground: low steps and high floors do not.
-    if (b.h <= WORLD.stepUp || b.y0 >= 1.75) continue;
+    const t = terrainHeight((b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2);
+    if (b.h - t <= WORLD.stepUp || b.y0 - t >= 1.75) continue;
     for (let i = cell(b.x0 - r); i <= cell(b.x1 + r); i++)
       for (let j = cell(b.z0 - r); j <= cell(b.z1 + r); j++) {
         const x0 = -WORLD.half + i * RES;
@@ -27,6 +29,13 @@ const center = (i: number) => -WORLD.half + (i + 0.5) * RES;
         if (x0 + RES > b.x0 - r && x0 < b.x1 + r && z0 + RES > b.z0 - r && z0 < b.z1 + r) blocked[j * N + i] = 1;
       }
   }
+  // Cliffs, and ground a body's width from one.
+  for (let j = 0; j < N; j++)
+    for (let i = 0; i < N; i++) {
+      const x = center(i);
+      const z = center(j);
+      if (steepAt(x, z) || steepAt(x + r, z) || steepAt(x - r, z) || steepAt(x, z + r) || steepAt(x, z - r)) blocked[j * N + i] = 1;
+    }
 }
 
 const free = (i: number, j: number) => i >= 0 && j >= 0 && i < N && j < N && !blocked[j * N + i];

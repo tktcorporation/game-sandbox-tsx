@@ -1,10 +1,11 @@
 import { AWARE, DEG, HEALS, PLAYER, TICK, WORLD } from "./config";
 import { bodyCenter, eyePos, flankOf, magSize, weakPoint } from "./combat";
-import { dist2d, groundAt, los, lookAngles, solidAt, wrapAngle } from "./geom";
+import { dist2d, groundAt, los, onTerrain, lookAngles, solidAt, wrapAngle } from "./geom";
 import { EXTRACT, POIS } from "./map";
 import { clearLine, findPath } from "./nav";
 import { enemyMax, idleInput, type Enemy, type Input, type State } from "./state";
 import { pickHeal } from "./player";
+import { terrainHeight } from "./terrain";
 
 /**
  * A scripted player for the headless balance run (`npm run sim:ringfall`) and the
@@ -43,6 +44,8 @@ export class Bot {
   private stuckT = 0;
   private lastPos = { x: 0, z: 0 };
   private unstick = 0;
+  private trail: { x: number; z: number }[] = [];
+  private upT = 0;
   private stuckCount = 0;
   private unstickSide = 1;
   private dodgeT = 0;
@@ -180,7 +183,7 @@ export class Bot {
         this.flank = spot ? { ...spot, id: tgt.id, step: "go" } : null;
         this.flankT = 7;
       }
-      if (!this.flank && this.flankCheck <= 0 && tgt.kind !== "titan" && tgt.aware === "engaged" && p.pos.y < 0.6 && tgt.pos.y < 0.6) {
+      if (!this.flank && this.flankCheck <= 0 && tgt.kind !== "titan" && tgt.aware === "engaged" && onTerrain(p.pos) && onTerrain(tgt.pos)) {
         this.flankCheck = 1.5;
         // Worth it only on a robot with plenty of fight left, and not twice in a row.
         const healthy = tgt.hp + tgt.shield > enemyMax(tgt.kind) * 0.5;
@@ -198,7 +201,7 @@ export class Bot {
         const rel = lookAngles(p.pos, { x: step.x, y: 0, z: step.z }).yaw - p.yaw;
         inp.moveZ = Math.cos(rel);
         inp.moveX = Math.sin(rel);
-      } else if (!sees && p.pos.y < 0.6) {
+      } else if (!sees && onTerrain(p.pos)) {
         // Walk a ground path toward it. A robot up high is hidden by its own roof edge
         // from close below, so back off to about 14 m to get an angle on it instead.
         let to = { x: tgt.pos.x, z: tgt.pos.z };
@@ -290,6 +293,32 @@ export class Bot {
       inp.jump = this.unstick % 1 > 0.9;
       inp.moveX = this.unstickSide;
       inp.moveZ = 0.25;
+    }
+    // The bot finds its way on the ground only, so it never climbs a ledge: in the air
+    // it keeps its take-off speed but does not push forward, which a climb needs.
+    if (!p.onGround) inp.moveZ = Math.min(inp.moveZ, 0.4);
+    // Up on a floor it reached by stairs, it cannot plan a way down. It keeps the
+    // trail it walked since leaving the terrain, and after a while up there walks
+    // that trail back.
+    if (p.pos.y - terrainHeight(p.pos.x, p.pos.z) > 0.5) inp.jump = false;
+    if (onTerrain(p.pos)) {
+      this.trail = [];
+      this.upT = 0;
+    } else {
+      const last = this.trail[this.trail.length - 1];
+      if (this.upT <= 2 && (!last || dist2d(last, p.pos) > 0.4)) this.trail.push({ x: p.pos.x, z: p.pos.z });
+      if (p.onGround && p.pos.y - terrainHeight(p.pos.x, p.pos.z) > 0.8) this.upT += TICK;
+      if (this.upT > 2) {
+        while (this.trail.length > 1 && dist2d(this.trail[this.trail.length - 1], p.pos) < 0.35) this.trail.pop();
+        const to = this.trail[this.trail.length - 1] ?? p.pos;
+        const dx = to.x - p.pos.x;
+        const dz = to.z - p.pos.z;
+        const l = Math.hypot(dx, dz) || 1;
+        inp.moveZ = (dx * Math.sin(p.yaw) - dz * Math.cos(p.yaw)) / l;
+        inp.moveX = (dx * Math.cos(p.yaw) + dz * Math.sin(p.yaw)) / l;
+        inp.fire = false;
+        inp.crouch = false;
+      }
     }
     return inp;
   }
@@ -383,7 +412,8 @@ export class Bot {
     const p = s.player;
     const worst = Math.min(...p.weapons.map((w) => (w ? w.rarity : -1)));
     // Skip anything above our floor (roofs, platforms) and anything we failed to reach for 10 s.
-    const reachable = (c: { x: number; z: number; y?: number }) => (c.y ?? 0) < p.pos.y + 1 && !this.skip.has(`${Math.round(c.x)},${Math.round(c.z)}`);
+    // Only things on the terrain: the bot plans on the ground and does not climb to floors or roofs.
+    const reachable = (c: { x: number; z: number; y?: number }) => (c.y ?? 0) < terrainHeight(c.x, c.z) + 0.6 && !this.skip.has(`${Math.round(c.x)},${Math.round(c.z)}`);
 
     const cands: { x: number; z: number; d: number; weapon?: true }[] = [];
     for (const b of s.bins) if (!b.open && dist2d(b, p.pos) < 26 && reachable(b)) cands.push({ x: b.x, z: b.z, d: dist2d(b, p.pos) });

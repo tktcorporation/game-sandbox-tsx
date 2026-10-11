@@ -102,8 +102,9 @@ export function stepLoot(s: State, input: Input) {
   const maxShield = PLAYER.shieldByTier[p.armor];
   if (s.care && !s.care.landed) {
     s.care.y -= 14 * TICK;
-    if (s.care.y <= 0) {
-      s.care.y = 0;
+    const ground = groundAt(s.care.x, s.care.z, 0.8, s.care.y);
+    if (s.care.y <= ground) {
+      s.care.y = ground;
       s.care.landed = true;
       s.events.push({ t: "careLand", x: s.care.x, z: s.care.z });
     }

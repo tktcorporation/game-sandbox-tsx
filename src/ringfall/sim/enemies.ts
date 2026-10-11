@@ -1,5 +1,6 @@
 import { AWARE, CHARGER, COVER, DEG, ENEMIES, PLAYER, TICK, TITAN, TURN, WORLD, type EnemyKind } from "./config";
-import { collide, dist2d, groundAt, los, lookAngles, solidAt, wrapAngle } from "./geom";
+import { collide, dist2d, groundAt, los, lookAngles, onTerrain, solidAt, wrapAngle } from "./geom";
+import { terrainHeight } from "./terrain";
 import { engageSquad, knownSpot, sense, stepSquads } from "./awareness";
 import { COVERS } from "./cover";
 
@@ -196,7 +197,7 @@ export function stepEnemies(s: State) {
     const dz = known.z - e.pos.z;
     const d = Math.hypot(dx, dz) || 1e-3;
     if (e.mode !== "lunge" && d > 0.5) turnAt(e, Math.atan2(dx, -dz), TURN[e.kind]);
-    if (e.kind === "grunt" && e.pos.y < 0.6 && fromCover(s, e, known)) continue;
+    if (e.kind === "grunt" && onTerrain(e.pos) && fromCover(s, e, known)) continue;
     switch (e.mode) {
       case "move": {
         const sees = known.live && facing(e, p.pos) && los(muzzle(e), chest(s));
@@ -570,7 +571,7 @@ export function stepOrbs(s: State) {
     o.pos.y += o.vel.y * TICK;
     o.pos.z += o.vel.z * TICK;
     o.life -= TICK;
-    if (o.life <= 0 || o.pos.y < 0) return false;
+    if (o.life <= 0 || o.pos.y < terrainHeight(o.pos.x, o.pos.z)) return false;
     if (!los({ x: o.pos.x - o.vel.x * TICK, y: o.pos.y - o.vel.y * TICK, z: o.pos.z - o.vel.z * TICK }, o.pos)) return false;
     // Player as a vertical capsule from knee to head.
     const py = Math.max(p.pos.y + 0.4, Math.min(p.pos.y + (p.crouch || p.sliding ? 1.1 : 1.7), o.pos.y));

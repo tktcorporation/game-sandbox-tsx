@@ -8,7 +8,7 @@ export const TICK = 1 / 60;
 export const DEG = Math.PI / 180;
 
 export const WORLD = {
-  half: 150, // playable square is [-half, half] on x and z
+  half: 215, // bounding square [-half, half]; the island's cliffs (terrain.ts) stop bodies well inside it
   gravity: 15,
   stepUp: 0.45,
 };
@@ -27,6 +27,9 @@ export const PLAYER = {
   slideStart: 9.6, // speed set at slide start when slower
   slideFriction: 4.2,
   slideMin: 4.0,
+  /** Share of gravity along the ground that pulls a slide down a slope, and its top speed. */
+  slideSlope: 0.7,
+  slideMax: 15,
   autoSprintAfter: 0.2, // forward input without firing for this long turns into a sprint
   regenDelay: 5,
   regenPerSec: 6,

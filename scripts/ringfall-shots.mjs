@@ -141,10 +141,13 @@ const tour = [
   ["tour-2-town-street", 0, 1.6, 42, 0, 0.05],
   ["tour-3-plateau-top", -52, 8.8, -52, 2.45, -0.1],
   ["tour-4-factory-catwalk", 46, 4.9, 39.3, 1.57, -0.15],
-  ["tour-5-canyon-bridge", 52, 1.6, -78, 0, 0.12],
+  ["tour-5-canyon-bridge", 50, -3.45, -80, 0, 0.25],
   ["tour-6-quarry-terraces", -100, 1.6, 30, -0.61, 0.05],
   ["tour-7-high-rise-view", -2.5, 18.6, -10.2, Math.PI, -0.3],
   ["tour-8-high-rises", 20, 1.6, -45, -2.57, 0.25],
+  ["tour-9-west-mesa", -134, 10.6, 110, 1.9, -0.12],
+  ["tour-10-north-spine", -12, 12.6, -62, 0, -0.15],
+  ["tour-11-canyon-rim", 70, 1.6, -40, -0.35, -0.05],
 ];
 for (const [name, x, y, z, yaw, pitch] of tour) {
   await page.evaluate(([x, y, z, yaw, pitch]) => window.ringfallCamera(x, y, z, yaw, pitch), [x, y, z, yaw, pitch]);

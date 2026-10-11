@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { ENEMIES, PLAYER, TITAN, WEAPONS, WORLD, type EnemyKind } from "../sim/config";
 import { BOXES, EXTRACT, POIS } from "../sim/map";
+import { rimRadius, steepAt, terrainHeight } from "../sim/terrain";
 import type { GameEvent, State, Vec3 } from "../sim/state";
 import { PAL, RARITY_COLOR, buildBin, buildBox, mergeStatic, buildCare, buildDropship, buildEnemy, buildGun, buildLootItem, flat, glow, haloSprite, type EnemyModel } from "./models";
 
@@ -11,6 +12,23 @@ import { PAL, RARITY_COLOR, buildBin, buildBox, mergeStatic, buildCare, buildDro
  */
 
 const EYE_LERP = 12;
+
+const hash = (x: number, z: number) => {
+  const v = Math.sin(x * 12.9898 + z * 78.233) * 43758.5453;
+  return v - Math.floor(v);
+};
+/** Smooth value noise in 0..1 for colouring the ground. */
+function noise(x: number, z: number): number {
+  const xi = Math.floor(x);
+  const zi = Math.floor(z);
+  const u = (x - xi) * (x - xi) * (3 - 2 * (x - xi));
+  const v = (z - zi) * (z - zi) * (3 - 2 * (z - zi));
+  const a = hash(xi, zi);
+  const b = hash(xi + 1, zi);
+  const c = hash(xi, zi + 1);
+  const d = hash(xi + 1, zi + 1);
+  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+}
 
 interface Particle {
   pos: THREE.Vector3;
@@ -187,58 +205,59 @@ export class World {
     return m;
   }
 
-  /** Terrain height: flat inside the island, rising into canyon walls outside it. */
-  private height = (_x: number, _z: number) => 0;
-
   private terrain(): THREE.Mesh {
-    const size = 900;
-    const seg = 150;
-    const geo = new THREE.PlaneGeometry(size, size, seg, seg).rotateX(-Math.PI / 2).toNonIndexed();
-    const pos = geo.attributes.position;
-    const colors = new Float32Array(pos.count * 3);
+    // Fine spacing over the island, coarse out on the cliffs and the horizon.
+    const ticks: number[] = [];
+    for (let v = -450; v < -WORLD.half; v += 9) ticks.push(v);
+    for (let v = -WORLD.half; v < WORLD.half; v += 2) ticks.push(v);
+    for (let v = WORLD.half; v <= 450; v += 9) ticks.push(v);
+    const n = ticks.length;
+    const pos = new Float32Array(n * n * 3);
+    for (let j = 0; j < n; j++)
+      for (let i = 0; i < n; i++) pos.set([ticks[i], terrainHeight(ticks[i], ticks[j]), ticks[j]], (j * n + i) * 3);
+    const idx: number[] = [];
+    for (let j = 0; j < n - 1; j++)
+      for (let i = 0; i < n - 1; i++) {
+        const a = j * n + i;
+        idx.push(a, a + n, a + 1, a + 1, a + n, a + n + 1);
+      }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    geo.setIndex(idx);
+    const flatGeo = geo.toNonIndexed();
+    const p = flatGeo.attributes.position;
+    const colors = new Float32Array(p.count * 3);
     const sand = new THREE.Color(PAL.sand);
     const dark = new THREE.Color(PAL.sandDark);
     const rock = new THREE.Color(PAL.rock);
     const rockDark = new THREE.Color(PAL.rockDark);
-    const hash = (x: number, z: number) => {
-      const s = Math.sin(x * 12.9898 + z * 78.233) * 43758.5453;
-      return s - Math.floor(s);
-    };
-    const vnoise = (x: number, z: number) => {
-      const xi = Math.floor(x);
-      const zi = Math.floor(z);
-      const xf = x - xi;
-      const zf = z - zi;
-      const u = xf * xf * (3 - 2 * xf);
-      const v = zf * zf * (3 - 2 * zf);
-      const a = hash(xi, zi);
-      const b = hash(xi + 1, zi);
-      const c = hash(xi, zi + 1);
-      const d = hash(xi + 1, zi + 1);
-      return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
-    };
-    const height = (x: number, z: number) => {
-      const m = Math.max(Math.abs(x), Math.abs(z));
-      const edge = WORLD.half + 6;
-      if (m < edge) return 0;
-      const t = m - edge;
-      return Math.min(46, Math.pow(t, 1.15) * 0.9) * (0.75 + vnoise(x * 0.05, z * 0.05) * 0.5) + vnoise(x * 0.2, z * 0.2) * Math.min(t, 6);
-    };
-    this.height = height;
     const c = new THREE.Color();
-    for (let i = 0; i < pos.count; i++) {
-      const x = pos.getX(i);
-      const z = pos.getZ(i);
-      const h = height(x, z);
-      pos.setY(i, h);
-      const n = vnoise(x * 0.08, z * 0.08);
-      if (h > 1.5) c.copy(rock).lerp(rockDark, vnoise(x * 0.3, z * 0.1 + h * 0.2));
-      else c.copy(sand).lerp(dark, n > 0.62 ? 0.7 : n * 0.3);
-      colors.set([c.r, c.g, c.b], i * 3);
+    // Colour each triangle as a whole: rock where it is a cliff, sand elsewhere.
+    for (let t = 0; t < p.count; t += 3) {
+      let x = 0;
+      let z = 0;
+      let lo = Infinity;
+      let hi = -Infinity;
+      for (let k = 0; k < 3; k++) {
+        x += p.getX(t + k) / 3;
+        z += p.getZ(t + k) / 3;
+        lo = Math.min(lo, p.getY(t + k));
+        hi = Math.max(hi, p.getY(t + k));
+      }
+      const h = (lo + hi) / 2;
+      const cliff = steepAt(x, z) || hi - lo > 2.2;
+      if (cliff) c.copy(rock).lerp(rockDark, noise(x * 0.3, z * 0.1 + h * 0.2));
+      else {
+        const k = noise(x * 0.08, z * 0.08);
+        c.copy(sand).lerp(dark, h < -1 ? 0.55 : k > 0.62 ? 0.7 : k * 0.3);
+        // High ground a touch lighter, so hills read from afar.
+        c.offsetHSL(0, 0, Math.max(-0.04, Math.min(0.05, h * 0.006)));
+      }
+      for (let k = 0; k < 3; k++) colors.set([c.r, c.g, c.b], (t + k) * 3);
     }
-    geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-    geo.computeVertexNormals();
-    const m = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }));
+    flatGeo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    flatGeo.computeVertexNormals();
+    const m = new THREE.Mesh(flatGeo, new THREE.MeshLambertMaterial({ vertexColors: true }));
     m.receiveShadow = true;
     return m;
   }
@@ -247,18 +266,19 @@ export class World {
     let r = 11;
     const rnd = () => ((r = (r * 16807) % 2147483647) / 2147483647);
     const geo = new THREE.DodecahedronGeometry(1, 0);
-    // Boulders along the foot of the canyon walls, just outside the playable square.
-    for (let i = 0; i < 160; i++) {
-      const side = Math.floor(rnd() * 4);
-      const along = (rnd() - 0.5) * (WORLD.half * 2 + 20);
-      const out = WORLD.half + 2 + rnd() * 6;
-      const x = side === 0 ? out : side === 1 ? -out : along;
-      const z = side === 2 ? out : side === 3 ? -out : along;
+    // Boulders along the foot of the cliffs round the island.
+    for (let i = 0; i < 220; i++) {
+      const a = rnd() * Math.PI * 2;
+      const dx = Math.cos(a);
+      const dz = Math.sin(a);
+      const rr = rimRadius(dx * 190, dz * 190) + rnd() * 5;
+      const x = dx * rr;
+      const z = dz * rr;
       const m = new THREE.Mesh(geo, flat(rnd() < 0.5 ? PAL.rock : PAL.rockDark));
       const s = 1.5 + rnd() * 3.5;
       m.scale.set(s, s * (0.6 + rnd() * 0.9), s);
       m.rotation.set(rnd(), rnd() * 6, rnd());
-      m.position.set(x, this.height(x, z) - s * 0.3, z);
+      m.position.set(x, terrainHeight(x, z) - s * 0.3, z);
       m.castShadow = true;
       this.scene.add(m);
     }
