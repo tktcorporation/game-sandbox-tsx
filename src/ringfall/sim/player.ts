@@ -420,6 +420,7 @@ export function hurtPlayer(s: State, dmg: number, fromX: number, fromZ: number, 
   if (p.hp > 0) return;
   p.hp = 0;
   p.healing = null;
+  p.mantle = null; // a downed player lets go of the ledge
   p.reload = 0;
   s.stats.downs++;
   if (p.selfRevive > 0) {
@@ -436,6 +437,7 @@ export function wipe(s: State) {
   s.stats.wipes++;
   p.pos = { x: poi.entry.x, y: groundAt(poi.entry.x, poi.entry.z, PLAYER.radius, 99), z: poi.entry.z };
   p.vel = { x: 0, y: 0, z: 0 };
+  p.mantle = null;
   p.yaw = poi.entry.yaw;
   p.pitch = 0;
   p.hp = PLAYER.hp;

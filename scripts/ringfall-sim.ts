@@ -11,6 +11,7 @@ import { groundAt, solidAt } from "../src/ringfall/sim/geom";
 import { Bot, SKILLS } from "../src/ringfall/sim/bot";
 import { idleInput, newRun, type GameEvent, type State } from "../src/ringfall/sim/state";
 import { step } from "../src/ringfall/sim/step";
+import { hurtPlayer } from "../src/ringfall/sim/player";
 import { rank } from "../src/ringfall/sim/results";
 import { magSize } from "../src/ringfall/sim/combat";
 
@@ -160,7 +161,25 @@ function checkArcIgnoresFacing(): string | null {
   if (Math.abs(dealt - TACTICAL.dmg) > 1e-6) return `arc facing scenario: an arc on an unaware grunt dealt ${dealt}, expected ${TACTICAL.dmg}`;
   return null;
 }
-for (const err of [checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing()]) {
+/** A wipe in the middle of a climb leaves the player at the entry, not back on the ledge. */
+function checkWipeMidClimb(): string | null {
+  const s = newRun(5);
+  s.enemies = [];
+  s.phase = "play";
+  const p = s.player;
+  const entry = POIS[0].entry;
+  p.pos = { x: entry.x + 40, y: 0, z: entry.z };
+  p.mantle = { t: 0.1, dur: 0.5, from: { ...p.pos }, to: { x: p.pos.x + 1, y: 2, z: p.pos.z } };
+  p.hp = 1;
+  p.shield = 0;
+  p.selfRevive = 0;
+  hurtPlayer(s, 10, p.pos.x, p.pos.z);
+  step(s, idleInput(), false);
+  const off = Math.hypot(p.pos.x - entry.x, p.pos.z - entry.z);
+  if (s.stats.wipes !== 1 || off > 1) return `wipe mid-climb scenario: ${off.toFixed(1)} m from the entry after the wipe`;
+  return null;
+}
+for (const err of [checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkWipeMidClimb()]) {
   if (err) {
     console.error(err);
     process.exit(1);
