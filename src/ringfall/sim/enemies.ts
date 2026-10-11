@@ -602,6 +602,8 @@ export function stepOrbs(s: State) {
   // A hit can wipe the squad, and wipe() clears the air; do not write the old list back over it.
   const wipes = s.stats.wipes;
   const kept = s.orbs.filter((o) => {
+    // Once a hit has wiped the squad, the rest of the air is gone: nothing may hit the team at the entry.
+    if (s.stats.wipes !== wipes) return false;
     if (o.homing) {
       // Turn the velocity toward the player a little each tick.
       const sp = Math.hypot(o.vel.x, o.vel.y, o.vel.z);
@@ -643,6 +645,7 @@ export function stepWaves(s: State) {
   const p = s.player;
   const wipes = s.stats.wipes;
   const kept = s.waves.filter((w) => {
+    if (s.stats.wipes !== wipes) return false;
     w.r += TITAN.stompSpeed * TICK;
     const d = Math.hypot(p.pos.x - w.x, p.pos.z - w.z);
     if (!w.hit && Math.abs(d - w.r) < 0.9 && p.pos.y < w.y + TITAN.stompHeight) {

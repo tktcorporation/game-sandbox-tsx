@@ -99,7 +99,8 @@ export function fireRay(s: State, w: Weapon, dir: Vec3) {
     const c = bodyCenter(e);
     const tw = raySphere(eye, dir, weakPoint(e), k.weakR);
     const tb = raySphere(eye, dir, c, k.radius);
-    if (tw < wallT && (!raw || tw < raw.t)) raw = { e, t: tw, crit: true };
+    // The nearer of the two: a weak point on the far side of the body is behind armour.
+    if (tw < wallT && tw <= tb && (!raw || tw < raw.t)) raw = { e, t: tw, crit: true };
     else if (tb < wallT && (!raw || tb < raw.t)) raw = { e, t: tb, crit: false };
     if (raw) continue;
     const v = { x: c.x - eye.x, y: c.y - eye.y, z: c.z - eye.z };

@@ -14,7 +14,9 @@ import { step } from "../src/ringfall/sim/step";
 import { hurtPlayer } from "../src/ringfall/sim/player";
 import { hurtAlly, placeAlly } from "../src/ringfall/sim/ally";
 import { rank } from "../src/ringfall/sim/results";
-import { magSize } from "../src/ringfall/sim/combat";
+import { eyePos, fireRay, magSize, weakPoint } from "../src/ringfall/sim/combat";
+import { lookAngles } from "../src/ringfall/sim/geom";
+import { forward } from "../src/ringfall/sim/state";
 
 const runs = Number(process.argv[2] ?? 12);
 const LIMIT = 20 * 60; // seconds of game time before a run counts as stuck
@@ -289,6 +291,44 @@ function checkStompHeight(): string | null {
   if (high > 0 || low <= 0) return `stomp scenario: ${high} damage up high, ${low} on the ground`;
   return null;
 }
+/** Projectiles after the one that wipes the team are gone too: none of them hits the teammate placed at the entry. */
+function checkNothingHitsAfterWipe(): string | null {
+  const s = padRun();
+  const p = s.player;
+  p.hp = 1;
+  p.shield = 0;
+  p.selfRevive = 0;
+  hurtAlly(s, 999); // nobody to wait for: the next down wipes
+  const entry = POIS[POIS.length - 1].entry;
+  s.orbs.push({ id: 900, pos: { x: p.pos.x, y: p.pos.y + 1.1, z: p.pos.z }, vel: { x: 0, y: 0, z: 0 }, r: 0.4, dmg: 10, life: 5, homing: false });
+  // Projectiles all over the entry, where the wipe puts the player and the teammate.
+  for (let dx = -3; dx <= 3; dx += 1)
+    for (let dz = -3; dz <= 3; dz += 1) {
+      const x = entry.x + dx;
+      const z = entry.z + dz;
+      s.orbs.push({ id: 1000 + s.orbs.length, pos: { x, y: groundAt(x, z, 0.4, 99) + 1.1, z }, vel: { x: 0, y: 0, z: 0 }, r: 0.7, dmg: 200, life: 5, homing: false });
+    }
+  step(s, idleInput(), false);
+  if (s.stats.wipes !== 1 || s.ally.down > 0 || s.ally.hp < ALLY.hp) return `after-wipe scenario: wipes ${s.stats.wipes}, teammate hp ${s.ally.hp}, down ${s.ally.down.toFixed(1)}`;
+  return null;
+}
+/** A shot from behind meets the body before the weak point on its far side: no critical hit. */
+function checkWeakPointBehindBody(): string | null {
+  const s = newRun(5);
+  s.phase = "play";
+  const drone = s.enemies.find((e) => e.kind === "drone")!;
+  s.enemies = [drone];
+  const p = s.player;
+  p.onGround = true;
+  const eye = eyePos(s);
+  drone.pos = { x: eye.x, y: eye.y, z: eye.z - 10 };
+  drone.yaw = 0; // faces away from the player, toward -z
+  drone.aware = "engaged";
+  const a = lookAngles(eye, weakPoint(drone));
+  fireRay(s, { kind: "pike", rarity: 0, mag: -1 }, forward(a.yaw, a.pitch));
+  if (s.stats.hits !== 1 || s.stats.crits !== 0) return `weak point scenario: ${s.stats.hits} hits, ${s.stats.crits} crits through the body`;
+  return null;
+}
 /** The teammate never opens fire on robots that have not noticed anyone. */
 function checkAllyHoldsFire(): string | null {
   const s = newRun(5);
@@ -309,7 +349,7 @@ function checkAllyHoldsFire(): string | null {
   if (shots) return `hold fire scenario: the teammate fired ${shots} shots at an idle robot`;
   return null;
 }
-for (const err of [checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkWipeMidClimb(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkAllySelfUp(), checkStompHeight()]) {
+for (const err of [checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkWipeMidClimb(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkAllySelfUp(), checkStompHeight(), checkNothingHitsAfterWipe(), checkWeakPointBehindBody()]) {
   if (err) {
     console.error(err);
     process.exit(1);
