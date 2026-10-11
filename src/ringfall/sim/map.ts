@@ -186,6 +186,25 @@ function tower(cx: number, cz: number, w: number, d: number, floors: number, o: 
   return out;
 }
 
+/**
+ * A tall landmark: `floors` storeys with doors on the south and east of the ground
+ * floor and windows all round above, a supply bin on the top floor.
+ */
+function highRise(cx: number, cz: number, w: number, d: number, floors: number): Box[] {
+  const windows: Side[][] = [["w"]];
+  for (let k = 1; k < floors; k++) windows.push(["n", "s", "e", "w"]);
+  return tower(cx, cz, w, d, floors, { doors: [["s", "e"]], windows });
+}
+
+/** Tall buildings: where they stand, their size and storeys. Their top-floor bins are in EXTRA_BINS. */
+const HIGH_RISES = [
+  { x: 0, z: -14, w: 10, d: 10, floors: 6 }, // the old town's office block
+  { x: 125, z: 0, w: 10, d: 10, floors: 5 }, // flats beyond the housing street
+  { x: 40, z: -130, w: 8, d: 8, floors: 5 }, // the pad's control tower
+  { x: -130, z: 40, w: 8, d: 8, floors: 4 }, // a lookout west of the quarry
+  { x: -79, z: 28, w: 8, d: 8, floors: 4 }, // the quarry office
+] as const;
+
 /** A walkway slab whose top is at height y. */
 const bridge = (x0: number, z0: number, x1: number, z1: number, y: number): Box => rect(x0, z0, x1, z1, y - 0.3, y, "slab", 1);
 
@@ -283,10 +302,12 @@ const POI_FRAMES: Poi[] = [
     ring: 70,
     entry: { x: 0, z: 74, yaw: 0 },
     squads: [
-      { name: "コンテナ前", members: [{ kind: "grunt", x: -8, z: 50, face: S }, { kind: "grunt", x: -2, z: 48, face: S }] },
-      { name: "巡回ドローン", members: [{ kind: "drone", x: 6, z: 48 }, { kind: "drone", x: 4, z: 46 }], patrol: [{ x: 6, z: 48 }, { x: 6, z: 64 }, { x: -6, z: 64 }, { x: -6, z: 50 }] },
-      { name: "見張り台", members: [{ kind: "grunt", x: 18, z: 63, y: 3, face: S }, { kind: "charger", x: 14, z: 66, face: S }] },
-      { name: "管理棟", members: [{ kind: "grunt", x: -24, z: 46, face: E }, { kind: "grunt", x: -21, z: 50, face: E }, { kind: "charger", x: -25, z: 51, face: E }] },
+      { name: "見張り台", members: [{ kind: "grunt", x: 18, z: 63, y: 3, face: S }] },
+      { name: "倉庫の中", members: [{ kind: "grunt", x: 25, z: 52, face: W }] },
+      { name: "管理棟", members: [{ kind: "grunt", x: -23, z: 50, face: E }] },
+      { name: "荷台", members: [{ kind: "grunt", x: 6, z: 30, y: 1.2, face: S }] },
+      { name: "塀の裏", members: [{ kind: "charger", x: -16, z: 56, face: E }] },
+      { name: "巡回ドローン", members: [{ kind: "drone", x: -6, z: 36 }], patrol: [{ x: -6, z: 36 }, { x: 14, z: 36 }, { x: 22, z: 44 }, { x: 0, z: 42 }] },
     ],
     bins: [
       { x: -2, z: 54 },
@@ -311,10 +332,12 @@ const POI_FRAMES: Poi[] = [
     ring: 55,
     entry: { x: -18, z: 30, yaw: -0.8 },
     squads: [
-      { name: "鉄骨の足場", members: [{ kind: "grunt", x: -52, z: -15, y: 4, face: SE }, { kind: "grunt", x: -38, z: -15, y: 4, face: SE }] },
-      { name: "採掘穴", members: [{ kind: "charger", x: -46, z: 4, face: SE }, { kind: "charger", x: -48, z: -4, face: SE }, { kind: "grunt", x: -42, z: 2, face: SE }] },
-      { name: "段丘", members: [{ kind: "grunt", x: -63, z: -8, y: 2.4, face: E }, { kind: "drone", x: -58, z: -2 }], patrol: [{ x: -58, z: -2 }, { x: -50, z: -8 }, { x: -58, z: -12 }] },
-      { name: "作業小屋", members: [{ kind: "grunt", x: -63, z: 25, face: E }, { kind: "charger", x: -61, z: 22.5, face: E }] },
+      { name: "鉄骨の足場", members: [{ kind: "grunt", x: -52, z: -15, y: 4, face: SE }] },
+      { name: "採掘穴", members: [{ kind: "charger", x: -46, z: 4, face: SE }] },
+      { name: "段丘", members: [{ kind: "grunt", x: -63, z: -8, y: 2.4, face: E }] },
+      { name: "作業小屋", members: [{ kind: "grunt", x: -62, z: 25, face: E }] },
+      { name: "西の段丘", members: [{ kind: "grunt", x: -72, z: 3, y: 3, face: E }] },
+      { name: "巡回ドローン", members: [{ kind: "drone", x: -48, z: 12 }], patrol: [{ x: -48, z: 12 }, { x: -34, z: 12 }, { x: -30, z: 0 }, { x: -44, z: -6 }] },
     ],
     bins: [
       { x: -37, z: 8 },
@@ -334,10 +357,12 @@ const POI_FRAMES: Poi[] = [
     ring: 55,
     entry: { x: 22, z: -6, yaw: -0.85 },
     squads: [
-      { name: "中継塔", members: [{ kind: "grunt", x: 41.5, z: -29, y: 5, face: SW }, { kind: "grunt", x: 43.8, z: -28, y: 3.4, face: SW }] },
-      { name: "コンテナ置き場", members: [{ kind: "heavy", x: 36, z: -36, face: SW }, { kind: "grunt", x: 34, z: -26, face: SW }, { kind: "grunt", x: 46, z: -36, face: SW }] },
-      { name: "西の小屋", members: [{ kind: "grunt", x: 30, z: -18, y: 3.4, face: SW }, { kind: "charger", x: 29, z: -18, face: E }, { kind: "charger", x: 31, z: -17.5, face: E }] },
-      { name: "東の小屋", members: [{ kind: "grunt", x: 57, z: -36, face: W }, { kind: "grunt", x: 56, z: -38.5, face: W }, { kind: "drone", x: 50, z: -46 }], patrol: [{ x: 50, z: -46 }, { x: 60, z: -30 }, { x: 48, z: -30 }] },
+      { name: "中継塔", members: [{ kind: "grunt", x: 41.5, z: -29, y: 5, face: SW }] },
+      { name: "コンテナ置き場", members: [{ kind: "heavy", x: 36, z: -36, face: SW }] },
+      { name: "西の小屋", members: [{ kind: "grunt", x: 30, z: -18, y: 3.4, face: SW }] },
+      { name: "東の小屋", members: [{ kind: "grunt", x: 57, z: -36, face: W }] },
+      { name: "3 階建ての 1 階", members: [{ kind: "grunt", x: 49, z: -10, face: W }] },
+      { name: "通路の番", members: [{ kind: "charger", x: 34, z: -26, face: SW }] },
     ],
     bins: [
       { x: 33, z: -22 },
@@ -378,18 +403,14 @@ export const EXTRACT = { x: AT[3][0], z: -84 + AT[3][1], radius: 5 };
 /** Squads between the POIs. Beating them is optional; they guard loot and high ground. */
 export const ROAMERS: Squad[] = [
   { name: "時計塔", members: [{ kind: "grunt", x: 0, z: 13, y: STOREY * 3, face: S }] },
-  {
-    name: "旧市街の見回り",
-    members: [{ kind: "grunt", x: -7, z: 20, face: E }, { kind: "grunt", x: -7, z: 22, face: E }, { kind: "drone", x: 7, z: 20 }],
-    patrol: [{ x: 7, z: 20 }, { x: 7, z: 2 }, { x: -7, z: 2 }, { x: -7, z: 20 }],
-  },
-  { name: "商店", members: [{ kind: "grunt", x: -17, z: 26, face: N }, { kind: "charger", x: -14, z: 25, face: E }] },
+  { name: "旧市街の見回り", members: [{ kind: "grunt", x: -7, z: 20, face: E }], patrol: [{ x: 7, z: 20 }, { x: 7, z: 2 }, { x: -7, z: 2 }, { x: -7, z: 20 }] },
+  { name: "商店", members: [{ kind: "charger", x: -14, z: 25, face: E }] },
   { name: "尾根の狙撃手", members: [{ kind: "grunt", x: -50, z: 70.5, y: 3.5, face: E }] },
-  { name: "台地の見張り", members: [{ kind: "grunt", x: -52, z: -54, y: 7.2, face: E }, { kind: "grunt", x: -40, z: -56, y: 4.8, face: E }] },
-  { name: "工場の警備", members: [{ kind: "heavy", x: 55, z: 46, face: S }, { kind: "grunt", x: 60, z: 39.3, y: 3.3, face: S }] },
-  { name: "住宅地", members: [{ kind: "grunt", x: 99, z: 16, y: STOREY * 2, face: W }, { kind: "charger", x: 106, z: 24, face: W }] },
-  { name: "廃村", members: [{ kind: "grunt", x: -104, z: -55, face: E }, { kind: "grunt", x: -112, z: -69, y: STOREY * 2, face: E }] },
-  { name: "橋の上", members: [{ kind: "grunt", x: 52, z: -95, y: 6, face: N }, { kind: "drone", x: 52, z: -86 }], patrol: [{ x: 52, z: -86 }, { x: 52, z: -104 }] },
+  { name: "台地の見張り", members: [{ kind: "grunt", x: -52, z: -54, y: 7.2, face: E }] },
+  { name: "工場の警備", members: [{ kind: "heavy", x: 55, z: 46, face: S }] },
+  { name: "住宅地", members: [{ kind: "grunt", x: 99, z: 16, y: STOREY * 2, face: W }] },
+  { name: "廃村", members: [{ kind: "grunt", x: -112, z: -69, y: STOREY * 2, face: E }] },
+  { name: "橋の上", members: [{ kind: "grunt", x: 52, z: -95, y: 6, face: N }] },
 ];
 export const SPAWN = { x: 0, z: 140, yaw: 0 };
 
@@ -405,6 +426,8 @@ export const EXTRA_BINS: { x: number; z: number; y?: number; table: number }[] =
   { x: -50, z: -52, y: 7.2, table: 2 },
   { x: 113, z: 14, y: STOREY, table: 2 },
   { x: -114, z: -71, y: STOREY, table: 1 },
+  // Top floor of each tall building, on the side away from its stairs.
+  ...HIGH_RISES.map((h) => ({ x: h.x - h.w / 2 + 1.5, z: h.z, y: (h.floors - 1) * STOREY, table: 2 })),
 ];
 
 /** Everything placed by hand: POIs, districts, landmarks. */
@@ -510,6 +533,9 @@ const AUTHORED: Box[] = [
   box(-24, 6, 0.6, 8, 1.4, "wall"),
   box(24, 20, 0.6, 8, 1.4, "wall"),
   box(0, 38, 3, 1.2, 1.2, "rock"),
+
+  // --- tall buildings, seen from anywhere on the island
+  ...HIGH_RISES.flatMap((h) => highRise(h.x, h.z, h.w, h.d, h.floors)),
 
   // --- 尾根: a long ridge with stairs at both ends, cover on top
   box(-50, 70, 30, 6, 3.5, "rock"),

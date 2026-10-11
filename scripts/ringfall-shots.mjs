@@ -143,6 +143,8 @@ const tour = [
   ["tour-4-factory-catwalk", 46, 4.9, 39.3, 1.57, -0.15],
   ["tour-5-canyon-bridge", 52, 1.6, -78, 0, 0.12],
   ["tour-6-quarry-terraces", -100, 1.6, 30, -0.61, 0.05],
+  ["tour-7-high-rise-view", -2.5, 18.6, -10.2, Math.PI, -0.3],
+  ["tour-8-high-rises", 20, 1.6, -45, -2.57, 0.25],
 ];
 for (const [name, x, y, z, yaw, pitch] of tour) {
   await page.evaluate(([x, y, z, yaw, pitch]) => window.ringfallCamera(x, y, z, yaw, pitch), [x, y, z, yaw, pitch]);

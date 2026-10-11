@@ -31,6 +31,9 @@ interface DmgNum {
 }
 
 /** Tag shown with a damage number, by how the shot met the robot. */
+/** The straggler hint: shown when this few robots are left and none has been found for this long. */
+const HINT = { left: 2, after: 20 };
+
 const FLANK_TAG: Partial<Record<Flank, string>> = { back: "背後", ambush: "奇襲" };
 const FLANK_RANK: Record<Flank, number> = { front: 0, none: 1, side: 1, back: 2, ambush: 3 };
 
@@ -49,6 +52,10 @@ export class Hud {
   private awareLayer = $("aware-layer");
   private awEls = new Map<number, HTMLElement>();
   private spotted = new Map<number, number>(); // robot id -> seconds left to show "!"
+  /** Game time of the last kill at the current POI, for the straggler hint. */
+  private lastPoiKill = 0;
+  private hintPoi = -1;
+  private foePips: HTMLElement[] = [];
 
   constructor() {
     const strip = $("compass-strip");
@@ -111,6 +118,7 @@ export class Hud {
         break;
       }
       case "kill":
+        this.lastPoiKill = s.time;
         this.hitT = 0.4;
         $("hitmark").className = "kill";
         break;
@@ -215,6 +223,7 @@ export class Hud {
       rel = Math.max(-100, Math.min(100, rel));
       $("compass-obj").style.left = `${half + rel * 2}px`;
     }
+    this.stragglers(s, active, heading, half);
 
     // Vitals.
     const maxShield = PLAYER.shieldByTier[p.armor];
@@ -388,6 +397,35 @@ export class Hud {
 
     this.bannerT -= dt;
     if (this.bannerT <= 0) $("banner").className = "";
+  }
+
+  /**
+   * When the last one or two robots of a POI have not been found for a while, their
+   * bearings show on the compass so the search never stalls.
+   */
+  private stragglers(s: State, active: boolean, heading: number, half: number) {
+    if (this.hintPoi !== s.poi) {
+      this.hintPoi = s.poi;
+      this.lastPoiKill = s.time;
+    }
+    const left = active && s.phase === "play" ? s.enemies.filter((e) => e.poi === s.poi && e.kind !== "titan") : [];
+    const show = left.length > 0 && left.length <= HINT.left && s.time - this.lastPoiKill > HINT.after;
+    if (show && !this.foePips.length) this.toast("残りのロボットの方角をコンパスに表示", 0);
+    const n = show ? left.length : 0;
+    while (this.foePips.length > n) this.foePips.pop()?.remove();
+    while (this.foePips.length < n) {
+      const el = document.createElement("i");
+      el.className = "compass-foe";
+      $("compass").appendChild(el);
+      this.foePips.push(el);
+    }
+    const p = s.player;
+    this.foePips.forEach((el, i) => {
+      const e = left[i];
+      const bearing = (Math.atan2(e.pos.x - p.pos.x, -(e.pos.z - p.pos.z)) * 180) / Math.PI;
+      const rel = Math.max(-100, Math.min(100, ((bearing - heading + 540) % 360) - 180));
+      el.style.left = `${half + rel * 2}px`;
+    });
   }
 
   /**
