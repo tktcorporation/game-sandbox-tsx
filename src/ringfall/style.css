@@ -1023,6 +1023,10 @@ body.touch #objective {
   left: max(12px, env(safe-area-inset-left));
   top: 10px;
 }
+/* The weapon cards take taps (to switch weapons), so the HUD sits above the touch zones. */
+body.touch #hud {
+  z-index: 1;
+}
 body.touch #weapons {
   top: 10px;
   bottom: auto;

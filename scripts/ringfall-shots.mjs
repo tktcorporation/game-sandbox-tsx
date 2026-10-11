@@ -85,6 +85,17 @@ const errors = [];
   const shots1 = (await read()).stats.shots;
   if (!(shots1 > shots0)) errors.push(`mobile: the fire button did not shoot (${shots0} -> ${shots1})`);
 
+  // The weapon cards are tappable (they switch weapons): a tap on each card shown
+  // lands on the card itself, not on the view-turning zone under it.
+  for (const id of ["slot-0", "slot-1"]) {
+    const hit = await page.evaluate((cardId) => {
+      const r = document.getElementById(cardId).getBoundingClientRect();
+      if (!r.width) return true; // an empty slot is not shown
+      return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)?.closest(`#${cardId}`) !== null;
+    }, id);
+    if (!hit) errors.push(`mobile: a tap on the weapon card ${id} does not reach it`);
+  }
+
   // The page never zooms: browser gestures are off on the root (touch-action
   // narrows down the tree, so the HUD and menus are covered too), and iOS Safari's
   // pinch events, which ignore the viewport meta, are cancelled.
