@@ -171,9 +171,13 @@ export function stepLoot(s: State, input: Input) {
   type Pick = { d: number; act: () => void };
   const picks: Pick[] = [];
   const level = (y: number) => Math.abs(y - p.pos.y) < 1.5;
-  // A downed teammate within reach comes before any loot.
+  // A downed teammate within reach comes before any loot, however close the loot is (the
+  // HUD offers the revive over everything else at the same reach).
   const a = s.ally;
-  if (a.active && a.down > 0 && a.helped <= 0 && level(a.pos.y)) picks.push({ d: dist2d(a.pos, p.pos) - 1, act: () => startHelp(s) });
+  if (a.active && a.down > 0 && dist2d(a.pos, p.pos) < PLAYER.interactRange + 1 && level(a.pos.y)) {
+    startHelp(s);
+    return;
+  }
   s.bins.forEach((b, i) => {
     if (!b.open && level(b.y)) picks.push({ d: dist2d(b, p.pos), act: () => openBin(s, i) });
   });

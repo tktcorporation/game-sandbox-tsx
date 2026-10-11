@@ -329,6 +329,20 @@ function checkWeakPointBehindBody(): string | null {
   if (s.stats.hits !== 1 || s.stats.crits !== 0) return `weak point scenario: ${s.stats.hits} hits, ${s.stats.crits} crits through the body`;
   return null;
 }
+/** With a bin at the player's feet and the teammate down 3 m away, the use key picks the teammate up and leaves the bin shut. */
+function checkHelpBeforeLoot(): string | null {
+  const s = padRun();
+  const p = s.player;
+  s.bins.push({ id: 9999, x: p.pos.x + 0.3, y: p.pos.y, z: p.pos.z, poi: 0, open: false, flare: false });
+  hurtAlly(s, 999);
+  s.ally.pos = { x: p.pos.x + 3, y: p.pos.y, z: p.pos.z };
+  const press = idleInput();
+  press.interact = true;
+  step(s, press, false);
+  const bin = s.bins.find((b) => b.id === 9999)!;
+  if (bin.open || s.ally.helped <= 0) return `help-before-loot scenario: bin open ${bin.open}, help ${s.ally.helped.toFixed(2)}`;
+  return null;
+}
 /** The teammate never opens fire on robots that have not noticed anyone. */
 function checkAllyHoldsFire(): string | null {
   const s = newRun(5);
@@ -349,7 +363,7 @@ function checkAllyHoldsFire(): string | null {
   if (shots) return `hold fire scenario: the teammate fired ${shots} shots at an idle robot`;
   return null;
 }
-for (const err of [checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkWipeMidClimb(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkAllySelfUp(), checkStompHeight(), checkNothingHitsAfterWipe(), checkWeakPointBehindBody()]) {
+for (const err of [checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkWipeMidClimb(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkAllySelfUp(), checkStompHeight(), checkNothingHitsAfterWipe(), checkWeakPointBehindBody(), checkHelpBeforeLoot()]) {
   if (err) {
     console.error(err);
     process.exit(1);
