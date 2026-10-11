@@ -142,6 +142,25 @@ const errors = [];
   await ctx.close();
 }
 
+// Without pointer lock (a sandboxed frame), the mouse still turns the view.
+{
+  const p2 = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+  p2.on("pageerror", (e) => errors.push(`no-lock pageerror: ${e.message}`));
+  await p2.addInitScript(() => {
+    Element.prototype.requestPointerLock = undefined;
+  });
+  await p2.goto(`http://localhost:${port}/ringfall/`, { waitUntil: "load" });
+  await p2.click("#start");
+  await p2.waitForTimeout(300);
+  const y0 = await p2.evaluate(() => window.ringfallYaw());
+  await p2.mouse.move(640, 360);
+  await p2.mouse.move(840, 360, { steps: 10 });
+  await p2.waitForTimeout(300);
+  const y1 = await p2.evaluate(() => window.ringfallYaw());
+  if (!(Math.abs(y1 - y0) > 0.05)) errors.push(`no pointer lock: the mouse did not turn the view (${y0.toFixed(2)} -> ${y1.toFixed(2)})`);
+  await p2.close();
+}
+
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
 page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
 page.on("console", (m) => m.type() === "error" && !/fonts\.g|ERR_TUNNEL|net::/.test(m.text()) && errors.push(`console: ${m.text()}`));

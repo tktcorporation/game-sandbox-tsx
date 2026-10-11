@@ -261,6 +261,18 @@ function checkHelpAlly(): string | null {
   if (s.ally.down > 0 || s.stats.allyHelped !== 1) return `help scenario: teammate still down (${s.ally.down.toFixed(1)} s left)`;
   return null;
 }
+/** A downed teammate left alone stands up by itself, with health, after ALLY.selfUp seconds. */
+function checkAllySelfUp(): string | null {
+  const s = padRun();
+  hurtAlly(s, 999);
+  let up = 0;
+  for (let i = 0; i < (ALLY.selfUp + 0.5) / TICK; i++) {
+    step(s, idleInput(), false);
+    up += s.events.filter((e) => e.t === "allyUp").length;
+  }
+  if (s.ally.down > 0 || s.ally.hp <= 0 || up !== 1) return `self-up scenario: down ${s.ally.down.toFixed(1)}, hp ${s.ally.hp}, ${up} allyUp events`;
+  return null;
+}
 /** The teammate never opens fire on robots that have not noticed anyone. */
 function checkAllyHoldsFire(): string | null {
   const s = newRun(5);
@@ -281,7 +293,7 @@ function checkAllyHoldsFire(): string | null {
   if (shots) return `hold fire scenario: the teammate fired ${shots} shots at an idle robot`;
   return null;
 }
-for (const err of [checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkWipeMidClimb(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall()]) {
+for (const err of [checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkWipeMidClimb(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkAllySelfUp()]) {
   if (err) {
     console.error(err);
     process.exit(1);

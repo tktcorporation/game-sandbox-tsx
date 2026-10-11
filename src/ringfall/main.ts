@@ -70,8 +70,13 @@ addEventListener("keydown", (e) => {
   if (["Space", "KeyC", "ControlLeft", "Tab"].includes(e.code)) e.preventDefault();
 });
 addEventListener("keyup", (e) => keys.delete(e.code));
+/**
+ * Pointer lock was refused or is missing (a sandboxed frame, an old browser): the
+ * view then follows plain mouse movement over the page instead of locking the cursor.
+ */
+let noLock = false;
 addEventListener("mousemove", (e) => {
-  if (document.pointerLockElement !== stage) return;
+  if (document.pointerLockElement !== stage && !(noLock && running && !paused)) return;
   look.x += e.movementX;
   look.y += e.movementY;
 });
@@ -319,11 +324,15 @@ requestAnimationFrame(frame);
 // --- screens
 function lock() {
   if (bot || manual || touchMode) return;
+  if (!stage.requestPointerLock) {
+    noLock = true;
+    return;
+  }
   try {
     const r = stage.requestPointerLock() as unknown as Promise<void> | undefined;
-    r?.catch?.(() => undefined);
+    r?.catch?.(() => (noLock = true));
   } catch {
-    /* pointer lock unavailable: the game still runs */
+    noLock = true;
   }
 }
 
@@ -366,6 +375,7 @@ function setPaused(on: boolean) {
   if (on) fire = ads = false;
 }
 
+document.addEventListener("pointerlockerror", () => (noLock = true));
 document.addEventListener("pointerlockchange", () => {
   if (document.pointerLockElement !== stage && running && state.phase !== "done") setPaused(true);
 });

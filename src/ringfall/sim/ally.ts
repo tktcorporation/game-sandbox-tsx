@@ -88,7 +88,8 @@ export function hurtAlly(s: State, dmg: number) {
 /** The teammate stands up (revived by the player, on its own, or when the objective falls). */
 export function raiseAlly(s: State, by: "player" | "self", hp: number) {
   const a = s.ally;
-  if (a.down <= 0) return;
+  // Down means a running timer or, on the tick it runs out, a body still at 0 health.
+  if (a.down <= 0 && a.hp > 0) return;
   a.down = 0;
   a.helped = 0;
   a.hp = hp;
