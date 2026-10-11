@@ -1,0 +1,405 @@
+import { AWARE, DEG, TICK, WORLD } from "./config";
+import { bodyCenter, eyePos, flankOf, magSize, weakPoint } from "./combat";
+import { dist2d, groundAt, los, lookAngles, solidAt, wrapAngle } from "./geom";
+import { EXTRACT, POIS } from "./map";
+import { clearLine, findPath } from "./nav";
+import { enemyMax, idleInput, type Enemy, type Input, type State } from "./state";
+
+/**
+ * A scripted player for the headless balance run (`npm run sim:ringfall`) and the
+ * browser run (`npm run shots:ringfall`). It only produces Input, exactly like a
+ * human: mouse deltas with a skill-dependent wandering aim error, reactions,
+ * dodges. Everything that helps it (assist, pull, slowdown) is the game's own.
+ */
+
+export interface Skill {
+  name: string;
+  aimErr: number; // degrees, std of the wandering aim error
+  turn: number; // fraction of the remaining angle turned per tick
+  react: number; // seconds before tracking a new target
+  dodge: number; // chance to sidestep a telegraphed attack / jump a stomp
+  heads: boolean; // aims at the weak point instead of the body
+  abilities: number; // chance per second to use tactical when it would help
+  flank: number; // chance to leave a robot that faces it and come back from its side or back
+}
+
+export const SKILLS: Skill[] = [
+  { name: "beginner", aimErr: 6.5, turn: 0.1, react: 0.45, dodge: 0.25, heads: false, abilities: 0.25, flank: 0.2 },
+  { name: "casual", aimErr: 3.2, turn: 0.18, react: 0.28, dodge: 0.55, heads: false, abilities: 0.8, flank: 0.5 },
+  { name: "good", aimErr: 1.1, turn: 0.32, react: 0.15, dodge: 0.9, heads: true, abilities: 3, flank: 0.85 },
+];
+
+const PREF: Record<string, number> = { pike: 14, hornet: 9, maul: 5, lance: 20 };
+
+export class Bot {
+  private nx = 0;
+  private ny = 0;
+  private seed: number;
+  private target = -1;
+  private tracking = 0;
+  private side = 1;
+  private sideT = 0;
+  private stuckT = 0;
+  private lastPos = { x: 0, z: 0 };
+  private unstick = 0;
+  private stuckCount = 0;
+  private unstickSide = 1;
+  private dodgeT = 0;
+  private dodged = new Set<number>();
+  private interactT = 0;
+  private swapT = 0;
+  private lootKey = "";
+  private lootT = 0;
+  private skip = new Set<string>();
+  private path: { x: number; z: number }[] = [];
+  private pathGoal = { x: 1e9, z: 1e9 };
+  private pathT = 0;
+  private flank: { x: number; z: number; id: number; step: "hide" | "go" } | null = null;
+  private flankT = 0;
+  private flankCheck = 0;
+  private lastFlanked = -1;
+  crouch = false;
+
+  constructor(
+    private skill: Skill,
+    seed = 7,
+  ) {
+    this.seed = seed;
+  }
+
+  private rnd() {
+    this.seed = (this.seed * 1664525 + 1013904223) >>> 0;
+    return this.seed / 4294967296;
+  }
+
+  private gauss() {
+    return Math.sqrt(-2 * Math.log(this.rnd() + 1e-9)) * Math.cos(2 * Math.PI * this.rnd());
+  }
+
+  input(s: State): Input {
+    const sk = this.skill;
+    const p = s.player;
+    const inp = idleInput();
+    // Ornstein-Uhlenbeck aim error: wanders, stationary std = aimErr.
+    const theta = 2.5;
+    const sigma = sk.aimErr * DEG * Math.sqrt(2 * theta);
+    this.nx += -this.nx * theta * TICK + sigma * Math.sqrt(TICK) * this.gauss();
+    this.ny += -this.ny * theta * TICK + sigma * Math.sqrt(TICK) * this.gauss() * 0.6;
+
+    const eye = eyePos(s);
+    this.from = { x: p.pos.x, z: p.pos.z };
+    const live = s.enemies.filter((e) => e.mode !== "spawning");
+    // Only fight robots that are after us or stand at the current objective; leave the rest alone.
+    const relevant = live.filter((e) => e.aware === "engaged" || e.poi === s.poi);
+    const sees = (e: Enemy) => dist2d(e.pos, p.pos) < 60 && los(eye, bodyCenter(e));
+    // Finish the squads already fighting before opening on a new one, as a careful player would.
+    const engaged = relevant.filter((e) => e.aware === "engaged");
+    const objective = relevant.filter((e) => e.poi === s.poi);
+    const engagedSeen = engaged.filter(sees);
+    const pool = engagedSeen.length ? engagedSeen : engaged.length ? engaged : objective.filter(sees).length ? objective.filter(sees) : objective;
+    // A flank in progress keeps its robot; otherwise the nearest one.
+    const flanked = this.flank && live.find((e) => e.id === this.flank?.id);
+    const tgt = flanked || (pool.sort((a, b) => dist2d(a.pos, p.pos) - dist2d(b.pos, p.pos))[0] as Enemy | undefined);
+    if (!tgt || tgt.id !== this.target) {
+      this.target = tgt?.id ?? -1;
+      this.tracking = 0;
+    } else this.tracking += TICK;
+
+    // Where to go.
+    let goal: { x: number; z: number } | null = null;
+    let fight = false;
+    if (s.phase === "drop") {
+      const poi = POIS[0];
+      goal = { x: poi.x, z: poi.z + 14 };
+    } else if (s.phase === "extract") {
+      goal = EXTRACT;
+    } else if (tgt && dist2d(tgt.pos, p.pos) < 70) {
+      fight = true;
+    } else {
+      const lg = this.lootGoal(s);
+      goal = lg ?? (s.poi < POIS.length ? POIS[s.poi] : EXTRACT);
+      // Swap a better weapon in for the worse one, never for the one in hand.
+      if (lg?.weapon) {
+        const r = p.weapons.map((w) => (w ? w.rarity : -1));
+        inp.slot = r[0] <= r[1] ? 0 : 1;
+      }
+    }
+
+    // Look.
+    let want: { yaw: number; pitch: number };
+    if (fight && tgt) {
+      const aimAt = sk.heads ? weakPoint(tgt) : bodyCenter(tgt);
+      want = lookAngles(eye, aimAt);
+    } else if (goal) {
+      const step = s.phase === "drop" ? goal : this.via(s, goal);
+      want = { yaw: lookAngles(p.pos, { x: step.x, y: 0, z: step.z }).yaw, pitch: s.phase === "drop" ? -0.6 : 0 };
+    } else want = { yaw: p.yaw, pitch: 0 };
+    const reacting = fight && this.tracking < sk.react;
+    const turn = reacting ? sk.turn * 0.3 : sk.turn;
+    inp.lookX = wrapAngle(want.yaw + this.nx - p.yaw) * turn;
+    inp.lookY = (want.pitch + this.ny - p.pitch) * turn;
+
+    // Move.
+    if (s.phase === "drop") {
+      const d = goal ? dist2d(goal, p.pos) : 0;
+      inp.moveZ = d > 4 ? 1 : 0;
+      return inp;
+    }
+    const w = p.weapons[p.slot];
+    if (fight && tgt) {
+      const d = dist2d(tgt.pos, p.pos);
+      const pref = w ? PREF[w.kind] : 12;
+      this.sideT -= TICK;
+      if (this.sideT <= 0) {
+        this.side = this.rnd() < 0.5 ? -1 : 1;
+        this.sideT = 0.8 + this.rnd() * 1.2;
+      }
+      // Dodge a wind-up that is about to release.
+      for (const e of live) {
+        if (this.dodged.has(e.id * 1000 + Math.floor(s.time / 2))) continue;
+        const windup = (e.mode === "telegraph" && e.timer < 0.3) || (e.mode === "stomp" && e.timer < 0.2);
+        if (windup && dist2d(e.pos, p.pos) < 40) {
+          this.dodged.add(e.id * 1000 + Math.floor(s.time / 2));
+          if (this.rnd() < sk.dodge) {
+            this.dodgeT = 0.45;
+            this.side = this.rnd() < 0.5 ? -1 : 1;
+          }
+        }
+      }
+      const sees = los(eye, bodyCenter(tgt));
+      // Flank: a robot that faces us is not worth trading shots with. First break its
+      // squad's line of sight, wait until they lose track, then come round to a spot
+      // at its side or back and shoot from there.
+      this.flankT -= TICK;
+      this.flankCheck -= TICK;
+      if (this.flank && (this.flank.id !== tgt.id || this.flankT <= 0 || tgt.aware !== "engaged")) this.flank = null;
+      if (this.flank?.step === "go" && dist2d(this.flank, p.pos) < 1.2) this.flank = null;
+      if (this.flank?.step === "hide" && dist2d(this.flank, p.pos) < 1.2 && s.squads[tgt.squad].sinceSeen >= AWARE.trackTime) {
+        const spot = this.flankSpot(s, tgt);
+        this.flank = spot ? { ...spot, id: tgt.id, step: "go" } : null;
+        this.flankT = 7;
+      }
+      if (!this.flank && this.flankCheck <= 0 && tgt.kind !== "titan" && tgt.aware === "engaged" && p.pos.y < 0.6 && tgt.pos.y < 0.6) {
+        this.flankCheck = 1.5;
+        // Worth it only on a robot with plenty of fight left, and not twice in a row.
+        const healthy = tgt.hp + tgt.shield > enemyMax(tgt.kind) * 0.5;
+        if (healthy && tgt.id !== this.lastFlanked && flankOf(s, tgt) === "front" && this.rnd() < sk.flank) {
+          const hide = this.hideSpot(s, tgt);
+          if (hide) {
+            this.lastFlanked = tgt.id;
+            this.flank = { ...hide, id: tgt.id, step: "hide" };
+            this.flankT = 6;
+          }
+        }
+      }
+      if (this.flank) {
+        const step = this.via(s, this.flank);
+        const rel = lookAngles(p.pos, { x: step.x, y: 0, z: step.z }).yaw - p.yaw;
+        inp.moveZ = Math.cos(rel);
+        inp.moveX = Math.sin(rel);
+      } else if (!sees && p.pos.y < 0.6) {
+        // Walk a ground path toward it. A robot up high is hidden by its own roof edge
+        // from close below, so back off to about 14 m to get an angle on it instead.
+        let to = { x: tgt.pos.x, z: tgt.pos.z };
+        if (tgt.pos.y > p.pos.y + 1.5) {
+          const k = 14 / Math.max(d, 0.1);
+          to = { x: tgt.pos.x + (p.pos.x - tgt.pos.x) * k, z: tgt.pos.z + (p.pos.z - tgt.pos.z) * k };
+        }
+        const step = this.via(s, to);
+        const rel = lookAngles(p.pos, { x: step.x, y: 0, z: step.z }).yaw - p.yaw;
+        inp.moveZ = Math.cos(rel);
+        inp.moveX = Math.sin(rel);
+      } else {
+        inp.moveZ = !sees ? 1 : d > pref + 3 ? 1 : d < pref - 3 ? -0.8 : 0;
+        inp.moveX = this.dodgeT > 0 ? this.side : this.side * (sk.dodge > 0.5 ? 0.9 : 0.5);
+      }
+      this.dodgeT -= TICK;
+
+      const aimDir = Math.hypot(wrapAngle(want.yaw - p.yaw), want.pitch - p.pitch);
+      const tol = (sk.name === "beginner" ? 12 : 8) * DEG + Math.atan(1 / Math.max(d, 1));
+      inp.fire = sees && aimDir < tol && d < 60 && p.battery <= 0 && !(this.flank && flankOf(s, tgt) === "front");
+      inp.ads = sees && d > 12 && w?.kind !== "maul" && w?.kind !== "hornet";
+
+      // Shockwave: jump when the ring is about to arrive.
+      for (const wv of s.waves) {
+        const dd = Math.hypot(p.pos.x - wv.x, p.pos.z - wv.z) - wv.r;
+        if (dd > 0.3 && dd < 1.6 && this.rnd() < sk.dodge * 0.25) inp.jump = true;
+      }
+      if (engaged.length >= 2 || tgt.mode === "telegraph") {
+        if (p.tactical <= 0 && this.rnd() < sk.abilities * TICK) inp.tactical = true;
+      }
+      if (p.ult >= 1 && (live.length >= 3 || tgt.kind === "titan")) inp.ult = true;
+      // Pick the weapon that suits the distance (when it has two).
+      const other = p.weapons[1 - p.slot];
+      this.swapT -= TICK;
+      if (other && w && sk.name !== "beginner" && this.swapT <= 0 && p.reload <= 0) {
+        if (Math.abs(PREF[other.kind] - d) + 6 < Math.abs(PREF[w.kind] - d)) {
+          inp.swap = true;
+          this.swapT = 3;
+        }
+      }
+      const threat = live.some((e) => dist2d(e.pos, p.pos) < 14 || e.mode === "telegraph");
+      if (p.shield < 25 && p.batteries > 0 && !threat && p.battery <= 0) inp.battery = true;
+      if (p.battery > 0) inp.fire = false;
+    } else if (goal) {
+      const d = dist2d(goal, p.pos);
+      inp.moveZ = d > 1.2 ? 1 : 0;
+      if (Math.abs(wrapAngle(want.yaw - p.yaw)) > 0.5) inp.moveZ = 0.4;
+      if (w && w.mag < magSize(w) * 0.6 && p.reload <= 0) inp.reload = true;
+      const max = [50, 75, 100, 125][p.armor];
+      if (p.shield < max * 0.6 && p.batteries > 0 && p.battery <= 0) inp.battery = true;
+      if (p.battery > 0) inp.moveZ = Math.min(inp.moveZ, 0.6);
+      // Slide now and then on long runs, like people do.
+      if (p.sprinting && d > 12 && this.rnd() < TICK * 0.4) this.crouch = true;
+      this.interactT -= TICK;
+      if (d < 1.8 && this.interactT <= 0) {
+        inp.interact = true;
+        this.interactT = 0.5;
+      }
+    }
+    // Never back out of the ring: near its edge, walk toward its centre.
+    const ring = s.ring;
+    const out = dist2d(p.pos, ring) - (ring.r - 4);
+    if (out > 0 && this.unstick <= 0) {
+      const inward = this.via(s, { x: ring.x, z: ring.z });
+      const toward = lookAngles(p.pos, { x: inward.x, y: 0, z: inward.z }).yaw - p.yaw;
+      inp.moveZ = Math.cos(toward);
+      inp.moveX = Math.sin(toward);
+    }
+    if (this.crouch) {
+      inp.crouch = true;
+      if (!p.sliding && Math.hypot(p.vel.x, p.vel.z) < 5) this.crouch = false;
+    }
+
+    // Unstick: little progress for a second -> jump and step sideways.
+    this.stuckT += TICK;
+    if (this.stuckT > 1) {
+      const moved = Math.hypot(p.pos.x - this.lastPos.x, p.pos.z - this.lastPos.z);
+      if (moved < 0.8 && (inp.moveZ !== 0 || inp.moveX !== 0) && p.battery <= 0) {
+        // Each repeated stall tries the other side, for longer.
+        this.stuckCount++;
+        this.unstickSide = this.stuckCount % 2 ? 1 : -1;
+        this.unstick = Math.min(3, 0.8 + this.stuckCount * 0.5);
+      } else if (moved > 3) this.stuckCount = 0;
+      this.lastPos = { x: p.pos.x, z: p.pos.z };
+      this.stuckT = 0;
+    }
+    if (this.unstick > 0) {
+      this.unstick -= TICK;
+      inp.jump = this.unstick % 1 > 0.9;
+      inp.moveX = this.unstickSide;
+      inp.moveZ = 0.25;
+    }
+    return inp;
+  }
+
+  /**
+   * A standable spot 9-13 m from the robot, behind it or to its side, that sees
+   * its body and is reachable on foot by a route mostly out of its squad's sight.
+   * The shortest and least exposed route wins.
+   */
+  private flankSpot(s: State, tgt: Enemy): { x: number; z: number } | null {
+    const watchers = s.enemies.filter((e) => e.squad === tgt.squad);
+    let best: { x: number; z: number; cost: number } | null = null;
+    for (let off = 1.6; off <= 2 * Math.PI - 1.6 + 1e-6; off += 0.3)
+      for (const r of [7, 10, 14]) {
+        const a = tgt.yaw + off;
+        const x = tgt.pos.x + Math.sin(a) * r;
+        const z = tgt.pos.z - Math.cos(a) * r;
+        if (Math.max(Math.abs(x), Math.abs(z)) > WORLD.half - 3) continue;
+        if (groundAt(x, z, 0.4, 0.3) > 0.3 || [0.3, 1.0, 1.6].some((h) => solidAt(x, h, z))) continue;
+        if (!los({ x, y: 1.6, z }, bodyCenter(tgt))) continue;
+        const route = this.route(x, z);
+        if (!route || route.len > 45) continue;
+        // Walking the route in the squad's sight would only turn it round: prefer hidden routes.
+        const exposed = route.samples.filter((q) => watchers.some((w) => los({ x: q.x, y: 1.4, z: q.z }, bodyCenter(w)))).length / Math.max(1, route.samples.length);
+        const cost = route.len * (1 + exposed * 3);
+        if (exposed < 0.6 && (!best || cost < best.cost)) best = { x, z, cost };
+      }
+    return best ? { x: best.x, z: best.z } : null;
+  }
+
+  /** The nearest standable spot within 10 m that no member of the robot's squad can see. */
+  private hideSpot(s: State, tgt: Enemy): { x: number; z: number } | null {
+    const watchers = s.enemies.filter((e) => e.squad === tgt.squad);
+    let best: { x: number; z: number; len: number } | null = null;
+    for (const r of [3, 5, 7, 10])
+      for (let a = 0; a < 2 * Math.PI; a += Math.PI / 6) {
+        const x = this.from.x + Math.sin(a) * r;
+        const z = this.from.z - Math.cos(a) * r;
+        if (Math.max(Math.abs(x), Math.abs(z)) > WORLD.half - 3) continue;
+        if (groundAt(x, z, 0.4, 0.3) > 0.3 || [0.3, 1.0, 1.6].some((h) => solidAt(x, h, z))) continue;
+        if (watchers.some((w) => los(bodyCenter(w), { x, y: 1.5, z }))) continue;
+        const route = this.route(x, z);
+        if (!route || route.len > 16) continue;
+        if (!best || route.len < best.len) best = { x, z, len: route.len };
+      }
+    return best && { x: best.x, z: best.z };
+  }
+
+  private from = { x: 0, z: 0 };
+
+  /** Path on foot from where the bot stands to (x, z): its length and points every 2 m along it. */
+  private route(x: number, z: number): { len: number; samples: { x: number; z: number }[] } | null {
+    const pts = findPath(this.from.x, this.from.z, x, z);
+    if (!pts) return null;
+    let len = 0;
+    let prev = this.from;
+    const samples: { x: number; z: number }[] = [];
+    for (const q of pts) {
+      const seg = Math.hypot(q.x - prev.x, q.z - prev.z);
+      for (let d = 2; d < seg; d += 2) samples.push({ x: prev.x + ((q.x - prev.x) * d) / seg, z: prev.z + ((q.z - prev.z) * d) / seg });
+      len += seg;
+      prev = q;
+    }
+    return { len, samples };
+  }
+
+  /**
+   * The point to walk toward on the way to `goal`: the goal itself when the way is
+   * clear, otherwise the next waypoint of a ground path around walls.
+   */
+  private via(s: State, goal: { x: number; z: number }): { x: number; z: number } {
+    const p = s.player;
+    // Up on a roof or platform the ground grid does not apply: walk straight (and drop off).
+    if ((p.onGround && p.pos.y > 0.6) || clearLine(p.pos.x, p.pos.z, goal.x, goal.z)) {
+      this.path = [];
+      return goal;
+    }
+    this.pathT -= TICK;
+    // Re-plan when the goal moved or every 2 s; an unreachable goal is not retried every tick.
+    if (dist2d(goal, this.pathGoal) > 3 || this.pathT <= 0) {
+      this.path = findPath(p.pos.x, p.pos.z, goal.x, goal.z, { x: s.ring.x, z: s.ring.z, r: s.ring.r - 6 }) ?? [];
+      this.pathGoal = { ...goal };
+      this.pathT = 2;
+    }
+    while (this.path.length > 1 && dist2d(this.path[0], p.pos) < 0.8) this.path.shift();
+    return this.path[0] ?? goal;
+  }
+
+  /** Unopened bins and better weapons nearby, when nothing is shooting. */
+  private lootGoal(s: State): { x: number; z: number; weapon?: true } | null {
+    const p = s.player;
+    const worst = Math.min(...p.weapons.map((w) => (w ? w.rarity : -1)));
+    // Skip anything above our floor (roofs, platforms) and anything we failed to reach for 10 s.
+    const reachable = (c: { x: number; z: number; y?: number }) => (c.y ?? 0) < p.pos.y + 1 && !this.skip.has(`${Math.round(c.x)},${Math.round(c.z)}`);
+
+    const cands: { x: number; z: number; d: number; weapon?: true }[] = [];
+    for (const b of s.bins) if (!b.open && dist2d(b, p.pos) < 26 && reachable(b)) cands.push({ x: b.x, z: b.z, d: dist2d(b, p.pos) });
+    if (s.care && s.care.landed && !s.care.open) cands.push({ x: s.care.x, z: s.care.z, d: dist2d(s.care, p.pos) });
+    for (const l of s.loot) {
+      if (l.age < 0.6 || dist2d(l.pos, p.pos) > 22 || !reachable(l.pos)) continue;
+      if (l.kind === "weapon" && l.weapon && l.rarity > worst) cands.push({ x: l.pos.x, z: l.pos.z, d: dist2d(l.pos, p.pos), weapon: true });
+      if (l.kind === "armor" && l.rarity > p.armor) cands.push({ x: l.pos.x, z: l.pos.z, d: dist2d(l.pos, p.pos) });
+      if (l.kind === "battery" && p.batteries < 4) cands.push({ x: l.pos.x, z: l.pos.z, d: dist2d(l.pos, p.pos) });
+    }
+    const inRing = (c: { x: number; z: number }) => dist2d(c, s.ring) < s.ring.r - 5 && dist2d(c, s.ring) < s.ring.toR + dist2d(s.ring, { x: s.ring.toX, z: s.ring.toZ }) - 5;
+    const best = cands.filter(inRing).sort((a, b) => a.d - b.d)[0] ?? null;
+    const k = best ? `${Math.round(best.x)},${Math.round(best.z)}` : "";
+    if (k !== this.lootKey) {
+      this.lootKey = k;
+      this.lootT = 0;
+    } else if (best && (this.lootT += TICK) > 10) this.skip.add(k);
+    return best;
+  }
+}
