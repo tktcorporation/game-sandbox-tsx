@@ -5,7 +5,7 @@
  *
  *   npm run sim:ringfall -- [runsPerSkill]
  */
-import { TICK, WORLD } from "../src/ringfall/sim/config";
+import { TACTICAL, TICK, WORLD } from "../src/ringfall/sim/config";
 import { BOXES, EXTRA_BINS, EXTRACT, POIS, ROAMERS, type Squad } from "../src/ringfall/sim/map";
 import { groundAt, solidAt } from "../src/ringfall/sim/geom";
 import { Bot, SKILLS } from "../src/ringfall/sim/bot";
@@ -139,7 +139,28 @@ function checkGoldReload(): string | null {
   if (w.mag !== magSize(w)) return `gold reload scenario: magazine ${w.mag} of ${magSize(w)} after a kill`;
   return null;
 }
-for (const err of [checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload()]) {
+/** The arc deals its damage as it is: facing bonuses (ambush, back) belong to weapon hits. */
+function checkArcIgnoresFacing(): string | null {
+  const s = newRun(5);
+  s.phase = "play";
+  const p = s.player;
+  const pad = POIS[3];
+  p.pos = { x: pad.x, y: 0, z: pad.z + 6 };
+  p.onGround = true;
+  p.yaw = 0;
+  const grunt = s.enemies.find((e) => e.kind === "grunt")!;
+  s.enemies = [grunt];
+  grunt.pos = { x: pad.x, y: 0, z: pad.z - 4 };
+  grunt.aware = "idle";
+  const before = grunt.hp + grunt.shield;
+  const inp = idleInput();
+  inp.tactical = true;
+  step(s, inp, false);
+  const dealt = before - (grunt.hp + grunt.shield);
+  if (Math.abs(dealt - TACTICAL.dmg) > 1e-6) return `arc facing scenario: an arc on an unaware grunt dealt ${dealt}, expected ${TACTICAL.dmg}`;
+  return null;
+}
+for (const err of [checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing()]) {
   if (err) {
     console.error(err);
     process.exit(1);

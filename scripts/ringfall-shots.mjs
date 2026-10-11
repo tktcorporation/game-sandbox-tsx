@@ -49,8 +49,11 @@ const errors = [];
   await page.goto(`http://localhost:${port}/ringfall/`, { waitUntil: "load" });
   await page.waitForTimeout(400);
   await page.screenshot({ path: `${out}/m0-title.png` });
+  // Some phone browsers and web views have no Screen Orientation API; starting must not depend on it.
+  await page.evaluate(() => Object.defineProperty(screen, "orientation", { value: undefined, configurable: true }));
   await page.tap("#start");
   if (!(await page.evaluate(() => document.body.classList.contains("touch")))) errors.push("mobile: touch mode did not turn on");
+  if (!(await page.evaluate(() => document.body.classList.contains("playing")))) errors.push("mobile: the start button did not start the game");
   const cdp = await ctx.newCDPSession(page);
   const touch = (type, points) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints: points });
   const read = async () => JSON.parse(await page.evaluate(() => window.render_game_to_text()));

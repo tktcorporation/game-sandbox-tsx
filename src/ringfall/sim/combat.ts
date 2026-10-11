@@ -125,10 +125,10 @@ export function fireRay(s: State, w: Weapon, dir: Vec3) {
   const dmg = spec.dmg * RARITY.dmg[w.rarity] * falloff(spec, hit.t) * (hit.crit ? spec.crit : 1);
   s.stats.hits++;
   if (hit.crit) s.stats.crits++;
-  // Counted with weapon hits only, so the share of flank hits stays a share of `hits`.
+  // Facing matters for weapon hits only; counted here so flank hits stay a share of `hits`.
   const flank = flankOf(s, hit.e);
   if (flank === "back" || flank === "ambush") s.stats.flankHits++;
-  damageEnemy(s, hit.e, dmg, hit.crit, c);
+  damageEnemy(s, hit.e, dmg, hit.crit, c, flank);
 }
 
 /** Fire the active weapon once: spread, pellets, recoil. */
@@ -156,11 +156,14 @@ export function flankOf(s: State, e: Enemy): Flank {
   return off < FLANK.frontArc ? "front" : off > FLANK.backArc ? "back" : "side";
 }
 
-export function damageEnemy(s: State, e: Enemy, raw: number, crit: boolean, at: Vec3) {
+/**
+ * `flank` is where a weapon shot met the robot (see flankOf); the arc and other
+ * non-weapon damage pass "none" and deal their damage as it is.
+ */
+export function damageEnemy(s: State, e: Enemy, raw: number, crit: boolean, at: Vec3, flank: Flank = "none") {
   // Callers may hold a list taken before a kill removed this robot (the titan takes its summons with it).
   if (!s.enemies.includes(e)) return;
   const k = ENEMIES[e.kind];
-  const flank = flankOf(s, e);
   raw *= FLANK.mult[flank];
   // Being shot gives the player away to the whole squad. A squad already fighting
   // learns where the shot came from and turns there, at its usual turning speed.

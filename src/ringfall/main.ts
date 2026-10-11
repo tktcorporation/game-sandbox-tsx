@@ -307,7 +307,7 @@ function start() {
   if (touchMode) {
     // Full screen and landscape where the browser allows it; the game runs either way.
     document.documentElement.requestFullscreen?.().catch(() => undefined);
-    (screen.orientation as unknown as { lock?: (o: string) => Promise<void> }).lock?.("landscape").catch(() => undefined);
+    (screen.orientation as unknown as { lock?: (o: string) => Promise<void> } | undefined)?.lock?.("landscape").catch(() => undefined);
   }
   document.body.classList.add("playing");
   world.reset();
