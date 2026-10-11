@@ -5,7 +5,7 @@ import { POIS } from "../sim/map";
 import type { GameEvent, State, Vec3 } from "../sim/state";
 import { rank } from "../sim/results";
 import { pickHeal } from "../sim/player";
-import { RARITY_CSS } from "./models";
+import { RARITY_CSS, SCOPE_IN } from "./models";
 import type { World } from "./world";
 
 /*
@@ -296,6 +296,7 @@ export class Hud {
     xs[2].style.left = `${-spread - 8}px`;
     xs[3].style.left = `${spread}px`;
     xh.style.display = p.ads > 0.6 && spec.adsSpread === 0 ? "none" : "";
+    $("scope").classList.toggle("on", !!spec.scope && p.ads > SCOPE_IN && p.downed <= 0);
     this.hitT = Math.max(0, this.hitT - dt);
     $("hitmark").style.opacity = this.hitT > 0 ? "1" : "0";
 

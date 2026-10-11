@@ -31,7 +31,7 @@ export const SKILLS: Skill[] = [
   { name: "good", aimErr: 1.1, turn: 0.32, react: 0.15, dodge: 0.9, heads: true, abilities: 3, flank: 0.85 },
 ];
 
-const PREF: Record<string, number> = { pike: 14, hornet: 9, maul: 5, lance: 20 };
+const PREF: Record<string, number> = { pike: 14, hornet: 9, maul: 5, lance: 20, talon: 30 };
 
 export class Bot {
   private nx = 0;

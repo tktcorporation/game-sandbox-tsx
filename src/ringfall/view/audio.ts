@@ -86,6 +86,11 @@ const GUN: Record<WeaponKind, () => void> = {
     hiss(0.28, { freq: 900, to: 160, vol: 0.55, q: 0.5 });
     tone(90, 0.22, { type: "sine", to: 40, vol: 0.6 });
   },
+  talon: () => {
+    hiss(0.35, { freq: 3000, to: 300, vol: 0.55, q: 0.8 });
+    tone(260, 0.2, { type: "sawtooth", to: 50, vol: 0.2 });
+    tone(55, 0.35, { type: "sine", to: 30, vol: 0.7 });
+  },
   lance: () => {
     hiss(0.2, { freq: 4200, to: 700, vol: 0.4, q: 0.9 });
     tone(320, 0.16, { type: "sawtooth", to: 80, vol: 0.18 });

@@ -325,7 +325,10 @@ export function newRun(seed = 1): State {
       mantle: null,
       sprinting: false,
       forwardHeld: 0,
-      weapons: [{ kind: "pike", rarity: 0, mag: -1 }, null],
+      weapons: [
+        { kind: "pike", rarity: 0, mag: -1 },
+        { kind: "talon", rarity: 0, mag: -1 },
+      ],
       slot: 0,
       cooldown: 0,
       reload: 0,

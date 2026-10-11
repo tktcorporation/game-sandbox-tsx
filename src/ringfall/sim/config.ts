@@ -103,7 +103,7 @@ export const ASSIST = {
   range: 70,
 };
 
-export type WeaponKind = "pike" | "hornet" | "maul" | "lance";
+export type WeaponKind = "pike" | "hornet" | "maul" | "lance" | "talon";
 export type Rarity = 0 | 1 | 2 | 3; // white, blue, purple, gold
 
 export interface WeaponSpec {
@@ -123,12 +123,16 @@ export interface WeaponSpec {
   crit: number;
   recoil: number; // degrees of pitch kick per shot
   adsFov: number;
+  /** Aiming looks through a scope: the view zooms to adsFov behind a round sight, with no gun in view. */
+  scope?: true;
 }
 
 export const WEAPONS: Record<WeaponKind, WeaponSpec> = {
   pike: { name: "PIKE", label: "アサルトライフル", dmg: 14, pellets: 1, interval: 0.1, auto: true, mag: 24, reload: 1.6, hipSpread: 1.3, adsSpread: 0.3, falloffStart: 40, falloffEnd: 70, falloffMin: 0.7, crit: 1.75, recoil: 0.32, adsFov: 52 },
   hornet: { name: "HORNET", label: "サブマシンガン", dmg: 10, pellets: 1, interval: 0.066, auto: true, mag: 26, reload: 1.3, hipSpread: 2.0, adsSpread: 0.9, falloffStart: 18, falloffEnd: 40, falloffMin: 0.55, crit: 1.6, recoil: 0.22, adsFov: 60 },
   maul: { name: "MAUL", label: "ショットガン", dmg: 11, pellets: 8, interval: 0.8, auto: false, mag: 6, reload: 2.2, hipSpread: 5.0, adsSpread: 3.6, falloffStart: 9, falloffEnd: 22, falloffMin: 0.3, crit: 1.5, recoil: 2.2, adsFov: 62 },
+  // A bolt-action sniper: one hit drops most robots that have not noticed the player.
+  talon: { name: "TALON", label: "スナイパー", dmg: 90, pellets: 1, interval: 1.2, auto: false, mag: 5, reload: 2.6, hipSpread: 4.5, adsSpread: 0, falloffStart: 999, falloffEnd: 1000, falloffMin: 1, crit: 2.0, recoil: 3.2, adsFov: 18, scope: true },
   lance: { name: "LANCE", label: "マークスマン", dmg: 48, pellets: 1, interval: 0.36, auto: false, mag: 10, reload: 2.0, hipSpread: 1.6, adsSpread: 0, falloffStart: 999, falloffEnd: 1000, falloffMin: 1, crit: 2.0, recoil: 1.6, adsFov: 38 },
 };
 
@@ -292,6 +296,7 @@ export const NOISE = {
   hornet: 13,
   maul: 15,
   lance: 22,
+  talon: 30,
   arc: 10,
   sprintStep: 8,
   slide: 10,

@@ -99,6 +99,22 @@ const errors = [];
     if (!hit) errors.push(`mobile: a tap on the weapon card ${id} does not reach it`);
   }
 
+  // The starting sniper: tap its card, aim, and the scope covers the view.
+  const tap = async (sel, id) => {
+    const bb = await page.locator(sel).boundingBox();
+    await touch("touchStart", [{ x: bb.x + bb.width / 2, y: bb.y + bb.height / 2, id }]);
+    await touch("touchEnd", []);
+  };
+  await tap("#slot-1", 4);
+  await step(400);
+  await tap("#t-ads", 5);
+  await step(400);
+  await page.screenshot({ path: `${out}/m3-scope.png` });
+  if (!(await page.evaluate(() => document.getElementById("scope").classList.contains("on")))) errors.push("mobile: aiming the sniper did not show the scope");
+  await tap("#t-ads", 6);
+  await tap("#slot-0", 7);
+  await step(300);
+
   // The page never zooms: browser gestures are off on the root (touch-action
   // narrows down the tree, so the HUD and menus are covered too), and iOS Safari's
   // pinch events, which ignore the viewport meta, are cancelled.

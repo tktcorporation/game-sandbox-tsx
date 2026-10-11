@@ -346,7 +346,7 @@ const POI_FRAMES: Poi[] = [
       { x: -46, z: 14 },
       { x: -73, z: -4, y: 5.5 },
     ],
-    loot: { weapon: [["pike", 2], ["maul", 1], ["lance", 1], ["hornet", 2]], armor: [2], heals: 2 },
+    loot: { weapon: [["pike", 2], ["maul", 1], ["lance", 1], ["hornet", 2], ["talon", 1]], armor: [2], heals: 2 },
     floor: [{ x: -45, z: -15, y: 4, heal: "medkit" }],
     carePackage: { x: -46, z: 0, weapon: ["lance", 3] },
   },
@@ -371,7 +371,7 @@ const POI_FRAMES: Poi[] = [
       { x: 44, z: -16 },
       { x: 48, z: -10, y: STOREY * 2 },
     ],
-    loot: { weapon: [["pike", 3], ["hornet", 2], ["maul", 2], ["lance", 2]], armor: [2, 3], heals: 2 },
+    loot: { weapon: [["pike", 3], ["hornet", 2], ["maul", 2], ["lance", 2], ["talon", 2]], armor: [2, 3], heals: 2 },
     floor: [
       { x: 41.5, z: -29, y: 5, weapon: ["lance", 2] },
       { x: 50, z: -12, y: STOREY * 3, armor: 2 },

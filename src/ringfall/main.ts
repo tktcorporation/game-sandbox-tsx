@@ -1,4 +1,4 @@
-import { AWARE, TICK } from "./sim/config";
+import { AWARE, TICK, WEAPONS } from "./sim/config";
 import { Bot, SKILLS } from "./sim/bot";
 import { dist2d } from "./sim/geom";
 import { idleInput, newRun, type GameEvent, type Input, type State } from "./sim/state";
@@ -95,7 +95,11 @@ function readInput(): Input {
   inp.moveZ = (keys.has("KeyW") ? 1 : 0) - (keys.has("KeyS") ? 1 : 0) + stick.z;
   inp.moveX = (keys.has("KeyD") ? 1 : 0) - (keys.has("KeyA") ? 1 : 0) + stick.x;
   inp.touch = touchMode;
-  const k = 0.0022 * sens;
+  // Aiming slows the view in step with the zoom, so a scope does not swing wildly.
+  const pl = state.player;
+  const held = pl.weapons[pl.slot];
+  const zoom = held ? 1 - pl.ads * (1 - WEAPONS[held.kind].adsFov / 74) : 1;
+  const k = 0.0022 * sens * zoom;
   inp.lookX = look.x * k;
   inp.lookY = -look.y * k;
   look.x = look.y = 0;

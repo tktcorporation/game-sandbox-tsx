@@ -35,6 +35,9 @@ export const PAL = {
   gunLight: 0x4a505c,
 } as const;
 
+/** Aim amount past which a scoped weapon shows its sight instead of the gun. */
+export const SCOPE_IN = 0.85;
+
 export const RARITY_COLOR = [0xeeeeee, 0x45a6ff, 0xb65cff, 0xffc93a] as const;
 /** The band on health items, apart from the enemy red and the ring orange. */
 const HEAL_RED = 0xe0475a;
@@ -334,7 +337,7 @@ export function buildGun(kind: WeaponKind, rarity: Rarity): THREE.Group {
     g.add(o);
     return o;
   };
-  const len = { pike: 0.75, hornet: 0.5, maul: 0.8, lance: 1.0 }[kind];
+  const len = { pike: 0.75, hornet: 0.5, maul: 0.8, lance: 1.0, talon: 1.25 }[kind];
   add(new THREE.BoxGeometry(0.09, 0.13, len * 0.6), dark, 0, 0, 0);
   add(new THREE.BoxGeometry(0.05, 0.05, len * 0.5), mid, 0, 0.03, -len * 0.5);
   add(new THREE.BoxGeometry(0.07, 0.16, 0.08), dark, 0, -0.12, 0.1);
@@ -343,6 +346,13 @@ export function buildGun(kind: WeaponKind, rarity: Rarity): THREE.Group {
   add(new THREE.BoxGeometry(0.03, 0.03, len * 0.3), mid, 0, 0.085, 0.02);
   if (kind === "pike" || kind === "hornet") add(new THREE.BoxGeometry(0.06, 0.18, 0.08), dark, 0, -0.13, -0.12);
   if (kind === "maul") add(new THREE.BoxGeometry(0.11, 0.08, len * 0.4), mid, 0, -0.08, -len * 0.3);
+  if (kind === "talon") {
+    // A long scope with its two lenses, and a bolt handle.
+    add(new THREE.CylinderGeometry(0.05, 0.05, 0.42, 10).rotateX(Math.PI / 2), dark, 0, 0.13, -0.05);
+    add(new THREE.CylinderGeometry(0.062, 0.062, 0.06, 10).rotateX(Math.PI / 2), mid, 0, 0.13, -0.27);
+    add(new THREE.CylinderGeometry(0.058, 0.058, 0.05, 10).rotateX(Math.PI / 2), mid, 0, 0.13, 0.17);
+    add(new THREE.BoxGeometry(0.1, 0.025, 0.025), mid, 0.07, 0.04, 0.12);
+  }
   if (kind === "lance") add(new THREE.CylinderGeometry(0.045, 0.045, 0.32, 8).rotateX(Math.PI / 2), mid, 0, 0.12, -0.05);
   return g;
 }

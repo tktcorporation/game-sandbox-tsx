@@ -3,7 +3,7 @@ import { ENEMIES, PLAYER, TITAN, WEAPONS, WORLD, type EnemyKind } from "../sim/c
 import { BOXES, EXTRACT, POIS } from "../sim/map";
 import { rimRadius, steepAt, terrainHeight } from "../sim/terrain";
 import type { GameEvent, State, Vec3 } from "../sim/state";
-import { PAL, RARITY_COLOR, buildBin, buildBox, mergeStatic, buildCare, buildDropship, buildEnemy, buildGun, buildLootItem, flat, glow, haloSprite, type EnemyModel } from "./models";
+import { PAL, RARITY_COLOR, SCOPE_IN, buildBin, buildBox, mergeStatic, buildCare, buildDropship, buildEnemy, buildGun, buildLootItem, flat, glow, haloSprite, type EnemyModel } from "./models";
 
 /*
  * Renders a State in first person. It reads the state and the tick's events and
@@ -361,12 +361,12 @@ export class World {
       switch (e.t) {
         case "shot": {
           const spec = WEAPONS[e.weapon];
-          this.gunKick = Math.min(1, this.gunKick + (e.weapon === "maul" || e.weapon === "lance" ? 1 : 0.45));
+          this.gunKick = Math.min(1, this.gunKick + (e.weapon === "maul" || e.weapon === "lance" || e.weapon === "talon" ? 1 : 0.45));
           this.recoilView += spec.recoil;
           this.flash.material.opacity = 1;
           this.flash.scale.setScalar(e.weapon === "maul" ? 0.6 : 0.35 + Math.random() * 0.1);
           this.muzzleLight.intensity = 6;
-          this.shake = Math.max(this.shake, e.weapon === "maul" ? 0.35 : e.weapon === "lance" ? 0.3 : 0.08);
+          this.shake = Math.max(this.shake, e.weapon === "maul" ? 0.35 : e.weapon === "lance" || e.weapon === "talon" ? 0.3 : 0.08);
           break;
         }
         case "tracer":
@@ -716,6 +716,8 @@ export class World {
     this.flash.material.opacity = Math.max(0, this.flash.material.opacity - dt * 22);
     this.muzzleLight.intensity = Math.max(0, this.muzzleLight.intensity - dt * 120);
     this.muzzleLight.position.copy(this.muzzleWorld());
+    // Looking through a scope hides the gun; the round sight is drawn by the HUD.
+    this.gun.visible = !(w0 && WEAPONS[w0.kind].scope && ads > SCOPE_IN);
     this.gunCam.fov = 55 - ads * 8;
     this.gunCam.updateProjectionMatrix();
 

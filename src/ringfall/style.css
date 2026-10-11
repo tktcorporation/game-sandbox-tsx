@@ -82,9 +82,11 @@ kbd {
 }
 
 /* --- HUD */
+/* Above the scope and the touch controls (the weapon cards take taps on phones). */
 #hud {
   position: fixed;
   inset: 0;
+  z-index: 1;
   pointer-events: none;
   font-family: var(--num);
 }
@@ -336,6 +338,48 @@ kbd {
   transition: opacity 0.6s;
 }
 
+/* The scope: a round sight with a thin cross, black all round. It sits under the
+   touch buttons and the HUD, so they stay visible and usable while aiming. */
+#scope {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  display: none;
+  background: radial-gradient(circle at center, transparent 0, transparent 38vmin, rgba(0, 0, 0, 0.55) 38.3vmin, #050608 39.5vmin);
+}
+#scope.on {
+  display: block;
+}
+#scope::before,
+#scope::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  background: rgba(10, 12, 16, 0.85);
+}
+#scope::before {
+  width: 76vmin;
+  height: 1.5px;
+  transform: translate(-50%, -50%);
+}
+#scope::after {
+  width: 1.5px;
+  height: 76vmin;
+  transform: translate(-50%, -50%);
+}
+/* The aim point: a small dot where the lines cross. */
+#scope i {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  margin: -2.5px 0 0 -2.5px;
+  border-radius: 50%;
+  background: var(--white);
+  box-shadow: 0 0 0 1.5px rgba(5, 6, 8, 0.85);
+}
 #xhair {
   position: absolute;
   left: 50%;
@@ -676,6 +720,7 @@ kbd {
 
 #banner {
   position: fixed;
+  z-index: 2;
   left: 0;
   right: 0;
   top: 22%;
@@ -715,6 +760,7 @@ kbd {
 .screen {
   position: fixed;
   inset: 0;
+  z-index: 2;
   display: grid;
   place-items: center start;
   padding-left: 6vw;
@@ -1022,10 +1068,6 @@ body.touch #vitals {
 body.touch #objective {
   left: max(12px, env(safe-area-inset-left));
   top: 10px;
-}
-/* The weapon cards take taps (to switch weapons), so the HUD sits above the touch zones. */
-body.touch #hud {
-  z-index: 1;
 }
 body.touch #weapons {
   top: 10px;

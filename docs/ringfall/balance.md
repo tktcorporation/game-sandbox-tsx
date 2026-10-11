@@ -19,9 +19,9 @@
 flank: share of hits from behind a robot or before it noticed the player
 crowd: median over runs of the most squads / robots fighting the player at once outside the titan fight
 skill     P1 補給所         P2 採掘場         P3 中継塔         P4 発着場         extract finish total(med) downs wipes acc crit ult crowd flank rank
-beginner  28s 0.0d       67s 0.1d       68s 0.0d       71s 0.0d       4s      100%   243s       0.1   0.0   83% 16%  4.5 2/2   3%    S30 A0 B0 C0
-casual    32s 0.0d       61s 0.0d       68s 0.0d       64s 0.0d       5s      100%   227s       0.0   0.0   92% 19%  4.3 2/2   4%    S30 A0 B0 C0
-good      27s 0.0d       62s 0.0d       65s 0.0d       53s 0.0d       5s      100%   213s       0.0   0.0   94% 48%  4.1 2/2   6%    S30 A0 B0 C0
+beginner  28s 0.0d       65s 0.0d       67s 0.0d       71s 0.1d       5s      100%   235s       0.1   0.0   83% 16%  4.5 2/2   3%    S27 A2 B1 C0
+casual    27s 0.0d       62s 0.0d       67s 0.0d       65s 0.0d       5s      100%   225s       0.0   0.0   92% 20%  4.4 2/2   4%    S30 A0 B0 C0
+good      25s 0.0d       55s 0.0d       63s 0.0d       52s 0.0d       5s      100%   202s       0.0   0.0   95% 51%  4.0 2/2   6%    S30 A0 B0 C0
 ```
 
 ボットは迷わず、探索もしないので、人が遊ぶ時間の下限にあたる。ランクの基準タイム（`RANK.parSeconds` = 240 秒、25% 超過ごとに 1 段階下がる）は人のプレイ時間（5〜7 分）に合わせてあり、ボットは全員 S になる。
@@ -45,6 +45,7 @@ good      27s 0.0d       62s 0.0d       65s 0.0d       53s 0.0d       5s      10
 | 平らに保つ範囲（`buildTerrain`） | 手で置いた物から 3 m、そこから 7 m で地形に戻す | 建物・持ち場・巡回路・補給箱の高さが変わらない |
 | よじ登りの届く高さ（`MANTLE.reach`） | 足元から 1.9 m | ジャンプと合わせて約 2.9 m。建物 1 階分（3.4 m）に届くと、屋上の見張りへ階段なしで回れてしまう |
 | 体力の自然回復の上限（`PLAYER.regenCap`） | 50 | 上限なしだと注射器と医療キットを使う場面がない |
+| スナイパー TALON（`WEAPONS.talon`） | 90 / 弱点 2 倍、間隔 1.2 秒、5 発、スコープ 18°、銃声 30 m | 初期装備。気づかれる前に遠くから 1 体ずつ減らせる。音が大きいので、撃つと隣の見張りを起こす |
 | 回復アイテム（`HEALS`） | セル +25 / 1.2 秒、バッテリー全快 / 2.4 秒、注射器 +25 / 1.4 秒、医療キット全快 / 3.0 秒 | 小さい方は早く、大きい方は長く無防備になる。戦闘の合間にどれを使うかを選ぶ |
 | 坂でのスライディング（`PLAYER.slideSlope` / `slideMax`） | 重力の 0.7 倍 / 最高 15 m/s | 坂を滑り降りると加速する |
 | 岩棚（`SHELVES`） | 拠点ごとに 1 本、高さ 3.4 m、奥行き 8 m | 拠点の脇を上から回る道。登り口は片方の端の坂だけ |
