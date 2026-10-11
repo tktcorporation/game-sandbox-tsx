@@ -651,8 +651,8 @@ export function stepWaves(s: State) {
     }
     const a = s.ally;
     const da = Math.hypot(a.pos.x - w.x, a.pos.z - w.z);
-    // The wave passes the teammate once; it jumps it no better than a beginner would.
-    if (allyUp(s) && Math.abs(da - w.r) < 0.9 && !w.allyHit) {
+    // The wave passes the teammate once. It never jumps, but standing up high clears the wave like the player.
+    if (allyUp(s) && Math.abs(da - w.r) < 0.9 && a.pos.y < w.y + TITAN.stompHeight && !w.allyHit) {
       w.allyHit = true;
       hurtAlly(s, TITAN.stompDmg);
     }

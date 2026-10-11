@@ -273,6 +273,22 @@ function checkAllySelfUp(): string | null {
   if (s.ally.down > 0 || s.ally.hp <= 0 || up !== 1) return `self-up scenario: down ${s.ally.down.toFixed(1)}, hp ${s.ally.hp}, ${up} allyUp events`;
   return null;
 }
+/** A stomp's wave passes under a teammate standing above it, and hits one on the ground. */
+function checkStompHeight(): string | null {
+  const hit = (y: number) => {
+    const s = padRun();
+    const a = s.ally;
+    a.pos = { x: s.player.pos.x + 20, y, z: s.player.pos.z };
+    s.waves.push({ x: a.pos.x - 6, z: a.pos.z, y: 0, r: 5.9, hit: true });
+    const hp = a.hp + a.shield;
+    step(s, idleInput(), false);
+    return hp - (a.hp + a.shield);
+  };
+  const high = hit(2.4);
+  const low = hit(0);
+  if (high > 0 || low <= 0) return `stomp scenario: ${high} damage up high, ${low} on the ground`;
+  return null;
+}
 /** The teammate never opens fire on robots that have not noticed anyone. */
 function checkAllyHoldsFire(): string | null {
   const s = newRun(5);
@@ -293,7 +309,7 @@ function checkAllyHoldsFire(): string | null {
   if (shots) return `hold fire scenario: the teammate fired ${shots} shots at an idle robot`;
   return null;
 }
-for (const err of [checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkWipeMidClimb(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkAllySelfUp()]) {
+for (const err of [checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkWipeMidClimb(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkAllySelfUp(), checkStompHeight()]) {
   if (err) {
     console.error(err);
     process.exit(1);
