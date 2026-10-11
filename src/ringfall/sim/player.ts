@@ -293,8 +293,9 @@ function weapons(s: State, input: Input) {
       if (!p.triggerHeld) s.events.push({ t: "dry" });
       startReload();
     } else {
-      shoot(s, w);
+      // Spend the round first: a kill with a gold weapon refills the magazine inside shoot().
       if (p.ultTime <= 0) w.mag--;
+      shoot(s, w);
       const held = !spec.auto && p.triggerHeld ? SEMI_HOLD : 1;
       p.cooldown = (spec.interval * held) / (p.ultTime > 0 ? ULT.fireRate : 1);
       if (w.mag <= 0 && p.ultTime <= 0) startReload();

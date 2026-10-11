@@ -12,6 +12,7 @@ import { Bot, SKILLS } from "../src/ringfall/sim/bot";
 import { idleInput, newRun, type GameEvent, type State } from "../src/ringfall/sim/state";
 import { step } from "../src/ringfall/sim/step";
 import { rank } from "../src/ringfall/sim/results";
+import { magSize } from "../src/ringfall/sim/combat";
 
 const runs = Number(process.argv[2] ?? 12);
 const LIMIT = 20 * 60; // seconds of game time before a run counts as stuck
@@ -113,7 +114,32 @@ function checkArcOnTitan(): string | null {
   if (new Set(kills).size !== kills.length || s.stats.kills !== boss.length) return `arc scenario: kills ${JSON.stringify(kills)}, stats ${s.stats.kills} of ${boss.length}`;
   return null;
 }
-for (const err of [checkWipeClearsAir(), checkArcOnTitan()]) {
+/** A kill with a gold weapon leaves its magazine full, the round that killed included. */
+function checkGoldReload(): string | null {
+  const s = newRun(5);
+  s.phase = "play";
+  const p = s.player;
+  const pad = POIS[3];
+  p.pos = { x: pad.x, y: 0, z: pad.z + 6 };
+  p.onGround = true;
+  p.yaw = 0;
+  p.pitch = 0;
+  const target = s.enemies.find((e) => e.kind === "drone" && e.poi === 3)!;
+  s.enemies = [target];
+  target.pos = { x: pad.x, y: 1.6, z: pad.z - 4 };
+  target.hp = 1;
+  target.shield = 0;
+  const w = { kind: "lance" as const, rarity: 3 as const, mag: 4 };
+  p.weapons = [w, null];
+  p.slot = 0;
+  const inp = idleInput();
+  inp.fire = true;
+  step(s, inp, false);
+  if (s.stats.kills !== 1) return `gold reload scenario: expected a kill, got ${s.stats.kills}`;
+  if (w.mag !== magSize(w)) return `gold reload scenario: magazine ${w.mag} of ${magSize(w)} after a kill`;
+  return null;
+}
+for (const err of [checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload()]) {
   if (err) {
     console.error(err);
     process.exit(1);

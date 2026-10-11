@@ -19,9 +19,9 @@
 flank: share of hits from behind a robot or before it noticed the player
 crowd: median over runs of the most squads / robots fighting the player at once outside the titan fight
 skill     P1 補給所         P2 採掘場         P3 中継塔         P4 発着場         extract finish total(med) downs wipes acc crit ult crowd flank rank
-beginner  29s 0.0d       68s 0.0d       63s 0.0d       71s 0.1d       6s      100%   235s       0.1   0.0   82% 16%  4.3 2/2   4%    S29 A0 B1 C0
-casual    30s 0.0d       64s 0.0d       63s 0.0d       65s 0.0d       5s      100%   226s       0.0   0.0   93% 19%  4.4 2/2   4%    S30 A0 B0 C0
-good      30s 0.0d       59s 0.0d       63s 0.0d       51s 0.0d       5s      100%   211s       0.0   0.0   94% 48%  4.0 1/1   6%    S30 A0 B0 C0
+beginner  29s 0.0d       68s 0.0d       63s 0.0d       73s 0.1d       6s      100%   238s       0.1   0.0   82% 15%  4.4 2/2   4%    S29 A0 B1 C0
+casual    30s 0.0d       64s 0.0d       63s 0.0d       65s 0.0d       5s      100%   230s       0.0   0.0   93% 19%  4.4 2/2   4%    S30 A0 B0 C0
+good      30s 0.0d       59s 0.0d       63s 0.0d       52s 0.0d       5s      100%   211s       0.0   0.0   94% 48%  4.0 1/1   6%    S30 A0 B0 C0
 ```
 
 ボットは迷わず、探索もしないので、人が遊ぶ時間の下限にあたる。ランクの基準タイム（`RANK.parSeconds` = 240 秒、25% 超過ごとに 1 段階下がる）は人のプレイ時間（5〜7 分）に合わせてあり、ボットは全員 S になる。

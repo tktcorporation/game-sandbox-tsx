@@ -125,6 +125,9 @@ export function fireRay(s: State, w: Weapon, dir: Vec3) {
   const dmg = spec.dmg * RARITY.dmg[w.rarity] * falloff(spec, hit.t) * (hit.crit ? spec.crit : 1);
   s.stats.hits++;
   if (hit.crit) s.stats.crits++;
+  // Counted with weapon hits only, so the share of flank hits stays a share of `hits`.
+  const flank = flankOf(s, hit.e);
+  if (flank === "back" || flank === "ambush") s.stats.flankHits++;
   damageEnemy(s, hit.e, dmg, hit.crit, c);
 }
 
@@ -159,7 +162,6 @@ export function damageEnemy(s: State, e: Enemy, raw: number, crit: boolean, at: 
   const k = ENEMIES[e.kind];
   const flank = flankOf(s, e);
   raw *= FLANK.mult[flank];
-  if (flank === "back" || flank === "ambush") s.stats.flankHits++;
   // Being shot gives the player away to the whole squad. A squad already fighting
   // learns where the shot came from and turns there, at its usual turning speed.
   engageSquad(s, e.squad, e);
