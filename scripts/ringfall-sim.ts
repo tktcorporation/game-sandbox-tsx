@@ -6,7 +6,7 @@
  *   npm run sim:ringfall -- [runsPerSkill]
  */
 import { ALLY, TACTICAL, TICK, WORLD } from "../src/ringfall/sim/config";
-import { BOXES, EXTRA_BINS, EXTRACT, POIS, ROAMERS, type Squad } from "../src/ringfall/sim/map";
+import { BOXES, EXTRA_BINS, EXTRACTS, POIS, ROAMERS, type Squad } from "../src/ringfall/sim/map";
 import { groundAt, solidAt } from "../src/ringfall/sim/geom";
 import { Bot, SKILLS } from "../src/ringfall/sim/bot";
 import { idleInput, newRun, type GameEvent, type State } from "../src/ringfall/sim/state";
@@ -55,7 +55,7 @@ function checkLayout(): string[] {
   });
   EXTRA_BINS.forEach((b) => point("extra bin", b.x, b.z, b.y ?? 0));
   ROAMERS.forEach((sq) => squad(`roamer ${sq.name}`, sq));
-  point("extract", EXTRACT.x, EXTRACT.z, 0.25);
+  for (const x of EXTRACTS) point(`extract ${x.id}`, x.x, x.z, x.id === "ship" ? 0.25 : 0);
   return bad;
 }
 
@@ -180,6 +180,33 @@ function checkWipeMidClimb(): string | null {
   if (s.stats.wipes !== 1 || off > 1) return `wipe mid-climb scenario: ${off.toFixed(1)} m from the entry after the wipe`;
   return null;
 }
+/** Standing in the plateau pickup leaves with a flare, and does nothing without one. */
+function checkFlareExtract(): string | null {
+  const s = padRun();
+  const at = EXTRACTS.find((x) => x.id === "flare")!;
+  const p = s.player;
+  p.pos = { x: at.x, y: groundAt(at.x, at.z, 0.4, 20), z: at.z };
+  ticks(s, at.hold + 2);
+  if (s.phase === "done") return "flare scenario: left the island without a flare";
+  p.flares = 1;
+  ticks(s, at.hold + 0.2);
+  if (s.phase !== "done" || s.extractedAt !== "flare" || p.flares !== 0) return `flare scenario: phase ${s.phase}, exit ${s.extractedAt}, flares ${p.flares}`;
+  return null;
+}
+/** Standing at the dropship calls it; robots beam in while it comes, and it lands after its call time. */
+function checkShipCall(): string | null {
+  const s = padRun();
+  const ship = EXTRACTS.find((x) => x.id === "ship")!;
+  const p = s.player;
+  p.pos = { x: ship.x, y: groundAt(ship.x, ship.z, 0.4, 20), z: ship.z };
+  p.iframes = 999; // the waves must not end the scenario
+  ticks(s, ship.call! - 1);
+  const waves = s.enemies.filter((e) => s.squads[e.squad]?.name === "増援").length;
+  if (s.shipCall <= 0 || s.phase === "done" || waves < 2) return `ship scenario: ${s.shipCall.toFixed(1)} s left, phase ${s.phase}, ${waves} robots beamed in`;
+  ticks(s, 1 + ship.hold + 0.2);
+  if (s.phase !== "done" || s.extractedAt !== "ship") return `ship scenario: did not leave after landing (${s.shipCall.toFixed(1)}, ${s.phase})`;
+  return null;
+}
 /** A run on the open landing pad with no robots, the player and the teammate standing there. */
 function padRun(): State {
   const s = newRun(5);
@@ -254,7 +281,7 @@ function checkAllyHoldsFire(): string | null {
   if (shots) return `hold fire scenario: the teammate fired ${shots} shots at an idle robot`;
   return null;
 }
-for (const err of [checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkWipeMidClimb(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire()]) {
+for (const err of [checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkWipeMidClimb(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall()]) {
   if (err) {
     console.error(err);
     process.exit(1);
@@ -267,10 +294,11 @@ const median = (xs: number[]) => {
 };
 
 let failed = false;
-const head = ["skill    ", ...POIS.map((p, i) => `P${i + 1} ${p.name}`.padEnd(14)), "extract", "finish", "total(med)", "downs", "wipes", "acc", "crit", "ult", "crowd", "flank", "ally".padEnd(18), "rank"];
+const head = ["skill    ", ...POIS.map((p, i) => `P${i + 1} ${p.name}`.padEnd(14)), "extract", "finish", "total(med)", "downs", "wipes", "acc", "crit", "ult", "crowd", "flank", "ally".padEnd(18), "rank".padEnd(14), "exit"];
 console.log(`${runs} runs per skill. per POI: median seconds from the previous objective, downs+wipes per run`);
 console.log("flank: share of hits from behind a robot or before it noticed the player");
 console.log("ally: teammate's share of the damage, its downs, times it picked the player up (r) and was picked up (h), per run");
+console.log("exit: runs that left by each extraction point (the bot's choice depends on skill)");
 console.log("crowd: median over runs of the most squads / robots fighting the player at once outside the titan fight");
 console.log(head.join(" "));
 for (const skill of SKILLS) {
@@ -290,6 +318,7 @@ for (const skill of SKILLS) {
   let allyDowns = 0;
   let rescues = 0;
   let helped = 0;
+  const exits: Record<string, number> = { ship: 0, flare: 0, village: 0 };
   const crowdSq: number[] = [];
   const crowdBots: number[] = [];
   const ranks: Record<string, number> = { S: 0, A: 0, B: 0, C: 0 };
@@ -344,6 +373,7 @@ for (const skill of SKILLS) {
     allyDowns += s.stats.allyDowns;
     rescues += s.stats.allyRescues;
     helped += s.stats.allyHelped;
+    if (s.extractedAt) exits[s.extractedAt]++;
   }
   const n = Math.max(finished, 1);
   console.log(
@@ -361,7 +391,8 @@ for (const skill of SKILLS) {
       `${median(crowdSq)}/${median(crowdBots)}`.padEnd(5),
       `${Math.round((flanks / Math.max(hits, 1)) * 100)}%`.padEnd(5),
       `${Math.round((allyDmg / n) * 100)}% ${(allyDowns / n).toFixed(1)}d ${(rescues / n).toFixed(1)}r ${(helped / n).toFixed(1)}h`.padEnd(18),
-      `S${ranks.S} A${ranks.A} B${ranks.B} C${ranks.C}`,
+      `S${ranks.S} A${ranks.A} B${ranks.B} C${ranks.C}`.padEnd(14),
+      `ship ${exits.ship} flare ${exits.flare} village ${exits.village}`,
     ].join(" "),
   );
 }

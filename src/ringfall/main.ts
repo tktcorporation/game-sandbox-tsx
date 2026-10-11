@@ -133,6 +133,16 @@ function onEvent(e: GameEvent, s: State) {
     case "allyShot":
       sfx.allyShot(Math.hypot(e.from.x - p.pos.x, e.from.z - p.pos.z));
       break;
+    case "shipCalled":
+    case "shipLanded":
+      sfx.banner();
+      break;
+    case "shipWave":
+      sfx.spawn();
+      break;
+    case "flareLit":
+      sfx.careDrop();
+      break;
     case "allyDown":
       sfx.allyDown();
       break;
@@ -401,6 +411,7 @@ window.render_game_to_text = () => {
     player: { x: +p.pos.x.toFixed(1), y: +p.pos.y.toFixed(1), z: +p.pos.z.toFixed(1), hp: Math.round(p.hp), shield: Math.round(p.shield), armor: p.armor, downed: p.downed > 0, weapons: p.weapons.map((w) => w && `${w.kind}${w.rarity}:${w.mag}`), ult: +p.ult.toFixed(2), ultTime: +p.ultTime.toFixed(1), reveal: +p.reveal.toFixed(1), crouch: p.crouch },
     ally: { active: s.ally.active, x: +s.ally.pos.x.toFixed(1), y: +s.ally.pos.y.toFixed(1), z: +s.ally.pos.z.toFixed(1), hp: Math.round(s.ally.hp), shield: Math.round(s.ally.shield), down: +s.ally.down.toFixed(1), helped: +s.ally.helped.toFixed(1), rescue: +s.ally.rescue.toFixed(1), target: s.ally.target },
     awaitAlly: p.awaitAlly,
+    extract: { ship: +s.shipCall.toFixed(1), hold: +s.extractTime.toFixed(1), at: s.extractedAt, flares: p.flares },
     enemies: s.enemies.map((e) => ({ kind: e.kind, x: Math.round(e.pos.x), z: Math.round(e.pos.z), y: +e.pos.y.toFixed(1), hp: Math.round(e.hp + e.shield), mode: e.mode, aware: e.aware, detect: +e.detect.toFixed(2), squad: e.squad, target: e.target })),
     squads: s.squads.map((q) => ({ name: q.name, poi: q.poi, engaged: q.engaged, lost: q.engaged && q.sinceSeen >= AWARE.trackTime })),
     orbs: s.orbs.length,

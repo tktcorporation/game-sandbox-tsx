@@ -426,6 +426,14 @@ export function buildLootItem(kind: LootKind, rarity: Rarity, weapon?: WeaponKin
       g.add(mesh(new THREE.CylinderGeometry(r, r, h, 8), flat(heal === "syringe" ? 0xf2f0ea : PAL.gunLight), 0, 0.35, 0, false));
       g.add(mesh(new THREE.CylinderGeometry(r + 0.01, r + 0.01, h * 0.45, 8), heal === "syringe" ? flat(band) : glow(band), 0, 0.35, 0, false));
     }
+  } else if (kind === "flare") {
+    // A road flare: a red tube with a cap.
+    const tube = mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.42, 8), flat(HEAL_RED), 0, 0.3, 0, false);
+    tube.rotation.z = Math.PI / 2;
+    g.add(tube);
+    const cap = mesh(new THREE.CylinderGeometry(0.065, 0.065, 0.08, 8), flat(PAL.gun), 0.22, 0.3, 0, false);
+    cap.rotation.z = Math.PI / 2;
+    g.add(cap);
   } else {
     g.add(new THREE.Mesh(new THREE.OctahedronGeometry(0.16, 0), glow(RARITY_COLOR[1])));
   }

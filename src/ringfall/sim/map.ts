@@ -399,7 +399,35 @@ const POI_FRAMES: Poi[] = [
 
 export const POIS: Poi[] = POI_FRAMES.map((p, i) => placePoi(p, AT[i]));
 
-export const EXTRACT = { x: AT[3][0], z: -84 + AT[3][1], radius: 5 };
+export type ExtractId = "ship" | "flare" | "village";
+
+/**
+ * Ways off the island once the titan is down; the player picks one by walking to it.
+ * The dropship is right there but has to be called and held for while reinforcements
+ * beam in; the plateau pickup is close and quick but needs a flare (top floors of the
+ * high-rises); the village pickup needs nothing but a long walk and a wait.
+ */
+export interface ExtractPoint {
+  id: ExtractId;
+  name: string;
+  short: string;
+  x: number;
+  z: number;
+  radius: number;
+  /** Seconds standing inside to leave once it is ready. */
+  hold: number;
+  /** Seconds from calling until it can be used (the dropship). */
+  call?: number;
+  needsFlare?: true;
+  note: string;
+}
+
+export const EXTRACTS: ExtractPoint[] = [
+  { id: "ship", name: "発着場のドロップシップ", short: "ドロップシップ", x: AT[3][0], z: -84 + AT[3][1], radius: 5, hold: 1.5, call: 20, note: "呼んで 20 秒守る。増援が降りてくる" },
+  { id: "flare", name: "台地の回収地点", short: "台地", x: -22, z: -62, radius: 5, hold: 4, needsFlare: true, note: "発煙筒を焚けば 4 秒" },
+  { id: "village", name: "廃村の回収地点", short: "廃村", x: -91, z: -63, radius: 5, hold: 15, note: "遠いが静か。15 秒待つ" },
+];
+export const EXTRACT = EXTRACTS[0];
 
 /** Squads between the POIs. Beating them is optional; they guard loot and high ground. */
 export const ROAMERS: Squad[] = [
@@ -416,7 +444,7 @@ export const ROAMERS: Squad[] = [
 export const SPAWN = { x: 0, z: 140, yaw: 0 };
 
 /** Bins outside the POIs, mostly up high. `table` is the POI whose loot table they use. */
-export const EXTRA_BINS: { x: number; z: number; y?: number; table: number }[] = [
+export const EXTRA_BINS: { x: number; z: number; y?: number; table: number; flare?: true }[] = [
   { x: -12, z: 132, table: 0 },
   { x: -45, z: 70, y: 3.5, table: 0 },
   { x: -2, z: 10, y: STOREY * 2, table: 1 },
@@ -427,8 +455,9 @@ export const EXTRA_BINS: { x: number; z: number; y?: number; table: number }[] =
   { x: -50, z: -52, y: 7.2, table: 2 },
   { x: 113, z: 14, y: STOREY, table: 2 },
   { x: -114, z: -71, y: STOREY, table: 1 },
-  // Top floor of each tall building, on the side away from its stairs.
-  ...HIGH_RISES.map((h) => ({ x: h.x - h.w / 2 + 1.5, z: h.z, y: (h.floors - 1) * STOREY, table: 2 })),
+  // Top floor of each tall building, on the side away from its stairs. These hold the
+  // flares that call the plateau pickup (EXTRACTS).
+  ...HIGH_RISES.map((h) => ({ x: h.x - h.w / 2 + 1.5, z: h.z, y: (h.floors - 1) * STOREY, table: 2, flare: true as const })),
 ];
 
 /** Everything placed by hand: POIs, districts, landmarks. */
@@ -623,7 +652,7 @@ function authoredKeep(): Keep {
   }
   ROAMERS.forEach(squadArea);
   for (const b of EXTRA_BINS) points.push({ x: b.x, z: b.z, r: 2.5 });
-  points.push({ x: EXTRACT.x, z: EXTRACT.z, r: 10 });
+  for (const x of EXTRACTS) points.push({ x: x.x, z: x.z, r: 10 });
   points.push({ x: SPAWN.x, z: SPAWN.z, r: 6 });
   return { points, segments };
 }

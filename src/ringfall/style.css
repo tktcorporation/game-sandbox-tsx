@@ -272,6 +272,55 @@ kbd {
   box-shadow: 0 0 0 2px var(--ink);
 }
 
+/* Extraction points: one marker each, and a line each on the objective card. */
+.xmark {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  font-family: var(--jp);
+  font-weight: 800;
+  font-size: 13px;
+  white-space: nowrap;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+.xmark i {
+  width: 14px;
+  height: 14px;
+  background: var(--hot);
+  transform: rotate(45deg);
+  box-shadow: 0 0 0 2px var(--ink);
+  order: 2;
+}
+.xmark.locked i {
+  background: rgba(255, 255, 255, 0.35);
+}
+.xmark.locked {
+  color: var(--muted);
+}
+#obj-exits {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+}
+#obj-exits:empty {
+  display: none;
+}
+#obj-exits span {
+  color: var(--muted);
+}
+#obj-exits b {
+  color: var(--white);
+  margin-right: 6px;
+}
+#obj-exits .locked b {
+  color: var(--muted);
+}
+
 .ebar {
   position: absolute;
   width: 64px;

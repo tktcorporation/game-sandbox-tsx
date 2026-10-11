@@ -1,7 +1,8 @@
 import { ALLY, AWARE, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, RING, TACTICAL, ULT, WEAPONS, type Flank } from "../sim/config";
 import { magSize } from "../sim/combat";
 import { dist2d } from "../sim/geom";
-import { POIS } from "../sim/map";
+import { EXTRACTS, POIS } from "../sim/map";
+import { extractReady } from "../sim/world";
 import type { GameEvent, State, Vec3 } from "../sim/state";
 import { rank } from "../sim/results";
 import { pickHeal } from "../sim/player";
@@ -57,8 +58,17 @@ export class Hud {
   private lastPoiKill = 0;
   private hintPoi = -1;
   private foePips: HTMLElement[] = [];
+  private exitMarks: HTMLElement[] = [];
 
   constructor() {
+    for (const x of EXTRACTS) {
+      const el = document.createElement("div");
+      el.className = "xmark";
+      el.innerHTML = `<i></i><b>${x.short}</b><span></span>`;
+      el.style.display = "none";
+      $("exit-marks").appendChild(el);
+      this.exitMarks.push(el);
+    }
     const strip = $("compass-strip");
     const labels: Record<number, string> = { 0: "N", 45: "NE", 90: "E", 135: "SE", 180: "S", 225: "SW", 270: "W", 315: "NW" };
     // Three turns of the strip so it can scroll seamlessly.
@@ -161,7 +171,16 @@ export class Hud {
         if (e.poi + 1 < POIS.length) this.banner(`${POIS[e.poi].name} 制圧`, `次は ${POIS[e.poi + 1].name}。リングが縮み始める`, true);
         break;
       case "extractReady":
-        this.banner("タイタン撃破", "ドロップシップに乗れ", true, 3);
+        this.banner("タイタン撃破", "脱出地点を選べ：ドロップシップ・台地・廃村", true, 3.2);
+        break;
+      case "shipCalled":
+        this.banner("ドロップシップを呼んだ", `到着まで ${EXTRACTS[0].call} 秒。増援が降りてくる`);
+        break;
+      case "shipLanded":
+        this.banner("ドロップシップ着陸", "乗り込め", true);
+        break;
+      case "flareLit":
+        this.toast("発煙筒を焚いた：回収を待て", 3);
         break;
       case "careDrop":
         this.banner("補給ポッド投下", "金色の光の下にレジェンド武器", true);
@@ -202,7 +221,7 @@ export class Hud {
     const active = s.poiActive || s.enemies.some((e) => e.poi === s.poi && e.aware === "engaged");
     let text = "";
     if (s.phase === "drop") text = isTouch() ? "降下中：スティックで着地点を選ぶ" : "降下中：WASD で着地点を選ぶ";
-    else if (s.phase === "extract") text = "ドロップシップに乗れ";
+    else if (s.phase === "extract") text = "脱出地点を選べ";
     else if (s.phase === "done") text = "生還";
     else if (poi && active) text = poi.boss ? "タイタンを倒せ" : `${poi.name}のロボット部隊を倒せ`;
     else if (poi) text = `${poi.name}へ向かえ`;
@@ -243,6 +262,8 @@ export class Hud {
       $("compass-obj").style.left = `${half + rel * 2}px`;
     }
     this.stragglers(s, active, heading, half);
+    $("compass-obj").style.display = obj ? "" : "none";
+    this.exits(s, view, w, h);
 
     // Vitals.
     const maxShield = PLAYER.shieldByTier[p.armor];
@@ -551,6 +572,42 @@ export class Hud {
     st.className = worst === 3 && !tracked && anyLost ? "lost" : worst === 3 ? "engaged" : worst === 2 ? "alert" : "";
   }
 
+  /** Extraction points: a marker over each, and a line each on the objective card. */
+  private exits(s: State, view: World, w: number, h: number) {
+    const on = s.phase === "extract";
+    const p = s.player;
+    const lines: string[] = [];
+    EXTRACTS.forEach((x, i) => {
+      const el = this.exitMarks[i];
+      if (!on) {
+        el.style.display = "none";
+        return;
+      }
+      const d = Math.round(dist2d(p.pos, x));
+      const ready = extractReady(s, x);
+      const state = x.call
+        ? s.shipCall < 0
+          ? x.note
+          : s.shipCall > 0
+            ? `到着まで ${Math.ceil(s.shipCall)} 秒：持ちこたえろ`
+            : "着陸：乗り込め"
+        : x.needsFlare
+          ? p.flares > 0
+            ? "発煙筒あり：4 秒で回収"
+            : "発煙筒が要る（高い建物の最上階）"
+          : x.note;
+      const locked = x.needsFlare && !ready;
+      lines.push(`<div class="${locked ? "locked" : ""}"><b>${x.short} ${d}m</b><span>${state}</span></div>`);
+      const sp = view.project({ x: x.x, y: 3, z: x.z }, w, h);
+      el.style.display = sp.behind ? "none" : "flex";
+      el.className = `xmark${locked ? " locked" : ""}`;
+      el.style.left = `${Math.max(40, Math.min(w - 40, sp.x))}px`;
+      el.style.top = `${Math.max(90, Math.min(h - 140, sp.y))}px`;
+      (el.querySelector("span") as HTMLElement).textContent = `${d}m`;
+    });
+    $("obj-exits").innerHTML = lines.join("");
+  }
+
   /** The teammate's row on the vitals plate and the tag over its head. */
   private mate(s: State, view: World, w: number, h: number) {
     const a = s.ally;
@@ -606,6 +663,15 @@ export class Hud {
     const p = s.player;
     if (p.downed > 0 || (s.phase !== "play" && s.phase !== "extract")) return "";
     const r = PLAYER.interactRange;
+    if (s.phase === "extract") {
+      const x = EXTRACTS.find((e) => dist2d(e, p.pos) < e.radius);
+      if (x) {
+        const hold = Math.floor((s.extractTime / x.hold) * 100);
+        if (x.call && s.shipCall > 0) return `ドロップシップ到着まで ${Math.ceil(s.shipCall)} 秒`;
+        if (x.needsFlare && p.flares <= 0) return "発煙筒がない：高い建物の最上階の補給箱にある";
+        return `脱出中 ${hold}%`;
+      }
+    }
     const a = s.ally;
     if (a.active && a.down > 0 && dist2d(a.pos, p.pos) < r + 1 && Math.abs(a.pos.y - p.pos.y) < 1.5) {
       return a.helped > 0 ? `${ALLY.name}を起こしている…（撃つ・離れると中断）` : `${key("E")}${ALLY.name}を起こす`;
@@ -638,6 +704,7 @@ export class Hud {
       ["弱点命中", `${crit}%`],
       ["ダウン", st.downs],
       ["やり直し", st.wipes],
+      ["脱出", EXTRACTS.find((x) => x.id === s.extractedAt)?.short ?? "-"],
       [`${ALLY.name}の撃破`, st.allyKills],
       [`${ALLY.name}に救助`, st.allyRescues],
     ]

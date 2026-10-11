@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { ENEMIES, PLAYER, TITAN, WEAPONS, WORLD, type EnemyKind } from "../sim/config";
-import { BOXES, EXTRACT, POIS } from "../sim/map";
+import { BOXES, EXTRACT, EXTRACTS, POIS } from "../sim/map";
+import { groundAt } from "../sim/geom";
 import { rimRadius, steepAt, terrainHeight } from "../sim/terrain";
 import type { GameEvent, State, Vec3 } from "../sim/state";
 import { PAL, RARITY_COLOR, SCOPE_IN, buildAlly, buildBin, buildBox, mergeStatic, buildCare, buildDropship, buildEnemy, buildGun, buildLootItem, flat, glow, haloSprite, type EnemyModel } from "./models";
@@ -77,7 +78,7 @@ export class World {
   private care: THREE.Group | null = null;
   private careBeam: THREE.Mesh;
   private dropship: THREE.Group | null = null;
-  private extractRing: THREE.Mesh;
+  private extractRings: THREE.Mesh[] = [];
   private stompRing: THREE.Mesh;
   private gun = new THREE.Group();
   private gunKey = "";
@@ -163,11 +164,14 @@ export class World {
     this.careBeam.visible = false;
     this.scene.add(this.careBeam);
 
-    this.extractRing = new THREE.Mesh(new THREE.RingGeometry(EXTRACT.radius - 0.4, EXTRACT.radius, 48), glow(PAL.hot, 0.8));
-    this.extractRing.rotation.x = -Math.PI / 2;
-    this.extractRing.position.set(EXTRACT.x, 0.3, EXTRACT.z);
-    this.extractRing.visible = false;
-    this.scene.add(this.extractRing);
+    for (const x of EXTRACTS) {
+      const ring = new THREE.Mesh(new THREE.RingGeometry(x.radius - 0.4, x.radius, 48), glow(PAL.hot, 0.8));
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.set(x.x, groundAt(x.x, x.z, 0.4, 99) + 0.3, x.z);
+      ring.visible = false;
+      this.scene.add(ring);
+      this.extractRings.push(ring);
+    }
 
     this.stompRing = new THREE.Mesh(new THREE.RingGeometry(0.96, 1, 64), glow(PAL.orb, 0.5));
     this.stompRing.rotation.x = -Math.PI / 2;
@@ -677,15 +681,23 @@ export class World {
     }
 
     // --- extraction
-    this.extractRing.visible = s.phase === "extract";
-    if (s.phase === "extract" || s.phase === "done") {
+    this.extractRings.forEach((r) => (r.visible = s.phase === "extract"));
+    // The dropship comes once called, and is low over the pad when it lands.
+    if ((s.phase === "extract" || s.phase === "done") && s.shipCall >= 0) {
       if (!this.dropship) {
         this.dropship = buildDropship();
-        this.dropship.position.set(EXTRACT.x, 40, EXTRACT.z - 2);
+        this.dropship.position.set(EXTRACT.x, 90, EXTRACT.z - 2);
         this.scene.add(this.dropship);
       }
-      this.dropship.position.y += (4.5 - this.dropship.position.y) * Math.min(1, dt * 0.8);
+      const call = EXTRACT.call ?? 1;
+      const want = 4.5 + 70 * Math.min(1, s.shipCall / call);
+      this.dropship.position.y += (want - this.dropship.position.y) * Math.min(1, dt * 0.8);
       this.dropship.rotation.z = Math.sin(this.time * 1.3) * 0.03;
+    }
+    // A lit flare at the plateau pickup sends up red smoke.
+    const here = EXTRACTS.find((x) => x.needsFlare);
+    if (here && s.phase === "extract" && s.extractTime > 0 && Math.hypot(s.player.pos.x - here.x, s.player.pos.z - here.z) < here.radius) {
+      if (Math.random() < dt * 30) this.burst({ x: here.x, y: groundAt(here.x, here.z, 0.4, 99) + 0.4, z: here.z }, PAL.ring, 2, 1.2, 0.25, -2.5, 2.2);
     }
 
     // --- particles and tracers
@@ -776,7 +788,7 @@ export class World {
 
   /** The POI the HUD should mark next, in world coordinates. */
   objective(s: State): Vec3 | null {
-    if (s.phase === "extract") return { x: EXTRACT.x, y: 2, z: EXTRACT.z };
+    if (s.phase === "extract") return null; // the HUD marks every extraction point
     const poi = POIS[s.poi];
     if (!poi) return null;
     return { x: poi.x, y: 2, z: poi.z };

@@ -1,6 +1,7 @@
-import { ALLY, HEALS, PLAYER, RING, TICK, WORLD, type HealKind } from "./config";
+import { ALLY, HEALS, PLAYER, RING, SHIP_WAVES, TICK, WORLD, type HealKind } from "./config";
 import { dist2d, groundAt } from "./geom";
-import { EXTRACT, POIS } from "./map";
+import { EXTRACTS, POIS, type ExtractPoint } from "./map";
+import { spawnEnemy } from "./enemies";
 import { hurtPlayer } from "./player";
 import { raiseAlly, startHelp } from "./ally";
 import { rand, type Input, type Loot, type State, type Weapon } from "./state";
@@ -44,6 +45,8 @@ export function stepPoi(s: State) {
     if (s.poi < POIS.length) closeRingTo(s, s.poi);
     else {
       s.phase = "extract";
+      // Every way off the island is open: the ring lets go of the whole island.
+      Object.assign(s.ring, { x: 0, z: 0, r: 260, fromX: 0, fromZ: 0, fromR: 260, toX: 0, toZ: 0, toR: 260, t: 1, shrinking: false });
       s.events.push({ t: "extractReady" });
     }
   }
@@ -94,6 +97,7 @@ function openBin(s: State, binIndex: number) {
   }
   if (table.armor.length && nth !== 0) spill(s, b.x, b.y, b.z, { kind: "armor", rarity: table.armor[nth % table.armor.length] });
   for (let i = 0; i < table.heals; i++) spill(s, b.x, b.y, b.z, { kind: "heal", heal: rollHeal(s), rarity: 1 });
+  if (b.flare) spill(s, b.x, b.y, b.z, { kind: "flare", rarity: 3 });
   s.events.push({ t: "binOpen", id: b.id });
 }
 
@@ -146,6 +150,11 @@ export function stepLoot(s: State, input: Input) {
     if (l.kind === "heal" && l.heal && p.heals[l.heal] < HEALS[l.heal].max) {
       p.heals[l.heal]++;
       s.events.push({ t: "pickup", kind: "heal", rarity: 1, label: HEALS[l.heal].label });
+      return false;
+    }
+    if (l.kind === "flare" && p.flares < 1) {
+      p.flares = 1;
+      s.events.push({ t: "pickup", kind: "flare", rarity: 3, label: "発煙筒" });
       return false;
     }
     if (l.kind === "armor" && l.rarity > p.armor) {
@@ -204,15 +213,66 @@ export function takeWeapon(s: State, l: Loot) {
   s.events.push({ t: "pickup", kind: "weapon", rarity: w.rarity, label: weaponLabel(w) });
 }
 
+/** The extraction point the player stands in, if any. */
+export function extractHere(s: State): ExtractPoint | null {
+  const p = s.player;
+  return EXTRACTS.find((x) => dist2d(p.pos, x) < x.radius && Math.abs(p.pos.y - groundAt(x.x, x.z, 0.4, 99)) < 1.5) ?? null;
+}
+
+/** Whether an extraction point can be used now (the dropship has landed, the player has a flare). */
+export function extractReady(s: State, x: ExtractPoint): boolean {
+  if (x.call) return s.shipCall === 0;
+  if (x.needsFlare) return s.player.flares > 0;
+  return true;
+}
+
 export function stepExtract(s: State) {
   if (s.phase !== "extract") return;
   const p = s.player;
-  if (dist2d(p.pos, EXTRACT) < EXTRACT.radius && p.downed <= 0) {
+  const here = p.downed > 0 ? null : extractHere(s);
+  const ship = EXTRACTS.find((x) => x.call)!;
+  if (here === ship && s.shipCall < 0) {
+    s.shipCall = ship.call!;
+    s.shipWaveT = SHIP_WAVES.first;
+    s.events.push({ t: "shipCalled" });
+  }
+  if (s.shipCall > 0) {
+    s.shipCall = Math.max(0, s.shipCall - TICK);
+    if (s.shipCall === 0) s.events.push({ t: "shipLanded" });
+    s.shipWaveT -= TICK;
+    if (s.shipWaveT <= 0 && s.shipWave < SHIP_WAVES.waves.length) shipWave(s, ship);
+  }
+  if (here && extractReady(s, here)) {
+    if (here.needsFlare && s.extractTime === 0) s.events.push({ t: "flareLit" });
     s.extractTime += TICK;
-    if (s.extractTime >= 1.5) {
+    if (s.extractTime >= here.hold) {
+      if (here.needsFlare) p.flares--;
+      s.extractedAt = here.id;
       s.phase = "done";
       s.stats.poiTimes.push(s.time - s.poiStart);
       s.events.push({ t: "done" });
     }
   } else s.extractTime = 0;
+}
+
+/** Robots beam in round the pad while the dropship is on its way. */
+function shipWave(s: State, ship: ExtractPoint) {
+  s.shipWaveT = SHIP_WAVES.every;
+  const kinds = SHIP_WAVES.waves[s.shipWave++];
+  let squad = s.squads.findIndex((q) => q.name === "増援");
+  if (squad < 0) {
+    squad = s.squads.length;
+    s.squads.push({ name: "増援", poi: -1, patrol: [], leg: 0, engaged: true, sinceSeen: 0, last: { x: ship.x, z: ship.z } });
+  }
+  const pad = POIS[POIS.length - 1];
+  for (const kind of kinds) {
+    if (s.enemies.filter((e) => e.squad === squad).length >= SHIP_WAVES.maxAlive) break;
+    const a = rand(s) * Math.PI * 2;
+    const e = spawnEnemy(s, kind, pad.x + Math.sin(a) * SHIP_WAVES.radius, pad.z - Math.cos(a) * SHIP_WAVES.radius, -1, squad, { appear: true });
+    e.aware = "engaged";
+    e.detect = 1;
+  }
+  s.squads[squad].engaged = true;
+  s.squads[squad].sinceSeen = 0;
+  s.events.push({ t: "shipWave" });
 }

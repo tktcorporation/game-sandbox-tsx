@@ -1,7 +1,7 @@
 import { AWARE, DEG, HEALS, PLAYER, TICK, WORLD } from "./config";
 import { bodyCenter, eyePos, flankOf, magSize, weakPoint } from "./combat";
 import { dist2d, groundAt, los, onTerrain, lookAngles, solidAt, wrapAngle } from "./geom";
-import { EXTRACT, POIS } from "./map";
+import { EXTRACTS, POIS } from "./map";
 import { clearLine, findPath } from "./nav";
 import { enemyMax, idleInput, type Enemy, type Input, type State } from "./state";
 import { pickHeal } from "./player";
@@ -115,8 +115,8 @@ export class Bot {
     if (s.phase === "drop") {
       const poi = POIS[0];
       goal = { x: poi.x, z: poi.z + 14 };
-    } else if (s.phase === "extract") {
-      goal = EXTRACT;
+    } else if (s.phase === "extract" && (s.shipCall === 0 || !tgt || dist2d(tgt.pos, p.pos) > 70)) {
+      goal = this.exit(s);
     } else if (tgt && dist2d(tgt.pos, p.pos) < 70) {
       fight = true;
     } else if (s.ally.down > 0 && dist2d(s.ally.pos, p.pos) < 45) {
@@ -124,7 +124,7 @@ export class Bot {
       goal = { x: s.ally.pos.x, z: s.ally.pos.z };
     } else {
       const lg = this.lootGoal(s);
-      goal = lg ?? (s.poi < POIS.length ? POIS[s.poi] : EXTRACT);
+      goal = lg ?? (s.poi < POIS.length ? POIS[s.poi] : this.exit(s));
       // Swap a better weapon in for the worse one, never for the one in hand.
       if (lg?.weapon) {
         const r = p.weapons.map((w) => (w ? w.rarity : -1));
@@ -324,6 +324,15 @@ export class Bot {
       }
     }
     return inp;
+  }
+
+  /**
+   * The way off the island: a flare's quick pickup when it has one, else beginners
+   * take the long quiet walk and the others call the dropship and hold.
+   */
+  private exit(s: State): { x: number; z: number } {
+    const id = s.player.flares > 0 ? "flare" : this.skill.name === "beginner" ? "village" : "ship";
+    return EXTRACTS.find((x) => x.id === id)!;
   }
 
   /**

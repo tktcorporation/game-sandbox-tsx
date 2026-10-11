@@ -365,5 +365,17 @@ export const ALLY = {
   noise: 16,
 };
 
+/**
+ * Robots that beam in around the dropship while it is on its way: a wave every
+ * `every` seconds, at most `maxAlive` of them up at once.
+ */
+export const SHIP_WAVES = {
+  every: 4.5,
+  first: 2,
+  radius: 18,
+  maxAlive: 5,
+  waves: [["drone", "grunt"], ["drone", "drone"], ["grunt", "charger"], ["drone", "grunt"]] as EnemyKind[][],
+};
+
 /** Seconds the arc shows every robot within range through walls. */
 export const REVEAL = { time: 5, range: 40 };

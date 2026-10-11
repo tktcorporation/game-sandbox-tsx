@@ -1,5 +1,5 @@
 import { ALLY, DROP, ENEMIES, PLAYER, ULT, type EnemyKind, type Flank, type HealKind, type Rarity, type WeaponKind } from "./config";
-import { EXTRA_BINS, POIS, SPAWN } from "./map";
+import { EXTRA_BINS, POIS, SPAWN, type ExtractId } from "./map";
 import { populate } from "./enemies";
 
 export interface Vec3 {
@@ -42,6 +42,8 @@ export interface Player {
   reveal: number; // seconds left of seeing robots through walls
   stepNoise: number; // seconds until the next sprint footstep sound
   heals: Record<HealKind, number>;
+  /** Flares carried (0 or 1): they call the plateau pickup. */
+  flares: number;
   /** The item being used and the seconds left; shooting cancels it without using it. */
   healing: { kind: HealKind; t: number } | null;
   sinceHurt: number;
@@ -161,7 +163,7 @@ export interface Shockwave {
   allyHit?: boolean;
 }
 
-export type LootKind = "weapon" | "armor" | "heal" | "shard";
+export type LootKind = "weapon" | "armor" | "heal" | "shard" | "flare";
 
 export interface Loot {
   id: number;
@@ -181,6 +183,8 @@ export interface Bin {
   z: number;
   poi: number;
   open: boolean;
+  /** One of the high-rises' top-floor bins, which also hold a flare. */
+  flare: boolean;
 }
 
 export interface CarePackage {
@@ -259,6 +263,10 @@ export type GameEvent =
   | { t: "bossPhase" }
   | { t: "landed" }
   | { t: "extractReady" }
+  | { t: "shipCalled" }
+  | { t: "shipLanded" }
+  | { t: "flareLit" }
+  | { t: "shipWave" }
   | { t: "done" };
 
 export interface Stats {
@@ -300,7 +308,14 @@ export interface State {
   poi: number; // index of the current objective POI
   poiActive: boolean; // the player is inside the current POI's area
   poiStart: number;
+  /** Seconds the player has stood ready in an extraction point. */
   extractTime: number;
+  /** Seconds until the dropship lands: -1 not called yet, 0 landed. */
+  shipCall: number;
+  shipWave: number;
+  shipWaveT: number;
+  /** The way the player left the island. */
+  extractedAt: ExtractId | null;
   events: GameEvent[];
   stats: Stats;
 }
@@ -348,8 +363,8 @@ export const idleInput = (): Input => ({
 export function newRun(seed = 1): State {
   const bins: Bin[] = [];
   let id = 1;
-  POIS.forEach((p, poi) => p.bins.forEach((b) => bins.push({ id: id++, x: b.x, y: b.y ?? 0, z: b.z, poi, open: false })));
-  for (const b of EXTRA_BINS) bins.push({ id: id++, x: b.x, y: b.y ?? 0, z: b.z, poi: b.table, open: false });
+  POIS.forEach((p, poi) => p.bins.forEach((b) => bins.push({ id: id++, x: b.x, y: b.y ?? 0, z: b.z, poi, open: false, flare: false })));
+  for (const b of EXTRA_BINS) bins.push({ id: id++, x: b.x, y: b.y ?? 0, z: b.z, poi: b.table, open: false, flare: !!b.flare });
   const loot: Loot[] = [];
   POIS.forEach((p) =>
     p.floor.forEach((f) => {
@@ -395,6 +410,7 @@ export function newRun(seed = 1): State {
       reveal: 0,
       stepNoise: 0,
       heals: { cell: 2, battery: 0, syringe: 2, medkit: 0 },
+      flares: 0,
       healing: null,
       sinceHurt: 99,
       downed: 0,
@@ -416,6 +432,10 @@ export function newRun(seed = 1): State {
     poiActive: false,
     poiStart: 0,
     extractTime: 0,
+    shipCall: -1,
+    shipWave: 0,
+    shipWaveT: 0,
+    extractedAt: null,
     events: [],
     stats: { kills: 0, damage: 0, shots: 0, hits: 0, crits: 0, flankHits: 0, downs: 0, wipes: 0, poiTimes: [], allyDamage: 0, allyKills: 0, allyDowns: 0, allyRescues: 0, allyHelped: 0 },
   };

@@ -250,7 +250,12 @@ for (let i = 0; i < 25 * 60 * 10; i++) {
   if (s.waves > 0) await shot("10-stomp");
   if (s.player.downed) await shot("11-downed");
   if (s.ally.target && live.length >= 2 && Math.hypot(s.ally.x - s.player.x, s.ally.z - s.player.z) > 3) await shot("19-teammate-fight");
-  if (s.phase === "extract") await shot("12-extract");
+  if (s.phase === "extract" && !taken.has("12-extract")) {
+    await shot("12-extract");
+    const lines = await page.evaluate(() => document.getElementById("obj-exits").children.length);
+    if (lines !== 3) errors.push(`extract: the objective card lists ${lines} ways out, not 3`);
+  }
+  if (s.phase === "extract" && s.extract.ship > 0 && live.length >= 2) await shot("20-ship-waves");
   if (s.phase === "done") break;
 }
 if (s.phase !== "done") errors.push(`run did not finish: ${JSON.stringify(s).slice(0, 300)}`);
