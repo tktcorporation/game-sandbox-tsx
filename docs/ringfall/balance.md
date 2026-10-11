@@ -25,9 +25,9 @@ ally: teammate's share of the damage, its downs, times it picked the player up (
 exit: runs that left by each extraction point (the bot's choice depends on skill)
 crowd: median over runs of the most squads / robots fighting the player at once outside the titan fight
 skill     P1 補給所         P2 採掘場         P3 中継塔         P4 発着場         extract finish total(med) downs wipes acc crit ult crowd flank ally               rank           exit
-beginner  27s 0.0d       61s 0.0d       69s 0.0d       58s 0.0d       34s     100%   248s       0.0   0.0   83% 18%  3.9 2/2   4%    19% 0.2d 0.0r 0.0h S30 A0 B0 C0   ship 0 flare 0 village 30
-casual    24s 0.0d       55s 0.0d       62s 0.0d       54s 0.0d       26s     100%   218s       0.0   0.0   91% 20%  4.7 2/3   4%    18% 0.0d 0.0r 0.0h S30 A0 B0 C0   ship 30 flare 0 village 0
-good      21s 0.0d       55s 0.0d       62s 0.0d       48s 0.0d       25s     100%   213s       0.0   0.0   93% 48%  4.8 2/2   6%    15% 0.0d 0.0r 0.0h S30 A0 B0 C0   ship 30 flare 0 village 0
+beginner  26s 0.0d       61s 0.0d       68s 0.0d       60s 0.0d       34s     100%   250s       0.0   0.0   82% 18%  4.0 2/2   4%    19% 0.2d 0.0r 0.0h S30 A0 B0 C0   ship 0 flare 0 village 30
+casual    24s 0.0d       55s 0.0d       64s 0.0d       57s 0.0d       26s     100%   222s       0.0   0.0   92% 19%  4.8 2/2   4%    18% 0.0d 0.0r 0.0h S30 A0 B0 C0   ship 30 flare 0 village 0
+good      21s 0.0d       55s 0.0d       66s 0.0d       46s 0.0d       26s     100%   211s       0.0   0.0   94% 42%  4.8 2/2   6%    14% 0.0d 0.0r 0.0h S30 A0 B0 C0   ship 30 flare 0 village 0
 ```
 
 ボットは迷わず、探索もしないので、人が遊ぶ時間の下限にあたる。ランクの基準タイム（`RANK.parSeconds` = 240 秒、25% 超過ごとに 1 段階下がる）は人のプレイ時間（5〜7 分）に合わせてあり、ボットは全員 S になる。
@@ -41,7 +41,7 @@ good      21s 0.0d       55s 0.0d       62s 0.0d       48s 0.0d       25s     10
 | アシストの角度（`ASSIST.hipCone` / `adsCone`） | 2.6° / 3.6° | 体の外を撃っても当たる範囲。5.5° では全腕前で命中率 94〜100% になり、腕前の差が消えた |
 | 照準の吸い寄せ（`ASSIST.pull`） | 1.6 / 秒 | 移動しながら撃つか覗いているときだけ効く。止まって撃つと効かないので、動くことが得になる |
 | タッチ操作の吸い寄せ（`ASSIST.touchPull`） | 1.6 倍、止まっていても効く | 親指 1 本では照準と横移動を同時にしにくい。ボットはマウス扱いなので、上の表の結果には入らない |
-| 弱点の判定 | 補正前の素の照準 | アシストで当たった弾は必ず体に当たる扱い。弱点命中率が腕前の指標として残る |
+| 弱点の判定 | 補正前の素の照準。体と弱点のうち手前に当たった方 | アシストで当たった弾は必ず体に当たる扱い。弱点命中率が腕前の指標として残る。背後から体越しに向こう側の弱点は撃ち抜けない |
 | 単発武器の押しっぱなし（`SEMI_HOLD`） | 間隔 1.3 倍で連射 | クリックし直す必要があると、押しっぱなしにする人は 1 発しか撃てない |
 | 敵弾の速さ | 13〜23 m/s | 15 m 先から 0.7 秒以上かかる。予兆の最後 35% で狙いが固定されるので、横に動けば避けられる |
 | タイタンの追尾（`TITAN.homing`） | 0.55 rad/s | 1.2 では横移動で振り切れず、初心者ボットがボス戦で 14 回ダウンした |
