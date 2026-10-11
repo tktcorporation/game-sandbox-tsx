@@ -188,6 +188,30 @@ await page.evaluate(() => {
   document.getElementById("hud").hidden = false;
 });
 
+// Land, then knock the teammate down and pick it up by hand: its tag and the prompt
+// show, one press of E starts the help, and it stands up after standing by it.
+for (let i = 0; i < 100 && (await read()).phase === "drop"; i++) await page.evaluate(() => window.advanceTime(200));
+// The teammate up close, from a fixed camera in front of it.
+const mate = (await read()).ally;
+await page.evaluate((a) => {
+  document.getElementById("hud").hidden = true;
+  window.ringfallCamera(a.x + 2.2, a.y + 1.5, a.z - 2.2, -2.36, -0.12);
+}, mate);
+await page.screenshot({ path: `${out}/18-teammate.png` });
+await page.evaluate(() => {
+  window.ringfallCamera();
+  document.getElementById("hud").hidden = false;
+});
+await page.evaluate(() => window.ringfallDownAlly());
+await page.evaluate(() => window.advanceTime(300));
+await page.screenshot({ path: `${out}/18-teammate-down.png` });
+const downUi = await page.evaluate(() => ({ prompt: document.getElementById("prompt").textContent, tag: getComputedStyle(document.getElementById("mate-tag")).display, row: document.getElementById("mate-state").textContent }));
+if (!/リオを起こす/.test(downUi.prompt) || downUi.tag === "none" || !/ダウン/.test(downUi.row)) errors.push(`teammate down: HUD did not show it (${JSON.stringify(downUi)})`);
+await page.keyboard.press("KeyE");
+await page.evaluate(() => window.advanceTime(3400));
+const helped = await read();
+if (helped.ally.down > 0 || helped.stats.allyHelped !== 1) errors.push(`teammate down: E did not pick it up (${JSON.stringify(helped.ally)})`);
+
 await page.evaluate((s) => window.ringfallBot(s), skill);
 const taken = new Set();
 const shot = async (name) => {
@@ -225,6 +249,7 @@ for (let i = 0; i < 25 * 60 * 10; i++) {
   if (s.poi === 3 && live.some((e) => e.kind === "titan") && s.orbs >= 2) await shot("09-titan");
   if (s.waves > 0) await shot("10-stomp");
   if (s.player.downed) await shot("11-downed");
+  if (s.ally.target && live.length >= 2 && Math.hypot(s.ally.x - s.player.x, s.ally.z - s.player.z) > 3) await shot("19-teammate-fight");
   if (s.phase === "extract") await shot("12-extract");
   if (s.phase === "done") break;
 }

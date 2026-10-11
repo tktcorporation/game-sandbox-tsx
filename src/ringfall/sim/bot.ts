@@ -119,6 +119,9 @@ export class Bot {
       goal = EXTRACT;
     } else if (tgt && dist2d(tgt.pos, p.pos) < 70) {
       fight = true;
+    } else if (s.ally.down > 0 && dist2d(s.ally.pos, p.pos) < 45) {
+      // Pick the teammate up before looting or moving on.
+      goal = { x: s.ally.pos.x, z: s.ally.pos.z };
     } else {
       const lg = this.lootGoal(s);
       goal = lg ?? (s.poi < POIS.length ? POIS[s.poi] : EXTRACT);

@@ -3,6 +3,7 @@ import { Bot, SKILLS } from "./sim/bot";
 import { dist2d } from "./sim/geom";
 import { idleInput, newRun, type GameEvent, type Input, type State } from "./sim/state";
 import { step } from "./sim/step";
+import { hurtAlly } from "./sim/ally";
 import { setWind, sfx, unlock } from "./view/audio";
 import { Hud } from "./view/hud";
 import { World } from "./view/world";
@@ -127,13 +128,23 @@ function onEvent(e: GameEvent, s: State) {
       sfx.shot(e.weapon, p.ultTime > 0);
       break;
     case "hit":
-      sfx.hit(e.crit, e.shield, e.flank === "back" || e.flank === "ambush");
+      if (!e.ally) sfx.hit(e.crit, e.shield, e.flank === "back" || e.flank === "ambush");
+      break;
+    case "allyShot":
+      sfx.allyShot(Math.hypot(e.from.x - p.pos.x, e.from.z - p.pos.z));
+      break;
+    case "allyDown":
+      sfx.allyDown();
+      break;
+    case "allyUp":
+      sfx.allyUp();
       break;
     case "shieldBreak":
       sfx.shieldBreak(e.tier);
       break;
     case "kill":
-      sfx.kill(e.crit);
+      if (!e.ally) sfx.kill(e.crit);
+      else sfx.allyUp();
       break;
     case "hurt":
       if (e.shieldBroke) sfx.myShieldBreak();
@@ -373,6 +384,7 @@ declare global {
     advanceTime: (ms: number) => void;
     ringfallBot: (skill: string) => void;
     ringfallYaw: () => number;
+    ringfallDownAlly: () => void;
     ringfallCamera: (x?: number, y?: number, z?: number, yaw?: number, pitch?: number) => void;
   }
 }
@@ -387,7 +399,9 @@ window.render_game_to_text = () => {
     poi: s.poi,
     poiActive: s.poiActive,
     player: { x: +p.pos.x.toFixed(1), y: +p.pos.y.toFixed(1), z: +p.pos.z.toFixed(1), hp: Math.round(p.hp), shield: Math.round(p.shield), armor: p.armor, downed: p.downed > 0, weapons: p.weapons.map((w) => w && `${w.kind}${w.rarity}:${w.mag}`), ult: +p.ult.toFixed(2), ultTime: +p.ultTime.toFixed(1), reveal: +p.reveal.toFixed(1), crouch: p.crouch },
-    enemies: s.enemies.map((e) => ({ kind: e.kind, x: Math.round(e.pos.x), z: Math.round(e.pos.z), y: +e.pos.y.toFixed(1), hp: Math.round(e.hp + e.shield), mode: e.mode, aware: e.aware, detect: +e.detect.toFixed(2), squad: e.squad })),
+    ally: { active: s.ally.active, x: +s.ally.pos.x.toFixed(1), y: +s.ally.pos.y.toFixed(1), z: +s.ally.pos.z.toFixed(1), hp: Math.round(s.ally.hp), shield: Math.round(s.ally.shield), down: +s.ally.down.toFixed(1), helped: +s.ally.helped.toFixed(1), rescue: +s.ally.rescue.toFixed(1), target: s.ally.target },
+    awaitAlly: p.awaitAlly,
+    enemies: s.enemies.map((e) => ({ kind: e.kind, x: Math.round(e.pos.x), z: Math.round(e.pos.z), y: +e.pos.y.toFixed(1), hp: Math.round(e.hp + e.shield), mode: e.mode, aware: e.aware, detect: +e.detect.toFixed(2), squad: e.squad, target: e.target })),
     squads: s.squads.map((q) => ({ name: q.name, poi: q.poi, engaged: q.engaged, lost: q.engaged && q.sinceSeen >= AWARE.trackTime })),
     orbs: s.orbs.length,
     waves: s.waves.length,
@@ -410,6 +424,9 @@ window.ringfallCamera = (x, y, z, yaw, pitch) => {
   world.cameraOverride = x === undefined ? null : { x, y: y ?? 2, z: z ?? 0, yaw: yaw ?? 0, pitch: pitch ?? 0 };
   world.render(state, 0.016);
 };
+
+/** Automation only: knock the teammate down, to check picking it up. */
+window.ringfallDownAlly = () => hurtAlly(state, 9999);
 
 /** The player's exact view yaw (render_game_to_text rounds it away). */
 window.ringfallYaw = () => state.player.yaw;

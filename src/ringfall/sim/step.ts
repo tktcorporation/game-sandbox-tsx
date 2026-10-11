@@ -1,5 +1,6 @@
 import { stepEnemies, stepOrbs, stepWaves } from "./enemies";
 import { stepDrop, stepPlayer, tickReveal } from "./player";
+import { placeAlly, stepAlly } from "./ally";
 import { closeRingTo, stepExtract, stepLoot, stepPoi, stepRing } from "./world";
 import { TICK } from "./config";
 import type { Input, State } from "./state";
@@ -10,11 +11,15 @@ export function step(s: State, input: Input, prevCrouch: boolean) {
   if (s.phase === "done") return;
   s.time += TICK;
   if (s.phase === "drop") {
-    if (stepDrop(s, input)) closeRingTo(s, 0);
+    if (stepDrop(s, input)) {
+      closeRingTo(s, 0);
+      placeAlly(s);
+    }
     return;
   }
   stepPlayer(s, input, prevCrouch);
   tickReveal(s);
+  stepAlly(s);
   stepEnemies(s);
   stepOrbs(s);
   stepWaves(s);

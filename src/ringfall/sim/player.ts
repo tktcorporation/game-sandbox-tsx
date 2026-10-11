@@ -1,5 +1,6 @@
-import { ASSIST, DEG, DROP, HEALS, type HealKind, MANTLE, NOISE, PLAYER, RARITY, REVEAL, SEMI_HOLD, TACTICAL, TICK, ULT, WEAPONS, WORLD } from "./config";
+import { ALLY, ASSIST, DEG, DROP, HEALS, type HealKind, MANTLE, NOISE, PLAYER, RARITY, REVEAL, SEMI_HOLD, TACTICAL, TICK, ULT, WEAPONS, WORLD } from "./config";
 import { makeNoise } from "./awareness";
+import { allyUp, placeAlly } from "./ally";
 import { POIS } from "./map";
 import { applyPull, assistTarget, bodyCenter, damageEnemy, eyePos, magSize, shoot } from "./combat";
 import { ceilingAt, collide, groundAt, los } from "./geom";
@@ -49,7 +50,9 @@ export function stepPlayer(s: State, input: Input, prevCrouch: boolean) {
 
   if (p.downed > 0) {
     p.downed -= TICK;
-    if (p.downed <= 0) {
+    // Waiting for the teammate, who did not make it in time.
+    if (p.downed <= 0 && p.awaitAlly) wipe(s);
+    else if (p.downed <= 0) {
       p.hp = PLAYER.reviveHp;
       p.iframes = PLAYER.reviveIframes;
       s.events.push({ t: "revive" });
@@ -427,10 +430,15 @@ export function hurtPlayer(s: State, dmg: number, fromX: number, fromZ: number, 
     p.selfRevive--;
     p.downed = PLAYER.downedTime;
     s.events.push({ t: "down" });
+  } else if (allyUp(s)) {
+    // No self-revive left, but the teammate can come and pick the player up.
+    p.downed = ALLY.bleedout;
+    p.awaitAlly = true;
+    s.events.push({ t: "down" }, { t: "awaitAlly" });
   } else wipe(s);
 }
 
-/** Everyone down: back to this POI's entry with full health; robots keep their damage. */
+/** Everyone down: back to this POI's entry (the teammate too) with full health; robots keep their damage. */
 export function wipe(s: State) {
   const p = s.player;
   const poi = POIS[Math.min(s.poi, POIS.length - 1)];
@@ -443,8 +451,10 @@ export function wipe(s: State) {
   p.hp = PLAYER.hp;
   p.shield = PLAYER.shieldByTier[p.armor];
   p.downed = 0;
+  p.awaitAlly = false;
   p.selfRevive = 1;
   p.iframes = 2.5;
+  placeAlly(s);
   s.orbs = [];
   s.waves = [];
   // Robots lose track of the player and go back to their posts; damage stays. The

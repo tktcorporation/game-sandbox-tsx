@@ -326,6 +326,50 @@ export function buildEnemy(kind: EnemyKind): EnemyModel {
   return { root, body, eye, eyeHalo, shield, legs, mats };
 }
 
+export interface AllyModel {
+  root: THREE.Group;
+  /** Turns with the teammate's yaw; tipped over when it is down. */
+  body: THREE.Group;
+  legs: THREE.Object3D[];
+  /** Arms and rifle, pitched toward what it aims at. */
+  arms: THREE.Group;
+}
+
+/**
+ * The teammate: a person in a teal suit and sand vest, so it reads as one of
+ * ours at a glance against the navy robots. Nothing on it glows.
+ */
+export function buildAlly(): AllyModel {
+  const root = new THREE.Group();
+  const body = new THREE.Group();
+  root.add(body);
+  const suit = flat(PAL.teal);
+  const vest = flat(PAL.sand);
+  const dark = flat(PAL.joint);
+  const legs: THREE.Object3D[] = [];
+  for (const s of [-1, 1]) {
+    const leg = new THREE.Group();
+    leg.position.set(s * 0.13, 0.86, 0);
+    leg.add(mesh(new THREE.BoxGeometry(0.2, 0.84, 0.24), suit, 0, -0.42, 0));
+    leg.add(mesh(new THREE.BoxGeometry(0.22, 0.14, 0.32), dark, 0, -0.8, -0.04));
+    body.add(leg);
+    legs.push(leg);
+  }
+  body.add(mesh(new THREE.BoxGeometry(0.5, 0.62, 0.3), suit, 0, 1.18, 0));
+  body.add(mesh(new THREE.BoxGeometry(0.54, 0.42, 0.34), vest, 0, 1.24, 0));
+  body.add(mesh(new THREE.BoxGeometry(0.36, 0.44, 0.2), flat(PAL.ochre), 0, 1.22, 0.26));
+  body.add(mesh(new THREE.BoxGeometry(0.28, 0.28, 0.3), flat(PAL.concrete), 0, 1.66, 0));
+  body.add(mesh(new THREE.BoxGeometry(0.32, 0.14, 0.34), suit, 0, 1.78, 0.01));
+  body.add(mesh(new THREE.BoxGeometry(0.24, 0.09, 0.04), dark, 0, 1.67, -0.16));
+  const arms = new THREE.Group();
+  arms.position.set(0, 1.38, 0);
+  for (const s of [-1, 1]) arms.add(mesh(new THREE.BoxGeometry(0.14, 0.14, 0.5), suit, s * 0.22, -0.06, -0.22));
+  arms.add(mesh(new THREE.BoxGeometry(0.08, 0.12, 0.75), flat(PAL.gun), 0.08, -0.02, -0.5));
+  arms.add(mesh(new THREE.BoxGeometry(0.06, 0.16, 0.1), flat(PAL.gunLight), 0.08, -0.12, -0.36));
+  body.add(arms);
+  return { root, body, legs, arms };
+}
+
 export function buildGun(kind: WeaponKind, rarity: Rarity): THREE.Group {
   const g = new THREE.Group();
   const dark = flat(PAL.gun);

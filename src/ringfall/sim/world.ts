@@ -1,7 +1,8 @@
-import { HEALS, PLAYER, RING, TICK, WORLD, type HealKind } from "./config";
+import { ALLY, HEALS, PLAYER, RING, TICK, WORLD, type HealKind } from "./config";
 import { dist2d, groundAt } from "./geom";
 import { EXTRACT, POIS } from "./map";
 import { hurtPlayer } from "./player";
+import { raiseAlly, startHelp } from "./ally";
 import { rand, type Input, type Loot, type State, type Weapon } from "./state";
 
 /*
@@ -38,6 +39,7 @@ export function stepPoi(s: State) {
     s.poiStart = s.time;
     s.poiActive = false;
     p.selfRevive = 1;
+    raiseAlly(s, "self", ALLY.reviveHp);
     s.poi++;
     if (s.poi < POIS.length) closeRingTo(s, s.poi);
     else {
@@ -160,6 +162,9 @@ export function stepLoot(s: State, input: Input) {
   type Pick = { d: number; act: () => void };
   const picks: Pick[] = [];
   const level = (y: number) => Math.abs(y - p.pos.y) < 1.5;
+  // A downed teammate within reach comes before any loot.
+  const a = s.ally;
+  if (a.active && a.down > 0 && a.helped <= 0 && level(a.pos.y)) picks.push({ d: dist2d(a.pos, p.pos) - 1, act: () => startHelp(s) });
   s.bins.forEach((b, i) => {
     if (!b.open && level(b.y)) picks.push({ d: dist2d(b, p.pos), act: () => openBin(s, i) });
   });

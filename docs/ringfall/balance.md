@@ -10,6 +10,8 @@
 | 普通 | 100% | 0.2 以下 | 15〜25% | 2 体以下 |
 | 上手い | 100% | ほぼ 0 | 40% 以上 | 2 体以下 |
 
+味方（リオ）は、与ダメージの 1〜2 割を担い、交戦中のロボットの 15% 前後に狙われる程度に留める。主役はプレイヤーのままにし、味方は攻撃を散らして、全滅の手前で拾い上げる役にする。ally 列は、与ダメージに占める割合、1 周あたりのダウン（d）、プレイヤーを起こした回数（r）、プレイヤーに起こされた回数（h）。
+
 狙いは、下手でも最後まで行けて、腕前の差がタイムと弱点命中率に出ること。flank は命中のうち背後と奇襲の割合。ボットの回り込みは人より下手で、腕前の差を測る指標として見る。crowd は 1 周のうち最も多くの部隊・ロボットと同時に戦った瞬間の値（タイタン戦を除く）で、拠点を部隊ごとに片付けられているかの指標。命中率はアシストで全員 80% 以上になる。上手さは「当たるか」ではなく「弱点に当たるか」と「速く片付くか」で見せる。
 
 ## 現在の結果
@@ -17,11 +19,12 @@
 ```
 30 runs per skill. per POI: median seconds from the previous objective, downs+wipes per run
 flank: share of hits from behind a robot or before it noticed the player
+ally: teammate's share of the damage, its downs, times it picked the player up (r) and was picked up (h), per run
 crowd: median over runs of the most squads / robots fighting the player at once outside the titan fight
-skill     P1 補給所         P2 採掘場         P3 中継塔         P4 発着場         extract finish total(med) downs wipes acc crit ult crowd flank rank
-beginner  28s 0.0d       65s 0.0d       67s 0.0d       71s 0.1d       5s      100%   235s       0.1   0.0   83% 16%  4.5 2/2   3%    S27 A2 B1 C0
-casual    27s 0.0d       62s 0.0d       67s 0.0d       65s 0.0d       5s      100%   225s       0.0   0.0   92% 20%  4.4 2/2   4%    S30 A0 B0 C0
-good      25s 0.0d       55s 0.0d       63s 0.0d       52s 0.0d       5s      100%   202s       0.0   0.0   95% 51%  4.0 2/2   6%    S30 A0 B0 C0
+skill     P1 補給所         P2 採掘場         P3 中継塔         P4 発着場         extract finish total(med) downs wipes acc crit ult crowd flank ally               rank
+beginner  27s 0.0d       61s 0.0d       69s 0.0d       58s 0.0d       5s      100%   217s       0.0   0.0   83% 18%  3.9 2/2   4%    19% 0.2d 0.0r 0.0h S30 A0 B0 C0
+casual    24s 0.0d       55s 0.0d       62s 0.0d       54s 0.0d       6s      100%   198s       0.0   0.0   92% 22%  4.0 2/2   5%    16% 0.0d 0.0r 0.0h S30 A0 B0 C0
+good      21s 0.0d       55s 0.0d       62s 0.0d       48s 0.0d       5s      100%   193s       0.0   0.0   93% 51%  4.0 2/2   6%    14% 0.0d 0.0r 0.0h S30 A0 B0 C0
 ```
 
 ボットは迷わず、探索もしないので、人が遊ぶ時間の下限にあたる。ランクの基準タイム（`RANK.parSeconds` = 240 秒、25% 超過ごとに 1 段階下がる）は人のプレイ時間（5〜7 分）に合わせてあり、ボットは全員 S になる。
@@ -57,6 +60,9 @@ good      25s 0.0d       55s 0.0d       63s 0.0d       52s 0.0d       5s      10
 | 残りの方角の表示（`hud.ts` の `HINT`） | 残り 2 体以下・20 秒 | 散らばった最後の 1 体を探し回る時間を切る |
 | 必ず加わる距離（`AWARE.joinClose`） | 5 m | 回り込みの途中で隣の部隊の近くを通ると、8 m では中継塔で 3 部隊目が加わってダウンした |
 | 銃声の届く距離（`NOISE`） | 10〜22 m（PIKE 16 m） | 26 m では 1 体を撃つたびに隣の見張りが調べに来た |
+| 味方の腕前（`ALLY.dmg` / `hitNear` / `hitFar`） | 1 発 11、6 発ずつ、命中 80%（近距離）〜30%（48 m） | 与ダメージは全体の 13〜19%。プレイヤーの PIKE の 4 分の 1 ほどの火力 |
+| 味方への狙いやすさ（`ALLY.aggroBias`） | 1 m 遠い扱い、味方に撃たれたロボットは 4 m 近い扱い | 6 m では狙われるのが 1 割で、味方がいる手応えがなかった。1 m で 15〜17% |
+| 味方が撃つ相手 | 交戦中のロボットだけ | 気づいていない見張りを撃つと、忍び寄りと先手の奇襲が成り立たなくなる |
 | アシストの優先順位 | 気づいていない敵を後回し | アシストで外れ弾が眠っている部隊に当たり、交戦の連鎖の最大の原因になっていた |
 | ロボットの体力（`ENEMIES`） | グラント 140 + 70、ヘビー 300 + 150、チャージャー 120 + 50、ドローン 70 | 1 体ずつの戦いでは、元の体力だと撃ち返す前に倒れ、全腕前でダウン 0 だった |
 | 弾のダメージ | グラント 15、ドローン 16、ヘビー 14、チャージャー 32 | 1 体ずつの戦いでも撃ち合いに緊張が残る |

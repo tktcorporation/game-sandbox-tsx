@@ -1,4 +1,4 @@
-import { AWARE, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, RING, TACTICAL, ULT, WEAPONS, type Flank } from "../sim/config";
+import { ALLY, AWARE, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, RING, TACTICAL, ULT, WEAPONS, type Flank } from "../sim/config";
 import { magSize } from "../sim/combat";
 import { dist2d } from "../sim/geom";
 import { POIS } from "../sim/map";
@@ -95,6 +95,8 @@ export class Hud {
   event(e: GameEvent, s: State) {
     switch (e.t) {
       case "hit": {
+        // The teammate's hits are not the player's: no marker, no number.
+        if (e.ally) break;
         this.hitT = 0.08;
         $("hitmark").className = e.crit ? "crit" : "";
         // Hits on the same robot in quick succession add up, for at most 1.2 s per number.
@@ -120,8 +122,24 @@ export class Hud {
       }
       case "kill":
         this.lastPoiKill = s.time;
+        if (e.ally) {
+          this.toast(`${ALLY.name}が撃破`, 0);
+          break;
+        }
         this.hitT = 0.4;
         $("hitmark").className = "kill";
+        break;
+      case "allyDown":
+        this.banner(`${ALLY.name}がダウン`, isTouch() ? `近くで「使う」を押して起こす（${ALLY.selfUp} 秒で自力で起きる）` : `近くで E を押して起こす（${ALLY.selfUp} 秒で自力で起きる）`);
+        break;
+      case "allyUp":
+        this.toast(e.by === "player" ? `${ALLY.name}を起こした` : `${ALLY.name}が起き上がった`, 1);
+        break;
+      case "allyRescue":
+        this.banner(`${ALLY.name}に起こされた`, "", true, 1.8);
+        break;
+      case "awaitAlly":
+        this.banner("ダウン", `${ALLY.name}が起こしに来る。${ALLY.name}もやられると拠点の入口からやり直し`);
         break;
       case "hurt": {
         this.hurtT = 0.5;
@@ -149,7 +167,7 @@ export class Hud {
         this.banner("補給ポッド投下", "金色の光の下にレジェンド武器", true);
         break;
       case "down":
-        this.banner("ダウン", "3 秒で自己蘇生する");
+        if (!s.player.awaitAlly) this.banner("ダウン", "3 秒で自己蘇生する");
         break;
       case "wipe":
         this.banner("やり直し", `${POIS[Math.min(s.poi, POIS.length - 1)].name}の入口から。倒した敵はそのまま`);
@@ -393,7 +411,15 @@ export class Hud {
 
     // Downed / healing progress.
     $("downed").className = p.downed > 0 ? "on" : "";
-    $("downed-bar").style.width = `${(1 - p.downed / PLAYER.downedTime) * 100}%`;
+    if (p.awaitAlly) {
+      const a = s.ally;
+      $("downed-sub").textContent = a.rescue > 0 ? `${ALLY.name}が起こしている` : `${ALLY.name}を待っている（${Math.ceil(p.downed)} 秒）`;
+      $("downed-bar").style.width = `${(a.rescue / ALLY.reviveTime) * 100}%`;
+    } else {
+      $("downed-sub").textContent = "自己蘇生中";
+      $("downed-bar").style.width = `${(1 - p.downed / PLAYER.downedTime) * 100}%`;
+    }
+    this.mate(s, view, w, h);
     $("battery").className = p.healing ? "on" : "";
     if (p.healing) {
       $("heal-label").textContent = `${HEALS[p.healing.kind].label}を使用中`;
@@ -525,10 +551,65 @@ export class Hud {
     st.className = worst === 3 && !tracked && anyLost ? "lost" : worst === 3 ? "engaged" : worst === 2 ? "alert" : "";
   }
 
+  /** The teammate's row on the vitals plate and the tag over its head. */
+  private mate(s: State, view: World, w: number, h: number) {
+    const a = s.ally;
+    const p = s.player;
+    const row = $("mate");
+    row.hidden = !a.active;
+    const tag = $("mate-tag");
+    if (!a.active || s.phase === "done") {
+      tag.style.display = "none";
+      return;
+    }
+    const down = a.down > 0;
+    const state = down
+      ? a.helped > 0
+        ? `起こしている ${Math.floor((a.helped / ALLY.helpTime) * 100)}%`
+        : `ダウン ${Math.ceil(a.down)}秒`
+      : a.rescue > 0
+        ? "あなたを起こしている"
+        : p.downed > 0 && p.awaitAlly
+          ? "救助に向かっている"
+          : a.target
+            ? "交戦中"
+            : "ついてくる";
+    $("mate-state").textContent = state;
+    row.className = down ? "down" : "";
+    $("mate-sh").style.width = `${(a.shield / ALLY.shield) * 100}%`;
+    $("mate-hp").style.width = `${(a.hp / ALLY.hp) * 100}%`;
+    // Over its head: always when down (through walls), otherwise only when it is a few metres off.
+    const d = dist2d(a.pos, p.pos);
+    const sp = view.project({ x: a.pos.x, y: a.pos.y + (down ? 1.3 : 2.15), z: a.pos.z }, w, h);
+    // Down, it is pinned to the screen edge when out of view, like the objective marker.
+    let x = sp.x;
+    let y = sp.y;
+    if (down && sp.behind) {
+      x = w - x;
+      y = h - 160;
+    }
+    if (down) {
+      x = Math.max(50, Math.min(w - 50, x));
+      y = Math.max(110, Math.min(h - 160, y));
+    }
+    const show = (down || (!sp.behind && d > 7)) && p.ads < 0.5;
+    tag.style.display = show ? "flex" : "none";
+    if (show) {
+      tag.style.left = `${x}px`;
+      tag.style.top = `${y}px`;
+      tag.className = down ? "down" : "";
+      $("mate-tag-sub").textContent = down ? (a.helped > 0 ? `${Math.floor((a.helped / ALLY.helpTime) * 100)}%` : `ダウン ${Math.round(d)}m`) : `${Math.round(d)}m`;
+    }
+  }
+
   private prompt(s: State): string {
     const p = s.player;
     if (p.downed > 0 || (s.phase !== "play" && s.phase !== "extract")) return "";
     const r = PLAYER.interactRange;
+    const a = s.ally;
+    if (a.active && a.down > 0 && dist2d(a.pos, p.pos) < r + 1 && Math.abs(a.pos.y - p.pos.y) < 1.5) {
+      return a.helped > 0 ? `${ALLY.name}を起こしている…（撃つ・離れると中断）` : `${key("E")}${ALLY.name}を起こす`;
+    }
     const bin = s.bins.find((b) => !b.open && dist2d(b, p.pos) < r && Math.abs(b.y - p.pos.y) < 1.5);
     if (bin) return `${key("E")}補給箱を開ける`;
     if (s.care && s.care.landed && !s.care.open && dist2d(s.care, p.pos) < r + 0.6) return `${key("E")}補給ポッドを開ける`;
@@ -557,6 +638,8 @@ export class Hud {
       ["弱点命中", `${crit}%`],
       ["ダウン", st.downs],
       ["やり直し", st.wipes],
+      [`${ALLY.name}の撃破`, st.allyKills],
+      [`${ALLY.name}に救助`, st.allyRescues],
     ]
       .map(([k, v]) => `<span>${k}<b>${v}</b></span>`)
       .join("");

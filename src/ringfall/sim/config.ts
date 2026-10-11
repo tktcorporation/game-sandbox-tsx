@@ -317,5 +317,53 @@ export const COVER = {
   hide: [1.4, 2.4] as const,
 };
 
+/**
+ * The teammate. It walks the player's footsteps a few metres behind, shoots only
+ * robots that are already fighting (so it never gives a sneaking player away), and
+ * draws some of the fire. It picks the player up once the self-revive is spent;
+ * the player picks it up by standing over it and pressing the use key.
+ */
+export const ALLY = {
+  name: "リオ",
+  hp: 100,
+  shield: 75,
+  radius: 0.4,
+  walk: 4.6,
+  run: 7.0,
+  /** It keeps about this far behind the player, measured along the footsteps. */
+  follow: 5,
+  /** Further than this, or stuck for `stuckTime` s, it moves up to a point just behind the player. */
+  catchUp: 38,
+  stuckTime: 2.5,
+  range: 48,
+  dmg: 11,
+  interval: 0.11,
+  burst: 6,
+  pause: [0.6, 1.1] as const,
+  /** Chance a shot lands: `hitNear` up close, falling to `hitFar` at `range`. */
+  hitNear: 0.8,
+  hitFar: 0.3,
+  crit: 0.15,
+  critMult: 1.5,
+  /** Radians per second it turns toward a target. */
+  turn: 6,
+  /** Share of the ult charge its damage gives the player. */
+  ultShare: 0.5,
+  regenDelay: 4,
+  shieldRegen: 15,
+  hpRegen: 8,
+  /** Seconds for it to pick the player up, and for the player to pick it up. */
+  reviveTime: 4,
+  helpTime: 3,
+  reviveHp: 60,
+  /** A downed teammate stands up on its own after this long, or when the objective is cleared. */
+  selfUp: 30,
+  /** How long a player out of self-revives waits for the teammate before the wipe. */
+  bleedout: 30,
+  /** Metres a robot adds to the teammate's distance when choosing whom to shoot: the player is the main target. */
+  aggroBias: 1,
+  noise: 16,
+};
+
 /** Seconds the arc shows every robot within range through walls. */
 export const REVEAL = { time: 5, range: 40 };

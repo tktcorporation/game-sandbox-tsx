@@ -3,7 +3,7 @@ import { ENEMIES, PLAYER, TITAN, WEAPONS, WORLD, type EnemyKind } from "../sim/c
 import { BOXES, EXTRACT, POIS } from "../sim/map";
 import { rimRadius, steepAt, terrainHeight } from "../sim/terrain";
 import type { GameEvent, State, Vec3 } from "../sim/state";
-import { PAL, RARITY_COLOR, SCOPE_IN, buildBin, buildBox, mergeStatic, buildCare, buildDropship, buildEnemy, buildGun, buildLootItem, flat, glow, haloSprite, type EnemyModel } from "./models";
+import { PAL, RARITY_COLOR, SCOPE_IN, buildAlly, buildBin, buildBox, mergeStatic, buildCare, buildDropship, buildEnemy, buildGun, buildLootItem, flat, glow, haloSprite, type EnemyModel } from "./models";
 
 /*
  * Renders a State in first person. It reads the state and the tick's events and
@@ -63,6 +63,8 @@ export class World {
   private gunCam = new THREE.PerspectiveCamera(55, 16 / 9, 0.01, 10);
   private sun = new THREE.DirectionalLight(0xfff1d6, 2.2);
   private enemies = new Map<number, EnemyView>();
+  private ally = buildAlly();
+  private allyWalk = 0;
   private loot = new Map<number, THREE.Group>();
   private bins = new Map<number, ReturnType<typeof buildBin>>();
   private orbPool: THREE.Group[] = [];
@@ -120,6 +122,7 @@ export class World {
     this.sun.shadow.bias = -0.0006;
     this.scene.add(this.sun, this.sun.target);
     this.scene.add(this.terrain());
+    this.scene.add(this.ally.root);
     const statics = new THREE.Group();
     BOXES.forEach((b, i) => statics.add(buildBox(b, i)));
     this.scene.add(mergeStatic(statics));
@@ -372,6 +375,10 @@ export class World {
         case "tracer":
           this.tracer(this.muzzleWorld(), e.to, ult ? RARITY_COLOR[3] : e.hit ? 0xfff3c4 : 0xffffff, ult ? 0.05 : 0.025);
           break;
+        case "allyShot":
+          this.tracer(e.from, e.to, e.hit ? 0xfff3c4 : 0xffffff, 0.018);
+          this.burst(e.from, 0xffd27a, 2, 1.5, 0.04, 0, 0.08);
+          break;
         case "impact":
           this.burst(e.pos, PAL.sandDark, 4, 3, 0.06, 12, 0.35);
           break;
@@ -496,6 +503,26 @@ export class World {
     this.ringMat.uniforms.time.value = this.time;
 
     for (const c of this.clouds) c.visible = drop || p.pos.y > 30;
+
+    // --- teammate
+    const a = s.ally;
+    const am = this.ally;
+    am.root.visible = a.active;
+    if (a.active) {
+      am.root.position.set(a.pos.x, a.pos.y, a.pos.z);
+      am.body.rotation.set(0, -a.yaw, 0);
+      const sp = Math.hypot(a.vel.x, a.vel.z);
+      this.allyWalk += dt * sp * 2.2;
+      const swing = Math.sin(this.allyWalk) * Math.min(1, sp / 3) * 0.6;
+      am.legs.forEach((l, i) => (l.rotation.x = i ? swing : -swing));
+      am.arms.rotation.x = a.target ? a.pitch : -0.25;
+      if (a.down > 0) {
+        // Down: kneeling over, rifle lowered.
+        am.body.rotation.set(-1.1, -a.yaw, 0, "YXZ");
+        am.root.position.y = a.pos.y + 0.25;
+        am.arms.rotation.x = -0.9;
+      }
+    }
 
     // --- enemies
     for (const e of s.enemies) {

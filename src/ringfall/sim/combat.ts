@@ -1,4 +1,4 @@
-import { ASSIST, DEG, ENEMIES, FLANK, NOISE, PLAYER, RARITY, TICK, ULT, WEAPONS, type Flank, type WeaponSpec } from "./config";
+import { ALLY, ASSIST, DEG, ENEMIES, FLANK, NOISE, PLAYER, RARITY, TICK, ULT, WEAPONS, type Flank, type WeaponSpec } from "./config";
 import { engageSquad, makeNoise } from "./awareness";
 import { POIS } from "./map";
 import { los, lookAngles, norm, rayWorld, raySphere, wrapAngle } from "./geom";
@@ -158,9 +158,10 @@ export function flankOf(s: State, e: Enemy): Flank {
 
 /**
  * `flank` is where a weapon shot met the robot (see flankOf); the arc and other
- * non-weapon damage pass "none" and deal their damage as it is.
+ * non-weapon damage pass "none" and deal their damage as it is. `by` is who fired:
+ * the teammate's damage is counted apart and gives the player part of its ult charge.
  */
-export function damageEnemy(s: State, e: Enemy, raw: number, crit: boolean, at: Vec3, flank: Flank = "none") {
+export function damageEnemy(s: State, e: Enemy, raw: number, crit: boolean, at: Vec3, flank: Flank = "none", by: "player" | "ally" = "player") {
   // Callers may hold a list taken before a kill removed this robot (the titan takes its summons with it).
   if (!s.enemies.includes(e)) return;
   const k = ENEMIES[e.kind];
@@ -169,33 +170,40 @@ export function damageEnemy(s: State, e: Enemy, raw: number, crit: boolean, at: 
   // learns where the shot came from and turns there, at its usual turning speed.
   engageSquad(s, e.squad, e);
   const sq = s.squads[e.squad];
-  if (sq) sq.last = { x: s.player.pos.x, z: s.player.pos.z };
+  const shooter = by === "ally" ? s.ally.pos : s.player.pos;
+  if (sq) sq.last = { x: shooter.x, z: shooter.z };
   const before = e.hp + e.shield;
   const hadShield = e.shield > 0;
   const toShield = Math.min(e.shield, raw);
   e.shield -= toShield;
   e.hp -= raw - toShield;
   const dealt = before - Math.max(0, e.hp) - e.shield;
-  e.lastHit = 0;
-  s.stats.damage += dealt;
-  s.events.push({ t: "hit", id: e.id, pos: at, dmg: Math.round(raw), crit, shield: toShield > 0, tier: k.shieldTier, flank });
+  if (by === "ally") {
+    e.allyHit = 0;
+    s.stats.allyDamage += dealt;
+  } else {
+    e.lastHit = 0;
+    s.stats.damage += dealt;
+  }
+  s.events.push({ t: "hit", id: e.id, pos: at, dmg: Math.round(raw), crit, shield: toShield > 0, tier: k.shieldTier, flank, ally: by === "ally" });
   if (hadShield && e.shield <= 0) s.events.push({ t: "shieldBreak", id: e.id, pos: at, tier: k.shieldTier });
   const p = s.player;
   if (p.ultTime <= 0 && p.ult < 1) {
-    p.ult = Math.min(1, p.ult + (dealt / ULT.dmgPerCharge) * k.ult);
+    p.ult = Math.min(1, p.ult + (dealt / ULT.dmgPerCharge) * k.ult * (by === "ally" ? ALLY.ultShare : 1));
     if (p.ult >= 1) s.events.push({ t: "ultReady" });
   }
-  if (e.hp <= 0) kill(s, e, crit);
+  if (e.hp <= 0) kill(s, e, crit, by);
 }
 
 const SHARDS = { drone: 1, grunt: 1, charger: 1, heavy: 3, titan: 0 } as const;
 
-export function kill(s: State, e: Enemy, crit: boolean) {
+export function kill(s: State, e: Enemy, crit: boolean, by: "player" | "ally" = "player") {
   s.enemies = s.enemies.filter((o) => o !== e);
   s.stats.kills++;
+  if (by === "ally") s.stats.allyKills++;
   const p = s.player;
   const w = p.weapons[p.slot];
-  if (w && w.rarity === 3) w.mag = magSize(w);
+  if (w && w.rarity === 3 && by === "player") w.mag = magSize(w);
   const c = bodyCenter(e);
   for (let i = 0; i < SHARDS[e.kind]; i++) {
     const a = rand(s) * Math.PI * 2;
@@ -205,7 +213,7 @@ export function kill(s: State, e: Enemy, crit: boolean) {
     s.loot.push({ id: s.nextId++, kind: "heal", heal: rand(s) < 0.5 ? "cell" : "syringe", rarity: 1, pos: { ...c }, vel: { x: 0, y: 5, z: 0 }, age: 0 });
   }
   const last = e.poi === s.poi && s.poi < POIS.length && !s.enemies.some((o) => o.poi === s.poi);
-  s.events.push({ t: "kill", id: e.id, kind: e.kind, pos: c, crit, last });
+  s.events.push({ t: "kill", id: e.id, kind: e.kind, pos: c, crit, last, ally: by === "ally" });
   if (e.kind === "titan") {
     // The titan's fall takes its summons and everything in the air with it.
     s.orbs = [];

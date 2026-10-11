@@ -1,4 +1,4 @@
-import { DROP, ENEMIES, PLAYER, ULT, type EnemyKind, type Flank, type HealKind, type Rarity, type WeaponKind } from "./config";
+import { ALLY, DROP, ENEMIES, PLAYER, ULT, type EnemyKind, type Flank, type HealKind, type Rarity, type WeaponKind } from "./config";
 import { EXTRA_BINS, POIS, SPAWN } from "./map";
 import { populate } from "./enemies";
 
@@ -46,8 +46,41 @@ export interface Player {
   healing: { kind: HealKind; t: number } | null;
   sinceHurt: number;
   downed: number; // seconds left while downed
+  /** Out of self-revives and down: waiting for the teammate, wiped when `downed` runs out. */
+  awaitAlly: boolean;
   selfRevive: number;
   iframes: number;
+}
+
+/** The teammate (see ALLY). */
+export interface Ally {
+  /** False during the drop: it lands with the player. */
+  active: boolean;
+  pos: Vec3;
+  vel: Vec3;
+  yaw: number;
+  pitch: number;
+  hp: number;
+  shield: number;
+  /** Seconds until it stands up on its own; 0 = up. */
+  down: number;
+  /** Seconds of the player's revive done on it. */
+  helped: number;
+  /** Seconds into picking the player up. */
+  rescue: number;
+  /** The robot it shoots (id), 0 for none. */
+  target: number;
+  pickT: number;
+  cooldown: number;
+  shots: number;
+  sinceHurt: number;
+  /** Index into State.trail of the next footstep to walk to. */
+  crumb: number;
+  /** Climbing a ledge the player climbed: seconds left with gravity off. */
+  climb: number;
+  stuckT: number;
+  last: Point;
+  shortcutT: number;
 }
 
 export type EnemyMode = "spawning" | "move" | "telegraph" | "fire" | "lunge" | "recover" | "stomp" | "stunned";
@@ -92,6 +125,11 @@ export interface Enemy {
   cover: Point | null; // engaged grunt: where it hides
   peek: Point | null; // and where it steps out to shoot
   coverT: number; // seconds until it re-checks its cover
+  /** Whom it fights: the player, or the teammate when that one is nearer or shooting it. */
+  target: "player" | "ally";
+  targetT: number;
+  /** Seconds since the teammate last hit it. */
+  allyHit: number;
 }
 
 export interface SquadState {
@@ -120,6 +158,7 @@ export interface Shockwave {
   y: number;
   r: number;
   hit: boolean;
+  allyHit?: boolean;
 }
 
 export type LootKind = "weapon" | "armor" | "heal" | "shard";
@@ -173,9 +212,15 @@ export type GameEvent =
   | { t: "shot"; weapon: WeaponKind; rarity: Rarity }
   | { t: "tracer"; from: Vec3; to: Vec3; hit: boolean }
   | { t: "impact"; pos: Vec3 }
-  | { t: "hit"; id: number; pos: Vec3; dmg: number; crit: boolean; shield: boolean; tier: Rarity; flank: Flank }
+  | { t: "hit"; id: number; pos: Vec3; dmg: number; crit: boolean; shield: boolean; tier: Rarity; flank: Flank; ally: boolean }
   | { t: "shieldBreak"; id: number; pos: Vec3; tier: Rarity }
-  | { t: "kill"; id: number; kind: EnemyKind; pos: Vec3; crit: boolean; last: boolean }
+  | { t: "kill"; id: number; kind: EnemyKind; pos: Vec3; crit: boolean; last: boolean; ally: boolean }
+  | { t: "allyShot"; from: Vec3; to: Vec3; hit: boolean }
+  | { t: "allyHurt"; dmg: number }
+  | { t: "allyDown" }
+  | { t: "allyUp"; by: "player" | "self" }
+  | { t: "allyRescue" }
+  | { t: "awaitAlly" }
   | { t: "hurt"; dmg: number; fromX: number; fromZ: number; shieldBroke: boolean; shield: boolean }
   | { t: "down" }
   | { t: "revive" }
@@ -227,6 +272,12 @@ export interface Stats {
   downs: number;
   wipes: number;
   poiTimes: number[];
+  allyDamage: number;
+  allyKills: number;
+  allyDowns: number;
+  /** Times the teammate picked the player up, and the player picked the teammate up. */
+  allyRescues: number;
+  allyHelped: number;
 }
 
 export interface State {
@@ -235,6 +286,9 @@ export interface State {
   rng: number;
   nextId: number;
   player: Player;
+  ally: Ally;
+  /** The player's footsteps on the ground, about a metre apart; the teammate walks them. */
+  trail: Vec3[];
   enemies: Enemy[];
   squads: SquadState[];
   orbs: Orb[];
@@ -344,9 +398,12 @@ export function newRun(seed = 1): State {
       healing: null,
       sinceHurt: 99,
       downed: 0,
+      awaitAlly: false,
       selfRevive: 1,
       iframes: 0,
     },
+    ally: newAlly(),
+    trail: [],
     enemies: [],
     squads: [],
     orbs: [],
@@ -360,10 +417,35 @@ export function newRun(seed = 1): State {
     poiStart: 0,
     extractTime: 0,
     events: [],
-    stats: { kills: 0, damage: 0, shots: 0, hits: 0, crits: 0, flankHits: 0, downs: 0, wipes: 0, poiTimes: [] },
+    stats: { kills: 0, damage: 0, shots: 0, hits: 0, crits: 0, flankHits: 0, downs: 0, wipes: 0, poiTimes: [], allyDamage: 0, allyKills: 0, allyDowns: 0, allyRescues: 0, allyHelped: 0 },
   };
   populate(s);
   return s;
+}
+
+export function newAlly(): Ally {
+  return {
+    active: false,
+    pos: { x: SPAWN.x, y: DROP.startY, z: SPAWN.z },
+    vel: { x: 0, y: 0, z: 0 },
+    yaw: SPAWN.yaw,
+    pitch: 0,
+    hp: ALLY.hp,
+    shield: ALLY.shield,
+    down: 0,
+    helped: 0,
+    rescue: 0,
+    target: 0,
+    pickT: 0,
+    cooldown: 0,
+    shots: 0,
+    sinceHurt: 99,
+    crumb: 0,
+    climb: 0,
+    stuckT: 0,
+    last: { x: SPAWN.x, z: SPAWN.z },
+    shortcutT: 0,
+  };
 }
 
 /** Deterministic xorshift; the state is the seed so runs replay exactly. */

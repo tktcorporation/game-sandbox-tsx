@@ -1,4 +1,4 @@
-import { AWARE, CHARGER, COVER, DEG, ENEMIES, PLAYER, TICK, TITAN, TURN, WORLD, type EnemyKind } from "./config";
+import { ALLY, AWARE, CHARGER, COVER, DEG, ENEMIES, PLAYER, TICK, TITAN, TURN, WORLD, type EnemyKind } from "./config";
 import { collide, dist2d, groundAt, los, lookAngles, onTerrain, solidAt, wrapAngle } from "./geom";
 import { terrainHeight } from "./terrain";
 import { engageSquad, knownSpot, sense, stepSquads } from "./awareness";
@@ -12,6 +12,7 @@ const bodyHeight = (k: { bodyY: number; radius: number }) => k.bodyY + k.radius;
 import { POIS, ROAMERS, type Squad } from "./map";
 import { bodyCenter, weakPoint } from "./combat";
 import { hurtPlayer } from "./player";
+import { allyChest, allyUp, hurtAlly } from "./ally";
 import { rand, type Enemy, type Point, type State, type Vec3 } from "./state";
 
 /*
@@ -65,6 +66,9 @@ export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi:
     cover: null,
     peek: null,
     coverT: 0,
+    target: "player",
+    targetT: 0,
+    allyHit: 99,
   };
   s.enemies.push(e);
   if (o.appear) s.events.push({ t: "spawn", id: e.id, pos: { ...pos } });
@@ -105,8 +109,8 @@ function fireOrb(s: State, e: Enemy, yawOff = 0, homing = false) {
   s.events.push({ t: "enemyFire", id: e.id, pos: from });
 }
 
-function lockAim(s: State, e: Enemy) {
-  const a = lookAngles(muzzle(e), chest(s));
+function lockAim(e: Enemy, at: Vec3) {
+  const a = lookAngles(muzzle(e), at);
   e.aimYaw = a.yaw;
   e.aimPitch = a.pitch;
 }
@@ -164,6 +168,7 @@ export function stepEnemies(s: State) {
   for (const e of [...s.enemies]) {
     const k = ENEMIES[e.kind];
     e.lastHit += TICK;
+    e.allyHit += TICK;
     if (e.mode === "spawning") {
       e.timer -= TICK;
       if (e.timer <= 0) {
@@ -196,16 +201,23 @@ export function stepEnemies(s: State) {
       titan(s, e, d);
       continue;
     }
-    // It acts on what its squad knows: the player while seen, else the last sighting.
-    const known = knownSpot(s, e);
+    // Whom it fights. At the teammate it knows where it is (the teammate shoots and
+    // calls out); at the player it acts on what its squad knows: the player while
+    // seen, else the last sighting.
+    chooseTarget(s, e);
+    const atAlly = e.target === "ally";
+    const tPos = atAlly ? s.ally.pos : p.pos;
+    const tChest = atAlly ? allyChest(s.ally) : chest(s);
+    const tUp = atAlly ? allyUp(s) : p.downed <= 0;
+    const known = atAlly ? { x: tPos.x, z: tPos.z, live: true } : knownSpot(s, e);
     const dx = known.x - e.pos.x;
     const dz = known.z - e.pos.z;
     const d = Math.hypot(dx, dz) || 1e-3;
     if (e.mode !== "lunge" && d > 0.5) turnAt(e, Math.atan2(dx, -dz), TURN[e.kind]);
-    if (e.kind === "grunt" && onTerrain(e.pos) && fromCover(s, e, known)) continue;
+    if (e.kind === "grunt" && onTerrain(e.pos) && fromCover(s, e, known, tChest, tUp)) continue;
     switch (e.mode) {
       case "move": {
-        const sees = known.live && facing(e, p.pos) && los(muzzle(e), chest(s));
+        const sees = known.live && facing(e, tPos) && los(muzzle(e), tChest);
         const ux = dx / d;
         const uz = dz / d;
         let along = 0;
@@ -219,11 +231,11 @@ export function stepEnemies(s: State) {
         if (moveBody(e, vx, vz)) e.strafe = -e.strafe;
         else if (rand(s) < TICK * 0.35) e.strafe = -e.strafe;
         e.cooldown -= TICK;
-        const ready = e.cooldown <= 0 && sees && p.downed <= 0;
+        const ready = e.cooldown <= 0 && sees && tUp;
         if (ready && (e.kind === "charger" ? d < CHARGER.lungeRange : d < 48)) {
           e.mode = "telegraph";
           e.timer = k.telegraph;
-          lockAim(s, e);
+          lockAim(e, tChest);
           s.events.push({ t: "telegraph", id: e.id });
         }
         break;
@@ -233,7 +245,7 @@ export function stepEnemies(s: State) {
         e.timer -= TICK;
         // Aim follows the player until the last 35% of the wind-up, then locks: moving dodges.
         // It can only aim where it faces: a player who slips out of its cone is shot at where they were.
-        if (e.timer > k.telegraph * 0.35 && facing(e, p.pos)) lockAim(s, e);
+        if (e.timer > k.telegraph * 0.35 && facing(e, tPos)) lockAim(e, tChest);
         if (e.timer <= 0) {
           if (e.kind === "charger") {
             e.mode = "lunge";
@@ -278,6 +290,11 @@ export function stepEnemies(s: State) {
           e.shotsLeft = 0;
           hurtPlayer(s, k.orbDmg, e.pos.x, e.pos.z);
         }
+        const a = s.ally;
+        if (e.shotsLeft > 0 && allyUp(s) && Math.hypot(a.pos.x - e.pos.x, a.pos.z - e.pos.z) < CHARGER.hitRadius + ALLY.radius && Math.abs(a.pos.y - e.pos.y) < 1.4) {
+          e.shotsLeft = 0;
+          hurtAlly(s, k.orbDmg);
+        }
         e.timer -= TICK;
         if (e.timer <= 0 || hitWall) {
           e.mode = "recover";
@@ -299,6 +316,31 @@ export function stepEnemies(s: State) {
     }
   }
   separate(s);
+}
+
+/**
+ * Whom an engaged robot fights, re-thought every 1.5 s: the nearer of the player and
+ * the teammate, a target out of sight counting as far away. The teammate counts as
+ * `aggroBias` metres further unless it has just shot this robot, so the player stays
+ * the main target and the teammate draws the robots it hurts. The titan only fights the player.
+ */
+function chooseTarget(s: State, e: Enemy) {
+  if (!allyUp(s)) {
+    e.target = "player";
+    return;
+  }
+  if (s.player.downed > 0) {
+    e.target = "ally";
+    return;
+  }
+  e.targetT -= TICK;
+  if (e.targetT > 0) return;
+  e.targetT = 1.5;
+  const from = muzzle(e);
+  const a = s.ally;
+  const toPlayer = dist2d(e.pos, s.player.pos) + (los(from, chest(s)) ? 0 : 30) - (e.target === "player" ? 3 : 0);
+  const toAlly = dist2d(e.pos, a.pos) + (los(from, allyChest(a)) ? 0 : 30) - (e.target === "ally" ? 3 : 0) + (e.allyHit < 2 ? -4 : ALLY.aggroBias);
+  e.target = toAlly < toPlayer ? "ally" : "player";
 }
 
 /** Turn toward a yaw at no more than `rate` radians per second. */
@@ -377,8 +419,8 @@ function calm(s: State, e: Enemy) {
 }
 
 /** Find a spot near this grunt that hides it from the player, with a spot beside it to shoot from. */
-function findCover(s: State, e: Enemy, threat: Point): { cover: Point; peek: Point } | null {
-  const p = { pos: { x: threat.x, y: s.player.pos.y, z: threat.z } };
+function findCover(s: State, e: Enemy, threat: Point, threatY: number): { cover: Point; peek: Point } | null {
+  const p = { pos: { x: threat.x, y: threatY, z: threat.z } };
   const head = { x: p.pos.x, y: p.pos.y + 1.5, z: p.pos.z };
   const chestP = { x: p.pos.x, y: p.pos.y + 1.1, z: p.pos.z };
   const taken = s.enemies.filter((o) => o !== e && o.cover).map((o) => o.cover!);
@@ -401,13 +443,13 @@ function findCover(s: State, e: Enemy, threat: Point): { cover: Point; peek: Poi
  * An engaged grunt on the ground: hide behind cover, step out to shoot, step
  * back. Returns false when it has no cover and should fight in the open.
  */
-function fromCover(s: State, e: Enemy, known: { x: number; z: number; live: boolean }): boolean {
+function fromCover(s: State, e: Enemy, known: { x: number; z: number; live: boolean }, tChest: Vec3, tUp: boolean): boolean {
   const k = ENEMIES.grunt;
   if (e.mode !== "move") return false; // telegraph and fire run as usual
   e.coverT -= TICK;
   // Re-think the spot every few seconds, and at once when hit (flanked).
   if (e.coverT <= 0 || e.lastHit < TICK * 1.5) {
-    const found = findCover(s, e, known);
+    const found = findCover(s, e, known, tChest.y - 1.1);
     e.cover = found?.cover ?? null;
     e.peek = found?.peek ?? null;
     e.coverT = 2.5;
@@ -417,7 +459,7 @@ function fromCover(s: State, e: Enemy, known: { x: number; z: number; live: bool
   const out = e.cooldown <= 0;
   const there = walkTo(e, out ? e.peek : e.cover, k.speed, false);
   if (out && there) {
-    if (known.live && facing(e, s.player.pos) && los({ ...e.pos, y: e.pos.y + k.weakY }, { x: s.player.pos.x, y: s.player.pos.y + 1.1, z: s.player.pos.z }) && s.player.downed <= 0) {
+    if (known.live && facing(e, tChest) && los({ ...e.pos, y: e.pos.y + k.weakY }, tChest) && tUp) {
       e.mode = "telegraph";
       e.timer = k.telegraph;
       e.aimYaw = e.yaw;
@@ -503,7 +545,7 @@ function titan(s: State, e: Enemy, d: number) {
         } else {
           e.mode = "telegraph";
           e.timer = k.telegraph * pace;
-          lockAim(s, e);
+          lockAim(e, chest(s));
           s.events.push({ t: "telegraph", id: e.id });
         }
       }
@@ -524,7 +566,7 @@ function titan(s: State, e: Enemy, d: number) {
     case "telegraph": {
       moveBody(e, 0, 0);
       e.timer -= TICK;
-      lockAim(s, e);
+      lockAim(e, chest(s));
       if (e.timer <= 0) {
         e.mode = "fire";
         e.timer = 0;
@@ -536,7 +578,7 @@ function titan(s: State, e: Enemy, d: number) {
       moveBody(e, 0, 0);
       e.timer -= TICK;
       if (e.timer <= 0 && e.shotsLeft > 0) {
-        lockAim(s, e);
+        lockAim(e, chest(s));
         const n = e.shotsLeft;
         fireOrb(s, e, (n % 2 ? 1 : -1) * (0.25 + (n % 3) * 0.12), true);
         e.shotsLeft--;
@@ -584,6 +626,14 @@ export function stepOrbs(s: State) {
       hurtPlayer(s, o.dmg, o.pos.x - o.vel.x, o.pos.z - o.vel.z);
       return false;
     }
+    const a = s.ally;
+    if (allyUp(s)) {
+      const ay = Math.max(a.pos.y + 0.4, Math.min(a.pos.y + 1.7, o.pos.y));
+      if (Math.hypot(o.pos.x - a.pos.x, o.pos.y - ay, o.pos.z - a.pos.z) < o.r + ALLY.radius) {
+        hurtAlly(s, o.dmg);
+        return false;
+      }
+    }
     return true;
   });
   if (s.stats.wipes === wipes) s.orbs = kept;
@@ -598,6 +648,13 @@ export function stepWaves(s: State) {
     if (!w.hit && Math.abs(d - w.r) < 0.9 && p.pos.y < w.y + TITAN.stompHeight) {
       w.hit = true;
       hurtPlayer(s, TITAN.stompDmg, w.x, w.z);
+    }
+    const a = s.ally;
+    const da = Math.hypot(a.pos.x - w.x, a.pos.z - w.z);
+    // The wave passes the teammate once; it jumps it no better than a beginner would.
+    if (allyUp(s) && Math.abs(da - w.r) < 0.9 && !w.allyHit) {
+      w.allyHit = true;
+      hurtAlly(s, TITAN.stompDmg);
     }
     return w.r < TITAN.stompRange;
   });

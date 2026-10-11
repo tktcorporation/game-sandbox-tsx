@@ -229,6 +229,20 @@ export const sfx = {
     tone(880, 0.09, { type: "square", vol: 0.07 });
     tone(1320, 0.14, { type: "square", vol: 0.07, at: 0.09 });
   },
+  /** The teammate's rifle: the same gun, further off and quieter. */
+  allyShot(dist: number) {
+    const v = Math.max(0.03, 0.16 - dist * 0.004);
+    hiss(0.07, { freq: 1800, to: 450, vol: v, q: 0.6 });
+    tone(130, 0.06, { type: "sine", to: 60, vol: v * 0.8 });
+  },
+  allyDown() {
+    tone(587, 0.25, { type: "triangle", vol: 0.12, to: 294 });
+    tone(440, 0.35, { type: "triangle", vol: 0.1, to: 220, at: 0.18 });
+  },
+  allyUp() {
+    tone(523, 0.16, { type: "triangle", vol: 0.1 });
+    tone(784, 0.22, { type: "triangle", vol: 0.1, at: 0.08 });
+  },
   down() {
     tone(330, 0.6, { type: "sawtooth", to: 80, vol: 0.18 });
   },

@@ -5,13 +5,14 @@
  *
  *   npm run sim:ringfall -- [runsPerSkill]
  */
-import { TACTICAL, TICK, WORLD } from "../src/ringfall/sim/config";
+import { ALLY, TACTICAL, TICK, WORLD } from "../src/ringfall/sim/config";
 import { BOXES, EXTRA_BINS, EXTRACT, POIS, ROAMERS, type Squad } from "../src/ringfall/sim/map";
 import { groundAt, solidAt } from "../src/ringfall/sim/geom";
 import { Bot, SKILLS } from "../src/ringfall/sim/bot";
 import { idleInput, newRun, type GameEvent, type State } from "../src/ringfall/sim/state";
 import { step } from "../src/ringfall/sim/step";
 import { hurtPlayer } from "../src/ringfall/sim/player";
+import { hurtAlly, placeAlly } from "../src/ringfall/sim/ally";
 import { rank } from "../src/ringfall/sim/results";
 import { magSize } from "../src/ringfall/sim/combat";
 
@@ -179,7 +180,81 @@ function checkWipeMidClimb(): string | null {
   if (s.stats.wipes !== 1 || off > 1) return `wipe mid-climb scenario: ${off.toFixed(1)} m from the entry after the wipe`;
   return null;
 }
-for (const err of [checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkWipeMidClimb()]) {
+/** A run on the open landing pad with no robots, the player and the teammate standing there. */
+function padRun(): State {
+  const s = newRun(5);
+  s.enemies = [];
+  // Past the last objective, so an empty island does not count as cleared POIs (which stand the teammate up).
+  s.phase = "extract";
+  s.poi = POIS.length;
+  const p = s.player;
+  p.pos = { x: POIS[3].x, y: 0, z: POIS[3].z };
+  p.pos.y = groundAt(p.pos.x, p.pos.z, 0.4, 2);
+  p.onGround = true;
+  placeAlly(s);
+  return s;
+}
+const ticks = (s: State, seconds: number, inp = idleInput()) => {
+  for (let i = 0; i < seconds / TICK; i++) step(s, inp, false);
+};
+/** Out of self-revives, the player waits downed and the teammate walks over and picks them up. */
+function checkAllyRescue(): string | null {
+  const s = padRun();
+  const p = s.player;
+  s.ally.pos.x += 10;
+  p.selfRevive = 0;
+  p.hp = 1;
+  p.shield = 0;
+  hurtPlayer(s, 10, p.pos.x, p.pos.z);
+  if (!p.awaitAlly || p.downed <= 0) return "ally rescue scenario: the player did not wait for the teammate";
+  ticks(s, 10);
+  if (s.stats.wipes || p.downed > 0 || s.stats.allyRescues !== 1) return `ally rescue scenario: wipes ${s.stats.wipes}, downed ${p.downed.toFixed(1)}, rescues ${s.stats.allyRescues}`;
+  return null;
+}
+/** The teammate going down while the player waits for it ends in a wipe. */
+function checkAllyDownWipes(): string | null {
+  const s = padRun();
+  const p = s.player;
+  p.selfRevive = 0;
+  p.hp = 1;
+  p.shield = 0;
+  hurtPlayer(s, 10, p.pos.x, p.pos.z);
+  hurtAlly(s, 999);
+  if (s.stats.wipes !== 1 || s.ally.down > 0) return `ally down scenario: wipes ${s.stats.wipes}, teammate down ${s.ally.down.toFixed(1)}`;
+  return null;
+}
+/** One press of the use key beside a downed teammate, then standing still, picks it up. */
+function checkHelpAlly(): string | null {
+  const s = padRun();
+  hurtAlly(s, 999);
+  const press = idleInput();
+  press.interact = true;
+  step(s, press, false);
+  ticks(s, ALLY.helpTime + 0.2);
+  if (s.ally.down > 0 || s.stats.allyHelped !== 1) return `help scenario: teammate still down (${s.ally.down.toFixed(1)} s left)`;
+  return null;
+}
+/** The teammate never opens fire on robots that have not noticed anyone. */
+function checkAllyHoldsFire(): string | null {
+  const s = newRun(5);
+  s.phase = "play";
+  const grunt = s.enemies.find((e) => e.kind === "grunt" && e.pos.y < 0.5)!;
+  s.enemies = [grunt];
+  const p = s.player;
+  // Behind the grunt, out of its sight cone, with the teammate beside.
+  p.pos = { x: grunt.pos.x - Math.sin(grunt.face) * 25, y: 0, z: grunt.pos.z + Math.cos(grunt.face) * 25 };
+  p.pos.y = groundAt(p.pos.x, p.pos.z, 0.4, 20);
+  p.onGround = true;
+  placeAlly(s);
+  let shots = 0;
+  for (let i = 0; i < 180; i++) {
+    step(s, idleInput(), false);
+    shots += s.events.filter((e) => e.t === "allyShot").length;
+  }
+  if (shots) return `hold fire scenario: the teammate fired ${shots} shots at an idle robot`;
+  return null;
+}
+for (const err of [checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkWipeMidClimb(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire()]) {
   if (err) {
     console.error(err);
     process.exit(1);
@@ -192,9 +267,10 @@ const median = (xs: number[]) => {
 };
 
 let failed = false;
-const head = ["skill    ", ...POIS.map((p, i) => `P${i + 1} ${p.name}`.padEnd(14)), "extract", "finish", "total(med)", "downs", "wipes", "acc", "crit", "ult", "crowd", "flank", "rank"];
+const head = ["skill    ", ...POIS.map((p, i) => `P${i + 1} ${p.name}`.padEnd(14)), "extract", "finish", "total(med)", "downs", "wipes", "acc", "crit", "ult", "crowd", "flank", "ally".padEnd(18), "rank"];
 console.log(`${runs} runs per skill. per POI: median seconds from the previous objective, downs+wipes per run`);
 console.log("flank: share of hits from behind a robot or before it noticed the player");
+console.log("ally: teammate's share of the damage, its downs, times it picked the player up (r) and was picked up (h), per run");
 console.log("crowd: median over runs of the most squads / robots fighting the player at once outside the titan fight");
 console.log(head.join(" "));
 for (const skill of SKILLS) {
@@ -210,6 +286,10 @@ for (const skill of SKILLS) {
   let crits = 0;
   let flanks = 0;
   let ults = 0;
+  let allyDmg = 0;
+  let allyDowns = 0;
+  let rescues = 0;
+  let helped = 0;
   const crowdSq: number[] = [];
   const crowdBots: number[] = [];
   const ranks: Record<string, number> = { S: 0, A: 0, B: 0, C: 0 };
@@ -260,6 +340,10 @@ for (const skill of SKILLS) {
     hits += s.stats.hits;
     crits += s.stats.crits;
     flanks += s.stats.flankHits;
+    allyDmg += s.stats.allyDamage / Math.max(1, s.stats.allyDamage + s.stats.damage);
+    allyDowns += s.stats.allyDowns;
+    rescues += s.stats.allyRescues;
+    helped += s.stats.allyHelped;
   }
   const n = Math.max(finished, 1);
   console.log(
@@ -276,6 +360,7 @@ for (const skill of SKILLS) {
       (ults / n).toFixed(1).padEnd(3),
       `${median(crowdSq)}/${median(crowdBots)}`.padEnd(5),
       `${Math.round((flanks / Math.max(hits, 1)) * 100)}%`.padEnd(5),
+      `${Math.round((allyDmg / n) * 100)}% ${(allyDowns / n).toFixed(1)}d ${(rescues / n).toFixed(1)}r ${(helped / n).toFixed(1)}h`.padEnd(18),
       `S${ranks.S} A${ranks.A} B${ranks.B} C${ranks.C}`,
     ].join(" "),
   );

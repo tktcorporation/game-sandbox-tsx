@@ -43,6 +43,10 @@ npm run shots:ringfall   # gate 3: the build played to the end in Chromium; scre
   `cover.ts` precomputes the spots grunts hide behind. The sim gate's `crowd` column is the most
   squads / robots fighting at once, and `flank` the share of hits from behind or by ambush; keep them
   within the targets in `docs/ringfall/balance.md`.
+- `ally.ts` is the teammate: it walks the player's footsteps (`State.trail`), shoots only engaged
+  robots, revives the player once the self-revive is spent, and is revived with the use key.
+  Robots choose between the player and the teammate in `chooseTarget()` (`enemies.ts`); the sim
+  gate's `ally` column is its damage share, downs and revives.
 - `nav.ts` is ground path finding for the bot only; the game never reads it.
 - `src/ringfall/touch.ts` is the phone layout (landscape): a floating stick on the left half, view
   drag on the right half, buttons under the right thumb. It feeds the same `Input` as the keyboard,
