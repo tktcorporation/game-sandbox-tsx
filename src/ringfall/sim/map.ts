@@ -1,4 +1,4 @@
-import type { EnemyKind, Rarity, WeaponKind } from "./config";
+import type { EnemyKind, HealKind, Rarity, WeaponKind } from "./config";
 
 /**
  * The island. Everything solid is an axis-aligned box, so collision, line of sight
@@ -233,7 +233,7 @@ export interface Squad {
   patrol?: { x: number; z: number }[];
 }
 
-export type LootTable = { weapon: [WeaponKind, Rarity][]; armor: Rarity[]; batteries: number };
+export type LootTable = { weapon: [WeaponKind, Rarity][]; armor: Rarity[]; heals: number };
 
 export interface Poi {
   name: string;
@@ -249,7 +249,7 @@ export interface Poi {
   squads: Squad[];
   bins: { x: number; z: number; y?: number }[];
   loot: LootTable;
-  floor: { x: number; z: number; y?: number; weapon?: [WeaponKind, Rarity]; armor?: Rarity; battery?: true }[];
+  floor: { x: number; z: number; y?: number; weapon?: [WeaponKind, Rarity]; armor?: Rarity; heal?: HealKind }[];
   carePackage?: { x: number; z: number; weapon: [WeaponKind, Rarity] };
   boss?: true;
 }
@@ -316,12 +316,12 @@ const POI_FRAMES: Poi[] = [
       { x: -23, z: 47 },
       { x: 22, z: 52, y: STOREY },
     ],
-    loot: { weapon: [["hornet", 1], ["maul", 0], ["lance", 0], ["pike", 1]], armor: [1], batteries: 1 },
+    loot: { weapon: [["hornet", 1], ["maul", 0], ["lance", 0], ["pike", 1]], armor: [1], heals: 1 },
     floor: [
       { x: 3, z: 66, weapon: ["hornet", 0] },
-      { x: -4, z: 66, battery: true },
+      { x: -4, z: 66, heal: "syringe" },
       { x: -24, z: 49, y: 3.6, armor: 1 },
-      { x: 25, z: 50, y: STOREY * 2, battery: true },
+      { x: 25, z: 50, y: STOREY * 2, heal: "battery" },
     ],
   },
   {
@@ -345,8 +345,8 @@ const POI_FRAMES: Poi[] = [
       { x: -46, z: 14 },
       { x: -73, z: -4, y: 5.5 },
     ],
-    loot: { weapon: [["pike", 2], ["maul", 1], ["lance", 1], ["hornet", 2]], armor: [2], batteries: 2 },
-    floor: [{ x: -45, z: -15, y: 4, battery: true }],
+    loot: { weapon: [["pike", 2], ["maul", 1], ["lance", 1], ["hornet", 2]], armor: [2], heals: 2 },
+    floor: [{ x: -45, z: -15, y: 4, heal: "medkit" }],
     carePackage: { x: -46, z: 0, weapon: ["lance", 3] },
   },
   {
@@ -370,7 +370,7 @@ const POI_FRAMES: Poi[] = [
       { x: 44, z: -16 },
       { x: 48, z: -10, y: STOREY * 2 },
     ],
-    loot: { weapon: [["pike", 3], ["hornet", 2], ["maul", 2], ["lance", 2]], armor: [2, 3], batteries: 2 },
+    loot: { weapon: [["pike", 3], ["hornet", 2], ["maul", 2], ["lance", 2]], armor: [2, 3], heals: 2 },
     floor: [
       { x: 41.5, z: -29, y: 5, weapon: ["lance", 2] },
       { x: 50, z: -12, y: STOREY * 3, armor: 2 },
@@ -390,7 +390,7 @@ const POI_FRAMES: Poi[] = [
       { x: -32, z: -60, y: STOREY },
       { x: 32, z: -60, y: STOREY },
     ],
-    loot: { weapon: [], armor: [3], batteries: 2 },
+    loot: { weapon: [], armor: [3], heals: 2 },
     floor: [],
     boss: true,
   },

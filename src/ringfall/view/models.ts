@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { ENEMIES, type EnemyKind, type Rarity, type WeaponKind } from "../sim/config";
+import { ENEMIES, type EnemyKind, type HealKind, type Rarity, type WeaponKind } from "../sim/config";
+import type { LootKind } from "../sim/state";
 import type { Box } from "../sim/map";
 
 /*
@@ -35,6 +36,8 @@ export const PAL = {
 } as const;
 
 export const RARITY_COLOR = [0xeeeeee, 0x45a6ff, 0xb65cff, 0xffc93a] as const;
+/** The band on health items, apart from the enemy red and the ring orange. */
+const HEAL_RED = 0xe0475a;
 export const RARITY_CSS = ["#eeeeee", "#45a6ff", "#b65cff", "#ffc93a"] as const;
 
 const matCache = new Map<number, THREE.MeshLambertMaterial>();
@@ -344,7 +347,7 @@ export function buildGun(kind: WeaponKind, rarity: Rarity): THREE.Group {
   return g;
 }
 
-export function buildLootItem(kind: "weapon" | "armor" | "battery" | "shard", rarity: Rarity, weapon?: WeaponKind): THREE.Group {
+export function buildLootItem(kind: LootKind, rarity: Rarity, weapon?: WeaponKind, heal?: HealKind): THREE.Group {
   const g = new THREE.Group();
   const color = RARITY_COLOR[rarity];
   if (kind === "weapon" && weapon) {
@@ -356,9 +359,19 @@ export function buildLootItem(kind: "weapon" | "armor" | "battery" | "shard", ra
   } else if (kind === "armor") {
     g.add(mesh(new THREE.BoxGeometry(0.55, 0.6, 0.25), flat(color), 0, 0.45, 0, false));
     g.add(mesh(new THREE.BoxGeometry(0.35, 0.18, 0.27), flat(PAL.gun), 0, 0.68, 0, false));
-  } else if (kind === "battery") {
-    g.add(mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.42, 8), flat(PAL.gunLight), 0, 0.35, 0, false));
-    g.add(mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.2, 8), glow(RARITY_COLOR[1]), 0, 0.35, 0, false));
+  } else if (kind === "heal") {
+    // Shield items glow blue, health items are white with a red band; big ones are bigger.
+    const big = heal === "battery" || heal === "medkit";
+    const band = heal === "cell" || heal === "battery" ? RARITY_COLOR[1] : HEAL_RED;
+    if (heal === "medkit") {
+      g.add(mesh(new THREE.BoxGeometry(0.5, 0.3, 0.36), flat(0xf2f0ea), 0, 0.3, 0, false));
+      g.add(mesh(new THREE.BoxGeometry(0.52, 0.08, 0.38), flat(band), 0, 0.3, 0, false));
+    } else {
+      const r = big ? 0.16 : 0.1;
+      const h = big ? 0.42 : 0.3;
+      g.add(mesh(new THREE.CylinderGeometry(r, r, h, 8), flat(heal === "syringe" ? 0xf2f0ea : PAL.gunLight), 0, 0.35, 0, false));
+      g.add(mesh(new THREE.CylinderGeometry(r + 0.01, r + 0.01, h * 0.45, 8), heal === "syringe" ? flat(band) : glow(band), 0, 0.35, 0, false));
+    }
   } else {
     g.add(new THREE.Mesh(new THREE.OctahedronGeometry(0.16, 0), glow(RARITY_COLOR[1])));
   }

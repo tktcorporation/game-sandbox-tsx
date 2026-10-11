@@ -11,6 +11,7 @@
   --hot: #ffe23d;
   --r0: #eeeeee;
   --r1: #45a6ff;
+  --hp-heal: #e0475a;
   --r2: #b65cff;
   --r3: #ffc93a;
   --num: "Saira Condensed", "M PLUS 1p", system-ui, sans-serif;
@@ -465,11 +466,35 @@ kbd {
   color: var(--muted);
   margin-top: 2px;
 }
-#cells b {
-  font-family: var(--num);
-  font-size: 18px;
-  color: var(--white);
+#heal-list {
+  display: flex;
+  gap: 8px;
   margin-left: auto;
+}
+#heal-list i {
+  font-style: normal;
+  font-family: var(--num);
+  font-size: 15px;
+  color: var(--white);
+  padding-left: 9px;
+  position: relative;
+}
+/* A small mark before each count: blue for shield items, red for health; a big item's mark is taller. */
+#heal-list i::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 5px;
+  height: 8px;
+  transform: translateY(-50%);
+  background: var(--r1);
+}
+#heal-list i.hpi::before {
+  background: var(--hp-heal);
+}
+#heal-list i.big::before {
+  height: 13px;
 }
 
 #abilities {

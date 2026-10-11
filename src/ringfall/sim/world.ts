@@ -1,4 +1,4 @@
-import { PLAYER, RING, TICK, WORLD } from "./config";
+import { HEALS, PLAYER, RING, TICK, WORLD, type HealKind } from "./config";
 import { dist2d, groundAt } from "./geom";
 import { EXTRACT, POIS } from "./map";
 import { hurtPlayer } from "./player";
@@ -75,6 +75,12 @@ function spill(s: State, x: number, y: number, z: number, item: Omit<Loot, "id" 
   s.loot.push({ ...item, id: s.nextId++, pos: { x, y: y + 1.0, z }, vel: { x: Math.cos(a) * sp, y: 4.2, z: Math.sin(a) * sp }, age: 0 });
 }
 
+/** Small items turn up twice as often as big ones. */
+function rollHeal(s: State): HealKind {
+  const r = rand(s);
+  return r < 0.33 ? "cell" : r < 0.66 ? "syringe" : r < 0.83 ? "battery" : "medkit";
+}
+
 function openBin(s: State, binIndex: number) {
   const b = s.bins[binIndex];
   b.open = true;
@@ -85,7 +91,7 @@ function openBin(s: State, binIndex: number) {
     spill(s, b.x, b.y, b.z, { kind: "weapon", rarity, weapon: { kind, rarity, mag: -1 } });
   }
   if (table.armor.length && nth !== 0) spill(s, b.x, b.y, b.z, { kind: "armor", rarity: table.armor[nth % table.armor.length] });
-  if (nth !== 1 && table.batteries > 0) spill(s, b.x, b.y, b.z, { kind: "battery", rarity: 1 });
+  for (let i = 0; i < table.heals; i++) spill(s, b.x, b.y, b.z, { kind: "heal", heal: rollHeal(s), rarity: 1 });
   s.events.push({ t: "binOpen", id: b.id });
 }
 
@@ -134,9 +140,9 @@ export function stepLoot(s: State, input: Input) {
     if (!alive || l.age < 0.4) return true;
     const near = Math.hypot(l.pos.x - p.pos.x, l.pos.z - p.pos.z) < PLAYER.pickupRange && Math.abs(l.pos.y - p.pos.y) < 2;
     if (!near) return true;
-    if (l.kind === "battery" && p.batteries < PLAYER.batteryMax) {
-      p.batteries++;
-      s.events.push({ t: "pickup", kind: "battery", rarity: 1, label: "シールドバッテリー" });
+    if (l.kind === "heal" && l.heal && p.heals[l.heal] < HEALS[l.heal].max) {
+      p.heals[l.heal]++;
+      s.events.push({ t: "pickup", kind: "heal", rarity: 1, label: HEALS[l.heal].label });
       return false;
     }
     if (l.kind === "armor" && l.rarity > p.armor) {

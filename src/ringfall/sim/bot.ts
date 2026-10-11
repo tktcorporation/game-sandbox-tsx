@@ -1,9 +1,10 @@
-import { AWARE, DEG, TICK, WORLD } from "./config";
+import { AWARE, DEG, HEALS, PLAYER, TICK, WORLD } from "./config";
 import { bodyCenter, eyePos, flankOf, magSize, weakPoint } from "./combat";
 import { dist2d, groundAt, los, lookAngles, solidAt, wrapAngle } from "./geom";
 import { EXTRACT, POIS } from "./map";
 import { clearLine, findPath } from "./nav";
 import { enemyMax, idleInput, type Enemy, type Input, type State } from "./state";
+import { pickHeal } from "./player";
 
 /**
  * A scripted player for the headless balance run (`npm run sim:ringfall`) and the
@@ -217,7 +218,7 @@ export class Bot {
 
       const aimDir = Math.hypot(wrapAngle(want.yaw - p.yaw), want.pitch - p.pitch);
       const tol = (sk.name === "beginner" ? 12 : 8) * DEG + Math.atan(1 / Math.max(d, 1));
-      inp.fire = sees && aimDir < tol && d < 60 && p.battery <= 0 && !(this.flank && flankOf(s, tgt) === "front");
+      inp.fire = sees && aimDir < tol && d < 60 && !p.healing && !(this.flank && flankOf(s, tgt) === "front");
       inp.ads = sees && d > 12 && w?.kind !== "maul" && w?.kind !== "hornet";
 
       // Shockwave: jump when the ring is about to arrive.
@@ -239,16 +240,16 @@ export class Bot {
         }
       }
       const threat = live.some((e) => dist2d(e.pos, p.pos) < 14 || e.mode === "telegraph");
-      if (p.shield < 25 && p.batteries > 0 && !threat && p.battery <= 0) inp.battery = true;
-      if (p.battery > 0) inp.fire = false;
+      if ((p.shield < 25 || p.hp < 45) && !threat && !p.healing && pickHeal(s)) inp.heal = true;
+      if (p.healing) inp.fire = false;
     } else if (goal) {
       const d = dist2d(goal, p.pos);
       inp.moveZ = d > 1.2 ? 1 : 0;
       if (Math.abs(wrapAngle(want.yaw - p.yaw)) > 0.5) inp.moveZ = 0.4;
       if (w && w.mag < magSize(w) * 0.6 && p.reload <= 0) inp.reload = true;
-      const max = [50, 75, 100, 125][p.armor];
-      if (p.shield < max * 0.6 && p.batteries > 0 && p.battery <= 0) inp.battery = true;
-      if (p.battery > 0) inp.moveZ = Math.min(inp.moveZ, 0.6);
+      const max = PLAYER.shieldByTier[p.armor];
+      if ((p.shield < max * 0.6 || p.hp < 75) && !p.healing && pickHeal(s)) inp.heal = true;
+      if (p.healing) inp.moveZ = Math.min(inp.moveZ, 0.6);
       // Slide now and then on long runs, like people do.
       if (p.sprinting && d > 12 && this.rnd() < TICK * 0.4) this.crouch = true;
       this.interactT -= TICK;
@@ -275,7 +276,7 @@ export class Bot {
     this.stuckT += TICK;
     if (this.stuckT > 1) {
       const moved = Math.hypot(p.pos.x - this.lastPos.x, p.pos.z - this.lastPos.z);
-      if (moved < 0.8 && (inp.moveZ !== 0 || inp.moveX !== 0) && p.battery <= 0) {
+      if (moved < 0.8 && (inp.moveZ !== 0 || inp.moveX !== 0) && !p.healing) {
         // Each repeated stall tries the other side, for longer.
         this.stuckCount++;
         this.unstickSide = this.stuckCount % 2 ? 1 : -1;
@@ -391,7 +392,7 @@ export class Bot {
       if (l.age < 0.6 || dist2d(l.pos, p.pos) > 22 || !reachable(l.pos)) continue;
       if (l.kind === "weapon" && l.weapon && l.rarity > worst) cands.push({ x: l.pos.x, z: l.pos.z, d: dist2d(l.pos, p.pos), weapon: true });
       if (l.kind === "armor" && l.rarity > p.armor) cands.push({ x: l.pos.x, z: l.pos.z, d: dist2d(l.pos, p.pos) });
-      if (l.kind === "battery" && p.batteries < 4) cands.push({ x: l.pos.x, z: l.pos.z, d: dist2d(l.pos, p.pos) });
+      if (l.kind === "heal" && l.heal && p.heals[l.heal] < HEALS[l.heal].max) cands.push({ x: l.pos.x, z: l.pos.z, d: dist2d(l.pos, p.pos) });
     }
     const inRing = (c: { x: number; z: number }) => dist2d(c, s.ring) < s.ring.r - 5 && dist2d(c, s.ring) < s.ring.toR + dist2d(s.ring, { x: s.ring.toX, z: s.ring.toZ }) - 5;
     const best = cands.filter(inRing).sort((a, b) => a.d - b.d)[0] ?? null;

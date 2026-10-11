@@ -197,7 +197,7 @@ export function kill(s: State, e: Enemy, crit: boolean) {
     s.loot.push({ id: s.nextId++, kind: "shard", rarity: 1, pos: { ...c }, vel: { x: Math.cos(a) * 2.5, y: 4, z: Math.sin(a) * 2.5 }, age: 0 });
   }
   if (e.kind !== "titan" && rand(s) < 0.12) {
-    s.loot.push({ id: s.nextId++, kind: "battery", rarity: 1, pos: { ...c }, vel: { x: 0, y: 5, z: 0 }, age: 0 });
+    s.loot.push({ id: s.nextId++, kind: "heal", heal: rand(s) < 0.5 ? "cell" : "syringe", rarity: 1, pos: { ...c }, vel: { x: 0, y: 5, z: 0 }, age: 0 });
   }
   const last = e.poi === s.poi && s.poi < POIS.length && !s.enemies.some((o) => o.poi === s.poi);
   s.events.push({ t: "kill", id: e.id, kind: e.kind, pos: c, crit, last });

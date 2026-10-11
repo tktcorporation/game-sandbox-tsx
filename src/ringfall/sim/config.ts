@@ -30,9 +30,9 @@ export const PLAYER = {
   autoSprintAfter: 0.2, // forward input without firing for this long turns into a sprint
   regenDelay: 5,
   regenPerSec: 6,
+  /** Health comes back on its own only this far; above it takes a syringe or a med kit. */
+  regenCap: 50,
   shieldByTier: [50, 75, 100, 125],
-  batteryTime: 2.0,
-  batteryMax: 4,
   downedTime: 3,
   reviveHp: 60,
   reviveIframes: 1.5,
@@ -41,6 +41,36 @@ export const PLAYER = {
   pickupRange: 2.6,
   interactRange: 2.4,
 };
+
+/**
+ * Climbing over a ledge in the air while pushing toward it. Hands reach `reach`
+ * above the feet, so a jump clears about 2.9 m: crates, containers, low walls and
+ * rock shelves, but not a storey (3.4 m).
+ */
+export const MANTLE = {
+  reach: 1.9,
+  /** Seconds to climb the full reach; a lower ledge is quicker. */
+  time: 0.5,
+  /** How far past the body the hands look for the edge, and where the feet land. */
+  probe: 0.2,
+  land: 0.5,
+  /** Speed kept after climbing, along the way the player faced. */
+  exitSpeed: 4,
+};
+
+export type HealKind = "cell" | "battery" | "syringe" | "medkit";
+
+/**
+ * Healing items. Small ones are quick and top up; big ones fill but leave the player
+ * slow and unable to shoot for longer, so when to heal is a choice. `amount` 0 fills.
+ */
+export const HEALS: Record<HealKind, { label: string; short: string; shield: boolean; amount: number; time: number; max: number }> = {
+  cell: { label: "シールドセル", short: "セル", shield: true, amount: 25, time: 1.2, max: 6 },
+  battery: { label: "シールドバッテリー", short: "バッテリー", shield: true, amount: 0, time: 2.4, max: 3 },
+  syringe: { label: "注射器", short: "注射器", shield: false, amount: 25, time: 1.4, max: 4 },
+  medkit: { label: "医療キット", short: "医療キット", shield: false, amount: 0, time: 3.0, max: 2 },
+};
+export const HEAL_KINDS = Object.keys(HEALS) as HealKind[];
 
 export const DROP = {
   startY: 140,

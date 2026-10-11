@@ -1,4 +1,4 @@
-import { DROP, ENEMIES, PLAYER, ULT, type EnemyKind, type Flank, type Rarity, type WeaponKind } from "./config";
+import { DROP, ENEMIES, PLAYER, ULT, type EnemyKind, type Flank, type HealKind, type Rarity, type WeaponKind } from "./config";
 import { EXTRA_BINS, POIS, SPAWN } from "./map";
 import { populate } from "./enemies";
 
@@ -25,6 +25,8 @@ export interface Player {
   onGround: boolean;
   crouch: boolean;
   sliding: boolean;
+  /** Climbing a ledge: rises at the start point, then moves onto the top. */
+  mantle: { t: number; dur: number; from: Vec3; to: Vec3 } | null;
   sprinting: boolean;
   forwardHeld: number;
   weapons: (Weapon | null)[];
@@ -39,8 +41,9 @@ export interface Player {
   ultTime: number; // seconds of overdrive left
   reveal: number; // seconds left of seeing robots through walls
   stepNoise: number; // seconds until the next sprint footstep sound
-  batteries: number;
-  battery: number; // channel time left, 0 = not using
+  heals: Record<HealKind, number>;
+  /** The item being used and the seconds left; shooting cancels it without using it. */
+  healing: { kind: HealKind; t: number } | null;
   sinceHurt: number;
   downed: number; // seconds left while downed
   selfRevive: number;
@@ -119,12 +122,13 @@ export interface Shockwave {
   hit: boolean;
 }
 
-export type LootKind = "weapon" | "armor" | "battery" | "shard";
+export type LootKind = "weapon" | "armor" | "heal" | "shard";
 
 export interface Loot {
   id: number;
   kind: LootKind;
   weapon?: Weapon;
+  heal?: HealKind;
   rarity: Rarity;
   pos: Vec3;
   vel: Vec3;
@@ -181,6 +185,7 @@ export type GameEvent =
   | { t: "dry" }
   | { t: "slide" }
   | { t: "jump" }
+  | { t: "mantle" }
   | { t: "land"; speed: number }
   | { t: "pickup"; kind: LootKind; rarity: Rarity; label: string }
   | { t: "binOpen"; id: number }
@@ -189,8 +194,8 @@ export type GameEvent =
   | { t: "ultReady" }
   | { t: "ultStart" }
   | { t: "ultEnd" }
-  | { t: "batteryStart" }
-  | { t: "batteryDone" }
+  | { t: "healStart"; kind: HealKind }
+  | { t: "healDone"; kind: HealKind }
   | { t: "telegraph"; id: number }
   | { t: "enemyFire"; id: number; pos: Vec3 }
   | { t: "lunge"; id: number }
@@ -261,7 +266,8 @@ export interface Input {
   interact: boolean;
   swap: boolean;
   slot: number; // -1 none, 0 / 1 select
-  battery: boolean;
+  /** Use the item that fits best: shield first when it is lower, big items for big gaps. */
+  heal: boolean;
   /** The input comes from a touch screen (stronger aim assist, see ASSIST.touchPull). */
   touch: boolean;
 }
@@ -281,7 +287,7 @@ export const idleInput = (): Input => ({
   interact: false,
   swap: false,
   slot: -1,
-  battery: false,
+  heal: false,
   touch: false,
 });
 
@@ -297,7 +303,7 @@ export function newRun(seed = 1): State {
       const vel = { x: 0, y: 0, z: 0 };
       if (f.weapon) loot.push({ id: id++, kind: "weapon", rarity: f.weapon[1], weapon: { kind: f.weapon[0], rarity: f.weapon[1], mag: -1 }, pos, vel, age: 99 });
       if (f.armor !== undefined) loot.push({ id: id++, kind: "armor", rarity: f.armor, pos, vel, age: 99 });
-      if (f.battery) loot.push({ id: id++, kind: "battery", rarity: 1, pos, vel, age: 99 });
+      if (f.heal) loot.push({ id: id++, kind: "heal", heal: f.heal, rarity: 1, pos, vel, age: 99 });
     }),
   );
   const s: State = {
@@ -316,6 +322,7 @@ export function newRun(seed = 1): State {
       onGround: false,
       crouch: false,
       sliding: false,
+      mantle: null,
       sprinting: false,
       forwardHeld: 0,
       weapons: [{ kind: "pike", rarity: 0, mag: -1 }, null],
@@ -330,8 +337,8 @@ export function newRun(seed = 1): State {
       ultTime: 0,
       reveal: 0,
       stepNoise: 0,
-      batteries: 1,
-      battery: 0,
+      heals: { cell: 2, battery: 0, syringe: 2, medkit: 0 },
+      healing: null,
       sinceHurt: 99,
       downed: 0,
       selfRevive: 1,

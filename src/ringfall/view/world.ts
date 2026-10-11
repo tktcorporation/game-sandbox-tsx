@@ -595,7 +595,7 @@ export class World {
     for (const l of s.loot) {
       let g = this.loot.get(l.id);
       if (!g) {
-        g = buildLootItem(l.kind, l.rarity, l.weapon?.kind);
+        g = buildLootItem(l.kind, l.rarity, l.weapon?.kind, l.heal);
         this.loot.set(l.id, g);
         this.scene.add(g);
       }
@@ -685,7 +685,7 @@ export class World {
     }
     this.gunKick += (0 - this.gunKick) * Math.min(1, dt * 14);
     const reloading = p.reload > 0;
-    const lowered = p.battery > 0 || p.downed > 0 || drop || s.phase === "done";
+    const lowered = !!p.healing || !!p.mantle || p.downed > 0 || drop || s.phase === "done";
     const ads = p.ads;
     const gx = 0.2 * (1 - ads);
     const gy = -0.2 + 0.07 * ads - (lowered ? 0.4 : 0) - (reloading ? 0.08 : 0) + Math.sin(this.bob * 2) * 0.01 * (1 - ads);

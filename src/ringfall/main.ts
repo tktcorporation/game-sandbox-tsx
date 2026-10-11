@@ -107,7 +107,7 @@ function readInput(): Input {
   inp.tactical = edges.has("KeyQ");
   inp.ult = edges.has("KeyZ");
   inp.interact = edges.has("KeyE");
-  inp.battery = edges.has("KeyH");
+  inp.heal = edges.has("KeyH");
   inp.swap = edges.has("Wheel");
   inp.slot = edges.has("Digit1") ? 0 : edges.has("Digit2") ? 1 : -1;
   edges.clear();
@@ -175,11 +175,14 @@ function onEvent(e: GameEvent, s: State) {
     case "ultEnd":
       sfx.ultEnd();
       break;
-    case "batteryStart":
+    case "healStart":
       sfx.battery();
       break;
-    case "batteryDone":
+    case "healDone":
       sfx.batteryDone();
+      break;
+    case "mantle":
+      sfx.jump();
       break;
     case "telegraph": {
       const en = s.enemies.find((x) => x.id === e.id);

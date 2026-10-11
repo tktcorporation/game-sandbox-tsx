@@ -30,7 +30,7 @@
       <div id="vitals">
         <div id="shield-cells"></div>
         <div id="hp"><span id="hp-fill"></span></div>
-        <div id="cells"><kbd>H</kbd><span>バッテリー</span><b id="cells-n">0</b></div>
+        <div id="cells"><kbd>H</kbd><span>回復</span><span id="heal-list"><i class="sh" id="n-cell">0</i><i class="sh big" id="n-battery">0</i><i class="hpi" id="n-syringe">0</i><i class="hpi big" id="n-medkit">0</i></span></div>
       </div>
       <div id="abilities">
         <div class="ab" id="ab-tac"><kbd>Q</kbd><div class="ring"><span>アーク</span></div></div>
@@ -42,7 +42,7 @@
         <div class="slot" id="slot-1"><span class="name"></span><span class="ammo"><b></b><small></small></span></div>
       </div>
       <div id="downed"><b>ダウン</b><span>自己蘇生中</span><i><span id="downed-bar"></span></i></div>
-      <div id="battery"><span>シールド充電中</span><i><span id="battery-bar"></span></i></div>
+      <div id="battery"><span id="heal-label">回復中</span><i><span id="battery-bar"></span></i></div>
     </div>
 
     <div id="touch">
@@ -57,7 +57,7 @@
       <button type="button" class="tb small" id="t-reload" data-act="KeyR" aria-label="リロード"><b>リロード</b></button>
       <button type="button" class="tb ab-btn" id="t-tac" data-act="KeyQ" aria-label="アーク"><b>アーク</b></button>
       <button type="button" class="tb ab-btn ult" id="t-ult" data-act="KeyZ" aria-label="オーバードライブ"><b id="t-ult-pct">0%</b></button>
-      <button type="button" class="tb small" id="t-battery" data-act="KeyH" aria-label="シールドバッテリー"><b>充電 <span id="t-cells">0</span></b></button>
+      <button type="button" class="tb small" id="t-battery" data-act="KeyH" aria-label="回復"><b>回復 <span id="t-cells">0</span></b></button>
       <button type="button" class="tb pill" id="t-use" data-act="KeyE" hidden><b>拾う・開ける</b></button>
       <button type="button" class="tb small" id="t-pause" data-act="pause" aria-label="一時停止"><b>II</b></button>
     </div>

@@ -1,9 +1,10 @@
-import { AWARE, ENEMIES, PLAYER, RARITY, REVEAL, RING, TACTICAL, ULT, WEAPONS, type Flank } from "../sim/config";
+import { AWARE, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, RING, TACTICAL, ULT, WEAPONS, type Flank } from "../sim/config";
 import { magSize } from "../sim/combat";
 import { dist2d } from "../sim/geom";
 import { POIS } from "../sim/map";
 import type { GameEvent, State, Vec3 } from "../sim/state";
 import { rank } from "../sim/results";
+import { pickHeal } from "../sim/player";
 import { RARITY_CSS } from "./models";
 import type { World } from "./world";
 
@@ -245,7 +246,7 @@ export class Hud {
     this.shieldCells.forEach((f, i) => (f.style.width = `${Math.max(0, Math.min(1, (p.shield - i * 25) / 25)) * 100}%`));
     $("hp-fill").style.width = `${(p.hp / PLAYER.hp) * 100}%`;
     $("hp").className = p.hp < 35 ? "low" : "";
-    $("cells-n").textContent = String(p.batteries);
+    for (const k of HEAL_KINDS) $(`n-${k}`).textContent = String(p.heals[k]);
 
     // Abilities.
     const tac = $("ab-tac");
@@ -264,7 +265,7 @@ export class Hud {
     tUlt.style.setProperty("--p", String(p.ultTime > 0 ? p.ultTime / ULT.duration : p.ult));
     tUlt.classList.toggle("ready", p.ult >= 1);
     $("t-ult-pct").textContent = $("ult-pct").textContent;
-    $("t-cells").textContent = String(p.batteries);
+    $("t-cells").textContent = pickHeal(s) ? String(HEAL_KINDS.reduce((n, k) => n + p.heals[k], 0)) : "-";
 
     // Weapons.
     p.weapons.forEach((wpn, i) => {
@@ -389,11 +390,15 @@ export class Hud {
     this.hurtT = Math.max(0, this.hurtT - dt);
     $("fx-hurt").style.opacity = String(Math.max(this.hurtT * 1.6, p.hp < 35 ? 0.5 : 0, p.downed > 0 ? 0.9 : 0));
 
-    // Downed / battery progress.
+    // Downed / healing progress.
     $("downed").className = p.downed > 0 ? "on" : "";
     $("downed-bar").style.width = `${(1 - p.downed / PLAYER.downedTime) * 100}%`;
-    $("battery").className = p.battery > 0 ? "on" : "";
-    $("battery-bar").style.width = `${(1 - p.battery / PLAYER.batteryTime) * 100}%`;
+    $("battery").className = p.healing ? "on" : "";
+    if (p.healing) {
+      $("heal-label").textContent = `${HEALS[p.healing.kind].label}を使用中`;
+      $("battery-bar").style.width = `${(1 - p.healing.t / HEALS[p.healing.kind].time) * 100}%`;
+      $("battery-bar").style.background = HEALS[p.healing.kind].shield ? "" : "var(--hp-heal)";
+    }
 
     this.bannerT -= dt;
     if (this.bannerT <= 0) $("banner").className = "";

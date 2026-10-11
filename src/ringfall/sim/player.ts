@@ -1,4 +1,4 @@
-import { ASSIST, DEG, DROP, NOISE, PLAYER, RARITY, REVEAL, SEMI_HOLD, TACTICAL, TICK, ULT, WEAPONS, WORLD } from "./config";
+import { ASSIST, DEG, DROP, HEALS, type HealKind, MANTLE, NOISE, PLAYER, RARITY, REVEAL, SEMI_HOLD, TACTICAL, TICK, ULT, WEAPONS, WORLD } from "./config";
 import { makeNoise } from "./awareness";
 import { POIS } from "./map";
 import { applyPull, assistTarget, bodyCenter, damageEnemy, eyePos, magSize, shoot } from "./combat";
@@ -53,19 +53,75 @@ export function stepPlayer(s: State, input: Input, prevCrouch: boolean) {
       p.iframes = PLAYER.reviveIframes;
       s.events.push({ t: "revive" });
     }
-  } else if (p.sinceHurt > PLAYER.regenDelay && p.hp < PLAYER.hp) {
-    p.hp = Math.min(PLAYER.hp, p.hp + PLAYER.regenPerSec * TICK);
+  } else if (p.sinceHurt > PLAYER.regenDelay && p.hp < PLAYER.regenCap) {
+    p.hp = Math.min(PLAYER.regenCap, p.hp + PLAYER.regenPerSec * TICK);
   }
 
   move(s, input, prevCrouch);
-  if (p.downed <= 0) {
+  if (p.downed <= 0 && !p.mantle) {
     weapons(s, input);
     abilities(s, input);
   }
 }
 
+/**
+ * Starts a climb when the player is in the air, pushing forward, and facing a ledge
+ * within reach whose top has room to stand. Over a thin wall the landing point is
+ * past it, so the climb becomes a vault and the player drops down the far side.
+ */
+function tryMantle(s: State, input: Input): boolean {
+  const p = s.player;
+  if (p.onGround || p.downed > 0 || input.moveZ < 0.5 || p.vel.y > 3) return false;
+  const fx = Math.sin(p.yaw);
+  const fz = -Math.cos(p.yaw);
+  const hx = p.pos.x + fx * (PLAYER.radius + MANTLE.probe);
+  const hz = p.pos.z + fz * (PLAYER.radius + MANTLE.probe);
+  const top = groundAt(hx, hz, 0.05, p.pos.y + MANTLE.reach - WORLD.stepUp);
+  const rise = top - p.pos.y;
+  if (rise <= WORLD.stepUp + 0.05) return false;
+  // Room above the climber's head all the way up, and a body's room on top.
+  if (ceilingAt(p.pos.x, p.pos.z, PLAYER.radius, top + 1.8, p.pos.y) < top + 1.8) return false;
+  const to = { x: p.pos.x + fx * (PLAYER.radius + MANTLE.land), y: top, z: p.pos.z + fz * (PLAYER.radius + MANTLE.land) };
+  const probe = { ...to };
+  if (collide(probe, PLAYER.radius * 0.9) || Math.hypot(probe.x - to.x, probe.z - to.z) > 0.01) return false;
+  p.mantle = { t: 0, dur: MANTLE.time * (0.4 + (0.6 * rise) / MANTLE.reach), from: { ...p.pos }, to };
+  p.vel.x = p.vel.y = p.vel.z = 0;
+  p.sliding = false;
+  p.crouch = false;
+  p.sprinting = false;
+  s.events.push({ t: "mantle" });
+  return true;
+}
+
+/** Rise straight up for most of the climb, then over the edge onto the top. */
+function stepMantle(s: State) {
+  const p = s.player;
+  const m = p.mantle;
+  if (!m) return;
+  m.t += TICK;
+  const k = Math.min(1, m.t / m.dur);
+  const up = Math.min(1, k / 0.65);
+  const over = Math.max(0, (k - 0.65) / 0.35);
+  p.pos.y = m.from.y + (m.to.y + 0.02 - m.from.y) * (1 - (1 - up) * (1 - up));
+  p.pos.x = m.from.x + (m.to.x - m.from.x) * over;
+  p.pos.z = m.from.z + (m.to.z - m.from.z) * over;
+  if (k >= 1) {
+    p.mantle = null;
+    p.pos.y = m.to.y;
+    p.onGround = groundAt(p.pos.x, p.pos.z, PLAYER.radius, p.pos.y) >= p.pos.y - 0.02;
+    const dx = m.to.x - m.from.x;
+    const dz = m.to.z - m.from.z;
+    const d = Math.hypot(dx, dz) || 1;
+    p.vel.x = (dx / d) * MANTLE.exitSpeed;
+    p.vel.z = (dz / d) * MANTLE.exitSpeed;
+    p.vel.y = 0;
+  }
+}
+
 function move(s: State, input: Input, prevCrouch: boolean) {
   const p = s.player;
+  if (p.mantle) return stepMantle(s);
+  if (tryMantle(s, input)) return;
   const fx = Math.sin(p.yaw);
   const fz = -Math.cos(p.yaw);
   const rx = Math.cos(p.yaw);
@@ -79,7 +135,7 @@ function move(s: State, input: Input, prevCrouch: boolean) {
   }
   const speed = Math.hypot(p.vel.x, p.vel.z);
 
-  if (input.moveZ > 0.5 && !input.fire && p.ads < 0.1 && p.battery <= 0) p.forwardHeld += TICK;
+  if (input.moveZ > 0.5 && !input.fire && p.ads < 0.1 && !p.healing) p.forwardHeld += TICK;
   else p.forwardHeld = 0;
   p.sprinting = p.onGround && !p.sliding && !input.crouch && p.downed <= 0 && p.forwardHeld > PLAYER.autoSprintAfter;
   // Running footsteps carry a little way; walking and crouching are silent.
@@ -113,7 +169,7 @@ function move(s: State, input: Input, prevCrouch: boolean) {
   } else {
     let top = p.downed > 0 ? 1.4 : p.crouch ? PLAYER.crouch : p.sprinting ? PLAYER.sprint : PLAYER.walk;
     if (p.ads > 0.5) top *= 0.75;
-    if (p.battery > 0) top *= 0.5;
+    if (p.healing) top *= 0.5;
     if (p.ultTime > 0) top *= ULT.speed;
     if (p.onGround) {
       const tx = wx * top - p.vel.x;
@@ -198,7 +254,7 @@ function weapons(s: State, input: Input) {
   const size = magSize(w);
   if (w.mag < 0) w.mag = size;
   p.cooldown = Math.max(0, p.cooldown - TICK);
-  p.ads += ((input.ads && p.battery <= 0 ? 1 : 0) - p.ads) * Math.min(1, TICK / 0.08);
+  p.ads += ((input.ads && !p.healing ? 1 : 0) - p.ads) * Math.min(1, TICK / 0.08);
 
   if (p.reload > 0) {
     p.reload -= TICK;
@@ -215,11 +271,11 @@ function weapons(s: State, input: Input) {
   };
   if (input.reload) startReload();
 
-  if (input.fire && p.battery > 0) {
-    p.battery = 0; // shooting cancels the battery without using it
+  if (input.fire && p.healing) {
+    p.healing = null; // shooting cancels the item without using it
   }
   // Semi-auto weapons also repeat while held, a little slower than clicking.
-  const canFire = input.fire && p.cooldown <= 0 && p.reload <= 0 && p.battery <= 0;
+  const canFire = input.fire && p.cooldown <= 0 && p.reload <= 0 && !p.healing;
   if (canFire) {
     if (w.mag <= 0 && p.ultTime <= 0) {
       if (!p.triggerHeld) s.events.push({ t: "dry" });
@@ -288,20 +344,50 @@ function abilities(s: State, input: Input) {
     s.events.push({ t: "ultStart" });
   }
 
-  const maxShield = PLAYER.shieldByTier[p.armor];
-  if (p.battery > 0) {
-    p.battery -= TICK;
-    if (p.battery <= 0) {
-      p.battery = 0;
-      p.shield = maxShield;
-      p.batteries--;
-      s.events.push({ t: "batteryDone" });
+  const h = p.healing;
+  if (h) {
+    h.t -= TICK;
+    if (h.t <= 0) {
+      p.healing = null;
+      const spec = HEALS[h.kind];
+      if (spec.shield) p.shield = spec.amount ? Math.min(maxShieldOf(s), p.shield + spec.amount) : maxShieldOf(s);
+      else p.hp = spec.amount ? Math.min(PLAYER.hp, p.hp + spec.amount) : PLAYER.hp;
+      p.heals[h.kind]--;
+      s.events.push({ t: "healDone", kind: h.kind });
     }
-  } else if (input.battery && p.batteries > 0 && p.shield < maxShield) {
-    p.battery = PLAYER.batteryTime;
-    p.reload = 0;
-    s.events.push({ t: "batteryStart" });
+  } else if (input.heal) {
+    const kind = pickHeal(s);
+    if (kind) {
+      p.healing = { kind, t: HEALS[kind].time };
+      p.reload = 0;
+      s.events.push({ t: "healStart", kind });
+    }
   }
+}
+
+const maxShieldOf = (s: State) => PLAYER.shieldByTier[s.player.armor];
+
+/**
+ * The item one press of the heal key uses. Whichever of shield and health is
+ * missing more goes first (shield on a tie, since it breaks first); a big gap
+ * takes the big item, a small one the small item, and either stands in for the
+ * other when it has run out. Null when nothing is missing or nothing fits.
+ */
+export function pickHeal(s: State): HealKind | null {
+  const p = s.player;
+  const shieldGap = maxShieldOf(s) - p.shield;
+  const hpGap = PLAYER.hp - p.hp;
+  const order: [number, HealKind, HealKind][] = [
+    [shieldGap, "battery", "cell"],
+    [hpGap, "medkit", "syringe"],
+  ];
+  if (hpGap > shieldGap) order.reverse();
+  for (const [gap, big, small] of order) {
+    if (gap < 1) continue;
+    const prefer: HealKind[] = gap > HEALS[small].amount * 1.6 ? [big, small] : [small, big];
+    for (const k of prefer) if (p.heals[k] > 0) return k;
+  }
+  return null;
 }
 
 export function tickReveal(s: State) {
@@ -320,7 +406,7 @@ export function hurtPlayer(s: State, dmg: number, fromX: number, fromZ: number, 
   s.events.push({ t: "hurt", dmg, fromX, fromZ, shieldBroke: hadShield && p.shield <= 0, shield: toShield > 0 });
   if (p.hp > 0) return;
   p.hp = 0;
-  p.battery = 0;
+  p.healing = null;
   p.reload = 0;
   s.stats.downs++;
   if (p.selfRevive > 0) {
