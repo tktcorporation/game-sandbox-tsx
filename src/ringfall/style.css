@@ -1198,9 +1198,52 @@ body.touch #vitals {
   width: 190px;
   padding: 6px 8px;
 }
+/*
+ * Three short rows that end above the vitals (top 92px): objective and haul, raid clock and
+ * alert state, the nearest exit. The empty ::after takes a full row to break after the haul.
+ */
 body.touch #objective {
   left: max(12px, env(safe-area-inset-left));
   top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 10px;
+  max-width: 255px;
+  padding: 4px 10px 4px 9px;
+  white-space: nowrap;
+}
+body.touch #objective::after {
+  content: "";
+  flex-basis: 100%;
+  order: 1;
+}
+body.touch #obj-text {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1 1 0;
+  min-width: 0;
+}
+body.touch #obj-count {
+  font-size: 17px;
+}
+body.touch #obj-raid,
+body.touch #obj-stealth {
+  order: 2;
+  font-size: 11px;
+}
+body.touch #obj-exits {
+  order: 3;
+  flex-basis: 100%;
+  font-size: 11px;
+  gap: 0;
+}
+body.touch #obj-exits div:not(.near):not(.live) {
+  display: none;
+}
+body.touch #obj-exits div:not(.live) span {
+  display: none;
 }
 body.touch #weapons {
   top: 10px;

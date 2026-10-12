@@ -578,6 +578,8 @@ export class Hud {
     const on = s.phase === "play";
     const p = s.player;
     const lines: string[] = [];
+    // The phone layout keeps only the nearest exit's line, so the card stays above the vitals.
+    const nearest = EXTRACTS.reduce((best, x, i) => (dist2d(p.pos, x) < dist2d(p.pos, EXTRACTS[best]) ? i : best), 0);
     EXTRACTS.forEach((x, i) => {
       const el = this.exitMarks[i];
       if (!on) {
@@ -598,7 +600,10 @@ export class Hud {
             : "発煙筒が要る（高い建物の最上階）"
           : x.note;
       const locked = x.needsFlare && !ready;
-      lines.push(`<div class="${locked ? "locked" : ""}"><b>${x.short} ${d}m</b><span>${state}</span></div>`);
+      // A called ship or a flare in hand is news worth a line even on the phone.
+      const live = (x.call && s.shipCall >= 0) || (x.needsFlare && ready);
+      const cls = [locked && "locked", i === nearest && "near", live && "live"].filter(Boolean).join(" ");
+      lines.push(`<div class="${cls}"><b>${x.short} ${d}m</b><span>${state}</span></div>`);
       const sp = view.project({ x: x.x, y: 3, z: x.z }, w, h);
       // Far away, the card's line is enough; three distant markers would pile up on the horizon.
       el.style.display = sp.behind || d > EXIT_MARK ? "none" : "flex";
