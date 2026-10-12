@@ -1,8 +1,8 @@
-import { ALLY, HEALS, PLAYER, REINFORCE, SHIP_WAVES, TICK, VALUABLES, WORLD, type HealKind } from "./config";
+import { ALLY, ENEMIES, HEALS, PLAYER, REINFORCE, SHIP_WAVES, TICK, VALUABLES, WORLD, type HealKind } from "./config";
 import { dist2d, groundAt, los, solidAt } from "./geom";
 import { steepAt, terrainHeight } from "./terrain";
 import { EXTRACTS, POIS, type ExtractPoint } from "./map";
-import { spawnEnemy } from "./enemies";
+import { spawnEnemy, spawnSpot } from "./enemies";
 import { raiseAlly, startHelp } from "./ally";
 import { rand, type Input, type Loot, type State, type Weapon } from "./state";
 
@@ -67,6 +67,16 @@ export function stepReinforce(s: State) {
   const p = s.player;
   const eye = { x: p.pos.x, y: p.pos.y + 1.5, z: p.pos.z };
   const [near, far] = REINFORCE.dist;
+  const kinds = REINFORCE.waves[Math.min(s.reinforceN, REINFORCE.waves.length - 1)];
+  // Where each member stands round the squad's spot, and the top of its body there:
+  // every one of them must be out of sight, a hovering drone included.
+  const posts = (x: number, z: number) =>
+    kinds.map((kind, i) => {
+      const mx = x + (i % 2 ? 1.8 : -1.8) * Math.min(i, 1);
+      const mz = z + i * 1.6;
+      const at = spawnSpot(kind, mx, mz);
+      return { x: at.x, y: at.y + ENEMIES[kind].bodyY + ENEMIES[kind].radius, z: at.z, mx, mz }; // the top of its body
+    });
   // Somewhere on open ground at the right distance, out of sight; the best of a few tries.
   // The first tries also want a way in clear of buildings; failing that, a clear valley floor will do.
   let at: { x: number; z: number } | null = null;
@@ -79,7 +89,7 @@ export function stepReinforce(s: State) {
     if (Math.hypot(x, z) > WORLD.half - 30 || steepAt(x, z)) continue;
     const g = groundAt(x, z, 1, 99);
     if (g > terrainHeight(x, z) + 0.3 || terrainHeight(x, z) > 4) continue; // valley floor only, not a roof or the high ground
-    if (los(eye, { x, y: g + 1.5, z })) continue;
+    if (los(eye, { x, y: g + 1.5, z }) || posts(x, z).some((q) => los(eye, q))) continue;
     if (!walkable(x, z, p.pos.x, p.pos.z, strict)) continue;
     at = { x, z };
   }
@@ -87,12 +97,12 @@ export function stepReinforce(s: State) {
     s.reinforceT = 5; // try again shortly
     return;
   }
-  const kinds = REINFORCE.waves[Math.min(s.reinforceN, REINFORCE.waves.length - 1)];
   s.reinforceN++;
   const squad = s.squads.length;
   s.squads.push({ name: "増援", poi: -1, patrol: [], leg: 0, engaged: false, roam: true, hunt: true, sinceSeen: 0, last: { x: p.pos.x, z: p.pos.z } });
+  const spots = posts(at.x, at.z);
   kinds.forEach((kind, i) => {
-    const e = spawnEnemy(s, kind, at!.x + (i % 2 ? 1.8 : -1.8) * Math.min(i, 1), at!.z + i * 1.6, -1, squad, { appear: true });
+    const e = spawnEnemy(s, kind, spots[i].mx, spots[i].mz, -1, squad, { appear: true });
     e.aware = "alert";
     e.goal = { x: p.pos.x, z: p.pos.z };
     e.searchT = 40;

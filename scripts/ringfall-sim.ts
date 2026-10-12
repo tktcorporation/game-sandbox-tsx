@@ -5,9 +5,9 @@
  *
  *   npm run sim:ringfall -- [runsPerSkill]
  */
-import { ALLY, REINFORCE, TACTICAL, TICK, VALUABLES, WORLD } from "../src/ringfall/sim/config";
+import { ALLY, ENEMIES, REINFORCE, TACTICAL, TICK, VALUABLES, WORLD } from "../src/ringfall/sim/config";
 import { BOXES, EXTRA_BINS, EXTRACTS, POIS, ROAMERS, type Squad } from "../src/ringfall/sim/map";
-import { groundAt, solidAt } from "../src/ringfall/sim/geom";
+import { groundAt, los, solidAt } from "../src/ringfall/sim/geom";
 import { Bot, SKILLS } from "../src/ringfall/sim/bot";
 import { idleInput, newRun, type GameEvent, type State } from "../src/ringfall/sim/state";
 import { step } from "../src/ringfall/sim/step";
@@ -207,6 +207,9 @@ function checkReinforce(): string | null {
   const fresh = s.enemies.slice(before);
   const ev = s.events.find((e) => e.t === "reinforce");
   if (!ev || !fresh.length) return `reinforce scenario: ${fresh.length} robots, event ${!!ev}`;
+  const eye = { x: p.pos.x, y: p.pos.y + 1.5, z: p.pos.z };
+  const seen = fresh.filter((e) => los(eye, { x: e.pos.x, y: e.pos.y + ENEMIES[e.kind].bodyY, z: e.pos.z }));
+  if (seen.length) return `reinforce scenario: ${seen.map((e) => e.kind).join(",")} beamed in where the player can see`;
   const d = Math.hypot(fresh[0].pos.x - p.pos.x, fresh[0].pos.z - p.pos.z);
   if (d < REINFORCE.dist[0] - 5 || d > REINFORCE.dist[1] + 5 || fresh.some((e) => e.aware !== "alert" || !e.goal)) return `reinforce scenario: ${d.toFixed(0)} m away, not hunting`;
   // They keep closing in while the player moves on, instead of giving up at the first guess.
@@ -216,6 +219,24 @@ function checkReinforce(): string | null {
   const left = s.enemies.filter((e) => fresh.includes(e));
   const closest = Math.min(...left.map((e) => Math.hypot(e.pos.x - p.pos.x, e.pos.z - p.pos.z)));
   if (!(closest < d - 20)) return `reinforce scenario: still ${closest.toFixed(0)} m away after 30 s (spawned ${d.toFixed(0)} m away)`;
+  return null;
+}
+/** Reinforcements beam in where the player cannot see any of them, a hovering drone included. */
+function checkReinforceHidden(): string | null {
+  for (let seed = 1; seed <= 10; seed++)
+    for (const poi of POIS) {
+      const s = newRun(seed);
+      s.phase = "play";
+      const p = s.player;
+      p.pos = { x: poi.entry.x, y: groundAt(poi.entry.x, poi.entry.z, 0.4, 20), z: poi.entry.z };
+      p.onGround = true;
+      s.reinforceT = TICK;
+      const before = s.enemies.length;
+      step(s, idleInput(), false);
+      const eye = { x: p.pos.x, y: p.pos.y + 1.5, z: p.pos.z };
+      const seen = s.enemies.slice(before).find((e) => los(eye, { x: e.pos.x, y: e.pos.y + ENEMIES[e.kind].bodyY, z: e.pos.z }));
+      if (seen) return `reinforce scenario: a ${seen.kind} beamed in in sight of ${poi.name} (seed ${seed})`;
+    }
   return null;
 }
 /** Every bin holds a valuable, and walking over it adds its worth to the haul. */
@@ -408,7 +429,7 @@ function checkAllyHoldsFire(): string | null {
   if (shots) return `hold fire scenario: the teammate fired ${shots} shots at an idle robot`;
   return null;
 }
-for (const err of [checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkAllySelfUp(), checkStompHeight(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill()]) {
+for (const err of [checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkAllySelfUp(), checkStompHeight(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill()]) {
   if (err) {
     console.error(err);
     process.exit(1);

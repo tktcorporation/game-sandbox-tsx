@@ -30,12 +30,18 @@ interface SpawnOpts {
   appear?: boolean;
 }
 
-export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi: number, squad: number, o: SpawnOpts = {}): Enemy {
+/** Where a robot asked to appear at (x, z) on `floor` ends up: pushed out of solids, on its floor or at hover height. */
+export function spawnSpot(kind: EnemyKind, x: number, z: number, floor = 0): Vec3 {
   const k = ENEMIES[kind];
-  const floor = o.floor ?? 0;
   const pos = { x, y: floor, z };
   collide(pos, k.radius, bodyHeight(k));
   pos.y = k.fly > 0 ? flyHeight(pos.x, pos.z) : groundAt(pos.x, pos.z, k.radius, floor + 0.3);
+  return pos;
+}
+
+export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi: number, squad: number, o: SpawnOpts = {}): Enemy {
+  const k = ENEMIES[kind];
+  const pos = spawnSpot(kind, x, z, o.floor ?? 0);
   const face = o.face ?? rand(s) * Math.PI * 2;
   const e: Enemy = {
     id: s.nextId++,
