@@ -166,6 +166,7 @@ export function stepEnemies(s: State) {
   const p = s.player;
   stepSquads(s);
   for (const e of [...s.enemies]) {
+    if (s.phase === "done") return; // a robot ahead in the list ended the raid
     const k = ENEMIES[e.kind];
     e.lastHit += TICK;
     e.allyHit += TICK;

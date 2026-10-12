@@ -449,6 +449,8 @@ for (const skill of SKILLS) {
         const inp = bot.input(s);
         step(s, inp, prevCrouch);
         prevCrouch = inp.crouch;
+        const end = s.events.findIndex((e) => e.t === "done");
+        if (end >= 0 && end < s.events.length - 1) throw new Error(`${skill.name}#${r}: events after the raid ended: ${s.events.slice(end + 1).map((e) => e.t).join(",")}`);
         for (const e of s.events) {
           if (e.t === "ultStart") ults++;
           if (e.t === "landed") landed = s.time;

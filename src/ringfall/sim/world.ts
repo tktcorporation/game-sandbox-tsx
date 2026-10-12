@@ -1,5 +1,5 @@
 import { ALLY, HEALS, PLAYER, REINFORCE, SHIP_WAVES, TICK, VALUABLES, WORLD, type HealKind } from "./config";
-import { dist2d, groundAt, los } from "./geom";
+import { dist2d, groundAt, los, solidAt } from "./geom";
 import { steepAt, terrainHeight } from "./terrain";
 import { EXTRACTS, POIS, type ExtractPoint } from "./map";
 import { spawnEnemy } from "./enemies";
@@ -68,8 +68,10 @@ export function stepReinforce(s: State) {
   const eye = { x: p.pos.x, y: p.pos.y + 1.5, z: p.pos.z };
   const [near, far] = REINFORCE.dist;
   // Somewhere on open ground at the right distance, out of sight; the best of a few tries.
+  // The first tries also want a way in clear of buildings; failing that, a clear valley floor will do.
   let at: { x: number; z: number } | null = null;
-  for (let i = 0; i < 40 && !at; i++) {
+  for (let i = 0; i < 80 && !at; i++) {
+    const strict = i < 40;
     const a = rand(s) * Math.PI * 2;
     const d = near + rand(s) * (far - near);
     const x = p.pos.x + Math.sin(a) * d;
@@ -78,7 +80,7 @@ export function stepReinforce(s: State) {
     const g = groundAt(x, z, 1, 99);
     if (g > terrainHeight(x, z) + 0.3 || terrainHeight(x, z) > 4) continue; // valley floor only, not a roof or the high ground
     if (los(eye, { x, y: g + 1.5, z })) continue;
-    if (!walkable(x, z, p.pos.x, p.pos.z)) continue;
+    if (!walkable(x, z, p.pos.x, p.pos.z, strict)) continue;
     at = { x, z };
   }
   if (!at) {
@@ -99,13 +101,22 @@ export function stepReinforce(s: State) {
   s.events.push({ t: "reinforce", x: at.x, z: at.z });
 }
 
-/** A robot walking straight from (x, z) to (tx, tz) stays on the valley floor: no cliff, no high ground. */
-function walkable(x: number, z: number, tx: number, tz: number): boolean {
-  const n = Math.ceil(Math.hypot(tx - x, tz - z) / 2);
+/** Just above the 1.2 m a ground robot climbs (`CLIMB` in enemies.ts): low cover does not block it. */
+const CLIMB_OVER = 1.3;
+
+/**
+ * A robot walking straight from (x, z) to (tx, tz) stays on the valley floor: no cliff and no
+ * high ground, and with `solids` nothing taller than a robot can step onto. Robots walk straight
+ * at their goal, so a route that needs a door or stairs would leave them stuck at a wall.
+ */
+function walkable(x: number, z: number, tx: number, tz: number, solids: boolean): boolean {
+  const n = Math.ceil(Math.hypot(tx - x, tz - z) / 1);
   for (let i = 1; i < n; i++) {
     const qx = x + ((tx - x) * i) / n;
     const qz = z + ((tz - z) * i) / n;
     if (steepAt(qx, qz) || terrainHeight(qx, qz) > 4) return false;
+    const g = terrainHeight(qx, qz);
+    if (solids && solidAt(qx, g + CLIMB_OVER, qz)) return false;
   }
   return true;
 }
