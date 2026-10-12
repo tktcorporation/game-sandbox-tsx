@@ -150,6 +150,12 @@ export interface SquadState {
   roam: boolean;
   /** A reinforcement squad that keeps heading for the player until it first finds them. */
   hunt?: boolean;
+  /**
+   * Beamed in from afar (reinforcements, raiders): its walkers find their way by the
+   * ground's field (hunt.ts) whenever they cannot see whom they are after, fight or not,
+   * so one member's sighting does not strand the rest behind a cliff.
+   */
+  routed?: boolean;
   /** Raiders: elite members, and a closer hunt. */
   elite?: boolean;
   sinceSeen: number; // seconds since any member saw the player while engaged

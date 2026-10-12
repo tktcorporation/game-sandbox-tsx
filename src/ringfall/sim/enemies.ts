@@ -230,8 +230,11 @@ export function stepEnemies(s: State) {
     switch (e.mode) {
       case "move": {
         const sees = known.live && facing(e, tPos) && los(muzzle(e), tChest);
-        const ux = dx / d;
-        const uz = dz / d;
+        // Out of sight, a walker that came from afar closes in by the ground's way, not through a cliff.
+        const via = sees ? known : huntStep(s, e, known);
+        const vd = Math.hypot(via.x - e.pos.x, via.z - e.pos.z) || 1e-3;
+        const ux = (via.x - e.pos.x) / vd;
+        const uz = (via.z - e.pos.z) / vd;
         let along = 0;
         // At the last sighting with nobody in view, it stands and turns: the squad's search begins.
         if (!sees && !known.live && d < 2) along = 0;
@@ -413,11 +416,11 @@ function walkTo(e: Enemy, to: Point, speed: number, face = true): boolean {
 }
 
 /**
- * Where an alerted robot walks next toward its goal: straight at it, except that a
- * hunting squad's walkers follow the ground's distance field round cliffs and up ramps.
+ * Where a robot heads next on its way to `goal`: straight at it, except that the walkers
+ * of a squad beamed in from afar follow the ground's distance field round cliffs and up ramps.
  */
 function huntStep(s: State, e: Enemy, goal: Point): Point {
-  if (!s.squads[e.squad]?.hunt || ENEMIES[e.kind].fly > 0) return goal;
+  if (!s.squads[e.squad]?.routed || ENEMIES[e.kind].fly > 0) return goal;
   const f = fieldTo(goal.x, goal.z);
   return f ? nextStep(f, e.pos.x, e.pos.z, goal) : goal;
 }

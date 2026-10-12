@@ -273,7 +273,11 @@ function checkWalkableIsland(): string | null {
   return cut.length ? `walk scenario: no way on foot to ${cut.map(([n, x, z]) => `${n} (${x},${z})`).join(", ")}` : null;
 }
 
-/** Wherever the player waits, reinforcements find a hidden spot a walk away, and their walkers reach the fight. */
+/**
+ * Wherever the player waits, reinforcements find a hidden spot a walk away, and every one of
+ * their walkers reaches the fight: within 30 m, in sight, or behind cover it took to fight from,
+ * even after a drone found the player first.
+ */
 function checkReinforceEverywhere(): string | null {
   for (const [name, x, z] of WAIT_SPOTS)
     for (let seed = 1; seed <= 3; seed++) {
@@ -288,15 +292,14 @@ function checkReinforceEverywhere(): string | null {
       step(s, idleInput(), false);
       const walkers = s.enemies.slice(before).filter((e) => e.kind !== "drone");
       if (!walkers.length) return `reinforce everywhere: none beamed in at ${name} (seed ${seed})`;
-      if (seed > 1) continue;
       for (let t = 0; t < 60 * 60 && s.phase === "play"; t++) {
         p.iframes = 99;
         p.hp = PLAYER.hp;
         step(s, idleInput(), false);
       }
-      const left = s.enemies.filter((e) => walkers.includes(e));
-      const near = left.some((e) => e.aware === "engaged" || Math.hypot(e.pos.x - p.pos.x, e.pos.z - p.pos.z) < 25);
-      if (left.length && !near) return `reinforce everywhere: at ${name} the walkers are still out of the fight after 60 s`;
+      const eye = { x: p.pos.x, y: p.pos.y + 1.5, z: p.pos.z };
+      const out = s.enemies.filter((e) => walkers.includes(e) && !(e.aware === "engaged" && e.cover) && Math.hypot(e.pos.x - p.pos.x, e.pos.z - p.pos.z) > 30 && !los(eye, bodyCenter(e)));
+      if (out.length) return `reinforce everywhere: at ${name} (seed ${seed}) ${out.map((e) => `${e.kind} ${Math.hypot(e.pos.x - p.pos.x, e.pos.z - p.pos.z).toFixed(0)} m`).join(", ")} still out of the fight after 60 s`;
     }
   return null;
 }
