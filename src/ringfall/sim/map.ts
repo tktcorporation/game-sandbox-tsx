@@ -1,4 +1,4 @@
-import type { EnemyKind, HealKind, Rarity, WeaponKind } from "./config";
+import type { EnemyKind, HealKind, Rarity, ValuableKind, WeaponKind } from "./config";
 import { buildTerrain, rimRadius, steepAt, terrainHeight } from "./terrain";
 
 /**
@@ -232,9 +232,11 @@ export interface Squad {
   members: Member[];
   /** Waypoints walked in a loop while nothing is wrong. Without it the squad holds its posts. */
   patrol?: { x: number; z: number }[];
+  /** Roams the roads between districts: hears gunfire from further away (NOISE.roamMult). */
+  roam?: true;
 }
 
-export type LootTable = { weapon: [WeaponKind, Rarity][]; armor: Rarity[]; heals: number };
+export type LootTable = { weapon: [WeaponKind, Rarity][]; armor: Rarity[]; heals: number; valuable: ValuableKind };
 
 export interface Poi {
   name: string;
@@ -242,9 +244,7 @@ export interface Poi {
   z: number;
   /** The objective banner shows when the player comes this close. */
   trigger: number;
-  /** The ring closes to this radius around the POI. */
-  ring: number;
-  /** Where the player restarts after a wipe here. */
+  /** The way in from the main road: kept open and flat (the bot's default approach).*/
   entry: { x: number; z: number; yaw: number };
   /** Clearing the POI means beating every one of these squads. */
   squads: Squad[];
@@ -300,7 +300,6 @@ const POI_FRAMES: Poi[] = [
     x: 0,
     z: 50,
     trigger: 24,
-    ring: 70,
     entry: { x: 0, z: 74, yaw: 0 },
     squads: [
       { name: "見張り台", members: [{ kind: "grunt", x: 18, z: 63, y: 3, face: S }] },
@@ -317,7 +316,7 @@ const POI_FRAMES: Poi[] = [
       { x: -23, z: 47 },
       { x: 22, z: 52, y: STOREY },
     ],
-    loot: { weapon: [["hornet", 1], ["maul", 0], ["lance", 0], ["pike", 1]], armor: [1], heals: 1 },
+    loot: { weapon: [["hornet", 1], ["maul", 0], ["lance", 0], ["pike", 1]], armor: [1], heals: 1, valuable: "parts" },
     floor: [
       { x: 3, z: 66, weapon: ["hornet", 0] },
       { x: -4, z: 66, heal: "syringe" },
@@ -330,7 +329,6 @@ const POI_FRAMES: Poi[] = [
     x: -46,
     z: 2,
     trigger: 26,
-    ring: 55,
     entry: { x: -18, z: 30, yaw: -0.8 },
     squads: [
       { name: "鉄骨の足場", members: [{ kind: "grunt", x: -52, z: -15, y: 4, face: SE }] },
@@ -346,7 +344,7 @@ const POI_FRAMES: Poi[] = [
       { x: -46, z: 14 },
       { x: -73, z: -4, y: 5.5 },
     ],
-    loot: { weapon: [["pike", 2], ["maul", 1], ["lance", 1], ["hornet", 2], ["talon", 1]], armor: [2], heals: 2 },
+    loot: { weapon: [["pike", 2], ["maul", 1], ["lance", 1], ["hornet", 2], ["talon", 1]], armor: [2], heals: 2, valuable: "parts" },
     floor: [{ x: -45, z: -15, y: 4, heal: "medkit" }],
     carePackage: { x: -46, z: 0, weapon: ["lance", 3] },
   },
@@ -355,7 +353,6 @@ const POI_FRAMES: Poi[] = [
     x: 42,
     z: -28,
     trigger: 27,
-    ring: 55,
     entry: { x: 22, z: -6, yaw: -0.85 },
     squads: [
       { name: "中継塔", members: [{ kind: "grunt", x: 41.5, z: -29, y: 5, face: SW }] },
@@ -371,7 +368,7 @@ const POI_FRAMES: Poi[] = [
       { x: 44, z: -16 },
       { x: 48, z: -10, y: STOREY * 2 },
     ],
-    loot: { weapon: [["pike", 3], ["hornet", 2], ["maul", 2], ["lance", 2], ["talon", 2]], armor: [2, 3], heals: 2 },
+    loot: { weapon: [["pike", 3], ["hornet", 2], ["maul", 2], ["lance", 2], ["talon", 2]], armor: [2, 3], heals: 2, valuable: "board" },
     floor: [
       { x: 41.5, z: -29, y: 5, weapon: ["lance", 2] },
       { x: 50, z: -12, y: STOREY * 3, armor: 2 },
@@ -382,7 +379,6 @@ const POI_FRAMES: Poi[] = [
     x: 0,
     z: -68,
     trigger: 28,
-    ring: 46,
     entry: { x: 12, z: -40, yaw: 0.35 },
     squads: [{ name: "タイタン", members: [{ kind: "titan", x: 0, z: -76, face: S }, { kind: "drone", x: -8, z: -70 }, { kind: "drone", x: 8, z: -70 }] }],
     bins: [
@@ -391,7 +387,7 @@ const POI_FRAMES: Poi[] = [
       { x: -32, z: -60, y: STOREY },
       { x: 32, z: -60, y: STOREY },
     ],
-    loot: { weapon: [], armor: [3], heals: 2 },
+    loot: { weapon: [], armor: [3], heals: 2, valuable: "board" },
     floor: [],
     boss: true,
   },
@@ -402,7 +398,7 @@ export const POIS: Poi[] = POI_FRAMES.map((p, i) => placePoi(p, AT[i]));
 export type ExtractId = "ship" | "flare" | "village";
 
 /**
- * Ways off the island once the titan is down; the player picks one by walking to it.
+ * Ways off the island, open from the landing on; the player picks one by walking to it.
  * The dropship is right there but has to be called and held for while reinforcements
  * beam in; the plateau pickup is close and quick but needs a flare (top floors of the
  * high-rises); the village pickup needs nothing but a long walk and a wait.
@@ -440,6 +436,31 @@ export const ROAMERS: Squad[] = [
   { name: "住宅地", members: [{ kind: "grunt", x: 99, z: 16, y: STOREY * 2, face: W }] },
   { name: "廃村", members: [{ kind: "grunt", x: -112, z: -69, y: STOREY * 2, face: E }] },
   { name: "橋の上", members: [{ kind: "grunt", x: 52, z: -95, y: 6, face: N }] },
+  // Squads walking the valley roads up and down: met on the way, not found at a post.
+  {
+    name: "尾根道の巡回",
+    roam: true,
+    members: [{ kind: "grunt", x: -46, z: 80 }, { kind: "grunt", x: -48, z: 81.4 }, { kind: "drone", x: -44, z: 82 }],
+    patrol: [{ x: -46, z: 80 }, { x: -66, z: 52 }, { x: -80, z: 36 }, { x: -66, z: 52 }, { x: -46, z: 80 }, { x: -26, z: 100 }],
+  },
+  {
+    name: "東道の巡回",
+    roam: true,
+    members: [{ kind: "grunt", x: 44, z: -6 }, { kind: "charger", x: 42.4, z: -4.6 }, { kind: "drone", x: 46, z: -4 }],
+    patrol: [{ x: 44, z: -6 }, { x: 58, z: -22 }, { x: 44, z: -6 }, { x: 22, z: 8 }],
+  },
+  {
+    name: "北道の巡回",
+    roam: true,
+    members: [{ kind: "grunt", x: 2, z: -60 }, { kind: "grunt", x: 0.4, z: -58.6 }, { kind: "drone", x: 4, z: -58 }],
+    patrol: [{ x: 2, z: -60 }, { x: 6, z: -86 }, { x: 2, z: -60 }, { x: 0, z: -34 }],
+  },
+  {
+    name: "住宅道の巡回",
+    roam: true,
+    members: [{ kind: "grunt", x: 92, z: 38 }, { kind: "charger", x: 90.4, z: 39.4 }],
+    patrol: [{ x: 92, z: 38 }, { x: 104, z: 28 }, { x: 92, z: 38 }, { x: 72, z: 50 }],
+  },
 ];
 export const SPAWN = { x: 0, z: 140, yaw: 0 };
 

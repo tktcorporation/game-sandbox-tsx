@@ -207,11 +207,8 @@ export const sfx = {
     tone(392, 0.3, { type: "triangle", vol: 0.1 });
     tone(587, 0.4, { type: "triangle", vol: 0.1, at: 0.09 });
   },
-  ringWarn() {
+  reinforce() {
     for (let i = 0; i < 3; i++) tone(700, 0.18, { type: "square", vol: 0.05, at: i * 0.28 });
-  },
-  ringHurt() {
-    hiss(0.2, { freq: 900, vol: 0.12 });
   },
   careDrop() {
     tone(900, 1.4, { type: "sine", to: 200, vol: 0.06, attack: 0.3 });

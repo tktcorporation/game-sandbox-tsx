@@ -79,7 +79,7 @@ export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi:
 export function populate(s: State) {
   const add = (sq: Squad, poi: number) => {
     const index = s.squads.length;
-    s.squads.push({ name: sq.name, poi, patrol: sq.patrol ?? [], leg: 0, engaged: false, sinceSeen: 0, last: { x: 0, z: 0 } });
+    s.squads.push({ name: sq.name, poi, patrol: sq.patrol ?? [], leg: 0, engaged: false, roam: !!sq.roam, sinceSeen: 0, last: { x: 0, z: 0 } });
     for (const m of sq.members) spawnEnemy(s, m.kind, m.x, m.z, poi, index, { floor: m.y ?? 0, face: m.face });
   };
   POIS.forEach((p, i) => p.squads.forEach((sq) => add(sq, i)));

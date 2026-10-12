@@ -27,7 +27,7 @@ export function stepDrop(s: State, input: Input): boolean {
     p.pos.y = g;
     p.onGround = true;
     s.phase = "play";
-    s.poiStart = s.time;
+    s.landedAt = s.time;
     s.events.push({ t: "landed" }, { t: "land", speed: DROP.fallSpeed });
     return true;
   }
@@ -410,10 +410,10 @@ export function tickReveal(s: State) {
   s.player.reveal = Math.max(0, s.player.reveal - TICK);
 }
 
-export function hurtPlayer(s: State, dmg: number, fromX: number, fromZ: number, ring = false) {
+export function hurtPlayer(s: State, dmg: number, fromX: number, fromZ: number) {
   const p = s.player;
-  if (s.phase !== "play" && s.phase !== "extract") return;
-  if (p.downed > 0 || (p.iframes > 0 && !ring)) return;
+  if (s.phase !== "play") return;
+  if (p.downed > 0 || p.iframes > 0) return;
   p.sinceHurt = 0;
   const hadShield = p.shield > 0;
   const toShield = Math.min(p.shield, dmg);
@@ -438,38 +438,15 @@ export function hurtPlayer(s: State, dmg: number, fromX: number, fromZ: number, 
   } else wipe(s);
 }
 
-/** Everyone down: back to this POI's entry (the teammate too) with full health; robots keep their damage. */
+/**
+ * Everyone down: the raid is lost, and everything carried with it. The air is
+ * cleared so nothing still in flight lands after the end.
+ */
 export function wipe(s: State) {
-  const p = s.player;
-  const poi = POIS[Math.min(s.poi, POIS.length - 1)];
   s.stats.wipes++;
-  p.pos = { x: poi.entry.x, y: groundAt(poi.entry.x, poi.entry.z, PLAYER.radius, 99), z: poi.entry.z };
-  p.vel = { x: 0, y: 0, z: 0 };
-  p.mantle = null;
-  p.yaw = poi.entry.yaw;
-  p.pitch = 0;
-  p.hp = PLAYER.hp;
-  p.shield = PLAYER.shieldByTier[p.armor];
-  p.downed = 0;
-  p.awaitAlly = false;
-  p.selfRevive = 1;
-  p.iframes = 2.5;
-  placeAlly(s);
   s.orbs = [];
   s.waves = [];
-  // Robots lose track of the player and go back to their posts; damage stays. The
-  // titan's squad, once woken, keeps fighting.
-  const boss = new Set(s.enemies.filter((e) => e.kind === "titan").map((e) => e.squad));
-  for (const e of s.enemies) {
-    if (e.mode !== "spawning") e.mode = "move";
-    e.cooldown = 2.5;
-    if (boss.has(e.squad)) continue;
-    e.aware = "idle";
-    e.detect = 0;
-    e.goal = e.cover = e.peek = null;
-  }
-  s.squads.forEach((sq, i) => {
-    if (!boss.has(i)) sq.engaged = false;
-  });
-  s.events.push({ t: "wipe" });
+  s.phase = "done";
+  s.outcome = "dead";
+  s.events.push({ t: "wipe" }, { t: "done" });
 }

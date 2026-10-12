@@ -61,7 +61,6 @@ kbd {
 }
 
 /* --- screen effects */
-#fx-ring,
 #fx-hurt,
 #fx-ult {
   position: fixed;
@@ -69,9 +68,6 @@ kbd {
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.25s;
-}
-#fx-ring {
-  background: radial-gradient(ellipse at center, transparent 45%, rgba(255, 90, 42, 0.55) 100%);
 }
 #fx-hurt {
   background: radial-gradient(ellipse at center, transparent 55%, rgba(200, 20, 40, 0.6) 100%);
@@ -175,13 +171,13 @@ kbd {
   font-size: 26px;
   line-height: 1;
 }
-#obj-ring {
+#obj-raid {
   grid-column: 1 / -1;
   color: #ffb08f;
   font-size: 13px;
   font-weight: 800;
 }
-#obj-ring:empty {
+#obj-raid:empty {
   display: none;
 }
 
@@ -1013,7 +1009,11 @@ body.touch .mate-bars {
   color: var(--white);
 }
 #pois {
-  grid-template-columns: repeat(5, auto);
+  grid-template-columns: repeat(4, auto);
+}
+#pois .lost b {
+  color: var(--muted);
+  text-decoration: line-through;
 }
 
 /* --- touch controls (body.touch is set when the device has a touch screen) */

@@ -40,7 +40,7 @@ const dot = (x: number, z: number, r: number, c: [number, number, number]) => {
   for (let a = -r; a <= r; a += 1 / PX) for (let b = -r; b <= r; b += 1 / PX) if (a * a + b * b <= r * r) put(x + a, z + b, c);
 };
 for (const p of POIS) {
-  for (let a = 0; a < Math.PI * 2; a += 0.01) put(p.x + Math.cos(a) * p.ring, p.z + Math.sin(a) * p.ring, [255, 90, 40]);
+  for (let a = 0; a < Math.PI * 2; a += 0.01) put(p.x + Math.cos(a) * p.trigger, p.z + Math.sin(a) * p.trigger, [255, 90, 40]);
   for (const sq of p.squads) for (const m of sq.members) dot(m.x, m.z, 1.5, [220, 30, 60]);
   dot(p.entry.x, p.entry.z, 2, [40, 200, 80]);
 }

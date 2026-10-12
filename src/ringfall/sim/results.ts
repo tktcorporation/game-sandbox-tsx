@@ -1,13 +1,19 @@
-import { RANK } from "./config";
+import { SCORE, VALUABLES } from "./config";
+import { POIS } from "./map";
 import type { State } from "./state";
 
+/** Worth of everything the player carries. */
+export const haulValue = (s: State) => s.player.haul.reduce((n, k) => n + VALUABLES[k].value, 0);
+
 /**
- * Rank from total time against par, wipes and downs. Each 25% over par, each wipe
- * and every two downs costs one step from S.
+ * A raid's score and rank. Getting off the island scores the haul plus a bonus per
+ * POI cleared (more for the titan); a wipe scores nothing and has no rank.
  */
-export function rank(s: State): { rank: (typeof RANK.steps)[number]; total: number; steps: number } {
-  const total = s.stats.poiTimes.reduce((a, b) => a + b, 0);
-  const over = Math.max(0, total - RANK.parSeconds) / (RANK.parSeconds * 0.25);
-  const steps = Math.floor(over) + s.stats.wipes + Math.floor(s.stats.downs / 2);
-  return { rank: RANK.steps[Math.min(steps, RANK.steps.length - 1)], total, steps };
+export function rank(s: State): { rank: string; score: number; haul: number; cleared: number } {
+  const cleared = s.stats.cleared.length;
+  const haul = haulValue(s);
+  if (s.outcome !== "extracted") return { rank: "-", score: 0, haul, cleared };
+  const boss = s.stats.cleared.filter((i) => POIS[i].boss).length;
+  const score = haul + (cleared - boss) * SCORE.poi + boss * SCORE.titan;
+  return { rank: SCORE.ranks.find(([, min]) => score >= min)![0], score, haul, cleared };
 }

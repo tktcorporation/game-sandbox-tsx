@@ -73,8 +73,6 @@ export class World {
   private tracers: Tracer[] = [];
   private particles: Particle[] = [];
   private partMesh: THREE.InstancedMesh;
-  private ringMesh: THREE.Mesh;
-  private ringMat: THREE.ShaderMaterial;
   private care: THREE.Group | null = null;
   private careBeam: THREE.Mesh;
   private dropship: THREE.Group | null = null;
@@ -130,26 +128,6 @@ export class World {
     this.scatterRocks();
     this.addClouds();
 
-    this.ringMat = new THREE.ShaderMaterial({
-      transparent: true,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-      uniforms: { time: { value: 0 }, color: { value: new THREE.Color(PAL.ring) } },
-      vertexShader: `varying vec2 vUv; varying vec3 vWorld;
-        void main(){ vUv = uv; vec4 w = modelMatrix * vec4(position,1.0); vWorld = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
-      fragmentShader: `uniform float time; uniform vec3 color; varying vec2 vUv; varying vec3 vWorld;
-        void main(){
-          float d = distance(cameraPosition.xz, vWorld.xz);
-          float near = 1.0 - smoothstep(6.0, 45.0, d);
-          float band = step(0.82, fract(vUv.x * 220.0 + time * 0.25));
-          float height = 1.0 - smoothstep(0.0, 0.35, vUv.y);
-          float a = (0.05 + band * 0.05) * (0.35 + 0.65 * height) + near * (0.28 + band * 0.12);
-          gl_FragColor = vec4(color, a);
-        }`,
-    });
-    this.ringMesh = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 128, 1, true), this.ringMat);
-    this.ringMesh.renderOrder = 2;
-    this.scene.add(this.ringMesh);
 
     this.partMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: 0xffffff }), 700);
     this.partMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -500,12 +478,6 @@ export class World {
     this.sun.position.set(fx - 40, 80, fz + 30);
     this.sun.target.position.set(fx, 0, fz);
 
-    // --- ring
-    const r = s.ring;
-    this.ringMesh.scale.set(r.r, 140, r.r);
-    this.ringMesh.position.set(r.x, 70, r.z);
-    this.ringMat.uniforms.time.value = this.time;
-
     for (const c of this.clouds) c.visible = drop || p.pos.y > 30;
 
     // --- teammate
@@ -646,15 +618,16 @@ export class World {
     for (const l of s.loot) {
       let g = this.loot.get(l.id);
       if (!g) {
-        g = buildLootItem(l.kind, l.rarity, l.weapon?.kind, l.heal);
+        g = buildLootItem(l.kind, l.rarity, l.weapon?.kind, l.heal, l.valuable);
         this.loot.set(l.id, g);
         this.scene.add(g);
       }
       g.position.set(l.pos.x, l.pos.y + (l.kind === "shard" ? 0.5 : 0), l.pos.z);
       g.rotation.y = this.time * (l.kind === "shard" ? 5 : 1.2) + l.id;
     }
+    const present = new Set(s.loot.map((l) => l.id));
     for (const [id, g] of this.loot) {
-      if (!s.loot.some((l) => l.id === id)) {
+      if (!present.has(id)) {
         this.scene.remove(g);
         this.loot.delete(id);
       }
@@ -681,9 +654,9 @@ export class World {
     }
 
     // --- extraction
-    this.extractRings.forEach((r) => (r.visible = s.phase === "extract"));
+    this.extractRings.forEach((r) => (r.visible = s.phase === "play"));
     // The dropship comes once called, and is low over the pad when it lands.
-    if ((s.phase === "extract" || s.phase === "done") && s.shipCall >= 0) {
+    if (s.phase !== "drop" && s.shipCall >= 0) {
       if (!this.dropship) {
         this.dropship = buildDropship();
         this.dropship.position.set(EXTRACT.x, 90, EXTRACT.z - 2);
@@ -696,7 +669,7 @@ export class World {
     }
     // A lit flare at the plateau pickup sends up red smoke.
     const here = EXTRACTS.find((x) => x.needsFlare);
-    if (here && s.phase === "extract" && s.extractTime > 0 && Math.hypot(s.player.pos.x - here.x, s.player.pos.z - here.z) < here.radius) {
+    if (here && s.phase === "play" && s.extractTime > 0 && Math.hypot(s.player.pos.x - here.x, s.player.pos.z - here.z) < here.radius) {
       if (Math.random() < dt * 30) this.burst({ x: here.x, y: groundAt(here.x, here.z, 0.4, 99) + 0.4, z: here.z }, PAL.ring, 2, 1.2, 0.25, -2.5, 2.2);
     }
 
@@ -786,11 +759,18 @@ export class World {
     this.particles = [];
   }
 
-  /** The POI the HUD should mark next, in world coordinates. */
+  /** The nearest POI not yet cleared, which the HUD marks; the extraction points have markers of their own. */
   objective(s: State): Vec3 | null {
-    if (s.phase === "extract") return null; // the HUD marks every extraction point
-    const poi = POIS[s.poi];
-    if (!poi) return null;
-    return { x: poi.x, y: 2, z: poi.z };
+    const p = s.player.pos;
+    let best: Vec3 | null = null;
+    let bd = Infinity;
+    POIS.forEach((poi, i) => {
+      const d = Math.hypot(poi.x - p.x, poi.z - p.z);
+      if (!s.cleared[i] && d < bd) {
+        bd = d;
+        best = { x: poi.x, y: 2, z: poi.z };
+      }
+    });
+    return best;
   }
 }

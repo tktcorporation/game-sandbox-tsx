@@ -20,7 +20,7 @@ export const allyUp = (s: State) => s.ally.active && s.ally.down <= 0;
 export const allyChest = (a: Ally): Vec3 => ({ x: a.pos.x, y: a.pos.y + (a.down > 0 ? 0.4 : 1.1), z: a.pos.z });
 const allyEye = (a: Ally): Vec3 => ({ x: a.pos.x, y: a.pos.y + EYE, z: a.pos.z });
 
-/** Put the teammate on the ground beside the player (landing, wipes). */
+/** Put the teammate on the ground beside the player (on landing). */
 export function placeAlly(s: State) {
   const a = s.ally;
   const p = s.player;
@@ -66,7 +66,7 @@ function recordTrail(s: State) {
 
 export function hurtAlly(s: State, dmg: number) {
   const a = s.ally;
-  if (!allyUp(s) || (s.phase !== "play" && s.phase !== "extract")) return;
+  if (!allyUp(s) || s.phase !== "play") return;
   a.sinceHurt = 0;
   const toShield = Math.min(a.shield, dmg);
   a.shield -= toShield;

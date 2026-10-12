@@ -10,7 +10,7 @@ import type { Enemy, State, Vec3 } from "./state";
 export const headOf = (e: Enemy): Vec3 => ({ x: e.pos.x, y: e.pos.y + Math.max(ENEMIES[e.kind].weakY, 0.2), z: e.pos.z });
 
 /** The player is a valid target for robots: on the ground and not knocked down. */
-const visibleNow = (s: State) => (s.phase === "play" || s.phase === "extract") && s.player.downed <= 0;
+const visibleNow = (s: State) => s.phase === "play" && s.player.downed <= 0;
 
 /**
  * Whether another squad may start fighting (see AWARE.maxSquads). The boss
@@ -62,7 +62,8 @@ export function makeNoise(s: State, x: number, z: number, radius: number) {
   for (const e of s.enemies) {
     if (e.aware === "engaged" || e.mode === "spawning") continue;
     const d = dist2d(e.pos, spot);
-    if (d > radius) continue;
+    // Squads out on the roads hear it from further and come to look.
+    if (d > radius * (s.squads[e.squad]?.roam ? NOISE.roamMult : 1)) continue;
     if (d < radius * NOISE.engageInside && los(headOf(e), spot) && mayEngage(s, e)) engageSquad(s, e.squad, e);
     else if (!alerted.has(e.squad)) {
       alerted.add(e.squad);

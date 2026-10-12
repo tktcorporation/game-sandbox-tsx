@@ -245,7 +245,7 @@ let s = after;
 for (let i = 0; i < 25 * 60 * 10; i++) {
   await page.evaluate(() => window.advanceTime(100));
   s = await read();
-  const key = `${s.phase}-${s.poi}-${s.enemies.length}-${s.poiActive}-${s.loot}-${s.stats.kills}`;
+  const key = `${s.phase}-${s.cleared.join("")}-${s.enemies.length}-${s.loot}-${s.stats.kills}-${s.haul.value}`;
   if (key !== prevKey) {
     prevKey = key;
     lastProgress = s.time;
@@ -253,31 +253,35 @@ for (let i = 0; i < 25 * 60 * 10; i++) {
   if (s.time - lastProgress > 90) throw new Error(`no progress for 90 s: ${JSON.stringify(s).slice(0, 600)}`);
   const live = s.enemies.filter((e) => e.mode !== "spawning" && e.aware === "engaged");
   const near = (e) => Math.hypot(e.x - s.player.x, e.z - s.player.z);
-  if (s.phase === "play") await shot("02-landed");
-  if (s.poi === 0 && live.length >= 2 && s.orbs >= 1) await shot("03-fight-supply");
+  const at = (poi) => live.some((e) => s.squads[e.squad].poi === poi);
+  if (s.phase === "play" && !taken.has("02-landed")) {
+    await shot("02-landed");
+    // The ways off the island are open from the start and listed on the objective card.
+    const lines = await page.evaluate(() => document.getElementById("obj-exits").children.length);
+    if (lines !== 3) errors.push(`landed: the objective card lists ${lines} ways out, not 3`);
+  }
+  if (at(0) && live.length >= 2 && s.orbs >= 1) await shot("03-fight-supply");
   if (s.stats.kills >= 3 && s.enemies.some((e) => e.mode !== "spawning" && e.hp < 60)) await shot("04-damage-numbers");
-  if (s.stats.poiTimes.length >= 2 && !live.length && s.loot >= 3) await shot("05-loot");
+  if (s.stats.cleared.length >= 2 && !live.length && s.loot >= 3) await shot("05-loot");
   if (s.care && !s.care.landed) await shot("06-care-package");
   if (s.player.ultTime > 4) await shot("07-overdrive");
-  if (s.poi === 2 && live.some((e) => e.kind === "heavy") && s.orbs >= 2) await shot("08-relay-heavy");
+  if (at(2) && live.some((e) => e.kind === "heavy") && s.orbs >= 2) await shot("08-relay-heavy");
   if (!live.length && s.enemies.some((e) => (e.aware === "alert" || e.detect > 0.3) && near(e) < 45)) await shot("14-noticed");
   if (s.player.reveal > 2) await shot("15-reveal");
   if (s.stats.flankHits > prevFlank && s.stats.flankHits >= 3) await shot("16-flank-hit");
   prevFlank = s.stats.flankHits;
-  if (s.squads.some((q) => q.lost && q.poi === s.poi) && live.length) await shot("17-lost-track");
-  if (s.poi === 3 && live.some((e) => e.kind === "titan") && s.orbs >= 2) await shot("09-titan");
+  if (s.squads.some((q) => q.lost) && live.length) await shot("17-lost-track");
+  if (live.some((e) => e.kind === "titan") && s.orbs >= 2) await shot("09-titan");
   if (s.waves > 0) await shot("10-stomp");
   if (s.player.downed) await shot("11-downed");
   if (s.ally.target && live.length >= 2 && Math.hypot(s.ally.x - s.player.x, s.ally.z - s.player.z) > 3) await shot("19-teammate-fight");
-  if (s.phase === "extract" && !taken.has("12-extract")) {
-    await shot("12-extract");
-    const lines = await page.evaluate(() => document.getElementById("obj-exits").children.length);
-    if (lines !== 3) errors.push(`extract: the objective card lists ${lines} ways out, not 3`);
-  }
-  if (s.phase === "extract" && s.extract.ship > 0 && live.length >= 2) await shot("20-ship-waves");
+  if (s.extract.hold > 0 || s.extract.ship > 0) await shot("12-extract");
+  if (s.extract.ship > 0 && live.length >= 2) await shot("20-ship-waves");
+  if (s.reinforce.came > 0 && live.some((e) => s.squads[e.squad].name === "増援")) await shot("21-reinforce");
+  if (s.haul.value >= 1000 && !live.length) await shot("22-haul");
   if (s.phase === "done") break;
 }
-if (s.phase !== "done") errors.push(`run did not finish: ${JSON.stringify(s).slice(0, 300)}`);
+if (s.phase !== "done" || s.outcome !== "extracted") errors.push(`run did not get off the island: ${JSON.stringify(s).slice(0, 300)}`);
 await page.waitForTimeout(1800);
 await page.screenshot({ path: `${out}/13-results.png` });
 console.log(JSON.stringify((await read()).stats));

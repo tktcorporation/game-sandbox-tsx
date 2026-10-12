@@ -1,4 +1,4 @@
-import { ALLY, ASSIST, DEG, ENEMIES, FLANK, NOISE, PLAYER, RARITY, TICK, ULT, WEAPONS, type Flank, type WeaponSpec } from "./config";
+import { ALLY, ASSIST, DEG, ENEMIES, FLANK, NOISE, PLAYER, RARITY, TICK, ULT, WEAPONS, type Flank, type ValuableKind, type WeaponSpec } from "./config";
 import { engageSquad, makeNoise } from "./awareness";
 import { POIS } from "./map";
 import { los, lookAngles, norm, rayWorld, raySphere, wrapAngle } from "./geom";
@@ -213,7 +213,13 @@ export function kill(s: State, e: Enemy, crit: boolean, by: "player" | "ally" = 
   if (e.kind !== "titan" && rand(s) < 0.12) {
     s.loot.push({ id: s.nextId++, kind: "heal", heal: rand(s) < 0.5 ? "cell" : "syringe", rarity: 1, pos: { ...c }, vel: { x: 0, y: 5, z: 0 }, age: 0 });
   }
-  const last = e.poi === s.poi && s.poi < POIS.length && !s.enemies.some((o) => o.poi === s.poi);
+  // Valuables: a chance of parts from most robots, a board from a heavy, data cores from the titan.
+  const drops: ValuableKind[] = e.kind === "titan" ? ["core", "core"] : e.kind === "heavy" ? ["board"] : rand(s) < 0.3 ? ["parts"] : [];
+  for (const v of drops) {
+    const a = rand(s) * Math.PI * 2;
+    s.loot.push({ id: s.nextId++, kind: "valuable", valuable: v, rarity: v === "core" ? 3 : v === "board" ? 2 : 1, pos: { ...c }, vel: { x: Math.cos(a) * 1.5, y: 5, z: Math.sin(a) * 1.5 }, age: 0 });
+  }
+  const last = e.poi >= 0 && !s.enemies.some((o) => o.poi === e.poi);
   s.events.push({ t: "kill", id: e.id, kind: e.kind, pos: c, crit, last, ally: by === "ally" });
   if (e.kind === "titan") {
     // The titan's fall takes its summons and everything in the air with it.

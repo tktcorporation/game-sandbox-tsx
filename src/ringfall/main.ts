@@ -4,6 +4,7 @@ import { dist2d } from "./sim/geom";
 import { idleInput, newRun, type GameEvent, type Input, type State } from "./sim/state";
 import { step } from "./sim/step";
 import { hurtAlly } from "./sim/ally";
+import { haulValue } from "./sim/results";
 import { setWind, sfx, unlock } from "./view/audio";
 import { Hud } from "./view/hud";
 import { World } from "./view/world";
@@ -245,11 +246,8 @@ function onEvent(e: GameEvent, s: State) {
     case "landed":
       sfx.banner();
       break;
-    case "ringClose":
-      if (e.poi > 0) sfx.ringWarn();
-      break;
-    case "ringHurt":
-      sfx.ringHurt();
+    case "reinforce":
+      sfx.reinforce();
       break;
     case "careDrop":
       sfx.careDrop();
@@ -263,12 +261,12 @@ function onEvent(e: GameEvent, s: State) {
     case "revive":
       sfx.revive();
       break;
-    case "extractReady":
+    case "titanDown":
       sfx.victory();
       break;
     case "done":
-      sfx.victory();
-      setTimeout(finish, 1400);
+      if (s.outcome === "extracted") sfx.victory();
+      setTimeout(finish, s.outcome === "extracted" ? 1400 : 2400);
       break;
   }
 }
@@ -353,7 +351,7 @@ function start() {
   $("results").hidden = true;
   $("pause").hidden = true;
   hud.show(true);
-  hud.banner("降下", `${touchMode ? "スティック" : "WASD"}で着地点を選ぶ。黄色の目印が最初の拠点`);
+  hud.banner("降下", `${touchMode ? "スティック" : "WASD"}で着地点を選ぶ。黄色の目印が近い拠点`);
   lock();
 }
 
@@ -416,8 +414,12 @@ window.render_game_to_text = () => {
     screen: running ? "game" : $("results").hidden ? "title" : "results",
     phase: s.phase,
     time: +s.time.toFixed(1),
-    poi: s.poi,
-    poiActive: s.poiActive,
+    outcome: s.outcome,
+    raid: +(s.phase === "drop" ? 0 : s.time - s.landedAt).toFixed(1),
+    visited: s.visited,
+    cleared: s.cleared,
+    reinforce: { next: +s.reinforceT.toFixed(1), came: s.reinforceN },
+    haul: { items: s.player.haul, value: haulValue(s) },
     player: { x: +p.pos.x.toFixed(1), y: +p.pos.y.toFixed(1), z: +p.pos.z.toFixed(1), hp: Math.round(p.hp), shield: Math.round(p.shield), armor: p.armor, downed: p.downed > 0, weapons: p.weapons.map((w) => w && `${w.kind}${w.rarity}:${w.mag}`), ult: +p.ult.toFixed(2), ultTime: +p.ultTime.toFixed(1), reveal: +p.reveal.toFixed(1), crouch: p.crouch },
     ally: { active: s.ally.active, x: +s.ally.pos.x.toFixed(1), y: +s.ally.pos.y.toFixed(1), z: +s.ally.pos.z.toFixed(1), hp: Math.round(s.ally.hp), shield: Math.round(s.ally.shield), down: +s.ally.down.toFixed(1), helped: +s.ally.helped.toFixed(1), rescue: +s.ally.rescue.toFixed(1), target: s.ally.target },
     awaitAlly: p.awaitAlly,

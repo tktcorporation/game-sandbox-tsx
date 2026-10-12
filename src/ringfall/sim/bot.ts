@@ -23,12 +23,13 @@ export interface Skill {
   heads: boolean; // aims at the weak point instead of the body
   abilities: number; // chance per second to use tactical when it would help
   flank: number; // chance to leave a robot that faces it and come back from its side or back
+  raid: number; // POIs it clears before heading for a way out
 }
 
 export const SKILLS: Skill[] = [
-  { name: "beginner", aimErr: 6.5, turn: 0.1, react: 0.45, dodge: 0.25, heads: false, abilities: 0.25, flank: 0.2 },
-  { name: "casual", aimErr: 3.2, turn: 0.18, react: 0.28, dodge: 0.55, heads: false, abilities: 0.8, flank: 0.5 },
-  { name: "good", aimErr: 1.1, turn: 0.32, react: 0.15, dodge: 0.9, heads: true, abilities: 3, flank: 0.85 },
+  { name: "beginner", aimErr: 6.5, turn: 0.1, react: 0.45, dodge: 0.25, heads: false, abilities: 0.25, flank: 0.2, raid: 2 },
+  { name: "casual", aimErr: 3.2, turn: 0.18, react: 0.28, dodge: 0.55, heads: false, abilities: 0.8, flank: 0.5, raid: 3 },
+  { name: "good", aimErr: 1.1, turn: 0.32, react: 0.15, dodge: 0.9, heads: true, abilities: 3, flank: 0.85, raid: 4 },
 ];
 
 const PREF: Record<string, number> = { pike: 14, hornet: 9, maul: 5, lance: 20, talon: 30 };
@@ -93,12 +94,13 @@ export class Bot {
     const eye = eyePos(s);
     this.from = { x: p.pos.x, z: p.pos.z };
     const live = s.enemies.filter((e) => e.mode !== "spawning");
-    // Only fight robots that are after us or stand at the current objective; leave the rest alone.
-    const relevant = live.filter((e) => e.aware === "engaged" || e.poi === s.poi);
+    // Only fight robots that are after us or stand at the POI we are taking; leave the rest alone.
+    const aim = this.nextPoi(s);
+    const relevant = live.filter((e) => e.aware === "engaged" || (aim >= 0 && e.poi === aim));
     const sees = (e: Enemy) => dist2d(e.pos, p.pos) < 60 && los(eye, bodyCenter(e));
     // Finish the squads already fighting before opening on a new one, as a careful player would.
     const engaged = relevant.filter((e) => e.aware === "engaged");
-    const objective = relevant.filter((e) => e.poi === s.poi);
+    const objective = relevant.filter((e) => aim >= 0 && e.poi === aim);
     const engagedSeen = engaged.filter(sees);
     const pool = engagedSeen.length ? engagedSeen : engaged.length ? engaged : objective.filter(sees).length ? objective.filter(sees) : objective;
     // A flank in progress keeps its robot; otherwise the nearest one.
@@ -115,7 +117,7 @@ export class Bot {
     if (s.phase === "drop") {
       const poi = POIS[0];
       goal = { x: poi.x, z: poi.z + 14 };
-    } else if (s.phase === "extract" && (s.shipCall === 0 || !tgt || dist2d(tgt.pos, p.pos) > 70)) {
+    } else if (aim < 0 && (s.shipCall === 0 || !tgt || dist2d(tgt.pos, p.pos) > 70)) {
       goal = this.exit(s);
     } else if (tgt && dist2d(tgt.pos, p.pos) < 70) {
       fight = true;
@@ -124,7 +126,7 @@ export class Bot {
       goal = { x: s.ally.pos.x, z: s.ally.pos.z };
     } else {
       const lg = this.lootGoal(s);
-      goal = lg ?? (s.poi < POIS.length ? POIS[s.poi] : this.exit(s));
+      goal = lg ?? (aim >= 0 ? POIS[aim] : this.exit(s));
       // Swap a better weapon in for the worse one, never for the one in hand.
       if (lg?.weapon) {
         const r = p.weapons.map((w) => (w ? w.rarity : -1));
@@ -205,12 +207,15 @@ export class Bot {
         inp.moveZ = Math.cos(rel);
         inp.moveX = Math.sin(rel);
       } else if (!sees && onTerrain(p.pos)) {
-        // Walk a ground path toward it. A robot up high is hidden by its own roof edge
-        // from close below, so back off to about 14 m to get an angle on it instead.
+        // Walk a ground path toward it. A robot up high is hidden by its own roof edge or
+        // tower walls from close below, so walk to the nearest ground spot that sees it instead.
         let to = { x: tgt.pos.x, z: tgt.pos.z };
         if (tgt.pos.y > p.pos.y + 1.5) {
-          const k = 14 / Math.max(d, 0.1);
-          to = { x: tgt.pos.x + (p.pos.x - tgt.pos.x) * k, z: tgt.pos.z + (p.pos.z - tgt.pos.z) * k };
+          if (!this.angle || this.angle.id !== tgt.id || s.time > this.angle.until) {
+            const spot = this.angleSpot(tgt);
+            this.angle = { id: tgt.id, until: s.time + 4, x: spot?.x ?? to.x, z: spot?.z ?? to.z };
+          }
+          to = { x: this.angle.x, z: this.angle.z };
         }
         const step = this.via(s, to);
         const rel = lookAngles(p.pos, { x: step.x, y: 0, z: step.z }).yaw - p.yaw;
@@ -263,15 +268,6 @@ export class Bot {
         inp.interact = true;
         this.interactT = 0.5;
       }
-    }
-    // Never back out of the ring: near its edge, walk toward its centre.
-    const ring = s.ring;
-    const out = dist2d(p.pos, ring) - (ring.r - 4);
-    if (out > 0 && this.unstick <= 0) {
-      const inward = this.via(s, { x: ring.x, z: ring.z });
-      const toward = lookAngles(p.pos, { x: inward.x, y: 0, z: inward.z }).yaw - p.yaw;
-      inp.moveZ = Math.cos(toward);
-      inp.moveX = Math.sin(toward);
     }
     if (this.crouch) {
       inp.crouch = true;
@@ -327,6 +323,19 @@ export class Bot {
   }
 
   /**
+   * The POI to take next: the nearest one not yet cleared, until the bot has cleared
+   * as many as its skill dares (`Skill.raid`). The titan's landing pad comes only last,
+   * and only for a bot that takes on every POI. -1 means it is time to leave.
+   */
+  private nextPoi(s: State): number {
+    if (s.stats.cleared.length >= this.skill.raid) return -1;
+    const p = s.player;
+    const open = POIS.map((poi, i) => ({ poi, i })).filter(({ poi, i }) => !s.cleared[i] && (!poi.boss || s.stats.cleared.length >= POIS.length - 1));
+    open.sort((a, b) => dist2d(a.poi, p.pos) - dist2d(b.poi, p.pos));
+    return open[0]?.i ?? -1;
+  }
+
+  /**
    * The way off the island: a flare's quick pickup when it has one, else beginners
    * take the long quiet walk and the others call the dropship and hold.
    */
@@ -359,6 +368,24 @@ export class Bot {
         if (exposed < 0.6 && (!best || cost < best.cost)) best = { x, z, cost };
       }
     return best ? { x: best.x, z: best.z } : null;
+  }
+
+  private angle: { id: number; until: number; x: number; z: number } | null = null;
+
+  /** The nearest ground spot (by route) within 40 m of a robot up high that sees its body. */
+  private angleSpot(tgt: Enemy): { x: number; z: number } | null {
+    let best: { x: number; z: number; len: number } | null = null;
+    for (let r = 10; r <= 40; r += 5)
+      for (let a = 0; a < 2 * Math.PI; a += Math.PI / 12) {
+        const x = tgt.pos.x + Math.sin(a) * r;
+        const z = tgt.pos.z - Math.cos(a) * r;
+        if (Math.max(Math.abs(x), Math.abs(z)) > WORLD.half - 3) continue;
+        if (groundAt(x, z, 0.4, 0.3) > 0.3 || [0.3, 1.0, 1.6].some((h) => solidAt(x, h, z))) continue;
+        if (!los({ x, y: 1.6, z }, bodyCenter(tgt))) continue;
+        const route = this.route(x, z);
+        if (route && route.len < 70 && (!best || route.len < best.len)) best = { x, z, len: route.len };
+      }
+    return best && { x: best.x, z: best.z };
   }
 
   /** The nearest standable spot within 10 m that no member of the robot's squad can see. */
@@ -411,7 +438,7 @@ export class Bot {
     this.pathT -= TICK;
     // Re-plan when the goal moved or every 2 s; an unreachable goal is not retried every tick.
     if (dist2d(goal, this.pathGoal) > 3 || this.pathT <= 0) {
-      this.path = findPath(p.pos.x, p.pos.z, goal.x, goal.z, { x: s.ring.x, z: s.ring.z, r: s.ring.r - 6 }) ?? [];
+      this.path = findPath(p.pos.x, p.pos.z, goal.x, goal.z) ?? [];
       this.pathGoal = { ...goal };
       this.pathT = 2;
     }
@@ -435,9 +462,9 @@ export class Bot {
       if (l.kind === "weapon" && l.weapon && l.rarity > worst) cands.push({ x: l.pos.x, z: l.pos.z, d: dist2d(l.pos, p.pos), weapon: true });
       if (l.kind === "armor" && l.rarity > p.armor) cands.push({ x: l.pos.x, z: l.pos.z, d: dist2d(l.pos, p.pos) });
       if (l.kind === "heal" && l.heal && p.heals[l.heal] < HEALS[l.heal].max) cands.push({ x: l.pos.x, z: l.pos.z, d: dist2d(l.pos, p.pos) });
+      if (l.kind === "valuable") cands.push({ x: l.pos.x, z: l.pos.z, d: dist2d(l.pos, p.pos) });
     }
-    const inRing = (c: { x: number; z: number }) => dist2d(c, s.ring) < s.ring.r - 5 && dist2d(c, s.ring) < s.ring.toR + dist2d(s.ring, { x: s.ring.toX, z: s.ring.toZ }) - 5;
-    const best = cands.filter(inRing).sort((a, b) => a.d - b.d)[0] ?? null;
+    const best = cands.sort((a, b) => a.d - b.d)[0] ?? null;
     const k = best ? `${Math.round(best.x)},${Math.round(best.z)}` : "";
     if (k !== this.lootKey) {
       this.lootKey = k;

@@ -1,10 +1,10 @@
-import { ALLY, AWARE, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, RING, TACTICAL, ULT, WEAPONS, type Flank } from "../sim/config";
+import { ALLY, AWARE, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, SCORE, TACTICAL, ULT, VALUABLES, WEAPONS, type Flank } from "../sim/config";
 import { magSize } from "../sim/combat";
 import { dist2d } from "../sim/geom";
 import { EXTRACTS, POIS } from "../sim/map";
-import { extractReady, useTarget } from "../sim/world";
+import { extractHere, extractReady, poiAt, useTarget } from "../sim/world";
 import type { GameEvent, State, Vec3 } from "../sim/state";
-import { rank } from "../sim/results";
+import { haulValue, rank } from "../sim/results";
 import { pickHeal } from "../sim/player";
 import { RARITY_CSS, SCOPE_IN } from "./models";
 import type { World } from "./world";
@@ -15,6 +15,9 @@ import type { World } from "./world";
  * (shield cells, health, ammo, ability charge).
  */
 
+/** Extraction points get an on-screen marker within this many metres. */
+const EXIT_MARK = 90;
+const clock = (t: number) => `${Math.floor(Math.max(0, t) / 60)}:${String(Math.floor(Math.max(0, t) % 60)).padStart(2, "0")}`;
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 /** Wording follows the controls in use: keys on a PC, on-screen buttons on a phone. */
 const isTouch = () => document.body.classList.contains("touch");
@@ -149,7 +152,7 @@ export class Hud {
         this.banner(`${ALLY.name}に起こされた`, "", true, 1.8);
         break;
       case "awaitAlly":
-        this.banner("ダウン", `${ALLY.name}が起こしに来る。${ALLY.name}もやられると拠点の入口からやり直し`);
+        this.banner("ダウン", `${ALLY.name}が起こしに来る。${ALLY.name}もやられるとレイドは終わる`);
         break;
       case "hurt": {
         this.hurtT = 0.5;
@@ -162,16 +165,16 @@ export class Hud {
         if (e.kind !== "shard") this.toast(`${e.label}${e.kind === "weapon" ? `（${RARITY.names[e.rarity]}）` : e.kind === "armor" ? `（${RARITY.names[e.rarity]}）` : ""}`, e.rarity);
         break;
       case "landed":
-        this.banner(`${POIS[0].name}へ向かえ`, "リングの外にいると削られる");
+        this.banner("探索して脱出せよ", "拠点の補給箱とロボットから価値のある物を集め、脱出地点から島を出る");
         break;
       case "poiStart":
-        this.banner(POIS[e.poi].boss ? "タイタン出現" : `${POIS[e.poi].name}`, POIS[e.poi].boss ? "足元の衝撃波はジャンプでかわせる" : "ロボット部隊を全滅させろ");
+        this.banner(POIS[e.poi].boss ? "タイタンの縄張り" : `${POIS[e.poi].name}`, POIS[e.poi].boss ? "足元の衝撃波はジャンプでかわせる" : "部隊を全滅させると制圧になる");
         break;
       case "poiClear":
-        if (e.poi + 1 < POIS.length) this.banner(`${POIS[e.poi].name} 制圧`, `次は ${POIS[e.poi + 1].name}。リングが縮み始める`, true);
+        this.banner(`${POIS[e.poi].name} 制圧`, POIS[e.poi].boss ? "タイタン撃破。データコアを拾って脱出せよ" : `生還すれば +${SCORE.poi} 点。自己蘇生が戻った`, true, POIS[e.poi].boss ? 3.2 : 2.4);
         break;
-      case "extractReady":
-        this.banner("タイタン撃破", "脱出地点を選べ：ドロップシップ・台地・廃村", true, 3.2);
+      case "reinforce":
+        this.banner("増援が降下した", "ロボット部隊がこちらを探している");
         break;
       case "shipCalled":
         this.banner("ドロップシップを呼んだ", `到着まで ${EXTRACTS[0].call} 秒。増援が降りてくる`);
@@ -189,7 +192,7 @@ export class Hud {
         if (!s.player.awaitAlly) this.banner("ダウン", "3 秒で自己蘇生する");
         break;
       case "wipe":
-        this.banner("やり直し", `${POIS[Math.min(s.poi, POIS.length - 1)].name}の入口から。倒した敵はそのまま`);
+        this.banner("行方不明", "集めた物は持ち帰れなかった");
         break;
       case "bossPhase":
         this.banner("タイタン 怒り状態", "攻撃が速くなる");
@@ -197,7 +200,7 @@ export class Hud {
       case "engage":
         if (!s.squads[e.squad]?.engaged) break;
         for (const r of s.enemies) if (r.squad === e.squad) this.spotted.set(r.id, 2.5);
-        if (s.poi < POIS.length && !POIS[s.poi].boss) this.toast(`発見された：${s.squads[e.squad].name}`, 0);
+        if (s.squads[e.squad].name !== "タイタン") this.toast(`発見された：${s.squads[e.squad].name}`, 0);
         break;
       case "calm":
         this.toast("見失わせた：部隊が捜索に移った", 1);
@@ -215,27 +218,25 @@ export class Hud {
     const p = s.player;
 
     // Objective card.
-    const poi = POIS[s.poi];
-    const remaining = s.enemies.filter((e) => e.poi === s.poi).length;
-    // A fight with this POI's robots counts as being there, even short of its area.
-    const active = s.poiActive || s.enemies.some((e) => e.poi === s.poi && e.aware === "engaged");
+    const here = poiAt(s);
+    const poi = POIS[here];
+    const active = here >= 0;
+    const remaining = s.enemies.filter((e) => e.poi === here).length;
     let text = "";
     if (s.phase === "drop") text = isTouch() ? "降下中：スティックで着地点を選ぶ" : "降下中：WASD で着地点を選ぶ";
-    else if (s.phase === "extract") text = "脱出地点を選べ";
-    else if (s.phase === "done") text = "生還";
-    else if (poi && active) text = poi.boss ? "タイタンを倒せ" : `${poi.name}のロボット部隊を倒せ`;
-    else if (poi) text = `${poi.name}へ向かえ`;
+    else if (s.phase === "done") text = s.outcome === "extracted" ? "生還" : "行方不明";
+    else if (poi) text = poi.boss ? "タイタンの縄張り" : `${poi.name}：部隊 残り ${remaining}`;
+    else text = "探索して脱出せよ";
     $("obj-text").textContent = text;
-    $("obj-count").textContent = active ? `残り ${remaining}` : "";
-    const ring = s.ring;
-    const outside = dist2d(p.pos, ring) > ring.r && s.phase !== "drop";
-    $("obj-ring").textContent = outside ? "リングの外：内側へ戻れ" : ring.shrinking ? `リング縮小中 ${Math.ceil((1 - ring.t) * RING.shrinkTime)} 秒` : "";
-    $("fx-ring").style.opacity = outside ? "1" : "0";
+    $("obj-count").textContent = s.phase === "drop" ? "" : `回収 ${haulValue(s)}`;
+    const raid = s.phase === "play" ? `${clock(s.time - s.landedAt)}` : "";
+    const next = s.phase === "play" && s.reinforceT < 60 ? `　増援まで ${Math.ceil(s.reinforceT)} 秒` : "";
+    $("obj-raid").textContent = raid + next;
 
     // Objective marker.
     const obj = view.objective(s);
     const marker = $("marker");
-    if (obj && s.phase !== "done" && !(s.poiActive && dist2d(p.pos, obj) < 18)) {
+    if (obj && s.phase !== "done" && !(active && dist2d(p.pos, obj) < 18)) {
       const sp = view.project(obj, w, h);
       let x = sp.x;
       let y = sp.y;
@@ -261,7 +262,7 @@ export class Hud {
       rel = Math.max(-100, Math.min(100, rel));
       $("compass-obj").style.left = `${half + rel * 2}px`;
     }
-    this.stragglers(s, active, heading, half);
+    this.stragglers(s, here, heading, half);
     $("compass-obj").style.display = obj ? "" : "none";
     this.exits(s, view, w, h);
 
@@ -456,12 +457,12 @@ export class Hud {
    * When the last one or two robots of a POI have not been found for a while, their
    * bearings show on the compass so the search never stalls.
    */
-  private stragglers(s: State, active: boolean, heading: number, half: number) {
-    if (this.hintPoi !== s.poi) {
-      this.hintPoi = s.poi;
+  private stragglers(s: State, here: number, heading: number, half: number) {
+    if (this.hintPoi !== here) {
+      this.hintPoi = here;
       this.lastPoiKill = s.time;
     }
-    const left = active && s.phase === "play" ? s.enemies.filter((e) => e.poi === s.poi && e.kind !== "titan") : [];
+    const left = here >= 0 && s.phase === "play" ? s.enemies.filter((e) => e.poi === here && e.kind !== "titan") : [];
     const show = left.length > 0 && left.length <= HINT.left && s.time - this.lastPoiKill > HINT.after;
     if (show && !this.foePips.length) this.toast("残りのロボットの方角をコンパスに表示", 0);
     const n = show ? left.length : 0;
@@ -574,7 +575,7 @@ export class Hud {
 
   /** Extraction points: a marker over each, and a line each on the objective card. */
   private exits(s: State, view: World, w: number, h: number) {
-    const on = s.phase === "extract";
+    const on = s.phase === "play";
     const p = s.player;
     const lines: string[] = [];
     EXTRACTS.forEach((x, i) => {
@@ -599,7 +600,8 @@ export class Hud {
       const locked = x.needsFlare && !ready;
       lines.push(`<div class="${locked ? "locked" : ""}"><b>${x.short} ${d}m</b><span>${state}</span></div>`);
       const sp = view.project({ x: x.x, y: 3, z: x.z }, w, h);
-      el.style.display = sp.behind ? "none" : "flex";
+      // Far away, the card's line is enough; three distant markers would pile up on the horizon.
+      el.style.display = sp.behind || d > EXIT_MARK ? "none" : "flex";
       el.className = `xmark${locked ? " locked" : ""}`;
       el.style.left = `${Math.max(40, Math.min(w - 40, sp.x))}px`;
       el.style.top = `${Math.max(90, Math.min(h - 140, sp.y))}px`;
@@ -661,18 +663,16 @@ export class Hud {
 
   private prompt(s: State): string {
     const p = s.player;
-    if (p.downed > 0 || (s.phase !== "play" && s.phase !== "extract")) return "";
-    if (s.phase === "extract") {
-      const x = EXTRACTS.find((e) => dist2d(e, p.pos) < e.radius);
-      if (x) {
-        const hold = Math.floor((s.extractTime / x.hold) * 100);
-        if (x.call && s.shipCall > 0) return `ドロップシップ到着まで ${Math.ceil(s.shipCall)} 秒`;
-        if (x.needsFlare && p.flares <= 0) return "発煙筒がない：高い建物の最上階の補給箱にある";
-        return `脱出中 ${hold}%`;
-      }
+    if (p.downed > 0 || s.phase !== "play") return "";
+    // The use key comes first: picking the teammate up or opening a bin works inside an extraction point too.
+    const t = useTarget(s);
+    const x = t ? null : extractHere(s);
+    if (x) {
+      if (x.call && s.shipCall > 0) return `ドロップシップ到着まで ${Math.ceil(s.shipCall)} 秒`;
+      if (x.needsFlare && p.flares <= 0) return "発煙筒がない：高い建物の最上階の補給箱にある";
+      return `脱出中 ${Math.floor((s.extractTime / x.hold) * 100)}%`;
     }
     // The same choice the use key acts on (sim/world.ts useTarget), so the prompt never promises something else.
-    const t = useTarget(s);
     if (!t) return "";
     if (t.kind === "ally") return s.ally.helped > 0 ? `${ALLY.name}を起こしている…（撃つ・離れると中断）` : `${key("E")}${ALLY.name}を起こす`;
     if (t.kind === "bin") return `${key("E")}補給箱を開ける`;
@@ -685,8 +685,8 @@ export class Hud {
   results(s: State) {
     const r = rank(s);
     $("rank").textContent = r.rank;
-    const fmt = (t: number) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
-    $("total").textContent = fmt(r.total);
+    $("result-title").textContent = s.outcome === "extracted" ? "生還" : "行方不明";
+    $("total").textContent = String(r.score);
     const st = s.stats;
     const acc = st.shots ? Math.round((st.hits / st.shots) * 100) : 0;
     const crit = st.hits ? Math.round((st.crits / st.hits) * 100) : 0;
@@ -696,13 +696,19 @@ export class Hud {
       ["命中率", `${acc}%`],
       ["弱点命中", `${crit}%`],
       ["ダウン", st.downs],
-      ["やり直し", st.wipes],
+      ["レイド時間", clock(s.time - s.landedAt)],
       ["脱出", EXTRACTS.find((x) => x.id === s.extractedAt)?.short ?? "-"],
       [`${ALLY.name}の撃破`, st.allyKills],
       [`${ALLY.name}に救助`, st.allyRescues],
     ]
       .map(([k, v]) => `<span>${k}<b>${v}</b></span>`)
       .join("");
-    $("pois").innerHTML = [...POIS.map((p) => p.name), "生還"].map((name, i) => `<span>${name}<b>${fmt(st.poiTimes[i] ?? 0)}</b></span>`).join("");
+    const lost = s.outcome !== "extracted";
+    const haul = (Object.keys(VALUABLES) as (keyof typeof VALUABLES)[]).map((k) => [VALUABLES[k].label, s.player.haul.filter((h) => h === k).length] as const).filter(([, n]) => n > 0);
+    $("pois").innerHTML = [
+      ...POIS.map((p, i) => `<span>${p.name}<b>${s.cleared[i] ? "制圧" : s.visited[i] ? "立ち寄り" : "-"}</b></span>`),
+      ...haul.map(([label, n]) => `<span${lost ? ' class="lost"' : ""}>${label}<b>× ${n}</b></span>`),
+      `<span>回収の価値<b>${lost ? `${r.haul}（失った）` : r.haul}</b></span>`,
+    ].join("");
   }
 }

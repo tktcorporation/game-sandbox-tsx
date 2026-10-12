@@ -5,7 +5,7 @@
  *
  *   npm run sim:ringfall -- [runsPerSkill]
  */
-import { ALLY, TACTICAL, TICK, WORLD } from "../src/ringfall/sim/config";
+import { ALLY, REINFORCE, TACTICAL, TICK, VALUABLES, WORLD } from "../src/ringfall/sim/config";
 import { BOXES, EXTRA_BINS, EXTRACTS, POIS, ROAMERS, type Squad } from "../src/ringfall/sim/map";
 import { groundAt, solidAt } from "../src/ringfall/sim/geom";
 import { Bot, SKILLS } from "../src/ringfall/sim/bot";
@@ -13,7 +13,8 @@ import { idleInput, newRun, type GameEvent, type State } from "../src/ringfall/s
 import { step } from "../src/ringfall/sim/step";
 import { hurtPlayer } from "../src/ringfall/sim/player";
 import { hurtAlly, placeAlly } from "../src/ringfall/sim/ally";
-import { rank } from "../src/ringfall/sim/results";
+import { haulValue, rank } from "../src/ringfall/sim/results";
+import { SHIP_SQUAD } from "../src/ringfall/sim/world";
 import { bodyCenter, damageEnemy, eyePos, fireRay, magSize, weakPoint } from "../src/ringfall/sim/combat";
 import { lookAngles } from "../src/ringfall/sim/geom";
 import { forward } from "../src/ringfall/sim/state";
@@ -94,7 +95,6 @@ function checkWipeClearsAir(): string | null {
 function checkArcOnTitan(): string | null {
   const s = newRun(5);
   s.phase = "play";
-  s.poi = 3;
   const boss = s.enemies.filter((e) => e.poi === 3);
   s.enemies = boss;
   const p = s.player;
@@ -164,24 +164,59 @@ function checkArcIgnoresFacing(): string | null {
   if (Math.abs(dealt - TACTICAL.dmg) > 1e-6) return `arc facing scenario: an arc on an unaware grunt dealt ${dealt}, expected ${TACTICAL.dmg}`;
   return null;
 }
-/** A wipe in the middle of a climb leaves the player at the entry, not back on the ledge. */
-function checkWipeMidClimb(): string | null {
-  const s = newRun(5);
-  s.enemies = [];
-  s.phase = "play";
+/** A wipe ends the raid: nothing is carried out and it scores nothing. */
+function checkDeathEndsRaid(): string | null {
+  const s = padRun();
   const p = s.player;
-  const entry = POIS[0].entry;
-  p.pos = { x: entry.x + 40, y: 0, z: entry.z };
-  p.mantle = { t: 0.1, dur: 0.5, from: { ...p.pos }, to: { x: p.pos.x + 1, y: 2, z: p.pos.z } };
+  p.haul = ["core", "board"];
   p.hp = 1;
   p.shield = 0;
   p.selfRevive = 0;
+  hurtAlly(s, 999);
   hurtPlayer(s, 10, p.pos.x, p.pos.z);
-  step(s, idleInput(), false);
-  const off = Math.hypot(p.pos.x - entry.x, p.pos.z - entry.z);
-  if (s.stats.wipes !== 1 || off > 1) return `wipe mid-climb scenario: ${off.toFixed(1)} m from the entry after the wipe`;
+  const r = rank(s);
+  if (s.phase !== "done" || s.outcome !== "dead" || r.score !== 0) return `death scenario: phase ${s.phase}, outcome ${s.outcome}, score ${r.score}`;
   return null;
 }
+/** Reinforcements beam in out of sight, at a distance, and come looking for the player. */
+function checkReinforce(): string | null {
+  const s = newRun(5);
+  s.phase = "play";
+  const p = s.player;
+  const at = POIS[1].entry;
+  p.pos = { x: at.x, y: groundAt(at.x, at.z, 0.4, 20), z: at.z };
+  p.onGround = true;
+  s.reinforceT = TICK;
+  const before = s.enemies.length;
+  step(s, idleInput(), false);
+  const fresh = s.enemies.slice(before);
+  const ev = s.events.find((e) => e.t === "reinforce");
+  if (!ev || !fresh.length) return `reinforce scenario: ${fresh.length} robots, event ${!!ev}`;
+  const d = Math.hypot(fresh[0].pos.x - p.pos.x, fresh[0].pos.z - p.pos.z);
+  if (d < REINFORCE.dist[0] - 5 || d > REINFORCE.dist[1] + 5 || fresh.some((e) => e.aware !== "alert" || !e.goal)) return `reinforce scenario: ${d.toFixed(0)} m away, not hunting`;
+  // They keep closing in while the player moves on, instead of giving up at the first guess.
+  p.iframes = 999;
+  p.pos.x += 8;
+  ticks(s, 30);
+  const left = s.enemies.filter((e) => fresh.includes(e));
+  const closest = Math.min(...left.map((e) => Math.hypot(e.pos.x - p.pos.x, e.pos.z - p.pos.z)));
+  if (!(closest < d - 20)) return `reinforce scenario: still ${closest.toFixed(0)} m away after 30 s (spawned ${d.toFixed(0)} m away)`;
+  return null;
+}
+/** Every bin holds a valuable, and walking over it adds its worth to the haul. */
+function checkValuableBin(): string | null {
+  const s = padRun();
+  const p = s.player;
+  s.bins = [{ id: 9001, x: p.pos.x + 1, y: p.pos.y, z: p.pos.z, poi: 2, open: false, flare: false }];
+  const press = idleInput();
+  press.interact = true;
+  step(s, press, false);
+  ticks(s, 3);
+  if (haulValue(s) !== VALUABLES[POIS[2].loot.valuable].value) return `valuable scenario: haul ${haulValue(s)}, bin open ${s.bins[0].open}`;
+  return null;
+}
+/** Reads the phase afresh, past the narrowing of an earlier check. */
+const phaseOf = (s: State): State["phase"] => s.phase;
 /** Standing in the plateau pickup leaves with a flare, and does nothing without one. */
 function checkFlareExtract(): string | null {
   const s = padRun();
@@ -192,7 +227,7 @@ function checkFlareExtract(): string | null {
   if (s.phase === "done") return "flare scenario: left the island without a flare";
   p.flares = 1;
   ticks(s, at.hold + 0.2);
-  if (s.phase !== "done" || s.extractedAt !== "flare" || p.flares !== 0) return `flare scenario: phase ${s.phase}, exit ${s.extractedAt}, flares ${p.flares}`;
+  if (phaseOf(s) !== "done" || s.extractedAt !== "flare" || p.flares !== 0) return `flare scenario: phase ${s.phase}, exit ${s.extractedAt}, flares ${p.flares}`;
   return null;
 }
 /** Standing at the dropship calls it; robots beam in while it comes, and it lands after its call time. */
@@ -203,19 +238,21 @@ function checkShipCall(): string | null {
   p.pos = { x: ship.x, y: groundAt(ship.x, ship.z, 0.4, 20), z: ship.z };
   p.iframes = 999; // the waves must not end the scenario
   ticks(s, ship.call! - 1);
-  const waves = s.enemies.filter((e) => s.squads[e.squad]?.name === "増援").length;
+  const waves = s.enemies.filter((e) => s.squads[e.squad]?.name === SHIP_SQUAD).length;
   if (s.shipCall <= 0 || s.phase === "done" || waves < 2) return `ship scenario: ${s.shipCall.toFixed(1)} s left, phase ${s.phase}, ${waves} robots beamed in`;
   ticks(s, 1 + ship.hold + 0.2);
-  if (s.phase !== "done" || s.extractedAt !== "ship") return `ship scenario: did not leave after landing (${s.shipCall.toFixed(1)}, ${s.phase})`;
+  if (phaseOf(s) !== "done" || s.extractedAt !== "ship") return `ship scenario: did not leave after landing (${s.shipCall.toFixed(1)}, ${s.phase})`;
   return null;
 }
 /** A run on the open landing pad with no robots, the player and the teammate standing there. */
 function padRun(): State {
   const s = newRun(5);
   s.enemies = [];
-  // Past the last objective, so an empty island does not count as cleared POIs (which stand the teammate up).
-  s.phase = "extract";
-  s.poi = POIS.length;
+  s.phase = "play";
+  // Marked cleared already, so the empty island does not clear them now (which stands the teammate up).
+  s.cleared = POIS.map(() => true);
+  s.visited = POIS.map(() => true);
+  s.reinforceT = 1e9;
   const p = s.player;
   p.pos = { x: POIS[3].x, y: 0, z: POIS[3].z };
   p.pos.y = groundAt(p.pos.x, p.pos.z, 0.4, 2);
@@ -249,7 +286,7 @@ function checkAllyDownWipes(): string | null {
   p.shield = 0;
   hurtPlayer(s, 10, p.pos.x, p.pos.z);
   hurtAlly(s, 999);
-  if (s.stats.wipes !== 1 || s.ally.down > 0) return `ally down scenario: wipes ${s.stats.wipes}, teammate down ${s.ally.down.toFixed(1)}`;
+  if (s.stats.wipes !== 1 || s.outcome !== "dead") return `ally down scenario: wipes ${s.stats.wipes}, outcome ${s.outcome}`;
   return null;
 }
 /** One press of the use key beside a downed teammate, then standing still, picks it up. */
@@ -291,27 +328,6 @@ function checkStompHeight(): string | null {
   if (high > 0 || low <= 0) return `stomp scenario: ${high} damage up high, ${low} on the ground`;
   return null;
 }
-/** Projectiles after the one that wipes the team are gone too: none of them hits the teammate placed at the entry. */
-function checkNothingHitsAfterWipe(): string | null {
-  const s = padRun();
-  const p = s.player;
-  p.hp = 1;
-  p.shield = 0;
-  p.selfRevive = 0;
-  hurtAlly(s, 999); // nobody to wait for: the next down wipes
-  const entry = POIS[POIS.length - 1].entry;
-  s.orbs.push({ id: 900, pos: { x: p.pos.x, y: p.pos.y + 1.1, z: p.pos.z }, vel: { x: 0, y: 0, z: 0 }, r: 0.4, dmg: 10, life: 5, homing: false });
-  // Projectiles all over the entry, where the wipe puts the player and the teammate.
-  for (let dx = -3; dx <= 3; dx += 1)
-    for (let dz = -3; dz <= 3; dz += 1) {
-      const x = entry.x + dx;
-      const z = entry.z + dz;
-      s.orbs.push({ id: 1000 + s.orbs.length, pos: { x, y: groundAt(x, z, 0.4, 99) + 1.1, z }, vel: { x: 0, y: 0, z: 0 }, r: 0.7, dmg: 200, life: 5, homing: false });
-    }
-  step(s, idleInput(), false);
-  if (s.stats.wipes !== 1 || s.ally.down > 0 || s.ally.hp < ALLY.hp) return `after-wipe scenario: wipes ${s.stats.wipes}, teammate hp ${s.ally.hp}, down ${s.ally.down.toFixed(1)}`;
-  return null;
-}
 /** A shot from behind meets the body before the weak point on its far side: no critical hit. */
 function checkWeakPointBehindBody(): string | null {
   const s = newRun(5);
@@ -347,7 +363,6 @@ function checkHelpBeforeLoot(): string | null {
 function checkAllyTitanKill(): string | null {
   const s = newRun(5);
   s.phase = "play";
-  s.poi = 3;
   s.enemies = s.enemies.filter((e) => e.poi === 3);
   const titan = s.enemies.find((e) => e.kind === "titan")!;
   const count = s.enemies.length;
@@ -378,7 +393,7 @@ function checkAllyHoldsFire(): string | null {
   if (shots) return `hold fire scenario: the teammate fired ${shots} shots at an idle robot`;
   return null;
 }
-for (const err of [checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkWipeMidClimb(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkAllySelfUp(), checkStompHeight(), checkNothingHitsAfterWipe(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill()]) {
+for (const err of [checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkReinforce(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkAllySelfUp(), checkStompHeight(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill()]) {
   if (err) {
     console.error(err);
     process.exit(1);
@@ -391,21 +406,24 @@ const median = (xs: number[]) => {
 };
 
 let failed = false;
-const head = ["skill    ", ...POIS.map((p, i) => `P${i + 1} ${p.name}`.padEnd(14)), "extract", "finish", "total(med)", "downs", "wipes", "acc", "crit", "ult", "crowd", "flank", "ally".padEnd(18), "rank".padEnd(14), "exit"];
-console.log(`${runs} runs per skill. per POI: median seconds from the previous objective, downs+wipes per run`);
+const head = ["skill    ", "alive", "time(med)", "cleared", "haul(med)", "score(med)", "downs", "acc", "crit", "ult", "crowd", "flank", "waves", "ally".padEnd(18), "rank".padEnd(18), "exit"];
+console.log(`${runs} runs per skill. alive: share of raids that got off the island (the rest were wiped out)`);
+console.log("time: minutes from landing to leaving; cleared: median POIs cleared; haul and score: medians over raids that got off the island");
 console.log("flank: share of hits from behind a robot or before it noticed the player");
+console.log("waves: median reinforcement squads that beamed in during a raid");
 console.log("ally: teammate's share of the damage, its downs, times it picked the player up (r) and was picked up (h), per run");
-console.log("exit: runs that left by each extraction point (the bot's choice depends on skill)");
+console.log("exit: raids that left by each extraction point (the bot's choice depends on skill)");
 console.log("crowd: median over runs of the most squads / robots fighting the player at once outside the titan fight");
 console.log(head.join(" "));
 for (const skill of SKILLS) {
-  const per: number[][] = POIS.map(() => []);
-  const perDowns = POIS.map(() => 0);
-  const ext: number[] = [];
-  const totals: number[] = [];
-  let finished = 0;
+  const times: number[] = [];
+  const clearedN: number[] = [];
+  const hauls: number[] = [];
+  const scores: number[] = [];
+  const waves: number[] = [];
+  let ended = 0;
+  let alive = 0;
   let downs = 0;
-  let wipes = 0;
   let shots = 0;
   let hits = 0;
   let crits = 0;
@@ -418,13 +436,14 @@ for (const skill of SKILLS) {
   const exits: Record<string, number> = { ship: 0, flare: 0, village: 0 };
   const crowdSq: number[] = [];
   const crowdBots: number[] = [];
-  const ranks: Record<string, number> = { S: 0, A: 0, B: 0, C: 0 };
+  const ranks: Record<string, number> = { S: 0, A: 0, B: 0, C: 0, "-": 0 };
   for (let r = 0; r < runs; r++) {
     const s = newRun(1000 + r * 7919);
     const bot = new Bot(skill, 31 + r);
     let prevCrouch = false;
     let peakSq = 0;
     let peakBots = 0;
+    let landed = 0;
     try {
       while (s.phase !== "done" && s.time < LIMIT) {
         const inp = bot.input(s);
@@ -432,14 +451,14 @@ for (const skill of SKILLS) {
         prevCrouch = inp.crouch;
         for (const e of s.events) {
           if (e.t === "ultStart") ults++;
-          if (e.t === "down" || e.t === "wipe") perDowns[Math.min(s.poi, POIS.length - 1)] += e.t === "wipe" ? 1 : 1;
+          if (e.t === "landed") landed = s.time;
         }
-        if (!POIS[s.poi]?.boss) {
+        if (!s.enemies.some((e) => e.kind === "titan" && e.aware === "engaged")) {
           const fighting = s.enemies.filter((e) => e.aware === "engaged" && e.mode !== "spawning");
           peakBots = Math.max(peakBots, fighting.length);
           peakSq = Math.max(peakSq, new Set(fighting.map((e) => e.squad)).size);
         }
-        if (Math.round(s.time / TICK) % 30 === 0) check(s, `${skill.name}#${r} t=${s.time.toFixed(1)} poi=${s.poi}`);
+        if (Math.round(s.time / TICK) % 30 === 0) check(s, `${skill.name}#${r} t=${s.time.toFixed(1)}`);
       }
     } catch (err) {
       failed = true;
@@ -449,19 +468,23 @@ for (const skill of SKILLS) {
     if (s.phase !== "done") {
       failed = true;
       const p = s.player.pos;
-      console.error(`${skill.name}#${r}: stuck at poi ${s.poi} enemies ${s.enemies.map((e) => `${e.kind}@${e.pos.x.toFixed(0)},${e.pos.z.toFixed(0)}:${e.mode}:${e.aware}`).join(" ")} player ${p.x.toFixed(1)},${p.y.toFixed(1)},${p.z.toFixed(1)}`);
+      console.error(`${skill.name}#${r}: still on the island after ${LIMIT} s, cleared ${s.stats.cleared.join(",")} player ${p.x.toFixed(1)},${p.y.toFixed(1)},${p.z.toFixed(1)} enemies near: ${s.enemies.filter((e) => Math.hypot(e.pos.x - p.x, e.pos.z - p.z) < 60).map((e) => `${e.kind}@${e.pos.x.toFixed(0)},${e.pos.z.toFixed(0)}:${e.mode}:${e.aware}`).join(" ")}`);
       continue;
     }
-    finished++;
+    ended++;
     crowdSq.push(peakSq);
     crowdBots.push(peakBots);
-    s.stats.poiTimes.slice(0, POIS.length).forEach((t, i) => per[i].push(t));
-    ext.push(s.stats.poiTimes[POIS.length] ?? NaN);
+    clearedN.push(s.stats.cleared.length);
+    waves.push(s.reinforceN);
     const rk = rank(s);
-    totals.push(rk.total);
     ranks[rk.rank]++;
+    if (s.outcome === "extracted") {
+      alive++;
+      times.push((s.time - landed) / 60);
+      hauls.push(rk.haul);
+      scores.push(rk.score);
+    }
     downs += s.stats.downs;
-    wipes += s.stats.wipes;
     shots += s.stats.shots;
     hits += s.stats.hits;
     crits += s.stats.crits;
@@ -472,23 +495,24 @@ for (const skill of SKILLS) {
     helped += s.stats.allyHelped;
     if (s.extractedAt) exits[s.extractedAt]++;
   }
-  const n = Math.max(finished, 1);
+  const n = Math.max(ended, 1);
   console.log(
     [
       skill.name.padEnd(9),
-      ...per.map((xs, i) => `${median(xs).toFixed(0)}s ${(perDowns[i] / n).toFixed(1)}d`.padEnd(14)),
-      `${median(ext).toFixed(0)}s`.padEnd(7),
-      `${Math.round((finished / runs) * 100)}%`.padEnd(6),
-      `${median(totals).toFixed(0)}s`.padEnd(10),
+      `${Math.round((alive / runs) * 100)}%`.padEnd(5),
+      `${median(times).toFixed(1)}m`.padEnd(9),
+      String(median(clearedN)).padEnd(7),
+      String(median(hauls)).padEnd(9),
+      String(median(scores)).padEnd(10),
       (downs / n).toFixed(1).padEnd(5),
-      (wipes / n).toFixed(1).padEnd(5),
       `${Math.round((hits / Math.max(shots, 1)) * 100)}%`.padEnd(3),
       `${Math.round((crits / Math.max(hits, 1)) * 100)}%`.padEnd(4),
       (ults / n).toFixed(1).padEnd(3),
       `${median(crowdSq)}/${median(crowdBots)}`.padEnd(5),
       `${Math.round((flanks / Math.max(hits, 1)) * 100)}%`.padEnd(5),
+      String(median(waves)).padEnd(5),
       `${Math.round((allyDmg / n) * 100)}% ${(allyDowns / n).toFixed(1)}d ${(rescues / n).toFixed(1)}r ${(helped / n).toFixed(1)}h`.padEnd(18),
-      `S${ranks.S} A${ranks.A} B${ranks.B} C${ranks.C}`.padEnd(14),
+      `S${ranks.S} A${ranks.A} B${ranks.B} C${ranks.C} -${ranks["-"]}`.padEnd(18),
       `ship ${exits.ship} flare ${exits.flare} village ${exits.village}`,
     ].join(" "),
   );

@@ -1,4 +1,4 @@
-import { ALLY, DROP, ENEMIES, PLAYER, ULT, type EnemyKind, type Flank, type HealKind, type Rarity, type WeaponKind } from "./config";
+import { ALLY, DROP, ENEMIES, REINFORCE, type ValuableKind, PLAYER, ULT, type EnemyKind, type Flank, type HealKind, type Rarity, type WeaponKind } from "./config";
 import { EXTRA_BINS, POIS, SPAWN, type ExtractId } from "./map";
 import { populate } from "./enemies";
 
@@ -44,6 +44,8 @@ export interface Player {
   heals: Record<HealKind, number>;
   /** Flares carried (0 or 1): they call the plateau pickup. */
   flares: number;
+  /** Valuables carried; their worth is the raid's score if the player gets off the island. */
+  haul: ValuableKind[];
   /** The item being used and the seconds left; shooting cancels it without using it. */
   healing: { kind: HealKind; t: number } | null;
   sinceHurt: number;
@@ -140,6 +142,10 @@ export interface SquadState {
   patrol: Point[];
   leg: number; // next patrol waypoint
   engaged: boolean;
+  /** Walks the roads: hears gunfire from further away. */
+  roam: boolean;
+  /** A reinforcement squad that keeps heading for the player until it first finds them. */
+  hunt?: boolean;
   sinceSeen: number; // seconds since any member saw the player while engaged
   last: Point; // where the squad last saw the player
 }
@@ -163,13 +169,14 @@ export interface Shockwave {
   allyHit?: boolean;
 }
 
-export type LootKind = "weapon" | "armor" | "heal" | "shard" | "flare";
+export type LootKind = "weapon" | "armor" | "heal" | "shard" | "flare" | "valuable";
 
 export interface Loot {
   id: number;
   kind: LootKind;
   weapon?: Weapon;
   heal?: HealKind;
+  valuable?: ValuableKind;
   rarity: Rarity;
   pos: Vec3;
   vel: Vec3;
@@ -196,21 +203,10 @@ export interface CarePackage {
   weapon: Weapon;
 }
 
-export interface Ring {
-  x: number;
-  z: number;
-  r: number;
-  fromX: number;
-  fromZ: number;
-  fromR: number;
-  toX: number;
-  toZ: number;
-  toR: number;
-  t: number; // 0..1 progress of the current shrink
-  shrinking: boolean;
-}
+export type Phase = "drop" | "play" | "done";
 
-export type Phase = "drop" | "play" | "extract" | "done";
+/** How a raid ended: off the island with what was carried, or wiped out. */
+export type Outcome = "extracted" | "dead";
 
 export type GameEvent =
   | { t: "shot"; weapon: WeaponKind; rarity: Rarity }
@@ -254,15 +250,14 @@ export type GameEvent =
   | { t: "calm"; squad: number }
   | { t: "poiStart"; poi: number }
   | { t: "poiClear"; poi: number }
-  | { t: "ringClose"; poi: number }
-  | { t: "ringHurt" }
+  | { t: "reinforce"; x: number; z: number }
   | { t: "careDrop"; x: number; z: number }
   | { t: "careLand"; x: number; z: number }
   | { t: "stomp"; x: number; z: number }
   | { t: "stompTelegraph"; id: number }
   | { t: "bossPhase" }
   | { t: "landed" }
-  | { t: "extractReady" }
+  | { t: "titanDown" }
   | { t: "shipCalled" }
   | { t: "shipLanded" }
   | { t: "flareLit" }
@@ -279,7 +274,8 @@ export interface Stats {
   flankHits: number;
   downs: number;
   wipes: number;
-  poiTimes: number[];
+  /** The POIs cleared, in the order they fell. */
+  cleared: number[];
   allyDamage: number;
   allyKills: number;
   allyDowns: number;
@@ -304,10 +300,15 @@ export interface State {
   loot: Loot[];
   bins: Bin[];
   care: CarePackage | null;
-  ring: Ring;
-  poi: number; // index of the current objective POI
-  poiActive: boolean; // the player is inside the current POI's area
-  poiStart: number;
+  /** POIs the player has come into (for the arrival banner), and those cleared of robots. */
+  visited: boolean[];
+  cleared: boolean[];
+  /** Seconds until the next reinforcement squad beams in, and how many have come. */
+  reinforceT: number;
+  /** When the player touched down: the raid clock starts here. */
+  landedAt: number;
+  reinforceN: number;
+  outcome: Outcome | null;
   /** Seconds the player has stood ready in an extraction point. */
   extractTime: number;
   /** Seconds until the dropship lands: -1 not called yet, 0 landed. */
@@ -411,6 +412,7 @@ export function newRun(seed = 1): State {
       stepNoise: 0,
       heals: { cell: 2, battery: 0, syringe: 2, medkit: 0 },
       flares: 0,
+      haul: [],
       healing: null,
       sinceHurt: 99,
       downed: 0,
@@ -427,17 +429,19 @@ export function newRun(seed = 1): State {
     loot,
     bins,
     care: null,
-    ring: { x: 0, z: 0, r: 230, fromX: 0, fromZ: 0, fromR: 230, toX: 0, toZ: 0, toR: 230, t: 1, shrinking: false },
-    poi: 0,
-    poiActive: false,
-    poiStart: 0,
+    visited: POIS.map(() => false),
+    cleared: POIS.map(() => false),
+    reinforceT: REINFORCE.first,
+    landedAt: 0,
+    reinforceN: 0,
+    outcome: null,
     extractTime: 0,
     shipCall: -1,
     shipWave: 0,
     shipWaveT: 0,
     extractedAt: null,
     events: [],
-    stats: { kills: 0, damage: 0, shots: 0, hits: 0, crits: 0, flankHits: 0, downs: 0, wipes: 0, poiTimes: [], allyDamage: 0, allyKills: 0, allyDowns: 0, allyRescues: 0, allyHelped: 0 },
+    stats: { kills: 0, damage: 0, shots: 0, hits: 0, crits: 0, flankHits: 0, downs: 0, wipes: 0, cleared: [], allyDamage: 0, allyKills: 0, allyDowns: 0, allyRescues: 0, allyHelped: 0 },
   };
   populate(s);
   return s;

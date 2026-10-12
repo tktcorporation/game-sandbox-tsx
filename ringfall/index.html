@@ -12,13 +12,12 @@
   </head>
   <body>
     <div id="stage"></div>
-    <div id="fx-ring" aria-hidden="true"></div>
     <div id="fx-hurt" aria-hidden="true"></div>
     <div id="fx-ult" aria-hidden="true"></div>
 
     <div id="hud" hidden>
       <div id="compass"><div id="compass-strip"></div><i id="compass-obj"></i><b id="compass-deg">0</b></div>
-      <div id="objective"><span id="obj-text"></span><b id="obj-count"></b><small id="obj-ring"></small><small id="obj-stealth"></small><small id="obj-exits"></small></div>
+      <div id="objective"><span id="obj-text"></span><b id="obj-count"></b><small id="obj-raid"></small><small id="obj-stealth"></small><small id="obj-exits"></small></div>
       <div id="exit-marks" aria-hidden="true"></div>
       <div id="marker" aria-hidden="true"><i></i><span id="marker-dist"></span></div>
       <div id="enemy-bars" aria-hidden="true"></div>
@@ -72,7 +71,7 @@
     <section id="title" class="screen">
       <div class="title-inner">
         <h1>RINGFALL</h1>
-        <p class="lede">降りて、拾って、撃ちまくれ。相手はロボットだけ。</p>
+        <p class="lede">降りて、漁って、生きて帰れ。相手はロボットだけ。</p>
         <p class="touch-help">左半分を押してスティック移動、右半分をなぞって視点。撃つボタンは押したまま動かすと狙いも動く。</p>
         <ul class="keys">
           <li><kbd>WASD</kbd>移動（前進で自動ダッシュ）</li>
@@ -97,8 +96,8 @@
 
     <section id="results" class="screen" hidden>
       <div class="title-inner">
-        <p class="label">生還</p>
-        <div class="rank-row"><b id="rank">S</b><div><span>合計タイム</span><strong id="total"></strong></div></div>
+        <p class="label" id="result-title">生還</p>
+        <div class="rank-row"><b id="rank">S</b><div><span>スコア</span><strong id="total"></strong></div></div>
         <div id="stats"></div>
         <div id="pois"></div>
         <button id="restart" type="button">もう一度降下する</button>

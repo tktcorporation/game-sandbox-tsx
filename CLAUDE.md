@@ -13,10 +13,13 @@ Read the game's brief before changing anything visual. A new page needs an entry
 
 ## RINGFALL
 
-A battle-royale-shaped run against robots only: skydive onto an island, clear three POIs while the
-ring closes toward the next one, beat the titan, extract. First person on three.js. Robots are
-squads placed on the island from the start (`POIS[].squads` and `ROAMERS` in `map.ts`), not waves:
-the player finds them and takes them one squad at a time.
+An extraction raid against robots only: skydive onto an island, explore it for valuables, and get
+off alive by one of three extraction points, all open from the start. No ring and no set order: the
+player chooses which POIs to take and when to leave. First person on three.js. Robots are squads
+placed on the island from the start (`POIS[].squads` and `ROAMERS` in `map.ts`, some of them
+patrolling the roads), plus reinforcements (`REINFORCE` in `config.ts`) that beam in out of sight
+on a timer and come looking. A wipe ends the raid and loses the haul; `results.ts` scores the haul
+plus cleared POIs.
 
 ```bash
 npm run sim:ringfall     # gate 2: bots of three skills play the whole run headless
@@ -47,7 +50,7 @@ npm run shots:ringfall   # gate 3: the build played to the end in Chromium; scre
   robots, revives the player once the self-revive is spent, and is revived with the use key.
   Robots choose between the player and the teammate in `chooseTarget()` (`enemies.ts`); the sim
   gate's `ally` column is its damage share, downs and revives.
-- `EXTRACTS` in `map.ts` are the ways off the island after the titan; `stepExtract()` in `world.ts`
+- `EXTRACTS` in `map.ts` are the ways off the island; `stepExtract()` in `world.ts`
   runs them (dropship call and its waves in `SHIP_WAVES`, the flare, the waits). The sim gate's
   `exit` column counts which one each run used; the bot's choice depends on its skill.
 - `nav.ts` is ground path finding for the bot only; the game never reads it.

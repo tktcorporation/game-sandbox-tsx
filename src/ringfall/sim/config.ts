@@ -210,14 +210,49 @@ export const TITAN = {
   enrageAt: 0.5,
 };
 
-export const RING = {
-  dmgPerSec: 4,
-  shrinkTime: 45,
+/**
+ * What a raid scores when the player gets off the island: the value carried out,
+ * plus a bonus for each POI cleared and for the titan. A raid that ends in a wipe
+ * scores nothing.
+ */
+export const SCORE = {
+  poi: 400,
+  titan: 1500,
+  /** Lowest score for each rank, best first. */
+  ranks: [
+    ["S", 4500],
+    ["A", 3000],
+    ["B", 1500],
+    ["C", 0],
+  ] as const,
 };
 
-export const RANK = {
-  parSeconds: 240, // total run time that earns full time score
-  steps: ["S", "A", "B", "C"] as const,
+export type ValuableKind = "parts" | "board" | "core";
+
+/** Things worth carrying out. Every bin holds one; robots drop some; the best sit up high or with the titan. */
+export const VALUABLES: Record<ValuableKind, { label: string; value: number }> = {
+  parts: { label: "部品", value: 100 },
+  board: { label: "回路基板", value: 300 },
+  core: { label: "データコア", value: 1000 },
+};
+
+/**
+ * Reinforcements: a squad beams in somewhere `dist` metres from the player, out of
+ * sight, every `every` seconds after the first `first`, and comes looking for them.
+ * Later waves are bigger. The longer a raid lasts, the more is hunting the player.
+ */
+export const REINFORCE = {
+  first: 180,
+  every: 120,
+  /** Seconds between fresh guesses of where the player is while a reinforcement squad hunts. */
+  huntEvery: 8,
+  dist: [55, 110] as const,
+  waves: [
+    ["grunt", "drone"],
+    ["grunt", "drone", "charger"],
+    ["grunt", "grunt", "drone", "charger"],
+    ["heavy", "grunt", "drone", "drone"],
+  ] as EnemyKind[][],
 };
 
 /**
@@ -254,7 +289,7 @@ export const AWARE = {
    * keeps searching ("?") until one of them is down, unless the player comes within
    * `joinClose` metres or shoots it. This keeps a POI a series of fights, not a crowd.
    */
-  maxSquads: 1,
+  maxSquads: 2,
   joinClose: 5,
   /** A fighting robot looks wider and further than a calm one, but never behind itself. */
   engagedFov: 1.2,
@@ -300,6 +335,8 @@ export const NOISE = {
   arc: 10,
   sprintStep: 8,
   slide: 10,
+  /** Squads that roam the roads (and reinforcements) hear gunfire this many times further and come to look. */
+  roamMult: 2.5,
   /** Within this fraction of a sound's radius, a robot that can see the spot engages at once. */
   engageInside: 0.35,
 };

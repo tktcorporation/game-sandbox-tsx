@@ -1,75 +1,113 @@
-import { ALLY, HEALS, PLAYER, RING, SHIP_WAVES, TICK, WORLD, type HealKind } from "./config";
-import { dist2d, groundAt } from "./geom";
+import { ALLY, HEALS, PLAYER, REINFORCE, SHIP_WAVES, TICK, VALUABLES, WORLD, type HealKind } from "./config";
+import { dist2d, groundAt, los } from "./geom";
+import { steepAt, terrainHeight } from "./terrain";
 import { EXTRACTS, POIS, type ExtractPoint } from "./map";
 import { spawnEnemy } from "./enemies";
-import { hurtPlayer } from "./player";
 import { raiseAlly, startHelp } from "./ally";
 import { rand, type Input, type Loot, type State, type Weapon } from "./state";
 
 /*
- * The run's structure: POIs that wake up when approached, the ring that closes
- * toward the next POI, loot and bins, the care package, and extraction.
+ * The raid's structure: POIs that fall when their robots are beaten, loot and bins,
+ * the care package, reinforcements that keep coming, and the ways off the island.
+ * There is no set order: the player chooses where to go and when to leave.
  */
 
-export function closeRingTo(s: State, poiIndex: number) {
-  const poi = POIS[poiIndex];
-  const r = s.ring;
-  Object.assign(r, { fromX: r.x, fromZ: r.z, fromR: r.r, toX: poi.x, toZ: poi.z, toR: poi.ring, t: 0, shrinking: true });
-  s.events.push({ t: "ringClose", poi: poiIndex });
+/** The uncleared POI whose area the player stands in, or -1. A fight with its robots counts as being there. */
+export function poiAt(s: State): number {
+  const p = s.player;
+  return POIS.findIndex((poi, i) => !s.cleared[i] && (dist2d(p.pos, poi) < poi.trigger || s.enemies.some((e) => e.poi === i && e.aware === "engaged")));
 }
 
 export function stepPoi(s: State) {
-  if (s.poi >= POIS.length) return;
-  const poi = POIS[s.poi];
   const p = s.player;
-  if (!s.poiActive && dist2d(p.pos, poi) < poi.trigger) {
-    s.poiActive = true;
-    s.events.push({ t: "poiStart", poi: s.poi });
-  }
-  // The care package drops once the fight at its POI has started.
-  if (poi.carePackage && !s.care && s.squads.some((sq) => sq.poi === s.poi && sq.engaged)) {
-    const c = poi.carePackage;
-    s.care = { x: c.x, z: c.z, y: 70, landed: false, open: false, weapon: { kind: c.weapon[0], rarity: c.weapon[1], mag: -1 } };
-    s.events.push({ t: "careDrop", x: c.x, z: c.z });
-  }
-  // Squads are on the island from the start, so a POI can be cleared before the player arrives.
-  const alive = s.enemies.filter((e) => e.poi === s.poi).length;
-  if (alive === 0) {
-    s.events.push({ t: "poiClear", poi: s.poi });
-    s.stats.poiTimes.push(s.time - s.poiStart);
-    s.poiStart = s.time;
-    s.poiActive = false;
+  POIS.forEach((poi, i) => {
+    if (!s.visited[i] && dist2d(p.pos, poi) < poi.trigger) {
+      s.visited[i] = true;
+      s.events.push({ t: "poiStart", poi: i });
+    }
+    // The care package drops once a fight at its POI has started.
+    if (poi.carePackage && !s.care && s.squads.some((sq) => sq.poi === i && sq.engaged)) {
+      const c = poi.carePackage;
+      s.care = { x: c.x, z: c.z, y: 70, landed: false, open: false, weapon: { kind: c.weapon[0], rarity: c.weapon[1], mag: -1 } };
+      s.events.push({ t: "careDrop", x: c.x, z: c.z });
+    }
+    if (s.cleared[i] || s.enemies.some((e) => e.poi === i)) return;
+    // Every robot of this POI is down: the self-revive comes back and the teammate gets up.
+    s.cleared[i] = true;
+    s.stats.cleared.push(i);
     p.selfRevive = 1;
     raiseAlly(s, "self", ALLY.reviveHp);
-    s.poi++;
-    if (s.poi < POIS.length) closeRingTo(s, s.poi);
-    else {
-      s.phase = "extract";
-      // Every way off the island is open: the ring lets go of the whole island.
-      Object.assign(s.ring, { x: 0, z: 0, r: 260, fromX: 0, fromZ: 0, fromR: 260, toX: 0, toZ: 0, toR: 260, t: 1, shrinking: false });
-      s.events.push({ t: "extractReady" });
-    }
-  }
+    s.events.push({ t: "poiClear", poi: i });
+    if (poi.boss) s.events.push({ t: "titanDown" });
+  });
 }
 
-export function stepRing(s: State) {
-  const r = s.ring;
-  if (r.shrinking) {
-    r.t = Math.min(1, r.t + TICK / RING.shrinkTime);
-    const k = r.t * r.t * (3 - 2 * r.t);
-    r.x = r.fromX + (r.toX - r.fromX) * k;
-    r.z = r.fromZ + (r.toZ - r.fromZ) * k;
-    r.r = r.fromR + (r.toR - r.fromR) * k;
-    if (r.t >= 1) r.shrinking = false;
-  }
-  const p = s.player;
-  if (dist2d(p.pos, r) > r.r) {
-    const before = Math.floor((s.time - TICK) * 1);
-    if (Math.floor(s.time) !== before) {
-      hurtPlayer(s, RING.dmgPerSec, r.x, r.z, true);
-      s.events.push({ t: "ringHurt" });
+/** A reinforcement squad beams in out of the player's sight and comes looking for them. */
+export function stepReinforce(s: State) {
+  if (s.phase !== "play") return;
+  // Hunting squads get a fresh idea of where the player is every few seconds, not a live track.
+  const p0 = s.player.pos;
+  const refresh = Math.round(s.time / TICK) % Math.round(REINFORCE.huntEvery / TICK) === 0;
+  s.squads.forEach((q, i) => {
+    if (!q.hunt) return;
+    if (q.engaged) {
+      q.hunt = false;
+      return;
     }
+    if (!refresh) return;
+    for (const e of s.enemies)
+      if (e.squad === i && e.aware === "alert") {
+        e.goal = { x: p0.x, z: p0.z };
+        e.searchT = Math.max(e.searchT, REINFORCE.huntEvery + 2);
+      }
+  });
+  s.reinforceT -= TICK;
+  if (s.reinforceT > 0) return;
+  s.reinforceT = REINFORCE.every;
+  const p = s.player;
+  const eye = { x: p.pos.x, y: p.pos.y + 1.5, z: p.pos.z };
+  const [near, far] = REINFORCE.dist;
+  // Somewhere on open ground at the right distance, out of sight; the best of a few tries.
+  let at: { x: number; z: number } | null = null;
+  for (let i = 0; i < 40 && !at; i++) {
+    const a = rand(s) * Math.PI * 2;
+    const d = near + rand(s) * (far - near);
+    const x = p.pos.x + Math.sin(a) * d;
+    const z = p.pos.z - Math.cos(a) * d;
+    if (Math.hypot(x, z) > WORLD.half - 30 || steepAt(x, z)) continue;
+    const g = groundAt(x, z, 1, 99);
+    if (g > terrainHeight(x, z) + 0.3 || terrainHeight(x, z) > 4) continue; // valley floor only, not a roof or the high ground
+    if (los(eye, { x, y: g + 1.5, z })) continue;
+    if (!walkable(x, z, p.pos.x, p.pos.z)) continue;
+    at = { x, z };
   }
+  if (!at) {
+    s.reinforceT = 5; // try again shortly
+    return;
+  }
+  const kinds = REINFORCE.waves[Math.min(s.reinforceN, REINFORCE.waves.length - 1)];
+  s.reinforceN++;
+  const squad = s.squads.length;
+  s.squads.push({ name: "増援", poi: -1, patrol: [], leg: 0, engaged: false, roam: true, hunt: true, sinceSeen: 0, last: { x: p.pos.x, z: p.pos.z } });
+  kinds.forEach((kind, i) => {
+    const e = spawnEnemy(s, kind, at!.x + (i % 2 ? 1.8 : -1.8) * Math.min(i, 1), at!.z + i * 1.6, -1, squad, { appear: true });
+    e.aware = "alert";
+    e.goal = { x: p.pos.x, z: p.pos.z };
+    e.searchT = 40;
+    e.detect = 0.3;
+  });
+  s.events.push({ t: "reinforce", x: at.x, z: at.z });
+}
+
+/** A robot walking straight from (x, z) to (tx, tz) stays on the valley floor: no cliff, no high ground. */
+function walkable(x: number, z: number, tx: number, tz: number): boolean {
+  const n = Math.ceil(Math.hypot(tx - x, tz - z) / 2);
+  for (let i = 1; i < n; i++) {
+    const qx = x + ((tx - x) * i) / n;
+    const qz = z + ((tz - z) * i) / n;
+    if (steepAt(qx, qz) || terrainHeight(qx, qz) > 4) return false;
+  }
+  return true;
 }
 
 function spill(s: State, x: number, y: number, z: number, item: Omit<Loot, "id" | "pos" | "vel" | "age">) {
@@ -98,6 +136,9 @@ function openBin(s: State, binIndex: number) {
   if (table.armor.length && nth !== 0) spill(s, b.x, b.y, b.z, { kind: "armor", rarity: table.armor[nth % table.armor.length] });
   for (let i = 0; i < table.heals; i++) spill(s, b.x, b.y, b.z, { kind: "heal", heal: rollHeal(s), rarity: 1 });
   if (b.flare) spill(s, b.x, b.y, b.z, { kind: "flare", rarity: 3 });
+  // One valuable per bin; the high-rises' top floors are worth the climb.
+  const valuable = b.flare ? (rand(s) < 0.4 ? "core" : "board") : table.valuable;
+  spill(s, b.x, b.y, b.z, { kind: "valuable", valuable, rarity: valuable === "core" ? 3 : valuable === "board" ? 2 : 1 });
   s.events.push({ t: "binOpen", id: b.id });
 }
 
@@ -115,7 +156,7 @@ export function stepLoot(s: State, input: Input) {
       s.events.push({ t: "careLand", x: s.care.x, z: s.care.z });
     }
   }
-  const alive = p.downed <= 0 && (s.phase === "play" || s.phase === "extract");
+  const alive = p.downed <= 0 && s.phase === "play";
   s.loot = s.loot.filter((l) => {
     l.age += TICK;
     const d = Math.hypot(l.pos.x - p.pos.x, l.pos.z - p.pos.z, l.pos.y - (p.pos.y + 0.8));
@@ -150,6 +191,12 @@ export function stepLoot(s: State, input: Input) {
     if (l.kind === "heal" && l.heal && p.heals[l.heal] < HEALS[l.heal].max) {
       p.heals[l.heal]++;
       s.events.push({ t: "pickup", kind: "heal", rarity: 1, label: HEALS[l.heal].label });
+      return false;
+    }
+    if (l.kind === "valuable" && l.valuable) {
+      p.haul.push(l.valuable);
+      const v = VALUABLES[l.valuable];
+      s.events.push({ t: "pickup", kind: "valuable", rarity: l.rarity, label: `${v.label} +${v.value}` });
       return false;
     }
     if (l.kind === "flare" && p.flares < 1) {
@@ -239,7 +286,7 @@ export function extractReady(s: State, x: ExtractPoint): boolean {
 }
 
 export function stepExtract(s: State) {
-  if (s.phase !== "extract") return;
+  if (s.phase !== "play") return;
   const p = s.player;
   const here = p.downed > 0 ? null : extractHere(s);
   const ship = EXTRACTS.find((x) => x.call)!;
@@ -261,20 +308,23 @@ export function stepExtract(s: State) {
       if (here.needsFlare) p.flares--;
       s.extractedAt = here.id;
       s.phase = "done";
-      s.stats.poiTimes.push(s.time - s.poiStart);
+      s.outcome = "extracted";
       s.events.push({ t: "done" });
     }
   } else s.extractTime = 0;
 }
 
+/** The squad the dropship's waves join, kept apart from the timed reinforcements. */
+export const SHIP_SQUAD = "降下部隊";
+
 /** Robots beam in round the pad while the dropship is on its way. */
 function shipWave(s: State, ship: ExtractPoint) {
   s.shipWaveT = SHIP_WAVES.every;
   const kinds = SHIP_WAVES.waves[s.shipWave++];
-  let squad = s.squads.findIndex((q) => q.name === "増援");
+  let squad = s.squads.findIndex((q) => q.name === SHIP_SQUAD);
   if (squad < 0) {
     squad = s.squads.length;
-    s.squads.push({ name: "増援", poi: -1, patrol: [], leg: 0, engaged: true, sinceSeen: 0, last: { x: ship.x, z: ship.z } });
+    s.squads.push({ name: SHIP_SQUAD, poi: -1, patrol: [], leg: 0, engaged: true, roam: true, sinceSeen: 0, last: { x: ship.x, z: ship.z } });
   }
   const pad = POIS[POIS.length - 1];
   for (const kind of kinds) {
