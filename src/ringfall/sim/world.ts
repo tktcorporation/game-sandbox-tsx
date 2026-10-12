@@ -265,23 +265,22 @@ export function stepLoot(s: State, input: Input) {
 export const bagUsed = (haul: ValuableKind[]) => haul.reduce((n, k) => n + VALUABLES[k].size, 0);
 
 /**
- * What would make room for `kind` in a full bag: the cheapest items for their size go first.
- * Null when the bag cannot hold it at all or the trade would lose value.
+ * What would make room for `kind` in a full bag: the set of items (their indices) that frees
+ * enough slots for the least value, fewest items on a tie. Null when no set frees enough or
+ * the cheapest one is worth as much as `kind`. The bag holds at most `BAG.slots` items, so
+ * trying every set is cheap.
  */
 export function makeRoom(haul: ValuableKind[], kind: ValuableKind): number[] | null {
   const need = bagUsed(haul) + VALUABLES[kind].size - BAG.slots;
   if (need <= 0) return [];
-  const order = haul.map((k, i) => i).sort((a, b) => VALUABLES[haul[a]].value / VALUABLES[haul[a]].size - VALUABLES[haul[b]].value / VALUABLES[haul[b]].size);
-  const out: number[] = [];
-  let freed = 0;
-  let lost = 0;
-  for (const i of order) {
-    if (freed >= need) break;
-    out.push(i);
-    freed += VALUABLES[haul[i]].size;
-    lost += VALUABLES[haul[i]].value;
+  let best: { set: number[]; lost: number } | null = null;
+  for (let mask = 1; mask < 1 << haul.length; mask++) {
+    const set = haul.map((_, i) => i).filter((i) => mask & (1 << i));
+    if (set.reduce((n, i) => n + VALUABLES[haul[i]].size, 0) < need) continue;
+    const lost = set.reduce((n, i) => n + VALUABLES[haul[i]].value, 0);
+    if (!best || lost < best.lost || (lost === best.lost && set.length < best.set.length)) best = { set, lost };
   }
-  return freed >= need && lost < VALUABLES[kind].value ? out : null;
+  return best && best.lost < VALUABLES[kind].value ? best.set : null;
 }
 
 /** Drop the cheapest items on the ground and bag the better one. */
