@@ -129,22 +129,27 @@ function beamIn(s: State, kinds: readonly EnemyKind[], name: string, elite: bool
   return true;
 }
 
-/** Just above the 1.2 m a ground robot climbs (`CLIMB` in enemies.ts): low cover does not block it. */
-const CLIMB_OVER = 1.3;
+/** Half the width of the lane a walking robot needs: the heavy's body radius. */
+const LANE = 1;
 
 /**
  * A robot walking straight from (x, z) to (tx, tz) stays on the valley floor: no cliff and no
- * high ground, and with `solids` nothing taller than a robot can step onto. Robots walk straight
- * at their goal, so a route that needs a door or stairs would leave them stuck at a wall.
+ * high ground, and with `solids` no box in a robot-wide lane that it could not step over
+ * (WORLD.stepUp; a crate or a low wall stops it). Robots walk straight at their goal, so a route
+ * that needs a door, stairs or a way round cover would leave them stuck against it.
  */
 function walkable(x: number, z: number, tx: number, tz: number, solids: boolean): boolean {
-  const n = Math.ceil(Math.hypot(tx - x, tz - z) / 1);
+  const len = Math.hypot(tx - x, tz - z);
+  const n = Math.ceil(len / 0.5);
+  const sx = (-(tz - z) / (len || 1)) * LANE;
+  const sz = ((tx - x) / (len || 1)) * LANE;
   for (let i = 1; i < n; i++) {
     const qx = x + ((tx - x) * i) / n;
     const qz = z + ((tz - z) * i) / n;
     if (steepAt(qx, qz) || highGround(qx, qz)) return false;
-    const g = terrainHeight(qx, qz);
-    if (solids && solidAt(qx, g + CLIMB_OVER, qz)) return false;
+    if (!solids) continue;
+    const h = terrainHeight(qx, qz) + WORLD.stepUp + 0.05;
+    if (solidAt(qx, h, qz) || solidAt(qx + sx, h, qz + sz) || solidAt(qx - sx, h, qz - sz)) return false;
   }
   return true;
 }

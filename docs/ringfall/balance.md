@@ -37,9 +37,9 @@ ally: teammate's share of the damage, its downs, times it picked the player up (
 exit: raids that left by each extraction point (the bot's choice depends on skill)
 crowd: median over runs of the most squads / robots fighting the player at once outside the titan fight
 skill     alive time(med) cleared haul(med) score(med) downs acc crit ult crowd flank waves ally               rank               exit
-beginner  100%  2.7m      2       800       1600       0.0   62% 3%   2.1 2/2   6%    0     23% 0.2d 0.0r 0.1h S0 A0 B23 C7 -0    ship 0 flare 0 village 30
-casual    80%   5.5m      4       1400      4100       0.6   89% 16%  5.4 2/4   4%    1     18% 1.1d 0.0r 0.2h S5 A19 B0 C0 -6    ship 24 flare 0 village 0
-good      87%   5.0m      4       1300      4000       0.3   92% 37%  5.0 2/4   5%    1     15% 0.6d 0.0r 0.1h S3 A23 B0 C0 -4    ship 26 flare 0 village 0
+beginner  100%  2.7m      2       800       1600       0.0   62% 3%   2.1 2/2   6%    0     23% 0.2d 0.0r 0.1h S0 A0 B22 C8 -0    ship 0 flare 0 village 30
+casual    77%   5.4m      4       1300      4000       0.6   89% 16%  5.2 2/4   4%    1     18% 1.1d 0.0r 0.2h S4 A18 B1 C0 -7    ship 23 flare 0 village 0
+good      87%   4.9m      4       1400      4100       0.3   92% 37%  5.0 2/4   5%    1     16% 0.6d 0.0r 0.1h S4 A22 B0 C0 -4    ship 26 flare 0 village 0
 ```
 
 上手いの弱点命中率（crit）は 37% で、目標の 40% を下回る。
