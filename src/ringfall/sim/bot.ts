@@ -5,6 +5,7 @@ import { EXTRACTS, POIS } from "./map";
 import { clearLine, findPath } from "./nav";
 import { enemyMax, idleInput, type Enemy, type Input, type State } from "./state";
 import { pickHeal } from "./player";
+import { makeRoom } from "./world";
 import { terrainHeight } from "./terrain";
 
 /**
@@ -191,7 +192,7 @@ export class Bot {
       if (!this.flank && this.flankCheck <= 0 && tgt.kind !== "titan" && tgt.aware === "engaged" && onTerrain(p.pos) && onTerrain(tgt.pos)) {
         this.flankCheck = 1.5;
         // Worth it only on a robot with plenty of fight left, and not twice in a row.
-        const healthy = tgt.hp + tgt.shield > enemyMax(tgt.kind) * 0.5;
+        const healthy = tgt.hp + tgt.shield > enemyMax(tgt) * 0.5;
         if (healthy && tgt.id !== this.lastFlanked && flankOf(s, tgt) === "front" && this.rnd() < sk.flank) {
           const hide = this.hideSpot(s, tgt);
           if (hide) {
@@ -340,7 +341,9 @@ export class Bot {
    * take the long quiet walk and the others call the dropship and hold.
    */
   private exit(s: State): { x: number; z: number } {
-    const id = s.player.flares > 0 ? "flare" : this.skill.name === "beginner" ? "village" : "ship";
+    // The dropship lands by the titan: only a bot that has beaten it goes there.
+    const titanUp = s.enemies.some((e) => e.kind === "titan");
+    const id = s.player.flares > 0 ? "flare" : this.skill.name === "beginner" || titanUp ? "village" : "ship";
     return EXTRACTS.find((x) => x.id === id)!;
   }
 
@@ -462,7 +465,8 @@ export class Bot {
       if (l.kind === "weapon" && l.weapon && l.rarity > worst) cands.push({ x: l.pos.x, z: l.pos.z, d: dist2d(l.pos, p.pos), weapon: true });
       if (l.kind === "armor" && l.rarity > p.armor) cands.push({ x: l.pos.x, z: l.pos.z, d: dist2d(l.pos, p.pos) });
       if (l.kind === "heal" && l.heal && p.heals[l.heal] < HEALS[l.heal].max) cands.push({ x: l.pos.x, z: l.pos.z, d: dist2d(l.pos, p.pos) });
-      if (l.kind === "valuable") cands.push({ x: l.pos.x, z: l.pos.z, d: dist2d(l.pos, p.pos) });
+      // A valuable the bag can take, or one worth throwing cheaper things out for.
+      if (l.kind === "valuable" && l.valuable && makeRoom(p.haul, l.valuable)) cands.push({ x: l.pos.x, z: l.pos.z, d: dist2d(l.pos, p.pos) });
     }
     const best = cands.sort((a, b) => a.d - b.d)[0] ?? null;
     const k = best ? `${Math.round(best.x)},${Math.round(best.z)}` : "";

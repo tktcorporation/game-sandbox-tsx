@@ -18,8 +18,10 @@ off alive by one of three extraction points, all open from the start. No ring an
 player chooses which POIs to take and when to leave. First person on three.js. Robots are squads
 placed on the island from the start (`POIS[].squads` and `ROAMERS` in `map.ts`, some of them
 patrolling the roads), plus reinforcements (`REINFORCE` in `config.ts`) that beam in out of sight
-on a timer and come looking. A wipe ends the raid and loses the haul; `results.ts` scores the haul
-plus cleared POIs.
+on a timer and come looking, and once per raid an elite squad (`RAIDERS` / `ELITE`) that flanks.
+Bins take time to search (`SEARCH`) and valuables fill a bag of `BAG.slots`. The HUD shows no
+markers or distances; the island map (`view/map.ts`, M) is where the POIs and exits are. A wipe
+ends the raid and loses the haul; `results.ts` scores the haul plus cleared POIs.
 
 ```bash
 npm run sim:ringfall     # gate 2: bots of three skills play the whole run headless

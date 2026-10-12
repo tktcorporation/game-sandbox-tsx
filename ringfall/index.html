@@ -16,10 +16,9 @@
     <div id="fx-ult" aria-hidden="true"></div>
 
     <div id="hud" hidden>
-      <div id="compass"><div id="compass-strip"></div><i id="compass-obj"></i><b id="compass-deg">0</b></div>
-      <div id="objective"><span id="obj-text"></span><b id="obj-count"></b><small id="obj-raid"></small><small id="obj-stealth"></small><small id="obj-exits"></small></div>
-      <div id="exit-marks" aria-hidden="true"></div>
-      <div id="marker" aria-hidden="true"><i></i><span id="marker-dist"></span></div>
+      <div id="compass"><div id="compass-strip"></div><b id="compass-deg">0</b></div>
+      <div id="map" hidden><canvas id="map-canvas"></canvas><p><span class="map-key">◆</span> 脱出地点<span class="map-close">　<kbd>M</kbd>で閉じる</span></p></div>
+      <div id="objective"><span id="obj-text"></span><b id="obj-count"></b><small id="obj-bag"></small><small id="obj-raid"></small><small id="obj-stealth"></small><small id="obj-exits"></small></div>
       <div id="enemy-bars" aria-hidden="true"></div>
       <div id="aware-layer" aria-hidden="true"></div>
       <div id="dmg-layer" aria-hidden="true"></div>
@@ -63,6 +62,7 @@
       <button type="button" class="tb small" id="t-battery" data-act="KeyH" aria-label="回復"><b>回復 <span id="t-cells">0</span></b></button>
       <button type="button" class="tb pill" id="t-use" data-act="KeyE" hidden><b>拾う・開ける</b></button>
       <button type="button" class="tb small" id="t-pause" data-act="pause" aria-label="一時停止"><b>II</b></button>
+      <button type="button" class="tb small" id="t-map" data-act="map" aria-label="地図"><b>地図</b></button>
     </div>
     <div id="rotate">横向きにすると遊べます</div>
 

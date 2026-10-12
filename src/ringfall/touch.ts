@@ -16,6 +16,8 @@ export interface TouchSink {
   fire(on: boolean): void;
   toggleAds(): void;
   pause(): void;
+  /** Open or close the island map. */
+  map(): void;
 }
 
 const STICK_RADIUS = 56;
@@ -113,6 +115,9 @@ export function setupTouch(sink: TouchSink) {
           break;
         case "pause":
           sink.pause();
+          break;
+        case "map":
+          sink.map();
           break;
         default:
           sink.press(act);

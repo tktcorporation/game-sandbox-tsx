@@ -34,8 +34,8 @@ export const PLAYER = {
   regenDelay: 5,
   regenPerSec: 6,
   /** Health comes back on its own only this far; above it takes a syringe or a med kit. */
-  regenCap: 50,
-  shieldByTier: [50, 75, 100, 125],
+  regenCap: 30,
+  shieldByTier: [25, 50, 75, 100],
   downedTime: 3,
   reviveHp: 60,
   reviveIframes: 1.5,
@@ -83,8 +83,8 @@ export const DROP = {
 
 export const ASSIST = {
   /** Half-angle of the cone in which a shot that misses the hitbox still hits the enemy. */
-  hipCone: 2.6,
-  adsCone: 3.6,
+  hipCone: 2.1,
+  adsCone: 2.9,
   ultCone: 10,
   /** Extra metres of tolerance far away, so distant enemies are not impossible. */
   farPadding: 0.3,
@@ -190,10 +190,10 @@ export interface EnemySpec {
 }
 
 export const ENEMIES: Record<EnemyKind, EnemySpec> = {
-  drone: { hp: 70, shield: 0, shieldTier: 0, radius: 0.55, bodyY: 0, weakY: 0, weakR: 0.24, weakFwd: 0.42, speed: 4.2, fly: 3.4, range: 14, telegraph: 0.55, cooldown: 1.6, shots: 1, shotGap: 0, spread: 0, orbSpeed: 19, orbDmg: 16, orbR: 0.32, ult: 1 },
-  grunt: { hp: 140, shield: 70, shieldTier: 1, radius: 0.6, bodyY: 1.1, weakY: 1.86, weakR: 0.27, weakFwd: 0.08, speed: 3.2, fly: 0, range: 15, telegraph: 0.6, cooldown: 1.5, shots: 3, shotGap: 0.16, spread: 0, orbSpeed: 23, orbDmg: 15, orbR: 0.3, ult: 1 },
-  charger: { hp: 120, shield: 50, shieldTier: 0, radius: 0.72, bodyY: 0.75, weakY: 0.95, weakR: 0.3, weakFwd: 0.62, speed: 6.4, fly: 0, range: 0, telegraph: 0.6, cooldown: 1.2, shots: 0, shotGap: 0, spread: 0, orbSpeed: 0, orbDmg: 32, orbR: 0, ult: 1 },
-  heavy: { hp: 300, shield: 150, shieldTier: 2, radius: 0.95, bodyY: 1.4, weakY: 2.35, weakR: 0.36, weakFwd: 0.1, speed: 2.0, fly: 0, range: 18, telegraph: 0.85, cooldown: 3.2, shots: 5, shotGap: 0, spread: 9, orbSpeed: 17, orbDmg: 14, orbR: 0.42, ult: 1 },
+  drone: { hp: 70, shield: 0, shieldTier: 0, radius: 0.55, bodyY: 0, weakY: 0, weakR: 0.24, weakFwd: 0.42, speed: 4.2, fly: 3.4, range: 14, telegraph: 0.55, cooldown: 1.6, shots: 1, shotGap: 0, spread: 0, orbSpeed: 23, orbDmg: 21, orbR: 0.32, ult: 1 },
+  grunt: { hp: 140, shield: 70, shieldTier: 1, radius: 0.6, bodyY: 1.1, weakY: 1.86, weakR: 0.27, weakFwd: 0.08, speed: 3.2, fly: 0, range: 15, telegraph: 0.6, cooldown: 1.5, shots: 3, shotGap: 0.16, spread: 0, orbSpeed: 28, orbDmg: 20, orbR: 0.3, ult: 1 },
+  charger: { hp: 120, shield: 50, shieldTier: 0, radius: 0.72, bodyY: 0.75, weakY: 0.95, weakR: 0.3, weakFwd: 0.62, speed: 6.4, fly: 0, range: 0, telegraph: 0.6, cooldown: 1.2, shots: 0, shotGap: 0, spread: 0, orbSpeed: 0, orbDmg: 40, orbR: 0, ult: 1 },
+  heavy: { hp: 300, shield: 150, shieldTier: 2, radius: 0.95, bodyY: 1.4, weakY: 2.35, weakR: 0.36, weakFwd: 0.1, speed: 2.0, fly: 0, range: 18, telegraph: 0.85, cooldown: 3.2, shots: 5, shotGap: 0, spread: 9, orbSpeed: 20, orbDmg: 18, orbR: 0.42, ult: 1 },
   titan: { hp: 3200, shield: 1000, shieldTier: 3, radius: 2.3, bodyY: 3.2, weakY: 3.4, weakR: 0.75, weakFwd: 2.1, speed: 1.6, fly: 0, range: 20, telegraph: 1.0, cooldown: 3.0, shots: 6, shotGap: 0.16, spread: 0, orbSpeed: 13, orbDmg: 9, orbR: 0.48, ult: 0.5 },
 };
 
@@ -230,11 +230,20 @@ export const SCORE = {
 export type ValuableKind = "parts" | "board" | "core";
 
 /** Things worth carrying out. Every bin holds one; robots drop some; the best sit up high or with the titan. */
-export const VALUABLES: Record<ValuableKind, { label: string; value: number }> = {
-  parts: { label: "部品", value: 100 },
-  board: { label: "回路基板", value: 300 },
-  core: { label: "データコア", value: 1000 },
+export const VALUABLES: Record<ValuableKind, { label: string; value: number; size: number }> = {
+  parts: { label: "部品", value: 100, size: 1 },
+  board: { label: "回路基板", value: 300, size: 2 },
+  core: { label: "データコア", value: 1000, size: 3 },
 };
+
+/** The bag the valuables go in: what does not fit stays on the ground unless something cheaper makes way. */
+export const BAG = { slots: 10 };
+
+/**
+ * Searching a bin takes time with the hands busy and makes a noise; a top-floor bin
+ * of a high-rise takes longer. Moving away, shooting or healing breaks it off.
+ */
+export const SEARCH = { time: 2.2, flareTime: 3.5, noise: 9 };
 
 /**
  * Reinforcements: a squad beams in somewhere `dist` metres from the player, out of
@@ -253,6 +262,30 @@ export const REINFORCE = {
     ["grunt", "grunt", "drone", "charger"],
     ["heavy", "grunt", "drone", "drone"],
   ] as EnemyKind[][],
+};
+
+/**
+ * The raiders: one elite squad that beams in once the raid has gone on a while and hunts
+ * the player down, closer on their heels than reinforcements. In a fight one member holds
+ * the player's attention while the others go wide to the sides.
+ */
+export const RAIDERS = {
+  at: 240,
+  name: "レイダー",
+  kinds: ["grunt", "grunt", "grunt"] as EnemyKind[],
+  huntEvery: 4,
+};
+
+/** How much tougher, deadlier and quicker an elite robot (a raider) is than a plain one. */
+export const ELITE = {
+  hp: 1.6,
+  dmg: 1.3,
+  cooldown: 0.75,
+  turn: 1.5,
+  /** Degrees either side of facing it can fire into (`AWARE.fireCone` for plain robots). */
+  fireCone: 70,
+  /** How far to the side of the player a flanking raider goes. */
+  flankDist: 11,
 };
 
 /**
@@ -297,7 +330,7 @@ export const AWARE = {
   /** A squad tracks the player's true position only this long after a member last saw them. */
   trackTime: 0.4,
   /** A robot fires only when the player is within this many degrees of where it faces. */
-  fireCone: 25,
+  fireCone: 40,
 };
 
 /**
@@ -305,10 +338,10 @@ export const AWARE = {
  * so circling to its side or back while it faces the last known position works.
  */
 export const TURN: Record<EnemyKind, number> = {
-  drone: 3.0,
-  grunt: 2.4,
-  charger: 3.2,
-  heavy: 1.3,
+  drone: 3.6,
+  grunt: 3.0,
+  charger: 3.8,
+  heavy: 1.6,
   titan: 1.2,
 };
 
@@ -322,7 +355,7 @@ export type Flank = "front" | "side" | "back" | "ambush" | "none";
 export const FLANK = {
   frontArc: 55, // degrees either side of facing
   backArc: 115, // beyond this many degrees from facing
-  mult: { front: 0.75, side: 1, back: 2, ambush: 2.5, none: 1 } satisfies Record<Flank, number>,
+  mult: { front: 0.85, side: 1, back: 2, ambush: 2.5, none: 1 } satisfies Record<Flank, number>,
 };
 
 /** How far a sound carries, in metres. Robots inside it come to look. */

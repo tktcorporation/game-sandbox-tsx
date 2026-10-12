@@ -1,10 +1,12 @@
-import { ALLY, ENEMIES, HEALS, PLAYER, REINFORCE, SHIP_WAVES, TICK, VALUABLES, WORLD, type HealKind } from "./config";
+import { ALLY, BAG, ENEMIES, HEALS, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, TICK, VALUABLES, WORLD, type HealKind } from "./config";
 import { dist2d, groundAt, los, solidAt } from "./geom";
 import { steepAt, terrainHeight } from "./terrain";
 import { EXTRACTS, POIS, type ExtractPoint } from "./map";
 import { spawnEnemy, spawnSpot } from "./enemies";
 import { raiseAlly, startHelp } from "./ally";
 import { rand, type Input, type Loot, type State, type Weapon } from "./state";
+import type { EnemyKind, ValuableKind } from "./config";
+import { makeNoise } from "./awareness";
 
 /*
  * The raid's structure: POIs that fall when their robots are beaten, loot and bins,
@@ -42,32 +44,50 @@ export function stepPoi(s: State) {
   });
 }
 
-/** A reinforcement squad beams in out of the player's sight and comes looking for them. */
+/**
+ * Reinforcement squads beam in out of the player's sight on a timer and come looking for them;
+ * once in the raid, so do the raiders, who keep after the player more closely and fight better.
+ */
 export function stepReinforce(s: State) {
   if (s.phase !== "play") return;
   // Hunting squads get a fresh idea of where the player is every few seconds, not a live track.
   const p0 = s.player.pos;
-  const refresh = Math.round(s.time / TICK) % Math.round(REINFORCE.huntEvery / TICK) === 0;
+  const tick = Math.round(s.time / TICK);
   s.squads.forEach((q, i) => {
     if (!q.hunt) return;
     if (q.engaged) {
       q.hunt = false;
       return;
     }
-    if (!refresh) return;
+    const every = q.elite ? RAIDERS.huntEvery : REINFORCE.huntEvery;
+    if (tick % Math.round(every / TICK) !== 0) return;
     for (const e of s.enemies)
       if (e.squad === i && e.aware === "alert") {
         e.goal = { x: p0.x, z: p0.z };
-        e.searchT = Math.max(e.searchT, REINFORCE.huntEvery + 2);
+        e.searchT = Math.max(e.searchT, every + 2);
       }
   });
+  // Nobody beams in on top of the titan fight; the raiders wait for any fight to end, then come.
+  const titanFight = s.enemies.some((e) => e.kind === "titan" && e.aware === "engaged");
+  const fighting = s.enemies.some((e) => e.aware === "engaged" && e.mode !== "spawning");
+  s.raiderT -= TICK;
+  if (s.raiderT <= 0 && !fighting) s.raiderT = beamIn(s, RAIDERS.kinds, RAIDERS.name, true) ? Infinity : 5;
   s.reinforceT -= TICK;
-  if (s.reinforceT > 0) return;
+  if (s.reinforceT > 0 || titanFight) return;
+  const kinds = REINFORCE.waves[Math.min(s.reinforceN, REINFORCE.waves.length - 1)];
+  if (!beamIn(s, kinds, "増援", false)) {
+    s.reinforceT = 5; // try again shortly
+    return;
+  }
   s.reinforceT = REINFORCE.every;
+  s.reinforceN++;
+}
+
+/** Beam a hunting squad in somewhere the player cannot see; false when no such spot turned up. */
+function beamIn(s: State, kinds: readonly EnemyKind[], name: string, elite: boolean): boolean {
   const p = s.player;
   const eye = { x: p.pos.x, y: p.pos.y + 1.5, z: p.pos.z };
   const [near, far] = REINFORCE.dist;
-  const kinds = REINFORCE.waves[Math.min(s.reinforceN, REINFORCE.waves.length - 1)];
   // Where each member stands round the squad's spot, and the top of its body there:
   // every one of them must be out of sight, a hovering drone included.
   const posts = (x: number, z: number) =>
@@ -93,22 +113,19 @@ export function stepReinforce(s: State) {
     if (!walkable(x, z, p.pos.x, p.pos.z, strict)) continue;
     at = { x, z };
   }
-  if (!at) {
-    s.reinforceT = 5; // try again shortly
-    return;
-  }
-  s.reinforceN++;
+  if (!at) return false;
   const squad = s.squads.length;
-  s.squads.push({ name: "増援", poi: -1, patrol: [], leg: 0, engaged: false, roam: true, hunt: true, sinceSeen: 0, last: { x: p.pos.x, z: p.pos.z } });
+  s.squads.push({ name, poi: -1, patrol: [], leg: 0, engaged: false, roam: true, hunt: true, elite, sinceSeen: 0, last: { x: p.pos.x, z: p.pos.z } });
   const spots = posts(at.x, at.z);
   kinds.forEach((kind, i) => {
-    const e = spawnEnemy(s, kind, spots[i].mx, spots[i].mz, -1, squad, { appear: true });
+    const e = spawnEnemy(s, kind, spots[i].mx, spots[i].mz, -1, squad, { appear: true, elite });
     e.aware = "alert";
     e.goal = { x: p.pos.x, z: p.pos.z };
     e.searchT = 40;
     e.detect = 0.3;
   });
-  s.events.push({ t: "reinforce", x: at.x, z: at.z });
+  s.events.push({ t: elite ? "raiders" : "reinforce", x: at.x, z: at.z });
+  return true;
 }
 
 /** Just above the 1.2 m a ground robot climbs (`CLIMB` in enemies.ts): low cover does not block it. */
@@ -214,7 +231,7 @@ export function stepLoot(s: State, input: Input) {
       s.events.push({ t: "pickup", kind: "heal", rarity: 1, label: HEALS[l.heal].label });
       return false;
     }
-    if (l.kind === "valuable" && l.valuable) {
+    if (l.kind === "valuable" && l.valuable && bagUsed(p.haul) + VALUABLES[l.valuable].size <= BAG.slots) {
       p.haul.push(l.valuable);
       const v = VALUABLES[l.valuable];
       s.events.push({ t: "pickup", kind: "valuable", rarity: l.rarity, label: `${v.label} +${v.value}` });
@@ -234,16 +251,84 @@ export function stepLoot(s: State, input: Input) {
     return true;
   });
 
+  stepSearch(s, alive);
   if (!input.interact || !alive) return;
   const t = useTarget(s);
   if (t?.kind === "ally") startHelp(s);
-  else if (t?.kind === "bin") openBin(s, t.index);
+  else if (t?.kind === "bin") startSearch(s, t.index);
   else if (t?.kind === "care") openCare(s);
   else if (t?.kind === "weapon") takeWeapon(s, t.loot);
+  else if (t?.kind === "swap") swapInto(s, t.loot);
 }
 
+/** Bag slots the haul takes up. */
+export const bagUsed = (haul: ValuableKind[]) => haul.reduce((n, k) => n + VALUABLES[k].size, 0);
+
+/**
+ * What would make room for `kind` in a full bag: the cheapest items for their size go first.
+ * Null when the bag cannot hold it at all or the trade would lose value.
+ */
+export function makeRoom(haul: ValuableKind[], kind: ValuableKind): number[] | null {
+  const need = bagUsed(haul) + VALUABLES[kind].size - BAG.slots;
+  if (need <= 0) return [];
+  const order = haul.map((k, i) => i).sort((a, b) => VALUABLES[haul[a]].value / VALUABLES[haul[a]].size - VALUABLES[haul[b]].value / VALUABLES[haul[b]].size);
+  const out: number[] = [];
+  let freed = 0;
+  let lost = 0;
+  for (const i of order) {
+    if (freed >= need) break;
+    out.push(i);
+    freed += VALUABLES[haul[i]].size;
+    lost += VALUABLES[haul[i]].value;
+  }
+  return freed >= need && lost < VALUABLES[kind].value ? out : null;
+}
+
+/** Drop the cheapest items on the ground and bag the better one. */
+function swapInto(s: State, l: Loot) {
+  const p = s.player;
+  const out = l.valuable ? makeRoom(p.haul, l.valuable) : null;
+  if (!out || !l.valuable) return;
+  const dropped = out.map((i) => p.haul[i]);
+  p.haul = p.haul.filter((_, i) => !out.includes(i));
+  for (const k of dropped) spill(s, p.pos.x, p.pos.y, p.pos.z, { kind: "valuable", valuable: k, rarity: k === "core" ? 3 : k === "board" ? 2 : 1 });
+  s.loot = s.loot.filter((o) => o !== l);
+  p.haul.push(l.valuable);
+  const v = VALUABLES[l.valuable];
+  s.events.push({ t: "pickup", kind: "valuable", rarity: l.rarity, label: `${v.label} +${v.value}（${dropped.map((k) => VALUABLES[k].label).join("・")}を捨てた）` });
+}
+
+function startSearch(s: State, bin: number) {
+  const p = s.player;
+  if (p.search?.bin === bin) return;
+  p.search = { bin, t: 0 };
+  const b = s.bins[bin];
+  makeNoise(s, b.x, b.z, SEARCH.noise);
+  s.events.push({ t: "searchStart", id: b.id });
+}
+
+/** A search goes on while the player stays at the bin with free hands; done, the bin spills open. */
+function stepSearch(s: State, alive: boolean) {
+  const p = s.player;
+  const q = p.search;
+  if (!q) return;
+  const b = s.bins[q.bin];
+  const beside = b && !b.open && dist2d(b, p.pos) < PLAYER.interactRange + 0.4 && Math.abs(b.y - p.pos.y) < 1.5;
+  if (!alive || !beside || p.triggerHeld || p.healing) {
+    p.search = null;
+    return;
+  }
+  q.t += TICK;
+  if (q.t >= searchTime(b)) {
+    p.search = null;
+    openBin(s, q.bin);
+  }
+}
+
+export const searchTime = (b: { flare: boolean }) => (b.flare ? SEARCH.flareTime : SEARCH.time);
+
 /** What one press of the use key acts on. The HUD shows its prompt from the same choice. */
-export type UseTarget = { kind: "ally" } | { kind: "bin"; index: number } | { kind: "care" } | { kind: "weapon"; loot: Loot };
+export type UseTarget = { kind: "ally" } | { kind: "bin"; index: number } | { kind: "care" } | { kind: "weapon"; loot: Loot } | { kind: "swap"; loot: Loot };
 
 /**
  * A downed teammate within reach comes first, however close any loot is; otherwise
@@ -261,8 +346,10 @@ export function useTarget(s: State): UseTarget | null {
   const care = s.care;
   if (care && care.landed && !care.open && level(care.y)) picks.push({ d: dist2d(care, p.pos) - 0.6, t: { kind: "care" } });
   for (const l of s.loot) {
-    if (l.kind !== "weapon" || !l.weapon || l.age < 0.4 || !level(l.pos.y)) continue;
-    picks.push({ d: dist2d(l.pos, p.pos) - 0.3, t: { kind: "weapon", loot: l } });
+    if (l.age < 0.4 || !level(l.pos.y)) continue;
+    if (l.kind === "weapon" && l.weapon) picks.push({ d: dist2d(l.pos, p.pos) - 0.3, t: { kind: "weapon", loot: l } });
+    // A valuable that does not fit is worth a press when something cheaper can make way.
+    else if (l.kind === "valuable" && l.valuable && makeRoom(p.haul, l.valuable)?.length) picks.push({ d: dist2d(l.pos, p.pos) - 0.3, t: { kind: "swap", loot: l } });
   }
   return picks.filter((k) => k.d < PLAYER.interactRange).sort((x, y) => x.d - y.d)[0]?.t ?? null;
 }

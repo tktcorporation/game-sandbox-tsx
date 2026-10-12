@@ -505,6 +505,13 @@ export class World {
       let v = this.enemies.get(e.id);
       if (!v) {
         const m = buildEnemy(e.kind);
+        if (e.elite)
+          m.root.traverse((o) => {
+            if (o instanceof THREE.Mesh && o.material instanceof THREE.MeshLambertMaterial && o.material.color.getHex() === PAL.armor) {
+              o.material = o.material.clone();
+              o.material.color.setHex(PAL.eliteArmor);
+            }
+          });
         this.scene.add(m.root);
         const beam = new THREE.Mesh(
           new THREE.CylinderGeometry(0.06, ENEMIES[e.kind].radius * 0.45, 40, 8, 1, true),
@@ -757,20 +764,5 @@ export class World {
     if (this.dropship) this.scene.remove(this.dropship);
     this.dropship = null;
     this.particles = [];
-  }
-
-  /** The nearest POI not yet cleared, which the HUD marks; the extraction points have markers of their own. */
-  objective(s: State): Vec3 | null {
-    const p = s.player.pos;
-    let best: Vec3 | null = null;
-    let bd = Infinity;
-    POIS.forEach((poi, i) => {
-      const d = Math.hypot(poi.x - p.x, poi.z - p.z);
-      if (!s.cleared[i] && d < bd) {
-        bd = d;
-        best = { x: poi.x, y: 2, z: poi.z };
-      }
-    });
-    return best;
   }
 }

@@ -5,7 +5,7 @@
  *
  *   npm run sim:ringfall -- [runsPerSkill]
  */
-import { ALLY, ENEMIES, REINFORCE, TACTICAL, TICK, VALUABLES, WORLD } from "../src/ringfall/sim/config";
+import { ALLY, BAG, ENEMIES, RAIDERS, REINFORCE, SEARCH, TACTICAL, TICK, VALUABLES, WORLD } from "../src/ringfall/sim/config";
 import { BOXES, EXTRA_BINS, EXTRACTS, POIS, ROAMERS, type Squad } from "../src/ringfall/sim/map";
 import { groundAt, los, solidAt } from "../src/ringfall/sim/geom";
 import { Bot, SKILLS } from "../src/ringfall/sim/bot";
@@ -14,7 +14,7 @@ import { step } from "../src/ringfall/sim/step";
 import { hurtPlayer } from "../src/ringfall/sim/player";
 import { hurtAlly, placeAlly } from "../src/ringfall/sim/ally";
 import { haulValue, rank } from "../src/ringfall/sim/results";
-import { SHIP_SQUAD } from "../src/ringfall/sim/world";
+import { SHIP_SQUAD, bagUsed } from "../src/ringfall/sim/world";
 import { bodyCenter, damageEnemy, eyePos, fireRay, magSize, weakPoint } from "../src/ringfall/sim/combat";
 import { lookAngles } from "../src/ringfall/sim/geom";
 import { forward } from "../src/ringfall/sim/state";
@@ -247,10 +247,53 @@ function checkValuableBin(): string | null {
   const press = idleInput();
   press.interact = true;
   step(s, press, false);
+  // Searching takes its time: not open just short of it, open (and bagged) after.
+  ticks(s, SEARCH.time - 0.2);
+  if (s.bins[0].open) return "search scenario: the bin opened before the search time";
   ticks(s, 3);
   if (haulValue(s) !== VALUABLES[POIS[2].loot.valuable].value) return `valuable scenario: haul ${haulValue(s)}, bin open ${s.bins[0].open}`;
   return null;
 }
+/** Walking away from a bin breaks the search off; it starts over on the next press. */
+function checkSearchBreaks(): string | null {
+  const s = padRun();
+  const p = s.player;
+  s.bins = [{ id: 9001, x: p.pos.x + 1, y: p.pos.y, z: p.pos.z, poi: 2, open: false, flare: false }];
+  const press = idleInput();
+  press.interact = true;
+  step(s, press, false);
+  ticks(s, 1);
+  p.pos.x += 6;
+  ticks(s, SEARCH.time + 1);
+  if (s.bins[0].open || p.search) return `search scenario: open ${s.bins[0].open}, still searching ${!!p.search} after walking away`;
+  return null;
+}
+/** A full bag takes nothing more; with the use key, cheaper items make way for a better one. */
+function checkBagSwap(): string | null {
+  const s = padRun();
+  const p = s.player;
+  p.haul = Array.from({ length: BAG.slots }, () => "parts" as const);
+  s.loot.push({ id: 9002, kind: "valuable", valuable: "core", rarity: 3, pos: { ...p.pos }, vel: { x: 0, y: 0, z: 0 }, age: 1 });
+  ticks(s, 0.5);
+  if (bagUsed(p.haul) > BAG.slots || p.haul.includes("core")) return `bag scenario: a full bag took the core (${p.haul.join(",")})`;
+  const press = idleInput();
+  press.interact = true;
+  step(s, press, false);
+  if (!p.haul.includes("core") || bagUsed(p.haul) > BAG.slots || haulValue(s) !== 1000 + (BAG.slots - 3) * 100) return `bag scenario: after the swap ${p.haul.join(",")}`;
+  return null;
+}
+/** The raiders beam in once the raid has gone on long enough, as a tougher elite squad. */
+function checkRaiders(): string | null {
+  const s = padRun();
+  s.raiderT = TICK;
+  const before = s.enemies.length;
+  step(s, idleInput(), false);
+  const fresh = s.enemies.slice(before);
+  if (!s.events.some((e) => e.t === "raiders") || fresh.length !== RAIDERS.kinds.length || fresh.some((e) => !e.elite || e.hp + e.shield <= enemyMaxPlain(e.kind))) return `raider scenario: ${fresh.length} robots, elite ${fresh.map((e) => e.elite).join(",")}`;
+  if (Number.isFinite(s.raiderT)) return "raider scenario: they would come again";
+  return null;
+}
+const enemyMaxPlain = (k: keyof typeof ENEMIES) => ENEMIES[k].hp + ENEMIES[k].shield;
 /** Reads the phase afresh, past the narrowing of an earlier check. */
 const phaseOf = (s: State): State["phase"] => s.phase;
 /** Standing in the plateau pickup leaves with a flare, and does nothing without one. */
@@ -289,6 +332,7 @@ function padRun(): State {
   s.cleared = POIS.map(() => true);
   s.visited = POIS.map(() => true);
   s.reinforceT = 1e9;
+  s.raiderT = 1e9;
   const p = s.player;
   p.pos = { x: POIS[3].x, y: 0, z: POIS[3].z };
   p.pos.y = groundAt(p.pos.x, p.pos.z, 0.4, 2);
@@ -429,7 +473,7 @@ function checkAllyHoldsFire(): string | null {
   if (shots) return `hold fire scenario: the teammate fired ${shots} shots at an idle robot`;
   return null;
 }
-for (const err of [checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkAllySelfUp(), checkStompHeight(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill()]) {
+for (const err of [checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkAllySelfUp(), checkStompHeight(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill()]) {
   if (err) {
     console.error(err);
     process.exit(1);

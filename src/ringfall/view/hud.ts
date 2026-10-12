@@ -1,12 +1,13 @@
-import { ALLY, AWARE, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, SCORE, TACTICAL, ULT, VALUABLES, WEAPONS, type Flank } from "../sim/config";
+import { ALLY, AWARE, BAG, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, SCORE, TACTICAL, ULT, VALUABLES, WEAPONS, type Flank } from "../sim/config";
 import { magSize } from "../sim/combat";
 import { dist2d } from "../sim/geom";
 import { EXTRACTS, POIS } from "../sim/map";
-import { extractHere, extractReady, poiAt, useTarget } from "../sim/world";
-import type { GameEvent, State, Vec3 } from "../sim/state";
+import { bagUsed, extractHere, extractReady, makeRoom, poiAt, searchTime, useTarget } from "../sim/world";
+import { enemyHp, enemyShield, type GameEvent, type State, type Vec3 } from "../sim/state";
 import { haulValue, rank } from "../sim/results";
 import { pickHeal } from "../sim/player";
 import { RARITY_CSS, SCOPE_IN } from "./models";
+import { IslandMap } from "./map";
 import type { World } from "./world";
 
 /*
@@ -15,8 +16,6 @@ import type { World } from "./world";
  * (shield cells, health, ammo, ability charge).
  */
 
-/** Extraction points get an on-screen marker within this many metres. */
-const EXIT_MARK = 90;
 const clock = (t: number) => `${Math.floor(Math.max(0, t) / 60)}:${String(Math.floor(Math.max(0, t) % 60)).padStart(2, "0")}`;
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 /** Wording follows the controls in use: keys on a PC, on-screen buttons on a phone. */
@@ -36,8 +35,6 @@ interface DmgNum {
 }
 
 /** Tag shown with a damage number, by how the shot met the robot. */
-/** The straggler hint: shown when this few robots are left and none has been found for this long. */
-const HINT = { left: 2, after: 20 };
 
 const FLANK_TAG: Partial<Record<Flank, string>> = { back: "背後", ambush: "奇襲" };
 const FLANK_RANK: Record<Flank, number> = { front: 0, none: 1, side: 1, back: 2, ambush: 3 };
@@ -57,21 +54,17 @@ export class Hud {
   private awareLayer = $("aware-layer");
   private awEls = new Map<number, HTMLElement>();
   private spotted = new Map<number, number>(); // robot id -> seconds left to show "!"
-  /** Game time of the last kill at the current POI, for the straggler hint. */
-  private lastPoiKill = 0;
-  private hintPoi = -1;
-  private foePips: HTMLElement[] = [];
-  private exitMarks: HTMLElement[] = [];
+
+  private map = new IslandMap($<HTMLCanvasElement>("map-canvas"));
+  private mapOpen = false;
+
+  /** Open or close the island map; it is redrawn every frame while open. */
+  toggleMap(force?: boolean) {
+    this.mapOpen = force ?? !this.mapOpen;
+    $("map").hidden = !this.mapOpen;
+  }
 
   constructor() {
-    for (const x of EXTRACTS) {
-      const el = document.createElement("div");
-      el.className = "xmark";
-      el.innerHTML = `<i></i><b>${x.short}</b><span></span>`;
-      el.style.display = "none";
-      $("exit-marks").appendChild(el);
-      this.exitMarks.push(el);
-    }
     const strip = $("compass-strip");
     const labels: Record<number, string> = { 0: "N", 45: "NE", 90: "E", 135: "SE", 180: "S", 225: "SW", 270: "W", 315: "NW" };
     // Three turns of the strip so it can scroll seamlessly.
@@ -134,7 +127,6 @@ export class Hud {
         break;
       }
       case "kill":
-        this.lastPoiKill = s.time;
         if (e.ally) {
           this.toast(`${ALLY.name}が撃破`, 0);
           break;
@@ -176,6 +168,9 @@ export class Hud {
       case "reinforce":
         this.banner("増援が降下した", "ロボット部隊がこちらを探している");
         break;
+      case "raiders":
+        this.banner("レイダーが降下した", "精鋭部隊がこちらを狩りに来る。横から回り込んでくる");
+        break;
       case "shipCalled":
         this.banner("ドロップシップを呼んだ", `到着まで ${EXTRACTS[0].call} 秒。増援が降りてくる`);
         break;
@@ -216,6 +211,10 @@ export class Hud {
 
   frame(s: State, view: World, dt: number, w: number, h: number) {
     const p = s.player;
+    if (this.mapOpen) {
+      if (s.phase === "done") this.toggleMap(false);
+      else this.map.draw(s);
+    }
 
     // Objective card.
     const here = poiAt(s);
@@ -229,42 +228,17 @@ export class Hud {
     else text = "探索して脱出せよ";
     $("obj-text").textContent = text;
     $("obj-count").textContent = s.phase === "drop" ? "" : `回収 ${haulValue(s)}`;
+    $("obj-bag").textContent = s.phase === "drop" ? "" : `バッグ ${bagUsed(p.haul)}/${BAG.slots}`;
     const raid = s.phase === "play" ? `${clock(s.time - s.landedAt)}` : "";
     const next = s.phase === "play" && s.reinforceT < 60 ? `　増援まで ${Math.ceil(s.reinforceT)} 秒` : "";
     $("obj-raid").textContent = raid + next;
 
-    // Objective marker.
-    const obj = view.objective(s);
-    const marker = $("marker");
-    if (obj && s.phase !== "done" && !(active && dist2d(p.pos, obj) < 18)) {
-      const sp = view.project(obj, w, h);
-      let x = sp.x;
-      let y = sp.y;
-      if (sp.behind) {
-        x = w - x;
-        y = h - 40;
-      }
-      x = Math.max(40, Math.min(w - 40, x));
-      y = Math.max(90, Math.min(h - 140, y));
-      marker.style.display = "flex";
-      marker.style.left = `${x}px`;
-      marker.style.top = `${y}px`;
-      $("marker-dist").textContent = `${Math.round(dist2d(p.pos, obj))}m`;
-    } else marker.style.display = "none";
 
     // Compass: 2 px per degree, centred on the current heading.
     const heading = ((((p.yaw * 180) / Math.PI) % 360) + 360) % 360;
     const half = $("compass").clientWidth / 2;
     $("compass-strip").style.transform = `translateX(${half - (heading + 360) * 2}px)`;
-    if (obj) {
-      const bearing = (Math.atan2(obj.x - p.pos.x, -(obj.z - p.pos.z)) * 180) / Math.PI;
-      let rel = ((bearing - heading + 540) % 360) - 180;
-      rel = Math.max(-100, Math.min(100, rel));
-      $("compass-obj").style.left = `${half + rel * 2}px`;
-    }
-    this.stragglers(s, here, heading, half);
-    $("compass-obj").style.display = obj ? "" : "none";
-    this.exits(s, view, w, h);
+    this.exits(s);
 
     // Vitals.
     const maxShield = PLAYER.shieldByTier[p.armor];
@@ -382,10 +356,10 @@ export class Hud {
       const spans = el.querySelectorAll<HTMLElement>("span");
       const sh = spans[0];
       const hp = spans[1];
-      sh.style.width = `${(e.shield / Math.max(1, k.shield)) * 100}%`;
+      sh.style.width = `${(e.shield / Math.max(1, enemyShield(e))) * 100}%`;
       sh.style.background = RARITY_CSS[k.shieldTier];
       (sh.parentElement as HTMLElement).style.display = k.shield > 0 ? "" : "none";
-      hp.style.width = `${(Math.max(0, e.hp) / k.hp) * 100}%`;
+      hp.style.width = `${(Math.max(0, e.hp) / enemyHp(e)) * 100}%`;
     }
     // The titan's bar sits at the top of the screen like a boss bar, once it wakes.
     const titan = s.enemies.find((e) => e.kind === "titan" && e.mode !== "spawning" && e.aware === "engaged");
@@ -453,34 +427,6 @@ export class Hud {
     if (this.bannerT <= 0) $("banner").className = "";
   }
 
-  /**
-   * When the last one or two robots of a POI have not been found for a while, their
-   * bearings show on the compass so the search never stalls.
-   */
-  private stragglers(s: State, here: number, heading: number, half: number) {
-    if (this.hintPoi !== here) {
-      this.hintPoi = here;
-      this.lastPoiKill = s.time;
-    }
-    const left = here >= 0 && s.phase === "play" ? s.enemies.filter((e) => e.poi === here && e.kind !== "titan") : [];
-    const show = left.length > 0 && left.length <= HINT.left && s.time - this.lastPoiKill > HINT.after;
-    if (show && !this.foePips.length) this.toast("残りのロボットの方角をコンパスに表示", 0);
-    const n = show ? left.length : 0;
-    while (this.foePips.length > n) this.foePips.pop()?.remove();
-    while (this.foePips.length < n) {
-      const el = document.createElement("i");
-      el.className = "compass-foe";
-      $("compass").appendChild(el);
-      this.foePips.push(el);
-    }
-    const p = s.player;
-    this.foePips.forEach((el, i) => {
-      const e = left[i];
-      const bearing = (Math.atan2(e.pos.x - p.pos.x, -(e.pos.z - p.pos.z)) * 180) / Math.PI;
-      const rel = Math.max(-100, Math.min(100, ((bearing - heading + 540) % 360) - 180));
-      el.style.left = `${half + rel * 2}px`;
-    });
-  }
 
   /**
    * A mark over each robot that knows something, pinned to the screen edge when it
@@ -573,20 +519,20 @@ export class Hud {
     st.className = worst === 3 && !tracked && anyLost ? "lost" : worst === 3 ? "engaged" : worst === 2 ? "alert" : "";
   }
 
-  /** Extraction points: a marker over each, and a line each on the objective card. */
-  private exits(s: State, view: World, w: number, h: number) {
-    const on = s.phase === "play";
+  /**
+   * Extraction points: a line each on the objective card with its condition, and no distance or
+   * marker; where they are is on the map (M).
+   */
+  private exits(s: State) {
     const p = s.player;
+    if (s.phase !== "play") {
+      $("obj-exits").innerHTML = "";
+      return;
+    }
     const lines: string[] = [];
     // The phone layout keeps only the nearest exit's line, so the card stays above the vitals.
     const nearest = EXTRACTS.reduce((best, x, i) => (dist2d(p.pos, x) < dist2d(p.pos, EXTRACTS[best]) ? i : best), 0);
     EXTRACTS.forEach((x, i) => {
-      const el = this.exitMarks[i];
-      if (!on) {
-        el.style.display = "none";
-        return;
-      }
-      const d = Math.round(dist2d(p.pos, x));
       const ready = extractReady(s, x);
       const state = x.call
         ? s.shipCall < 0
@@ -603,14 +549,7 @@ export class Hud {
       // A called ship or a flare in hand is news worth a line even on the phone.
       const live = (x.call && s.shipCall >= 0) || (x.needsFlare && ready);
       const cls = [locked && "locked", i === nearest && "near", live && "live"].filter(Boolean).join(" ");
-      lines.push(`<div class="${cls}"><b>${x.short} ${d}m</b><span>${state}</span></div>`);
-      const sp = view.project({ x: x.x, y: 3, z: x.z }, w, h);
-      // Far away, the card's line is enough; three distant markers would pile up on the horizon.
-      el.style.display = sp.behind || d > EXIT_MARK ? "none" : "flex";
-      el.className = `xmark${locked ? " locked" : ""}`;
-      el.style.left = `${Math.max(40, Math.min(w - 40, sp.x))}px`;
-      el.style.top = `${Math.max(90, Math.min(h - 140, sp.y))}px`;
-      (el.querySelector("span") as HTMLElement).textContent = `${d}m`;
+      lines.push(`<div class="${cls}"><b>${x.short}</b><span>${state}</span></div>`);
     });
     $("obj-exits").innerHTML = lines.join("");
   }
@@ -678,9 +617,22 @@ export class Hud {
       return `脱出中 ${Math.floor((s.extractTime / x.hold) * 100)}%`;
     }
     // The same choice the use key acts on (sim/world.ts useTarget), so the prompt never promises something else.
-    if (!t) return "";
+    if (!t) {
+      // Standing on a valuable that will not go in, and nothing in the bag is worth less.
+      const left = s.loot.find((l) => l.kind === "valuable" && l.valuable && l.age >= 0.4 && dist2d(l.pos, p.pos) < PLAYER.pickupRange && Math.abs(l.pos.y - p.pos.y) < 2);
+      return left?.valuable ? `バッグがいっぱい：${VALUABLES[left.valuable].label}は入らない` : "";
+    }
     if (t.kind === "ally") return s.ally.helped > 0 ? `${ALLY.name}を起こしている…（撃つ・離れると中断）` : `${key("E")}${ALLY.name}を起こす`;
-    if (t.kind === "bin") return `${key("E")}補給箱を開ける`;
+    if (t.kind === "bin") {
+      const q = p.search;
+      if (q?.bin === t.index) return `補給箱を調べている… ${Math.floor((q.t / searchTime(s.bins[t.index])) * 100)}%（撃つ・離れると中断）`;
+      return `${key("E")}補給箱を調べる（音が出る）`;
+    }
+    if (t.kind === "swap") {
+      const v = t.loot.valuable!;
+      const out = (makeRoom(p.haul, v) ?? []).map((i) => VALUABLES[p.haul[i]].label);
+      return `${key("E")}${VALUABLES[v].label}と入れ替える（${out.join("・")}を捨てる）`;
+    }
     if (t.kind === "care") return `${key("E")}補給ポッドを開ける`;
     const wl = t.loot;
     const swap = p.weapons.includes(null) ? "" : `（${WEAPONS[p.weapons[p.slot]!.kind].name} と交換）`;

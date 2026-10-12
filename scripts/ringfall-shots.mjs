@@ -259,6 +259,15 @@ for (let i = 0; i < 25 * 60 * 10; i++) {
     // The ways off the island are open from the start and listed on the objective card.
     const lines = await page.evaluate(() => document.getElementById("obj-exits").children.length);
     if (lines !== 3) errors.push(`landed: the objective card lists ${lines} ways out, not 3`);
+    // The map (M) is the only place that shows where the POIs and the ways out are.
+    await page.keyboard.press("KeyM");
+    await page.evaluate(() => window.advanceTime(100));
+    const open = await page.evaluate(() => !document.getElementById("map").hidden);
+    await shot("23-map");
+    await page.keyboard.press("KeyM");
+    await page.evaluate(() => window.advanceTime(100));
+    const closed = await page.evaluate(() => document.getElementById("map").hidden);
+    if (!open || !closed) errors.push(`map: M opened ${open}, closed again ${closed}`);
   }
   if (at(0) && live.length >= 2 && s.orbs >= 1) await shot("03-fight-supply");
   if (s.stats.kills >= 3 && s.enemies.some((e) => e.mode !== "spawning" && e.hp < 60)) await shot("04-damage-numbers");
@@ -279,9 +288,14 @@ for (let i = 0; i < 25 * 60 * 10; i++) {
   if (s.extract.ship > 0 && live.length >= 2) await shot("20-ship-waves");
   if (s.reinforce.came > 0 && live.some((e) => s.squads[e.squad].name === "増援")) await shot("21-reinforce");
   if (s.haul.value >= 1000 && !live.length) await shot("22-haul");
+  if (s.search) await shot("24-search");
+  if (s.enemies.some((e) => s.squads[e.squad].name === "レイダー" && e.mode !== "spawning" && near(e) < 40)) await shot("25-raiders");
   if (s.phase === "done") break;
 }
-if (s.phase !== "done" || s.outcome !== "extracted") errors.push(`run did not get off the island: ${JSON.stringify(s).slice(0, 300)}`);
+// The bot can be wiped out now that robots hit hard; a raid that ends either way has played through.
+// Getting off the island is checked by the sim's extraction scenarios.
+if (s.phase !== "done" || !s.outcome) errors.push(`run did not finish: ${JSON.stringify(s).slice(0, 300)}`);
+console.log(`outcome: ${s.outcome}`);
 await page.waitForTimeout(1800);
 await page.screenshot({ path: `${out}/13-results.png` });
 console.log(JSON.stringify((await read()).stats));

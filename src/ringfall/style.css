@@ -122,25 +122,6 @@ kbd {
   height: 8px;
   background: var(--muted);
 }
-#compass-obj {
-  position: absolute;
-  top: 20px;
-  width: 0;
-  height: 0;
-  border-left: 7px solid transparent;
-  border-right: 7px solid transparent;
-  border-bottom: 9px solid var(--hot);
-  transform: translateX(-50%);
-}
-.compass-foe {
-  position: absolute;
-  top: 20px;
-  width: 10px;
-  height: 10px;
-  background: #ff3b2f;
-  box-shadow: 0 0 0 2px var(--ink);
-  transform: translateX(-50%) rotate(45deg);
-}
 #compass-deg {
   position: absolute;
   left: 50%;
@@ -170,6 +151,15 @@ kbd {
   font-family: var(--num);
   font-size: 26px;
   line-height: 1;
+}
+#obj-bag {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+#obj-bag:empty {
+  display: none;
 }
 #obj-raid {
   grid-column: 1 / -1;
@@ -249,53 +239,8 @@ kbd {
   opacity: 0.85;
 }
 
-#marker {
-  position: absolute;
-  transform: translate(-50%, -100%);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  font-weight: 800;
-  font-size: 15px;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
-}
-#marker i {
-  width: 16px;
-  height: 16px;
-  background: var(--hot);
-  transform: rotate(45deg);
-  box-shadow: 0 0 0 2px var(--ink);
-}
 
-/* Extraction points: one marker each, and a line each on the objective card. */
-.xmark {
-  position: absolute;
-  transform: translate(-50%, -100%);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  font-family: var(--jp);
-  font-weight: 800;
-  font-size: 13px;
-  white-space: nowrap;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
-}
-.xmark i {
-  width: 14px;
-  height: 14px;
-  background: var(--hot);
-  transform: rotate(45deg);
-  box-shadow: 0 0 0 2px var(--ink);
-  order: 2;
-}
-.xmark.locked i {
-  background: rgba(255, 255, 255, 0.35);
-}
-.xmark.locked {
-  color: var(--muted);
-}
+/* Extraction points: a line each on the objective card. */
 #obj-exits {
   grid-column: 1 / -1;
   display: flex;
@@ -1178,6 +1123,13 @@ body.touch.playing #touch {
 #t-use[hidden] {
   display: none;
 }
+#t-map {
+  left: 50%;
+  top: 46px;
+  margin-left: 118px;
+  width: 52px;
+  height: 40px;
+}
 #t-pause {
   left: 50%;
   top: 46px;
@@ -1228,8 +1180,10 @@ body.touch #obj-text {
 body.touch #obj-count {
   font-size: 17px;
 }
+body.touch #obj-bag,
 body.touch #obj-raid,
 body.touch #obj-stealth {
+  grid-column: auto;
   order: 2;
   font-size: 11px;
 }
@@ -1303,5 +1257,42 @@ body.touch #title h1 {
   }
 }
 #mate[hidden] {
+  display: none;
+}
+
+/* The island map: the only place that shows where things are. */
+#map {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: rgba(14, 16, 28, 0.55);
+  pointer-events: none;
+  z-index: 5;
+}
+#map[hidden] {
+  display: none;
+}
+#map-canvas {
+  height: min(82vh, 82vw);
+  aspect-ratio: 1;
+  border: 2px solid var(--ink);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  image-rendering: auto;
+}
+#map p {
+  margin: 0;
+  font-family: var(--jp);
+  font-weight: 800;
+  font-size: 13px;
+  color: var(--white);
+}
+#map .map-key {
+  color: var(--hot);
+}
+body.touch #map .map-close {
   display: none;
 }

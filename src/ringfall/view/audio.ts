@@ -159,6 +159,15 @@ export const sfx = {
   shard() {
     tone(1900 + Math.random() * 300, 0.06, { type: "sine", vol: 0.06 });
   },
+  /** Rummaging through a bin: a dry scrape, loud enough to give the player away. */
+  search() {
+    hiss(0.5, { freq: 500, to: 1200, vol: 0.12 });
+  },
+  /** The raiders arrive: a low two-note horn. */
+  raiders() {
+    tone(147, 0.6, { type: "sawtooth", vol: 0.08 });
+    tone(110, 0.9, { type: "sawtooth", vol: 0.08, at: 0.45 });
+  },
   bin() {
     hiss(0.2, { freq: 700, to: 2000, vol: 0.2 });
     tone(330, 0.2, { type: "triangle", vol: 0.12, to: 660 });

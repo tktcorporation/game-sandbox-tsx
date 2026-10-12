@@ -29,6 +29,8 @@ export const PAL = {
   eye: 0xff2d4d,
   orb: 0xff3fb0,
   ring: 0xff5a2a,
+  /** Raiders' armour: the plain robots' navy turned a dark red, so the elite squad reads at a glance. */
+  eliteArmor: 0x6a1f2a,
   hot: 0xffe23d,
   white: 0xffffff,
   gun: 0x2b2f38,

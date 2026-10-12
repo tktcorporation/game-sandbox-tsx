@@ -5,6 +5,7 @@ import { idleInput, newRun, type GameEvent, type Input, type State } from "./sim
 import { step } from "./sim/step";
 import { hurtAlly } from "./sim/ally";
 import { haulValue } from "./sim/results";
+import { bagUsed } from "./sim/world";
 import { setWind, sfx, unlock } from "./view/audio";
 import { Hud } from "./view/hud";
 import { World } from "./view/world";
@@ -62,10 +63,15 @@ setupTouch({
   fire: (on) => (fire = on && running && !paused),
   toggleAds: () => (ads = !ads),
   pause: () => setPaused(true),
+  map: () => {
+    if (running) hud.toggleMap();
+  },
 });
 
 addEventListener("keydown", (e) => {
   if (e.repeat) return;
+  // The map opens over the game straight from the key, whoever is at the controls.
+  if (e.code === "KeyM" && running) hud.toggleMap();
   keys.add(e.code);
   edges.add(e.code);
   if (["Space", "KeyC", "ControlLeft", "Tab"].includes(e.code)) e.preventDefault();
@@ -249,6 +255,12 @@ function onEvent(e: GameEvent, s: State) {
     case "reinforce":
       sfx.reinforce();
       break;
+    case "raiders":
+      sfx.raiders();
+      break;
+    case "searchStart":
+      sfx.search();
+      break;
     case "careDrop":
       sfx.careDrop();
       break;
@@ -419,7 +431,9 @@ window.render_game_to_text = () => {
     visited: s.visited,
     cleared: s.cleared,
     reinforce: { next: +s.reinforceT.toFixed(1), came: s.reinforceN },
-    haul: { items: s.player.haul, value: haulValue(s) },
+    haul: { items: s.player.haul, value: haulValue(s), bag: bagUsed(s.player.haul) },
+    search: s.player.search && { bin: s.player.search.bin, t: +s.player.search.t.toFixed(1) },
+    raiders: { next: Number.isFinite(s.raiderT) ? +s.raiderT.toFixed(1) : null },
     player: { x: +p.pos.x.toFixed(1), y: +p.pos.y.toFixed(1), z: +p.pos.z.toFixed(1), hp: Math.round(p.hp), shield: Math.round(p.shield), armor: p.armor, downed: p.downed > 0, weapons: p.weapons.map((w) => w && `${w.kind}${w.rarity}:${w.mag}`), ult: +p.ult.toFixed(2), ultTime: +p.ultTime.toFixed(1), reveal: +p.reveal.toFixed(1), crouch: p.crouch },
     ally: { active: s.ally.active, x: +s.ally.pos.x.toFixed(1), y: +s.ally.pos.y.toFixed(1), z: +s.ally.pos.z.toFixed(1), hp: Math.round(s.ally.hp), shield: Math.round(s.ally.shield), down: +s.ally.down.toFixed(1), helped: +s.ally.helped.toFixed(1), rescue: +s.ally.rescue.toFixed(1), target: s.ally.target },
     awaitAlly: p.awaitAlly,

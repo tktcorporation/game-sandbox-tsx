@@ -1,6 +1,6 @@
-import { ALLY, AWARE, CHARGER, COVER, DEG, ENEMIES, PLAYER, TICK, TITAN, TURN, WORLD, type EnemyKind } from "./config";
+import { ALLY, AWARE, CHARGER, COVER, DEG, ELITE, ENEMIES, PLAYER, TICK, TITAN, TURN, WORLD, type EnemyKind } from "./config";
 import { collide, dist2d, groundAt, los, lookAngles, onTerrain, solidAt, wrapAngle } from "./geom";
-import { terrainHeight } from "./terrain";
+import { steepAt, terrainHeight } from "./terrain";
 import { engageSquad, knownSpot, sense, stepSquads } from "./awareness";
 import { COVERS } from "./cover";
 
@@ -28,6 +28,8 @@ interface SpawnOpts {
   face?: number;
   /** Beam in with the spawn animation (titan summons) instead of standing there from the start. */
   appear?: boolean;
+  /** A raider. */
+  elite?: boolean;
 }
 
 /** Where a robot asked to appear at (x, z) on `floor` ends up: pushed out of solids, on its floor or at hover height. */
@@ -49,8 +51,8 @@ export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi:
     pos,
     vel: { x: 0, y: 0, z: 0 },
     yaw: face,
-    hp: k.hp,
-    shield: k.shield,
+    hp: k.hp * (o.elite ? ELITE.hp : 1),
+    shield: k.shield * (o.elite ? ELITE.hp : 1),
     mode: o.appear ? "spawning" : "move",
     timer: o.appear ? 0.9 : 0,
     cooldown: 0,
@@ -75,6 +77,7 @@ export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi:
     target: "player",
     targetT: 0,
     allyHit: 99,
+    elite: !!o.elite,
   };
   s.enemies.push(e);
   if (o.appear) s.events.push({ t: "spawn", id: e.id, pos: { ...pos } });
@@ -108,7 +111,7 @@ function fireOrb(s: State, e: Enemy, yawOff = 0, homing = false) {
     pos: from,
     vel: { x: Math.sin(yaw) * c * k.orbSpeed, y: Math.sin(e.aimPitch) * k.orbSpeed, z: -Math.cos(yaw) * c * k.orbSpeed },
     r: k.orbR,
-    dmg: k.orbDmg,
+    dmg: k.orbDmg * (e.elite ? ELITE.dmg : 1),
     life: 5,
     homing,
   });
@@ -220,8 +223,9 @@ export function stepEnemies(s: State) {
     const dx = known.x - e.pos.x;
     const dz = known.z - e.pos.z;
     const d = Math.hypot(dx, dz) || 1e-3;
-    if (e.mode !== "lunge" && d > 0.5) turnAt(e, Math.atan2(dx, -dz), TURN[e.kind]);
-    if (e.kind === "grunt" && onTerrain(e.pos) && fromCover(s, e, known, tChest, tUp)) continue;
+    if (e.mode !== "lunge" && d > 0.5) turnAt(e, Math.atan2(dx, -dz), TURN[e.kind] * (e.elite ? ELITE.turn : 1));
+    // Raiders do not hide: they press in and go round.
+    if (e.kind === "grunt" && !e.elite && onTerrain(e.pos) && fromCover(s, e, known, tChest, tUp)) continue;
     switch (e.mode) {
       case "move": {
         const sees = known.live && facing(e, tPos) && los(muzzle(e), tChest);
@@ -233,8 +237,15 @@ export function stepEnemies(s: State) {
         else if (!sees || d > k.range + 4) along = 1;
         else if (d < k.range - 4) along = -0.7;
         const side = sees || e.kind === "charger" ? 0.55 : 0.8;
-        const vx = (ux * along - uz * e.strafe * side) * k.speed;
-        const vz = (uz * along + ux * e.strafe * side) * k.speed;
+        let vx = (ux * along - uz * e.strafe * side) * k.speed;
+        let vz = (uz * along + ux * e.strafe * side) * k.speed;
+        // A flanking raider runs wide to its spot at the player's side, shooting when it can.
+        const wide = e.elite && !atAlly ? flankSpot(s, e, known) : null;
+        if (wide && dist2d(e.pos, wide) > 3) {
+          const fd = dist2d(e.pos, wide);
+          vx = ((wide.x - e.pos.x) / fd) * k.speed;
+          vz = ((wide.z - e.pos.z) / fd) * k.speed;
+        }
         if (moveBody(e, vx, vz)) e.strafe = -e.strafe;
         else if (rand(s) < TICK * 0.35) e.strafe = -e.strafe;
         e.cooldown -= TICK;
@@ -283,7 +294,7 @@ export function stepEnemies(s: State) {
         }
         if (e.shotsLeft <= 0) {
           e.mode = "move";
-          e.cooldown = k.cooldown * (0.8 + rand(s) * 0.4);
+          e.cooldown = k.cooldown * (0.8 + rand(s) * 0.4) * (e.elite ? ELITE.cooldown : 1);
         }
         break;
       }
@@ -357,9 +368,28 @@ function turnAt(e: Enemy, yaw: number, rate: number) {
   e.yaw += Math.max(-max, Math.min(max, diff));
 }
 
+/**
+ * Where a raider goes round to: the squad's first member holds the front, the others take a
+ * spot `ELITE.flankDist` to either side of the player, across the line from that member.
+ * Null for the front member, or when the spot is on high ground or a cliff.
+ */
+function flankSpot(s: State, e: Enemy, known: { x: number; z: number }): Point | null {
+  const mates = s.enemies.filter((o) => o.squad === e.squad).sort((a, b) => a.id - b.id);
+  const n = mates.indexOf(e);
+  if (n <= 0) return null;
+  const lead = mates[0];
+  const lx = known.x - lead.pos.x;
+  const lz = known.z - lead.pos.z;
+  const ll = Math.hypot(lx, lz) || 1;
+  const side = n % 2 ? 1 : -1;
+  const x = known.x + (-lz / ll) * ELITE.flankDist * side;
+  const z = known.z + (lx / ll) * ELITE.flankDist * side;
+  return steepAt(x, z) || terrainHeight(x, z) > terrainHeight(known.x, known.z) + 1.5 ? null : { x, z };
+}
+
 /** Whether the point is inside the cone a robot can fire into. */
 function facing(e: Enemy, at: { x: number; z: number }): boolean {
-  return Math.abs(wrapAngle(lookAngles(e.pos, { x: at.x, y: 0, z: at.z }).yaw - e.yaw)) < AWARE.fireCone * DEG;
+  return Math.abs(wrapAngle(lookAngles(e.pos, { x: at.x, y: 0, z: at.z }).yaw - e.yaw)) < (e.elite ? ELITE.fireCone : AWARE.fireCone) * DEG;
 }
 
 /** Turn toward a yaw at a robot's turning speed. */

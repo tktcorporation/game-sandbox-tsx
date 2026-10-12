@@ -1,4 +1,4 @@
-import { ALLY, DROP, ENEMIES, REINFORCE, type ValuableKind, PLAYER, ULT, type EnemyKind, type Flank, type HealKind, type Rarity, type WeaponKind } from "./config";
+import { ALLY, DROP, ELITE, ENEMIES, RAIDERS, REINFORCE, type ValuableKind, PLAYER, ULT, type EnemyKind, type Flank, type HealKind, type Rarity, type WeaponKind } from "./config";
 import { EXTRA_BINS, POIS, SPAWN, type ExtractId } from "./map";
 import { populate } from "./enemies";
 
@@ -46,6 +46,8 @@ export interface Player {
   flares: number;
   /** Valuables carried; their worth is the raid's score if the player gets off the island. */
   haul: ValuableKind[];
+  /** The bin being searched and for how long, or null. */
+  search: { bin: number; t: number } | null;
   /** The item being used and the seconds left; shooting cancels it without using it. */
   healing: { kind: HealKind; t: number } | null;
   sinceHurt: number;
@@ -134,6 +136,8 @@ export interface Enemy {
   targetT: number;
   /** Seconds since the teammate last hit it. */
   allyHit: number;
+  /** A raider: tougher, deadlier, quicker to turn, and it goes round the player's side. */
+  elite: boolean;
 }
 
 export interface SquadState {
@@ -146,6 +150,8 @@ export interface SquadState {
   roam: boolean;
   /** A reinforcement squad that keeps heading for the player until it first finds them. */
   hunt?: boolean;
+  /** Raiders: elite members, and a closer hunt. */
+  elite?: boolean;
   sinceSeen: number; // seconds since any member saw the player while engaged
   last: Point; // where the squad last saw the player
 }
@@ -258,6 +264,8 @@ export type GameEvent =
   | { t: "bossPhase" }
   | { t: "landed" }
   | { t: "titanDown" }
+  | { t: "searchStart"; id: number }
+  | { t: "raiders"; x: number; z: number }
   | { t: "shipCalled" }
   | { t: "shipLanded" }
   | { t: "flareLit" }
@@ -308,6 +316,8 @@ export interface State {
   /** When the player touched down: the raid clock starts here. */
   landedAt: number;
   reinforceN: number;
+  /** Seconds until the raiders beam in (Infinity once they have). */
+  raiderT: number;
   outcome: Outcome | null;
   /** Seconds the player has stood ready in an extraction point. */
   extractTime: number;
@@ -413,6 +423,7 @@ export function newRun(seed = 1): State {
       heals: { cell: 2, battery: 0, syringe: 2, medkit: 0 },
       flares: 0,
       haul: [],
+      search: null,
       healing: null,
       sinceHurt: 99,
       downed: 0,
@@ -434,6 +445,7 @@ export function newRun(seed = 1): State {
     reinforceT: REINFORCE.first,
     landedAt: 0,
     reinforceN: 0,
+    raiderT: RAIDERS.at,
     outcome: null,
     extractTime: 0,
     shipCall: -1,
@@ -484,7 +496,10 @@ export function rand(s: State): number {
   return (s.rng % 1_000_000) / 1_000_000;
 }
 
-export const enemyMax = (k: EnemyKind) => ENEMIES[k].hp + ENEMIES[k].shield;
+/** Full health and shield of a robot; raiders have more. */
+export const enemyHp = (e: Enemy) => ENEMIES[e.kind].hp * (e.elite ? ELITE.hp : 1);
+export const enemyShield = (e: Enemy) => ENEMIES[e.kind].shield * (e.elite ? ELITE.hp : 1);
+export const enemyMax = (e: Enemy) => enemyHp(e) + enemyShield(e);
 
 /** Unit vector the player looks along. yaw 0 = -z, yaw +π/2 = +x. */
 export function forward(yaw: number, pitch: number): Vec3 {
