@@ -5,7 +5,8 @@
  *
  *   npm run sim:ringfall -- [runsPerSkill]
  */
-import { ALLY, BAG, ENEMIES, RAIDERS, REINFORCE, SEARCH, TACTICAL, TICK, VALUABLES, WORLD } from "../src/ringfall/sim/config";
+import { ALLY, BAG, ENEMIES, NOISE, RAIDERS, REINFORCE, SEARCH, TACTICAL, TICK, VALUABLES, WORLD } from "../src/ringfall/sim/config";
+import { makeNoise } from "../src/ringfall/sim/awareness";
 import { BOXES, EXTRA_BINS, EXTRACTS, POIS, ROAMERS, type Squad } from "../src/ringfall/sim/map";
 import { groundAt, los, solidAt } from "../src/ringfall/sim/geom";
 import { floorLevel, highGround, terrainHeight } from "../src/ringfall/sim/terrain";
@@ -420,6 +421,37 @@ function checkDropOffHighGround(): string | null {
   }
   return null;
 }
+/** A road patrol hears gunfire from 2.5 times further, but a bin search only from its own radius. */
+function checkRoamersHearOnlyGunfire(): string | null {
+  const heard = (gunfire: boolean, radius: number) => {
+    const s = newRun(5);
+    s.phase = "play";
+    const sq = s.squads.findIndex((q) => q.roam);
+    const e = s.enemies.find((m) => m.squad === sq)!;
+    const x = e.pos.x + 15;
+    makeNoise(s, x, e.pos.z, radius, gunfire);
+    return e.aware !== "idle";
+  };
+  if (heard(false, SEARCH.noise)) return `roam noise scenario: a search ${SEARCH.noise} m loud alerted a patrol 15 m away`;
+  if (!heard(true, NOISE.pike)) return `roam noise scenario: a PIKE shot did not alert a patrol 15 m away`;
+  return null;
+}
+/** A reinforcement due during the titan fight waits at 0 (the HUD never counts below it) and comes when the fight ends. */
+function checkReinforceWaitsForTitan(): string | null {
+  const s = newRun(5);
+  s.phase = "play";
+  s.raiderT = 1e9;
+  s.reinforceT = 0.5;
+  const titan = s.enemies.find((e) => e.kind === "titan")!;
+  titan.aware = "engaged";
+  for (let t = 0; t < 120; t++) {
+    step(s, idleInput(), false);
+    titan.aware = "engaged";
+    if (s.reinforceT < 0) return `titan reinforce scenario: countdown at ${s.reinforceT.toFixed(2)}`;
+    if (s.events.some((ev) => ev.t === "reinforce")) return "titan reinforce scenario: a wave beamed in during the titan fight";
+  }
+  return null;
+}
 /** A stomp's wave passes under a teammate standing above it, and hits one on the ground. */
 function checkStompHeight(): string | null {
   const hit = (y: number) => {
@@ -502,7 +534,7 @@ function checkAllyHoldsFire(): string | null {
   if (shots) return `hold fire scenario: the teammate fired ${shots} shots at an idle robot`;
   return null;
 }
-for (const err of [checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkAllySelfUp(), checkStompHeight(), checkDropOffHighGround(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill()]) {
+for (const err of [checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkAllySelfUp(), checkStompHeight(), checkDropOffHighGround(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill()]) {
   if (err) {
     console.error(err);
     process.exit(1);

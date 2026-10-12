@@ -37,12 +37,12 @@ ally: teammate's share of the damage, its downs, times it picked the player up (
 exit: raids that left by each extraction point (the bot's choice depends on skill)
 crowd: median over runs of the most squads / robots fighting the player at once outside the titan fight
 skill     alive time(med) cleared haul(med) score(med) downs acc crit ult crowd flank waves ally               rank               exit
-beginner  100%  2.7m      2       800       1600       0.0   69% 3%   2.1 2/2   5%    0     20% 0.4d 0.0r 0.2h S0 A0 B24 C6 -0    ship 0 flare 0 village 30
-casual    80%   5.3m      4       1300      4000       0.5   87% 13%  5.2 2/4   4%    1     18% 0.9d 0.0r 0.1h S1 A22 B1 C0 -6    ship 24 flare 0 village 0
-good      87%   5.2m      4       1300      4000       0.3   92% 35%  5.2 2/4   5%    1     16% 0.6d 0.0r 0.0h S3 A23 B0 C0 -4    ship 26 flare 0 village 0
+beginner  100%  2.7m      2       800       1600       0.0   62% 3%   2.1 2/2   6%    0     23% 0.2d 0.0r 0.1h S0 A0 B23 C7 -0    ship 0 flare 0 village 30
+casual    80%   5.5m      4       1400      4100       0.6   89% 16%  5.4 2/4   4%    1     18% 1.1d 0.0r 0.2h S5 A19 B0 C0 -6    ship 24 flare 0 village 0
+good      87%   5.0m      4       1300      4000       0.3   92% 37%  5.0 2/4   5%    1     15% 0.6d 0.0r 0.1h S3 A23 B0 C0 -4    ship 26 flare 0 village 0
 ```
 
-弱点命中率（crit）は普通 13%、上手い 35% で、目標（15〜25%、40% 以上）を下回る。
+上手いの弱点命中率（crit）は 37% で、目標の 40% を下回る。
 
 ボットは地上の経路探索（`src/ringfall/sim/nav.ts`、0.5 m 格子の A*）で建物のドアを通り、壁と崖を回り込み、坂道を通る。崖は下りにも使わない。峡谷の橋は使わず、放水路の谷底を回る。よじ登りは使わず、床や屋上にある補給箱は狙わない。階段で床に上がってしまったときは、歩いた跡をたどって地面へ戻る。屋上の敵が真上の縁で隠れたときは、14 m 離れて角度を取る。
 

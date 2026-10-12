@@ -473,7 +473,7 @@ export const ROAMERS: Squad[] = (
       // Walks the dam crest, looking down on the lakebed.
       name: "堤の巡回",
       roam: true,
-      members: [{ kind: "grunt", x: -18, z: -80 }, { kind: "grunt", x: -16.4, z: -81.4 }, { kind: "drone", x: -14, z: -80 }],
+      members: [{ kind: "grunt", x: -18, z: -80 }, { kind: "drone", x: -14, z: -80 }],
       patrol: [{ x: -18, z: -80 }, { x: 18, z: -80 }],
     },
     {

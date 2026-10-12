@@ -230,7 +230,7 @@ export class Hud {
     $("obj-count").textContent = s.phase === "drop" ? "" : `回収 ${haulValue(s)}`;
     $("obj-bag").textContent = s.phase === "drop" ? "" : `バッグ ${bagUsed(p.haul)}/${BAG.slots}`;
     const raid = s.phase === "play" ? `${clock(s.time - s.landedAt)}` : "";
-    const next = s.phase === "play" && s.reinforceT < 60 ? `　増援まで ${Math.ceil(s.reinforceT)} 秒` : "";
+    const next = s.phase !== "play" || s.reinforceT >= 60 ? "" : s.reinforceT > 0 ? `　増援まで ${Math.ceil(s.reinforceT)} 秒` : "　増援が来る";
     $("obj-raid").textContent = raid + next;
 
 

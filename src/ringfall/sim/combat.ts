@@ -146,7 +146,7 @@ export function shoot(s: State, w: Weapon) {
   }
   p.recoil += spec.recoil * (1 - 0.5 * p.ads);
   s.events.push({ t: "shot", weapon: w.kind, rarity: w.rarity });
-  makeNoise(s, p.pos.x, p.pos.z, NOISE[w.kind]);
+  makeNoise(s, p.pos.x, p.pos.z, NOISE[w.kind], true);
 }
 
 /** Which way a shot from the player meets this robot (see FLANK). */

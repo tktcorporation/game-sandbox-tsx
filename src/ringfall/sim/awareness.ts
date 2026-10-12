@@ -54,16 +54,16 @@ export function alertSquad(s: State, squad: number, x: number, z: number, by: En
 
 /**
  * A sound at (x, z) carrying `radius` metres. Robots inside it come to look;
- * close ones that can see the spot engage at once.
+ * close ones that can see the spot engage at once. Gunfire carries further to the
+ * squads out on the roads (NOISE.roamMult); footsteps and searching do not.
  */
-export function makeNoise(s: State, x: number, z: number, radius: number) {
+export function makeNoise(s: State, x: number, z: number, radius: number, gunfire = false) {
   const spot = { x, y: s.player.pos.y + 1.2, z };
   const alerted = new Set<number>();
   for (const e of s.enemies) {
     if (e.aware === "engaged" || e.mode === "spawning") continue;
     const d = dist2d(e.pos, spot);
-    // Squads out on the roads hear it from further and come to look.
-    if (d > radius * (s.squads[e.squad]?.roam ? NOISE.roamMult : 1)) continue;
+    if (d > radius * (gunfire && s.squads[e.squad]?.roam ? NOISE.roamMult : 1)) continue;
     if (d < radius * NOISE.engageInside && los(headOf(e), spot) && mayEngage(s, e)) engageSquad(s, e.squad, e);
     else if (!alerted.has(e.squad)) {
       alerted.add(e.squad);

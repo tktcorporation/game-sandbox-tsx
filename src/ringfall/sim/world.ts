@@ -72,7 +72,8 @@ export function stepReinforce(s: State) {
   const fighting = s.enemies.some((e) => e.aware === "engaged" && e.mode !== "spawning");
   s.raiderT -= TICK;
   if (s.raiderT <= 0 && !fighting) s.raiderT = beamIn(s, RAIDERS.kinds, RAIDERS.name, true) ? Infinity : 5;
-  s.reinforceT -= TICK;
+  // A wave held back by the titan fight waits at 0 and comes the moment it ends.
+  s.reinforceT = Math.max(0, s.reinforceT - TICK);
   if (s.reinforceT > 0 || titanFight) return;
   const kinds = REINFORCE.waves[Math.min(s.reinforceN, REINFORCE.waves.length - 1)];
   if (!beamIn(s, kinds, "増援", false)) {
