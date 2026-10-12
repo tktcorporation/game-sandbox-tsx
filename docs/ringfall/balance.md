@@ -34,7 +34,7 @@ exit: raids that left by each extraction point (the bot's choice depends on skil
 crowd: median over runs of the most squads / robots fighting the player at once outside the titan fight
 skill     alive time(med) cleared haul(med) score(med) downs acc crit ult crowd flank waves ally               rank               exit
 beginner  100%  2.2m      2       600       1400       0.0   77% 3%   1.9 2/3   6%    0     22% 0.0d 0.0r 0.0h S0 A0 B14 C16 -0   ship 0 flare 0 village 30
-casual    100%  4.3m      4       1800      4500       0.0   91% 16%  5.3 2/4   4%    1     22% 0.6d 0.0r 0.1h S15 A12 B3 C0 -0   ship 30 flare 0 village 0
+casual    100%  4.3m      4       1800      4500       0.0   91% 16%  5.3 2/4   4%    1     21% 0.5d 0.0r 0.1h S16 A11 B3 C0 -0   ship 30 flare 0 village 0
 good      100%  4.1m      4       2700      5400       0.0   93% 40%  5.3 2/4   5%    1     17% 0.2d 0.0r 0.0h S30 A0 B0 C0 -0    ship 30 flare 0 village 0
 ```
 
