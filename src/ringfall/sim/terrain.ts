@@ -116,8 +116,9 @@ const BASINS: Open[] = [
 const ROADS: Open[] = [
   { name: "湖への坂", line: [[0, 62], [0, 40]], half: 5, level: [LEVEL.shore, LEVEL.lakebed] },
   // Up onto the ridge at its east end, along its top, and down the haul road into the pit at its west end.
-  { name: "尾根道", line: [[-24, 100], [-36, 82]], half: 5, level: [LEVEL.shore, LEVEL.ridge] },
-  { name: "採掘場の運搬路", line: [[-70, 64], [-84, 44], [-94, 30]], half: 5, level: [LEVEL.ridge, -4, LEVEL.pit] },
+  // The climb starts at the supply basin's edge: a ramp rising inside a basin would leave a step where they meet.
+  { name: "尾根道", line: [[-20, 106], [-29, 93], [-40, 77]], half: 5, level: [LEVEL.shore, LEVEL.shore, LEVEL.ridge] },
+  { name: "採掘場の運搬路", line: [[-70, 64], [-90, 60], [-104, 46], [-106, 40]], half: 5, level: [LEVEL.ridge, -1, -8, LEVEL.pit] },
   { name: "西道", line: [[-24, 16], [-46, 16], [-62, 20]], half: 5, level: [LEVEL.lakebed, -8, LEVEL.pit] },
   { name: "廃村道", line: [[-112, -16], [-112, -44]], half: 5, level: [LEVEL.pit, LEVEL.shore] },
   { name: "湖の西坂", line: [[-22, -30], [-44, -38]], half: 5, level: [LEVEL.lakebed, LEVEL.shore] },

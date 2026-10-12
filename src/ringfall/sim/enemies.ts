@@ -3,6 +3,7 @@ import { collide, dist2d, groundAt, los, lookAngles, onTerrain, solidAt, wrapAng
 import { steepAt, terrainHeight } from "./terrain";
 import { engageSquad, knownSpot, sense, stepSquads } from "./awareness";
 import { COVERS } from "./cover";
+import { fieldTo, nextStep } from "./hunt";
 
 /** Walkers refuse to step off a ledge higher than this, so rooftop robots stay on their roof. */
 const LEDGE = 1.0;
@@ -411,6 +412,16 @@ function walkTo(e: Enemy, to: Point, speed: number, face = true): boolean {
   return false;
 }
 
+/**
+ * Where an alerted robot walks next toward its goal: straight at it, except that a
+ * hunting squad's walkers follow the ground's distance field round cliffs and up ramps.
+ */
+function huntStep(s: State, e: Enemy, goal: Point): Point {
+  if (!s.squads[e.squad]?.hunt || ENEMIES[e.kind].fly > 0) return goal;
+  const f = fieldTo(goal.x, goal.z);
+  return f ? nextStep(f, e.pos.x, e.pos.z, goal) : goal;
+}
+
 /** Out of combat: hold the post or walk the patrol; when alerted, go and look. */
 function calm(s: State, e: Enemy) {
   const k = ENEMIES[e.kind];
@@ -427,7 +438,7 @@ function calm(s: State, e: Enemy) {
   }
   if (e.aware === "alert") {
     e.searchT -= TICK;
-    if (e.goal && dist2d(e.pos, e.goal) > 2.5) walkTo(e, e.goal, slow * 1.4);
+    if (e.goal && dist2d(e.pos, e.goal) > 2.5) walkTo(e, huntStep(s, e, e.goal), slow * 1.4);
     else {
       moveBody(e, 0, 0);
       e.yaw += Math.sin(e.lookT * 1.3) * TICK * 1.6; // looking around

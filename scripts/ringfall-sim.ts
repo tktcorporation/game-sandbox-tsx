@@ -5,11 +5,12 @@
  *
  *   npm run sim:ringfall -- [runsPerSkill]
  */
-import { ALLY, BAG, ENEMIES, NOISE, RAIDERS, REINFORCE, SEARCH, TACTICAL, TICK, VALUABLES, WORLD } from "../src/ringfall/sim/config";
+import { ALLY, BAG, ENEMIES, NOISE, PLAYER, RAIDERS, REINFORCE, SEARCH, TACTICAL, TICK, VALUABLES, WORLD } from "../src/ringfall/sim/config";
 import { makeNoise } from "../src/ringfall/sim/awareness";
-import { BOXES, EXTRA_BINS, EXTRACTS, POIS, ROAMERS, type Squad } from "../src/ringfall/sim/map";
+import { BOXES, EXTRA_BINS, EXTRACTS, POIS, ROAMERS, SPAWN, type Squad } from "../src/ringfall/sim/map";
+import { fieldTo, routeLength } from "../src/ringfall/sim/hunt";
 import { groundAt, los, solidAt } from "../src/ringfall/sim/geom";
-import { floorLevel, highGround, terrainHeight } from "../src/ringfall/sim/terrain";
+import { floorLevel, highGround, LEVEL, terrainHeight } from "../src/ringfall/sim/terrain";
 import { Bot, SKILLS } from "../src/ringfall/sim/bot";
 import { idleInput, newRun, type GameEvent, type State } from "../src/ringfall/sim/state";
 import { step } from "../src/ringfall/sim/step";
@@ -218,15 +219,85 @@ function checkReinforce(): string | null {
   const eye = { x: p.pos.x, y: p.pos.y + 1.5, z: p.pos.z };
   const seen = fresh.filter((e) => los(eye, { x: e.pos.x, y: e.pos.y + ENEMIES[e.kind].bodyY, z: e.pos.z }));
   if (seen.length) return `reinforce scenario: ${seen.map((e) => e.kind).join(",")} beamed in where the player can see`;
-  const d = Math.hypot(fresh[0].pos.x - p.pos.x, fresh[0].pos.z - p.pos.z);
+  // Distances are walks along the ground (round cliffs, up ramps), as the squad goes.
+  const walk = (e: { pos: { x: number; z: number } }) => routeLength(fieldTo(p.pos.x, p.pos.z)!, e.pos.x, e.pos.z);
+  const d = walk(fresh[0]);
   if (d < REINFORCE.dist[0] - 5 || d > REINFORCE.dist[1] + 5 || fresh.some((e) => e.aware !== "alert" || !e.goal)) return `reinforce scenario: ${d.toFixed(0)} m away, not hunting`;
   // They keep closing in while the player moves on, instead of giving up at the first guess.
   p.iframes = 999;
   p.pos.x += 8;
   ticks(s, 30);
   const left = s.enemies.filter((e) => fresh.includes(e));
-  const closest = Math.min(...left.map((e) => Math.hypot(e.pos.x - p.pos.x, e.pos.z - p.pos.z)));
+  const closest = Math.min(...left.map(walk));
   if (!(closest < d - 20)) return `reinforce scenario: still ${closest.toFixed(0)} m away after 30 s (spawned ${d.toFixed(0)} m away)`;
+  return null;
+}
+/** Places on the island a player waits in: the POI entries and the districts between them. */
+const WAIT_SPOTS: [string, number, number][] = [
+  ...POIS.map((p): [string, number, number] => [p.name, p.entry.x, p.entry.z]),
+  ["工場", 50, 50],
+  ["台地", -60, -40],
+  ["廃村", -100, -62],
+  ["放水路", 50, -80],
+  ["住宅地", 112, 20],
+  ["採掘場の奥", -100, 12],
+  ["尾根", -50, 76],
+];
+
+/** Walking into the lakebed's walls for 10 s gets the player nowhere: a cliff is climbed by no one. */
+function checkCliffsStop(): string | null {
+  for (const [x, z, yaw] of [[-20, -20, -Math.PI / 2], [20, -30, Math.PI / 2], [0, -60, 0], [-10, 30, Math.PI * 0.75]]) {
+    const s = newRun(1);
+    s.phase = "play";
+    s.enemies = [];
+    s.reinforceT = s.raiderT = 1e9;
+    const p = s.player;
+    p.pos = { x, y: groundAt(x, z, 0.4, 0), z };
+    p.onGround = true;
+    p.yaw = yaw;
+    for (let t = 0; t < 600; t++) step(s, { ...idleInput(), moveZ: 1, sprint: true }, false);
+    if (p.pos.y > LEVEL.lakebed + 1.5) return `cliff scenario: walking from ${x},${z} climbed to ${p.pos.y.toFixed(1)} m at ${p.pos.x.toFixed(0)},${p.pos.z.toFixed(0)}`;
+  }
+  return null;
+}
+/** Every POI, way off and patrol route can be walked to from the landing, robots' way: no climbing, no drops. */
+function checkWalkableIsland(): string | null {
+  const f = fieldTo(SPAWN.x, SPAWN.z);
+  if (!f) return "walk scenario: the landing is not on open ground";
+  const places: [string, number, number][] = [
+    ...WAIT_SPOTS,
+    ...EXTRACTS.map((x): [string, number, number] => [x.id, x.x, x.z]),
+    ...ROAMERS.flatMap((sq) => (sq.patrol ?? []).map((w): [string, number, number] => [sq.name, w.x, w.z])),
+  ];
+  const cut = places.filter(([, x, z]) => !Number.isFinite(routeLength(f, x, z)));
+  return cut.length ? `walk scenario: no way on foot to ${cut.map(([n, x, z]) => `${n} (${x},${z})`).join(", ")}` : null;
+}
+
+/** Wherever the player waits, reinforcements find a hidden spot a walk away, and their walkers reach the fight. */
+function checkReinforceEverywhere(): string | null {
+  for (const [name, x, z] of WAIT_SPOTS)
+    for (let seed = 1; seed <= 3; seed++) {
+      const s = newRun(seed);
+      s.phase = "play";
+      s.raiderT = 1e9;
+      const p = s.player;
+      p.pos = { x, y: groundAt(x, z, 0.4, terrainHeight(x, z) + 2), z };
+      p.onGround = true;
+      s.reinforceT = TICK;
+      const before = s.enemies.length;
+      step(s, idleInput(), false);
+      const walkers = s.enemies.slice(before).filter((e) => e.kind !== "drone");
+      if (!walkers.length) return `reinforce everywhere: none beamed in at ${name} (seed ${seed})`;
+      if (seed > 1) continue;
+      for (let t = 0; t < 60 * 60 && s.phase === "play"; t++) {
+        p.iframes = 99;
+        p.hp = PLAYER.hp;
+        step(s, idleInput(), false);
+      }
+      const left = s.enemies.filter((e) => walkers.includes(e));
+      const near = left.some((e) => e.aware === "engaged" || Math.hypot(e.pos.x - p.pos.x, e.pos.z - p.pos.z) < 25);
+      if (left.length && !near) return `reinforce everywhere: at ${name} the walkers are still out of the fight after 60 s`;
+    }
   return null;
 }
 /** Reinforcements beam in where the player cannot see any of them, a hovering drone included. */
@@ -534,7 +605,7 @@ function checkAllyHoldsFire(): string | null {
   if (shots) return `hold fire scenario: the teammate fired ${shots} shots at an idle robot`;
   return null;
 }
-for (const err of [checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkAllySelfUp(), checkStompHeight(), checkDropOffHighGround(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill()]) {
+for (const err of [checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkAllySelfUp(), checkStompHeight(), checkDropOffHighGround(), checkCliffsStop(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill()]) {
   if (err) {
     console.error(err);
     process.exit(1);

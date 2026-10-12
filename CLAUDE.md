@@ -58,7 +58,11 @@ npm run shots:ringfall   # gate 3: the build played to the end in Chromium; scre
 - `EXTRACTS` in `map.ts` are the ways off the island; `stepExtract()` in `world.ts`
   runs them (dropship call and its waves in `SHIP_WAVES`, the flare, the waits). The sim gate's
   `exit` column counts which one each run used; the bot's choice depends on its skill.
-- `nav.ts` is ground path finding for the bot only; the game never reads it.
+- `nav.ts` is ground path finding for the bot only; the game never reads it. Robots find their
+  way only while hunting: `hunt.ts` builds a distance field over the terrain (2 m cells, cliffs
+  and high ground closed, boxes ignored) to where the squad thinks the player is, and hunting
+  walkers follow it up the ramps. Reinforcements and raiders beam in a walk of `REINFORCE.dist`
+  away along it. Fighting robots still walk straight at the player.
 - `src/ringfall/touch.ts` is the phone layout (landscape): a floating stick on the left half, view
   drag on the right half, buttons under the right thumb. It feeds the same `Input` as the keyboard,
   with `input.touch` set so the sim applies `ASSIST.touchPull`. `npm run shots:ringfall` drives it with

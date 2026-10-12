@@ -3,6 +3,7 @@ import { dist2d, groundAt, los, solidAt } from "./geom";
 import { highGround, steepAt, terrainHeight } from "./terrain";
 import { EXTRACTS, POIS, type ExtractPoint } from "./map";
 import { spawnEnemy, spawnSpot } from "./enemies";
+import { cellsAround, fieldTo, nextStep } from "./hunt";
 import { raiseAlly, startHelp } from "./ally";
 import { rand, type Input, type Loot, type State, type Weapon } from "./state";
 import type { EnemyKind, ValuableKind } from "./config";
@@ -98,20 +99,24 @@ function beamIn(s: State, kinds: readonly EnemyKind[], name: string, elite: bool
       const at = spawnSpot(kind, mx, mz);
       return { x: at.x, y: at.y + ENEMIES[kind].bodyY + ENEMIES[kind].radius, z: at.z, mx, mz }; // the top of its body
     });
-  // Somewhere on open ground at the right distance, out of sight; the best of a few tries.
-  // The first tries also want a way in clear of buildings; failing that, a clear valley floor will do.
+  // Somewhere on open ground a walk of the right length away (along the ramps, not as the
+  // crow flies), out of sight; the best of a few tries. The first tries also want the first
+  // stretch of that walk clear of cover a robot cannot step over; failing that, any will do.
+  const field = fieldTo(p.pos.x, p.pos.z);
+  const cells = field ? cellsAround(field, near, far) : [];
   let at: { x: number; z: number } | null = null;
-  for (let i = 0; i < 80 && !at; i++) {
-    const strict = i < 40;
-    const a = rand(s) * Math.PI * 2;
-    const d = near + rand(s) * (far - near);
-    const x = p.pos.x + Math.sin(a) * d;
-    const z = p.pos.z - Math.cos(a) * d;
-    if (Math.hypot(x, z) > WORLD.half - 30 || steepAt(x, z)) continue;
+  for (let i = 0; i < 80 && !at && cells.length; i++) {
+    const c = cells[Math.floor(rand(s) * cells.length)];
+    const x = c.x + (rand(s) - 0.5) * 1.5;
+    const z = c.z + (rand(s) - 0.5) * 1.5;
     const g = groundAt(x, z, 1, 99);
-    if (g > terrainHeight(x, z) + 0.3 || highGround(x, z)) continue; // valley floor only, not a roof or the high ground
-    if (los(eye, { x, y: g + 1.5, z }) || posts(x, z).some((q) => los(eye, q))) continue;
-    if (!walkable(x, z, p.pos.x, p.pos.z, strict)) continue;
+    if (steepAt(x, z) || g > terrainHeight(x, z) + 0.3) continue; // open ground, not a roof
+    const spots = posts(x, z);
+    // Every member lands on the same open ground, not up on the high ground beside it.
+    if (spots.some((q) => steepAt(q.mx, q.mz) || highGround(q.mx, q.mz))) continue;
+    if (los(eye, { x, y: g + 1.5, z }) || spots.some((q) => los(eye, q))) continue;
+    const next = nextStep(field!, x, z, p.pos);
+    if (i < 40 && !clearWalk(x, z, next.x, next.z)) continue;
     at = { x, z };
   }
   if (!at) return false;
@@ -133,12 +138,11 @@ function beamIn(s: State, kinds: readonly EnemyKind[], name: string, elite: bool
 const LANE = 1;
 
 /**
- * A robot walking straight from (x, z) to (tx, tz) stays on the valley floor: no cliff and no
- * high ground, and with `solids` no box in a robot-wide lane that it could not step over
- * (WORLD.stepUp; a crate or a low wall stops it). Robots walk straight at their goal, so a route
- * that needs a door, stairs or a way round cover would leave them stuck against it.
+ * No box in a robot-wide lane from (x, z) to (tx, tz) that a walker could not step over
+ * (WORLD.stepUp; a crate or a low wall stops it). Hunters follow the ground's field but
+ * walk straight between its steps, so cover across a step would leave them pressed against it.
  */
-function walkable(x: number, z: number, tx: number, tz: number, solids: boolean): boolean {
+function clearWalk(x: number, z: number, tx: number, tz: number): boolean {
   const len = Math.hypot(tx - x, tz - z);
   const n = Math.ceil(len / 0.5);
   const sx = (-(tz - z) / (len || 1)) * LANE;
@@ -146,8 +150,6 @@ function walkable(x: number, z: number, tx: number, tz: number, solids: boolean)
   for (let i = 1; i < n; i++) {
     const qx = x + ((tx - x) * i) / n;
     const qz = z + ((tz - z) * i) / n;
-    if (steepAt(qx, qz) || highGround(qx, qz)) return false;
-    if (!solids) continue;
     const h = terrainHeight(qx, qz) + WORLD.stepUp + 0.05;
     if (solidAt(qx, h, qz) || solidAt(qx + sx, h, qz + sz) || solidAt(qx - sx, h, qz - sz)) return false;
   }

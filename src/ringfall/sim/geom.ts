@@ -96,14 +96,19 @@ export function collide(p: Vec3, r: number, height = 1.75): boolean {
   return touched;
 }
 
+/** How far a cliff may rise above a body's feet before it stops the body: barely at all. */
+const CLIFF_GRIP = 0.05;
+
 /**
- * A cliff is a wall: a body whose feet are below the ground of a cliff cell is
- * moved back downhill until it stands clear. Walking down a cliff is a fall.
+ * A cliff is a wall: a body that would stand on a cliff cell above its feet is moved
+ * back downhill until it stands clear. A body moves a few centimetres a tick, far less
+ * than a step, so only this small allowance keeps it from walking up a cliff by
+ * inches. Walking down a cliff is a fall.
  */
 function pushOffCliff(p: Vec3): boolean {
   let moved = false;
   for (let k = 0; k < 16; k++) {
-    if (terrainHeight(p.x, p.z) <= p.y + WORLD.stepUp || !steepAt(p.x, p.z)) break;
+    if (terrainHeight(p.x, p.z) <= p.y + CLIFF_GRIP || !steepAt(p.x, p.z)) break;
     const g = terrainGrad(p.x, p.z);
     const l = Math.hypot(g.x, g.z) || 1;
     p.x -= (g.x / l) * 0.12;

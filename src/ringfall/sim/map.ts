@@ -461,7 +461,7 @@ export const ROAMERS: Squad[] = (
       name: "尾根道の巡回",
       roam: true,
       members: [{ kind: "grunt", x: -40, z: 78 }, { kind: "grunt", x: -42, z: 79.4 }, { kind: "drone", x: -38, z: 80 }],
-      patrol: [{ x: -40, z: 78 }, { x: -62, z: 64 }, { x: -80, z: 50 }, { x: -62, z: 64 }, { x: -40, z: 78 }, { x: -31, z: 89 }],
+      patrol: [{ x: -40, z: 78 }, { x: -62, z: 64 }, { x: -90, z: 60 }, { x: -62, z: 64 }, { x: -40, z: 78 }, { x: -33, z: 86 }],
     },
     {
       name: "東の坂の巡回",
