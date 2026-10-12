@@ -178,6 +178,21 @@ function checkDeathEndsRaid(): string | null {
   if (s.phase !== "done" || s.outcome !== "dead" || r.score !== 0) return `death scenario: phase ${s.phase}, outcome ${s.outcome}, score ${r.score}`;
   return null;
 }
+/** Bleeding out while holding fire and jump ends the raid with nothing after "done" in that tick. */
+function checkBleedoutWipe(): string | null {
+  const s = padRun();
+  const p = s.player;
+  hurtAlly(s, 999);
+  p.downed = TICK;
+  p.awaitAlly = true;
+  const press = idleInput();
+  press.fire = true;
+  press.jump = true;
+  step(s, press, false);
+  const end = s.events.findIndex((e) => e.t === "done");
+  if (end < 0 || end !== s.events.length - 1 || s.outcome !== "dead") return `bleedout scenario: events ${s.events.map((e) => e.t).join(",")}`;
+  return null;
+}
 /** Reinforcements beam in out of sight, at a distance, and come looking for the player. */
 function checkReinforce(): string | null {
   const s = newRun(5);
@@ -393,7 +408,7 @@ function checkAllyHoldsFire(): string | null {
   if (shots) return `hold fire scenario: the teammate fired ${shots} shots at an idle robot`;
   return null;
 }
-for (const err of [checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkReinforce(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkAllySelfUp(), checkStompHeight(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill()]) {
+for (const err of [checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkAllySelfUp(), checkStompHeight(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill()]) {
   if (err) {
     console.error(err);
     process.exit(1);

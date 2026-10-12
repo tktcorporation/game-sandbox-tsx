@@ -51,8 +51,11 @@ export function stepPlayer(s: State, input: Input, prevCrouch: boolean) {
   if (p.downed > 0) {
     p.downed -= TICK;
     // Waiting for the teammate, who did not make it in time.
-    if (p.downed <= 0 && p.awaitAlly) wipe(s);
-    else if (p.downed <= 0) {
+    if (p.downed <= 0 && p.awaitAlly) {
+      // The raid is over: no move, shot or jump may follow in this tick.
+      wipe(s);
+      return;
+    } else if (p.downed <= 0) {
       p.hp = PLAYER.reviveHp;
       p.iframes = PLAYER.reviveIframes;
       s.events.push({ t: "revive" });
