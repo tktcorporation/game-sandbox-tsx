@@ -32,8 +32,8 @@ interface SpawnOpts {
   elite?: boolean;
 }
 
-/** Where a robot asked to appear at (x, z) on `floor` ends up: pushed out of solids, on its floor or at hover height. */
-export function spawnSpot(kind: EnemyKind, x: number, z: number, floor = 0): Vec3 {
+/** Where a robot asked to appear at (x, z) on `floor` (the ground when omitted) ends up: pushed out of solids, on its floor or at hover height. */
+export function spawnSpot(kind: EnemyKind, x: number, z: number, floor = terrainHeight(x, z)): Vec3 {
   const k = ENEMIES[kind];
   const pos = { x, y: floor, z };
   collide(pos, k.radius, bodyHeight(k));
@@ -43,7 +43,7 @@ export function spawnSpot(kind: EnemyKind, x: number, z: number, floor = 0): Vec
 
 export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi: number, squad: number, o: SpawnOpts = {}): Enemy {
   const k = ENEMIES[kind];
-  const pos = spawnSpot(kind, x, z, o.floor ?? 0);
+  const pos = spawnSpot(kind, x, z, o.floor);
   const face = o.face ?? rand(s) * Math.PI * 2;
   const e: Enemy = {
     id: s.nextId++,
@@ -89,7 +89,7 @@ export function populate(s: State) {
   const add = (sq: Squad, poi: number) => {
     const index = s.squads.length;
     s.squads.push({ name: sq.name, poi, patrol: sq.patrol ?? [], leg: 0, engaged: false, roam: !!sq.roam, sinceSeen: 0, last: { x: 0, z: 0 } });
-    for (const m of sq.members) spawnEnemy(s, m.kind, m.x, m.z, poi, index, { floor: m.y ?? 0, face: m.face });
+    for (const m of sq.members) spawnEnemy(s, m.kind, m.x, m.z, poi, index, { floor: m.y, face: m.face });
   };
   POIS.forEach((p, i) => p.squads.forEach((sq) => add(sq, i)));
   ROAMERS.forEach((sq) => add(sq, -1));
@@ -124,9 +124,9 @@ function lockAim(e: Enemy, at: Vec3) {
   e.aimPitch = a.pitch;
 }
 
-/** Drones keep their hover height above whatever is under them. */
+/** Drones keep their hover height above the ground, and clear whatever is built under them. */
 function flyHeight(x: number, z: number): number {
-  return Math.max(ENEMIES.drone.fly, groundAt(x, z, 1.2, 99) + 2.4);
+  return Math.max(terrainHeight(x, z) + ENEMIES.drone.fly, groundAt(x, z, 1.2, 99) + 2.4);
 }
 
 function moveBody(e: Enemy, vx: number, vz: number) {
@@ -466,11 +466,12 @@ function findCover(s: State, e: Enemy, threat: Point, threatY: number): { cover:
     .sort((a, b) => a.d + Math.abs(a.dp - 16) * 0.3 - (b.d + Math.abs(b.dp - 16) * 0.3))
     .slice(0, 14);
   for (const { c } of cands) {
-    if (los({ x: c.x, y: 1.3, z: c.z }, head)) continue;
+    if (los({ x: c.x, y: terrainHeight(c.x, c.z) + 1.3, z: c.z }, head)) continue;
     for (const sign of [1, -1]) {
       const peek = { x: c.x + c.tx * sign * COVER.peek, z: c.z + c.tz * sign * COVER.peek };
-      if (solidAt(peek.x, 1.0, peek.z)) continue;
-      if (los({ x: peek.x, y: 1.6, z: peek.z }, chestP)) return { cover: { x: c.x, z: c.z }, peek };
+      const pg = terrainHeight(peek.x, peek.z);
+      if (solidAt(peek.x, pg + 1.0, peek.z)) continue;
+      if (los({ x: peek.x, y: pg + 1.6, z: peek.z }, chestP)) return { cover: { x: c.x, z: c.z }, peek };
     }
   }
   return null;
@@ -592,7 +593,7 @@ function titan(s: State, e: Enemy, d: number) {
       moveBody(e, 0, 0);
       e.timer -= TICK;
       if (e.timer <= 0) {
-        s.waves.push({ x: e.pos.x, z: e.pos.z, y: 0, r: k.radius, hit: false });
+        s.waves.push({ x: e.pos.x, z: e.pos.z, y: e.pos.y, r: k.radius, hit: false });
         s.events.push({ t: "stomp", x: e.pos.x, z: e.pos.z });
         e.shotsLeft = -1; // next attack is rockets
         e.mode = "move";

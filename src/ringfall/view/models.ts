@@ -17,6 +17,11 @@ export const PAL = {
   sandDark: 0xc4914f,
   rock: 0xb0623c,
   rockDark: 0x8d4a2c,
+  /** The dried lakebed: cracked clay, greyer than the sand. */
+  mud: 0xb9a385,
+  mudDark: 0x9c8669,
+  /** The bleached band on the lakebed's walls, up to where the water stood. */
+  tide: 0xe3d5ba,
   concrete: 0xcfc8b8,
   concreteDark: 0x9c9586,
   rust: 0xb5482b,

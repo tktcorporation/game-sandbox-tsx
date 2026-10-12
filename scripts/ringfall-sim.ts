@@ -8,6 +8,7 @@
 import { ALLY, BAG, ENEMIES, RAIDERS, REINFORCE, SEARCH, TACTICAL, TICK, VALUABLES, WORLD } from "../src/ringfall/sim/config";
 import { BOXES, EXTRA_BINS, EXTRACTS, POIS, ROAMERS, type Squad } from "../src/ringfall/sim/map";
 import { groundAt, los, solidAt } from "../src/ringfall/sim/geom";
+import { floorLevel, highGround, terrainHeight } from "../src/ringfall/sim/terrain";
 import { Bot, SKILLS } from "../src/ringfall/sim/bot";
 import { idleInput, newRun, type GameEvent, type State } from "../src/ringfall/sim/state";
 import { step } from "../src/ringfall/sim/step";
@@ -39,26 +40,28 @@ function check(s: State, where: string) {
 /** Static layout check: every authored point must be standable, not inside a wall. */
 function checkLayout(): string[] {
   const bad: string[] = [];
-  const point = (what: string, x: number, z: number, y = 0) => {
+  // Without a height a point stands on the walkable floor of its area.
+  const point = (what: string, x: number, z: number, y = floorLevel(x, z)) => {
     const g = groundAt(x, z, 0.3, y + 0.3);
     if (Math.abs(g - y) > 0.3) bad.push(`${what} at ${x},${z} expects floor ${y}, finds ${g.toFixed(2)}`);
     for (const h of [0.3, 1.0, 1.6]) if (solidAt(x, g + h, z)) bad.push(`${what} at ${x},${z} is inside a box (height ${h})`);
   };
   // Robots stand exactly where they are placed (walkers), and patrols run over open ground.
   const squad = (what: string, sq: Squad) => {
-    for (const m of sq.members) if (m.kind !== "drone") point(`${what} ${m.kind}`, m.x, m.z, m.y ?? 0);
+    for (const m of sq.members) if (m.kind !== "drone") point(`${what} ${m.kind}`, m.x, m.z, m.y);
     for (const w of sq.patrol ?? []) if (sq.members.some((m) => m.kind !== "drone")) point(`${what} patrol`, w.x, w.z);
   };
   POIS.forEach((p, i) => {
     point(`POI ${i} entry`, p.entry.x, p.entry.z);
-    p.bins.forEach((b) => point(`POI ${i} bin`, b.x, b.z, b.y ?? 0));
-    p.floor.forEach((f) => point(`POI ${i} floor loot`, f.x, f.z, f.y ?? 0));
+    p.bins.forEach((b) => point(`POI ${i} bin`, b.x, b.z, b.y));
+    p.floor.forEach((f) => point(`POI ${i} floor loot`, f.x, f.z, f.y));
     p.squads.forEach((sq) => squad(`POI ${i} ${sq.name}`, sq));
     if (p.carePackage) point(`POI ${i} care package`, p.carePackage.x, p.carePackage.z);
   });
-  EXTRA_BINS.forEach((b) => point("extra bin", b.x, b.z, b.y ?? 0));
+  EXTRA_BINS.forEach((b) => point("extra bin", b.x, b.z, b.y));
   ROAMERS.forEach((sq) => squad(`roamer ${sq.name}`, sq));
-  for (const x of EXTRACTS) point(`extract ${x.id}`, x.x, x.z, x.id === "ship" ? 0.25 : 0);
+  // An extract is used standing on whatever is highest there (the pad, a rock top), as the game checks it.
+  for (const x of EXTRACTS) point(`extract ${x.id}`, x.x, x.z, groundAt(x.x, x.z, 0.4, 99));
   return bad;
 }
 
@@ -78,14 +81,15 @@ function checkWipeClearsAir(): string | null {
   // The landing pad, kept open for the titan, with nothing between the player and the projectiles.
   const x = POIS[3].x;
   const z = POIS[3].z;
-  p.pos = { x, y: 0, z };
+  const g = terrainHeight(x, z);
+  p.pos = { x, y: g, z };
   p.onGround = true;
   p.hp = 1;
   p.shield = 0;
   p.selfRevive = 0;
-  s.orbs.push({ id: 900, pos: { x, y: 1.1, z: z + 0.3 }, vel: { x: 0, y: 0, z: -1 }, r: 0.4, dmg: 10, life: 5, homing: false });
-  s.orbs.push({ id: 901, pos: { x, y: 3, z: z + 20 }, vel: { x: 0, y: 0, z: -5 }, r: 0.4, dmg: 10, life: 5, homing: true });
-  s.waves.push({ x, z: z + 30, y: 0, r: 3, hit: false });
+  s.orbs.push({ id: 900, pos: { x, y: g + 1.1, z: z + 0.3 }, vel: { x: 0, y: 0, z: -1 }, r: 0.4, dmg: 10, life: 5, homing: false });
+  s.orbs.push({ id: 901, pos: { x, y: g + 3, z: z + 20 }, vel: { x: 0, y: 0, z: -5 }, r: 0.4, dmg: 10, life: 5, homing: true });
+  s.waves.push({ x, z: z + 30, y: g, r: 3, hit: false });
   step(s, idleInput(), false);
   if (s.stats.wipes !== 1) return `wipe scenario: expected a wipe, got ${s.stats.wipes}`;
   if (s.orbs.length || s.waves.length) return `wipe scenario: ${s.orbs.length} orbs and ${s.waves.length} shockwaves survived the wipe`;
@@ -99,7 +103,8 @@ function checkArcOnTitan(): string | null {
   s.enemies = boss;
   const p = s.player;
   const pad = POIS[3];
-  p.pos = { x: pad.x, y: 0, z: pad.z + 6 };
+  const g = terrainHeight(pad.x, pad.z);
+  p.pos = { x: pad.x, y: g, z: pad.z + 6 };
   p.onGround = true;
   p.yaw = 0; // facing north, at the titan
   const titan = boss.find((e) => e.kind === "titan")!;
@@ -107,7 +112,7 @@ function checkArcOnTitan(): string | null {
   titan.shield = 0;
   // Its drones stand behind it, so the arc reaches the titan first.
   boss.filter((e) => e.kind === "drone").forEach((d, i) => {
-    d.pos = { x: pad.x + (i ? 3 : -3), y: 3.4, z: pad.z - 18 };
+    d.pos = { x: pad.x + (i ? 3 : -3), y: g + 3.4, z: pad.z - 18 };
     d.hp = 10; // low enough that a second hit from the arc would kill it again
     d.shield = 0;
   });
@@ -124,13 +129,14 @@ function checkGoldReload(): string | null {
   s.phase = "play";
   const p = s.player;
   const pad = POIS[3];
-  p.pos = { x: pad.x, y: 0, z: pad.z + 6 };
+  const g = terrainHeight(pad.x, pad.z);
+  p.pos = { x: pad.x, y: g, z: pad.z + 6 };
   p.onGround = true;
   p.yaw = 0;
   p.pitch = 0;
   const target = s.enemies.find((e) => e.kind === "drone" && e.poi === 3)!;
   s.enemies = [target];
-  target.pos = { x: pad.x, y: 1.6, z: pad.z - 4 };
+  target.pos = { x: pad.x, y: g + 1.6, z: pad.z - 4 };
   target.hp = 1;
   target.shield = 0;
   const w = { kind: "lance" as const, rarity: 3 as const, mag: 4 };
@@ -149,12 +155,13 @@ function checkArcIgnoresFacing(): string | null {
   s.phase = "play";
   const p = s.player;
   const pad = POIS[3];
-  p.pos = { x: pad.x, y: 0, z: pad.z + 6 };
+  const g = terrainHeight(pad.x, pad.z);
+  p.pos = { x: pad.x, y: g, z: pad.z + 6 };
   p.onGround = true;
   p.yaw = 0;
   const grunt = s.enemies.find((e) => e.kind === "grunt")!;
   s.enemies = [grunt];
-  grunt.pos = { x: pad.x, y: 0, z: pad.z - 4 };
+  grunt.pos = { x: pad.x, y: g, z: pad.z - 4 };
   grunt.aware = "idle";
   const before = grunt.hp + grunt.shield;
   const inp = idleInput();
@@ -341,7 +348,7 @@ function padRun(): State {
   s.raiderT = 1e9;
   const p = s.player;
   p.pos = { x: POIS[3].x, y: 0, z: POIS[3].z };
-  p.pos.y = groundAt(p.pos.x, p.pos.z, 0.4, 2);
+  p.pos.y = groundAt(p.pos.x, p.pos.z, 0.4, terrainHeight(p.pos.x, p.pos.z) + 2);
   p.onGround = true;
   placeAlly(s);
   return s;
@@ -398,13 +405,29 @@ function checkAllySelfUp(): string | null {
   if (s.ally.down > 0 || s.ally.hp <= 0 || up !== 1) return `self-up scenario: down ${s.ally.down.toFixed(1)}, hp ${s.ally.hp}, ${up} allyUp events`;
   return null;
 }
+/** A jumper over the high ground, even one steering deeper in, lands on walkable ground. */
+function checkDropOffHighGround(): string | null {
+  for (const [x, z] of [[40, 22], [-40, 40], [70, 10], [-80, -30], [30, 140], [-150, 0], [150, 60]]) {
+    if (!highGround(x, z)) return `drop scenario: ${x},${z} is not high ground`;
+    const s = newRun(5);
+    const p = s.player;
+    p.pos = { x, y: 140, z };
+    p.yaw = Math.atan2(x, -z); // facing away from the island's middle, deeper into the high ground
+    const input = { ...idleInput(), moveZ: 1 };
+    for (let t = 0; t < 20 * 60 && s.phase === "drop"; t++) step(s, input, false);
+    if (s.phase === "drop") return `drop scenario: from ${x},${z} still falling`;
+    if (highGround(p.pos.x, p.pos.z)) return `drop scenario: from ${x},${z} landed on high ground at ${p.pos.x.toFixed(1)},${p.pos.z.toFixed(1)}`;
+  }
+  return null;
+}
 /** A stomp's wave passes under a teammate standing above it, and hits one on the ground. */
 function checkStompHeight(): string | null {
   const hit = (y: number) => {
     const s = padRun();
     const a = s.ally;
-    a.pos = { x: s.player.pos.x + 20, y, z: s.player.pos.z };
-    s.waves.push({ x: a.pos.x - 6, z: a.pos.z, y: 0, r: 5.9, hit: true });
+    const g = s.player.pos.y;
+    a.pos = { x: s.player.pos.x + 20, y: g + y, z: s.player.pos.z };
+    s.waves.push({ x: a.pos.x - 6, z: a.pos.z, y: g, r: 5.9, hit: true });
     const hp = a.hp + a.shield;
     step(s, idleInput(), false);
     return hp - (a.hp + a.shield);
@@ -463,7 +486,7 @@ function checkAllyTitanKill(): string | null {
 function checkAllyHoldsFire(): string | null {
   const s = newRun(5);
   s.phase = "play";
-  const grunt = s.enemies.find((e) => e.kind === "grunt" && e.pos.y < 0.5)!;
+  const grunt = s.enemies.find((e) => e.kind === "grunt" && e.pos.y < terrainHeight(e.pos.x, e.pos.z) + 0.5)!;
   s.enemies = [grunt];
   const p = s.player;
   // Behind the grunt, out of its sight cone, with the teammate beside.
@@ -479,7 +502,7 @@ function checkAllyHoldsFire(): string | null {
   if (shots) return `hold fire scenario: the teammate fired ${shots} shots at an idle robot`;
   return null;
 }
-for (const err of [checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkAllySelfUp(), checkStompHeight(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill()]) {
+for (const err of [checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkAllySelfUp(), checkStompHeight(), checkDropOffHighGround(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill()]) {
   if (err) {
     console.error(err);
     process.exit(1);

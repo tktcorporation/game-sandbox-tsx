@@ -1,6 +1,6 @@
 import { ALLY, BAG, ENEMIES, HEALS, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, TICK, VALUABLES, WORLD, type HealKind } from "./config";
 import { dist2d, groundAt, los, solidAt } from "./geom";
-import { steepAt, terrainHeight } from "./terrain";
+import { highGround, steepAt, terrainHeight } from "./terrain";
 import { EXTRACTS, POIS, type ExtractPoint } from "./map";
 import { spawnEnemy, spawnSpot } from "./enemies";
 import { raiseAlly, startHelp } from "./ally";
@@ -30,7 +30,7 @@ export function stepPoi(s: State) {
     // The care package drops once a fight at its POI has started.
     if (poi.carePackage && !s.care && s.squads.some((sq) => sq.poi === i && sq.engaged)) {
       const c = poi.carePackage;
-      s.care = { x: c.x, z: c.z, y: 70, landed: false, open: false, weapon: { kind: c.weapon[0], rarity: c.weapon[1], mag: -1 } };
+      s.care = { x: c.x, z: c.z, y: terrainHeight(c.x, c.z) + 70, landed: false, open: false, weapon: { kind: c.weapon[0], rarity: c.weapon[1], mag: -1 } };
       s.events.push({ t: "careDrop", x: c.x, z: c.z });
     }
     if (s.cleared[i] || s.enemies.some((e) => e.poi === i)) return;
@@ -108,7 +108,7 @@ function beamIn(s: State, kinds: readonly EnemyKind[], name: string, elite: bool
     const z = p.pos.z - Math.cos(a) * d;
     if (Math.hypot(x, z) > WORLD.half - 30 || steepAt(x, z)) continue;
     const g = groundAt(x, z, 1, 99);
-    if (g > terrainHeight(x, z) + 0.3 || terrainHeight(x, z) > 4) continue; // valley floor only, not a roof or the high ground
+    if (g > terrainHeight(x, z) + 0.3 || highGround(x, z)) continue; // valley floor only, not a roof or the high ground
     if (los(eye, { x, y: g + 1.5, z }) || posts(x, z).some((q) => los(eye, q))) continue;
     if (!walkable(x, z, p.pos.x, p.pos.z, strict)) continue;
     at = { x, z };
@@ -141,7 +141,7 @@ function walkable(x: number, z: number, tx: number, tz: number, solids: boolean)
   for (let i = 1; i < n; i++) {
     const qx = x + ((tx - x) * i) / n;
     const qz = z + ((tz - z) * i) / n;
-    if (steepAt(qx, qz) || terrainHeight(qx, qz) > 4) return false;
+    if (steepAt(qx, qz) || highGround(qx, qz)) return false;
     const g = terrainHeight(qx, qz);
     if (solids && solidAt(qx, g + CLIMB_OVER, qz)) return false;
   }
@@ -152,7 +152,7 @@ function spill(s: State, x: number, y: number, z: number, item: Omit<Loot, "id" 
   const p = s.player;
   const a = Math.atan2(p.pos.z - z, p.pos.x - x) + (rand(s) - 0.5) * 1.6;
   // Gentle toss so loot from a roof bin stays on the roof.
-  const sp = y > 0.5 ? 1.2 : 2.6;
+  const sp = y > terrainHeight(x, z) + 0.5 ? 1.2 : 2.6;
   s.loot.push({ ...item, id: s.nextId++, pos: { x, y: y + 1.0, z }, vel: { x: Math.cos(a) * sp, y: 4.2, z: Math.sin(a) * sp }, age: 0 });
 }
 

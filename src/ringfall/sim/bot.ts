@@ -29,7 +29,7 @@ export interface Skill {
 
 export const SKILLS: Skill[] = [
   { name: "beginner", aimErr: 6.5, turn: 0.1, react: 0.45, dodge: 0.25, heads: false, abilities: 0.25, flank: 0.2, raid: 2 },
-  { name: "casual", aimErr: 3.2, turn: 0.18, react: 0.28, dodge: 0.55, heads: false, abilities: 0.8, flank: 0.5, raid: 3 },
+  { name: "casual", aimErr: 3.2, turn: 0.18, react: 0.28, dodge: 0.55, heads: false, abilities: 0.8, flank: 0.5, raid: 4 },
   { name: "good", aimErr: 1.1, turn: 0.32, react: 0.15, dodge: 0.9, heads: true, abilities: 3, flank: 0.85, raid: 4 },
 ];
 
@@ -361,12 +361,13 @@ export class Bot {
         const x = tgt.pos.x + Math.sin(a) * r;
         const z = tgt.pos.z - Math.cos(a) * r;
         if (Math.max(Math.abs(x), Math.abs(z)) > WORLD.half - 3) continue;
-        if (groundAt(x, z, 0.4, 0.3) > 0.3 || [0.3, 1.0, 1.6].some((h) => solidAt(x, h, z))) continue;
-        if (!los({ x, y: 1.6, z }, bodyCenter(tgt))) continue;
+        const g = terrainHeight(x, z);
+        if (groundAt(x, z, 0.4, g + 0.3) > g + 0.3 || [0.3, 1.0, 1.6].some((h) => solidAt(x, g + h, z))) continue;
+        if (!los({ x, y: g + 1.6, z }, bodyCenter(tgt))) continue;
         const route = this.route(x, z);
         if (!route || route.len > 45) continue;
         // Walking the route in the squad's sight would only turn it round: prefer hidden routes.
-        const exposed = route.samples.filter((q) => watchers.some((w) => los({ x: q.x, y: 1.4, z: q.z }, bodyCenter(w)))).length / Math.max(1, route.samples.length);
+        const exposed = route.samples.filter((q) => watchers.some((w) => los({ x: q.x, y: terrainHeight(q.x, q.z) + 1.4, z: q.z }, bodyCenter(w)))).length / Math.max(1, route.samples.length);
         const cost = route.len * (1 + exposed * 3);
         if (exposed < 0.6 && (!best || cost < best.cost)) best = { x, z, cost };
       }
@@ -383,8 +384,9 @@ export class Bot {
         const x = tgt.pos.x + Math.sin(a) * r;
         const z = tgt.pos.z - Math.cos(a) * r;
         if (Math.max(Math.abs(x), Math.abs(z)) > WORLD.half - 3) continue;
-        if (groundAt(x, z, 0.4, 0.3) > 0.3 || [0.3, 1.0, 1.6].some((h) => solidAt(x, h, z))) continue;
-        if (!los({ x, y: 1.6, z }, bodyCenter(tgt))) continue;
+        const g = terrainHeight(x, z);
+        if (groundAt(x, z, 0.4, g + 0.3) > g + 0.3 || [0.3, 1.0, 1.6].some((h) => solidAt(x, g + h, z))) continue;
+        if (!los({ x, y: g + 1.6, z }, bodyCenter(tgt))) continue;
         const route = this.route(x, z);
         if (route && route.len < 70 && (!best || route.len < best.len)) best = { x, z, len: route.len };
       }
@@ -400,8 +402,9 @@ export class Bot {
         const x = this.from.x + Math.sin(a) * r;
         const z = this.from.z - Math.cos(a) * r;
         if (Math.max(Math.abs(x), Math.abs(z)) > WORLD.half - 3) continue;
-        if (groundAt(x, z, 0.4, 0.3) > 0.3 || [0.3, 1.0, 1.6].some((h) => solidAt(x, h, z))) continue;
-        if (watchers.some((w) => los(bodyCenter(w), { x, y: 1.5, z }))) continue;
+        const g = terrainHeight(x, z);
+        if (groundAt(x, z, 0.4, g + 0.3) > g + 0.3 || [0.3, 1.0, 1.6].some((h) => solidAt(x, g + h, z))) continue;
+        if (watchers.some((w) => los(bodyCenter(w), { x, y: g + 1.5, z }))) continue;
         const route = this.route(x, z);
         if (!route || route.len > 16) continue;
         if (!best || route.len < best.len) best = { x, z, len: route.len };
@@ -434,7 +437,7 @@ export class Bot {
   private via(s: State, goal: { x: number; z: number }): { x: number; z: number } {
     const p = s.player;
     // Up on a roof or platform the ground grid does not apply: walk straight (and drop off).
-    if ((p.onGround && p.pos.y > 0.6) || clearLine(p.pos.x, p.pos.z, goal.x, goal.z)) {
+    if ((p.onGround && !onTerrain(p.pos)) || clearLine(p.pos.x, p.pos.z, goal.x, goal.z)) {
       this.path = [];
       return goal;
     }

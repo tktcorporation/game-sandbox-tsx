@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { ENEMIES, PLAYER, TITAN, WEAPONS, WORLD, type EnemyKind } from "../sim/config";
 import { BOXES, EXTRACT, EXTRACTS, POIS } from "../sim/map";
 import { groundAt } from "../sim/geom";
-import { rimRadius, steepAt, terrainHeight } from "../sim/terrain";
+import { DAM_FACE, floorLevel, highGround, LEVEL, rimRadius, steepAt, terrainHeight } from "../sim/terrain";
 import type { GameEvent, State, Vec3 } from "../sim/state";
 import { PAL, RARITY_COLOR, SCOPE_IN, buildAlly, buildBin, buildBox, mergeStatic, buildCare, buildDropship, buildEnemy, buildGun, buildLootItem, flat, glow, haloSprite, type EnemyModel } from "./models";
 
@@ -216,6 +216,11 @@ export class World {
     const dark = new THREE.Color(PAL.sandDark);
     const rock = new THREE.Color(PAL.rock);
     const rockDark = new THREE.Color(PAL.rockDark);
+    const mud = new THREE.Color(PAL.mud);
+    const mudDark = new THREE.Color(PAL.mudDark);
+    const tide = new THREE.Color(PAL.tide);
+    const concrete = new THREE.Color(PAL.concrete);
+    const concreteDark = new THREE.Color(PAL.concreteDark);
     const c = new THREE.Color();
     // Colour each triangle as a whole: rock where it is a cliff, sand elsewhere.
     for (let t = 0; t < p.count; t += 3) {
@@ -231,12 +236,18 @@ export class World {
       }
       const h = (lo + hi) / 2;
       const cliff = steepAt(x, z) || hi - lo > 2.2;
-      if (cliff) c.copy(rock).lerp(rockDark, noise(x * 0.3, z * 0.1 + h * 0.2));
+      const k = noise(x * 0.08, z * 0.08);
+      if (cliff && DAM_FACE(x, z)) c.copy(concrete).lerp(concreteDark, noise(x * 0.5, h * 0.3) * 0.35);
+      // Below the old waterline the walls are bleached in bands; above it, bare red rock.
+      else if (cliff && h < LEVEL.shore) c.copy(tide).lerp(rock, Math.max(0, Math.min(1, (h - LEVEL.shore) / 3 + 1)) * 0.5 + noise(x * 0.3, h * 0.6) * 0.2);
+      else if (cliff) c.copy(rock).lerp(rockDark, noise(x * 0.3, z * 0.1 + h * 0.2));
+      // The unclimbable high ground: weathered rock, darker than anything walked on.
+      else if (highGround(x, z)) c.copy(rockDark).lerp(rock, k * 0.6);
+      else if (floorLevel(x, z) <= LEVEL.lakebed + 0.5) c.copy(mud).lerp(mudDark, noise(x * 0.4, z * 0.4) > 0.6 ? 0.6 : k * 0.3);
       else {
-        const k = noise(x * 0.08, z * 0.08);
-        c.copy(sand).lerp(dark, h < -1 ? 0.55 : k > 0.62 ? 0.7 : k * 0.3);
-        // High ground a touch lighter, so hills read from afar.
-        c.offsetHSL(0, 0, Math.max(-0.04, Math.min(0.05, h * 0.006)));
+        c.copy(sand).lerp(dark, k > 0.62 ? 0.7 : k * 0.3);
+        // Higher levels a touch lighter, so the steps read from afar.
+        c.offsetHSL(0, 0, Math.max(-0.05, Math.min(0.05, h * 0.006)));
       }
       for (let k = 0; k < 3; k++) colors.set([c.r, c.g, c.b], (t + k) * 3);
     }
@@ -399,11 +410,11 @@ export class World {
           break;
         case "slide":
           this.fovKick = Math.max(this.fovKick, 8);
-          this.burst({ x: s.player.pos.x, y: 0.1, z: s.player.pos.z }, PAL.sandDark, 8, 2, 0.08, 6, 0.5);
+          this.burst({ x: s.player.pos.x, y: s.player.pos.y + 0.1, z: s.player.pos.z }, PAL.sandDark, 8, 2, 0.08, 6, 0.5);
           break;
         case "land":
           this.landDip = Math.min(0.35, e.speed * 0.02);
-          if (e.speed > 10) this.burst({ x: s.player.pos.x, y: 0.1, z: s.player.pos.z }, PAL.sand, 30, 6, 0.12, 8, 0.9);
+          if (e.speed > 10) this.burst({ x: s.player.pos.x, y: s.player.pos.y + 0.1, z: s.player.pos.z }, PAL.sand, 30, 6, 0.12, 8, 0.9);
           break;
         case "tactical":
           for (const t of e.targets) {
@@ -420,11 +431,11 @@ export class World {
           break;
         case "stomp":
           this.shake = Math.max(this.shake, 0.9);
-          this.burst({ x: e.x, y: 0.2, z: e.z }, PAL.sand, 60, 10, 0.18, 10, 1.0);
+          this.burst({ x: e.x, y: terrainHeight(e.x, e.z) + 0.2, z: e.z }, PAL.sand, 60, 10, 0.18, 10, 1.0);
           break;
         case "careLand":
           this.shake = Math.max(this.shake, 0.5);
-          this.burst({ x: e.x, y: 0.2, z: e.z }, PAL.sand, 40, 7, 0.14, 8, 1.0);
+          this.burst({ x: e.x, y: (s.care?.y ?? terrainHeight(e.x, e.z)) + 0.2, z: e.z }, PAL.sand, 40, 7, 0.14, 8, 1.0);
           break;
         case "binOpen":
           break;
@@ -517,7 +528,7 @@ export class World {
           new THREE.CylinderGeometry(0.06, ENEMIES[e.kind].radius * 0.45, 40, 8, 1, true),
           new THREE.MeshBasicMaterial({ color: PAL.eye, transparent: true, opacity: 0.3, depthWrite: false, blending: THREE.AdditiveBlending }),
         );
-        beam.position.set(e.pos.x, 20, e.pos.z);
+        beam.position.set(e.pos.x, e.pos.y + 20, e.pos.z);
         this.scene.add(beam);
         v = { m, kind: e.kind, flash: 0, shieldFlash: 0, walk: 0, spawnBeam: beam, lane: null };
         this.enemies.set(e.id, v);
@@ -529,7 +540,7 @@ export class World {
       if (e.mode === "spawning") {
         const t = Math.max(0, 1 - e.timer / (e.kind === "titan" ? 2.2 : 0.9));
         m.root.scale.setScalar(0.2 + 0.8 * t);
-        if (k.fly > 0) m.root.position.y = k.fly + (1 - t) * 10;
+        if (k.fly > 0) m.root.position.y = e.pos.y + (1 - t) * 10;
       } else {
         m.root.scale.setScalar(1);
         if (v.spawnBeam) {
@@ -575,7 +586,7 @@ export class World {
           const t = 1 - e.timer / TITAN.stompTelegraph;
           const rr = TITAN.stompRange * Math.min(1, t * 1.2);
           this.stompRing.scale.setScalar(rr);
-          this.stompRing.position.set(e.pos.x, 0.06, e.pos.z);
+          this.stompRing.position.set(e.pos.x, e.pos.y + 0.06, e.pos.z);
         }
       }
     }
@@ -657,7 +668,7 @@ export class World {
       }
       this.care.position.set(s.care.x, s.care.y, s.care.z);
       this.careBeam.visible = !s.care.open;
-      this.careBeam.position.set(s.care.x, 60, s.care.z);
+      this.careBeam.position.set(s.care.x, terrainHeight(s.care.x, s.care.z) + 60, s.care.z);
     }
 
     // --- extraction
@@ -666,11 +677,11 @@ export class World {
     if (s.phase !== "drop" && s.shipCall >= 0) {
       if (!this.dropship) {
         this.dropship = buildDropship();
-        this.dropship.position.set(EXTRACT.x, 90, EXTRACT.z - 2);
+        this.dropship.position.set(EXTRACT.x, terrainHeight(EXTRACT.x, EXTRACT.z) + 90, EXTRACT.z - 2);
         this.scene.add(this.dropship);
       }
       const call = EXTRACT.call ?? 1;
-      const want = 4.5 + 70 * Math.min(1, s.shipCall / call);
+      const want = terrainHeight(EXTRACT.x, EXTRACT.z) + 4.5 + 70 * Math.min(1, s.shipCall / call);
       this.dropship.position.y += (want - this.dropship.position.y) * Math.min(1, dt * 0.8);
       this.dropship.rotation.z = Math.sin(this.time * 1.3) * 0.03;
     }
@@ -686,8 +697,9 @@ export class World {
     for (const q of this.particles) {
       q.vel.y -= q.gravity * dt;
       q.pos.addScaledVector(q.vel, dt);
-      if (q.pos.y < 0.03) {
-        q.pos.y = 0.03;
+      const floor = terrainHeight(q.pos.x, q.pos.z) + 0.03;
+      if (q.pos.y < floor) {
+        q.pos.y = floor;
         q.vel.multiplyScalar(0.4);
       }
       this.dummy.position.copy(q.pos);

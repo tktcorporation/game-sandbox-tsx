@@ -1,11 +1,14 @@
 import type { EnemyKind, HealKind, Rarity, ValuableKind, WeaponKind } from "./config";
-import { buildTerrain, rimRadius, steepAt, terrainHeight } from "./terrain";
+import { buildTerrain, type FlatShape, floorLevel, highGround, LEVEL, rimRadius, steepAt, terrainHeight } from "./terrain";
 
 /**
- * The island. Everything solid is an axis-aligned box, so collision, line of sight
- * and standing on top are all the same cheap test. North is -z. The player drops
- * in from the south, clears the four POIs counter-clockwise, and extracts in the
- * north. The districts between them are optional: high ground, loot and squads.
+ * The island, a dried-up reservoir (see terrain.ts for its levels). Everything solid
+ * is an axis-aligned box, so collision, line of sight and standing on top are all the
+ * same cheap test. North is -z. The player drops in on the south shore; the four
+ * POIs, the districts between them and the three ways off are all open from the start.
+ *
+ * Boxes and points are written relative to the ground of their area and lifted to
+ * its level here, so a building reads the same on the lakebed as on the mesa.
  */
 
 export type BoxKind = "crate" | "container" | "wall" | "rock" | "pad" | "tower" | "slab" | "step";
@@ -199,11 +202,11 @@ function highRise(cx: number, cz: number, w: number, d: number, floors: number):
 
 /** Tall buildings: where they stand, their size and storeys. Their top-floor bins are in EXTRA_BINS. */
 const HIGH_RISES = [
-  { x: 0, z: -14, w: 10, d: 10, floors: 6 }, // the old town's office block
-  { x: 125, z: 0, w: 10, d: 10, floors: 5 }, // flats beyond the housing street
-  { x: 40, z: -130, w: 8, d: 8, floors: 5 }, // the pad's control tower
-  { x: -130, z: 40, w: 8, d: 8, floors: 4 }, // a lookout west of the quarry
-  { x: -79, z: 28, w: 8, d: 8, floors: 4 }, // the quarry office
+  { x: 0, z: -14, w: 10, d: 10, floors: 6, level: LEVEL.lakebed }, // the drowned town's office block
+  { x: 125, z: 0, w: 10, d: 10, floors: 5, level: LEVEL.mesa }, // flats beyond the housing street
+  { x: -34, z: -128, w: 8, d: 8, floors: 5, level: LEVEL.dam }, // the pad's control tower
+  { x: -132, z: 10, w: 8, d: 8, floors: 4, level: LEVEL.pit }, // a lookout at the quarry's far end
+  { x: -79, z: 28, w: 8, d: 8, floors: 4, level: LEVEL.pit }, // the quarry office
 ] as const;
 
 /** A walkway slab whose top is at height y. */
@@ -212,12 +215,28 @@ const bridge = (x0: number, z0: number, x1: number, z1: number, y: number): Box 
 /** Moves boxes authored in a district's own frame into place. */
 const place = (dx: number, dz: number, boxes: Box[]): Box[] => boxes.map((b) => ({ ...b, x0: b.x0 + dx, x1: b.x1 + dx, z0: b.z0 + dz, z1: b.z1 + dz }));
 
+/** Ground the hand-built boxes stand on, pressed flat to their level (buildTerrain). */
+const FLAT: FlatShape[] = [];
+
+/**
+ * Lifts boxes written on ground at 0 onto ground at `level`. Those standing on the
+ * ground (not hanging below it, like the bridge's pillars) keep it flat at that level.
+ */
+function onLevel(level: number, boxes: Box[]): Box[] {
+  const out = boxes.map((b) => ({ ...b, y0: b.y0 + level, h: b.h + level }));
+  for (const b of out) if (b.y0 >= level) FLAT.push({ x0: b.x0, z0: b.z0, x1: b.x1, z1: b.z1, y: level });
+  return out;
+}
+
+/** A point written relative to the ground of its area, at its absolute height. */
+const onFloor = <T extends { x: number; z: number; y?: number }>(q: T): T & { y: number } => ({ ...q, y: (q.y ?? 0) + floorLevel(q.x, q.z) });
+
 /** One robot of a squad, placed on the island from the start. */
 export interface Member {
   kind: EnemyKind;
   x: number;
   z: number;
-  /** Floor height it stands on (a roof, a platform); 0 = ground. */
+  /** Floor height it stands on (a roof, a platform). Authored relative to its area's ground, absolute once placed. */
   y?: number;
   /** Direction it watches while idle (yaw, 0 = north / -z). */
   face?: number;
@@ -266,19 +285,20 @@ const SW = (-3 * Math.PI) / 4;
 
 /** Moves a squad authored in a district's own frame into place. */
 function placeSquad(sq: Squad, dx: number, dz: number): Squad {
-  return { ...sq, members: sq.members.map((m) => ({ ...m, x: m.x + dx, z: m.z + dz })), patrol: sq.patrol?.map((p) => ({ x: p.x + dx, z: p.z + dz })) };
+  return { ...sq, members: sq.members.map((m) => onFloor({ ...m, x: m.x + dx, z: m.z + dz })), patrol: sq.patrol?.map((p) => ({ x: p.x + dx, z: p.z + dz })) };
 }
 
 function placePoi(p: Poi, [dx, dz]: readonly [number, number]): Poi {
   const at = <T extends { x: number; z: number }>(q: T): T => ({ ...q, x: q.x + dx, z: q.z + dz });
+  const up = <T extends { x: number; z: number; y?: number }>(q: T) => onFloor(at(q));
   return {
     ...p,
     x: p.x + dx,
     z: p.z + dz,
     entry: at(p.entry),
     squads: p.squads.map((sq) => placeSquad(sq, dx, dz)),
-    bins: p.bins.map(at),
-    floor: p.floor.map(at),
+    bins: p.bins.map(up),
+    floor: p.floor.map(up),
     carePackage: p.carePackage && at(p.carePackage),
   };
 }
@@ -353,7 +373,7 @@ const POI_FRAMES: Poi[] = [
     x: 42,
     z: -28,
     trigger: 27,
-    entry: { x: 22, z: -6, yaw: -0.85 },
+    entry: { x: 16, z: -23, yaw: 1.4 },
     squads: [
       { name: "中継塔", members: [{ kind: "grunt", x: 41.5, z: -29, y: 5, face: SW }] },
       { name: "コンテナ置き場", members: [{ kind: "heavy", x: 36, z: -36, face: SW }] },
@@ -379,7 +399,7 @@ const POI_FRAMES: Poi[] = [
     x: 0,
     z: -68,
     trigger: 28,
-    entry: { x: 12, z: -40, yaw: 0.35 },
+    entry: { x: 0, z: -36, yaw: 0 },
     squads: [{ name: "タイタン", members: [{ kind: "titan", x: 0, z: -76, face: S }, { kind: "drone", x: -8, z: -70 }, { kind: "drone", x: 8, z: -70 }] }],
     bins: [
       { x: -16, z: -56 },
@@ -420,48 +440,53 @@ export interface ExtractPoint {
 
 export const EXTRACTS: ExtractPoint[] = [
   { id: "ship", name: "発着場のドロップシップ", short: "ドロップシップ", x: AT[3][0], z: -84 + AT[3][1], radius: 5, hold: 1.5, call: 20, note: "呼んで 20 秒守る。増援が降りてくる" },
-  { id: "flare", name: "台地の回収地点", short: "台地", x: -22, z: -62, radius: 5, hold: 4, needsFlare: true, note: "発煙筒を焚けば 4 秒" },
+  { id: "flare", name: "台地の回収地点", short: "台地", x: -58, z: -53, radius: 5, hold: 4, needsFlare: true, note: "発煙筒を焚けば 4 秒" },
   { id: "village", name: "廃村の回収地点", short: "廃村", x: -91, z: -63, radius: 5, hold: 15, note: "遠いが静か。15 秒待つ" },
 ];
 export const EXTRACT = EXTRACTS[0];
 
 /** Squads between the POIs. Beating them is optional; they guard loot and high ground. */
-export const ROAMERS: Squad[] = [
-  { name: "時計塔", members: [{ kind: "grunt", x: 0, z: 13, y: STOREY * 3, face: S }] },
-  { name: "旧市街の見回り", members: [{ kind: "grunt", x: -7, z: 20, face: E }], patrol: [{ x: 7, z: 20 }, { x: 7, z: 2 }, { x: -7, z: 2 }, { x: -7, z: 20 }] },
-  { name: "商店", members: [{ kind: "charger", x: -14, z: 25, face: E }] },
-  { name: "尾根の狙撃手", members: [{ kind: "grunt", x: -50, z: 70.5, y: 3.5, face: E }] },
-  { name: "台地の見張り", members: [{ kind: "grunt", x: -52, z: -54, y: 7.2, face: E }] },
-  { name: "工場の警備", members: [{ kind: "heavy", x: 55, z: 46, face: S }] },
-  { name: "住宅地", members: [{ kind: "grunt", x: 99, z: 16, y: STOREY * 2, face: W }] },
-  { name: "廃村", members: [{ kind: "grunt", x: -112, z: -69, y: STOREY * 2, face: E }] },
-  { name: "橋の上", members: [{ kind: "grunt", x: 52, z: -95, y: 6, face: N }] },
-  // Squads walking the valley roads up and down: met on the way, not found at a post.
-  {
-    name: "尾根道の巡回",
-    roam: true,
-    members: [{ kind: "grunt", x: -46, z: 80 }, { kind: "grunt", x: -48, z: 81.4 }, { kind: "drone", x: -44, z: 82 }],
-    patrol: [{ x: -46, z: 80 }, { x: -66, z: 52 }, { x: -80, z: 36 }, { x: -66, z: 52 }, { x: -46, z: 80 }, { x: -26, z: 100 }],
-  },
-  {
-    name: "東道の巡回",
-    roam: true,
-    members: [{ kind: "grunt", x: 44, z: -6 }, { kind: "charger", x: 42.4, z: -4.6 }, { kind: "drone", x: 46, z: -4 }],
-    patrol: [{ x: 44, z: -6 }, { x: 58, z: -22 }, { x: 44, z: -6 }, { x: 22, z: 8 }],
-  },
-  {
-    name: "北道の巡回",
-    roam: true,
-    members: [{ kind: "grunt", x: 2, z: -60 }, { kind: "grunt", x: 0.4, z: -58.6 }, { kind: "drone", x: 4, z: -58 }],
-    patrol: [{ x: 2, z: -60 }, { x: 6, z: -86 }, { x: 2, z: -60 }, { x: 0, z: -34 }],
-  },
-  {
-    name: "住宅道の巡回",
-    roam: true,
-    members: [{ kind: "grunt", x: 92, z: 38 }, { kind: "charger", x: 90.4, z: 39.4 }],
-    patrol: [{ x: 92, z: 38 }, { x: 104, z: 28 }, { x: 92, z: 38 }, { x: 72, z: 50 }],
-  },
-];
+export const ROAMERS: Squad[] = (
+  [
+    { name: "時計塔", members: [{ kind: "grunt", x: 0, z: 13, y: STOREY * 3, face: S }] },
+    { name: "旧市街の見回り", members: [{ kind: "grunt", x: -7, z: 20, face: E }], patrol: [{ x: 7, z: 20 }, { x: 7, z: 2 }, { x: -7, z: 2 }, { x: -7, z: 20 }] },
+    { name: "商店", members: [{ kind: "charger", x: -14, z: 25, face: E }] },
+    { name: "尾根の狙撃手", members: [{ kind: "grunt", x: -50, z: 70.5, y: 3.5, face: E }] },
+    { name: "台地の見張り", members: [{ kind: "grunt", x: -58, z: -54, y: 7.2, face: E }] },
+    { name: "工場の警備", members: [{ kind: "heavy", x: 55, z: 46, face: S }] },
+    { name: "住宅地", members: [{ kind: "grunt", x: 99, z: 16, y: STOREY * 2, face: W }] },
+    { name: "廃村", members: [{ kind: "grunt", x: -112, z: -69, y: STOREY * 2, face: E }] },
+    // Squads walking the roads up and down: met on the way, not found at a post.
+    {
+      name: "尾根道の巡回",
+      roam: true,
+      members: [{ kind: "grunt", x: -40, z: 78 }, { kind: "grunt", x: -42, z: 79.4 }, { kind: "drone", x: -38, z: 80 }],
+      patrol: [{ x: -40, z: 78 }, { x: -62, z: 64 }, { x: -80, z: 50 }, { x: -62, z: 64 }, { x: -40, z: 78 }, { x: -31, z: 89 }],
+    },
+    {
+      name: "東の坂の巡回",
+      roam: true,
+      members: [{ kind: "grunt", x: 44, z: -8 }, { kind: "charger", x: 42.4, z: -6.6 }, { kind: "drone", x: 46, z: -6 }],
+      patrol: [{ x: 44, z: -8 }, { x: 58, z: -24 }, { x: 44, z: -8 }, { x: 22, z: 0 }],
+    },
+    {
+      // Walks the dam crest, looking down on the lakebed.
+      name: "堤の巡回",
+      roam: true,
+      members: [{ kind: "grunt", x: -18, z: -80 }, { kind: "grunt", x: -16.4, z: -81.4 }, { kind: "drone", x: -14, z: -80 }],
+      patrol: [{ x: -18, z: -80 }, { x: 18, z: -80 }],
+    },
+    {
+      name: "住宅道の巡回",
+      roam: true,
+      members: [{ kind: "grunt", x: 92, z: 38 }, { kind: "charger", x: 90.4, z: 39.4 }],
+      patrol: [{ x: 92, z: 38 }, { x: 106, z: 28 }, { x: 92, z: 38 }, { x: 70, z: 52 }],
+    },
+  ] satisfies Squad[]
+)
+  .map((sq) => placeSquad(sq, 0, 0))
+  // On the bridge deck, at the mesa's level high over the spillway floor.
+  .concat({ name: "橋の上", members: [{ kind: "grunt", x: 52, z: -95, y: LEVEL.mesa, face: N }] });
 export const SPAWN = { x: 0, z: 140, yaw: 0 };
 
 /** Bins outside the POIs, mostly up high. `table` is the POI whose loot table they use. */
@@ -473,18 +498,18 @@ export const EXTRA_BINS: { x: number; z: number; y?: number; table: number; flar
   { x: -2, z: 30, table: 1 },
   { x: 64, z: 49, table: 2 },
   { x: 48, z: 39.3, y: 3.3, table: 2 },
-  { x: -50, z: -52, y: 7.2, table: 2 },
+  { x: -56, z: -52, y: 7.2, table: 2 },
   { x: 113, z: 14, y: STOREY, table: 2 },
   { x: -114, z: -71, y: STOREY, table: 1 },
   // Top floor of each tall building, on the side away from its stairs. These hold the
   // flares that call the plateau pickup (EXTRACTS).
   ...HIGH_RISES.map((h) => ({ x: h.x - h.w / 2 + 1.5, z: h.z, y: (h.floors - 1) * STOREY, table: 2, flare: true as const })),
-];
+].map(onFloor);
 
 /** Everything placed by hand: POIs, districts, landmarks. */
 const AUTHORED: Box[] = [
   // --- 補給所: containers, an office with a roof, a two-storey warehouse, a lookout platform, a loading deck
-  ...place(AT[0][0], AT[0][1], [
+  ...onLevel(LEVEL.shore, place(AT[0][0], AT[0][1], [
     box(-9, 46, 6.2, 2.5, 2.6, "container", 0),
     box(10, 55, 2.5, 6.2, 2.6, "container", 1),
     box(-3, 60, 1.2, 1.2, 0.9, "crate"),
@@ -505,9 +530,9 @@ const AUTHORED: Box[] = [
     // the landing zone: a hut with the first bin
     ...building(-12, 82, 6, 5, 3.4, { doors: ["n"], windows: ["e"], roof: "e" }),
     box(14, 76, 4, 3, 1.4, "rock"),
-  ]),
+  ])),
   // --- 採掘場: rock shelves, terraces, a catwalk between two scaffold towers, a shed
-  ...place(AT[1][0], AT[1][1], [
+  ...onLevel(LEVEL.pit, place(AT[1][0], AT[1][1], [
     box(-58, 6, 6, 9, 4.5, "rock"),
     box(-36, -6, 7, 5, 3.6, "rock"),
     box(-41, 11, 2.5, 6.2, 2.6, "container", 0),
@@ -529,9 +554,9 @@ const AUTHORED: Box[] = [
     box(-73, -4, 4, 6, 5.5, "rock", 1),
     ...stairs(-68, 3, "e", 2, 3, 1),
     ...stairs(-71, -3, "e", 1.6, 5.5, 1, 3),
-  ]),
+  ])),
   // --- 中継塔: a two-tier tower, a three-storey block, huts with roofs, containers around
-  ...place(AT[2][0], AT[2][1], [
+  ...onLevel(LEVEL.mesa, place(AT[2][0], AT[2][1], [
     box(42, -28, 5, 5, 3.4, "tower", 1),
     box(41.5, -29, 3, 3, 5.0, "tower"),
     box(41.5, -25.8, 3, 0.6, 3.8, "step"),
@@ -548,9 +573,9 @@ const AUTHORED: Box[] = [
     ...building(30, -18, 6, 5, 3.4, { doors: ["e"], windows: ["s"], roof: "w" }),
     ...building(57, -37, 5, 6, 3.4, { doors: ["w"], roof: "n" }),
     ...tower(50, -12, 8, 8, 3, { doors: [["w", "s"]], windows: [["e"], ["n", "e", "w"], ["s", "e", "w"]] }),
-  ]),
+  ])),
   // --- 発着場: open pad ringed by pillars, raised gantries, two control rooms
-  ...place(AT[3][0], AT[3][1], [
+  ...onLevel(LEVEL.dam, place(AT[3][0], AT[3][1], [
     box(0, -82, 12, 10, 0.25, "pad"),
     box(-12, -60, 2, 2, 3.8, "wall"),
     box(12, -60, 2, 2, 3.8, "wall"),
@@ -566,78 +591,83 @@ const AUTHORED: Box[] = [
     ...stairs(-20, -71, "e", 2, 2.4),
     ...tower(-32, -60, 8, 8, 2, { doors: [["e", "s"]], windows: [["w"], ["n", "e", "w"]] }),
     ...tower(32, -60, 8, 8, 2, { doors: [["w", "s"]], windows: [["e"], ["n", "e", "w"]] }),
-  ]),
+  ])),
 
   // --- 旧市街: a clock tower joined to two houses by bridges at 6.8 m, shops around two streets
-  ...tower(0, 12, 8, 9, 3, { doors: [["s", "e"], [], ["w", "e"]], windows: [["w"], ["n", "e", "w"], ["s"]] }),
-  ...tower(-14, 12, 10, 8, 2, { doors: [["s", "w"]], windows: [["e"], ["n", "w"]], open: ["e"] }),
-  ...tower(14, 12, 8, 8, 2, { doors: [["s", "e"]], windows: [["w"], ["n", "e"]], open: ["w"] }),
-  bridge(-9, 11, -4, 13, STOREY * 2),
-  bridge(4, 11, 10, 13, STOREY * 2),
-  ...building(-16, 26, 7, 6, 3.4, { doors: ["n", "e"], windows: ["s"] }),
-  ...building(16, 27, 6, 7, 3.4, { doors: ["w"], windows: ["n"], roof: "s" }),
-  ...building(-2, 30, 8, 5, 3.4, { doors: ["s", "n"], windows: ["e", "w"] }),
-  ...building(-15, -4, 7, 6, 3.4, { doors: ["n", "e"], roof: "w" }),
-  ...building(12, -5, 8, 6, 3.4, { doors: ["n", "w"], windows: ["s"] }),
-  box(-4, 23, 1.2, 1.2, 0.9, "crate"),
-  box(2, 5, 1.2, 1.2, 1.8, "crate"),
-  box(-24, 6, 0.6, 8, 1.4, "wall"),
-  box(24, 20, 0.6, 8, 1.4, "wall"),
-  box(0, 38, 3, 1.2, 1.2, "rock"),
+  ...onLevel(LEVEL.lakebed, [
+    ...tower(0, 12, 8, 9, 3, { doors: [["s", "e"], [], ["w", "e"]], windows: [["w"], ["n", "e", "w"], ["s"]] }),
+    ...tower(-14, 12, 10, 8, 2, { doors: [["s", "w"]], windows: [["e"], ["n", "w"]], open: ["e"] }),
+    ...tower(14, 12, 8, 8, 2, { doors: [["s", "e"]], windows: [["w"], ["n", "e"]], open: ["w"] }),
+    bridge(-9, 11, -4, 13, STOREY * 2),
+    bridge(4, 11, 10, 13, STOREY * 2),
+    ...building(-16, 26, 7, 6, 3.4, { doors: ["n", "e"], windows: ["s"] }),
+    ...building(16, 27, 6, 7, 3.4, { doors: ["w"], windows: ["n"], roof: "s" }),
+    ...building(-2, 30, 8, 5, 3.4, { doors: ["s", "n"], windows: ["e", "w"] }),
+    ...building(-15, -4, 7, 6, 3.4, { doors: ["n", "e"], roof: "w" }),
+    ...building(12, -5, 8, 6, 3.4, { doors: ["n", "w"], windows: ["s"] }),
+    box(-4, 23, 1.2, 1.2, 0.9, "crate"),
+    box(2, 5, 1.2, 1.2, 1.8, "crate"),
+    box(-24, 6, 0.6, 8, 1.4, "wall"),
+    box(24, 20, 0.6, 8, 1.4, "wall"),
+    box(0, 38, 3, 1.2, 1.2, "rock"),
+  ]),
 
   // --- tall buildings, seen from anywhere on the island
-  ...HIGH_RISES.flatMap((h) => highRise(h.x, h.z, h.w, h.d, h.floors)),
+  ...HIGH_RISES.flatMap((h) => onLevel(h.level, highRise(h.x, h.z, h.w, h.d, h.floors))),
 
   // --- 尾根: a long ridge with stairs at both ends, cover on top
-  box(-50, 70, 30, 6, 3.5, "rock"),
-  ...stairs(-35, 70, "e", 2.4, 3.5, 1),
-  ...stairs(-65, 70, "w", 2.4, 3.5, 1),
-  box(-50, 67.4, 6, 0.4, 4.4, "wall", 1, 3.5),
-  box(-42, 82, 5, 4, 2, "rock"),
-  box(-58, 56, 4, 6, 1.6, "rock"),
+  ...onLevel(LEVEL.ridge, [
+    box(-50, 70, 30, 6, 3.5, "rock"),
+    ...stairs(-35, 70, "e", 2.4, 3.5, 1),
+    ...stairs(-65, 70, "w", 2.4, 3.5, 1),
+    box(-50, 67.4, 6, 0.4, 4.4, "wall", 1, 3.5),
+    box(-42, 82, 5, 4, 2, "rock"),
+    box(-58, 56, 4, 6, 1.6, "rock"),
+  ]),
 
-  // --- 台地: three terraces climbing to a lookout over the south-west
-  box(-45, -50, 34, 26, 2.4, "rock"),
-  box(-48, -52, 20, 14, 4.8, "rock", 1),
-  box(-52, -54, 8, 8, 7.2, "rock"),
-  ...stairs(-28, -45, "e", 3, 2.4, 1),
-  ...stairs(-40, -63, "n", 3, 2.4, 1),
-  ...stairs(-38, -49, "e", 2, 4.8, 1, 2.4),
-  ...stairs(-48, -52, "e", 1.6, 7.2, 1, 4.8),
-  box(-52, -57.6, 8, 0.4, 8.2, "wall", 1, 7.2),
+  // --- 台地: three terraces climbing to a lookout over the lakebed
+  ...onLevel(LEVEL.shore, place(-6, 0, [
+    box(-45, -50, 34, 26, 2.4, "rock"),
+    box(-48, -52, 20, 14, 4.8, "rock", 1),
+    box(-52, -54, 8, 8, 7.2, "rock"),
+    ...stairs(-28, -45, "e", 3, 2.4, 1),
+    ...stairs(-40, -63, "n", 3, 2.4, 1),
+    ...stairs(-38, -49, "e", 2, 4.8, 1, 2.4),
+    ...stairs(-48, -52, "e", 1.6, 7.2, 1, 4.8),
+    box(-52, -57.6, 8, 0.4, 8.2, "wall", 1, 7.2),
+  ])),
 
   // --- 工場: a hall with a catwalk inside, two silos, a container yard
-  ...building(55, 45, 24, 14, 6, { doors: ["w", "s"], windows: ["n", "e"] }),
-  rect(45, 38.35, 65, 40.35, 3.0, 3.3, "slab"),
-  ...stairs(46, 40.35, "s", 1.4, 3.3),
-  box(72, 38, 4, 4, 9, "tower", 1),
-  box(72, 45, 4, 4, 9, "tower"),
-  box(50, 58, 6.2, 2.5, 2.6, "container", 2),
-  box(58, 60, 2.5, 6.2, 2.6, "container", 0),
-  box(46, 64, 6.2, 2.5, 2.6, "container", 1),
-  box(53, 63, 1.2, 1.2, 0.9, "crate"),
-
-  // --- 峡谷の橋: two rock pillars joined by a bridge at 6 m
-  box(42, -95, 6, 6, 6, "rock", 0, -9),
-  box(62, -95, 6, 6, 6, "rock", 1, -9),
-  bridge(45, -96.2, 59, -93.8, 6),
-  ...stairs(42, -92, "s", 2, 6, 1),
-  ...stairs(62, -98, "n", 2, 6, 1),
+  ...onLevel(LEVEL.shore, [
+    ...building(55, 45, 24, 14, 6, { doors: ["w", "s"], windows: ["n", "e"] }),
+    rect(45, 38.35, 65, 40.35, 3.0, 3.3, "slab"),
+    ...stairs(46, 40.35, "s", 1.4, 3.3),
+    box(72, 38, 4, 4, 9, "tower", 1),
+    box(72, 45, 4, 4, 9, "tower"),
+    box(50, 58, 6.2, 2.5, 2.6, "container", 2),
+    box(58, 60, 2.5, 6.2, 2.6, "container", 0),
+    box(46, 64, 6.2, 2.5, 2.6, "container", 1),
+    box(53, 63, 1.2, 1.2, 0.9, "crate"),
+  ]),
 
   // --- 住宅地: two houses joined by a roof bridge, two cottages
-  ...tower(100, 15, 8, 8, 2, { doors: [["s", "w"]], windows: [["e"], ["n", "w"]], open: ["e"] }),
-  ...tower(114, 15, 8, 8, 2, { doors: [["s", "e"]], windows: [["w"], ["n", "e"]], open: ["w"] }),
-  bridge(104, 14, 110, 16, STOREY * 2),
-  ...building(98, 30, 6, 6, 3.4, { doors: ["n", "e"], windows: ["s"] }),
-  ...building(112, 31, 7, 6, 3.4, { doors: ["w"], windows: ["e"], roof: "s" }),
-  box(106, 40, 0.6, 6, 1.4, "wall"),
+  ...onLevel(LEVEL.mesa, [
+    ...tower(100, 15, 8, 8, 2, { doors: [["s", "w"]], windows: [["e"], ["n", "w"]], open: ["e"] }),
+    ...tower(114, 15, 8, 8, 2, { doors: [["s", "e"]], windows: [["w"], ["n", "e"]], open: ["w"] }),
+    bridge(104, 14, 110, 16, STOREY * 2),
+    ...building(98, 30, 6, 6, 3.4, { doors: ["n", "e"], windows: ["s"] }),
+    ...building(112, 31, 7, 6, 3.4, { doors: ["w"], windows: ["e"], roof: "s" }),
+    box(106, 40, 0.6, 6, 1.4, "wall"),
+  ]),
 
   // --- 廃村: a two-storey house, two cottages and broken walls
-  ...tower(-112, -70, 8, 8, 2, { doors: [["e", "s"]], windows: [["w"], ["n", "e", "w"]] }),
-  ...building(-105, -55, 7, 6, 3.4, { doors: ["e", "n"], roof: "s" }),
-  ...building(-95, -68, 6, 6, 3.4, { doors: ["n", "w"], windows: ["e"] }),
-  box(-100, -80, 7, 0.6, 1.6, "wall"),
-  box(-118, -58, 0.6, 6, 1.2, "wall"),
+  ...onLevel(LEVEL.shore, [
+    ...tower(-112, -70, 8, 8, 2, { doors: [["e", "s"]], windows: [["w"], ["n", "e", "w"]] }),
+    ...building(-105, -55, 7, 6, 3.4, { doors: ["e", "n"], roof: "s" }),
+    ...building(-95, -68, 6, 6, 3.4, { doors: ["n", "w"], windows: ["e"] }),
+    box(-100, -80, 7, 0.6, 1.6, "wall"),
+    box(-118, -58, 0.6, 6, 1.2, "wall"),
+  ]),
 ];
 
 /**
@@ -735,7 +765,7 @@ function scatterCover(authored: Box[], { points, segments }: Keep): Box[] {
     for (const b of piece)
       for (const [x, z] of [[b.x0, b.z0], [b.x1, b.z0], [b.x0, b.z1], [b.x1, b.z1], [(b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2]]) {
         if (steepAt(x, z) || Math.hypot(x, z) > rimRadius(x, z) - 4) return null;
-        if (terrainHeight(x, z) > 3) return null; // cover belongs on the low ground people walk
+        if (highGround(x, z)) return null; // cover belongs on the low ground people walk
         const h = terrainHeight(x, z);
         lo = Math.min(lo, h);
         hi = Math.max(hi, h);
@@ -771,10 +801,21 @@ function scatterCover(authored: Box[], { points, segments }: Keep): Box[] {
   return placed;
 }
 
+/**
+ * The canyon bridge: two rock pillars standing on the spillway floor and a deck at
+ * the mesa's level between the two bridge roads. They are not pressed flat: the
+ * spillway runs under them.
+ */
+const BRIDGE: Box[] = [
+  box(42, -95, 6, 6, LEVEL.mesa, "rock", 0, LEVEL.pit - 2),
+  box(62, -95, 6, 6, LEVEL.mesa, "rock", 1, LEVEL.pit - 2),
+  bridge(45, -96.2, 59, -93.8, LEVEL.mesa),
+];
+
 const KEEP = authoredKeep();
-// Hand-built things keep flat ground around them; the canyon bridge's pillars stand in the canyon.
+// Hand-built things keep flat ground around them, at their level.
 buildTerrain([
-  ...AUTHORED.filter((b) => b.y0 >= 0),
+  ...FLAT,
   ...KEEP.points.map((q) => ({ x0: q.x - q.r, z0: q.z - q.r, x1: q.x + q.r, z1: q.z + q.r })),
   ...KEEP.segments.flatMap((sg) => {
     const n = Math.max(1, Math.ceil(Math.hypot(sg.bx - sg.ax, sg.bz - sg.az) / 2));
@@ -790,4 +831,4 @@ buildTerrain([
 for (const [x, z, table] of [[55, -112, 2]] as const)
   EXTRA_BINS.push({ x, z, y: terrainHeight(x, z), table });
 
-export const BOXES: Box[] = [...AUTHORED, ...scatterCover(AUTHORED, KEEP)];
+export const BOXES: Box[] = [...AUTHORED, ...BRIDGE, ...scatterCover([...AUTHORED, ...BRIDGE], KEEP)];

@@ -34,10 +34,13 @@ npm run shots:ringfall   # gate 3: the build played to the end in Chromium; scre
   float); build structures with its `building()` (one storey), `tower()` (several storeys with stairs
   inside), `bridge()` and `stairs()` helpers, whose risers stay under the step-up height. Each POI is
   written in its own frame and moved into place by `AT`; the districts between them use island
-  coordinates. The ground is a height field (`terrain.ts`): unclimbable high ground with the POIs
-  and districts in basins cut into it (`BASINS`), joined by valley roads (`ROADS`), shelves inside
-  the POI basins, a canyon, and cliffs round the island; ground steeper than `STEEP` is a wall. It is pressed flat
-  near every authored box and point, so hand-built places keep the heights they were written with.
+  coordinates. The ground is a height field (`terrain.ts`), a dried-up reservoir: the POIs and
+  districts are basins (`BASINS`) at their own `LEVEL` (the lakebed at -7 m, the dam crest at +8,
+  the quarry pit at -10...), joined by roads (`ROADS`) that ramp between levels, with unclimbable
+  high ground between them, shelves inside the POI basins, the spillway canyon, and cliffs round
+  the island; ground steeper than `STEEP` is a wall, dropped down but never climbed. Boxes are
+  written on ground at 0 and lifted to their area's level by `onLevel()`, points by `onFloor()`
+  (`map.ts`); the ground is pressed flat at that level near every authored box and point.
   `scatterCover()` then fills the open ground with low walls,
   crates, containers and ruins from a fixed seed, keeping clear of authored points and patrol routes. Tuning numbers are in `config.ts`. `npm run sim:ringfall` first checks that every
   authored point (entries, bins, loot, squad posts, patrols) stands on a floor and not inside a box.

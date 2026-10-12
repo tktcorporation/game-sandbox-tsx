@@ -189,17 +189,17 @@ await page.evaluate(() => {
 });
 await page.waitForTimeout(400);
 const tour = [
-  ["tour-1-town-bridges", -17, 8.4, 14, 1.57, -0.12],
-  ["tour-2-town-street", 0, 1.6, 42, 0, 0.05],
-  ["tour-3-plateau-top", -52, 8.8, -52, 2.45, -0.1],
-  ["tour-4-factory-catwalk", 46, 4.9, 39.3, 1.57, -0.15],
-  ["tour-5-canyon-bridge", 50, -3.45, -80, 0, 0.25],
-  ["tour-6-quarry-terraces", -100, 1.6, 30, -0.61, 0.05],
-  ["tour-7-high-rise-view", -2.5, 18.6, -10.2, Math.PI, -0.3],
-  ["tour-8-high-rises", 20, 1.6, -45, -2.57, 0.25],
-  ["tour-9-ridge-road", -46, 1.6, 80, -0.66, 0.02],
-  ["tour-10-over-supply", 45, 12.4, 104, -1.57, -0.25],
-  ["tour-11-canyon-from-bridge", 49, 7.6, -94, 0.1, -0.35],
+  ["tour-1-lakebed-from-dam", 0, 11.6, -77, Math.PI, -0.25],
+  ["tour-2-dam-face", 0, -5.4, -40, 0, 0.22],
+  ["tour-3-town-street", 0, -5.4, 36, 0, 0.05],
+  ["tour-4-east-ramp", 16, -5.4, 4, 1.3, 0.1],
+  ["tour-5-spillway", 52, -8.4, -78, 0, 0.3],
+  ["tour-6-quarry-pit", -84, -2.4, 44, -0.63, -0.15],
+  ["tour-7-high-rise-view", -2.5, 11.6, -10.2, Math.PI, -0.3],
+  ["tour-8-plateau-over-lakebed", -40, 6.4, -46, 1.57, -0.15],
+  ["tour-9-ridge", -50, 10.1, 70, -1.57, -0.1],
+  ["tour-10-over-supply", 45, 34, 104, -1.57, -0.35],
+  ["tour-11-mesa-relay", 66, 8.6, -30, 1.57, 0.02],
 ];
 for (const [name, x, y, z, yaw, pitch] of tour) {
   await page.evaluate(([x, y, z, yaw, pitch]) => window.ringfallCamera(x, y, z, yaw, pitch), [x, y, z, yaw, pitch]);

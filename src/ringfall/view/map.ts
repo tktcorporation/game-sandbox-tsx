@@ -1,6 +1,6 @@
 import { WORLD } from "../sim/config";
 import { BOXES, EXTRACTS, POIS } from "../sim/map";
-import { steepAt, terrainHeight } from "../sim/terrain";
+import { DAM_FACE, floorLevel, highGround, LEVEL, steepAt, terrainHeight } from "../sim/terrain";
 import type { State } from "../sim/state";
 import { PAL } from "./models";
 
@@ -13,6 +13,16 @@ import { PAL } from "./models";
 
 /** Metres per map pixel of the ground image. */
 const CELL = 1.5;
+
+/** Names on the map for the districts and landmarks between the POIs. */
+const DISTRICTS = [
+  { name: "湖底の旧市街", x: 0, z: -22 },
+  { name: "堤", x: 0, z: -79 },
+  { name: "放水路", x: 50, z: -72 },
+  { name: "尾根", x: -50, z: 62 },
+  { name: "工場", x: 57, z: 60 },
+  { name: "住宅地", x: 112, z: 24 },
+] as const;
 
 const css = (c: number) => `#${c.toString(16).padStart(6, "0")}`;
 
@@ -27,22 +37,30 @@ export class IslandMap {
     return { x: (x + WORLD.half) / CELL, y: (z + WORLD.half) / CELL };
   }
 
-  /** The ground (valleys light, high ground dark, cliffs darker) with every box on it. */
+  /**
+   * The ground with every box on it. Walkable ground is shaded by level, from the dark
+   * quarry pit and the grey lakebed up to the light dam crest and mesa; high ground is
+   * dark rock and cliffs darker still, so the ways between levels stand out.
+   */
   private build(): HTMLCanvasElement {
     const c = document.createElement("canvas");
     c.width = c.height = this.size;
     const g = c.getContext("2d")!;
     const img = g.createImageData(this.size, this.size);
-    const low = [0xe2, 0xbf, 0x8a];
-    const high = [0x9a, 0x5a, 0x3a];
-    const wall = [0x6e, 0x3b, 0x26];
+    const high = [0x8a, 0x4e, 0x32];
+    const wall = [0x5e, 0x31, 0x20];
+    const dam = [0xcf, 0xc8, 0xb8];
+    // Walkable ground by level: pit, lakebed, shore, then the high levels.
+    const floor = (lv: number) =>
+      lv <= LEVEL.pit + 0.5 ? [0x8f, 0x86, 0x74] : lv <= LEVEL.lakebed + 0.5 ? [0xb4, 0xa8, 0x8e] : lv < LEVEL.ridge - 0.5 ? [0xe2, 0xbf, 0x8a] : [0xf2, 0xda, 0xa8];
     for (let j = 0; j < this.size; j++)
       for (let i = 0; i < this.size; i++) {
         const x = -WORLD.half + (i + 0.5) * CELL;
         const z = -WORLD.half + (j + 0.5) * CELL;
-        const h = terrainHeight(x, z);
         const k = (j * this.size + i) * 4;
-        const col = steepAt(x, z) ? wall : h > 4 ? high : low;
+        const lv = floorLevel(x, z);
+        // A ramp's middle: shade by the ground's own height.
+        const col = steepAt(x, z) ? (DAM_FACE(x, z) ? dam : wall) : highGround(x, z) ? high : floor(Math.min(lv, terrainHeight(x, z)));
         img.data[k] = col[0];
         img.data[k + 1] = col[1];
         img.data[k + 2] = col[2];
@@ -74,6 +92,11 @@ export class IslandMap {
       g.fillStyle = color;
       g.fillText(text, x, y);
     };
+    // Districts and landmarks between the POIs, small and muted under everything else.
+    for (const d of DISTRICTS) {
+      const p = this.px(d.x, d.z);
+      label(d.name, p.x, p.y, "#e9dcc2", 10);
+    }
     for (const x of EXTRACTS) {
       const p = this.px(x.x, x.z);
       g.fillStyle = css(PAL.hot);

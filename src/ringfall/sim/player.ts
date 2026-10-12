@@ -4,7 +4,7 @@ import { allyUp, placeAlly } from "./ally";
 import { POIS } from "./map";
 import { applyPull, assistTarget, bodyCenter, damageEnemy, eyePos, magSize, shoot } from "./combat";
 import { ceilingAt, collide, groundAt, los } from "./geom";
-import { terrainGrad, terrainHeight } from "./terrain";
+import { offLowGround, terrainGrad, terrainHeight, towardLowGround } from "./terrain";
 import type { Input, State } from "./state";
 
 /*
@@ -18,9 +18,17 @@ export function stepDrop(s: State, input: Input): boolean {
   p.pitch = Math.max(-1.45, Math.min(1.2, p.pitch + input.lookY));
   const fx = Math.sin(p.yaw);
   const fz = -Math.cos(p.yaw);
-  p.pos.x += (fx * input.moveZ + Math.cos(p.yaw) * input.moveX) * DROP.steer * TICK;
-  p.pos.z += (fz * input.moveZ + Math.sin(p.yaw) * input.moveX) * DROP.steer * TICK;
   p.pos.y -= DROP.fallSpeed * TICK;
+  // High ground can only be left by dropping off it, so over it the wind takes the
+  // jumper on to the nearest walkable ground instead of their steering.
+  if (offLowGround(p.pos.x, p.pos.z)) {
+    const to = towardLowGround(p.pos.x, p.pos.z);
+    p.pos.x += to.x * DROP.drift * TICK;
+    p.pos.z += to.z * DROP.drift * TICK;
+  } else {
+    p.pos.x += (fx * input.moveZ + Math.cos(p.yaw) * input.moveX) * DROP.steer * TICK;
+    p.pos.z += (fz * input.moveZ + Math.sin(p.yaw) * input.moveX) * DROP.steer * TICK;
+  }
   collide(p.pos, PLAYER.radius);
   const g = groundAt(p.pos.x, p.pos.z, PLAYER.radius, p.pos.y);
   if (p.pos.y <= g) {

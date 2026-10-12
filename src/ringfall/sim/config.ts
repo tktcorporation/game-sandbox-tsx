@@ -79,6 +79,8 @@ export const DROP = {
   startY: 140,
   fallSpeed: 26,
   steer: 20,
+  /** Speed the wind carries a jumper falling over high ground toward walkable ground. */
+  drift: 26,
 };
 
 export const ASSIST = {
