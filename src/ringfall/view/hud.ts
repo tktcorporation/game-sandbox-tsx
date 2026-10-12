@@ -12,7 +12,7 @@ import type { World } from "./world";
 
 /*
  * The DOM layer: everything the player reads. The screen always answers two
- * questions: what to do next (objective card + marker) and how am I doing
+ * questions: what to do next (objective card, and the map for where things are) and how am I doing
  * (shield cells, health, ammo, ability charge).
  */
 
@@ -584,7 +584,7 @@ export class Hud {
     // Over its head: always when down (through walls), otherwise only when it is a few metres off.
     const d = dist2d(a.pos, p.pos);
     const sp = view.project({ x: a.pos.x, y: a.pos.y + (down ? 1.3 : 2.15), z: a.pos.z }, w, h);
-    // Down, it is pinned to the screen edge when out of view, like the objective marker.
+    // Down, it is pinned to the screen edge when out of view.
     let x = sp.x;
     let y = sp.y;
     if (down && sp.behind) {

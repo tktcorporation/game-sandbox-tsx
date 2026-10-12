@@ -178,6 +178,9 @@ await page.keyboard.up("KeyW");
 const after = await read();
 if (!(after.player.z < before.player.z - 3)) errors.push(`keyboard: W did not move the player (${before.player.z} -> ${after.player.z})`);
 await page.screenshot({ path: `${out}/01-drop.png` });
+// The drop banner sends the player to the map (M), since the HUD has no markers to follow.
+const dropBanner = await page.evaluate(() => document.getElementById("banner").textContent);
+if (!/地図/.test(dropBanner) || /目印/.test(dropBanner)) errors.push(`drop banner does not point at the map: ${dropBanner}`);
 
 // A tour of the island's buildings and high ground, from fixed cameras.
 await page.evaluate(() => {

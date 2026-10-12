@@ -363,7 +363,7 @@ function start() {
   $("results").hidden = true;
   $("pause").hidden = true;
   hud.show(true);
-  hud.banner("降下", `${touchMode ? "スティック" : "WASD"}で着地点を選ぶ。黄色の目印が近い拠点`);
+  hud.banner("降下", `${touchMode ? "スティック" : "WASD"}で着地点を選ぶ。拠点と脱出地点は${touchMode ? "地図ボタン" : " M "}の地図で見る`);
   lock();
 }
 
