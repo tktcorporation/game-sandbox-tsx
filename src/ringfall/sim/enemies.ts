@@ -246,9 +246,11 @@ export function stepEnemies(s: State) {
         // A flanking raider runs wide to its spot at the player's side, shooting when it can.
         const wide = e.elite && !atAlly ? flankSpot(s, e, known) : null;
         if (wide && dist2d(e.pos, wide) > 3) {
-          const fd = dist2d(e.pos, wide);
-          vx = ((wide.x - e.pos.x) / fd) * k.speed;
-          vz = ((wide.z - e.pos.z) / fd) * k.speed;
+          // Out of sight it gets there by the ground's way, round the cliff or the house between.
+          const to = sees ? wide : huntStep(s, e, wide);
+          const fd = dist2d(e.pos, to) || 1e-3;
+          vx = ((to.x - e.pos.x) / fd) * k.speed;
+          vz = ((to.z - e.pos.z) / fd) * k.speed;
         }
         if (moveBody(e, vx, vz)) e.strafe = -e.strafe;
         else if (rand(s) < TICK * 0.35) e.strafe = -e.strafe;

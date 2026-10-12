@@ -65,6 +65,7 @@ export class Hud {
   }
 
   constructor() {
+    $("map-close").addEventListener("click", () => this.toggleMap(false));
     const strip = $("compass-strip");
     const labels: Record<number, string> = { 0: "N", 45: "NE", 90: "E", 135: "SE", 180: "S", 225: "SW", 270: "W", 315: "NW" };
     // Three turns of the strip so it can scroll seamlessly.

@@ -115,6 +115,17 @@ const errors = [];
   await tap("#slot-0", 7);
   await step(300);
 
+  // The map button opens the map, and the map's own close button (the map covers the
+  // map button) closes it again, both by a tap.
+  const mapOpen = () => page.evaluate(() => !document.getElementById("map").hidden);
+  await tap("#t-map", 8);
+  await step(200);
+  if (!(await mapOpen())) errors.push("mobile: the map button did not open the map");
+  await page.screenshot({ path: `${out}/m4-map.png` });
+  await tap("#map-close", 9);
+  await step(200);
+  if (await mapOpen()) errors.push("mobile: the map's close button did not close it");
+
   // The page never zooms: browser gestures are off on the root (touch-action
   // narrows down the tree, so the HUD and menus are covered too), and iOS Safari's
   // pinch events, which ignore the viewport meta, are cancelled.

@@ -1296,3 +1296,19 @@ body.touch #title h1 {
 body.touch #map .map-close {
   display: none;
 }
+/* On a phone the open map covers the map button, so it carries its own close button. */
+#map-close {
+  display: none;
+}
+body.touch #map-close {
+  display: block;
+  pointer-events: auto;
+  font-family: var(--jp);
+  font-weight: 800;
+  font-size: 15px;
+  padding: 8px 22px;
+  color: var(--white);
+  background: rgba(14, 16, 28, 0.85);
+  border: 2px solid var(--ink);
+  border-radius: 6px;
+}
