@@ -10,7 +10,9 @@
     "deploy": "npm run build && wrangler deploy",
     "cf-typegen": "wrangler types",
     "sim": "tsx scripts/sim.ts",
-    "shots": "node scripts/shots.mjs"
+    "shots": "node scripts/shots.mjs",
+    "sim:ringfall": "tsx scripts/ringfall-sim.ts",
+    "shots:ringfall": "node scripts/ringfall-shots.mjs"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.54.10",
