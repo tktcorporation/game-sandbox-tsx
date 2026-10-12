@@ -116,7 +116,14 @@ export interface Field {
   dist: Float32Array;
 }
 
-let last: Field | null = null;
+/**
+ * Fields built lately, by target cell, oldest first. Squads hunting the player and the
+ * teammate at once (or several spots) each keep theirs instead of rebuilding every tick.
+ */
+const cache = new Map<number, Field>();
+const CACHE = 8;
+/** Fields built so far: the sim gate checks that alternating targets reuse them. */
+export let fieldsBuilt = 0;
 
 /**
  * The nearest open cell to (x, z), searching out as far as from the middle of the factory
@@ -141,12 +148,18 @@ function openCell(x: number, z: number): number {
 
 /**
  * The field toward (x, z), by Dijkstra over open cells. Fields are shared: squads
- * hunting the same spot reuse the last one built.
+ * hunting the same spot share one, and a few recent ones are kept (see `cache`).
  */
 export function fieldTo(x: number, z: number): Field | null {
   const target = openCell(x, z);
   if (target < 0) return null;
-  if (last && last.target === target) return last;
+  const hit = cache.get(target);
+  if (hit) {
+    // Most recently used goes last, so the oldest is dropped first.
+    cache.delete(target);
+    cache.set(target, hit);
+    return hit;
+  }
   const { open, height } = grid();
   const dist = new Float32Array(N * N).fill(Infinity);
   dist[target] = 0;
@@ -196,8 +209,11 @@ export function fieldTo(x: number, z: number): Field | null {
       }
     }
   }
-  last = { target, dist };
-  return last;
+  const f = { target, dist };
+  fieldsBuilt++;
+  cache.set(target, f);
+  if (cache.size > CACHE) cache.delete(cache.keys().next().value!);
+  return f;
 }
 
 /** Walking distance from (x, z) along the field, or Infinity when no way leads there. */
