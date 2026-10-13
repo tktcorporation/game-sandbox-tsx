@@ -540,6 +540,7 @@ export function hurtPlayer(s: State, dmg: number, fromX: number, fromZ: number) 
   p.hp = 0;
   p.healing = null;
   p.mantle = null; // a downed player lets go of the ledge
+  p.leap = null; // and of the glider: it falls, and a carried teammate falls free beside it
   p.reload = 0;
   s.stats.downs++;
   if (p.selfRevive > 0) {
