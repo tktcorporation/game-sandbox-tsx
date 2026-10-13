@@ -24,6 +24,8 @@
 
 増援（`REINFORCE`）は着地 3 分後に最初の部隊が、以後 2 分ごとに次が降りる。レイダー（`RAIDERS`）は着地 4 分後、戦闘が途切れたところで 1 度だけ降りる。タイタン戦の最中はどちらも降りない。waves 列はレイド中に降りた増援の数。ボットは迷わず探索もしないので 2〜4 分で島を出て、増援に会うのは 0〜1 回になる。人は寄り道と箱漁りで 10〜15 分かかり、4〜6 回の増援に追われる想定で、長居するほど危なくなる。
 
+アルティメットは離脱ジャンプ（`ULT`）。ゲージは与ダメージと 150 秒の時間経過で溜まり、真上へ約 26 m 跳んで滑空し、別の場所へ降りる。ボットは体力とシールドが 4 割を切り、2 体以上と交戦しているときに、ロボットから最も遠い開けた低地（建物の近くと、途中に高い建物がある向きは選ばない）へ跳ぶ。leap 列は 1 周あたりの使用回数。
+
 狙いは、欲張らなければ生きて帰れて、欲張るほど危なくなり、腕前の差が持ち帰る価値と弱点命中率に出ること。flank は命中のうち背後と奇襲の割合。ボットの回り込みは人より下手で、腕前の差を測る指標として見る。crowd は 1 周のうち最も多くの部隊・ロボットと同時に戦った瞬間の値（タイタン戦を除く）。命中率はアシストで全員 80% 前後以上になる。上手さは「当たるか」ではなく「弱点に当たるか」と「どれだけ持ち帰れるか」で見せる。
 
 ## 現在の結果
@@ -36,13 +38,13 @@ waves: median reinforcement squads that beamed in during a raid
 ally: teammate's share of the damage, its downs, times it picked the player up (r) and was picked up (h), per run
 exit: raids that left by each extraction point (the bot's choice depends on skill)
 crowd: median over runs of the most squads / robots fighting the player at once outside the titan fight
-skill     alive time(med) cleared haul(med) score(med) downs acc crit ult crowd flank waves ally               rank               exit
-beginner  100%  2.3m      2       700       1500       0.2   70% 3%   2.0 2/4   6%    0     22% 0.3d 0.0r 0.1h S0 A0 B18 C12 -0   ship 0 flare 0 village 30
-casual    80%   5.3m      4       1300      4000       0.5   87% 14%  4.9 2/4   4%    2     18% 0.9d 0.0r 0.1h S4 A20 B0 C0 -6    ship 24 flare 0 village 0
-good      87%   5.2m      4       1300      4000       0.4   93% 37%  5.1 2/4   5%    2     16% 0.6d 0.0r 0.0h S4 A22 B0 C0 -4    ship 26 flare 0 village 0
+skill     alive time(med) cleared haul(med) score(med) downs acc crit leap crowd flank waves ally               rank               exit
+beginner  100%  2.7m      2       700       1500       0.1   62% 3%   0.3 2/4   6%    0     26% 0.3d 0.0r 0.1h S0 A0 B17 C13 -0   ship 0 flare 0 village 30
+casual    87%   5.5m      4       1400      4100       0.3   84% 13%  0.4 2/4   5%    2     21% 1.0d 0.0r 0.1h S1 A25 B0 C0 -4    ship 26 flare 0 village 0
+good      90%   5.4m      4       1300      4000       0.3   91% 37%  0.5 2/4   6%    2     18% 0.9d 0.0r 0.2h S4 A23 B0 C0 -3    ship 27 flare 0 village 0
 ```
 
-弱点命中率（crit）は普通 14%、上手い 37% で、目標（15〜25%、40% 以上）をわずかに下回る。
+弱点命中率（crit）は普通 13%、上手い 37% で、目標（15〜25%、40% 以上）をわずかに下回る。
 
 ボットは地上の経路探索（`src/ringfall/sim/nav.ts`、0.5 m 格子の A*）で建物のドアを通り、壁と崖を回り込み、坂道を通る。崖は下りにも使わない。峡谷の橋は使わず、放水路の谷底を回る。よじ登りは使わず、床や屋上にある補給箱は狙わない。階段で床に上がってしまったときは、歩いた跡をたどって地面へ戻る。屋上の敵が真上の縁で隠れたときは、14 m 離れて角度を取る。
 
