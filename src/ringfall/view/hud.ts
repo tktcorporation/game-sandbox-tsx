@@ -1,4 +1,4 @@
-import { ALLY, AWARE, BAG, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, SCORE, TACTICAL, ULT, VALUABLES, WEAPONS, type Flank } from "../sim/config";
+import { ALLY, AWARE, BAG, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, SCORE, TACTICAL, VALUABLES, WEAPONS, type Flank } from "../sim/config";
 import { magSize } from "../sim/combat";
 import { dist2d } from "../sim/geom";
 import { EXTRACTS, POIS } from "../sim/map";
@@ -204,8 +204,11 @@ export class Hud {
       case "tacticalMiss":
         this.toast("前方に敵がいない", 0);
         break;
+      case "leapBlocked":
+        this.toast("屋根の下では跳べない", 0);
+        break;
       case "ultReady":
-        this.toast(isTouch() ? "オーバードライブ 準備完了" : "オーバードライブ 準備完了（Z）", 3);
+        this.toast(isTouch() ? "離脱ジャンプ 準備完了" : "離脱ジャンプ 準備完了（Z）", 3);
         break;
     }
   }
@@ -224,6 +227,7 @@ export class Hud {
     const remaining = s.enemies.filter((e) => e.poi === here).length;
     let text = "";
     if (s.phase === "drop") text = isTouch() ? "降下中：スティックで着地点を選ぶ" : "降下中：WASD で着地点を選ぶ";
+    else if (p.leap) text = isTouch() ? "滑空中：スティックで着地点を選ぶ" : "滑空中：WASD で着地点を選ぶ";
     else if (s.phase === "done") text = s.outcome === "extracted" ? "生還" : "行方不明";
     else if (poi) text = poi.boss ? "タイタンの縄張り" : `${poi.name}：部隊 残り ${remaining}`;
     else text = "探索して脱出せよ";
@@ -268,16 +272,16 @@ export class Hud {
     tac.style.setProperty("--p", String(1 - p.tactical / TACTICAL.cooldown));
     tac.className = p.tactical <= 0 ? "ab ready" : "ab cool";
     const ult = $("ab-ult");
-    ult.style.setProperty("--p", String(p.ultTime > 0 ? p.ultTime / ULT.duration : p.ult));
+    ult.style.setProperty("--p", String(p.ult));
     ult.className = p.ult >= 1 ? "ab ult ready" : "ab ult";
-    $("ult-pct").textContent = p.ultTime > 0 ? `${Math.ceil(p.ultTime)}s` : `${Math.floor(p.ult * 100)}%`;
-    $("fx-ult").style.opacity = p.ultTime > 0 ? "1" : "0";
+    $("ult-pct").textContent = p.ult >= 1 ? "離脱" : `${Math.floor(p.ult * 100)}%`;
+    $("fx-ult").style.opacity = p.leap ? "1" : "0";
     // The same charge on the touch buttons.
     const tTac = $("t-tac");
     tTac.style.setProperty("--p", String(1 - p.tactical / TACTICAL.cooldown));
     tTac.classList.toggle("ready", p.tactical <= 0);
     const tUlt = $("t-ult");
-    tUlt.style.setProperty("--p", String(p.ultTime > 0 ? p.ultTime / ULT.duration : p.ult));
+    tUlt.style.setProperty("--p", String(p.ult));
     tUlt.classList.toggle("ready", p.ult >= 1);
     $("t-ult-pct").textContent = $("ult-pct").textContent;
     $("t-cells").textContent = pickHeal(s) ? String(HEAL_KINDS.reduce((n, k) => n + p.heals[k], 0)) : "-";
@@ -295,8 +299,7 @@ export class Hud {
       el.style.setProperty("--rc", RARITY_CSS[wpn.rarity]);
       (el.querySelector(".name") as HTMLElement).textContent = `${i + 1}  ${WEAPONS[wpn.kind].name}`;
       const ammo = el.querySelector(".ammo b") as HTMLElement;
-      ammo.textContent = p.ultTime > 0 && i === p.slot ? "∞" : p.reload > 0 && i === p.slot ? "…" : String(mag);
-      ammo.style.fontFamily = p.ultTime > 0 && i === p.slot ? "var(--jp)" : "";
+      ammo.textContent = p.reload > 0 && i === p.slot ? "…" : String(mag);
       (el.querySelector(".ammo small") as HTMLElement).textContent = `/${size}`;
     });
 

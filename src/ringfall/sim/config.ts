@@ -87,7 +87,6 @@ export const ASSIST = {
   /** Half-angle of the cone in which a shot that misses the hitbox still hits the enemy. */
   hipCone: 2.1,
   adsCone: 2.9,
-  ultCone: 10,
   /** Extra metres of tolerance far away, so distant enemies are not impossible. */
   farPadding: 0.3,
   /** Look sensitivity multiplier while the crosshair is near an enemy. */
@@ -95,7 +94,6 @@ export const ASSIST = {
   slowCone: 9,
   /** Fraction of the angle to the target closed per second while moving and firing or ADS. */
   pull: 1.6,
-  ultPull: 9,
   /**
    * Touch aiming: pull also works while standing still, and this much faster.
    * A thumb cannot track and strafe at once the way a mouse hand and WASD can.
@@ -158,12 +156,30 @@ export const TACTICAL = {
   stun: 1.3,
 };
 
+/**
+ * The ult: a leap straight up into the sky and a glide away, to break off a fight that
+ * is going wrong. It goes up only under open sky, carries a teammate standing close,
+ * and comes down only on low ground (like the drop). The launch is loud, and in the air
+ * the robots can still see and shoot: where to glide to decides whether it works.
+ */
 export const ULT = {
   dmgPerCharge: 1100, // damage dealt for a full charge
-  duration: 8,
-  fireRate: 1.4,
-  speed: 1.15,
-  startCharge: 0.35,
+  /** Charge gained per second on top of the damage: a full gauge in 150 s of doing nothing. */
+  perSec: 1 / 150,
+  startCharge: 0.5,
+  /** Upward speed at launch (m/s): about 26 m up under the island's gravity. */
+  rise: 28,
+  /** Fastest the glide sinks (m/s) once past the top. */
+  fall: 8,
+  /** Horizontal speed steered in the air (m/s) and how quickly it is reached. */
+  glide: 15,
+  glideAccel: 20,
+  /** Seconds of glide ahead checked for high ground, which the glider keeps out of. */
+  edgeLook: 0.4,
+  /** Open sky needed above the head to go up at all. */
+  headroom: 8,
+  /** A standing teammate within this many metres comes along. */
+  carry: 20,
 };
 
 export type EnemyKind = "drone" | "grunt" | "charger" | "heavy" | "titan";
@@ -370,6 +386,8 @@ export const NOISE = {
   arc: 10,
   sprintStep: 8,
   slide: 10,
+  /** The ult's launch: everyone round about hears where the player went up. */
+  leap: 30,
   /** Squads that roam the roads (and reinforcements) hear gunfire this many times further and come to look. */
   roamMult: 2.5,
   /** Within this fraction of a sound's radius, a robot that can see the spot engages at once. */

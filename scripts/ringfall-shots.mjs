@@ -125,6 +125,23 @@ const errors = [];
   await tap("#map-close", 9);
   await step(200);
   if (await mapOpen()) errors.push("mobile: the map's close button did not close it");
+  // The pause button lives on the open map (automation never pauses, so only the tap closing the map shows here).
+  await tap("#t-map", 10);
+  await step(200);
+  await tap("#map-pause", 11);
+  await step(200);
+  if (await mapOpen()) errors.push("mobile: the map's pause button did not take the map away");
+
+  // The ult button leaps: up into the sky, then a glide down.
+  const g0 = await read();
+  await page.evaluate(() => window.ringfallChargeUlt());
+  await tap("#t-ult", 12);
+  await step(900);
+  const g1 = await read();
+  await page.screenshot({ path: `${out}/m5-leap.png` });
+  if (!g1.player.leap || !(g1.player.y > g0.player.y + 10)) errors.push(`mobile: the ult button did not leap (${JSON.stringify(g1.player)})`);
+  for (let i = 0; i < 60 && (await read()).player.leap; i++) await step(250);
+  if ((await read()).player.leap) errors.push("mobile: the leap never came down");
 
   // The page never zooms: browser gestures are off on the root (touch-action
   // narrows down the tree, so the HUD and menus are covered too), and iOS Safari's
@@ -245,6 +262,23 @@ await page.evaluate(() => window.advanceTime(3400));
 const helped = await read();
 if (helped.ally.down > 0 || helped.stats.allyHelped !== 1) errors.push(`teammate down: E did not pick it up (${JSON.stringify(helped.ally)})`);
 
+// The ult: leap with the teammate beside, glide forward, and land together.
+const l0 = await read();
+await page.evaluate(() => window.ringfallChargeUlt());
+await page.keyboard.press("KeyZ");
+await page.keyboard.down("KeyW");
+await page.evaluate(() => window.advanceTime(1600));
+await page.screenshot({ path: `${out}/07-leap.png` });
+const l1 = await read();
+if (!l1.player.leap || !(l1.player.y > l0.player.y + 15)) errors.push(`leap: Z did not leap (${JSON.stringify(l1.player)})`);
+for (let i = 0; i < 60 && (await read()).player.leap; i++) await page.evaluate(() => window.advanceTime(250));
+await page.keyboard.up("KeyW");
+const l2 = await read();
+const glided = Math.hypot(l2.player.x - l0.player.x, l2.player.z - l0.player.z);
+const mateGap = Math.hypot(l2.ally.x - l2.player.x, l2.ally.z - l2.player.z);
+if (l2.player.leap || glided < 30 || mateGap > 4) errors.push(`leap: landed ${l2.player.leap ? "never" : ""} ${glided.toFixed(0)} m away, teammate ${mateGap.toFixed(1)} m off`);
+await page.screenshot({ path: `${out}/07-leap-landed.png` });
+
 await page.evaluate((s) => window.ringfallBot(s), skill);
 const taken = new Set();
 const shot = async (name) => {
@@ -287,7 +321,6 @@ for (let i = 0; i < 25 * 60 * 10; i++) {
   if (s.stats.kills >= 3 && s.enemies.some((e) => e.mode !== "spawning" && e.hp < 60)) await shot("04-damage-numbers");
   if (s.stats.cleared.length >= 2 && !live.length && s.loot >= 3) await shot("05-loot");
   if (s.care && !s.care.landed) await shot("06-care-package");
-  if (s.player.ultTime > 4) await shot("07-overdrive");
   if (at(2) && live.some((e) => e.kind === "heavy") && s.orbs >= 2) await shot("08-relay-heavy");
   if (!live.length && s.enemies.some((e) => (e.aware === "alert" || e.detect > 0.3) && near(e) < 45)) await shot("14-noticed");
   if (s.player.reveal > 2) await shot("15-reveal");

@@ -23,10 +23,10 @@ export const eyePos = (s: State): Vec3 => {
 
 export const magSize = (w: Weapon) => Math.round(WEAPONS[w.kind].mag * RARITY.mag[w.rarity]);
 
-/** Assist cone half-angle (radians) for the current ADS and overdrive state at a distance. */
+/** Assist cone half-angle (radians) for the current ADS state at a distance. */
 function coneAt(s: State, dist: number, pelletScale: number): number {
   const p = s.player;
-  const base = p.ultTime > 0 ? ASSIST.ultCone : ASSIST.hipCone + (ASSIST.adsCone - ASSIST.hipCone) * p.ads;
+  const base = ASSIST.hipCone + (ASSIST.adsCone - ASSIST.hipCone) * p.ads;
   return base * DEG * pelletScale + Math.atan(ASSIST.farPadding / Math.max(dist, 1));
 }
 
@@ -68,13 +68,12 @@ const assistRank = (e: Enemy, angle: number) => (e.aware === "idle" ? angle + 10
 /** Turn the player's view toward the assist target by a fraction of the remaining angle. */
 export function applyPull(s: State, moving: boolean, firing: boolean, touch = false) {
   const p = s.player;
-  const strong = p.ultTime > 0;
   const engaged = firing || p.ads > 0.5;
-  if (!strong && !(engaged && (moving || touch))) return;
-  const t = assistTarget(s, ASSIST.pullCone * (strong ? 1.6 : 1));
+  if (!(engaged && (moving || touch))) return;
+  const t = assistTarget(s, ASSIST.pullCone);
   if (!t) return;
   const want = lookAngles(eyePos(s), bodyCenter(t.e));
-  const k = Math.min(1, (strong ? ASSIST.ultPull : ASSIST.pull * (touch ? ASSIST.touchPull : 1)) * TICK);
+  const k = Math.min(1, ASSIST.pull * (touch ? ASSIST.touchPull : 1) * TICK);
   p.yaw += wrapAngle(want.yaw - p.yaw) * k;
   p.pitch += (want.pitch - p.pitch) * k;
 }
@@ -136,7 +135,7 @@ export function fireRay(s: State, w: Weapon, dir: Vec3) {
 export function shoot(s: State, w: Weapon) {
   const p = s.player;
   const spec = WEAPONS[w.kind];
-  const spread = (spec.hipSpread + (spec.adsSpread - spec.hipSpread) * p.ads) * (p.ultTime > 0 ? 0.5 : 1);
+  const spread = (spec.hipSpread + (spec.adsSpread - spec.hipSpread) * p.ads);
   const aimPitch = p.pitch + p.recoil * DEG;
   for (let i = 0; i < spec.pellets; i++) {
     const a = rand(s) * Math.PI * 2;
@@ -189,7 +188,7 @@ export function damageEnemy(s: State, e: Enemy, raw: number, crit: boolean, at: 
   s.events.push({ t: "hit", id: e.id, pos: at, dmg: Math.round(raw), crit, shield: toShield > 0, tier: k.shieldTier, flank, ally: by === "ally" });
   if (hadShield && e.shield <= 0) s.events.push({ t: "shieldBreak", id: e.id, pos: at, tier: k.shieldTier });
   const p = s.player;
-  if (p.ultTime <= 0 && p.ult < 1) {
+  if (!p.leap && p.ult < 1) {
     p.ult = Math.min(1, p.ult + (dealt / ULT.dmgPerCharge) * k.ult * (by === "ally" ? ALLY.ultShare : 1));
     if (p.ult >= 1) s.events.push({ t: "ultReady" });
   }

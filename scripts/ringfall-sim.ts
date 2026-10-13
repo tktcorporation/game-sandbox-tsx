@@ -599,6 +599,68 @@ function checkAllyTitanKill(): string | null {
   return null;
 }
 /** The teammate never opens fire on robots that have not noticed anyone. */
+/**
+ * The ult's leap goes well up, glides a long way on held input, lands on low ground with
+ * the teammate beside the player, and spends the charge.
+ */
+function checkLeap(): string | null {
+  const s = padRun();
+  const p = s.player;
+  p.yaw = Math.PI; // off the dam's crest, out over the lakebed
+  const from = { ...p.pos };
+  p.ult = 1;
+  step(s, { ...idleInput(), ult: true }, false);
+  if (!p.leap?.carry) return `leap scenario: no leap with the teammate (leap ${JSON.stringify(p.leap)})`;
+  if (p.ult !== 0) return "leap scenario: the charge was not spent";
+  let top = p.pos.y;
+  let t = 0;
+  for (; t < 20 * 60 && p.leap; t++) {
+    step(s, { ...idleInput(), moveZ: 1 }, false);
+    top = Math.max(top, p.pos.y);
+  }
+  if (p.leap) return "leap scenario: still in the air after 20 s";
+  const went = Math.hypot(p.pos.x - from.x, p.pos.z - from.z);
+  if (top - from.y < 20) return `leap scenario: rose only ${(top - from.y).toFixed(1)} m`;
+  if (went < 40) return `leap scenario: glided only ${went.toFixed(1)} m`;
+  if (highGround(p.pos.x, p.pos.z)) return `leap scenario: landed on high ground at ${p.pos.x.toFixed(0)},${p.pos.z.toFixed(0)}`;
+  const mate = Math.hypot(s.ally.pos.x - p.pos.x, s.ally.pos.z - p.pos.z);
+  if (mate > 4 || Math.abs(s.ally.pos.y - p.pos.y) > 1) return `leap scenario: the teammate landed ${mate.toFixed(1)} m away`;
+  return null;
+}
+/** Gliding toward high ground from below its cliffs still comes down on low ground. */
+function checkLeapOffHighGround(): string | null {
+  for (const [x, z, yaw] of [[-20, -20, -Math.PI / 2], [20, -30, Math.PI / 2], [0, -60, 0], [-10, 30, Math.PI * 0.75]]) {
+    const s = padRun();
+    const p = s.player;
+    p.pos = { x, y: groundAt(x, z, 0.4, terrainHeight(x, z) + 2), z };
+    p.yaw = yaw;
+    p.ult = 1;
+    step(s, { ...idleInput(), ult: true }, false);
+    for (let t = 0; t < 20 * 60 && p.leap; t++) step(s, { ...idleInput(), moveZ: 1 }, false);
+    if (p.leap) return `leap scenario: from ${x},${z} still in the air`;
+    if (highGround(p.pos.x, p.pos.z)) return `leap scenario: from ${x},${z} landed on high ground at ${p.pos.x.toFixed(0)},${p.pos.z.toFixed(0)}`;
+  }
+  return null;
+}
+/** Under a roof the ult does nothing and keeps its charge. */
+function checkLeapUnderRoof(): string | null {
+  const roof = BOXES.find((b) => {
+    const x = (b.x0 + b.x1) / 2;
+    const z = (b.z0 + b.z1) / 2;
+    const t = terrainHeight(x, z);
+    return b.x1 - b.x0 > 4 && b.z1 - b.z0 > 4 && b.y0 - t > 2.5 && b.y0 - t < 6 && !solidAt(x, t + 1, z) && groundAt(x, z, 0.4, t + 0.2) < t + 0.5;
+  });
+  if (!roof) return "leap scenario: no roof to stand under";
+  const s = padRun();
+  const p = s.player;
+  const x = (roof.x0 + roof.x1) / 2;
+  const z = (roof.z0 + roof.z1) / 2;
+  p.pos = { x, y: groundAt(x, z, 0.4, terrainHeight(x, z) + 0.2), z };
+  p.ult = 1;
+  step(s, { ...idleInput(), ult: true }, false);
+  if (p.leap || p.ult < 1 || !s.events.some((e) => e.t === "leapBlocked")) return `leap scenario: under the roof at ${x.toFixed(0)},${z.toFixed(0)} leap ${!!p.leap}, charge ${p.ult}`;
+  return null;
+}
 function checkAllyHoldsFire(): string | null {
   const s = newRun(5);
   s.phase = "play";
@@ -618,7 +680,7 @@ function checkAllyHoldsFire(): string | null {
   if (shots) return `hold fire scenario: the teammate fired ${shots} shots at an idle robot`;
   return null;
 }
-for (const err of [checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkAllySelfUp(), checkStompHeight(), checkDropOffHighGround(), checkFieldsReused(), checkCliffsStop(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill()]) {
+for (const err of [checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkAllySelfUp(), checkStompHeight(), checkDropOffHighGround(), checkFieldsReused(), checkCliffsStop(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill(), checkLeap(), checkLeapOffHighGround(), checkLeapUnderRoof()]) {
   if (err) {
     console.error(err);
     process.exit(1);
@@ -631,7 +693,7 @@ const median = (xs: number[]) => {
 };
 
 let failed = false;
-const head = ["skill    ", "alive", "time(med)", "cleared", "haul(med)", "score(med)", "downs", "acc", "crit", "ult", "crowd", "flank", "waves", "ally".padEnd(18), "rank".padEnd(18), "exit"];
+const head = ["skill    ", "alive", "time(med)", "cleared", "haul(med)", "score(med)", "downs", "acc", "crit", "leap", "crowd", "flank", "waves", "ally".padEnd(18), "rank".padEnd(18), "exit"];
 console.log(`${runs} runs per skill. alive: share of raids that got off the island (the rest were wiped out)`);
 console.log("time: minutes from landing to leaving; cleared: median POIs cleared; haul and score: medians over raids that got off the island");
 console.log("flank: share of hits from behind a robot or before it noticed the player");
@@ -677,7 +739,7 @@ for (const skill of SKILLS) {
         const end = s.events.findIndex((e) => e.t === "done");
         if (end >= 0 && end < s.events.length - 1) throw new Error(`${skill.name}#${r}: events after the raid ended: ${s.events.slice(end + 1).map((e) => e.t).join(",")}`);
         for (const e of s.events) {
-          if (e.t === "ultStart") ults++;
+          if (e.t === "leap") ults++;
           if (e.t === "landed") landed = s.time;
         }
         if (!s.enemies.some((e) => e.kind === "titan" && e.aware === "engaged")) {

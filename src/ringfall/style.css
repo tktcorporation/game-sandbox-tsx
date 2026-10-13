@@ -74,7 +74,7 @@ kbd {
   transition: opacity 0.4s;
 }
 #fx-ult {
-  background: radial-gradient(ellipse at center, transparent 60%, rgba(255, 201, 58, 0.45) 100%);
+  background: radial-gradient(ellipse at center, transparent 60%, rgba(214, 236, 255, 0.4) 100%);
 }
 
 /* --- HUD */
@@ -1130,13 +1130,6 @@ body.touch.playing #touch {
   width: 52px;
   height: 40px;
 }
-#t-pause {
-  left: 50%;
-  top: 46px;
-  margin-left: 180px;
-  width: 40px;
-  height: 40px;
-}
 
 /* HUD rearranged around the thumbs. */
 body.touch #abilities,
@@ -1296,12 +1289,18 @@ body.touch #title h1 {
 body.touch #map .map-close {
   display: none;
 }
-/* On a phone the open map covers the map button, so it carries its own close button. */
-#map-close {
+/*
+ * On a phone the open map covers the map button, so it carries its own close button,
+ * and the pause button too: one button fewer on the screen while fighting.
+ */
+.map-buttons {
   display: none;
 }
-body.touch #map-close {
-  display: block;
+body.touch .map-buttons {
+  display: flex;
+  gap: 14px;
+}
+body.touch .map-buttons button {
   pointer-events: auto;
   font-family: var(--jp);
   font-weight: 800;

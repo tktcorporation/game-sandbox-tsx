@@ -23,8 +23,23 @@ const allyEye = (a: Ally): Vec3 => ({ x: a.pos.x, y: a.pos.y + EYE, z: a.pos.z }
 /** Put the teammate on the ground beside the player (on landing). */
 export function placeAlly(s: State) {
   const a = s.ally;
-  const p = s.player;
   a.active = true;
+  besidePlayer(s);
+  a.hp = ALLY.hp;
+  a.shield = ALLY.shield;
+  a.down = 0;
+  a.helped = 0;
+  a.rescue = 0;
+  a.target = 0;
+}
+
+/**
+ * Stand the teammate on the ground beside the player and start its footsteps afresh:
+ * after the drop, and after the ult's leap when it came along. Its health stays as it is.
+ */
+export function besidePlayer(s: State) {
+  const a = s.ally;
+  const p = s.player;
   a.pos = { ...p.pos };
   for (const side of [1, -1]) {
     const x = p.pos.x + Math.cos(p.yaw) * 1.8 * side - Math.sin(p.yaw) * 1.2;
@@ -38,12 +53,6 @@ export function placeAlly(s: State) {
   }
   a.vel = { x: 0, y: 0, z: 0 };
   a.yaw = p.yaw;
-  a.hp = ALLY.hp;
-  a.shield = ALLY.shield;
-  a.down = 0;
-  a.helped = 0;
-  a.rescue = 0;
-  a.target = 0;
   a.climb = 0;
   a.stuckT = 0;
   a.last = { x: a.pos.x, z: a.pos.z };
@@ -108,6 +117,12 @@ export function stepAlly(s: State) {
   const a = s.ally;
   if (!a.active) return;
   const p = s.player;
+  // Carried on the player's leap: it flies alongside and lands with them (see besidePlayer).
+  if (p.leap?.carry) {
+    a.pos = { x: p.pos.x - Math.cos(p.yaw) * 1.6, y: p.pos.y, z: p.pos.z - Math.sin(p.yaw) * 1.6 };
+    a.vel = { x: 0, y: 0, z: 0 };
+    return;
+  }
   recordTrail(s);
   a.sinceHurt += TICK;
   if (a.down > 0) {

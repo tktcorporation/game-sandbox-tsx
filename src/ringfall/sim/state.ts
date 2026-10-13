@@ -38,7 +38,8 @@ export interface Player {
   recoil: number; // degrees currently kicked up, recovers
   tactical: number; // cooldown left
   ult: number; // charge 0..1
-  ultTime: number; // seconds of overdrive left
+  /** In the air on the ult's leap, going up and then gliding down; `carry` takes the teammate along. */
+  leap: { carry: boolean } | null;
   reveal: number; // seconds left of seeing robots through walls
   stepNoise: number; // seconds until the next sprint footstep sound
   heals: Record<HealKind, number>;
@@ -249,8 +250,10 @@ export type GameEvent =
   | { t: "tactical"; targets: Vec3[] }
   | { t: "tacticalMiss" }
   | { t: "ultReady" }
-  | { t: "ultStart" }
-  | { t: "ultEnd" }
+  | { t: "leap" }
+  /** The ult was pressed under a roof: nothing happens and the charge is kept. */
+  | { t: "leapBlocked" }
+  | { t: "leapLand" }
   | { t: "healStart"; kind: HealKind }
   | { t: "healDone"; kind: HealKind }
   | { t: "telegraph"; id: number }
@@ -423,7 +426,7 @@ export function newRun(seed = 1): State {
       recoil: 0,
       tactical: 0,
       ult: ULT.startCharge,
-      ultTime: 0,
+      leap: null,
       reveal: 0,
       stepNoise: 0,
       heals: { cell: 2, battery: 0, syringe: 2, medkit: 0 },

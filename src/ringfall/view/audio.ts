@@ -99,9 +99,8 @@ const GUN: Record<WeaponKind, () => void> = {
 };
 
 export const sfx = {
-  shot(kind: WeaponKind, overdrive: boolean) {
+  shot(kind: WeaponKind) {
     GUN[kind]();
-    if (overdrive) tone(1400, 0.05, { type: "square", vol: 0.04, to: 2200 });
   },
   hit(crit: boolean, shield: boolean, flank = false) {
     // A hit from behind rings a little brighter on top of the usual sound.
@@ -182,12 +181,12 @@ export const sfx = {
   ultReady() {
     [523, 784, 1047].forEach((f, i) => tone(f, 0.2, { type: "triangle", vol: 0.12, at: i * 0.07 }));
   },
-  ultStart() {
-    tone(110, 0.8, { type: "sawtooth", to: 440, vol: 0.18, attack: 0.05 });
-    hiss(0.8, { freq: 300, to: 4000, vol: 0.25, attack: 0.1 });
+  leap() {
+    tone(90, 0.7, { type: "sawtooth", to: 520, vol: 0.2, attack: 0.02 });
+    hiss(0.9, { freq: 200, to: 5000, vol: 0.3, attack: 0.03 });
   },
-  ultEnd() {
-    tone(440, 0.4, { type: "sawtooth", to: 110, vol: 0.1 });
+  leapLand() {
+    hiss(0.3, { freq: 2000, to: 200, vol: 0.18 });
   },
   battery() {
     tone(400, 1.9, { type: "sine", to: 1200, vol: 0.06, attack: 0.2 });

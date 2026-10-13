@@ -62,10 +62,14 @@ setupTouch({
   hold: (code, on) => (on ? keys.add(code) : keys.delete(code)),
   fire: (on) => (fire = on && running && !paused),
   toggleAds: () => (ads = !ads),
-  pause: () => setPaused(true),
   map: () => {
     if (running) hud.toggleMap();
   },
+});
+// The pause button sits on the open map on a phone (see .map-buttons).
+$("map-pause").addEventListener("click", () => {
+  hud.toggleMap(false);
+  setPaused(true);
 });
 
 addEventListener("keydown", (e) => {
@@ -137,7 +141,7 @@ function onEvent(e: GameEvent, s: State) {
   const p = s.player;
   switch (e.t) {
     case "shot":
-      sfx.shot(e.weapon, p.ultTime > 0);
+      sfx.shot(e.weapon);
       break;
     case "hit":
       if (!e.ally) sfx.hit(e.crit, e.shield, e.flank === "back" || e.flank === "ambush");
@@ -206,11 +210,14 @@ function onEvent(e: GameEvent, s: State) {
     case "ultReady":
       sfx.ultReady();
       break;
-    case "ultStart":
-      sfx.ultStart();
+    case "leap":
+      sfx.leap();
       break;
-    case "ultEnd":
-      sfx.ultEnd();
+    case "leapBlocked":
+      sfx.tacticalMiss();
+      break;
+    case "leapLand":
+      sfx.leapLand();
       break;
     case "healStart":
       sfx.battery();
@@ -324,7 +331,7 @@ function frame(now: number) {
     }
     if (n === 6) acc = 0;
   }
-  setWind(running && state.phase === "drop" ? 1 : 0);
+  setWind(running && (state.phase === "drop" || state.player.leap) ? 1 : 0);
   world.render(state, dt);
   if (running) hud.frame(state, world, dt, dims.w, dims.h);
   requestAnimationFrame(frame);
@@ -415,6 +422,7 @@ declare global {
     ringfallBot: (skill: string) => void;
     ringfallYaw: () => number;
     ringfallDownAlly: () => void;
+    ringfallChargeUlt: () => void;
     ringfallCamera: (x?: number, y?: number, z?: number, yaw?: number, pitch?: number) => void;
   }
 }
@@ -434,7 +442,7 @@ window.render_game_to_text = () => {
     haul: { items: s.player.haul, value: haulValue(s), bag: bagUsed(s.player.haul) },
     search: s.player.search && { bin: s.player.search.bin, t: +s.player.search.t.toFixed(1) },
     raiders: { next: Number.isFinite(s.raiderT) ? +s.raiderT.toFixed(1) : null },
-    player: { x: +p.pos.x.toFixed(1), y: +p.pos.y.toFixed(1), z: +p.pos.z.toFixed(1), hp: Math.round(p.hp), shield: Math.round(p.shield), armor: p.armor, downed: p.downed > 0, weapons: p.weapons.map((w) => w && `${w.kind}${w.rarity}:${w.mag}`), ult: +p.ult.toFixed(2), ultTime: +p.ultTime.toFixed(1), reveal: +p.reveal.toFixed(1), crouch: p.crouch },
+    player: { x: +p.pos.x.toFixed(1), y: +p.pos.y.toFixed(1), z: +p.pos.z.toFixed(1), hp: Math.round(p.hp), shield: Math.round(p.shield), armor: p.armor, downed: p.downed > 0, weapons: p.weapons.map((w) => w && `${w.kind}${w.rarity}:${w.mag}`), ult: +p.ult.toFixed(2), leap: !!p.leap, reveal: +p.reveal.toFixed(1), crouch: p.crouch },
     ally: { active: s.ally.active, x: +s.ally.pos.x.toFixed(1), y: +s.ally.pos.y.toFixed(1), z: +s.ally.pos.z.toFixed(1), hp: Math.round(s.ally.hp), shield: Math.round(s.ally.shield), down: +s.ally.down.toFixed(1), helped: +s.ally.helped.toFixed(1), rescue: +s.ally.rescue.toFixed(1), target: s.ally.target },
     awaitAlly: p.awaitAlly,
     extract: { ship: +s.shipCall.toFixed(1), hold: +s.extractTime.toFixed(1), at: s.extractedAt, flares: p.flares },
@@ -460,6 +468,11 @@ window.advanceTime = (ms: number) => {
 window.ringfallCamera = (x, y, z, yaw, pitch) => {
   world.cameraOverride = x === undefined ? null : { x, y: y ?? 2, z: z ?? 0, yaw: yaw ?? 0, pitch: pitch ?? 0 };
   world.render(state, 0.016);
+};
+
+/** Automation only: fill the ult's charge, to check the leap. */
+window.ringfallChargeUlt = () => {
+  state.player.ult = 1;
 };
 
 /** Automation only: knock the teammate down, to check picking it up. */

@@ -352,7 +352,6 @@ export class World {
   handle(s: State, events: GameEvent[]): { hitstop: number; slowmo: number } {
     let hitstop = 0;
     let slowmo = 0;
-    const ult = s.player.ultTime > 0;
     for (const e of events) {
       switch (e.t) {
         case "shot": {
@@ -366,7 +365,7 @@ export class World {
           break;
         }
         case "tracer":
-          this.tracer(this.muzzleWorld(), e.to, ult ? RARITY_COLOR[3] : e.hit ? 0xfff3c4 : 0xffffff, ult ? 0.05 : 0.025);
+          this.tracer(this.muzzleWorld(), e.to, e.hit ? 0xfff3c4 : 0xffffff, 0.025);
           break;
         case "allyShot":
           this.tracer(e.from, e.to, e.hit ? 0xfff3c4 : 0xffffff, 0.018);
@@ -423,8 +422,9 @@ export class World {
           }
           this.fovKick = Math.max(this.fovKick, 3);
           break;
-        case "ultStart":
+        case "leap":
           this.fovKick = Math.max(this.fovKick, 10);
+          this.shake = Math.max(this.shake, 0.5);
           break;
         case "enemyFire":
           this.burst(e.pos, PAL.orb, 3, 2, 0.06, 0, 0.25);
@@ -468,7 +468,7 @@ export class World {
     this.camera.position.set(p.pos.x, p.pos.y + (drop ? 1.6 : this.eyeY) + bobY - this.landDip, p.pos.z);
     this.camera.rotation.set(p.pitch + (p.recoil * Math.PI) / 180 + shakeY, -p.yaw + shakeX, p.sliding ? -0.04 : 0, "YXZ");
     const spec = w0 ? WEAPONS[w0.kind] : WEAPONS.pike;
-    const baseFov = 74 + (p.sprinting ? 4 : 0) + (p.ultTime > 0 ? 4 : 0) + (drop ? 10 : 0);
+    const baseFov = 74 + (p.sprinting ? 4 : 0) + (drop || p.leap ? 10 : 0);
     const fovTarget = baseFov + (spec.adsFov - 74) * p.ads;
     this.fovKick *= Math.exp(-dt * 2.2);
     const fov = fovTarget + this.fovKick;
@@ -736,7 +736,7 @@ export class World {
     }
     this.gunKick += (0 - this.gunKick) * Math.min(1, dt * 14);
     const reloading = p.reload > 0;
-    const lowered = !!p.healing || !!p.mantle || p.downed > 0 || drop || s.phase === "done";
+    const lowered = !!p.healing || !!p.mantle || !!p.leap || p.downed > 0 || drop || s.phase === "done";
     const ads = p.ads;
     const gx = 0.2 * (1 - ads);
     const gy = -0.2 + 0.07 * ads - (lowered ? 0.4 : 0) - (reloading ? 0.08 : 0) + Math.sin(this.bob * 2) * 0.01 * (1 - ads);

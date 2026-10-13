@@ -15,7 +15,6 @@ export interface TouchSink {
   hold(code: string, on: boolean): void;
   fire(on: boolean): void;
   toggleAds(): void;
-  pause(): void;
   /** Open or close the island map. */
   map(): void;
 }
@@ -112,9 +111,6 @@ export function setupTouch(sink: TouchSink) {
           break;
         case "ads":
           sink.toggleAds();
-          break;
-        case "pause":
-          sink.pause();
           break;
         case "map":
           sink.map();

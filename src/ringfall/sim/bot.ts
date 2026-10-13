@@ -1,4 +1,4 @@
-import { AWARE, DEG, HEALS, PLAYER, TICK, WORLD } from "./config";
+import { AWARE, DEG, HEALS, PLAYER, TICK, ULT, WORLD } from "./config";
 import { bodyCenter, eyePos, flankOf, magSize, weakPoint } from "./combat";
 import { dist2d, groundAt, los, onTerrain, lookAngles, solidAt, wrapAngle } from "./geom";
 import { EXTRACTS, POIS } from "./map";
@@ -6,7 +6,7 @@ import { clearLine, findPath } from "./nav";
 import { enemyMax, idleInput, type Enemy, type Input, type State } from "./state";
 import { pickHeal } from "./player";
 import { makeRoom } from "./world";
-import { terrainHeight } from "./terrain";
+import { offLowGround, rimRadius, terrainHeight } from "./terrain";
 
 /**
  * A scripted player for the headless balance run (`npm run sim:ringfall`) and the
@@ -64,6 +64,8 @@ export class Bot {
   private flankT = 0;
   private flankCheck = 0;
   private lastFlanked = -1;
+  /** Where it glides to on the leap: away from the robots fighting it. */
+  private escape: { x: number; z: number } | null = null;
   crouch = false;
 
   constructor(
@@ -133,6 +135,15 @@ export class Bot {
         const r = p.weapons.map((w) => (w ? w.rarity : -1));
         inp.slot = r[0] <= r[1] ? 0 : 1;
       }
+    }
+
+    // In the air on the leap: glide on toward the spot it chose at take-off.
+    if (p.leap) {
+      const to = this.escape ?? p.pos;
+      inp.lookX = wrapAngle(lookAngles(p.pos, { x: to.x, y: 0, z: to.z }).yaw - p.yaw) * sk.turn;
+      inp.lookY = -p.pitch * sk.turn;
+      inp.moveZ = dist2d(to, p.pos) > 3 ? 1 : 0;
+      return inp;
     }
 
     // Look.
@@ -241,7 +252,12 @@ export class Bot {
       if (engaged.length >= 2 || tgt.mode === "telegraph") {
         if (p.tactical <= 0 && this.rnd() < sk.abilities * TICK) inp.tactical = true;
       }
-      if (p.ult >= 1 && (live.length >= 3 || tgt.kind === "titan")) inp.ult = true;
+      // Losing a fight against a squad or more: leap away and start over somewhere else.
+      const left = (p.hp + p.shield) / (PLAYER.hp + PLAYER.shieldByTier[p.armor]);
+      if (p.ult >= 1 && left < 0.4 && engaged.length >= 2 && tgt.kind !== "titan") {
+        this.escape = this.escapeSpot(s, engaged);
+        if (this.escape) inp.ult = true;
+      }
       // Pick the weapon that suits the distance (when it has two).
       const other = p.weapons[1 - p.slot];
       this.swapT -= TICK;
@@ -340,7 +356,30 @@ export class Bot {
    * The way off the island: a flare's quick pickup when it has one, else beginners
    * take the long quiet walk and the others call the dropship and hold.
    */
-  private exit(s: State): { x: number; z: number } {
+/**
+   * Low ground a glide's length away, as far as can be from the robots fighting it:
+   * the way a player would pick where to leap to.
+   */
+  private escapeSpot(s: State, from: Enemy[]): { x: number; z: number } | null {
+    const p = s.player;
+    const reach = ULT.glide * 4;
+    let best: { x: number; z: number } | null = null;
+    let bestScore = -Infinity;
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2;
+      const x = p.pos.x + Math.cos(a) * reach;
+      const z = p.pos.z + Math.sin(a) * reach;
+      if (offLowGround(x, z) || Math.hypot(x, z) > rimRadius(x, z) - 12) continue;
+      const score = Math.min(...from.map((e) => Math.hypot(e.pos.x - x, e.pos.z - z)));
+      if (score > bestScore) {
+        bestScore = score;
+        best = { x, z };
+      }
+    }
+    return best;
+  }
+
+    private exit(s: State): { x: number; z: number } {
     // The dropship lands by the titan: only a bot that has beaten it goes there.
     const titanUp = s.enemies.some((e) => e.kind === "titan");
     const id = s.player.flares > 0 ? "flare" : this.skill.name === "beginner" || titanUp ? "village" : "ship";

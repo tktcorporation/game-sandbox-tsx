@@ -17,7 +17,7 @@
 
     <div id="hud" hidden>
       <div id="compass"><div id="compass-strip"></div><b id="compass-deg">0</b></div>
-      <div id="map" hidden><canvas id="map-canvas"></canvas><p><span class="map-key">◆</span> 脱出地点<span class="map-close">　<kbd>M</kbd>で閉じる</span></p><button id="map-close" type="button">閉じる</button></div>
+      <div id="map" hidden><canvas id="map-canvas"></canvas><p><span class="map-key">◆</span> 脱出地点<span class="map-close">　<kbd>M</kbd>で閉じる</span></p><span class="map-buttons"><button id="map-close" type="button">閉じる</button><button id="map-pause" type="button">一時停止</button></span></div>
       <div id="objective"><span id="obj-text"></span><b id="obj-count"></b><small id="obj-bag"></small><small id="obj-raid"></small><small id="obj-stealth"></small><small id="obj-exits"></small></div>
       <div id="enemy-bars" aria-hidden="true"></div>
       <div id="aware-layer" aria-hidden="true"></div>
@@ -58,10 +58,9 @@
       <button type="button" class="tb small" id="t-ads" data-act="ads" aria-label="覗く"><b>覗く</b></button>
       <button type="button" class="tb small" id="t-reload" data-act="KeyR" aria-label="リロード"><b>リロード</b></button>
       <button type="button" class="tb ab-btn" id="t-tac" data-act="KeyQ" aria-label="アーク"><b>アーク</b></button>
-      <button type="button" class="tb ab-btn ult" id="t-ult" data-act="KeyZ" aria-label="オーバードライブ"><b id="t-ult-pct">0%</b></button>
+      <button type="button" class="tb ab-btn ult" id="t-ult" data-act="KeyZ" aria-label="離脱ジャンプ"><b id="t-ult-pct">0%</b></button>
       <button type="button" class="tb small" id="t-battery" data-act="KeyH" aria-label="回復"><b>回復 <span id="t-cells">0</span></b></button>
       <button type="button" class="tb pill" id="t-use" data-act="KeyE" hidden><b>拾う・調べる</b></button>
-      <button type="button" class="tb small" id="t-pause" data-act="pause" aria-label="一時停止"><b>II</b></button>
       <button type="button" class="tb small" id="t-map" data-act="map" aria-label="地図"><b>地図</b></button>
     </div>
     <div id="rotate">横向きにすると遊べます</div>
@@ -78,7 +77,7 @@
           <li><kbd>左クリック</kbd>撃つ <kbd>右</kbd>覗く</li>
           <li><kbd>Space</kbd>ジャンプ <kbd>C</kbd>スライディング</li>
           <li><kbd>E</kbd>調べる・拾う <kbd>R</kbd>リロード <kbd>1</kbd><kbd>2</kbd>持ち替え <kbd>M</kbd>地図</li>
-          <li><kbd>Q</kbd>アーク（自動で狙う） <kbd>Z</kbd>オーバードライブ <kbd>H</kbd>バッテリー</li>
+          <li><kbd>Q</kbd>アーク（自動で狙う） <kbd>Z</kbd>離脱ジャンプ <kbd>H</kbd>バッテリー</li>
         </ul>
         <button id="start" type="button">降下する</button>
         <label class="sens">マウス感度 <input id="sens" type="range" min="0.4" max="2.5" step="0.05" value="1" /></label>
