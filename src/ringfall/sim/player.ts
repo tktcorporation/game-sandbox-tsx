@@ -73,6 +73,7 @@ export function stepPlayer(s: State, input: Input, prevCrouch: boolean) {
   }
 
   move(s, input, prevCrouch);
+  clocks(s);
   // In the air on the leap the hands are on the glider: no shooting, items or abilities.
   if (p.downed <= 0 && !p.mantle && !p.leap) {
     weapons(s, input);
@@ -282,7 +283,6 @@ function weapons(s: State, input: Input) {
   const spec = WEAPONS[w.kind];
   const size = magSize(w);
   if (w.mag < 0) w.mag = size;
-  p.cooldown = Math.max(0, p.cooldown - TICK);
   p.ads += ((input.ads && !p.healing ? 1 : 0) - p.ads) * Math.min(1, TICK / 0.08);
 
   if (p.reload > 0) {
@@ -341,6 +341,7 @@ function leap(s: State) {
   p.sprinting = false;
   p.healing = null;
   p.search = null;
+  p.reload = 0; // the hands let go of the magazine for the glider
   p.ads = 0;
   makeNoise(s, p.pos.x, p.pos.z, NOISE.leap);
   s.events.push({ t: "leap" });
@@ -434,9 +435,22 @@ function glide(s: State, wx: number, wz: number) {
   s.events.push({ t: "leapLand" }, { t: "land", speed: ULT.fall });
 }
 
+/**
+ * Cooldowns and the ult's charge run on time, whatever the hands are doing: they
+ * count down through a glide, a climb or being downed just as they do on foot.
+ */
+function clocks(s: State) {
+  const p = s.player;
+  p.cooldown = Math.max(0, p.cooldown - TICK);
+  p.tactical = Math.max(0, p.tactical - TICK);
+  if (p.ult < 1 && !p.leap) {
+    p.ult = Math.min(1, p.ult + ULT.perSec * TICK);
+    if (p.ult >= 1) s.events.push({ t: "ultReady" });
+  }
+}
+
 function abilities(s: State, input: Input) {
   const p = s.player;
-  p.tactical = Math.max(0, p.tactical - TICK);
   if (input.tactical && p.tactical <= 0) {
     const eye = eyePos(s);
     const fx = Math.sin(p.yaw);
@@ -472,10 +486,6 @@ function abilities(s: State, input: Input) {
     }
   }
 
-  if (p.ult < 1) {
-    p.ult = Math.min(1, p.ult + ULT.perSec * TICK);
-    if (p.ult >= 1) s.events.push({ t: "ultReady" });
-  }
   if (input.ult && p.ult >= 1) {
     leap(s);
     // The hands are on the glider from this tick: no item starts with the leap.
