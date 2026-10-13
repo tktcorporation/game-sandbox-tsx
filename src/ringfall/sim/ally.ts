@@ -60,12 +60,22 @@ export function besidePlayer(s: State) {
   a.crumb = 0;
 }
 
+/** Footsteps further apart than this were not walked between. */
+const TRAIL_GAP = 20;
+
 /** Drop a footstep where the player stands on the ground. */
 function recordTrail(s: State) {
   const p = s.player;
   if (!p.onGround || p.downed > 0 || p.mantle) return;
   const last = s.trail[s.trail.length - 1];
-  if (last && Math.hypot(last.x - p.pos.x, last.y - p.pos.y, last.z - p.pos.z) < 1) return;
+  const gap = last ? Math.hypot(last.x - p.pos.x, last.y - p.pos.y, last.z - p.pos.z) : 0;
+  if (last && gap < 1) return;
+  // Back on the ground far from the last footstep (a leap, or a fall out of one): no walk
+  // joins them, so the footsteps start again here and catching up leads to this side.
+  if (gap > TRAIL_GAP) {
+    s.trail = [];
+    s.ally.crumb = 0;
+  }
   s.trail.push({ ...p.pos });
   if (s.trail.length > 240) {
     s.trail.shift();

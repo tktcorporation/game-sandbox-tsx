@@ -675,6 +675,23 @@ function checkLeapDowned(): string | null {
   if (s.ally.pos.y - g > 0.1) return `leap downed scenario: the teammate hangs ${(s.ally.pos.y - g).toFixed(1)} m in the air`;
   return null;
 }
+/** A teammate left behind by the leap catches up with the player after the landing. */
+function checkLeapAllyCatchesUp(): string | null {
+  const s = padRun();
+  const p = s.player;
+  p.yaw = Math.PI;
+  // Too far to be carried: walk the player 25 m south first, leaving the teammate posted.
+  s.ally.pos = { ...s.ally.pos, x: s.ally.pos.x + 22 };
+  s.ally.pos.y = groundAt(s.ally.pos.x, s.ally.pos.z, 0.4, s.ally.pos.y + 1);
+  p.ult = 1;
+  step(s, { ...idleInput(), ult: true }, false);
+  if (!p.leap || p.leap.carry) return `leap catch-up scenario: leap ${JSON.stringify(p.leap)}`;
+  for (let t = 0; t < 20 * 60 && p.leap; t++) step(s, { ...idleInput(), moveZ: 1 }, false);
+  ticks(s, 20);
+  const gap = Math.hypot(s.ally.pos.x - p.pos.x, s.ally.pos.z - p.pos.z);
+  if (gap > 12) return `leap catch-up scenario: the teammate is still ${gap.toFixed(0)} m away 20 s after the landing`;
+  return null;
+}
 /** Gliding toward high ground from below its cliffs still comes down on low ground. */
 function checkLeapOffHighGround(): string | null {
   for (const [x, z, yaw] of [[-20, -20, -Math.PI / 2], [20, -30, Math.PI / 2], [0, -60, 0], [-10, 30, Math.PI * 0.75]]) {
@@ -728,7 +745,7 @@ function checkAllyHoldsFire(): string | null {
   if (shots) return `hold fire scenario: the teammate fired ${shots} shots at an idle robot`;
   return null;
 }
-for (const err of [checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkAllySelfUp(), checkStompHeight(), checkDropOffHighGround(), checkFieldsReused(), checkCliffsStop(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill(), checkLeap(), checkLeapLeavesAllyBelow(), checkLeapDowned(), checkLeapOffHighGround(), checkLeapUnderRoof()]) {
+for (const err of [checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkAllySelfUp(), checkStompHeight(), checkDropOffHighGround(), checkFieldsReused(), checkCliffsStop(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill(), checkLeap(), checkLeapLeavesAllyBelow(), checkLeapDowned(), checkLeapAllyCatchesUp(), checkLeapOffHighGround(), checkLeapUnderRoof()]) {
   if (err) {
     console.error(err);
     process.exit(1);
