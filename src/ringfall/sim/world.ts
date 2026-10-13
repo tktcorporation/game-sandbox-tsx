@@ -273,7 +273,8 @@ export function stepLoot(s: State, input: Input) {
       return false;
     }
     if (l.kind === "key" && l.key !== undefined) {
-      if (!p.keys.includes(l.key)) p.keys.push(l.key);
+      // A second copy is kept too: it comes home as a spare (one carried is lost on a wipe).
+      p.keys.push(l.key);
       s.events.push({ t: "pickup", kind: "key", rarity: 3, label: `${POIS[l.key].name}の鍵` });
       return false;
     }

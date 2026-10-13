@@ -986,7 +986,13 @@ function checkQuests(): string | null {
   const ks = newRun(8, k.kit);
   if (ks.player.keys.join() !== "2" || k.profile.stash.some((i) => i.t === "key")) return "key scenario: the key did not go into the raid";
   ks.outcome = "extracted";
-  if (!settle(k.profile, ks).profile.stash.some((i) => i.t === "key" && i.poi === 2)) return "key scenario: the key did not come home";
+  // A second copy found on the island comes home as well.
+  ks.loot = [{ id: 9200, kind: "key", key: 2, rarity: 3, pos: { ...ks.player.pos }, vel: { x: 0, y: 0, z: 0 }, age: 1 }];
+  ks.phase = "play";
+  step(ks, idleInput(), false);
+  ks.outcome = "extracted";
+  const copies = settle(k.profile, ks).profile.stash.filter((i) => i.t === "key" && i.poi === 2).length;
+  if (copies !== 2) return `key scenario: carrying a key and finding another brought home ${copies}, not 2`;
   // One slot left: a quest's key reward takes it ahead of a fuse from the same raid.
   const tight = { ...newProfile(), stash: Array.from({ length: META.stash - 1 }, () => ({ t: "heal" as const, kind: "cell" as const })), quests: { progress: {}, done: ["grunts", "parts", "quarry"] } };
   const tk = takeKit(tight, { weapons: [], armor: null, heals: { cell: 0, battery: 0, syringe: 0, medkit: 0 }, keys: [] });

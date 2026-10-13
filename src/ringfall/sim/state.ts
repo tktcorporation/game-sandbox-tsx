@@ -71,7 +71,7 @@ export interface Player {
   flares: number;
   /** Valuables carried; their worth is the raid's score if the player gets off the island. */
   haul: ValuableKind[];
-  /** Keys on the ring, as the POIs whose vaults they open. They take no bag space. */
+  /** Keys on the ring, as the POIs whose vaults they open (copies included). They take no bag space. */
   keys: number[];
   /** The bin being searched and for how long, or null. */
   search: { bin: number; t: number } | null;
