@@ -252,11 +252,7 @@ export function stepLoot(s: State, input: Input) {
       return false;
     }
     if (l.kind === "armor" && l.rarity > p.armor) {
-      // The armour taken off stays on the ground, like a swapped weapon, rather than vanishing.
-      if (p.armor > 0) shed.push({ id: s.nextId++, kind: "armor", rarity: p.armor, pos: { ...l.pos }, vel: { x: 0, y: 2, z: 0 }, age: 0 });
-      p.armor = l.rarity;
-      p.shield = PLAYER.shieldByTier[p.armor];
-      s.events.push({ t: "pickup", kind: "armor", rarity: l.rarity, label: "アーマー" });
+      wearArmor(s, l, shed);
       return false;
     }
     return true;
@@ -271,6 +267,25 @@ export function stepLoot(s: State, input: Input) {
   else if (t?.kind === "care") openCare(s);
   else if (t?.kind === "weapon") takeWeapon(s, t.loot);
   else if (t?.kind === "swap") swapInto(s, t.loot);
+  else if (t?.kind === "armor") {
+    const shed: Loot[] = [];
+    s.loot = s.loot.filter((o) => o !== t.loot);
+    wearArmor(s, t.loot, shed);
+    s.loot.push(...shed);
+  }
+}
+
+/**
+ * Puts on armour from the ground. What was worn is left there (`shed`), marked worn so it
+ * can be put back on; fresh armour fills the shield, worn armour keeps what is left of it.
+ */
+function wearArmor(s: State, l: Loot, shed: Loot[]) {
+  const p = s.player;
+  if (p.armor > 0) shed.push({ id: s.nextId++, kind: "armor", rarity: p.armor, worn: true, pos: { ...l.pos }, vel: { x: 0, y: 2, z: 0 }, age: 0 });
+  p.armor = l.rarity;
+  const max = PLAYER.shieldByTier[p.armor];
+  p.shield = l.worn ? Math.min(p.shield, max) : max;
+  s.events.push({ t: "pickup", kind: "armor", rarity: l.rarity, label: "アーマー" });
 }
 
 /** Bag slots the haul takes up. */
@@ -339,7 +354,7 @@ function stepSearch(s: State, alive: boolean) {
 export const searchTime = (b: { flare: boolean }) => (b.flare ? SEARCH.flareTime : SEARCH.time);
 
 /** What one press of the use key acts on. The HUD shows its prompt from the same choice. */
-export type UseTarget = { kind: "ally" } | { kind: "bin"; index: number } | { kind: "care" } | { kind: "weapon"; loot: Loot } | { kind: "swap"; loot: Loot };
+export type UseTarget = { kind: "ally" } | { kind: "bin"; index: number } | { kind: "care" } | { kind: "weapon"; loot: Loot } | { kind: "swap"; loot: Loot } | { kind: "armor"; loot: Loot };
 
 /**
  * A downed teammate within reach comes first, however close any loot is; otherwise
@@ -359,6 +374,8 @@ export function useTarget(s: State): UseTarget | null {
   for (const l of s.loot) {
     if (l.age < 0.4 || !level(l.pos.y)) continue;
     if (l.kind === "weapon" && l.weapon) picks.push({ d: dist2d(l.pos, p.pos) - 0.3, t: { kind: "weapon", loot: l } });
+    // Armour the player took off can go back on; fresh armour is only ever an upgrade, put on by walking over it.
+    else if (l.kind === "armor" && l.worn && l.rarity !== p.armor) picks.push({ d: dist2d(l.pos, p.pos) - 0.3, t: { kind: "armor", loot: l } });
     // A valuable that does not fit is worth a press when something cheaper can make way.
     else if (l.kind === "valuable" && l.valuable && makeRoom(p.haul, l.valuable)?.length) picks.push({ d: dist2d(l.pos, p.pos) - 0.3, t: { kind: "swap", loot: l } });
   }

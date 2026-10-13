@@ -211,6 +211,8 @@ export interface Loot {
   weapon?: Weapon;
   heal?: HealKind;
   valuable?: ValuableKind;
+  /** Armour the player took off: it can be put back on with the use key, and its shield is not refilled. */
+  worn?: boolean;
   rarity: Rarity;
   pos: Vec3;
   vel: Vec3;
