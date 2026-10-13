@@ -476,7 +476,11 @@ function abilities(s: State, input: Input) {
     p.ult = Math.min(1, p.ult + ULT.perSec * TICK);
     if (p.ult >= 1) s.events.push({ t: "ultReady" });
   }
-  if (input.ult && p.ult >= 1) leap(s);
+  if (input.ult && p.ult >= 1) {
+    leap(s);
+    // The hands are on the glider from this tick: no item starts with the leap.
+    if (p.leap) return;
+  }
 
   const h = p.healing;
   if (h) {
