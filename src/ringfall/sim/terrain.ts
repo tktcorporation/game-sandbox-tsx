@@ -279,8 +279,11 @@ export function buildTerrain(flat: FlatShape[]) {
   // by a two-pass chamfer.
   const dist = new Float32Array(N * N).fill(1e9);
   const at = new Float32Array(N * N);
+  // For a shape with no level of its own: the level of the ground at its middle.
+  const mid = new Float32Array(N * N);
   for (const b of flat) {
     const y = b.y ?? NaN;
+    const m = lowest((b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2).level;
     const i0 = Math.max(0, Math.floor((b.x0 + WORLD.half) / RES));
     const i1 = Math.min(N - 1, Math.ceil((b.x1 + WORLD.half) / RES));
     const j0 = Math.max(0, Math.floor((b.z0 + WORLD.half) / RES));
@@ -289,6 +292,7 @@ export function buildTerrain(flat: FlatShape[]) {
       for (let i = i0; i <= i1; i++) {
         dist[j * N + i] = 0;
         at[j * N + i] = y;
+        mid[j * N + i] = m;
       }
   }
   const D = RES;
@@ -297,6 +301,7 @@ export function buildTerrain(flat: FlatShape[]) {
     if (dist[from] + step < dist[k]) {
       dist[k] = dist[from] + step;
       at[k] = at[from];
+      mid[k] = mid[from];
     }
   };
   for (let j = 0; j < N; j++)
@@ -323,7 +328,10 @@ export function buildTerrain(flat: FlatShape[]) {
       const z = j * RES - WORLD.half;
       const k = j * N + i;
       floors[k] = lowest(x, z).level;
-      const level = Number.isNaN(at[k]) ? floors[k] : at[k];
+      // A shape with no level follows the floor under each cell (so a ramp stays a ramp),
+      // unless that floor is another level altogether: a patrol point on the dam's crest
+      // would otherwise press its corner of the dam face down to the lakebed, leaving a pit.
+      const level = !Number.isNaN(at[k]) ? at[k] : Math.abs(floors[k] - mid[k]) > 2 ? mid[k] : floors[k];
       // Shelves stand right up to hand-built things (a 1 m gap); other shapes leave them room to blend.
       const dd = dist[k];
       let shelf = -Infinity;

@@ -10,7 +10,7 @@ import { makeNoise } from "../src/ringfall/sim/awareness";
 import { BOXES, EXTRA_BINS, EXTRACTS, POIS, ROAMERS, SPAWN, type Squad } from "../src/ringfall/sim/map";
 import { fieldTo, fieldsBuilt, routeLength } from "../src/ringfall/sim/hunt";
 import { groundAt, los, solidAt } from "../src/ringfall/sim/geom";
-import { floorLevel, highGround, LEVEL, terrainHeight } from "../src/ringfall/sim/terrain";
+import { floorLevel, highGround, LEVEL, offLowGround, terrainHeight } from "../src/ringfall/sim/terrain";
 import { Bot, SKILLS } from "../src/ringfall/sim/bot";
 import { idleInput, newRun, type GameEvent, type State } from "../src/ringfall/sim/state";
 import { step } from "../src/ringfall/sim/step";
@@ -269,6 +269,36 @@ function checkCliffsStop(): string | null {
     if (p.pos.y > LEVEL.lakebed + 1.5) return `cliff scenario: walking from ${x},${z} climbed to ${p.pos.y.toFixed(1)} m at ${p.pos.x.toFixed(0)},${p.pos.z.toFixed(0)}`;
   }
   return null;
+}
+/**
+ * No pit on the high ground next to walkable ground: a hollow with steep ground rising on
+ * every side, which a body that drops off an edge into it can never leave.
+ */
+function checkNoPits(): string | null {
+  const R = 1.5;
+  const pits: string[] = [];
+  for (let x = -WORLD.half + 4; x < WORLD.half - 4; x += 1)
+    for (let z = -WORLD.half + 4; z < WORLD.half - 4; z += 1) {
+      if (!offLowGround(x, z) || Math.hypot(x, z) > 200) continue;
+      const h = terrainHeight(x, z);
+      // Higher on every side by more than a step: no way out on foot.
+      let walled = true;
+      for (let a = 0; a < 8 && walled; a++) {
+        const n = terrainHeight(x + Math.cos((a * Math.PI) / 4) * R, z + Math.sin((a * Math.PI) / 4) * R);
+        walled = n > h + WORLD.stepUp;
+      }
+      if (!walled) continue;
+      // Only a pit something can fall into: walkable ground above it within a few metres.
+      let above = false;
+      for (let a = 0; a < 16 && !above; a++)
+        for (const r of [3, 5, 7]) {
+          const nx = x + Math.cos((a * Math.PI) / 8) * r;
+          const nz = z + Math.sin((a * Math.PI) / 8) * r;
+          if (!offLowGround(nx, nz) && terrainHeight(nx, nz) > h + 1) above = true;
+        }
+      if (above) pits.push(`${x.toFixed(0)},${z.toFixed(0)} at ${h.toFixed(1)} m`);
+    }
+  return pits.length ? `pit scenario: ${pits.length} pits a fall can trap a body in, e.g. ${pits.slice(0, 5).join("; ")}` : null;
 }
 /** Every POI, way off and patrol route can be walked to from the landing, robots' way: no climbing, no drops. */
 function checkWalkableIsland(): string | null {
@@ -796,7 +826,7 @@ function checkAllyHoldsFire(): string | null {
   if (shots) return `hold fire scenario: the teammate fired ${shots} shots at an idle robot`;
   return null;
 }
-for (const err of [checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkAllySelfUp(), checkStompHeight(), checkDropOffHighGround(), checkFieldsReused(), checkCliffsStop(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill(), checkLeap(), checkLeapLeavesAllyBelow(), checkLeapDowned(), checkLeapAllyCatchesUp(), checkLeapAllyDowned(), checkLeapWithItem(), checkLeapClocks(), checkLeapOffHighGround(), checkLeapUnderRoof()]) {
+for (const err of [checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkAllySelfUp(), checkStompHeight(), checkDropOffHighGround(), checkFieldsReused(), checkCliffsStop(), checkNoPits(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill(), checkLeap(), checkLeapLeavesAllyBelow(), checkLeapDowned(), checkLeapAllyCatchesUp(), checkLeapAllyDowned(), checkLeapWithItem(), checkLeapClocks(), checkLeapOffHighGround(), checkLeapUnderRoof()]) {
   if (err) {
     console.error(err);
     process.exit(1);
