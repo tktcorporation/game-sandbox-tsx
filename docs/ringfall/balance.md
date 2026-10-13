@@ -41,10 +41,10 @@ crowd: median over runs of the most squads / robots fighting the player at once 
 skill     alive time(med) cleared haul(med) score(med) downs acc crit leap crowd flank waves ally               rank               exit
 beginner  100%  2.7m      2       700       1500       0.1   62% 3%   0.3 2/4   6%    0     26% 0.3d 0.0r 0.1h S0 A0 B17 C13 -0   ship 0 flare 0 village 30
 casual    87%   5.5m      4       1400      4100       0.3   84% 13%  0.4 2/4   5%    2     21% 1.0d 0.0r 0.1h S1 A25 B0 C0 -4    ship 26 flare 0 village 0
-good      90%   5.4m      4       1300      4000       0.3   91% 36%  0.5 2/4   5%    2     18% 0.8d 0.0r 0.2h S4 A23 B0 C0 -3    ship 27 flare 0 village 0
+good      90%   5.4m      4       1300      4000       0.3   91% 37%  0.5 2/4   5%    2     18% 0.8d 0.0r 0.2h S4 A23 B0 C0 -3    ship 27 flare 0 village 0
 ```
 
-弱点命中率（crit）は普通 13%、上手い 36% で、目標（15〜25%、40% 以上）をわずかに下回る。
+弱点命中率（crit）は普通 13%、上手い 37% で、目標（15〜25%、40% 以上）をわずかに下回る。
 
 ボットは地上の経路探索（`src/ringfall/sim/nav.ts`、0.5 m 格子の A*）で建物のドアを通り、壁と崖を回り込み、坂道を通る。崖は下りにも使わない。峡谷の橋は使わず、放水路の谷底を回る。よじ登りは使わず、床や屋上にある補給箱は狙わない。階段で床に上がってしまったときは、歩いた跡をたどって地面へ戻る。屋上の敵が真上の縁で隠れたときは、14 m 離れて角度を取る。
 
