@@ -49,6 +49,17 @@ const errors = [];
   await page.goto(`http://localhost:${port}/ringfall/`, { waitUntil: "load" });
   await page.waitForTimeout(400);
   await page.screenshot({ path: `${out}/m0-title.png` });
+  // Turning the phone: the picture is drawn at the new shape, not the old one stretched.
+  // (Checked before starting: once the game asks for full screen, the window no longer follows the viewport here.)
+  await page.setViewportSize({ width: 740, height: 360 });
+  await page.waitForTimeout(300);
+  const shape = await page.evaluate(() => {
+    const c = document.querySelector("#stage canvas");
+    return { w: c.width, h: c.height };
+  });
+  if (Math.abs(shape.w / shape.h - 740 / 360) > 0.02) errors.push(`mobile: after a resize the canvas is ${shape.w}x${shape.h}, not 740:360`);
+  await page.setViewportSize({ width: 844, height: 390 });
+  await page.waitForTimeout(300);
   // Some phone browsers and web views have no Screen Orientation API; starting must not depend on it.
   await page.evaluate(() => Object.defineProperty(screen, "orientation", { value: undefined, configurable: true }));
   await page.tap("#start");
@@ -166,17 +177,6 @@ const errors = [];
     return r?.ok ? r.json() : null;
   });
   if (manifest?.display !== "fullscreen" || manifest?.orientation !== "landscape") errors.push(`mobile: no landscape full-screen manifest (${JSON.stringify(manifest)})`);
-  // Turning the phone: the picture is drawn at the new shape, not the old one stretched.
-  await page.setViewportSize({ width: 740, height: 360 });
-  // A resize is reported on the next frames (ResizeObserver), not inside advanceTime.
-  await page.waitForTimeout(300);
-  const shape = await page.evaluate(() => {
-    const c = document.querySelector("#stage canvas");
-    return { w: c.width, h: c.height };
-  });
-  if (Math.abs(shape.w / shape.h - 740 / 360) > 0.02) errors.push(`mobile: after a resize the canvas is ${shape.w}x${shape.h}, not 740:360`);
-  await page.setViewportSize({ width: 844, height: 390 });
-  await step(100);
 
   // The bot plays to the first fight for a screenshot of the touch layout.
   await page.evaluate((s) => window.ringfallBot(s), skill);
