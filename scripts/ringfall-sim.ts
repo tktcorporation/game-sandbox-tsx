@@ -850,13 +850,13 @@ function checkSettle(): string | null {
   s.player.armor = 2;
   s.player.haul = ["core", "board", "parts", "parts"];
   s.outcome = "extracted";
-  const won = settle(taken.profile, taken.kit, s);
+  const won = settle(taken.profile, s);
   const kinds = won.home.map((i) => i.t).sort().join();
   if (kinds !== "armor,valuable,valuable,valuable,valuable,weapon,weapon") return `settle scenario: getting off brought home ${kinds}`;
   if (won.profile.stash.length !== taken.profile.stash.length + 7 || won.profile.extracted !== 1 || won.profile.raids !== 1) return "settle scenario: the stash or record did not take what came home";
   // A wipe: the kit is gone, and of the haul only the best that fits the pouch comes back.
   s.outcome = "dead";
-  const lost = settle(taken.profile, taken.kit, s);
+  const lost = settle(taken.profile, s);
   if (lost.home.map((i) => (i.t === "valuable" ? i.kind : i.t)).join() !== "board") return `settle scenario: a wipe kept ${JSON.stringify(lost.home)}, not the board`;
   if (pouch(["parts", "parts", "board"]).join() !== "board" || pouch(["parts", "core", "parts"]).join() !== "parts,parts") return "pouch scenario: the pouch did not keep the most valuable fit";
   // The free kit is lent: getting off with it brings home only what was found, and its spare heals stay lent.
@@ -865,7 +865,17 @@ function checkSettle(): string | null {
   const f = newRun(6, free.kit);
   f.outcome = "extracted";
   f.player.heals.syringe = 3;
-  const back = settle(free.profile, free.kit, f);
+  const back = settle(free.profile, f);
+  // A lent syringe used up and one found: the found one is the player's.
+  const g = newRun(6, free.kit);
+  g.outcome = "extracted";
+  g.player.heals.syringe = 1;
+  g.player.heals.cell = 2;
+  g.player.lentHeals.syringe = 1;
+  const g2 = settle(free.profile, g);
+  g.player.heals.syringe = 2; // ...then a syringe picked up
+  const g3 = settle(free.profile, g);
+  if (g2.home.length !== 0 || g3.home.map((i) => (i.t === "heal" ? i.kind : i.t)).join() !== "syringe") return `free kit scenario: after using a lent syringe and finding one, home is ${JSON.stringify(g3.home)}`;
   if (back.home.map((i) => (i.t === "heal" ? i.kind : i.t)).join() !== "syringe") return `free kit scenario: getting off brought home ${JSON.stringify(back.home)}, not one found syringe`;
   // Trading and a full stash.
   const cash = p.cash;
@@ -874,7 +884,7 @@ function checkSettle(): string | null {
   if (sell(bought, bought.stash.length - 1).cash >= cash) return "trader scenario: selling paid back at least the price";
   p = { ...p, stash: Array.from({ length: META.stash }, () => ({ t: "heal" as const, kind: "cell" as const })) };
   if (buy(p, wares()[0])) return "trader scenario: bought into a full stash";
-  const full = settle(p, free.kit, f);
+  const full = settle(p, f);
   if (full.profile.stash.length !== META.stash || full.sold.length !== 1 || full.profile.cash <= p.cash) return "full stash scenario: what did not fit was not sold";
   if (parseProfile(JSON.parse(JSON.stringify(won.profile)))?.stash.length !== won.profile.stash.length || parseProfile({ v: 2 }) !== null) return "storage scenario: a saved profile does not load back";
   return null;
