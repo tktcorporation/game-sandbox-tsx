@@ -142,7 +142,8 @@ export class Bot {
       const to = this.escape ?? p.pos;
       inp.lookX = wrapAngle(lookAngles(p.pos, { x: to.x, y: 0, z: to.z }).yaw - p.yaw) * sk.turn;
       inp.lookY = -p.pitch * sk.turn;
-      inp.moveZ = dist2d(to, p.pos) > 3 ? 1 : 0;
+      // Ease off near it: the glide keeps its speed without input, and would carry on past.
+      inp.moveZ = Math.max(0.15, Math.min(1, dist2d(to, p.pos) / ULT.glide));
       return inp;
     }
 
@@ -355,7 +356,8 @@ export class Bot {
   /**
    * Open low ground a glide's length away, as far as can be from the robots fighting it:
    * the way a player would pick where to leap to. Open means no building within a couple
-   * of metres, so it comes down on the ground it plans on, not on a roof or into a stairwell.
+   * of metres of it or tall under the way, so it comes down on the ground it plans on, not on
+   * a roof or into a stairwell (it does not take stairs).
    */
   private escapeSpot(s: State, from: Enemy[]): { x: number; z: number } | null {
     const p = s.player;
@@ -369,6 +371,15 @@ export class Bot {
       if (offLowGround(x, z) || Math.hypot(x, z) > rimRadius(x, z) - 12) continue;
       const t = terrainHeight(x, z);
       if (ceilingAt(x, z, 2, t + 40, t) < Infinity || groundAt(x, z, 2, t + 40) > t + 0.5) continue;
+      // Nothing tall under the way there either: the glide may run out of height over it.
+      let clear = true;
+      for (let k = 2; k < reach && clear; k += 2) {
+        const cx = p.pos.x + Math.cos(a) * k;
+        const cz = p.pos.z + Math.sin(a) * k;
+        const ct = terrainHeight(cx, cz);
+        clear = groundAt(cx, cz, 1.5, ct + 40) <= ct + 3;
+      }
+      if (!clear) continue;
       const score = Math.min(...from.map((e) => Math.hypot(e.pos.x - x, e.pos.z - z)));
       if (score > bestScore) {
         bestScore = score;
