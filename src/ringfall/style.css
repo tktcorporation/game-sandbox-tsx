@@ -1617,6 +1617,12 @@ body.touch .map-buttons button {
 #results #pois {
   grid-area: pois;
 }
+/* Five to a row keeps the left column short enough for the button even after a wipe with
+   every kind of loot struck through. */
+#results #stats,
+#results #pois {
+  grid-template-columns: repeat(5, auto);
+}
 #results #restart {
   grid-area: button;
   justify-self: start;
@@ -1644,46 +1650,50 @@ body.touch #pois b {
 body:not(.playing) #banner {
   display: none;
 }
-/* A phone on its side: both result columns share the width, and the numbers shrink to fit. */
+/* A phone on its side: both result columns share the width, the stats spread into more
+   columns so the left one stays within the screen's height, and the numbers shrink. */
 @media (max-width: 960px), (max-height: 500px) {
   #results .title-inner {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    column-gap: 20px;
-    row-gap: 6px;
-    padding: 10px 16px;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+    column-gap: 18px;
+    row-gap: 4px;
+    padding: 8px 14px;
   }
-  #results #stats {
-    grid-template-columns: repeat(3, auto);
-    gap: 2px 14px;
-    font-size: 12px;
-  }
+  #results #stats,
   #results #pois {
-    grid-template-columns: repeat(4, auto);
-    gap: 2px 12px;
-    font-size: 12px;
+    grid-template-columns: repeat(5, auto);
+    gap: 0 10px;
+    font-size: 11px;
   }
   #results #stats b,
   #results #pois b {
-    font-size: 18px;
+    font-size: 16px;
+  }
+  #results .rank-row {
+    gap: 12px;
   }
   #results #rank {
-    font-size: 64px;
+    font-size: 44px;
+    text-shadow: 3px 3px 0 var(--ring);
   }
   #results .label {
-    font-size: 30px;
+    font-size: 24px;
+  }
+  #results .rank-row span {
+    font-size: 11px;
   }
   #results .rank-row strong {
-    font-size: 30px;
+    font-size: 26px;
   }
   #results #restart {
-    font-size: 18px;
-    padding: 10px 22px;
+    font-size: 16px;
+    padding: 8px 20px;
   }
   #home h3 {
-    font-size: 14px;
+    font-size: 13px;
   }
   #home p {
-    font-size: 13px;
+    font-size: 12px;
     gap: 2px 10px;
   }
 }
