@@ -164,8 +164,8 @@ export const TACTICAL = {
  */
 export const ULT = {
   dmgPerCharge: 1100, // damage dealt for a full charge
-  /** Charge gained per second on top of the damage: a full gauge in 175 s of doing nothing. */
-  perSec: 1 / 175,
+  /** Charge gained per second on top of the damage: a full gauge in 150 s of doing nothing. */
+  perSec: 1 / 150,
   startCharge: 0.5,
   /** Upward speed at launch (m/s): about 26 m up under the island's gravity. */
   rise: 28,
