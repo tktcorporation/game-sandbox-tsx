@@ -203,6 +203,7 @@ export function stepLoot(s: State, input: Input) {
     }
   }
   const alive = p.downed <= 0 && s.phase === "play";
+  const shed: Loot[] = [];
   s.loot = s.loot.filter((l) => {
     l.age += TICK;
     const d = Math.hypot(l.pos.x - p.pos.x, l.pos.z - p.pos.z, l.pos.y - (p.pos.y + 0.8));
@@ -251,6 +252,8 @@ export function stepLoot(s: State, input: Input) {
       return false;
     }
     if (l.kind === "armor" && l.rarity > p.armor) {
+      // The armour taken off stays on the ground, like a swapped weapon, rather than vanishing.
+      if (p.armor > 0) shed.push({ id: s.nextId++, kind: "armor", rarity: p.armor, pos: { ...l.pos }, vel: { x: 0, y: 2, z: 0 }, age: 0 });
       p.armor = l.rarity;
       p.shield = PLAYER.shieldByTier[p.armor];
       s.events.push({ t: "pickup", kind: "armor", rarity: l.rarity, label: "アーマー" });
@@ -258,6 +261,7 @@ export function stepLoot(s: State, input: Input) {
     }
     return true;
   });
+  s.loot.push(...shed);
 
   stepSearch(s, alive);
   if (!input.interact || !alive) return;
