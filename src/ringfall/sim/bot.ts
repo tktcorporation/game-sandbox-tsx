@@ -1,6 +1,6 @@
 import { AWARE, DEG, HEALS, PLAYER, TICK, ULT, WORLD } from "./config";
 import { bodyCenter, eyePos, flankOf, magSize, weakPoint } from "./combat";
-import { dist2d, groundAt, los, onTerrain, lookAngles, solidAt, wrapAngle } from "./geom";
+import { ceilingAt, dist2d, groundAt, los, onTerrain, lookAngles, solidAt, wrapAngle } from "./geom";
 import { EXTRACTS, POIS } from "./map";
 import { clearLine, findPath } from "./nav";
 import { enemyMax, idleInput, type Enemy, type Input, type State } from "./state";
@@ -353,16 +353,13 @@ export class Bot {
   }
 
   /**
-   * The way off the island: a flare's quick pickup when it has one, else beginners
-   * take the long quiet walk and the others call the dropship and hold.
-   */
-/**
-   * Low ground a glide's length away, as far as can be from the robots fighting it:
-   * the way a player would pick where to leap to.
+   * Open low ground a glide's length away, as far as can be from the robots fighting it:
+   * the way a player would pick where to leap to. Open means no building within a couple
+   * of metres, so it comes down on the ground it plans on, not on a roof or into a stairwell.
    */
   private escapeSpot(s: State, from: Enemy[]): { x: number; z: number } | null {
     const p = s.player;
-    const reach = ULT.glide * 4;
+    const reach = ULT.glide * 3;
     let best: { x: number; z: number } | null = null;
     let bestScore = -Infinity;
     for (let i = 0; i < 12; i++) {
@@ -370,6 +367,8 @@ export class Bot {
       const x = p.pos.x + Math.cos(a) * reach;
       const z = p.pos.z + Math.sin(a) * reach;
       if (offLowGround(x, z) || Math.hypot(x, z) > rimRadius(x, z) - 12) continue;
+      const t = terrainHeight(x, z);
+      if (ceilingAt(x, z, 2, t + 40, t) < Infinity || groundAt(x, z, 2, t + 40) > t + 0.5) continue;
       const score = Math.min(...from.map((e) => Math.hypot(e.pos.x - x, e.pos.z - z)));
       if (score > bestScore) {
         bestScore = score;
@@ -379,7 +378,11 @@ export class Bot {
     return best;
   }
 
-    private exit(s: State): { x: number; z: number } {
+  /**
+   * The way off the island: a flare's quick pickup when it has one, else beginners
+   * take the long quiet walk and the others call the dropship and hold.
+   */
+  private exit(s: State): { x: number; z: number } {
     // The dropship lands by the titan: only a bot that has beaten it goes there.
     const titanUp = s.enemies.some((e) => e.kind === "titan");
     const id = s.player.flares > 0 ? "flare" : this.skill.name === "beginner" || titanUp ? "village" : "ship";

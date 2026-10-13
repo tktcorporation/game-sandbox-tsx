@@ -157,6 +157,25 @@ const errors = [];
   });
   if (!/user-scalable=no/.test(zoom.meta) || !/maximum-scale=1/.test(zoom.meta) || zoom.body !== "none" || !zoom.pinchCancelled)
     errors.push(`mobile: the page can still zoom (${JSON.stringify(zoom)})`);
+  // Edge to edge on a phone: drawn under the notch and home bar (the HUD keeps clear by the
+  // safe-area insets), and installable to the home screen as a landscape full-screen app.
+  if (!/viewport-fit=cover/.test(zoom.meta)) errors.push("mobile: the viewport does not cover the whole screen");
+  const manifest = await page.evaluate(async () => {
+    const link = document.querySelector('link[rel="manifest"]');
+    const r = link && (await fetch(link.href));
+    return r?.ok ? r.json() : null;
+  });
+  if (manifest?.display !== "fullscreen" || manifest?.orientation !== "landscape") errors.push(`mobile: no landscape full-screen manifest (${JSON.stringify(manifest)})`);
+  // Turning the phone: the picture is drawn at the new shape, not the old one stretched.
+  await page.setViewportSize({ width: 740, height: 360 });
+  await step(100);
+  const shape = await page.evaluate(() => {
+    const c = document.querySelector("#stage canvas");
+    return { w: c.width, h: c.height };
+  });
+  if (Math.abs(shape.w / shape.h - 740 / 360) > 0.02) errors.push(`mobile: after a resize the canvas is ${shape.w}x${shape.h}, not 740:360`);
+  await page.setViewportSize({ width: 844, height: 390 });
+  await step(100);
 
   // The bot plays to the first fight for a screenshot of the touch layout.
   await page.evaluate((s) => window.ringfallBot(s), skill);

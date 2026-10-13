@@ -300,14 +300,40 @@ function tick() {
   for (const e of state.events) onEvent(e, state);
 }
 
+/**
+ * The canvas's drawing size, measured from the stage itself. iOS reports `innerWidth` and
+ * `innerHeight` from before a rotation on the resize event, which left the picture drawn
+ * at the old shape and stretched to the new one; the stage's own box is always current.
+ */
 function size() {
-  const w = innerWidth;
-  const h = innerHeight;
+  const w = Math.max(1, stage.clientWidth || innerWidth);
+  const h = Math.max(1, stage.clientHeight || innerHeight);
   world.resize(w, h);
   return { w, h };
 }
 let dims = size();
-addEventListener("resize", () => (dims = size()));
+new ResizeObserver(() => (dims = size())).observe(stage);
+
+// iPhone Safari cannot put a page in full screen; opened from the home screen it runs
+// without the browser's bars, so say how on the title screen there.
+const ios = /iP(hone|od)/.test(navigator.userAgent);
+const homeScreen = matchMedia("(display-mode: standalone), (display-mode: fullscreen)").matches || (navigator as Navigator & { standalone?: boolean }).standalone === true;
+$("install-help").hidden = !(ios && !homeScreen);
+
+/** Keeps the phone's screen awake during a raid; let go when the page is hidden, taken again on return. */
+let wake: { release(): Promise<void> } | null = null;
+function keepAwake(on: boolean) {
+  const lock = (navigator as Navigator & { wakeLock?: { request(type: "screen"): Promise<{ release(): Promise<void> }> } }).wakeLock;
+  if (!on) {
+    wake?.release().catch(() => undefined);
+    wake = null;
+  } else if (lock && !wake && !document.hidden) {
+    lock
+      .request("screen")
+      .then((w) => (wake = w))
+      .catch(() => undefined);
+  }
+}
 
 let last = performance.now();
 function frame(now: number) {
@@ -361,6 +387,7 @@ function start() {
     (screen.orientation as unknown as { lock?: (o: string) => Promise<void> } | undefined)?.lock?.("landscape").catch(() => undefined);
   }
   document.body.classList.add("playing");
+  keepAwake(true);
   world.reset();
   state = newRun(Date.now() & 0xffff);
   acc = hitstop = slowmo = 0;
@@ -376,6 +403,7 @@ function start() {
 
 function finish() {
   running = false;
+  keepAwake(false);
   document.body.classList.remove("playing");
   fire = ads = false;
   $("banner").className = "";
@@ -396,7 +424,12 @@ document.addEventListener("pointerlockerror", () => (noLock = true));
 document.addEventListener("pointerlockchange", () => {
   if (document.pointerLockElement !== stage && running && state.phase !== "done") setPaused(true);
 });
-document.addEventListener("visibilitychange", () => document.hidden && setPaused(true));
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) setPaused(true);
+  // The system drops the wake lock while the page is hidden.
+  wake = null;
+  if (!document.hidden && running) keepAwake(true);
+});
 $("start").addEventListener("click", start);
 $("restart").addEventListener("click", start);
 $("resume").addEventListener("click", () => {

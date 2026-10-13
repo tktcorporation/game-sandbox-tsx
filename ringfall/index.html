@@ -2,8 +2,14 @@
 <html lang="ja">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <meta name="theme-color" content="#7ec8e3" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#262d52" />
+    <link rel="manifest" href="/ringfall/manifest.webmanifest" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="RINGFALL" />
+    <link rel="apple-touch-icon" href="/ringfall/apple-touch-icon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@600;800&family=M+PLUS+1p:wght@500;800&display=swap" rel="stylesheet" />
@@ -81,6 +87,7 @@
         </ul>
         <button id="start" type="button">降下する</button>
         <label class="sens">マウス感度 <input id="sens" type="range" min="0.4" max="2.5" step="0.05" value="1" /></label>
+        <p class="install-help" id="install-help" hidden>iPhone では、共有ボタンから「ホーム画面に追加」して開くと、ブラウザのバーが消えて画面いっぱいで遊べる。</p>
         <p class="note">マウスとキーボード、またはスマホを横向きにして遊ぶ。<a href="/">HITMARK に戻る</a></p>
       </div>
     </section>

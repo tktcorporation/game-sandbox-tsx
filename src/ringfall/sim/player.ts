@@ -397,9 +397,18 @@ function glide(s: State, wx: number, wz: number) {
   p.vel.y = Math.max(-ULT.fall, p.vel.y - WORLD.gravity * TICK);
   // The leap is lower than the drop, so over high ground the wind also holds the glider up.
   if (risesInto(p.pos.x, p.pos.z, p.pos.y)) p.vel.y = Math.max(0, p.vel.y);
+  const was = { x: p.pos.x, z: p.pos.z };
   p.pos.x += p.vel.x * TICK;
   p.pos.z += p.vel.z * TICK;
   collide(p.pos, PLAYER.radius);
+  // It comes down only under open sky, as it went up: never in through a window or under a
+  // balcony, onto a floor with no way down but the stairs. It slides down outside instead.
+  const roof = p.pos.y + ULT.headroom;
+  if (ceilingAt(p.pos.x, p.pos.z, PLAYER.radius, roof, p.pos.y) < roof) {
+    p.pos.x = was.x;
+    p.pos.z = was.z;
+    p.vel.x = p.vel.z = 0;
+  }
   const from = p.pos.y;
   p.pos.y += p.vel.y * TICK;
   if (p.vel.y > 0) {

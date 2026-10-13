@@ -27,6 +27,8 @@ body {
   margin: 0;
   height: 100%;
   overflow: hidden;
+  /* A pull past the edge would bounce the page and reveal the browser behind it. */
+  overscroll-behavior: none;
   background: var(--sky);
   color: var(--white);
   font-family: var(--jp);
@@ -910,6 +912,16 @@ body.touch .mate-bars {
 .note a {
   color: var(--white);
 }
+.install-help {
+  margin: 0;
+  max-width: 34em;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--white);
+}
+.install-help[hidden] {
+  display: none;
+}
 
 #results .label {
   margin: 0;
@@ -1047,9 +1059,17 @@ body.touch.playing #touch {
   background: rgba(255, 255, 255, 0.85);
   color: var(--ink);
 }
+/*
+ * The right-thumb cluster is laid out from the screen's corner inside the safe area,
+ * so on a phone with a notch or a home bar none of it goes under them.
+ */
+#touch {
+  --edge-r: max(24px, env(safe-area-inset-right));
+  --edge-b: max(18px, env(safe-area-inset-bottom));
+}
 #t-fire {
-  right: max(24px, env(safe-area-inset-right));
-  bottom: 96px;
+  right: var(--edge-r);
+  bottom: calc(var(--edge-b) + 78px);
   width: 92px;
   height: 92px;
   border-color: var(--ring);
@@ -1067,28 +1087,28 @@ body.touch.playing #touch {
   background: rgba(255, 90, 42, 0.3);
 }
 #t-jump {
-  right: max(24px, env(safe-area-inset-right));
-  bottom: 18px;
+  right: var(--edge-r);
+  bottom: var(--edge-b);
 }
 #t-crouch {
-  right: 128px;
-  bottom: 18px;
+  right: calc(var(--edge-r) + 104px);
+  bottom: var(--edge-b);
 }
 #t-ads {
-  right: 132px;
-  bottom: 100px;
+  right: calc(var(--edge-r) + 108px);
+  bottom: calc(var(--edge-b) + 82px);
 }
 #t-reload {
-  right: 132px;
-  bottom: 166px;
+  right: calc(var(--edge-r) + 108px);
+  bottom: calc(var(--edge-b) + 148px);
 }
 #t-tac {
-  right: 210px;
-  bottom: 18px;
+  right: calc(var(--edge-r) + 186px);
+  bottom: var(--edge-b);
 }
 #t-ult {
-  right: 210px;
-  bottom: 92px;
+  right: calc(var(--edge-r) + 186px);
+  bottom: calc(var(--edge-b) + 74px);
 }
 .ab-btn {
   background: conic-gradient(rgba(255, 255, 255, 0.35) calc(var(--p, 1) * 360deg), rgba(20, 26, 51, 0.5) 0);
@@ -1109,8 +1129,8 @@ body.touch.playing #touch {
   border-color: var(--r1);
 }
 #t-use {
-  right: 290px;
-  bottom: 170px;
+  right: calc(var(--edge-r) + 266px);
+  bottom: calc(var(--edge-b) + 152px);
   width: auto;
   height: 44px;
   border-radius: 22px;
