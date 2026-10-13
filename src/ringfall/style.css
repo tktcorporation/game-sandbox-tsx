@@ -27,6 +27,8 @@ body {
   margin: 0;
   height: 100%;
   overflow: hidden;
+  /* A pull past the edge would bounce the page and reveal the browser behind it. */
+  overscroll-behavior: none;
   background: var(--sky);
   color: var(--white);
   font-family: var(--jp);
@@ -61,7 +63,6 @@ kbd {
 }
 
 /* --- screen effects */
-#fx-ring,
 #fx-hurt,
 #fx-ult {
   position: fixed;
@@ -70,15 +71,12 @@ kbd {
   opacity: 0;
   transition: opacity 0.25s;
 }
-#fx-ring {
-  background: radial-gradient(ellipse at center, transparent 45%, rgba(255, 90, 42, 0.55) 100%);
-}
 #fx-hurt {
   background: radial-gradient(ellipse at center, transparent 55%, rgba(200, 20, 40, 0.6) 100%);
   transition: opacity 0.4s;
 }
 #fx-ult {
-  background: radial-gradient(ellipse at center, transparent 60%, rgba(255, 201, 58, 0.45) 100%);
+  background: radial-gradient(ellipse at center, transparent 60%, rgba(214, 236, 255, 0.4) 100%);
 }
 
 /* --- HUD */
@@ -126,25 +124,6 @@ kbd {
   height: 8px;
   background: var(--muted);
 }
-#compass-obj {
-  position: absolute;
-  top: 20px;
-  width: 0;
-  height: 0;
-  border-left: 7px solid transparent;
-  border-right: 7px solid transparent;
-  border-bottom: 9px solid var(--hot);
-  transform: translateX(-50%);
-}
-.compass-foe {
-  position: absolute;
-  top: 20px;
-  width: 10px;
-  height: 10px;
-  background: #ff3b2f;
-  box-shadow: 0 0 0 2px var(--ink);
-  transform: translateX(-50%) rotate(45deg);
-}
 #compass-deg {
   position: absolute;
   left: 50%;
@@ -175,13 +154,22 @@ kbd {
   font-size: 26px;
   line-height: 1;
 }
-#obj-ring {
+#obj-bag {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+#obj-bag:empty {
+  display: none;
+}
+#obj-raid {
   grid-column: 1 / -1;
   color: #ffb08f;
   font-size: 13px;
   font-weight: 800;
 }
-#obj-ring:empty {
+#obj-raid:empty {
   display: none;
 }
 
@@ -253,53 +241,8 @@ kbd {
   opacity: 0.85;
 }
 
-#marker {
-  position: absolute;
-  transform: translate(-50%, -100%);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  font-weight: 800;
-  font-size: 15px;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
-}
-#marker i {
-  width: 16px;
-  height: 16px;
-  background: var(--hot);
-  transform: rotate(45deg);
-  box-shadow: 0 0 0 2px var(--ink);
-}
 
-/* Extraction points: one marker each, and a line each on the objective card. */
-.xmark {
-  position: absolute;
-  transform: translate(-50%, -100%);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  font-family: var(--jp);
-  font-weight: 800;
-  font-size: 13px;
-  white-space: nowrap;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
-}
-.xmark i {
-  width: 14px;
-  height: 14px;
-  background: var(--hot);
-  transform: rotate(45deg);
-  box-shadow: 0 0 0 2px var(--ink);
-  order: 2;
-}
-.xmark.locked i {
-  background: rgba(255, 255, 255, 0.35);
-}
-.xmark.locked {
-  color: var(--muted);
-}
+/* Extraction points: a line each on the objective card. */
 #obj-exits {
   grid-column: 1 / -1;
   display: flex;
@@ -969,6 +912,16 @@ body.touch .mate-bars {
 .note a {
   color: var(--white);
 }
+.install-help {
+  margin: 0;
+  max-width: 34em;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--white);
+}
+.install-help[hidden] {
+  display: none;
+}
 
 #results .label {
   margin: 0;
@@ -1013,7 +966,11 @@ body.touch .mate-bars {
   color: var(--white);
 }
 #pois {
-  grid-template-columns: repeat(5, auto);
+  grid-template-columns: repeat(4, auto);
+}
+#pois .lost b {
+  color: var(--muted);
+  text-decoration: line-through;
 }
 
 /* --- touch controls (body.touch is set when the device has a touch screen) */
@@ -1102,9 +1059,17 @@ body.touch.playing #touch {
   background: rgba(255, 255, 255, 0.85);
   color: var(--ink);
 }
+/*
+ * The right-thumb cluster is laid out from the screen's corner inside the safe area,
+ * so on a phone with a notch or a home bar none of it goes under them.
+ */
+#touch {
+  --edge-r: max(24px, env(safe-area-inset-right));
+  --edge-b: max(18px, env(safe-area-inset-bottom));
+}
 #t-fire {
-  right: max(24px, env(safe-area-inset-right));
-  bottom: 96px;
+  right: var(--edge-r);
+  bottom: calc(var(--edge-b) + 78px);
   width: 92px;
   height: 92px;
   border-color: var(--ring);
@@ -1122,28 +1087,28 @@ body.touch.playing #touch {
   background: rgba(255, 90, 42, 0.3);
 }
 #t-jump {
-  right: max(24px, env(safe-area-inset-right));
-  bottom: 18px;
+  right: var(--edge-r);
+  bottom: var(--edge-b);
 }
 #t-crouch {
-  right: 128px;
-  bottom: 18px;
+  right: calc(var(--edge-r) + 104px);
+  bottom: var(--edge-b);
 }
 #t-ads {
-  right: 132px;
-  bottom: 100px;
+  right: calc(var(--edge-r) + 108px);
+  bottom: calc(var(--edge-b) + 82px);
 }
 #t-reload {
-  right: 132px;
-  bottom: 166px;
+  right: calc(var(--edge-r) + 108px);
+  bottom: calc(var(--edge-b) + 148px);
 }
 #t-tac {
-  right: 210px;
-  bottom: 18px;
+  right: calc(var(--edge-r) + 186px);
+  bottom: var(--edge-b);
 }
 #t-ult {
-  right: 210px;
-  bottom: 92px;
+  right: calc(var(--edge-r) + 186px);
+  bottom: calc(var(--edge-b) + 74px);
 }
 .ab-btn {
   background: conic-gradient(rgba(255, 255, 255, 0.35) calc(var(--p, 1) * 360deg), rgba(20, 26, 51, 0.5) 0);
@@ -1164,8 +1129,8 @@ body.touch.playing #touch {
   border-color: var(--r1);
 }
 #t-use {
-  right: 290px;
-  bottom: 170px;
+  right: calc(var(--edge-r) + 266px);
+  bottom: calc(var(--edge-b) + 152px);
   width: auto;
   height: 44px;
   border-radius: 22px;
@@ -1178,11 +1143,11 @@ body.touch.playing #touch {
 #t-use[hidden] {
   display: none;
 }
-#t-pause {
+#t-map {
   left: 50%;
   top: 46px;
-  margin-left: 180px;
-  width: 40px;
+  margin-left: 118px;
+  width: 52px;
   height: 40px;
 }
 
@@ -1198,9 +1163,54 @@ body.touch #vitals {
   width: 190px;
   padding: 6px 8px;
 }
+/*
+ * Three short rows that end above the vitals (top 92px): objective and haul, raid clock and
+ * alert state, the nearest exit. The empty ::after takes a full row to break after the haul.
+ */
 body.touch #objective {
   left: max(12px, env(safe-area-inset-left));
   top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 10px;
+  max-width: 255px;
+  padding: 4px 10px 4px 9px;
+  white-space: nowrap;
+}
+body.touch #objective::after {
+  content: "";
+  flex-basis: 100%;
+  order: 1;
+}
+body.touch #obj-text {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1 1 0;
+  min-width: 0;
+}
+body.touch #obj-count {
+  font-size: 17px;
+}
+body.touch #obj-bag,
+body.touch #obj-raid,
+body.touch #obj-stealth {
+  grid-column: auto;
+  order: 2;
+  font-size: 11px;
+}
+body.touch #obj-exits {
+  order: 3;
+  flex-basis: 100%;
+  font-size: 11px;
+  gap: 0;
+}
+body.touch #obj-exits div:not(.near):not(.live) {
+  display: none;
+}
+body.touch #obj-exits div:not(.live) span {
+  display: none;
 }
 body.touch #weapons {
   top: 10px;
@@ -1261,4 +1271,63 @@ body.touch #title h1 {
 }
 #mate[hidden] {
   display: none;
+}
+
+/* The island map: the only place that shows where things are. */
+#map {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: rgba(14, 16, 28, 0.55);
+  pointer-events: none;
+  z-index: 5;
+}
+#map[hidden] {
+  display: none;
+}
+#map-canvas {
+  height: min(82vh, 82vw);
+  aspect-ratio: 1;
+  border: 2px solid var(--ink);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  image-rendering: auto;
+}
+#map p {
+  margin: 0;
+  font-family: var(--jp);
+  font-weight: 800;
+  font-size: 13px;
+  color: var(--white);
+}
+#map .map-key {
+  color: var(--hot);
+}
+body.touch #map .map-close {
+  display: none;
+}
+/*
+ * On a phone the open map covers the map button, so it carries its own close button,
+ * and the pause button too: one button fewer on the screen while fighting.
+ */
+.map-buttons {
+  display: none;
+}
+body.touch .map-buttons {
+  display: flex;
+  gap: 14px;
+}
+body.touch .map-buttons button {
+  pointer-events: auto;
+  font-family: var(--jp);
+  font-weight: 800;
+  font-size: 15px;
+  padding: 8px 22px;
+  color: var(--white);
+  background: rgba(14, 16, 28, 0.85);
+  border: 2px solid var(--ink);
+  border-radius: 6px;
 }

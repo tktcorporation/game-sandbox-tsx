@@ -4,6 +4,8 @@ import { dist2d } from "./sim/geom";
 import { idleInput, newRun, type GameEvent, type Input, type State } from "./sim/state";
 import { step } from "./sim/step";
 import { hurtAlly } from "./sim/ally";
+import { haulValue } from "./sim/results";
+import { bagUsed } from "./sim/world";
 import { setWind, sfx, unlock } from "./view/audio";
 import { Hud } from "./view/hud";
 import { World } from "./view/world";
@@ -60,11 +62,20 @@ setupTouch({
   hold: (code, on) => (on ? keys.add(code) : keys.delete(code)),
   fire: (on) => (fire = on && running && !paused),
   toggleAds: () => (ads = !ads),
-  pause: () => setPaused(true),
+  map: () => {
+    if (running) hud.toggleMap();
+  },
+});
+// The pause button sits on the open map on a phone (see .map-buttons).
+$("map-pause").addEventListener("click", () => {
+  hud.toggleMap(false);
+  setPaused(true);
 });
 
 addEventListener("keydown", (e) => {
   if (e.repeat) return;
+  // The map opens over the game straight from the key, whoever is at the controls.
+  if (e.code === "KeyM" && running) hud.toggleMap();
   keys.add(e.code);
   edges.add(e.code);
   if (["Space", "KeyC", "ControlLeft", "Tab"].includes(e.code)) e.preventDefault();
@@ -130,7 +141,7 @@ function onEvent(e: GameEvent, s: State) {
   const p = s.player;
   switch (e.t) {
     case "shot":
-      sfx.shot(e.weapon, p.ultTime > 0);
+      sfx.shot(e.weapon);
       break;
     case "hit":
       if (!e.ally) sfx.hit(e.crit, e.shield, e.flank === "back" || e.flank === "ambush");
@@ -199,11 +210,14 @@ function onEvent(e: GameEvent, s: State) {
     case "ultReady":
       sfx.ultReady();
       break;
-    case "ultStart":
-      sfx.ultStart();
+    case "leap":
+      sfx.leap();
       break;
-    case "ultEnd":
-      sfx.ultEnd();
+    case "leapBlocked":
+      sfx.tacticalMiss();
+      break;
+    case "leapLand":
+      sfx.leapLand();
       break;
     case "healStart":
       sfx.battery();
@@ -245,11 +259,14 @@ function onEvent(e: GameEvent, s: State) {
     case "landed":
       sfx.banner();
       break;
-    case "ringClose":
-      if (e.poi > 0) sfx.ringWarn();
+    case "reinforce":
+      sfx.reinforce();
       break;
-    case "ringHurt":
-      sfx.ringHurt();
+    case "raiders":
+      sfx.raiders();
+      break;
+    case "searchStart":
+      sfx.search();
       break;
     case "careDrop":
       sfx.careDrop();
@@ -263,12 +280,12 @@ function onEvent(e: GameEvent, s: State) {
     case "revive":
       sfx.revive();
       break;
-    case "extractReady":
+    case "titanDown":
       sfx.victory();
       break;
     case "done":
-      sfx.victory();
-      setTimeout(finish, 1400);
+      if (s.outcome === "extracted") sfx.victory();
+      setTimeout(finish, s.outcome === "extracted" ? 1400 : 2400);
       break;
   }
 }
@@ -283,14 +300,40 @@ function tick() {
   for (const e of state.events) onEvent(e, state);
 }
 
+/**
+ * The canvas's drawing size, measured from the stage itself. iOS reports `innerWidth` and
+ * `innerHeight` from before a rotation on the resize event, which left the picture drawn
+ * at the old shape and stretched to the new one; the stage's own box is always current.
+ */
 function size() {
-  const w = innerWidth;
-  const h = innerHeight;
+  const w = Math.max(1, stage.clientWidth || innerWidth);
+  const h = Math.max(1, stage.clientHeight || innerHeight);
   world.resize(w, h);
   return { w, h };
 }
 let dims = size();
-addEventListener("resize", () => (dims = size()));
+new ResizeObserver(() => (dims = size())).observe(stage);
+
+// iPhone Safari cannot put a page in full screen; opened from the home screen it runs
+// without the browser's bars, so say how on the title screen there.
+const ios = /iP(hone|od)/.test(navigator.userAgent);
+const homeScreen = matchMedia("(display-mode: standalone), (display-mode: fullscreen)").matches || (navigator as Navigator & { standalone?: boolean }).standalone === true;
+$("install-help").hidden = !(ios && !homeScreen);
+
+/** Keeps the phone's screen awake during a raid; let go when the page is hidden, taken again on return. */
+let wake: { release(): Promise<void> } | null = null;
+function keepAwake(on: boolean) {
+  const lock = (navigator as Navigator & { wakeLock?: { request(type: "screen"): Promise<{ release(): Promise<void> }> } }).wakeLock;
+  if (!on) {
+    wake?.release().catch(() => undefined);
+    wake = null;
+  } else if (lock && !wake && !document.hidden) {
+    lock
+      .request("screen")
+      .then((w) => (wake = w))
+      .catch(() => undefined);
+  }
+}
 
 let last = performance.now();
 function frame(now: number) {
@@ -314,7 +357,7 @@ function frame(now: number) {
     }
     if (n === 6) acc = 0;
   }
-  setWind(running && state.phase === "drop" ? 1 : 0);
+  setWind(running && (state.phase === "drop" || state.player.leap) ? 1 : 0);
   world.render(state, dt);
   if (running) hud.frame(state, world, dt, dims.w, dims.h);
   requestAnimationFrame(frame);
@@ -344,6 +387,7 @@ function start() {
     (screen.orientation as unknown as { lock?: (o: string) => Promise<void> } | undefined)?.lock?.("landscape").catch(() => undefined);
   }
   document.body.classList.add("playing");
+  keepAwake(true);
   world.reset();
   state = newRun(Date.now() & 0xffff);
   acc = hitstop = slowmo = 0;
@@ -353,12 +397,13 @@ function start() {
   $("results").hidden = true;
   $("pause").hidden = true;
   hud.show(true);
-  hud.banner("降下", `${touchMode ? "スティック" : "WASD"}で着地点を選ぶ。黄色の目印が最初の拠点`);
+  hud.banner("降下", `${touchMode ? "スティック" : "WASD"}で着地点を選ぶ。拠点と脱出地点は${touchMode ? "地図ボタン" : " M "}の地図で見る`);
   lock();
 }
 
 function finish() {
   running = false;
+  keepAwake(false);
   document.body.classList.remove("playing");
   fire = ads = false;
   $("banner").className = "";
@@ -379,7 +424,12 @@ document.addEventListener("pointerlockerror", () => (noLock = true));
 document.addEventListener("pointerlockchange", () => {
   if (document.pointerLockElement !== stage && running && state.phase !== "done") setPaused(true);
 });
-document.addEventListener("visibilitychange", () => document.hidden && setPaused(true));
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) setPaused(true);
+  // The system drops the wake lock while the page is hidden.
+  wake = null;
+  if (!document.hidden && running) keepAwake(true);
+});
 $("start").addEventListener("click", start);
 $("restart").addEventListener("click", start);
 $("resume").addEventListener("click", () => {
@@ -405,6 +455,7 @@ declare global {
     ringfallBot: (skill: string) => void;
     ringfallYaw: () => number;
     ringfallDownAlly: () => void;
+    ringfallChargeUlt: () => void;
     ringfallCamera: (x?: number, y?: number, z?: number, yaw?: number, pitch?: number) => void;
   }
 }
@@ -416,9 +467,15 @@ window.render_game_to_text = () => {
     screen: running ? "game" : $("results").hidden ? "title" : "results",
     phase: s.phase,
     time: +s.time.toFixed(1),
-    poi: s.poi,
-    poiActive: s.poiActive,
-    player: { x: +p.pos.x.toFixed(1), y: +p.pos.y.toFixed(1), z: +p.pos.z.toFixed(1), hp: Math.round(p.hp), shield: Math.round(p.shield), armor: p.armor, downed: p.downed > 0, weapons: p.weapons.map((w) => w && `${w.kind}${w.rarity}:${w.mag}`), ult: +p.ult.toFixed(2), ultTime: +p.ultTime.toFixed(1), reveal: +p.reveal.toFixed(1), crouch: p.crouch },
+    outcome: s.outcome,
+    raid: +(s.phase === "drop" ? 0 : s.time - s.landedAt).toFixed(1),
+    visited: s.visited,
+    cleared: s.cleared,
+    reinforce: { next: +s.reinforceT.toFixed(1), came: s.reinforceN },
+    haul: { items: s.player.haul, value: haulValue(s), bag: bagUsed(s.player.haul) },
+    search: s.player.search && { bin: s.player.search.bin, t: +s.player.search.t.toFixed(1) },
+    raiders: { next: Number.isFinite(s.raiderT) ? +s.raiderT.toFixed(1) : null },
+    player: { x: +p.pos.x.toFixed(1), y: +p.pos.y.toFixed(1), z: +p.pos.z.toFixed(1), hp: Math.round(p.hp), shield: Math.round(p.shield), armor: p.armor, downed: p.downed > 0, weapons: p.weapons.map((w) => w && `${w.kind}${w.rarity}:${w.mag}`), ult: +p.ult.toFixed(2), leap: !!p.leap, reveal: +p.reveal.toFixed(1), crouch: p.crouch },
     ally: { active: s.ally.active, x: +s.ally.pos.x.toFixed(1), y: +s.ally.pos.y.toFixed(1), z: +s.ally.pos.z.toFixed(1), hp: Math.round(s.ally.hp), shield: Math.round(s.ally.shield), down: +s.ally.down.toFixed(1), helped: +s.ally.helped.toFixed(1), rescue: +s.ally.rescue.toFixed(1), target: s.ally.target },
     awaitAlly: p.awaitAlly,
     extract: { ship: +s.shipCall.toFixed(1), hold: +s.extractTime.toFixed(1), at: s.extractedAt, flares: p.flares },
@@ -444,6 +501,11 @@ window.advanceTime = (ms: number) => {
 window.ringfallCamera = (x, y, z, yaw, pitch) => {
   world.cameraOverride = x === undefined ? null : { x, y: y ?? 2, z: z ?? 0, yaw: yaw ?? 0, pitch: pitch ?? 0 };
   world.render(state, 0.016);
+};
+
+/** Automation only: fill the ult's charge, to check the leap. */
+window.ringfallChargeUlt = () => {
+  state.player.ult = 1;
 };
 
 /** Automation only: knock the teammate down, to check picking it up. */

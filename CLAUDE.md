@@ -13,10 +13,15 @@ Read the game's brief before changing anything visual. A new page needs an entry
 
 ## RINGFALL
 
-A battle-royale-shaped run against robots only: skydive onto an island, clear three POIs while the
-ring closes toward the next one, beat the titan, extract. First person on three.js. Robots are
-squads placed on the island from the start (`POIS[].squads` and `ROAMERS` in `map.ts`), not waves:
-the player finds them and takes them one squad at a time.
+An extraction raid against robots only: skydive onto an island, explore it for valuables, and get
+off alive by one of three extraction points, all open from the start. No ring and no set order: the
+player chooses which POIs to take and when to leave. First person on three.js. Robots are squads
+placed on the island from the start (`POIS[].squads` and `ROAMERS` in `map.ts`, some of them
+patrolling the roads), plus reinforcements (`REINFORCE` in `config.ts`) that beam in out of sight
+on a timer and come looking, and once per raid an elite squad (`RAIDERS` / `ELITE`) that flanks.
+Bins take time to search (`SEARCH`) and valuables fill a bag of `BAG.slots`. The HUD shows no
+markers or distances; the island map (`view/map.ts`, M) is where the POIs and exits are. A wipe
+ends the raid and loses the haul; `results.ts` scores the haul plus cleared POIs.
 
 ```bash
 npm run sim:ringfall     # gate 2: bots of three skills play the whole run headless
@@ -29,10 +34,13 @@ npm run shots:ringfall   # gate 3: the build played to the end in Chromium; scre
   float); build structures with its `building()` (one storey), `tower()` (several storeys with stairs
   inside), `bridge()` and `stairs()` helpers, whose risers stay under the step-up height. Each POI is
   written in its own frame and moved into place by `AT`; the districts between them use island
-  coordinates. The ground is a height field (`terrain.ts`): unclimbable high ground with the POIs
-  and districts in basins cut into it (`BASINS`), joined by valley roads (`ROADS`), shelves inside
-  the POI basins, a canyon, and cliffs round the island; ground steeper than `STEEP` is a wall. It is pressed flat
-  near every authored box and point, so hand-built places keep the heights they were written with.
+  coordinates. The ground is a height field (`terrain.ts`), a dried-up reservoir: the POIs and
+  districts are basins (`BASINS`) at their own `LEVEL` (the lakebed at -7 m, the dam crest at +8,
+  the quarry pit at -10...), joined by roads (`ROADS`) that ramp between levels, with unclimbable
+  high ground between them, shelves inside the POI basins, the spillway canyon, and cliffs round
+  the island; ground steeper than `STEEP` is a wall, dropped down but never climbed. Boxes are
+  written on ground at 0 and lifted to their area's level by `onLevel()`, points by `onFloor()`
+  (`map.ts`); the ground is pressed flat at that level near every authored box and point.
   `scatterCover()` then fills the open ground with low walls,
   crates, containers and ruins from a fixed seed, keeping clear of authored points and patrol routes. Tuning numbers are in `config.ts`. `npm run sim:ringfall` first checks that every
   authored point (entries, bins, loot, squad posts, patrols) stands on a floor and not inside a box.
@@ -47,10 +55,15 @@ npm run shots:ringfall   # gate 3: the build played to the end in Chromium; scre
   robots, revives the player once the self-revive is spent, and is revived with the use key.
   Robots choose between the player and the teammate in `chooseTarget()` (`enemies.ts`); the sim
   gate's `ally` column is its damage share, downs and revives.
-- `EXTRACTS` in `map.ts` are the ways off the island after the titan; `stepExtract()` in `world.ts`
+- `EXTRACTS` in `map.ts` are the ways off the island; `stepExtract()` in `world.ts`
   runs them (dropship call and its waves in `SHIP_WAVES`, the flare, the waits). The sim gate's
   `exit` column counts which one each run used; the bot's choice depends on its skill.
-- `nav.ts` is ground path finding for the bot only; the game never reads it.
+- `nav.ts` is ground path finding for the bot only; the game never reads it. Robots beamed in from
+  afar (reinforcements and raiders, `SquadState.routed`) find their way: `hunt.ts` builds a
+  distance field over the ground (2 m cells; cliffs, high ground and boxes a walker cannot step
+  over closed) to where they think the player is, and their walkers follow it whenever they cannot
+  see whom they are after, fight or not. They beam in a walk of `REINFORCE.dist` away along it.
+  Every other robot walks straight at its goal, and nobody paths inside a building.
 - `src/ringfall/touch.ts` is the phone layout (landscape): a floating stick on the left half, view
   drag on the right half, buttons under the right thumb. It feeds the same `Input` as the keyboard,
   with `input.touch` set so the sim applies `ASSIST.touchPull`. `npm run shots:ringfall` drives it with

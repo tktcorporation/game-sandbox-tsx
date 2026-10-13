@@ -1,4 +1,4 @@
-import { ALLY, DROP, ENEMIES, PLAYER, ULT, type EnemyKind, type Flank, type HealKind, type Rarity, type WeaponKind } from "./config";
+import { ALLY, DROP, ELITE, ENEMIES, RAIDERS, REINFORCE, type ValuableKind, PLAYER, ULT, type EnemyKind, type Flank, type HealKind, type Rarity, type WeaponKind } from "./config";
 import { EXTRA_BINS, POIS, SPAWN, type ExtractId } from "./map";
 import { populate } from "./enemies";
 
@@ -38,12 +38,17 @@ export interface Player {
   recoil: number; // degrees currently kicked up, recovers
   tactical: number; // cooldown left
   ult: number; // charge 0..1
-  ultTime: number; // seconds of overdrive left
+  /** In the air on the ult's leap, going up and then gliding down; `carry` takes the teammate along. */
+  leap: { carry: boolean } | null;
   reveal: number; // seconds left of seeing robots through walls
   stepNoise: number; // seconds until the next sprint footstep sound
   heals: Record<HealKind, number>;
   /** Flares carried (0 or 1): they call the plateau pickup. */
   flares: number;
+  /** Valuables carried; their worth is the raid's score if the player gets off the island. */
+  haul: ValuableKind[];
+  /** The bin being searched and for how long, or null. */
+  search: { bin: number; t: number } | null;
   /** The item being used and the seconds left; shooting cancels it without using it. */
   healing: { kind: HealKind; t: number } | null;
   sinceHurt: number;
@@ -132,6 +137,8 @@ export interface Enemy {
   targetT: number;
   /** Seconds since the teammate last hit it. */
   allyHit: number;
+  /** A raider: tougher, deadlier, quicker to turn, and it goes round the player's side. */
+  elite: boolean;
 }
 
 export interface SquadState {
@@ -140,6 +147,18 @@ export interface SquadState {
   patrol: Point[];
   leg: number; // next patrol waypoint
   engaged: boolean;
+  /** Walks the roads: hears gunfire from further away. */
+  roam: boolean;
+  /** A reinforcement squad that keeps heading for the player until it first finds them. */
+  hunt?: boolean;
+  /**
+   * Beamed in from afar (reinforcements, raiders): its walkers find their way by the
+   * ground's field (hunt.ts) whenever they cannot see whom they are after, fight or not,
+   * so one member's sighting does not strand the rest behind a cliff.
+   */
+  routed?: boolean;
+  /** Raiders: elite members, and a closer hunt. */
+  elite?: boolean;
   sinceSeen: number; // seconds since any member saw the player while engaged
   last: Point; // where the squad last saw the player
 }
@@ -163,13 +182,14 @@ export interface Shockwave {
   allyHit?: boolean;
 }
 
-export type LootKind = "weapon" | "armor" | "heal" | "shard" | "flare";
+export type LootKind = "weapon" | "armor" | "heal" | "shard" | "flare" | "valuable";
 
 export interface Loot {
   id: number;
   kind: LootKind;
   weapon?: Weapon;
   heal?: HealKind;
+  valuable?: ValuableKind;
   rarity: Rarity;
   pos: Vec3;
   vel: Vec3;
@@ -196,21 +216,10 @@ export interface CarePackage {
   weapon: Weapon;
 }
 
-export interface Ring {
-  x: number;
-  z: number;
-  r: number;
-  fromX: number;
-  fromZ: number;
-  fromR: number;
-  toX: number;
-  toZ: number;
-  toR: number;
-  t: number; // 0..1 progress of the current shrink
-  shrinking: boolean;
-}
+export type Phase = "drop" | "play" | "done";
 
-export type Phase = "drop" | "play" | "extract" | "done";
+/** How a raid ended: off the island with what was carried, or wiped out. */
+export type Outcome = "extracted" | "dead";
 
 export type GameEvent =
   | { t: "shot"; weapon: WeaponKind; rarity: Rarity }
@@ -241,8 +250,10 @@ export type GameEvent =
   | { t: "tactical"; targets: Vec3[] }
   | { t: "tacticalMiss" }
   | { t: "ultReady" }
-  | { t: "ultStart" }
-  | { t: "ultEnd" }
+  | { t: "leap" }
+  /** The ult was pressed under a roof: nothing happens and the charge is kept. */
+  | { t: "leapBlocked" }
+  | { t: "leapLand" }
   | { t: "healStart"; kind: HealKind }
   | { t: "healDone"; kind: HealKind }
   | { t: "telegraph"; id: number }
@@ -254,15 +265,16 @@ export type GameEvent =
   | { t: "calm"; squad: number }
   | { t: "poiStart"; poi: number }
   | { t: "poiClear"; poi: number }
-  | { t: "ringClose"; poi: number }
-  | { t: "ringHurt" }
+  | { t: "reinforce"; x: number; z: number }
   | { t: "careDrop"; x: number; z: number }
   | { t: "careLand"; x: number; z: number }
   | { t: "stomp"; x: number; z: number }
   | { t: "stompTelegraph"; id: number }
   | { t: "bossPhase" }
   | { t: "landed" }
-  | { t: "extractReady" }
+  | { t: "titanDown" }
+  | { t: "searchStart"; id: number }
+  | { t: "raiders"; x: number; z: number }
   | { t: "shipCalled" }
   | { t: "shipLanded" }
   | { t: "flareLit" }
@@ -279,7 +291,8 @@ export interface Stats {
   flankHits: number;
   downs: number;
   wipes: number;
-  poiTimes: number[];
+  /** The POIs cleared, in the order they fell. */
+  cleared: number[];
   allyDamage: number;
   allyKills: number;
   allyDowns: number;
@@ -304,10 +317,17 @@ export interface State {
   loot: Loot[];
   bins: Bin[];
   care: CarePackage | null;
-  ring: Ring;
-  poi: number; // index of the current objective POI
-  poiActive: boolean; // the player is inside the current POI's area
-  poiStart: number;
+  /** POIs the player has come into (for the arrival banner), and those cleared of robots. */
+  visited: boolean[];
+  cleared: boolean[];
+  /** Seconds until the next reinforcement squad beams in, and how many have come. */
+  reinforceT: number;
+  /** When the player touched down: the raid clock starts here. */
+  landedAt: number;
+  reinforceN: number;
+  /** Seconds until the raiders beam in (Infinity once they have). */
+  raiderT: number;
+  outcome: Outcome | null;
   /** Seconds the player has stood ready in an extraction point. */
   extractTime: number;
   /** Seconds until the dropship lands: -1 not called yet, 0 landed. */
@@ -406,11 +426,13 @@ export function newRun(seed = 1): State {
       recoil: 0,
       tactical: 0,
       ult: ULT.startCharge,
-      ultTime: 0,
+      leap: null,
       reveal: 0,
       stepNoise: 0,
       heals: { cell: 2, battery: 0, syringe: 2, medkit: 0 },
       flares: 0,
+      haul: [],
+      search: null,
       healing: null,
       sinceHurt: 99,
       downed: 0,
@@ -427,17 +449,20 @@ export function newRun(seed = 1): State {
     loot,
     bins,
     care: null,
-    ring: { x: 0, z: 0, r: 230, fromX: 0, fromZ: 0, fromR: 230, toX: 0, toZ: 0, toR: 230, t: 1, shrinking: false },
-    poi: 0,
-    poiActive: false,
-    poiStart: 0,
+    visited: POIS.map(() => false),
+    cleared: POIS.map(() => false),
+    reinforceT: REINFORCE.first,
+    landedAt: 0,
+    reinforceN: 0,
+    raiderT: RAIDERS.at,
+    outcome: null,
     extractTime: 0,
     shipCall: -1,
     shipWave: 0,
     shipWaveT: 0,
     extractedAt: null,
     events: [],
-    stats: { kills: 0, damage: 0, shots: 0, hits: 0, crits: 0, flankHits: 0, downs: 0, wipes: 0, poiTimes: [], allyDamage: 0, allyKills: 0, allyDowns: 0, allyRescues: 0, allyHelped: 0 },
+    stats: { kills: 0, damage: 0, shots: 0, hits: 0, crits: 0, flankHits: 0, downs: 0, wipes: 0, cleared: [], allyDamage: 0, allyKills: 0, allyDowns: 0, allyRescues: 0, allyHelped: 0 },
   };
   populate(s);
   return s;
@@ -480,7 +505,10 @@ export function rand(s: State): number {
   return (s.rng % 1_000_000) / 1_000_000;
 }
 
-export const enemyMax = (k: EnemyKind) => ENEMIES[k].hp + ENEMIES[k].shield;
+/** Full health and shield of a robot; raiders have more. */
+export const enemyHp = (e: Enemy) => ENEMIES[e.kind].hp * (e.elite ? ELITE.hp : 1);
+export const enemyShield = (e: Enemy) => ENEMIES[e.kind].shield * (e.elite ? ELITE.hp : 1);
+export const enemyMax = (e: Enemy) => enemyHp(e) + enemyShield(e);
 
 /** Unit vector the player looks along. yaw 0 = -z, yaw +π/2 = +x. */
 export function forward(yaw: number, pitch: number): Vec3 {

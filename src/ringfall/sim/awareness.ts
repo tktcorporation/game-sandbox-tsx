@@ -10,7 +10,7 @@ import type { Enemy, State, Vec3 } from "./state";
 export const headOf = (e: Enemy): Vec3 => ({ x: e.pos.x, y: e.pos.y + Math.max(ENEMIES[e.kind].weakY, 0.2), z: e.pos.z });
 
 /** The player is a valid target for robots: on the ground and not knocked down. */
-const visibleNow = (s: State) => (s.phase === "play" || s.phase === "extract") && s.player.downed <= 0;
+const visibleNow = (s: State) => s.phase === "play" && s.player.downed <= 0;
 
 /**
  * Whether another squad may start fighting (see AWARE.maxSquads). The boss
@@ -54,15 +54,16 @@ export function alertSquad(s: State, squad: number, x: number, z: number, by: En
 
 /**
  * A sound at (x, z) carrying `radius` metres. Robots inside it come to look;
- * close ones that can see the spot engage at once.
+ * close ones that can see the spot engage at once. Gunfire carries further to the
+ * squads out on the roads (NOISE.roamMult); footsteps and searching do not.
  */
-export function makeNoise(s: State, x: number, z: number, radius: number) {
+export function makeNoise(s: State, x: number, z: number, radius: number, gunfire = false) {
   const spot = { x, y: s.player.pos.y + 1.2, z };
   const alerted = new Set<number>();
   for (const e of s.enemies) {
     if (e.aware === "engaged" || e.mode === "spawning") continue;
     const d = dist2d(e.pos, spot);
-    if (d > radius) continue;
+    if (d > radius * (gunfire && s.squads[e.squad]?.roam ? NOISE.roamMult : 1)) continue;
     if (d < radius * NOISE.engageInside && los(headOf(e), spot) && mayEngage(s, e)) engageSquad(s, e.squad, e);
     else if (!alerted.has(e.squad)) {
       alerted.add(e.squad);

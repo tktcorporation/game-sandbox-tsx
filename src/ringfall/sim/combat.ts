@@ -1,4 +1,4 @@
-import { ALLY, ASSIST, DEG, ENEMIES, FLANK, NOISE, PLAYER, RARITY, TICK, ULT, WEAPONS, type Flank, type WeaponSpec } from "./config";
+import { ALLY, ASSIST, DEG, ENEMIES, FLANK, NOISE, PLAYER, RARITY, TICK, ULT, WEAPONS, type Flank, type ValuableKind, type WeaponSpec } from "./config";
 import { engageSquad, makeNoise } from "./awareness";
 import { POIS } from "./map";
 import { los, lookAngles, norm, rayWorld, raySphere, wrapAngle } from "./geom";
@@ -23,10 +23,10 @@ export const eyePos = (s: State): Vec3 => {
 
 export const magSize = (w: Weapon) => Math.round(WEAPONS[w.kind].mag * RARITY.mag[w.rarity]);
 
-/** Assist cone half-angle (radians) for the current ADS and overdrive state at a distance. */
+/** Assist cone half-angle (radians) for the current ADS state at a distance. */
 function coneAt(s: State, dist: number, pelletScale: number): number {
   const p = s.player;
-  const base = p.ultTime > 0 ? ASSIST.ultCone : ASSIST.hipCone + (ASSIST.adsCone - ASSIST.hipCone) * p.ads;
+  const base = ASSIST.hipCone + (ASSIST.adsCone - ASSIST.hipCone) * p.ads;
   return base * DEG * pelletScale + Math.atan(ASSIST.farPadding / Math.max(dist, 1));
 }
 
@@ -68,13 +68,12 @@ const assistRank = (e: Enemy, angle: number) => (e.aware === "idle" ? angle + 10
 /** Turn the player's view toward the assist target by a fraction of the remaining angle. */
 export function applyPull(s: State, moving: boolean, firing: boolean, touch = false) {
   const p = s.player;
-  const strong = p.ultTime > 0;
   const engaged = firing || p.ads > 0.5;
-  if (!strong && !(engaged && (moving || touch))) return;
-  const t = assistTarget(s, ASSIST.pullCone * (strong ? 1.6 : 1));
+  if (!(engaged && (moving || touch))) return;
+  const t = assistTarget(s, ASSIST.pullCone);
   if (!t) return;
   const want = lookAngles(eyePos(s), bodyCenter(t.e));
-  const k = Math.min(1, (strong ? ASSIST.ultPull : ASSIST.pull * (touch ? ASSIST.touchPull : 1)) * TICK);
+  const k = Math.min(1, ASSIST.pull * (touch ? ASSIST.touchPull : 1) * TICK);
   p.yaw += wrapAngle(want.yaw - p.yaw) * k;
   p.pitch += (want.pitch - p.pitch) * k;
 }
@@ -136,7 +135,7 @@ export function fireRay(s: State, w: Weapon, dir: Vec3) {
 export function shoot(s: State, w: Weapon) {
   const p = s.player;
   const spec = WEAPONS[w.kind];
-  const spread = (spec.hipSpread + (spec.adsSpread - spec.hipSpread) * p.ads) * (p.ultTime > 0 ? 0.5 : 1);
+  const spread = (spec.hipSpread + (spec.adsSpread - spec.hipSpread) * p.ads);
   const aimPitch = p.pitch + p.recoil * DEG;
   for (let i = 0; i < spec.pellets; i++) {
     const a = rand(s) * Math.PI * 2;
@@ -146,7 +145,7 @@ export function shoot(s: State, w: Weapon) {
   }
   p.recoil += spec.recoil * (1 - 0.5 * p.ads);
   s.events.push({ t: "shot", weapon: w.kind, rarity: w.rarity });
-  makeNoise(s, p.pos.x, p.pos.z, NOISE[w.kind]);
+  makeNoise(s, p.pos.x, p.pos.z, NOISE[w.kind], true);
 }
 
 /** Which way a shot from the player meets this robot (see FLANK). */
@@ -189,7 +188,7 @@ export function damageEnemy(s: State, e: Enemy, raw: number, crit: boolean, at: 
   s.events.push({ t: "hit", id: e.id, pos: at, dmg: Math.round(raw), crit, shield: toShield > 0, tier: k.shieldTier, flank, ally: by === "ally" });
   if (hadShield && e.shield <= 0) s.events.push({ t: "shieldBreak", id: e.id, pos: at, tier: k.shieldTier });
   const p = s.player;
-  if (p.ultTime <= 0 && p.ult < 1) {
+  if (!p.leap && p.ult < 1) {
     p.ult = Math.min(1, p.ult + (dealt / ULT.dmgPerCharge) * k.ult * (by === "ally" ? ALLY.ultShare : 1));
     if (p.ult >= 1) s.events.push({ t: "ultReady" });
   }
@@ -213,7 +212,13 @@ export function kill(s: State, e: Enemy, crit: boolean, by: "player" | "ally" = 
   if (e.kind !== "titan" && rand(s) < 0.12) {
     s.loot.push({ id: s.nextId++, kind: "heal", heal: rand(s) < 0.5 ? "cell" : "syringe", rarity: 1, pos: { ...c }, vel: { x: 0, y: 5, z: 0 }, age: 0 });
   }
-  const last = e.poi === s.poi && s.poi < POIS.length && !s.enemies.some((o) => o.poi === s.poi);
+  // Valuables: a chance of parts from most robots, a board from a heavy, data cores from the titan.
+  const drops: ValuableKind[] = e.kind === "titan" ? ["core", "core"] : e.kind === "heavy" ? ["board"] : rand(s) < 0.3 ? ["parts"] : [];
+  for (const v of drops) {
+    const a = rand(s) * Math.PI * 2;
+    s.loot.push({ id: s.nextId++, kind: "valuable", valuable: v, rarity: v === "core" ? 3 : v === "board" ? 2 : 1, pos: { ...c }, vel: { x: Math.cos(a) * 1.5, y: 5, z: Math.sin(a) * 1.5 }, age: 0 });
+  }
+  const last = e.poi >= 0 && !s.enemies.some((o) => o.poi === e.poi);
   s.events.push({ t: "kill", id: e.id, kind: e.kind, pos: c, crit, last, ally: by === "ally" });
   if (e.kind === "titan") {
     // The titan's fall takes its summons and everything in the air with it.

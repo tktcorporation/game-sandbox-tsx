@@ -34,8 +34,8 @@ export const PLAYER = {
   regenDelay: 5,
   regenPerSec: 6,
   /** Health comes back on its own only this far; above it takes a syringe or a med kit. */
-  regenCap: 50,
-  shieldByTier: [50, 75, 100, 125],
+  regenCap: 30,
+  shieldByTier: [25, 50, 75, 100],
   downedTime: 3,
   reviveHp: 60,
   reviveIframes: 1.5,
@@ -79,13 +79,14 @@ export const DROP = {
   startY: 140,
   fallSpeed: 26,
   steer: 20,
+  /** Speed the wind carries a jumper falling over high ground toward walkable ground. */
+  drift: 26,
 };
 
 export const ASSIST = {
   /** Half-angle of the cone in which a shot that misses the hitbox still hits the enemy. */
-  hipCone: 2.6,
-  adsCone: 3.6,
-  ultCone: 10,
+  hipCone: 2.1,
+  adsCone: 2.9,
   /** Extra metres of tolerance far away, so distant enemies are not impossible. */
   farPadding: 0.3,
   /** Look sensitivity multiplier while the crosshair is near an enemy. */
@@ -93,7 +94,6 @@ export const ASSIST = {
   slowCone: 9,
   /** Fraction of the angle to the target closed per second while moving and firing or ADS. */
   pull: 1.6,
-  ultPull: 9,
   /**
    * Touch aiming: pull also works while standing still, and this much faster.
    * A thumb cannot track and strafe at once the way a mouse hand and WASD can.
@@ -156,12 +156,30 @@ export const TACTICAL = {
   stun: 1.3,
 };
 
+/**
+ * The ult: a leap straight up into the sky and a glide away, to break off a fight that
+ * is going wrong. It goes up only under open sky, carries a teammate standing close,
+ * and comes down only on low ground (like the drop). The launch is loud, and in the air
+ * the robots can still see and shoot: where to glide to decides whether it works.
+ */
 export const ULT = {
   dmgPerCharge: 1100, // damage dealt for a full charge
-  duration: 8,
-  fireRate: 1.4,
-  speed: 1.15,
-  startCharge: 0.35,
+  /** Charge gained per second on top of the damage: a full gauge in 150 s of doing nothing. */
+  perSec: 1 / 150,
+  startCharge: 0.5,
+  /** Upward speed at launch (m/s): about 26 m up under the island's gravity. */
+  rise: 28,
+  /** Fastest the glide sinks (m/s) once past the top. */
+  fall: 8,
+  /** Horizontal speed steered in the air (m/s) and how quickly it is reached. */
+  glide: 15,
+  glideAccel: 20,
+  /** Seconds of glide ahead checked for high ground, which the glider keeps out of. */
+  edgeLook: 0.4,
+  /** Open sky needed above the head to go up at all. */
+  headroom: 8,
+  /** A standing teammate within this many metres comes along. */
+  carry: 20,
 };
 
 export type EnemyKind = "drone" | "grunt" | "charger" | "heavy" | "titan";
@@ -190,10 +208,10 @@ export interface EnemySpec {
 }
 
 export const ENEMIES: Record<EnemyKind, EnemySpec> = {
-  drone: { hp: 70, shield: 0, shieldTier: 0, radius: 0.55, bodyY: 0, weakY: 0, weakR: 0.24, weakFwd: 0.42, speed: 4.2, fly: 3.4, range: 14, telegraph: 0.55, cooldown: 1.6, shots: 1, shotGap: 0, spread: 0, orbSpeed: 19, orbDmg: 16, orbR: 0.32, ult: 1 },
-  grunt: { hp: 140, shield: 70, shieldTier: 1, radius: 0.6, bodyY: 1.1, weakY: 1.86, weakR: 0.27, weakFwd: 0.08, speed: 3.2, fly: 0, range: 15, telegraph: 0.6, cooldown: 1.5, shots: 3, shotGap: 0.16, spread: 0, orbSpeed: 23, orbDmg: 15, orbR: 0.3, ult: 1 },
-  charger: { hp: 120, shield: 50, shieldTier: 0, radius: 0.72, bodyY: 0.75, weakY: 0.95, weakR: 0.3, weakFwd: 0.62, speed: 6.4, fly: 0, range: 0, telegraph: 0.6, cooldown: 1.2, shots: 0, shotGap: 0, spread: 0, orbSpeed: 0, orbDmg: 32, orbR: 0, ult: 1 },
-  heavy: { hp: 300, shield: 150, shieldTier: 2, radius: 0.95, bodyY: 1.4, weakY: 2.35, weakR: 0.36, weakFwd: 0.1, speed: 2.0, fly: 0, range: 18, telegraph: 0.85, cooldown: 3.2, shots: 5, shotGap: 0, spread: 9, orbSpeed: 17, orbDmg: 14, orbR: 0.42, ult: 1 },
+  drone: { hp: 70, shield: 0, shieldTier: 0, radius: 0.55, bodyY: 0, weakY: 0, weakR: 0.24, weakFwd: 0.42, speed: 4.2, fly: 3.4, range: 14, telegraph: 0.55, cooldown: 1.6, shots: 1, shotGap: 0, spread: 0, orbSpeed: 23, orbDmg: 21, orbR: 0.32, ult: 1 },
+  grunt: { hp: 140, shield: 70, shieldTier: 1, radius: 0.6, bodyY: 1.1, weakY: 1.86, weakR: 0.27, weakFwd: 0.08, speed: 3.2, fly: 0, range: 15, telegraph: 0.6, cooldown: 1.5, shots: 3, shotGap: 0.16, spread: 0, orbSpeed: 28, orbDmg: 20, orbR: 0.3, ult: 1 },
+  charger: { hp: 120, shield: 50, shieldTier: 0, radius: 0.72, bodyY: 0.75, weakY: 0.95, weakR: 0.3, weakFwd: 0.62, speed: 6.4, fly: 0, range: 0, telegraph: 0.6, cooldown: 1.2, shots: 0, shotGap: 0, spread: 0, orbSpeed: 0, orbDmg: 40, orbR: 0, ult: 1 },
+  heavy: { hp: 300, shield: 150, shieldTier: 2, radius: 0.95, bodyY: 1.4, weakY: 2.35, weakR: 0.36, weakFwd: 0.1, speed: 2.0, fly: 0, range: 18, telegraph: 0.85, cooldown: 3.2, shots: 5, shotGap: 0, spread: 9, orbSpeed: 20, orbDmg: 18, orbR: 0.42, ult: 1 },
   titan: { hp: 3200, shield: 1000, shieldTier: 3, radius: 2.3, bodyY: 3.2, weakY: 3.4, weakR: 0.75, weakFwd: 2.1, speed: 1.6, fly: 0, range: 20, telegraph: 1.0, cooldown: 3.0, shots: 6, shotGap: 0.16, spread: 0, orbSpeed: 13, orbDmg: 9, orbR: 0.48, ult: 0.5 },
 };
 
@@ -210,14 +228,82 @@ export const TITAN = {
   enrageAt: 0.5,
 };
 
-export const RING = {
-  dmgPerSec: 4,
-  shrinkTime: 45,
+/**
+ * What a raid scores when the player gets off the island: the value carried out,
+ * plus a bonus for each POI cleared and for the titan. A raid that ends in a wipe
+ * scores nothing.
+ */
+export const SCORE = {
+  poi: 400,
+  titan: 1500,
+  /** Lowest score for each rank, best first. */
+  ranks: [
+    ["S", 4500],
+    ["A", 3000],
+    ["B", 1500],
+    ["C", 0],
+  ] as const,
 };
 
-export const RANK = {
-  parSeconds: 240, // total run time that earns full time score
-  steps: ["S", "A", "B", "C"] as const,
+export type ValuableKind = "parts" | "board" | "core";
+
+/** Things worth carrying out. Every bin holds one; robots drop some; the best sit up high or with the titan. */
+export const VALUABLES: Record<ValuableKind, { label: string; value: number; size: number }> = {
+  parts: { label: "部品", value: 100, size: 1 },
+  board: { label: "回路基板", value: 300, size: 2 },
+  core: { label: "データコア", value: 1000, size: 3 },
+};
+
+/** The bag the valuables go in: what does not fit stays on the ground unless something cheaper makes way. */
+export const BAG = { slots: 10 };
+
+/**
+ * Searching a bin takes time with the hands busy and makes a noise; a top-floor bin
+ * of a high-rise takes longer. Moving away, shooting or healing breaks it off.
+ */
+export const SEARCH = { time: 2.2, flareTime: 3.5, noise: 9 };
+
+/**
+ * Reinforcements: a squad beams in somewhere `dist` metres from the player, out of
+ * sight, every `every` seconds after the first `first`, and comes looking for them.
+ * Later waves are bigger. The longer a raid lasts, the more is hunting the player.
+ */
+export const REINFORCE = {
+  first: 180,
+  every: 120,
+  /** Seconds between fresh guesses of where the player is while a reinforcement squad hunts. */
+  huntEvery: 8,
+  dist: [55, 110] as const,
+  waves: [
+    ["grunt", "drone"],
+    ["grunt", "drone", "charger"],
+    ["grunt", "grunt", "drone", "charger"],
+    ["heavy", "grunt", "drone", "drone"],
+  ] as EnemyKind[][],
+};
+
+/**
+ * The raiders: one elite squad that beams in once the raid has gone on a while and hunts
+ * the player down, closer on their heels than reinforcements. In a fight one member holds
+ * the player's attention while the others go wide to the sides.
+ */
+export const RAIDERS = {
+  at: 240,
+  name: "レイダー",
+  kinds: ["grunt", "grunt", "grunt"] as EnemyKind[],
+  huntEvery: 4,
+};
+
+/** How much tougher, deadlier and quicker an elite robot (a raider) is than a plain one. */
+export const ELITE = {
+  hp: 1.6,
+  dmg: 1.3,
+  cooldown: 0.75,
+  turn: 1.5,
+  /** Degrees either side of facing it can fire into (`AWARE.fireCone` for plain robots). */
+  fireCone: 70,
+  /** How far to the side of the player a flanking raider goes. */
+  flankDist: 11,
 };
 
 /**
@@ -254,7 +340,7 @@ export const AWARE = {
    * keeps searching ("?") until one of them is down, unless the player comes within
    * `joinClose` metres or shoots it. This keeps a POI a series of fights, not a crowd.
    */
-  maxSquads: 1,
+  maxSquads: 2,
   joinClose: 5,
   /** A fighting robot looks wider and further than a calm one, but never behind itself. */
   engagedFov: 1.2,
@@ -262,7 +348,7 @@ export const AWARE = {
   /** A squad tracks the player's true position only this long after a member last saw them. */
   trackTime: 0.4,
   /** A robot fires only when the player is within this many degrees of where it faces. */
-  fireCone: 25,
+  fireCone: 40,
 };
 
 /**
@@ -270,10 +356,10 @@ export const AWARE = {
  * so circling to its side or back while it faces the last known position works.
  */
 export const TURN: Record<EnemyKind, number> = {
-  drone: 3.0,
-  grunt: 2.4,
-  charger: 3.2,
-  heavy: 1.3,
+  drone: 3.6,
+  grunt: 3.0,
+  charger: 3.8,
+  heavy: 1.6,
   titan: 1.2,
 };
 
@@ -287,7 +373,7 @@ export type Flank = "front" | "side" | "back" | "ambush" | "none";
 export const FLANK = {
   frontArc: 55, // degrees either side of facing
   backArc: 115, // beyond this many degrees from facing
-  mult: { front: 0.75, side: 1, back: 2, ambush: 2.5, none: 1 } satisfies Record<Flank, number>,
+  mult: { front: 0.85, side: 1, back: 2, ambush: 2.5, none: 1 } satisfies Record<Flank, number>,
 };
 
 /** How far a sound carries, in metres. Robots inside it come to look. */
@@ -300,6 +386,10 @@ export const NOISE = {
   arc: 10,
   sprintStep: 8,
   slide: 10,
+  /** The ult's launch: everyone round about hears where the player went up. */
+  leap: 30,
+  /** Squads that roam the roads (and reinforcements) hear gunfire this many times further and come to look. */
+  roamMult: 2.5,
   /** Within this fraction of a sound's radius, a robot that can see the spot engages at once. */
   engageInside: 0.35,
 };

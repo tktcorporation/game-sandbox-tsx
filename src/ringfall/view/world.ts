@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { ENEMIES, PLAYER, TITAN, WEAPONS, WORLD, type EnemyKind } from "../sim/config";
 import { BOXES, EXTRACT, EXTRACTS, POIS } from "../sim/map";
 import { groundAt } from "../sim/geom";
-import { rimRadius, steepAt, terrainHeight } from "../sim/terrain";
+import { DAM_FACE, floorLevel, highGround, LEVEL, rimRadius, steepAt, terrainHeight } from "../sim/terrain";
 import type { GameEvent, State, Vec3 } from "../sim/state";
 import { PAL, RARITY_COLOR, SCOPE_IN, buildAlly, buildBin, buildBox, mergeStatic, buildCare, buildDropship, buildEnemy, buildGun, buildLootItem, flat, glow, haloSprite, type EnemyModel } from "./models";
 
@@ -73,8 +73,6 @@ export class World {
   private tracers: Tracer[] = [];
   private particles: Particle[] = [];
   private partMesh: THREE.InstancedMesh;
-  private ringMesh: THREE.Mesh;
-  private ringMat: THREE.ShaderMaterial;
   private care: THREE.Group | null = null;
   private careBeam: THREE.Mesh;
   private dropship: THREE.Group | null = null;
@@ -130,26 +128,6 @@ export class World {
     this.scatterRocks();
     this.addClouds();
 
-    this.ringMat = new THREE.ShaderMaterial({
-      transparent: true,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-      uniforms: { time: { value: 0 }, color: { value: new THREE.Color(PAL.ring) } },
-      vertexShader: `varying vec2 vUv; varying vec3 vWorld;
-        void main(){ vUv = uv; vec4 w = modelMatrix * vec4(position,1.0); vWorld = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
-      fragmentShader: `uniform float time; uniform vec3 color; varying vec2 vUv; varying vec3 vWorld;
-        void main(){
-          float d = distance(cameraPosition.xz, vWorld.xz);
-          float near = 1.0 - smoothstep(6.0, 45.0, d);
-          float band = step(0.82, fract(vUv.x * 220.0 + time * 0.25));
-          float height = 1.0 - smoothstep(0.0, 0.35, vUv.y);
-          float a = (0.05 + band * 0.05) * (0.35 + 0.65 * height) + near * (0.28 + band * 0.12);
-          gl_FragColor = vec4(color, a);
-        }`,
-    });
-    this.ringMesh = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 128, 1, true), this.ringMat);
-    this.ringMesh.renderOrder = 2;
-    this.scene.add(this.ringMesh);
 
     this.partMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: 0xffffff }), 700);
     this.partMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -238,6 +216,11 @@ export class World {
     const dark = new THREE.Color(PAL.sandDark);
     const rock = new THREE.Color(PAL.rock);
     const rockDark = new THREE.Color(PAL.rockDark);
+    const mud = new THREE.Color(PAL.mud);
+    const mudDark = new THREE.Color(PAL.mudDark);
+    const tide = new THREE.Color(PAL.tide);
+    const concrete = new THREE.Color(PAL.concrete);
+    const concreteDark = new THREE.Color(PAL.concreteDark);
     const c = new THREE.Color();
     // Colour each triangle as a whole: rock where it is a cliff, sand elsewhere.
     for (let t = 0; t < p.count; t += 3) {
@@ -253,12 +236,18 @@ export class World {
       }
       const h = (lo + hi) / 2;
       const cliff = steepAt(x, z) || hi - lo > 2.2;
-      if (cliff) c.copy(rock).lerp(rockDark, noise(x * 0.3, z * 0.1 + h * 0.2));
+      const k = noise(x * 0.08, z * 0.08);
+      if (cliff && DAM_FACE(x, z)) c.copy(concrete).lerp(concreteDark, noise(x * 0.5, h * 0.3) * 0.35);
+      // Below the old waterline the walls are bleached in bands; above it, bare red rock.
+      else if (cliff && h < LEVEL.shore) c.copy(tide).lerp(rock, Math.max(0, Math.min(1, (h - LEVEL.shore) / 3 + 1)) * 0.5 + noise(x * 0.3, h * 0.6) * 0.2);
+      else if (cliff) c.copy(rock).lerp(rockDark, noise(x * 0.3, z * 0.1 + h * 0.2));
+      // The unclimbable high ground: weathered rock, darker than anything walked on.
+      else if (highGround(x, z)) c.copy(rockDark).lerp(rock, k * 0.6);
+      else if (floorLevel(x, z) <= LEVEL.lakebed + 0.5) c.copy(mud).lerp(mudDark, noise(x * 0.4, z * 0.4) > 0.6 ? 0.6 : k * 0.3);
       else {
-        const k = noise(x * 0.08, z * 0.08);
-        c.copy(sand).lerp(dark, h < -1 ? 0.55 : k > 0.62 ? 0.7 : k * 0.3);
-        // High ground a touch lighter, so hills read from afar.
-        c.offsetHSL(0, 0, Math.max(-0.04, Math.min(0.05, h * 0.006)));
+        c.copy(sand).lerp(dark, k > 0.62 ? 0.7 : k * 0.3);
+        // Higher levels a touch lighter, so the steps read from afar.
+        c.offsetHSL(0, 0, Math.max(-0.05, Math.min(0.05, h * 0.006)));
       }
       for (let k = 0; k < 3; k++) colors.set([c.r, c.g, c.b], (t + k) * 3);
     }
@@ -363,7 +352,6 @@ export class World {
   handle(s: State, events: GameEvent[]): { hitstop: number; slowmo: number } {
     let hitstop = 0;
     let slowmo = 0;
-    const ult = s.player.ultTime > 0;
     for (const e of events) {
       switch (e.t) {
         case "shot": {
@@ -377,7 +365,7 @@ export class World {
           break;
         }
         case "tracer":
-          this.tracer(this.muzzleWorld(), e.to, ult ? RARITY_COLOR[3] : e.hit ? 0xfff3c4 : 0xffffff, ult ? 0.05 : 0.025);
+          this.tracer(this.muzzleWorld(), e.to, e.hit ? 0xfff3c4 : 0xffffff, 0.025);
           break;
         case "allyShot":
           this.tracer(e.from, e.to, e.hit ? 0xfff3c4 : 0xffffff, 0.018);
@@ -421,11 +409,11 @@ export class World {
           break;
         case "slide":
           this.fovKick = Math.max(this.fovKick, 8);
-          this.burst({ x: s.player.pos.x, y: 0.1, z: s.player.pos.z }, PAL.sandDark, 8, 2, 0.08, 6, 0.5);
+          this.burst({ x: s.player.pos.x, y: s.player.pos.y + 0.1, z: s.player.pos.z }, PAL.sandDark, 8, 2, 0.08, 6, 0.5);
           break;
         case "land":
           this.landDip = Math.min(0.35, e.speed * 0.02);
-          if (e.speed > 10) this.burst({ x: s.player.pos.x, y: 0.1, z: s.player.pos.z }, PAL.sand, 30, 6, 0.12, 8, 0.9);
+          if (e.speed > 10) this.burst({ x: s.player.pos.x, y: s.player.pos.y + 0.1, z: s.player.pos.z }, PAL.sand, 30, 6, 0.12, 8, 0.9);
           break;
         case "tactical":
           for (const t of e.targets) {
@@ -434,19 +422,20 @@ export class World {
           }
           this.fovKick = Math.max(this.fovKick, 3);
           break;
-        case "ultStart":
+        case "leap":
           this.fovKick = Math.max(this.fovKick, 10);
+          this.shake = Math.max(this.shake, 0.5);
           break;
         case "enemyFire":
           this.burst(e.pos, PAL.orb, 3, 2, 0.06, 0, 0.25);
           break;
         case "stomp":
           this.shake = Math.max(this.shake, 0.9);
-          this.burst({ x: e.x, y: 0.2, z: e.z }, PAL.sand, 60, 10, 0.18, 10, 1.0);
+          this.burst({ x: e.x, y: terrainHeight(e.x, e.z) + 0.2, z: e.z }, PAL.sand, 60, 10, 0.18, 10, 1.0);
           break;
         case "careLand":
           this.shake = Math.max(this.shake, 0.5);
-          this.burst({ x: e.x, y: 0.2, z: e.z }, PAL.sand, 40, 7, 0.14, 8, 1.0);
+          this.burst({ x: e.x, y: (s.care?.y ?? terrainHeight(e.x, e.z)) + 0.2, z: e.z }, PAL.sand, 40, 7, 0.14, 8, 1.0);
           break;
         case "binOpen":
           break;
@@ -479,7 +468,7 @@ export class World {
     this.camera.position.set(p.pos.x, p.pos.y + (drop ? 1.6 : this.eyeY) + bobY - this.landDip, p.pos.z);
     this.camera.rotation.set(p.pitch + (p.recoil * Math.PI) / 180 + shakeY, -p.yaw + shakeX, p.sliding ? -0.04 : 0, "YXZ");
     const spec = w0 ? WEAPONS[w0.kind] : WEAPONS.pike;
-    const baseFov = 74 + (p.sprinting ? 4 : 0) + (p.ultTime > 0 ? 4 : 0) + (drop ? 10 : 0);
+    const baseFov = 74 + (p.sprinting ? 4 : 0) + (drop || p.leap ? 10 : 0);
     const fovTarget = baseFov + (spec.adsFov - 74) * p.ads;
     this.fovKick *= Math.exp(-dt * 2.2);
     const fov = fovTarget + this.fovKick;
@@ -499,12 +488,6 @@ export class World {
     const fz = this.camera.position.z;
     this.sun.position.set(fx - 40, 80, fz + 30);
     this.sun.target.position.set(fx, 0, fz);
-
-    // --- ring
-    const r = s.ring;
-    this.ringMesh.scale.set(r.r, 140, r.r);
-    this.ringMesh.position.set(r.x, 70, r.z);
-    this.ringMat.uniforms.time.value = this.time;
 
     for (const c of this.clouds) c.visible = drop || p.pos.y > 30;
 
@@ -533,12 +516,19 @@ export class World {
       let v = this.enemies.get(e.id);
       if (!v) {
         const m = buildEnemy(e.kind);
+        if (e.elite)
+          m.root.traverse((o) => {
+            if (o instanceof THREE.Mesh && o.material instanceof THREE.MeshLambertMaterial && o.material.color.getHex() === PAL.armor) {
+              o.material = o.material.clone();
+              o.material.color.setHex(PAL.eliteArmor);
+            }
+          });
         this.scene.add(m.root);
         const beam = new THREE.Mesh(
           new THREE.CylinderGeometry(0.06, ENEMIES[e.kind].radius * 0.45, 40, 8, 1, true),
           new THREE.MeshBasicMaterial({ color: PAL.eye, transparent: true, opacity: 0.3, depthWrite: false, blending: THREE.AdditiveBlending }),
         );
-        beam.position.set(e.pos.x, 20, e.pos.z);
+        beam.position.set(e.pos.x, e.pos.y + 20, e.pos.z);
         this.scene.add(beam);
         v = { m, kind: e.kind, flash: 0, shieldFlash: 0, walk: 0, spawnBeam: beam, lane: null };
         this.enemies.set(e.id, v);
@@ -550,7 +540,7 @@ export class World {
       if (e.mode === "spawning") {
         const t = Math.max(0, 1 - e.timer / (e.kind === "titan" ? 2.2 : 0.9));
         m.root.scale.setScalar(0.2 + 0.8 * t);
-        if (k.fly > 0) m.root.position.y = k.fly + (1 - t) * 10;
+        if (k.fly > 0) m.root.position.y = e.pos.y + (1 - t) * 10;
       } else {
         m.root.scale.setScalar(1);
         if (v.spawnBeam) {
@@ -596,7 +586,7 @@ export class World {
           const t = 1 - e.timer / TITAN.stompTelegraph;
           const rr = TITAN.stompRange * Math.min(1, t * 1.2);
           this.stompRing.scale.setScalar(rr);
-          this.stompRing.position.set(e.pos.x, 0.06, e.pos.z);
+          this.stompRing.position.set(e.pos.x, e.pos.y + 0.06, e.pos.z);
         }
       }
     }
@@ -646,15 +636,16 @@ export class World {
     for (const l of s.loot) {
       let g = this.loot.get(l.id);
       if (!g) {
-        g = buildLootItem(l.kind, l.rarity, l.weapon?.kind, l.heal);
+        g = buildLootItem(l.kind, l.rarity, l.weapon?.kind, l.heal, l.valuable);
         this.loot.set(l.id, g);
         this.scene.add(g);
       }
       g.position.set(l.pos.x, l.pos.y + (l.kind === "shard" ? 0.5 : 0), l.pos.z);
       g.rotation.y = this.time * (l.kind === "shard" ? 5 : 1.2) + l.id;
     }
+    const present = new Set(s.loot.map((l) => l.id));
     for (const [id, g] of this.loot) {
-      if (!s.loot.some((l) => l.id === id)) {
+      if (!present.has(id)) {
         this.scene.remove(g);
         this.loot.delete(id);
       }
@@ -677,26 +668,26 @@ export class World {
       }
       this.care.position.set(s.care.x, s.care.y, s.care.z);
       this.careBeam.visible = !s.care.open;
-      this.careBeam.position.set(s.care.x, 60, s.care.z);
+      this.careBeam.position.set(s.care.x, terrainHeight(s.care.x, s.care.z) + 60, s.care.z);
     }
 
     // --- extraction
-    this.extractRings.forEach((r) => (r.visible = s.phase === "extract"));
+    this.extractRings.forEach((r) => (r.visible = s.phase === "play"));
     // The dropship comes once called, and is low over the pad when it lands.
-    if ((s.phase === "extract" || s.phase === "done") && s.shipCall >= 0) {
+    if (s.phase !== "drop" && s.shipCall >= 0) {
       if (!this.dropship) {
         this.dropship = buildDropship();
-        this.dropship.position.set(EXTRACT.x, 90, EXTRACT.z - 2);
+        this.dropship.position.set(EXTRACT.x, terrainHeight(EXTRACT.x, EXTRACT.z) + 90, EXTRACT.z - 2);
         this.scene.add(this.dropship);
       }
       const call = EXTRACT.call ?? 1;
-      const want = 4.5 + 70 * Math.min(1, s.shipCall / call);
+      const want = terrainHeight(EXTRACT.x, EXTRACT.z) + 4.5 + 70 * Math.min(1, s.shipCall / call);
       this.dropship.position.y += (want - this.dropship.position.y) * Math.min(1, dt * 0.8);
       this.dropship.rotation.z = Math.sin(this.time * 1.3) * 0.03;
     }
     // A lit flare at the plateau pickup sends up red smoke.
     const here = EXTRACTS.find((x) => x.needsFlare);
-    if (here && s.phase === "extract" && s.extractTime > 0 && Math.hypot(s.player.pos.x - here.x, s.player.pos.z - here.z) < here.radius) {
+    if (here && s.phase === "play" && s.extractTime > 0 && Math.hypot(s.player.pos.x - here.x, s.player.pos.z - here.z) < here.radius) {
       if (Math.random() < dt * 30) this.burst({ x: here.x, y: groundAt(here.x, here.z, 0.4, 99) + 0.4, z: here.z }, PAL.ring, 2, 1.2, 0.25, -2.5, 2.2);
     }
 
@@ -706,8 +697,9 @@ export class World {
     for (const q of this.particles) {
       q.vel.y -= q.gravity * dt;
       q.pos.addScaledVector(q.vel, dt);
-      if (q.pos.y < 0.03) {
-        q.pos.y = 0.03;
+      const floor = terrainHeight(q.pos.x, q.pos.z) + 0.03;
+      if (q.pos.y < floor) {
+        q.pos.y = floor;
         q.vel.multiplyScalar(0.4);
       }
       this.dummy.position.copy(q.pos);
@@ -744,7 +736,7 @@ export class World {
     }
     this.gunKick += (0 - this.gunKick) * Math.min(1, dt * 14);
     const reloading = p.reload > 0;
-    const lowered = !!p.healing || !!p.mantle || p.downed > 0 || drop || s.phase === "done";
+    const lowered = !!p.healing || !!p.mantle || !!p.leap || p.downed > 0 || drop || s.phase === "done";
     const ads = p.ads;
     const gx = 0.2 * (1 - ads);
     const gy = -0.2 + 0.07 * ads - (lowered ? 0.4 : 0) - (reloading ? 0.08 : 0) + Math.sin(this.bob * 2) * 0.01 * (1 - ads);
@@ -784,13 +776,5 @@ export class World {
     if (this.dropship) this.scene.remove(this.dropship);
     this.dropship = null;
     this.particles = [];
-  }
-
-  /** The POI the HUD should mark next, in world coordinates. */
-  objective(s: State): Vec3 | null {
-    if (s.phase === "extract") return null; // the HUD marks every extraction point
-    const poi = POIS[s.poi];
-    if (!poi) return null;
-    return { x: poi.x, y: 2, z: poi.z };
   }
 }

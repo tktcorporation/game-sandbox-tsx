@@ -1,14 +1,14 @@
 import { ALLY, ASSIST, DEG, DROP, HEALS, type HealKind, MANTLE, NOISE, PLAYER, RARITY, REVEAL, SEMI_HOLD, TACTICAL, TICK, ULT, WEAPONS, WORLD } from "./config";
 import { makeNoise } from "./awareness";
-import { allyUp, placeAlly } from "./ally";
+import { allyChest, allyUp, besidePlayer, placeAlly } from "./ally";
 import { POIS } from "./map";
 import { applyPull, assistTarget, bodyCenter, damageEnemy, eyePos, magSize, shoot } from "./combat";
 import { ceilingAt, collide, groundAt, los } from "./geom";
-import { terrainGrad, terrainHeight } from "./terrain";
+import { floorLevel, offLowGround, terrainGrad, terrainHeight, towardLowGround } from "./terrain";
 import type { Input, State } from "./state";
 
 /*
- * The player: drop, movement (sprint, slide, jump), weapons, abilities, and taking damage.
+ * The player: drop, movement (sprint, slide, jump, the ult's leap), weapons, abilities, and taking damage.
  */
 
 /** Returns true on the tick the player touches the ground. */
@@ -18,16 +18,24 @@ export function stepDrop(s: State, input: Input): boolean {
   p.pitch = Math.max(-1.45, Math.min(1.2, p.pitch + input.lookY));
   const fx = Math.sin(p.yaw);
   const fz = -Math.cos(p.yaw);
-  p.pos.x += (fx * input.moveZ + Math.cos(p.yaw) * input.moveX) * DROP.steer * TICK;
-  p.pos.z += (fz * input.moveZ + Math.sin(p.yaw) * input.moveX) * DROP.steer * TICK;
   p.pos.y -= DROP.fallSpeed * TICK;
+  // High ground can only be left by dropping off it, so over it the wind takes the
+  // jumper on to the nearest walkable ground instead of their steering.
+  if (offLowGround(p.pos.x, p.pos.z)) {
+    const to = towardLowGround(p.pos.x, p.pos.z);
+    p.pos.x += to.x * DROP.drift * TICK;
+    p.pos.z += to.z * DROP.drift * TICK;
+  } else {
+    p.pos.x += (fx * input.moveZ + Math.cos(p.yaw) * input.moveX) * DROP.steer * TICK;
+    p.pos.z += (fz * input.moveZ + Math.sin(p.yaw) * input.moveX) * DROP.steer * TICK;
+  }
   collide(p.pos, PLAYER.radius);
   const g = groundAt(p.pos.x, p.pos.z, PLAYER.radius, p.pos.y);
   if (p.pos.y <= g) {
     p.pos.y = g;
     p.onGround = true;
     s.phase = "play";
-    s.poiStart = s.time;
+    s.landedAt = s.time;
     s.events.push({ t: "landed" }, { t: "land", speed: DROP.fallSpeed });
     return true;
   }
@@ -51,8 +59,11 @@ export function stepPlayer(s: State, input: Input, prevCrouch: boolean) {
   if (p.downed > 0) {
     p.downed -= TICK;
     // Waiting for the teammate, who did not make it in time.
-    if (p.downed <= 0 && p.awaitAlly) wipe(s);
-    else if (p.downed <= 0) {
+    if (p.downed <= 0 && p.awaitAlly) {
+      // The raid is over: no move, shot or jump may follow in this tick.
+      wipe(s);
+      return;
+    } else if (p.downed <= 0) {
       p.hp = PLAYER.reviveHp;
       p.iframes = PLAYER.reviveIframes;
       s.events.push({ t: "revive" });
@@ -62,7 +73,9 @@ export function stepPlayer(s: State, input: Input, prevCrouch: boolean) {
   }
 
   move(s, input, prevCrouch);
-  if (p.downed <= 0 && !p.mantle) {
+  clocks(s);
+  // In the air on the leap the hands are on the glider: no shooting, items or abilities.
+  if (p.downed <= 0 && !p.mantle && !p.leap) {
     weapons(s, input);
     abilities(s, input);
   }
@@ -125,7 +138,6 @@ function stepMantle(s: State) {
 function move(s: State, input: Input, prevCrouch: boolean) {
   const p = s.player;
   if (p.mantle) return stepMantle(s);
-  if (tryMantle(s, input)) return;
   const fx = Math.sin(p.yaw);
   const fz = -Math.cos(p.yaw);
   const rx = Math.cos(p.yaw);
@@ -137,6 +149,8 @@ function move(s: State, input: Input, prevCrouch: boolean) {
     wx /= wl;
     wz /= wl;
   }
+  if (p.leap) return glide(s, wx, wz);
+  if (tryMantle(s, input)) return;
   const speed = Math.hypot(p.vel.x, p.vel.z);
 
   if (input.moveZ > 0.5 && !input.fire && p.ads < 0.1 && !p.healing) p.forwardHeld += TICK;
@@ -180,7 +194,6 @@ function move(s: State, input: Input, prevCrouch: boolean) {
     let top = p.downed > 0 ? 1.4 : p.crouch ? PLAYER.crouch : p.sprinting ? PLAYER.sprint : PLAYER.walk;
     if (p.ads > 0.5) top *= 0.75;
     if (p.healing) top *= 0.5;
-    if (p.ultTime > 0) top *= ULT.speed;
     if (p.onGround) {
       const tx = wx * top - p.vel.x;
       const tz = wz * top - p.vel.z;
@@ -195,9 +208,11 @@ function move(s: State, input: Input, prevCrouch: boolean) {
       }
     } else {
       // Air: steer, but never gain speed beyond the take-off speed (keeps slide-jump momentum).
+      // A downed body (knocked out of the leap) just falls where it was going.
+      const steer = p.downed > 0 ? 0 : PLAYER.airAccel;
       const cap = Math.max(speed, top);
-      p.vel.x += wx * PLAYER.airAccel * TICK;
-      p.vel.z += wz * PLAYER.airAccel * TICK;
+      p.vel.x += wx * steer * TICK;
+      p.vel.z += wz * steer * TICK;
       const ns = Math.hypot(p.vel.x, p.vel.z);
       if (ns > cap) {
         p.vel.x *= cap / ns;
@@ -268,7 +283,6 @@ function weapons(s: State, input: Input) {
   const spec = WEAPONS[w.kind];
   const size = magSize(w);
   if (w.mag < 0) w.mag = size;
-  p.cooldown = Math.max(0, p.cooldown - TICK);
   p.ads += ((input.ads && !p.healing ? 1 : 0) - p.ads) * Math.min(1, TICK / 0.08);
 
   if (p.reload > 0) {
@@ -292,24 +306,151 @@ function weapons(s: State, input: Input) {
   // Semi-auto weapons also repeat while held, a little slower than clicking.
   const canFire = input.fire && p.cooldown <= 0 && p.reload <= 0 && !p.healing;
   if (canFire) {
-    if (w.mag <= 0 && p.ultTime <= 0) {
+    if (w.mag <= 0) {
       if (!p.triggerHeld) s.events.push({ t: "dry" });
       startReload();
     } else {
       // Spend the round first: a kill with a gold weapon refills the magazine inside shoot().
-      if (p.ultTime <= 0) w.mag--;
+      w.mag--;
       shoot(s, w);
       const held = !spec.auto && p.triggerHeld ? SEMI_HOLD : 1;
-      p.cooldown = (spec.interval * held) / (p.ultTime > 0 ? ULT.fireRate : 1);
-      if (w.mag <= 0 && p.ultTime <= 0) startReload();
+      p.cooldown = spec.interval * held;
+      if (w.mag <= 0) startReload();
     }
   }
   p.triggerHeld = input.fire;
 }
 
+/** The ult: straight up into the sky, if there is open sky above. */
+function leap(s: State) {
+  const p = s.player;
+  const top = p.pos.y + ULT.headroom;
+  if (ceilingAt(p.pos.x, p.pos.z, PLAYER.radius, top, p.pos.y) < top) {
+    s.events.push({ t: "leapBlocked" });
+    return;
+  }
+  p.ult = 0;
+  // Only a teammate on the same floor and in sight comes along: never one through a floor or a wall.
+  const a = s.ally;
+  const carry = allyUp(s) && Math.hypot(a.pos.x - p.pos.x, a.pos.z - p.pos.z) < ULT.carry && Math.abs(a.pos.y - p.pos.y) < 1.5 && los(eyePos(s), allyChest(a));
+  p.leap = { carry };
+  p.vel.y = ULT.rise;
+  p.onGround = false;
+  p.sliding = false;
+  p.crouch = false;
+  p.sprinting = false;
+  p.healing = null;
+  p.search = null;
+  p.reload = 0; // the hands let go of the magazine for the glider
+  p.ads = 0;
+  makeNoise(s, p.pos.x, p.pos.z, NOISE.leap);
+  s.events.push({ t: "leap" });
+}
+
+/**
+ * High ground at (x, z) that a glider at height y is about to touch: above the level
+ * round it, and less than 3 m under the glider. Ground falling away below it, like the
+ * dam's face, does not count: dropping down is always allowed.
+ */
+function risesInto(x: number, z: number, y: number): boolean {
+  if (!offLowGround(x, z)) return false;
+  const t = terrainHeight(x, z);
+  return t > floorLevel(x, z) + 1.5 && t > y - 3;
+}
+
+/**
+ * The flight after the leap: up on the launch speed, then a slow glide down, steered
+ * at glide speed and keeping its way with no input. Over high ground the wind holds
+ * the glider up and takes it on toward walkable ground, as in the drop, so the leap
+ * never lands where no road leads.
+ */
+function glide(s: State, wx: number, wz: number) {
+  const p = s.player;
+  const over = offLowGround(p.pos.x, p.pos.z);
+  if (over) {
+    const to = towardLowGround(p.pos.x, p.pos.z);
+    wx = to.x;
+    wz = to.z;
+  } else {
+    // High ground just ahead: the wind takes away the way into it, steering and speed both,
+    // so the glider slides along its edge instead of in and back out again.
+    const ax = p.pos.x + p.vel.x * ULT.edgeLook;
+    const az = p.pos.z + p.vel.z * ULT.edgeLook;
+    if (risesInto(ax, az, p.pos.y)) {
+      const to = towardLowGround(ax, az);
+      const w = wx * to.x + wz * to.z;
+      if (w < 0) {
+        wx -= w * to.x;
+        wz -= w * to.z;
+      }
+      const v = p.vel.x * to.x + p.vel.z * to.z;
+      if (v < 0) {
+        p.vel.x -= v * to.x;
+        p.vel.z -= v * to.z;
+      }
+    }
+  }
+  if (Math.hypot(wx, wz) > 0.1) {
+    const tx = wx * ULT.glide - p.vel.x;
+    const tz = wz * ULT.glide - p.vel.z;
+    const tl = Math.hypot(tx, tz);
+    const step = Math.min(tl, ULT.glideAccel * TICK);
+    if (tl > 1e-6) {
+      p.vel.x += (tx / tl) * step;
+      p.vel.z += (tz / tl) * step;
+    }
+  }
+  p.vel.y = Math.max(-ULT.fall, p.vel.y - WORLD.gravity * TICK);
+  // The leap is lower than the drop, so over high ground the wind also holds the glider up.
+  if (risesInto(p.pos.x, p.pos.z, p.pos.y)) p.vel.y = Math.max(0, p.vel.y);
+  const was = { x: p.pos.x, z: p.pos.z };
+  p.pos.x += p.vel.x * TICK;
+  p.pos.z += p.vel.z * TICK;
+  collide(p.pos, PLAYER.radius);
+  // It comes down only under open sky, as it went up: never in through a window or under a
+  // balcony, onto a floor with no way down but the stairs. It slides down outside instead.
+  const roof = p.pos.y + ULT.headroom;
+  if (ceilingAt(p.pos.x, p.pos.z, PLAYER.radius, roof, p.pos.y) < roof) {
+    p.pos.x = was.x;
+    p.pos.z = was.z;
+    p.vel.x = p.vel.z = 0;
+  }
+  const from = p.pos.y;
+  p.pos.y += p.vel.y * TICK;
+  if (p.vel.y > 0) {
+    const c = ceilingAt(p.pos.x, p.pos.z, PLAYER.radius, p.pos.y + 1.75, from);
+    if (p.pos.y + 1.75 > c) {
+      p.pos.y = c - 1.75;
+      p.vel.y = 0;
+    }
+  }
+  const g = groundAt(p.pos.x, p.pos.z, PLAYER.radius, Math.max(p.pos.y, from));
+  if (p.pos.y > g) return;
+  p.pos.y = g;
+  p.vel.y = 0;
+  p.onGround = true;
+  const carry = p.leap?.carry;
+  p.leap = null;
+  if (carry) besidePlayer(s);
+  s.events.push({ t: "leapLand" }, { t: "land", speed: ULT.fall });
+}
+
+/**
+ * Cooldowns and the ult's charge run on time, whatever the hands are doing: they
+ * count down through a glide, a climb or being downed just as they do on foot.
+ */
+function clocks(s: State) {
+  const p = s.player;
+  p.cooldown = Math.max(0, p.cooldown - TICK);
+  p.tactical = Math.max(0, p.tactical - TICK);
+  if (p.ult < 1 && !p.leap) {
+    p.ult = Math.min(1, p.ult + ULT.perSec * TICK);
+    if (p.ult >= 1) s.events.push({ t: "ultReady" });
+  }
+}
+
 function abilities(s: State, input: Input) {
   const p = s.player;
-  p.tactical = Math.max(0, p.tactical - TICK);
   if (input.tactical && p.tactical <= 0) {
     const eye = eyePos(s);
     const fx = Math.sin(p.yaw);
@@ -345,19 +486,10 @@ function abilities(s: State, input: Input) {
     }
   }
 
-  if (p.ultTime > 0) {
-    p.ultTime -= TICK;
-    if (p.ultTime <= 0) {
-      p.ultTime = 0;
-      s.events.push({ t: "ultEnd" });
-    }
-  } else if (input.ult && p.ult >= 1) {
-    p.ult = 0;
-    p.ultTime = ULT.duration;
-    p.reload = 0;
-    const w = p.weapons[p.slot];
-    if (w) w.mag = magSize(w);
-    s.events.push({ t: "ultStart" });
+  if (input.ult && p.ult >= 1) {
+    leap(s);
+    // The hands are on the glider from this tick: no item starts with the leap.
+    if (p.leap) return;
   }
 
   const h = p.healing;
@@ -410,10 +542,10 @@ export function tickReveal(s: State) {
   s.player.reveal = Math.max(0, s.player.reveal - TICK);
 }
 
-export function hurtPlayer(s: State, dmg: number, fromX: number, fromZ: number, ring = false) {
+export function hurtPlayer(s: State, dmg: number, fromX: number, fromZ: number) {
   const p = s.player;
-  if (s.phase !== "play" && s.phase !== "extract") return;
-  if (p.downed > 0 || (p.iframes > 0 && !ring)) return;
+  if (s.phase !== "play") return;
+  if (p.downed > 0 || p.iframes > 0) return;
   p.sinceHurt = 0;
   const hadShield = p.shield > 0;
   const toShield = Math.min(p.shield, dmg);
@@ -424,6 +556,7 @@ export function hurtPlayer(s: State, dmg: number, fromX: number, fromZ: number, 
   p.hp = 0;
   p.healing = null;
   p.mantle = null; // a downed player lets go of the ledge
+  p.leap = null; // and of the glider: it falls, and a carried teammate falls free beside it
   p.reload = 0;
   s.stats.downs++;
   if (p.selfRevive > 0) {
@@ -438,38 +571,15 @@ export function hurtPlayer(s: State, dmg: number, fromX: number, fromZ: number, 
   } else wipe(s);
 }
 
-/** Everyone down: back to this POI's entry (the teammate too) with full health; robots keep their damage. */
+/**
+ * Everyone down: the raid is lost, and everything carried with it. The air is
+ * cleared so nothing still in flight lands after the end.
+ */
 export function wipe(s: State) {
-  const p = s.player;
-  const poi = POIS[Math.min(s.poi, POIS.length - 1)];
   s.stats.wipes++;
-  p.pos = { x: poi.entry.x, y: groundAt(poi.entry.x, poi.entry.z, PLAYER.radius, 99), z: poi.entry.z };
-  p.vel = { x: 0, y: 0, z: 0 };
-  p.mantle = null;
-  p.yaw = poi.entry.yaw;
-  p.pitch = 0;
-  p.hp = PLAYER.hp;
-  p.shield = PLAYER.shieldByTier[p.armor];
-  p.downed = 0;
-  p.awaitAlly = false;
-  p.selfRevive = 1;
-  p.iframes = 2.5;
-  placeAlly(s);
   s.orbs = [];
   s.waves = [];
-  // Robots lose track of the player and go back to their posts; damage stays. The
-  // titan's squad, once woken, keeps fighting.
-  const boss = new Set(s.enemies.filter((e) => e.kind === "titan").map((e) => e.squad));
-  for (const e of s.enemies) {
-    if (e.mode !== "spawning") e.mode = "move";
-    e.cooldown = 2.5;
-    if (boss.has(e.squad)) continue;
-    e.aware = "idle";
-    e.detect = 0;
-    e.goal = e.cover = e.peek = null;
-  }
-  s.squads.forEach((sq, i) => {
-    if (!boss.has(i)) sq.engaged = false;
-  });
-  s.events.push({ t: "wipe" });
+  s.phase = "done";
+  s.outcome = "dead";
+  s.events.push({ t: "wipe" }, { t: "done" });
 }

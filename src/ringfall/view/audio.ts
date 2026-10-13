@@ -99,9 +99,8 @@ const GUN: Record<WeaponKind, () => void> = {
 };
 
 export const sfx = {
-  shot(kind: WeaponKind, overdrive: boolean) {
+  shot(kind: WeaponKind) {
     GUN[kind]();
-    if (overdrive) tone(1400, 0.05, { type: "square", vol: 0.04, to: 2200 });
   },
   hit(crit: boolean, shield: boolean, flank = false) {
     // A hit from behind rings a little brighter on top of the usual sound.
@@ -159,6 +158,15 @@ export const sfx = {
   shard() {
     tone(1900 + Math.random() * 300, 0.06, { type: "sine", vol: 0.06 });
   },
+  /** Rummaging through a bin: a dry scrape, loud enough to give the player away. */
+  search() {
+    hiss(0.5, { freq: 500, to: 1200, vol: 0.12 });
+  },
+  /** The raiders arrive: a low two-note horn. */
+  raiders() {
+    tone(147, 0.6, { type: "sawtooth", vol: 0.08 });
+    tone(110, 0.9, { type: "sawtooth", vol: 0.08, at: 0.45 });
+  },
   bin() {
     hiss(0.2, { freq: 700, to: 2000, vol: 0.2 });
     tone(330, 0.2, { type: "triangle", vol: 0.12, to: 660 });
@@ -173,12 +181,12 @@ export const sfx = {
   ultReady() {
     [523, 784, 1047].forEach((f, i) => tone(f, 0.2, { type: "triangle", vol: 0.12, at: i * 0.07 }));
   },
-  ultStart() {
-    tone(110, 0.8, { type: "sawtooth", to: 440, vol: 0.18, attack: 0.05 });
-    hiss(0.8, { freq: 300, to: 4000, vol: 0.25, attack: 0.1 });
+  leap() {
+    tone(90, 0.7, { type: "sawtooth", to: 520, vol: 0.2, attack: 0.02 });
+    hiss(0.9, { freq: 200, to: 5000, vol: 0.3, attack: 0.03 });
   },
-  ultEnd() {
-    tone(440, 0.4, { type: "sawtooth", to: 110, vol: 0.1 });
+  leapLand() {
+    hiss(0.3, { freq: 2000, to: 200, vol: 0.18 });
   },
   battery() {
     tone(400, 1.9, { type: "sine", to: 1200, vol: 0.06, attack: 0.2 });
@@ -207,11 +215,8 @@ export const sfx = {
     tone(392, 0.3, { type: "triangle", vol: 0.1 });
     tone(587, 0.4, { type: "triangle", vol: 0.1, at: 0.09 });
   },
-  ringWarn() {
+  reinforce() {
     for (let i = 0; i < 3; i++) tone(700, 0.18, { type: "square", vol: 0.05, at: i * 0.28 });
-  },
-  ringHurt() {
-    hiss(0.2, { freq: 900, vol: 0.12 });
   },
   careDrop() {
     tone(900, 1.4, { type: "sine", to: 200, vol: 0.06, attack: 0.3 });

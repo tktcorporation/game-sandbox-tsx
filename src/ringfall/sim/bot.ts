@@ -1,11 +1,12 @@
-import { AWARE, DEG, HEALS, PLAYER, TICK, WORLD } from "./config";
+import { AWARE, DEG, HEALS, PLAYER, TICK, ULT, WORLD } from "./config";
 import { bodyCenter, eyePos, flankOf, magSize, weakPoint } from "./combat";
-import { dist2d, groundAt, los, onTerrain, lookAngles, solidAt, wrapAngle } from "./geom";
+import { ceilingAt, dist2d, groundAt, los, onTerrain, lookAngles, solidAt, wrapAngle } from "./geom";
 import { EXTRACTS, POIS } from "./map";
 import { clearLine, findPath } from "./nav";
 import { enemyMax, idleInput, type Enemy, type Input, type State } from "./state";
 import { pickHeal } from "./player";
-import { terrainHeight } from "./terrain";
+import { makeRoom } from "./world";
+import { offLowGround, rimRadius, terrainHeight } from "./terrain";
 
 /**
  * A scripted player for the headless balance run (`npm run sim:ringfall`) and the
@@ -23,12 +24,13 @@ export interface Skill {
   heads: boolean; // aims at the weak point instead of the body
   abilities: number; // chance per second to use tactical when it would help
   flank: number; // chance to leave a robot that faces it and come back from its side or back
+  raid: number; // POIs it clears before heading for a way out
 }
 
 export const SKILLS: Skill[] = [
-  { name: "beginner", aimErr: 6.5, turn: 0.1, react: 0.45, dodge: 0.25, heads: false, abilities: 0.25, flank: 0.2 },
-  { name: "casual", aimErr: 3.2, turn: 0.18, react: 0.28, dodge: 0.55, heads: false, abilities: 0.8, flank: 0.5 },
-  { name: "good", aimErr: 1.1, turn: 0.32, react: 0.15, dodge: 0.9, heads: true, abilities: 3, flank: 0.85 },
+  { name: "beginner", aimErr: 6.5, turn: 0.1, react: 0.45, dodge: 0.25, heads: false, abilities: 0.25, flank: 0.2, raid: 2 },
+  { name: "casual", aimErr: 3.2, turn: 0.18, react: 0.28, dodge: 0.55, heads: false, abilities: 0.8, flank: 0.5, raid: 4 },
+  { name: "good", aimErr: 1.1, turn: 0.32, react: 0.15, dodge: 0.9, heads: true, abilities: 3, flank: 0.85, raid: 4 },
 ];
 
 const PREF: Record<string, number> = { pike: 14, hornet: 9, maul: 5, lance: 20, talon: 30 };
@@ -62,6 +64,8 @@ export class Bot {
   private flankT = 0;
   private flankCheck = 0;
   private lastFlanked = -1;
+  /** Where it glides to on the leap: away from the robots fighting it. */
+  private escape: { x: number; z: number } | null = null;
   crouch = false;
 
   constructor(
@@ -93,12 +97,13 @@ export class Bot {
     const eye = eyePos(s);
     this.from = { x: p.pos.x, z: p.pos.z };
     const live = s.enemies.filter((e) => e.mode !== "spawning");
-    // Only fight robots that are after us or stand at the current objective; leave the rest alone.
-    const relevant = live.filter((e) => e.aware === "engaged" || e.poi === s.poi);
+    // Only fight robots that are after us or stand at the POI we are taking; leave the rest alone.
+    const aim = this.nextPoi(s);
+    const relevant = live.filter((e) => e.aware === "engaged" || (aim >= 0 && e.poi === aim));
     const sees = (e: Enemy) => dist2d(e.pos, p.pos) < 60 && los(eye, bodyCenter(e));
     // Finish the squads already fighting before opening on a new one, as a careful player would.
     const engaged = relevant.filter((e) => e.aware === "engaged");
-    const objective = relevant.filter((e) => e.poi === s.poi);
+    const objective = relevant.filter((e) => aim >= 0 && e.poi === aim);
     const engagedSeen = engaged.filter(sees);
     const pool = engagedSeen.length ? engagedSeen : engaged.length ? engaged : objective.filter(sees).length ? objective.filter(sees) : objective;
     // A flank in progress keeps its robot; otherwise the nearest one.
@@ -115,7 +120,7 @@ export class Bot {
     if (s.phase === "drop") {
       const poi = POIS[0];
       goal = { x: poi.x, z: poi.z + 14 };
-    } else if (s.phase === "extract" && (s.shipCall === 0 || !tgt || dist2d(tgt.pos, p.pos) > 70)) {
+    } else if (aim < 0 && (s.shipCall === 0 || !tgt || dist2d(tgt.pos, p.pos) > 70)) {
       goal = this.exit(s);
     } else if (tgt && dist2d(tgt.pos, p.pos) < 70) {
       fight = true;
@@ -124,12 +129,22 @@ export class Bot {
       goal = { x: s.ally.pos.x, z: s.ally.pos.z };
     } else {
       const lg = this.lootGoal(s);
-      goal = lg ?? (s.poi < POIS.length ? POIS[s.poi] : this.exit(s));
+      goal = lg ?? (aim >= 0 ? POIS[aim] : this.exit(s));
       // Swap a better weapon in for the worse one, never for the one in hand.
       if (lg?.weapon) {
         const r = p.weapons.map((w) => (w ? w.rarity : -1));
         inp.slot = r[0] <= r[1] ? 0 : 1;
       }
+    }
+
+    // In the air on the leap: glide on toward the spot it chose at take-off.
+    if (p.leap) {
+      const to = this.escape ?? p.pos;
+      inp.lookX = wrapAngle(lookAngles(p.pos, { x: to.x, y: 0, z: to.z }).yaw - p.yaw) * sk.turn;
+      inp.lookY = -p.pitch * sk.turn;
+      // Ease off near it: the glide keeps its speed without input, and would carry on past.
+      inp.moveZ = Math.max(0.15, Math.min(1, dist2d(to, p.pos) / ULT.glide));
+      return inp;
     }
 
     // Look.
@@ -189,7 +204,7 @@ export class Bot {
       if (!this.flank && this.flankCheck <= 0 && tgt.kind !== "titan" && tgt.aware === "engaged" && onTerrain(p.pos) && onTerrain(tgt.pos)) {
         this.flankCheck = 1.5;
         // Worth it only on a robot with plenty of fight left, and not twice in a row.
-        const healthy = tgt.hp + tgt.shield > enemyMax(tgt.kind) * 0.5;
+        const healthy = tgt.hp + tgt.shield > enemyMax(tgt) * 0.5;
         if (healthy && tgt.id !== this.lastFlanked && flankOf(s, tgt) === "front" && this.rnd() < sk.flank) {
           const hide = this.hideSpot(s, tgt);
           if (hide) {
@@ -205,12 +220,15 @@ export class Bot {
         inp.moveZ = Math.cos(rel);
         inp.moveX = Math.sin(rel);
       } else if (!sees && onTerrain(p.pos)) {
-        // Walk a ground path toward it. A robot up high is hidden by its own roof edge
-        // from close below, so back off to about 14 m to get an angle on it instead.
+        // Walk a ground path toward it. A robot up high is hidden by its own roof edge or
+        // tower walls from close below, so walk to the nearest ground spot that sees it instead.
         let to = { x: tgt.pos.x, z: tgt.pos.z };
         if (tgt.pos.y > p.pos.y + 1.5) {
-          const k = 14 / Math.max(d, 0.1);
-          to = { x: tgt.pos.x + (p.pos.x - tgt.pos.x) * k, z: tgt.pos.z + (p.pos.z - tgt.pos.z) * k };
+          if (!this.angle || this.angle.id !== tgt.id || s.time > this.angle.until) {
+            const spot = this.angleSpot(tgt);
+            this.angle = { id: tgt.id, until: s.time + 4, x: spot?.x ?? to.x, z: spot?.z ?? to.z };
+          }
+          to = { x: this.angle.x, z: this.angle.z };
         }
         const step = this.via(s, to);
         const rel = lookAngles(p.pos, { x: step.x, y: 0, z: step.z }).yaw - p.yaw;
@@ -235,7 +253,12 @@ export class Bot {
       if (engaged.length >= 2 || tgt.mode === "telegraph") {
         if (p.tactical <= 0 && this.rnd() < sk.abilities * TICK) inp.tactical = true;
       }
-      if (p.ult >= 1 && (live.length >= 3 || tgt.kind === "titan")) inp.ult = true;
+      // Losing a fight against a squad or more: leap away and start over somewhere else.
+      const left = (p.hp + p.shield) / (PLAYER.hp + PLAYER.shieldByTier[p.armor]);
+      if (p.ult >= 1 && left < 0.4 && engaged.length >= 2 && tgt.kind !== "titan") {
+        this.escape = this.escapeSpot(s, engaged);
+        if (this.escape) inp.ult = true;
+      }
       // Pick the weapon that suits the distance (when it has two).
       const other = p.weapons[1 - p.slot];
       this.swapT -= TICK;
@@ -263,15 +286,6 @@ export class Bot {
         inp.interact = true;
         this.interactT = 0.5;
       }
-    }
-    // Never back out of the ring: near its edge, walk toward its centre.
-    const ring = s.ring;
-    const out = dist2d(p.pos, ring) - (ring.r - 4);
-    if (out > 0 && this.unstick <= 0) {
-      const inward = this.via(s, { x: ring.x, z: ring.z });
-      const toward = lookAngles(p.pos, { x: inward.x, y: 0, z: inward.z }).yaw - p.yaw;
-      inp.moveZ = Math.cos(toward);
-      inp.moveX = Math.sin(toward);
     }
     if (this.crouch) {
       inp.crouch = true;
@@ -327,11 +341,62 @@ export class Bot {
   }
 
   /**
+   * The POI to take next: the nearest one not yet cleared, until the bot has cleared
+   * as many as its skill dares (`Skill.raid`). The titan's landing pad comes only last,
+   * and only for a bot that takes on every POI. -1 means it is time to leave.
+   */
+  private nextPoi(s: State): number {
+    if (s.stats.cleared.length >= this.skill.raid) return -1;
+    const p = s.player;
+    const open = POIS.map((poi, i) => ({ poi, i })).filter(({ poi, i }) => !s.cleared[i] && (!poi.boss || s.stats.cleared.length >= POIS.length - 1));
+    open.sort((a, b) => dist2d(a.poi, p.pos) - dist2d(b.poi, p.pos));
+    return open[0]?.i ?? -1;
+  }
+
+  /**
+   * Open low ground a glide's length away, as far as can be from the robots fighting it:
+   * the way a player would pick where to leap to. Open means no building within a couple
+   * of metres of it or tall under the way, so it comes down on the ground it plans on, not on
+   * a roof or into a stairwell (it does not take stairs).
+   */
+  private escapeSpot(s: State, from: Enemy[]): { x: number; z: number } | null {
+    const p = s.player;
+    const reach = ULT.glide * 3;
+    let best: { x: number; z: number } | null = null;
+    let bestScore = -Infinity;
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2;
+      const x = p.pos.x + Math.cos(a) * reach;
+      const z = p.pos.z + Math.sin(a) * reach;
+      if (offLowGround(x, z) || Math.hypot(x, z) > rimRadius(x, z) - 12) continue;
+      const t = terrainHeight(x, z);
+      if (ceilingAt(x, z, 2, t + 40, t) < Infinity || groundAt(x, z, 2, t + 40) > t + 0.5) continue;
+      // Nothing tall under the way there either: the glide may run out of height over it.
+      let clear = true;
+      for (let k = 2; k < reach && clear; k += 2) {
+        const cx = p.pos.x + Math.cos(a) * k;
+        const cz = p.pos.z + Math.sin(a) * k;
+        const ct = terrainHeight(cx, cz);
+        clear = groundAt(cx, cz, 1.5, ct + 40) <= ct + 3;
+      }
+      if (!clear) continue;
+      const score = Math.min(...from.map((e) => Math.hypot(e.pos.x - x, e.pos.z - z)));
+      if (score > bestScore) {
+        bestScore = score;
+        best = { x, z };
+      }
+    }
+    return best;
+  }
+
+  /**
    * The way off the island: a flare's quick pickup when it has one, else beginners
    * take the long quiet walk and the others call the dropship and hold.
    */
   private exit(s: State): { x: number; z: number } {
-    const id = s.player.flares > 0 ? "flare" : this.skill.name === "beginner" ? "village" : "ship";
+    // The dropship lands by the titan: only a bot that has beaten it goes there.
+    const titanUp = s.enemies.some((e) => e.kind === "titan");
+    const id = s.player.flares > 0 ? "flare" : this.skill.name === "beginner" || titanUp ? "village" : "ship";
     return EXTRACTS.find((x) => x.id === id)!;
   }
 
@@ -349,16 +414,36 @@ export class Bot {
         const x = tgt.pos.x + Math.sin(a) * r;
         const z = tgt.pos.z - Math.cos(a) * r;
         if (Math.max(Math.abs(x), Math.abs(z)) > WORLD.half - 3) continue;
-        if (groundAt(x, z, 0.4, 0.3) > 0.3 || [0.3, 1.0, 1.6].some((h) => solidAt(x, h, z))) continue;
-        if (!los({ x, y: 1.6, z }, bodyCenter(tgt))) continue;
+        const g = terrainHeight(x, z);
+        if (groundAt(x, z, 0.4, g + 0.3) > g + 0.3 || [0.3, 1.0, 1.6].some((h) => solidAt(x, g + h, z))) continue;
+        if (!los({ x, y: g + 1.6, z }, bodyCenter(tgt))) continue;
         const route = this.route(x, z);
         if (!route || route.len > 45) continue;
         // Walking the route in the squad's sight would only turn it round: prefer hidden routes.
-        const exposed = route.samples.filter((q) => watchers.some((w) => los({ x: q.x, y: 1.4, z: q.z }, bodyCenter(w)))).length / Math.max(1, route.samples.length);
+        const exposed = route.samples.filter((q) => watchers.some((w) => los({ x: q.x, y: terrainHeight(q.x, q.z) + 1.4, z: q.z }, bodyCenter(w)))).length / Math.max(1, route.samples.length);
         const cost = route.len * (1 + exposed * 3);
         if (exposed < 0.6 && (!best || cost < best.cost)) best = { x, z, cost };
       }
     return best ? { x: best.x, z: best.z } : null;
+  }
+
+  private angle: { id: number; until: number; x: number; z: number } | null = null;
+
+  /** The nearest ground spot (by route) within 40 m of a robot up high that sees its body. */
+  private angleSpot(tgt: Enemy): { x: number; z: number } | null {
+    let best: { x: number; z: number; len: number } | null = null;
+    for (let r = 10; r <= 40; r += 5)
+      for (let a = 0; a < 2 * Math.PI; a += Math.PI / 12) {
+        const x = tgt.pos.x + Math.sin(a) * r;
+        const z = tgt.pos.z - Math.cos(a) * r;
+        if (Math.max(Math.abs(x), Math.abs(z)) > WORLD.half - 3) continue;
+        const g = terrainHeight(x, z);
+        if (groundAt(x, z, 0.4, g + 0.3) > g + 0.3 || [0.3, 1.0, 1.6].some((h) => solidAt(x, g + h, z))) continue;
+        if (!los({ x, y: g + 1.6, z }, bodyCenter(tgt))) continue;
+        const route = this.route(x, z);
+        if (route && route.len < 70 && (!best || route.len < best.len)) best = { x, z, len: route.len };
+      }
+    return best && { x: best.x, z: best.z };
   }
 
   /** The nearest standable spot within 10 m that no member of the robot's squad can see. */
@@ -370,8 +455,9 @@ export class Bot {
         const x = this.from.x + Math.sin(a) * r;
         const z = this.from.z - Math.cos(a) * r;
         if (Math.max(Math.abs(x), Math.abs(z)) > WORLD.half - 3) continue;
-        if (groundAt(x, z, 0.4, 0.3) > 0.3 || [0.3, 1.0, 1.6].some((h) => solidAt(x, h, z))) continue;
-        if (watchers.some((w) => los(bodyCenter(w), { x, y: 1.5, z }))) continue;
+        const g = terrainHeight(x, z);
+        if (groundAt(x, z, 0.4, g + 0.3) > g + 0.3 || [0.3, 1.0, 1.6].some((h) => solidAt(x, g + h, z))) continue;
+        if (watchers.some((w) => los(bodyCenter(w), { x, y: g + 1.5, z }))) continue;
         const route = this.route(x, z);
         if (!route || route.len > 16) continue;
         if (!best || route.len < best.len) best = { x, z, len: route.len };
@@ -404,14 +490,14 @@ export class Bot {
   private via(s: State, goal: { x: number; z: number }): { x: number; z: number } {
     const p = s.player;
     // Up on a roof or platform the ground grid does not apply: walk straight (and drop off).
-    if ((p.onGround && p.pos.y > 0.6) || clearLine(p.pos.x, p.pos.z, goal.x, goal.z)) {
+    if ((p.onGround && !onTerrain(p.pos)) || clearLine(p.pos.x, p.pos.z, goal.x, goal.z)) {
       this.path = [];
       return goal;
     }
     this.pathT -= TICK;
     // Re-plan when the goal moved or every 2 s; an unreachable goal is not retried every tick.
     if (dist2d(goal, this.pathGoal) > 3 || this.pathT <= 0) {
-      this.path = findPath(p.pos.x, p.pos.z, goal.x, goal.z, { x: s.ring.x, z: s.ring.z, r: s.ring.r - 6 }) ?? [];
+      this.path = findPath(p.pos.x, p.pos.z, goal.x, goal.z) ?? [];
       this.pathGoal = { ...goal };
       this.pathT = 2;
     }
@@ -435,9 +521,10 @@ export class Bot {
       if (l.kind === "weapon" && l.weapon && l.rarity > worst) cands.push({ x: l.pos.x, z: l.pos.z, d: dist2d(l.pos, p.pos), weapon: true });
       if (l.kind === "armor" && l.rarity > p.armor) cands.push({ x: l.pos.x, z: l.pos.z, d: dist2d(l.pos, p.pos) });
       if (l.kind === "heal" && l.heal && p.heals[l.heal] < HEALS[l.heal].max) cands.push({ x: l.pos.x, z: l.pos.z, d: dist2d(l.pos, p.pos) });
+      // A valuable the bag can take, or one worth throwing cheaper things out for.
+      if (l.kind === "valuable" && l.valuable && makeRoom(p.haul, l.valuable)) cands.push({ x: l.pos.x, z: l.pos.z, d: dist2d(l.pos, p.pos) });
     }
-    const inRing = (c: { x: number; z: number }) => dist2d(c, s.ring) < s.ring.r - 5 && dist2d(c, s.ring) < s.ring.toR + dist2d(s.ring, { x: s.ring.toX, z: s.ring.toZ }) - 5;
-    const best = cands.filter(inRing).sort((a, b) => a.d - b.d)[0] ?? null;
+    const best = cands.sort((a, b) => a.d - b.d)[0] ?? null;
     const k = best ? `${Math.round(best.x)},${Math.round(best.z)}` : "";
     if (k !== this.lootKey) {
       this.lootKey = k;

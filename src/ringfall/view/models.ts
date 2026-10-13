@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { ENEMIES, type EnemyKind, type HealKind, type Rarity, type WeaponKind } from "../sim/config";
+import { ENEMIES, type EnemyKind, type HealKind, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
 import type { LootKind } from "../sim/state";
 import type { Box } from "../sim/map";
 
@@ -17,6 +17,11 @@ export const PAL = {
   sandDark: 0xc4914f,
   rock: 0xb0623c,
   rockDark: 0x8d4a2c,
+  /** The dried lakebed: cracked clay, greyer than the sand. */
+  mud: 0xb9a385,
+  mudDark: 0x9c8669,
+  /** The bleached band on the lakebed's walls, up to where the water stood. */
+  tide: 0xe3d5ba,
   concrete: 0xcfc8b8,
   concreteDark: 0x9c9586,
   rust: 0xb5482b,
@@ -29,6 +34,8 @@ export const PAL = {
   eye: 0xff2d4d,
   orb: 0xff3fb0,
   ring: 0xff5a2a,
+  /** Raiders' armour: the plain robots' navy turned a dark red, so the elite squad reads at a glance. */
+  eliteArmor: 0x6a1f2a,
   hot: 0xffe23d,
   white: 0xffffff,
   gun: 0x2b2f38,
@@ -401,7 +408,7 @@ export function buildGun(kind: WeaponKind, rarity: Rarity): THREE.Group {
   return g;
 }
 
-export function buildLootItem(kind: LootKind, rarity: Rarity, weapon?: WeaponKind, heal?: HealKind): THREE.Group {
+export function buildLootItem(kind: LootKind, rarity: Rarity, weapon?: WeaponKind, heal?: HealKind, valuable?: ValuableKind): THREE.Group {
   const g = new THREE.Group();
   const color = RARITY_COLOR[rarity];
   if (kind === "weapon" && weapon) {
@@ -425,6 +432,19 @@ export function buildLootItem(kind: LootKind, rarity: Rarity, weapon?: WeaponKin
       const h = big ? 0.42 : 0.3;
       g.add(mesh(new THREE.CylinderGeometry(r, r, h, 8), flat(heal === "syringe" ? 0xf2f0ea : PAL.gunLight), 0, 0.35, 0, false));
       g.add(mesh(new THREE.CylinderGeometry(r + 0.01, r + 0.01, h * 0.45, 8), heal === "syringe" ? flat(band) : glow(band), 0, 0.35, 0, false));
+    }
+  } else if (kind === "valuable") {
+    // Parts: a gear on a scrap block. Circuit board: a flat green card with chips. Data core: a glowing cube in a frame.
+    if (valuable === "core") {
+      g.add(mesh(new THREE.BoxGeometry(0.34, 0.34, 0.34), flat(PAL.gun), 0, 0.4, 0, false));
+      g.add(mesh(new THREE.BoxGeometry(0.24, 0.36, 0.24), glow(color), 0, 0.4, 0, false));
+    } else if (valuable === "board") {
+      g.add(mesh(new THREE.BoxGeometry(0.5, 0.04, 0.34), flat(0x2f7a4a), 0, 0.3, 0, false));
+      for (const [x, z] of [[-0.12, 0.05], [0.1, -0.06], [0.14, 0.09]]) g.add(mesh(new THREE.BoxGeometry(0.1, 0.05, 0.08), flat(PAL.gun), x, 0.34, z, false));
+    } else {
+      g.add(mesh(new THREE.BoxGeometry(0.3, 0.16, 0.26), flat(PAL.gunLight), 0, 0.24, 0, false));
+      const gear = mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.06, 8), flat(PAL.gun), 0, 0.36, 0, false);
+      g.add(gear);
     }
   } else if (kind === "flare") {
     // A road flare: a red tube with a cap.

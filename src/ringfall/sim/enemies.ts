@@ -1,8 +1,9 @@
-import { ALLY, AWARE, CHARGER, COVER, DEG, ENEMIES, PLAYER, TICK, TITAN, TURN, WORLD, type EnemyKind } from "./config";
+import { ALLY, AWARE, CHARGER, COVER, DEG, ELITE, ENEMIES, PLAYER, TICK, TITAN, TURN, WORLD, type EnemyKind } from "./config";
 import { collide, dist2d, groundAt, los, lookAngles, onTerrain, solidAt, wrapAngle } from "./geom";
-import { terrainHeight } from "./terrain";
+import { steepAt, terrainHeight } from "./terrain";
 import { engageSquad, knownSpot, sense, stepSquads } from "./awareness";
 import { COVERS } from "./cover";
+import { fieldTo, nextStep } from "./hunt";
 
 /** Walkers refuse to step off a ledge higher than this, so rooftop robots stay on their roof. */
 const LEDGE = 1.0;
@@ -28,14 +29,22 @@ interface SpawnOpts {
   face?: number;
   /** Beam in with the spawn animation (titan summons) instead of standing there from the start. */
   appear?: boolean;
+  /** A raider. */
+  elite?: boolean;
+}
+
+/** Where a robot asked to appear at (x, z) on `floor` (the ground when omitted) ends up: pushed out of solids, on its floor or at hover height. */
+export function spawnSpot(kind: EnemyKind, x: number, z: number, floor = terrainHeight(x, z)): Vec3 {
+  const k = ENEMIES[kind];
+  const pos = { x, y: floor, z };
+  collide(pos, k.radius, bodyHeight(k));
+  pos.y = k.fly > 0 ? flyHeight(pos.x, pos.z) : groundAt(pos.x, pos.z, k.radius, floor + 0.3);
+  return pos;
 }
 
 export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi: number, squad: number, o: SpawnOpts = {}): Enemy {
   const k = ENEMIES[kind];
-  const floor = o.floor ?? 0;
-  const pos = { x, y: floor, z };
-  collide(pos, k.radius, bodyHeight(k));
-  pos.y = k.fly > 0 ? flyHeight(pos.x, pos.z) : groundAt(pos.x, pos.z, k.radius, floor + 0.3);
+  const pos = spawnSpot(kind, x, z, o.floor);
   const face = o.face ?? rand(s) * Math.PI * 2;
   const e: Enemy = {
     id: s.nextId++,
@@ -43,8 +52,8 @@ export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi:
     pos,
     vel: { x: 0, y: 0, z: 0 },
     yaw: face,
-    hp: k.hp,
-    shield: k.shield,
+    hp: k.hp * (o.elite ? ELITE.hp : 1),
+    shield: k.shield * (o.elite ? ELITE.hp : 1),
     mode: o.appear ? "spawning" : "move",
     timer: o.appear ? 0.9 : 0,
     cooldown: 0,
@@ -69,6 +78,7 @@ export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi:
     target: "player",
     targetT: 0,
     allyHit: 99,
+    elite: !!o.elite,
   };
   s.enemies.push(e);
   if (o.appear) s.events.push({ t: "spawn", id: e.id, pos: { ...pos } });
@@ -79,8 +89,8 @@ export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi:
 export function populate(s: State) {
   const add = (sq: Squad, poi: number) => {
     const index = s.squads.length;
-    s.squads.push({ name: sq.name, poi, patrol: sq.patrol ?? [], leg: 0, engaged: false, sinceSeen: 0, last: { x: 0, z: 0 } });
-    for (const m of sq.members) spawnEnemy(s, m.kind, m.x, m.z, poi, index, { floor: m.y ?? 0, face: m.face });
+    s.squads.push({ name: sq.name, poi, patrol: sq.patrol ?? [], leg: 0, engaged: false, roam: !!sq.roam, sinceSeen: 0, last: { x: 0, z: 0 } });
+    for (const m of sq.members) spawnEnemy(s, m.kind, m.x, m.z, poi, index, { floor: m.y, face: m.face });
   };
   POIS.forEach((p, i) => p.squads.forEach((sq) => add(sq, i)));
   ROAMERS.forEach((sq) => add(sq, -1));
@@ -102,7 +112,7 @@ function fireOrb(s: State, e: Enemy, yawOff = 0, homing = false) {
     pos: from,
     vel: { x: Math.sin(yaw) * c * k.orbSpeed, y: Math.sin(e.aimPitch) * k.orbSpeed, z: -Math.cos(yaw) * c * k.orbSpeed },
     r: k.orbR,
-    dmg: k.orbDmg,
+    dmg: k.orbDmg * (e.elite ? ELITE.dmg : 1),
     life: 5,
     homing,
   });
@@ -115,9 +125,9 @@ function lockAim(e: Enemy, at: Vec3) {
   e.aimPitch = a.pitch;
 }
 
-/** Drones keep their hover height above whatever is under them. */
+/** Drones keep their hover height above the ground, and clear whatever is built under them. */
 function flyHeight(x: number, z: number): number {
-  return Math.max(ENEMIES.drone.fly, groundAt(x, z, 1.2, 99) + 2.4);
+  return Math.max(terrainHeight(x, z) + ENEMIES.drone.fly, groundAt(x, z, 1.2, 99) + 2.4);
 }
 
 function moveBody(e: Enemy, vx: number, vz: number) {
@@ -166,6 +176,7 @@ export function stepEnemies(s: State) {
   const p = s.player;
   stepSquads(s);
   for (const e of [...s.enemies]) {
+    if (s.phase === "done") return; // a robot ahead in the list ended the raid
     const k = ENEMIES[e.kind];
     e.lastHit += TICK;
     e.allyHit += TICK;
@@ -213,21 +224,34 @@ export function stepEnemies(s: State) {
     const dx = known.x - e.pos.x;
     const dz = known.z - e.pos.z;
     const d = Math.hypot(dx, dz) || 1e-3;
-    if (e.mode !== "lunge" && d > 0.5) turnAt(e, Math.atan2(dx, -dz), TURN[e.kind]);
-    if (e.kind === "grunt" && onTerrain(e.pos) && fromCover(s, e, known, tChest, tUp)) continue;
+    if (e.mode !== "lunge" && d > 0.5) turnAt(e, Math.atan2(dx, -dz), TURN[e.kind] * (e.elite ? ELITE.turn : 1));
+    // Raiders do not hide: they press in and go round.
+    if (e.kind === "grunt" && !e.elite && onTerrain(e.pos) && fromCover(s, e, known, tChest, tUp)) continue;
     switch (e.mode) {
       case "move": {
         const sees = known.live && facing(e, tPos) && los(muzzle(e), tChest);
-        const ux = dx / d;
-        const uz = dz / d;
+        // Out of sight, a walker that came from afar closes in by the ground's way, not through a cliff.
+        const via = sees ? known : huntStep(s, e, known);
+        const vd = Math.hypot(via.x - e.pos.x, via.z - e.pos.z) || 1e-3;
+        const ux = (via.x - e.pos.x) / vd;
+        const uz = (via.z - e.pos.z) / vd;
         let along = 0;
         // At the last sighting with nobody in view, it stands and turns: the squad's search begins.
         if (!sees && !known.live && d < 2) along = 0;
         else if (!sees || d > k.range + 4) along = 1;
         else if (d < k.range - 4) along = -0.7;
         const side = sees || e.kind === "charger" ? 0.55 : 0.8;
-        const vx = (ux * along - uz * e.strafe * side) * k.speed;
-        const vz = (uz * along + ux * e.strafe * side) * k.speed;
+        let vx = (ux * along - uz * e.strafe * side) * k.speed;
+        let vz = (uz * along + ux * e.strafe * side) * k.speed;
+        // A flanking raider runs wide to its spot at the player's side, shooting when it can.
+        const wide = e.elite && !atAlly ? flankSpot(s, e, known) : null;
+        if (wide && dist2d(e.pos, wide) > 3) {
+          // Out of sight it gets there by the ground's way, round the cliff or the house between.
+          const to = sees ? wide : huntStep(s, e, wide);
+          const fd = dist2d(e.pos, to) || 1e-3;
+          vx = ((to.x - e.pos.x) / fd) * k.speed;
+          vz = ((to.z - e.pos.z) / fd) * k.speed;
+        }
         if (moveBody(e, vx, vz)) e.strafe = -e.strafe;
         else if (rand(s) < TICK * 0.35) e.strafe = -e.strafe;
         e.cooldown -= TICK;
@@ -276,7 +300,7 @@ export function stepEnemies(s: State) {
         }
         if (e.shotsLeft <= 0) {
           e.mode = "move";
-          e.cooldown = k.cooldown * (0.8 + rand(s) * 0.4);
+          e.cooldown = k.cooldown * (0.8 + rand(s) * 0.4) * (e.elite ? ELITE.cooldown : 1);
         }
         break;
       }
@@ -350,9 +374,28 @@ function turnAt(e: Enemy, yaw: number, rate: number) {
   e.yaw += Math.max(-max, Math.min(max, diff));
 }
 
+/**
+ * Where a raider goes round to: the squad's first member holds the front, the others take a
+ * spot `ELITE.flankDist` to either side of the player, across the line from that member.
+ * Null for the front member, or when the spot is on high ground or a cliff.
+ */
+function flankSpot(s: State, e: Enemy, known: { x: number; z: number }): Point | null {
+  const mates = s.enemies.filter((o) => o.squad === e.squad).sort((a, b) => a.id - b.id);
+  const n = mates.indexOf(e);
+  if (n <= 0) return null;
+  const lead = mates[0];
+  const lx = known.x - lead.pos.x;
+  const lz = known.z - lead.pos.z;
+  const ll = Math.hypot(lx, lz) || 1;
+  const side = n % 2 ? 1 : -1;
+  const x = known.x + (-lz / ll) * ELITE.flankDist * side;
+  const z = known.z + (lx / ll) * ELITE.flankDist * side;
+  return steepAt(x, z) || terrainHeight(x, z) > terrainHeight(known.x, known.z) + 1.5 ? null : { x, z };
+}
+
 /** Whether the point is inside the cone a robot can fire into. */
 function facing(e: Enemy, at: { x: number; z: number }): boolean {
-  return Math.abs(wrapAngle(lookAngles(e.pos, { x: at.x, y: 0, z: at.z }).yaw - e.yaw)) < AWARE.fireCone * DEG;
+  return Math.abs(wrapAngle(lookAngles(e.pos, { x: at.x, y: 0, z: at.z }).yaw - e.yaw)) < (e.elite ? ELITE.fireCone : AWARE.fireCone) * DEG;
 }
 
 /** Turn toward a yaw at a robot's turning speed. */
@@ -374,6 +417,16 @@ function walkTo(e: Enemy, to: Point, speed: number, face = true): boolean {
   return false;
 }
 
+/**
+ * Where a robot heads next on its way to `goal`: straight at it, except that the walkers
+ * of a squad beamed in from afar follow the ground's distance field round cliffs and up ramps.
+ */
+function huntStep(s: State, e: Enemy, goal: Point): Point {
+  if (!s.squads[e.squad]?.routed || ENEMIES[e.kind].fly > 0) return goal;
+  const f = fieldTo(goal.x, goal.z);
+  return f ? nextStep(f, e.pos.x, e.pos.z, goal) : goal;
+}
+
 /** Out of combat: hold the post or walk the patrol; when alerted, go and look. */
 function calm(s: State, e: Enemy) {
   const k = ENEMIES[e.kind];
@@ -390,7 +443,7 @@ function calm(s: State, e: Enemy) {
   }
   if (e.aware === "alert") {
     e.searchT -= TICK;
-    if (e.goal && dist2d(e.pos, e.goal) > 2.5) walkTo(e, e.goal, slow * 1.4);
+    if (e.goal && dist2d(e.pos, e.goal) > 2.5) walkTo(e, huntStep(s, e, e.goal), slow * 1.4);
     else {
       moveBody(e, 0, 0);
       e.yaw += Math.sin(e.lookT * 1.3) * TICK * 1.6; // looking around
@@ -429,11 +482,12 @@ function findCover(s: State, e: Enemy, threat: Point, threatY: number): { cover:
     .sort((a, b) => a.d + Math.abs(a.dp - 16) * 0.3 - (b.d + Math.abs(b.dp - 16) * 0.3))
     .slice(0, 14);
   for (const { c } of cands) {
-    if (los({ x: c.x, y: 1.3, z: c.z }, head)) continue;
+    if (los({ x: c.x, y: terrainHeight(c.x, c.z) + 1.3, z: c.z }, head)) continue;
     for (const sign of [1, -1]) {
       const peek = { x: c.x + c.tx * sign * COVER.peek, z: c.z + c.tz * sign * COVER.peek };
-      if (solidAt(peek.x, 1.0, peek.z)) continue;
-      if (los({ x: peek.x, y: 1.6, z: peek.z }, chestP)) return { cover: { x: c.x, z: c.z }, peek };
+      const pg = terrainHeight(peek.x, peek.z);
+      if (solidAt(peek.x, pg + 1.0, peek.z)) continue;
+      if (los({ x: peek.x, y: pg + 1.6, z: peek.z }, chestP)) return { cover: { x: c.x, z: c.z }, peek };
     }
   }
   return null;
@@ -555,7 +609,7 @@ function titan(s: State, e: Enemy, d: number) {
       moveBody(e, 0, 0);
       e.timer -= TICK;
       if (e.timer <= 0) {
-        s.waves.push({ x: e.pos.x, z: e.pos.z, y: 0, r: k.radius, hit: false });
+        s.waves.push({ x: e.pos.x, z: e.pos.z, y: e.pos.y, r: k.radius, hit: false });
         s.events.push({ t: "stomp", x: e.pos.x, z: e.pos.z });
         e.shotsLeft = -1; // next attack is rockets
         e.mode = "move";
