@@ -5,7 +5,7 @@ import { EXTRACTS, POIS } from "./map";
 import { clearLine, findPath } from "./nav";
 import { enemyMax, idleInput, type Enemy, type Input, type State } from "./state";
 import { pickHeal } from "./player";
-import { makeRoom } from "./world";
+import { makeRoom, useTarget } from "./world";
 import { offLowGround, rimRadius, terrainHeight } from "./terrain";
 
 /**
@@ -282,7 +282,9 @@ export class Bot {
       // Slide now and then on long runs, like people do.
       if (p.sprinting && d > 12 && this.rnd() < TICK * 0.4) this.crouch = true;
       this.interactT -= TICK;
-      if (d < 1.8 && this.interactT <= 0) {
+      // The bot never takes off armour to put a worse one back on.
+      const t = d < 1.8 && this.interactT <= 0 ? useTarget(s) : null;
+      if (t && !(t.kind === "armor" && t.loot.rarity < p.armor)) {
         inp.interact = true;
         this.interactT = 0.5;
       }

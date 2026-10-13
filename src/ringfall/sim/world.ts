@@ -375,7 +375,8 @@ export function useTarget(s: State): UseTarget | null {
     if (l.age < 0.4 || !level(l.pos.y)) continue;
     if (l.kind === "weapon" && l.weapon) picks.push({ d: dist2d(l.pos, p.pos) - 0.3, t: { kind: "weapon", loot: l } });
     // Armour the player took off can go back on; fresh armour is only ever an upgrade, put on by walking over it.
-    else if (l.kind === "armor" && l.worn && l.rarity !== p.armor) picks.push({ d: dist2d(l.pos, p.pos) - 0.3, t: { kind: "armor", loot: l } });
+    // It yields to a bin or a weapon at the same distance, since it lies where the upgrade was found.
+    else if (l.kind === "armor" && l.worn && l.rarity !== p.armor) picks.push({ d: dist2d(l.pos, p.pos) + 0.3, t: { kind: "armor", loot: l } });
     // A valuable that does not fit is worth a press when something cheaper can make way.
     else if (l.kind === "valuable" && l.valuable && makeRoom(p.haul, l.valuable)?.length) picks.push({ d: dist2d(l.pos, p.pos) - 0.3, t: { kind: "swap", loot: l } });
   }
