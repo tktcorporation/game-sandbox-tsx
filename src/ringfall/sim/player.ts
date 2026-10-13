@@ -1,6 +1,6 @@
 import { ALLY, ASSIST, DEG, DROP, HEALS, type HealKind, MANTLE, NOISE, PLAYER, RARITY, REVEAL, SEMI_HOLD, TACTICAL, TICK, ULT, WEAPONS, WORLD } from "./config";
 import { makeNoise } from "./awareness";
-import { allyUp, besidePlayer, placeAlly } from "./ally";
+import { allyChest, allyUp, besidePlayer, placeAlly } from "./ally";
 import { POIS } from "./map";
 import { applyPull, assistTarget, bodyCenter, damageEnemy, eyePos, magSize, shoot } from "./combat";
 import { ceilingAt, collide, groundAt, los } from "./geom";
@@ -328,7 +328,10 @@ function leap(s: State) {
     return;
   }
   p.ult = 0;
-  p.leap = { carry: allyUp(s) && Math.hypot(s.ally.pos.x - p.pos.x, s.ally.pos.z - p.pos.z) < ULT.carry };
+  // Only a teammate on the same floor and in sight comes along: never one through a floor or a wall.
+  const a = s.ally;
+  const carry = allyUp(s) && Math.hypot(a.pos.x - p.pos.x, a.pos.z - p.pos.z) < ULT.carry && Math.abs(a.pos.y - p.pos.y) < 1.5 && los(eyePos(s), allyChest(a));
+  p.leap = { carry };
   p.vel.y = ULT.rise;
   p.onGround = false;
   p.sliding = false;
