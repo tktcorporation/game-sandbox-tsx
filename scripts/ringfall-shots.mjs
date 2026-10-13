@@ -411,6 +411,23 @@ console.log(`outcome: ${s.outcome}`);
 await page.waitForTimeout(1800);
 await page.screenshot({ path: `${out}/13-results.png` });
 console.log(JSON.stringify((await read()).stats));
+// The results on a phone on its side: both columns and the button fit the screen.
+{
+  await page.setViewportSize({ width: 740, height: 360 });
+  await page.waitForTimeout(300);
+  const fit = await page.evaluate(() => {
+    const out = [];
+    for (const id of ["home", "restart", "stats", "pois"]) {
+      const r = document.getElementById(id).getBoundingClientRect();
+      if (r.width && (r.right > innerWidth + 1 || r.bottom > innerHeight + 1)) out.push(`${id} ${Math.round(r.right)}x${Math.round(r.bottom)}`);
+    }
+    return out;
+  });
+  if (fit.length) errors.push(`results on a phone: ${fit.join(", ")} past the 740x360 screen`);
+  await page.screenshot({ path: `${out}/m9-results.png` });
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.waitForTimeout(200);
+}
 {
   const r = await read();
   if (!r.settled) errors.push("results: the raid was not settled into the profile");

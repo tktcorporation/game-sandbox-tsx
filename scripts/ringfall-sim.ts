@@ -977,6 +977,16 @@ function checkQuests(): string | null {
   if (ks.player.keys.join() !== "2" || k.profile.stash.some((i) => i.t === "key")) return "key scenario: the key did not go into the raid";
   ks.outcome = "extracted";
   if (!settle(k.profile, ks).profile.stash.some((i) => i.t === "key" && i.poi === 2)) return "key scenario: the key did not come home";
+  // One slot left: a quest's key reward takes it ahead of a fuse from the same raid.
+  const tight = { ...newProfile(), stash: Array.from({ length: META.stash - 1 }, () => ({ t: "heal" as const, kind: "cell" as const })), quests: { progress: {}, done: ["grunts", "parts", "quarry"] } };
+  const tk = takeKit(tight, { weapons: [], armor: null, heals: { cell: 0, battery: 0, syringe: 0, medkit: 0 }, keys: [] });
+  const ts = newRun(10, tk.kit);
+  ts.outcome = "extracted";
+  ts.player.haul = ["fuse"];
+  ts.stats.cleared = [2];
+  const tr = settle(tk.profile, ts);
+  const last = tr.profile.stash.at(-1);
+  if (tr.quests[0]?.id !== "relay" || last?.t !== "key" || !tr.sold.some((i) => i.t === "valuable")) return `quest scenario: with one slot left the stash kept ${JSON.stringify(last)} and sold ${JSON.stringify(tr.sold)}`;
   const v1 = parseProfile({ v: 1, cash: 10, stash: [], raids: 2, extracted: 1 });
   if (!v1 || v1.v !== 2 || v1.quests.done.length) return "storage scenario: a v1 save does not load";
   return null;

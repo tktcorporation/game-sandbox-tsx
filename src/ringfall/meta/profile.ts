@@ -201,18 +201,18 @@ export function settle(p: Profile, s: State): Settlement {
   } else {
     for (const v of pouch(pl.haul)) home.push({ t: "valuable", kind: v });
   }
-  let r = store(p, home);
-  const sold = [...r.sold];
-  let soldFor = r.soldFor;
+  // What came home and what the quests pay claim stash room together, in one `keepOrder()`.
   const { log, finished } = creditRaid(p.quests, s);
-  let profile: Profile = { ...r.profile, quests: log, raids: p.raids + 1, extracted: p.extracted + (s.outcome === "extracted" ? 1 : 0) };
-  for (const q of finished) {
-    r = pay(profile, q);
-    profile = r.profile;
-    sold.push(...r.sold);
-    soldFor += r.soldFor;
-  }
-  return { profile, home, quests: finished, sold, soldFor };
+  const rewards = finished.flatMap((q) => q.reward.items.map((i): Item => ({ ...i })));
+  const cash = finished.reduce((n, q) => n + q.reward.cash, 0);
+  const { profile, sold, soldFor } = store({ ...p, cash: p.cash + cash }, [...home, ...rewards]);
+  return {
+    profile: { ...profile, quests: log, raids: p.raids + 1, extracted: p.extracted + (s.outcome === "extracted" ? 1 : 0) },
+    home,
+    quests: finished,
+    sold,
+    soldFor,
+  };
 }
 
 /** Stash entries (indices) a delivery quest would take, or null when the stash lacks them. */
