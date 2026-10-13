@@ -168,7 +168,8 @@ const errors = [];
   if (manifest?.display !== "fullscreen" || manifest?.orientation !== "landscape") errors.push(`mobile: no landscape full-screen manifest (${JSON.stringify(manifest)})`);
   // Turning the phone: the picture is drawn at the new shape, not the old one stretched.
   await page.setViewportSize({ width: 740, height: 360 });
-  await step(100);
+  // A resize is reported on the next frames (ResizeObserver), not inside advanceTime.
+  await page.waitForTimeout(300);
   const shape = await page.evaluate(() => {
     const c = document.querySelector("#stage canvas");
     return { w: c.width, h: c.height };
