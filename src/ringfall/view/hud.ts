@@ -1,3 +1,5 @@
+import type { Settlement } from "../meta/profile";
+import { itemName } from "./hub";
 import { ALLY, AWARE, BAG, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, SCORE, TACTICAL, VALUABLES, WEAPONS, type Flank } from "../sim/config";
 import { magSize } from "../sim/combat";
 import { dist2d } from "../sim/geom";
@@ -643,7 +645,7 @@ export class Hud {
     return `${key("E")}<span class="r" style="color:${RARITY_CSS[wl.rarity]}">${WEAPONS[wl.weapon!.kind].name}</span> ${RARITY.names[wl.rarity]}を拾う${swap}`;
   }
 
-  results(s: State) {
+  results(s: State, settled?: Settlement) {
     const r = rank(s);
     $("rank").textContent = r.rank;
     $("result-title").textContent = s.outcome === "extracted" ? "生還" : "行方不明";
@@ -671,5 +673,12 @@ export class Hud {
       ...haul.map(([label, n]) => `<span${lost ? ' class="lost"' : ""}>${label}<b>× ${n}</b></span>`),
       `<span>回収の価値<b>${lost ? `${r.haul}（失った）` : r.haul}</b></span>`,
     ].join("");
+    const home = settled?.home ?? [];
+    const counted = new Map<string, number>();
+    for (const i of home) counted.set(itemName(i), (counted.get(itemName(i)) ?? 0) + 1);
+    $("home").innerHTML = settled
+      ? `<h3>${lost ? "ポーチに残った物" : "持ち帰った物"}</h3><p>${home.length ? [...counted].map(([n, c]) => `<span>${n}${c > 1 ? ` × ${c}` : ""}</span>`).join("") : "<span>なし</span>"}</p>` +
+        (settled.sold.length ? `<p class="sold">倉庫に入りきらない ${settled.sold.length} 点は ${settled.soldFor} クレジットで売った</p>` : "")
+      : "";
   }
 }

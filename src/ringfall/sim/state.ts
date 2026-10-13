@@ -1,4 +1,4 @@
-import { ALLY, DROP, ELITE, ENEMIES, RAIDERS, REINFORCE, type ValuableKind, PLAYER, ULT, type EnemyKind, type Flank, type HealKind, type Rarity, type WeaponKind } from "./config";
+import { ALLY, DROP, ELITE, ENEMIES, META, RAIDERS, REINFORCE, type ValuableKind, PLAYER, ULT, type EnemyKind, type Flank, type HealKind, type Rarity, type WeaponKind } from "./config";
 import { EXTRA_BINS, POIS, SPAWN, type ExtractId } from "./map";
 import { populate } from "./enemies";
 
@@ -12,7 +12,26 @@ export interface Weapon {
   kind: WeaponKind;
   rarity: Rarity;
   mag: number;
+  /** Lent for a free raid: it goes back to the trader and never reaches the stash. */
+  loan?: boolean;
 }
+
+/** What the player takes into a raid. */
+export interface Kit {
+  weapons: { kind: WeaponKind; rarity: Rarity; loan?: boolean }[];
+  armor: Rarity;
+  heals: Record<HealKind, number>;
+  /** Of `heals`, how many are lent (used first, never brought home). */
+  lentHeals: Record<HealKind, number>;
+}
+
+/** The lent kit of a free raid, which is also the default for the gates. */
+export const freeKit = (): Kit => ({
+  weapons: META.free.weapons.map((w) => ({ ...w, loan: true })),
+  armor: 0,
+  heals: { ...META.free.heals },
+  lentHeals: { ...META.free.heals },
+});
 
 export interface Player {
   pos: Vec3;
@@ -380,7 +399,7 @@ export const idleInput = (): Input => ({
   touch: false,
 });
 
-export function newRun(seed = 1): State {
+export function newRun(seed = 1, kit: Kit = freeKit()): State {
   const bins: Bin[] = [];
   let id = 1;
   POIS.forEach((p, poi) => p.bins.forEach((b) => bins.push({ id: id++, x: b.x, y: b.y ?? 0, z: b.z, poi, open: false, flare: false })));
@@ -406,18 +425,15 @@ export function newRun(seed = 1): State {
       yaw: SPAWN.yaw,
       pitch: -0.5,
       hp: PLAYER.hp,
-      shield: PLAYER.shieldByTier[0],
-      armor: 0,
+      shield: PLAYER.shieldByTier[kit.armor],
+      armor: kit.armor,
       onGround: false,
       crouch: false,
       sliding: false,
       mantle: null,
       sprinting: false,
       forwardHeld: 0,
-      weapons: [
-        { kind: "pike", rarity: 0, mag: -1 },
-        { kind: "talon", rarity: 0, mag: -1 },
-      ],
+      weapons: [0, 1].map((i) => (kit.weapons[i] ? { ...kit.weapons[i], mag: -1 } : null)),
       slot: 0,
       cooldown: 0,
       reload: 0,
@@ -429,7 +445,7 @@ export function newRun(seed = 1): State {
       leap: null,
       reveal: 0,
       stepNoise: 0,
-      heals: { cell: 2, battery: 0, syringe: 2, medkit: 0 },
+      heals: { ...kit.heals },
       flares: 0,
       haul: [],
       search: null,

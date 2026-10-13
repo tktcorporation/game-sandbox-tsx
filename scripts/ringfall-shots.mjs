@@ -69,6 +69,9 @@ const errors = [];
   // Some phone browsers and web views have no Screen Orientation API; starting must not depend on it.
   await page.evaluate(() => Object.defineProperty(screen, "orientation", { value: undefined, configurable: true }));
   await page.tap("#start");
+  await page.waitForTimeout(200);
+  await page.screenshot({ path: `${out}/m0-hub.png` });
+  await page.tap("#hub-free");
   if (!(await page.evaluate(() => document.body.classList.contains("touch")))) errors.push("mobile: touch mode did not turn on");
   if (!(await page.evaluate(() => document.body.classList.contains("playing")))) errors.push("mobile: the start button did not start the game");
   const cdp = await ctx.newCDPSession(page);
@@ -205,6 +208,7 @@ const errors = [];
   });
   await p2.goto(`http://localhost:${port}/ringfall/`, { waitUntil: "load" });
   await p2.click("#start");
+  await p2.click("#hub-free");
   await p2.waitForTimeout(300);
   const y0 = await p2.evaluate(() => window.ringfallYaw());
   await p2.mouse.move(640, 360);
@@ -223,6 +227,28 @@ await page.waitForTimeout(400);
 await page.screenshot({ path: `${out}/00-title.png` });
 await page.click("#start");
 const read = async () => JSON.parse(await page.evaluate(() => window.render_game_to_text()));
+
+// The base: buy a rare PIKE from the trader, then take it and a stash weapon into the raid.
+{
+  const h0 = await read();
+  if (h0.screen !== "hub") errors.push(`hub: the start button opened ${h0.screen}, not the base`);
+  await page.screenshot({ path: `${out}/00-hub.png` });
+  await page.click('#hub [data-act=tab][data-arg=shop]');
+  await page.click('#hub-side [data-act=buy][data-arg="1"]');
+  const h1 = await read();
+  if (!(h1.profile.cash < h0.profile.cash && h1.profile.stash === h0.profile.stash + 1)) errors.push(`hub: buying did not take cash and fill the stash (${JSON.stringify(h0.profile)} -> ${JSON.stringify(h1.profile)})`);
+  await page.screenshot({ path: `${out}/00-hub-shop.png` });
+  await page.click('#hub [data-act=tab][data-arg=kit]');
+  const picks = page.locator("#hub-stash [data-act=pick]");
+  await picks.nth(2).click();
+  await picks.nth(1).click();
+  await page.screenshot({ path: `${out}/00-hub-kit.png` });
+  await page.click("#hub-go");
+  const h2 = await read();
+  if (h2.screen !== "game") errors.push(`hub: deploying did not start the raid (${h2.screen})`);
+  if (h2.player.weapons.join() !== "pike1:-1,hornet0:-1") errors.push(`hub: the raid did not start with the picked weapons (${h2.player.weapons.join()})`);
+  if (h2.profile.stash !== h1.profile.stash - 2) errors.push(`hub: the picked weapons stayed in the stash (${h1.profile.stash} -> ${h2.profile.stash})`);
+}
 
 // Real keyboard input must reach the sim: holding W during the drop moves the player north.
 const before = await read();
@@ -372,6 +398,15 @@ console.log(`outcome: ${s.outcome}`);
 await page.waitForTimeout(1800);
 await page.screenshot({ path: `${out}/13-results.png` });
 console.log(JSON.stringify((await read()).stats));
+{
+  const r = await read();
+  if (!r.settled) errors.push("results: the raid was not settled into the profile");
+  await page.click("#restart");
+  const h = await read();
+  if (h.screen !== "hub" || h.profile.raids !== 1) errors.push(`results: back to base shows ${h.screen} with ${h.profile.raids} raids`);
+  await page.waitForTimeout(200);
+  await page.screenshot({ path: `${out}/14-hub-after.png` });
+}
 console.log(`screens: ${[...taken].join(", ")}`);
 await browser.close();
 server.close();

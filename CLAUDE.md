@@ -22,6 +22,11 @@ on a timer and come looking, and once per raid an elite squad (`RAIDERS` / `ELIT
 Bins take time to search (`SEARCH`) and valuables fill a bag of `BAG.slots`. The HUD shows no
 markers or distances; the island map (`view/map.ts`, M) is where the POIs and exits are. A wipe
 ends the raid and loses the haul; `results.ts` scores the haul plus cleared POIs.
+Between raids the base (`view/hub.ts`) keeps a stash, a trader and the loadout for the next raid:
+`src/ringfall/meta/profile.ts` is its pure logic (`takeKit()` out of the stash, `settle()` after a
+raid, the pouch that survives a wipe), `meta/storage.ts` saves it in localStorage, and `META` in
+`config.ts` holds its numbers. `newRun(seed, kit)` starts a raid from a kit; the default is the
+lent free kit, which is what the sim gate plays.
 
 ```bash
 npm run sim:ringfall     # gate 2: bots of three skills play the whole run headless
