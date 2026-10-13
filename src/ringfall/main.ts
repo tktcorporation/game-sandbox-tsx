@@ -485,7 +485,9 @@ window.render_game_to_text = () => {
   return JSON.stringify({
     screen: running ? "game" : !$("results").hidden ? "results" : !$("hub").hidden ? "hub" : "title",
     profile: { cash: hub.profile.cash, stash: hub.profile.stash.length, raids: hub.profile.raids },
-    settled: settlement && { home: settlement.home.length, sold: settlement.sold.length },
+    settled: settlement && { home: settlement.home.length, sold: settlement.sold.length, quests: settlement.quests.map((q) => q.id) },
+    vaults: s.bins.filter((b) => b.vault).map((b) => ({ poi: b.poi, x: b.x, y: b.y, z: b.z, open: b.open })),
+    keys: p.keys,
     phase: s.phase,
     time: +s.time.toFixed(1),
     outcome: s.outcome,

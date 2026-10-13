@@ -255,7 +255,8 @@ export interface Squad {
   roam?: true;
 }
 
-export type LootTable = { weapon: [WeaponKind, Rarity][]; armor: Rarity[]; heals: number; valuable: ValuableKind };
+/** `valuable` lists the kinds a bin may hold, each with its weight. */
+export type LootTable = { weapon: [WeaponKind, Rarity][]; armor: Rarity[]; heals: number; valuable: [ValuableKind, number][] };
 
 export interface Poi {
   name: string;
@@ -267,7 +268,8 @@ export interface Poi {
   entry: { x: number; z: number; yaw: number };
   /** Clearing the POI means beating every one of these squads. */
   squads: Squad[];
-  bins: { x: number; z: number; y?: number }[];
+  /** The one with `vault` is locked: it takes this POI's key (`VAULT`). */
+  bins: { x: number; z: number; y?: number; vault?: true }[];
   loot: LootTable;
   floor: { x: number; z: number; y?: number; weapon?: [WeaponKind, Rarity]; armor?: Rarity; heal?: HealKind }[];
   carePackage?: { x: number; z: number; weapon: [WeaponKind, Rarity] };
@@ -334,9 +336,9 @@ const POI_FRAMES: Poi[] = [
       { x: 7, z: 61 },
       { x: -11, z: 41 },
       { x: -23, z: 47 },
-      { x: 22, z: 52, y: STOREY },
+      { x: 22, z: 52, y: STOREY, vault: true },
     ],
-    loot: { weapon: [["hornet", 1], ["maul", 0], ["lance", 0], ["pike", 1]], armor: [1], heals: 1, valuable: "parts" },
+    loot: { weapon: [["hornet", 1], ["maul", 0], ["lance", 0], ["pike", 1]], armor: [1], heals: 1, valuable: [["fuse", 3], ["parts", 4], ["wire", 2], ["drive", 1]] },
     floor: [
       { x: 3, z: 66, weapon: ["hornet", 0] },
       { x: -4, z: 66, heal: "syringe" },
@@ -362,9 +364,9 @@ const POI_FRAMES: Poi[] = [
       { x: -37, z: 8 },
       { x: -54, z: -4 },
       { x: -46, z: 14 },
-      { x: -73, z: -4, y: 5.5 },
+      { x: -73, z: -4, y: 5.5, vault: true },
     ],
-    loot: { weapon: [["pike", 2], ["maul", 1], ["lance", 1], ["hornet", 2], ["talon", 1]], armor: [2], heals: 2, valuable: "parts" },
+    loot: { weapon: [["pike", 2], ["maul", 1], ["lance", 1], ["hornet", 2], ["talon", 1]], armor: [2], heals: 2, valuable: [["parts", 3], ["wire", 4], ["fuse", 1], ["gyro", 1]] },
     floor: [{ x: -45, z: -15, y: 4, heal: "medkit" }],
     carePackage: { x: -46, z: 0, weapon: ["lance", 3] },
   },
@@ -386,9 +388,9 @@ const POI_FRAMES: Poi[] = [
       { x: 33, z: -22 },
       { x: 50, z: -36 },
       { x: 44, z: -16 },
-      { x: 48, z: -10, y: STOREY * 2 },
+      { x: 48, z: -10, y: STOREY * 2, vault: true },
     ],
-    loot: { weapon: [["pike", 3], ["hornet", 2], ["maul", 2], ["lance", 2], ["talon", 2]], armor: [2, 3], heals: 2, valuable: "board" },
+    loot: { weapon: [["pike", 3], ["hornet", 2], ["maul", 2], ["lance", 2], ["talon", 2]], armor: [2, 3], heals: 2, valuable: [["board", 4], ["drive", 2], ["wire", 1], ["gyro", 1]] },
     floor: [
       { x: 41.5, z: -29, y: 5, weapon: ["lance", 2] },
       { x: 50, z: -12, y: STOREY * 3, armor: 2 },
@@ -405,9 +407,9 @@ const POI_FRAMES: Poi[] = [
       { x: -16, z: -56 },
       { x: 16, z: -56 },
       { x: -32, z: -60, y: STOREY },
-      { x: 32, z: -60, y: STOREY },
+      { x: 32, z: -60, y: STOREY, vault: true },
     ],
-    loot: { weapon: [], armor: [3], heals: 2, valuable: "board" },
+    loot: { weapon: [], armor: [3], heals: 2, valuable: [["board", 3], ["drive", 2], ["core", 1]] },
     floor: [],
     boss: true,
   },

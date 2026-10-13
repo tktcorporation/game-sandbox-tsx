@@ -1,4 +1,4 @@
-import { ALLY, BAG, ENEMIES, HEALS, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, TICK, VALUABLES, WORLD, type HealKind } from "./config";
+import { ALLY, BAG, ENEMIES, HEALS, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, TICK, VALUABLES, VAULT, WORLD, type HealKind } from "./config";
 import { dist2d, groundAt, los, solidAt } from "./geom";
 import { highGround, steepAt, terrainHeight } from "./terrain";
 import { EXTRACTS, POIS, type ExtractPoint } from "./map";
@@ -170,9 +170,32 @@ function rollHeal(s: State): HealKind {
   return r < 0.33 ? "cell" : r < 0.66 ? "syringe" : r < 0.83 ? "battery" : "medkit";
 }
 
+/** A pick from `[item, weight]` pairs. */
+function weighted<T>(s: State, list: [T, number][]): T {
+  let r = rand(s) * list.reduce((n, [, w]) => n + w, 0);
+  for (const [item, w] of list) if ((r -= w) < 0) return item;
+  return list[list.length - 1][0];
+}
+
+const spillValuable = (s: State, b: { x: number; y: number; z: number }, valuable: ValuableKind) =>
+  spill(s, b.x, b.y, b.z, { kind: "valuable", valuable, rarity: VALUABLES[valuable].rarity });
+
+/** The POI whose vault a key found in `poi`'s bins opens. */
+export const keyFoundIn = (vault: number) => (vault + POIS.length - 1) % POIS.length;
+
 function openBin(s: State, binIndex: number) {
   const b = s.bins[binIndex];
   b.open = true;
+  s.events.push({ t: "binOpen", id: b.id });
+  if (b.vault) {
+    const [kind, rarity] = VAULT.weapon[Math.floor(rand(s) * VAULT.weapon.length)];
+    spill(s, b.x, b.y, b.z, { kind: "weapon", rarity, weapon: { kind, rarity, mag: -1 } });
+    spill(s, b.x, b.y, b.z, { kind: "armor", rarity: VAULT.armor });
+    for (let i = 0; i < VAULT.heals; i++) spill(s, b.x, b.y, b.z, { kind: "heal", heal: rollHeal(s), rarity: 1 });
+    for (const v of VAULT.valuables[Math.floor(rand(s) * VAULT.valuables.length)]) spillValuable(s, b, v);
+    if (!s.stats.vaults.includes(b.poi)) s.stats.vaults.push(b.poi);
+    return;
+  }
   const table = POIS[b.poi].loot;
   const nth = s.bins.filter((o) => o.poi === b.poi).indexOf(b);
   if (table.weapon.length) {
@@ -183,9 +206,11 @@ function openBin(s: State, binIndex: number) {
   for (let i = 0; i < table.heals; i++) spill(s, b.x, b.y, b.z, { kind: "heal", heal: rollHeal(s), rarity: 1 });
   if (b.flare) spill(s, b.x, b.y, b.z, { kind: "flare", rarity: 3 });
   // One valuable per bin; the high-rises' top floors are worth the climb.
-  const valuable = b.flare ? (rand(s) < 0.4 ? "core" : "board") : table.valuable;
-  spill(s, b.x, b.y, b.z, { kind: "valuable", valuable, rarity: valuable === "core" ? 3 : valuable === "board" ? 2 : 1 });
-  s.events.push({ t: "binOpen", id: b.id });
+  spillValuable(s, b, b.flare ? weighted<ValuableKind>(s, [["core", 2], ["gyro", 1], ["board", 2]]) : weighted(s, table.valuable));
+  if (!b.flare && rand(s) < VAULT.keyChance) {
+    const vault = POIS.findIndex((_, i) => keyFoundIn(i) === b.poi);
+    spill(s, b.x, b.y, b.z, { kind: "key", key: vault, rarity: 3 });
+  }
 }
 
 const weaponLabel = (w: Weapon) => w.kind.toUpperCase();
@@ -245,6 +270,11 @@ export function stepLoot(s: State, input: Input) {
       s.events.push({ t: "pickup", kind: "valuable", rarity: l.rarity, label: `${v.label} +${v.value}` });
       return false;
     }
+    if (l.kind === "key" && l.key !== undefined) {
+      if (!p.keys.includes(l.key)) p.keys.push(l.key);
+      s.events.push({ t: "pickup", kind: "key", rarity: 3, label: `${POIS[l.key].name}の鍵` });
+      return false;
+    }
     if (l.kind === "flare" && p.flares < 1) {
       p.flares = 1;
       s.events.push({ t: "pickup", kind: "flare", rarity: 3, label: "発煙筒" });
@@ -298,7 +328,7 @@ function swapInto(s: State, l: Loot) {
   if (!out || !l.valuable) return;
   const dropped = out.map((i) => p.haul[i]);
   p.haul = p.haul.filter((_, i) => !out.includes(i));
-  for (const k of dropped) spill(s, p.pos.x, p.pos.y, p.pos.z, { kind: "valuable", valuable: k, rarity: k === "core" ? 3 : k === "board" ? 2 : 1 });
+  for (const k of dropped) spillValuable(s, p.pos, k);
   s.loot = s.loot.filter((o) => o !== l);
   p.haul.push(l.valuable);
   const v = VALUABLES[l.valuable];
@@ -308,6 +338,10 @@ function swapInto(s: State, l: Loot) {
 function startSearch(s: State, bin: number) {
   const p = s.player;
   if (p.search?.bin === bin) return;
+  if (s.bins[bin].vault && !p.keys.includes(s.bins[bin].poi)) {
+    s.events.push({ t: "locked", poi: s.bins[bin].poi });
+    return;
+  }
   p.search = { bin, t: 0 };
   const b = s.bins[bin];
   makeNoise(s, b.x, b.z, SEARCH.noise);
@@ -332,7 +366,7 @@ function stepSearch(s: State, alive: boolean) {
   }
 }
 
-export const searchTime = (b: { flare: boolean }) => (b.flare ? SEARCH.flareTime : SEARCH.time);
+export const searchTime = (b: { flare: boolean; vault: boolean }) => (b.vault ? SEARCH.vaultTime : b.flare ? SEARCH.flareTime : SEARCH.time);
 
 /** What one press of the use key acts on. The HUD shows its prompt from the same choice. */
 export type UseTarget = { kind: "ally" } | { kind: "bin"; index: number } | { kind: "care" } | { kind: "weapon"; loot: Loot } | { kind: "swap"; loot: Loot };

@@ -1,5 +1,5 @@
 import type { Settlement } from "../meta/profile";
-import { itemName } from "./hub";
+import { itemName, rewardList } from "./hub";
 import { ALLY, AWARE, BAG, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, SCORE, TACTICAL, VALUABLES, WEAPONS, type Flank } from "../sim/config";
 import { magSize } from "../sim/combat";
 import { dist2d } from "../sim/geom";
@@ -156,6 +156,9 @@ export class Hud {
         this.dirs.push({ el, x: e.fromX, z: e.fromZ, t: 0.9 });
         break;
       }
+      case "locked":
+        this.toast(`${POIS[e.poi].name}の鍵が要る`, 0);
+        break;
       case "pickup":
         if (e.kind !== "shard") this.toast(`${e.label}${e.kind === "weapon" ? `（${RARITY.names[e.rarity]}）` : e.kind === "armor" ? `（${RARITY.names[e.rarity]}）` : ""}`, e.rarity);
         break;
@@ -631,8 +634,11 @@ export class Hud {
     if (t.kind === "ally") return s.ally.helped > 0 ? `${ALLY.name}を起こしている…（撃つ・離れると中断）` : `${key("E")}${ALLY.name}を起こす`;
     if (t.kind === "bin") {
       const q = p.search;
-      if (q?.bin === t.index) return `補給箱を調べている… ${Math.floor((q.t / searchTime(s.bins[t.index])) * 100)}%（撃つ・離れると中断）`;
-      return `${key("E")}補給箱を調べる（音が出る）`;
+      const b = s.bins[t.index];
+      const what = b.vault ? "保管庫" : "補給箱";
+      if (q?.bin === t.index) return `${what}を調べている… ${Math.floor((q.t / searchTime(b)) * 100)}%（撃つ・離れると中断）`;
+      if (b.vault && !p.keys.includes(b.poi)) return `保管庫：${POIS[b.poi].name}の鍵が要る`;
+      return `${key("E")}${what}を${b.vault ? "開ける" : "調べる"}（音が出る）`;
     }
     if (t.kind === "swap") {
       const v = t.loot.valuable!;
@@ -670,15 +676,17 @@ export class Hud {
     const haul = (Object.keys(VALUABLES) as (keyof typeof VALUABLES)[]).map((k) => [VALUABLES[k].label, s.player.haul.filter((h) => h === k).length] as const).filter(([, n]) => n > 0);
     $("pois").innerHTML = [
       ...POIS.map((p, i) => `<span>${p.name}<b>${s.cleared[i] ? "制圧" : s.visited[i] ? "立ち寄り" : "-"}</b></span>`),
-      ...haul.map(([label, n]) => `<span${lost ? ' class="lost"' : ""}>${label}<b>× ${n}</b></span>`),
+      // What came home is listed beside the results; what was lost is struck through here.
+      ...(lost ? haul.map(([label, n]) => `<span class="lost">${label}<b>× ${n}</b></span>`) : []),
       `<span>回収の価値<b>${lost ? `${r.haul}（失った）` : r.haul}</b></span>`,
     ].join("");
     const home = settled?.home ?? [];
     const counted = new Map<string, number>();
     for (const i of home) counted.set(itemName(i), (counted.get(itemName(i)) ?? 0) + 1);
-    $("home").innerHTML = settled
+    const quests = settled?.quests ?? [];
+    $("home").innerHTML = (quests.length ? `<h3>済んだ依頼</h3><p>${quests.map((q) => `<span>${q.title}（${q.reward.cash} クレジット${rewardList(q).map(([i, n]) => `・${itemName(i)}${n > 1 ? ` × ${n}` : ""}`).join("")}）</span>`).join("")}</p>` : "") + (settled
       ? `<h3>${lost ? "ポーチに残った物" : "持ち帰った物"}</h3><p>${home.length ? [...counted].map(([n, c]) => `<span>${n}${c > 1 ? ` × ${c}` : ""}</span>`).join("") : "<span>なし</span>"}</p>` +
         (settled.sold.length ? `<p class="sold">倉庫に入りきらない ${settled.sold.length} 点は ${settled.soldFor} クレジットで売った</p>` : "")
-      : "";
+      : "");
   }
 }

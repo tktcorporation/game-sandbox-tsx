@@ -1141,6 +1141,51 @@ body.touch .mate-bars {
   font-size: 13px;
   color: var(--muted);
 }
+#hub .hub-tabs i {
+  font-style: normal;
+  font-family: var(--num);
+  margin-left: 6px;
+  padding: 0 6px;
+  background: var(--ring);
+  color: var(--white);
+}
+#hub .hub-tabs i:empty {
+  display: none;
+}
+.hub-list .quest {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 12px;
+  background: var(--plate);
+}
+.hub-list .quest > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+.hub-list .quest strong {
+  font-size: 16px;
+}
+.hub-list .quest span {
+  font-size: 14px;
+}
+.hub-list .quest small {
+  font-size: 12px;
+  color: var(--muted);
+}
+.hub-list .quest > b {
+  font-family: var(--num);
+  font-size: 18px;
+  color: var(--hot);
+  white-space: nowrap;
+}
+#hub .quest button {
+  font-size: 15px;
+  padding: 8px 14px;
+  white-space: nowrap;
+}
 .hub-foot {
   display: flex;
   gap: 12px;
@@ -1540,4 +1585,62 @@ body.touch .map-buttons button {
   background: rgba(14, 16, 28, 0.85);
   border: 2px solid var(--ink);
   border-radius: 6px;
+}
+
+/* The results in two columns: the raid on the left, what it brought home on the right. The
+   column scrolls rather than pushing the button off a short screen. */
+#results .title-inner {
+  display: grid;
+  grid-template-columns: auto minmax(0, 26em);
+  grid-template-areas:
+    "label home"
+    "rank home"
+    "stats home"
+    "pois home"
+    "button home";
+  align-items: start;
+  column-gap: 48px;
+  row-gap: 12px;
+  max-width: 1120px;
+  max-height: 100%;
+  padding: 16px 24px;
+}
+#results #result-title {
+  grid-area: label;
+}
+#results .rank-row {
+  grid-area: rank;
+}
+#results #stats {
+  grid-area: stats;
+}
+#results #pois {
+  grid-area: pois;
+}
+#results #restart {
+  grid-area: button;
+  justify-self: start;
+}
+#results #home {
+  grid-area: home;
+  align-self: center;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+}
+#home:empty {
+  display: none;
+}
+body.touch #results #rank {
+  font-size: 80px;
+}
+body.touch #results .label {
+  font-size: 38px;
+}
+body.touch #stats b,
+body.touch #pois b {
+  font-size: 20px;
+}
+/* A banner from the raid's last moments must not linger over the results. */
+body:not(.playing) #banner {
+  display: none;
 }
