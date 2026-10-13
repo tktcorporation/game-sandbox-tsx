@@ -98,6 +98,8 @@ export function hurtAlly(s: State, dmg: number) {
   a.rescue = 0;
   a.target = 0;
   a.climb = 0;
+  // Downed on the player's leap, it lets go and falls free (stepAlly carries only while this is set).
+  if (s.player.leap) s.player.leap.carry = false;
   s.stats.allyDowns++;
   s.events.push({ t: "allyDown" });
   // The player was waiting for this teammate: nobody is left to help.
