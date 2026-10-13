@@ -9,7 +9,7 @@ import { ALLY, BAG, ENEMIES, NOISE, PLAYER, RAIDERS, REINFORCE, SEARCH, TACTICAL
 import { makeNoise } from "../src/ringfall/sim/awareness";
 import { BOXES, EXTRA_BINS, EXTRACTS, POIS, ROAMERS, SPAWN, type Squad } from "../src/ringfall/sim/map";
 import { fieldTo, fieldsBuilt, routeLength } from "../src/ringfall/sim/hunt";
-import { groundAt, los, solidAt } from "../src/ringfall/sim/geom";
+import { dist2d, groundAt, los, solidAt } from "../src/ringfall/sim/geom";
 import { floorLevel, highGround, LEVEL, offLowGround, terrainHeight } from "../src/ringfall/sim/terrain";
 import { Bot, SKILLS } from "../src/ringfall/sim/bot";
 import { idleInput, newRun, type GameEvent, type State } from "../src/ringfall/sim/state";
@@ -888,6 +888,13 @@ function checkSettle(): string | null {
   if (buy(p, wares()[0])) return "trader scenario: bought into a full stash";
   const full = settle(p, f);
   if (full.profile.stash.length !== META.stash || full.sold.length !== 1 || full.profile.cash <= p.cash) return "full stash scenario: what did not fit was not sold";
+  // Armour from the stash, swapped on the island for a better one, is left on the ground, not lost.
+  const worn = padRun();
+  worn.player.armor = 1;
+  worn.loot = [];
+  worn.loot.push({ id: 9100, kind: "armor", rarity: 2, pos: { ...worn.player.pos }, vel: { x: 0, y: 0, z: 0 }, age: 1 });
+  step(worn, idleInput(), false);
+  if (worn.player.armor !== 2 || !worn.loot.some((l) => l.kind === "armor" && l.rarity === 1 && dist2d(l.pos, worn.player.pos) < 2)) return `armor scenario: after the upgrade the player wears ${worn.player.armor} and the old armour ${worn.loot.some((l) => l.kind === "armor") ? "lies there" : "is gone"}`;
   // One slot left, and a common and an epic weapon come home: the epic is kept.
   const one = { ...p, stash: p.stash.slice(1) };
   f.player.heals.syringe = 2;
