@@ -65,6 +65,8 @@ export interface Player {
   reveal: number; // seconds left of seeing robots through walls
   stepNoise: number; // seconds until the next sprint footstep sound
   heals: Record<HealKind, number>;
+  /** Of `heals`, how many are still lent: used first, and never brought home. */
+  lentHeals: Record<HealKind, number>;
   /** Flares carried (0 or 1): they call the plateau pickup. */
   flares: number;
   /** Valuables carried; their worth is the raid's score if the player gets off the island. */
@@ -460,6 +462,7 @@ export function newRun(seed = 1, kit: Kit = freeKit()): State {
       reveal: 0,
       stepNoise: 0,
       heals: { ...kit.heals },
+      lentHeals: { ...kit.lentHeals },
       flares: 0,
       haul: [],
       keys: [...kit.keys],

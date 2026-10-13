@@ -288,6 +288,10 @@ function onEvent(e: GameEvent, s: State) {
       break;
     case "done":
       if (s.outcome === "extracted") sfx.victory();
+      // Settle and save at once; only the results screen waits for the moment to play out.
+      settlement = settle(hub.profile, s);
+      hub.profile = settlement.profile;
+      saveProfile(hub.profile);
       setTimeout(finish, s.outcome === "extracted" ? 1400 : 2400);
       break;
   }
@@ -382,7 +386,7 @@ function lock() {
   }
 }
 
-/** The kit of the raid under way, to settle against when it ends. */
+/** The kit the raid under way started from. */
 let kit: Kit = freeKit();
 let settlement: Settlement | null = null;
 const hub = new Hub(loadProfile(), start);
@@ -424,10 +428,7 @@ function finish() {
   fire = ads = false;
   $("banner").className = "";
   hud.show(false);
-  settlement = settle(hub.profile, kit, state);
-  hub.profile = settlement.profile;
-  saveProfile(hub.profile);
-  hud.results(state, settlement);
+  hud.results(state, settlement ?? undefined);
   $("results").hidden = false;
   if (document.pointerLockElement) document.exitPointerLock();
 }

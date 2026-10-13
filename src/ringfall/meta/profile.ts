@@ -184,13 +184,13 @@ function pay(p: Profile, q: Quest): { profile: Profile; sold: Item[]; soldFor: n
 }
 
 /** Puts what came off the island into the stash, and pays the quests the raid finished. */
-export function settle(p: Profile, kit: Kit, s: State): Settlement {
+export function settle(p: Profile, s: State): Settlement {
   const pl = s.player;
   const home: Item[] = [];
   if (s.outcome === "extracted") {
     for (const w of pl.weapons) if (w && !w.loan) home.push({ t: "weapon", kind: w.kind, rarity: w.rarity });
     if (pl.armor > 0) home.push({ t: "armor", tier: pl.armor });
-    for (const k of HEALS) for (let i = Math.max(0, pl.heals[k] - kit.lentHeals[k]); i > 0; i--) home.push({ t: "heal", kind: k });
+    for (const k of HEALS) for (let i = Math.max(0, pl.heals[k] - pl.lentHeals[k]); i > 0; i--) home.push({ t: "heal", kind: k });
     for (const v of pl.haul) home.push({ t: "valuable", kind: v });
     for (const poi of pl.keys) home.push({ t: "key", poi });
   } else {
