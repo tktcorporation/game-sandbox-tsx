@@ -52,7 +52,13 @@ const errors = [];
   // Turning the phone: the picture is drawn at the new shape, not the old one stretched.
   // (Checked before starting: once the game asks for full screen, the window no longer follows the viewport here.)
   await page.setViewportSize({ width: 740, height: 360 });
-  await page.waitForTimeout(300);
+  // The resize is reported on a later frame; give it up to 3 s on a slow software renderer.
+  await page
+    .waitForFunction(() => {
+      const c = document.querySelector("#stage canvas");
+      return Math.abs(c.width / c.height - 740 / 360) < 0.02;
+    }, null, { timeout: 3000 })
+    .catch(() => undefined);
   const shape = await page.evaluate(() => {
     const c = document.querySelector("#stage canvas");
     return { w: c.width, h: c.height };
