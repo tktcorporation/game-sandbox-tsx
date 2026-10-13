@@ -283,8 +283,9 @@ export class Bot {
       if (p.sprinting && d > 12 && this.rnd() < TICK * 0.4) this.crouch = true;
       this.interactT -= TICK;
       // The bot never takes off armour to put a worse one back on.
+      // It presses on the same beat whether or not anything is in reach.
       const t = d < 1.8 && this.interactT <= 0 ? useTarget(s) : null;
-      if (t && !(t.kind === "armor" && t.loot.rarity < p.armor)) {
+      if (d < 1.8 && this.interactT <= 0 && !(t?.kind === "armor" && t.loot.rarity < p.armor)) {
         inp.interact = true;
         this.interactT = 0.5;
       }
