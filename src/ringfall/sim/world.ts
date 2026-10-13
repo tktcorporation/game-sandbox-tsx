@@ -207,7 +207,8 @@ function openBin(s: State, binIndex: number) {
   if (b.flare) spill(s, b.x, b.y, b.z, { kind: "flare", rarity: 3 });
   // One valuable per bin; the high-rises' top floors are worth the climb.
   spillValuable(s, b, b.flare ? weighted<ValuableKind>(s, [["core", 2], ["gyro", 1], ["board", 2]]) : weighted(s, table.valuable));
-  if (!b.flare && rand(s) < VAULT.keyChance) {
+  // Keys lie only in the POIs themselves, so each one is found where the route says.
+  if (!b.outside && rand(s) < VAULT.keyChance) {
     const vault = POIS.findIndex((_, i) => keyFoundIn(i) === b.poi);
     spill(s, b.x, b.y, b.z, { kind: "key", key: vault, rarity: 3 });
   }

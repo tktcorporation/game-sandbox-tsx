@@ -235,6 +235,8 @@ export interface Bin {
   flare: boolean;
   /** Locked: opened only with the key of its POI. */
   vault: boolean;
+  /** Out on the island between the POIs: `poi` only picks its loot table, and it never holds a key. */
+  outside: boolean;
 }
 
 export interface CarePackage {
@@ -418,8 +420,8 @@ export const idleInput = (): Input => ({
 export function newRun(seed = 1, kit: Kit = freeKit()): State {
   const bins: Bin[] = [];
   let id = 1;
-  POIS.forEach((p, poi) => p.bins.forEach((b) => bins.push({ id: id++, x: b.x, y: b.y ?? 0, z: b.z, poi, open: false, flare: false, vault: !!b.vault })));
-  for (const b of EXTRA_BINS) bins.push({ id: id++, x: b.x, y: b.y ?? 0, z: b.z, poi: b.table, open: false, flare: !!b.flare, vault: false });
+  POIS.forEach((p, poi) => p.bins.forEach((b) => bins.push({ id: id++, x: b.x, y: b.y ?? 0, z: b.z, poi, open: false, flare: false, vault: !!b.vault, outside: false })));
+  for (const b of EXTRA_BINS) bins.push({ id: id++, x: b.x, y: b.y ?? 0, z: b.z, poi: b.table, open: false, flare: !!b.flare, vault: false, outside: true });
   const loot: Loot[] = [];
   POIS.forEach((p) =>
     p.floor.forEach((f) => {

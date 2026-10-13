@@ -376,7 +376,7 @@ function checkReinforceHidden(): string | null {
 function checkValuableBin(): string | null {
   const s = padRun();
   const p = s.player;
-  s.bins = [{ id: 9001, x: p.pos.x + 1, y: p.pos.y, z: p.pos.z, poi: 2, open: false, flare: false, vault: false }];
+  s.bins = [{ id: 9001, x: p.pos.x + 1, y: p.pos.y, z: p.pos.z, poi: 2, open: false, flare: false, vault: false, outside: false }];
   const press = idleInput();
   press.interact = true;
   step(s, press, false);
@@ -391,7 +391,7 @@ function checkValuableBin(): string | null {
 function checkSearchBreaks(): string | null {
   const s = padRun();
   const p = s.player;
-  s.bins = [{ id: 9001, x: p.pos.x + 1, y: p.pos.y, z: p.pos.z, poi: 2, open: false, flare: false, vault: false }];
+  s.bins = [{ id: 9001, x: p.pos.x + 1, y: p.pos.y, z: p.pos.z, poi: 2, open: false, flare: false, vault: false, outside: false }];
   const press = idleInput();
   press.interact = true;
   step(s, press, false);
@@ -615,7 +615,7 @@ function checkWeakPointBehindBody(): string | null {
 function checkHelpBeforeLoot(): string | null {
   const s = padRun();
   const p = s.player;
-  s.bins.push({ id: 9999, x: p.pos.x + 0.3, y: p.pos.y, z: p.pos.z, poi: 0, open: false, flare: false, vault: false });
+  s.bins.push({ id: 9999, x: p.pos.x + 0.3, y: p.pos.y, z: p.pos.z, poi: 0, open: false, flare: false, vault: false, outside: false });
   hurtAlly(s, 999);
   s.ally.pos = { x: p.pos.x + 3, y: p.pos.y, z: p.pos.z };
   const press = idleInput();
@@ -896,7 +896,7 @@ function checkSettle(): string | null {
 function checkVault(): string | null {
   const s = padRun();
   const p = s.player;
-  s.bins = [{ id: 9001, x: p.pos.x + 1, y: p.pos.y, z: p.pos.z, poi: 1, open: false, flare: false, vault: true }];
+  s.bins = [{ id: 9001, x: p.pos.x + 1, y: p.pos.y, z: p.pos.z, poi: 1, open: false, flare: false, vault: true, outside: false }];
   const press = idleInput();
   press.interact = true;
   step(s, press, false);
@@ -914,6 +914,21 @@ function checkVault(): string | null {
   const keyed = POIS.map((_, i) => keyFoundIn(i));
   if (new Set(keyed).size !== POIS.length || keyed.some((k, i) => k === i)) return `vault scenario: keys are found in ${keyed.join()}`;
   if (POIS.some((poi) => poi.bins.filter((b) => b.vault).length !== 1)) return "vault scenario: a POI does not have exactly one vault";
+  // Bins out between the POIs never hold a key, whatever loot table they use.
+  const out = padRun();
+  const extra = out.bins.filter((b) => b.outside && !b.flare);
+  let opened = 0;
+  for (let i = 0; i < 60 && extra.length; i++) {
+    const b = extra[i % extra.length];
+    b.open = false;
+    out.loot = [];
+    out.player.search = { bin: out.bins.indexOf(b), t: 99 };
+    out.player.pos = { x: b.x, y: b.y, z: b.z };
+    step(out, idleInput(), false);
+    if (b.open) opened++;
+    if (out.loot.some((l) => l.kind === "key")) return "vault scenario: a bin outside the POIs dropped a key";
+  }
+  if (opened < 30) return `vault scenario: only ${opened} of 60 bins outside the POIs were opened to check for keys`;
   return null;
 }
 
