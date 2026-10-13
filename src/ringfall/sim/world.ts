@@ -261,7 +261,7 @@ export function stepLoot(s: State, input: Input) {
 
   stepSearch(s, alive);
   if (!input.interact || !alive) return;
-  const t = useTarget(s);
+  const t = useTarget(s, !input.keepArmor);
   if (t?.kind === "ally") startHelp(s);
   else if (t?.kind === "bin") startSearch(s, t.index);
   else if (t?.kind === "care") openCare(s);
@@ -360,7 +360,7 @@ export type UseTarget = { kind: "ally" } | { kind: "bin"; index: number } | { ki
  * A downed teammate within reach comes first, however close any loot is; otherwise
  * the closest of bin, care package or weapon within reach.
  */
-export function useTarget(s: State): UseTarget | null {
+export function useTarget(s: State, armor = true): UseTarget | null {
   const p = s.player;
   const level = (y: number) => Math.abs(y - p.pos.y) < 1.5;
   const a = s.ally;
@@ -376,7 +376,7 @@ export function useTarget(s: State): UseTarget | null {
     if (l.kind === "weapon" && l.weapon) picks.push({ d: dist2d(l.pos, p.pos) - 0.3, t: { kind: "weapon", loot: l } });
     // Armour the player took off can go back on; fresh armour is only ever an upgrade, put on by walking over it.
     // It yields to a bin or a weapon at the same distance, since it lies where the upgrade was found.
-    else if (l.kind === "armor" && l.worn && l.rarity !== p.armor) picks.push({ d: dist2d(l.pos, p.pos) + 0.3, t: { kind: "armor", loot: l } });
+    else if (armor && l.kind === "armor" && l.worn && l.rarity !== p.armor) picks.push({ d: dist2d(l.pos, p.pos) + 0.3, t: { kind: "armor", loot: l } });
     // A valuable that does not fit is worth a press when something cheaper can make way.
     else if (l.kind === "valuable" && l.valuable && makeRoom(p.haul, l.valuable)?.length) picks.push({ d: dist2d(l.pos, p.pos) - 0.3, t: { kind: "swap", loot: l } });
   }

@@ -5,7 +5,7 @@ import { EXTRACTS, POIS } from "./map";
 import { clearLine, findPath } from "./nav";
 import { enemyMax, idleInput, type Enemy, type Input, type State } from "./state";
 import { pickHeal } from "./player";
-import { makeRoom, useTarget } from "./world";
+import { makeRoom } from "./world";
 import { offLowGround, rimRadius, terrainHeight } from "./terrain";
 
 /**
@@ -88,6 +88,7 @@ export class Bot {
     const sk = this.skill;
     const p = s.player;
     const inp = idleInput();
+    inp.keepArmor = true;
     // Ornstein-Uhlenbeck aim error: wanders, stationary std = aimErr.
     const theta = 2.5;
     const sigma = sk.aimErr * DEG * Math.sqrt(2 * theta);
@@ -282,10 +283,7 @@ export class Bot {
       // Slide now and then on long runs, like people do.
       if (p.sprinting && d > 12 && this.rnd() < TICK * 0.4) this.crouch = true;
       this.interactT -= TICK;
-      // The bot never takes off armour to put a worse one back on.
-      // It presses on the same beat whether or not anything is in reach.
-      const t = d < 1.8 && this.interactT <= 0 ? useTarget(s) : null;
-      if (d < 1.8 && this.interactT <= 0 && !(t?.kind === "armor" && t.loot.rarity < p.armor)) {
+      if (d < 1.8 && this.interactT <= 0) {
         inp.interact = true;
         this.interactT = 0.5;
       }

@@ -382,6 +382,8 @@ export interface Input {
   heal: boolean;
   /** The input comes from a touch screen (stronger aim assist, see ASSIST.touchPull). */
   touch: boolean;
+  /** The use key never swaps back into armour taken off (the bot keeps the better one). */
+  keepArmor?: boolean;
 }
 
 export const idleInput = (): Input => ({
