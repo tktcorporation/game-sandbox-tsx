@@ -122,6 +122,12 @@ export interface Field {
  */
 const cache = new Map<number, Field>();
 const CACHE = 8;
+/**
+ * A target that has moved this many cells or fewer from a cached field's keeps that field:
+ * hunters walk to its cell and the last few metres straight (see nextStep). A running
+ * target so costs a field every few metres instead of every cell it enters.
+ */
+const NEAR = 3;
 /** Fields built so far: the sim gate checks that alternating targets reuse them. */
 export let fieldsBuilt = 0;
 
@@ -153,11 +159,22 @@ function openCell(x: number, z: number): number {
 export function fieldTo(x: number, z: number): Field | null {
   const target = openCell(x, z);
   if (target < 0) return null;
-  const hit = cache.get(target);
+  let hit: Field | undefined;
+  let hitD = Infinity;
+  const ti = target % N;
+  const tj = (target - ti) / N;
+  for (const f of cache.values()) {
+    const fi = f.target % N;
+    const d = Math.max(Math.abs(fi - ti), Math.abs((f.target - fi) / N - tj));
+    if (d <= NEAR && d < hitD) {
+      hit = f;
+      hitD = d;
+    }
+  }
   if (hit) {
     // Most recently used goes last, so the oldest is dropped first.
-    cache.delete(target);
-    cache.set(target, hit);
+    cache.delete(hit.target);
+    cache.set(hit.target, hit);
     return hit;
   }
   const { open, height } = grid();

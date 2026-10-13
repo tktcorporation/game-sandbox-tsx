@@ -242,6 +242,13 @@ function checkFieldsReused(): string | null {
   const built = fieldsBuilt - before;
   return built > 2 ? `field cache scenario: ${built} fields built for 2 targets` : null;
 }
+/** A target running across the lakebed costs a field every few metres, not one per 2 m cell it enters. */
+function checkFieldsFollowRunner(): string | null {
+  const before = fieldsBuilt;
+  for (let t = 0; t <= 40 * 60; t++) fieldTo(-20 + t * (40 / (40 * 60)), -15);
+  const built = fieldsBuilt - before;
+  return built > 8 ? `field cache scenario: ${built} fields built for a target running 40 m` : null;
+}
 /** Places on the island a player waits in: the POI entries and the districts between them. */
 const WAIT_SPOTS: [string, number, number][] = [
   ...POIS.map((p): [string, number, number] => [p.name, p.entry.x, p.entry.z]),
@@ -826,7 +833,7 @@ function checkAllyHoldsFire(): string | null {
   if (shots) return `hold fire scenario: the teammate fired ${shots} shots at an idle robot`;
   return null;
 }
-for (const err of [checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkAllySelfUp(), checkStompHeight(), checkDropOffHighGround(), checkFieldsReused(), checkCliffsStop(), checkNoPits(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill(), checkLeap(), checkLeapLeavesAllyBelow(), checkLeapDowned(), checkLeapAllyCatchesUp(), checkLeapAllyDowned(), checkLeapWithItem(), checkLeapClocks(), checkLeapOffHighGround(), checkLeapUnderRoof()]) {
+for (const err of [checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkAllySelfUp(), checkStompHeight(), checkDropOffHighGround(), checkFieldsReused(), checkFieldsFollowRunner(), checkCliffsStop(), checkNoPits(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill(), checkLeap(), checkLeapLeavesAllyBelow(), checkLeapDowned(), checkLeapAllyCatchesUp(), checkLeapAllyDowned(), checkLeapWithItem(), checkLeapClocks(), checkLeapOffHighGround(), checkLeapUnderRoof()]) {
   if (err) {
     console.error(err);
     process.exit(1);
