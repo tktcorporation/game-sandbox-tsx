@@ -146,6 +146,14 @@ export interface Settlement {
   soldFor: number;
 }
 
+/**
+ * The order in which things claim stash room. Valuables are worth the same sold now or
+ * later, so they go first when room runs out; of the gear, the dearest is kept, since
+ * the better of it is found only on the island.
+ */
+export const keepOrder = (items: Item[]) =>
+  [...items].sort((a, b) => Number(a.t === "valuable") - Number(b.t === "valuable") || price(b) - price(a));
+
 /** Puts what came off the island into the stash. */
 export function settle(p: Profile, s: State): Settlement {
   const pl = s.player;
@@ -159,8 +167,7 @@ export function settle(p: Profile, s: State): Settlement {
     for (const v of pouch(pl.haul)) home.push({ t: "valuable", kind: v });
   }
   const room = Math.max(0, META.stash - p.stash.length);
-  // Valuables are worth the same sold now or later, so they are the first to go when room runs out.
-  const keep = [...home].sort((a, b) => Number(a.t === "valuable") - Number(b.t === "valuable"));
+  const keep = keepOrder(home);
   const kept = keep.slice(0, room);
   const sold = keep.slice(room);
   const soldFor = sold.reduce((n, i) => n + sellPrice(i), 0);

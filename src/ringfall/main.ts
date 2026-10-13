@@ -386,7 +386,7 @@ function lock() {
   }
 }
 
-/** The kit of the raid under way, to settle against when it ends. */
+/** The kit the raid under way started from. */
 let kit: Kit = freeKit();
 let settlement: Settlement | null = null;
 const hub = new Hub(loadProfile(), start);
