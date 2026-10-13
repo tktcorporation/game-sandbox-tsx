@@ -888,6 +888,12 @@ function checkSettle(): string | null {
   if (buy(p, wares()[0])) return "trader scenario: bought into a full stash";
   const full = settle(p, f);
   if (full.profile.stash.length !== META.stash || full.sold.length !== 1 || full.profile.cash <= p.cash) return "full stash scenario: what did not fit was not sold";
+  // One slot left, and a common and an epic weapon come home: the epic is kept.
+  const one = { ...p, stash: p.stash.slice(1) };
+  f.player.heals.syringe = 2;
+  f.player.weapons = [{ kind: "pike", rarity: 0, mag: -1 }, { kind: "lance", rarity: 2, mag: -1 }];
+  const kept = settle(one, f).profile.stash.at(-1);
+  if (kept?.t !== "weapon" || kept.rarity !== 2) return `full stash scenario: the last slot went to ${JSON.stringify(kept)}, not the epic LANCE`;
   if (parseProfile(JSON.parse(JSON.stringify(won.profile)))?.stash.length !== won.profile.stash.length || parseProfile({ v: 2 }) !== null) return "storage scenario: a saved profile does not load back";
   return null;
 }
