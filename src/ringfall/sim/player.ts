@@ -207,9 +207,11 @@ function move(s: State, input: Input, prevCrouch: boolean) {
       }
     } else {
       // Air: steer, but never gain speed beyond the take-off speed (keeps slide-jump momentum).
+      // A downed body (knocked out of the leap) just falls where it was going.
+      const steer = p.downed > 0 ? 0 : PLAYER.airAccel;
       const cap = Math.max(speed, top);
-      p.vel.x += wx * PLAYER.airAccel * TICK;
-      p.vel.z += wz * PLAYER.airAccel * TICK;
+      p.vel.x += wx * steer * TICK;
+      p.vel.z += wz * steer * TICK;
       const ns = Math.hypot(p.vel.x, p.vel.z);
       if (ns > cap) {
         p.vel.x *= cap / ns;

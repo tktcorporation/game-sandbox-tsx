@@ -663,11 +663,13 @@ function checkLeapDowned(): string | null {
   p.shield = 0;
   hurtPlayer(s, 10, p.pos.x, p.pos.z);
   if (p.downed <= 0 || p.leap) return `leap downed scenario: downed ${p.downed.toFixed(1)}, still leaping ${!!p.leap}`;
-  const vx = p.vel.x;
-  const vz = p.vel.z;
-  step(s, { ...idleInput(), moveX: 1, moveZ: -1 }, false);
-  if (Math.hypot(p.vel.x - vx, p.vel.z - vz) > 1) return "leap downed scenario: a downed player still steers like a glider";
-  ticks(s, 8);
+  // The same fall with and without a held direction: a downed body cannot steer.
+  // (Compared where it lands: on the ground a downed player may crawl.)
+  const free = structuredClone(s);
+  for (let t = 0; t < 8 * 60 && !p.onGround; t++) step(s, { ...idleInput(), moveX: 1, moveZ: -1 }, false);
+  for (let t = 0; t < 8 * 60 && !free.player.onGround; t++) step(free, idleInput(), false);
+  const drift = Math.hypot(p.pos.x - free.player.pos.x, p.pos.z - free.player.pos.z);
+  if (drift > 0.5) return `leap downed scenario: holding a direction moved the downed player ${drift.toFixed(1)} m`;
   if (!p.onGround) return `leap downed scenario: still in the air at ${p.pos.y.toFixed(1)}`;
   const g = groundAt(s.ally.pos.x, s.ally.pos.z, 0.4, s.ally.pos.y);
   if (s.ally.pos.y - g > 0.1) return `leap downed scenario: the teammate hangs ${(s.ally.pos.y - g).toFixed(1)} m in the air`;
