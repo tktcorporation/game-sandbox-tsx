@@ -218,6 +218,8 @@ export interface Loot {
   valuable?: ValuableKind;
   /** For a key: the POI whose vault it opens. */
   key?: number;
+  /** Armour the player took off: it can be put back on with the use key, and its shield is not refilled. */
+  worn?: boolean;
   rarity: Rarity;
   pos: Vec3;
   vel: Vec3;
@@ -396,6 +398,8 @@ export interface Input {
   heal: boolean;
   /** The input comes from a touch screen (stronger aim assist, see ASSIST.touchPull). */
   touch: boolean;
+  /** The use key never swaps back into armour taken off (the bot keeps the better one). */
+  keepArmor?: boolean;
 }
 
 export const idleInput = (): Input => ({

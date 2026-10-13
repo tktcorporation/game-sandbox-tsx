@@ -895,6 +895,16 @@ function checkSettle(): string | null {
   worn.loot.push({ id: 9100, kind: "armor", rarity: 2, pos: { ...worn.player.pos }, vel: { x: 0, y: 0, z: 0 }, age: 1 });
   step(worn, idleInput(), false);
   if (worn.player.armor !== 2 || !worn.loot.some((l) => l.kind === "armor" && l.rarity === 1 && dist2d(l.pos, worn.player.pos) < 2)) return `armor scenario: after the upgrade the player wears ${worn.player.armor} and the old armour ${worn.loot.some((l) => l.kind === "armor") ? "lies there" : "is gone"}`;
+  // ...and it can be put back on with the use key, leaving the better one there, without a fresh shield.
+  ticks(worn, 1);
+  worn.player.shield = 10;
+  const press = idleInput();
+  press.interact = true;
+  step(worn, press, false);
+  step(worn, idleInput(), false);
+  if (worn.player.armor !== 1 || worn.player.shield > 10 || !worn.loot.some((l) => l.kind === "armor" && l.rarity === 2 && l.worn)) return `armor scenario: putting the old armour back on left the player in ${worn.player.armor} with shield ${worn.player.shield}`;
+  worn.outcome = "extracted";
+  if (!settle(newProfile(), worn).home.some((i) => i.t === "armor" && i.tier === 1)) return "armor scenario: the armour put back on did not come home";
   // One slot left, and a common and an epic weapon come home: the epic is kept.
   const one = { ...p, stash: p.stash.slice(1) };
   f.player.heals.syringe = 2;
