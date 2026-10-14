@@ -526,10 +526,15 @@ function fromCover(s: State, e: Enemy, known: { x: number; z: number; live: bool
 }
 
 /** Keep walkers from stacking into one blob. */
+/** Coarse cells for `separate()`: robots more than a cell apart cannot touch. */
+const SEP_CELL = 8;
 function separate(s: State) {
   const list = s.enemies.filter((e) => ENEMIES[e.kind].fly === 0 && e.mode !== "spawning");
+  const cx = list.map((e) => Math.floor(e.pos.x / SEP_CELL));
+  const cz = list.map((e) => Math.floor(e.pos.z / SEP_CELL));
   for (let i = 0; i < list.length; i++)
     for (let j = i + 1; j < list.length; j++) {
+      if (Math.abs(cx[i] - cx[j]) > 1 || Math.abs(cz[i] - cz[j]) > 1) continue;
       const a = list[i];
       const b = list[j];
       const r = ENEMIES[a.kind].radius + ENEMIES[b.kind].radius;

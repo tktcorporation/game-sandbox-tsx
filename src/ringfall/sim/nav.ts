@@ -60,6 +60,48 @@ function blockedCells(): Uint8Array {
 
 const free = (i: number, j: number) => i >= 0 && j >= 0 && i < NX && j < NZ && !grid[j * NX + i];
 
+/*
+ * Which connected stretch of open ground each free cell belongs to (0 for blocked cells),
+ * the same 8-way moves A* makes. A search between two stretches has no answer, and
+ * finding that out by A* means visiting every cell of the start's stretch, which spans
+ * both regions; the labels answer it at once.
+ */
+let area = new Int32Array(0);
+function areas(): Int32Array {
+  if (area.length) return area;
+  blockedCells();
+  const label = new Int32Array(NX * NZ);
+  const queue = new Int32Array(NX * NZ);
+  let next = 0;
+  for (let k0 = 0; k0 < NX * NZ; k0++) {
+    if (grid[k0] || label[k0]) continue;
+    next++;
+    label[k0] = next;
+    let head = 0;
+    let tail = 0;
+    queue[tail++] = k0;
+    while (head < tail) {
+      const cur = queue[head++];
+      const ci = cur % NX;
+      const cj = (cur / NX) | 0;
+      for (let di = -1; di <= 1; di++)
+        for (let dj = -1; dj <= 1; dj++) {
+          if (!di && !dj) continue;
+          const ni = ci + di;
+          const nj = cj + dj;
+          if (!free(ni, nj)) continue;
+          if (di && dj && (!free(ci + di, cj) || !free(ci, cj + dj))) continue;
+          const n = nj * NX + ni;
+          if (label[n]) continue;
+          label[n] = next;
+          queue[tail++] = n;
+        }
+    }
+  }
+  area = label;
+  return label;
+}
+
 /** True if the straight line between two points crosses no blocked cell. */
 export function clearLine(ax: number, az: number, bx: number, bz: number): boolean {
   blockedCells();
@@ -119,6 +161,7 @@ export function findPath(
   }
   const start = s[1] * NX + s[0];
   const goal = g[1] * NX + g[0];
+  if (areas()[start] !== area[goal]) return null;
   if (++search === 0xffffffff) {
     stamp.fill(0);
     search = 1;
