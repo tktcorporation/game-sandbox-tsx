@@ -138,7 +138,7 @@ export class Bot {
     let fight = false;
     if (s.phase === "drop") {
       goal = regionOf(s.region).land;
-    } else if (aim < 0 && (callLeft(s, this.exit(s).id) === 0 || !tgt || dist2d(tgt.pos, p.pos) > 70)) {
+    } else if (aim < 0 && (callLeft(s, this.exit(s).id) === 0 || !tgt || dist2d(tgt.pos, p.pos) > 70 || this.slipAway(s, live))) {
       goal = this.exit(s);
     } else if (tgt && dist2d(tgt.pos, p.pos) < 70) {
       fight = true;
@@ -224,6 +224,7 @@ export class Bot {
           }
         }
       }
+      if (this.retreat && dist2d(this.retreat, p.pos) > 26) this.retreat = null;
       const hiding = !!this.retreat && dist2d(this.retreat, p.pos) < 1.5;
       if (this.retreat && hiding && watching.length && this.retreatCool <= 0) {
         // Found in hiding (one came round): somewhere else, at once.
@@ -263,7 +264,9 @@ export class Bot {
         // Worth it on a robot with fight left; the same robot again only after a while.
         const healthy = tgt.hp + tgt.shield > enemyMax(tgt) * 0.3;
         const again = tgt.id !== this.lastFlanked || s.time - this.flankedAt > 5;
-        if (healthy && again && flankOf(s, tgt) === "front" && this.rnd() < sk.flank) {
+        // Going round pays against one squad, not when another can see the way round.
+        const alone = new Set(fighting.map((e) => e.squad)).size <= 1 && watching.length <= 1;
+        if (healthy && again && alone && flankOf(s, tgt) === "front" && this.rnd() < sk.flank) {
           const hide = this.hideSpot(s, tgt);
           if (hide) {
             this.lastFlanked = tgt.id;
@@ -349,7 +352,7 @@ export class Bot {
       const ambushing = hiding && flankOf(s, tgt) !== "front";
       const busy = (!!this.retreat && !ambushing) || (this.duckT > 0 && !!this.duck);
       inp.fire = sees && aimDir < tol && d < 60 && !p.healing && !busy && !(this.flank && flankOf(s, tgt) === "front");
-      inp.ads = sees && !busy && d > 12 && w?.kind !== "maul" && w?.kind !== "hornet";
+      inp.ads = sees && !busy && d > (w?.kind === "hornet" ? 8 : 12) && w?.kind !== "maul";
 
       // Shockwave: jump when the ring is about to arrive.
       for (const wv of s.waves) {
@@ -363,15 +366,23 @@ export class Bot {
       const left = (p.hp + p.shield) / (PLAYER.hp + PLAYER.shieldByTier[p.armor]);
       if (p.ult >= 1 && left < 0.4 && engaged.length >= 2 && tgt.kind !== "titan") {
         this.escape = this.escapeSpot(s, engaged);
-        if (this.escape) inp.ult = true;
+        if (this.escape) {
+          inp.ult = true;
+          // Plans made down here do not hold where it lands.
+          this.retreat = this.flank = this.post = null;
+        }
       }
       // Pick the weapon that suits the distance (when it has two).
       const other = p.weapons[1 - p.slot];
       this.swapT -= TICK;
-      if (other && w && sk.name !== "beginner" && this.swapT <= 0 && p.reload <= 0) {
-        // The scoped rifle for an opening shot from range; otherwise what suits the distance.
+      if (other && w && this.swapT <= 0 && p.reload <= 0) {
+        // The scoped rifle for an opening shot from range (every skill does that much);
+        // otherwise, past a beginner, what suits the distance.
         const scope = opening && d > 16 && other.kind === "talon";
-        if (scope || (!(opening && w.kind === "talon") && Math.abs(PREF[other.kind] - d) + 6 < Math.abs(PREF[w.kind] - d))) {
+        const suits = sk.name !== "beginner" && !(opening && w.kind === "talon") && Math.abs(PREF[other.kind] - d) + 6 < Math.abs(PREF[w.kind] - d);
+        // A beginner puts the rifle away once the fight is on.
+        const back = sk.name === "beginner" && !opening && w.kind === "talon";
+        if (scope || suits || back) {
           inp.swap = true;
           this.swapT = 3;
         }
@@ -474,6 +485,18 @@ export class Bot {
   }
 
   /**
+   * On its way out, with no robot that is fighting it in sight (so none sees it either) and
+   * no robot it has not dealt with standing in the way: slip off toward the exit rather than
+   * go back into the fight.
+   */
+  private slipAway(s: State, live: Enemy[]): boolean {
+    const p = s.player;
+    const eye = eyePos(s);
+    if (this.retreat && dist2d(this.retreat, p.pos) > 1.5) return false;
+    return !live.some((e) => e.aware === "engaged" && dist2d(e.pos, p.pos) < 50 && los(eye, bodyCenter(e)));
+  }
+
+  /**
    * Open low ground a glide's length away, as far as can be from the robots fighting it:
    * the way a player would pick where to leap to. Open means no building within a couple
    * of metres of it or tall under the way, so it comes down on the ground it plans on, not on
@@ -519,7 +542,7 @@ export class Bot {
     const pick = (id: string) => (exits.includes(id as ExtractPoint["id"]) ? EXTRACTS.find((x) => x.id === id) : undefined);
     // The dropship lands by the titan: only a bot that has beaten it goes there.
     const titanUp = s.enemies.some((e) => e.kind === "titan");
-    const quiet = this.skill.name === "beginner" || titanUp;
+    const quiet = this.skill.name === "beginner" || titanUp || this.raidersIn;
     return (s.player.flares > 0 ? pick("flare") : undefined) ?? (quiet ? pick("village") : pick("ship")) ?? pick("village") ?? EXTRACTS.find((x) => x.id === exits[0])!;
   }
 
@@ -529,7 +552,9 @@ export class Bot {
    * The shortest and least exposed route wins.
    */
   private flankSpot(s: State, tgt: Enemy): { x: number; z: number } | null {
-    const watchers = s.enemies.filter((e) => e.squad === tgt.squad);
+    // Everyone fighting it: the spot sees the target and no one else, and the way there stays out of their sight.
+    const watchers = s.enemies.filter((e) => e.squad === tgt.squad || (e.aware === "engaged" && dist2d(e.pos, this.from) < 60));
+    const others = watchers.filter((e) => e !== tgt);
     let best: { x: number; z: number; cost: number } | null = null;
     for (let off = 1.6; off <= 2 * Math.PI - 1.6 + 1e-6; off += 0.3)
       for (const r of [7, 10, 14]) {
@@ -540,12 +565,13 @@ export class Bot {
         const g = terrainHeight(x, z);
         if (groundAt(x, z, 0.4, g + 0.3) > g + 0.3 || [0.3, 1.0, 1.6].some((h) => solidAt(x, g + h, z))) continue;
         if (!los({ x, y: g + 1.6, z }, bodyCenter(tgt))) continue;
+        if (others.some((w) => los(muzzleOf(w), { x, y: g + 1.1, z }))) continue;
         const route = this.route(x, z);
         if (!route || route.len > 45) continue;
-        // Walking the route in the squad's sight would only turn it round: prefer hidden routes.
+        // Walking the route in their sight would only turn them round: prefer hidden routes.
         const exposed = route.samples.filter((q) => watchers.some((w) => los({ x: q.x, y: terrainHeight(q.x, q.z) + 1.4, z: q.z }, bodyCenter(w)))).length / Math.max(1, route.samples.length);
-        const cost = route.len * (1 + exposed * 3);
-        if (exposed < 0.6 && (!best || cost < best.cost)) best = { x, z, cost };
+        const cost = route.len * (1 + exposed * 4);
+        if (exposed < 0.3 && (!best || cost < best.cost)) best = { x, z, cost };
       }
     return best ? { x: best.x, z: best.z } : null;
   }
@@ -643,7 +669,7 @@ export class Bot {
 
   /** The nearest standable spot within 10 m that no member of the robot's squad can see. */
   private hideSpot(s: State, tgt: Enemy): { x: number; z: number } | null {
-    const watchers = s.enemies.filter((e) => e.squad === tgt.squad);
+    const watchers = s.enemies.filter((e) => e.squad === tgt.squad || (e.aware === "engaged" && dist2d(e.pos, this.from) < 60));
     let best: { x: number; z: number; len: number } | null = null;
     for (const r of [3, 5, 7, 10])
       for (let a = 0; a < 2 * Math.PI; a += Math.PI / 6) {
