@@ -1,7 +1,10 @@
 import { AWARE, TICK, WEAPONS } from "./sim/config";
 import { Bot, SKILLS } from "./sim/bot";
 import { dist2d } from "./sim/geom";
-import { idleInput, newRun, type GameEvent, type Input, type State } from "./sim/state";
+import { freeKit, idleInput, newRun, type GameEvent, type Input, type Kit, type State } from "./sim/state";
+import { settle, type Settlement } from "./meta/profile";
+import { loadProfile, saveProfile } from "./meta/storage";
+import { Hub } from "./view/hub";
 import { step } from "./sim/step";
 import { hurtAlly } from "./sim/ally";
 import { haulValue } from "./sim/results";
@@ -285,6 +288,10 @@ function onEvent(e: GameEvent, s: State) {
       break;
     case "done":
       if (s.outcome === "extracted") sfx.victory();
+      // Settle and save at once; only the results screen waits for the moment to play out.
+      settlement = settle(hub.profile, s);
+      hub.profile = settlement.profile;
+      saveProfile(hub.profile);
       setTimeout(finish, s.outcome === "extracted" ? 1400 : 2400);
       break;
   }
@@ -379,7 +386,20 @@ function lock() {
   }
 }
 
-function start() {
+/** The kit the raid under way started from. */
+let kit: Kit = freeKit();
+let settlement: Settlement | null = null;
+const hub = new Hub(loadProfile(), start);
+
+function openHub() {
+  $("title").hidden = true;
+  $("results").hidden = true;
+  hub.open();
+}
+
+function start(k: Kit) {
+  kit = k;
+  settlement = null;
   unlock();
   if (touchMode) {
     // Full screen and landscape where the browser allows it; the game runs either way.
@@ -389,7 +409,7 @@ function start() {
   document.body.classList.add("playing");
   keepAwake(true);
   world.reset();
-  state = newRun(Date.now() & 0xffff);
+  state = newRun(Date.now() & 0xffff, kit);
   acc = hitstop = slowmo = 0;
   running = true;
   paused = false;
@@ -408,7 +428,7 @@ function finish() {
   fire = ads = false;
   $("banner").className = "";
   hud.show(false);
-  hud.results(state);
+  hud.results(state, settlement ?? undefined);
   $("results").hidden = false;
   if (document.pointerLockElement) document.exitPointerLock();
 }
@@ -430,8 +450,8 @@ document.addEventListener("visibilitychange", () => {
   wake = null;
   if (!document.hidden && running) keepAwake(true);
 });
-$("start").addEventListener("click", start);
-$("restart").addEventListener("click", start);
+$("start").addEventListener("click", openHub);
+$("restart").addEventListener("click", openHub);
 $("resume").addEventListener("click", () => {
   unlock();
   setPaused(false);
@@ -464,7 +484,9 @@ window.render_game_to_text = () => {
   const s = state;
   const p = s.player;
   return JSON.stringify({
-    screen: running ? "game" : $("results").hidden ? "title" : "results",
+    screen: running ? "game" : !$("results").hidden ? "results" : !$("hub").hidden ? "hub" : "title",
+    profile: { cash: hub.profile.cash, stash: hub.profile.stash.length, raids: hub.profile.raids },
+    settled: settlement && { home: settlement.home.length, sold: settlement.sold.length },
     phase: s.phase,
     time: +s.time.toFixed(1),
     outcome: s.outcome,

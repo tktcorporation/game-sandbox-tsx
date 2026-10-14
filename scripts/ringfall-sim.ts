@@ -9,7 +9,7 @@ import { ALLY, BAG, ENEMIES, NOISE, PLAYER, RAIDERS, REINFORCE, SEARCH, TACTICAL
 import { makeNoise } from "../src/ringfall/sim/awareness";
 import { BOXES, EXTRA_BINS, EXTRACTS, POIS, ROAMERS, SPAWN, type Squad } from "../src/ringfall/sim/map";
 import { fieldTo, fieldsBuilt, routeLength } from "../src/ringfall/sim/hunt";
-import { groundAt, los, solidAt } from "../src/ringfall/sim/geom";
+import { dist2d, groundAt, los, solidAt } from "../src/ringfall/sim/geom";
 import { floorLevel, highGround, LEVEL, offLowGround, terrainHeight } from "../src/ringfall/sim/terrain";
 import { Bot, SKILLS } from "../src/ringfall/sim/bot";
 import { idleInput, newRun, type GameEvent, type State } from "../src/ringfall/sim/state";
@@ -21,6 +21,8 @@ import { SHIP_SQUAD, bagUsed, makeRoom } from "../src/ringfall/sim/world";
 import { bodyCenter, damageEnemy, eyePos, fireRay, magSize, weakPoint } from "../src/ringfall/sim/combat";
 import { lookAngles } from "../src/ringfall/sim/geom";
 import { forward } from "../src/ringfall/sim/state";
+import { buy, newProfile, parseProfile, pouch, price, sell, settle, takeKit, wares } from "../src/ringfall/meta/profile";
+import { META } from "../src/ringfall/sim/config";
 
 const runs = Number(process.argv[2] ?? 12);
 const LIMIT = 20 * 60; // seconds of game time before a run counts as stuck
@@ -833,7 +835,85 @@ function checkAllyHoldsFire(): string | null {
   if (shots) return `hold fire scenario: the teammate fired ${shots} shots at an idle robot`;
   return null;
 }
-for (const err of [checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkAllySelfUp(), checkStompHeight(), checkDropOffHighGround(), checkFieldsReused(), checkFieldsFollowRunner(), checkCliffsStop(), checkNoPits(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill(), checkLeap(), checkLeapLeavesAllyBelow(), checkLeapDowned(), checkLeapAllyCatchesUp(), checkLeapAllyDowned(), checkLeapWithItem(), checkLeapClocks(), checkLeapOffHighGround(), checkLeapUnderRoof()]) {
+/** The stash: a raid takes its kit out, getting off brings it and the haul home, a wipe keeps only the pouch. */
+function checkSettle(): string | null {
+  let p = newProfile();
+  const start = p.stash.length;
+  // Two stash weapons and a cell in; the cell is used up, a rare PIKE is picked up instead of the HORNET.
+  const taken = takeKit(p, { weapons: [0, 1], armor: null, heals: { cell: 1, battery: 0, syringe: 0, medkit: 0 } });
+  if (taken.kit.weapons.some((w) => w.loan) || taken.kit.heals.cell !== 1) return `settle scenario: the stash kit came out wrong (${JSON.stringify(taken.kit)})`;
+  if (taken.profile.stash.length !== start - 3) return `settle scenario: taking the kit left ${taken.profile.stash.length} things in the stash, not ${start - 3}`;
+  const s = newRun(5, taken.kit);
+  if (s.player.weapons.map((w) => w?.kind).join() !== "pike,hornet") return `settle scenario: the raid started with ${s.player.weapons.map((w) => w?.kind).join()}`;
+  s.player.heals.cell = 0;
+  s.player.weapons[1] = { kind: "pike", rarity: 1, mag: -1 };
+  s.player.armor = 2;
+  s.player.haul = ["core", "board", "parts", "parts"];
+  s.outcome = "extracted";
+  const won = settle(taken.profile, s);
+  const kinds = won.home.map((i) => i.t).sort().join();
+  if (kinds !== "armor,valuable,valuable,valuable,valuable,weapon,weapon") return `settle scenario: getting off brought home ${kinds}`;
+  if (won.profile.stash.length !== taken.profile.stash.length + 7 || won.profile.extracted !== 1 || won.profile.raids !== 1) return "settle scenario: the stash or record did not take what came home";
+  // A wipe: the kit is gone, and of the haul only the best that fits the pouch comes back.
+  s.outcome = "dead";
+  const lost = settle(taken.profile, s);
+  if (lost.home.map((i) => (i.t === "valuable" ? i.kind : i.t)).join() !== "board") return `settle scenario: a wipe kept ${JSON.stringify(lost.home)}, not the board`;
+  if (pouch(["parts", "parts", "board"]).join() !== "board" || pouch(["parts", "core", "parts"]).join() !== "parts,parts") return "pouch scenario: the pouch did not keep the most valuable fit";
+  // The free kit is lent: getting off with it brings home only what was found, and its spare heals stay lent.
+  const free = takeKit(p, { weapons: [], armor: null, heals: { cell: 0, battery: 0, syringe: 0, medkit: 0 } });
+  if (!free.kit.weapons.every((w) => w.loan) || free.profile.stash.length !== start) return "free kit scenario: the free kit was not lent, or it took from the stash";
+  const f = newRun(6, free.kit);
+  f.outcome = "extracted";
+  f.player.heals.syringe = 3;
+  const back = settle(free.profile, f);
+  // A lent syringe used up and one found: the found one is the player's.
+  const g = newRun(6, free.kit);
+  g.outcome = "extracted";
+  g.player.heals.syringe = 1;
+  g.player.heals.cell = 2;
+  g.player.lentHeals.syringe = 1;
+  const g2 = settle(free.profile, g);
+  g.player.heals.syringe = 2; // ...then a syringe picked up
+  const g3 = settle(free.profile, g);
+  if (g2.home.length !== 0 || g3.home.map((i) => (i.t === "heal" ? i.kind : i.t)).join() !== "syringe") return `free kit scenario: after using a lent syringe and finding one, home is ${JSON.stringify(g3.home)}`;
+  if (back.home.map((i) => (i.t === "heal" ? i.kind : i.t)).join() !== "syringe") return `free kit scenario: getting off brought home ${JSON.stringify(back.home)}, not one found syringe`;
+  // Trading and a full stash.
+  const cash = p.cash;
+  const bought = buy(p, wares()[0]);
+  if (!bought || bought.cash !== cash - price(wares()[0]) || bought.stash.length !== start + 1) return "trader scenario: buying did not take the price and add the item";
+  if (sell(bought, bought.stash.length - 1).cash >= cash) return "trader scenario: selling paid back at least the price";
+  p = { ...p, stash: Array.from({ length: META.stash }, () => ({ t: "heal" as const, kind: "cell" as const })) };
+  if (buy(p, wares()[0])) return "trader scenario: bought into a full stash";
+  const full = settle(p, f);
+  if (full.profile.stash.length !== META.stash || full.sold.length !== 1 || full.profile.cash <= p.cash) return "full stash scenario: what did not fit was not sold";
+  // Armour from the stash, swapped on the island for a better one, is left on the ground, not lost.
+  const worn = padRun();
+  worn.player.armor = 1;
+  worn.loot = [];
+  worn.loot.push({ id: 9100, kind: "armor", rarity: 2, pos: { ...worn.player.pos }, vel: { x: 0, y: 0, z: 0 }, age: 1 });
+  step(worn, idleInput(), false);
+  if (worn.player.armor !== 2 || !worn.loot.some((l) => l.kind === "armor" && l.rarity === 1 && dist2d(l.pos, worn.player.pos) < 2)) return `armor scenario: after the upgrade the player wears ${worn.player.armor} and the old armour ${worn.loot.some((l) => l.kind === "armor") ? "lies there" : "is gone"}`;
+  // ...and it can be put back on with the use key, leaving the better one there, without a fresh shield.
+  ticks(worn, 1);
+  worn.player.shield = 10;
+  const press = idleInput();
+  press.interact = true;
+  step(worn, press, false);
+  step(worn, idleInput(), false);
+  if (worn.player.armor !== 1 || worn.player.shield > 10 || !worn.loot.some((l) => l.kind === "armor" && l.rarity === 2 && l.worn)) return `armor scenario: putting the old armour back on left the player in ${worn.player.armor} with shield ${worn.player.shield}`;
+  worn.outcome = "extracted";
+  if (!settle(newProfile(), worn).home.some((i) => i.t === "armor" && i.tier === 1)) return "armor scenario: the armour put back on did not come home";
+  // One slot left, and a common and an epic weapon come home: the epic is kept.
+  const one = { ...p, stash: p.stash.slice(1) };
+  f.player.heals.syringe = 2;
+  f.player.weapons = [{ kind: "pike", rarity: 0, mag: -1 }, { kind: "lance", rarity: 2, mag: -1 }];
+  const kept = settle(one, f).profile.stash.at(-1);
+  if (kept?.t !== "weapon" || kept.rarity !== 2) return `full stash scenario: the last slot went to ${JSON.stringify(kept)}, not the epic LANCE`;
+  if (parseProfile(JSON.parse(JSON.stringify(won.profile)))?.stash.length !== won.profile.stash.length || parseProfile({ v: 2 }) !== null) return "storage scenario: a saved profile does not load back";
+  return null;
+}
+
+for (const err of [checkSettle(), checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkAllySelfUp(), checkStompHeight(), checkDropOffHighGround(), checkFieldsReused(), checkFieldsFollowRunner(), checkCliffsStop(), checkNoPits(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill(), checkLeap(), checkLeapLeavesAllyBelow(), checkLeapDowned(), checkLeapAllyCatchesUp(), checkLeapAllyDowned(), checkLeapWithItem(), checkLeapClocks(), checkLeapOffHighGround(), checkLeapUnderRoof()]) {
   if (err) {
     console.error(err);
     process.exit(1);

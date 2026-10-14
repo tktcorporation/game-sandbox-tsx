@@ -258,6 +258,39 @@ export const VALUABLES: Record<ValuableKind, { label: string; value: number; siz
 export const BAG = { slots: 10 };
 
 /**
+ * Between raids: what the player keeps, what things cost, and what is lost. Whatever is
+ * taken into a raid is lost with it on a wipe, except what fits in the pouch: the most
+ * valuable things in the bag, up to its slots. A raid with the free kit risks nothing:
+ * its gear is lent and goes back at the end, whatever happens.
+ */
+export const META = {
+  /** Things the stash holds (each weapon, armour, item or valuable is one). */
+  stash: 40,
+  /** Bag slots (as `VALUABLES[].size`) whose contents come home even from a wipe. */
+  pouch: 2,
+  start: {
+    cash: 1500,
+    weapons: [{ kind: "pike", rarity: 0 }, { kind: "hornet", rarity: 0 }] as { kind: WeaponKind; rarity: Rarity }[],
+    heals: { cell: 2, battery: 0, syringe: 2, medkit: 0 } as Record<HealKind, number>,
+  },
+  /** The lent kit of a free raid. */
+  free: {
+    weapons: [{ kind: "pike", rarity: 0 }, { kind: "talon", rarity: 0 }] as { kind: WeaponKind; rarity: Rarity }[],
+    heals: { cell: 2, battery: 0, syringe: 2, medkit: 0 } as Record<HealKind, number>,
+  },
+  /** Trader prices. A weapon's price is its base times its rarity's factor. */
+  weapon: { pike: 600, hornet: 500, maul: 700, lance: 900, talon: 1200 } as Record<WeaponKind, number>,
+  rarityFactor: [1, 2.5, 5, 9],
+  /** Armour by tier (1 to 3); tier 0 is none. */
+  armor: [0, 400, 1200, 3000],
+  heal: { cell: 60, battery: 250, syringe: 60, medkit: 250 } as Record<HealKind, number>,
+  /** Share of the price the trader pays for gear (valuables sell at their full value). */
+  sellShare: 0.4,
+  /** The best rarity of weapon and tier of armour the trader sells; better is found in raids. */
+  shopRarity: 1 as Rarity,
+};
+
+/**
  * Searching a bin takes time with the hands busy and makes a noise; a top-floor bin
  * of a high-rise takes longer. Moving away, shooting or healing breaks it off.
  */

@@ -973,6 +973,216 @@ body.touch .mate-bars {
   text-decoration: line-through;
 }
 
+/* --- the base between raids */
+#hub {
+  place-items: stretch;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, var(--edge-r, 0px)) max(16px, var(--edge-b, 0px)) max(16px, env(safe-area-inset-left));
+  background: rgba(20, 26, 51, 0.88);
+}
+.hub-inner {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  width: min(1080px, 100%);
+  height: 100%;
+  margin: 0 auto;
+  min-height: 0;
+}
+.hub-head {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.hub-head h2 {
+  margin: 0;
+  font-size: 32px;
+}
+.hub-tabs {
+  display: flex;
+  gap: 6px;
+}
+#hub .hub-tabs button {
+  font-size: 16px;
+  padding: 8px 18px;
+  background: transparent;
+  color: var(--white);
+  box-shadow: inset 0 0 0 2px var(--muted);
+}
+#hub .hub-tabs button.on {
+  background: var(--white);
+  color: var(--ink);
+  box-shadow: none;
+}
+.hub-cash {
+  margin-left: auto;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.hub-cash small {
+  color: var(--muted);
+  font-size: 13px;
+}
+.hub-cash b {
+  font-family: var(--num);
+  font-size: 34px;
+  color: var(--hot);
+}
+.hub-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  min-height: 0;
+}
+.hub-col {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.hub-col h3 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+.hub-col h3 small {
+  color: var(--muted);
+  font-family: var(--num);
+  font-size: 15px;
+  margin-left: 6px;
+}
+.hub-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+  min-height: 0;
+  padding-right: 4px;
+  -webkit-overflow-scrolling: touch;
+}
+#hub .item {
+  font-weight: 800;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto auto;
+  column-gap: 12px;
+  align-items: center;
+  text-align: left;
+  font-size: 16px;
+  padding: 7px 12px;
+  background: var(--plate);
+  color: var(--white);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+#hub .item:hover:not(:disabled) {
+  transform: none;
+  box-shadow: inset 0 0 0 2px var(--white);
+}
+#hub .item.on {
+  box-shadow: inset 0 0 0 2px var(--hot);
+}
+#hub .item:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+#hub .item i {
+  font-style: normal;
+  font-family: var(--num);
+  color: var(--muted);
+}
+#hub .item small {
+  grid-column: 1;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+}
+#hub .item b {
+  grid-column: 2;
+  grid-row: 1 / 3;
+  font-family: var(--num);
+  font-size: 18px;
+  color: var(--hot);
+}
+.hub-list .slot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--plate);
+  font-weight: 800;
+}
+.hub-list .slot > small:first-child {
+  width: 7em;
+  color: var(--muted);
+  font-weight: 400;
+}
+.hub-list .slot .none {
+  color: var(--muted);
+}
+.hub-list .slot.count b {
+  font-family: var(--num);
+  font-size: 22px;
+  min-width: 1.4em;
+  text-align: center;
+}
+#hub .slot.count button {
+  font-size: 18px;
+  padding: 2px 14px;
+  box-shadow: none;
+  background: var(--white);
+}
+.hub-list .slot.count small:last-child {
+  margin-left: auto;
+  color: var(--muted);
+  font-weight: 400;
+}
+.hub-list .hint,
+.hub-list .empty {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.hub-foot {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+#hub .hub-foot button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.screen button.ghost {
+  background: transparent;
+  color: var(--white);
+  box-shadow: inset 0 0 0 2px var(--white);
+}
+#home h3 {
+  margin: 4px 0 2px;
+  font-size: 16px;
+}
+#home p {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  font-weight: 800;
+}
+#home .sold {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--muted);
+}
+body.touch .hub-head h2 {
+  font-size: 22px;
+}
+body.touch #hub .item {
+  font-size: 14px;
+  padding: 5px 10px;
+}
+body.touch .hub-foot button {
+  font-size: 17px;
+  padding: 10px 20px;
+}
+
 /* --- touch controls (body.touch is set when the device has a touch screen) */
 #touch,
 #rotate,
