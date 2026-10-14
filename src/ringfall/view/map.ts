@@ -126,24 +126,66 @@ export class IslandMap {
     g.lineWidth = 3 * dpr;
     g.lineJoin = "round";
     g.strokeStyle = "rgba(20,24,40,0.85)";
+    const font = (size: number) => `800 ${size * dpr}px system-ui, sans-serif`;
     const label = (text: string, x: number, y: number, color: string, size: number, stroke = true) => {
-      g.font = `800 ${size * dpr}px system-ui, sans-serif`;
+      g.font = font(size);
       if (stroke) g.strokeText(text, x, y);
       g.fillStyle = color;
       g.fillText(text, x, y);
     };
+    // Where POI and exit names will go. On a small map, a district or region name that would
+    // cover one of them is left out: those are the names the player navigates by.
+    type Rect = { x0: number; y0: number; x1: number; y1: number };
+    const box = (text: string, x: number, y: number, size: number, left = false): Rect => {
+      g.font = font(size);
+      const w = g.measureText(text).width;
+      const hh = size * dpr * 0.6;
+      const x0 = left ? x : x - w / 2;
+      return { x0, y0: y - hh, x1: x0 + w, y1: y + hh };
+    };
+    const taken: Rect[] = [];
+    const free = (r: Rect) => !taken.some((t) => r.x0 < t.x1 && r.x1 > t.x0 && r.y0 < t.y1 && r.y1 > t.y0);
+    const poiText = (i: number) => (s.cleared[i] ? `${POIS[i].name}（制圧）` : POIS[i].name);
+    POIS.forEach((poi, i) => {
+      const p = at(poi.x, poi.z);
+      taken.push(box(poiText(i), p.x, p.y - 9 * dpr, 12));
+    });
+    for (const x of EXTRACTS) {
+      const p = at(x.x, x.z);
+      const r = 6 * dpr;
+      taken.push({ x0: p.x - r, y0: p.y - r, x1: p.x + r, y1: p.y + r });
+    }
+    // An exit's name sits under its marker, or beside it when another name is already there.
+    const exitAt = EXTRACTS.map((x) => {
+      const p = at(x.x, x.z);
+      g.font = font(10);
+      const half = g.measureText(x.short).width / 2 + 9 * dpr;
+      const spots = [
+        { x: p.x, y: p.y + 13 * dpr },
+        { x: p.x - half, y: p.y },
+        { x: p.x + half, y: p.y },
+        { x: p.x, y: p.y - 13 * dpr },
+      ];
+      const spot = spots.find((q) => free(box(x.short, q.x, q.y, 10))) ?? spots[0];
+      taken.push(box(x.short, spot.x, spot.y, 10));
+      return spot;
+    });
+    // Districts and landmarks between the POIs, small and muted under everything else.
+    for (const d of DISTRICTS) {
+      const p = at(d.x, d.z);
+      const r = box(d.name, p.x, p.y, 10);
+      if (!free(r)) continue;
+      taken.push(r);
+      label(d.name, p.x, p.y, "#e9dcc2", 10);
+    }
     for (const r of REGIONS) {
       const p = at(REGION_LABELS[r.id].x, REGION_LABELS[r.id].z);
+      if (!free(box(r.name, p.x, p.y, 15, true))) continue;
       g.textAlign = "left";
       label(r.name, p.x, p.y, "rgba(255,248,232,0.55)", 15, false);
       g.textAlign = "center";
     }
-    // Districts and landmarks between the POIs, small and muted under everything else.
-    for (const d of DISTRICTS) {
-      const p = at(d.x, d.z);
-      label(d.name, p.x, p.y, "#e9dcc2", 10);
-    }
-    for (const x of EXTRACTS) {
+    EXTRACTS.forEach((x, i) => {
       const p = at(x.x, x.z);
       const r = 6 * dpr;
       g.fillStyle = css(PAL.hot);
@@ -155,12 +197,12 @@ export class IslandMap {
       g.closePath();
       g.fill();
       g.stroke();
-      label(x.short, p.x, p.y + 13 * dpr, css(PAL.hot), 10);
-    }
+      label(x.short, exitAt[i].x, exitAt[i].y, css(PAL.hot), 10);
+    });
     // POI names go on top, a little above their centre, so an exit nearby does not hide them.
     POIS.forEach((poi, i) => {
       const p = at(poi.x, poi.z);
-      label(s.cleared[i] ? `${poi.name}（制圧）` : poi.name, p.x, p.y - 9 * dpr, s.cleared[i] ? "#cfd6e0" : "#ffffff", 12);
+      label(poiText(i), p.x, p.y - 9 * dpr, s.cleared[i] ? "#cfd6e0" : "#ffffff", 12);
     });
     if (s.ally.active) {
       const a = at(s.ally.pos.x, s.ally.pos.z);
