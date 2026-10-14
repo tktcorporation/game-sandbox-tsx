@@ -894,6 +894,13 @@ export const DECKS: Deck[] = [{ x0: 120.2, z0: -201.5, x1: 123.8, z1: -178.5, y:
  * length, with an abandoned carriage on it. They are not pressed flat: the gorge and the
  * road run under them, and their ends rest on the embankments.
  */
+/**
+ * A kerb along the quay's edge, knee high: walkers fighting round the boat's pickup point
+ * cannot step off into the channel, where they could not climb out. The slipway east of it
+ * stays open.
+ */
+const QUAY: Box[] = [rect(89, -583.2, 146, -582.6, -6.2, -2.3, "wall", 1)];
+
 const RAILWAY: Box[] = [
   bridge(119.5, -208, 124.5, -172, LEVEL.rail),
   rect(119.5, -202, 119.8, -178, LEVEL.rail, LEVEL.rail + 1.2, "steel", 2),
@@ -1281,7 +1288,7 @@ buildTerrain([
 for (const [x, z, table] of [[55, -112, "relay"], [127, -192, "smelter"]] as const)
   EXTRA_BINS.push({ x, z, y: terrainHeight(x, z), table });
 
-export const BOXES: Box[] = [...AUTHORED, ...BRIDGE, ...RAILWAY, ...scatterCover([...AUTHORED, ...BRIDGE, ...RAILWAY], KEEP)];
+export const BOXES: Box[] = [...AUTHORED, ...BRIDGE, ...RAILWAY, ...QUAY, ...scatterCover([...AUTHORED, ...BRIDGE, ...RAILWAY, ...QUAY], KEEP)];
 
 /** The bridge deck's height at (x, z) when it lies on a deck that path finding walks (DECKS), else null. */
 export function deckAt(x: number, z: number): number | null {
