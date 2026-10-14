@@ -77,7 +77,12 @@ npm run shots:ringfall   # gate 3: the build played to the end in Chromium; scre
   with `input.touch` set so the sim applies `ASSIST.touchPull`. `npm run shots:ringfall` drives it with
   real touch events in a phone-sized viewport before the desktop run.
 - `src/ringfall/view/` renders and never changes rules: `world.ts` (three.js), `hud.ts` (DOM),
-  `audio.ts` (synthesized). `src/ringfall/main.ts` wires input and the fixed-step loop, and exposes
+  and synthesized sound. `audio.ts` is the engine (buses, reverb, voice cap, positional voices)
+  and runs on any `BaseAudioContext`; `sfx.ts` holds every cue; `soundscape.ts` puts the listener
+  at the camera, tests walls with a few `los()` rays a frame, plays nearby robots' steps, the wind,
+  the dropship and the ambience, and turns `state.events` into cues. `soundcheck.ts` is the `?sfx`
+  panel; `npm run sfx:ringfall` renders every cue offline and fails on silent, NaN or clipping ones.
+  `src/ringfall/main.ts` wires input and the fixed-step loop, and exposes
   `window.render_game_to_text()`, `window.advanceTime(ms)` and `window.ringfallBot(skill)`.
 - `docs/ringfall/balance.md` holds the target curve and the latest `npm run sim:ringfall -- 30` output.
   Change a number in `config.ts` or `map.ts` only together with a re-run and an update to that file.
