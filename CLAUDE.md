@@ -79,6 +79,12 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   (shots, sprinting) sends squads to look, and at most `AWARE.maxSquads` squads fight at once.
   A fighting squad tracks the player only while a member sees them (`knownSpot()`), turns at `TURN`
   and fires only ahead, and takes more damage from behind (`FLANK`): going round is the intended play.
+  Robot shots (`SHOT`) are fast and led, re-aimed for every shot while the robot sees its target, and
+  stray more with distance; a burst starts only with the target in sight, so the glow means "get
+  behind something", not "step aside". A squad of two or more that has had the player pinned to one
+  spot for a few seconds sends members round it to either side (`PINCH`, `pinchSpot()` in
+  `enemies.ts`). Aim pull (`ASSIST.pull`) works while aiming down sights, not for hip fire on the
+  move; healing is slow and heard (`HEALS`, `NOISE.heal`).
   `cover.ts` precomputes the spots grunts hide behind. The sim gate's `crowd` column is the most
   squads / robots fighting at once, and `flank` the share of hits from behind or by ambush; keep them
   within the targets in `docs/ringfall/balance.md`.

@@ -352,6 +352,7 @@ export class Bot {
       const ambushing = hiding && flankOf(s, tgt) !== "front";
       const busy = (!!this.retreat && !ambushing) || (this.duckT > 0 && !!this.duck);
       inp.fire = sees && aimDir < tol && d < 60 && !p.healing && !busy && !(this.flank && flankOf(s, tgt) === "front");
+      // Aimed down sights past arm's length, where the aim pull helps; the shotgun from the hip.
       inp.ads = sees && !busy && d > (w?.kind === "hornet" ? 8 : 12) && w?.kind !== "maul";
 
       // Shockwave: jump when the ring is about to arrive.
@@ -476,6 +477,8 @@ export class Bot {
     const p0 = s.player;
     const left = (p0.hp + p0.shield) / (PLAYER.hp + PLAYER.shieldByTier[p0.armor]);
     if (left < 0.6 && !pickHeal(s) && s.stats.cleared.length > 0) return -1;
+    // Its self-revive is spent: the next down may be the last, so no more POIs.
+    if (p0.selfRevive <= 0 && s.stats.cleared.length > 0) return -1;
     const p = s.player;
     const mine = regionOf(s.region).pois;
     const others = POIS.filter((poi) => !poi.boss && mine.includes(poi.id)).length;
