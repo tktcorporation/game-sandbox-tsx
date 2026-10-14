@@ -1,18 +1,20 @@
 /**
- * Gate 2 for RINGFALL: bots of three skills play the whole run headless.
- * Fails if any run does not finish, or if an invariant breaks (NaN, a body inside
- * a box, an enemy outside the island). Prints the table kept in docs/ringfall/balance.md.
+ * Gate 2 for RINGFALL: bots of three skills play the whole run headless, dropping into
+ * each region in turn. Fails if any run does not finish, or if an invariant breaks (NaN,
+ * a body inside a box, an enemy outside the world). Prints the tables kept in
+ * docs/ringfall/balance.md, one per region.
  *
- *   npm run sim:ringfall -- [runsPerSkill]
+ *   npm run sim:ringfall -- [runsPerSkillAndRegion]
  */
 import { ALLY, BAG, ENEMIES, NOISE, PLAYER, RAIDERS, REINFORCE, SEARCH, TACTICAL, TICK, VALUABLES, WORLD } from "../src/ringfall/sim/config";
 import { makeNoise } from "../src/ringfall/sim/awareness";
-import { BOXES, EXTRA_BINS, EXTRACTS, POIS, poiIndex, ROAMERS, SPAWN, type Squad } from "../src/ringfall/sim/map";
+import { BOXES, DECKS, EXTRA_BINS, EXTRACTS, POIS, poiIndex, REGIONS, regionHere, regionOf, ROAMERS, SPAWN, type RegionId, type Squad } from "../src/ringfall/sim/map";
+import { findPath } from "../src/ringfall/sim/nav";
 import { fieldTo, fieldsBuilt, routeLength } from "../src/ringfall/sim/hunt";
 import { dist2d, groundAt, inWorld, los, solidAt } from "../src/ringfall/sim/geom";
 import { floorLevel, highGround, landAt, LEVEL, offLowGround, offshore, terrainHeight } from "../src/ringfall/sim/terrain";
 import { Bot, SKILLS } from "../src/ringfall/sim/bot";
-import { idleInput, newRun, type GameEvent, type State } from "../src/ringfall/sim/state";
+import { callLeft, freeKit, idleInput, newRun, type GameEvent, type State } from "../src/ringfall/sim/state";
 import { step } from "../src/ringfall/sim/step";
 import { hurtPlayer } from "../src/ringfall/sim/player";
 import { hurtAlly, placeAlly } from "../src/ringfall/sim/ally";
@@ -69,6 +71,7 @@ function checkLayout(): string[] {
     if (p.carePackage) point(`POI ${i} care package`, p.carePackage.x, p.carePackage.z);
   });
   EXTRA_BINS.forEach((b) => point("extra bin", b.x, b.z, b.y));
+  for (const r of REGIONS) point(`${r.id} landing`, r.land.x, r.land.z);
   ROAMERS.forEach((sq) => squad(`roamer ${sq.name}`, sq));
   // An extract is used standing on whatever is highest there (the pad, a rock top), as the game checks it.
   for (const x of EXTRACTS) point(`extract ${x.id}`, x.x, x.z, groundAt(x.x, x.z, 0.4, 99));
@@ -267,6 +270,12 @@ const WAIT_SPOTS: [string, number, number][] = [
   ["住宅地", 112, 20],
   ["採掘場の奥", -100, 12],
   ["尾根", -50, 76],
+  ["峠", -60, -222],
+  ["駅", 122, -230],
+  ["港町", 20, -306],
+  ["高架下", 60, -344],
+  ["塩田", 10, -500],
+  ["岬", -122, -545],
 ];
 
 /** Walking into the lakebed's walls for 10 s gets the player nowhere: a cliff is climbed by no one. */
@@ -461,9 +470,89 @@ function checkShipCall(): string | null {
   p.iframes = 999; // the waves must not end the scenario
   ticks(s, ship.call! - 1);
   const waves = s.enemies.filter((e) => s.squads[e.squad]?.name === SHIP_SQUAD).length;
-  if (s.shipCall <= 0 || s.phase === "done" || waves < 2) return `ship scenario: ${s.shipCall.toFixed(1)} s left, phase ${s.phase}, ${waves} robots beamed in`;
+  if (callLeft(s, "ship") <= 0 || s.phase === "done" || waves < 2) return `ship scenario: ${callLeft(s, "ship").toFixed(1)} s left, phase ${s.phase}, ${waves} robots beamed in`;
   ticks(s, 1 + ship.hold + 0.2);
-  if (phaseOf(s) !== "done" || s.extractedAt !== "ship") return `ship scenario: did not leave after landing (${s.shipCall.toFixed(1)}, ${s.phase})`;
+  if (phaseOf(s) !== "done" || s.extractedAt !== "ship") return `ship scenario: did not leave after landing (${callLeft(s, "ship").toFixed(1)}, ${s.phase})`;
+  return null;
+}
+/**
+ * Standing on the harbor's quay calls the boat; robots beam in round the quay, on ground a
+ * walker stands on, while it comes up the channel; it is there after its call time, and the
+ * raid ends by it. Calling it calls nothing else.
+ */
+function checkBoatCall(): string | null {
+  const s = padRun();
+  const boat = EXTRACTS.find((x) => x.id === "boat")!;
+  const p = s.player;
+  p.pos = { x: boat.x, y: groundAt(boat.x, boat.z, 0.4, 20), z: boat.z };
+  p.iframes = 999;
+  ticks(s, boat.call! - 1);
+  const waves = s.enemies.filter((e) => s.squads[e.squad]?.name === SHIP_SQUAD);
+  if (callLeft(s, "boat") <= 0 || callLeft(s, "ship") >= 0 || s.phase === "done" || waves.length < 2) return `boat scenario: ${callLeft(s, "boat").toFixed(1)} s left, ship ${callLeft(s, "ship")}, phase ${s.phase}, ${waves.length} robots beamed in`;
+  const stranded = waves.filter((e) => ENEMIES[e.kind].fly === 0 && (highGround(e.pos.x, e.pos.z) || Math.hypot(e.pos.x - boat.x, e.pos.z - boat.z) > 40));
+  if (stranded.length) return `boat scenario: robots beamed in off the quay at ${stranded.map((e) => `${e.pos.x.toFixed(0)},${e.pos.z.toFixed(0)}`).join(" ")}`;
+  ticks(s, 1 + boat.hold + 0.2);
+  if (phaseOf(s) !== "done" || s.extractedAt !== "boat") return `boat scenario: did not leave by boat (${callLeft(s, "boat").toFixed(1)}, ${s.phase})`;
+  return null;
+}
+/**
+ * The landing choice: a raid starts over the region it was given (the reservoir when none
+ * is), and a fall with no input comes down in that region, with the teammate.
+ */
+function checkRegionDrop(): string | null {
+  if (newRun(3).region !== "reservoir") return "region scenario: a raid with no region given did not drop into the reservoir";
+  for (const r of REGIONS) {
+    const s = newRun(3, freeKit(), r.id);
+    const p = s.player;
+    if (s.region !== r.id || Math.hypot(p.pos.x - r.drop.x, p.pos.z - r.drop.z) > 1 || Math.hypot(s.ally.pos.x - r.drop.x, s.ally.pos.z - r.drop.z) > 1) return `region scenario: a ${r.id} raid starts at ${p.pos.x.toFixed(0)},${p.pos.z.toFixed(0)}`;
+    for (let t = 0; t < 20 * 60 && s.phase === "drop"; t++) step(s, idleInput(), false);
+    if (s.phase !== "play" || regionHere(p.pos).id !== r.id) return `region scenario: a ${r.id} raid landed at ${p.pos.x.toFixed(0)},${p.pos.z.toFixed(0)} (${regionHere(p.pos).id})`;
+  }
+  return null;
+}
+/** Length of a bot path on foot (nav.ts) from a to b, or Infinity when there is none. */
+function navLength(ax: number, az: number, bx: number, bz: number): number {
+  const pts = findPath(ax, az, bx, bz);
+  if (!pts) return Infinity;
+  let len = 0;
+  let prev = { x: ax, z: az };
+  for (const q of pts) {
+    len += Math.hypot(q.x - prev.x, q.z - prev.z);
+    prev = q;
+  }
+  return len;
+}
+/**
+ * The two ways between the regions are walked end to end: the bot's paths and the routed
+ * robots' field cross the gorge on the railway bridge (a short way; round by the pass would be
+ * hundreds of metres) and climb over the pass; and a player walking the bridge stays on its deck.
+ */
+function checkConnections(): string | null {
+  const deck = DECKS[0];
+  const mid = (deck.x0 + deck.x1) / 2;
+  const [south, north] = [deck.z1 + 14, deck.z0 - 14];
+  const span = south - north;
+  const bridgeNav = navLength(mid, south, mid, north);
+  if (!(bridgeNav < span * 1.3)) return `connection scenario: the bot's way over the railway bridge is ${bridgeNav.toFixed(0)} m for ${span.toFixed(0)} m`;
+  const bridgeField = routeLength(fieldTo(mid, north)!, mid, south);
+  if (!(bridgeField < span * 1.3)) return `connection scenario: robots' way over the railway bridge is ${bridgeField.toFixed(0)} m for ${span.toFixed(0)} m`;
+  // The pass: from the landing pad over the saddle to the harbor town, on foot both ways.
+  const pad = POIS[PAD];
+  const town = regionOf("harbor").land;
+  const passNav = navLength(pad.x, pad.z, town.x, town.z);
+  const passField = routeLength(fieldTo(town.x, town.z)!, pad.x, pad.z);
+  if (!Number.isFinite(passNav) || !Number.isFinite(passField)) return `connection scenario: no way on foot from the landing pad to the harbor (bot ${passNav}, robots ${passField})`;
+  // Walking the bridge: north along its middle, the deck under the feet the whole way.
+  const s = padRun();
+  const p = s.player;
+  p.pos = { x: mid, y: groundAt(mid, south, 0.4, deck.y + 1), z: south };
+  p.yaw = 0;
+  let low = Infinity;
+  for (let t = 0; t < 12 * 60 && p.pos.z > north; t++) {
+    step(s, { ...idleInput(), moveZ: 1 }, false);
+    if (p.pos.z < deck.z1 && p.pos.z > deck.z0) low = Math.min(low, p.pos.y);
+  }
+  if (p.pos.z > north || low < deck.y - 0.5) return `connection scenario: walking the bridge ended at ${p.pos.x.toFixed(1)},${p.pos.y.toFixed(1)},${p.pos.z.toFixed(1)}, lowest ${low.toFixed(1)} m over the gorge`;
   return null;
 }
 /** A run on the open landing pad with no robots, the player and the teammate standing there. */
@@ -537,7 +626,7 @@ function checkAllySelfUp(): string | null {
 }
 /** A jumper over the high ground, even one steering deeper in, lands on walkable ground. */
 function checkDropOffHighGround(): string | null {
-  for (const [x, z] of [[40, 22], [-40, 40], [70, 10], [-80, -30], [30, 140], [-150, 0], [150, 60]]) {
+  for (const [x, z] of [[40, 22], [-40, 40], [70, 10], [-80, -30], [30, 140], [-150, 0], [150, 60], [0, -420], [60, -240], [-55, -440]]) {
     if (!highGround(x, z)) return `drop scenario: ${x},${z} is not high ground`;
     const s = newRun(5);
     const p = s.player;
@@ -1009,15 +1098,38 @@ function checkQuests(): string | null {
   const last = tr.profile.stash.at(-1);
   if (tr.quests[0]?.id !== "relay" || last?.t !== "key" || !tr.sold.some((i) => i.t === "valuable")) return `quest scenario: with one slot left the stash kept ${JSON.stringify(last)} and sold ${JSON.stringify(tr.sold)}`;
   const v1 = parseProfile({ v: 1, cash: 10, stash: [], raids: 2, extracted: 1 });
-  if (!v1 || v1.v !== 3 || v1.quests.done.length) return "storage scenario: a v1 save does not load";
+  if (!v1 || v1.v !== 4 || v1.quests.done.length || v1.region !== "reservoir") return "storage scenario: a v1 save does not load";
   // v2 saves named a key's POI by its place in the list; it loads as that POI's id.
   const v2 = parseProfile({ v: 2, cash: 10, stash: [{ t: "key", poi: 2 }, { t: "key", poi: 9 }], raids: 1, extracted: 1, quests: { progress: {}, done: [] } });
   const v2Key = v2?.stash[0];
-  if (!v2 || v2.v !== 3 || v2.stash.length !== 1 || v2Key?.t !== "key" || v2Key.poi !== "relay") return `storage scenario: a v2 save's key 2 loaded as ${JSON.stringify(v2?.stash)}, not the relay key`;
+  if (!v2 || v2.v !== 4 || v2.stash.length !== 1 || v2Key?.t !== "key" || v2Key.poi !== "relay") return `storage scenario: a v2 save's key 2 loaded as ${JSON.stringify(v2?.stash)}, not the relay key`;
+  // A v3 save keeps its keys by id and drops into the reservoir; the landing choice is kept.
+  const v3 = parseProfile({ v: 3, cash: 10, stash: [{ t: "key", poi: "wreck" }], raids: 1, extracted: 1, quests: { progress: {}, done: [] } });
+  if (!v3 || v3.v !== 4 || v3.stash.length !== 1 || v3.region !== "reservoir") return `storage scenario: a v3 save loaded as ${JSON.stringify(v3)}`;
+  if (parseProfile(JSON.parse(JSON.stringify({ ...newProfile(), region: "harbor" })))?.region !== "harbor") return "storage scenario: the landing choice did not survive a save";
+  // The harbor quests: the yard's vault counts only that vault, the harbor haul only a raid dropped into the harbor.
+  const late = { ...newProfile(), quests: { progress: {}, done: QUESTS.filter((q) => !["yardVault", "harborHaul"].includes(q.id)).map((q) => q.id) } };
+  if (offered(late.quests).map((q) => q.id).join() !== "yardVault") return `quest scenario: after the harbor's first quests the trader offers ${offered(late.quests).map((q) => q.id).join()}`;
+  const hv = newRun(11, freeKit(), "harbor");
+  hv.outcome = "dead";
+  hv.stats.vaults = [QUARRY];
+  if (settle(late, hv).quests.length) return "quest scenario: the quarry's vault counted for the yard's";
+  hv.stats.vaults = [poiIndex("yard")];
+  const afterVault = settle(late, hv).profile;
+  if (!afterVault.quests.done.includes("yardVault")) return "quest scenario: opening the yard's vault did not finish its quest";
+  const haulRun = (region: RegionId) => {
+    const r = newRun(12, freeKit(), region);
+    r.outcome = "extracted";
+    r.extractedAt = region === "harbor" ? "boat" : "ship";
+    r.player.haul = ["reactor", "core", "gyro", "drive"];
+    return r;
+  };
+  if (settle(afterVault, haulRun("reservoir")).quests.some((q) => q.id === "harborHaul")) return "quest scenario: a haul out of the reservoir counted for the harbor's";
+  if (!settle(afterVault, haulRun("harbor")).quests.some((q) => q.id === "harborHaul")) return "quest scenario: a haul out of the harbor did not count";
   return null;
 }
 
-for (const err of [checkVault(), checkQuests(), checkSettle(), checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkAllySelfUp(), checkStompHeight(), checkDropOffHighGround(), checkFieldsReused(), checkFieldsFollowRunner(), checkCliffsStop(), checkNoPits(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill(), checkLeap(), checkLeapLeavesAllyBelow(), checkLeapDowned(), checkLeapAllyCatchesUp(), checkLeapAllyDowned(), checkLeapWithItem(), checkLeapClocks(), checkLeapOffHighGround(), checkLeapUnderRoof()]) {
+for (const err of [checkVault(), checkQuests(), checkSettle(), checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkBoatCall(), checkRegionDrop(), checkConnections(), checkAllySelfUp(), checkStompHeight(), checkDropOffHighGround(), checkFieldsReused(), checkFieldsFollowRunner(), checkCliffsStop(), checkNoPits(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill(), checkLeap(), checkLeapLeavesAllyBelow(), checkLeapDowned(), checkLeapAllyCatchesUp(), checkLeapAllyDowned(), checkLeapWithItem(), checkLeapClocks(), checkLeapOffHighGround(), checkLeapUnderRoof()]) {
   if (err) {
     console.error(err);
     process.exit(1);
@@ -1031,15 +1143,21 @@ const median = (xs: number[]) => {
 
 let failed = false;
 const head = ["skill    ", "alive", "time(med)", "cleared", "haul(med)", "score(med)", "downs", "acc", "crit", "leap", "crowd", "flank", "waves", "ally".padEnd(18), "rank".padEnd(18), "exit"];
-console.log(`${runs} runs per skill. alive: share of raids that got off the island (the rest were wiped out)`);
-console.log("time: minutes from landing to leaving; cleared: median POIs cleared; haul and score: medians over raids that got off the island");
+console.log(`${runs} runs per skill and region. alive: share of raids that got off (the rest were wiped out)`);
+console.log("time: minutes from landing to leaving; cleared: median POIs cleared; haul and score: medians over raids that got off");
 console.log("flank: share of hits from behind a robot or before it noticed the player");
 console.log("waves: median reinforcement squads that beamed in during a raid");
 console.log("ally: teammate's share of the damage, its downs, times it picked the player up (r) and was picked up (h), per run");
-console.log("exit: raids that left by each extraction point (the bot's choice depends on skill)");
+console.log("exit: raids that left by each extraction point of the region (the bot's choice depends on skill)");
 console.log("crowd: median over runs of the most squads / robots fighting the player at once outside the titan fight");
-console.log(head.join(" "));
-for (const skill of SKILLS) {
+for (const region of REGIONS) {
+  console.log("");
+  console.log(`region: ${region.id} (${region.name})`);
+  console.log(head.join(" "));
+  for (const skill of SKILLS) table(region.id, skill);
+}
+
+function table(region: RegionId, skill: (typeof SKILLS)[number]) {
   const times: number[] = [];
   const clearedN: number[] = [];
   const hauls: number[] = [];
@@ -1057,12 +1175,12 @@ for (const skill of SKILLS) {
   let allyDowns = 0;
   let rescues = 0;
   let helped = 0;
-  const exits: Record<string, number> = { ship: 0, flare: 0, village: 0 };
+  const exits: Record<string, number> = Object.fromEntries(EXTRACTS.map((x) => [x.id, 0]));
   const crowdSq: number[] = [];
   const crowdBots: number[] = [];
   const ranks: Record<string, number> = { S: 0, A: 0, B: 0, C: 0, "-": 0 };
   for (let r = 0; r < runs; r++) {
-    const s = newRun(1000 + r * 7919);
+    const s = newRun(1000 + r * 7919, freeKit(), region);
     const bot = new Bot(skill, 31 + r);
     let prevCrouch = false;
     let peakSq = 0;
@@ -1074,7 +1192,7 @@ for (const skill of SKILLS) {
         step(s, inp, prevCrouch);
         prevCrouch = inp.crouch;
         const end = s.events.findIndex((e) => e.t === "done");
-        if (end >= 0 && end < s.events.length - 1) throw new Error(`${skill.name}#${r}: events after the raid ended: ${s.events.slice(end + 1).map((e) => e.t).join(",")}`);
+        if (end >= 0 && end < s.events.length - 1) throw new Error(`${region} ${skill.name}#${r}: events after the raid ended: ${s.events.slice(end + 1).map((e) => e.t).join(",")}`);
         for (const e of s.events) {
           if (e.t === "leap") ults++;
           if (e.t === "landed") landed = s.time;
@@ -1084,7 +1202,7 @@ for (const skill of SKILLS) {
           peakBots = Math.max(peakBots, fighting.length);
           peakSq = Math.max(peakSq, new Set(fighting.map((e) => e.squad)).size);
         }
-        if (Math.round(s.time / TICK) % 30 === 0) check(s, `${skill.name}#${r} t=${s.time.toFixed(1)}`);
+        if (Math.round(s.time / TICK) % 30 === 0) check(s, `${region} ${skill.name}#${r} t=${s.time.toFixed(1)}`);
       }
     } catch (err) {
       failed = true;
@@ -1094,7 +1212,7 @@ for (const skill of SKILLS) {
     if (s.phase !== "done") {
       failed = true;
       const p = s.player.pos;
-      console.error(`${skill.name}#${r}: still on the island after ${LIMIT} s, cleared ${s.stats.cleared.join(",")} player ${p.x.toFixed(1)},${p.y.toFixed(1)},${p.z.toFixed(1)} enemies near: ${s.enemies.filter((e) => Math.hypot(e.pos.x - p.x, e.pos.z - p.z) < 60).map((e) => `${e.kind}@${e.pos.x.toFixed(0)},${e.pos.z.toFixed(0)}:${e.mode}:${e.aware}`).join(" ")}`);
+      console.error(`${region} ${skill.name}#${r}: still on the island after ${LIMIT} s, cleared ${s.stats.cleared.join(",")} player ${p.x.toFixed(1)},${p.y.toFixed(1)},${p.z.toFixed(1)} enemies near: ${s.enemies.filter((e) => Math.hypot(e.pos.x - p.x, e.pos.z - p.z) < 60).map((e) => `${e.kind}@${e.pos.x.toFixed(0)},${e.pos.z.toFixed(0)}:${e.mode}:${e.aware}`).join(" ")}`);
       continue;
     }
     ended++;
@@ -1139,7 +1257,7 @@ for (const skill of SKILLS) {
       String(median(waves)).padEnd(5),
       `${Math.round((allyDmg / n) * 100)}% ${(allyDowns / n).toFixed(1)}d ${(rescues / n).toFixed(1)}r ${(helped / n).toFixed(1)}h`.padEnd(18),
       `S${ranks.S} A${ranks.A} B${ranks.B} C${ranks.C} -${ranks["-"]}`.padEnd(18),
-      `ship ${exits.ship} flare ${exits.flare} village ${exits.village}`,
+      regionOf(region).exits.map((id) => `${id} ${exits[id]}`).join(" "),
     ].join(" "),
   );
 }

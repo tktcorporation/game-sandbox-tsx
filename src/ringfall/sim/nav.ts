@@ -1,23 +1,26 @@
 import { PLAYER, WORLD } from "./config";
-import { BOXES } from "./map";
+import { BOXES, DECKS } from "./map";
 import { steepAt, terrainHeight } from "./terrain";
 
 /*
  * Ground-level path finding for the bot only (the game never uses it). A 0.5 m grid
  * marks cells a walker on the ground cannot enter; A* finds a way around
- * buildings and rocks, and through doors.
+ * buildings and rocks, and through doors. The railway bridge's deck counts as ground
+ * (DECKS), so a path crosses the gorge on it. The grid is built on first use.
  */
 
 const RES = 0.5;
 const NX = Math.ceil((WORLD.x1 - WORLD.x0) / RES);
 const NZ = Math.ceil((WORLD.z1 - WORLD.z0) / RES);
-const blocked = new Uint8Array(NX * NZ);
+let grid: Uint8Array | null = null;
 const cellX = (v: number) => Math.max(0, Math.min(NX - 1, Math.floor((v - WORLD.x0) / RES)));
 const cellZ = (v: number) => Math.max(0, Math.min(NZ - 1, Math.floor((v - WORLD.z0) / RES)));
 const centerX = (i: number) => WORLD.x0 + (i + 0.5) * RES;
 const centerZ = (j: number) => WORLD.z0 + (j + 0.5) * RES;
 
-{
+function blockedCells(): Uint8Array {
+  if (grid) return grid;
+  const blocked = new Uint8Array(NX * NZ);
   // A cell is blocked when any part of it is within a body radius of a box, so a
   // body standing in a free cell never overlaps a wall.
   const r = PLAYER.radius + 0.02;
@@ -39,9 +42,22 @@ const centerZ = (j: number) => WORLD.z0 + (j + 0.5) * RES;
       const z = centerZ(j);
       if (steepAt(x, z) || steepAt(x + r, z) || steepAt(x - r, z) || steepAt(x, z + r) || steepAt(x, z - r)) blocked[j * NX + i] = 1;
     }
+  // A deck is open between its railings (its rectangle already keeps a body clear of them);
+  // round it, wherever the ground lies well below, the drop is closed.
+  for (const d of DECKS)
+    for (let i = cellX(d.x0 - 2); i <= cellX(d.x1 + 2); i++)
+      for (let j = cellZ(d.z0 - 2); j <= cellZ(d.z1 + 2); j++) {
+        const x = centerX(i);
+        const z = centerZ(j);
+        const on = x >= d.x0 && x <= d.x1 && z >= d.z0 && z <= d.z1;
+        if (on) blocked[j * NX + i] = 0;
+        else if (terrainHeight(x, z) < d.y - 2) blocked[j * NX + i] = 1;
+      }
+  grid = blocked;
+  return blocked;
 }
 
-const free = (i: number, j: number) => i >= 0 && j >= 0 && i < NX && j < NZ && !blocked[j * NX + i];
+const free = (i: number, j: number) => i >= 0 && j >= 0 && i < NX && j < NZ && !blockedCells()[j * NX + i];
 
 /** True if the straight line between two points crosses no blocked cell. */
 export function clearLine(ax: number, az: number, bx: number, bz: number): boolean {
@@ -69,10 +85,10 @@ function nearestFree(x: number, z: number): [number, number] | null {
  * stamp is the current search's, so a search resets just the cells it reaches
  * instead of the whole grid.
  */
-const gScore = new Float32Array(NX * NZ);
-const came = new Int32Array(NX * NZ);
-const closed = new Uint8Array(NX * NZ);
-const stamp = new Uint32Array(NX * NZ);
+let gScore = new Float32Array(0);
+let came = new Int32Array(0);
+let closed = new Uint8Array(0);
+let stamp = new Uint32Array(0);
 let search = 0;
 const touch = (k: number) => {
   if (stamp[k] === search) return;
@@ -92,6 +108,12 @@ export function findPath(
   const s = nearestFree(ax, az);
   const g = nearestFree(bx, bz);
   if (!s || !g) return null;
+  if (stamp.length !== NX * NZ) {
+    gScore = new Float32Array(NX * NZ);
+    came = new Int32Array(NX * NZ);
+    closed = new Uint8Array(NX * NZ);
+    stamp = new Uint32Array(NX * NZ);
+  }
   const start = s[1] * NX + s[0];
   const goal = g[1] * NX + g[0];
   if (++search === 0xffffffff) {

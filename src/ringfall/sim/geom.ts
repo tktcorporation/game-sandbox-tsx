@@ -1,5 +1,5 @@
 import { WORLD } from "./config";
-import { BOXES, type Box } from "./map";
+import { BOXES, deckAt, type Box } from "./map";
 import { steepAt, terrainGrad, terrainHeight } from "./terrain";
 import type { Vec3 } from "./state";
 
@@ -232,8 +232,15 @@ export function raySphere(o: Vec3, d: Vec3, c: Vec3, r: number): number {
   return t >= 0 ? t : cc < 0 ? 0 : Infinity;
 }
 
-/** True for a body standing on the terrain rather than up on a roof, a floor or a box. */
-export const onTerrain = (p: Vec3) => p.y < terrainHeight(p.x, p.z) + 0.6;
+/**
+ * The ground a walker goes by at (x, z): the railway bridge's deck where it crosses the
+ * gorge (DECKS), the terrain everywhere else. Robots and the bot treat the deck as ground,
+ * as their path finding does, so they cross the bridge like a road.
+ */
+export const groundLevel = (x: number, z: number) => deckAt(x, z) ?? terrainHeight(x, z);
+
+/** True for a body standing on the ground (as `groundLevel()`) rather than up on a roof, a floor or a box. */
+export const onTerrain = (p: Vec3) => p.y < groundLevel(p.x, p.z) + 0.6;
 
 /** True when (x, z) lies at least `margin` metres inside the world's bounds. */
 export const inWorld = (x: number, z: number, margin = 0) => x >= WORLD.x0 + margin && x <= WORLD.x1 - margin && z >= WORLD.z0 + margin && z <= WORLD.z1 - margin;

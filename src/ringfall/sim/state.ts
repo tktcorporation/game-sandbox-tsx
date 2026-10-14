@@ -1,5 +1,5 @@
 import { ALLY, DROP, ELITE, ENEMIES, META, RAIDERS, REINFORCE, type ValuableKind, PLAYER, ULT, type EnemyKind, type Flank, type HealKind, type Rarity, type WeaponKind } from "./config";
-import { EXTRA_BINS, POIS, poiIndex, SPAWN, type ExtractId } from "./map";
+import { EXTRA_BINS, POIS, poiIndex, regionOf, type ExtractId, type RegionId } from "./map";
 import { populate } from "./enemies";
 
 export interface Vec3 {
@@ -310,10 +310,11 @@ export type GameEvent =
   | { t: "titanDown" }
   | { t: "searchStart"; id: number }
   | { t: "raiders"; x: number; z: number }
-  | { t: "shipCalled" }
-  | { t: "shipLanded" }
+  /** A pickup that has to be called (the dropship, the boat) was called, came, or had robots beam in round it. */
+  | { t: "shipCalled"; id: ExtractId }
+  | { t: "shipLanded"; id: ExtractId }
   | { t: "flareLit" }
-  | { t: "shipWave" }
+  | { t: "shipWave"; id: ExtractId }
   | { t: "done" };
 
 export interface Stats {
@@ -340,9 +341,18 @@ export interface Stats {
   vaults: number[];
 }
 
+/** A called pickup on its way: seconds until it is there (0 = there), and the robots that beam in meanwhile. */
+export interface Call {
+  t: number;
+  wave: number;
+  waveT: number;
+}
+
 export interface State {
   time: number;
   phase: Phase;
+  /** The region the raid dropped into. */
+  region: RegionId;
   rng: number;
   nextId: number;
   player: Player;
@@ -369,10 +379,8 @@ export interface State {
   outcome: Outcome | null;
   /** Seconds the player has stood ready in an extraction point. */
   extractTime: number;
-  /** Seconds until the dropship lands: -1 not called yet, 0 landed. */
-  shipCall: number;
-  shipWave: number;
-  shipWaveT: number;
+  /** The pickups called so far (the dropship, the boat), by extraction point. */
+  calls: Partial<Record<ExtractId, Call>>;
   /** The way the player left the island. */
   extractedAt: ExtractId | null;
   events: GameEvent[];
@@ -421,7 +429,12 @@ export const idleInput = (): Input => ({
   touch: false,
 });
 
-export function newRun(seed = 1, kit: Kit = freeKit()): State {
+/** Seconds until a called pickup is there: -1 when it has not been called, 0 once it is there. */
+export const callLeft = (s: State, id: ExtractId) => s.calls[id]?.t ?? -1;
+
+/** A raid dropping into `region`; the default is the reservoir, which the sim gate plays. */
+export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reservoir"): State {
+  const drop = regionOf(region).drop;
   const bins: Bin[] = [];
   let id = 1;
   POIS.forEach((p, poi) => p.bins.forEach((b) => bins.push({ id: id++, x: b.x, y: b.y ?? 0, z: b.z, poi, open: false, flare: false, vault: !!b.vault, outside: false })));
@@ -439,12 +452,13 @@ export function newRun(seed = 1, kit: Kit = freeKit()): State {
   const s: State = {
     time: 0,
     phase: "drop",
+    region: regionOf(region).id,
     rng: seed >>> 0 || 1,
     nextId: id,
     player: {
-      pos: { x: SPAWN.x, y: DROP.startY, z: SPAWN.z },
+      pos: { x: drop.x, y: DROP.startY, z: drop.z },
       vel: { x: 0, y: 0, z: 0 },
-      yaw: SPAWN.yaw,
+      yaw: drop.yaw,
       pitch: -0.5,
       hp: PLAYER.hp,
       shield: PLAYER.shieldByTier[kit.armor],
@@ -480,7 +494,7 @@ export function newRun(seed = 1, kit: Kit = freeKit()): State {
       selfRevive: 1,
       iframes: 0,
     },
-    ally: newAlly(),
+    ally: newAlly(drop),
     trail: [],
     enemies: [],
     squads: [],
@@ -497,9 +511,7 @@ export function newRun(seed = 1, kit: Kit = freeKit()): State {
     raiderT: RAIDERS.at,
     outcome: null,
     extractTime: 0,
-    shipCall: -1,
-    shipWave: 0,
-    shipWaveT: 0,
+    calls: {},
     extractedAt: null,
     events: [],
     stats: { kills: 0, damage: 0, shots: 0, hits: 0, crits: 0, flankHits: 0, downs: 0, wipes: 0, cleared: [], allyDamage: 0, allyKills: 0, allyDowns: 0, allyRescues: 0, allyHelped: 0, killsBy: { drone: 0, grunt: 0, charger: 0, heavy: 0, titan: 0 }, vaults: [] },
@@ -508,12 +520,13 @@ export function newRun(seed = 1, kit: Kit = freeKit()): State {
   return s;
 }
 
-export function newAlly(): Ally {
+/** The teammate before the drop, up with the player over `drop`. */
+export function newAlly(drop: { x: number; z: number; yaw: number }): Ally {
   return {
     active: false,
-    pos: { x: SPAWN.x, y: DROP.startY, z: SPAWN.z },
+    pos: { x: drop.x, y: DROP.startY, z: drop.z },
     vel: { x: 0, y: 0, z: 0 },
-    yaw: SPAWN.yaw,
+    yaw: drop.yaw,
     pitch: 0,
     hp: ALLY.hp,
     shield: ALLY.shield,
@@ -528,7 +541,7 @@ export function newAlly(): Ally {
     crumb: 0,
     climb: 0,
     stuckT: 0,
-    last: { x: SPAWN.x, z: SPAWN.z },
+    last: { x: drop.x, z: drop.z },
     shortcutT: 0,
   };
 }

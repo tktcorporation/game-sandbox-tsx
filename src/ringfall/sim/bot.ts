@@ -1,9 +1,9 @@
 import { AWARE, DEG, HEALS, PLAYER, TICK, ULT } from "./config";
 import { bodyCenter, eyePos, flankOf, magSize, weakPoint } from "./combat";
-import { ceilingAt, dist2d, inWorld, groundAt, los, onTerrain, lookAngles, solidAt, wrapAngle } from "./geom";
-import { EXTRACTS, POIS, poiIndex } from "./map";
+import { ceilingAt, dist2d, inWorld, groundAt, groundLevel, los, onTerrain, lookAngles, solidAt, wrapAngle } from "./geom";
+import { EXTRACTS, POIS, regionOf, type ExtractPoint } from "./map";
 import { clearLine, findPath } from "./nav";
-import { enemyMax, idleInput, type Enemy, type Input, type State } from "./state";
+import { callLeft, enemyMax, idleInput, type Enemy, type Input, type State } from "./state";
 import { pickHeal } from "./player";
 import { makeRoom } from "./world";
 import { offLowGround, offshore, terrainHeight } from "./terrain";
@@ -119,9 +119,8 @@ export class Bot {
     let goal: { x: number; z: number } | null = null;
     let fight = false;
     if (s.phase === "drop") {
-      const poi = POIS[poiIndex("supply")];
-      goal = { x: poi.x, z: poi.z + 14 };
-    } else if (aim < 0 && (s.shipCall === 0 || !tgt || dist2d(tgt.pos, p.pos) > 70)) {
+      goal = regionOf(s.region).land;
+    } else if (aim < 0 && (callLeft(s, this.exit(s).id) === 0 || !tgt || dist2d(tgt.pos, p.pos) > 70)) {
       goal = this.exit(s);
     } else if (tgt && dist2d(tgt.pos, p.pos) < 70) {
       fight = true;
@@ -318,14 +317,14 @@ export class Bot {
     // Up on a floor it reached by stairs, it cannot plan a way down. It keeps the
     // trail it walked since leaving the terrain, and after a while up there walks
     // that trail back.
-    if (p.pos.y - terrainHeight(p.pos.x, p.pos.z) > 0.5) inp.jump = false;
+    if (p.pos.y - groundLevel(p.pos.x, p.pos.z) > 0.5) inp.jump = false;
     if (onTerrain(p.pos)) {
       this.trail = [];
       this.upT = 0;
     } else {
       const last = this.trail[this.trail.length - 1];
       if (this.upT <= 2 && (!last || dist2d(last, p.pos) > 0.4)) this.trail.push({ x: p.pos.x, z: p.pos.z });
-      if (p.onGround && p.pos.y - terrainHeight(p.pos.x, p.pos.z) > 0.8) this.upT += TICK;
+      if (p.onGround && p.pos.y - groundLevel(p.pos.x, p.pos.z) > 0.8) this.upT += TICK;
       if (this.upT > 2) {
         while (this.trail.length > 1 && dist2d(this.trail[this.trail.length - 1], p.pos) < 0.35) this.trail.pop();
         const to = this.trail[this.trail.length - 1] ?? p.pos;
@@ -342,15 +341,17 @@ export class Bot {
   }
 
   /**
-   * The POI to take next: the nearest one not yet cleared, until the bot has cleared
-   * as many as its skill dares (`Skill.raid`). The titan's landing pad comes only last,
-   * and only for a bot that takes on every POI. -1 means it is time to leave.
+   * The POI to take next: the nearest one not yet cleared in the region it dropped into,
+   * until the bot has cleared as many as its skill dares (`Skill.raid`). The titan's
+   * landing pad comes only last, and only for a bot that takes on every POI. -1 means it
+   * is time to leave.
    */
   private nextPoi(s: State): number {
     if (s.stats.cleared.length >= this.skill.raid) return -1;
     const p = s.player;
-    const others = POIS.filter((poi) => !poi.boss).length;
-    const open = POIS.map((poi, i) => ({ poi, i })).filter(({ poi, i }) => !s.cleared[i] && (!poi.boss || s.stats.cleared.length >= others));
+    const mine = regionOf(s.region).pois;
+    const others = POIS.filter((poi) => !poi.boss && mine.includes(poi.id)).length;
+    const open = POIS.map((poi, i) => ({ poi, i })).filter(({ poi, i }) => mine.includes(poi.id) && !s.cleared[i] && (!poi.boss || s.stats.cleared.length >= others));
     open.sort((a, b) => dist2d(a.poi, p.pos) - dist2d(b.poi, p.pos));
     return open[0]?.i ?? -1;
   }
@@ -392,14 +393,17 @@ export class Bot {
   }
 
   /**
-   * The way off the island: a flare's quick pickup when it has one, else beginners
-   * take the long quiet walk and the others call the dropship and hold.
+   * The way off, in the region it dropped into. In the reservoir: a flare's quick pickup
+   * when it has one, else beginners take the long quiet walk and the others call the
+   * dropship and hold. In the harbor: the boat, called and held for.
    */
-  private exit(s: State): { x: number; z: number } {
+  private exit(s: State): ExtractPoint {
+    const exits = regionOf(s.region).exits;
+    const pick = (id: string) => (exits.includes(id as ExtractPoint["id"]) ? EXTRACTS.find((x) => x.id === id) : undefined);
     // The dropship lands by the titan: only a bot that has beaten it goes there.
     const titanUp = s.enemies.some((e) => e.kind === "titan");
-    const id = s.player.flares > 0 ? "flare" : this.skill.name === "beginner" || titanUp ? "village" : "ship";
-    return EXTRACTS.find((x) => x.id === id)!;
+    const quiet = this.skill.name === "beginner" || titanUp;
+    return (s.player.flares > 0 ? pick("flare") : undefined) ?? (quiet ? pick("village") : pick("ship")) ?? pick("village") ?? EXTRACTS.find((x) => x.id === exits[0])!;
   }
 
   /**

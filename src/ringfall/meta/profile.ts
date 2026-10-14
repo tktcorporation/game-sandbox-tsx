@@ -1,5 +1,5 @@
 import { HEALS as HEAL_SPECS, META, VALUABLES, type HealKind, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
-import { POIS, poiIndex, type PoiId } from "../sim/map";
+import { POIS, poiIndex, REGIONS, type PoiId, type RegionId } from "../sim/map";
 import type { Kit, State } from "../sim/state";
 import { creditRaid, emptyLog, need, offered, type Quest, type QuestLog } from "./quests";
 
@@ -13,12 +13,14 @@ export type Item =
 
 /** What persists between raids. */
 export interface Profile {
-  v: 3;
+  v: 4;
   cash: number;
   stash: Item[];
   raids: number;
   extracted: number;
   quests: QuestLog;
+  /** The region the last raid dropped into: the base offers it first next time. */
+  region: RegionId;
 }
 
 export const HEALS: HealKind[] = ["cell", "battery", "syringe", "medkit"];
@@ -26,7 +28,7 @@ export const HEALS: HealKind[] = ["cell", "battery", "syringe", "medkit"];
 export function newProfile(): Profile {
   const stash: Item[] = META.start.weapons.map((w) => ({ t: "weapon", ...w }));
   for (const k of HEALS) for (let i = 0; i < META.start.heals[k]; i++) stash.push({ t: "heal", kind: k });
-  return { v: 3, cash: META.start.cash, stash, raids: 0, extracted: 0, quests: emptyLog() };
+  return { v: 4, cash: META.start.cash, stash, raids: 0, extracted: 0, quests: emptyLog(), region: "reservoir" };
 }
 
 /** What the trader asks for an item. */
@@ -241,13 +243,14 @@ const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
 
 /**
  * Accepts a stored profile only if it has the right shape. A v1 profile gains an empty
- * quest log; v1 and v2 keys name their POI by number and are moved to ids.
+ * quest log; v1 and v2 keys name their POI by number and are moved to ids; profiles before
+ * v4 drop into the reservoir.
  */
 export function parseProfile(raw: unknown): Profile | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if ((o.v !== 1 && o.v !== 2 && o.v !== 3) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
-  const old = o.v !== 3;
+  if ((o.v !== 1 && o.v !== 2 && o.v !== 3 && o.v !== 4) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
+  const old = o.v === 1 || o.v === 2;
   const migrate = (i: unknown): unknown => {
     if (!old || !i || typeof i !== "object" || (i as Record<string, unknown>).t !== "key") return i;
     const n = (i as Record<string, unknown>).poi;
@@ -267,11 +270,12 @@ export function parseProfile(raw: unknown): Profile | null {
   const progress: Record<string, number> = {};
   if (q.progress && typeof q.progress === "object") for (const [k, n] of Object.entries(q.progress)) if (typeof n === "number") progress[k] = n;
   return {
-    v: 3,
+    v: 4,
     cash: Math.max(0, Math.floor(o.cash)),
     stash: o.stash.map(migrate).filter(ok).slice(0, META.stash),
     raids: typeof o.raids === "number" ? o.raids : 0,
     extracted: typeof o.extracted === "number" ? o.extracted : 0,
     quests: { progress, done: Array.isArray(q.done) ? q.done.filter((d): d is string => typeof d === "string") : [] },
+    region: REGIONS.find((r) => r.id === o.region)?.id ?? "reservoir",
   };
 }

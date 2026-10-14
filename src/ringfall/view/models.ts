@@ -22,6 +22,16 @@ export const PAL = {
   mudDark: 0x9c8669,
   /** The bleached band on the lakebed's walls, up to where the water stood. */
   tide: 0xe3d5ba,
+  /** The harbor's salt flats (the dry bay floor) and its paved quays and streets. */
+  salt: 0xece3cf,
+  saltDark: 0xd6c9ad,
+  paved: 0xc9b896,
+  pavedDark: 0xb3a27f,
+  /** The last water, left in the harbor's tidal channel. */
+  water: 0x5fa8a6,
+  /** Painted steel: a ship's hull below the old waterline, girders and posts. */
+  hull: 0x6e3a2a,
+  steel: 0x707780,
   concrete: 0xcfc8b8,
   concreteDark: 0x9c9586,
   rust: 0xb5482b,
@@ -145,8 +155,8 @@ export function buildBox(b: Box, i: number): THREE.Object3D {
       break;
     }
     case "wall": {
-      // tint 1: the low parapet around a roof.
-      g.add(mesh(new THREE.BoxGeometry(w, h, d), flat(b.tint === 1 ? PAL.concreteDark : PAL.concrete), 0, mid, 0));
+      // tint 1: the low parapet around a roof; tint 2: the lighthouse's red bands.
+      g.add(mesh(new THREE.BoxGeometry(w, h, d), flat(b.tint === 1 ? PAL.concreteDark : b.tint === 2 ? PAL.rust : PAL.concrete), 0, mid, 0));
       if (b.y0 === 0) g.add(mesh(new THREE.BoxGeometry(w + 0.04, Math.min(0.5, h), d + 0.04), flat(PAL.concreteDark), 0, Math.min(0.5, h) / 2, 0, false));
       break;
     }
@@ -157,6 +167,14 @@ export function buildBox(b: Box, i: number): THREE.Object3D {
     }
     case "step": {
       g.add(mesh(new THREE.BoxGeometry(w, h, d), flat(b.tint === 1 ? PAL.rockDark : PAL.concreteDark), 0, mid, 0));
+      break;
+    }
+    case "steel": {
+      // tint 0: rust-red plate, 1: the dark hull, 2: grey girders and posts, 3: teal paint.
+      const color = [PAL.rust, PAL.hull, PAL.steel, PAL.teal][b.tint % 4];
+      g.add(mesh(new THREE.BoxGeometry(w, h, d), flat(color), 0, mid, 0));
+      // Big plates carry a darker seam along their top, so a hull reads as riveted plate.
+      if (h > 2 && Math.max(w, d) > 4) g.add(mesh(new THREE.BoxGeometry(w + 0.04, 0.14, d + 0.04), flat(new THREE.Color(color).multiplyScalar(0.72).getHex()), 0, b.h - 0.25, 0, false));
       break;
     }
     case "rock": {
@@ -212,6 +230,53 @@ export function mergeStatic(root: THREE.Object3D): THREE.Group {
     const merged = mergeGeometries(geos, false);
     if (!merged) continue;
     const m = new THREE.Mesh(merged, mat);
+    m.castShadow = m.receiveShadow = !(mat instanceof THREE.MeshBasicMaterial);
+    out.add(m);
+  }
+  return out;
+}
+
+/** The one material a chunk's merged statics share: each vertex carries its own colour. */
+const chunkMat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
+
+/**
+ * Merge every mesh under `root` into as few meshes as possible: all flat-shaded ones into
+ * one, their colours moved into the vertices, and the rest one per material. A chunk of
+ * the world so costs one or two draw calls, and is culled as a whole.
+ */
+export function mergeChunk(root: THREE.Object3D): THREE.Group {
+  root.updateMatrixWorld(true);
+  const lit: THREE.BufferGeometry[] = [];
+  const other = new Map<THREE.Material, THREE.BufferGeometry[]>();
+  root.traverse((o) => {
+    if (!(o instanceof THREE.Mesh)) return;
+    const geo = (o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone()).applyMatrix4(o.matrixWorld);
+    for (const name of Object.keys(geo.attributes)) if (!["position", "normal"].includes(name)) geo.deleteAttribute(name);
+    const mat = o.material as THREE.Material;
+    if (mat instanceof THREE.MeshLambertMaterial && !mat.vertexColors && !mat.transparent) {
+      const c = mat.color;
+      const n = geo.attributes.position.count;
+      const col = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) col.set([c.r, c.g, c.b], i * 3);
+      geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
+      lit.push(geo);
+    } else {
+      const list = other.get(mat);
+      if (list) list.push(geo);
+      else other.set(mat, [geo]);
+    }
+  });
+  const out = new THREE.Group();
+  const merged = lit.length ? mergeGeometries(lit, false) : null;
+  if (merged) {
+    const m = new THREE.Mesh(merged, chunkMat);
+    m.castShadow = m.receiveShadow = true;
+    out.add(m);
+  }
+  for (const [mat, geos] of other) {
+    const g = mergeGeometries(geos, false);
+    if (!g) continue;
+    const m = new THREE.Mesh(g, mat);
     m.castShadow = m.receiveShadow = !(mat instanceof THREE.MeshBasicMaterial);
     out.add(m);
   }
@@ -516,6 +581,17 @@ export function buildCare(): THREE.Group {
   g.add(mesh(new THREE.CylinderGeometry(0.9, 1.1, 2.0, 8), flat(PAL.gun), 0, 1.0, 0));
   g.add(mesh(new THREE.CylinderGeometry(0.95, 0.95, 0.25, 8), glow(RARITY_COLOR[3]), 0, 1.4, 0));
   g.add(mesh(new THREE.ConeGeometry(0.95, 0.6, 8), flat(PAL.gunLight), 0, 2.3, 0));
+  return g;
+}
+
+/** The boat that comes up the harbor's channel to the quay: a low hull, a wheelhouse, a rust stripe. */
+export function buildBoat(): THREE.Group {
+  const g = new THREE.Group();
+  g.add(mesh(new THREE.BoxGeometry(9, 1.4, 3.4), flat(PAL.concrete), 0, 0.5, 0));
+  g.add(mesh(new THREE.BoxGeometry(9.1, 0.3, 3.5), flat(PAL.rust), 0, 0.05, 0, false));
+  g.add(mesh(new THREE.BoxGeometry(2, 1.4, 2.4), flat(PAL.concrete), -1.8, 1.9, 0));
+  g.add(mesh(new THREE.BoxGeometry(2.1, 0.5, 2.5), flat(PAL.teal), -1.8, 2.3, 0, false));
+  g.add(mesh(new THREE.BoxGeometry(1.4, 0.8, 3.4), flat(PAL.gun), 4.6, 0.9, 0));
   return g;
 }
 

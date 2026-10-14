@@ -1,5 +1,5 @@
 import { ALLY, AWARE, CHARGER, COVER, DEG, ELITE, ENEMIES, PLAYER, TICK, TITAN, TURN, WORLD, type EnemyKind } from "./config";
-import { clampToWorld, collide, dist2d, groundAt, los, lookAngles, onTerrain, solidAt, wrapAngle } from "./geom";
+import { clampToWorld, collide, dist2d, groundAt, groundLevel, los, lookAngles, onTerrain, solidAt, wrapAngle } from "./geom";
 import { steepAt, terrainHeight } from "./terrain";
 import { engageSquad, knownSpot, sense, stepSquads } from "./awareness";
 import { COVERS } from "./cover";
@@ -149,8 +149,8 @@ function moveBody(e: Enemy, vx: number, vz: number) {
   // A drop ahead stays on this floor. A robot posted up high (a roof, a tower tier)
   // never leaves its floor at all: it could not find the way back up. A robot posted
   // on the ground does not climb stairs onto roofs or upper floors either.
-  const homeHigh = e.home.y > terrainHeight(e.home.x, e.home.z) + 0.6;
-  const climbsUp = !homeHigh && there > terrainHeight(e.pos.x, e.pos.z) + CLIMB;
+  const homeHigh = e.home.y > groundLevel(e.home.x, e.home.z) + 0.6;
+  const climbsUp = !homeHigh && there > groundLevel(e.pos.x, e.pos.z) + CLIMB;
   if (there < here - LEDGE || (homeHigh && Math.abs(there - e.home.y) > 0.3) || climbsUp) {
     e.pos.x = bx;
     e.pos.z = bz;
