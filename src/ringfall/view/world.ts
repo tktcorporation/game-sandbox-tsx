@@ -651,7 +651,14 @@ export class World {
       const k = ENEMIES[e.kind];
       const m = v.m;
       m.root.position.set(e.pos.x, e.pos.y + (k.fly > 0 ? Math.sin(this.time * 3 + e.id) * 0.12 : 0), e.pos.z);
-      if (!near(m.root)) continue;
+      // The arrival beam goes once the robot is down, near or far; a far one's is not drawn.
+      const close = near(m.root);
+      if (v.spawnBeam && e.mode !== "spawning") {
+        this.scene.remove(v.spawnBeam);
+        v.spawnBeam = null;
+      }
+      if (v.spawnBeam) v.spawnBeam.visible = close;
+      if (!close) continue;
       m.body.rotation.y = -e.yaw;
       if (e.mode === "spawning") {
         const t = Math.max(0, 1 - e.timer / (e.kind === "titan" ? 2.2 : 0.9));
@@ -659,10 +666,6 @@ export class World {
         if (k.fly > 0) m.root.position.y = e.pos.y + (1 - t) * 10;
       } else {
         m.root.scale.setScalar(1);
-        if (v.spawnBeam) {
-          this.scene.remove(v.spawnBeam);
-          v.spawnBeam = null;
-        }
       }
       if (v.spawnBeam) (v.spawnBeam.material as THREE.MeshBasicMaterial).opacity = 0.15 + Math.random() * 0.1;
       const sp = Math.hypot(e.vel.x, e.vel.z);

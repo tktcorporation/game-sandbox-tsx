@@ -499,6 +499,26 @@ function checkBoatCall(): string | null {
   return null;
 }
 /**
+ * Two pickups called in one raid each get their own waves: robots left at the quay from the
+ * boat's call do not use up the dropship's.
+ */
+function checkSecondPickup(): string | null {
+  const s = padRun();
+  const boat = EXTRACTS.find((x) => x.id === "boat")!;
+  const ship = EXTRACTS.find((x) => x.id === "ship")!;
+  const p = s.player;
+  p.iframes = 999;
+  p.pos = { x: boat.x, y: groundAt(boat.x, boat.z, 0.4, 20), z: boat.z };
+  ticks(s, boat.call! - 1);
+  const left = s.enemies.filter((e) => s.squads[e.squad]?.name === SHIP_SQUAD).length;
+  p.pos = { x: ship.x, y: groundAt(ship.x, ship.z, 0.4, 20), z: ship.z };
+  ticks(s, ship.call! - 1);
+  const at = ship.waves ?? ship;
+  const there = s.enemies.filter((e) => s.squads[e.squad]?.name === SHIP_SQUAD && Math.hypot(e.pos.x - at.x, e.pos.z - at.z) < 40).length;
+  if (left < 2 || there < 2) return `second pickup: ${left} robots left at the quay, ${there} beamed in at the pad`;
+  return null;
+}
+/**
  * The landing choice: a raid starts over the region it was given (the reservoir when none
  * is), and a fall with no input comes down in that region, with the teammate.
  */
@@ -1132,7 +1152,7 @@ function checkQuests(): string | null {
   return null;
 }
 
-for (const err of [checkVault(), checkQuests(), checkSettle(), checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkBoatCall(), checkRegionDrop(), checkConnections(), checkAllySelfUp(), checkStompHeight(), checkDropOffHighGround(), checkFieldsReused(), checkFieldsFollowRunner(), checkCliffsStop(), checkNoPits(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill(), checkLeap(), checkLeapLeavesAllyBelow(), checkLeapDowned(), checkLeapAllyCatchesUp(), checkLeapAllyDowned(), checkLeapWithItem(), checkLeapClocks(), checkLeapOffHighGround(), checkLeapUnderRoof()]) {
+for (const err of [checkVault(), checkQuests(), checkSettle(), checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkBoatCall(), checkSecondPickup(), checkRegionDrop(), checkConnections(), checkAllySelfUp(), checkStompHeight(), checkDropOffHighGround(), checkFieldsReused(), checkFieldsFollowRunner(), checkCliffsStop(), checkNoPits(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill(), checkLeap(), checkLeapLeavesAllyBelow(), checkLeapDowned(), checkLeapAllyCatchesUp(), checkLeapAllyDowned(), checkLeapWithItem(), checkLeapClocks(), checkLeapOffHighGround(), checkLeapUnderRoof()]) {
   if (err) {
     console.error(err);
     process.exit(1);

@@ -461,7 +461,7 @@ export function stepExtract(s: State) {
   const here = p.downed > 0 ? null : extractHere(s);
   // Standing in a pickup that has to be called calls it; it comes after its time, with robots beaming in round it.
   if (here?.call && !s.calls[here.id]) {
-    s.calls[here.id] = { t: here.call, wave: 0, waveT: SHIP_WAVES.first };
+    s.calls[here.id] = { t: here.call, wave: 0, waveT: SHIP_WAVES.first, squad: -1 };
     s.events.push({ t: "shipCalled", id: here.id });
   }
   for (const x of EXTRACTS) {
@@ -485,7 +485,7 @@ export function stepExtract(s: State) {
   } else s.extractTime = 0;
 }
 
-/** The squad the dropship's waves join, kept apart from the timed reinforcements. */
+/** The name of the squads a called pickup's waves join, kept apart from the timed reinforcements. */
 export const SHIP_SQUAD = "降下部隊";
 
 /** Robots beam in round a called pickup (the landing pad, the quay) while it is on its way. */
@@ -493,9 +493,9 @@ function shipWave(s: State, ship: ExtractPoint) {
   const c = s.calls[ship.id]!;
   c.waveT = SHIP_WAVES.every;
   const kinds = SHIP_WAVES.waves[c.wave++];
-  let squad = s.squads.findIndex((q) => q.name === SHIP_SQUAD);
+  let squad = c.squad;
   if (squad < 0) {
-    squad = s.squads.length;
+    squad = c.squad = s.squads.length;
     s.squads.push({ name: SHIP_SQUAD, poi: -1, patrol: [], leg: 0, engaged: true, roam: true, sinceSeen: 0, last: { x: ship.x, z: ship.z } });
   }
   const at = ship.waves ?? ship;

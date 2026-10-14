@@ -346,6 +346,8 @@ export interface Call {
   t: number;
   wave: number;
   waveT: number;
+  /** The squad this pickup's waves join (-1 until the first wave), so each pickup counts its own robots. */
+  squad: number;
 }
 
 export interface State {
