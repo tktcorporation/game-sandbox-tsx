@@ -245,13 +245,22 @@ export const SCORE = {
   ] as const,
 };
 
-export type ValuableKind = "parts" | "board" | "core";
+export type ValuableKind = "fuse" | "parts" | "wire" | "board" | "drive" | "gyro" | "core" | "reactor";
 
-/** Things worth carrying out. Every bin holds one; robots drop some; the best sit up high or with the titan. */
-export const VALUABLES: Record<ValuableKind, { label: string; value: number; size: number }> = {
-  parts: { label: "部品", value: 100, size: 1 },
-  board: { label: "回路基板", value: 300, size: 2 },
-  core: { label: "データコア", value: 1000, size: 3 },
+/**
+ * Things worth carrying out. Every bin holds one (which kinds is the POI's `loot.valuable`);
+ * robots drop some; the best sit up high, in the vaults or with the titan. Small and dear
+ * (the drive) is what a pouch wants; big and dear (the reactor) has to be carried home.
+ */
+export const VALUABLES: Record<ValuableKind, { label: string; value: number; size: number; rarity: Rarity }> = {
+  fuse: { label: "ヒューズ", value: 60, size: 1, rarity: 1 },
+  parts: { label: "部品", value: 100, size: 1, rarity: 1 },
+  wire: { label: "銅線の束", value: 180, size: 2, rarity: 1 },
+  board: { label: "回路基板", value: 300, size: 2, rarity: 2 },
+  drive: { label: "記憶装置", value: 450, size: 1, rarity: 2 },
+  gyro: { label: "ジャイロ", value: 650, size: 2, rarity: 3 },
+  core: { label: "データコア", value: 1000, size: 3, rarity: 3 },
+  reactor: { label: "小型炉心", value: 2200, size: 4, rarity: 3 },
 };
 
 /** The bag the valuables go in: what does not fit stays on the ground unless something cheaper makes way. */
@@ -284,6 +293,8 @@ export const META = {
   /** Armour by tier (1 to 3); tier 0 is none. */
   armor: [0, 400, 1200, 3000],
   heal: { cell: 60, battery: 250, syringe: 60, medkit: 250 } as Record<HealKind, number>,
+  /** What a key counts as for selling (the trader never sells keys). */
+  key: 800,
   /** Share of the price the trader pays for gear (valuables sell at their full value). */
   sellShare: 0.4,
   /** The best rarity of weapon and tier of armour the trader sells; better is found in raids. */
@@ -294,7 +305,20 @@ export const META = {
  * Searching a bin takes time with the hands busy and makes a noise; a top-floor bin
  * of a high-rise takes longer. Moving away, shooting or healing breaks it off.
  */
-export const SEARCH = { time: 2.2, flareTime: 3.5, noise: 9 };
+export const SEARCH = { time: 2.2, flareTime: 3.5, vaultTime: 5, noise: 9 };
+
+/**
+ * Vaults: one locked bin per POI, opened only with that POI's key. A key turns up in the
+ * bins of the POI before it (`(poi + 3) % 4`, so the supply depot's key is at the landing
+ * pad), comes home like any other find and opens its vault on every later raid.
+ */
+export const VAULT = {
+  keyChance: 0.15,
+  weapon: [["talon", 3], ["lance", 3], ["pike", 3], ["hornet", 3], ["maul", 2]] as [WeaponKind, Rarity][],
+  armor: 3 as Rarity,
+  valuables: [["reactor"], ["core", "drive"], ["gyro", "drive", "drive"]] as ValuableKind[][],
+  heals: 2,
+};
 
 /**
  * Reinforcements: a squad beams in somewhere `dist` metres from the player, out of

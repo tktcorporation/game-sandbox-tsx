@@ -238,6 +238,10 @@ const read = async () => JSON.parse(await page.evaluate(() => window.render_game
   const h1 = await read();
   if (!(h1.profile.cash < h0.profile.cash && h1.profile.stash === h0.profile.stash + 1)) errors.push(`hub: buying did not take cash and fill the stash (${JSON.stringify(h0.profile)} -> ${JSON.stringify(h1.profile)})`);
   await page.screenshot({ path: `${out}/00-hub-shop.png` });
+  await page.click('#hub [data-act=tab][data-arg=quests]');
+  const quests = await page.locator("#hub-side .quest").count();
+  if (quests !== 2) errors.push(`hub: the trader offers ${quests} quests at the start, not 2`);
+  await page.screenshot({ path: `${out}/00-hub-quests.png` });
   await page.click('#hub [data-act=tab][data-arg=kit]');
   const picks = page.locator("#hub-stash [data-act=pick]");
   await picks.nth(2).click();
@@ -368,6 +372,15 @@ for (let i = 0; i < 25 * 60 * 10; i++) {
     await page.evaluate(() => window.advanceTime(100));
     const closed = await page.evaluate(() => document.getElementById("map").hidden);
     if (!open || !closed) errors.push(`map: M opened ${open}, closed again ${closed}`);
+    // A vault, from just in front of it: the locked crate reads apart from the supply bins.
+    // The quarry's stands on an open terrace, so the camera has a clear view of it.
+    const v = s.vaults.find((b) => b.poi === 1);
+    if (s.vaults.length !== 4 || !v) errors.push(`vaults: ${s.vaults.length} on the island`);
+    else {
+      await page.evaluate((b) => window.ringfallCamera(b.x + 0.4, b.y + 1.6, b.z + 2.6, 0.12, -0.42), v);
+      await shot("26-vault");
+      await page.evaluate(() => window.ringfallCamera());
+    }
   }
   if (at(0) && live.length >= 2 && s.orbs >= 1) await shot("03-fight-supply");
   if (s.stats.kills >= 3 && s.enemies.some((e) => e.mode !== "spawning" && e.hp < 60)) await shot("04-damage-numbers");
@@ -398,6 +411,23 @@ console.log(`outcome: ${s.outcome}`);
 await page.waitForTimeout(1800);
 await page.screenshot({ path: `${out}/13-results.png` });
 console.log(JSON.stringify((await read()).stats));
+// The results on a phone on its side: both columns and the button fit the screen.
+{
+  await page.setViewportSize({ width: 740, height: 360 });
+  await page.waitForTimeout(300);
+  const fit = await page.evaluate(() => {
+    const out = [];
+    for (const id of ["home", "restart", "stats", "pois"]) {
+      const r = document.getElementById(id).getBoundingClientRect();
+      if (r.width && (r.right > innerWidth + 1 || r.bottom > innerHeight + 1)) out.push(`${id} ${Math.round(r.right)}x${Math.round(r.bottom)}`);
+    }
+    return out;
+  });
+  if (fit.length) errors.push(`results on a phone: ${fit.join(", ")} past the 740x360 screen`);
+  await page.screenshot({ path: `${out}/m9-results.png` });
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.waitForTimeout(200);
+}
 {
   const r = await read();
   if (!r.settled) errors.push("results: the raid was not settled into the profile");

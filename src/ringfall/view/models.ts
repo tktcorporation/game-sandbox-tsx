@@ -435,7 +435,23 @@ export function buildLootItem(kind: LootKind, rarity: Rarity, weapon?: WeaponKin
     }
   } else if (kind === "valuable") {
     // Parts: a gear on a scrap block. Circuit board: a flat green card with chips. Data core: a glowing cube in a frame.
-    if (valuable === "core") {
+    if (valuable === "reactor") {
+      // A reactor: a fat glowing cylinder in a cage.
+      g.add(mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.5, 10), flat(PAL.gun), 0, 0.42, 0, false));
+      g.add(mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.54, 10), glow(color), 0, 0.42, 0, false));
+    } else if (valuable === "drive") {
+      g.add(mesh(new THREE.BoxGeometry(0.3, 0.06, 0.2), flat(PAL.gunLight), 0, 0.25, 0, false));
+      g.add(mesh(new THREE.BoxGeometry(0.08, 0.065, 0.08), glow(color), 0.08, 0.26, 0, false));
+    } else if (valuable === "gyro") {
+      const ring = mesh(new THREE.TorusGeometry(0.2, 0.04, 6, 14), flat(PAL.gunLight), 0, 0.42, 0, false);
+      g.add(ring);
+      g.add(mesh(new THREE.SphereGeometry(0.1, 10, 8), glow(color), 0, 0.42, 0, false));
+    } else if (valuable === "wire") {
+      g.add(mesh(new THREE.TorusGeometry(0.18, 0.07, 6, 12).rotateX(Math.PI / 2), flat(PAL.rust), 0, 0.25, 0, false));
+    } else if (valuable === "fuse") {
+      g.add(mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.3, 8).rotateZ(Math.PI / 2), flat(0xf2f0ea), 0, 0.22, 0, false));
+      for (const x of [-0.16, 0.16]) g.add(mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.05, 8).rotateZ(Math.PI / 2), flat(PAL.gun), x, 0.22, 0, false));
+    } else if (valuable === "core") {
       g.add(mesh(new THREE.BoxGeometry(0.34, 0.34, 0.34), flat(PAL.gun), 0, 0.4, 0, false));
       g.add(mesh(new THREE.BoxGeometry(0.24, 0.36, 0.24), glow(color), 0, 0.4, 0, false));
     } else if (valuable === "board") {
@@ -446,6 +462,10 @@ export function buildLootItem(kind: LootKind, rarity: Rarity, weapon?: WeaponKin
       const gear = mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.06, 8), flat(PAL.gun), 0, 0.36, 0, false);
       g.add(gear);
     }
+  } else if (kind === "key") {
+    // A key card: a gold card with a dark stripe.
+    g.add(mesh(new THREE.BoxGeometry(0.34, 0.03, 0.22), glow(color), 0, 0.3, 0, false));
+    g.add(mesh(new THREE.BoxGeometry(0.34, 0.035, 0.05), flat(PAL.gun), 0, 0.3, 0.05, false));
   } else if (kind === "flare") {
     // A road flare: a red tube with a cap.
     const tube = mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.42, 8), flat(HEAL_RED), 0, 0.3, 0, false);
@@ -472,9 +492,14 @@ export function buildLootItem(kind: LootKind, rarity: Rarity, weapon?: WeaponKin
   return g;
 }
 
-export function buildBin(): { root: THREE.Group; lid: THREE.Object3D; seam: THREE.Mesh } {
+/** A supply bin; a vault is a darker, banded crate with a gold lock. */
+export function buildBin(vault = false): { root: THREE.Group; lid: THREE.Object3D; seam: THREE.Mesh } {
   const root = new THREE.Group();
-  root.add(mesh(new THREE.BoxGeometry(1.4, 0.7, 0.8), flat(PAL.teal), 0, 0.35, 0));
+  root.add(mesh(new THREE.BoxGeometry(1.4, 0.7, 0.8), flat(vault ? PAL.gun : PAL.teal), 0, 0.35, 0));
+  if (vault) {
+    for (const x of [-0.45, 0.45]) root.add(mesh(new THREE.BoxGeometry(0.12, 0.72, 0.82), flat(PAL.gunLight), x, 0.36, 0, false));
+    root.add(mesh(new THREE.BoxGeometry(0.22, 0.24, 0.06), glow(RARITY_COLOR[3]), 0, 0.42, 0.42, false));
+  }
   root.add(mesh(new THREE.BoxGeometry(1.42, 0.14, 0.82), flat(PAL.concrete), 0, 0.1, 0, false));
   const lid = new THREE.Group();
   lid.position.set(0, 0.72, 0.4);

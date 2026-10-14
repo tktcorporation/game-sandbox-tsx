@@ -23,6 +23,8 @@ export interface Kit {
   heals: Record<HealKind, number>;
   /** Of `heals`, how many are lent (used first, never brought home). */
   lentHeals: Record<HealKind, number>;
+  /** Vault keys taken along, as POI indices. */
+  keys: number[];
 }
 
 /** The lent kit of a free raid, which is also the default for the gates. */
@@ -31,6 +33,7 @@ export const freeKit = (): Kit => ({
   armor: 0,
   heals: { ...META.free.heals },
   lentHeals: { ...META.free.heals },
+  keys: [],
 });
 
 export interface Player {
@@ -68,6 +71,8 @@ export interface Player {
   flares: number;
   /** Valuables carried; their worth is the raid's score if the player gets off the island. */
   haul: ValuableKind[];
+  /** Keys on the ring, as the POIs whose vaults they open (copies included). They take no bag space. */
+  keys: number[];
   /** The bin being searched and for how long, or null. */
   search: { bin: number; t: number } | null;
   /** The item being used and the seconds left; shooting cancels it without using it. */
@@ -203,7 +208,7 @@ export interface Shockwave {
   allyHit?: boolean;
 }
 
-export type LootKind = "weapon" | "armor" | "heal" | "shard" | "flare" | "valuable";
+export type LootKind = "weapon" | "armor" | "heal" | "shard" | "flare" | "valuable" | "key";
 
 export interface Loot {
   id: number;
@@ -211,6 +216,8 @@ export interface Loot {
   weapon?: Weapon;
   heal?: HealKind;
   valuable?: ValuableKind;
+  /** For a key: the POI whose vault it opens. */
+  key?: number;
   /** Armour the player took off: it can be put back on with the use key, and its shield is not refilled. */
   worn?: boolean;
   rarity: Rarity;
@@ -228,6 +235,10 @@ export interface Bin {
   open: boolean;
   /** One of the high-rises' top-floor bins, which also hold a flare. */
   flare: boolean;
+  /** Locked: opened only with the key of its POI. */
+  vault: boolean;
+  /** Out on the island between the POIs: `poi` only picks its loot table, and it never holds a key. */
+  outside: boolean;
 }
 
 export interface CarePackage {
@@ -269,6 +280,7 @@ export type GameEvent =
   | { t: "mantle" }
   | { t: "land"; speed: number }
   | { t: "pickup"; kind: LootKind; rarity: Rarity; label: string }
+  | { t: "locked"; poi: number }
   | { t: "binOpen"; id: number }
   | { t: "tactical"; targets: Vec3[] }
   | { t: "tacticalMiss" }
@@ -322,6 +334,10 @@ export interface Stats {
   /** Times the teammate picked the player up, and the player picked the teammate up. */
   allyRescues: number;
   allyHelped: number;
+  /** Robots the player (not the teammate) brought down, by kind. */
+  killsBy: Record<EnemyKind, number>;
+  /** POIs whose vault the player opened. */
+  vaults: number[];
 }
 
 export interface State {
@@ -408,8 +424,8 @@ export const idleInput = (): Input => ({
 export function newRun(seed = 1, kit: Kit = freeKit()): State {
   const bins: Bin[] = [];
   let id = 1;
-  POIS.forEach((p, poi) => p.bins.forEach((b) => bins.push({ id: id++, x: b.x, y: b.y ?? 0, z: b.z, poi, open: false, flare: false })));
-  for (const b of EXTRA_BINS) bins.push({ id: id++, x: b.x, y: b.y ?? 0, z: b.z, poi: b.table, open: false, flare: !!b.flare });
+  POIS.forEach((p, poi) => p.bins.forEach((b) => bins.push({ id: id++, x: b.x, y: b.y ?? 0, z: b.z, poi, open: false, flare: false, vault: !!b.vault, outside: false })));
+  for (const b of EXTRA_BINS) bins.push({ id: id++, x: b.x, y: b.y ?? 0, z: b.z, poi: b.table, open: false, flare: !!b.flare, vault: false, outside: true });
   const loot: Loot[] = [];
   POIS.forEach((p) =>
     p.floor.forEach((f) => {
@@ -455,6 +471,7 @@ export function newRun(seed = 1, kit: Kit = freeKit()): State {
       lentHeals: { ...kit.lentHeals },
       flares: 0,
       haul: [],
+      keys: [...kit.keys],
       search: null,
       healing: null,
       sinceHurt: 99,
@@ -485,7 +502,7 @@ export function newRun(seed = 1, kit: Kit = freeKit()): State {
     shipWaveT: 0,
     extractedAt: null,
     events: [],
-    stats: { kills: 0, damage: 0, shots: 0, hits: 0, crits: 0, flankHits: 0, downs: 0, wipes: 0, cleared: [], allyDamage: 0, allyKills: 0, allyDowns: 0, allyRescues: 0, allyHelped: 0 },
+    stats: { kills: 0, damage: 0, shots: 0, hits: 0, crits: 0, flankHits: 0, downs: 0, wipes: 0, cleared: [], allyDamage: 0, allyKills: 0, allyDowns: 0, allyRescues: 0, allyHelped: 0, killsBy: { drone: 0, grunt: 0, charger: 0, heavy: 0, titan: 0 }, vaults: [] },
   };
   populate(s);
   return s;

@@ -21,7 +21,9 @@ import { SHIP_SQUAD, bagUsed, makeRoom } from "../src/ringfall/sim/world";
 import { bodyCenter, damageEnemy, eyePos, fireRay, magSize, weakPoint } from "../src/ringfall/sim/combat";
 import { lookAngles } from "../src/ringfall/sim/geom";
 import { forward } from "../src/ringfall/sim/state";
-import { buy, newProfile, parseProfile, pouch, price, sell, settle, takeKit, wares } from "../src/ringfall/meta/profile";
+import { buy, deliver, newProfile, parseProfile, pouch, price, sell, settle, takeKit, wares } from "../src/ringfall/meta/profile";
+import { QUESTS, offered } from "../src/ringfall/meta/quests";
+import { keyFoundIn } from "../src/ringfall/sim/world";
 import { META } from "../src/ringfall/sim/config";
 
 const runs = Number(process.argv[2] ?? 12);
@@ -374,7 +376,7 @@ function checkReinforceHidden(): string | null {
 function checkValuableBin(): string | null {
   const s = padRun();
   const p = s.player;
-  s.bins = [{ id: 9001, x: p.pos.x + 1, y: p.pos.y, z: p.pos.z, poi: 2, open: false, flare: false }];
+  s.bins = [{ id: 9001, x: p.pos.x + 1, y: p.pos.y, z: p.pos.z, poi: 2, open: false, flare: false, vault: false, outside: false }];
   const press = idleInput();
   press.interact = true;
   step(s, press, false);
@@ -382,14 +384,14 @@ function checkValuableBin(): string | null {
   ticks(s, SEARCH.time - 0.2);
   if (s.bins[0].open) return "search scenario: the bin opened before the search time";
   ticks(s, 3);
-  if (haulValue(s) !== VALUABLES[POIS[2].loot.valuable].value) return `valuable scenario: haul ${haulValue(s)}, bin open ${s.bins[0].open}`;
+  if (p.haul.length !== 1 || !POIS[2].loot.valuable.some(([k]) => k === p.haul[0])) return `valuable scenario: haul ${p.haul.join()}, bin open ${s.bins[0].open}`;
   return null;
 }
 /** Walking away from a bin breaks the search off; it starts over on the next press. */
 function checkSearchBreaks(): string | null {
   const s = padRun();
   const p = s.player;
-  s.bins = [{ id: 9001, x: p.pos.x + 1, y: p.pos.y, z: p.pos.z, poi: 2, open: false, flare: false }];
+  s.bins = [{ id: 9001, x: p.pos.x + 1, y: p.pos.y, z: p.pos.z, poi: 2, open: false, flare: false, vault: false, outside: false }];
   const press = idleInput();
   press.interact = true;
   step(s, press, false);
@@ -613,7 +615,7 @@ function checkWeakPointBehindBody(): string | null {
 function checkHelpBeforeLoot(): string | null {
   const s = padRun();
   const p = s.player;
-  s.bins.push({ id: 9999, x: p.pos.x + 0.3, y: p.pos.y, z: p.pos.z, poi: 0, open: false, flare: false });
+  s.bins.push({ id: 9999, x: p.pos.x + 0.3, y: p.pos.y, z: p.pos.z, poi: 0, open: false, flare: false, vault: false, outside: false });
   hurtAlly(s, 999);
   s.ally.pos = { x: p.pos.x + 3, y: p.pos.y, z: p.pos.z };
   const press = idleInput();
@@ -840,7 +842,7 @@ function checkSettle(): string | null {
   let p = newProfile();
   const start = p.stash.length;
   // Two stash weapons and a cell in; the cell is used up, a rare PIKE is picked up instead of the HORNET.
-  const taken = takeKit(p, { weapons: [0, 1], armor: null, heals: { cell: 1, battery: 0, syringe: 0, medkit: 0 } });
+  const taken = takeKit(p, { weapons: [0, 1], armor: null, heals: { cell: 1, battery: 0, syringe: 0, medkit: 0 }, keys: [] });
   if (taken.kit.weapons.some((w) => w.loan) || taken.kit.heals.cell !== 1) return `settle scenario: the stash kit came out wrong (${JSON.stringify(taken.kit)})`;
   if (taken.profile.stash.length !== start - 3) return `settle scenario: taking the kit left ${taken.profile.stash.length} things in the stash, not ${start - 3}`;
   const s = newRun(5, taken.kit);
@@ -860,7 +862,7 @@ function checkSettle(): string | null {
   if (lost.home.map((i) => (i.t === "valuable" ? i.kind : i.t)).join() !== "board") return `settle scenario: a wipe kept ${JSON.stringify(lost.home)}, not the board`;
   if (pouch(["parts", "parts", "board"]).join() !== "board" || pouch(["parts", "core", "parts"]).join() !== "parts,parts") return "pouch scenario: the pouch did not keep the most valuable fit";
   // The free kit is lent: getting off with it brings home only what was found, and its spare heals stay lent.
-  const free = takeKit(p, { weapons: [], armor: null, heals: { cell: 0, battery: 0, syringe: 0, medkit: 0 } });
+  const free = takeKit(p, { weapons: [], armor: null, heals: { cell: 0, battery: 0, syringe: 0, medkit: 0 }, keys: [] });
   if (!free.kit.weapons.every((w) => w.loan) || free.profile.stash.length !== start) return "free kit scenario: the free kit was not lent, or it took from the stash";
   const f = newRun(6, free.kit);
   f.outcome = "extracted";
@@ -913,7 +915,100 @@ function checkSettle(): string | null {
   return null;
 }
 
-for (const err of [checkSettle(), checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkAllySelfUp(), checkStompHeight(), checkDropOffHighGround(), checkFieldsReused(), checkFieldsFollowRunner(), checkCliffsStop(), checkNoPits(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill(), checkLeap(), checkLeapLeavesAllyBelow(), checkLeapDowned(), checkLeapAllyCatchesUp(), checkLeapAllyDowned(), checkLeapWithItem(), checkLeapClocks(), checkLeapOffHighGround(), checkLeapUnderRoof()]) {
+/** A vault stays shut without its POI's key, opens with it, and counts for the vault quest. */
+function checkVault(): string | null {
+  const s = padRun();
+  const p = s.player;
+  s.bins = [{ id: 9001, x: p.pos.x + 1, y: p.pos.y, z: p.pos.z, poi: 1, open: false, flare: false, vault: true, outside: false }];
+  const press = idleInput();
+  press.interact = true;
+  step(s, press, false);
+  ticks(s, SEARCH.vaultTime + 1);
+  if (s.bins[0].open || p.search) return "vault scenario: a vault opened without its key";
+  p.keys = [1];
+  step(s, press, false);
+  ticks(s, SEARCH.vaultTime - 0.3);
+  if (s.bins[0].open) return "vault scenario: the vault opened before its search time";
+  ticks(s, 1);
+  if (!s.bins[0].open || !s.stats.vaults.includes(1)) return "vault scenario: the key did not open the vault";
+  const rare = s.loot.some((l) => l.kind === "weapon" && l.rarity >= 2) && s.loot.some((l) => l.kind === "armor" && l.rarity === 3);
+  if (!rare && !p.haul.length) return "vault scenario: the vault held no better loot than a bin";
+  // Every POI's vault has a key somewhere else on the island.
+  const keyed = POIS.map((_, i) => keyFoundIn(i));
+  if (new Set(keyed).size !== POIS.length || keyed.some((k, i) => k === i)) return `vault scenario: keys are found in ${keyed.join()}`;
+  if (POIS.some((poi) => poi.bins.filter((b) => b.vault).length !== 1)) return "vault scenario: a POI does not have exactly one vault";
+  // Bins out between the POIs never hold a key, whatever loot table they use.
+  const out = padRun();
+  const extra = out.bins.filter((b) => b.outside && !b.flare);
+  let opened = 0;
+  for (let i = 0; i < 60 && extra.length; i++) {
+    const b = extra[i % extra.length];
+    b.open = false;
+    out.loot = [];
+    out.player.search = { bin: out.bins.indexOf(b), t: 99 };
+    out.player.pos = { x: b.x, y: b.y, z: b.z };
+    step(out, idleInput(), false);
+    if (b.open) opened++;
+    if (out.loot.some((l) => l.kind === "key")) return "vault scenario: a bin outside the POIs dropped a key";
+  }
+  if (opened < 30) return `vault scenario: only ${opened} of 60 bins outside the POIs were opened to check for keys`;
+  return null;
+}
+
+/** Quests open in order, count raids (kills even on a wipe), pay on finishing, and take deliveries. */
+function checkQuests(): string | null {
+  let p = newProfile();
+  const first = offered(p.quests).map((q) => q.id).join();
+  if (first !== "grunts,village") return `quest scenario: the first quests offered are ${first}`;
+  if (QUESTS.some((q) => q.after.some((a) => !QUESTS.find((o) => o.id === a)))) return "quest scenario: a quest comes after one that does not exist";
+  const { profile, kit } = takeKit(p, { weapons: [], armor: null, heals: { cell: 0, battery: 0, syringe: 0, medkit: 0 }, keys: [] });
+  const s = newRun(7, kit);
+  s.outcome = "dead";
+  s.stats.killsBy.grunt = 5;
+  let r = settle(profile, s);
+  if (r.profile.quests.progress.grunts !== 5 || r.quests.length) return `quest scenario: 5 grunt kills on a wipe left ${JSON.stringify(r.profile.quests)}`;
+  s.stats.killsBy.grunt = 3;
+  s.outcome = "extracted";
+  s.extractedAt = "village";
+  const cash = r.profile.cash;
+  r = settle(r.profile, s);
+  if (r.quests.map((q) => q.id).sort().join() !== "grunts,village") return `quest scenario: the raid finished ${r.quests.map((q) => q.id).join()}`;
+  if (r.profile.cash !== cash + 600 + 500 || r.profile.quests.progress.grunts !== undefined) return "quest scenario: rewards were not paid";
+  if (!offered(r.profile.quests).some((q) => q.id === "parts")) return "quest scenario: finishing the first quest did not open the next";
+  p = { ...r.profile, stash: [...r.profile.stash, { t: "valuable", kind: "parts" }, { t: "valuable", kind: "parts" }] };
+  if (deliver(p, "parts") !== p) return "quest scenario: delivered with too few parts";
+  p = { ...p, stash: [...p.stash, { t: "valuable", kind: "parts" }] };
+  const d = deliver(p, "parts");
+  if (d.stash.some((i) => i.t === "valuable" && i.kind === "parts") || !d.quests.done.includes("parts") || !d.stash.some((i) => i.t === "weapon" && i.kind === "pike" && i.rarity === 1)) return "quest scenario: the delivery did not take the parts and pay the PIKE";
+  // Keys go along and come home; a v1 save loads with an empty quest log.
+  const withKey = { ...newProfile(), stash: [...newProfile().stash, { t: "key" as const, poi: 2 }] };
+  const k = takeKit(withKey, { weapons: [0], armor: null, heals: { cell: 0, battery: 0, syringe: 0, medkit: 0 }, keys: [withKey.stash.length - 1] });
+  const ks = newRun(8, k.kit);
+  if (ks.player.keys.join() !== "2" || k.profile.stash.some((i) => i.t === "key")) return "key scenario: the key did not go into the raid";
+  ks.outcome = "extracted";
+  // A second copy found on the island comes home as well.
+  ks.loot = [{ id: 9200, kind: "key", key: 2, rarity: 3, pos: { ...ks.player.pos }, vel: { x: 0, y: 0, z: 0 }, age: 1 }];
+  ks.phase = "play";
+  step(ks, idleInput(), false);
+  ks.outcome = "extracted";
+  const copies = settle(k.profile, ks).profile.stash.filter((i) => i.t === "key" && i.poi === 2).length;
+  if (copies !== 2) return `key scenario: carrying a key and finding another brought home ${copies}, not 2`;
+  // One slot left: a quest's key reward takes it ahead of a fuse from the same raid.
+  const tight = { ...newProfile(), stash: Array.from({ length: META.stash - 1 }, () => ({ t: "heal" as const, kind: "cell" as const })), quests: { progress: {}, done: ["grunts", "parts", "quarry"] } };
+  const tk = takeKit(tight, { weapons: [], armor: null, heals: { cell: 0, battery: 0, syringe: 0, medkit: 0 }, keys: [] });
+  const ts = newRun(10, tk.kit);
+  ts.outcome = "extracted";
+  ts.player.haul = ["fuse"];
+  ts.stats.cleared = [2];
+  const tr = settle(tk.profile, ts);
+  const last = tr.profile.stash.at(-1);
+  if (tr.quests[0]?.id !== "relay" || last?.t !== "key" || !tr.sold.some((i) => i.t === "valuable")) return `quest scenario: with one slot left the stash kept ${JSON.stringify(last)} and sold ${JSON.stringify(tr.sold)}`;
+  const v1 = parseProfile({ v: 1, cash: 10, stash: [], raids: 2, extracted: 1 });
+  if (!v1 || v1.v !== 2 || v1.quests.done.length) return "storage scenario: a v1 save does not load";
+  return null;
+}
+
+for (const err of [checkVault(), checkQuests(), checkSettle(), checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkAllySelfUp(), checkStompHeight(), checkDropOffHighGround(), checkFieldsReused(), checkFieldsFollowRunner(), checkCliffsStop(), checkNoPits(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill(), checkLeap(), checkLeapLeavesAllyBelow(), checkLeapDowned(), checkLeapAllyCatchesUp(), checkLeapAllyDowned(), checkLeapWithItem(), checkLeapClocks(), checkLeapOffHighGround(), checkLeapUnderRoof()]) {
   if (err) {
     console.error(err);
     process.exit(1);

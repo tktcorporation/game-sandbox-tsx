@@ -653,7 +653,7 @@ export class World {
     for (const b of s.bins) {
       let v = this.bins.get(b.id);
       if (!v) {
-        v = buildBin();
+        v = buildBin(b.vault);
         v.root.position.set(b.x, b.y, b.z);
         this.bins.set(b.id, v);
         this.scene.add(v.root);

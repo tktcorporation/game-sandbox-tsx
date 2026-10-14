@@ -27,6 +27,9 @@ Between raids the base (`view/hub.ts`) keeps a stash, a trader and the loadout f
 raid, the pouch that survives a wipe), `meta/storage.ts` saves it in localStorage, and `META` in
 `config.ts` holds its numbers. `newRun(seed, kit)` starts a raid from a kit; the default is the
 lent free kit, which is what the sim gate plays.
+The trader's quests are data in `meta/quests.ts` (`QUESTS`, credited from a raid's `stats` by
+`creditRaid()` inside `settle()`). Each POI has one locked bin (`vault: true` in its `bins`), opened
+only with that POI's key; keys drop from the bins of the POI before it (`keyFoundIn()`, `VAULT`).
 
 ```bash
 npm run sim:ringfall     # gate 2: bots of three skills play the whole run headless
