@@ -546,15 +546,17 @@ export const ALLY = {
 };
 
 /**
- * Robots that beam in around the dropship while it is on its way: a wave every
- * `every` seconds, at most `maxAlive` of them up at once.
+ * Robots that beam in around a called pickup while it is on its way: a wave every `every`
+ * seconds, at most `maxAlive` of them up at once. Waiting at a pickup is a fight from cover
+ * against a few robots at a time, not a hold against a crowd: with fire that finds anyone
+ * in the open, a crowd would decide the raid at its very end.
  */
 export const SHIP_WAVES = {
-  every: 4.5,
-  first: 2,
+  every: 7,
+  first: 3,
   radius: 18,
-  maxAlive: 5,
-  waves: [["drone", "grunt"], ["drone", "drone"], ["grunt", "charger"], ["drone", "grunt"]] as EnemyKind[][],
+  maxAlive: 3,
+  waves: [["grunt"], ["drone", "grunt"], ["charger"], ["drone"]] as EnemyKind[][],
 };
 
 /** Seconds the arc shows every robot within range through walls. */
