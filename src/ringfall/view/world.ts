@@ -29,7 +29,8 @@ const THINGS_FAR = 220;
 const SALT = new Set(["塩田", "難破船"]);
 const PAVED = new Set(["港町", "埠頭", "高架下", "西の道", "コンテナヤード", "製錬所", "製錬所の坂", "駅の坂"]);
 /** The harbor's tidal channel: its floor and the water over it. */
-const CHANNEL = { x0: 88, x1: 170, z0: -600, z1: -583, y: -5.55 };
+/** The water channel the boat comes up, at the harbor's quay. */
+export const CHANNEL = { x0: 88, x1: 170, z0: -600, z1: -583, y: -5.55 };
 
 /** A chunk of the world: its ground and everything built on it, drawn or skipped together. */
 interface Chunk {

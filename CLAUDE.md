@@ -102,10 +102,15 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   with `input.touch` set so the sim applies `ASSIST.touchPull`. `npm run shots:ringfall` drives it with
   real touch events in a phone-sized viewport before the desktop run.
 - `src/ringfall/view/` renders and never changes rules: `world.ts` (three.js), `hud.ts` (DOM),
-  `audio.ts` (synthesized). `world.ts` cuts the ground and everything built into `CHUNK`-metre
+  and synthesized sound. `world.ts` cuts the ground and everything built into `CHUNK`-metre
   chunks, each merged into a mesh or two with its colours in the vertices, and skips chunks past
   the fog (`FOG_FAR`) and robots, bins and loot past `THINGS_FAR`, so the draw calls stay bounded
-  however large the world grows. `src/ringfall/main.ts` wires input and the fixed-step loop, and
+  however large the world grows. `audio.ts` is the sound engine (buses, reverb, voice cap,
+  positional voices) and runs on any `BaseAudioContext`; `sfx.ts` holds every cue; `soundscape.ts`
+  puts the listener at the camera, tests walls with a few `los()` rays a frame, plays nearby robots'
+  steps, the wind, the extraction craft and the ambience, and turns `state.events` into cues.
+  `soundcheck.ts` is the `?sfx` panel; `npm run sfx:ringfall` renders every cue offline and fails on
+  silent, NaN or clipping ones. `src/ringfall/main.ts` wires input and the fixed-step loop, and
   exposes `window.render_game_to_text()`, `window.advanceTime(ms)`, `window.ringfallBot(skill)` and
   `window.ringfallFrameCost(frames)` (draw calls, triangles and time per frame, for the shots gate).
 - `docs/ringfall/balance.md` holds the target curve and the latest `npm run sim:ringfall -- 30` output
