@@ -25,9 +25,14 @@ import { SHIP_SQUAD, bagUsed, makeRoom } from "../src/ringfall/sim/world";
 import { bodyCenter, damageEnemy, eyePos, fireRay, magSize, weakPoint } from "../src/ringfall/sim/combat";
 import { lookAngles } from "../src/ringfall/sim/geom";
 import { forward } from "../src/ringfall/sim/state";
-import { buy, deliver, newProfile, parseProfile, pouch, price, sell, settle, takeKit, wares } from "../src/ringfall/meta/profile";
+import { build, buy, canBuild, deliver, newProfile, parseProfile, pouch, price, sell, settle, takeKit, wares, type Item, type Profile } from "../src/ringfall/meta/profile";
+import { emptyHideout, maxLevel, MODULES, poisWith, sources, stashCap } from "../src/ringfall/meta/hideout";
+import { boostFor, boosted } from "../src/ringfall/sim/state";
+import { HIDEOUT, VAULT } from "../src/ringfall/sim/config";
 import { QUESTS, offered } from "../src/ringfall/meta/quests";
 import { META } from "../src/ringfall/sim/config";
+import { pacing, recordOf, type Pool } from "./ringfall-pacing";
+import { writeFileSync } from "node:fs";
 
 const runs = Number(process.argv[2] ?? 12);
 const only = process.argv[3];
@@ -998,11 +1003,11 @@ function checkSettle(): string | null {
   if (back.home.map((i) => (i.t === "heal" ? i.kind : i.t)).join() !== "syringe") return `free kit scenario: getting off brought home ${JSON.stringify(back.home)}, not one found syringe`;
   // Trading and a full stash.
   const cash = p.cash;
-  const bought = buy(p, wares()[0]);
-  if (!bought || bought.cash !== cash - price(wares()[0]) || bought.stash.length !== start + 1) return "trader scenario: buying did not take the price and add the item";
+  const bought = buy(p, wares(p)[0]);
+  if (!bought || bought.cash !== cash - price(wares(p)[0]) || bought.stash.length !== start + 1) return "trader scenario: buying did not take the price and add the item";
   if (sell(bought, bought.stash.length - 1).cash >= cash) return "trader scenario: selling paid back at least the price";
   p = { ...p, stash: Array.from({ length: META.stash }, () => ({ t: "heal" as const, kind: "cell" as const })) };
-  if (buy(p, wares()[0])) return "trader scenario: bought into a full stash";
+  if (buy(p, wares(p)[0])) return "trader scenario: bought into a full stash";
   const full = settle(p, f);
   if (full.profile.stash.length !== META.stash || full.sold.length !== 1 || full.profile.cash <= p.cash) return "full stash scenario: what did not fit was not sold";
   // Armour from the stash, swapped on the island for a better one, is left on the ground, not lost.
@@ -1029,6 +1034,108 @@ function checkSettle(): string | null {
   const kept = settle(one, f).profile.stash.at(-1);
   if (kept?.t !== "weapon" || kept.rarity !== 2) return `full stash scenario: the last slot went to ${JSON.stringify(kept)}, not the epic LANCE`;
   if (parseProfile(JSON.parse(JSON.stringify(won.profile)))?.stash.length !== won.profile.stash.length || parseProfile({ v: 2 }) !== null) return "storage scenario: a saved profile does not load back";
+  return null;
+}
+
+/** The hideout: building takes exactly its items and credits, each module's benefit is real, the craft ends the game once. */
+function checkHideout(): string | null {
+  const count = (p: Profile, k: string) => p.stash.filter((i) => i.t === "valuable" && i.kind === k).length;
+  const give = (p: Profile, list: [string, number][]): Profile => ({ ...p, stash: [...p.stash, ...list.flatMap(([k, n]) => Array.from({ length: n }, (): Item => ({ t: "valuable", kind: k as "fuse" }))) ] });
+  // Every level asks only for kinds that bins or vaults hold, and only for modules that exist.
+  for (const m of MODULES)
+    for (const l of HIDEOUT[m].levels) {
+      for (const [k] of l.items) if (!poisWith(k).length && !VAULT.valuables.some((set) => set.includes(k))) return `hideout scenario: ${m} needs ${k}, which no bin or vault holds`;
+      for (const [o, n] of l.needs) if (!(o in HIDEOUT) || n > maxLevel(o) || o === m) return `hideout scenario: ${m} needs ${o} Lv${n}`;
+    }
+  if (sources("reactor")[0]?.share === undefined) return "hideout scenario: the reactor has no source";
+  // The generator's first level: one fuse short it cannot be built; with them it takes exactly its items and credits.
+  const gen = HIDEOUT.generator.levels[0];
+  let p = { ...newProfile(), cash: 5000 };
+  p = give(p, gen.items.map(([k, n]) => [k, k === "fuse" ? n - 1 : n]));
+  if (canBuild(p, "generator") || build(p, "generator")) return "hideout scenario: the generator was built a fuse short";
+  p = give(p, [["fuse", 1], ["board", 2]]);
+  const before = p.stash.length;
+  const built = build(p, "generator");
+  if (!built || built.hideout.generator !== 1 || built.cash !== p.cash - gen.cash || built.stash.length !== before - gen.items.reduce((n, [, c]) => n + c, 0) || count(built, "fuse") !== 0 || count(built, "board") !== 2)
+    return `hideout scenario: building the generator took ${p.cash - (built?.cash ?? p.cash)} credits and left ${built?.stash.length} things`;
+  // A level that needs another module's level waits for it.
+  const inf = give({ ...newProfile(), cash: 9000 }, HIDEOUT.infirmary.levels[0].items);
+  if (canBuild(inf, "infirmary") || !canBuild({ ...inf, hideout: { ...inf.hideout, generator: 1 } }, "infirmary")) return "hideout scenario: the infirmary did not wait for the generator";
+  // The infirmary lends its heals to both kits; they never come home.
+  const sick = { ...newProfile(), hideout: { ...emptyHideout(), infirmary: 2 } };
+  const freeKit2 = takeKit(sick, { weapons: [], armor: null, heals: { cell: 0, battery: 0, syringe: 0, medkit: 0 }, keys: [] }).kit;
+  const ownKit = takeKit(sick, { weapons: [0], armor: null, heals: { cell: 0, battery: 0, syringe: 0, medkit: 0 }, keys: [] }).kit;
+  if (freeKit2.heals.syringe !== META.free.heals.syringe + 1 || freeKit2.heals.cell !== META.free.heals.cell + 2 || ownKit.heals.syringe !== 1 || ownKit.lentHeals.cell !== 2)
+    return `hideout scenario: the infirmary's heals came out as ${JSON.stringify(freeKit2.heals)} (free) and ${JSON.stringify(ownKit.heals)} (own)`;
+  const healed = newRun(13, ownKit);
+  healed.outcome = "extracted";
+  if (settle(sick, healed).home.some((i) => i.t === "heal")) return "hideout scenario: the infirmary's lent heals came home";
+  // The workbench raises the best rarity the trader sells.
+  const best = (lv: number) => Math.max(...wares({ ...newProfile(), hideout: { ...emptyHideout(), workbench: lv } }).map((i) => (i.t === "weapon" ? i.rarity : i.t === "armor" ? i.tier : 0)));
+  if (best(0) !== META.shopRarity || best(1) !== META.shopRarity + 1 || best(2) !== 3) return `hideout scenario: the trader sells up to ${best(0)}, ${best(1)}, ${best(2)} by workbench level`;
+  // The storage holds more, and buying fills it.
+  const roomy = { ...newProfile(), cash: 9999, hideout: { ...emptyHideout(), storage: 1 }, stash: Array.from({ length: META.stash }, (): Item => ({ t: "heal", kind: "cell" })) };
+  if (stashCap(roomy.hideout) !== META.stash + 10 || !buy(roomy, wares(roomy)[0])) return "hideout scenario: the storage did not make room";
+  // The pouch keeps more through a wipe.
+  const wipe = newRun(14);
+  wipe.outcome = "dead";
+  wipe.player.haul = ["drive", "drive", "drive", "drive", "fuse"];
+  const keptN = (lv: number) => settle({ ...newProfile(), hideout: { ...emptyHideout(), pouch: lv } }, wipe).home.length;
+  if (keptN(0) !== META.pouch || keptN(1) !== META.pouch + 1 || keptN(2) !== META.pouch + 2) return `hideout scenario: a wipe kept ${keptN(0)}, ${keptN(1)}, ${keptN(2)} drives by pouch level`;
+  // The radio tells of the raid the profile's seed starts: the same POI and kind, and its bins really lean that way.
+  const radio = { ...newProfile(4321), hideout: { ...emptyHideout(), radio: 2 } };
+  for (const region of REGIONS) {
+    const told = boostFor(radio.seed, region.id);
+    const raid = newRun(radio.seed, freeKit(), region.id);
+    if (raid.boost.poi !== told.poi || raid.boost.kind !== told.kind || !region.pois.includes(POIS[told.poi].id)) return `hideout scenario: the radio told of ${JSON.stringify(told)}, the raid has ${JSON.stringify(raid.boost)}`;
+    // Its bins opened on an empty island, with the raid's boost.
+    const open = padRun();
+    open.boost = raid.boost;
+    const binsThere = open.bins.filter((b) => b.poi === told.poi && !b.vault && !b.outside);
+    let got = 0;
+    for (let i = 0; i < 60; i++) {
+      const b = binsThere[i % binsThere.length];
+      b.open = false;
+      open.loot = [];
+      open.player.search = { bin: open.bins.indexOf(b), t: 99 };
+      open.player.pos = { x: b.x, y: b.y, z: b.z };
+      step(open, idleInput(), false);
+      if (open.loot.some((l) => l.kind === "valuable" && l.valuable === told.kind)) got++;
+    }
+    const plain = POIS[told.poi].loot.valuable;
+    const plainShare = (plain.find(([k]) => k === told.kind)?.[1] ?? 0) / plain.reduce((n, [, w]) => n + w, 0);
+    if (got / 60 < plainShare + 0.2) return `hideout scenario: the boosted ${POIS[told.poi].id} gave ${told.kind} from ${got} of 60 bins (${Math.round(plainShare * 100)}% unboosted)`;
+  }
+  if (boosted([["fuse", 3], ["drive", 1]], "drive").find(([k]) => k === "drive")?.[1] !== 5) return "hideout scenario: the boosted weights are off";
+  const after = settle(radio, newRun(radio.seed)).profile;
+  if (after.seed === radio.seed) return "hideout scenario: the next raid's seed did not move on";
+  // The craft's last stage ends the playthrough once; the record is kept and the game goes on.
+  const last = HIDEOUT.craft.levels.at(-1)!;
+  const full = Object.fromEntries(MODULES.map((m) => [m, maxLevel(m)])) as Profile["hideout"];
+  let end = give({ ...newProfile(), cash: last.cash, raids: 31, extracted: 25, time: 3600, hideout: { ...full, craft: maxLevel("craft") - 1 } }, last.items);
+  end = build(end, "craft")!;
+  if (!end?.escaped || end.escaped.raids !== 31 || end.escaped.extracted !== 25 || end.cash !== 0 || end.stash.some((i) => i.t === "valuable")) return `hideout scenario: finishing the craft left ${JSON.stringify(end?.escaped)} with ${end?.cash} credits`;
+  if (build(give({ ...end, cash: 99999 }, last.items), "craft")) return "hideout scenario: the craft was built past its last stage";
+  const later = settle(end, newRun(15));
+  if (later.profile.escaped?.raids !== 31 || later.profile.raids !== 32) return "hideout scenario: the ending's record changed after another raid";
+  // The trader's last quest is finished by the craft.
+  const late = { ...end, escaped: null, hideout: { ...full, craft: maxLevel("craft") - 1 }, quests: { progress: {}, done: QUESTS.filter((q) => q.id !== "escape").map((q) => q.id) } };
+  const fin = build(give({ ...late, cash: last.cash }, last.items), "craft");
+  if (!fin?.quests.done.includes("escape") || !fin.escaped) return "hideout scenario: finishing the craft did not finish the last quest";
+  // Saves: a v4 profile keeps its stash and starts with an empty hideout; a v5 one keeps its hideout.
+  const v4 = { v: 4, cash: 900, stash: [{ t: "valuable", kind: "gyro" }, { t: "weapon", kind: "pike", rarity: 2 }, { t: "key", poi: "yard" }], raids: 9, extracted: 7, quests: { progress: {}, done: ["grunts"] }, region: "harbor" };
+  const m4 = parseProfile(JSON.parse(JSON.stringify(v4)));
+  if (!m4 || m4.v !== 5 || m4.stash.length !== 3 || m4.raids !== 9 || MODULES.some((m) => m4.hideout[m] !== 0) || m4.escaped || m4.region !== "harbor") return `storage scenario: a v4 save loaded as ${JSON.stringify(m4)}`;
+  const m5 = parseProfile(JSON.parse(JSON.stringify(end)));
+  if (!m5 || m5.hideout.craft !== maxLevel("craft") || m5.escaped?.raids !== 31 || m5.seed !== end.seed) return "storage scenario: a v5 save lost its hideout";
+  // With one slot left, a valuable the hideout wants takes it ahead of gear; one it does not want is sold first.
+  const tight = { ...newProfile(), stash: Array.from({ length: META.stash - 1 }, (): Item => ({ t: "heal", kind: "cell" })) };
+  const back = newRun(16);
+  back.outcome = "extracted";
+  back.player.weapons = [{ kind: "lance", rarity: 2, mag: -1 }, null];
+  back.player.haul = ["gyro"];
+  const kept = settle(tight, back).profile.stash.at(-1);
+  if (kept?.t !== "valuable" || kept.kind !== "gyro") return `full stash scenario: the last slot went to ${JSON.stringify(kept)}, not the gyro the hideout needs`;
   return null;
 }
 
@@ -1121,18 +1228,18 @@ function checkQuests(): string | null {
   const last = tr.profile.stash.at(-1);
   if (tr.quests[0]?.id !== "relay" || last?.t !== "key" || !tr.sold.some((i) => i.t === "valuable")) return `quest scenario: with one slot left the stash kept ${JSON.stringify(last)} and sold ${JSON.stringify(tr.sold)}`;
   const v1 = parseProfile({ v: 1, cash: 10, stash: [], raids: 2, extracted: 1 });
-  if (!v1 || v1.v !== 4 || v1.quests.done.length || v1.region !== "reservoir") return "storage scenario: a v1 save does not load";
+  if (!v1 || v1.v !== 5 || v1.quests.done.length || v1.region !== "reservoir") return "storage scenario: a v1 save does not load";
   // v2 saves named a key's POI by its place in the list; it loads as that POI's id.
   const v2 = parseProfile({ v: 2, cash: 10, stash: [{ t: "key", poi: 2 }, { t: "key", poi: 9 }], raids: 1, extracted: 1, quests: { progress: {}, done: [] } });
   const v2Key = v2?.stash[0];
-  if (!v2 || v2.v !== 4 || v2.stash.length !== 1 || v2Key?.t !== "key" || v2Key.poi !== "relay") return `storage scenario: a v2 save's key 2 loaded as ${JSON.stringify(v2?.stash)}, not the relay key`;
+  if (!v2 || v2.v !== 5 || v2.stash.length !== 1 || v2Key?.t !== "key" || v2Key.poi !== "relay") return `storage scenario: a v2 save's key 2 loaded as ${JSON.stringify(v2?.stash)}, not the relay key`;
   // A v3 save keeps its keys by id and drops into the reservoir; the landing choice is kept.
   const v3 = parseProfile({ v: 3, cash: 10, stash: [{ t: "key", poi: "wreck" }], raids: 1, extracted: 1, quests: { progress: {}, done: [] } });
-  if (!v3 || v3.v !== 4 || v3.stash.length !== 1 || v3.region !== "reservoir") return `storage scenario: a v3 save loaded as ${JSON.stringify(v3)}`;
+  if (!v3 || v3.v !== 5 || v3.stash.length !== 1 || v3.region !== "reservoir") return `storage scenario: a v3 save loaded as ${JSON.stringify(v3)}`;
   if (parseProfile(JSON.parse(JSON.stringify({ ...newProfile(), region: "harbor" })))?.region !== "harbor") return "storage scenario: the landing choice did not survive a save";
   // The harbor quests: the yard's vault counts only that vault, the harbor haul only a raid dropped into the harbor.
-  const late = { ...newProfile(), quests: { progress: {}, done: QUESTS.filter((q) => !["yardVault", "harborHaul"].includes(q.id)).map((q) => q.id) } };
-  if (offered(late.quests).map((q) => q.id).join() !== "yardVault") return `quest scenario: after the harbor's first quests the trader offers ${offered(late.quests).map((q) => q.id).join()}`;
+  const late = { ...newProfile(), quests: { progress: {}, done: QUESTS.filter((q) => !["yardVault", "harborHaul", "craft", "navigator", "control", "furnace", "escape"].includes(q.id)).map((q) => q.id) } };
+  if (offered(late.quests).map((q) => q.id).join() !== "yardVault,craft") return `quest scenario: after the harbor's first quests the trader offers ${offered(late.quests).map((q) => q.id).join()}`;
   const hv = newRun(11, freeKit(), "harbor");
   hv.outcome = "dead";
   hv.stats.vaults = [QUARRY];
@@ -1152,7 +1259,7 @@ function checkQuests(): string | null {
   return null;
 }
 
-for (const err of [checkVault(), checkQuests(), checkSettle(), checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkBoatCall(), checkSecondPickup(), checkRegionDrop(), checkConnections(), checkAllySelfUp(), checkStompHeight(), checkDropOffHighGround(), checkFieldsReused(), checkFieldsFollowRunner(), checkCliffsStop(), checkNoPits(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill(), checkLeap(), checkLeapLeavesAllyBelow(), checkLeapDowned(), checkLeapAllyCatchesUp(), checkLeapAllyDowned(), checkLeapWithItem(), checkLeapClocks(), checkLeapOffHighGround(), checkLeapUnderRoof()]) {
+for (const err of [checkHideout(), checkVault(), checkQuests(), checkSettle(), checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkBoatCall(), checkSecondPickup(), checkRegionDrop(), checkConnections(), checkAllySelfUp(), checkStompHeight(), checkDropOffHighGround(), checkFieldsReused(), checkFieldsFollowRunner(), checkCliffsStop(), checkNoPits(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill(), checkLeap(), checkLeapLeavesAllyBelow(), checkLeapDowned(), checkLeapAllyCatchesUp(), checkLeapAllyDowned(), checkLeapWithItem(), checkLeapClocks(), checkLeapOffHighGround(), checkLeapUnderRoof()]) {
   if (err) {
     console.error(err);
     process.exit(1);
@@ -1173,6 +1280,7 @@ console.log("waves: median reinforcement squads that beamed in during a raid");
 console.log("ally: teammate's share of the damage, its downs, times it picked the player up (r) and was picked up (h), per run");
 console.log("exit: raids that left by each extraction point of the region (the bot's choice depends on skill)");
 console.log("crowd: median over runs of the most squads / robots fighting the player at once outside the titan fight");
+const pool: Pool = {};
 for (const region of REGIONS.filter((r) => !only || r.id === only)) {
   console.log("");
   console.log(`region: ${region.id} (${region.name})`);
@@ -1239,6 +1347,7 @@ function table(region: RegionId, skill: (typeof SKILLS)[number]) {
       continue;
     }
     ended++;
+    ((pool[skill.name] ??= {})[region] ??= []).push(recordOf(s));
     crowdSq.push(peakSq);
     crowdBots.push(peakBots);
     clearedN.push(s.stats.cleared.length);
@@ -1283,6 +1392,18 @@ function table(region: RegionId, skill: (typeof SKILLS)[number]) {
       regionOf(region).exits.map((id) => `${id} ${exits[id]}`).join(" "),
     ].join(" "),
   );
+}
+if (process.env.RINGFALL_POOL) writeFileSync(process.env.RINGFALL_POOL, JSON.stringify(pool));
+// The hideout's pacing, from the raids above (both regions are needed to plan the drops).
+if (runs > 0 && !only) {
+  console.log("");
+  console.log("hideout pacing: the meta played with these raids, greedy spending (scripts/ringfall-pacing.ts)");
+  const { lines, unreached } = pacing(pool);
+  for (const l of lines) console.log(l);
+  if (unreached.length) {
+    failed = true;
+    console.error(`hideout pacing: never built within the cap: ${unreached.join(", ")}`);
+  }
 }
 if (failed) {
   console.error("FAILED");

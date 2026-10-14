@@ -40,9 +40,22 @@ only with that POI's key; keys drop from the bins of the POI named by its `keyFr
 POIs have a stable `id` (`PoiId` in `map.ts`); saves, quests, `keyFrom` and `EXTRA_BINS` refer to a
 POI by it, never by its place in `POIS` (the run's state may index `POIS` internally). The profile
 is versioned (`Profile.v`), and `parseProfile()` moves older saves forward.
+The hideout is the long-term goal: modules built level by level from specific valuables and
+credits taken from the stash (`build()` in `profile.ts`; levels, costs and prerequisites in
+`HIDEOUT`, effects in `HIDEOUT_EFFECT`, both in `config.ts`; `meta/hideout.ts` holds the pure
+helpers). Their benefits act in the meta: `takeKit()` lends the infirmary's heals, `wares()` sells
+up to `shopRarity()`, `stashCap()` and `pouchSlots()` grow, and the radio reports the next raid's
+boosted POI. Every raid leans one POI's bins of its region to a rare kind (`State.boost`, from
+`boostFor(seed, region)` in `state.ts`, without drawing on the raid's random numbers);
+`Profile.seed` is the next raid's seed, fixed at the base so the report comes true. The escape
+craft is the last module: its last stage records `Profile.escaped` and the hub shows the ending
+once; play goes on. Build quests (`{ t: "build" }`) finish at the base (`claimBuilt()`).
+`sources()` derives where each valuable is found from the loot data (`loot.valuable`, `TOP_BINS`,
+`VAULT`, `ROBOT_DROPS`), for the hub's hints.
 
 ```bash
-npm run sim:ringfall     # gate 2: bots of three skills play whole raids headless, in each region
+npm run sim:ringfall     # gate 2: bots of three skills play whole raids headless, in each region,
+                         # then the hideout's pacing replays the meta with those raids
 npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir raid to the end, a harbor raid
                          # to its first fight, a tour of both); screenshots in shots/ringfall/
 ```
@@ -114,7 +127,8 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   exposes `window.render_game_to_text()`, `window.advanceTime(ms)`, `window.ringfallBot(skill)` and
   `window.ringfallFrameCost(frames)` (draw calls, triangles and time per frame, for the shots gate).
 - `docs/ringfall/balance.md` holds the target curve and the latest `npm run sim:ringfall -- 30` output
-  (a table per region).
+  (a table per region, and the hideout's pacing table from `scripts/ringfall-pacing.ts`: each skill's
+  recorded raids settled in sequence with a greedy spender, the raid at which each level is built).
   Change a number in `config.ts` or `map.ts` only together with a re-run and an update to that file.
 
 ## HITMARK

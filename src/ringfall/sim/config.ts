@@ -270,6 +270,27 @@ export const VALUABLES: Record<ValuableKind, { label: string; value: number; siz
   reactor: { label: "小型炉心", value: 2200, size: 4, rarity: 3 },
 };
 
+/** What the top-floor bins of the high-rises hold instead of their table's valuable, with weights. */
+export const TOP_BINS: [ValuableKind, number][] = [["core", 2], ["gyro", 1], ["board", 2]];
+
+/**
+ * Valuables robots drop: the titan and heavies always theirs, the others one of `scrap`
+ * with its chance (one roll for the lot).
+ */
+export const ROBOT_DROPS = {
+  titan: ["core", "core"] as ValuableKind[],
+  heavy: ["board"] as ValuableKind[],
+  scrap: [["fuse", 0.15], ["parts", 0.15]] as [ValuableKind, number][],
+};
+
+/**
+ * Each raid, one POI of the region dropped into has bins that lean rare: they hold `kind`
+ * (one of the rarer kinds of its own table) as often as `share` times everything else
+ * together. Which POI and kind follow from the raid's seed (`boostFor()` in state.ts), so
+ * the base's radio can tell them before the drop.
+ */
+export const BOOST = { share: 1 };
+
 /** The bag the valuables go in: what does not fit stays on the ground unless something cheaper makes way. */
 export const BAG = { slots: 10 };
 
@@ -306,6 +327,105 @@ export const META = {
   sellShare: 0.4,
   /** The best rarity of weapon and tier of armour the trader sells; better is found in raids. */
   shopRarity: 1 as Rarity,
+  /**
+   * The common valuables the trader also sells, at `markup` times their value, so the
+   * hideout's cheap parts never hold it up; the rarer ones come only from raids.
+   */
+  materials: { kinds: ["fuse", "parts", "wire"] as ValuableKind[], markup: 2 },
+};
+
+export type ModuleId = "generator" | "infirmary" | "workbench" | "storage" | "radio" | "pouch" | "craft";
+
+/** One level of a hideout module: what it takes from the stash, and the module levels it needs first. */
+export interface ModuleLevel {
+  items: [ValuableKind, number][];
+  cash: number;
+  needs: [ModuleId, number][];
+  /** What this level does, in a line, for the base. */
+  does: string;
+}
+
+/**
+ * The hideout at the base: modules built level by level from specific valuables and some
+ * credits, all taken from the stash. The generator powers the rest; the escape craft is the
+ * last project, and finishing it ends the playthrough (the game goes on after).
+ * Each level's effect is the number at its place in the module's own list below
+ * (index 0 is the module unbuilt).
+ */
+export const HIDEOUT: Record<ModuleId, { name: string; note: string; levels: ModuleLevel[] }> = {
+  generator: {
+    name: "発電機",
+    note: "ほかの設備の上の段に電気を回す",
+    levels: [
+      { items: [["fuse", 4], ["wire", 1]], cash: 300, needs: [], does: "設備の Lv1 を動かせる" },
+      { items: [["fuse", 4], ["wire", 3], ["board", 3]], cash: 1500, needs: [], does: "設備の Lv2 を動かせる" },
+      { items: [["board", 4], ["drive", 3], ["gyro", 2]], cash: 4000, needs: [["workbench", 1]], does: "設備の Lv3 と脱出艇の制御系を動かせる" },
+    ],
+  },
+  infirmary: {
+    name: "医務室",
+    note: "毎回のレイドに回復を持たせる（貸出装備でも）",
+    levels: [
+      { items: [["parts", 3], ["fuse", 2]], cash: 500, needs: [["generator", 1]], does: "注射器 +1" },
+      { items: [["parts", 3], ["board", 3]], cash: 1500, needs: [["generator", 2]], does: "注射器 +1、シールドセル +2" },
+      { items: [["board", 3], ["drive", 2], ["gyro", 2]], cash: 3000, needs: [["generator", 3]], does: "注射器 +2、シールドセル +2、医療キット +1" },
+    ],
+  },
+  workbench: {
+    name: "作業台",
+    note: "商人が売る武器とアーマーの質が上がる",
+    levels: [
+      { items: [["parts", 4], ["wire", 2]], cash: 800, needs: [["generator", 1]], does: "商人がエピックまで売る" },
+      { items: [["board", 4], ["drive", 2], ["gyro", 3]], cash: 3500, needs: [["generator", 2]], does: "商人がレジェンドまで売る" },
+    ],
+  },
+  storage: {
+    name: "倉庫",
+    note: "倉庫に置ける数が増える",
+    levels: [
+      { items: [["parts", 3], ["wire", 2]], cash: 600, needs: [], does: "倉庫 +10" },
+      { items: [["wire", 3], ["board", 3]], cash: 1500, needs: [["generator", 1]], does: "倉庫 +10" },
+      { items: [["board", 3], ["drive", 2], ["gyro", 2]], cash: 3000, needs: [["generator", 2]], does: "倉庫 +10" },
+    ],
+  },
+  radio: {
+    name: "無線機",
+    note: "出撃前に島の様子が分かる",
+    levels: [
+      { items: [["wire", 2], ["board", 2], ["drive", 1]], cash: 1200, needs: [["generator", 1]], does: "珍しい物が多い拠点が分かる" },
+      { items: [["board", 3], ["drive", 2], ["gyro", 2]], cash: 3000, needs: [["generator", 2]], does: "その拠点で出やすい物と、レイダーの降りる時刻も分かる" },
+    ],
+  },
+  pouch: {
+    name: "ポーチ",
+    note: "倒れても残る枠が増える",
+    levels: [
+      { items: [["wire", 2], ["board", 2]], cash: 1000, needs: [], does: "ポーチ 3 枠" },
+      { items: [["drive", 3], ["gyro", 2]], cash: 2500, needs: [["generator", 2]], does: "ポーチ 4 枠" },
+    ],
+  },
+  craft: {
+    name: "脱出艇",
+    note: "直せば島を出られる",
+    levels: [
+      { items: [["wire", 4], ["board", 4]], cash: 2500, needs: [["generator", 2], ["workbench", 1]], does: "船体を塞ぐ" },
+      { items: [["gyro", 5], ["drive", 4], ["board", 4]], cash: 5000, needs: [["radio", 1]], does: "航法装置を据える" },
+      { items: [["core", 3], ["board", 6], ["gyro", 4]], cash: 8000, needs: [["generator", 3], ["radio", 2]], does: "制御系をつなぐ" },
+      { items: [["reactor", 1], ["core", 1], ["gyro", 4], ["drive", 3]], cash: 12000, needs: [["workbench", 2]], does: "機関に火を入れる" },
+    ],
+  },
+};
+
+/** The hideout's effects, by module level (index 0 is unbuilt), on top of `META`'s base numbers. */
+export const HIDEOUT_EFFECT = {
+  /** Heals the infirmary adds to every raid's kit, lent like the free kit's. */
+  infirmary: [{}, { syringe: 1 }, { syringe: 1, cell: 2 }, { syringe: 2, cell: 2, medkit: 1 }] as Partial<Record<HealKind, number>>[],
+  /** Steps of rarity the trader sells above `META.shopRarity`. */
+  workbench: [0, 1, 2],
+  /** Room in the stash above `META.stash`. */
+  storage: [0, 10, 20, 30],
+  /** Pouch slots above `META.pouch`. */
+  pouch: [0, 1, 2],
 };
 
 /**

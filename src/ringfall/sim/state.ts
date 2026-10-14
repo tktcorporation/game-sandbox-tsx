@@ -1,4 +1,4 @@
-import { ALLY, DROP, ELITE, ENEMIES, META, RAIDERS, REINFORCE, type ValuableKind, PLAYER, ULT, type EnemyKind, type Flank, type HealKind, type Rarity, type WeaponKind } from "./config";
+import { ALLY, BOOST, DROP, ELITE, ENEMIES, META, RAIDERS, REINFORCE, VALUABLES, type ValuableKind, PLAYER, ULT, type EnemyKind, type Flank, type HealKind, type Rarity, type WeaponKind } from "./config";
 import { EXTRA_BINS, POIS, poiIndex, regionOf, type ExtractId, type RegionId } from "./map";
 import { populate } from "./enemies";
 
@@ -378,6 +378,8 @@ export interface State {
   reinforceN: number;
   /** Seconds until the raiders beam in (Infinity once they have). */
   raiderT: number;
+  /** This raid's POI whose bins lean to a rare kind (`BOOST`), as a POI index. */
+  boost: { poi: number; kind: ValuableKind };
   outcome: Outcome | null;
   /** Seconds the player has stood ready in an extraction point. */
   extractTime: number;
@@ -433,6 +435,31 @@ export const idleInput = (): Input => ({
 
 /** Seconds until a called pickup is there: -1 when it has not been called, 0 once it is there. */
 export const callLeft = (s: State, id: ExtractId) => s.calls[id]?.t ?? -1;
+
+/** A small integer hash, so the boost does not draw on the raid's random numbers. */
+function mix(n: number): number {
+  let h = Math.imul((n >>> 0) ^ 0x9e3779b9, 0x85ebca6b) >>> 0;
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35) >>> 0;
+  return (h ^ (h >>> 16)) >>> 0;
+}
+
+/**
+ * The POI of `region` whose bins lean rare in the raid started from `seed`, and the kind
+ * they lean to: one of its table's kinds of rarity 2 or more.
+ */
+export function boostFor(seed: number, region: RegionId): { poi: number; kind: ValuableKind } {
+  const h = mix(seed);
+  const ids = regionOf(region).pois;
+  const poi = poiIndex(ids[h % ids.length]);
+  const rare = POIS[poi].loot.valuable.map(([k]) => k).filter((k) => VALUABLES[k].rarity >= 2);
+  return { poi, kind: rare[(h >>> 8) % rare.length] };
+}
+
+/** Bin weights in the boosted POI: its kind as often as `BOOST.share` times all the rest. */
+export function boosted(table: [ValuableKind, number][], kind: ValuableKind): [ValuableKind, number][] {
+  const total = table.reduce((n, [, w]) => n + w, 0);
+  return [...table.filter(([k]) => k !== kind), [kind, total * BOOST.share + (table.find(([k]) => k === kind)?.[1] ?? 0)]];
+}
 
 /** A raid dropping into `region`; the default is the reservoir, which the sim gate plays. */
 export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reservoir"): State {
@@ -511,6 +538,7 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
     landedAt: 0,
     reinforceN: 0,
     raiderT: RAIDERS.at,
+    boost: boostFor(seed, region),
     outcome: null,
     extractTime: 0,
     calls: {},
