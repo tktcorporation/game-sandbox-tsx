@@ -729,21 +729,38 @@ function titan(s: State, e: Enemy, d: number) {
 }
 
 /**
- * Where along the segment a→b it first comes within `r` of a body standing at `at` (taken as
- * the vertical segment from knee, 0.4 m, to `top` above its feet), or null. Sampled finely
- * enough that no step skips `r`.
+ * Where on the segment a→b it comes closest to a body standing at `at` (taken as the vertical
+ * segment from knee, 0.4 m, to `top` above its feet), if that is within `r`; else null. Exact
+ * closest points between the two segments, so a fast bolt that only grazes a body still hits.
  */
 function sweptHit(a: Vec3, b: Vec3, r: number, at: Vec3, top: number): Vec3 | null {
-  const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z) / r));
-  for (let i = 1; i <= n; i++) {
-    const t = i / n;
-    const x = a.x + (b.x - a.x) * t;
-    const y = a.y + (b.y - a.y) * t;
-    const z = a.z + (b.z - a.z) * t;
-    const cy = Math.max(at.y + 0.4, Math.min(at.y + top, y));
-    if (Math.hypot(x - at.x, y - cy, z - at.z) < r) return { x, y, z };
+  // Bolt: a + d·s, s in [0, 1]. Body axis: q + (0, h, 0)·t, t in [0, 1].
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const dz = b.z - a.z;
+  const qy = at.y + 0.4;
+  const h = Math.max(0, top - 0.4);
+  const wx = a.x - at.x;
+  const wy = a.y - qy;
+  const wz = a.z - at.z;
+  const dd = dx * dx + dy * dy + dz * dz;
+  const de = dy * h; // d·e with e = (0, h, 0)
+  const ee = h * h;
+  const dw = dx * wx + dy * wy + dz * wz;
+  const ew = h * wy;
+  const den = dd * ee - de * de;
+  let sP = den > 1e-9 ? (de * ew - ee * dw) / den : 0;
+  sP = Math.max(0, Math.min(1, sP));
+  let tP = ee > 1e-9 ? (de * sP + ew) / ee : 0;
+  if (tP < 0 || tP > 1) {
+    tP = Math.max(0, Math.min(1, tP));
+    sP = dd > 1e-9 ? Math.max(0, Math.min(1, (de * tP - dw) / dd)) : 0;
   }
-  return null;
+  const px = a.x + dx * sP;
+  const py = a.y + dy * sP;
+  const pz = a.z + dz * sP;
+  const cy = qy + h * tP;
+  return Math.hypot(px - at.x, py - cy, pz - at.z) < r ? { x: px, y: py, z: pz } : null;
 }
 
 export function stepOrbs(s: State) {

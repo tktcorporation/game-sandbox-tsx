@@ -1211,20 +1211,24 @@ function standoff(at: { x: number; z: number }, dist: number, kinds: EnemyKind[]
 function checkBoltNoTunnel(): string | null {
   const at = openSpot(16, 2, 9);
   if (!at) return "bolt scenario: no open ground for the test";
-  const { s } = standoff(at, 15, ["grunt"]);
-  s.enemies = [];
-  const p = s.player;
   const speed = ENEMIES.grunt.orbSpeed;
   const perTick = speed * TICK;
   // Start so that after 5 ticks the bolt is half a tick short of the player, and after 6 half a tick past.
   const back = perTick * 5.5;
-  s.orbs.push({ id: s.nextId++, pos: { x: p.pos.x, y: p.pos.y + 1.2, z: p.pos.z - back }, vel: { x: 0, y: 0, z: speed }, r: ENEMIES.grunt.orbR, dmg: 10, life: 5, homing: false });
-  let hit = false;
-  for (let i = 0; i < 10; i++) {
-    step(s, idleInput(), false);
-    if (s.events.some((e) => e.t === "hurt")) hit = true;
+  // Straight through the middle, and grazing: 0.55 m to the side, inside the 0.58 m reach of bolt and body.
+  for (const side of [0, 0.55]) {
+    const t = standoff(at, 15, ["grunt"]).s;
+    t.enemies = [];
+    const q = t.player;
+    t.orbs.push({ id: t.nextId++, pos: { x: q.pos.x + side, y: q.pos.y + 1.2, z: q.pos.z - back }, vel: { x: 0, y: 0, z: speed }, r: ENEMIES.grunt.orbR, dmg: 10, life: 5, homing: false });
+    let hit = false;
+    for (let i = 0; i < 10; i++) {
+      step(t, idleInput(), false);
+      if (t.events.some((e) => e.t === "hurt")) hit = true;
+    }
+    if (!hit) return `bolt scenario: a grunt bolt ${side ? "grazing" : "straight through"} the player passed without hitting`;
   }
-  return hit ? null : "bolt scenario: a grunt bolt flew straight through the player without hitting";
+  return null;
 }
 
 /** A pickup's later waves fight once its squad is fighting: they do not stand by as "alert" robots. */
