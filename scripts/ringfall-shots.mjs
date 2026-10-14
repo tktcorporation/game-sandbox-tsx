@@ -344,7 +344,7 @@ const harborTour = [
   ["tour-21-lighthouse", -66, 1.7, -514, -0.97, 0.22],
   ["tour-22-lighthouse-view", -112.9, 33.4, -552, 1.45, -0.2, true],
   ["tour-23-salt-flats", -40, 1.7, -468, 0.75, 0.0],
-  ["tour-24-quay-boat", 100, 1.7, -572, 0.9, -0.22],
+  ["tour-24-quay-boat", 94, 1.7, -578, 1.32, -0.1],
 ];
 for (const [name, x, dy, z, yaw, pitch, abs] of harborTour) {
   const y = abs ? dy : (await page.evaluate(([x, z]) => window.ringfallTerrain(x, z), [x, z])) + dy;
