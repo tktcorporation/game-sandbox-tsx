@@ -574,7 +574,7 @@ export const EXTRACTS: ExtractPoint[] = [
   { id: "flare", name: "台地の回収地点", short: "台地", x: -58, z: -53, radius: 5, hold: 4, needsFlare: true, note: "発煙筒を焚けば 4 秒" },
   { id: "village", name: "廃村の回収地点", short: "廃村", x: -91, z: -63, radius: 5, hold: 15, note: "遠いが静か。15 秒待つ" },
   // The harbor's way off: a boat comes up the channel to the quay.
-  { id: "boat", name: "埠頭のボート", short: "ボート", x: 105, z: -569, radius: 5, hold: 1.5, call: 25, waves: { x: 100, z: -563 }, note: "呼んで 25 秒守る。増援が降りてくる" },
+  { id: "boat", name: "埠頭のボート", short: "ボート", x: 105, z: -580, radius: 5, hold: 1.5, call: 25, waves: { x: 100, z: -563 }, note: "呼んで 25 秒守る。増援が降りてくる" },
 ];
 export const EXTRACT = EXTRACTS[0];
 

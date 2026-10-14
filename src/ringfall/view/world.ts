@@ -31,6 +31,15 @@ const PAVED = new Set(["港町", "埠頭", "高架下", "西の道", "コンテ�
 /** The harbor's tidal channel: its floor and the water over it. */
 /** The water channel the boat comes up, at the harbor's quay. */
 export const CHANNEL = { x0: 88, x1: 170, z0: -600, z1: -583, y: -5.55 };
+/**
+ * Where the boat is on the channel, `t` from 1 (waiting at the far end, mid-channel) to 0
+ * (docked against the quay beside the pickup point, so the player boards it from there).
+ */
+export function boatSpot(quayX: number, t: number) {
+  const mid = (CHANNEL.z0 + CHANNEL.z1) / 2 + 1;
+  const docked = CHANNEL.z1 - 2;
+  return { x: quayX + (CHANNEL.x1 - 6 - quayX) * t, z: docked + (mid - docked) * t };
+}
 
 /** A chunk of the world: its ground and everything built on it, drawn or skipped together. */
 interface Chunk {
@@ -816,9 +825,11 @@ export class World {
         this.scene.add(this.boat);
       }
       const t = boatLeft < 0 ? 1 : Math.min(1, boatLeft / (quay.call ?? 1));
-      const wantX = quay.x + (CHANNEL.x1 - 6 - quay.x) * t;
-      this.boat.position.x += (wantX - this.boat.position.x) * Math.min(1, this.boat.position.x === 0 ? 1 : dt * 2);
-      this.boat.position.set(this.boat.position.x, CHANNEL.y + Math.sin(this.time * 1.7) * 0.06, (CHANNEL.z0 + CHANNEL.z1) / 2 + 1);
+      const want = boatSpot(quay.x, t);
+      const k = Math.min(1, this.boat.position.x === 0 ? 1 : dt * 2);
+      this.boat.position.x += (want.x - this.boat.position.x) * k;
+      this.boat.position.z += (want.z - this.boat.position.z) * k;
+      this.boat.position.y = CHANNEL.y + Math.sin(this.time * 1.7) * 0.06;
       this.boat.rotation.z = Math.sin(this.time * 1.1) * 0.02;
     }
     // A lit flare at the plateau pickup sends up red smoke.

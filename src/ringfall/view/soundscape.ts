@@ -6,7 +6,7 @@ import { callLeft, type GameEvent, type State } from "../sim/state";
 import { terrainHeight } from "../sim/terrain";
 import { getMixer, loop, placeLoop, type Loop, type P3 } from "./audio";
 import { sfx } from "./sfx";
-import { CHANNEL } from "./world";
+import { boatSpot, CHANNEL } from "./world";
 
 /*
  * The game side of the sound: puts the listener at the camera, decides which
@@ -115,7 +115,7 @@ export class Soundscape {
   private craftAt(id: ExtractId, s: State, y: number): P3 {
     const x = EXTRACTS.find((e) => e.id === id)!;
     const k = Math.min(1, Math.max(0, callLeft(s, id)) / (x.call ?? 1));
-    if (id === "boat") return { x: x.x + (CHANNEL.x1 - 6 - x.x) * k, y: CHANNEL.y + 0.6, z: (CHANNEL.z0 + CHANNEL.z1) / 2 + 1 };
+    if (id === "boat") return { ...boatSpot(x.x, k), y: CHANNEL.y + 0.6 };
     return { x: x.x, y, z: x.z - 2 };
   }
 
