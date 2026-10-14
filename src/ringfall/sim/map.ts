@@ -460,9 +460,10 @@ const POI_FRAMES: Poi[] = [
     squads: [
       { name: "船倉", members: [{ kind: "grunt", x: -8, z: -2, face: S }] },
       { name: "船倉の奥", members: [{ kind: "charger", x: 24, z: 2, face: W }] },
-      { name: "甲板", members: [{ kind: "grunt", x: -24, z: 6, y: SHIP_DECK, face: S }] },
-      { name: "甲板の重機", members: [{ kind: "heavy", x: 6, z: 5.5, y: SHIP_DECK, face: S }] },
-      { name: "船橋の屋上", members: [{ kind: "grunt", x: 31, z: 4, y: SHIP_DECK + STOREY * 3, face: S }] },
+      // Up high, robots stand at the parapet: seen from the ground below, and seeing it.
+      { name: "甲板", members: [{ kind: "grunt", x: -24, z: 7.1, y: SHIP_DECK, face: S }] },
+      { name: "甲板の重機", members: [{ kind: "heavy", x: 6, z: 6.75, y: SHIP_DECK, face: S }] },
+      { name: "船橋の前", members: [{ kind: "grunt", x: 30, z: 7.1, y: SHIP_DECK, face: S }] },
       { name: "浜の二体", members: [{ kind: "grunt", x: -12, z: 16, face: S }, { kind: "grunt", x: -9.5, z: 17, face: S }] },
       { name: "巡回ドローン", members: [{ kind: "drone", x: -50, z: 18 }], patrol: [{ x: -50, z: 18 }, { x: 56, z: 18 }, { x: 56, z: -16 }, { x: -50, z: -16 }] },
     ],
@@ -488,7 +489,7 @@ const POI_FRAMES: Poi[] = [
     trigger: 30,
     entry: { x: 8, z: 27, yaw: 0 },
     squads: [
-      { name: "クレーンの上", members: [{ kind: "grunt", x: 0, z: -6, y: CRANE, face: S }] },
+      { name: "クレーンの上", members: [{ kind: "grunt", x: 0.35, z: -6, y: CRANE, face: E }] },
       { name: "通路の重機", members: [{ kind: "heavy", x: -24, z: -13.5, face: E }] },
       { name: "通路の二体", members: [{ kind: "grunt", x: 20, z: 13.5, face: W }, { kind: "grunt", x: 23, z: 13.5, face: W }] },
       { name: "積み荷の上", members: [{ kind: "grunt", x: 23.4, z: 9, y: 5.2, face: S }] },
@@ -519,7 +520,7 @@ const POI_FRAMES: Poi[] = [
     squads: [
       { name: "炉の番", members: [{ kind: "heavy", x: -15, z: -1, face: S }] },
       { name: "B 棟の中", members: [{ kind: "grunt", x: 16, z: -2, face: S }] },
-      { name: "制御棟の屋上", members: [{ kind: "grunt", x: 37, z: -4, y: STOREY * 3, face: W }] },
+      { name: "制御棟の屋上", members: [{ kind: "grunt", x: 37, z: -2.9, y: STOREY * 3, face: S }] },
       { name: "A 棟の屋上", members: [{ kind: "grunt", x: -22, z: 0, y: STOREY * 3, face: S }] },
       { name: "スラグの山", members: [{ kind: "charger", x: -26, z: 12, face: E }] },
       { name: "煙突の二人", members: [{ kind: "grunt", x: -8, z: 18, face: S }, { kind: "grunt", x: -5.5, z: 19, face: S }] },
@@ -784,7 +785,8 @@ function yard(): Box[] {
   out.push(...paint(tower(0, -22, 8, 8, 4, { doors: [["e", "w"]], windows: [[], ["e"], ["w"], ["e", "w"]], open: ["s"] }), "wall", "steel", () => 0, (b) => b.tint === 0));
   // The catwalk from the tower's roof to the far leg, railed both sides, round the cab.
   out.push(rect(-1.2, -18, 1.2, 22, CRANE - 0.3, CRANE, "slab", 1));
-  for (const [z0, z1] of [[-18, 4], [9, 22]] as const) out.push(rect(-1.25, z0, -1.0, z1, CRANE, CRANE + 1.0, "steel", 0), rect(1.0, z0, 1.25, z1, CRANE, CRANE + 1.0, "steel", 0));
+  // Railings knee-high, so the catwalk's guard is seen from the yard below.
+  for (const [z0, z1] of [[-18, 4], [9, 22]] as const) out.push(rect(-1.25, z0, -1.0, z1, CRANE, CRANE + 0.5, "steel", 0), rect(1.0, z0, 1.25, z1, CRANE, CRANE + 0.5, "steel", 0));
   out.push(rect(-2.5, 4, 2.5, 9, CRANE - 0.3, CRANE, "slab", 1));
   out.push(...walls(0, 6.5, 5, 5, CRANE, CRANE + 2.5, ["n", "s"], ["e", "w"]).map((b) => ({ ...b, kind: "steel" as const, tint: 3 })));
   out.push(rect(-2.5, 4, 2.5, 9, CRANE + 2.5, CRANE + 2.8, "slab", 1));

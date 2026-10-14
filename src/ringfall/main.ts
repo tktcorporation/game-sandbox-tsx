@@ -1,6 +1,7 @@
 import { AWARE, TICK, WEAPONS } from "./sim/config";
 import { Bot, SKILLS } from "./sim/bot";
 import { dist2d } from "./sim/geom";
+import { terrainHeight } from "./sim/terrain";
 import { callLeft, freeKit, idleInput, newRun, type GameEvent, type Input, type Kit, type State } from "./sim/state";
 import type { RegionId } from "./sim/map";
 import { settle, type Settlement } from "./meta/profile";
@@ -481,6 +482,7 @@ declare global {
     ringfallChargeUlt: () => void;
     ringfallCamera: (x?: number, y?: number, z?: number, yaw?: number, pitch?: number) => void;
     ringfallFrameCost: (frames: number) => { ms: number; calls: number; triangles: number; chunks: number; of: number };
+    ringfallTerrain: (x: number, z: number) => number;
   }
 }
 
@@ -546,6 +548,9 @@ window.ringfallFrameCost = (frames: number) => {
   for (let i = 0; i < frames; i++) world.render(state, 1 / 60);
   return { ms: +((performance.now() - t0) / frames).toFixed(1), ...world.stats() };
 };
+
+/** Automation only: the ground's height at (x, z), to place the screenshot cameras. */
+window.ringfallTerrain = (x, z) => terrainHeight(x, z);
 
 /** The player's exact view yaw (render_game_to_text rounds it away). */
 window.ringfallYaw = () => state.player.yaw;

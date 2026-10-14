@@ -12,14 +12,15 @@ import { steepAt, terrainHeight } from "./terrain";
 const RES = 0.5;
 const NX = Math.ceil((WORLD.x1 - WORLD.x0) / RES);
 const NZ = Math.ceil((WORLD.z1 - WORLD.z0) / RES);
-let grid: Uint8Array | null = null;
+/** Blocked cells, filled by `blockedCells()` on first use. */
+let grid = new Uint8Array(0);
 const cellX = (v: number) => Math.max(0, Math.min(NX - 1, Math.floor((v - WORLD.x0) / RES)));
 const cellZ = (v: number) => Math.max(0, Math.min(NZ - 1, Math.floor((v - WORLD.z0) / RES)));
 const centerX = (i: number) => WORLD.x0 + (i + 0.5) * RES;
 const centerZ = (j: number) => WORLD.z0 + (j + 0.5) * RES;
 
 function blockedCells(): Uint8Array {
-  if (grid) return grid;
+  if (grid.length) return grid;
   const blocked = new Uint8Array(NX * NZ);
   // A cell is blocked when any part of it is within a body radius of a box, so a
   // body standing in a free cell never overlaps a wall.
@@ -57,10 +58,11 @@ function blockedCells(): Uint8Array {
   return blocked;
 }
 
-const free = (i: number, j: number) => i >= 0 && j >= 0 && i < NX && j < NZ && !blockedCells()[j * NX + i];
+const free = (i: number, j: number) => i >= 0 && j >= 0 && i < NX && j < NZ && !grid[j * NX + i];
 
 /** True if the straight line between two points crosses no blocked cell. */
 export function clearLine(ax: number, az: number, bx: number, bz: number): boolean {
+  blockedCells();
   const len = Math.hypot(bx - ax, bz - az);
   const n = Math.ceil(len / (RES * 0.4));
   for (let k = 1; k < n; k++) {
@@ -105,6 +107,7 @@ export function findPath(
   bx: number,
   bz: number,
 ): { x: number; z: number }[] | null {
+  blockedCells();
   const s = nearestFree(ax, az);
   const g = nearestFree(bx, bz);
   if (!s || !g) return null;

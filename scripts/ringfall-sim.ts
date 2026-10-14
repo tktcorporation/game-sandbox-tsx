@@ -4,7 +4,9 @@
  * a body inside a box, an enemy outside the world). Prints the tables kept in
  * docs/ringfall/balance.md, one per region.
  *
- *   npm run sim:ringfall -- [runsPerSkillAndRegion]
+ *   npm run sim:ringfall -- [runsPerSkillAndRegion] [region]
+ *
+ * With a region id after the count, only that region's table is played.
  */
 import { ALLY, BAG, ENEMIES, NOISE, PLAYER, RAIDERS, REINFORCE, SEARCH, TACTICAL, TICK, VALUABLES, WORLD } from "../src/ringfall/sim/config";
 import { makeNoise } from "../src/ringfall/sim/awareness";
@@ -28,12 +30,13 @@ import { QUESTS, offered } from "../src/ringfall/meta/quests";
 import { META } from "../src/ringfall/sim/config";
 
 const runs = Number(process.argv[2] ?? 12);
+const only = process.argv[3];
 /** The POIs' places in `POIS`, for scenarios that set up a run's state by hand. */
 const SUPPLY = poiIndex("supply");
 const QUARRY = poiIndex("quarry");
 const RELAY = poiIndex("relay");
 const PAD = poiIndex("pad");
-const LIMIT = 20 * 60; // seconds of game time before a run counts as stuck
+const LIMIT = 30 * 60; // seconds of game time before a run counts as stuck
 
 function check(s: State, where: string) {
   const p = s.player.pos;
@@ -1150,7 +1153,7 @@ console.log("waves: median reinforcement squads that beamed in during a raid");
 console.log("ally: teammate's share of the damage, its downs, times it picked the player up (r) and was picked up (h), per run");
 console.log("exit: raids that left by each extraction point of the region (the bot's choice depends on skill)");
 console.log("crowd: median over runs of the most squads / robots fighting the player at once outside the titan fight");
-for (const region of REGIONS) {
+for (const region of REGIONS.filter((r) => !only || r.id === only)) {
   console.log("");
   console.log(`region: ${region.id} (${region.name})`);
   console.log(head.join(" "));

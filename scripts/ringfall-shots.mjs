@@ -196,6 +196,42 @@ const errors = [];
   }
   await page.screenshot({ path: `${out}/m2-fight.png` });
   console.log(`mobile: stick ${s0.player.z} -> ${s1.player.z}, yaw ${yaw0.toFixed(2)} -> ${yaw1.toFixed(2)}, shots ${shots0} -> ${shots1}`);
+  console.log(`mobile reservoir frame: ${JSON.stringify(await page.evaluate(() => window.ringfallFrameCost(20)))}`);
+  await ctx.close();
+}
+
+/*
+ * Phone again, dropping into the harbor: the base's landing choice works by touch, the raid
+ * starts over the harbor, and the map shows both regions.
+ */
+{
+  const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+  const page = await ctx.newPage();
+  page.on("pageerror", (e) => errors.push(`mobile harbor pageerror: ${e.message}`));
+  page.on("console", (m) => m.type() === "error" && !/fonts\.g|ERR_TUNNEL|net::/.test(m.text()) && errors.push(`mobile harbor console: ${m.text()}`));
+  await page.goto(`http://localhost:${port}/ringfall/`, { waitUntil: "load" });
+  await page.waitForTimeout(400);
+  await page.evaluate(() => Object.defineProperty(screen, "orientation", { value: undefined, configurable: true }));
+  await page.tap("#start");
+  await page.waitForTimeout(200);
+  await page.tap("#hub-region [data-arg=harbor]");
+  await page.waitForTimeout(100);
+  await page.screenshot({ path: `${out}/m6-hub-harbor.png` });
+  await page.tap("#hub-free");
+  const read = async () => JSON.parse(await page.evaluate(() => window.render_game_to_text()));
+  const step = (ms) => page.evaluate((t) => window.advanceTime(t), ms);
+  for (let i = 0; i < 80 && (await read()).phase === "drop"; i++) await step(100);
+  const st = await read();
+  if (st.region !== "harbor" || !(st.player.z < -250)) errors.push(`mobile harbor: the raid landed in ${st.region} at ${st.player.x},${st.player.z}`);
+  await step(300);
+  await page.screenshot({ path: `${out}/m7-harbor-landed.png` });
+  const bb = await page.locator("#t-map").boundingBox();
+  const cdp = await ctx.newCDPSession(page);
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: bb.x + bb.width / 2, y: bb.y + bb.height / 2, id: 1 }] });
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await step(200);
+  await page.screenshot({ path: `${out}/m8-map-harbor.png` });
+  console.log(`mobile harbor frame: ${JSON.stringify(await page.evaluate(() => window.ringfallFrameCost(20)))}`);
   await ctx.close();
 }
 
@@ -247,6 +283,11 @@ const read = async () => JSON.parse(await page.evaluate(() => window.render_game
   await picks.nth(2).click();
   await picks.nth(1).click();
   await page.screenshot({ path: `${out}/00-hub-kit.png` });
+  // The landing choice: the harbor shows its line, and the raid below drops into the reservoir.
+  await page.click("#hub-region [data-arg=harbor]");
+  await page.screenshot({ path: `${out}/00-hub-region.png` });
+  if (!/港/.test(await page.evaluate(() => document.getElementById("hub-region").textContent))) errors.push("hub: the harbor's line did not show");
+  await page.click("#hub-region [data-arg=reservoir]");
   await page.click("#hub-go");
   const h2 = await read();
   if (h2.screen !== "game") errors.push(`hub: deploying did not start the raid (${h2.screen})`);
@@ -286,6 +327,27 @@ const tour = [
   ["tour-11-mesa-relay", 66, 8.6, -30, 1.57, 0.02],
 ];
 for (const [name, x, y, z, yaw, pitch] of tour) {
+  await page.evaluate(([x, y, z, yaw, pitch]) => window.ringfallCamera(x, y, z, yaw, pitch), [x, y, z, yaw, pitch]);
+  await page.screenshot({ path: `${out}/${name}.png` });
+}
+// The harbor and the ways there. Heights are above the ground at the camera, or absolute (a deck, a roof).
+const harborTour = [
+  ["tour-12-pass-saddle", -60, 1.7, -228, 0.05, -0.05],
+  ["tour-13-railway-bridge", 100, 1.7, -191, 1.45, 0.32],
+  ["tour-14-bridge-deck", 122, 11.8, -168, 0, -0.04, true],
+  ["tour-15-viaduct", 112, 1.7, -352, -1.57, 0.12],
+  ["tour-16-wreck", -2, 1.7, -522, 0.12, 0.1],
+  ["tour-17-wreck-deck", -30, 8.8, -560, 1.5, 0.02, true],
+  ["tour-18-yard-alley", -138, 1.7, -413.5, 1.57, 0.02],
+  ["tour-19-yard-crane", -100, 15.4 + 1.6, -405, 3.1, -0.42, true],
+  ["tour-20-smelter", 118, 1.7, -384, 0, 0.18],
+  ["tour-21-lighthouse", -66, 1.7, -514, -0.97, 0.22],
+  ["tour-22-lighthouse-view", -114, 33.5, -551, 1.5, -0.22, true],
+  ["tour-23-salt-flats", -40, 1.7, -468, 0.75, 0.0],
+  ["tour-24-quay-boat", 70, 1.7, -566, 1.57, -0.05],
+];
+for (const [name, x, dy, z, yaw, pitch, abs] of harborTour) {
+  const y = abs ? dy : (await page.evaluate(([x, z]) => window.ringfallTerrain(x, z), [x, z])) + dy;
   await page.evaluate(([x, y, z, yaw, pitch]) => window.ringfallCamera(x, y, z, yaw, pitch), [x, y, z, yaw, pitch]);
   await page.screenshot({ path: `${out}/${name}.png` });
 }
@@ -372,10 +434,11 @@ for (let i = 0; i < 25 * 60 * 10; i++) {
     await page.evaluate(() => window.advanceTime(100));
     const closed = await page.evaluate(() => document.getElementById("map").hidden);
     if (!open || !closed) errors.push(`map: M opened ${open}, closed again ${closed}`);
+    console.log(`desktop reservoir frame: ${JSON.stringify(await page.evaluate(() => window.ringfallFrameCost(20)))}`);
     // A vault, from just in front of it: the locked crate reads apart from the supply bins.
     // The quarry's stands on an open terrace, so the camera has a clear view of it.
     const v = s.vaults.find((b) => b.poi === 1);
-    if (s.vaults.length !== 4 || !v) errors.push(`vaults: ${s.vaults.length} on the island`);
+    if (s.vaults.length !== 7 || !v) errors.push(`vaults: ${s.vaults.length} in the world`);
     else {
       await page.evaluate((b) => window.ringfallCamera(b.x + 0.4, b.y + 1.6, b.z + 2.6, 0.12, -0.42), v);
       await shot("26-vault");
@@ -436,6 +499,37 @@ console.log(JSON.stringify((await read()).stats));
   if (h.screen !== "hub" || h.profile.raids !== 1) errors.push(`results: back to base shows ${h.screen} with ${h.profile.raids} raids`);
   await page.waitForTimeout(200);
   await page.screenshot({ path: `${out}/14-hub-after.png` });
+}
+
+// A second raid, into the harbor: the bot (still at the controls) drops there and plays to its first fight.
+{
+  await page.click("#hub-region [data-arg=harbor]");
+  await page.screenshot({ path: `${out}/27-hub-harbor.png` });
+  await page.click("#hub-free");
+  await page.evaluate(() => window.advanceTime(1500));
+  await page.screenshot({ path: `${out}/28-harbor-drop.png` });
+  for (let i = 0; i < 100 && (await read()).phase === "drop"; i++) await page.evaluate(() => window.advanceTime(200));
+  const h = await read();
+  if (h.region !== "harbor" || !(h.player.z < -250) || h.phase !== "play") errors.push(`harbor raid: landed in ${h.region} at ${h.player.x},${h.player.z} (${h.phase})`);
+  await page.evaluate(() => window.advanceTime(400));
+  await page.screenshot({ path: `${out}/29-harbor-landed.png` });
+  const lines = await page.evaluate(() => document.getElementById("obj-exits").children.length);
+  if (lines !== 1) errors.push(`harbor raid: the objective card lists ${lines} ways out, not the boat alone`);
+  console.log(`desktop harbor frame: ${JSON.stringify(await page.evaluate(() => window.ringfallFrameCost(20)))}`);
+  await page.keyboard.press("KeyM");
+  await page.evaluate(() => window.advanceTime(100));
+  await page.screenshot({ path: `${out}/30-map-harbor.png` });
+  await page.keyboard.press("KeyM");
+  let fought = false;
+  for (let i = 0; i < 3000 && !fought; i++) {
+    await page.evaluate(() => window.advanceTime(100));
+    const st = await read();
+    if (st.phase !== "play") break;
+    fought = st.enemies.filter((e) => e.aware === "engaged" && e.mode !== "spawning").length >= 1 && st.orbs >= 1;
+  }
+  await page.screenshot({ path: `${out}/31-harbor-fight.png` });
+  const end = await read();
+  console.log(`harbor raid: fought ${fought}, cleared ${end.stats.cleared.join(",") || "-"}, at ${end.player.x},${end.player.z}`);
 }
 console.log(`screens: ${[...taken].join(", ")}`);
 await browser.close();

@@ -225,8 +225,10 @@ export class Bot {
         let to = { x: tgt.pos.x, z: tgt.pos.z };
         if (tgt.pos.y > p.pos.y + 1.5) {
           if (!this.angle || this.angle.id !== tgt.id || s.time > this.angle.until) {
-            const spot = this.angleSpot(tgt);
-            this.angle = { id: tgt.id, until: s.time + 4, x: spot?.x ?? to.x, z: spot?.z ?? to.z };
+            // With no spot that sees it, back off into the open rather than stand under it: a
+            // robot that heard the bot comes to its roof's edge to look, and shows itself there.
+            const spot = this.angleSpot(tgt) ?? this.backOff(tgt) ?? to;
+            this.angle = { id: tgt.id, until: s.time + 4, x: spot.x, z: spot.z };
           }
           to = { x: this.angle.x, z: this.angle.z };
         }
@@ -435,10 +437,13 @@ export class Bot {
 
   private angle: { id: number; until: number; x: number; z: number } | null = null;
 
-  /** The nearest ground spot (by route) within 40 m of a robot up high that sees its body. */
+  /**
+   * The nearest ground spot (by route) within 55 m of a robot up high that sees its body:
+   * a tall deck's guard is seen only from well back.
+   */
   private angleSpot(tgt: Enemy): { x: number; z: number } | null {
     let best: { x: number; z: number; len: number } | null = null;
-    for (let r = 10; r <= 40; r += 5)
+    for (let r = 10; r <= 55; r += 5)
       for (let a = 0; a < 2 * Math.PI; a += Math.PI / 12) {
         const x = tgt.pos.x + Math.sin(a) * r;
         const z = tgt.pos.z - Math.cos(a) * r;
@@ -447,9 +452,27 @@ export class Bot {
         if (groundAt(x, z, 0.4, g + 0.3) > g + 0.3 || [0.3, 1.0, 1.6].some((h) => solidAt(x, g + h, z))) continue;
         if (!los({ x, y: g + 1.6, z }, bodyCenter(tgt))) continue;
         const route = this.route(x, z);
-        if (route && route.len < 70 && (!best || route.len < best.len)) best = { x, z, len: route.len };
+        if (route && route.len < 90 && (!best || route.len < best.len)) best = { x, z, len: route.len };
       }
     return best && { x: best.x, z: best.z };
+  }
+
+  /** Open ground under open sky 25-40 m from a robot up high, on the bot's side of it, that it can walk to. */
+  private backOff(tgt: Enemy): { x: number; z: number } | null {
+    const away = Math.atan2(this.from.x - tgt.pos.x, -(this.from.z - tgt.pos.z));
+    for (const r of [32, 25, 40])
+      for (const da of [0, 0.5, -0.5, 1, -1, 1.6, -1.6]) {
+        const a = away + da;
+        const x = tgt.pos.x + Math.sin(a) * r;
+        const z = tgt.pos.z - Math.cos(a) * r;
+        if (!inWorld(x, z, 3)) continue;
+        const g = terrainHeight(x, z);
+        if (groundAt(x, z, 0.4, g + 0.3) > g + 0.3 || [0.3, 1.0, 1.6].some((h) => solidAt(x, g + h, z))) continue;
+        if (ceilingAt(x, z, 0.4, g + 60, g) < Infinity) continue; // indoors: the robot would never see it
+        const route = this.route(x, z);
+        if (route && route.len < 90) return { x, z };
+      }
+    return null;
   }
 
   /** The nearest standable spot within 10 m that no member of the robot's squad can see. */
