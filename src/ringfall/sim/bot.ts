@@ -139,7 +139,7 @@ export class Bot {
     if (s.phase === "drop") {
       goal = regionOf(s.region).land;
     } else if (aim < 0 && (callLeft(s, this.exit(s).id) === 0 || !tgt || dist2d(tgt.pos, p.pos) > 70 || this.slipAway(s, live))) {
-      goal = this.exit(s);
+      goal = this.waitSpot(s) ?? this.exit(s);
     } else if (tgt && dist2d(tgt.pos, p.pos) < 70) {
       fight = true;
     } else if (s.ally.down > 0 && dist2d(s.ally.pos, p.pos) < 45) {
@@ -212,7 +212,9 @@ export class Bot {
       this.retreatCool -= TICK;
       const broken = p.shield <= 0 && p.hp < PLAYER.hp * 0.8;
       const fighting = live.filter((e) => e.aware === "engaged" && e.kind !== "titan" && dist2d(e.pos, p.pos) < 60);
-      const pressed = watching.length >= 2 || (broken && watching.length >= 1);
+      // While its call is running the robots come to the pickup whatever it does: it holds and fights.
+      const calling = aim < 0 && !!this.exit(s).call && callLeft(s, this.exit(s).id) > 0;
+      const pressed = !calling && (watching.length >= 2 || (broken && watching.length >= 1));
       if (!this.retreat && pressed && tgt.kind !== "titan" && onTerrain(p.pos) && this.retreatCool <= 0) {
         this.retreatCool = 1.5;
         if (this.rnd() < sk.retreat) {
@@ -309,8 +311,9 @@ export class Bot {
       } else if (!sees && onTerrain(p.pos)) {
         // Walk a ground path toward it. A robot up high is hidden by its own roof edge or
         // tower walls from close below, so walk to the nearest ground spot that sees it instead.
-        let to = { x: tgt.pos.x, z: tgt.pos.z };
-        if (tgt.pos.y > p.pos.y + 1.5) {
+        // On its way out it does not go looking for robots it cannot see: it makes for the pickup.
+        let to = aim < 0 ? (this.waitSpot(s) ?? { x: this.exit(s).x, z: this.exit(s).z }) : { x: tgt.pos.x, z: tgt.pos.z };
+        if (aim >= 0 && tgt.pos.y > p.pos.y + 1.5) {
           if (!this.angle || this.angle.id !== tgt.id || s.time > this.angle.until) {
             // With no spot that sees it, back off into the open rather than stand under it: a
             // robot that heard the bot comes to its roof's edge to look, and shows itself there.
@@ -365,7 +368,7 @@ export class Bot {
       }
       // Losing a fight against a squad or more: leap away and start over somewhere else.
       const left = (p.hp + p.shield) / (PLAYER.hp + PLAYER.shieldByTier[p.armor]);
-      if (p.ult >= 1 && left < 0.4 && engaged.length >= 2 && tgt.kind !== "titan") {
+      if (p.ult >= 1 && left < 0.4 && engaged.length >= 2 && tgt.kind !== "titan" && !calling) {
         this.escape = this.escapeSpot(s, engaged);
         if (this.escape) {
           inp.ult = true;
@@ -395,6 +398,10 @@ export class Bot {
     } else if (goal) {
       const d = dist2d(goal, p.pos);
       inp.moveZ = d > 1.2 ? 1 : 0;
+      // Not into a pickup that has to be called while hurt with something to heal with: top up first.
+      const x = this.exit(s);
+      const hurt = (p.hp + p.shield) / (PLAYER.hp + PLAYER.shieldByTier[p.armor]) < 0.75;
+      if (aim < 0 && x.call && !s.calls[x.id] && dist2d(x, p.pos) < x.radius + 6 && (hurt || p.healing) && pickHeal(s)) inp.moveZ = 0;
       if (Math.abs(wrapAngle(want.yaw - p.yaw)) > 0.5) inp.moveZ = 0.4;
       if (w && w.mag < magSize(w) * 0.6 && p.reload <= 0) inp.reload = true;
       const max = PLAYER.shieldByTier[p.armor];
@@ -485,6 +492,36 @@ export class Bot {
     const open = POIS.map((poi, i) => ({ poi, i })).filter(({ poi, i }) => mine.includes(poi.id) && !s.cleared[i] && (!poi.boss || s.stats.cleared.length >= others));
     open.sort((a, b) => dist2d(a.poi, p.pos) - dist2d(b.poi, p.pos));
     return open[0]?.i ?? -1;
+  }
+
+  private wait: { id: string; x: number; z: number } | null = null;
+
+  /**
+   * While a pickup it called is on its way: a spot near it, out of sight of where the robots
+   * beam in, to wait at instead of standing in the open. Null once the pickup is there (it
+   * goes in then), for a pickup that is not called, or when there is no such spot.
+   */
+  private waitSpot(s: State): { x: number; z: number } | null {
+    const x = this.exit(s);
+    if (!x.call || !s.calls[x.id] || callLeft(s, x.id) <= 1.5) return null;
+    if (this.wait?.id === x.id) return this.wait;
+    const at = x.waves ?? x;
+    const from = { x: at.x, y: terrainHeight(at.x, at.z) + 1.8, z: at.z };
+    let best: { x: number; z: number; d: number } | null = null;
+    for (const r of [4, 7, 10, 13])
+      for (let a = 0; a < 2 * Math.PI; a += Math.PI / 8) {
+        const px = x.x + Math.sin(a) * r;
+        const pz = x.z - Math.cos(a) * r;
+        if (!inWorld(px, pz, 3)) continue;
+        const g = terrainHeight(px, pz);
+        if (groundAt(px, pz, 0.4, g + 0.3) > g + 0.3 || [0.3, 1.0, 1.6].some((h) => solidAt(px, g + h, pz))) continue;
+        if (los(from, { x: px, y: g + 1.1, z: pz })) continue;
+        const route = findPath(x.x, x.z, px, pz);
+        if (!route) continue;
+        if (!best || r < best.d) best = { x: px, z: pz, d: r };
+      }
+    this.wait = best ? { id: x.id, x: best.x, z: best.z } : { id: x.id, x: NaN, z: NaN };
+    return Number.isFinite(this.wait.x) ? this.wait : null;
   }
 
   /**

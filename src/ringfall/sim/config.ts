@@ -368,9 +368,9 @@ export const ELITE = {
   hp: 1.6,
   dmg: 1.3,
   cooldown: 0.75,
-  turn: 1.5,
+  turn: 1.2,
   /** Degrees either side of facing it can fire into (`AWARE.fireCone` for plain robots). */
-  fireCone: 70,
+  fireCone: 50,
   /** How far to the side of the player a flanking raider goes. */
   flankDist: 11,
 };

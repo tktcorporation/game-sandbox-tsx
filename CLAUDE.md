@@ -94,7 +94,7 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   gate's `ally` column is its damage share, downs and revives.
 - `EXTRACTS` in `map.ts` are the ways off; `stepExtract()` in `world.ts` runs them: a pickup with
   `call` (the dropship, the boat) is called by standing in it and comes after its time, while robots
-  beam in round its `waves` point (`SHIP_WAVES`; `State.calls` keeps each call); the flare; the waits.
+  beam in round its `waves` point out of the player's sight and come to look at the pickup (`SHIP_WAVES`; `State.calls` keeps each call); the flare; the waits.
   The sim gate's `exit` column counts which one each run used; the bot leaves by a way off of the
   region it dropped into, chosen by its skill, and takes only that region's POIs.
 - `nav.ts` is ground path finding for the bot only (built on first use); the game never reads it. Robots beamed in from
