@@ -8,10 +8,13 @@ export const TICK = 1 / 60;
 export const DEG = Math.PI / 180;
 
 export const WORLD = {
-  /** The world's bounds on each axis. The coast's cliffs (terrain.ts) stop bodies well inside them. */
-  x0: -215,
-  x1: 215,
-  z0: -215,
+  /**
+   * The world's bounds on each axis: the reservoir in the south (+z), the harbor in the
+   * north. The coast's cliffs (terrain.ts) stop bodies well inside them.
+   */
+  x0: -230,
+  x1: 230,
+  z0: -660,
   z1: 215,
   gravity: 15,
   stepUp: 0.45,

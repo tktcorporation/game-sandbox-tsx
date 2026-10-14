@@ -1,15 +1,19 @@
 import type { EnemyKind, ValuableKind } from "../sim/config";
-import { POIS, type ExtractId, type PoiId } from "../sim/map";
+import { POIS, type ExtractId, type PoiId, type RegionId } from "../sim/map";
 import type { State } from "../sim/state";
 import { haulValue } from "../sim/results";
 
-/** What a quest asks for. Kills, clears and vaults count even on a wipe; leaving needs getting off. */
+/**
+ * What a quest asks for. Kills, clears and vaults count even on a wipe; leaving needs
+ * getting off. A vault goal may name the POI whose vault it wants, and a haul goal the
+ * region the raid dropped into.
+ */
 export type Goal =
   | { t: "kill"; kind: EnemyKind; n: number }
   | { t: "clear"; poi: PoiId }
-  | { t: "vault" }
+  | { t: "vault"; poi?: PoiId }
   | { t: "extract"; exit: ExtractId }
-  | { t: "haul"; value: number }
+  | { t: "haul"; value: number; region?: RegionId }
   | { t: "deliver"; valuable: ValuableKind; n: number };
 
 /** Reward items, written like stash items (kept loose here to avoid a cycle with profile.ts). */
@@ -31,8 +35,9 @@ export interface Quest {
 }
 
 /**
- * The trader's quests, in the order they open up. They lead round the island: the near
- * POIs first, a vault once a key is in hand, the titan last.
+ * The trader's quests, in the order they open up. They lead round the reservoir first:
+ * the near POIs, a vault once a key is in hand, the titan. Then over the mountains to the
+ * harbor: the wreck, the yard's vault, the boat, and a haul brought out of the harbor.
  */
 export const QUESTS: Quest[] = [
   { id: "grunts", title: "見張りの間引き", text: "グラントを 8 体倒す", goal: { t: "kill", kind: "grunt", n: 8 }, after: [], reward: { cash: 600, items: [{ t: "heal", kind: "cell" }, { t: "heal", kind: "cell" }] } },
@@ -46,6 +51,10 @@ export const QUESTS: Quest[] = [
   { id: "drives", title: "記憶装置の納品", text: "記憶装置を 2 個納品する", goal: { t: "deliver", valuable: "drive", n: 2 }, after: ["relay"], reward: { cash: 1500, items: [{ t: "weapon", kind: "hornet", rarity: 3 }] } },
   { id: "titan", title: "タイタン討伐", text: "発着場を制圧する", goal: { t: "clear", poi: "pad" }, after: ["heavies", "vault"], reward: { cash: 4000, items: [{ t: "weapon", kind: "talon", rarity: 3 }] } },
   { id: "haul", title: "大荷物", text: "回収品 3000 以上を持って脱出する", goal: { t: "haul", value: 3000 }, after: ["titan"], reward: { cash: 3000, items: [{ t: "armor", tier: 3 }] } },
+  { id: "wreck", title: "難破船の調査", text: "港湾地帯の難破船を制圧する", goal: { t: "clear", poi: "wreck" }, after: ["haul"], reward: { cash: 3000, items: [{ t: "key", poi: "yard" }] } },
+  { id: "boat", title: "船で帰る", text: "埠頭のボートで脱出する", goal: { t: "extract", exit: "boat" }, after: ["haul"], reward: { cash: 2000, items: [{ t: "heal", kind: "battery" }, { t: "heal", kind: "battery" }] } },
+  { id: "yardVault", title: "ヤードの保管庫", text: "コンテナヤードの保管庫を開ける", goal: { t: "vault", poi: "yard" }, after: ["wreck"], reward: { cash: 3500, items: [{ t: "weapon", kind: "maul", rarity: 3 }] } },
+  { id: "harborHaul", title: "港の積み荷", text: "港湾地帯に降りて、回収品 4000 以上を持って脱出する", goal: { t: "haul", value: 4000, region: "harbor" }, after: ["boat", "yardVault"], reward: { cash: 5000, items: [{ t: "weapon", kind: "pike", rarity: 3 }] } },
 ];
 
 /** How much a goal needs (a count, or 1 for a yes/no goal). */
@@ -71,11 +80,11 @@ export function raidCredit(g: Goal, s: State): number {
     case "clear":
       return s.stats.cleared.some((i) => POIS[i].id === g.poi) ? 1 : 0;
     case "vault":
-      return s.stats.vaults.length ? 1 : 0;
+      return s.stats.vaults.some((i) => !g.poi || POIS[i].id === g.poi) ? 1 : 0;
     case "extract":
       return out && s.extractedAt === g.exit ? 1 : 0;
     case "haul":
-      return out && haulValue(s) >= g.value ? 1 : 0;
+      return out && haulValue(s) >= g.value && (!g.region || s.region === g.region) ? 1 : 0;
     case "deliver":
       return 0;
   }

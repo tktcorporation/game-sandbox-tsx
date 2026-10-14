@@ -5,7 +5,7 @@ import { EXTRACTS, POIS, type ExtractPoint } from "./map";
 import { spawnEnemy, spawnSpot } from "./enemies";
 import { cellsAround, fieldTo, nextStep } from "./hunt";
 import { raiseAlly, startHelp } from "./ally";
-import { rand, type Input, type Loot, type State, type Weapon } from "./state";
+import { callLeft, rand, type Input, type Loot, type State, type Weapon } from "./state";
 import type { EnemyKind, ValuableKind } from "./config";
 import { makeNoise } from "./awareness";
 
@@ -448,9 +448,9 @@ export function extractHere(s: State): ExtractPoint | null {
   return EXTRACTS.find((x) => dist2d(p.pos, x) < x.radius && Math.abs(p.pos.y - groundAt(x.x, x.z, 0.4, 99)) < 1.5) ?? null;
 }
 
-/** Whether an extraction point can be used now (the dropship has landed, the player has a flare). */
+/** Whether an extraction point can be used now (its pickup has come, the player has a flare). */
 export function extractReady(s: State, x: ExtractPoint): boolean {
-  if (x.call) return s.shipCall === 0;
+  if (x.call) return callLeft(s, x.id) === 0;
   if (x.needsFlare) return s.player.flares > 0;
   return true;
 }
@@ -459,17 +459,18 @@ export function stepExtract(s: State) {
   if (s.phase !== "play") return;
   const p = s.player;
   const here = p.downed > 0 ? null : extractHere(s);
-  const ship = EXTRACTS.find((x) => x.call)!;
-  if (here === ship && s.shipCall < 0) {
-    s.shipCall = ship.call!;
-    s.shipWaveT = SHIP_WAVES.first;
-    s.events.push({ t: "shipCalled" });
+  // Standing in a pickup that has to be called calls it; it comes after its time, with robots beaming in round it.
+  if (here?.call && !s.calls[here.id]) {
+    s.calls[here.id] = { t: here.call, wave: 0, waveT: SHIP_WAVES.first, squad: -1 };
+    s.events.push({ t: "shipCalled", id: here.id });
   }
-  if (s.shipCall > 0) {
-    s.shipCall = Math.max(0, s.shipCall - TICK);
-    if (s.shipCall === 0) s.events.push({ t: "shipLanded" });
-    s.shipWaveT -= TICK;
-    if (s.shipWaveT <= 0 && s.shipWave < SHIP_WAVES.waves.length) shipWave(s, ship);
+  for (const x of EXTRACTS) {
+    const c = s.calls[x.id];
+    if (!c || c.t <= 0) continue;
+    c.t = Math.max(0, c.t - TICK);
+    if (c.t === 0) s.events.push({ t: "shipLanded", id: x.id });
+    c.waveT -= TICK;
+    if (c.waveT <= 0 && c.wave < SHIP_WAVES.waves.length) shipWave(s, x);
   }
   if (here && extractReady(s, here)) {
     if (here.needsFlare && s.extractTime === 0) s.events.push({ t: "flareLit" });
@@ -484,27 +485,28 @@ export function stepExtract(s: State) {
   } else s.extractTime = 0;
 }
 
-/** The squad the dropship's waves join, kept apart from the timed reinforcements. */
+/** The name of the squads a called pickup's waves join, kept apart from the timed reinforcements. */
 export const SHIP_SQUAD = "降下部隊";
 
-/** Robots beam in round the pad while the dropship is on its way. */
+/** Robots beam in round a called pickup (the landing pad, the quay) while it is on its way. */
 function shipWave(s: State, ship: ExtractPoint) {
-  s.shipWaveT = SHIP_WAVES.every;
-  const kinds = SHIP_WAVES.waves[s.shipWave++];
-  let squad = s.squads.findIndex((q) => q.name === SHIP_SQUAD);
+  const c = s.calls[ship.id]!;
+  c.waveT = SHIP_WAVES.every;
+  const kinds = SHIP_WAVES.waves[c.wave++];
+  let squad = c.squad;
   if (squad < 0) {
-    squad = s.squads.length;
+    squad = c.squad = s.squads.length;
     s.squads.push({ name: SHIP_SQUAD, poi: -1, patrol: [], leg: 0, engaged: true, roam: true, sinceSeen: 0, last: { x: ship.x, z: ship.z } });
   }
-  const pad = POIS.find((q) => q.boss)!;
+  const at = ship.waves ?? ship;
   for (const kind of kinds) {
     if (s.enemies.filter((e) => e.squad === squad).length >= SHIP_WAVES.maxAlive) break;
     const a = rand(s) * Math.PI * 2;
-    const e = spawnEnemy(s, kind, pad.x + Math.sin(a) * SHIP_WAVES.radius, pad.z - Math.cos(a) * SHIP_WAVES.radius, -1, squad, { appear: true });
+    const e = spawnEnemy(s, kind, at.x + Math.sin(a) * SHIP_WAVES.radius, at.z - Math.cos(a) * SHIP_WAVES.radius, -1, squad, { appear: true });
     e.aware = "engaged";
     e.detect = 1;
   }
   s.squads[squad].engaged = true;
   s.squads[squad].sinceSeen = 0;
-  s.events.push({ t: "shipWave" });
+  s.events.push({ t: "shipWave", id: ship.id });
 }

@@ -1,10 +1,10 @@
 import * as THREE from "three";
 import { ENEMIES, PLAYER, TITAN, WEAPONS, WORLD, type EnemyKind } from "../sim/config";
-import { BOXES, EXTRACT, EXTRACTS, POIS } from "../sim/map";
+import { BOXES, EXTRACTS } from "../sim/map";
 import { groundAt } from "../sim/geom";
-import { DAM_FACE, floorLevel, highGround, LANDS, LEVEL, steepAt, terrainHeight } from "../sim/terrain";
-import type { GameEvent, State, Vec3 } from "../sim/state";
-import { PAL, RARITY_COLOR, SCOPE_IN, buildAlly, buildBin, buildBox, mergeStatic, buildCare, buildDropship, buildEnemy, buildGun, buildLootItem, flat, glow, haloSprite, type EnemyModel } from "./models";
+import { DAM_FACE, floorLevel, highGround, LANDS, LEVEL, offshore, steepAt, surfaceAt, terrainHeight } from "../sim/terrain";
+import { callLeft, type GameEvent, type State, type Vec3 } from "../sim/state";
+import { PAL, RARITY_COLOR, SCOPE_IN, buildAlly, buildBin, buildBoat, buildBox, mergeChunk, buildCare, buildDropship, buildEnemy, buildGun, buildLootItem, flat, glow, haloSprite, type EnemyModel } from "./models";
 
 /*
  * Renders a State in first person. It reads the state and the tick's events and
@@ -15,6 +15,40 @@ import { PAL, RARITY_COLOR, SCOPE_IN, buildAlly, buildBin, buildBox, mergeStatic
 const EYE_LERP = 12;
 /** How far past the world's bounds the terrain mesh reaches: far enough to fill the horizon. */
 const HORIZON = 235;
+/** Side of the square chunks the world's ground and buildings are drawn and culled in. */
+const CHUNK = 64;
+/**
+ * Where the fog ends: a chunk wholly beyond it is skipped, since it would be drawn in the
+ * fog's colour, which is the sky's at the horizon.
+ */
+const FOG_FAR = 420;
+/** Robots, bins and loot further than this are not drawn: they are specks even through a scope. */
+const THINGS_FAR = 220;
+
+/** Ground the harbor paints apart: the old bay floor white with salt, and the paved town and quays. */
+const SALT = new Set(["塩田", "難破船"]);
+const PAVED = new Set(["港町", "埠頭", "高架下", "西の道", "コンテナヤード", "製錬所", "製錬所の坂", "駅の坂"]);
+/** The harbor's tidal channel: its floor and the water over it. */
+/** The water channel the boat comes up, at the harbor's quay. */
+export const CHANNEL = { x0: 88, x1: 170, z0: -600, z1: -583, y: -5.55 };
+/**
+ * Where the boat is on the channel, `t` from 1 (waiting at the far end, mid-channel) to 0
+ * (docked against the quay beside the pickup point, so the player boards it from there).
+ */
+export function boatSpot(quayX: number, t: number) {
+  const mid = (CHANNEL.z0 + CHANNEL.z1) / 2 + 1;
+  const docked = CHANNEL.z1 - 2;
+  return { x: quayX + (CHANNEL.x1 - 6 - quayX) * t, z: docked + (mid - docked) * t };
+}
+
+/** A chunk of the world: its ground and everything built on it, drawn or skipped together. */
+interface Chunk {
+  group: THREE.Group;
+  x0: number;
+  z0: number;
+  x1: number;
+  z1: number;
+}
 
 const hash = (x: number, z: number) => {
   const v = Math.sin(x * 12.9898 + z * 78.233) * 43758.5453;
@@ -31,6 +65,48 @@ function noise(x: number, z: number): number {
   const c = hash(xi, zi + 1);
   const d = hash(xi + 1, zi + 1);
   return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+}
+
+const COL = {
+  sand: new THREE.Color(PAL.sand),
+  dark: new THREE.Color(PAL.sandDark),
+  rock: new THREE.Color(PAL.rock),
+  rockDark: new THREE.Color(PAL.rockDark),
+  mud: new THREE.Color(PAL.mud),
+  mudDark: new THREE.Color(PAL.mudDark),
+  tide: new THREE.Color(PAL.tide),
+  concrete: new THREE.Color(PAL.concrete),
+  concreteDark: new THREE.Color(PAL.concreteDark),
+  salt: new THREE.Color(PAL.salt),
+  saltDark: new THREE.Color(PAL.saltDark),
+  paved: new THREE.Color(PAL.paved),
+  pavedDark: new THREE.Color(PAL.pavedDark),
+};
+const groundMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+
+/** The colour of a ground triangle centred on (x, z), spanning heights lo..hi. */
+function groundColour(c: THREE.Color, x: number, z: number, lo: number, hi: number) {
+  const h = (lo + hi) / 2;
+  const cliff = steepAt(x, z) || hi - lo > 2.2;
+  const k = noise(x * 0.08, z * 0.08);
+  if (cliff && DAM_FACE(x, z)) c.copy(COL.concrete).lerp(COL.concreteDark, noise(x * 0.5, h * 0.3) * 0.35);
+  // Below the old waterline the walls are bleached in bands; above it, bare red rock.
+  else if (cliff && h < LEVEL.shore) c.copy(COL.tide).lerp(COL.rock, Math.max(0, Math.min(1, (h - LEVEL.shore) / 3 + 1)) * 0.5 + noise(x * 0.3, h * 0.6) * 0.2);
+  else if (cliff) c.copy(COL.rock).lerp(COL.rockDark, noise(x * 0.3, z * 0.1 + h * 0.2));
+  // The unclimbable high ground: weathered rock, darker than anything walked on.
+  else if (highGround(x, z)) c.copy(COL.rockDark).lerp(COL.rock, k * 0.6);
+  else {
+    const at = surfaceAt(x, z);
+    // Salt crust split by darker cracks.
+    if (SALT.has(at)) c.copy(COL.salt).lerp(COL.saltDark, noise(x * 0.35, z * 0.35) > 0.62 ? 0.8 : k * 0.25);
+    else if (PAVED.has(at)) c.copy(COL.paved).lerp(COL.pavedDark, noise(x * 0.5, z * 0.5) > 0.66 ? 0.6 : k * 0.25);
+    else if (at === "水路" || floorLevel(x, z) <= LEVEL.lakebed + 0.5) c.copy(COL.mud).lerp(COL.mudDark, noise(x * 0.4, z * 0.4) > 0.6 ? 0.6 : k * 0.3);
+    else {
+      c.copy(COL.sand).lerp(COL.dark, k > 0.62 ? 0.7 : k * 0.3);
+      // Higher levels a touch lighter, so the steps read from afar.
+      c.offsetHSL(0, 0, Math.max(-0.05, Math.min(0.05, h * 0.006)));
+    }
+  }
 }
 
 interface Particle {
@@ -85,6 +161,8 @@ export class World {
   private flash: THREE.Sprite;
   private muzzleLight = new THREE.PointLight(0xffd27a, 0, 8, 2);
   private clouds: THREE.Sprite[] = [];
+  private chunks: Chunk[] = [];
+  private boat: THREE.Group | null = null;
   private readonly skyDome = this.sky();
   private dummy = new THREE.Object3D();
 
@@ -107,6 +185,8 @@ export class World {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.autoClear = false;
+    // Counted over the whole frame (both passes and the shadows), not just the last call.
+    this.renderer.info.autoReset = false;
     container.appendChild(this.renderer.domElement);
 
     this.scene.fog = new THREE.Fog(PAL.skyHorizon, 110, 420);
@@ -123,12 +203,8 @@ export class World {
     sc.far = 220;
     this.sun.shadow.bias = -0.0006;
     this.scene.add(this.sun, this.sun.target);
-    this.scene.add(this.terrain());
+    this.buildChunks();
     this.scene.add(this.ally.root);
-    const statics = new THREE.Group();
-    BOXES.forEach((b, i) => statics.add(buildBox(b, i)));
-    this.scene.add(mergeStatic(statics));
-    this.scatterRocks();
     this.addClouds();
 
 
@@ -193,7 +269,13 @@ export class World {
     return m;
   }
 
-  private terrain(): THREE.Mesh {
+  /**
+   * The ground and everything built on it, cut into CHUNK-metre squares: each square's
+   * terrain, boxes and boulders are merged into a mesh or two, so that a chunk is a couple
+   * of draw calls, is culled by the camera's view as a whole, and is skipped beyond the fog
+   * (render). The cliffs past the world's bounds, out to the horizon, are one coarse mesh.
+   */
+  private buildChunks() {
     // Fine spacing inside the world's bounds, coarse out on the cliffs to the horizon.
     const ticks = (lo: number, hi: number) => {
       const out: number[] = [];
@@ -204,6 +286,73 @@ export class World {
     };
     const xs = ticks(WORLD.x0, WORLD.x1);
     const zs = ticks(WORLD.z0, WORLD.z1);
+    const nx = Math.ceil((WORLD.x1 - WORLD.x0) / CHUNK);
+    const nz = Math.ceil((WORLD.z1 - WORLD.z0) / CHUNK);
+    const roots: THREE.Group[] = [];
+    for (let j = 0; j < nz; j++)
+      for (let i = 0; i < nx; i++) {
+        const x0 = WORLD.x0 + i * CHUNK;
+        const z0 = WORLD.z0 + j * CHUNK;
+        const x1 = Math.min(WORLD.x1, x0 + CHUNK);
+        const z1 = Math.min(WORLD.z1, z0 + CHUNK);
+        const ground = this.groundMesh(
+          xs.filter((v) => v >= x0 && v <= x1),
+          zs.filter((v) => v >= z0 && v <= z1),
+          () => true,
+        );
+        const group = new THREE.Group();
+        group.add(ground);
+        this.chunks.push({ group, x0, z0, x1, z1 });
+        roots.push(new THREE.Group());
+      }
+    const chunkOf = (x: number, z: number) => {
+      const i = Math.max(0, Math.min(nx - 1, Math.floor((x - WORLD.x0) / CHUNK)));
+      const j = Math.max(0, Math.min(nz - 1, Math.floor((z - WORLD.z0) / CHUNK)));
+      return j * nx + i;
+    };
+    BOXES.forEach((b, n) => roots[chunkOf((b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2)].add(buildBox(b, n)));
+    // Boulders along the foot of the coast's cliffs, where a land's coast is the world's.
+    let r = 11;
+    const rnd = () => ((r = (r * 16807) % 2147483647) / 2147483647);
+    const geo = new THREE.DodecahedronGeometry(1, 0);
+    for (const land of LANDS)
+      for (let k = 0; k < 220; k++) {
+        const a = rnd() * Math.PI * 2;
+        const dx = Math.cos(a);
+        const dz = Math.sin(a);
+        const rr = land.radius(Math.atan2(dz, dx)) + rnd() * 5;
+        const x = land.x + dx * rr;
+        const z = land.z + dz * rr;
+        const color = rnd() < 0.5 ? PAL.rock : PAL.rockDark;
+        const sc = 1.5 + rnd() * 3.5;
+        const sy = sc * (0.6 + rnd() * 0.9);
+        const rot = [rnd(), rnd() * 6, rnd()] as const;
+        if (offshore(x, z) < -3) continue; // inside another land: not the coast
+        const m = new THREE.Mesh(geo, flat(color));
+        m.scale.set(sc, sy, sc);
+        m.rotation.set(rot[0], rot[1], rot[2]);
+        m.position.set(x, terrainHeight(x, z) - sc * 0.3, z);
+        roots[chunkOf(x, z)].add(m);
+      }
+    this.chunks.forEach((c, n) => {
+      if (roots[n].children.length) c.group.add(mergeChunk(roots[n]));
+      this.scene.add(c.group);
+    });
+    // Out past the bounds: the coarse ring of cliffs.
+    const inside = (x: number, z: number) => x > WORLD.x0 && x < WORLD.x1 && z > WORLD.z0 && z < WORLD.z1;
+    this.scene.add(this.groundMesh(xs, zs, (cx, cz) => !inside(cx, cz)));
+    // The last water in the harbor, over the floor of its channel.
+    const water = new THREE.Mesh(
+      new THREE.PlaneGeometry(CHANNEL.x1 - CHANNEL.x0, CHANNEL.z1 - CHANNEL.z0).rotateX(-Math.PI / 2),
+      new THREE.MeshLambertMaterial({ color: PAL.water, transparent: true, opacity: 0.82 }),
+    );
+    water.position.set((CHANNEL.x0 + CHANNEL.x1) / 2, CHANNEL.y, (CHANNEL.z0 + CHANNEL.z1) / 2);
+    water.receiveShadow = true;
+    this.chunks[chunkOf(water.position.x, water.position.z)].group.add(water);
+  }
+
+  /** The ground over the grid of `xs` by `zs`, keeping the quads whose middle `keep` accepts. */
+  private groundMesh(xs: number[], zs: number[], keep: (x: number, z: number) => boolean): THREE.Mesh {
     const n = xs.length;
     const pos = new Float32Array(n * zs.length * 3);
     for (let j = 0; j < zs.length; j++)
@@ -211,6 +360,7 @@ export class World {
     const idx: number[] = [];
     for (let j = 0; j < zs.length - 1; j++)
       for (let i = 0; i < n - 1; i++) {
+        if (!keep((xs[i] + xs[i + 1]) / 2, (zs[j] + zs[j + 1]) / 2)) continue;
         const a = j * n + i;
         idx.push(a, a + n, a + 1, a + 1, a + n, a + n + 1);
       }
@@ -220,17 +370,8 @@ export class World {
     const flatGeo = geo.toNonIndexed();
     const p = flatGeo.attributes.position;
     const colors = new Float32Array(p.count * 3);
-    const sand = new THREE.Color(PAL.sand);
-    const dark = new THREE.Color(PAL.sandDark);
-    const rock = new THREE.Color(PAL.rock);
-    const rockDark = new THREE.Color(PAL.rockDark);
-    const mud = new THREE.Color(PAL.mud);
-    const mudDark = new THREE.Color(PAL.mudDark);
-    const tide = new THREE.Color(PAL.tide);
-    const concrete = new THREE.Color(PAL.concrete);
-    const concreteDark = new THREE.Color(PAL.concreteDark);
     const c = new THREE.Color();
-    // Colour each triangle as a whole: rock where it is a cliff, sand elsewhere.
+    // Colour each triangle as a whole: rock where it is a cliff, the ground's own colour elsewhere.
     for (let t = 0; t < p.count; t += 3) {
       let x = 0;
       let z = 0;
@@ -242,51 +383,14 @@ export class World {
         lo = Math.min(lo, p.getY(t + k));
         hi = Math.max(hi, p.getY(t + k));
       }
-      const h = (lo + hi) / 2;
-      const cliff = steepAt(x, z) || hi - lo > 2.2;
-      const k = noise(x * 0.08, z * 0.08);
-      if (cliff && DAM_FACE(x, z)) c.copy(concrete).lerp(concreteDark, noise(x * 0.5, h * 0.3) * 0.35);
-      // Below the old waterline the walls are bleached in bands; above it, bare red rock.
-      else if (cliff && h < LEVEL.shore) c.copy(tide).lerp(rock, Math.max(0, Math.min(1, (h - LEVEL.shore) / 3 + 1)) * 0.5 + noise(x * 0.3, h * 0.6) * 0.2);
-      else if (cliff) c.copy(rock).lerp(rockDark, noise(x * 0.3, z * 0.1 + h * 0.2));
-      // The unclimbable high ground: weathered rock, darker than anything walked on.
-      else if (highGround(x, z)) c.copy(rockDark).lerp(rock, k * 0.6);
-      else if (floorLevel(x, z) <= LEVEL.lakebed + 0.5) c.copy(mud).lerp(mudDark, noise(x * 0.4, z * 0.4) > 0.6 ? 0.6 : k * 0.3);
-      else {
-        c.copy(sand).lerp(dark, k > 0.62 ? 0.7 : k * 0.3);
-        // Higher levels a touch lighter, so the steps read from afar.
-        c.offsetHSL(0, 0, Math.max(-0.05, Math.min(0.05, h * 0.006)));
-      }
+      groundColour(c, x, z, lo, hi);
       for (let k = 0; k < 3; k++) colors.set([c.r, c.g, c.b], (t + k) * 3);
     }
     flatGeo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
     flatGeo.computeVertexNormals();
-    const m = new THREE.Mesh(flatGeo, new THREE.MeshLambertMaterial({ vertexColors: true }));
+    const m = new THREE.Mesh(flatGeo, groundMat);
     m.receiveShadow = true;
     return m;
-  }
-
-  private scatterRocks() {
-    let r = 11;
-    const rnd = () => ((r = (r * 16807) % 2147483647) / 2147483647);
-    const geo = new THREE.DodecahedronGeometry(1, 0);
-    // Boulders along the foot of the cliffs round each land mass.
-    for (const land of LANDS)
-      for (let i = 0; i < 220; i++) {
-        const a = rnd() * Math.PI * 2;
-        const dx = Math.cos(a);
-        const dz = Math.sin(a);
-        const rr = land.radius(Math.atan2(dz, dx)) + rnd() * 5;
-        const x = land.x + dx * rr;
-        const z = land.z + dz * rr;
-        const m = new THREE.Mesh(geo, flat(rnd() < 0.5 ? PAL.rock : PAL.rockDark));
-        const s = 1.5 + rnd() * 3.5;
-        m.scale.set(s, s * (0.6 + rnd() * 0.9), s);
-        m.rotation.set(rnd(), rnd() * 6, rnd());
-        m.position.set(x, terrainHeight(x, z) - s * 0.3, z);
-        m.castShadow = true;
-        this.scene.add(m);
-      }
   }
 
   private addClouds() {
@@ -506,6 +610,11 @@ export class World {
 
     for (const c of this.clouds) c.visible = drop || p.pos.y > 30;
 
+    // Chunks wholly past the fog are skipped (the camera's view culls the rest), and so are
+    // robots, bins and loot far off.
+    for (const c of this.chunks) c.group.visible = Math.hypot(Math.max(c.x0 - fx, 0, fx - c.x1), Math.max(c.z0 - fz, 0, fz - c.z1)) < FOG_FAR;
+    const near = (o: THREE.Object3D) => (o.visible = Math.hypot(o.position.x - fx, o.position.z - fz) < THINGS_FAR);
+
     // --- teammate
     const a = s.ally;
     const am = this.ally;
@@ -551,6 +660,14 @@ export class World {
       const k = ENEMIES[e.kind];
       const m = v.m;
       m.root.position.set(e.pos.x, e.pos.y + (k.fly > 0 ? Math.sin(this.time * 3 + e.id) * 0.12 : 0), e.pos.z);
+      // The arrival beam goes once the robot is down, near or far; a far one's is not drawn.
+      const close = near(m.root);
+      if (v.spawnBeam && e.mode !== "spawning") {
+        this.scene.remove(v.spawnBeam);
+        v.spawnBeam = null;
+      }
+      if (v.spawnBeam) v.spawnBeam.visible = close;
+      if (!close) continue;
       m.body.rotation.y = -e.yaw;
       if (e.mode === "spawning") {
         const t = Math.max(0, 1 - e.timer / (e.kind === "titan" ? 2.2 : 0.9));
@@ -558,10 +675,6 @@ export class World {
         if (k.fly > 0) m.root.position.y = e.pos.y + (1 - t) * 10;
       } else {
         m.root.scale.setScalar(1);
-        if (v.spawnBeam) {
-          this.scene.remove(v.spawnBeam);
-          v.spawnBeam = null;
-        }
       }
       if (v.spawnBeam) (v.spawnBeam.material as THREE.MeshBasicMaterial).opacity = 0.15 + Math.random() * 0.1;
       const sp = Math.hypot(e.vel.x, e.vel.z);
@@ -656,6 +769,7 @@ export class World {
         this.scene.add(g);
       }
       g.position.set(l.pos.x, l.pos.y + (l.kind === "shard" ? 0.5 : 0), l.pos.z);
+      if (!near(g)) continue;
       g.rotation.y = this.time * (l.kind === "shard" ? 5 : 1.2) + l.id;
     }
     const present = new Set(s.loot.map((l) => l.id));
@@ -673,6 +787,7 @@ export class World {
         this.bins.set(b.id, v);
         this.scene.add(v.root);
       }
+      if (!near(v.root)) continue;
       v.lid.rotation.x += ((b.open ? -1.9 : 0) - v.lid.rotation.x) * Math.min(1, dt * 10);
       (v.seam.material as THREE.MeshBasicMaterial).color.setHex(b.open ? 0x3a3f4a : 0xffffff);
     }
@@ -689,16 +804,33 @@ export class World {
     // --- extraction
     this.extractRings.forEach((r) => (r.visible = s.phase === "play"));
     // The dropship comes once called, and is low over the pad when it lands.
-    if (s.phase !== "drop" && s.shipCall >= 0) {
+    const ship = EXTRACTS.find((x) => x.id === "ship")!;
+    const shipLeft = callLeft(s, "ship");
+    if (s.phase !== "drop" && shipLeft >= 0) {
       if (!this.dropship) {
         this.dropship = buildDropship();
-        this.dropship.position.set(EXTRACT.x, terrainHeight(EXTRACT.x, EXTRACT.z) + 90, EXTRACT.z - 2);
+        this.dropship.position.set(ship.x, terrainHeight(ship.x, ship.z) + 90, ship.z - 2);
         this.scene.add(this.dropship);
       }
-      const call = EXTRACT.call ?? 1;
-      const want = terrainHeight(EXTRACT.x, EXTRACT.z) + 4.5 + 70 * Math.min(1, s.shipCall / call);
+      const want = terrainHeight(ship.x, ship.z) + 4.5 + 70 * Math.min(1, shipLeft / (ship.call ?? 1));
       this.dropship.position.y += (want - this.dropship.position.y) * Math.min(1, dt * 0.8);
       this.dropship.rotation.z = Math.sin(this.time * 1.3) * 0.03;
+    }
+    // The boat waits at the channel's far end; once called it comes up to the quay, and lies there when it is there.
+    const quay = EXTRACTS.find((x) => x.id === "boat")!;
+    const boatLeft = callLeft(s, "boat");
+    {
+      if (!this.boat) {
+        this.boat = buildBoat();
+        this.scene.add(this.boat);
+      }
+      const t = boatLeft < 0 ? 1 : Math.min(1, boatLeft / (quay.call ?? 1));
+      const want = boatSpot(quay.x, t);
+      const k = Math.min(1, this.boat.position.x === 0 ? 1 : dt * 2);
+      this.boat.position.x += (want.x - this.boat.position.x) * k;
+      this.boat.position.z += (want.z - this.boat.position.z) * k;
+      this.boat.position.y = CHANNEL.y + Math.sin(this.time * 1.7) * 0.06;
+      this.boat.rotation.z = Math.sin(this.time * 1.1) * 0.02;
     }
     // A lit flare at the plateau pickup sends up red smoke.
     const here = EXTRACTS.find((x) => x.needsFlare);
@@ -767,10 +899,17 @@ export class World {
     this.gunCam.fov = 55 - ads * 8;
     this.gunCam.updateProjectionMatrix();
 
+    this.renderer.info.reset();
     this.renderer.clear();
     this.renderer.render(this.scene, this.camera);
     this.renderer.clearDepth();
     this.renderer.render(this.gunScene, this.gunCam);
+  }
+
+  /** What the last frame cost: draw calls and triangles, and how many chunks were drawn. */
+  stats() {
+    const r = this.renderer.info.render;
+    return { calls: r.calls, triangles: r.triangles, chunks: this.chunks.filter((c) => c.group.visible).length, of: this.chunks.length };
   }
 
   /** Drop everything that belongs to a run, before starting another. */
@@ -790,6 +929,8 @@ export class World {
     this.careBeam.visible = false;
     if (this.dropship) this.scene.remove(this.dropship);
     this.dropship = null;
+    if (this.boat) this.scene.remove(this.boat);
+    this.boat = null;
     this.particles = [];
   }
 }

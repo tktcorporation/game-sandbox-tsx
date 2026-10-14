@@ -1,29 +1,31 @@
 /**
- * Writes a top-down picture of the island (terrain shaded by height, cliffs dark,
- * boxes grey, POIs, robots, spawn and extract) to the path given, for checking a
- * layout by eye: `npx tsx scripts/ringfall-topdown.ts out.png [x z size]` (the optional
- * square, centre and side in metres, zooms in on one place).
+ * Writes a top-down picture of the world (terrain shaded by height, cliffs dark, boxes
+ * grey, POIs, robots, each region's drop and the ways off) to the path given, for
+ * checking a layout by eye: `npx tsx scripts/ringfall-topdown.ts out.png [x z size]`
+ * (the optional square, centre and side in metres, zooms in on one place).
  */
 import { writeFileSync } from "node:fs";
 import { deflateSync } from "node:zlib";
 import { WORLD } from "../src/ringfall/sim/config";
-import { BOXES, EXTRACT, POIS, ROAMERS, SPAWN } from "../src/ringfall/sim/map";
+import { BOXES, EXTRACTS, POIS, REGIONS, ROAMERS } from "../src/ringfall/sim/map";
 import { terrainHeight, steepAt } from "../src/ringfall/sim/terrain";
 
 const [cx, cz, size] = process.argv.slice(3).map(Number);
-const span = size || WORLD.half * 2;
-const ox = size ? cx - span / 2 : -WORLD.half;
-const oz = size ? cz - span / 2 : -WORLD.half;
-const PX = Math.max(1, Math.round(860 / span)); // pixels per metre
-const W = span * PX;
-const img = new Uint8Array(W * W * 3);
+const spanX = size || WORLD.x1 - WORLD.x0;
+const spanZ = size || WORLD.z1 - WORLD.z0;
+const ox = size ? cx - spanX / 2 : WORLD.x0;
+const oz = size ? cz - spanZ / 2 : WORLD.z0;
+const PX = Math.max(1, Math.round(860 / Math.max(spanX, spanZ))); // pixels per metre
+const W = Math.round(spanX * PX);
+const HT = Math.round(spanZ * PX);
+const img = new Uint8Array(W * HT * 3);
 const put = (x: number, z: number, c: [number, number, number]) => {
   const i = Math.floor((x - ox) * PX);
   const j = Math.floor((z - oz) * PX);
-  if (i < 0 || j < 0 || i >= W || j >= W) return;
+  if (i < 0 || j < 0 || i >= W || j >= HT) return;
   img.set(c, (j * W + i) * 3);
 };
-for (let j = 0; j < W; j++)
+for (let j = 0; j < HT; j++)
   for (let i = 0; i < W; i++) {
     const x = i / PX + ox;
     const z = j / PX + oz;
@@ -45,8 +47,8 @@ for (const p of POIS) {
   dot(p.entry.x, p.entry.z, 2, [40, 200, 80]);
 }
 for (const sq of ROAMERS) for (const m of sq.members) dot(m.x, m.z, 1.5, [160, 20, 160]);
-dot(SPAWN.x, SPAWN.z, 3, [40, 120, 255]);
-dot(EXTRACT.x, EXTRACT.z, 3, [255, 255, 255]);
+for (const r of REGIONS) dot(r.drop.x, r.drop.z, 3, [40, 120, 255]);
+for (const x of EXTRACTS) dot(x.x, x.z, 3, [255, 255, 255]);
 
 // Minimal PNG writer.
 const crcTable = new Uint32Array(256).map((_, n) => {
@@ -67,14 +69,14 @@ const chunk = (type: string, data: Uint8Array) => {
   out.writeUInt32BE(crc(out.subarray(4, 8 + data.length)), 8 + data.length);
   return out;
 };
-const raw = Buffer.alloc((W * 3 + 1) * W);
-for (let j = 0; j < W; j++) {
+const raw = Buffer.alloc((W * 3 + 1) * HT);
+for (let j = 0; j < HT; j++) {
   raw[j * (W * 3 + 1)] = 0;
   Buffer.from(img.subarray(j * W * 3, (j + 1) * W * 3)).copy(raw, j * (W * 3 + 1) + 1);
 }
 const ihdr = Buffer.alloc(13);
 ihdr.writeUInt32BE(W, 0);
-ihdr.writeUInt32BE(W, 4);
+ihdr.writeUInt32BE(HT, 4);
 ihdr[8] = 8;
 ihdr[9] = 2;
 writeFileSync(process.argv[2] ?? "topdown.png", Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk("IHDR", ihdr), chunk("IDAT", deflateSync(raw)), chunk("IEND", new Uint8Array())]));

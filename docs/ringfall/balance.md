@@ -30,21 +30,38 @@
 
 ## 現在の結果
 
+目標の表はダム湖の値で、港湾地帯には別の目標を置いていない。港湾にはタイタンがいないため、弱点命中率はダム湖より低く出る。
+
 ```
-30 runs per skill. alive: share of raids that got off the island (the rest were wiped out)
-time: minutes from landing to leaving; cleared: median POIs cleared; haul and score: medians over raids that got off the island
+30 runs per skill and region. alive: share of raids that got off (the rest were wiped out)
+time: minutes from landing to leaving; cleared: median POIs cleared; haul and score: medians over raids that got off
 flank: share of hits from behind a robot or before it noticed the player
 waves: median reinforcement squads that beamed in during a raid
 ally: teammate's share of the damage, its downs, times it picked the player up (r) and was picked up (h), per run
-exit: raids that left by each extraction point (the bot's choice depends on skill)
+exit: raids that left by each extraction point of the region (the bot's choice depends on skill)
 crowd: median over runs of the most squads / robots fighting the player at once outside the titan fight
+
+region: reservoir (ダム湖)
 skill     alive time(med) cleared haul(med) score(med) downs acc crit leap crowd flank waves ally               rank               exit
-beginner  100%  2.6m      2       790       1590       0.1   60% 3%   0.3 2/4   6%    0     27% 0.3d 0.0r 0.1h S0 A0 B19 C11 -0   ship 0 flare 0 village 30
-casual    83%   5.9m      4       1750      4450       0.4   83% 12%  0.4 2/4   4%    2     22% 1.1d 0.0r 0.2h S11 A14 B0 C0 -5   ship 25 flare 0 village 0
-good      93%   5.7m      4       1650      4350       0.3   90% 37%  0.4 2/4   5%    2     18% 1.1d 0.0r 0.1h S10 A18 B0 C0 -2   ship 28 flare 0 village 0
+beginner  100%  2.5m      2       870       1670       0.0   61% 3%   0.2 2/4   6%    0     28% 0.2d 0.0r 0.1h S0 A0 B19 C11 -0   ship 0 flare 0 village 30
+casual    80%   6.1m      4       2000      4700       0.6   85% 13%  1.0 2/5   4%    2     21% 1.5d 0.0r 0.2h S15 A9 B0 C0 -6    ship 24 flare 0 village 0
+good      80%   5.8m      4       1740      4440       0.6   87% 37%  0.9 2/4   5%    2     17% 1.4d 0.0r 0.2h S9 A15 B0 C0 -6    ship 24 flare 0 village 0
+
+region: harbor (港湾地帯)
+skill     alive time(med) cleared haul(med) score(med) downs acc crit leap crowd flank waves ally               rank               exit
+beginner  87%   3.8m      2       1230      2030       0.3   47% 3%   0.6 2/4   4%    1     31% 1.3d 0.0r 0.0h S0 A0 B18 C8 -4    boat 26
+casual    83%   4.9m      3       980       2180       0.4   68% 4%   0.6 2/4   8%    1     21% 1.1d 0.0r 0.0h S0 A1 B24 C0 -5    boat 25
+good      90%   4.6m      3       1080      2280       0.3   75% 18%  0.4 2/4   9%    1     18% 1.0d 0.0r 0.1h S0 A1 B26 C0 -3    boat 27
 ```
 
-弱点命中率（crit）は普通 12%、上手い 37% で、目標（15〜25%、40% 以上）をわずかに下回る。
+目標から外れている値:
+
+- ダム湖の上手い（good）の生還 80% が目標（85〜95%）を下回り、ダウンも 0.6 で目標（0.5 以下）を超える。
+- ダム湖の普通（casual）の crowd は 2 部隊・5 体で、目標（4 体以下）を 1 体超える。
+- 港湾の初心者（beginner）の生還 87% が、ダム湖の初心者の目標（90% 以上）を下回る。
+- 弱点命中率（crit）は、ダム湖の普通 13%、上手い 37% で、目標（15〜25%、40% 以上）をわずかに下回る。
+
+全体の数値（`config.ts`）は 2 地域で共通にしてある。広い世界での手触りは人が遊んで確かめ、そのうえで地域ごとの調整を決める。
 
 30 周ずつの生還率は、乱数の引き方だけで 10% 前後ぶれる。
 

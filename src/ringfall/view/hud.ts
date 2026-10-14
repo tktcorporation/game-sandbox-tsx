@@ -3,9 +3,9 @@ import { itemName, rewardList } from "./hub";
 import { ALLY, AWARE, BAG, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, SCORE, TACTICAL, VALUABLES, WEAPONS, type Flank } from "../sim/config";
 import { magSize } from "../sim/combat";
 import { dist2d } from "../sim/geom";
-import { EXTRACTS, POIS } from "../sim/map";
+import { EXTRACTS, POIS, regionHere, regionOf } from "../sim/map";
 import { bagUsed, extractHere, extractReady, makeRoom, poiAt, searchTime, useTarget } from "../sim/world";
-import { enemyHp, enemyShield, type GameEvent, type State, type Vec3 } from "../sim/state";
+import { callLeft, enemyHp, enemyShield, type GameEvent, type State, type Vec3 } from "../sim/state";
 import { haulValue, rank } from "../sim/results";
 import { pickHeal } from "../sim/player";
 import { RARITY_CSS, SCOPE_IN } from "./models";
@@ -177,11 +177,13 @@ export class Hud {
       case "raiders":
         this.banner("レイダーが降下した", "精鋭部隊がこちらを狩りに来る。横から回り込んでくる");
         break;
-      case "shipCalled":
-        this.banner("ドロップシップを呼んだ", `到着まで ${EXTRACTS[0].call} 秒。増援が降りてくる`);
+      case "shipCalled": {
+        const x = EXTRACTS.find((o) => o.id === e.id)!;
+        this.banner(`${x.short}を呼んだ`, `到着まで ${x.call} 秒。増援が降りてくる`);
         break;
+      }
       case "shipLanded":
-        this.banner("ドロップシップ着陸", "乗り込め", true);
+        this.banner(e.id === "ship" ? "ドロップシップ着陸" : `${EXTRACTS.find((o) => o.id === e.id)!.short}到着`, "乗り込め", true);
         break;
       case "flareLit":
         this.toast("発煙筒を焚いた：回収を待て", 3);
@@ -529,8 +531,8 @@ export class Hud {
   }
 
   /**
-   * Extraction points: a line each on the objective card with its condition, and no distance or
-   * marker; where they are is on the map (M).
+   * Extraction points of the region the player is in: a line each on the objective card with
+   * its condition, and no distance or marker; where they are is on the map (M).
    */
   private exits(s: State) {
     const p = s.player;
@@ -539,16 +541,18 @@ export class Hud {
       return;
     }
     const lines: string[] = [];
+    const exits = regionHere(p.pos).exits.map((id) => EXTRACTS.find((x) => x.id === id)!);
     // The phone layout keeps only the nearest exit's line, so the card stays above the vitals.
-    const nearest = EXTRACTS.reduce((best, x, i) => (dist2d(p.pos, x) < dist2d(p.pos, EXTRACTS[best]) ? i : best), 0);
-    EXTRACTS.forEach((x, i) => {
+    const nearest = exits.reduce((best, x, i) => (dist2d(p.pos, x) < dist2d(p.pos, exits[best]) ? i : best), 0);
+    exits.forEach((x, i) => {
       const ready = extractReady(s, x);
+      const left = callLeft(s, x.id);
       const state = x.call
-        ? s.shipCall < 0
+        ? left < 0
           ? x.note
-          : s.shipCall > 0
-            ? `到着まで ${Math.ceil(s.shipCall)} 秒：持ちこたえろ`
-            : "着陸：乗り込め"
+          : left > 0
+            ? `到着まで ${Math.ceil(left)} 秒：持ちこたえろ`
+            : "着いた：乗り込め"
         : x.needsFlare
           ? p.flares > 0
             ? "発煙筒あり：4 秒で回収"
@@ -556,7 +560,7 @@ export class Hud {
           : x.note;
       const locked = x.needsFlare && !ready;
       // A called ship or a flare in hand is news worth a line even on the phone.
-      const live = (x.call && s.shipCall >= 0) || (x.needsFlare && ready);
+      const live = (x.call && left >= 0) || (x.needsFlare && ready);
       const cls = [locked && "locked", i === nearest && "near", live && "live"].filter(Boolean).join(" ");
       lines.push(`<div class="${cls}"><b>${x.short}</b><span>${state}</span></div>`);
     });
@@ -621,7 +625,7 @@ export class Hud {
     const t = useTarget(s);
     const x = t ? null : extractHere(s);
     if (x) {
-      if (x.call && s.shipCall > 0) return `ドロップシップ到着まで ${Math.ceil(s.shipCall)} 秒`;
+      if (x.call && callLeft(s, x.id) > 0) return `${x.short}到着まで ${Math.ceil(callLeft(s, x.id))} 秒`;
       if (x.needsFlare && p.flares <= 0) return "発煙筒がない：高い建物の最上階の補給箱にある";
       return `脱出中 ${Math.floor((s.extractTime / x.hold) * 100)}%`;
     }
@@ -676,7 +680,10 @@ export class Hud {
     const lost = s.outcome !== "extracted";
     const haul = (Object.keys(VALUABLES) as (keyof typeof VALUABLES)[]).map((k) => [VALUABLES[k].label, s.player.haul.filter((h) => h === k).length] as const).filter(([, n]) => n > 0);
     $("pois").innerHTML = [
-      ...POIS.map((p, i) => `<span>${p.name}<b>${s.cleared[i] ? "制圧" : s.visited[i] ? "立ち寄り" : "-"}</b></span>`),
+      // The POIs of the region dropped into, and any visited in the other.
+      ...POIS.map((p, i) => ({ p, i }))
+        .filter(({ p, i }) => regionOf(s.region).pois.includes(p.id) || s.visited[i])
+        .map(({ p, i }) => `<span>${p.name}<b>${s.cleared[i] ? "制圧" : s.visited[i] ? "立ち寄り" : "-"}</b></span>`),
       // What came home is listed beside the results; what was lost is struck through here.
       ...(lost ? haul.map(([label, n]) => `<span class="lost">${label}<b>× ${n}</b></span>`) : []),
       `<span>回収の価値<b>${lost ? `${r.haul}（失った）` : r.haul}</b></span>`,

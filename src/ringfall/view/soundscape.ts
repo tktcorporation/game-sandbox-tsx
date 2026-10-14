@@ -1,11 +1,12 @@
 import { Vector3, type Camera } from "three";
 import { ENEMIES } from "../sim/config";
 import { ceilingAt, los } from "../sim/geom";
-import { EXTRACT } from "../sim/map";
-import type { GameEvent, State } from "../sim/state";
+import { EXTRACTS, type ExtractId } from "../sim/map";
+import { callLeft, type GameEvent, type State } from "../sim/state";
 import { terrainHeight } from "../sim/terrain";
 import { getMixer, loop, placeLoop, type Loop, type P3 } from "./audio";
 import { sfx } from "./sfx";
+import { boatSpot, CHANNEL } from "./world";
 
 /*
  * The game side of the sound: puts the listener at the camera, decides which
@@ -50,8 +51,8 @@ export class Soundscape {
   private breeze: Loop | null = null;
   private gust: Loop | null = null;
   private rush: Loop | null = null;
-  private ship: Loop | null = null;
-  private shipY = 0;
+  /** Engines of the extraction craft that have been called: the dropship, the boat. */
+  private crafts = new Map<ExtractId, { loop: Loop; y: number }>();
   private steps = new Map<number, { x: number; z: number; t: number; n: number }>();
   /** Robot step sounds allowed in the current window (rate limit). */
   private stepTokens = 4;
@@ -82,7 +83,7 @@ export class Soundscape {
 
     const play = running && s.phase !== "done";
     this.wind(s, ear, play);
-    this.dropship(s, play, ear);
+    this.craft(s, play, ear);
     if (play && s.phase === "play") {
       this.robotSteps(s, ear, dt);
       this.ambience(ear, dt);
@@ -110,26 +111,42 @@ export class Soundscape {
     this.rush?.filter.frequency.setTargetAtTime(500 + 1600 * fall, t, 0.15);
   }
 
-  /** The dropship's engines, from where it hovers, once called. */
-  private dropship(s: State, play: boolean, ear: P3) {
-    const on = play && s.phase === "play" && s.shipCall >= 0;
-    if (!on) {
-      this.ship?.stop();
-      this.ship = null;
-      return;
+  /** Where a called craft is: the dropship drops onto its pad, the boat comes up the channel to the quay. */
+  private craftAt(id: ExtractId, s: State, y: number): P3 {
+    const x = EXTRACTS.find((e) => e.id === id)!;
+    const k = Math.min(1, Math.max(0, callLeft(s, id)) / (x.call ?? 1));
+    if (id === "boat") return { ...boatSpot(x.x, k), y: CHANNEL.y + 0.6 };
+    return { x: x.x, y, z: x.z - 2 };
+  }
+
+  /** The engines of each extraction craft, from where it is, once called. */
+  private craft(s: State, play: boolean, ear: P3) {
+    for (const x of EXTRACTS) {
+      if (!x.call) continue;
+      const left = callLeft(s, x.id);
+      let c = this.crafts.get(x.id);
+      if (!play || s.phase !== "play" || left < 0) {
+        c?.loop.stop();
+        this.crafts.delete(x.id);
+        continue;
+      }
+      const boat = x.id === "boat";
+      const want = terrainHeight(x.x, x.z) + 4.5 + 70 * Math.min(1, left / x.call);
+      if (!c) {
+        const y = want + 20;
+        const l = boat
+          ? loop({ bus: "world", brown: true, type: "lowpass", freq: 260, q: 1.6, hum: 38, pos: this.craftAt(x.id, s, y), ref: 14, send: 0.25 })
+          : loop({ bus: "world", brown: true, type: "lowpass", freq: 380, q: 1.2, hum: 55, pos: this.craftAt(x.id, s, y), ref: 18, send: 0.3 });
+        if (!l) continue;
+        c = { loop: l, y };
+        this.crafts.set(x.id, c);
+      }
+      c.y += (want - c.y) * 0.013;
+      const t = getMixer()!.ctx.currentTime;
+      c.loop.gain.gain.setTargetAtTime(left === 0 ? 0.5 : 0.4, t, 0.5);
+      const at = this.craftAt(x.id, s, c.y);
+      placeLoop(c.loop, at, this.occ.blocked(ear, at));
     }
-    const call = EXTRACT.call ?? 1;
-    const want = terrainHeight(EXTRACT.x, EXTRACT.z) + 4.5 + 70 * Math.min(1, s.shipCall / call);
-    if (!this.ship) {
-      this.shipY = want + 20;
-      this.ship = loop({ bus: "world", brown: true, type: "lowpass", freq: 380, q: 1.2, hum: 55, pos: { x: EXTRACT.x, y: this.shipY, z: EXTRACT.z - 2 }, ref: 18, send: 0.3 });
-    }
-    if (!this.ship) return;
-    this.shipY += (want - this.shipY) * 0.013;
-    const t = getMixer()!.ctx.currentTime;
-    this.ship.gain.gain.setTargetAtTime(s.shipCall === 0 ? 0.5 : 0.4, t, 0.5);
-    const at = { x: EXTRACT.x, y: this.shipY, z: EXTRACT.z - 2 };
-    placeLoop(this.ship, at, this.occ.blocked(ear, at));
   }
 
   /** Footfalls and servo whine of robots walking near the listener. */
@@ -191,8 +208,8 @@ export class Soundscape {
 
   /** Drops the continuous sounds (a raid ended). */
   reset() {
-    this.ship?.stop();
-    this.ship = null;
+    for (const c of this.crafts.values()) c.loop.stop();
+    this.crafts.clear();
     this.steps.clear();
   }
 
@@ -216,9 +233,11 @@ export class Soundscape {
       case "shipLanded":
         sfx.banner();
         break;
-      case "shipWave":
-        sfx.spawn({ x: EXTRACT.x, y: this.shipY || terrainHeight(EXTRACT.x, EXTRACT.z) + 10, z: EXTRACT.z - 2 });
+      case "shipWave": {
+        const w = EXTRACTS.find((x) => x.id === e.id)?.waves;
+        if (w) sfx.spawn({ x: w.x, y: terrainHeight(w.x, w.z) + 1.5, z: w.z });
         break;
+      }
       case "flareLit":
         sfx.careDrop();
         break;

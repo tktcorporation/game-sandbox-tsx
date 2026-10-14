@@ -1,5 +1,5 @@
 import { WORLD } from "./config";
-import { BOXES, type Box } from "./map";
+import { BOXES, deckAt, type Box } from "./map";
 import { steepAt, terrainGrad, terrainHeight } from "./terrain";
 import type { Vec3 } from "./state";
 
@@ -22,13 +22,23 @@ for (const b of BOXES) {
 const indexOf = new Map(BOXES.map((b, i) => [b, i]));
 const seenBy = new Int32Array(BOXES.length);
 let rayId = 0;
-const scratch = new Set<Box>();
+/** Each box once, in the order the cells list them; a box spanning cells is kept by its stamp. */
+const scratch: Box[] = [];
+const nearBy = new Int32Array(BOXES.length);
+let nearId = 0;
 function near(x: number, z: number, r: number): Iterable<Box> {
-  scratch.clear();
+  scratch.length = 0;
+  nearId++;
   for (let cx = Math.floor((x - r) / CELL); cx <= Math.floor((x + r) / CELL); cx++)
     for (let cz = Math.floor((z - r) / CELL); cz <= Math.floor((z + r) / CELL); cz++) {
       const list = grid.get(key(cx, cz));
-      if (list) for (const b of list) scratch.add(b);
+      if (!list) continue;
+      for (const b of list) {
+        const i = indexOf.get(b)!;
+        if (nearBy[i] === nearId) continue;
+        nearBy[i] = nearId;
+        scratch.push(b);
+      }
     }
   return scratch;
 }
@@ -232,8 +242,15 @@ export function raySphere(o: Vec3, d: Vec3, c: Vec3, r: number): number {
   return t >= 0 ? t : cc < 0 ? 0 : Infinity;
 }
 
-/** True for a body standing on the terrain rather than up on a roof, a floor or a box. */
-export const onTerrain = (p: Vec3) => p.y < terrainHeight(p.x, p.z) + 0.6;
+/**
+ * The ground a walker goes by at (x, z): the railway bridge's deck where it crosses the
+ * gorge (DECKS), the terrain everywhere else. Robots and the bot treat the deck as ground,
+ * as their path finding does, so they cross the bridge like a road.
+ */
+export const groundLevel = (x: number, z: number) => deckAt(x, z) ?? terrainHeight(x, z);
+
+/** True for a body standing on the ground (as `groundLevel()`) rather than up on a roof, a floor or a box. */
+export const onTerrain = (p: Vec3) => p.y < groundLevel(p.x, p.z) + 0.6;
 
 /** True when (x, z) lies at least `margin` metres inside the world's bounds. */
 export const inWorld = (x: number, z: number, margin = 0) => x >= WORLD.x0 + margin && x <= WORLD.x1 - margin && z >= WORLD.z0 + margin && z <= WORLD.z1 - margin;

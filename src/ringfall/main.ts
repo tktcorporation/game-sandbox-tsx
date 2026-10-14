@@ -1,6 +1,9 @@
 import { AWARE, TICK, WEAPONS } from "./sim/config";
 import { Bot, SKILLS } from "./sim/bot";
-import { freeKit, idleInput, newRun, type GameEvent, type Input, type Kit, type State } from "./sim/state";
+import { dist2d } from "./sim/geom";
+import { terrainHeight } from "./sim/terrain";
+import { callLeft, freeKit, idleInput, newRun, type GameEvent, type Input, type Kit, type State } from "./sim/state";
+import type { RegionId } from "./sim/map";
 import { settle, type Settlement } from "./meta/profile";
 import { loadProfile, saveProfile } from "./meta/storage";
 import { Hub } from "./view/hub";
@@ -245,8 +248,9 @@ function lock() {
   }
 }
 
-/** The kit the raid under way started from. */
+/** The kit the raid under way started from, and the region it dropped into. */
 let kit: Kit = freeKit();
+let region: RegionId = "reservoir";
 let settlement: Settlement | null = null;
 const hub = new Hub(loadProfile(), start);
 
@@ -256,8 +260,9 @@ function openHub() {
   hub.open();
 }
 
-function start(k: Kit) {
+function start(k: Kit, r: RegionId) {
   kit = k;
+  region = r;
   settlement = null;
   unlock();
   if (touchMode) {
@@ -269,7 +274,7 @@ function start(k: Kit) {
   keepAwake(true);
   world.reset();
   sound.reset();
-  state = newRun(Date.now() & 0xffff, kit);
+  state = newRun(Date.now() & 0xffff, kit, region);
   acc = hitstop = slowmo = 0;
   running = true;
   paused = false;
@@ -353,6 +358,8 @@ declare global {
     ringfallDownAlly: () => void;
     ringfallChargeUlt: () => void;
     ringfallCamera: (x?: number, y?: number, z?: number, yaw?: number, pitch?: number) => void;
+    ringfallFrameCost: (frames: number) => { ms: number; calls: number; triangles: number; chunks: number; of: number };
+    ringfallTerrain: (x: number, z: number) => number;
   }
 }
 
@@ -378,7 +385,8 @@ window.render_game_to_text = () => {
     player: { x: +p.pos.x.toFixed(1), y: +p.pos.y.toFixed(1), z: +p.pos.z.toFixed(1), hp: Math.round(p.hp), shield: Math.round(p.shield), armor: p.armor, downed: p.downed > 0, weapons: p.weapons.map((w) => w && `${w.kind}${w.rarity}:${w.mag}`), ult: +p.ult.toFixed(2), leap: !!p.leap, reveal: +p.reveal.toFixed(1), crouch: p.crouch },
     ally: { active: s.ally.active, x: +s.ally.pos.x.toFixed(1), y: +s.ally.pos.y.toFixed(1), z: +s.ally.pos.z.toFixed(1), hp: Math.round(s.ally.hp), shield: Math.round(s.ally.shield), down: +s.ally.down.toFixed(1), helped: +s.ally.helped.toFixed(1), rescue: +s.ally.rescue.toFixed(1), target: s.ally.target },
     awaitAlly: p.awaitAlly,
-    extract: { ship: +s.shipCall.toFixed(1), hold: +s.extractTime.toFixed(1), at: s.extractedAt, flares: p.flares },
+    region: s.region,
+    extract: { ship: +callLeft(s, "ship").toFixed(1), boat: +callLeft(s, "boat").toFixed(1), hold: +s.extractTime.toFixed(1), at: s.extractedAt, flares: p.flares },
     enemies: s.enemies.map((e) => ({ kind: e.kind, x: Math.round(e.pos.x), z: Math.round(e.pos.z), y: +e.pos.y.toFixed(1), hp: Math.round(e.hp + e.shield), mode: e.mode, aware: e.aware, detect: +e.detect.toFixed(2), squad: e.squad, target: e.target })),
     squads: s.squads.map((q) => ({ name: q.name, poi: q.poi, engaged: q.engaged, lost: q.engaged && q.sinceSeen >= AWARE.trackTime })),
     orbs: s.orbs.length,
@@ -410,6 +418,16 @@ window.ringfallChargeUlt = () => {
 
 /** Automation only: knock the teammate down, to check picking it up. */
 window.ringfallDownAlly = () => hurtAlly(state, 9999);
+
+/** Automation only: draws `frames` frames as they stand and reports the average time and the last frame's cost. */
+window.ringfallFrameCost = (frames: number) => {
+  const t0 = performance.now();
+  for (let i = 0; i < frames; i++) world.render(state, 1 / 60);
+  return { ms: +((performance.now() - t0) / frames).toFixed(1), ...world.stats() };
+};
+
+/** Automation only: the ground's height at (x, z), to place the screenshot cameras. */
+window.ringfallTerrain = (x, z) => terrainHeight(x, z);
 
 /** The player's exact view yaw (render_game_to_text rounds it away). */
 window.ringfallYaw = () => state.player.yaw;

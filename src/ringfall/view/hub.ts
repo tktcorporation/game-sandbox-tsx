@@ -1,5 +1,6 @@
 import { HEALS as HEAL_SPECS, META, RARITY, VALUABLES, WEAPONS } from "../sim/config";
 import type { Kit } from "../sim/state";
+import { REGIONS, regionOf, type RegionId } from "../sim/map";
 import { buy, deliver, deliverable, emptyLoadout, HEALS, healCount, keyName, price, sell, sellPrice, takeKit, wares, type Item, type Loadout, type Profile } from "../meta/profile";
 import { need, offered, type Quest, type RewardItem } from "../meta/quests";
 import { saveProfile } from "../meta/storage";
@@ -72,17 +73,20 @@ const yen = (n: number) => n.toLocaleString("ja-JP");
 type Tab = "kit" | "shop" | "quests";
 
 /**
- * The base between raids: the stash, the loadout for the next raid, the trader and their
- * quests. It changes only the profile; the raid itself starts from the kit it hands over.
+ * The base between raids: the stash, the loadout for the next raid, the region to drop
+ * into, the trader and their quests. It changes only the profile; the raid itself starts
+ * from the kit and the region it hands over.
  */
 export class Hub {
   private tab: Tab = "kit";
   private load: Loadout = emptyLoadout();
+  private region: RegionId;
 
   constructor(
     public profile: Profile,
-    private deploy: (kit: Kit) => void,
+    private deploy: (kit: Kit, region: RegionId) => void,
   ) {
+    this.region = profile.region;
     $("hub").addEventListener("click", (e) => {
       const el = (e.target as HTMLElement).closest<HTMLElement>("[data-act]");
       if (el && !(el as HTMLButtonElement).disabled) this.act(el.dataset.act!, el.dataset.arg ?? "");
@@ -131,6 +135,9 @@ export class Hub {
     if (act === "tab") {
       this.tab = arg as Tab;
       sfx.tab();
+    } else if (act === "region") {
+      this.region = regionOf(arg as RegionId).id;
+      sfx.click();
     }
     else if (act === "pick") {
       sfx.click();
@@ -170,11 +177,11 @@ export class Hub {
     } else if (act === "go" || act === "free") {
       const l = act === "free" ? { ...emptyLoadout(), heals: this.load.heals, keys: this.load.keys } : this.load;
       const { profile, kit } = takeKit(this.profile, l);
-      this.set(profile);
+      this.set({ ...profile, region: this.region });
       this.load = emptyLoadout();
       this.close();
       sfx.deploy();
-      this.deploy(kit);
+      this.deploy(kit, this.region);
       return;
     } else if (act === "back") {
       sfx.click();
@@ -243,6 +250,10 @@ export class Hub {
         HEALS.map(heal).join("") +
         `<p class="hint">倒れると、持ち込んだ物と回収品は失う。ポーチ（${META.pouch} 枠）に入る分の回収品だけは残る。</p>`;
     }
+    $("hub-region").innerHTML =
+      `<small>降下地点</small>` +
+      REGIONS.map((r) => `<button type="button" data-act="region" data-arg="${r.id}"${r.id === this.region ? ' class="on"' : ""}>${esc(r.name)}</button>`).join("") +
+      `<span>${esc(regionOf(this.region).note)}</span>`;
     ($("hub-go") as HTMLButtonElement).disabled = this.load.weapons.length === 0;
     const ready = offered(p.quests).filter((q) => deliverable(p, q)).length;
     $("hub-quest-badge").textContent = ready ? String(ready) : "";

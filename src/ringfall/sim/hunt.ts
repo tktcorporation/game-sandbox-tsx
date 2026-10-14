@@ -1,5 +1,5 @@
 import { WORLD } from "./config";
-import { BOXES } from "./map";
+import { BOXES, DECKS } from "./map";
 import { highGround, offshore, steepAt, terrainHeight } from "./terrain";
 
 /*
@@ -9,7 +9,9 @@ import { highGround, offshore, steepAt, terrainHeight } from "./terrain";
  * gives every cell the walking distance to the target; a hunter heads for the cell
  * a few steps down that field. Cliffs, high ground and anything built that a walker
  * cannot step over close a cell, so the way goes up the ramps and round the houses;
- * the inside of a building is closed too (a hunter waits at its doors).
+ * the inside of a building is closed too (a hunter waits at its doors). The railway
+ * bridge's deck (DECKS) is ground at its own height, so the way between the regions
+ * goes over the pass or across the bridge.
  */
 
 /** Cell size in metres. Ramps are 8 m wide or more, so 2 m cells keep them open. */
@@ -60,6 +62,15 @@ function grid() {
         if (x > b.x0 - BODY - RES / 2 && x < b.x1 + BODY + RES / 2 && z > b.z0 - BODY - RES / 2 && z < b.z1 + BODY + RES / 2) open[j * NX + i] = 0;
       }
   }
+  for (const d of DECKS)
+    for (let j = idxZ(d.z0); j <= idxZ(d.z1); j++)
+      for (let i = idxX(d.x0); i <= idxX(d.x1); i++) {
+        const x = centreX(i);
+        const z = centreZ(j);
+        if (x < d.x0 || x > d.x1 || z < d.z0 || z > d.z1) continue;
+        open[j * NX + i] = 1;
+        height[j * NX + i] = d.y;
+      }
   main = mainGround(open, height);
   return { open, height, main };
 }
@@ -279,4 +290,11 @@ export function cellsAround(f: Field, lo: number, hi: number): { x: number; z: n
     out.push({ x: centreX(i), z: centreZ((k - i) / NX) });
   }
   return out;
+}
+
+/** The cell at (x, z) as the field sees it: open, its height, and whether it is on the main walkable ground. For the sim gate's checks. */
+export function cellAt(x: number, z: number): { open: boolean; height: number; main: boolean } {
+  const { open, height, main } = grid();
+  const k = idxZ(z) * NX + idxX(x);
+  return { open: !!open[k], height: height[k], main: !!main[k] };
 }

@@ -13,20 +13,27 @@ Read the game's brief before changing anything visual. A new page needs an entry
 
 ## RINGFALL
 
-An extraction raid against robots only: skydive onto an island, explore it for valuables, and get
-off alive by one of three extraction points, all open from the start. No ring and no set order: the
-player chooses which POIs to take and when to leave. First person on three.js. Robots are squads
-placed on the island from the start (`POIS[].squads` and `ROAMERS` in `map.ts`, some of them
-patrolling the roads), plus reinforcements (`REINFORCE` in `config.ts`) that beam in out of sight
-on a timer and come looking, and once per raid an elite squad (`RAIDERS` / `ELITE`) that flanks.
-Bins take time to search (`SEARCH`) and valuables fill a bag of `BAG.slots`. The HUD shows no
-markers or distances; the island map (`view/map.ts`, M) is where the POIs and exits are. A wipe
-ends the raid and loses the haul; `results.ts` scores the haul plus cleared POIs.
+An extraction raid against robots only: skydive into one of two regions of one world, explore it
+for valuables, and get off alive by one of its extraction points, all open from the start. No ring
+and no set order: the player chooses which POIs to take and when to leave. First person on three.js.
+The reservoir (south, +z) has four POIs and three ways off; the harbor (north, beyond a mountain
+belt) has three POIs and a boat. A pass road from the landing pad and a railway (an embankment from
+the east mesa, a bridge over a gorge, a viaduct into the harbor) join them, so a raid may walk from
+one to the other. `REGIONS` in `map.ts` gives each region its POIs, ways off, drop and landing spot;
+`newRun(seed, kit, region)` drops into one (the reservoir by default), and the base picks it.
+Robots are squads placed in the world from the start (`POIS[].squads` and `ROAMERS` in `map.ts`,
+some of them patrolling the roads), plus reinforcements (`REINFORCE` in `config.ts`) that beam in
+out of sight on a timer and come looking, and once per raid an elite squad (`RAIDERS` / `ELITE`)
+that flanks. Bins take time to search (`SEARCH`) and valuables fill a bag of `BAG.slots`. The HUD
+shows no markers or distances, and lists only the ways off of the region the player is in
+(`regionHere()`); the world map (`view/map.ts`, M) is where the POIs and exits of both regions are.
+A wipe ends the raid and loses the haul; `results.ts` scores the haul plus cleared POIs.
 Between raids the base (`view/hub.ts`) keeps a stash, a trader and the loadout for the next raid:
 `src/ringfall/meta/profile.ts` is its pure logic (`takeKit()` out of the stash, `settle()` after a
 raid, the pouch that survives a wipe), `meta/storage.ts` saves it in localStorage, and `META` in
-`config.ts` holds its numbers. `newRun(seed, kit)` starts a raid from a kit; the default is the
-lent free kit, which is what the sim gate plays.
+`config.ts` holds its numbers. `newRun(seed, kit, region)` starts a raid from a kit; the default is
+the lent free kit, which is what the sim gate plays; `Profile.region` remembers the last landing
+region.
 The trader's quests are data in `meta/quests.ts` (`QUESTS`, credited from a raid's `stats` by
 `creditRaid()` inside `settle()`). Each POI has one locked bin (`vault: true` in its `bins`), opened
 only with that POI's key; keys drop from the bins of the POI named by its `keyFrom` (`VAULT`).
@@ -35,29 +42,39 @@ POI by it, never by its place in `POIS` (the run's state may index `POIS` intern
 is versioned (`Profile.v`), and `parseProfile()` moves older saves forward.
 
 ```bash
-npm run sim:ringfall     # gate 2: bots of three skills play the whole run headless
-npm run shots:ringfall   # gate 3: the build played to the end in Chromium; screenshots in shots/ringfall/
+npm run sim:ringfall     # gate 2: bots of three skills play whole raids headless, in each region
+npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir raid to the end, a harbor raid
+                         # to its first fight, a tour of both); screenshots in shots/ringfall/
 ```
 
 - `src/ringfall/sim/` is the game: pure TypeScript, metres and seconds, `step(state, input, prevCrouch)`
   per 1/60 s tick. Aim assist (slowdown, pull, the hit cone) lives here, so bots and people get the
   same help. Every solid is an axis-aligned box spanning `y0..h` in `map.ts` (floors, roofs and bridges
   float); build structures with its `building()` (one storey), `tower()` (several storeys with stairs
-  inside), `bridge()` and `stairs()` helpers, whose risers stay under the step-up height. Each POI is
-  written in its own frame and moved into place by `AT`; the districts between them use island
-  coordinates. The ground is a height field (`terrain.ts`), a dried-up reservoir: the POIs and
-  districts are basins (`BASINS`) at their own `LEVEL` (the lakebed at -7 m, the dam crest at +8,
-  the quarry pit at -10...), joined by roads (`ROADS`) that ramp between levels, with unclimbable
-  high ground between them, shelves inside the POI basins, the spillway canyon, and cliffs beyond
-  the coast; ground steeper than `STEEP` is a wall, dropped down but never climbed. The coast is
-  the outline of the land masses in `LANDS` (`offshore()` gives how far a point lies outside it),
-  and the world's bounds are `WORLD.x0..x1` and `WORLD.z0..z1` in `config.ts`; no code assumes
-  either is centred on the origin. Boxes are
+  inside), `bridge()` and `stairs()` helpers, whose risers stay under the step-up height; `lift()`
+  raises a structure onto a deck and `paint()` repaints its walls (a ship's hull as steel plate).
+  Each POI is written in its own frame and moved into place by `AT`; the districts between them use
+  world coordinates. The ground is a height field (`terrain.ts`): the POIs and districts are basins
+  (`BASINS`) at their own `LEVEL` (the lakebed at -7 m, the dam crest at +8, the quarry pit at -10,
+  the harbor's salt flats at -3, the pass at +15...), joined by roads (`ROADS`) that ramp between
+  levels, with unclimbable high ground between them, shelves inside some POI basins, canyons
+  (`CUTS`: the spillway, the gorge under the railway bridge), and cliffs beyond the coast; ground
+  steeper than `STEEP` is a wall, dropped down but never climbed. A road's levels are spaced evenly
+  along it, or belong to its points with `atPoints`; a ramp reaches the level of the basin it runs
+  into at that basin's edge, or it ends in a cliff. The coast is the outline of the land masses in
+  `LANDS` (`offshore()` gives how far a point lies outside it), and the world's bounds are
+  `WORLD.x0..x1` and `WORLD.z0..z1` in `config.ts`; no code assumes either is centred on the origin.
+  The railway bridge's deck is in `DECKS` (`map.ts`): the bot's and the hunters' path finding and
+  the robots' `groundLevel()` treat it as ground, which is how they cross between the regions on it;
+  everything else built up off the ground is out of their reach. Boxes are
   written on ground at 0 and lifted to their area's level by `onLevel()`, points by `onFloor()`
   (`map.ts`); the ground is pressed flat at that level near every authored box and point.
-  `scatterCover()` then fills the open ground with low walls,
-  crates, containers and ruins from a fixed seed, keeping clear of authored points and patrol routes. Tuning numbers are in `config.ts`. `npm run sim:ringfall` first checks that every
-  authored point (entries, bins, loot, squad posts, patrols) stands on a floor and not inside a box.
+  `scatterCover()` then fills the open ground with low walls, crates, containers and ruins, each
+  region from its own grid and seed (`SCATTER`), sparse on the salt flats, keeping clear of
+  authored points, patrol routes and the roads that are the only ways between areas (`KEPT_ROADS`,
+  also pressed to their own floor). Tuning numbers are in `config.ts`. `npm run sim:ringfall` first
+  checks that every authored point (entries, bins, loot, squad posts, patrols, landing spots) stands
+  on a floor and not inside a box, and that the pass and the railway bridge are walkable end to end.
 - `awareness.ts` decides who knows about the player: sight cones fill a detection meter, noise
   (shots, sprinting) sends squads to look, and at most `AWARE.maxSquads` squads fight at once.
   A fighting squad tracks the player only while a member sees them (`knownSpot()`), turns at `TURN`
@@ -69,10 +86,12 @@ npm run shots:ringfall   # gate 3: the build played to the end in Chromium; scre
   robots, revives the player once the self-revive is spent, and is revived with the use key.
   Robots choose between the player and the teammate in `chooseTarget()` (`enemies.ts`); the sim
   gate's `ally` column is its damage share, downs and revives.
-- `EXTRACTS` in `map.ts` are the ways off the island; `stepExtract()` in `world.ts`
-  runs them (dropship call and its waves in `SHIP_WAVES`, the flare, the waits). The sim gate's
-  `exit` column counts which one each run used; the bot's choice depends on its skill.
-- `nav.ts` is ground path finding for the bot only; the game never reads it. Robots beamed in from
+- `EXTRACTS` in `map.ts` are the ways off; `stepExtract()` in `world.ts` runs them: a pickup with
+  `call` (the dropship, the boat) is called by standing in it and comes after its time, while robots
+  beam in round its `waves` point (`SHIP_WAVES`; `State.calls` keeps each call); the flare; the waits.
+  The sim gate's `exit` column counts which one each run used; the bot leaves by a way off of the
+  region it dropped into, chosen by its skill, and takes only that region's POIs.
+- `nav.ts` is ground path finding for the bot only (built on first use); the game never reads it. Robots beamed in from
   afar (reinforcements and raiders, `SquadState.routed`) find their way: `hunt.ts` builds a
   distance field over the ground (2 m cells; cliffs, high ground and boxes a walker cannot step
   over closed) to where they think the player is, and their walkers follow it whenever they cannot
@@ -83,14 +102,19 @@ npm run shots:ringfall   # gate 3: the build played to the end in Chromium; scre
   with `input.touch` set so the sim applies `ASSIST.touchPull`. `npm run shots:ringfall` drives it with
   real touch events in a phone-sized viewport before the desktop run.
 - `src/ringfall/view/` renders and never changes rules: `world.ts` (three.js), `hud.ts` (DOM),
-  and synthesized sound. `audio.ts` is the engine (buses, reverb, voice cap, positional voices)
-  and runs on any `BaseAudioContext`; `sfx.ts` holds every cue; `soundscape.ts` puts the listener
-  at the camera, tests walls with a few `los()` rays a frame, plays nearby robots' steps, the wind,
-  the dropship and the ambience, and turns `state.events` into cues. `soundcheck.ts` is the `?sfx`
-  panel; `npm run sfx:ringfall` renders every cue offline and fails on silent, NaN or clipping ones.
-  `src/ringfall/main.ts` wires input and the fixed-step loop, and exposes
-  `window.render_game_to_text()`, `window.advanceTime(ms)` and `window.ringfallBot(skill)`.
-- `docs/ringfall/balance.md` holds the target curve and the latest `npm run sim:ringfall -- 30` output.
+  and synthesized sound. `world.ts` cuts the ground and everything built into `CHUNK`-metre
+  chunks, each merged into a mesh or two with its colours in the vertices, and skips chunks past
+  the fog (`FOG_FAR`) and robots, bins and loot past `THINGS_FAR`, so the draw calls stay bounded
+  however large the world grows. `audio.ts` is the sound engine (buses, reverb, voice cap,
+  positional voices) and runs on any `BaseAudioContext`; `sfx.ts` holds every cue; `soundscape.ts`
+  puts the listener at the camera, tests walls with a few `los()` rays a frame, plays nearby robots'
+  steps, the wind, the extraction craft and the ambience, and turns `state.events` into cues.
+  `soundcheck.ts` is the `?sfx` panel; `npm run sfx:ringfall` renders every cue offline and fails on
+  silent, NaN or clipping ones. `src/ringfall/main.ts` wires input and the fixed-step loop, and
+  exposes `window.render_game_to_text()`, `window.advanceTime(ms)`, `window.ringfallBot(skill)` and
+  `window.ringfallFrameCost(frames)` (draw calls, triangles and time per frame, for the shots gate).
+- `docs/ringfall/balance.md` holds the target curve and the latest `npm run sim:ringfall -- 30` output
+  (a table per region).
   Change a number in `config.ts` or `map.ts` only together with a re-run and an update to that file.
 
 ## HITMARK
