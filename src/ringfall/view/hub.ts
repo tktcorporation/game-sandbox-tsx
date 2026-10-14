@@ -1,7 +1,7 @@
 import { HEALS as HEAL_SPECS, HIDEOUT, RAIDERS, RARITY, VALUABLES, WEAPONS, type ModuleId, type ValuableKind } from "../sim/config";
 import { boostFor, type Kit } from "../sim/state";
 import { POIS, REGIONS, regionOf, type RegionId } from "../sim/map";
-import { build, buy, buyPrice, canBuild, deliver, deliverable, emptyLoadout, HEALS, healCount, keyName, price, sell, sellPrice, shortfall, takeKit, wanted, wares, type Item, type Loadout, type Profile } from "../meta/profile";
+import { build, buildState, buy, buyPrice, canBuild, deliver, deliverable, emptyLoadout, HEALS, healCount, keyName, price, sell, sellPrice, shortfall, takeKit, wanted, wares, type Item, type Loadout, type Profile } from "../meta/profile";
 import { craftDone, maxLevel, MODULES, nextLevel, pouchSlots, sources, stashCap, stillNeeded, type Source } from "../meta/hideout";
 import { need, offered, type Quest, type RewardItem } from "../meta/quests";
 import { saveProfile } from "../meta/storage";
@@ -293,7 +293,7 @@ export class Hub {
     const next = nextLevel(p.hideout, m);
     const pips = Array.from({ length: maxLevel(m) }, (_, n) => `<i class="${n < lv ? "on" : ""}"></i>`).join("");
     const short = shortfall(p, m);
-    const state = !next ? "完成" : canBuild(p, m) ? "作れる" : short?.needs.length ? "設備が足りない" : `あと ${short!.items.reduce((n, [, have, need]) => n + need - have, 0)} 個`;
+    const state = buildState(p, m);
     const open = this.module === m;
     let body = "";
     if (open && next) {

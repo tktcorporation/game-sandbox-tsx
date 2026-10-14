@@ -25,7 +25,7 @@ import { SHIP_SQUAD, bagUsed, makeRoom } from "../src/ringfall/sim/world";
 import { bodyCenter, damageEnemy, eyePos, fireRay, magSize, weakPoint } from "../src/ringfall/sim/combat";
 import { lookAngles } from "../src/ringfall/sim/geom";
 import { forward } from "../src/ringfall/sim/state";
-import { build, buy, canBuild, deliver, newProfile, parseProfile, pouch, price, sell, settle, takeKit, wares, type Item, type Profile } from "../src/ringfall/meta/profile";
+import { build, buildState, buy, canBuild, deliver, newProfile, parseProfile, pouch, price, sell, settle, takeKit, wares, type Item, type Profile } from "../src/ringfall/meta/profile";
 import { emptyHideout, maxLevel, MODULES, poisWith, sources, stashCap } from "../src/ringfall/meta/hideout";
 import { boostFor, boosted } from "../src/ringfall/sim/state";
 import { HIDEOUT, VAULT } from "../src/ringfall/sim/config";
@@ -1058,6 +1058,11 @@ function checkHideout(): string | null {
   const built = build(p, "generator");
   if (!built || built.hideout.generator !== 1 || built.cash !== p.cash - gen.cash || built.stash.length !== before - gen.items.reduce((n, [, c]) => n + c, 0) || count(built, "fuse") !== 0 || count(built, "board") !== 2)
     return `hideout scenario: building the generator took ${p.cash - (built?.cash ?? p.cash)} credits and left ${built?.stash.length} things`;
+  // The card names what is in the way: the parts still missing, or only the credits once they are all there.
+  const fuseShort = give({ ...newProfile(), cash: 5000 }, gen.items.map(([k, n]) => [k, k === "fuse" ? n - 1 : n]));
+  const broke = give({ ...newProfile(), cash: gen.cash - 50 }, gen.items);
+  if (buildState(fuseShort, "generator") !== "あと 1 個" || buildState(broke, "generator") !== "あと 50 クレジット")
+    return `hideout scenario: the generator's card said "${buildState(fuseShort, "generator")}" one fuse short and "${buildState(broke, "generator")}" 50 credits short`;
   // A level that needs another module's level waits for it.
   const inf = give({ ...newProfile(), cash: 9000 }, HIDEOUT.infirmary.levels[0].items);
   if (canBuild(inf, "infirmary") || !canBuild({ ...inf, hideout: { ...inf.hideout, generator: 1 } }, "infirmary")) return "hideout scenario: the infirmary did not wait for the generator";

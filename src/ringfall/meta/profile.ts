@@ -279,6 +279,20 @@ export function shortfall(p: Profile, m: ModuleId): { items: [ValuableKind, numb
   };
 }
 
+/**
+ * What the module card says about its next level: done, buildable, or the first thing in the
+ * way (a module it needs, then the parts still missing, then only the credits).
+ */
+export function buildState(p: Profile, m: ModuleId): string {
+  const s = shortfall(p, m);
+  if (!s) return "完成";
+  if (s.needs.length) return "設備が足りない";
+  const missing = s.items.reduce((n, [, have, need]) => n + need - have, 0);
+  if (missing) return `あと ${missing} 個`;
+  if (s.cash) return `あと ${s.cash.toLocaleString()} クレジット`;
+  return "作れる";
+}
+
 export const canBuild = (p: Profile, m: ModuleId) => {
   const s = shortfall(p, m);
   return !!s && !s.items.length && !s.cash && !s.needs.length;
