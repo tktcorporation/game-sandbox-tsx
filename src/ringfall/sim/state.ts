@@ -1,5 +1,5 @@
 import { ALLY, DROP, ELITE, ENEMIES, META, RAIDERS, REINFORCE, type ValuableKind, PLAYER, ULT, type EnemyKind, type Flank, type HealKind, type Rarity, type WeaponKind } from "./config";
-import { EXTRA_BINS, POIS, SPAWN, type ExtractId } from "./map";
+import { EXTRA_BINS, POIS, poiIndex, SPAWN, type ExtractId } from "./map";
 import { populate } from "./enemies";
 
 export interface Vec3 {
@@ -425,7 +425,7 @@ export function newRun(seed = 1, kit: Kit = freeKit()): State {
   const bins: Bin[] = [];
   let id = 1;
   POIS.forEach((p, poi) => p.bins.forEach((b) => bins.push({ id: id++, x: b.x, y: b.y ?? 0, z: b.z, poi, open: false, flare: false, vault: !!b.vault, outside: false })));
-  for (const b of EXTRA_BINS) bins.push({ id: id++, x: b.x, y: b.y ?? 0, z: b.z, poi: b.table, open: false, flare: !!b.flare, vault: false, outside: true });
+  for (const b of EXTRA_BINS) bins.push({ id: id++, x: b.x, y: b.y ?? 0, z: b.z, poi: poiIndex(b.table), open: false, flare: !!b.flare, vault: false, outside: true });
   const loot: Loot[] = [];
   POIS.forEach((p) =>
     p.floor.forEach((f) => {

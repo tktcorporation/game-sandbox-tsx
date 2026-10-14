@@ -1,5 +1,5 @@
 import { HEALS as HEAL_SPECS, META, VALUABLES, type HealKind, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
-import { POIS } from "../sim/map";
+import { POIS, poiIndex, type PoiId } from "../sim/map";
 import type { Kit, State } from "../sim/state";
 import { creditRaid, emptyLog, need, offered, type Quest, type QuestLog } from "./quests";
 
@@ -9,11 +9,11 @@ export type Item =
   | { t: "armor"; tier: Rarity }
   | { t: "heal"; kind: HealKind }
   | { t: "valuable"; kind: ValuableKind }
-  | { t: "key"; poi: number };
+  | { t: "key"; poi: PoiId };
 
 /** What persists between raids. */
 export interface Profile {
-  v: 2;
+  v: 3;
   cash: number;
   stash: Item[];
   raids: number;
@@ -26,7 +26,7 @@ export const HEALS: HealKind[] = ["cell", "battery", "syringe", "medkit"];
 export function newProfile(): Profile {
   const stash: Item[] = META.start.weapons.map((w) => ({ t: "weapon", ...w }));
   for (const k of HEALS) for (let i = 0; i < META.start.heals[k]; i++) stash.push({ t: "heal", kind: k });
-  return { v: 2, cash: META.start.cash, stash, raids: 0, extracted: 0, quests: emptyLog() };
+  return { v: 3, cash: META.start.cash, stash, raids: 0, extracted: 0, quests: emptyLog() };
 }
 
 /** What the trader asks for an item. */
@@ -49,7 +49,7 @@ export function price(i: Item): number {
 export const sellPrice = (i: Item) => (i.t === "valuable" ? price(i) : Math.round(price(i) * META.sellShare));
 
 /** Key names, for lists and the HUD. */
-export const keyName = (poi: number) => `${POIS[poi].name}の鍵`;
+export const keyName = (poi: PoiId) => `${POIS[poiIndex(poi)].name}の鍵`;
 
 /** Everything the trader sells. */
 export function wares(): Item[] {
@@ -126,9 +126,9 @@ export function takeKit(p: Profile, l: Loadout): { profile: Profile; kit: Kit } 
   const keys: number[] = [];
   for (const n of l.keys) {
     const i = p.stash[n];
-    if (i?.t === "key" && !take.has(n) && !keys.includes(i.poi)) {
+    if (i?.t === "key" && !take.has(n) && !keys.includes(poiIndex(i.poi))) {
       take.add(n);
-      keys.push(i.poi);
+      keys.push(poiIndex(i.poi));
     }
   }
   const kit: Kit = {
@@ -197,7 +197,7 @@ export function settle(p: Profile, s: State): Settlement {
     if (pl.armor > 0) home.push({ t: "armor", tier: pl.armor });
     for (const k of HEALS) for (let i = Math.max(0, pl.heals[k] - pl.lentHeals[k]); i > 0; i--) home.push({ t: "heal", kind: k });
     for (const v of pl.haul) home.push({ t: "valuable", kind: v });
-    for (const poi of pl.keys) home.push({ t: "key", poi });
+    for (const poi of pl.keys) home.push({ t: "key", poi: POIS[poi].id });
   } else {
     for (const v of pouch(pl.haul)) home.push({ t: "valuable", kind: v });
   }
@@ -233,11 +233,26 @@ export function deliver(p: Profile, id: string): Profile {
   return pay(left, q).profile;
 }
 
-/** Accepts a stored profile only if it has the right shape (a v1 profile gains an empty quest log). */
+/**
+ * The POI ids in the order v1 and v2 saves numbered them: those saves kept a key's POI
+ * as its place in this list.
+ */
+const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
+
+/**
+ * Accepts a stored profile only if it has the right shape. A v1 profile gains an empty
+ * quest log; v1 and v2 keys name their POI by number and are moved to ids.
+ */
 export function parseProfile(raw: unknown): Profile | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if ((o.v !== 1 && o.v !== 2) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
+  if ((o.v !== 1 && o.v !== 2 && o.v !== 3) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
+  const old = o.v !== 3;
+  const migrate = (i: unknown): unknown => {
+    if (!old || !i || typeof i !== "object" || (i as Record<string, unknown>).t !== "key") return i;
+    const n = (i as Record<string, unknown>).poi;
+    return Number.isInteger(n) && V2_POIS[n as number] ? { t: "key", poi: V2_POIS[n as number] } : null;
+  };
   const ok = (i: unknown): i is Item => {
     if (!i || typeof i !== "object") return false;
     const x = i as Record<string, unknown>;
@@ -245,16 +260,16 @@ export function parseProfile(raw: unknown): Profile | null {
     if (x.t === "armor") return [1, 2, 3].includes(x.tier as number);
     if (x.t === "heal") return HEALS.includes(x.kind as HealKind);
     if (x.t === "valuable") return typeof x.kind === "string" && x.kind in VALUABLES;
-    if (x.t === "key") return Number.isInteger(x.poi) && (x.poi as number) >= 0 && (x.poi as number) < POIS.length;
+    if (x.t === "key") return typeof x.poi === "string" && poiIndex(x.poi as PoiId) >= 0;
     return false;
   };
   const q = (o.quests ?? {}) as Record<string, unknown>;
   const progress: Record<string, number> = {};
   if (q.progress && typeof q.progress === "object") for (const [k, n] of Object.entries(q.progress)) if (typeof n === "number") progress[k] = n;
   return {
-    v: 2,
+    v: 3,
     cash: Math.max(0, Math.floor(o.cash)),
-    stash: o.stash.filter(ok).slice(0, META.stash),
+    stash: o.stash.map(migrate).filter(ok).slice(0, META.stash),
     raids: typeof o.raids === "number" ? o.raids : 0,
     extracted: typeof o.extracted === "number" ? o.extracted : 0,
     quests: { progress, done: Array.isArray(q.done) ? q.done.filter((d): d is string => typeof d === "string") : [] },

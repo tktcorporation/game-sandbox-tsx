@@ -180,9 +180,6 @@ function weighted<T>(s: State, list: [T, number][]): T {
 const spillValuable = (s: State, b: { x: number; y: number; z: number }, valuable: ValuableKind) =>
   spill(s, b.x, b.y, b.z, { kind: "valuable", valuable, rarity: VALUABLES[valuable].rarity });
 
-/** The POI whose vault a key found in `poi`'s bins opens. */
-export const keyFoundIn = (vault: number) => (vault + POIS.length - 1) % POIS.length;
-
 function openBin(s: State, binIndex: number) {
   const b = s.bins[binIndex];
   b.open = true;
@@ -209,7 +206,7 @@ function openBin(s: State, binIndex: number) {
   spillValuable(s, b, b.flare ? weighted<ValuableKind>(s, [["core", 2], ["gyro", 1], ["board", 2]]) : weighted(s, table.valuable));
   // Keys lie only in the POIs themselves, so each one is found where the route says.
   if (!b.outside && rand(s) < VAULT.keyChance) {
-    const vault = POIS.findIndex((_, i) => keyFoundIn(i) === b.poi);
+    const vault = POIS.findIndex((v) => v.keyFrom === POIS[b.poi].id);
     spill(s, b.x, b.y, b.z, { kind: "key", key: vault, rarity: 3 });
   }
 }
@@ -499,7 +496,7 @@ function shipWave(s: State, ship: ExtractPoint) {
     squad = s.squads.length;
     s.squads.push({ name: SHIP_SQUAD, poi: -1, patrol: [], leg: 0, engaged: true, roam: true, sinceSeen: 0, last: { x: ship.x, z: ship.z } });
   }
-  const pad = POIS[POIS.length - 1];
+  const pad = POIS.find((q) => q.boss)!;
   for (const kind of kinds) {
     if (s.enemies.filter((e) => e.squad === squad).length >= SHIP_WAVES.maxAlive) break;
     const a = rand(s) * Math.PI * 2;

@@ -29,13 +29,23 @@ const RES = 1;
 
 type P = readonly [number, number];
 
+/** A line's points with its segment lengths and their sum, worked out once. */
+interface Polyline {
+  pts: readonly P[];
+  lens: number[];
+  sum: number;
+}
+
+function polyline(pts: readonly P[]): Polyline {
+  const lens = pts.slice(1).map((b, i) => Math.hypot(b[0] - pts[i][0], b[1] - pts[i][1]));
+  return { pts, lens, sum: lens.reduce((a, b) => a + b, 0) || 1 };
+}
+
 /** Distance from (x, z) to the polyline, and the fraction along it of the nearest point. */
-function toPolyline(x: number, z: number, pts: readonly P[]): { d: number; along: number } {
+function toPolyline(x: number, z: number, { pts, lens, sum }: Polyline): { d: number; along: number } {
   let best = Infinity;
   let along = 0;
   let total = 0;
-  const lens = pts.slice(1).map((b, i) => Math.hypot(b[0] - pts[i][0], b[1] - pts[i][1]));
-  const sum = lens.reduce((a, b) => a + b, 0) || 1;
   for (let i = 0; i < lens.length; i++) {
     const [ax, az] = pts[i];
     const [bx, bz] = pts[i + 1];
@@ -169,10 +179,41 @@ const CUTS: Cut[] = [
   },
 ];
 
-/** Island radius by bearing: an uneven coast, cliffs beyond it. */
-export function rimRadius(x: number, z: number): number {
-  const a = Math.atan2(z, x);
-  return 192 + 8 * Math.sin(3 * a + 1.1) + 5 * Math.sin(7 * a + 2.3) + 3 * Math.sin(13 * a + 0.4);
+/** Open shapes and cuts with their lines worked out once: `lowest()` runs for every grid cell. */
+const OPEN = [...BASINS, ...ROADS].map((o) => ({ o, poly: polyline(o.line) }));
+const CUT_LINES = CUTS.map((c) => ({ c, poly: polyline(c.line) }));
+
+/**
+ * A land mass: its coast lies `radius(bearing)` metres from its middle, the bearing
+ * measured from it as `Math.atan2(dz, dx)`. Beyond the coast cliffs rise to the horizon.
+ */
+export interface Land {
+  name: string;
+  x: number;
+  z: number;
+  radius: (bearing: number) => number;
+}
+
+/** The land masses. The world's coast is the outline of all of them together. */
+export const LANDS: Land[] = [
+  { name: "島", x: 0, z: 0, radius: (a) => 192 + 8 * Math.sin(3 * a + 1.1) + 5 * Math.sin(7 * a + 2.3) + 3 * Math.sin(13 * a + 0.4) },
+];
+
+/** How far (x, z) lies outside one land mass's coast; negative inside it. */
+export const outsideLand = (l: Land, x: number, z: number) => Math.hypot(x - l.x, z - l.z) - l.radius(Math.atan2(z - l.z, x - l.x));
+
+/** How far (x, z) lies outside the coast, metres; negative on land, by how far inland. */
+export function offshore(x: number, z: number): number {
+  let out = Infinity;
+  for (const l of LANDS) out = Math.min(out, outsideLand(l, x, z));
+  return out;
+}
+
+/** The land mass whose coast (x, z) lies furthest inside, or nearest to when it is offshore. */
+export function landAt(x: number, z: number): Land {
+  let best = LANDS[0];
+  for (const l of LANDS) if (outsideLand(l, x, z) < outsideLand(best, x, z)) best = l;
+  return best;
 }
 
 const hash = (x: number, z: number) => {
@@ -193,14 +234,17 @@ function vnoise(x: number, z: number): number {
   return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
 }
 
-function shelfAt(sh: Shelf, x: number, z: number): number {
-  const basin = BASINS.find((o) => o.name === sh.basin)!;
+const SHELF_BASINS = SHELVES.map((sh) => OPEN.find(({ o }) => o.name === sh.basin)!);
+
+function shelfAt(n: number, x: number, z: number): number {
+  const sh = SHELVES[n];
+  const { o: basin, poly } = SHELF_BASINS[n];
   const [a0, b0] = [basin.line[0], basin.line[basin.line.length - 1]];
   const cx = (a0[0] + b0[0]) / 2;
   const cz = (a0[1] + b0[1]) / 2;
   const off = Math.atan2(Math.sin(Math.atan2(z - cz, x - cx) - sh.at), Math.cos(Math.atan2(z - cz, x - cx) - sh.at));
   if (Math.abs(off) > sh.span) return -Infinity;
-  const d = toPolyline(x, z, basin.line).d;
+  const d = toPolyline(x, z, poly).d;
   const inner = basin.half - sh.width;
   if (d > basin.half + 1) return -Infinity;
   // Rise from the floor along the ramp end, then flat to the far end.
@@ -216,8 +260,8 @@ function shelfAt(sh: Shelf, x: number, z: number): number {
 function lowest(x: number, z: number): { h: number; level: number } {
   let h = Infinity;
   let level = 0;
-  for (const o of [...BASINS, ...ROADS]) {
-    const { d, along: t } = toPolyline(x, z, o.line);
+  for (const { o, poly } of OPEN) {
+    const { d, along: t } = toPolyline(x, z, poly);
     const lv = levelOf(o, t);
     const cone = lv + Math.max(0, d - o.half) * CLIFF;
     if (cone < h) {
@@ -225,8 +269,8 @@ function lowest(x: number, z: number): { h: number; level: number } {
       level = lv;
     }
   }
-  for (const c of CUTS) {
-    const { d, along: t } = toPolyline(x, z, c.line);
+  for (const { c, poly } of CUT_LINES) {
+    const { d, along: t } = toPolyline(x, z, poly);
     const lv = along(c.levels, t);
     const cone = lv + Math.max(0, d - c.floor) * c.slope;
     if (cone < h) {
@@ -245,12 +289,14 @@ function natural(x: number, z: number): number {
 
 /** The rim: cliffs rising beyond the coast, out to the horizon. */
 function rim(x: number, z: number): number {
-  const out = Math.hypot(x, z) - rimRadius(x, z);
+  const out = offshore(x, z);
   if (out <= 0) return 0;
   return Math.min(48, out * 2.2) * (0.8 + vnoise(x * 0.05, z * 0.05) * 0.4) + vnoise(x * 0.2, z * 0.2) * Math.min(out, 6);
 }
 
-const N = Math.round((WORLD.half * 2) / RES) + 1;
+/** Grid points of the cached field on each axis, from the world's corner (x0, z0). */
+const NX = Math.round((WORLD.x1 - WORLD.x0) / RES) + 1;
+const NZ = Math.round((WORLD.z1 - WORLD.z0) / RES) + 1;
 let field: Float32Array | null = null;
 let steep: Uint8Array | null = null;
 let floors: Float32Array | null = null;
@@ -277,22 +323,22 @@ export interface FlatShape {
 export function buildTerrain(flat: FlatShape[]) {
   // Distance from each grid point to the nearest flat shape, and that shape's level,
   // by a two-pass chamfer.
-  const dist = new Float32Array(N * N).fill(1e9);
-  const at = new Float32Array(N * N);
+  const dist = new Float32Array(NX * NZ).fill(1e9);
+  const at = new Float32Array(NX * NZ);
   // For a shape with no level of its own: the level of the ground at its middle.
-  const mid = new Float32Array(N * N);
+  const mid = new Float32Array(NX * NZ);
   for (const b of flat) {
     const y = b.y ?? NaN;
     const m = lowest((b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2).level;
-    const i0 = Math.max(0, Math.floor((b.x0 + WORLD.half) / RES));
-    const i1 = Math.min(N - 1, Math.ceil((b.x1 + WORLD.half) / RES));
-    const j0 = Math.max(0, Math.floor((b.z0 + WORLD.half) / RES));
-    const j1 = Math.min(N - 1, Math.ceil((b.z1 + WORLD.half) / RES));
+    const i0 = Math.max(0, Math.floor((b.x0 - WORLD.x0) / RES));
+    const i1 = Math.min(NX - 1, Math.ceil((b.x1 - WORLD.x0) / RES));
+    const j0 = Math.max(0, Math.floor((b.z0 - WORLD.z0) / RES));
+    const j1 = Math.min(NZ - 1, Math.ceil((b.z1 - WORLD.z0) / RES));
     for (let j = j0; j <= j1; j++)
       for (let i = i0; i <= i1; i++) {
-        dist[j * N + i] = 0;
-        at[j * N + i] = y;
-        mid[j * N + i] = m;
+        dist[j * NX + i] = 0;
+        at[j * NX + i] = y;
+        mid[j * NX + i] = m;
       }
   }
   const D = RES;
@@ -304,29 +350,29 @@ export function buildTerrain(flat: FlatShape[]) {
       mid[k] = mid[from];
     }
   };
-  for (let j = 0; j < N; j++)
-    for (let i = 0; i < N; i++) {
-      const k = j * N + i;
+  for (let j = 0; j < NZ; j++)
+    for (let i = 0; i < NX; i++) {
+      const k = j * NX + i;
       if (i > 0) relax(k, k - 1, D);
-      if (j > 0) relax(k, k - N, D);
-      if (i > 0 && j > 0) relax(k, k - N - 1, DD);
-      if (i < N - 1 && j > 0) relax(k, k - N + 1, DD);
+      if (j > 0) relax(k, k - NX, D);
+      if (i > 0 && j > 0) relax(k, k - NX - 1, DD);
+      if (i < NX - 1 && j > 0) relax(k, k - NX + 1, DD);
     }
-  for (let j = N - 1; j >= 0; j--)
-    for (let i = N - 1; i >= 0; i--) {
-      const k = j * N + i;
-      if (i < N - 1) relax(k, k + 1, D);
-      if (j < N - 1) relax(k, k + N, D);
-      if (i < N - 1 && j < N - 1) relax(k, k + N + 1, DD);
-      if (i > 0 && j < N - 1) relax(k, k + N - 1, DD);
+  for (let j = NZ - 1; j >= 0; j--)
+    for (let i = NX - 1; i >= 0; i--) {
+      const k = j * NX + i;
+      if (i < NX - 1) relax(k, k + 1, D);
+      if (j < NZ - 1) relax(k, k + NX, D);
+      if (i < NX - 1 && j < NZ - 1) relax(k, k + NX + 1, DD);
+      if (i > 0 && j < NZ - 1) relax(k, k + NX - 1, DD);
     }
-  field = new Float32Array(N * N);
-  floors = new Float32Array(N * N);
-  for (let j = 0; j < N; j++)
-    for (let i = 0; i < N; i++) {
-      const x = i * RES - WORLD.half;
-      const z = j * RES - WORLD.half;
-      const k = j * N + i;
+  field = new Float32Array(NX * NZ);
+  floors = new Float32Array(NX * NZ);
+  for (let j = 0; j < NZ; j++)
+    for (let i = 0; i < NX; i++) {
+      const x = WORLD.x0 + i * RES;
+      const z = WORLD.z0 + j * RES;
+      const k = j * NX + i;
       floors[k] = lowest(x, z).level;
       // A shape with no level follows the floor under each cell (so a ramp stays a ramp),
       // unless that floor is another level altogether: a patrol point on the dam's crest
@@ -335,43 +381,43 @@ export function buildTerrain(flat: FlatShape[]) {
       // Shelves stand right up to hand-built things (a 1 m gap); other shapes leave them room to blend.
       const dd = dist[k];
       let shelf = -Infinity;
-      for (const sh of SHELVES) shelf = Math.max(shelf, shelfAt(sh, x, z));
+      for (let n = 0; n < SHELVES.length; n++) shelf = Math.max(shelf, shelfAt(n, x, z));
       const base = level + (natural(x, z) - level) * smooth(3, 10, dd);
       field[k] = (shelf > base ? base + (shelf - base) * smooth(1, 2, dd) : base) + rim(x, z);
     }
-  steep = new Uint8Array(N * N);
-  for (let j = 1; j < N - 1; j++)
-    for (let i = 1; i < N - 1; i++) {
-      const gx = (field[j * N + i + 1] - field[j * N + i - 1]) / (2 * RES);
-      const gz = (field[(j + 1) * N + i] - field[(j - 1) * N + i]) / (2 * RES);
+  steep = new Uint8Array(NX * NZ);
+  for (let j = 1; j < NZ - 1; j++)
+    for (let i = 1; i < NX - 1; i++) {
+      const gx = (field[j * NX + i + 1] - field[j * NX + i - 1]) / (2 * RES);
+      const gz = (field[(j + 1) * NX + i] - field[(j - 1) * NX + i]) / (2 * RES);
       // A cell is a cliff when the ground rises steeply across it or onto a neighbour.
       const up = Math.max(Math.abs(gx), Math.abs(gz), Math.hypot(gx, gz));
-      if (up > STEEP) steep[j * N + i] = 1;
+      if (up > STEEP) steep[j * NX + i] = 1;
     }
 }
 
-/** Ground height at (x, z). Outside the cached square it is the rim's horizon. */
+/** Ground height at (x, z). Outside the world's bounds it is the rim's horizon. */
 export function terrainHeight(x: number, z: number): number {
-  const fx = (x + WORLD.half) / RES;
-  const fz = (z + WORLD.half) / RES;
-  if (!field || fx < 0 || fz < 0 || fx >= N - 1 || fz >= N - 1) return rim(x, z) + (field ? 0 : natural(x, z));
+  const fx = (x - WORLD.x0) / RES;
+  const fz = (z - WORLD.z0) / RES;
+  if (!field || fx < 0 || fz < 0 || fx >= NX - 1 || fz >= NZ - 1) return rim(x, z) + (field ? 0 : natural(x, z));
   const i = Math.floor(fx);
   const j = Math.floor(fz);
   const u = fx - i;
   const v = fz - j;
-  const a = field[j * N + i];
-  const b = field[j * N + i + 1];
-  const c = field[(j + 1) * N + i];
-  const d = field[(j + 1) * N + i + 1];
+  const a = field[j * NX + i];
+  const b = field[j * NX + i + 1];
+  const c = field[(j + 1) * NX + i];
+  const d = field[(j + 1) * NX + i + 1];
   return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
 }
 
-/** True where the ground is a cliff. Outside the cached square everything is. */
+/** True where the ground is a cliff. Outside the world's bounds everything is. */
 export function steepAt(x: number, z: number): boolean {
-  const i = Math.round((x + WORLD.half) / RES);
-  const j = Math.round((z + WORLD.half) / RES);
-  if (!steep || i < 0 || j < 0 || i >= N || j >= N) return true;
-  return steep[j * N + i] === 1;
+  const i = Math.round((x - WORLD.x0) / RES);
+  const j = Math.round((z - WORLD.z0) / RES);
+  if (!steep || i < 0 || j < 0 || i >= NX || j >= NZ) return true;
+  return steep[j * NX + i] === 1;
 }
 
 /** Uphill direction scaled by the rise per metre. */
@@ -386,10 +432,10 @@ export function terrainGrad(x: number, z: number): { x: number; z: number } {
  * the low ground at its foot.
  */
 export function floorLevel(x: number, z: number): number {
-  const i = Math.round((x + WORLD.half) / RES);
-  const j = Math.round((z + WORLD.half) / RES);
-  if (!floors || i < 0 || j < 0 || i >= N || j >= N) return lowest(x, z).level;
-  return floors[j * N + i];
+  const i = Math.round((x - WORLD.x0) / RES);
+  const j = Math.round((z - WORLD.z0) / RES);
+  if (!floors || i < 0 || j < 0 || i >= NX || j >= NZ) return lowest(x, z).level;
+  return floors[j * NX + i];
 }
 
 /** True on high ground or a cliff: anywhere well above the walkable floor nearby. */

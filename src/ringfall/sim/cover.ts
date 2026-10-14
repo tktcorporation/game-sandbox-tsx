@@ -1,5 +1,5 @@
-import { COVER, WORLD } from "./config";
-import { groundAt, solidAt } from "./geom";
+import { COVER } from "./config";
+import { groundAt, inWorld, solidAt } from "./geom";
 import { BOXES } from "./map";
 import type { Point } from "./state";
 
@@ -34,7 +34,7 @@ for (const b of BOXES) {
       const t = -len / 2 + ((i + 0.5) * len) / n;
       const x = fx + tx * t + nx * COVER.offset;
       const z = fz + tz * t + nz * COVER.offset;
-      if (Math.abs(x) > WORLD.half - 1 || Math.abs(z) > WORLD.half - 1) continue;
+      if (!inWorld(x, z, 1)) continue;
       if (solidAt(x, 0.5, z) || solidAt(x, 1.5, z)) continue;
       if (Math.abs(groundAt(x, z, 0.3, 0.3)) > 0.3) continue;
       COVERS.push({ x, z, tx, tz });
