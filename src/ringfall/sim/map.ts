@@ -574,7 +574,7 @@ export const EXTRACTS: ExtractPoint[] = [
   { id: "flare", name: "台地の回収地点", short: "台地", x: -58, z: -53, radius: 5, hold: 4, needsFlare: true, note: "発煙筒を焚けば 4 秒" },
   { id: "village", name: "廃村の回収地点", short: "廃村", x: -91, z: -63, radius: 5, hold: 15, note: "遠いが静か。15 秒待つ" },
   // The harbor's way off: a boat comes up the channel to the quay.
-  { id: "boat", name: "埠頭のボート", short: "ボート", x: 105, z: -571, radius: 5, hold: 1.5, call: 25, waves: { x: 100, z: -563 }, note: "呼んで 25 秒守る。増援が降りてくる" },
+  { id: "boat", name: "埠頭のボート", short: "ボート", x: 105, z: -569, radius: 5, hold: 1.5, call: 25, waves: { x: 100, z: -563 }, note: "呼んで 25 秒守る。増援が降りてくる" },
 ];
 export const EXTRACT = EXTRACTS[0];
 
@@ -1124,7 +1124,8 @@ function authoredKeep(): Keep {
   }
   ROAMERS.forEach(squadArea);
   for (const b of EXTRA_BINS) points.push({ x: b.x, z: b.z, r: 2.5 });
-  for (const x of EXTRACTS) points.push({ x: x.x, z: x.z, r: 10 });
+  // The boat's point keeps less flat ground round it: the channel's water starts a few metres off.
+  for (const x of EXTRACTS) points.push({ x: x.x, z: x.z, r: x.id === "boat" ? 6 : 10 });
   for (const r of REGIONS) points.push({ x: r.drop.x, z: r.drop.z, r: 6 }, { x: r.land.x, z: r.land.z, r: 6 });
   return { points, segments };
 }
@@ -1132,13 +1133,16 @@ function authoredKeep(): Keep {
 /**
  * The ground scattered with cover, each with its own grid and seed so that adding to one
  * region leaves the other's cover as it was. On the salt flats only one candidate in four
- * stands, and only a container or a rock: open ground that is dangerous to cross.
+ * stands, and only a container or a rock: open ground that is dangerous to cross. The
+ * channel, under water, gets none.
  */
 const SCATTER = [
   { x0: -215, x1: 215, z0: -215, z1: 215, seed: 7_331 },
   { x0: WORLD.x0, x1: WORLD.x1, z0: WORLD.z0, z1: -216, seed: 4_517 },
 ];
 const SPARSE = "塩田";
+/** The harbor's channel, which holds water: nothing is scattered in it. */
+const WATER = "水路";
 
 function scatterCover(authored: Box[], keep: Keep): Box[] {
   const placed: Box[] = [];
@@ -1220,8 +1224,9 @@ function scatterArea(authored: Box[], { points, segments }: Keep, area: (typeof 
     for (let gz = area.z0 + edge; gz <= area.z1 - edge; gz += 12) {
       const x = gx + (rnd() - 0.5) * 7;
       const z = gz + (rnd() - 0.5) * 7;
-      const sparse = surfaceAt(x, z) === SPARSE;
-      if (sparse && rnd() > 0.25) continue;
+      const at = surfaceAt(x, z);
+      const sparse = at === SPARSE;
+      if ((sparse && rnd() > 0.25) || at === WATER) continue;
       const piece = sparse ? wreckAt(x, z) : pieceAt(x, z);
       const base = groundUnder(piece);
       if (base === null) continue;

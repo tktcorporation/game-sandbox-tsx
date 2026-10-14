@@ -335,16 +335,16 @@ const harborTour = [
   ["tour-12-pass-saddle", -60, 1.7, -228, 0.05, -0.05],
   ["tour-13-railway-bridge", 100, 1.7, -191, 1.45, 0.32],
   ["tour-14-bridge-deck", 122, 11.8, -168, 0, -0.04, true],
-  ["tour-15-viaduct", 112, 1.7, -352, -1.57, 0.12],
+  ["tour-15-viaduct", 119, 1.7, -357, -1.42, 0.16],
   ["tour-16-wreck", -2, 1.7, -522, 0.12, 0.1],
   ["tour-17-wreck-deck", -30, 8.8, -560, 1.5, 0.02, true],
   ["tour-18-yard-alley", -138, 1.7, -413.5, 1.57, 0.02],
-  ["tour-19-yard-crane", -100, 15.4 + 1.6, -405, 3.1, -0.42, true],
-  ["tour-20-smelter", 118, 1.7, -384, 0, 0.18],
+  ["tour-19-yard-crane", -100, 13.6 + 1.6, -405, 3.1, -0.42, true],
+  ["tour-20-smelter", 98, 1.7, -383, 0.4, 0.16],
   ["tour-21-lighthouse", -66, 1.7, -514, -0.97, 0.22],
-  ["tour-22-lighthouse-view", -114, 33.5, -551, 1.5, -0.22, true],
+  ["tour-22-lighthouse-view", -112.9, 33.4, -552, 1.45, -0.2, true],
   ["tour-23-salt-flats", -40, 1.7, -468, 0.75, 0.0],
-  ["tour-24-quay-boat", 70, 1.7, -566, 1.57, -0.05],
+  ["tour-24-quay-boat", 100, 1.7, -572, 0.9, -0.22],
 ];
 for (const [name, x, dy, z, yaw, pitch, abs] of harborTour) {
   const y = abs ? dy : (await page.evaluate(([x, z]) => window.ringfallTerrain(x, z), [x, z])) + dy;
@@ -416,7 +416,11 @@ for (let i = 0; i < 25 * 60 * 10; i++) {
     prevKey = key;
     lastProgress = s.time;
   }
-  if (s.time - lastProgress > 90) throw new Error(`no progress for 90 s: ${JSON.stringify(s).slice(0, 600)}`);
+  if (s.time - lastProgress > 90) {
+    await page.screenshot({ path: `${out}/stall.png` });
+    const near = s.enemies.filter((e) => Math.hypot(e.x - s.player.x, e.z - s.player.z) < 70);
+    throw new Error(`no progress for 90 s: player ${JSON.stringify(s.player)} ally ${JSON.stringify(s.ally)} cleared ${s.cleared} near ${JSON.stringify(near)}`);
+  }
   const live = s.enemies.filter((e) => e.mode !== "spawning" && e.aware === "engaged");
   const near = (e) => Math.hypot(e.x - s.player.x, e.z - s.player.z);
   const at = (poi) => live.some((e) => s.squads[e.squad].poi === poi);

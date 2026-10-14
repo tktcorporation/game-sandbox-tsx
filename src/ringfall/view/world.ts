@@ -803,15 +803,15 @@ export class World {
       this.dropship.position.y += (want - this.dropship.position.y) * Math.min(1, dt * 0.8);
       this.dropship.rotation.z = Math.sin(this.time * 1.3) * 0.03;
     }
-    // The boat comes up the channel from its far end once called, and lies at the quay when it is there.
+    // The boat waits at the channel's far end; once called it comes up to the quay, and lies there when it is there.
     const quay = EXTRACTS.find((x) => x.id === "boat")!;
     const boatLeft = callLeft(s, "boat");
-    if (s.phase !== "drop" && boatLeft >= 0) {
+    {
       if (!this.boat) {
         this.boat = buildBoat();
         this.scene.add(this.boat);
       }
-      const t = Math.min(1, boatLeft / (quay.call ?? 1));
+      const t = boatLeft < 0 ? 1 : Math.min(1, boatLeft / (quay.call ?? 1));
       const wantX = quay.x + (CHANNEL.x1 - 6 - quay.x) * t;
       this.boat.position.x += (wantX - this.boat.position.x) * Math.min(1, this.boat.position.x === 0 ? 1 : dt * 2);
       this.boat.position.set(this.boat.position.x, CHANNEL.y + Math.sin(this.time * 1.7) * 0.06, (CHANNEL.z0 + CHANNEL.z1) / 2 + 1);

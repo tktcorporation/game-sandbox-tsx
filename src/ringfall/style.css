@@ -1191,13 +1191,13 @@ body.touch .mate-bars {
   gap: 12px;
   flex-wrap: wrap;
 }
-/* The landing region: a choice of two, its line under it. */
+/* The landing region: a choice of two and its line, on a row of its own above the buttons. */
 .hub-region {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 6px;
-  margin-right: auto;
+  flex-basis: 100%;
 }
 .hub-region small {
   color: var(--muted);
@@ -1216,9 +1216,19 @@ body.touch .mate-bars {
   box-shadow: none;
 }
 .hub-region span {
-  flex-basis: 100%;
+  margin-left: 8px;
   font-size: 13px;
   color: var(--muted);
+}
+/* A phone on its side: the choice shares the buttons' row, without its line, so the lists keep their room. */
+@media (max-height: 500px) {
+  .hub-region {
+    flex-basis: auto;
+    margin-right: auto;
+  }
+  .hub-region span {
+    display: none;
+  }
 }
 #hub .hub-foot button:disabled {
   opacity: 0.4;
