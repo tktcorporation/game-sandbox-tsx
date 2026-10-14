@@ -49,9 +49,9 @@ good      80%   5.8m      4       1740      4440       0.6   87% 37%  0.9 2/4   
 
 region: harbor (港湾地帯)
 skill     alive time(med) cleared haul(med) score(med) downs acc crit leap crowd flank waves ally               rank               exit
-beginner  87%   3.8m      2       1230      2030       0.4   46% 3%   0.7 2/4   4%    1     32% 1.1d 0.0r 0.0h S0 A0 B18 C8 -4    boat 26
-casual    80%   4.9m      3       980       2180       0.5   67% 4%   0.6 2/4   8%    1     21% 1.4d 0.0r 0.0h S0 A1 B23 C0 -6    boat 24
-good      87%   4.5m      3       1080      2280       0.4   75% 18%  0.5 2/4   9%    1     17% 0.9d 0.0r 0.1h S0 A1 B25 C0 -4    boat 26
+beginner  87%   3.8m      2       1230      2030       0.3   47% 3%   0.6 2/4   4%    1     31% 1.3d 0.0r 0.0h S0 A0 B18 C8 -4    boat 26
+casual    83%   4.9m      3       980       2180       0.4   68% 4%   0.6 2/4   8%    1     21% 1.1d 0.0r 0.0h S0 A1 B24 C0 -5    boat 25
+good      90%   4.6m      3       1080      2280       0.3   75% 18%  0.4 2/4   9%    1     18% 1.0d 0.0r 0.1h S0 A1 B26 C0 -3    boat 27
 ```
 
 目標から外れている値:
