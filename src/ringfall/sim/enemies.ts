@@ -728,6 +728,24 @@ function titan(s: State, e: Enemy, d: number) {
   }
 }
 
+/**
+ * Where along the segment a→b it first comes within `r` of a body standing at `at` (taken as
+ * the vertical segment from knee, 0.4 m, to `top` above its feet), or null. Sampled finely
+ * enough that no step skips `r`.
+ */
+function sweptHit(a: Vec3, b: Vec3, r: number, at: Vec3, top: number): Vec3 | null {
+  const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z) / r));
+  for (let i = 1; i <= n; i++) {
+    const t = i / n;
+    const x = a.x + (b.x - a.x) * t;
+    const y = a.y + (b.y - a.y) * t;
+    const z = a.z + (b.z - a.z) * t;
+    const cy = Math.max(at.y + 0.4, Math.min(at.y + top, y));
+    if (Math.hypot(x - at.x, y - cy, z - at.z) < r) return { x, y, z };
+  }
+  return null;
+}
+
 export function stepOrbs(s: State) {
   const p = s.player;
   const c = chest(s);
@@ -753,23 +771,23 @@ export function stepOrbs(s: State) {
     o.pos.z += o.vel.z * TICK;
     o.life -= TICK;
     if (o.life <= 0 || o.pos.y < terrainHeight(o.pos.x, o.pos.z)) return false;
-    // A wall stops an orb that meets it with its centre or its lower edge, so one that would only graze the top of a low wall does not pass over it.
+    // The player and the teammate as vertical capsules from knee to head, tested along the whole
+    // stretch the orb covered this tick (a fast bolt moves further than a body is wide); a body
+    // is hit only if no wall stands between where the orb was and where it meets the body.
     const from = { x: o.pos.x - o.vel.x * TICK, y: o.pos.y - o.vel.y * TICK, z: o.pos.z - o.vel.z * TICK };
-    if (!los(from, o.pos) || !los({ ...from, y: from.y - o.r }, { ...o.pos, y: o.pos.y - o.r })) return false;
-    // Player as a vertical capsule from knee to head.
-    const py = Math.max(p.pos.y + 0.4, Math.min(p.pos.y + (p.crouch || p.sliding ? 1.1 : 1.7), o.pos.y));
-    if (Math.hypot(o.pos.x - p.pos.x, o.pos.y - py, o.pos.z - p.pos.z) < o.r + PLAYER.radius) {
+    const clear = (to: Vec3) => los(from, to) && los({ ...from, y: from.y - o.r }, { ...to, y: to.y - o.r });
+    const onPlayer = sweptHit(from, o.pos, o.r + PLAYER.radius, p.pos, p.crouch || p.sliding ? 1.1 : 1.7);
+    if (onPlayer && clear(onPlayer)) {
       hurtPlayer(s, o.dmg, o.pos.x - o.vel.x, o.pos.z - o.vel.z);
       return false;
     }
-    const a = s.ally;
-    if (allyUp(s)) {
-      const ay = Math.max(a.pos.y + 0.4, Math.min(a.pos.y + 1.7, o.pos.y));
-      if (Math.hypot(o.pos.x - a.pos.x, o.pos.y - ay, o.pos.z - a.pos.z) < o.r + ALLY.radius) {
-        hurtAlly(s, o.dmg);
-        return false;
-      }
+    const onAlly = allyUp(s) ? sweptHit(from, o.pos, o.r + ALLY.radius, s.ally.pos, 1.7) : null;
+    if (onAlly && clear(onAlly)) {
+      hurtAlly(s, o.dmg);
+      return false;
     }
+    // A wall stops an orb that meets it with its centre or its lower edge, so one that would only graze the top of a low wall does not pass over it.
+    if (!clear(o.pos)) return false;
     return true;
   });
   if (s.stats.wipes === wipes) s.orbs = kept;

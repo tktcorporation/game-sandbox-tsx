@@ -8,7 +8,7 @@
  *
  * With a region id after the count, only that region's table is played.
  */
-import { ALLY, BAG, ENEMIES, NOISE, PLAYER, RAIDERS, REINFORCE, SEARCH, TACTICAL, TICK, VALUABLES, WORLD } from "../src/ringfall/sim/config";
+import { ALLY, BAG, ENEMIES, NOISE, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, TACTICAL, TICK, VALUABLES, WORLD } from "../src/ringfall/sim/config";
 import { engageSquad, makeNoise } from "../src/ringfall/sim/awareness";
 import { spawnEnemy } from "../src/ringfall/sim/enemies";
 import { COVERS } from "../src/ringfall/sim/cover";
@@ -1204,6 +1204,46 @@ function standoff(at: { x: number; z: number }, dist: number, kinds: EnemyKind[]
   return { s, foes, squad };
 }
 
+/**
+ * A fast bolt aimed through the player hits even when its positions before and after a
+ * tick fall on either side of the player.
+ */
+function checkBoltNoTunnel(): string | null {
+  const at = openSpot(16, 2, 9);
+  if (!at) return "bolt scenario: no open ground for the test";
+  const { s } = standoff(at, 15, ["grunt"]);
+  s.enemies = [];
+  const p = s.player;
+  const speed = ENEMIES.grunt.orbSpeed;
+  const perTick = speed * TICK;
+  // Start so that after 5 ticks the bolt is half a tick short of the player, and after 6 half a tick past.
+  const back = perTick * 5.5;
+  s.orbs.push({ id: s.nextId++, pos: { x: p.pos.x, y: p.pos.y + 1.2, z: p.pos.z - back }, vel: { x: 0, y: 0, z: speed }, r: ENEMIES.grunt.orbR, dmg: 10, life: 5, homing: false });
+  let hit = false;
+  for (let i = 0; i < 10; i++) {
+    step(s, idleInput(), false);
+    if (s.events.some((e) => e.t === "hurt")) hit = true;
+  }
+  return hit ? null : "bolt scenario: a grunt bolt flew straight through the player without hitting";
+}
+
+/** A pickup's later waves fight once its squad is fighting: they do not stand by as "alert" robots. */
+function checkLaterWaveFights(): string | null {
+  const s = padRun();
+  const ship = EXTRACTS.find((x) => x.id === "ship")!;
+  const p = s.player;
+  p.pos = { x: ship.x, y: groundAt(ship.x, ship.z, 0.4, 20), z: ship.z };
+  p.iframes = 999;
+  holdSpot(s, SHIP_WAVES.first + 0.2);
+  const first = s.enemies.find((e) => s.squads[e.squad]?.name === SHIP_SQUAD);
+  if (!first) return "later-wave scenario: no first wave";
+  engageSquad(s, first.squad, first);
+  holdSpot(s, SHIP_WAVES.every + 0.2);
+  const idle = s.enemies.filter((e) => e.squad === first.squad && e.aware !== "engaged");
+  if (s.enemies.filter((e) => e.squad === first.squad).length < 3) return "later-wave scenario: the second wave did not come";
+  return idle.length ? `later-wave scenario: ${idle.length} robots of a later wave joined a fighting squad without fighting` : null;
+}
+
 /** A grunt's burst at 15 m in the open finds a player who sidesteps through the glow and the shots. */
 function checkSidestepHit(): string | null {
   const at = openSpot(16, 2, 9);
@@ -1365,7 +1405,7 @@ function checkPullWhenAiming(): string | null {
   return null;
 }
 
-for (const err of [checkSidestepHit(), checkWallStops(), checkPinch(), checkHealHeard(), checkPositionMatters(), checkPullWhenAiming(), checkVault(), checkQuests(), checkSettle(), checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkBoatCall(), checkSecondPickup(), checkRegionDrop(), checkConnections(), checkAllySelfUp(), checkStompHeight(), checkDropOffHighGround(), checkFieldsReused(), checkFieldsFollowRunner(), checkCliffsStop(), checkNoPits(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill(), checkLeap(), checkLeapLeavesAllyBelow(), checkLeapDowned(), checkLeapAllyCatchesUp(), checkLeapAllyDowned(), checkLeapWithItem(), checkLeapClocks(), checkLeapOffHighGround(), checkLeapUnderRoof()]) {
+for (const err of [checkBoltNoTunnel(), checkLaterWaveFights(), checkSidestepHit(), checkWallStops(), checkPinch(), checkHealHeard(), checkPositionMatters(), checkPullWhenAiming(), checkVault(), checkQuests(), checkSettle(), checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkBoatCall(), checkSecondPickup(), checkRegionDrop(), checkConnections(), checkAllySelfUp(), checkStompHeight(), checkDropOffHighGround(), checkFieldsReused(), checkFieldsFollowRunner(), checkCliffsStop(), checkNoPits(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill(), checkLeap(), checkLeapLeavesAllyBelow(), checkLeapDowned(), checkLeapAllyCatchesUp(), checkLeapAllyDowned(), checkLeapWithItem(), checkLeapClocks(), checkLeapOffHighGround(), checkLeapUnderRoof()]) {
   if (err) {
     console.error(err);
     process.exit(1);

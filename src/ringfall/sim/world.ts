@@ -516,7 +516,13 @@ function shipWave(s: State, ship: ExtractPoint) {
       }
     }
     const e = spawnEnemy(s, kind, at.x + Math.sin(a) * SHIP_WAVES.radius, at.z - Math.cos(a) * SHIP_WAVES.radius, -1, squad, { appear: true });
-    // They come to the pickup looking for whoever called it: a player in cover near it sees them first.
+    // A squad already fighting takes its new members straight into the fight.
+    if (s.squads[squad].engaged) {
+      e.aware = "engaged";
+      e.detect = 1;
+      continue;
+    }
+    // Otherwise they come to the pickup looking for whoever called it: a player in cover near it sees them first.
     e.aware = "alert";
     e.detect = AWARE.suspicious;
     e.goal = { x: ship.x, z: ship.z };
