@@ -26,7 +26,6 @@ const $ = (id: string) => document.getElementById(id)!;
 const stage = $("stage");
 /** Phones and tablets: touch controls, stronger aim pull, lighter rendering. */
 let touchMode = matchMedia("(pointer: coarse)").matches;
-preferLowPower(touchMode);
 const world = new World(stage, { lowPower: touchMode });
 const hud = new Hud();
 
@@ -51,8 +50,10 @@ let ads = false;
 /** Touch drag pixels are worth this many mouse pixels of turning. */
 const TOUCH_LOOK = 2.6;
 
+/** Also picks the light mixer: this runs before the same gesture unlocks audio. */
 function enableTouch() {
   touchMode = true;
+  preferLowPower(true);
   document.body.classList.add("touch");
 }
 if (touchMode) enableTouch();

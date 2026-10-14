@@ -82,7 +82,7 @@ export class Soundscape {
 
     const play = running && s.phase !== "done";
     this.wind(s, ear, play);
-    this.dropship(s, play);
+    this.dropship(s, play, ear);
     if (play && s.phase === "play") {
       this.robotSteps(s, ear, dt);
       this.ambience(ear, dt);
@@ -111,7 +111,7 @@ export class Soundscape {
   }
 
   /** The dropship's engines, from where it hovers, once called. */
-  private dropship(s: State, play: boolean) {
+  private dropship(s: State, play: boolean, ear: P3) {
     const on = play && s.phase === "play" && s.shipCall >= 0;
     if (!on) {
       this.ship?.stop();
@@ -128,7 +128,8 @@ export class Soundscape {
     this.shipY += (want - this.shipY) * 0.013;
     const t = getMixer()!.ctx.currentTime;
     this.ship.gain.gain.setTargetAtTime(s.shipCall === 0 ? 0.5 : 0.4, t, 0.5);
-    placeLoop(this.ship, { x: EXTRACT.x, y: this.shipY, z: EXTRACT.z - 2 });
+    const at = { x: EXTRACT.x, y: this.shipY, z: EXTRACT.z - 2 };
+    placeLoop(this.ship, at, this.occ.blocked(ear, at));
   }
 
   /** Footfalls and servo whine of robots walking near the listener. */
