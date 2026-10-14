@@ -3,6 +3,7 @@ import type { Kit } from "../sim/state";
 import { buy, deliver, deliverable, emptyLoadout, HEALS, healCount, keyName, price, sell, sellPrice, takeKit, wares, type Item, type Loadout, type Profile } from "../meta/profile";
 import { need, offered, type Quest, type RewardItem } from "../meta/quests";
 import { saveProfile } from "../meta/storage";
+import { sfx } from "./sfx";
 
 const RARITY_CSS = ["var(--r0)", "var(--r1)", "var(--r2)", "var(--r3)"];
 
@@ -127,8 +128,12 @@ export class Hub {
 
   private act(act: string, arg: string) {
     const pick = arg.split(",").map(Number);
-    if (act === "tab") this.tab = arg as Tab;
+    if (act === "tab") {
+      this.tab = arg as Tab;
+      sfx.tab();
+    }
     else if (act === "pick") {
+      sfx.click();
       const n = pick[0];
       const it = this.profile.stash[n];
       const toggle = (ns: number[]) => (ns.includes(n) ? ns.filter((x) => x !== n) : [...ns, n]);
@@ -138,6 +143,7 @@ export class Hub {
       } else if (it?.t === "armor") this.load.armor = this.load.armor === n ? null : n;
       else if (it?.t === "key") this.load.keys = toggle(this.load.keys);
     } else if (act === "heal+" || act === "heal-") {
+      sfx.click();
       const k = arg as keyof Loadout["heals"];
       const max = Math.min(healCount(this.profile, k), HEAL_SPECS[k].max);
       this.load.heals[k] = Math.max(0, Math.min(max, this.load.heals[k] + (act === "heal+" ? 1 : -1)));
@@ -146,15 +152,20 @@ export class Hub {
       const n = pick[pick.length - 1];
       this.reindex([n]);
       this.set(sell(this.profile, n));
+      sfx.sell();
     } else if (act === "buy") {
       const next = buy(this.profile, wares()[pick[0]]);
-      if (next) this.set(next);
+      if (next) {
+        this.set(next);
+        sfx.buy();
+      }
     } else if (act === "deliver") {
       const q = offered(this.profile.quests).find((o) => o.id === arg);
       const take = q && deliverable(this.profile, q);
       if (take) {
         this.reindex(take);
         this.set(deliver(this.profile, arg));
+        sfx.deliver();
       }
     } else if (act === "go" || act === "free") {
       const l = act === "free" ? { ...emptyLoadout(), heals: this.load.heals, keys: this.load.keys } : this.load;
@@ -162,9 +173,11 @@ export class Hub {
       this.set(profile);
       this.load = emptyLoadout();
       this.close();
+      sfx.deploy();
       this.deploy(kit);
       return;
     } else if (act === "back") {
+      sfx.click();
       this.close();
       $("title").hidden = false;
       return;

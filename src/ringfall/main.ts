@@ -1,6 +1,5 @@
 import { AWARE, TICK, WEAPONS } from "./sim/config";
 import { Bot, SKILLS } from "./sim/bot";
-import { dist2d } from "./sim/geom";
 import { freeKit, idleInput, newRun, type GameEvent, type Input, type Kit, type State } from "./sim/state";
 import { settle, type Settlement } from "./meta/profile";
 import { loadProfile, saveProfile } from "./meta/storage";
@@ -9,7 +8,10 @@ import { step } from "./sim/step";
 import { hurtAlly } from "./sim/ally";
 import { haulValue } from "./sim/results";
 import { bagUsed } from "./sim/world";
-import { setWind, sfx, unlock } from "./view/audio";
+import { preferLowPower, savedVolume, setVolume, unlock } from "./view/audio";
+import { sfx } from "./view/sfx";
+import { Soundscape } from "./view/soundscape";
+import { setupSoundCheck } from "./view/soundcheck";
 import { Hud } from "./view/hud";
 import { World } from "./view/world";
 import { blockPageZoom, setupTouch } from "./touch";
@@ -24,6 +26,7 @@ const $ = (id: string) => document.getElementById(id)!;
 const stage = $("stage");
 /** Phones and tablets: touch controls, stronger aim pull, lighter rendering. */
 let touchMode = matchMedia("(pointer: coarse)").matches;
+preferLowPower(touchMode);
 const world = new World(stage, { lowPower: touchMode });
 const hud = new Hud();
 
@@ -139,161 +142,16 @@ function readInput(): Input {
 }
 
 // --- sound and feel for each event
+const sound = new Soundscape();
 function onEvent(e: GameEvent, s: State) {
   hud.event(e, s);
-  const p = s.player;
-  switch (e.t) {
-    case "shot":
-      sfx.shot(e.weapon);
-      break;
-    case "hit":
-      if (!e.ally) sfx.hit(e.crit, e.shield, e.flank === "back" || e.flank === "ambush");
-      break;
-    case "allyShot":
-      sfx.allyShot(Math.hypot(e.from.x - p.pos.x, e.from.z - p.pos.z));
-      break;
-    case "shipCalled":
-    case "shipLanded":
-      sfx.banner();
-      break;
-    case "shipWave":
-      sfx.spawn();
-      break;
-    case "flareLit":
-      sfx.careDrop();
-      break;
-    case "allyDown":
-      sfx.allyDown();
-      break;
-    case "allyUp":
-      sfx.allyUp();
-      break;
-    case "shieldBreak":
-      sfx.shieldBreak(e.tier);
-      break;
-    case "kill":
-      if (!e.ally) sfx.kill(e.crit);
-      else sfx.allyUp();
-      break;
-    case "hurt":
-      if (e.shieldBroke) sfx.myShieldBreak();
-      else sfx.hurt(e.shield);
-      break;
-    case "dry":
-      sfx.dry();
-      break;
-    case "reload":
-      sfx.reload(e.time);
-      break;
-    case "reloaded":
-      sfx.reloaded();
-      break;
-    case "slide":
-      sfx.slide();
-      break;
-    case "jump":
-      sfx.jump();
-      break;
-    case "land":
-      sfx.land(e.speed);
-      break;
-    case "pickup":
-      if (e.kind === "shard") sfx.shard();
-      else sfx.pickup(e.rarity);
-      break;
-    case "binOpen":
-      sfx.bin();
-      break;
-    case "tactical":
-      sfx.tactical();
-      break;
-    case "tacticalMiss":
-      sfx.tacticalMiss();
-      break;
-    case "ultReady":
-      sfx.ultReady();
-      break;
-    case "leap":
-      sfx.leap();
-      break;
-    case "leapBlocked":
-      sfx.tacticalMiss();
-      break;
-    case "leapLand":
-      sfx.leapLand();
-      break;
-    case "healStart":
-      sfx.battery();
-      break;
-    case "healDone":
-      sfx.batteryDone();
-      break;
-    case "mantle":
-      sfx.jump();
-      break;
-    case "telegraph": {
-      const en = s.enemies.find((x) => x.id === e.id);
-      if (en && dist2d(en.pos, p.pos) < 45) sfx.telegraph(en.kind === "titan" || en.kind === "heavy");
-      break;
-    }
-    case "stompTelegraph":
-      sfx.telegraph(true);
-      break;
-    case "enemyFire":
-      sfx.enemyFire(Math.hypot(e.pos.x - p.pos.x, e.pos.z - p.pos.z));
-      break;
-    case "lunge":
-      sfx.lunge();
-      break;
-    case "spawn":
-      sfx.spawn();
-      break;
-    case "stomp":
-      sfx.stomp();
-      break;
-    case "suspect":
-      sfx.suspect();
-      break;
-    case "engage":
-      sfx.engage();
-      break;
-    case "poiStart":
-    case "poiClear":
-    case "landed":
-      sfx.banner();
-      break;
-    case "reinforce":
-      sfx.reinforce();
-      break;
-    case "raiders":
-      sfx.raiders();
-      break;
-    case "searchStart":
-      sfx.search();
-      break;
-    case "careDrop":
-      sfx.careDrop();
-      break;
-    case "careLand":
-      sfx.careLand();
-      break;
-    case "down":
-      sfx.down();
-      break;
-    case "revive":
-      sfx.revive();
-      break;
-    case "titanDown":
-      sfx.victory();
-      break;
-    case "done":
-      if (s.outcome === "extracted") sfx.victory();
-      // Settle and save at once; only the results screen waits for the moment to play out.
-      settlement = settle(hub.profile, s);
-      hub.profile = settlement.profile;
-      saveProfile(hub.profile);
-      setTimeout(finish, s.outcome === "extracted" ? 1400 : 2400);
-      break;
+  sound.event(e, s);
+  if (e.t === "done") {
+    // Settle and save at once; only the results screen waits for the moment to play out.
+    settlement = settle(hub.profile, s);
+    hub.profile = settlement.profile;
+    saveProfile(hub.profile);
+    setTimeout(finish, s.outcome === "extracted" ? 1400 : 2400);
   }
 }
 
@@ -364,8 +222,8 @@ function frame(now: number) {
     }
     if (n === 6) acc = 0;
   }
-  setWind(running && (state.phase === "drop" || state.player.leap) ? 1 : 0);
   world.render(state, dt);
+  sound.frame(state, world.camera, dt, running && !paused);
   if (running) hud.frame(state, world, dt, dims.w, dims.h);
   requestAnimationFrame(frame);
 }
@@ -409,6 +267,7 @@ function start(k: Kit) {
   document.body.classList.add("playing");
   keepAwake(true);
   world.reset();
+  sound.reset();
   state = newRun(Date.now() & 0xffff, kit);
   acc = hitstop = slowmo = 0;
   running = true;
@@ -429,6 +288,9 @@ function finish() {
   $("banner").className = "";
   hud.show(false);
   hud.results(state, settlement ?? undefined);
+  if (state.outcome === "extracted") sfx.extracted();
+  else sfx.lost();
+  sound.reset();
   $("results").hidden = false;
   if (document.pointerLockElement) document.exitPointerLock();
 }
@@ -458,6 +320,19 @@ $("resume").addEventListener("click", () => {
   lock();
 });
 stage.addEventListener("click", () => !touchMode && running && !paused && document.pointerLockElement !== stage && lock());
+// Browsers start sound only after a gesture; any press on the page counts.
+addEventListener("pointerdown", unlock);
+addEventListener("keydown", unlock);
+for (const id of ["vol", "vol2"]) {
+  const el = $(id) as HTMLInputElement;
+  el.value = String(savedVolume());
+  el.addEventListener("input", () => {
+    setVolume(Number(el.value));
+    ($("vol") as HTMLInputElement).value = el.value;
+    ($("vol2") as HTMLInputElement).value = el.value;
+  });
+}
+setupSoundCheck();
 for (const id of ["sens", "sens2"]) {
   const el = $(id) as HTMLInputElement;
   el.addEventListener("input", () => {
