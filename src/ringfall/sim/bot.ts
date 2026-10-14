@@ -1,12 +1,12 @@
-import { AWARE, DEG, HEALS, PLAYER, TICK, ULT, WORLD } from "./config";
+import { AWARE, DEG, HEALS, PLAYER, TICK, ULT } from "./config";
 import { bodyCenter, eyePos, flankOf, magSize, weakPoint } from "./combat";
-import { ceilingAt, dist2d, groundAt, los, onTerrain, lookAngles, solidAt, wrapAngle } from "./geom";
-import { EXTRACTS, POIS } from "./map";
+import { ceilingAt, dist2d, inWorld, groundAt, los, onTerrain, lookAngles, solidAt, wrapAngle } from "./geom";
+import { EXTRACTS, POIS, poiIndex } from "./map";
 import { clearLine, findPath } from "./nav";
 import { enemyMax, idleInput, type Enemy, type Input, type State } from "./state";
 import { pickHeal } from "./player";
 import { makeRoom } from "./world";
-import { offLowGround, rimRadius, terrainHeight } from "./terrain";
+import { offLowGround, offshore, terrainHeight } from "./terrain";
 
 /**
  * A scripted player for the headless balance run (`npm run sim:ringfall`) and the
@@ -119,7 +119,7 @@ export class Bot {
     let goal: { x: number; z: number } | null = null;
     let fight = false;
     if (s.phase === "drop") {
-      const poi = POIS[0];
+      const poi = POIS[poiIndex("supply")];
       goal = { x: poi.x, z: poi.z + 14 };
     } else if (aim < 0 && (s.shipCall === 0 || !tgt || dist2d(tgt.pos, p.pos) > 70)) {
       goal = this.exit(s);
@@ -349,7 +349,8 @@ export class Bot {
   private nextPoi(s: State): number {
     if (s.stats.cleared.length >= this.skill.raid) return -1;
     const p = s.player;
-    const open = POIS.map((poi, i) => ({ poi, i })).filter(({ poi, i }) => !s.cleared[i] && (!poi.boss || s.stats.cleared.length >= POIS.length - 1));
+    const others = POIS.filter((poi) => !poi.boss).length;
+    const open = POIS.map((poi, i) => ({ poi, i })).filter(({ poi, i }) => !s.cleared[i] && (!poi.boss || s.stats.cleared.length >= others));
     open.sort((a, b) => dist2d(a.poi, p.pos) - dist2d(b.poi, p.pos));
     return open[0]?.i ?? -1;
   }
@@ -369,7 +370,7 @@ export class Bot {
       const a = (i / 12) * Math.PI * 2;
       const x = p.pos.x + Math.cos(a) * reach;
       const z = p.pos.z + Math.sin(a) * reach;
-      if (offLowGround(x, z) || Math.hypot(x, z) > rimRadius(x, z) - 12) continue;
+      if (offLowGround(x, z) || offshore(x, z) > -12) continue;
       const t = terrainHeight(x, z);
       if (ceilingAt(x, z, 2, t + 40, t) < Infinity || groundAt(x, z, 2, t + 40) > t + 0.5) continue;
       // Nothing tall under the way there either: the glide may run out of height over it.
@@ -414,7 +415,7 @@ export class Bot {
         const a = tgt.yaw + off;
         const x = tgt.pos.x + Math.sin(a) * r;
         const z = tgt.pos.z - Math.cos(a) * r;
-        if (Math.max(Math.abs(x), Math.abs(z)) > WORLD.half - 3) continue;
+        if (!inWorld(x, z, 3)) continue;
         const g = terrainHeight(x, z);
         if (groundAt(x, z, 0.4, g + 0.3) > g + 0.3 || [0.3, 1.0, 1.6].some((h) => solidAt(x, g + h, z))) continue;
         if (!los({ x, y: g + 1.6, z }, bodyCenter(tgt))) continue;
@@ -437,7 +438,7 @@ export class Bot {
       for (let a = 0; a < 2 * Math.PI; a += Math.PI / 12) {
         const x = tgt.pos.x + Math.sin(a) * r;
         const z = tgt.pos.z - Math.cos(a) * r;
-        if (Math.max(Math.abs(x), Math.abs(z)) > WORLD.half - 3) continue;
+        if (!inWorld(x, z, 3)) continue;
         const g = terrainHeight(x, z);
         if (groundAt(x, z, 0.4, g + 0.3) > g + 0.3 || [0.3, 1.0, 1.6].some((h) => solidAt(x, g + h, z))) continue;
         if (!los({ x, y: g + 1.6, z }, bodyCenter(tgt))) continue;
@@ -455,7 +456,7 @@ export class Bot {
       for (let a = 0; a < 2 * Math.PI; a += Math.PI / 6) {
         const x = this.from.x + Math.sin(a) * r;
         const z = this.from.z - Math.cos(a) * r;
-        if (Math.max(Math.abs(x), Math.abs(z)) > WORLD.half - 3) continue;
+        if (!inWorld(x, z, 3)) continue;
         const g = terrainHeight(x, z);
         if (groundAt(x, z, 0.4, g + 0.3) > g + 0.3 || [0.3, 1.0, 1.6].some((h) => solidAt(x, g + h, z))) continue;
         if (watchers.some((w) => los(bodyCenter(w), { x, y: g + 1.5, z }))) continue;

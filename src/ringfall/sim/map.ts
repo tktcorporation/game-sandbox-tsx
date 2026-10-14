@@ -1,5 +1,5 @@
-import type { EnemyKind, HealKind, Rarity, ValuableKind, WeaponKind } from "./config";
-import { buildTerrain, type FlatShape, floorLevel, highGround, LEVEL, rimRadius, steepAt, terrainHeight } from "./terrain";
+import { WORLD, type EnemyKind, type HealKind, type Rarity, type ValuableKind, type WeaponKind } from "./config";
+import { buildTerrain, type FlatShape, floorLevel, highGround, LEVEL, offshore, steepAt, terrainHeight } from "./terrain";
 
 /**
  * The island, a dried-up reservoir (see terrain.ts for its levels). Everything solid
@@ -258,7 +258,11 @@ export interface Squad {
 /** `valuable` lists the kinds a bin may hold, each with its weight. */
 export type LootTable = { weapon: [WeaponKind, Rarity][]; armor: Rarity[]; heals: number; valuable: [ValuableKind, number][] };
 
+/** Stable names for the POIs: saves, quests and other data refer to a POI by these, never by its place in `POIS`. */
+export type PoiId = "supply" | "quarry" | "relay" | "pad";
+
 export interface Poi {
+  id: PoiId;
   name: string;
   x: number;
   z: number;
@@ -270,6 +274,8 @@ export interface Poi {
   squads: Squad[];
   /** The one with `vault` is locked: it takes this POI's key (`VAULT`). */
   bins: { x: number; z: number; y?: number; vault?: true }[];
+  /** The POI whose bins may hold this POI's key. */
+  keyFrom: PoiId;
   loot: LootTable;
   floor: { x: number; z: number; y?: number; weapon?: [WeaponKind, Rarity]; armor?: Rarity; heal?: HealKind }[];
   carePackage?: { x: number; z: number; weapon: [WeaponKind, Rarity] };
@@ -318,6 +324,7 @@ const AT = [
 
 const POI_FRAMES: Poi[] = [
   {
+    id: "supply",
     name: "補給所",
     x: 0,
     z: 50,
@@ -338,6 +345,7 @@ const POI_FRAMES: Poi[] = [
       { x: -23, z: 47 },
       { x: 22, z: 52, y: STOREY, vault: true },
     ],
+    keyFrom: "pad",
     loot: { weapon: [["hornet", 1], ["maul", 0], ["lance", 0], ["pike", 1]], armor: [1], heals: 1, valuable: [["fuse", 3], ["parts", 4], ["wire", 2], ["drive", 1]] },
     floor: [
       { x: 3, z: 66, weapon: ["hornet", 0] },
@@ -347,6 +355,7 @@ const POI_FRAMES: Poi[] = [
     ],
   },
   {
+    id: "quarry",
     name: "採掘場",
     x: -46,
     z: 2,
@@ -366,11 +375,13 @@ const POI_FRAMES: Poi[] = [
       { x: -46, z: 14 },
       { x: -73, z: -4, y: 5.5, vault: true },
     ],
+    keyFrom: "supply",
     loot: { weapon: [["pike", 2], ["maul", 1], ["lance", 1], ["hornet", 2], ["talon", 1]], armor: [2], heals: 2, valuable: [["parts", 3], ["wire", 4], ["fuse", 1], ["gyro", 1]] },
     floor: [{ x: -45, z: -15, y: 4, heal: "medkit" }],
     carePackage: { x: -46, z: 0, weapon: ["lance", 3] },
   },
   {
+    id: "relay",
     name: "中継塔",
     x: 42,
     z: -28,
@@ -390,6 +401,7 @@ const POI_FRAMES: Poi[] = [
       { x: 44, z: -16 },
       { x: 48, z: -10, y: STOREY * 2, vault: true },
     ],
+    keyFrom: "quarry",
     loot: { weapon: [["pike", 3], ["hornet", 2], ["maul", 2], ["lance", 2], ["talon", 2]], armor: [2, 3], heals: 2, valuable: [["board", 4], ["drive", 2], ["wire", 1], ["gyro", 1]] },
     floor: [
       { x: 41.5, z: -29, y: 5, weapon: ["lance", 2] },
@@ -397,6 +409,7 @@ const POI_FRAMES: Poi[] = [
     ],
   },
   {
+    id: "pad",
     name: "発着場",
     x: 0,
     z: -68,
@@ -409,6 +422,7 @@ const POI_FRAMES: Poi[] = [
       { x: -32, z: -60, y: STOREY },
       { x: 32, z: -60, y: STOREY, vault: true },
     ],
+    keyFrom: "relay",
     loot: { weapon: [], armor: [3], heals: 2, valuable: [["board", 3], ["drive", 2], ["core", 1]] },
     floor: [],
     boss: true,
@@ -416,6 +430,9 @@ const POI_FRAMES: Poi[] = [
 ];
 
 export const POIS: Poi[] = POI_FRAMES.map((p, i) => placePoi(p, AT[i]));
+
+/** A POI's place in `POIS` (and in the run's per-POI state), from its id. */
+export const poiIndex = (id: PoiId) => POIS.findIndex((p) => p.id === id);
 
 export type ExtractId = "ship" | "flare" | "village";
 
@@ -491,22 +508,26 @@ export const ROAMERS: Squad[] = (
   .concat({ name: "橋の上", members: [{ kind: "grunt", x: 52, z: -95, y: LEVEL.mesa, face: N }] });
 export const SPAWN = { x: 0, z: 140, yaw: 0 };
 
+type ExtraBin = { x: number; z: number; y?: number; table: PoiId; flare?: true };
+
 /** Bins outside the POIs, mostly up high. `table` is the POI whose loot table they use. */
-export const EXTRA_BINS: { x: number; z: number; y?: number; table: number; flare?: true }[] = [
-  { x: -12, z: 132, table: 0 },
-  { x: -45, z: 70, y: 3.5, table: 0 },
-  { x: -2, z: 10, y: STOREY * 2, table: 1 },
-  { x: 14, z: 11, y: STOREY * 2, table: 1 },
-  { x: -2, z: 30, table: 1 },
-  { x: 64, z: 49, table: 2 },
-  { x: 48, z: 39.3, y: 3.3, table: 2 },
-  { x: -56, z: -52, y: 7.2, table: 2 },
-  { x: 113, z: 14, y: STOREY, table: 2 },
-  { x: -114, z: -71, y: STOREY, table: 1 },
-  // Top floor of each tall building, on the side away from its stairs. These hold the
-  // flares that call the plateau pickup (EXTRACTS).
-  ...HIGH_RISES.map((h) => ({ x: h.x - h.w / 2 + 1.5, z: h.z, y: (h.floors - 1) * STOREY, table: 2, flare: true as const })),
-].map(onFloor);
+export const EXTRA_BINS: ExtraBin[] = (
+  [
+    { x: -12, z: 132, table: "supply" },
+    { x: -45, z: 70, y: 3.5, table: "supply" },
+    { x: -2, z: 10, y: STOREY * 2, table: "quarry" },
+    { x: 14, z: 11, y: STOREY * 2, table: "quarry" },
+    { x: -2, z: 30, table: "quarry" },
+    { x: 64, z: 49, table: "relay" },
+    { x: 48, z: 39.3, y: 3.3, table: "relay" },
+    { x: -56, z: -52, y: 7.2, table: "relay" },
+    { x: 113, z: 14, y: STOREY, table: "relay" },
+    { x: -114, z: -71, y: STOREY, table: "quarry" },
+    // Top floor of each tall building, on the side away from its stairs. These hold the
+    // flares that call the plateau pickup (EXTRACTS).
+    ...HIGH_RISES.map((h) => ({ x: h.x - h.w / 2 + 1.5, z: h.z, y: (h.floors - 1) * STOREY, table: "relay" as const, flare: true as const })),
+  ] satisfies ExtraBin[]
+).map(onFloor);
 
 /** Everything placed by hand: POIs, districts, landmarks. */
 const AUTHORED: Box[] = [
@@ -766,7 +787,7 @@ function scatterCover(authored: Box[], { points, segments }: Keep): Box[] {
     let hi = -Infinity;
     for (const b of piece)
       for (const [x, z] of [[b.x0, b.z0], [b.x1, b.z0], [b.x0, b.z1], [b.x1, b.z1], [(b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2]]) {
-        if (steepAt(x, z) || Math.hypot(x, z) > rimRadius(x, z) - 4) return null;
+        if (steepAt(x, z) || offshore(x, z) > -4) return null;
         if (highGround(x, z)) return null; // cover belongs on the low ground people walk
         const h = terrainHeight(x, z);
         lo = Math.min(lo, h);
@@ -775,9 +796,10 @@ function scatterCover(authored: Box[], { points, segments }: Keep): Box[] {
     return hi - lo > 1.2 ? null : { lo, hi };
   };
   const placed: Box[] = [];
-  const edge = 204;
-  for (let gx = -edge; gx <= edge; gx += 12)
-    for (let gz = -edge; gz <= edge; gz += 12) {
+  // Candidates on a 12 m grid from 11 m inside the world's bounds, each nudged at random.
+  const edge = 11;
+  for (let gx = WORLD.x0 + edge; gx <= WORLD.x1 - edge; gx += 12)
+    for (let gz = WORLD.z0 + edge; gz <= WORLD.z1 - edge; gz += 12) {
       const x = gx + (rnd() - 0.5) * 7;
       const z = gz + (rnd() - 0.5) * 7;
       const piece = pieceAt(x, z);
@@ -830,7 +852,7 @@ buildTerrain([
 ]);
 
 // The canyon floor pays for the detour: a bin under the bridge's north side.
-for (const [x, z, table] of [[55, -112, 2]] as const)
+for (const [x, z, table] of [[55, -112, "relay"]] as const)
   EXTRA_BINS.push({ x, z, y: terrainHeight(x, z), table });
 
 export const BOXES: Box[] = [...AUTHORED, ...BRIDGE, ...scatterCover([...AUTHORED, ...BRIDGE], KEEP)];

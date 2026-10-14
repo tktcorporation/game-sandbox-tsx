@@ -1,12 +1,12 @@
 import type { EnemyKind, ValuableKind } from "../sim/config";
-import type { ExtractId } from "../sim/map";
+import { POIS, type ExtractId, type PoiId } from "../sim/map";
 import type { State } from "../sim/state";
 import { haulValue } from "../sim/results";
 
 /** What a quest asks for. Kills, clears and vaults count even on a wipe; leaving needs getting off. */
 export type Goal =
   | { t: "kill"; kind: EnemyKind; n: number }
-  | { t: "clear"; poi: number }
+  | { t: "clear"; poi: PoiId }
   | { t: "vault" }
   | { t: "extract"; exit: ExtractId }
   | { t: "haul"; value: number }
@@ -17,7 +17,7 @@ export type RewardItem =
   | { t: "weapon"; kind: "pike" | "hornet" | "maul" | "lance" | "talon"; rarity: 0 | 1 | 2 | 3 }
   | { t: "armor"; tier: 1 | 2 | 3 }
   | { t: "heal"; kind: "cell" | "battery" | "syringe" | "medkit" }
-  | { t: "key"; poi: number };
+  | { t: "key"; poi: PoiId };
 
 export interface Quest {
   id: string;
@@ -39,12 +39,12 @@ export const QUESTS: Quest[] = [
   { id: "village", title: "静かな帰り道", text: "廃村から脱出する", goal: { t: "extract", exit: "village" }, after: [], reward: { cash: 500, items: [{ t: "heal", kind: "syringe" }, { t: "heal", kind: "syringe" }] } },
   { id: "parts", title: "部品の回収", text: "部品を 3 個納品する", goal: { t: "deliver", valuable: "parts", n: 3 }, after: ["grunts"], reward: { cash: 500, items: [{ t: "weapon", kind: "pike", rarity: 1 }] } },
   { id: "drones", title: "ドローン落とし", text: "ドローンを 4 機倒す", goal: { t: "kill", kind: "drone", n: 4 }, after: ["grunts"], reward: { cash: 700, items: [{ t: "heal", kind: "battery" }] } },
-  { id: "quarry", title: "採掘場の制圧", text: "採掘場を制圧する", goal: { t: "clear", poi: 1 }, after: ["parts"], reward: { cash: 1000, items: [{ t: "armor", tier: 2 }] } },
+  { id: "quarry", title: "採掘場の制圧", text: "採掘場を制圧する", goal: { t: "clear", poi: "quarry" }, after: ["parts"], reward: { cash: 1000, items: [{ t: "armor", tier: 2 }] } },
   { id: "heavies", title: "重機の解体", text: "ヘビーを 4 体倒す", goal: { t: "kill", kind: "heavy", n: 4 }, after: ["drones"], reward: { cash: 1200, items: [{ t: "weapon", kind: "lance", rarity: 2 }] } },
-  { id: "relay", title: "中継塔の奪還", text: "中継塔を制圧する", goal: { t: "clear", poi: 2 }, after: ["quarry"], reward: { cash: 1500, items: [{ t: "key", poi: 0 }] } },
-  { id: "vault", title: "保管庫の中身", text: "どこかの保管庫を開ける", goal: { t: "vault" }, after: ["relay"], reward: { cash: 2000, items: [{ t: "key", poi: 2 }] } },
+  { id: "relay", title: "中継塔の奪還", text: "中継塔を制圧する", goal: { t: "clear", poi: "relay" }, after: ["quarry"], reward: { cash: 1500, items: [{ t: "key", poi: "supply" }] } },
+  { id: "vault", title: "保管庫の中身", text: "どこかの保管庫を開ける", goal: { t: "vault" }, after: ["relay"], reward: { cash: 2000, items: [{ t: "key", poi: "relay" }] } },
   { id: "drives", title: "記憶装置の納品", text: "記憶装置を 2 個納品する", goal: { t: "deliver", valuable: "drive", n: 2 }, after: ["relay"], reward: { cash: 1500, items: [{ t: "weapon", kind: "hornet", rarity: 3 }] } },
-  { id: "titan", title: "タイタン討伐", text: "発着場を制圧する", goal: { t: "clear", poi: 3 }, after: ["heavies", "vault"], reward: { cash: 4000, items: [{ t: "weapon", kind: "talon", rarity: 3 }] } },
+  { id: "titan", title: "タイタン討伐", text: "発着場を制圧する", goal: { t: "clear", poi: "pad" }, after: ["heavies", "vault"], reward: { cash: 4000, items: [{ t: "weapon", kind: "talon", rarity: 3 }] } },
   { id: "haul", title: "大荷物", text: "回収品 3000 以上を持って脱出する", goal: { t: "haul", value: 3000 }, after: ["titan"], reward: { cash: 3000, items: [{ t: "armor", tier: 3 }] } },
 ];
 
@@ -69,7 +69,7 @@ export function raidCredit(g: Goal, s: State): number {
     case "kill":
       return s.stats.killsBy[g.kind];
     case "clear":
-      return s.stats.cleared.includes(g.poi) ? 1 : 0;
+      return s.stats.cleared.some((i) => POIS[i].id === g.poi) ? 1 : 0;
     case "vault":
       return s.stats.vaults.length ? 1 : 0;
     case "extract":

@@ -28,13 +28,17 @@ const css = (c: number) => `#${c.toString(16).padStart(6, "0")}`;
 
 export class IslandMap {
   private base: HTMLCanvasElement | null = null;
-  private readonly size = Math.ceil((WORLD.half * 2) / CELL);
+  private readonly width = Math.ceil((WORLD.x1 - WORLD.x0) / CELL);
+  private readonly height = Math.ceil((WORLD.z1 - WORLD.z0) / CELL);
 
-  constructor(private readonly canvas: HTMLCanvasElement) {}
+  constructor(private readonly canvas: HTMLCanvasElement) {
+    // The page sizes the map by this, so it keeps the world's shape.
+    canvas.style.setProperty("--map-aspect", `${this.width / this.height}`);
+  }
 
   /** Map pixel of a world point. */
   private px(x: number, z: number) {
-    return { x: (x + WORLD.half) / CELL, y: (z + WORLD.half) / CELL };
+    return { x: (x - WORLD.x0) / CELL, y: (z - WORLD.z0) / CELL };
   }
 
   /**
@@ -44,20 +48,21 @@ export class IslandMap {
    */
   private build(): HTMLCanvasElement {
     const c = document.createElement("canvas");
-    c.width = c.height = this.size;
+    c.width = this.width;
+    c.height = this.height;
     const g = c.getContext("2d")!;
-    const img = g.createImageData(this.size, this.size);
+    const img = g.createImageData(this.width, this.height);
     const high = [0x8a, 0x4e, 0x32];
     const wall = [0x5e, 0x31, 0x20];
     const dam = [0xcf, 0xc8, 0xb8];
     // Walkable ground by level: pit, lakebed, shore, then the high levels.
     const floor = (lv: number) =>
       lv <= LEVEL.pit + 0.5 ? [0x8f, 0x86, 0x74] : lv <= LEVEL.lakebed + 0.5 ? [0xb4, 0xa8, 0x8e] : lv < LEVEL.ridge - 0.5 ? [0xe2, 0xbf, 0x8a] : [0xf2, 0xda, 0xa8];
-    for (let j = 0; j < this.size; j++)
-      for (let i = 0; i < this.size; i++) {
-        const x = -WORLD.half + (i + 0.5) * CELL;
-        const z = -WORLD.half + (j + 0.5) * CELL;
-        const k = (j * this.size + i) * 4;
+    for (let j = 0; j < this.height; j++)
+      for (let i = 0; i < this.width; i++) {
+        const x = WORLD.x0 + (i + 0.5) * CELL;
+        const z = WORLD.z0 + (j + 0.5) * CELL;
+        const k = (j * this.width + i) * 4;
         const lv = floorLevel(x, z);
         // A ramp's middle: shade by the ground's own height.
         const col = steepAt(x, z) ? (DAM_FACE(x, z) ? dam : wall) : highGround(x, z) ? high : floor(Math.min(lv, terrainHeight(x, z)));
@@ -79,8 +84,8 @@ export class IslandMap {
   draw(s: State) {
     this.base ??= this.build();
     const g = this.canvas.getContext("2d")!;
-    const n = this.size;
-    this.canvas.width = this.canvas.height = n;
+    this.canvas.width = this.width;
+    this.canvas.height = this.height;
     g.drawImage(this.base, 0, 0);
     g.textAlign = "center";
     g.textBaseline = "middle";

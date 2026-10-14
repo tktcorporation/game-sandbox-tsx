@@ -29,7 +29,10 @@ raid, the pouch that survives a wipe), `meta/storage.ts` saves it in localStorag
 lent free kit, which is what the sim gate plays.
 The trader's quests are data in `meta/quests.ts` (`QUESTS`, credited from a raid's `stats` by
 `creditRaid()` inside `settle()`). Each POI has one locked bin (`vault: true` in its `bins`), opened
-only with that POI's key; keys drop from the bins of the POI before it (`keyFoundIn()`, `VAULT`).
+only with that POI's key; keys drop from the bins of the POI named by its `keyFrom` (`VAULT`).
+POIs have a stable `id` (`PoiId` in `map.ts`); saves, quests, `keyFrom` and `EXTRA_BINS` refer to a
+POI by it, never by its place in `POIS` (the run's state may index `POIS` internally). The profile
+is versioned (`Profile.v`), and `parseProfile()` moves older saves forward.
 
 ```bash
 npm run sim:ringfall     # gate 2: bots of three skills play the whole run headless
@@ -45,8 +48,11 @@ npm run shots:ringfall   # gate 3: the build played to the end in Chromium; scre
   coordinates. The ground is a height field (`terrain.ts`), a dried-up reservoir: the POIs and
   districts are basins (`BASINS`) at their own `LEVEL` (the lakebed at -7 m, the dam crest at +8,
   the quarry pit at -10...), joined by roads (`ROADS`) that ramp between levels, with unclimbable
-  high ground between them, shelves inside the POI basins, the spillway canyon, and cliffs round
-  the island; ground steeper than `STEEP` is a wall, dropped down but never climbed. Boxes are
+  high ground between them, shelves inside the POI basins, the spillway canyon, and cliffs beyond
+  the coast; ground steeper than `STEEP` is a wall, dropped down but never climbed. The coast is
+  the outline of the land masses in `LANDS` (`offshore()` gives how far a point lies outside it),
+  and the world's bounds are `WORLD.x0..x1` and `WORLD.z0..z1` in `config.ts`; no code assumes
+  either is centred on the origin. Boxes are
   written on ground at 0 and lifted to their area's level by `onLevel()`, points by `onFloor()`
   (`map.ts`); the ground is pressed flat at that level near every authored box and point.
   `scatterCover()` then fills the open ground with low walls,

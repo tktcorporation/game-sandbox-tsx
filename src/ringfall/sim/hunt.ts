@@ -1,6 +1,6 @@
 import { WORLD } from "./config";
 import { BOXES } from "./map";
-import { highGround, rimRadius, steepAt, terrainHeight } from "./terrain";
+import { highGround, offshore, steepAt, terrainHeight } from "./terrain";
 
 /*
  * How hunting squads (reinforcements and raiders) find their way to where they think
@@ -14,7 +14,9 @@ import { highGround, rimRadius, steepAt, terrainHeight } from "./terrain";
 
 /** Cell size in metres. Ramps are 8 m wide or more, so 2 m cells keep them open. */
 const RES = 2;
-const N = Math.ceil((WORLD.half * 2) / RES);
+const NX = Math.ceil((WORLD.x1 - WORLD.x0) / RES);
+const NZ = Math.ceil((WORLD.z1 - WORLD.z0) / RES);
+const CELLS = NX * NZ;
 /** Height change between neighbouring cells that a walker still takes: a ramp, not a cliff. */
 const STEP = 1.4;
 /** How far ahead along the field a hunter aims, in cells: short enough not to cut a corner. */
@@ -22,8 +24,10 @@ const AHEAD = 2;
 /** Room a walker's body needs round a box: a cell this close to one is closed. */
 const BODY = 0.5;
 
-const idx = (v: number) => Math.max(0, Math.min(N - 1, Math.floor((v + WORLD.half) / RES)));
-const centre = (i: number) => -WORLD.half + (i + 0.5) * RES;
+const idxX = (v: number) => Math.max(0, Math.min(NX - 1, Math.floor((v - WORLD.x0) / RES)));
+const idxZ = (v: number) => Math.max(0, Math.min(NZ - 1, Math.floor((v - WORLD.z0) / RES)));
+const centreX = (i: number) => WORLD.x0 + (i + 0.5) * RES;
+const centreZ = (j: number) => WORLD.z0 + (j + 0.5) * RES;
 
 let open: Uint8Array | null = null;
 let height: Float32Array | null = null;
@@ -33,27 +37,27 @@ let main: Uint8Array | null = null;
 /** Which cells a walker can stand in: not a cliff, not the high ground, not past the coast. */
 function grid() {
   if (open && height && main) return { open, height, main };
-  open = new Uint8Array(N * N);
-  height = new Float32Array(N * N);
-  for (let j = 0; j < N; j++)
-    for (let i = 0; i < N; i++) {
-      const x = centre(i);
-      const z = centre(j);
-      const k = j * N + i;
+  open = new Uint8Array(CELLS);
+  height = new Float32Array(CELLS);
+  for (let j = 0; j < NZ; j++)
+    for (let i = 0; i < NX; i++) {
+      const x = centreX(i);
+      const z = centreZ(j);
+      const k = j * NX + i;
       height[k] = terrainHeight(x, z);
-      const clear = !steepAt(x, z) && !highGround(x, z) && Math.hypot(x, z) < rimRadius(x, z) - 3;
+      const clear = !steepAt(x, z) && !highGround(x, z) && offshore(x, z) < -3;
       open[k] = clear ? 1 : 0;
     }
   // Boxes in a walker's way: higher than a step above the ground and low enough to walk into.
   for (const b of BOXES) {
     const t = terrainHeight((b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2);
     if (b.h - t <= WORLD.stepUp || b.y0 - t >= 1.75) continue;
-    for (let j = idx(b.z0 - BODY); j <= idx(b.z1 + BODY); j++)
-      for (let i = idx(b.x0 - BODY); i <= idx(b.x1 + BODY); i++) {
-        const x = centre(i);
-        const z = centre(j);
+    for (let j = idxZ(b.z0 - BODY); j <= idxZ(b.z1 + BODY); j++)
+      for (let i = idxX(b.x0 - BODY); i <= idxX(b.x1 + BODY); i++) {
+        const x = centreX(i);
+        const z = centreZ(j);
         // The cell's middle within a body's reach of the box.
-        if (x > b.x0 - BODY - RES / 2 && x < b.x1 + BODY + RES / 2 && z > b.z0 - BODY - RES / 2 && z < b.z1 + BODY + RES / 2) open[j * N + i] = 0;
+        if (x > b.x0 - BODY - RES / 2 && x < b.x1 + BODY + RES / 2 && z > b.z0 - BODY - RES / 2 && z < b.z1 + BODY + RES / 2) open[j * NX + i] = 0;
       }
   }
   main = mainGround(open, height);
@@ -66,24 +70,24 @@ const COST = DI.map((di, n) => (di !== 0 && DJ[n] !== 0 ? Math.SQRT2 : 1) * RES)
 
 /** Whether a walker steps from cell k to its n-th neighbour q: both open, no cliff between, no corner cut. */
 function steps(open: Uint8Array, height: Float32Array, k: number, n: number): number {
-  const i = k % N;
-  const j = (k - i) / N;
+  const i = k % NX;
+  const j = (k - i) / NX;
   const a = i + DI[n];
   const b = j + DJ[n];
-  if (a < 0 || b < 0 || a >= N || b >= N) return -1;
-  const q = b * N + a;
+  if (a < 0 || b < 0 || a >= NX || b >= NZ) return -1;
+  const q = b * NX + a;
   if (!open[q] || Math.abs(height[q] - height[k]) > STEP) return -1;
-  if (DI[n] && DJ[n] && (!open[j * N + a] || !open[b * N + i])) return -1;
+  if (DI[n] && DJ[n] && (!open[j * NX + a] || !open[b * NX + i])) return -1;
   return q;
 }
 
 /** The largest set of open cells a walker can get between: the island's walkable ground. */
 function mainGround(open: Uint8Array, height: Float32Array): Uint8Array {
-  const label = new Int32Array(N * N).fill(-1);
+  const label = new Int32Array(CELLS).fill(-1);
   let best = -1;
   let bestSize = 0;
-  const queue = new Int32Array(N * N);
-  for (let start = 0, id = 0; start < N * N; start++) {
+  const queue = new Int32Array(CELLS);
+  for (let start = 0, id = 0; start < CELLS; start++) {
     if (!open[start] || label[start] >= 0) continue;
     let head = 0;
     let tail = 0;
@@ -105,8 +109,8 @@ function mainGround(open: Uint8Array, height: Float32Array): Uint8Array {
     }
     id++;
   }
-  const out = new Uint8Array(N * N);
-  for (let k = 0; k < N * N; k++) if (label[k] === best) out[k] = 1;
+  const out = new Uint8Array(CELLS);
+  for (let k = 0; k < CELLS; k++) if (label[k] === best) out[k] = 1;
   return out;
 }
 
@@ -138,15 +142,15 @@ export let fieldsBuilt = 0;
  */
 function openCell(x: number, z: number): number {
   const { main } = grid();
-  const ci = idx(x);
-  const cj = idx(z);
+  const ci = idxX(x);
+  const cj = idxZ(z);
   for (let r = 0; r <= 12; r++)
     for (let dj = -r; dj <= r; dj++)
       for (let di = -r; di <= r; di++) {
         if (Math.max(Math.abs(di), Math.abs(dj)) !== r) continue;
         const i = ci + di;
         const j = cj + dj;
-        if (i >= 0 && j >= 0 && i < N && j < N && main[j * N + i]) return j * N + i;
+        if (i >= 0 && j >= 0 && i < NX && j < NZ && main[j * NX + i]) return j * NX + i;
       }
   return -1;
 }
@@ -161,11 +165,11 @@ export function fieldTo(x: number, z: number): Field | null {
   if (target < 0) return null;
   let hit: Field | undefined;
   let hitD = Infinity;
-  const ti = target % N;
-  const tj = (target - ti) / N;
+  const ti = target % NX;
+  const tj = (target - ti) / NX;
   for (const f of cache.values()) {
-    const fi = f.target % N;
-    const d = Math.max(Math.abs(fi - ti), Math.abs((f.target - fi) / N - tj));
+    const fi = f.target % NX;
+    const d = Math.max(Math.abs(fi - ti), Math.abs((f.target - fi) / NX - tj));
     if (d <= NEAR && d < hitD) {
       hit = f;
       hitD = d;
@@ -178,7 +182,7 @@ export function fieldTo(x: number, z: number): Field | null {
     return hit;
   }
   const { open, height } = grid();
-  const dist = new Float32Array(N * N).fill(Infinity);
+  const dist = new Float32Array(CELLS).fill(Infinity);
   dist[target] = 0;
   // Binary heap of cell indices keyed by dist.
   const heap: number[] = [target];
@@ -211,7 +215,7 @@ export function fieldTo(x: number, z: number): Field | null {
     }
     return top;
   };
-  const done = new Uint8Array(N * N);
+  const done = new Uint8Array(CELLS);
   while (heap.length) {
     const k = pop();
     if (done[k]) continue;
@@ -237,10 +241,10 @@ export function fieldTo(x: number, z: number): Field | null {
 export function routeLength(f: Field, x: number, z: number): number {
   const k = openCell(x, z);
   if (k < 0) return Infinity;
-  const i = k % N;
-  const j = (k - i) / N;
+  const i = k % NX;
+  const j = (k - i) / NX;
   // Add the step from (x, z) to the centre of the open cell it was snapped to.
-  return f.dist[k] + Math.hypot(centre(i) - x, centre(j) - z);
+  return f.dist[k] + Math.hypot(centreX(i) - x, centreZ(j) - z);
 }
 
 /**
@@ -261,8 +265,8 @@ export function nextStep(f: Field, x: number, z: number, to: { x: number; z: num
     if (best === k) break;
     k = best;
   }
-  const i = k % N;
-  return { x: centre(i), z: centre((k - i) / N) };
+  const i = k % NX;
+  return { x: centreX(i), z: centreZ((k - i) / NX) };
 }
 
 /** Centres of the open cells whose walking distance to the field's target is within [lo, hi]. */
@@ -271,8 +275,8 @@ export function cellsAround(f: Field, lo: number, hi: number): { x: number; z: n
   for (let k = 0; k < f.dist.length; k++) {
     const d = f.dist[k];
     if (d < lo || d > hi) continue;
-    const i = k % N;
-    out.push({ x: centre(i), z: centre((k - i) / N) });
+    const i = k % NX;
+    out.push({ x: centreX(i), z: centreZ((k - i) / NX) });
   }
   return out;
 }

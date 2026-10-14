@@ -90,9 +90,7 @@ export function collide(p: Vec3, r: number, height = 1.75): boolean {
     }
   }
   if (pushOffCliff(p)) touched = true;
-  const lim = WORLD.half - r;
-  p.x = Math.max(-lim, Math.min(lim, p.x));
-  p.z = Math.max(-lim, Math.min(lim, p.z));
+  clampToWorld(p, r);
   return touched;
 }
 
@@ -236,6 +234,15 @@ export function raySphere(o: Vec3, d: Vec3, c: Vec3, r: number): number {
 
 /** True for a body standing on the terrain rather than up on a roof, a floor or a box. */
 export const onTerrain = (p: Vec3) => p.y < terrainHeight(p.x, p.z) + 0.6;
+
+/** True when (x, z) lies at least `margin` metres inside the world's bounds. */
+export const inWorld = (x: number, z: number, margin = 0) => x >= WORLD.x0 + margin && x <= WORLD.x1 - margin && z >= WORLD.z0 + margin && z <= WORLD.z1 - margin;
+
+/** Moves a point back inside the world's bounds, `margin` metres from their edge. */
+export function clampToWorld(p: { x: number; z: number }, margin: number) {
+  p.x = Math.max(WORLD.x0 + margin, Math.min(WORLD.x1 - margin, p.x));
+  p.z = Math.max(WORLD.z0 + margin, Math.min(WORLD.z1 - margin, p.z));
+}
 
 export const dist2d = (a: { x: number; z: number }, b: { x: number; z: number }) => Math.hypot(a.x - b.x, a.z - b.z);
 

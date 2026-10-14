@@ -9,10 +9,13 @@ import { steepAt, terrainHeight } from "./terrain";
  */
 
 const RES = 0.5;
-const N = Math.ceil((WORLD.half * 2) / RES);
-const blocked = new Uint8Array(N * N);
-const cell = (v: number) => Math.max(0, Math.min(N - 1, Math.floor((v + WORLD.half) / RES)));
-const center = (i: number) => -WORLD.half + (i + 0.5) * RES;
+const NX = Math.ceil((WORLD.x1 - WORLD.x0) / RES);
+const NZ = Math.ceil((WORLD.z1 - WORLD.z0) / RES);
+const blocked = new Uint8Array(NX * NZ);
+const cellX = (v: number) => Math.max(0, Math.min(NX - 1, Math.floor((v - WORLD.x0) / RES)));
+const cellZ = (v: number) => Math.max(0, Math.min(NZ - 1, Math.floor((v - WORLD.z0) / RES)));
+const centerX = (i: number) => WORLD.x0 + (i + 0.5) * RES;
+const centerZ = (j: number) => WORLD.z0 + (j + 0.5) * RES;
 
 {
   // A cell is blocked when any part of it is within a body radius of a box, so a
@@ -22,23 +25,23 @@ const center = (i: number) => -WORLD.half + (i + 0.5) * RES;
     // Only what stops a body standing on the ground: low steps and high floors do not.
     const t = terrainHeight((b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2);
     if (b.h - t <= WORLD.stepUp || b.y0 - t >= 1.75) continue;
-    for (let i = cell(b.x0 - r); i <= cell(b.x1 + r); i++)
-      for (let j = cell(b.z0 - r); j <= cell(b.z1 + r); j++) {
-        const x0 = -WORLD.half + i * RES;
-        const z0 = -WORLD.half + j * RES;
-        if (x0 + RES > b.x0 - r && x0 < b.x1 + r && z0 + RES > b.z0 - r && z0 < b.z1 + r) blocked[j * N + i] = 1;
+    for (let i = cellX(b.x0 - r); i <= cellX(b.x1 + r); i++)
+      for (let j = cellZ(b.z0 - r); j <= cellZ(b.z1 + r); j++) {
+        const x0 = WORLD.x0 + i * RES;
+        const z0 = WORLD.z0 + j * RES;
+        if (x0 + RES > b.x0 - r && x0 < b.x1 + r && z0 + RES > b.z0 - r && z0 < b.z1 + r) blocked[j * NX + i] = 1;
       }
   }
   // Cliffs, and ground a body's width from one.
-  for (let j = 0; j < N; j++)
-    for (let i = 0; i < N; i++) {
-      const x = center(i);
-      const z = center(j);
-      if (steepAt(x, z) || steepAt(x + r, z) || steepAt(x - r, z) || steepAt(x, z + r) || steepAt(x, z - r)) blocked[j * N + i] = 1;
+  for (let j = 0; j < NZ; j++)
+    for (let i = 0; i < NX; i++) {
+      const x = centerX(i);
+      const z = centerZ(j);
+      if (steepAt(x, z) || steepAt(x + r, z) || steepAt(x - r, z) || steepAt(x, z + r) || steepAt(x, z - r)) blocked[j * NX + i] = 1;
     }
 }
 
-const free = (i: number, j: number) => i >= 0 && j >= 0 && i < N && j < N && !blocked[j * N + i];
+const free = (i: number, j: number) => i >= 0 && j >= 0 && i < NX && j < NZ && !blocked[j * NX + i];
 
 /** True if the straight line between two points crosses no blocked cell. */
 export function clearLine(ax: number, az: number, bx: number, bz: number): boolean {
@@ -46,20 +49,38 @@ export function clearLine(ax: number, az: number, bx: number, bz: number): boole
   const n = Math.ceil(len / (RES * 0.4));
   for (let k = 1; k < n; k++) {
     const t = k / n;
-    if (!free(cell(ax + (bx - ax) * t), cell(az + (bz - az) * t))) return false;
+    if (!free(cellX(ax + (bx - ax) * t), cellZ(az + (bz - az) * t))) return false;
   }
   return true;
 }
 
 /** Nearest free cell to (x, z), searching outward a few metres. */
 function nearestFree(x: number, z: number): [number, number] | null {
-  const ci = cell(x);
-  const cj = cell(z);
+  const ci = cellX(x);
+  const cj = cellZ(z);
   for (let r = 0; r < 8; r++)
     for (let di = -r; di <= r; di++)
       for (let dj = -r; dj <= r; dj++) if (Math.max(Math.abs(di), Math.abs(dj)) === r && free(ci + di, cj + dj)) return [ci + di, cj + dj];
   return null;
 }
+
+/*
+ * A*'s per-cell scores, kept between searches. A cell's entries count only when its
+ * stamp is the current search's, so a search resets just the cells it reaches
+ * instead of the whole grid.
+ */
+const gScore = new Float32Array(NX * NZ);
+const came = new Int32Array(NX * NZ);
+const closed = new Uint8Array(NX * NZ);
+const stamp = new Uint32Array(NX * NZ);
+let search = 0;
+const touch = (k: number) => {
+  if (stamp[k] === search) return;
+  stamp[k] = search;
+  gScore[k] = Infinity;
+  came[k] = -1;
+  closed[k] = 0;
+};
 
 /** Waypoints (world x, z) from a to b, or null if unreachable. */
 export function findPath(
@@ -71,11 +92,14 @@ export function findPath(
   const s = nearestFree(ax, az);
   const g = nearestFree(bx, bz);
   if (!s || !g) return null;
-  const start = s[1] * N + s[0];
-  const goal = g[1] * N + g[0];
-  const gScore = new Float32Array(N * N).fill(Infinity);
-  const came = new Int32Array(N * N).fill(-1);
-  const closed = new Uint8Array(N * N);
+  const start = s[1] * NX + s[0];
+  const goal = g[1] * NX + g[0];
+  if (++search === 0xffffffff) {
+    stamp.fill(0);
+    search = 1;
+  }
+  touch(start);
+  touch(goal);
   // Binary heap of [f, index].
   const heap: number[] = [];
   const push = (f: number, idx: number) => {
@@ -128,8 +152,8 @@ export function findPath(
     closed[cur] = 1;
     expanded++;
     if (cur === goal) break;
-    const ci = cur % N;
-    const cj = (cur / N) | 0;
+    const ci = cur % NX;
+    const cj = (cur / NX) | 0;
     for (let di = -1; di <= 1; di++)
       for (let dj = -1; dj <= 1; dj++) {
         if (!di && !dj) continue;
@@ -137,7 +161,8 @@ export function findPath(
         const nj = cj + dj;
         if (!free(ni, nj)) continue;
         if (di && dj && (!free(ci + di, cj) || !free(ci, cj + dj))) continue; // no corner cutting
-        const nIdx = nj * N + ni;
+        const nIdx = nj * NX + ni;
+        touch(nIdx);
         let cost = di && dj ? 1.414 : 1;
         const ng = gScore[cur] + cost;
         if (ng < gScore[nIdx]) {
@@ -152,7 +177,7 @@ export function findPath(
   for (let c = goal; c !== -1; c = came[c]) cells.push(c);
   cells.reverse();
   // Keep only the cells where a straight walk would be blocked.
-  const pts = cells.map((c) => ({ x: center(c % N), z: center((c / N) | 0) }));
+  const pts = cells.map((c) => ({ x: centerX(c % NX), z: centerZ((c / NX) | 0) }));
   const out: { x: number; z: number }[] = [];
   let from = { x: ax, z: az };
   let k = 0;

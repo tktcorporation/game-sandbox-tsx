@@ -1545,8 +1545,9 @@ body.touch #title h1 {
   display: none;
 }
 #map-canvas {
-  height: min(82vh, 82vw);
-  aspect-ratio: 1;
+  /* --map-aspect (width / height) is set from the world's bounds by view/map.ts. */
+  height: min(82vh, calc(82vw / var(--map-aspect, 1)));
+  aspect-ratio: var(--map-aspect, 1);
   border: 2px solid var(--ink);
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
   image-rendering: auto;

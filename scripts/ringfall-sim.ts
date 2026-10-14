@@ -7,10 +7,10 @@
  */
 import { ALLY, BAG, ENEMIES, NOISE, PLAYER, RAIDERS, REINFORCE, SEARCH, TACTICAL, TICK, VALUABLES, WORLD } from "../src/ringfall/sim/config";
 import { makeNoise } from "../src/ringfall/sim/awareness";
-import { BOXES, EXTRA_BINS, EXTRACTS, POIS, ROAMERS, SPAWN, type Squad } from "../src/ringfall/sim/map";
+import { BOXES, EXTRA_BINS, EXTRACTS, POIS, poiIndex, ROAMERS, SPAWN, type Squad } from "../src/ringfall/sim/map";
 import { fieldTo, fieldsBuilt, routeLength } from "../src/ringfall/sim/hunt";
-import { dist2d, groundAt, los, solidAt } from "../src/ringfall/sim/geom";
-import { floorLevel, highGround, LEVEL, offLowGround, terrainHeight } from "../src/ringfall/sim/terrain";
+import { dist2d, groundAt, inWorld, los, solidAt } from "../src/ringfall/sim/geom";
+import { floorLevel, highGround, landAt, LEVEL, offLowGround, offshore, terrainHeight } from "../src/ringfall/sim/terrain";
 import { Bot, SKILLS } from "../src/ringfall/sim/bot";
 import { idleInput, newRun, type GameEvent, type State } from "../src/ringfall/sim/state";
 import { step } from "../src/ringfall/sim/step";
@@ -23,10 +23,14 @@ import { lookAngles } from "../src/ringfall/sim/geom";
 import { forward } from "../src/ringfall/sim/state";
 import { buy, deliver, newProfile, parseProfile, pouch, price, sell, settle, takeKit, wares } from "../src/ringfall/meta/profile";
 import { QUESTS, offered } from "../src/ringfall/meta/quests";
-import { keyFoundIn } from "../src/ringfall/sim/world";
 import { META } from "../src/ringfall/sim/config";
 
 const runs = Number(process.argv[2] ?? 12);
+/** The POIs' places in `POIS`, for scenarios that set up a run's state by hand. */
+const SUPPLY = poiIndex("supply");
+const QUARRY = poiIndex("quarry");
+const RELAY = poiIndex("relay");
+const PAD = poiIndex("pad");
 const LIMIT = 20 * 60; // seconds of game time before a run counts as stuck
 
 function check(s: State, where: string) {
@@ -39,7 +43,7 @@ function check(s: State, where: string) {
   }
   for (const e of s.enemies) {
     if (![e.pos.x, e.pos.y, e.pos.z, e.hp].every(Number.isFinite)) throw new Error(`${where}: enemy NaN`);
-    if (Math.abs(e.pos.x) > WORLD.half + 1 || Math.abs(e.pos.z) > WORLD.half + 1) throw new Error(`${where}: enemy off the island`);
+    if (!inWorld(e.pos.x, e.pos.z, -1)) throw new Error(`${where}: enemy off the island`);
   }
 }
 
@@ -85,8 +89,8 @@ function checkWipeClearsAir(): string | null {
   s.phase = "play";
   const p = s.player;
   // The landing pad, kept open for the titan, with nothing between the player and the projectiles.
-  const x = POIS[3].x;
-  const z = POIS[3].z;
+  const x = POIS[PAD].x;
+  const z = POIS[PAD].z;
   const g = terrainHeight(x, z);
   p.pos = { x, y: g, z };
   p.onGround = true;
@@ -105,10 +109,10 @@ function checkWipeClearsAir(): string | null {
 function checkArcOnTitan(): string | null {
   const s = newRun(5);
   s.phase = "play";
-  const boss = s.enemies.filter((e) => e.poi === 3);
+  const boss = s.enemies.filter((e) => e.poi === PAD);
   s.enemies = boss;
   const p = s.player;
-  const pad = POIS[3];
+  const pad = POIS[PAD];
   const g = terrainHeight(pad.x, pad.z);
   p.pos = { x: pad.x, y: g, z: pad.z + 6 };
   p.onGround = true;
@@ -134,13 +138,13 @@ function checkGoldReload(): string | null {
   const s = newRun(5);
   s.phase = "play";
   const p = s.player;
-  const pad = POIS[3];
+  const pad = POIS[PAD];
   const g = terrainHeight(pad.x, pad.z);
   p.pos = { x: pad.x, y: g, z: pad.z + 6 };
   p.onGround = true;
   p.yaw = 0;
   p.pitch = 0;
-  const target = s.enemies.find((e) => e.kind === "drone" && e.poi === 3)!;
+  const target = s.enemies.find((e) => e.kind === "drone" && e.poi === PAD)!;
   s.enemies = [target];
   target.pos = { x: pad.x, y: g + 1.6, z: pad.z - 4 };
   target.hp = 1;
@@ -160,7 +164,7 @@ function checkArcIgnoresFacing(): string | null {
   const s = newRun(5);
   s.phase = "play";
   const p = s.player;
-  const pad = POIS[3];
+  const pad = POIS[PAD];
   const g = terrainHeight(pad.x, pad.z);
   p.pos = { x: pad.x, y: g, z: pad.z + 6 };
   p.onGround = true;
@@ -211,7 +215,7 @@ function checkReinforce(): string | null {
   const s = newRun(5);
   s.phase = "play";
   const p = s.player;
-  const at = POIS[1].entry;
+  const at = POIS[QUARRY].entry;
   p.pos = { x: at.x, y: groundAt(at.x, at.z, 0.4, 20), z: at.z };
   p.onGround = true;
   s.reinforceT = TICK;
@@ -288,9 +292,9 @@ function checkCliffsStop(): string | null {
 function checkNoPits(): string | null {
   const R = 1.5;
   const pits: string[] = [];
-  for (let x = -WORLD.half + 4; x < WORLD.half - 4; x += 1)
-    for (let z = -WORLD.half + 4; z < WORLD.half - 4; z += 1) {
-      if (!offLowGround(x, z) || Math.hypot(x, z) > 200) continue;
+  for (let x = WORLD.x0 + 4; x < WORLD.x1 - 4; x += 1)
+    for (let z = WORLD.z0 + 4; z < WORLD.z1 - 4; z += 1) {
+      if (!offLowGround(x, z) || offshore(x, z) > 0) continue;
       const h = terrainHeight(x, z);
       // Higher on every side by more than a step: no way out on foot.
       let walled = true;
@@ -376,7 +380,7 @@ function checkReinforceHidden(): string | null {
 function checkValuableBin(): string | null {
   const s = padRun();
   const p = s.player;
-  s.bins = [{ id: 9001, x: p.pos.x + 1, y: p.pos.y, z: p.pos.z, poi: 2, open: false, flare: false, vault: false, outside: false }];
+  s.bins = [{ id: 9001, x: p.pos.x + 1, y: p.pos.y, z: p.pos.z, poi: RELAY, open: false, flare: false, vault: false, outside: false }];
   const press = idleInput();
   press.interact = true;
   step(s, press, false);
@@ -384,14 +388,14 @@ function checkValuableBin(): string | null {
   ticks(s, SEARCH.time - 0.2);
   if (s.bins[0].open) return "search scenario: the bin opened before the search time";
   ticks(s, 3);
-  if (p.haul.length !== 1 || !POIS[2].loot.valuable.some(([k]) => k === p.haul[0])) return `valuable scenario: haul ${p.haul.join()}, bin open ${s.bins[0].open}`;
+  if (p.haul.length !== 1 || !POIS[RELAY].loot.valuable.some(([k]) => k === p.haul[0])) return `valuable scenario: haul ${p.haul.join()}, bin open ${s.bins[0].open}`;
   return null;
 }
 /** Walking away from a bin breaks the search off; it starts over on the next press. */
 function checkSearchBreaks(): string | null {
   const s = padRun();
   const p = s.player;
-  s.bins = [{ id: 9001, x: p.pos.x + 1, y: p.pos.y, z: p.pos.z, poi: 2, open: false, flare: false, vault: false, outside: false }];
+  s.bins = [{ id: 9001, x: p.pos.x + 1, y: p.pos.y, z: p.pos.z, poi: RELAY, open: false, flare: false, vault: false, outside: false }];
   const press = idleInput();
   press.interact = true;
   step(s, press, false);
@@ -473,7 +477,7 @@ function padRun(): State {
   s.reinforceT = 1e9;
   s.raiderT = 1e9;
   const p = s.player;
-  p.pos = { x: POIS[3].x, y: 0, z: POIS[3].z };
+  p.pos = { x: POIS[PAD].x, y: 0, z: POIS[PAD].z };
   p.pos.y = groundAt(p.pos.x, p.pos.z, 0.4, terrainHeight(p.pos.x, p.pos.z) + 2);
   p.onGround = true;
   placeAlly(s);
@@ -538,7 +542,8 @@ function checkDropOffHighGround(): string | null {
     const s = newRun(5);
     const p = s.player;
     p.pos = { x, y: 140, z };
-    p.yaw = Math.atan2(x, -z); // facing away from the island's middle, deeper into the high ground
+    const land = landAt(x, z);
+    p.yaw = Math.atan2(x - land.x, -(z - land.z)); // facing away from the land's middle, deeper into the high ground
     const input = { ...idleInput(), moveZ: 1 };
     for (let t = 0; t < 20 * 60 && s.phase === "drop"; t++) step(s, input, false);
     if (s.phase === "drop") return `drop scenario: from ${x},${z} still falling`;
@@ -615,7 +620,7 @@ function checkWeakPointBehindBody(): string | null {
 function checkHelpBeforeLoot(): string | null {
   const s = padRun();
   const p = s.player;
-  s.bins.push({ id: 9999, x: p.pos.x + 0.3, y: p.pos.y, z: p.pos.z, poi: 0, open: false, flare: false, vault: false, outside: false });
+  s.bins.push({ id: 9999, x: p.pos.x + 0.3, y: p.pos.y, z: p.pos.z, poi: SUPPLY, open: false, flare: false, vault: false, outside: false });
   hurtAlly(s, 999);
   s.ally.pos = { x: p.pos.x + 3, y: p.pos.y, z: p.pos.z };
   const press = idleInput();
@@ -629,7 +634,7 @@ function checkHelpBeforeLoot(): string | null {
 function checkAllyTitanKill(): string | null {
   const s = newRun(5);
   s.phase = "play";
-  s.enemies = s.enemies.filter((e) => e.poi === 3);
+  s.enemies = s.enemies.filter((e) => e.poi === PAD);
   const titan = s.enemies.find((e) => e.kind === "titan")!;
   const count = s.enemies.length;
   titan.hp = 1;
@@ -919,23 +924,23 @@ function checkSettle(): string | null {
 function checkVault(): string | null {
   const s = padRun();
   const p = s.player;
-  s.bins = [{ id: 9001, x: p.pos.x + 1, y: p.pos.y, z: p.pos.z, poi: 1, open: false, flare: false, vault: true, outside: false }];
+  s.bins = [{ id: 9001, x: p.pos.x + 1, y: p.pos.y, z: p.pos.z, poi: QUARRY, open: false, flare: false, vault: true, outside: false }];
   const press = idleInput();
   press.interact = true;
   step(s, press, false);
   ticks(s, SEARCH.vaultTime + 1);
   if (s.bins[0].open || p.search) return "vault scenario: a vault opened without its key";
-  p.keys = [1];
+  p.keys = [QUARRY];
   step(s, press, false);
   ticks(s, SEARCH.vaultTime - 0.3);
   if (s.bins[0].open) return "vault scenario: the vault opened before its search time";
   ticks(s, 1);
-  if (!s.bins[0].open || !s.stats.vaults.includes(1)) return "vault scenario: the key did not open the vault";
+  if (!s.bins[0].open || !s.stats.vaults.includes(QUARRY)) return "vault scenario: the key did not open the vault";
   const rare = s.loot.some((l) => l.kind === "weapon" && l.rarity >= 2) && s.loot.some((l) => l.kind === "armor" && l.rarity === 3);
   if (!rare && !p.haul.length) return "vault scenario: the vault held no better loot than a bin";
   // Every POI's vault has a key somewhere else on the island.
-  const keyed = POIS.map((_, i) => keyFoundIn(i));
-  if (new Set(keyed).size !== POIS.length || keyed.some((k, i) => k === i)) return `vault scenario: keys are found in ${keyed.join()}`;
+  const keyed = POIS.map((poi) => poi.keyFrom);
+  if (new Set(keyed).size !== POIS.length || keyed.some((k, i) => k === POIS[i].id || poiIndex(k) < 0)) return `vault scenario: keys are found in ${keyed.join()}`;
   if (POIS.some((poi) => poi.bins.filter((b) => b.vault).length !== 1)) return "vault scenario: a POI does not have exactly one vault";
   // Bins out between the POIs never hold a key, whatever loot table they use.
   const out = padRun();
@@ -981,17 +986,17 @@ function checkQuests(): string | null {
   const d = deliver(p, "parts");
   if (d.stash.some((i) => i.t === "valuable" && i.kind === "parts") || !d.quests.done.includes("parts") || !d.stash.some((i) => i.t === "weapon" && i.kind === "pike" && i.rarity === 1)) return "quest scenario: the delivery did not take the parts and pay the PIKE";
   // Keys go along and come home; a v1 save loads with an empty quest log.
-  const withKey = { ...newProfile(), stash: [...newProfile().stash, { t: "key" as const, poi: 2 }] };
+  const withKey = { ...newProfile(), stash: [...newProfile().stash, { t: "key" as const, poi: "relay" as const }] };
   const k = takeKit(withKey, { weapons: [0], armor: null, heals: { cell: 0, battery: 0, syringe: 0, medkit: 0 }, keys: [withKey.stash.length - 1] });
   const ks = newRun(8, k.kit);
-  if (ks.player.keys.join() !== "2" || k.profile.stash.some((i) => i.t === "key")) return "key scenario: the key did not go into the raid";
+  if (ks.player.keys.join() !== `${RELAY}` || k.profile.stash.some((i) => i.t === "key")) return "key scenario: the key did not go into the raid";
   ks.outcome = "extracted";
   // A second copy found on the island comes home as well.
-  ks.loot = [{ id: 9200, kind: "key", key: 2, rarity: 3, pos: { ...ks.player.pos }, vel: { x: 0, y: 0, z: 0 }, age: 1 }];
+  ks.loot = [{ id: 9200, kind: "key", key: RELAY, rarity: 3, pos: { ...ks.player.pos }, vel: { x: 0, y: 0, z: 0 }, age: 1 }];
   ks.phase = "play";
   step(ks, idleInput(), false);
   ks.outcome = "extracted";
-  const copies = settle(k.profile, ks).profile.stash.filter((i) => i.t === "key" && i.poi === 2).length;
+  const copies = settle(k.profile, ks).profile.stash.filter((i) => i.t === "key" && i.poi === "relay").length;
   if (copies !== 2) return `key scenario: carrying a key and finding another brought home ${copies}, not 2`;
   // One slot left: a quest's key reward takes it ahead of a fuse from the same raid.
   const tight = { ...newProfile(), stash: Array.from({ length: META.stash - 1 }, () => ({ t: "heal" as const, kind: "cell" as const })), quests: { progress: {}, done: ["grunts", "parts", "quarry"] } };
@@ -999,12 +1004,16 @@ function checkQuests(): string | null {
   const ts = newRun(10, tk.kit);
   ts.outcome = "extracted";
   ts.player.haul = ["fuse"];
-  ts.stats.cleared = [2];
+  ts.stats.cleared = [RELAY];
   const tr = settle(tk.profile, ts);
   const last = tr.profile.stash.at(-1);
   if (tr.quests[0]?.id !== "relay" || last?.t !== "key" || !tr.sold.some((i) => i.t === "valuable")) return `quest scenario: with one slot left the stash kept ${JSON.stringify(last)} and sold ${JSON.stringify(tr.sold)}`;
   const v1 = parseProfile({ v: 1, cash: 10, stash: [], raids: 2, extracted: 1 });
-  if (!v1 || v1.v !== 2 || v1.quests.done.length) return "storage scenario: a v1 save does not load";
+  if (!v1 || v1.v !== 3 || v1.quests.done.length) return "storage scenario: a v1 save does not load";
+  // v2 saves named a key's POI by its place in the list; it loads as that POI's id.
+  const v2 = parseProfile({ v: 2, cash: 10, stash: [{ t: "key", poi: 2 }, { t: "key", poi: 9 }], raids: 1, extracted: 1, quests: { progress: {}, done: [] } });
+  const v2Key = v2?.stash[0];
+  if (!v2 || v2.v !== 3 || v2.stash.length !== 1 || v2Key?.t !== "key" || v2Key.poi !== "relay") return `storage scenario: a v2 save's key 2 loaded as ${JSON.stringify(v2?.stash)}, not the relay key`;
   return null;
 }
 

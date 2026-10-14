@@ -1,5 +1,5 @@
 import { ALLY, AWARE, CHARGER, COVER, DEG, ELITE, ENEMIES, PLAYER, TICK, TITAN, TURN, WORLD, type EnemyKind } from "./config";
-import { collide, dist2d, groundAt, los, lookAngles, onTerrain, solidAt, wrapAngle } from "./geom";
+import { clampToWorld, collide, dist2d, groundAt, los, lookAngles, onTerrain, solidAt, wrapAngle } from "./geom";
 import { steepAt, terrainHeight } from "./terrain";
 import { engageSquad, knownSpot, sense, stepSquads } from "./awareness";
 import { COVERS } from "./cover";
@@ -140,9 +140,7 @@ function moveBody(e: Enemy, vx: number, vz: number) {
   e.pos.z += e.vel.z * TICK;
   if (k.fly > 0) {
     e.pos.y += (flyHeight(e.pos.x, e.pos.z) - e.pos.y) * Math.min(1, TICK * 2.5);
-    const lim = WORLD.half - 1;
-    e.pos.x = Math.max(-lim, Math.min(lim, e.pos.x));
-    e.pos.z = Math.max(-lim, Math.min(lim, e.pos.z));
+    clampToWorld(e.pos, 1);
     return false;
   }
   const blocked = collide(e.pos, k.radius, bodyHeight(k));
@@ -432,7 +430,7 @@ function calm(s: State, e: Enemy) {
   const k = ENEMIES[e.kind];
   const slow = k.speed * AWARE.idleSpeed;
   e.lookT += TICK;
-  if (e.aware === "alert" && e.poi === POIS.length - 1) {
+  if (e.aware === "alert" && e.poi >= 0 && POIS[e.poi].boss) {
     // The boss arena holds its ground: it looks, but does not leave.
     e.searchT -= TICK;
     if (e.goal) turnTo(e, Math.atan2(e.goal.x - e.pos.x, -(e.goal.z - e.pos.z)), 2);

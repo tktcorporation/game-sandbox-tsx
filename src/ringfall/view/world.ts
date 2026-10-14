@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { ENEMIES, PLAYER, TITAN, WEAPONS, WORLD, type EnemyKind } from "../sim/config";
 import { BOXES, EXTRACT, EXTRACTS, POIS } from "../sim/map";
 import { groundAt } from "../sim/geom";
-import { DAM_FACE, floorLevel, highGround, LEVEL, rimRadius, steepAt, terrainHeight } from "../sim/terrain";
+import { DAM_FACE, floorLevel, highGround, LANDS, LEVEL, steepAt, terrainHeight } from "../sim/terrain";
 import type { GameEvent, State, Vec3 } from "../sim/state";
 import { PAL, RARITY_COLOR, SCOPE_IN, buildAlly, buildBin, buildBox, mergeStatic, buildCare, buildDropship, buildEnemy, buildGun, buildLootItem, flat, glow, haloSprite, type EnemyModel } from "./models";
 
@@ -13,6 +13,8 @@ import { PAL, RARITY_COLOR, SCOPE_IN, buildAlly, buildBin, buildBox, mergeStatic
  */
 
 const EYE_LERP = 12;
+/** How far past the world's bounds the terrain mesh reaches: far enough to fill the horizon. */
+const HORIZON = 235;
 
 const hash = (x: number, z: number) => {
   const v = Math.sin(x * 12.9898 + z * 78.233) * 43758.5453;
@@ -83,6 +85,7 @@ export class World {
   private flash: THREE.Sprite;
   private muzzleLight = new THREE.PointLight(0xffd27a, 0, 8, 2);
   private clouds: THREE.Sprite[] = [];
+  private readonly skyDome = this.sky();
   private dummy = new THREE.Object3D();
 
   /** Automation only: a fixed camera that replaces the player's view. */
@@ -107,7 +110,7 @@ export class World {
     container.appendChild(this.renderer.domElement);
 
     this.scene.fog = new THREE.Fog(PAL.skyHorizon, 110, 420);
-    this.scene.add(this.sky());
+    this.scene.add(this.skyDome);
     this.scene.add(new THREE.HemisphereLight(0xcfe9ff, 0xb98a55, 1.15));
     this.sun.position.set(-40, 80, 30);
     this.sun.castShadow = true;
@@ -191,17 +194,22 @@ export class World {
   }
 
   private terrain(): THREE.Mesh {
-    // Fine spacing over the island, coarse out on the cliffs and the horizon.
-    const ticks: number[] = [];
-    for (let v = -450; v < -WORLD.half; v += 9) ticks.push(v);
-    for (let v = -WORLD.half; v < WORLD.half; v += 2) ticks.push(v);
-    for (let v = WORLD.half; v <= 450; v += 9) ticks.push(v);
-    const n = ticks.length;
-    const pos = new Float32Array(n * n * 3);
-    for (let j = 0; j < n; j++)
-      for (let i = 0; i < n; i++) pos.set([ticks[i], terrainHeight(ticks[i], ticks[j]), ticks[j]], (j * n + i) * 3);
+    // Fine spacing inside the world's bounds, coarse out on the cliffs to the horizon.
+    const ticks = (lo: number, hi: number) => {
+      const out: number[] = [];
+      for (let v = lo - HORIZON; v < lo; v += 9) out.push(v);
+      for (let v = lo; v < hi; v += 2) out.push(v);
+      for (let v = hi; v <= hi + HORIZON; v += 9) out.push(v);
+      return out;
+    };
+    const xs = ticks(WORLD.x0, WORLD.x1);
+    const zs = ticks(WORLD.z0, WORLD.z1);
+    const n = xs.length;
+    const pos = new Float32Array(n * zs.length * 3);
+    for (let j = 0; j < zs.length; j++)
+      for (let i = 0; i < n; i++) pos.set([xs[i], terrainHeight(xs[i], zs[j]), zs[j]], (j * n + i) * 3);
     const idx: number[] = [];
-    for (let j = 0; j < n - 1; j++)
+    for (let j = 0; j < zs.length - 1; j++)
       for (let i = 0; i < n - 1; i++) {
         const a = j * n + i;
         idx.push(a, a + n, a + 1, a + 1, a + n, a + n + 1);
@@ -262,29 +270,35 @@ export class World {
     let r = 11;
     const rnd = () => ((r = (r * 16807) % 2147483647) / 2147483647);
     const geo = new THREE.DodecahedronGeometry(1, 0);
-    // Boulders along the foot of the cliffs round the island.
-    for (let i = 0; i < 220; i++) {
-      const a = rnd() * Math.PI * 2;
-      const dx = Math.cos(a);
-      const dz = Math.sin(a);
-      const rr = rimRadius(dx * 190, dz * 190) + rnd() * 5;
-      const x = dx * rr;
-      const z = dz * rr;
-      const m = new THREE.Mesh(geo, flat(rnd() < 0.5 ? PAL.rock : PAL.rockDark));
-      const s = 1.5 + rnd() * 3.5;
-      m.scale.set(s, s * (0.6 + rnd() * 0.9), s);
-      m.rotation.set(rnd(), rnd() * 6, rnd());
-      m.position.set(x, terrainHeight(x, z) - s * 0.3, z);
-      m.castShadow = true;
-      this.scene.add(m);
-    }
+    // Boulders along the foot of the cliffs round each land mass.
+    for (const land of LANDS)
+      for (let i = 0; i < 220; i++) {
+        const a = rnd() * Math.PI * 2;
+        const dx = Math.cos(a);
+        const dz = Math.sin(a);
+        const rr = land.radius(Math.atan2(dz, dx)) + rnd() * 5;
+        const x = land.x + dx * rr;
+        const z = land.z + dz * rr;
+        const m = new THREE.Mesh(geo, flat(rnd() < 0.5 ? PAL.rock : PAL.rockDark));
+        const s = 1.5 + rnd() * 3.5;
+        m.scale.set(s, s * (0.6 + rnd() * 0.9), s);
+        m.rotation.set(rnd(), rnd() * 6, rnd());
+        m.position.set(x, terrainHeight(x, z) - s * 0.3, z);
+        m.castShadow = true;
+        this.scene.add(m);
+      }
   }
 
   private addClouds() {
+    // Spread over the world, short of its bounds.
+    const cx = (WORLD.x0 + WORLD.x1) / 2;
+    const cz = (WORLD.z0 + WORLD.z1) / 2;
+    const rx = (WORLD.x1 - WORLD.x0) / 2 - 35;
+    const rz = (WORLD.z1 - WORLD.z0) / 2 - 35;
     for (let i = 0; i < 26; i++) {
       const s = haloSprite(0xffffff, 30 + (i % 5) * 9, 0.55);
       s.material.blending = THREE.NormalBlending;
-      s.position.set(Math.sin(i * 2.4) * 180, 60 + (i % 7) * 9, Math.cos(i * 1.7) * 180);
+      s.position.set(cx + Math.sin(i * 2.4) * rx, 60 + (i % 7) * 9, cz + Math.cos(i * 1.7) * rz);
       this.clouds.push(s);
       this.scene.add(s);
     }
@@ -483,7 +497,8 @@ export class World {
     }
     this.camera.updateMatrixWorld();
 
-    // Shadows follow the camera.
+    // The sky stays centred on the camera; shadows follow it.
+    this.skyDome.position.copy(this.camera.position);
     const fx = this.camera.position.x;
     const fz = this.camera.position.z;
     this.sun.position.set(fx - 40, 80, fz + 30);
