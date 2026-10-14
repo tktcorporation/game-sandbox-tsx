@@ -150,11 +150,11 @@ export function shoot(s: State, w: Weapon) {
   makeNoise(s, p.pos.x, p.pos.z, NOISE[w.kind], true);
 }
 
-/** Which way a shot from the player meets this robot (see FLANK). */
-export function flankOf(s: State, e: Enemy): Flank {
+/** Which way a shot from `from` (the player unless given) meets this robot (see FLANK). */
+export function flankOf(s: State, e: Enemy, from: Vec3 = s.player.pos): Flank {
   if (e.kind === "titan") return "none";
   if (e.aware !== "engaged") return "ambush";
-  const off = Math.abs(wrapAngle(lookAngles(e.pos, s.player.pos).yaw - e.yaw)) / DEG;
+  const off = Math.abs(wrapAngle(lookAngles(e.pos, from).yaw - e.yaw)) / DEG;
   return off < FLANK.frontArc ? "front" : off > FLANK.backArc ? "back" : "side";
 }
 

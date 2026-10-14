@@ -109,12 +109,17 @@ function muzzle(e: Enemy): Vec3 {
 function fireOrb(s: State, e: Enemy, yawOff = 0, homing = false) {
   const k = ENEMIES[e.kind];
   const from = muzzle(e);
-  const yaw = e.aimYaw + yawOff;
-  const c = Math.cos(e.aimPitch);
+  // A random stray (see SHOT.spread); the titan's homing rockets find their own way.
+  const stray = homing ? 0 : SHOT.spread * DEG;
+  const r = Math.sqrt(-2 * Math.log(rand(s) + 1e-9));
+  const a = rand(s) * Math.PI * 2;
+  const yaw = e.aimYaw + yawOff + r * Math.cos(a) * stray;
+  const pitch = e.aimPitch + r * Math.sin(a) * stray;
+  const c = Math.cos(pitch);
   s.orbs.push({
     id: s.nextId++,
     pos: from,
-    vel: { x: Math.sin(yaw) * c * k.orbSpeed, y: Math.sin(e.aimPitch) * k.orbSpeed, z: -Math.cos(yaw) * c * k.orbSpeed },
+    vel: { x: Math.sin(yaw) * c * k.orbSpeed, y: Math.sin(pitch) * k.orbSpeed, z: -Math.cos(yaw) * c * k.orbSpeed },
     r: k.orbR,
     dmg: k.orbDmg * (e.elite ? ELITE.dmg : 1),
     life: 5,
@@ -263,8 +268,20 @@ export function stepEnemies(s: State) {
           // Out of sight it gets there by the ground's way, round the cliff or the house between.
           const to = sees ? wide : huntStep(s, e, wide);
           const fd = dist2d(e.pos, to) || 1e-3;
-          vx = ((to.x - e.pos.x) / fd) * k.speed;
-          vz = ((to.z - e.pos.z) / fd) * k.speed;
+          let ux2 = (to.x - e.pos.x) / fd;
+          let uz2 = (to.z - e.pos.z) / fd;
+          // Round the spot, not through it: closer than 6 m it bends away from where the player is believed to be.
+          const kd = dist2d(e.pos, known) || 1e-3;
+          if (kd < 6) {
+            const w = (6 - kd) / 6;
+            ux2 += ((e.pos.x - known.x) / kd) * w * 1.5;
+            uz2 += ((e.pos.z - known.z) / kd) * w * 1.5;
+            const ul = Math.hypot(ux2, uz2) || 1;
+            ux2 /= ul;
+            uz2 /= ul;
+          }
+          vx = ux2 * k.speed;
+          vz = uz2 * k.speed;
         }
         if (moveBody(e, vx, vz)) e.strafe = -e.strafe;
         else if (rand(s) < TICK * 0.35) e.strafe = -e.strafe;
@@ -292,10 +309,14 @@ export function stepEnemies(s: State) {
             e.shotsLeft = 1;
             e.yaw = e.aimYaw;
             s.events.push({ t: "lunge", id: e.id });
-          } else {
+          } else if (sightOn(e, tPos, tChest)) {
             e.mode = "fire";
             e.timer = 0;
             e.shotsLeft = k.shots;
+          } else {
+            // The target got behind something or out of its cone during the glow: no burst.
+            e.mode = "move";
+            e.cooldown = 0.5;
           }
         }
         break;

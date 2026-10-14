@@ -1,4 +1,4 @@
-import { AWARE, DEG, HEALS, PLAYER, TICK, ULT } from "./config";
+import { AWARE, DEG, ENEMIES, HEALS, PLAYER, TICK, ULT } from "./config";
 import { bodyCenter, eyePos, flankOf, magSize, weakPoint } from "./combat";
 import { ceilingAt, dist2d, inWorld, groundAt, groundLevel, los, onTerrain, lookAngles, solidAt, wrapAngle } from "./geom";
 import { EXTRACTS, POIS, regionOf, type ExtractPoint } from "./map";
@@ -20,20 +20,25 @@ export interface Skill {
   aimErr: number; // degrees, std of the wandering aim error
   turn: number; // fraction of the remaining angle turned per tick
   react: number; // seconds before tracking a new target
-  dodge: number; // chance to sidestep a telegraphed attack / jump a stomp
+  dodge: number; // chance to duck behind cover from a telegraphed attack / jump a stomp
   heads: boolean; // aims at the weak point instead of the body
   abilities: number; // chance per second to use tactical when it would help
   flank: number; // chance to leave a robot that faces it and come back from its side or back
+  retreat: number; // chance to break line of sight and back off when two robots see it or its shield is gone
   raid: number; // POIs it clears before heading for a way out
 }
 
 export const SKILLS: Skill[] = [
-  { name: "beginner", aimErr: 6.5, turn: 0.1, react: 0.45, dodge: 0.25, heads: false, abilities: 0.25, flank: 0.2, raid: 2 },
-  { name: "casual", aimErr: 3.2, turn: 0.18, react: 0.28, dodge: 0.55, heads: false, abilities: 0.8, flank: 0.5, raid: 4 },
-  { name: "good", aimErr: 1.1, turn: 0.32, react: 0.15, dodge: 0.9, heads: true, abilities: 3, flank: 0.85, raid: 4 },
+  { name: "beginner", aimErr: 6.5, turn: 0.1, react: 0.45, dodge: 0.4, heads: false, abilities: 0.25, flank: 0.2, retreat: 0.5, raid: 2 },
+  { name: "casual", aimErr: 3.2, turn: 0.18, react: 0.28, dodge: 0.6, heads: false, abilities: 0.8, flank: 0.5, retreat: 0.8, raid: 4 },
+  { name: "good", aimErr: 1.1, turn: 0.32, react: 0.15, dodge: 0.9, heads: true, abilities: 3, flank: 0.85, retreat: 0.95, raid: 4 },
 ];
 
-const PREF: Record<string, number> = { pike: 14, hornet: 9, maul: 5, lance: 20, talon: 30 };
+/** Where a robot's shots leave from, near its head. */
+const muzzleOf = (e: Enemy) => ({ x: e.pos.x, y: e.pos.y + Math.max(ENEMIES[e.kind].weakY - 0.1, 0.2), z: e.pos.z });
+
+/** Distance it likes to fight at with each weapon: off at the edge of a robot's reach, where its fire strays. */
+const PREF: Record<string, number> = { pike: 22, hornet: 11, maul: 6, lance: 26, talon: 32 };
 
 export class Bot {
   private nx = 0;
@@ -50,7 +55,6 @@ export class Bot {
   private upT = 0;
   private stuckCount = 0;
   private unstickSide = 1;
-  private dodgeT = 0;
   private dodged = new Set<number>();
   private interactT = 0;
   private swapT = 0;
@@ -64,6 +68,17 @@ export class Bot {
   private flankT = 0;
   private flankCheck = 0;
   private lastFlanked = -1;
+  private flankedAt = -99;
+  /** The raiders have been announced: time to stop taking POIs and get out. */
+  private raidersIn = false;
+  /** Where it backs off to out of every fighting robot's sight, to let them lose it and to heal. */
+  private retreat: { x: number; z: number; until: number } | null = null;
+  private retreatCool = 0;
+  /** A spot a step or two away behind cover from a robot winding up, and how long to keep down there. */
+  private duck: { x: number; z: number } | null = null;
+  private duckT = 0;
+  /** Where it fights a robot from: low cover it can shoot over standing and hide behind crouched. */
+  private post: { x: number; z: number; id: number; until: number } | null = null;
   /** Where it glides to on the leap: away from the robots fighting it. */
   private escape: { x: number; z: number } | null = null;
   crouch = false;
@@ -97,14 +112,17 @@ export class Bot {
 
     const eye = eyePos(s);
     this.from = { x: p.pos.x, z: p.pos.z };
+    if (s.events.some((e) => e.t === "raiders")) this.raidersIn = true;
     const live = s.enemies.filter((e) => e.mode !== "spawning");
     // Only fight robots that are after us or stand at the POI we are taking; leave the rest alone.
     const aim = this.nextPoi(s);
-    const relevant = live.filter((e) => e.aware === "engaged" || (aim >= 0 && e.poi === aim));
     const sees = (e: Enemy) => dist2d(e.pos, p.pos) < 60 && los(eye, bodyCenter(e));
+    // Robots coming to look ("?") in plain sight are worth the first shot before they find it.
+    const coming = (e: Enemy) => e.aware === "alert" && dist2d(e.pos, p.pos) < 45 && sees(e);
+    const relevant = live.filter((e) => e.aware === "engaged" || (aim >= 0 && e.poi === aim) || coming(e));
     // Finish the squads already fighting before opening on a new one, as a careful player would.
     const engaged = relevant.filter((e) => e.aware === "engaged");
-    const objective = relevant.filter((e) => aim >= 0 && e.poi === aim);
+    const objective = relevant.filter((e) => (aim >= 0 && e.poi === aim) || coming(e));
     const engagedSeen = engaged.filter(sees);
     const pool = engagedSeen.length ? engagedSeen : engaged.length ? engaged : objective.filter(sees).length ? objective.filter(sees) : objective;
     // A flank in progress keeps its robot; otherwise the nearest one.
@@ -133,7 +151,7 @@ export class Bot {
       // Swap a better weapon in for the worse one, never for the one in hand.
       if (lg?.weapon) {
         const r = p.weapons.map((w) => (w ? w.rarity : -1));
-        inp.slot = r[0] <= r[1] ? 0 : 1;
+        inp.slot = this.spareSlot(s);
       }
     }
 
@@ -176,16 +194,54 @@ export class Bot {
         this.side = this.rnd() < 0.5 ? -1 : 1;
         this.sideT = 0.8 + this.rnd() * 1.2;
       }
-      // Dodge a wind-up that is about to release.
-      for (const e of live) {
-        if (this.dodged.has(e.id * 1000 + Math.floor(s.time / 2))) continue;
-        const windup = (e.mode === "telegraph" && e.timer < 0.3) || (e.mode === "stomp" && e.timer < 0.2);
-        if (windup && dist2d(e.pos, p.pos) < 40) {
-          this.dodged.add(e.id * 1000 + Math.floor(s.time / 2));
-          if (this.rnd() < sk.dodge) {
-            this.dodgeT = 0.45;
-            this.side = this.rnd() < 0.5 ? -1 : 1;
+      // The robots fighting it that it can see, and so can see it.
+      const watching = live.filter((e) => e.aware === "engaged" && e.kind !== "titan" && dist2d(e.pos, p.pos) < 50 && los(eye, bodyCenter(e)));
+      // A wind-up in sight: get down behind something before it fires (a sidestep in the open does not help).
+      for (const e of watching) {
+        const key = e.id * 1000 + Math.floor(s.time / 2);
+        if (e.mode !== "telegraph" || this.dodged.has(key) || this.retreat) continue;
+        this.dodged.add(key);
+        if (this.rnd() >= sk.dodge) continue;
+        const winding = watching.filter((o) => o.mode === "telegraph" || o.mode === "fire");
+        if (winding.every((o) => !los(muzzleOf(o), { x: p.pos.x, y: p.pos.y + 0.75, z: p.pos.z }))) this.duck = { x: p.pos.x, z: p.pos.z };
+        else this.duck = this.coverSpot(winding, [1.5, 2.5, 3.5], 5, true);
+        if (this.duck) this.duckT = 1.3;
+      }
+      // Two robots on it, or its shield gone: break their line of sight and back off, let them
+      // lose it, heal there, and come again from somewhere else.
+      this.retreatCool -= TICK;
+      const broken = p.shield <= 0 && p.hp < PLAYER.hp * 0.8;
+      const fighting = live.filter((e) => e.aware === "engaged" && e.kind !== "titan" && dist2d(e.pos, p.pos) < 60);
+      const pressed = watching.length >= 2 || (broken && watching.length >= 1);
+      if (!this.retreat && pressed && tgt.kind !== "titan" && onTerrain(p.pos) && this.retreatCool <= 0) {
+        this.retreatCool = 1.5;
+        if (this.rnd() < sk.retreat) {
+          const spot = this.coverSpot(fighting, [3, 5, 8, 12, 16], 22, false);
+          if (spot) {
+            this.retreat = { ...spot, until: s.time + 14 };
+            this.flank = null;
+            this.duckT = 0;
           }
+        }
+      }
+      const hiding = !!this.retreat && dist2d(this.retreat, p.pos) < 1.5;
+      if (this.retreat && hiding && watching.length && this.retreatCool <= 0) {
+        // Found in hiding (one came round): somewhere else, at once.
+        this.retreatCool = 1;
+        const spot = this.coverSpot(fighting, [3, 5, 8, 12, 16], 22, false);
+        this.retreat = spot ? { ...spot, until: this.retreat.until } : null;
+      }
+      const tracked = fighting.some((e) => (s.squads[e.squad]?.sinceSeen ?? 99) < AWARE.trackTime);
+      const max = PLAYER.shieldByTier[p.armor];
+      const needHeal = (p.shield < max * 0.7 || p.hp < 70) && !!pickHeal(s);
+      if (this.retreat && (s.time > this.retreat.until || (hiding && !tracked && !needHeal && !p.healing))) {
+        this.retreat = null;
+        // They lost it: come again from their side or back rather than where they look.
+        const spot = tgt.aware === "engaged" && onTerrain(tgt.pos) && this.rnd() < sk.flank ? this.flankSpot(s, tgt) : null;
+        if (spot) {
+          this.flank = { ...spot, id: tgt.id, step: "go" };
+          this.flankT = 7;
+          this.lastFlanked = tgt.id;
         }
       }
       const sees = los(eye, bodyCenter(tgt));
@@ -201,20 +257,48 @@ export class Bot {
         this.flank = spot ? { ...spot, id: tgt.id, step: "go" } : null;
         this.flankT = 7;
       }
-      if (!this.flank && this.flankCheck <= 0 && tgt.kind !== "titan" && tgt.aware === "engaged" && onTerrain(p.pos) && onTerrain(tgt.pos)) {
+      if (!this.flank && !this.retreat && this.flankCheck <= 0 && tgt.kind !== "titan" && tgt.aware === "engaged" && onTerrain(p.pos) && onTerrain(tgt.pos)) {
         this.flankCheck = 1.5;
         // Worth it only on a robot with plenty of fight left, and not twice in a row.
-        const healthy = tgt.hp + tgt.shield > enemyMax(tgt) * 0.5;
-        if (healthy && tgt.id !== this.lastFlanked && flankOf(s, tgt) === "front" && this.rnd() < sk.flank) {
+        // Worth it on a robot with fight left; the same robot again only after a while.
+        const healthy = tgt.hp + tgt.shield > enemyMax(tgt) * 0.3;
+        const again = tgt.id !== this.lastFlanked || s.time - this.flankedAt > 5;
+        if (healthy && again && flankOf(s, tgt) === "front" && this.rnd() < sk.flank) {
           const hide = this.hideSpot(s, tgt);
           if (hide) {
             this.lastFlanked = tgt.id;
+            this.flankedAt = s.time;
             this.flank = { ...hide, id: tgt.id, step: "hide" };
             this.flankT = 6;
           }
         }
       }
-      if (this.flank) {
+      const opening = tgt.aware !== "engaged";
+      if (this.retreat) {
+        // Run for it, facing the way: no shooting on the way, then down low out of sight.
+        if (!hiding) {
+          const step = this.via(s, this.retreat);
+          const yaw = lookAngles(p.pos, { x: step.x, y: 0, z: step.z }).yaw;
+          inp.lookX = wrapAngle(yaw - p.yaw) * sk.turn;
+          inp.lookY = -p.pitch * sk.turn;
+          const rel = yaw - p.yaw;
+          inp.moveZ = Math.cos(rel);
+          inp.moveX = Math.sin(rel);
+        } else {
+          // Low, watching the way they will come: one that walks into view side-on gets shot.
+          inp.crouch = !(sees && flankOf(s, tgt) !== "front");
+          if (needHeal && !p.healing && !watching.length) inp.heal = true;
+        }
+      } else if (this.duckT > 0 && this.duck) {
+        this.duckT -= TICK;
+        const there = dist2d(this.duck, p.pos) < 0.6;
+        if (!there) {
+          const step = this.via(s, this.duck);
+          const rel = lookAngles(p.pos, { x: step.x, y: 0, z: step.z }).yaw - p.yaw;
+          inp.moveZ = Math.cos(rel);
+          inp.moveX = Math.sin(rel);
+        } else inp.crouch = true;
+      } else if (this.flank) {
         const step = this.via(s, this.flank);
         const rel = lookAngles(p.pos, { x: step.x, y: 0, z: step.z }).yaw - p.yaw;
         inp.moveZ = Math.cos(rel);
@@ -236,16 +320,36 @@ export class Bot {
         const rel = lookAngles(p.pos, { x: step.x, y: 0, z: step.z }).yaw - p.yaw;
         inp.moveZ = Math.cos(rel);
         inp.moveX = Math.sin(rel);
+      } else if (opening) {
+        // A robot that has not seen it yet: stop, get low and take the first shot from range.
+        inp.moveZ = d > pref + 3 ? 1 : 0;
+        inp.crouch = inp.moveZ === 0;
       } else {
-        inp.moveZ = !sees ? 1 : d > pref + 3 ? 1 : d < pref - 3 ? -0.8 : 0;
-        inp.moveX = this.dodgeT > 0 ? this.side : this.side * (sk.dodge > 0.5 ? 0.9 : 0.5);
+        // Fight from behind low cover near by when there is some; otherwise keep moving.
+        if (!this.post || this.post.id !== tgt.id || s.time > this.post.until) {
+          const spot = sees && onTerrain(p.pos) && onTerrain(tgt.pos) && this.rnd() < sk.dodge ? this.postSpot(tgt, pref) : null;
+          this.post = spot ? { ...spot, id: tgt.id, until: s.time + 3 } : { x: NaN, z: NaN, id: tgt.id, until: s.time + 1.5 };
+        }
+        if (Number.isFinite(this.post.x)) {
+          const there = dist2d(this.post, p.pos) < 0.7;
+          if (!there) {
+            const step = this.via(s, this.post);
+            const rel = lookAngles(p.pos, { x: step.x, y: 0, z: step.z }).yaw - p.yaw;
+            inp.moveZ = Math.cos(rel);
+            inp.moveX = Math.sin(rel);
+          }
+        } else {
+          inp.moveZ = !sees ? 1 : d > pref + 3 ? 1 : d < pref - 3 ? -0.8 : 0;
+          inp.moveX = this.side * (sk.dodge > 0.5 ? 0.9 : 0.5);
+        }
       }
-      this.dodgeT -= TICK;
 
       const aimDir = Math.hypot(wrapAngle(want.yaw - p.yaw), want.pitch - p.pitch);
       const tol = (sk.name === "beginner" ? 12 : 8) * DEG + Math.atan(1 / Math.max(d, 1));
-      inp.fire = sees && aimDir < tol && d < 60 && !p.healing && !(this.flank && flankOf(s, tgt) === "front");
-      inp.ads = sees && d > 12 && w?.kind !== "maul" && w?.kind !== "hornet";
+      const ambushing = hiding && flankOf(s, tgt) !== "front";
+      const busy = (!!this.retreat && !ambushing) || (this.duckT > 0 && !!this.duck);
+      inp.fire = sees && aimDir < tol && d < 60 && !p.healing && !busy && !(this.flank && flankOf(s, tgt) === "front");
+      inp.ads = sees && !busy && d > 12 && w?.kind !== "maul" && w?.kind !== "hornet";
 
       // Shockwave: jump when the ring is about to arrive.
       for (const wv of s.waves) {
@@ -265,13 +369,16 @@ export class Bot {
       const other = p.weapons[1 - p.slot];
       this.swapT -= TICK;
       if (other && w && sk.name !== "beginner" && this.swapT <= 0 && p.reload <= 0) {
-        if (Math.abs(PREF[other.kind] - d) + 6 < Math.abs(PREF[w.kind] - d)) {
+        // The scoped rifle for an opening shot from range; otherwise what suits the distance.
+        const scope = opening && d > 16 && other.kind === "talon";
+        if (scope || (!(opening && w.kind === "talon") && Math.abs(PREF[other.kind] - d) + 6 < Math.abs(PREF[w.kind] - d))) {
           inp.swap = true;
           this.swapT = 3;
         }
       }
-      const threat = live.some((e) => dist2d(e.pos, p.pos) < 14 || e.mode === "telegraph");
-      if ((p.shield < 25 || p.hp < 45) && !threat && !p.healing && pickHeal(s)) inp.heal = true;
+      // Out of every fighting robot's sight and with none close, top up between exchanges.
+      const close = live.some((e) => dist2d(e.pos, p.pos) < 8);
+      if (needHeal && !close && !watching.length && !p.healing && !inp.fire) inp.heal = true;
       if (p.healing) inp.fire = false;
     } else if (goal) {
       const d = dist2d(goal, p.pos);
@@ -279,7 +386,9 @@ export class Bot {
       if (Math.abs(wrapAngle(want.yaw - p.yaw)) > 0.5) inp.moveZ = 0.4;
       if (w && w.mag < magSize(w) * 0.6 && p.reload <= 0) inp.reload = true;
       const max = PLAYER.shieldByTier[p.armor];
-      if ((p.shield < max * 0.6 || p.hp < 75) && !p.healing && pickHeal(s)) inp.heal = true;
+      // Not in sight of a robot that is fighting it: healing is slow and heard.
+      const watched = live.some((e) => e.aware === "engaged" && dist2d(e.pos, p.pos) < 50 && los(eye, bodyCenter(e)));
+      if ((p.shield < max * 0.6 || p.hp < 75) && !p.healing && !watched && pickHeal(s)) inp.heal = true;
       if (p.healing) inp.moveZ = Math.min(inp.moveZ, 0.6);
       // Slide now and then on long runs, like people do.
       if (p.sprinting && d > 12 && this.rnd() < TICK * 0.4) this.crouch = true;
@@ -350,6 +459,12 @@ export class Bot {
    */
   private nextPoi(s: State): number {
     if (s.stats.cleared.length >= this.skill.raid) return -1;
+    // The raiders are down: cut the raid short, as soon as the POIs it promised itself are halved.
+    if (this.raidersIn && s.stats.cleared.length >= Math.ceil(this.skill.raid / 2)) return -1;
+    // Hurt with nothing left to heal with: one more fight is one too many.
+    const p0 = s.player;
+    const left = (p0.hp + p0.shield) / (PLAYER.hp + PLAYER.shieldByTier[p0.armor]);
+    if (left < 0.6 && !pickHeal(s) && s.stats.cleared.length > 0) return -1;
     const p = s.player;
     const mine = regionOf(s.region).pois;
     const others = POIS.filter((poi) => !poi.boss && mine.includes(poi.id)).length;
@@ -475,6 +590,57 @@ export class Bot {
     return null;
   }
 
+  /**
+   * A standable spot at one of `radii` metres that none of `watchers` can see (crouched when
+   * `low`), reachable on foot within `maxRoute` metres. A quick duck takes the nearest; backing
+   * off favours a way there that stays out of their sight, and spots further from them.
+   */
+  private coverSpot(watchers: Enemy[], radii: number[], maxRoute: number, low: boolean): { x: number; z: number } | null {
+    let best: { x: number; z: number; score: number } | null = null;
+    for (const r of radii)
+      for (let a = 0; a < 2 * Math.PI; a += Math.PI / 6) {
+        const x = this.from.x + Math.sin(a) * r;
+        const z = this.from.z - Math.cos(a) * r;
+        if (!inWorld(x, z, 3)) continue;
+        const g = terrainHeight(x, z);
+        if (groundAt(x, z, 0.4, g + 0.3) > g + 0.3 || [0.3, 1.0, 1.6].some((h) => solidAt(x, g + h, z))) continue;
+        const at = { x, y: g + (low ? 0.75 : 1.5), z };
+        if (watchers.some((w) => los(muzzleOf(w), at))) continue;
+        const route = this.route(x, z);
+        if (!route || route.len > maxRoute) continue;
+        let score = route.len;
+        if (!low) {
+          const seen = route.samples.filter((q) => watchers.some((w) => los(muzzleOf(w), { x: q.x, y: terrainHeight(q.x, q.z) + 1.1, z: q.z }))).length;
+          score = route.len * (1 + (4 * seen) / Math.max(1, route.samples.length)) - 0.5 * Math.min(...watchers.map((w) => dist2d(w.pos, at)));
+        }
+        if (!best || score < best.score) best = { x, z, score };
+      }
+    return best && { x: best.x, z: best.z };
+  }
+
+  /**
+   * A spot within a few metres from which the bot, standing, sees the robot's body, and which
+   * hides its chest from the robot when it crouches: low cover to shoot over and duck behind.
+   */
+  private postSpot(tgt: Enemy, pref: number): { x: number; z: number } | null {
+    let best: { x: number; z: number; score: number } | null = null;
+    for (const r of [0, 1.5, 3, 4.5, 6])
+      for (let a = 0; a < 2 * Math.PI; a += r ? Math.PI / 6 : 7) {
+        const x = this.from.x + Math.sin(a) * r;
+        const z = this.from.z - Math.cos(a) * r;
+        if (!inWorld(x, z, 3)) continue;
+        const g = terrainHeight(x, z);
+        if (groundAt(x, z, 0.4, g + 0.3) > g + 0.3 || [0.3, 1.0, 1.6].some((h) => solidAt(x, g + h, z))) continue;
+        if (!los({ x, y: g + PLAYER.eye, z }, bodyCenter(tgt))) continue;
+        if (los(muzzleOf(tgt), { x, y: g + 0.75, z })) continue;
+        const route = r ? this.route(x, z) : { len: 0, samples: [] };
+        if (!route || route.len > 8) continue;
+        const score = route.len + Math.abs(dist2d({ x, z }, tgt.pos) - pref) * 0.3;
+        if (!best || score < best.score) best = { x, z, score };
+      }
+    return best && { x: best.x, z: best.z };
+  }
+
   /** The nearest standable spot within 10 m that no member of the robot's squad can see. */
   private hideSpot(s: State, tgt: Enemy): { x: number; z: number } | null {
     const watchers = s.enemies.filter((e) => e.squad === tgt.squad);
@@ -534,10 +700,22 @@ export class Bot {
     return this.path[0] ?? goal;
   }
 
+  /**
+   * The slot a found weapon goes into: the worse of the two, but never the scoped rifle,
+   * which the bot keeps for its opening shots.
+   */
+  private spareSlot(s: State): number {
+    const [a, b] = s.player.weapons;
+    if (a?.kind === "talon" && b) return 1;
+    if (b?.kind === "talon" && a) return 0;
+    return (a ? a.rarity : -1) <= (b ? b.rarity : -1) ? 0 : 1;
+  }
+
   /** Unopened bins and better weapons nearby, when nothing is shooting. */
   private lootGoal(s: State): { x: number; z: number; weapon?: true } | null {
     const p = s.player;
-    const worst = Math.min(...p.weapons.map((w) => (w ? w.rarity : -1)));
+    const spare = p.weapons[this.spareSlot(s)];
+    const worst = spare ? spare.rarity : -1;
     // Skip anything above our floor (roofs, platforms) and anything we failed to reach for 10 s.
     // Only things on the terrain: the bot plans on the ground and does not climb to floors or roofs.
     const reachable = (c: { x: number; z: number; y?: number }) => (c.y ?? 0) < terrainHeight(c.x, c.z) + 0.6 && !this.skip.has(`${Math.round(c.x)},${Math.round(c.z)}`);

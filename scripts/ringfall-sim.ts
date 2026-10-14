@@ -474,10 +474,10 @@ function checkShipCall(): string | null {
   const p = s.player;
   p.pos = { x: ship.x, y: groundAt(ship.x, ship.z, 0.4, 20), z: ship.z };
   p.iframes = 999; // the waves must not end the scenario
-  ticks(s, ship.call! - 1);
+  holdSpot(s, ship.call! - 1);
   const waves = s.enemies.filter((e) => s.squads[e.squad]?.name === SHIP_SQUAD).length;
   if (callLeft(s, "ship") <= 0 || s.phase === "done" || waves < 2) return `ship scenario: ${callLeft(s, "ship").toFixed(1)} s left, phase ${s.phase}, ${waves} robots beamed in`;
-  ticks(s, 1 + ship.hold + 0.2);
+  holdSpot(s, 1 + ship.hold + 0.2);
   if (phaseOf(s) !== "done" || s.extractedAt !== "ship") return `ship scenario: did not leave after landing (${callLeft(s, "ship").toFixed(1)}, ${s.phase})`;
   return null;
 }
@@ -492,12 +492,12 @@ function checkBoatCall(): string | null {
   const p = s.player;
   p.pos = { x: boat.x, y: groundAt(boat.x, boat.z, 0.4, 20), z: boat.z };
   p.iframes = 999;
-  ticks(s, boat.call! - 1);
+  holdSpot(s, boat.call! - 1);
   const waves = s.enemies.filter((e) => s.squads[e.squad]?.name === SHIP_SQUAD);
   if (callLeft(s, "boat") <= 0 || callLeft(s, "ship") >= 0 || s.phase === "done" || waves.length < 2) return `boat scenario: ${callLeft(s, "boat").toFixed(1)} s left, ship ${callLeft(s, "ship")}, phase ${s.phase}, ${waves.length} robots beamed in`;
   const stranded = waves.filter((e) => ENEMIES[e.kind].fly === 0 && (highGround(e.pos.x, e.pos.z) || Math.hypot(e.pos.x - boat.x, e.pos.z - boat.z) > 40));
   if (stranded.length) return `boat scenario: robots beamed in off the quay at ${stranded.map((e) => `${e.pos.x.toFixed(0)},${e.pos.z.toFixed(0)}`).join(" ")}`;
-  ticks(s, 1 + boat.hold + 0.2);
+  holdSpot(s, 1 + boat.hold + 0.2);
   if (phaseOf(s) !== "done" || s.extractedAt !== "boat") return `boat scenario: did not leave by boat (${callLeft(s, "boat").toFixed(1)}, ${s.phase})`;
   return null;
 }
@@ -600,6 +600,14 @@ function padRun(): State {
 }
 const ticks = (s: State, seconds: number, inp = idleInput()) => {
   for (let i = 0; i < seconds / TICK; i++) step(s, inp, false);
+};
+/** Ticks with the player holding where it stands: a lunging charger's shove does not carry it out of a pickup. */
+const holdSpot = (s: State, seconds: number) => {
+  const spot = { ...s.player.pos };
+  for (let i = 0; i < seconds / TICK && s.phase !== "done"; i++) {
+    step(s, idleInput(), false);
+    s.player.pos = { ...spot };
+  }
 };
 /** Out of self-revives, the player waits downed and the teammate walks over and picks them up. */
 function checkAllyRescue(): string | null {

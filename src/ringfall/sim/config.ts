@@ -387,10 +387,12 @@ export const PINCH = { after: 4, radius: 4, dist: 10 };
 /**
  * Robot fire: shots are fast enough that a sidestep in the open does not get out of the
  * way at fighting ranges, so the glow before a burst means "get behind something". Each
- * shot aims at the target's chest led by this share of its motion over the flight time,
- * and is aimed afresh for every shot of a burst while the robot sees its target.
+ * shot aims at the target's chest led by `lead` of its motion over the flight time, and is
+ * aimed afresh for every shot of a burst while the robot sees its target. Every shot also
+ * strays by a random angle (`spread` degrees, standard deviation), which matters only far
+ * off: up close a burst lands, from beyond 30 m a good part of it misses.
  */
-export const SHOT = { lead: 0.85 };
+export const SHOT = { lead: 0.85, spread: 1.5 };
 
 /**
  * How robots notice the player. Each robot has a view cone; while it sees the
