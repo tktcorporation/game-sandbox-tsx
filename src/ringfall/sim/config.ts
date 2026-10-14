@@ -72,13 +72,14 @@ export type HealKind = "cell" | "battery" | "syringe" | "medkit";
 
 /**
  * Healing items. Small ones are quick and top up; big ones fill but leave the player
- * slow and unable to shoot for longer, so when to heal is a choice. `amount` 0 fills.
+ * slow and unable to shoot for longer, and every one is heard nearby (`NOISE.heal`), so
+ * healing belongs after breaking contact, not in the middle of a fight. `amount` 0 fills.
  */
 export const HEALS: Record<HealKind, { label: string; short: string; shield: boolean; amount: number; time: number; max: number }> = {
-  cell: { label: "シールドセル", short: "セル", shield: true, amount: 25, time: 1.2, max: 6 },
-  battery: { label: "シールドバッテリー", short: "バッテリー", shield: true, amount: 0, time: 2.4, max: 3 },
-  syringe: { label: "注射器", short: "注射器", shield: false, amount: 25, time: 1.4, max: 4 },
-  medkit: { label: "医療キット", short: "医療キット", shield: false, amount: 0, time: 3.0, max: 2 },
+  cell: { label: "シールドセル", short: "セル", shield: true, amount: 25, time: 1.8, max: 6 },
+  battery: { label: "シールドバッテリー", short: "バッテリー", shield: true, amount: 0, time: 3.6, max: 3 },
+  syringe: { label: "注射器", short: "注射器", shield: false, amount: 25, time: 2.1, max: 4 },
+  medkit: { label: "医療キット", short: "医療キット", shield: false, amount: 0, time: 4.5, max: 2 },
 };
 export const HEAL_KINDS = Object.keys(HEALS) as HealKind[];
 
@@ -99,11 +100,15 @@ export const ASSIST = {
   /** Look sensitivity multiplier while the crosshair is near an enemy. */
   slowdown: 0.55,
   slowCone: 9,
-  /** Fraction of the angle to the target closed per second while moving and firing or ADS. */
+  /**
+   * Fraction of the angle to the target closed per second while aiming down sights, moving
+   * or not. Hip fire gets no pull: the help goes to the deliberate aimed shot, not to
+   * strafing and spraying.
+   */
   pull: 1.6,
   /**
-   * Touch aiming: pull also works while standing still, and this much faster.
-   * A thumb cannot track and strafe at once the way a mouse hand and WASD can.
+   * Touch aiming: pull also works while firing from the hip, and this much faster.
+   * A thumb cannot hold aim and track at once the way a mouse hand can.
    */
   touchPull: 1.6,
   pullCone: 12,
@@ -215,10 +220,10 @@ export interface EnemySpec {
 }
 
 export const ENEMIES: Record<EnemyKind, EnemySpec> = {
-  drone: { hp: 70, shield: 0, shieldTier: 0, radius: 0.55, bodyY: 0, weakY: 0, weakR: 0.24, weakFwd: 0.42, speed: 4.2, fly: 3.4, range: 14, telegraph: 0.55, cooldown: 1.6, shots: 1, shotGap: 0, spread: 0, orbSpeed: 23, orbDmg: 21, orbR: 0.32, ult: 1 },
-  grunt: { hp: 140, shield: 70, shieldTier: 1, radius: 0.6, bodyY: 1.1, weakY: 1.86, weakR: 0.27, weakFwd: 0.08, speed: 3.2, fly: 0, range: 15, telegraph: 0.6, cooldown: 1.5, shots: 3, shotGap: 0.16, spread: 0, orbSpeed: 28, orbDmg: 20, orbR: 0.3, ult: 1 },
+  drone: { hp: 70, shield: 0, shieldTier: 0, radius: 0.55, bodyY: 0, weakY: 0, weakR: 0.24, weakFwd: 0.42, speed: 4.2, fly: 3.4, range: 14, telegraph: 0.55, cooldown: 1.6, shots: 1, shotGap: 0, spread: 0, orbSpeed: 62, orbDmg: 21, orbR: 0.2, ult: 1 },
+  grunt: { hp: 140, shield: 70, shieldTier: 1, radius: 0.6, bodyY: 1.1, weakY: 1.86, weakR: 0.27, weakFwd: 0.08, speed: 3.2, fly: 0, range: 15, telegraph: 0.6, cooldown: 1.5, shots: 3, shotGap: 0.16, spread: 0, orbSpeed: 76, orbDmg: 20, orbR: 0.18, ult: 1 },
   charger: { hp: 120, shield: 50, shieldTier: 0, radius: 0.72, bodyY: 0.75, weakY: 0.95, weakR: 0.3, weakFwd: 0.62, speed: 6.4, fly: 0, range: 0, telegraph: 0.6, cooldown: 1.2, shots: 0, shotGap: 0, spread: 0, orbSpeed: 0, orbDmg: 40, orbR: 0, ult: 1 },
-  heavy: { hp: 300, shield: 150, shieldTier: 2, radius: 0.95, bodyY: 1.4, weakY: 2.35, weakR: 0.36, weakFwd: 0.1, speed: 2.0, fly: 0, range: 18, telegraph: 0.85, cooldown: 3.2, shots: 5, shotGap: 0, spread: 9, orbSpeed: 20, orbDmg: 18, orbR: 0.42, ult: 1 },
+  heavy: { hp: 300, shield: 150, shieldTier: 2, radius: 0.95, bodyY: 1.4, weakY: 2.35, weakR: 0.36, weakFwd: 0.1, speed: 2.0, fly: 0, range: 18, telegraph: 0.85, cooldown: 3.2, shots: 5, shotGap: 0, spread: 9, orbSpeed: 54, orbDmg: 18, orbR: 0.26, ult: 1 },
   titan: { hp: 3200, shield: 1000, shieldTier: 3, radius: 2.3, bodyY: 3.2, weakY: 3.4, weakR: 0.75, weakFwd: 2.1, speed: 1.6, fly: 0, range: 20, telegraph: 1.0, cooldown: 3.0, shots: 6, shotGap: 0.16, spread: 0, orbSpeed: 13, orbDmg: 9, orbR: 0.48, ult: 0.5 },
 };
 
@@ -371,6 +376,23 @@ export const ELITE = {
 };
 
 /**
+ * A squad of two or more that has had the player pinned to one spot for `after` seconds
+ * (the spot it last saw them at has moved less than `radius` metres) goes round it: one
+ * member keeps facing and shooting at the spot, the others walk to points `dist` metres
+ * to either side of it, across the line from that member. Staying put in front of a squad
+ * gets the player caught between two; moving or breaking line of sight is the answer.
+ */
+export const PINCH = { after: 4, radius: 4, dist: 10 };
+
+/**
+ * Robot fire: shots are fast enough that a sidestep in the open does not get out of the
+ * way at fighting ranges, so the glow before a burst means "get behind something". Each
+ * shot aims at the target's chest led by this share of its motion over the flight time,
+ * and is aimed afresh for every shot of a burst while the robot sees its target.
+ */
+export const SHOT = { lead: 0.85 };
+
+/**
  * How robots notice the player. Each robot has a view cone; while it sees the
  * player its detection fills (faster up close), and at full the whole squad
  * engages. Crouching shrinks the range and slows the fill.
@@ -437,7 +459,7 @@ export type Flank = "front" | "side" | "back" | "ambush" | "none";
 export const FLANK = {
   frontArc: 55, // degrees either side of facing
   backArc: 115, // beyond this many degrees from facing
-  mult: { front: 0.85, side: 1, back: 2, ambush: 2.5, none: 1 } satisfies Record<Flank, number>,
+  mult: { front: 0.6, side: 1, back: 2.2, ambush: 3, none: 1 } satisfies Record<Flank, number>,
 };
 
 /** How far a sound carries, in metres. Robots inside it come to look. */
@@ -450,6 +472,8 @@ export const NOISE = {
   arc: 10,
   sprintStep: 8,
   slide: 10,
+  /** Using a healing item: the click of a cell or the hiss of a syringe. */
+  heal: 9,
   /** The ult's launch: everyone round about hears where the player went up. */
   leap: 30,
   /** Squads that roam the roads (and reinforcements) hear gunfire this many times further and come to look. */

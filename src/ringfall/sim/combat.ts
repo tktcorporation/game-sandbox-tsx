@@ -65,11 +65,13 @@ export function assistTarget(s: State, coneDeg: number): { e: Enemy; angle: numb
  */
 const assistRank = (e: Enemy, angle: number) => (e.aware === "idle" ? angle + 10 : angle);
 
-/** Turn the player's view toward the assist target by a fraction of the remaining angle. */
-export function applyPull(s: State, moving: boolean, firing: boolean, touch = false) {
+/**
+ * Turn the player's view toward the assist target by a fraction of the remaining angle:
+ * while aiming down sights (moving or not), and on touch also while firing from the hip.
+ */
+export function applyPull(s: State, firing: boolean, touch = false) {
   const p = s.player;
-  const engaged = firing || p.ads > 0.5;
-  if (!(engaged && (moving || touch))) return;
+  if (!(p.ads > 0.5 || (touch && firing))) return;
   const t = assistTarget(s, ASSIST.pullCone);
   if (!t) return;
   const want = lookAngles(eyePos(s), bodyCenter(t.e));

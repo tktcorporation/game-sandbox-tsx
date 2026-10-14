@@ -47,13 +47,12 @@ export function stepPlayer(s: State, input: Input, prevCrouch: boolean) {
   p.iframes = Math.max(0, p.iframes - TICK);
   p.sinceHurt += TICK;
 
-  // Look, with slowdown near enemies and pull while moving and shooting.
+  // Look, with slowdown near enemies and pull while aiming down sights.
   const near = p.downed > 0 ? null : assistTarget(s, ASSIST.slowCone);
   const sens = near ? ASSIST.slowdown : 1;
   p.yaw += input.lookX * sens;
   p.pitch = Math.max(-1.45, Math.min(1.45, p.pitch + input.lookY * sens));
-  const moving = Math.abs(input.moveX) + Math.abs(input.moveZ) > 0.1;
-  if (p.downed <= 0) applyPull(s, moving, input.fire, input.touch);
+  if (p.downed <= 0) applyPull(s, input.fire, input.touch);
   p.recoil *= Math.exp(-TICK / 0.12);
 
   if (p.downed > 0) {
@@ -510,6 +509,7 @@ function abilities(s: State, input: Input) {
       p.healing = { kind, t: HEALS[kind].time };
       p.reload = 0;
       s.events.push({ t: "healStart", kind });
+      makeNoise(s, p.pos.x, p.pos.z, NOISE.heal);
     }
   }
 }

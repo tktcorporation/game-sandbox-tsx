@@ -9,7 +9,10 @@
  * With a region id after the count, only that region's table is played.
  */
 import { ALLY, BAG, ENEMIES, NOISE, PLAYER, RAIDERS, REINFORCE, SEARCH, TACTICAL, TICK, VALUABLES, WORLD } from "../src/ringfall/sim/config";
-import { makeNoise } from "../src/ringfall/sim/awareness";
+import { engageSquad, makeNoise } from "../src/ringfall/sim/awareness";
+import { spawnEnemy } from "../src/ringfall/sim/enemies";
+import { COVERS } from "../src/ringfall/sim/cover";
+import { ENEMIES as KINDS, type EnemyKind } from "../src/ringfall/sim/config";
 import { BOXES, DECKS, EXTRA_BINS, EXTRACTS, POIS, poiIndex, REGIONS, regionHere, regionOf, ROAMERS, SPAWN, type RegionId, type Squad } from "../src/ringfall/sim/map";
 import { findPath } from "../src/ringfall/sim/nav";
 import { fieldTo, fieldsBuilt, routeLength } from "../src/ringfall/sim/hunt";
@@ -1152,7 +1155,209 @@ function checkQuests(): string | null {
   return null;
 }
 
-for (const err of [checkVault(), checkQuests(), checkSettle(), checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkBoatCall(), checkSecondPickup(), checkRegionDrop(), checkConnections(), checkAllySelfUp(), checkStompHeight(), checkDropOffHighGround(), checkFieldsReused(), checkFieldsFollowRunner(), checkCliffsStop(), checkNoPits(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill(), checkLeap(), checkLeapLeavesAllyBelow(), checkLeapDowned(), checkLeapAllyCatchesUp(), checkLeapAllyDowned(), checkLeapWithItem(), checkLeapClocks(), checkLeapOffHighGround(), checkLeapUnderRoof()]) {
+/**
+ * Open level ground in the reservoir: from `left` metres to the -x side of (x, z) to `right`
+ * metres to the +x side, and `dist` metres toward -z, clear of boxes, for a fight in the open.
+ */
+function openSpot(dist: number, left: number, right: number): { x: number; z: number } | null {
+  const land = regionOf("reservoir").land;
+  for (let ring = 0; ring < 400; ring += 4)
+    for (let a = 0; a < 2 * Math.PI; a += 4 / Math.max(ring, 8)) {
+      const x = land.x + Math.cos(a) * ring;
+      const z = land.z + Math.sin(a) * ring;
+      if (!inWorld(x, z, 5) || offLowGround(x, z)) continue;
+      const g = terrainHeight(x, z);
+      let ok = !BOXES.some((b) => b.x1 > x - left && b.x0 < x + right && b.z1 > z - dist - 2 && b.z0 < z + 2 && b.y0 < g + 3);
+      for (let dx = -left; dx <= right && ok; dx += 1)
+        for (let dz = -2; dz <= dist + 2 && ok; dz += 1) if (Math.abs(terrainHeight(x + dx, z - dz) - g) > 0.5) ok = false;
+      if (ok) return { x, z };
+    }
+  return null;
+}
+
+/**
+ * The player alone at (x, z), facing -z, and an engaged squad of `kinds` standing `dist`
+ * metres away toward -z, facing the player. No teammate.
+ */
+function standoff(at: { x: number; z: number }, dist: number, kinds: EnemyKind[]) {
+  const s = padRun();
+  const p = s.player;
+  s.ally.active = false;
+  p.pos = { x: at.x, y: 0, z: at.z };
+  p.pos.y = groundAt(at.x, at.z, 0.4, terrainHeight(at.x, at.z) + 2);
+  p.vel = { x: 0, y: 0, z: 0 };
+  p.yaw = 0;
+  p.pitch = 0;
+  p.onGround = true;
+  const squad = s.squads.length;
+  s.squads.push({ name: "test", poi: -1, patrol: [], leg: 0, engaged: false, roam: false, sinceSeen: 0, last: { x: at.x, z: at.z } });
+  const foes = kinds.map((k, i) => spawnEnemy(s, k, at.x + (i - (kinds.length - 1) / 2) * 2.5, at.z - dist, -1, squad, { face: Math.PI }));
+  engageSquad(s, squad, foes[0]);
+  return { s, foes, squad };
+}
+
+/** A grunt's burst at 15 m in the open finds a player who sidesteps through the glow and the shots. */
+function checkSidestepHit(): string | null {
+  const at = openSpot(16, 2, 9);
+  if (!at) return "sidestep scenario: no open ground for the test";
+  const { s, foes } = standoff(at, 15, ["grunt"]);
+  const g = foes[0];
+  g.mode = "telegraph";
+  g.timer = KINDS.grunt.telegraph;
+  g.cooldown = 99;
+  const strafe = idleInput();
+  strafe.moveX = 1;
+  let hits = 0;
+  for (let i = 0; i < 1.6 / TICK; i++) {
+    step(s, strafe, false);
+    hits += s.events.filter((e) => e.t === "hurt").length;
+    s.player.iframes = 0;
+  }
+  if (hits < 2) return `sidestep scenario: a player strafing in the open at 15 m took ${hits} of a grunt's 3 shots`;
+  return null;
+}
+
+/** The same burst stops on a wall: a player crouched behind cover takes nothing. */
+function checkWallStops(): string | null {
+  for (const c of COVERS) {
+    // The box is on the far side of the cover point: its face's normal is the tangent turned a quarter.
+    for (const sgn of [1, -1]) {
+      const nx = -c.tz * sgn;
+      const nz = c.tx * sgn;
+      const gx = c.x - nx * 15;
+      const gz = c.z - nz * 15;
+      const g0 = terrainHeight(c.x, c.z);
+      if (offLowGround(c.x, c.z) || offLowGround(gx, gz) || Math.abs(terrainHeight(gx, gz) - g0) > 0.8 || solidAt(gx, terrainHeight(gx, gz) + 1, gz)) continue;
+      const s = padRun();
+      s.ally.active = false;
+      const p = s.player;
+      p.pos = { x: c.x, y: groundAt(c.x, c.z, 0.4, g0 + 2), z: c.z };
+      p.onGround = true;
+      p.crouch = true;
+      const squad = s.squads.length;
+      s.squads.push({ name: "test", poi: -1, patrol: [], leg: 0, engaged: false, roam: false, sinceSeen: 0, last: { x: c.x, z: c.z } });
+      const g = spawnEnemy(s, "grunt", gx, gz, -1, squad, { face: Math.atan2(c.x - gx, -(c.z - gz)) });
+      if (los({ x: g.pos.x, y: g.pos.y + 1.8, z: g.pos.z }, { x: p.pos.x, y: p.pos.y + 0.9, z: p.pos.z })) continue;
+      if (!los({ x: g.pos.x, y: g.pos.y + 1.8, z: g.pos.z }, { x: p.pos.x + nx * 3, y: p.pos.y + 1.1, z: p.pos.z + nz * 3 })) continue;
+      engageSquad(s, squad, g);
+      // It saw the player stand up a moment ago and aims where it saw them.
+      const aim = lookAngles({ x: g.pos.x, y: g.pos.y + KINDS.grunt.weakY - 0.1, z: g.pos.z }, { x: p.pos.x, y: p.pos.y + 1.1, z: p.pos.z });
+      g.aimYaw = aim.yaw;
+      g.aimPitch = aim.pitch;
+      g.mode = "fire";
+      g.timer = 0;
+      g.shotsLeft = 3;
+      const hold = idleInput();
+      hold.crouch = true;
+      let hurt = 0;
+      for (let i = 0; i < 1.2 / TICK; i++) {
+        step(s, hold, true);
+        hurt += s.events.filter((e) => e.t === "hurt").length;
+      }
+      if (hurt) return `wall scenario: a player crouched behind cover took ${hurt} shots through it`;
+      return null;
+    }
+  }
+  return "wall scenario: no cover to test with";
+}
+
+/** A player standing still in front of an engaged 3-grunt squad ends up with a grunt at their side. */
+function checkPinch(): string | null {
+  const at = openSpot(19, 4, 4);
+  if (!at) return "pinch scenario: no open ground for the test";
+  const { s, foes } = standoff(at, 18, ["grunt", "grunt", "grunt"]);
+  const p = s.player;
+  const lead = foes[0];
+  let widest = 0;
+  for (let i = 0; i < 14 / TICK; i++) {
+    p.iframes = 1; // stands there whatever comes
+    step(s, idleInput(), false);
+    const la = Math.atan2(lead.pos.x - p.pos.x, lead.pos.z - p.pos.z);
+    for (const e of foes.slice(1)) {
+      if (!s.enemies.includes(e)) continue;
+      const off = Math.abs(Math.atan2(Math.sin(Math.atan2(e.pos.x - p.pos.x, e.pos.z - p.pos.z) - la), Math.cos(Math.atan2(e.pos.x - p.pos.x, e.pos.z - p.pos.z) - la)));
+      widest = Math.max(widest, off);
+    }
+  }
+  if (widest < 60 * (Math.PI / 180)) return `pinch scenario: after 14 s standing still, the widest grunt was ${(widest * 180 / Math.PI).toFixed(0)} deg off the front grunt`;
+  return null;
+}
+
+/** Healing is heard: a robot 7 m away looking the other way comes to look. */
+function checkHealHeard(): string | null {
+  const s = padRun();
+  const p = s.player;
+  s.ally.active = false;
+  p.shield = 0;
+  const squad = s.squads.length;
+  s.squads.push({ name: "test", poi: -1, patrol: [], leg: 0, engaged: false, roam: false, sinceSeen: 0, last: { x: 0, z: 0 } });
+  const g = spawnEnemy(s, "grunt", p.pos.x, p.pos.z + 7, -1, squad, { face: Math.PI });
+  if (los({ x: g.pos.x, y: g.pos.y + 1.8, z: g.pos.z }, { x: p.pos.x, y: p.pos.y + 1.2, z: p.pos.z }) === false) return "heal scenario: a wall between the robot and the player";
+  const press = idleInput();
+  press.heal = true;
+  step(s, press, false);
+  ticks(s, 0.2);
+  if (!p.healing && s.events.every((e) => e.t !== "healDone")) return "heal scenario: no heal started";
+  if (g.aware === "idle") return "heal scenario: a robot 7 m away did not hear the player heal";
+  return null;
+}
+
+/** Position decides: the same TALON weak-point shot drops an unaware grunt or one shot from behind, and only dents one facing the player. */
+function checkPositionMatters(): string | null {
+  const shot = (aware: boolean, behind: boolean) => {
+    const s = newRun(5);
+    s.phase = "play";
+    s.enemies = [];
+    const squad = s.squads.length;
+    s.squads.push({ name: "test", poi: -1, patrol: [], leg: 0, engaged: false, roam: false, sinceSeen: 0, last: { x: 0, z: 0 } });
+    const p = s.player;
+    p.onGround = true;
+    const eye = eyePos(s);
+    const g = spawnEnemy(s, "grunt", eye.x, eye.z - 25, -1, squad, { face: behind ? 0 : Math.PI });
+    g.pos.y = eye.y - KINDS.grunt.weakY;
+    if (aware) {
+      g.aware = "engaged";
+      s.squads[squad].engaged = true;
+    }
+    const a = lookAngles(eye, weakPoint(g));
+    fireRay(s, { kind: "talon", rarity: 0, mag: -1 }, forward(a.yaw, a.pitch));
+    return s.enemies.includes(g) ? (g.hp + g.shield) / enemyMaxPlain("grunt") : 0;
+  };
+  const ambush = shot(false, false);
+  const front = shot(true, false);
+  const back = shot(true, true);
+  if (ambush > 0 || back > 0 || front < 0.4) return `position scenario: a TALON weak-point shot leaves a grunt at ${Math.round(ambush * 100)}% unaware, ${Math.round(back * 100)}% from behind, ${Math.round(front * 100)}% from the front`;
+  return null;
+}
+
+/** Aim pull helps an aimed shot standing still, and not hip fire on the move. */
+function checkPullWhenAiming(): string | null {
+  const at = openSpot(21, 2, 2);
+  if (!at) return "pull scenario: no open ground for the test";
+  const turned = (ads: boolean, move: boolean) => {
+    const { s, foes } = standoff(at, 20, ["grunt"]);
+    foes[0].mode = "stunned";
+    foes[0].timer = 99;
+    const p = s.player;
+    p.yaw = 0.12; // a little off the robot
+    const inp = idleInput();
+    inp.ads = ads;
+    inp.fire = !ads;
+    inp.moveX = move ? 1 : 0;
+    const before = p.yaw;
+    for (let i = 0; i < 0.5 / TICK; i++) {
+      p.cooldown = 1; // the trigger is held, but no shot needs to land for the test
+      step(s, inp, false);
+    }
+    return Math.abs(before) - Math.abs(p.yaw);
+  };
+  const aimed = turned(true, false);
+  const hip = turned(false, true);
+  if (aimed < 0.03 || hip > 0.01) return `pull scenario: aiming down sights still pulled ${aimed.toFixed(3)} rad, hip fire on the move ${hip.toFixed(3)} rad`;
+  return null;
+}
+
+for (const err of [checkSidestepHit(), checkWallStops(), checkPinch(), checkHealHeard(), checkPositionMatters(), checkPullWhenAiming(), checkVault(), checkQuests(), checkSettle(), checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkBoatCall(), checkSecondPickup(), checkRegionDrop(), checkConnections(), checkAllySelfUp(), checkStompHeight(), checkDropOffHighGround(), checkFieldsReused(), checkFieldsFollowRunner(), checkCliffsStop(), checkNoPits(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill(), checkLeap(), checkLeapLeavesAllyBelow(), checkLeapDowned(), checkLeapAllyCatchesUp(), checkLeapAllyDowned(), checkLeapWithItem(), checkLeapClocks(), checkLeapOffHighGround(), checkLeapUnderRoof()]) {
   if (err) {
     console.error(err);
     process.exit(1);

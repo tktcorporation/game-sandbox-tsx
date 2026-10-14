@@ -1,4 +1,4 @@
-import { ALLY, AWARE, CHARGER, COVER, DEG, ELITE, ENEMIES, PLAYER, TICK, TITAN, TURN, WORLD, type EnemyKind } from "./config";
+import { ALLY, AWARE, CHARGER, COVER, DEG, ELITE, ENEMIES, PINCH, PLAYER, SHOT, TICK, TITAN, TURN, WORLD, type EnemyKind } from "./config";
 import { clampToWorld, collide, dist2d, groundAt, groundLevel, los, lookAngles, onTerrain, solidAt, wrapAngle } from "./geom";
 import { steepAt, terrainHeight } from "./terrain";
 import { engageSquad, knownSpot, sense, stepSquads } from "./awareness";
@@ -96,7 +96,11 @@ export function populate(s: State) {
   ROAMERS.forEach((sq) => add(sq, -1));
 }
 
-const chest = (s: State): Vec3 => ({ x: s.player.pos.x, y: s.player.pos.y + 1.1, z: s.player.pos.z });
+/** Where robots aim at the player: the chest, lower while crouched or sliding, so a low wall covers. */
+const chest = (s: State): Vec3 => {
+  const p = s.player;
+  return { x: p.pos.x, y: p.pos.y + (p.crouch || p.sliding ? 0.75 : 1.1), z: p.pos.z };
+};
 
 function muzzle(e: Enemy): Vec3 {
   return e.kind === "drone" ? weakPoint(e) : { ...bodyCenter(e), y: e.pos.y + ENEMIES[e.kind].weakY - 0.1 };
@@ -123,6 +127,14 @@ function lockAim(e: Enemy, at: Vec3) {
   const a = lookAngles(muzzle(e), at);
   e.aimYaw = a.yaw;
   e.aimPitch = a.pitch;
+}
+
+/** Aim at a moving target's chest, led by its ground motion over the shot's flight (see SHOT). */
+function leadAim(e: Enemy, at: Vec3, vel: Vec3) {
+  const k = ENEMIES[e.kind];
+  const from = muzzle(e);
+  const t = (Math.hypot(at.x - from.x, at.y - from.y, at.z - from.z) / Math.max(k.orbSpeed, 1)) * SHOT.lead;
+  lockAim(e, { x: at.x + vel.x * t, y: at.y, z: at.z + vel.z * t });
 }
 
 /** Drones keep their hover height above the ground, and clear whatever is built under them. */
@@ -218,13 +230,16 @@ export function stepEnemies(s: State) {
     const tPos = atAlly ? s.ally.pos : p.pos;
     const tChest = atAlly ? allyChest(s.ally) : chest(s);
     const tUp = atAlly ? allyUp(s) : p.downed <= 0;
+    const tVel = atAlly ? s.ally.vel : p.vel;
     const known = atAlly ? { x: tPos.x, z: tPos.z, live: true } : knownSpot(s, e);
+    // Its squad has the player pinned to one spot: this member goes round it (see PINCH).
+    const round = atAlly ? null : pinchSpot(s, e, known);
     const dx = known.x - e.pos.x;
     const dz = known.z - e.pos.z;
     const d = Math.hypot(dx, dz) || 1e-3;
     if (e.mode !== "lunge" && d > 0.5) turnAt(e, Math.atan2(dx, -dz), TURN[e.kind] * (e.elite ? ELITE.turn : 1));
-    // Raiders do not hide: they press in and go round.
-    if (e.kind === "grunt" && !e.elite && onTerrain(e.pos) && fromCover(s, e, known, tChest, tUp)) continue;
+    // Raiders do not hide: they press in and go round. Nor does a grunt on its way round a pinned player.
+    if (e.kind === "grunt" && !e.elite && !round && onTerrain(e.pos) && fromCover(s, e, known, tChest, tUp, tVel)) continue;
     switch (e.mode) {
       case "move": {
         const sees = known.live && facing(e, tPos) && los(muzzle(e), tChest);
@@ -241,8 +256,9 @@ export function stepEnemies(s: State) {
         const side = sees || e.kind === "charger" ? 0.55 : 0.8;
         let vx = (ux * along - uz * e.strafe * side) * k.speed;
         let vz = (uz * along + ux * e.strafe * side) * k.speed;
-        // A flanking raider runs wide to its spot at the player's side, shooting when it can.
-        const wide = e.elite && !atAlly ? flankSpot(s, e, known) : null;
+        // A flanking raider, or a member going round a pinned player, runs wide to its spot
+        // at the player's side, shooting when it can.
+        const wide = round ?? (e.elite && !atAlly ? flankSpot(s, e, known) : null);
         if (wide && dist2d(e.pos, wide) > 3) {
           // Out of sight it gets there by the ground's way, round the cliff or the house between.
           const to = sees ? wide : huntStep(s, e, wide);
@@ -257,7 +273,7 @@ export function stepEnemies(s: State) {
         if (ready && (e.kind === "charger" ? d < CHARGER.lungeRange : d < 48)) {
           e.mode = "telegraph";
           e.timer = k.telegraph;
-          lockAim(e, tChest);
+          leadAim(e, tChest, tVel);
           s.events.push({ t: "telegraph", id: e.id });
         }
         break;
@@ -265,9 +281,10 @@ export function stepEnemies(s: State) {
       case "telegraph": {
         moveBody(e, 0, 0);
         e.timer -= TICK;
-        // Aim follows the player until the last 35% of the wind-up, then locks: moving dodges.
-        // It can only aim where it faces: a player who slips out of its cone is shot at where they were.
-        if (e.timer > k.telegraph * 0.35 && facing(e, tPos)) lockAim(e, tChest);
+        // Aim follows the target through the wind-up while it is in sight and in the robot's
+        // cone: the glow is the time to get behind something, not to step aside. A target that
+        // breaks the line of sight or slips out of the cone is shot at where it was.
+        if (sightOn(e, tPos, tChest)) leadAim(e, tChest, tVel);
         if (e.timer <= 0) {
           if (e.kind === "charger") {
             e.mode = "lunge";
@@ -287,6 +304,8 @@ export function stepEnemies(s: State) {
         moveBody(e, 0, 0);
         e.timer -= TICK;
         if (e.timer <= 0 && e.shotsLeft > 0) {
+          // Every shot of a burst is aimed afresh while the target is in sight.
+          if (sightOn(e, tPos, tChest)) leadAim(e, tChest, tVel);
           if (k.spread > 0) {
             for (let i = 0; i < k.shots; i++) fireOrb(s, e, ((i - (k.shots - 1) / 2) * k.spread * Math.PI) / 180);
             e.shotsLeft = 0;
@@ -396,6 +415,41 @@ function facing(e: Enemy, at: { x: number; z: number }): boolean {
   return Math.abs(wrapAngle(lookAngles(e.pos, { x: at.x, y: 0, z: at.z }).yaw - e.yaw)) < (e.elite ? ELITE.fireCone : AWARE.fireCone) * DEG;
 }
 
+/** The target is in the robot's fire cone and in its line of sight. */
+function sightOn(e: Enemy, at: { x: number; z: number }, chestAt: Vec3): boolean {
+  return facing(e, at) && los(muzzle(e), chestAt);
+}
+
+/**
+ * Where a member of an engaged squad goes while its squad has the player pinned (see PINCH):
+ * a point `PINCH.dist` metres to one side of the spot the squad believes the player is at,
+ * across the line from the member that holds the front. Null for that member, for a squad not
+ * pinning, and for robots that cannot walk round (posted up high, the titan, heavies). Raiders
+ * have their own way round (`flankSpot`).
+ */
+function pinchSpot(s: State, e: Enemy, known: { x: number; z: number }): Point | null {
+  const sq = s.squads[e.squad];
+  if (!sq || !sq.engaged || e.elite || (sq.pinT ?? 0) < PINCH.after) return null;
+  const mates = s.enemies.filter((o) => o.squad === e.squad && o.mode !== "spawning");
+  if (mates.length < 2) return null;
+  const walks = (o: Enemy) => (o.kind === "grunt" || o.kind === "charger" || o.kind === "drone") && (ENEMIES[o.kind].fly > 0 || (onTerrain(o.pos) && o.home.y <= groundLevel(o.home.x, o.home.z) + 0.6));
+  if (!walks(e)) return null;
+  // The front: a member that cannot go round if there is one, else the first of the squad.
+  const lead = mates.find((o) => !walks(o)) ?? [...mates].sort((a, b) => a.id - b.id)[0];
+  if (lead === e) return null;
+  const n = mates.filter((o) => o !== lead).sort((a, b) => a.id - b.id).indexOf(e);
+  const lx = known.x - lead.pos.x;
+  const lz = known.z - lead.pos.z;
+  const ll = Math.hypot(lx, lz) || 1;
+  const side = n % 2 ? -1 : 1;
+  for (const d of [PINCH.dist, PINCH.dist * 0.6]) {
+    const x = known.x + (-lz / ll) * d * side;
+    const z = known.z + (lx / ll) * d * side;
+    if (!steepAt(x, z) && terrainHeight(x, z) <= terrainHeight(known.x, known.z) + 1.5 && !solidAt(x, terrainHeight(x, z) + 1, z)) return { x, z };
+  }
+  return null;
+}
+
 /** Turn toward a yaw at a robot's turning speed. */
 function turnTo(e: Enemy, yaw: number, rate = 3) {
   e.yaw += wrapAngle(yaw - e.yaw) * Math.min(1, TICK * rate);
@@ -495,7 +549,7 @@ function findCover(s: State, e: Enemy, threat: Point, threatY: number): { cover:
  * An engaged grunt on the ground: hide behind cover, step out to shoot, step
  * back. Returns false when it has no cover and should fight in the open.
  */
-function fromCover(s: State, e: Enemy, known: { x: number; z: number; live: boolean }, tChest: Vec3, tUp: boolean): boolean {
+function fromCover(s: State, e: Enemy, known: { x: number; z: number; live: boolean }, tChest: Vec3, tUp: boolean, tVel: Vec3): boolean {
   const k = ENEMIES.grunt;
   if (e.mode !== "move") return false; // telegraph and fire run as usual
   e.coverT -= TICK;
@@ -514,7 +568,7 @@ function fromCover(s: State, e: Enemy, known: { x: number; z: number; live: bool
     if (known.live && facing(e, tChest) && los({ ...e.pos, y: e.pos.y + k.weakY }, tChest) && tUp) {
       e.mode = "telegraph";
       e.timer = k.telegraph;
-      e.aimYaw = e.yaw;
+      leadAim(e, tChest, tVel);
       s.events.push({ t: "telegraph", id: e.id });
     } else {
       // The player moved out of that angle: find another spot.
@@ -678,7 +732,9 @@ export function stepOrbs(s: State) {
     o.pos.z += o.vel.z * TICK;
     o.life -= TICK;
     if (o.life <= 0 || o.pos.y < terrainHeight(o.pos.x, o.pos.z)) return false;
-    if (!los({ x: o.pos.x - o.vel.x * TICK, y: o.pos.y - o.vel.y * TICK, z: o.pos.z - o.vel.z * TICK }, o.pos)) return false;
+    // A wall stops an orb that meets it with its centre or its lower edge, so one that would only graze the top of a low wall does not pass over it.
+    const from = { x: o.pos.x - o.vel.x * TICK, y: o.pos.y - o.vel.y * TICK, z: o.pos.z - o.vel.z * TICK };
+    if (!los(from, o.pos) || !los({ ...from, y: from.y - o.r }, { ...o.pos, y: o.pos.y - o.r })) return false;
     // Player as a vertical capsule from knee to head.
     const py = Math.max(p.pos.y + 0.4, Math.min(p.pos.y + (p.crouch || p.sliding ? 1.1 : 1.7), o.pos.y));
     if (Math.hypot(o.pos.x - p.pos.x, o.pos.y - py, o.pos.z - p.pos.z) < o.r + PLAYER.radius) {
