@@ -496,7 +496,8 @@ function shipWave(s: State, ship: ExtractPoint) {
   let squad = c.squad;
   if (squad < 0) {
     squad = c.squad = s.squads.length;
-    s.squads.push({ name: SHIP_SQUAD, poi: -1, patrol: [], leg: 0, engaged: false, roam: true, sinceSeen: 0, last: { x: ship.x, z: ship.z } });
+    // Routed like reinforcements: they beam in behind cover, so they must find their way round it to the pickup.
+    s.squads.push({ name: SHIP_SQUAD, poi: -1, patrol: [], leg: 0, engaged: false, roam: true, routed: true, sinceSeen: 0, last: { x: ship.x, z: ship.z } });
   }
   const at = ship.waves ?? ship;
   const p = s.player;
