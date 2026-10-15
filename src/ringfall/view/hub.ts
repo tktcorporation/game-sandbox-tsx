@@ -1,7 +1,7 @@
 import { HEALS as HEAL_SPECS, HIDEOUT, RAIDERS, RARITY, VALUABLES, WEAPONS, type ModuleId, type ValuableKind } from "../sim/config";
 import { boostFor, type Kit } from "../sim/state";
 import { POIS, REGIONS, regionOf, type RegionId } from "../sim/map";
-import { build, buildState, buy, buyPrice, canBuild, deliver, deliverable, emptyLoadout, HEALS, healCount, keyName, price, sell, sellPrice, shortfall, takeKit, wanted, wares, type Item, type Loadout, type Profile } from "../meta/profile";
+import { build, buildState, buy, buyPrice, canBuild, deliver, deliverable, emptyLoadout, HEALS, healCount, healRoom, keyName, lentHeals, price, sell, sellPrice, shortfall, takeKit, wanted, wares, type Item, type Loadout, type Profile } from "../meta/profile";
 import { craftDone, maxLevel, MODULES, nextLevel, pouchSlots, sources, stashCap, stillNeeded, type Source } from "../meta/hideout";
 import { need, offered, type Quest, type RewardItem } from "../meta/quests";
 import { saveProfile } from "../meta/storage";
@@ -161,9 +161,10 @@ export class Hub {
   private fit(l: Loadout): Loadout {
     const st = this.profile.stash;
     const heals = { ...l.heals };
-    for (const k of HEALS) heals[k] = Math.min(heals[k], healCount(this.profile, k), HEAL_SPECS[k].max);
+    const weapons = l.weapons.filter((n) => st[n]?.t === "weapon");
+    for (const k of HEALS) heals[k] = Math.min(heals[k], healRoom(this.profile, { ...l, weapons }, k));
     return {
-      weapons: l.weapons.filter((n) => st[n]?.t === "weapon"),
+      weapons,
       armor: l.armor !== null && st[l.armor]?.t === "armor" ? l.armor : null,
       heals,
       keys: l.keys.filter((n) => st[n]?.t === "key"),
@@ -217,11 +218,12 @@ export class Hub {
         this.load.weapons = w.includes(n) ? w.filter((x) => x !== n) : w.length < 2 ? [...w, n] : [w[1], n];
       } else if (it?.t === "armor") this.load.armor = this.load.armor === n ? null : n;
       else if (it?.t === "key") this.load.keys = toggle(this.load.keys);
+      // Taking or leaving a weapon decides whether the free kit's heals are lent.
+      this.load = this.fit(this.load);
     } else if (act === "heal+" || act === "heal-") {
       sfx.click();
       const k = arg as keyof Loadout["heals"];
-      const max = Math.min(healCount(this.profile, k), HEAL_SPECS[k].max);
-      this.load.heals[k] = Math.max(0, Math.min(max, this.load.heals[k] + (act === "heal+" ? 1 : -1)));
+      this.load.heals[k] = Math.max(0, Math.min(healRoom(this.profile, this.load, k), this.load.heals[k] + (act === "heal+" ? 1 : -1)));
     } else if (act === "sell") {
       // Sell the last of a group, so the loadout's picks before it keep their indices.
       const n = pick[pick.length - 1];
@@ -365,8 +367,9 @@ export class Hub {
         `<p class="hint">倒した数・制圧・保管庫は倒れても数える。脱出の依頼は生還したときだけ。済んだ依頼の報酬は倉庫に届く。</p>`;
     } else {
       const slot = (label: string, n: number | null | undefined) => `<div class="slot"><small>${label}</small><span${n == null ? ' class="none"' : ` style="color:${color(p.stash[n])}"`}>${n == null ? "なし" : esc(itemName(p.stash[n]))}</span></div>`;
+      const lent = lentHeals(p, !this.load.weapons.length);
       const heal = (k: (typeof HEALS)[number]) =>
-        `<div class="slot count"><small>${HEAL_SPECS[k].label}</small><button type="button" data-act="heal-" data-arg="${k}">−</button><b>${this.load.heals[k]}</b><button type="button" data-act="heal+" data-arg="${k}">+</button><small>倉庫 ${healCount(p, k)}</small></div>`;
+        `<div class="slot count"><small>${HEAL_SPECS[k].label}</small><button type="button" data-act="heal-" data-arg="${k}">−</button><b>${this.load.heals[k]}</b><button type="button" data-act="heal+" data-arg="${k}">+</button><small>倉庫 ${healCount(p, k)}${lent[k] ? `・貸出 ${lent[k]}` : ""}</small></div>`;
       const keys = this.load.keys.map((n) => esc(itemName(p.stash[n]))).join("・");
       const intel = this.intel();
       $("hub-side").innerHTML =

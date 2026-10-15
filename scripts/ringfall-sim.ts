@@ -8,7 +8,7 @@
  *
  * With a region id after the count, only that region's table is played.
  */
-import { ALLY, BAG, ENEMIES, NOISE, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, TACTICAL, TICK, VALUABLES, WORLD } from "../src/ringfall/sim/config";
+import { ALLY, BAG, ENEMIES, HEALS, NOISE, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, TACTICAL, TICK, VALUABLES, WORLD } from "../src/ringfall/sim/config";
 import { engageSquad, makeNoise } from "../src/ringfall/sim/awareness";
 import { spawnEnemy } from "../src/ringfall/sim/enemies";
 import { COVERS } from "../src/ringfall/sim/cover";
@@ -28,7 +28,7 @@ import { SHIP_SQUAD, bagUsed, makeRoom } from "../src/ringfall/sim/world";
 import { bodyCenter, damageEnemy, eyePos, fireRay, magSize, weakPoint } from "../src/ringfall/sim/combat";
 import { lookAngles } from "../src/ringfall/sim/geom";
 import { forward } from "../src/ringfall/sim/state";
-import { build, buildState, buy, canBuild, deliver, newProfile, parseProfile, pouch, price, sell, settle, takeKit, wares, type Item, type Profile } from "../src/ringfall/meta/profile";
+import { build, buildState, buy, canBuild, deliver, healRoom, newProfile, parseProfile, pouch, price, sell, settle, takeKit, wares, type Item, type Profile } from "../src/ringfall/meta/profile";
 import { emptyHideout, maxLevel, MODULES, poisWith, sources, stashCap } from "../src/ringfall/meta/hideout";
 import { boostFor, boosted } from "../src/ringfall/sim/state";
 import { HIDEOUT, VAULT } from "../src/ringfall/sim/config";
@@ -1088,6 +1088,15 @@ function checkHideout(): string | null {
   const ownKit = takeKit(sick, { weapons: [0], armor: null, heals: { cell: 0, battery: 0, syringe: 0, medkit: 0 }, keys: [] }).kit;
   if (freeKit2.heals.syringe !== META.free.heals.syringe + 1 || freeKit2.heals.cell !== META.free.heals.cell + 2 || ownKit.heals.syringe !== 1 || ownKit.lentHeals.cell !== 2)
     return `hideout scenario: the infirmary's heals came out as ${JSON.stringify(freeKit2.heals)} (free) and ${JSON.stringify(ownKit.heals)} (own)`;
+  // The loadout's heal picks stop where the lent heals leave no room: every pick is taken from the stash.
+  const stocked: Profile = { ...sick, stash: [{ t: "weapon", kind: "pike", rarity: 0 }, ...Array.from({ length: HEALS.cell.max }, (): Item => ({ t: "heal", kind: "cell" }))] };
+  for (const weapons of [[], [0]]) {
+    const load = { weapons, armor: null, heals: { cell: 0, battery: 0, syringe: 0, medkit: 0 }, keys: [] };
+    const room = healRoom(stocked, load, "cell");
+    const kit = takeKit(stocked, { ...load, heals: { ...load.heals, cell: room } }).kit;
+    if (kit.heals.cell - kit.lentHeals.cell !== room || kit.heals.cell > HEALS.cell.max || room !== HEALS.cell.max - kit.lentHeals.cell)
+      return `hideout scenario: the loadout let ${room} cells be picked, the kit took ${kit.heals.cell - kit.lentHeals.cell} and lent ${kit.lentHeals.cell}`;
+  }
   const healed = newRun(13, ownKit);
   healed.outcome = "extracted";
   if (settle(sick, healed).home.some((i) => i.t === "heal")) return "hideout scenario: the infirmary's lent heals came home";

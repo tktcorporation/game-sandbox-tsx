@@ -115,6 +115,18 @@ export const emptyLoadout = (): Loadout => ({ weapons: [], armor: null, heals: {
 /** How many of a heal the stash holds. */
 export const healCount = (p: Profile, k: HealKind) => p.stash.filter((i) => i.t === "heal" && i.kind === k).length;
 
+/** Heals a raid is lent: the free kit's when it carries no weapon of the stash, and the infirmary's. */
+export function lentHeals(p: Profile, free: boolean): Record<HealKind, number> {
+  const sick = infirmaryHeals(p.hideout);
+  return Object.fromEntries(HEALS.map((k) => [k, Math.min(HEAL_SPECS[k].max, (free ? META.free.heals[k] : 0) + sick[k])])) as Record<HealKind, number>;
+}
+
+/** How many heals of a kind a loadout can take from the stash: what it holds, up to what the lent ones leave room for. */
+export function healRoom(p: Profile, l: Loadout, k: HealKind): number {
+  const free = !l.weapons.some((n) => p.stash[n]?.t === "weapon");
+  return Math.max(0, Math.min(healCount(p, k), HEAL_SPECS[k].max - lentHeals(p, free)[k]));
+}
+
 /**
  * Takes a loadout out of the stash. Picking no weapon means the free kit: its weapons and
  * heals are lent, and any heals picked from the stash come on top of them. The hideout's
@@ -137,12 +149,11 @@ export function takeKit(p: Profile, l: Loadout): { profile: Profile; kit: Kit } 
     armor = a.tier;
   }
   const free = weapons.length === 0;
-  const sick = infirmaryHeals(p.hideout);
-  const lentHeals = Object.fromEntries(HEALS.map((k) => [k, Math.min(HEAL_SPECS[k].max, (free ? META.free.heals[k] : 0) + sick[k])])) as Record<HealKind, number>;
+  const lent = lentHeals(p, free);
   const heals = { cell: 0, battery: 0, syringe: 0, medkit: 0 } as Record<HealKind, number>;
   for (const k of HEALS) {
     // A kind holds at most HEAL_SPECS[k].max, lent ones included.
-    let want = Math.min(l.heals[k], HEAL_SPECS[k].max - lentHeals[k]);
+    let want = Math.min(l.heals[k], HEAL_SPECS[k].max - lent[k]);
     p.stash.forEach((i, n) => {
       if (want > 0 && i.t === "heal" && i.kind === k && !take.has(n)) {
         take.add(n);
@@ -163,8 +174,8 @@ export function takeKit(p: Profile, l: Loadout): { profile: Profile; kit: Kit } 
     keys,
     weapons: free ? META.free.weapons.map((w) => ({ ...w, loan: true })) : weapons,
     armor,
-    heals: Object.fromEntries(HEALS.map((k) => [k, heals[k] + lentHeals[k]])) as Record<HealKind, number>,
-    lentHeals,
+    heals: Object.fromEntries(HEALS.map((k) => [k, heals[k] + lent[k]])) as Record<HealKind, number>,
+    lentHeals: lent,
   };
   return { profile: { ...p, stash: p.stash.filter((_, n) => !take.has(n)) }, kit };
 }
