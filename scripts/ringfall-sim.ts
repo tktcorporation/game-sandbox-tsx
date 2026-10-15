@@ -1141,6 +1141,15 @@ function checkDepots(): string | null {
   // A fight left behind (the titan never stands down) does not shut the depots once it is outrun.
   near.pos = { x: d.x + DEPOT.safe + 15, y: near.pos.y, z: d.z };
   if (useTarget(fight)?.kind !== "depot") return "depot scenario: the depot was not offered with the only fighting robot far off";
+  // So does picking up a valuable: leaving takes an empty bag.
+  const fill = padRun();
+  fill.depots[PADD] = true;
+  stand(fill);
+  step(fill, press, false);
+  ticks(fill, 1);
+  fill.player.haul.push("parts");
+  step(fill, idleInput(), false);
+  if (fill.leaving || !fill.events.some((e) => e.t === "leaveCancel")) return "depot scenario: filling the bag did not break off leaving";
   // Walking away breaks it off too.
   const away = padRun();
   away.depots[PADD] = true;

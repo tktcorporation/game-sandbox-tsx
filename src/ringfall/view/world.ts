@@ -160,7 +160,7 @@ export class World {
   private dropship: THREE.Group | null = null;
   private extractRings: THREE.Mesh[] = [];
   /** One per `DEPOTS` entry, built once: they stand in every run, only lit or not. */
-  private depots: (ReturnType<typeof buildDepot> & { on: boolean })[] = [];
+  private depots: (ReturnType<typeof buildDepot> & { /** Last lit state drawn; null until the first frame sets it. */ on: boolean | null })[] = [];
   private stompRing: THREE.Mesh;
   private gun = new THREE.Group();
   private gunKey = "";
@@ -239,7 +239,7 @@ export class World {
     for (const d of DEPOTS) {
       // A raid started from a depot begins behind its point, facing the POI: the locker's slot
       // (its -z side) is turned back along the road, towards that start.
-      const v = { ...buildDepot(), on: false };
+      const v = { ...buildDepot(), on: null };
       v.root.position.set(d.x, groundAt(d.x, d.z, 0.4, d.y + 1), d.z);
       v.root.rotation.y = Math.PI - d.yaw;
       this.scene.add(v.root);
@@ -820,8 +820,8 @@ export class World {
       if (on !== v.on) {
         v.on = on;
         v.lamp.visible = true;
-        (v.lamp.material as THREE.MeshBasicMaterial).color.setHex(on ? MATE_LIGHT : PAL.gunLight);
-        (v.slot.material as THREE.MeshBasicMaterial).color.setHex(on ? MATE_LIGHT : PAL.gunLight);
+        (v.lamp.material as THREE.MeshBasicMaterial).color.setHex(on ? MATE_LIGHT : PAL.gun);
+        (v.slot.material as THREE.MeshBasicMaterial).color.setHex(on ? MATE_LIGHT : PAL.gun);
       }
       // A lit lamp blinks slowly, so an on depot reads as working from down the road.
       if (on) v.lamp.visible = Math.sin(this.time * 3 + i) > -0.6;

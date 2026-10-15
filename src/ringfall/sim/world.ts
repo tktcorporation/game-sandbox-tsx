@@ -455,7 +455,8 @@ function useDepot(s: State, index: number) {
 
 /**
  * The depots: walking up to one switches it on; leaving at one takes standing there, out of
- * any fight, for `DEPOT.leave` seconds. The explored map is marked round the player as they go.
+ * any fight and with the bag still empty, for `DEPOT.leave` seconds (a bag filled meanwhile
+ * would go home without being sent). The explored map is marked round the player as they go.
  */
 export function stepDepots(s: State) {
   if (s.phase !== "play") return;
@@ -479,7 +480,7 @@ export function stepDepots(s: State) {
   }
   const l = s.leaving;
   if (!l) return;
-  if (!up || dist2d(DEPOTS[l.depot], p.pos) > PLAYER.interactRange + 1.5 || depotBlocked(s)) {
+  if (!up || p.haul.length || dist2d(DEPOTS[l.depot], p.pos) > PLAYER.interactRange + 1.5 || depotBlocked(s)) {
     s.leaving = null;
     s.events.push({ t: "leaveCancel" });
     return;
