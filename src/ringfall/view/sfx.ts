@@ -98,7 +98,7 @@ export const sfx = {
   shot(kind: WeaponKind) {
     own(kind === "talon" ? 1 : kind === "hornet" ? 0.5 : 0.8, () => gun(GUNS[kind]), kind === "talon" || kind === "lance" ? 0.35 : 0.2);
   },
-  hit(crit: boolean, shield: boolean, flank = false) {
+  hit(crit: boolean, shield: boolean, flank = false, plate = false) {
     ui(0.4, () => {
       // A hit from behind rings a little brighter on top of the usual sound.
       if (flank) tone(1760, 0.07, { type: "triangle", vol: 0.2, to: 2640 });
@@ -107,6 +107,13 @@ export const sfx = {
         tone(3520, 0.09, { type: "sine", vol: 0.2, at: 0.008 });
         tone(4700, 0.04, { type: "triangle", vol: 0.1 });
         hiss(0.02, { freq: 6000, q: 2, vol: 0.3 });
+      } else if (plate) {
+        // A plate turning the round aside: a dull clank of struck steel, partials out of
+        // tune with each other, in place of the body hit's bright tick.
+        tone(vary(430, 0.04), 0.09, { type: "square", vol: 0.14, to: 390 });
+        tone(vary(1170, 0.03), 0.12, { type: "sine", vol: 0.22 });
+        tone(vary(2630, 0.03), 0.07, { type: "sine", vol: 0.12 });
+        hiss(0.03, { freq: 3200, q: 4, vol: 0.4 });
       } else if (shield) {
         tone(vary(1250, 0.04), 0.05, { type: "square", vol: 0.2, to: 900 });
         tone(vary(2900, 0.04), 0.04, { type: "triangle", vol: 0.3, to: 2200 });

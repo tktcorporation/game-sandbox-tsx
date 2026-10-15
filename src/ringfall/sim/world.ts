@@ -124,7 +124,7 @@ function beamIn(s: State, kinds: readonly EnemyKind[], name: string, elite: bool
   s.squads.push({ name, poi: -1, patrol: [], leg: 0, engaged: false, roam: true, hunt: true, routed: true, elite, sinceSeen: 0, last: { x: p.pos.x, z: p.pos.z } });
   const spots = posts(at.x, at.z);
   kinds.forEach((kind, i) => {
-    const e = spawnEnemy(s, kind, spots[i].mx, spots[i].mz, -1, squad, { appear: true, elite });
+    const e = spawnEnemy(s, kind, spots[i].mx, spots[i].mz, -1, squad, { appear: true, elite, plate: elite ? RAIDERS.plate : 0 });
     e.aware = "alert";
     e.goal = { x: p.pos.x, z: p.pos.z };
     e.searchT = 40;

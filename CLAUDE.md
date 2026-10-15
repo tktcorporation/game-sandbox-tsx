@@ -101,6 +101,9 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   `cover.ts` precomputes the spots grunts hide behind. The sim gate's `crowd` column is the most
   squads / robots fighting at once, and `flank` the share of hits from behind or by ambush; keep them
   within the targets in `docs/ringfall/balance.md`.
+- Some robots wear armour plates (`Enemy.plate`, a rarity tier): body hits from a weapon of lower
+  rarity are cut by `PLATE` in `config.ts`, weak points pass in full. Each POI's vault guard
+  (`Member.plate` in `map.ts`) and the raiders (`RAIDERS.plate`) wear them.
 - `ally.ts` is the teammate: it walks the player's footsteps (`State.trail`), shoots only engaged
   robots, revives the player once the self-revive is spent, and is revived with the use key.
   Robots choose between the player and the teammate in `chooseTarget()` (`enemies.ts`); the sim

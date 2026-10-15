@@ -245,7 +245,7 @@ function shootAt(s: State, e: Enemy) {
     const at = crit ? weakPoint(e) : bodyCenter(e);
     s.events.push({ t: "allyShot", from, to: at, hit: true });
     // Armour faces the same way for the teammate's shots: it hurts most from a robot's side or back.
-    damageEnemy(s, e, ALLY.dmg * (crit ? ALLY.critMult : 1), crit, at, flankOf(s, e, a.pos), "ally");
+    damageEnemy(s, e, ALLY.dmg * (crit ? ALLY.critMult : 1), crit, at, flankOf(s, e, a.pos), "ally", ALLY.rarity);
   } else {
     const c = bodyCenter(e);
     const r = ENEMIES[e.kind].radius + 0.6;

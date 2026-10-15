@@ -168,7 +168,10 @@ export class Bot {
     // Look.
     let want: { yaw: number; pitch: number };
     if (fight && tgt) {
-      const aimAt = sk.heads ? weakPoint(tgt) : bodyCenter(tgt);
+      // A plate the gun cannot pierce turns body shots to scratches: go for the weak point.
+      const w = p.weapons[p.slot];
+      const plated = !!w && tgt.plate > w.rarity;
+      const aimAt = sk.heads || plated ? weakPoint(tgt) : bodyCenter(tgt);
       want = lookAngles(eye, aimAt);
     } else if (goal) {
       const step = s.phase === "drop" ? goal : this.via(s, goal);
