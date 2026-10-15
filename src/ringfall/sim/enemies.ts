@@ -728,11 +728,18 @@ function titan(s: State, e: Enemy, d: number) {
   }
 }
 
+/** Distance from `pt` to a body's axis: the vertical segment from `y0` to `y0 + h` at (x, z). */
+function axisDist(pt: Vec3, x: number, z: number, y0: number, h: number): number {
+  const cy = Math.max(y0, Math.min(y0 + h, pt.y));
+  return Math.hypot(pt.x - x, pt.y - cy, pt.z - z);
+}
+
 /**
- * Where on the segment a→b it comes closest to a body standing at `at` (taken as the vertical
- * segment from knee, 0.4 m, to `top` above its feet), if that is within `r`; else null. Exact
- * closest points between the two segments, so a fast bolt that only grazes a body still hits.
- * `s` is how far along a→b (0 to 1) that point lies, to tell which of two bodies comes first.
+ * Where the segment a→b first comes within `r` of a body standing at `at` (its axis the vertical
+ * segment from knee, 0.4 m, to `top` above its feet), or null if it never does. `s` is how far
+ * along a→b (0 to 1) that is, so of two bodies the one the orb enters first can take the hit. The
+ * distance to the axis is convex along the segment: the closest approach is found exactly, and
+ * the entry before it by halving, so a fast bolt that only grazes a body still hits.
  */
 function sweptHit(a: Vec3, b: Vec3, r: number, at: Vec3, top: number): { at: Vec3; s: number } | null {
   // Bolt: a + d·s, s in [0, 1]. Body axis: q + (0, h, 0)·t, t in [0, 1].
@@ -757,11 +764,19 @@ function sweptHit(a: Vec3, b: Vec3, r: number, at: Vec3, top: number): { at: Vec
     tP = Math.max(0, Math.min(1, tP));
     sP = dd > 1e-9 ? Math.max(0, Math.min(1, (de * tP - dw) / dd)) : 0;
   }
-  const px = a.x + dx * sP;
-  const py = a.y + dy * sP;
-  const pz = a.z + dz * sP;
-  const cy = qy + h * tP;
-  return Math.hypot(px - at.x, py - cy, pz - at.z) < r ? { at: { x: px, y: py, z: pz }, s: sP } : null;
+  const point = (k: number): Vec3 => ({ x: a.x + dx * k, y: a.y + dy * k, z: a.z + dz * k });
+  const dist = (k: number) => axisDist(point(k), at.x, at.z, qy, h);
+  if (dist(sP) >= r) return null;
+  if (dist(0) < r) return { at: point(0), s: 0 };
+  // Outside at 0, inside at sP: halve to the surface (2^-20 of a tick's travel is far below a millimetre).
+  let lo = 0;
+  let hi = sP;
+  for (let i = 0; i < 20; i++) {
+    const mid = (lo + hi) / 2;
+    if (dist(mid) < r) hi = mid;
+    else lo = mid;
+  }
+  return { at: point(hi), s: hi };
 }
 
 export function stepOrbs(s: State) {
@@ -788,13 +803,13 @@ export function stepOrbs(s: State) {
     o.pos.y += o.vel.y * TICK;
     o.pos.z += o.vel.z * TICK;
     o.life -= TICK;
-    if (o.life <= 0 || o.pos.y < terrainHeight(o.pos.x, o.pos.z)) return false;
     // The player and the teammate as vertical capsules from knee to head, tested along the whole
-    // stretch the orb covered this tick (a fast bolt moves further than a body is wide); a body
-    // is hit only if no wall stands between where the orb was and where it meets the body.
+    // stretch the orb covered this tick (a fast bolt moves further than a body is wide), before
+    // the ground or a wall ends it: a body is hit only if neither stands between where the orb was
+    // and where it enters the body, so a bolt that meets a body and then the ground in one tick hits.
     const from = { x: o.pos.x - o.vel.x * TICK, y: o.pos.y - o.vel.y * TICK, z: o.pos.z - o.vel.z * TICK };
     const clear = (to: Vec3) => los(from, to) && los({ ...from, y: from.y - o.r }, { ...to, y: to.y - o.r });
-    // Whichever body the orb reaches first along its way this tick takes the hit.
+    // Whichever body the orb enters first along its way this tick takes the hit.
     const onPlayer = sweptHit(from, o.pos, o.r + PLAYER.radius, p.pos, p.crouch || p.sliding ? 1.1 : 1.7);
     const onAlly = allyUp(s) ? sweptHit(from, o.pos, o.r + ALLY.radius, s.ally.pos, 1.7) : null;
     const playerHit = onPlayer && clear(onPlayer.at) ? onPlayer : null;
@@ -807,6 +822,7 @@ export function stepOrbs(s: State) {
       hurtPlayer(s, o.dmg, o.pos.x - o.vel.x, o.pos.z - o.vel.z);
       return false;
     }
+    if (o.life <= 0 || o.pos.y < terrainHeight(o.pos.x, o.pos.z)) return false;
     // A wall stops an orb that meets it with its centre or its lower edge, so one that would only graze the top of a low wall does not pass over it.
     if (!clear(o.pos)) return false;
     return true;

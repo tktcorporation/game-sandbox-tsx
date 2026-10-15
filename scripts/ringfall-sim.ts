@@ -1241,6 +1241,26 @@ function checkBoltNoTunnel(): string | null {
   const playerHit = t.events.some((e) => e.t === "hurt");
   const allyHit = t.events.some((e) => e.t === "allyHurt");
   if (playerHit || !allyHit) return `bolt scenario: a bolt went past the teammate in front and ${playerHit ? "hit" : "missed"} the player behind`;
+  // Overlapping bodies: the bolt passes through the teammate's middle and grazes the player's edge.
+  // It enters the teammate first even though it comes closest to the player's axis first.
+  const u = standoff(at, 15, ["grunt"]).s;
+  u.enemies = [];
+  const w = u.player;
+  u.ally.active = true;
+  u.ally.down = 0;
+  const allyAt = () => ({ x: w.pos.x - 0.5, y: w.pos.y, z: w.pos.z + 0.1 });
+  u.ally.pos = allyAt();
+  u.orbs.push({ id: u.nextId++, pos: { x: w.pos.x - 0.5, y: w.pos.y + 1.2, z: w.pos.z - 0.75 }, vel: { x: 0, y: 0, z: speed }, r: ENEMIES.grunt.orbR, dmg: 10, life: 5, homing: false });
+  step(u, idleInput(), false);
+  if (u.events.some((e) => e.t === "hurt") || !u.events.some((e) => e.t === "allyHurt")) return "bolt scenario: a bolt hit the player it only grazed instead of the teammate it entered first";
+  // A steep bolt that goes through the player and into the ground within one tick still hits.
+  const v = standoff(at, 15, ["grunt"]).s;
+  v.enemies = [];
+  const g = v.player;
+  const down = { x: 0, y: -96, z: 36 };
+  v.orbs.push({ id: v.nextId++, pos: { x: g.pos.x, y: g.pos.y + 1.3, z: g.pos.z - 0.65 }, vel: down, r: ENEMIES.grunt.orbR, dmg: 10, life: 5, homing: false });
+  step(v, idleInput(), false);
+  if (!v.events.some((e) => e.t === "hurt")) return "bolt scenario: a bolt that went through the player into the ground in one tick did no damage";
   return null;
 }
 
