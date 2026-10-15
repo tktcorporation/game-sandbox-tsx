@@ -333,10 +333,11 @@ export const META = {
   /** The best rarity of weapon and tier of armour the trader sells; better is found in raids. */
   shopRarity: 1 as Rarity,
   /**
-   * The common valuables the trader also sells, at `markup` times their value, so the
-   * hideout's cheap parts never hold it up; the rarer ones come only from raids.
+   * The trader also sells valuables, at `markup` times their value: those no rarer than
+   * the gear it sells (`shopRarity`, raised by the workbench), so the common parts never
+   * hold the hideout up and credits buy the rarer ones once the workbench is built.
    */
-  materials: { kinds: ["fuse", "parts", "wire"] as ValuableKind[], markup: 2 },
+  materials: { markup: 2 },
 };
 
 export type ModuleId = "generator" | "infirmary" | "workbench" | "storage" | "radio" | "pouch" | "craft";
@@ -378,10 +379,10 @@ export const HIDEOUT: Record<ModuleId, { name: string; note: string; levels: Mod
   },
   workbench: {
     name: "作業台",
-    note: "商人が売る武器とアーマーの質が上がる",
+    note: "商人が売る武器とアーマー、材料の質が上がる",
     levels: [
-      { items: [["parts", 4], ["wire", 2]], cash: 800, needs: [["generator", 1]], does: "商人がエピックまで売る" },
-      { items: [["board", 4], ["drive", 2], ["gyro", 3]], cash: 3500, needs: [["generator", 2]], does: "商人がレジェンドまで売る" },
+      { items: [["parts", 4], ["wire", 2]], cash: 800, needs: [["generator", 1]], does: "商人がエピックまで売る。回路基板と記憶装置も売る" },
+      { items: [["board", 4], ["drive", 2], ["gyro", 3]], cash: 3500, needs: [["generator", 2]], does: "商人がレジェンドまで売る。ジャイロ、データコア、小型炉心も売る" },
     ],
   },
   storage: {

@@ -1,7 +1,7 @@
 import { HEALS as HEAL_SPECS, HIDEOUT, META, VALUABLES, type HealKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
 import { POIS, poiIndex, REGIONS, type PoiId, type RegionId } from "../sim/map";
 import type { Kit, State } from "../sim/state";
-import { craftDone, emptyHideout, infirmaryHeals, MODULES, nextLevel, pouchSlots, shopRarity, stashCap, stillNeeded, unmet, type Hideout } from "./hideout";
+import { craftDone, emptyHideout, infirmaryHeals, MODULES, nextLevel, onSale, pouchSlots, shopRarity, stashCap, stillNeeded, unmet, type Hideout } from "./hideout";
 import { built, creditRaid, emptyLog, need, offered, type Quest, type QuestLog } from "./quests";
 
 /** One thing in the stash. Heals are one entry per unit, so the stash cap counts them. */
@@ -83,7 +83,7 @@ export function wares(p: Profile): Item[] {
     for (let r = 0; r <= best; r++) out.push({ t: "weapon", kind, rarity: r as Rarity });
   for (let tier = 1; tier <= best; tier++) out.push({ t: "armor", tier: tier as Rarity });
   for (const kind of HEALS) out.push({ t: "heal", kind });
-  for (const kind of META.materials.kinds) out.push({ t: "valuable", kind });
+  for (const kind of onSale(p.hideout)) out.push({ t: "valuable", kind });
   return out;
 }
 

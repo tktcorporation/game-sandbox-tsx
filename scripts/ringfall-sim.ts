@@ -1058,6 +1058,11 @@ function checkHideout(): string | null {
       for (const [k] of l.items) if (!poisWith(k).length && !VAULT.valuables.some((set) => set.includes(k))) return `hideout scenario: ${m} needs ${k}, which no bin or vault holds`;
       for (const [o, n] of l.needs) if (!(o in HIDEOUT) || n > maxLevel(o) || o === m) return `hideout scenario: ${m} needs ${o} Lv${n}`;
     }
+  // The trader sells the common parts from the start, and rarer valuables with each workbench level.
+  const sells = (workbench: number, k: string) => wares({ ...newProfile(1), hideout: { ...emptyHideout(), workbench } }).some((i) => i.t === "valuable" && i.kind === k);
+  if (!sells(0, "fuse") || sells(0, "board")) return "hideout scenario: the trader's valuables without a workbench are not just the common parts";
+  if (!sells(1, "board") || !sells(1, "drive") || sells(1, "reactor")) return "hideout scenario: the workbench Lv1 trader does not sell boards and drives (and only them)";
+  if (!sells(2, "core") || !sells(2, "reactor")) return "hideout scenario: the workbench Lv2 trader does not sell cores and reactors";
   if (sources("reactor")[0]?.share === undefined) return "hideout scenario: the reactor has no source";
   // The generator's first level: one fuse short it cannot be built; with them it takes exactly its items and credits.
   const gen = HIDEOUT.generator.levels[0];
