@@ -40,6 +40,9 @@ const muzzleOf = (e: Enemy) => ({ x: e.pos.x, y: e.pos.y + Math.max(ENEMIES[e.ki
 /** Distance it likes to fight at with each weapon: off at the edge of a robot's reach, where its fire strays. */
 const PREF: Record<string, number> = { pike: 22, hornet: 11, maul: 6, lance: 26, talon: 32 };
 
+/** Seconds a fighting robot may stay out of sight before the bot stops waiting for it. */
+const GIVE_UP = 25;
+
 export class Bot {
   private nx = 0;
   private ny = 0;
@@ -99,6 +102,9 @@ export class Bot {
     return Math.sqrt(-2 * Math.log(this.rnd() + 1e-9)) * Math.cos(2 * Math.PI * this.rnd());
   }
 
+  /** Seconds each fighting robot has been out of the bot's sight. */
+  private unseen = new Map<number, number>();
+
   input(s: State): Input {
     const sk = this.skill;
     const p = s.player;
@@ -119,7 +125,13 @@ export class Bot {
     const sees = (e: Enemy) => dist2d(e.pos, p.pos) < 60 && los(eye, bodyCenter(e));
     // Robots coming to look ("?") in plain sight are worth the first shot before they find it.
     const coming = (e: Enemy) => e.aware === "alert" && dist2d(e.pos, p.pos) < 45 && sees(e);
-    const relevant = live.filter((e) => e.aware === "engaged" || (aim >= 0 && e.poi === aim) || coming(e));
+    // A fighting robot out of sight for long is one that will not come (the titan on its pad
+    // above the lakebed): stop waiting for it, as a player would, until it shows itself again.
+    for (const e of live)
+      if (e.aware !== "engaged" || sees(e)) this.unseen.delete(e.id);
+      else this.unseen.set(e.id, (this.unseen.get(e.id) ?? 0) + TICK);
+    const given = (e: Enemy) => (this.unseen.get(e.id) ?? 0) > GIVE_UP;
+    const relevant = live.filter((e) => !given(e) && (e.aware === "engaged" || (aim >= 0 && e.poi === aim) || coming(e)));
     // Finish the squads already fighting before opening on a new one, as a careful player would.
     const engaged = relevant.filter((e) => e.aware === "engaged");
     const objective = relevant.filter((e) => (aim >= 0 && e.poi === aim) || coming(e));
