@@ -3,63 +3,120 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#0b1240" />
+    <meta name="theme-color" content="#11142a" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;900&family=M+PLUS+1p:wght@500;800&display=swap" rel="stylesheet" />
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 fill=%27%232034d6%27/%3E%3Cpath d=%27M7 7l6 6M25 7l-6 6M7 25l6-6M25 25l-6-6%27 stroke=%27%23ffe23d%27 stroke-width=%274%27/%3E%3C/svg%3E" />
-    <title>HITMARK</title>
+    <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@900&family=Saira+Condensed:wght@800&family=M+PLUS+1p:wght@500;800&display=swap" rel="stylesheet" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 fill=%27%2311142a%27/%3E%3Crect x=%275%27 y=%275%27 width=%2710%27 height=%2722%27 fill=%27%232034d6%27/%3E%3Crect x=%2717%27 y=%275%27 width=%2710%27 height=%2722%27 fill=%27%23ff5a2a%27/%3E%3C/svg%3E" />
+    <title>ゲームを選ぶ</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #11142a;
+        --ink: #f2f4fb;
+        --dim: #a6acc8;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: "M PLUS 1p", system-ui, sans-serif;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        padding: 24px 16px;
+      }
+      main {
+        width: 100%;
+        max-width: 960px;
+        margin: 0 auto;
+      }
+      h1 {
+        margin: 0 0 20px;
+        font-size: 15px;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        color: var(--dim);
+      }
+      .games {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 16px;
+      }
+      .game {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        min-height: 220px;
+        padding: 24px;
+        border-radius: 6px;
+        color: var(--ink);
+        text-decoration: none;
+        border: 2px solid transparent;
+        transition: transform 120ms ease, border-color 120ms ease;
+      }
+      .game:hover,
+      .game:focus-visible {
+        transform: translateY(-2px);
+        border-color: var(--accent);
+        outline: none;
+      }
+      .game b {
+        font-size: 56px;
+        line-height: 0.9;
+        color: var(--accent);
+      }
+      .game p {
+        margin: 0;
+        line-height: 1.6;
+      }
+      .game .lede {
+        font-weight: 800;
+      }
+      .game small {
+        margin-top: auto;
+        color: var(--dim);
+        font-size: 13px;
+      }
+      .hitmark {
+        --accent: #ffe23d;
+        background: #0b1240;
+      }
+      .hitmark b {
+        font-family: "Big Shoulders Display", sans-serif;
+        font-weight: 900;
+      }
+      .ringfall {
+        --accent: #ff5a2a;
+        background: #262d52;
+      }
+      .ringfall b {
+        font-family: "Saira Condensed", sans-serif;
+        font-weight: 800;
+      }
+    </style>
   </head>
   <body>
-    <div id="stage"></div>
-    <div id="vignette"></div>
-
-    <div id="hud" hidden>
-      <div id="xhair" aria-hidden="true"><i></i><i></i><i></i><i></i><b></b></div>
-      <div id="arrows" aria-hidden="true"></div>
-      <div id="dmgdir" aria-hidden="true"></div>
-      <div class="top">
-        <div class="room"><b id="room">ROOM 1/6</b><span id="timer">0.0</span><span id="par"></span></div>
-        <div class="remaining"><span>残り</span><b id="remaining-n">0</b></div>
-        <div class="streak" id="streak"></div>
-      </div>
-      <p id="hint"></p>
-      <div class="bottom">
-        <div id="hp"></div>
-        <div id="ammo"><b id="mag">30</b><i><span id="mag-bar"></span></i><small>R リロード</small></div>
-      </div>
-      <button id="dash-btn" type="button" aria-label="ダッシュ">DASH</button>
-    </div>
-
-    <div id="banner" aria-live="polite"><b id="banner-head"></b><span id="banner-sub"></span></div>
-
-    <section id="title">
-      <h1>HITMARK</h1>
-      <p class="lede">対人なし。撃って、当てて、全部倒す。</p>
-      <ul class="keys">
-        <li><kbd>WASD</kbd>移動</li>
-        <li><kbd>マウス</kbd>狙う / 見回す</li>
-        <li><kbd>左クリック</kbd>撃つ</li>
-        <li><kbd>Space</kbd>ダッシュ</li>
-      </ul>
-      <div class="modes">
-        <button id="start3d" type="button"><b>3D</b><span>一人称で出撃</span></button>
-        <button id="start" type="button"><b>2D</b><span>見下ろしで出撃</span></button>
-      </div>
-      <p class="touch-note">スマホ: 左半分をなぞって移動、右半分で狙って撃つ。3D はマウス推奨</p>
-      <p class="touch-note"><a href="/ringfall/" style="color: inherit">新作 RINGFALL：降下して拾って撃つ、ロボット相手のバトロワ風 →</a></p>
-    </section>
-
-    <section id="results" hidden>
-      <p class="label">RUN COMPLETE</p>
-      <div class="rank-row"><b id="rank">S</b><div><span>合計</span><strong id="total"></strong></div></div>
-      <div id="rooms"></div>
-      <div id="stats"></div>
-      <button id="restart" type="button">もう一周</button>
-    </section>
-
-    <div id="rotate">横向きにすると遊べます</div>
-
-    <script type="module" src="/src/main.ts"></script>
+    <main>
+      <h1>ゲームを選ぶ</h1>
+      <nav class="games">
+        <a class="game hitmark" href="/hitmark/">
+          <b>HITMARK</b>
+          <p class="lede">対人なし。撃って、当てて、全部倒す。</p>
+          <p>部屋ごとに敵を全滅させるシューター。見下ろしの 2D と一人称の 3D を選べる。</p>
+          <small>マウスとキーボード、またはスマホ</small>
+        </a>
+        <a class="game ringfall" href="/ringfall/">
+          <b>RINGFALL</b>
+          <p class="lede">降りて、漁って、生きて帰れ。相手はロボットだけ。</p>
+          <p>島に降りて回収品を集め、脱出地点から生きて帰る。拠点で隠れ家を作り、脱出艇を直す。</p>
+          <small>マウスとキーボード、またはスマホを横向きに</small>
+        </a>
+      </nav>
+    </main>
   </body>
 </html>
