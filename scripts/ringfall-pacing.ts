@@ -9,7 +9,7 @@
 import { HIDEOUT, META, VALUABLES, type ModuleId, type ValuableKind } from "../src/ringfall/sim/config";
 import { POIS, REGIONS, type RegionId } from "../src/ringfall/sim/map";
 import type { State } from "../src/ringfall/sim/state";
-import { craftDone, MODULES, maxLevel, nextLevel } from "../src/ringfall/meta/hideout";
+import { craftDone, MODULES, maxLevel, nextLevel, pouchSlots } from "../src/ringfall/meta/hideout";
 import { build, buy, canBuild, deliver, deliverable, newProfile, pouch, sell, settle, shortfall, wanted, type Profile } from "../src/ringfall/meta/profile";
 import { offered } from "../src/ringfall/meta/quests";
 
@@ -48,7 +48,7 @@ function pickRegion(p: Profile, pool: Partial<Record<RegionId, RaidRecord[]>>): 
     const raids = pool[r.id] ?? [];
     if (!raids.length) continue;
     const mean: Partial<Record<ValuableKind, number>> = {};
-    for (const raid of raids) for (const k of brought(raid, 2)) mean[k] = (mean[k] ?? 0) + 1 / raids.length;
+    for (const raid of raids) for (const k of brought(raid, pouchSlots(p.hideout))) mean[k] = (mean[k] ?? 0) + 1 / raids.length;
     let score = (Object.keys(mean) as ValuableKind[]).reduce((n, k) => n + Math.min(Math.max(0, want[k]), mean[k] ?? 0) * VALUABLES[k].value, 0);
     for (const q of clears) {
       const poi = POIS.findIndex((o) => q.goal.t === "clear" && o.id === q.goal.poi);
