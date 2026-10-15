@@ -224,7 +224,7 @@ export class Soundscape {
         sfx.shot(e.weapon);
         break;
       case "hit":
-        if (!e.ally) sfx.hit(e.crit, e.shield, e.flank === "back" || e.flank === "ambush");
+        if (!e.ally) sfx.hit(e.crit, e.shield, e.flank === "back" || e.flank === "ambush", e.blocked);
         break;
       case "allyShot":
         sfx.allyShot(e.from);

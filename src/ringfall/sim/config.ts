@@ -449,6 +449,12 @@ export const VAULT = {
   keyChance: 0.15,
   weapon: [["talon", 3], ["lance", 3], ["pike", 3], ["hornet", 3], ["maul", 2]] as [WeaponKind, Rarity][],
   armor: 3 as Rarity,
+  /**
+   * The plate (see PLATE) of the guard posted nearest each vault. The guard stands in a POI
+   * the raid clears on its way, so its plate stays light: a rare gun pierces it and the free
+   * kit's common one still does half.
+   */
+  guardPlate: 1 as Rarity,
   valuables: [["reactor"], ["core", "drive"], ["gyro", "drive", "drive"]] as ValuableKind[][],
   heals: 2,
 };
@@ -482,6 +488,8 @@ export const RAIDERS = {
   name: "レイダー",
   kinds: ["grunt", "grunt", "grunt"] as EnemyKind[],
   huntEvery: 4,
+  /** The elite squad wears plates (see PLATE): a common gun barely scratches their bodies. */
+  plate: 2 as Rarity,
 };
 
 /** How much tougher, deadlier and quicker an elite robot (a raider) is than a plain one. */
@@ -585,6 +593,17 @@ export const FLANK = {
   mult: { front: 0.6, side: 1, back: 2.2, ambush: 3, none: 1 } satisfies Record<Flank, number>,
 };
 
+/**
+ * Armour plates. Some robots wear a plate of tier 1-3 (0 is none). A weapon pierces a
+ * plate of tier up to its own rarity; a body hit from a weapon of lower rarity deals
+ * `mult[plate - rarity]` of its damage. Weak-point hits always pass in full, and damage
+ * that does not come from a weapon (the arc) is never reduced, so a plated robot is
+ * an aim check or a reason to bring better gear, never a wall.
+ */
+export const PLATE = {
+  mult: [1, 0.5, 0.3, 0.2] as number[],
+};
+
 /** How far a sound carries, in metres. Robots inside it come to look. */
 export const NOISE = {
   pike: 16,
@@ -664,6 +683,8 @@ export const ALLY = {
   /** Metres a robot adds to the teammate's distance when choosing whom to shoot: the player is the main target. */
   aggroBias: 1,
   noise: 16,
+  /** The rarity its gun counts as against plates (see PLATE): it pierces tier 1 only. */
+  rarity: 1 as Rarity,
 };
 
 /**

@@ -448,6 +448,15 @@ for (let i = 0; i < 25 * 60 * 10; i++) {
       await shot("26-vault");
       await page.evaluate(() => window.ringfallCamera());
     }
+    // The supply's vault guard, from 3 m in front of it (it faces west): its plate reads on its chest.
+    const guard = s.enemies.find((e) => e.plate > 0 && s.squads[e.squad].poi === 0);
+    if (!guard) errors.push("plates: the supply's vault guard wears none");
+    else {
+      const cx = guard.x - 3;
+      await page.evaluate(([x, y, z, w]) => window.ringfallCamera(x, y, z, w, -0.05), [cx, guard.y + 1.5, guard.z, Math.atan2(guard.x - cx, 0)]);
+      await shot("28-plate");
+      await page.evaluate(() => window.ringfallCamera());
+    }
   }
   if (at(0) && live.length >= 2 && s.orbs >= 1) await shot("03-fight-supply");
   // A robot's shot in flight, seen from beside its path: fast shots are drawn as stretched bolts.

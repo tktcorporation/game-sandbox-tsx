@@ -1,4 +1,4 @@
-import { ALLY, ASSIST, DEG, ENEMIES, FLANK, NOISE, PLAYER, RARITY, ROBOT_DROPS, TICK, ULT, VALUABLES, WEAPONS, type Flank, type ValuableKind, type WeaponSpec } from "./config";
+import { ALLY, ASSIST, DEG, ENEMIES, FLANK, NOISE, PLATE, PLAYER, RARITY, ROBOT_DROPS, TICK, ULT, VALUABLES, WEAPONS, type Flank, type Rarity, type ValuableKind, type WeaponSpec } from "./config";
 import { engageSquad, makeNoise } from "./awareness";
 import { POIS } from "./map";
 import { los, lookAngles, norm, rayWorld, raySphere, wrapAngle } from "./geom";
@@ -130,7 +130,7 @@ export function fireRay(s: State, w: Weapon, dir: Vec3) {
   // Facing matters for weapon hits only; counted here so flank hits stay a share of `hits`.
   const flank = flankOf(s, hit.e);
   if (flank === "back" || flank === "ambush") s.stats.flankHits++;
-  damageEnemy(s, hit.e, dmg, hit.crit, c, flank);
+  damageEnemy(s, hit.e, dmg, hit.crit, c, flank, "player", w.rarity);
 }
 
 /** Fire the active weapon once: spread, pellets, recoil. */
@@ -162,12 +162,16 @@ export function flankOf(s: State, e: Enemy, from: Vec3 = s.player.pos): Flank {
  * `flank` is where a weapon shot met the robot (see flankOf); the arc and other
  * non-weapon damage pass "none" and deal their damage as it is. `by` is who fired:
  * the teammate's damage is counted apart and gives the player part of its ult charge.
+ * `rarity` is the firing weapon's, which decides whether the robot's plate takes part
+ * of a body hit (see PLATE); damage with none is not a weapon's and passes in full.
  */
-export function damageEnemy(s: State, e: Enemy, raw: number, crit: boolean, at: Vec3, flank: Flank = "none", by: "player" | "ally" = "player") {
+export function damageEnemy(s: State, e: Enemy, raw: number, crit: boolean, at: Vec3, flank: Flank = "none", by: "player" | "ally" = "player", rarity?: Rarity) {
   // Callers may hold a list taken before a kill removed this robot (the titan takes its summons with it).
   if (!s.enemies.includes(e)) return;
   const k = ENEMIES[e.kind];
   raw *= FLANK.mult[flank];
+  const blocked = !crit && rarity !== undefined && e.plate > rarity;
+  if (blocked) raw *= PLATE.mult[e.plate - rarity];
   // Being shot gives the player away to the whole squad. A squad already fighting
   // learns where the shot came from and turns there, at its usual turning speed.
   engageSquad(s, e.squad, e);
@@ -187,7 +191,7 @@ export function damageEnemy(s: State, e: Enemy, raw: number, crit: boolean, at: 
     e.lastHit = 0;
     s.stats.damage += dealt;
   }
-  s.events.push({ t: "hit", id: e.id, pos: at, dmg: Math.round(raw), crit, shield: toShield > 0, tier: k.shieldTier, flank, ally: by === "ally" });
+  s.events.push({ t: "hit", id: e.id, pos: at, dmg: Math.round(raw), crit, shield: toShield > 0, tier: k.shieldTier, flank, ally: by === "ally", blocked });
   if (hadShield && e.shield <= 0) s.events.push({ t: "shieldBreak", id: e.id, pos: at, tier: k.shieldTier });
   const p = s.player;
   if (!p.leap && p.ult < 1) {

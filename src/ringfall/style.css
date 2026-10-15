@@ -314,6 +314,10 @@ kbd {
 .dmg.front {
   opacity: 0.7;
 }
+/* A plate took part of the hit: grey, so the player sees the gun is too weak for the body. */
+.dmg.plate {
+  color: #9aa3b5 !important;
+}
 
 #dmgdir {
   position: absolute;

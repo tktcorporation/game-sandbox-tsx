@@ -62,6 +62,7 @@ export const CUES: Cue[] = [
   { id: "hit-shield", label: "命中（シールド）", group: "命中", run: () => sfx.hit(false, true) },
   { id: "hit-crit", label: "弱点命中", group: "命中", run: () => sfx.hit(true, false) },
   { id: "hit-flank", label: "背後から命中", group: "命中", run: () => sfx.hit(false, false, true) },
+  { id: "hit-plate", label: "命中（装甲）", group: "命中", run: () => sfx.hit(false, false, false, true) },
   ...([0, 1, 2, 3] as Rarity[]).map((t) => ({ id: `shield-break-${t}`, label: `シールド破壊（${["白", "青", "紫", "金"][t]}）`, group: "命中", run: () => sfx.shieldBreak(t) })),
   { id: "kill", label: "撃破", group: "命中", run: () => sfx.kill(false) },
   { id: "kill-crit", label: "撃破（弱点）", group: "命中", run: () => sfx.kill(true) },
