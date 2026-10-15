@@ -263,6 +263,23 @@ export const sfx = {
       tone(150, 0.1, { type: "square", vol: 0.06, at: 0.1 });
     });
   },
+  /** A depot switching on as the player walks up: a relay clunk, then a rising two-note chime. */
+  depotOn() {
+    ui(0.3, () => {
+      hiss(0.05, { freq: 900, q: 3, vol: 0.14 });
+      tone(110, 0.08, { type: "square", vol: 0.05, to: 80 });
+      tone(587, 0.18, { type: "sine", vol: 0.12, at: 0.1 });
+      tone(880, 0.3, { type: "sine", vol: 0.1, at: 0.2 });
+    });
+  },
+  /** The bag going home from a depot: a hatch, a pneumatic whoosh away, a confirming ping. */
+  deposit() {
+    ui(0.35, () => {
+      tone(220, 0.06, { type: "square", vol: 0.06, to: 160 });
+      hiss(0.45, { freq: 600, to: 3200, q: 1.2, vol: 0.14, attack: 0.05, at: 0.06 });
+      tone(1175, 0.25, { type: "triangle", vol: 0.09, at: 0.48 });
+    });
+  },
   tactical() {
     me(0.5, () => {
       hiss(0.25, { freq: 6000, to: 1500, vol: 0.28, q: 2 });

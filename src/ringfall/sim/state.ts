@@ -630,7 +630,10 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
   };
   if (from) {
     const p = s.player;
-    p.pos = { x: from.x, y: groundAt(from.x, from.z, PLAYER.radius, from.y + 0.3), z: from.z };
+    // A few steps back from the depot, facing it and the POI beyond: the depot is in sight and in reach.
+    const x = from.x - Math.sin(from.yaw) * DEPOT.back;
+    const z = from.z + Math.cos(from.yaw) * DEPOT.back;
+    p.pos = { x, y: groundAt(x, z, PLAYER.radius, from.y + 0.3), z };
     p.yaw = from.yaw;
     p.pitch = 0;
     p.onGround = true;

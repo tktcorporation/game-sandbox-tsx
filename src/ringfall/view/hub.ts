@@ -1,6 +1,6 @@
-import { HEALS as HEAL_SPECS, HIDEOUT, RAIDERS, RARITY, VALUABLES, WEAPONS, type ModuleId, type ValuableKind } from "../sim/config";
+import { ALLY, HEALS as HEAL_SPECS, HIDEOUT, RAIDERS, RARITY, VALUABLES, WEAPONS, type ModuleId, type ValuableKind } from "../sim/config";
 import { boostFor, type Kit } from "../sim/state";
-import { POIS, REGIONS, regionOf, type RegionId } from "../sim/map";
+import { POIS, poiIndex, poiRegion, REGIONS, regionOf, type PoiId, type RegionId } from "../sim/map";
 import { build, buildState, buy, buyPrice, canBuild, deliver, deliverable, emptyLoadout, HEALS, healCount, healRoom, keyName, lentHeals, price, sell, sellPrice, shortfall, takeKit, wanted, wares, type Item, type Loadout, type Profile } from "../meta/profile";
 import { craftDone, maxLevel, MODULES, nextLevel, pouchSlots, sources, stashCap, stillNeeded, type Source } from "../meta/hideout";
 import { need, offered, type Quest, type RewardItem } from "../meta/quests";
@@ -96,14 +96,16 @@ export function whereLine(kind: ValuableKind): string {
 }
 
 /**
- * The base between raids: the stash, the loadout for the next raid, the region to drop
- * into, the trader and their quests. It changes only the profile; the raid itself starts
- * from the kit and the region it hands over.
+ * The base between raids: the stash, the loadout for the next raid, where it starts (a
+ * region to drop into, or a depot already on), the trader and their quests. It changes only
+ * the profile; the raid itself starts from the kit, the region and the depot it hands over.
  */
 export class Hub {
   private tab: Tab = "kit";
   private load: Loadout = emptyLoadout();
   private region: RegionId;
+  /** A depot to start from on the ground instead of dropping into `region`; null for the drop. */
+  private from: PoiId | null = null;
   /** The hideout module opened to show what its next level takes. */
   private module: ModuleId | null = null;
   /** A stash row a module still needs, pressed once to sell: the next press sells it. */
@@ -111,7 +113,7 @@ export class Hub {
 
   constructor(
     public profile: Profile,
-    private deploy: (kit: Kit, region: RegionId, seed: number) => void,
+    private deploy: (kit: Kit, region: RegionId, seed: number, from?: PoiId) => void,
   ) {
     this.region = profile.region;
     $("hub").addEventListener("click", (e) => {
@@ -206,6 +208,11 @@ export class Hub {
       return this.showEnding();
     } else if (act === "region") {
       this.region = regionOf(arg as RegionId).id;
+      this.from = null;
+      sfx.click();
+    } else if (act === "from" && this.profile.depots.includes(arg as PoiId)) {
+      this.from = arg as PoiId;
+      this.region = poiRegion(this.from).id;
       sfx.click();
     }
     else if (act === "pick") {
@@ -259,7 +266,9 @@ export class Hub {
       this.load = emptyLoadout();
       this.close();
       sfx.deploy();
-      this.deploy(kit, this.region, this.profile.seed);
+      const from = this.from ?? undefined;
+      this.from = null;
+      this.deploy(kit, this.region, this.profile.seed, from);
       return;
     } else if (act === "back") {
       sfx.click();
@@ -379,10 +388,16 @@ export class Hub {
         HEALS.map(heal).join("") +
         `<p class="hint">倒れると、持ち込んだ物と回収品は失う。ポーチ（${pouchSlots(p.hideout)} 枠）に入る分の回収品だけは残る。${p.hideout.infirmary ? "医務室の回復は、どちらの装備にも貸し出される。" : ""}</p>`;
     }
+    // A depot chosen in an earlier visit may no longer be on in a profile loaded since.
+    if (this.from && !p.depots.includes(this.from)) this.from = null;
+    const on = (yes: boolean) => (yes ? ' class="on"' : "");
     $("hub-region").innerHTML =
-      `<small>降下地点</small>` +
-      REGIONS.map((r) => `<button type="button" data-act="region" data-arg="${r.id}"${r.id === this.region ? ' class="on"' : ""}>${esc(r.name)}</button>`).join("") +
-      `<span>${esc(regionOf(this.region).note)}</span>`;
+      `<small>出撃地点</small>` +
+      REGIONS.map((r) => `<button type="button" data-act="region" data-arg="${r.id}"${on(!this.from && r.id === this.region)}>${esc(r.name)}に降下</button>`).join("") +
+      p.depots.map((d) => `<button type="button" class="depot${this.from === d ? " on" : ""}" data-act="from" data-arg="${d}">中継ボックス：${esc(POIS[poiIndex(d)].name)}（${esc(poiRegion(d).name)}）</button>`).join("") +
+      `<span>${this.from ? `${esc(POIS[poiIndex(this.from)].name)}の中継ボックスの前から、${ALLY.name}と歩いて始める` : esc(regionOf(this.region).note)}</span>`;
+    $("hub-go").textContent = this.from ? "この装備で出撃" : "この装備で降下";
+    $("hub-free").textContent = this.from ? "貸出装備で出撃" : "貸出装備で降下";
     ($("hub-go") as HTMLButtonElement).disabled = this.load.weapons.length === 0;
     const ready = offered(p.quests).filter((q) => deliverable(p, q)).length;
     $("hub-quest-badge").textContent = ready ? String(ready) : "";

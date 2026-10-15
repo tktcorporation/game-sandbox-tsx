@@ -574,7 +574,7 @@ console.log(JSON.stringify((await read()).stats));
 const KEY = "ringfall.profile.v1";
 const bag = (list) => list.flatMap(([kind, n]) => Array.from({ length: n }, () => ({ t: "valuable", kind })));
 const midGame = {
-  v: 5, cash: 6400, raids: 14, extracted: 11, time: 9000, region: "reservoir", seed: 777, escaped: null,
+  v: 6, cash: 6400, raids: 14, extracted: 11, time: 9000, region: "reservoir", seed: 777, escaped: null, depots: ["quarry", "wreck"], seen: "",
   quests: { progress: {}, done: ["grunts", "village", "power", "parts", "drones"] },
   hideout: { generator: 2, infirmary: 1, workbench: 1, storage: 1, radio: 1, pouch: 1, craft: 0 },
   stash: [{ t: "weapon", kind: "pike", rarity: 1 }, { t: "heal", kind: "cell" }, ...bag([["fuse", 5], ["parts", 4], ["wire", 5], ["board", 4], ["drive", 1], ["gyro", 1]])],
@@ -660,7 +660,53 @@ const spills = (pg) =>
   await pg.tap('#hub [data-act=tab][data-arg=kit]');
   fit = fit.concat(await spills(pg));
   await pg.screenshot({ path: `${out}/m12-hub-intel.png` });
+  // The starts row holds the depots too; it scrolls on its own and stays inside the screen.
+  await pg.tap("#hub-region [data-act=from][data-arg=wreck]");
+  fit = fit.concat(await spills(pg));
+  const row = await pg.evaluate(() => document.getElementById("hub-region").getBoundingClientRect().right);
+  if (row > 741) fit.push(`hub-region ends at ${Math.round(row)}`);
+  await pg.screenshot({ path: `${out}/m14-hub-depot.png` });
   if (fit.length) errors.push(`hideout on a phone: ${[...new Set(fit)].join(", ")} (740x360)`);
+  await ctx.close();
+}
+/*
+ * A depot: the base offers the depots on as starts, the raid begins on the ground beside one
+ * with its prompt, the map lies under fog except round where the player has been, and leaving
+ * there ends the raid as extracted at that depot.
+ */
+{
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+  const pg = await withProfile(ctx, midGame);
+  await pg.click("#start");
+  const starts = await pg.locator("#hub-region [data-act=from]").count();
+  if (starts !== 2) errors.push(`depot: the base offers ${starts} depots to start from, not 2`);
+  await pg.click("#hub-region [data-act=from][data-arg=quarry]");
+  await pg.screenshot({ path: `${out}/46-hub-depots.png` });
+  await pg.click("#hub-free");
+  await pg.evaluate(() => window.advanceTime(500));
+  const d0 = await readOf(pg);
+  if (d0.screen !== "game" || d0.phase !== "play" || d0.region !== "reservoir" || !d0.ally.active) errors.push(`depot: starting at the quarry depot left ${d0.screen} ${d0.phase} in ${d0.region}, ally ${d0.ally.active}`);
+  const prompt = await pg.textContent("#prompt");
+  if (!/切り上げる/.test(prompt)) errors.push(`depot: standing at it with an empty bag prompts "${prompt}"`);
+  await pg.screenshot({ path: `${out}/47-depot.png` });
+  await pg.keyboard.press("KeyE");
+  await pg.evaluate(() => window.advanceTime(1000));
+  const d1 = await readOf(pg);
+  if (d1.leaving === null) errors.push(`depot: the use key did not start leaving (${d1.phase})`);
+  await pg.screenshot({ path: `${out}/48-depot-leaving.png` });
+  // The map, once the start's banner is gone; leaving goes on under it.
+  await pg.keyboard.press("KeyM");
+  await pg.evaluate(() => window.advanceTime(1000));
+  const cells = d1.seenCells;
+  if (!(cells > 0 && cells <= 9)) errors.push(`depot: a fresh map has ${cells} cells explored, not the few round the start`);
+  await pg.screenshot({ path: `${out}/49-map-fog.png` });
+  await pg.keyboard.press("KeyM");
+  await pg.evaluate(() => window.advanceTime(4000));
+  await pg.waitForTimeout(1800);
+  const d2 = await readOf(pg);
+  if (d2.outcome !== "extracted" || d2.leftAt !== "quarry" || d2.screen !== "results") errors.push(`depot: leaving ended ${d2.outcome} at ${d2.leftAt} on ${d2.screen}`);
+  if (!/中継ボックス/.test(await pg.textContent("#stats"))) errors.push("depot: the results do not say the raid ended at the depot");
+  await pg.screenshot({ path: `${out}/50-results-depot.png` });
   await ctx.close();
 }
 for (const [size, name] of [[{ width: 1280, height: 720 }, "44-ending"], [{ width: 740, height: 360 }, "m13-ending"]]) {

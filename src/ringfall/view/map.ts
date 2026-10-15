@@ -1,7 +1,7 @@
-import { WORLD } from "../sim/config";
-import { BOXES, EXTRACTS, POIS, REGIONS } from "../sim/map";
+import { DEPOT, WORLD } from "../sim/config";
+import { BOXES, DEPOTS, EXTRACTS, POIS, REGIONS } from "../sim/map";
 import { DAM_FACE, floorLevel, highGround, LEVEL, steepAt, surfaceAt, terrainHeight } from "../sim/terrain";
-import type { State } from "../sim/state";
+import { cellOf, exploreSize, type State } from "../sim/state";
 import { PAL } from "./models";
 
 /*
@@ -10,7 +10,8 @@ import { PAL } from "./models";
  * POIs and the ways off. The ground and buildings are drawn once; each open frame scales
  * them to the map's size on screen and adds the names, the player, the teammate and
  * which POIs are cleared, with text at a fixed size on screen. North (-z) is up, as on
- * the compass.
+ * the compass. Ground the player has not walked near (`State.seen`) lies under fog; the
+ * POIs and exits show through it, since the map is how a first raid finds its way.
  */
 
 /** Metres per map pixel of the ground image. */
@@ -41,6 +42,8 @@ const css = (c: number) => `#${c.toString(16).padStart(6, "0")}`;
 
 export class IslandMap {
   private base: HTMLCanvasElement | null = null;
+  /** One pixel per explored-map cell, redrawn each open frame and scaled over the ground. */
+  private fog: HTMLCanvasElement | null = null;
   private readonly width = Math.ceil((WORLD.x1 - WORLD.x0) / CELL);
   private readonly height = Math.ceil((WORLD.z1 - WORLD.z0) / CELL);
 
@@ -105,6 +108,22 @@ export class IslandMap {
     return c;
   }
 
+  /** The fog as a cell-per-pixel image: opaque where unexplored, clear where seen. */
+  private fogImage(seen: number[]): HTMLCanvasElement {
+    const { cols, rows } = exploreSize();
+    const c = (this.fog ??= Object.assign(document.createElement("canvas"), { width: cols, height: rows }));
+    const g = c.getContext("2d")!;
+    const img = g.createImageData(cols, rows);
+    for (let i = 0; i < cols * rows; i++) {
+      img.data[i * 4] = 0x1c;
+      img.data[i * 4 + 1] = 0x1f;
+      img.data[i * 4 + 2] = 0x2a;
+      img.data[i * 4 + 3] = seen[i] ? 0 : 250;
+    }
+    g.putImageData(img, 0, 0);
+    return c;
+  }
+
   draw(s: State) {
     this.base ??= this.build();
     const g = this.canvas.getContext("2d")!;
@@ -117,6 +136,9 @@ export class IslandMap {
     const k = w / this.width;
     g.imageSmoothingEnabled = true;
     g.drawImage(this.base, 0, 0, w, h);
+    // Smoothed, so the fog's edge is soft rather than a staircase of 20 m squares.
+    const { cols, rows } = exploreSize();
+    g.drawImage(this.fogImage(s.seen), 0, 0, (k * cols * DEPOT.cell) / CELL, (k * rows * DEPOT.cell) / CELL);
     const at = (x: number, z: number) => {
       const p = this.px(x, z);
       return { x: p.x * k, y: p.y * k };
@@ -172,6 +194,8 @@ export class IslandMap {
     });
     // Districts and landmarks between the POIs, small and muted under everything else.
     for (const d of DISTRICTS) {
+      // A district's name is learnt by going there.
+      if (!s.seen[cellOf(d.x, d.z)]) continue;
       const p = at(d.x, d.z);
       const r = box(d.name, p.x, p.y, 10);
       if (!free(r)) continue;
@@ -198,6 +222,15 @@ export class IslandMap {
       g.fill();
       g.stroke();
       label(x.short, exitAt[i].x, exitAt[i].y, css(PAL.hot), 10);
+    });
+    // Depots that are on: a teal square each, a place a later raid can start from.
+    DEPOTS.forEach((d, i) => {
+      if (!s.depots[i]) return;
+      const p = at(d.x, d.z);
+      const r = 3.5 * dpr;
+      g.fillStyle = "#6fd0cf";
+      g.strokeRect(p.x - r, p.y - r, r * 2, r * 2);
+      g.fillRect(p.x - r, p.y - r, r * 2, r * 2);
     });
     // POI names go on top, a little above their centre, so an exit nearby does not hide them.
     POIS.forEach((poi, i) => {

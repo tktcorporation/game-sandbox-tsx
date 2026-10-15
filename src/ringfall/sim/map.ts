@@ -557,15 +557,22 @@ export interface Depot {
 }
 
 /**
- * One depot per POI, on the road 6 m further out than its entry: in reach on the way in
- * or out, yet outside the fight round the POI. They are not boxes and keep no ground clear,
- * so the island's cover is laid out the same with or without them.
+ * How far out from its POI's entry each depot stands, along the line from the POI through
+ * the entry: the nearest flat spot where a raid started there is not seen by the POI's
+ * squads at once (`checkDepots` in the sim gate holds them to it).
+ */
+const DEPOT_OUT: Record<PoiId, number> = { supply: 18, quarry: 6, relay: 40, pad: 25, wreck: 25, yard: 18, smelter: 25 };
+
+/**
+ * One depot per POI, on the road out from its entry: in reach on the way in or out, yet
+ * outside the fight round the POI. They are not boxes and keep no ground clear, so the
+ * island's cover is laid out the same with or without them.
  */
 export const DEPOTS: Depot[] = POIS.map((p) => {
   const ax = p.entry.x - p.x;
   const az = p.entry.z - p.z;
   const len = Math.hypot(ax, az);
-  const at = onFloor({ x: +(p.entry.x + (ax / len) * 6).toFixed(1), z: +(p.entry.z + (az / len) * 6).toFixed(1) });
+  const at = onFloor({ x: +(p.entry.x + (ax / len) * DEPOT_OUT[p.id]).toFixed(1), z: +(p.entry.z + (az / len) * DEPOT_OUT[p.id]).toFixed(1) });
   return { poi: p.id, x: at.x, y: at.y, z: at.z, yaw: Math.atan2(p.x - at.x, -(p.z - at.z)) };
 });
 

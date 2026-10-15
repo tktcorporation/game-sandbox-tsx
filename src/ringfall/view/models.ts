@@ -597,6 +597,28 @@ export function buildBin(vault = false): { root: THREE.Group; lid: THREE.Object3
   return { root, lid, seam };
 }
 
+/**
+ * A depot by a POI's road: a squat steel locker with a slot facing the road and a lamp on a short
+ * mast. The lamp and slot are dark until the depot is switched on, then lit in the teammate's
+ * teal, the colour that means "ours" on the HUD; nothing else on it glows.
+ */
+export function buildDepot(): { root: THREE.Group; lamp: THREE.Mesh; slot: THREE.Mesh } {
+  const root = new THREE.Group();
+  root.add(mesh(new THREE.BoxGeometry(1.3, 0.16, 1.0), flat(PAL.concreteDark), 0, 0.08, 0));
+  root.add(mesh(new THREE.BoxGeometry(1.1, 0.95, 0.8), flat(PAL.steel), 0, 0.62, 0));
+  root.add(mesh(new THREE.BoxGeometry(1.16, 0.12, 0.86), flat(PAL.teal), 0, 1.15, 0, false));
+  // The front (-z, turned away from the POI, along the road) carries the slot the bag goes into.
+  root.add(mesh(new THREE.BoxGeometry(0.7, 0.36, 0.06), flat(PAL.gun), 0, 0.72, -0.42, false));
+  const slot = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.06, 0.04), glow(PAL.gunLight));
+  slot.position.set(0, 0.8, -0.46);
+  root.add(slot);
+  root.add(mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.5, 6), flat(PAL.gun), 0.38, 1.46, 0.2, false));
+  const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 0.16), glow(PAL.gunLight));
+  lamp.position.set(0.38, 1.76, 0.2);
+  root.add(lamp);
+  return { root, lamp, slot };
+}
+
 export function buildCare(): THREE.Group {
   const g = new THREE.Group();
   g.add(mesh(new THREE.CylinderGeometry(0.9, 1.1, 2.0, 8), flat(PAL.gun), 0, 1.0, 0));

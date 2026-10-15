@@ -83,7 +83,11 @@ function checkLayout(): string[] {
   });
   EXTRA_BINS.forEach((b) => point("extra bin", b.x, b.z, b.y));
   for (const r of REGIONS) point(`${r.id} landing`, r.land.x, r.land.z);
-  for (const d of DEPOTS) point(`depot ${d.poi}`, d.x, d.z, d.y);
+  for (const d of DEPOTS) {
+    point(`depot ${d.poi}`, d.x, d.z, d.y);
+    // A raid started there begins `DEPOT.back` behind it.
+    point(`depot ${d.poi} start`, +(d.x - Math.sin(d.yaw) * DEPOT.back).toFixed(2), +(d.z + Math.cos(d.yaw) * DEPOT.back).toFixed(2), d.y);
+  }
   ROAMERS.forEach((sq) => squad(`roamer ${sq.name}`, sq));
   // An extract is used standing on whatever is highest there (the pad, a rock top), as the game checks it.
   for (const x of EXTRACTS) point(`extract ${x.id}`, x.x, x.z, groundAt(x.x, x.z, 0.4, 99));
@@ -1159,11 +1163,20 @@ function checkDepots(): string | null {
   const from = newRun(5, freeKit(), "reservoir", { depots: ["pad", "wreck"], from: "wreck" });
   ticks(from, 1);
   const fp = from.player;
-  if (from.region !== "harbor" || phaseOf(from) !== "play" || dist2d(fp.pos, wreck) > 1 || Math.abs(fp.pos.y - wreck.y) > 0.5 || !from.ally.active || dist2d(from.ally.pos, fp.pos) > 4 || from.landedAt !== 0 || !from.depots[depotIndex("pad")] || !from.depots[depotIndex("wreck")])
+  if (from.region !== "harbor" || phaseOf(from) !== "play" || dist2d(fp.pos, wreck) > PLAYER.interactRange + 1 || useTarget(from)?.kind !== "depot" || Math.abs(fp.pos.y - wreck.y) > 0.5 || !from.ally.active || dist2d(from.ally.pos, fp.pos) > 4 || from.landedAt !== 0 || !from.depots[depotIndex("pad")] || !from.depots[depotIndex("wreck")])
     return `depot scenario: starting from the wreck's depot gave region ${from.region}, phase ${from.phase}, player at ${fp.pos.x.toFixed(1)},${fp.pos.y.toFixed(1)},${fp.pos.z.toFixed(1)}, teammate ${from.ally.active ? dist2d(from.ally.pos, fp.pos).toFixed(1) : "inactive"}`;
   // ...but not from one that is not on: that raid drops as usual.
   const off = newRun(5, freeKit(), "reservoir", { depots: ["pad"], from: "wreck" });
   if (off.phase !== "drop" || off.region !== "reservoir") return `depot scenario: starting from a depot that is off gave phase ${off.phase} in ${off.region}`;
+
+  // A raid started from any depot is not seen at once: standing still there for 15 s, no squad fights.
+  const every = DEPOTS.map((x) => x.poi);
+  for (const x of DEPOTS)
+    for (const seed of [11, 222, 777, 4242]) {
+      const q = newRun(seed, freeKit(), "reservoir", { depots: every, from: x.poi });
+      ticks(q, 15);
+      if (q.squads.some((sq) => sq.engaged) || q.player.hp < PLAYER.hp) return `depot scenario: a raid started from the ${x.poi} depot (seed ${seed}) was in a fight within 15 s`;
+    }
 
   // Saves from before the depots load with none on and nothing explored; unknown depots are dropped.
   const { depots: _d, seen: _s, ...v5 } = newProfile();

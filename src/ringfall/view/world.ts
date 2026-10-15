@@ -1,10 +1,10 @@
 import * as THREE from "three";
 import { ENEMIES, PLAYER, TITAN, WEAPONS, WORLD, type EnemyKind } from "../sim/config";
-import { BOXES, EXTRACTS } from "../sim/map";
+import { BOXES, DEPOTS, EXTRACTS } from "../sim/map";
 import { groundAt } from "../sim/geom";
 import { DAM_FACE, floorLevel, highGround, LANDS, LEVEL, offshore, steepAt, surfaceAt, terrainHeight } from "../sim/terrain";
 import { callLeft, type GameEvent, type State, type Vec3 } from "../sim/state";
-import { PAL, RARITY_COLOR, SCOPE_IN, buildAlly, buildBin, buildBoat, buildBox, mergeChunk, buildCare, buildDropship, buildEnemy, buildGun, buildLootItem, addPlates, flat, glow, haloSprite, type EnemyModel } from "./models";
+import { PAL, RARITY_COLOR, SCOPE_IN, buildAlly, buildBin, buildBoat, buildBox, buildDepot, mergeChunk, buildCare, buildDropship, buildEnemy, buildGun, buildLootItem, addPlates, flat, glow, haloSprite, type EnemyModel } from "./models";
 
 /*
  * Renders a State in first person. It reads the state and the tick's events and
@@ -24,6 +24,8 @@ const CHUNK = 64;
 const FOG_FAR = 420;
 /** Robots, bins and loot further than this are not drawn: they are specks even through a scope. */
 const THINGS_FAR = 220;
+/** The teammate's HUD teal: a depot that is on is lit in the colour that means "ours". */
+const MATE_LIGHT = 0x6fd0cf;
 /** Sparks off a plate that took part of a hit: grey like its damage number. */
 const PLATE_SPARK = 0x9aa3b5;
 
@@ -157,6 +159,8 @@ export class World {
   private careBeam: THREE.Mesh;
   private dropship: THREE.Group | null = null;
   private extractRings: THREE.Mesh[] = [];
+  /** One per `DEPOTS` entry, built once: they stand in every run, only lit or not. */
+  private depots: (ReturnType<typeof buildDepot> & { on: boolean })[] = [];
   private stompRing: THREE.Mesh;
   private gun = new THREE.Group();
   private gunKey = "";
@@ -230,6 +234,16 @@ export class World {
       ring.visible = false;
       this.scene.add(ring);
       this.extractRings.push(ring);
+    }
+
+    for (const d of DEPOTS) {
+      // A raid started from a depot begins behind its point, facing the POI: the locker's slot
+      // (its -z side) is turned back along the road, towards that start.
+      const v = { ...buildDepot(), on: false };
+      v.root.position.set(d.x, groundAt(d.x, d.z, 0.4, d.y + 1), d.z);
+      v.root.rotation.y = Math.PI - d.yaw;
+      this.scene.add(v.root);
+      this.depots.push(v);
     }
 
     this.stompRing = new THREE.Mesh(new THREE.RingGeometry(0.96, 1, 64), glow(PAL.orb, 0.5));
@@ -800,6 +814,18 @@ export class World {
       v.lid.rotation.x += ((b.open ? -1.9 : 0) - v.lid.rotation.x) * Math.min(1, dt * 10);
       (v.seam.material as THREE.MeshBasicMaterial).color.setHex(b.open ? 0x3a3f4a : 0xffffff);
     }
+    this.depots.forEach((v, i) => {
+      if (!near(v.root)) return;
+      const on = !!s.depots[i];
+      if (on !== v.on) {
+        v.on = on;
+        v.lamp.visible = true;
+        (v.lamp.material as THREE.MeshBasicMaterial).color.setHex(on ? MATE_LIGHT : PAL.gunLight);
+        (v.slot.material as THREE.MeshBasicMaterial).color.setHex(on ? MATE_LIGHT : PAL.gunLight);
+      }
+      // A lit lamp blinks slowly, so an on depot reads as working from down the road.
+      if (on) v.lamp.visible = Math.sin(this.time * 3 + i) > -0.6;
+    });
     if (s.care) {
       if (!this.care) {
         this.care = buildCare();

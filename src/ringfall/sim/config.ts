@@ -309,6 +309,8 @@ export const DEPOT = {
   radius: 6,
   /** Seconds standing at it after choosing to leave. */
   leave: 5,
+  /** Metres behind a depot a raid started there begins: inside its reach (PLAYER.interactRange + 1). */
+  back: 2.5,
   /** Metres: a side of one cell of the explored map. */
   cell: 20,
   /** Cells uncovered round the player's own, each way. */
