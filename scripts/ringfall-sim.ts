@@ -1585,7 +1585,7 @@ function checkPullWhenAiming(): string | null {
  * Armour plates: a body hit from a weapon below the plate's tier is cut to
  * `PLATE.mult[plate - rarity]`; weak-point hits, weapons that pierce the plate and the
  * arc pass in full, and the hit event says `blocked` exactly when a plate took part.
- * Raiders and each POI's vault guard wear tier-2 plates.
+ * Raiders wear tier-2 plates, and each POI's vault guard a VAULT.guardPlate one.
  */
 function checkPlates(): string | null {
   const at = openSpot(10, 3, 3);
@@ -1666,9 +1666,9 @@ function checkPlates(): string | null {
     if (!vault || poi.id === "pad") continue;
     const guards = poi.squads.flatMap((sq) => sq.members).filter((m) => m.kind === "grunt");
     const guard = guards.reduce((a, b) => (Math.hypot(b.x - vault.x, b.z - vault.z) < Math.hypot(a.x - vault.x, a.z - vault.z) ? b : a));
-    if (guard.plate !== 2) return `plate scenario: ${poi.id}'s vault guard wears plate ${guard.plate ?? 0}, expected 2`;
+    if (guard.plate !== VAULT.guardPlate) return `plate scenario: ${poi.id}'s vault guard wears plate ${guard.plate ?? 0}, expected ${VAULT.guardPlate}`;
     const live = run.enemies.filter((e) => e.poi === i && e.plate > 0);
-    if (live.length !== 1 || live[0].plate !== 2) return `plate scenario: ${poi.id} spawns ${live.length} plated robots, expected its vault guard alone`;
+    if (live.length !== 1 || live[0].plate !== VAULT.guardPlate) return `plate scenario: ${poi.id} spawns ${live.length} plated robots, expected its vault guard alone`;
   }
   return null;
 }

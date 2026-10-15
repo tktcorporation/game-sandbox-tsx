@@ -1,4 +1,4 @@
-import { WORLD, type EnemyKind, type HealKind, type Rarity, type ValuableKind, type WeaponKind } from "./config";
+import { VAULT, WORLD, type EnemyKind, type HealKind, type Rarity, type ValuableKind, type WeaponKind } from "./config";
 import { buildTerrain, type FlatShape, floorLevel, highGround, LEVEL, offshore, roadLine, steepAt, surfaceAt, terrainHeight } from "./terrain";
 
 /**
@@ -356,7 +356,7 @@ const POI_FRAMES: Poi[] = [
     entry: { x: 0, z: 74, yaw: 0 },
     squads: [
       { name: "見張り台", members: [{ kind: "grunt", x: 18, z: 63, y: 3, face: S }] },
-      { name: "倉庫の中", members: [{ kind: "grunt", plate: 2, x: 25, z: 52, face: W }] },
+      { name: "倉庫の中", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 25, z: 52, face: W }] },
       { name: "管理棟", members: [{ kind: "grunt", x: -23, z: 50, face: E }] },
       { name: "荷台", members: [{ kind: "grunt", x: 6, z: 30, y: 1.2, face: S }] },
       { name: "塀の裏", members: [{ kind: "charger", x: -16, z: 56, face: E }] },
@@ -390,7 +390,7 @@ const POI_FRAMES: Poi[] = [
       { name: "採掘穴", members: [{ kind: "charger", x: -46, z: 4, face: SE }] },
       { name: "段丘", members: [{ kind: "grunt", x: -63, z: -8, y: 2.4, face: E }] },
       { name: "作業小屋", members: [{ kind: "grunt", x: -62, z: 25, face: E }] },
-      { name: "西の段丘", members: [{ kind: "grunt", plate: 2, x: -72, z: 3, y: 3, face: E }] },
+      { name: "西の段丘", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: -72, z: 3, y: 3, face: E }] },
       { name: "巡回ドローン", members: [{ kind: "drone", x: -48, z: 12 }], patrol: [{ x: -48, z: 12 }, { x: -34, z: 12 }, { x: -30, z: 0 }, { x: -44, z: -6 }] },
     ],
     bins: [
@@ -416,7 +416,7 @@ const POI_FRAMES: Poi[] = [
       { name: "コンテナ置き場", members: [{ kind: "heavy", x: 36, z: -36, face: SW }] },
       { name: "西の小屋", members: [{ kind: "grunt", x: 30, z: -18, y: 3.4, face: SW }] },
       { name: "東の小屋", members: [{ kind: "grunt", x: 57, z: -36, face: W }] },
-      { name: "3 階建ての 1 階", members: [{ kind: "grunt", plate: 2, x: 49, z: -10, face: W }] },
+      { name: "3 階建ての 1 階", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 49, z: -10, face: W }] },
       { name: "通路の番", members: [{ kind: "charger", x: 34, z: -26, face: SW }] },
     ],
     bins: [
@@ -465,7 +465,7 @@ const POI_FRAMES: Poi[] = [
       // Up high, robots stand at the parapet: seen from the ground below, and seeing it.
       { name: "甲板", members: [{ kind: "grunt", x: -24, z: 7.1, y: SHIP_DECK, face: S }] },
       { name: "甲板の重機", members: [{ kind: "heavy", x: 6, z: 6.75, y: SHIP_DECK, face: S }] },
-      { name: "船橋の前", members: [{ kind: "grunt", plate: 2, x: 30, z: 7.1, y: SHIP_DECK, face: S }] },
+      { name: "船橋の前", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 30, z: 7.1, y: SHIP_DECK, face: S }] },
       { name: "浜の二体", members: [{ kind: "grunt", x: -12, z: 16, face: S }, { kind: "grunt", x: -9.5, z: 17, face: S }] },
       { name: "巡回ドローン", members: [{ kind: "drone", x: -50, z: 18 }], patrol: [{ x: -50, z: 18 }, { x: 56, z: 18 }, { x: 56, z: -16 }, { x: -50, z: -16 }] },
     ],
@@ -491,7 +491,7 @@ const POI_FRAMES: Poi[] = [
     trigger: 30,
     entry: { x: 8, z: 27, yaw: 0 },
     squads: [
-      { name: "クレーンの上", members: [{ kind: "grunt", plate: 2, x: 0.35, z: -6, y: CRANE, face: E }] },
+      { name: "クレーンの上", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 0.35, z: -6, y: CRANE, face: E }] },
       { name: "通路の重機", members: [{ kind: "heavy", x: -24, z: -13.5, face: E }] },
       { name: "通路の二体", members: [{ kind: "grunt", x: 20, z: 13.5, face: W }, { kind: "grunt", x: 23, z: 13.5, face: W }] },
       { name: "積み荷の上", members: [{ kind: "grunt", x: 23.4, z: 9, y: 5.2, face: S }] },
@@ -522,7 +522,7 @@ const POI_FRAMES: Poi[] = [
     squads: [
       { name: "炉の番", members: [{ kind: "heavy", x: -15, z: -1, face: S }] },
       { name: "B 棟の中", members: [{ kind: "grunt", x: 16, z: -2, face: S }] },
-      { name: "制御棟の屋上", members: [{ kind: "grunt", plate: 2, x: 37, z: -2.9, y: STOREY * 3, face: S }] },
+      { name: "制御棟の屋上", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 37, z: -2.9, y: STOREY * 3, face: S }] },
       { name: "A 棟の屋上", members: [{ kind: "grunt", x: -22, z: 0, y: STOREY * 3, face: S }] },
       { name: "スラグの山", members: [{ kind: "charger", x: -26, z: 12, face: E }] },
       { name: "煙突の二人", members: [{ kind: "grunt", x: -8, z: 18, face: S }, { kind: "grunt", x: -5.5, z: 19, face: S }] },

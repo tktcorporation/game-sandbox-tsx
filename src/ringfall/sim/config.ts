@@ -449,6 +449,12 @@ export const VAULT = {
   keyChance: 0.15,
   weapon: [["talon", 3], ["lance", 3], ["pike", 3], ["hornet", 3], ["maul", 2]] as [WeaponKind, Rarity][],
   armor: 3 as Rarity,
+  /**
+   * The plate (see PLATE) of the guard posted nearest each vault. The guard stands in a POI
+   * the raid clears on its way, so its plate stays light: a rare gun pierces it and the free
+   * kit's common one still does half.
+   */
+  guardPlate: 1 as Rarity,
   valuables: [["reactor"], ["core", "drive"], ["gyro", "drive", "drive"]] as ValuableKind[][],
   heals: 2,
 };
