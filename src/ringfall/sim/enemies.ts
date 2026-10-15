@@ -1,4 +1,4 @@
-import { ALLY, AWARE, CHARGER, COVER, DEG, ELITE, ENEMIES, PINCH, PLAYER, SHOT, TICK, TITAN, TURN, WORLD, type EnemyKind } from "./config";
+import { ALLY, AWARE, CHARGER, COVER, DEG, ELITE, ENEMIES, PINCH, PLAYER, SHOT, TICK, TITAN, TURN, WORLD, type EnemyKind, type Rarity } from "./config";
 import { clampToWorld, collide, dist2d, groundAt, groundLevel, los, lookAngles, onTerrain, solidAt, wrapAngle } from "./geom";
 import { steepAt, terrainHeight } from "./terrain";
 import { engageSquad, knownSpot, sense, stepSquads } from "./awareness";
@@ -31,6 +31,8 @@ interface SpawnOpts {
   appear?: boolean;
   /** A raider. */
   elite?: boolean;
+  /** Its armour plate's tier (see PLATE); none when omitted. */
+  plate?: Rarity;
 }
 
 /** Where a robot asked to appear at (x, z) on `floor` (the ground when omitted) ends up: pushed out of solids, on its floor or at hover height. */
@@ -79,6 +81,7 @@ export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi:
     targetT: 0,
     allyHit: 99,
     elite: !!o.elite,
+    plate: o.plate ?? 0,
   };
   s.enemies.push(e);
   if (o.appear) s.events.push({ t: "spawn", id: e.id, pos: { ...pos } });
@@ -90,7 +93,7 @@ export function populate(s: State) {
   const add = (sq: Squad, poi: number) => {
     const index = s.squads.length;
     s.squads.push({ name: sq.name, poi, patrol: sq.patrol ?? [], leg: 0, engaged: false, roam: !!sq.roam, sinceSeen: 0, last: { x: 0, z: 0 } });
-    for (const m of sq.members) spawnEnemy(s, m.kind, m.x, m.z, poi, index, { floor: m.y, face: m.face });
+    for (const m of sq.members) spawnEnemy(s, m.kind, m.x, m.z, poi, index, { floor: m.y, face: m.face, plate: m.plate });
   };
   POIS.forEach((p, i) => p.squads.forEach((sq) => add(sq, i)));
   ROAMERS.forEach((sq) => add(sq, -1));

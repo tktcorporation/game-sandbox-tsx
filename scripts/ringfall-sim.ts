@@ -8,18 +8,18 @@
  *
  * With a region id after the count, only that region's table is played.
  */
-import { ALLY, BAG, ENEMIES, HEALS, NOISE, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, TACTICAL, TICK, VALUABLES, WORLD } from "../src/ringfall/sim/config";
+import { ALLY, BAG, ENEMIES, HEALS, NOISE, PLATE, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, TACTICAL, TICK, VALUABLES, WORLD } from "../src/ringfall/sim/config";
 import { engageSquad, makeNoise } from "../src/ringfall/sim/awareness";
 import { spawnEnemy } from "../src/ringfall/sim/enemies";
 import { COVERS } from "../src/ringfall/sim/cover";
-import { ENEMIES as KINDS, type EnemyKind } from "../src/ringfall/sim/config";
+import { ENEMIES as KINDS, type EnemyKind, type Rarity } from "../src/ringfall/sim/config";
 import { BOXES, DECKS, EXTRA_BINS, EXTRACTS, POIS, poiIndex, REGIONS, regionHere, regionOf, ROAMERS, SPAWN, type RegionId, type Squad } from "../src/ringfall/sim/map";
 import { findPath } from "../src/ringfall/sim/nav";
 import { fieldTo, fieldsBuilt, routeLength } from "../src/ringfall/sim/hunt";
 import { dist2d, groundAt, inWorld, los, solidAt } from "../src/ringfall/sim/geom";
 import { floorLevel, highGround, landAt, LEVEL, offLowGround, offshore, terrainHeight } from "../src/ringfall/sim/terrain";
 import { Bot, SKILLS } from "../src/ringfall/sim/bot";
-import { callLeft, freeKit, idleInput, newRun, type GameEvent, type State } from "../src/ringfall/sim/state";
+import { callLeft, freeKit, idleInput, newRun, type Enemy, type GameEvent, type State } from "../src/ringfall/sim/state";
 import { step } from "../src/ringfall/sim/step";
 import { hurtPlayer } from "../src/ringfall/sim/player";
 import { hurtAlly, placeAlly } from "../src/ringfall/sim/ally";
@@ -1581,7 +1581,99 @@ function checkPullWhenAiming(): string | null {
   return null;
 }
 
-for (const err of [checkHideout(), checkBoltNoTunnel(), checkPickupWavesRouted(), checkLaterWaveFights(), checkSidestepHit(), checkWallStops(), checkPinch(), checkHealHeard(), checkPositionMatters(), checkPullWhenAiming(), checkVault(), checkQuests(), checkSettle(), checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkBoatCall(), checkSecondPickup(), checkRegionDrop(), checkConnections(), checkAllySelfUp(), checkStompHeight(), checkDropOffHighGround(), checkFieldsReused(), checkFieldsFollowRunner(), checkCliffsStop(), checkNoPits(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill(), checkLeap(), checkLeapLeavesAllyBelow(), checkLeapDowned(), checkLeapAllyCatchesUp(), checkLeapAllyDowned(), checkLeapWithItem(), checkLeapClocks(), checkLeapOffHighGround(), checkLeapUnderRoof()]) {
+/**
+ * Armour plates: a body hit from a weapon below the plate's tier is cut to
+ * `PLATE.mult[plate - rarity]`; weak-point hits, weapons that pierce the plate and the
+ * arc pass in full, and the hit event says `blocked` exactly when a plate took part.
+ * Raiders wear tier-2 plates, and each POI's vault guard a VAULT.guardPlate one.
+ */
+function checkPlates(): string | null {
+  const at = openSpot(10, 3, 3);
+  if (!at) return "plate scenario: no open ground for the test";
+  const { s, foes } = standoff(at, 8, ["grunt", "grunt"]);
+  const [plated, bare] = foes;
+  plated.plate = 2;
+  const hit = (e: Enemy, raw: number, crit: boolean, rarity?: Rarity) => {
+    e.hp = ENEMIES[e.kind].hp;
+    e.shield = ENEMIES[e.kind].shield;
+    s.events = [];
+    damageEnemy(s, e, raw, crit, bodyCenter(e), "none", "player", rarity);
+    const ev = s.events.find((x): x is Extract<GameEvent, { t: "hit" }> => x.t === "hit" && x.id === e.id);
+    return { dealt: ENEMIES[e.kind].hp + ENEMIES[e.kind].shield - (e.hp + e.shield), blocked: ev?.blocked };
+  };
+  const near = (a: number, b: number) => Math.abs(a - b) < 1e-6;
+  const raw = 20;
+  const cases: [string, ReturnType<typeof hit>, number, boolean][] = [
+    ["common body hit on plate 2", hit(plated, raw, false, 0), raw * PLATE.mult[2], true],
+    ["rare body hit on plate 2", hit(plated, raw, false, 1), raw * PLATE.mult[1], true],
+    ["common body hit on no plate", hit(bare, raw, false, 0), raw, false],
+    ["common weak-point hit on plate 2", hit(plated, raw, true, 0), raw, false],
+    ["epic body hit on plate 2", hit(plated, raw, false, 2), raw, false],
+    ["legend body hit on plate 2", hit(plated, raw, false, 3), raw, false],
+    ["damage with no weapon on plate 2", hit(plated, raw, false), raw, false],
+  ];
+  for (const [what, got, want, blocked] of cases)
+    if (!near(got.dealt, want) || got.blocked !== blocked) return `plate scenario: ${what} dealt ${got.dealt} (blocked ${got.blocked}), expected ${want} (blocked ${blocked})`;
+
+  // A real shot carries its weapon's rarity, and the teammate's counts as ALLY.rarity.
+  const shoot = (rarity: Rarity) => {
+    plated.hp = ENEMIES.grunt.hp;
+    plated.shield = ENEMIES.grunt.shield;
+    s.events = [];
+    const eye = eyePos(s);
+    const c = bodyCenter(plated);
+    const d = Math.hypot(c.x - eye.x, c.y - eye.y, c.z - eye.z);
+    fireRay(s, { kind: "pike", rarity, mag: 1 }, { x: (c.x - eye.x) / d, y: (c.y - eye.y) / d, z: (c.z - eye.z) / d });
+    return s.events.find((x): x is Extract<GameEvent, { t: "hit" }> => x.t === "hit" && x.id === plated.id);
+  };
+  const common = shoot(0);
+  const epic = shoot(2);
+  if (!common || common.crit || !common.blocked) return `plate scenario: a common rifle's body shot on plate 2 ${common ? `was ${common.crit ? "a crit" : "not blocked"}` : "missed"}`;
+  if (!epic || epic.blocked) return `plate scenario: an epic rifle's body shot on plate 2 ${epic ? "was blocked" : "missed"}`;
+  const ally = hit(plated, raw, false, ALLY.rarity);
+  if (!near(ally.dealt, raw * PLATE.mult[2 - ALLY.rarity]) || !ally.blocked) return `plate scenario: the teammate's body hit on plate 2 dealt ${ally.dealt}`;
+
+  // The arc tactical is not a weapon: a plated grunt takes its damage in full.
+  const r = newRun(5);
+  r.phase = "play";
+  const pad = POIS[PAD];
+  const g = terrainHeight(pad.x, pad.z);
+  r.player.pos = { x: pad.x, y: g, z: pad.z + 6 };
+  r.player.onGround = true;
+  r.player.yaw = 0;
+  const grunt = r.enemies.find((e) => e.kind === "grunt")!;
+  r.enemies = [grunt];
+  grunt.pos = { x: pad.x, y: g, z: pad.z - 4 };
+  grunt.aware = "engaged";
+  grunt.plate = 3;
+  const before = grunt.hp + grunt.shield;
+  const inp = idleInput();
+  inp.tactical = true;
+  step(r, inp, false);
+  const arc = before - (grunt.hp + grunt.shield);
+  if (!near(arc, TACTICAL.dmg)) return `plate scenario: an arc on a plate-3 grunt dealt ${arc}, expected ${TACTICAL.dmg}`;
+
+  // Who wears plates: the raiders, and the grunt nearest each POI's vault bin (the pad's is the titan's).
+  const raid = padRun();
+  raid.raiderT = TICK;
+  const was = raid.enemies.length;
+  step(raid, idleInput(), false);
+  const raiders = raid.enemies.slice(was);
+  if (raiders.length === 0 || raiders.some((e) => e.plate !== RAIDERS.plate)) return `plate scenario: raiders wear plates ${raiders.map((e) => e.plate).join(",")}, expected ${RAIDERS.plate}`;
+  const run = newRun(5);
+  for (const [i, poi] of POIS.entries()) {
+    const vault = poi.bins.find((b) => b.vault);
+    if (!vault || poi.id === "pad") continue;
+    const guards = poi.squads.flatMap((sq) => sq.members).filter((m) => m.kind === "grunt");
+    const guard = guards.reduce((a, b) => (Math.hypot(b.x - vault.x, b.z - vault.z) < Math.hypot(a.x - vault.x, a.z - vault.z) ? b : a));
+    if (guard.plate !== VAULT.guardPlate) return `plate scenario: ${poi.id}'s vault guard wears plate ${guard.plate ?? 0}, expected ${VAULT.guardPlate}`;
+    const live = run.enemies.filter((e) => e.poi === i && e.plate > 0);
+    if (live.length !== 1 || live[0].plate !== VAULT.guardPlate) return `plate scenario: ${poi.id} spawns ${live.length} plated robots, expected its vault guard alone`;
+  }
+  return null;
+}
+
+for (const err of [checkPlates(), checkHideout(), checkBoltNoTunnel(), checkPickupWavesRouted(), checkLaterWaveFights(), checkSidestepHit(), checkWallStops(), checkPinch(), checkHealHeard(), checkPositionMatters(), checkPullWhenAiming(), checkVault(), checkQuests(), checkSettle(), checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkBoatCall(), checkSecondPickup(), checkRegionDrop(), checkConnections(), checkAllySelfUp(), checkStompHeight(), checkDropOffHighGround(), checkFieldsReused(), checkFieldsFollowRunner(), checkCliffsStop(), checkNoPits(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill(), checkLeap(), checkLeapLeavesAllyBelow(), checkLeapDowned(), checkLeapAllyCatchesUp(), checkLeapAllyDowned(), checkLeapWithItem(), checkLeapClocks(), checkLeapOffHighGround(), checkLeapUnderRoof()]) {
   if (err) {
     console.error(err);
     process.exit(1);

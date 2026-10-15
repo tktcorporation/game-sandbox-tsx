@@ -398,6 +398,27 @@ export function buildEnemy(kind: EnemyKind): EnemyModel {
   return { root, body, eye, eyeHalo, shield, legs, mats };
 }
 
+/** The front of each kind's body that a plate covers: width, height, centre height, and the face's z. */
+const CHEST: Record<EnemyKind, { w: number; h: number; y: number; z: number }> = {
+  drone: { w: 0.5, h: 0.32, y: 0.12, z: -0.42 },
+  grunt: { w: 0.85, h: 0.75, y: 1.25, z: -0.3 },
+  charger: { w: 0.7, h: 0.32, y: 1.0, z: -0.42 },
+  heavy: { w: 1.4, h: 1.15, y: 1.55, z: -0.5 },
+  titan: { w: 3.4, h: 2.2, y: 3.6, z: -1.7 },
+};
+
+/**
+ * Armour plates bolted over the front of a robot's body, in its plate's rarity colour:
+ * the player tells at a glance which robots their gun cannot pierce.
+ */
+export function addPlates(m: EnemyModel, kind: EnemyKind, tier: Rarity) {
+  const c = CHEST[kind];
+  const mat = flat(RARITY_COLOR[tier]);
+  const t = c.w * 0.07;
+  m.body.add(mesh(new THREE.BoxGeometry(c.w, c.h * 0.48, t), mat, 0, c.y + c.h * 0.22, c.z - t / 2));
+  m.body.add(mesh(new THREE.BoxGeometry(c.w * 0.75, c.h * 0.32, t), mat, 0, c.y - c.h * 0.22, c.z - t / 2));
+}
+
 export interface AllyModel {
   root: THREE.Group;
   /** Turns with the teammate's yaw; tipped over when it is down. */

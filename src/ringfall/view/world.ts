@@ -4,7 +4,7 @@ import { BOXES, EXTRACTS } from "../sim/map";
 import { groundAt } from "../sim/geom";
 import { DAM_FACE, floorLevel, highGround, LANDS, LEVEL, offshore, steepAt, surfaceAt, terrainHeight } from "../sim/terrain";
 import { callLeft, type GameEvent, type State, type Vec3 } from "../sim/state";
-import { PAL, RARITY_COLOR, SCOPE_IN, buildAlly, buildBin, buildBoat, buildBox, mergeChunk, buildCare, buildDropship, buildEnemy, buildGun, buildLootItem, flat, glow, haloSprite, type EnemyModel } from "./models";
+import { PAL, RARITY_COLOR, SCOPE_IN, buildAlly, buildBin, buildBoat, buildBox, mergeChunk, buildCare, buildDropship, buildEnemy, buildGun, buildLootItem, addPlates, flat, glow, haloSprite, type EnemyModel } from "./models";
 
 /*
  * Renders a State in first person. It reads the state and the tick's events and
@@ -24,6 +24,8 @@ const CHUNK = 64;
 const FOG_FAR = 420;
 /** Robots, bins and loot further than this are not drawn: they are specks even through a scope. */
 const THINGS_FAR = 220;
+/** Sparks off a plate that took part of a hit: grey like its damage number. */
+const PLATE_SPARK = 0x9aa3b5;
 
 /** Ground the harbor paints apart: the old bay floor white with salt, and the paved town and quays. */
 const SALT = new Set(["塩田", "難破船"]);
@@ -498,7 +500,9 @@ export class World {
             v.flash = 0.07;
             if (e.shield) v.shieldFlash = 0.18;
           }
-          this.burst(e.pos, e.crit ? PAL.hot : e.shield ? RARITY_COLOR[e.tier] : 0xffffff, e.crit ? 7 : 4, 4, 0.06, 6, 0.3);
+          // A plate turning a hit aside throws grey sparks, so the player sees the gun is too weak.
+          if (e.blocked) this.burst(e.pos, PLATE_SPARK, 7, 6, 0.05, 9, 0.25);
+          else this.burst(e.pos, e.crit ? PAL.hot : e.shield ? RARITY_COLOR[e.tier] : 0xffffff, e.crit ? 7 : 4, 4, 0.06, 6, 0.3);
           break;
         }
         case "shieldBreak":
@@ -647,6 +651,7 @@ export class World {
               o.material.color.setHex(PAL.eliteArmor);
             }
           });
+        if (e.plate > 0) addPlates(m, e.kind, e.plate);
         this.scene.add(m.root);
         const beam = new THREE.Mesh(
           new THREE.CylinderGeometry(0.06, ENEMIES[e.kind].radius * 0.45, 40, 8, 1, true),

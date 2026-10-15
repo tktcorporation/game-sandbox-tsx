@@ -165,6 +165,11 @@ export interface Enemy {
   allyHit: number;
   /** A raider: tougher, deadlier, quicker to turn, and it goes round the player's side. */
   elite: boolean;
+  /**
+   * Its armour plate's tier (0 = none, see PLATE): body hits from weapons of lower
+   * rarity are reduced; weak-point hits pass in full.
+   */
+  plate: Rarity;
 }
 
 export interface SquadState {
@@ -262,7 +267,7 @@ export type GameEvent =
   | { t: "shot"; weapon: WeaponKind; rarity: Rarity }
   | { t: "tracer"; from: Vec3; to: Vec3; hit: boolean }
   | { t: "impact"; pos: Vec3 }
-  | { t: "hit"; id: number; pos: Vec3; dmg: number; crit: boolean; shield: boolean; tier: Rarity; flank: Flank; ally: boolean }
+  | { t: "hit"; id: number; pos: Vec3; dmg: number; crit: boolean; shield: boolean; tier: Rarity; flank: Flank; ally: boolean; /** A plate took part of this hit. */ blocked: boolean }
   | { t: "shieldBreak"; id: number; pos: Vec3; tier: Rarity }
   | { t: "kill"; id: number; kind: EnemyKind; pos: Vec3; crit: boolean; last: boolean; ally: boolean }
   | { t: "allyShot"; from: Vec3; to: Vec3; hit: boolean }

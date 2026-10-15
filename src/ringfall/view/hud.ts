@@ -34,6 +34,8 @@ interface DmgNum {
   crit: boolean;
   /** The best angle among the hits merged into this number. */
   flank: Flank;
+  /** A plate took part of one of the hits merged into this number. */
+  blocked: boolean;
 }
 
 /** Tag shown with a damage number, by how the shot met the robot. */
@@ -116,16 +118,20 @@ export class Hud {
           n.pos = e.pos;
           n.crit = n.crit || e.crit;
           if (FLANK_RANK[e.flank] > FLANK_RANK[n.flank]) n.flank = e.flank;
+          n.blocked = n.blocked || e.blocked;
         } else {
           const el = document.createElement("div");
           el.className = "dmg";
           this.dmgLayer.appendChild(el);
-          this.nums.push({ el, id: e.id, pos: e.pos, value: e.dmg, age: 0, life: 0, crit: e.crit, flank: e.flank });
+          this.nums.push({ el, id: e.id, pos: e.pos, value: e.dmg, age: 0, life: 0, crit: e.crit, flank: e.flank, blocked: e.blocked });
         }
         const cur = this.nums.find((x) => x.id === e.id && x.age === 0)!;
         const tag = FLANK_TAG[cur.flank];
-        cur.el.innerHTML = `${tag ? `<small>${tag}</small>` : ""}${Math.round(cur.value)}`;
-        cur.el.className = `dmg${cur.crit ? " crit" : ""}${tag ? " flank" : ""}${cur.flank === "front" ? " front" : ""}`;
+        // A weak-point hit passes a plate in full, so a number with one is not shown as blocked.
+        const plate = cur.blocked && !cur.crit;
+        const tags = [tag, plate ? "装甲" : undefined].filter(Boolean).join(" ");
+        cur.el.innerHTML = `${tags ? `<small>${tags}</small>` : ""}${Math.round(cur.value)}`;
+        cur.el.className = `dmg${cur.crit ? " crit" : ""}${tag ? " flank" : ""}${cur.flank === "front" ? " front" : ""}${plate ? " plate" : ""}`;
         cur.el.style.color = cur.crit ? "" : e.shield ? RARITY_CSS[e.tier] : "#ffffff";
         break;
       }
