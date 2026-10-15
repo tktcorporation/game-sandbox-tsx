@@ -300,6 +300,22 @@ export const BOOST = { share: 1 };
 export const BAG = { slots: 10 };
 
 /**
+ * The depots outside the POIs (`DEPOTS`): walked up to once, one stays on for good. Its use
+ * key sends the bag home, or, with the bag empty, leaves the raid there; a later raid may
+ * start from any depot already on. The map is uncovered cell by cell where the player walks.
+ */
+export const DEPOT = {
+  /** Metres: walking this close switches a depot on. */
+  radius: 6,
+  /** Seconds standing at it after choosing to leave. */
+  leave: 5,
+  /** Metres: a side of one cell of the explored map. */
+  cell: 20,
+  /** Cells uncovered round the player's own, each way. */
+  sight: 1,
+};
+
+/**
  * Between raids: what the player keeps, what things cost, and what is lost. Whatever is
  * taken into a raid is lost with it on a wipe, except what fits in the pouch: the most
  * valuable things in the bag, up to its slots. A raid with the free kit risks nothing:

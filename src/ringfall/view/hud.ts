@@ -656,6 +656,7 @@ export class Hud {
       return `${key("E")}${VALUABLES[v].label}と入れ替える（${out.join("・")}を捨てる）`;
     }
     if (t.kind === "care") return `${key("E")}補給ポッドを開ける`;
+    if (t.kind === "depot") return "";
     if (t.kind === "armor") return `${key("E")}<span class="r" style="color:${RARITY_CSS[t.loot.rarity]}">アーマー Lv${t.loot.rarity}</span>に着替える（Lv${p.armor} を置く）`;
     const wl = t.loot;
     const swap = p.weapons.includes(null) ? "" : `（${WEAPONS[p.weapons[p.slot]!.kind].name} と交換）`;

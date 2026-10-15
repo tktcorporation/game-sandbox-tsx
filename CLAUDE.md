@@ -40,6 +40,10 @@ only with that POI's key; keys drop from the bins of the POI named by its `keyFr
 POIs have a stable `id` (`PoiId` in `map.ts`); saves, quests, `keyFrom` and `EXTRA_BINS` refer to a
 POI by it, never by its place in `POIS` (the run's state may index `POIS` internally). The profile
 is versioned (`Profile.v`), and `parseProfile()` moves older saves forward.
+Each POI has a depot on its road (`DEPOTS` in `map.ts`, run by `stepDepots()` in `world.ts`): walking
+up switches it on for good, its use key sends the bag home (it survives a wipe) or, with the bag empty
+and no squad fighting, leaves the raid there. The profile keeps the depots on (`Profile.depots`), from
+which `newRun(seed, kit, region, start)` may begin on the ground, and the explored map (`Profile.seen`).
 The hideout is the long-term goal: modules built level by level from specific valuables and
 credits taken from the stash (`build()` in `profile.ts`; levels, costs and prerequisites in
 `HIDEOUT`, effects in `HIDEOUT_EFFECT`, both in `config.ts`; `meta/hideout.ts` holds the pure

@@ -1,6 +1,6 @@
 import { HEALS as HEAL_SPECS, HIDEOUT, META, VALUABLES, type HealKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
-import { POIS, poiIndex, REGIONS, type PoiId, type RegionId } from "../sim/map";
-import type { Kit, State } from "../sim/state";
+import { DEPOTS, POIS, poiIndex, REGIONS, type PoiId, type RegionId } from "../sim/map";
+import { encodeSeen, type Kit, type State } from "../sim/state";
 import { craftDone, emptyHideout, infirmaryHeals, MODULES, nextLevel, onSale, pouchSlots, shopRarity, stashCap, stillNeeded, unmet, type Hideout } from "./hideout";
 import { built, creditRaid, emptyLog, need, offered, type Quest, type QuestLog } from "./quests";
 
@@ -22,7 +22,7 @@ export interface Escape {
 
 /** What persists between raids. */
 export interface Profile {
-  v: 5;
+  v: 6;
   cash: number;
   stash: Item[];
   raids: number;
@@ -37,6 +37,10 @@ export interface Profile {
   escaped: Escape | null;
   /** The next raid's seed: fixed before the drop, so the radio can tell what that raid holds. */
   seed: number;
+  /** The depots switched on in any raid: they stay on, and a raid may start from one. */
+  depots: PoiId[];
+  /** The explored map (`encodeSeen()`), grown by every raid. */
+  seen: string;
 }
 
 export const HEALS: HealKind[] = ["cell", "battery", "syringe", "medkit"];
@@ -44,7 +48,7 @@ export const HEALS: HealKind[] = ["cell", "battery", "syringe", "medkit"];
 export function newProfile(seed = 1): Profile {
   const stash: Item[] = META.start.weapons.map((w) => ({ t: "weapon", ...w }));
   for (const k of HEALS) for (let i = 0; i < META.start.heals[k]; i++) stash.push({ t: "heal", kind: k });
-  return { v: 5, cash: META.start.cash, stash, raids: 0, extracted: 0, time: 0, quests: emptyLog(), region: "reservoir", hideout: emptyHideout(), escaped: null, seed: seed & 0xffff };
+  return { v: 6, cash: META.start.cash, stash, raids: 0, extracted: 0, time: 0, quests: emptyLog(), region: "reservoir", hideout: emptyHideout(), escaped: null, seed: seed & 0xffff, depots: [], seen: "" };
 }
 
 /** The seed of the raid after one started from `seed`. */
@@ -239,10 +243,14 @@ function pay(p: Profile, q: Quest): { profile: Profile; sold: Item[]; soldFor: n
   return store({ ...p, cash: p.cash + q.reward.cash }, q.reward.items.map((i) => ({ ...i })));
 }
 
-/** Puts what came off the island into the stash, and pays the quests the raid finished. */
+/**
+ * Puts what came off the island into the stash, and pays the quests the raid finished.
+ * What was sent home from a depot arrives however the raid ended; the depots switched on
+ * and the map explored are kept too.
+ */
 export function settle(p: Profile, s: State): Settlement {
   const pl = s.player;
-  const home: Item[] = [];
+  const home: Item[] = s.sent.map((v): Item => ({ t: "valuable", kind: v }));
   if (s.outcome === "extracted") {
     for (const w of pl.weapons) if (w && !w.loan) home.push({ t: "weapon", kind: w.kind, rarity: w.rarity });
     if (pl.armor > 0) home.push({ t: "armor", tier: pl.armor });
@@ -257,7 +265,8 @@ export function settle(p: Profile, s: State): Settlement {
   const rewards = finished.flatMap((q) => q.reward.items.map((i): Item => ({ ...i })));
   const cash = finished.reduce((n, q) => n + q.reward.cash, 0);
   const { profile, sold, soldFor } = store({ ...p, cash: p.cash + cash }, [...home, ...rewards]);
-  const next = { ...profile, quests: log, raids: p.raids + 1, extracted: p.extracted + (s.outcome === "extracted" ? 1 : 0), time: p.time + s.time, seed: nextSeed(p.seed) };
+  const depots = DEPOTS.map((d) => d.poi).filter((id, i) => p.depots.includes(id) || s.depots[i]);
+  const next = { ...profile, quests: log, raids: p.raids + 1, extracted: p.extracted + (s.outcome === "extracted" ? 1 : 0), time: p.time + s.time, seed: nextSeed(p.seed), depots, seen: encodeSeen(s.seen) };
   // Quests the raid opened may ask for a hideout level already built.
   const claimed = claimBuilt(next);
   return { profile: claimed.profile, home, quests: [...finished, ...claimed.quests], sold: [...sold, ...claimed.sold], soldFor: soldFor + claimed.soldFor };
@@ -359,12 +368,13 @@ const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
 /**
  * Accepts a stored profile only if it has the right shape. A v1 profile gains an empty
  * quest log; v1 and v2 keys name their POI by number and are moved to ids; profiles before
- * v4 drop into the reservoir; profiles before v5 start with an empty hideout.
+ * v4 drop into the reservoir; profiles before v5 start with an empty hideout; profiles before
+ * v6 have no depot on and nothing explored.
  */
 export function parseProfile(raw: unknown, seed = 1): Profile | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (![1, 2, 3, 4, 5].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
+  if (![1, 2, 3, 4, 5, 6].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
   const old = o.v === 1 || o.v === 2;
   const migrate = (i: unknown): unknown => {
     if (!old || !i || typeof i !== "object" || (i as Record<string, unknown>).t !== "key") return i;
@@ -390,8 +400,9 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   const e = o.escaped as Record<string, unknown> | null | undefined;
   const escaped = craftDone(hideout) ? { raids: Number(e?.raids) || 0, extracted: Number(e?.extracted) || 0, time: Number(e?.time) || 0 } : null;
   const num = (x: unknown) => (typeof x === "number" && x >= 0 ? x : 0);
+  const depots = Array.isArray(o.depots) ? [...new Set(o.depots.filter((d): d is PoiId => typeof d === "string" && poiIndex(d as PoiId) >= 0))] : [];
   return {
-    v: 5,
+    v: 6,
     cash: Math.max(0, Math.floor(o.cash)),
     stash: o.stash.map(migrate).filter(ok).slice(0, stashCap(hideout)),
     raids: num(o.raids),
@@ -402,5 +413,7 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     hideout,
     escaped,
     seed: Number.isInteger(o.seed) ? (o.seed as number) & 0xffff : seed & 0xffff,
+    depots,
+    seen: typeof o.seen === "string" && /^[0-9a-f]*$/.test(o.seen) ? o.seen : "",
   };
 }

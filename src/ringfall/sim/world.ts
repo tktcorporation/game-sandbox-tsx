@@ -1,11 +1,11 @@
-import { ALLY, AWARE, BAG, ENEMIES, HEALS, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, TICK, TOP_BINS, VALUABLES, VAULT, WORLD, type HealKind } from "./config";
+import { ALLY, AWARE, BAG, DEPOT, ENEMIES, HEALS, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, TICK, TOP_BINS, VALUABLES, VAULT, WORLD, type HealKind } from "./config";
 import { dist2d, groundAt, los, solidAt } from "./geom";
 import { highGround, steepAt, terrainHeight } from "./terrain";
-import { EXTRACTS, POIS, type ExtractPoint } from "./map";
+import { DEPOTS, EXTRACTS, POIS, type ExtractPoint } from "./map";
 import { spawnEnemy, spawnSpot } from "./enemies";
 import { cellsAround, fieldTo, nextStep } from "./hunt";
 import { raiseAlly, startHelp } from "./ally";
-import { boosted, callLeft, rand, type Input, type Loot, type State, type Weapon } from "./state";
+import { boosted, callLeft, cellOf, exploreSize, rand, type Input, type Loot, type State, type Weapon } from "./state";
 import type { EnemyKind, ValuableKind } from "./config";
 import { makeNoise } from "./awareness";
 
@@ -298,6 +298,7 @@ export function stepLoot(s: State, input: Input) {
   else if (t?.kind === "care") openCare(s);
   else if (t?.kind === "weapon") takeWeapon(s, t.loot);
   else if (t?.kind === "swap") swapInto(s, t.loot);
+  else if (t?.kind === "depot") useDepot(s, t.index);
   else if (t?.kind === "armor") {
     const shed: Loot[] = [];
     s.loot = s.loot.filter((o) => o !== t.loot);
@@ -389,11 +390,19 @@ function stepSearch(s: State, alive: boolean) {
 export const searchTime = (b: { flare: boolean; vault: boolean }) => (b.vault ? SEARCH.vaultTime : b.flare ? SEARCH.flareTime : SEARCH.time);
 
 /** What one press of the use key acts on. The HUD shows its prompt from the same choice. */
-export type UseTarget = { kind: "ally" } | { kind: "bin"; index: number } | { kind: "care" } | { kind: "weapon"; loot: Loot } | { kind: "swap"; loot: Loot } | { kind: "armor"; loot: Loot };
+export type UseTarget =
+  | { kind: "ally" }
+  | { kind: "bin"; index: number }
+  | { kind: "care" }
+  | { kind: "weapon"; loot: Loot }
+  | { kind: "swap"; loot: Loot }
+  | { kind: "armor"; loot: Loot }
+  | { kind: "depot"; index: number };
 
 /**
  * A downed teammate within reach comes first, however close any loot is; otherwise
- * the closest of bin, care package or weapon within reach.
+ * the closest of bin, care package or weapon within reach; and only when none of those
+ * is, a depot that is on, so a press meant for loot never sends the bag home or ends the raid.
  */
 export function useTarget(s: State, armor = true): UseTarget | null {
   const p = s.player;
@@ -415,7 +424,67 @@ export function useTarget(s: State, armor = true): UseTarget | null {
     // A valuable that does not fit is worth a press when something cheaper can make way.
     else if (l.kind === "valuable" && l.valuable && makeRoom(p.haul, l.valuable)?.length) picks.push({ d: dist2d(l.pos, p.pos) - 0.3, t: { kind: "swap", loot: l } });
   }
-  return picks.filter((k) => k.d < PLAYER.interactRange).sort((x, y) => x.d - y.d)[0]?.t ?? null;
+  const pick = picks.filter((k) => k.d < PLAYER.interactRange).sort((x, y) => x.d - y.d)[0]?.t;
+  if (pick) return pick;
+  const depot = DEPOTS.findIndex((d, i) => s.depots[i] && dist2d(d, p.pos) < PLAYER.interactRange + 1 && level(d.y));
+  return depot >= 0 && !depotBlocked(s) ? { kind: "depot", index: depot } : null;
+}
+
+/** A depot cannot be used while any squad is fighting: neither the bag nor the player leaves under fire. */
+export const depotBlocked = (s: State) => s.squads.some((q) => q.engaged);
+
+/** The use key at a depot: a bag with anything in it goes home; an empty one means leaving the raid there. */
+function useDepot(s: State, index: number) {
+  const p = s.player;
+  if (p.haul.length) {
+    const value = p.haul.reduce((n, k) => n + VALUABLES[k].value, 0);
+    s.events.push({ t: "deposit", n: p.haul.length, value });
+    s.sent.push(...p.haul);
+    p.haul = [];
+  } else if (!s.leaving) {
+    s.leaving = { depot: index, t: DEPOT.leave };
+    s.events.push({ t: "leaveStart" });
+  }
+}
+
+/**
+ * The depots: walking up to one switches it on; leaving at one takes standing there, out of
+ * any fight, for `DEPOT.leave` seconds. The explored map is marked round the player as they go.
+ */
+export function stepDepots(s: State) {
+  if (s.phase !== "play") return;
+  const p = s.player;
+  const up = p.downed <= 0;
+  DEPOTS.forEach((d, i) => {
+    if (!s.depots[i] && up && dist2d(d, p.pos) < DEPOT.radius && Math.abs(d.y - p.pos.y) < 2) {
+      s.depots[i] = true;
+      s.events.push({ t: "depotOn", poi: d.poi });
+    }
+  });
+  const cell = cellOf(p.pos.x, p.pos.z);
+  if (cell >= 0 && cell !== s.cell) {
+    s.cell = cell;
+    const { cols, rows } = exploreSize();
+    const c = cell % cols;
+    const r = Math.floor(cell / cols);
+    for (let dr = -DEPOT.sight; dr <= DEPOT.sight; dr++)
+      for (let dc = -DEPOT.sight; dc <= DEPOT.sight; dc++)
+        if (r + dr >= 0 && r + dr < rows && c + dc >= 0 && c + dc < cols) s.seen[(r + dr) * cols + c + dc] = 1;
+  }
+  const l = s.leaving;
+  if (!l) return;
+  if (!up || dist2d(DEPOTS[l.depot], p.pos) > PLAYER.interactRange + 1.5 || depotBlocked(s)) {
+    s.leaving = null;
+    s.events.push({ t: "leaveCancel" });
+    return;
+  }
+  l.t -= TICK;
+  if (l.t > 0) return;
+  s.leaving = null;
+  s.leftAt = DEPOTS[l.depot].poi;
+  s.phase = "done";
+  s.outcome = "extracted";
+  s.events.push({ t: "done" });
 }
 
 function openCare(s: State) {

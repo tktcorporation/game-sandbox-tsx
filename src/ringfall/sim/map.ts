@@ -546,6 +546,32 @@ export const POIS: Poi[] = POI_FRAMES.map((p, i) => placePoi(p, AT[i]));
 /** A POI's place in `POIS` (and in the run's per-POI state), from its id. */
 export const poiIndex = (id: PoiId) => POIS.findIndex((p) => p.id === id);
 
+/** A depot (`DEPOT`): a point on the ground facing its POI, with nothing built there to walk round. */
+export interface Depot {
+  poi: PoiId;
+  x: number;
+  y: number;
+  z: number;
+  /** Facing its POI (0 = north / -z). */
+  yaw: number;
+}
+
+/**
+ * One depot per POI, on the road 6 m further out than its entry: in reach on the way in
+ * or out, yet outside the fight round the POI. They are not boxes and keep no ground clear,
+ * so the island's cover is laid out the same with or without them.
+ */
+export const DEPOTS: Depot[] = POIS.map((p) => {
+  const ax = p.entry.x - p.x;
+  const az = p.entry.z - p.z;
+  const len = Math.hypot(ax, az);
+  const at = onFloor({ x: +(p.entry.x + (ax / len) * 6).toFixed(1), z: +(p.entry.z + (az / len) * 6).toFixed(1) });
+  return { poi: p.id, x: at.x, y: at.y, z: at.z, yaw: Math.atan2(p.x - at.x, -(p.z - at.z)) };
+});
+
+/** A depot's place in `DEPOTS` (and in the run's `depots`), from its POI. */
+export const depotIndex = (poi: PoiId) => DEPOTS.findIndex((d) => d.poi === poi);
+
 export type ExtractId = "ship" | "flare" | "village" | "boat";
 
 /**
