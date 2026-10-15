@@ -556,6 +556,131 @@ console.log(JSON.stringify((await read()).stats));
   const end = await read();
   console.log(`harbor raid: fought ${fought}, cleared ${end.stats.cleared.join(",") || "-"}, at ${end.player.x},${end.player.z}`);
 }
+
+/*
+ * The hideout, from saved profiles: a mid-game base (the tab, a module's needs with where
+ * they are found, building, the radio's report, the warning before selling a needed part)
+ * on the desktop and a phone on its side, then the escape craft's last stage and the ending.
+ */
+const KEY = "ringfall.profile.v1";
+const bag = (list) => list.flatMap(([kind, n]) => Array.from({ length: n }, () => ({ t: "valuable", kind })));
+const midGame = {
+  v: 5, cash: 6400, raids: 14, extracted: 11, time: 9000, region: "reservoir", seed: 777, escaped: null,
+  quests: { progress: {}, done: ["grunts", "village", "power", "parts", "drones"] },
+  hideout: { generator: 2, infirmary: 1, workbench: 1, storage: 1, radio: 1, pouch: 1, craft: 0 },
+  stash: [{ t: "weapon", kind: "pike", rarity: 1 }, { t: "heal", kind: "cell" }, ...bag([["fuse", 5], ["parts", 4], ["wire", 5], ["board", 4], ["drive", 1], ["gyro", 1]])],
+};
+const lastStage = {
+  ...midGame, cash: 15000, raids: 36, extracted: 29, time: 22000, seed: 31,
+  hideout: { generator: 3, infirmary: 3, workbench: 2, storage: 3, radio: 2, pouch: 2, craft: 3 },
+  stash: bag([["reactor", 1], ["core", 1], ["gyro", 4], ["drive", 3], ["board", 2]]),
+};
+const withProfile = async (ctx, profile) => {
+  const pg = await ctx.newPage();
+  pg.on("pageerror", (e) => errors.push(`hideout pageerror: ${e.message}`));
+  pg.on("console", (m) => m.type() === "error" && !/fonts\.g|ERR_TUNNEL|net::/.test(m.text()) && errors.push(`hideout console: ${m.text()}`));
+  await pg.addInitScript(([k, v]) => localStorage.setItem(k, v), [KEY, JSON.stringify(profile)]);
+  await pg.goto(`http://localhost:${port}/ringfall/`, { waitUntil: "load" });
+  await pg.waitForTimeout(300);
+  return pg;
+};
+const readOf = async (pg) => JSON.parse(await pg.evaluate(() => window.render_game_to_text()));
+/** Hub and ending parts that spill past the screen, or lists that scroll sideways. */
+const spills = (pg) =>
+  pg.evaluate(() => {
+    const out = [];
+    for (const el of document.querySelectorAll("#hub .hub-inner, #hub .hub-tabs, #hub-side, #hub-stash, #hub .hub-foot, #ending .ending-inner, #ending-back")) {
+      const r = el.getBoundingClientRect();
+      if (r.width && (r.right > innerWidth + 1 || r.bottom > innerHeight + 1)) out.push(`${el.id || el.className} ends at ${Math.round(r.right)}x${Math.round(r.bottom)}`);
+      if (el.scrollWidth > el.clientWidth + 1) out.push(`${el.id || el.className} scrolls sideways`);
+    }
+    return out;
+  });
+{
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+  const pg = await withProfile(ctx, midGame);
+  await pg.click("#start");
+  // The radio (Lv1) names the POI whose bins lean rare in the next raid.
+  const intel = await pg.evaluate(() => document.querySelector("#hub-side .intel")?.textContent ?? "");
+  await pg.click('#hub [data-act=tab][data-arg=hideout]');
+  const mods = await pg.locator("#hub-side .mod").count();
+  if (mods !== 7) errors.push(`hideout: the tab lists ${mods} modules, not 7`);
+  await pg.screenshot({ path: `${out}/40-hideout.png` });
+  // The generator's next level lacks parts: each shows how many are short and where they are found.
+  await pg.click('#hub-side [data-act=mod][data-arg=generator]');
+  const hints = await pg.locator("#hub-side .mod.open .req small").allTextContents();
+  if (hints.length < 2 || !hints.every((h) => /%/.test(h))) errors.push(`hideout: the generator's needs show no places to find them (${hints.join(" / ")})`);
+  if (!(await pg.locator("#hub-side .mod.open .req:not(.ok)").count()) || !(await pg.locator("#hub-side .mod.open [data-act=build]").isDisabled())) errors.push("hideout: the generator's missing parts are not marked, or it can be built");
+  await pg.screenshot({ path: `${out}/41-hideout-needs.png` });
+  // Building the storage's next level takes its parts and makes room.
+  const h0 = await readOf(pg);
+  await pg.click('#hub-side [data-act=mod][data-arg=storage]');
+  await pg.click('#hub-side [data-act=build][data-arg=storage]');
+  const h1 = await readOf(pg);
+  if (h1.profile.hideout.storage !== 2 || h1.profile.stash >= h0.profile.stash || !/\/ 60/.test(await pg.textContent("#hub-stash-count"))) errors.push(`hideout: building the storage left ${JSON.stringify(h1.profile)}`);
+  await pg.screenshot({ path: `${out}/42-hideout-built.png` });
+  // Selling a part the hideout still needs asks a second press.
+  await pg.click('#hub [data-act=tab][data-arg=shop]');
+  const board = pg.locator("#hub-stash [data-act=sell]", { hasText: "回路基板" });
+  await board.click();
+  const warned = await pg.locator("#hub-stash .warn").count();
+  const h2 = await readOf(pg);
+  if (!warned || h2.profile.stash !== h1.profile.stash) errors.push("hideout: a needed board was sold without a warning");
+  await pg.screenshot({ path: `${out}/43-hub-sell-warn.png` });
+  await board.click();
+  if ((await readOf(pg)).profile.stash !== h1.profile.stash - 1) errors.push("hideout: the second press did not sell the board");
+  // The raid deployed next is the one the radio told of.
+  await pg.click('#hub [data-act=tab][data-arg=kit]');
+  await pg.click("#hub-free");
+  const raid = await readOf(pg);
+  if (!intel.includes(raid.boost.name)) errors.push(`hideout: the radio said "${intel}", the raid boosts ${raid.boost.name}`);
+  await ctx.close();
+}
+{
+  const ctx = await browser.newContext({ viewport: { width: 740, height: 360 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+  const pg = await withProfile(ctx, midGame);
+  await pg.tap("#start");
+  await pg.tap('#hub [data-act=tab][data-arg=hideout]');
+  await pg.waitForTimeout(100);
+  let fit = await spills(pg);
+  await pg.screenshot({ path: `${out}/m10-hideout.png` });
+  await pg.tap('#hub-side [data-act=mod][data-arg=craft]');
+  await pg.locator("#hub-side .mod.open").scrollIntoViewIfNeeded();
+  fit = fit.concat(await spills(pg));
+  await pg.screenshot({ path: `${out}/m11-hideout-craft.png` });
+  await pg.tap('#hub [data-act=tab][data-arg=kit]');
+  fit = fit.concat(await spills(pg));
+  await pg.screenshot({ path: `${out}/m12-hub-intel.png` });
+  if (fit.length) errors.push(`hideout on a phone: ${[...new Set(fit)].join(", ")} (740x360)`);
+  await ctx.close();
+}
+for (const [size, name] of [[{ width: 1280, height: 720 }, "44-ending"], [{ width: 740, height: 360 }, "m13-ending"]]) {
+  const phone = size.width < 800;
+  const ctx = await browser.newContext({ viewport: size, ...(phone ? { deviceScaleFactor: 2, isMobile: true, hasTouch: true } : {}) });
+  const pg = await withProfile(ctx, lastStage);
+  const press = (sel) => (phone ? pg.tap(sel) : pg.click(sel));
+  await press("#start");
+  await press('#hub [data-act=tab][data-arg=hideout]');
+  await press('#hub-side [data-act=mod][data-arg=craft]');
+  await press('#hub-side [data-act=build][data-arg=craft]');
+  await pg.waitForTimeout(200);
+  const e = await readOf(pg);
+  if (e.screen !== "ending" || !e.profile.escaped || e.profile.hideout.craft !== 4) errors.push(`ending: finishing the craft showed ${e.screen} (${JSON.stringify(e.profile.hideout)})`);
+  const stats = await pg.locator("#ending-stats > div").count();
+  if (stats !== 4) errors.push(`ending: ${stats} stats, not 4`);
+  const fit = await spills(pg);
+  if (fit.length) errors.push(`ending (${size.width}x${size.height}): ${fit.join(", ")}`);
+  await pg.screenshot({ path: `${out}/${name}.png` });
+  await press("#ending-back");
+  const back = await readOf(pg);
+  if (back.screen !== "hub" || !/完成/.test(await pg.textContent("#hub-record"))) errors.push(`ending: going on left ${back.screen} without the craft marked done`);
+  if (!phone) {
+    await press('#hub [data-act=tab][data-arg=hideout]');
+    if (!(await pg.locator("#hub-side .escaped").count())) errors.push("ending: the hideout does not show the craft done");
+    await pg.screenshot({ path: `${out}/45-hideout-done.png` });
+  }
+  await ctx.close();
+}
 console.log(`screens: ${[...taken].join(", ")}`);
 await browser.close();
 server.close();

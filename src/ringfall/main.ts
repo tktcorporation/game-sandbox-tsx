@@ -3,7 +3,7 @@ import { Bot, SKILLS } from "./sim/bot";
 import { dist2d } from "./sim/geom";
 import { terrainHeight } from "./sim/terrain";
 import { callLeft, freeKit, idleInput, newRun, type GameEvent, type Input, type Kit, type State } from "./sim/state";
-import type { RegionId } from "./sim/map";
+import { POIS, type RegionId } from "./sim/map";
 import { settle, type Settlement } from "./meta/profile";
 import { loadProfile, saveProfile } from "./meta/storage";
 import { Hub } from "./view/hub";
@@ -260,7 +260,7 @@ function openHub() {
   hub.open();
 }
 
-function start(k: Kit, r: RegionId) {
+function start(k: Kit, r: RegionId, seed: number) {
   kit = k;
   region = r;
   settlement = null;
@@ -274,7 +274,7 @@ function start(k: Kit, r: RegionId) {
   keepAwake(true);
   world.reset();
   sound.reset();
-  state = newRun(Date.now() & 0xffff, kit, region);
+  state = newRun(seed, kit, region);
   acc = hitstop = slowmo = 0;
   running = true;
   paused = false;
@@ -367,8 +367,9 @@ window.render_game_to_text = () => {
   const s = state;
   const p = s.player;
   return JSON.stringify({
-    screen: running ? "game" : !$("results").hidden ? "results" : !$("hub").hidden ? "hub" : "title",
-    profile: { cash: hub.profile.cash, stash: hub.profile.stash.length, raids: hub.profile.raids },
+    screen: running ? "game" : !$("results").hidden ? "results" : !$("hub").hidden ? "hub" : !$("ending").hidden ? "ending" : "title",
+    profile: { cash: hub.profile.cash, stash: hub.profile.stash.length, raids: hub.profile.raids, hideout: hub.profile.hideout, escaped: !!hub.profile.escaped, seed: hub.profile.seed },
+    boost: { ...s.boost, name: POIS[s.boost.poi].name },
     settled: settlement && { home: settlement.home.length, sold: settlement.sold.length, quests: settlement.quests.map((q) => q.id) },
     vaults: s.bins.filter((b) => b.vault).map((b) => ({ poi: b.poi, x: b.x, y: b.y, z: b.z, open: b.open })),
     keys: p.keys,

@@ -6,11 +6,11 @@ const KEY = "ringfall.profile.v1";
 export function loadProfile(): Profile {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) return parseProfile(JSON.parse(raw)) ?? newProfile();
+    if (raw) return parseProfile(JSON.parse(raw), Date.now()) ?? newProfile(Date.now());
   } catch {
     // Private windows and blocked storage: play on with a fresh profile.
   }
-  return newProfile();
+  return newProfile(Date.now());
 }
 
 export function saveProfile(p: Profile) {

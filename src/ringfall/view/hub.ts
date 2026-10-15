@@ -1,7 +1,8 @@
-import { HEALS as HEAL_SPECS, META, RARITY, VALUABLES, WEAPONS } from "../sim/config";
-import type { Kit } from "../sim/state";
-import { REGIONS, regionOf, type RegionId } from "../sim/map";
-import { buy, deliver, deliverable, emptyLoadout, HEALS, healCount, keyName, price, sell, sellPrice, takeKit, wares, type Item, type Loadout, type Profile } from "../meta/profile";
+import { HEALS as HEAL_SPECS, HIDEOUT, RAIDERS, RARITY, VALUABLES, WEAPONS, type ModuleId, type ValuableKind } from "../sim/config";
+import { boostFor, type Kit } from "../sim/state";
+import { POIS, REGIONS, regionOf, type RegionId } from "../sim/map";
+import { build, buildState, buy, buyPrice, canBuild, deliver, deliverable, emptyLoadout, HEALS, healCount, healRoom, keyName, lentHeals, price, sell, sellPrice, shortfall, takeKit, wanted, wares, type Item, type Loadout, type Profile } from "../meta/profile";
+import { craftDone, maxLevel, MODULES, nextLevel, pouchSlots, sources, stashCap, stillNeeded, type Source } from "../meta/hideout";
 import { need, offered, type Quest, type RewardItem } from "../meta/quests";
 import { saveProfile } from "../meta/storage";
 import { sfx } from "./sfx";
@@ -23,12 +24,15 @@ export function itemName(i: Item | RewardItem): string {
   }
 }
 
-function itemNote(i: Item): string {
+/** `need`: valuables the hideout's unbuilt levels still ask for; `have`: how many of this one the stash holds. */
+function itemNote(i: Item, need?: Record<ValuableKind, number>, have = 1): string {
   switch (i.t) {
     case "weapon":
       return WEAPONS[i.kind].label;
     case "valuable":
-      return "売却用";
+      if (!need || !need[i.kind]) return "売却用";
+      if (have > need[i.kind]) return `隠れ家で ${need[i.kind]} 個使う・残りは売れる`;
+      return have < need[i.kind] ? `隠れ家で使う・あと ${need[i.kind] - have} 個要る` : "隠れ家で使う";
     case "armor":
       return "シールド強化";
     case "key":
@@ -70,7 +74,26 @@ const $ = (id: string) => document.getElementById(id)!;
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
 const yen = (n: number) => n.toLocaleString("ja-JP");
 
-type Tab = "kit" | "shop" | "quests";
+type Tab = "kit" | "shop" | "quests" | "hideout";
+
+/** Seconds as hours and minutes. */
+const clock = (sec: number) => {
+  const m = Math.round(sec / 60);
+  return m >= 60 ? `${Math.floor(m / 60)} 時間 ${m % 60} 分` : `${m} 分`;
+};
+
+/**
+ * Where a valuable is found, as a line: the POIs whose bins hold it most often (with the
+ * chance per bin), then the likeliest other place.
+ */
+export function whereLine(kind: ValuableKind): string {
+  const all = sources(kind);
+  const bins = all.filter((s) => s.from === "bin").slice(0, 3);
+  const other = all.find((s) => s.from !== "bin");
+  const say = (s: Source) =>
+    s.from === "robot" ? (s.share >= 1 ? `${s.where}${s.region ? `（${s.region}）` : ""}が落とす` : `${s.where}が ${Math.round(s.share * 100)}% で落とす`) : `${s.where}${s.region ? `（${s.region}）` : ""} ${Math.round(s.share * 100)}%`;
+  return [...bins, ...(other ? [other] : [])].map(say).join("・");
+}
 
 /**
  * The base between raids: the stash, the loadout for the next raid, the region to drop
@@ -81,16 +104,41 @@ export class Hub {
   private tab: Tab = "kit";
   private load: Loadout = emptyLoadout();
   private region: RegionId;
+  /** The hideout module opened to show what its next level takes. */
+  private module: ModuleId | null = null;
+  /** A stash row a module still needs, pressed once to sell: the next press sells it. */
+  private armed = "";
 
   constructor(
     public profile: Profile,
-    private deploy: (kit: Kit, region: RegionId) => void,
+    private deploy: (kit: Kit, region: RegionId, seed: number) => void,
   ) {
     this.region = profile.region;
     $("hub").addEventListener("click", (e) => {
       const el = (e.target as HTMLElement).closest<HTMLElement>("[data-act]");
       if (el && !(el as HTMLButtonElement).disabled) this.act(el.dataset.act!, el.dataset.arg ?? "");
     });
+    $("ending-back").addEventListener("click", () => {
+      sfx.click();
+      $("ending").hidden = true;
+      this.open();
+    });
+  }
+
+  /** The ending: the escape craft's last stage is built. The game goes on after it. */
+  showEnding() {
+    const e = this.profile.escaped;
+    if (!e) return;
+    $("hub").hidden = true;
+    $("ending-stats").innerHTML = [
+      ["出撃", `${e.raids} 回`],
+      ["生還", `${e.extracted} 回`],
+      ["行方不明", `${e.raids - e.extracted} 回`],
+      ["島で過ごした時間", clock(e.time)],
+    ]
+      .map(([k, v]) => `<div><small>${k}</small><b>${v}</b></div>`)
+      .join("");
+    $("ending").hidden = false;
   }
 
   open() {
@@ -113,9 +161,10 @@ export class Hub {
   private fit(l: Loadout): Loadout {
     const st = this.profile.stash;
     const heals = { ...l.heals };
-    for (const k of HEALS) heals[k] = Math.min(heals[k], healCount(this.profile, k), HEAL_SPECS[k].max);
+    const weapons = l.weapons.filter((n) => st[n]?.t === "weapon");
+    for (const k of HEALS) heals[k] = Math.min(heals[k], healRoom(this.profile, { ...l, weapons }, k));
     return {
-      weapons: l.weapons.filter((n) => st[n]?.t === "weapon"),
+      weapons,
       armor: l.armor !== null && st[l.armor]?.t === "armor" ? l.armor : null,
       heals,
       keys: l.keys.filter((n) => st[n]?.t === "key"),
@@ -132,9 +181,29 @@ export class Hub {
 
   private act(act: string, arg: string) {
     const pick = arg.split(",").map(Number);
+    if (act !== "sell") this.armed = "";
     if (act === "tab") {
       this.tab = arg as Tab;
+      $("hub-side").scrollTop = 0;
       sfx.tab();
+    } else if (act === "mod") {
+      this.module = this.module === arg ? null : (arg as ModuleId);
+      sfx.click();
+    } else if (act === "build") {
+      const m = arg as ModuleId;
+      const next = build(this.profile, m);
+      if (next) {
+        const before = this.profile;
+        // Building takes stash entries: drop the loadout's picks rather than chase their indices.
+        this.load = emptyLoadout();
+        if (!nextLevel(next.hideout, m)) this.module = null;
+        this.set(next);
+        sfx.deliver();
+        if (next.escaped && !before.escaped) return this.showEnding();
+      }
+    } else if (act === "ending") {
+      sfx.click();
+      return this.showEnding();
     } else if (act === "region") {
       this.region = regionOf(arg as RegionId).id;
       sfx.click();
@@ -149,19 +218,28 @@ export class Hub {
         this.load.weapons = w.includes(n) ? w.filter((x) => x !== n) : w.length < 2 ? [...w, n] : [w[1], n];
       } else if (it?.t === "armor") this.load.armor = this.load.armor === n ? null : n;
       else if (it?.t === "key") this.load.keys = toggle(this.load.keys);
+      // Taking or leaving a weapon decides whether the free kit's heals are lent.
+      this.load = this.fit(this.load);
     } else if (act === "heal+" || act === "heal-") {
       sfx.click();
       const k = arg as keyof Loadout["heals"];
-      const max = Math.min(healCount(this.profile, k), HEAL_SPECS[k].max);
-      this.load.heals[k] = Math.max(0, Math.min(max, this.load.heals[k] + (act === "heal+" ? 1 : -1)));
+      this.load.heals[k] = Math.max(0, Math.min(healRoom(this.profile, this.load, k), this.load.heals[k] + (act === "heal+" ? 1 : -1)));
     } else if (act === "sell") {
       // Sell the last of a group, so the loadout's picks before it keep their indices.
       const n = pick[pick.length - 1];
-      this.reindex([n]);
-      this.set(sell(this.profile, n));
-      sfx.sell();
+      const it = this.profile.stash[n];
+      // A valuable the hideout still needs is sold only on a second press.
+      if (it?.t === "valuable" && wanted(this.profile)[it.kind] >= 0 && this.armed !== arg) {
+        this.armed = arg;
+        sfx.click();
+      } else {
+        this.armed = "";
+        this.reindex([n]);
+        this.set(sell(this.profile, n));
+        sfx.sell();
+      }
     } else if (act === "buy") {
-      const next = buy(this.profile, wares()[pick[0]]);
+      const next = buy(this.profile, wares(this.profile)[pick[0]]);
       if (next) {
         this.set(next);
         sfx.buy();
@@ -181,7 +259,7 @@ export class Hub {
       this.load = emptyLoadout();
       this.close();
       sfx.deploy();
-      this.deploy(kit, this.region);
+      this.deploy(kit, this.region, this.profile.seed);
       return;
     } else if (act === "back") {
       sfx.click();
@@ -192,10 +270,51 @@ export class Hub {
     this.render();
   }
 
-  private item(item: Item, body: { act?: string; arg?: string; on?: boolean; right?: string; count?: number }) {
+  private item(item: Item, body: { act?: string; arg?: string; on?: boolean; right?: string; count?: number; need?: Record<ValuableKind, number>; warn?: boolean }) {
     const n = body.count && body.count > 1 ? ` <i>× ${body.count}</i>` : "";
-    const inner = `<span style="color:${color(item)}">${esc(itemName(item))}${n}</span><small>${itemNote(item)}</small>${body.right ?? ""}`;
+    const note = body.warn ? `<small class="warn">隠れ家でまだ使う。もう一度押すと売る</small>` : `<small${body.need && item.t === "valuable" && body.need[item.kind] ? ' class="need"' : ""}>${itemNote(item, body.need, body.count)}</small>`;
+    const inner = `<span style="color:${color(item)}">${esc(itemName(item))}${n}</span>${note}${body.right ?? ""}`;
     return body.act ? `<button type="button" class="item${body.on ? " on" : ""}" data-act="${body.act}" data-arg="${body.arg}">${inner}</button>` : `<div class="item">${inner}</div>`;
+  }
+
+  /** The radio's report on the next raid into the chosen region, or null without a radio. */
+  private intel(): string | null {
+    const lv = this.profile.hideout.radio;
+    if (!lv) return null;
+    const b = boostFor(this.profile.seed, this.region);
+    const where = esc(POIS[b.poi].name);
+    if (lv === 1) return `${where}の箱に珍しい物が多い`;
+    return `${where}の箱に${esc(VALUABLES[b.kind].label)}が多い。レイダーは着地のおよそ ${Math.round(RAIDERS.at / 60)} 分後に降りる`;
+  }
+
+  /** A hideout module: its level, its next level's effect, and when opened, what it takes and where that is found. */
+  private moduleCard(m: ModuleId) {
+    const p = this.profile;
+    const spec = HIDEOUT[m];
+    const lv = p.hideout[m];
+    const next = nextLevel(p.hideout, m);
+    const pips = Array.from({ length: maxLevel(m) }, (_, n) => `<i class="${n < lv ? "on" : ""}"></i>`).join("");
+    const short = shortfall(p, m);
+    const state = buildState(p, m);
+    const open = this.module === m;
+    let body = "";
+    if (open && next) {
+      const have = (k: ValuableKind) => p.stash.filter((i) => i.t === "valuable" && i.kind === k).length;
+      const rows = next.items
+        .map(([k, n]) => {
+          const ok = have(k) >= n;
+          return `<div class="req${ok ? " ok" : ""}"><span style="color:${RARITY_CSS[VALUABLES[k].rarity]}">${esc(VALUABLES[k].label)}</span><b>${Math.min(have(k), n)} / ${n}</b><small>${esc(whereLine(k))}</small></div>`;
+        })
+        .join("");
+      const cash = `<div class="req${p.cash >= next.cash ? " ok" : ""}"><span>クレジット</span><b>${yen(Math.min(p.cash, next.cash))} / ${yen(next.cash)}</b></div>`;
+      const needs = next.needs.map(([o, n]) => `<div class="req${p.hideout[o] >= n ? " ok" : ""}"><span>${esc(HIDEOUT[o].name)} Lv${n}</span><b>${p.hideout[o] >= n ? "済" : `いま Lv${p.hideout[o]}`}</b></div>`).join("");
+      body = `<div class="mod-body">${rows}${cash}${needs}<button type="button" data-act="build" data-arg="${m}" ${canBuild(p, m) ? "" : "disabled"}>${lv ? `Lv${lv + 1} にする` : "作る"}</button></div>`;
+    }
+    return (
+      `<div class="mod${open ? " open" : ""}${m === "craft" ? " craft" : ""}"><button type="button" class="mod-head" data-act="mod" data-arg="${m}">` +
+      `<strong>${esc(spec.name)}</strong><span class="pips">${pips}</span><b class="${state === "作れる" ? "go" : ""}">${state}</b>` +
+      `<small>${esc(next ? `Lv${lv + 1}：${next.does}` : spec.note)}</small></button>${body}</div>`
+    );
   }
 
   private quest(q: Quest) {
@@ -214,8 +333,10 @@ export class Hub {
   render() {
     const p = this.profile;
     $("hub-cash").textContent = yen(p.cash);
-    $("hub-record").textContent = `出撃 ${p.raids} ・ 生還 ${p.extracted}`;
-    $("hub-stash-count").textContent = `${p.stash.length} / ${META.stash}`;
+    $("hub-record").textContent = `出撃 ${p.raids} ・ 生還 ${p.extracted} ・ ${craftDone(p.hideout) ? "脱出艇 完成" : `脱出艇 ${p.hideout.craft} / ${maxLevel("craft")}`}`;
+    $("hub-stash-count").textContent = `${p.stash.length} / ${stashCap(p.hideout)}`;
+    const want = wanted(p);
+    const need = stillNeeded(p.hideout);
     document.querySelectorAll<HTMLElement>("#hub [data-act=tab]").forEach((b) => b.classList.toggle("on", b.dataset.arg === this.tab));
     const shop = this.tab === "shop";
     const used = new Set([...this.load.weapons, ...this.load.keys, ...(this.load.armor === null ? [] : [this.load.armor])]);
@@ -225,14 +346,19 @@ export class Hub {
           const on = this.tab === "kit" && used.has(index[0]);
           const right = shop ? `<b>売る ${yen(sellPrice(item))}</b>` : on ? "<b>持っていく</b>" : item.t === "valuable" ? `<b>${yen(price(item))}</b>` : "";
           const act = shop ? "sell" : this.tab === "kit" && (item.t === "weapon" || item.t === "armor" || item.t === "key") ? "pick" : undefined;
-          return this.item(item, { act, arg: index.join(","), on, right, count: index.length });
+          return this.item(item, { act, arg: index.join(","), on, right, count: index.length, need, warn: shop && this.armed === index.join(",") });
         })
         .join("") || `<p class="empty">倉庫は空。商人で買うか、貸出装備で降りて持ち帰る。</p>`;
-    $("hub-side-title").textContent = shop ? "商人" : this.tab === "quests" ? "商人の依頼" : "持っていく物";
-    if (shop) {
-      const full = p.stash.length >= META.stash;
-      $("hub-side").innerHTML = wares()
-        .map((item, n) => `<button type="button" class="item" data-act="buy" data-arg="${n}" ${p.cash < price(item) || full ? "disabled" : ""}><span style="color:${color(item)}">${esc(itemName(item))}</span><small>${itemNote(item)}</small><b>${yen(price(item))}</b></button>`)
+    $("hub-side-title").textContent = shop ? "商人" : this.tab === "quests" ? "商人の依頼" : this.tab === "hideout" ? "隠れ家" : "持っていく物";
+    if (this.tab === "hideout") {
+      const done = p.escaped ? `<div class="escaped"><span>脱出艇は直った。いつでも島を出られる</span><button type="button" data-act="ending">エンディング</button></div>` : "";
+      $("hub-side").innerHTML =
+        done + MODULES.map((m) => this.moduleCard(m)).join("") + `<p class="hint">回収品とクレジットで設備を作る。足りない物は、押すと出やすい場所が出る。脱出艇を直せば島を出られる。</p>`;
+      $("hub-side").querySelector(".mod.open .mod-body")?.parentElement?.scrollIntoView({ block: "nearest" });
+    } else if (shop) {
+      const full = p.stash.length >= stashCap(p.hideout);
+      $("hub-side").innerHTML = wares(p)
+        .map((item, n) => `<button type="button" class="item" data-act="buy" data-arg="${n}" ${p.cash < buyPrice(item) || full ? "disabled" : ""}><span style="color:${color(item)}">${esc(itemName(item))}</span><small>${item.t === "valuable" ? (want[item.kind] > 0 ? `隠れ家の材料・あと ${want[item.kind]} 個要る` : "隠れ家の材料") : itemNote(item)}</small><b>${yen(buyPrice(item))}</b></button>`)
         .join("");
     } else if (this.tab === "quests") {
       const open = offered(p.quests);
@@ -241,14 +367,17 @@ export class Hub {
         `<p class="hint">倒した数・制圧・保管庫は倒れても数える。脱出の依頼は生還したときだけ。済んだ依頼の報酬は倉庫に届く。</p>`;
     } else {
       const slot = (label: string, n: number | null | undefined) => `<div class="slot"><small>${label}</small><span${n == null ? ' class="none"' : ` style="color:${color(p.stash[n])}"`}>${n == null ? "なし" : esc(itemName(p.stash[n]))}</span></div>`;
+      const lent = lentHeals(p, !this.load.weapons.length);
       const heal = (k: (typeof HEALS)[number]) =>
-        `<div class="slot count"><small>${HEAL_SPECS[k].label}</small><button type="button" data-act="heal-" data-arg="${k}">−</button><b>${this.load.heals[k]}</b><button type="button" data-act="heal+" data-arg="${k}">+</button><small>倉庫 ${healCount(p, k)}</small></div>`;
+        `<div class="slot count"><small>${HEAL_SPECS[k].label}</small><button type="button" data-act="heal-" data-arg="${k}">−</button><b>${this.load.heals[k]}</b><button type="button" data-act="heal+" data-arg="${k}">+</button><small>倉庫 ${healCount(p, k)}${lent[k] ? `・貸出 ${lent[k]}` : ""}</small></div>`;
       const keys = this.load.keys.map((n) => esc(itemName(p.stash[n]))).join("・");
+      const intel = this.intel();
       $("hub-side").innerHTML =
+        (intel ? `<div class="slot intel"><small>無線</small><span>${intel}</span></div>` : "") +
         slot("武器 1", this.load.weapons[0]) + slot("武器 2", this.load.weapons[1]) + slot("アーマー", this.load.armor) +
         `<div class="slot"><small>鍵</small><span${keys ? ` style="color:${RARITY_CSS[3]}"` : ' class="none"'}>${keys || "なし"}</span></div>` +
         HEALS.map(heal).join("") +
-        `<p class="hint">倒れると、持ち込んだ物と回収品は失う。ポーチ（${META.pouch} 枠）に入る分の回収品だけは残る。</p>`;
+        `<p class="hint">倒れると、持ち込んだ物と回収品は失う。ポーチ（${pouchSlots(p.hideout)} 枠）に入る分の回収品だけは残る。${p.hideout.infirmary ? "医務室の回復は、どちらの装備にも貸し出される。" : ""}</p>`;
     }
     $("hub-region").innerHTML =
       `<small>降下地点</small>` +
@@ -257,5 +386,7 @@ export class Hub {
     ($("hub-go") as HTMLButtonElement).disabled = this.load.weapons.length === 0;
     const ready = offered(p.quests).filter((q) => deliverable(p, q)).length;
     $("hub-quest-badge").textContent = ready ? String(ready) : "";
+    const buildable = MODULES.filter((m) => canBuild(p, m)).length;
+    $("hub-build-badge").textContent = buildable ? String(buildable) : "";
   }
 }

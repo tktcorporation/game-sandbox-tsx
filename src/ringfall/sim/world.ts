@@ -1,11 +1,11 @@
-import { ALLY, AWARE, BAG, ENEMIES, HEALS, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, TICK, VALUABLES, VAULT, WORLD, type HealKind } from "./config";
+import { ALLY, AWARE, BAG, ENEMIES, HEALS, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, TICK, TOP_BINS, VALUABLES, VAULT, WORLD, type HealKind } from "./config";
 import { dist2d, groundAt, los, solidAt } from "./geom";
 import { highGround, steepAt, terrainHeight } from "./terrain";
 import { EXTRACTS, POIS, type ExtractPoint } from "./map";
 import { spawnEnemy, spawnSpot } from "./enemies";
 import { cellsAround, fieldTo, nextStep } from "./hunt";
 import { raiseAlly, startHelp } from "./ally";
-import { callLeft, rand, type Input, type Loot, type State, type Weapon } from "./state";
+import { boosted, callLeft, rand, type Input, type Loot, type State, type Weapon } from "./state";
 import type { EnemyKind, ValuableKind } from "./config";
 import { makeNoise } from "./awareness";
 
@@ -203,7 +203,9 @@ function openBin(s: State, binIndex: number) {
   for (let i = 0; i < table.heals; i++) spill(s, b.x, b.y, b.z, { kind: "heal", heal: rollHeal(s), rarity: 1 });
   if (b.flare) spill(s, b.x, b.y, b.z, { kind: "flare", rarity: 3 });
   // One valuable per bin; the high-rises' top floors are worth the climb.
-  spillValuable(s, b, b.flare ? weighted<ValuableKind>(s, [["core", 2], ["gyro", 1], ["board", 2]]) : weighted(s, table.valuable));
+  // In the raid's boosted POI, its own bins lean to one rare kind (`BOOST`).
+  const kinds = !b.outside && b.poi === s.boost.poi ? boosted(table.valuable, s.boost.kind) : table.valuable;
+  spillValuable(s, b, b.flare ? weighted(s, TOP_BINS) : weighted(s, kinds));
   // Keys lie only in the POIs themselves, so each one is found where the route says.
   if (!b.outside && rand(s) < VAULT.keyChance) {
     const vault = POIS.findIndex((v) => v.keyFrom === POIS[b.poi].id);

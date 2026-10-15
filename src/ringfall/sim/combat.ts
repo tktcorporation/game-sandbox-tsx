@@ -1,4 +1,4 @@
-import { ALLY, ASSIST, DEG, ENEMIES, FLANK, NOISE, PLAYER, RARITY, TICK, ULT, VALUABLES, WEAPONS, type Flank, type ValuableKind, type WeaponSpec } from "./config";
+import { ALLY, ASSIST, DEG, ENEMIES, FLANK, NOISE, PLAYER, RARITY, ROBOT_DROPS, TICK, ULT, VALUABLES, WEAPONS, type Flank, type ValuableKind, type WeaponSpec } from "./config";
 import { engageSquad, makeNoise } from "./awareness";
 import { POIS } from "./map";
 import { los, lookAngles, norm, rayWorld, raySphere, wrapAngle } from "./geom";
@@ -217,10 +217,11 @@ export function kill(s: State, e: Enemy, crit: boolean, by: "player" | "ally" = 
   }
   // Valuables: a chance of parts from most robots, a board from a heavy, data cores from the titan.
   const scrap = (): ValuableKind[] => {
-    const r = rand(s);
-    return r < 0.15 ? ["fuse"] : r < 0.3 ? ["parts"] : [];
+    let r = rand(s);
+    for (const [kind, chance] of ROBOT_DROPS.scrap) if ((r -= chance) < 0) return [kind];
+    return [];
   };
-  const drops: ValuableKind[] = e.kind === "titan" ? ["core", "core"] : e.kind === "heavy" ? ["board"] : scrap();
+  const drops: ValuableKind[] = e.kind === "titan" ? ROBOT_DROPS.titan : e.kind === "heavy" ? ROBOT_DROPS.heavy : scrap();
   for (const v of drops) {
     const a = rand(s) * Math.PI * 2;
     s.loot.push({ id: s.nextId++, kind: "valuable", valuable: v, rarity: VALUABLES[v].rarity, pos: { ...c }, vel: { x: Math.cos(a) * 1.5, y: 5, z: Math.sin(a) * 1.5 }, age: 0 });

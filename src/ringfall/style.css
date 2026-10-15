@@ -1239,6 +1239,194 @@ body.touch .mate-bars {
   padding: 8px 14px;
   white-space: nowrap;
 }
+/* Stash rows a hideout module still needs, and the warning before one is sold. */
+#hub .item small.need {
+  color: var(--sky);
+}
+#hub .item small.warn {
+  color: var(--ring);
+  font-weight: 800;
+}
+/* The radio's report on the next raid, at the top of the loadout. */
+.hub-list .slot.intel {
+  box-shadow: inset 3px 0 0 var(--sky);
+  font-weight: 400;
+  font-size: 14px;
+}
+/* The hideout: a card per module, opened to show what its next level takes. */
+.hub-list .mod {
+  background: var(--plate);
+}
+.hub-list .mod.open {
+  box-shadow: inset 0 0 0 2px var(--white);
+}
+.hub-list .mod.craft {
+  margin-top: 6px;
+  box-shadow: inset 3px 0 0 var(--hot);
+}
+.hub-list .mod.craft.open {
+  box-shadow: inset 0 0 0 2px var(--hot);
+}
+#hub .mod-head {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  column-gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  background: transparent;
+  color: var(--white);
+  box-shadow: none;
+  text-align: left;
+  font-size: 16px;
+}
+#hub .mod-head:hover {
+  transform: none;
+}
+.mod-head strong {
+  font-weight: 800;
+}
+.mod-head .pips {
+  display: flex;
+  gap: 3px;
+}
+.mod-head .pips i {
+  width: 14px;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.18);
+}
+.mod-head .pips i.on {
+  background: var(--hot);
+}
+.mod-head b {
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.mod-head b.go {
+  color: var(--hot);
+}
+.mod-head small {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+}
+.mod-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 0 12px 10px;
+}
+.mod-body .req {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  column-gap: 10px;
+  padding: 4px 8px;
+  background: rgba(0, 0, 0, 0.22);
+  font-weight: 800;
+  font-size: 14px;
+}
+.mod-body .req b {
+  font-family: var(--num);
+  font-size: 16px;
+  color: var(--ring);
+}
+.mod-body .req.ok b {
+  color: var(--hot);
+}
+.mod-body .req small {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+}
+#hub .mod-body button {
+  align-self: flex-start;
+  margin-top: 4px;
+  font-size: 15px;
+  padding: 8px 18px;
+}
+#hub .mod-body button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.hub-list .escaped {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 12px;
+  background: var(--hot);
+  color: var(--ink);
+  font-weight: 800;
+}
+.hub-list .escaped span {
+  flex: 1;
+}
+#hub .escaped button {
+  font-size: 14px;
+  padding: 6px 14px;
+  background: var(--ink);
+  color: var(--white);
+}
+/* The ending: the escape craft is repaired. */
+#ending {
+  background: linear-gradient(180deg, rgba(20, 26, 51, 0.92), rgba(47, 127, 134, 0.92));
+}
+.ending-inner {
+  max-height: 100%;
+  overflow-y: auto;
+}
+.ending-kicker {
+  color: var(--hot);
+  font-weight: 800;
+  letter-spacing: 0.2em;
+}
+#ending h2 {
+  margin: 0;
+  font-size: clamp(36px, 7vw, 64px);
+}
+#ending p {
+  margin: 0;
+  line-height: 1.7;
+}
+.ending-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 28px;
+}
+.ending-stats div {
+  display: flex;
+  flex-direction: column;
+}
+.ending-stats small {
+  color: var(--muted);
+  font-size: 13px;
+}
+.ending-stats b {
+  font-family: var(--num);
+  font-size: 30px;
+  color: var(--hot);
+}
+#ending .ending-note {
+  color: var(--muted);
+  font-size: 14px;
+}
+@media (max-height: 500px) {
+  #ending h2 {
+    font-size: 32px;
+  }
+  #ending p {
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .ending-stats b {
+    font-size: 22px;
+  }
+  .ending-inner {
+    gap: 8px;
+  }
+}
 .hub-foot {
   display: flex;
   gap: 12px;
@@ -1278,6 +1466,23 @@ body.touch .mate-bars {
   .hub-region {
     flex-basis: auto;
     margin-right: auto;
+  }
+  /* The heading, four tabs and the credits on one row. */
+  .hub-head {
+    gap: 12px;
+  }
+  #hub .hub-tabs button {
+    font-size: 15px;
+    padding: 6px 12px;
+  }
+  .hub-cash small:first-child {
+    display: none;
+  }
+  .hub-cash b {
+    font-size: 26px;
+  }
+  .hub-cash small {
+    font-size: 12px;
   }
   .hub-region span {
     display: none;
