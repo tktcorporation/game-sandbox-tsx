@@ -5,10 +5,11 @@ page, simulation and gates; they share only `three` and the build.
 
 | Game | Page | Code | Brief |
 | --- | --- | --- | --- |
-| HITMARK | `/` (`index.html`) | `src/sim`, `src/game`, `src/game3d` | `docs/brief.md` |
+| HITMARK | `/hitmark/` (`hitmark/index.html`) | `src/sim`, `src/game`, `src/game3d` | `docs/brief.md` |
 | RINGFALL | `/ringfall/` (`ringfall/index.html`) | `src/ringfall/` | `docs/ringfall/brief.md` |
 
-Read the game's brief before changing anything visual. A new page needs an entry in
+The root page (`/`, `index.html`) only lists the games and links to each; a new game gets a card
+there. Read the game's brief before changing anything visual. A new page needs an entry in
 `environments.client.build.rollupOptions.input` in `vite.config.ts`.
 
 ## RINGFALL

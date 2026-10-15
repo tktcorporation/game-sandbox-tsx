@@ -31,11 +31,28 @@ const until = Number(process.argv[2] ?? 2);
 const modes = (process.argv[3] ?? "3d,2d").split(",");
 const sizes = modes.map((mode) => ({ name: mode, mode, width: 1280, height: 720 }));
 
+// The root page lists the games: each card links to its page, desktop and phone width.
+for (const view of [{ width: 1280, height: 720 }, { width: 390, height: 844 }]) {
+  const page = await browser.newPage({ viewport: view, deviceScaleFactor: 1 });
+  page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
+  page.on("console", (m) => m.type() === "error" && !/fonts\.g/.test(m.text()) && errors.push(`console: ${m.text()}`));
+  await page.goto(`http://localhost:${port}/`, { waitUntil: "networkidle" });
+  const links = await page.$$eval("a.game", (as) => as.map((a) => a.getAttribute("href")));
+  if (links.join(" ") !== "/hitmark/ /ringfall/") errors.push(`launcher: links ${links.join(" ")}`);
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+  if (overflow) errors.push(`launcher: scrolls sideways at ${view.width} px`);
+  await page.screenshot({ path: `shots/launcher-${view.width}.png` });
+  await page.click("a.game.hitmark");
+  await page.waitForLoadState("networkidle");
+  if ((await page.title()) !== "HITMARK") errors.push(`launcher: the HITMARK card opened "${await page.title()}"`);
+  await page.close();
+}
+
 for (const size of sizes) {
   const page = await browser.newPage({ viewport: size, deviceScaleFactor: 1 });
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   page.on("console", (m) => m.type() === "error" && !/fonts\.g/.test(m.text()) && errors.push(`console: ${m.text()}`));
-  await page.goto(`http://localhost:${port}/`, { waitUntil: "networkidle" });
+  await page.goto(`http://localhost:${port}/hitmark/`, { waitUntil: "networkidle" });
   await page.screenshot({ path: `shots/${size.name}-0-title.png` });
   await page.click(size.mode === "3d" ? "#start3d" : "#start");
   await page.waitForFunction(() => JSON.parse(window.render_game_to_text()).phase !== "title");
