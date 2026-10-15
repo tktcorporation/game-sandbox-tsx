@@ -1139,8 +1139,9 @@ function authoredKeep(): Keep {
 
 /**
  * The ground scattered with cover, each with its own grid and seed so that adding to one
- * region leaves the other's cover as it was. On the salt flats only one candidate in four
- * stands, and only a container or a rock: open ground that is dangerous to cross. The
+ * region leaves the other's cover as it was. On the salt flats only one candidate in two
+ * stands, and only a container or a rock: the most open ground, yet with a wreck to get behind
+ * a few steps away, since in the open a robot's burst lands. The
  * channel, under water, gets none.
  */
 const SCATTER = [
@@ -1233,7 +1234,7 @@ function scatterArea(authored: Box[], { points, segments }: Keep, area: (typeof 
       const z = gz + (rnd() - 0.5) * 7;
       const at = surfaceAt(x, z);
       const sparse = at === SPARSE;
-      if ((sparse && rnd() > 0.25) || at === WATER) continue;
+      if ((sparse && rnd() > 0.5) || at === WATER) continue;
       const piece = sparse ? wreckAt(x, z) : pieceAt(x, z);
       const base = groundUnder(piece);
       if (base === null) continue;

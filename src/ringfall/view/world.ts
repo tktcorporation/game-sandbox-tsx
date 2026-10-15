@@ -741,7 +741,11 @@ export class World {
       }
       g.visible = true;
       g.position.set(o.pos.x, o.pos.y, o.pos.z);
-      g.scale.setScalar(o.r * (1 + Math.sin(this.time * 30 + o.id) * 0.08));
+      // A fast shot reads as a bolt: stretched along its flight, short and round when slow (the titan's rockets).
+      const r = o.r * (1 + Math.sin(this.time * 30 + o.id) * 0.08);
+      const speed = Math.hypot(o.vel.x, o.vel.y, o.vel.z);
+      g.lookAt(o.pos.x + o.vel.x, o.pos.y + o.vel.y, o.pos.z + o.vel.z);
+      g.scale.set(r, r, r * Math.max(1, speed / 18));
     });
     for (let i = s.orbs.length; i < this.orbPool.length; i++) this.orbPool[i].visible = false;
     s.waves.forEach((wv, i) => {
