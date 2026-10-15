@@ -311,6 +311,12 @@ export const DEPOT = {
   leave: 5,
   /** Metres behind a depot a raid started there begins: inside its reach (PLAYER.interactRange + 1). */
   back: 2.5,
+  /**
+   * Metres: a robot fighting the player this close shuts the depots (about twice a robot's
+   * sight). One further off is outrun: the titan, which never stands down, shuts only depots
+   * near its arena.
+   */
+  safe: 60,
   /** Metres: a side of one cell of the explored map. */
   cell: 20,
   /** Cells uncovered round the player's own, each way. */

@@ -1130,13 +1130,14 @@ function checkDepots(): string | null {
   ticks(fight, 1);
   const squad = fight.squads.length;
   fight.squads.push({ name: "test", poi: -1, patrol: [], leg: 0, engaged: false, roam: false, sinceSeen: 0, last: { x: d.x, z: d.z } });
-  const far = spawnEnemy(fight, "grunt", POIS[SUPPLY].x, POIS[SUPPLY].z, -1, squad);
-  engageSquad(fight, squad, far);
+  const near = spawnEnemy(fight, "grunt", d.x + DEPOT.safe - 15, d.z, -1, squad);
+  engageSquad(fight, squad, near);
   step(fight, idleInput(), false);
-  if (fight.leaving || !fight.events.some((e) => e.t === "leaveCancel")) return "depot scenario: a squad engaging did not break off leaving";
-  if (useTarget(fight)) return `depot scenario: the depot was offered with a squad fighting (${useTarget(fight)?.kind})`;
-  fight.squads[squad].engaged = false;
-  if (useTarget(fight)?.kind !== "depot") return "depot scenario: the depot was not offered once the fight was over";
+  if (fight.leaving || !fight.events.some((e) => e.t === "leaveCancel")) return "depot scenario: a robot fighting nearby did not break off leaving";
+  if (useTarget(fight)) return `depot scenario: the depot was offered with a robot fighting nearby (${useTarget(fight)?.kind})`;
+  // A fight left behind (the titan never stands down) does not shut the depots once it is outrun.
+  near.pos = { x: d.x + DEPOT.safe + 15, y: near.pos.y, z: d.z };
+  if (useTarget(fight)?.kind !== "depot") return "depot scenario: the depot was not offered with the only fighting robot far off";
   // Walking away breaks it off too.
   const away = padRun();
   away.depots[PADD] = true;

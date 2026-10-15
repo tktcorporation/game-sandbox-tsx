@@ -108,10 +108,16 @@ export class IslandMap {
     return c;
   }
 
+  /** Cells seen when the fog was last drawn: cells are only ever uncovered, so the count says whether it changed. */
+  private fogSeen = -1;
+
   /** The fog as a cell-per-pixel image: opaque where unexplored, clear where seen. */
   private fogImage(seen: number[]): HTMLCanvasElement {
     const { cols, rows } = exploreSize();
     const c = (this.fog ??= Object.assign(document.createElement("canvas"), { width: cols, height: rows }));
+    const count = seen.reduce((n, v) => n + v, 0);
+    if (count === this.fogSeen) return c;
+    this.fogSeen = count;
     const g = c.getContext("2d")!;
     const img = g.createImageData(cols, rows);
     for (let i = 0; i < cols * rows; i++) {

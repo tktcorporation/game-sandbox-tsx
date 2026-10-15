@@ -4,7 +4,7 @@ import { ALLY, AWARE, BAG, DEPOT, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, RE
 import { magSize } from "../sim/combat";
 import { dist2d } from "../sim/geom";
 import { DEPOTS, EXTRACTS, POIS, poiIndex, regionHere, regionOf } from "../sim/map";
-import { bagUsed, depotBlocked, extractHere, extractReady, makeRoom, poiAt, searchTime, useTarget } from "../sim/world";
+import { bagUsed, depotBlocked, depotInReach, extractHere, extractReady, makeRoom, poiAt, searchTime, useTarget } from "../sim/world";
 import { callLeft, enemyHp, enemyShield, type GameEvent, type State, type Vec3 } from "../sim/state";
 import { haulValue, rank } from "../sim/results";
 import { pickHeal } from "../sim/player";
@@ -648,7 +648,7 @@ export class Hud {
     // The same choice the use key acts on (sim/world.ts useTarget), so the prompt never promises something else.
     if (!t) {
       // At a depot that is on, which useTarget passes over while a squad is fighting: say why.
-      if (depotBlocked(s) && DEPOTS.some((d, i) => s.depots[i] && dist2d(d, p.pos) < PLAYER.interactRange + 1 && Math.abs(d.y - p.pos.y) < 2)) return "中継ボックス：戦闘中は使えない";
+      if (depotBlocked(s) && depotInReach(s) >= 0) return "中継ボックス：戦闘中は使えない";
       // Standing on a valuable that will not go in, and nothing in the bag is worth less.
       const left = s.loot.find((l) => l.kind === "valuable" && l.valuable && l.age >= 0.4 && dist2d(l.pos, p.pos) < PLAYER.pickupRange && Math.abs(l.pos.y - p.pos.y) < 2);
       return left?.valuable ? `バッグがいっぱい：${VALUABLES[left.valuable].label}は入らない` : "";

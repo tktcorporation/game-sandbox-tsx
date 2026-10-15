@@ -214,8 +214,7 @@ export class Hub {
       this.from = arg as PoiId;
       this.region = poiRegion(this.from).id;
       sfx.click();
-    }
-    else if (act === "pick") {
+    } else if (act === "pick") {
       sfx.click();
       const n = pick[0];
       const it = this.profile.stash[n];

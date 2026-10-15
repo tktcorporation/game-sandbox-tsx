@@ -426,12 +426,18 @@ export function useTarget(s: State, armor = true): UseTarget | null {
   }
   const pick = picks.filter((k) => k.d < PLAYER.interactRange).sort((x, y) => x.d - y.d)[0]?.t;
   if (pick) return pick;
-  const depot = DEPOTS.findIndex((d, i) => s.depots[i] && dist2d(d, p.pos) < PLAYER.interactRange + 1 && level(d.y));
+  const depot = depotInReach(s);
   return depot >= 0 && !depotBlocked(s) ? { kind: "depot", index: depot } : null;
 }
 
-/** A depot cannot be used while any squad is fighting: neither the bag nor the player leaves under fire. */
-export const depotBlocked = (s: State) => s.squads.some((q) => q.engaged);
+/** A depot cannot be used with a robot that fights the player nearby: neither the bag nor the player leaves under fire. */
+export const depotBlocked = (s: State) => s.enemies.some((e) => e.aware === "engaged" && dist2d(e.pos, s.player.pos) < DEPOT.safe);
+
+/** The depot that is on within the use key's reach, as `DEPOTS` index, or -1. */
+export function depotInReach(s: State): number {
+  const p = s.player;
+  return DEPOTS.findIndex((d, i) => s.depots[i] && dist2d(d, p.pos) < PLAYER.interactRange + 1 && Math.abs(d.y - p.pos.y) < 1.5);
+}
 
 /** The use key at a depot: a bag with anything in it goes home; an empty one means leaving the raid there. */
 function useDepot(s: State, index: number) {
