@@ -443,6 +443,11 @@ export function depotInReach(s: State): number {
 function useDepot(s: State, index: number) {
   const p = s.player;
   if (p.haul.length) {
+    // Something picked up while leaving breaks the leaving off, even when it is sent at once.
+    if (s.leaving) {
+      s.leaving = null;
+      s.events.push({ t: "leaveCancel" });
+    }
     const value = p.haul.reduce((n, k) => n + VALUABLES[k].value, 0);
     s.events.push({ t: "deposit", n: p.haul.length, value });
     s.sent.push(...p.haul);

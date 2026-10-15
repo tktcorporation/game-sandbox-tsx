@@ -1150,6 +1150,15 @@ function checkDepots(): string | null {
   fill.player.haul.push("parts");
   step(fill, idleInput(), false);
   if (fill.leaving || !fill.events.some((e) => e.t === "leaveCancel")) return "depot scenario: filling the bag did not break off leaving";
+  // ...even when what was picked up is sent home in the same tick.
+  const send = padRun();
+  send.depots[PADD] = true;
+  stand(send);
+  step(send, press, false);
+  ticks(send, 1);
+  send.player.haul.push("parts");
+  step(send, press, false);
+  if (send.leaving || send.sent.join() !== "parts") return "depot scenario: sending what was picked up while leaving did not break off leaving";
   // Walking away breaks it off too.
   const away = padRun();
   away.depots[PADD] = true;
