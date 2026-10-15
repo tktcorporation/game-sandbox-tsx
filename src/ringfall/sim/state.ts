@@ -187,6 +187,9 @@ export interface SquadState {
   elite?: boolean;
   sinceSeen: number; // seconds since any member saw the player while engaged
   last: Point; // where the squad last saw the player
+  /** Where the squad has had the player pinned, and for how long (see PINCH); unset until it engages. */
+  pin?: Point;
+  pinT?: number;
 }
 
 export interface Orb {

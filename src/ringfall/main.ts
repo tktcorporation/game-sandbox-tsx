@@ -391,6 +391,8 @@ window.render_game_to_text = () => {
     enemies: s.enemies.map((e) => ({ kind: e.kind, x: Math.round(e.pos.x), z: Math.round(e.pos.z), y: +e.pos.y.toFixed(1), hp: Math.round(e.hp + e.shield), mode: e.mode, aware: e.aware, detect: +e.detect.toFixed(2), squad: e.squad, target: e.target })),
     squads: s.squads.map((q) => ({ name: q.name, poi: q.poi, engaged: q.engaged, lost: q.engaged && q.sinceSeen >= AWARE.trackTime })),
     orbs: s.orbs.length,
+    // The first robot shot in the air, for a screenshot of one in flight.
+    bolt: s.orbs[0] ? { x: s.orbs[0].pos.x, y: s.orbs[0].pos.y, z: s.orbs[0].pos.z, vx: s.orbs[0].vel.x, vy: s.orbs[0].vel.y, vz: s.orbs[0].vel.z } : null,
     waves: s.waves.length,
     loot: s.loot.length,
     care: s.care ? { landed: s.care.landed, open: s.care.open } : null,

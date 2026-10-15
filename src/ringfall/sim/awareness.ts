@@ -1,4 +1,4 @@
-import { AWARE, DEG, ENEMIES, NOISE, SIGHT, TICK } from "./config";
+import { AWARE, DEG, ENEMIES, NOISE, PINCH, SIGHT, TICK } from "./config";
 import { dist2d, los, lookAngles, wrapAngle } from "./geom";
 import type { Enemy, State, Vec3 } from "./state";
 
@@ -30,6 +30,8 @@ export function engageSquad(s: State, squad: number, by: Enemy) {
   sq.engaged = true;
   sq.sinceSeen = 0;
   sq.last = { x: s.player.pos.x, z: s.player.pos.z };
+  sq.pin = { ...sq.last };
+  sq.pinT = 0;
   for (const e of s.enemies) {
     if (e.squad !== squad) continue;
     e.aware = "engaged";
@@ -139,8 +141,14 @@ export function stepSquads(s: State) {
       sq.sinceSeen = 0;
       return;
     }
+    // How long the spot the squad believes the player is at has stayed put (see PINCH).
+    if (!sq.pin || dist2d(sq.pin, sq.last) > PINCH.radius) {
+      sq.pin = { ...sq.last };
+      sq.pinT = 0;
+    } else sq.pinT = (sq.pinT ?? 0) + TICK;
     sq.sinceSeen += TICK;
     if (sq.sinceSeen < AWARE.loseTime) return;
+    sq.pinT = 0;
     sq.engaged = false;
     for (const e of members) {
       e.aware = "alert";

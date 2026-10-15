@@ -1,6 +1,6 @@
 import { ALLY, ENEMIES, PLAYER, TICK, WORLD } from "./config";
 import { makeNoise } from "./awareness";
-import { bodyCenter, damageEnemy, weakPoint } from "./combat";
+import { bodyCenter, damageEnemy, flankOf, weakPoint } from "./combat";
 import { collide, dist2d, groundAt, los, lookAngles, wrapAngle } from "./geom";
 import { wipe } from "./player";
 import { rand, type Ally, type Enemy, type State, type Vec3 } from "./state";
@@ -244,7 +244,8 @@ function shootAt(s: State, e: Enemy) {
     const crit = rand(s) < ALLY.crit;
     const at = crit ? weakPoint(e) : bodyCenter(e);
     s.events.push({ t: "allyShot", from, to: at, hit: true });
-    damageEnemy(s, e, ALLY.dmg * (crit ? ALLY.critMult : 1), crit, at, "none", "ally");
+    // Armour faces the same way for the teammate's shots: it hurts most from a robot's side or back.
+    damageEnemy(s, e, ALLY.dmg * (crit ? ALLY.critMult : 1), crit, at, flankOf(s, e, a.pos), "ally");
   } else {
     const c = bodyCenter(e);
     const r = ENEMIES[e.kind].radius + 0.6;

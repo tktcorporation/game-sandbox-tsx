@@ -1,4 +1,4 @@
-import { ALLY, BAG, ENEMIES, HEALS, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, TICK, TOP_BINS, VALUABLES, VAULT, WORLD, type HealKind } from "./config";
+import { ALLY, AWARE, BAG, ENEMIES, HEALS, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, TICK, TOP_BINS, VALUABLES, VAULT, WORLD, type HealKind } from "./config";
 import { dist2d, groundAt, los, solidAt } from "./geom";
 import { highGround, steepAt, terrainHeight } from "./terrain";
 import { EXTRACTS, POIS, type ExtractPoint } from "./map";
@@ -498,17 +498,38 @@ function shipWave(s: State, ship: ExtractPoint) {
   let squad = c.squad;
   if (squad < 0) {
     squad = c.squad = s.squads.length;
-    s.squads.push({ name: SHIP_SQUAD, poi: -1, patrol: [], leg: 0, engaged: true, roam: true, sinceSeen: 0, last: { x: ship.x, z: ship.z } });
+    // Routed like reinforcements: they beam in behind cover, so they must find their way round it to the pickup.
+    s.squads.push({ name: SHIP_SQUAD, poi: -1, patrol: [], leg: 0, engaged: false, roam: true, routed: true, sinceSeen: 0, last: { x: ship.x, z: ship.z } });
   }
   const at = ship.waves ?? ship;
+  const p = s.player;
+  const eye = { x: p.pos.x, y: p.pos.y + 1.6, z: p.pos.z };
   for (const kind of kinds) {
     if (s.enemies.filter((e) => e.squad === squad).length >= SHIP_WAVES.maxAlive) break;
-    const a = rand(s) * Math.PI * 2;
+    // Like reinforcements, they beam in where the player cannot see them (a few tries round the ring), and come.
+    const start = rand(s) * Math.PI * 2;
+    let a = start;
+    for (let i = 0; i < 12; i++) {
+      const t = start + (i * Math.PI * 2) / 12;
+      const x = at.x + Math.sin(t) * SHIP_WAVES.radius;
+      const z = at.z - Math.cos(t) * SHIP_WAVES.radius;
+      if (!los(eye, { x, y: terrainHeight(x, z) + 1.5, z })) {
+        a = t;
+        break;
+      }
+    }
     const e = spawnEnemy(s, kind, at.x + Math.sin(a) * SHIP_WAVES.radius, at.z - Math.cos(a) * SHIP_WAVES.radius, -1, squad, { appear: true });
-    e.aware = "engaged";
-    e.detect = 1;
+    // A squad already fighting takes its new members straight into the fight.
+    if (s.squads[squad].engaged) {
+      e.aware = "engaged";
+      e.detect = 1;
+      continue;
+    }
+    // Otherwise they come to the pickup looking for whoever called it: a player in cover near it sees them first.
+    e.aware = "alert";
+    e.detect = AWARE.suspicious;
+    e.goal = { x: ship.x, z: ship.z };
+    e.searchT = (c.t > 0 ? c.t : 0) + 20;
   }
-  s.squads[squad].engaged = true;
-  s.squads[squad].sinceSeen = 0;
   s.events.push({ t: "shipWave", id: ship.id });
 }

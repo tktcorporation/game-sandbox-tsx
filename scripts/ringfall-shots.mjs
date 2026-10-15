@@ -450,6 +450,26 @@ for (let i = 0; i < 25 * 60 * 10; i++) {
     }
   }
   if (at(0) && live.length >= 2 && s.orbs >= 1) await shot("03-fight-supply");
+  // A robot's shot in flight, seen from beside its path: fast shots are drawn as stretched bolts.
+  // Read afresh: shots taken earlier in this step may have moved time on.
+  const fresh = !taken.has("27-bolt") && s.bolt ? await read() : null;
+  // A shot in a fight on the ground, near the player: not one fired up at the leap.
+  const nearBolt = fresh?.bolt && Math.abs(fresh.bolt.y - fresh.player.y) < 4 && Math.hypot(fresh.bolt.x - fresh.player.x, fresh.bolt.z - fresh.player.z) < 40;
+  if (nearBolt && Math.hypot(fresh.bolt.vx, fresh.bolt.vz) > 30) {
+    const b = fresh.bolt;
+    const sp = Math.hypot(b.vx, b.vy, b.vz);
+    const ux = b.vx / sp;
+    const uz = b.vz / sp;
+    const hl = Math.hypot(ux, uz) || 1;
+    // 3 m to the side of its path, level with it, looking straight at it.
+    const cx = b.x + (-uz / hl) * 3;
+    const cz = b.z + (ux / hl) * 3;
+    const yaw = Math.atan2(b.x - cx, -(b.z - cz));
+    console.log(`bolt at ${b.x.toFixed(1)},${b.y.toFixed(1)},${b.z.toFixed(1)} speed ${sp.toFixed(0)}, camera ${cx.toFixed(1)},${cz.toFixed(1)} yaw ${yaw.toFixed(2)}`);
+    await page.evaluate(([x, y, z, w]) => window.ringfallCamera(x, y, z, w, 0), [cx, b.y, cz, yaw]);
+    await shot("27-bolt");
+    await page.evaluate(() => window.ringfallCamera());
+  }
   if (s.stats.kills >= 3 && s.enemies.some((e) => e.mode !== "spawning" && e.hp < 60)) await shot("04-damage-numbers");
   if (s.stats.cleared.length >= 2 && !live.length && s.loot >= 3) await shot("05-loot");
   if (s.care && !s.care.landed) await shot("06-care-package");
@@ -474,6 +494,7 @@ for (let i = 0; i < 25 * 60 * 10; i++) {
 // The bot can be wiped out now that robots hit hard; a raid that ends either way has played through.
 // Getting off the island is checked by the sim's extraction scenarios.
 if (s.phase !== "done" || !s.outcome) errors.push(`run did not finish: ${JSON.stringify(s).slice(0, 300)}`);
+if (!taken.has("27-bolt")) errors.push("no robot shot was caught in flight for 27-bolt");
 console.log(`outcome: ${s.outcome}`);
 await page.waitForTimeout(1800);
 await page.screenshot({ path: `${out}/13-results.png` });

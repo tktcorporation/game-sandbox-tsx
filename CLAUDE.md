@@ -92,6 +92,12 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   (shots, sprinting) sends squads to look, and at most `AWARE.maxSquads` squads fight at once.
   A fighting squad tracks the player only while a member sees them (`knownSpot()`), turns at `TURN`
   and fires only ahead, and takes more damage from behind (`FLANK`): going round is the intended play.
+  Robot shots (`SHOT`) are fast and led, re-aimed for every shot while the robot sees its target, and
+  stray more with distance; a burst starts only with the target in sight, so the glow means "get
+  behind something", not "step aside". A squad of two or more that has had the player pinned to one
+  spot for a few seconds sends members round it to either side (`PINCH`, `pinchSpot()` in
+  `enemies.ts`). Aim pull (`ASSIST.pull`) works while aiming down sights, not for hip fire on the
+  move; healing is slow and heard (`HEALS`, `NOISE.heal`).
   `cover.ts` precomputes the spots grunts hide behind. The sim gate's `crowd` column is the most
   squads / robots fighting at once, and `flank` the share of hits from behind or by ambush; keep them
   within the targets in `docs/ringfall/balance.md`.
@@ -101,7 +107,7 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   gate's `ally` column is its damage share, downs and revives.
 - `EXTRACTS` in `map.ts` are the ways off; `stepExtract()` in `world.ts` runs them: a pickup with
   `call` (the dropship, the boat) is called by standing in it and comes after its time, while robots
-  beam in round its `waves` point (`SHIP_WAVES`; `State.calls` keeps each call); the flare; the waits.
+  beam in round its `waves` point out of the player's sight and come to look at the pickup (`SHIP_WAVES`; `State.calls` keeps each call); the flare; the waits.
   The sim gate's `exit` column counts which one each run used; the bot leaves by a way off of the
   region it dropped into, chosen by its skill, and takes only that region's POIs.
 - `nav.ts` is ground path finding for the bot only (built on first use); the game never reads it. Robots beamed in from
