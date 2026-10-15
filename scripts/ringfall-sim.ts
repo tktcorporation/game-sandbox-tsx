@@ -32,7 +32,7 @@ import { build, buildState, buy, canBuild, deliver, healRoom, newProfile, parseP
 import { emptyHideout, maxLevel, MODULES, poisWith, sources, stashCap } from "../src/ringfall/meta/hideout";
 import { boostFor, boosted } from "../src/ringfall/sim/state";
 import { HIDEOUT, VAULT } from "../src/ringfall/sim/config";
-import { QUESTS, offered } from "../src/ringfall/meta/quests";
+import { QUESTS, offered, raidCredit } from "../src/ringfall/meta/quests";
 import { META } from "../src/ringfall/sim/config";
 import { pacing, recordOf, type Pool } from "./ringfall-pacing";
 import { writeFileSync } from "node:fs";
@@ -1120,6 +1120,9 @@ function checkDepots(): string | null {
   if (phaseOf(go) !== "play") return "depot scenario: left before the wait was over";
   ticks(go, 1);
   if (phaseOf(go) !== "done" || go.outcome !== "extracted" || go.leftAt !== "pad" || go.extractedAt !== null) return `depot scenario: after the wait phase ${go.phase}, outcome ${go.outcome}, left at ${go.leftAt}`;
+  // Leaving at a depot is not getting the bag out by a way off: a haul quest does not count it.
+  go.sent.push("core", "core", "core", "core", "core");
+  if (raidCredit({ t: "haul", value: 1000 }, go)) return "depot scenario: leaving at a depot with valuables sent home counted for a haul quest";
 
   // A squad engaging breaks the wait off, and while one fights the depot takes no press.
   const fight = padRun();
