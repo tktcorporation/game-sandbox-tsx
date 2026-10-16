@@ -1,4 +1,4 @@
-import { ALLY, AWARE, CHARGER, COVER, DEG, ELITE, ENEMIES, PINCH, PLAYER, SHOT, TICK, TITAN, TURN, WORLD, type EnemyKind, type Rarity } from "./config";
+import { ALLY, AWARE, CHARGER, COVER, DEG, DODGE, ELITE, ENEMIES, FALLBACK, PINCH, PLAYER, SHOT, STAGGER, TICK, TITAN, TURN, WORLD, type EnemyKind, type Rarity } from "./config";
 import { clampToWorld, collide, dist2d, groundAt, groundLevel, los, lookAngles, onTerrain, solidAt, wrapAngle } from "./geom";
 import { steepAt, terrainHeight } from "./terrain";
 import { engageSquad, knownSpot, sense, stepSquads } from "./awareness";
@@ -82,6 +82,11 @@ export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi:
     allyHit: 99,
     elite: !!o.elite,
     plate: o.plate ?? 0,
+    strafeT: rand(s),
+    jink: 0,
+    stagger: 0,
+    steady: 0,
+    peekSide: rand(s) < 0.5 ? -1 : 1,
   };
   s.enemies.push(e);
   if (o.appear) s.events.push({ t: "spawn", id: e.id, pos: { ...pos } });
@@ -198,6 +203,9 @@ export function stepEnemies(s: State) {
     const k = ENEMIES[e.kind];
     e.lastHit += TICK;
     e.allyHit += TICK;
+    e.jink = Math.max(0, e.jink - TICK);
+    e.steady = Math.max(0, e.steady - TICK);
+    e.stagger *= Math.exp(-TICK / STAGGER.window);
     if (e.mode === "spawning") {
       e.timer -= TICK;
       if (e.timer <= 0) {
@@ -207,12 +215,13 @@ export function stepEnemies(s: State) {
       continue;
     }
     sense(s, e);
-    if (e.mode === "stunned") {
+    if (e.mode === "stunned" || e.mode === "staggered") {
+      // Reeling: the knock-back it was given dies away; then it fights on, a beat before its next attack.
       e.timer -= TICK;
       moveBody(e, 0, 0);
       if (e.timer <= 0) {
+        e.cooldown = Math.max(e.cooldown, e.mode === "staggered" ? 0.4 : 0.6);
         e.mode = "move";
-        e.cooldown = Math.max(e.cooldown, 0.6);
       }
       continue;
     }
@@ -259,9 +268,11 @@ export function stepEnemies(s: State) {
         let along = 0;
         // At the last sighting with nobody in view, it stands and turns: the squad's search begins.
         if (!sees && !known.live && d < 2) along = 0;
+        else if (sees && hurtAlone(s, e) && d < k.range + 8) along = -1; // hurt and alone: it gives ground
         else if (!sees || d > k.range + 4) along = 1;
         else if (d < k.range - 4) along = -0.7;
-        const side = sees || e.kind === "charger" ? 0.55 : 0.8;
+        // In sight it strafes across the target's view; a jink after a hit is a quicker step the other way.
+        const side = (e.kind === "charger" ? 0.55 : sees ? DODGE.strafe : 0.8) * (e.jink > 0 ? DODGE.jinkSpeed : 1);
         let vx = (ux * along - uz * e.strafe * side) * k.speed;
         let vz = (uz * along + ux * e.strafe * side) * k.speed;
         // A flanking raider, or a member going round a pinned player, runs wide to its spot
@@ -287,7 +298,10 @@ export function stepEnemies(s: State) {
           vz = uz2 * k.speed;
         }
         if (moveBody(e, vx, vz)) e.strafe = -e.strafe;
-        else if (rand(s) < TICK * 0.35) e.strafe = -e.strafe;
+        else if (e.jink <= 0 && (e.strafeT -= TICK) <= 0) {
+          e.strafeT = DODGE.every[0] + rand(s) * (DODGE.every[1] - DODGE.every[0]);
+          if (rand(s) < DODGE.flip) e.strafe = -e.strafe;
+        }
         e.cooldown -= TICK;
         const ready = e.cooldown <= 0 && sees && tUp;
         if (ready && (e.kind === "charger" ? d < CHARGER.lungeRange : d < 48)) {
@@ -299,7 +313,7 @@ export function stepEnemies(s: State) {
         break;
       }
       case "telegraph": {
-        moveBody(e, 0, 0);
+        windupStep(e, dx / d, dz / d);
         e.timer -= TICK;
         // Aim follows the target through the wind-up while it is in sight and in the robot's
         // cone: the glow is the time to get behind something, not to step aside. A target that
@@ -325,7 +339,7 @@ export function stepEnemies(s: State) {
         break;
       }
       case "fire": {
-        moveBody(e, 0, 0);
+        windupStep(e, dx / d, dz / d);
         e.timer -= TICK;
         if (e.timer <= 0 && e.shotsLeft > 0) {
           // Every shot of a burst is aimed afresh while the target is in sight.
@@ -342,6 +356,10 @@ export function stepEnemies(s: State) {
         if (e.shotsLeft <= 0) {
           e.mode = "move";
           e.cooldown = k.cooldown * (0.8 + rand(s) * 0.4) * (e.elite ? ELITE.cooldown : 1);
+          // A grunt in cover shows itself next from the other side of it; hurt and alone, it stays hidden longer.
+          e.peekSide = -e.peekSide;
+          e.coverT = 0;
+          if (e.kind === "grunt" && hurtAlone(s, e)) e.cooldown = Math.max(e.cooldown, FALLBACK.hide[0] + rand(s) * (FALLBACK.hide[1] - FALLBACK.hide[0]));
         }
         break;
       }
@@ -406,6 +424,28 @@ function chooseTarget(s: State, e: Enemy) {
   const toPlayer = dist2d(e.pos, s.player.pos) + (los(from, chest(s)) ? 0 : 30) - (e.target === "player" ? 3 : 0);
   const toAlly = dist2d(e.pos, a.pos) + (los(from, allyChest(a)) ? 0 : 30) - (e.target === "ally" ? 3 : 0) + (e.allyHit < 2 ? -4 : ALLY.aggroBias);
   e.target = toAlly < toPlayer ? "ally" : "player";
+}
+
+/**
+ * A step through a wind-up or burst: sideways across the line to the target at
+ * `DODGE.windup` of its speed (none for the kinds that plant their feet to fire).
+ * `ux, uz` is the unit direction to the target.
+ */
+function windupStep(e: Enemy, ux: number, uz: number) {
+  const w = DODGE.windup[e.kind] * ENEMIES[e.kind].speed;
+  if (w <= 0) {
+    moveBody(e, 0, 0);
+    return;
+  }
+  if (moveBody(e, -uz * e.strafe * w, ux * e.strafe * w)) e.strafe = -e.strafe;
+}
+
+/** A plain grunt that is badly hurt and the last of its squad still fighting. */
+function hurtAlone(s: State, e: Enemy): boolean {
+  if (e.kind !== "grunt" || e.elite) return false;
+  const k = ENEMIES.grunt;
+  if (e.hp + e.shield > (k.hp + k.shield) * FALLBACK.below) return false;
+  return !s.enemies.some((o) => o !== e && o.squad === e.squad && o.aware === "engaged");
 }
 
 /** Turn toward a yaw at no more than `rate` radians per second. */
@@ -549,17 +589,20 @@ function calm(s: State, e: Enemy) {
 
 /** Find a spot near this grunt that hides it from the player, with a spot beside it to shoot from. */
 function findCover(s: State, e: Enemy, threat: Point, threatY: number): { cover: Point; peek: Point } | null {
+  // Hurt and alone it looks further for a place to hide.
+  const search = hurtAlone(s, e) ? COVER.search * 1.5 : COVER.search;
   const p = { pos: { x: threat.x, y: threatY, z: threat.z } };
   const head = { x: p.pos.x, y: p.pos.y + 1.5, z: p.pos.z };
   const chestP = { x: p.pos.x, y: p.pos.y + 1.1, z: p.pos.z };
   const taken = s.enemies.filter((o) => o !== e && o.cover).map((o) => o.cover!);
   const cands = COVERS.map((c) => ({ c, d: dist2d(c, e.pos), dp: dist2d(c, p.pos) }))
-    .filter(({ c, d, dp }) => d < COVER.search && dp > COVER.minFromPlayer && dp < COVER.maxFromPlayer && !taken.some((t) => dist2d(t, c) < 1.5))
+    .filter(({ c, d, dp }) => d < search && dp > COVER.minFromPlayer && dp < COVER.maxFromPlayer && !taken.some((t) => dist2d(t, c) < 1.5))
     .sort((a, b) => a.d + Math.abs(a.dp - 16) * 0.3 - (b.d + Math.abs(b.dp - 16) * 0.3))
     .slice(0, 14);
   for (const { c } of cands) {
     if (los({ x: c.x, y: terrainHeight(c.x, c.z) + 1.3, z: c.z }, head)) continue;
-    for (const sign of [1, -1]) {
+    // The side it did not show itself at last time first, so it is not where the player's sights wait.
+    for (const sign of [e.peekSide, -e.peekSide]) {
       const peek = { x: c.x + c.tx * sign * COVER.peek, z: c.z + c.tz * sign * COVER.peek };
       const pg = terrainHeight(peek.x, peek.z);
       if (solidAt(peek.x, pg + 1.0, peek.z)) continue;
@@ -592,6 +635,10 @@ function fromCover(s: State, e: Enemy, known: { x: number; z: number; live: bool
     if (known.live && facing(e, tChest) && los({ ...e.pos, y: e.pos.y + k.weakY }, tChest) && tUp) {
       e.mode = "telegraph";
       e.timer = k.telegraph;
+      // Through the wind-up it keeps stepping out, away from its cover, not back behind it.
+      const ox = e.peek.x - e.cover.x;
+      const oz = e.peek.z - e.cover.z;
+      e.strafe = -(tChest.z - e.pos.z) * ox + (tChest.x - e.pos.x) * oz >= 0 ? 1 : -1;
       leadAim(e, tChest, tVel);
       s.events.push({ t: "telegraph", id: e.id });
     } else {

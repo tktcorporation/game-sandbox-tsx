@@ -60,6 +60,12 @@ export interface Player {
   triggerHeld: boolean;
   ads: number; // 0..1
   recoil: number; // degrees currently kicked up, recovers
+  /** Degrees currently kicked sideways (positive to the right), recovers like `recoil`. */
+  recoilYaw: number;
+  /** Shots in the current spray: the place in `KICK_PATTERN`. */
+  spray: number;
+  /** `State.time` of the last shot, to tell when a spray ends. */
+  lastShot: number;
   tactical: number; // cooldown left
   ult: number; // charge 0..1
   /** In the air on the ult's leap, going up and then gliding down; `carry` takes the teammate along. */
@@ -118,7 +124,7 @@ export interface Ally {
   shortcutT: number;
 }
 
-export type EnemyMode = "spawning" | "move" | "telegraph" | "fire" | "lunge" | "recover" | "stomp" | "stunned";
+export type EnemyMode = "spawning" | "move" | "telegraph" | "fire" | "lunge" | "recover" | "stomp" | "stunned" | "staggered";
 
 /**
  * What a robot knows. idle: at its post or on patrol. alert: heard or glimpsed
@@ -172,6 +178,16 @@ export interface Enemy {
    * rarity are reduced; weak-point hits pass in full.
    */
   plate: Rarity;
+  /** Seconds until it may change strafe direction. */
+  strafeT: number;
+  /** Seconds left of a jink: a fast sidestep the other way after being hit. */
+  jink: number;
+  /** Damage counted toward a stagger, decaying over `STAGGER.window`. */
+  stagger: number;
+  /** Seconds left in which it cannot be staggered again. */
+  steady: number;
+  /** The side of its cover a grunt steps out to next (+1 / -1): it alternates. */
+  peekSide: number;
 }
 
 export interface SquadState {
@@ -271,7 +287,9 @@ export type GameEvent =
   | { t: "impact"; pos: Vec3 }
   | { t: "hit"; id: number; pos: Vec3; dmg: number; crit: boolean; shield: boolean; tier: Rarity; flank: Flank; ally: boolean; /** A plate took part of this hit. */ blocked: boolean }
   | { t: "shieldBreak"; id: number; pos: Vec3; tier: Rarity }
-  | { t: "kill"; id: number; kind: EnemyKind; pos: Vec3; crit: boolean; last: boolean; ally: boolean }
+  /** A robot reels from the damage it took; a wind-up it was in is lost. `fromX/Z` is where the shot came from. */
+  | { t: "stagger"; id: number; pos: Vec3; fromX: number; fromZ: number; interrupted: boolean }
+  | { t: "kill"; id: number; kind: EnemyKind; pos: Vec3; crit: boolean; last: boolean; ally: boolean; /** Where the killing shot came from, so the wreck falls away from it. */ fromX: number; fromZ: number }
   | { t: "allyShot"; from: Vec3; to: Vec3; hit: boolean }
   | { t: "allyHurt"; dmg: number }
   | { t: "allyDown" }
@@ -581,6 +599,9 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
       triggerHeld: false,
       ads: 0,
       recoil: 0,
+      recoilYaw: 0,
+      spray: 0,
+      lastShot: -99,
       tactical: 0,
       ult: ULT.startCharge,
       leap: null,

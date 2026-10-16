@@ -1,4 +1,4 @@
-import { ALLY, ASSIST, DEG, ENEMIES, FLANK, NOISE, PLATE, PLAYER, RARITY, ROBOT_DROPS, TICK, ULT, VALUABLES, WEAPONS, type Flank, type Rarity, type ValuableKind, type WeaponSpec } from "./config";
+import { ALLY, ASSIST, DEG, DODGE, ELITE, ENEMIES, FLANK, KICK_PATTERN, KICK_RESET, NOISE, PLATE, PLAYER, RARITY, ROBOT_DROPS, STAGGER, TICK, ULT, VALUABLES, WEAPONS, type Flank, type Rarity, type ValuableKind, type WeaponSpec } from "./config";
 import { engageSquad, makeNoise } from "./awareness";
 import { POIS } from "./map";
 import { los, lookAngles, norm, rayWorld, raySphere, wrapAngle } from "./geom";
@@ -24,9 +24,9 @@ export const eyePos = (s: State): Vec3 => {
 export const magSize = (w: Weapon) => Math.round(WEAPONS[w.kind].mag * RARITY.mag[w.rarity]);
 
 /** Assist cone half-angle (radians) for the current ADS state at a distance. */
-function coneAt(s: State, dist: number, pelletScale: number): number {
+function coneAt(s: State, dist: number, pelletScale: number, touch: boolean): number {
   const p = s.player;
-  const base = ASSIST.hipCone + (ASSIST.adsCone - ASSIST.hipCone) * p.ads;
+  const base = (ASSIST.hipCone + (ASSIST.adsCone - ASSIST.hipCone) * p.ads) * (touch ? ASSIST.touchCone : 1);
   return base * DEG * pelletScale + Math.atan(ASSIST.farPadding / Math.max(dist, 1));
 }
 
@@ -86,8 +86,8 @@ function falloff(spec: WeaponSpec, d: number): number {
   return 1 - ((d - spec.falloffStart) / (spec.falloffEnd - spec.falloffStart)) * (1 - spec.falloffMin);
 }
 
-/** One hitscan ray (one pellet). */
-export function fireRay(s: State, w: Weapon, dir: Vec3) {
+/** One hitscan ray (one pellet). `touch`: the shot came from a touch screen (a wider assist cone). */
+export function fireRay(s: State, w: Weapon, dir: Vec3, touch = false) {
   const spec = WEAPONS[w.kind];
   const eye = eyePos(s);
   const wallT = rayWorld(eye, dir, 140);
@@ -108,7 +108,7 @@ export function fireRay(s: State, w: Weapon, dir: Vec3) {
     const d = Math.hypot(v.x, v.y, v.z);
     if (d > ASSIST.range) continue;
     const ang = Math.acos(Math.max(-1, Math.min(1, (v.x * dir.x + v.y * dir.y + v.z * dir.z) / d)));
-    if (ang > coneAt(s, d, pelletScale) + Math.atan(k.radius / Math.max(d, 1))) continue;
+    if (ang > coneAt(s, d, pelletScale, touch) + Math.atan(k.radius / Math.max(d, 1))) continue;
     const rank = assistRank(e, ang);
     if (assisted && rank >= assisted.angle) continue;
     if (!los(eye, c)) continue;
@@ -134,18 +134,24 @@ export function fireRay(s: State, w: Weapon, dir: Vec3) {
 }
 
 /** Fire the active weapon once: spread, pellets, recoil. */
-export function shoot(s: State, w: Weapon) {
+export function shoot(s: State, w: Weapon, touch = false) {
   const p = s.player;
   const spec = WEAPONS[w.kind];
   const spread = (spec.hipSpread + (spec.adsSpread - spec.hipSpread) * p.ads);
   const aimPitch = p.pitch + p.recoil * DEG;
+  const aimYaw = p.yaw + p.recoilYaw * DEG;
   for (let i = 0; i < spec.pellets; i++) {
     const a = rand(s) * Math.PI * 2;
     const r = Math.sqrt(rand(s)) * spread * DEG;
     s.stats.shots++;
-    fireRay(s, w, norm(forward(p.yaw + Math.cos(a) * r, aimPitch + Math.sin(a) * r)));
+    fireRay(s, w, norm(forward(aimYaw + Math.cos(a) * r, aimPitch + Math.sin(a) * r)), touch);
   }
-  p.recoil += spec.recoil * (1 - 0.5 * p.ads);
+  const steady = 1 - 0.5 * p.ads;
+  p.recoil += spec.recoil * steady;
+  if (s.time - p.lastShot > KICK_RESET) p.spray = 0;
+  p.recoilYaw += spec.kick * KICK_PATTERN[p.spray % KICK_PATTERN.length] * steady;
+  p.spray++;
+  p.lastShot = s.time;
   s.events.push({ t: "shot", weapon: w.kind, rarity: w.rarity });
   makeNoise(s, p.pos.x, p.pos.z, NOISE[w.kind], true);
 }
@@ -169,7 +175,8 @@ export function damageEnemy(s: State, e: Enemy, raw: number, crit: boolean, at: 
   // Callers may hold a list taken before a kill removed this robot (the titan takes its summons with it).
   if (!s.enemies.includes(e)) return;
   const k = ENEMIES[e.kind];
-  raw *= FLANK.mult[flank];
+  raw *= flank === "ambush" && (e.kind === "heavy" || e.elite) ? FLANK.ambushTough : FLANK.mult[flank];
+  const quiet = Math.min(e.lastHit, e.allyHit) > DODGE.jinkQuiet;
   const blocked = !crit && rarity !== undefined && e.plate > rarity;
   if (blocked) raw *= PLATE.mult[e.plate - rarity];
   // Being shot gives the player away to the whole squad. A squad already fighting
@@ -192,13 +199,48 @@ export function damageEnemy(s: State, e: Enemy, raw: number, crit: boolean, at: 
     s.stats.damage += dealt;
   }
   s.events.push({ t: "hit", id: e.id, pos: at, dmg: Math.round(raw), crit, shield: toShield > 0, tier: k.shieldTier, flank, ally: by === "ally", blocked });
-  if (hadShield && e.shield <= 0) s.events.push({ t: "shieldBreak", id: e.id, pos: at, tier: k.shieldTier });
+  const broke = hadShield && e.shield <= 0;
+  if (broke) s.events.push({ t: "shieldBreak", id: e.id, pos: at, tier: k.shieldTier });
+  if (e.hp > 0) react(s, e, dealt * (crit ? STAGGER.weak : 1), broke, quiet, shooter);
   const p = s.player;
   if (!p.leap && p.ult < 1) {
     p.ult = Math.min(1, p.ult + (dealt / ULT.dmgPerCharge) * k.ult * (by === "ally" ? ALLY.ultShare : 1));
     if (p.ult >= 1) s.events.push({ t: "ultReady" });
   }
   if (e.hp <= 0) kill(s, e, crit, by);
+}
+
+/**
+ * How a robot that survives a hit reacts (see STAGGER and DODGE): the damage counts
+ * toward a stagger, which knocks it back from the shooter and costs it the wind-up or
+ * burst it was in; the first hit after a quiet spell makes a moving robot jink.
+ * The titan and robots already stunned or beaming in do neither.
+ */
+function react(s: State, e: Enemy, weight: number, broke: boolean, quiet: boolean, from: Vec3) {
+  if (e.kind === "titan" || e.mode === "spawning" || e.mode === "stunned") return;
+  e.stagger += weight;
+  const k = ENEMIES[e.kind];
+  const full = (k.hp + k.shield) * (e.elite ? ELITE.hp : 1);
+  const heavy = e.stagger >= STAGGER.share[e.kind] * full;
+  if (e.mode !== "staggered" && e.steady <= 0 && (heavy || broke)) {
+    const interrupted = e.mode === "telegraph" || e.mode === "fire" || e.mode === "lunge";
+    e.mode = "staggered";
+    e.timer = heavy ? STAGGER.time[e.kind] : STAGGER.shieldBreak;
+    e.shotsLeft = 0;
+    e.stagger = 0;
+    e.steady = e.timer + STAGGER.steady;
+    const dx = e.pos.x - from.x;
+    const dz = e.pos.z - from.z;
+    const d = Math.hypot(dx, dz) || 1;
+    e.vel.x = (dx / d) * STAGGER.knock;
+    e.vel.z = (dz / d) * STAGGER.knock;
+    s.events.push({ t: "stagger", id: e.id, pos: bodyCenter(e), fromX: from.x, fromZ: from.z, interrupted });
+    return;
+  }
+  if (quiet && e.mode === "move" && e.aware === "engaged") {
+    e.jink = DODGE.jinkTime;
+    e.strafe = -e.strafe;
+  }
 }
 
 const SHARDS = { drone: 1, grunt: 1, charger: 1, heavy: 3, titan: 0 } as const;
@@ -231,7 +273,8 @@ export function kill(s: State, e: Enemy, crit: boolean, by: "player" | "ally" = 
     s.loot.push({ id: s.nextId++, kind: "valuable", valuable: v, rarity: VALUABLES[v].rarity, pos: { ...c }, vel: { x: Math.cos(a) * 1.5, y: 5, z: Math.sin(a) * 1.5 }, age: 0 });
   }
   const last = e.poi >= 0 && !s.enemies.some((o) => o.poi === e.poi);
-  s.events.push({ t: "kill", id: e.id, kind: e.kind, pos: c, crit, last, ally: by === "ally" });
+  const from = by === "ally" ? s.ally.pos : s.player.pos;
+  s.events.push({ t: "kill", id: e.id, kind: e.kind, pos: c, crit, last, ally: by === "ally", fromX: from.x, fromZ: from.z });
   if (e.kind === "titan") {
     // The titan's fall takes its summons and everything in the air with it.
     s.orbs = [];
