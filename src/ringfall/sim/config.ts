@@ -92,11 +92,17 @@ export const DROP = {
 };
 
 export const ASSIST = {
-  /** Half-angle of the cone in which a shot that misses the hitbox still hits the enemy. */
-  hipCone: 2.1,
-  adsCone: 2.9,
+  /**
+   * Half-angle of the cone in which a shot that misses the hitbox still hits the enemy.
+   * Narrow enough that a strafing robot has to be tracked: a crosshair left where the
+   * robot was misses once it has moved a body width.
+   */
+  hipCone: 1.5,
+  adsCone: 2.1,
+  /** Touch input: the cone is this much wider, since a thumb tracks a jinking target less closely than a mouse. */
+  touchCone: 1.35,
   /** Extra metres of tolerance far away, so distant enemies are not impossible. */
-  farPadding: 0.3,
+  farPadding: 0.2,
   /** Look sensitivity multiplier while the crosshair is near an enemy. */
   slowdown: 0.55,
   slowCone: 9,
@@ -110,7 +116,7 @@ export const ASSIST = {
    * Touch aiming: pull also works while firing from the hip, and this much faster.
    * A thumb cannot hold aim and track at once the way a mouse hand can.
    */
-  touchPull: 1.6,
+  touchPull: 1.8,
   pullCone: 12,
   range: 70,
 };
@@ -134,19 +140,29 @@ export interface WeaponSpec {
   falloffMin: number;
   crit: number;
   recoil: number; // degrees of pitch kick per shot
+  /** Degrees of sideways kick per shot, scaled by `KICK_PATTERN` along a spray (0: none). */
+  kick: number;
   adsFov: number;
   /** Aiming looks through a scope: the view zooms to adsFov behind a round sight, with no gun in view. */
   scope?: true;
 }
 
 export const WEAPONS: Record<WeaponKind, WeaponSpec> = {
-  pike: { name: "PIKE", label: "アサルトライフル", dmg: 14, pellets: 1, interval: 0.1, auto: true, mag: 24, reload: 1.6, hipSpread: 1.3, adsSpread: 0.3, falloffStart: 40, falloffEnd: 70, falloffMin: 0.7, crit: 1.75, recoil: 0.32, adsFov: 52 },
-  hornet: { name: "HORNET", label: "サブマシンガン", dmg: 10, pellets: 1, interval: 0.066, auto: true, mag: 26, reload: 1.3, hipSpread: 2.0, adsSpread: 0.9, falloffStart: 18, falloffEnd: 40, falloffMin: 0.55, crit: 1.6, recoil: 0.22, adsFov: 60 },
-  maul: { name: "MAUL", label: "ショットガン", dmg: 11, pellets: 8, interval: 0.8, auto: false, mag: 6, reload: 2.2, hipSpread: 5.0, adsSpread: 3.6, falloffStart: 9, falloffEnd: 22, falloffMin: 0.3, crit: 1.5, recoil: 2.2, adsFov: 62 },
+  pike: { name: "PIKE", label: "アサルトライフル", dmg: 14, pellets: 1, interval: 0.1, auto: true, mag: 24, reload: 1.6, hipSpread: 1.3, adsSpread: 0.3, falloffStart: 40, falloffEnd: 70, falloffMin: 0.7, crit: 1.75, recoil: 0.32, kick: 0.32, adsFov: 52 },
+  hornet: { name: "HORNET", label: "サブマシンガン", dmg: 10, pellets: 1, interval: 0.066, auto: true, mag: 26, reload: 1.3, hipSpread: 2.0, adsSpread: 0.9, falloffStart: 18, falloffEnd: 40, falloffMin: 0.55, crit: 1.6, recoil: 0.22, kick: 0.28, adsFov: 60 },
+  maul: { name: "MAUL", label: "ショットガン", dmg: 11, pellets: 8, interval: 0.8, auto: false, mag: 6, reload: 2.2, hipSpread: 5.0, adsSpread: 3.6, falloffStart: 9, falloffEnd: 22, falloffMin: 0.3, crit: 1.5, recoil: 2.2, kick: 0.9, adsFov: 62 },
   // A bolt-action sniper: one hit drops most robots that have not noticed the player.
-  talon: { name: "TALON", label: "スナイパー", dmg: 90, pellets: 1, interval: 1.2, auto: false, mag: 5, reload: 2.6, hipSpread: 4.5, adsSpread: 0, falloffStart: 999, falloffEnd: 1000, falloffMin: 1, crit: 2.0, recoil: 3.2, adsFov: 18, scope: true },
-  lance: { name: "LANCE", label: "マークスマン", dmg: 48, pellets: 1, interval: 0.36, auto: false, mag: 10, reload: 2.0, hipSpread: 1.6, adsSpread: 0, falloffStart: 999, falloffEnd: 1000, falloffMin: 1, crit: 2.0, recoil: 1.6, adsFov: 38 },
+  talon: { name: "TALON", label: "スナイパー", dmg: 90, pellets: 1, interval: 1.2, auto: false, mag: 5, reload: 2.6, hipSpread: 4.5, adsSpread: 0, falloffStart: 999, falloffEnd: 1000, falloffMin: 1, crit: 2.0, recoil: 3.2, kick: 0, adsFov: 18, scope: true },
+  lance: { name: "LANCE", label: "マークスマン", dmg: 48, pellets: 1, interval: 0.36, auto: false, mag: 10, reload: 2.0, hipSpread: 1.6, adsSpread: 0, falloffStart: 999, falloffEnd: 1000, falloffMin: 1, crit: 2.0, recoil: 1.6, kick: 0.5, adsFov: 38 },
 };
+
+/**
+ * The sideways kick along a spray, shot by shot: a drift right, a swing left, back
+ * right, repeating. Fixed rather than random, so holding the trigger is a pattern the
+ * player learns to pull against. The spray restarts after `KICK_RESET` s without a shot.
+ */
+export const KICK_PATTERN = [0.3, 0.6, 0.9, 1, 0.7, 0.2, -0.4, -0.9, -1, -0.8, -0.3, 0.3, 0.8, 1, 0.6, 0, -0.6, -1, -0.9, -0.4];
+export const KICK_RESET = 0.35;
 
 /** Interval multiplier when a semi-auto weapon repeats because the trigger is held. */
 export const SEMI_HOLD = 1.3;
@@ -223,7 +239,7 @@ export const ENEMIES: Record<EnemyKind, EnemySpec> = {
   drone: { hp: 70, shield: 0, shieldTier: 0, radius: 0.55, bodyY: 0, weakY: 0, weakR: 0.24, weakFwd: 0.42, speed: 4.2, fly: 3.4, range: 14, telegraph: 0.55, cooldown: 1.6, shots: 1, shotGap: 0, spread: 0, orbSpeed: 62, orbDmg: 21, orbR: 0.2, ult: 1 },
   grunt: { hp: 140, shield: 70, shieldTier: 1, radius: 0.6, bodyY: 1.1, weakY: 1.86, weakR: 0.27, weakFwd: 0.08, speed: 3.2, fly: 0, range: 15, telegraph: 0.6, cooldown: 1.5, shots: 3, shotGap: 0.16, spread: 0, orbSpeed: 76, orbDmg: 20, orbR: 0.18, ult: 1 },
   charger: { hp: 120, shield: 50, shieldTier: 0, radius: 0.72, bodyY: 0.75, weakY: 0.95, weakR: 0.3, weakFwd: 0.62, speed: 6.4, fly: 0, range: 0, telegraph: 0.6, cooldown: 1.2, shots: 0, shotGap: 0, spread: 0, orbSpeed: 0, orbDmg: 40, orbR: 0, ult: 1 },
-  heavy: { hp: 300, shield: 150, shieldTier: 2, radius: 0.95, bodyY: 1.4, weakY: 2.35, weakR: 0.36, weakFwd: 0.1, speed: 2.0, fly: 0, range: 18, telegraph: 0.85, cooldown: 3.2, shots: 5, shotGap: 0, spread: 9, orbSpeed: 54, orbDmg: 18, orbR: 0.26, ult: 1 },
+  heavy: { hp: 270, shield: 130, shieldTier: 2, radius: 0.95, bodyY: 1.4, weakY: 2.35, weakR: 0.36, weakFwd: 0.1, speed: 2.0, fly: 0, range: 18, telegraph: 0.85, cooldown: 3.2, shots: 5, shotGap: 0, spread: 9, orbSpeed: 54, orbDmg: 18, orbR: 0.26, ult: 1 },
   titan: { hp: 3200, shield: 1000, shieldTier: 3, radius: 2.3, bodyY: 3.2, weakY: 3.4, weakR: 0.75, weakFwd: 2.1, speed: 1.6, fly: 0, range: 20, telegraph: 1.0, cooldown: 3.0, shots: 6, shotGap: 0.16, spread: 0, orbSpeed: 13, orbDmg: 9, orbR: 0.48, ult: 0.5 },
 };
 
@@ -513,13 +529,13 @@ export const RAIDERS = {
   name: "レイダー",
   kinds: ["grunt", "grunt", "grunt"] as EnemyKind[],
   huntEvery: 4,
-  /** The elite squad wears plates (see PLATE): a common gun barely scratches their bodies. */
+  /** The elite squad wears plates (see PLATE): a common gun does half its damage to their bodies. */
   plate: 2 as Rarity,
 };
 
 /** How much tougher, deadlier and quicker an elite robot (a raider) is than a plain one. */
 export const ELITE = {
-  hp: 1.6,
+  hp: 1.5,
   dmg: 1.3,
   cooldown: 0.75,
   turn: 1.2,
@@ -615,7 +631,13 @@ export type Flank = "front" | "side" | "back" | "ambush" | "none";
 export const FLANK = {
   frontArc: 55, // degrees either side of facing
   backArc: 115, // beyond this many degrees from facing
-  mult: { front: 0.6, side: 1, back: 2.2, ambush: 3, none: 1 } satisfies Record<Flank, number>,
+  mult: { front: 0.75, side: 1, back: 2.2, ambush: 3, none: 1 } satisfies Record<Flank, number>,
+  /**
+   * Heavies and raiders brace for the first shot: an ambush on them counts this much
+   * instead of `mult.ambush`, so a sniper's opener drops a grunt or a drone outright but
+   * only opens a fight with the big ones.
+   */
+  ambushTough: 1.5,
 };
 
 /**
@@ -626,8 +648,51 @@ export const FLANK = {
  * an aim check or a reason to bring better gear, never a wall.
  */
 export const PLATE = {
-  mult: [1, 0.5, 0.3, 0.2] as number[],
+  mult: [1, 0.6, 0.5, 0.35] as number[],
 };
+
+/**
+ * How a fighting robot moves. It strafes across the player's view while it sees them,
+ * changes direction every so often, and keeps sidestepping through its wind-up and burst
+ * (`windup`, a fraction of its speed: the heavy plants its feet to fire, the charger
+ * holds its lane). The first hit after a quiet spell makes it jink the other way, faster,
+ * for `jinkTime` s.
+ */
+export const DODGE = {
+  /** Fraction of its speed a robot strafes at between attacks while it sees its target. */
+  strafe: 1,
+  windup: { drone: 0.7, grunt: 0.6, charger: 0, heavy: 0, titan: 0 } satisfies Record<EnemyKind, number>,
+  /** Seconds between chances to change direction, and the chance it does. */
+  every: [0.4, 1.1] as const,
+  flip: 0.65,
+  jinkTime: 0.35,
+  jinkSpeed: 1.5,
+  /** Seconds without being hit before the next hit makes it jink. */
+  jinkQuiet: 1.2,
+};
+
+/**
+ * Robots react to being shot. Every hit flinches the model (drawn only). Damage landed
+ * within a short window adds up, and once it passes `share` of the robot's full health
+ * and shield it staggers: it reels back for `time` s, and a wind-up or burst it was in
+ * is lost. Weak-point damage counts `weak` times. A shield breaking staggers it briefly
+ * too. After a stagger it shrugs hits off for `steady` s, so steady fire is rewarded
+ * with one interrupt per robot rather than a robot that never shoots back.
+ */
+export const STAGGER = {
+  /** Seconds over which damage counts toward a stagger (an exponential window). */
+  window: 0.7,
+  share: { drone: 0.35, grunt: 0.3, charger: 0.3, heavy: 0.22, titan: 99 } satisfies Record<EnemyKind, number>,
+  weak: 1.6,
+  time: { drone: 0.45, grunt: 0.6, charger: 0.7, heavy: 0.5, titan: 0 } satisfies Record<EnemyKind, number>,
+  shieldBreak: 0.3,
+  steady: 1.8,
+  /** Speed (m/s) it is knocked back from the shot that staggers it. */
+  knock: 2.5,
+};
+
+/** A grunt left alone below this share of its health and shield falls back to cover and hides longer. */
+export const FALLBACK = { below: 0.4, hide: [2.2, 3.2] as const };
 
 /** How far a sound carries, in metres. Robots inside it come to look. */
 export const NOISE = {

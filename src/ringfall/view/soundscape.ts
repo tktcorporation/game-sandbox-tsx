@@ -253,6 +253,10 @@ export class Soundscape {
       case "kill":
         if (!e.ally) sfx.kill(e.crit);
         else sfx.wreck(lift(e.pos, 0.8));
+        sfx.collapse(lift(e.pos, -0.5), e.kind === "heavy" || e.kind === "titan");
+        break;
+      case "stagger":
+        sfx.stagger(enemyAt(e.id), e.interrupted);
         break;
       case "hurt":
         if (e.shieldBroke) sfx.myShieldBreak();

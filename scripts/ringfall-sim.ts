@@ -8,7 +8,7 @@
  *
  * With a region id after the count, only that region's table is played.
  */
-import { ALLY, BAG, DEPOT, ENEMIES, HEALS, NOISE, PLATE, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, TACTICAL, TICK, VALUABLES, WORLD } from "../src/ringfall/sim/config";
+import { ALLY, BAG, DEPOT, ELITE, ENEMIES, HEALS, NOISE, PLATE, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, STAGGER, TACTICAL, TICK, VALUABLES, VAULT, WEAPONS, WORLD } from "../src/ringfall/sim/config";
 import { engageSquad, makeNoise } from "../src/ringfall/sim/awareness";
 import { spawnEnemy } from "../src/ringfall/sim/enemies";
 import { COVERS } from "../src/ringfall/sim/cover";
@@ -502,6 +502,8 @@ function checkBoatCall(): string | null {
   s.ally.active = false;
   const boat = EXTRACTS.find((x) => x.id === "boat")!;
   const p = s.player;
+  // No teammate: it would shoot the waves down before they can be counted.
+  s.ally.active = false;
   p.pos = { x: boat.x, y: groundAt(boat.x, boat.z, 0.4, 20), z: boat.z };
   p.iframes = 999;
   holdSpot(s, boat.call! - 1);
@@ -525,6 +527,8 @@ function checkSecondPickup(): string | null {
   const ship = EXTRACTS.find((x) => x.id === "ship")!;
   const p = s.player;
   p.iframes = 999;
+  // No teammate: it would shoot the waves down before they can be counted.
+  s.ally.active = false;
   p.pos = { x: boat.x, y: groundAt(boat.x, boat.z, 0.4, 20), z: boat.z };
   ticks(s, boat.call! - 1);
   const left = s.enemies.filter((e) => s.squads[e.squad]?.name === SHIP_SQUAD).length;
@@ -1642,8 +1646,11 @@ function checkWallStops(): string | null {
       const hold = idleInput();
       hold.crouch = true;
       let hurt = 0;
+      // Held where it stands: grunts strafe through a burst, and a step out round the cover is a fair shot, not one through the wall.
+      const at = { ...g.pos };
       for (let i = 0; i < 1.2 / TICK; i++) {
         step(s, hold, true);
+        g.pos = { ...at };
         hurt += s.events.filter((e) => e.t === "hurt").length;
       }
       if (hurt) return `wall scenario: a player crouched behind cover took ${hurt} shots through it`;
@@ -1718,7 +1725,150 @@ function checkPositionMatters(): string | null {
   const ambush = shot(false, false);
   const front = shot(true, false);
   const back = shot(true, true);
-  if (ambush > 0 || back > 0 || front < 0.4) return `position scenario: a TALON weak-point shot leaves a grunt at ${Math.round(ambush * 100)}% unaware, ${Math.round(back * 100)}% from behind, ${Math.round(front * 100)}% from the front`;
+  if (ambush > 0 || back > 0 || front < 0.3) return `position scenario: a TALON weak-point shot leaves a grunt at ${Math.round(ambush * 100)}% unaware, ${Math.round(back * 100)}% from behind, ${Math.round(front * 100)}% from the front`;
+  return null;
+}
+
+/**
+ * Time to kill with the free kit's PIKE, every round on the body of a robot that faces the
+ * player (the usual fight): a grunt falls in 1.5-2.5 s of fire, a heavy and a vault guard
+ * in 3-4 s, a raider in 5-6.5 s, at 12 m and at 30 m. The kill says where the shot came from.
+ */
+function checkTimeToKill(): string | null {
+  const at = openSpot(31, 3, 3);
+  if (!at) return "ttk scenario: no open ground for the test";
+  const cases: [string, EnemyKind, (e: Enemy) => void, number, number][] = [
+    ["grunt", "grunt", () => {}, 1.5, 2.5],
+    ["heavy", "heavy", () => {}, 3, 4],
+    ["vault guard", "grunt", (e) => (e.plate = VAULT.guardPlate), 3, 4],
+    ["raider", "grunt", (e) => { e.elite = true; e.plate = RAIDERS.plate; e.hp *= ELITE.hp; e.shield *= ELITE.hp; }, 5, 6.5],
+  ];
+  for (const dist of [12, 30])
+    for (const [name, kind, dress, lo, hi] of cases) {
+      const { s, foes } = standoff(at, dist, [kind]);
+      const e = foes[0];
+      dress(e);
+      const gun = { kind: "pike" as const, rarity: 0 as Rarity, mag: -1 };
+      let n = 0;
+      while (s.enemies.includes(e) && n < 400) {
+        s.events = [];
+        const a = lookAngles(eyePos(s), bodyCenter(e));
+        fireRay(s, gun, forward(a.yaw, a.pitch));
+        n++;
+      }
+      const t = (n - 1) * WEAPONS.pike.interval;
+      if (t < lo || t > hi) return `ttk scenario: a common PIKE took ${n} body rounds (${t.toFixed(1)} s of fire) to kill a ${name} facing the player at ${dist} m (want ${lo}-${hi} s)`;
+      const k = s.events.find((x) => x.t === "kill");
+      if (!k || k.t !== "kill" || Math.hypot(k.fromX - s.player.pos.x, k.fromZ - s.player.pos.z) > 0.01) return "ttk scenario: the kill does not say where the shot came from";
+    }
+  // A sniper's opener on the weak point drops a grunt or a drone that has not noticed, and only opens a fight with a heavy or a raider.
+  for (const [kind, elite, dies] of [["grunt", false, true], ["drone", false, true], ["heavy", false, false], ["grunt", true, false]] as [EnemyKind, boolean, boolean][]) {
+    const s = newRun(5);
+    s.phase = "play";
+    s.enemies = [];
+    const squad = s.squads.length;
+    s.squads.push({ name: "test", poi: -1, patrol: [], leg: 0, engaged: false, roam: false, sinceSeen: 0, last: { x: 0, z: 0 } });
+    s.player.onGround = true;
+    const eye = eyePos(s);
+    const e = spawnEnemy(s, kind, eye.x, eye.z - 25, -1, squad, { face: Math.PI, elite, plate: elite ? RAIDERS.plate : 0 });
+    e.pos.y = eye.y - KINDS[kind].weakY; // level with the eye: a fresh run's player is still up in the drop
+    const a = lookAngles(eye, weakPoint(e));
+    fireRay(s, { kind: "talon", rarity: 0, mag: -1 }, forward(a.yaw, a.pitch));
+    if (s.enemies.includes(e) === dies) return `ttk scenario: a TALON weak-point shot on an unaware ${elite ? "raider" : kind} ${dies ? "left it standing" : "killed it outright"}`;
+  }
+  return null;
+}
+
+/**
+ * Hits rock a robot, and enough of them in a short time stagger it: a grunt in its wind-up
+ * that takes a burst reels back, its burst is lost, and it cannot be staggered again at once.
+ * One hit alone does not stagger it.
+ */
+function checkStagger(): string | null {
+  const at = openSpot(16, 2, 2);
+  if (!at) return "stagger scenario: no open ground for the test";
+  const { s, foes } = standoff(at, 15, ["grunt"]);
+  const g = foes[0];
+  s.player.iframes = 99;
+  // No shield, so the stagger can only come from the damage adding up (a shield breaking staggers too, checked below).
+  g.shield = 0;
+  g.mode = "telegraph";
+  g.timer = KINDS.grunt.telegraph;
+  g.cooldown = 99;
+  const gun = { kind: "pike" as const, rarity: 0 as Rarity, mag: -1 };
+  const fire = (n: number) => {
+    for (let i = 0; i < n; i++) {
+      const a = lookAngles(eyePos(s), bodyCenter(g));
+      fireRay(s, gun, forward(a.yaw, a.pitch));
+    }
+  };
+  s.events = [];
+  fire(1);
+  if (g.mode !== "telegraph") return `stagger scenario: one round put a grunt in ${g.mode}`;
+  // A burst's worth within the window: enough to pass its share.
+  const need = Math.ceil((STAGGER.share.grunt * enemyMaxPlain("grunt")) / (WEAPONS.pike.dmg * 0.75)) + 1;
+  fire(need);
+  const st = s.events.find((e) => e.t === "stagger");
+  if (g.mode !== "staggered" || !st || st.t !== "stagger" || !st.interrupted) return `stagger scenario: ${need + 1} quick rounds left a winding-up grunt in ${g.mode}${st ? "" : " with no stagger event"}`;
+  for (let i = 0; i < (KINDS.grunt.telegraph + 0.3) / TICK; i++) {
+    step(s, idleInput(), false);
+    if (s.events.some((e) => e.t === "enemyFire")) return "stagger scenario: a grunt staggered out of its wind-up still fired its burst";
+  }
+  // Back on its feet, it shrugs off another stagger's worth of rounds for a while.
+  if (g.mode === "staggered") return "stagger scenario: a grunt was still staggered after its wind-up's time";
+  s.events = [];
+  g.hp = KINDS.grunt.hp; // alive through another stagger's worth of rounds
+  fire(need);
+  if (!s.enemies.includes(g)) return "stagger scenario: the grunt died before the repeat could be checked";
+  if (s.events.some((e) => e.t === "stagger")) return "stagger scenario: a grunt was staggered again straight after a stagger";
+  // A shield breaking staggers it briefly, even on a hit too light to stagger it otherwise.
+  {
+    const { s, foes } = standoff(at, 15, ["grunt"]);
+    const h = foes[0];
+    s.player.iframes = 99;
+    h.shield = 1;
+    s.events = [];
+    const a = lookAngles(eyePos(s), bodyCenter(h));
+    fireRay(s, gun, forward(a.yaw, a.pitch));
+    if (h.mode !== "staggered" || Math.abs(h.timer - STAGGER.shieldBreak) > 1e-6) return `stagger scenario: breaking a grunt's shield left it in ${h.mode}`;
+  }
+  // A stagger out of a wind-up or a burst never brings the next one sooner: the attack's cooldown is still owed.
+  for (const mode of ["telegraph", "fire"] as const) {
+    const { s, foes } = standoff(at, 15, ["grunt"]);
+    const h = foes[0];
+    s.player.iframes = 99;
+    h.mode = mode;
+    h.cooldown = 0;
+    h.shield = 1;
+    const a = lookAngles(eyePos(s), bodyCenter(h));
+    fireRay(s, gun, forward(a.yaw, a.pitch));
+    if (h.mode !== "staggered" || h.cooldown < KINDS.grunt.cooldown * 0.8 - 1e-6) return `stagger scenario: a grunt staggered out of its ${mode} owes ${h.cooldown.toFixed(2)} s of cooldown`;
+  }
+  return null;
+}
+
+/** Robots keep moving through their wind-up: a grunt sidesteps across the player's view; a heavy plants its feet. */
+function checkWindupMoves(): string | null {
+  const at = openSpot(16, 5, 5);
+  if (!at) return "wind-up scenario: no open ground for the test";
+  for (const kind of ["grunt", "heavy"] as EnemyKind[]) {
+    const { s, foes } = standoff(at, 15, [kind]);
+    const e = foes[0];
+    s.player.iframes = 99;
+    e.mode = "telegraph";
+    e.timer = KINDS[kind].telegraph;
+    e.cooldown = 99;
+    const x0 = e.pos.x;
+    let telegraphT = 0;
+    while (e.mode === "telegraph" && telegraphT < 2) {
+      s.player.iframes = 99;
+      step(s, idleInput(), false);
+      telegraphT += TICK;
+    }
+    const moved = Math.abs(e.pos.x - x0);
+    // Half a metre: about a body width, enough to carry it off a crosshair left where it stood.
+    if (kind === "heavy" ? moved > 0.05 : moved < 0.5) return `wind-up scenario: a ${kind} moved ${moved.toFixed(2)} m sideways through its ${KINDS[kind].telegraph} s wind-up`;
+  }
   return null;
 }
 
@@ -1841,7 +1991,7 @@ function checkPlates(): string | null {
   return null;
 }
 
-for (const err of [checkDepots(), checkPlates(), checkHideout(), checkBoltNoTunnel(), checkPickupWavesRouted(), checkLaterWaveFights(), checkSidestepHit(), checkWallStops(), checkPinch(), checkHealHeard(), checkPositionMatters(), checkPullWhenAiming(), checkVault(), checkQuests(), checkSettle(), checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkBoatCall(), checkSecondPickup(), checkRegionDrop(), checkConnections(), checkAllySelfUp(), checkStompHeight(), checkDropOffHighGround(), checkFieldsReused(), checkFieldsFollowRunner(), checkCliffsStop(), checkNoPits(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill(), checkLeap(), checkLeapLeavesAllyBelow(), checkLeapDowned(), checkLeapAllyCatchesUp(), checkLeapAllyDowned(), checkLeapWithItem(), checkLeapClocks(), checkLeapOffHighGround(), checkLeapUnderRoof()]) {
+for (const err of [checkTimeToKill(), checkStagger(), checkWindupMoves(), checkDepots(), checkPlates(), checkHideout(), checkBoltNoTunnel(), checkPickupWavesRouted(), checkLaterWaveFights(), checkSidestepHit(), checkWallStops(), checkPinch(), checkHealHeard(), checkPositionMatters(), checkPullWhenAiming(), checkVault(), checkQuests(), checkSettle(), checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkBoatCall(), checkSecondPickup(), checkRegionDrop(), checkConnections(), checkAllySelfUp(), checkStompHeight(), checkDropOffHighGround(), checkFieldsReused(), checkFieldsFollowRunner(), checkCliffsStop(), checkNoPits(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill(), checkLeap(), checkLeapLeavesAllyBelow(), checkLeapDowned(), checkLeapAllyCatchesUp(), checkLeapAllyDowned(), checkLeapWithItem(), checkLeapClocks(), checkLeapOffHighGround(), checkLeapUnderRoof()]) {
   if (err) {
     console.error(err);
     process.exit(1);

@@ -54,6 +54,7 @@ export function stepPlayer(s: State, input: Input, prevCrouch: boolean) {
   p.pitch = Math.max(-1.45, Math.min(1.45, p.pitch + input.lookY * sens));
   if (p.downed <= 0) applyPull(s, input.fire, input.touch);
   p.recoil *= Math.exp(-TICK / 0.12);
+  p.recoilYaw *= Math.exp(-TICK / 0.12);
 
   if (p.downed > 0) {
     p.downed -= TICK;
@@ -311,7 +312,7 @@ function weapons(s: State, input: Input) {
     } else {
       // Spend the round first: a kill with a gold weapon refills the magazine inside shoot().
       w.mag--;
-      shoot(s, w);
+      shoot(s, w, input.touch);
       const held = !spec.auto && p.triggerHeld ? SEMI_HOLD : 1;
       p.cooldown = spec.interval * held;
       if (w.mag <= 0) startReload();
