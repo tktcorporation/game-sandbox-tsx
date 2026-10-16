@@ -349,7 +349,7 @@ const harborTour = [
   ["tour-25-open-ground", -60, 1.7, 140, -1.23, 0.0],
   ["tour-26-west-farm", -150, 1.7, 110, -0.84, 0.05],
   ["tour-27-water-tower", 70, 1.7, 130, 2.24, 0.08],
-  ["tour-28-checkpoint", 145, 1.7, -68, 0.97, 0.02],
+  ["tour-28-checkpoint", 145, 5, -68, 0.97, -0.08],
   ["tour-29-fishing-village", -145, 1.7, -460, -0.9, 0.05],
   ["tour-30-signal-box", -10, 1.7, -400, -0.79, 0.08],
   ["tour-31-reservoir-from-above", 0, 70, 215, 0, -0.38, true],
