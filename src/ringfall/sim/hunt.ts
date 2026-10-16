@@ -155,15 +155,28 @@ function openCell(x: number, z: number): number {
   const { main } = grid();
   const ci = idxX(x);
   const cj = idxZ(z);
-  for (let r = 0; r <= 12; r++)
+  // Nearest by the cell's centre, not the first in scan order: a walker pressed against a box
+  // stands in a cell the box closes, and an open cell across the box's corner would send it
+  // straight into the box. A cell one ring further out can be nearer than a corner of the
+  // ring that first had one, so that ring is searched too.
+  let best = -1;
+  let bestD = Infinity;
+  let last = 12;
+  for (let r = 0; r <= last; r++)
     for (let dj = -r; dj <= r; dj++)
       for (let di = -r; di <= r; di++) {
         if (Math.max(Math.abs(di), Math.abs(dj)) !== r) continue;
         const i = ci + di;
         const j = cj + dj;
-        if (i >= 0 && j >= 0 && i < NX && j < NZ && main[j * NX + i]) return j * NX + i;
+        if (i < 0 || j < 0 || i >= NX || j >= NZ || !main[j * NX + i]) continue;
+        const d = Math.hypot(centreX(i) - x, centreZ(j) - z);
+        if (d < bestD) {
+          bestD = d;
+          best = j * NX + i;
+          last = Math.min(last, r + 1);
+        }
       }
-  return -1;
+  return best;
 }
 
 

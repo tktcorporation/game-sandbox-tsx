@@ -319,11 +319,11 @@ const tour = [
   ["tour-3-town-street", 0, -5.4, 36, 0, 0.05],
   ["tour-4-east-ramp", 16, -5.4, 4, 1.3, 0.1],
   ["tour-5-spillway", 52, -8.4, -78, 0, 0.3],
-  ["tour-6-quarry-pit", -84, -2.4, 44, -0.63, -0.15],
+  ["tour-6-quarry-pit", -134, -2.4, 44, -0.63, -0.15],
   ["tour-7-high-rise-view", -2.5, 11.6, -10.2, Math.PI, -0.3],
   ["tour-8-plateau-over-lakebed", -40, 6.4, -46, 1.57, -0.15],
   ["tour-9-ridge", -50, 10.1, 70, -1.57, -0.1],
-  ["tour-10-over-supply", 45, 34, 104, -1.57, -0.35],
+  ["tour-10-over-supply", 45, 34, 144, -1.57, -0.35],
   ["tour-11-mesa-relay", 66, 8.6, -30, 1.57, 0.02],
 ];
 for (const [name, x, y, z, yaw, pitch] of tour) {
@@ -345,6 +345,14 @@ const harborTour = [
   ["tour-22-lighthouse-view", -112.9, 33.4, -552, 1.45, -0.2, true],
   ["tour-23-salt-flats", -40, 1.7, -468, 0.75, 0.0],
   ["tour-24-quay-boat", 94, 1.7, -578, 1.32, -0.1],
+  // The open ground between the areas, its outcrops and hamlets.
+  ["tour-25-open-ground", -60, 1.7, 140, -1.23, 0.0],
+  ["tour-26-west-farm", -150, 1.7, 110, -0.84, 0.05],
+  ["tour-27-water-tower", 70, 1.7, 130, 2.24, 0.08],
+  ["tour-28-checkpoint", 145, 5, -68, 0.97, -0.08],
+  ["tour-29-fishing-village", -145, 1.7, -460, -0.9, 0.05],
+  ["tour-30-signal-box", -10, 1.7, -400, -0.79, 0.08],
+  ["tour-31-reservoir-from-above", 0, 70, 215, 0, -0.38, true],
 ];
 for (const [name, x, dy, z, yaw, pitch, abs] of harborTour) {
   const y = abs ? dy : (await page.evaluate(([x, z]) => window.ringfallTerrain(x, z), [x, z])) + dy;

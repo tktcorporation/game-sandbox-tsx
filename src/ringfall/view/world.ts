@@ -115,6 +115,8 @@ function groundColour(c: THREE.Color, x: number, z: number, lo: number, hi: numb
     else if (at === "水路" || floorLevel(x, z) <= LEVEL.lakebed + 0.5) c.copy(COL.mud).lerp(COL.mudDark, noise(x * 0.4, z * 0.4) > 0.6 ? 0.6 : k * 0.3);
     else {
       c.copy(COL.sand).lerp(COL.dark, k > 0.62 ? 0.7 : k * 0.3);
+      // The ground between the areas in broad patches of redder soil, so the basins read as clearings.
+      if (at === "野") c.lerp(COL.rock, Math.max(0, noise(x * 0.015 + 3, z * 0.015) - 0.4) * 0.45);
       // Higher levels a touch lighter, so the steps read from afar.
       c.offsetHSL(0, 0, Math.max(-0.05, Math.min(0.05, h * 0.006)));
     }
