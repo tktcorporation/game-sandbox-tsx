@@ -668,7 +668,7 @@ export interface Region {
 
 export const REGIONS: Region[] = [
   { id: "reservoir", name: "ダム湖", note: "干上がったダム湖の島。拠点 4 つ、発着場にタイタン", drop: SPAWN, land: { x: 0, z: 106 }, pois: ["supply", "quarry", "relay", "pad"], exits: ["ship", "flare", "village"] },
-  { id: "harbor", name: "港湾地帯", note: "干上がった湾の港。拠点 3 つ、部隊が厚い", drop: { x: 20, z: -296, yaw: 0 }, land: { x: 22, z: -306 }, pois: ["wreck", "yard", "smelter"], exits: ["boat"] },
+  { id: "harbor", name: "港湾地帯", note: "干上がった湾の港。拠点 3 つ、どこにもヘビーがいる", drop: { x: 20, z: -296, yaw: 0 }, land: { x: 22, z: -306 }, pois: ["wreck", "yard", "smelter"], exits: ["boat"] },
 ];
 
 export const regionOf = (id: RegionId): Region => REGIONS.find((r) => r.id === id) ?? REGIONS[0];

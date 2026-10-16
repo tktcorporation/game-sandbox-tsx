@@ -400,67 +400,97 @@ const CRAG_LINES = CRAGS.map((c) => ({ c, poly: polyline(c.line) }));
 /** Metres inside the coast where the ground between turns into the coast's cliff. */
 const COAST = 8;
 
-/** Cell size of the ground-between grid, and the relaxation sweeps that smooth it. */
+/** Cell size of the ground-between grid. */
 const BRES = 4;
-const SWEEPS = 900;
 const BNX = Math.ceil((WORLD.x1 - WORLD.x0) / BRES) + 1;
 const BNZ = Math.ceil((WORLD.z1 - WORLD.z0) / BRES) + 1;
 let betweenField: Float32Array | null = null;
 
 /**
- * The ground between the open shapes, before its rolling: the smoothest surface (harmonic,
- * relaxed over a grid) that meets every open shape that is not walled at that shape's level.
- * Walking out of a basin the ground runs on at the basin's level and climbs or falls evenly
- * toward the next one, as steep as their levels and the distance between them make it.
+ * Laplace's equation relaxed over a grid of `res` metres: every cell inside an open shape that
+ * is not walled holds that shape's level, and the rest settle to the smoothest surface between
+ * them. Free cells start at `start` where given, else at their nearest fixed cell's level.
  */
-function betweenGrid(): Float32Array {
-  if (betweenField) return betweenField;
-  const u = new Float32Array(BNX * BNZ);
-  const fixed = new Uint8Array(BNX * BNZ);
+function relaxed(res: number, sweeps: number, start?: (x: number, z: number) => number): Float32Array {
+  const nx = Math.ceil((WORLD.x1 - WORLD.x0) / res) + 1;
+  const nz = Math.ceil((WORLD.z1 - WORLD.z0) / res) + 1;
+  const u = new Float32Array(nx * nz);
+  const fixed = new Uint8Array(nx * nz);
   const open = OPEN.filter(({ o }) => !o.walled);
   const queue: number[] = [];
-  for (let j = 0; j < BNZ; j++)
-    for (let i = 0; i < BNX; i++) {
-      const x = WORLD.x0 + i * BRES;
-      const z = WORLD.z0 + j * BRES;
+  for (let j = 0; j < nz; j++)
+    for (let i = 0; i < nx; i++) {
+      const x = WORLD.x0 + i * res;
+      const z = WORLD.z0 + j * res;
       let lv = Infinity;
       for (const { o, poly } of open) {
+        if (nearBox(x, z, poly) > o.half) continue;
         const { d, along: t } = toPolyline(x, z, poly);
         if (d <= o.half) lv = Math.min(lv, levelOf(o, t, poly));
       }
+      const k = j * nx + i;
       if (lv < Infinity) {
-        u[j * BNX + i] = lv;
-        fixed[j * BNX + i] = 1;
-        queue.push(j * BNX + i);
-      }
+        u[k] = lv;
+        fixed[k] = 1;
+        queue.push(k);
+      } else if (start) u[k] = start(x, z);
     }
-  // Every free cell starts at its nearest fixed cell's level, so the sweeps only smooth.
-  const seen = Uint8Array.from(fixed);
-  for (let q = 0; q < queue.length; q++) {
-    const k = queue[q];
-    const i = k % BNX;
-    for (const n of [i > 0 ? k - 1 : -1, i < BNX - 1 ? k + 1 : -1, k - BNX, k + BNX]) {
-      if (n < 0 || n >= u.length || seen[n]) continue;
-      seen[n] = 1;
-      u[n] = u[k];
-      queue.push(n);
+  if (!start) {
+    const seen = Uint8Array.from(fixed);
+    for (let q = 0; q < queue.length; q++) {
+      const k = queue[q];
+      const i = k % nx;
+      for (const n of [i > 0 ? k - 1 : -1, i < nx - 1 ? k + 1 : -1, k - nx, k + nx]) {
+        if (n < 0 || n >= u.length || seen[n]) continue;
+        seen[n] = 1;
+        u[n] = u[k];
+        queue.push(n);
+      }
     }
   }
-  // Over-relaxed Gauss-Seidel sweeps of Laplace's equation; the world's edges mirror.
+  // Over-relaxed Gauss-Seidel sweeps; the world's edges mirror.
   const w = 1.9;
-  for (let it = 0; it < SWEEPS; it++)
-    for (let j = 0; j < BNZ; j++)
-      for (let i = 0; i < BNX; i++) {
-        const k = j * BNX + i;
+  for (let it = 0; it < sweeps; it++)
+    for (let j = 0; j < nz; j++)
+      for (let i = 0; i < nx; i++) {
+        const k = j * nx + i;
         if (fixed[k]) continue;
         const l = u[i > 0 ? k - 1 : k + 1];
-        const r = u[i < BNX - 1 ? k + 1 : k - 1];
-        const t = u[j > 0 ? k - BNX : k + BNX];
-        const b = u[j < BNZ - 1 ? k + BNX : k - BNX];
+        const r = u[i < nx - 1 ? k + 1 : k - 1];
+        const t = u[j > 0 ? k - nx : k + nx];
+        const b = u[j < nz - 1 ? k + nx : k - nx];
         u[k] += w * ((l + r + t + b) / 4 - u[k]);
       }
-  betweenField = u;
   return u;
+}
+
+/**
+ * The ground between the open shapes, before its rolling: the smoothest surface (harmonic)
+ * that meets every open shape that is not walled at that shape's level. Walking out of a
+ * basin the ground runs on at the basin's level and climbs or falls evenly toward the next
+ * one, as steep as their levels and the distance between them make it. Settled first on a
+ * coarse grid, whose long-range shape a fine grid takes in only slowly, then on the fine one.
+ */
+function betweenGrid(): Float32Array {
+  if (betweenField) return betweenField;
+  const C = 16;
+  const cnx = Math.ceil((WORLD.x1 - WORLD.x0) / C) + 1;
+  const coarse = relaxed(C, 400);
+  const at = (x: number, z: number) => {
+    const fx = Math.min(cnx - 1.001, (x - WORLD.x0) / C);
+    const fz = (z - WORLD.z0) / C;
+    const i = Math.floor(fx);
+    const j = Math.floor(fz);
+    const k = j * cnx + i;
+    const u = fx - i;
+    const v = fz - j;
+    const below = coarse[k] + (coarse[k + 1] - coarse[k]) * u;
+    const next = k + cnx < coarse.length ? k + cnx : k;
+    const above = coarse[next] + (coarse[next + 1] - coarse[next]) * u;
+    return below + (above - below) * v;
+  };
+  betweenField = relaxed(BRES, 150, at);
+  return betweenField;
 }
 
 /** The ground between at (x, z), before its rolling. */
