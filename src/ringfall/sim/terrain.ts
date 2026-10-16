@@ -164,12 +164,12 @@ export const DAM_FACE = (x: number, z: number) => Math.abs(x) < 28 && z > -76 &&
 
 /** Basins: the POIs and the districts. Each holds everything built there. */
 const BASINS: Open[] = [
-  { name: "補給所", line: [[0, 86], [0, 130]], half: 28, level: LEVEL.shore },
+  { name: "補給所", line: [[0, 126], [0, 170]], half: 28, level: LEVEL.shore },
   { name: "湖底", line: [[0, -40], [0, 18]], half: 26, level: LEVEL.lakebed, walled: true },
   { name: "発着場", line: [[-8, -118], [10, -118]], half: 32, level: LEVEL.dam },
   // The dam crest: a walkway along the top of the dam face, the lakebed 15 m below.
   { name: "堤", line: [[-24, -79], [24, -79]], half: 5, level: LEVEL.dam },
-  { name: "採掘場", line: [[-116, 8], [-86, 24]], half: 26, level: LEVEL.pit, walled: true },
+  { name: "採掘場", line: [[-166, 8], [-136, 24]], half: 26, level: LEVEL.pit, walled: true },
   { name: "中継塔", line: [[78, -36], [102, -28]], half: 25, level: LEVEL.mesa },
   { name: "住宅地", line: [[104, 26], [122, 2]], half: 14, level: LEVEL.mesa },
   { name: "尾根", line: [[-66, 70], [-34, 70]], half: 10, level: LEVEL.ridge },
@@ -196,13 +196,13 @@ const BASINS: Open[] = [
  * the choice of road the choice of approach.
  */
 const ROADS: Open[] = [
-  { name: "湖への坂", line: [[0, 62], [0, 40]], half: 5, level: [LEVEL.shore, LEVEL.lakebed], walled: true },
+  { name: "湖への坂", line: [[0, 102], [0, 40]], half: 5, level: [LEVEL.shore, LEVEL.lakebed], walled: true },
   // Up onto the ridge at its east end, along its top, and down the haul road into the pit at its west end.
   // The climb starts at the supply basin's edge: a ramp rising inside a basin would leave a step where they meet.
   { name: "尾根道", line: [[-20, 106], [-29, 93], [-40, 77]], half: 5, level: [LEVEL.shore, LEVEL.shore, LEVEL.ridge] },
-  { name: "採掘場の運搬路", line: [[-70, 64], [-90, 60], [-104, 46], [-106, 40]], half: 5, level: [LEVEL.ridge, -1, -8, LEVEL.pit], walled: true },
-  { name: "西道", line: [[-24, 16], [-46, 16], [-62, 20]], half: 5, level: [LEVEL.lakebed, -8, LEVEL.pit], walled: true },
-  { name: "廃村道", line: [[-112, -16], [-112, -44]], half: 5, level: [LEVEL.pit, LEVEL.shore], walled: true },
+  { name: "採掘場の運搬路", line: [[-70, 64], [-100, 62], [-140, 50], [-156, 40]], half: 5, level: [LEVEL.ridge, -1, -8, LEVEL.pit], walled: true },
+  { name: "西道", line: [[-24, 16], [-60, 16], [-112, 20]], half: 5, level: [LEVEL.lakebed, -8, LEVEL.pit], walled: true },
+  { name: "廃村道", line: [[-150, -14], [-124, -46]], half: 5, level: [LEVEL.pit, LEVEL.shore] },
   { name: "湖の西坂", line: [[-22, -30], [-44, -38]], half: 5, level: [LEVEL.lakebed, LEVEL.shore], walled: true },
   { name: "堤の西坂", line: [[-56, -58], [-52, -82], [-30, -80]], half: 5, level: [LEVEL.shore, 6, LEVEL.dam] },
   { name: "廃村の北道", line: [[-96, -74], [-66, -96], [-40, -110]], half: 5, level: [LEVEL.shore, 4, LEVEL.dam] },

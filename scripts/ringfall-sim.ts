@@ -284,7 +284,7 @@ const WAIT_SPOTS: [string, number, number][] = [
   ["廃村", -100, -62],
   ["放水路", 50, -80],
   ["住宅地", 112, 20],
-  ["採掘場の奥", -100, 12],
+  ["採掘場の奥", -150, 12],
   ["尾根", -50, 76],
   ["峠", -60, -222],
   ["駅", 122, -230],
@@ -296,7 +296,7 @@ const WAIT_SPOTS: [string, number, number][] = [
 
 /** Walking into the lakebed's walls for 10 s gets the player nowhere: a cliff is climbed by no one. */
 function checkCliffsStop(): string | null {
-  for (const [x, z, yaw] of [[-20, -20, -Math.PI / 2], [20, -30, Math.PI / 2], [0, -60, 0], [-10, 30, Math.PI * 0.75]]) {
+  for (const [x, z, yaw] of [[-20, -20, -Math.PI / 2], [20, -30, Math.PI / 2], [0, -60, 0], [-10, 30, -Math.PI * 0.75]]) {
     const s = newRun(1);
     s.phase = "play";
     s.enemies = [];
@@ -816,9 +816,9 @@ function checkLeapLeavesAllyBelow(): string | null {
     const x = (b.x0 + b.x1) / 2;
     const z = (b.z0 + b.z1) / 2;
     const t = terrainHeight(x, z);
-    return Math.hypot(x - 25, z - 99) < 15 && b.h - t > 4 && b.x1 - b.x0 > 4 && b.z1 - b.z0 > 4;
+    return Math.hypot(x - 25, z - 139) < 15 && b.h - t > 4 && b.x1 - b.x0 > 4 && b.z1 - b.z0 > 4;
   });
-  if (!roof) return "leap scenario: no warehouse roof near 25,99";
+  if (!roof) return "leap scenario: no warehouse roof near 25,139";
   const s = padRun();
   const p = s.player;
   const x = (roof.x0 + roof.x1) / 2;
@@ -1207,9 +1207,12 @@ function checkDepots(): string | null {
   // Saves from before the depots load with none on and nothing explored; unknown depots are dropped.
   const { depots: _d, seen: _s, ...v5 } = newProfile();
   const loaded = parseProfile(JSON.parse(JSON.stringify({ ...v5, v: 5 })));
-  if (loaded?.v !== 6 || loaded.depots.length || loaded.seen !== "") return `depot scenario: a v5 save loaded as ${JSON.stringify(loaded && { v: loaded.v, depots: loaded.depots, seen: loaded.seen })}`;
+  if (loaded?.v !== 7 || loaded.depots.length || loaded.seen !== "") return `depot scenario: a v5 save loaded as ${JSON.stringify(loaded && { v: loaded.v, depots: loaded.depots, seen: loaded.seen })}`;
   const kept = parseProfile(JSON.parse(JSON.stringify({ ...after.profile, depots: ["pad", "nowhere", "pad"] })));
-  if (kept?.depots.join() !== "pad" || kept.seen !== after.profile.seen) return `depot scenario: a v6 save loaded depots ${kept?.depots.join()}`;
+  if (kept?.depots.join() !== "pad" || kept.seen !== after.profile.seen) return `depot scenario: a v7 save loaded depots ${kept?.depots.join()}`;
+  // A v6 save's explored map was drawn over the world before it widened: it is dropped, the depots stay.
+  const v6 = parseProfile(JSON.parse(JSON.stringify({ ...after.profile, v: 6 })));
+  if (v6?.v !== 7 || v6.seen !== "" || v6.depots.join() !== after.profile.depots.join()) return `depot scenario: a v6 save loaded as ${JSON.stringify(v6 && { v: v6.v, depots: v6.depots, seen: v6.seen.length })}`;
   return null;
 }
 
@@ -1320,7 +1323,7 @@ function checkHideout(): string | null {
   // Saves: a v4 profile keeps its stash and starts with an empty hideout; a v5 one keeps its hideout.
   const v4 = { v: 4, cash: 900, stash: [{ t: "valuable", kind: "gyro" }, { t: "weapon", kind: "pike", rarity: 2 }, { t: "key", poi: "yard" }], raids: 9, extracted: 7, quests: { progress: {}, done: ["grunts"] }, region: "harbor" };
   const m4 = parseProfile(JSON.parse(JSON.stringify(v4)));
-  if (!m4 || m4.v !== 6 || m4.stash.length !== 3 || m4.raids !== 9 || MODULES.some((m) => m4.hideout[m] !== 0) || m4.escaped || m4.region !== "harbor") return `storage scenario: a v4 save loaded as ${JSON.stringify(m4)}`;
+  if (!m4 || m4.v !== 7 || m4.stash.length !== 3 || m4.raids !== 9 || MODULES.some((m) => m4.hideout[m] !== 0) || m4.escaped || m4.region !== "harbor") return `storage scenario: a v4 save loaded as ${JSON.stringify(m4)}`;
   const m5 = parseProfile(JSON.parse(JSON.stringify(end)));
   if (!m5 || m5.hideout.craft !== maxLevel("craft") || m5.escaped?.raids !== 31 || m5.seed !== end.seed) return "storage scenario: a v5 save lost its hideout";
   // With one slot left, a valuable the hideout wants takes it ahead of gear; one it does not want is sold first.
@@ -1423,14 +1426,14 @@ function checkQuests(): string | null {
   const last = tr.profile.stash.at(-1);
   if (tr.quests[0]?.id !== "relay" || last?.t !== "key" || !tr.sold.some((i) => i.t === "valuable")) return `quest scenario: with one slot left the stash kept ${JSON.stringify(last)} and sold ${JSON.stringify(tr.sold)}`;
   const v1 = parseProfile({ v: 1, cash: 10, stash: [], raids: 2, extracted: 1 });
-  if (!v1 || v1.v !== 6 || v1.quests.done.length || v1.region !== "reservoir") return "storage scenario: a v1 save does not load";
+  if (!v1 || v1.v !== 7 || v1.quests.done.length || v1.region !== "reservoir") return "storage scenario: a v1 save does not load";
   // v2 saves named a key's POI by its place in the list; it loads as that POI's id.
   const v2 = parseProfile({ v: 2, cash: 10, stash: [{ t: "key", poi: 2 }, { t: "key", poi: 9 }], raids: 1, extracted: 1, quests: { progress: {}, done: [] } });
   const v2Key = v2?.stash[0];
-  if (!v2 || v2.v !== 6 || v2.stash.length !== 1 || v2Key?.t !== "key" || v2Key.poi !== "relay") return `storage scenario: a v2 save's key 2 loaded as ${JSON.stringify(v2?.stash)}, not the relay key`;
+  if (!v2 || v2.v !== 7 || v2.stash.length !== 1 || v2Key?.t !== "key" || v2Key.poi !== "relay") return `storage scenario: a v2 save's key 2 loaded as ${JSON.stringify(v2?.stash)}, not the relay key`;
   // A v3 save keeps its keys by id and drops into the reservoir; the landing choice is kept.
   const v3 = parseProfile({ v: 3, cash: 10, stash: [{ t: "key", poi: "wreck" }], raids: 1, extracted: 1, quests: { progress: {}, done: [] } });
-  if (!v3 || v3.v !== 6 || v3.stash.length !== 1 || v3.region !== "reservoir") return `storage scenario: a v3 save loaded as ${JSON.stringify(v3)}`;
+  if (!v3 || v3.v !== 7 || v3.stash.length !== 1 || v3.region !== "reservoir") return `storage scenario: a v3 save loaded as ${JSON.stringify(v3)}`;
   if (parseProfile(JSON.parse(JSON.stringify({ ...newProfile(), region: "harbor" })))?.region !== "harbor") return "storage scenario: the landing choice did not survive a save";
   // The harbor quests: the yard's vault counts only that vault, the harbor haul only a raid dropped into the harbor.
   const late = { ...newProfile(), quests: { progress: {}, done: QUESTS.filter((q) => !["yardVault", "harborHaul", "craft", "navigator", "control", "furnace", "escape"].includes(q.id)).map((q) => q.id) } };

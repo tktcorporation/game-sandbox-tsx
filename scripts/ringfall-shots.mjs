@@ -319,11 +319,11 @@ const tour = [
   ["tour-3-town-street", 0, -5.4, 36, 0, 0.05],
   ["tour-4-east-ramp", 16, -5.4, 4, 1.3, 0.1],
   ["tour-5-spillway", 52, -8.4, -78, 0, 0.3],
-  ["tour-6-quarry-pit", -84, -2.4, 44, -0.63, -0.15],
+  ["tour-6-quarry-pit", -134, -2.4, 44, -0.63, -0.15],
   ["tour-7-high-rise-view", -2.5, 11.6, -10.2, Math.PI, -0.3],
   ["tour-8-plateau-over-lakebed", -40, 6.4, -46, 1.57, -0.15],
   ["tour-9-ridge", -50, 10.1, 70, -1.57, -0.1],
-  ["tour-10-over-supply", 45, 34, 104, -1.57, -0.35],
+  ["tour-10-over-supply", 45, 34, 144, -1.57, -0.35],
   ["tour-11-mesa-relay", 66, 8.6, -30, 1.57, 0.02],
 ];
 for (const [name, x, y, z, yaw, pitch] of tour) {

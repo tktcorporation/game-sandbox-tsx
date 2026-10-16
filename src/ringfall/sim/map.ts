@@ -212,8 +212,8 @@ const HIGH_RISES = [
   { x: 0, z: -14, w: 10, d: 10, floors: 6, level: LEVEL.lakebed }, // the drowned town's office block
   { x: 125, z: 0, w: 10, d: 10, floors: 5, level: LEVEL.mesa }, // flats beyond the housing street
   { x: -34, z: -128, w: 8, d: 8, floors: 5, level: LEVEL.dam }, // the pad's control tower
-  { x: -132, z: 10, w: 8, d: 8, floors: 4, level: LEVEL.pit }, // a lookout at the quarry's far end
-  { x: -79, z: 28, w: 8, d: 8, floors: 4, level: LEVEL.pit }, // the quarry office
+  { x: -182, z: 10, w: 8, d: 8, floors: 4, level: LEVEL.pit }, // a lookout at the quarry's far end
+  { x: -129, z: 28, w: 8, d: 8, floors: 4, level: LEVEL.pit }, // the quarry office
 ] as const;
 
 /** A walkway slab whose top is at height y. */
@@ -336,8 +336,8 @@ function placePoi(p: Poi, [dx, dz]: readonly [number, number]): Poi {
  * into place by this offset.
  */
 const AT = [
-  [0, 50],
-  [-49, 8],
+  [0, 90],
+  [-99, 8],
   [48, -7],
   [0, -52],
   // The harbor's POIs are written round their own middle.
@@ -645,7 +645,7 @@ export const ROAMERS: Squad[] = (
       ] satisfies Squad[]
     ).map((sq) => placeSquad(sq, 0, 0)),
   );
-export const SPAWN = { x: 0, z: 140, yaw: 0 };
+export const SPAWN = { x: 0, z: 180, yaw: 0 };
 
 export type RegionId = "reservoir" | "harbor";
 
@@ -667,7 +667,7 @@ export interface Region {
 }
 
 export const REGIONS: Region[] = [
-  { id: "reservoir", name: "ダム湖", note: "干上がったダム湖の島。拠点 4 つ、発着場にタイタン", drop: SPAWN, land: { x: 0, z: 64 }, pois: ["supply", "quarry", "relay", "pad"], exits: ["ship", "flare", "village"] },
+  { id: "reservoir", name: "ダム湖", note: "干上がったダム湖の島。拠点 4 つ、発着場にタイタン", drop: SPAWN, land: { x: 0, z: 106 }, pois: ["supply", "quarry", "relay", "pad"], exits: ["ship", "flare", "village"] },
   { id: "harbor", name: "港湾地帯", note: "干上がった湾の港。拠点 3 つ、部隊が厚い", drop: { x: 20, z: -296, yaw: 0 }, land: { x: 22, z: -306 }, pois: ["wreck", "yard", "smelter"], exits: ["boat"] },
 ];
 
@@ -702,8 +702,8 @@ const HAMLET_FRAMES: Hamlet[] = [
   // --- the reservoir
   {
     name: "西の農場",
-    x: -175,
-    z: 55,
+    x: -170,
+    z: 92,
     boxes: [
       ...tower(0, 0, 8, 8, 2, { doors: [["s", "e"]], windows: [["w"], ["n", "e", "w"]] }),
       ...building(14, 4, 12, 8, 4.2, { doors: ["w", "e"], windows: ["n"] }),
@@ -861,7 +861,7 @@ type ExtraBin = { x: number; z: number; y?: number; table: PoiId; flare?: true }
 /** Bins outside the POIs, mostly up high. `table` is the POI whose loot table they use. */
 export const EXTRA_BINS: ExtraBin[] = (
   [
-    { x: -12, z: 132, table: "supply" },
+    { x: -12, z: 172, table: "supply" },
     { x: -45, z: 70, y: 3.5, table: "supply" },
     { x: -2, z: 10, y: STOREY * 2, table: "quarry" },
     { x: 14, z: 11, y: STOREY * 2, table: "quarry" },

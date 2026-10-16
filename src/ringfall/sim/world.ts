@@ -90,14 +90,16 @@ function beamIn(s: State, kinds: readonly EnemyKind[], name: string, elite: bool
   const p = s.player;
   const eye = { x: p.pos.x, y: p.pos.y + 1.5, z: p.pos.z };
   const [near, far] = REINFORCE.dist;
-  // Where each member stands round the squad's spot, and the top of its body there:
-  // every one of them must be out of sight, a hovering drone included.
+  // Where each member stands round the squad's spot, and the top and the middle of its body
+  // there: every one of them must be out of sight, a hovering drone included. Both, since a
+  // window or a gap under a roof can show the one and hide the other.
   const posts = (x: number, z: number) =>
     kinds.map((kind, i) => {
       const mx = x + (i % 2 ? 1.8 : -1.8) * Math.min(i, 1);
       const mz = z + i * 1.6;
       const at = spawnSpot(kind, mx, mz);
-      return { x: at.x, y: at.y + ENEMIES[kind].bodyY + ENEMIES[kind].radius, z: at.z, mx, mz }; // the top of its body
+      const mid = at.y + ENEMIES[kind].bodyY;
+      return { x: at.x, y: mid + ENEMIES[kind].radius, mid, z: at.z, mx, mz };
     });
   // Somewhere on open ground a walk of the right length away (along the ramps, not as the
   // crow flies), out of sight; the best of a few tries. The first tries also want the first
@@ -114,7 +116,7 @@ function beamIn(s: State, kinds: readonly EnemyKind[], name: string, elite: bool
     const spots = posts(x, z);
     // Every member lands on the same open ground, not up on the high ground beside it.
     if (spots.some((q) => steepAt(q.mx, q.mz) || highGround(q.mx, q.mz))) continue;
-    if (los(eye, { x, y: g + 1.5, z }) || spots.some((q) => los(eye, q))) continue;
+    if (los(eye, { x, y: g + 1.5, z }) || spots.some((q) => los(eye, q) || los(eye, { x: q.x, y: q.mid, z: q.z }))) continue;
     const next = nextStep(field!, x, z, p.pos);
     if (i < 40 && !clearWalk(x, z, next.x, next.z)) continue;
     at = { x, z };
