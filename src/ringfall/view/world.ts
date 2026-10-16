@@ -512,11 +512,12 @@ export class World {
       const f = Math.min(1, w.t / WRECK_FALL);
       const ease = f * f;
       const bounce = f >= 1 ? Math.max(0, Math.sin((w.t - WRECK_FALL) * 14) * Math.exp(-(w.t - WRECK_FALL) * 9)) * 0.06 : 0;
-      const tipMax = w.kind === "drone" ? 0.9 : w.kind === "titan" ? 0.55 : 1.25;
+      // It goes over stiffly about its feet, knees buckling only on the way down, and comes to rest on its side.
+      const tipMax = w.kind === "drone" ? 0.9 : w.kind === "titan" ? 0.55 : 1.42;
       lean(m.body, w.yaw, w.fallYaw, tipMax * ease - bounce);
-      m.legs.forEach((leg) => (leg.rotation.x = -0.7 * ease));
+      m.legs.forEach((leg) => (leg.rotation.x = -0.5 * Math.sin(Math.PI * f)));
       const sink = w.t > WRECK_TIME ? ((w.t - WRECK_TIME) / WRECK_SINK) * (ENEMIES[w.kind].bodyY + ENEMIES[w.kind].radius + 0.5) : 0;
-      const settle = w.kind === "drone" ? 0 : -0.25 * ease;
+      const settle = w.kind === "drone" ? 0 : ENEMIES[w.kind].radius * 0.35 * ease;
       m.root.position.set(w.x, w.ground + (w.y0 - w.ground) * (1 - ease) + settle - sink, w.z);
       if ((w.smoke -= dt) <= 0 && w.t < WRECK_TIME) {
         w.smoke = 0.25 + Math.random() * 0.25;

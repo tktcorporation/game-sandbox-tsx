@@ -155,20 +155,20 @@ export const sfx = {
   },
   /** A robot's wreck hitting the ground where it fell: struck steel and a scrape. */
   collapse(pos: P3, big: boolean) {
-    at(pos, { level: big ? 0.6 : 0.45, ref: big ? 9 : 6 }, () => {
+    at(pos, { level: big ? 0.4 : 0.3, ref: big ? 9 : 6 }, () => {
       const t = 0.42;
-      tone(vary(big ? 70 : 110, 0.05), 0.2, { type: "sine", to: 40, vol: 0.5, at: t });
-      tone(vary(big ? 380 : 610, 0.05), 0.16, { type: "square", vol: 0.07, to: big ? 300 : 470, at: t });
-      tone(vary(1450, 0.04), 0.22, { type: "sine", vol: 0.1, at: t + 0.01 });
-      hiss(0.3, { type: "bandpass", freq: 2400, to: 900, q: 1.2, vol: 0.18, at: t + 0.03 });
+      tone(vary(big ? 70 : 110, 0.05), 0.2, { type: "sine", to: 40, vol: 0.08, at: t });
+      tone(vary(big ? 380 : 610, 0.05), 0.16, { type: "square", vol: 0.015, to: big ? 300 : 470, at: t });
+      tone(vary(1450, 0.04), 0.22, { type: "sine", vol: 0.025, at: t + 0.01 });
+      hiss(0.3, { type: "bandpass", freq: 2400, to: 900, q: 1.2, vol: 0.035, at: t + 0.03 });
     });
   },
   /** A robot reeling from damage: servos grinding down; a lost wind-up also fizzles out. */
   stagger(pos: P3 | undefined, interrupted: boolean) {
     const body = () => {
-      tone(vary(520, 0.05), 0.18, { type: "square", vol: 0.08, to: 180 });
-      hiss(0.12, { type: "bandpass", freq: 1800, to: 700, q: 2, vol: 0.2 });
-      if (interrupted) tone(vary(1500, 0.03), 0.16, { type: "sawtooth", vol: 0.05, to: 300, at: 0.02 });
+      tone(vary(520, 0.05), 0.18, { type: "square", vol: 0.13, to: 180 });
+      hiss(0.12, { type: "bandpass", freq: 1800, to: 700, q: 2, vol: 0.32 });
+      if (interrupted) tone(vary(1500, 0.03), 0.16, { type: "sawtooth", vol: 0.08, to: 300, at: 0.02 });
     };
     if (pos) at(pos, { level: 0.5, ref: 7 }, body);
     else ui(0.4, body);
