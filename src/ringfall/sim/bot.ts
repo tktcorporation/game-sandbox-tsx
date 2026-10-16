@@ -56,6 +56,9 @@ export class Bot {
   private unstick = 0;
   private trail: { x: number; z: number }[] = [];
   private upT = 0;
+  private trailStuckT = 0;
+  private trailFrom = { x: 0, z: 0 };
+  private lastGround: { x: number; z: number } | null = null;
   private stuckCount = 0;
   private unstickSide = 1;
   private dodged = new Set<number>();
@@ -466,12 +469,32 @@ export class Bot {
     if (onTerrain(p.pos)) {
       this.trail = [];
       this.upT = 0;
+      this.trailStuckT = 0;
+      this.lastGround = { x: p.pos.x, z: p.pos.z };
     } else {
+      // The trail starts where it last stood on the terrain, so walking it back ends on the
+      // ground (where the grid plans again), not on the bottom step of a stair.
+      if (!this.trail.length && this.lastGround && dist2d(this.lastGround, p.pos) < 3) this.trail.push(this.lastGround);
       const last = this.trail[this.trail.length - 1];
       if (this.upT <= 2 && (!last || dist2d(last, p.pos) > 0.4)) this.trail.push({ x: p.pos.x, z: p.pos.z });
       if (p.onGround && p.pos.y - groundLevel(p.pos.x, p.pos.z) > 0.8) this.upT += TICK;
       if (this.upT > 2) {
         while (this.trail.length > 1 && dist2d(this.trail[this.trail.length - 1], p.pos) < 0.35) this.trail.pop();
+        // A point taken while brushing a wall or a floor's edge can lie a hand's width
+        // out of reach: when the walk back makes no headway, skip to the point before it,
+        // and past the first one hand the way down back to the unstick step.
+        this.trailStuckT += TICK;
+        if (dist2d(this.trailFrom, p.pos) > 0.3) {
+          this.trailFrom = { x: p.pos.x, z: p.pos.z };
+          this.trailStuckT = 0;
+        } else if (this.trailStuckT > 0.5) {
+          this.trailStuckT = 0;
+          if (this.trail.length > 1) this.trail.pop();
+          else {
+            this.trail = [];
+            this.upT = 0;
+          }
+        }
         const to = this.trail[this.trail.length - 1] ?? p.pos;
         const dx = to.x - p.pos.x;
         const dz = to.z - p.pos.z;

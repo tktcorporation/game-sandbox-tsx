@@ -212,8 +212,8 @@ const HIGH_RISES = [
   { x: 0, z: -14, w: 10, d: 10, floors: 6, level: LEVEL.lakebed }, // the drowned town's office block
   { x: 125, z: 0, w: 10, d: 10, floors: 5, level: LEVEL.mesa }, // flats beyond the housing street
   { x: -34, z: -128, w: 8, d: 8, floors: 5, level: LEVEL.dam }, // the pad's control tower
-  { x: -132, z: 10, w: 8, d: 8, floors: 4, level: LEVEL.pit }, // a lookout at the quarry's far end
-  { x: -79, z: 28, w: 8, d: 8, floors: 4, level: LEVEL.pit }, // the quarry office
+  { x: -182, z: 10, w: 8, d: 8, floors: 4, level: LEVEL.pit }, // a lookout at the quarry's far end
+  { x: -129, z: 28, w: 8, d: 8, floors: 4, level: LEVEL.pit }, // the quarry office
 ] as const;
 
 /** A walkway slab whose top is at height y. */
@@ -336,8 +336,8 @@ function placePoi(p: Poi, [dx, dz]: readonly [number, number]): Poi {
  * into place by this offset.
  */
 const AT = [
-  [0, 50],
-  [-49, 8],
+  [0, 90],
+  [-99, 8],
   [48, -7],
   [0, -52],
   // The harbor's POIs are written round their own middle.
@@ -355,12 +355,9 @@ const POI_FRAMES: Poi[] = [
     trigger: 24,
     entry: { x: 0, z: 74, yaw: 0 },
     squads: [
-      { name: "見張り台", members: [{ kind: "grunt", x: 18, z: 63, y: 3, face: S }] },
-      { name: "倉庫の中", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 25, z: 52, face: W }] },
-      { name: "管理棟", members: [{ kind: "grunt", x: -23, z: 50, face: E }] },
-      { name: "荷台", members: [{ kind: "grunt", x: 6, z: 30, y: 1.2, face: S }] },
-      { name: "塀の裏", members: [{ kind: "charger", x: -16, z: 56, face: E }] },
-      { name: "巡回ドローン", members: [{ kind: "drone", x: -6, z: 36 }], patrol: [{ x: -6, z: 36 }, { x: 14, z: 36 }, { x: 22, z: 44 }, { x: 0, z: 42 }] },
+      // Two squads, one each side of the yard: a fight with one leaves the other a flank to come round.
+      { name: "倉庫", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 25, z: 52, face: W }, { kind: "grunt", x: 18, z: 63, y: 3, face: S }] },
+      { name: "管理棟", members: [{ kind: "grunt", x: -23, z: 50, face: E }, { kind: "charger", x: -16, z: 56, face: E }] },
     ],
     bins: [
       { x: -2, z: 54 },
@@ -386,12 +383,8 @@ const POI_FRAMES: Poi[] = [
     trigger: 26,
     entry: { x: -18, z: 30, yaw: -0.8 },
     squads: [
-      { name: "鉄骨の足場", members: [{ kind: "grunt", x: -52, z: -15, y: 4, face: SE }] },
-      { name: "採掘穴", members: [{ kind: "charger", x: -46, z: 4, face: SE }] },
-      { name: "段丘", members: [{ kind: "grunt", x: -63, z: -8, y: 2.4, face: E }] },
-      { name: "作業小屋", members: [{ kind: "grunt", x: -62, z: 25, face: E }] },
-      { name: "西の段丘", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: -72, z: 3, y: 3, face: E }] },
-      { name: "巡回ドローン", members: [{ kind: "drone", x: -48, z: 12 }], patrol: [{ x: -48, z: 12 }, { x: -34, z: 12 }, { x: -30, z: 0 }, { x: -44, z: -6 }] },
+      { name: "西の段丘", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: -72, z: 3, y: 3, face: E }, { kind: "grunt", x: -63, z: -8, y: 2.4, face: E }] },
+      { name: "採掘穴", members: [{ kind: "charger", x: -46, z: 4, face: SE }, { kind: "grunt", x: -52, z: -15, y: 4, face: SE }] },
     ],
     bins: [
       { x: -37, z: 8 },
@@ -412,12 +405,8 @@ const POI_FRAMES: Poi[] = [
     trigger: 27,
     entry: { x: 16, z: -23, yaw: 1.4 },
     squads: [
-      { name: "中継塔", members: [{ kind: "grunt", x: 41.5, z: -29, y: 5, face: SW }] },
-      { name: "コンテナ置き場", members: [{ kind: "heavy", x: 36, z: -36, face: SW }] },
-      { name: "西の小屋", members: [{ kind: "grunt", x: 30, z: -18, y: 3.4, face: SW }] },
-      { name: "東の小屋", members: [{ kind: "grunt", x: 57, z: -36, face: W }] },
-      { name: "3 階建ての 1 階", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 49, z: -10, face: W }] },
-      { name: "通路の番", members: [{ kind: "charger", x: 34, z: -26, face: SW }] },
+      { name: "中継塔", members: [{ kind: "grunt", x: 41.5, z: -29, y: 5, face: SW }, { kind: "heavy", x: 36, z: -36, face: SW }] },
+      { name: "3 階建て", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 49, z: -10, face: W }, { kind: "grunt", x: 57, z: -20, face: W }, { kind: "charger", x: 34, z: -26, face: SW }] },
     ],
     bins: [
       { x: 33, z: -22 },
@@ -460,14 +449,13 @@ const POI_FRAMES: Poi[] = [
     trigger: 34,
     entry: { x: 0, z: 24, yaw: 0 },
     squads: [
-      { name: "船倉", members: [{ kind: "grunt", x: -8, z: -2, face: S }] },
-      { name: "船倉の奥", members: [{ kind: "charger", x: 24, z: 2, face: W }] },
       // Up high, robots stand at the parapet: seen from the ground below, and seeing it.
-      { name: "甲板", members: [{ kind: "grunt", x: -24, z: 7.1, y: SHIP_DECK, face: S }] },
-      { name: "甲板の重機", members: [{ kind: "heavy", x: 6, z: 6.75, y: SHIP_DECK, face: S }] },
-      { name: "船橋の前", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 30, z: 7.1, y: SHIP_DECK, face: S }] },
-      { name: "浜の二体", members: [{ kind: "grunt", x: -12, z: 16, face: S }, { kind: "grunt", x: -9.5, z: 17, face: S }] },
-      { name: "巡回ドローン", members: [{ kind: "drone", x: -50, z: 18 }], patrol: [{ x: -50, z: 18 }, { x: 56, z: 18 }, { x: 56, z: -16 }, { x: -50, z: -16 }] },
+      { name: "甲板", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 30, z: 7.1, y: SHIP_DECK, face: S }, { kind: "heavy", x: 6, z: 6.75, y: SHIP_DECK, face: S }] },
+      {
+        name: "浜",
+        members: [{ kind: "grunt", x: -12, z: 16, face: S }, { kind: "grunt", x: -9.5, z: 17, face: S }, { kind: "drone", x: -50, z: 18 }],
+        patrol: [{ x: -50, z: 18 }, { x: 56, z: 18 }, { x: 56, z: -16 }, { x: -50, z: -16 }],
+      },
     ],
     bins: [
       { x: -32, z: 3 },
@@ -491,12 +479,8 @@ const POI_FRAMES: Poi[] = [
     trigger: 30,
     entry: { x: 8, z: 27, yaw: 0 },
     squads: [
-      { name: "クレーンの上", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 0.35, z: -6, y: CRANE, face: E }] },
-      { name: "通路の重機", members: [{ kind: "heavy", x: -24, z: -13.5, face: E }] },
-      { name: "通路の二体", members: [{ kind: "grunt", x: 20, z: 13.5, face: W }, { kind: "grunt", x: 23, z: 13.5, face: W }] },
-      { name: "積み荷の上", members: [{ kind: "grunt", x: 23.4, z: 9, y: 5.2, face: S }] },
-      { name: "事務所の前", members: [{ kind: "charger", x: -36, z: 6, face: E }] },
-      { name: "巡回ドローン", members: [{ kind: "drone", x: -38, z: -24 }], patrol: [{ x: -38, z: -24 }, { x: 38, z: -24 }, { x: 38, z: 24 }, { x: -38, z: 24 }] },
+      { name: "クレーン", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 0.35, z: -6, y: CRANE, face: E }, { kind: "heavy", x: -24, z: -13.5, face: E }] },
+      { name: "通路", members: [{ kind: "grunt", x: 20, z: 13.5, face: W }, { kind: "grunt", x: 23, z: 13.5, face: W }] },
     ],
     bins: [
       { x: -28, z: -13.5 },
@@ -520,13 +504,8 @@ const POI_FRAMES: Poi[] = [
     trigger: 32,
     entry: { x: 2, z: 26, yaw: 0 },
     squads: [
-      { name: "炉の番", members: [{ kind: "heavy", x: -15, z: -1, face: S }] },
-      { name: "B 棟の中", members: [{ kind: "grunt", x: 16, z: -2, face: S }] },
-      { name: "制御棟の屋上", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 37, z: -2.9, y: STOREY * 3, face: S }] },
-      { name: "A 棟の屋上", members: [{ kind: "grunt", x: -22, z: 0, y: STOREY * 3, face: S }] },
-      { name: "スラグの山", members: [{ kind: "charger", x: -26, z: 12, face: E }] },
-      { name: "煙突の二人", members: [{ kind: "grunt", x: -8, z: 18, face: S }, { kind: "grunt", x: -5.5, z: 19, face: S }] },
-      { name: "巡回ドローン", members: [{ kind: "drone", x: -36, z: -20 }], patrol: [{ x: -36, z: -20 }, { x: 36, z: -20 }, { x: 40, z: 22 }, { x: -36, z: 22 }] },
+      { name: "制御棟", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 37, z: -2.9, y: STOREY * 3, face: S }, { kind: "grunt", x: 16, z: -2, face: S }] },
+      { name: "炉", members: [{ kind: "heavy", x: -15, z: -1, face: S }, { kind: "charger", x: -26, z: 12, face: E }] },
     ],
     bins: [
       { x: -24, z: -3 },
@@ -561,7 +540,7 @@ export interface Depot {
  * the entry: the nearest flat spot where a raid started there is not seen by the POI's
  * squads at once (`checkDepots` in the sim gate holds them to it).
  */
-const DEPOT_OUT: Record<PoiId, number> = { supply: 18, quarry: 6, relay: 40, pad: 25, wreck: 25, yard: 18, smelter: 25 };
+const DEPOT_OUT: Record<PoiId, number> = { supply: 18, quarry: 6, relay: 40, pad: 24, wreck: 22, yard: 18, smelter: 25 };
 
 /**
  * One depot per POI, on the road out from its entry: in reach on the way in or out, yet
@@ -613,80 +592,62 @@ export const EXTRACTS: ExtractPoint[] = [
 ];
 export const EXTRACT = EXTRACTS[0];
 
-/** Squads between the POIs. Beating them is optional; they guard loot and high ground. */
+/**
+ * Squads between the POIs. Beating them is optional. Most of the ground between the POIs is
+ * quiet: one squad holds the drowned town, and a few walk the roads and the open ground
+ * between the areas, met on the way rather than found at a post.
+ */
 export const ROAMERS: Squad[] = (
   [
+    // The lookout stays on the clock tower: a patrol is led by its first member, and one posted up high cannot leave its floor.
     { name: "時計塔", members: [{ kind: "grunt", x: 0, z: 13, y: STOREY * 3, face: S }] },
-    { name: "旧市街の見回り", members: [{ kind: "grunt", x: -7, z: 20, face: E }], patrol: [{ x: 7, z: 20 }, { x: 7, z: 2 }, { x: -7, z: 2 }, { x: -7, z: 20 }] },
-    { name: "商店", members: [{ kind: "charger", x: -14, z: 25, face: E }] },
-    { name: "尾根の狙撃手", members: [{ kind: "grunt", x: -50, z: 70.5, y: 3.5, face: E }] },
-    { name: "台地の見張り", members: [{ kind: "grunt", x: -58, z: -54, y: 7.2, face: E }] },
-    { name: "工場の警備", members: [{ kind: "heavy", x: 55, z: 46, face: S }] },
-    { name: "住宅地", members: [{ kind: "grunt", x: 99, z: 16, y: STOREY * 2, face: W }] },
-    { name: "廃村", members: [{ kind: "grunt", x: -112, z: -69, y: STOREY * 2, face: E }] },
-    // Squads walking the roads up and down: met on the way, not found at a post.
+    {
+      name: "旧市街の見回り",
+      members: [{ kind: "grunt", x: -7, z: 20, face: E }],
+      patrol: [{ x: 7, z: 20 }, { x: 7, z: 2 }, { x: -7, z: 2 }, { x: -7, z: 20 }],
+    },
     {
       name: "尾根道の巡回",
       roam: true,
-      members: [{ kind: "grunt", x: -40, z: 78 }, { kind: "grunt", x: -42, z: 79.4 }, { kind: "drone", x: -38, z: 80 }],
-      patrol: [{ x: -40, z: 78 }, { x: -62, z: 64 }, { x: -90, z: 60 }, { x: -62, z: 64 }, { x: -40, z: 78 }, { x: -33, z: 86 }],
+      members: [{ kind: "grunt", x: -40, z: 78 }, { kind: "drone", x: -38, z: 80 }],
+      patrol: [{ x: -40, z: 78 }, { x: -62, z: 64 }, { x: -90, z: 68 }, { x: -62, z: 64 }, { x: -40, z: 78 }, { x: -33, z: 86 }],
     },
     {
       name: "東の坂の巡回",
       roam: true,
-      members: [{ kind: "grunt", x: 44, z: -8 }, { kind: "charger", x: 42.4, z: -6.6 }, { kind: "drone", x: 46, z: -6 }],
+      members: [{ kind: "grunt", x: 44, z: -8 }, { kind: "charger", x: 42.4, z: -6.6 }],
       patrol: [{ x: 44, z: -8 }, { x: 58, z: -24 }, { x: 44, z: -8 }, { x: 22, z: 0 }],
-    },
-    {
-      // Walks the dam crest, looking down on the lakebed.
-      name: "堤の巡回",
-      roam: true,
-      members: [{ kind: "grunt", x: -18, z: -80 }, { kind: "drone", x: -14, z: -80 }],
-      patrol: [{ x: -18, z: -80 }, { x: 18, z: -80 }],
-    },
-    {
-      name: "住宅道の巡回",
-      roam: true,
-      members: [{ kind: "grunt", x: 92, z: 38 }, { kind: "charger", x: 90.4, z: 39.4 }],
-      patrol: [{ x: 92, z: 38 }, { x: 106, z: 28 }, { x: 92, z: 38 }, { x: 70, z: 52 }],
     },
   ] satisfies Squad[]
 )
   .map((sq) => placeSquad(sq, 0, 0))
-  // On the bridge deck, at the mesa's level high over the spillway floor.
-  .concat({ name: "橋の上", members: [{ kind: "grunt", x: 52, z: -95, y: LEVEL.mesa, face: N }] })
   .concat(
     (
       [
         // Between the regions.
-        { name: "峠の見張り", members: [{ kind: "grunt", x: -58, z: -224, face: N }] },
         {
           name: "峠道の巡回",
           roam: true,
           members: [{ kind: "grunt", x: -48, z: -185 }, { kind: "drone", x: -46, z: -183 }],
           patrol: [{ x: -48, z: -185 }, { x: -60, z: -222 }, { x: -64, z: -262 }, { x: -60, z: -222 }],
         },
-        { name: "鉄橋の番", members: [{ kind: "grunt", x: 122, z: -214, face: S }] },
         // The harbor.
-        { name: "高架の狙撃手", members: [{ kind: "grunt", x: 76, z: -350, y: LEVEL.rail, face: S }] },
         {
           name: "高架下の巡回",
           roam: true,
-          members: [{ kind: "grunt", x: 118, z: -276 }, { kind: "charger", x: 116.6, z: -274.6 }, { kind: "drone", x: 119, z: -278 }],
+          members: [{ kind: "grunt", x: 118, z: -276 }, { kind: "charger", x: 116.6, z: -274.6 }],
           patrol: [{ x: 118, z: -276 }, { x: 118, z: -343 }, { x: 30, z: -345 }, { x: 118, z: -343 }],
         },
         {
           name: "塩田の巡回",
           roam: true,
-          members: [{ kind: "grunt", x: -40, z: -480 }, { kind: "grunt", x: -38.4, z: -481.4 }, { kind: "drone", x: -36, z: -482 }],
+          members: [{ kind: "grunt", x: -40, z: -480 }, { kind: "drone", x: -36, z: -482 }],
           patrol: [{ x: -40, z: -480 }, { x: 60, z: -480 }, { x: 60, z: -518 }, { x: -40, z: -518 }],
         },
-        { name: "灯台", members: [{ kind: "grunt", x: -104, z: -555, face: S }] },
-        { name: "港町の倉庫", members: [{ kind: "grunt", x: 60, z: -294, y: STOREY * 2, face: W }] },
       ] satisfies Squad[]
     ).map((sq) => placeSquad(sq, 0, 0)),
   );
-export const SPAWN = { x: 0, z: 140, yaw: 0 };
+export const SPAWN = { x: 0, z: 180, yaw: 0 };
 
 export type RegionId = "reservoir" | "harbor";
 
@@ -708,8 +669,8 @@ export interface Region {
 }
 
 export const REGIONS: Region[] = [
-  { id: "reservoir", name: "ダム湖", note: "干上がったダム湖の島。拠点 4 つ、発着場にタイタン", drop: SPAWN, land: { x: 0, z: 64 }, pois: ["supply", "quarry", "relay", "pad"], exits: ["ship", "flare", "village"] },
-  { id: "harbor", name: "港湾地帯", note: "干上がった湾の港。拠点 3 つ、部隊が厚い", drop: { x: 20, z: -296, yaw: 0 }, land: { x: 22, z: -306 }, pois: ["wreck", "yard", "smelter"], exits: ["boat"] },
+  { id: "reservoir", name: "ダム湖", note: "干上がったダム湖の島。拠点 4 つ、発着場にタイタン", drop: SPAWN, land: { x: 0, z: 106 }, pois: ["supply", "quarry", "relay", "pad"], exits: ["ship", "flare", "village"] },
+  { id: "harbor", name: "港湾地帯", note: "干上がった湾の港。拠点 3 つ、どこにもヘビーがいる", drop: { x: 20, z: -296, yaw: 0 }, land: { x: 22, z: -306 }, pois: ["wreck", "yard", "smelter"], exits: ["boat"] },
 ];
 
 export const regionOf = (id: RegionId): Region => REGIONS.find((r) => r.id === id) ?? REGIONS[0];
@@ -724,12 +685,185 @@ export function regionHere(at: { x: number; z: number }): Region {
   return poiRegion(best.id);
 }
 
+/**
+ * A small settlement out on the open ground between the areas: a few buildings to look into
+ * and fight round, and a bin or two. No robots post there; the roads' patrols and the
+ * reinforcements pass by.
+ */
+interface Hamlet {
+  name: string;
+  x: number;
+  z: number;
+  /** Its boxes, written round (0, 0) on ground at 0. */
+  boxes: Box[];
+  /** Its bins in the same frame, with the POI whose loot table each uses. */
+  bins: { x: number; z: number; y?: number; table: PoiId }[];
+}
+
+const HAMLET_FRAMES: Hamlet[] = [
+  // --- the reservoir
+  {
+    name: "西の農場",
+    x: -170,
+    z: 92,
+    boxes: [
+      ...tower(0, 0, 8, 8, 2, { doors: [["s", "e"]], windows: [["w"], ["n", "e", "w"]] }),
+      ...building(14, 4, 12, 8, 4.2, { doors: ["w", "e"], windows: ["n"] }),
+      ...building(4, 14, 5, 4, 3.0, { doors: ["n"] }),
+      box(-8, 12, 0.5, 10, 1.15, "wall", 1),
+      box(-2, 18, 12, 0.5, 1.15, "wall", 1),
+      box(8, -7, 1.2, 1.2, 0.9, "crate"),
+      box(9.2, -7, 1.2, 1.2, 1.8, "crate"),
+    ],
+    bins: [{ x: 14, z: 4, table: "quarry" }, { x: -2.5, z: -1.5, y: STOREY, table: "quarry" }],
+  },
+  {
+    name: "西の飯場",
+    x: -185,
+    z: -45,
+    boxes: [
+      ...building(-8, -6, 6, 5, 3.4, { doors: ["e"], windows: ["s"] }),
+      ...building(-8, 6, 6, 5, 3.4, { doors: ["e"], windows: ["n"], roof: "w" }),
+      ...building(8, 0, 7, 6, 3.4, { doors: ["w", "s"], windows: ["e"] }),
+      box(0, -14, 6.2, 2.5, 2.6, "container", 1),
+      ...walls(2, 14, 6, 6, 0, 2.4, ["n", "s"], ["e"]),
+    ],
+    bins: [{ x: 8, z: 0, table: "quarry" }],
+  },
+  {
+    name: "南の漁師小屋",
+    x: -70,
+    z: 180,
+    boxes: [
+      ...building(-6, 0, 7, 6, 3.4, { doors: ["n", "e"], windows: ["s"] }),
+      ...building(8, -4, 6, 5, 3.4, { doors: ["w"], roof: "e" }),
+      ...walls(4, 12, 10, 6, 0, 2.6, ["s", "n"]),
+      box(-8, 10, 1.2, 1.2, 0.9, "crate"),
+      box(-6.8, 10, 1.2, 1.2, 1.8, "crate"),
+    ],
+    bins: [{ x: -6, z: 0, table: "supply" }],
+  },
+  {
+    name: "給水所",
+    x: 95,
+    z: 150,
+    boxes: [
+      // The water tower: seen from the shore, a bin on its top floor.
+      ...tower(0, 0, 8, 8, 3, { doors: [["s", "w"]], windows: [[], ["n", "e"], ["n", "e", "s", "w"]] }),
+      ...building(14, 6, 7, 6, 3.4, { doors: ["w", "n"], windows: ["e"] }),
+      ...walls(-14, 8, 6, 6, 0, 2.4, ["e", "w"], ["n"]),
+      box(6, -12, 2.5, 6.2, 2.6, "container", 2),
+    ],
+    bins: [{ x: -2.5, z: 1.5, y: STOREY * 2, table: "relay" }, { x: 14, z: 6, table: "relay" }],
+  },
+  {
+    name: "東の牧場",
+    x: 180,
+    z: 70,
+    boxes: [
+      ...tower(0, 0, 8, 8, 2, { doors: [["w", "s"]], windows: [["e"], ["n", "w", "s"]] }),
+      ...building(-14, -4, 12, 8, 4.2, { doors: ["e", "w"], windows: ["s"] }),
+      ...building(2, 14, 6, 5, 3.4, { doors: ["n"], roof: "e" }),
+      box(-14, 8, 10, 0.5, 1.15, "wall", 1),
+      box(10, -8, 0.5, 8, 1.15, "wall", 1),
+    ],
+    bins: [{ x: -14, z: -4, table: "relay" }],
+  },
+  {
+    name: "東の検問所",
+    x: 170,
+    z: -85,
+    boxes: [
+      ...tower(0, 0, 8, 8, 2, { doors: [["w", "s"]], windows: [["e"], ["n", "e", "w", "s"]] }),
+      ...building(-12, -8, 6, 5, 3.4, { doors: ["e"], roof: "s" }),
+      box(12, -6, 6.2, 2.5, 2.6, "container", 0),
+      box(12, 4, 2.5, 6.2, 2.6, "container", 1),
+      box(-12, 6, 3.4, 0.5, 1.15, "wall", 1),
+      box(-13.5, 7.5, 0.5, 3.4, 1.15, "wall", 1),
+    ],
+    bins: [{ x: -2, z: 1.5, table: "relay" }],
+  },
+  // --- the harbor
+  {
+    name: "西の漁村",
+    x: -170,
+    z: -480,
+    boxes: [
+      ...building(-10, -6, 7, 6, 3.4, { doors: ["e", "s"], windows: ["w"] }),
+      ...building(4, -10, 6, 6, 3.4, { doors: ["s"], windows: ["n"], roof: "e" }),
+      ...tower(8, 6, 8, 8, 2, { doors: [["w", "s"]], windows: [["e"], ["n", "e", "w"]] }),
+      ...walls(-12, 10, 6, 6, 0, 2.4, ["n", "e"], ["w"]),
+      // A boat hauled up and left to rot.
+      box(-2, 20, 8, 3, 1.6, "steel", 3),
+    ],
+    bins: [{ x: -10, z: -6, table: "wreck" }, { x: 6, z: 8, table: "wreck" }],
+  },
+  {
+    name: "北西の倉庫",
+    x: -175,
+    z: -320,
+    boxes: [
+      ...tower(0, 0, 16, 10, 2, { doors: [["s", "e"]], windows: [["w"], ["n", "e", "w"]] }),
+      ...building(14, 8, 6, 5, 3.4, { doors: ["w"], roof: "s" }),
+      box(-12, 10, 6.2, 2.5, 2.6, "container", 1),
+      box(-4, 12, 1.2, 1.2, 0.9, "crate"),
+    ],
+    bins: [{ x: -5, z: 2, table: "yard" }],
+  },
+  {
+    name: "東の燃料所",
+    x: 190,
+    z: -500,
+    boxes: [
+      box(-10, -8, 6, 6, 5, "tower", 1),
+      box(-10, 4, 6, 6, 5, "tower", 0),
+      ...building(6, -4, 8, 6, 3.4, { doors: ["w", "s"], windows: ["e"], roof: "n" }),
+      box(8, 10, 6.2, 2.5, 2.6, "container", 2),
+      box(-2, 12, 3.4, 0.5, 1.15, "wall", 1),
+    ],
+    bins: [{ x: 6, z: -4, table: "smelter" }],
+  },
+  {
+    name: "信号所",
+    x: -30,
+    z: -420,
+    boxes: [
+      ...tower(0, 0, 8, 8, 3, { doors: [["e", "s"]], windows: [["w"], ["n", "e", "w"], ["n", "e", "s", "w"]] }),
+      ...walls(12, 6, 6, 6, 0, 2.4, ["w", "s"], ["n"]),
+      box(-8, 8, 1.2, 1.2, 0.9, "crate"),
+      box(-6.8, 8, 1.2, 1.2, 1.8, "crate"),
+    ],
+    bins: [{ x: -2.5, z: 1.5, y: STOREY * 2, table: "yard" }],
+  },
+  {
+    name: "東の丘の家",
+    x: 175,
+    z: -340,
+    boxes: [
+      ...building(-6, 0, 7, 6, 3.4, { doors: ["e", "n"], windows: ["s"], roof: "w" }),
+      ...building(8, 4, 6, 6, 3.4, { doors: ["w"], windows: ["e"] }),
+      box(0, -10, 8, 0.5, 1.15, "wall", 1),
+    ],
+    bins: [{ x: -6, z: 0, table: "smelter" }],
+  },
+];
+
+/** The hamlets placed, each flat at the level of the ground under its middle. */
+const HAMLETS = HAMLET_FRAMES.map((h) => {
+  const level = floorLevel(h.x, h.z);
+  return {
+    ...h,
+    boxes: onLevel(level, place(h.x, h.z, h.boxes)),
+    bins: h.bins.map((b) => ({ ...b, x: b.x + h.x, z: b.z + h.z, y: level + (b.y ?? 0) })),
+  };
+});
+
 type ExtraBin = { x: number; z: number; y?: number; table: PoiId; flare?: true };
 
 /** Bins outside the POIs, mostly up high. `table` is the POI whose loot table they use. */
 export const EXTRA_BINS: ExtraBin[] = (
   [
-    { x: -12, z: 132, table: "supply" },
+    { x: -12, z: 172, table: "supply" },
     { x: -45, z: 70, y: 3.5, table: "supply" },
     { x: -2, z: 10, y: STOREY * 2, table: "quarry" },
     { x: 14, z: 11, y: STOREY * 2, table: "quarry" },
@@ -753,7 +887,9 @@ export const EXTRA_BINS: ExtraBin[] = (
     // The lighthouse's top floor, like the high-rises', holds a flare.
     { x: LIGHTHOUSE.x - 2.5, z: LIGHTHOUSE.z + 0.5, y: (LIGHTHOUSE.floors - 1) * STOREY, table: "wreck", flare: true },
   ] satisfies ExtraBin[]
-).map(onFloor);
+)
+  .map((b): ExtraBin => onFloor(b))
+  .concat(HAMLETS.flatMap((h) => h.bins));
 
 
 /**
@@ -960,6 +1096,7 @@ const RAILWAY: Box[] = [
 /** Everything placed by hand: POIs, districts, landmarks. */
 const AUTHORED: Box[] = [
   ...HARBOR,
+  ...HAMLETS.flatMap((h) => h.boxes),
   // --- 補給所: containers, an office with a roof, a two-storey warehouse, a lookout platform, a loading deck
   ...onLevel(LEVEL.shore, place(AT[0][0], AT[0][1], [
     box(-9, 46, 6.2, 2.5, 2.6, "container", 0),
@@ -1180,12 +1317,16 @@ function authoredKeep(): Keep {
  * channel, under water, gets none.
  */
 const SCATTER = [
-  { x0: -215, x1: 215, z0: -215, z1: 215, seed: 7_331 },
+  { x0: WORLD.x0, x1: WORLD.x1, z0: -215, z1: WORLD.z1, seed: 7_331 },
   { x0: WORLD.x0, x1: WORLD.x1, z0: WORLD.z0, z1: -216, seed: 4_517 },
 ];
 const SPARSE = "塩田";
 /** The harbor's channel, which holds water: nothing is scattered in it. */
 const WATER = "水路";
+/** The ground between the basins and roads (terrain.ts). */
+const BETWEEN = "野";
+/** Where on the ground between the cover clumps: above 0.55 in blobs about a hundred metres across. */
+const clump = (x: number, z: number) => 0.5 + 0.25 * Math.sin(x / 37 + 1.3) * Math.sin(z / 41 + 0.7) + 0.25 * Math.sin((x + z) / 53);
 
 function scatterCover(authored: Box[], keep: Keep): Box[] {
   const placed: Box[] = [];
@@ -1270,6 +1411,9 @@ function scatterArea(authored: Box[], { points, segments }: Keep, area: (typeof 
       const at = surfaceAt(x, z);
       const sparse = at === SPARSE;
       if ((sparse && rnd() > 0.5) || at === WATER) continue;
+      // The ground between the areas is bare but for clumps of cover a hundred metres or so
+      // across, some way apart: open stretches to cross, and somewhere to break the sightline.
+      if (at === BETWEEN && (rnd() > 0.6 || clump(x, z) < 0.55)) continue;
       const piece = sparse ? wreckAt(x, z) : pieceAt(x, z);
       const base = groundUnder(piece);
       if (base === null) continue;

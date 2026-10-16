@@ -22,8 +22,8 @@ belt) has three POIs and a boat. A pass road from the landing pad and a railway 
 the east mesa, a bridge over a gorge, a viaduct into the harbor) join them, so a raid may walk from
 one to the other. `REGIONS` in `map.ts` gives each region its POIs, ways off, drop and landing spot;
 `newRun(seed, kit, region)` drops into one (the reservoir by default), and the base picks it.
-Robots are squads placed in the world from the start (`POIS[].squads` and `ROAMERS` in `map.ts`,
-some of them patrolling the roads), plus reinforcements (`REINFORCE` in `config.ts`) that beam in
+Robots are squads placed in the world from the start (`POIS[].squads`, two squads of two or three
+per POI (the pad holds the titan and its drones), and a few `ROAMERS` in `map.ts`, most of them patrolling the roads), plus reinforcements (`REINFORCE` in `config.ts`) that beam in
 out of sight on a timer and come looking, and once per raid an elite squad (`RAIDERS` / `ELITE`)
 that flanks. Bins take time to search (`SEARCH`) and valuables fill a bag of `BAG.slots`. The HUD
 shows no markers or distances, and lists only the ways off of the region the player is in
@@ -75,9 +75,14 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   world coordinates. The ground is a height field (`terrain.ts`): the POIs and districts are basins
   (`BASINS`) at their own `LEVEL` (the lakebed at -7 m, the dam crest at +8, the quarry pit at -10,
   the harbor's salt flats at -3, the pass at +15...), joined by roads (`ROADS`) that ramp between
-  levels, with unclimbable high ground between them, shelves inside some POI basins, canyons
-  (`CUTS`: the spillway, the gorge under the railway bridge), and cliffs beyond the coast; ground
-  steeper than `STEEP` is a wall, dropped down but never climbed. A road's levels are spaced evenly
+  levels, shelves inside some POI basins, and canyons (`CUTS`: the spillway, the gorge under the
+  railway bridge). Between them lies open walkable ground, the "ground between" (`betweenAt()`,
+  surface `野`): a smooth surface relaxed to meet every basin and road at its level, with low
+  rolling hills. Shapes marked `walled` (the lakebed, the quarry pit and most ramps cut into them,
+  the railway's embankments, the channel, the headland) take no part in it and keep cliffs all
+  round. Unclimbable high ground is left only in `CRAGS` (the mountain belt between the regions and
+  rock outcrops) and beyond the coast; ground steeper than `STEEP` is a wall, dropped down but
+  never climbed. A road's levels are spaced evenly
   along it, or belong to its points with `atPoints`; a ramp reaches the level of the basin it runs
   into at that basin's edge, or it ends in a cliff. The coast is the outline of the land masses in
   `LANDS` (`offshore()` gives how far a point lies outside it), and the world's bounds are
@@ -87,8 +92,11 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   everything else built up off the ground is out of their reach. Boxes are
   written on ground at 0 and lifted to their area's level by `onLevel()`, points by `onFloor()`
   (`map.ts`); the ground is pressed flat at that level near every authored box and point.
+  Hamlets (`HAMLET_FRAMES` in `map.ts`: a few buildings and a bin or two, no robots) stand on the
+  ground between, each flat at the level under its middle.
   `scatterCover()` then fills the open ground with low walls, crates, containers and ruins, each
-  region from its own grid and seed (`SCATTER`), sparse on the salt flats, keeping clear of
+  region from its own grid and seed (`SCATTER`), sparse on the salt flats and only in clumps
+  (`clump()`) on the ground between, keeping clear of
   authored points, patrol routes and the roads that are the only ways between areas (`KEPT_ROADS`,
   also pressed to their own floor). Tuning numbers are in `config.ts`. `npm run sim:ringfall` first
   checks that every authored point (entries, bins, loot, squad posts, patrols, landing spots) stands
