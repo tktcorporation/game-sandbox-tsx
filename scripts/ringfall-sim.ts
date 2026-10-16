@@ -402,6 +402,8 @@ function checkReinforceEverywhere(): string | null {
       const s = newRun(seed);
       s.phase = "play";
       s.raiderT = 1e9;
+      // Only the reinforcements: the island's own robots would fight and shove the player off the spot.
+      s.enemies = [];
       const p = s.player;
       p.pos = { x, y: groundAt(x, z, 0.4, terrainHeight(x, z) + 2), z };
       p.onGround = true;
@@ -2040,7 +2042,7 @@ let failed = false;
 const head = ["skill    ", "alive", "time(med)", "cleared", "haul(med)", "score(med)", "downs", "acc", "crit", "leap", "crowd", "flank", "waves", "ally".padEnd(18), "rank".padEnd(18), "exit"];
 console.log(`${runs} runs per skill and region. alive: share of raids that got off (the rest were wiped out)`);
 console.log("time: minutes from landing to leaving; cleared: median POIs cleared; haul and score: medians over raids that got off");
-console.log("flank: share of hits from behind a robot or before it noticed the player");
+console.log("flank: share of hits from behind a robot or before it noticed or located the player (the titan, hit alike from every side, not counted)");
 console.log("waves: median reinforcement squads that beamed in during a raid");
 console.log("ally: teammate's share of the damage, its downs, times it picked the player up (r) and was picked up (h), per run");
 console.log("exit: raids that left by each extraction point of the region (the bot's choice depends on skill)");

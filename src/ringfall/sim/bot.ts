@@ -542,7 +542,8 @@ export class Bot {
   private waitSpot(s: State): { x: number; z: number } | null {
     const x = this.exit(s);
     if (!x.call || !s.calls[x.id] || callLeft(s, x.id) <= 1.5) return null;
-    if (this.wait?.id === x.id) return this.wait;
+    // A pickup with no hidden spot near it is remembered as NaN: wait in the open then.
+    if (this.wait?.id === x.id) return Number.isFinite(this.wait.x) ? this.wait : null;
     const at = x.waves ?? x;
     const from = { x: at.x, y: terrainHeight(at.x, at.z) + 1.8, z: at.z };
     let best: { x: number; z: number; d: number } | null = null;

@@ -616,7 +616,7 @@ const midGame = {
   stash: [{ t: "weapon", kind: "pike", rarity: 1 }, { t: "heal", kind: "cell" }, ...bag([["fuse", 5], ["parts", 4], ["wire", 5], ["board", 4], ["drive", 1], ["gyro", 1]])],
 };
 const lastStage = {
-  ...midGame, cash: 15000, raids: 36, extracted: 29, time: 22000, seed: 31,
+  ...midGame, cash: 63000, raids: 36, extracted: 29, time: 22000, seed: 31,
   hideout: { generator: 3, infirmary: 3, workbench: 2, storage: 3, radio: 2, pouch: 2, craft: 3 },
   stash: bag([["reactor", 1], ["core", 1], ["gyro", 4], ["drive", 3], ["board", 2]]),
 };
