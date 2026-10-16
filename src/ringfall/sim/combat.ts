@@ -225,7 +225,7 @@ function react(s: State, e: Enemy, weight: number, broke: boolean, quiet: boolea
   if (e.mode !== "staggered" && e.steady <= 0 && (heavy || broke)) {
     const interrupted = e.mode === "telegraph" || e.mode === "fire" || e.mode === "lunge";
     // An attack under way or just spent still owes its cooldown: the stagger costs that attack, it never brings the next one sooner.
-    if (e.mode === "fire" || e.mode === "lunge" || e.mode === "recover") e.cooldown = Math.max(e.cooldown, k.cooldown * 0.8 * (e.elite ? ELITE.cooldown : 1));
+    if (interrupted || e.mode === "recover") e.cooldown = Math.max(e.cooldown, k.cooldown * 0.8 * (e.elite ? ELITE.cooldown : 1));
     e.mode = "staggered";
     e.timer = heavy ? STAGGER.time[e.kind] : STAGGER.shieldBreak;
     e.shotsLeft = 0;
