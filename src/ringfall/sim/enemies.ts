@@ -87,7 +87,8 @@ export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi:
     stagger: 0,
     steady: 0,
     peekSide: rand(s) < 0.5 ? -1 : 1,
-    blind: 0,
+    // Not located: a robot that appears mid-fight must find the player with its own eyes too.
+    blind: AWARE.loseTime,
     sawAt: null,
     finding: 0,
   };

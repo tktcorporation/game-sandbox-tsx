@@ -131,7 +131,8 @@ export function sense(s: State, e: Enemy): boolean {
 /**
  * Whether this robot itself knows where the player is: it saw them or was hit by them
  * within `FLANK.blindTime`, or since then the player has stayed within `FLANK.moved` of
- * where it saw them (it ducked behind cover; they did not go anywhere). A fighting robot
+ * where it saw them (it ducked behind cover; they did not go anywhere) for no longer than
+ * `AWARE.loseTime`, after which what it saw is too old to act on. A fighting robot
  * that has not located the player moves on what its squad knows but holds its fire, and
  * the player's shots on it are an ambush.
  */
