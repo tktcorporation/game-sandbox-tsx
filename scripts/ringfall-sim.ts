@@ -8,7 +8,7 @@
  *
  * With a region id after the count, only that region's table is played.
  */
-import { ALLY, BAG, DEPOT, DODGE, ELITE, ENEMIES, HEALS, NOISE, PLATE, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, STAGGER, TACTICAL, TICK, VALUABLES, VAULT, WEAPONS, WORLD } from "../src/ringfall/sim/config";
+import { ALLY, BAG, DEPOT, ELITE, ENEMIES, HEALS, NOISE, PLATE, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, STAGGER, TACTICAL, TICK, VALUABLES, VAULT, WEAPONS, WORLD } from "../src/ringfall/sim/config";
 import { engageSquad, makeNoise } from "../src/ringfall/sim/awareness";
 import { spawnEnemy } from "../src/ringfall/sim/enemies";
 import { COVERS } from "../src/ringfall/sim/cover";
@@ -1780,6 +1780,8 @@ function checkStagger(): string | null {
   const { s, foes } = standoff(at, 15, ["grunt"]);
   const g = foes[0];
   s.player.iframes = 99;
+  // No shield, so the stagger can only come from the damage adding up (a shield breaking staggers too, checked below).
+  g.shield = 0;
   g.mode = "telegraph";
   g.timer = KINDS.grunt.telegraph;
   g.cooldown = 99;
@@ -1798,12 +1800,27 @@ function checkStagger(): string | null {
   fire(need);
   const st = s.events.find((e) => e.t === "stagger");
   if (g.mode !== "staggered" || !st || st.t !== "stagger" || !st.interrupted) return `stagger scenario: ${need + 1} quick rounds left a winding-up grunt in ${g.mode}${st ? "" : " with no stagger event"}`;
-  s.events = [];
-  fire(need);
-  if (s.events.some((e) => e.t === "stagger")) return "stagger scenario: a grunt was staggered again straight after a stagger";
   for (let i = 0; i < (KINDS.grunt.telegraph + 0.3) / TICK; i++) {
     step(s, idleInput(), false);
     if (s.events.some((e) => e.t === "enemyFire")) return "stagger scenario: a grunt staggered out of its wind-up still fired its burst";
+  }
+  // Back on its feet, it shrugs off another stagger's worth of rounds for a while.
+  if (g.mode === "staggered") return "stagger scenario: a grunt was still staggered after its wind-up's time";
+  s.events = [];
+  g.hp = KINDS.grunt.hp; // alive through another stagger's worth of rounds
+  fire(need);
+  if (!s.enemies.includes(g)) return "stagger scenario: the grunt died before the repeat could be checked";
+  if (s.events.some((e) => e.t === "stagger")) return "stagger scenario: a grunt was staggered again straight after a stagger";
+  // A shield breaking staggers it briefly, even on a hit too light to stagger it otherwise.
+  {
+    const { s, foes } = standoff(at, 15, ["grunt"]);
+    const h = foes[0];
+    s.player.iframes = 99;
+    h.shield = 1;
+    s.events = [];
+    const a = lookAngles(eyePos(s), bodyCenter(h));
+    fireRay(s, gun, forward(a.yaw, a.pitch));
+    if (h.mode !== "staggered" || Math.abs(h.timer - STAGGER.shieldBreak) > 1e-6) return `stagger scenario: breaking a grunt's shield left it in ${h.mode}`;
   }
   return null;
 }
@@ -1827,8 +1844,8 @@ function checkWindupMoves(): string | null {
       telegraphT += TICK;
     }
     const moved = Math.abs(e.pos.x - x0);
-    const want = DODGE.windup[kind] * KINDS[kind].speed * KINDS[kind].telegraph * 0.5;
-    if (kind === "heavy" ? moved > 0.05 : moved < want) return `wind-up scenario: a ${kind} moved ${moved.toFixed(2)} m sideways through its ${KINDS[kind].telegraph} s wind-up`;
+    // Half a metre: about a body width, enough to carry it off a crosshair left where it stood.
+    if (kind === "heavy" ? moved > 0.05 : moved < 0.5) return `wind-up scenario: a ${kind} moved ${moved.toFixed(2)} m sideways through its ${KINDS[kind].telegraph} s wind-up`;
   }
   return null;
 }
