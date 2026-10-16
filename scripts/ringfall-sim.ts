@@ -1822,6 +1822,18 @@ function checkStagger(): string | null {
     fireRay(s, gun, forward(a.yaw, a.pitch));
     if (h.mode !== "staggered" || Math.abs(h.timer - STAGGER.shieldBreak) > 1e-6) return `stagger scenario: breaking a grunt's shield left it in ${h.mode}`;
   }
+  // A stagger out of a burst never brings the next burst sooner: the burst's cooldown is still owed.
+  {
+    const { s, foes } = standoff(at, 15, ["grunt"]);
+    const h = foes[0];
+    s.player.iframes = 99;
+    h.mode = "fire";
+    h.cooldown = 0;
+    h.shield = 1;
+    const a = lookAngles(eyePos(s), bodyCenter(h));
+    fireRay(s, gun, forward(a.yaw, a.pitch));
+    if (h.mode !== "staggered" || h.cooldown < KINDS.grunt.cooldown * 0.8 - 1e-6) return `stagger scenario: a grunt staggered out of its burst owes ${h.cooldown.toFixed(2)} s of cooldown`;
+  }
   return null;
 }
 

@@ -528,7 +528,7 @@ export const RAIDERS = {
   name: "レイダー",
   kinds: ["grunt", "grunt", "grunt"] as EnemyKind[],
   huntEvery: 4,
-  /** The elite squad wears plates (see PLATE): a common gun barely scratches their bodies. */
+  /** The elite squad wears plates (see PLATE): a common gun does half its damage to their bodies. */
   plate: 2 as Rarity,
 };
 
