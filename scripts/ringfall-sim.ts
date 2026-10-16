@@ -1501,6 +1501,11 @@ function standoff(at: { x: number; z: number }, dist: number, kinds: EnemyKind[]
   s.squads.push({ name: "test", poi: -1, patrol: [], leg: 0, engaged: false, roam: false, sinceSeen: 0, last: { x: at.x, z: at.z } });
   const foes = kinds.map((k, i) => spawnEnemy(s, k, at.x + (i - (kinds.length - 1) / 2) * 2.5, at.z - dist, -1, squad, { face: Math.PI }));
   engageSquad(s, squad, foes[0]);
+  // Every foe faces the player and has seen them: the usual fight, not an ambush.
+  for (const e of foes) {
+    e.blind = 0;
+    e.sawAt = { x: p.pos.x, z: p.pos.z };
+  }
   return { s, foes, squad };
 }
 
@@ -1719,6 +1724,9 @@ function checkPositionMatters(): string | null {
     if (aware) {
       g.aware = "engaged";
       s.squads[squad].engaged = true;
+      // It has seen the player itself: an engaged robot that has not is an ambush too.
+      g.blind = 0;
+      g.sawAt = { x: p.pos.x, z: p.pos.z };
     }
     const a = lookAngles(eye, weakPoint(g));
     fireRay(s, { kind: "talon", rarity: 0, mag: -1 }, forward(a.yaw, a.pitch));
