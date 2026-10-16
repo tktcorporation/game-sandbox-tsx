@@ -540,7 +540,7 @@ export interface Depot {
  * the entry: the nearest flat spot where a raid started there is not seen by the POI's
  * squads at once (`checkDepots` in the sim gate holds them to it).
  */
-const DEPOT_OUT: Record<PoiId, number> = { supply: 18, quarry: 6, relay: 40, pad: 25, wreck: 22, yard: 18, smelter: 25 };
+const DEPOT_OUT: Record<PoiId, number> = { supply: 18, quarry: 6, relay: 40, pad: 24, wreck: 22, yard: 18, smelter: 25 };
 
 /**
  * One depot per POI, on the road out from its entry: in reach on the way in or out, yet
@@ -608,7 +608,7 @@ export const ROAMERS: Squad[] = (
       name: "尾根道の巡回",
       roam: true,
       members: [{ kind: "grunt", x: -40, z: 78 }, { kind: "drone", x: -38, z: 80 }],
-      patrol: [{ x: -40, z: 78 }, { x: -62, z: 64 }, { x: -90, z: 60 }, { x: -62, z: 64 }, { x: -40, z: 78 }, { x: -33, z: 86 }],
+      patrol: [{ x: -40, z: 78 }, { x: -62, z: 64 }, { x: -90, z: 68 }, { x: -62, z: 64 }, { x: -40, z: 78 }, { x: -33, z: 86 }],
     },
     {
       name: "東の坂の巡回",
@@ -886,7 +886,7 @@ export const EXTRA_BINS: ExtraBin[] = (
     { x: LIGHTHOUSE.x - 2.5, z: LIGHTHOUSE.z + 0.5, y: (LIGHTHOUSE.floors - 1) * STOREY, table: "wreck", flare: true },
   ] satisfies ExtraBin[]
 )
-  .map(onFloor)
+  .map((b): ExtraBin => onFloor(b))
   .concat(HAMLETS.flatMap((h) => h.bins));
 
 
@@ -1323,6 +1323,8 @@ const SPARSE = "塩田";
 const WATER = "水路";
 /** The ground between the basins and roads (terrain.ts). */
 const BETWEEN = "野";
+/** Where on the ground between the cover clumps: above 0.55 in blobs about a hundred metres across. */
+const clump = (x: number, z: number) => 0.5 + 0.25 * Math.sin(x / 37 + 1.3) * Math.sin(z / 41 + 0.7) + 0.25 * Math.sin((x + z) / 53);
 
 function scatterCover(authored: Box[], keep: Keep): Box[] {
   const placed: Box[] = [];
@@ -1407,8 +1409,9 @@ function scatterArea(authored: Box[], { points, segments }: Keep, area: (typeof 
       const at = surfaceAt(x, z);
       const sparse = at === SPARSE;
       if ((sparse && rnd() > 0.5) || at === WATER) continue;
-      // The ground between the areas keeps long open stretches: one candidate in three stands.
-      if (at === BETWEEN && rnd() > 0.34) continue;
+      // The ground between the areas is bare but for clumps of cover a hundred metres or so
+      // across, some way apart: open stretches to cross, and somewhere to break the sightline.
+      if (at === BETWEEN && (rnd() > 0.6 || clump(x, z) < 0.55)) continue;
       const piece = sparse ? wreckAt(x, z) : pieceAt(x, z);
       const base = groundUnder(piece);
       if (base === null) continue;

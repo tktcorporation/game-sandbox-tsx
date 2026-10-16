@@ -486,11 +486,12 @@ export const VAULT = {
 /**
  * Reinforcements: a squad beams in somewhere `dist` metres from the player, out of
  * sight, every `every` seconds after the first `first`, and comes looking for them.
- * Later waves are bigger. The longer a raid lasts, the more is hunting the player.
+ * Later waves are bigger. The longer a raid lasts, the more is hunting the player. The gap
+ * between waves leaves a quiet walk between the fights a wave brings.
  */
 export const REINFORCE = {
   first: 180,
-  every: 120,
+  every: 150,
   /** Seconds between fresh guesses of where the player is while a reinforcement squad hunts. */
   huntEvery: 8,
   dist: [55, 110] as const,

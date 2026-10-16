@@ -200,7 +200,7 @@ const ROADS: Open[] = [
   // Up onto the ridge at its east end, along its top, and down the haul road into the pit at its west end.
   // The climb starts at the supply basin's edge: a ramp rising inside a basin would leave a step where they meet.
   { name: "尾根道", line: [[-20, 106], [-29, 93], [-40, 77]], half: 5, level: [LEVEL.shore, LEVEL.shore, LEVEL.ridge] },
-  { name: "採掘場の運搬路", line: [[-70, 64], [-100, 62], [-140, 50], [-156, 40]], half: 5, level: [LEVEL.ridge, -1, -8, LEVEL.pit], walled: true },
+  { name: "採掘場の運搬路", line: [[-70, 64], [-110, 72], [-150, 62], [-172, 30]], half: 5, level: [LEVEL.ridge, -1, -8, LEVEL.pit], walled: true },
   { name: "西道", line: [[-24, 16], [-60, 16], [-112, 20]], half: 5, level: [LEVEL.lakebed, -8, LEVEL.pit], walled: true },
   { name: "廃村道", line: [[-150, -14], [-124, -46]], half: 5, level: [LEVEL.pit, LEVEL.shore] },
   { name: "湖の西坂", line: [[-22, -30], [-44, -38]], half: 5, level: [LEVEL.lakebed, LEVEL.shore], walled: true },
@@ -304,7 +304,7 @@ export const LANDS: Land[] = [
   { name: "島", x: 0, z: 0, radius: (a) => 228 + 8 * Math.sin(3 * a + 1.1) + 5 * Math.sin(7 * a + 2.3) + 3 * Math.sin(13 * a + 0.4) },
   // The mountain belt between the two regions, wider east to west.
   { name: "山地", x: 30, z: -205, radius: (a) => 140 + 45 * Math.abs(Math.cos(a)) + 6 * Math.sin(5 * a + 0.7) },
-  { name: "港湾", x: 0, z: -420, radius: (a) => 246 + 6 * Math.sin(3 * a + 0.5) + 4 * Math.sin(7 * a + 1.9) + 2 * Math.sin(11 * a + 0.3) },
+  { name: "港湾", x: 0, z: -420, radius: (a) => 252 + 6 * Math.sin(3 * a + 0.5) + 4 * Math.sin(7 * a + 1.9) + 2 * Math.sin(11 * a + 0.3) },
   // The quay and its channel, out at the harbor's north-east corner.
   { name: "埠頭", x: 125, z: -575, radius: (a) => 62 + 4 * Math.sin(4 * a + 1.3) },
 ];
@@ -480,7 +480,7 @@ function betweenAt(x: number, z: number): number {
 }
 
 /** Low rolling hills on the ground between, fading in away from the open shapes' edges. */
-const rolling = (x: number, z: number) => (vnoise(x / 46 + 17, z / 46) - 0.5) * 5 + (vnoise(x / 15, z / 15 + 9) - 0.5) * 1.2;
+const rolling = (x: number, z: number) => (vnoise(x / 60 + 17, z / 60) - 0.5) * 8 + (vnoise(x / 20, z / 20 + 9) - 0.5) * 1.6;
 
 /** Index of the ground between among the shapes `lowest()` answers with. */
 const BETWEEN = OPEN.length + CUTS.length;
