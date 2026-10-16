@@ -28,6 +28,14 @@ const THINGS_FAR = 220;
 const MATE_LIGHT = 0x6fd0cf;
 /** Sparks off a plate that took part of a hit: grey like its damage number. */
 const PLATE_SPARK = 0x9aa3b5;
+/** Smoke from a robot below half its health and shield, and from a wreck. */
+const SMOKE = 0x3b3a3c;
+/** Seconds a wreck lies where it fell, then sinks away over `WRECK_SINK`. At most `WRECK_MAX` lie at once. */
+const WRECK_TIME = 7;
+const WRECK_SINK = 1.2;
+const WRECK_MAX = 6;
+/** Seconds of the collapse after a kill. */
+const WRECK_FALL = 0.55;
 
 /** Ground the harbor paints apart: the old bay floor white with salt, and the paved town and quays. */
 const SALT = new Set(["塩田", "難破船"]);
@@ -127,10 +135,39 @@ interface EnemyView {
   m: EnemyModel;
   kind: EnemyKind;
   flash: number;
+  /** 0..1: how hard the last hits rocked it; the lean falls away in a fraction of a second. */
+  flinch: number;
+  /** Which way the hits push it, as a yaw in the world (away from the shooter). */
+  pushYaw: number;
+  /** Seconds until its next puff of smoke when badly hurt. */
+  smoke: number;
   shieldFlash: number;
   walk: number;
   spawnBeam: THREE.Mesh | null;
   lane: THREE.Mesh | null;
+}
+
+/** A robot's model left lying where it was destroyed. */
+interface Wreck {
+  m: EnemyModel;
+  kind: EnemyKind;
+  t: number;
+  /** World yaw it falls toward (away from the killing shot). */
+  fallYaw: number;
+  yaw: number;
+  x: number;
+  y: number;
+  z: number;
+  /** Height it fell from (drones drop out of the air) and the ground it lies on. */
+  y0: number;
+  ground: number;
+  smoke: number;
+}
+
+/** Tip a robot's body toward a world yaw by `amount` radians, its own yaw `yaw` (the body's euler order is YXZ). */
+function lean(body: THREE.Object3D, yaw: number, towardYaw: number, amount: number) {
+  const rel = towardYaw - yaw;
+  body.rotation.set(-Math.cos(rel) * amount, -yaw, -Math.sin(rel) * amount);
 }
 
 interface Tracer {
@@ -146,6 +183,7 @@ export class World {
   private gunCam = new THREE.PerspectiveCamera(55, 16 / 9, 0.01, 10);
   private sun = new THREE.DirectionalLight(0xfff1d6, 2.2);
   private enemies = new Map<number, EnemyView>();
+  private wrecks: Wreck[] = [];
   private ally = buildAlly();
   private allyWalk = 0;
   private loot = new Map<number, THREE.Group>();
@@ -439,6 +477,56 @@ export class World {
     return { x: ((v.x + 1) / 2) * w, y: ((1 - v.y) / 2) * h, behind };
   }
 
+  /**
+   * Lay a destroyed robot's model down as a wreck: its eye goes dark, its armour scorches,
+   * and it topples toward `fallYaw`. The model's own meshes are reused, and the oldest
+   * wreck goes once more than `WRECK_MAX` lie about, so wrecks never add up.
+   */
+  private wreck(v: EnemyView, fallYaw: number) {
+    const m = v.m;
+    m.eye.visible = false;
+    m.eyeHalo.visible = false;
+    m.shield.visible = false;
+    for (const mat of m.mats) {
+      mat.emissive.setHex(0x000000);
+      mat.color.lerp(new THREE.Color(0x1a1a1e), 0.55);
+    }
+    const p = m.root.position;
+    const yaw = -m.body.rotation.y;
+    const fly = ENEMIES[v.kind].fly > 0;
+    this.wrecks.push({ m, kind: v.kind, t: 0, fallYaw, yaw, x: p.x, y: p.y, z: p.z, y0: p.y, ground: fly ? groundAt(p.x, p.z, 0.4, p.y) : p.y, smoke: 0 });
+    while (this.wrecks.length > WRECK_MAX) this.scene.remove(this.wrecks.shift()!.m.root);
+  }
+
+  private stepWrecks(dt: number, fx: number, fz: number) {
+    this.wrecks = this.wrecks.filter((w) => {
+      w.t += dt;
+      if (w.t > WRECK_TIME + WRECK_SINK) {
+        this.scene.remove(w.m.root);
+        return false;
+      }
+      const m = w.m;
+      m.root.visible = Math.hypot(w.x - fx, w.z - fz) < THINGS_FAR;
+      if (!m.root.visible) return true;
+      // Collapse: knees give, the body tips over and lands with a small bounce; a drone drops out of the air.
+      const f = Math.min(1, w.t / WRECK_FALL);
+      const ease = f * f;
+      const bounce = f >= 1 ? Math.max(0, Math.sin((w.t - WRECK_FALL) * 14) * Math.exp(-(w.t - WRECK_FALL) * 9)) * 0.06 : 0;
+      const tipMax = w.kind === "drone" ? 0.9 : w.kind === "titan" ? 0.55 : 1.25;
+      lean(m.body, w.yaw, w.fallYaw, tipMax * ease - bounce);
+      m.legs.forEach((leg) => (leg.rotation.x = -0.7 * ease));
+      const sink = w.t > WRECK_TIME ? ((w.t - WRECK_TIME) / WRECK_SINK) * (ENEMIES[w.kind].bodyY + ENEMIES[w.kind].radius + 0.5) : 0;
+      const settle = w.kind === "drone" ? 0 : -0.25 * ease;
+      m.root.position.set(w.x, w.ground + (w.y0 - w.ground) * (1 - ease) + settle - sink, w.z);
+      if ((w.smoke -= dt) <= 0 && w.t < WRECK_TIME) {
+        w.smoke = 0.25 + Math.random() * 0.25;
+        const k = ENEMIES[w.kind];
+        this.burst({ x: w.x, y: w.ground + k.radius, z: w.z }, SMOKE, 1, 0.5, 0.3, -1.4, 1.4);
+      }
+      return true;
+    });
+  }
+
   private burst(at: Vec3, color: number, n: number, speed: number, size = 0.08, gravity = 9, life = 0.5) {
     for (let i = 0; i < n && this.particles.length < 700; i++) {
       const a = Math.random() * Math.PI * 2;
@@ -513,6 +601,10 @@ export class World {
           if (v) {
             v.flash = 0.07;
             if (e.shield) v.shieldFlash = 0.18;
+            // The robot rocks away from the shot: harder on the weak point, softer when a plate takes it.
+            v.flinch = Math.min(1, v.flinch + (e.crit ? 0.8 : e.blocked ? 0.2 : 0.45));
+            const from = e.ally ? s.ally.pos : s.player.pos;
+            v.pushYaw = Math.atan2(e.pos.x - from.x, -(e.pos.z - from.z));
           }
           // A plate turning a hit aside throws grey sparks, so the player sees the gun is too weak.
           if (e.blocked) this.burst(e.pos, PLATE_SPARK, 7, 6, 0.05, 9, 0.25);
@@ -523,6 +615,17 @@ export class World {
           this.burst(e.pos, RARITY_COLOR[e.tier], 26, 7, 0.1, 5, 0.7);
           hitstop = Math.max(hitstop, 0.05);
           break;
+        case "stagger": {
+          const v = this.enemies.get(e.id);
+          if (v) {
+            v.flinch = 1;
+            v.pushYaw = Math.atan2(e.pos.x - e.fromX, -(e.pos.z - e.fromZ));
+          }
+          // Sparks off the joints; a lost wind-up also snuffs the eye's glow in a hot spray.
+          this.burst(e.pos, 0xffc070, e.interrupted ? 16 : 9, 6, 0.06, 9, 0.4);
+          if (e.interrupted) this.burst({ ...e.pos, y: e.pos.y + 0.6 }, PAL.eye, 8, 4, 0.05, 6, 0.3);
+          break;
+        }
         case "kill": {
           const v = this.enemies.get(e.id);
           const big = e.kind === "titan" ? 4 : e.kind === "heavy" ? 2 : 1;
@@ -530,10 +633,10 @@ export class World {
           this.burst(e.pos, PAL.eye, 6 * big, 5, 0.08, 4, 0.5);
           this.burst(e.pos, 0xffc070, 10 * big, 9, 0.06, 2, 0.35);
           if (v) {
-            this.scene.remove(v.m.root);
             if (v.lane) this.scene.remove(v.lane);
             if (v.spawnBeam) this.scene.remove(v.spawnBeam);
             this.enemies.delete(e.id);
+            this.wreck(v, Math.atan2(e.pos.x - e.fromX, -(e.pos.z - e.fromZ)));
           }
           hitstop = Math.max(hitstop, e.kind === "titan" ? 0.2 : 0.04);
           this.shake = Math.max(this.shake, e.kind === "titan" ? 1.4 : 0.25);
@@ -602,7 +705,7 @@ export class World {
     const bobY = Math.sin(this.bob * 2) * 0.035 * (p.ads > 0.5 ? 0.2 : 1);
     const drop = s.phase === "drop";
     this.camera.position.set(p.pos.x, p.pos.y + (drop ? 1.6 : this.eyeY) + bobY - this.landDip, p.pos.z);
-    this.camera.rotation.set(p.pitch + (p.recoil * Math.PI) / 180 + shakeY, -p.yaw + shakeX, p.sliding ? -0.04 : 0, "YXZ");
+    this.camera.rotation.set(p.pitch + (p.recoil * Math.PI) / 180 + shakeY, -(p.yaw + (p.recoilYaw * Math.PI) / 180) + shakeX, p.sliding ? -0.04 : 0, "YXZ");
     const spec = w0 ? WEAPONS[w0.kind] : WEAPONS.pike;
     const baseFov = 74 + (p.sprinting ? 4 : 0) + (drop || p.leap ? 10 : 0);
     const fovTarget = baseFov + (spec.adsFov - 74) * p.ads;
@@ -673,7 +776,8 @@ export class World {
         );
         beam.position.set(e.pos.x, e.pos.y + 20, e.pos.z);
         this.scene.add(beam);
-        v = { m, kind: e.kind, flash: 0, shieldFlash: 0, walk: 0, spawnBeam: beam, lane: null };
+        m.body.rotation.order = "YXZ";
+        v = { m, kind: e.kind, flash: 0, flinch: 0, pushYaw: 0, smoke: 0, shieldFlash: 0, walk: 0, spawnBeam: beam, lane: null };
         this.enemies.set(e.id, v);
       }
       const k = ENEMIES[e.kind];
@@ -687,7 +791,20 @@ export class World {
       }
       if (v.spawnBeam) v.spawnBeam.visible = close;
       if (!close) continue;
-      m.body.rotation.y = -e.yaw;
+      // Flinch: a lean away from the last hits that springs back. Staggered: reeling, rocking on its feet.
+      v.flinch *= Math.exp(-dt * 12);
+      const staggered = e.mode === "staggered";
+      const tip = staggered ? 0.32 + Math.sin(this.time * 26) * 0.06 : v.flinch * (e.kind === "heavy" ? 0.1 : 0.2);
+      lean(m.body, e.yaw, v.pushYaw, tip);
+      if (staggered) m.root.position.y -= 0.08;
+      // Below half its health and shield it smokes, and now and then spits sparks.
+      const k0 = ENEMIES[e.kind];
+      if (e.kind !== "titan" && e.hp + e.shield < (k0.hp + k0.shield) * 0.5 && (v.smoke -= dt) <= 0) {
+        v.smoke = 0.12 + Math.random() * 0.1;
+        const top = { x: e.pos.x, y: e.pos.y + k0.bodyY + k0.radius * 0.6, z: e.pos.z };
+        this.burst(top, SMOKE, 1, 0.6, 0.22, -1.6, 1.1);
+        if (Math.random() < 0.25) this.burst(top, 0xffc070, 3, 3, 0.04, 9, 0.25);
+      }
       if (e.mode === "spawning") {
         const t = Math.max(0, 1 - e.timer / (e.kind === "titan" ? 2.2 : 0.9));
         m.root.scale.setScalar(0.2 + 0.8 * t);
@@ -701,7 +818,7 @@ export class World {
       m.legs.forEach((leg, i) => (leg.rotation.x = Math.sin(v!.walk + i * Math.PI) * Math.min(0.6, sp * 0.15)));
       if (k.fly > 0) m.body.rotation.z = Math.sin(this.time * 2 + e.id) * 0.15;
       const winding = e.mode === "telegraph" || e.mode === "stomp";
-      const tele = winding ? 1 + Math.sin(this.time * 40) * 0.25 + 0.6 : e.mode === "stunned" ? 0.4 : 1;
+      const tele = winding ? 1 + Math.sin(this.time * 40) * 0.25 + 0.6 : e.mode === "stunned" ? 0.4 : staggered ? 0.5 + Math.random() * 0.5 : 1;
       m.eye.scale.setScalar(tele);
       m.eyeHalo.scale.setScalar(k.weakR * (winding ? 9 : 4));
       (m.eyeHalo.material as THREE.SpriteMaterial).opacity = winding ? 0.95 : 0.55;
@@ -746,6 +863,7 @@ export class World {
       }
     }
     if (!s.enemies.some((e) => e.kind === "titan" && e.mode === "stomp")) this.stompRing.visible = false;
+    this.stepWrecks(dt, fx, fz);
 
     // --- enemy fire
     s.orbs.forEach((o, i) => {
@@ -955,6 +1073,8 @@ export class World {
       if (v.spawnBeam) this.scene.remove(v.spawnBeam);
     }
     this.enemies.clear();
+    for (const w of this.wrecks) this.scene.remove(w.m.root);
+    this.wrecks = [];
     for (const g of this.loot.values()) this.scene.remove(g);
     this.loot.clear();
     for (const b of this.bins.values()) this.scene.remove(b.root);

@@ -36,6 +36,8 @@ interface DmgNum {
   flank: Flank;
   /** A plate took part of one of the hits merged into this number. */
   blocked: boolean;
+  /** The hits behind this number staggered the robot out of its wind-up. */
+  cut?: boolean;
 }
 
 /** Tag shown with a damage number, by how the shot met the robot. */
@@ -129,10 +131,19 @@ export class Hud {
         const tag = FLANK_TAG[cur.flank];
         // A weak-point hit passes a plate in full, so a number with one is not shown as blocked.
         const plate = cur.blocked && !cur.crit;
-        const tags = [tag, plate ? "装甲" : undefined].filter(Boolean).join(" ");
+        const tags = [cur.cut ? "阻止" : undefined, tag, plate ? "装甲" : undefined].filter(Boolean).join(" ");
         cur.el.innerHTML = `${tags ? `<small>${tags}</small>` : ""}${Math.round(cur.value)}`;
         cur.el.className = `dmg${cur.crit ? " crit" : ""}${tag ? " flank" : ""}${cur.flank === "front" ? " front" : ""}${plate ? " plate" : ""}`;
         cur.el.style.color = cur.crit ? "" : e.shield ? RARITY_CSS[e.tier] : "#ffffff";
+        break;
+      }
+      case "stagger": {
+        // Fire that knocks a robot out of its wind-up says so on its number.
+        const n = e.interrupted ? this.nums.find((x) => x.id === e.id && x.age === 0) : undefined;
+        if (n && !n.cut) {
+          n.cut = true;
+          n.el.insertAdjacentHTML("afterbegin", "<small>阻止</small>");
+        }
         break;
       }
       case "kill":
