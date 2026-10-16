@@ -407,6 +407,11 @@ const shot = async (name) => {
 let prevKey = "";
 let prevFlank = 0;
 let lastProgress = 0;
+// A kill is shot once the wreck has had time to fall over.
+let prevKills = 0;
+let wreckAt = -1;
+let wreckSpot = null;
+let prevEnemies = [];
 let s = after;
 for (let i = 0; i < 25 * 60 * 10; i++) {
   await page.evaluate(() => window.advanceTime(100));
@@ -459,6 +464,29 @@ for (let i = 0; i < 25 * 60 * 10; i++) {
     }
   }
   if (at(0) && live.length >= 2 && s.orbs >= 1) await shot("03-fight-supply");
+  // A robot reeling from a burst, close enough to see its pose.
+  if (live.some((e) => e.mode === "staggered" && near(e) < 30)) await shot("32-stagger");
+  if (s.stats.kills > prevKills && wreckAt < 0 && !taken.has("33-wreck")) {
+    // The robot that is gone since the last step, nearest the player: that is where the wreck lies.
+    const gone = prevEnemies.filter((o) => !s.enemies.some((e) => e.kind === o.kind && Math.hypot(e.x - o.x, e.z - o.z) < 2));
+    gone.sort((a, b) => near(a) - near(b));
+    if (gone[0] && gone[0].kind !== "drone") {
+      wreckSpot = gone[0];
+      wreckAt = s.time + 0.8;
+    }
+  }
+  prevKills = s.stats.kills;
+  prevEnemies = s.enemies;
+  if (wreckAt >= 0 && s.time >= wreckAt) {
+    // From 4 m off, a little above: the fallen body on the ground.
+    const w = wreckSpot;
+    const cx = w.x + 3;
+    const cz = w.z + 3;
+    await page.evaluate(([x, y, z, yaw]) => window.ringfallCamera(x, y, z, yaw, -0.32), [cx, w.y + 2.2, cz, Math.atan2(w.x - cx, -(w.z - cz))]);
+    await shot("33-wreck");
+    await page.evaluate(() => window.ringfallCamera());
+    wreckAt = -1;
+  }
   // A robot's shot in flight, seen from beside its path: fast shots are drawn as stretched bolts.
   // Read afresh: shots taken earlier in this step may have moved time on.
   const fresh = !taken.has("27-bolt") && s.bolt ? await read() : null;
