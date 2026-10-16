@@ -108,7 +108,7 @@ interface Open {
   atPoints?: true;
   /**
    * Cliffs all round, below or above the ground between (`between()`): the lakebed and the
-   * quarry pit, the ramps cut down into them, the railway's embankments. Without it the shape
+   * quarry pit, most ramps cut down into them (the quarry's north road runs out gently instead), the railway's embankments. Without it the shape
    * runs out into the ground between at its own level.
    */
   walled?: true;

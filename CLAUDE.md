@@ -23,7 +23,7 @@ the east mesa, a bridge over a gorge, a viaduct into the harbor) join them, so a
 one to the other. `REGIONS` in `map.ts` gives each region its POIs, ways off, drop and landing spot;
 `newRun(seed, kit, region)` drops into one (the reservoir by default), and the base picks it.
 Robots are squads placed in the world from the start (`POIS[].squads`, two squads of two or three
-per POI, and a few `ROAMERS` in `map.ts`, most of them patrolling the roads), plus reinforcements (`REINFORCE` in `config.ts`) that beam in
+per POI (the pad holds the titan and its drones), and a few `ROAMERS` in `map.ts`, most of them patrolling the roads), plus reinforcements (`REINFORCE` in `config.ts`) that beam in
 out of sight on a timer and come looking, and once per raid an elite squad (`RAIDERS` / `ELITE`)
 that flanks. Bins take time to search (`SEARCH`) and valuables fill a bag of `BAG.slots`. The HUD
 shows no markers or distances, and lists only the ways off of the region the player is in
@@ -78,7 +78,7 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   levels, shelves inside some POI basins, and canyons (`CUTS`: the spillway, the gorge under the
   railway bridge). Between them lies open walkable ground, the "ground between" (`betweenAt()`,
   surface `野`): a smooth surface relaxed to meet every basin and road at its level, with low
-  rolling hills. Shapes marked `walled` (the lakebed, the quarry pit and the ramps cut into them,
+  rolling hills. Shapes marked `walled` (the lakebed, the quarry pit and most ramps cut into them,
   the railway's embankments, the channel, the headland) take no part in it and keep cliffs all
   round. Unclimbable high ground is left only in `CRAGS` (the mountain belt between the regions and
   rock outcrops) and beyond the coast; ground steeper than `STEEP` is a wall, dropped down but

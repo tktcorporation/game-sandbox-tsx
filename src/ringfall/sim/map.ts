@@ -599,9 +599,11 @@ export const EXTRACT = EXTRACTS[0];
  */
 export const ROAMERS: Squad[] = (
   [
+    // The lookout stays on the clock tower: a patrol is led by its first member, and one posted up high cannot leave its floor.
+    { name: "時計塔", members: [{ kind: "grunt", x: 0, z: 13, y: STOREY * 3, face: S }] },
     {
-      name: "旧市街",
-      members: [{ kind: "grunt", x: 0, z: 13, y: STOREY * 3, face: S }, { kind: "grunt", x: -7, z: 20, face: E }],
+      name: "旧市街の見回り",
+      members: [{ kind: "grunt", x: -7, z: 20, face: E }],
       patrol: [{ x: 7, z: 20 }, { x: 7, z: 2 }, { x: -7, z: 2 }, { x: -7, z: 20 }],
     },
     {
