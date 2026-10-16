@@ -1,4 +1,5 @@
 import { PLAYER, WORLD } from "./config";
+import { los } from "./geom";
 import { BOXES, DECKS } from "./map";
 import { steepAt, terrainHeight } from "./terrain";
 
@@ -114,14 +115,31 @@ export function clearLine(ax: number, az: number, bx: number, bz: number): boole
   return true;
 }
 
-/** Nearest free cell to (x, z), searching outward a few metres. */
+/**
+ * Nearest free cell to (x, z), searching outward a few metres. A point in a closed cell
+ * (a stairwell, a gap between crates) is matched to a free cell on its own side of the
+ * walls round it: the closest one in waist-high sight, or else the closest one.
+ */
 function nearestFree(x: number, z: number): [number, number] | null {
   const ci = cellX(x);
   const cj = cellZ(z);
-  for (let r = 0; r < 8; r++)
+  if (free(ci, cj)) return [ci, cj];
+  const y = terrainHeight(x, z) + 1;
+  let fallback: [number, number] | null = null;
+  for (let r = 1; r < 8; r++) {
+    const ring: [number, number, number][] = [];
     for (let di = -r; di <= r; di++)
-      for (let dj = -r; dj <= r; dj++) if (Math.max(Math.abs(di), Math.abs(dj)) === r && free(ci + di, cj + dj)) return [ci + di, cj + dj];
-  return null;
+      for (let dj = -r; dj <= r; dj++)
+        if (Math.max(Math.abs(di), Math.abs(dj)) === r && free(ci + di, cj + dj)) ring.push([ci + di, cj + dj, Math.hypot(centerX(ci + di) - x, centerZ(cj + dj) - z)]);
+    ring.sort((a, b) => a[2] - b[2]);
+    for (const [i, j] of ring) {
+      fallback ??= [i, j];
+      const cx = centerX(i);
+      const cz = centerZ(j);
+      if (los({ x, y, z }, { x: cx, y: terrainHeight(cx, cz) + 1, z: cz })) return [i, j];
+    }
+  }
+  return fallback;
 }
 
 /*
