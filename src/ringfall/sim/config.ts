@@ -647,7 +647,8 @@ export const FLANK = {
   /**
    * A fighting robot that has gone this many seconds without seeing the player, or being
    * hit by them, while the player moved away from where it saw them (`moved`), has lost
-   * them: it must find them again before it fires (`AWARE.locate`), and the player's hits
+   * them (and so has one that has not seen them for `AWARE.loseTime`, wherever they are):
+   * it must find them again before it fires (`AWARE.locate`), and the player's hits
    * on it until then are an ambush. One hit wakes the whole squad, but the members that
    * never saw the player are still there for the taking, and so is a squad that lost the
    * player behind cover and is shot from somewhere new.
