@@ -498,6 +498,8 @@ function checkShipCall(): string | null {
  */
 function checkBoatCall(): string | null {
   const s = padRun();
+  // The teammate stays out of it: the robots counted are the ones the waves brought, not the ones it left standing.
+  s.ally.active = false;
   const boat = EXTRACTS.find((x) => x.id === "boat")!;
   const p = s.player;
   p.pos = { x: boat.x, y: groundAt(boat.x, boat.z, 0.4, 20), z: boat.z };
@@ -517,6 +519,8 @@ function checkBoatCall(): string | null {
  */
 function checkSecondPickup(): string | null {
   const s = padRun();
+  // The teammate stays out of it, as in checkBoatCall: the count is of what the waves brought.
+  s.ally.active = false;
   const boat = EXTRACTS.find((x) => x.id === "boat")!;
   const ship = EXTRACTS.find((x) => x.id === "ship")!;
   const p = s.player;
@@ -670,7 +674,7 @@ function checkAllySelfUp(): string | null {
 }
 /** A jumper over the high ground, even one steering deeper in, lands on walkable ground. */
 function checkDropOffHighGround(): string | null {
-  for (const [x, z] of [[40, 22], [-40, 40], [70, 10], [-80, -30], [30, 140], [-150, 0], [150, 60], [0, -420], [60, -240], [-55, -440]]) {
+  for (const [x, z] of [[-122, 118], [153, 128], [158, -5], [-168, -113], [43, -427], [203, -417], [-137, -346], [0, -206], [60, -240], [-150, -215], [-200, -210]]) {
     if (!highGround(x, z)) return `drop scenario: ${x},${z} is not high ground`;
     const s = newRun(5);
     const p = s.player;

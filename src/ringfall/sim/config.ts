@@ -12,10 +12,10 @@ export const WORLD = {
    * The world's bounds on each axis: the reservoir in the south (+z), the harbor in the
    * north. The coast's cliffs (terrain.ts) stop bodies well inside them.
    */
-  x0: -230,
-  x1: 230,
-  z0: -660,
-  z1: 215,
+  x0: -280,
+  x1: 280,
+  z0: -700,
+  z1: 265,
   gravity: 15,
   stepUp: 0.45,
 };

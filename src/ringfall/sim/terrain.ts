@@ -43,12 +43,28 @@ interface Polyline {
   pts: readonly P[];
   lens: number[];
   sum: number;
+  /** Its bounding box: the distance to it is a cheap lower bound of the distance to the line. */
+  x0: number;
+  z0: number;
+  x1: number;
+  z1: number;
 }
 
 function polyline(pts: readonly P[]): Polyline {
   const lens = pts.slice(1).map((b, i) => Math.hypot(b[0] - pts[i][0], b[1] - pts[i][1]));
-  return { pts, lens, sum: lens.reduce((a, b) => a + b, 0) || 1 };
+  const xs = pts.map((q) => q[0]);
+  const zs = pts.map((q) => q[1]);
+  return { pts, lens, sum: lens.reduce((a, b) => a + b, 0) || 1, x0: Math.min(...xs), z0: Math.min(...zs), x1: Math.max(...xs), z1: Math.max(...zs) };
 }
+
+/** Distance from (x, z) to a line's bounding box: never more than the distance to the line. */
+const nearBox = (x: number, z: number, l: Polyline) => Math.hypot(Math.max(l.x0 - x, 0, x - l.x1), Math.max(l.z0 - z, 0, z - l.z1));
+
+/**
+ * Metres outside a shape beyond which `lowest()` skips working out its cone: there it rises
+ * higher than the high ground's top, and the ground between has stopped rolling in from it.
+ */
+const FAR = 40;
 
 /** Distance from (x, z) to the polyline, and the fraction along it of the nearest point. */
 function toPolyline(x: number, z: number, { pts, lens, sum }: Polyline): { d: number; along: number } {
@@ -90,6 +106,12 @@ interface Open {
   level: number | readonly number[];
   /** The levels belong to the line's points (else they are spaced evenly along its length). */
   atPoints?: true;
+  /**
+   * Cliffs all round, below or above the ground between (`between()`): the lakebed and the
+   * quarry pit, the ramps cut down into them, the railway's embankments. Without it the shape
+   * runs out into the ground between at its own level.
+   */
+  walled?: true;
 }
 
 /** Value at fraction `t` along a line whose points carry `vals`, one each. */
@@ -143,11 +165,11 @@ export const DAM_FACE = (x: number, z: number) => Math.abs(x) < 28 && z > -76 &&
 /** Basins: the POIs and the districts. Each holds everything built there. */
 const BASINS: Open[] = [
   { name: "補給所", line: [[0, 86], [0, 130]], half: 28, level: LEVEL.shore },
-  { name: "湖底", line: [[0, -40], [0, 18]], half: 26, level: LEVEL.lakebed },
+  { name: "湖底", line: [[0, -40], [0, 18]], half: 26, level: LEVEL.lakebed, walled: true },
   { name: "発着場", line: [[-8, -118], [10, -118]], half: 32, level: LEVEL.dam },
   // The dam crest: a walkway along the top of the dam face, the lakebed 15 m below.
   { name: "堤", line: [[-24, -79], [24, -79]], half: 5, level: LEVEL.dam },
-  { name: "採掘場", line: [[-116, 8], [-86, 24]], half: 26, level: LEVEL.pit },
+  { name: "採掘場", line: [[-116, 8], [-86, 24]], half: 26, level: LEVEL.pit, walled: true },
   { name: "中継塔", line: [[78, -36], [102, -28]], half: 25, level: LEVEL.mesa },
   { name: "住宅地", line: [[104, 26], [122, 2]], half: 14, level: LEVEL.mesa },
   { name: "尾根", line: [[-66, 70], [-34, 70]], half: 10, level: LEVEL.ridge },
@@ -162,8 +184,8 @@ const BASINS: Open[] = [
   { name: "塩田", line: [[-60, -500], [80, -500]], half: 40, level: LEVEL.seabed },
   { name: "難破船", line: [[-40, -562], [60, -562]], half: 22, level: LEVEL.seabed },
   { name: "埠頭", line: [[60, -565], [140, -568]], half: 22, level: LEVEL.seabed },
-  { name: "水路", line: [[96, -592], [162, -592]], half: 8, level: LEVEL.channel },
-  { name: "岬", line: [[-120, -545], [-106, -560]], half: 13, level: LEVEL.headland },
+  { name: "水路", line: [[96, -592], [162, -592]], half: 8, level: LEVEL.channel, walled: true },
+  { name: "岬", line: [[-120, -545], [-106, -560]], half: 13, level: LEVEL.headland, walled: true },
   // The top of the pass: a saddle between the peaks, with the harbor in view.
   { name: "峠", line: [[-66, -214], [-54, -230]], half: 9, level: LEVEL.pass },
 ];
@@ -174,19 +196,19 @@ const BASINS: Open[] = [
  * the choice of road the choice of approach.
  */
 const ROADS: Open[] = [
-  { name: "湖への坂", line: [[0, 62], [0, 40]], half: 5, level: [LEVEL.shore, LEVEL.lakebed] },
+  { name: "湖への坂", line: [[0, 62], [0, 40]], half: 5, level: [LEVEL.shore, LEVEL.lakebed], walled: true },
   // Up onto the ridge at its east end, along its top, and down the haul road into the pit at its west end.
   // The climb starts at the supply basin's edge: a ramp rising inside a basin would leave a step where they meet.
   { name: "尾根道", line: [[-20, 106], [-29, 93], [-40, 77]], half: 5, level: [LEVEL.shore, LEVEL.shore, LEVEL.ridge] },
-  { name: "採掘場の運搬路", line: [[-70, 64], [-90, 60], [-104, 46], [-106, 40]], half: 5, level: [LEVEL.ridge, -1, -8, LEVEL.pit] },
-  { name: "西道", line: [[-24, 16], [-46, 16], [-62, 20]], half: 5, level: [LEVEL.lakebed, -8, LEVEL.pit] },
-  { name: "廃村道", line: [[-112, -16], [-112, -44]], half: 5, level: [LEVEL.pit, LEVEL.shore] },
-  { name: "湖の西坂", line: [[-22, -30], [-44, -38]], half: 5, level: [LEVEL.lakebed, LEVEL.shore] },
+  { name: "採掘場の運搬路", line: [[-70, 64], [-90, 60], [-104, 46], [-106, 40]], half: 5, level: [LEVEL.ridge, -1, -8, LEVEL.pit], walled: true },
+  { name: "西道", line: [[-24, 16], [-46, 16], [-62, 20]], half: 5, level: [LEVEL.lakebed, -8, LEVEL.pit], walled: true },
+  { name: "廃村道", line: [[-112, -16], [-112, -44]], half: 5, level: [LEVEL.pit, LEVEL.shore], walled: true },
+  { name: "湖の西坂", line: [[-22, -30], [-44, -38]], half: 5, level: [LEVEL.lakebed, LEVEL.shore], walled: true },
   { name: "堤の西坂", line: [[-56, -58], [-52, -82], [-30, -80]], half: 5, level: [LEVEL.shore, 6, LEVEL.dam] },
   { name: "廃村の北道", line: [[-96, -74], [-66, -96], [-40, -110]], half: 5, level: [LEVEL.shore, 4, LEVEL.dam] },
   { name: "工場道", line: [[24, 104], [44, 76], [52, 60]], half: 5, level: LEVEL.shore },
   { name: "住宅道", line: [[70, 52], [92, 38], [106, 28]], half: 5, level: [LEVEL.shore, 4, LEVEL.mesa] },
-  { name: "東の坂", line: [[22, 0], [44, -8], [58, -24], [62, -34]], half: 5, level: [LEVEL.lakebed, -1, 5, LEVEL.mesa] },
+  { name: "東の坂", line: [[22, 0], [44, -8], [58, -24], [62, -34]], half: 5, level: [LEVEL.lakebed, -1, 5, LEVEL.mesa], walled: true },
   // To the canyon bridge: the deck is at the mesa's level, a step down from the pad.
   { name: "橋の西道", line: [[26, -100], [40, -95]], half: 4, level: [LEVEL.dam, LEVEL.mesa] },
   { name: "橋の東道", line: [[64, -96], [76, -78], [84, -60]], half: 4, level: LEVEL.mesa },
@@ -196,8 +218,8 @@ const ROADS: Open[] = [
   { name: "峠道", line: [[-28, -142], [-48, -185], [-60, -222], [-64, -262], [-57, -288], [-52, -300]], half: 5, level: [LEVEL.dam, 12, LEVEL.pass, 8, LEVEL.shore, LEVEL.shore], atPoints: true },
   // The railway's embankment from the mesa north to the gorge, and on from the gorge to the
   // harbor, where it ends in a cliff and the viaduct carries the line on.
-  { name: "鉄道の土手（南）", line: [[123, -44], [125, -60], [124, -120], [122, -176]], half: 5, level: [LEVEL.mesa, 7.6, 9.6, LEVEL.rail], atPoints: true },
-  { name: "鉄道の土手（北）", line: [[122, -205], [122, -250]], half: 5, level: LEVEL.rail },
+  { name: "鉄道の土手（南）", line: [[123, -44], [125, -60], [124, -120], [122, -176]], half: 5, level: [LEVEL.mesa, 7.6, 9.6, LEVEL.rail], atPoints: true, walled: true },
+  { name: "鉄道の土手（北）", line: [[122, -205], [122, -250]], half: 5, level: LEVEL.rail, walled: true },
   { name: "駅の坂", line: [[122, -236], [100, -258], [94, -276], [90, -290]], half: 5, level: [LEVEL.rail, 4, LEVEL.shore, LEVEL.shore], atPoints: true },
   // Under the viaduct: a road along the line from the station to the container yard.
   { name: "高架下", line: [[122, -268], [122, -350], [-80, -350], [-95, -378]], half: 6, level: LEVEL.shore },
@@ -206,9 +228,9 @@ const ROADS: Open[] = [
   { name: "塩田への坂", line: [[20, -350], [20, -462]], half: 5, level: [LEVEL.shore, LEVEL.seabed], atPoints: true },
   { name: "ヤードの北道", line: [[-95, -425], [-79, -461], [-75, -470]], half: 5, level: [LEVEL.shore, LEVEL.seabed, LEVEL.seabed], atPoints: true },
   { name: "製錬所の北道", line: [[115, -440], [105, -470]], half: 5, level: [LEVEL.terrace, LEVEL.seabed], atPoints: true },
-  { name: "岬の坂", line: [[-92, -526], [-104, -538], [-112, -548]], half: 5, level: [LEVEL.seabed, 3, LEVEL.headland], atPoints: true },
+  { name: "岬の坂", line: [[-92, -526], [-104, -538], [-112, -548]], half: 5, level: [LEVEL.seabed, 3, LEVEL.headland], atPoints: true, walled: true },
   // A slipway from the quay down into the channel.
-  { name: "斜路", line: [[150, -570], [156, -583], [160, -590]], half: 4, level: [LEVEL.seabed, LEVEL.channel, LEVEL.channel], atPoints: true },
+  { name: "斜路", line: [[150, -570], [156, -583], [160, -590]], half: 4, level: [LEVEL.seabed, LEVEL.channel, LEVEL.channel], atPoints: true, walled: true },
 ];
 
 /** The line of the road named `name` (empty when there is none). */
@@ -279,10 +301,10 @@ export interface Land {
 
 /** The land masses. The world's coast is the outline of all of them together. */
 export const LANDS: Land[] = [
-  { name: "島", x: 0, z: 0, radius: (a) => 192 + 8 * Math.sin(3 * a + 1.1) + 5 * Math.sin(7 * a + 2.3) + 3 * Math.sin(13 * a + 0.4) },
+  { name: "島", x: 0, z: 0, radius: (a) => 228 + 8 * Math.sin(3 * a + 1.1) + 5 * Math.sin(7 * a + 2.3) + 3 * Math.sin(13 * a + 0.4) },
   // The mountain belt between the two regions, wider east to west.
   { name: "山地", x: 30, z: -205, radius: (a) => 140 + 45 * Math.abs(Math.cos(a)) + 6 * Math.sin(5 * a + 0.7) },
-  { name: "港湾", x: 0, z: -420, radius: (a) => 214 + 6 * Math.sin(3 * a + 0.5) + 4 * Math.sin(7 * a + 1.9) + 2 * Math.sin(11 * a + 0.3) },
+  { name: "港湾", x: 0, z: -420, radius: (a) => 246 + 6 * Math.sin(3 * a + 0.5) + 4 * Math.sin(7 * a + 1.9) + 2 * Math.sin(11 * a + 0.3) },
   // The quay and its channel, out at the harbor's north-east corner.
   { name: "埠頭", x: 125, z: -575, radius: (a) => 62 + 4 * Math.sin(4 * a + 1.3) },
 ];
@@ -322,11 +344,15 @@ function vnoise(x: number, z: number): number {
   return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
 }
 
+/** Metres a shelf's top runs on past its basin's edge, over the foot of the basin's wall. */
+const SHELF_OUT = 3;
+
 const SHELF_BASINS = SHELVES.map((sh) => OPEN.find(({ o }) => o.name === sh.basin)!);
 
 function shelfAt(n: number, x: number, z: number): number {
   const sh = SHELVES[n];
   const { o: basin, poly } = SHELF_BASINS[n];
+  if (nearBox(x, z, poly) > basin.half + SHELF_OUT) return -Infinity;
   const [a0, b0] = [basin.line[0], basin.line[basin.line.length - 1]];
   const cx = (a0[0] + b0[0]) / 2;
   const cz = (a0[1] + b0[1]) / 2;
@@ -334,25 +360,153 @@ function shelfAt(n: number, x: number, z: number): number {
   if (Math.abs(off) > sh.span) return -Infinity;
   const d = toPolyline(x, z, poly).d;
   const inner = basin.half - sh.width;
-  if (d > basin.half + 1) return -Infinity;
+  if (d > basin.half + SHELF_OUT) return -Infinity;
   // Rise from the floor along the ramp end, then flat to the far end.
   const fromRampEnd = (sh.span - off * sh.rampEnd) * (basin.half - sh.width / 2);
   const top = levelOf(basin, 0, poly) + sh.height * Math.min(1, fromRampEnd / sh.ramp);
   return top - Math.max(0, inner - d) * CLIFF;
 }
 
+const smooth = (a: number, b: number, v: number) => {
+  const t = Math.max(0, Math.min(1, (v - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
+
+/**
+ * High ground kept among the ground between: the mountain belt between the regions, which
+ * only the pass road and the railway cross, and rock outcrops that stand over the open
+ * ground as landmarks and break its sightlines. Inside one the ground rises from its edge
+ * at the cliff slope to the high ground's top.
+ */
+const CRAGS: { name: string; line: readonly P[]; half: number }[] = [
+  { name: "山地", line: [[-330, -205], [-230, -214], [-150, -200], [-80, -216], [0, -206], [70, -218], [150, -200], [230, -213], [330, -204]], half: 50 },
+  // The reservoir.
+  { name: "西の岩山", line: [[-128, 112], [-116, 124]], half: 19 },
+  { name: "東の岩稜", line: [[150, -30], [165, 20]], half: 7 },
+  { name: "南東の岩", line: [[148, 132], [158, 124]], half: 16 },
+  { name: "北西の岩稜", line: [[-185, -105], [-150, -122]], half: 8 },
+  { name: "南の岩", line: [[45, 190], [52, 186]], half: 9 },
+  // The harbor.
+  { name: "港の岩山", line: [[36, -422], [50, -432]], half: 18 },
+  { name: "西の岩稜", line: [[-135, -470], [-112, -440]], half: 7 },
+  { name: "東の岩", line: [[198, -422], [208, -412]], half: 16 },
+  { name: "北の岩", line: [[150, -472], [158, -480]], half: 12 },
+  { name: "西の道の岩", line: [[-142, -342], [-132, -350]], half: 12 },
+  // Cliffs over the far side of the channel: the water stays a waterfront along the quay.
+  { name: "水路の崖", line: [[76, -598], [92, -614], [190, -614]], half: 13 },
+];
+const CRAG_LINES = CRAGS.map((c) => ({ c, poly: polyline(c.line) }));
+
+/** Metres inside the coast where the ground between turns into the coast's cliff. */
+const COAST = 8;
+
+/** Cell size of the ground-between grid, and the relaxation sweeps that smooth it. */
+const BRES = 4;
+const SWEEPS = 900;
+const BNX = Math.ceil((WORLD.x1 - WORLD.x0) / BRES) + 1;
+const BNZ = Math.ceil((WORLD.z1 - WORLD.z0) / BRES) + 1;
+let betweenField: Float32Array | null = null;
+
+/**
+ * The ground between the open shapes, before its rolling: the smoothest surface (harmonic,
+ * relaxed over a grid) that meets every open shape that is not walled at that shape's level.
+ * Walking out of a basin the ground runs on at the basin's level and climbs or falls evenly
+ * toward the next one, as steep as their levels and the distance between them make it.
+ */
+function betweenGrid(): Float32Array {
+  if (betweenField) return betweenField;
+  const u = new Float32Array(BNX * BNZ);
+  const fixed = new Uint8Array(BNX * BNZ);
+  const open = OPEN.filter(({ o }) => !o.walled);
+  const queue: number[] = [];
+  for (let j = 0; j < BNZ; j++)
+    for (let i = 0; i < BNX; i++) {
+      const x = WORLD.x0 + i * BRES;
+      const z = WORLD.z0 + j * BRES;
+      let lv = Infinity;
+      for (const { o, poly } of open) {
+        const { d, along: t } = toPolyline(x, z, poly);
+        if (d <= o.half) lv = Math.min(lv, levelOf(o, t, poly));
+      }
+      if (lv < Infinity) {
+        u[j * BNX + i] = lv;
+        fixed[j * BNX + i] = 1;
+        queue.push(j * BNX + i);
+      }
+    }
+  // Every free cell starts at its nearest fixed cell's level, so the sweeps only smooth.
+  const seen = Uint8Array.from(fixed);
+  for (let q = 0; q < queue.length; q++) {
+    const k = queue[q];
+    const i = k % BNX;
+    for (const n of [i > 0 ? k - 1 : -1, i < BNX - 1 ? k + 1 : -1, k - BNX, k + BNX]) {
+      if (n < 0 || n >= u.length || seen[n]) continue;
+      seen[n] = 1;
+      u[n] = u[k];
+      queue.push(n);
+    }
+  }
+  // Over-relaxed Gauss-Seidel sweeps of Laplace's equation; the world's edges mirror.
+  const w = 1.9;
+  for (let it = 0; it < SWEEPS; it++)
+    for (let j = 0; j < BNZ; j++)
+      for (let i = 0; i < BNX; i++) {
+        const k = j * BNX + i;
+        if (fixed[k]) continue;
+        const l = u[i > 0 ? k - 1 : k + 1];
+        const r = u[i < BNX - 1 ? k + 1 : k - 1];
+        const t = u[j > 0 ? k - BNX : k + BNX];
+        const b = u[j < BNZ - 1 ? k + BNX : k - BNX];
+        u[k] += w * ((l + r + t + b) / 4 - u[k]);
+      }
+  betweenField = u;
+  return u;
+}
+
+/** The ground between at (x, z), before its rolling. */
+function betweenAt(x: number, z: number): number {
+  const u = betweenGrid();
+  const fx = Math.max(0, Math.min(BNX - 1.001, (x - WORLD.x0) / BRES));
+  const fz = Math.max(0, Math.min(BNZ - 1.001, (z - WORLD.z0) / BRES));
+  const i = Math.floor(fx);
+  const j = Math.floor(fz);
+  const a = u[j * BNX + i];
+  const b = u[j * BNX + i + 1];
+  const c = u[(j + 1) * BNX + i];
+  const d = u[(j + 1) * BNX + i + 1];
+  const tu = fx - i;
+  const tv = fz - j;
+  return a + (b - a) * tu + (c - a) * tv + (a - b - c + d) * tu * tv;
+}
+
+/** Low rolling hills on the ground between, fading in away from the open shapes' edges. */
+const rolling = (x: number, z: number) => (vnoise(x / 46 + 17, z / 46) - 0.5) * 5 + (vnoise(x / 15, z / 15 + 9) - 0.5) * 1.2;
+
+/** Index of the ground between among the shapes `lowest()` answers with. */
+const BETWEEN = OPEN.length + CUTS.length;
+
 /**
  * The lowest of the open shapes' cones at (x, z): each rises from its level at its
- * edge at the cliff slope. `level` is the level of the shape that gives it.
+ * edge at the cliff slope. Outside every open shape the ground between is one more,
+ * rising at the cliff slope into the crags and the coast. `level` is the level of the
+ * shape that gives it.
  */
 function lowest(x: number, z: number): { h: number; level: number; shape: number } {
   let h = Infinity;
   let level = 0;
   let shape = 0;
+  // How far outside the nearest open shape or cut (x, z) lies; negative inside one.
+  let edge = Infinity;
   for (let n = 0; n < OPEN.length; n++) {
     const { o, poly } = OPEN[n];
+    const far = nearBox(x, z, poly) - o.half;
+    if (far > FAR) {
+      edge = Math.min(edge, far);
+      continue;
+    }
     const { d, along: t } = toPolyline(x, z, poly);
     const lv = levelOf(o, t, poly);
+    edge = Math.min(edge, d - o.half);
     const cone = lv + Math.max(0, d - o.half) * CLIFF;
     if (cone < h) {
       h = cone;
@@ -362,8 +516,14 @@ function lowest(x: number, z: number): { h: number; level: number; shape: number
   }
   for (let n = 0; n < CUT_LINES.length; n++) {
     const { c, poly } = CUT_LINES[n];
+    const far = nearBox(x, z, poly) - c.floor;
+    if (far > FAR) {
+      edge = Math.min(edge, far);
+      continue;
+    }
     const { d, along: t } = toPolyline(x, z, poly);
     const lv = c.atPoints ? atPoint(c.levels, t, poly) : along(c.levels, t);
+    edge = Math.min(edge, d - c.floor);
     const cone = lv + Math.max(0, d - c.floor) * c.slope;
     if (cone < h) {
       h = cone;
@@ -371,11 +531,22 @@ function lowest(x: number, z: number): { h: number; level: number; shape: number
       shape = OPEN.length + n;
     }
   }
+  if (edge > 0) {
+    const lv = betweenAt(x, z) + rolling(x, z) * smooth(2, 30, edge);
+    let crag = 0;
+    for (const { c, poly } of CRAG_LINES) crag = Math.max(crag, c.half - toPolyline(x, z, poly).d);
+    const rise = lv + (crag + Math.max(0, offshore(x, z) + COAST)) * CLIFF;
+    if (rise < h) {
+      h = rise;
+      level = lv;
+      shape = BETWEEN;
+    }
+  }
   return { h, level, shape };
 }
 
-/** Names of the open shapes, then "谷" for each cut: what `surfaceAt()` answers with. */
-const SHAPE_NAMES = [...OPEN.map(({ o }) => o.name), ...CUTS.map(() => "谷")];
+/** Names of the open shapes, then "谷" for each cut and "野" for the ground between: what `surfaceAt()` answers with. */
+const SHAPE_NAMES = [...OPEN.map(({ o }) => o.name), ...CUTS.map(() => "谷"), "野"];
 
 /** The shaped ground before anything is flattened for buildings; `low` is `lowest(x, z).h` when already known. */
 function natural(x: number, z: number, low = lowest(x, z).h): number {
@@ -398,10 +569,6 @@ let steep: Uint8Array | null = null;
 let floors: Float32Array | null = null;
 let shapes: Uint8Array | null = null;
 
-const smooth = (a: number, b: number, v: number) => {
-  const t = Math.max(0, Math.min(1, (v - a) / (b - a)));
-  return t * t * (3 - 2 * t);
-};
 
 export interface FlatShape {
   x0: number;
@@ -433,6 +600,8 @@ export function buildTerrain(flat: FlatShape[]) {
     const j1 = Math.min(NZ - 1, Math.ceil((b.z1 - WORLD.z0) / RES));
     for (let j = j0; j <= j1; j++)
       for (let i = i0; i <= i1; i++) {
+        // A shape with a level of its own (a building) keeps it under one without (a bin's room round it).
+        if (Number.isNaN(y) && dist[j * NX + i] === 0 && !Number.isNaN(at[j * NX + i])) continue;
         dist[j * NX + i] = 0;
         at[j * NX + i] = y;
         mid[j * NX + i] = m;
