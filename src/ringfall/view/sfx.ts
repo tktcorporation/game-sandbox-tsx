@@ -143,9 +143,35 @@ export const sfx = {
       hiss(0.22, { brown: true, type: "lowpass", freq: 900, to: 100, vol: 0.45 });
       hiss(0.12, { freq: 1500, to: 400, vol: 0.18 });
       tone(700, 0.35, { type: "sawtooth", to: 70, vol: 0.05, at: 0.03 });
-      tone(crit ? 1760 : 1320, 0.18, { type: "triangle", vol: 0.15, at: 0.05 });
-      if (crit) tone(2640, 0.16, { type: "triangle", vol: 0.07, at: 0.09 });
     });
+    // The confirm: a rising two-note chime heard over any gunfire, unlike every hit sound, so a
+    // kill is known without looking. A weak-point kill adds a third, higher note.
+    ui(0.55, () => {
+      tone(1318, 0.09, { type: "triangle", vol: 0.32, at: 0.04 });
+      tone(1976, 0.2, { type: "triangle", vol: 0.3, at: 0.11 });
+      tone(3952, 0.12, { type: "sine", vol: 0.06, at: 0.11 });
+      if (crit) tone(2637, 0.22, { type: "triangle", vol: 0.22, at: 0.18 });
+    });
+  },
+  /** A robot's wreck hitting the ground where it fell: struck steel and a scrape. */
+  collapse(pos: P3, big: boolean) {
+    at(pos, { level: big ? 0.6 : 0.45, ref: big ? 9 : 6 }, () => {
+      const t = 0.42;
+      tone(vary(big ? 70 : 110, 0.05), 0.2, { type: "sine", to: 40, vol: 0.5, at: t });
+      tone(vary(big ? 380 : 610, 0.05), 0.16, { type: "square", vol: 0.07, to: big ? 300 : 470, at: t });
+      tone(vary(1450, 0.04), 0.22, { type: "sine", vol: 0.1, at: t + 0.01 });
+      hiss(0.3, { type: "bandpass", freq: 2400, to: 900, q: 1.2, vol: 0.18, at: t + 0.03 });
+    });
+  },
+  /** A robot reeling from damage: servos grinding down; a lost wind-up also fizzles out. */
+  stagger(pos: P3 | undefined, interrupted: boolean) {
+    const body = () => {
+      tone(vary(520, 0.05), 0.18, { type: "square", vol: 0.08, to: 180 });
+      hiss(0.12, { type: "bandpass", freq: 1800, to: 700, q: 2, vol: 0.2 });
+      if (interrupted) tone(vary(1500, 0.03), 0.16, { type: "sawtooth", vol: 0.05, to: 300, at: 0.02 });
+    };
+    if (pos) at(pos, { level: 0.5, ref: 7 }, body);
+    else ui(0.4, body);
   },
   hurt(shield: boolean) {
     me(0.5, () => {
