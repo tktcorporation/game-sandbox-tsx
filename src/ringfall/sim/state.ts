@@ -1,6 +1,8 @@
-import { ALLY, BOOST, DROP, ELITE, ENEMIES, META, RAIDERS, REINFORCE, VALUABLES, type ValuableKind, PLAYER, ULT, type EnemyKind, type Flank, type HealKind, type Rarity, type WeaponKind } from "./config";
-import { EXTRA_BINS, POIS, poiIndex, regionOf, type ExtractId, type RegionId } from "./map";
+import { ALLY, BOOST, DEPOT, DROP, ELITE, ENEMIES, META, RAIDERS, REINFORCE, VALUABLES, WORLD, type ValuableKind, PLAYER, ULT, type EnemyKind, type Flank, type HealKind, type Rarity, type WeaponKind } from "./config";
+import { DEPOTS, depotIndex, EXTRA_BINS, POIS, poiIndex, poiRegion, regionOf, type ExtractId, type PoiId, type RegionId } from "./map";
 import { populate } from "./enemies";
+import { placeAlly } from "./ally";
+import { groundAt } from "./geom";
 
 export interface Vec3 {
   x: number;
@@ -323,6 +325,13 @@ export type GameEvent =
   | { t: "shipLanded"; id: ExtractId }
   | { t: "flareLit" }
   | { t: "shipWave"; id: ExtractId }
+  /** A depot was switched on by walking up to it. */
+  | { t: "depotOn"; poi: PoiId }
+  /** The bag was sent home from a depot: how many valuables, worth how much. */
+  | { t: "deposit"; n: number; value: number }
+  /** The player chose to leave at a depot, and the countdown started or was broken off. */
+  | { t: "leaveStart" }
+  | { t: "leaveCancel" }
   | { t: "done" };
 
 export interface Stats {
@@ -395,6 +404,18 @@ export interface State {
   calls: Partial<Record<ExtractId, Call>>;
   /** The way the player left the island. */
   extractedAt: ExtractId | null;
+  /** The depots switched on, by place in `DEPOTS`: those of earlier raids and those walked up to in this one. */
+  depots: boolean[];
+  /** Valuables sent home from a depot this raid: they reach the stash however the raid ends. */
+  sent: ValuableKind[];
+  /** Leaving at a depot: which one, and the seconds still to stand there. */
+  leaving: { depot: number; t: number } | null;
+  /** The depot the raid ended at, if it ended at one. */
+  leftAt: PoiId | null;
+  /** The explored map, one 0 / 1 per cell (`exploreSize()`, `cellOf()`), carried over from earlier raids. */
+  seen: number[];
+  /** The cell the player was last marked in, so the map is marked only when they cross into another. */
+  cell: number;
   events: GameEvent[];
   stats: Stats;
 }
@@ -469,8 +490,55 @@ export function boosted(table: [ValuableKind, number][], kind: ValuableKind): [V
   return [...table.filter(([k]) => k !== kind), [kind, total * BOOST.share + (table.find(([k]) => k === kind)?.[1] ?? 0)]];
 }
 
-/** A raid dropping into `region`; the default is the reservoir, which the sim gate plays. */
-export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reservoir"): State {
+/** The explored map's size in cells, over the world's bounds. */
+export const exploreSize = () => ({ cols: Math.ceil((WORLD.x1 - WORLD.x0) / DEPOT.cell), rows: Math.ceil((WORLD.z1 - WORLD.z0) / DEPOT.cell) });
+
+/** The explored map's cell holding (x, z), row by row from the world's north-west corner; -1 outside the world. */
+export function cellOf(x: number, z: number): number {
+  const { cols, rows } = exploreSize();
+  const c = Math.floor((x - WORLD.x0) / DEPOT.cell);
+  const r = Math.floor((z - WORLD.z0) / DEPOT.cell);
+  return c < 0 || r < 0 || c >= cols || r >= rows ? -1 : r * cols + c;
+}
+
+const emptySeen = () => new Array<number>(exploreSize().cols * exploreSize().rows).fill(0);
+
+/** The explored map for saving: four cells to a hex digit. */
+export function encodeSeen(seen: number[]): string {
+  let out = "";
+  for (let i = 0; i < seen.length; i += 4) out += ((seen[i] ? 1 : 0) | (seen[i + 1] ? 2 : 0) | (seen[i + 2] ? 4 : 0) | (seen[i + 3] ? 8 : 0)).toString(16);
+  return out;
+}
+
+/** A saved explored map; one of another size keeps the cells both have, and anything unreadable counts as unexplored. */
+export function decodeSeen(str: string): number[] {
+  const seen = emptySeen();
+  for (let i = 0; i < str.length && i * 4 < seen.length; i++) {
+    const n = parseInt(str[i], 16);
+    if (Number.isNaN(n)) continue;
+    for (let b = 0; b < 4 && i * 4 + b < seen.length; b++) seen[i * 4 + b] = (n >> b) & 1;
+  }
+  return seen;
+}
+
+/**
+ * What a raid carries over from earlier ones: the depots on, the explored map, and a depot
+ * to start from instead of the drop. `from` counts only when it is among `depots`.
+ */
+export interface Start {
+  depots?: PoiId[];
+  from?: PoiId;
+  seen?: string;
+}
+
+/**
+ * A raid dropping into `region`; the default is the reservoir, which the sim gate plays.
+ * Started from a depot, it begins on the ground there, in that depot's region, with the
+ * teammate beside the player.
+ */
+export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reservoir", start: Start = {}): State {
+  const from = start.from && start.depots?.includes(start.from) ? DEPOTS[depotIndex(start.from)] : null;
+  if (from) region = poiRegion(from.poi).id;
   const drop = regionOf(region).drop;
   const bins: Bin[] = [];
   let id = 1;
@@ -551,9 +619,27 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
     extractTime: 0,
     calls: {},
     extractedAt: null,
+    depots: DEPOTS.map((d) => !!start.depots?.includes(d.poi)),
+    sent: [],
+    leaving: null,
+    leftAt: null,
+    seen: start.seen ? decodeSeen(start.seen) : emptySeen(),
+    cell: -1,
     events: [],
     stats: { kills: 0, damage: 0, shots: 0, hits: 0, crits: 0, flankHits: 0, downs: 0, wipes: 0, cleared: [], allyDamage: 0, allyKills: 0, allyDowns: 0, allyRescues: 0, allyHelped: 0, killsBy: { drone: 0, grunt: 0, charger: 0, heavy: 0, titan: 0 }, vaults: [] },
   };
+  if (from) {
+    const p = s.player;
+    // A few steps back from the depot, facing it and the POI beyond: the depot is in sight and in reach.
+    const x = from.x - Math.sin(from.yaw) * DEPOT.back;
+    const z = from.z + Math.cos(from.yaw) * DEPOT.back;
+    p.pos = { x, y: groundAt(x, z, PLAYER.radius, from.y + 0.3), z };
+    p.yaw = from.yaw;
+    p.pitch = 0;
+    p.onGround = true;
+    s.phase = "play";
+    placeAlly(s);
+  }
   populate(s);
   return s;
 }

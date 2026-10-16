@@ -1,10 +1,10 @@
 import type { Settlement } from "../meta/profile";
 import { itemName, rewardList } from "./hub";
-import { ALLY, AWARE, BAG, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, SCORE, TACTICAL, VALUABLES, WEAPONS, type Flank } from "../sim/config";
+import { ALLY, AWARE, BAG, DEPOT, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, SCORE, TACTICAL, VALUABLES, WEAPONS, type Flank } from "../sim/config";
 import { magSize } from "../sim/combat";
 import { dist2d } from "../sim/geom";
-import { EXTRACTS, POIS, regionHere, regionOf } from "../sim/map";
-import { bagUsed, extractHere, extractReady, makeRoom, poiAt, searchTime, useTarget } from "../sim/world";
+import { DEPOTS, EXTRACTS, POIS, poiIndex, regionHere, regionOf } from "../sim/map";
+import { bagUsed, depotBlocked, depotInReach, extractHere, extractReady, makeRoom, poiAt, searchTime, useTarget } from "../sim/world";
 import { callLeft, enemyHp, enemyShield, type GameEvent, type State, type Vec3 } from "../sim/state";
 import { haulValue, rank } from "../sim/results";
 import { pickHeal } from "../sim/player";
@@ -219,6 +219,15 @@ export class Hud {
         break;
       case "leapBlocked":
         this.toast("屋根の下では跳べない", 0);
+        break;
+      case "depotOn":
+        this.toast(`中継ボックスを起動した：${POIS[poiIndex(e.poi)].name}`, 1);
+        break;
+      case "deposit":
+        this.toast(`倉庫へ送った ${e.n} 点（${e.value}）`, 3);
+        break;
+      case "leaveCancel":
+        this.toast("切り上げを取り消した", 0);
         break;
       case "ultReady":
         this.toast(isTouch() ? "離脱ジャンプ 準備完了" : "離脱ジャンプ 準備完了（Z）", 3);
@@ -627,6 +636,7 @@ export class Hud {
   private prompt(s: State): string {
     const p = s.player;
     if (p.downed > 0 || s.phase !== "play") return "";
+    if (s.leaving) return `切り上げ中 ${Math.max(0, s.leaving.t).toFixed(1)} 秒（離れる・戦闘になると中断）`;
     // The use key comes first: picking the teammate up or opening a bin works inside an extraction point too.
     const t = useTarget(s);
     const x = t ? null : extractHere(s);
@@ -637,6 +647,8 @@ export class Hud {
     }
     // The same choice the use key acts on (sim/world.ts useTarget), so the prompt never promises something else.
     if (!t) {
+      // At a depot that is on, which useTarget passes over while a squad is fighting: say why.
+      if (depotBlocked(s) && depotInReach(s) >= 0) return "中継ボックス：戦闘中は使えない";
       // Standing on a valuable that will not go in, and nothing in the bag is worth less.
       const left = s.loot.find((l) => l.kind === "valuable" && l.valuable && l.age >= 0.4 && dist2d(l.pos, p.pos) < PLAYER.pickupRange && Math.abs(l.pos.y - p.pos.y) < 2);
       return left?.valuable ? `バッグがいっぱい：${VALUABLES[left.valuable].label}は入らない` : "";
@@ -656,6 +668,11 @@ export class Hud {
       return `${key("E")}${VALUABLES[v].label}と入れ替える（${out.join("・")}を捨てる）`;
     }
     if (t.kind === "care") return `${key("E")}補給ポッドを開ける`;
+    if (t.kind === "depot") {
+      if (!p.haul.length) return `${key("E")}ここで切り上げる（${DEPOT.leave} 秒そばに立つ）`;
+      const value = p.haul.reduce((n, k) => n + VALUABLES[k].value, 0);
+      return `${key("E")}倉庫へ送る（${p.haul.length} 点・${value}）`;
+    }
     if (t.kind === "armor") return `${key("E")}<span class="r" style="color:${RARITY_CSS[t.loot.rarity]}">アーマー Lv${t.loot.rarity}</span>に着替える（Lv${p.armor} を置く）`;
     const wl = t.loot;
     const swap = p.weapons.includes(null) ? "" : `（${WEAPONS[p.weapons[p.slot]!.kind].name} と交換）`;
@@ -677,13 +694,14 @@ export class Hud {
       ["弱点命中", `${crit}%`],
       ["ダウン", st.downs],
       ["レイド時間", clock(s.time - s.landedAt)],
-      ["脱出", EXTRACTS.find((x) => x.id === s.extractedAt)?.short ?? "-"],
+      ["脱出", s.leftAt ? `${POIS[poiIndex(s.leftAt)].name}の中継ボックス` : (EXTRACTS.find((x) => x.id === s.extractedAt)?.short ?? "-")],
       [`${ALLY.name}の撃破`, st.allyKills],
       [`${ALLY.name}に救助`, st.allyRescues],
     ]
       .map(([k, v]) => `<span>${k}<b>${v}</b></span>`)
       .join("");
     const lost = s.outcome !== "extracted";
+    const sentValue = s.sent.reduce((n, k) => n + VALUABLES[k].value, 0);
     const haul = (Object.keys(VALUABLES) as (keyof typeof VALUABLES)[]).map((k) => [VALUABLES[k].label, s.player.haul.filter((h) => h === k).length] as const).filter(([, n]) => n > 0);
     $("pois").innerHTML = [
       // The POIs of the region dropped into, and any visited in the other.
@@ -692,14 +710,23 @@ export class Hud {
         .map(({ p, i }) => `<span>${p.name}<b>${s.cleared[i] ? "制圧" : s.visited[i] ? "立ち寄り" : "-"}</b></span>`),
       // What came home is listed beside the results; what was lost is struck through here.
       ...(lost ? haul.map(([label, n]) => `<span class="lost">${label}<b>× ${n}</b></span>`) : []),
-      `<span>回収の価値<b>${lost ? `${r.haul}（失った）` : r.haul}</b></span>`,
+      // What went home from a depot is kept on a wipe too, so a lost raid shows the two apart.
+      ...(lost && sentValue ? [`<span>倉庫へ送った価値<b>${sentValue}</b></span>`] : []),
+      `<span>回収の価値<b>${lost ? `${r.haul - sentValue}（失った）` : r.haul}</b></span>`,
     ].join("");
-    const home = settled?.home ?? [];
-    const counted = new Map<string, number>();
-    for (const i of home) counted.set(itemName(i), (counted.get(itemName(i)) ?? 0) + 1);
+    // settle() lists what was sent from a depot first in `home`; it is shown on a line of its own.
+    const all = settled?.home ?? [];
+    const sent = all.slice(0, s.sent.length);
+    const home = all.slice(s.sent.length);
+    const count = (items: typeof all) => {
+      const counted = new Map<string, number>();
+      for (const i of items) counted.set(itemName(i), (counted.get(itemName(i)) ?? 0) + 1);
+      return [...counted].map(([n, c]) => `<span>${n}${c > 1 ? ` × ${c}` : ""}</span>`).join("");
+    };
     const quests = settled?.quests ?? [];
     $("home").innerHTML = (quests.length ? `<h3>済んだ依頼</h3><p>${quests.map((q) => `<span>${q.title}（${q.reward.cash} クレジット${rewardList(q).map(([i, n]) => `・${itemName(i)}${n > 1 ? ` × ${n}` : ""}`).join("")}）</span>`).join("")}</p>` : "") + (settled
-      ? `<h3>${lost ? "ポーチに残った物" : "持ち帰った物"}</h3><p>${home.length ? [...counted].map(([n, c]) => `<span>${n}${c > 1 ? ` × ${c}` : ""}</span>`).join("") : "<span>なし</span>"}</p>` +
+      ? (sent.length ? `<h3>中継ボックスから倉庫へ送った物</h3><p>${count(sent)}</p>` : "") +
+        `<h3>${lost ? "ポーチに残った物" : "持ち帰った物"}</h3><p>${home.length ? count(home) : "<span>なし</span>"}</p>` +
         (settled.sold.length ? `<p class="sold">倉庫に入りきらない ${settled.sold.length} 点は ${settled.soldFor} クレジットで売った</p>` : "")
       : "");
   }

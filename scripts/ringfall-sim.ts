@@ -8,23 +8,23 @@
  *
  * With a region id after the count, only that region's table is played.
  */
-import { ALLY, BAG, ENEMIES, HEALS, NOISE, PLATE, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, TACTICAL, TICK, VALUABLES, WORLD } from "../src/ringfall/sim/config";
+import { ALLY, BAG, DEPOT, ENEMIES, HEALS, NOISE, PLATE, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, TACTICAL, TICK, VALUABLES, WORLD } from "../src/ringfall/sim/config";
 import { engageSquad, makeNoise } from "../src/ringfall/sim/awareness";
 import { spawnEnemy } from "../src/ringfall/sim/enemies";
 import { COVERS } from "../src/ringfall/sim/cover";
 import { ENEMIES as KINDS, type EnemyKind, type Rarity } from "../src/ringfall/sim/config";
-import { BOXES, DECKS, EXTRA_BINS, EXTRACTS, POIS, poiIndex, REGIONS, regionHere, regionOf, ROAMERS, SPAWN, type RegionId, type Squad } from "../src/ringfall/sim/map";
+import { BOXES, DECKS, DEPOTS, depotIndex, EXTRA_BINS, EXTRACTS, POIS, poiIndex, REGIONS, regionHere, regionOf, ROAMERS, SPAWN, type RegionId, type Squad } from "../src/ringfall/sim/map";
 import { findPath } from "../src/ringfall/sim/nav";
 import { fieldTo, fieldsBuilt, routeLength } from "../src/ringfall/sim/hunt";
 import { dist2d, groundAt, inWorld, los, solidAt } from "../src/ringfall/sim/geom";
 import { floorLevel, highGround, landAt, LEVEL, offLowGround, offshore, terrainHeight } from "../src/ringfall/sim/terrain";
 import { Bot, SKILLS } from "../src/ringfall/sim/bot";
-import { callLeft, freeKit, idleInput, newRun, type Enemy, type GameEvent, type State } from "../src/ringfall/sim/state";
+import { callLeft, cellOf, decodeSeen, encodeSeen, freeKit, idleInput, newRun, type Enemy, type GameEvent, type State } from "../src/ringfall/sim/state";
 import { step } from "../src/ringfall/sim/step";
 import { hurtPlayer } from "../src/ringfall/sim/player";
 import { hurtAlly, placeAlly } from "../src/ringfall/sim/ally";
 import { haulValue, rank } from "../src/ringfall/sim/results";
-import { SHIP_SQUAD, bagUsed, makeRoom } from "../src/ringfall/sim/world";
+import { SHIP_SQUAD, bagUsed, makeRoom, useTarget } from "../src/ringfall/sim/world";
 import { bodyCenter, damageEnemy, eyePos, fireRay, magSize, weakPoint } from "../src/ringfall/sim/combat";
 import { lookAngles } from "../src/ringfall/sim/geom";
 import { forward } from "../src/ringfall/sim/state";
@@ -32,7 +32,7 @@ import { build, buildState, buy, canBuild, deliver, healRoom, newProfile, parseP
 import { emptyHideout, maxLevel, MODULES, poisWith, sources, stashCap } from "../src/ringfall/meta/hideout";
 import { boostFor, boosted } from "../src/ringfall/sim/state";
 import { HIDEOUT, VAULT } from "../src/ringfall/sim/config";
-import { QUESTS, offered } from "../src/ringfall/meta/quests";
+import { QUESTS, offered, raidCredit } from "../src/ringfall/meta/quests";
 import { META } from "../src/ringfall/sim/config";
 import { pacing, recordOf, type Pool } from "./ringfall-pacing";
 import { writeFileSync } from "node:fs";
@@ -83,6 +83,11 @@ function checkLayout(): string[] {
   });
   EXTRA_BINS.forEach((b) => point("extra bin", b.x, b.z, b.y));
   for (const r of REGIONS) point(`${r.id} landing`, r.land.x, r.land.z);
+  for (const d of DEPOTS) {
+    point(`depot ${d.poi}`, d.x, d.z, d.y);
+    // A raid started there begins `DEPOT.back` behind it.
+    point(`depot ${d.poi} start`, +(d.x - Math.sin(d.yaw) * DEPOT.back).toFixed(2), +(d.z + Math.cos(d.yaw) * DEPOT.back).toFixed(2), d.y);
+  }
   ROAMERS.forEach((sq) => squad(`roamer ${sq.name}`, sq));
   // An extract is used standing on whatever is highest there (the pad, a rock top), as the game checks it.
   for (const x of EXTRACTS) point(`extract ${x.id}`, x.x, x.z, groundAt(x.x, x.z, 0.4, 99));
@@ -1048,6 +1053,162 @@ function checkSettle(): string | null {
   return null;
 }
 
+/**
+ * The depots: walking up switches one on; its use key sends a full bag home or, with the bag
+ * empty and no fight on, leaves the raid there after a wait that a fight or a step away breaks
+ * off; it never takes a press meant for loot. What was sent home survives a wipe, the depots
+ * and the explored map are kept, and a later raid starts on the ground at a depot already on.
+ */
+function checkDepots(): string | null {
+  const PADD = depotIndex("pad");
+  const d = DEPOTS[PADD];
+  const press = idleInput();
+  press.interact = true;
+  const stand = (s: State, x = d.x, z = d.z) => {
+    s.player.pos = { x, y: groundAt(x, z, PLAYER.radius, d.y + 0.3), z };
+    s.player.onGround = true;
+  };
+  if (newRun(5).depots.some(Boolean) || newRun(5).sent.length) return "depot scenario: a raid started the usual way has a depot on or something sent";
+  if (DEPOTS.length !== POIS.length || POIS.some((p) => depotIndex(p.id) < 0)) return "depot scenario: not one depot per POI";
+
+  // Walking up the road to the supply depot's switches it on, once, and not from further off.
+  const SUP = depotIndex("supply");
+  const sup = DEPOTS[SUP];
+  const walk = padRun();
+  const back = { x: sup.x - Math.sin(sup.yaw) * 12, z: sup.z + Math.cos(sup.yaw) * 12 };
+  stand(walk, back.x, back.z);
+  walk.player.yaw = sup.yaw;
+  walk.player.pitch = 0;
+  let on = 0;
+  let early = false;
+  const fwd = idleInput();
+  fwd.moveZ = 1;
+  for (let i = 0; i < 4 / TICK && dist2d(walk.player.pos, sup) > 1; i++) {
+    step(walk, fwd, false);
+    on += walk.events.filter((e) => e.t === "depotOn" && e.poi === "supply").length;
+    if (walk.depots[SUP] && dist2d(walk.player.pos, sup) > DEPOT.radius + 0.5) early = true;
+  }
+  if (!walk.depots[SUP] || on !== 1 || early || walk.depots.filter(Boolean).length !== 1) return `depot scenario: walking up left it ${walk.depots[SUP] ? "on" : "off"} after ${on} depotOn events (early ${early}), ${walk.depots.filter(Boolean).length} on`;
+  if (cellOf(walk.player.pos.x, walk.player.pos.z) < 0 || !walk.seen[cellOf(walk.player.pos.x, walk.player.pos.z)] || !walk.seen[cellOf(back.x, back.z)]) return "depot scenario: the cells walked through were not marked explored";
+  if (walk.seen.filter(Boolean).length > (2 * DEPOT.sight + 1) ** 2 * 3) return `depot scenario: a short walk explored ${walk.seen.filter(Boolean).length} cells`;
+  if (decodeSeen(encodeSeen(walk.seen)).join() !== walk.seen.join() || decodeSeen("zz").some(Boolean)) return "depot scenario: the explored map does not survive saving";
+
+  // With a bag, the use key sends it home: the bag is empty and the raid's worth unchanged.
+  const s = padRun();
+  s.depots[PADD] = true;
+  stand(s);
+  s.player.haul = ["core", "board", "parts"];
+  const worth = haulValue(s);
+  step(s, press, false);
+  const sentEv = s.events.find((e): e is Extract<GameEvent, { t: "deposit" }> => e.t === "deposit");
+  if (s.player.haul.length || s.sent.join() !== "core,board,parts" || haulValue(s) !== worth || sentEv?.n !== 3 || sentEv.value !== worth || s.leaving) return `depot scenario: sending the bag left haul ${s.player.haul.join()}, sent ${s.sent.join()}, worth ${haulValue(s)} of ${worth}`;
+  // ...and it comes home after a wipe, with the depot and the explored map kept for later raids.
+  s.outcome = "dead";
+  const old = { ...newProfile(), depots: ["supply" as const] };
+  const after = settle(old, s);
+  const home = after.home.filter((i) => i.t === "valuable").map((i) => (i.t === "valuable" ? i.kind : "")).sort().join();
+  if (home !== "board,core,parts") return `depot scenario: a wipe brought home ${home}, not what was sent`;
+  if (after.profile.depots.join() !== "supply,pad" || after.profile.seen !== encodeSeen(s.seen) || !decodeSeen(after.profile.seen).some(Boolean)) return `depot scenario: the profile kept depots ${after.profile.depots.join()} and ${decodeSeen(after.profile.seen).filter(Boolean).length} explored cells`;
+
+  // With the bag empty, the use key leaves the raid there, after DEPOT.leave seconds standing still.
+  const go = padRun();
+  go.depots[PADD] = true;
+  stand(go);
+  step(go, press, false);
+  if (!go.leaving || !go.events.some((e) => e.t === "leaveStart")) return "depot scenario: an empty bag at a depot did not start leaving";
+  ticks(go, DEPOT.leave - 0.5);
+  if (phaseOf(go) !== "play") return "depot scenario: left before the wait was over";
+  ticks(go, 1);
+  if (phaseOf(go) !== "done" || go.outcome !== "extracted" || go.leftAt !== "pad" || go.extractedAt !== null) return `depot scenario: after the wait phase ${go.phase}, outcome ${go.outcome}, left at ${go.leftAt}`;
+  // Leaving at a depot is not getting the bag out by a way off: a haul quest does not count it.
+  go.sent.push("core", "core", "core", "core", "core");
+  if (raidCredit({ t: "haul", value: 1000 }, go)) return "depot scenario: leaving at a depot with valuables sent home counted for a haul quest";
+
+  // A squad engaging breaks the wait off, and while one fights the depot takes no press.
+  const fight = padRun();
+  fight.depots[PADD] = true;
+  stand(fight);
+  fight.player.iframes = 999;
+  step(fight, press, false);
+  ticks(fight, 1);
+  const squad = fight.squads.length;
+  fight.squads.push({ name: "test", poi: -1, patrol: [], leg: 0, engaged: false, roam: false, sinceSeen: 0, last: { x: d.x, z: d.z } });
+  const near = spawnEnemy(fight, "grunt", d.x + DEPOT.safe - 15, d.z, -1, squad);
+  engageSquad(fight, squad, near);
+  step(fight, idleInput(), false);
+  if (fight.leaving || !fight.events.some((e) => e.t === "leaveCancel")) return "depot scenario: a robot fighting nearby did not break off leaving";
+  if (useTarget(fight)) return `depot scenario: the depot was offered with a robot fighting nearby (${useTarget(fight)?.kind})`;
+  // A fight left behind (the titan never stands down) does not shut the depots once it is outrun.
+  near.pos = { x: d.x + DEPOT.safe + 15, y: near.pos.y, z: d.z };
+  if (useTarget(fight)?.kind !== "depot") return "depot scenario: the depot was not offered with the only fighting robot far off";
+  // So does picking up a valuable: leaving takes an empty bag.
+  const fill = padRun();
+  fill.depots[PADD] = true;
+  stand(fill);
+  step(fill, press, false);
+  ticks(fill, 1);
+  fill.player.haul.push("parts");
+  step(fill, idleInput(), false);
+  if (fill.leaving || !fill.events.some((e) => e.t === "leaveCancel")) return "depot scenario: filling the bag did not break off leaving";
+  // ...even when what was picked up is sent home in the same tick.
+  const send = padRun();
+  send.depots[PADD] = true;
+  stand(send);
+  step(send, press, false);
+  ticks(send, 1);
+  send.player.haul.push("parts");
+  step(send, press, false);
+  if (send.leaving || send.sent.join() !== "parts") return "depot scenario: sending what was picked up while leaving did not break off leaving";
+  // Walking away breaks it off too.
+  const away = padRun();
+  away.depots[PADD] = true;
+  stand(away);
+  step(away, press, false);
+  ticks(away, 1);
+  stand(away, d.x + Math.cos(d.yaw) * (PLAYER.interactRange + 2.5), d.z + Math.sin(d.yaw) * (PLAYER.interactRange + 2.5));
+  step(away, idleInput(), false);
+  if (away.leaving || !away.events.some((e) => e.t === "leaveCancel")) return "depot scenario: walking away did not break off leaving";
+
+  // A bin or a weapon within reach takes the press before the depot does.
+  const loot = padRun();
+  loot.depots[PADD] = true;
+  stand(loot);
+  const p = loot.player;
+  loot.bins.push({ id: 9300, x: p.pos.x + 1, y: p.pos.y, z: p.pos.z, poi: PAD, open: false, flare: false, vault: false, outside: false });
+  if (useTarget(loot)?.kind !== "bin") return `depot scenario: with a bin in reach the press went to ${useTarget(loot)?.kind}`;
+  loot.bins.pop();
+  loot.loot.push({ id: 9301, kind: "weapon", rarity: 1, weapon: { kind: "pike", rarity: 1, mag: -1 }, pos: { ...p.pos }, vel: { x: 0, y: 0, z: 0 }, age: 1 });
+  if (useTarget(loot)?.kind !== "weapon") return `depot scenario: with a weapon in reach the press went to ${useTarget(loot)?.kind}`;
+
+  // A raid started from a depot already on begins at it, on the ground, in its region, with the teammate.
+  const wreck = DEPOTS[depotIndex("wreck")];
+  const from = newRun(5, freeKit(), "reservoir", { depots: ["pad", "wreck"], from: "wreck" });
+  ticks(from, 1);
+  const fp = from.player;
+  if (from.region !== "harbor" || phaseOf(from) !== "play" || dist2d(fp.pos, wreck) > PLAYER.interactRange + 1 || useTarget(from)?.kind !== "depot" || Math.abs(fp.pos.y - wreck.y) > 0.5 || !from.ally.active || dist2d(from.ally.pos, fp.pos) > 4 || from.landedAt !== 0 || !from.depots[depotIndex("pad")] || !from.depots[depotIndex("wreck")])
+    return `depot scenario: starting from the wreck's depot gave region ${from.region}, phase ${from.phase}, player at ${fp.pos.x.toFixed(1)},${fp.pos.y.toFixed(1)},${fp.pos.z.toFixed(1)}, teammate ${from.ally.active ? dist2d(from.ally.pos, fp.pos).toFixed(1) : "inactive"}`;
+  // ...but not from one that is not on: that raid drops as usual.
+  const off = newRun(5, freeKit(), "reservoir", { depots: ["pad"], from: "wreck" });
+  if (off.phase !== "drop" || off.region !== "reservoir") return `depot scenario: starting from a depot that is off gave phase ${off.phase} in ${off.region}`;
+
+  // A raid started from any depot is not seen at once: standing still there for 15 s, no squad fights.
+  const every = DEPOTS.map((x) => x.poi);
+  for (const x of DEPOTS)
+    for (const seed of [11, 222, 777, 4242]) {
+      const q = newRun(seed, freeKit(), "reservoir", { depots: every, from: x.poi });
+      ticks(q, 15);
+      if (q.squads.some((sq) => sq.engaged) || q.player.hp < PLAYER.hp) return `depot scenario: a raid started from the ${x.poi} depot (seed ${seed}) was in a fight within 15 s`;
+    }
+
+  // Saves from before the depots load with none on and nothing explored; unknown depots are dropped.
+  const { depots: _d, seen: _s, ...v5 } = newProfile();
+  const loaded = parseProfile(JSON.parse(JSON.stringify({ ...v5, v: 5 })));
+  if (loaded?.v !== 6 || loaded.depots.length || loaded.seen !== "") return `depot scenario: a v5 save loaded as ${JSON.stringify(loaded && { v: loaded.v, depots: loaded.depots, seen: loaded.seen })}`;
+  const kept = parseProfile(JSON.parse(JSON.stringify({ ...after.profile, depots: ["pad", "nowhere", "pad"] })));
+  if (kept?.depots.join() !== "pad" || kept.seen !== after.profile.seen) return `depot scenario: a v6 save loaded depots ${kept?.depots.join()}`;
+  return null;
+}
+
 /** The hideout: building takes exactly its items and credits, each module's benefit is real, the craft ends the game once. */
 function checkHideout(): string | null {
   const count = (p: Profile, k: string) => p.stash.filter((i) => i.t === "valuable" && i.kind === k).length;
@@ -1155,7 +1316,7 @@ function checkHideout(): string | null {
   // Saves: a v4 profile keeps its stash and starts with an empty hideout; a v5 one keeps its hideout.
   const v4 = { v: 4, cash: 900, stash: [{ t: "valuable", kind: "gyro" }, { t: "weapon", kind: "pike", rarity: 2 }, { t: "key", poi: "yard" }], raids: 9, extracted: 7, quests: { progress: {}, done: ["grunts"] }, region: "harbor" };
   const m4 = parseProfile(JSON.parse(JSON.stringify(v4)));
-  if (!m4 || m4.v !== 5 || m4.stash.length !== 3 || m4.raids !== 9 || MODULES.some((m) => m4.hideout[m] !== 0) || m4.escaped || m4.region !== "harbor") return `storage scenario: a v4 save loaded as ${JSON.stringify(m4)}`;
+  if (!m4 || m4.v !== 6 || m4.stash.length !== 3 || m4.raids !== 9 || MODULES.some((m) => m4.hideout[m] !== 0) || m4.escaped || m4.region !== "harbor") return `storage scenario: a v4 save loaded as ${JSON.stringify(m4)}`;
   const m5 = parseProfile(JSON.parse(JSON.stringify(end)));
   if (!m5 || m5.hideout.craft !== maxLevel("craft") || m5.escaped?.raids !== 31 || m5.seed !== end.seed) return "storage scenario: a v5 save lost its hideout";
   // With one slot left, a valuable the hideout wants takes it ahead of gear; one it does not want is sold first.
@@ -1258,14 +1419,14 @@ function checkQuests(): string | null {
   const last = tr.profile.stash.at(-1);
   if (tr.quests[0]?.id !== "relay" || last?.t !== "key" || !tr.sold.some((i) => i.t === "valuable")) return `quest scenario: with one slot left the stash kept ${JSON.stringify(last)} and sold ${JSON.stringify(tr.sold)}`;
   const v1 = parseProfile({ v: 1, cash: 10, stash: [], raids: 2, extracted: 1 });
-  if (!v1 || v1.v !== 5 || v1.quests.done.length || v1.region !== "reservoir") return "storage scenario: a v1 save does not load";
+  if (!v1 || v1.v !== 6 || v1.quests.done.length || v1.region !== "reservoir") return "storage scenario: a v1 save does not load";
   // v2 saves named a key's POI by its place in the list; it loads as that POI's id.
   const v2 = parseProfile({ v: 2, cash: 10, stash: [{ t: "key", poi: 2 }, { t: "key", poi: 9 }], raids: 1, extracted: 1, quests: { progress: {}, done: [] } });
   const v2Key = v2?.stash[0];
-  if (!v2 || v2.v !== 5 || v2.stash.length !== 1 || v2Key?.t !== "key" || v2Key.poi !== "relay") return `storage scenario: a v2 save's key 2 loaded as ${JSON.stringify(v2?.stash)}, not the relay key`;
+  if (!v2 || v2.v !== 6 || v2.stash.length !== 1 || v2Key?.t !== "key" || v2Key.poi !== "relay") return `storage scenario: a v2 save's key 2 loaded as ${JSON.stringify(v2?.stash)}, not the relay key`;
   // A v3 save keeps its keys by id and drops into the reservoir; the landing choice is kept.
   const v3 = parseProfile({ v: 3, cash: 10, stash: [{ t: "key", poi: "wreck" }], raids: 1, extracted: 1, quests: { progress: {}, done: [] } });
-  if (!v3 || v3.v !== 5 || v3.stash.length !== 1 || v3.region !== "reservoir") return `storage scenario: a v3 save loaded as ${JSON.stringify(v3)}`;
+  if (!v3 || v3.v !== 6 || v3.stash.length !== 1 || v3.region !== "reservoir") return `storage scenario: a v3 save loaded as ${JSON.stringify(v3)}`;
   if (parseProfile(JSON.parse(JSON.stringify({ ...newProfile(), region: "harbor" })))?.region !== "harbor") return "storage scenario: the landing choice did not survive a save";
   // The harbor quests: the yard's vault counts only that vault, the harbor haul only a raid dropped into the harbor.
   const late = { ...newProfile(), quests: { progress: {}, done: QUESTS.filter((q) => !["yardVault", "harborHaul", "craft", "navigator", "control", "furnace", "escape"].includes(q.id)).map((q) => q.id) } };
@@ -1673,7 +1834,7 @@ function checkPlates(): string | null {
   return null;
 }
 
-for (const err of [checkPlates(), checkHideout(), checkBoltNoTunnel(), checkPickupWavesRouted(), checkLaterWaveFights(), checkSidestepHit(), checkWallStops(), checkPinch(), checkHealHeard(), checkPositionMatters(), checkPullWhenAiming(), checkVault(), checkQuests(), checkSettle(), checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkBoatCall(), checkSecondPickup(), checkRegionDrop(), checkConnections(), checkAllySelfUp(), checkStompHeight(), checkDropOffHighGround(), checkFieldsReused(), checkFieldsFollowRunner(), checkCliffsStop(), checkNoPits(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill(), checkLeap(), checkLeapLeavesAllyBelow(), checkLeapDowned(), checkLeapAllyCatchesUp(), checkLeapAllyDowned(), checkLeapWithItem(), checkLeapClocks(), checkLeapOffHighGround(), checkLeapUnderRoof()]) {
+for (const err of [checkDepots(), checkPlates(), checkHideout(), checkBoltNoTunnel(), checkPickupWavesRouted(), checkLaterWaveFights(), checkSidestepHit(), checkWallStops(), checkPinch(), checkHealHeard(), checkPositionMatters(), checkPullWhenAiming(), checkVault(), checkQuests(), checkSettle(), checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkBoatCall(), checkSecondPickup(), checkRegionDrop(), checkConnections(), checkAllySelfUp(), checkStompHeight(), checkDropOffHighGround(), checkFieldsReused(), checkFieldsFollowRunner(), checkCliffsStop(), checkNoPits(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill(), checkLeap(), checkLeapLeavesAllyBelow(), checkLeapDowned(), checkLeapAllyCatchesUp(), checkLeapAllyDowned(), checkLeapWithItem(), checkLeapClocks(), checkLeapOffHighGround(), checkLeapUnderRoof()]) {
   if (err) {
     console.error(err);
     process.exit(1);

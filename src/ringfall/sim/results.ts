@@ -2,8 +2,8 @@ import { SCORE, VALUABLES } from "./config";
 import { POIS } from "./map";
 import type { State } from "./state";
 
-/** Worth of everything the player carries. */
-export const haulValue = (s: State) => s.player.haul.reduce((n, k) => n + VALUABLES[k].value, 0);
+/** Worth of everything the player carries and has sent home from a depot. */
+export const haulValue = (s: State) => [...s.player.haul, ...s.sent].reduce((n, k) => n + VALUABLES[k].value, 0);
 
 /**
  * A raid's score and rank. Getting off the island scores the haul plus a bonus per

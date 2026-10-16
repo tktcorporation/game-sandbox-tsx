@@ -15,7 +15,7 @@ import { build, buy, canBuild, deliver, deliverable, newProfile, pouch, sell, se
 import { offered } from "../src/ringfall/meta/quests";
 
 /** What settle() reads of a raid, kept from each bot run. */
-export type RaidRecord = Pick<State, "outcome" | "extractedAt" | "region" | "time" | "stats"> & {
+export type RaidRecord = Pick<State, "outcome" | "extractedAt" | "region" | "time" | "stats" | "sent" | "depots" | "seen"> & {
   player: Pick<State["player"], "weapons" | "armor" | "heals" | "lentHeals" | "haul" | "keys">;
 };
 
@@ -25,6 +25,9 @@ export const recordOf = (s: State): RaidRecord => ({
   region: s.region,
   time: s.time,
   stats: structuredClone(s.stats),
+  sent: [...s.sent],
+  depots: [...s.depots],
+  seen: [...s.seen],
   player: structuredClone({ weapons: s.player.weapons, armor: s.player.armor, heals: s.player.heals, lentHeals: s.player.lentHeals, haul: s.player.haul, keys: s.player.keys }),
 });
 
@@ -34,7 +37,7 @@ export type Pool = Record<string, Partial<Record<RegionId, RaidRecord[]>>>;
 const CAP = 200;
 
 /** Valuables a recorded raid brings home with a pouch of `slots`. */
-const brought = (r: RaidRecord, slots: number): ValuableKind[] => (r.outcome === "extracted" ? r.player.haul : pouch(r.player.haul, slots));
+const brought = (r: RaidRecord, slots: number): ValuableKind[] => [...r.sent, ...(r.outcome === "extracted" ? r.player.haul : pouch(r.player.haul, slots))];
 
 /**
  * The region whose raids bring home the most credits' worth, counting twice what the hideout

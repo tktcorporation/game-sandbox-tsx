@@ -352,6 +352,18 @@ export class Soundscape {
         sfx.raiders();
         sfx.arrive(ground(e.x, e.z, 2), true);
         break;
+      case "depotOn":
+        sfx.depotOn();
+        break;
+      case "deposit":
+        sfx.deposit();
+        break;
+      case "leaveStart":
+        sfx.click();
+        break;
+      case "leaveCancel":
+        sfx.tacticalMiss();
+        break;
       case "searchStart":
         sfx.search();
         break;

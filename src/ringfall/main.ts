@@ -1,9 +1,9 @@
-import { AWARE, TICK, WEAPONS } from "./sim/config";
+import { AWARE, TICK, VALUABLES, WEAPONS } from "./sim/config";
 import { Bot, SKILLS } from "./sim/bot";
 import { dist2d } from "./sim/geom";
 import { terrainHeight } from "./sim/terrain";
 import { callLeft, freeKit, idleInput, newRun, type GameEvent, type Input, type Kit, type State } from "./sim/state";
-import { POIS, type RegionId } from "./sim/map";
+import { POIS, poiIndex, type PoiId, type RegionId } from "./sim/map";
 import { settle, type Settlement } from "./meta/profile";
 import { loadProfile, saveProfile } from "./meta/storage";
 import { Hub } from "./view/hub";
@@ -206,7 +206,9 @@ function keepAwake(on: boolean) {
 
 let last = performance.now();
 function frame(now: number) {
-  const dt = Math.min(0.1, (now - last) / 1000);
+  // The first frame's timestamp can predate `last` by the seconds the page took to load, and a
+  // negative step would grow every fade in the view (the muzzle flash and its light) instead.
+  const dt = Math.max(0, Math.min(0.1, (now - last) / 1000));
   last = now;
   if (running && !paused && !manual) {
     let simDt = dt;
@@ -260,7 +262,8 @@ function openHub() {
   hub.open();
 }
 
-function start(k: Kit, r: RegionId, seed: number) {
+/** `from`: a depot to start at on the ground, instead of the drop into `r`. */
+function start(k: Kit, r: RegionId, seed: number, from?: PoiId) {
   kit = k;
   region = r;
   settlement = null;
@@ -274,7 +277,7 @@ function start(k: Kit, r: RegionId, seed: number) {
   keepAwake(true);
   world.reset();
   sound.reset();
-  state = newRun(seed, kit, region);
+  state = newRun(seed, kit, region, { depots: hub.profile.depots, seen: hub.profile.seen, from });
   acc = hitstop = slowmo = 0;
   running = true;
   paused = false;
@@ -282,7 +285,8 @@ function start(k: Kit, r: RegionId, seed: number) {
   $("results").hidden = true;
   $("pause").hidden = true;
   hud.show(true);
-  hud.banner("降下", `${touchMode ? "スティック" : "WASD"}で着地点を選ぶ。拠点と脱出地点は${touchMode ? "地図ボタン" : " M "}の地図で見る`);
+  if (state.phase === "drop") hud.banner("降下", `${touchMode ? "スティック" : "WASD"}で着地点を選ぶ。拠点と脱出地点は${touchMode ? "地図ボタン" : " M "}の地図で見る`);
+  else hud.banner(`${POIS[poiIndex(from!)].name}の中継ボックス`, `ここから探索する。拠点と脱出地点は${touchMode ? "地図ボタン" : " M "}の地図で見る`);
   lock();
 }
 
@@ -381,6 +385,12 @@ window.render_game_to_text = () => {
     cleared: s.cleared,
     reinforce: { next: +s.reinforceT.toFixed(1), came: s.reinforceN },
     haul: { items: s.player.haul, value: haulValue(s), bag: bagUsed(s.player.haul) },
+    depots: s.depots,
+    sent: { items: s.sent, value: s.sent.reduce((n, k) => n + VALUABLES[k].value, 0) },
+    leaving: s.leaving && +s.leaving.t.toFixed(1),
+    leftAt: s.leftAt,
+    // A count only: the whole explored map is too long for a line of state.
+    seenCells: s.seen.reduce((n, c) => n + c, 0),
     search: s.player.search && { bin: s.player.search.bin, t: +s.player.search.t.toFixed(1) },
     raiders: { next: Number.isFinite(s.raiderT) ? +s.raiderT.toFixed(1) : null },
     player: { x: +p.pos.x.toFixed(1), y: +p.pos.y.toFixed(1), z: +p.pos.z.toFixed(1), hp: Math.round(p.hp), shield: Math.round(p.shield), armor: p.armor, downed: p.downed > 0, weapons: p.weapons.map((w) => w && `${w.kind}${w.rarity}:${w.mag}`), ult: +p.ult.toFixed(2), leap: !!p.leap, reveal: +p.reveal.toFixed(1), crouch: p.crouch },
