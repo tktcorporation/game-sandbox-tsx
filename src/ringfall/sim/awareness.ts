@@ -1,4 +1,4 @@
-import { AWARE, DEG, ENEMIES, NOISE, PINCH, SIGHT, TICK } from "./config";
+import { AWARE, DEG, ENEMIES, FLANK, NOISE, PINCH, SIGHT, TICK } from "./config";
 import { dist2d, los, lookAngles, wrapAngle } from "./geom";
 import type { Enemy, State, Vec3 } from "./state";
 
@@ -96,6 +96,18 @@ export function sense(s: State, e: Enemy): boolean {
       inView = Math.abs(wrapAngle(lookAngles(e.pos, target).yaw - e.yaw)) < (fov / 2) * DEG;
     }
     seen = inView && los(eye, target);
+    // A fighting robot that has lost the player, or never had them itself, takes a moment
+    // to find them again; one that is not fighting yet is filling its detection instead.
+    if (!seen) e.finding = 0;
+    else {
+      if (engaged && !located(s, e) && d >= AWARE.closeSense) e.finding += (TICK / ((AWARE.fillNear + AWARE.fillFar * (d / range)) * AWARE.locate)) * (low ? AWARE.crouchRate : 1);
+      else e.finding = 1;
+      if (e.finding >= 1) {
+        e.blind = 0;
+        e.sawAt = { x: p.pos.x, z: p.pos.z };
+        e.finding = 0;
+      }
+    }
     if (seen && !engaged) {
       const rate = (1 / (AWARE.fillNear + AWARE.fillFar * (d / range))) * (low ? AWARE.crouchRate : 1) * (e.aware === "alert" ? 1.6 : 1);
       e.detect = Math.min(1, e.detect + rate * TICK);
@@ -115,6 +127,16 @@ export function sense(s: State, e: Enemy): boolean {
   if (!seen && e.aware !== "engaged") e.detect = Math.max(0, e.detect - AWARE.decay * TICK);
   return seen;
 }
+
+/**
+ * Whether this robot itself knows where the player is: it saw them or was hit by them
+ * within `FLANK.blindTime`, or since then the player has stayed within `FLANK.moved` of
+ * where it saw them (it ducked behind cover; they did not go anywhere). A fighting robot
+ * that has not located the player moves on what its squad knows but holds its fire, and
+ * the player's shots on it are an ambush.
+ */
+export const located = (s: State, e: Enemy) =>
+  e.blind < FLANK.blindTime || (!!e.sawAt && e.blind < AWARE.loseTime && dist2d(e.sawAt, s.player.pos) < FLANK.moved);
 
 /**
  * Where a fighting robot believes the player is: the true position while its squad

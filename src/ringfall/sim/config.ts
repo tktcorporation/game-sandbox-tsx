@@ -454,10 +454,10 @@ export const HIDEOUT: Record<ModuleId, { name: string; note: string; levels: Mod
     name: "脱出艇",
     note: "直せば島を出られる",
     levels: [
-      { items: [["wire", 4], ["board", 4]], cash: 2500, needs: [["generator", 2], ["workbench", 1]], does: "船体を塞ぐ" },
-      { items: [["gyro", 5], ["drive", 4], ["board", 4]], cash: 5000, needs: [["radio", 1]], does: "航法装置を据える" },
-      { items: [["core", 3], ["board", 6], ["gyro", 4]], cash: 8000, needs: [["generator", 3], ["radio", 2]], does: "制御系をつなぐ" },
-      { items: [["reactor", 1], ["core", 1], ["gyro", 4], ["drive", 3]], cash: 12000, needs: [["workbench", 2]], does: "機関に火を入れる" },
+      { items: [["wire", 4], ["board", 4]], cash: 12500, needs: [["generator", 2], ["workbench", 1]], does: "船体を塞ぐ" },
+      { items: [["gyro", 5], ["drive", 4], ["board", 4]], cash: 25000, needs: [["radio", 1]], does: "航法装置を据える" },
+      { items: [["core", 3], ["board", 6], ["gyro", 4]], cash: 40000, needs: [["generator", 3], ["radio", 2]], does: "制御系をつなぐ" },
+      { items: [["reactor", 1], ["core", 1], ["gyro", 4], ["drive", 3]], cash: 60000, needs: [["workbench", 2]], does: "機関に火を入れる" },
     ],
   },
 };
@@ -525,7 +525,7 @@ export const REINFORCE = {
  * the player's attention while the others go wide to the sides.
  */
 export const RAIDERS = {
-  at: 240,
+  at: 420,
   name: "レイダー",
   kinds: ["grunt", "grunt", "grunt"] as EnemyKind[],
   huntEvery: 4,
@@ -607,6 +607,11 @@ export const AWARE = {
   trackTime: 0.4,
   /** A robot fires only when the player is within this many degrees of where it faces. */
   fireCone: 40,
+  /**
+   * A fighting robot that has not located the player (see FLANK.blindTime) finds them in
+   * this share of the time a calm one takes to notice them at that distance.
+   */
+  locate: 0.75,
 };
 
 /**
@@ -625,7 +630,8 @@ export type Flank = "front" | "side" | "back" | "ambush" | "none";
 
 /**
  * Damage by where the shot comes from, measured from the way the robot faces. The
- * first hit on a robot that has not noticed the player is an ambush. The titan
+ * first hit on a robot that has not noticed the player is an ambush, and so is a hit
+ * on a fighting robot that has not located the player itself. The titan
  * takes plain damage from every side.
  */
 export const FLANK = {
@@ -638,6 +644,17 @@ export const FLANK = {
    * only opens a fight with the big ones.
    */
   ambushTough: 1.5,
+  /**
+   * A fighting robot that has gone this many seconds without seeing the player, or being
+   * hit by them, while the player moved away from where it saw them (`moved`), has lost
+   * them: it must find them again before it fires (`AWARE.locate`), and the player's hits
+   * on it until then are an ambush. One hit wakes the whole squad, but the members that
+   * never saw the player are still there for the taking, and so is a squad that lost the
+   * player behind cover and is shot from somewhere new.
+   */
+  blindTime: 1.5,
+  /** Metres the player must move from where a robot last saw them for it to lose them. */
+  moved: 4,
 };
 
 /**

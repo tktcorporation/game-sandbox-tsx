@@ -188,6 +188,15 @@ export interface Enemy {
   steady: number;
   /** The side of its cover a grunt steps out to next (+1 / -1): it alternates. */
   peekSide: number;
+  /**
+   * Seconds since this robot itself last saw the player or was hit by them, and where
+   * the player was then. A squad that fights shares where it believes the player is,
+   * but each member locates the player only with its own eyes (see `located()`).
+   */
+  blind: number;
+  sawAt: Point | null;
+  /** Progress (0..1) toward finding the player again after losing them (see AWARE.locate). */
+  finding: number;
 }
 
 export interface SquadState {
@@ -358,8 +367,10 @@ export interface Stats {
   shots: number;
   hits: number;
   crits: number;
-  /** Hits from behind a robot or before it noticed the player. */
+  /** Hits from behind a robot, or before it noticed or located the player (see FLANK). */
   flankHits: number;
+  /** Hits on the titan, which has no back or side (see FLANK): left out of the flank share. */
+  titanHits: number;
   downs: number;
   wipes: number;
   /** The POIs cleared, in the order they fell. */
@@ -647,7 +658,7 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
     seen: start.seen ? decodeSeen(start.seen) : emptySeen(),
     cell: -1,
     events: [],
-    stats: { kills: 0, damage: 0, shots: 0, hits: 0, crits: 0, flankHits: 0, downs: 0, wipes: 0, cleared: [], allyDamage: 0, allyKills: 0, allyDowns: 0, allyRescues: 0, allyHelped: 0, killsBy: { drone: 0, grunt: 0, charger: 0, heavy: 0, titan: 0 }, vaults: [] },
+    stats: { kills: 0, damage: 0, shots: 0, hits: 0, crits: 0, flankHits: 0, titanHits: 0, downs: 0, wipes: 0, cleared: [], allyDamage: 0, allyKills: 0, allyDowns: 0, allyRescues: 0, allyHelped: 0, killsBy: { drone: 0, grunt: 0, charger: 0, heavy: 0, titan: 0 }, vaults: [] },
   };
   if (from) {
     const p = s.player;
