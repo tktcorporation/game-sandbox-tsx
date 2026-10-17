@@ -23,6 +23,15 @@ const CHUNK = 64;
  * fog's colour, which is the sky's at the horizon.
  */
 const FOG_FAR = 420;
+/**
+ * Chunks are built while within this of the camera, a few a frame (`STREAM_BUDGET`) nearest
+ * first, so one is ready before it comes out of the fog; one inside the fog that is not yet built
+ * is built at once. Past `DROP_AT` times this a chunk is let go: the memory held follows the
+ * ground round the camera, not the world's size.
+ */
+const STREAM_FAR = FOG_FAR + CHUNK;
+const STREAM_BUDGET = 2;
+const DROP_AT = 1.3;
 /** Robots, bins and loot further than this are not drawn: they are specks even through a scope. */
 const THINGS_FAR = 220;
 /** The teammate's HUD teal: a depot that is on is lit in the colour that means "ours". */
@@ -65,17 +74,30 @@ const ROUTE_REACH = ROUTES.map((r) => {
 /** Whether any route reaches into the square [x0, x1] x [z0, z1]. */
 const reached = (c: { x0: number; z0: number; x1: number; z1: number }) => ROUTE_REACH.some((a) => a.x0 < c.x1 + 2 && a.x1 > c.x0 - 2 && a.z0 < c.z1 + 2 && a.z1 > c.z0 - 2);
 
-/** A chunk of the world: its ground and everything built on it, drawn or skipped together. */
+/** A boulder at the foot of the coast's cliffs, as placed; its mesh is made when its chunk is built. */
+interface Boulder {
+  x: number;
+  y: number;
+  z: number;
+  color: number;
+  sc: number;
+  sy: number;
+  rot: readonly [number, number, number];
+}
+
+/**
+ * A chunk of the world: its ground and everything built on it, drawn or skipped together. What
+ * stands in it is kept as data (`boxes`, `boulders`); its meshes exist only while it is built.
+ */
 interface Chunk {
   group: THREE.Group;
-  /** Its ground and its merged statics, as built for the routes open when it was last built. */
+  /** Its ground and its merged statics, as built for the world in place (`built`); null while not built. */
   ground: THREE.Mesh | null;
   merged: THREE.Group | null;
-  /**
-   * The map's boxes and the boulders in it, before merging, kept only in a chunk a route reaches
-   * (`ROUTE_REACH`), which is built again when the routes open change. Elsewhere they are let go once merged.
-   */
-  statics: THREE.Group;
+  built: boolean;
+  /** Indices into BOXES of the map's boxes whose middle lies in it, in BOXES order. */
+  boxes: number[];
+  boulders: Boulder[];
   x0: number;
   z0: number;
   x1: number;
@@ -235,6 +257,7 @@ export class World {
   private boat: THREE.Group | null = null;
   private readonly skyDome = this.sky();
   private dummy = new THREE.Object3D();
+  private boulderGeo = new THREE.DodecahedronGeometry(1, 0);
 
   /** Automation only: a fixed camera that replaces the player's view. */
   cameraOverride: { x: number; y: number; z: number; yaw: number; pitch: number } | null = null;
@@ -382,13 +405,12 @@ export class World {
         const z0 = WORLD.z0 + j * CHUNK;
         const x1 = Math.min(WORLD.x1, x0 + CHUNK);
         const z1 = Math.min(WORLD.z1, z0 + CHUNK);
-        this.chunks.push({ group: new THREE.Group(), x0, z0, x1, z1, ground: null, merged: null, statics: new THREE.Group() });
+        this.chunks.push({ group: new THREE.Group(), x0, z0, x1, z1, ground: null, merged: null, built: false, boxes: [], boulders: [] });
       }
-    BOXES.forEach((b, n) => this.chunkOf(b).statics.add(buildBox(b, n)));
+    BOXES.forEach((b, n) => this.chunkOf(b).boxes.push(n));
     // Boulders along the foot of the coast's cliffs, where a land's coast is the world's.
     let r = 11;
     const rnd = () => ((r = (r * 16807) % 2147483647) / 2147483647);
-    const geo = new THREE.DodecahedronGeometry(1, 0);
     for (const land of LANDS)
       for (let k = 0; k < 220; k++) {
         const a = rnd() * Math.PI * 2;
@@ -402,18 +424,11 @@ export class World {
         const sy = sc * (0.6 + rnd() * 0.9);
         const rot = [rnd(), rnd() * 6, rnd()] as const;
         if (offshore(x, z) < -3) continue; // inside another land: not the coast
-        const m = new THREE.Mesh(geo, flat(color));
-        m.scale.set(sc, sy, sc);
-        m.rotation.set(rot[0], rot[1], rot[2]);
-        m.position.set(x, terrainHeight(x, z) - sc * 0.3, z);
-        this.chunkOf({ x0: x, x1: x, z0: z, z1: z }).statics.add(m);
+        this.chunkOf({ x0: x, x1: x, z0: z, z1: z }).boulders.push({ x, y: terrainHeight(x, z) - sc * 0.3, z, color, sc, sy, rot });
       }
     this.built = worldKey();
-    this.chunks.forEach((c) => {
-      this.fillChunk(c);
-      if (!reached(c)) c.statics = new THREE.Group();
-      this.scene.add(c.group);
-    });
+    // Built as the camera comes near them (streamChunks).
+    for (const c of this.chunks) this.scene.add(c.group);
     // Out past the bounds: the coarse ring of cliffs.
     const inside = (x: number, z: number) => x > WORLD.x0 && x < WORLD.x1 && z > WORLD.z0 && z < WORLD.z1;
     this.scene.add(this.groundMesh(xs, zs, (cx, cz) => !inside(cx, cz)));
@@ -442,28 +457,79 @@ export class World {
     return ROUTES.flatMap((r) => (open.includes(r.id) ? r.open : r.closed));
   }
 
-  /** (Re)builds a chunk's ground and merged statics for the world now in place, with the routes' boxes in it. */
-  private fillChunk(c: Chunk) {
+  /** Lets a chunk's meshes go: it holds only its data until it is built again. */
+  private emptyChunk(c: Chunk) {
     for (const o of [c.ground, c.merged])
       if (o) {
         c.group.remove(o);
         o.traverse((m) => m instanceof THREE.Mesh && m.geometry.dispose());
       }
+    c.ground = c.merged = null;
+    c.built = false;
+  }
+
+  /** (Re)builds a chunk's ground and merged statics for the world now in place, with the routes' boxes in it. */
+  private fillChunk(c: Chunk) {
+    this.emptyChunk(c);
+    c.built = true;
     c.ground = this.groundMesh(
       this.ticks.xs.filter((v) => v >= c.x0 && v <= c.x1),
       this.ticks.zs.filter((v) => v >= c.z0 && v <= c.z1),
       () => true,
     );
     c.group.add(c.ground);
-    // The statics are merged where they are, lent to the root for the merge and taken back.
+    // The map's boxes and the boulders first, then the routes', merged in that order.
+    const statics = new THREE.Group();
+    for (const n of c.boxes) statics.add(buildBox(BOXES[n], n));
+    for (const b of c.boulders) {
+      const m = new THREE.Mesh(this.boulderGeo, flat(b.color));
+      m.scale.set(b.sc, b.sy, b.sc);
+      m.rotation.set(b.rot[0], b.rot[1], b.rot[2]);
+      m.position.set(b.x, b.y, b.z);
+      statics.add(m);
+    }
     const root = new THREE.Group();
-    root.add(c.statics);
+    root.add(statics);
     this.routeBoxes().forEach((b, n) => {
       if (this.chunkOf(b) === c) root.add(buildBox(b, BOXES.length + n));
     });
-    c.merged = c.statics.children.length || root.children.length > 1 ? mergeChunk(root) : null;
-    root.remove(c.statics);
+    c.merged = statics.children.length || root.children.length > 1 ? mergeChunk(root) : null;
+    // The meshes built for the merge are let go; only their geometry's copies in the merge stay.
+    root.traverse((m) => m instanceof THREE.Mesh && m.geometry !== this.boulderGeo && m.geometry.dispose());
     if (c.merged) c.group.add(c.merged);
+  }
+
+  /** Distance on the ground from (x, z) to a chunk's square. */
+  private static away(c: Chunk, x: number, z: number) {
+    return Math.hypot(Math.max(c.x0 - x, 0, x - c.x1), Math.max(c.z0 - z, 0, z - c.z1));
+  }
+
+  /**
+   * Builds the chunks round (x, z) that are not built yet: those inside the fog at once, so
+   * nothing drawn is ever missing, and those out to STREAM_FAR a few a frame; lets go those past
+   * DROP_AT times that.
+   */
+  private streamChunks(x: number, z: number) {
+    const waiting: { c: Chunk; d: number }[] = [];
+    for (const c of this.chunks) {
+      const d = World.away(c, x, z);
+      if (c.built) {
+        if (d > STREAM_FAR * DROP_AT) this.emptyChunk(c);
+      } else if (d < FOG_FAR) this.fillChunk(c);
+      else if (d < STREAM_FAR) waiting.push({ c, d });
+    }
+    waiting.sort((a, b) => a.d - b.d);
+    for (const { c } of waiting.slice(0, STREAM_BUDGET)) this.fillChunk(c);
+  }
+
+  /**
+   * Builds now every chunk within STREAM_FAR of the given points, for the world in place: where a
+   * raid's camera starts and where it is about to be (a drop's column and its landing), so its
+   * first seconds draw what was built before them.
+   */
+  prebuild(points: readonly { x: number; z: number }[]) {
+    this.syncRoutes();
+    for (const c of this.chunks) if (!c.built && points.some((q) => World.away(c, q.x, q.z) < STREAM_FAR)) this.fillChunk(c);
   }
 
   /**
@@ -473,7 +539,7 @@ export class World {
   private syncRoutes() {
     if (worldKey() === this.built) return;
     this.built = worldKey();
-    for (const c of this.chunks) if (reached(c)) this.fillChunk(c);
+    for (const c of this.chunks) if (c.built && reached(c)) this.fillChunk(c);
   }
 
   /** The ground over the grid of `xs` by `zs`, keeping the quads whose middle `keep` accepts. */
@@ -813,9 +879,10 @@ export class World {
     for (const c of this.clouds) c.visible = drop || p.pos.y > 30;
 
     this.syncRoutes();
+    this.streamChunks(fx, fz);
     // Chunks wholly past the fog are skipped (the camera's view culls the rest), and so are
     // robots, bins and loot far off.
-    for (const c of this.chunks) c.group.visible = Math.hypot(Math.max(c.x0 - fx, 0, fx - c.x1), Math.max(c.z0 - fz, 0, fz - c.z1)) < FOG_FAR;
+    for (const c of this.chunks) c.group.visible = World.away(c, fx, fz) < FOG_FAR;
     const near = (o: THREE.Object3D) => (o.visible = Math.hypot(o.position.x - fx, o.position.z - fz) < THINGS_FAR);
 
     // --- teammate
@@ -1147,7 +1214,7 @@ export class World {
   /** What the last frame cost: draw calls and triangles, and how many chunks were drawn. */
   stats() {
     const r = this.renderer.info.render;
-    return { calls: r.calls, triangles: r.triangles, chunks: this.chunks.filter((c) => c.group.visible).length, of: this.chunks.length };
+    return { calls: r.calls, triangles: r.triangles, chunks: this.chunks.filter((c) => c.group.visible).length, built: this.chunks.filter((c) => c.built).length, of: this.chunks.length };
   }
 
   /** Drop everything that belongs to a run, before starting another. */

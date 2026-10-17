@@ -669,11 +669,13 @@ export interface Region {
   land: { x: number; z: number };
   pois: PoiId[];
   exits: ExtractId[];
+  /** Where the world map writes the region's name, large and faint under everything. */
+  label: { x: number; z: number };
 }
 
 export const REGIONS: Region[] = [
-  { id: "reservoir", name: "ダム湖", note: "干上がったダム湖の島。拠点 4 つ、発着場にタイタン", drop: SPAWN, land: { x: 0, z: 106 }, pois: ["supply", "quarry", "relay", "pad"], exits: ["ship", "flare", "village"] },
-  { id: "harbor", name: "港湾地帯", note: "干上がった湾の港。拠点 3 つ、どこにもヘビーがいる", drop: { x: 20, z: -296, yaw: 0 }, land: { x: 22, z: -306 }, pois: ["wreck", "yard", "smelter"], exits: ["boat"] },
+  { id: "reservoir", name: "ダム湖", note: "干上がったダム湖の島。拠点 4 つ、発着場にタイタン", drop: SPAWN, land: { x: 0, z: 106 }, pois: ["supply", "quarry", "relay", "pad"], exits: ["ship", "flare", "village"], label: { x: -150, z: 120 } },
+  { id: "harbor", name: "港湾地帯", note: "干上がった湾の港。拠点 3 つ、どこにもヘビーがいる", drop: { x: 20, z: -296, yaw: 0 }, land: { x: 22, z: -306 }, pois: ["wreck", "yard", "smelter"], exits: ["boat"], label: { x: -150, z: -270 } },
 ];
 
 export const regionOf = (id: RegionId): Region => REGIONS.find((r) => r.id === id) ?? REGIONS[0];
@@ -849,6 +851,55 @@ const HAMLET_FRAMES: Hamlet[] = [
     ],
     bins: [{ x: -6, z: 0, table: "smelter" }],
   },
+];
+
+/**
+ * The frames areas are written in, by name: each POI's (`AT`, by its id) and each hamlet's. Data
+ * outside the map that points into one of them (the shots gate's cameras) is written in its frame,
+ * so moving an area moves it too.
+ */
+export const FRAMES: Record<string, { x: number; z: number }> = Object.fromEntries([
+  ...POI_FRAMES.map((p, i): [string, { x: number; z: number }] => [p.id, { x: AT[i][0], z: AT[i][1] }]),
+  ...HAMLET_FRAMES.map((h): [string, { x: number; z: number }] => [h.name, { x: h.x, z: h.z }]),
+]);
+
+/** Names on the world map for the districts and landmarks between the POIs, where each is written. */
+export const LANDMARKS: readonly { name: string; x: number; z: number }[] = [
+  { name: "湖底の旧市街", x: 0, z: -22 },
+  { name: "堤", x: 0, z: -79 },
+  { name: "放水路", x: 50, z: -72 },
+  { name: "尾根", x: -50, z: 62 },
+  { name: "工場", x: 57, z: 60 },
+  { name: "住宅地", x: 112, z: 24 },
+  { name: "峠", x: -60, z: -236 },
+  { name: "鉄橋", x: 140, z: -190 },
+  { name: "駅", x: 108, z: -228 },
+  { name: "港町", x: 20, z: -312 },
+  { name: "高架", x: 30, z: -362 },
+  { name: "塩田", x: -10, z: -480 },
+  { name: "灯台", x: -116, z: -538 },
+  { name: "水路", x: 140, z: -604 },
+];
+
+/**
+ * Open ground off the POIs where a raid may stop, one or more per district and on the ways
+ * between: the sim gate checks that each is reached on foot and that reinforcements find a
+ * hidden spot a walk away from each.
+ */
+export const STOPS: readonly { name: string; x: number; z: number }[] = [
+  { name: "工場", x: 50, z: 50 },
+  { name: "台地", x: -60, z: -40 },
+  { name: "廃村", x: -100, z: -62 },
+  { name: "放水路", x: 50, z: -80 },
+  { name: "住宅地", x: 112, z: 20 },
+  { name: "採掘場の奥", x: -150, z: 12 },
+  { name: "尾根", x: -50, z: 76 },
+  { name: "峠", x: -60, z: -222 },
+  { name: "駅", x: 122, z: -230 },
+  { name: "港町", x: 20, z: -306 },
+  { name: "高架下", x: 60, z: -344 },
+  { name: "塩田", x: 10, z: -500 },
+  { name: "岬", x: -122, z: -545 },
 ];
 
 /** The hamlets placed, each flat at the level of the ground under its middle. */
@@ -1331,13 +1382,63 @@ const BETWEEN = "野";
 /** Where on the ground between the cover clumps: above 0.55 in blobs about a hundred metres across. */
 const clump = (x: number, z: number) => 0.5 + 0.25 * Math.sin(x / 37 + 1.3) * Math.sin(z / 41 + 0.7) + 0.25 * Math.sin((x + z) / 53);
 
-function scatterCover(authored: Box[], keep: Keep): Box[] {
+/** Things in 8 m squares, so a test against "anything near" looks only at the squares it reaches. */
+class Near<T> {
+  private cells = new Map<number, T[]>();
+  private static readonly SIZE = 8;
+  /** Every square the box [x0, x1] x [z0, z1] touches. */
+  private each(x0: number, z0: number, x1: number, z1: number, f: (k: number) => void) {
+    const S = Near.SIZE;
+    for (let j = Math.floor(z0 / S); j <= Math.floor(z1 / S); j++) for (let i = Math.floor(x0 / S); i <= Math.floor(x1 / S); i++) f(j * 65_536 + i);
+  }
+  add(x0: number, z0: number, x1: number, z1: number, t: T) {
+    this.each(x0, z0, x1, z1, (k) => {
+      const list = this.cells.get(k);
+      if (list) list.push(t);
+      else this.cells.set(k, [t]);
+    });
+  }
+  /** Whether `ok` holds for everything in the squares the box touches (some things are seen more than once). */
+  every(x0: number, z0: number, x1: number, z1: number, ok: (t: T) => boolean): boolean {
+    let all = true;
+    this.each(x0, z0, x1, z1, (k) => {
+      if (all) for (const t of this.cells.get(k) ?? []) if (!ok(t)) return void (all = false);
+    });
+    return all;
+  }
+}
+
+/**
+ * What a scattered piece must keep clear of, by square: the authored boxes, the pieces already
+ * placed, the authored points with their room, and the kept roads and patrol legs as the points
+ * along them a piece must stay 2.5 m from. Each is filed under the squares its own box (with the
+ * room it keeps) touches, so a piece is tested against exactly the things it could crowd.
+ */
+interface Clearance {
+  authored: Near<Box>;
+  laid: Near<Box>;
+  points: Near<Keep["points"][number]>;
+  along: Near<{ x: number; z: number }>;
+}
+
+function scatterCover(authored: Box[], { points, segments }: Keep): Box[] {
+  const near: Clearance = { authored: new Near(), laid: new Near(), points: new Near(), along: new Near() };
+  for (const b of authored) near.authored.add(b.x0, b.z0, b.x1, b.z1, b);
+  for (const q of points) near.points.add(q.x - q.r, q.z - q.r, q.x + q.r, q.z + q.r, q);
+  for (const sg of segments) {
+    const n = Math.max(1, Math.ceil(Math.hypot(sg.bx - sg.ax, sg.bz - sg.az)));
+    for (let k = 0; k <= n; k++) {
+      const x = sg.ax + ((sg.bx - sg.ax) * k) / n;
+      const z = sg.az + ((sg.bz - sg.az) * k) / n;
+      near.along.add(x - 2.5, z - 2.5, x + 2.5, z + 2.5, { x, z });
+    }
+  }
   const placed: Box[] = [];
-  for (const area of SCATTER) placed.push(...scatterArea(authored, keep, area, placed));
+  for (const area of SCATTER) placed.push(...scatterArea(near, area));
   return placed;
 }
 
-function scatterArea(authored: Box[], { points, segments }: Keep, area: (typeof SCATTER)[number], before: Box[]): Box[] {
+function scatterArea(near: Clearance, area: (typeof SCATTER)[number]): Box[] {
   let seed = area.seed;
   const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
   const pick = <T,>(xs: readonly T[]) => xs[Math.floor(rnd() * xs.length)];
@@ -1426,17 +1527,15 @@ function scatterArea(authored: Box[], { points, segments }: Keep, area: (typeof 
       }
       const ok = piece.every(
         (b) =>
-          authored.every(clear(b, 3)) &&
-          placed.every(clear(b, 2.5)) &&
-          before.every(clear(b, 2.5)) &&
-          points.every((q) => distToBox(b, q.x, q.z) > q.r) &&
-          segments.every((sg) => {
-            const n = Math.max(1, Math.ceil(Math.hypot(sg.bx - sg.ax, sg.bz - sg.az)));
-            for (let k = 0; k <= n; k++) if (distToBox(b, sg.ax + ((sg.bx - sg.ax) * k) / n, sg.az + ((sg.bz - sg.az) * k) / n) < 2.5) return false;
-            return true;
-          }),
+          near.authored.every(b.x0 - 3, b.z0 - 3, b.x1 + 3, b.z1 + 3, clear(b, 3)) &&
+          near.laid.every(b.x0 - 2.5, b.z0 - 2.5, b.x1 + 2.5, b.z1 + 2.5, clear(b, 2.5)) &&
+          near.points.every(b.x0, b.z0, b.x1, b.z1, (q) => distToBox(b, q.x, q.z) > q.r) &&
+          near.along.every(b.x0, b.z0, b.x1, b.z1, (q) => distToBox(b, q.x, q.z) >= 2.5),
       );
-      if (ok) placed.push(...piece);
+      if (ok) {
+        placed.push(...piece);
+        for (const b of piece) near.laid.add(b.x0, b.z0, b.x1, b.z1, b);
+      }
     }
   return placed;
 }
@@ -1608,10 +1707,14 @@ export const ROUTES: Route[] = (() => {
   const dx = 14;
   const dam: Carve = { name: "点検通路", line: [[dx, -62], [dx, -91]], floor: 2.5, levels: [LEVEL.lakebed, LEVEL.dam], slope: 2.4 };
   const dFoot = cliffFoot(dx, -54, -1);
-  // The wreck's gangway: up the hull's north side to its main deck, near the bow.
+  // The wreck's gangway: up the hull's north side to its main deck, near the bow, written in the
+  // wreck's frame (its hull's north face is 8 m north of its middle) so it moves with the wreck.
   const deck = LEVEL.seabed + STOREY * 3;
-  const gx = -22.4;
-  const gz = -571.3;
+  const [wx, wz] = AT[poiIndex("wreck")];
+  const gx = wx - 32.4;
+  const gz = wz - 9.3;
+  // The deck's rail along the hull's north side: the gangway is chained against it, and lands over it.
+  const rail = wz - 7.75;
   const gangway = paint(lift(LEVEL.seabed, stairs(gx, gz, "w", 2.0, deck + 0.7 - LEVEL.seabed)), "step", "steel", () => 2);
   return [
     {
@@ -1641,16 +1744,16 @@ export const ROUTES: Route[] = (() => {
       name: "難破船の舷梯",
       tool: "cutter",
       note: "難破船の北側から甲板へ直に上がる。船尾の階段を通らない",
-      path: [{ x: gx - 15.5, z: gz }, { x: gx + 1.2, z: -567 }],
+      path: [{ x: gx - 15.5, z: gz }, { x: gx + 1.2, z: wz - 5 }],
       at: [{ x: gx, y: LEVEL.seabed, z: gz - 1.4 }],
       // Hauled aboard and stood up against the deck's rail, over the place it lands, chained there.
       closed: [
-        rect(gx - 1.0, -569.75, gx + 1.0, -569.45, deck, deck + 2.8, "steel", 2),
-        rect(gx - 1.15, -569.45, gx + 1.15, -569.3, deck + 1.0, deck + 1.15, "steel", 2),
-        rect(gx - 0.18, -569.3, gx + 0.18, -569.1, deck + 0.75, deck + 1.2, "steel", 0),
+        rect(gx - 1.0, rail, gx + 1.0, wz - 7.45, deck, deck + 2.8, "steel", 2),
+        rect(gx - 1.15, wz - 7.45, gx + 1.15, wz - 7.3, deck + 1.0, deck + 1.15, "steel", 2),
+        rect(gx - 0.18, wz - 7.3, gx + 0.18, wz - 7.1, deck + 0.75, deck + 1.2, "steel", 0),
       ],
       // Its flight, and a landing over the deck's rail that steps down onto the deck.
-      open: [...gangway, rect(gx, gz - 1.0, gx + 2.4, -569.45, deck + 0.4, deck + 0.7, "steel", 2)],
+      open: [...gangway, rect(gx, gz - 1.0, gx + 2.4, wz - 7.45, deck + 0.4, deck + 0.7, "steel", 2)],
     },
   ];
 })();

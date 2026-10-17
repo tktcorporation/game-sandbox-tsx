@@ -297,16 +297,18 @@ export interface Land {
   x: number;
   z: number;
   radius: (bearing: number) => number;
+  /** No bearing's radius is larger: `offshore()` skips a land too far off to be the nearest coast. */
+  max: number;
 }
 
 /** The land masses. The world's coast is the outline of all of them together. */
 export const LANDS: Land[] = [
-  { name: "島", x: 0, z: 0, radius: (a) => 228 + 8 * Math.sin(3 * a + 1.1) + 5 * Math.sin(7 * a + 2.3) + 3 * Math.sin(13 * a + 0.4) },
+  { name: "島", x: 0, z: 0, radius: (a) => 228 + 8 * Math.sin(3 * a + 1.1) + 5 * Math.sin(7 * a + 2.3) + 3 * Math.sin(13 * a + 0.4), max: 244 },
   // The mountain belt between the two regions, wider east to west.
-  { name: "山地", x: 30, z: -205, radius: (a) => 140 + 45 * Math.abs(Math.cos(a)) + 6 * Math.sin(5 * a + 0.7) },
-  { name: "港湾", x: 0, z: -420, radius: (a) => 252 + 6 * Math.sin(3 * a + 0.5) + 4 * Math.sin(7 * a + 1.9) + 2 * Math.sin(11 * a + 0.3) },
+  { name: "山地", x: 30, z: -205, radius: (a) => 140 + 45 * Math.abs(Math.cos(a)) + 6 * Math.sin(5 * a + 0.7), max: 191 },
+  { name: "港湾", x: 0, z: -420, radius: (a) => 252 + 6 * Math.sin(3 * a + 0.5) + 4 * Math.sin(7 * a + 1.9) + 2 * Math.sin(11 * a + 0.3), max: 264 },
   // The quay and its channel, out at the harbor's north-east corner.
-  { name: "埠頭", x: 125, z: -575, radius: (a) => 62 + 4 * Math.sin(4 * a + 1.3) },
+  { name: "埠頭", x: 125, z: -575, radius: (a) => 62 + 4 * Math.sin(4 * a + 1.3), max: 66 },
 ];
 
 /** How far (x, z) lies outside one land mass's coast; negative inside it. */
@@ -315,7 +317,9 @@ export const outsideLand = (l: Land, x: number, z: number) => Math.hypot(x - l.x
 /** How far (x, z) lies outside the coast, metres; negative on land, by how far inland. */
 export function offshore(x: number, z: number): number {
   let out = Infinity;
-  for (const l of LANDS) out = Math.min(out, outsideLand(l, x, z));
+  // A land whose coast cannot come nearer than the nearest yet changes nothing: the minimum is
+  // the same as over every land, in any order.
+  for (const l of LANDS) if (Math.hypot(x - l.x, z - l.z) - l.max < out) out = Math.min(out, outsideLand(l, x, z));
   return out;
 }
 
@@ -416,15 +420,15 @@ function relaxed(res: number, sweeps: number, start?: (x: number, z: number) => 
   const nz = Math.ceil((WORLD.z1 - WORLD.z0) / res) + 1;
   const u = new Float32Array(nx * nz);
   const fixed = new Uint8Array(nx * nz);
-  const open = OPEN.filter(({ o }) => !o.walled);
   const queue: number[] = [];
   for (let j = 0; j < nz; j++)
     for (let i = 0; i < nx; i++) {
       const x = WORLD.x0 + i * res;
       const z = WORLD.z0 + j * res;
       let lv = Infinity;
-      for (const { o, poly } of open) {
-        if (nearBox(x, z, poly) > o.half) continue;
+      for (const n of bucketAt(x, z).open) {
+        const { o, poly } = OPEN[n];
+        if (o.walled || nearBox(x, z, poly) > o.half) continue;
         const { d, along: t } = toPolyline(x, z, poly);
         if (d <= o.half) lv = Math.min(lv, levelOf(o, t, poly));
       }
@@ -521,13 +525,63 @@ const BETWEEN = OPEN.length + CUTS.length;
  * rising at the cliff slope into the crags and the coast. `level` is the level of the
  * shape that gives it.
  */
-function lowest(x: number, z: number): { h: number; level: number; shape: number } {
+/**
+ * Which shapes can matter where, in 32 m squares over the world's bounds: each square lists the
+ * open shapes and cuts whose cones `lowest()` works out there (within FAR of their edge), the crags
+ * that rise there and the shelves that reach there. Every shape left off a square's list is one
+ * that `lowest()` and `shelfAt()` would skip at every point of it, so the answers are the same as
+ * scanning all of them, at a cost that stays flat however many shapes the world holds.
+ */
+const BUCKET = 32;
+const BX = Math.ceil((WORLD.x1 - WORLD.x0) / BUCKET) + 1;
+const BZ = Math.ceil((WORLD.z1 - WORLD.z0) / BUCKET) + 1;
+
+interface Bucket {
+  open: number[];
+  cuts: number[];
+  crags: number[];
+  shelves: number[];
+}
+
+/** The squares whose ground lies within `reach` of the box (a metre of slack for rounding). */
+function squaresNear(l: { x0: number; z0: number; x1: number; z1: number }, reach: number, add: (b: number) => void) {
+  const r = reach + 1;
+  const i0 = Math.max(0, Math.floor((l.x0 - r - WORLD.x0) / BUCKET));
+  const i1 = Math.min(BX - 1, Math.floor((l.x1 + r - WORLD.x0) / BUCKET));
+  const j0 = Math.max(0, Math.floor((l.z0 - r - WORLD.z0) / BUCKET));
+  const j1 = Math.min(BZ - 1, Math.floor((l.z1 + r - WORLD.z0) / BUCKET));
+  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) add(j * BX + i);
+}
+
+const BUCKETS: Bucket[] = (() => {
+  const out: Bucket[] = Array.from({ length: BX * BZ }, () => ({ open: [], cuts: [], crags: [], shelves: [] }));
+  // Shapes go in in their own order, so ties between equal cones fall the same way as a full scan.
+  OPEN.forEach(({ o, poly }, n) => squaresNear(poly, o.half + FAR, (b) => out[b].open.push(n)));
+  CUT_LINES.forEach(({ c, poly }, n) => squaresNear(poly, c.floor + FAR, (b) => out[b].cuts.push(n)));
+  CRAG_LINES.forEach(({ c, poly }, n) => squaresNear(poly, c.half, (b) => out[b].crags.push(n)));
+  SHELVES.forEach((_, n) => {
+    const { o, poly } = SHELF_BASINS[n];
+    squaresNear(poly, o.half + SHELF_OUT, (b) => out[b].shelves.push(n));
+  });
+  return out;
+})();
+
+/** Every shape, for points outside the world's bounds: there `lowest()` scans them all. */
+const EVERY: Bucket = { open: OPEN.map((_, n) => n), cuts: CUT_LINES.map((_, n) => n), crags: CRAG_LINES.map((_, n) => n), shelves: SHELVES.map((_, n) => n) };
+
+function bucketAt(x: number, z: number): Bucket {
+  const i = Math.floor((x - WORLD.x0) / BUCKET);
+  const j = Math.floor((z - WORLD.z0) / BUCKET);
+  return i < 0 || j < 0 || i >= BX || j >= BZ ? EVERY : BUCKETS[j * BX + i];
+}
+
+function lowest(x: number, z: number, near = bucketAt(x, z)): { h: number; level: number; shape: number } {
   let h = Infinity;
   let level = 0;
   let shape = 0;
   // How far outside the nearest open shape or cut (x, z) lies; negative inside one.
   let edge = Infinity;
-  for (let n = 0; n < OPEN.length; n++) {
+  for (const n of near.open) {
     const { o, poly } = OPEN[n];
     const far = nearBox(x, z, poly) - o.half;
     if (far > FAR) {
@@ -544,7 +598,7 @@ function lowest(x: number, z: number): { h: number; level: number; shape: number
       shape = n;
     }
   }
-  for (let n = 0; n < CUT_LINES.length; n++) {
+  for (const n of near.cuts) {
     const { c, poly } = CUT_LINES[n];
     const far = nearBox(x, z, poly) - c.floor;
     if (far > FAR) {
@@ -564,7 +618,10 @@ function lowest(x: number, z: number): { h: number; level: number; shape: number
   if (edge > 0) {
     const lv = betweenAt(x, z) + rolling(x, z) * smooth(2, 30, edge);
     let crag = 0;
-    for (const { c, poly } of CRAG_LINES) crag = Math.max(crag, c.half - toPolyline(x, z, poly).d);
+    for (const n of near.crags) {
+      const { c, poly } = CRAG_LINES[n];
+      crag = Math.max(crag, c.half - toPolyline(x, z, poly).d);
+    }
     const rise = lv + (crag + Math.max(0, offshore(x, z) + COAST)) * CLIFF;
     if (rise < h) {
       h = rise;
@@ -573,6 +630,34 @@ function lowest(x: number, z: number): { h: number; level: number; shape: number
     }
   }
   return { h, level, shape };
+}
+
+/**
+ * For the sim gate: at `n` points spread over the world (and a little past it), the shapes the
+ * index lists give the same lowest ground and shelves as all the shapes do, and no land's coast
+ * lies further out than its `max`. Null when they agree, else what differs.
+ */
+export function checkTerrainIndex(n: number): string | null {
+  for (const l of LANDS)
+    for (let k = 0; k < 3600; k++) {
+      const a = -Math.PI + (k / 3600) * 2 * Math.PI;
+      if (l.radius(a) > l.max) return `land ${l.name}: radius ${l.radius(a).toFixed(2)} past its max ${l.max} at bearing ${a.toFixed(3)}`;
+    }
+  let seed = 4242;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (let k = 0; k < n; k++) {
+    const x = WORLD.x0 - 40 + rnd() * (WORLD.x1 - WORLD.x0 + 80);
+    const z = WORLD.z0 - 40 + rnd() * (WORLD.z1 - WORLD.z0 + 80);
+    const a = lowest(x, z);
+    const b = lowest(x, z, EVERY);
+    if (a.h !== b.h || a.level !== b.level || a.shape !== b.shape) return `terrain index at ${x.toFixed(1)},${z.toFixed(1)}: ${JSON.stringify(a)} vs ${JSON.stringify(b)}`;
+    let sa = -Infinity;
+    let sb = -Infinity;
+    for (const m of bucketAt(x, z).shelves) sa = Math.max(sa, shelfAt(m, x, z));
+    for (let m = 0; m < SHELVES.length; m++) sb = Math.max(sb, shelfAt(m, x, z));
+    if (sa !== sb) return `shelf index at ${x.toFixed(1)},${z.toFixed(1)}: ${sa} vs ${sb}`;
+  }
+  return null;
 }
 
 /** Names of the open shapes, then "谷" for each cut and "野" for the ground between: what `surfaceAt()` answers with. */
@@ -680,7 +765,7 @@ export function buildTerrain(flat: FlatShape[]) {
       // Shelves stand right up to hand-built things (a 1 m gap); other shapes leave them room to blend.
       const dd = dist[k];
       let shelf = -Infinity;
-      for (let n = 0; n < SHELVES.length; n++) shelf = Math.max(shelf, shelfAt(n, x, z));
+      for (const n of bucketAt(x, z).shelves) shelf = Math.max(shelf, shelfAt(n, x, z));
       const base = level + (natural(x, z, low.h) - level) * smooth(3, 10, dd);
       field[k] = (shelf > base ? base + (shelf - base) * smooth(1, 2, dd) : base) + rim(x, z);
     }

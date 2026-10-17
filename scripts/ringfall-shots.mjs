@@ -345,18 +345,21 @@ await page.evaluate(() => {
   document.getElementById("banner").className = "";
 });
 await page.waitForTimeout(400);
+// A camera written in the frame of a POI (by its id) or a hamlet (by its name): [x, y, z].
+const frames = await page.evaluate(() => window.ringfallFrames());
+const at = (frame, dx, y, dz) => [frames[frame].x + dx, y, frames[frame].z + dz];
 const tour = [
   ["tour-1-lakebed-from-dam", 0, 11.6, -77, Math.PI, -0.25],
   ["tour-2-dam-face", 0, -5.4, -40, 0, 0.22],
   ["tour-3-town-street", 0, -5.4, 36, 0, 0.05],
   ["tour-4-east-ramp", 16, -5.4, 4, 1.3, 0.1],
   ["tour-5-spillway", 52, -8.4, -78, 0, 0.3],
-  ["tour-6-quarry-pit", -134, -2.4, 44, -0.63, -0.15],
+  ["tour-6-quarry-pit", ...at("quarry", -35, -2.4, 36), -0.63, -0.15],
   ["tour-7-high-rise-view", -2.5, 11.6, -10.2, Math.PI, -0.3],
   ["tour-8-plateau-over-lakebed", -40, 6.4, -46, 1.57, -0.15],
   ["tour-9-ridge", -50, 10.1, 70, -1.57, -0.1],
-  ["tour-10-over-supply", 45, 34, 144, -1.57, -0.35],
-  ["tour-11-mesa-relay", 66, 8.6, -30, 1.57, 0.02],
+  ["tour-10-over-supply", ...at("supply", 45, 34, 54), -1.57, -0.35],
+  ["tour-11-mesa-relay", ...at("relay", 18, 8.6, -23), 1.57, 0.02],
 ];
 for (const [name, x, y, z, yaw, pitch] of tour) {
   await page.evaluate(([x, y, z, yaw, pitch]) => window.ringfallCamera(x, y, z, yaw, pitch), [x, y, z, yaw, pitch]);
@@ -368,29 +371,29 @@ const harborTour = [
   ["tour-13-railway-bridge", 100, 1.7, -191, 1.45, 0.32],
   ["tour-14-bridge-deck", 122, 11.8, -168, 0, -0.04, true],
   ["tour-15-viaduct", 119, 1.7, -357, -1.42, 0.16],
-  ["tour-16-wreck", -2, 1.7, -522, 0.12, 0.1],
-  ["tour-17-wreck-deck", -30, 8.8, -560, 1.5, 0.02, true],
-  ["tour-18-yard-alley", -138, 1.7, -413.5, 1.57, 0.02],
-  ["tour-19-yard-crane", -100, 13.6 + 1.6, -405, 3.1, -0.42, true],
-  ["tour-20-smelter", 98, 1.7, -383, 0.4, 0.16],
+  ["tour-16-wreck", ...at("wreck", -12, 1.7, 40), 0.12, 0.1],
+  ["tour-17-wreck-deck", ...at("wreck", -40, 8.8, 2), 1.5, 0.02, true],
+  ["tour-18-yard-alley", ...at("yard", -38, 1.7, -13.5), 1.57, 0.02],
+  ["tour-19-yard-crane", ...at("yard", 0, 13.6 + 1.6, -5), 3.1, -0.42, true],
+  ["tour-20-smelter", ...at("smelter", -22, 1.7, 32), 0.4, 0.16],
   ["tour-21-lighthouse", -66, 1.7, -514, -0.97, 0.22],
   ["tour-22-lighthouse-view", -112.9, 33.4, -552, 1.45, -0.2, true],
   ["tour-23-salt-flats", -40, 1.7, -468, 0.75, 0.0],
   ["tour-24-quay-boat", 94, 1.7, -578, 1.32, -0.1],
   // The open ground between the areas, its outcrops and hamlets.
   ["tour-25-open-ground", -60, 1.7, 140, -1.23, 0.0],
-  ["tour-26-west-farm", -150, 1.7, 110, -0.84, 0.05],
-  ["tour-27-water-tower", 70, 1.7, 130, 2.24, 0.08],
-  ["tour-28-checkpoint", 145, 5, -68, 0.97, -0.08],
-  ["tour-29-fishing-village", -145, 1.7, -460, -0.9, 0.05],
-  ["tour-30-signal-box", -10, 1.7, -400, -0.79, 0.08],
+  ["tour-26-west-farm", ...at("西の農場", 20, 1.7, 18), -0.84, 0.05],
+  ["tour-27-water-tower", ...at("給水所", -25, 1.7, -20), 2.24, 0.08],
+  ["tour-28-checkpoint", ...at("東の検問所", -25, 5, 17), 0.97, -0.08],
+  ["tour-29-fishing-village", ...at("西の漁村", 25, 1.7, 20), -0.9, 0.05],
+  ["tour-30-signal-box", ...at("信号所", 20, 1.7, 20), -0.79, 0.08],
   ["tour-31-reservoir-from-above", 0, 70, 215, 0, -0.38, true],
   // The routes' obstacles, all closed in this fresh profile: the tunnel's two choked mouths,
   // the dam's chained gallery door, the wreck's gangway hauled up against its hull.
   ["tour-32-tunnel-rubble", 48, 1.7, -150, 0, 0.12],
   ["tour-33-tunnel-rubble-north", 48, 1.7, -277, Math.PI, 0.12],
   ["tour-34-dam-gate", 14, 1.7, -53, 0, 0.12],
-  ["tour-35-gangway-hauled", -27, 1.7, -579, Math.PI - 0.45, 0.5],
+  ["tour-35-gangway-hauled", ...at("wreck", -37, 1.7, -17), Math.PI - 0.45, 0.5],
 ];
 for (const [name, x, dy, z, yaw, pitch, abs] of harborTour) {
   const y = abs ? dy : (await page.evaluate(([x, z]) => window.ringfallTerrain(x, z), [x, z])) + dy;

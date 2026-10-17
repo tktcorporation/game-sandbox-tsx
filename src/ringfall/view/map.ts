@@ -1,5 +1,5 @@
 import { DEPOT, WORLD } from "../sim/config";
-import { BOXES, DEPOTS, EXTRACTS, POIS, REGIONS, ROUTES } from "../sim/map";
+import { BOXES, DEPOTS, EXTRACTS, LANDMARKS, POIS, REGIONS, ROUTES } from "../sim/map";
 import { worldKey } from "../sim/routes";
 import { DAM_FACE, floorLevel, highGround, LEVEL, steepAt, surfaceAt, terrainHeight } from "../sim/terrain";
 import { cellOf, exploreSize, type State } from "../sim/state";
@@ -17,27 +17,6 @@ import { PAL } from "./models";
 
 /** Metres per map pixel of the ground image. */
 const CELL = 1.5;
-
-/** Names on the map for the districts and landmarks between the POIs. */
-const DISTRICTS = [
-  { name: "湖底の旧市街", x: 0, z: -22 },
-  { name: "堤", x: 0, z: -79 },
-  { name: "放水路", x: 50, z: -72 },
-  { name: "尾根", x: -50, z: 62 },
-  { name: "工場", x: 57, z: 60 },
-  { name: "住宅地", x: 112, z: 24 },
-  { name: "峠", x: -60, z: -236 },
-  { name: "鉄橋", x: 140, z: -190 },
-  { name: "駅", x: 108, z: -228 },
-  { name: "港町", x: 20, z: -312 },
-  { name: "高架", x: 30, z: -362 },
-  { name: "塩田", x: -10, z: -480 },
-  { name: "灯台", x: -116, z: -538 },
-  { name: "水路", x: 140, z: -604 },
-] as const;
-
-/** Where each region's name goes, large and faint under everything. */
-const REGION_LABELS: Record<string, { x: number; z: number }> = { reservoir: { x: -150, z: 120 }, harbor: { x: -150, z: -270 } };
 
 const css = (c: number) => `#${c.toString(16).padStart(6, "0")}`;
 
@@ -204,7 +183,7 @@ export class IslandMap {
       return spot;
     });
     // Districts and landmarks between the POIs, small and muted under everything else.
-    for (const d of DISTRICTS) {
+    for (const d of LANDMARKS) {
       // A district's name is learnt by going there.
       if (!s.seen[cellOf(d.x, d.z)]) continue;
       const p = at(d.x, d.z);
@@ -214,7 +193,7 @@ export class IslandMap {
       label(d.name, p.x, p.y, "#e9dcc2", 10);
     }
     for (const r of REGIONS) {
-      const p = at(REGION_LABELS[r.id].x, REGION_LABELS[r.id].z);
+      const p = at(r.label.x, r.label.z);
       if (!free(box(r.name, p.x, p.y, 15, true))) continue;
       g.textAlign = "left";
       label(r.name, p.x, p.y, "rgba(255,248,232,0.55)", 15, false);
