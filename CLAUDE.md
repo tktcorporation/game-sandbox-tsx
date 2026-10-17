@@ -118,7 +118,11 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   region from its own grid and seed (`SCATTER`), sparse on the salt flats and only in clumps
   (`clump()`) on the ground between, keeping clear of
   authored points, patrol routes and the roads that are the only ways between areas (`KEPT_ROADS`,
-  also pressed to their own floor). Tuning numbers are in `config.ts`. `npm run sim:ringfall` first
+  also pressed to their own floor). Its clearance tests and the terrain's shapes are looked up in
+  spatial buckets (`Near` in `map.ts`, `BUCKETS` in `terrain.ts`, checked against a full scan by
+  `checkTerrainIndex()` in the sim gate), so loading stays fast as shapes are added. Places that
+  scripts and the world map name are data in `map.ts` (`FRAMES`, `LANDMARKS`, `STOPS`).
+  Tuning numbers are in `config.ts`. `npm run sim:ringfall` first
   checks that every authored point (entries, bins, loot, squad posts, patrols, landing spots) stands
   on a floor and not inside a box, and that the pass and the railway bridge are walkable end to end;
   `checkRoutes()` walks each route closed (the long way round) and open (straight through), with
@@ -162,7 +166,9 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   and synthesized sound. `world.ts` cuts the ground and everything built into `CHUNK`-metre
   chunks, each merged into a mesh or two with its colours in the vertices, and skips chunks past
   the fog (`FOG_FAR`) and robots, bins and loot past `THINGS_FAR`, so the draw calls stay bounded
-  however large the world grows. `audio.ts` is the sound engine (buses, reverb, voice cap,
+  however large the world grows. Chunks are built only near the camera (`streamChunks()`: at once
+  inside the fog, a few a frame out to `STREAM_FAR`) and let go past `DROP_AT` times that, and
+  `prebuild()` builds round where a raid starts before its first frame. `audio.ts` is the sound engine (buses, reverb, voice cap,
   positional voices) and runs on any `BaseAudioContext`; `sfx.ts` holds every cue; `soundscape.ts`
   puts the listener at the camera, tests walls with a few `los()` rays a frame, plays nearby robots'
   steps, the wind, the extraction craft and the ambience, and turns `state.events` into cues.
