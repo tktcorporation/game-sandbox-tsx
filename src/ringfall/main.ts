@@ -88,6 +88,7 @@ addEventListener("keydown", (e) => {
   if (e.repeat) return;
   // The map opens over the game straight from the key, whoever is at the controls.
   if (e.code === "KeyM" && running) hud.toggleMap();
+  if (e.code === "KeyN" && running) hud.toggleMapView();
   keys.add(e.code);
   edges.add(e.code);
   if (["Space", "KeyC", "ControlLeft", "Tab"].includes(e.code)) e.preventDefault();

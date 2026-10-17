@@ -170,6 +170,17 @@ const lap = (name) => {
   await step(200);
   if (!(await mapOpen())) errors.push("mobile: the map button did not open the map");
   await page.screenshot({ path: `${out}/m4-map.png` });
+  // It opens on the region the player is in; its own button shows the whole world, and back.
+  const mapAspect = () => page.evaluate(() => +getComputedStyle(document.getElementById("map-canvas")).getPropertyValue("--map-aspect"));
+  const regionAspect = await mapAspect();
+  await tap("#map-zoom", 12);
+  await step(200);
+  const worldAspect = await mapAspect();
+  if (!(worldAspect < regionAspect * 0.8)) errors.push(`mobile: the map's zoom button did not show the whole world (shape ${regionAspect.toFixed(2)} -> ${worldAspect.toFixed(2)})`);
+  await page.screenshot({ path: `${out}/m4-map-world.png` });
+  await tap("#map-zoom", 13);
+  await step(200);
+  if ((await mapAspect()) !== regionAspect) errors.push("mobile: the map's zoom button did not go back to the region");
   await tap("#map-close", 9);
   await step(200);
   if (await mapOpen()) errors.push("mobile: the map's close button did not close it");
@@ -500,6 +511,16 @@ for (let i = 0; i < 25 * 60 * 10; i++) {
     await page.evaluate(() => window.advanceTime(100));
     const open = await page.evaluate(() => !document.getElementById("map").hidden);
     await shot("23-map");
+    // N shows the whole world, and back to the region the player is in.
+    const shape = () => page.evaluate(() => +getComputedStyle(document.getElementById("map-canvas")).getPropertyValue("--map-aspect"));
+    const regionShape = await shape();
+    await page.keyboard.press("KeyN");
+    await page.evaluate(() => window.advanceTime(100));
+    const worldShape = await shape();
+    await shot("23-map-world");
+    await page.keyboard.press("KeyN");
+    await page.evaluate(() => window.advanceTime(100));
+    if (!(worldShape < regionShape * 0.8) || (await shape()) !== regionShape) errors.push(`map: N did not switch to the whole world and back (shape ${regionShape} -> ${worldShape})`);
     await page.keyboard.press("KeyM");
     await page.evaluate(() => window.advanceTime(100));
     const closed = await page.evaluate(() => document.getElementById("map").hidden);

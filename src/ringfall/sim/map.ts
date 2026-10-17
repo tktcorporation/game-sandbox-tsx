@@ -968,11 +968,13 @@ export interface Region {
   exits: ExtractId[];
   /** Where the world map writes the region's name, large and faint under everything. */
   label: { x: number; z: number };
+  /** The part of the world the map frames when it shows this region: its land, its ways in and the ends of the ways out of it. */
+  bounds: { x0: number; z0: number; x1: number; z1: number };
 }
 
 export const REGIONS: Region[] = [
-  { id: "reservoir", name: "ダム湖", note: "干上がったダム湖の島。拠点 4 つ、発着場にタイタン", entries: ["beach", "checkpoint", "jetty"], pois: ["supply", "quarry", "relay", "pad"], exits: ["ship", "flare", "village"], label: { x: -225, z: 250 } },
-  { id: "harbor", name: "港湾地帯", note: "干上がった湾の港。拠点 3 つ、どこにもヘビーがいる", entries: ["outskirts", "quay", "shore"], pois: ["wreck", "yard", "smelter"], exits: ["boat"], label: { x: -250, z: -520 } },
+  { id: "reservoir", name: "ダム湖", note: "干上がったダム湖の島。拠点 4 つ、発着場にタイタン", entries: ["beach", "checkpoint", "jetty"], pois: ["supply", "quarry", "relay", "pad"], exits: ["ship", "flare", "village"], label: { x: -225, z: 250 }, bounds: { x0: WORLD.x0, z0: -340, x1: WORLD.x1, z1: WORLD.z1 } },
+  { id: "harbor", name: "港湾地帯", note: "干上がった湾の港。拠点 3 つ、どこにもヘビーがいる", entries: ["outskirts", "quay", "shore"], pois: ["wreck", "yard", "smelter"], exits: ["boat"], label: { x: -250, z: -520 }, bounds: { x0: WORLD.x0, z0: WORLD.z0, x1: WORLD.x1, z1: -380 } },
 ];
 
 export const regionOf = (id: RegionId): Region => REGIONS.find((r) => r.id === id) ?? REGIONS[0];
@@ -1711,11 +1713,9 @@ const AUTHORED: Box[] = [
     box(53, 63, 1.2, 1.2, 0.9, "crate"),
   ])),
 
-  // --- 住宅地: two houses joined by a roof bridge, two cottages
+  // --- 住宅地: a terrace of three houses under one roof, two cottages
   ...onLevel(LEVEL.mesa, placeIn("relay", [
-    ...tower(100, 15, 8, 8, 2, { doors: [["s", "w"]], windows: [["e"], ["n", "w"]], open: ["e"] }),
-    ...tower(114, 15, 8, 8, 2, { doors: [["s", "e"]], windows: [["w"], ["n", "e"]], open: ["w"] }),
-    bridge(104, 14, 110, 16, STOREY * 2),
+    ...rowHouses(96, 15, 3, 8, 8, 2),
     ...building(98, 30, 6, 6, 3.4, { doors: ["n", "e"], windows: ["s"] }),
     ...building(112, 31, 7, 6, 3.4, { doors: ["w"], windows: ["e"], roof: "s" }),
     box(106, 40, 0.6, 6, 1.4, "wall"),
