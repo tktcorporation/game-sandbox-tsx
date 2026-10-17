@@ -109,7 +109,7 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   `wreck()`, `yard()`, `smelter()`). The helpers take their sizes from a `Scale` (storey, walls,
   doors, windows, roller doors, stair width): `HOUSE` (3.4 m storeys) everywhere but the supply
   depot, which is built to `WORKS` at the scale of real industry (4.5 m storeys, half-metre walls,
-  doors 1.8 by 2.8 m, roller doors 6 m high) and stands about 220 m across on the dune coast:
+  doors 2.4 by 2.8 m, roller doors 6 m high) and stands about 220 m across on the dune coast:
   warehouses 40 to 66 m long and 9 to 13.5 m high, a four-storey office block, silos 32 m high,
   a beached tanker whose bow rises 38 m, a watchtower sunk two storeys into a dune, dunes up to
   13 m (`dunes` on its basin in `terrain.ts`) and a bluff 26 m over its west side. It is the

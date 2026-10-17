@@ -72,8 +72,8 @@ interface Scale {
   stair: number;
 }
 const HOUSE: Scale = { storey: STOREY, wall: WALL, door: 2.2, doorHead: 2.5, window: 1.4, sill: 1.1, windowHead: 2.1, roller: 4.4, stair: 1.4 };
-/** Industrial scale: storeys of 4.5 m, half-metre walls, doors 1.8 by 2.8 m, roller doors 6 m high. */
-const WORKS: Scale = { storey: 4.5, wall: 0.5, door: 1.8, doorHead: 2.8, window: 2.0, sill: 1.2, windowHead: 2.8, roller: 6, stair: 1.8 };
+/** Industrial scale: storeys of 4.5 m, half-metre walls, doors 2.4 by 2.8 m (wide enough for a heavy), roller doors 6 m high. */
+const WORKS: Scale = { storey: 4.5, wall: 0.5, door: 2.4, doorHead: 2.8, window: 2.0, sill: 1.2, windowHead: 2.8, roller: 6, stair: 1.8 };
 /** Steps a flight needs to climb `rise` with every riser under the step-up height. */
 const stepsFor = (rise: number) => Math.ceil(rise / 0.42) - 1;
 

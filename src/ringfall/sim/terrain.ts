@@ -726,11 +726,11 @@ const SHAPE_NAMES = [...OPEN.map(({ o }) => o.name), ...CUTS.map(() => "谷"), "
 
 /**
  * The shaped ground before anything is flattened for buildings; `low` is `lowest(x, z)` when
- * already known. The high ground's top is capped near HIGH, and rises over a shape walked above
- * it (a bluff), so that its floor is not cut down to the cap.
+ * already known. The high ground's top is capped near HIGH, and rises over a basin or road walked
+ * above it (a bluff), so that its floor is not cut down to the cap; the ground between keeps the cap.
  */
 function natural(x: number, z: number, low = lowest(x, z)): number {
-  const top = HIGH + vnoise(x / 30, z / 30) * 5 + (low.level > HIGH - 1 ? low.level - HIGH + 3 : 0);
+  const top = HIGH + vnoise(x / 30, z / 30) * 5 + (low.shape < OPEN.length && low.level > HIGH - 1 ? low.level - HIGH + 3 : 0);
   return Math.min(top, low.h) + (vnoise(x / 9, z / 9) - 0.5) * 0.5;
 }
 
