@@ -1,7 +1,7 @@
 import { stepEnemies, stepOrbs, stepWaves } from "./enemies";
 import { stepPlayer, tickReveal } from "./player";
 import { stepAlly } from "./ally";
-import { stepDepots, stepExtract, stepLoot, stepPoi, stepReinforce } from "./world";
+import { stepDepots, stepEntries, stepExtract, stepLoot, stepPoi, stepReinforce } from "./world";
 import { TICK } from "./config";
 import type { Input, State } from "./state";
 import { useRoutes } from "./routes";
@@ -28,6 +28,7 @@ export function step(s: State, input: Input, prevCrouch: boolean) {
     stepReinforce,
     stepExtract,
     stepDepots,
+    stepEntries,
   ];
   for (const run of systems) {
     run(s);

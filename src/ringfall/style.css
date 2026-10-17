@@ -1505,6 +1505,18 @@ body.touch .mate-bars {
   font-size: 13px;
   color: var(--muted);
 }
+/* A region with no way in known and no depot on: shown, so the player knows it is there, but not chosen. */
+#hub .hub-region button.locked {
+  opacity: 0.45;
+  cursor: default;
+  box-shadow: inset 0 0 0 2px var(--muted);
+  border: 0;
+}
+/* How to open a locked region: a line of its own under the choice. */
+.hub-region span.lock {
+  flex-basis: 100%;
+  margin-left: 0;
+}
 /* A phone on its side: the choice shares the buttons' row, without its line, so the lists keep their room. */
 @media (max-height: 500px) {
   /* With depots on there are more starts than fit: the row scrolls sideways instead of wrapping. */

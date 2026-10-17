@@ -357,6 +357,8 @@ export type GameEvent =
   | { t: "shipWave"; id: ExtractId }
   /** A depot was switched on by walking up to it. */
   | { t: "depotOn"; poi: PoiId }
+  /** A way in on foot was walked to for the first time this raid. */
+  | { t: "entryFound"; id: EntryId }
   /** The bag was sent home from a depot: how many valuables, worth how much. */
   | { t: "deposit"; n: number; value: number }
   /** The player chose to leave at a depot, and the countdown started or was broken off. */
@@ -450,6 +452,8 @@ export interface State {
   leaving: { depot: number; t: number } | null;
   /** The depot the raid ended at, if it ended at one. */
   leftAt: PoiId | null;
+  /** The ways in walked to this raid (`ENTRY`), the start's own first unless it began at a depot: the base learns them if the player gets off alive. */
+  found: EntryId[];
   /** The explored map, one 0 / 1 per cell (`exploreSize()`, `cellOf()`), carried over from earlier raids. */
   seen: number[];
   /** The cell the player was last marked in, so the map is marked only when they cross into another. */
@@ -678,6 +682,7 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
     sentVia: DEPOTS.map(() => 0),
     leaving: null,
     leftAt: null,
+    found: from ? [] : [entry.id],
     seen: start.seen ? decodeSeen(start.seen) : emptySeen(),
     cell: -1,
     events: [],

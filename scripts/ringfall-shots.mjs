@@ -27,6 +27,10 @@ const server = createServer(async (req, res) => {
 }).listen(0);
 const port = server.address().port;
 const out = "shots/ringfall";
+/** Where the game keeps its profile (src/ringfall/meta/storage.ts). */
+const KEY = "ringfall.profile.v1";
+/** A save from before ways in were learned: it loads knowing every way in, so a start in the harbor can be chosen. */
+const KNOWS_ALL = JSON.stringify({ v: 10, cash: 1500, stash: [], raids: 0, extracted: 0, region: "reservoir" });
 await mkdir(out, { recursive: true });
 
 const skill = process.argv[2] ?? "casual";
@@ -249,6 +253,7 @@ const lap = (name) => {
   const page = await ctx.newPage();
   page.on("pageerror", (e) => errors.push(`mobile harbor pageerror: ${e.message}`));
   page.on("console", (m) => m.type() === "error" && !/fonts\.g|ERR_TUNNEL|net::/.test(m.text()) && errors.push(`mobile harbor console: ${m.text()}`));
+  await page.addInitScript(([k, v]) => localStorage.setItem(k, v), [KEY, KNOWS_ALL]);
   await page.goto(`http://localhost:${port}/ringfall/`, { waitUntil: "load" });
   await page.waitForTimeout(400);
   await page.evaluate(() => Object.defineProperty(screen, "orientation", { value: undefined, configurable: true }));
@@ -299,6 +304,32 @@ const lap = (name) => {
   lap("no pointer lock");
 }
 
+// A fresh profile walks to a way in it does not know: the toast says it is remembered, the camp marks it, and the map tells it from those still unknown.
+{
+  const pg = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+  pg.on("pageerror", (e) => errors.push(`way in pageerror: ${e.message}`));
+  pg.on("console", (m) => m.type() === "error" && !/fonts\.g|ERR_TUNNEL|net::/.test(m.text()) && errors.push(`way in console: ${m.text()}`));
+  await pg.goto(`http://localhost:${port}/ringfall/`, { waitUntil: "load" });
+  await pg.click("#start");
+  await pg.click("#hub-free");
+  await pg.evaluate(() => window.advanceTime(100));
+  // The east checkpoint's way in (325, -40) faces west: stand 8 m inside it, looking out at its camp.
+  await pg.evaluate(() => window.ringfallPlace(317, -40, Math.PI / 2));
+  await pg.evaluate(() => window.advanceTime(300));
+  const st = JSON.parse(await pg.evaluate(() => window.render_game_to_text()));
+  const toast = await pg.evaluate(() => document.getElementById("toasts").textContent);
+  if (st.found.join() !== "beach,checkpoint" || !/この場所を覚えた：東の検問道/.test(toast)) errors.push(`way in: walking to the checkpoint found ${st.found.join()}, toast "${toast}"`);
+  await pg.screenshot({ path: `${out}/32-entry-found.png` });
+  await pg.keyboard.press("KeyM");
+  await pg.evaluate(() => window.advanceTime(100));
+  await pg.screenshot({ path: `${out}/33-map-entries.png` });
+  await pg.keyboard.press("KeyN");
+  await pg.evaluate(() => window.advanceTime(100));
+  await pg.screenshot({ path: `${out}/34-map-entries-whole.png` });
+  await pg.close();
+  lap("way in found");
+}
+
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
 page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
 page.on("console", (m) => m.type() === "error" && !/fonts\.g|ERR_TUNNEL|net::/.test(m.text()) && errors.push(`console: ${m.text()}`));
@@ -328,14 +359,16 @@ const read = async () => JSON.parse(await page.evaluate(() => window.render_game
   await picks.nth(1).click();
   await page.screenshot({ path: `${out}/00-hub-kit.png` });
   // The start choice: the harbor shows its line, and the raid below starts in the reservoir.
-  await page.click("#hub-region [data-arg=harbor]");
+  // A fresh profile knows only the reservoir's first way in: the harbor is shown locked, with how to open it.
+  const harborLocked = await page.locator("#hub-region button.locked").count();
+  const entriesOffered = await page.locator("#hub-region [data-act=entry]").count();
   await page.screenshot({ path: `${out}/00-hub-region.png` });
-  if (!/港/.test(await page.evaluate(() => document.getElementById("hub-region").textContent))) errors.push("hub: the harbor's line did not show");
-  await page.click("#hub-region [data-arg=reservoir]");
+  if (harborLocked !== 1 || entriesOffered !== 1 || !/港湾地帯：峠/.test(await page.evaluate(() => document.getElementById("hub-region").textContent))) errors.push(`hub: a fresh profile offers ${entriesOffered} ways in and ${harborLocked} locked regions, or the harbor's hint did not show`);
   await page.click("#hub-go");
   const h2 = await read();
   if (h2.screen !== "game") errors.push(`hub: deploying did not start the raid (${h2.screen})`);
-  if (h2.player.weapons.join() !== "pike1:-1,hornet0:-1") errors.push(`hub: the raid did not start with the picked weapons (${h2.player.weapons.join()})`);
+  // The magazine is left out: the frame loop may already have stepped the raid and loaded it.
+  if (h2.player.weapons.map((w) => w?.split(":")[0]).join() !== "pike1,hornet0") errors.push(`hub: the raid did not start with the picked weapons (${h2.player.weapons.join()})`);
   if (h2.profile.stash !== h1.profile.stash - 2) errors.push(`hub: the picked weapons stayed in the stash (${h1.profile.stash} -> ${h2.profile.stash})`);
   lap("base");
 }
@@ -660,8 +693,16 @@ console.log(JSON.stringify((await read()).stats));
   lap("results");
 }
 
-// A second raid, into the harbor: the bot (still at the controls) starts at its first way in and plays to its first fight.
+// A second raid, into the harbor: the bot starts at its first way in and plays to its first fight.
+// The first raid did not walk to the harbor, so the save is made to know every way in, and the page reloaded to read it.
 {
+  await page.evaluate((k) => {
+    const p = JSON.parse(localStorage.getItem(k));
+    localStorage.setItem(k, JSON.stringify({ ...p, entries: ["beach", "checkpoint", "jetty", "outskirts", "quay", "shore"] }));
+  }, KEY);
+  await page.reload({ waitUntil: "load" });
+  await page.click("#start");
+  await page.evaluate((s) => window.ringfallBot(s), skill);
   await page.click("#hub-region [data-arg=harbor]");
   await page.screenshot({ path: `${out}/27-hub-harbor.png` });
   await page.click("#hub-free");
@@ -699,7 +740,6 @@ await page.close();
  * they are found, building, the radio's report, the warning before selling a needed part)
  * on the desktop and a phone on its side, then the escape craft's last stage and the ending.
  */
-const KEY = "ringfall.profile.v1";
 const bag = (list) => list.flatMap(([kind, n]) => Array.from({ length: n }, () => ({ t: "valuable", kind })));
 const midGame = {
   v: 6, cash: 6400, raids: 14, extracted: 11, time: 9000, region: "reservoir", seed: 777, escaped: null, depots: ["quarry", "wreck"], seen: "",
