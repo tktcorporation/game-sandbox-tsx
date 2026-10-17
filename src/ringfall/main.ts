@@ -3,7 +3,7 @@ import { Bot, SKILLS } from "./sim/bot";
 import { dist2d, groundAt } from "./sim/geom";
 import { terrainHeight } from "./sim/terrain";
 import { callLeft, freeKit, idleInput, newRun, type GameEvent, type Input, type Kit, type State } from "./sim/state";
-import { POIS, poiIndex, type PoiId, type RegionId } from "./sim/map";
+import { POIS, poiIndex, regionOf, type PoiId, type RegionId } from "./sim/map";
 import { settle, type Settlement } from "./meta/profile";
 import { loadProfile, saveProfile } from "./meta/storage";
 import { Hub } from "./view/hub";
@@ -278,6 +278,8 @@ function start(k: Kit, r: RegionId, seed: number, from?: PoiId) {
   world.reset();
   sound.reset();
   state = newRun(seed, kit, region, { depots: hub.profile.depots, seen: hub.profile.seen, from, routes: hub.profile.routes });
+  // The ground round where the raid starts is built before its first frame, and so is a drop's landing.
+  world.prebuild([state.player.pos, ...(state.phase === "drop" ? [regionOf(state.region).land] : [])]);
   acc = hitstop = slowmo = 0;
   running = true;
   paused = false;
@@ -362,7 +364,7 @@ declare global {
     ringfallDownAlly: () => void;
     ringfallChargeUlt: () => void;
     ringfallCamera: (x?: number, y?: number, z?: number, yaw?: number, pitch?: number) => void;
-    ringfallFrameCost: (frames: number) => { ms: number; calls: number; triangles: number; chunks: number; of: number };
+    ringfallFrameCost: (frames: number) => { ms: number; calls: number; triangles: number; chunks: number; built: number; of: number };
     ringfallTerrain: (x: number, z: number) => number;
     ringfallPlace: (x: number, z: number, yaw: number) => void;
   }
