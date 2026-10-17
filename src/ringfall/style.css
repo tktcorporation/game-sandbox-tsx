@@ -909,6 +909,14 @@ body.touch .mate-bars {
 .sens.vol input {
   width: 110px;
 }
+.sens.quality select {
+  font: inherit;
+  font-weight: 800;
+  color: var(--white);
+  background: var(--plate-strong);
+  border: 2px solid var(--muted);
+  padding: 2px 6px;
+}
 
 /* The sound check (?sfx): every cue as a button, on the right of the title screen. */
 #sfx-panel {
@@ -1589,7 +1597,8 @@ body.touch .keys,
 body.touch .sens {
   display: none;
 }
-body.touch .sens.vol {
+body.touch .sens.vol,
+body.touch .sens.quality {
   display: flex;
 }
 body.touch .touch-help {

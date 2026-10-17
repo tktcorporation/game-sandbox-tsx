@@ -17,7 +17,7 @@ import { Soundscape } from "./view/soundscape";
 import { setupSoundCheck } from "./view/soundcheck";
 import { Hud } from "./view/hud";
 import { World } from "./view/world";
-import { Governor, loadChoice, pickTier, QUALITY, type Level, type QualityChoice } from "./view/quality";
+import { Governor, loadChoice, pickTier, QUALITY, saveChoice, type Level, type QualityChoice } from "./view/quality";
 import { blockPageZoom, setupTouch } from "./touch";
 import "./style.css";
 
@@ -393,6 +393,20 @@ for (const id of ["vol", "vol2"]) {
   });
 }
 setupSoundCheck();
+// 画質: automatic follows the device and the governor; a tier pins it, only its resolution moving.
+// Antialiasing stays as the page loaded with it: it is fixed when the renderer is made.
+for (const id of ["quality", "quality2"]) {
+  const el = $(id) as HTMLSelectElement;
+  el.value = quality;
+  el.addEventListener("change", () => {
+    quality = el.value as QualityChoice;
+    saveChoice(quality);
+    ($("quality") as HTMLSelectElement).value = quality;
+    ($("quality2") as HTMLSelectElement).value = quality;
+    governor = new Governor(quality === "auto" ? deviceTier : quality, devicePixelRatio, quality !== "auto");
+    applyLevel(governor.level);
+  });
+}
 for (const id of ["sens", "sens2"]) {
   const el = $(id) as HTMLInputElement;
   el.addEventListener("input", () => {
