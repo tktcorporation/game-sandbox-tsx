@@ -499,11 +499,16 @@ export class Hud {
         else if (level === 1) cls = "sense";
         else if (revealed) cls = "reveal";
         // A mark sits only over a robot the player can see, and near: it tells how aware that
-        // robot is, never where an unseen one stands. The reveal's marks are the exception.
-        if (!cls || e.kind === "titan" || d > (cls === "reveal" ? REVEAL.range : MARK_RANGE)) continue;
+        // robot is, never where an unseen one stands. The reveal is the exception: while it lasts,
+        // every robot in its range shows through walls, with the reveal's mark when out of sight.
+        if (!cls || e.kind === "titan") continue;
+        if (cls !== "reveal") {
+          const head = { x: e.pos.x, y: e.pos.y + ENEMIES[e.kind].weakY, z: e.pos.z };
+          const inSight = d <= MARK_RANGE && los(eyePos(s), head);
+          if (!inSight && revealed) cls = "reveal";
+          else if (!inSight) continue;
+        }
         const top = cls === "reveal" ? ENEMIES[e.kind].weakY : ENEMIES[e.kind].weakY + 1.4;
-        const head = { x: e.pos.x, y: e.pos.y + ENEMIES[e.kind].weakY, z: e.pos.z };
-        if (cls !== "reveal" && !los(eyePos(s), head)) continue;
         const sp = view.project({ x: e.pos.x, y: e.pos.y + top, z: e.pos.z }, w, h);
         if (sp.behind || sp.x < 0 || sp.x > w || sp.y < 0 || sp.y > h) continue;
         seen.add(e.id);
