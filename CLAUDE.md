@@ -40,7 +40,7 @@ The trader's quests are data in `meta/quests.ts` (`QUESTS`, credited from a raid
 only with that POI's key; keys drop from the bins of the POI named by its `keyFrom` (`VAULT`).
 POIs have a stable `id` (`PoiId` in `map.ts`); saves, quests, `keyFrom` and `EXTRA_BINS` refer to a
 POI by it, never by its place in `POIS` (the run's state may index `POIS` internally). The profile
-is versioned (`Profile.v`, which is 8), and `parseProfile()` moves older saves forward.
+is versioned (`Profile.v`, which is 9), and `parseProfile()` moves older saves forward.
 Each POI has a depot on its road (`DEPOTS` in `map.ts`, run by `stepDepots()` in `world.ts`): walking
 up switches it on for good, its use key sends the bag home (it survives a wipe) or, with the bag empty,
 leaves the raid there; neither works while a robot fighting the player is within `DEPOT.safe`. The profile keeps the depots on (`Profile.depots`), from
@@ -49,6 +49,21 @@ A start from a depot carries a limited loadout: `loadoutCost()` prices stash wea
 (the lent kit and heals are free), `depotAllowance()` gives the depot's level and budget from the
 credits' worth sent through it (`Profile.depotSent`, added up in `settle()` from `State.sentVia`), and
 `takeKit(p, loadout, from)` refuses a loadout over it (`fitsStart()`); the numbers are in `DEPOT`.
+Some ways are blocked until a tool opens them for good: `ROUTES` in `map.ts` (a stable `RouteId`,
+the tool, the obstacle boxes `closed`, what stands once open `open`, and for a way through rock a
+`carve`, a trench cut into the terrain only while the route is open). The tools (`TOOLS` in
+`config.ts`) lie in the bins of one POI each, decided by `toolIn()` in `world.ts` from the raid's
+seed and the bin, never from `rand(s)`; they fill bag slots (`Player.tools`, `bagLoad()`), are taken
+with the use key (the bot passes `Input.leaveTools`), go home through a depot (`State.sentTools`) or
+the pouch, and `settle()` spends each one home on the first of its routes still closed
+(`Profile.routes`, `Settlement.opened`). `newRun(seed, kit, region, { routes })` plays in the world
+with those routes open: `routes.ts` keeps one world in place at a time (`useRoutes()`, called by
+`newRun()` and every `step()`), carving the terrain (`carveTerrain()`), swapping the routes' boxes in
+the collision grid (`setRouteBoxes()` in `geom.ts`) and dropping the bot's and the hunters' grids
+(`resetNav()`, `resetHunt()`); the view rebuilds the chunks a route touches when `worldKey()`
+changes. With every route closed the terrain, the map's boxes and the walkers' grids are the ones
+before routes existed, and the obstacles stand in cliffs and on a deck where path finding does not
+go (its grids and its sight checks, `los(a, b, true)`, leave them out).
 The hideout is the long-term goal: modules built level by level from specific valuables and
 credits taken from the stash (`build()` in `profile.ts`; levels, costs and prerequisites in
 `HIDEOUT`, effects in `HIDEOUT_EFFECT`, both in `config.ts`; `meta/hideout.ts` holds the pure
@@ -105,7 +120,9 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   authored points, patrol routes and the roads that are the only ways between areas (`KEPT_ROADS`,
   also pressed to their own floor). Tuning numbers are in `config.ts`. `npm run sim:ringfall` first
   checks that every authored point (entries, bins, loot, squad posts, patrols, landing spots) stands
-  on a floor and not inside a box, and that the pass and the railway bridge are walkable end to end.
+  on a floor and not inside a box, and that the pass and the railway bridge are walkable end to end;
+  `checkRoutes()` walks each route closed (the long way round) and open (straight through), with
+  the authored points checked again in the world with every route open.
 - `awareness.ts` decides who knows about the player: sight cones fill a detection meter, noise
   (shots, sprinting) sends squads to look, and at most `AWARE.maxSquads` squads fight at once.
   A fighting squad tracks the player only while a member sees them (`knownSpot()`), turns at `TURN`
