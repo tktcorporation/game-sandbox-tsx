@@ -56,11 +56,13 @@ export interface DeviceHints {
 
 /**
  * The tier a device starts on. Touch screens start no higher than medium: a phone's GPU drawing
- * its full pixel ratio with soft shadows is the cost that makes it stutter and heat up. Few cores,
- * little memory or a large screen to fill each take one step further down.
+ * its full pixel ratio with soft shadows is the cost that makes it stutter and heat up. Very few
+ * cores, little memory or a large screen to fill each take one step further down. The hints are
+ * coarse (some browsers report fewer cores than the device has, some no memory at all) and the
+ * governor never climbs above the tier it starts on, so only a clear sign starts a device lower.
  */
 export function pickTier(h: DeviceHints): Tier {
-  const weak = (h.cores !== undefined && h.cores <= 4) || (h.memory !== undefined && h.memory <= 3);
+  const weak = (h.cores !== undefined && h.cores <= 2) || (h.memory !== undefined && h.memory <= 3);
   if (h.coarse) return weak || h.pixels > 4_000_000 ? "low" : "medium";
   return (h.cores !== undefined && h.cores <= 2) || (h.memory !== undefined && h.memory <= 2) ? "medium" : "high";
 }
