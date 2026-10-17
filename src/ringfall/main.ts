@@ -235,8 +235,11 @@ let last = performance.now();
 /** When the last frame was drawn, and the real seconds since then the next draw catches up on. */
 let drawnAt = last;
 let drawDt = 0;
-/** Toggles each animation frame; on the governor's 30 fps rungs only every other one draws. */
-let odd = false;
+/**
+ * On the governor's 30 fps rungs a frame draws once a thirtieth of a second has nearly passed
+ * since the last: every other one at 60 Hz, every fourth at 120 Hz.
+ */
+const CAP_MS = 1000 / 30 - 4;
 function frame(now: number) {
   // The first frame's timestamp can predate `last` by the seconds the page took to load, and a
   // negative step would grow every fade in the view (the muzzle flash and its light) instead.
@@ -260,11 +263,10 @@ function frame(now: number) {
     }
     if (n === 6) acc = 0;
   }
-  odd = !odd;
   drawDt += dt;
   // Nothing is drawn while the page is hidden: some web views keep calling frames for a page in
   // the background, and drawing there only spends the battery.
-  const drawn = !(manual && quiet) && !(governor.level.cap30 && odd) && !document.hidden;
+  const drawn = !(manual && quiet) && !(governor.level.cap30 && now - drawnAt < CAP_MS) && !document.hidden;
   if (drawn) {
     world.render(state, drawDt);
     if (running) hud.frame(state, world, drawDt, dims.w, dims.h);
