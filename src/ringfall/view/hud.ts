@@ -3,7 +3,7 @@ import { itemName, rewardList } from "./hub";
 import { ALLY, AWARE, BAG, DEPOT, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, SCORE, TACTICAL, TOOL_KINDS, TOOLS, VALUABLES, WEAPONS, type Flank } from "../sim/config";
 import { eyePos, magSize } from "../sim/combat";
 import { dist2d, los } from "../sim/geom";
-import { DEPOTS, EXTRACTS, POIS, poiIndex, regionHere, regionOf, routeOf } from "../sim/map";
+import { DEPOTS, entryOf, EXTRACTS, POIS, poiIndex, regionHere, regionOf, routeOf, type EntryId } from "../sim/map";
 import { routeBefore } from "../sim/routes";
 import { bagLoad, depotBlocked, depotInReach, extractHere, extractReady, makeRoom, poiAt, roomForTool, searchTime, useTarget } from "../sim/world";
 import { callLeft, enemyHp, enemyShield, type GameEvent, type State, type Vec3 } from "../sim/state";
@@ -67,6 +67,8 @@ export class Hud {
 
   private map = new IslandMap($<HTMLCanvasElement>("map-canvas"));
   private mapOpen = false;
+  /** The ways in the profile knew when the raid began: one walked to that is not among them is news. */
+  private known: EntryId[] = [];
 
   /** Open or close the island map; it is redrawn every frame while open, and opens on the region the player is in. */
   toggleMap(force?: boolean) {
@@ -107,6 +109,12 @@ export class Hud {
     this.root.hidden = !on;
   }
 
+  /** The ways in the base offers, for the raid about to start: the HUD and the map tell the others apart. */
+  setKnown(known: EntryId[]) {
+    this.known = [...known];
+    this.map.known = this.known;
+  }
+
   banner(head: string, sub = "", good = false, time = 2.4) {
     $("banner-head").textContent = head;
     $("banner-sub").textContent = sub;
@@ -114,13 +122,13 @@ export class Hud {
     this.bannerT = time;
   }
 
-  toast(text: string, rarity: number) {
+  toast(text: string, rarity: number, ms = 2400) {
     const el = document.createElement("div");
     el.className = "toast";
     el.textContent = text;
     el.style.setProperty("--rc", RARITY_CSS[rarity]);
     $("toasts").appendChild(el);
-    setTimeout(() => el.remove(), 2400);
+    setTimeout(() => el.remove(), ms);
   }
 
   event(e: GameEvent, s: State) {
@@ -245,6 +253,10 @@ export class Hud {
         break;
       case "leapBlocked":
         this.toast("屋根の下では跳べない", 0);
+        break;
+      case "entryFound":
+        // Longer than other toasts: it says what to do for the find to count.
+        if (!this.known.includes(e.id)) this.toast(`この場所を覚えた：${entryOf(e.id).name}（生きて帰れば次からここから入れる）`, 1, 5000);
         break;
       case "depotOn":
         this.toast(`中継ボックスを起動した：${POIS[poiIndex(e.poi)].name}`, 1);
@@ -761,9 +773,13 @@ export class Hud {
       return [...counted].map(([n, c]) => `<span>${n}${c > 1 ? ` × ${c}` : ""}</span>`).join("");
     };
     const quests = settled?.quests ?? [];
+    // A record of a raid kept from before ways in were learned has walked to none.
+    const forgot = (s.found ?? []).filter((id) => !this.known.includes(id));
     $("home").innerHTML = (quests.length ? `<h3>済んだ依頼</h3><p>${quests.map((q) => `<span>${q.title}（${q.reward.cash} クレジット${rewardList(q).map(([i, n]) => `・${itemName(i)}${n > 1 ? ` × ${n}` : ""}`).join("")}）</span>`).join("")}</p>` : "") + (settled
       ? (sent.length ? `<h3>中継ボックスから倉庫へ送った物</h3><p>${count(sent)}</p>` : "") +
         `<h3>${lost ? "ポーチに残った物" : "持ち帰った物"}</h3><p>${home.length ? count(home) : "<span>なし</span>"}</p>` +
+        (settled.learned.length ? `<h3>次から選べる入口</h3><p>${settled.learned.map((id) => `<span>${entryOf(id).name}（${regionOf(entryOf(id).region).name}）</span>`).join("")}</p>` : "") +
+        (lost && forgot.length ? `<p class="sold">生きて帰れなかったので、見つけた入口（${forgot.map((id) => entryOf(id).name).join("・")}）は覚えられなかった</p>` : "") +
         (settled.opened.length ? `<h3>開いた道</h3><p>${settled.opened.map((id) => `<span>${routeOf(id).name}（${TOOLS[routeOf(id).tool].label}を使った）</span>`).join("")}</p>` : "") +
         (settled.sold.length ? `<p class="sold">倉庫に入りきらない ${settled.sold.length} 点は ${settled.soldFor} クレジットで売った</p>` : "")
       : "");
