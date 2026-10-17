@@ -98,8 +98,9 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   per 1/60 s tick. Aim assist (slowdown, pull, the hit cone) lives here, so bots and people get the
   same help. Every solid is an axis-aligned box spanning `y0..h` in `map.ts` (floors, roofs and bridges
   float); build structures with its `building()` (one storey), `tower()` (several storeys with stairs
-  inside), `bridge()` and `stairs()` helpers, whose risers stay under the step-up height, and the
-  larger pieces made of them: `hall()` (a shed with roller doors, mezzanines and columns),
+  inside, at both ends with `twin`), `bridge()` and `stairs()` helpers, whose risers stay under the
+  step-up height, `shell()` (four walls with holes for doors and windows, which must not overlap),
+  and the larger pieces made of them: `hall()` (a shed with roller doors, mezzanines and columns),
   `catwalk()`, `gantry()`, `rowHouses()`, `compound()` (a walled yard with gates), `tank()` and
   `lattice()` (an open steel tower with stairs); `lift()`
   raises a structure onto a deck and `paint()` repaints its walls (a ship's hull as steel plate).

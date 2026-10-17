@@ -345,7 +345,10 @@ function hall(cx: number, cz: number, w: number, d: number, H: number, o: HallOp
   // A band of windows round the top, broken by piers so it reads as a row of panes.
   for (const side of o.windows ?? []) {
     const len = side === "n" || side === "s" ? w : d;
-    for (let t = -len / 2 + 3; t <= len / 2 - 3; t += 4) holes.push({ side, at: t, w: 2.4, sill: H - 2.6, head: H - 1.2 });
+    // Panes stop short of a door on the same side: a pane's sill is wall from the floor up.
+    const doors = holes.filter((q) => q.side === side);
+    const clear = (t: number) => doors.every((q) => Math.abs(t - (q.at ?? 0)) >= q.w / 2 + 1.2 + 0.3);
+    for (let t = -len / 2 + 3; t <= len / 2 - 3; t += 4) if (clear(t)) holes.push({ side, at: t, w: 2.4, sill: H - 2.6, head: H - 1.2 });
   }
   const kind: BoxKind = o.steel === undefined ? "wall" : "steel";
   const out = shell(cx, cz, w, d, 0, H - 0.3, holes, kind, o.steel ?? 0);
@@ -1446,7 +1449,7 @@ function wreck(): Box[] {
   for (const x of [-34, -15, 4]) out.push(box(x, 0, 0.6, 0.6, SHIP_DECK + 12, "steel", 2, SHIP_DECK), box(x, 0, 0.4, 7, SHIP_DECK + 10.4, "steel", 2, SHIP_DECK + 10));
   // In the holds: containers and crates that came loose.
   out.push(box(-31, -3, 6.2, 2.5, 2.6, "container", 0), box(21.5, -3.5, 2.5, 6.2, 2.6, "container", 1), box(-19, 3, 1.2, 1.2, 0.9, "crate"), box(-20.2, 3, 1.2, 1.2, 1.8, "crate"), box(5, -5, 1.2, 1.2, 0.9, "crate"));
-  out.push(box(-45, 3.5, 6.2, 2.5, 2.6, "container", 2), box(-45, 3.5, 6.2, 2.5, 5.2, "container", 0, 2.6), box(44, -4, 2.5, 6.2, 2.6, "container", 2));
+  out.push(box(-45, 3.5, 6.2, 2.5, 2.6, "container", 2), box(44, -4, 2.5, 6.2, 2.6, "container", 2));
   // A container fallen onto the deck, and the plates torn out round the breach.
   out.push(box(-36, 4.6, 6.2, 2.5, SHIP_DECK + 2.6, "container", 2, SHIP_DECK));
   out.push(box(3.8, 10, 2, 1.4, 1.0, "rock", 1), box(-4.2, 10.6, 1.6, 1.2, 0.7, "rock"));
@@ -2215,7 +2218,7 @@ export const ROUTES: Route[] = (() => {
       id: "gangway",
       name: "難破船の舷梯",
       tool: "cutter",
-      note: "難破船の北側から甲板へ直に上がる。船尾の階段を通らない",
+      note: "難破船の北側から甲板へ直に上がる。船内の階段を通らない",
       path: [{ x: gx - 15.5, z: gz }, { x: gx + 1.2, z: wz - 5 }],
       at: [{ x: gx, y: LEVEL.seabed, z: gz - 1.4 }],
       // Hauled aboard and stood up against the deck's rail, over the place it lands, chained there.
