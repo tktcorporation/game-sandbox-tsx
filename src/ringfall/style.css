@@ -1515,7 +1515,8 @@ body.touch .mate-bars {
 /* How to open a locked region: a line of its own over the start choice. */
 .hub-lock {
   flex-basis: 100%;
-  margin: 0;
+  /* Close to the start choice it explains: the footer's row gap would push the lists up. */
+  margin: 0 0 -8px;
   font-size: 13px;
   color: var(--muted);
 }
