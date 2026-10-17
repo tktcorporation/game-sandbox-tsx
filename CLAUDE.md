@@ -186,17 +186,32 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
 - `src/ringfall/view/` renders and never changes rules: `world.ts` (three.js), `hud.ts` (DOM),
   and synthesized sound. `world.ts` cuts the ground and everything built into `CHUNK`-metre
   chunks, each merged into a mesh or two with its colours in the vertices, and skips chunks past
-  the fog (`FOG_FAR`) and robots, bins and loot past `THINGS_FAR`, so the draw calls stay bounded
+  the fog and robots, bins and loot past the tier's `thingsFar`, so the draw calls stay bounded
   however large the world grows. Chunks are built only near the camera (`streamChunks()`: at once
-  inside the fog, a few a frame out to `STREAM_FAR`) and let go past `DROP_AT` times that, and
-  `prebuild()` builds round where a raid starts before its first frame. `audio.ts` is the sound engine (buses, reverb, voice cap,
+  inside the fog, nearest first for the tier's `streamMs` a frame out to a chunk past it) and let
+  go past `DROP_AT` times that, and `prebuild()` builds round where a raid starts before its first
+  frame. How much is drawn is a quality tier (`quality.ts`: `QUALITY` holds high / medium / low,
+  each a pixel-ratio range, antialiasing, the shadow map's size, filtering, reach and redraw rate
+  (`shadowHz`; medium and low redraw it at that rate or when the camera has moved), the fog's
+  distances, `thingsFar` and `streamMs`). `pickTier()` starts a device on one from its pointer,
+  cores, memory and screen; `?quality=` or the settings' 画質 overrides it, remembered in
+  localStorage. While a raid runs, `Governor` walks a ladder of levels (the pixel ratio stepped
+  down within a tier, then the next tier, then low drawn at 30 fps) by the smoothed interval
+  between drawn frames: down after 2 s over the budget, up after 12 s within it, a level that
+  failed blocked for a time that doubles each failure, so it settles instead of swinging; a
+  chosen tier keeps its tier and moves only its resolution. It never runs under a browser driver
+  (`navigator.webdriver`) or `advanceTime`, so the shots gate draws the same thing on any machine.
+  Nothing is drawn while the page is hidden. None of it changes what robots see (`SIGHT` is far
+  inside every tier's fog). `audio.ts` is the sound engine (buses, reverb, voice cap,
   positional voices) and runs on any `BaseAudioContext`; `sfx.ts` holds every cue; `soundscape.ts`
   puts the listener at the camera, tests walls with a few `los()` rays a frame, plays nearby robots'
   steps, the wind, the extraction craft and the ambience, and turns `state.events` into cues.
   `soundcheck.ts` is the `?sfx` panel; `npm run sfx:ringfall` renders every cue offline and fails on
   silent, NaN or clipping ones. `src/ringfall/main.ts` wires input and the fixed-step loop, and
-  exposes `window.render_game_to_text()`, `window.advanceTime(ms)`, `window.ringfallBot(skill)` and
-  `window.ringfallFrameCost(frames)` (draw calls, triangles and time per frame, for the shots gate).
+  exposes `window.render_game_to_text()`, `window.advanceTime(ms)`, `window.ringfallBot(skill)`,
+  `window.ringfallFrameCost(frames)` (draw calls, triangles, time per frame with and without
+  waiting for the GPU, the tier and the pixel ratio, for the shots gate) and
+  `window.ringfallQuality(tier)` (draw at a tier; the gate logs the phone at each).
   `window.ringfallStep(ms)` is `advanceTime` without drawing (drawing in software is most of a
   step's cost) and `window.ringfallDraw()` draws the scene as it stands; the shots gate steps
   undrawn while it only waits on the state, and draws before each screenshot and every few steps.
