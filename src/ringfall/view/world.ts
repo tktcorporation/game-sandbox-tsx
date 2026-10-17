@@ -20,12 +20,11 @@ const HORIZON = 235;
 /** Side of the square chunks the world's ground and buildings are drawn and culled in. */
 const CHUNK = 64;
 /**
- * Chunks are built while within a chunk past the fog's end (the tier's `fogFar`), a few a frame
- * (`STREAM_BUDGET`) nearest first, so one is ready before it comes out of the fog; one inside the
- * fog that is not yet built is built at once. Past `DROP_AT` times that distance a chunk is let
- * go: the memory held follows the ground round the camera, not the world's size.
+ * Chunks are built while within a chunk past the fog's end (the tier's `fogFar`), nearest first
+ * for up to the tier's `streamMs` a frame, so one is ready before it comes out of the fog; one
+ * inside the fog that is not yet built is built at once. Past `DROP_AT` times that distance a
+ * chunk is let go: the memory held follows the ground round the camera, not the world's size.
  */
-const STREAM_BUDGET = 2;
 const DROP_AT = 1.3;
 /** Metres the camera may travel before a shadow map redrawn at the tier's rate is redrawn at once. */
 const SHADOW_MOVE = 4;
@@ -273,6 +272,8 @@ export class World {
   /** When (`time`) and from where the shadow map was last redrawn, on the tiers that do not redraw it every frame. */
   private shadowAt = -Infinity;
   private shadowFrom = new THREE.Vector3();
+  /** Chunks built so far and the milliseconds they took, for `stats()`. */
+  private filled = { n: 0, ms: 0 };
 
   /** `tier` and `ratio`: what the page starts drawing at; the tier's antialiasing is fixed from then on. */
   constructor(container: HTMLElement, opts: { tier: Tier; ratio: number }) {
@@ -468,6 +469,7 @@ export class World {
 
   /** (Re)builds a chunk's ground and merged statics for the world now in place, with the routes' boxes in it. */
   private fillChunk(c: Chunk) {
+    const t0 = performance.now();
     this.emptyChunk(c);
     c.built = true;
     c.ground = this.groundMesh(
@@ -495,6 +497,8 @@ export class World {
     // The meshes built for the merge are let go; only their geometry's copies in the merge stay.
     root.traverse((m) => m instanceof THREE.Mesh && m.geometry !== this.boulderGeo && m.geometry.dispose());
     if (c.merged) c.group.add(c.merged);
+    this.filled.n++;
+    this.filled.ms += performance.now() - t0;
   }
 
   /** Distance on the ground from (x, z) to a chunk's square. */
@@ -504,7 +508,7 @@ export class World {
 
   /**
    * Builds the chunks round (x, z) that are not built yet: those inside the fog at once, so
-   * nothing drawn is ever missing, and those out to `streamFar()` a few a frame; lets go those past
+   * nothing drawn is ever missing, and those out to `streamFar()` within the tier's time; lets go those past
    * DROP_AT times that.
    */
   private streamChunks(x: number, z: number) {
@@ -519,7 +523,11 @@ export class World {
       else if (d < far) waiting.push({ c, d });
     }
     waiting.sort((a, b) => a.d - b.d);
-    for (const { c } of waiting.slice(0, STREAM_BUDGET)) this.fillChunk(c);
+    const t0 = performance.now();
+    for (const { c } of waiting) {
+      this.fillChunk(c);
+      if (performance.now() - t0 >= this.q.streamMs) break;
+    }
   }
 
   /**
@@ -1266,7 +1274,15 @@ export class World {
   /** What the last frame cost: draw calls and triangles, and how many chunks were drawn. */
   stats() {
     const r = this.renderer.info.render;
-    return { calls: r.calls, triangles: r.triangles, chunks: this.chunks.filter((c) => c.group.visible).length, built: this.chunks.filter((c) => c.built).length, of: this.chunks.length };
+    return {
+      calls: r.calls,
+      triangles: r.triangles,
+      chunks: this.chunks.filter((c) => c.group.visible).length,
+      built: this.chunks.filter((c) => c.built).length,
+      of: this.chunks.length,
+      /** Average milliseconds a chunk took to build, over every build so far. */
+      fillMs: this.filled.n ? +(this.filled.ms / this.filled.n).toFixed(1) : 0,
+    };
   }
 
   /** Drop everything that belongs to a run, before starting another. */
