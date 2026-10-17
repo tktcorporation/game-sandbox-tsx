@@ -1,5 +1,6 @@
-import { DEPOT, HEALS as HEAL_SPECS, HIDEOUT, META, VALUABLES, type HealKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
-import { depotIndex, DEPOTS, POIS, poiIndex, REGIONS, type PoiId, type RegionId } from "../sim/map";
+import { DEPOT, HEALS as HEAL_SPECS, HIDEOUT, META, TOOLS, VALUABLES, type HealKind, type ModuleId, type Rarity, type ToolKind, type ValuableKind, type WeaponKind } from "../sim/config";
+import { depotIndex, DEPOTS, POIS, poiIndex, REGIONS, ROUTES, type PoiId, type RegionId, type RouteId } from "../sim/map";
+import { openRoutes } from "../sim/routes";
 import { encodeSeen, type Kit, type State } from "../sim/state";
 import { craftDone, emptyHideout, infirmaryHeals, MODULES, nextLevel, onSale, pouchSlots, shopRarity, stashCap, stillNeeded, unmet, type Hideout } from "./hideout";
 import { built, creditRaid, emptyLog, need, offered, type Quest, type QuestLog } from "./quests";
@@ -10,7 +11,8 @@ export type Item =
   | { t: "armor"; tier: Rarity }
   | { t: "heal"; kind: HealKind }
   | { t: "valuable"; kind: ValuableKind }
-  | { t: "key"; poi: PoiId };
+  | { t: "key"; poi: PoiId }
+  | { t: "tool"; kind: ToolKind };
 
 /** The playthrough's record when the escape craft was finished, for the ending. */
 export interface Escape {
@@ -22,7 +24,7 @@ export interface Escape {
 
 /** What persists between raids. */
 export interface Profile {
-  v: 8;
+  v: 9;
   cash: number;
   stash: Item[];
   raids: number;
@@ -43,6 +45,8 @@ export interface Profile {
   depotSent: Partial<Record<PoiId, number>>;
   /** The explored map (`encodeSeen()`), grown by every raid. */
   seen: string;
+  /** The routes opened for good (`ROUTES` order): every raid's world has them open. */
+  routes: RouteId[];
 }
 
 export const HEALS: HealKind[] = ["cell", "battery", "syringe", "medkit"];
@@ -50,7 +54,7 @@ export const HEALS: HealKind[] = ["cell", "battery", "syringe", "medkit"];
 export function newProfile(seed = 1): Profile {
   const stash: Item[] = META.start.weapons.map((w) => ({ t: "weapon", ...w }));
   for (const k of HEALS) for (let i = 0; i < META.start.heals[k]; i++) stash.push({ t: "heal", kind: k });
-  return { v: 8, cash: META.start.cash, stash, raids: 0, extracted: 0, time: 0, quests: emptyLog(), region: "reservoir", hideout: emptyHideout(), escaped: null, seed: seed & 0xffff, depots: [], depotSent: {}, seen: "" };
+  return { v: 9, cash: META.start.cash, stash, raids: 0, extracted: 0, time: 0, quests: emptyLog(), region: "reservoir", hideout: emptyHideout(), escaped: null, seed: seed & 0xffff, depots: [], depotSent: {}, seen: "", routes: [] };
 }
 
 /** The seed of the raid after one started from `seed`. */
@@ -69,14 +73,16 @@ export function price(i: Item): number {
       return VALUABLES[i.kind].value;
     case "key":
       return META.key;
+    case "tool":
+      return TOOLS[i.kind].value;
   }
 }
 
 /** What the trader charges for an item: common valuables cost more than they sell for. */
 export const buyPrice = (i: Item) => (i.t === "valuable" ? Math.round(price(i) * META.materials.markup) : price(i));
 
-/** What the trader pays for an item: valuables at full value, gear at a share of its price. */
-export const sellPrice = (i: Item) => (i.t === "valuable" ? price(i) : Math.round(price(i) * META.sellShare));
+/** What the trader pays for an item: valuables and spare tools at full value, gear at a share of its price. */
+export const sellPrice = (i: Item) => (i.t === "valuable" || i.t === "tool" ? price(i) : Math.round(price(i) * META.sellShare));
 
 /** Key names, for lists and the HUD. */
 export const keyName = (poi: PoiId) => `${POIS[poiIndex(poi)].name}の鍵`;
@@ -251,6 +257,21 @@ export function takeKit(p: Profile, l: Loadout, from: PoiId | null = null): { pr
   return { profile: { ...p, stash: p.stash.filter((_, n) => !take.has(n)) }, kit };
 }
 
+/**
+ * What the pouch keeps on a wipe: the tools first, in the order taken, while they fit (they are
+ * what opens a route), then the most valuable valuables in the slots left.
+ */
+export function pouchKeep(haul: ValuableKind[], tools: ToolKind[], slots: number = META.pouch): { haul: ValuableKind[]; tools: ToolKind[] } {
+  const kept: ToolKind[] = [];
+  let left = slots;
+  for (const k of tools)
+    if (TOOLS[k].size <= left) {
+      kept.push(k);
+      left -= TOOLS[k].size;
+    }
+  return { haul: pouch(haul, left), tools: kept };
+}
+
 /** The most valuable valuables that fit in `slots` bag slots. */
 export function pouch(haul: ValuableKind[], slots: number = META.pouch): ValuableKind[] {
   // Knapsack over the few slots: best[c] is the best pick using at most c slots.
@@ -267,10 +288,14 @@ export function pouch(haul: ValuableKind[], slots: number = META.pouch): Valuabl
   return best[slots].pick.map((n) => haul[n]);
 }
 
-/** What a raid brings home, the quests it finished, and what the stash had no room for (sold on the spot). */
+/**
+ * What a raid brings home, the quests it finished, the routes its tools opened (the tools spent
+ * on them are in `home` but not in the stash), and what the stash had no room for (sold on the spot).
+ */
 export interface Settlement {
   profile: Profile;
   home: Item[];
+  opened: RouteId[];
   quests: Quest[];
   sold: Item[];
   soldFor: number;
@@ -286,11 +311,12 @@ export function wanted(p: Profile): Record<ValuableKind, number> {
 /**
  * The order in which things claim stash room: keys, then valuables the hideout still
  * wants, then gear (the dearest first, since the better of it is found only on the
- * island), then the other valuables, which are worth the same sold now or later.
+ * island), then the other valuables and spare tools, which are worth the same sold now
+ * or later (a tool that opens a route is spent before anything is stored).
  */
 export function keepOrder(items: Item[], want: Record<ValuableKind, number>): Item[] {
   const left = { ...want };
-  const rankOf = (i: Item) => (i.t === "key" ? 0 : i.t !== "valuable" ? 2 : left[i.kind]-- > 0 ? 1 : 3);
+  const rankOf = (i: Item) => (i.t === "key" ? 0 : i.t === "tool" ? 3 : i.t !== "valuable" ? 2 : left[i.kind]-- > 0 ? 1 : 3);
   // Dearer valuables claim what the hideout wants first.
   const ranked = [...items].sort((a, b) => price(b) - price(a)).map((i) => ({ i, r: rankOf(i) }));
   return ranked.sort((a, b) => a.r - b.r || price(b.i) - price(a.i)).map((x) => x.i);
@@ -317,27 +343,42 @@ function pay(p: Profile, q: Quest): { profile: Profile; sold: Item[]; soldFor: n
  */
 export function settle(p: Profile, s: State): Settlement {
   const pl = s.player;
-  const home: Item[] = s.sent.map((v): Item => ({ t: "valuable", kind: v }));
+  // A record of a raid kept from before tools were carried has none.
+  const tools = pl.tools ?? [];
+  const home: Item[] = [...s.sent.map((v): Item => ({ t: "valuable", kind: v })), ...(s.sentTools ?? []).map((k): Item => ({ t: "tool", kind: k }))];
   if (s.outcome === "extracted") {
     for (const w of pl.weapons) if (w && !w.loan) home.push({ t: "weapon", kind: w.kind, rarity: w.rarity });
     if (pl.armor > 0) home.push({ t: "armor", tier: pl.armor });
     for (const k of HEALS) for (let i = Math.max(0, pl.heals[k] - pl.lentHeals[k]); i > 0; i--) home.push({ t: "heal", kind: k });
     for (const v of pl.haul) home.push({ t: "valuable", kind: v });
     for (const poi of pl.keys) home.push({ t: "key", poi: POIS[poi].id });
+    for (const k of tools) home.push({ t: "tool", kind: k });
   } else {
-    for (const v of pouch(pl.haul, pouchSlots(p.hideout))) home.push({ t: "valuable", kind: v });
+    const kept = pouchKeep(pl.haul, tools, pouchSlots(p.hideout));
+    for (const v of kept.haul) home.push({ t: "valuable", kind: v });
+    for (const k of kept.tools) home.push({ t: "tool", kind: k });
+  }
+  // Each tool home opens the first of its routes still closed, and is spent on it.
+  const opened: RouteId[] = [];
+  const spent = new Set<Item>();
+  for (const i of home) {
+    if (i.t !== "tool") continue;
+    const r = ROUTES.find((o) => o.tool === i.kind && !p.routes.includes(o.id) && !opened.includes(o.id));
+    if (!r) continue;
+    opened.push(r.id);
+    spent.add(i);
   }
   // What came home and what the quests pay claim stash room together, in one `keepOrder()`.
   const { log, finished } = creditRaid(p.quests, s);
   const rewards = finished.flatMap((q) => q.reward.items.map((i): Item => ({ ...i })));
   const cash = finished.reduce((n, q) => n + q.reward.cash, 0);
-  const { profile, sold, soldFor } = store({ ...p, cash: p.cash + cash }, [...home, ...rewards]);
+  const { profile, sold, soldFor } = store({ ...p, cash: p.cash + cash, routes: openRoutes([...p.routes, ...opened]) }, [...home.filter((i) => !spent.has(i)), ...rewards]);
   const depots = DEPOTS.map((d) => d.poi).filter((id, i) => p.depots.includes(id) || s.depots[i]);
   const depotSent = Object.fromEntries(depots.map((id) => [id, (p.depotSent[id] ?? 0) + (s.sentVia[depotIndex(id)] ?? 0)]));
   const next = { ...profile, quests: log, raids: p.raids + 1, extracted: p.extracted + (s.outcome === "extracted" ? 1 : 0), time: p.time + s.time, seed: nextSeed(p.seed), depots, depotSent, seen: encodeSeen(s.seen) };
   // Quests the raid opened may ask for a hideout level already built.
   const claimed = claimBuilt(next);
-  return { profile: claimed.profile, home, quests: [...finished, ...claimed.quests], sold: [...sold, ...claimed.sold], soldFor: soldFor + claimed.soldFor };
+  return { profile: claimed.profile, home, opened, quests: [...finished, ...claimed.quests], sold: [...sold, ...claimed.sold], soldFor: soldFor + claimed.soldFor };
 }
 
 /** Finishes and pays every offered build quest the hideout already meets, and those they open. */
@@ -439,12 +480,13 @@ const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
  * v4 drop into the reservoir; profiles before v5 start with an empty hideout; profiles before
  * v6 have no depot on and nothing explored. A v6 profile's explored map was drawn over the
  * world before its open ground and wider bounds, so it is dropped (its depots stay). Profiles
- * before v8 have sent nothing through their depots: each one on starts at level 0.
+ * before v8 have sent nothing through their depots: each one on starts at level 0. Profiles
+ * before v9 have every route closed.
  */
 export function parseProfile(raw: unknown, seed = 1): Profile | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (![1, 2, 3, 4, 5, 6, 7, 8].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
+  if (![1, 2, 3, 4, 5, 6, 7, 8, 9].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
   const old = o.v === 1 || o.v === 2;
   const migrate = (i: unknown): unknown => {
     if (!old || !i || typeof i !== "object" || (i as Record<string, unknown>).t !== "key") return i;
@@ -459,6 +501,7 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     if (x.t === "heal") return HEALS.includes(x.kind as HealKind);
     if (x.t === "valuable") return typeof x.kind === "string" && x.kind in VALUABLES;
     if (x.t === "key") return typeof x.poi === "string" && poiIndex(x.poi as PoiId) >= 0;
+    if (x.t === "tool") return typeof x.kind === "string" && x.kind in TOOLS;
     return false;
   };
   const q = (o.quests ?? {}) as Record<string, unknown>;
@@ -471,10 +514,10 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   const escaped = craftDone(hideout) ? { raids: Number(e?.raids) || 0, extracted: Number(e?.extracted) || 0, time: Number(e?.time) || 0 } : null;
   const num = (x: unknown) => (typeof x === "number" && x >= 0 ? x : 0);
   const depots = Array.isArray(o.depots) ? [...new Set(o.depots.filter((d): d is PoiId => typeof d === "string" && poiIndex(d as PoiId) >= 0))] : [];
-  const ds = (o.v === 8 && o.depotSent && typeof o.depotSent === "object" ? o.depotSent : {}) as Record<string, unknown>;
+  const ds = ((o.v === 8 || o.v === 9) && o.depotSent && typeof o.depotSent === "object" ? o.depotSent : {}) as Record<string, unknown>;
   const depotSent = Object.fromEntries(depots.map((d) => [d, num(ds[d])]));
   return {
-    v: 8,
+    v: 9,
     cash: Math.max(0, Math.floor(o.cash)),
     stash: o.stash.map(migrate).filter(ok).slice(0, stashCap(hideout)),
     raids: num(o.raids),
@@ -487,6 +530,7 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     seed: Number.isInteger(o.seed) ? (o.seed as number) & 0xffff : seed & 0xffff,
     depots,
     depotSent,
-    seen: (o.v === 7 || o.v === 8) && typeof o.seen === "string" && /^[0-9a-f]*$/.test(o.seen) ? o.seen : "",
+    seen: (o.v === 7 || o.v === 8 || o.v === 9) && typeof o.seen === "string" && /^[0-9a-f]*$/.test(o.seen) ? o.seen : "",
+    routes: o.v === 9 && Array.isArray(o.routes) ? openRoutes(o.routes.filter((r): r is string => typeof r === "string")) : [],
   };
 }

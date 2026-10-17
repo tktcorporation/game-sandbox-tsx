@@ -1,10 +1,11 @@
 import type { Settlement } from "../meta/profile";
 import { itemName, rewardList } from "./hub";
-import { ALLY, AWARE, BAG, DEPOT, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, SCORE, TACTICAL, VALUABLES, WEAPONS, type Flank } from "../sim/config";
+import { ALLY, AWARE, BAG, DEPOT, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, SCORE, TACTICAL, TOOL_KINDS, TOOLS, VALUABLES, WEAPONS, type Flank } from "../sim/config";
 import { magSize } from "../sim/combat";
 import { dist2d } from "../sim/geom";
-import { DEPOTS, EXTRACTS, POIS, poiIndex, regionHere, regionOf } from "../sim/map";
-import { bagUsed, depotBlocked, depotInReach, extractHere, extractReady, makeRoom, poiAt, searchTime, useTarget } from "../sim/world";
+import { DEPOTS, EXTRACTS, POIS, poiIndex, regionHere, regionOf, routeOf } from "../sim/map";
+import { routeBefore } from "../sim/routes";
+import { bagLoad, depotBlocked, depotInReach, extractHere, extractReady, makeRoom, poiAt, roomForTool, searchTime, useTarget } from "../sim/world";
 import { callLeft, enemyHp, enemyShield, type GameEvent, type State, type Vec3 } from "../sim/state";
 import { haulValue, rank } from "../sim/results";
 import { pickHeal } from "../sim/player";
@@ -266,7 +267,7 @@ export class Hud {
     else text = "探索して脱出せよ";
     $("obj-text").textContent = text;
     $("obj-count").textContent = s.phase === "drop" ? "" : `回収 ${haulValue(s)}`;
-    $("obj-bag").textContent = s.phase === "drop" ? "" : `バッグ ${bagUsed(p.haul)}/${BAG.slots}`;
+    $("obj-bag").textContent = s.phase === "drop" ? "" : `バッグ ${bagLoad(p)}/${BAG.slots}`;
     const raid = s.phase === "play" ? `${clock(s.time - s.landedAt)}` : "";
     const next = s.phase !== "play" || s.reinforceT >= 60 ? "" : s.reinforceT > 0 ? `　増援まで ${Math.ceil(s.reinforceT)} 秒` : "　増援が来る";
     $("obj-raid").textContent = raid + next;
@@ -661,8 +662,19 @@ export class Hud {
       // At a depot that is on, which useTarget passes over while a squad is fighting: say why.
       if (depotBlocked(s) && depotInReach(s) >= 0) return "中継ボックス：戦闘中は使えない";
       // Standing on a valuable that will not go in, and nothing in the bag is worth less.
-      const left = s.loot.find((l) => l.kind === "valuable" && l.valuable && l.age >= 0.4 && dist2d(l.pos, p.pos) < PLAYER.pickupRange && Math.abs(l.pos.y - p.pos.y) < 2);
-      return left?.valuable ? `バッグがいっぱい：${VALUABLES[left.valuable].label}は入らない` : "";
+      const left = s.loot.find((l) => (l.kind === "valuable" || l.kind === "tool") && l.age >= 0.4 && dist2d(l.pos, p.pos) < PLAYER.pickupRange && Math.abs(l.pos.y - p.pos.y) < 2);
+      if (left?.valuable) return `バッグがいっぱい：${VALUABLES[left.valuable].label}は入らない`;
+      if (left?.tool) return `バッグがいっぱい：${TOOLS[left.tool].label}は入らない`;
+      // Before a closed route's obstacle: which tool opens it.
+      const r = routeBefore(p.pos, s.routes);
+      if (!r) return "";
+      const tool = TOOLS[r.tool].label;
+      return p.tools.includes(r.tool) ? `${r.name}：${tool}を持ち帰れば、次のレイドから通れる` : `${r.name}：${tool}があれば開く`;
+    }
+    if (t.kind === "tool") {
+      const k = t.loot.tool!;
+      const out = (roomForTool(p, k) ?? []).map((i) => VALUABLES[p.haul[i]].label);
+      return `${key("E")}<span class="r" style="color:${RARITY_CSS[3]}">${TOOLS[k].label}</span>を持つ（${TOOLS[k].size} 枠${out.length ? `・${out.join("・")}を捨てる` : ""}）`;
     }
     if (t.kind === "ally") return s.ally.helped > 0 ? `${ALLY.name}を起こしている…（撃つ・離れると中断）` : `${key("E")}${ALLY.name}を起こす`;
     if (t.kind === "bin") {
@@ -675,14 +687,14 @@ export class Hud {
     }
     if (t.kind === "swap") {
       const v = t.loot.valuable!;
-      const out = (makeRoom(p.haul, v) ?? []).map((i) => VALUABLES[p.haul[i]].label);
+      const out = (makeRoom(p.haul, v, p.tools) ?? []).map((i) => VALUABLES[p.haul[i]].label);
       return `${key("E")}${VALUABLES[v].label}と入れ替える（${out.join("・")}を捨てる）`;
     }
     if (t.kind === "care") return `${key("E")}補給ポッドを開ける`;
     if (t.kind === "depot") {
-      if (!p.haul.length) return `${key("E")}ここで切り上げる（${DEPOT.leave} 秒そばに立つ）`;
+      if (!p.haul.length && !p.tools.length) return `${key("E")}ここで切り上げる（${DEPOT.leave} 秒そばに立つ）`;
       const value = p.haul.reduce((n, k) => n + VALUABLES[k].value, 0);
-      return `${key("E")}倉庫へ送る（${p.haul.length} 点・${value}）`;
+      return `${key("E")}倉庫へ送る（${p.haul.length + p.tools.length} 点・${value}）`;
     }
     if (t.kind === "armor") return `${key("E")}<span class="r" style="color:${RARITY_CSS[t.loot.rarity]}">アーマー Lv${t.loot.rarity}</span>に着替える（Lv${p.armor} を置く）`;
     const wl = t.loot;
@@ -713,7 +725,10 @@ export class Hud {
       .join("");
     const lost = s.outcome !== "extracted";
     const sentValue = s.sent.reduce((n, k) => n + VALUABLES[k].value, 0);
-    const haul = (Object.keys(VALUABLES) as (keyof typeof VALUABLES)[]).map((k) => [VALUABLES[k].label, s.player.haul.filter((h) => h === k).length] as const).filter(([, n]) => n > 0);
+    const haul = [
+      ...(Object.keys(VALUABLES) as (keyof typeof VALUABLES)[]).map((k) => [VALUABLES[k].label, s.player.haul.filter((h) => h === k).length] as const),
+      ...TOOL_KINDS.map((k) => [TOOLS[k].label, s.player.tools.filter((t) => t === k).length] as const),
+    ].filter(([, n]) => n > 0);
     $("pois").innerHTML = [
       // The POIs of the region dropped into, and any visited in the other.
       ...POIS.map((p, i) => ({ p, i }))
@@ -727,8 +742,8 @@ export class Hud {
     ].join("");
     // settle() lists what was sent from a depot first in `home`; it is shown on a line of its own.
     const all = settled?.home ?? [];
-    const sent = all.slice(0, s.sent.length);
-    const home = all.slice(s.sent.length);
+    const sent = all.slice(0, s.sent.length + s.sentTools.length);
+    const home = all.slice(s.sent.length + s.sentTools.length);
     const count = (items: typeof all) => {
       const counted = new Map<string, number>();
       for (const i of items) counted.set(itemName(i), (counted.get(itemName(i)) ?? 0) + 1);
@@ -738,6 +753,7 @@ export class Hud {
     $("home").innerHTML = (quests.length ? `<h3>済んだ依頼</h3><p>${quests.map((q) => `<span>${q.title}（${q.reward.cash} クレジット${rewardList(q).map(([i, n]) => `・${itemName(i)}${n > 1 ? ` × ${n}` : ""}`).join("")}）</span>`).join("")}</p>` : "") + (settled
       ? (sent.length ? `<h3>中継ボックスから倉庫へ送った物</h3><p>${count(sent)}</p>` : "") +
         `<h3>${lost ? "ポーチに残った物" : "持ち帰った物"}</h3><p>${home.length ? count(home) : "<span>なし</span>"}</p>` +
+        (settled.opened.length ? `<h3>開いた道</h3><p>${settled.opened.map((id) => `<span>${routeOf(id).name}（${TOOLS[routeOf(id).tool].label}を使った）</span>`).join("")}</p>` : "") +
         (settled.sold.length ? `<p class="sold">倉庫に入りきらない ${settled.sold.length} 点は ${settled.soldFor} クレジットで売った</p>` : "")
       : "");
   }

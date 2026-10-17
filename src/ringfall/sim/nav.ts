@@ -1,5 +1,5 @@
 import { PLAYER, WORLD } from "./config";
-import { los } from "./geom";
+import { los, routeBoxesOpen } from "./geom";
 import { BOXES, DECKS } from "./map";
 import { steepAt, terrainHeight } from "./terrain";
 
@@ -26,7 +26,7 @@ function blockedCells(): Uint8Array {
   // A cell is blocked when any part of it is within a body radius of a box, so a
   // body standing in a free cell never overlaps a wall.
   const r = PLAYER.radius + 0.02;
-  for (const b of BOXES) {
+  for (const b of [...BOXES, ...routeBoxesOpen]) {
     // Only what stops a body standing on the ground: low steps and high floors do not.
     const t = terrainHeight((b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2);
     if (b.h - t <= WORLD.stepUp || b.y0 - t >= 1.75) continue;
@@ -68,6 +68,12 @@ const free = (i: number, j: number) => i >= 0 && j >= 0 && i < NX && j < NZ && !
  * both regions; the labels answer it at once.
  */
 let area = new Int32Array(0);
+
+/** Forgets the grid and its stretches, for a world whose open routes changed (routes.ts): both are built again on first use. */
+export function resetNav() {
+  grid = new Uint8Array(0);
+  area = new Int32Array(0);
+}
 function areas(): Int32Array {
   if (area.length) return area;
   blockedCells();
@@ -136,7 +142,7 @@ function nearestFree(x: number, z: number): [number, number] | null {
       fallback ??= [i, j];
       const cx = centerX(i);
       const cz = centerZ(j);
-      if (los({ x, y, z }, { x: cx, y: terrainHeight(cx, cz) + 1, z: cz })) return [i, j];
+      if (los({ x, y, z }, { x: cx, y: terrainHeight(cx, cz) + 1, z: cz }, true)) return [i, j];
     }
   }
   return fallback;

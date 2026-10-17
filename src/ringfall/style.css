@@ -2052,3 +2052,12 @@ body:not(.playing) #banner {
     gap: 2px 10px;
   }
 }
+/* The routes under the hideout's modules: a closed one in the warning colour, an open one quiet. */
+.hub-list .hub-sub {
+  margin: 14px 0 2px;
+  font-size: 14px;
+  color: var(--muted);
+}
+.hub-list .quest.route.open > b {
+  color: var(--sky);
+}

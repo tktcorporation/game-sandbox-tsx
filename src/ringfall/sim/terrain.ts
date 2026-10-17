@@ -127,7 +127,7 @@ function atPoint(vals: readonly number[], t: number, { lens, sum }: Polyline): n
 const levelOf = (o: Open, t: number, poly: Polyline) => (typeof o.level === "number" ? o.level : o.atPoints ? atPoint(o.level, t, poly) : along(o.level, t));
 
 /** A trench with a flat floor `floor` metres either side of its line, at `levels` along it. */
-interface Cut {
+export interface Cut {
   line: readonly P[];
   floor: number;
   levels: readonly number[];
@@ -693,6 +693,78 @@ export function buildTerrain(flat: FlatShape[]) {
       const up = Math.max(Math.abs(gx), Math.abs(gz), Math.hypot(gx, gz));
       if (up > STEEP) steep[j * NX + i] = 1;
     }
+}
+
+/**
+ * A trench cut into the built field only while the route it belongs to is open (`ROUTES` in
+ * map.ts): a floor `floor` metres either side of its line at the levels along it, walls rising
+ * at `slope`. It only ever lowers the ground, and `surfaceAt()` answers `name` on it.
+ */
+export interface Carve extends Cut {
+  name: string;
+}
+
+/** The trench's ground at (x, z) before the field's own height caps it, or Infinity beyond its reach. */
+function carveAt(c: Carve, poly: Polyline, x: number, z: number): { h: number; level: number } {
+  const { d, along: t } = toPolyline(x, z, poly);
+  const level = c.atPoints ? atPoint(c.levels, t, poly) : along(c.levels, t);
+  return { h: level + Math.max(0, d - c.floor) * c.slope + (vnoise(x / 9, z / 9) - 0.5) * 0.5, level };
+}
+
+/** Cells the carves now in place changed, with what the built field held there, to put back. */
+const carved = new Map<number, { field: number; floor: number; shape: number; steep: number }>();
+
+/**
+ * Puts exactly `carves` into the field, taking out any cut before. The field built by
+ * `buildTerrain()` stays the one with nothing carved, so a world with every route closed is
+ * the same ground cell for cell. Only the cached field changes: `lowest()` keeps answering for
+ * the ground as built, so the drop and the leap's glide treat a route's roof as the high
+ * ground it covers.
+ */
+export function carveTerrain(carves: readonly Carve[]) {
+  if (!field || !floors || !shapes || !steep) throw new Error("carveTerrain before buildTerrain");
+  for (const [k, v] of carved) {
+    field[k] = v.field;
+    floors[k] = v.floor;
+    shapes[k] = v.shape;
+    steep[k] = v.steep;
+  }
+  carved.clear();
+  const save = (k: number) => {
+    if (!carved.has(k)) carved.set(k, { field: field![k], floor: floors![k], shape: shapes![k], steep: steep![k] });
+  };
+  for (const c of carves) {
+    let shape = SHAPE_NAMES.indexOf(c.name);
+    if (shape < 0) shape = SHAPE_NAMES.push(c.name) - 1;
+    const poly = polyline(c.line);
+    // Beyond this the walls have risen past any high ground: nothing there is lowered.
+    const reach = c.floor + (HIGH + 12 - Math.min(...c.levels)) / c.slope;
+    const i0 = Math.max(1, Math.floor((poly.x0 - reach - WORLD.x0) / RES));
+    const i1 = Math.min(NX - 2, Math.ceil((poly.x1 + reach - WORLD.x0) / RES));
+    const j0 = Math.max(1, Math.floor((poly.z0 - reach - WORLD.z0) / RES));
+    const j1 = Math.min(NZ - 2, Math.ceil((poly.z1 + reach - WORLD.z0) / RES));
+    for (let j = j0; j <= j1; j++)
+      for (let i = i0; i <= i1; i++) {
+        const k = j * NX + i;
+        const at = carveAt(c, poly, WORLD.x0 + i * RES, WORLD.z0 + j * RES);
+        if (at.h >= field[k]) continue;
+        save(k);
+        field[k] = at.h;
+        floors[k] = at.level;
+        shapes[k] = shape;
+      }
+    // Cliffs over again where the trench changed the slope, one cell round it included.
+    for (let j = j0; j <= j1; j++)
+      for (let i = i0; i <= i1; i++) {
+        const k = j * NX + i;
+        const gx = (field[k + 1] - field[k - 1]) / (2 * RES);
+        const gz = (field[k + NX] - field[k - NX]) / (2 * RES);
+        const s = Math.max(Math.abs(gx), Math.abs(gz), Math.hypot(gx, gz)) > STEEP ? 1 : 0;
+        if (s === steep[k]) continue;
+        save(k);
+        steep[k] = s;
+      }
+  }
 }
 
 /** Ground height at (x, z). Outside the world's bounds it is the rim's horizon. */

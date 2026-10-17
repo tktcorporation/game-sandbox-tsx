@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { ENEMIES, type EnemyKind, type HealKind, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
+import { ENEMIES, type EnemyKind, type HealKind, type Rarity, type ToolKind, type ValuableKind, type WeaponKind } from "../sim/config";
 import type { LootKind } from "../sim/state";
 import type { Box } from "../sim/map";
 
@@ -175,6 +175,16 @@ export function buildBox(b: Box, i: number): THREE.Object3D {
       g.add(mesh(new THREE.BoxGeometry(w, h, d), flat(color), 0, mid, 0));
       // Big plates carry a darker seam along their top, so a hull reads as riveted plate.
       if (h > 2 && Math.max(w, d) > 4) g.add(mesh(new THREE.BoxGeometry(w + 0.04, 0.14, d + 0.04), flat(new THREE.Color(color).multiplyScalar(0.72).getHex()), 0, b.h - 0.25, 0, false));
+      break;
+    }
+    case "fence": {
+      // A gate of steel bars in a frame: bars across the thin side, a rail top, middle and foot.
+      const along = w >= d;
+      const len = along ? w : d;
+      const thick = Math.min(w, d);
+      const bar = flat(PAL.steel);
+      for (let t = -len / 2 + 0.06; t <= len / 2 - 0.06; t += 0.16) g.add(mesh(new THREE.BoxGeometry(along ? 0.04 : thick, h, along ? thick : 0.04), bar, along ? t : 0, mid, along ? 0 : t, false));
+      for (const y of [b.y0 + 0.08, mid, b.h - 0.08]) g.add(mesh(new THREE.BoxGeometry(along ? w : thick + 0.02, 0.12, along ? thick + 0.02 : d), flat(PAL.hull), 0, y, 0, false));
       break;
     }
     case "rock": {
@@ -494,7 +504,7 @@ export function buildGun(kind: WeaponKind, rarity: Rarity): THREE.Group {
   return g;
 }
 
-export function buildLootItem(kind: LootKind, rarity: Rarity, weapon?: WeaponKind, heal?: HealKind, valuable?: ValuableKind): THREE.Group {
+export function buildLootItem(kind: LootKind, rarity: Rarity, weapon?: WeaponKind, heal?: HealKind, valuable?: ValuableKind, tool?: ToolKind): THREE.Group {
   const g = new THREE.Group();
   const color = RARITY_COLOR[rarity];
   if (kind === "weapon" && weapon) {
@@ -552,6 +562,19 @@ export function buildLootItem(kind: LootKind, rarity: Rarity, weapon?: WeaponKin
     // A key card: a gold card with a dark stripe.
     g.add(mesh(new THREE.BoxGeometry(0.34, 0.03, 0.22), glow(color), 0, 0.3, 0, false));
     g.add(mesh(new THREE.BoxGeometry(0.34, 0.035, 0.05), flat(PAL.gun), 0, 0.3, 0.05, false));
+  } else if (kind === "tool" && tool === "cutter") {
+    // Bolt cutters: two long red-gripped handles meeting at short steel jaws.
+    for (const z of [-0.05, 0.05]) {
+      g.add(mesh(new THREE.BoxGeometry(0.62, 0.035, 0.035), flat(PAL.steel), -0.05, 0.12, z, false));
+      g.add(mesh(new THREE.BoxGeometry(0.26, 0.05, 0.05), flat(HEAL_RED), -0.27, 0.12, z * 1.4, false));
+    }
+    g.add(mesh(new THREE.BoxGeometry(0.16, 0.06, 0.14), flat(PAL.gun), 0.3, 0.12, 0, false));
+  } else if (kind === "tool") {
+    // A breaching charge: a squat orange case with a black detonator on top.
+    g.add(mesh(new THREE.BoxGeometry(0.44, 0.26, 0.3), flat(0xd8742c), 0, 0.2, 0, false));
+    g.add(mesh(new THREE.BoxGeometry(0.46, 0.05, 0.32), flat(PAL.gun), 0, 0.26, 0, false));
+    g.add(mesh(new THREE.BoxGeometry(0.12, 0.1, 0.1), flat(PAL.gun), 0.1, 0.38, 0, false));
+    g.add(mesh(new THREE.SphereGeometry(0.03, 6, 4), glow(HEAL_RED), 0.1, 0.45, 0, false));
   } else if (kind === "flare") {
     // A road flare: a red tube with a cap.
     const tube = mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.42, 8), flat(HEAL_RED), 0, 0.3, 0, false);

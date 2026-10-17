@@ -47,6 +47,8 @@
 
 目標の表はダム湖の値で、港湾地帯には別の目標を置いていない。港湾にはタイタンがいないため、弱点命中率はダム湖より低く出る。
 
+ボットは道具を拾わず、道はすべて閉じたまま遊ぶ。閉じた道の障害物のうち 2 つ（山の坑道の南口、ダムの点検通路の扉）は発着場のそばの崖に据えてあり、タイタン戦で崖際やダムの下まで下がったボットの視線や弾がそこで止まるレイドがある。ダム湖の表はその分も含む。
+
 ```
 30 runs per skill and region. alive: share of raids that got off (the rest were wiped out)
 time: minutes from landing to leaving; cleared: median POIs cleared; haul and score: medians over raids that got off
@@ -58,9 +60,9 @@ crowd: median over runs of the most squads / robots fighting the player at once 
 
 region: reservoir (ダム湖)
 skill     alive time(med) cleared haul(med) score(med) downs acc crit leap crowd flank waves ally               rank               exit
-beginner  97%   2.8m      2       880       1680       0.1   54% 10%  0.4 2/3   12%   0     28% 0.3d 0.0r 0.0h S1 A2 B16 C10 -1   ship 0 flare 0 village 29
+beginner  97%   2.8m      2       880       1680       0.1   54% 11%  0.4 2/3   12%   0     28% 0.3d 0.0r 0.0h S1 A2 B16 C10 -1   ship 0 flare 0 village 29
 casual    93%   6.4m      4       2100      4700       0.2   77% 19%  0.3 2/4   18%   2     22% 0.4d 0.0r 0.0h S17 A11 B0 C0 -2   ship 21 flare 0 village 7
-good      97%   5.8m      4       1750      4450       0.1   85% 48%  0.3 2/4   24%   2     18% 0.5d 0.0r 0.0h S14 A13 B0 C2 -1   ship 25 flare 0 village 4
+good      97%   5.8m      4       1750      4450       0.1   85% 48%  0.3 2/4   24%   2     18% 0.6d 0.0r 0.0h S14 A13 B0 C2 -1   ship 24 flare 0 village 5
 
 region: harbor (港湾地帯)
 skill     alive time(med) cleared haul(med) score(med) downs acc crit leap crowd flank waves ally               rank               exit
@@ -125,7 +127,7 @@ level          beginner       casual         good
 無線機 Lv2     21 (15-32)     6 (5-9)        8 (6-14)      
 ポーチ Lv1     3 (2-4)        2 (2-3)        2 (2-2)       
 ポーチ Lv2     11 (8-19)      5 (4-6)        5 (4-6)       
-脱出艇 Lv1     17 (14-26)     10 (6-12)      8 (6-11)      
+脱出艇 Lv1     17 (14-26)     10 (6-12)      7 (6-11)      
 脱出艇 Lv2     41 (38-57)     15 (14-17)     17 (15-27)    
 脱出艇 Lv3     60 (55-66)     21 (20-23)     22 (19-27)    
 脱出艇 Lv4     82 (77-86)     28 (27-31)     30 (28-34)    

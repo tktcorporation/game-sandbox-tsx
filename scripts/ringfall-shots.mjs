@@ -353,6 +353,12 @@ const harborTour = [
   ["tour-29-fishing-village", -145, 1.7, -460, -0.9, 0.05],
   ["tour-30-signal-box", -10, 1.7, -400, -0.79, 0.08],
   ["tour-31-reservoir-from-above", 0, 70, 215, 0, -0.38, true],
+  // The routes' obstacles, all closed in this fresh profile: the tunnel's two choked mouths,
+  // the dam's chained gallery door, the wreck's gangway hauled up against its hull.
+  ["tour-32-tunnel-rubble", 48, 1.7, -150, 0, 0.12],
+  ["tour-33-tunnel-rubble-north", 48, 1.7, -277, Math.PI, 0.12],
+  ["tour-34-dam-gate", 14, 1.7, -53, 0, 0.12],
+  ["tour-35-gangway-hauled", -27, 1.7, -579, Math.PI - 0.45, 0.5],
 ];
 for (const [name, x, dy, z, yaw, pitch, abs] of harborTour) {
   const y = abs ? dy : (await page.evaluate(([x, z]) => window.ringfallTerrain(x, z), [x, z])) + dy;
@@ -601,6 +607,9 @@ console.log(JSON.stringify((await read()).stats));
   const end = await read();
   console.log(`harbor raid: fought ${fought}, cleared ${end.stats.cleared.join(",") || "-"}, at ${end.player.x},${end.player.z}`);
 }
+// The desktop page is done with; left open it draws the harbor every frame, and the pages
+// below, each a fresh load, would share the machine with it.
+await page.close();
 
 /*
  * The hideout, from saved profiles: a mid-game base (the tab, a module's needs with where
@@ -758,6 +767,76 @@ const spills = (pg) =>
   if (d2.outcome !== "extracted" || d2.leftAt !== "quarry" || d2.screen !== "results") errors.push(`depot: leaving ended ${d2.outcome} at ${d2.leftAt} on ${d2.screen}`);
   if (!/中継ボックス/.test(await pg.textContent("#stats"))) errors.push("depot: the results do not say the raid ended at the depot");
   await pg.screenshot({ path: `${out}/50-results-depot.png` });
+  await ctx.close();
+}
+/*
+ * The routes a tool opens: listed under the hideout, closed (the obstacle, its prompt naming the
+ * tool, the map's dashed line) and then open in a profile that has them all (the tunnel walked
+ * through on the keyboard, the dam's gallery and the gangway seen from inside, the map's lines).
+ */
+{
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+  const pg = await withProfile(ctx, { ...midGame, v: 9, routes: [] });
+  await pg.click("#start");
+  await pg.click('#hub [data-act=tab][data-arg=hideout]');
+  const shut = await pg.locator("#hub-side .route").allTextContents();
+  if (shut.length !== 3 || !shut.every((t) => /閉鎖/.test(t) && /箱にある/.test(t))) errors.push(`routes: the hideout lists ${JSON.stringify(shut)}`);
+  await pg.locator("#hub-side .route").first().scrollIntoViewIfNeeded();
+  await pg.screenshot({ path: `${out}/51-hub-routes.png` });
+  await pg.click('#hub [data-act=tab][data-arg=kit]');
+  await pg.click("#hub-region [data-arg=reservoir]");
+  await pg.click("#hub-free");
+  for (let i = 0; i < 80 && (await readOf(pg)).phase === "drop"; i++) await pg.evaluate(() => window.advanceTime(100));
+  await pg.evaluate(() => window.advanceTime(3000));
+  // Before the dam's gallery door, facing it.
+  await pg.evaluate(() => window.ringfallPlace(14, -58.6, 0));
+  await pg.evaluate(() => window.advanceTime(300));
+  const prompt = await pg.textContent("#prompt");
+  if (!/ダムの点検通路/.test(prompt) || !/ボルトカッターがあれば開く/.test(prompt)) errors.push(`routes: before the dam's door the prompt reads "${prompt}"`);
+  await pg.screenshot({ path: `${out}/52-route-closed.png` });
+  await pg.keyboard.press("KeyM");
+  await pg.evaluate(() => window.advanceTime(200));
+  await pg.screenshot({ path: `${out}/53-map-routes.png` });
+  await pg.keyboard.press("KeyM");
+  await ctx.close();
+}
+{
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+  const pg = await withProfile(ctx, { ...midGame, v: 9, routes: ["tunnel", "dam", "gangway"] });
+  await pg.click("#start");
+  await pg.click('#hub [data-act=tab][data-arg=hideout]');
+  const open = await pg.locator("#hub-side .route").allTextContents();
+  if (open.length !== 3 || !open.every((t) => /開通/.test(t))) errors.push(`routes: with every route open the hideout lists ${JSON.stringify(open)}`);
+  await pg.click('#hub [data-act=tab][data-arg=kit]');
+  await pg.click("#hub-region [data-arg=reservoir]");
+  await pg.click("#hub-free");
+  for (let i = 0; i < 80 && (await readOf(pg)).phase === "drop"; i++) await pg.evaluate(() => window.advanceTime(100));
+  await pg.evaluate(() => window.advanceTime(3000));
+  const r = await readOf(pg);
+  if (r.routes.join() !== "tunnel,dam,gangway") errors.push(`routes: the raid's world has ${r.routes.join() || "none"} open`);
+  // Inside, from fixed cameras: the tunnel under the mountains, the gallery climbing through the dam, the gangway.
+  const views = [
+    ["54-tunnel-open", 48, 1.6, -170, 0, 0.05],
+    ["55-dam-gallery-open", 14, 1.6, -58, 0, 0.32],
+    ["56-gangway-open", -30, 1.7, -578, Math.PI - 0.6, 0.35],
+  ];
+  for (const [name, x, dy, z, yaw, pitch] of views) {
+    const y = (await pg.evaluate(([x, z]) => window.ringfallTerrain(x, z), [x, z])) + dy;
+    await pg.evaluate(([x, y, z, yaw, pitch]) => window.ringfallCamera(x, y, z, yaw, pitch), [x, y, z, yaw, pitch]);
+    await pg.screenshot({ path: `${out}/${name}.png` });
+  }
+  await pg.evaluate(() => window.ringfallCamera());
+  // Walked on the keyboard from the tunnel's south mouth to its north one.
+  await pg.evaluate(() => window.ringfallPlace(48, -148, 0));
+  await pg.keyboard.down("KeyW");
+  for (let i = 0; i < 40 && (await readOf(pg)).player.z > -262; i++) await pg.evaluate(() => window.advanceTime(1000));
+  await pg.keyboard.up("KeyW");
+  const through = await readOf(pg);
+  if (through.player.z > -262 || Math.abs(through.player.x - 48) > 3) errors.push(`routes: walking the open tunnel ended at ${through.player.x},${through.player.z}`);
+  await pg.screenshot({ path: `${out}/57-tunnel-walked.png` });
+  await pg.keyboard.press("KeyM");
+  await pg.evaluate(() => window.advanceTime(200));
+  await pg.screenshot({ path: `${out}/58-map-routes-open.png` });
   await ctx.close();
 }
 for (const [size, name] of [[{ width: 1280, height: 720 }, "44-ending"], [{ width: 740, height: 360 }, "m13-ending"]]) {
