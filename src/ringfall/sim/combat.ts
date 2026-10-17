@@ -1,5 +1,5 @@
 import { ALLY, ASSIST, DEG, DODGE, ELITE, ENEMIES, FLANK, KICK_PATTERN, KICK_RESET, NOISE, PLATE, PLAYER, RARITY, ROBOT_DROPS, STAGGER, TICK, ULT, VALUABLES, WEAPONS, type Flank, type Rarity, type ValuableKind, type WeaponSpec } from "./config";
-import { engageSquad, makeNoise } from "./awareness";
+import { engageSquad, located, makeNoise } from "./awareness";
 import { POIS } from "./map";
 import { los, lookAngles, norm, rayWorld, raySphere, wrapAngle } from "./geom";
 import { forward, rand, type Enemy, type State, type Vec3, type Weapon } from "./state";
@@ -130,6 +130,7 @@ export function fireRay(s: State, w: Weapon, dir: Vec3, touch = false) {
   // Facing matters for weapon hits only; counted here so flank hits stay a share of `hits`.
   const flank = flankOf(s, hit.e);
   if (flank === "back" || flank === "ambush") s.stats.flankHits++;
+  if (hit.e.kind === "titan") s.stats.titanHits++;
   damageEnemy(s, hit.e, dmg, hit.crit, c, flank, "player", w.rarity);
 }
 
@@ -156,11 +157,15 @@ export function shoot(s: State, w: Weapon, touch = false) {
   makeNoise(s, p.pos.x, p.pos.z, NOISE[w.kind], true);
 }
 
-/** Which way a shot from `from` (the player unless given) meets this robot (see FLANK). */
-export function flankOf(s: State, e: Enemy, from: Vec3 = s.player.pos): Flank {
+/**
+ * Which way a shot meets this robot (see FLANK): from the player unless `from` is given
+ * (the teammate's shots). The player's shot on a fighting robot that has not located
+ * them itself is an ambush, like one on a robot that never noticed.
+ */
+export function flankOf(s: State, e: Enemy, from?: Vec3): Flank {
   if (e.kind === "titan") return "none";
-  if (e.aware !== "engaged") return "ambush";
-  const off = Math.abs(wrapAngle(lookAngles(e.pos, from).yaw - e.yaw)) / DEG;
+  if (e.aware !== "engaged" || (!from && !located(s, e))) return "ambush";
+  const off = Math.abs(wrapAngle(lookAngles(e.pos, from ?? s.player.pos).yaw - e.yaw)) / DEG;
   return off < FLANK.frontArc ? "front" : off > FLANK.backArc ? "back" : "side";
 }
 
@@ -178,6 +183,11 @@ export function damageEnemy(s: State, e: Enemy, raw: number, crit: boolean, at: 
   raw *= flank === "ambush" && (e.kind === "heavy" || e.elite) ? FLANK.ambushTough : FLANK.mult[flank];
   const quiet = Math.min(e.lastHit, e.allyHit) > DODGE.jinkQuiet;
   const blocked = !crit && rarity !== undefined && e.plate > rarity;
+  // A robot hit by the player knows where they are from now on.
+  if (by === "player") {
+    e.blind = 0;
+    e.sawAt = { x: s.player.pos.x, z: s.player.pos.z };
+  }
   if (blocked) raw *= PLATE.mult[e.plate - rarity];
   // Being shot gives the player away to the whole squad. A squad already fighting
   // learns where the shot came from and turns there, at its usual turning speed.

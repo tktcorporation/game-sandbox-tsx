@@ -1,7 +1,7 @@
 import { ALLY, AWARE, CHARGER, COVER, DEG, DODGE, ELITE, ENEMIES, FALLBACK, PINCH, PLAYER, SHOT, STAGGER, TICK, TITAN, TURN, WORLD, type EnemyKind, type Rarity } from "./config";
 import { clampToWorld, collide, dist2d, groundAt, groundLevel, los, lookAngles, onTerrain, solidAt, wrapAngle } from "./geom";
 import { steepAt, terrainHeight } from "./terrain";
-import { engageSquad, knownSpot, sense, stepSquads } from "./awareness";
+import { engageSquad, knownSpot, located, sense, stepSquads } from "./awareness";
 import { COVERS } from "./cover";
 import { fieldTo, nextStep } from "./hunt";
 
@@ -87,6 +87,10 @@ export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi:
     stagger: 0,
     steady: 0,
     peekSide: rand(s) < 0.5 ? -1 : 1,
+    // Not located: a robot that appears mid-fight must find the player with its own eyes too.
+    blind: AWARE.loseTime,
+    sawAt: null,
+    finding: 0,
   };
   s.enemies.push(e);
   if (o.appear) s.events.push({ t: "spawn", id: e.id, pos: { ...pos } });
@@ -203,6 +207,7 @@ export function stepEnemies(s: State) {
     const k = ENEMIES[e.kind];
     e.lastHit += TICK;
     e.allyHit += TICK;
+    e.blind += TICK;
     e.jink = Math.max(0, e.jink - TICK);
     e.steady = Math.max(0, e.steady - TICK);
     e.stagger *= Math.exp(-TICK / STAGGER.window);
@@ -270,6 +275,8 @@ export function stepEnemies(s: State) {
         if (!sees && !known.live && d < 2) along = 0;
         else if (sees && hurtAlone(s, e) && d < k.range + 8) along = -1; // hurt and alone: it gives ground
         else if (!sees || d > k.range + 4) along = 1;
+        // In line with the player it has not found, and not making them out from here: it closes in to look.
+        else if (!atAlly && !located(s, e) && e.finding <= 0) along = 1;
         else if (d < k.range - 4) along = -0.7;
         // In sight it strafes across the target's view; a jink after a hit is a quicker step the other way.
         const side = (e.kind === "charger" ? 0.55 : sees ? DODGE.strafe : 0.8) * (e.jink > 0 ? DODGE.jinkSpeed : 1);
@@ -303,7 +310,7 @@ export function stepEnemies(s: State) {
           if (rand(s) < DODGE.flip) e.strafe = -e.strafe;
         }
         e.cooldown -= TICK;
-        const ready = e.cooldown <= 0 && sees && tUp;
+        const ready = e.cooldown <= 0 && sees && tUp && (atAlly || located(s, e));
         if (ready && (e.kind === "charger" ? d < CHARGER.lungeRange : d < 48)) {
           e.mode = "telegraph";
           e.timer = k.telegraph;
@@ -619,6 +626,8 @@ function findCover(s: State, e: Enemy, threat: Point, threatY: number): { cover:
 function fromCover(s: State, e: Enemy, known: { x: number; z: number; live: boolean }, tChest: Vec3, tUp: boolean, tVel: Vec3): boolean {
   const k = ENEMIES.grunt;
   if (e.mode !== "move") return false; // telegraph and fire run as usual
+  // It hides from a player it has found; one it has not found (see located()) it comes out to look for.
+  if (e.target === "player" && !located(s, e)) return false;
   e.coverT -= TICK;
   // Re-think the spot every few seconds, and at once when hit (flanked).
   if (e.coverT <= 0 || e.lastHit < TICK * 1.5) {
