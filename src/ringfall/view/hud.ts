@@ -1,8 +1,8 @@
 import type { Settlement } from "../meta/profile";
 import { itemName, rewardList } from "./hub";
 import { ALLY, AWARE, BAG, DEPOT, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, SCORE, TACTICAL, TOOL_KINDS, TOOLS, VALUABLES, WEAPONS, type Flank } from "../sim/config";
-import { magSize } from "../sim/combat";
-import { dist2d } from "../sim/geom";
+import { eyePos, magSize } from "../sim/combat";
+import { dist2d, los } from "../sim/geom";
 import { DEPOTS, EXTRACTS, POIS, poiIndex, regionHere, regionOf, routeOf } from "../sim/map";
 import { routeBefore } from "../sim/routes";
 import { bagLoad, depotBlocked, depotInReach, extractHere, extractReady, makeRoom, poiAt, roomForTool, searchTime, useTarget } from "../sim/world";
@@ -45,6 +45,9 @@ interface DmgNum {
 
 const FLANK_TAG: Partial<Record<Flank, string>> = { back: "背後", ambush: "奇襲" };
 const FLANK_RANK: Record<Flank, number> = { front: 0, none: 1, side: 1, back: 2, ambush: 3 };
+
+/** Metres within which a seen robot shows how aware it is. */
+const MARK_RANGE = 40;
 
 export class Hud {
   private root = $("hud");
@@ -495,7 +498,19 @@ export class Hud {
         else if (level === 2) cls = "alert";
         else if (level === 1) cls = "sense";
         else if (revealed) cls = "reveal";
-        if (!cls || e.kind === "titan" || d > 80) continue;
+        // A mark sits only over a robot the player can see, and near: it tells how aware that
+        // robot is, never where an unseen one stands. The reveal is the exception: while it lasts,
+        // every robot in its range shows through walls, with the reveal's mark when out of sight.
+        if (!cls || e.kind === "titan") continue;
+        if (cls !== "reveal") {
+          const head = { x: e.pos.x, y: e.pos.y + ENEMIES[e.kind].weakY, z: e.pos.z };
+          const inSight = d <= MARK_RANGE && los(eyePos(s), head);
+          if (!inSight && revealed) cls = "reveal";
+          else if (!inSight) continue;
+        }
+        const top = cls === "reveal" ? ENEMIES[e.kind].weakY : ENEMIES[e.kind].weakY + 1.4;
+        const sp = view.project({ x: e.pos.x, y: e.pos.y + top, z: e.pos.z }, w, h);
+        if (sp.behind || sp.x < 0 || sp.x > w || sp.y < 0 || sp.y > h) continue;
         seen.add(e.id);
         let el = this.awEls.get(e.id);
         if (!el) {
@@ -503,23 +518,9 @@ export class Hud {
           this.awareLayer.appendChild(el);
           this.awEls.set(e.id, el);
         }
-        const top = cls === "reveal" ? ENEMIES[e.kind].weakY : ENEMIES[e.kind].weakY + 1.4;
-        const sp = view.project({ x: e.pos.x, y: e.pos.y + top, z: e.pos.z }, w, h);
-        let x = sp.x;
-        let y = sp.y;
-        // Off screen: noticing and searching marks stick to the edge; the rest hide.
-        const off = sp.behind || x < 0 || x > w || y < 0 || y > h;
-        if (off && cls === "reveal") {
-          el.style.display = "none";
-          continue;
-        }
-        if (sp.behind) {
-          x = w - x;
-          y = h - 60;
-        }
-        x = Math.max(30, Math.min(w - 30, x));
-        y = Math.max(off ? 150 : 40, Math.min(h - 150, y));
-        el.className = `aw ${cls}${off ? " edge" : ""}`;
+        const x = sp.x;
+        const y = sp.y;
+        el.className = `aw ${cls}`;
         el.textContent = cls === "engaged" ? "!" : cls === "alert" || cls === "lost" ? "?" : "";
         el.style.setProperty("--p", e.detect.toFixed(2));
         el.style.display = "";
