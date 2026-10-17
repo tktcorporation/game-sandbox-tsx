@@ -1331,13 +1331,63 @@ const BETWEEN = "野";
 /** Where on the ground between the cover clumps: above 0.55 in blobs about a hundred metres across. */
 const clump = (x: number, z: number) => 0.5 + 0.25 * Math.sin(x / 37 + 1.3) * Math.sin(z / 41 + 0.7) + 0.25 * Math.sin((x + z) / 53);
 
-function scatterCover(authored: Box[], keep: Keep): Box[] {
+/** Things in 8 m squares, so a test against "anything near" looks only at the squares it reaches. */
+class Near<T> {
+  private cells = new Map<number, T[]>();
+  private static readonly SIZE = 8;
+  /** Every square the box [x0, x1] x [z0, z1] touches. */
+  private each(x0: number, z0: number, x1: number, z1: number, f: (k: number) => void) {
+    const S = Near.SIZE;
+    for (let j = Math.floor(z0 / S); j <= Math.floor(z1 / S); j++) for (let i = Math.floor(x0 / S); i <= Math.floor(x1 / S); i++) f(j * 65_536 + i);
+  }
+  add(x0: number, z0: number, x1: number, z1: number, t: T) {
+    this.each(x0, z0, x1, z1, (k) => {
+      const list = this.cells.get(k);
+      if (list) list.push(t);
+      else this.cells.set(k, [t]);
+    });
+  }
+  /** Whether `ok` holds for everything in the squares the box touches (some things are seen more than once). */
+  every(x0: number, z0: number, x1: number, z1: number, ok: (t: T) => boolean): boolean {
+    let all = true;
+    this.each(x0, z0, x1, z1, (k) => {
+      if (all) for (const t of this.cells.get(k) ?? []) if (!ok(t)) return void (all = false);
+    });
+    return all;
+  }
+}
+
+/**
+ * What a scattered piece must keep clear of, by square: the authored boxes, the pieces already
+ * placed, the authored points with their room, and the kept roads and patrol legs as the points
+ * along them a piece must stay 2.5 m from. Each is filed under the squares its own box (with the
+ * room it keeps) touches, so a piece is tested against exactly the things it could crowd.
+ */
+interface Clearance {
+  authored: Near<Box>;
+  laid: Near<Box>;
+  points: Near<Keep["points"][number]>;
+  along: Near<{ x: number; z: number }>;
+}
+
+function scatterCover(authored: Box[], { points, segments }: Keep): Box[] {
+  const near: Clearance = { authored: new Near(), laid: new Near(), points: new Near(), along: new Near() };
+  for (const b of authored) near.authored.add(b.x0, b.z0, b.x1, b.z1, b);
+  for (const q of points) near.points.add(q.x - q.r, q.z - q.r, q.x + q.r, q.z + q.r, q);
+  for (const sg of segments) {
+    const n = Math.max(1, Math.ceil(Math.hypot(sg.bx - sg.ax, sg.bz - sg.az)));
+    for (let k = 0; k <= n; k++) {
+      const x = sg.ax + ((sg.bx - sg.ax) * k) / n;
+      const z = sg.az + ((sg.bz - sg.az) * k) / n;
+      near.along.add(x - 2.5, z - 2.5, x + 2.5, z + 2.5, { x, z });
+    }
+  }
   const placed: Box[] = [];
-  for (const area of SCATTER) placed.push(...scatterArea(authored, keep, area, placed));
+  for (const area of SCATTER) placed.push(...scatterArea(near, area));
   return placed;
 }
 
-function scatterArea(authored: Box[], { points, segments }: Keep, area: (typeof SCATTER)[number], before: Box[]): Box[] {
+function scatterArea(near: Clearance, area: (typeof SCATTER)[number]): Box[] {
   let seed = area.seed;
   const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
   const pick = <T,>(xs: readonly T[]) => xs[Math.floor(rnd() * xs.length)];
@@ -1426,17 +1476,15 @@ function scatterArea(authored: Box[], { points, segments }: Keep, area: (typeof 
       }
       const ok = piece.every(
         (b) =>
-          authored.every(clear(b, 3)) &&
-          placed.every(clear(b, 2.5)) &&
-          before.every(clear(b, 2.5)) &&
-          points.every((q) => distToBox(b, q.x, q.z) > q.r) &&
-          segments.every((sg) => {
-            const n = Math.max(1, Math.ceil(Math.hypot(sg.bx - sg.ax, sg.bz - sg.az)));
-            for (let k = 0; k <= n; k++) if (distToBox(b, sg.ax + ((sg.bx - sg.ax) * k) / n, sg.az + ((sg.bz - sg.az) * k) / n) < 2.5) return false;
-            return true;
-          }),
+          near.authored.every(b.x0 - 3, b.z0 - 3, b.x1 + 3, b.z1 + 3, clear(b, 3)) &&
+          near.laid.every(b.x0 - 2.5, b.z0 - 2.5, b.x1 + 2.5, b.z1 + 2.5, clear(b, 2.5)) &&
+          near.points.every(b.x0, b.z0, b.x1, b.z1, (q) => distToBox(b, q.x, q.z) > q.r) &&
+          near.along.every(b.x0, b.z0, b.x1, b.z1, (q) => distToBox(b, q.x, q.z) >= 2.5),
       );
-      if (ok) placed.push(...piece);
+      if (ok) {
+        placed.push(...piece);
+        for (const b of piece) near.laid.add(b.x0, b.z0, b.x1, b.z1, b);
+      }
     }
   return placed;
 }

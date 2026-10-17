@@ -126,10 +126,17 @@ function mainGround(open: Uint8Array, height: Float32Array): Uint8Array {
   return out;
 }
 
-/** Walking distance from every cell to one target cell. */
+/**
+ * Walking distance from every cell to one target cell, out to `reach` metres (Infinity beyond
+ * it, and everywhere no way leads). `order` holds the cells within reach, nearest first, and
+ * `count` how many there are.
+ */
 export interface Field {
   target: number;
   dist: Float32Array;
+  reach: number;
+  order: Int32Array;
+  count: number;
 }
 
 /**
@@ -191,10 +198,11 @@ function openCell(x: number, z: number): number {
 
 
 /**
- * The field toward (x, z), by Dijkstra over open cells. Fields are shared: squads
- * hunting the same spot share one, and a few recent ones are kept (see `cache`).
+ * The field toward (x, z), by Dijkstra over open cells, out to `reach` metres of walking (all
+ * the way by default). Fields are shared: squads hunting the same spot share one, and a few
+ * recent ones are kept (see `cache`); a kept field serves any reach up to its own.
  */
-export function fieldTo(x: number, z: number): Field | null {
+export function fieldTo(x: number, z: number, reach = Infinity): Field | null {
   const target = openCell(x, z);
   if (target < 0) return null;
   let hit: Field | undefined;
@@ -204,7 +212,7 @@ export function fieldTo(x: number, z: number): Field | null {
   for (const f of cache.values()) {
     const fi = f.target % NX;
     const d = Math.max(Math.abs(fi - ti), Math.abs((f.target - fi) / NX - tj));
-    if (d <= NEAR && d < hitD) {
+    if (d <= NEAR && d < hitD && f.reach >= reach) {
       hit = f;
       hitD = d;
     }
@@ -250,10 +258,18 @@ export function fieldTo(x: number, z: number): Field | null {
     return top;
   };
   const done = new Uint8Array(CELLS);
+  const order = new Int32Array(CELLS);
+  let count = 0;
   while (heap.length) {
     const k = pop();
     if (done[k]) continue;
+    // Cells come out nearest first: once one is past the reach, every one left is too.
+    if (dist[k] > reach) {
+      dist[k] = Infinity;
+      break;
+    }
     done[k] = 1;
+    order[count++] = k;
     for (let n = 0; n < 8; n++) {
       const q = steps(open, height, k, n);
       if (q < 0 || done[q]) continue;
@@ -264,7 +280,9 @@ export function fieldTo(x: number, z: number): Field | null {
       }
     }
   }
-  const f = { target, dist };
+  // Cells reached but not settled lie past the reach: their distances so far are not theirs.
+  for (const k of heap) if (!done[k]) dist[k] = Infinity;
+  const f = { target, dist, reach, order, count };
   fieldsBuilt++;
   cache.set(target, f);
   if (cache.size > CACHE) cache.delete(cache.keys().next().value!);
@@ -303,14 +321,36 @@ export function nextStep(f: Field, x: number, z: number, to: { x: number; z: num
   return { x: centreX(i), z: centreZ((k - i) / NX) };
 }
 
-/** Centres of the open cells whose walking distance to the field's target is within [lo, hi]. */
+/**
+ * Centres of the open cells whose walking distance to the field's target is within [lo, hi], in
+ * the cells' own order (row by row). Found among the field's cells nearest first, so the cost
+ * follows the band's size rather than the world's.
+ */
 export function cellsAround(f: Field, lo: number, hi: number): { x: number; z: number }[] {
-  const out: { x: number; z: number }[] = [];
-  for (let k = 0; k < f.dist.length; k++) {
-    const d = f.dist[k];
-    if (d < lo || d > hi) continue;
+  let cells: Int32Array;
+  if (hi === Infinity) {
+    // Cells no way leads to are at Infinity and in the band too; only a full scan has them.
+    const all: number[] = [];
+    for (let k = 0; k < f.dist.length; k++) if (f.dist[k] >= lo) all.push(k);
+    cells = Int32Array.from(all);
+  } else {
+    // The first cell at lo or further, then on while within hi; put back in row order.
+    let a = 0;
+    let b = f.count;
+    while (a < b) {
+      const m = (a + b) >> 1;
+      if (f.dist[f.order[m]] < lo) a = m + 1;
+      else b = m;
+    }
+    let e = a;
+    while (e < f.count && f.dist[f.order[e]] <= hi) e++;
+    cells = f.order.slice(a, e).sort();
+  }
+  const out: { x: number; z: number }[] = new Array(cells.length);
+  for (let n = 0; n < cells.length; n++) {
+    const k = cells[n];
     const i = k % NX;
-    out.push({ x: centreX(i), z: centreZ((k - i) / NX) });
+    out[n] = { x: centreX(i), z: centreZ((k - i) / NX) };
   }
   return out;
 }
