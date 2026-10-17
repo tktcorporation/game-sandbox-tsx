@@ -60,7 +60,8 @@ once; play goes on. Build quests (`{ t: "build" }`) finish at the base (`claimBu
 
 ```bash
 npm run sim:ringfall     # gate 2: bots of three skills play whole raids headless, in each region,
-                         # then the hideout's pacing replays the meta with those raids
+                         # then the hideout's pacing replays the meta with those raids; tables run
+                         # in parallel, one process per core (RINGFALL_SIM_JOBS=n to set, 1 = in turn)
 npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir raid to the end, a harbor raid
                          # to its first fight, a tour of both); screenshots in shots/ringfall/
 ```

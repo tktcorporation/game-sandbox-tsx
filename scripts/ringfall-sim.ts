@@ -6,7 +6,9 @@
  *
  *   npm run sim:ringfall -- [runsPerSkillAndRegion] [region]
  *
- * With a region id after the count, only that region's table is played.
+ * With a region id after the count, only that region's table is played. The tables are
+ * played in one worker process per core; RINGFALL_SIM_JOBS sets how many (1 plays them in
+ * this process, in turn).
  */
 import { ALLY, BAG, DEPOT, ELITE, ENEMIES, HEALS, NOISE, PLATE, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, STAGGER, TACTICAL, TICK, VALUABLES, VAULT, WEAPONS, WORLD } from "../src/ringfall/sim/config";
 import { engageSquad, makeNoise } from "../src/ringfall/sim/awareness";
@@ -18,7 +20,7 @@ import { findPath } from "../src/ringfall/sim/nav";
 import { fieldTo, fieldsBuilt, routeLength } from "../src/ringfall/sim/hunt";
 import { dist2d, groundAt, inWorld, los, solidAt } from "../src/ringfall/sim/geom";
 import { floorLevel, highGround, landAt, LEVEL, offLowGround, offshore, terrainHeight } from "../src/ringfall/sim/terrain";
-import { Bot, SKILLS } from "../src/ringfall/sim/bot";
+import { SKILLS } from "../src/ringfall/sim/bot";
 import { callLeft, cellOf, decodeSeen, encodeSeen, freeKit, idleInput, newRun, type Enemy, type GameEvent, type State } from "../src/ringfall/sim/state";
 import { step } from "../src/ringfall/sim/step";
 import { hurtPlayer } from "../src/ringfall/sim/player";
@@ -34,31 +36,67 @@ import { boostFor, boosted } from "../src/ringfall/sim/state";
 import { HIDEOUT, VAULT } from "../src/ringfall/sim/config";
 import { QUESTS, offered, raidCredit } from "../src/ringfall/meta/quests";
 import { META } from "../src/ringfall/sim/config";
-import { pacing, recordOf, type Pool } from "./ringfall-pacing";
+import { pacing, type Pool } from "./ringfall-pacing";
+import { playTable, type TableResult } from "./ringfall-table";
+import type { TableJob } from "./ringfall-table-worker";
+import { fork, type ChildProcess } from "node:child_process";
 import { writeFileSync } from "node:fs";
+import { availableParallelism } from "node:os";
+import { fileURLToPath } from "node:url";
 
 const runs = Number(process.argv[2] ?? 12);
 const only = process.argv[3];
+/**
+ * The tables (region × skill) are independent and each raid is fixed by its seed, so with
+ * more than one job they are played in worker processes, started here so they run while the
+ * checks below do; the results are printed in table order, the same as when played in turn.
+ */
+const jobs = Math.max(1, Number(process.env.RINGFALL_SIM_JOBS ?? availableParallelism()) || 1);
+const TABLES = REGIONS.filter((r) => !only || r.id === only).flatMap((r) => SKILLS.map((k) => ({ region: r.id, skill: k.name })));
+const tableIndex = (region: RegionId, skill: string) => TABLES.findIndex((t) => t.region === region && t.skill === skill);
+const tables: (() => Promise<TableResult>)[] = jobs === 1 ? TABLES.map((t) => async () => playTable(t.region, t.skill, runs)) : playInWorkers(Math.min(jobs, TABLES.length));
+
+function playInWorkers(n: number): (() => Promise<TableResult>)[] {
+  const done = TABLES.map(() => Promise.withResolvers<TableResult>());
+  let next = 0;
+  const workers: ChildProcess[] = [];
+  // A worker only notices the gate has gone once its table is played, which at full counts
+  // takes minutes; a gate that exits early (a failed check) stops them now.
+  process.on("exit", () => {
+    for (const w of workers) w.kill();
+  });
+  // A worker that dies with tables unplayed fails the gate at once: its tables would never come.
+  const crash = (why: string) => {
+    console.error(`sim worker failed: ${why}`);
+    process.exit(1);
+  };
+  for (let k = 0; k < n; k++) {
+    const w = fork(fileURLToPath(new URL("./ringfall-table-worker.ts", import.meta.url)), { serialization: "advanced" });
+    workers.push(w);
+    let playing = -1;
+    const give = () => {
+      if (next < TABLES.length) w.send({ i: (playing = next), ...TABLES[next++], runs } satisfies TableJob);
+      else w.disconnect();
+    };
+    w.on("message", (m: { i: number; result: TableResult }) => {
+      done[m.i].resolve(m.result);
+      playing = -1;
+      give();
+    });
+    w.on("error", (err) => crash(String(err)));
+    w.on("exit", (code, signal) => {
+      if (playing >= 0) crash(`it exited (${signal ?? `code ${code}`}) while playing ${TABLES[playing].region} ${TABLES[playing].skill}`);
+    });
+    give();
+  }
+  return done.map((d) => () => d.promise);
+}
+
 /** The POIs' places in `POIS`, for scenarios that set up a run's state by hand. */
 const SUPPLY = poiIndex("supply");
 const QUARRY = poiIndex("quarry");
 const RELAY = poiIndex("relay");
 const PAD = poiIndex("pad");
-const LIMIT = 30 * 60; // seconds of game time before a run counts as stuck
-
-function check(s: State, where: string) {
-  const p = s.player.pos;
-  if (![p.x, p.y, p.z, s.player.hp, s.player.shield].every(Number.isFinite)) throw new Error(`${where}: player NaN`);
-  for (const b of BOXES) {
-    const body = p.y + 0.9;
-    const inside = p.x > b.x0 + 0.05 && p.x < b.x1 - 0.05 && p.z > b.z0 + 0.05 && p.z < b.z1 - 0.05 && body > b.y0 && body < b.h;
-    if (inside) throw new Error(`${where}: player inside a ${b.kind} at ${p.x.toFixed(1)},${p.z.toFixed(1)}`);
-  }
-  for (const e of s.enemies) {
-    if (![e.pos.x, e.pos.y, e.pos.z, e.hp].every(Number.isFinite)) throw new Error(`${where}: enemy NaN`);
-    if (!inWorld(e.pos.x, e.pos.z, -1)) throw new Error(`${where}: enemy off the island`);
-  }
-}
 
 /** Static layout check: every authored point must be standable, not inside a wall. */
 function checkLayout(): string[] {
@@ -2008,11 +2046,6 @@ for (const err of [checkTimeToKill(), checkStagger(), checkWindupMoves(), checkD
   }
 }
 
-const median = (xs: number[]) => {
-  const a = [...xs].sort((x, y) => x - y);
-  return a.length ? a[Math.floor(a.length / 2)] : NaN;
-};
-
 let failed = false;
 const head = ["skill    ", "alive", "time(med)", "cleared", "haul(med)", "score(med)", "downs", "acc", "crit", "leap", "crowd", "flank", "waves", "ally".padEnd(18), "rank".padEnd(18), "exit"];
 console.log(`${runs} runs per skill and region. alive: share of raids that got off (the rest were wiped out)`);
@@ -2027,116 +2060,14 @@ for (const region of REGIONS.filter((r) => !only || r.id === only)) {
   console.log("");
   console.log(`region: ${region.id} (${region.name})`);
   console.log(head.join(" "));
-  for (const skill of SKILLS) table(region.id, skill);
+  for (const skill of SKILLS) {
+    const t = await tables[tableIndex(region.id, skill.name)]();
+    for (const l of t.lines) (l.err ? console.error : console.log)(l.text);
+    for (const rec of t.records) ((pool[skill.name] ??= {})[region.id] ??= []).push(rec);
+    if (t.failed) failed = true;
+  }
 }
 
-function table(region: RegionId, skill: (typeof SKILLS)[number]) {
-  const times: number[] = [];
-  const clearedN: number[] = [];
-  const hauls: number[] = [];
-  const scores: number[] = [];
-  const waves: number[] = [];
-  let ended = 0;
-  let alive = 0;
-  let downs = 0;
-  let shots = 0;
-  let hits = 0;
-  let crits = 0;
-  let flanks = 0;
-  let titanHits = 0;
-  let ults = 0;
-  let allyDmg = 0;
-  let allyDowns = 0;
-  let rescues = 0;
-  let helped = 0;
-  const exits: Record<string, number> = Object.fromEntries(EXTRACTS.map((x) => [x.id, 0]));
-  const crowdSq: number[] = [];
-  const crowdBots: number[] = [];
-  const ranks: Record<string, number> = { S: 0, A: 0, B: 0, C: 0, "-": 0 };
-  for (let r = 0; r < runs; r++) {
-    const s = newRun(1000 + r * 7919, freeKit(), region);
-    const bot = new Bot(skill, 31 + r);
-    let prevCrouch = false;
-    let peakSq = 0;
-    let peakBots = 0;
-    let landed = 0;
-    try {
-      while (s.phase !== "done" && s.time < LIMIT) {
-        const inp = bot.input(s);
-        step(s, inp, prevCrouch);
-        prevCrouch = inp.crouch;
-        const end = s.events.findIndex((e) => e.t === "done");
-        if (end >= 0 && end < s.events.length - 1) throw new Error(`${region} ${skill.name}#${r}: events after the raid ended: ${s.events.slice(end + 1).map((e) => e.t).join(",")}`);
-        for (const e of s.events) {
-          if (e.t === "leap") ults++;
-          if (e.t === "landed") landed = s.time;
-        }
-        if (!s.enemies.some((e) => e.kind === "titan" && e.aware === "engaged")) {
-          const fighting = s.enemies.filter((e) => e.aware === "engaged" && e.mode !== "spawning");
-          peakBots = Math.max(peakBots, fighting.length);
-          peakSq = Math.max(peakSq, new Set(fighting.map((e) => e.squad)).size);
-        }
-        if (Math.round(s.time / TICK) % 30 === 0) check(s, `${region} ${skill.name}#${r} t=${s.time.toFixed(1)}`);
-      }
-    } catch (err) {
-      failed = true;
-      console.error(String(err));
-      continue;
-    }
-    if (s.phase !== "done") {
-      failed = true;
-      const p = s.player.pos;
-      console.error(`${region} ${skill.name}#${r}: still on the island after ${LIMIT} s, cleared ${s.stats.cleared.join(",")} player ${p.x.toFixed(1)},${p.y.toFixed(1)},${p.z.toFixed(1)} enemies near: ${s.enemies.filter((e) => Math.hypot(e.pos.x - p.x, e.pos.z - p.z) < 60).map((e) => `${e.kind}@${e.pos.x.toFixed(0)},${e.pos.z.toFixed(0)}:${e.mode}:${e.aware}`).join(" ")}`);
-      continue;
-    }
-    ended++;
-    ((pool[skill.name] ??= {})[region] ??= []).push(recordOf(s));
-    crowdSq.push(peakSq);
-    crowdBots.push(peakBots);
-    clearedN.push(s.stats.cleared.length);
-    waves.push(s.reinforceN);
-    const rk = rank(s);
-    ranks[rk.rank]++;
-    if (s.outcome === "extracted") {
-      alive++;
-      times.push((s.time - landed) / 60);
-      hauls.push(rk.haul);
-      scores.push(rk.score);
-    }
-    downs += s.stats.downs;
-    shots += s.stats.shots;
-    hits += s.stats.hits;
-    crits += s.stats.crits;
-    flanks += s.stats.flankHits;
-    titanHits += s.stats.titanHits;
-    allyDmg += s.stats.allyDamage / Math.max(1, s.stats.allyDamage + s.stats.damage);
-    allyDowns += s.stats.allyDowns;
-    rescues += s.stats.allyRescues;
-    helped += s.stats.allyHelped;
-    if (s.extractedAt) exits[s.extractedAt]++;
-  }
-  const n = Math.max(ended, 1);
-  console.log(
-    [
-      skill.name.padEnd(9),
-      `${Math.round((alive / runs) * 100)}%`.padEnd(5),
-      `${median(times).toFixed(1)}m`.padEnd(9),
-      String(median(clearedN)).padEnd(7),
-      String(median(hauls)).padEnd(9),
-      String(median(scores)).padEnd(10),
-      (downs / n).toFixed(1).padEnd(5),
-      `${Math.round((hits / Math.max(shots, 1)) * 100)}%`.padEnd(3),
-      `${Math.round((crits / Math.max(hits, 1)) * 100)}%`.padEnd(4),
-      (ults / n).toFixed(1).padEnd(3),
-      `${median(crowdSq)}/${median(crowdBots)}`.padEnd(5),
-      `${Math.round((flanks / Math.max(hits - titanHits, 1)) * 100)}%`.padEnd(5),
-      String(median(waves)).padEnd(5),
-      `${Math.round((allyDmg / n) * 100)}% ${(allyDowns / n).toFixed(1)}d ${(rescues / n).toFixed(1)}r ${(helped / n).toFixed(1)}h`.padEnd(18),
-      `S${ranks.S} A${ranks.A} B${ranks.B} C${ranks.C} -${ranks["-"]}`.padEnd(18),
-      regionOf(region).exits.map((id) => `${id} ${exits[id]}`).join(" "),
-    ].join(" "),
-  );
-}
 if (process.env.RINGFALL_POOL) writeFileSync(process.env.RINGFALL_POOL, JSON.stringify(pool));
 // The hideout's pacing, from the raids above (both regions are needed to plan the drops).
 if (runs > 0 && !only) {
