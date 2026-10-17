@@ -518,18 +518,26 @@ window.ringfallChargeUlt = () => {
 window.ringfallDownAlly = () => hurtAlly(state, 9999);
 
 /**
- * Automation only: draws `frames` frames as they stand and reports the average time and the last
- * frame's cost, with the tier and pixel ratio drawn at. `ms` is the time to issue a frame; `syncMs`
- * also waits for the GPU to finish them (a pixel read back at the end), so it includes the drawing.
+ * Automation only: draws `frames` frames as they stand and reports the averages per frame, with the
+ * tier and pixel ratio drawn at. Draw calls and triangles are averaged because the tiers that redraw
+ * shadows at their own rate draw the shadow pass on some frames only. `ms` is the time to issue a
+ * frame; `syncMs` also waits for the GPU to finish them (a pixel read back at the end).
  */
 window.ringfallFrameCost = (frames: number) => {
+  let calls = 0;
+  let triangles = 0;
   const t0 = performance.now();
-  for (let i = 0; i < frames; i++) world.render(state, 1 / 60);
+  for (let i = 0; i < frames; i++) {
+    world.render(state, 1 / 60);
+    const st = world.stats();
+    calls += st.calls;
+    triangles += st.triangles;
+  }
   const t1 = performance.now();
   const gl = world.renderer.getContext();
   gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
   const t2 = performance.now();
-  return { ms: +((t1 - t0) / frames).toFixed(1), syncMs: +((t2 - t0) / frames).toFixed(1), ...world.stats() };
+  return { ...world.stats(), ms: +((t1 - t0) / frames).toFixed(1), syncMs: +((t2 - t0) / frames).toFixed(1), calls: Math.round(calls / frames), triangles: Math.round(triangles / frames) };
 };
 
 /** Automation only: draws at `tier` from now on, its resolution pinned at its start (the governor stays off under automation). */
