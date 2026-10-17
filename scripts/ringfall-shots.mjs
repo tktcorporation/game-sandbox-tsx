@@ -118,8 +118,7 @@ const lap = (name) => {
   const s1 = await read();
   if (!(s1.player.z < s0.player.z - 3)) errors.push(`mobile: stick did not move the player (${s0.player.z} -> ${s1.player.z})`);
 
-  // Land, then turn the view by dragging on the right half.
-  await stepWhile(page, 100, 60, (st) => st.phase === "drop");
+  // Turn the view by dragging on the right half.
   const yaw0 = await page.evaluate(() => window.ringfallYaw());
   await touch("touchStart", [{ x: 560, y: 120, id: 2 }]);
   for (let k = 1; k <= 5; k++) await touch("touchMove", [{ x: 560 + k * 20, y: 120, id: 2 }]);
@@ -231,8 +230,8 @@ const lap = (name) => {
 }
 
 /*
- * Phone again, dropping into the harbor: the base's landing choice works by touch, the raid
- * starts over the harbor, and the map shows both regions.
+ * Phone again, starting in the harbor: the base's choice of region and way in works by touch,
+ * the raid starts on the ground at that way in, and the map shows both regions.
  */
 {
   const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
@@ -246,14 +245,17 @@ const lap = (name) => {
   await page.waitForTimeout(200);
   await page.tap("#hub-region [data-arg=harbor]");
   await page.waitForTimeout(100);
+  await page.tap("#hub-region [data-act=entry][data-arg=quay]");
+  await page.waitForTimeout(100);
   await page.screenshot({ path: `${out}/m6-hub-harbor.png` });
   await page.tap("#hub-free");
   const read = async () => JSON.parse(await page.evaluate(() => window.render_game_to_text()));
   const step = (ms) => page.evaluate((t) => window.advanceTime(t), ms);
-  const st = await stepWhile(page, 100, 80, (st) => st.phase === "drop");
-  if (st.region !== "harbor" || !(st.player.z < -250)) errors.push(`mobile harbor: the raid landed in ${st.region} at ${st.player.x},${st.player.z}`);
+  const st = await read();
+  // The quay's way in lies at the harbor's north-east, past the town and the wreck.
+  if (st.region !== "harbor" || st.phase !== "play" || !(st.player.z < -800 && st.player.x > 100)) errors.push(`mobile harbor: the raid started in ${st.region} at ${st.player.x},${st.player.z} (${st.phase})`);
   await step(300);
-  await page.screenshot({ path: `${out}/m7-harbor-landed.png` });
+  await page.screenshot({ path: `${out}/m7-harbor-start.png` });
   const bb = await page.locator("#t-map").boundingBox();
   const cdp = await ctx.newCDPSession(page);
   await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: bb.x + bb.width / 2, y: bb.y + bb.height / 2, id: 1 }] });
@@ -314,7 +316,7 @@ const read = async () => JSON.parse(await page.evaluate(() => window.render_game
   await picks.nth(2).click();
   await picks.nth(1).click();
   await page.screenshot({ path: `${out}/00-hub-kit.png` });
-  // The landing choice: the harbor shows its line, and the raid below drops into the reservoir.
+  // The start choice: the harbor shows its line, and the raid below starts in the reservoir.
   await page.click("#hub-region [data-arg=harbor]");
   await page.screenshot({ path: `${out}/00-hub-region.png` });
   if (!/港/.test(await page.evaluate(() => document.getElementById("hub-region").textContent))) errors.push("hub: the harbor's line did not show");
@@ -327,17 +329,17 @@ const read = async () => JSON.parse(await page.evaluate(() => window.render_game
   lap("base");
 }
 
-// Real keyboard input must reach the sim: holding W during the drop moves the player north.
+// Real keyboard input must reach the sim: holding W at the start moves the player north (the beach faces north).
 const before = await read();
 await page.keyboard.down("KeyW");
 await page.evaluate(() => window.advanceTime(600));
 await page.keyboard.up("KeyW");
 const after = await read();
 if (!(after.player.z < before.player.z - 3)) errors.push(`keyboard: W did not move the player (${before.player.z} -> ${after.player.z})`);
-await page.screenshot({ path: `${out}/01-drop.png` });
-// The drop banner sends the player to the map (M), since the HUD has no markers to follow.
-const dropBanner = await page.evaluate(() => document.getElementById("banner").textContent);
-if (!/地図/.test(dropBanner) || /目印/.test(dropBanner)) errors.push(`drop banner does not point at the map: ${dropBanner}`);
+await page.screenshot({ path: `${out}/01-start.png` });
+// The start's banner names the way in and sends the player to the map (M), since the HUD has no markers to follow.
+const startBanner = await page.evaluate(() => document.getElementById("banner").textContent);
+if (!/地図/.test(startBanner) || /目印/.test(startBanner) || !/南の浜/.test(startBanner)) errors.push(`start banner does not name the way in and point at the map: ${startBanner}`);
 
 // A tour of the island's buildings and high ground, from fixed cameras.
 await page.evaluate(() => {
@@ -345,19 +347,19 @@ await page.evaluate(() => {
   document.getElementById("banner").className = "";
 });
 await page.waitForTimeout(400);
-// A camera written in the frame of a POI (by its id) or a hamlet (by its name): [x, y, z].
+// A camera written in the frame of a POI (by its id), a hamlet (by its name) or an area ("area:" and its id): [x, y, z].
 const frames = await page.evaluate(() => window.ringfallFrames());
 const at = (frame, dx, y, dz) => [frames[frame].x + dx, y, frames[frame].z + dz];
 const tour = [
-  ["tour-1-lakebed-from-dam", 0, 11.6, -77, Math.PI, -0.25],
-  ["tour-2-dam-face", 0, -5.4, -40, 0, 0.22],
-  ["tour-3-town-street", 0, -5.4, 36, 0, 0.05],
-  ["tour-4-east-ramp", 16, -5.4, 4, 1.3, 0.1],
-  ["tour-5-spillway", 52, -8.4, -78, 0, 0.3],
+  ["tour-1-lakebed-from-dam", ...at("area:heart", 0, 11.6, -77), Math.PI, -0.25],
+  ["tour-2-dam-face", ...at("area:heart", 0, -5.4, -40), 0, 0.22],
+  ["tour-3-town-street", ...at("area:heart", 0, -5.4, 36), 0, 0.05],
+  ["tour-4-east-ramp", ...at("area:heart", 16, -5.4, 4), 1.3, 0.1],
+  ["tour-5-spillway", ...at("area:heart", 52, -8.4, -78), 0, 0.3],
   ["tour-6-quarry-pit", ...at("quarry", -35, -2.4, 36), -0.63, -0.15],
-  ["tour-7-high-rise-view", -2.5, 11.6, -10.2, Math.PI, -0.3],
-  ["tour-8-plateau-over-lakebed", -40, 6.4, -46, 1.57, -0.15],
-  ["tour-9-ridge", -50, 10.1, 70, -1.57, -0.1],
+  ["tour-7-high-rise-view", ...at("area:heart", -2.5, 11.6, -10.2), Math.PI, -0.3],
+  ["tour-8-plateau-over-lakebed", ...at("area:heart", -40, 6.4, -46), 1.57, -0.15],
+  ["tour-9-ridge", ...at("area:ridge", -50, 10.1, 70), -1.57, -0.1],
   ["tour-10-over-supply", ...at("supply", 45, 34, 54), -1.57, -0.35],
   ["tour-11-mesa-relay", ...at("relay", 18, 8.6, -23), 1.57, 0.02],
 ];
@@ -367,32 +369,36 @@ for (const [name, x, y, z, yaw, pitch] of tour) {
 }
 // The harbor and the ways there. Heights are above the ground at the camera, or absolute (a deck, a roof).
 const harborTour = [
-  ["tour-12-pass-saddle", -60, 1.7, -228, 0.05, -0.05],
-  ["tour-13-railway-bridge", 100, 1.7, -191, 1.45, 0.32],
-  ["tour-14-bridge-deck", 122, 11.8, -168, 0, -0.04, true],
-  ["tour-15-viaduct", 119, 1.7, -357, -1.42, 0.16],
+  ["tour-12-pass-saddle", ...at("area:pass", -60, 1.7, -228), 0.05, -0.05],
+  ["tour-13-railway-bridge", ...at("area:railway", 100, 1.7, -191), 1.45, 0.32],
+  ["tour-14-bridge-deck", ...at("area:railway", 122, 11.8, -168), 0, -0.04, true],
+  // Under the viaduct's corner, looking west along it.
+  ["tour-15-viaduct", 165, 1.7, -622, -1.42, 0.16],
   ["tour-16-wreck", ...at("wreck", -12, 1.7, 40), 0.12, 0.1],
   ["tour-17-wreck-deck", ...at("wreck", -40, 8.8, 2), 1.5, 0.02, true],
   ["tour-18-yard-alley", ...at("yard", -38, 1.7, -13.5), 1.57, 0.02],
   ["tour-19-yard-crane", ...at("yard", 0, 13.6 + 1.6, -5), 3.1, -0.42, true],
   ["tour-20-smelter", ...at("smelter", -22, 1.7, 32), 0.4, 0.16],
-  ["tour-21-lighthouse", -66, 1.7, -514, -0.97, 0.22],
-  ["tour-22-lighthouse-view", -112.9, 33.4, -552, 1.45, -0.2, true],
-  ["tour-23-salt-flats", -40, 1.7, -468, 0.75, 0.0],
-  ["tour-24-quay-boat", 94, 1.7, -578, 1.32, -0.1],
+  ["tour-21-lighthouse", ...at("area:bay", -66, 1.7, -514), -0.97, 0.22],
+  ["tour-22-lighthouse-view", ...at("area:bay", -112.9, 33.4, -552), 1.45, -0.2, true],
+  ["tour-23-salt-flats", ...at("area:bay", -40, 1.7, -468), 0.75, 0.0],
+  ["tour-24-quay-boat", ...at("area:bay", 94, 1.7, -578), 1.32, -0.1],
   // The open ground between the areas, its outcrops and hamlets.
-  ["tour-25-open-ground", -60, 1.7, 140, -1.23, 0.0],
+  ["tour-25-open-ground", -90, 1.7, 280, -1.23, 0.0],
   ["tour-26-west-farm", ...at("西の農場", 20, 1.7, 18), -0.84, 0.05],
   ["tour-27-water-tower", ...at("給水所", -25, 1.7, -20), 2.24, 0.08],
   ["tour-28-checkpoint", ...at("東の検問所", -25, 5, 17), 0.97, -0.08],
   ["tour-29-fishing-village", ...at("西の漁村", 25, 1.7, 20), -0.9, 0.05],
   ["tour-30-signal-box", ...at("信号所", 20, 1.7, 20), -0.79, 0.08],
-  ["tour-31-reservoir-from-above", 0, 70, 215, 0, -0.38, true],
+  ["tour-31-reservoir-from-above", 0, 90, 430, 0, -0.38, true],
   // The routes' obstacles, all closed in this fresh profile: the tunnel's two choked mouths,
   // the dam's chained gallery door, the wreck's gangway hauled up against its hull.
-  ["tour-32-tunnel-rubble", 48, 1.7, -150, 0, 0.12],
-  ["tour-33-tunnel-rubble-north", 48, 1.7, -277, Math.PI, 0.12],
-  ["tour-34-dam-gate", 14, 1.7, -53, 0, 0.12],
+  ["tour-32-tunnel-rubble", 40, 1.7, -287, 0, 0.12],
+  ["tour-33-tunnel-rubble-north", 40, 1.7, -422, Math.PI, 0.12],
+  ["tour-34-dam-gate", ...at("area:heart", 14, 1.7, -53), 0, 0.12],
+  // The open ground north of the landing pad, toward the mountains, and the harbor's south plain from the pass.
+  ["tour-36-north-of-pad", ...at("pad", -30, 1.7, -110), 0.2, 0.05],
+  ["tour-37-harbor-plain", -96, 1.7, -440, 0.3, -0.04],
   ["tour-35-gangway-hauled", ...at("wreck", -37, 1.7, -17), Math.PI - 0.45, 0.5],
 ];
 for (const [name, x, dy, z, yaw, pitch, abs] of harborTour) {
@@ -404,11 +410,13 @@ await page.evaluate(() => {
   window.ringfallCamera();
   document.getElementById("hud").hidden = false;
 });
-lap("drop and tour");
+lap("start and tour");
 
-// Land, then knock the teammate down and pick it up by hand: its tag and the prompt
-// show, one press of E starts the help, and it stands up after standing by it.
-await stepWhile(page, 200, 100, (st) => st.phase === "drop");
+// Knock the teammate down and pick it up by hand: its tag and the prompt show, one press
+// of E starts the help, and it stands up after standing by it.
+// The keyboard check above walked the player off: stand the teammate beside them again, as a raid starts.
+const here = (await read()).player;
+await page.evaluate(([x, z]) => window.ringfallPlace(x, z, window.ringfallYaw()), [here.x, here.z]);
 // The teammate up close, from a fixed camera in front of it.
 const mate = (await read()).ally;
 await page.evaluate((a) => {
@@ -482,11 +490,11 @@ for (let i = 0; i < 25 * 60 * 10; i++) {
   const live = s.enemies.filter((e) => e.mode !== "spawning" && e.aware === "engaged");
   const near = (e) => Math.hypot(e.x - s.player.x, e.z - s.player.z);
   const at = (poi) => live.some((e) => s.squads[e.squad].poi === poi);
-  if (s.phase === "play" && !taken.has("02-landed")) {
-    await shot("02-landed");
+  if (s.phase === "play" && !taken.has("02-start")) {
+    await shot("02-start");
     // The ways off the island are open from the start and listed on the objective card.
     const lines = await page.evaluate(() => document.getElementById("obj-exits").children.length);
-    if (lines !== 3) errors.push(`landed: the objective card lists ${lines} ways out, not 3`);
+    if (lines !== 3) errors.push(`start: the objective card lists ${lines} ways out, not 3`);
     // The map (M) is the only place that shows where the POIs and the ways out are.
     await page.keyboard.press("KeyM");
     await page.evaluate(() => window.advanceTime(100));
@@ -622,17 +630,16 @@ console.log(JSON.stringify((await read()).stats));
   lap("results");
 }
 
-// A second raid, into the harbor: the bot (still at the controls) drops there and plays to its first fight.
+// A second raid, into the harbor: the bot (still at the controls) starts at its first way in and plays to its first fight.
 {
   await page.click("#hub-region [data-arg=harbor]");
   await page.screenshot({ path: `${out}/27-hub-harbor.png` });
   await page.click("#hub-free");
   await page.evaluate(() => window.advanceTime(1500));
-  await page.screenshot({ path: `${out}/28-harbor-drop.png` });
-  const h = await stepWhile(page, 200, 100, (st) => st.phase === "drop");
-  if (h.region !== "harbor" || !(h.player.z < -250) || h.phase !== "play") errors.push(`harbor raid: landed in ${h.region} at ${h.player.x},${h.player.z} (${h.phase})`);
-  await page.evaluate(() => window.advanceTime(400));
-  await page.screenshot({ path: `${out}/29-harbor-landed.png` });
+  await draw(page);
+  await page.screenshot({ path: `${out}/28-harbor-start.png` });
+  const h = await read();
+  if (h.region !== "harbor" || !(h.player.z < -400) || h.phase !== "play") errors.push(`harbor raid: started in ${h.region} at ${h.player.x},${h.player.z} (${h.phase})`);
   const lines = await page.evaluate(() => document.getElementById("obj-exits").children.length);
   if (lines !== 1) errors.push(`harbor raid: the objective card lists ${lines} ways out, not the boat alone`);
   console.log(`desktop harbor frame: ${JSON.stringify(await page.evaluate(() => window.ringfallFrameCost(20)))}`);
@@ -776,7 +783,7 @@ const spills = (pg) =>
   if (starts !== 2) errors.push(`depot: the base offers ${starts} depots to start from, not 2`);
   await pg.click("#hub-region [data-act=from][data-arg=quarry]");
   await pg.screenshot({ path: `${out}/46-hub-depots.png` });
-  // The depot's allowance: the PIKE fits it, the armour on top does not, and a drop lifts the limit.
+  // The depot's allowance: the PIKE fits it, the armour on top does not, and a start at a way in lifts the limit.
   const allowance = () => pg.evaluate(() => document.querySelector("#hub-side .slot.depot")?.textContent ?? "");
   const goOff = () => pg.locator("#hub-go").isDisabled();
   await pg.locator("#hub-stash [data-act=pick]", { hasText: "PIKE" }).click();
@@ -788,7 +795,7 @@ const spills = (pg) =>
   if (!/4 \/ 2/.test(over) || !(await goOff()) || !/持ち込み枠/.test(await pg.getAttribute("#hub-go", "title"))) errors.push(`depot: over the allowance it reads "${over}" and the start is ${(await goOff()) ? "disabled" : "enabled"}`);
   await pg.screenshot({ path: `${out}/46-hub-depot-over.png` });
   await pg.click("#hub-region [data-arg=reservoir]");
-  if ((await goOff()) || (await allowance())) errors.push("depot: switching to the drop did not lift the allowance");
+  if ((await goOff()) || (await allowance())) errors.push("depot: switching to a way in did not lift the allowance");
   await pg.click("#hub-region [data-act=from][data-arg=quarry]");
   await pg.click("#hub-free");
   await pg.evaluate(() => window.advanceTime(500));
@@ -835,10 +842,12 @@ const spills = (pg) =>
   await pg.click('#hub [data-act=tab][data-arg=kit]');
   await pg.click("#hub-region [data-arg=reservoir]");
   await pg.click("#hub-free");
-  for (let i = 0; i < 80 && (await readOf(pg)).phase === "drop"; i++) await pg.evaluate(() => window.advanceTime(100));
   await pg.evaluate(() => window.advanceTime(3000));
   // Before the dam's gallery door, facing it.
-  await pg.evaluate(() => window.ringfallPlace(14, -58.6, 0));
+  await pg.evaluate(() => {
+    const h = window.ringfallFrames()["area:heart"];
+    window.ringfallPlace(14 + h.x, -58.6 + h.z, 0);
+  });
   await pg.evaluate(() => window.advanceTime(300));
   const prompt = await pg.textContent("#prompt");
   if (!/ダムの点検通路/.test(prompt) || !/ボルトカッターがあれば開く/.test(prompt)) errors.push(`routes: before the dam's door the prompt reads "${prompt}"`);
@@ -859,15 +868,15 @@ const spills = (pg) =>
   await pg.click('#hub [data-act=tab][data-arg=kit]');
   await pg.click("#hub-region [data-arg=reservoir]");
   await pg.click("#hub-free");
-  for (let i = 0; i < 80 && (await readOf(pg)).phase === "drop"; i++) await pg.evaluate(() => window.advanceTime(100));
   await pg.evaluate(() => window.advanceTime(3000));
   const r = await readOf(pg);
   if (r.routes.join() !== "tunnel,dam,gangway") errors.push(`routes: the raid's world has ${r.routes.join() || "none"} open`);
   // Inside, from fixed cameras: the tunnel under the mountains, the gallery climbing through the dam, the gangway.
+  const fr = await pg.evaluate(() => window.ringfallFrames());
   const views = [
-    ["54-tunnel-open", 48, 1.6, -170, 0, 0.05],
-    ["55-dam-gallery-open", 14, 1.6, -58, 0, 0.32],
-    ["56-gangway-open", -30, 1.7, -578, Math.PI - 0.6, 0.35],
+    ["54-tunnel-open", 40, 1.6, -306, 0, 0.05],
+    ["55-dam-gallery-open", 14 + fr["area:heart"].x, 1.6, -58 + fr["area:heart"].z, 0, 0.32],
+    ["56-gangway-open", -40 + fr.wreck.x, 1.7, -16 + fr.wreck.z, Math.PI - 0.6, 0.35],
   ];
   for (const [name, x, dy, z, yaw, pitch] of views) {
     const y = (await pg.evaluate(([x, z]) => window.ringfallTerrain(x, z), [x, z])) + dy;
@@ -876,12 +885,12 @@ const spills = (pg) =>
   }
   await pg.evaluate(() => window.ringfallCamera());
   // Walked on the keyboard from the tunnel's south mouth to its north one.
-  await pg.evaluate(() => window.ringfallPlace(48, -148, 0));
+  await pg.evaluate(() => window.ringfallPlace(40, -268, 0));
   await pg.keyboard.down("KeyW");
-  for (let i = 0; i < 40 && (await readOf(pg)).player.z > -262; i++) await pg.evaluate(() => window.advanceTime(1000));
+  for (let i = 0; i < 40 && (await readOf(pg)).player.z > -430; i++) await pg.evaluate(() => window.advanceTime(1000));
   await pg.keyboard.up("KeyW");
   const through = await readOf(pg);
-  if (through.player.z > -262 || Math.abs(through.player.x - 48) > 3) errors.push(`routes: walking the open tunnel ended at ${through.player.x},${through.player.z}`);
+  if (through.player.z > -430 || Math.abs(through.player.x - 40) > 3) errors.push(`routes: walking the open tunnel ended at ${through.player.x},${through.player.z}`);
   await pg.screenshot({ path: `${out}/57-tunnel-walked.png` });
   await pg.keyboard.press("KeyM");
   await pg.evaluate(() => window.advanceTime(200));

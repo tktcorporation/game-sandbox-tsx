@@ -180,9 +180,6 @@ export class Hud {
       case "pickup":
         if (e.kind !== "shard") this.toast(`${e.label}${e.kind === "weapon" ? `（${RARITY.names[e.rarity]}）` : e.kind === "armor" ? `（${RARITY.names[e.rarity]}）` : ""}`, e.rarity);
         break;
-      case "landed":
-        this.banner("探索して脱出せよ", "拠点の補給箱とロボットから価値のある物を集め、脱出地点から島を出る");
-        break;
       case "poiStart":
         this.banner(POIS[e.poi].boss ? "タイタンの縄張り" : `${POIS[e.poi].name}`, POIS[e.poi].boss ? "足元の衝撃波はジャンプでかわせる" : "部隊を全滅させると制圧になる");
         break;
@@ -260,15 +257,14 @@ export class Hud {
     const active = here >= 0;
     const remaining = s.enemies.filter((e) => e.poi === here).length;
     let text = "";
-    if (s.phase === "drop") text = isTouch() ? "降下中：スティックで着地点を選ぶ" : "降下中：WASD で着地点を選ぶ";
-    else if (p.leap) text = isTouch() ? "滑空中：スティックで着地点を選ぶ" : "滑空中：WASD で着地点を選ぶ";
+    if (p.leap) text = isTouch() ? "滑空中：スティックで着地点を選ぶ" : "滑空中：WASD で着地点を選ぶ";
     else if (s.phase === "done") text = s.outcome === "extracted" ? "生還" : "行方不明";
     else if (poi) text = poi.boss ? "タイタンの縄張り" : `${poi.name}：部隊 残り ${remaining}`;
     else text = "探索して脱出せよ";
     $("obj-text").textContent = text;
-    $("obj-count").textContent = s.phase === "drop" ? "" : `回収 ${haulValue(s)}`;
-    $("obj-bag").textContent = s.phase === "drop" ? "" : `バッグ ${bagLoad(p)}/${BAG.slots}`;
-    const raid = s.phase === "play" ? `${clock(s.time - s.landedAt)}` : "";
+    $("obj-count").textContent = `回収 ${haulValue(s)}`;
+    $("obj-bag").textContent = `バッグ ${bagLoad(p)}/${BAG.slots}`;
+    const raid = s.phase === "play" ? `${clock(s.time)}` : "";
     const next = s.phase !== "play" || s.reinforceT >= 60 ? "" : s.reinforceT > 0 ? `　増援まで ${Math.ceil(s.reinforceT)} 秒` : "　増援が来る";
     $("obj-raid").textContent = raid + next;
 
@@ -716,7 +712,7 @@ export class Hud {
       ["命中率", `${acc}%`],
       ["弱点命中", `${crit}%`],
       ["ダウン", st.downs],
-      ["レイド時間", clock(s.time - s.landedAt)],
+      ["レイド時間", clock(s.time)],
       ["脱出", s.leftAt ? `${POIS[poiIndex(s.leftAt)].name}の中継ボックス` : (EXTRACTS.find((x) => x.id === s.extractedAt)?.short ?? "-")],
       [`${ALLY.name}の撃破`, st.allyKills],
       [`${ALLY.name}に救助`, st.allyRescues],

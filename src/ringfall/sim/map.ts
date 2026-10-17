@@ -1,12 +1,13 @@
 import { VAULT, WORLD, type EnemyKind, type HealKind, type Rarity, type ToolKind, type ValuableKind, type WeaponKind } from "./config";
+import { AREA, inArea, POI_AT, type AreaId } from "./areas";
 import { buildTerrain, type Carve, type FlatShape, floorLevel, highGround, LEVEL, offshore, roadLine, steepAt, surfaceAt, terrainHeight } from "./terrain";
 
 /**
  * The world: two regions, a dried-up reservoir in the south and a dry harbor in the
  * north, joined by a pass road and a railway (see terrain.ts for their levels).
  * Everything solid is an axis-aligned box, so collision, line of sight and standing on
- * top are all the same cheap test. North is -z. The player chooses the region to drop
- * into; every POI, district and way off in both regions is open from the start.
+ * top are all the same cheap test. North is -z. The player chooses the region to start
+ * in; every POI, district and way off in both regions is open from the start.
  *
  * Boxes and points are written relative to the ground of their area and lifted to
  * its level here, so a building reads the same on the lakebed as on the mesa.
@@ -207,23 +208,34 @@ function highRise(cx: number, cz: number, w: number, d: number, floors: number):
   return tower(cx, cz, w, d, floors, { doors: [["s", "e"]], windows });
 }
 
-/** The harbor's lighthouse on its headland: the highest view over the harbor. */
+/** The harbor's lighthouse on its headland, in the bay's frame: the highest view over the harbor. */
 const LIGHTHOUSE = { x: -116, z: -553, floors: 7 } as const;
 
-/** Tall buildings: where they stand, their size and storeys. Their top-floor bins are in EXTRA_BINS. */
-const HIGH_RISES = [
-  { x: 0, z: -14, w: 10, d: 10, floors: 6, level: LEVEL.lakebed }, // the drowned town's office block
-  { x: 125, z: 0, w: 10, d: 10, floors: 5, level: LEVEL.mesa }, // flats beyond the housing street
-  { x: -34, z: -128, w: 8, d: 8, floors: 5, level: LEVEL.dam }, // the pad's control tower
-  { x: -182, z: 10, w: 8, d: 8, floors: 4, level: LEVEL.pit }, // a lookout at the quarry's far end
-  { x: -129, z: 28, w: 8, d: 8, floors: 4, level: LEVEL.pit }, // the quarry office
-] as const;
+/** Tall buildings: where they stand in their area's frame, their size and storeys. Their top-floor bins are in EXTRA_BINS. */
+const HIGH_RISES = (
+  [
+    { x: 0, z: -14, w: 10, d: 10, floors: 6, level: LEVEL.lakebed, area: "heart" }, // the drowned town's office block
+    { x: 125, z: 0, w: 10, d: 10, floors: 5, level: LEVEL.mesa, area: "relay" }, // flats beyond the housing street
+    { x: -34, z: -128, w: 8, d: 8, floors: 5, level: LEVEL.dam, area: "heart" }, // the pad's control tower
+    { x: -182, z: 10, w: 8, d: 8, floors: 4, level: LEVEL.pit, area: "quarry" }, // a lookout at the quarry's far end
+    { x: -129, z: 28, w: 8, d: 8, floors: 4, level: LEVEL.pit, area: "quarry" }, // the quarry office
+  ] as const
+).map((h) => {
+  const [x, z] = inArea(h.area, h.x, h.z);
+  return { ...h, x, z };
+});
 
 /** A walkway slab whose top is at height y. */
 const bridge = (x0: number, z0: number, x1: number, z1: number, y: number): Box => rect(x0, z0, x1, z1, y - 0.3, y, "slab", 1);
 
 /** Moves boxes authored in a district's own frame into place. */
 const place = (dx: number, dz: number, boxes: Box[]): Box[] => boxes.map((b) => ({ ...b, x0: b.x0 + dx, x1: b.x1 + dx, z0: b.z0 + dz, z1: b.z1 + dz }));
+
+/** Moves boxes written in an area's frame (areas.ts) into place. */
+const placeIn = (a: AreaId, boxes: Box[]): Box[] => place(AREA[a][0], AREA[a][1], boxes);
+
+/** A point written in an area's frame, moved into place. */
+const at = <T extends { x: number; z: number }>(a: AreaId, q: T): T => ({ ...q, x: q.x + AREA[a][0], z: q.z + AREA[a][1] });
 
 /** Raises boxes by `dy`: a building stood on a deck or a roof. */
 const lift = (dy: number, boxes: Box[]): Box[] => boxes.map((b) => ({ ...b, y0: b.y0 + dy, h: b.h + dy }));
@@ -336,18 +348,10 @@ function placePoi(p: Poi, [dx, dz]: readonly [number, number]): Poi {
 
 /**
  * Each POI is written in its own frame (its data and its boxes below) and moved
- * into place by this offset.
+ * into place by this offset (`POI_AT` in areas.ts, which sets each in its area's frame).
+ * The harbor's POIs are written round their own middle.
  */
-const AT = [
-  [0, 90],
-  [-99, 8],
-  [48, -7],
-  [0, -52],
-  // The harbor's POIs are written round their own middle.
-  [10, -562],
-  [-100, -400],
-  [120, -415],
-] as const;
+const AT = (["supply", "quarry", "relay", "pad", "wreck", "yard", "smelter"] as const).map((id) => POI_AT[id]);
 
 const POI_FRAMES: Poi[] = [
   {
@@ -543,20 +547,7 @@ export interface Depot {
  * the entry: the nearest flat spot where a raid started there is not seen by the POI's
  * squads at once (`checkDepots` in the sim gate holds them to it).
  */
-const DEPOT_OUT: Record<PoiId, number> = { supply: 18, quarry: 6, relay: 40, pad: 24, wreck: 22, yard: 18, smelter: 25 };
-
-/**
- * One depot per POI, on the road out from its entry: in reach on the way in or out, yet
- * outside the fight round the POI. They are not boxes and keep no ground clear, so the
- * island's cover is laid out the same with or without them.
- */
-export const DEPOTS: Depot[] = POIS.map((p) => {
-  const ax = p.entry.x - p.x;
-  const az = p.entry.z - p.z;
-  const len = Math.hypot(ax, az);
-  const at = onFloor({ x: +(p.entry.x + (ax / len) * DEPOT_OUT[p.id]).toFixed(1), z: +(p.entry.z + (az / len) * DEPOT_OUT[p.id]).toFixed(1) });
-  return { poi: p.id, x: at.x, y: at.y, z: at.z, yaw: Math.atan2(p.x - at.x, -(p.z - at.z)) };
-});
+const DEPOT_OUT: Record<PoiId, number> = { supply: 18, quarry: 6, relay: 85, pad: 24, wreck: 22, yard: 18, smelter: 25 };
 
 /** A depot's place in `DEPOTS` (and in the run's `depots`), from its POI. */
 export const depotIndex = (poi: PoiId) => DEPOTS.findIndex((d) => d.poi === poi);
@@ -588,10 +579,10 @@ export interface ExtractPoint {
 
 export const EXTRACTS: ExtractPoint[] = [
   { id: "ship", name: "発着場のドロップシップ", short: "ドロップシップ", x: AT[3][0], z: -84 + AT[3][1], radius: 5, hold: 1.5, call: 20, waves: { x: POIS[poiIndex("pad")].x, z: POIS[poiIndex("pad")].z }, note: "呼んで 20 秒守る。増援が降りてくる" },
-  { id: "flare", name: "台地の回収地点", short: "台地", x: -58, z: -53, radius: 5, hold: 4, needsFlare: true, note: "発煙筒を焚けば 4 秒" },
-  { id: "village", name: "廃村の回収地点", short: "廃村", x: -91, z: -63, radius: 5, hold: 15, note: "遠いが静か。15 秒待つ" },
+  { id: "flare", name: "台地の回収地点", short: "台地", ...at("heart", { x: -58, z: -53 }), radius: 5, hold: 4, needsFlare: true, note: "発煙筒を焚けば 4 秒" },
+  { id: "village", name: "廃村の回収地点", short: "廃村", ...at("village", { x: -91, z: -63 }), radius: 5, hold: 15, note: "遠いが静か。15 秒待つ" },
   // The harbor's way off: a boat comes up the channel to the quay.
-  { id: "boat", name: "埠頭のボート", short: "ボート", x: 105, z: -580, radius: 5, hold: 1.5, call: 25, waves: { x: 100, z: -563 }, note: "呼んで 25 秒守る。増援が降りてくる" },
+  { id: "boat", name: "埠頭のボート", short: "ボート", ...at("bay", { x: 105, z: -580 }), radius: 5, hold: 1.5, call: 25, waves: at("bay", { x: 100, z: -563 }), note: "呼んで 25 秒守る。増援が降りてくる" },
 ];
 export const EXTRACT = EXTRACTS[0];
 
@@ -602,71 +593,110 @@ export const EXTRACT = EXTRACTS[0];
  */
 export const ROAMERS: Squad[] = (
   [
-    // The lookout stays on the clock tower: a patrol is led by its first member, and one posted up high cannot leave its floor.
-    { name: "時計塔", members: [{ kind: "grunt", x: 0, z: 13, y: STOREY * 3, face: S }] },
-    {
-      name: "旧市街の見回り",
-      members: [{ kind: "grunt", x: -7, z: 20, face: E }],
-      patrol: [{ x: 7, z: 20 }, { x: 7, z: 2 }, { x: -7, z: 2 }, { x: -7, z: 20 }],
-    },
-    {
-      name: "尾根道の巡回",
-      roam: true,
-      members: [{ kind: "grunt", x: -40, z: 78 }, { kind: "drone", x: -38, z: 80 }],
-      patrol: [{ x: -40, z: 78 }, { x: -62, z: 64 }, { x: -90, z: 68 }, { x: -62, z: 64 }, { x: -40, z: 78 }, { x: -33, z: 86 }],
-    },
-    {
-      name: "東の坂の巡回",
-      roam: true,
-      members: [{ kind: "grunt", x: 44, z: -8 }, { kind: "charger", x: 42.4, z: -6.6 }],
-      patrol: [{ x: 44, z: -8 }, { x: 58, z: -24 }, { x: 44, z: -8 }, { x: 22, z: 0 }],
-    },
-  ] satisfies Squad[]
-)
-  .map((sq) => placeSquad(sq, 0, 0))
-  .concat(
-    (
-      [
-        // Between the regions.
-        {
-          name: "峠道の巡回",
-          roam: true,
-          members: [{ kind: "grunt", x: -48, z: -185 }, { kind: "drone", x: -46, z: -183 }],
-          patrol: [{ x: -48, z: -185 }, { x: -60, z: -222 }, { x: -64, z: -262 }, { x: -60, z: -222 }],
-        },
-        // The harbor.
-        {
-          name: "高架下の巡回",
-          roam: true,
-          members: [{ kind: "grunt", x: 118, z: -276 }, { kind: "charger", x: 116.6, z: -274.6 }],
-          patrol: [{ x: 118, z: -276 }, { x: 118, z: -343 }, { x: 30, z: -345 }, { x: 118, z: -343 }],
-        },
-        {
-          name: "塩田の巡回",
-          roam: true,
-          members: [{ kind: "grunt", x: -40, z: -480 }, { kind: "drone", x: -36, z: -482 }],
-          patrol: [{ x: -40, z: -480 }, { x: 60, z: -480 }, { x: 60, z: -518 }, { x: -40, z: -518 }],
-        },
-      ] satisfies Squad[]
-    ).map((sq) => placeSquad(sq, 0, 0)),
-  );
-export const SPAWN = { x: 0, z: 180, yaw: 0 };
+    // The drowned town, in the heart's frame. The lookout stays on the clock tower: a patrol is
+    // led by its first member, and one posted up high cannot leave its floor.
+    ["heart", { name: "時計塔", members: [{ kind: "grunt", x: 0, z: 13, y: STOREY * 3, face: S }] }],
+    [
+      "heart",
+      {
+        name: "旧市街の見回り",
+        members: [{ kind: "grunt", x: -7, z: 20, face: E }],
+        patrol: [{ x: 7, z: 20 }, { x: 7, z: 2 }, { x: -7, z: 2 }, { x: -7, z: 20 }],
+      },
+    ],
+    // Along the roads between the areas, in the world's coordinates.
+    [
+      null,
+      {
+        name: "尾根道の巡回",
+        roam: true,
+        members: [{ kind: "grunt", x: -65, z: 183 }, { kind: "drone", x: -63, z: 185 }],
+        patrol: [{ x: -65, z: 183 }, { x: -87, z: 169 }, { x: -123, z: 168 }, { x: -87, z: 169 }, { x: -65, z: 183 }, { x: -50, z: 202.5 }],
+      },
+    ],
+    [
+      null,
+      {
+        name: "東の坂の巡回",
+        roam: true,
+        members: [{ kind: "grunt", x: 67.5, z: 37 }, { kind: "charger", x: 65.9, z: 38.4 }],
+        patrol: [{ x: 67.5, z: 37 }, { x: 103, z: 28 }, { x: 67.5, z: 37 }, { x: 22, z: 37 }],
+      },
+    ],
+    // Between the regions.
+    [
+      null,
+      {
+        name: "峠道の巡回",
+        roam: true,
+        members: [{ kind: "grunt", x: -60, z: -230 }, { kind: "drone", x: -58, z: -228 }],
+        patrol: [{ x: -60, z: -230 }, { x: -90, z: -350 }, { x: -96, z: -430 }, { x: -90, z: -350 }],
+      },
+    ],
+    // The harbor.
+    [
+      null,
+      {
+        name: "高架下の巡回",
+        roam: true,
+        members: [{ kind: "grunt", x: 164, z: -436 }, { kind: "charger", x: 162.6, z: -434.6 }],
+        patrol: [{ x: 164, z: -436 }, { x: 164, z: -611 }, { x: 25, z: -610 }, { x: 164, z: -611 }],
+      },
+    ],
+    [
+      "bay",
+      {
+        name: "塩田の巡回",
+        roam: true,
+        members: [{ kind: "grunt", x: -40, z: -480 }, { kind: "drone", x: -36, z: -482 }],
+        patrol: [{ x: -40, z: -480 }, { x: 60, z: -480 }, { x: 60, z: -518 }, { x: -40, z: -518 }],
+      },
+    ],
+  ] satisfies [AreaId | null, Squad][]
+).map(([a, sq]) => (a ? placeSquad(sq, AREA[a][0], AREA[a][1]) : placeSquad(sq, 0, 0)));
 
 export type RegionId = "reservoir" | "harbor";
 
+export type EntryId = "beach" | "checkpoint" | "jetty" | "outskirts" | "quay" | "shore";
+
 /**
- * The regions a raid can drop into. Each holds its own POIs and ways off; the pass road
+ * A way into a region on foot, out on its open ground: a raid that does not start at a depot
+ * begins here, with the teammate beside the player, facing in. Each is out of every robot's
+ * sight for the first seconds (`checkEntries` in the sim gate holds them to it), and a walk
+ * from the nearest POI.
+ */
+export interface Entry {
+  id: EntryId;
+  region: RegionId;
+  name: string;
+  x: number;
+  z: number;
+  /** Facing in (0 = north / -z). */
+  yaw: number;
+}
+
+export const ENTRIES: Entry[] = [
+  { id: "beach", region: "reservoir", name: "南の浜", x: 10, z: 405, yaw: 0 },
+  { id: "checkpoint", region: "reservoir", name: "東の検問道", x: 325, z: -40, yaw: -Math.PI / 2 },
+  { id: "jetty", region: "reservoir", name: "西の釣り桟橋", x: -345, z: 130, yaw: Math.PI / 2 },
+  { id: "outskirts", region: "harbor", name: "港町の外れ", x: 40, z: -500, yaw: 0 },
+  { id: "quay", region: "harbor", name: "埠頭の東の道", x: 215, z: -940, yaw: -Math.PI / 2 },
+  { id: "shore", region: "harbor", name: "西の漁村の浜", x: -340, z: -820, yaw: Math.PI / 2 },
+];
+
+export const entryOf = (id: EntryId): Entry => ENTRIES.find((e) => e.id === id) ?? ENTRIES[0];
+
+/**
+ * The regions a raid can start in. Each holds its own POIs, ways off and ways in; the pass road
  * and the railway join them, so a raid may cross from one to the other on foot.
  */
 export interface Region {
   id: RegionId;
   name: string;
-  /** A line for the base's landing choice. */
+  /** A line for the base's start choice. */
   note: string;
-  /** Where the drop starts, high over the region. */
-  drop: { x: number; z: number; yaw: number };
-  /** Open ground near the drop that the bot steers its fall to. */
-  land: { x: number; z: number };
+  /** Its ways in on foot (`ENTRIES`), the first of them the one offered first. */
+  entries: EntryId[];
   pois: PoiId[];
   exits: ExtractId[];
   /** Where the world map writes the region's name, large and faint under everything. */
@@ -674,8 +704,8 @@ export interface Region {
 }
 
 export const REGIONS: Region[] = [
-  { id: "reservoir", name: "ダム湖", note: "干上がったダム湖の島。拠点 4 つ、発着場にタイタン", drop: SPAWN, land: { x: 0, z: 106 }, pois: ["supply", "quarry", "relay", "pad"], exits: ["ship", "flare", "village"], label: { x: -150, z: 120 } },
-  { id: "harbor", name: "港湾地帯", note: "干上がった湾の港。拠点 3 つ、どこにもヘビーがいる", drop: { x: 20, z: -296, yaw: 0 }, land: { x: 22, z: -306 }, pois: ["wreck", "yard", "smelter"], exits: ["boat"], label: { x: -150, z: -270 } },
+  { id: "reservoir", name: "ダム湖", note: "干上がったダム湖の島。拠点 4 つ、発着場にタイタン", entries: ["beach", "checkpoint", "jetty"], pois: ["supply", "quarry", "relay", "pad"], exits: ["ship", "flare", "village"], label: { x: -225, z: 250 } },
+  { id: "harbor", name: "港湾地帯", note: "干上がった湾の港。拠点 3 つ、どこにもヘビーがいる", entries: ["outskirts", "quay", "shore"], pois: ["wreck", "yard", "smelter"], exits: ["boat"], label: { x: -250, z: -520 } },
 ];
 
 export const regionOf = (id: RegionId): Region => REGIONS.find((r) => r.id === id) ?? REGIONS[0];
@@ -709,8 +739,8 @@ const HAMLET_FRAMES: Hamlet[] = [
   // --- the reservoir
   {
     name: "西の農場",
-    x: -170,
-    z: 92,
+    x: -255,
+    z: 208,
     boxes: [
       ...tower(0, 0, 8, 8, 2, { doors: [["s", "e"]], windows: [["w"], ["n", "e", "w"]] }),
       ...building(14, 4, 12, 8, 4.2, { doors: ["w", "e"], windows: ["n"] }),
@@ -724,8 +754,8 @@ const HAMLET_FRAMES: Hamlet[] = [
   },
   {
     name: "西の飯場",
-    x: -185,
-    z: -45,
+    x: -277,
+    z: 2,
     boxes: [
       ...building(-8, -6, 6, 5, 3.4, { doors: ["e"], windows: ["s"] }),
       ...building(-8, 6, 6, 5, 3.4, { doors: ["e"], windows: ["n"], roof: "w" }),
@@ -737,8 +767,8 @@ const HAMLET_FRAMES: Hamlet[] = [
   },
   {
     name: "南の漁師小屋",
-    x: -70,
-    z: 180,
+    x: -105,
+    z: 340,
     boxes: [
       ...building(-6, 0, 7, 6, 3.4, { doors: ["n", "e"], windows: ["s"] }),
       ...building(8, -4, 6, 5, 3.4, { doors: ["w"], roof: "e" }),
@@ -750,8 +780,8 @@ const HAMLET_FRAMES: Hamlet[] = [
   },
   {
     name: "給水所",
-    x: 95,
-    z: 150,
+    x: 142,
+    z: 295,
     boxes: [
       // The water tower: seen from the shore, a bin on its top floor.
       ...tower(0, 0, 8, 8, 3, { doors: [["s", "w"]], windows: [[], ["n", "e"], ["n", "e", "s", "w"]] }),
@@ -763,8 +793,8 @@ const HAMLET_FRAMES: Hamlet[] = [
   },
   {
     name: "東の牧場",
-    x: 180,
-    z: 70,
+    x: 270,
+    z: 175,
     boxes: [
       ...tower(0, 0, 8, 8, 2, { doors: [["w", "s"]], windows: [["e"], ["n", "w", "s"]] }),
       ...building(-14, -4, 12, 8, 4.2, { doors: ["e", "w"], windows: ["s"] }),
@@ -776,8 +806,8 @@ const HAMLET_FRAMES: Hamlet[] = [
   },
   {
     name: "東の検問所",
-    x: 170,
-    z: -85,
+    x: 255,
+    z: -57,
     boxes: [
       ...tower(0, 0, 8, 8, 2, { doors: [["w", "s"]], windows: [["e"], ["n", "e", "w", "s"]] }),
       ...building(-12, -8, 6, 5, 3.4, { doors: ["e"], roof: "s" }),
@@ -791,8 +821,8 @@ const HAMLET_FRAMES: Hamlet[] = [
   // --- the harbor
   {
     name: "西の漁村",
-    x: -170,
-    z: -480,
+    x: -277,
+    z: -835,
     boxes: [
       ...building(-10, -6, 7, 6, 3.4, { doors: ["e", "s"], windows: ["w"] }),
       ...building(4, -10, 6, 6, 3.4, { doors: ["s"], windows: ["n"], roof: "e" }),
@@ -805,8 +835,8 @@ const HAMLET_FRAMES: Hamlet[] = [
   },
   {
     name: "北西の倉庫",
-    x: -175,
-    z: -320,
+    x: -285,
+    z: -595,
     boxes: [
       ...tower(0, 0, 16, 10, 2, { doors: [["s", "e"]], windows: [["w"], ["n", "e", "w"]] }),
       ...building(14, 8, 6, 5, 3.4, { doors: ["w"], roof: "s" }),
@@ -817,8 +847,8 @@ const HAMLET_FRAMES: Hamlet[] = [
   },
   {
     name: "東の燃料所",
-    x: 190,
-    z: -500,
+    x: 262,
+    z: -865,
     boxes: [
       box(-10, -8, 6, 6, 5, "tower", 1),
       box(-10, 4, 6, 6, 5, "tower", 0),
@@ -830,8 +860,8 @@ const HAMLET_FRAMES: Hamlet[] = [
   },
   {
     name: "信号所",
-    x: -30,
-    z: -420,
+    x: -67,
+    z: -745,
     boxes: [
       ...tower(0, 0, 8, 8, 3, { doors: [["e", "s"]], windows: [["w"], ["n", "e", "w"], ["n", "e", "s", "w"]] }),
       ...walls(12, 6, 6, 6, 0, 2.4, ["w", "s"], ["n"]),
@@ -842,8 +872,8 @@ const HAMLET_FRAMES: Hamlet[] = [
   },
   {
     name: "東の丘の家",
-    x: 175,
-    z: -340,
+    x: 240,
+    z: -625,
     boxes: [
       ...building(-6, 0, 7, 6, 3.4, { doors: ["e", "n"], windows: ["s"], roof: "w" }),
       ...building(8, 4, 6, 6, 3.4, { doors: ["w"], windows: ["e"] }),
@@ -861,24 +891,26 @@ const HAMLET_FRAMES: Hamlet[] = [
 export const FRAMES: Record<string, { x: number; z: number }> = Object.fromEntries([
   ...POI_FRAMES.map((p, i): [string, { x: number; z: number }] => [p.id, { x: AT[i][0], z: AT[i][1] }]),
   ...HAMLET_FRAMES.map((h): [string, { x: number; z: number }] => [h.name, { x: h.x, z: h.z }]),
+  // The areas' frames (areas.ts), as "area:" and the area's id.
+  ...Object.entries(AREA).map(([id, [x, z]]): [string, { x: number; z: number }] => [`area:${id}`, { x, z }]),
 ]);
 
 /** Names on the world map for the districts and landmarks between the POIs, where each is written. */
 export const LANDMARKS: readonly { name: string; x: number; z: number }[] = [
-  { name: "湖底の旧市街", x: 0, z: -22 },
-  { name: "堤", x: 0, z: -79 },
-  { name: "放水路", x: 50, z: -72 },
-  { name: "尾根", x: -50, z: 62 },
-  { name: "工場", x: 57, z: 60 },
-  { name: "住宅地", x: 112, z: 24 },
-  { name: "峠", x: -60, z: -236 },
-  { name: "鉄橋", x: 140, z: -190 },
-  { name: "駅", x: 108, z: -228 },
-  { name: "港町", x: 20, z: -312 },
-  { name: "高架", x: 30, z: -362 },
-  { name: "塩田", x: -10, z: -480 },
-  { name: "灯台", x: -116, z: -538 },
-  { name: "水路", x: 140, z: -604 },
+  at("heart", { name: "湖底の旧市街", x: 0, z: -22 }),
+  at("heart", { name: "堤", x: 0, z: -79 }),
+  at("heart", { name: "放水路", x: 50, z: -72 }),
+  at("ridge", { name: "尾根", x: -50, z: 62 }),
+  at("factory", { name: "工場", x: 57, z: 60 }),
+  at("relay", { name: "住宅地", x: 112, z: 24 }),
+  at("pass", { name: "峠", x: -60, z: -236 }),
+  at("railway", { name: "鉄橋", x: 140, z: -190 }),
+  at("railway", { name: "駅", x: 108, z: -228 }),
+  at("town", { name: "港町", x: 20, z: -312 }),
+  { name: "高架", x: 30, z: -627 },
+  at("bay", { name: "塩田", x: -10, z: -480 }),
+  at("bay", { name: "灯台", x: -116, z: -538 }),
+  at("bay", { name: "水路", x: 140, z: -604 }),
 ];
 
 /**
@@ -887,19 +919,19 @@ export const LANDMARKS: readonly { name: string; x: number; z: number }[] = [
  * hidden spot a walk away from each.
  */
 export const STOPS: readonly { name: string; x: number; z: number }[] = [
-  { name: "工場", x: 50, z: 50 },
-  { name: "台地", x: -60, z: -40 },
-  { name: "廃村", x: -100, z: -62 },
-  { name: "放水路", x: 50, z: -80 },
-  { name: "住宅地", x: 112, z: 20 },
-  { name: "採掘場の奥", x: -150, z: 12 },
-  { name: "尾根", x: -50, z: 76 },
-  { name: "峠", x: -60, z: -222 },
-  { name: "駅", x: 122, z: -230 },
-  { name: "港町", x: 20, z: -306 },
-  { name: "高架下", x: 60, z: -344 },
-  { name: "塩田", x: 10, z: -500 },
-  { name: "岬", x: -122, z: -545 },
+  at("factory", { name: "工場", x: 50, z: 50 }),
+  at("heart", { name: "台地", x: -60, z: -40 }),
+  at("village", { name: "廃村", x: -100, z: -62 }),
+  at("heart", { name: "放水路", x: 50, z: -80 }),
+  at("relay", { name: "住宅地", x: 112, z: 20 }),
+  at("quarry", { name: "採掘場の奥", x: -150, z: 12 }),
+  at("ridge", { name: "尾根", x: -50, z: 76 }),
+  at("pass", { name: "峠", x: -60, z: -222 }),
+  at("railway", { name: "駅", x: 122, z: -230 }),
+  at("town", { name: "港町", x: 20, z: -306 }),
+  { name: "高架下", x: 55, z: -609 },
+  at("bay", { name: "塩田", x: 10, z: -500 }),
+  at("bay", { name: "岬", x: -122, z: -545 }),
 ];
 
 /** The hamlets placed, each flat at the level of the ground under its middle. */
@@ -917,29 +949,29 @@ type ExtraBin = { x: number; z: number; y?: number; table: PoiId; flare?: true }
 /** Bins outside the POIs, mostly up high. `table` is the POI whose loot table they use. */
 export const EXTRA_BINS: ExtraBin[] = (
   [
-    { x: -12, z: 172, table: "supply" },
-    { x: -45, z: 70, y: 3.5, table: "supply" },
-    { x: -2, z: 10, y: STOREY * 2, table: "quarry" },
-    { x: 14, z: 11, y: STOREY * 2, table: "quarry" },
-    { x: -2, z: 30, table: "quarry" },
-    { x: 64, z: 49, table: "relay" },
-    { x: 48, z: 39.3, y: 3.3, table: "relay" },
-    { x: -56, z: -52, y: 7.2, table: "relay" },
-    { x: 113, z: 14, y: STOREY, table: "relay" },
-    { x: -114, z: -71, y: STOREY, table: "quarry" },
+    at("supply", { x: -12, z: 172, table: "supply" }),
+    at("ridge", { x: -45, z: 70, y: 3.5, table: "supply" }),
+    at("heart", { x: -2, z: 10, y: STOREY * 2, table: "quarry" }),
+    at("heart", { x: 14, z: 11, y: STOREY * 2, table: "quarry" }),
+    at("heart", { x: -2, z: 30, table: "quarry" }),
+    at("factory", { x: 64, z: 49, table: "relay" }),
+    at("factory", { x: 48, z: 39.3, y: 3.3, table: "relay" }),
+    at("heart", { x: -56, z: -52, y: 7.2, table: "relay" }),
+    at("relay", { x: 113, z: 14, y: STOREY, table: "relay" }),
+    at("village", { x: -114, z: -71, y: STOREY, table: "quarry" }),
     // Top floor of each tall building, on the side away from its stairs. These hold the
     // flares that call the plateau pickup (EXTRACTS).
     ...HIGH_RISES.map((h) => ({ x: h.x - h.w / 2 + 1.5, z: h.z, y: (h.floors - 1) * STOREY, table: "relay" as const, flare: true as const })),
-    // The harbor: the landing hut, the town's warehouse, the viaduct and the road under it,
-    // a lone bin out on the salt flats, the saddle of the pass.
-    { x: 14, z: -288, table: "yard" },
-    { x: 56, z: -290, y: STOREY, table: "yard" },
-    { x: 92, z: -350, y: LEVEL.rail, table: "smelter" },
-    { x: 60, z: -355, table: "smelter" },
-    { x: -20, z: -505, table: "wreck" },
-    { x: -62, z: -220, table: "yard" },
+    // The harbor: the town's hut and warehouse, the viaduct and the road under it, a lone bin
+    // out on the salt flats, the saddle of the pass.
+    at("town", { x: 14, z: -288, table: "yard" }),
+    at("town", { x: 56, z: -290, y: STOREY, table: "yard" }),
+    { x: 87, z: -615, y: LEVEL.rail, table: "smelter" },
+    { x: 55, z: -620, table: "smelter" },
+    at("bay", { x: -20, z: -505, table: "wreck" }),
+    at("pass", { x: -62, z: -220, table: "yard" }),
     // The lighthouse's top floor, like the high-rises', holds a flare.
-    { x: LIGHTHOUSE.x - 2.5, z: LIGHTHOUSE.z + 0.5, y: (LIGHTHOUSE.floors - 1) * STOREY, table: "wreck", flare: true },
+    at("bay", { x: LIGHTHOUSE.x - 2.5, z: LIGHTHOUSE.z + 0.5, y: (LIGHTHOUSE.floors - 1) * STOREY, table: "wreck", flare: true }),
   ] satisfies ExtraBin[]
 )
   .map((b): ExtraBin => onFloor(b))
@@ -1048,13 +1080,20 @@ function smelter(): Box[] {
   return out;
 }
 
+/**
+ * The viaduct, in the world's coordinates: from the north embankment's end (`z0`) it runs north
+ * along `x` to its corner at `z`, past the town's east end where stairs come down (`stair`),
+ * then west along `z`, north of the town, to its end by the container yard at `x0`.
+ */
+const VIADUCT = { x: 168, z0: -406, z: -615, x0: -67, stair: -564.6 } as const;
+
 /** Everything built in the harbor and on the way there, outside the POIs. */
 const HARBOR: Box[] = [
   ...onLevel(LEVEL.seabed, place(AT[4][0], AT[4][1], wreck())),
   ...onLevel(LEVEL.shore, place(AT[5][0], AT[5][1], yard())),
   ...onLevel(LEVEL.terrace, place(AT[6][0], AT[6][1], smelter())),
-  // --- 港町: the landing hut, a warehouse with a roof to watch from, cottages, crates
-  ...onLevel(LEVEL.shore, [
+  // --- 港町: a hut, a warehouse with a roof to watch from, cottages, crates
+  ...onLevel(LEVEL.shore, placeIn("town", [
     ...building(14, -288, 6, 5, 3.4, { doors: ["s"], windows: ["e"], roof: "e" }),
     ...tower(60, -293, 16, 10, 2, { doors: [["s", "w"]], windows: [["e"], ["n", "e", "w"]] }),
     ...tower(-22, -308, 8, 8, 2, { doors: [["s", "e"]], windows: [["w"], ["n", "e", "w"]] }),
@@ -1064,9 +1103,9 @@ const HARBOR: Box[] = [
     box(42, -290, 1.2, 1.2, 0.9, "crate"),
     box(43.2, -290, 1.2, 1.2, 1.8, "crate"),
     box(76, -306, 2.5, 6.2, 2.6, "container", 2),
-  ]),
+  ])),
   // --- 岬: the lighthouse, banded red every other storey, its lantern on top, and the keeper's cottage
-  ...onLevel(LEVEL.headland, [
+  ...onLevel(LEVEL.headland, placeIn("bay", [
     ...paint(
       tower(LIGHTHOUSE.x, LIGHTHOUSE.z, 8, 8, LIGHTHOUSE.floors, { doors: [["s", "e"]], windows: [[], ["n"], ["e"], ["s"], ["w"], ["n", "e"], ["n", "e", "s", "w"]] }),
       "wall",
@@ -1078,24 +1117,24 @@ const HARBOR: Box[] = [
     box(LIGHTHOUSE.x, LIGHTHOUSE.z, 1.6, 1.6, LIGHTHOUSE.floors * STOREY + 1.5, "steel", 3, LIGHTHOUSE.floors * STOREY),
     box(LIGHTHOUSE.x, LIGHTHOUSE.z, 8.4, 8.4, LIGHTHOUSE.floors * STOREY + 2.8, "steel", 0, LIGHTHOUSE.floors * STOREY + 2.5),
     ...building(-107, -563, 6, 5, 3.4, { doors: ["w", "s"], windows: ["e"] }),
-  ]),
+  ])),
   // --- 峠: a ruined wall and a signpost on the saddle
-  ...onLevel(LEVEL.pass, [box(-52.5, -219.5, 3.2, 0.6, 1.2, "wall", 1), box(-51, -221, 0.6, 2.4, 1.6, "wall", 1), box(-55, -216.5, 0.3, 0.3, 3.2, "steel", 2)]),
+  ...onLevel(LEVEL.pass, placeIn("pass", [box(-52.5, -219.5, 3.2, 0.6, 1.2, "wall", 1), box(-51, -221, 0.6, 2.4, 1.6, "wall", 1), box(-55, -216.5, 0.3, 0.3, 3.2, "steel", 2)])),
   // --- the station on the railway's north embankment: a canopy over the platform
-  ...onLevel(LEVEL.rail, [
+  ...onLevel(LEVEL.rail, placeIn("railway", [
     box(125.6, -222, 0.3, 0.3, 3.2, "steel", 2),
     box(125.6, -234, 0.3, 0.3, 3.2, "steel", 2),
     rect(124, -236, 127, -220, 3.0, 3.25, "slab", 1),
     box(118.6, -228, 1.2, 1.2, 0.9, "crate"),
-  ]),
+  ])),
   // --- the viaduct's pillars, standing on the road under it, and its stairs
   ...onLevel(LEVEL.shore, [
-    ...Array.from({ length: 8 }, (_, i) => box(122, -262 - i * 12, 2.4, 1.6, LEVEL.rail - 0.3, "tower")),
-    ...Array.from({ length: 15 }, (_, i) => box(-56 + i * 12, -350, 1.6, 2.4, LEVEL.rail - 0.3, "tower")),
-    ...stairs(-62, -350, "w", 2.4, LEVEL.rail),
-    ...stairs(125.5, -299.6, "s", 1.8, LEVEL.rail),
+    ...Array.from({ length: 16 }, (_, i) => box(VIADUCT.x, VIADUCT.z0 - 16 - i * 12, 2.4, 1.6, LEVEL.rail - 0.3, "tower")),
+    ...Array.from({ length: 19 }, (_, i) => box(VIADUCT.x0 + 6 + i * 12, VIADUCT.z, 1.6, 2.4, LEVEL.rail - 0.3, "tower")),
+    ...stairs(VIADUCT.x0, VIADUCT.z, "w", 2.4, LEVEL.rail),
+    ...stairs(VIADUCT.x + 3.5, VIADUCT.stair, "s", 1.8, LEVEL.rail),
     // A carriage fallen from the line onto the road below.
-    box(-30, -353.8, 12, 2.8, 3, "steel", 3),
+    box(-35, VIADUCT.z - 3.8, 12, 2.8, 3, "steel", 3),
   ]),
 ];
 
@@ -1111,40 +1150,44 @@ export interface Deck {
   z1: number;
   y: number;
 }
-export const DECKS: Deck[] = [{ x0: 120.2, z0: -201.5, x1: 123.8, z1: -178.5, y: LEVEL.rail }];
+export const DECKS: Deck[] = placeIn("railway", [rect(120.2, -201.5, 123.8, -178.5, 0, 0, "slab")]).map((b) => ({ x0: b.x0, z0: b.z0, x1: b.x1, z1: b.z1, y: LEVEL.rail }));
 
-/**
- * The railway's decks: the bridge over the gorge on two piers, and the viaduct from the
- * north embankment out over the harbor (pillars and stairs in HARBOR), railed along its
- * length, with an abandoned carriage on it. They are not pressed flat: the gorge and the
- * road run under them, and their ends rest on the embankments.
- */
 /**
  * A kerb along the quay's edge, knee high: walkers fighting round the boat's pickup point
  * cannot step off into the channel, where they could not climb out. The slipway east of it
  * stays open.
  */
-const QUAY: Box[] = [rect(89, -583.2, 146, -582.6, -6.2, -2.3, "wall", 1)];
+const QUAY: Box[] = placeIn("bay", [rect(89, -583.2, 146, -582.6, -6.2, -2.3, "wall", 1)]);
 
+/**
+ * The railway's decks: the bridge over the gorge on two piers (in the railway's frame), and the
+ * viaduct from the north embankment out over the harbor (`VIADUCT`, its pillars and stairs in
+ * HARBOR), railed along its length, with an abandoned carriage on it. They are not pressed
+ * flat: the gorge and the road run under them, and their ends rest on the embankments.
+ */
+const { x: VX, z: VZ, z0: VZ0, x0: VX0, stair: VS } = VIADUCT;
 const RAILWAY: Box[] = [
-  bridge(119.5, -208, 124.5, -172, LEVEL.rail),
-  rect(119.5, -202, 119.8, -178, LEVEL.rail, LEVEL.rail + 1.2, "steel", 2),
-  rect(124.2, -202, 124.5, -178, LEVEL.rail, LEVEL.rail + 1.2, "steel", 2),
-  box(122, -185, 3, 2, LEVEL.rail - 0.3, "tower", 0, -9),
-  box(122, -195, 3, 2, LEVEL.rail - 0.3, "tower", 0, -9),
+  ...placeIn("railway", [
+    bridge(119.5, -208, 124.5, -172, LEVEL.rail),
+    rect(119.5, -202, 119.8, -178, LEVEL.rail, LEVEL.rail + 1.2, "steel", 2),
+    rect(124.2, -202, 124.5, -178, LEVEL.rail, LEVEL.rail + 1.2, "steel", 2),
+    box(122, -185, 3, 2, LEVEL.rail - 0.3, "tower", 0, -9),
+    box(122, -195, 3, 2, LEVEL.rail - 0.3, "tower", 0, -9),
+    ...[121.2, 122.8].map((x) => rect(x - 0.08, -205, x + 0.08, -175, LEVEL.rail, LEVEL.rail + 0.12, "steel", 2)),
+  ]),
   // The viaduct: north from the embankment, then west over the road to its end by the yard.
-  bridge(119.5, -352.5, 124.5, -246, LEVEL.rail),
-  bridge(-62, -352.5, 119.5, -347.5, LEVEL.rail),
-  rect(124.5, -302, 126.6, -299.6, LEVEL.rail - 0.3, LEVEL.rail, "slab", 1),
-  rect(119.5, -347.5, 119.75, -258, LEVEL.rail, LEVEL.rail + 0.9, "wall", 1),
-  rect(124.25, -352.5, 124.5, -302, LEVEL.rail, LEVEL.rail + 0.9, "wall", 1),
-  rect(124.25, -299.6, 124.5, -258, LEVEL.rail, LEVEL.rail + 0.9, "wall", 1),
-  rect(-59, -352.5, 124.5, -352.25, LEVEL.rail, LEVEL.rail + 0.9, "wall", 1),
-  rect(-59, -347.75, 119.5, -347.5, LEVEL.rail, LEVEL.rail + 0.9, "wall", 1),
+  bridge(VX - 2.5, VZ - 2.5, VX + 2.5, VZ0, LEVEL.rail),
+  bridge(VX0, VZ - 2.5, VX - 2.5, VZ + 2.5, LEVEL.rail),
+  rect(VX + 2.5, VS - 2.4, VX + 4.6, VS, LEVEL.rail - 0.3, LEVEL.rail, "slab", 1),
+  rect(VX - 2.5, VZ + 2.5, VX - 2.25, VZ0 - 12, LEVEL.rail, LEVEL.rail + 0.9, "wall", 1),
+  rect(VX + 2.25, VZ - 2.5, VX + 2.5, VS - 2.4, LEVEL.rail, LEVEL.rail + 0.9, "wall", 1),
+  rect(VX + 2.25, VS, VX + 2.5, VZ0 - 12, LEVEL.rail, LEVEL.rail + 0.9, "wall", 1),
+  rect(VX0 + 3, VZ - 2.5, VX + 2.5, VZ - 2.25, LEVEL.rail, LEVEL.rail + 0.9, "wall", 1),
+  rect(VX0 + 3, VZ + 2.25, VX - 2.5, VZ + 2.5, LEVEL.rail, LEVEL.rail + 0.9, "wall", 1),
   // Rails along the decks.
-  ...[121.2, 122.8].flatMap((x) => [rect(x - 0.08, -205, x + 0.08, -175, LEVEL.rail, LEVEL.rail + 0.12, "steel", 2), rect(x - 0.08, -350, x + 0.08, -250, LEVEL.rail, LEVEL.rail + 0.12, "steel", 2)]),
-  ...[-350.8, -349.2].map((z) => rect(-60, z - 0.08, 121, z + 0.08, LEVEL.rail, LEVEL.rail + 0.12, "steel", 2)),
-  box(48, -350, 12, 2.6, LEVEL.rail + 3, "steel", 3, LEVEL.rail),
+  ...[VX - 0.8, VX + 0.8].map((x) => rect(x - 0.08, VZ, x + 0.08, VZ0 - 4, LEVEL.rail, LEVEL.rail + 0.12, "steel", 2)),
+  ...[VZ - 0.8, VZ + 0.8].map((z) => rect(VX0 + 2, z - 0.08, VX - 1, z + 0.08, LEVEL.rail, LEVEL.rail + 0.12, "steel", 2)),
+  box(43, VZ, 12, 2.6, LEVEL.rail + 3, "steel", 3, LEVEL.rail),
 ];
 
 /** Everything placed by hand: POIs, districts, landmarks. */
@@ -1170,7 +1213,7 @@ const AUTHORED: Box[] = [
     box(6, 30, 12, 5, 1.2, "tower"),
     ...stairs(2, 32.5, "s", 3, 1.2),
     ...stairs(10, 27.5, "n", 3, 1.2),
-    // the landing zone: a hut with the first bin
+    // south of the yard: a hut with the first bin
     ...building(-12, 82, 6, 5, 3.4, { doors: ["n"], windows: ["e"], roof: "e" }),
     box(14, 76, 4, 3, 1.4, "rock"),
   ])),
@@ -1237,7 +1280,7 @@ const AUTHORED: Box[] = [
   ])),
 
   // --- 旧市街: a clock tower joined to two houses by bridges at 6.8 m, shops around two streets
-  ...onLevel(LEVEL.lakebed, [
+  ...onLevel(LEVEL.lakebed, placeIn("heart", [
     ...tower(0, 12, 8, 9, 3, { doors: [["s", "e"], [], ["w", "e"]], windows: [["w"], ["n", "e", "w"], ["s"]] }),
     ...tower(-14, 12, 10, 8, 2, { doors: [["s", "w"]], windows: [["e"], ["n", "w"]], open: ["e"] }),
     ...tower(14, 12, 8, 8, 2, { doors: [["s", "e"]], windows: [["w"], ["n", "e"]], open: ["w"] }),
@@ -1253,23 +1296,23 @@ const AUTHORED: Box[] = [
     box(-24, 6, 0.6, 8, 1.4, "wall"),
     box(24, 20, 0.6, 8, 1.4, "wall"),
     box(0, 38, 3, 1.2, 1.2, "rock"),
-  ]),
+  ])),
 
   // --- tall buildings, seen from anywhere on the island
   ...HIGH_RISES.flatMap((h) => onLevel(h.level, highRise(h.x, h.z, h.w, h.d, h.floors))),
 
   // --- 尾根: a long ridge with stairs at both ends, cover on top
-  ...onLevel(LEVEL.ridge, [
+  ...onLevel(LEVEL.ridge, placeIn("ridge", [
     box(-50, 70, 30, 6, 3.5, "rock"),
     ...stairs(-35, 70, "e", 2.4, 3.5, 1),
     ...stairs(-65, 70, "w", 2.4, 3.5, 1),
     box(-50, 67.4, 6, 0.4, 4.4, "wall", 1, 3.5),
     box(-42, 82, 5, 4, 2, "rock"),
     box(-58, 56, 4, 6, 1.6, "rock"),
-  ]),
+  ])),
 
   // --- 台地: three terraces climbing to a lookout over the lakebed
-  ...onLevel(LEVEL.shore, place(-6, 0, [
+  ...onLevel(LEVEL.shore, place(AREA.heart[0] - 6, AREA.heart[1], [
     box(-45, -50, 34, 26, 2.4, "rock"),
     box(-48, -52, 20, 14, 4.8, "rock", 1),
     box(-52, -54, 8, 8, 7.2, "rock"),
@@ -1281,7 +1324,7 @@ const AUTHORED: Box[] = [
   ])),
 
   // --- 工場: a hall with a catwalk inside, two silos, a container yard
-  ...onLevel(LEVEL.shore, [
+  ...onLevel(LEVEL.shore, placeIn("factory", [
     ...building(55, 45, 24, 14, 6, { doors: ["w", "s"], windows: ["n", "e"] }),
     rect(45, 38.35, 65, 40.35, 3.0, 3.3, "slab"),
     ...stairs(46, 40.35, "s", 1.4, 3.3),
@@ -1291,27 +1334,41 @@ const AUTHORED: Box[] = [
     box(58, 60, 2.5, 6.2, 2.6, "container", 0),
     box(46, 64, 6.2, 2.5, 2.6, "container", 1),
     box(53, 63, 1.2, 1.2, 0.9, "crate"),
-  ]),
+  ])),
 
   // --- 住宅地: two houses joined by a roof bridge, two cottages
-  ...onLevel(LEVEL.mesa, [
+  ...onLevel(LEVEL.mesa, placeIn("relay", [
     ...tower(100, 15, 8, 8, 2, { doors: [["s", "w"]], windows: [["e"], ["n", "w"]], open: ["e"] }),
     ...tower(114, 15, 8, 8, 2, { doors: [["s", "e"]], windows: [["w"], ["n", "e"]], open: ["w"] }),
     bridge(104, 14, 110, 16, STOREY * 2),
     ...building(98, 30, 6, 6, 3.4, { doors: ["n", "e"], windows: ["s"] }),
     ...building(112, 31, 7, 6, 3.4, { doors: ["w"], windows: ["e"], roof: "s" }),
     box(106, 40, 0.6, 6, 1.4, "wall"),
-  ]),
+  ])),
 
   // --- 廃村: a two-storey house, two cottages and broken walls
-  ...onLevel(LEVEL.shore, [
+  ...onLevel(LEVEL.shore, placeIn("village", [
     ...tower(-112, -70, 8, 8, 2, { doors: [["e", "s"]], windows: [["w"], ["n", "e", "w"]] }),
     ...building(-105, -55, 7, 6, 3.4, { doors: ["e", "n"], roof: "s" }),
     ...building(-95, -68, 6, 6, 3.4, { doors: ["n", "w"], windows: ["e"] }),
     box(-100, -80, 7, 0.6, 1.6, "wall"),
     box(-118, -58, 0.6, 6, 1.2, "wall"),
-  ]),
+  ])),
 ];
+
+/**
+ * The routes' trenches (`ROUTES`), carved only while a route is open. Cover is kept off the
+ * ground they lower (`scatterCover`), which is otherwise left as it is: pressing it flat would
+ * change the closed world.
+ */
+// The tunnel under the mountains, straight through them north of the landing pad, its floor at
+// the open ground's level at either mouth.
+const TUNNEL: Carve = { name: "坑道", line: [[40, -270], [40, -430]], floor: 3, levels: [10, 4], slope: 2.4 };
+// The dam's inspection gallery, in the heart's frame: from the lakebed under the crest, up onto
+// the crest and the pad behind it.
+const GALLERY: Carve = { name: "点検通路", line: [[14 + AREA.heart[0], -62 + AREA.heart[1]], [14 + AREA.heart[0], -91 + AREA.heart[1]]], floor: 2.5, levels: [LEVEL.lakebed, LEVEL.dam], slope: 2.4 };
+/** Metres either side of a trench's floor that its walls may lower the ground. */
+const TRENCH_ROOM = 10;
 
 /**
  * Cover scattered over the open ground so that a fight is mostly about breaking
@@ -1359,7 +1416,7 @@ function authoredKeep(): Keep {
   for (const b of EXTRA_BINS) points.push({ x: b.x, z: b.z, r: 2.5 });
   // The boat's point keeps less flat ground round it: the channel's water starts a few metres off.
   for (const x of EXTRACTS) points.push({ x: x.x, z: x.z, r: x.id === "boat" ? 6 : 10 });
-  for (const r of REGIONS) points.push({ x: r.drop.x, z: r.drop.z, r: 6 }, { x: r.land.x, z: r.land.z, r: 6 });
+  for (const e of ENTRIES) points.push({ x: e.x, z: e.z, r: 6 });
   return { points, segments };
 }
 
@@ -1371,8 +1428,8 @@ function authoredKeep(): Keep {
  * channel, under water, gets none.
  */
 const SCATTER = [
-  { x0: WORLD.x0, x1: WORLD.x1, z0: -215, z1: WORLD.z1, seed: 7_331 },
-  { x0: WORLD.x0, x1: WORLD.x1, z0: WORLD.z0, z1: -216, seed: 4_517 },
+  { x0: WORLD.x0, x1: WORLD.x1, z0: -350, z1: WORLD.z1, seed: 7_331 },
+  { x0: WORLD.x0, x1: WORLD.x1, z0: WORLD.z0, z1: -351, seed: 4_517 },
 ];
 const SPARSE = "塩田";
 /** The harbor's channel, which holds water: nothing is scattered in it. */
@@ -1425,6 +1482,17 @@ function scatterCover(authored: Box[], { points, segments }: Keep): Box[] {
   const near: Clearance = { authored: new Near(), laid: new Near(), points: new Near(), along: new Near() };
   for (const b of authored) near.authored.add(b.x0, b.z0, b.x1, b.z1, b);
   for (const q of points) near.points.add(q.x - q.r, q.z - q.r, q.x + q.r, q.z + q.r, q);
+  // A trench's line keeps cover off as far as its walls may lower the ground.
+  for (const c of [TUNNEL, GALLERY]) {
+    const [[ax, az], [bx, bz]] = c.line;
+    const n = Math.ceil(Math.hypot(bx - ax, bz - az));
+    const r = c.floor + TRENCH_ROOM;
+    for (let k = 0; k <= n; k++) {
+      const x = ax + ((bx - ax) * k) / n;
+      const z = az + ((bz - az) * k) / n;
+      near.points.add(x - r, z - r, x + r, z + r, { x, z, r });
+    }
+  }
   for (const sg of segments) {
     const n = Math.max(1, Math.ceil(Math.hypot(sg.bx - sg.ax, sg.bz - sg.az)));
     for (let k = 0; k <= n; k++) {
@@ -1545,11 +1613,11 @@ function scatterArea(near: Clearance, area: (typeof SCATTER)[number]): Box[] {
  * the mesa's level between the two bridge roads. They are not pressed flat: the
  * spillway runs under them.
  */
-const BRIDGE: Box[] = [
+const BRIDGE: Box[] = placeIn("heart", [
   box(42, -95, 6, 6, LEVEL.mesa, "rock", 0, LEVEL.pit - 2),
   box(62, -95, 6, 6, LEVEL.mesa, "rock", 1, LEVEL.pit - 2),
   bridge(45, -96.2, 59, -93.8, LEVEL.mesa),
-];
+]);
 
 const KEEP = authoredKeep();
 // Hand-built things keep flat ground around them, at their level.
@@ -1567,8 +1635,22 @@ buildTerrain([
 ]);
 
 // The canyon floors pay for the detour: a bin under each bridge.
-for (const [x, z, table] of [[55, -112, "relay"], [127, -192, "smelter"]] as const)
+for (const { x, z, table } of [at("heart", { x: 55, z: -112, table: "relay" as const }), at("railway", { x: 127, z: -192, table: "smelter" as const })])
   EXTRA_BINS.push({ x, z, y: terrainHeight(x, z), table });
+
+/**
+ * One depot per POI, on the road out from its entry: in reach on the way in or out, yet
+ * outside the fight round the POI. They are not boxes and keep no ground clear, so the
+ * island's cover is laid out the same with or without them. They are placed on the built
+ * ground, so each stands at the floor level the walkers find there.
+ */
+export const DEPOTS: Depot[] = POIS.map((p) => {
+  const ax = p.entry.x - p.x;
+  const az = p.entry.z - p.z;
+  const len = Math.hypot(ax, az);
+  const at = onFloor({ x: +(p.entry.x + (ax / len) * DEPOT_OUT[p.id]).toFixed(1), z: +(p.entry.z + (az / len) * DEPOT_OUT[p.id]).toFixed(1) });
+  return { poi: p.id, x: at.x, y: at.y, z: at.z, yaw: Math.atan2(p.x - at.x, -(p.z - at.z)) };
+});
 
 export const BOXES: Box[] = [...AUTHORED, ...BRIDGE, ...RAILWAY, ...QUAY, ...scatterCover([...AUTHORED, ...BRIDGE, ...RAILWAY, ...QUAY], KEEP)];
 
@@ -1698,15 +1780,14 @@ function chainedGate(x: number, foot: { z: number; y: number }, dir: 1 | -1, hal
 
 /** The routes, in the order a tool opens them when more than one of its routes is closed. */
 export const ROUTES: Route[] = (() => {
-  // The tunnel under the mountains, straight from the landing pad's north side to the harbor town.
-  const tx = 48;
-  const tunnel: Carve = { name: "坑道", line: [[tx, -150], [tx, -268]], floor: 3, levels: [7.2, 1.2], slope: 2.4 };
-  const tSouth = cliffFoot(tx, -150, -1);
-  const tNorth = cliffFoot(tx, -268, 1);
-  // The dam's inspection gallery: from the lakebed under the crest, up onto the crest and the pad behind it.
-  const dx = 14;
-  const dam: Carve = { name: "点検通路", line: [[dx, -62], [dx, -91]], floor: 2.5, levels: [LEVEL.lakebed, LEVEL.dam], slope: 2.4 };
-  const dFoot = cliffFoot(dx, -54, -1);
+  const tunnel = TUNNEL;
+  const tx = tunnel.line[0][0];
+  const tSouth = cliffFoot(tx, tunnel.line[0][1], -1);
+  const tNorth = cliffFoot(tx, tunnel.line[1][1], 1);
+  const dam = GALLERY;
+  const [hx, hz] = AREA.heart;
+  const dx = dam.line[0][0];
+  const dFoot = cliffFoot(dx, -54 + hz, -1);
   // The wreck's gangway: up the hull's north side to its main deck, near the bow, written in the
   // wreck's frame (its hull's north face is 8 m north of its middle) so it moves with the wreck.
   const deck = LEVEL.seabed + STOREY * 3;
@@ -1721,8 +1802,8 @@ export const ROUTES: Route[] = (() => {
       id: "tunnel",
       name: "山の坑道",
       tool: "charge",
-      note: "発着場の東から山地を抜けて港町へ。峠道より短く、峠の登り降りもない",
-      path: [{ x: tx, z: -146 }, { x: tx, z: -266 }],
+      note: "発着場の北の野から山地を抜けて港湾地帯の南の野へ。峠の登り降りがない",
+      path: [{ x: tx, z: -266 }, { x: tx, z: -434 }],
       at: [{ x: tx, y: tSouth.y, z: tSouth.z + 2 }, { x: tx, y: tNorth.y, z: tNorth.z - 2 }],
       carve: tunnel,
       closed: [...rubble(tx, tSouth, -1, 3), ...rubble(tx, tNorth, 1, 3)],
@@ -1733,7 +1814,7 @@ export const ROUTES: Route[] = (() => {
       name: "ダムの点検通路",
       tool: "cutter",
       note: "湖底からダムの中を登って堤と発着場へ。放水路や西の坂を回らずに済む",
-      path: [{ x: dx, z: -54 }, { x: dx, z: -96 }],
+      path: [{ x: dx, z: -54 + hz }, { x: dx, z: -96 + hz }],
       at: [{ x: dx, y: dFoot.y, z: dFoot.z + 2 }],
       carve: dam,
       closed: chainedGate(dx, dFoot, -1, 2.5),

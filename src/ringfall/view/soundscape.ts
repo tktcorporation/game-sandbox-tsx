@@ -100,7 +100,7 @@ export class Soundscape {
     const above = Math.max(0, ear.y - terrainHeight(ear.x, ear.z));
     const height = Math.min(1, Math.max(0, (ear.y + 8) / 32));
     const open = 1 - m.room * 0.85;
-    const falling = play && (s.phase === "drop" || !!s.player.leap);
+    const falling = play && !!s.player.leap;
     const base = play ? (0.07 + 0.12 * height + Math.min(0.08, above * 0.004)) * open : 0;
     const swell = 0.6 + 0.4 * Math.sin(this.time * 0.37) * Math.sin(this.time * 0.11 + 1);
     this.breeze?.gain.gain.setTargetAtTime(base * (0.8 + 0.4 * swell), t, 0.4);
@@ -345,7 +345,6 @@ export class Soundscape {
         break;
       case "poiStart":
       case "poiClear":
-      case "landed":
         sfx.banner();
         break;
       case "reinforce":

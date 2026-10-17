@@ -63,12 +63,13 @@ export function playTable(region: RegionId, skillName: string, runs: number): Ta
   const crowdBots: number[] = [];
   const ranks: Record<string, number> = { S: 0, A: 0, B: 0, C: 0, "-": 0 };
   for (let r = 0; r < runs; r++) {
-    const s = newRun(1000 + r * 7919, freeKit(), region);
+    // Each raid starts at one of the region's ways in, in turn.
+    const ways = regionOf(region).entries;
+    const s = newRun(1000 + r * 7919, freeKit(), region, { entry: ways[r % ways.length] });
     const bot = new Bot(skill, 31 + r);
     let prevCrouch = false;
     let peakSq = 0;
     let peakBots = 0;
-    let landed = 0;
     try {
       while (s.phase !== "done" && s.time < LIMIT) {
         const inp = bot.input(s);
@@ -78,7 +79,6 @@ export function playTable(region: RegionId, skillName: string, runs: number): Ta
         if (end >= 0 && end < s.events.length - 1) throw new Error(`${region} ${skill.name}#${r}: events after the raid ended: ${s.events.slice(end + 1).map((e) => e.t).join(",")}`);
         for (const e of s.events) {
           if (e.t === "leap") ults++;
-          if (e.t === "landed") landed = s.time;
         }
         if (!s.enemies.some((e) => e.kind === "titan" && e.aware === "engaged")) {
           const fighting = s.enemies.filter((e) => e.aware === "engaged" && e.mode !== "spawning");
@@ -108,7 +108,7 @@ export function playTable(region: RegionId, skillName: string, runs: number): Ta
     ranks[rk.rank]++;
     if (s.outcome === "extracted") {
       alive++;
-      times.push((s.time - landed) / 60);
+      times.push(s.time / 60);
       hauls.push(rk.haul);
       scores.push(rk.score);
     }

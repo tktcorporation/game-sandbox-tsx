@@ -1,5 +1,5 @@
-import { ALLY, BOOST, DEPOT, DROP, ELITE, ENEMIES, META, RAIDERS, REINFORCE, VALUABLES, WORLD, type ValuableKind, PLAYER, ULT, type EnemyKind, type Flank, type HealKind, type Rarity, type ToolKind, type WeaponKind } from "./config";
-import { DEPOTS, depotIndex, EXTRA_BINS, POIS, poiIndex, poiRegion, regionOf, type ExtractId, type PoiId, type RegionId, type RouteId } from "./map";
+import { ALLY, BOOST, DEPOT, ELITE, ENEMIES, META, RAIDERS, REINFORCE, VALUABLES, WORLD, type ValuableKind, PLAYER, ULT, type EnemyKind, type Flank, type HealKind, type Rarity, type ToolKind, type WeaponKind } from "./config";
+import { DEPOTS, depotIndex, entryOf, EXTRA_BINS, POIS, poiIndex, poiRegion, regionOf, type EntryId, type ExtractId, type PoiId, type RegionId, type RouteId } from "./map";
 import { openRoutes, useRoutes } from "./routes";
 import { populate } from "./enemies";
 import { placeAlly } from "./ally";
@@ -98,7 +98,7 @@ export interface Player {
 
 /** The teammate (see ALLY). */
 export interface Ally {
-  /** False during the drop: it lands with the player. */
+  /** False until it is stood beside the player as the raid starts. */
   active: boolean;
   pos: Vec3;
   vel: Vec3;
@@ -289,7 +289,7 @@ export interface CarePackage {
   weapon: Weapon;
 }
 
-export type Phase = "drop" | "play" | "done";
+export type Phase = "play" | "done";
 
 /** How a raid ended: off the island with what was carried, or wiped out. */
 export type Outcome = "extracted" | "dead";
@@ -347,7 +347,6 @@ export type GameEvent =
   | { t: "stomp"; x: number; z: number }
   | { t: "stompTelegraph"; id: number }
   | { t: "bossPhase" }
-  | { t: "landed" }
   | { t: "titanDown" }
   | { t: "searchStart"; id: number }
   | { t: "raiders"; x: number; z: number }
@@ -403,7 +402,7 @@ export interface Call {
 export interface State {
   time: number;
   phase: Phase;
-  /** The region the raid dropped into. */
+  /** The region the raid started in. */
   region: RegionId;
   /** The routes open in this raid's world (`ROUTES` order); `step()` keeps that world in place. */
   routes: RouteId[];
@@ -427,8 +426,6 @@ export interface State {
   cleared: boolean[];
   /** Seconds until the next reinforcement squad beams in, and how many have come. */
   reinforceT: number;
-  /** When the player touched down: the raid clock starts here. */
-  landedAt: number;
   reinforceN: number;
   /** Seconds until the raiders beam in (Infinity once they have). */
   raiderT: number;
@@ -565,28 +562,32 @@ export function decodeSeen(str: string): number[] {
 }
 
 /**
- * What a raid carries over from earlier ones: the depots on, the explored map, and a depot
- * to start from instead of the drop. `from` counts only when it is among `depots`.
+ * What a raid carries over from earlier ones: the depots on, the explored map, and where it
+ * starts: a depot (`from`, which counts only when it is among `depots`) or else a way in
+ * (`entry`) of its region.
  */
 export interface Start {
   depots?: PoiId[];
   from?: PoiId;
+  /** A way in on foot; left out, or not one of the region's, the region's first. */
+  entry?: EntryId;
   seen?: string;
   /** The routes opened in earlier raids: the raid's world has them open. */
   routes?: RouteId[];
 }
 
 /**
- * A raid dropping into `region`; the default is the reservoir, which the sim gate plays.
- * Started from a depot, it begins on the ground there, in that depot's region, with the
- * teammate beside the player.
+ * A raid in `region`, on the ground with the teammate beside the player: at one of the region's
+ * ways in, or at a depot already on (in that depot's region). The default is the reservoir,
+ * which the sim gate plays.
  */
 export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reservoir", start: Start = {}): State {
   const routes = openRoutes(start.routes ?? []);
   useRoutes(routes);
   const from = start.from && start.depots?.includes(start.from) ? DEPOTS[depotIndex(start.from)] : null;
   if (from) region = poiRegion(from.poi).id;
-  const drop = regionOf(region).drop;
+  const ways = regionOf(region).entries;
+  const entry = entryOf(start.entry && ways.includes(start.entry) ? start.entry : ways[0]);
   const bins: Bin[] = [];
   let id = 1;
   POIS.forEach((p, poi) => p.bins.forEach((b) => bins.push({ id: id++, x: b.x, y: b.y ?? 0, z: b.z, poi, open: false, flare: false, vault: !!b.vault, outside: false })));
@@ -603,21 +604,21 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
   );
   const s: State = {
     time: 0,
-    phase: "drop",
+    phase: "play",
     region: regionOf(region).id,
     routes,
     seed: seed >>> 0,
     rng: seed >>> 0 || 1,
     nextId: id,
     player: {
-      pos: { x: drop.x, y: DROP.startY, z: drop.z },
+      pos: { x: entry.x, y: groundAt(entry.x, entry.z, PLAYER.radius, 99), z: entry.z },
       vel: { x: 0, y: 0, z: 0 },
-      yaw: drop.yaw,
-      pitch: -0.5,
+      yaw: entry.yaw,
+      pitch: 0,
       hp: PLAYER.hp,
       shield: PLAYER.shieldByTier[kit.armor],
       armor: kit.armor,
-      onGround: false,
+      onGround: true,
       crouch: false,
       sliding: false,
       mantle: null,
@@ -652,7 +653,7 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
       selfRevive: 1,
       iframes: 0,
     },
-    ally: newAlly(drop),
+    ally: newAlly(entry),
     trail: [],
     enemies: [],
     squads: [],
@@ -664,7 +665,6 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
     visited: POIS.map(() => false),
     cleared: POIS.map(() => false),
     reinforceT: REINFORCE.first,
-    landedAt: 0,
     reinforceN: 0,
     raiderT: RAIDERS.at,
     boost: boostFor(seed, region),
@@ -690,22 +690,19 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
     const z = from.z + Math.cos(from.yaw) * DEPOT.back;
     p.pos = { x, y: groundAt(x, z, PLAYER.radius, from.y + 0.3), z };
     p.yaw = from.yaw;
-    p.pitch = 0;
-    p.onGround = true;
-    s.phase = "play";
-    placeAlly(s);
   }
+  placeAlly(s);
   populate(s);
   return s;
 }
 
-/** The teammate before the drop, up with the player over `drop`. */
-export function newAlly(drop: { x: number; z: number; yaw: number }): Ally {
+/** The teammate before it is stood beside the player (`placeAlly()`), at `at`. */
+export function newAlly(at: { x: number; z: number; yaw: number }): Ally {
   return {
     active: false,
-    pos: { x: drop.x, y: DROP.startY, z: drop.z },
+    pos: { x: at.x, y: 0, z: at.z },
     vel: { x: 0, y: 0, z: 0 },
-    yaw: drop.yaw,
+    yaw: at.yaw,
     pitch: 0,
     hp: ALLY.hp,
     shield: ALLY.shield,
@@ -720,7 +717,7 @@ export function newAlly(drop: { x: number; z: number; yaw: number }): Ally {
     crumb: 0,
     climb: 0,
     stuckT: 0,
-    last: { x: drop.x, z: drop.z },
+    last: { x: at.x, z: at.z },
     shortcutT: 0,
   };
 }

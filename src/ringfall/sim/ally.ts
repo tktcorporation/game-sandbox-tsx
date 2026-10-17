@@ -35,7 +35,7 @@ export function placeAlly(s: State) {
 
 /**
  * Stand the teammate on the ground beside the player and start its footsteps afresh:
- * after the drop, and after the ult's leap when it came along. Its health stays as it is.
+ * when a raid starts, and after the ult's leap when it came along. Its health stays as it is.
  */
 export function besidePlayer(s: State) {
   const a = s.ally;

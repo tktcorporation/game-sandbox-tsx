@@ -152,9 +152,7 @@ export class Bot {
     // Where to go.
     let goal: { x: number; z: number } | null = null;
     let fight = false;
-    if (s.phase === "drop") {
-      goal = regionOf(s.region).land;
-    } else if (aim < 0 && (callLeft(s, this.exit(s).id) === 0 || !tgt || dist2d(tgt.pos, p.pos) > 70 || this.slipAway(s, live))) {
+    if (aim < 0 && (callLeft(s, this.exit(s).id) === 0 || !tgt || dist2d(tgt.pos, p.pos) > 70 || this.slipAway(s, live))) {
       goal = this.waitSpot(s) ?? this.exit(s);
     } else if (tgt && dist2d(tgt.pos, p.pos) < 70) {
       fight = true;
@@ -190,8 +188,8 @@ export class Bot {
       const aimAt = sk.heads || plated ? weakPoint(tgt) : bodyCenter(tgt);
       want = lookAngles(eye, aimAt);
     } else if (goal) {
-      const step = s.phase === "drop" ? goal : this.via(s, goal);
-      want = { yaw: lookAngles(p.pos, { x: step.x, y: 0, z: step.z }).yaw, pitch: s.phase === "drop" ? -0.6 : 0 };
+      const step = this.via(s, goal);
+      want = { yaw: lookAngles(p.pos, { x: step.x, y: 0, z: step.z }).yaw, pitch: 0 };
     } else want = { yaw: p.yaw, pitch: 0 };
     const reacting = fight && this.tracking < sk.react;
     const turn = reacting ? sk.turn * 0.3 : sk.turn;
@@ -199,11 +197,6 @@ export class Bot {
     inp.lookY = (want.pitch + this.ny - p.pitch) * turn;
 
     // Move.
-    if (s.phase === "drop") {
-      const d = goal ? dist2d(goal, p.pos) : 0;
-      inp.moveZ = d > 4 ? 1 : 0;
-      return inp;
-    }
     const w = p.weapons[p.slot];
     if (fight && tgt) {
       const d = dist2d(tgt.pos, p.pos);
@@ -441,9 +434,11 @@ export class Bot {
       if (!p.sliding && Math.hypot(p.vel.x, p.vel.z) < 5) this.crouch = false;
     }
 
-    // Unstick: little progress for a second -> jump and step sideways.
+    // Unstick: little progress for a second -> jump and step sideways. The sidestep's own
+    // way is not measured as progress: counted, it cancels the walk back that follows and
+    // reads as another stall, again and again.
     this.stuckT += TICK;
-    if (this.stuckT > 1) {
+    if (this.stuckT > 1 && this.unstick <= 0) {
       const moved = Math.hypot(p.pos.x - this.lastPos.x, p.pos.z - this.lastPos.z);
       if (moved < 0.8 && (inp.moveZ !== 0 || inp.moveX !== 0) && !p.healing) {
         // Each repeated stall tries the other side, for longer.
@@ -459,6 +454,10 @@ export class Bot {
       inp.jump = this.unstick % 1 > 0.9;
       inp.moveX = this.unstickSide;
       inp.moveZ = 0.25;
+      if (this.unstick <= 0) {
+        this.lastPos = { x: p.pos.x, z: p.pos.z };
+        this.stuckT = 0;
+      }
     }
     // The bot finds its way on the ground only, so it never climbs a ledge: in the air
     // it keeps its take-off speed but does not push forward, which a climb needs.
