@@ -262,7 +262,9 @@ function frame(now: number) {
   }
   odd = !odd;
   drawDt += dt;
-  const drawn = !(manual && quiet) && !(governor.level.cap30 && odd);
+  // Nothing is drawn while the page is hidden: some web views keep calling frames for a page in
+  // the background, and drawing there only spends the battery.
+  const drawn = !(manual && quiet) && !(governor.level.cap30 && odd) && !document.hidden;
   if (drawn) {
     world.render(state, drawDt);
     if (running) hud.frame(state, world, drawDt, dims.w, dims.h);
@@ -367,6 +369,7 @@ document.addEventListener("visibilitychange", () => {
   // The system drops the wake lock while the page is hidden.
   wake = null;
   if (!document.hidden && running) keepAwake(true);
+  if (!document.hidden) governor.settle();
 });
 $("start").addEventListener("click", openHub);
 $("restart").addEventListener("click", openHub);
