@@ -311,11 +311,12 @@ export function wanted(p: Profile): Record<ValuableKind, number> {
 /**
  * The order in which things claim stash room: keys, then valuables the hideout still
  * wants, then gear (the dearest first, since the better of it is found only on the
- * island), then the other valuables, which are worth the same sold now or later.
+ * island), then the other valuables and spare tools, which are worth the same sold now
+ * or later (a tool that opens a route is spent before anything is stored).
  */
 export function keepOrder(items: Item[], want: Record<ValuableKind, number>): Item[] {
   const left = { ...want };
-  const rankOf = (i: Item) => (i.t === "key" || i.t === "tool" ? 0 : i.t !== "valuable" ? 2 : left[i.kind]-- > 0 ? 1 : 3);
+  const rankOf = (i: Item) => (i.t === "key" ? 0 : i.t === "tool" ? 3 : i.t !== "valuable" ? 2 : left[i.kind]-- > 0 ? 1 : 3);
   // Dearer valuables claim what the hideout wants first.
   const ranked = [...items].sort((a, b) => price(b) - price(a)).map((i) => ({ i, r: rankOf(i) }));
   return ranked.sort((a, b) => a.r - b.r || price(b.i) - price(a.i)).map((x) => x.i);
