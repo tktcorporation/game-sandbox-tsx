@@ -2,7 +2,7 @@ import { ALLY, AWARE, CHARGER, COVER, DEG, DODGE, ELITE, ENEMIES, FALLBACK, PINC
 import { clampToWorld, collide, dist2d, groundAt, groundLevel, los, lookAngles, onTerrain, solidAt, wrapAngle } from "./geom";
 import { steepAt, terrainHeight } from "./terrain";
 import { engageSquad, knownSpot, located, sense, stepSquads } from "./awareness";
-import { COVERS } from "./cover";
+import { COVERS, type CoverPoint } from "./cover";
 import { fieldTo, nextStep } from "./hunt";
 
 /** Walkers refuse to step off a ledge higher than this, so rooftop robots stay on their roof. */
@@ -261,7 +261,7 @@ export function stepEnemies(s: State) {
     const d = Math.hypot(dx, dz) || 1e-3;
     if (e.mode !== "lunge" && d > 0.5) turnAt(e, Math.atan2(dx, -dz), TURN[e.kind] * (e.elite ? ELITE.turn : 1));
     // Raiders do not hide: they press in and go round. Nor does a grunt on its way round a pinned player.
-    if (e.kind === "grunt" && !e.elite && !round && onTerrain(e.pos) && fromCover(s, e, known, tChest, tUp, tVel)) continue;
+    if (e.kind === "grunt" && !e.elite && !round && fromCover(s, e, known, tChest, tUp, tVel)) continue;
     switch (e.mode) {
       case "move": {
         const sees = known.live && facing(e, tPos) && los(muzzle(e), tChest);
@@ -594,6 +594,23 @@ function calm(s: State, e: Enemy) {
   }
 }
 
+/**
+ * Whether a straight walk from `from` to the cover spot stays on the spot's floor: a robot
+ * up on a deck or a roof stops at an edge rather than step off it, and would never get there.
+ */
+function sameFloor(from: Vec3, c: CoverPoint): boolean {
+  // On the ground both ends, the walk follows the ground, slopes included.
+  if (onTerrain(from) && Math.abs(c.y - groundLevel(c.x, c.z)) < 0.3) return true;
+  const d = Math.hypot(c.x - from.x, c.z - from.z);
+  const n = Math.ceil(d / 0.5);
+  for (let i = 1; i < n; i++) {
+    const x = from.x + ((c.x - from.x) * i) / n;
+    const z = from.z + ((c.z - from.z) * i) / n;
+    if (Math.abs(groundAt(x, z, 0.3, c.y + 0.3) - c.y) > COVER.level) return false;
+  }
+  return true;
+}
+
 /** Find a spot near this grunt that hides it from the player, with a spot beside it to shoot from. */
 function findCover(s: State, e: Enemy, threat: Point, threatY: number): { cover: Point; peek: Point } | null {
   // Hurt and alone it looks further for a place to hide.
@@ -603,15 +620,18 @@ function findCover(s: State, e: Enemy, threat: Point, threatY: number): { cover:
   const chestP = { x: p.pos.x, y: p.pos.y + 1.1, z: p.pos.z };
   const taken = s.enemies.filter((o) => o !== e && o.cover).map((o) => o.cover!);
   const cands = COVERS.map((c) => ({ c, d: dist2d(c, e.pos), dp: dist2d(c, p.pos) }))
-    .filter(({ c, d, dp }) => d < search && dp > COVER.minFromPlayer && dp < COVER.maxFromPlayer && !taken.some((t) => dist2d(t, c) < 1.5))
+    .filter(({ c, d, dp }) => d < search && Math.abs(c.y - e.pos.y) < COVER.level && dp > COVER.minFromPlayer && dp < COVER.maxFromPlayer && !taken.some((t) => dist2d(t, c) < 1.5))
     .sort((a, b) => a.d + Math.abs(a.dp - 16) * 0.3 - (b.d + Math.abs(b.dp - 16) * 0.3))
     .slice(0, 14);
   for (const { c } of cands) {
-    if (los({ x: c.x, y: terrainHeight(c.x, c.z) + 1.3, z: c.z }, head)) continue;
+    if (los({ x: c.x, y: c.y + 1.3, z: c.z }, head)) continue;
+    if (!sameFloor(e.pos, c)) continue;
     // The side it did not show itself at last time first, so it is not where the player's sights wait.
     for (const sign of [e.peekSide, -e.peekSide]) {
       const peek = { x: c.x + c.tx * sign * COVER.peek, z: c.z + c.tz * sign * COVER.peek };
-      const pg = terrainHeight(peek.x, peek.z);
+      const pg = c.y;
+      // Stepping out stays on the same floor: not off a deck's or a roof's edge, not into a box.
+      if (Math.abs(groundAt(peek.x, peek.z, 0.3, pg + 0.3) - pg) > 0.3) continue;
       if (solidAt(peek.x, pg + 1.0, peek.z)) continue;
       if (los({ x: peek.x, y: pg + 1.6, z: peek.z }, chestP)) return { cover: { x: c.x, z: c.z }, peek };
     }
