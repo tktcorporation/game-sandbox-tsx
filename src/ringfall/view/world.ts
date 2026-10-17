@@ -27,6 +27,8 @@ const CHUNK = 64;
  */
 const STREAM_BUDGET = 2;
 const DROP_AT = 1.3;
+/** Metres the camera may travel before a shadow map redrawn at the tier's rate is redrawn at once. */
+const SHADOW_MOVE = 4;
 /** The teammate's HUD teal: a depot that is on is lit in the colour that means "ours". */
 const MATE_LIGHT = 0x6fd0cf;
 /** Sparks off a plate that took part of a hit: grey like its damage number. */
@@ -268,6 +270,9 @@ export class World {
   /** The quality tier drawn (quality.ts) and its settings. */
   private tierNow: Tier = "high";
   private q: Quality = QUALITY.high;
+  /** When (`time`) and from where the shadow map was last redrawn, on the tiers that do not redraw it every frame. */
+  private shadowAt = -Infinity;
+  private shadowFrom = new THREE.Vector3();
 
   /** `tier` and `ratio`: what the page starts drawing at; the tier's antialiasing is fixed from then on. */
   constructor(container: HTMLElement, opts: { tier: Tier; ratio: number }) {
@@ -539,6 +544,7 @@ export class World {
   private syncRoutes() {
     if (worldKey() === this.built) return;
     this.built = worldKey();
+    this.shadowAt = -Infinity;
     for (const c of this.chunks) if (c.built && reached(c)) this.fillChunk(c);
   }
 
@@ -626,6 +632,8 @@ export class World {
     sc.right = sc.top = q.shadowSpan;
     sc.updateProjectionMatrix();
     this.renderer.shadowMap.type = q.softShadows ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
+    this.renderer.shadowMap.autoUpdate = !Number.isFinite(q.shadowHz);
+    this.shadowAt = -Infinity;
   }
 
   /** Device pixels per CSS pixel the canvas is drawn at; the canvas keeps its size on the page. */
@@ -1239,6 +1247,15 @@ export class World {
 
   /** Draws the scene as the last `sync()` left it. */
   draw() {
+    // On tiers that redraw shadows at their own rate: when that time has passed (in the scene's
+    // time, so automation's undrawn steps count) or the camera has gone far enough that the map
+    // no longer covers round it.
+    const sm = this.renderer.shadowMap;
+    if (!sm.autoUpdate && (this.time - this.shadowAt >= 1 / this.q.shadowHz - 1e-4 || this.shadowFrom.distanceToSquared(this.camera.position) > SHADOW_MOVE ** 2)) {
+      sm.needsUpdate = true;
+      this.shadowAt = this.time;
+      this.shadowFrom.copy(this.camera.position);
+    }
     this.renderer.info.reset();
     this.renderer.clear();
     this.renderer.render(this.scene, this.camera);
@@ -1274,5 +1291,6 @@ export class World {
     if (this.boat) this.scene.remove(this.boat);
     this.boat = null;
     this.particles = [];
+    this.shadowAt = -Infinity;
   }
 }

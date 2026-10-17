@@ -21,6 +21,11 @@ export interface Quality {
   softShadows: boolean;
   /** Half the side of the square the sun's shadows cover round the camera, in metres. */
   shadowSpan: number;
+  /**
+   * How often a second the shadow map is redrawn; Infinity redraws it with every frame. Between
+   * redraws the ground and buildings shade the same, only a robot's own shadow trails it a little.
+   */
+  shadowHz: number;
   fogNear: number;
   /** Where the fog ends: chunks past it are skipped, and the streaming reaches a chunk past it. */
   fogFar: number;
@@ -29,9 +34,9 @@ export interface Quality {
 }
 
 export const QUALITY: Record<Tier, Quality> = {
-  high: { maxRatio: 2, minRatio: 1, antialias: true, shadowSize: 2048, softShadows: true, shadowSpan: 55, fogNear: 110, fogFar: 420, thingsFar: 220 },
-  medium: { maxRatio: 1.5, minRatio: 0.75, antialias: false, shadowSize: 1024, softShadows: false, shadowSpan: 50, fogNear: 90, fogFar: 320, thingsFar: 180 },
-  low: { maxRatio: 1.25, minRatio: 0.6, antialias: false, shadowSize: 1024, softShadows: false, shadowSpan: 42, fogNear: 70, fogFar: 240, thingsFar: 150 },
+  high: { maxRatio: 2, minRatio: 1, antialias: true, shadowSize: 2048, softShadows: true, shadowSpan: 55, shadowHz: Infinity, fogNear: 110, fogFar: 420, thingsFar: 220 },
+  medium: { maxRatio: 1.5, minRatio: 0.75, antialias: false, shadowSize: 1024, softShadows: false, shadowSpan: 50, shadowHz: 30, fogNear: 90, fogFar: 320, thingsFar: 180 },
+  low: { maxRatio: 1.25, minRatio: 0.6, antialias: false, shadowSize: 1024, softShadows: false, shadowSpan: 42, shadowHz: 15, fogNear: 70, fogFar: 240, thingsFar: 150 },
 };
 
 /** What the browser tells about the device; any of it may be missing. */
