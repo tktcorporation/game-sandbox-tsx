@@ -248,6 +248,24 @@ const lap = (name) => {
  * Phone again, starting in the harbor: the base's choice of region and way in works by touch,
  * the raid starts on the ground at that way in, and the map shows both regions.
  */
+// A fresh profile on a phone on its side: the harbor is locked, and the base still says how to open it.
+{
+  const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+  const page = await ctx.newPage();
+  page.on("pageerror", (e) => errors.push(`mobile fresh pageerror: ${e.message}`));
+  await page.goto(`http://localhost:${port}/ringfall/`, { waitUntil: "load" });
+  await page.waitForTimeout(400);
+  await page.evaluate(() => Object.defineProperty(screen, "orientation", { value: undefined, configurable: true }));
+  await page.tap("#start");
+  await page.waitForTimeout(200);
+  const lock = await page.evaluate(() => {
+    const el = document.querySelector("#hub-region span.lock");
+    return el ? getComputedStyle(el).display : "missing";
+  });
+  if (lock === "none" || lock === "missing") errors.push(`mobile: the locked region's hint is not shown (${lock})`);
+  await page.screenshot({ path: `${out}/m7-hub-locked.png` });
+  await ctx.close();
+}
 {
   const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
   const page = await ctx.newPage();
