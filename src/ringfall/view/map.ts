@@ -49,9 +49,21 @@ export class IslandMap {
     return { x: (x - WORLD.x0) / CELL, y: (z - WORLD.z0) / CELL };
   }
 
-  /** The part of the world on show: the region the player is in, or all of it. */
+  /**
+   * The part of the world on show: the region the player is in, or all of it. The region's frame
+   * grows to take in the player, who may stand on the way between the regions outside it.
+   */
   view(s: State): View {
-    return this.whole ? WHOLE : regionHere(s.player.pos).bounds;
+    if (this.whole) return WHOLE;
+    const b = regionHere(s.player.pos).bounds;
+    const { x, z } = s.player.pos;
+    const pad = 40;
+    return {
+      x0: Math.max(WORLD.x0, Math.min(b.x0, x - pad)),
+      z0: Math.max(WORLD.z0, Math.min(b.z0, z - pad)),
+      x1: Math.min(WORLD.x1, Math.max(b.x1, x + pad)),
+      z1: Math.min(WORLD.z1, Math.max(b.z1, z + pad)),
+    };
   }
 
   /**
