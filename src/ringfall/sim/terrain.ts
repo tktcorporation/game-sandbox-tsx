@@ -114,7 +114,24 @@ interface Open {
    * runs out into the ground between at its own level.
    */
   walled?: true;
+  /** Sand dunes on the shape's floor (a basin's), which fade out toward its edge. */
+  dunes?: readonly Dune[];
 }
+
+/**
+ * A dune: its crest runs along `line`, `height` metres over the floor it stands on, and its sides
+ * fall away over `half` metres, gentle enough to walk (a crest of 12 m over 26 m rises 0.7 per metre at
+ * most). Crests open and close the sightlines over a floor that would otherwise be one flat yard.
+ * The floor's level carries it (`floorLevel()`), so things placed out on a dune stand on its sand.
+ */
+interface Dune {
+  line: readonly P[];
+  half: number;
+  height: number;
+}
+
+/** Metres inside its basin's edge over which a dune fades out, so the floor meets the ground beyond at its level. */
+const DUNE_FADE = 16;
 
 /** Value at fraction `t` along a line whose points carry `vals`, one each. */
 function atPoint(vals: readonly number[], t: number, { lens, sum }: Polyline): number {
@@ -127,6 +144,17 @@ function atPoint(vals: readonly number[], t: number, { lens, sum }: Polyline): n
 }
 
 const levelOf = (o: Open, t: number, poly: Polyline) => (typeof o.level === "number" ? o.level : o.atPoints ? atPoint(o.level, t, poly) : along(o.level, t));
+
+/** The dunes' rise over a shape's floor at (x, z), `d` metres from the shape's line: the highest crest's. */
+function duneRise(dunes: readonly { dune: Dune; poly: Polyline }[], half: number, x: number, z: number, d: number): number {
+  let rise = 0;
+  for (const { dune, poly } of dunes) {
+    if (nearBox(x, z, poly) >= dune.half) continue;
+    const t = Math.min(1, toPolyline(x, z, poly).d / dune.half);
+    rise = Math.max(rise, dune.height * (0.5 + 0.5 * Math.cos(Math.PI * t)));
+  }
+  return rise * smooth(0, DUNE_FADE, half - d);
+}
 
 /** A trench with a flat floor `floor` metres either side of its line, at `levels` along it. */
 export interface Cut {
@@ -293,7 +321,7 @@ const CUTS: Cut[] = [
 ];
 
 /** Open shapes and cuts with their lines worked out once: `lowest()` runs for every grid cell. */
-const OPEN = [...BASINS, ...ROADS].map((o) => ({ o, poly: polyline(o.line) }));
+const OPEN = [...BASINS, ...ROADS].map((o) => ({ o, poly: polyline(o.line), dunes: (o.dunes ?? []).map((dune) => ({ dune, poly: polyline(dune.line) })) }));
 const CUT_LINES = CUTS.map((c) => ({ c, poly: polyline(c.line) }));
 
 /**
@@ -596,14 +624,14 @@ function lowest(x: number, z: number, near = bucketAt(x, z)): { h: number; level
   // How far outside the nearest open shape or cut (x, z) lies; negative inside one.
   let edge = Infinity;
   for (const n of near.open) {
-    const { o, poly } = OPEN[n];
+    const { o, poly, dunes } = OPEN[n];
     const far = nearBox(x, z, poly) - o.half;
     if (far > FAR) {
       edge = Math.min(edge, far);
       continue;
     }
     const { d, along: t } = toPolyline(x, z, poly);
-    const lv = levelOf(o, t, poly);
+    const lv = levelOf(o, t, poly) + (dunes.length && d < o.half ? duneRise(dunes, o.half, x, z, d) : 0);
     edge = Math.min(edge, d - o.half);
     const cone = lv + Math.max(0, d - o.half) * CLIFF;
     if (cone < h) {
@@ -677,10 +705,14 @@ export function checkTerrainIndex(n: number): string | null {
 /** Names of the open shapes, then "谷" for each cut and "野" for the ground between: what `surfaceAt()` answers with. */
 const SHAPE_NAMES = [...OPEN.map(({ o }) => o.name), ...CUTS.map(() => "谷"), "野"];
 
-/** The shaped ground before anything is flattened for buildings; `low` is `lowest(x, z).h` when already known. */
-function natural(x: number, z: number, low = lowest(x, z).h): number {
-  const top = HIGH + vnoise(x / 30, z / 30) * 5;
-  return Math.min(top, low) + (vnoise(x / 9, z / 9) - 0.5) * 0.5;
+/**
+ * The shaped ground before anything is flattened for buildings; `low` is `lowest(x, z)` when
+ * already known. The high ground's top is capped near HIGH, and rises over a shape walked above
+ * it (a bluff), so that its floor is not cut down to the cap.
+ */
+function natural(x: number, z: number, low = lowest(x, z)): number {
+  const top = HIGH + vnoise(x / 30, z / 30) * 5 + (low.level > HIGH - 1 ? low.level - HIGH + 3 : 0);
+  return Math.min(top, low.h) + (vnoise(x / 9, z / 9) - 0.5) * 0.5;
 }
 
 /** The rim: cliffs rising beyond the coast, out to the horizon. */
@@ -780,7 +812,7 @@ export function buildTerrain(flat: FlatShape[]) {
       const dd = dist[k];
       let shelf = -Infinity;
       for (const n of bucketAt(x, z).shelves) shelf = Math.max(shelf, shelfAt(n, x, z));
-      const base = level + (natural(x, z, low.h) - level) * smooth(3, 10, dd);
+      const base = level + (natural(x, z, low) - level) * smooth(3, 10, dd);
       field[k] = (shelf > base ? base + (shelf - base) * smooth(1, 2, dd) : base) + rim(x, z);
     }
   steep = new Uint8Array(NX * NZ);

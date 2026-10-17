@@ -53,6 +53,27 @@ const SIDES: Side[] = ["n", "s", "e", "w"];
 const STOREY = 3.4;
 const WALL = 0.35;
 const STEP_DEPTH = 0.55;
+
+/**
+ * The sizes a building is built to: storey height, wall thickness, doors (width and head),
+ * windows (width, sill, head), the height of roller doors and the width of stair flights.
+ * Most of the world is built to `HOUSE`; a POI built at the scale of real industry (`WORKS`)
+ * passes its own to the helpers below.
+ */
+interface Scale {
+  storey: number;
+  wall: number;
+  door: number;
+  doorHead: number;
+  window: number;
+  sill: number;
+  windowHead: number;
+  roller: number;
+  stair: number;
+}
+const HOUSE: Scale = { storey: STOREY, wall: WALL, door: 2.2, doorHead: 2.5, window: 1.4, sill: 1.1, windowHead: 2.1, roller: 4.4, stair: 1.4 };
+/** Industrial scale: storeys of 4.5 m, half-metre walls, doors 1.8 by 2.8 m, roller doors 6 m high. */
+const WORKS: Scale = { storey: 4.5, wall: 0.5, door: 1.8, doorHead: 2.8, window: 2.0, sill: 1.2, windowHead: 2.8, roller: 6, stair: 1.8 };
 /** Steps a flight needs to climb `rise` with every riser under the step-up height. */
 const stepsFor = (rise: number) => Math.ceil(rise / 0.42) - 1;
 
@@ -77,19 +98,20 @@ function stairs(ex: number, ez: number, away: Side, width: number, top: number, 
 }
 
 /**
- * The four walls of one storey between heights y0 and y1, with 2.2 m doors (2.5 m
- * tall) and pairs of windows (sill 1.1 m, head 2.1 m) cut into the named sides.
+ * The four walls of one storey between heights y0 and y1, with doors and pairs of windows cut
+ * into the named sides, sized by `sc` (`HOUSE`: 2.2 m doors 2.5 m tall, windows from 1.1 m to 2.1 m).
  */
-function walls(cx: number, cz: number, w: number, d: number, y0: number, y1: number, doors: Side[] = [], windows: Side[] = []): Box[] {
+function walls(cx: number, cz: number, w: number, d: number, y0: number, y1: number, doors: Side[] = [], windows: Side[] = [], sc: Scale = HOUSE): Box[] {
+  const WALL = sc.wall;
   const out: Box[] = [];
   for (const side of SIDES) {
     const alongX = side === "n" || side === "s";
     const len = alongX ? w : d;
     const holes: { a: number; b: number; door: boolean }[] = [];
-    if (doors.includes(side)) holes.push({ a: -1.1, b: 1.1, door: true });
+    if (doors.includes(side)) holes.push({ a: -sc.door / 2, b: sc.door / 2, door: true });
     if (windows.includes(side)) {
       const off = doors.includes(side) ? len * 0.32 : len * 0.25;
-      for (const sg of [-1, 1]) holes.push({ a: sg * off - 0.7, b: sg * off + 0.7, door: false });
+      for (const sg of [-1, 1]) holes.push({ a: sg * off - sc.window / 2, b: sg * off + sc.window / 2, door: false });
     }
     holes.sort((p, q) => p.a - q.a);
     // Wall piece spanning [a, b] along the side, from height lo to hi.
@@ -103,10 +125,10 @@ function walls(cx: number, cz: number, w: number, d: number, y0: number, y1: num
     let cur = -len / 2;
     for (const hole of holes) {
       piece(cur, hole.a, y0, y1);
-      if (hole.door) piece(hole.a, hole.b, y0 + 2.5, y1);
+      if (hole.door) piece(hole.a, hole.b, y0 + sc.doorHead, y1);
       else {
-        piece(hole.a, hole.b, y0, y0 + 1.1);
-        piece(hole.a, hole.b, y0 + 2.1, y1);
+        piece(hole.a, hole.b, y0, y0 + sc.sill);
+        piece(hole.a, hole.b, y0 + sc.windowHead, y1);
       }
       cur = hole.b;
     }
@@ -141,6 +163,7 @@ interface BuildingOpts {
   roof?: Side;
   /** Roof parapet sides left open besides the stairs', where a bridge lands. */
   open?: Side[];
+  scale?: Scale;
 }
 
 /**
@@ -148,15 +171,19 @@ interface BuildingOpts {
  * slab, a low parapet around the roof, and optional outside stairs up to it.
  */
 function building(cx: number, cz: number, w: number, d: number, H: number, o: BuildingOpts = {}): Box[] {
-  const out = walls(cx, cz, w, d, 0, H - 0.3, o.doors, o.windows);
+  const sc = o.scale ?? HOUSE;
+  const out = walls(cx, cz, w, d, 0, H - 0.3, o.doors, o.windows, sc);
   out.push(box(cx, cz, w, d, H, "slab", 0, H - 0.3));
   out.push(...parapet(cx, cz, w, d, H, [...(o.roof ? [o.roof] : []), ...(o.open ?? [])]));
-  if (o.roof) {
-    const r = o.roof;
-    if (r === "n" || r === "s") out.push(...stairs(cx + w / 2 - 1.0, r === "n" ? cz - d / 2 : cz + d / 2, r, 1.4, H));
-    else out.push(...stairs(r === "e" ? cx + w / 2 : cx - w / 2, cz + d / 2 - 1.0, r, 1.4, H));
-  }
+  if (o.roof) out.push(...roofStairs(cx, cz, w, d, H, o.roof, sc.stair));
   return out;
+}
+
+/** Outside stairs up to a roof at height H, against the corner of side `r`, running away from the wall. */
+function roofStairs(cx: number, cz: number, w: number, d: number, H: number, r: Side, width: number): Box[] {
+  const inset = width / 2 + 0.3;
+  if (r === "n" || r === "s") return stairs(cx + w / 2 - inset, r === "n" ? cz - d / 2 : cz + d / 2, r, width, H);
+  return stairs(r === "e" ? cx + w / 2 : cx - w / 2, cz + d / 2 - inset, r, width, H);
 }
 
 interface TowerOpts {
@@ -167,6 +194,7 @@ interface TowerOpts {
   open?: Side[];
   /** A second stair core at the west end, its flights climbing east: a long building climbed from either end. */
   twin?: true;
+  scale?: Scale;
 }
 
 /** A floor slab with rectangular holes ([x0, z0, x1, z1] each, apart along x, in order). */
@@ -189,6 +217,8 @@ function slabWithHoles(x0: number, z0: number, x1: number, z1: number, y0: numbe
  * would open onto the flight, so doors go on the other sides. Needs w >= 8, d >= 7.
  */
 function tower(cx: number, cz: number, w: number, d: number, floors: number, o: TowerOpts = {}): Box[] {
+  const sc = o.scale ?? HOUSE;
+  const { storey: STOREY, wall: WALL, stair } = sc;
   const x0 = cx - w / 2;
   const x1 = cx + w / 2;
   const z0 = cz - d / 2;
@@ -200,8 +230,8 @@ function tower(cx: number, cz: number, w: number, d: number, floors: number, o: 
   for (let k = 0; k < floors; k++) {
     const base = k * STOREY;
     const top = base + STOREY;
-    out.push(...walls(cx, cz, w, d, base, top - 0.3, o.doors?.[k], o.windows?.[k]));
-    const [za, zb] = k % 2 === 0 ? [z0 + WALL, z0 + WALL + 1.4] : [z1 - WALL - 1.4, z1 - WALL];
+    out.push(...walls(cx, cz, w, d, base, top - 0.3, o.doors?.[k], o.windows?.[k], sc));
+    const [za, zb] = k % 2 === 0 ? [z0 + WALL, z0 + WALL + stair] : [z1 - WALL - stair, z1 - WALL];
     for (let j = 0; j < n; j++) {
       const x = sx1 - (j + 0.5) * STEP_DEPTH;
       out.push(rect(x - STEP_DEPTH / 2, za, x + STEP_DEPTH / 2, zb, base, base + (STOREY * (j + 1)) / (n + 1), "step"));
@@ -281,7 +311,7 @@ interface Hole {
  * Four walls between heights y0 and y1 round (cx, cz) with any holes cut into them: the
  * general form of `walls()`, for roller doors and long bands of windows.
  */
-function shell(cx: number, cz: number, w: number, d: number, y0: number, y1: number, holes: Hole[], kind: BoxKind = "wall", tint = 0): Box[] {
+function shell(cx: number, cz: number, w: number, d: number, y0: number, y1: number, holes: Hole[], kind: BoxKind = "wall", tint = 0, WALL = HOUSE.wall): Box[] {
   const out: Box[] = [];
   for (const side of SIDES) {
     const alongX = side === "n" || side === "s";
@@ -307,13 +337,10 @@ function shell(cx: number, cz: number, w: number, d: number, y0: number, y1: num
   return out;
 }
 
-/** Height of a roller door's opening: tall enough for a truck, and for anything tall to see in. */
-const ROLLER = 4.4;
-
 interface HallOpts {
-  /** Roller doors, `w` wide (default 5 m), at `at` metres along their side from its middle. */
+  /** Roller doors, as high as the scale's `roller` (tall enough for a truck, and for anything tall to see in), `w` wide (default 0.6 m more than high), at `at` metres along their side from its middle. */
   doors?: { side: Side; at?: number; w?: number }[];
-  /** Plain 2.2 m doors. */
+  /** Plain doors, as the scale's. */
   hatches?: { side: Side; at?: number }[];
   /** Sides with a band of high windows, out of reach from the floor: light in, a view out from the mezzanines. */
   windows?: Side[];
@@ -330,6 +357,7 @@ interface HallOpts {
   steel?: number;
   /** Outside stairs up to the roof, at the corner of this side (as `building()`'s). */
   roof?: Side;
+  scale?: Scale;
 }
 
 /**
@@ -338,9 +366,11 @@ interface HallOpts {
  * columns holding the roof. The roof is reached from outside (a stair tower set against it).
  */
 function hall(cx: number, cz: number, w: number, d: number, H: number, o: HallOpts = {}): Box[] {
+  const size = o.scale ?? HOUSE;
+  const WALL = size.wall;
   const holes: Hole[] = [
-    ...(o.doors ?? []).map((q) => ({ side: q.side, at: q.at, w: q.w ?? 5, head: ROLLER })),
-    ...(o.hatches ?? []).map((q) => ({ side: q.side, at: q.at, w: 2.2, head: 2.5 })),
+    ...(o.doors ?? []).map((q) => ({ side: q.side, at: q.at, w: q.w ?? size.roller + 0.6, head: size.roller })),
+    ...(o.hatches ?? []).map((q) => ({ side: q.side, at: q.at, w: size.door, head: size.doorHead })),
   ];
   // A band of windows round the top, broken by piers so it reads as a row of panes.
   for (const side of o.windows ?? []) {
@@ -351,14 +381,10 @@ function hall(cx: number, cz: number, w: number, d: number, H: number, o: HallOp
     for (let t = -len / 2 + 3; t <= len / 2 - 3; t += 4) if (clear(t)) holes.push({ side, at: t, w: 2.4, sill: H - 2.6, head: H - 1.2 });
   }
   const kind: BoxKind = o.steel === undefined ? "wall" : "steel";
-  const out = shell(cx, cz, w, d, 0, H - 0.3, holes, kind, o.steel ?? 0);
+  const out = shell(cx, cz, w, d, 0, H - 0.3, holes, kind, o.steel ?? 0, WALL);
   out.push(box(cx, cz, w, d, H, "slab", 0, H - 0.3));
   out.push(...parapet(cx, cz, w, d, H, [...(o.open ?? []), ...(o.roof ? [o.roof] : [])]));
-  if (o.roof) {
-    const r = o.roof;
-    if (r === "n" || r === "s") out.push(...stairs(cx + w / 2 - 1.0, r === "n" ? cz - d / 2 : cz + d / 2, r, 1.4, H));
-    else out.push(...stairs(r === "e" ? cx + w / 2 : cx - w / 2, cz + d / 2 - 1.0, r, 1.4, H));
-  }
+  if (o.roof) out.push(...roofStairs(cx, cz, w, d, H, o.roof, size.stair));
   const x0 = cx - w / 2 + WALL;
   const x1 = cx + w / 2 - WALL;
   const z0 = cz - d / 2 + WALL;
@@ -375,7 +401,7 @@ function hall(cx: number, cz: number, w: number, d: number, H: number, o: HallOp
     if (alongX) out.push(rect(a0, Math.min(edge, m.side === "n" ? z0 : z1), a1, Math.max(edge, m.side === "n" ? z0 : z1), m.y - 0.3, m.y, "slab"));
     else out.push(rect(Math.min(edge, m.side === "w" ? x0 : x1), a0, Math.max(edge, m.side === "w" ? x0 : x1), a1, m.y - 0.3, m.y, "slab"));
     const s = m.stair ?? 0;
-    const sw = 1.4;
+    const sw = size.stair;
     const railTo = (p: number, q: number) =>
       alongX ? rect(p, edge - (inner > 0 ? 0.15 : 0), q, edge + (inner > 0 ? 0 : 0.15), m.y, m.y + 1.0, "steel", 2) : rect(edge - (inner > 0 ? 0.15 : 0), p, edge + (inner > 0 ? 0 : 0.15), q, m.y, m.y + 1.0, "steel", 2);
     const sc = (alongX ? cx : cz) + s;
