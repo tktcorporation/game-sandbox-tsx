@@ -712,12 +712,27 @@ const spills = (pg) =>
  */
 {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
-  const pg = await withProfile(ctx, midGame);
+  // An epic armour in the stash: with the rare PIKE (2) it is over a level 0 depot's allowance (2).
+  const pg = await withProfile(ctx, { ...midGame, stash: [...midGame.stash, { t: "armor", tier: 2 }] });
   await pg.click("#start");
   const starts = await pg.locator("#hub-region [data-act=from]").count();
   if (starts !== 2) errors.push(`depot: the base offers ${starts} depots to start from, not 2`);
   await pg.click("#hub-region [data-act=from][data-arg=quarry]");
   await pg.screenshot({ path: `${out}/46-hub-depots.png` });
+  // The depot's allowance: the PIKE fits it, the armour on top does not, and a drop lifts the limit.
+  const allowance = () => pg.evaluate(() => document.querySelector("#hub-side .slot.depot")?.textContent ?? "");
+  const goOff = () => pg.locator("#hub-go").isDisabled();
+  await pg.locator("#hub-stash [data-act=pick]", { hasText: "PIKE" }).click();
+  const fits = await allowance();
+  if (!/Lv0/.test(fits) || !/2 \/ 2/.test(fits) || !/1,500/.test(fits) || (await goOff())) errors.push(`depot: with the PIKE the allowance reads "${fits}", start ${(await goOff()) ? "disabled" : "enabled"}`);
+  await pg.screenshot({ path: `${out}/46-hub-depot-budget.png` });
+  await pg.locator("#hub-stash [data-act=pick]", { hasText: "アーマー" }).click();
+  const over = await allowance();
+  if (!/4 \/ 2/.test(over) || !(await goOff()) || !/持ち込み枠/.test(await pg.getAttribute("#hub-go", "title"))) errors.push(`depot: over the allowance it reads "${over}" and the start is ${(await goOff()) ? "disabled" : "enabled"}`);
+  await pg.screenshot({ path: `${out}/46-hub-depot-over.png` });
+  await pg.click("#hub-region [data-arg=reservoir]");
+  if ((await goOff()) || (await allowance())) errors.push("depot: switching to the drop did not lift the allowance");
+  await pg.click("#hub-region [data-act=from][data-arg=quarry]");
   await pg.click("#hub-free");
   await pg.evaluate(() => window.advanceTime(500));
   const d0 = await readOf(pg);
