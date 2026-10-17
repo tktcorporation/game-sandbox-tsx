@@ -259,8 +259,8 @@ const lap = (name) => {
   await page.tap("#start");
   await page.waitForTimeout(200);
   const lock = await page.evaluate(() => {
-    const el = document.querySelector("#hub-region span.lock");
-    return el ? getComputedStyle(el).display : "missing";
+    const el = document.querySelector("#hub-lock");
+    return el && !el.hidden && el.textContent ? getComputedStyle(el).display : "missing";
   });
   if (lock === "none" || lock === "missing") errors.push(`mobile: the locked region's hint is not shown (${lock})`);
   await page.screenshot({ path: `${out}/m7-hub-locked.png` });
@@ -381,7 +381,7 @@ const read = async () => JSON.parse(await page.evaluate(() => window.render_game
   const harborLocked = await page.locator("#hub-region button.locked").count();
   const entriesOffered = await page.locator("#hub-region [data-act=entry]").count();
   await page.screenshot({ path: `${out}/00-hub-region.png` });
-  if (harborLocked !== 1 || entriesOffered !== 1 || !/港湾地帯：峠/.test(await page.evaluate(() => document.getElementById("hub-region").textContent))) errors.push(`hub: a fresh profile offers ${entriesOffered} ways in and ${harborLocked} locked regions, or the harbor's hint did not show`);
+  if (harborLocked !== 1 || entriesOffered !== 1 || !/港湾地帯：峠/.test(await page.evaluate(() => document.getElementById("hub-lock").textContent))) errors.push(`hub: a fresh profile offers ${entriesOffered} ways in and ${harborLocked} locked regions, or the harbor's hint did not show`);
   await page.click("#hub-go");
   const h2 = await read();
   if (h2.screen !== "game") errors.push(`hub: deploying did not start the raid (${h2.screen})`);

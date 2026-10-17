@@ -1512,10 +1512,12 @@ body.touch .mate-bars {
   box-shadow: inset 0 0 0 2px var(--muted);
   border: 0;
 }
-/* How to open a locked region: a line of its own under the choice. */
-.hub-region span.lock {
+/* How to open a locked region: a line of its own over the start choice. */
+.hub-lock {
   flex-basis: 100%;
-  margin-left: 0;
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
 }
 /* A phone on its side: the choice shares the buttons' row, without its line, so the lists keep their room. */
 @media (max-height: 500px) {
@@ -1553,12 +1555,8 @@ body.touch .mate-bars {
   .hub-region span {
     display: none;
   }
-  /* How to open a locked region stays: on a phone it is the only place that says so. */
-  .hub-region span.lock {
-    display: inline;
-    flex: none;
-    white-space: nowrap;
-    margin-left: 8px;
+  .hub-lock {
+    font-size: 12px;
   }
 }
 #hub .hub-foot button:disabled {

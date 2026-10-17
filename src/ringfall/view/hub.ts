@@ -483,8 +483,10 @@ export class Hub {
         this.from && allow
           ? `${esc(POIS[poiIndex(this.from)].name)}の中継ボックス（Lv${allow.level}・持ち込み枠 ${allow.budget}）の前から、${ALLY.name}と歩いて始める`
           : `${esc(entryOf(this.entry ?? p.entry).name)}から${ALLY.name}と歩いて始める。${esc(regionOf(this.region).note)}${unseen ? `。ほかの入口 ${unseen} つは、歩いて見つけて生きて帰ると選べる` : ""}`
-      }</span>` +
-      locked.map((r) => `<span class="lock">${esc(r.name)}：${esc(r.locked ?? "")}</span>`).join("");
+      }</span>`;
+    // How to open a locked region: a line of its own over the start choice, kept on a phone too.
+    $("hub-lock").hidden = !locked.length;
+    $("hub-lock").textContent = locked.map((r) => `${r.name}：${r.locked ?? ""}`).join("　");
     $("hub-go").textContent = "この装備で出撃";
     $("hub-free").textContent = "貸出装備で出撃";
     // Both buttons go through fitsStart(), as takeKit() does: a loadout over a depot's allowance cannot start there.
