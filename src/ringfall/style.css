@@ -197,37 +197,33 @@ kbd {
 .aw {
   position: absolute;
   transform: translate(-50%, -100%);
-  width: 26px;
-  height: 26px;
+  width: 16px;
+  height: 16px;
   display: grid;
   place-items: center;
   font-family: var(--num);
   font-weight: 800;
-  font-size: 20px;
+  font-size: 15px;
   line-height: 1;
   border-radius: 50%;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+  opacity: 0.7;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
 }
 .aw.sense {
-  background: conic-gradient(var(--white) calc(var(--p) * 360deg), rgba(20, 26, 51, 0.45) 0);
-  -webkit-mask: radial-gradient(circle, transparent 7px, #000 8px);
-  mask: radial-gradient(circle, transparent 7px, #000 8px);
+  background: conic-gradient(rgba(255, 255, 255, 0.75) calc(var(--p) * 360deg), transparent 0);
+  -webkit-mask: radial-gradient(circle, transparent 6px, #000 7px);
+  mask: radial-gradient(circle, transparent 6px, #000 7px);
+  opacity: 0.55;
 }
 .aw.alert {
   color: var(--hot);
-  background: var(--plate);
-  box-shadow: 0 0 0 2px var(--hot);
 }
 .aw.engaged {
-  color: var(--white);
-  background: #ff3b2f;
-  box-shadow: 0 0 0 2px var(--ink);
-  font-size: 22px;
+  color: #ff5a4f;
+  opacity: 0.85;
 }
 .aw.lost {
-  color: var(--white);
-  background: rgba(20, 26, 51, 0.55);
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.55);
+  color: rgba(255, 255, 255, 0.8);
 }
 .aw.reveal {
   width: 14px;
@@ -236,11 +232,8 @@ kbd {
   transform: translate(-50%, -50%) rotate(45deg);
   border: 2px solid #ff3b2f;
   box-shadow: 0 0 6px rgba(255, 59, 47, 0.8);
+  opacity: 1;
 }
-.aw.edge {
-  opacity: 0.85;
-}
-
 
 /* Extraction points: a line each on the objective card. */
 #obj-exits {
