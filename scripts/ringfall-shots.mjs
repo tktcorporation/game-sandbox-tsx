@@ -37,6 +37,35 @@ const browser = await chromium.launch({
 const errors = [];
 
 /*
+ * Drawing a frame in software is most of what a step costs, so stretches that only wait on the
+ * state step without drawing (window.ringfallStep). The scene is drawn before every screenshot
+ * and frame-cost report, at the end of every such stretch, and every DRAW_EVERY steps within one,
+ * so an error that drawing raises still shows up in the console while what it drew is on screen.
+ */
+const DRAW_EVERY = 10;
+/** One undrawn step and the state after it, in one round trip. */
+const quietStep = async (pg, ms) =>
+  JSON.parse(await pg.evaluate((t) => (window.ringfallStep(t), window.render_game_to_text()), ms));
+const draw = (pg) => pg.evaluate(() => window.ringfallDraw());
+/** Undrawn steps while `going(state)` holds, at most `max`; draws as above. The state at the end. */
+const stepWhile = async (pg, ms, max, going) => {
+  let st = JSON.parse(await pg.evaluate(() => window.render_game_to_text()));
+  for (let i = 0; i < max && going(st); i++) {
+    st = await quietStep(pg, ms);
+    if ((i + 1) % DRAW_EVERY === 0) await draw(pg);
+  }
+  await draw(pg);
+  return st;
+};
+let lapAt = Date.now();
+/** Wall time per section, to see where the gate's time goes. */
+const lap = (name) => {
+  const now = Date.now();
+  console.log(`time: ${name} ${((now - lapAt) / 1000).toFixed(1)} s`);
+  lapAt = now;
+};
+
+/*
  * Phone in landscape: real touch events (through the DevTools protocol) must move
  * the player with the stick, turn the view, and fire. Then the bot plays to the
  * first fight so the touch layout is captured with enemies on screen.
@@ -90,7 +119,7 @@ const errors = [];
   if (!(s1.player.z < s0.player.z - 3)) errors.push(`mobile: stick did not move the player (${s0.player.z} -> ${s1.player.z})`);
 
   // Land, then turn the view by dragging on the right half.
-  for (let i = 0; i < 60 && (await read()).phase === "drop"; i++) await step(100);
+  await stepWhile(page, 100, 60, (st) => st.phase === "drop");
   const yaw0 = await page.evaluate(() => window.ringfallYaw());
   await touch("touchStart", [{ x: 560, y: 120, id: 2 }]);
   for (let k = 1; k <= 5; k++) await touch("touchMove", [{ x: 560 + k * 20, y: 120, id: 2 }]);
@@ -160,8 +189,7 @@ const errors = [];
   const g1 = await read();
   await page.screenshot({ path: `${out}/m5-leap.png` });
   if (!g1.player.leap || !(g1.player.y > g0.player.y + 10)) errors.push(`mobile: the ult button did not leap (${JSON.stringify(g1.player)})`);
-  for (let i = 0; i < 60 && (await read()).player.leap; i++) await step(250);
-  if ((await read()).player.leap) errors.push("mobile: the leap never came down");
+  if ((await stepWhile(page, 250, 60, (st) => st.player.leap)).player.leap) errors.push("mobile: the leap never came down");
 
   // The page never zooms: browser gestures are off on the root (touch-action
   // narrows down the tree, so the HUD and menus are covered too), and iOS Safari's
@@ -190,14 +218,16 @@ const errors = [];
   // The bot plays to the first fight for a screenshot of the touch layout.
   await page.evaluate((s) => window.ringfallBot(s), skill);
   for (let i = 0; i < 900; i++) {
-    await step(100);
-    const st = await read();
+    const st = await quietStep(page, 100);
     if (st.enemies.filter((e) => e.aware === "engaged" && e.mode !== "spawning").length >= 2 && st.orbs >= 1) break;
+    if ((i + 1) % DRAW_EVERY === 0) await draw(page);
   }
+  await draw(page);
   await page.screenshot({ path: `${out}/m2-fight.png` });
   console.log(`mobile: stick ${s0.player.z} -> ${s1.player.z}, yaw ${yaw0.toFixed(2)} -> ${yaw1.toFixed(2)}, shots ${shots0} -> ${shots1}`);
   console.log(`mobile reservoir frame: ${JSON.stringify(await page.evaluate(() => window.ringfallFrameCost(20)))}`);
   await ctx.close();
+  lap("phone, reservoir");
 }
 
 /*
@@ -220,8 +250,7 @@ const errors = [];
   await page.tap("#hub-free");
   const read = async () => JSON.parse(await page.evaluate(() => window.render_game_to_text()));
   const step = (ms) => page.evaluate((t) => window.advanceTime(t), ms);
-  for (let i = 0; i < 80 && (await read()).phase === "drop"; i++) await step(100);
-  const st = await read();
+  const st = await stepWhile(page, 100, 80, (st) => st.phase === "drop");
   if (st.region !== "harbor" || !(st.player.z < -250)) errors.push(`mobile harbor: the raid landed in ${st.region} at ${st.player.x},${st.player.z}`);
   await step(300);
   await page.screenshot({ path: `${out}/m7-harbor-landed.png` });
@@ -233,6 +262,7 @@ const errors = [];
   await page.screenshot({ path: `${out}/m8-map-harbor.png` });
   console.log(`mobile harbor frame: ${JSON.stringify(await page.evaluate(() => window.ringfallFrameCost(20)))}`);
   await ctx.close();
+  lap("phone, harbor");
 }
 
 // Without pointer lock (a sandboxed frame), the mouse still turns the view.
@@ -253,6 +283,7 @@ const errors = [];
   const y1 = await p2.evaluate(() => window.ringfallYaw());
   if (!(Math.abs(y1 - y0) > 0.05)) errors.push(`no pointer lock: the mouse did not turn the view (${y0.toFixed(2)} -> ${y1.toFixed(2)})`);
   await p2.close();
+  lap("no pointer lock");
 }
 
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
@@ -293,6 +324,7 @@ const read = async () => JSON.parse(await page.evaluate(() => window.render_game
   if (h2.screen !== "game") errors.push(`hub: deploying did not start the raid (${h2.screen})`);
   if (h2.player.weapons.join() !== "pike1:-1,hornet0:-1") errors.push(`hub: the raid did not start with the picked weapons (${h2.player.weapons.join()})`);
   if (h2.profile.stash !== h1.profile.stash - 2) errors.push(`hub: the picked weapons stayed in the stash (${h1.profile.stash} -> ${h2.profile.stash})`);
+  lap("base");
 }
 
 // Real keyboard input must reach the sim: holding W during the drop moves the player north.
@@ -372,10 +404,11 @@ await page.evaluate(() => {
   window.ringfallCamera();
   document.getElementById("hud").hidden = false;
 });
+lap("drop and tour");
 
 // Land, then knock the teammate down and pick it up by hand: its tag and the prompt
 // show, one press of E starts the help, and it stands up after standing by it.
-for (let i = 0; i < 100 && (await read()).phase === "drop"; i++) await page.evaluate(() => window.advanceTime(200));
+await stepWhile(page, 200, 100, (st) => st.phase === "drop");
 // The teammate up close, from a fixed camera in front of it.
 const mate = (await read()).ally;
 await page.evaluate((a) => {
@@ -406,19 +439,21 @@ await page.evaluate(() => window.advanceTime(1600));
 await page.screenshot({ path: `${out}/07-leap.png` });
 const l1 = await read();
 if (!l1.player.leap || !(l1.player.y > l0.player.y + 15)) errors.push(`leap: Z did not leap (${JSON.stringify(l1.player)})`);
-for (let i = 0; i < 60 && (await read()).player.leap; i++) await page.evaluate(() => window.advanceTime(250));
+await stepWhile(page, 250, 60, (st) => st.player.leap);
 await page.keyboard.up("KeyW");
 const l2 = await read();
 const glided = Math.hypot(l2.player.x - l0.player.x, l2.player.z - l0.player.z);
 const mateGap = Math.hypot(l2.ally.x - l2.player.x, l2.ally.z - l2.player.z);
 if (l2.player.leap || glided < 30 || mateGap > 4) errors.push(`leap: landed ${l2.player.leap ? "never" : ""} ${glided.toFixed(0)} m away, teammate ${mateGap.toFixed(1)} m off`);
 await page.screenshot({ path: `${out}/07-leap-landed.png` });
+lap("teammate and leap");
 
 await page.evaluate((s) => window.ringfallBot(s), skill);
 const taken = new Set();
 const shot = async (name) => {
   if (taken.has(name)) return;
   taken.add(name);
+  await draw(page);
   await page.screenshot({ path: `${out}/${name}.png` });
 };
 let prevKey = "";
@@ -431,14 +466,15 @@ let wreckSpot = null;
 let prevEnemies = [];
 let s = after;
 for (let i = 0; i < 25 * 60 * 10; i++) {
-  await page.evaluate(() => window.advanceTime(100));
-  s = await read();
+  s = await quietStep(page, 100);
+  if ((i + 1) % DRAW_EVERY === 0) await draw(page);
   const key = `${s.phase}-${s.cleared.join("")}-${s.enemies.length}-${s.loot}-${s.stats.kills}-${s.haul.value}`;
   if (key !== prevKey) {
     prevKey = key;
     lastProgress = s.time;
   }
   if (s.time - lastProgress > 90) {
+    await draw(page);
     await page.screenshot({ path: `${out}/stall.png` });
     const near = s.enemies.filter((e) => Math.hypot(e.x - s.player.x, e.z - s.player.z) < 70);
     throw new Error(`no progress for 90 s: player ${JSON.stringify(s.player)} ally ${JSON.stringify(s.ally)} cleared ${s.cleared} near ${JSON.stringify(near)}`);
@@ -550,7 +586,12 @@ for (let i = 0; i < 25 * 60 * 10; i++) {
 if (s.phase !== "done" || !s.outcome) errors.push(`run did not finish: ${JSON.stringify(s).slice(0, 300)}`);
 if (!taken.has("27-bolt")) errors.push("no robot shot was caught in flight for 27-bolt");
 console.log(`outcome: ${s.outcome}`);
-await page.waitForTimeout(1800);
+// A drawn step hands drawing back to the frame loop: the results are shot over the scene, and
+// the phone-sized resize below clears the canvas, which only the frame loop draws again.
+await page.evaluate(() => window.advanceTime(0));
+lap("raid");
+// The results come up a moment after the raid ends (on a timer of the page's own clock).
+await page.waitForFunction(() => !document.getElementById("results").hidden, null, { timeout: 10000 }).catch(() => undefined);
 await page.screenshot({ path: `${out}/13-results.png` });
 console.log(JSON.stringify((await read()).stats));
 // The results on a phone on its side: both columns and the button fit the screen.
@@ -578,6 +619,7 @@ console.log(JSON.stringify((await read()).stats));
   if (h.screen !== "hub" || h.profile.raids !== 1) errors.push(`results: back to base shows ${h.screen} with ${h.profile.raids} raids`);
   await page.waitForTimeout(200);
   await page.screenshot({ path: `${out}/14-hub-after.png` });
+  lap("results");
 }
 
 // A second raid, into the harbor: the bot (still at the controls) drops there and plays to its first fight.
@@ -587,8 +629,7 @@ console.log(JSON.stringify((await read()).stats));
   await page.click("#hub-free");
   await page.evaluate(() => window.advanceTime(1500));
   await page.screenshot({ path: `${out}/28-harbor-drop.png` });
-  for (let i = 0; i < 100 && (await read()).phase === "drop"; i++) await page.evaluate(() => window.advanceTime(200));
-  const h = await read();
+  const h = await stepWhile(page, 200, 100, (st) => st.phase === "drop");
   if (h.region !== "harbor" || !(h.player.z < -250) || h.phase !== "play") errors.push(`harbor raid: landed in ${h.region} at ${h.player.x},${h.player.z} (${h.phase})`);
   await page.evaluate(() => window.advanceTime(400));
   await page.screenshot({ path: `${out}/29-harbor-landed.png` });
@@ -601,14 +642,16 @@ console.log(JSON.stringify((await read()).stats));
   await page.keyboard.press("KeyM");
   let fought = false;
   for (let i = 0; i < 3000 && !fought; i++) {
-    await page.evaluate(() => window.advanceTime(100));
-    const st = await read();
+    const st = await quietStep(page, 100);
     if (st.phase !== "play") break;
     fought = st.enemies.filter((e) => e.aware === "engaged" && e.mode !== "spawning").length >= 1 && st.orbs >= 1;
+    if ((i + 1) % DRAW_EVERY === 0) await draw(page);
   }
+  await draw(page);
   await page.screenshot({ path: `${out}/31-harbor-fight.png` });
   const end = await read();
   console.log(`harbor raid: fought ${fought}, cleared ${end.stats.cleared.join(",") || "-"}, at ${end.player.x},${end.player.z}`);
+  lap("harbor raid");
 }
 // The desktop page is done with; left open it draws the harbor every frame, and the pages
 // below, each a fresh load, would share the machine with it.
@@ -692,6 +735,7 @@ const spills = (pg) =>
   const raid = await readOf(pg);
   if (!intel.includes(raid.boost.name)) errors.push(`hideout: the radio said "${intel}", the raid boosts ${raid.boost.name}`);
   await ctx.close();
+  lap("hideout");
 }
 {
   const ctx = await browser.newContext({ viewport: { width: 740, height: 360 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
@@ -716,6 +760,7 @@ const spills = (pg) =>
   await pg.screenshot({ path: `${out}/m14-hub-depot.png` });
   if (fit.length) errors.push(`hideout on a phone: ${[...new Set(fit)].join(", ")} (740x360)`);
   await ctx.close();
+  lap("hideout, phone");
 }
 /*
  * A depot: the base offers the depots on as starts, the raid begins on the ground beside one
@@ -765,12 +810,13 @@ const spills = (pg) =>
   await pg.screenshot({ path: `${out}/49-map-fog.png` });
   await pg.keyboard.press("KeyM");
   await pg.evaluate(() => window.advanceTime(4000));
-  await pg.waitForTimeout(1800);
+  await pg.waitForFunction(() => !document.getElementById("results").hidden, null, { timeout: 10000 }).catch(() => undefined);
   const d2 = await readOf(pg);
   if (d2.outcome !== "extracted" || d2.leftAt !== "quarry" || d2.screen !== "results") errors.push(`depot: leaving ended ${d2.outcome} at ${d2.leftAt} on ${d2.screen}`);
   if (!/中継ボックス/.test(await pg.textContent("#stats"))) errors.push("depot: the results do not say the raid ended at the depot");
   await pg.screenshot({ path: `${out}/50-results-depot.png` });
   await ctx.close();
+  lap("depot");
 }
 /*
  * The routes a tool opens: listed under the hideout, closed (the obstacle, its prompt naming the
@@ -869,6 +915,7 @@ for (const [size, name] of [[{ width: 1280, height: 720 }, "44-ending"], [{ widt
   }
   await ctx.close();
 }
+lap("ending");
 console.log(`screens: ${[...taken].join(", ")}`);
 await browser.close();
 server.close();

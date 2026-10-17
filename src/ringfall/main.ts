@@ -36,6 +36,8 @@ let state: State = newRun(Date.now() & 0xffff);
 let running = false;
 let paused = false;
 let manual = false; // automation drives time through advanceTime()
+/** Automation stepped without drawing: the frame loop leaves the canvas as automation last drew it. */
+let quiet = false;
 let bot: Bot | null = null;
 let acc = 0;
 let hitstop = 0;
@@ -228,9 +230,10 @@ function frame(now: number) {
     }
     if (n === 6) acc = 0;
   }
-  world.render(state, dt);
+  const drawn = !(manual && quiet);
+  if (drawn) world.render(state, dt);
   sound.frame(state, world.camera, dt, running && !paused);
-  if (running) hud.frame(state, world, dt, dims.w, dims.h);
+  if (running && drawn) hud.frame(state, world, dt, dims.w, dims.h);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
@@ -359,6 +362,8 @@ declare global {
   interface Window {
     render_game_to_text: () => string;
     advanceTime: (ms: number) => void;
+    ringfallStep: (ms: number) => void;
+    ringfallDraw: () => void;
     ringfallBot: (skill: string) => void;
     ringfallYaw: () => number;
     ringfallDownAlly: () => void;
@@ -415,13 +420,26 @@ window.render_game_to_text = () => {
   });
 };
 
-window.advanceTime = (ms: number) => {
+function advance(ms: number, draw: boolean) {
   manual = true;
+  quiet = !draw;
   const n = Math.round(ms / 1000 / TICK);
   for (let i = 0; i < n && running; i++) tick();
-  world.render(state, ms / 1000);
+  if (draw) world.render(state, ms / 1000);
+  else world.sync(state, ms / 1000);
   if (running) hud.frame(state, world, ms / 1000, dims.w, dims.h);
-};
+}
+window.advanceTime = (ms) => advance(ms, true);
+
+/**
+ * Automation only: advanceTime without drawing. The scene and the HUD move on as usual but the
+ * canvas is left as it was, and the frame loop draws nothing either until advanceTime: drawing in
+ * software is most of what a step costs, and a gate waiting on the state need not pay it each step.
+ */
+window.ringfallStep = (ms) => advance(ms, false);
+
+/** Automation only: draws the scene as the last step left it, before a screenshot of an undrawn step. */
+window.ringfallDraw = () => world.draw();
 
 /** Look from a fixed point without touching the run (for screenshots of the island). No arguments: back to the player. */
 window.ringfallCamera = (x, y, z, yaw, pitch) => {

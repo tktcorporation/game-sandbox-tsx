@@ -823,8 +823,17 @@ export class World {
     return { hitstop, slowmo };
   }
 
-  /** Per-frame sync. `dt` is real seconds since the last frame. */
+  /** Per-frame sync and draw. `dt` is real seconds since the last frame. */
   render(s: State, dt: number) {
+    this.sync(s, dt);
+    this.draw();
+  }
+
+  /**
+   * Moves the scene to `s` and runs every fade by `dt`, without drawing. Automation calls it
+   * on its own for steps nobody looks at: drawing in software is most of a step's cost.
+   */
+  sync(s: State, dt: number) {
     this.time += dt;
     const p = s.player;
     const w0 = p.weapons[p.slot];
@@ -1191,7 +1200,10 @@ export class World {
     this.gun.visible = !(w0 && WEAPONS[w0.kind].scope && ads > SCOPE_IN);
     this.gunCam.fov = 55 - ads * 8;
     this.gunCam.updateProjectionMatrix();
+  }
 
+  /** Draws the scene as the last `sync()` left it. */
+  draw() {
     this.renderer.info.reset();
     this.renderer.clear();
     this.renderer.render(this.scene, this.camera);
