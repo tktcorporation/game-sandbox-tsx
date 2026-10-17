@@ -548,7 +548,7 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   const depots = Array.isArray(o.depots) ? [...new Set(o.depots.filter((d): d is PoiId => typeof d === "string" && poiIndex(d as PoiId) >= 0))] : [];
   const ds = ((o.v === 8 || o.v === 9 || o.v === 10 || o.v === 11) && o.depotSent && typeof o.depotSent === "object" ? o.depotSent : {}) as Record<string, unknown>;
   const depotSent = Object.fromEntries(depots.map((d) => [d, num(ds[d])]));
-  const entries = o.v === 11 && Array.isArray(o.entries) ? knownEntries(o.entries.filter((e): e is string => typeof e === "string")) : ENTRIES.map((e) => e.id);
+  const entries = typeof o.v === "number" && o.v < 11 ? ENTRIES.map((e) => e.id) : knownEntries(Array.isArray(o.entries) ? o.entries.filter((e): e is string => typeof e === "string") : []);
   const { region, entry } = allowedStart({ entries, depots } as Profile, REGIONS.find((r) => r.id === o.region)?.id ?? "reservoir", o.entry);
   return {
     v: 11,

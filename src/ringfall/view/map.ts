@@ -174,8 +174,14 @@ export class IslandMap {
     g.lineJoin = "round";
     g.strokeStyle = "rgba(20,24,40,0.85)";
     const font = (size: number) => `800 ${size * dpr}px system-ui, sans-serif`;
+    // A centred name near the world's edge is moved in so it stays whole on the canvas.
+    const inside = (text: string, x: number) => {
+      const half = g.measureText(text).width / 2 + 4 * dpr;
+      return Math.max(half, Math.min(g.canvas.width - half, x));
+    };
     const label = (text: string, x: number, y: number, color: string, size: number, stroke = true) => {
       g.font = font(size);
+      if (g.textAlign === "center") x = inside(text, x);
       if (stroke) g.strokeText(text, x, y);
       g.fillStyle = color;
       g.fillText(text, x, y);
@@ -187,7 +193,7 @@ export class IslandMap {
       g.font = font(size);
       const w = g.measureText(text).width;
       const hh = size * dpr * 0.6;
-      const x0 = left ? x : x - w / 2;
+      const x0 = left ? x : inside(text, x) - w / 2;
       return { x0, y0: y - hh, x1: x0 + w, y1: y + hh };
     };
     const taken: Rect[] = [];
