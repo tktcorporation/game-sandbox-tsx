@@ -1,6 +1,6 @@
 import { ALLY, HEALS as HEAL_SPECS, HIDEOUT, RAIDERS, RARITY, TOOLS, VALUABLES, WEAPONS, type ModuleId, type ValuableKind } from "../sim/config";
 import { boostFor, type Kit } from "../sim/state";
-import { POIS, poiIndex, poiRegion, REGIONS, regionOf, ROUTES, type PoiId, type RegionId } from "../sim/map";
+import { entryOf, POIS, poiIndex, poiRegion, REGIONS, regionOf, ROUTES, type EntryId, type PoiId, type RegionId } from "../sim/map";
 import { build, buildState, buy, buyPrice, canBuild, deliver, deliverable, depotAllowance, emptyLoadout, fitsStart, itemCost, HEALS, healCount, healRoom, keyName, lentHeals, loadoutCost, price, sell, sellPrice, shortfall, takeKit, wanted, wares, type Item, type Loadout, type Profile } from "../meta/profile";
 import { craftDone, maxLevel, MODULES, nextLevel, pouchSlots, sources, stashCap, stillNeeded, type Source } from "../meta/hideout";
 import { need, offered, type Quest, type RewardItem } from "../meta/quests";
@@ -101,15 +101,17 @@ export function whereLine(kind: ValuableKind): string {
 }
 
 /**
- * The base between raids: the stash, the loadout for the next raid, where it starts (a
- * region to drop into, or a depot already on), the trader and their quests. It changes only
- * the profile; the raid itself starts from the kit, the region and the depot it hands over.
+ * The base between raids: the stash, the loadout for the next raid, where it starts (a way in
+ * of a region, or a depot already on), the trader and their quests. It changes only the
+ * profile; the raid itself starts from the kit, the region and the way in or depot it hands over.
  */
 export class Hub {
   private tab: Tab = "kit";
   private load: Loadout = emptyLoadout();
   private region: RegionId;
-  /** A depot to start from on the ground instead of dropping into `region`; null for the drop. */
+  /** The way in of `region` to start at, when not at a depot. */
+  private entry: EntryId;
+  /** A depot to start at instead of a way in; null for a way in. */
   private from: PoiId | null = null;
   /** The hideout module opened to show what its next level takes. */
   private module: ModuleId | null = null;
@@ -118,9 +120,10 @@ export class Hub {
 
   constructor(
     public profile: Profile,
-    private deploy: (kit: Kit, region: RegionId, seed: number, from?: PoiId) => void,
+    private deploy: (kit: Kit, region: RegionId, seed: number, start: { from?: PoiId; entry: EntryId }) => void,
   ) {
     this.region = profile.region;
+    this.entry = this.entryIn(profile.region);
     $("hub").addEventListener("click", (e) => {
       const el = (e.target as HTMLElement).closest<HTMLElement>("[data-act]");
       if (el && !(el as HTMLButtonElement).disabled) this.act(el.dataset.act!, el.dataset.arg ?? "");
@@ -213,6 +216,11 @@ export class Hub {
       return this.showEnding();
     } else if (act === "region") {
       this.region = regionOf(arg as RegionId).id;
+      this.entry = this.entryIn(this.region);
+      this.from = null;
+      sfx.click();
+    } else if (act === "entry" && regionOf(this.region).entries.includes(arg as EntryId)) {
+      this.entry = arg as EntryId;
       this.from = null;
       sfx.click();
     } else if (act === "from" && this.profile.depots.includes(arg as PoiId)) {
@@ -268,13 +276,13 @@ export class Hub {
       const taken = takeKit(this.profile, l, this.from);
       if (!taken) return this.render();
       const { profile, kit } = taken;
-      this.set({ ...profile, region: this.region });
+      this.set({ ...profile, region: this.region, entry: this.from ? profile.entry : this.entry });
       this.load = emptyLoadout();
       this.close();
       sfx.deploy();
       const from = this.from ?? undefined;
       this.from = null;
-      this.deploy(kit, this.region, this.profile.seed, from);
+      this.deploy(kit, this.region, this.profile.seed, { from, entry: this.entry });
       return;
     } else if (act === "back") {
       sfx.click();
@@ -285,12 +293,18 @@ export class Hub {
     this.render();
   }
 
+  /** The way in offered first in `region`: the one the profile remembers when it is that region's, else its first. */
+  private entryIn(region: RegionId): EntryId {
+    const ways = regionOf(region).entries;
+    return ways.includes(this.profile.entry) ? this.profile.entry : ways[0];
+  }
+
   /** The loadout a start button takes: the free one keeps only the heals and keys picked. */
   private startLoad(act: "go" | "free"): Loadout {
     return act === "free" ? { ...emptyLoadout(), heals: this.load.heals, keys: this.load.keys } : this.load;
   }
 
-  /** The chosen depot's allowance and what each start button's loadout costs of it, or null for a drop. */
+  /** The chosen depot's allowance and what each start button's loadout costs of it, or null for a way in. */
   private allowance() {
     if (!this.from) return null;
     const a = depotAllowance(this.profile, this.from);
@@ -311,7 +325,7 @@ export class Hub {
     const b = boostFor(this.profile.seed, this.region);
     const where = esc(POIS[b.poi].name);
     if (lv === 1) return `${where}の箱に珍しい物が多い`;
-    return `${where}の箱に${esc(VALUABLES[b.kind].label)}が多い。レイダーは着地のおよそ ${Math.round(RAIDERS.at / 60)} 分後に降りる`;
+    return `${where}の箱に${esc(VALUABLES[b.kind].label)}が多い。レイダーはレイドの始めからおよそ ${Math.round(RAIDERS.at / 60)} 分後に降りる`;
   }
 
   /** The routes a tool opens: open or closed, and for a closed one, the tool and where it lies. */
@@ -428,17 +442,22 @@ export class Hub {
         `<div class="slot"><small>鍵</small><span${keys ? ` style="color:${RARITY_CSS[3]}"` : ' class="none"'}>${keys || "なし"}</span></div>` +
         HEALS.map(heal).join("") +
         `<p class="hint">倒れると、持ち込んだ物と回収品は失う。ポーチ（${pouchSlots(p.hideout)} 枠）に入る分の回収品だけは残る。${p.hideout.infirmary ? "医務室の回復は、どちらの装備にも貸し出される。" : ""}${
-          allow ? "中継ボックスから出撃するときは、武器・アーマー・鍵が持ち込み枠を使う。貸出装備と回復は枠を使わない。この中継ボックスから倉庫へ送るほど枠が広がる。降下なら枠はない。" : ""
+          allow ? "中継ボックスから出撃するときは、武器・アーマー・鍵が持ち込み枠を使う。貸出装備と回復は枠を使わない。この中継ボックスから倉庫へ送るほど枠が広がる。地域の入口から出撃するなら枠はない。" : ""
         }</p>`;
     }
     const on = (yes: boolean) => (yes ? ' class="on"' : "");
     $("hub-region").innerHTML =
       `<small>出撃地点</small>` +
-      REGIONS.map((r) => `<button type="button" data-act="region" data-arg="${r.id}"${on(!this.from && r.id === this.region)}>${esc(r.name)}に降下</button>`).join("") +
+      REGIONS.map((r) => `<button type="button" data-act="region" data-arg="${r.id}"${on(!this.from && r.id === this.region)}>${esc(r.name)}</button>`).join("") +
+      (this.from ? "" : `<div class="entries">${regionOf(this.region).entries.map((e) => `<button type="button" class="entry${e === this.entry ? " on" : ""}" data-act="entry" data-arg="${e}">${esc(entryOf(e).name)}から</button>`).join("")}</div>`) +
       p.depots.map((d) => `<button type="button" class="depot${this.from === d ? " on" : ""}" data-act="from" data-arg="${d}">中継ボックス：${esc(POIS[poiIndex(d)].name)}（${esc(poiRegion(d).name)}）</button>`).join("") +
-      `<span>${this.from && allow ? `${esc(POIS[poiIndex(this.from)].name)}の中継ボックス（Lv${allow.level}・持ち込み枠 ${allow.budget}）の前から、${ALLY.name}と歩いて始める` : esc(regionOf(this.region).note)}</span>`;
-    $("hub-go").textContent = this.from ? "この装備で出撃" : "この装備で降下";
-    $("hub-free").textContent = this.from ? "貸出装備で出撃" : "貸出装備で降下";
+      `<span>${
+        this.from && allow
+          ? `${esc(POIS[poiIndex(this.from)].name)}の中継ボックス（Lv${allow.level}・持ち込み枠 ${allow.budget}）の前から、${ALLY.name}と歩いて始める`
+          : `${esc(entryOf(this.entry).name)}から${ALLY.name}と歩いて始める。${esc(regionOf(this.region).note)}`
+      }</span>`;
+    $("hub-go").textContent = "この装備で出撃";
+    $("hub-free").textContent = "貸出装備で出撃";
     // Both buttons go through fitsStart(), as takeKit() does: a loadout over a depot's allowance cannot start there.
     const go = $("hub-go") as HTMLButtonElement;
     const free = $("hub-free") as HTMLButtonElement;

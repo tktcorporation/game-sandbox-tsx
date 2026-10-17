@@ -1,6 +1,6 @@
 import { stepEnemies, stepOrbs, stepWaves } from "./enemies";
-import { stepDrop, stepPlayer, tickReveal } from "./player";
-import { placeAlly, stepAlly } from "./ally";
+import { stepPlayer, tickReveal } from "./player";
+import { stepAlly } from "./ally";
 import { stepDepots, stepExtract, stepLoot, stepPoi, stepReinforce } from "./world";
 import { TICK } from "./config";
 import type { Input, State } from "./state";
@@ -15,10 +15,6 @@ export function step(s: State, input: Input, prevCrouch: boolean) {
   s.events = [];
   if (s.phase === "done") return;
   s.time += TICK;
-  if (s.phase === "drop") {
-    if (stepDrop(s, input)) placeAlly(s);
-    return;
-  }
   // A wipe or an extraction ends the raid mid-tick; nothing after it may fire, score or move.
   const systems: ((s: State) => void)[] = [
     (s) => stepPlayer(s, input, prevCrouch),

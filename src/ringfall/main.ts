@@ -3,7 +3,7 @@ import { Bot, SKILLS } from "./sim/bot";
 import { dist2d, groundAt } from "./sim/geom";
 import { terrainHeight } from "./sim/terrain";
 import { callLeft, freeKit, idleInput, newRun, type GameEvent, type Input, type Kit, type State } from "./sim/state";
-import { FRAMES, POIS, poiIndex, regionOf, type PoiId, type RegionId } from "./sim/map";
+import { entryOf, FRAMES, POIS, poiIndex, regionOf, type EntryId, type PoiId, type RegionId } from "./sim/map";
 import { settle, type Settlement } from "./meta/profile";
 import { loadProfile, saveProfile } from "./meta/storage";
 import { Hub } from "./view/hub";
@@ -265,8 +265,8 @@ function openHub() {
   hub.open();
 }
 
-/** `from`: a depot to start at on the ground, instead of the drop into `r`. */
-function start(k: Kit, r: RegionId, seed: number, from?: PoiId) {
+/** `from`: a depot to start at, instead of the way in `entry` of `r`. */
+function start(k: Kit, r: RegionId, seed: number, { from, entry }: { from?: PoiId; entry: EntryId }) {
   kit = k;
   region = r;
   settlement = null;
@@ -280,9 +280,9 @@ function start(k: Kit, r: RegionId, seed: number, from?: PoiId) {
   keepAwake(true);
   world.reset();
   sound.reset();
-  state = newRun(seed, kit, region, { depots: hub.profile.depots, seen: hub.profile.seen, from, routes: hub.profile.routes });
-  // The ground round where the raid starts is built before its first frame, and so is a drop's landing.
-  world.prebuild([state.player.pos, ...(state.phase === "drop" ? [regionOf(state.region).land] : [])]);
+  state = newRun(seed, kit, region, { depots: hub.profile.depots, seen: hub.profile.seen, from, entry, routes: hub.profile.routes });
+  // The ground round where the raid starts is built before its first frame.
+  world.prebuild([state.player.pos]);
   acc = hitstop = slowmo = 0;
   running = true;
   paused = false;
@@ -290,8 +290,8 @@ function start(k: Kit, r: RegionId, seed: number, from?: PoiId) {
   $("results").hidden = true;
   $("pause").hidden = true;
   hud.show(true);
-  if (state.phase === "drop") hud.banner("降下", `${touchMode ? "スティック" : "WASD"}で着地点を選ぶ。拠点と脱出地点は${touchMode ? "地図ボタン" : " M "}の地図で見る`);
-  else hud.banner(`${POIS[poiIndex(from!)].name}の中継ボックス`, `ここから探索する。拠点と脱出地点は${touchMode ? "地図ボタン" : " M "}の地図で見る`);
+  const depot = from && hub.profile.depots.includes(from) ? from : null;
+  hud.banner(depot ? `${POIS[poiIndex(depot)].name}の中継ボックス` : entryOf(entry).name, `ここから探索する。拠点と脱出地点は${touchMode ? "地図ボタン" : " M "}の地図で見る`);
   lock();
 }
 
@@ -389,7 +389,7 @@ window.render_game_to_text = () => {
     phase: s.phase,
     time: +s.time.toFixed(1),
     outcome: s.outcome,
-    raid: +(s.phase === "drop" ? 0 : s.time - s.landedAt).toFixed(1),
+    raid: +s.time.toFixed(1),
     visited: s.visited,
     cleared: s.cleared,
     reinforce: { next: +s.reinforceT.toFixed(1), came: s.reinforceN },
@@ -462,7 +462,7 @@ window.ringfallFrameCost = (frames: number) => {
   return { ms: +((performance.now() - t0) / frames).toFixed(1), ...world.stats() };
 };
 
-/** Automation only: where each POI and hamlet is written round, to place the screenshot cameras in their frames. */
+/** Automation only: where each POI, hamlet and area is written round, to place the screenshot cameras in their frames. */
 window.ringfallFrames = () => FRAMES;
 
 /** Automation only: the ground's height at (x, z), to place the screenshot cameras. */

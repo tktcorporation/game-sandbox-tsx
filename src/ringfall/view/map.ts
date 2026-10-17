@@ -1,5 +1,5 @@
 import { DEPOT, WORLD } from "../sim/config";
-import { BOXES, DEPOTS, EXTRACTS, LANDMARKS, POIS, REGIONS, ROUTES } from "../sim/map";
+import { BOXES, DEPOTS, ENTRIES, EXTRACTS, LANDMARKS, POIS, REGIONS, ROUTES } from "../sim/map";
 import { worldKey } from "../sim/routes";
 import { DAM_FACE, floorLevel, highGround, LEVEL, steepAt, surfaceAt, terrainHeight } from "../sim/terrain";
 import { cellOf, exploreSize, type State } from "../sim/state";
@@ -191,6 +191,21 @@ export class IslandMap {
       if (!free(r)) continue;
       taken.push(r);
       label(d.name, p.x, p.y, "#e9dcc2", 10);
+    }
+    // The ways in: a ring each, where a raid that does not start at a depot begins.
+    for (const e of ENTRIES) {
+      const p = at(e.x, e.z);
+      g.save();
+      g.lineWidth = 2 * dpr;
+      g.strokeStyle = "#e9dcc2";
+      g.beginPath();
+      g.arc(p.x, p.y, 3.5 * dpr, 0, Math.PI * 2);
+      g.stroke();
+      g.restore();
+      const r = box(e.name, p.x, p.y + 11 * dpr, 9);
+      if (!free(r)) continue;
+      taken.push(r);
+      label(e.name, p.x, p.y + 11 * dpr, "#e9dcc2", 9);
     }
     for (const r of REGIONS) {
       const p = at(r.label.x, r.label.z);

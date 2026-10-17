@@ -1,5 +1,5 @@
 import { DEPOT, HEALS as HEAL_SPECS, HIDEOUT, META, TOOLS, VALUABLES, type HealKind, type ModuleId, type Rarity, type ToolKind, type ValuableKind, type WeaponKind } from "../sim/config";
-import { depotIndex, DEPOTS, POIS, poiIndex, REGIONS, ROUTES, type PoiId, type RegionId, type RouteId } from "../sim/map";
+import { depotIndex, DEPOTS, ENTRIES, POIS, poiIndex, REGIONS, regionOf, ROUTES, type EntryId, type PoiId, type RegionId, type RouteId } from "../sim/map";
 import { openRoutes } from "../sim/routes";
 import { encodeSeen, type Kit, type State } from "../sim/state";
 import { craftDone, emptyHideout, infirmaryHeals, MODULES, nextLevel, onSale, pouchSlots, shopRarity, stashCap, stillNeeded, unmet, type Hideout } from "./hideout";
@@ -24,7 +24,7 @@ export interface Escape {
 
 /** What persists between raids. */
 export interface Profile {
-  v: 9;
+  v: 10;
   cash: number;
   stash: Item[];
   raids: number;
@@ -32,12 +32,14 @@ export interface Profile {
   /** Seconds spent in raids, all told. */
   time: number;
   quests: QuestLog;
-  /** The region the last raid dropped into: the base offers it first next time. */
+  /** The region the last raid started in. */
   region: RegionId;
+  /** The way in the last raid that did not start at a depot took: the base offers it first next time. */
+  entry: EntryId;
   hideout: Hideout;
   /** Set once, when the escape craft is finished. */
   escaped: Escape | null;
-  /** The next raid's seed: fixed before the drop, so the radio can tell what that raid holds. */
+  /** The next raid's seed: fixed before the raid, so the radio can tell what that raid holds. */
   seed: number;
   /** The depots switched on in any raid: they stay on, and a raid may start from one. */
   depots: PoiId[];
@@ -54,7 +56,7 @@ export const HEALS: HealKind[] = ["cell", "battery", "syringe", "medkit"];
 export function newProfile(seed = 1): Profile {
   const stash: Item[] = META.start.weapons.map((w) => ({ t: "weapon", ...w }));
   for (const k of HEALS) for (let i = 0; i < META.start.heals[k]; i++) stash.push({ t: "heal", kind: k });
-  return { v: 9, cash: META.start.cash, stash, raids: 0, extracted: 0, time: 0, quests: emptyLog(), region: "reservoir", hideout: emptyHideout(), escaped: null, seed: seed & 0xffff, depots: [], depotSent: {}, seen: "", routes: [] };
+  return { v: 10, cash: META.start.cash, stash, raids: 0, extracted: 0, time: 0, quests: emptyLog(), region: "reservoir", entry: regionOf("reservoir").entries[0], hideout: emptyHideout(), escaped: null, seed: seed & 0xffff, depots: [], depotSent: {}, seen: "", routes: [] };
 }
 
 /** The seed of the raid after one started from `seed`. */
@@ -192,7 +194,7 @@ export function depotAllowance(p: Profile, poi: PoiId): DepotAllowance {
 export const depotBudget = (p: Profile, poi: PoiId) => depotAllowance(p, poi).budget;
 
 /**
- * Whether a raid may start with this loadout: a drop (`from` null) always may; a depot start
+ * Whether a raid may start with this loadout: a start at a way in (`from` null) always may; a depot start
  * only from a depot on, and within its allowance.
  */
 export function fitsStart(p: Profile, l: Loadout, from: PoiId | null): boolean {
@@ -481,12 +483,14 @@ const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
  * v6 have no depot on and nothing explored. A v6 profile's explored map was drawn over the
  * world before its open ground and wider bounds, so it is dropped (its depots stay). Profiles
  * before v8 have sent nothing through their depots: each one on starts at level 0. Profiles
- * before v9 have every route closed.
+ * before v9 have every route closed. Before v10 a raid dropped from the air: such a profile
+ * starts at its last region's first way in, and its explored map, drawn over the smaller
+ * world, is dropped.
  */
 export function parseProfile(raw: unknown, seed = 1): Profile | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (![1, 2, 3, 4, 5, 6, 7, 8, 9].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
+  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
   const old = o.v === 1 || o.v === 2;
   const migrate = (i: unknown): unknown => {
     if (!old || !i || typeof i !== "object" || (i as Record<string, unknown>).t !== "key") return i;
@@ -514,23 +518,26 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   const escaped = craftDone(hideout) ? { raids: Number(e?.raids) || 0, extracted: Number(e?.extracted) || 0, time: Number(e?.time) || 0 } : null;
   const num = (x: unknown) => (typeof x === "number" && x >= 0 ? x : 0);
   const depots = Array.isArray(o.depots) ? [...new Set(o.depots.filter((d): d is PoiId => typeof d === "string" && poiIndex(d as PoiId) >= 0))] : [];
-  const ds = ((o.v === 8 || o.v === 9) && o.depotSent && typeof o.depotSent === "object" ? o.depotSent : {}) as Record<string, unknown>;
+  const ds = ((o.v === 8 || o.v === 9 || o.v === 10) && o.depotSent && typeof o.depotSent === "object" ? o.depotSent : {}) as Record<string, unknown>;
   const depotSent = Object.fromEntries(depots.map((d) => [d, num(ds[d])]));
+  const region = REGIONS.find((r) => r.id === o.region)?.id ?? "reservoir";
+  const entry = ENTRIES.find((e) => e.id === o.entry && e.region === region)?.id ?? regionOf(region).entries[0];
   return {
-    v: 9,
+    v: 10,
     cash: Math.max(0, Math.floor(o.cash)),
     stash: o.stash.map(migrate).filter(ok).slice(0, stashCap(hideout)),
     raids: num(o.raids),
     extracted: num(o.extracted),
     time: num(o.time),
     quests: { progress, done: Array.isArray(q.done) ? q.done.filter((d): d is string => typeof d === "string") : [] },
-    region: REGIONS.find((r) => r.id === o.region)?.id ?? "reservoir",
+    region,
+    entry,
     hideout,
     escaped,
     seed: Number.isInteger(o.seed) ? (o.seed as number) & 0xffff : seed & 0xffff,
     depots,
     depotSent,
-    seen: (o.v === 7 || o.v === 8 || o.v === 9) && typeof o.seen === "string" && /^[0-9a-f]*$/.test(o.seen) ? o.seen : "",
-    routes: o.v === 9 && Array.isArray(o.routes) ? openRoutes(o.routes.filter((r): r is string => typeof r === "string")) : [],
+    seen: o.v === 10 && typeof o.seen === "string" && /^[0-9a-f]*$/.test(o.seen) ? o.seen : "",
+    routes: (o.v === 9 || o.v === 10) && Array.isArray(o.routes) ? openRoutes(o.routes.filter((r): r is string => typeof r === "string")) : [],
   };
 }

@@ -4,7 +4,7 @@
  * them in order, and spends with a greedy policy: deliver what the trader asks, build the
  * cheapest level that can be built (buying what it lacks, if the trader sells it), and
  * sell all gear (the bots play the lent kit) and every valuable nothing still needs, and keep
- * room in the stash for a full bag. It drops into the region whose recorded raids bring
+ * room in the stash for a full bag. It starts in the region whose recorded raids bring
  * home the most worth, above all what the hideout wants and cannot buy.
  */
 import { BAG, HIDEOUT, META, VALUABLES, type ModuleId, type ValuableKind } from "../src/ringfall/sim/config";

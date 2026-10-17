@@ -1466,7 +1466,7 @@ body.touch .mate-bars {
   gap: 12px;
   flex-wrap: wrap;
 }
-/* Where the raid starts: the two regions' drops, then the depots on, and the choice's line, on a row of its own above the buttons. */
+/* Where the raid starts: the two regions, the chosen region's ways in, then the depots on, and the choice's line, on a row of its own above the buttons. */
 .hub-region {
   display: flex;
   align-items: center;
@@ -1496,6 +1496,16 @@ body.touch .mate-bars {
   background: var(--white);
   color: var(--ink);
   box-shadow: none;
+}
+/* The chosen region's ways in, a step smaller than the regions: a choice within the region's. */
+.hub-region .entries {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+#hub .hub-region button.entry {
+  font-size: 13px;
+  padding: 6px 11px;
 }
 .hub-region span {
   margin-left: 8px;

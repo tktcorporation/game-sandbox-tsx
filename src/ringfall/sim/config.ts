@@ -13,10 +13,10 @@ export const WORLD = {
    * The world's bounds on each axis: the reservoir in the south (+z), the harbor in the
    * north. The coast's cliffs (terrain.ts) stop bodies well inside them.
    */
-  x0: -280,
-  x1: 280,
-  z0: -700,
-  z1: 265,
+  x0: -440,
+  x1: 460,
+  z0: -1220,
+  z1: 470,
   gravity: 15,
   stepUp: 0.45,
 };
@@ -83,14 +83,6 @@ export const HEALS: Record<HealKind, { label: string; short: string; shield: boo
   medkit: { label: "医療キット", short: "医療キット", shield: false, amount: 0, time: 4.5, max: 2 },
 };
 export const HEAL_KINDS = Object.keys(HEALS) as HealKind[];
-
-export const DROP = {
-  startY: 140,
-  fallSpeed: 26,
-  steer: 20,
-  /** Speed the wind carries a jumper falling over high ground toward walkable ground. */
-  drift: 26,
-};
 
 export const ASSIST = {
   /**
@@ -188,7 +180,7 @@ export const TACTICAL = {
 /**
  * The ult: a leap straight up into the sky and a glide away, to break off a fight that
  * is going wrong. It goes up only under open sky, carries a teammate standing close,
- * and comes down only on low ground (like the drop). The launch is loud, and in the air
+ * and comes down only on low ground. The launch is loud, and in the air
  * the robots can still see and shoot: where to glide to decides whether it works.
  */
 export const ULT = {
@@ -309,7 +301,7 @@ export const ROBOT_DROPS = {
  * Each raid, one POI of the region dropped into has bins that lean rare: they hold `kind`
  * (one of the rarer kinds of its own table) as often as `share` times everything else
  * together. Which POI and kind follow from the raid's seed (`boostFor()` in state.ts), so
- * the base's radio can tell them before the drop.
+ * the base's radio can tell them before the raid.
  */
 export const BOOST = { share: 1 };
 
@@ -340,11 +332,11 @@ export const DEPOT = {
   sight: 1,
   /**
    * Credits' worth sent home through one depot, over all raids, that each level of it needs.
-   * A start at a depot skips the drop and lands beside a POI with the teammate, so the gear it
+   * A start at a depot skips the walk in from the region's edge and begins beside a POI with the teammate, so the gear it
    * may carry is earned at that depot: the more it has been trusted with, the more it lets in.
    */
   levels: [0, 1500, 5000, 12000],
-  /** Loadout points a raid started from a depot may carry, by that depot's level. A drop has no limit. */
+  /** Loadout points a raid started from a depot may carry, by that depot's level. A start at a way in has no limit. */
   budget: [2, 4, 6, 9],
   /**
    * Points a stash weapon costs, by rarity. The lent free kit and every heal cost nothing: a
@@ -558,7 +550,7 @@ export const REINFORCE = {
  * the player's attention while the others go wide to the sides.
  */
 export const RAIDERS = {
-  at: 420,
+  at: 480,
   name: "レイダー",
   kinds: ["grunt", "grunt", "grunt"] as EnemyKind[],
   huntEvery: 4,

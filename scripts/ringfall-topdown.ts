@@ -1,13 +1,13 @@
 /**
  * Writes a top-down picture of the world (terrain shaded by height, cliffs dark, boxes
- * grey, POIs, robots, each region's drop and the ways off) to the path given, for
+ * grey, POIs, robots, each region's ways in and the ways off) to the path given, for
  * checking a layout by eye: `npx tsx scripts/ringfall-topdown.ts out.png [x z size]`
  * (the optional square, centre and side in metres, zooms in on one place).
  */
 import { writeFileSync } from "node:fs";
 import { deflateSync } from "node:zlib";
 import { WORLD } from "../src/ringfall/sim/config";
-import { BOXES, EXTRACTS, POIS, REGIONS, ROAMERS } from "../src/ringfall/sim/map";
+import { BOXES, EXTRACTS, POIS, ENTRIES, ROAMERS } from "../src/ringfall/sim/map";
 import { terrainHeight, steepAt } from "../src/ringfall/sim/terrain";
 
 const [cx, cz, size] = process.argv.slice(3).map(Number);
@@ -47,7 +47,7 @@ for (const p of POIS) {
   dot(p.entry.x, p.entry.z, 2, [40, 200, 80]);
 }
 for (const sq of ROAMERS) for (const m of sq.members) dot(m.x, m.z, 1.5, [160, 20, 160]);
-for (const r of REGIONS) dot(r.drop.x, r.drop.z, 3, [40, 120, 255]);
+for (const e of ENTRIES) dot(e.x, e.z, 3, [40, 120, 255]);
 for (const x of EXTRACTS) dot(x.x, x.z, 3, [255, 255, 255]);
 
 // Minimal PNG writer.

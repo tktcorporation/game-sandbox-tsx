@@ -524,8 +524,7 @@ export class World {
 
   /**
    * Builds now every chunk within STREAM_FAR of the given points, for the world in place: where a
-   * raid's camera starts and where it is about to be (a drop's column and its landing), so its
-   * first seconds draw what was built before them.
+   * raid's camera starts, so its first seconds draw what was built before them.
    */
   prebuild(points: readonly { x: number; z: number }[]) {
     this.syncRoutes();
@@ -850,11 +849,10 @@ export class World {
     const shakeX = (Math.random() - 0.5) * this.shake * 0.05;
     const shakeY = (Math.random() - 0.5) * this.shake * 0.05;
     const bobY = Math.sin(this.bob * 2) * 0.035 * (p.ads > 0.5 ? 0.2 : 1);
-    const drop = s.phase === "drop";
-    this.camera.position.set(p.pos.x, p.pos.y + (drop ? 1.6 : this.eyeY) + bobY - this.landDip, p.pos.z);
+    this.camera.position.set(p.pos.x, p.pos.y + this.eyeY + bobY - this.landDip, p.pos.z);
     this.camera.rotation.set(p.pitch + (p.recoil * Math.PI) / 180 + shakeY, -(p.yaw + (p.recoilYaw * Math.PI) / 180) + shakeX, p.sliding ? -0.04 : 0, "YXZ");
     const spec = w0 ? WEAPONS[w0.kind] : WEAPONS.pike;
-    const baseFov = 74 + (p.sprinting ? 4 : 0) + (drop || p.leap ? 10 : 0);
+    const baseFov = 74 + (p.sprinting ? 4 : 0) + (p.leap ? 10 : 0);
     const fovTarget = baseFov + (spec.adsFov - 74) * p.ads;
     this.fovKick *= Math.exp(-dt * 2.2);
     const fov = fovTarget + this.fovKick;
@@ -876,7 +874,7 @@ export class World {
     this.sun.position.set(fx - 40, 80, fz + 30);
     this.sun.target.position.set(fx, 0, fz);
 
-    for (const c of this.clouds) c.visible = drop || p.pos.y > 30;
+    for (const c of this.clouds) c.visible = p.pos.y > 30;
 
     this.syncRoutes();
     this.streamChunks(fx, fz);
@@ -1108,7 +1106,7 @@ export class World {
     // The dropship comes once called, and is low over the pad when it lands.
     const ship = EXTRACTS.find((x) => x.id === "ship")!;
     const shipLeft = callLeft(s, "ship");
-    if (s.phase !== "drop" && shipLeft >= 0) {
+    if (shipLeft >= 0) {
       if (!this.dropship) {
         this.dropship = buildDropship();
         this.dropship.position.set(ship.x, terrainHeight(ship.x, ship.z) + 90, ship.z - 2);
@@ -1185,7 +1183,7 @@ export class World {
     }
     this.gunKick += (0 - this.gunKick) * Math.min(1, dt * 14);
     const reloading = p.reload > 0;
-    const lowered = !!p.healing || !!p.mantle || !!p.leap || p.downed > 0 || drop || s.phase === "done";
+    const lowered = !!p.healing || !!p.mantle || !!p.leap || p.downed > 0 || s.phase === "done";
     const ads = p.ads;
     const gx = 0.2 * (1 - ads);
     const gy = -0.2 + 0.07 * ads - (lowered ? 0.4 : 0) - (reloading ? 0.08 : 0) + Math.sin(this.bob * 2) * 0.01 * (1 - ads);

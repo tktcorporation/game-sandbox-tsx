@@ -1,4 +1,4 @@
-import { ALLY, ASSIST, DEG, DROP, HEALS, type HealKind, MANTLE, NOISE, PLAYER, RARITY, REVEAL, SEMI_HOLD, TACTICAL, TICK, ULT, WEAPONS, WORLD } from "./config";
+import { ALLY, ASSIST, DEG, HEALS, type HealKind, MANTLE, NOISE, PLAYER, RARITY, REVEAL, SEMI_HOLD, TACTICAL, TICK, ULT, WEAPONS, WORLD } from "./config";
 import { makeNoise } from "./awareness";
 import { allyChest, allyUp, besidePlayer, placeAlly } from "./ally";
 import { POIS } from "./map";
@@ -8,39 +8,8 @@ import { floorLevel, offLowGround, terrainGrad, terrainHeight, towardLowGround }
 import type { Input, State } from "./state";
 
 /*
- * The player: drop, movement (sprint, slide, jump, the ult's leap), weapons, abilities, and taking damage.
+ * The player: movement (sprint, slide, jump, the ult's leap), weapons, abilities, and taking damage.
  */
-
-/** Returns true on the tick the player touches the ground. */
-export function stepDrop(s: State, input: Input): boolean {
-  const p = s.player;
-  p.yaw += input.lookX;
-  p.pitch = Math.max(-1.45, Math.min(1.2, p.pitch + input.lookY));
-  const fx = Math.sin(p.yaw);
-  const fz = -Math.cos(p.yaw);
-  p.pos.y -= DROP.fallSpeed * TICK;
-  // High ground can only be left by dropping off it, so over it the wind takes the
-  // jumper on to the nearest walkable ground instead of their steering.
-  if (offLowGround(p.pos.x, p.pos.z)) {
-    const to = towardLowGround(p.pos.x, p.pos.z);
-    p.pos.x += to.x * DROP.drift * TICK;
-    p.pos.z += to.z * DROP.drift * TICK;
-  } else {
-    p.pos.x += (fx * input.moveZ + Math.cos(p.yaw) * input.moveX) * DROP.steer * TICK;
-    p.pos.z += (fz * input.moveZ + Math.sin(p.yaw) * input.moveX) * DROP.steer * TICK;
-  }
-  collide(p.pos, PLAYER.radius);
-  const g = groundAt(p.pos.x, p.pos.z, PLAYER.radius, p.pos.y);
-  if (p.pos.y <= g) {
-    p.pos.y = g;
-    p.onGround = true;
-    s.phase = "play";
-    s.landedAt = s.time;
-    s.events.push({ t: "landed" }, { t: "land", speed: DROP.fallSpeed });
-    return true;
-  }
-  return false;
-}
 
 export function stepPlayer(s: State, input: Input, prevCrouch: boolean) {
   const p = s.player;
@@ -361,8 +330,8 @@ function risesInto(x: number, z: number, y: number): boolean {
 /**
  * The flight after the leap: up on the launch speed, then a slow glide down, steered
  * at glide speed and keeping its way with no input. Over high ground the wind holds
- * the glider up and takes it on toward walkable ground, as in the drop, so the leap
- * never lands where no road leads.
+ * the glider up and takes it on toward walkable ground, so the leap never lands where
+ * no road leads.
  */
 function glide(s: State, wx: number, wz: number) {
   const p = s.player;
@@ -401,7 +370,7 @@ function glide(s: State, wx: number, wz: number) {
     }
   }
   p.vel.y = Math.max(-ULT.fall, p.vel.y - WORLD.gravity * TICK);
-  // The leap is lower than the drop, so over high ground the wind also holds the glider up.
+  // Over high ground the wind also holds the glider up.
   if (risesInto(p.pos.x, p.pos.z, p.pos.y)) p.vel.y = Math.max(0, p.vel.y);
   const was = { x: p.pos.x, z: p.pos.z };
   p.pos.x += p.vel.x * TICK;

@@ -1,4 +1,6 @@
 import { WORLD } from "./config";
+import { AREA, POI_AT, type AreaId } from "./areas";
+import type { PoiId } from "./map";
 
 /*
  * The ground of two regions joined by a mountain belt. The south one is a dried-up
@@ -160,77 +162,83 @@ export const LEVEL = {
 } as const;
 
 /** The dam's face: the cliff from the crest walkway down to the lakebed, drawn as concrete. */
-export const DAM_FACE = (x: number, z: number) => Math.abs(x) < 28 && z > -76 && z < -63;
+export const DAM_FACE = (x: number, z: number) => Math.abs(x - AREA.heart[0]) < 28 && z - AREA.heart[1] > -76 && z - AREA.heart[1] < -63;
 
-/** Basins: the POIs and the districts. Each holds everything built there. */
+/** A line written in an area's frame (areas.ts), in the world. */
+const inArea = (a: AreaId, line: readonly P[]): P[] => line.map(([x, z]) => [x + AREA[a][0], z + AREA[a][1]] as const);
+/** A line written in a POI's own frame, in the world. */
+const inPoi = (p: PoiId, line: readonly P[]): P[] => line.map(([x, z]) => [x + POI_AT[p][0], z + POI_AT[p][1]] as const);
+
+/** Basins: the POIs and the districts. Each holds everything built there, and is written in its area's frame. */
 const BASINS: Open[] = [
-  { name: "補給所", line: [[0, 126], [0, 170]], half: 28, level: LEVEL.shore },
-  { name: "湖底", line: [[0, -40], [0, 18]], half: 26, level: LEVEL.lakebed, walled: true },
-  { name: "発着場", line: [[-8, -118], [10, -118]], half: 32, level: LEVEL.dam },
+  { name: "補給所", line: inPoi("supply", [[0, 36], [0, 80]]), half: 28, level: LEVEL.shore },
+  { name: "湖底", line: inArea("heart", [[0, -40], [0, 18]]), half: 26, level: LEVEL.lakebed, walled: true },
+  { name: "発着場", line: inPoi("pad", [[-8, -66], [10, -66]]), half: 32, level: LEVEL.dam },
   // The dam crest: a walkway along the top of the dam face, the lakebed 15 m below.
-  { name: "堤", line: [[-24, -79], [24, -79]], half: 5, level: LEVEL.dam },
-  { name: "採掘場", line: [[-166, 8], [-136, 24]], half: 26, level: LEVEL.pit, walled: true },
-  { name: "中継塔", line: [[78, -36], [102, -28]], half: 25, level: LEVEL.mesa },
-  { name: "住宅地", line: [[104, 26], [122, 2]], half: 14, level: LEVEL.mesa },
-  { name: "尾根", line: [[-66, 70], [-34, 70]], half: 10, level: LEVEL.ridge },
+  { name: "堤", line: inArea("heart", [[-24, -79], [24, -79]]), half: 5, level: LEVEL.dam },
+  { name: "採掘場", line: inPoi("quarry", [[-67, 0], [-37, 16]]), half: 26, level: LEVEL.pit, walled: true },
+  { name: "中継塔", line: inPoi("relay", [[30, -29], [54, -21]]), half: 25, level: LEVEL.mesa },
+  { name: "住宅地", line: inArea("relay", [[104, 26], [122, 2]]), half: 14, level: LEVEL.mesa },
+  { name: "尾根", line: inArea("ridge", [[-66, 70], [-34, 70]]), half: 10, level: LEVEL.ridge },
   // Close enough to the lakebed that its east side is a clean drop into it.
-  { name: "台地", line: [[-58, -46], [-43, -46]], half: 14, level: LEVEL.shore },
-  { name: "工場", line: [[54, 42], [60, 58]], half: 16, level: LEVEL.shore },
-  { name: "廃村", line: [[-114, -68], [-96, -60]], half: 15, level: LEVEL.shore },
+  { name: "台地", line: inArea("heart", [[-58, -46], [-43, -46]]), half: 14, level: LEVEL.shore },
+  { name: "工場", line: inArea("factory", [[54, 42], [60, 58]]), half: 16, level: LEVEL.shore },
+  { name: "廃村", line: inArea("village", [[-114, -68], [-96, -60]]), half: 15, level: LEVEL.shore },
   // The harbor.
-  { name: "港町", line: [[-40, -300], [110, -300]], half: 22, level: LEVEL.shore },
-  { name: "コンテナヤード", line: [[-125, -400], [-75, -400]], half: 28, level: LEVEL.shore },
-  { name: "製錬所", line: [[100, -415], [140, -415]], half: 30, level: LEVEL.terrace },
-  { name: "塩田", line: [[-60, -500], [80, -500]], half: 40, level: LEVEL.seabed },
-  { name: "難破船", line: [[-40, -562], [60, -562]], half: 22, level: LEVEL.seabed },
-  { name: "埠頭", line: [[60, -565], [140, -568]], half: 22, level: LEVEL.seabed },
-  { name: "水路", line: [[96, -592], [162, -592]], half: 8, level: LEVEL.channel, walled: true },
-  { name: "岬", line: [[-120, -545], [-106, -560]], half: 13, level: LEVEL.headland, walled: true },
+  { name: "港町", line: inArea("town", [[-40, -300], [110, -300]]), half: 22, level: LEVEL.shore },
+  { name: "コンテナヤード", line: inPoi("yard", [[-25, 0], [25, 0]]), half: 28, level: LEVEL.shore },
+  { name: "製錬所", line: inPoi("smelter", [[-20, 0], [20, 0]]), half: 30, level: LEVEL.terrace },
+  { name: "塩田", line: inArea("bay", [[-60, -500], [80, -500]]), half: 40, level: LEVEL.seabed },
+  { name: "難破船", line: inPoi("wreck", [[-50, 0], [50, 0]]), half: 22, level: LEVEL.seabed },
+  { name: "埠頭", line: inArea("bay", [[60, -565], [140, -568]]), half: 22, level: LEVEL.seabed },
+  { name: "水路", line: inArea("bay", [[96, -592], [162, -592]]), half: 8, level: LEVEL.channel, walled: true },
+  { name: "岬", line: inArea("bay", [[-120, -545], [-106, -560]]), half: 13, level: LEVEL.headland, walled: true },
   // The top of the pass: a saddle between the peaks, with the harbor in view.
-  { name: "峠", line: [[-66, -214], [-54, -230]], half: 9, level: LEVEL.pass },
+  { name: "峠", line: inArea("pass", [[-66, -214], [-54, -230]]), half: 9, level: LEVEL.pass },
 ];
 
 /**
- * Roads between basins, 8 to 10 m wide. Each area has two or three of them; the
- * lakebed has four ramps out and the spillway, and the cliffs everywhere else make
- * the choice of road the choice of approach.
+ * Roads between basins, 8 to 10 m wide, in the world's coordinates. Each area has two or three
+ * of them; the lakebed has four ramps out and the spillway, and its cliffs make the choice of
+ * road the choice of approach. Across the open ground between the areas a road is the way the
+ * patrols walk rather than the only way: off it the ground runs on at its level.
  */
 const ROADS: Open[] = [
-  { name: "湖への坂", line: [[0, 102], [0, 40]], half: 5, level: [LEVEL.shore, LEVEL.lakebed], walled: true },
+  { name: "湖への坂", line: inArea("heart", [[0, 102], [0, 40]]), half: 5, level: [LEVEL.shore, LEVEL.lakebed], walled: true },
   // Up onto the ridge at its east end, along its top, and down the haul road into the pit at its west end.
   // The climb starts at the supply basin's edge: a ramp rising inside a basin would leave a step where they meet.
-  { name: "尾根道", line: [[-20, 106], [-29, 93], [-40, 77]], half: 5, level: [LEVEL.shore, LEVEL.shore, LEVEL.ridge] },
-  { name: "採掘場の運搬路", line: [[-70, 64], [-110, 72], [-150, 62], [-172, 30]], half: 5, level: [LEVEL.ridge, -1, -8, LEVEL.pit], walled: true },
-  { name: "西道", line: [[-24, 16], [-60, 16], [-112, 20]], half: 5, level: [LEVEL.lakebed, -8, LEVEL.pit], walled: true },
-  { name: "廃村道", line: [[-150, -14], [-124, -46]], half: 5, level: [LEVEL.pit, LEVEL.shore] },
-  { name: "湖の西坂", line: [[-22, -30], [-44, -38]], half: 5, level: [LEVEL.lakebed, LEVEL.shore], walled: true },
-  { name: "堤の西坂", line: [[-56, -58], [-52, -82], [-30, -80]], half: 5, level: [LEVEL.shore, 6, LEVEL.dam] },
-  { name: "廃村の北道", line: [[-96, -74], [-66, -96], [-40, -110]], half: 5, level: [LEVEL.shore, 4, LEVEL.dam] },
-  { name: "工場道", line: [[24, 104], [44, 76], [52, 60]], half: 5, level: LEVEL.shore },
-  { name: "住宅道", line: [[70, 52], [92, 38], [106, 28]], half: 5, level: [LEVEL.shore, 4, LEVEL.mesa] },
-  { name: "東の坂", line: [[22, 0], [44, -8], [58, -24], [62, -34]], half: 5, level: [LEVEL.lakebed, -1, 5, LEVEL.mesa], walled: true },
+  { name: "尾根道", line: [[-20, 246], [-40, 217.5], [-65, 182]], half: 5, level: [LEVEL.shore, LEVEL.shore, LEVEL.ridge] },
+  { name: "採掘場の運搬路", line: [[-95, 169], [-151, 167], [-207, 146.5], [-244, 105]], half: 5, level: [LEVEL.ridge, -1, -8, LEVEL.pit], walled: true },
+  { name: "西道", line: [[-24, 53], [-89.5, 68.5], [-184, 95]], half: 5, level: [LEVEL.lakebed, -8, LEVEL.pit], walled: true },
+  { name: "廃村道", line: [[-222, 61], [-176, -8]], half: 5, level: [LEVEL.pit, LEVEL.shore] },
+  { name: "湖の西坂", line: inArea("heart", [[-22, -30], [-44, -38]]), half: 5, level: [LEVEL.lakebed, LEVEL.shore], walled: true },
+  { name: "堤の西坂", line: inArea("heart", [[-56, -58], [-52, -82], [-30, -80]]), half: 5, level: [LEVEL.shore, 6, LEVEL.dam] },
+  { name: "廃村の北道", line: [[-148, -36], [-89, -58.5], [-40, -73]], half: 5, level: [LEVEL.shore, 4, LEVEL.dam] },
+  { name: "工場道", line: [[24, 244], [62.5, 187], [80, 156]], half: 5, level: LEVEL.shore },
+  { name: "住宅道", line: [[98, 148], [130, 107.5], [151, 80]], half: 5, level: [LEVEL.shore, 4, LEVEL.mesa] },
+  { name: "東の坂", line: [[22, 37], [67.5, 37], [103, 28], [107, 18]], half: 5, level: [LEVEL.lakebed, -1, 5, LEVEL.mesa], walled: true },
   // To the canyon bridge: the deck is at the mesa's level, a step down from the pad.
-  { name: "橋の西道", line: [[26, -100], [40, -95]], half: 4, level: [LEVEL.dam, LEVEL.mesa] },
-  { name: "橋の東道", line: [[64, -96], [76, -78], [84, -60]], half: 4, level: LEVEL.mesa },
+  { name: "橋の西道", line: inArea("heart", [[26, -100], [40, -95]]), half: 4, level: [LEVEL.dam, LEVEL.mesa] },
+  { name: "橋の東道", line: [[64, -59], [99.5, -33], [129, -8]], half: 4, level: LEVEL.mesa },
   // Over the mountains to the harbor: up from the landing pad to the saddle and down to the town.
   // Each ramp reaches the level of the basin it runs into at that basin's edge: one still
   // above it there would end in a cliff.
-  { name: "峠道", line: [[-28, -142], [-48, -185], [-60, -222], [-64, -262], [-57, -288], [-52, -300]], half: 5, level: [LEVEL.dam, 12, LEVEL.pass, 8, LEVEL.shore, LEVEL.shore], atPoints: true },
+  { name: "峠道", line: [[-28, -105], [-60, -230], [-90, -350], [-96, -430], [-70, -520], [-57, -565]], half: 5, level: [LEVEL.dam, 12, LEVEL.pass, 8, LEVEL.shore, LEVEL.shore], atPoints: true },
   // The railway's embankment from the mesa north to the gorge, and on from the gorge to the
   // harbor, where it ends in a cliff and the viaduct carries the line on.
-  { name: "鉄道の土手（南）", line: [[123, -44], [125, -60], [124, -120], [122, -176]], half: 5, level: [LEVEL.mesa, 7.6, 9.6, LEVEL.rail], atPoints: true, walled: true },
-  { name: "鉄道の土手（北）", line: [[122, -205], [122, -250]], half: 5, level: LEVEL.rail, walled: true },
-  { name: "駅の坂", line: [[122, -236], [100, -258], [94, -276], [90, -290]], half: 5, level: [LEVEL.rail, 4, LEVEL.shore, LEVEL.shore], atPoints: true },
-  // Under the viaduct: a road along the line from the station to the container yard.
-  { name: "高架下", line: [[122, -268], [122, -350], [-80, -350], [-95, -378]], half: 6, level: LEVEL.shore },
-  { name: "西の道", line: [[-50, -305], [-75, -340], [-95, -375]], half: 5, level: LEVEL.shore },
-  { name: "製錬所の坂", line: [[122, -350], [122, -390]], half: 5, level: [LEVEL.shore, LEVEL.terrace], atPoints: true },
-  { name: "塩田への坂", line: [[20, -350], [20, -462]], half: 5, level: [LEVEL.shore, LEVEL.seabed], atPoints: true },
-  { name: "ヤードの北道", line: [[-95, -425], [-79, -461], [-75, -470]], half: 5, level: [LEVEL.shore, LEVEL.seabed, LEVEL.seabed], atPoints: true },
-  { name: "製錬所の北道", line: [[115, -440], [105, -470]], half: 5, level: [LEVEL.terrace, LEVEL.seabed], atPoints: true },
-  { name: "岬の坂", line: [[-92, -526], [-104, -538], [-112, -548]], half: 5, level: [LEVEL.seabed, 3, LEVEL.headland], atPoints: true, walled: true },
+  { name: "鉄道の土手（南）", line: [[168, 8], [170, -8], [170, -150], [168, -336]], half: 5, level: [LEVEL.mesa, 7.6, 9.6, LEVEL.rail], atPoints: true, walled: true },
+  { name: "鉄道の土手（北）", line: [[168, -365], [168, -410]], half: 5, level: LEVEL.rail, walled: true },
+  { name: "駅の坂", line: [[168, -396], [146, -418], [140, -436], [140, -456], [120, -505], [100, -555]], half: 5, level: [LEVEL.rail, 4, LEVEL.shore, LEVEL.shore, LEVEL.shore, LEVEL.shore], atPoints: true },
+  // Under the viaduct: a road along the line from the station's foot past the town to the container yard.
+  { name: "高架下", line: [[168, -428], [168, -615], [-80, -615], [-110, -650], [-150, -695]], half: 6, level: LEVEL.shore },
+  { name: "西の道", line: [[-55, -570], [-114.5, -631], [-167, -690]], half: 5, level: LEVEL.shore },
+  { name: "製錬所の坂", line: [[168, -615], [168, -712]], half: 5, level: [LEVEL.shore, LEVEL.terrace], atPoints: true },
+  { name: "塩田への坂", line: [[20, -615], [2, -858]], half: 5, level: [LEVEL.shore, LEVEL.seabed], atPoints: true },
+  { name: "ヤードの北道", line: [[-167, -740], [-108, -841], [-93, -866]], half: 5, level: [LEVEL.shore, LEVEL.seabed, LEVEL.seabed], atPoints: true },
+  { name: "製錬所の北道", line: [[153, -762], [87, -866]], half: 5, level: [LEVEL.terrace, LEVEL.seabed], atPoints: true },
+  { name: "岬の坂", line: inArea("bay", [[-92, -526], [-104, -538], [-112, -548]]), half: 5, level: [LEVEL.seabed, 3, LEVEL.headland], atPoints: true, walled: true },
   // A slipway from the quay down into the channel.
-  { name: "斜路", line: [[150, -570], [156, -583], [160, -590]], half: 4, level: [LEVEL.seabed, LEVEL.channel, LEVEL.channel], atPoints: true, walled: true },
+  { name: "斜路", line: inArea("bay", [[150, -570], [156, -583], [160, -590]]), half: 4, level: [LEVEL.seabed, LEVEL.channel, LEVEL.channel], atPoints: true, walled: true },
 ];
 
 /** The line of the road named `name` (empty when there is none). */
@@ -266,17 +274,17 @@ const SHELVES: Shelf[] = [
  */
 const CUTS: Cut[] = [
   {
-    line: [[20, -40], [36, -55], [48, -75], [52, -95], [56, -115], [48, -132], [36, -128]],
+    line: inArea("heart", [[20, -40], [36, -55], [48, -75], [52, -95], [56, -115], [48, -132], [36, -128]]),
     floor: 5,
     levels: [LEVEL.lakebed, -8, LEVEL.pit, LEVEL.pit, -8, 0, LEVEL.mesa],
     slope: CLIFF,
   },
   /**
    * The gorge the railway bridge crosses: a dry river bed from under the mountains,
-   * past the bridge and down to the harbor town's east end. Walled by cliffs.
+   * past the bridge and out onto the harbor's plain at the station road. Walled by cliffs.
    */
   {
-    line: [[70, -192], [120, -190], [150, -205], [160, -245], [140, -285], [124, -300]],
+    line: [[116, -352], [166, -350], [196, -358], [204, -392], [178, -438], [142, -450]],
     floor: 4,
     levels: [-5, -6, -5, -3, LEVEL.shore, LEVEL.shore],
     slope: CLIFF,
@@ -303,12 +311,10 @@ export interface Land {
 
 /** The land masses. The world's coast is the outline of all of them together. */
 export const LANDS: Land[] = [
-  { name: "島", x: 0, z: 0, radius: (a) => 228 + 8 * Math.sin(3 * a + 1.1) + 5 * Math.sin(7 * a + 2.3) + 3 * Math.sin(13 * a + 0.4), max: 244 },
+  { name: "島", x: 0, z: 60, radius: (a) => 385 + 13.5 * Math.sin(3 * a + 1.1) + 8.4 * Math.sin(7 * a + 2.3) + 5 * Math.sin(13 * a + 0.4), max: 412 },
   // The mountain belt between the two regions, wider east to west.
-  { name: "山地", x: 30, z: -205, radius: (a) => 140 + 45 * Math.abs(Math.cos(a)) + 6 * Math.sin(5 * a + 0.7), max: 191 },
-  { name: "港湾", x: 0, z: -420, radius: (a) => 252 + 6 * Math.sin(3 * a + 0.5) + 4 * Math.sin(7 * a + 1.9) + 2 * Math.sin(11 * a + 0.3), max: 264 },
-  // The quay and its channel, out at the harbor's north-east corner.
-  { name: "埠頭", x: 125, z: -575, radius: (a) => 62 + 4 * Math.sin(4 * a + 1.3), max: 66 },
+  { name: "山地", x: 30, z: -350, radius: (a) => 150 + 60 * Math.abs(Math.cos(a)) + 6 * Math.sin(5 * a + 0.7), max: 216 },
+  { name: "港湾", x: 0, z: -775, radius: (a) => 425 + 10 * Math.sin(3 * a + 0.5) + 7 * Math.sin(7 * a + 1.9) + 3.4 * Math.sin(11 * a + 0.3), max: 441 },
 ];
 
 /** How far (x, z) lies outside one land mass's coast; negative inside it. */
@@ -383,21 +389,29 @@ const smooth = (a: number, b: number, v: number) => {
  * at the cliff slope to the high ground's top.
  */
 const CRAGS: { name: string; line: readonly P[]; half: number }[] = [
-  { name: "山地", line: [[-330, -205], [-230, -214], [-150, -200], [-80, -216], [0, -206], [70, -218], [150, -200], [230, -213], [330, -204]], half: 50 },
+  { name: "山地", line: [[-460, -350], [-330, -340], [-230, -355], [-150, -342], [-80, -358], [0, -348], [70, -360], [150, -342], [230, -355], [330, -346], [460, -352]], half: 60 },
   // The reservoir.
-  { name: "西の岩山", line: [[-128, 112], [-116, 124]], half: 19 },
-  { name: "東の岩稜", line: [[150, -30], [165, 20]], half: 7 },
-  { name: "南東の岩", line: [[148, 132], [158, 124]], half: 16 },
-  { name: "北西の岩稜", line: [[-185, -105], [-150, -122]], half: 8 },
-  { name: "南の岩", line: [[45, 190], [52, 186]], half: 9 },
+  { name: "西の岩山", line: [[-189, 241], [-177, 253]], half: 19 },
+  { name: "東の岩稜", line: [[229, 38], [244, 88]], half: 7 },
+  { name: "南東の岩", line: [[224, 266], [234, 258]], half: 16 },
+  { name: "北西の岩稜", line: [[-269, -92], [-234, -109]], half: 8 },
+  { name: "南の岩", line: [[69, 354], [76, 350]], half: 9 },
+  { name: "発着場の北の岩", line: [[84, -196], [98, -208]], half: 14 },
+  { name: "西の岩塔", line: [[-205, -176], [-196, -186]], half: 12 },
+  { name: "南西の岩", line: [[-156, 362], [-144, 354]], half: 12 },
+  { name: "東の岩山", line: [[296, 116], [306, 128]], half: 15 },
   // The harbor.
-  { name: "港の岩山", line: [[36, -422], [50, -432]], half: 18 },
-  { name: "西の岩稜", line: [[-135, -470], [-112, -440]], half: 7 },
-  { name: "東の岩", line: [[198, -422], [208, -412]], half: 16 },
-  { name: "北の岩", line: [[150, -472], [158, -480]], half: 12 },
-  { name: "西の道の岩", line: [[-142, -342], [-132, -350]], half: 12 },
+  { name: "港の岩山", line: [[40, -750], [54, -760]], half: 18 },
+  { name: "西の岩稜", line: [[-219, -812], [-196, -782]], half: 7 },
+  { name: "東の岩", line: [[277, -745], [287, -735]], half: 16 },
+  { name: "北の岩", line: [[204, -825], [212, -833]], half: 12 },
+  { name: "西の道の岩", line: [[-233, -630], [-223, -638]], half: 12 },
+  { name: "南の野の岩", line: [[-206, -476], [-194, -486]], half: 14 },
+  { name: "北の岩山", line: [[-128, -1076], [-112, -1086]], half: 16 },
+  { name: "東の岩塔", line: [[296, -996], [304, -1006]], half: 12 },
+  { name: "北東の岩", line: [[144, -1096], [156, -1106]], half: 14 },
   // Cliffs over the far side of the channel: the water stays a waterfront along the quay.
-  { name: "水路の崖", line: [[76, -598], [92, -614], [190, -614]], half: 13 },
+  { name: "水路の崖", line: inArea("bay", [[76, -598], [92, -614], [190, -614]]), half: 13 },
 ];
 const CRAG_LINES = CRAGS.map((c) => ({ c, poly: polyline(c.line) }));
 
@@ -803,7 +817,7 @@ const carved = new Map<number, { field: number; floor: number; shape: number; st
  * Puts exactly `carves` into the field, taking out any cut before. The field built by
  * `buildTerrain()` stays the one with nothing carved, so a world with every route closed is
  * the same ground cell for cell. Only the cached field changes: `lowest()` keeps answering for
- * the ground as built, so the drop and the leap's glide treat a route's roof as the high
+ * the ground as built, so the leap's glide treats a route's roof as the high
  * ground it covers.
  */
 export function carveTerrain(carves: readonly Carve[]) {
