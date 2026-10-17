@@ -191,7 +191,7 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   inside the fog, nearest first for the tier's `streamMs` a frame out to a chunk past it) and let
   go past `DROP_AT` times that, and `prebuild()` builds round where a raid starts before its first
   frame. How much is drawn is a quality tier (`quality.ts`: `QUALITY` holds high / medium / low,
-  each a pixel-ratio range, antialiasing, the shadow map's size, filtering, reach and redraw rate
+  each a pixel-ratio range, antialiasing, the shadow map's size, reach and redraw rate
   (`shadowHz`; medium and low redraw it at that rate or when the camera has moved), the fog's
   distances, `thingsFar` and `streamMs`). `pickTier()` starts a device on one from its pointer,
   cores, memory and screen; `?quality=` or the settings' 画質 overrides it, remembered in

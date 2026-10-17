@@ -17,8 +17,6 @@ export interface Quality {
   /** Multisampling; fixed when the renderer is made, so only the tier the page loads with sets it. */
   antialias: boolean;
   shadowSize: number;
-  /** Soft (PCFSoft) or plain (PCF) shadow filtering. */
-  softShadows: boolean;
   /** Half the side of the square the sun's shadows cover round the camera, in metres. */
   shadowSpan: number;
   /**
@@ -39,9 +37,9 @@ export interface Quality {
 }
 
 export const QUALITY: Record<Tier, Quality> = {
-  high: { maxRatio: 2, minRatio: 1, antialias: true, shadowSize: 2048, softShadows: true, shadowSpan: 55, shadowHz: Infinity, fogNear: 110, fogFar: 420, thingsFar: 220, streamMs: 6 },
-  medium: { maxRatio: 1.5, minRatio: 0.75, antialias: false, shadowSize: 1024, softShadows: false, shadowSpan: 50, shadowHz: 30, fogNear: 90, fogFar: 320, thingsFar: 180, streamMs: 4 },
-  low: { maxRatio: 1.25, minRatio: 0.6, antialias: false, shadowSize: 1024, softShadows: false, shadowSpan: 42, shadowHz: 15, fogNear: 70, fogFar: 240, thingsFar: 150, streamMs: 3 },
+  high: { maxRatio: 2, minRatio: 1, antialias: true, shadowSize: 2048, shadowSpan: 55, shadowHz: Infinity, fogNear: 110, fogFar: 420, thingsFar: 220, streamMs: 6 },
+  medium: { maxRatio: 1.5, minRatio: 0.75, antialias: false, shadowSize: 1024, shadowSpan: 50, shadowHz: 30, fogNear: 90, fogFar: 320, thingsFar: 180, streamMs: 4 },
+  low: { maxRatio: 1.25, minRatio: 0.6, antialias: false, shadowSize: 1024, shadowSpan: 42, shadowHz: 15, fogNear: 70, fogFar: 240, thingsFar: 150, streamMs: 3 },
 };
 
 /** What the browser tells about the device; any of it may be missing. */
@@ -137,6 +135,8 @@ export function ladder(start: Tier, dpr: number, pinned: boolean): Level[] {
 const TAU = 1;
 /** A reading longer than this is a gap (a hidden tab, a chunk prebuild, a shader compile), not a frame. */
 const GAP_MS = 250;
+/** This many long intervals running are slow frames, not gaps, and are judged as `GAP_MS` each. */
+const GAPS = 3;
 /** Over budget when the smoothed interval passes it by this much, for `OVER_FOR` seconds running. */
 const OVER = 1.2;
 const OVER_FOR = 2;
@@ -164,6 +164,7 @@ export class Governor {
   private avg = 0;
   private wait = COOLDOWN;
   private overT = 0;
+  private long = 0;
   private holdT = 0;
   private clock = 0;
   private blocked = new Map<number, { until: number; span: number }>();
@@ -180,12 +181,18 @@ export class Governor {
   settle(s = COOLDOWN) {
     this.wait = Math.max(this.wait, s);
     this.overT = this.holdT = 0;
+    this.long = 0;
     this.avg = 0;
   }
 
   /** One drawn frame `ms` after the last; the new level when it changes, else null. */
   frame(ms: number): Level | null {
-    if (!(ms > 0) || ms > GAP_MS) return null;
+    if (!(ms > 0)) return null;
+    // One long interval is a gap; several in a row are a device too slow for its level, and count.
+    if (ms > GAP_MS) {
+      if (++this.long < GAPS) return null;
+      ms = GAP_MS;
+    } else this.long = 0;
     const s = ms / 1000;
     this.clock += s;
     if (this.wait > 0) {

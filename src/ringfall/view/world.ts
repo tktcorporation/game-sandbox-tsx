@@ -619,8 +619,7 @@ export class World {
 
   /**
    * Draws at `tier` from the next frame: its fog and view distances, and its shadows (map size,
-   * filtering, reach). The shadow map is let go and made again at the new size; changing the
-   * filtering recompiles the lit materials once.
+   * reach, redraw rate). The shadow map is let go and made again at the new size.
    */
   setTier(tier: Tier) {
     const q = QUALITY[tier];
@@ -639,7 +638,6 @@ export class World {
     sc.left = sc.bottom = -q.shadowSpan;
     sc.right = sc.top = q.shadowSpan;
     sc.updateProjectionMatrix();
-    this.renderer.shadowMap.type = q.softShadows ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
     this.renderer.shadowMap.autoUpdate = !Number.isFinite(q.shadowHz);
     this.shadowAt = -Infinity;
   }
