@@ -16,7 +16,7 @@ export const WORLD = {
   x0: -440,
   x1: 460,
   z0: -1220,
-  z1: 470,
+  z1: 660,
   gravity: 15,
   stepUp: 0.45,
 };

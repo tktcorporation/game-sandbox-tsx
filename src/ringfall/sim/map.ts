@@ -643,6 +643,28 @@ function placePoi(p: Poi, [dx, dz]: readonly [number, number]): Poi {
 }
 
 /**
+ * The supply depot's watchtower, in the depot's frame: four storeys on the crest of the east dune,
+ * sunk two storeys into its sand, so that the sand comes up under its third floor's windows. It is
+ * not pressed flat (the dune runs up to it), so its storeys are reckoned from the sand at its foot.
+ */
+const WATCH = (() => {
+  const x = 88;
+  const z = -12;
+  const sand = floorLevel(x + POI_AT.supply[0], z + POI_AT.supply[1]);
+  return { x, z, floors: 4, w: 9, sand, base: sand + 0.1 - 2 * WORKS.storey };
+})();
+/** The height of the watchtower's storey `k` (0 = its buried ground floor) over the depot's floor at (x, z), in its frame. */
+const watchFloor = (x: number, z: number, k: number) => WATCH.base + k * WORKS.storey - floorLevel(x + POI_AT.supply[0], z + POI_AT.supply[1]);
+
+/**
+ * The tanker beached on the dune coast, in the supply depot's frame: its bow run up the sand to
+ * the north, 22 m across, the stem 38 m over the beach and the deck stepping down south (each step
+ * too tall to climb) into the dune that buries its stern. Its hold is open from the east and the
+ * west through holes torn in its side, with a tween deck along its west side.
+ */
+const TANKER = { x0: 40, x1: 62, z0: 72, z1: 112, deck: 9 } as const;
+
+/**
  * Each POI is written in its own frame (its data and its boxes below) and moved
  * into place by this offset (`POI_AT` in areas.ts, which sets each in its area's frame).
  * The harbor's POIs are written round their own middle.
@@ -653,29 +675,33 @@ const POI_FRAMES: Poi[] = [
   {
     id: "supply",
     name: "補給所",
-    x: 10,
-    z: 50,
-    trigger: 36,
-    entry: { x: 4, z: 92, yaw: 0 },
+    x: 0,
+    z: -5,
+    trigger: 95,
+    entry: { x: 0, z: 114, yaw: 0 },
     squads: [
-      // Two squads, one each side of the depot's yard: a fight with one leaves the other a flank to come round.
-      { name: "倉庫", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 22, z: 45, face: W }, { kind: "grunt", x: 28, z: 66.8, y: STOREY * 2, face: S }] },
-      { name: "管理棟", members: [{ kind: "grunt", x: -20, z: 47, face: E }, { kind: "charger", x: -8, z: 58, face: E }] },
+      // Two squads, one in the west warehouse and one out on the east dune by the tanker: a fight
+      // with one leaves the other a flank to come round, across a yard 30 m wide.
+      { name: "倉庫", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: -76, z: -30, face: W }, { kind: "grunt", x: -50, z: -9, face: S }] },
+      { name: "砂丘", members: [{ kind: "grunt", x: 74, z: 18, face: W }, { kind: "charger", x: 26, z: 44, face: W }] },
     ],
     bins: [
-      { x: -2, z: 54 },
-      { x: 8, z: 66 },
-      { x: -11, z: 38 },
-      { x: -22, z: 49 },
-      { x: 20, z: 36.4, y: STOREY, vault: true },
+      { x: -12, z: -35, y: WORKS.storey * 3 },
+      { x: -46, z: 25 },
+      { x: -56, z: -22 },
+      { x: 28, z: -42 },
+      { x: 43.5, z: 78, y: TANKER.deck },
+      { x: WATCH.x - 3, z: WATCH.z, y: watchFloor(WATCH.x - 3, WATCH.z, 3) },
+      { x: 54, z: -44, y: WORKS.storey },
+      { x: -84, z: -38, y: WORKS.storey, vault: true },
     ],
     keyFrom: "pad",
     loot: { weapon: [["hornet", 1], ["maul", 0], ["lance", 0], ["pike", 1]], armor: [1], heals: 1, valuable: [["fuse", 3], ["parts", 4], ["wire", 2], ["drive", 1]] },
     floor: [
-      { x: 3, z: 76, weapon: ["hornet", 0] },
-      { x: -4, z: 76, heal: "syringe" },
-      { x: -21, z: 48, y: STOREY, armor: 1 },
-      { x: 28, z: 44.5, y: STOREY * 2, heal: "battery" },
+      { x: 6, z: 104, weapon: ["hornet", 0] },
+      { x: -6, z: 104, heal: "syringe" },
+      { x: -10, z: -36, y: WORKS.storey, armor: 1 },
+      { x: -36, z: -18, y: WORKS.storey * 2, heal: "battery" },
     ],
   },
   {
@@ -972,7 +998,7 @@ export interface Entry {
 }
 
 export const ENTRIES: Entry[] = [
-  { id: "beach", region: "reservoir", name: "南の浜", x: 10, z: 405, yaw: 0 },
+  { id: "beach", region: "reservoir", name: "南の浜", x: 20, z: 590, yaw: 0 },
   { id: "checkpoint", region: "reservoir", name: "東の検問道", x: 325, z: -40, yaw: -Math.PI / 2 },
   { id: "jetty", region: "reservoir", name: "西の釣り桟橋", x: -345, z: 130, yaw: Math.PI / 2 },
   { id: "outskirts", region: "harbor", name: "港町の外れ", x: 40, z: -500, yaw: 0 },
@@ -1065,8 +1091,8 @@ const HAMLET_FRAMES: Hamlet[] = [
   },
   {
     name: "南の漁師小屋",
-    x: -105,
-    z: 340,
+    x: -190,
+    z: 470,
     boxes: [
       ...building(-6, 0, 7, 6, 3.4, { doors: ["n", "e"], windows: ["s"] }),
       ...building(8, -4, 6, 5, 3.4, { doors: ["w"], roof: "e" }),
@@ -1196,6 +1222,8 @@ export const FRAMES: Record<string, { x: number; z: number }> = Object.fromEntri
 /** Names on the world map for the districts and landmarks between the POIs, where each is written. */
 export const LANDMARKS: readonly { name: string; x: number; z: number }[] = [
   at("heart", { name: "湖底の旧市街", x: 0, z: -22 }),
+  at("supply", { name: "座礁したタンカー", x: 51, z: 128 }),
+  at("supply", { name: "砂丘の崖", x: -140, z: 15 }),
   at("heart", { name: "堤", x: 0, z: -79 }),
   at("heart", { name: "放水路", x: 50, z: -72 }),
   at("ridge", { name: "尾根", x: -50, z: 62 }),
@@ -1247,7 +1275,7 @@ type ExtraBin = { x: number; z: number; y?: number; table: PoiId; flare?: true }
 /** Bins outside the POIs, mostly up high. `table` is the POI whose loot table they use. */
 export const EXTRA_BINS: ExtraBin[] = (
   [
-    at("supply", { x: -12, z: 172, table: "supply" }),
+    at("supply", { x: -140, z: 10, table: "supply" }),
     at("ridge", { x: -45, z: 70, y: 3.5, table: "supply" }),
     at("heart", { x: -2, z: 10, y: STOREY * 2, table: "quarry" }),
     at("heart", { x: 14, z: 11, y: STOREY * 2, table: "quarry" }),
@@ -1394,52 +1422,121 @@ function pad(): Box[] {
 }
 
 /**
- * The supply depot, in its own frame: a walled yard round a warehouse three storeys high,
- * one hall inside with mezzanines along two walls, its office block beside it (stairs inside up
- * to both roofs, which join), a loading dock along its south side with trailers at it, a steel
- * watchtower in the yard's corner, the admin block outside the west gate, and two feed silos
- * north of it all that stand over the shore.
+ * The supply depot on the dune coast, in its own frame, built to `WORKS`: two warehouses and a
+ * long shed round a yard, the office block between them, three feed silos north of it all that
+ * stand over the shore, the beached tanker on the beach to the south-east and trailers and
+ * containers about the yard. The streets between the buildings are 14 to 30 m wide.
  */
 function supply(): Box[] {
-  const H = STOREY * 3;
+  const S = WORKS.storey;
   const out: Box[] = [];
+  // The west warehouse, three storeys high: a mezzanine along the north wall (the vault on it),
+  // a higher one along the south, stairs outside the west end up to its roof.
   out.push(
-    ...hall(16, 44, 28, 20, H, {
-      doors: [{ side: "w", at: -2 }, { side: "s", at: -4, w: 6 }],
-      hatches: [{ side: "n", at: 8 }],
+    ...hall(-62, -28, 64, 26, S * 3, {
+      scale: WORKS,
+      doors: [{ side: "s", at: -12, w: 7 }, { side: "e", at: 2, w: 7 }],
+      hatches: [{ side: "n", at: 18 }, { side: "w", at: -4 }],
       windows: ["n", "s"],
       mezz: [
-        { side: "n", depth: 5, y: STOREY, stair: -6 },
-        { side: "e", depth: 4, y: STOREY * 2, stair: 5, from: -2 },
+        { side: "n", depth: 6, y: S, stair: -10 },
+        { side: "s", depth: 5, y: S * 2, stair: 14, from: 0 },
       ],
-      columns: 7,
-      open: ["e"],
+      columns: 8,
+      roof: "w",
     }),
   );
-  out.push(...tower(34, 44, 8, 10, 3, { doors: [["s", "e"]], windows: [["e"], ["n", "e", "s"], ["n", "e", "s"]], open: ["w"] }));
-  // The loading dock and two trailers backed up to it.
-  out.push(box(14, 56, 22, 4, 1.2, "tower"), ...stairs(3, 56, "w", 3, 1.2), ...stairs(25, 56, "e", 3, 1.2));
-  out.push(box(8, 61.5, 2.5, 6.2, 2.6, "container", 1), box(18, 61.5, 2.5, 6.2, 2.6, "container", 0));
-  // The yard's wall, with a gate on every side.
+  // The office block, four storeys, stairs inside up to its roof.
+  out.push(...tower(-6, -38, 16, 12, 4, { scale: WORKS, doors: [["s", "e"]], windows: [["w"], ["s", "e", "w"], ["s", "e", "w"], ["n", "s", "e", "w"]] }));
+  // The east warehouse, a steel shed with a mezzanine along its east wall.
   out.push(
-    ...compound(16, 50, 52, 44, 2.4, [
-      { side: "w", at: -4, w: 8 },
-      { side: "s", at: -12, w: 10 },
-      { side: "e", at: 8, w: 6 },
-      { side: "n", at: 10, w: 6 },
-    ]),
+    ...hall(38, -36, 40, 24, 12, {
+      scale: WORKS,
+      steel: 1,
+      doors: [{ side: "w", at: 4, w: 7 }, { side: "s", at: 8, w: 7 }],
+      hatches: [{ side: "n", at: -12 }, { side: "e", at: 6 }],
+      windows: ["n", "s"],
+      mezz: [{ side: "e", depth: 7, y: S, stair: 6 }],
+      columns: 8,
+      roof: "s",
+    }),
   );
-  out.push(...lattice(28, 68, 5, 5, 2, 12));
-  // In the yard: crates and a stack of containers, and a rock left from clearing it.
-  out.push(box(-2, 46, 6.2, 2.5, 2.6, "container", 0), box(-2, 46, 6.2, 2.5, 5.2, "container", 2, 2.6), box(2, 52, 1.2, 1.2, 0.9, "crate"), box(-6, 62, 1.2, 1.2, 0.9, "crate"), box(-4.8, 62, 1.2, 1.2, 1.8, "crate"));
-  out.push(box(36, 62, 4, 1.2, 1.1, "rock"));
-  // Outside the west gate, the admin block; to the north, the silos; to the south, a hut.
-  out.push(...tower(-18, 46, 12, 10, 2, { doors: [["e", "s"]], windows: [["n", "w"], ["n", "e", "w"]] }));
-  out.push(...tank(-6, 20, 4.5, 20, "s"), ...tank(5, 20, 4.5, 20, "s"));
-  out.push(box(-0.5, 20, 2, 2, 22, "steel", 0, 17));
-  out.push(...building(-12, 82, 6, 5, 3.4, { doors: ["n"], windows: ["e"], roof: "e" }), ...building(-20, 75, 6, 6, 3.4, { doors: ["e"], windows: ["s"] }));
-  out.push(box(14, 86, 4, 3, 1.4, "rock"));
+  // The long shed south of the yard, two storeys, a mezzanine along its south wall.
+  out.push(
+    ...hall(-30, 22, 66, 22, S * 2, {
+      scale: WORKS,
+      doors: [{ side: "n", at: -18, w: 7 }, { side: "n", at: 14, w: 7 }, { side: "e", w: 7 }],
+      hatches: [{ side: "s", at: -20 }, { side: "w" }],
+      windows: ["n", "s"],
+      mezz: [{ side: "s", depth: 5, y: S, stair: -4 }],
+      columns: 11,
+    }),
+  );
+  // The feed silos, 32 m high, and the conveyor house over them.
+  for (const x of [-40, -22, -4]) out.push(...tank(x, -84, 6.5, 32, "s"));
+  out.push(box(-22, -84, 44, 4, 35, "steel", 0, 32));
+  // About the yard: trailers left at the doors, a stack of containers, a fuel tank.
+  out.push(box(-14, -6, 2.6, 13, 4, "container", 1), box(-44, 2, 13, 2.6, 4, "container", 0), box(30, -14, 13, 2.6, 4, "container", 2));
+  out.push(box(10, 10, 6.1, 2.5, 2.6, "container", 0), box(10, 10, 6.1, 2.5, 5.2, "container", 2, 2.6), box(10, 13, 6.1, 2.5, 2.6, "container", 1));
+  out.push(box(-24, -60, 6.1, 2.5, 2.6, "container", 2), box(-17, -60, 6.1, 2.5, 2.6, "container", 0), box(-17, -60, 6.1, 2.5, 5.2, "container", 1, 2.6));
+  out.push(...tank(48, 2, 3.5, 7, "w", 0));
+  out.push(...tankerBow());
   return out;
+}
+
+/** The tanker's hull (`TANKER`): solid at the bow and the stern, its hold between open. */
+function tankerBow(): Box[] {
+  const { x0, x1, z0, z1, deck } = TANKER;
+  const out: Box[] = [];
+  /** A run of hull from y0 to h: red below the boot-top at 6 m, grey above. */
+  const hull = (ax0: number, az0: number, ax1: number, az1: number, y0: number, h: number) => {
+    if (y0 < 6) out.push(rect(ax0, az0, ax1, az1, y0, Math.min(6, h), "steel", 1));
+    if (h > 6) out.push(rect(ax0, az0, ax1, az1, Math.max(6, y0), h, "steel", 2));
+  };
+  // [z0, z1, the deck's height, how far the hull narrows in from each side]: the stem first.
+  const slices = [
+    [54, 58, 38, 8],
+    [58, 64, 36, 5],
+    [64, z0, 33, 1.5],
+    [z0, 82, 29.5, 0],
+    [82, 92, 26, 0],
+    [92, 102, 22.5, 0],
+    [102, z1, 19, 0],
+    [z1, 120, 15.5, 0],
+  ] as const;
+  // The holes torn in the hull: z from, z to, and how high, in the east and the west side.
+  const tears = { e: [84, 96, 8], w: [100, 106, 5] } as const;
+  for (const [a, b, top, inset] of slices) {
+    if (a < z0 || b > z1) {
+      hull(x0 + inset, a, x1 - inset, b, 0, top);
+      continue;
+    }
+    // The hold: the deck overhead, the sides with their tears.
+    out.push(rect(x0, a, x1, b, top - 1, top, "steel", 0));
+    for (const [side, xa, xb] of [["w", x0, x0 + 1], ["e", x1 - 1, x1]] as const) {
+      const [ta, tb, th] = tears[side];
+      const lo = Math.max(a, ta);
+      const hi = Math.min(b, tb);
+      if (lo >= hi) hull(xa, a, xb, b, 0, top - 1);
+      else {
+        if (lo > a) hull(xa, a, xb, lo, 0, top - 1);
+        if (hi < b) hull(xa, hi, xb, b, 0, top - 1);
+        hull(xa, lo, xb, hi, th, top - 1);
+      }
+    }
+  }
+  // The tween deck along the west side, its rail open at the head of its stairs.
+  out.push(rect(x0 + 1, z0 + 1, x0 + 7, z1 - 1, deck - 0.3, deck, "slab", 1));
+  out.push(rect(x0 + 6.85, z0 + 1, x0 + 7, z1 - 7.9, deck, deck + 1, "steel", 2), rect(x0 + 6.85, z1 - 6.1, x0 + 7, z1 - 1, deck, deck + 1, "steel", 2));
+  out.push(...stairs(x0 + 7, z1 - 7, "e", WORKS.stair, deck));
+  return out;
+}
+
+/** The watchtower (`WATCH`), placed: only what stands above the sand. */
+function watchtower(): Box[] {
+  const { x, z, floors, w, base, sand } = WATCH;
+  const t = tower(x, z, w, w, floors, { scale: WORKS, doors: [[], [], ["s", "e"]], windows: [["w"], ["n", "w"], ["w"], ["n", "s", "e", "w"]] });
+  return lift(base, t).filter((b) => b.h > sand - 0.5);
 }
 
 /**
@@ -1681,6 +1778,7 @@ const AUTHORED: Box[] = [
   ...HARBOR,
   ...HAMLETS.flatMap((h) => h.boxes),
   ...onLevel(LEVEL.shore, place(AT[0][0], AT[0][1], supply())),
+  ...place(AT[0][0], AT[0][1], watchtower()),
   ...onLevel(LEVEL.pit, place(AT[1][0], AT[1][1], quarry())),
   ...onLevel(LEVEL.mesa, place(AT[2][0], AT[2][1], relay())),
   ...onLevel(LEVEL.dam, place(AT[3][0], AT[3][1], pad())),
@@ -1832,10 +1930,11 @@ function authoredKeep(): Keep {
  * channel, under water, gets none.
  */
 const SCATTER = [
-  { x0: WORLD.x0, x1: WORLD.x1, z0: -350, z1: WORLD.z1, seed: 7_331 },
+  { x0: WORLD.x0, x1: WORLD.x1, z0: -350, z1: WORLD.z1, seed: 7_332 },
   { x0: WORLD.x0, x1: WORLD.x1, z0: WORLD.z0, z1: -351, seed: 4_517 },
 ];
-const SPARSE = "塩田";
+/** Where cover is sparse: the salt flats, and the supply depot's dune coast, whose dunes are its cover. */
+const SPARSE = new Set(["塩田", "補給所"]);
 /** The harbor's channel, which holds water: nothing is scattered in it. */
 const WATER = "水路";
 /** The ground between the basins and roads (terrain.ts). */
@@ -1985,7 +2084,7 @@ function scatterArea(near: Clearance, area: (typeof SCATTER)[number]): Box[] {
       const x = gx + (rnd() - 0.5) * 7;
       const z = gz + (rnd() - 0.5) * 7;
       const at = surfaceAt(x, z);
-      const sparse = at === SPARSE;
+      const sparse = SPARSE.has(at);
       if ((sparse && rnd() > 0.5) || at === WATER) continue;
       // The ground between the areas is bare but for clumps of cover a hundred metres or so
       // across, some way apart: open stretches to cross, and somewhere to break the sightline.

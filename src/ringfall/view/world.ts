@@ -77,6 +77,8 @@ const WRECK_FALL = 0.55;
 /** Ground the harbor paints apart: the old bay floor white with salt, and the paved town and quays. */
 const SALT = new Set(["塩田", "難破船"]);
 const PAVED = new Set(["港町", "埠頭", "高架下", "西の道", "コンテナヤード", "製錬所", "製錬所の坂", "駅の坂"]);
+/** The dune coast's ground: pale blown sand, ripples running across it. */
+const DUNES = new Set(["補給所", "砂丘の崖", "崖への坂"]);
 /** The harbor's tidal channel: its floor and the water over it. */
 /** The water channel the boat comes up, at the harbor's quay. */
 export const CHANNEL = { x0: 88, x1: 170, z0: -600, z1: -583, y: -5.55 };
@@ -162,6 +164,8 @@ const COL = {
   saltDark: new THREE.Color(PAL.saltDark),
   paved: new THREE.Color(PAL.paved),
   pavedDark: new THREE.Color(PAL.pavedDark),
+  dune: new THREE.Color(PAL.dune),
+  duneDark: new THREE.Color(PAL.duneDark),
 };
 const groundMat = new THREE.MeshLambertMaterial({ vertexColors: true });
 
@@ -180,6 +184,7 @@ function groundColour(c: THREE.Color, x: number, z: number, lo: number, hi: numb
     const at = surfaceAt(x, z);
     // Salt crust split by darker cracks.
     if (SALT.has(at)) c.copy(COL.salt).lerp(COL.saltDark, noise(x * 0.35, z * 0.35) > 0.62 ? 0.8 : k * 0.25);
+    else if (DUNES.has(at)) c.copy(COL.dune).lerp(COL.duneDark, Math.sin(x * 0.9 + z * 0.35 + noise(x * 0.05, z * 0.05) * 6) > 0.7 ? 0.45 : k * 0.3);
     else if (PAVED.has(at)) c.copy(COL.paved).lerp(COL.pavedDark, noise(x * 0.5, z * 0.5) > 0.66 ? 0.6 : k * 0.25);
     else if (at === "水路" || floorLevel(x, z) <= LEVEL.lakebed + 0.5) c.copy(COL.mud).lerp(COL.mudDark, noise(x * 0.4, z * 0.4) > 0.6 ? 0.6 : k * 0.3);
     else {

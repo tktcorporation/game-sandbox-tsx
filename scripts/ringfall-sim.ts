@@ -304,8 +304,8 @@ function checkReinforce(): string | null {
 function checkFieldsReused(): string | null {
   const before = fieldsBuilt;
   for (let t = 0; t < 120; t++) {
-    fieldTo(...inArea("supply", 0, 110));
-    fieldTo(...inArea("supply", -12, 132));
+    fieldTo(...inArea("supply", 0, -170));
+    fieldTo(...inArea("supply", -12, -148));
   }
   const built = fieldsBuilt - before;
   return built > 2 ? `field cache scenario: ${built} fields built for 2 targets` : null;
@@ -844,7 +844,7 @@ function checkLeap(): string | null {
 }
 /** A teammate on the ground below a roof the player leaps from stays behind: no carrying through floors. */
 function checkLeapLeavesAllyBelow(): string | null {
-  const [wx, wz] = inArea("supply", 25, 139);
+  const [wx, wz] = inArea("supply", 38, -36);
   const roof = BOXES.find((b) => {
     const x = (b.x0 + b.x1) / 2;
     const z = (b.z0 + b.z1) / 2;
@@ -1592,7 +1592,7 @@ function checkQuests(): string | null {
  * metres to the +x side, and `dist` metres toward -z, clear of boxes, for a fight in the open.
  */
 function openSpot(dist: number, left: number, right: number): { x: number; z: number } | null {
-  const [lx, lz] = inArea("supply", 0, 106);
+  const [lx, lz] = inArea("supply", 0, -174);
   const land = { x: lx, z: lz };
   for (let ring = 0; ring < 400; ring += 4)
     for (let a = 0; a < 2 * Math.PI; a += 4 / Math.max(ring, 8)) {
