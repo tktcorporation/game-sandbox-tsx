@@ -1,5 +1,6 @@
-import { ALLY, BOOST, DEPOT, DROP, ELITE, ENEMIES, META, RAIDERS, REINFORCE, VALUABLES, WORLD, type ValuableKind, PLAYER, ULT, type EnemyKind, type Flank, type HealKind, type Rarity, type WeaponKind } from "./config";
-import { DEPOTS, depotIndex, EXTRA_BINS, POIS, poiIndex, poiRegion, regionOf, type ExtractId, type PoiId, type RegionId } from "./map";
+import { ALLY, BOOST, DEPOT, DROP, ELITE, ENEMIES, META, RAIDERS, REINFORCE, VALUABLES, WORLD, type ValuableKind, PLAYER, ULT, type EnemyKind, type Flank, type HealKind, type Rarity, type ToolKind, type WeaponKind } from "./config";
+import { DEPOTS, depotIndex, EXTRA_BINS, POIS, poiIndex, poiRegion, regionOf, type ExtractId, type PoiId, type RegionId, type RouteId } from "./map";
+import { openRoutes, useRoutes } from "./routes";
 import { populate } from "./enemies";
 import { placeAlly } from "./ally";
 import { groundAt } from "./geom";
@@ -81,6 +82,8 @@ export interface Player {
   haul: ValuableKind[];
   /** Keys on the ring, as the POIs whose vaults they open (copies included). They take no bag space. */
   keys: number[];
+  /** Tools carried (`TOOLS`): they fill bag slots beside the haul and score nothing, but open a route once home. */
+  tools: ToolKind[];
   /** The bin being searched and for how long, or null. */
   search: { bin: number; t: number } | null;
   /** The item being used and the seconds left; shooting cancels it without using it. */
@@ -243,7 +246,7 @@ export interface Shockwave {
   allyHit?: boolean;
 }
 
-export type LootKind = "weapon" | "armor" | "heal" | "shard" | "flare" | "valuable" | "key";
+export type LootKind = "weapon" | "armor" | "heal" | "shard" | "flare" | "valuable" | "key" | "tool";
 
 export interface Loot {
   id: number;
@@ -253,6 +256,7 @@ export interface Loot {
   valuable?: ValuableKind;
   /** For a key: the POI whose vault it opens. */
   key?: number;
+  tool?: ToolKind;
   /** Armour the player took off: it can be put back on with the use key, and its shield is not refilled. */
   worn?: boolean;
   rarity: Rarity;
@@ -401,6 +405,10 @@ export interface State {
   phase: Phase;
   /** The region the raid dropped into. */
   region: RegionId;
+  /** The routes open in this raid's world (`ROUTES` order); `step()` keeps that world in place. */
+  routes: RouteId[];
+  /** The raid's seed, for what is decided without drawing on `rng` (the tools in the bins). */
+  seed: number;
   rng: number;
   nextId: number;
   player: Player;
@@ -437,6 +445,8 @@ export interface State {
   depots: boolean[];
   /** Valuables sent home from a depot this raid: they reach the stash however the raid ends. */
   sent: ValuableKind[];
+  /** Tools sent home the same way. */
+  sentTools: ToolKind[];
   /** Credits' worth sent home through each depot this raid, by place in `DEPOTS`: it levels that depot (`DEPOT.levels`). */
   sentVia: number[];
   /** Leaving at a depot: which one, and the seconds still to stand there. */
@@ -472,6 +482,8 @@ export interface Input {
   touch: boolean;
   /** The use key never swaps back into armour taken off (the bot keeps the better one). */
   keepArmor?: boolean;
+  /** The use key never takes up a tool: the bot plays the gate's raids as they stand without tools. */
+  leaveTools?: boolean;
 }
 
 export const idleInput = (): Input => ({
@@ -496,8 +508,8 @@ export const idleInput = (): Input => ({
 /** Seconds until a called pickup is there: -1 when it has not been called, 0 once it is there. */
 export const callLeft = (s: State, id: ExtractId) => s.calls[id]?.t ?? -1;
 
-/** A small integer hash, so the boost does not draw on the raid's random numbers. */
-function mix(n: number): number {
+/** A small integer hash, so the boost and the tools do not draw on the raid's random numbers. */
+export function mix(n: number): number {
   let h = Math.imul((n >>> 0) ^ 0x9e3779b9, 0x85ebca6b) >>> 0;
   h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35) >>> 0;
   return (h ^ (h >>> 16)) >>> 0;
@@ -560,6 +572,8 @@ export interface Start {
   depots?: PoiId[];
   from?: PoiId;
   seen?: string;
+  /** The routes opened in earlier raids: the raid's world has them open. */
+  routes?: RouteId[];
 }
 
 /**
@@ -568,6 +582,8 @@ export interface Start {
  * teammate beside the player.
  */
 export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reservoir", start: Start = {}): State {
+  const routes = openRoutes(start.routes ?? []);
+  useRoutes(routes);
   const from = start.from && start.depots?.includes(start.from) ? DEPOTS[depotIndex(start.from)] : null;
   if (from) region = poiRegion(from.poi).id;
   const drop = regionOf(region).drop;
@@ -589,6 +605,8 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
     time: 0,
     phase: "drop",
     region: regionOf(region).id,
+    routes,
+    seed: seed >>> 0,
     rng: seed >>> 0 || 1,
     nextId: id,
     player: {
@@ -625,6 +643,7 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
       flares: 0,
       haul: [],
       keys: [...kit.keys],
+      tools: [],
       search: null,
       healing: null,
       sinceHurt: 99,
@@ -655,6 +674,7 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
     extractedAt: null,
     depots: DEPOTS.map((d) => !!start.depots?.includes(d.poi)),
     sent: [],
+    sentTools: [],
     sentVia: DEPOTS.map(() => 0),
     leaving: null,
     leftAt: null,

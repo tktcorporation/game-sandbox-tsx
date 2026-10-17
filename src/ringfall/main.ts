@@ -1,6 +1,6 @@
 import { AWARE, TICK, VALUABLES, WEAPONS } from "./sim/config";
 import { Bot, SKILLS } from "./sim/bot";
-import { dist2d } from "./sim/geom";
+import { dist2d, groundAt } from "./sim/geom";
 import { terrainHeight } from "./sim/terrain";
 import { callLeft, freeKit, idleInput, newRun, type GameEvent, type Input, type Kit, type State } from "./sim/state";
 import { POIS, poiIndex, type PoiId, type RegionId } from "./sim/map";
@@ -8,9 +8,9 @@ import { settle, type Settlement } from "./meta/profile";
 import { loadProfile, saveProfile } from "./meta/storage";
 import { Hub } from "./view/hub";
 import { step } from "./sim/step";
-import { hurtAlly } from "./sim/ally";
+import { hurtAlly, placeAlly } from "./sim/ally";
 import { haulValue } from "./sim/results";
-import { bagUsed } from "./sim/world";
+import { bagLoad } from "./sim/world";
 import { preferLowPower, savedVolume, setVolume, unlock } from "./view/audio";
 import { sfx } from "./view/sfx";
 import { Soundscape } from "./view/soundscape";
@@ -277,7 +277,7 @@ function start(k: Kit, r: RegionId, seed: number, from?: PoiId) {
   keepAwake(true);
   world.reset();
   sound.reset();
-  state = newRun(seed, kit, region, { depots: hub.profile.depots, seen: hub.profile.seen, from });
+  state = newRun(seed, kit, region, { depots: hub.profile.depots, seen: hub.profile.seen, from, routes: hub.profile.routes });
   acc = hitstop = slowmo = 0;
   running = true;
   paused = false;
@@ -364,6 +364,7 @@ declare global {
     ringfallCamera: (x?: number, y?: number, z?: number, yaw?: number, pitch?: number) => void;
     ringfallFrameCost: (frames: number) => { ms: number; calls: number; triangles: number; chunks: number; of: number };
     ringfallTerrain: (x: number, z: number) => number;
+    ringfallPlace: (x: number, z: number, yaw: number) => void;
   }
 }
 
@@ -372,9 +373,9 @@ window.render_game_to_text = () => {
   const p = s.player;
   return JSON.stringify({
     screen: running ? "game" : !$("results").hidden ? "results" : !$("hub").hidden ? "hub" : !$("ending").hidden ? "ending" : "title",
-    profile: { cash: hub.profile.cash, stash: hub.profile.stash.length, raids: hub.profile.raids, hideout: hub.profile.hideout, escaped: !!hub.profile.escaped, seed: hub.profile.seed },
+    profile: { cash: hub.profile.cash, stash: hub.profile.stash.length, raids: hub.profile.raids, hideout: hub.profile.hideout, escaped: !!hub.profile.escaped, seed: hub.profile.seed, routes: hub.profile.routes },
     boost: { ...s.boost, name: POIS[s.boost.poi].name },
-    settled: settlement && { home: settlement.home.length, sold: settlement.sold.length, quests: settlement.quests.map((q) => q.id) },
+    settled: settlement && { home: settlement.home.length, sold: settlement.sold.length, quests: settlement.quests.map((q) => q.id), opened: settlement.opened },
     vaults: s.bins.filter((b) => b.vault).map((b) => ({ poi: b.poi, x: b.x, y: b.y, z: b.z, open: b.open })),
     keys: p.keys,
     phase: s.phase,
@@ -384,7 +385,8 @@ window.render_game_to_text = () => {
     visited: s.visited,
     cleared: s.cleared,
     reinforce: { next: +s.reinforceT.toFixed(1), came: s.reinforceN },
-    haul: { items: s.player.haul, value: haulValue(s), bag: bagUsed(s.player.haul) },
+    haul: { items: s.player.haul, tools: s.player.tools, value: haulValue(s), bag: bagLoad(s.player) },
+    routes: s.routes,
     depots: s.depots,
     sent: { items: s.sent, value: s.sent.reduce((n, k) => n + VALUABLES[k].value, 0) },
     leaving: s.leaving && +s.leaving.t.toFixed(1),
@@ -441,6 +443,17 @@ window.ringfallFrameCost = (frames: number) => {
 
 /** Automation only: the ground's height at (x, z), to place the screenshot cameras. */
 window.ringfallTerrain = (x, z) => terrainHeight(x, z);
+
+/** Automation only: stands the player at (x, z) on the ground facing `yaw`, the teammate beside them (screenshots of one place). */
+window.ringfallPlace = (x, z, yaw) => {
+  const p = state.player;
+  p.pos = { x, y: groundAt(x, z, 0.4, terrainHeight(x, z) + 1), z };
+  p.vel = { x: 0, y: 0, z: 0 };
+  p.yaw = yaw;
+  p.pitch = 0;
+  p.onGround = true;
+  placeAlly(state);
+};
 
 /** The player's exact view yaw (render_game_to_text rounds it away). */
 window.ringfallYaw = () => state.player.yaw;

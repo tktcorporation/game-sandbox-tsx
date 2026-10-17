@@ -1,11 +1,11 @@
-import { ALLY, AWARE, BAG, DEPOT, ENEMIES, HEALS, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, TICK, TOP_BINS, VALUABLES, VAULT, WORLD, type HealKind } from "./config";
+import { ALLY, AWARE, BAG, DEPOT, ENEMIES, HEALS, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, TICK, TOOL_KINDS, TOOLS, TOP_BINS, VALUABLES, VAULT, WORLD, type HealKind, type ToolKind } from "./config";
 import { dist2d, groundAt, los, solidAt } from "./geom";
 import { highGround, steepAt, terrainHeight } from "./terrain";
 import { DEPOTS, EXTRACTS, POIS, type ExtractPoint } from "./map";
 import { spawnEnemy, spawnSpot } from "./enemies";
 import { cellsAround, fieldTo, nextStep } from "./hunt";
 import { raiseAlly, startHelp } from "./ally";
-import { boosted, callLeft, cellOf, exploreSize, rand, type Input, type Loot, type State, type Weapon } from "./state";
+import { boosted, callLeft, cellOf, exploreSize, mix, rand, type Bin, type Input, type Loot, type Player, type State, type Weapon } from "./state";
 import type { EnemyKind, ValuableKind } from "./config";
 import { makeNoise } from "./awareness";
 
@@ -213,6 +213,24 @@ function openBin(s: State, binIndex: number) {
     const vault = POIS.findIndex((v) => v.keyFrom === POIS[b.poi].id);
     spill(s, b.x, b.y, b.z, { kind: "key", key: vault, rarity: 3 });
   }
+  for (const k of TOOL_KINDS) if (toolIn(s, b, k)) spillTool(s, b, k);
+}
+
+/** A uniform number in [0, 1) from the raid's seed, a bin and a salt, drawing nothing from `rand`. */
+const hashed = (s: State, b: Bin, salt: number) => mix(Math.imul(s.seed ^ 0x2c1b3c6d, 0x9e3779b1) + Math.imul(b.id, 7919) + Math.imul(salt + 1, 104729)) / 4294967296;
+
+/** Whether bin `b` holds tool `k` this raid (`TOOLS`). Vaults hold none. */
+export const toolIn = (s: State, b: Bin, k: ToolKind) => !b.vault && !b.outside && POIS[b.poi].id === TOOLS[k].from && hashed(s, b, TOOL_KINDS.indexOf(k)) < TOOLS[k].chance;
+
+/**
+ * A tool tossed out of an opened bin as `spill()` tosses loot, its direction from the hash and
+ * its id the bin's own, negated: neither the raid's random numbers nor its ids move for it.
+ */
+function spillTool(s: State, b: Bin, k: ToolKind) {
+  const p = s.player;
+  const a = Math.atan2(p.pos.z - b.z, p.pos.x - b.x) + (hashed(s, b, 7) - 0.5) * 1.6;
+  const sp = b.y > terrainHeight(b.x, b.z) + 0.5 ? 1.2 : 2.6;
+  s.loot.push({ id: -(b.id * TOOL_KINDS.length + TOOL_KINDS.indexOf(k) + 1), kind: "tool", tool: k, rarity: 3, pos: { x: b.x, y: b.y + 1.0, z: b.z }, vel: { x: Math.cos(a) * sp, y: 4.2, z: Math.sin(a) * sp }, age: 0 });
 }
 
 const weaponLabel = (w: Weapon) => w.kind.toUpperCase();
@@ -267,7 +285,7 @@ export function stepLoot(s: State, input: Input) {
       s.events.push({ t: "pickup", kind: "heal", rarity: 1, label: HEALS[l.heal].label });
       return false;
     }
-    if (l.kind === "valuable" && l.valuable && bagUsed(p.haul) + VALUABLES[l.valuable].size <= BAG.slots) {
+    if (l.kind === "valuable" && l.valuable && bagLoad(p) + VALUABLES[l.valuable].size <= BAG.slots) {
       p.haul.push(l.valuable);
       const v = VALUABLES[l.valuable];
       s.events.push({ t: "pickup", kind: "valuable", rarity: l.rarity, label: `${v.label} +${v.value}` });
@@ -294,8 +312,9 @@ export function stepLoot(s: State, input: Input) {
 
   stepSearch(s, alive);
   if (!input.interact || !alive) return;
-  const t = useTarget(s, !input.keepArmor);
+  const t = useTarget(s, !input.keepArmor, !input.leaveTools);
   if (t?.kind === "ally") startHelp(s);
+  else if (t?.kind === "tool") takeTool(s, t.loot);
   else if (t?.kind === "bin") startSearch(s, t.index);
   else if (t?.kind === "care") openCare(s);
   else if (t?.kind === "weapon") takeWeapon(s, t.loot);
@@ -325,14 +344,28 @@ function wearArmor(s: State, l: Loot, shed: Loot[]) {
 /** Bag slots the haul takes up. */
 export const bagUsed = (haul: ValuableKind[]) => haul.reduce((n, k) => n + VALUABLES[k].size, 0);
 
+/** Bag slots the tools take up. */
+export const toolsUsed = (tools: ToolKind[]) => tools.reduce((n, k) => n + TOOLS[k].size, 0);
+
+/** Bag slots taken, the haul and the tools together. */
+export const bagLoad = (p: Pick<Player, "haul" | "tools">) => bagUsed(p.haul) + toolsUsed(p.tools);
+
 /**
  * What would make room for `kind` in a full bag: the set of items (their indices) that frees
  * enough slots for the least value, fewest items on a tie. Null when no set frees enough or
  * the cheapest one is worth as much as `kind`. The bag holds at most `BAG.slots` items, so
  * trying every set is cheap.
  */
-export function makeRoom(haul: ValuableKind[], kind: ValuableKind): number[] | null {
-  const need = bagUsed(haul) + VALUABLES[kind].size - BAG.slots;
+export function makeRoom(haul: ValuableKind[], kind: ValuableKind, tools: ToolKind[] = []): number[] | null {
+  return roomFor(haul, VALUABLES[kind].size + toolsUsed(tools), VALUABLES[kind].value);
+}
+
+/**
+ * The cheapest set of the haul (its indices) to throw out for `size` more slots, kept only
+ * when it is worth less than `worth`; [] when the room is there already. Tools are never thrown out.
+ */
+function roomFor(haul: ValuableKind[], size: number, worth: number): number[] | null {
+  const need = bagUsed(haul) + size - BAG.slots;
   if (need <= 0) return [];
   let best: { set: number[]; lost: number } | null = null;
   for (let mask = 1; mask < 1 << haul.length; mask++) {
@@ -341,13 +374,34 @@ export function makeRoom(haul: ValuableKind[], kind: ValuableKind): number[] | n
     const lost = set.reduce((n, i) => n + VALUABLES[haul[i]].value, 0);
     if (!best || lost < best.lost || (lost === best.lost && set.length < best.set.length)) best = { set, lost };
   }
-  return best && best.lost < VALUABLES[kind].value ? best.set : null;
+  return best && best.lost < worth ? best.set : null;
+}
+
+/**
+ * What taking tool `k` throws out of the bag: the cheapest valuables that make room, whatever
+ * they are worth, since a tool is carried for the route it opens. Null when even the whole
+ * haul does not make room (other tools fill the bag).
+ */
+export const roomForTool = (p: Pick<Player, "haul" | "tools">, k: ToolKind) => roomFor(p.haul, TOOLS[k].size + toolsUsed(p.tools), Infinity);
+
+/** Takes a tool up, dropping what `roomForTool()` throws out. */
+function takeTool(s: State, l: Loot) {
+  const p = s.player;
+  const k = l.tool;
+  const out = k ? roomForTool(p, k) : null;
+  if (!k || !out) return;
+  const dropped = out.map((i) => p.haul[i]);
+  p.haul = p.haul.filter((_, i) => !out.includes(i));
+  for (const v of dropped) spillValuable(s, p.pos, v);
+  s.loot = s.loot.filter((o) => o !== l);
+  p.tools.push(k);
+  s.events.push({ t: "pickup", kind: "tool", rarity: 3, label: `${TOOLS[k].label}${dropped.length ? `（${dropped.map((v) => VALUABLES[v].label).join("・")}を捨てた）` : ""}` });
 }
 
 /** Drop the cheapest items on the ground and bag the better one. */
 function swapInto(s: State, l: Loot) {
   const p = s.player;
-  const out = l.valuable ? makeRoom(p.haul, l.valuable) : null;
+  const out = l.valuable ? makeRoom(p.haul, l.valuable, p.tools) : null;
   if (!out || !l.valuable) return;
   const dropped = out.map((i) => p.haul[i]);
   p.haul = p.haul.filter((_, i) => !out.includes(i));
@@ -399,14 +453,15 @@ export type UseTarget =
   | { kind: "weapon"; loot: Loot }
   | { kind: "swap"; loot: Loot }
   | { kind: "armor"; loot: Loot }
-  | { kind: "depot"; index: number };
+  | { kind: "depot"; index: number }
+  | { kind: "tool"; loot: Loot };
 
 /**
  * A downed teammate within reach comes first, however close any loot is; otherwise
  * the closest of bin, care package or weapon within reach; and only when none of those
  * is, a depot that is on, so a press meant for loot never sends the bag home or ends the raid.
  */
-export function useTarget(s: State, armor = true): UseTarget | null {
+export function useTarget(s: State, armor = true, tools = true): UseTarget | null {
   const p = s.player;
   const level = (y: number) => Math.abs(y - p.pos.y) < 1.5;
   const a = s.ally;
@@ -424,7 +479,9 @@ export function useTarget(s: State, armor = true): UseTarget | null {
     // It yields to a bin or a weapon at the same distance, since it lies where the upgrade was found.
     else if (armor && l.kind === "armor" && l.worn && l.rarity !== p.armor) picks.push({ d: dist2d(l.pos, p.pos) + 0.3, t: { kind: "armor", loot: l } });
     // A valuable that does not fit is worth a press when something cheaper can make way.
-    else if (l.kind === "valuable" && l.valuable && makeRoom(p.haul, l.valuable)?.length) picks.push({ d: dist2d(l.pos, p.pos) - 0.3, t: { kind: "swap", loot: l } });
+    else if (l.kind === "valuable" && l.valuable && makeRoom(p.haul, l.valuable, p.tools)?.length) picks.push({ d: dist2d(l.pos, p.pos) - 0.3, t: { kind: "swap", loot: l } });
+    // A tool is taken by the use key, throwing cheaper things out of a full bag.
+    else if (tools && l.kind === "tool" && l.tool && roomForTool(p, l.tool)) picks.push({ d: dist2d(l.pos, p.pos) - 0.3, t: { kind: "tool", loot: l } });
   }
   const pick = picks.filter((k) => k.d < PLAYER.interactRange).sort((x, y) => x.d - y.d)[0]?.t;
   if (pick) return pick;
@@ -444,17 +501,19 @@ export function depotInReach(s: State): number {
 /** The use key at a depot: a bag with anything in it goes home; an empty one means leaving the raid there. */
 function useDepot(s: State, index: number) {
   const p = s.player;
-  if (p.haul.length) {
+  if (p.haul.length || p.tools.length) {
     // Something picked up while leaving breaks the leaving off, even when it is sent at once.
     if (s.leaving) {
       s.leaving = null;
       s.events.push({ t: "leaveCancel" });
     }
     const value = p.haul.reduce((n, k) => n + VALUABLES[k].value, 0);
-    s.events.push({ t: "deposit", n: p.haul.length, value });
+    s.events.push({ t: "deposit", n: p.haul.length + p.tools.length, value });
     s.sent.push(...p.haul);
+    s.sentTools.push(...p.tools);
     s.sentVia[index] += value;
     p.haul = [];
+    p.tools = [];
   } else if (!s.leaving) {
     s.leaving = { depot: index, t: DEPOT.leave };
     s.events.push({ t: "leaveStart" });
@@ -488,7 +547,7 @@ export function stepDepots(s: State) {
   }
   const l = s.leaving;
   if (!l) return;
-  if (!up || p.haul.length || dist2d(DEPOTS[l.depot], p.pos) > PLAYER.interactRange + 1.5 || depotBlocked(s)) {
+  if (!up || p.haul.length || p.tools.length || dist2d(DEPOTS[l.depot], p.pos) > PLAYER.interactRange + 1.5 || depotBlocked(s)) {
     s.leaving = null;
     s.events.push({ t: "leaveCancel" });
     return;

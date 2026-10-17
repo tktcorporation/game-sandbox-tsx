@@ -1,6 +1,6 @@
-import { ALLY, HEALS as HEAL_SPECS, HIDEOUT, RAIDERS, RARITY, VALUABLES, WEAPONS, type ModuleId, type ValuableKind } from "../sim/config";
+import { ALLY, HEALS as HEAL_SPECS, HIDEOUT, RAIDERS, RARITY, TOOLS, VALUABLES, WEAPONS, type ModuleId, type ValuableKind } from "../sim/config";
 import { boostFor, type Kit } from "../sim/state";
-import { POIS, poiIndex, poiRegion, REGIONS, regionOf, type PoiId, type RegionId } from "../sim/map";
+import { POIS, poiIndex, poiRegion, REGIONS, regionOf, ROUTES, type PoiId, type RegionId } from "../sim/map";
 import { build, buildState, buy, buyPrice, canBuild, deliver, deliverable, depotAllowance, emptyLoadout, fitsStart, itemCost, HEALS, healCount, healRoom, keyName, lentHeals, loadoutCost, price, sell, sellPrice, shortfall, takeKit, wanted, wares, type Item, type Loadout, type Profile } from "../meta/profile";
 import { craftDone, maxLevel, MODULES, nextLevel, pouchSlots, sources, stashCap, stillNeeded, type Source } from "../meta/hideout";
 import { need, offered, type Quest, type RewardItem } from "../meta/quests";
@@ -21,6 +21,8 @@ export function itemName(i: Item | RewardItem): string {
       return VALUABLES[i.kind].label;
     case "key":
       return keyName(i.poi);
+    case "tool":
+      return TOOLS[i.kind].label;
   }
 }
 
@@ -37,25 +39,28 @@ function itemNote(i: Item, need?: Record<ValuableKind, number>, have = 1): strin
       return "シールド強化";
     case "key":
       return "保管庫を開ける";
+    case "tool":
+      // One that reaches the stash is spent on a closed route, so one kept there has none left to open.
+      return "道はもう開いている・売れる";
     case "heal":
       return HEAL_SPECS[i.kind].shield ? "シールド回復" : "体力回復";
   }
 }
 
 const color = (i: Item | RewardItem) =>
-  i.t === "weapon" ? RARITY_CSS[i.rarity] : i.t === "armor" ? RARITY_CSS[i.tier] : i.t === "valuable" ? RARITY_CSS[VALUABLES[i.kind].rarity] : i.t === "key" ? RARITY_CSS[3] : "var(--white)";
+  i.t === "weapon" ? RARITY_CSS[i.rarity] : i.t === "armor" ? RARITY_CSS[i.tier] : i.t === "valuable" ? RARITY_CSS[VALUABLES[i.kind].rarity] : i.t === "key" || i.t === "tool" ? RARITY_CSS[3] : "var(--white)";
 
 /** Weapons, armour and keys are listed one by one; heals and valuables are counted. */
 function rows(stash: Item[]): { item: Item; index: number[] }[] {
   const out: { item: Item; index: number[] }[] = [];
   stash.forEach((item, n) => {
-    if (item.t === "heal" || item.t === "valuable") {
+    if (item.t === "heal" || item.t === "valuable" || item.t === "tool") {
       const row = out.find((r) => r.item.t === item.t && (r.item as { kind: string }).kind === item.kind);
       if (row) return void row.index.push(n);
     }
     out.push({ item, index: [n] });
   });
-  const order = { weapon: 0, armor: 1, key: 2, heal: 3, valuable: 4 };
+  const order = { weapon: 0, armor: 1, key: 2, tool: 3, heal: 4, valuable: 5 };
   return out.sort((a, b) => order[a.item.t] - order[b.item.t]);
 }
 
@@ -309,6 +314,18 @@ export class Hub {
     return `${where}の箱に${esc(VALUABLES[b.kind].label)}が多い。レイダーは着地のおよそ ${Math.round(RAIDERS.at / 60)} 分後に降りる`;
   }
 
+  /** The routes a tool opens: open or closed, and for a closed one, the tool and where it lies. */
+  private routes(): string {
+    const p = this.profile;
+    const rows = ROUTES.map((r) => {
+      const open = p.routes.includes(r.id);
+      const tool = TOOLS[r.tool];
+      const how = open ? r.note : `${tool.label}で開く。${tool.label}は${POIS[poiIndex(tool.from)].name}の補給箱にある。持ち帰るか中継ボックスから送れば開く`;
+      return `<div class="quest route${open ? " open" : ""}"><div><strong>${esc(r.name)}</strong><span>${esc(how)}</span>${open ? "" : `<small>${esc(r.note)}</small>`}</div><b>${open ? "開通" : "閉鎖"}</b></div>`;
+    });
+    return `<h3 class="hub-sub">道</h3>${rows.join("")}`;
+  }
+
   /** A hideout module: its level, its next level's effect, and when opened, what it takes and where that is found. */
   private moduleCard(m: ModuleId) {
     const p = this.profile;
@@ -380,7 +397,7 @@ export class Hub {
     if (this.tab === "hideout") {
       const done = p.escaped ? `<div class="escaped"><span>脱出艇は直った。いつでも島を出られる</span><button type="button" data-act="ending">エンディング</button></div>` : "";
       $("hub-side").innerHTML =
-        done + MODULES.map((m) => this.moduleCard(m)).join("") + `<p class="hint">回収品とクレジットで設備を作る。足りない物は、押すと出やすい場所が出る。脱出艇を直せば島を出られる。</p>`;
+        done + MODULES.map((m) => this.moduleCard(m)).join("") + `<p class="hint">回収品とクレジットで設備を作る。足りない物は、押すと出やすい場所が出る。脱出艇を直せば島を出られる。</p>` + this.routes();
       $("hub-side").querySelector(".mod.open .mod-body")?.parentElement?.scrollIntoView({ block: "nearest" });
     } else if (shop) {
       const full = p.stash.length >= stashCap(p.hideout);

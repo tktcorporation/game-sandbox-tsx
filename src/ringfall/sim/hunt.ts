@@ -1,5 +1,6 @@
 import { WORLD } from "./config";
 import { BOXES, DECKS } from "./map";
+import { routeBoxesOpen } from "./geom";
 import { highGround, offshore, steepAt, terrainHeight } from "./terrain";
 
 /*
@@ -51,7 +52,7 @@ function grid() {
       open[k] = clear ? 1 : 0;
     }
   // Boxes in a walker's way: higher than a step above the ground and low enough to walk into.
-  for (const b of BOXES) {
+  for (const b of [...BOXES, ...routeBoxesOpen]) {
     const t = terrainHeight((b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2);
     if (b.h - t <= WORLD.stepUp || b.y0 - t >= 1.75) continue;
     for (let j = idxZ(b.z0 - BODY); j <= idxZ(b.z1 + BODY); j++)
@@ -143,6 +144,15 @@ const CACHE = 8;
  * target so costs a field every few metres instead of every cell it enters.
  */
 const NEAR = 3;
+/**
+ * Forgets the grid and every field, for a world whose open routes changed (routes.ts): they are
+ * built again on first use.
+ */
+export function resetHunt() {
+  open = height = main = null;
+  cache.clear();
+}
+
 /** Fields built so far: the sim gate checks that alternating targets reuse them. */
 export let fieldsBuilt = 0;
 

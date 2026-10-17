@@ -1,5 +1,6 @@
 import { DEPOT, WORLD } from "../sim/config";
-import { BOXES, DEPOTS, EXTRACTS, POIS, REGIONS } from "../sim/map";
+import { BOXES, DEPOTS, EXTRACTS, POIS, REGIONS, ROUTES } from "../sim/map";
+import { worldKey } from "../sim/routes";
 import { DAM_FACE, floorLevel, highGround, LEVEL, steepAt, surfaceAt, terrainHeight } from "../sim/terrain";
 import { cellOf, exploreSize, type State } from "../sim/state";
 import { PAL } from "./models";
@@ -42,6 +43,8 @@ const css = (c: number) => `#${c.toString(16).padStart(6, "0")}`;
 
 export class IslandMap {
   private base: HTMLCanvasElement | null = null;
+  /** The world (`worldKey()`) the ground image was drawn from: a raid with other routes open redraws it. */
+  private baseKey = "";
   /** One pixel per explored-map cell, redrawn each open frame and scaled over the ground. */
   private fog: HTMLCanvasElement | null = null;
   private readonly width = Math.ceil((WORLD.x1 - WORLD.x0) / CELL);
@@ -131,6 +134,8 @@ export class IslandMap {
   }
 
   draw(s: State) {
+    if (this.baseKey !== worldKey()) this.base = null;
+    this.baseKey = worldKey();
     this.base ??= this.build();
     const g = this.canvas.getContext("2d")!;
     // Drawn at the size it is shown, so names stay readable however tall the world is.
@@ -229,6 +234,46 @@ export class IslandMap {
       g.stroke();
       label(x.short, exitAt[i].x, exitAt[i].y, css(PAL.hot), 10);
     });
+    // The routes a tool opens: open ones a solid line, closed ones dashed with a cross at each obstacle.
+    for (const r of ROUTES) {
+      const open = s.routes.includes(r.id);
+      g.save();
+      g.lineWidth = 3 * dpr;
+      g.strokeStyle = open ? "#6fd0cf" : "#ff8a5c";
+      if (!open) g.setLineDash([4 * dpr, 4 * dpr]);
+      g.beginPath();
+      r.path.forEach((q, n) => {
+        const p = at(q.x, q.z);
+        if (n) g.lineTo(p.x, p.y);
+        else g.moveTo(p.x, p.y);
+      });
+      g.stroke();
+      g.setLineDash([]);
+      if (!open)
+        for (const a of r.at) {
+          const p = at(a.x, a.z);
+          const d = 4 * dpr;
+          g.lineWidth = 2.5 * dpr;
+          g.beginPath();
+          g.moveTo(p.x - d, p.y - d);
+          g.lineTo(p.x + d, p.y + d);
+          g.moveTo(p.x + d, p.y - d);
+          g.lineTo(p.x - d, p.y + d);
+          g.stroke();
+        }
+      g.restore();
+      // Its name beside its middle, where nothing else is.
+      const mid = r.path[Math.floor(r.path.length / 2)];
+      const m = at((r.path[0].x + mid.x) / 2, (r.path[0].z + mid.z) / 2);
+      const text = open ? r.name : `${r.name}（閉）`;
+      g.textAlign = "left";
+      const spot = box(text, m.x + 7 * dpr, m.y, 9, true);
+      if (free(spot)) {
+        taken.push(spot);
+        label(text, m.x + 7 * dpr, m.y, open ? "#bfeeee" : "#ffc2a8", 9);
+      }
+      g.textAlign = "center";
+    }
     // Depots that are on: a teal square each, a place a later raid can start from.
     DEPOTS.forEach((d, i) => {
       if (!s.depots[i]) return;

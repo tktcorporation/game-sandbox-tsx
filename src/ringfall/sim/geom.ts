@@ -1,5 +1,5 @@
 import { WORLD } from "./config";
-import { BOXES, deckAt, type Box } from "./map";
+import { BOXES, deckAt, ROUTES, type Box } from "./map";
 import { steepAt, terrainGrad, terrainHeight } from "./terrain";
 import type { Vec3 } from "./state";
 
@@ -10,21 +10,28 @@ import type { Vec3 } from "./state";
 const CELL = 8;
 const grid = new Map<number, Box[]>();
 const key = (cx: number, cz: number) => (cx + 1000) * 4096 + (cz + 1000);
-for (const b of BOXES) {
-  for (let cx = Math.floor(b.x0 / CELL); cx <= Math.floor(b.x1 / CELL); cx++)
-    for (let cz = Math.floor(b.z0 / CELL); cz <= Math.floor(b.z1 / CELL); cz++) {
-      const k = key(cx, cz);
-      const list = grid.get(k);
-      if (list) list.push(b);
-      else grid.set(k, [b]);
-    }
+/** The grid cells a box spans, as keys. */
+function cellsOf(b: Box): number[] {
+  const out: number[] = [];
+  for (let cx = Math.floor(b.x0 / CELL); cx <= Math.floor(b.x1 / CELL); cx++) for (let cz = Math.floor(b.z0 / CELL); cz <= Math.floor(b.z1 / CELL); cz++) out.push(key(cx, cz));
+  return out;
 }
-const indexOf = new Map(BOXES.map((b, i) => [b, i]));
-const seenBy = new Int32Array(BOXES.length);
+const addToGrid = (b: Box) => {
+  for (const k of cellsOf(b)) {
+    const list = grid.get(k);
+    if (list) list.push(b);
+    else grid.set(k, [b]);
+  }
+};
+for (const b of BOXES) addToGrid(b);
+/** Every box any world may hold: the map's, then each route's, closed and open. */
+const ALL = [...BOXES, ...ROUTES.flatMap((r) => [...r.closed, ...r.open])];
+const indexOf = new Map(ALL.map((b, i) => [b, i]));
+const seenBy = new Int32Array(ALL.length);
 let rayId = 0;
 /** Each box once, in the order the cells list them; a box spanning cells is kept by its stamp. */
 const scratch: Box[] = [];
-const nearBy = new Int32Array(BOXES.length);
+const nearBy = new Int32Array(ALL.length);
 let nearId = 0;
 function near(x: number, z: number, r: number): Iterable<Box> {
   scratch.length = 0;
@@ -42,6 +49,40 @@ function near(x: number, z: number, r: number): Iterable<Box> {
     }
   return scratch;
 }
+
+/** The routes' boxes in the grid now: the obstacles of those closed and what stands on those open. */
+let routeBoxes: Box[] = [];
+/** The closed routes' obstacles among them. */
+let obstacles = new Set<Box>();
+/**
+ * What stands on the open routes (a roof, a gangway). Path finding (nav.ts, hunt.ts) counts these
+ * as it counts the map's boxes, but not a closed route's obstacles: they stand in the cliff a
+ * route will be cut through, or on the deck a gangway climbs to, where path finding already goes
+ * no further. So with every route closed the walkers' grids are the ones the map alone gives.
+ */
+export let routeBoxesOpen: readonly Box[] = [];
+
+/**
+ * Puts the routes' boxes for one set of open routes into the grid (routes.ts), after the map's
+ * own: a cell's boxes keep their order, so a world with every route closed meets the map's
+ * boxes exactly as before, and its obstacles only where something reaches them.
+ */
+export function setRouteBoxes(closed: Box[], open: Box[]) {
+  for (const b of routeBoxes)
+    for (const k of cellsOf(b)) {
+      const list = grid.get(k)!.filter((o) => o !== b);
+      if (list.length) grid.set(k, list);
+      else grid.delete(k);
+    }
+  routeBoxes = [...closed, ...open];
+  obstacles = new Set(closed);
+  for (const b of routeBoxes) addToGrid(b);
+  routeBoxesOpen = open;
+}
+setRouteBoxes(
+  ROUTES.flatMap((r) => r.closed),
+  [],
+);
 
 /**
  * Height of the highest surface under a circle at (x, z) that a body with feet at
@@ -156,8 +197,11 @@ function rayBox(o: Vec3, d: Vec3, b: Box, maxT: number): number {
   return t0;
 }
 
-/** Distance along a unit ray to the first box or the ground, capped at maxT. */
-export function rayWorld(o: Vec3, d: Vec3, maxT: number): number {
+/**
+ * Distance along a unit ray to the first box or the ground, capped at maxT. `paths` leaves the
+ * closed routes' obstacles out, as the walkers' grids do (`routeBoxesOpen`).
+ */
+export function rayWorld(o: Vec3, d: Vec3, maxT: number, paths = false): number {
   let t = maxT;
   // Walk the grid cells under the ray in order. A box in a cell entered beyond the
   // nearest hit so far cannot be nearer, so the walk stops there.
@@ -179,6 +223,7 @@ export function rayWorld(o: Vec3, d: Vec3, maxT: number): number {
         const i = indexOf.get(b) ?? 0;
         if (seenBy[i] === rayId) continue;
         seenBy[i] = rayId;
+        if (paths && obstacles.has(b)) continue;
         const bt = rayBox(o, d, b, t);
         if (bt < t) t = bt;
       }
@@ -220,13 +265,14 @@ function rayTerrain(o: Vec3, d: Vec3, maxT: number): number {
   return end < 0 ? Math.max(prev, maxT - 0.4) : maxT;
 }
 
-export function los(a: Vec3, b: Vec3): boolean {
+/** Clear sight from a to b. `paths`: as path finding sees the world, without the closed routes' obstacles (see `rayWorld`). */
+export function los(a: Vec3, b: Vec3, paths = false): boolean {
   const dx = b.x - a.x;
   const dy = b.y - a.y;
   const dz = b.z - a.z;
   const len = Math.hypot(dx, dy, dz);
   if (len < 1e-6) return true;
-  return rayWorld(a, { x: dx / len, y: dy / len, z: dz / len }, len) >= len - 0.05;
+  return rayWorld(a, { x: dx / len, y: dy / len, z: dz / len }, len, paths) >= len - 0.05;
 }
 
 /** Distance along a unit ray to a sphere, or Infinity. */

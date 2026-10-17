@@ -113,6 +113,7 @@ export class Bot {
     const p = s.player;
     const inp = idleInput();
     inp.keepArmor = true;
+    inp.leaveTools = true;
     // Ornstein-Uhlenbeck aim error: wanders, stationary std = aimErr.
     const theta = 2.5;
     const sigma = sk.aimErr * DEG * Math.sqrt(2 * theta);
