@@ -165,6 +165,20 @@ interface TowerOpts {
   windows?: Side[][];
   /** Roof parapet sides left open, where a bridge lands. */
   open?: Side[];
+  /** A second stair core at the west end, its flights climbing east: a long building climbed from either end. */
+  twin?: true;
+}
+
+/** A floor slab with rectangular holes ([x0, z0, x1, z1] each, apart along x, in order). */
+function slabWithHoles(x0: number, z0: number, x1: number, z1: number, y0: number, h: number, holes: [number, number, number, number][]): Box[] {
+  const out: Box[] = [];
+  let cur = x0;
+  for (const [hx0, hz0, hx1, hz1] of holes) {
+    out.push(rect(cur, z0, hx0, z1, y0, h, "slab"), rect(hx0, z0, hx1, hz0, y0, h, "slab"), rect(hx0, hz1, hx1, z1, y0, h, "slab"));
+    cur = hx1;
+  }
+  out.push(rect(cur, z0, x1, z1, y0, h, "slab"));
+  return out.filter((p) => p.x1 - p.x0 > 0.01 && p.z1 - p.z0 > 0.01);
 }
 
 /**
@@ -192,7 +206,14 @@ function tower(cx: number, cz: number, w: number, d: number, floors: number, o: 
       const x = sx1 - (j + 0.5) * STEP_DEPTH;
       out.push(rect(x - STEP_DEPTH / 2, za, x + STEP_DEPTH / 2, zb, base, base + (STOREY * (j + 1)) / (n + 1), "step"));
     }
-    out.push(...slabWithHole(x0, z0, x1, z1, top - 0.3, top, sx0, za, sx1, zb));
+    if (o.twin) {
+      const tx0 = x0 + WALL + 0.4;
+      for (let j = 0; j < n; j++) {
+        const x = tx0 + (j + 0.5) * STEP_DEPTH;
+        out.push(rect(x - STEP_DEPTH / 2, za, x + STEP_DEPTH / 2, zb, base, base + (STOREY * (j + 1)) / (n + 1), "step"));
+      }
+      out.push(...slabWithHoles(x0, z0, x1, z1, top - 0.3, top, [[tx0, za, tx0 + n * STEP_DEPTH, zb], [sx0, za, sx1, zb]]));
+    } else out.push(...slabWithHole(x0, z0, x1, z1, top - 0.3, top, sx0, za, sx1, zb));
   }
   out.push(...parapet(cx, cz, w, d, floors * STOREY, o.open));
   return out;
@@ -211,12 +232,15 @@ function highRise(cx: number, cz: number, w: number, d: number, floors: number):
 /** The harbor's lighthouse on its headland, in the bay's frame: the highest view over the harbor. */
 const LIGHTHOUSE = { x: -116, z: -553, floors: 7 } as const;
 
+/** The landing pad's control tower, in the pad's frame (52 m north of the heart's). */
+const PAD_TOWER = { x: -34, z: -76, floors: 5 } as const;
+
 /** Tall buildings: where they stand in their area's frame, their size and storeys. Their top-floor bins are in EXTRA_BINS. */
 const HIGH_RISES = (
   [
     { x: 0, z: -14, w: 10, d: 10, floors: 6, level: LEVEL.lakebed, area: "heart" }, // the drowned town's office block
     { x: 125, z: 0, w: 10, d: 10, floors: 5, level: LEVEL.mesa, area: "relay" }, // flats beyond the housing street
-    { x: -34, z: -128, w: 8, d: 8, floors: 5, level: LEVEL.dam, area: "heart" }, // the pad's control tower
+    { x: PAD_TOWER.x, z: PAD_TOWER.z - 52, w: 10, d: 10, floors: 5, level: LEVEL.dam, area: "heart" }, // the pad's control tower (pad() puts its cab on top)
     { x: -182, z: 10, w: 8, d: 8, floors: 4, level: LEVEL.pit, area: "quarry" }, // a lookout at the quarry's far end
     { x: -129, z: 28, w: 8, d: 8, floors: 4, level: LEVEL.pit, area: "quarry" }, // the quarry office
   ] as const
@@ -243,6 +267,249 @@ const lift = (dy: number, boxes: Box[]): Box[] => boxes.map((b) => ({ ...b, y0: 
 /** Repaints the boxes of one kind that `which` picks (a ship's walls as steel plate, a lighthouse's bands). */
 const paint = (boxes: Box[], from: BoxKind, kind: BoxKind, tint: (b: Box) => number, which: (b: Box) => boolean = () => true): Box[] =>
   boxes.map((b) => (b.kind === from && which(b) ? { ...b, kind, tint: tint(b) } : b));
+
+/** A hole in a wall: `at` metres along its side from the side's middle, `w` wide, from `sill` up to `head` over the wall's foot. */
+interface Hole {
+  side: Side;
+  at?: number;
+  w: number;
+  head: number;
+  sill?: number;
+}
+
+/**
+ * Four walls between heights y0 and y1 round (cx, cz) with any holes cut into them: the
+ * general form of `walls()`, for roller doors and long bands of windows.
+ */
+function shell(cx: number, cz: number, w: number, d: number, y0: number, y1: number, holes: Hole[], kind: BoxKind = "wall", tint = 0): Box[] {
+  const out: Box[] = [];
+  for (const side of SIDES) {
+    const alongX = side === "n" || side === "s";
+    const len = alongX ? w : d;
+    const piece = (a: number, b: number, lo: number, hi: number) => {
+      const span = b - a;
+      if (span <= 0.01 || hi - lo <= 0.01) return;
+      const mid = (a + b) / 2;
+      const [x, z] = alongX ? [cx + mid, side === "n" ? cz - d / 2 + WALL / 2 : cz + d / 2 - WALL / 2] : [side === "w" ? cx - w / 2 + WALL / 2 : cx + w / 2 - WALL / 2, cz + mid];
+      out.push(alongX ? box(x, z, span, WALL, hi, kind, tint, lo) : box(x, z, WALL, span, hi, kind, tint, lo));
+    };
+    let cur = -len / 2;
+    for (const h of holes.filter((q) => q.side === side).sort((p, q) => (p.at ?? 0) - (q.at ?? 0))) {
+      const a = Math.max(-len / 2, (h.at ?? 0) - h.w / 2);
+      const b = Math.min(len / 2, (h.at ?? 0) + h.w / 2);
+      piece(cur, a, y0, y1);
+      piece(a, b, y0, y0 + (h.sill ?? 0));
+      piece(a, b, Math.min(y1, y0 + h.head), y1);
+      cur = b;
+    }
+    piece(cur, len / 2, y0, y1);
+  }
+  return out;
+}
+
+/** Height of a roller door's opening: tall enough for a truck, and for anything tall to see in. */
+const ROLLER = 4.4;
+
+interface HallOpts {
+  /** Roller doors, `w` wide (default 5 m), at `at` metres along their side from its middle. */
+  doors?: { side: Side; at?: number; w?: number }[];
+  /** Plain 2.2 m doors. */
+  hatches?: { side: Side; at?: number }[];
+  /** Sides with a band of high windows, out of reach from the floor: light in, a view out from the mezzanines. */
+  windows?: Side[];
+  /**
+   * Mezzanines: a slab `depth` metres deep along the inside of `side`, its top at `y`, railed
+   * along its open edge, with a flight up from the floor at `stair` metres along it from its middle.
+   */
+  mezz?: { side: Side; depth: number; y: number; stair?: number; from?: number; to?: number }[];
+  /** Two rows of columns along the hall's length, this far apart along it. */
+  columns?: number;
+  /** Roof parapet sides left open (a bridge, a stair tower beside it). */
+  open?: Side[];
+  /** Walls as painted plate (a shed of corrugated steel) of this tint, rather than concrete. */
+  steel?: number;
+  /** Outside stairs up to the roof, at the corner of this side (as `building()`'s). */
+  roof?: Side;
+}
+
+/**
+ * A large single-volume shed (a warehouse, a hangar, a works hall) of height H: thin walls with
+ * wide roller doors, a flat roof, mezzanines inside along its walls with stairs up to them, and
+ * columns holding the roof. The roof is reached from outside (a stair tower set against it).
+ */
+function hall(cx: number, cz: number, w: number, d: number, H: number, o: HallOpts = {}): Box[] {
+  const holes: Hole[] = [
+    ...(o.doors ?? []).map((q) => ({ side: q.side, at: q.at, w: q.w ?? 5, head: ROLLER })),
+    ...(o.hatches ?? []).map((q) => ({ side: q.side, at: q.at, w: 2.2, head: 2.5 })),
+  ];
+  // A band of windows round the top, broken by piers so it reads as a row of panes.
+  for (const side of o.windows ?? []) {
+    const len = side === "n" || side === "s" ? w : d;
+    for (let t = -len / 2 + 3; t <= len / 2 - 3; t += 4) holes.push({ side, at: t, w: 2.4, sill: H - 2.6, head: H - 1.2 });
+  }
+  const kind: BoxKind = o.steel === undefined ? "wall" : "steel";
+  const out = shell(cx, cz, w, d, 0, H - 0.3, holes, kind, o.steel ?? 0);
+  out.push(box(cx, cz, w, d, H, "slab", 0, H - 0.3));
+  out.push(...parapet(cx, cz, w, d, H, [...(o.open ?? []), ...(o.roof ? [o.roof] : [])]));
+  if (o.roof) {
+    const r = o.roof;
+    if (r === "n" || r === "s") out.push(...stairs(cx + w / 2 - 1.0, r === "n" ? cz - d / 2 : cz + d / 2, r, 1.4, H));
+    else out.push(...stairs(r === "e" ? cx + w / 2 : cx - w / 2, cz + d / 2 - 1.0, r, 1.4, H));
+  }
+  const x0 = cx - w / 2 + WALL;
+  const x1 = cx + w / 2 - WALL;
+  const z0 = cz - d / 2 + WALL;
+  const z1 = cz + d / 2 - WALL;
+  for (const m of o.mezz ?? []) {
+    const alongX = m.side === "n" || m.side === "s";
+    const half = (alongX ? x1 - x0 : z1 - z0) / 2;
+    const from = m.from ?? -half;
+    const to = m.to ?? half;
+    // The slab, its edge rail (open over the stairs' landing), and the flight up into the hall.
+    const [a0, a1] = alongX ? [cx + from, cx + to] : [cz + from, cz + to];
+    const edge = m.side === "n" ? z0 + m.depth : m.side === "s" ? z1 - m.depth : m.side === "w" ? x0 + m.depth : x1 - m.depth;
+    const inner = m.side === "n" || m.side === "w" ? 1 : -1;
+    if (alongX) out.push(rect(a0, Math.min(edge, m.side === "n" ? z0 : z1), a1, Math.max(edge, m.side === "n" ? z0 : z1), m.y - 0.3, m.y, "slab"));
+    else out.push(rect(Math.min(edge, m.side === "w" ? x0 : x1), a0, Math.max(edge, m.side === "w" ? x0 : x1), a1, m.y - 0.3, m.y, "slab"));
+    const s = m.stair ?? 0;
+    const sw = 1.4;
+    const railTo = (p: number, q: number) =>
+      alongX ? rect(p, edge - (inner > 0 ? 0.15 : 0), q, edge + (inner > 0 ? 0 : 0.15), m.y, m.y + 1.0, "steel", 2) : rect(edge - (inner > 0 ? 0.15 : 0), p, edge + (inner > 0 ? 0 : 0.15), q, m.y, m.y + 1.0, "steel", 2);
+    const sc = (alongX ? cx : cz) + s;
+    out.push(railTo(a0, sc - sw / 2), railTo(sc + sw / 2, a1));
+    const away: Side = m.side === "n" ? "s" : m.side === "s" ? "n" : m.side === "w" ? "e" : "w";
+    out.push(...(alongX ? stairs(sc, edge, away, sw, m.y) : stairs(edge, sc, away, sw, m.y)));
+  }
+  if (o.columns) {
+    const long = w >= d;
+    const len = long ? w : d;
+    for (let t = -len / 2 + o.columns; t <= len / 2 - o.columns + 0.01; t += o.columns)
+      for (const k of [-1, 1]) {
+        const off = (k * (long ? d : w)) / 6;
+        out.push(long ? box(cx + t, cz + off, 0.5, 0.5, H - 0.3, "steel", 2) : box(cx + off, cz + t, 0.5, 0.5, H - 0.3, "steel", 2));
+      }
+  }
+  return out;
+}
+
+/**
+ * A walkway at height y between two points on a line along x or along z, `width` wide, with a
+ * knee-high rail along both sides: low enough that whoever stands on it is seen from below.
+ */
+function catwalk(ax: number, az: number, bx: number, bz: number, y: number, width = 1.6, tint = 0): Box[] {
+  const alongX = Math.abs(bx - ax) >= Math.abs(bz - az);
+  const [a, b] = alongX ? [Math.min(ax, bx), Math.max(ax, bx)] : [Math.min(az, bz), Math.max(az, bz)];
+  const c = alongX ? az : ax;
+  const h = width / 2;
+  if (alongX)
+    return [rect(a, c - h, b, c + h, y - 0.3, y, "slab", 1), rect(a, c - h - 0.05, b, c - h + 0.2, y, y + 0.5, "steel", tint), rect(a, c + h - 0.2, b, c + h + 0.05, y, y + 0.5, "steel", tint)];
+  return [rect(c - h, a, c + h, b, y - 0.3, y, "slab", 1), rect(c - h - 0.05, a, c - h + 0.2, b, y, y + 0.5, "steel", tint), rect(c + h - 0.2, a, c + h + 0.05, b, y, y + 0.5, "steel", tint)];
+}
+
+/**
+ * A gantry crane straddling a lane along z at x = cx: a stair tower for one leg (its foot on
+ * the north, z0 - 8 .. z0), a railed catwalk at height H from it to the far leg at z1, the
+ * driver's cab on the catwalk round `cab`, and the boom running out over all of it.
+ */
+function gantry(cx: number, z0: number, z1: number, H: number, cab: number): Box[] {
+  const floors = Math.round(H / STOREY);
+  const out = paint(tower(cx, z0 - 4, 8, 8, floors, { doors: [["e", "w"]], windows: [[], ["e"], ["w"], ["e", "w"]], open: ["s"] }), "wall", "steel", () => 0, (b) => b.tint === 0);
+  out.push(rect(cx - 1.2, z0, cx + 1.2, z1, H - 0.3, H, "slab", 1));
+  // Railings knee-high, so the catwalk's guard is seen from below; open round the cab.
+  for (const [a, b] of [[z0, cab - 2.5], [cab + 2.5, z1]] as const) out.push(rect(cx - 1.25, a, cx - 1.0, b, H, H + 0.5, "steel", 0), rect(cx + 1.0, a, cx + 1.25, b, H, H + 0.5, "steel", 0));
+  out.push(rect(cx - 2.5, cab - 2.5, cx + 2.5, cab + 2.5, H - 0.3, H, "slab", 1));
+  out.push(...walls(cx, cab, 5, 5, H, H + 2.5, ["n", "s"], ["e", "w"]).map((b) => ({ ...b, kind: "steel" as const, tint: 3 })));
+  out.push(rect(cx - 2.5, cab - 2.5, cx + 2.5, cab + 2.5, H + 2.5, H + 2.8, "slab", 1));
+  out.push(box(cx, z1 + 1.5, 3, 3, H, "steel", 0));
+  const len = z1 - z0 + 30;
+  out.push(box(cx, (z0 + z1) / 2, 1.4, len, H + 4.4, "steel", 0, H + 3.6));
+  return out;
+}
+
+/**
+ * A terrace of `n` houses of `floors` storeys in a row along x from x0, each `w` by `d`, their
+ * party walls side by side. Every other house has its front door (south); the others are
+ * entered through a door in the party wall from the house beside, so the row is one way
+ * through. Their roofs join into one long roof, open between the houses.
+ */
+function rowHouses(x0: number, cz: number, n: number, w: number, d: number, floors: number): Box[] {
+  const out: Box[] = [];
+  for (let i = 0; i < n; i++) {
+    const ground: Side[] = [];
+    if (i % 2 === 0) ground.push("s");
+    // The party wall between this house and the next has a door when this one has the front door.
+    if (i % 2 === 0 && i + 1 < n) ground.push("e");
+    if (i % 2 === 1) ground.push("w");
+    const windows: Side[][] = [i % 2 === 0 ? [] : ["s"]];
+    for (let k = 1; k < floors; k++) windows.push(["s", "n"]);
+    const open: Side[] = [...(i > 0 ? ["w" as const] : []), ...(i + 1 < n ? ["e" as const] : [])];
+    out.push(...tower(x0 + w / 2 + i * w, cz, w, d, floors, { doors: [ground], windows, open }));
+  }
+  return out;
+}
+
+/**
+ * A perimeter wall `h` high round a yard `w` by `d`, with a gap for each gate (`w` wide, at
+ * `at` metres along its side from the middle).
+ */
+function compound(cx: number, cz: number, w: number, d: number, h: number, gates: { side: Side; at?: number; w: number }[]): Box[] {
+  return shell(cx, cz, w, d, 0, h, gates.map((g) => ({ side: g.side, at: g.at, w: g.w, head: h + 1 })), "wall", 0).map((b) => ({ ...b, tint: 1 }));
+}
+
+/**
+ * A round tank `r` metres in radius and `h` high, from crossing boxes (an octagon in steps),
+ * painted plate of `tint`, with a thin ladder up the `ladder` side: a landmark, not a climb.
+ */
+function tank(cx: number, cz: number, r: number, h: number, ladder: Side, tint = 2, y0 = 0): Box[] {
+  const s = r * 0.83;
+  const q = r * 1.42;
+  const out = [box(cx, cz, 2 * r, s, h, "steel", tint, y0), box(cx, cz, s, 2 * r, h, "steel", tint, y0), box(cx, cz, q, q, h, "steel", tint, y0)];
+  // A darker cap.
+  out.push(box(cx, cz, q * 0.8, q * 0.8, h + 0.6, "steel", 1, h));
+  const [dx, dz] = DIR[ladder];
+  const lx = cx + dx * (r + 0.1);
+  const lz = cz + dz * (r + 0.1);
+  out.push(dx !== 0 ? box(lx, lz, 0.2, 0.7, h + 1, "steel", 2, y0 + 1.2) : box(lx, lz, 0.7, 0.2, h + 1, "steel", 2, y0 + 1.2));
+  return out;
+}
+
+/**
+ * An open steel lattice tower `w` by `d`: four corner posts to `top`, a platform with a
+ * stairwell at each of its `floors` storeys reached by flights inside (as `tower()`'s), knee
+ * rails round each platform (the top one's open on the `open` sides), and girders across above.
+ */
+function lattice(cx: number, cz: number, w: number, d: number, floors: number, top: number, open: Side[] = []): Box[] {
+  const out: Box[] = [];
+  const x0 = cx - w / 2;
+  const x1 = cx + w / 2;
+  const z0 = cz - d / 2;
+  const z1 = cz + d / 2;
+  for (const [x, z] of [[x0 + 0.2, z0 + 0.2], [x1 - 0.2, z0 + 0.2], [x0 + 0.2, z1 - 0.2], [x1 - 0.2, z1 - 0.2]]) out.push(box(x, z, 0.4, 0.4, top, "steel", 2));
+  const n = stepsFor(STOREY);
+  const sx1 = x1 - 0.6;
+  const sx0 = sx1 - n * STEP_DEPTH;
+  for (let k = 0; k < floors; k++) {
+    const base = k * STOREY;
+    const lvl = base + STOREY;
+    const [za, zb] = k % 2 === 0 ? [z0 + 0.4, z0 + 1.8] : [z1 - 1.8, z1 - 0.4];
+    for (let j = 0; j < n; j++) {
+      const x = sx1 - (j + 0.5) * STEP_DEPTH;
+      out.push(rect(x - STEP_DEPTH / 2, za, x + STEP_DEPTH / 2, zb, base, base + (STOREY * (j + 1)) / (n + 1), "step", 0));
+    }
+    out.push(...slabWithHole(x0, z0, x1, z1, lvl - 0.3, lvl, sx0, za, sx1, zb).map((b) => ({ ...b, tint: 1 })));
+    // Knee rails round the platform; the top one's are left off the `open` sides (a roof beside it).
+    const rails: [Side, Box][] = [
+      ["n", rect(x0, z0, x1, z0 + 0.15, lvl, lvl + 0.5, "steel", 2)],
+      ["s", rect(x0, z1 - 0.15, x1, z1, lvl, lvl + 0.5, "steel", 2)],
+      ["w", rect(x0, z0, x0 + 0.15, z1, lvl, lvl + 0.5, "steel", 2)],
+      ["e", rect(x1 - 0.15, z0, x1, z1, lvl, lvl + 0.5, "steel", 2)],
+    ];
+    for (const [side, rail] of rails) if (k < floors - 1 || !open.includes(side)) out.push(rail);
+  }
+  // The mast above the top platform, its girders every few metres.
+  for (let y = floors * STOREY + 4; y < top; y += 4) out.push(rect(x0, z0, x1, z0 + 0.25, y - 0.25, y, "steel", 2), rect(x0, z1 - 0.25, x1, z1, y - 0.25, y, "steel", 2));
+  return out;
+}
 
 /** Ground the hand-built boxes stand on, pressed flat to their level (buildTerrain). */
 const FLAT: FlatShape[] = [];
@@ -357,29 +624,29 @@ const POI_FRAMES: Poi[] = [
   {
     id: "supply",
     name: "補給所",
-    x: 0,
+    x: 10,
     z: 50,
-    trigger: 24,
-    entry: { x: 0, z: 74, yaw: 0 },
+    trigger: 36,
+    entry: { x: 4, z: 92, yaw: 0 },
     squads: [
-      // Two squads, one each side of the yard: a fight with one leaves the other a flank to come round.
-      { name: "倉庫", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 25, z: 52, face: W }, { kind: "grunt", x: 18, z: 63, y: 3, face: S }] },
-      { name: "管理棟", members: [{ kind: "grunt", x: -23, z: 50, face: E }, { kind: "charger", x: -16, z: 56, face: E }] },
+      // Two squads, one each side of the depot's yard: a fight with one leaves the other a flank to come round.
+      { name: "倉庫", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 22, z: 45, face: W }, { kind: "grunt", x: 28, z: 66.8, y: STOREY * 2, face: S }] },
+      { name: "管理棟", members: [{ kind: "grunt", x: -20, z: 47, face: E }, { kind: "charger", x: -8, z: 58, face: E }] },
     ],
     bins: [
       { x: -2, z: 54 },
-      { x: 7, z: 61 },
-      { x: -11, z: 41 },
-      { x: -23, z: 47 },
-      { x: 22, z: 52, y: STOREY, vault: true },
+      { x: 8, z: 66 },
+      { x: -11, z: 38 },
+      { x: -22, z: 49 },
+      { x: 20, z: 36.4, y: STOREY, vault: true },
     ],
     keyFrom: "pad",
     loot: { weapon: [["hornet", 1], ["maul", 0], ["lance", 0], ["pike", 1]], armor: [1], heals: 1, valuable: [["fuse", 3], ["parts", 4], ["wire", 2], ["drive", 1]] },
     floor: [
-      { x: 3, z: 66, weapon: ["hornet", 0] },
-      { x: -4, z: 66, heal: "syringe" },
-      { x: -24, z: 49, y: 3.6, armor: 1 },
-      { x: 25, z: 50, y: STOREY * 2, heal: "battery" },
+      { x: 3, z: 76, weapon: ["hornet", 0] },
+      { x: -4, z: 76, heal: "syringe" },
+      { x: -21, z: 48, y: STOREY, armor: 1 },
+      { x: 28, z: 44.5, y: STOREY * 2, heal: "battery" },
     ],
   },
   {
@@ -407,16 +674,16 @@ const POI_FRAMES: Poi[] = [
   {
     id: "relay",
     name: "中継塔",
-    x: 42,
-    z: -28,
-    trigger: 27,
-    entry: { x: 16, z: -23, yaw: 1.4 },
+    x: 40,
+    z: -24,
+    trigger: 36,
+    entry: { x: 4, z: -23, yaw: 1.4 },
     squads: [
-      { name: "中継塔", members: [{ kind: "grunt", x: 41.5, z: -29, y: 5, face: SW }, { kind: "heavy", x: 36, z: -36, face: SW }] },
-      { name: "3 階建て", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 49, z: -10, face: W }, { kind: "grunt", x: 57, z: -20, face: W }, { kind: "charger", x: 34, z: -26, face: SW }] },
+      { name: "中継塔", members: [{ kind: "grunt", x: 40, z: -29.8, y: STOREY * 2, face: SW }, { kind: "heavy", x: 36, z: -36, face: SW }] },
+      { name: "4 階建て", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 49, z: -10, face: W }, { kind: "grunt", x: 57, z: -20, face: W }, { kind: "charger", x: 34, z: -26, face: SW }] },
     ],
     bins: [
-      { x: 33, z: -22 },
+      { x: 31, z: -22 },
       { x: 50, z: -36 },
       { x: 44, z: -16 },
       { x: 48, z: -10, y: STOREY * 2, vault: true },
@@ -424,7 +691,7 @@ const POI_FRAMES: Poi[] = [
     keyFrom: "quarry",
     loot: { weapon: [["pike", 3], ["hornet", 2], ["maul", 2], ["lance", 2], ["talon", 2]], armor: [2, 3], heals: 2, valuable: [["board", 4], ["drive", 2], ["wire", 1], ["gyro", 1]] },
     floor: [
-      { x: 41.5, z: -29, y: 5, weapon: ["lance", 2] },
+      { x: 39.8, z: -30, y: STOREY, weapon: ["lance", 2] },
       { x: 50, z: -12, y: STOREY * 3, armor: 2 },
     ],
   },
@@ -432,15 +699,15 @@ const POI_FRAMES: Poi[] = [
     id: "pad",
     name: "発着場",
     x: 0,
-    z: -68,
-    trigger: 28,
+    z: -72,
+    trigger: 40,
     entry: { x: 0, z: -36, yaw: 0 },
     squads: [{ name: "タイタン", members: [{ kind: "titan", x: 0, z: -76, face: S }, { kind: "drone", x: -8, z: -70 }, { kind: "drone", x: 8, z: -70 }] }],
     bins: [
       { x: -16, z: -56 },
       { x: 16, z: -56 },
-      { x: -32, z: -60, y: STOREY },
-      { x: 32, z: -60, y: STOREY, vault: true },
+      { x: -27, z: -106.5, y: STOREY },
+      { x: 27, z: -106.5, y: STOREY, vault: true },
     ],
     keyFrom: "relay",
     loot: { weapon: [], armor: [3], heals: 2, valuable: [["board", 3], ["drive", 2], ["core", 1]] },
@@ -453,15 +720,15 @@ const POI_FRAMES: Poi[] = [
     name: "難破船",
     x: 0,
     z: 0,
-    trigger: 34,
-    entry: { x: 0, z: 24, yaw: 0 },
+    trigger: 46,
+    entry: { x: 4, z: 26, yaw: 0 },
     squads: [
       // Up high, robots stand at the parapet: seen from the ground below, and seeing it.
-      { name: "甲板", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 30, z: 7.1, y: SHIP_DECK, face: S }, { kind: "heavy", x: 6, z: 6.75, y: SHIP_DECK, face: S }] },
+      { name: "甲板", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 34, z: 7.1, y: SHIP_DECK, face: S }, { kind: "heavy", x: 6, z: 6.75, y: SHIP_DECK, face: S }] },
       {
         name: "浜",
-        members: [{ kind: "grunt", x: -12, z: 16, face: S }, { kind: "grunt", x: -9.5, z: 17, face: S }, { kind: "drone", x: -50, z: 18 }],
-        patrol: [{ x: -50, z: 18 }, { x: 56, z: 18 }, { x: 56, z: -16 }, { x: -50, z: -16 }],
+        members: [{ kind: "grunt", x: -12, z: 16, face: S }, { kind: "grunt", x: -9.5, z: 17, face: S }, { kind: "drone", x: -78, z: 18 }],
+        patrol: [{ x: -78, z: 18 }, { x: 70, z: 18 }, { x: 70, z: -16 }, { x: -78, z: -16 }],
       },
     ],
     bins: [
@@ -469,7 +736,7 @@ const POI_FRAMES: Poi[] = [
       { x: 26, z: -3 },
       { x: -10, z: 4, y: STOREY },
       { x: -36, z: -3, y: SHIP_DECK },
-      { x: 26.5, z: 2, y: SHIP_DECK + STOREY * 2, vault: true },
+      { x: 40.5, z: 2, y: SHIP_DECK + STOREY * 2, vault: true },
     ],
     keyFrom: "smelter",
     loot: { weapon: [["talon", 2], ["lance", 2], ["maul", 2], ["pike", 2]], armor: [2, 3], heals: 2, valuable: [["board", 3], ["drive", 3], ["gyro", 2], ["core", 1]] },
@@ -483,47 +750,47 @@ const POI_FRAMES: Poi[] = [
     name: "コンテナヤード",
     x: 0,
     z: 0,
-    trigger: 30,
-    entry: { x: 8, z: 27, yaw: 0 },
+    trigger: 46,
+    entry: { x: 0, z: 46, yaw: 0 },
     squads: [
-      { name: "クレーン", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 0.35, z: -6, y: CRANE, face: E }, { kind: "heavy", x: -24, z: -13.5, face: E }] },
-      { name: "通路", members: [{ kind: "grunt", x: 20, z: 13.5, face: W }, { kind: "grunt", x: 23, z: 13.5, face: W }] },
+      { name: "クレーン", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 24.35, z: -2, y: CRANE, face: E }, { kind: "heavy", x: 2, z: -13.5, face: E }] },
+      { name: "通路", members: [{ kind: "grunt", x: -20, z: 13.5, face: W }, { kind: "grunt", x: -23, z: 22.5, face: W }] },
     ],
     bins: [
-      { x: -28, z: -13.5 },
+      { x: -30, z: -13.5 },
       { x: 10, z: 13.5 },
-      { x: -41, z: 2 },
-      { x: -7.8, z: -9, y: 2.6 },
-      { x: 1.4, z: 6.5, y: CRANE, vault: true },
+      { x: -70, z: 2 },
+      { x: -6.6, z: -9, y: 2.6 },
+      { x: 25.4, z: 6.5, y: CRANE, vault: true },
     ],
     keyFrom: "wreck",
     loot: { weapon: [["hornet", 2], ["maul", 2], ["pike", 2], ["lance", 1]], armor: [2], heals: 2, valuable: [["wire", 3], ["board", 3], ["drive", 2], ["gyro", 1]] },
     floor: [
       { x: 12, z: -13.5, heal: "battery" },
-      { x: -42, z: 3, y: 3.4, armor: 2 },
+      { x: -70, z: 3, y: 3.4, armor: 2 },
     ],
   },
   {
     id: "smelter",
     name: "製錬所",
-    x: 0,
+    x: 4,
     z: 0,
-    trigger: 32,
-    entry: { x: 2, z: 26, yaw: 0 },
+    trigger: 46,
+    entry: { x: 8, z: 40, yaw: 0 },
     squads: [
-      { name: "制御棟", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 37, z: -2.9, y: STOREY * 3, face: S }, { kind: "grunt", x: 16, z: -2, face: S }] },
-      { name: "炉", members: [{ kind: "heavy", x: -15, z: -1, face: S }, { kind: "charger", x: -26, z: 12, face: E }] },
+      { name: "制御棟", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 41, z: -1.8, y: STOREY * 4, face: S }, { kind: "grunt", x: 16, z: -2, face: S }] },
+      { name: "炉", members: [{ kind: "heavy", x: -18, z: -1, face: S }, { kind: "charger", x: -26, z: 12, face: E }] },
     ],
     bins: [
       { x: -24, z: -3 },
       { x: 21, z: -3 },
-      { x: -20, z: -11.65, y: 5.1 },
+      { x: -24, z: -12.5, y: STOREY * 2 },
       { x: -38, z: 20 },
-      { x: 34, z: -4, y: STOREY * 2, vault: true },
+      { x: 41, z: -4, y: STOREY * 2, vault: true },
     ],
     keyFrom: "yard",
     loot: { weapon: [["pike", 3], ["lance", 2], ["maul", 2], ["talon", 1], ["hornet", 3]], armor: [2, 3], heals: 2, valuable: [["wire", 2], ["gyro", 3], ["drive", 2], ["board", 2], ["reactor", 1]] },
-    floor: [{ x: 34, z: -3, y: STOREY * 3, weapon: ["talon", 2] }],
+    floor: [{ x: 41, z: -6, y: STOREY * 3, weapon: ["talon", 2] }],
   },
 ];
 
@@ -978,59 +1245,236 @@ export const EXTRA_BINS: ExtraBin[] = (
   .concat(HAMLETS.flatMap((h) => h.bins));
 
 
+/** Where the quarry's plant stands in the quarry's frame, and its conveyor's walkway over the pit's west wall. */
+const PLANT = { x: -64, z: -18, floors: 4, belt: STOREY * 2, rim: -95 } as const;
+
 /**
- * The beached cargo ship, in its own frame: a three-storey hull lying east to west on the
- * old bay floor, holed on both sides of its hold, with stairs inside at its stern (east)
- * end up to the main deck, a three-storey bridge house on the deck with its own stairs,
- * a funnel and two masts. The pointed bow is solid.
+ * The quarry, in its own frame: the processing plant at the pit's north-west corner, four
+ * storeys with stairs inside and a stack over its roof, its conveyor run out at its third floor
+ * over the pit's west wall to the rim (the walkway itself is `CONVEYOR`, laid after the ground);
+ * rock shelves and terraces, a catwalk between two scaffold towers, a shed.
+ */
+function quarry(): Box[] {
+  return [
+    ...tower(PLANT.x, PLANT.z, 14, 8, PLANT.floors, { doors: [["s", "e"], [], ["w"], []], windows: [["w"], ["s", "e"], ["s", "e"], ["n", "e", "s", "w"]] }),
+    box(PLANT.x - 4, PLANT.z, 2, 2, PLANT.floors * STOREY + 9, "steel", 0, PLANT.floors * STOREY),
+    // The hopper over the plant's east end, on its legs.
+    ...tank(PLANT.x + 11, PLANT.z - 1, 3, 9, "e", 0, 4),
+    ...[-1, 1].flatMap((sx) => [-1, 1].map((sz) => box(PLANT.x + 11 + sx * 2, PLANT.z - 1 + sz * 2, 0.4, 0.4, 4, "steel", 2))),
+    box(-58, 6, 6, 9, 4.5, "rock"),
+    box(-36, -6, 7, 5, 3.6, "rock"),
+    box(-41, 11, 2.5, 6.2, 2.6, "container", 0),
+    box(-49, 9, 1.2, 1.2, 0.9, "crate"),
+    box(-50.2, 9, 1.2, 1.2, 1.8, "crate"),
+    box(-44, -2, 1.2, 1.2, 0.9, "crate"),
+    box(-55, 18, 10, 0.8, 1.2, "wall"),
+    box(-33, 6, 1.2, 1.2, 0.9, "crate"),
+    box(-63, -8, 8, 8, 2.4, "rock"),
+    ...stairs(-59, -8, "e", 2.4, 2.4, 1),
+    box(-52, -15, 3, 3, 4.0, "tower"),
+    box(-38, -15, 3, 3, 4.0, "tower"),
+    box(-45, -15, 11, 1.2, 4.0, "slab", 0, 3.7),
+    ...stairs(-52, -13.5, "s", 1.6, 4.0),
+    ...stairs(-38, -16.5, "n", 1.6, 4.0),
+    ...building(-62, 24, 6, 6, 3.4, { doors: ["e", "s"], windows: ["n"] }),
+    // the west terraces: two shelves above the pit
+    box(-72, 0, 8, 14, 3, "rock"),
+    box(-73, -4, 4, 6, 5.5, "rock", 1),
+    ...stairs(-68, 3, "e", 2, 3, 1),
+    ...stairs(-71, -3, "e", 1.6, 5.5, 1, 3),
+  ];
+}
+
+/**
+ * The relay station, in its own frame: a walled compound on the mesa round a steel lattice
+ * mast with four railed platforms (its dish hut at the top, seen across the reservoir), the
+ * four-storey equipment block, a generator shed and a fuel tank.
+ */
+function relay(): Box[] {
+  const out: Box[] = [];
+  out.push(...lattice(42, -30, 6, 6, 4, 32), box(42, -30, 2, 2, 33.4, "tower", 1, 32));
+  out.push(...tower(52, -12, 10, 10, 4, { doors: [["w", "s"]], windows: [["e"], ["n", "e", "w"], ["s", "e", "w"], ["n", "e", "s", "w"]] }));
+  out.push(...hall(24, -35, 14, 10, 5.1, { doors: [{ side: "e" }], hatches: [{ side: "s", at: 3 }], steel: 3 }));
+  out.push(...tank(60, -36, 3.5, 7, "w"));
+  out.push(
+    ...compound(38, -22, 52, 40, 2.4, [
+      { side: "w", at: -1, w: 8 },
+      { side: "s", at: -4, w: 8 },
+      { side: "e", at: 2, w: 6 },
+      { side: "n", at: 12, w: 6 },
+    ]),
+  );
+  out.push(...building(28, -12, 7, 6, 3.4, { doors: ["e"], windows: ["s"], roof: "w" }));
+  out.push(
+    box(36, -20, 2.5, 6.2, 2.6, "container", 1),
+    box(60, -26, 2.5, 6.2, 2.6, "container", 2),
+    box(46, -40, 6.2, 2.5, 2.6, "container", 0),
+    box(36, -16, 1.2, 1.2, 0.9, "crate"),
+    box(47.5, -26, 1.2, 1.2, 1.8, "crate"),
+    box(48.7, -26, 1.2, 1.2, 0.9, "crate"),
+    box(55, -31, 4, 0.6, 2.4, "wall"),
+  );
+  // Outside the south side, a hut by the road.
+  out.push(...building(56, 8, 5, 6, 3.4, { doors: ["w"], roof: "n" }));
+  return out;
+}
+
+/**
+ * The landing pad, in its own frame: the open pad ringed by pillars and two raised gantries
+ * for the titan's arena, two hangars behind it to the north with mezzanines and stairs up their
+ * sides to their roofs, and the glazed cab on the control tower (`HIGH_RISES`) west of it.
+ */
+function pad(): Box[] {
+  const out: Box[] = [
+    box(0, -82, 12, 10, 0.25, "pad"),
+    box(-12, -60, 2, 2, 3.8, "wall"),
+    box(12, -60, 2, 2, 3.8, "wall"),
+    box(-17, -74, 2, 2, 3.8, "wall"),
+    box(17, -74, 2, 2, 3.8, "wall"),
+    box(-6, -54, 1.2, 1.2, 0.9, "crate"),
+    box(6, -54, 1.2, 1.2, 0.9, "crate"),
+    box(-21, -64, 1.2, 1.2, 0.9, "crate"),
+    box(21, -64, 1.2, 1.2, 0.9, "crate"),
+    box(22, -71, 4, 8, 2.4, "tower"),
+    ...stairs(20, -71, "w", 2, 2.4),
+    box(-22, -71, 4, 8, 2.4, "tower"),
+    ...stairs(-20, -71, "e", 2, 2.4),
+  ];
+  for (const sx of [-1, 1] as const)
+    out.push(
+      ...hall(sx * 26, -100, 22, 18, 8.5, {
+        doors: [{ side: "s", w: 10 }],
+        hatches: [{ side: sx < 0 ? "e" : "w", at: -4 }],
+        windows: ["n"],
+        mezz: [{ side: "n", depth: 4, y: STOREY, stair: sx * 6 }],
+        columns: 7,
+        roof: sx < 0 ? "w" : "e",
+        steel: 2,
+      }),
+      box(sx * 26, -88, 6.2, 2.5, 2.6, "container", sx < 0 ? 0 : 1),
+    );
+  // The control tower's cab: glass all round on its roof, an aerial over it.
+  const top = PAD_TOWER.floors * STOREY;
+  const holes: Hole[] = SIDES.flatMap((side) => [-2.5, 2.5].map((at) => ({ side, at, w: 3.2, sill: 0.9, head: 2.4 })));
+  out.push(...shell(PAD_TOWER.x, PAD_TOWER.z, 10, 10, top, top + 2.7, holes));
+  out.push(box(PAD_TOWER.x, PAD_TOWER.z, 10.6, 10.6, top + 3.0, "slab", 1, top + 2.7));
+  out.push(box(PAD_TOWER.x + 3, PAD_TOWER.z - 3, 0.3, 0.3, top + 9, "steel", 2, top + 3.0));
+  return out;
+}
+
+/**
+ * The supply depot, in its own frame: a walled yard round a warehouse three storeys high,
+ * one hall inside with mezzanines along two walls, its office block beside it (stairs inside up
+ * to both roofs, which join), a loading dock along its south side with trailers at it, a steel
+ * watchtower in the yard's corner, the admin block outside the west gate, and two feed silos
+ * north of it all that stand over the shore.
+ */
+function supply(): Box[] {
+  const H = STOREY * 3;
+  const out: Box[] = [];
+  out.push(
+    ...hall(16, 44, 28, 20, H, {
+      doors: [{ side: "w", at: -2 }, { side: "s", at: -4, w: 6 }],
+      hatches: [{ side: "n", at: 8 }],
+      windows: ["n", "s"],
+      mezz: [
+        { side: "n", depth: 5, y: STOREY, stair: -6 },
+        { side: "e", depth: 4, y: STOREY * 2, stair: 5, from: -2 },
+      ],
+      columns: 7,
+      open: ["e"],
+    }),
+  );
+  out.push(...tower(34, 44, 8, 10, 3, { doors: [["s", "e"]], windows: [["e"], ["n", "e", "s"], ["n", "e", "s"]], open: ["w"] }));
+  // The loading dock and two trailers backed up to it.
+  out.push(box(14, 56, 22, 4, 1.2, "tower"), ...stairs(3, 56, "w", 3, 1.2), ...stairs(25, 56, "e", 3, 1.2));
+  out.push(box(8, 61.5, 2.5, 6.2, 2.6, "container", 1), box(18, 61.5, 2.5, 6.2, 2.6, "container", 0));
+  // The yard's wall, with a gate on every side.
+  out.push(
+    ...compound(16, 50, 52, 44, 2.4, [
+      { side: "w", at: -4, w: 8 },
+      { side: "s", at: -12, w: 10 },
+      { side: "e", at: 8, w: 6 },
+      { side: "n", at: 10, w: 6 },
+    ]),
+  );
+  out.push(...lattice(28, 68, 5, 5, 2, 12));
+  // In the yard: crates and a stack of containers, and a rock left from clearing it.
+  out.push(box(-2, 46, 6.2, 2.5, 2.6, "container", 0), box(-2, 46, 6.2, 2.5, 5.2, "container", 2, 2.6), box(2, 52, 1.2, 1.2, 0.9, "crate"), box(-6, 62, 1.2, 1.2, 0.9, "crate"), box(-4.8, 62, 1.2, 1.2, 1.8, "crate"));
+  out.push(box(36, 62, 4, 1.2, 1.1, "rock"));
+  // Outside the west gate, the admin block; to the north, the silos; to the south, a hut.
+  out.push(...tower(-18, 46, 12, 10, 2, { doors: [["e", "s"]], windows: [["n", "w"], ["n", "e", "w"]] }));
+  out.push(...tank(-6, 20, 4.5, 20, "s"), ...tank(5, 20, 4.5, 20, "s"));
+  out.push(box(-0.5, 20, 2, 2, 22, "steel", 0, 17));
+  out.push(...building(-12, 82, 6, 5, 3.4, { doors: ["n"], windows: ["e"], roof: "e" }), ...building(-20, 75, 6, 6, 3.4, { doors: ["e"], windows: ["s"] }));
+  out.push(box(14, 86, 4, 3, 1.4, "rock"));
+  return out;
+}
+
+/**
+ * The beached cargo ship, in its own frame: a three-storey hull 112 m long lying east to west on
+ * the old bay floor, holed on both sides of its hold, with stairs inside at both ends up to the
+ * main deck, bulkheads cutting each deck into holds, a three-storey bridge house on the deck
+ * with its own stairs, a funnel and three masts. The pointed bow is solid.
  */
 function wreck(): Box[] {
   const hull = paint(
-    tower(0, 0, 84, 16, 3, { doors: [["s", "n"], [], []], windows: [["e"], ["n", "s"], ["n", "s"]] }),
+    tower(0, 0, 112, 16, 3, { doors: [["s", "n"], [], []], windows: [["e", "w"], ["n", "s"], ["n", "s"]], twin: true }),
     "wall",
     "steel",
     (b) => (b.y0 < STOREY ? 1 : 0),
   );
   const out: Box[] = [...hull];
-  // Bulkheads across the hold and the decks above, each with a door in the middle.
-  for (const x of [-21, 14])
+  // Bulkheads across the holds and the decks above, each with a door in the middle.
+  for (const x of [-35, -14, 14, 35])
     for (let k = 0; k < 3; k++) {
       const y0 = k * STOREY;
       out.push(box(x, -4.5, 0.35, 6.3, y0 + STOREY - 0.3, "steel", 2, y0), box(x, 4.5, 0.35, 6.3, y0 + STOREY - 0.3, "steel", 2, y0));
       out.push(box(x, 0, 0.35, 2.7, y0 + STOREY - 0.3, "steel", 2, y0 + 2.5));
     }
   // The bow, narrowing in steps to a point, and a blunt stern.
-  out.push(box(-44.5, 0, 5, 13, SHIP_DECK + 0.7, "steel", 1), box(-49, 0, 4, 9, SHIP_DECK + 1, "steel", 1), box(-52.5, 0, 3, 4.6, SHIP_DECK + 1.3, "steel", 1));
-  out.push(box(43.5, 0, 3, 14, SHIP_DECK, "steel", 1));
+  out.push(box(-58.5, 0, 5, 13, SHIP_DECK + 0.7, "steel", 1), box(-63, 0, 4, 9, SHIP_DECK + 1, "steel", 1), box(-66.5, 0, 3, 4.6, SHIP_DECK + 1.3, "steel", 1));
+  out.push(box(57.5, 0, 3, 14, SHIP_DECK, "steel", 1));
   // The bridge house and the funnel behind it.
-  const house = tower(30, 0, 12, 12, 3, { doors: [["w", "s"]], windows: [["n"], ["n", "s", "w"], ["n", "s", "w", "e"]] });
+  const house = tower(44, 0, 12, 12, 3, { doors: [["w", "s"]], windows: [["n"], ["n", "s", "w"], ["n", "s", "w", "e"]] });
   out.push(...lift(SHIP_DECK, house));
-  out.push(box(39, 0, 3, 4, SHIP_DECK + 14, "steel", 3, SHIP_DECK), box(39, 0, 3.2, 4.2, SHIP_DECK + 15, "steel", 1, SHIP_DECK + 14));
-  // Cargo hatches on the deck (cover up there), two masts with their cross-trees.
-  out.push(box(-28, 0, 7, 8, SHIP_DECK + 0.9, "steel", 2, SHIP_DECK), box(-12, 0, 7, 8, SHIP_DECK + 0.9, "steel", 2, SHIP_DECK));
-  for (const x of [-20, -2]) out.push(box(x, 0, 0.6, 0.6, SHIP_DECK + 12, "steel", 2, SHIP_DECK), box(x, 0, 0.4, 7, SHIP_DECK + 10.4, "steel", 2, SHIP_DECK + 10));
-  // In the hold: a container and crates that came loose.
-  out.push(box(-31, -3, 6.2, 2.5, 2.6, "container", 0), box(21.5, -3.5, 2.5, 6.2, 2.6, "container", 1), box(-14, 3, 1.2, 1.2, 0.9, "crate"), box(-15.2, 3, 1.2, 1.2, 1.8, "crate"), box(5, -5, 1.2, 1.2, 0.9, "crate"));
+  out.push(box(53, 0, 3, 4, SHIP_DECK + 14, "steel", 3, SHIP_DECK), box(53, 0, 3.2, 4.2, SHIP_DECK + 15, "steel", 1, SHIP_DECK + 14));
+  // Cargo hatches on the deck (cover up there), three masts with their cross-trees.
+  for (const x of [-44, -24, -6]) out.push(box(x, 0, 7, 8, SHIP_DECK + 0.9, "steel", 2, SHIP_DECK));
+  for (const x of [-34, -15, 4]) out.push(box(x, 0, 0.6, 0.6, SHIP_DECK + 12, "steel", 2, SHIP_DECK), box(x, 0, 0.4, 7, SHIP_DECK + 10.4, "steel", 2, SHIP_DECK + 10));
+  // In the holds: containers and crates that came loose.
+  out.push(box(-31, -3, 6.2, 2.5, 2.6, "container", 0), box(21.5, -3.5, 2.5, 6.2, 2.6, "container", 1), box(-19, 3, 1.2, 1.2, 0.9, "crate"), box(-20.2, 3, 1.2, 1.2, 1.8, "crate"), box(5, -5, 1.2, 1.2, 0.9, "crate"));
+  out.push(box(-45, 3.5, 6.2, 2.5, 2.6, "container", 2), box(-45, 3.5, 6.2, 2.5, 5.2, "container", 0, 2.6), box(44, -4, 2.5, 6.2, 2.6, "container", 2));
   // A container fallen onto the deck, and the plates torn out round the breach.
-  out.push(box(-38, 4.5, 6.2, 2.5, SHIP_DECK + 2.6, "container", 2, SHIP_DECK));
+  out.push(box(-36, 4.6, 6.2, 2.5, SHIP_DECK + 2.6, "container", 2, SHIP_DECK));
   out.push(box(3.8, 10, 2, 1.4, 1.0, "rock", 1), box(-4.2, 10.6, 1.6, 1.2, 0.7, "rock"));
   return out;
 }
 
-/** Container stacks in the yard: per row, the heights of the stacks along it (0 = an alley). */
-const YARD_X = [-36.2, -29.8, -23.4, -14.2, -7.8, 7.8, 14.2, 23.4, 29.8, 36.2];
+/**
+ * Container stacks in the yard: per row (its z), the heights of the stacks at each of `YARD_X`
+ * (0 = an alley across). Three blocks of columns, split by the two lanes the gantries straddle.
+ */
+const YARD_X = [-57.2, -50.8, -44.4, -38, -31.6, -13, -6.6, 6.6, 13, 31.6, 38, 44.4, 50.8, 57.2];
 const YARD_ROWS: [number, number[]][] = [
-  [-18, [2, 3, 2, 1, 2, 2, 3, 1, 2, 3]],
-  [-9, [1, 2, 3, 2, 1, 1, 2, 3, 2, 1]],
-  [9, [3, 2, 1, 2, 2, 1, 2, 2, 3, 2]],
-  [18, [2, 1, 2, 3, 2, 2, 1, 2, 2, 3]],
+  [-27, [1, 2, 0, 2, 1, 2, 0, 0, 0, 2, 0, 3, 2, 1]],
+  [-18, [2, 3, 2, 1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2]],
+  [-9, [1, 2, 3, 0, 1, 2, 1, 2, 2, 3, 0, 2, 1, 2]],
+  [9, [3, 2, 1, 2, 2, 1, 2, 2, 1, 2, 3, 1, 2, 3]],
+  [18, [2, 1, 0, 3, 2, 2, 3, 1, 2, 2, 1, 0, 2, 1]],
+  [27, [1, 2, 3, 1, 0, 1, 2, 0, 0, 0, 2, 3, 1, 2]],
 ];
+/** The two gantries: the lanes' middles, and where each cab sits along its catwalk. */
+const GANTRIES = [
+  { x: -24, cab: -6 },
+  { x: 24, cab: 6.5 },
+] as const;
 
 /**
- * The container yard, in its own frame: four rows of stacked containers with an aisle
- * down the middle and alleys across, and a gantry crane over the aisle. One leg of the
- * crane is a stair tower to the catwalk along its top; the driver's cab sits on the
- * catwalk, and a boom runs over all of it.
+ * The container yard, in its own frame: six rows of stacked containers in three blocks with a
+ * lane down between each pair of blocks and alleys across, a gantry crane over each lane (one
+ * leg a stair tower up to the catwalk along its top, the driver's cab on the catwalk), and the
+ * yard office at its west end.
  */
 function yard(): Box[] {
   const out: Box[] = [];
@@ -1039,44 +1483,55 @@ function yard(): Box[] {
       for (let k = 0; k < n; k++) out.push(box(YARD_X[i], z, 6.2, 2.5, 2.6 * (k + 1), "container", (r + i + k) % 3, 2.6 * k));
     }),
   );
-  out.push(...paint(tower(0, -22, 8, 8, 4, { doors: [["e", "w"]], windows: [[], ["e"], ["w"], ["e", "w"]], open: ["s"] }), "wall", "steel", () => 0, (b) => b.tint === 0));
-  // The catwalk from the tower's roof to the far leg, railed both sides, round the cab.
-  out.push(rect(-1.2, -18, 1.2, 22, CRANE - 0.3, CRANE, "slab", 1));
-  // Railings knee-high, so the catwalk's guard is seen from the yard below.
-  for (const [z0, z1] of [[-18, 4], [9, 22]] as const) out.push(rect(-1.25, z0, -1.0, z1, CRANE, CRANE + 0.5, "steel", 0), rect(1.0, z0, 1.25, z1, CRANE, CRANE + 0.5, "steel", 0));
-  out.push(rect(-2.5, 4, 2.5, 9, CRANE - 0.3, CRANE, "slab", 1));
-  out.push(...walls(0, 6.5, 5, 5, CRANE, CRANE + 2.5, ["n", "s"], ["e", "w"]).map((b) => ({ ...b, kind: "steel" as const, tint: 3 })));
-  out.push(rect(-2.5, 4, 2.5, 9, CRANE + 2.5, CRANE + 2.8, "slab", 1));
-  out.push(box(0, 23.5, 3, 3, CRANE, "steel", 0));
-  out.push(box(0, 6, 1.4, 70, CRANE + 4.4, "steel", 0, CRANE + 3.6));
-  // The yard office, with stairs up to its roof.
-  out.push(...building(-42, 2, 7, 6, 3.4, { doors: ["e", "s"], windows: ["n"], roof: "w" }));
-  out.push(box(-30, 24, 1.2, 1.2, 0.9, "crate"), box(30, -25, 1.2, 1.2, 1.8, "crate"));
+  for (const g of GANTRIES) out.push(...gantry(g.x, -32, 32, CRANE, g.cab));
+  // The yard office, with stairs up to its roof, and a reefer stack by it.
+  out.push(...building(-70, 2, 8, 7, 3.4, { doors: ["e", "s"], windows: ["n"], roof: "w" }));
+  out.push(box(-70, 14, 2.5, 6.2, 2.6, "container", 1), box(-70, 14, 2.5, 6.2, 5.2, "container", 2, 2.6));
+  out.push(box(-4, 38, 1.2, 1.2, 0.9, "crate"), box(64, -36, 1.2, 1.2, 1.8, "crate"));
   return out;
 }
 
 /**
- * The smelter, in its own frame: two tall halls joined at roof height by a bridge, a
- * three-storey control block bridged to the second hall, and a chimney that can be
- * seen from anywhere in the harbor. The first hall has a catwalk inside and outside
- * stairs up to its roof, so the roofs make one high way across the works.
+ * The smelter, in its own frame: a furnace hall and a casting hall four storeys high, joined at
+ * roof height by a railed bridge, the four-storey control block bridged to the casting hall,
+ * and an open stair tower up the furnace hall's west end, so the roofs make one high way across
+ * the works. Two chimneys stand over it all, seen from anywhere in the harbor.
  */
 function smelter(): Box[] {
-  const H = STOREY * 3;
+  const H = STOREY * 4;
   const out: Box[] = [];
-  out.push(...building(-18, -6, 20, 14, H, { doors: ["s", "w"], windows: ["n", "e"], roof: "s", open: ["e"] }));
-  out.push(rect(-27.65, -12.65, -8.35, -10.65, 4.8, 5.1, "slab"), ...stairs(-12, -10.65, "s", 1.4, 5.1));
-  out.push(box(-20, -4, 5, 5, 4.2, "steel", 2));
-  out.push(...building(16, -6, 18, 14, H, { doors: ["s", "e"], windows: ["n", "w"], open: ["w", "e"] }));
-  out.push(box(12, -9, 3, 3, 2.4, "steel", 2), box(20, -9, 3, 3, 2.4, "steel", 2));
-  out.push(...tower(36, -6, 8, 8, 3, { doors: [["w", "s"]], windows: [["e"], ["n", "w", "s"], ["n", "w", "s"]], open: ["w"] }));
+  out.push(
+    ...hall(-28, -6, 28, 18, H, {
+      doors: [{ side: "s", at: -4, w: 6 }],
+      hatches: [{ side: "e", at: 4 }, { side: "w", at: 4 }],
+      windows: ["n", "s"],
+      mezz: [{ side: "n", depth: 4, y: STOREY * 2, stair: 8 }],
+      columns: 7,
+      open: ["w", "e"],
+    }),
+  );
+  out.push(box(-34, -8, 6, 6, 5.1, "steel", 2), box(-34, -8, 3, 3, H - 0.3, "steel", 3, 5.1));
+  out.push(...lattice(-44.5, -6, 5, 5, 4, H + 2, ["e"]));
+  out.push(
+    ...hall(14, -6, 26, 18, H, {
+      doors: [{ side: "s", w: 6 }],
+      hatches: [{ side: "e", at: 5 }],
+      windows: ["n", "s"],
+      columns: 6.5,
+      open: ["w", "e"],
+    }),
+  );
+  out.push(box(10, -9, 3, 3, 2.4, "steel", 2), box(18, -9, 3, 3, 2.4, "steel", 2));
+  out.push(...tower(44, -6, 10, 10, 4, { doors: [["w", "s"]], windows: [["e"], ["n", "w", "s"], ["n", "w", "s"], ["n", "e", "s"]], open: ["w"] }));
   // Roof bridges, railed.
-  for (const [x0, x1] of [[-8, 7], [25, 32]] as const) out.push(bridge(x0, -7, x1, -5, H), rect(x0, -7, x1, -6.8, H, H + 0.8, "wall", 1), rect(x0, -5.2, x1, -5, H, H + 0.8, "wall", 1));
-  // The chimney with its rusted top, and a pipe across to the first hall.
-  out.push(box(-2, 12, 4, 4, 26, "tower"), box(-2, 12, 4.2, 4.2, 32, "steel", 0, 26));
-  out.push(box(-2, 5.5, 1, 9, 8, "steel", 2, 7));
-  // Slag heaps.
-  out.push(box(-32, 16, 7, 5, 2.6, "rock", 1), box(-22, 22, 5, 4, 1.8, "rock"), box(26, 18, 6, 4, 2.2, "rock", 1));
+  for (const [x0, x1] of [[-14, 1], [27, 39]] as const) out.push(bridge(x0, -7, x1, -5, H), rect(x0, -7, x1, -6.8, H, H + 0.8, "wall", 1), rect(x0, -5.2, x1, -5, H, H + 0.8, "wall", 1));
+  // The chimneys with their rusted tops, and a pipe from each across to the halls.
+  out.push(box(-6, 14, 4, 4, 34, "tower"), box(-6, 14, 4.2, 4.2, 40, "steel", 0, 34));
+  out.push(box(6, 17, 3.4, 3.4, 28, "tower"), box(6, 17, 3.6, 3.6, 33, "steel", 0, 28));
+  out.push(box(-6, 7.5, 1, 9, 9, "steel", 2, 8), box(6, 9, 1, 12, 10, "steel", 2, 9));
+  // A fuel tank, and slag heaps.
+  out.push(...tank(58, 14, 4, 9, "w", 0));
+  out.push(box(-50, 16, 7, 5, 2.6, "rock", 1), box(-30, 24, 5, 4, 1.8, "rock"), box(34, 20, 6, 4, 2.2, "rock", 1));
   return out;
 }
 
@@ -1194,90 +1649,10 @@ const RAILWAY: Box[] = [
 const AUTHORED: Box[] = [
   ...HARBOR,
   ...HAMLETS.flatMap((h) => h.boxes),
-  // --- 補給所: containers, an office with a roof, a two-storey warehouse, a lookout platform, a loading deck
-  ...onLevel(LEVEL.shore, place(AT[0][0], AT[0][1], [
-    box(-9, 46, 6.2, 2.5, 2.6, "container", 0),
-    box(10, 55, 2.5, 6.2, 2.6, "container", 1),
-    box(-3, 60, 1.2, 1.2, 0.9, "crate"),
-    box(4.5, 44, 1.2, 1.2, 0.9, "crate"),
-    box(5.7, 44, 1.2, 1.2, 1.8, "crate"),
-    box(13, 41, 8, 0.6, 3.2, "wall"),
-    box(16.7, 44.5, 0.6, 7.6, 3.2, "wall"),
-    box(-14, 56, 0.6, 6, 2.2, "wall"),
-    box(-6, 38, 4, 1.2, 1.1, "rock"),
-    box(2, 52, 1.2, 1.2, 0.9, "crate"),
-    ...building(-23, 48, 8, 10, 3.6, { doors: ["e", "s"], windows: ["n", "w"], roof: "s" }),
-    ...tower(24, 50, 8, 8, 2, { doors: [["w", "s"]], windows: [["e"], ["n", "e", "w"]] }),
-    box(18, 63, 3, 3, 3.0, "tower"),
-    ...stairs(18, 64.5, "s", 1.4, 3.0),
-    box(6, 30, 12, 5, 1.2, "tower"),
-    ...stairs(2, 32.5, "s", 3, 1.2),
-    ...stairs(10, 27.5, "n", 3, 1.2),
-    // south of the yard: a hut with the first bin
-    ...building(-12, 82, 6, 5, 3.4, { doors: ["n"], windows: ["e"], roof: "e" }),
-    box(14, 76, 4, 3, 1.4, "rock"),
-  ])),
-  // --- 採掘場: rock shelves, terraces, a catwalk between two scaffold towers, a shed
-  ...onLevel(LEVEL.pit, place(AT[1][0], AT[1][1], [
-    box(-58, 6, 6, 9, 4.5, "rock"),
-    box(-36, -6, 7, 5, 3.6, "rock"),
-    box(-41, 11, 2.5, 6.2, 2.6, "container", 0),
-    box(-49, 9, 1.2, 1.2, 0.9, "crate"),
-    box(-50.2, 9, 1.2, 1.2, 1.8, "crate"),
-    box(-44, -2, 1.2, 1.2, 0.9, "crate"),
-    box(-55, 18, 10, 0.8, 1.2, "wall"),
-    box(-33, 6, 1.2, 1.2, 0.9, "crate"),
-    box(-63, -8, 8, 8, 2.4, "rock"),
-    ...stairs(-59, -8, "e", 2.4, 2.4, 1),
-    box(-52, -15, 3, 3, 4.0, "tower"),
-    box(-38, -15, 3, 3, 4.0, "tower"),
-    box(-45, -15, 11, 1.2, 4.0, "slab", 0, 3.7),
-    ...stairs(-52, -13.5, "s", 1.6, 4.0),
-    ...stairs(-38, -16.5, "n", 1.6, 4.0),
-    ...building(-62, 24, 6, 6, 3.4, { doors: ["e", "s"], windows: ["n"] }),
-    // the west terraces: two shelves above the pit
-    box(-72, 0, 8, 14, 3, "rock"),
-    box(-73, -4, 4, 6, 5.5, "rock", 1),
-    ...stairs(-68, 3, "e", 2, 3, 1),
-    ...stairs(-71, -3, "e", 1.6, 5.5, 1, 3),
-  ])),
-  // --- 中継塔: a two-tier tower, a three-storey block, huts with roofs, containers around
-  ...onLevel(LEVEL.mesa, place(AT[2][0], AT[2][1], [
-    box(42, -28, 5, 5, 3.4, "tower", 1),
-    box(41.5, -29, 3, 3, 5.0, "tower"),
-    box(41.5, -25.8, 3, 0.6, 3.8, "step"),
-    box(41.5, -26.4, 3, 0.6, 4.2, "step"),
-    box(41.5, -27.0, 3, 0.6, 4.6, "step"),
-    box(42, -24.9, 1.2, 1.2, 2.6, "crate"),
-    box(43.2, -24.9, 1.2, 1.2, 1.8, "crate"),
-    box(44.4, -24.9, 1.2, 1.2, 0.9, "crate"),
-    box(31, -32, 2.5, 6.2, 2.6, "container", 1),
-    box(53, -24, 2.5, 6.2, 2.6, "container", 2),
-    box(40, -41, 6.2, 2.5, 2.6, "container", 0),
-    box(36, -18, 1.2, 1.2, 0.9, "crate"),
-    box(49, -33, 4, 0.6, 2.4, "wall"),
-    ...building(30, -18, 6, 5, 3.4, { doors: ["e"], windows: ["s"], roof: "w" }),
-    ...building(57, -37, 5, 6, 3.4, { doors: ["w"], roof: "n" }),
-    ...tower(50, -12, 8, 8, 3, { doors: [["w", "s"]], windows: [["e"], ["n", "e", "w"], ["s", "e", "w"]] }),
-  ])),
-  // --- 発着場: open pad ringed by pillars, raised gantries, two control rooms
-  ...onLevel(LEVEL.dam, place(AT[3][0], AT[3][1], [
-    box(0, -82, 12, 10, 0.25, "pad"),
-    box(-12, -60, 2, 2, 3.8, "wall"),
-    box(12, -60, 2, 2, 3.8, "wall"),
-    box(-17, -74, 2, 2, 3.8, "wall"),
-    box(17, -74, 2, 2, 3.8, "wall"),
-    box(-6, -54, 1.2, 1.2, 0.9, "crate"),
-    box(6, -54, 1.2, 1.2, 0.9, "crate"),
-    box(-21, -64, 1.2, 1.2, 0.9, "crate"),
-    box(21, -64, 1.2, 1.2, 0.9, "crate"),
-    box(22, -71, 4, 8, 2.4, "tower"),
-    ...stairs(20, -71, "w", 2, 2.4),
-    box(-22, -71, 4, 8, 2.4, "tower"),
-    ...stairs(-20, -71, "e", 2, 2.4),
-    ...tower(-32, -60, 8, 8, 2, { doors: [["e", "s"]], windows: [["w"], ["n", "e", "w"]] }),
-    ...tower(32, -60, 8, 8, 2, { doors: [["w", "s"]], windows: [["e"], ["n", "e", "w"]] }),
-  ])),
+  ...onLevel(LEVEL.shore, place(AT[0][0], AT[0][1], supply())),
+  ...onLevel(LEVEL.pit, place(AT[1][0], AT[1][1], quarry())),
+  ...onLevel(LEVEL.mesa, place(AT[2][0], AT[2][1], relay())),
+  ...onLevel(LEVEL.dam, place(AT[3][0], AT[3][1], pad())),
 
   // --- 旧市街: a clock tower joined to two houses by bridges at 6.8 m, shops around two streets
   ...onLevel(LEVEL.lakebed, placeIn("heart", [
@@ -1634,6 +2009,22 @@ buildTerrain([
   }),
 ]);
 
+/**
+ * The quarry plant's conveyor walkway: from the plant's third floor west over the pit's wall to
+ * the rim, with steps down to the ground there. It is not pressed flat (the pit's wall runs under
+ * it), so it is laid once the ground is, and its steps reach the rim's height.
+ */
+const CONVEYOR: Box[] = (() => {
+  const [qx, qz] = AT[1];
+  const y = LEVEL.pit + PLANT.belt;
+  const x0 = qx + PLANT.rim;
+  const x1 = qx + PLANT.x - 7;
+  const z = qz + PLANT.z;
+  const ground = terrainHeight(x0 - 0.5, z);
+  // The belt itself runs beside the walkway, on its north side, from the plant's floor out over the wall.
+  return [...catwalk(x0, z, x1, z, y, 1.8), rect(x0 + 3, z - 2.1, x1, z - 0.95, y - 0.6, y + 0.2, "steel", 2), ...(y - ground > 0.4 ? stairs(x0, z, "w", 1.8, y, 0, ground) : [])];
+})();
+
 // The canyon floors pay for the detour: a bin under each bridge.
 for (const { x, z, table } of [at("heart", { x: 55, z: -112, table: "relay" as const }), at("railway", { x: 127, z: -192, table: "smelter" as const })])
   EXTRA_BINS.push({ x, z, y: terrainHeight(x, z), table });
@@ -1652,7 +2043,7 @@ export const DEPOTS: Depot[] = POIS.map((p) => {
   return { poi: p.id, x: at.x, y: at.y, z: at.z, yaw: Math.atan2(p.x - at.x, -(p.z - at.z)) };
 });
 
-export const BOXES: Box[] = [...AUTHORED, ...BRIDGE, ...RAILWAY, ...QUAY, ...scatterCover([...AUTHORED, ...BRIDGE, ...RAILWAY, ...QUAY], KEEP)];
+export const BOXES: Box[] = [...AUTHORED, ...BRIDGE, ...RAILWAY, ...QUAY, ...CONVEYOR, ...scatterCover([...AUTHORED, ...BRIDGE, ...RAILWAY, ...QUAY, ...CONVEYOR], KEEP)];
 
 /** The bridge deck's height at (x, z) when it lies on a deck that path finding walks (DECKS), else null. */
 export function deckAt(x: number, z: number): number | null {
