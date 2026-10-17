@@ -27,7 +27,8 @@ await mkdir("shots", { recursive: true });
 
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH ?? "/opt/pw-browsers/chromium" });
 const errors = [];
-const until = Number(process.argv[2] ?? 2);
+// With no room argument the gate plays the whole run, so a bare `npm run shots` covers every room.
+const until = Number(process.argv[2] ?? Infinity);
 const modes = (process.argv[3] ?? "3d,2d").split(",");
 const sizes = modes.map((mode) => ({ name: mode, mode, width: 1280, height: 720 }));
 

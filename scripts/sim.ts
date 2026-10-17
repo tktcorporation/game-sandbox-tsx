@@ -91,7 +91,8 @@ for (const k of SKILLS) {
         }
         if ((s.tick - roomStartTick) * TICK > 600) throw new Error(`stuck in room ${room + 1} for 600 s (${k.name}, run ${r})`);
       }
-      if (s.phase === "done") {
+      if (s.phase !== "done") throw new Error(`run never finished within 15 min (${k.name}, run ${r}, room ${s.room + 1})`);
+      {
         finished++;
         hits += s.hitsTaken;
         shotsHit += s.hits;
