@@ -1280,6 +1280,8 @@ export class World {
       chunks: this.chunks.filter((c) => c.group.visible).length,
       built: this.chunks.filter((c) => c.built).length,
       of: this.chunks.length,
+      tier: this.tierNow,
+      ratio: this.renderer.getPixelRatio(),
       /** Average milliseconds a chunk took to build, over every build so far. */
       fillMs: this.filled.n ? +(this.filled.ms / this.filled.n).toFixed(1) : 0,
     };

@@ -274,6 +274,16 @@ const lap = (name) => {
   await step(200);
   await page.screenshot({ path: `${out}/m8-map-harbor.png` });
   console.log(`mobile harbor frame: ${JSON.stringify(await page.evaluate(() => window.ringfallFrameCost(20)))}`);
+  // The same view drawn at the cheaper tiers: what the governor falls back to on a phone that
+  // cannot hold 60 fps. Logged only; software drawing's times say nothing absolute.
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: bb.x + bb.width / 2, y: bb.y + bb.height / 2, id: 1 }] });
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  for (const tier of ["high", "medium", "low"]) {
+    await page.evaluate((t) => window.ringfallQuality(t), tier);
+    await step(100);
+    console.log(`mobile harbor frame (${tier}): ${JSON.stringify(await page.evaluate(() => window.ringfallFrameCost(20)))}`);
+    await page.screenshot({ path: `${out}/m9-harbor-${tier}.png` });
+  }
   await ctx.close();
   lap("phone, harbor");
 }

@@ -17,7 +17,7 @@ import { Soundscape } from "./view/soundscape";
 import { setupSoundCheck } from "./view/soundcheck";
 import { Hud } from "./view/hud";
 import { World } from "./view/world";
-import { Governor, loadChoice, pickTier, QUALITY, saveChoice, type Level, type QualityChoice } from "./view/quality";
+import { Governor, loadChoice, pickTier, QUALITY, saveChoice, type Level, type QualityChoice, type Tier } from "./view/quality";
 import { blockPageZoom, setupTouch } from "./touch";
 import "./style.css";
 
@@ -428,7 +428,8 @@ declare global {
     ringfallDownAlly: () => void;
     ringfallChargeUlt: () => void;
     ringfallCamera: (x?: number, y?: number, z?: number, yaw?: number, pitch?: number) => void;
-    ringfallFrameCost: (frames: number) => { ms: number; calls: number; triangles: number; chunks: number; built: number; of: number };
+    ringfallFrameCost: (frames: number) => { ms: number; syncMs: number; calls: number; triangles: number; chunks: number; built: number; of: number; tier: Tier; ratio: number; fillMs: number };
+    ringfallQuality: (tier?: Tier) => { tier: Tier; ratio: number };
     ringfallTerrain: (x: number, z: number) => number;
     ringfallFrames: () => Record<string, { x: number; z: number }>;
     ringfallPlace: (x: number, z: number, yaw: number) => void;
@@ -514,11 +515,28 @@ window.ringfallChargeUlt = () => {
 /** Automation only: knock the teammate down, to check picking it up. */
 window.ringfallDownAlly = () => hurtAlly(state, 9999);
 
-/** Automation only: draws `frames` frames as they stand and reports the average time and the last frame's cost. */
+/**
+ * Automation only: draws `frames` frames as they stand and reports the average time and the last
+ * frame's cost, with the tier and pixel ratio drawn at. `ms` is the time to issue a frame; `syncMs`
+ * also waits for the GPU to finish them (a pixel read back at the end), so it includes the drawing.
+ */
 window.ringfallFrameCost = (frames: number) => {
   const t0 = performance.now();
   for (let i = 0; i < frames; i++) world.render(state, 1 / 60);
-  return { ms: +((performance.now() - t0) / frames).toFixed(1), ...world.stats() };
+  const t1 = performance.now();
+  const gl = world.renderer.getContext();
+  gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+  const t2 = performance.now();
+  return { ms: +((t1 - t0) / frames).toFixed(1), syncMs: +((t2 - t0) / frames).toFixed(1), ...world.stats() };
+};
+
+/** Automation only: draws at `tier` from now on, its resolution pinned at its start (the governor stays off under automation). */
+window.ringfallQuality = (tier) => {
+  if (tier) {
+    governor = new Governor(tier, devicePixelRatio, true);
+    applyLevel(governor.level);
+  }
+  return { tier: world.tier, ratio: world.renderer.getPixelRatio() };
 };
 
 /** Automation only: where each POI, hamlet and area is written round, to place the screenshot cameras in their frames. */
