@@ -14,6 +14,33 @@ import { PAL, RARITY_COLOR, SCOPE_IN, buildAlly, buildBin, buildBoat, buildBox, 
  */
 
 const EYE_LERP = 12;
+
+/**
+ * The view is set by its horizontal angle, as shooters' settings are: about 90° across, so the
+ * world reads at a human scale rather than pulled back. A wide phone gets a little more across
+ * (up to 95°) instead of a slot; a tall window is held to 70° up and down, narrowing it across.
+ */
+const VIEW = { across: 90, wideAcross: 95, wideAspect: 2.2, maxUp: 70 } as const;
+/**
+ * The vertical hip view the weapons' `adsFov` and the sprint, leap and kick widenings are
+ * written against: aiming zooms by the ratio of their half-angles' tangents to it, whatever
+ * the screen's own hip view.
+ */
+const FOV_REF = 74;
+const tanHalf = (deg: number) => Math.tan((deg * Math.PI) / 360);
+const atanDeg = (t: number) => (Math.atan(t) * 360) / Math.PI;
+
+/** Vertical hip view (degrees) for a screen of this aspect (width / height). */
+export function hipFov(aspect: number): number {
+  const wide = Math.max(0, Math.min(1, (aspect - 16 / 9) / (VIEW.wideAspect - 16 / 9)));
+  const across = VIEW.across + (VIEW.wideAcross - VIEW.across) * wide;
+  return Math.min(VIEW.maxUp, atanDeg(tanHalf(across) / aspect));
+}
+
+/** How much a sight written as `adsFov` (against FOV_REF) narrows the view: under 1, the share of it left. */
+export const sightZoom = (adsFov: number) => tanHalf(adsFov) / tanHalf(FOV_REF);
+/** The view `fov` narrowed by aiming through a sight written as `adsFov`. */
+const zoomedFov = (fov: number, adsFov: number) => atanDeg(tanHalf(fov) * sightZoom(adsFov));
 /** How far past the world's bounds the terrain mesh reaches: far enough to fill the horizon. */
 const HORIZON = 235;
 /** Side of the square chunks the world's ground and buildings are drawn and culled in. */
@@ -222,7 +249,7 @@ interface Tracer {
 export class World {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
-  readonly camera = new THREE.PerspectiveCamera(72, 16 / 9, 0.05, 900);
+  readonly camera = new THREE.PerspectiveCamera(hipFov(16 / 9), 16 / 9, 0.05, 900);
   private gunScene = new THREE.Scene();
   private gunCam = new THREE.PerspectiveCamera(55, 16 / 9, 0.01, 10);
   private sun = new THREE.DirectionalLight(0xfff1d6, 2.2);
@@ -601,6 +628,7 @@ export class World {
   resize(w: number, h: number) {
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
+    this.camera.fov = hipFov(w / h);
     this.camera.updateProjectionMatrix();
     this.gunCam.aspect = w / h;
     this.gunCam.updateProjectionMatrix();
@@ -852,10 +880,13 @@ export class World {
     this.camera.position.set(p.pos.x, p.pos.y + this.eyeY + bobY - this.landDip, p.pos.z);
     this.camera.rotation.set(p.pitch + (p.recoil * Math.PI) / 180 + shakeY, -(p.yaw + (p.recoilYaw * Math.PI) / 180) + shakeX, p.sliding ? -0.04 : 0, "YXZ");
     const spec = w0 ? WEAPONS[w0.kind] : WEAPONS.pike;
-    const baseFov = 74 + (p.sprinting ? 4 : 0) + (p.leap ? 10 : 0);
-    const fovTarget = baseFov + (spec.adsFov - 74) * p.ads;
+    // Widenings are written in degrees of the reference view and scaled to this screen's.
+    const hip = hipFov(this.camera.aspect);
+    const per = hip / FOV_REF;
+    const baseFov = hip + ((p.sprinting ? 4 : 0) + (p.leap ? 10 : 0)) * per;
+    const fovTarget = baseFov + (zoomedFov(baseFov, spec.adsFov) - baseFov) * p.ads;
     this.fovKick *= Math.exp(-dt * 2.2);
-    const fov = fovTarget + this.fovKick;
+    const fov = fovTarget + this.fovKick * per;
     if (Math.abs(this.camera.fov - fov) > 0.01) {
       this.camera.fov += (fov - this.camera.fov) * Math.min(1, dt * 14);
       this.camera.updateProjectionMatrix();
