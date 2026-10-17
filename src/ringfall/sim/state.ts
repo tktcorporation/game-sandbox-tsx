@@ -437,6 +437,8 @@ export interface State {
   depots: boolean[];
   /** Valuables sent home from a depot this raid: they reach the stash however the raid ends. */
   sent: ValuableKind[];
+  /** Credits' worth sent home through each depot this raid, by place in `DEPOTS`: it levels that depot (`DEPOT.levels`). */
+  sentVia: number[];
   /** Leaving at a depot: which one, and the seconds still to stand there. */
   leaving: { depot: number; t: number } | null;
   /** The depot the raid ended at, if it ended at one. */
@@ -653,6 +655,7 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
     extractedAt: null,
     depots: DEPOTS.map((d) => !!start.depots?.includes(d.poi)),
     sent: [],
+    sentVia: DEPOTS.map(() => 0),
     leaving: null,
     leftAt: null,
     seen: start.seen ? decodeSeen(start.seen) : emptySeen(),

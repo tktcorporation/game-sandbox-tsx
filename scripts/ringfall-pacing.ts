@@ -15,7 +15,7 @@ import { build, buy, canBuild, deliver, deliverable, newProfile, pouch, sell, se
 import { offered } from "../src/ringfall/meta/quests";
 
 /** What settle() reads of a raid, kept from each bot run. */
-export type RaidRecord = Pick<State, "outcome" | "extractedAt" | "region" | "time" | "stats" | "sent" | "depots" | "seen"> & {
+export type RaidRecord = Pick<State, "outcome" | "extractedAt" | "region" | "time" | "stats" | "sent" | "sentVia" | "depots" | "seen"> & {
   player: Pick<State["player"], "weapons" | "armor" | "heals" | "lentHeals" | "haul" | "keys">;
 };
 
@@ -26,6 +26,7 @@ export const recordOf = (s: State): RaidRecord => ({
   time: s.time,
   stats: structuredClone(s.stats),
   sent: [...s.sent],
+  sentVia: [...s.sentVia],
   depots: [...s.depots],
   seen: [...s.seen],
   player: structuredClone({ weapons: s.player.weapons, armor: s.player.armor, heals: s.player.heals, lentHeals: s.player.lentHeals, haul: s.player.haul, keys: s.player.keys }),

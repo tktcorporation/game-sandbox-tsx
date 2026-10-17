@@ -1257,6 +1257,36 @@ body.touch .mate-bars {
   font-weight: 400;
   font-size: 14px;
 }
+/* A depot start's allowance, teal like the depot's start button; red once the loadout is over it. */
+.hub-list .slot.depot {
+  flex-wrap: wrap;
+  row-gap: 2px;
+  box-shadow: inset 3px 0 0 var(--mate);
+}
+.hub-list .slot.depot span b {
+  margin-left: 12px;
+  font-family: var(--num);
+  font-size: 22px;
+}
+.hub-list .slot.depot > small:last-child {
+  flex-basis: 100%;
+  padding-left: calc(7em + 12px);
+  color: var(--muted);
+  font-weight: 400;
+}
+.hub-list .slot.depot.over {
+  box-shadow: inset 3px 0 0 var(--ring);
+}
+.hub-list .slot.depot.over span b,
+.hub-list .slot.depot.over > small:last-child {
+  color: var(--ring);
+  font-weight: 800;
+}
+/* What a pick costs of a depot start's allowance. */
+#hub .item b.cost {
+  color: var(--mate-light);
+  font-size: 15px;
+}
 /* The hideout: a card per module, opened to show what its next level takes. */
 .hub-list .mod {
   background: var(--plate);

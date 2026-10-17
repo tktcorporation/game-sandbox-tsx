@@ -1,5 +1,5 @@
-import { HEALS as HEAL_SPECS, HIDEOUT, META, VALUABLES, type HealKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
-import { DEPOTS, POIS, poiIndex, REGIONS, type PoiId, type RegionId } from "../sim/map";
+import { DEPOT, HEALS as HEAL_SPECS, HIDEOUT, META, VALUABLES, type HealKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
+import { depotIndex, DEPOTS, POIS, poiIndex, REGIONS, type PoiId, type RegionId } from "../sim/map";
 import { encodeSeen, type Kit, type State } from "../sim/state";
 import { craftDone, emptyHideout, infirmaryHeals, MODULES, nextLevel, onSale, pouchSlots, shopRarity, stashCap, stillNeeded, unmet, type Hideout } from "./hideout";
 import { built, creditRaid, emptyLog, need, offered, type Quest, type QuestLog } from "./quests";
@@ -22,7 +22,7 @@ export interface Escape {
 
 /** What persists between raids. */
 export interface Profile {
-  v: 7;
+  v: 8;
   cash: number;
   stash: Item[];
   raids: number;
@@ -39,6 +39,8 @@ export interface Profile {
   seed: number;
   /** The depots switched on in any raid: they stay on, and a raid may start from one. */
   depots: PoiId[];
+  /** Credits' worth sent home through each depot on, over all raids: it sets the depot's level (`depotAllowance()`). */
+  depotSent: Partial<Record<PoiId, number>>;
   /** The explored map (`encodeSeen()`), grown by every raid. */
   seen: string;
 }
@@ -48,7 +50,7 @@ export const HEALS: HealKind[] = ["cell", "battery", "syringe", "medkit"];
 export function newProfile(seed = 1): Profile {
   const stash: Item[] = META.start.weapons.map((w) => ({ t: "weapon", ...w }));
   for (const k of HEALS) for (let i = 0; i < META.start.heals[k]; i++) stash.push({ t: "heal", kind: k });
-  return { v: 7, cash: META.start.cash, stash, raids: 0, extracted: 0, time: 0, quests: emptyLog(), region: "reservoir", hideout: emptyHideout(), escaped: null, seed: seed & 0xffff, depots: [], seen: "" };
+  return { v: 8, cash: META.start.cash, stash, raids: 0, extracted: 0, time: 0, quests: emptyLog(), region: "reservoir", hideout: emptyHideout(), escaped: null, seed: seed & 0xffff, depots: [], depotSent: {}, seen: "" };
 }
 
 /** The seed of the raid after one started from `seed`. */
@@ -132,11 +134,76 @@ export function healRoom(p: Profile, l: Loadout, k: HealKind): number {
 }
 
 /**
+ * The stash entries a loadout really takes, resolved as `takeKit()` does: up to two weapons,
+ * one armour, one key per POI. Picks that are not of their kind are dropped.
+ */
+function picks(p: Profile, l: Loadout): { weapons: number[]; armor: number | null; keys: number[] } {
+  const weapons = [...new Set(l.weapons.slice(0, 2))].filter((n) => p.stash[n]?.t === "weapon");
+  const armor = l.armor !== null && p.stash[l.armor]?.t === "armor" ? l.armor : null;
+  const keys: number[] = [];
+  const pois = new Set<PoiId>();
+  for (const n of l.keys) {
+    const i = p.stash[n];
+    if (i?.t === "key" && !keys.includes(n) && !pois.has(i.poi)) {
+      keys.push(n);
+      pois.add(i.poi);
+    }
+  }
+  return { weapons, armor, keys };
+}
+
+/** What one stash entry costs of a depot start's allowance (`DEPOT`): heals and valuables nothing. */
+export function itemCost(i: Item): number {
+  if (i.t === "weapon") return DEPOT.weaponCost[i.rarity];
+  if (i.t === "armor") return DEPOT.armorCost[i.tier];
+  if (i.t === "key") return DEPOT.keyCost;
+  return 0;
+}
+
+/** What a loadout costs of a depot start's allowance. The lent free kit and all heals cost nothing. */
+export function loadoutCost(p: Profile, l: Loadout): number {
+  const k = picks(p, l);
+  return [...k.weapons, ...(k.armor === null ? [] : [k.armor]), ...k.keys].reduce((n, at) => n + itemCost(p.stash[at]), 0);
+}
+
+/** A depot's standing: its level, the allowance it gives, what has gone through it, and what the next level still needs (null at the top). */
+export interface DepotAllowance {
+  level: number;
+  budget: number;
+  sent: number;
+  next: number | null;
+}
+
+export function depotAllowance(p: Profile, poi: PoiId): DepotAllowance {
+  const sent = p.depotSent[poi] ?? 0;
+  let level = 0;
+  while (level + 1 < DEPOT.levels.length && sent >= DEPOT.levels[level + 1]) level++;
+  const next = level + 1 < DEPOT.levels.length ? DEPOT.levels[level + 1] - sent : null;
+  return { level, budget: DEPOT.budget[level], sent, next };
+}
+
+/** The loadout points a raid started from `poi`'s depot may carry. */
+export const depotBudget = (p: Profile, poi: PoiId) => depotAllowance(p, poi).budget;
+
+/**
+ * Whether a raid may start with this loadout: a drop (`from` null) always may; a depot start
+ * only from a depot on, and within its allowance.
+ */
+export function fitsStart(p: Profile, l: Loadout, from: PoiId | null): boolean {
+  if (from === null) return true;
+  return p.depots.includes(from) && loadoutCost(p, l) <= depotBudget(p, from);
+}
+
+/**
  * Takes a loadout out of the stash. Picking no weapon means the free kit: its weapons and
  * heals are lent, and any heals picked from the stash come on top of them. The hideout's
- * infirmary lends its heals to either kit.
+ * infirmary lends its heals to either kit. A start from a depot is held to its allowance.
  */
-export function takeKit(p: Profile, l: Loadout): { profile: Profile; kit: Kit } {
+export function takeKit(p: Profile, l: Loadout): { profile: Profile; kit: Kit };
+/** For a start from a depot (`from`), null when the loadout does not fit its allowance (`fitsStart()`). */
+export function takeKit(p: Profile, l: Loadout, from: PoiId | null): { profile: Profile; kit: Kit } | null;
+export function takeKit(p: Profile, l: Loadout, from: PoiId | null = null): { profile: Profile; kit: Kit } | null {
+  if (!fitsStart(p, l, from)) return null;
   const take = new Set<number>();
   const weapons: Kit["weapons"] = [];
   for (const n of l.weapons.slice(0, 2)) {
@@ -266,7 +333,8 @@ export function settle(p: Profile, s: State): Settlement {
   const cash = finished.reduce((n, q) => n + q.reward.cash, 0);
   const { profile, sold, soldFor } = store({ ...p, cash: p.cash + cash }, [...home, ...rewards]);
   const depots = DEPOTS.map((d) => d.poi).filter((id, i) => p.depots.includes(id) || s.depots[i]);
-  const next = { ...profile, quests: log, raids: p.raids + 1, extracted: p.extracted + (s.outcome === "extracted" ? 1 : 0), time: p.time + s.time, seed: nextSeed(p.seed), depots, seen: encodeSeen(s.seen) };
+  const depotSent = Object.fromEntries(depots.map((id) => [id, (p.depotSent[id] ?? 0) + (s.sentVia[depotIndex(id)] ?? 0)]));
+  const next = { ...profile, quests: log, raids: p.raids + 1, extracted: p.extracted + (s.outcome === "extracted" ? 1 : 0), time: p.time + s.time, seed: nextSeed(p.seed), depots, depotSent, seen: encodeSeen(s.seen) };
   // Quests the raid opened may ask for a hideout level already built.
   const claimed = claimBuilt(next);
   return { profile: claimed.profile, home, quests: [...finished, ...claimed.quests], sold: [...sold, ...claimed.sold], soldFor: soldFor + claimed.soldFor };
@@ -370,12 +438,13 @@ const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
  * quest log; v1 and v2 keys name their POI by number and are moved to ids; profiles before
  * v4 drop into the reservoir; profiles before v5 start with an empty hideout; profiles before
  * v6 have no depot on and nothing explored. A v6 profile's explored map was drawn over the
- * world before its open ground and wider bounds, so it is dropped (its depots stay).
+ * world before its open ground and wider bounds, so it is dropped (its depots stay). Profiles
+ * before v8 have sent nothing through their depots: each one on starts at level 0.
  */
 export function parseProfile(raw: unknown, seed = 1): Profile | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (![1, 2, 3, 4, 5, 6, 7].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
+  if (![1, 2, 3, 4, 5, 6, 7, 8].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
   const old = o.v === 1 || o.v === 2;
   const migrate = (i: unknown): unknown => {
     if (!old || !i || typeof i !== "object" || (i as Record<string, unknown>).t !== "key") return i;
@@ -402,8 +471,10 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   const escaped = craftDone(hideout) ? { raids: Number(e?.raids) || 0, extracted: Number(e?.extracted) || 0, time: Number(e?.time) || 0 } : null;
   const num = (x: unknown) => (typeof x === "number" && x >= 0 ? x : 0);
   const depots = Array.isArray(o.depots) ? [...new Set(o.depots.filter((d): d is PoiId => typeof d === "string" && poiIndex(d as PoiId) >= 0))] : [];
+  const ds = (o.v === 8 && o.depotSent && typeof o.depotSent === "object" ? o.depotSent : {}) as Record<string, unknown>;
+  const depotSent = Object.fromEntries(depots.map((d) => [d, num(ds[d])]));
   return {
-    v: 7,
+    v: 8,
     cash: Math.max(0, Math.floor(o.cash)),
     stash: o.stash.map(migrate).filter(ok).slice(0, stashCap(hideout)),
     raids: num(o.raids),
@@ -415,6 +486,7 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     escaped,
     seed: Number.isInteger(o.seed) ? (o.seed as number) & 0xffff : seed & 0xffff,
     depots,
-    seen: o.v === 7 && typeof o.seen === "string" && /^[0-9a-f]*$/.test(o.seen) ? o.seen : "",
+    depotSent,
+    seen: (o.v === 7 || o.v === 8) && typeof o.seen === "string" && /^[0-9a-f]*$/.test(o.seen) ? o.seen : "",
   };
 }

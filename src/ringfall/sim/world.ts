@@ -453,6 +453,7 @@ function useDepot(s: State, index: number) {
     const value = p.haul.reduce((n, k) => n + VALUABLES[k].value, 0);
     s.events.push({ t: "deposit", n: p.haul.length, value });
     s.sent.push(...p.haul);
+    s.sentVia[index] += value;
     p.haul = [];
   } else if (!s.leaving) {
     s.leaving = { depot: index, t: DEPOT.leave };

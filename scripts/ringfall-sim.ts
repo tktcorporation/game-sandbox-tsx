@@ -30,7 +30,7 @@ import { SHIP_SQUAD, bagUsed, makeRoom, useTarget } from "../src/ringfall/sim/wo
 import { bodyCenter, damageEnemy, eyePos, fireRay, magSize, weakPoint } from "../src/ringfall/sim/combat";
 import { lookAngles } from "../src/ringfall/sim/geom";
 import { forward } from "../src/ringfall/sim/state";
-import { build, buildState, buy, canBuild, deliver, healRoom, newProfile, parseProfile, pouch, price, sell, settle, takeKit, wares, type Item, type Profile } from "../src/ringfall/meta/profile";
+import { build, buildState, buy, canBuild, deliver, depotAllowance, depotBudget, emptyLoadout, fitsStart, healRoom, itemCost, loadoutCost, newProfile, parseProfile, pouch, price, sell, settle, takeKit, wares, type Item, type Profile } from "../src/ringfall/meta/profile";
 import { emptyHideout, maxLevel, MODULES, poisWith, sources, stashCap } from "../src/ringfall/meta/hideout";
 import { boostFor, boosted } from "../src/ringfall/sim/state";
 import { HIDEOUT, VAULT } from "../src/ringfall/sim/config";
@@ -1251,12 +1251,104 @@ function checkDepots(): string | null {
   // Saves from before the depots load with none on and nothing explored; unknown depots are dropped.
   const { depots: _d, seen: _s, ...v5 } = newProfile();
   const loaded = parseProfile(JSON.parse(JSON.stringify({ ...v5, v: 5 })));
-  if (loaded?.v !== 7 || loaded.depots.length || loaded.seen !== "") return `depot scenario: a v5 save loaded as ${JSON.stringify(loaded && { v: loaded.v, depots: loaded.depots, seen: loaded.seen })}`;
+  if (loaded?.v !== 8 || loaded.depots.length || loaded.seen !== "") return `depot scenario: a v5 save loaded as ${JSON.stringify(loaded && { v: loaded.v, depots: loaded.depots, seen: loaded.seen })}`;
   const kept = parseProfile(JSON.parse(JSON.stringify({ ...after.profile, depots: ["pad", "nowhere", "pad"] })));
   if (kept?.depots.join() !== "pad" || kept.seen !== after.profile.seen) return `depot scenario: a v7 save loaded depots ${kept?.depots.join()}`;
   // A v6 save's explored map was drawn over the world before it widened: it is dropped, the depots stay.
   const v6 = parseProfile(JSON.parse(JSON.stringify({ ...after.profile, v: 6 })));
-  if (v6?.v !== 7 || v6.seen !== "" || v6.depots.join() !== after.profile.depots.join()) return `depot scenario: a v6 save loaded as ${JSON.stringify(v6 && { v: v6.v, depots: v6.depots, seen: v6.seen.length })}`;
+  if (v6?.v !== 8 || v6.seen !== "" || v6.depots.join() !== after.profile.depots.join()) return `depot scenario: a v6 save loaded as ${JSON.stringify(v6 && { v: v6.v, depots: v6.depots, seen: v6.seen.length })}`;
+  return null;
+}
+
+/**
+ * A start from a depot carries a limited loadout: stash weapons, armour and keys cost points
+ * (`DEPOT`), the lent kit and heals cost nothing, and a depot's allowance grows with the
+ * credits' worth sent home through that depot alone. A drop has no limit.
+ */
+function checkDepotBudget(): string | null {
+  // What each pick costs.
+  for (const r of [0, 1, 2, 3] as const) if (itemCost({ t: "weapon", kind: "pike", rarity: r }) !== DEPOT.weaponCost[r]) return `depot budget: a rarity ${r} weapon costs ${itemCost({ t: "weapon", kind: "pike", rarity: r })}`;
+  if (DEPOT.weaponCost.join() !== "1,2,3,4" || DEPOT.armorCost.join() !== "0,1,2,3" || DEPOT.keyCost !== 1 || DEPOT.budget.join() !== "2,4,6,9" || DEPOT.levels.join() !== "0,1500,5000,12000") return "depot budget: the numbers in DEPOT are not the agreed ones";
+  if (itemCost({ t: "armor", tier: 3 }) !== 3 || itemCost({ t: "key", poi: "pad" }) !== 1 || itemCost({ t: "heal", kind: "medkit" }) !== 0) return "depot budget: armour, keys or heals cost the wrong points";
+  const base: Profile = {
+    ...newProfile(3),
+    depots: ["pad", "supply"],
+    depotSent: { pad: 0, supply: 0 },
+    stash: [
+      { t: "weapon", kind: "pike", rarity: 2 },
+      { t: "weapon", kind: "hornet", rarity: 0 },
+      { t: "armor", tier: 2 },
+      { t: "key", poi: "relay" },
+      { t: "key", poi: "relay" },
+      { t: "key", poi: "quarry" },
+      { t: "heal", kind: "cell" },
+      { t: "heal", kind: "medkit" },
+    ],
+  };
+  const heals = { cell: 1, battery: 0, syringe: 0, medkit: 1 };
+  const free = { ...emptyLoadout(), heals };
+  if (loadoutCost(base, free) !== 0) return `depot budget: the lent kit with heals costs ${loadoutCost(base, free)}`;
+  // The same weapon picked twice counts once; a second key to the same POI is not taken, so it costs nothing.
+  const full = { weapons: [0, 1, 0], armor: 2, heals, keys: [3, 4, 5] };
+  if (loadoutCost(base, full) !== 3 + 1 + 2 + 1 + 1) return `depot budget: an epic, a common, tier 2 armour and two keys cost ${loadoutCost(base, full)}, not 8`;
+
+  // The level, the allowance and what the next level still needs, from the credits sent through the depot.
+  const at = (sent: number) => depotAllowance({ ...base, depotSent: { pad: sent } }, "pad");
+  for (const [sent, level, budget, next] of [[0, 0, 2, 1500], [1499, 0, 2, 1], [1500, 1, 4, 3500], [4999, 1, 4, 1], [5000, 2, 6, 7000], [12000, 3, 9, null], [99999, 3, 9, null]] as const) {
+    const a = at(sent);
+    if (a.level !== level || a.budget !== budget || a.next !== next || a.sent !== sent) return `depot budget: ${sent} credits sent gave ${JSON.stringify(a)}`;
+  }
+  if (depotAllowance(base, "wreck").level !== 0) return "depot budget: a depot with nothing recorded is not level 0";
+
+  // Sending through the pad's depot raises the pad's level, across raids, and never the supply depot's.
+  const PADD = depotIndex("pad");
+  const d = DEPOTS[PADD];
+  const press = idleInput();
+  press.interact = true;
+  const raidSending = (haul: State["player"]["haul"]) => {
+    const s = padRun();
+    s.depots[PADD] = true;
+    s.depots[depotIndex("supply")] = true;
+    s.player.pos = { x: d.x, y: groundAt(d.x, d.z, PLAYER.radius, d.y + 0.3), z: d.z };
+    s.player.onGround = true;
+    s.player.haul = [...haul];
+    step(s, press, false);
+    s.outcome = "dead";
+    return s;
+  };
+  const r1 = raidSending(["core", "board"]);
+  if (r1.sentVia[PADD] !== 1300 || r1.sentVia.some((v, i) => i !== PADD && v !== 0)) return `depot budget: sending a core and a board through the pad recorded ${r1.sentVia.join()}`;
+  const p1 = settle(base, r1).profile;
+  if (p1.depotSent.pad !== 1300 || p1.depotSent.supply !== 0 || depotAllowance(p1, "pad").level !== 0) return `depot budget: after one raid the profile holds ${JSON.stringify(p1.depotSent)}`;
+  const p2 = settle(p1, raidSending(["board"])).profile;
+  if (p2.depotSent.pad !== 1600 || depotAllowance(p2, "pad").level !== 1 || depotBudget(p2, "pad") !== 4 || depotAllowance(p2, "supply").level !== 0 || depotBudget(p2, "supply") !== 2) return `depot budget: after two raids the profile holds ${JSON.stringify(p2.depotSent)}`;
+  // A raid that sends nothing keeps the record, and a depot switched on in it starts at 0.
+  const quiet = padRun();
+  quiet.depots[depotIndex("wreck")] = true;
+  quiet.outcome = "dead";
+  const p3 = settle(p2, quiet).profile;
+  if (p3.depotSent.pad !== 1600 || p3.depotSent.wreck !== 0) return `depot budget: a raid sending nothing left ${JSON.stringify(p3.depotSent)}`;
+  if (JSON.stringify(parseProfile(JSON.parse(JSON.stringify(p3)))?.depotSent) !== JSON.stringify(p3.depotSent)) return "depot budget: the sent record does not survive a save";
+
+  // A v7 save loads as v8 with nothing sent through each depot on; a v8 save keeps only its depots' records.
+  const { depotSent: _ds, ...v7 } = { ...p3, v: 7 };
+  const m7 = parseProfile(JSON.parse(JSON.stringify(v7)));
+  if (m7?.v !== 8 || JSON.stringify(m7.depotSent) !== JSON.stringify(Object.fromEntries(p3.depots.map((x) => [x, 0]))) || m7.seen !== p3.seen) return `depot budget: a v7 save loaded as ${JSON.stringify(m7 && { v: m7.v, depotSent: m7.depotSent })}`;
+  const odd = parseProfile(JSON.parse(JSON.stringify({ ...p3, depotSent: { pad: 2000, supply: -5, nowhere: 9, quarry: 7000 } })));
+  if (JSON.stringify(odd?.depotSent) !== JSON.stringify({ supply: 0, pad: 2000, wreck: 0 })) return `depot budget: a v8 save's odd records loaded as ${JSON.stringify(odd?.depotSent)}`;
+
+  // takeKit refuses a depot start over its allowance, and takes the same loadout as a drop.
+  const epic = { ...emptyLoadout(), weapons: [0] };
+  if (takeKit(base, epic, "pad") !== null || fitsStart(base, epic, "pad")) return "depot budget: an epic weapon (3) started from a level 0 depot (2)";
+  const dropped = takeKit(base, epic, null);
+  if (!dropped || dropped.kit.weapons[0]?.kind !== "pike" || dropped.profile.stash.length !== base.stash.length - 1) return "depot budget: the same loadout was not taken for a drop";
+  if (takeKit(base, epic).kit.weapons[0]?.kind !== "pike") return "depot budget: takeKit without a start no longer takes the loadout";
+  if (!takeKit(base, free, "pad") || !takeKit(base, { ...emptyLoadout(), weapons: [1], keys: [5] }, "pad")) return "depot budget: a loadout within the allowance (the lent kit; a common and a key) was refused";
+  if (takeKit(base, { ...emptyLoadout(), weapons: [1], armor: 2 }, "pad") !== null) return "depot budget: a common and tier 2 armour (3) started from a level 0 depot (2)";
+  if (takeKit(base, epic, "wreck") !== null) return "depot budget: a start from a depot that is not on was allowed";
+  const levelled = takeKit(p2, { ...emptyLoadout(), weapons: [0, 1] }, "pad");
+  if (!levelled || levelled.kit.weapons.length !== 2) return "depot budget: a level 1 depot (4) refused an epic and a common (4)";
+  if (takeKit(p2, { ...emptyLoadout(), weapons: [0, 1] }, "supply") !== null) return "depot budget: the supply depot was levelled by sends through the pad";
   return null;
 }
 
@@ -1367,7 +1459,7 @@ function checkHideout(): string | null {
   // Saves: a v4 profile keeps its stash and starts with an empty hideout; a v5 one keeps its hideout.
   const v4 = { v: 4, cash: 900, stash: [{ t: "valuable", kind: "gyro" }, { t: "weapon", kind: "pike", rarity: 2 }, { t: "key", poi: "yard" }], raids: 9, extracted: 7, quests: { progress: {}, done: ["grunts"] }, region: "harbor" };
   const m4 = parseProfile(JSON.parse(JSON.stringify(v4)));
-  if (!m4 || m4.v !== 7 || m4.stash.length !== 3 || m4.raids !== 9 || MODULES.some((m) => m4.hideout[m] !== 0) || m4.escaped || m4.region !== "harbor") return `storage scenario: a v4 save loaded as ${JSON.stringify(m4)}`;
+  if (!m4 || m4.v !== 8 || m4.stash.length !== 3 || m4.raids !== 9 || MODULES.some((m) => m4.hideout[m] !== 0) || m4.escaped || m4.region !== "harbor") return `storage scenario: a v4 save loaded as ${JSON.stringify(m4)}`;
   const m5 = parseProfile(JSON.parse(JSON.stringify(end)));
   if (!m5 || m5.hideout.craft !== maxLevel("craft") || m5.escaped?.raids !== 31 || m5.seed !== end.seed) return "storage scenario: a v5 save lost its hideout";
   // With one slot left, a valuable the hideout wants takes it ahead of gear; one it does not want is sold first.
@@ -1470,14 +1562,14 @@ function checkQuests(): string | null {
   const last = tr.profile.stash.at(-1);
   if (tr.quests[0]?.id !== "relay" || last?.t !== "key" || !tr.sold.some((i) => i.t === "valuable")) return `quest scenario: with one slot left the stash kept ${JSON.stringify(last)} and sold ${JSON.stringify(tr.sold)}`;
   const v1 = parseProfile({ v: 1, cash: 10, stash: [], raids: 2, extracted: 1 });
-  if (!v1 || v1.v !== 7 || v1.quests.done.length || v1.region !== "reservoir") return "storage scenario: a v1 save does not load";
+  if (!v1 || v1.v !== 8 || v1.quests.done.length || v1.region !== "reservoir") return "storage scenario: a v1 save does not load";
   // v2 saves named a key's POI by its place in the list; it loads as that POI's id.
   const v2 = parseProfile({ v: 2, cash: 10, stash: [{ t: "key", poi: 2 }, { t: "key", poi: 9 }], raids: 1, extracted: 1, quests: { progress: {}, done: [] } });
   const v2Key = v2?.stash[0];
-  if (!v2 || v2.v !== 7 || v2.stash.length !== 1 || v2Key?.t !== "key" || v2Key.poi !== "relay") return `storage scenario: a v2 save's key 2 loaded as ${JSON.stringify(v2?.stash)}, not the relay key`;
+  if (!v2 || v2.v !== 8 || v2.stash.length !== 1 || v2Key?.t !== "key" || v2Key.poi !== "relay") return `storage scenario: a v2 save's key 2 loaded as ${JSON.stringify(v2?.stash)}, not the relay key`;
   // A v3 save keeps its keys by id and drops into the reservoir; the landing choice is kept.
   const v3 = parseProfile({ v: 3, cash: 10, stash: [{ t: "key", poi: "wreck" }], raids: 1, extracted: 1, quests: { progress: {}, done: [] } });
-  if (!v3 || v3.v !== 7 || v3.stash.length !== 1 || v3.region !== "reservoir") return `storage scenario: a v3 save loaded as ${JSON.stringify(v3)}`;
+  if (!v3 || v3.v !== 8 || v3.stash.length !== 1 || v3.region !== "reservoir") return `storage scenario: a v3 save loaded as ${JSON.stringify(v3)}`;
   if (parseProfile(JSON.parse(JSON.stringify({ ...newProfile(), region: "harbor" })))?.region !== "harbor") return "storage scenario: the landing choice did not survive a save";
   // The harbor quests: the yard's vault counts only that vault, the harbor haul only a raid dropped into the harbor.
   const late = { ...newProfile(), quests: { progress: {}, done: QUESTS.filter((q) => !["yardVault", "harborHaul", "craft", "navigator", "control", "furnace", "escape"].includes(q.id)).map((q) => q.id) } };
@@ -2039,7 +2131,7 @@ function checkPlates(): string | null {
   return null;
 }
 
-for (const err of [checkTimeToKill(), checkStagger(), checkWindupMoves(), checkDepots(), checkPlates(), checkHideout(), checkBoltNoTunnel(), checkPickupWavesRouted(), checkLaterWaveFights(), checkSidestepHit(), checkWallStops(), checkPinch(), checkHealHeard(), checkPositionMatters(), checkPullWhenAiming(), checkVault(), checkQuests(), checkSettle(), checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkBoatCall(), checkSecondPickup(), checkRegionDrop(), checkConnections(), checkAllySelfUp(), checkStompHeight(), checkDropOffHighGround(), checkFieldsReused(), checkFieldsFollowRunner(), checkCliffsStop(), checkNoPits(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill(), checkLeap(), checkLeapLeavesAllyBelow(), checkLeapDowned(), checkLeapAllyCatchesUp(), checkLeapAllyDowned(), checkLeapWithItem(), checkLeapClocks(), checkLeapOffHighGround(), checkLeapUnderRoof()]) {
+for (const err of [checkTimeToKill(), checkStagger(), checkWindupMoves(), checkDepots(), checkDepotBudget(), checkPlates(), checkHideout(), checkBoltNoTunnel(), checkPickupWavesRouted(), checkLaterWaveFights(), checkSidestepHit(), checkWallStops(), checkPinch(), checkHealHeard(), checkPositionMatters(), checkPullWhenAiming(), checkVault(), checkQuests(), checkSettle(), checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkBoatCall(), checkSecondPickup(), checkRegionDrop(), checkConnections(), checkAllySelfUp(), checkStompHeight(), checkDropOffHighGround(), checkFieldsReused(), checkFieldsFollowRunner(), checkCliffsStop(), checkNoPits(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill(), checkLeap(), checkLeapLeavesAllyBelow(), checkLeapDowned(), checkLeapAllyCatchesUp(), checkLeapAllyDowned(), checkLeapWithItem(), checkLeapClocks(), checkLeapOffHighGround(), checkLeapUnderRoof()]) {
   if (err) {
     console.error(err);
     process.exit(1);
