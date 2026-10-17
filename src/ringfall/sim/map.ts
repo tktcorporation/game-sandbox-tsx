@@ -669,11 +669,13 @@ export interface Region {
   land: { x: number; z: number };
   pois: PoiId[];
   exits: ExtractId[];
+  /** Where the world map writes the region's name, large and faint under everything. */
+  label: { x: number; z: number };
 }
 
 export const REGIONS: Region[] = [
-  { id: "reservoir", name: "ダム湖", note: "干上がったダム湖の島。拠点 4 つ、発着場にタイタン", drop: SPAWN, land: { x: 0, z: 106 }, pois: ["supply", "quarry", "relay", "pad"], exits: ["ship", "flare", "village"] },
-  { id: "harbor", name: "港湾地帯", note: "干上がった湾の港。拠点 3 つ、どこにもヘビーがいる", drop: { x: 20, z: -296, yaw: 0 }, land: { x: 22, z: -306 }, pois: ["wreck", "yard", "smelter"], exits: ["boat"] },
+  { id: "reservoir", name: "ダム湖", note: "干上がったダム湖の島。拠点 4 つ、発着場にタイタン", drop: SPAWN, land: { x: 0, z: 106 }, pois: ["supply", "quarry", "relay", "pad"], exits: ["ship", "flare", "village"], label: { x: -150, z: 120 } },
+  { id: "harbor", name: "港湾地帯", note: "干上がった湾の港。拠点 3 つ、どこにもヘビーがいる", drop: { x: 20, z: -296, yaw: 0 }, land: { x: 22, z: -306 }, pois: ["wreck", "yard", "smelter"], exits: ["boat"], label: { x: -150, z: -270 } },
 ];
 
 export const regionOf = (id: RegionId): Region => REGIONS.find((r) => r.id === id) ?? REGIONS[0];
@@ -849,6 +851,55 @@ const HAMLET_FRAMES: Hamlet[] = [
     ],
     bins: [{ x: -6, z: 0, table: "smelter" }],
   },
+];
+
+/**
+ * The frames areas are written in, by name: each POI's (`AT`, by its id) and each hamlet's. Data
+ * outside the map that points into one of them (the shots gate's cameras) is written in its frame,
+ * so moving an area moves it too.
+ */
+export const FRAMES: Record<string, { x: number; z: number }> = Object.fromEntries([
+  ...POI_FRAMES.map((p, i): [string, { x: number; z: number }] => [p.id, { x: AT[i][0], z: AT[i][1] }]),
+  ...HAMLET_FRAMES.map((h): [string, { x: number; z: number }] => [h.name, { x: h.x, z: h.z }]),
+]);
+
+/** Names on the world map for the districts and landmarks between the POIs, where each is written. */
+export const LANDMARKS: readonly { name: string; x: number; z: number }[] = [
+  { name: "湖底の旧市街", x: 0, z: -22 },
+  { name: "堤", x: 0, z: -79 },
+  { name: "放水路", x: 50, z: -72 },
+  { name: "尾根", x: -50, z: 62 },
+  { name: "工場", x: 57, z: 60 },
+  { name: "住宅地", x: 112, z: 24 },
+  { name: "峠", x: -60, z: -236 },
+  { name: "鉄橋", x: 140, z: -190 },
+  { name: "駅", x: 108, z: -228 },
+  { name: "港町", x: 20, z: -312 },
+  { name: "高架", x: 30, z: -362 },
+  { name: "塩田", x: -10, z: -480 },
+  { name: "灯台", x: -116, z: -538 },
+  { name: "水路", x: 140, z: -604 },
+];
+
+/**
+ * Open ground off the POIs where a raid may stop, one or more per district and on the ways
+ * between: the sim gate checks that each is reached on foot and that reinforcements find a
+ * hidden spot a walk away from each.
+ */
+export const STOPS: readonly { name: string; x: number; z: number }[] = [
+  { name: "工場", x: 50, z: 50 },
+  { name: "台地", x: -60, z: -40 },
+  { name: "廃村", x: -100, z: -62 },
+  { name: "放水路", x: 50, z: -80 },
+  { name: "住宅地", x: 112, z: 20 },
+  { name: "採掘場の奥", x: -150, z: 12 },
+  { name: "尾根", x: -50, z: 76 },
+  { name: "峠", x: -60, z: -222 },
+  { name: "駅", x: 122, z: -230 },
+  { name: "港町", x: 20, z: -306 },
+  { name: "高架下", x: 60, z: -344 },
+  { name: "塩田", x: 10, z: -500 },
+  { name: "岬", x: -122, z: -545 },
 ];
 
 /** The hamlets placed, each flat at the level of the ground under its middle. */
@@ -1656,10 +1707,14 @@ export const ROUTES: Route[] = (() => {
   const dx = 14;
   const dam: Carve = { name: "点検通路", line: [[dx, -62], [dx, -91]], floor: 2.5, levels: [LEVEL.lakebed, LEVEL.dam], slope: 2.4 };
   const dFoot = cliffFoot(dx, -54, -1);
-  // The wreck's gangway: up the hull's north side to its main deck, near the bow.
+  // The wreck's gangway: up the hull's north side to its main deck, near the bow, written in the
+  // wreck's frame (its hull's north face is 8 m north of its middle) so it moves with the wreck.
   const deck = LEVEL.seabed + STOREY * 3;
-  const gx = -22.4;
-  const gz = -571.3;
+  const [wx, wz] = AT[poiIndex("wreck")];
+  const gx = wx - 32.4;
+  const gz = wz - 9.3;
+  // The deck's rail along the hull's north side: the gangway is chained against it, and lands over it.
+  const rail = wz - 7.75;
   const gangway = paint(lift(LEVEL.seabed, stairs(gx, gz, "w", 2.0, deck + 0.7 - LEVEL.seabed)), "step", "steel", () => 2);
   return [
     {
@@ -1689,16 +1744,16 @@ export const ROUTES: Route[] = (() => {
       name: "難破船の舷梯",
       tool: "cutter",
       note: "難破船の北側から甲板へ直に上がる。船尾の階段を通らない",
-      path: [{ x: gx - 15.5, z: gz }, { x: gx + 1.2, z: -567 }],
+      path: [{ x: gx - 15.5, z: gz }, { x: gx + 1.2, z: wz - 5 }],
       at: [{ x: gx, y: LEVEL.seabed, z: gz - 1.4 }],
       // Hauled aboard and stood up against the deck's rail, over the place it lands, chained there.
       closed: [
-        rect(gx - 1.0, -569.75, gx + 1.0, -569.45, deck, deck + 2.8, "steel", 2),
-        rect(gx - 1.15, -569.45, gx + 1.15, -569.3, deck + 1.0, deck + 1.15, "steel", 2),
-        rect(gx - 0.18, -569.3, gx + 0.18, -569.1, deck + 0.75, deck + 1.2, "steel", 0),
+        rect(gx - 1.0, rail, gx + 1.0, wz - 7.45, deck, deck + 2.8, "steel", 2),
+        rect(gx - 1.15, wz - 7.45, gx + 1.15, wz - 7.3, deck + 1.0, deck + 1.15, "steel", 2),
+        rect(gx - 0.18, wz - 7.3, gx + 0.18, wz - 7.1, deck + 0.75, deck + 1.2, "steel", 0),
       ],
       // Its flight, and a landing over the deck's rail that steps down onto the deck.
-      open: [...gangway, rect(gx, gz - 1.0, gx + 2.4, -569.45, deck + 0.4, deck + 0.7, "steel", 2)],
+      open: [...gangway, rect(gx, gz - 1.0, gx + 2.4, wz - 7.45, deck + 0.4, deck + 0.7, "steel", 2)],
     },
   ];
 })();
