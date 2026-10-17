@@ -772,6 +772,8 @@ export const COVER = {
   /** How far sideways a robot steps out of cover to shoot. */
   peek: 1.4,
   search: 14,
+  /** Metres between a cover spot's surface and a robot's feet for it to take that cover: its own level only. */
+  level: 1.2,
   minFromPlayer: 6,
   maxFromPlayer: 34,
   /** Seconds a robot stays behind cover between shots. */

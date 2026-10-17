@@ -603,15 +603,17 @@ function findCover(s: State, e: Enemy, threat: Point, threatY: number): { cover:
   const chestP = { x: p.pos.x, y: p.pos.y + 1.1, z: p.pos.z };
   const taken = s.enemies.filter((o) => o !== e && o.cover).map((o) => o.cover!);
   const cands = COVERS.map((c) => ({ c, d: dist2d(c, e.pos), dp: dist2d(c, p.pos) }))
-    .filter(({ c, d, dp }) => d < search && dp > COVER.minFromPlayer && dp < COVER.maxFromPlayer && !taken.some((t) => dist2d(t, c) < 1.5))
+    .filter(({ c, d, dp }) => d < search && Math.abs(c.y - e.pos.y) < COVER.level && dp > COVER.minFromPlayer && dp < COVER.maxFromPlayer && !taken.some((t) => dist2d(t, c) < 1.5))
     .sort((a, b) => a.d + Math.abs(a.dp - 16) * 0.3 - (b.d + Math.abs(b.dp - 16) * 0.3))
     .slice(0, 14);
   for (const { c } of cands) {
-    if (los({ x: c.x, y: terrainHeight(c.x, c.z) + 1.3, z: c.z }, head)) continue;
+    if (los({ x: c.x, y: c.y + 1.3, z: c.z }, head)) continue;
     // The side it did not show itself at last time first, so it is not where the player's sights wait.
     for (const sign of [e.peekSide, -e.peekSide]) {
       const peek = { x: c.x + c.tx * sign * COVER.peek, z: c.z + c.tz * sign * COVER.peek };
-      const pg = terrainHeight(peek.x, peek.z);
+      const pg = c.y;
+      // Stepping out stays on the same floor: not off a deck's or a roof's edge, not into a box.
+      if (Math.abs(groundAt(peek.x, peek.z, 0.3, pg + 0.3) - pg) > 0.3) continue;
       if (solidAt(peek.x, pg + 1.0, peek.z)) continue;
       if (los({ x: peek.x, y: pg + 1.6, z: peek.z }, chestP)) return { cover: { x: c.x, z: c.z }, peek };
     }
