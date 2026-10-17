@@ -170,6 +170,9 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   silent, NaN or clipping ones. `src/ringfall/main.ts` wires input and the fixed-step loop, and
   exposes `window.render_game_to_text()`, `window.advanceTime(ms)`, `window.ringfallBot(skill)` and
   `window.ringfallFrameCost(frames)` (draw calls, triangles and time per frame, for the shots gate).
+  `window.ringfallStep(ms)` is `advanceTime` without drawing (drawing in software is most of a
+  step's cost) and `window.ringfallDraw()` draws the scene as it stands; the shots gate steps
+  undrawn while it only waits on the state, and draws before each screenshot and every few steps.
 - `docs/ringfall/balance.md` holds the target curve and the latest `npm run sim:ringfall -- 30` output
   (a table per region, and the hideout's pacing table from `scripts/ringfall-pacing.ts`: each skill's
   recorded raids settled in sequence with a greedy spender, the raid at which each level is built).
