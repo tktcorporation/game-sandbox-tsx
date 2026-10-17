@@ -1553,6 +1553,13 @@ body.touch .mate-bars {
   .hub-region span {
     display: none;
   }
+  /* How to open a locked region stays: on a phone it is the only place that says so. */
+  .hub-region span.lock {
+    display: inline;
+    flex: none;
+    white-space: nowrap;
+    margin-left: 8px;
+  }
 }
 #hub .hub-foot button:disabled {
   opacity: 0.4;
