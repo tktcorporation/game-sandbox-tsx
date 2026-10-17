@@ -17,7 +17,7 @@ import { Soundscape } from "./view/soundscape";
 import { setupSoundCheck } from "./view/soundcheck";
 import { Hud } from "./view/hud";
 import { World } from "./view/world";
-import { loadChoice, pickTier, QUALITY, type QualityChoice } from "./view/quality";
+import { Governor, loadChoice, pickTier, QUALITY, type Level, type QualityChoice } from "./view/quality";
 import { blockPageZoom, setupTouch } from "./touch";
 import "./style.css";
 
@@ -40,6 +40,20 @@ const deviceTier = pickTier({
 let quality: QualityChoice = loadChoice(location.search);
 const startTier = quality === "auto" ? deviceTier : quality;
 const world = new World(stage, { tier: startTier, ratio: Math.min(devicePixelRatio, QUALITY[startTier].maxRatio) });
+/**
+ * Moves the drawing between the quality ladder's levels by the frame times of a raid under way.
+ * A tier the player chose stays; only its resolution moves.
+ */
+let governor = new Governor(startTier, devicePixelRatio, quality !== "auto");
+/**
+ * Under a browser driver (the shots gate) the governor stays put: what a screenshot shows must not
+ * depend on how fast the machine happened to draw.
+ */
+const automated = navigator.webdriver;
+function applyLevel(l: Level) {
+  if (l.tier !== world.tier) world.setTier(l.tier);
+  world.setRatio(l.ratio);
+}
 const hud = new Hud();
 
 let state: State = newRun(Date.now() & 0xffff);
@@ -218,6 +232,11 @@ function keepAwake(on: boolean) {
 }
 
 let last = performance.now();
+/** When the last frame was drawn, and the real seconds since then the next draw catches up on. */
+let drawnAt = last;
+let drawDt = 0;
+/** Toggles each animation frame; on the governor's 30 fps rungs only every other one draws. */
+let odd = false;
 function frame(now: number) {
   // The first frame's timestamp can predate `last` by the seconds the page took to load, and a
   // negative step would grow every fade in the view (the muzzle flash and its light) instead.
@@ -241,10 +260,20 @@ function frame(now: number) {
     }
     if (n === 6) acc = 0;
   }
-  const drawn = !(manual && quiet);
-  if (drawn) world.render(state, dt);
+  odd = !odd;
+  drawDt += dt;
+  const drawn = !(manual && quiet) && !(governor.level.cap30 && odd);
+  if (drawn) {
+    world.render(state, drawDt);
+    if (running) hud.frame(state, world, drawDt, dims.w, dims.h);
+    drawDt = 0;
+    if (!automated && running && !paused && !manual) {
+      const l = governor.frame(now - drawnAt);
+      if (l) applyLevel(l);
+    }
+    drawnAt = now;
+  } else if (manual) drawDt = 0;
   sound.frame(state, world.camera, dt, running && !paused);
-  if (running && drawn) hud.frame(state, world, dt, dims.w, dims.h);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
@@ -294,6 +323,7 @@ function start(k: Kit, r: RegionId, seed: number, { from, entry }: { from?: PoiI
   state = newRun(seed, kit, region, { depots: hub.profile.depots, seen: hub.profile.seen, from, entry, routes: hub.profile.routes });
   // The ground round where the raid starts is built before its first frame.
   world.prebuild([state.player.pos]);
+  governor.settle();
   acc = hitstop = slowmo = 0;
   running = true;
   paused = false;
@@ -342,6 +372,7 @@ $("start").addEventListener("click", openHub);
 $("restart").addEventListener("click", openHub);
 $("resume").addEventListener("click", () => {
   unlock();
+  governor.settle();
   setPaused(false);
   lock();
 });
