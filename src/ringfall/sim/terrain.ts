@@ -171,13 +171,13 @@ const inPoi = (p: PoiId, line: readonly P[]): P[] => line.map(([x, z]) => [x + P
 
 /** Basins: the POIs and the districts. Each holds everything built there, and is written in its area's frame. */
 const BASINS: Open[] = [
-  { name: "補給所", line: inPoi("supply", [[0, 36], [0, 80]]), half: 28, level: LEVEL.shore },
+  { name: "補給所", line: inPoi("supply", [[6, 30], [6, 86]]), half: 40, level: LEVEL.shore },
   { name: "湖底", line: inArea("heart", [[0, -40], [0, 18]]), half: 26, level: LEVEL.lakebed, walled: true },
-  { name: "発着場", line: inPoi("pad", [[-8, -66], [10, -66]]), half: 32, level: LEVEL.dam },
+  { name: "発着場", line: inPoi("pad", [[-12, -64], [12, -64], [0, -92]]), half: 34, level: LEVEL.dam },
   // The dam crest: a walkway along the top of the dam face, the lakebed 15 m below.
   { name: "堤", line: inArea("heart", [[-24, -79], [24, -79]]), half: 5, level: LEVEL.dam },
   { name: "採掘場", line: inPoi("quarry", [[-67, 0], [-37, 16]]), half: 26, level: LEVEL.pit, walled: true },
-  { name: "中継塔", line: inPoi("relay", [[30, -29], [54, -21]]), half: 25, level: LEVEL.mesa },
+  { name: "中継塔", line: inPoi("relay", [[30, -29], [54, -21]]), half: 32, level: LEVEL.mesa },
   { name: "住宅地", line: inArea("relay", [[104, 26], [122, 2]]), half: 14, level: LEVEL.mesa },
   { name: "尾根", line: inArea("ridge", [[-66, 70], [-34, 70]]), half: 10, level: LEVEL.ridge },
   // Close enough to the lakebed that its east side is a clean drop into it.
@@ -186,10 +186,10 @@ const BASINS: Open[] = [
   { name: "廃村", line: inArea("village", [[-114, -68], [-96, -60]]), half: 15, level: LEVEL.shore },
   // The harbor.
   { name: "港町", line: inArea("town", [[-40, -300], [110, -300]]), half: 22, level: LEVEL.shore },
-  { name: "コンテナヤード", line: inPoi("yard", [[-25, 0], [25, 0]]), half: 28, level: LEVEL.shore },
-  { name: "製錬所", line: inPoi("smelter", [[-20, 0], [20, 0]]), half: 30, level: LEVEL.terrace },
+  { name: "コンテナヤード", line: inPoi("yard", [[-44, 0], [44, 0]]), half: 42, level: LEVEL.shore },
+  { name: "製錬所", line: inPoi("smelter", [[-34, 0], [40, 0]]), half: 34, level: LEVEL.terrace },
   { name: "塩田", line: inArea("bay", [[-60, -500], [80, -500]]), half: 40, level: LEVEL.seabed },
-  { name: "難破船", line: inPoi("wreck", [[-50, 0], [50, 0]]), half: 22, level: LEVEL.seabed },
+  { name: "難破船", line: inPoi("wreck", [[-66, 0], [72, 0]]), half: 24, level: LEVEL.seabed },
   { name: "埠頭", line: inArea("bay", [[60, -565], [140, -568]]), half: 22, level: LEVEL.seabed },
   { name: "水路", line: inArea("bay", [[96, -592], [162, -592]]), half: 8, level: LEVEL.channel, walled: true },
   { name: "岬", line: inArea("bay", [[-120, -545], [-106, -560]]), half: 13, level: LEVEL.headland, walled: true },

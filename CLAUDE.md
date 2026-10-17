@@ -33,7 +33,8 @@ per POI (the pad holds the titan and its drones), and a few `ROAMERS` in `map.ts
 out of sight on a timer and come looking, and once per raid an elite squad (`RAIDERS` / `ELITE`)
 that flanks. Bins take time to search (`SEARCH`) and valuables fill a bag of `BAG.slots`. The HUD
 shows no markers or distances, and lists only the ways off of the region the player is in
-(`regionHere()`); the world map (`view/map.ts`, M) is where the POIs and exits of both regions are.
+(`regionHere()`); the world map (`view/map.ts`, M) is where the POIs and exits of both regions are; it opens framed
+on the region the player is in (`Region.bounds`) and N switches it to the whole world.
 A wipe ends the raid and loses the haul; `results.ts` scores the haul plus cleared POIs.
 Between raids the base (`view/hub.ts`) keeps a stash, a trader and the loadout for the next raid:
 `src/ringfall/meta/profile.ts` is its pure logic (`takeKit()` out of the stash, `settle()` after a
@@ -97,8 +98,14 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   per 1/60 s tick. Aim assist (slowdown, pull, the hit cone) lives here, so bots and people get the
   same help. Every solid is an axis-aligned box spanning `y0..h` in `map.ts` (floors, roofs and bridges
   float); build structures with its `building()` (one storey), `tower()` (several storeys with stairs
-  inside), `bridge()` and `stairs()` helpers, whose risers stay under the step-up height; `lift()`
+  inside, at both ends with `twin`), `bridge()` and `stairs()` helpers, whose risers stay under the
+  step-up height, `shell()` (four walls with holes for doors and windows, which must not overlap),
+  and the larger pieces made of them: `hall()` (a shed with roller doors, mezzanines and columns),
+  `catwalk()`, `gantry()`, `rowHouses()`, `compound()` (a walled yard with gates), `tank()` and
+  `lattice()` (an open steel tower with stairs); `lift()`
   raises a structure onto a deck and `paint()` repaints its walls (a ship's hull as steel plate).
+  Each POI's buildings are a function of its own (`supply()`, `quarry()`, `relay()`, `pad()`,
+  `wreck()`, `yard()`, `smelter()`).
   The world is laid out area by area (`areas.ts`): each area (a POI with the ground round it, a
   district, the harbor's bay in one piece, the heart of the reservoir round the drowned town) is
   written in a frame of its own, shared by its basins in `terrain.ts` and everything built on it

@@ -68,14 +68,28 @@ export class Hud {
   private map = new IslandMap($<HTMLCanvasElement>("map-canvas"));
   private mapOpen = false;
 
-  /** Open or close the island map; it is redrawn every frame while open. */
+  /** Open or close the island map; it is redrawn every frame while open, and opens on the region the player is in. */
   toggleMap(force?: boolean) {
     this.mapOpen = force ?? !this.mapOpen;
     $("map").hidden = !this.mapOpen;
+    if (this.mapOpen) this.showWhole(false);
+  }
+
+  /** Switch the open map between the region the player is in and the whole world. */
+  toggleMapView() {
+    if (this.mapOpen) this.showWhole(!this.map.whole);
+  }
+
+  private showWhole(whole: boolean) {
+    this.map.whole = whole;
+    const to = whole ? "地域" : "全体";
+    $("map-zoom").textContent = to;
+    $("map-view-key").textContent = `で${to}を見る`;
   }
 
   constructor() {
     $("map-close").addEventListener("click", () => this.toggleMap(false));
+    $("map-zoom").addEventListener("click", () => this.toggleMapView());
     const strip = $("compass-strip");
     const labels: Record<number, string> = { 0: "N", 45: "NE", 90: "E", 135: "SE", 180: "S", 225: "SW", 270: "W", 315: "NW" };
     // Three turns of the strip so it can scroll seamlessly.

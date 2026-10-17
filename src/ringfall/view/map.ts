@@ -1,5 +1,5 @@
 import { DEPOT, WORLD } from "../sim/config";
-import { BOXES, DEPOTS, ENTRIES, EXTRACTS, LANDMARKS, POIS, REGIONS, ROUTES } from "../sim/map";
+import { BOXES, DEPOTS, ENTRIES, EXTRACTS, LANDMARKS, POIS, REGIONS, ROUTES, regionHere } from "../sim/map";
 import { worldKey } from "../sim/routes";
 import { DAM_FACE, floorLevel, highGround, LEVEL, steepAt, surfaceAt, terrainHeight } from "../sim/terrain";
 import { cellOf, exploreSize, type State } from "../sim/state";
@@ -13,7 +13,15 @@ import { PAL } from "./models";
  * which POIs are cleared, with text at a fixed size on screen. North (-z) is up, as on
  * the compass. Ground the player has not walked near (`State.seen`) lies under fog; the
  * POIs and exits show through it, since the map is how a first raid finds its way.
+ *
+ * The world is tall and narrow, so a map of all of it leaves each region small on a wide
+ * screen. It opens framed on the region the player is in (`Region.bounds`), and switches to
+ * the whole world and back (N, or its button on a phone).
  */
+
+/** A rectangle of the world in metres. */
+type View = { x0: number; z0: number; x1: number; z1: number };
+const WHOLE: View = { x0: WORLD.x0, z0: WORLD.z0, x1: WORLD.x1, z1: WORLD.z1 };
 
 /** Metres per map pixel of the ground image. */
 const CELL = 1.5;
@@ -29,14 +37,33 @@ export class IslandMap {
   private readonly width = Math.ceil((WORLD.x1 - WORLD.x0) / CELL);
   private readonly height = Math.ceil((WORLD.z1 - WORLD.z0) / CELL);
 
-  constructor(private readonly canvas: HTMLCanvasElement) {
-    // The page sizes the map by this, so it keeps the world's shape.
-    canvas.style.setProperty("--map-aspect", `${this.width / this.height}`);
-  }
+  /** Whether the map shows the whole world rather than the region the player is in. */
+  whole = false;
+  /** The shape last given to the page, which sizes the map by it. */
+  private aspect = 0;
+
+  constructor(private readonly canvas: HTMLCanvasElement) {}
 
   /** Map pixel of a world point. */
   private px(x: number, z: number) {
     return { x: (x - WORLD.x0) / CELL, y: (z - WORLD.z0) / CELL };
+  }
+
+  /**
+   * The part of the world on show: the region the player is in, or all of it. The region's frame
+   * grows to take in the player, who may stand on the way between the regions outside it.
+   */
+  view(s: State): View {
+    if (this.whole) return WHOLE;
+    const b = regionHere(s.player.pos).bounds;
+    const { x, z } = s.player.pos;
+    const pad = 40;
+    return {
+      x0: Math.max(WORLD.x0, Math.min(b.x0, x - pad)),
+      z0: Math.max(WORLD.z0, Math.min(b.z0, z - pad)),
+      x1: Math.min(WORLD.x1, Math.max(b.x1, x + pad)),
+      z1: Math.min(WORLD.z1, Math.max(b.z1, z + pad)),
+    };
   }
 
   /**
@@ -117,22 +144,28 @@ export class IslandMap {
     this.baseKey = worldKey();
     this.base ??= this.build();
     const g = this.canvas.getContext("2d")!;
+    const v = this.view(s);
+    const aspect = (v.x1 - v.x0) / (v.z1 - v.z0);
+    // The page sizes the map by this, so it keeps the shape of what it shows.
+    if (aspect !== this.aspect) this.canvas.style.setProperty("--map-aspect", `${(this.aspect = aspect)}`);
     // Drawn at the size it is shown, so names stay readable however tall the world is.
     const dpr = Math.min(devicePixelRatio || 1, 2);
     const w = Math.round((this.canvas.clientWidth || this.width) * dpr);
     const h = Math.round((this.canvas.clientHeight || this.height) * dpr);
     this.canvas.width = w;
     this.canvas.height = h;
-    const k = w / this.width;
+    // Screen pixels per metre, the view centred in the canvas (whose shape follows it a frame late when it changes).
+    const m = Math.min(w / (v.x1 - v.x0), h / (v.z1 - v.z0));
+    const ox = (w - (v.x1 - v.x0) * m) / 2 - (v.x0 - WORLD.x0) * m;
+    const oy = (h - (v.z1 - v.z0) * m) / 2 - (v.z0 - WORLD.z0) * m;
+    g.fillStyle = "#1c1f2a";
+    g.fillRect(0, 0, w, h);
     g.imageSmoothingEnabled = true;
-    g.drawImage(this.base, 0, 0, w, h);
+    g.drawImage(this.base, ox, oy, this.width * CELL * m, this.height * CELL * m);
     // Smoothed, so the fog's edge is soft rather than a staircase of 20 m squares.
     const { cols, rows } = exploreSize();
-    g.drawImage(this.fogImage(s.seen), 0, 0, (k * cols * DEPOT.cell) / CELL, (k * rows * DEPOT.cell) / CELL);
-    const at = (x: number, z: number) => {
-      const p = this.px(x, z);
-      return { x: p.x * k, y: p.y * k };
-    };
+    g.drawImage(this.fogImage(s.seen), ox, oy, cols * DEPOT.cell * m, rows * DEPOT.cell * m);
+    const at = (x: number, z: number) => ({ x: ox + (x - WORLD.x0) * m, y: oy + (z - WORLD.z0) * m });
     g.textAlign = "center";
     g.textBaseline = "middle";
     g.lineWidth = 3 * dpr;
