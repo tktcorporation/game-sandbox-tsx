@@ -17,6 +17,7 @@ import { Soundscape } from "./view/soundscape";
 import { setupSoundCheck } from "./view/soundcheck";
 import { Hud } from "./view/hud";
 import { World } from "./view/world";
+import { loadChoice, pickTier, QUALITY, type QualityChoice } from "./view/quality";
 import { blockPageZoom, setupTouch } from "./touch";
 import "./style.css";
 
@@ -29,7 +30,16 @@ const $ = (id: string) => document.getElementById(id)!;
 const stage = $("stage");
 /** Phones and tablets: touch controls, stronger aim pull, lighter rendering. */
 let touchMode = matchMedia("(pointer: coarse)").matches;
-const world = new World(stage, { lowPower: touchMode });
+/** The tier the device starts on when the choice is automatic, from what the browser tells of it. */
+const deviceTier = pickTier({
+  coarse: touchMode,
+  cores: navigator.hardwareConcurrency || undefined,
+  memory: (navigator as Navigator & { deviceMemory?: number }).deviceMemory,
+  pixels: screen.width * screen.height * devicePixelRatio ** 2,
+});
+let quality: QualityChoice = loadChoice(location.search);
+const startTier = quality === "auto" ? deviceTier : quality;
+const world = new World(stage, { tier: startTier, ratio: Math.min(devicePixelRatio, QUALITY[startTier].maxRatio) });
 const hud = new Hud();
 
 let state: State = newRun(Date.now() & 0xffff);

@@ -5,6 +5,7 @@ import { worldKey } from "../sim/routes";
 import { groundAt } from "../sim/geom";
 import { DAM_FACE, floorLevel, highGround, LANDS, LEVEL, offshore, steepAt, surfaceAt, terrainHeight } from "../sim/terrain";
 import { callLeft, type GameEvent, type State, type Vec3 } from "../sim/state";
+import { QUALITY, type Quality, type Tier } from "./quality";
 import { PAL, RARITY_COLOR, SCOPE_IN, buildAlly, buildBin, buildBoat, buildBox, buildDepot, mergeChunk, buildCare, buildDropship, buildEnemy, buildGun, buildLootItem, addPlates, flat, glow, haloSprite, type EnemyModel } from "./models";
 
 /*
@@ -19,21 +20,13 @@ const HORIZON = 235;
 /** Side of the square chunks the world's ground and buildings are drawn and culled in. */
 const CHUNK = 64;
 /**
- * Where the fog ends: a chunk wholly beyond it is skipped, since it would be drawn in the
- * fog's colour, which is the sky's at the horizon.
+ * Chunks are built while within a chunk past the fog's end (the tier's `fogFar`), a few a frame
+ * (`STREAM_BUDGET`) nearest first, so one is ready before it comes out of the fog; one inside the
+ * fog that is not yet built is built at once. Past `DROP_AT` times that distance a chunk is let
+ * go: the memory held follows the ground round the camera, not the world's size.
  */
-const FOG_FAR = 420;
-/**
- * Chunks are built while within this of the camera, a few a frame (`STREAM_BUDGET`) nearest
- * first, so one is ready before it comes out of the fog; one inside the fog that is not yet built
- * is built at once. Past `DROP_AT` times this a chunk is let go: the memory held follows the
- * ground round the camera, not the world's size.
- */
-const STREAM_FAR = FOG_FAR + CHUNK;
 const STREAM_BUDGET = 2;
 const DROP_AT = 1.3;
-/** Robots, bins and loot further than this are not drawn: they are specks even through a scope. */
-const THINGS_FAR = 220;
 /** The teammate's HUD teal: a depot that is on is lit in the colour that means "ours". */
 const MATE_LIGHT = 0x6fd0cf;
 /** Sparks off a plate that took part of a hit: grey like its damage number. */
@@ -272,11 +265,15 @@ export class World {
   private time = 0;
   private recoilView = 0;
 
-  constructor(container: HTMLElement, opts: { lowPower?: boolean } = {}) {
-    this.renderer = new THREE.WebGLRenderer({ antialias: !opts.lowPower, powerPreference: "high-performance" });
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio, opts.lowPower ? 1.5 : 2));
+  /** The quality tier drawn (quality.ts) and its settings. */
+  private tierNow: Tier = "high";
+  private q: Quality = QUALITY.high;
+
+  /** `tier` and `ratio`: what the page starts drawing at; the tier's antialiasing is fixed from then on. */
+  constructor(container: HTMLElement, opts: { tier: Tier; ratio: number }) {
+    this.renderer = new THREE.WebGLRenderer({ antialias: QUALITY[opts.tier].antialias, powerPreference: "high-performance" });
+    this.renderer.setPixelRatio(opts.ratio);
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.autoClear = false;
     // Counted over the whole frame (both passes and the shadows), not just the last call.
     this.renderer.info.autoReset = false;
@@ -287,14 +284,10 @@ export class World {
     this.scene.add(new THREE.HemisphereLight(0xcfe9ff, 0xb98a55, 1.15));
     this.sun.position.set(-40, 80, 30);
     this.sun.castShadow = true;
-    const shadowSize = opts.lowPower ? 1024 : 2048;
-    this.sun.shadow.mapSize.set(shadowSize, shadowSize);
-    const sc = this.sun.shadow.camera;
-    sc.left = sc.bottom = -55;
-    sc.right = sc.top = 55;
-    sc.near = 1;
-    sc.far = 220;
+    this.sun.shadow.camera.near = 1;
+    this.sun.shadow.camera.far = 220;
     this.sun.shadow.bias = -0.0006;
+    this.setTier(opts.tier);
     this.scene.add(this.sun, this.sun.target);
     this.buildChunks();
     this.scene.add(this.ally.root);
@@ -506,29 +499,37 @@ export class World {
 
   /**
    * Builds the chunks round (x, z) that are not built yet: those inside the fog at once, so
-   * nothing drawn is ever missing, and those out to STREAM_FAR a few a frame; lets go those past
+   * nothing drawn is ever missing, and those out to `streamFar()` a few a frame; lets go those past
    * DROP_AT times that.
    */
   private streamChunks(x: number, z: number) {
+    const fogFar = this.q.fogFar;
+    const far = this.streamFar();
     const waiting: { c: Chunk; d: number }[] = [];
     for (const c of this.chunks) {
       const d = World.away(c, x, z);
       if (c.built) {
-        if (d > STREAM_FAR * DROP_AT) this.emptyChunk(c);
-      } else if (d < FOG_FAR) this.fillChunk(c);
-      else if (d < STREAM_FAR) waiting.push({ c, d });
+        if (d > far * DROP_AT) this.emptyChunk(c);
+      } else if (d < fogFar) this.fillChunk(c);
+      else if (d < far) waiting.push({ c, d });
     }
     waiting.sort((a, b) => a.d - b.d);
     for (const { c } of waiting.slice(0, STREAM_BUDGET)) this.fillChunk(c);
   }
 
   /**
-   * Builds now every chunk within STREAM_FAR of the given points, for the world in place: where a
+   * Builds now every chunk within `streamFar()` of the given points, for the world in place: where a
    * raid's camera starts, so its first seconds draw what was built before them.
    */
   prebuild(points: readonly { x: number; z: number }[]) {
     this.syncRoutes();
-    for (const c of this.chunks) if (!c.built && points.some((q) => World.away(c, q.x, q.z) < STREAM_FAR)) this.fillChunk(c);
+    const far = this.streamFar();
+    for (const c of this.chunks) if (!c.built && points.some((q) => World.away(c, q.x, q.z) < far)) this.fillChunk(c);
+  }
+
+  /** How far round the camera chunks are built: one chunk past the fog. */
+  private streamFar() {
+    return this.q.fogFar + CHUNK;
   }
 
   /**
@@ -598,6 +599,40 @@ export class World {
     }
   }
 
+  get tier(): Tier {
+    return this.tierNow;
+  }
+
+  /**
+   * Draws at `tier` from the next frame: its fog and view distances, and its shadows (map size,
+   * filtering, reach). The shadow map is let go and made again at the new size; changing the
+   * filtering recompiles the lit materials once.
+   */
+  setTier(tier: Tier) {
+    const q = QUALITY[tier];
+    this.tierNow = tier;
+    this.q = q;
+    const fog = this.scene.fog as THREE.Fog;
+    fog.near = q.fogNear;
+    fog.far = q.fogFar;
+    const shadow = this.sun.shadow;
+    if (shadow.mapSize.x !== q.shadowSize) {
+      shadow.map?.dispose();
+      shadow.map = null;
+      shadow.mapSize.set(q.shadowSize, q.shadowSize);
+    }
+    const sc = shadow.camera;
+    sc.left = sc.bottom = -q.shadowSpan;
+    sc.right = sc.top = q.shadowSpan;
+    sc.updateProjectionMatrix();
+    this.renderer.shadowMap.type = q.softShadows ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
+  }
+
+  /** Device pixels per CSS pixel the canvas is drawn at; the canvas keeps its size on the page. */
+  setRatio(ratio: number) {
+    if (ratio !== this.renderer.getPixelRatio()) this.renderer.setPixelRatio(ratio);
+  }
+
   resize(w: number, h: number) {
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
@@ -642,7 +677,7 @@ export class World {
         return false;
       }
       const m = w.m;
-      m.root.visible = Math.hypot(w.x - fx, w.z - fz) < THINGS_FAR;
+      m.root.visible = Math.hypot(w.x - fx, w.z - fz) < this.q.thingsFar;
       if (!m.root.visible) return true;
       // Collapse: knees give, the body tips over and lands with a small bounce; a drone drops out of the air.
       const f = Math.min(1, w.t / WRECK_FALL);
@@ -880,8 +915,10 @@ export class World {
     this.streamChunks(fx, fz);
     // Chunks wholly past the fog are skipped (the camera's view culls the rest), and so are
     // robots, bins and loot far off.
-    for (const c of this.chunks) c.group.visible = World.away(c, fx, fz) < FOG_FAR;
-    const near = (o: THREE.Object3D) => (o.visible = Math.hypot(o.position.x - fx, o.position.z - fz) < THINGS_FAR);
+    const fogFar = this.q.fogFar;
+    const thingsFar = this.q.thingsFar;
+    for (const c of this.chunks) c.group.visible = World.away(c, fx, fz) < fogFar;
+    const near = (o: THREE.Object3D) => (o.visible = Math.hypot(o.position.x - fx, o.position.z - fz) < thingsFar);
 
     // --- teammate
     const a = s.ally;
