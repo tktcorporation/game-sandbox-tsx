@@ -226,6 +226,8 @@ export class Hub {
     } else if (act === "from" && this.profile.depots.includes(arg as PoiId)) {
       this.from = arg as PoiId;
       this.region = poiRegion(this.from).id;
+      // The entry follows the depot's region, so a later start from an entry is one of its own.
+      this.entry = this.entryIn(this.region);
       sfx.click();
     } else if (act === "pick") {
       sfx.click();
@@ -276,7 +278,7 @@ export class Hub {
       const taken = takeKit(this.profile, l, this.from);
       if (!taken) return this.render();
       const { profile, kit } = taken;
-      this.set({ ...profile, region: this.region, entry: this.from ? profile.entry : this.entry });
+      this.set({ ...profile, region: this.region, entry: this.entry });
       this.load = emptyLoadout();
       this.close();
       sfx.deploy();
