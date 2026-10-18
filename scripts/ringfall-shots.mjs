@@ -408,6 +408,29 @@ await page.evaluate(() => window.advanceTime(600));
 await page.keyboard.up("KeyW");
 const after = await read();
 if (!(after.player.z < before.player.z - 3)) errors.push(`keyboard: W did not move the player (${before.player.z} -> ${after.player.z})`);
+// F aims without the right button: held in the default mode, switched on and off by each press in the other.
+{
+  const adsAfter = async (ms) => (await page.evaluate((t) => window.advanceTime(t), ms), (await read()).player.ads);
+  await page.keyboard.down("KeyF");
+  const held = await adsAfter(500);
+  await page.keyboard.up("KeyF");
+  const let_go = await adsAfter(500);
+  await page.evaluate(() => {
+    const el = document.getElementById("adsmode2");
+    el.value = "toggle";
+    el.dispatchEvent(new Event("change"));
+  });
+  await page.keyboard.press("KeyF");
+  const switchedOn = await adsAfter(500);
+  await page.keyboard.press("KeyF");
+  const switchedOff = await adsAfter(500);
+  await page.evaluate(() => {
+    const el = document.getElementById("adsmode2");
+    el.value = "hold";
+    el.dispatchEvent(new Event("change"));
+  });
+  if (!(held > 0.9 && let_go < 0.1 && switchedOn > 0.9 && switchedOff < 0.1)) errors.push(`F aim: held ${held}, let go ${let_go}, switched on ${switchedOn}, off ${switchedOff}`);
+}
 await page.screenshot({ path: `${out}/01-start.png` });
 // The start's banner names the way in and sends the player to the map (M), since the HUD has no markers to follow.
 const startBanner = await page.evaluate(() => document.getElementById("banner").textContent);

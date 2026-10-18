@@ -76,6 +76,24 @@ const look = { x: 0, y: 0 };
 const stick = { x: 0, z: 0 };
 let fire = false;
 let ads = false;
+type AdsMode = "hold" | "toggle";
+const ADS_KEY = "ringfall-ads-mode";
+function loadAdsMode(): AdsMode {
+  try {
+    return localStorage.getItem(ADS_KEY) === "toggle" ? "toggle" : "hold";
+  } catch {
+    // Storage blocked (a private window): held, like the right button.
+    return "hold";
+  }
+}
+function saveAdsMode(m: AdsMode) {
+  try {
+    localStorage.setItem(ADS_KEY, m);
+  } catch {
+    // Not remembered; the choice still holds for this visit.
+  }
+}
+let adsMode = loadAdsMode();
 /** Touch drag pixels are worth this many mouse pixels of turning. */
 const TOUCH_LOOK = 2.6;
 
@@ -110,6 +128,8 @@ $("map-pause").addEventListener("click", () => {
 
 addEventListener("keydown", (e) => {
   if (e.repeat) return;
+  // F aims on its own key, for trackpads that cannot hold the right button while clicking to fire.
+  if (e.code === "KeyF" && adsMode === "toggle" && running && !paused) ads = !ads;
   // The map opens over the game straight from the key, whoever is at the controls.
   if (e.code === "KeyM" && running) hud.toggleMap();
   if (e.code === "KeyN" && running) hud.toggleMapView();
@@ -158,7 +178,7 @@ function readInput(): Input {
   inp.lookY = -look.y * k;
   look.x = look.y = 0;
   inp.fire = fire;
-  inp.ads = ads;
+  inp.ads = ads || (adsMode === "hold" && keys.has("KeyF"));
   inp.crouch = keys.has("KeyC") || keys.has("ControlLeft");
   inp.jump = edges.has("Space");
   inp.reload = edges.has("KeyR");
@@ -418,6 +438,18 @@ for (const id of ["quality", "quality2"]) {
     applyLevel(governor.level);
   });
 }
+// 覗き方: F aims while held, or each press switches aiming on and off; the right button always aims while held.
+for (const id of ["adsmode", "adsmode2"]) {
+  const el = $(id) as HTMLSelectElement;
+  el.value = adsMode;
+  el.addEventListener("change", () => {
+    adsMode = el.value === "toggle" ? "toggle" : "hold";
+    saveAdsMode(adsMode);
+    ads = false;
+    ($("adsmode") as HTMLSelectElement).value = adsMode;
+    ($("adsmode2") as HTMLSelectElement).value = adsMode;
+  });
+}
 for (const id of ["sens", "sens2"]) {
   const el = $(id) as HTMLInputElement;
   el.addEventListener("input", () => {
@@ -475,7 +507,7 @@ window.render_game_to_text = () => {
     seenCells: s.seen.reduce((n, c) => n + c, 0),
     search: s.player.search && { bin: s.player.search.bin, t: +s.player.search.t.toFixed(1) },
     raiders: { next: Number.isFinite(s.raiderT) ? +s.raiderT.toFixed(1) : null },
-    player: { x: +p.pos.x.toFixed(1), y: +p.pos.y.toFixed(1), z: +p.pos.z.toFixed(1), hp: Math.round(p.hp), shield: Math.round(p.shield), armor: p.armor, downed: p.downed > 0, weapons: p.weapons.map((w) => w && `${w.kind}${w.rarity}:${w.mag}`), ult: +p.ult.toFixed(2), leap: !!p.leap, reveal: +p.reveal.toFixed(1), crouch: p.crouch },
+    player: { x: +p.pos.x.toFixed(1), y: +p.pos.y.toFixed(1), z: +p.pos.z.toFixed(1), hp: Math.round(p.hp), shield: Math.round(p.shield), armor: p.armor, downed: p.downed > 0, weapons: p.weapons.map((w) => w && `${w.kind}${w.rarity}:${w.mag}`), ult: +p.ult.toFixed(2), leap: !!p.leap, reveal: +p.reveal.toFixed(1), crouch: p.crouch, ads: +p.ads.toFixed(2) },
     ally: { active: s.ally.active, x: +s.ally.pos.x.toFixed(1), y: +s.ally.pos.y.toFixed(1), z: +s.ally.pos.z.toFixed(1), hp: Math.round(s.ally.hp), shield: Math.round(s.ally.shield), down: +s.ally.down.toFixed(1), helped: +s.ally.helped.toFixed(1), rescue: +s.ally.rescue.toFixed(1), target: s.ally.target },
     awaitAlly: p.awaitAlly,
     region: s.region,
