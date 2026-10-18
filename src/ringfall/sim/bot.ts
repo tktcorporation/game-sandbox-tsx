@@ -2,7 +2,7 @@ import { AWARE, DEG, ENEMIES, HEALS, PLAYER, TICK, ULT } from "./config";
 import { bodyCenter, eyePos, flankOf, magSize, weakPoint } from "./combat";
 import { ceilingAt, dist2d, inWorld, groundAt, groundLevel, los, onTerrain, lookAngles, solidAt, wrapAngle } from "./geom";
 import { EXTRACTS, POIS, regionOf, type ExtractPoint } from "./map";
-import { clearLine, findPath } from "./nav";
+import { clearLine, findPath, type Avoid } from "./nav";
 import { callLeft, enemyMax, idleInput, type Enemy, type Input, type State } from "./state";
 import { pickHeal } from "./player";
 import { makeRoom } from "./world";
@@ -54,6 +54,13 @@ function segmentNear(a: { x: number; z: number }, b: { x: number; z: number }, c
 /** Metres round a titan it is not out to fight that its paths keep out of where they can: past its sight. */
 const AVOID_TITAN = 70;
 
+/**
+ * The ground round a titan that the bot's paths go round. Its post (a metre less round where
+ * it stands guard) never moves, so the path finding keeps walks round that for as long as the
+ * titan stays within a metre of it.
+ */
+const titanSight = (t: Enemy): Avoid => ({ x: t.pos.x, z: t.pos.z, r: AVOID_TITAN, home: { x: t.home.x, z: t.home.z, r: AVOID_TITAN - 1 } });
+
 /** Seconds a fighting robot may stay out of sight before the bot stops waiting for it. */
 const GIVE_UP = 25;
 
@@ -90,7 +97,7 @@ export class Bot {
   private lastFlanked = -1;
   private flankedAt = -99;
   /** Ground its paths go round: the titan's sight, while it is not out to fight it. */
-  private avoid: { x: number; z: number; r: number } | undefined;
+  private avoid: Avoid | undefined;
   /** The robot it last went after: it keeps after it a little further than it takes one up. */
   private chasing = -1;
   /** The raiders have been announced: time to stop taking POIs and get out. */
@@ -146,7 +153,7 @@ export class Bot {
     let aim = this.nextPoi(s);
     // Until it means to take the titan on, its paths go round the titan's sight.
     const titan = s.enemies.find((e) => e.kind === "titan" && e.hp > 0 && e.aware !== "engaged");
-    this.avoid = titan && !(aim >= 0 && POIS[aim].boss) ? { x: titan.pos.x, z: titan.pos.z, r: AVOID_TITAN } : undefined;
+    this.avoid = titan && !(aim >= 0 && POIS[aim].boss) ? titanSight(titan) : undefined;
     const sees = (e: Enemy) => dist2d(e.pos, p.pos) < 60 && los(eye, bodyCenter(e));
     // Robots coming to look ("?") in plain sight are worth the first shot before they find it.
     const coming = (e: Enemy) => e.aware === "alert" && dist2d(e.pos, p.pos) < 45 && sees(e);
@@ -164,7 +171,7 @@ export class Bot {
       if (rest.length && rest.every(given)) {
         this.left.add(aim);
         aim = this.nextPoi(s);
-        this.avoid = titan && !(aim >= 0 && POIS[aim].boss) ? { x: titan.pos.x, z: titan.pos.z, r: AVOID_TITAN } : undefined;
+        this.avoid = titan && !(aim >= 0 && POIS[aim].boss) ? titanSight(titan) : undefined;
       }
     }
     const relevant = live.filter((e) => !given(e) && (e.aware === "engaged" || (aim >= 0 && e.poi === aim) || coming(e)));
