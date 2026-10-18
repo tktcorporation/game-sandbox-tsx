@@ -432,7 +432,7 @@ const tour = [
   ["tour-7-high-rise-view", ...at("area:heart", -2.5, 11.6, -10.2), Math.PI, -0.3],
   ["tour-8-plateau-over-lakebed", ...at("area:heart", -40, 6.4, -46), 1.57, -0.15],
   ["tour-9-ridge", ...at("area:ridge", -50, 10.1, 70), -1.57, -0.1],
-  ["tour-10-over-supply", ...at("supply", 45, 34, 54), -1.57, -0.35],
+  ["tour-10-over-supply", ...at("supply", 130, 45, -120), -2.32, -0.3],
   ["tour-11-mesa-relay", ...at("relay", 18, 8.6, -23), 1.57, 0.02],
 ];
 for (const [name, x, y, z, yaw, pitch] of tour) {
@@ -473,7 +473,12 @@ const harborTour = [
   ["tour-37-harbor-plain", -96, 1.7, -440, 0.3, -0.04],
   ["tour-35-gangway-hauled", ...at("wreck", -37, 1.7, -17), Math.PI - 0.45, 0.5],
   // Each POI's landmark from the way in, and the smelter's roofs from the bridge between its halls.
-  ["tour-38-supply-silos", ...at("supply", 60, 1.7, 110), -0.69, 0.08],
+  ["tour-38-supply-silos", ...at("supply", 20, 1.7, 170), -0.16, 0.08],
+  // The supply depot at its own scale, from eye height: the tanker's bow over the beach, the
+  // street between the office block and the east warehouse, the yard from the east dune's crest.
+  ["tour-46-supply-tanker-from-beach", ...at("supply", 30, 1.7, 160), 0.2, 0.15],
+  ["tour-47-supply-street", ...at("supply", 10, 1.7, 0), 0, 0.06],
+  ["tour-48-supply-dune-crest", ...at("supply", 90, 1.7, 22), -2.2, -0.04],
   ["tour-39-quarry-plant", ...at("quarry", 0, 1.7, 40), -0.83, -0.05],
   ["tour-40-relay-mast", ...at("relay", -20, 1.7, 20), 0.91, 0.12],
   ["tour-41-pad-hangars", ...at("pad", 0, 1.7, -40), 0, 0.1],

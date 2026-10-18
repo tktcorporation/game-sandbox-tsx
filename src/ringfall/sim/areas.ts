@@ -29,7 +29,9 @@ export const AREA: Record<AreaId, Offset> = {
   // lakebed, the dam and its crest, the landing pad behind it, the plateau over the lakebed's
   // west side, the spillway and its canyon bridge.
   heart: [0, 37],
-  supply: [0, 140],
+  // The south dune coast: the supply depot's works in one piece with the dunes, the beached
+  // tanker and the bluff over its west side.
+  supply: [0, 420],
   quarry: [-72, 75],
   // The relay tower's mesa with the housing street and the flats beside it.
   relay: [45, 52],
@@ -49,7 +51,7 @@ export const AREA: Record<AreaId, Offset> = {
 
 /** The area each POI stands in, and where the POI's own frame lies within that area's frame. */
 const POI_IN: Record<PoiId, [AreaId, Offset]> = {
-  supply: ["supply", [0, 90]],
+  supply: ["supply", [0, 0]],
   quarry: ["quarry", [-99, 8]],
   relay: ["relay", [48, -7]],
   pad: ["heart", [0, -52]],

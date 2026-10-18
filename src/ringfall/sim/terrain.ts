@@ -114,7 +114,24 @@ interface Open {
    * runs out into the ground between at its own level.
    */
   walled?: true;
+  /** Sand dunes on the shape's floor (a basin's), which fade out toward its edge. */
+  dunes?: readonly Dune[];
 }
+
+/**
+ * A dune: its crest runs along `line`, `height` metres over the floor it stands on, and its sides
+ * fall away over `half` metres, gentle enough to walk (a crest of 12 m over 26 m rises 0.7 per metre at
+ * most). Crests open and close the sightlines over a floor that would otherwise be one flat yard.
+ * The floor's level carries it (`floorLevel()`), so things placed out on a dune stand on its sand.
+ */
+interface Dune {
+  line: readonly P[];
+  half: number;
+  height: number;
+}
+
+/** Metres inside its basin's edge over which a dune fades out, so the floor meets the ground beyond at its level. */
+const DUNE_FADE = 16;
 
 /** Value at fraction `t` along a line whose points carry `vals`, one each. */
 function atPoint(vals: readonly number[], t: number, { lens, sum }: Polyline): number {
@@ -127,6 +144,17 @@ function atPoint(vals: readonly number[], t: number, { lens, sum }: Polyline): n
 }
 
 const levelOf = (o: Open, t: number, poly: Polyline) => (typeof o.level === "number" ? o.level : o.atPoints ? atPoint(o.level, t, poly) : along(o.level, t));
+
+/** The dunes' rise over a shape's floor at (x, z), `d` metres from the shape's line: the highest crest's. */
+function duneRise(dunes: readonly { dune: Dune; poly: Polyline }[], half: number, x: number, z: number, d: number): number {
+  let rise = 0;
+  for (const { dune, poly } of dunes) {
+    if (nearBox(x, z, poly) >= dune.half) continue;
+    const t = Math.min(1, toPolyline(x, z, poly).d / dune.half);
+    rise = Math.max(rise, dune.height * (0.5 + 0.5 * Math.cos(Math.PI * t)));
+  }
+  return rise * smooth(0, DUNE_FADE, half - d);
+}
 
 /** A trench with a flat floor `floor` metres either side of its line, at `levels` along it. */
 export interface Cut {
@@ -159,6 +187,8 @@ export const LEVEL = {
   /** The railway's embankments and the deck of its bridge and viaduct. */
   rail: 10.2,
   pass: 15,
+  /** The bluff over the dune coast's west side, above the high ground's usual top. */
+  bluff: 26,
 } as const;
 
 /** The dam's face: the cliff from the crest walkway down to the lakebed, drawn as concrete. */
@@ -171,7 +201,21 @@ const inPoi = (p: PoiId, line: readonly P[]): P[] => line.map(([x, z]) => [x + P
 
 /** Basins: the POIs and the districts. Each holds everything built there, and is written in its area's frame. */
 const BASINS: Open[] = [
-  { name: "補給所", line: inPoi("supply", [[6, 30], [6, 86]]), half: 40, level: LEVEL.shore },
+  // The dune coast's works: a floor some 220 m across, its yards between the sheds flat, dunes
+  // up to 13 m high piled against its east side, its south side and round the silos.
+  {
+    name: "補給所",
+    line: inPoi("supply", [[-58, -55], [70, -55], [70, 0], [-58, 0], [-58, 60], [70, 60], [70, 0]]),
+    half: 52,
+    level: LEVEL.shore,
+    dunes: [
+      { line: inPoi("supply", [[86, -70], [90, -12], [90, 36]]), half: 26, height: 13 },
+      { line: inPoi("supply", [[-80, 72], [-40, 84], [0, 72], [16, 86]]), half: 24, height: 11 },
+      { line: inPoi("supply", [[-104, -82], [-66, -98]]), half: 18, height: 7 },
+    ],
+  },
+  // The bluff: a sand-capped tableland over the works' west side, a 26 m cliff to its floor.
+  { name: "砂丘の崖", line: inPoi("supply", [[-140, -20], [-140, 50]]), half: 16, level: LEVEL.bluff, walled: true },
   { name: "湖底", line: inArea("heart", [[0, -40], [0, 18]]), half: 26, level: LEVEL.lakebed, walled: true },
   { name: "発着場", line: inPoi("pad", [[-12, -64], [12, -64], [0, -92]]), half: 34, level: LEVEL.dam },
   // The dam crest: a walkway along the top of the dam face, the lakebed 15 m below.
@@ -207,14 +251,16 @@ const ROADS: Open[] = [
   { name: "湖への坂", line: inArea("heart", [[0, 102], [0, 40]]), half: 5, level: [LEVEL.shore, LEVEL.lakebed], walled: true },
   // Up onto the ridge at its east end, along its top, and down the haul road into the pit at its west end.
   // The climb starts at the supply basin's edge: a ramp rising inside a basin would leave a step where they meet.
-  { name: "尾根道", line: [[-20, 246], [-40, 217.5], [-65, 182]], half: 5, level: [LEVEL.shore, LEVEL.shore, LEVEL.ridge] },
+  { name: "尾根道", line: [[-30, 318], [-40, 217.5], [-65, 182]], half: 5, level: [LEVEL.shore, LEVEL.shore, LEVEL.ridge] },
   { name: "採掘場の運搬路", line: [[-95, 169], [-151, 167], [-207, 146.5], [-244, 105]], half: 5, level: [LEVEL.ridge, -1, -8, LEVEL.pit], walled: true },
   { name: "西道", line: [[-24, 53], [-89.5, 68.5], [-184, 95]], half: 5, level: [LEVEL.lakebed, -8, LEVEL.pit], walled: true },
   { name: "廃村道", line: [[-222, 61], [-176, -8]], half: 5, level: [LEVEL.pit, LEVEL.shore] },
   { name: "湖の西坂", line: inArea("heart", [[-22, -30], [-44, -38]]), half: 5, level: [LEVEL.lakebed, LEVEL.shore], walled: true },
   { name: "堤の西坂", line: inArea("heart", [[-56, -58], [-52, -82], [-30, -80]]), half: 5, level: [LEVEL.shore, 6, LEVEL.dam] },
   { name: "廃村の北道", line: [[-148, -36], [-89, -58.5], [-40, -73]], half: 5, level: [LEVEL.shore, 4, LEVEL.dam] },
-  { name: "工場道", line: [[24, 244], [62.5, 187], [80, 156]], half: 5, level: LEVEL.shore },
+  { name: "工場道", line: [[30, 318], [62.5, 187], [80, 156]], half: 5, level: LEVEL.shore },
+  // Up the bluff from the works' south-west corner, round its south end and onto its top.
+  { name: "崖への坂", line: inArea("supply", [[-98, 88], [-126, 100], [-152, 84], [-150, 56]]), half: 5, level: [LEVEL.shore, 11, 20, LEVEL.bluff], atPoints: true, walled: true },
   { name: "住宅道", line: [[98, 148], [130, 107.5], [151, 80]], half: 5, level: [LEVEL.shore, 4, LEVEL.mesa] },
   { name: "東の坂", line: [[22, 37], [67.5, 37], [103, 28], [107, 18]], half: 5, level: [LEVEL.lakebed, -1, 5, LEVEL.mesa], walled: true },
   // To the canyon bridge: the deck is at the mesa's level, a step down from the pad.
@@ -262,7 +308,6 @@ interface Shelf {
 }
 
 const SHELVES: Shelf[] = [
-  { basin: "補給所", at: Math.PI, span: 0.5, width: 8, height: 3.4, ramp: 14, rampEnd: 1 },
   { basin: "採掘場", at: -2.4, span: 0.45, width: 8, height: 3.4, ramp: 14, rampEnd: -1 },
   { basin: "中継塔", at: -0.9, span: 0.5, width: 8, height: 3.4, ramp: 14, rampEnd: 1 },
   { basin: "発着場", at: Math.PI, span: 0.45, width: 8, height: 3.4, ramp: 14, rampEnd: -1 },
@@ -293,7 +338,7 @@ const CUTS: Cut[] = [
 ];
 
 /** Open shapes and cuts with their lines worked out once: `lowest()` runs for every grid cell. */
-const OPEN = [...BASINS, ...ROADS].map((o) => ({ o, poly: polyline(o.line) }));
+const OPEN = [...BASINS, ...ROADS].map((o) => ({ o, poly: polyline(o.line), dunes: (o.dunes ?? []).map((dune) => ({ dune, poly: polyline(dune.line) })) }));
 const CUT_LINES = CUTS.map((c) => ({ c, poly: polyline(c.line) }));
 
 /**
@@ -312,6 +357,8 @@ export interface Land {
 /** The land masses. The world's coast is the outline of all of them together. */
 export const LANDS: Land[] = [
   { name: "島", x: 0, z: 60, radius: (a) => 385 + 13.5 * Math.sin(3 * a + 1.1) + 8.4 * Math.sin(7 * a + 2.3) + 5 * Math.sin(13 * a + 0.4), max: 412 },
+  // The dune coast, bulging south of the island round the supply depot: wider east to west.
+  { name: "砂丘", x: 0, z: 470, radius: (a) => 230 * 175 / Math.hypot(175 * Math.cos(a), 230 * Math.sin(a)) + 6 * Math.sin(5 * a + 0.9) + 3 * Math.sin(11 * a + 2.1), max: 240 },
   // The mountain belt between the two regions, wider east to west.
   { name: "山地", x: 30, z: -350, radius: (a) => 150 + 60 * Math.abs(Math.cos(a)) + 6 * Math.sin(5 * a + 0.7), max: 216 },
   { name: "港湾", x: 0, z: -775, radius: (a) => 425 + 10 * Math.sin(3 * a + 0.5) + 7 * Math.sin(7 * a + 1.9) + 3.4 * Math.sin(11 * a + 0.3), max: 441 },
@@ -395,7 +442,7 @@ const CRAGS: { name: string; line: readonly P[]; half: number }[] = [
   { name: "東の岩稜", line: [[229, 38], [244, 88]], half: 7 },
   { name: "南東の岩", line: [[224, 266], [234, 258]], half: 16 },
   { name: "北西の岩稜", line: [[-269, -92], [-234, -109]], half: 8 },
-  { name: "南の岩", line: [[69, 354], [76, 350]], half: 9 },
+  { name: "南の岩", line: [[150, 530], [158, 524]], half: 10 },
   { name: "発着場の北の岩", line: [[84, -196], [98, -208]], half: 14 },
   { name: "西の岩塔", line: [[-205, -176], [-196, -186]], half: 12 },
   { name: "南西の岩", line: [[-156, 362], [-144, 354]], half: 12 },
@@ -596,14 +643,14 @@ function lowest(x: number, z: number, near = bucketAt(x, z)): { h: number; level
   // How far outside the nearest open shape or cut (x, z) lies; negative inside one.
   let edge = Infinity;
   for (const n of near.open) {
-    const { o, poly } = OPEN[n];
+    const { o, poly, dunes } = OPEN[n];
     const far = nearBox(x, z, poly) - o.half;
     if (far > FAR) {
       edge = Math.min(edge, far);
       continue;
     }
     const { d, along: t } = toPolyline(x, z, poly);
-    const lv = levelOf(o, t, poly);
+    const lv = levelOf(o, t, poly) + (dunes.length && d < o.half ? duneRise(dunes, o.half, x, z, d) : 0);
     edge = Math.min(edge, d - o.half);
     const cone = lv + Math.max(0, d - o.half) * CLIFF;
     if (cone < h) {
@@ -677,10 +724,14 @@ export function checkTerrainIndex(n: number): string | null {
 /** Names of the open shapes, then "谷" for each cut and "野" for the ground between: what `surfaceAt()` answers with. */
 const SHAPE_NAMES = [...OPEN.map(({ o }) => o.name), ...CUTS.map(() => "谷"), "野"];
 
-/** The shaped ground before anything is flattened for buildings; `low` is `lowest(x, z).h` when already known. */
-function natural(x: number, z: number, low = lowest(x, z).h): number {
-  const top = HIGH + vnoise(x / 30, z / 30) * 5;
-  return Math.min(top, low) + (vnoise(x / 9, z / 9) - 0.5) * 0.5;
+/**
+ * The shaped ground before anything is flattened for buildings; `low` is `lowest(x, z)` when
+ * already known. The high ground's top is capped near HIGH, and rises over a basin or road walked
+ * above it (a bluff), so that its floor is not cut down to the cap; the ground between keeps the cap.
+ */
+function natural(x: number, z: number, low = lowest(x, z)): number {
+  const top = HIGH + vnoise(x / 30, z / 30) * 5 + (low.shape < OPEN.length && low.level > HIGH - 1 ? low.level - HIGH + 3 : 0);
+  return Math.min(top, low.h) + (vnoise(x / 9, z / 9) - 0.5) * 0.5;
 }
 
 /** The rim: cliffs rising beyond the coast, out to the horizon. */
@@ -720,9 +771,12 @@ export function buildTerrain(flat: FlatShape[]) {
   const at = new Float32Array(NX * NZ);
   // For a shape with no level of its own: the level of the ground at its middle.
   const mid = new Float32Array(NX * NZ);
+  // And the shape there, so that a floor rising over dunes is followed rather than terraced.
+  const midShape = new Int32Array(NX * NZ);
   for (const b of flat) {
     const y = b.y ?? NaN;
-    const m = lowest((b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2).level;
+    const ml = lowest((b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2);
+    const m = ml.level;
     const i0 = Math.max(0, Math.floor((b.x0 - WORLD.x0) / RES));
     const i1 = Math.min(NX - 1, Math.ceil((b.x1 - WORLD.x0) / RES));
     const j0 = Math.max(0, Math.floor((b.z0 - WORLD.z0) / RES));
@@ -734,6 +788,7 @@ export function buildTerrain(flat: FlatShape[]) {
         dist[j * NX + i] = 0;
         at[j * NX + i] = y;
         mid[j * NX + i] = m;
+        midShape[j * NX + i] = ml.shape;
       }
   }
   const D = RES;
@@ -743,6 +798,7 @@ export function buildTerrain(flat: FlatShape[]) {
       dist[k] = dist[from] + step;
       at[k] = at[from];
       mid[k] = mid[from];
+      midShape[k] = midShape[from];
     }
   };
   for (let j = 0; j < NZ; j++)
@@ -775,12 +831,14 @@ export function buildTerrain(flat: FlatShape[]) {
       // A shape with no level follows the floor under each cell (so a ramp stays a ramp),
       // unless that floor is another level altogether: a patrol point on the dam's crest
       // would otherwise press its corner of the dam face down to the lakebed, leaving a pit.
-      const level = !Number.isNaN(at[k]) ? at[k] : Math.abs(floors[k] - mid[k]) > 2 ? mid[k] : floors[k];
+      // On one floor with dunes the floor is followed: its sand rises and falls within the one shape.
+      const dunes = low.shape === midShape[k] && low.shape < OPEN.length && OPEN[low.shape].dunes.length > 0;
+      const level = !Number.isNaN(at[k]) ? at[k] : Math.abs(floors[k] - mid[k]) > 2 && !dunes ? mid[k] : floors[k];
       // Shelves stand right up to hand-built things (a 1 m gap); other shapes leave them room to blend.
       const dd = dist[k];
       let shelf = -Infinity;
       for (const n of bucketAt(x, z).shelves) shelf = Math.max(shelf, shelfAt(n, x, z));
-      const base = level + (natural(x, z, low.h) - level) * smooth(3, 10, dd);
+      const base = level + (natural(x, z, low) - level) * smooth(3, 10, dd);
       field[k] = (shelf > base ? base + (shelf - base) * smooth(1, 2, dd) : base) + rim(x, z);
     }
   steep = new Uint8Array(NX * NZ);

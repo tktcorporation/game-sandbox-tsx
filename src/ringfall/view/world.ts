@@ -15,6 +15,33 @@ import { PAL, RARITY_COLOR, SCOPE_IN, buildAlly, buildBin, buildBoat, buildBox, 
  */
 
 const EYE_LERP = 12;
+
+/**
+ * The view is set by its horizontal angle, as shooters' settings are: about 90° across, so the
+ * world reads at a human scale rather than pulled back. A wide phone gets a little more across
+ * (up to 95°) instead of a slot; a tall window is held to 70° up and down, narrowing it across.
+ */
+const VIEW = { across: 90, wideAcross: 95, wideAspect: 2.2, maxUp: 70 } as const;
+/**
+ * The vertical hip view the weapons' `adsFov` and the sprint, leap and kick widenings are
+ * written against: aiming zooms by the ratio of their half-angles' tangents to it, whatever
+ * the screen's own hip view.
+ */
+const FOV_REF = 74;
+const tanHalf = (deg: number) => Math.tan((deg * Math.PI) / 360);
+const atanDeg = (t: number) => (Math.atan(t) * 360) / Math.PI;
+
+/** Vertical hip view (degrees) for a screen of this aspect (width / height). */
+export function hipFov(aspect: number): number {
+  const wide = Math.max(0, Math.min(1, (aspect - 16 / 9) / (VIEW.wideAspect - 16 / 9)));
+  const across = VIEW.across + (VIEW.wideAcross - VIEW.across) * wide;
+  return Math.min(VIEW.maxUp, atanDeg(tanHalf(across) / aspect));
+}
+
+/** How much a sight written as `adsFov` (against FOV_REF) narrows the view: under 1, the share of it left. */
+export const sightZoom = (adsFov: number) => tanHalf(adsFov) / tanHalf(FOV_REF);
+/** The view `fov` narrowed by aiming through a sight written as `adsFov`. */
+const zoomedFov = (fov: number, adsFov: number) => atanDeg(tanHalf(fov) * sightZoom(adsFov));
 /** How far past the world's bounds the terrain mesh reaches: far enough to fill the horizon. */
 const HORIZON = 235;
 /** Side of the square chunks the world's ground and buildings are drawn and culled in. */
@@ -44,6 +71,8 @@ const WRECK_FALL = 0.55;
 /** Ground the harbor paints apart: the old bay floor white with salt, and the paved town and quays. */
 const SALT = new Set(["塩田", "難破船"]);
 const PAVED = new Set(["港町", "埠頭", "高架下", "西の道", "コンテナヤード", "製錬所", "製錬所の坂", "駅の坂"]);
+/** The dune coast's ground: pale blown sand, ripples running across it. */
+const DUNES = new Set(["補給所", "砂丘の崖", "崖への坂"]);
 /** The harbor's tidal channel: its floor and the water over it. */
 /** The water channel the boat comes up, at the harbor's quay. */
 export const CHANNEL = { x0: 88, x1: 170, z0: -600, z1: -583, y: -5.55 };
@@ -129,6 +158,8 @@ const COL = {
   saltDark: new THREE.Color(PAL.saltDark),
   paved: new THREE.Color(PAL.paved),
   pavedDark: new THREE.Color(PAL.pavedDark),
+  dune: new THREE.Color(PAL.dune),
+  duneDark: new THREE.Color(PAL.duneDark),
 };
 const groundMat = new THREE.MeshLambertMaterial({ vertexColors: true });
 
@@ -147,6 +178,7 @@ function groundColour(c: THREE.Color, x: number, z: number, lo: number, hi: numb
     const at = surfaceAt(x, z);
     // Salt crust split by darker cracks.
     if (SALT.has(at)) c.copy(COL.salt).lerp(COL.saltDark, noise(x * 0.35, z * 0.35) > 0.62 ? 0.8 : k * 0.25);
+    else if (DUNES.has(at)) c.copy(COL.dune).lerp(COL.duneDark, Math.sin(x * 0.9 + z * 0.35 + noise(x * 0.05, z * 0.05) * 6) > 0.7 ? 0.45 : k * 0.3);
     else if (PAVED.has(at)) c.copy(COL.paved).lerp(COL.pavedDark, noise(x * 0.5, z * 0.5) > 0.66 ? 0.6 : k * 0.25);
     else if (at === "水路" || floorLevel(x, z) <= LEVEL.lakebed + 0.5) c.copy(COL.mud).lerp(COL.mudDark, noise(x * 0.4, z * 0.4) > 0.6 ? 0.6 : k * 0.3);
     else {
@@ -216,7 +248,7 @@ interface Tracer {
 export class World {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
-  readonly camera = new THREE.PerspectiveCamera(72, 16 / 9, 0.05, 900);
+  readonly camera = new THREE.PerspectiveCamera(hipFov(16 / 9), 16 / 9, 0.05, 900);
   private gunScene = new THREE.Scene();
   private gunCam = new THREE.PerspectiveCamera(55, 16 / 9, 0.01, 10);
   private sun = new THREE.DirectionalLight(0xfff1d6, 2.2);
@@ -670,7 +702,11 @@ export class World {
 
   resize(w: number, h: number) {
     this.renderer.setSize(w, h, false);
+    // Keep the zoom the view is at (aiming, a sight, a kick) and carry it to the new hip fov.
+    const rad = Math.PI / 360;
+    const zoom = Math.tan(this.camera.fov * rad) / Math.tan(hipFov(this.camera.aspect) * rad);
     this.camera.aspect = w / h;
+    this.camera.fov = Math.atan(zoom * Math.tan(hipFov(w / h) * rad)) / rad;
     this.camera.updateProjectionMatrix();
     this.gunCam.aspect = w / h;
     this.gunCam.updateProjectionMatrix();
@@ -922,10 +958,13 @@ export class World {
     this.camera.position.set(p.pos.x, p.pos.y + this.eyeY + bobY - this.landDip, p.pos.z);
     this.camera.rotation.set(p.pitch + (p.recoil * Math.PI) / 180 + shakeY, -(p.yaw + (p.recoilYaw * Math.PI) / 180) + shakeX, p.sliding ? -0.04 : 0, "YXZ");
     const spec = w0 ? WEAPONS[w0.kind] : WEAPONS.pike;
-    const baseFov = 74 + (p.sprinting ? 4 : 0) + (p.leap ? 10 : 0);
-    const fovTarget = baseFov + (spec.adsFov - 74) * p.ads;
+    // Widenings are written in degrees of the reference view and scaled to this screen's.
+    const hip = hipFov(this.camera.aspect);
+    const per = hip / FOV_REF;
+    const baseFov = hip + ((p.sprinting ? 4 : 0) + (p.leap ? 10 : 0)) * per;
+    const fovTarget = baseFov + (zoomedFov(baseFov, spec.adsFov) - baseFov) * p.ads;
     this.fovKick *= Math.exp(-dt * 2.2);
-    const fov = fovTarget + this.fovKick;
+    const fov = fovTarget + this.fovKick * per;
     if (Math.abs(this.camera.fov - fov) > 0.01) {
       this.camera.fov += (fov - this.camera.fov) * Math.min(1, dt * 14);
       this.camera.updateProjectionMatrix();

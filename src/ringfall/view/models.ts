@@ -15,6 +15,9 @@ export const PAL = {
   skyHorizon: 0xf4dcb0,
   sand: 0xd9a868,
   sandDark: 0xc4914f,
+  /** The south coast's dunes: wind-blown sand, paler than the island's soil. */
+  dune: 0xecd5a6,
+  duneDark: 0xd9bd86,
   rock: 0xb0623c,
   rockDark: 0x8d4a2c,
   /** The dried lakebed: cracked clay, greyer than the sand. */

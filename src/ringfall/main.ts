@@ -16,7 +16,7 @@ import { sfx } from "./view/sfx";
 import { Soundscape } from "./view/soundscape";
 import { setupSoundCheck } from "./view/soundcheck";
 import { Hud } from "./view/hud";
-import { World } from "./view/world";
+import { sightZoom, World } from "./view/world";
 import { Governor, loadChoice, pickTier, QUALITY, saveChoice, type Level, type QualityChoice, type Tier } from "./view/quality";
 import { blockPageZoom, setupTouch } from "./touch";
 import "./style.css";
@@ -152,7 +152,7 @@ function readInput(): Input {
   // Aiming slows the view in step with the zoom, so a scope does not swing wildly.
   const pl = state.player;
   const held = pl.weapons[pl.slot];
-  const zoom = held ? 1 - pl.ads * (1 - WEAPONS[held.kind].adsFov / 74) : 1;
+  const zoom = held ? 1 - pl.ads * (1 - sightZoom(WEAPONS[held.kind].adsFov)) : 1;
   const k = 0.0022 * sens * zoom;
   inp.lookX = look.x * k;
   inp.lookY = -look.y * k;

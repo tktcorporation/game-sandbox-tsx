@@ -16,7 +16,7 @@ export const WORLD = {
   x0: -440,
   x1: 460,
   z0: -1220,
-  z1: 470,
+  z1: 660,
   gravity: 15,
   stepUp: 0.45,
 };
@@ -135,6 +135,10 @@ export interface WeaponSpec {
   recoil: number; // degrees of pitch kick per shot
   /** Degrees of sideways kick per shot, scaled by `KICK_PATTERN` along a spray (0: none). */
   kick: number;
+  /**
+   * The vertical view while aiming, in degrees, written against a 74° vertical hip view: the view
+   * (view/world.ts) narrows by the same ratio of half-angle tangents from whatever hip view the screen has.
+   */
   adsFov: number;
   /** Aiming looks through a scope: the view zooms to adsFov behind a round sight, with no gun in view. */
   scope?: true;

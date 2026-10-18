@@ -20,9 +20,10 @@ and no set order: the player chooses which POIs to take and when to leave. First
 The reservoir (south, +z) has four POIs and three ways off; the harbor (north, beyond a mountain
 belt) has three POIs and a boat. A pass road from the landing pad and a railway (an embankment from
 the east mesa, a bridge over a gorge, a viaduct into the harbor) join them, so a raid may walk from
-one to the other. The world is about 900 by 1690 m (`WORLD` in `config.ts`): the reservoir's island
-(radius about 385 m), a mountain belt at z about -350, and the harbor's land (radius about 425 m);
-neighbouring POIs stand 170 to 330 m apart, with open ground left round them for more.
+one to the other. The world is about 900 by 1880 m (`WORLD` in `config.ts`): the reservoir's island
+(radius about 385 m) with the dune coast bulging south of it, a mountain belt at z about -350, and
+the harbor's land (radius about 425 m); neighbouring POIs stand 170 to 330 m apart, with open
+ground left round them for more.
 `REGIONS` in `map.ts` gives each region its POIs, ways off and ways in on foot (`ENTRIES`: a named
 point out on its open ground, facing in, out of every robot's sight for the first seconds);
 `newRun(seed, kit, region, { entry })` starts on the ground there with the teammate beside the
@@ -113,7 +114,14 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   `lattice()` (an open steel tower with stairs); `lift()`
   raises a structure onto a deck and `paint()` repaints its walls (a ship's hull as steel plate).
   Each POI's buildings are a function of its own (`supply()`, `quarry()`, `relay()`, `pad()`,
-  `wreck()`, `yard()`, `smelter()`).
+  `wreck()`, `yard()`, `smelter()`). The helpers take their sizes from a `Scale` (storey, walls,
+  doors, windows, roller doors, stair width): `HOUSE` (3.4 m storeys) everywhere but the supply
+  depot, which is built to `WORKS` at the scale of real industry (4.5 m storeys, half-metre walls,
+  doors 2.4 by 2.8 m, roller doors 6 m high) and stands about 220 m across on the dune coast:
+  warehouses 40 to 66 m long and 9 to 13.5 m high, a four-storey office block, silos 32 m high,
+  a beached tanker whose bow rises 38 m, a watchtower sunk two storeys into a dune, dunes up to
+  13 m (`dunes` on its basin in `terrain.ts`) and a bluff 26 m over its west side. It is the
+  slice the other POIs are meant to follow.
   The world is laid out area by area (`areas.ts`): each area (a POI with the ground round it, a
   district, the harbor's bay in one piece, the heart of the reservoir round the drowned town) is
   written in a frame of its own, shared by its basins in `terrain.ts` and everything built on it
@@ -192,7 +200,10 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   with `input.touch` set so the sim applies `ASSIST.touchPull`. `npm run shots:ringfall` drives it with
   real touch events in a phone-sized viewport before the desktop run.
 - `src/ringfall/view/` renders and never changes rules: `world.ts` (three.js), `hud.ts` (DOM),
-  and synthesized sound. `world.ts` cuts the ground and everything built into `CHUNK`-metre
+  and synthesized sound. The view is set by its horizontal angle (`hipFov()` in `world.ts`): 90°
+  across, up to 95° on a wide phone, at most 70° up and down on a tall window; aiming narrows it by
+  the ratio each weapon's `adsFov` gives against a 74° reference, so a sight zooms the same on
+  every screen. `world.ts` cuts the ground and everything built into `CHUNK`-metre
   chunks, each merged into a mesh or two with its colours in the vertices, and skips chunks past
   the fog and robots, bins and loot past the tier's `thingsFar`, so the draw calls stay bounded
   however large the world grows. Chunks are built only near the camera (`streamChunks()`: at once
