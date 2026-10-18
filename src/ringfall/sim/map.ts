@@ -271,9 +271,9 @@ const PAD_TOWER = { x: -100, z: 40, floors: 5 } as const;
 
 /**
  * The tether's anchor, in the anchor's frame (areas.ts), its heights over the landing pad's
- * (LEVEL.dam). The plinth is a stepped round `r` across the middle, its top a little over the pad's
+ * (LEVEL.dam). The plinth is a stepped round of radius `r`, its top a little over the pad's
  * so the pad's ground never shows through it, walked onto from the pad's north edge; its sides go
- * down to `foot`, under the lowest ground round it. On it the clamp ring, `ring` across the middle
+ * down to `foot`, under the lowest ground round it. On it the clamp ring, of radius `ring`
  * and a storey high, and in that the shaft: `shaft` metres either side of the middle, walls `wall`
  * thick, a scaffold of `floors` storeys inside up to the gallery, and broken off far above.
  */
@@ -1719,7 +1719,8 @@ function tetherPiece(t: TetherPiece): Box[] {
   out.push(rect(t.x0, -4.4, t.x1, 4.4, 0, 0.2, "slab"));
   const breached = (x: number) => (t.breaches ?? []).some((g) => x + 0.8 > g.a - 0.5 && x < g.b + 0.5);
   for (const zs of [-1, 1]) for (let x = t.x0 + 4.5; x + 0.8 < t.x1 - 2; x += 9) if (!breached(x)) out.push(rect(x, zs < 0 ? -6.3 : 6, x + 0.8, zs < 0 ? -6 : 6.3, t.foot, c, "steel", 6));
-  ribs(5.1, c, t.back - 0.7);
+  // Starting inside the roof keeps the rib's underside out of the ceiling's plane, which would flicker.
+  ribs(5.1, c + 0.2, t.back - 0.7);
   ribs(3.3, t.back, t.back + 0.3);
   return out;
 }
