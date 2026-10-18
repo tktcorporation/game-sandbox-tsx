@@ -236,10 +236,14 @@ let last = performance.now();
 let drawnAt = last;
 let drawDt = 0;
 /**
- * On the governor's 30 fps rungs a frame draws once a thirtieth of a second has nearly passed
- * since the last: every other one at 60 Hz, every fourth at 120 Hz.
+ * On the governor's 30 fps rungs frames draw against deadlines a thirtieth of a second apart, so
+ * the rate averages 30 at any refresh rate (every other frame at 60 Hz, two of every five at 75 Hz).
+ * A deadline that falls more than a frame behind (a stall, a hidden page) restarts from now.
  */
-const CAP_MS = 1000 / 30 - 4;
+const CAP_MS = 1000 / 30;
+/** Slack for refresh jitter, so a frame a hair early still meets its deadline. */
+const CAP_SLACK = 2;
+let capDue = 0;
 function frame(now: number) {
   // The first frame's timestamp can predate `last` by the seconds the page took to load, and a
   // negative step would grow every fade in the view (the muzzle flash and its light) instead.
@@ -266,7 +270,8 @@ function frame(now: number) {
   drawDt += dt;
   // Nothing is drawn while the page is hidden: some web views keep calling frames for a page in
   // the background, and drawing there only spends the battery.
-  const drawn = !(manual && quiet) && !(governor.level.cap30 && now - drawnAt < CAP_MS) && !document.hidden;
+  const capped = governor.level.cap30 && now < capDue - CAP_SLACK;
+  const drawn = !(manual && quiet) && !capped && !document.hidden;
   if (drawn) {
     world.render(state, drawDt);
     if (running) hud.frame(state, world, drawDt, dims.w, dims.h);
@@ -276,6 +281,7 @@ function frame(now: number) {
       if (l) applyLevel(l);
     }
     drawnAt = now;
+    capDue = now - capDue > CAP_MS ? now + CAP_MS : capDue + CAP_MS;
   } else if (manual) drawDt = 0;
   sound.frame(state, world.camera, dt, running && !paused);
   requestAnimationFrame(frame);
