@@ -52,10 +52,23 @@ const median = (xs: number[]) => {
   return a.length ? a[Math.floor(a.length / 2)] : NaN;
 };
 
+/** The boxes by 8 m square, so the check below reads only the square the player stands in. */
+const SQUARE = 8;
+const squares = new Map<number, typeof BOXES>();
+const squareKey = (x: number, z: number) => (Math.floor(x / SQUARE) + 4096) * 8192 + (Math.floor(z / SQUARE) + 4096);
+for (const b of BOXES)
+  for (let x = Math.floor(b.x0 / SQUARE); x <= Math.floor(b.x1 / SQUARE); x++)
+    for (let z = Math.floor(b.z0 / SQUARE); z <= Math.floor(b.z1 / SQUARE); z++) {
+      const k = squareKey(x * SQUARE, z * SQUARE);
+      const list = squares.get(k);
+      if (list) list.push(b);
+      else squares.set(k, [b]);
+    }
+
 function check(s: State, where: string) {
   const p = s.player.pos;
   if (![p.x, p.y, p.z, s.player.hp, s.player.shield].every(Number.isFinite)) throw new Error(`${where}: player NaN`);
-  for (const b of BOXES) {
+  for (const b of squares.get(squareKey(p.x, p.z)) ?? []) {
     const body = p.y + 0.9;
     const inside = p.x > b.x0 + 0.05 && p.x < b.x1 - 0.05 && p.z > b.z0 + 0.05 && p.z < b.z1 - 0.05 && body > b.y0 && body < b.h;
     if (inside) throw new Error(`${where}: player inside a ${b.kind} at ${p.x.toFixed(1)},${p.z.toFixed(1)}`);

@@ -62,9 +62,12 @@ const tables: (() => Promise<TableResult>)[] = jobs === 1 ? TABLES.map((t) => as
 
 function playInWorkers(n: number): (() => Promise<TableResult>)[] {
   const raids = TABLES.map(() => Array.from({ length: runs }, () => Promise.withResolvers<RaidResult>()));
-  // Raid by raid across the tables, so each table's results come in early and in step.
+  // The longest raids first, so the last to finish are short ones and no worker is left
+  // playing alone at the end: the reservoir's raids (the first region's) before the harbor's,
+  // raid by raid across each region's tables.
   const queue: RaidJob[] = [];
-  for (let r = 0; r < runs; r++) TABLES.forEach((t, i) => queue.push({ i, r, region: t.region, skill: t.skill }));
+  for (const region of new Set(TABLES.map((t) => t.region)))
+    for (let r = 0; r < runs; r++) TABLES.forEach((t, i) => t.region === region && queue.push({ i, r, region: t.region, skill: t.skill }));
   let next = 0;
   const workers: ChildProcess[] = [];
   // A worker only notices the gate has gone once its raid is played, which takes a minute;
