@@ -731,7 +731,7 @@ export class Bot {
    * a tall deck's guard is seen only from well back.
    */
   private angleSpot(tgt: Enemy): { x: number; z: number } | null {
-    let best: { x: number; z: number; len: number } | null = null;
+    const spots: { x: number; z: number; n: number; crow: number }[] = [];
     for (let r = 10; r <= 55; r += 5)
       for (let a = 0; a < 2 * Math.PI; a += Math.PI / 12) {
         const x = tgt.pos.x + Math.sin(a) * r;
@@ -740,9 +740,16 @@ export class Bot {
         const g = terrainHeight(x, z);
         if (groundAt(x, z, 0.4, g + 0.3) > g + 0.3 || [0.3, 1.0, 1.6].some((h) => solidAt(x, g + h, z))) continue;
         if (!los({ x, y: g + 1.6, z }, bodyCenter(tgt))) continue;
-        const route = this.route(x, z);
-        if (route && route.len < 90 && (!best || route.len < best.len)) best = { x, z, len: route.len };
+        spots.push({ x, z, n: spots.length, crow: dist2d(this.from, { x, z }) });
       }
+    // The shortest walk, the first such spot between equals. A walk is no shorter than the
+    // straight line, so spots are tried nearest first and none further than the best walk is.
+    let best: { x: number; z: number; n: number; len: number } | null = null;
+    for (const c of spots.sort((a, b) => a.crow - b.crow || a.n - b.n)) {
+      if (c.crow >= 90 || (best && c.crow > best.len)) break;
+      const route = this.route(c.x, c.z);
+      if (route && route.len < 90 && (!best || route.len < best.len || (route.len === best.len && c.n < best.n))) best = { x: c.x, z: c.z, n: c.n, len: route.len };
+    }
     return best && { x: best.x, z: best.z };
   }
 
