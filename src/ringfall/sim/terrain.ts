@@ -5,18 +5,19 @@ import type { PoiId } from "./map";
 /*
  * The ground of two regions joined by a mountain belt. The south one is a dried-up
  * reservoir: a dam once held a lake in the middle of it; the water is gone and the
- * drowned old town stands on the cracked lakebed, the lowest ground there. Around it
- * the ground steps up: the south shore where the player lands, the west plateau and
- * the old ridge, the dam crest in the north with the landing pad behind it, and the
- * east mesa with the relay tower. A quarry pit is sunk into the west, below even the
- * lakebed.
+ * drowned town stands on the cracked lakebed, 14 m under the shore. Around it the ground
+ * steps up and down: the dam's 30 m wall in the north with the landing pad on top of it,
+ * the plateau over the lakebed's west side, the red quarry dug in terraces into the west,
+ * the sandstone mesa with the relay mast in the east, the terraced fields climbing to a
+ * hill in the north-west, the works and housing in the south-east, and the dune coast
+ * with the supply depot in the south.
  *
  * North of the mountains lies the harbor, a bay gone dry: its town and quays stand at
  * sea level, the salt flats of the old bay floor lie below them with a beached cargo
  * ship on their far side, a tidal channel still holds a little water by the pier, and
  * a lighthouse stands on a headland over the flats. Two ways cross the mountains: the
  * pass road, climbing from the landing pad over the high ground, and the railway,
- * an embankment from the east mesa that crosses a gorge on a bridge and runs on into
+ * an embankment from the east mesa's foot that crosses a gorge on a bridge and runs on into
  * the harbor on a viaduct.
  *
  * Everything people walk on is an open shape at its own level: a basin (a POI, a

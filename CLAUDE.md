@@ -20,10 +20,11 @@ and no set order: the player chooses which POIs to take and when to leave. First
 The reservoir (south, +z) has four POIs and three ways off; the harbor (north, beyond a mountain
 belt) has three POIs and a boat. A pass road from the landing pad and a railway (an embankment from
 the east mesa, a bridge over a gorge, a viaduct into the harbor) join them, so a raid may walk from
-one to the other. The world is about 900 by 1880 m (`WORLD` in `config.ts`): the reservoir's island
-(radius about 385 m) with the dune coast bulging south of it, a mountain belt at z about -350, and
-the harbor's land (radius about 425 m); neighbouring POIs stand 170 to 330 m apart, with open
-ground left round them for more.
+one to the other. The world is about 1200 by 1880 m (`WORLD` in `config.ts`): the reservoir's island
+(about 1120 by 820 m) with the dune coast bulging south of it, a mountain belt at z about -350, and
+the harbor's land (radius about 425 m). The reservoir is built at the scale of real places, its
+neighbouring POIs and districts 250 to 400 m apart; the harbor's POIs stand 170 to 330 m apart
+and are still to be rebuilt the same way.
 `REGIONS` in `map.ts` gives each region its POIs, ways off and ways in on foot (`ENTRIES`: a named
 point out on its open ground, facing in, out of every robot's sight for the first seconds);
 `newRun(seed, kit, region, { entry })` starts on the ground there with the teammate beside the
@@ -114,14 +115,37 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   `lattice()` (an open steel tower with stairs); `lift()`
   raises a structure onto a deck and `paint()` repaints its walls (a ship's hull as steel plate).
   Each POI's buildings are a function of its own (`supply()`, `quarry()`, `relay()`, `pad()`,
-  `wreck()`, `yard()`, `smelter()`). The helpers take their sizes from a `Scale` (storey, walls,
-  doors, windows, roller doors, stair width): `HOUSE` (3.4 m storeys) everywhere but the supply
-  depot, which is built to `WORKS` at the scale of real industry (4.5 m storeys, half-metre walls,
-  doors 2.4 by 2.8 m, roller doors 6 m high) and stands about 220 m across on the dune coast:
-  warehouses 40 to 66 m long and 9 to 13.5 m high, a four-storey office block, silos 32 m high,
-  a beached tanker whose bow rises 38 m, a watchtower sunk two storeys into a dune, dunes up to
-  13 m (`dunes` on its basin in `terrain.ts`) and a bluff 26 m over its west side. It is the
-  slice the other POIs are meant to follow.
+  `wreck()`, `yard()`, `smelter()`), as is each district's (`heartTown()`, `damFace()`,
+  `plateau()`, `village()`, `factory()`). The helpers take their sizes from a `Scale` (storey,
+  walls, doors, windows, roller doors, stair width): `WORKS` for industry (4.5 m storeys,
+  half-metre walls, doors 2.4 by 2.8 m, roller doors 6 m high), `HOME` for homes and farms
+  (3.2 m storeys, larger rooms and windows), `INTAKE` for the dam's intake tower (5 m storeys), and
+  the older `HOUSE` (3.4 m) for the harbor and the drowned town. A function that builds on more
+  than one floor returns `Floors` (each group of boxes with the level it stands on; a `loose` group,
+  such as a catwalk out over a cliff, is lifted without pressing the ground under it). The
+  reservoir's POIs, built to these scales:
+  - the supply depot (`WORKS`, about 220 m across, on the dune coast): warehouses 40 to 66 m long
+    and 9 to 13.5 m high, a four-storey office block, silos 32 m high, a beached tanker whose bow
+    rises 38 m, a watchtower sunk two storeys into a dune, dunes up to 13 m and a bluff 26 m over
+    its west side;
+  - the quarry (about 250 by 140 m of terraces, rust-red bedrock): a rim yard at 0 with the
+    processing plant, terraces at -7 and -16 and the floor at -25, joined by haul roads, iron
+    stairs bolted to the terrace walls and a tunnel cut from the top terrace down to the floor
+    under the middle one; its landmark is the conveyor from the plant down to the floor;
+  - the relay (an orange sandstone mesa, 170 by 100 m on top at +27.5, cliffs 22 m to its foot):
+    a red-and-white mast 62 m over the top, the equipment block and a walled compound, reached by
+    a road up the scree and a ledge cut into the south face, or by a stair tower bolted to the
+    west cliff;
+  - the landing pad (a concrete plateau 245 by 135 m at +16 on top of a dam 30 m high over the
+    lakebed): the titan's arena, a runway, two hangars, the control tower, and in front of the
+    dam the intake tower (stairs down from the crest, windows over the lakebed, shut at the
+    bottom) and the outflow pipes.
+  The districts: the drowned town on the lakebed (-14 m, 150 by 210 m, mud banks up to 7 m, a
+  church spire, roofs sticking out of the mud, the old bridge's piers, a sunken bus), the
+  plateau over its west side, the terraced fields climbing in 4 m steps from +2 to the hill at
+  +14 (farmhouses, barns, a windmill, a temple, chest-high dry-stone walls), and the works and
+  housing on oil-stained concrete (a sawtooth shed, a water tower 28 m high, a multi-storey car
+  park, four blocks of flats). The marsh in the south-west is still open ground.
   The world is laid out area by area (`areas.ts`): each area (a POI with the ground round it, a
   district, the harbor's bay in one piece, the heart of the reservoir round the drowned town) is
   written in a frame of its own, shared by its basins in `terrain.ts` and everything built on it
@@ -129,16 +153,21 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   inside its area's, which `AT` in `map.ts` follows). The roads, cuts and crags between areas, the
   railway's viaduct and the ways in are written in world coordinates; `FRAMES` names every frame
   (areas as `area:` and the id) for the shots gate's cameras. The ground is a height field (`terrain.ts`): the POIs and districts are basins
-  (`BASINS`) at their own `LEVEL` (the lakebed at -7 m, the dam crest at +8, the quarry pit at -10,
-  the harbor's salt flats at -3, the pass at +15...), joined by roads (`ROADS`) that ramp between
-  levels, shelves inside some POI basins, and canyons (`CUTS`: the spillway, the gorge under the
-  railway bridge). Between them lies open walkable ground, the "ground between" (`betweenAt()`,
+  (`BASINS`) at their own `LEVEL` (the quarry floor at -25 m, the lakebed at -14, the harbor's
+  salt flats at -3, the fields from +2 to +14, the pass at +15, the dam crest and the pad at +16,
+  the mesa at +27.5...), joined by roads (`ROADS`) that ramp between levels, and canyons (`CUTS`:
+  the spillway, the gorge under the railway bridge). Nested walled basins make terraces (the
+  quarry's): the lowest shape at a point wins, so each sits inside the one above it. Shelves
+  (`SHELVES`) can still run along a basin's wall, though none does now. Between them lies open walkable ground, the "ground between" (`betweenAt()`,
   surface `野`): a smooth surface relaxed to meet every basin and road at its level, with low
   rolling hills. Shapes marked `walled` (the lakebed, the quarry pit and most ramps cut into them,
   the railway's embankments, the channel, the headland) take no part in it and keep cliffs all
-  round. Unclimbable high ground is left only in `CRAGS` (the mountain belt between the regions and
-  rock outcrops) and beyond the coast; ground steeper than `STEEP` is a wall, dropped down but
-  never climbed. A road's levels are spaced evenly
+  round. Unclimbable high ground (capped near `HIGH`, 28 m) is left only in `CRAGS` (the mountain
+  belt between the regions and rock outcrops) and beyond the coast; ground steeper than `STEEP` is
+  a wall, dropped down but never climbed. Each shape may name its `ground` (`Ground`: dune, mud,
+  quarry, sandstone, scrub, oiled, concrete, salt, paved), the colour the renderer and the world
+  map paint it in (`groundOf()`); the quarry's and the mesa's also colour the cliffs round them
+  (`cliffGround()`). It changes no rule. A road's levels are spaced evenly
   along it, or belong to its points with `atPoints`; a ramp reaches the level of the basin it runs
   into at that basin's edge, or it ends in a cliff. The coast is the outline of the land masses in
   `LANDS` (`offshore()` gives how far a point lies outside it), and the world's bounds are
@@ -147,7 +176,11 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   the robots' `groundLevel()` treat it as ground, which is how they cross between the regions on it;
   everything else built up off the ground is out of their reach. Boxes are
   written on ground at 0 and lifted to their area's level by `onLevel()`, points by `onFloor()`
-  (`map.ts`); the ground is pressed flat at that level near every authored box and point.
+  (`map.ts`); the ground is pressed flat at that level near every authored box and point. What
+  must stand on a cliff without pressing it (the quarry's conveyor and iron stairs, `cliffStairs()`,
+  the stone steps between the fields, the roofs in the mud banks) is laid once the ground is
+  built (`LAID`). The ways into the lakebed, the quarry, the pad, up the mesa and through the
+  fields are among `KEPT_ROADS`: kept clear of scattered cover and pressed along their middle.
   Hamlets (`HAMLET_FRAMES` in `map.ts`: a few buildings and a bin or two, no robots) stand on the
   ground between, each flat at the level under its middle.
   `scatterCover()` then fills the open ground with low walls, crates, containers and ruins, each
@@ -193,8 +226,13 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   afar (reinforcements and raiders, `SquadState.routed`) find their way: `hunt.ts` builds a
   distance field over the ground (2 m cells; cliffs, high ground and boxes a walker cannot step
   over closed) to where they think the player is, and their walkers follow it whenever they cannot
-  see whom they are after, fight or not. They beam in a walk of `REINFORCE.dist` away along it.
-  Every other robot walks straight at its goal, and nobody paths inside a building.
+  see whom they are after, fight or not. They beam in a walk of `REINFORCE.dist` away along it,
+  and keep re-learning where the player is (`stepReinforce()` in `world.ts`) until one of their
+  walkers has found the player itself: a fight only their drone joined, over a cliff, does not
+  end the hunt. Every other robot walks straight at its goal, and nobody paths inside a building.
+  The bot (`bot.ts`) opens only bins on the ground and does not climb: each POI keeps ground bins
+  by its ways in and floors, and the bot walks the ground's paths up to robots on higher ground (a
+  terrace, the mesa) rather than looking for an angle on them from below.
 - `src/ringfall/touch.ts` is the phone layout (landscape): a floating stick on the left half, view
   drag on the right half, buttons under the right thumb. It feeds the same `Input` as the keyboard,
   with `input.touch` set so the sim applies `ASSIST.touchPull`. `npm run shots:ringfall` drives it with
