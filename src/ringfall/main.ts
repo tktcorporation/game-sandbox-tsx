@@ -17,6 +17,7 @@ import { Soundscape } from "./view/soundscape";
 import { setupSoundCheck } from "./view/soundcheck";
 import { Hud } from "./view/hud";
 import { sightZoom, World } from "./view/world";
+import { Governor, loadChoice, pickTier, QUALITY, saveChoice, type Level, type QualityChoice, type Tier } from "./view/quality";
 import { blockPageZoom, setupTouch } from "./touch";
 import "./style.css";
 
@@ -29,7 +30,30 @@ const $ = (id: string) => document.getElementById(id)!;
 const stage = $("stage");
 /** Phones and tablets: touch controls, stronger aim pull, lighter rendering. */
 let touchMode = matchMedia("(pointer: coarse)").matches;
-const world = new World(stage, { lowPower: touchMode });
+/** The tier the device starts on when the choice is automatic, from what the browser tells of it. */
+const deviceTier = pickTier({
+  coarse: touchMode,
+  cores: navigator.hardwareConcurrency || undefined,
+  memory: (navigator as Navigator & { deviceMemory?: number }).deviceMemory,
+  pixels: screen.width * screen.height * devicePixelRatio ** 2,
+});
+let quality: QualityChoice = loadChoice(location.search);
+const startTier = quality === "auto" ? deviceTier : quality;
+const world = new World(stage, { tier: startTier, ratio: Math.min(devicePixelRatio, QUALITY[startTier].maxRatio) });
+/**
+ * Moves the drawing between the quality ladder's levels by the frame times of a raid under way.
+ * A tier the player chose stays; only its resolution moves.
+ */
+let governor = new Governor(startTier, devicePixelRatio, quality !== "auto");
+/**
+ * Under a browser driver (the shots gate) the governor stays put: what a screenshot shows must not
+ * depend on how fast the machine happened to draw.
+ */
+const automated = navigator.webdriver;
+function applyLevel(l: Level) {
+  if (l.tier !== world.tier) world.setTier(l.tier);
+  world.setRatio(l.ratio);
+}
 const hud = new Hud();
 
 let state: State = newRun(Date.now() & 0xffff);
@@ -208,6 +232,19 @@ function keepAwake(on: boolean) {
 }
 
 let last = performance.now();
+/** When the last frame was drawn, and the real seconds since then the next draw catches up on. */
+let drawnAt = last;
+let drawDt = 0;
+/**
+ * On the governor's 30 fps rungs frames draw against deadlines a thirtieth of a second apart, so
+ * the rate averages 30 at any refresh rate (every other frame at 60 Hz, two of every five at 75 Hz).
+ * A deadline that falls more than a frame behind (a stall, a hidden page, the first capped frame)
+ * restarts from now.
+ */
+const CAP_MS = 1000 / 30;
+/** Slack for refresh jitter, so a frame a hair early still meets its deadline. */
+const CAP_SLACK = 2;
+let capDue = 0;
 function frame(now: number) {
   // The first frame's timestamp can predate `last` by the seconds the page took to load, and a
   // negative step would grow every fade in the view (the muzzle flash and its light) instead.
@@ -231,10 +268,24 @@ function frame(now: number) {
     }
     if (n === 6) acc = 0;
   }
-  const drawn = !(manual && quiet);
-  if (drawn) world.render(state, dt);
+  drawDt += dt;
+  // Nothing is drawn while the page is hidden: some web views keep calling frames for a page in
+  // the background, and drawing there only spends the battery.
+  const capped = governor.level.cap30 && now < capDue - CAP_SLACK;
+  const drawn = !(manual && quiet) && !capped && !document.hidden;
+  if (drawn) {
+    world.render(state, drawDt);
+    if (running) hud.frame(state, world, drawDt, dims.w, dims.h);
+    drawDt = 0;
+    if (!automated && running && !paused && !manual) {
+      const l = governor.frame(now - drawnAt);
+      if (l) applyLevel(l);
+    }
+    drawnAt = now;
+    // The deadline runs only on the capped rungs; off them it is cleared, so the first capped frame draws at once.
+    capDue = !governor.level.cap30 ? 0 : now - capDue > CAP_MS ? now + CAP_MS : capDue + CAP_MS;
+  } else if (manual) drawDt = 0;
   sound.frame(state, world.camera, dt, running && !paused);
-  if (running && drawn) hud.frame(state, world, dt, dims.w, dims.h);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
@@ -284,6 +335,7 @@ function start(k: Kit, r: RegionId, seed: number, { from, entry }: { from?: PoiI
   state = newRun(seed, kit, region, { depots: hub.profile.depots, seen: hub.profile.seen, from, entry, routes: hub.profile.routes });
   // The ground round where the raid starts is built before its first frame.
   world.prebuild([state.player.pos]);
+  governor.settle();
   acc = hitstop = slowmo = 0;
   running = true;
   paused = false;
@@ -328,11 +380,13 @@ document.addEventListener("visibilitychange", () => {
   // The system drops the wake lock while the page is hidden.
   wake = null;
   if (!document.hidden && running) keepAwake(true);
+  if (!document.hidden) governor.settle();
 });
 $("start").addEventListener("click", openHub);
 $("restart").addEventListener("click", openHub);
 $("resume").addEventListener("click", () => {
   unlock();
+  governor.settle();
   setPaused(false);
   lock();
 });
@@ -350,6 +404,20 @@ for (const id of ["vol", "vol2"]) {
   });
 }
 setupSoundCheck();
+// 画質: automatic follows the device and the governor; a tier pins it, only its resolution moving.
+// Antialiasing stays as the page loaded with it: it is fixed when the renderer is made.
+for (const id of ["quality", "quality2"]) {
+  const el = $(id) as HTMLSelectElement;
+  el.value = quality;
+  el.addEventListener("change", () => {
+    quality = el.value as QualityChoice;
+    saveChoice(quality);
+    ($("quality") as HTMLSelectElement).value = quality;
+    ($("quality2") as HTMLSelectElement).value = quality;
+    governor = new Governor(quality === "auto" ? deviceTier : quality, devicePixelRatio, quality !== "auto");
+    applyLevel(governor.level);
+  });
+}
 for (const id of ["sens", "sens2"]) {
   const el = $(id) as HTMLInputElement;
   el.addEventListener("input", () => {
@@ -371,7 +439,8 @@ declare global {
     ringfallDownAlly: () => void;
     ringfallChargeUlt: () => void;
     ringfallCamera: (x?: number, y?: number, z?: number, yaw?: number, pitch?: number) => void;
-    ringfallFrameCost: (frames: number) => { ms: number; calls: number; triangles: number; chunks: number; built: number; of: number };
+    ringfallFrameCost: (frames: number) => { ms: number; syncMs: number; calls: number; triangles: number; chunks: number; built: number; of: number; tier: Tier; ratio: number; fillMs: number };
+    ringfallQuality: (tier?: Tier) => { tier: Tier; ratio: number };
     ringfallTerrain: (x: number, z: number) => number;
     ringfallFrames: () => Record<string, { x: number; z: number }>;
     ringfallPlace: (x: number, z: number, yaw: number) => void;
@@ -458,11 +527,36 @@ window.ringfallChargeUlt = () => {
 /** Automation only: knock the teammate down, to check picking it up. */
 window.ringfallDownAlly = () => hurtAlly(state, 9999);
 
-/** Automation only: draws `frames` frames as they stand and reports the average time and the last frame's cost. */
+/**
+ * Automation only: draws `frames` frames as they stand and reports the averages per frame, with the
+ * tier and pixel ratio drawn at. Draw calls and triangles are averaged because the tiers that redraw
+ * shadows at their own rate draw the shadow pass on some frames only. `ms` is the time to issue a
+ * frame; `syncMs` also waits for the GPU to finish them (a pixel read back at the end).
+ */
 window.ringfallFrameCost = (frames: number) => {
+  let calls = 0;
+  let triangles = 0;
   const t0 = performance.now();
-  for (let i = 0; i < frames; i++) world.render(state, 1 / 60);
-  return { ms: +((performance.now() - t0) / frames).toFixed(1), ...world.stats() };
+  for (let i = 0; i < frames; i++) {
+    world.render(state, 1 / 60);
+    const st = world.stats();
+    calls += st.calls;
+    triangles += st.triangles;
+  }
+  const t1 = performance.now();
+  const gl = world.renderer.getContext();
+  gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+  const t2 = performance.now();
+  return { ...world.stats(), ms: +((t1 - t0) / frames).toFixed(1), syncMs: +((t2 - t0) / frames).toFixed(1), calls: Math.round(calls / frames), triangles: Math.round(triangles / frames) };
+};
+
+/** Automation only: draws at `tier` from now on, its resolution pinned at its start (the governor stays off under automation). */
+window.ringfallQuality = (tier) => {
+  if (tier) {
+    governor = new Governor(tier, devicePixelRatio, true);
+    applyLevel(governor.level);
+  }
+  return { tier: world.tier, ratio: world.renderer.getPixelRatio() };
 };
 
 /** Automation only: where each POI, hamlet and area is written round, to place the screenshot cameras in their frames. */
