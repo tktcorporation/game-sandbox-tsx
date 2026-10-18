@@ -484,9 +484,9 @@ const harborTour = [
   // Each POI's landmark from the way in, and the smelter's roofs from the bridge between its halls.
   ["tour-38-supply-silos", ...at("supply", 20, 1.7, 170), -0.16, 0.08],
   // The supply depot at its own scale, from eye height: the tanker's bow over the beach, the
-  // street between the office block and the east warehouse, the yard from the east dune's crest.
+  // street between the assembly hall and the long shed, the yard from the east dune's crest.
   ["tour-46-supply-tanker-from-beach", ...at("supply", 30, 1.7, 160), 0.2, 0.15],
-  ["tour-47-supply-street", ...at("supply", 10, 1.7, 0), 0, 0.06],
+  ["tour-47-supply-street", ...at("supply", -40, 1.7, -15), 1.62, 0.1],
   ["tour-48-supply-dune-crest", ...at("supply", 90, 1.7, 22), -2.2, -0.04],
   // The ring-segment assembly hall: its south face torn open over the segment, the floor from its
   // west end along the segment and the cranes, and the hall from the crane runway's walkway.
