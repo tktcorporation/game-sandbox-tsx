@@ -570,6 +570,10 @@ const shot = async (name) => {
 let prevKey = "";
 let prevFlank = 0;
 let lastProgress = 0;
+// Where the bot stood at the last progress: ground covered counts too, since the walk between
+// POIs and to a way off takes minutes at the world's scale. A bot stuck going back and forth
+// on one spot stays within a few metres of it.
+let progressAt = null;
 // A kill is shot once the wreck has had time to fall over.
 let prevKills = 0;
 let wreckAt = -1;
@@ -580,9 +584,11 @@ for (let i = 0; i < 25 * 60 * 10; i++) {
   s = await quietStep(page, 100);
   if ((i + 1) % DRAW_EVERY === 0) await draw(page);
   const key = `${s.phase}-${s.cleared.join("")}-${s.enemies.length}-${s.loot}-${s.stats.kills}-${s.haul.value}`;
-  if (key !== prevKey) {
+  const walked = !progressAt || Math.hypot(s.player.x - progressAt.x, s.player.z - progressAt.z) > 25;
+  if (key !== prevKey || walked) {
     prevKey = key;
     lastProgress = s.time;
+    progressAt = { x: s.player.x, z: s.player.z };
   }
   if (s.time - lastProgress > 90) {
     await draw(page);
