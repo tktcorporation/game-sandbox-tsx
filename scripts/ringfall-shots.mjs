@@ -488,6 +488,11 @@ const harborTour = [
   ["tour-46-supply-tanker-from-beach", ...at("supply", 30, 1.7, 160), 0.2, 0.15],
   ["tour-47-supply-street", ...at("supply", 10, 1.7, 0), 0, 0.06],
   ["tour-48-supply-dune-crest", ...at("supply", 90, 1.7, 22), -2.2, -0.04],
+  // The ring-segment assembly hall: its south face torn open over the segment, the floor from its
+  // west end along the segment and the cranes, and the hall from the crane runway's walkway.
+  ["tour-65-assembly-hall", ...at("supply", 0, 1.7, 8), -0.15, 0.32],
+  ["tour-66-assembly-floor", ...at("supply", -64, 1.7, -30), 1.4, 0.15],
+  ["tour-67-assembly-crane-walk", ...at("supply", -66, 28.8, -58.4), 1.85, -0.4, true],
   ["tour-39-quarry-plant", ...at("quarry", -10, 1.7, 25), 0, 0.2],
   ["tour-40-relay-mast", ...at("relay", -20, 1.7, 20), 0.91, 0.35],
   ["tour-41-pad-hangars", ...at("pad", 0, 1.7, 60), 0, 0.1],
