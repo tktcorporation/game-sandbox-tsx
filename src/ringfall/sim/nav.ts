@@ -107,8 +107,7 @@ export function resetNav() {
   area = new Uint16Array(0);
   moves = new Uint8Array(0);
   fields = [];
-  store = new Uint16Array(0);
-  weighted = { disk: null, fields: [], store: new Uint16Array(0) };
+  weighted = { disk: null, fields: [] };
   landmarkCells = null;
 }
 function areas(): Uint16Array | Int32Array {
@@ -220,10 +219,22 @@ const PER_CELL = 17;
 const FIELD_COST = MOVE_COST.map((c) => (c === 1 ? PER_CELL : 24));
 /** How far a field reaches, in its units: a walk of 1100 m. A cell further out still has the reach for its bound. */
 const REACH = Math.round(1100 / RES) * PER_CELL;
+/**
+ * A field keeps, row by row, only the run of cells from the first it reaches to the last: rows
+ * `j0` to `j0 + lo.length - 1`, row j's run from column `lo` to `hi` packed at `off` in `d`.
+ * Most of the grid is sea, rock or past the reach, and a field held whole would take 18 MB.
+ * A cell outside its row's run is one the field does not reach.
+ */
+type Field = { d: Uint16Array; j0: number; lo: Int32Array; hi: Int32Array; off: Int32Array };
+const fieldAt = (f: Field, i: number, j: number): number => {
+  const r = j - f.j0;
+  if (r < 0 || r >= f.lo.length || i < f.lo[r] || i > f.hi[r]) return 0;
+  return f.d[f.off[r] + i - f.lo[r]];
+};
 /** Each landmark's field, once built (null for a landmark with no free cell near it). */
-let fields: (Uint16Array | null | undefined)[] = [];
-/** One buffer for all the fields, allocated whole the first time; a field's pages are touched only where it reaches. */
-let store = new Uint16Array(0);
+let fields: (Field | null | undefined)[] = [];
+/** The whole grid while a field is built, kept clear between builds. */
+let scratch = new Uint16Array(0);
 /*
  * Each landmark's field of the walk to it round `weighted.disk`, whose ground costs AVOID times
  * as much to cross, as A* charges it: for searches whose `avoid` holds that disk (the titan
@@ -231,7 +242,7 @@ let store = new Uint16Array(0);
  * with that alone, a search whose way goes round the titan's sight visits the ground between
  * the straight line and the way round.
  */
-let weighted: { disk: { x: number; z: number; r: number } | null; fields: (Uint16Array | null | undefined)[]; store: Uint16Array } = { disk: null, fields: [], store: new Uint16Array(0) };
+let weighted: { disk: { x: number; z: number; r: number } | null; fields: (Field | null | undefined)[] } = { disk: null, fields: [] };
 /** Each landmark's free cell, or -1. */
 let landmarkCells: Int32Array | null = null;
 /** Searches shorter than this many cells as the crow flies do without landmarks: they are cheap anyway. */
@@ -264,8 +275,14 @@ let poolNext = new Int32Array(1 << 16);
  * it ends within `disk`, as A* charges it, so the walk is searched backwards from `from`: a
  * cell is reached from its neighbour by the move from the cell into the neighbour.
  */
-function fill(f: Uint16Array, from: number, disk: { x: number; z: number; r: number } | null) {
+function fill(from: number, disk: { x: number; z: number; r: number } | null): Field {
   const mv = moveMask();
+  if (scratch.length !== NX * NZ) scratch = new Uint16Array(NX * NZ);
+  const f = scratch;
+  let i0 = NX;
+  let i1 = -1;
+  let j0 = NZ;
+  let j1 = -1;
   const r2 = disk ? disk.r * disk.r : 0;
   const head = new Int32Array(BUCKETS).fill(-1);
   let used = 0;
@@ -305,6 +322,12 @@ function fill(f: Uint16Array, from: number, disk: { x: number; z: number; r: num
       node = after;
       // A cell is in a bucket once for each time its distance went down; only the last counts.
       if (f[cur] !== d + 1) continue;
+      const ci = cur % NX;
+      const cj = (cur / NX) | 0;
+      if (ci < i0) i0 = ci;
+      if (ci > i1) i1 = ci;
+      if (cj < j0) j0 = cj;
+      if (cj > j1) j1 = cj;
       let times = 1;
       if (disk) {
         const dx = centerX(cur % NX) - disk.x;
@@ -325,39 +348,55 @@ function fill(f: Uint16Array, from: number, disk: { x: number; z: number; r: num
       }
     }
   }
+  // Row by row into a field of its own, and the scratch cleared for the next build.
+  const rows = Math.max(0, j1 - j0 + 1);
+  const lo = new Int32Array(rows);
+  const hi = new Int32Array(rows);
+  const off = new Int32Array(rows);
+  let size = 0;
+  for (let r = 0; r < rows; r++) {
+    const row = (j0 + r) * NX;
+    let a = i0;
+    let b = i1;
+    while (a <= b && !f[row + a]) a++;
+    while (b >= a && !f[row + b]) b--;
+    lo[r] = a;
+    hi[r] = b;
+    off[r] = size;
+    size += Math.max(0, b - a + 1);
+  }
+  const d = new Uint16Array(size);
+  for (let r = 0; r < rows; r++) {
+    if (hi[r] < lo[r]) continue;
+    const row = (j0 + r) * NX;
+    d.set(f.subarray(row + lo[r], row + hi[r] + 1), off[r]);
+    f.fill(0, row + lo[r], row + hi[r] + 1);
+  }
+  return { d, j0, lo, hi, off };
 }
 
-function field(n: number): Uint16Array | null {
+function field(n: number): Field | null {
   const known = fields[n];
   if (known !== undefined) return known;
   const from = landmarkCell(n);
-  if (from < 0) return (fields[n] = null);
-  if (store.length !== LANDMARKS.length * NX * NZ) store = new Uint16Array(LANDMARKS.length * NX * NZ);
-  const f = store.subarray(n * NX * NZ, (n + 1) * NX * NZ);
-  fill(f, from, null);
-  return (fields[n] = f);
+  return (fields[n] = from < 0 ? null : fill(from, null));
 }
 
 /** Landmark n's walk round `disk`, kept for that disk (another disk starts the set again). */
-function weightedField(n: number, disk: { x: number; z: number; r: number }): Uint16Array | null {
+function weightedField(n: number, disk: { x: number; z: number; r: number }): Field | null {
   const w = weighted;
   if (!w.disk || w.disk.x !== disk.x || w.disk.z !== disk.z || w.disk.r !== disk.r) {
     w.disk = { ...disk };
     w.fields = [];
-    if (w.store.length !== LANDMARKS.length * NX * NZ) w.store = new Uint16Array(LANDMARKS.length * NX * NZ);
-    else w.store.fill(0);
   }
   const known = w.fields[n];
   if (known !== undefined) return known;
   const from = landmarkCell(n);
-  if (from < 0) return (w.fields[n] = null);
-  const f = w.store.subarray(n * NX * NZ, (n + 1) * NX * NZ);
-  fill(f, from, w.disk);
-  return (w.fields[n] = f);
+  return (w.fields[n] = from < 0 ? null : fill(from, w.disk));
 }
 
 /** A landmark's field for a search, and whether it is a walk round a disk (good only for the bound toward the landmark). */
-type Landmark = { f: Uint16Array; round: boolean };
+type Landmark = { f: Field; round: boolean };
 
 /**
  * The landmarks a search from `start` to `goal` (cells) uses: the two nearest the goal and the
@@ -377,16 +416,18 @@ function landmarksFor(start: number, goal: number, disk: { x: number; z: number;
     }
     return ks.sort((a, b) => a.d - b.d || a.k - b.k).map((e) => e.k);
   };
+  const gi = goal % NX;
+  const gj = (goal / NX) | 0;
   const ks = near(goal).slice(0, 2);
   const s0 = near(start).find((k) => !ks.includes(k));
   const out: Landmark[] = [];
   for (const k of ks) {
     const f = disk ? weightedField(k, disk) : field(k);
-    if (f && f[goal]) out.push({ f, round: !!disk });
+    if (f && fieldAt(f, gi, gj)) out.push({ f, round: !!disk });
   }
   if (s0 !== undefined) {
     const f = field(s0);
-    if (f && f[goal]) out.push({ f, round: false });
+    if (f && fieldAt(f, gi, gj)) out.push({ f, round: false });
   }
   return out;
 }
@@ -526,14 +567,14 @@ export function findPath(
   const gj = g[1];
   const lms = Math.max(Math.abs(s[0] - gi), Math.abs(s[1] - gj)) >= LANDMARK_MIN ? landmarksFor(start, goal, diskFor(avoid, centerX(s[0]), centerZ(s[1]), centerX(gi), centerZ(gj))) : [];
   const lmF = lms.map((l) => l.f);
-  const lmGoal = lms.map((l) => l.f[goal]);
+  const lmGoal = lms.map((l) => fieldAt(l.f, gi, gj));
   const lmRound = lms.map((l) => l.round);
   const h = (i: number, j: number, k: number) => {
     const dx = Math.abs(i - gi);
     const dz = Math.abs(j - gj);
     let est = Math.max(dx, dz) + 0.414 * Math.min(dx, dz);
     for (let n = 0; n < lmF.length; n++) {
-      const v = lmF[n][k];
+      const v = fieldAt(lmF[n], i, j);
       // A cell the field does not reach is further than REACH from its landmark. A walk round a
       // disk is not the same both ways, so its field bounds only the way toward the landmark.
       const diff = !v ? REACH + 1 - lmGoal[n] : lmRound[n] ? v - lmGoal[n] : Math.abs(v - lmGoal[n]);
