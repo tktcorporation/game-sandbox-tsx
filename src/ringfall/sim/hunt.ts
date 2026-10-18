@@ -156,8 +156,8 @@ function mainGround(open: Uint8Array, height: Float32Array): Uint8Array {
 
 /**
  * Walking distance from every cell to one target cell, out to `reach` metres (Infinity beyond
- * it, and everywhere no way leads). `order` holds the cells within reach, nearest first, and
- * `count` how many there are.
+ * it, and everywhere no way leads). `order` holds the cells within reach by bands RES wide,
+ * nearest band first, and `count` how many there are.
  */
 export interface Field {
   target: number;
@@ -272,7 +272,7 @@ export function fieldTo(x: number, z: number, reach = Infinity): Field | null {
   // move: a cell relaxed from one in bucket b lands in bucket b + 1 or later, so every cell
   // in a bucket is settled by the time the bucket comes up, and the buckets are taken in turn
   // without a heap. The distances are the same as a heap's (each cell's is the least over its
-  // settled neighbours); `order` sorts each bucket by distance, so it runs nearest first.
+  // settled neighbours). `order` runs bucket by bucket, nearest bucket first.
   const done = settled.length === CELLS ? settled.fill(0) : (settled = new Uint8Array(CELLS));
   const order = reused?.order ?? new Int32Array(CELLS);
   let count = 0;
@@ -296,27 +296,21 @@ export function fieldTo(x: number, z: number, reach = Infinity): Field | null {
     const n = ringSize[r];
     ringSize[r] = 0;
     pending -= n;
-    // This bucket's cells, once each, nearest first (by index between equals).
+    // This bucket's cells, once each. A bucket that reaches past the reach is the last: the
+    // cells in it past the reach are not settled, and nor is any cell after it.
     if (bucket.length < n) bucket = new Int32Array(n * 2);
     let m = 0;
     for (let e = 0; e < n; e++) {
       const k = list[e];
       if (done[k] || Math.floor(dist[k] / RES) !== b) continue;
       done[k] = 2;
-      bucket[m++] = k;
-    }
-    const cells = bucket.subarray(0, m).sort((x, y) => dist[x] - dist[y] || x - y);
-    for (let e = 0; e < m; e++) {
-      const k = cells[e];
-      // Cells come out nearest first: once one is past the reach, every one left is too.
       if (dist[k] > reach) {
-        for (let t = e; t < m; t++) {
-          dist[cells[t]] = Infinity;
-          done[cells[t]] = 0;
-        }
+        dist[k] = Infinity;
         past = true;
-        break;
-      }
+      } else bucket[m++] = k;
+    }
+    for (let e = 0; e < m; e++) {
+      const k = bucket[e];
       done[k] = 1;
       order[count++] = k;
       const bits = mask[k];
@@ -336,7 +330,7 @@ export function fieldTo(x: number, z: number, reach = Infinity): Field | null {
   // Cells reached but not settled lie past the reach: their distances so far are not theirs.
   if (past)
     for (let r = 0; r < RING; r++)
-      for (let e = 0; e < ringSize[r]; e++) if (!done[ring[r][e]]) dist[ring[r][e]] = Infinity;
+      for (let e = 0; e < ringSize[r]; e++) if (done[ring[r][e]] !== 1) dist[ring[r][e]] = Infinity;
   const f = { target, dist, reach, order, count };
   fieldsBuilt++;
   cache.set(target, f);
@@ -393,17 +387,24 @@ export function cellsAround(f: Field, lo: number, hi: number): { x: number; z: n
     for (let k = 0; k < f.dist.length; k++) if (f.dist[k] >= lo) all.push(k);
     cells = Int32Array.from(all);
   } else {
-    // The first cell at lo or further, then on while within hi; put back in row order.
+    // The first cell in lo's band, then on through hi's band, keeping those within [lo, hi];
+    // put back in row order.
+    const band = (k: number) => Math.floor(f.dist[k] / RES);
+    const loBand = Math.floor(lo / RES);
+    const hiBand = Math.floor(hi / RES);
     let a = 0;
     let b = f.count;
     while (a < b) {
       const m = (a + b) >> 1;
-      if (f.dist[f.order[m]] < lo) a = m + 1;
+      if (band(f.order[m]) < loBand) a = m + 1;
       else b = m;
     }
-    let e = a;
-    while (e < f.count && f.dist[f.order[e]] <= hi) e++;
-    cells = f.order.slice(a, e).sort();
+    const inBand: number[] = [];
+    for (let e = a; e < f.count && band(f.order[e]) <= hiBand; e++) {
+      const d = f.dist[f.order[e]];
+      if (d >= lo && d <= hi) inBand.push(f.order[e]);
+    }
+    cells = Int32Array.from(inBand).sort();
   }
   const out: { x: number; z: number }[] = new Array(cells.length);
   for (let n = 0; n < cells.length; n++) {
