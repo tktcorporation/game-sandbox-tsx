@@ -4,6 +4,7 @@ import { openRoutes, useRoutes } from "./routes";
 import { populate } from "./enemies";
 import { placeAlly } from "./ally";
 import { groundAt } from "./geom";
+import { forgetFields } from "./hunt";
 
 export interface Vec3 {
   x: number;
@@ -588,6 +589,9 @@ export interface Start {
 export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reservoir", start: Start = {}): State {
   const routes = openRoutes(start.routes ?? []);
   useRoutes(routes);
+  // The hunters' fields kept from an earlier raid would steer this one's hunters near the
+  // same spots: a raid starts with none, so it plays the same whatever was played before it.
+  forgetFields();
   const from = start.from && start.depots?.includes(start.from) ? DEPOTS[depotIndex(start.from)] : null;
   if (from) region = poiRegion(from.poi).id;
   const ways = regionOf(region).entries;

@@ -1,12 +1,14 @@
 /**
  * One table of RINGFALL's sim gate: a bot of one skill plays `runs` raids in one region.
- * Pure data in and out, so the gate can play tables in worker processes and still print
- * them exactly as if it had played them in turn.
+ * Each raid is played on its own (`playRaid()`, pure data out) and the table is summed up
+ * from them in raid order (`summarize()`), so the gate can play the raids of every table in
+ * worker processes, in any order, and still print the tables exactly as if it had played
+ * them in turn.
  */
 import { TICK } from "../src/ringfall/sim/config";
 import { BOXES, EXTRACTS, regionOf, type RegionId } from "../src/ringfall/sim/map";
 import { inWorld } from "../src/ringfall/sim/geom";
-import { Bot, SKILLS } from "../src/ringfall/sim/bot";
+import { Bot, SKILLS, type Skill } from "../src/ringfall/sim/bot";
 import { freeKit, newRun, type State } from "../src/ringfall/sim/state";
 import { step } from "../src/ringfall/sim/step";
 import { rank } from "../src/ringfall/sim/results";
@@ -14,6 +16,34 @@ import { recordOf, type RaidRecord } from "./ringfall-pacing";
 
 /** A table's printed lines in order (errors go to stderr), and the raids that ended. */
 export type TableResult = { lines: { err: boolean; text: string }[]; records: RaidRecord[]; failed: boolean };
+
+/** What one raid adds to its table: an error, or what the table counts of a raid that ended. */
+export type RaidResult = {
+  /** Leaps made, counted whether the raid ended or not. */
+  ults: number;
+  error?: string;
+  ended?: {
+    record: RaidRecord;
+    peakSq: number;
+    peakBots: number;
+    cleared: number;
+    waves: number;
+    rank: string;
+    /** Minutes, haul and score of a raid that got off. */
+    got?: { time: number; haul: number; score: number };
+    downs: number;
+    shots: number;
+    hits: number;
+    crits: number;
+    flanks: number;
+    titanHits: number;
+    allyShare: number;
+    allyDowns: number;
+    rescues: number;
+    helped: number;
+    exit?: string;
+  };
+};
 
 const LIMIT = 30 * 60; // seconds of game time before a run counts as stuck
 
@@ -36,9 +66,80 @@ function check(s: State, where: string) {
   }
 }
 
-export function playTable(region: RegionId, skillName: string, runs: number): TableResult {
-  const skill = SKILLS.find((k) => k.name === skillName);
-  if (!skill) throw new Error(`unknown skill ${skillName}`);
+const skillNamed = (name: string): Skill => {
+  const skill = SKILLS.find((k) => k.name === name);
+  if (!skill) throw new Error(`unknown skill ${name}`);
+  return skill;
+};
+
+/** Raid `r` of a table: fixed by its seed, the same wherever and after whatever it is played. */
+export function playRaid(region: RegionId, skillName: string, r: number): RaidResult {
+  const skill = skillNamed(skillName);
+  // Each raid starts at one of the region's ways in, in turn.
+  const ways = regionOf(region).entries;
+  const s = newRun(1000 + r * 7919, freeKit(), region, { entry: ways[r % ways.length] });
+  const bot = new Bot(skill, 31 + r);
+  let prevCrouch = false;
+  let peakSq = 0;
+  let peakBots = 0;
+  let ults = 0;
+  try {
+    while (s.phase !== "done" && s.time < LIMIT) {
+      const inp = bot.input(s);
+      step(s, inp, prevCrouch);
+      prevCrouch = inp.crouch;
+      const end = s.events.findIndex((e) => e.t === "done");
+      if (end >= 0 && end < s.events.length - 1) throw new Error(`${region} ${skill.name}#${r}: events after the raid ended: ${s.events.slice(end + 1).map((e) => e.t).join(",")}`);
+      for (const e of s.events) {
+        if (e.t === "leap") ults++;
+      }
+      if (!s.enemies.some((e) => e.kind === "titan" && e.aware === "engaged")) {
+        const fighting = s.enemies.filter((e) => e.aware === "engaged" && e.mode !== "spawning");
+        peakBots = Math.max(peakBots, fighting.length);
+        peakSq = Math.max(peakSq, new Set(fighting.map((e) => e.squad)).size);
+      }
+      if (Math.round(s.time / TICK) % 30 === 0) check(s, `${region} ${skill.name}#${r} t=${s.time.toFixed(1)}`);
+    }
+  } catch (err) {
+    return { ults, error: String(err) };
+  }
+  if (s.phase !== "done") {
+    const p = s.player.pos;
+    return {
+      ults,
+      error: `${region} ${skill.name}#${r}: still on the island after ${LIMIT} s, cleared ${s.stats.cleared.join(",")} player ${p.x.toFixed(1)},${p.y.toFixed(1)},${p.z.toFixed(1)} enemies near: ${s.enemies.filter((e) => Math.hypot(e.pos.x - p.x, e.pos.z - p.z) < 60).map((e) => `${e.kind}@${e.pos.x.toFixed(0)},${e.pos.z.toFixed(0)}:${e.mode}:${e.aware}`).join(" ")}`,
+    };
+  }
+  const rk = rank(s);
+  return {
+    ults,
+    ended: {
+      record: recordOf(s),
+      peakSq,
+      peakBots,
+      cleared: s.stats.cleared.length,
+      waves: s.reinforceN,
+      rank: rk.rank,
+      got: s.outcome === "extracted" ? { time: s.time / 60, haul: rk.haul, score: rk.score } : undefined,
+      downs: s.stats.downs,
+      shots: s.stats.shots,
+      hits: s.stats.hits,
+      crits: s.stats.crits,
+      flanks: s.stats.flankHits,
+      titanHits: s.stats.titanHits,
+      allyShare: s.stats.allyDamage / Math.max(1, s.stats.allyDamage + s.stats.damage),
+      allyDowns: s.stats.allyDowns,
+      rescues: s.stats.allyRescues,
+      helped: s.stats.allyHelped,
+      exit: s.extractedAt ?? undefined,
+    },
+  };
+}
+
+/** The table from its raids' results, in raid order. */
+export function summarize(region: RegionId, skillName: string, raids: RaidResult[]): TableResult {
+  const skill = skillNamed(skillName);
+  const runs = raids.length;
   const out: TableResult = { lines: [], records: [], failed: false };
   const times: number[] = [];
   const clearedN: number[] = [];
@@ -62,67 +163,38 @@ export function playTable(region: RegionId, skillName: string, runs: number): Ta
   const crowdSq: number[] = [];
   const crowdBots: number[] = [];
   const ranks: Record<string, number> = { S: 0, A: 0, B: 0, C: 0, "-": 0 };
-  for (let r = 0; r < runs; r++) {
-    // Each raid starts at one of the region's ways in, in turn.
-    const ways = regionOf(region).entries;
-    const s = newRun(1000 + r * 7919, freeKit(), region, { entry: ways[r % ways.length] });
-    const bot = new Bot(skill, 31 + r);
-    let prevCrouch = false;
-    let peakSq = 0;
-    let peakBots = 0;
-    try {
-      while (s.phase !== "done" && s.time < LIMIT) {
-        const inp = bot.input(s);
-        step(s, inp, prevCrouch);
-        prevCrouch = inp.crouch;
-        const end = s.events.findIndex((e) => e.t === "done");
-        if (end >= 0 && end < s.events.length - 1) throw new Error(`${region} ${skill.name}#${r}: events after the raid ended: ${s.events.slice(end + 1).map((e) => e.t).join(",")}`);
-        for (const e of s.events) {
-          if (e.t === "leap") ults++;
-        }
-        if (!s.enemies.some((e) => e.kind === "titan" && e.aware === "engaged")) {
-          const fighting = s.enemies.filter((e) => e.aware === "engaged" && e.mode !== "spawning");
-          peakBots = Math.max(peakBots, fighting.length);
-          peakSq = Math.max(peakSq, new Set(fighting.map((e) => e.squad)).size);
-        }
-        if (Math.round(s.time / TICK) % 30 === 0) check(s, `${region} ${skill.name}#${r} t=${s.time.toFixed(1)}`);
-      }
-    } catch (err) {
+  for (const raid of raids) {
+    ults += raid.ults;
+    const e = raid.ended;
+    if (!e) {
       out.failed = true;
-      out.lines.push({ err: true, text: String(err) });
-      continue;
-    }
-    if (s.phase !== "done") {
-      out.failed = true;
-      const p = s.player.pos;
-      out.lines.push({ err: true, text: `${region} ${skill.name}#${r}: still on the island after ${LIMIT} s, cleared ${s.stats.cleared.join(",")} player ${p.x.toFixed(1)},${p.y.toFixed(1)},${p.z.toFixed(1)} enemies near: ${s.enemies.filter((e) => Math.hypot(e.pos.x - p.x, e.pos.z - p.z) < 60).map((e) => `${e.kind}@${e.pos.x.toFixed(0)},${e.pos.z.toFixed(0)}:${e.mode}:${e.aware}`).join(" ")}` });
+      out.lines.push({ err: true, text: raid.error ?? "" });
       continue;
     }
     ended++;
-    out.records.push(recordOf(s));
-    crowdSq.push(peakSq);
-    crowdBots.push(peakBots);
-    clearedN.push(s.stats.cleared.length);
-    waves.push(s.reinforceN);
-    const rk = rank(s);
-    ranks[rk.rank]++;
-    if (s.outcome === "extracted") {
+    out.records.push(e.record);
+    crowdSq.push(e.peakSq);
+    crowdBots.push(e.peakBots);
+    clearedN.push(e.cleared);
+    waves.push(e.waves);
+    ranks[e.rank]++;
+    if (e.got) {
       alive++;
-      times.push(s.time / 60);
-      hauls.push(rk.haul);
-      scores.push(rk.score);
+      times.push(e.got.time);
+      hauls.push(e.got.haul);
+      scores.push(e.got.score);
     }
-    downs += s.stats.downs;
-    shots += s.stats.shots;
-    hits += s.stats.hits;
-    crits += s.stats.crits;
-    flanks += s.stats.flankHits;
-    titanHits += s.stats.titanHits;
-    allyDmg += s.stats.allyDamage / Math.max(1, s.stats.allyDamage + s.stats.damage);
-    allyDowns += s.stats.allyDowns;
-    rescues += s.stats.allyRescues;
-    helped += s.stats.allyHelped;
-    if (s.extractedAt) exits[s.extractedAt]++;
+    downs += e.downs;
+    shots += e.shots;
+    hits += e.hits;
+    crits += e.crits;
+    flanks += e.flanks;
+    titanHits += e.titanHits;
+    allyDmg += e.allyShare;
+    allyDowns += e.allyDowns;
+    rescues += e.rescues;
+    helped += e.helped;
+    if (e.exit) exits[e.exit]++;
   }
   const n = Math.max(ended, 1);
   out.lines.push({
@@ -148,3 +220,11 @@ export function playTable(region: RegionId, skillName: string, runs: number): Ta
   });
   return out;
 }
+
+/** A whole table played in turn, in this process. */
+export const playTable = (region: RegionId, skillName: string, runs: number): TableResult =>
+  summarize(
+    region,
+    skillName,
+    Array.from({ length: runs }, (_, r) => playRaid(region, skillName, r)),
+  );
