@@ -7,7 +7,7 @@ import { cellsAround, fieldTo, nextStep } from "./hunt";
 import { raiseAlly, startHelp } from "./ally";
 import { boosted, callLeft, cellOf, exploreSize, mix, rand, type Bin, type Input, type Loot, type Player, type State, type Weapon } from "./state";
 import type { EnemyKind, ValuableKind } from "./config";
-import { makeNoise } from "./awareness";
+import { located, makeNoise } from "./awareness";
 
 /*
  * The raid's structure: POIs that fall when their robots are beaten, loot and bins,
@@ -57,7 +57,10 @@ export function stepReinforce(s: State) {
   s.squads.forEach((q, i) => {
     if (!q.hunt) return;
     if (q.engaged) {
-      q.hunt = false;
+      // It stops hunting once one of its walkers has found the player itself: a fight that only
+      // its drone joined, over a cliff or a wall the walkers have not got round yet, leaves
+      // them hunting on once it is lost.
+      if (s.enemies.some((e) => e.squad === i && e.kind !== "drone" && e.aware === "engaged" && located(s, e))) q.hunt = false;
       return;
     }
     const every = q.elite ? RAIDERS.huntEvery : REINFORCE.huntEvery;
