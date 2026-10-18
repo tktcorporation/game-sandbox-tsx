@@ -67,7 +67,7 @@ const free = (i: number, j: number) => i >= 0 && j >= 0 && i < NX && j < NZ && !
  * finding that out by A* means visiting every cell of the start's stretch, which spans
  * both regions; the labels answer it at once.
  */
-let area = new Int32Array(0);
+let area: Uint16Array | Int32Array = new Uint16Array(0);
 
 /*
  * The 8-way moves A* makes, in the order it tries them (di outer, dj inner), with the step
@@ -104,46 +104,56 @@ function moveMask(): Uint8Array {
 /** Forgets the grid, its stretches and the landmarks' fields, for a world whose open routes changed (routes.ts): all are built again on first use. */
 export function resetNav() {
   grid = new Uint8Array(0);
-  area = new Int32Array(0);
+  area = new Uint16Array(0);
   moves = new Uint8Array(0);
   fields = [];
   store = new Uint16Array(0);
   weighted = { disk: null, fields: [], store: new Uint16Array(0) };
   landmarkCells = null;
 }
-function areas(): Int32Array {
+function areas(): Uint16Array | Int32Array {
   if (area.length) return area;
-  blockedCells();
-  const label = new Int32Array(NX * NZ);
-  const queue = new Int32Array(NX * NZ);
-  let next = 0;
-  for (let k0 = 0; k0 < NX * NZ; k0++) {
-    if (grid[k0] || label[k0]) continue;
-    next++;
-    label[k0] = next;
-    let head = 0;
-    let tail = 0;
-    queue[tail++] = k0;
-    while (head < tail) {
-      const cur = queue[head++];
-      const ci = cur % NX;
-      const cj = (cur / NX) | 0;
-      for (let di = -1; di <= 1; di++)
-        for (let dj = -1; dj <= 1; dj++) {
-          if (!di && !dj) continue;
-          const ni = ci + di;
-          const nj = cj + dj;
-          if (!free(ni, nj)) continue;
-          if (di && dj && (!free(ci + di, cj) || !free(ci, cj + dj))) continue;
-          const n = nj * NX + ni;
-          if (label[n]) continue;
-          label[n] = next;
-          queue[tail++] = n;
+  const mv = moveMask();
+  // The stretches number a few hundred: two bytes a cell, or four for a world cut into more.
+  for (const wide of [false, true]) {
+    const label = wide ? new Int32Array(NX * NZ) : new Uint16Array(NX * NZ);
+    // A breadth-first fill holds only its front, a ring that grows when it fills.
+    let ring = new Int32Array(1 << 16);
+    let next = 0;
+    for (let k0 = 0; k0 < NX * NZ && (wide || next < 0xffff); k0++) {
+      if (grid[k0] || label[k0]) continue;
+      next++;
+      label[k0] = next;
+      let head = 0;
+      let size = 0;
+      ring[size++] = k0;
+      while (size) {
+        const cur = ring[head];
+        head = (head + 1) & (ring.length - 1);
+        size--;
+        const bits = mv[cur];
+        for (let n = 0; n < 8; n++) {
+          if (!(bits & (1 << n))) continue;
+          const k = cur + MOVE_OFF[n];
+          if (label[k]) continue;
+          label[k] = next;
+          if (size === ring.length) {
+            const grown = new Int32Array(ring.length * 2);
+            for (let e = 0; e < size; e++) grown[e] = ring[(head + e) & (ring.length - 1)];
+            ring = grown;
+            head = 0;
+          }
+          ring[(head + size) & (ring.length - 1)] = k;
+          size++;
         }
+      }
+    }
+    if (wide || next < 0xffff) {
+      area = label;
+      return label;
     }
   }
-  area = label;
-  return label;
+  return area;
 }
 
 /** True if the straight line between two points crosses no blocked cell. */
@@ -399,14 +409,16 @@ function diskFor(avoid: Avoid | undefined, sx: number, sz: number, gx: number, g
 /*
  * A*'s per-cell scores, kept between searches. A cell's entries count only when its
  * stamp is the current search's, so a search resets just the cells it reaches
- * instead of the whole grid. `came` is the move that reached a cell (NONE for none): a byte
- * rather than the cell it came from, so the arrays touch less memory.
+ * instead of the whole grid; the stamps are two bytes, and all are cleared when the count of
+ * searches runs out. `came` is the move that reached a cell (NONE for none), a byte rather than
+ * the cell it came from. Small entries touch less memory, and fresh memory is slow to touch (a
+ * page fault for each page).
  */
 const NONE = 255;
 let gScore = new Float32Array(0);
 let came = new Uint8Array(0);
 let closed = new Uint8Array(0);
-let stamp = new Uint32Array(0);
+let stamp = new Uint16Array(0);
 let search = 0;
 const touch = (k: number) => {
   if (stamp[k] === search) return;
@@ -497,12 +509,12 @@ export function findPath(
     gScore = new Float32Array(NX * NZ);
     came = new Uint8Array(NX * NZ);
     closed = new Uint8Array(NX * NZ);
-    stamp = new Uint32Array(NX * NZ);
+    stamp = new Uint16Array(NX * NZ);
   }
   const start = s[1] * NX + s[0];
   const goal = g[1] * NX + g[0];
   if (areas()[start] !== area[goal]) return null;
-  if (++search === 0xffffffff) {
+  if (++search === 0xffff) {
     stamp.fill(0);
     search = 1;
   }
