@@ -494,6 +494,10 @@ const harborTour = [
   ["tour-66-assembly-floor", ...at("supply", -64, 1.7, -30), 1.4, 0.15],
   ["tour-67-assembly-crane-walk", ...at("supply", -66, 28.8, -58.4), 1.85, -0.4, true],
   ["tour-39-quarry-plant", ...at("quarry", -10, 1.7, 25), 0, 0.2],
+  // The bucket-wheel excavator from the rim yard, from beside its crawlers, and down its boom from the machine house's roof.
+  ["tour-68-quarry-excavator", ...at("quarry", 60, 1.7, -95), 3.05, 0.15],
+  ["tour-69-excavator-crawlers", ...at("quarry", 70, 1.7, 40), 0.71, 0.35],
+  ["tour-70-excavator-boom", ...at("quarry", 90, 11.6, 12), -1.57, -0.2, true],
   ["tour-40-relay-mast", ...at("relay", -20, 1.7, 20), 0.91, 0.35],
   ["tour-41-pad-hangars", ...at("pad", 0, 1.7, 60), 0, 0.1],
   // The reservoir's POIs and districts at their own scale, from eye height: the quarry's

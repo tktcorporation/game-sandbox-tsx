@@ -713,6 +713,35 @@ const GASH = { x0: -12, x1: 18, y0: 14, y1: 32 } as const;
 const BRIDGES = { cab: -45, over: 27, fallen: -72 } as const;
 
 /**
+ * The bucket-wheel excavator that dug the ring's material, on the quarry's top terrace, in the
+ * quarry's frame, its heights over the top terrace: crawlers, a turntable, the machine house (its
+ * roof `roof` high, reached by an open stair tower at its east end), an A-frame mast `mast` high
+ * with stays to both booms, the counterweight boom east, and the wheel boom running west out over
+ * the middle terrace down to the wheel (`wheel`, beside the boom's tip) cutting into the pit's edge.
+ * A walkway steps down the wheel boom from the roof in `steps` steps a body walks, flat for a
+ * landing at the operator's cab (`cab`, the steps it spans) near the wheel.
+ */
+const BWE = { root: 86, tip: 40, roof: 17, end: 2, mast: 48, steps: 40, cab: [31, 33], wheel: { x: 40, y: 0, r: 9, z0: 7, z1: 10 } } as const;
+/** The wheel boom's walkway steps, from the roof out: x from, x to, and the top of each. */
+const BOOM_STEPS = (() => {
+  const { root, tip, roof, end, steps, cab } = BWE;
+  const L = (root - tip) / steps;
+  const flat = cab[1] - cab[0];
+  const rise = (roof - end) / (steps - flat);
+  let y = roof;
+  return Array.from({ length: steps }, (_, k) => {
+    if (k <= cab[0] || k > cab[1]) y -= rise;
+    return { x0: root - (k + 1) * L, x1: root - k * L, y };
+  });
+})();
+/** The cab's floor over the top terrace, and its walls round it. */
+const BWE_CAB = (() => {
+  const a = BOOM_STEPS[BWE.cab[1]].x0;
+  const b = BOOM_STEPS[BWE.cab[0]].x1;
+  return { x0: a - 0.5, x1: b + 1.1, z0: 13.5, z1: 17.6, y: BOOM_STEPS[BWE.cab[0]].y, door: (a + b) / 2 };
+})();
+
+/**
  * Each POI is written in its own frame (its data and its boxes below) and moved
  * into place by this offset (`POI_AT` in areas.ts, which sets each in its area's frame).
  * The harbor's POIs are written round their own middle.
@@ -773,6 +802,8 @@ const POI_FRAMES: Poi[] = [
       { x: 52, z: 6 },
       { x: -28, z: 32 },
       { x: 4, z: 6 },
+      // The excavator's cab, out on its boom over the middle terrace.
+      { x: (BWE_CAB.x0 + BWE_CAB.x1) / 2, z: 16, y: LEVEL.quarryTop + BWE_CAB.y - LEVEL.quarryMid },
       { x: -31, z: -55, y: WORKS.storey * 2, vault: true },
     ],
     keyFrom: "supply",
@@ -1296,6 +1327,7 @@ export const LANDMARKS: readonly { name: string; x: number; z: number }[] = [
   at("anchor", { name: "アンカー", x: 0, z: 0 }),
   at("anchor", { name: "倒れた昇降路", x: -160, z: 16 }),
   at("quarry", { name: "コンベヤー", x: 10, z: -40 }),
+  at("quarry", { name: "バケット掘削機", x: 94, z: 12 }),
   at("pass", { name: "峠", x: -60, z: -236 }),
   at("railway", { name: "鉄橋", x: 140, z: -190 }),
   at("railway", { name: "駅", x: 108, z: -228 }),
@@ -1443,10 +1475,77 @@ const stone = (boxes: Box[]): Box[] => paint(boxes, "wall", "wall", () => 3, (b)
 const PLANT = { x: 10, z: -104 } as const;
 const BELT = { x: 10, z0: -91, z1: 18, y0: 9, y1: LEVEL.pit + 6 } as const;
 
+/** A stay cable from (xa, ya) to (xb, yb) at z: blocks stepping along it, not overlapping along x. */
+function stay(xa: number, ya: number, xb: number, yb: number, z: number): Box[] {
+  const n = Math.ceil(Math.abs(xb - xa) / 0.8);
+  const out: Box[] = [];
+  for (let i = 0; i < n; i++) {
+    const [a, b] = [xa + ((xb - xa) * i) / n, xa + ((xb - xa) * (i + 1)) / n];
+    const [p, q] = [ya + ((yb - ya) * i) / n, ya + ((yb - ya) * (i + 1)) / n];
+    out.push(rect(Math.min(a, b), z - 0.15, Math.max(a, b), z + 0.15, Math.min(p, q) - 0.15, Math.max(p, q) + 0.15, "steel", 2));
+  }
+  return out;
+}
+
+/**
+ * The excavator (`BWE`): what stands on the top terrace, and what reaches out over the terraces
+ * below (laid without pressing them flat).
+ */
+function excavator(): { on: Box[]; out: Box[] } {
+  const { root, roof: R, mast: M, wheel: W } = BWE;
+  const on: Box[] = [];
+  // Crawlers, the frame between them, the turntable, the deck the house stands on.
+  on.push(rect(82, 2, 106, 7, 0, 4.5, "steel", 1), rect(82, 17, 106, 22, 0, 4.5, "steel", 1), rect(86, 7, 102, 17, 1.5, 4.5, "steel", 2));
+  on.push(...disc(94, 12, 9, 2, 4.5, 6, "steel", 2), rect(80, 4, 106, 20, 6, 7, "steel", 0));
+  // The machine house, its roof walked on: a band of windows down each side, knee rails round the
+  // roof open where the boom's walkway leaves it and where the stair tower's bridge comes in.
+  on.push(rect(root, 5, 106, 19, 7, R, "steel", 0));
+  for (const x of [89, 95, 101]) on.push(rect(x, 4.94, x + 3.5, 5, 12, 14.5, "steel", 3), rect(x, 19, x + 3.5, 19.06, 12, 14.5, "steel", 3));
+  on.push(rect(root, 5, 106, 5.15, R, R + 0.5, "steel", 2), rect(root, 18.85, 106, 19, R, R + 0.5, "steel", 2));
+  for (const x of [root, 105.85]) on.push(rect(x, 5.15, x + 0.15, 10.5, R, R + 0.5, "steel", 2), rect(x, 13.5, x + 0.15, 18.85, R, R + 0.5, "steel", 2));
+  on.push(...lattice(110, 12, 6, 7, 5, R + 0.6, ["w"]), rect(106, 10.5, 107, 13.5, R - 0.3, R, "slab", 1));
+  // The mast: two legs from the roof, a brace and a head; the counterweight boom on its post, the weight at its end.
+  on.push(rect(95, 7.5, 96.2, 8.7, R, M, "steel", 0), rect(95, 15.3, 96.2, 16.5, R, M, "steel", 0), rect(95.1, 8.7, 96.1, 15.3, 32, 33, "steel", 0), rect(94.6, 7.1, 96.6, 16.9, M, M + 1.6, "steel", 0));
+  on.push(rect(98, 10, 104, 14, R, 20.5, "steel", 0), rect(98.5, 10.3, 116, 13.7, 20.5, 22.5, "steel", 2), rect(114, 8, 122, 16, 15, 23.5, "steel", 1));
+  on.push(...stay(95.6, M, 118, 23.5, 12));
+  const out: Box[] = [];
+  // The wheel boom: per step its box girder, the walkway on it and knee rails, the south rail open at the cab.
+  BOOM_STEPS.forEach(({ x0, x1, y }, k) => {
+    out.push(rect(x0, 10.2, x1, 13.8, y - 3, y - 0.5, "steel", 0), rect(x0, 10.5, x1, 13.5, y - 0.5, y, "slab", 1), rect(x0, 10.5, x1, 10.7, y, y + 0.5, "steel", 2));
+    if (k < BWE.cab[0] || k > BWE.cab[1]) out.push(rect(x0, 13.3, x1, 13.5, y, y + 0.5, "steel", 2));
+  });
+  out.push(...stay(95.6, M, 44, 6, 12));
+  // The boom's head and the wheel's axle; the wheel beside it: a rim of rows, two spokes, buckets round it.
+  out.push(rect(W.x - 2, 9.8, W.x, 14.2, -3, BWE.end + 0.5, "steel", 0), rect(W.x - 1.2, W.z0 - 1, W.x + 1.2, 14, W.y - 1.2, W.y + 1.2, "steel", 2));
+  const ri = W.r - 2.5;
+  for (let y = -W.r; y < W.r; y += 1) {
+    const m = y + 0.5;
+    const wo = Math.sqrt(W.r * W.r - m * m);
+    if (Math.abs(m) < ri) {
+      const wi = Math.sqrt(ri * ri - m * m);
+      out.push(rect(W.x - wo, W.z0, W.x - wi, W.z1, W.y + y, W.y + y + 1, "steel", 0), rect(W.x + wi, W.z0, W.x + wo, W.z1, W.y + y, W.y + y + 1, "steel", 0));
+    } else out.push(rect(W.x - wo, W.z0, W.x + wo, W.z1, W.y + y, W.y + y + 1, "steel", 0));
+  }
+  const hub = Math.sqrt(ri * ri - 0.25);
+  out.push(rect(W.x - hub, W.z0 + 1, W.x + hub, W.z1 - 1, W.y - 0.5, W.y + 0.5, "steel", 2), rect(W.x - 0.5, W.z0 + 0.8, W.x + 0.5, W.z1 - 0.8, W.y - ri, W.y + ri, "steel", 2));
+  for (let k = 0; k < 12; k++) {
+    const a = ((k + 0.5) * Math.PI) / 6;
+    const [x, y] = [W.x + 9.7 * Math.cos(a), W.y + 9.7 * Math.sin(a)];
+    out.push(rect(x - 0.95, W.z0 - 0.2, x + 0.95, W.z1 + 0.2, y - 0.95, y + 0.95, "steel", 1));
+  }
+  // The operator's cab beside the walkway's landing, hung off the boom, its bin inside.
+  const c = BWE_CAB;
+  const [cx, cz] = [(c.x0 + c.x1) / 2, (c.z0 + 0.3 + c.z1) / 2];
+  out.push(rect(c.x0, c.z0, c.x1, c.z1, c.y - 0.3, c.y, "slab", 1), rect(c.x0 + 0.6, 13.8, c.x1 - 0.6, 14.8, c.y - 2.8, c.y - 0.3, "steel", 0));
+  const holes: Hole[] = [{ side: "n", at: c.door - cx, w: 2.2, head: 2.2 }, { side: "w", w: 2, sill: 1, head: 2.1 }, { side: "e", w: 2, sill: 1, head: 2.1 }, { side: "s", w: 3, sill: 1, head: 2.1 }];
+  out.push(...shell(cx, cz, c.x1 - c.x0, c.z1 - c.z0 - 0.3, c.y, c.y + 2.5, holes, "steel", 3, 0.25), rect(c.x0 - 0.1, c.z0 + 0.2, c.x1 + 0.1, c.z1 + 0.1, c.y + 2.5, c.y + 2.8, "slab", 1));
+  return { on, out };
+}
+
 /**
  * The quarry, in its own frame, built to `WORKS`: the processing plant and its hoppers on the rim
- * yard, the office tower (`HIGH_RISES`) on the top terrace, a shed, dump trucks on the terraces, an
- * excavator and spoil heaps on the floor. The conveyor down into it, the iron stairs between its
+ * yard, the office tower (`HIGH_RISES`) and the bucket-wheel excavator (`BWE`) on the top terrace, a
+ * shed, dump trucks on the terraces, a digger and spoil heaps on the floor. The conveyor down into it, the iron stairs between its
  * terraces and the tunnel's roof are laid once the ground is (`QUARRY_WORKS`). Each part is lifted
  * to the floor it stands on.
  */
@@ -1491,7 +1590,10 @@ function quarry(): Floors {
       box(-80, -10, 5, 6, 3, "rock", 1),
     ],
   ]);
-  // The floor: the excavator at work, spoil heaps and crates, a rock face to fight round.
+  // The bucket-wheel excavator on the top terrace's east end, its boom out over the middle terrace.
+  const bwe = excavator();
+  out.push([LEVEL.quarryTop, bwe.on], [LEVEL.quarryTop, bwe.out, "loose"]);
+  // The floor: a digger at work, spoil heaps and crates, a rock face to fight round.
   out.push([
     LEVEL.pit,
     [
