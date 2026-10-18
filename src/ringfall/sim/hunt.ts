@@ -93,6 +93,27 @@ function steps(open: Uint8Array, height: Float32Array, k: number, n: number): nu
   return q;
 }
 
+/** Neighbour n's index from a cell's. */
+const OFFSET = DI.map((di, n) => DJ[n] * NX + di);
+/** For each cell, bit n set when `steps()` lets a walker go to its n-th neighbour; built on first use. */
+let mask: Uint8Array | null = null;
+function stepMask(): Uint8Array {
+  if (mask) return mask;
+  const { open, height } = grid();
+  const m = new Uint8Array(CELLS);
+  for (let k = 0; k < CELLS; k++) {
+    if (!open[k]) continue;
+    let bits = 0;
+    for (let n = 0; n < 8; n++) if (steps(open, height, k, n) >= 0) bits |= 1 << n;
+    m[k] = bits;
+  }
+  mask = m;
+  return m;
+}
+/** Scratch for `fieldTo()`: its heap, and which cells it has settled. */
+let heap = new Int32Array(0);
+let settled = new Uint8Array(0);
+
 /** The largest set of open cells a walker can get between: the island's walkable ground. */
 function mainGround(open: Uint8Array, height: Float32Array): Uint8Array {
   const label = new Int32Array(CELLS).fill(-1);
@@ -156,7 +177,7 @@ const NEAR = 3;
  * built again on first use.
  */
 export function resetHunt() {
-  open = height = main = null;
+  open = height = main = mask = null;
   cache.clear();
 }
 
@@ -223,44 +244,60 @@ export function fieldTo(x: number, z: number, reach = Infinity): Field | null {
     cache.set(hit.target, hit);
     return hit;
   }
-  const { open, height } = grid();
+  const mask = stepMask();
   const dist = new Float32Array(CELLS).fill(Infinity);
   dist[target] = 0;
-  // Binary heap of cell indices keyed by dist.
-  const heap: number[] = [target];
+  // Binary heap of cell indices, each keyed by its cell's distance as it stands when compared.
+  if (heap.length < CELLS) heap = new Int32Array(CELLS * 2);
+  let size = 0;
   const push = (k: number) => {
-    heap.push(k);
-    let c = heap.length - 1;
+    if (size === heap.length) {
+      const grown = new Int32Array(heap.length * 2);
+      grown.set(heap);
+      heap = grown;
+    }
+    const h = heap;
+    const dk = dist[k];
+    let c = size++;
     while (c > 0) {
       const p = (c - 1) >> 1;
-      if (dist[heap[p]] <= dist[heap[c]]) break;
-      [heap[p], heap[c]] = [heap[c], heap[p]];
+      if (dist[h[p]] <= dk) break;
+      h[c] = h[p];
       c = p;
     }
+    h[c] = k;
   };
   const pop = () => {
-    const top = heap[0];
-    const end = heap.pop()!;
-    if (heap.length) {
-      heap[0] = end;
+    const h = heap;
+    const top = h[0];
+    const n = --size;
+    if (n) {
+      const end = h[n];
+      const de = dist[end];
       let c = 0;
       for (;;) {
         const l = 2 * c + 1;
         const r = l + 1;
         let m = c;
-        if (l < heap.length && dist[heap[l]] < dist[heap[m]]) m = l;
-        if (r < heap.length && dist[heap[r]] < dist[heap[m]]) m = r;
+        let dm = de;
+        if (l < n && dist[h[l]] < dm) {
+          m = l;
+          dm = dist[h[l]];
+        }
+        if (r < n && dist[h[r]] < dm) m = r;
         if (m === c) break;
-        [heap[m], heap[c]] = [heap[c], heap[m]];
+        h[c] = h[m];
         c = m;
       }
+      h[c] = end;
     }
     return top;
   };
-  const done = new Uint8Array(CELLS);
+  push(target);
+  const done = settled.length === CELLS ? settled.fill(0) : (settled = new Uint8Array(CELLS));
   const order = new Int32Array(CELLS);
   let count = 0;
-  while (heap.length) {
+  while (size) {
     const k = pop();
     if (done[k]) continue;
     // Cells come out nearest first: once one is past the reach, every one left is too.
@@ -270,9 +307,11 @@ export function fieldTo(x: number, z: number, reach = Infinity): Field | null {
     }
     done[k] = 1;
     order[count++] = k;
+    const bits = mask[k];
     for (let n = 0; n < 8; n++) {
-      const q = steps(open, height, k, n);
-      if (q < 0 || done[q]) continue;
+      if (!(bits & (1 << n))) continue;
+      const q = k + OFFSET[n];
+      if (done[q]) continue;
       const d = dist[k] + COST[n];
       if (d < dist[q]) {
         dist[q] = d;
@@ -281,7 +320,7 @@ export function fieldTo(x: number, z: number, reach = Infinity): Field | null {
     }
   }
   // Cells reached but not settled lie past the reach: their distances so far are not theirs.
-  for (const k of heap) if (!done[k]) dist[k] = Infinity;
+  for (let e = 0; e < size; e++) if (!done[heap[e]]) dist[heap[e]] = Infinity;
   const f = { target, dist, reach, order, count };
   fieldsBuilt++;
   cache.set(target, f);
