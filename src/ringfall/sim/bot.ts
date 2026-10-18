@@ -143,7 +143,7 @@ export class Bot {
     if (s.events.some((e) => e.t === "raiders")) this.raidersIn = true;
     const live = s.enemies.filter((e) => e.mode !== "spawning");
     // Only fight robots that are after us or stand at the POI we are taking; leave the rest alone.
-    const aim = this.nextPoi(s);
+    let aim = this.nextPoi(s);
     // Until it means to take the titan on, its paths go round the titan's sight.
     const titan = s.enemies.find((e) => e.kind === "titan" && e.hp > 0 && e.aware !== "engaged");
     this.avoid = titan && !(aim >= 0 && POIS[aim].boss) ? { x: titan.pos.x, z: titan.pos.z, r: AVOID_TITAN } : undefined;
@@ -156,6 +156,17 @@ export class Bot {
       if (e.aware !== "engaged" || sees(e)) this.unseen.delete(e.id);
       else this.unseen.set(e.id, (this.unseen.get(e.id) ?? 0) + TICK);
     const given = (e: Enemy) => (this.unseen.get(e.id) ?? 0) > GIVE_UP;
+    // A POI whose last robots went off after it and have long been out of sight (the titan
+    // come down off its pad to hunt it below) leaves nothing to wait for at its middle: the
+    // bot moves on to the next one, or out.
+    if (aim >= 0 && dist2d(p.pos, POIS[aim]) < 12) {
+      const rest = live.filter((e) => e.poi === aim);
+      if (rest.length && rest.every(given)) {
+        this.left.add(aim);
+        aim = this.nextPoi(s);
+        this.avoid = titan && !(aim >= 0 && POIS[aim].boss) ? { x: titan.pos.x, z: titan.pos.z, r: AVOID_TITAN } : undefined;
+      }
+    }
     const relevant = live.filter((e) => !given(e) && (e.aware === "engaged" || (aim >= 0 && e.poi === aim) || coming(e)));
     // Finish the squads already fighting before opening on a new one, as a careful player would.
     const engaged = relevant.filter((e) => e.aware === "engaged");
@@ -164,7 +175,11 @@ export class Bot {
     const pool = engagedSeen.length ? engagedSeen : engaged.length ? engaged : objective.filter(sees).length ? objective.filter(sees) : objective;
     // A flank in progress keeps its robot; otherwise the nearest one.
     const flanked = this.flank && live.find((e) => e.id === this.flank?.id);
-    const tgt = flanked || (pool.sort((a, b) => dist2d(a.pos, p.pos) - dist2d(b.pos, p.pos))[0] as Enemy | undefined);
+    // Robots that have not noticed it yet are walked up to one at a time: taken up afresh each
+    // step, the target flips to whichever one comes into sight on the way, whose way round
+    // leads off the other way, and back as soon as it is out of sight again.
+    const stalking = !engaged.length && objective.find((e) => e.id === this.chasing);
+    const tgt = flanked || stalking || (pool.sort((a, b) => dist2d(a.pos, p.pos) - dist2d(b.pos, p.pos))[0] as Enemy | undefined);
     if (!tgt || tgt.id !== this.target) {
       this.target = tgt?.id ?? -1;
       this.tracking = 0;
@@ -455,6 +470,13 @@ export class Bot {
       const watched = live.some((e) => e.aware === "engaged" && dist2d(e.pos, p.pos) < 50 && los(eye, bodyCenter(e)));
       if ((p.shield < max * 0.6 || p.hp < 75) && !p.healing && !watched && pickHeal(s)) inp.heal = true;
       if (p.healing) inp.moveZ = Math.min(inp.moveZ, 0.6);
+      // Walk toward the waypoint itself, not where the view points: the view lags in a turn and
+      // wanders with the aim error, and a path planned along a cliff's edge leaves no room for
+      // either (a body that steps off the edge drops to the foot, to walk the long way round
+      // and be led along the same edge again).
+      const rel = wrapAngle(want.yaw - p.yaw);
+      inp.moveX = inp.moveZ * Math.sin(rel);
+      inp.moveZ *= Math.cos(rel);
       // Slide now and then on long runs, like people do.
       if (p.sprinting && d > 12 && this.rnd() < TICK * 0.4) this.crouch = true;
       this.interactT -= TICK;
@@ -561,10 +583,13 @@ export class Bot {
     const p = s.player;
     const mine = regionOf(s.region).pois;
     const others = POIS.filter((poi) => !poi.boss && mine.includes(poi.id)).length;
-    const open = POIS.map((poi, i) => ({ poi, i })).filter(({ poi, i }) => mine.includes(poi.id) && !s.cleared[i] && (!poi.boss || s.stats.cleared.length >= others));
+    const open = POIS.map((poi, i) => ({ poi, i })).filter(({ poi, i }) => mine.includes(poi.id) && !s.cleared[i] && !this.left.has(i) && (!poi.boss || s.stats.cleared.length >= others));
     open.sort((a, b) => dist2d(a.poi, p.pos) - dist2d(b.poi, p.pos));
     return open[0]?.i ?? -1;
   }
+
+  /** POIs it walked away from with robots of theirs still about (see input()). */
+  private left = new Set<number>();
 
   private wait: { id: string; x: number; z: number } | null = null;
 
@@ -836,7 +861,15 @@ export class Bot {
       this.pathGoal = { ...goal };
       this.pathT = 2;
     }
-    while (this.path.length > 1 && dist2d(this.path[0], p.pos) < 0.8) this.path.shift();
+    // A waypoint is a corner the path turns round a closed cell at: passed 0.8 m short of it,
+    // the walk on to the next one can cut across that cell (a lip of cliff the sim pushes the
+    // body back down off, to be planned up again, over and over). Short of it, it is passed
+    // only once the way on is clear from where the bot stands.
+    while (this.path.length > 1) {
+      const d = dist2d(this.path[0], p.pos);
+      if (d >= 0.8 || (d > 0.2 && !clearLine(p.pos.x, p.pos.z, this.path[1].x, this.path[1].z))) break;
+      this.path.shift();
+    }
     return this.path[0] ?? goal;
   }
 
@@ -872,11 +905,15 @@ export class Bot {
       if (l.kind === "valuable" && l.valuable && makeRoom(p.haul, l.valuable)) cands.push({ x: l.pos.x, z: l.pos.z, d: dist2d(l.pos, p.pos) });
     }
     const best = cands.sort((a, b) => a.d - b.d)[0] ?? null;
-    const k = best ? `${Math.round(best.x)},${Math.round(best.z)}` : "";
+    // A thing at the edge of its reach whose way round leads off first drops out of reach and
+    // comes back again, the goal flipping to the POI and back every few steps: its time is
+    // kept while nothing else is wanted, so it is still given up on after 10 s of trying.
+    if (!best) return null;
+    const k = `${Math.round(best.x)},${Math.round(best.z)}`;
     if (k !== this.lootKey) {
       this.lootKey = k;
       this.lootT = 0;
-    } else if (best && (this.lootT += TICK) > 10) this.skip.add(k);
+    } else if ((this.lootT += TICK) > 10) this.skip.add(k);
     return best;
   }
 }
