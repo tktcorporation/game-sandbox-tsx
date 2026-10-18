@@ -20,6 +20,22 @@ export const PAL = {
   duneDark: 0xd9bd86,
   rock: 0xb0623c,
   rockDark: 0x8d4a2c,
+  /** The quarry's rust-red bedrock, its floors and its cut walls. */
+  quarry: 0xa9532f,
+  quarryDark: 0x86402a,
+  /** The mesa's orange sandstone, its top and its sheer cliffs. */
+  sandstone: 0xdc8e4c,
+  sandstoneDark: 0xbf6f38,
+  /** The terraced fields: dry soil under a dull sage-green scrub. */
+  scrub: 0xaaa678,
+  scrubDark: 0x878a5e,
+  /** The works and the housing: concrete stained with oil. */
+  oiled: 0xb2ada2,
+  oiledDark: 0x76726b,
+  /** Dry-stone walls in the fields. */
+  stone: 0xbcae92,
+  /** White paint: the mast's bands, a runway's markings. */
+  paint: 0xece8df,
   /** The dried lakebed: cracked clay, greyer than the sand. */
   mud: 0xb9a385,
   mudDark: 0x9c8669,
@@ -158,8 +174,8 @@ export function buildBox(b: Box, i: number): THREE.Object3D {
       break;
     }
     case "wall": {
-      // tint 1: the low parapet around a roof; tint 2: the lighthouse's red bands.
-      g.add(mesh(new THREE.BoxGeometry(w, h, d), flat(b.tint === 1 ? PAL.concreteDark : b.tint === 2 ? PAL.rust : PAL.concrete), 0, mid, 0));
+      // tint 1: the low parapet around a roof; tint 2: red bands and roof tiles; tint 3: dry stone.
+      g.add(mesh(new THREE.BoxGeometry(w, h, d), flat(b.tint === 1 ? PAL.concreteDark : b.tint === 2 ? PAL.rust : b.tint === 3 ? PAL.stone : PAL.concrete), 0, mid, 0));
       if (b.y0 === 0) g.add(mesh(new THREE.BoxGeometry(w + 0.04, Math.min(0.5, h), d + 0.04), flat(PAL.concreteDark), 0, Math.min(0.5, h) / 2, 0, false));
       break;
     }
@@ -173,8 +189,8 @@ export function buildBox(b: Box, i: number): THREE.Object3D {
       break;
     }
     case "steel": {
-      // tint 0: rust-red plate, 1: the dark hull, 2: grey girders and posts, 3: teal paint.
-      const color = [PAL.rust, PAL.hull, PAL.steel, PAL.teal][b.tint % 4];
+      // tint 0: rust-red plate, 1: the dark hull, 2: grey girders and posts, 3: teal paint, 4: white paint.
+      const color = [PAL.rust, PAL.hull, PAL.steel, PAL.teal, PAL.paint][b.tint % 5];
       g.add(mesh(new THREE.BoxGeometry(w, h, d), flat(color), 0, mid, 0));
       // Big plates carry a darker seam along their top, so a hull reads as riveted plate.
       if (h > 2 && Math.max(w, d) > 4) g.add(mesh(new THREE.BoxGeometry(w + 0.04, 0.14, d + 0.04), flat(new THREE.Color(color).multiplyScalar(0.72).getHex()), 0, b.h - 0.25, 0, false));

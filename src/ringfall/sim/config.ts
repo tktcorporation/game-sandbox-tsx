@@ -13,8 +13,8 @@ export const WORLD = {
    * The world's bounds on each axis: the reservoir in the south (+z), the harbor in the
    * north. The coast's cliffs (terrain.ts) stop bodies well inside them.
    */
-  x0: -440,
-  x1: 460,
+  x0: -600,
+  x1: 600,
   z0: -1220,
   z1: 660,
   gravity: 15,
@@ -547,11 +547,11 @@ export const TOOL_KINDS = Object.keys(TOOLS) as ToolKind[];
  * between waves leaves a quiet walk between the fights a wave brings.
  */
 export const REINFORCE = {
-  first: 180,
-  every: 150,
+  first: 270,
+  every: 225,
   /** Seconds between fresh guesses of where the player is while a reinforcement squad hunts. */
   huntEvery: 8,
-  dist: [55, 110] as const,
+  dist: [80, 165] as const,
   waves: [
     ["grunt", "drone"],
     ["grunt", "drone", "charger"],
@@ -566,7 +566,7 @@ export const REINFORCE = {
  * the player's attention while the others go wide to the sides.
  */
 export const RAIDERS = {
-  at: 480,
+  at: 720,
   name: "レイダー",
   kinds: ["grunt", "grunt", "grunt"] as EnemyKind[],
   huntEvery: 4,
@@ -611,11 +611,11 @@ export const SHOT = { lead: 0.85, spread: 1.5 };
  * engages. Crouching shrinks the range and slows the fill.
  */
 export const SIGHT: Record<EnemyKind, { range: number; fov: number }> = {
-  drone: { range: 26, fov: 150 },
-  grunt: { range: 30, fov: 110 },
-  charger: { range: 20, fov: 120 },
-  heavy: { range: 28, fov: 100 },
-  titan: { range: 34, fov: 160 },
+  drone: { range: 39, fov: 150 },
+  grunt: { range: 45, fov: 110 },
+  charger: { range: 30, fov: 120 },
+  heavy: { range: 42, fov: 100 },
+  titan: { range: 51, fov: 160 },
 };
 
 export const AWARE = {
