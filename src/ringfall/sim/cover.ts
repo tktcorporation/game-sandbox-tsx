@@ -48,3 +48,30 @@ for (const b of BOXES) {
     }
   }
 }
+
+/*
+ * The spots by 16 m square, so a robot looking for cover reads only the squares round it
+ * rather than every spot on the map. `coversNear()` gives the spots in the squares a disk
+ * overlaps, in the order of `COVERS`, so a search that filters and sorts them finds what a
+ * pass over all of them would.
+ */
+const SQUARE = 16;
+const squares = new Map<number, number[]>();
+const squareKey = (i: number, j: number) => (i + 4096) * 8192 + (j + 4096);
+COVERS.forEach((c, n) => {
+  const k = squareKey(Math.floor(c.x / SQUARE), Math.floor(c.z / SQUARE));
+  const list = squares.get(k);
+  if (list) list.push(n);
+  else squares.set(k, [n]);
+});
+
+/** Every spot within `r` of (x, z), and perhaps some further out, in the order of `COVERS`. */
+export function coversNear(x: number, z: number, r: number): CoverPoint[] {
+  const found: number[] = [];
+  for (let i = Math.floor((x - r) / SQUARE); i <= Math.floor((x + r) / SQUARE); i++)
+    for (let j = Math.floor((z - r) / SQUARE); j <= Math.floor((z + r) / SQUARE); j++) {
+      const list = squares.get(squareKey(i, j));
+      if (list) for (const n of list) found.push(n);
+    }
+  return found.sort((a, b) => a - b).map((n) => COVERS[n]);
+}

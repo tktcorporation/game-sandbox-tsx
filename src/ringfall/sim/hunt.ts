@@ -178,13 +178,21 @@ const NEAR = 3;
  */
 export function resetHunt() {
   open = height = main = mask = null;
-  cache.clear();
+  forgetFields();
 }
 
 /** Forgets every field but keeps the grid: a raid starts with none (`newRun()`). */
 export function forgetFields() {
+  for (const f of cache.values()) spare.push(f);
   cache.clear();
 }
+
+/*
+ * The arrays of fields dropped from the cache, for the next fields to fill. A field's arrays
+ * span the whole grid, and fresh memory costs a page fault for each page it first touches;
+ * reused, it does not. Nothing keeps a field past the next `fieldTo()` call.
+ */
+const spare: { dist: Float32Array; order: Int32Array }[] = [];
 
 /** Fields built so far: the sim gate checks that alternating targets reuse them. */
 export let fieldsBuilt = 0;
@@ -250,7 +258,8 @@ export function fieldTo(x: number, z: number, reach = Infinity): Field | null {
     return hit;
   }
   const mask = stepMask();
-  const dist = new Float32Array(CELLS).fill(Infinity);
+  const reused = spare.pop();
+  const dist = (reused?.dist ?? new Float32Array(CELLS)).fill(Infinity);
   dist[target] = 0;
   // Binary heap of cell indices, each keyed by its cell's distance as it stands when compared.
   if (heap.length < CELLS) heap = new Int32Array(CELLS * 2);
@@ -300,7 +309,7 @@ export function fieldTo(x: number, z: number, reach = Infinity): Field | null {
   };
   push(target);
   const done = settled.length === CELLS ? settled.fill(0) : (settled = new Uint8Array(CELLS));
-  const order = new Int32Array(CELLS);
+  const order = reused?.order ?? new Int32Array(CELLS);
   let count = 0;
   while (size) {
     const k = pop();
@@ -329,7 +338,11 @@ export function fieldTo(x: number, z: number, reach = Infinity): Field | null {
   const f = { target, dist, reach, order, count };
   fieldsBuilt++;
   cache.set(target, f);
-  if (cache.size > CACHE) cache.delete(cache.keys().next().value!);
+  if (cache.size > CACHE) {
+    const oldest = cache.keys().next().value!;
+    spare.push(cache.get(oldest)!);
+    cache.delete(oldest);
+  }
   return f;
 }
 
