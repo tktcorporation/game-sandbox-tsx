@@ -2,7 +2,7 @@ import { AWARE, DEG, ENEMIES, HEALS, PLAYER, TICK, ULT } from "./config";
 import { bodyCenter, eyePos, flankOf, magSize, weakPoint } from "./combat";
 import { ceilingAt, dist2d, inWorld, groundAt, groundLevel, los, onTerrain, lookAngles, solidAt, wrapAngle } from "./geom";
 import { EXTRACTS, POIS, regionOf, type ExtractPoint } from "./map";
-import { clearLine, findPath } from "./nav";
+import { clearLine, findPath, type Avoid } from "./nav";
 import { callLeft, enemyMax, idleInput, type Enemy, type Input, type State } from "./state";
 import { pickHeal } from "./player";
 import { makeRoom } from "./world";
@@ -54,6 +54,13 @@ function segmentNear(a: { x: number; z: number }, b: { x: number; z: number }, c
 /** Metres round a titan it is not out to fight that its paths keep out of where they can: past its sight. */
 const AVOID_TITAN = 70;
 
+/**
+ * The ground round a titan that the bot's paths go round. Its post (a metre less round where
+ * it stands guard) never moves, so the path finding keeps walks round that for as long as the
+ * titan stays within a metre of it.
+ */
+const titanSight = (t: Enemy): Avoid => ({ x: t.pos.x, z: t.pos.z, r: AVOID_TITAN, home: { x: t.home.x, z: t.home.z, r: AVOID_TITAN - 1 } });
+
 /** Seconds a fighting robot may stay out of sight before the bot stops waiting for it. */
 const GIVE_UP = 25;
 
@@ -84,13 +91,18 @@ export class Bot {
   private path: { x: number; z: number }[] = [];
   private pathGoal = { x: 1e9, z: 1e9 };
   private pathT = 0;
+  /** Where the ground `path` goes round stood when it was planned, and how near its next waypoint the bot has come since. */
+  private pathAvoid: { x: number; z: number } | undefined;
+  private pathNear = Infinity;
+  /** When `via()` last ran. */
+  private viaAt = -1;
   private flank: { x: number; z: number; id: number; step: "hide" | "go" } | null = null;
   private flankT = 0;
   private flankCheck = 0;
   private lastFlanked = -1;
   private flankedAt = -99;
   /** Ground its paths go round: the titan's sight, while it is not out to fight it. */
-  private avoid: { x: number; z: number; r: number } | undefined;
+  private avoid: Avoid | undefined;
   /** The robot it last went after: it keeps after it a little further than it takes one up. */
   private chasing = -1;
   /** The raiders have been announced: time to stop taking POIs and get out. */
@@ -146,7 +158,7 @@ export class Bot {
     let aim = this.nextPoi(s);
     // Until it means to take the titan on, its paths go round the titan's sight.
     const titan = s.enemies.find((e) => e.kind === "titan" && e.hp > 0 && e.aware !== "engaged");
-    this.avoid = titan && !(aim >= 0 && POIS[aim].boss) ? { x: titan.pos.x, z: titan.pos.z, r: AVOID_TITAN } : undefined;
+    this.avoid = titan && !(aim >= 0 && POIS[aim].boss) ? titanSight(titan) : undefined;
     const sees = (e: Enemy) => dist2d(e.pos, p.pos) < 60 && los(eye, bodyCenter(e));
     // Robots coming to look ("?") in plain sight are worth the first shot before they find it.
     const coming = (e: Enemy) => e.aware === "alert" && dist2d(e.pos, p.pos) < 45 && sees(e);
@@ -164,7 +176,7 @@ export class Bot {
       if (rest.length && rest.every(given)) {
         this.left.add(aim);
         aim = this.nextPoi(s);
-        this.avoid = titan && !(aim >= 0 && POIS[aim].boss) ? { x: titan.pos.x, z: titan.pos.z, r: AVOID_TITAN } : undefined;
+        this.avoid = titan && !(aim >= 0 && POIS[aim].boss) ? titanSight(titan) : undefined;
       }
     }
     const relevant = live.filter((e) => !given(e) && (e.aware === "engaged" || (aim >= 0 && e.poi === aim) || coming(e)));
@@ -721,7 +733,7 @@ export class Bot {
    * a tall deck's guard is seen only from well back.
    */
   private angleSpot(tgt: Enemy): { x: number; z: number } | null {
-    let best: { x: number; z: number; len: number } | null = null;
+    const spots: { x: number; z: number; n: number; crow: number }[] = [];
     for (let r = 10; r <= 55; r += 5)
       for (let a = 0; a < 2 * Math.PI; a += Math.PI / 12) {
         const x = tgt.pos.x + Math.sin(a) * r;
@@ -730,9 +742,16 @@ export class Bot {
         const g = terrainHeight(x, z);
         if (groundAt(x, z, 0.4, g + 0.3) > g + 0.3 || [0.3, 1.0, 1.6].some((h) => solidAt(x, g + h, z))) continue;
         if (!los({ x, y: g + 1.6, z }, bodyCenter(tgt))) continue;
-        const route = this.route(x, z);
-        if (route && route.len < 90 && (!best || route.len < best.len)) best = { x, z, len: route.len };
+        spots.push({ x, z, n: spots.length, crow: dist2d(this.from, { x, z }) });
       }
+    // The shortest walk, the first such spot between equals. A walk is no shorter than the
+    // straight line, so spots are tried nearest first and none further than the best walk is.
+    let best: { x: number; z: number; n: number; len: number } | null = null;
+    for (const c of spots.sort((a, b) => a.crow - b.crow || a.n - b.n)) {
+      if (c.crow >= 90 || (best && c.crow > best.len)) break;
+      const route = this.route(c.x, c.z);
+      if (route && route.len < 90 && (!best || route.len < best.len || (route.len === best.len && c.n < best.n))) best = { x: c.x, z: c.z, n: c.n, len: route.len };
+    }
     return best && { x: best.x, z: best.z };
   }
 
@@ -843,11 +862,43 @@ export class Bot {
   }
 
   /**
+   * Whether the path in hand no longer serves for `goal`. The rest of a shortest path from a
+   * point on it is a shortest path from there, so while the bot walks it toward the same goal
+   * round the same ground, a new search would find the way it holds. It plans again when the
+   * goal moved, the ground to go round moved, came or went, the next waypoint is out of a
+   * straight walk (pushed off the way in a fight), or the bot has come no nearer the next
+   * waypoint for 2 s (held up by something the grid does not know); an unreachable goal is
+   * tried again every 2 s.
+   */
+  private replan(pos: { x: number; z: number }, goal: { x: number; z: number }): boolean {
+    if (dist2d(goal, this.pathGoal) > 3) return true;
+    const a = this.avoid;
+    const b = this.pathAvoid;
+    if (!a !== !b || (a && b && dist2d(a, b) > 1)) return true;
+    const next = this.path[0];
+    if (!next) return this.pathT <= 0;
+    // Not at once: a waypoint just round a corner from where it was planned is out of a
+    // straight walk for a step or two.
+    if (!clearLine(pos.x, pos.z, next.x, next.z)) return this.pathT <= 1.5;
+    const d = dist2d(next, pos);
+    if (d < this.pathNear - 1) {
+      this.pathNear = d;
+      this.pathT = 2;
+    }
+    return this.pathT <= 0;
+  }
+
+  /**
    * The point to walk toward on the way to `goal`: the goal itself when the way is
    * clear, otherwise the next waypoint of a ground path around walls.
    */
   private via(s: State, goal: { x: number; z: number }): { x: number; z: number } {
     const p = s.player;
+    // A fight moves the bot without a path (strafing, closing in on a robot it sees): coming
+    // back to a path after a tick or more without one, it plans afresh rather than walk back
+    // to a waypoint it has left behind.
+    const resumed = s.time - this.viaAt > TICK * 1.5;
+    this.viaAt = s.time;
     // Up on a roof or platform the ground grid does not apply: walk straight (and drop off).
     // The low steps of a flight up from the ground still count as the ground.
     if ((p.onGround && !nearGround(p.pos)) || (clearLine(p.pos.x, p.pos.z, goal.x, goal.z) && !(this.avoid && segmentNear(p.pos, goal, this.avoid)))) {
@@ -855,11 +906,12 @@ export class Bot {
       return goal;
     }
     this.pathT -= TICK;
-    // Re-plan when the goal moved or every 2 s; an unreachable goal is not retried every tick.
-    if (dist2d(goal, this.pathGoal) > 3 || this.pathT <= 0) {
+    if (resumed || this.replan(p.pos, goal)) {
       this.path = findPath(p.pos.x, p.pos.z, goal.x, goal.z, this.avoid) ?? [];
       this.pathGoal = { ...goal };
+      this.pathAvoid = this.avoid && { x: this.avoid.x, z: this.avoid.z };
       this.pathT = 2;
+      this.pathNear = this.path.length ? dist2d(this.path[0], p.pos) : Infinity;
     }
     // A waypoint is a corner the path turns round a closed cell at: passed 0.8 m short of it,
     // the walk on to the next one can cut across that cell (a lip of cliff the sim pushes the
@@ -869,6 +921,7 @@ export class Bot {
       const d = dist2d(this.path[0], p.pos);
       if (d >= 0.8 || (d > 0.2 && !clearLine(p.pos.x, p.pos.z, this.path[1].x, this.path[1].z))) break;
       this.path.shift();
+      this.pathNear = Infinity;
     }
     return this.path[0] ?? goal;
   }

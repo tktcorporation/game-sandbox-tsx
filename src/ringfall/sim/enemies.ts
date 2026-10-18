@@ -2,7 +2,7 @@ import { ALLY, AWARE, CHARGER, COVER, DEG, DODGE, ELITE, ENEMIES, FALLBACK, PINC
 import { clampToWorld, collide, dist2d, groundAt, groundLevel, los, lookAngles, onTerrain, solidAt, wrapAngle } from "./geom";
 import { steepAt, terrainHeight } from "./terrain";
 import { engageSquad, knownSpot, located, sense, stepSquads } from "./awareness";
-import { COVERS, type CoverPoint } from "./cover";
+import { coversNear, type CoverPoint } from "./cover";
 import { fieldTo, nextStep } from "./hunt";
 
 /** Walkers refuse to step off a ledge higher than this, so rooftop robots stay on their roof. */
@@ -619,7 +619,8 @@ function findCover(s: State, e: Enemy, threat: Point, threatY: number): { cover:
   const head = { x: p.pos.x, y: p.pos.y + 1.5, z: p.pos.z };
   const chestP = { x: p.pos.x, y: p.pos.y + 1.1, z: p.pos.z };
   const taken = s.enemies.filter((o) => o !== e && o.cover).map((o) => o.cover!);
-  const cands = COVERS.map((c) => ({ c, d: dist2d(c, e.pos), dp: dist2d(c, p.pos) }))
+  const cands = coversNear(e.pos.x, e.pos.z, search)
+    .map((c) => ({ c, d: dist2d(c, e.pos), dp: dist2d(c, p.pos) }))
     .filter(({ c, d, dp }) => d < search && Math.abs(c.y - e.pos.y) < COVER.level && dp > COVER.minFromPlayer && dp < COVER.maxFromPlayer && !taken.some((t) => dist2d(t, c) < 1.5))
     .sort((a, b) => a.d + Math.abs(a.dp - 16) * 0.3 - (b.d + Math.abs(b.dp - 16) * 0.3))
     .slice(0, 14);

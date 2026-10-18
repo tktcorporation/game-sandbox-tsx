@@ -100,7 +100,8 @@ once; play goes on. Build quests (`{ t: "build" }`) finish at the base (`claimBu
 ```bash
 npm run sim:ringfall     # gate 2: bots of three skills play whole raids headless, in each region,
                          # then the hideout's pacing replays the meta with those raids; raids run
-                         # in parallel, one process per core (RINGFALL_SIM_JOBS=n to set, 1 = in turn)
+                         # in parallel, one process per core, the reservoir's (the longest) first
+                         # (RINGFALL_SIM_JOBS=n to set, 1 = in turn)
 npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir raid to the end, a harbor raid
                          # to its first fight, a tour of both); screenshots in shots/ringfall/
 ```
@@ -232,7 +233,11 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   The sim gate's `exit` column counts which one each run used; the bot leaves by a way off of the
   region it started in, chosen by its skill, and takes only that region's POIs. The gate's raids
   start at the region's ways in in turn (raid `r` at way `r` mod their count).
-- `nav.ts` is ground path finding for the bot only (built on first use); the game never reads it. Robots beamed in from
+- `nav.ts` is ground path finding for the bot only (built on first use); the game never reads it.
+  Its A* estimates with landmarks (`LANDMARKS`: each POI's middle and the ways off, each with the
+  walking distance from it, and for searches that go round the titan's sight the walk round its
+  post), so a search stays narrow and still finds a shortest way; the bot keeps a path for as
+  long as it serves (`replan()` in `bot.ts`). Robots beamed in from
   afar (reinforcements and raiders, `SquadState.routed`) find their way: `hunt.ts` builds a
   distance field over the ground (2 m cells; cliffs, high ground and boxes a walker cannot step
   over closed) to where they think the player is, and their walkers follow it whenever they cannot

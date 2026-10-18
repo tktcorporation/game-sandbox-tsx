@@ -110,9 +110,16 @@ function stepMask(): Uint8Array {
   mask = m;
   return m;
 }
-/** Scratch for `fieldTo()`: its heap, and which cells it has settled. */
-let heap = new Int32Array(0);
+/**
+ * Scratch for `fieldTo()`: which cells it has settled, its ring of buckets (a pending
+ * distance is at most the longest move past the bucket being settled, so four buckets of RES
+ * go round), and the cells of the bucket being settled.
+ */
 let settled = new Uint8Array(0);
+const RING = 4;
+const ring = Array.from({ length: RING }, () => new Int32Array(1 << 12));
+const ringSize = new Int32Array(RING);
+let bucket = new Int32Array(0);
 
 /** The largest set of open cells a walker can get between: the island's walkable ground. */
 function mainGround(open: Uint8Array, height: Float32Array): Uint8Array {
@@ -149,8 +156,8 @@ function mainGround(open: Uint8Array, height: Float32Array): Uint8Array {
 
 /**
  * Walking distance from every cell to one target cell, out to `reach` metres (Infinity beyond
- * it, and everywhere no way leads). `order` holds the cells within reach, nearest first, and
- * `count` how many there are.
+ * it, and everywhere no way leads). `order` holds the cells within reach by bands RES wide,
+ * nearest band first, and `count` how many there are.
  */
 export interface Field {
   target: number;
@@ -178,13 +185,21 @@ const NEAR = 3;
  */
 export function resetHunt() {
   open = height = main = mask = null;
-  cache.clear();
+  forgetFields();
 }
 
 /** Forgets every field but keeps the grid: a raid starts with none (`newRun()`). */
 export function forgetFields() {
+  for (const f of cache.values()) spare.push(f);
   cache.clear();
 }
+
+/*
+ * The arrays of fields dropped from the cache, for the next fields to fill. A field's arrays
+ * span the whole grid, and fresh memory costs a page fault for each page it first touches;
+ * reused, it does not. Nothing keeps a field past the next `fieldTo()` call.
+ */
+const spare: { dist: Float32Array; order: Int32Array }[] = [];
 
 /** Fields built so far: the sim gate checks that alternating targets reuse them. */
 export let fieldsBuilt = 0;
@@ -250,86 +265,80 @@ export function fieldTo(x: number, z: number, reach = Infinity): Field | null {
     return hit;
   }
   const mask = stepMask();
-  const dist = new Float32Array(CELLS).fill(Infinity);
+  const reused = spare.pop();
+  const dist = (reused?.dist ?? new Float32Array(CELLS)).fill(Infinity);
   dist[target] = 0;
-  // Binary heap of cell indices, each keyed by its cell's distance as it stands when compared.
-  if (heap.length < CELLS) heap = new Int32Array(CELLS * 2);
-  let size = 0;
-  const push = (k: number) => {
-    if (size === heap.length) {
-      const grown = new Int32Array(heap.length * 2);
-      grown.set(heap);
-      heap = grown;
-    }
-    const h = heap;
-    const dk = dist[k];
-    let c = size++;
-    while (c > 0) {
-      const p = (c - 1) >> 1;
-      if (dist[h[p]] <= dk) break;
-      h[c] = h[p];
-      c = p;
-    }
-    h[c] = k;
-  };
-  const pop = () => {
-    const h = heap;
-    const top = h[0];
-    const n = --size;
-    if (n) {
-      const end = h[n];
-      const de = dist[end];
-      let c = 0;
-      for (;;) {
-        const l = 2 * c + 1;
-        const r = l + 1;
-        let m = c;
-        let dm = de;
-        if (l < n && dist[h[l]] < dm) {
-          m = l;
-          dm = dist[h[l]];
-        }
-        if (r < n && dist[h[r]] < dm) m = r;
-        if (m === c) break;
-        h[c] = h[m];
-        c = m;
-      }
-      h[c] = end;
-    }
-    return top;
-  };
-  push(target);
+  // Dijkstra with the cells kept in buckets RES wide by distance, the cost of the shortest
+  // move: a cell relaxed from one in bucket b lands in bucket b + 1 or later, so every cell
+  // in a bucket is settled by the time the bucket comes up, and the buckets are taken in turn
+  // without a heap. The distances are the same as a heap's (each cell's is the least over its
+  // settled neighbours). `order` runs bucket by bucket, nearest bucket first.
   const done = settled.length === CELLS ? settled.fill(0) : (settled = new Uint8Array(CELLS));
-  const order = new Int32Array(CELLS);
+  const order = reused?.order ?? new Int32Array(CELLS);
   let count = 0;
-  while (size) {
-    const k = pop();
-    if (done[k]) continue;
-    // Cells come out nearest first: once one is past the reach, every one left is too.
-    if (dist[k] > reach) {
-      dist[k] = Infinity;
-      break;
+  const bucketOf = (d: number) => Math.floor(d / RES) & (RING - 1);
+  for (let r = 0; r < RING; r++) ringSize[r] = 0;
+  const put = (k: number, d: number) => {
+    const r = bucketOf(d);
+    if (ringSize[r] === ring[r].length) {
+      const grown = new Int32Array(ring[r].length * 2);
+      grown.set(ring[r]);
+      ring[r] = grown;
     }
-    done[k] = 1;
-    order[count++] = k;
-    const bits = mask[k];
-    for (let n = 0; n < 8; n++) {
-      if (!(bits & (1 << n))) continue;
-      const q = k + OFFSET[n];
-      if (done[q]) continue;
-      const d = dist[k] + COST[n];
-      if (d < dist[q]) {
-        dist[q] = d;
-        push(q);
+    ring[r][ringSize[r]++] = k;
+  };
+  put(target, 0);
+  let pending = 1;
+  let past = false;
+  for (let b = 0; pending && !past; b++) {
+    const r = b & (RING - 1);
+    const list = ring[r];
+    const n = ringSize[r];
+    ringSize[r] = 0;
+    pending -= n;
+    // This bucket's cells, once each. A bucket that reaches past the reach is the last: the
+    // cells in it past the reach are not settled, and nor is any cell after it.
+    if (bucket.length < n) bucket = new Int32Array(n * 2);
+    let m = 0;
+    for (let e = 0; e < n; e++) {
+      const k = list[e];
+      if (done[k] || Math.floor(dist[k] / RES) !== b) continue;
+      done[k] = 2;
+      if (dist[k] > reach) {
+        dist[k] = Infinity;
+        past = true;
+      } else bucket[m++] = k;
+    }
+    for (let e = 0; e < m; e++) {
+      const k = bucket[e];
+      done[k] = 1;
+      order[count++] = k;
+      const bits = mask[k];
+      for (let q0 = 0; q0 < 8; q0++) {
+        if (!(bits & (1 << q0))) continue;
+        const q = k + OFFSET[q0];
+        if (done[q]) continue;
+        const d = dist[k] + COST[q0];
+        if (d < dist[q]) {
+          dist[q] = d;
+          put(q, dist[q]);
+          pending++;
+        }
       }
     }
   }
   // Cells reached but not settled lie past the reach: their distances so far are not theirs.
-  for (let e = 0; e < size; e++) if (!done[heap[e]]) dist[heap[e]] = Infinity;
+  if (past)
+    for (let r = 0; r < RING; r++)
+      for (let e = 0; e < ringSize[r]; e++) if (done[ring[r][e]] !== 1) dist[ring[r][e]] = Infinity;
   const f = { target, dist, reach, order, count };
   fieldsBuilt++;
   cache.set(target, f);
-  if (cache.size > CACHE) cache.delete(cache.keys().next().value!);
+  if (cache.size > CACHE) {
+    const oldest = cache.keys().next().value!;
+    spare.push(cache.get(oldest)!);
+    cache.delete(oldest);
+  }
   return f;
 }
 
@@ -378,17 +387,24 @@ export function cellsAround(f: Field, lo: number, hi: number): { x: number; z: n
     for (let k = 0; k < f.dist.length; k++) if (f.dist[k] >= lo) all.push(k);
     cells = Int32Array.from(all);
   } else {
-    // The first cell at lo or further, then on while within hi; put back in row order.
+    // The first cell in lo's band, then on through hi's band, keeping those within [lo, hi];
+    // put back in row order.
+    const band = (k: number) => Math.floor(f.dist[k] / RES);
+    const loBand = Math.floor(lo / RES);
+    const hiBand = Math.floor(hi / RES);
     let a = 0;
     let b = f.count;
     while (a < b) {
       const m = (a + b) >> 1;
-      if (f.dist[f.order[m]] < lo) a = m + 1;
+      if (band(f.order[m]) < loBand) a = m + 1;
       else b = m;
     }
-    let e = a;
-    while (e < f.count && f.dist[f.order[e]] <= hi) e++;
-    cells = f.order.slice(a, e).sort();
+    const inBand: number[] = [];
+    for (let e = a; e < f.count && band(f.order[e]) <= hiBand; e++) {
+      const d = f.dist[f.order[e]];
+      if (d >= lo && d <= hi) inBand.push(f.order[e]);
+    }
+    cells = Int32Array.from(inBand).sort();
   }
   const out: { x: number; z: number }[] = new Array(cells.length);
   for (let n = 0; n < cells.length; n++) {
