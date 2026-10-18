@@ -532,7 +532,8 @@ const CRAGS: { name: string; line: readonly P[]; half: number }[] = [
   { name: "湖の東の岩", line: [[175, 176], [185, 186]], half: 14 },
   { name: "北の岩山", line: [[-160, -260], [-140, -250]], half: 16 },
   { name: "南の岩", line: [[150, 530], [158, 524]], half: 10 },
-  { name: "発着場の北の岩", line: [[84, -196], [98, -208]], half: 14 },
+  // North-east of the landing pad, clear of the fallen tether's east pieces.
+  { name: "発着場の北の岩", line: [[118, -250], [128, -260]], half: 12 },
   { name: "西の岩塔", line: [[-205, -176], [-196, -186]], half: 12 },
   { name: "南西の岩", line: [[-156, 362], [-144, 354]], half: 12 },
   { name: "東の岩山", line: [[470, 180], [480, 192]], half: 15 },

@@ -99,7 +99,7 @@ once; play goes on. Build quests (`{ t: "build" }`) finish at the base (`claimBu
 
 ```bash
 npm run sim:ringfall     # gate 2: bots of three skills play whole raids headless, in each region,
-                         # then the hideout's pacing replays the meta with those raids; tables run
+                         # then the hideout's pacing replays the meta with those raids; raids run
                          # in parallel, one process per core (RINGFALL_SIM_JOBS=n to set, 1 = in turn)
 npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir raid to the end, a harbor raid
                          # to its first fight, a tour of both); screenshots in shots/ringfall/
@@ -140,7 +140,16 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   - the landing pad (a concrete plateau 245 by 135 m at +16 on top of a dam 30 m high over the
     lakebed): the titan's arena, a runway, two hangars, the control tower, and in front of the
     dam the intake tower (stairs down from the crest, windows over the lakebed, shut at the
-    bottom) and the outflow pipes.
+    bottom) and the outflow pipes; north of it, in the `anchor` area's frame, the tether's anchor
+    (`anchor()`, sized by `ANCHOR`): a round plinth 84 m across built of `disc()` columns, flush
+    with the pad and so walked onto from it (stairs up from the ground on its north and west), a
+    clamp ring on it, and the tether's broken shaft, 22 m square and up to 104 m over the pad,
+    with a steel scaffold nine storeys up inside it to a windowed gallery.
+  The world was the ground base of an orbital ring (the brief's 「世界の由来」), and the fallen
+  tether lies east and west through the anchor in four lengths 12 m across (`TETHER`, each a
+  `tetherPiece()`): the root end, its back level with the plinth's top; a corridor through the
+  one west of the pass road; rubble stairs up the side of the far west one; gaps between them to
+  walk through. Steel tints 5 to 7 are the tether's composite skin, its ribs and its scorch.
   The districts: the drowned town on the lakebed (-14 m, 150 by 210 m, mud banks up to 7 m, a
   church spire, roofs sticking out of the mud, the old bridge's piers, a sunken bus), the
   plateau over its west side, the terraced fields climbing in 4 m steps from +2 to the hill at
@@ -231,6 +240,8 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   and keep re-learning where the player is (`stepReinforce()` in `world.ts`) until one of their
   walkers has found the player itself: a fight only their drone joined, over a cliff, does not
   end the hunt. Every other robot walks straight at its goal, and nobody paths inside a building.
+  The fields are kept for reuse within a raid only: `newRun()` drops them, so a raid plays the
+  same whatever ran before it, which is what lets the sim gate share raids among processes.
   The bot (`bot.ts`) opens only bins on the ground and does not climb: each POI keeps ground bins
   by its ways in and floors, and the bot walks the ground's paths up to robots on higher ground (a
   terrace, the mesa) rather than looking for an angle on them from below.
@@ -277,6 +288,8 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   (a table per region, and the hideout's pacing table from `scripts/ringfall-pacing.ts`: each skill's
   recorded raids settled in sequence with a greedy spender, the raid at which each level is built).
   Change a number in `config.ts` or `map.ts` only together with a re-run and an update to that file.
+  While tuning, `npm run sim:ringfall -- 10` (10 raids per skill and region, about a third of the
+  time) is enough to see which way a change moves the tables; the record in that file is 30.
 
 ## HITMARK
 

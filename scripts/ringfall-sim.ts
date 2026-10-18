@@ -6,9 +6,9 @@
  *
  *   npm run sim:ringfall -- [runsPerSkillAndRegion] [region]
  *
- * With a region id after the count, only that region's table is played. The tables are
- * played in one worker process per core; RINGFALL_SIM_JOBS sets how many (1 plays them in
- * this process, in turn).
+ * With a region id after the count, only that region's table is played. The tables' raids
+ * are played in one worker process per core; RINGFALL_SIM_JOBS sets how many (1 plays them
+ * in this process, in turn).
  */
 import { ALLY, BAG, DEPOT, ELITE, ENEMIES, HEALS, NOISE, PLATE, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, SIGHT, STAGGER, TACTICAL, TICK, VALUABLES, VAULT, WEAPONS, WORLD } from "../src/ringfall/sim/config";
 import { engageSquad, makeNoise } from "../src/ringfall/sim/awareness";
@@ -39,8 +39,8 @@ import { HIDEOUT, TOOL_KINDS, TOOLS, VAULT } from "../src/ringfall/sim/config";
 import { QUESTS, offered, raidCredit } from "../src/ringfall/meta/quests";
 import { META } from "../src/ringfall/sim/config";
 import { pacing, type Pool } from "./ringfall-pacing";
-import { playTable, type TableResult } from "./ringfall-table";
-import type { TableJob } from "./ringfall-table-worker";
+import { playTable, summarize, type RaidResult, type TableResult } from "./ringfall-table";
+import type { RaidJob } from "./ringfall-table-worker";
 import { fork, type ChildProcess } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { availableParallelism } from "node:os";
@@ -50,24 +50,29 @@ const runs = Number(process.argv[2] ?? 12);
 const only = process.argv[3];
 /**
  * The tables (region × skill) are independent and each raid is fixed by its seed, so with
- * more than one job they are played in worker processes, started here so they run while the
- * checks below do; the results are printed in table order, the same as when played in turn.
+ * more than one job their raids are played in worker processes, started here so they run
+ * while the checks below do. Raids rather than whole tables go to the workers: a table of
+ * long raids would otherwise keep one worker busy long after the others ran out of work.
+ * The results are printed in table order, the same as when played in turn.
  */
 const jobs = Math.max(1, Number(process.env.RINGFALL_SIM_JOBS ?? availableParallelism()) || 1);
 const TABLES = REGIONS.filter((r) => !only || r.id === only).flatMap((r) => SKILLS.map((k) => ({ region: r.id, skill: k.name })));
 const tableIndex = (region: RegionId, skill: string) => TABLES.findIndex((t) => t.region === region && t.skill === skill);
-const tables: (() => Promise<TableResult>)[] = jobs === 1 ? TABLES.map((t) => async () => playTable(t.region, t.skill, runs)) : playInWorkers(Math.min(jobs, TABLES.length));
+const tables: (() => Promise<TableResult>)[] = jobs === 1 ? TABLES.map((t) => async () => playTable(t.region, t.skill, runs)) : playInWorkers(Math.min(jobs, TABLES.length * runs));
 
 function playInWorkers(n: number): (() => Promise<TableResult>)[] {
-  const done = TABLES.map(() => Promise.withResolvers<TableResult>());
+  const raids = TABLES.map(() => Array.from({ length: runs }, () => Promise.withResolvers<RaidResult>()));
+  // Raid by raid across the tables, so each table's results come in early and in step.
+  const queue: RaidJob[] = [];
+  for (let r = 0; r < runs; r++) TABLES.forEach((t, i) => queue.push({ i, r, region: t.region, skill: t.skill }));
   let next = 0;
   const workers: ChildProcess[] = [];
-  // A worker only notices the gate has gone once its table is played, which at full counts
-  // takes minutes; a gate that exits early (a failed check) stops them now.
+  // A worker only notices the gate has gone once its raid is played, which takes a minute;
+  // a gate that exits early (a failed check) stops them now.
   process.on("exit", () => {
     for (const w of workers) w.kill();
   });
-  // A worker that dies with tables unplayed fails the gate at once: its tables would never come.
+  // A worker that dies with raids unplayed fails the gate at once: its raids would never come.
   const crash = (why: string) => {
     console.error(`sim worker failed: ${why}`);
     process.exit(1);
@@ -75,23 +80,23 @@ function playInWorkers(n: number): (() => Promise<TableResult>)[] {
   for (let k = 0; k < n; k++) {
     const w = fork(fileURLToPath(new URL("./ringfall-table-worker.ts", import.meta.url)), { serialization: "advanced" });
     workers.push(w);
-    let playing = -1;
+    let playing: RaidJob | null = null;
     const give = () => {
-      if (next < TABLES.length) w.send({ i: (playing = next), ...TABLES[next++], runs } satisfies TableJob);
+      if (next < queue.length) w.send((playing = queue[next++]) satisfies RaidJob);
       else w.disconnect();
     };
-    w.on("message", (m: { i: number; result: TableResult }) => {
-      done[m.i].resolve(m.result);
-      playing = -1;
+    w.on("message", (m: { i: number; r: number; result: RaidResult }) => {
+      raids[m.i][m.r].resolve(m.result);
+      playing = null;
       give();
     });
     w.on("error", (err) => crash(String(err)));
     w.on("exit", (code, signal) => {
-      if (playing >= 0) crash(`it exited (${signal ?? `code ${code}`}) while playing ${TABLES[playing].region} ${TABLES[playing].skill}`);
+      if (playing) crash(`it exited (${signal ?? `code ${code}`}) while playing ${playing.region} ${playing.skill}#${playing.r}`);
     });
     give();
   }
-  return done.map((d) => () => d.promise);
+  return TABLES.map((t, i) => async () => summarize(t.region, t.skill, await Promise.all(raids[i].map((d) => d.promise))));
 }
 
 /** The POIs' places in `POIS`, for scenarios that set up a run's state by hand. */

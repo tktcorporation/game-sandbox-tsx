@@ -270,6 +270,23 @@ const LIGHTHOUSE = { x: -116, z: -553, floors: 7 } as const;
 const PAD_TOWER = { x: -100, z: 40, floors: 5 } as const;
 
 /**
+ * The tether's anchor, in the anchor's frame (areas.ts), its heights over the landing pad's
+ * (LEVEL.dam). The plinth is a stepped round of radius `r`, its top a little over the pad's
+ * so the pad's ground never shows through it, walked onto from the pad's north edge; its sides go
+ * down to `foot`, under the lowest ground round it. On it the clamp ring, of radius `ring`
+ * and a storey high, and in that the shaft: `shaft` metres either side of the middle, walls `wall`
+ * thick, a scaffold of `floors` storeys inside up to the gallery, and broken off far above.
+ */
+const ANCHOR = { r: 42, top: 0.3, foot: -12, ring: 22, ringTop: 3.7, shaft: 11, wall: 1.5, floors: 9 } as const;
+/** The floor of the shaft's gallery, where its scaffold ends: windows all round, the highest view over the pad. */
+const ANCHOR_GALLERY = ANCHOR.ringTop + ANCHOR.floors * STOREY;
+/** A bin in the anchor's frame at height `y` over the pad, as EXTRA_BINS writes it (over the floor under it). */
+const anchorBin = (fx: number, fz: number, y: number) => {
+  const [x, z] = inArea("anchor", fx, fz);
+  return { x, z, y: LEVEL.dam + y - floorLevel(x, z) };
+};
+
+/**
  * Tall buildings: where they stand in their area's frame, their size, storeys and scale. Their
  * top-floor bins (in EXTRA_BINS) hold the flares that call the plateau pickup.
  */
@@ -1255,6 +1272,8 @@ export const LANDMARKS: readonly { name: string; x: number; z: number }[] = [
   at("village", { name: "段々畑", x: 10, z: 30 }),
   at("village", { name: "風車", x: -35, z: -82 }),
   at("relay", { name: "鉄の階段", x: -120, z: 0 }),
+  at("anchor", { name: "アンカー", x: 0, z: 0 }),
+  at("anchor", { name: "倒れた昇降路", x: -160, z: 16 }),
   at("quarry", { name: "コンベヤー", x: 10, z: -40 }),
   at("pass", { name: "峠", x: -60, z: -236 }),
   at("railway", { name: "鉄橋", x: 140, z: -190 }),
@@ -1278,6 +1297,7 @@ export const STOPS: readonly { name: string; x: number; z: number }[] = [
   at("village", { name: "廃村", x: 10, z: 64 }),
   at("village", { name: "丘", x: -10, z: -50 }),
   at("heart", { name: "放水路", x: 112, z: -112 }),
+  at("anchor", { name: "昇降路の通路", x: -117, z: 0 }),
   at("relay", { name: "台地の麓", x: -110, z: 72 }),
   at("quarry", { name: "採掘場の上段", x: -90, z: -40 }),
   at("pass", { name: "峠", x: -60, z: -222 }),
@@ -1323,6 +1343,9 @@ export const EXTRA_BINS: ExtraBin[] = (
     // Top floor of each tall building, on the side away from its stairs. These hold the
     // flares that call the plateau pickup (EXTRACTS).
     ...HIGH_RISES.map((h) => ({ x: h.x - h.w / 2 + 1.5, z: h.z, y: (h.floors - 1) * h.sc.storey, table: "relay" as const, flare: true as const })),
+    // The anchor: by its scaffold's foot inside the shaft, and on the gallery at its top (a flare).
+    { ...anchorBin(7.5, 7.5, ANCHOR.ringTop), table: "relay" },
+    { ...anchorBin(-7.5, 0, ANCHOR_GALLERY), table: "relay", flare: true },
     // The harbor: the town's hut and warehouse, the viaduct and the road under it, a lone bin
     // out on the salt flats, the saddle of the pass.
     at("town", { x: 14, z: -288, table: "yard" }),
@@ -1553,6 +1576,168 @@ function pad(): Box[] {
   out.push(...tank(98, 38, 5, 9, "w", 0), ...tank(98, 54, 4, 7, "w", 1));
   return out;
 }
+
+/**
+ * A round of radius r about (cx, cz) from y0 to h, built of columns `step` wide along x that do not
+ * overlap (so their tops never fight on screen), each as deep as the round at its middle.
+ */
+function disc(cx: number, cz: number, r: number, step: number, y0: number, h: number, kind: BoxKind, tint = 0): Box[] {
+  const out: Box[] = [];
+  const n = Math.round((2 * r) / step);
+  for (let i = 0; i < n; i++) {
+    const x0 = cx - r + i * step;
+    const hz = Math.sqrt(r * r - (x0 + step / 2 - cx) ** 2);
+    out.push(rect(x0, cz - hz, x0 + step, cz + hz, y0, h, kind, tint));
+  }
+  return out;
+}
+
+/** How far the edge of `disc(0, 0, r, step)` lies from its middle along z at x = 0 (the column there). */
+const discEdge = (r: number, step: number) => Math.sqrt(r * r - (step / 2) ** 2);
+
+/**
+ * The anchor of the tether that once climbed from here to the orbital ring, in its own frame, in
+ * heights over the landing pad (`ANCHOR`): the concrete plinth, the clamp ring on it with stairs up
+ * every side and four anchor blocks, and the shaft that held the tether's root. The shaft is of the
+ * tether's pale composite, banded and railed at its corners, and broken off at different heights on
+ * each side, scorched where it broke; doors at its foot open on a steel scaffold that climbs nine
+ * storeys inside it to a gallery with windows all round. The stairs up the plinth's sides from the
+ * ground round it are laid once the ground is built (`LAID`).
+ */
+function anchor(): Box[] {
+  const { r, top, foot, ring, ringTop, shaft: S, wall: T, floors } = ANCHOR;
+  const G = ANCHOR_GALLERY;
+  const out: Box[] = [...disc(0, 0, r, 6, foot, top, "wall", 0), ...disc(0, 0, ring, 5.5, top, ringTop, "wall", 1)];
+  // Up onto the clamp ring from the plinth, on every side.
+  const edge = discEdge(ring, 5.5);
+  for (const side of SIDES) {
+    const [dx, dz] = DIR[side];
+    const e = dz !== 0 ? edge : ring;
+    out.push(...lift(top, stairs(dx * e, dz * e, side, dz !== 0 ? 8 : 5, ringTop - top)));
+  }
+  // The anchor blocks the tether's cables were made fast to.
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) out.push(box(sx * 13, sz * 13, 5, 5, ringTop + 4.5, "tower", 0, ringTop));
+  // The shaft: up to the gallery, doors north and south and tall slits for light; the gallery's
+  // band of windows; then the broken walls above it, each side ending at its own height.
+  const slits: Hole[] = SIDES.flatMap((side) => [-6.5, 6.5].map((at) => ({ side, at, w: 1.4, sill: 4, head: G - ringTop - 2.5 })));
+  out.push(...shell(0, 0, 2 * S, 2 * S, ringTop, G - 0.3, [{ side: "s", w: 6, head: 8 }, { side: "n", w: 6, head: 8 }, ...slits], "steel", 5, T));
+  out.push(...shell(0, 0, 2 * S, 2 * S, G - 0.3, G + 3.7, SIDES.flatMap((side) => [-6, 0, 6].map((at) => ({ side, at, w: 3.5, sill: 1.2, head: 3.6 }))), "steel", 5, T));
+  const I = S - T;
+  const tops: Record<Side, number> = { n: 92, e: 80, s: 70, w: 86 };
+  const wallAt: Record<Side, (y0: number, h: number, a?: number, b?: number) => Box> = {
+    n: (y0, h, a = -S, b = S) => rect(a, -S, b, -I, y0, h, "steel", 5),
+    s: (y0, h, a = -S, b = S) => rect(a, I, b, S, y0, h, "steel", 5),
+    w: (y0, h, a = -I, b = I) => rect(-S, a, -I, b, y0, h, "steel", 5),
+    e: (y0, h, a = -I, b = I) => rect(I, a, S, b, y0, h, "steel", 5),
+  };
+  const scorch = (b: Box): Box => ({ ...b, tint: 7 });
+  for (const side of SIDES) out.push(wallAt[side](G + 3.7, tops[side] - 5), scorch(wallAt[side](tops[side] - 5, tops[side])));
+  // Jagged teeth left standing over the breaks.
+  out.push(scorch(wallAt.n(tops.n, tops.n + 7, -S, -6)), scorch(wallAt.n(tops.n, tops.n + 3.5, 2, 5)));
+  out.push(scorch(wallAt.w(tops.w, tops.w + 6, 3, I)), scorch(wallAt.e(tops.e, tops.e + 9, -I, -4)), scorch(wallAt.s(tops.s, tops.s + 5, 5, S)));
+  // The guide rails up its corners, the tallest still the highest thing on the island.
+  const rails: [number, number, number][] = [[-1, -1, 104], [1, -1, 84], [1, 1, 66], [-1, 1, 78]];
+  for (const [sx, sz, h] of rails) out.push(box(sx * (S + 0.3), sz * (S + 0.3), 3, 3, h - 3, "steel", 6, ringTop), box(sx * (S + 0.3), sz * (S + 0.3), 3, 3, h, "steel", 7, h - 3));
+  // Bands round it every 12 m, below where each side broke.
+  for (let y = 14; y < 90; y += 12) {
+    if (y > G - 2 && y < G + 5) continue;
+    const band: Record<Side, Box> = {
+      n: rect(-S - 0.35, -S - 0.35, S + 0.35, -S, y, y + 0.8, "steel", 6),
+      s: rect(-S - 0.35, S, S + 0.35, S + 0.35, y, y + 0.8, "steel", 6),
+      w: rect(-S - 0.35, -S, -S, S, y, y + 0.8, "steel", 6),
+      e: rect(S, -S, S + 0.35, S, y, y + 0.8, "steel", 6),
+    };
+    for (const side of SIDES) if (y + 0.8 < tops[side] - 5) out.push(band[side]);
+  }
+  // Inside: the scaffold from the floor to the gallery, open onto it on every side at its top,
+  // and the gallery's floor round it to the walls.
+  out.push(...lift(ringTop, lattice(0, 0, 10, 10, floors, floors * STOREY + 0.6, ["n", "s", "e", "w"])));
+  out.push(...slabWithHole(-I, -I, I, I, G - 0.3, G, -5, -5, 5, 5));
+  return out;
+}
+
+/**
+ * A length of the fallen tether lying along x from x0 to x1 round z = 0 in the anchor's frame,
+ * 12 m across: its sides from `foot` up, shoulders stepping in over them, its back's top at `back`, darker ribs
+ * every 9 m round it. A broken end (`broken`) is scorched, its back left reaching on past its sides.
+ * Hollow (`ceiling`), its floor is a deck at 0 between its sides, under a roof `ceiling` high, its
+ * sides open where `breaches` (ranges along x) tore them: a corridor to walk through; else it is
+ * solid, to climb onto and to hide behind.
+ */
+interface TetherPiece {
+  x0: number;
+  x1: number;
+  foot: number;
+  back: number;
+  broken: { w?: true; e?: true };
+  ceiling?: number;
+  breaches?: { side: "n" | "s"; a: number; b: number }[];
+}
+
+function tetherPiece(t: TetherPiece): Box[] {
+  const out: Box[] = [];
+  const SCORCH = 1.6;
+  // A length along x of one part of the cross-section, its broken ends scorched; `reach` runs it on past the sides there.
+  const run = (z0: number, z1: number, y0: number, h: number, reach = 0, a = t.x0, b = t.x1) => {
+    const wa = t.broken.w && a === t.x0 ? a - reach : a;
+    const eb = t.broken.e && b === t.x1 ? b + reach : b;
+    const lo = t.broken.w && a === t.x0 ? wa + SCORCH : wa;
+    const hi = t.broken.e && b === t.x1 ? eb - SCORCH : eb;
+    out.push(rect(lo, z0, hi, z1, y0, h, "steel", 5));
+    if (lo > wa) out.push(rect(wa, z0, lo, z1, y0, h, "steel", 7));
+    if (hi < eb) out.push(rect(hi, z0, eb, z1, y0, h, "steel", 7));
+  };
+  const ribs = (zs: number, y0: number, h: number, skip: (x: number) => boolean = () => false) => {
+    for (let x = t.x0 + 4.5; x + 0.8 < t.x1 - 2; x += 9) if (!skip(x)) out.push(rect(x, -zs, x + 0.8, zs, y0, h, "steel", 6));
+  };
+  // Solid: the sides, a chamfer stepping in over them, and the back, so it reads round from the ground.
+  if (t.ceiling === undefined) {
+    const [side, chamfer] = [t.back - 3, t.back - 1.5];
+    run(-6, 6, t.foot, side);
+    run(-5, 5, side, chamfer, 1.2);
+    run(-3.5, 3.5, chamfer, t.back, 2.5);
+    ribs(6.3, t.foot, side + 0.3);
+    ribs(5.3, side, chamfer + 0.3);
+    ribs(3.8, chamfer, t.back + 0.25);
+    return out;
+  }
+  const c = t.ceiling;
+  // The sides, broken through where breached.
+  for (const side of ["n", "s"] as const) {
+    const [z0, z1] = side === "n" ? [-6, -4.4] : [4.4, 6];
+    const gaps = (t.breaches ?? []).filter((g) => g.side === side).sort((p, q) => p.a - q.a);
+    let cur = t.x0;
+    for (const g of gaps) {
+      run(z0, z1, t.foot, c, 0, cur, g.a);
+      cur = g.b;
+    }
+    run(z0, z1, t.foot, c, 0, cur, t.x1);
+  }
+  run(-4.8, -3, c, t.back - 1, 1.2);
+  run(3, 4.8, c, t.back - 1, 1.2);
+  run(-3, 3, c, t.back, 2.5);
+  out.push(rect(t.x0, -4.4, t.x1, 4.4, 0, 0.2, "slab"));
+  const breached = (x: number) => (t.breaches ?? []).some((g) => x + 0.8 > g.a - 0.5 && x < g.b + 0.5);
+  for (const zs of [-1, 1]) for (let x = t.x0 + 4.5; x + 0.8 < t.x1 - 2; x += 9) if (!breached(x)) out.push(rect(x, zs < 0 ? -6.3 : 6, x + 0.8, zs < 0 ? -6 : 6.3, t.foot, c, "steel", 6));
+  // Starting inside the roof keeps the rib's underside out of the ceiling's plane, which would flicker.
+  ribs(5.1, c + 0.2, t.back - 0.7);
+  ribs(3.3, t.back, t.back + 0.3);
+  return out;
+}
+
+/** The fallen tether's lengths, in the anchor's frame: east of the plinth and west past the pass road, gaps between them to walk through. */
+const TETHER = {
+  /** The root end, lying from the plinth's east side, its back level with the plinth's top: walked out onto from it. */
+  east: { x0: ANCHOR.r, x1: 96 },
+  /** Further east, sunk deeper, broken at both ends short of the railway's embankment. */
+  far: { x0: 108, x1: 150 },
+  /** West of the pass road: hollow, a corridor through it with its sides torn open. */
+  corridor: { x0: -150, x1: -84 },
+  /** The far west, sunk to its shoulders, stairs of rubble up its south side; it ends short of the village's hill. */
+  west: { x0: -250, x1: -162 },
+} as const;
+/** The corridor's floor: the ground between at its middle, pressed flat under it. */
+const TETHER_FLOOR = floorLevel(...inArea("anchor", (TETHER.corridor.x0 + TETHER.corridor.x1) / 2, 0));
 
 /** The parapet along the dam's crest, in the pad's frame, open where the intake tower's catwalk lands and over the inspection gallery's cut. It stands on the crest's edge, which it does not press flat. */
 const CREST_PARAPET: Box[] = [rect(-58, 72.4, -37.2, 72.8, 0, 1.0, "wall", 1), rect(-32.8, 72.4, 6.5, 72.8, 0, 1.0, "wall", 1), rect(33.5, 72.4, 58, 72.8, 0, 1.0, "wall", 1)];
@@ -2144,6 +2329,27 @@ const AUTHORED: Box[] = [
     [LEVEL.dam, pad()],
     [LEVEL.dam, CREST_PARAPET, "loose"],
   ]),
+  // --- the tether's anchor north of the pad, and the fallen tether's lengths whose ground is known before it is built
+  ...lift(LEVEL.dam, placeIn("anchor", anchor())),
+  ...placeIn("anchor", tetherPiece({ ...TETHER.east, foot: 2, back: LEVEL.dam + ANCHOR.top, broken: { e: true } })),
+  ...onLevel(
+    TETHER_FLOOR,
+    placeIn(
+      "anchor",
+      tetherPiece({
+        ...TETHER.corridor,
+        foot: -2.5,
+        back: 10,
+        ceiling: 6.5,
+        broken: { w: true, e: true },
+        breaches: [
+          { side: "s", a: -142, b: -136 },
+          { side: "n", a: -122, b: -116 },
+          { side: "s", a: -104, b: -98 },
+        ],
+      }),
+    ),
+  ),
   // --- the drowned town and the dam's face, on the lakebed
   ...onFloors(AREA.heart[0], AREA.heart[1], [
     [LEVEL.lakebed, [...heartTown(), ...damFace()]],
@@ -2480,6 +2686,28 @@ const LAID: Box[] = (() => {
     const g = terrainHeight(rx, rz);
     out.push(box(rx, rz, w, d, g + 0.9, "wall", 2, g - 1), box(rx, rz, w - 2.4, d, g + 1.8, "wall", 2, g + 0.9), box(rx, rz, w - 4.8, d, g + 2.6, "wall", 2, g + 1.8));
   }
+  // The anchor's plinth: stairs up its north and west sides from the ground there.
+  const top = LEVEL.dam + ANCHOR.top;
+  for (const [fx, fz, side, width] of [[0, -discEdge(ANCHOR.r, 6), "n", 8], [-ANCHOR.r, 0, "w", 6]] as const) {
+    const [x, z] = inArea("anchor", fx, fz);
+    const [dx, dz] = DIR[side];
+    // The ground where the flight will end: its length depends on the rise, so look twice.
+    let g = terrainHeight(x + dx * 3, z + dz * 3);
+    g = terrainHeight(x + dx * (stepsFor(top - g) + 1) * STEP_DEPTH, z + dz * (stepsFor(top - g) + 1) * STEP_DEPTH);
+    if (top - g > WORLD.stepUp) out.push(...stairs(x, z, side, width, top, 0, g));
+  }
+  // The fallen tether's far lengths, sunk into the ground they lie on: their foot under its lowest
+  // point, their back a fixed height over it. The far west one has rubble stairs up its south side.
+  const sunk = (p: { x0: number; x1: number }, back: number, broken: TetherPiece["broken"]) => {
+    let g = Infinity;
+    for (let x = p.x0; x <= p.x1; x += 2) for (const fz of [-6, 0, 6]) g = Math.min(g, terrainHeight(...inArea("anchor", x, fz)));
+    return { ...p, foot: g - 1.5, back: g + back, broken };
+  };
+  const far = sunk(TETHER.far, 7.5, { w: true, e: true });
+  const west = sunk(TETHER.west, 8.5, { w: true, e: true });
+  out.push(...placeIn("anchor", [...tetherPiece(far), ...tetherPiece(west)]));
+  const [sx, sz] = inArea("anchor", -196, 3.5);
+  out.push(...stairs(sx, sz, "s", 3, west.back, 1, terrainHeight(sx, sz + 9)));
   return out;
 })();
 

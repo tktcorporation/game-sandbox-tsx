@@ -435,6 +435,13 @@ const tour = [
   ["tour-9-terraced-fields", ...at("area:village", 60, 1.7, 75), -0.66, 0.08],
   ["tour-10-over-supply", ...at("supply", 130, 45, -120), -2.32, -0.3, true],
   ["tour-11-mesa-relay", ...at("relay", -50, 1.7, 25), 1.08, 0.3],
+  // The tether's anchor over the titan's arena, the view south from its gallery over the pad, the
+  // fallen tether from beside it and through its corridor, and both from above the pad.
+  ["tour-60-anchor-from-pad", ...at("pad", 30, 1.7, 20), -0.15, 0.32],
+  ["tour-61-anchor-gallery", ...at("area:anchor", 0, 16 + 34.3 + 1.6, 7.5), Math.PI, -0.3, true],
+  ["tour-62-fallen-tether", ...at("area:anchor", -66, 1.7, 30), -1.25, 0.06],
+  ["tour-63-tether-corridor", ...at("area:anchor", -86, 1.7, 0), -1.57, 0.02],
+  ["tour-64-anchor-and-tether", ...at("area:anchor", -20, 70, 110), -0.55, -0.42, true],
 ];
 for (const [name, x, dy, z, yaw, pitch, abs] of tour) {
   const y = abs ? dy : (await page.evaluate(([x, z]) => window.ringfallTerrain(x, z), [x, z])) + dy;
