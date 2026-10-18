@@ -94,6 +94,8 @@ export class Bot {
   /** Where the ground `path` goes round stood when it was planned, and how near its next waypoint the bot has come since. */
   private pathAvoid: { x: number; z: number } | undefined;
   private pathNear = Infinity;
+  /** When `via()` last ran. */
+  private viaAt = -1;
   private flank: { x: number; z: number; id: number; step: "hide" | "go" } | null = null;
   private flankT = 0;
   private flankCheck = 0;
@@ -892,6 +894,11 @@ export class Bot {
    */
   private via(s: State, goal: { x: number; z: number }): { x: number; z: number } {
     const p = s.player;
+    // A fight moves the bot without a path (strafing, closing in on a robot it sees): coming
+    // back to a path after a tick or more without one, it plans afresh rather than walk back
+    // to a waypoint it has left behind.
+    const resumed = s.time - this.viaAt > TICK * 1.5;
+    this.viaAt = s.time;
     // Up on a roof or platform the ground grid does not apply: walk straight (and drop off).
     // The low steps of a flight up from the ground still count as the ground.
     if ((p.onGround && !nearGround(p.pos)) || (clearLine(p.pos.x, p.pos.z, goal.x, goal.z) && !(this.avoid && segmentNear(p.pos, goal, this.avoid)))) {
@@ -899,7 +906,7 @@ export class Bot {
       return goal;
     }
     this.pathT -= TICK;
-    if (this.replan(p.pos, goal)) {
+    if (resumed || this.replan(p.pos, goal)) {
       this.path = findPath(p.pos.x, p.pos.z, goal.x, goal.z, this.avoid) ?? [];
       this.pathGoal = { ...goal };
       this.pathAvoid = this.avoid && { x: this.avoid.x, z: this.avoid.z };
