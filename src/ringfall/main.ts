@@ -238,7 +238,8 @@ let drawDt = 0;
 /**
  * On the governor's 30 fps rungs frames draw against deadlines a thirtieth of a second apart, so
  * the rate averages 30 at any refresh rate (every other frame at 60 Hz, two of every five at 75 Hz).
- * A deadline that falls more than a frame behind (a stall, a hidden page) restarts from now.
+ * A deadline that falls more than a frame behind (a stall, a hidden page, the first capped frame)
+ * restarts from now.
  */
 const CAP_MS = 1000 / 30;
 /** Slack for refresh jitter, so a frame a hair early still meets its deadline. */
@@ -281,7 +282,8 @@ function frame(now: number) {
       if (l) applyLevel(l);
     }
     drawnAt = now;
-    capDue = now - capDue > CAP_MS ? now + CAP_MS : capDue + CAP_MS;
+    // The deadline runs only on the capped rungs; off them it is cleared, so the first capped frame draws at once.
+    capDue = !governor.level.cap30 ? 0 : now - capDue > CAP_MS ? now + CAP_MS : capDue + CAP_MS;
   } else if (manual) drawDt = 0;
   sound.frame(state, world.camera, dt, running && !paused);
   requestAnimationFrame(frame);
