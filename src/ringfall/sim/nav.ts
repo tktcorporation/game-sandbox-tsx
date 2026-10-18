@@ -333,6 +333,21 @@ export function findPath(
   const cells: number[] = [];
   for (let c = goal; c !== -1; c = came[c]) cells.push(c);
   cells.reverse();
+  // A straight walk may not reach deeper into `avoid` than its two ends do, or smoothing undoes the way round.
+  const cutsAvoid = (p: { x: number; z: number }, q: { x: number; z: number }): boolean => {
+    if (!avoid) return false;
+    const ex = q.x - p.x;
+    const ez = q.z - p.z;
+    const len2 = ex * ex + ez * ez;
+    const t = len2 > 0 ? Math.max(0, Math.min(1, ((avoid.x - p.x) * ex + (avoid.z - p.z) * ez) / len2)) : 0;
+    const dx = p.x + ex * t - avoid.x;
+    const dz = p.z + ez * t - avoid.z;
+    const d2 = dx * dx + dz * dz;
+    if (d2 >= ar2) return false;
+    const p2 = (p.x - avoid.x) ** 2 + (p.z - avoid.z) ** 2;
+    const q2 = (q.x - avoid.x) ** 2 + (q.z - avoid.z) ** 2;
+    return d2 < Math.min(p2, q2) - 1e-6;
+  };
   // Keep only the cells where a straight walk would be blocked.
   const pts = cells.map((c) => ({ x: centerX(c % NX), z: centerZ((c / NX) | 0) }));
   const out: { x: number; z: number }[] = [];
@@ -340,7 +355,12 @@ export function findPath(
   let k = 0;
   while (k < pts.length - 1) {
     let far = k + 1;
-    while (far + 1 < pts.length && clearLine(from.x, from.z, pts[far + 1].x, pts[far + 1].z)) far++;
+    while (
+      far + 1 < pts.length &&
+      clearLine(from.x, from.z, pts[far + 1].x, pts[far + 1].z) &&
+      !cutsAvoid(from, pts[far + 1])
+    )
+      far++;
     out.push(pts[far]);
     from = pts[far];
     k = far;
