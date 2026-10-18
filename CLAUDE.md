@@ -56,9 +56,10 @@ The trader's quests are data in `meta/quests.ts` (`QUESTS`, credited from a raid
 only with that POI's key; keys drop from the bins of the POI named by its `keyFrom` (`VAULT`).
 POIs have a stable `id` (`PoiId` in `map.ts`); saves, quests, `keyFrom` and `EXTRA_BINS` refer to a
 POI by it, never by its place in `POIS` (the run's state may index `POIS` internally). The profile
-is versioned (`Profile.v`, which is 11), and `parseProfile()` moves older saves forward (a save from
-before the ways in starts at its region's first way in, and its explored map is dropped, since
-`cellOf()` follows `WORLD`; a save from before ways in were learned knows them all) and moves its
+is versioned (`Profile.v`, which is 12), and `parseProfile()` moves older saves forward (a save from
+before the ways in starts at its region's first way in; a save from before ways in were learned
+knows them all; a save from before v12 drops its explored map, since `cellOf()` follows `WORLD`,
+which then grew wider) and moves its
 start to one it may choose (`allowedStart()`).
 Each POI has a depot on its road (`DEPOTS` in `map.ts`, run by `stepDepots()` in `world.ts`): walking
 up switches it on for good, its use key sends the bag home (it survives a wipe) or, with the bag empty,

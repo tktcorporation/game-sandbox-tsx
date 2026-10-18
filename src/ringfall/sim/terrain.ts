@@ -409,7 +409,7 @@ export const groundOf = (name: string): Ground | undefined => GROUNDS.get(name);
 const CLIFF_GROUNDS = new Set<Ground>(["quarry", "sandstone"]);
 
 /**
- * The ground of a cliff at (x, z), for the renderer: that of the nearest walled shape within
+ * The ground of a cliff at (x, z), for the renderer: that of the nearest shape within
  * `reach` metres of its edge whose rock shows in its cliffs (`CLIFF_GROUNDS`), if there is one.
  */
 export function cliffGround(x: number, z: number, reach = 14): Ground | undefined {
