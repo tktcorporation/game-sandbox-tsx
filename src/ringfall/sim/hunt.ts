@@ -181,6 +181,11 @@ export function resetHunt() {
   cache.clear();
 }
 
+/** Forgets every field but keeps the grid: a raid starts with none (`newRun()`). */
+export function forgetFields() {
+  cache.clear();
+}
+
 /** Fields built so far: the sim gate checks that alternating targets reuse them. */
 export let fieldsBuilt = 0;
 

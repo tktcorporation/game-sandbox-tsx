@@ -99,7 +99,7 @@ once; play goes on. Build quests (`{ t: "build" }`) finish at the base (`claimBu
 
 ```bash
 npm run sim:ringfall     # gate 2: bots of three skills play whole raids headless, in each region,
-                         # then the hideout's pacing replays the meta with those raids; tables run
+                         # then the hideout's pacing replays the meta with those raids; raids run
                          # in parallel, one process per core (RINGFALL_SIM_JOBS=n to set, 1 = in turn)
 npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir raid to the end, a harbor raid
                          # to its first fight, a tour of both); screenshots in shots/ringfall/
@@ -231,6 +231,8 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   and keep re-learning where the player is (`stepReinforce()` in `world.ts`) until one of their
   walkers has found the player itself: a fight only their drone joined, over a cliff, does not
   end the hunt. Every other robot walks straight at its goal, and nobody paths inside a building.
+  The fields are kept for reuse within a raid only: `newRun()` drops them, so a raid plays the
+  same whatever ran before it, which is what lets the sim gate share raids among processes.
   The bot (`bot.ts`) opens only bins on the ground and does not climb: each POI keeps ground bins
   by its ways in and floors, and the bot walks the ground's paths up to robots on higher ground (a
   terrace, the mesa) rather than looking for an angle on them from below.
@@ -277,6 +279,8 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   (a table per region, and the hideout's pacing table from `scripts/ringfall-pacing.ts`: each skill's
   recorded raids settled in sequence with a greedy spender, the raid at which each level is built).
   Change a number in `config.ts` or `map.ts` only together with a re-run and an update to that file.
+  While tuning, `npm run sim:ringfall -- 10` (10 raids per skill and region, about a third of the
+  time) is enough to see which way a change moves the tables; the record in that file is 30.
 
 ## HITMARK
 
