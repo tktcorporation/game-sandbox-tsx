@@ -715,13 +715,13 @@ const BRIDGES = { cab: -45, over: 27, fallen: -72 } as const;
 /**
  * The bucket-wheel excavator that dug the ring's material, on the quarry's top terrace, in the
  * quarry's frame, its heights over the top terrace: crawlers, a turntable, the machine house (its
- * roof `roof` high, reached by an open stair tower at its east end), an A-frame mast `mast` high
+ * roof `roof` high, reached by an open stair tower south of it), an A-frame mast `mast` high
  * with stays to both booms, the counterweight boom east, and the wheel boom running west out over
  * the middle terrace down to the wheel (`wheel`, beside the boom's tip) cutting into the pit's edge.
  * A walkway steps down the wheel boom from the roof in `steps` steps a body walks, flat for a
  * landing at the operator's cab (`cab`, the steps it spans) near the wheel.
  */
-const BWE = { root: 86, tip: 40, roof: 17, end: 2, mast: 48, steps: 40, cab: [31, 33], wheel: { x: 40, y: 0, r: 9, z0: 7, z1: 10 } } as const;
+const BWE = { root: 92, tip: 40, roof: 17, end: 2, mast: 48, steps: 40, cab: [31, 33], wheel: { x: 40, y: 0, r: 9, z0: 7, z1: 10 } } as const;
 /** The wheel boom's walkway steps, from the roof out: x from, x to, and the top of each. */
 const BOOM_STEPS = (() => {
   const { root, tip, roof, end, steps, cab } = BWE;
@@ -1337,7 +1337,7 @@ export const LANDMARKS: readonly { name: string; x: number; z: number }[] = [
   at("anchor", { name: "アンカー", x: 0, z: 0 }),
   at("anchor", { name: "倒れた昇降路", x: -160, z: 16 }),
   at("quarry", { name: "コンベヤー", x: 10, z: -40 }),
-  at("quarry", { name: "バケット掘削機", x: 94, z: 12 }),
+  at("quarry", { name: "バケット掘削機", x: 100, z: 12 }),
   at("pass", { name: "峠", x: -60, z: -236 }),
   at("railway", { name: "鉄橋", x: 140, z: -190 }),
   at("railway", { name: "駅", x: 108, z: -228 }),
@@ -1504,27 +1504,30 @@ function stay(xa: number, ya: number, xb: number, yb: number, z: number): Box[] 
 function excavator(): { on: Box[]; out: Box[] } {
   const { root, roof: R, mast: M, wheel: W } = BWE;
   const on: Box[] = [];
-  // Crawlers, the frame between them, the turntable, the deck the house stands on.
-  on.push(rect(82, 2, 106, 7, 0, 4.5, "steel", 1), rect(82, 17, 106, 22, 0, 4.5, "steel", 1), rect(86, 7, 102, 17, 1.5, 4.5, "steel", 2));
-  on.push(...disc(94, 12, 9, 2, 4.5, 6, "steel", 2), rect(80, 4, 106, 20, 6, 7, "steel", 0));
+  // Crawlers, the frame between them, the turntable, the deck the house stands on: 10 m inside the
+  // top terrace's edges, so the ground pressed flat under them leaves the terraces' walls as they are.
+  on.push(rect(88, 2, 112, 7, 0, 4.5, "steel", 1), rect(88, 17, 112, 22, 0, 4.5, "steel", 1), rect(92, 7, 108, 17, 1.5, 4.5, "steel", 2));
+  on.push(...disc(100, 12, 9, 2, 4.5, 6, "steel", 2), rect(88, 4, 112, 20, 6, 7, "steel", 0));
   // The machine house, its roof walked on: a band of windows down each side, knee rails round the
   // roof open where the boom's walkway leaves it and where the stair tower's bridge comes in.
-  on.push(rect(root, 5, 106, 19, 7, R, "steel", 0));
-  for (const x of [89, 95, 101]) on.push(rect(x, 4.94, x + 3.5, 5, 12, 14.5, "steel", 3), rect(x, 19, x + 3.5, 19.06, 12, 14.5, "steel", 3));
-  on.push(rect(root, 5, 106, 5.15, R, R + 0.5, "steel", 2), rect(root, 18.85, 106, 19, R, R + 0.5, "steel", 2));
-  for (const x of [root, 105.85]) on.push(rect(x, 5.15, x + 0.15, 10.5, R, R + 0.5, "steel", 2), rect(x, 13.5, x + 0.15, 18.85, R, R + 0.5, "steel", 2));
-  on.push(...lattice(110, 12, 6, 7, 5, R + 0.6, ["w"]), rect(106, 10.5, 107, 13.5, R - 0.3, R, "slab", 1));
-  // The mast: two legs from the roof, a brace and a head; the counterweight boom on its post, the weight at its end.
-  on.push(rect(95, 7.5, 96.2, 8.7, R, M, "steel", 0), rect(95, 15.3, 96.2, 16.5, R, M, "steel", 0), rect(95.1, 8.7, 96.1, 15.3, 32, 33, "steel", 0), rect(94.6, 7.1, 96.6, 16.9, M, M + 1.6, "steel", 0));
-  on.push(rect(98, 10, 104, 14, R, 20.5, "steel", 0), rect(98.5, 10.3, 116, 13.7, 20.5, 22.5, "steel", 2), rect(114, 8, 122, 16, 15, 23.5, "steel", 1));
-  on.push(...stay(95.6, M, 118, 23.5, 12));
+  on.push(rect(root, 5, 112, 19, 7, R, "steel", 0));
+  for (const x of [95, 101, 107]) on.push(rect(x, 4.94, x + 3.5, 5, 12, 14.5, "steel", 3), rect(x, 19, x + 3.5, 19.06, 12, 14.5, "steel", 3));
+  on.push(rect(root, 5, 112, 5.15, R, R + 0.5, "steel", 2), rect(root, 18.85, 101.5, 19, R, R + 0.5, "steel", 2), rect(104.5, 18.85, 112, 19, R, R + 0.5, "steel", 2));
+  on.push(rect(root, 5.15, root + 0.15, 10.5, R, R + 0.5, "steel", 2), rect(root, 13.5, root + 0.15, 18.85, R, R + 0.5, "steel", 2), rect(111.85, 5.15, 112, 18.85, R, R + 0.5, "steel", 2));
+  // The stair tower south of the house, on past the crawlers, and its bridge onto the roof.
+  on.push(...lattice(103, 26.5, 6, 7, 5, R + 0.6, ["n"]), rect(101.5, 19, 104.5, 23, R - 0.3, R, "slab", 1));
+  on.push(rect(101.5, 19, 101.65, 23, R, R + 0.5, "steel", 2), rect(104.35, 19, 104.5, 23, R, R + 0.5, "steel", 2));
+  // The mast: two legs from the roof, a brace and a head.
+  on.push(rect(101, 7.5, 102.2, 8.7, R, M, "steel", 0), rect(101, 15.3, 102.2, 16.5, R, M, "steel", 0), rect(101.1, 8.7, 102.1, 15.3, 32, 33, "steel", 0), rect(100.6, 7.1, 102.6, 16.9, M, M + 1.6, "steel", 0));
   const out: Box[] = [];
   // The wheel boom: per step its box girder, the walkway on it and knee rails, the south rail open at the cab.
   BOOM_STEPS.forEach(({ x0, x1, y }, k) => {
     out.push(rect(x0, 10.2, x1, 13.8, y - 3, y - 0.5, "steel", 0), rect(x0, 10.5, x1, 13.5, y - 0.5, y, "slab", 1), rect(x0, 10.5, x1, 10.7, y, y + 0.5, "steel", 2));
     if (k < BWE.cab[0] || k > BWE.cab[1]) out.push(rect(x0, 13.3, x1, 13.5, y, y + 0.5, "steel", 2));
   });
-  out.push(...stay(95.6, M, 44, 6, 12));
+  // The counterweight boom on its post, out over the terrace's east edge, the weight at its end, and the stays.
+  out.push(rect(104, 10, 110, 14, R, 20.5, "steel", 0), rect(104.5, 10.3, 122, 13.7, 20.5, 22.5, "steel", 2), rect(120, 8, 128, 16, 15, 23.5, "steel", 1));
+  out.push(...stay(101.6, M, 124, 23.5, 12), ...stay(101.6, M, 44, 6, 12));
   // The boom's head and the wheel's axle; the wheel beside it: a rim of rows, two spokes, buckets round it.
   out.push(rect(W.x - 2, 9.8, W.x, 14.2, -3, BWE.end + 0.5, "steel", 0), rect(W.x - 1.2, W.z0 - 1, W.x + 1.2, 14, W.y - 1.2, W.y + 1.2, "steel", 2));
   const ri = W.r - 2.5;
@@ -1724,7 +1727,7 @@ function dish(vx: number, vy: number, vz: number, o: DishOpts): Box[] {
  * The relay station on the sandstone mesa, in its own frame, built to `WORKS`: the base's station
  * for talking to the ring. The big dish (`BIG_DISH`, 56 m across, its rim 49 m over the top) faces
  * west over the island on its pedestal, an open stair tower up to a gallery at its lowest rim; two
- * small dishes, the red-and-white mast (62 m) at the north-west corner, the equipment block
+ * small dishes, the red-and-white mast (62 m) towards the north-west corner, the equipment block
  * (`HIGH_RISES`) and a generator hall inside a walled compound, a hut where the ledge road comes
  * up, a fuel tank.
  */
@@ -1755,9 +1758,7 @@ function relay(): Floors {
   const top: Box[] = [
     ...pedestal,
     ...gallery,
-    ...small(-25, -44, "s"),
-    ...small(68, 26, "w"),
-    ...mast(-55, -35, 7, 4, 62),
+    ...mast(-48, -28, 7, 4, 62),
     ...hall(45, 22, 20, 14, S + 2.5, { scale: WORKS, steel: 3, doors: [{ side: "w" }], hatches: [{ side: "s", at: 4 }], windows: ["n", "s"] }),
     ...tank(60, -30, 4, 8, "w"),
     ...compound(5, -5, 110, 70, 2.4, [
@@ -1781,8 +1782,9 @@ function relay(): Floors {
   const stairsTower = paint(tower(-106, 0, 8, 8, 5, { scale: WORKS, doors: [["w", "s"]], windows: [[], ["w"], ["w"], ["w"], ["w"]], open: ["e"] }), "wall", "steel", () => 2, (b) => b.tint === 0);
   return [
     [LEVEL.mesa, top],
-    // The dishes' bowls reach out past their posts; laid without pressing the mesa's edge flat.
-    [LEVEL.mesa, big, "loose"],
+    // The dishes stand on the top as it is: their bowls hang out past their posts, and pressing the
+    // ground flat under a box near the edge would pull the cliff's foot up toward the top.
+    [LEVEL.mesa, [...big, ...small(-25, -36, "s"), ...small(64, 20, "w")], "loose"],
     [LEVEL.foot, stairsTower],
     [LEVEL.foot, catwalk(-102, 0, -80, 0, LEVEL.mesa - LEVEL.foot, 2.2, 2), "loose"],
   ];
@@ -2483,12 +2485,13 @@ function supply(): Floors {
   out.push(box(-14, -6, 2.6, 13, 4, "container", 1), box(-44, 2, 13, 2.6, 4, "container", 0), box(30, -14, 13, 2.6, 4, "container", 2));
   out.push(box(10, 10, 6.1, 2.5, 2.6, "container", 0), box(10, 10, 6.1, 2.5, 5.2, "container", 2, 2.6), box(10, 13, 6.1, 2.5, 2.6, "container", 1));
   out.push(box(-24, -69, 6.1, 2.5, 2.6, "container", 2), box(-17, -69, 6.1, 2.5, 2.6, "container", 0), box(-17, -69, 6.1, 2.5, 5.2, "container", 1, 2.6));
-  out.push(rect(52, -46, 62, -34, 0, 1.2, "steel", 0), ...shippedSegment());
+  out.push(rect(52, -46, 62, -34, 0, 1.2, "steel", 0));
   out.push(...tank(48, 2, 3.5, 7, "w", 0));
   out.push(...tankerBow());
   return [
     [LEVEL.shore, out],
-    [LEVEL.shore, BURIED_RAILS, "loose"],
+    // The rails and the shipped segment run on into the east dune, which they leave as it is.
+    [LEVEL.shore, [...BURIED_RAILS, ...shippedSegment()], "loose"],
   ];
 }
 
