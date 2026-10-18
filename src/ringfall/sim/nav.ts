@@ -69,10 +69,43 @@ const free = (i: number, j: number) => i >= 0 && j >= 0 && i < NX && j < NZ && !
  */
 let area = new Int32Array(0);
 
+/*
+ * The 8-way moves A* makes, in the order it tries them (di outer, dj inner), with the step
+ * to the neighbour's index and its cost. Bit n of a cell's `moves` is set when move n from
+ * it is allowed: the neighbour is free and the move cuts no corner. A search looks this up
+ * once per cell it expands instead of testing up to five cells for each of its moves.
+ */
+const MOVE_DI = [-1, -1, -1, 0, 0, 1, 1, 1];
+const MOVE_DJ = [-1, 0, 1, -1, 1, -1, 0, 1];
+const MOVE_OFF = MOVE_DI.map((di, n) => MOVE_DJ[n] * NX + di);
+const MOVE_COST = MOVE_DI.map((di, n) => (di && MOVE_DJ[n] ? 1.414 : 1));
+let moves = new Uint8Array(0);
+function moveMask(): Uint8Array {
+  if (moves.length) return moves;
+  blockedCells();
+  const m = new Uint8Array(NX * NZ);
+  for (let cj = 0; cj < NZ; cj++)
+    for (let ci = 0; ci < NX; ci++) {
+      if (grid[cj * NX + ci]) continue;
+      let bits = 0;
+      for (let n = 0; n < 8; n++) {
+        const di = MOVE_DI[n];
+        const dj = MOVE_DJ[n];
+        if (!free(ci + di, cj + dj)) continue;
+        if (di && dj && (!free(ci + di, cj) || !free(ci, cj + dj))) continue;
+        bits |= 1 << n;
+      }
+      m[cj * NX + ci] = bits;
+    }
+  moves = m;
+  return m;
+}
+
 /** Forgets the grid and its stretches, for a world whose open routes changed (routes.ts): both are built again on first use. */
 export function resetNav() {
   grid = new Uint8Array(0);
   area = new Int32Array(0);
+  moves = new Uint8Array(0);
 }
 function areas(): Int32Array {
   if (area.length) return area;
@@ -166,6 +199,64 @@ const touch = (k: number) => {
   closed[k] = 0;
 };
 
+/*
+ * A*'s open list: a binary heap of (f, cell) pairs side by side in one array, kept between
+ * searches and grown as needed. Which of two cells with the same f comes out first follows
+ * from these exact comparisons, and with it the path among equally short ones.
+ */
+let heap = new Float64Array(1 << 17);
+let heapSize = 0;
+function heapPush(f: number, k: number) {
+  if (heapSize * 2 === heap.length) {
+    const grown = new Float64Array(heap.length * 2);
+    grown.set(heap);
+    heap = grown;
+  }
+  const h = heap;
+  let c = heapSize++;
+  while (c > 0) {
+    const p = (c - 1) >> 1;
+    if (h[p * 2] <= f) break;
+    h[c * 2] = h[p * 2];
+    h[c * 2 + 1] = h[p * 2 + 1];
+    c = p;
+  }
+  h[c * 2] = f;
+  h[c * 2 + 1] = k;
+}
+function heapPop(): number {
+  const h = heap;
+  const top = h[1];
+  const n = --heapSize;
+  if (n) {
+    // The last pair sinks from the root, below each child strictly smaller than it.
+    const f = h[n * 2];
+    const k = h[n * 2 + 1];
+    let c = 0;
+    for (;;) {
+      const l = c * 2 + 1;
+      const r = l + 1;
+      let m = c;
+      let mf = f;
+      if (l < n && h[l * 2] < mf) {
+        m = l;
+        mf = h[l * 2];
+      }
+      if (r < n && h[r * 2] < mf) {
+        m = r;
+        mf = h[r * 2];
+      }
+      if (m === c) break;
+      h[c * 2] = mf;
+      h[c * 2 + 1] = h[m * 2 + 1];
+      c = m;
+    }
+    h[c * 2] = f;
+    h[c * 2 + 1] = k;
+  }
+  return top;
+}
+
 /** Waypoints (world x, z) from a to b, or null if unreachable; round `avoid` where the way round is not much longer. */
 export function findPath(
   ax: number,
@@ -193,42 +284,8 @@ export function findPath(
   }
   touch(start);
   touch(goal);
-  // Binary heap of [f, index].
-  const heap: number[] = [];
-  const push = (f: number, idx: number) => {
-    heap.push(f, idx);
-    let c = heap.length / 2 - 1;
-    while (c > 0) {
-      const p = (c - 1) >> 1;
-      if (heap[p * 2] <= heap[c * 2]) break;
-      [heap[p * 2], heap[c * 2]] = [heap[c * 2], heap[p * 2]];
-      [heap[p * 2 + 1], heap[c * 2 + 1]] = [heap[c * 2 + 1], heap[p * 2 + 1]];
-      c = p;
-    }
-  };
-  const pop = (): number => {
-    const idx = heap[1];
-    const lastIdx = heap.pop()!;
-    const lastF = heap.pop()!;
-    if (heap.length) {
-      heap[0] = lastF;
-      heap[1] = lastIdx;
-      let c = 0;
-      const n = heap.length / 2;
-      for (;;) {
-        const l = c * 2 + 1;
-        const r = l + 1;
-        let m = c;
-        if (l < n && heap[l * 2] < heap[m * 2]) m = l;
-        if (r < n && heap[r * 2] < heap[m * 2]) m = r;
-        if (m === c) break;
-        [heap[m * 2], heap[c * 2]] = [heap[c * 2], heap[m * 2]];
-        [heap[m * 2 + 1], heap[c * 2 + 1]] = [heap[c * 2 + 1], heap[m * 2 + 1]];
-        c = m;
-      }
-    }
-    return idx;
-  };
+  const mv = moveMask();
+  heapSize = 0;
   const gi = g[0];
   const gj = g[1];
   const h = (i: number, j: number) => {
@@ -237,41 +294,40 @@ export function findPath(
     return Math.max(dx, dz) + 0.414 * Math.min(dx, dz);
   };
   gScore[start] = 0;
-  push(h(s[0], s[1]), start);
+  heapPush(h(s[0], s[1]), start);
   let expanded = 0;
   // Ground within `avoid` costs this many times as much to cross: walked round where a way round is not too long.
   const AVOID = 5;
   const ar2 = avoid ? avoid.r * avoid.r : 0;
-  while (heap.length && expanded < 1_500_000) {
-    const cur = pop();
+  while (heapSize && expanded < 1_500_000) {
+    // The heap keeps cells as doubles; as a small integer again the index arithmetic below stays integer.
+    const cur = heapPop() | 0;
     if (closed[cur]) continue;
     closed[cur] = 1;
     expanded++;
     if (cur === goal) break;
-    const ci = cur % NX;
     const cj = (cur / NX) | 0;
-    for (let di = -1; di <= 1; di++)
-      for (let dj = -1; dj <= 1; dj++) {
-        if (!di && !dj) continue;
-        const ni = ci + di;
-        const nj = cj + dj;
-        if (!free(ni, nj)) continue;
-        if (di && dj && (!free(ci + di, cj) || !free(ci, cj + dj))) continue; // no corner cutting
-        const nIdx = nj * NX + ni;
-        touch(nIdx);
-        let cost = di && dj ? 1.414 : 1;
-        if (avoid) {
-          const dx = centerX(ni) - avoid.x;
-          const dz = centerZ(nj) - avoid.z;
-          if (dx * dx + dz * dz < ar2) cost *= AVOID;
-        }
-        const ng = gScore[cur] + cost;
-        if (ng < gScore[nIdx]) {
-          gScore[nIdx] = ng;
-          came[nIdx] = cur;
-          push(ng + h(ni, nj), nIdx);
-        }
+    const ci = cur - cj * NX;
+    const bits = mv[cur];
+    for (let n = 0; n < 8; n++) {
+      if (!(bits & (1 << n))) continue;
+      const ni = ci + MOVE_DI[n];
+      const nj = cj + MOVE_DJ[n];
+      const nIdx = cur + MOVE_OFF[n];
+      touch(nIdx);
+      let cost = MOVE_COST[n];
+      if (avoid) {
+        const dx = centerX(ni) - avoid.x;
+        const dz = centerZ(nj) - avoid.z;
+        if (dx * dx + dz * dz < ar2) cost *= AVOID;
       }
+      const ng = gScore[cur] + cost;
+      if (ng < gScore[nIdx]) {
+        gScore[nIdx] = ng;
+        came[nIdx] = cur;
+        heapPush(ng + h(ni, nj), nIdx);
+      }
+    }
   }
   if (came[goal] < 0 && goal !== start) return null;
   const cells: number[] = [];
