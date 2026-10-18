@@ -354,6 +354,18 @@ export const DEPOT = {
 };
 
 /**
+ * The ways in on foot (`ENTRIES`) a player has walked to: one reached in a raid that ends with
+ * the player off alive can be chosen at the base from then on. A player starts knowing only
+ * the reservoir's first.
+ */
+export const ENTRY = {
+  /** Metres: walking this close to a way in, on its ground, finds it. */
+  radius: 10,
+  /** Metres above or below the ground there that still counts as on it (not a bridge or roof overhead). */
+  rise: 3,
+};
+
+/**
  * Between raids: what the player keeps, what things cost, and what is lost. Whatever is
  * taken into a raid is lost with it on a wipe, except what fits in the pouch: the most
  * valuable things in the bag, up to its slots. A raid with the free kit risks nothing:

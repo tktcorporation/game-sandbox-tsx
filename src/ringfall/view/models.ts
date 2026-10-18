@@ -645,6 +645,33 @@ export function buildDepot(): { root: THREE.Group; lamp: THREE.Mesh; slot: THREE
   return { root, lamp, slot };
 }
 
+/**
+ * The mark of a way in on foot: a cold campfire ring with a signboard behind it, the camp the
+ * player and the teammate set out from. It is only scenery: nothing in it is solid, and it does
+ * not glow, so it is found by walking the open ground, not seen from afar. The board faces +z.
+ */
+export function buildEntryMark(): { fire: THREE.Group; sign: THREE.Group } {
+  const fire = new THREE.Group();
+  for (let i = 0; i < 7; i++) {
+    const a = (i / 7) * Math.PI * 2;
+    const stone = mesh(new THREE.BoxGeometry(0.34, 0.2, 0.26), flat(i % 2 ? PAL.concreteDark : PAL.concrete), Math.cos(a) * 0.62, 0.1, Math.sin(a) * 0.62, false);
+    stone.rotation.y = -a;
+    fire.add(stone);
+  }
+  fire.add(mesh(new THREE.BoxGeometry(0.9, 0.04, 0.9), flat(PAL.gun), 0, 0.02, 0, false));
+  for (const [r, y] of [[0.5, 0.1], [-0.6, 0.16]]) {
+    const log = mesh(new THREE.BoxGeometry(0.9, 0.12, 0.12), flat(PAL.rockDark), 0, y, 0, false);
+    log.rotation.y = r;
+    fire.add(log);
+  }
+  const sign = new THREE.Group();
+  for (const x of [-0.55, 0.55]) sign.add(mesh(new THREE.BoxGeometry(0.1, 1.5, 0.1), flat(PAL.ochre), x, 0.75, 0));
+  sign.add(mesh(new THREE.BoxGeometry(1.4, 0.6, 0.06), flat(PAL.crate), 0, 1.25, 0.06));
+  // A painted band across the board: the island's camps are marked in the teammate's teal.
+  sign.add(mesh(new THREE.BoxGeometry(1.0, 0.12, 0.02), flat(PAL.teal), 0, 1.3, 0.1, false));
+  return { fire, sign };
+}
+
 export function buildCare(): THREE.Group {
   const g = new THREE.Group();
   g.add(mesh(new THREE.CylinderGeometry(0.9, 1.1, 2.0, 8), flat(PAL.gun), 0, 1.0, 0));
