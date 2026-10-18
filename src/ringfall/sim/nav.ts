@@ -166,12 +166,13 @@ const touch = (k: number) => {
   closed[k] = 0;
 };
 
-/** Waypoints (world x, z) from a to b, or null if unreachable. */
+/** Waypoints (world x, z) from a to b, or null if unreachable; round `avoid` where the way round is not much longer. */
 export function findPath(
   ax: number,
   az: number,
   bx: number,
   bz: number,
+  avoid?: { x: number; z: number; r: number },
 ): { x: number; z: number }[] | null {
   blockedCells();
   const s = nearestFree(ax, az);
@@ -238,7 +239,10 @@ export function findPath(
   gScore[start] = 0;
   push(h(s[0], s[1]), start);
   let expanded = 0;
-  while (heap.length && expanded < 400000) {
+  // Ground within `avoid` costs this many times as much to cross: walked round where a way round is not too long.
+  const AVOID = 5;
+  const ar2 = avoid ? avoid.r * avoid.r : 0;
+  while (heap.length && expanded < 1_500_000) {
     const cur = pop();
     if (closed[cur]) continue;
     closed[cur] = 1;
@@ -256,6 +260,11 @@ export function findPath(
         const nIdx = nj * NX + ni;
         touch(nIdx);
         let cost = di && dj ? 1.414 : 1;
+        if (avoid) {
+          const dx = centerX(ni) - avoid.x;
+          const dz = centerZ(nj) - avoid.z;
+          if (dx * dx + dz * dz < ar2) cost *= AVOID;
+        }
         const ng = gScore[cur] + cost;
         if (ng < gScore[nIdx]) {
           gScore[nIdx] = ng;

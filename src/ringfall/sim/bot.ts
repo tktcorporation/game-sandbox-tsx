@@ -40,6 +40,20 @@ const muzzleOf = (e: Enemy) => ({ x: e.pos.x, y: e.pos.y + Math.max(ENEMIES[e.ki
 /** Distance it likes to fight at with each weapon: off at the edge of a robot's reach, where its fire strays. */
 const PREF: Record<string, number> = { pike: 22, hornet: 11, maul: 6, lance: 26, talon: 32 };
 
+/** On the ground or the first steps of a flight up from it: where the ground's path finding still leads. */
+const nearGround = (pos: { x: number; y: number; z: number }) => pos.y < groundLevel(pos.x, pos.z) + 1.6;
+
+/** Whether the straight walk from a to b passes within c's radius of it. */
+function segmentNear(a: { x: number; z: number }, b: { x: number; z: number }, c: { x: number; z: number; r: number }): boolean {
+  const dx = b.x - a.x;
+  const dz = b.z - a.z;
+  const t = Math.max(0, Math.min(1, ((c.x - a.x) * dx + (c.z - a.z) * dz) / (dx * dx + dz * dz || 1)));
+  return Math.hypot(a.x + dx * t - c.x, a.z + dz * t - c.z) < c.r;
+}
+
+/** Metres round a titan it is not out to fight that its paths keep out of where they can: past its sight. */
+const AVOID_TITAN = 70;
+
 /** Seconds a fighting robot may stay out of sight before the bot stops waiting for it. */
 const GIVE_UP = 25;
 
@@ -75,6 +89,10 @@ export class Bot {
   private flankCheck = 0;
   private lastFlanked = -1;
   private flankedAt = -99;
+  /** Ground its paths go round: the titan's sight, while it is not out to fight it. */
+  private avoid: { x: number; z: number; r: number } | undefined;
+  /** The robot it last went after: it keeps after it a little further than it takes one up. */
+  private chasing = -1;
   /** The raiders have been announced: time to stop taking POIs and get out. */
   private raidersIn = false;
   /** Where it backs off to out of every fighting robot's sight, to let them lose it and to heal. */
@@ -126,6 +144,9 @@ export class Bot {
     const live = s.enemies.filter((e) => e.mode !== "spawning");
     // Only fight robots that are after us or stand at the POI we are taking; leave the rest alone.
     const aim = this.nextPoi(s);
+    // Until it means to take the titan on, its paths go round the titan's sight.
+    const titan = s.enemies.find((e) => e.kind === "titan" && e.hp > 0 && e.aware !== "engaged");
+    this.avoid = titan && !(aim >= 0 && POIS[aim].boss) ? { x: titan.pos.x, z: titan.pos.z, r: AVOID_TITAN } : undefined;
     const sees = (e: Enemy) => dist2d(e.pos, p.pos) < 60 && los(eye, bodyCenter(e));
     // Robots coming to look ("?") in plain sight are worth the first shot before they find it.
     const coming = (e: Enemy) => e.aware === "alert" && dist2d(e.pos, p.pos) < 45 && sees(e);
@@ -154,8 +175,12 @@ export class Bot {
     let fight = false;
     if (aim < 0 && (callLeft(s, this.exit(s).id) === 0 || !tgt || dist2d(tgt.pos, p.pos) > 70 || this.slipAway(s, live))) {
       goal = this.waitSpot(s) ?? this.exit(s);
-    } else if (tgt && dist2d(tgt.pos, p.pos) < 70) {
+    } else if (tgt && (dist2d(tgt.pos, p.pos) < 70 || (aim >= 0 && tgt.poi === aim && (tgt.id === this.chasing || dist2d(p.pos, POIS[aim]) < 30)))) {
+      // Once on its way to a robot of the POI it is taking it keeps after it, however far the
+      // way round (a ramp, a tunnel) leads, rather than turning back at the range it took it up
+      // at; and from the POI's middle it goes after those still standing further out in it.
       fight = true;
+      this.chasing = tgt.id;
     } else if (s.ally.down > 0 && dist2d(s.ally.pos, p.pos) < 45) {
       // Pick the teammate up before looting or moving on.
       goal = { x: s.ally.pos.x, z: s.ally.pos.z };
@@ -320,12 +345,13 @@ export class Bot {
         const rel = lookAngles(p.pos, { x: step.x, y: 0, z: step.z }).yaw - p.yaw;
         inp.moveZ = Math.cos(rel);
         inp.moveX = Math.sin(rel);
-      } else if (!sees && onTerrain(p.pos)) {
-        // Walk a ground path toward it. A robot up high is hidden by its own roof edge or
-        // tower walls from close below, so walk to the nearest ground spot that sees it instead.
+      } else if (!sees && nearGround(p.pos)) {
+        // Walk a ground path toward it. A robot up on a roof or a tower is hidden by its own
+        // roof edge or walls from close below, so walk to the nearest ground spot that sees it
+        // instead; one on higher ground (a terrace, a mesa) is walked up to along the ground.
         // On its way out it does not go looking for robots it cannot see: it makes for the pickup.
         let to = aim < 0 ? (this.waitSpot(s) ?? { x: this.exit(s).x, z: this.exit(s).z }) : { x: tgt.pos.x, z: tgt.pos.z };
-        if (aim >= 0 && tgt.pos.y > p.pos.y + 1.5) {
+        if (aim >= 0 && tgt.pos.y > p.pos.y + 1.5 && !onTerrain(tgt.pos)) {
           if (!this.angle || this.angle.id !== tgt.id || s.time > this.angle.until) {
             // With no spot that sees it, back off into the open rather than stand under it: a
             // robot that heard the bot comes to its roof's edge to look, and shows itself there.
@@ -339,9 +365,17 @@ export class Bot {
         inp.moveZ = Math.cos(rel);
         inp.moveX = Math.sin(rel);
       } else if (opening) {
-        // A robot that has not seen it yet: stop, get low and take the first shot from range.
-        inp.moveZ = d > pref + 3 ? 1 : 0;
-        inp.crouch = inp.moveZ === 0;
+        // A robot that has not seen it yet: stop, get low and take the first shot from range;
+        // stay up where getting low would hide it (over a terrace's lip, down a slope).
+        // Out of range it closes in along the ground's paths: one seen across a pit or up a
+        // terrace is not walked straight at.
+        if (d > pref + 3 && nearGround(p.pos)) {
+          const step = this.via(s, { x: tgt.pos.x, z: tgt.pos.z });
+          const rel = lookAngles(p.pos, { x: step.x, y: 0, z: step.z }).yaw - p.yaw;
+          inp.moveZ = Math.cos(rel);
+          inp.moveX = Math.sin(rel);
+        } else inp.moveZ = d > pref + 3 ? 1 : 0;
+        inp.crouch = inp.moveZ === 0 && inp.moveX === 0 && los({ ...eye, y: p.pos.y + PLAYER.eyeCrouch }, bodyCenter(tgt));
       } else {
         // Fight from behind low cover near by when there is some; otherwise keep moving.
         if (!this.post || this.post.id !== tgt.id || s.time > this.post.until) {
@@ -790,14 +824,15 @@ export class Bot {
   private via(s: State, goal: { x: number; z: number }): { x: number; z: number } {
     const p = s.player;
     // Up on a roof or platform the ground grid does not apply: walk straight (and drop off).
-    if ((p.onGround && !onTerrain(p.pos)) || clearLine(p.pos.x, p.pos.z, goal.x, goal.z)) {
+    // The low steps of a flight up from the ground still count as the ground.
+    if ((p.onGround && !nearGround(p.pos)) || (clearLine(p.pos.x, p.pos.z, goal.x, goal.z) && !(this.avoid && segmentNear(p.pos, goal, this.avoid)))) {
       this.path = [];
       return goal;
     }
     this.pathT -= TICK;
     // Re-plan when the goal moved or every 2 s; an unreachable goal is not retried every tick.
     if (dist2d(goal, this.pathGoal) > 3 || this.pathT <= 0) {
-      this.path = findPath(p.pos.x, p.pos.z, goal.x, goal.z) ?? [];
+      this.path = findPath(p.pos.x, p.pos.z, goal.x, goal.z, this.avoid) ?? [];
       this.pathGoal = { ...goal };
       this.pathT = 2;
     }
