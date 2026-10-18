@@ -51,6 +51,10 @@ export const PAL = {
   /** Painted steel: a ship's hull below the old waterline, girders and posts. */
   hull: 0x6e3a2a,
   steel: 0x707780,
+  /** The orbital tether's composite skin: a cool pale grey that reads apart from the warm concrete, its ribs darker, its broken ends scorched. */
+  tether: 0xd6dcdd,
+  tetherDark: 0x98a2a8,
+  scorch: 0x4a3e36,
   concrete: 0xcfc8b8,
   concreteDark: 0x9c9586,
   rust: 0xb5482b,
@@ -189,8 +193,9 @@ export function buildBox(b: Box, i: number): THREE.Object3D {
       break;
     }
     case "steel": {
-      // tint 0: rust-red plate, 1: the dark hull, 2: grey girders and posts, 3: teal paint, 4: white paint.
-      const color = [PAL.rust, PAL.hull, PAL.steel, PAL.teal, PAL.paint][b.tint % 5];
+      // tint 0: rust-red plate, 1: the dark hull, 2: grey girders and posts, 3: teal paint, 4: white paint,
+      // 5: the tether's composite skin, 6: its ribs, 7: scorch where it broke.
+      const color = [PAL.rust, PAL.hull, PAL.steel, PAL.teal, PAL.paint, PAL.tether, PAL.tetherDark, PAL.scorch][b.tint % 8];
       g.add(mesh(new THREE.BoxGeometry(w, h, d), flat(color), 0, mid, 0));
       // Big plates carry a darker seam along their top, so a hull reads as riveted plate.
       if (h > 2 && Math.max(w, d) > 4) g.add(mesh(new THREE.BoxGeometry(w + 0.04, 0.14, d + 0.04), flat(new THREE.Color(color).multiplyScalar(0.72).getHex()), 0, b.h - 0.25, 0, false));

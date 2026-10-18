@@ -14,6 +14,7 @@ export type AreaId =
   | "relay"
   | "factory"
   | "village"
+  | "anchor"
   | "pass"
   | "railway"
   | "town"
@@ -39,6 +40,9 @@ export const AREA: Record<AreaId, Offset> = {
   factory: [270, 320],
   // The terraced fields and their abandoned village on the hill in the north-west.
   village: [-300, -150],
+  // The tether's anchor on the ground north of the landing pad, its plinth flush with the pad's
+  // north edge, and the fallen tether lying east and west through it.
+  anchor: [0, -210],
   // Between the regions: the saddle of the pass road, and the railway's gorge bridge and station.
   pass: [-30, -128],
   railway: [46, -160],

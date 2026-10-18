@@ -140,7 +140,16 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   - the landing pad (a concrete plateau 245 by 135 m at +16 on top of a dam 30 m high over the
     lakebed): the titan's arena, a runway, two hangars, the control tower, and in front of the
     dam the intake tower (stairs down from the crest, windows over the lakebed, shut at the
-    bottom) and the outflow pipes.
+    bottom) and the outflow pipes; north of it, in the `anchor` area's frame, the tether's anchor
+    (`anchor()`, sized by `ANCHOR`): a round plinth 84 m across built of `disc()` columns, flush
+    with the pad and so walked onto from it (stairs up from the ground on its north and west), a
+    clamp ring on it, and the tether's broken shaft, 22 m square and up to 104 m over the pad,
+    with a steel scaffold nine storeys up inside it to a windowed gallery.
+  The world was the ground base of an orbital ring (the brief's 「世界の由来」), and the fallen
+  tether lies east and west through the anchor in four lengths 12 m across (`TETHER`, each a
+  `tetherPiece()`): the root end, its back level with the plinth's top; a corridor through the
+  one west of the pass road; rubble stairs up the side of the far west one; gaps between them to
+  walk through. Steel tints 5 to 7 are the tether's composite skin, its ribs and its scorch.
   The districts: the drowned town on the lakebed (-14 m, 150 by 210 m, mud banks up to 7 m, a
   church spire, roofs sticking out of the mud, the old bridge's piers, a sunken bus), the
   plateau over its west side, the terraced fields climbing in 4 m steps from +2 to the hill at
