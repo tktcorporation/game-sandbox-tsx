@@ -1505,6 +1505,21 @@ body.touch .mate-bars {
   font-size: 13px;
   color: var(--muted);
 }
+/* A region with no way in known and no depot on: shown, so the player knows it is there, but not chosen. */
+#hub .hub-region button.locked {
+  opacity: 0.45;
+  cursor: default;
+  box-shadow: inset 0 0 0 2px var(--muted);
+  border: 0;
+}
+/* How to open a locked region: a line of its own over the start choice. */
+.hub-lock {
+  flex-basis: 100%;
+  /* Close to the start choice it explains: the footer's row gap would push the lists up. */
+  margin: 0 0 -8px;
+  font-size: 13px;
+  color: var(--muted);
+}
 /* A phone on its side: the choice shares the buttons' row, without its line, so the lists keep their room. */
 @media (max-height: 500px) {
   /* With depots on there are more starts than fit: the row scrolls sideways instead of wrapping. */
@@ -1540,6 +1555,9 @@ body.touch .mate-bars {
   }
   .hub-region span {
     display: none;
+  }
+  .hub-lock {
+    font-size: 12px;
   }
 }
 #hub .hub-foot button:disabled {

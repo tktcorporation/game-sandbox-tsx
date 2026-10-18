@@ -1,11 +1,11 @@
 import * as THREE from "three";
 import { ENEMIES, PLAYER, TITAN, WEAPONS, WORLD, type EnemyKind } from "../sim/config";
-import { BOXES, DEPOTS, EXTRACTS, ROUTES, type Box } from "../sim/map";
+import { BOXES, DEPOTS, ENTRIES, EXTRACTS, ROUTES, type Box } from "../sim/map";
 import { worldKey } from "../sim/routes";
 import { groundAt } from "../sim/geom";
 import { DAM_FACE, floorLevel, highGround, LANDS, LEVEL, offshore, steepAt, surfaceAt, terrainHeight } from "../sim/terrain";
 import { callLeft, type GameEvent, type State, type Vec3 } from "../sim/state";
-import { PAL, RARITY_COLOR, SCOPE_IN, buildAlly, buildBin, buildBoat, buildBox, buildDepot, mergeChunk, buildCare, buildDropship, buildEnemy, buildGun, buildLootItem, addPlates, flat, glow, haloSprite, type EnemyModel } from "./models";
+import { PAL, RARITY_COLOR, SCOPE_IN, buildAlly, buildBin, buildBoat, buildBox, buildDepot, buildEntryMark, mergeChunk, buildCare, buildDropship, buildEnemy, buildGun, buildLootItem, addPlates, flat, glow, haloSprite, type EnemyModel } from "./models";
 
 /*
  * Renders a State in first person. It reads the state and the tick's events and
@@ -241,6 +241,8 @@ export class World {
   private careBeam: THREE.Mesh;
   private dropship: THREE.Group | null = null;
   private extractRings: THREE.Mesh[] = [];
+  /** The campfire and signboard at each way in (`ENTRIES`), built once: scenery only. */
+  private entryMarks: THREE.Group[] = [];
   /** One per `DEPOTS` entry, built once: they stand in every run, only lit or not. */
   private depots: (ReturnType<typeof buildDepot> & { /** Last lit state drawn; null until the first frame sets it. */ on: boolean | null })[] = [];
   private stompRing: THREE.Mesh;
@@ -331,6 +333,25 @@ export class World {
       v.root.rotation.y = Math.PI - d.yaw;
       this.scene.add(v.root);
       this.depots.push(v);
+    }
+
+    for (const e of ENTRIES) {
+      // Behind where a raid there starts, so the start's own view is of the region ahead; the
+      // board faces in, towards a player who walks out to it. Both stay inside the clearing the
+      // scattered cover leaves round a way in.
+      const { fire, sign } = buildEntryMark();
+      const fx = Math.sin(e.yaw);
+      const fz = -Math.cos(e.yaw);
+      const put = (o: THREE.Group, back: number, side: number) => {
+        const x = e.x - fx * back - fz * side;
+        const z = e.z - fz * back + fx * side;
+        o.position.set(x, groundAt(x, z, 0.4, 99), z);
+        o.rotation.y = Math.PI - e.yaw;
+        this.scene.add(o);
+        this.entryMarks.push(o);
+      };
+      put(fire, 2.5, 1.6);
+      put(sign, 4.5, -0.8);
     }
 
     this.stompRing = new THREE.Mesh(new THREE.RingGeometry(0.96, 1, 64), glow(PAL.orb, 0.5));
@@ -1079,6 +1100,7 @@ export class World {
       v.lid.rotation.x += ((b.open ? -1.9 : 0) - v.lid.rotation.x) * Math.min(1, dt * 10);
       (v.seam.material as THREE.MeshBasicMaterial).color.setHex(b.open ? 0x3a3f4a : 0xffffff);
     }
+    for (const m of this.entryMarks) near(m);
     this.depots.forEach((v, i) => {
       if (!near(v.root)) return;
       const on = !!s.depots[i];
