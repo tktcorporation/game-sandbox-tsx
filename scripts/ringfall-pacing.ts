@@ -8,7 +8,7 @@
  * home the most worth, above all what the hideout wants and cannot buy.
  */
 import { BAG, HIDEOUT, META, VALUABLES, type ModuleId, type ValuableKind } from "../src/ringfall/sim/config";
-import { POIS, REGIONS, type RegionId } from "../src/ringfall/sim/map";
+import { ENTRIES, POIS, REGIONS, type RegionId } from "../src/ringfall/sim/map";
 import type { State } from "../src/ringfall/sim/state";
 import { craftDone, MODULES, maxLevel, nextLevel, onSale, pouchSlots, stashCap } from "../src/ringfall/meta/hideout";
 import { build, buy, canBuild, deliver, deliverable, newProfile, pouch, sell, settle, shortfall, wanted, type Profile } from "../src/ringfall/meta/profile";
@@ -125,7 +125,8 @@ const rng = (seed: number) => () => ((seed = (Math.imul(seed, 1664525) + 1013904
 /** Raids each playthrough took to reach every module level, `CAP + 1` when it never did. */
 export function playthrough(pool: Partial<Record<RegionId, RaidRecord[]>>, seed: number): Record<string, number> {
   const draw = rng(seed);
-  let p = newProfile(seed);
+  // Knowing every way in, as a player some raids in does: the region is chosen by what its raids bring home.
+  let p: Profile = { ...newProfile(seed), entries: ENTRIES.map((e) => e.id) };
   const reached: Record<string, number> = {};
   for (let raid = 1; raid <= CAP && !craftDone(p.hideout); raid++) {
     const raids = pool[pickRegion(p, pool)]!;

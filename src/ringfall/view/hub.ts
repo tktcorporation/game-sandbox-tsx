@@ -1,7 +1,7 @@
 import { ALLY, HEALS as HEAL_SPECS, HIDEOUT, RAIDERS, RARITY, TOOLS, VALUABLES, WEAPONS, type ModuleId, type ValuableKind } from "../sim/config";
 import { boostFor, type Kit } from "../sim/state";
 import { entryOf, POIS, poiIndex, poiRegion, REGIONS, regionOf, ROUTES, type EntryId, type PoiId, type RegionId } from "../sim/map";
-import { build, buildState, buy, buyPrice, canBuild, deliver, deliverable, depotAllowance, emptyLoadout, fitsStart, itemCost, HEALS, healCount, healRoom, keyName, lentHeals, loadoutCost, price, sell, sellPrice, shortfall, takeKit, wanted, wares, type Item, type Loadout, type Profile } from "../meta/profile";
+import { build, buildState, buy, buyPrice, canBuild, canStartIn, deliver, deliverable, depotAllowance, emptyLoadout, fitsStart, itemCost, HEALS, healCount, healRoom, keyName, lentHeals, loadoutCost, price, sell, sellPrice, shortfall, startsIn, takeKit, wanted, wares, type Item, type Loadout, type Profile } from "../meta/profile";
 import { craftDone, maxLevel, MODULES, nextLevel, pouchSlots, sources, stashCap, stillNeeded, type Source } from "../meta/hideout";
 import { need, offered, type Quest, type RewardItem } from "../meta/quests";
 import { saveProfile } from "../meta/storage";
@@ -109,8 +109,8 @@ export class Hub {
   private tab: Tab = "kit";
   private load: Loadout = emptyLoadout();
   private region: RegionId;
-  /** The way in of `region` to start at, when not at a depot. */
-  private entry: EntryId;
+  /** The way in of `region` to start at, when not at a depot; null when the region is open only through a depot. */
+  private entry: EntryId | null;
   /** A depot to start at instead of a way in; null for a way in. */
   private from: PoiId | null = null;
   /** The hideout module opened to show what its next level takes. */
@@ -124,6 +124,7 @@ export class Hub {
   ) {
     this.region = profile.region;
     this.entry = this.entryIn(profile.region);
+    this.fixStart();
     $("hub").addEventListener("click", (e) => {
       const el = (e.target as HTMLElement).closest<HTMLElement>("[data-act]");
       if (el && !(el as HTMLButtonElement).disabled) this.act(el.dataset.act!, el.dataset.arg ?? "");
@@ -214,12 +215,14 @@ export class Hub {
     } else if (act === "ending") {
       sfx.click();
       return this.showEnding();
-    } else if (act === "region") {
+    } else if (act === "region" && canStartIn(this.profile, regionOf(arg as RegionId).id)) {
       this.region = regionOf(arg as RegionId).id;
       this.entry = this.entryIn(this.region);
       this.from = null;
+      // A region open only through a depot starts at its first depot on.
+      if (!this.entry) this.from = startsIn(this.profile, this.region).depots[0] ?? null;
       sfx.click();
-    } else if (act === "entry" && regionOf(this.region).entries.includes(arg as EntryId)) {
+    } else if (act === "entry" && startsIn(this.profile, this.region).entries.includes(arg as EntryId)) {
       this.entry = arg as EntryId;
       this.from = null;
       sfx.click();
@@ -278,13 +281,13 @@ export class Hub {
       const taken = takeKit(this.profile, l, this.from);
       if (!taken) return this.render();
       const { profile, kit } = taken;
-      this.set({ ...profile, region: this.region, entry: this.entry });
+      this.set({ ...profile, region: this.region, entry: this.entry ?? profile.entry });
       this.load = emptyLoadout();
       this.close();
       sfx.deploy();
       const from = this.from ?? undefined;
       this.from = null;
-      this.deploy(kit, this.region, this.profile.seed, { from, entry: this.entry });
+      this.deploy(kit, this.region, this.profile.seed, { from, entry: this.entry ?? this.profile.entry });
       return;
     } else if (act === "back") {
       sfx.click();
@@ -295,10 +298,26 @@ export class Hub {
     this.render();
   }
 
-  /** The way in offered first in `region`: the one the profile remembers when it is that region's, else its first. */
-  private entryIn(region: RegionId): EntryId {
-    const ways = regionOf(region).entries;
-    return ways.includes(this.profile.entry) ? this.profile.entry : ways[0];
+  /** The way in offered first in `region`: the one the profile remembers when it is that region's, else its first known; null when none is known. */
+  private entryIn(region: RegionId): EntryId | null {
+    const ways = startsIn(this.profile, region).entries;
+    return ways.includes(this.profile.entry) ? this.profile.entry : (ways[0] ?? null);
+  }
+
+  /**
+   * Keeps the chosen start one the profile allows: a depot still on, a region with a known way in
+   * or a depot on (else the reservoir, whose first way in is always known), a known way in of it,
+   * and a depot when the region has no known way in.
+   */
+  private fixStart() {
+    const p = this.profile;
+    if (this.from && !p.depots.includes(this.from)) this.from = null;
+    if (!canStartIn(p, this.region)) {
+      this.region = "reservoir";
+      this.from = null;
+    }
+    if (!this.entry || !startsIn(p, this.region).entries.includes(this.entry)) this.entry = this.entryIn(this.region);
+    if (!this.entry && !this.from) this.from = startsIn(p, this.region).depots[0] ?? null;
   }
 
   /** The loadout a start button takes: the free one keeps only the heals and keys picked. */
@@ -394,8 +413,8 @@ export class Hub {
     const need = stillNeeded(p.hideout);
     document.querySelectorAll<HTMLElement>("#hub [data-act=tab]").forEach((b) => b.classList.toggle("on", b.dataset.arg === this.tab));
     const shop = this.tab === "shop";
-    // A depot chosen in an earlier visit may no longer be on in a profile loaded since.
-    if (this.from && !p.depots.includes(this.from)) this.from = null;
+    // A start chosen in an earlier visit may not be allowed by a profile loaded since.
+    this.fixStart();
     const allow = this.allowance();
     const used = new Set([...this.load.weapons, ...this.load.keys, ...(this.load.armor === null ? [] : [this.load.armor])]);
     $("hub-stash").innerHTML =
@@ -448,16 +467,26 @@ export class Hub {
         }</p>`;
     }
     const on = (yes: boolean) => (yes ? ' class="on"' : "");
+    const known = startsIn(p, this.region).entries;
+    const unseen = regionOf(this.region).entries.length - known.length;
+    const locked = REGIONS.filter((r) => !canStartIn(p, r.id));
     $("hub-region").innerHTML =
       `<small>出撃地点</small>` +
-      REGIONS.map((r) => `<button type="button" data-act="region" data-arg="${r.id}"${on(!this.from && r.id === this.region)}>${esc(r.name)}</button>`).join("") +
-      (this.from ? "" : `<div class="entries">${regionOf(this.region).entries.map((e) => `<button type="button" class="entry${e === this.entry ? " on" : ""}" data-act="entry" data-arg="${e}">${esc(entryOf(e).name)}から</button>`).join("")}</div>`) +
+      REGIONS.map((r) =>
+        canStartIn(p, r.id)
+          ? `<button type="button" data-act="region" data-arg="${r.id}"${on(!this.from && r.id === this.region)}>${esc(r.name)}</button>`
+          : `<button type="button" class="locked" disabled title="${esc(r.locked ?? "")}">${esc(r.name)}（未踏）</button>`,
+      ).join("") +
+      (this.from ? "" : `<div class="entries">${known.map((e) => `<button type="button" class="entry${e === this.entry ? " on" : ""}" data-act="entry" data-arg="${e}">${esc(entryOf(e).name)}から</button>`).join("")}</div>`) +
       p.depots.map((d) => `<button type="button" class="depot${this.from === d ? " on" : ""}" data-act="from" data-arg="${d}">中継ボックス：${esc(POIS[poiIndex(d)].name)}（${esc(poiRegion(d).name)}）</button>`).join("") +
       `<span>${
         this.from && allow
           ? `${esc(POIS[poiIndex(this.from)].name)}の中継ボックス（Lv${allow.level}・持ち込み枠 ${allow.budget}）の前から、${ALLY.name}と歩いて始める`
-          : `${esc(entryOf(this.entry).name)}から${ALLY.name}と歩いて始める。${esc(regionOf(this.region).note)}`
+          : `${esc(entryOf(this.entry ?? p.entry).name)}から${ALLY.name}と歩いて始める。${esc(regionOf(this.region).note)}${unseen ? `。ほかの入口 ${unseen} つは、歩いて見つけて生きて帰ると選べる` : ""}`
       }</span>`;
+    // How to open a locked region: a line of its own over the start choice, kept on a phone too.
+    $("hub-lock").hidden = !locked.length;
+    $("hub-lock").textContent = locked.map((r) => `${r.name}：${r.locked ?? ""}`).join("　");
     $("hub-go").textContent = "この装備で出撃";
     $("hub-free").textContent = "貸出装備で出撃";
     // Both buttons go through fitsStart(), as takeKit() does: a loadout over a depot's allowance cannot start there.

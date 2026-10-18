@@ -27,7 +27,14 @@ neighbouring POIs stand 170 to 330 m apart, with open ground left round them for
 point out on its open ground, facing in, out of every robot's sight for the first seconds);
 `newRun(seed, kit, region, { entry })` starts on the ground there with the teammate beside the
 player (the reservoir and its first way in by default), and the base picks the region and the way
-in. There is no drop from the air.
+in. There is no drop from the air. The base offers only the ways in the player knows
+(`Profile.entries`): a new profile knows the reservoir's first (`FIRST_ENTRY`), and a raid marks
+each way in the player walks to, within `ENTRY.radius` on its ground, in `State.found` (the start's
+own included; `stepEntries()` in `world.ts`, an `entryFound` event for the HUD's toast), which
+`settle()` adds to the profile only when the raid got off alive (`Settlement.learned`). A region
+with no known way in and no depot on cannot be chosen (`canStartIn()`); the HUD and the world map
+are handed the known list (`Hud.setKnown()`), and each way in has a campfire and signboard in the
+view (scenery, no boxes).
 Robots are squads placed in the world from the start (`POIS[].squads`, two squads of two or three
 per POI (the pad holds the titan and its drones), and a few `ROAMERS` in `map.ts`, most of them patrolling the roads), plus reinforcements (`REINFORCE` in `config.ts`) that beam in
 out of sight on a timer and come looking, and once per raid an elite squad (`RAIDERS` / `ELITE`)
@@ -47,9 +54,10 @@ The trader's quests are data in `meta/quests.ts` (`QUESTS`, credited from a raid
 only with that POI's key; keys drop from the bins of the POI named by its `keyFrom` (`VAULT`).
 POIs have a stable `id` (`PoiId` in `map.ts`); saves, quests, `keyFrom` and `EXTRA_BINS` refer to a
 POI by it, never by its place in `POIS` (the run's state may index `POIS` internally). The profile
-is versioned (`Profile.v`, which is 10), and `parseProfile()` moves older saves forward (a save from
+is versioned (`Profile.v`, which is 11), and `parseProfile()` moves older saves forward (a save from
 before the ways in starts at its region's first way in, and its explored map is dropped, since
-`cellOf()` follows `WORLD`).
+`cellOf()` follows `WORLD`; a save from before ways in were learned knows them all) and moves its
+start to one it may choose (`allowedStart()`).
 Each POI has a depot on its road (`DEPOTS` in `map.ts`, run by `stepDepots()` in `world.ts`): walking
 up switches it on for good, its use key sends the bag home (it survives a wipe) or, with the bag empty,
 leaves the raid there; neither works while a robot fighting the player is within `DEPOT.safe`. The profile keeps the depots on (`Profile.depots`), from

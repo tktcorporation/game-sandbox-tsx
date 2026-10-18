@@ -335,6 +335,7 @@ function start(k: Kit, r: RegionId, seed: number, { from, entry }: { from?: PoiI
   $("results").hidden = true;
   $("pause").hidden = true;
   hud.show(true);
+  hud.setKnown(hub.profile.entries);
   const depot = from && hub.profile.depots.includes(from) ? from : null;
   hud.banner(depot ? `${POIS[poiIndex(depot)].name}の中継ボックス` : entryOf(entry).name, `ここから探索する。拠点と脱出地点は${touchMode ? "地図ボタン" : " M "}の地図で見る`);
   lock();
@@ -443,9 +444,9 @@ window.render_game_to_text = () => {
   const p = s.player;
   return JSON.stringify({
     screen: running ? "game" : !$("results").hidden ? "results" : !$("hub").hidden ? "hub" : !$("ending").hidden ? "ending" : "title",
-    profile: { cash: hub.profile.cash, stash: hub.profile.stash.length, raids: hub.profile.raids, hideout: hub.profile.hideout, escaped: !!hub.profile.escaped, seed: hub.profile.seed, routes: hub.profile.routes },
+    profile: { cash: hub.profile.cash, stash: hub.profile.stash.length, raids: hub.profile.raids, hideout: hub.profile.hideout, escaped: !!hub.profile.escaped, seed: hub.profile.seed, routes: hub.profile.routes, entries: hub.profile.entries },
     boost: { ...s.boost, name: POIS[s.boost.poi].name },
-    settled: settlement && { home: settlement.home.length, sold: settlement.sold.length, quests: settlement.quests.map((q) => q.id), opened: settlement.opened },
+    settled: settlement && { home: settlement.home.length, sold: settlement.sold.length, quests: settlement.quests.map((q) => q.id), opened: settlement.opened, learned: settlement.learned },
     vaults: s.bins.filter((b) => b.vault).map((b) => ({ poi: b.poi, x: b.x, y: b.y, z: b.z, open: b.open })),
     keys: p.keys,
     phase: s.phase,
@@ -461,6 +462,7 @@ window.render_game_to_text = () => {
     sent: { items: s.sent, value: s.sent.reduce((n, k) => n + VALUABLES[k].value, 0) },
     leaving: s.leaving && +s.leaving.t.toFixed(1),
     leftAt: s.leftAt,
+    found: s.found,
     // A count only: the whole explored map is too long for a line of state.
     seenCells: s.seen.reduce((n, c) => n + c, 0),
     search: s.player.search && { bin: s.player.search.bin, t: +s.player.search.t.toFixed(1) },

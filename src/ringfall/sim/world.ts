@@ -1,7 +1,7 @@
-import { ALLY, AWARE, BAG, DEPOT, ENEMIES, HEALS, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, TICK, TOOL_KINDS, TOOLS, TOP_BINS, VALUABLES, VAULT, WORLD, type HealKind, type ToolKind } from "./config";
+import { ALLY, AWARE, BAG, DEPOT, ENEMIES, ENTRY, HEALS, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, TICK, TOOL_KINDS, TOOLS, TOP_BINS, VALUABLES, VAULT, WORLD, type HealKind, type ToolKind } from "./config";
 import { dist2d, groundAt, los, solidAt } from "./geom";
 import { highGround, steepAt, terrainHeight } from "./terrain";
-import { DEPOTS, EXTRACTS, POIS, type ExtractPoint } from "./map";
+import { DEPOTS, ENTRIES, EXTRACTS, POIS, type ExtractPoint } from "./map";
 import { spawnEnemy, spawnSpot } from "./enemies";
 import { cellsAround, fieldTo, nextStep } from "./hunt";
 import { raiseAlly, startHelp } from "./ally";
@@ -559,6 +559,17 @@ export function stepDepots(s: State) {
   s.phase = "done";
   s.outcome = "extracted";
   s.events.push({ t: "done" });
+}
+
+/** Marks the ways in the player walks to, on their ground: the base learns them if the raid ends alive. */
+export function stepEntries(s: State) {
+  if (s.phase !== "play") return;
+  const p = s.player;
+  for (const e of ENTRIES) {
+    if (s.found.includes(e.id) || dist2d(e, p.pos) >= ENTRY.radius || Math.abs(terrainHeight(e.x, e.z) - p.pos.y) >= ENTRY.rise) continue;
+    s.found.push(e.id);
+    s.events.push({ t: "entryFound", id: e.id });
+  }
 }
 
 function openCare(s: State) {

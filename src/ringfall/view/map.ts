@@ -1,5 +1,5 @@
 import { DEPOT, WORLD } from "../sim/config";
-import { BOXES, DEPOTS, ENTRIES, EXTRACTS, LANDMARKS, POIS, REGIONS, ROUTES, regionHere } from "../sim/map";
+import { BOXES, DEPOTS, ENTRIES, EXTRACTS, LANDMARKS, POIS, REGIONS, ROUTES, regionHere, type EntryId } from "../sim/map";
 import { worldKey } from "../sim/routes";
 import { DAM_FACE, floorLevel, highGround, LEVEL, steepAt, surfaceAt, terrainHeight } from "../sim/terrain";
 import { cellOf, exploreSize, type State } from "../sim/state";
@@ -39,6 +39,8 @@ export class IslandMap {
 
   /** Whether the map shows the whole world rather than the region the player is in. */
   whole = false;
+  /** The ways in the base offers; null when the map is drawn without a profile, as all of them. */
+  known: EntryId[] | null = null;
   /** The shape last given to the page, which sizes the map by it. */
   private aspect = 0;
 
@@ -172,8 +174,14 @@ export class IslandMap {
     g.lineJoin = "round";
     g.strokeStyle = "rgba(20,24,40,0.85)";
     const font = (size: number) => `800 ${size * dpr}px system-ui, sans-serif`;
+    // A centred name near the world's edge is moved in so it stays whole on the canvas.
+    const inside = (text: string, x: number) => {
+      const half = g.measureText(text).width / 2 + 4 * dpr;
+      return Math.max(half, Math.min(g.canvas.width - half, x));
+    };
     const label = (text: string, x: number, y: number, color: string, size: number, stroke = true) => {
       g.font = font(size);
+      if (g.textAlign === "center") x = inside(text, x);
       if (stroke) g.strokeText(text, x, y);
       g.fillStyle = color;
       g.fillText(text, x, y);
@@ -185,7 +193,7 @@ export class IslandMap {
       g.font = font(size);
       const w = g.measureText(text).width;
       const hh = size * dpr * 0.6;
-      const x0 = left ? x : x - w / 2;
+      const x0 = left ? x : inside(text, x) - w / 2;
       return { x0, y0: y - hh, x1: x0 + w, y1: y + hh };
     };
     const taken: Rect[] = [];
@@ -225,20 +233,25 @@ export class IslandMap {
       taken.push(r);
       label(d.name, p.x, p.y, "#e9dcc2", 10);
     }
-    // The ways in: a ring each, where a raid that does not start at a depot begins.
+    // The ways in: a ring each, where a raid that does not start at a depot begins. One the base
+    // does not offer yet, and this raid has not walked to, is faint and dashed: somewhere to aim for.
     for (const e of ENTRIES) {
       const p = at(e.x, e.z);
+      const known = !this.known || this.known.includes(e.id) || s.found.includes(e.id);
+      const ink = known ? "#e9dcc2" : "rgba(233,220,194,0.5)";
       g.save();
-      g.lineWidth = 2 * dpr;
-      g.strokeStyle = "#e9dcc2";
+      g.lineWidth = (known ? 2 : 1.5) * dpr;
+      g.strokeStyle = ink;
+      if (!known) g.setLineDash([2 * dpr, 2 * dpr]);
       g.beginPath();
       g.arc(p.x, p.y, 3.5 * dpr, 0, Math.PI * 2);
       g.stroke();
       g.restore();
-      const r = box(e.name, p.x, p.y + 11 * dpr, 9);
+      const text = known ? e.name : `${e.name}（未発見）`;
+      const r = box(text, p.x, p.y + 11 * dpr, 9);
       if (!free(r)) continue;
       taken.push(r);
-      label(e.name, p.x, p.y + 11 * dpr, "#e9dcc2", 9);
+      label(text, p.x, p.y + 11 * dpr, known ? ink : "#9c9586", 9);
     }
     for (const r of REGIONS) {
       const p = at(r.label.x, r.label.z);
