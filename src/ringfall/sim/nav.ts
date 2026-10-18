@@ -1,6 +1,6 @@
 import { PLAYER, WORLD } from "./config";
 import { los, routeBoxesOpen } from "./geom";
-import { BOXES, DECKS } from "./map";
+import { BOXES, DECKS, ENTRIES, EXTRACTS, POIS } from "./map";
 import { steepAt, terrainHeight } from "./terrain";
 
 /*
@@ -101,11 +101,14 @@ function moveMask(): Uint8Array {
   return m;
 }
 
-/** Forgets the grid and its stretches, for a world whose open routes changed (routes.ts): both are built again on first use. */
+/** Forgets the grid, its stretches and the landmarks' fields, for a world whose open routes changed (routes.ts): all are built again on first use. */
 export function resetNav() {
   grid = new Uint8Array(0);
   area = new Int32Array(0);
   moves = new Uint8Array(0);
+  fields = [];
+  store = new Uint16Array(0);
+  landmarkCells = null;
 }
 function areas(): Int32Array {
   if (area.length) return area;
@@ -179,6 +182,140 @@ function nearestFree(x: number, z: number): [number, number] | null {
     }
   }
   return fallback;
+}
+
+/*
+ * Landmarks for A*'s estimate (the ALT method): fixed points of the map (each POI's middle,
+ * the ways off and the ways in), each with the walking distance from it to the cells round
+ * it. By the triangle inequality the walk between two cells is at least the difference of
+ * their distances from any landmark, which sees the cliffs, walled basins and ridges a walk
+ * goes round; the straight-line estimate does not, and with it a search across a region
+ * visits most of the ground in the ellipse round its two ends. The estimate never exceeds
+ * the true cost, so a search still finds a shortest way. A field is built the first time a
+ * search wants it, and which landmarks a search uses depends only on its two ends, so a path
+ * does not depend on what was searched before.
+ */
+const LANDMARKS = [...POIS, ...EXTRACTS, ...ENTRIES].map((p) => ({ x: p.x, z: p.z }));
+/*
+ * A field counts distance in seventeenths of a cell: a move along a row costs 17 and a
+ * diagonal one 24, under A*'s 1.414 by a sixth of a percent, so a field's distances are never
+ * longer than A*'s and fit 16 bits as whole numbers. A cell holds its distance plus one; 0 is
+ * a cell past `REACH` (or off the landmark's ground).
+ */
+const PER_CELL = 17;
+const FIELD_COST = MOVE_COST.map((c) => (c === 1 ? PER_CELL : 24));
+/** How far a field reaches, in its units: a walk of 1400 m, about a region's breadth. */
+const REACH = Math.round(1400 / RES) * PER_CELL;
+/** Each landmark's field, once built (null for a landmark with no free cell near it). */
+let fields: (Uint16Array | null | undefined)[] = [];
+/** One buffer for all the fields, allocated whole the first time; a field's pages are touched only where it reaches. */
+let store = new Uint16Array(0);
+/** Each landmark's free cell, or -1. */
+let landmarkCells: Int32Array | null = null;
+/** Searches shorter than this many cells as the crow flies do without landmarks: they are cheap anyway. */
+const LANDMARK_MIN = 40;
+
+function landmarkCell(n: number): number {
+  if (!landmarkCells) {
+    landmarkCells = new Int32Array(LANDMARKS.length);
+    LANDMARKS.forEach((l, k) => {
+      const c = nearestFree(l.x, l.z);
+      landmarkCells![k] = c ? c[1] * NX + c[0] : -1;
+    });
+  }
+  return landmarkCells[n];
+}
+
+/*
+ * The lists of a Dial queue for building a field: the costs are whole numbers no larger
+ * than 24, so cells are settled bucket by bucket in order of distance without a heap. List
+ * nodes are recycled through a free chain.
+ */
+const BUCKETS = 25;
+let poolCell = new Int32Array(1 << 16);
+let poolNext = new Int32Array(1 << 16);
+
+function field(n: number): Uint16Array | null {
+  const known = fields[n];
+  if (known !== undefined) return known;
+  const from = landmarkCell(n);
+  if (from < 0) return (fields[n] = null);
+  const mv = moveMask();
+  if (store.length !== LANDMARKS.length * NX * NZ) store = new Uint16Array(LANDMARKS.length * NX * NZ);
+  const f = store.subarray(n * NX * NZ, (n + 1) * NX * NZ);
+  const head = new Int32Array(BUCKETS).fill(-1);
+  let used = 0;
+  let spare = -1;
+  const push = (c: number, d: number) => {
+    let node = spare;
+    if (node >= 0) spare = poolNext[node];
+    else {
+      if (used === poolCell.length) {
+        const cells = new Int32Array(used * 2);
+        cells.set(poolCell);
+        poolCell = cells;
+        const next = new Int32Array(used * 2);
+        next.set(poolNext);
+        poolNext = next;
+      }
+      node = used++;
+    }
+    const b = d % BUCKETS;
+    poolCell[node] = c;
+    poolNext[node] = head[b];
+    head[b] = node;
+  };
+  f[from] = 1;
+  push(from, 0);
+  let pending = 1;
+  for (let d = 0; pending; d++) {
+    const b = d % BUCKETS;
+    let node = head[b];
+    head[b] = -1;
+    while (node >= 0) {
+      const cur = poolCell[node];
+      const after = poolNext[node];
+      poolNext[node] = spare;
+      spare = node;
+      pending--;
+      node = after;
+      // A cell is in a bucket once for each time its distance went down; only the last counts.
+      if (f[cur] !== d + 1) continue;
+      const bits = mv[cur];
+      for (let m = 0; m < 8; m++) {
+        if (!(bits & (1 << m))) continue;
+        const next = cur + MOVE_OFF[m];
+        const nd = d + FIELD_COST[m];
+        const was = f[next];
+        if (nd <= REACH && (was === 0 || nd + 1 < was)) {
+          f[next] = nd + 1;
+          push(next, nd);
+          pending++;
+        }
+      }
+    }
+  }
+  return (fields[n] = f);
+}
+
+/** The landmarks a search from `start` to `goal` (cells) uses: the two nearest the goal and the one nearest the start, on the goal's stretch of ground and reaching it. */
+function landmarksFor(start: number, goal: number): Uint16Array[] {
+  const label = areas();
+  const near = (c: number) => {
+    const x = c % NX;
+    const z = (c / NX) | 0;
+    const ks: { k: number; d: number }[] = [];
+    for (let k = 0; k < LANDMARKS.length; k++) {
+      const lc = landmarkCell(k);
+      if (lc < 0 || label[lc] !== label[goal]) continue;
+      ks.push({ k, d: ((lc % NX) - x) ** 2 + (((lc / NX) | 0) - z) ** 2 });
+    }
+    return ks.sort((a, b) => a.d - b.d || a.k - b.k).map((e) => e.k);
+  };
+  const ks = near(goal).slice(0, 2);
+  const s0 = near(start).find((k) => !ks.includes(k));
+  if (s0 !== undefined) ks.push(s0);
+  return ks.map(field).filter((f): f is Uint16Array => !!f && f[goal] !== 0);
 }
 
 /*
@@ -288,13 +425,22 @@ export function findPath(
   heapSize = 0;
   const gi = g[0];
   const gj = g[1];
-  const h = (i: number, j: number) => {
+  const lms = Math.max(Math.abs(s[0] - gi), Math.abs(s[1] - gj)) >= LANDMARK_MIN ? landmarksFor(start, goal) : [];
+  const lmGoal = lms.map((f) => f[goal]);
+  const h = (i: number, j: number, k: number) => {
     const dx = Math.abs(i - gi);
     const dz = Math.abs(j - gj);
-    return Math.max(dx, dz) + 0.414 * Math.min(dx, dz);
+    let est = Math.max(dx, dz) + 0.414 * Math.min(dx, dz);
+    for (let n = 0; n < lms.length; n++) {
+      const v = lms[n][k];
+      // A cell the field does not reach is at least REACH from its landmark.
+      const diff = v ? Math.abs(v - lmGoal[n]) : REACH + 1 - lmGoal[n];
+      if (diff > est * PER_CELL) est = diff / PER_CELL;
+    }
+    return est;
   };
   gScore[start] = 0;
-  heapPush(h(s[0], s[1]), start);
+  heapPush(h(s[0], s[1], start), start);
   let expanded = 0;
   // Ground within `avoid` costs this many times as much to cross: walked round where a way round is not too long.
   const AVOID = 5;
@@ -325,7 +471,7 @@ export function findPath(
       if (ng < gScore[nIdx]) {
         gScore[nIdx] = ng;
         came[nIdx] = cur;
-        heapPush(ng + h(ni, nj), nIdx);
+        heapPush(ng + h(ni, nj, nIdx), nIdx);
       }
     }
   }
