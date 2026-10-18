@@ -653,8 +653,11 @@ export class World {
 
   resize(w: number, h: number) {
     this.renderer.setSize(w, h, false);
+    // Keep the zoom the view is at (aiming, a sight, a kick) and carry it to the new hip fov.
+    const rad = Math.PI / 360;
+    const zoom = Math.tan(this.camera.fov * rad) / Math.tan(hipFov(this.camera.aspect) * rad);
     this.camera.aspect = w / h;
-    this.camera.fov = hipFov(w / h);
+    this.camera.fov = Math.atan(zoom * Math.tan(hipFov(w / h) * rad)) / rad;
     this.camera.updateProjectionMatrix();
     this.gunCam.aspect = w / h;
     this.gunCam.updateProjectionMatrix();
