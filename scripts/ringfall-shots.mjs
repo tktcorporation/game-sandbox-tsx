@@ -341,8 +341,8 @@ const lap = (name) => {
   await pg.click("#start");
   await pg.click("#hub-free");
   await pg.evaluate(() => window.advanceTime(100));
-  // The east checkpoint's way in (325, -40) faces west: stand 8 m inside it, looking out at its camp.
-  await pg.evaluate(() => window.ringfallPlace(317, -40, Math.PI / 2));
+  // The east checkpoint's way in (470, -30) faces west: stand 8 m inside it, looking out at its camp.
+  await pg.evaluate(() => window.ringfallPlace(462, -30, Math.PI / 2));
   await pg.evaluate(() => window.advanceTime(300));
   const st = JSON.parse(await pg.evaluate(() => window.render_game_to_text()));
   const toast = await pg.evaluate(() => document.getElementById("toasts").textContent);
@@ -423,19 +423,21 @@ await page.waitForTimeout(400);
 const frames = await page.evaluate(() => window.ringfallFrames());
 const at = (frame, dx, y, dz) => [frames[frame].x + dx, y, frames[frame].z + dz];
 const tour = [
-  ["tour-1-lakebed-from-dam", ...at("area:heart", 0, 11.6, -77), Math.PI, -0.25],
-  ["tour-2-dam-face", ...at("area:heart", 0, -5.4, -40), 0, 0.22],
-  ["tour-3-town-street", ...at("area:heart", 0, -5.4, 36), 0, 0.05],
-  ["tour-4-east-ramp", ...at("area:heart", 16, -5.4, 4), 1.3, 0.1],
-  ["tour-5-spillway", ...at("area:heart", 52, -8.4, -78), 0, 0.3],
-  ["tour-6-quarry-pit", ...at("quarry", -35, -2.4, 36), -0.63, -0.15],
-  ["tour-7-high-rise-view", ...at("area:heart", -2.5, 11.6, -10.2), Math.PI, -0.3],
-  ["tour-8-plateau-over-lakebed", ...at("area:heart", -40, 6.4, -46), 1.57, -0.15],
-  ["tour-9-ridge", ...at("area:ridge", -50, 10.1, 70), -1.57, -0.1],
-  ["tour-10-over-supply", ...at("supply", 130, 45, -120), -2.32, -0.3],
-  ["tour-11-mesa-relay", ...at("relay", 18, 8.6, -23), 1.57, 0.02],
+  // The reservoir, at eye height unless marked absolute (a crest, a floor up a tower).
+  ["tour-1-lakebed-from-dam", ...at("area:heart", 0, 17.7, -120), Math.PI, -0.25, true],
+  ["tour-2-dam-face", ...at("area:heart", 0, 1.7, -70), 0, 0.25],
+  ["tour-3-town-street", ...at("area:heart", 0, 1.7, 45), 0, 0.05],
+  ["tour-4-church-spire", ...at("area:heart", -5, 1.7, 15), -0.7, 0.3],
+  ["tour-5-spillway", ...at("area:heart", 112, 1.7, -108), 0, 0.15],
+  ["tour-6-quarry-pit", ...at("quarry", 20, 1.7, -75), Math.PI, -0.3],
+  ["tour-7-high-rise-view", ...at("area:heart", -26, 4.6, -14), 2.5, -0.25, true],
+  ["tour-8-plateau-over-lakebed", ...at("area:heart", -95, 1.7, -5), 1.57, -0.15],
+  ["tour-9-terraced-fields", ...at("area:village", 60, 1.7, 75), -0.66, 0.08],
+  ["tour-10-over-supply", ...at("supply", 130, 45, -120), -2.32, -0.3, true],
+  ["tour-11-mesa-relay", ...at("relay", -50, 1.7, 25), 1.08, 0.3],
 ];
-for (const [name, x, y, z, yaw, pitch] of tour) {
+for (const [name, x, dy, z, yaw, pitch, abs] of tour) {
+  const y = abs ? dy : (await page.evaluate(([x, z]) => window.ringfallTerrain(x, z), [x, z])) + dy;
   await page.evaluate(([x, y, z, yaw, pitch]) => window.ringfallCamera(x, y, z, yaw, pitch), [x, y, z, yaw, pitch]);
   await page.screenshot({ path: `${out}/${name}.png` });
 }
@@ -456,18 +458,18 @@ const harborTour = [
   ["tour-23-salt-flats", ...at("area:bay", -40, 1.7, -468), 0.75, 0.0],
   ["tour-24-quay-boat", ...at("area:bay", 94, 1.7, -578), 1.32, -0.1],
   // The open ground between the areas, its outcrops and hamlets.
-  ["tour-25-open-ground", -90, 1.7, 280, -1.23, 0.0],
+  ["tour-25-open-ground", 60, 1.7, 250, -0.3, 0.0],
   ["tour-26-west-farm", ...at("西の農場", 20, 1.7, 18), -0.84, 0.05],
   ["tour-27-water-tower", ...at("給水所", -25, 1.7, -20), 2.24, 0.08],
   ["tour-28-checkpoint", ...at("東の検問所", -25, 5, 17), 0.97, -0.08],
   ["tour-29-fishing-village", ...at("西の漁村", 25, 1.7, 20), -0.9, 0.05],
   ["tour-30-signal-box", ...at("信号所", 20, 1.7, 20), -0.79, 0.08],
-  ["tour-31-reservoir-from-above", 0, 90, 430, 0, -0.38, true],
+  ["tour-31-reservoir-from-above", 0, 150, 560, 0, -0.36, true],
   // The routes' obstacles, all closed in this fresh profile: the tunnel's two choked mouths,
   // the dam's chained gallery door, the wreck's gangway hauled up against its hull.
   ["tour-32-tunnel-rubble", 40, 1.7, -287, 0, 0.12],
   ["tour-33-tunnel-rubble-north", 40, 1.7, -422, Math.PI, 0.12],
-  ["tour-34-dam-gate", ...at("area:heart", 14, 1.7, -53), 0, 0.12],
+  ["tour-34-dam-gate", ...at("area:heart", 20, 1.7, -97), 0, 0.12],
   // The open ground north of the landing pad, toward the mountains, and the harbor's south plain from the pass.
   ["tour-36-north-of-pad", ...at("pad", -30, 1.7, -110), 0.2, 0.05],
   ["tour-37-harbor-plain", -96, 1.7, -440, 0.3, -0.04],
@@ -479,9 +481,24 @@ const harborTour = [
   ["tour-46-supply-tanker-from-beach", ...at("supply", 30, 1.7, 160), 0.2, 0.15],
   ["tour-47-supply-street", ...at("supply", 10, 1.7, 0), 0, 0.06],
   ["tour-48-supply-dune-crest", ...at("supply", 90, 1.7, 22), -2.2, -0.04],
-  ["tour-39-quarry-plant", ...at("quarry", 0, 1.7, 40), -0.83, -0.05],
-  ["tour-40-relay-mast", ...at("relay", -20, 1.7, 20), 0.91, 0.12],
-  ["tour-41-pad-hangars", ...at("pad", 0, 1.7, -40), 0, 0.1],
+  ["tour-39-quarry-plant", ...at("quarry", -10, 1.7, 25), 0, 0.2],
+  ["tour-40-relay-mast", ...at("relay", -20, 1.7, 20), 0.91, 0.35],
+  ["tour-41-pad-hangars", ...at("pad", 0, 1.7, 60), 0, 0.1],
+  // The reservoir's POIs and districts at their own scale, from eye height: the quarry's
+  // terraces from its floor and its tunnel, the mesa from its foot and from its ledge road,
+  // the pad's runway, the intake tower before the dam, the fields from the hill and the
+  // windmill, the sawtooth works and the car park, the drowned town from a roof.
+  ["tour-49-quarry-from-floor", ...at("quarry", -30, 1.7, 30), 1.57, 0.2],
+  ["tour-50-quarry-tunnel", ...at("quarry", -60, 1.7, 22), -1.57, 0.05],
+  ["tour-51-mesa-from-foot", ...at("relay", -130, 1.7, 60), 1.2, 0.25],
+  ["tour-52-mesa-ledge", ...at("relay", 30, 1.7, 52), -1.57, 0.05],
+  ["tour-53-pad-runway", ...at("pad", 60, 1.7, -42), -1.57, 0.02],
+  ["tour-54-intake-tower", ...at("area:heart", -20, 1.7, -60), -0.4, 0.35],
+  ["tour-55-fields-from-hill", ...at("area:village", -10, 1.7, -50), Math.PI, -0.1],
+  ["tour-56-windmill", ...at("area:village", -25, 1.7, -15), -0.2, 0.25],
+  ["tour-57-factory-sawtooth", ...at("area:factory", -55, 1.7, 10), 0, 0.12],
+  ["tour-58-housing-carpark", ...at("area:factory", 30, 1.7, 20), 0.6, 0.12],
+  ["tour-59-drowned-roofs", ...at("area:heart", 10, -8.9, -20), 0.8, -0.05, true],
   ["tour-42-wreck-length", ...at("wreck", 40, 1.7, 50), -0.67, 0.12],
   ["tour-43-yard-gantries", ...at("yard", 0, 1.7, 60), 0, 0.12],
   ["tour-44-smelter-chimneys", ...at("smelter", 20, 1.7, 70), -0.28, 0.18],
@@ -949,7 +966,7 @@ const spills = (pg) =>
   // Before the dam's gallery door, facing it.
   await pg.evaluate(() => {
     const h = window.ringfallFrames()["area:heart"];
-    window.ringfallPlace(14 + h.x, -58.6 + h.z, 0);
+    window.ringfallPlace(20 + h.x, -102.6 + h.z, 0);
   });
   await pg.evaluate(() => window.advanceTime(300));
   const prompt = await pg.textContent("#prompt");
@@ -978,7 +995,7 @@ const spills = (pg) =>
   const fr = await pg.evaluate(() => window.ringfallFrames());
   const views = [
     ["54-tunnel-open", 40, 1.6, -306, 0, 0.05],
-    ["55-dam-gallery-open", 14 + fr["area:heart"].x, 1.6, -58 + fr["area:heart"].z, 0, 0.32],
+    ["55-dam-gallery-open", 20 + fr["area:heart"].x, 1.6, -101 + fr["area:heart"].z, 0, 0.32],
     ["56-gangway-open", -40 + fr.wreck.x, 1.7, -16 + fr.wreck.z, Math.PI - 0.6, 0.35],
   ];
   for (const [name, x, dy, z, yaw, pitch] of views) {

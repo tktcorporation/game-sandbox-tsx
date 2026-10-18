@@ -3,7 +3,7 @@ import { ENEMIES, PLAYER, TITAN, WEAPONS, WORLD, type EnemyKind } from "../sim/c
 import { BOXES, DEPOTS, ENTRIES, EXTRACTS, ROUTES, type Box } from "../sim/map";
 import { worldKey } from "../sim/routes";
 import { groundAt } from "../sim/geom";
-import { DAM_FACE, floorLevel, highGround, LANDS, LEVEL, offshore, steepAt, surfaceAt, terrainHeight } from "../sim/terrain";
+import { cliffGround, DAM_FACE, floorLevel, groundOf, highGround, LANDS, LEVEL, offshore, steepAt, surfaceAt, terrainHeight, type Ground } from "../sim/terrain";
 import { callLeft, type GameEvent, type State, type Vec3 } from "../sim/state";
 import { QUALITY, type Quality, type Tier } from "./quality";
 import { PAL, RARITY_COLOR, SCOPE_IN, buildAlly, buildBin, buildBoat, buildBox, buildDepot, buildEntryMark, mergeChunk, buildCare, buildDropship, buildEnemy, buildGun, buildLootItem, addPlates, flat, glow, haloSprite, type EnemyModel } from "./models";
@@ -68,11 +68,6 @@ const WRECK_MAX = 6;
 /** Seconds of the collapse after a kill. */
 const WRECK_FALL = 0.55;
 
-/** Ground the harbor paints apart: the old bay floor white with salt, and the paved town and quays. */
-const SALT = new Set(["塩田", "難破船"]);
-const PAVED = new Set(["港町", "埠頭", "高架下", "西の道", "コンテナヤード", "製錬所", "製錬所の坂", "駅の坂"]);
-/** The dune coast's ground: pale blown sand, ripples running across it. */
-const DUNES = new Set(["補給所", "砂丘の崖", "崖への坂"]);
 /** The harbor's tidal channel: its floor and the water over it. */
 /** The water channel the boat comes up, at the harbor's quay. */
 export const CHANNEL = { x0: 88, x1: 170, z0: -600, z1: -583, y: -5.55 };
@@ -154,21 +149,40 @@ const COL = {
   tide: new THREE.Color(PAL.tide),
   concrete: new THREE.Color(PAL.concrete),
   concreteDark: new THREE.Color(PAL.concreteDark),
-  salt: new THREE.Color(PAL.salt),
-  saltDark: new THREE.Color(PAL.saltDark),
-  paved: new THREE.Color(PAL.paved),
-  pavedDark: new THREE.Color(PAL.pavedDark),
-  dune: new THREE.Color(PAL.dune),
-  duneDark: new THREE.Color(PAL.duneDark),
 };
 const groundMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+
+/**
+ * How each kind of ground (`Ground`, given to the shapes in terrain.ts) is painted: its colour, a
+ * darker one, and how much of the darker shows where, from the noise `k` at (x, z).
+ */
+const GROUND: Record<Ground, { base: THREE.Color; dark: THREE.Color; mix: (x: number, z: number, k: number) => number }> = {
+  // Salt crust split by darker cracks.
+  salt: { base: new THREE.Color(PAL.salt), dark: new THREE.Color(PAL.saltDark), mix: (x, z, k) => (noise(x * 0.35, z * 0.35) > 0.62 ? 0.8 : k * 0.25) },
+  // Pale blown sand, ripples running across it.
+  dune: { base: new THREE.Color(PAL.dune), dark: new THREE.Color(PAL.duneDark), mix: (x, z, k) => (Math.sin(x * 0.9 + z * 0.35 + noise(x * 0.05, z * 0.05) * 6) > 0.7 ? 0.45 : k * 0.3) },
+  paved: { base: new THREE.Color(PAL.paved), dark: new THREE.Color(PAL.pavedDark), mix: (x, z, k) => (noise(x * 0.5, z * 0.5) > 0.66 ? 0.6 : k * 0.25) },
+  // Cracked grey clay.
+  mud: { base: new THREE.Color(PAL.mud), dark: new THREE.Color(PAL.mudDark), mix: (x, z, k) => (noise(x * 0.4, z * 0.4) > 0.6 ? 0.6 : k * 0.3) },
+  // Red bedrock, in bands along the benches it was cut in.
+  quarry: { base: new THREE.Color(PAL.quarry), dark: new THREE.Color(PAL.quarryDark), mix: (x, z, k) => (noise(x * 0.25, z * 0.6) > 0.64 ? 0.7 : k * 0.35) },
+  sandstone: { base: new THREE.Color(PAL.sandstone), dark: new THREE.Color(PAL.sandstoneDark), mix: (x, z, k) => (noise(x * 0.12, z * 0.3) > 0.6 ? 0.55 : k * 0.3) },
+  // Sage-green scrub in clumps over dry soil.
+  scrub: { base: new THREE.Color(PAL.scrub), dark: new THREE.Color(PAL.scrubDark), mix: (x, z) => (noise(x * 0.45, z * 0.45) > 0.55 ? 0.75 : 0.15) },
+  // Concrete with black oil stains.
+  oiled: { base: new THREE.Color(PAL.oiled), dark: new THREE.Color(PAL.oiledDark), mix: (x, z, k) => (noise(x * 0.2, z * 0.2) > 0.68 ? 0.85 : k * 0.2) },
+  concrete: { base: new THREE.Color(PAL.concrete), dark: new THREE.Color(PAL.concreteDark), mix: (x, z, k) => (noise(x * 0.3, z * 0.3) > 0.7 ? 0.4 : k * 0.2) },
+};
 
 /** The colour of a ground triangle centred on (x, z), spanning heights lo..hi. */
 function groundColour(c: THREE.Color, x: number, z: number, lo: number, hi: number) {
   const h = (lo + hi) / 2;
   const cliff = steepAt(x, z) || hi - lo > 2.2;
   const k = noise(x * 0.08, z * 0.08);
+  const rock = cliff ? cliffGround(x, z) : undefined;
   if (cliff && DAM_FACE(x, z)) c.copy(COL.concrete).lerp(COL.concreteDark, noise(x * 0.5, h * 0.3) * 0.35);
+  // The quarry's and the mesa's cliffs show their own rock, in bands along the height.
+  else if (rock) c.copy(GROUND[rock].base).lerp(GROUND[rock].dark, 0.35 + noise(x * 0.3, h * 0.5) * 0.5);
   // Below the old waterline the walls are bleached in bands; above it, bare red rock.
   else if (cliff && h < LEVEL.shore) c.copy(COL.tide).lerp(COL.rock, Math.max(0, Math.min(1, (h - LEVEL.shore) / 3 + 1)) * 0.5 + noise(x * 0.3, h * 0.6) * 0.2);
   else if (cliff) c.copy(COL.rock).lerp(COL.rockDark, noise(x * 0.3, z * 0.1 + h * 0.2));
@@ -176,11 +190,8 @@ function groundColour(c: THREE.Color, x: number, z: number, lo: number, hi: numb
   else if (highGround(x, z)) c.copy(COL.rockDark).lerp(COL.rock, k * 0.6);
   else {
     const at = surfaceAt(x, z);
-    // Salt crust split by darker cracks.
-    if (SALT.has(at)) c.copy(COL.salt).lerp(COL.saltDark, noise(x * 0.35, z * 0.35) > 0.62 ? 0.8 : k * 0.25);
-    else if (DUNES.has(at)) c.copy(COL.dune).lerp(COL.duneDark, Math.sin(x * 0.9 + z * 0.35 + noise(x * 0.05, z * 0.05) * 6) > 0.7 ? 0.45 : k * 0.3);
-    else if (PAVED.has(at)) c.copy(COL.paved).lerp(COL.pavedDark, noise(x * 0.5, z * 0.5) > 0.66 ? 0.6 : k * 0.25);
-    else if (at === "水路" || floorLevel(x, z) <= LEVEL.lakebed + 0.5) c.copy(COL.mud).lerp(COL.mudDark, noise(x * 0.4, z * 0.4) > 0.6 ? 0.6 : k * 0.3);
+    const ground = groundOf(at) ?? (at === "水路" || floorLevel(x, z) <= LEVEL.lakebed + 0.5 ? "mud" : undefined);
+    if (ground) c.copy(GROUND[ground].base).lerp(GROUND[ground].dark, GROUND[ground].mix(x, z, k));
     else {
       c.copy(COL.sand).lerp(COL.dark, k > 0.62 ? 0.7 : k * 0.3);
       // The ground between the areas in broad patches of redder soil, so the basins read as clearings.

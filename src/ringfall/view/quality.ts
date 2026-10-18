@@ -1,7 +1,7 @@
 /*
  * How much the renderer draws, and how it backs off when the device cannot keep up. Pure logic:
  * the World applies a tier's settings, main.ts feeds the governor its frame times. None of it
- * touches the game's rules; robots see no further than `SIGHT` (34 m), well inside every tier's fog.
+ * touches the game's rules; robots see no further than `SIGHT` (51 m at most, the titan), well inside every tier's fog.
  */
 
 export type Tier = "high" | "medium" | "low";

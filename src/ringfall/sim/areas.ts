@@ -13,7 +13,6 @@ export type AreaId =
   | "quarry"
   | "relay"
   | "factory"
-  | "ridge"
   | "village"
   | "pass"
   | "railway"
@@ -25,19 +24,21 @@ export type AreaId =
 export type Offset = readonly [number, number];
 
 export const AREA: Record<AreaId, Offset> = {
-  // The reservoir. The heart is everything joined edge to edge round the drowned town: the
-  // lakebed, the dam and its crest, the landing pad behind it, the plateau over the lakebed's
-  // west side, the spillway and its canyon bridge.
-  heart: [0, 37],
+  // The reservoir, laid out with its neighbours 250 to 400 m apart. The heart is everything joined
+  // edge to edge round the drowned town: the lakebed, the dam and the landing pad on top of it, the
+  // plateau over the lakebed's west side and the spillway round the dam's east end.
+  heart: [0, 80],
   // The south dune coast: the supply depot's works in one piece with the dunes, the beached
   // tanker and the bluff over its west side.
   supply: [0, 420],
-  quarry: [-72, 75],
-  // The relay tower's mesa with the housing street and the flats beside it.
-  relay: [45, 52],
-  factory: [28, 96],
-  ridge: [-25, 105],
-  village: [-52, 38],
+  // The red quarry dug in terraces into the west of the island.
+  quarry: [-320, 110],
+  // The sandstone mesa in the east, the relay mast on its top.
+  relay: [300, 30],
+  // The works and the housing district in the south-east.
+  factory: [270, 320],
+  // The terraced fields and their abandoned village on the hill in the north-west.
+  village: [-300, -150],
   // Between the regions: the saddle of the pass road, and the railway's gorge bridge and station.
   pass: [-30, -128],
   railway: [46, -160],
@@ -52,9 +53,9 @@ export const AREA: Record<AreaId, Offset> = {
 /** The area each POI stands in, and where the POI's own frame lies within that area's frame. */
 const POI_IN: Record<PoiId, [AreaId, Offset]> = {
   supply: ["supply", [0, 0]],
-  quarry: ["quarry", [-99, 8]],
-  relay: ["relay", [48, -7]],
-  pad: ["heart", [0, -52]],
+  quarry: ["quarry", [0, 0]],
+  relay: ["relay", [0, 0]],
+  pad: ["heart", [0, -190]],
   wreck: ["bay", [10, -562]],
   yard: ["yard", [-100, -400]],
   smelter: ["smelter", [120, -415]],

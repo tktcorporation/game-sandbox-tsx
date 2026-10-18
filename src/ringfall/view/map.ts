@@ -1,7 +1,7 @@
 import { DEPOT, WORLD } from "../sim/config";
 import { BOXES, DEPOTS, ENTRIES, EXTRACTS, LANDMARKS, POIS, REGIONS, ROUTES, regionHere, type EntryId } from "../sim/map";
 import { worldKey } from "../sim/routes";
-import { DAM_FACE, floorLevel, highGround, LEVEL, steepAt, surfaceAt, terrainHeight } from "../sim/terrain";
+import { DAM_FACE, floorLevel, groundOf, highGround, LEVEL, steepAt, surfaceAt, terrainHeight, type Ground } from "../sim/terrain";
 import { cellOf, exploreSize, type State } from "../sim/state";
 import { PAL } from "./models";
 
@@ -82,19 +82,26 @@ export class IslandMap {
     const high = [0x8a, 0x4e, 0x32];
     const wall = [0x5e, 0x31, 0x20];
     const dam = [0xcf, 0xc8, 0xb8];
-    // Walkable ground by level: pit, lakebed, shore, then the high levels.
-    const floor = (lv: number) =>
-      lv <= LEVEL.pit + 0.5 ? [0x8f, 0x86, 0x74] : lv <= LEVEL.lakebed + 0.5 ? [0xb4, 0xa8, 0x8e] : lv < LEVEL.ridge - 0.5 ? [0xe2, 0xbf, 0x8a] : [0xf2, 0xda, 0xa8];
-    // The harbor's salt flats, its paved town and quays, and its channel of water.
-    const salt = [0xf2, 0xec, 0xdc];
-    const paved = [0xd2, 0xc5, 0xa8];
+    // Walkable ground by level: below the shore, the shore, then the high levels.
+    const floor = (lv: number) => (lv <= LEVEL.lakebed + 0.5 ? [0xb4, 0xa8, 0x8e] : lv < LEVEL.foot - 0.5 ? [0xe2, 0xbf, 0x8a] : [0xf2, 0xda, 0xa8]);
+    // Districts with a ground of their own (`Ground`, terrain.ts) keep its colour on the map, a shade lighter.
+    const GROUND: Record<Ground, number[]> = {
+      salt: [0xf2, 0xec, 0xdc],
+      paved: [0xd2, 0xc5, 0xa8],
+      dune: [0xf0, 0xdd, 0xb2],
+      mud: [0xb4, 0xa8, 0x8e],
+      quarry: [0xb8, 0x6a, 0x48],
+      sandstone: [0xe6, 0xa0, 0x62],
+      scrub: [0xb8, 0xb6, 0x8c],
+      oiled: [0xbf, 0xbb, 0xb2],
+      concrete: [0xd8, 0xd2, 0xc4],
+    };
     const water = [0x5f, 0xa8, 0xa6];
     const paint = (x: number, z: number, lv: number) => {
       const at = surfaceAt(x, z);
-      if (at === "塩田" || at === "難破船") return salt;
       if (at === "水路") return water;
-      if (at === "港町" || at === "埠頭" || at === "高架下") return paved;
-      return floor(lv);
+      const g = groundOf(at);
+      return g ? GROUND[g] : floor(lv);
     };
     for (let j = 0; j < this.height; j++)
       for (let i = 0; i < this.width; i++) {
