@@ -748,6 +748,13 @@ const BWE_CAB = (() => {
  */
 const AT = (["supply", "quarry", "relay", "pad", "wreck", "yard", "smelter"] as const).map((id) => POI_AT[id]);
 
+/** The big dish on the mesa, in the relay's frame (`dish()`), its heights over the mesa's top. */
+const BIG_DISH = { x: 45, z: -5, y: 23, r: 28, f: 22.4, tilt: Math.PI / 4, cell: 2.5 } as const;
+/** The big dish's bowl, and the stair tower west of its lowest rim, its top the gallery's floor. */
+const BIG_BOWL = dish(BIG_DISH.x, BIG_DISH.y, BIG_DISH.z, { r: BIG_DISH.r, f: BIG_DISH.f, tilt: BIG_DISH.tilt, face: "w", cell: BIG_DISH.cell, thick: 0.6, rim: 2.5, feed: 2 });
+const DISH_RIM_X = Math.min(...BIG_BOWL.filter((b) => b.z0 < BIG_DISH.z && b.z1 > BIG_DISH.z).map((b) => b.x0));
+const DISH_STAIRS = { x: DISH_RIM_X - 4, z: BIG_DISH.z, floors: 3 } as const;
+
 const POI_FRAMES: Poi[] = [
   {
     id: "supply",
@@ -819,13 +826,15 @@ const POI_FRAMES: Poi[] = [
     trigger: 100,
     entry: { x: -20, z: 20, yaw: 2.36 },
     squads: [
-      { name: "マスト", members: [{ kind: "grunt", x: 36, z: -28, face: W }, { kind: "heavy", x: 18, z: 2, face: SW }] },
+      { name: "アンテナ", members: [{ kind: "grunt", x: 36, z: -28, face: W }, { kind: "heavy", x: 18, z: 2, face: SW }] },
       { name: "機器棟", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: -22, z: -5, face: W }, { kind: "grunt", x: -8, z: -36, face: W }, { kind: "charger", x: 4, z: 14, face: SW }] },
     ],
     bins: [
       { x: 8, z: 18 },
       { x: -42, z: -30 },
-      { x: 46, z: -2 },
+      { x: 62, z: 8 },
+      // The gallery at the big dish's lowest rim, on its stair tower's top.
+      { x: DISH_STAIRS.x - 1.5, z: DISH_STAIRS.z + 2, y: DISH_STAIRS.floors * STOREY },
       { x: -29, z: -20, y: WORKS.storey, vault: true },
     ],
     keyFrom: "quarry",
@@ -1324,6 +1333,7 @@ export const LANDMARKS: readonly { name: string; x: number; z: number }[] = [
   at("village", { name: "段々畑", x: 10, z: 30 }),
   at("village", { name: "風車", x: -35, z: -82 }),
   at("relay", { name: "鉄の階段", x: -120, z: 0 }),
+  at("relay", { name: "パラボラアンテナ", x: 45, z: -5 }),
   at("anchor", { name: "アンカー", x: 0, z: 0 }),
   at("anchor", { name: "倒れた昇降路", x: -160, z: 16 }),
   at("quarry", { name: "コンベヤー", x: 10, z: -40 }),
@@ -1615,14 +1625,139 @@ function quarry(): Floors {
 }
 
 /**
- * The relay station on the sandstone mesa, in its own frame, built to `WORKS`: the red-and-white
- * mast (62 m over the top, seen across the island), the equipment block (`HIGH_RISES`) and a
- * generator hall inside a walled compound, a hut where the ledge road comes up, a fuel tank.
+ * A parabolic dish antenna of aperture radius `r` and focal length `f`, its vertex at (vx, vy, vz),
+ * its axis tilted `tilt` from the vertical toward `face`. The bowl is columns over a plan grid
+ * `cell` wide that do not overlap, each from the lowest point of the bowl over it (less `thick`) to
+ * the highest, so it reads as one stepped shell: white paint, its outer ring grey. The tilt stays
+ * under the bowl's own slope at its rim from the vertical, so a column meets the bowl once. Its
+ * feed legs from the rim's sides to the receiver at the focus are blocks stepping along them.
+ */
+interface DishOpts {
+  r: number;
+  f: number;
+  tilt: number;
+  face: Side;
+  cell: number;
+  thick: number;
+  /** How wide the grey ring round the rim is. */
+  rim: number;
+  /** The receiver's cabin at the focus, its half size, and whether feed legs carry it. */
+  feed?: number;
+}
+/** Plan axes of a dish facing `face`: local X runs back from its face, local Z across it. */
+function dishAxes(face: Side) {
+  const [dx, dz] = DIR[face];
+  return { X: [-dx, -dz] as const, Z: [dz, -dx] as const };
+}
+/** A point of a dish at local (X, y, Z) in the world, for its vertex at (vx, vz). */
+function dishPoint(vx: number, vz: number, face: Side, X: number, Z: number): [number, number] {
+  const a = dishAxes(face);
+  return [vx + X * a.X[0] + Z * a.Z[0], vz + X * a.X[1] + Z * a.Z[1]];
+}
+/** Blocks stepping from p to q, `t` thick, along the axis they run furthest on, not overlapping along it. */
+function strand(p: readonly [number, number, number], q: readonly [number, number, number], t: number, tint: number): Box[] {
+  const d = [q[0] - p[0], q[1] - p[1], q[2] - p[2]];
+  const ax = Math.abs(d[0]) >= Math.abs(d[2]) ? 0 : 2;
+  const n = Math.max(1, Math.ceil(Math.abs(d[ax]) / 0.8));
+  const out: Box[] = [];
+  for (let i = 0; i < n; i++) {
+    const a = p.map((v, j) => v + (d[j] * i) / n);
+    const b = p.map((v, j) => v + (d[j] * (i + 1)) / n);
+    const lo = a.map((v, j) => (j === ax ? Math.min(v, b[j]) : Math.min(v, b[j]) - t / 2));
+    const hi = a.map((v, j) => (j === ax ? Math.max(v, b[j]) : Math.max(v, b[j]) + t / 2));
+    out.push(rect(lo[0], lo[2], hi[0], hi[2], lo[1], hi[1], "steel", tint));
+  }
+  return out;
+}
+function dish(vx: number, vy: number, vz: number, o: DishOpts): Box[] {
+  const { r, f, tilt, face, cell, thick } = o;
+  const [c, s] = [Math.cos(tilt), Math.sin(tilt)];
+  const k = s / (4 * f);
+  // The bowl's height over local plan (X, Z), and its distance from the axis there squared, or null off it.
+  const at = (X: number, Z: number): { y: number; d2: number } | null => {
+    const D = c * c - 4 * k * (X + k * Z * Z);
+    if (D < 0) return null;
+    const u = (c - Math.sqrt(D)) / (2 * k);
+    const d2 = u * u + Z * Z;
+    return d2 <= r * r ? { y: vy + u * s + (d2 / (4 * f)) * c, d2 } : null;
+  };
+  const depth = (r * r) / (4 * f);
+  const [x0, x1] = [-r * c - depth * s, r * c - depth * s];
+  const out: Box[] = [];
+  for (let X = x0; X < x1; X += cell)
+    for (let Z = -r; Z < r; Z += cell) {
+      const mid = at(X + cell / 2, Z + cell / 2);
+      if (!mid) continue;
+      const ys = [mid.y];
+      for (const [a, b] of [[X, Z], [X + cell, Z], [X, Z + cell], [X + cell, Z + cell]]) {
+        const q = at(a, b);
+        if (q) ys.push(q.y);
+      }
+      const [px, pz] = dishPoint(vx, vz, face, X, Z);
+      const [qx, qz] = dishPoint(vx, vz, face, X + cell, Z + cell);
+      const rim = mid.d2 > (r - o.rim) ** 2;
+      const [ax, az, bx, bz, lo] = [Math.min(px, qx), Math.min(pz, qz), Math.max(px, qx), Math.max(pz, qz), Math.min(...ys) - thick];
+      out.push(rect(ax, az, bx, bz, lo, Math.max(...ys), "steel", rim ? 2 : 4));
+      // The backing trusses under the bowl: a cross through the axis and a ring half way out.
+      const d = Math.sqrt(mid.d2);
+      const back = Math.abs(Z + cell / 2) < cell / 2 || Math.abs(X + cell / 2) < cell / 2 || Math.abs(d - r * 0.55) < cell / 2;
+      if (back && !rim) out.push(rect(ax, az, bx, bz, lo - 1.4, lo, "steel", 2));
+    }
+  if (o.feed) {
+    // The receiver at the focus, on legs from the rim either side of the axis and from its far edge.
+    const [fx, fz] = dishPoint(vx, vz, face, -f * s, 0);
+    const fy = vy + f * c;
+    const h = o.feed;
+    out.push(rect(fx - h, fz - h, fx + h, fz + h, fy - h, fy + h, "steel", 2));
+    const foot = (X: number, Z: number, y: number): [number, number, number] => {
+      const [x, z] = dishPoint(vx, vz, face, X, Z);
+      return [x, y, z];
+    };
+    for (const side of [-1, 1]) out.push(...strand(foot(-depth * s, side * (r - cell / 2), vy + depth * c), [fx, fy, fz], 0.5, 2));
+    out.push(...strand(foot(r * c - depth * s - cell / 2, 0, vy + r * s + depth * c), [fx, fy, fz], 0.5, 2));
+  }
+  return out;
+}
+
+
+/**
+ * The relay station on the sandstone mesa, in its own frame, built to `WORKS`: the base's station
+ * for talking to the ring. The big dish (`BIG_DISH`, 56 m across, its rim 49 m over the top) faces
+ * west over the island on its pedestal, an open stair tower up to a gallery at its lowest rim; two
+ * small dishes, the red-and-white mast (62 m) at the north-west corner, the equipment block
+ * (`HIGH_RISES`) and a generator hall inside a walled compound, a hut where the ledge road comes
+ * up, a fuel tank.
  */
 function relay(): Floors {
   const S = WORKS.storey;
+  const D = BIG_DISH;
+  // The pedestal: a concrete drum, the turntable on it, the yoke's two arms and the elevation axle
+  // behind the dish's vertex, and the hub between the axle and the dish.
+  const B = { x: D.x + 6 * Math.sin(D.tilt), y: D.y - 6 * Math.cos(D.tilt) };
+  const pedestal: Box[] = [
+    ...disc(B.x, D.z, 7, 2, 0, 12, "wall", 0),
+    rect(B.x - 6, D.z - 13, B.x + 6, D.z + 13, 12, 13, "steel", 2),
+    rect(B.x - 2.5, D.z - 12.5, B.x + 2.5, D.z - 10, 13, B.y + 1.6, "steel", 0),
+    rect(B.x - 2.5, D.z + 10, B.x + 2.5, D.z + 12.5, 13, B.y + 1.6, "steel", 0),
+    rect(B.x - 1.2, D.z - 10, B.x + 1.2, D.z + 10, B.y - 1.2, B.y + 1.2, "steel", 2),
+  ];
+  for (const t of [0.25, 0.6]) {
+    const [hx, hy] = [B.x + (D.x - B.x) * t, B.y + (D.y - B.y) * t];
+    pedestal.push(rect(hx - 1.6, D.z - 4.3, hx + 1.6, D.z + 4.3, hy - 1.6, hy + 1.6, "steel", 2));
+  }
+  const big = BIG_BOWL;
+  // The stair tower to the gallery at the dish's lowest rim, the gallery from its top to the rim.
+  const [T, rimX, G] = [DISH_STAIRS, DISH_RIM_X, DISH_STAIRS.floors * STOREY];
+  const gallery = [...lattice(T.x, T.z, 6, 7, T.floors, G + 0.6, ["e"]), rect(T.x + 3, T.z - 2, rimX, T.z + 2, G - 0.3, G, "slab", 1)];
+  gallery.push(rect(T.x + 3, T.z - 2, rimX, T.z - 1.85, G, G + 0.5, "steel", 2), rect(T.x + 3, T.z + 1.85, rimX, T.z + 2, G, G + 0.5, "steel", 2));
+  // Two small dishes on concrete posts: one facing south by the north cliff, one west by the generators.
+  const small = (x: number, z: number, face: Side) => [rect(x - 1.4, z - 1.4, x + 1.4, z + 1.4, 0, 5.2, "wall", 0), ...dish(x, 6.2, z, { r: 6, f: 4.8, tilt: Math.PI / 4, face, cell: 1.25, thick: 0.3, rim: 0.7, feed: 0.5 })];
   const top: Box[] = [
-    ...mast(25, -15, 7, 4, 62),
+    ...pedestal,
+    ...gallery,
+    ...small(-25, -44, "s"),
+    ...small(68, 26, "w"),
+    ...mast(-55, -35, 7, 4, 62),
     ...hall(45, 22, 20, 14, S + 2.5, { scale: WORKS, steel: 3, doors: [{ side: "w" }], hatches: [{ side: "s", at: 4 }], windows: ["n", "s"] }),
     ...tank(60, -30, 4, 8, "w"),
     ...compound(5, -5, 110, 70, 2.4, [
@@ -1638,7 +1773,7 @@ function relay(): Floors {
     box(-40, -12, 6.2, 2.5, 2.6, "container", 0),
     box(10, -32, 1.2, 1.2, 0.9, "crate"),
     box(11.2, -32, 1.2, 1.2, 1.8, "crate"),
-    box(40, -10, 4, 0.6, 2.4, "wall"),
+    box(34, -16, 4, 0.6, 2.4, "wall"),
     box(-60, 10, 0.6, 5, 1.2, "wall"),
   ];
   // The iron stairs bolted to the west cliff: a stair tower of five storeys from the foot, its
@@ -1646,6 +1781,8 @@ function relay(): Floors {
   const stairsTower = paint(tower(-106, 0, 8, 8, 5, { scale: WORKS, doors: [["w", "s"]], windows: [[], ["w"], ["w"], ["w"], ["w"]], open: ["e"] }), "wall", "steel", () => 2, (b) => b.tint === 0);
   return [
     [LEVEL.mesa, top],
+    // The dishes' bowls reach out past their posts; laid without pressing the mesa's edge flat.
+    [LEVEL.mesa, big, "loose"],
     [LEVEL.foot, stairsTower],
     [LEVEL.foot, catwalk(-102, 0, -80, 0, LEVEL.mesa - LEVEL.foot, 2.2, 2), "loose"],
   ];

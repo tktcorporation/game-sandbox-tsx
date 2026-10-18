@@ -498,7 +498,11 @@ const harborTour = [
   ["tour-68-quarry-excavator", ...at("quarry", 60, 1.7, -95), 3.05, 0.15],
   ["tour-69-excavator-crawlers", ...at("quarry", 70, 1.7, 40), 0.71, 0.35],
   ["tour-70-excavator-boom", ...at("quarry", 90, 11.6, 12), -1.57, -0.2, true],
-  ["tour-40-relay-mast", ...at("relay", -20, 1.7, 20), 0.91, 0.35],
+  ["tour-40-relay-mast", ...at("relay", -20, 1.7, 20), -0.57, 0.35],
+  // The big dish: from the mesa's top, from its gallery into the bowl, and over the works from the south-west.
+  ["tour-71-relay-dish", ...at("relay", -20, 1.7, 20), 1.2, 0.35],
+  ["tour-72-dish-gallery", ...at("relay", 14.5, 39.3, -5), 1.57, 0.25, true],
+  ["tour-73-dish-from-works", ...at("relay", -60, 1.7, 230), 0.2, 0.12],
   ["tour-41-pad-hangars", ...at("pad", 0, 1.7, 60), 0, 0.1],
   // The reservoir's POIs and districts at their own scale, from eye height: the quarry's
   // terraces from its floor and its tunnel, the mesa from its foot and from its ledge road,
