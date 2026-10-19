@@ -909,7 +909,8 @@ body.touch .mate-bars {
 .sens.vol input {
   width: 110px;
 }
-.sens.quality select {
+.sens.quality select,
+.sens.adsmode select {
   font: inherit;
   font-weight: 800;
   color: var(--white);
