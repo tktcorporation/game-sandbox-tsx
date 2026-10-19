@@ -25,13 +25,17 @@ export function mayEngage(s: State, e: Enemy): boolean {
   return fighting < AWARE.maxSquads;
 }
 
-export function engageSquad(s: State, squad: number, by: Enemy) {
+/**
+ * `from` is where a fight the player did not start came from (the teammate's shot or sound):
+ * the squad turns there and has not seen the player until a member does.
+ */
+export function engageSquad(s: State, squad: number, by: Enemy, from?: { x: number; z: number }) {
   const sq = s.squads[squad];
   if (!sq || sq.engaged) return;
   sq.engaged = true;
-  sq.sinceSeen = 0;
+  sq.sinceSeen = from ? AWARE.trackTime : 0;
   sq.chaseT = 0;
-  sq.last = { x: s.player.pos.x, z: s.player.pos.z };
+  sq.last = from ? { x: from.x, z: from.z } : { x: s.player.pos.x, z: s.player.pos.z };
   // The player's motion from an earlier fight says nothing about where they go now.
   sq.vel = undefined;
   sq.pin = { ...sq.last };
@@ -87,7 +91,7 @@ export function makeNoise(s: State, x: number, z: number, radius: number, gunfir
     if (e.aware === "engaged" || e.mode === "spawning") continue;
     const d = dist2d(e.pos, spot);
     if (d > radius * (gunfire && s.squads[e.squad]?.roam ? NOISE.roamMult : 1)) continue;
-    if (d < radius * NOISE.engageInside && los(headOf(e), spot) && mayEngage(s, e)) engageSquad(s, e.squad, e);
+    if (d < radius * NOISE.engageInside && los(headOf(e), spot) && mayEngage(s, e)) engageSquad(s, e.squad, e, player ? undefined : { x, z });
     else if (!alerted.has(e.squad)) {
       alerted.add(e.squad);
       alertSquad(s, e.squad, x, z, e);

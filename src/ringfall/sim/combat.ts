@@ -191,9 +191,9 @@ export function damageEnemy(s: State, e: Enemy, raw: number, crit: boolean, at: 
   if (blocked) raw *= PLATE.mult[e.plate - rarity];
   // Being shot gives the player away to the whole squad. A squad already fighting
   // learns where the shot came from and turns there, at its usual turning speed.
-  engageSquad(s, e.squad, e);
-  const sq = s.squads[e.squad];
   const shooter = by === "ally" ? s.ally.pos : s.player.pos;
+  engageSquad(s, e.squad, e, by === "ally" ? shooter : undefined);
+  const sq = s.squads[e.squad];
   // Only the player's own shot tells a squad where they are now (see PURSUE).
   if (sq && by === "player") learnSpot(s, e.squad, shooter.x, shooter.z);
   const before = e.hp + e.shield;
