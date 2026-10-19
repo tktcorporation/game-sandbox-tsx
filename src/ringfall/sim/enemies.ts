@@ -508,7 +508,8 @@ function sightOn(e: Enemy, at: { x: number; z: number }, chestAt: Vec3): boolean
 function pinchSpot(s: State, e: Enemy, known: { x: number; z: number; live: boolean }): Point | null {
   const sq = s.squads[e.squad];
   if (!sq || !sq.engaged || e.elite) return null;
-  const pinned = (sq.pinT ?? 0) >= PINCH.after;
+  // A pinch holds only while the squad sees the player: once they are lost, every member chases and sweeps.
+  const pinned = known.live && (sq.pinT ?? 0) >= PINCH.after;
   // Backing away in sight: the squad goes round where the player is heading, not where they stand.
   const backing = !pinned && known.live && (sq.backT ?? 0) >= PINCH.retreat;
   if (!pinned && !backing) return null;
