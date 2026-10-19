@@ -303,11 +303,12 @@ export function stepSquads(s: State) {
       sq.sinceSeen = 0;
       return;
     }
-    // How long the spot the squad believes the player is at has stayed put (see PINCH).
+    // How long the player has been seen staying put (see PINCH). A squad that has lost them
+    // does not count the time: its chase and sweep stand in for the pinch.
     if (!sq.pin || dist2d(sq.pin, sq.last) > PINCH.radius) {
       sq.pin = { ...sq.last };
       sq.pinT = 0;
-    } else sq.pinT = (sq.pinT ?? 0) + TICK;
+    } else if (sq.sinceSeen < AWARE.trackTime) sq.pinT = (sq.pinT ?? 0) + TICK;
     // Seen backing away from the squad's front member (see PINCH): the time builds while they
     // do and wears off twice as fast while they do not.
     const lead = chasers(s, i)[0];
