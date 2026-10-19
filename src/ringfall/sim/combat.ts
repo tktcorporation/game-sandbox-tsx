@@ -233,8 +233,12 @@ function react(s: State, e: Enemy, weight: number, broke: boolean, quiet: boolea
   const k = ENEMIES[e.kind];
   const full = (k.hp + k.shield) * (e.elite ? ELITE.hp : 1);
   const heavy = e.stagger >= STAGGER.share[e.kind] * full;
-  if (e.mode !== "staggered" && e.steady <= 0 && (heavy || broke)) {
-    const interrupted = e.mode === "telegraph" || e.mode === "fire" || e.mode === "lunge";
+  const attacking = e.mode === "telegraph" || e.mode === "fire" || e.mode === "lunge";
+  // A shield breaking under an attack already under way does not cost that attack: the
+  // shield goes within a second of steady fire, and a robot that lost its first wind-up to
+  // it would never shoot back at a player standing in front of it.
+  if (e.mode !== "staggered" && e.steady <= 0 && (heavy || (broke && !attacking))) {
+    const interrupted = attacking;
     // An attack under way or just spent still owes its cooldown: the stagger costs that attack, it never brings the next one sooner.
     if (interrupted || e.mode === "recover") e.cooldown = Math.max(e.cooldown, k.cooldown * 0.8 * (e.elite ? ELITE.cooldown : 1));
     e.mode = "staggered";

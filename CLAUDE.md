@@ -220,7 +220,10 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   the authored points checked again in the world with every route open.
 - `awareness.ts` decides who knows about the player: sight cones fill a detection meter, noise
   (shots, sprinting) sends squads to look, and at most `AWARE.maxSquads` squads fight at once.
-  A fighting squad tracks the player only while a member sees them (`knownSpot()`), turns at `TURN`
+  A fighting squad tracks the player only while a member sees them (`knownSpot()`), or for up to
+  `AWARE.coverHold` while members sit at cover and the player has not moved off (`stepSquads()`).
+  Members get their first shot one after another, nearest first (`AWARE.react`); a grunt fires its
+  first burst from the open, strafing (`Enemy.opener`), and takes cover after it. A robot turns at `TURN`
   and fires only ahead, and takes more damage from behind (`FLANK`): going round is the intended play.
   Robot shots (`SHOT`) are fast and led, re-aimed for every shot while the robot sees its target, and
   stray more with distance; a burst starts only with the target in sight, so the glow means "get
