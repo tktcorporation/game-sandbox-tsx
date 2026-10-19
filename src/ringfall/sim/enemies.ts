@@ -87,6 +87,7 @@ export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi:
     stagger: 0,
     steady: 0,
     peekSide: rand(s) < 0.5 ? -1 : 1,
+    opener: true,
     // Not located: a robot that appears mid-fight must find the player with its own eyes too.
     blind: AWARE.loseTime,
     sawAt: null,
@@ -369,6 +370,7 @@ export function stepEnemies(s: State) {
         }
         if (e.shotsLeft <= 0) {
           e.mode = "move";
+          e.opener = false;
           e.cooldown = k.cooldown * (0.8 + rand(s) * 0.4) * (e.elite ? ELITE.cooldown : 1);
           // A grunt in cover shows itself next from the other side of it; hurt and alone, it stays hidden longer.
           e.peekSide = -e.peekSide;
@@ -708,6 +710,9 @@ function fromCover(s: State, e: Enemy, known: { x: number; z: number; live: bool
   if (e.mode !== "move") return false; // telegraph and fire run as usual
   // It hides from a player it has found; one it has not found (see located()) it comes out to look for.
   if (e.target === "player" && !located(s, e)) return false;
+  // Its first burst it fires from where it stands, strafing, if it sees its target: a squad that
+  // ran for cover before shooting would give a player standing in the open seconds for free.
+  if (e.opener && known.live && tUp && facing(e, tChest) && los(muzzle(e), tChest)) return false;
   e.coverT -= TICK;
   // Re-think the spot every few seconds, and at once when hit (flanked).
   if (e.coverT <= 0 || e.lastHit < TICK * 1.5) {
@@ -719,9 +724,14 @@ function fromCover(s: State, e: Enemy, known: { x: number; z: number; live: bool
   if (!e.cover || !e.peek) return false;
   e.cooldown -= TICK;
   const out = e.cooldown <= 0;
-  const there = walkTo(e, out ? e.peek : e.cover, k.speed, false);
-  if (out && there) {
-    if (known.live && facing(e, tChest) && los({ ...e.pos, y: e.pos.y + k.weakY }, tChest) && tUp) {
+  const bx = e.pos.x;
+  const bz = e.pos.z;
+  // A spot it is pressed against but cannot reach (a corner its body does not fit past) counts as reached.
+  const there = walkTo(e, out ? e.peek : e.cover, k.speed, false) || Math.hypot(e.pos.x - bx, e.pos.z - bz) < k.speed * TICK * 0.2;
+  const shows = out && known.live && tUp && facing(e, tChest) && los({ ...e.pos, y: e.pos.y + k.weakY }, tChest);
+  // Stepping out, it winds up as soon as it has the target in sight, before it reaches the spot.
+  if (out && (there || shows)) {
+    if (shows) {
       e.mode = "telegraph";
       e.timer = k.telegraph;
       // Through the wind-up it keeps stepping out, away from its cover, not back behind it.
@@ -731,7 +741,8 @@ function fromCover(s: State, e: Enemy, known: { x: number; z: number; live: bool
       leadAim(e, tChest, tVel);
       s.events.push({ t: "telegraph", id: e.id });
     } else {
-      // The player moved out of that angle: find another spot.
+      // The player moved out of that angle, or this side shows nothing: find another spot, trying the other side first.
+      e.peekSide = -e.peekSide;
       e.coverT = 0;
       e.cooldown = 0.4;
     }

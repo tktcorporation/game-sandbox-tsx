@@ -683,6 +683,19 @@ export const AWARE = {
    * this share of the time a calm one takes to notice them at that distance.
    */
   locate: 0.75,
+  /**
+   * Seconds from a squad engaging to each member's first chance to fire: `react[0]` for the
+   * first member, `react[1]` more for each after it, so a squad's opening bursts come one
+   * after another rather than on the same tick, and the glow of each can be read.
+   */
+  react: [0.35, 0.45] as const,
+  /**
+   * A squad whose members have ducked behind cover keeps hold of a player it was just seeing
+   * for up to this many seconds, as long as the player stays within `FLANK.moved` of where it
+   * last saw them: a member at cover knows where they stood, as a peek would show. Standing in
+   * the open does not make the player lost; moving off, or staying hidden longer, does.
+   */
+  coverHold: 3,
 };
 
 /**
@@ -765,13 +778,19 @@ export const DODGE = {
  * within a short window adds up, and once it passes `share` of the robot's full health
  * and shield it staggers: it reels back for `time` s, and a wind-up or burst it was in
  * is lost. Weak-point damage counts `weak` times. A shield breaking staggers it briefly
- * too. After a stagger it shrugs hits off for `steady` s, so steady fire is rewarded
- * with one interrupt per robot rather than a robot that never shoots back.
+ * too, unless it is winding up or firing: that attack goes on. After a stagger it shrugs
+ * hits off for `steady` s, so steady fire is rewarded with one interrupt per robot rather
+ * than a robot that never shoots back.
  */
 export const STAGGER = {
   /** Seconds over which damage counts toward a stagger (an exponential window). */
   window: 0.7,
-  share: { drone: 0.35, grunt: 0.3, charger: 0.3, heavy: 0.22, titan: 99 } satisfies Record<EnemyKind, number>,
+  /**
+   * The grunt's share is above what steady body fire from the starting weapon builds up in
+   * the window (about a third of its total), so a player standing in front of one does not
+   * keep it from shooting back; weak-point fire, or the teammate's fire on top, still staggers it.
+   */
+  share: { drone: 0.35, grunt: 0.45, charger: 0.3, heavy: 0.22, titan: 99 } satisfies Record<EnemyKind, number>,
   weak: 1.6,
   time: { drone: 0.45, grunt: 0.6, charger: 0.7, heavy: 0.5, titan: 0 } satisfies Record<EnemyKind, number>,
   shieldBreak: 0.3,

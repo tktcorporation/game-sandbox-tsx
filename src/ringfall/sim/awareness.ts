@@ -38,12 +38,21 @@ export function engageSquad(s: State, squad: number, by: Enemy) {
   sq.pinT = 0;
   sq.backT = 0;
   sq.chase = sq.chaseDir = undefined;
-  for (const e of s.enemies) {
-    if (e.squad !== squad) continue;
+  sq.hold = 0;
+  // Each member gets a moment to react, the nearest to the player first (AWARE.react), and opens fire from where it stands.
+  const byNear = chasers(s, squad).sort((a, b) => dist2d(a.pos, s.player.pos) - dist2d(b.pos, s.player.pos));
+  byNear.forEach((e, n) => {
     e.aware = "engaged";
     e.detect = 1;
     e.goal = null;
-    e.cooldown = Math.max(e.cooldown, 0.5);
+    e.opener = true;
+    e.cooldown = Math.max(e.cooldown, AWARE.react[0] + AWARE.react[1] * n);
+  });
+  for (const e of s.enemies) {
+    if (e.squad !== squad || e.mode !== "spawning") continue;
+    e.aware = "engaged";
+    e.detect = 1;
+    e.goal = null;
   }
   s.events.push({ t: "engage", squad, id: by.id });
 }
@@ -133,6 +142,7 @@ export function sense(s: State, e: Enemy): boolean {
     }
     if (seen && engaged && sq) {
       sq.sinceSeen = 0;
+      sq.hold = 0;
       sq.chaseT = 0;
       sq.last = { x: p.pos.x, z: p.pos.z };
       sq.vel = { x: p.vel.x, z: p.vel.z };
@@ -152,7 +162,10 @@ export function sense(s: State, e: Enemy): boolean {
  * the player's shots on it are an ambush.
  */
 export const located = (s: State, e: Enemy) =>
-  e.blind < FLANK.blindTime || (!!e.sawAt && e.blind < AWARE.loseTime && dist2d(e.sawAt, s.player.pos) < FLANK.moved);
+  e.blind < FLANK.blindTime ||
+  (!!e.sawAt && e.blind < AWARE.loseTime && dist2d(e.sawAt, s.player.pos) < FLANK.moved) ||
+  // A charger runs at whom its squad points it at: it has no time to find them itself before it lunges.
+  (e.kind === "charger" && e.aware === "engaged" && (s.squads[e.squad]?.sinceSeen ?? 99) < AWARE.trackTime);
 
 /**
  * Where a fighting robot believes the player is: the true position while its squad
@@ -303,7 +316,16 @@ export function stepSquads(s: State) {
       away = (sq.vel.x * lx + sq.vel.z * lz) / ll;
     }
     sq.backT = away > PINCH.backSpeed ? (sq.backT ?? 0) + TICK : Math.max(0, (sq.backT ?? 0) - 2 * TICK);
-    sq.sinceSeen += TICK;
+    // Members that ducked behind cover still know where a player who has not moved off stands
+    // (AWARE.coverHold): the squad keeps tracking them rather than losing them to its own hiding.
+    const holds =
+      sq.sinceSeen + TICK >= AWARE.trackTime &&
+      sq.sinceSeen < AWARE.trackTime &&
+      (sq.hold ?? 0) < AWARE.coverHold &&
+      dist2d(sq.last, s.player.pos) < FLANK.moved &&
+      members.some((e) => e.cover && e.aware === "engaged" && located(s, e));
+    if (holds) sq.hold = (sq.hold ?? 0) + TICK;
+    else sq.sinceSeen += TICK;
     sq.chaseT = (sq.chaseT ?? 0) + TICK;
     // Sight lost this tick: go after where the player was heading.
     if (sq.sinceSeen >= AWARE.trackTime && !sq.chase) chaseTo(s, i, aheadOfSighting(sq));

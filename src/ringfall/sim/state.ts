@@ -193,6 +193,11 @@ export interface Enemy {
   /** The side of its cover a grunt steps out to next (+1 / -1): it alternates. */
   peekSide: number;
   /**
+   * A grunt that has not yet fired since its squad engaged: seeing its target, it fires
+   * that first burst from where it stands, strafing, and takes cover only after it.
+   */
+  opener: boolean;
+  /**
    * Seconds since this robot itself last saw the player or was hit by them, and where
    * the player was then. A squad that fights shares where it believes the player is,
    * but each member locates the player only with its own eyes (see `located()`).
@@ -222,6 +227,8 @@ export interface SquadState {
   /** Raiders: elite members, and a closer hunt. */
   elite?: boolean;
   sinceSeen: number; // seconds since any member saw the player while engaged
+  /** Seconds the squad has kept the player in hand from behind cover since a member last saw them (see AWARE.coverHold). */
+  hold?: number;
   last: Point; // where the squad last saw the player
   /** Where the squad has had the player pinned, and for how long (see PINCH); unset until it engages. */
   pin?: Point;

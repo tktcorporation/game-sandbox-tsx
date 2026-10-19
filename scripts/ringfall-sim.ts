@@ -2136,6 +2136,18 @@ function checkStagger(): string | null {
     fireRay(s, gun, forward(a.yaw, a.pitch));
     if (h.mode !== "staggered" || Math.abs(h.timer - STAGGER.shieldBreak) > 1e-6) return `stagger scenario: breaking a grunt's shield left it in ${h.mode}`;
   }
+  // A shield breaking under a wind-up or a burst does not cost that attack.
+  for (const mode of ["telegraph", "fire"] as const) {
+    const { s, foes } = standoff(at, 15, ["grunt"]);
+    const h = foes[0];
+    s.player.iframes = 99;
+    h.mode = mode;
+    h.timer = 1;
+    h.shield = 1;
+    const a = lookAngles(eyePos(s), bodyCenter(h));
+    fireRay(s, gun, forward(a.yaw, a.pitch));
+    if (h.mode !== mode) return `stagger scenario: breaking a grunt's shield in its ${mode} left it in ${h.mode}`;
+  }
   // A stagger out of a wind-up or a burst never brings the next one sooner: the attack's cooldown is still owed.
   for (const mode of ["telegraph", "fire"] as const) {
     const { s, foes } = standoff(at, 15, ["grunt"]);
@@ -2143,7 +2155,9 @@ function checkStagger(): string | null {
     s.player.iframes = 99;
     h.mode = mode;
     h.cooldown = 0;
-    h.shield = 1;
+    h.shield = 0;
+    // Damage already adding up to its share: the next round staggers it.
+    h.stagger = STAGGER.share.grunt * enemyMaxPlain("grunt");
     const a = lookAngles(eyePos(s), bodyCenter(h));
     fireRay(s, gun, forward(a.yaw, a.pitch));
     if (h.mode !== "staggered" || h.cooldown < KINDS.grunt.cooldown * 0.8 - 1e-6) return `stagger scenario: a grunt staggered out of its ${mode} owes ${h.cooldown.toFixed(2)} s of cooldown`;
