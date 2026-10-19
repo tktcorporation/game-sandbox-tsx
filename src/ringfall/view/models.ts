@@ -94,8 +94,12 @@ export function flat(color: number): THREE.MeshLambertMaterial {
   return m;
 }
 
+/**
+ * Unlit, and kept out of the tone mapping like every unlit material here: what glows (an eye, a
+ * shot, a loot beam) shows the palette's colour exactly, brighter than anything the sun lights.
+ */
 export function glow(color: number, opacity = 1): THREE.MeshBasicMaterial {
-  return new THREE.MeshBasicMaterial({ color, transparent: opacity < 1, opacity, depthWrite: opacity >= 1 });
+  return new THREE.MeshBasicMaterial({ toneMapped: false, color, transparent: opacity < 1, opacity, depthWrite: opacity >= 1 });
 }
 
 function mesh(geo: THREE.BufferGeometry, mat: THREE.Material, x = 0, y = 0, z = 0, shadow = true): THREE.Mesh {
@@ -124,7 +128,7 @@ export function halo(): THREE.Texture {
 }
 
 export function haloSprite(color: number, size: number, opacity = 0.9): THREE.Sprite {
-  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: halo(), color, transparent: true, opacity, depthWrite: false, blending: THREE.AdditiveBlending }));
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ toneMapped: false, map: halo(), color, transparent: true, opacity, depthWrite: false, blending: THREE.AdditiveBlending }));
   s.scale.setScalar(size);
   return s;
 }
@@ -270,29 +274,111 @@ export function mergeStatic(root: THREE.Object3D): THREE.Group {
   return out;
 }
 
-/** The one material a chunk's merged statics share: each vertex carries its own colour. */
+/**
+ * Baked shade for a chunk's merged statics, from the world's boxes (shade.ts): the light a point
+ * keeps under what covers it, and the floor a face standing at `bottom` rests on.
+ */
+export interface ChunkShade {
+  cover(x: number, y: number, z: number): number;
+  floor(x: number, z: number, bottom: number): number;
+  /** Light left at the very foot of a wall, and how far up it the darkening reaches. */
+  base: number;
+  baseUp: number;
+}
+
+/** A height above any floor: no darkening at the foot of the face. */
+const NO_FLOOR = 99;
+
+/**
+ * The one material a chunk's merged statics share: each vertex carries its own colour, and its
+ * height above the floor its face stands on (`contact`), which darkens the foot of a wall per
+ * pixel. A wall's faces have vertices only at their top and bottom; the height between them is
+ * linear, so it is exact across the face without splitting it.
+ */
 const chunkMat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
+let chunkBase = { base: 1, baseUp: 1 };
+chunkMat.onBeforeCompile = (sh) => {
+  sh.uniforms.contactBase = { value: chunkBase.base };
+  sh.uniforms.contactUp = { value: chunkBase.baseUp };
+  sh.vertexShader = sh.vertexShader
+    .replace("#include <common>", "#include <common>\nattribute float contact;\nvarying float vContact;")
+    .replace("#include <begin_vertex>", "#include <begin_vertex>\nvContact = contact;");
+  sh.fragmentShader = sh.fragmentShader
+    .replace("#include <common>", "#include <common>\nvarying float vContact;\nuniform float contactBase;\nuniform float contactUp;")
+    .replace("#include <color_fragment>", "#include <color_fragment>\ndiffuseColor.rgb *= mix(contactBase, 1.0, smoothstep(0.0, contactUp, vContact));");
+};
 
 /**
  * Merge every mesh under `root` into as few meshes as possible: all flat-shaded ones into
  * one, their colours moved into the vertices, and the rest one per material. A chunk of
- * the world so costs one or two draw calls, and is culled as a whole.
+ * the world so costs one or two draw calls, and is culled as a whole. With `shade`, the
+ * colours carry the shade of what covers each face and each wall's foot is darkened.
  */
-export function mergeChunk(root: THREE.Object3D): THREE.Group {
+export function mergeChunk(root: THREE.Object3D, shade?: ChunkShade): THREE.Group {
+  if (shade && (shade.base !== chunkBase.base || shade.baseUp !== chunkBase.baseUp)) {
+    chunkBase = { base: shade.base, baseUp: shade.baseUp };
+    chunkMat.needsUpdate = true;
+  }
   root.updateMatrixWorld(true);
   const lit: THREE.BufferGeometry[] = [];
   const other = new Map<THREE.Material, THREE.BufferGeometry[]>();
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  const n = new THREE.Vector3();
+  const e = new THREE.Vector3();
   root.traverse((o) => {
     if (!(o instanceof THREE.Mesh)) return;
     const geo = (o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone()).applyMatrix4(o.matrixWorld);
     for (const name of Object.keys(geo.attributes)) if (!["position", "normal"].includes(name)) geo.deleteAttribute(name);
     const mat = o.material as THREE.Material;
     if (mat instanceof THREE.MeshLambertMaterial && !mat.vertexColors && !mat.transparent) {
-      const c = mat.color;
-      const n = geo.attributes.position.count;
-      const col = new Float32Array(n * 3);
-      for (let i = 0; i < n; i++) col.set([c.r, c.g, c.b], i * 3);
+      const m = mat.color;
+      const pos = geo.attributes.position;
+      const count = pos.count;
+      const col = new Float32Array(count * 3);
+      const contact = new Float32Array(count).fill(NO_FLOOR);
+      // A box's face is two triangles sharing an edge: the previous triangle's vertices and floor
+      // are kept, and reused where the next one has the same normal, so each lookup is made once.
+      const prev = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+      const prevLight = [1, 1, 1];
+      const prevN = new THREE.Vector3(NaN, NaN, NaN);
+      let prevBottom = NaN;
+      let prevFloor = NaN;
+      for (let t = 0; t + 2 < count; t += 3) {
+        a.fromBufferAttribute(pos, t);
+        b.fromBufferAttribute(pos, t + 1);
+        c.fromBufferAttribute(pos, t + 2);
+        n.subVectors(c, b).cross(e.subVectors(a, b)).normalize();
+        const same = n.distanceToSquared(prevN) < 1e-6;
+        const lights = [1, 1, 1];
+        for (let k = 0; k < 3; k++) {
+          const v = k === 0 ? a : k === 1 ? b : c;
+          let light = 1;
+          if (shade) {
+            const hit = same ? prev.findIndex((q) => q.distanceToSquared(v) < 1e-8) : -1;
+            light = hit >= 0 ? prevLight[hit] : shade.cover(v.x + n.x * 0.2, v.y + n.y * 0.2, v.z + n.z * 0.2);
+          }
+          lights[k] = light;
+          col.set([m.r * light, m.g * light, m.b * light], (t + k) * 3);
+        }
+        // A wall-like face whose bottom edge rests on a floor: its height above that floor.
+        if (shade && Math.abs(n.y) < 0.5) {
+          const bottom = Math.min(a.y, b.y, c.y);
+          const floor =
+            same && bottom === prevBottom ? prevFloor : shade.floor((a.x + b.x + c.x) / 3 + n.x * 0.15, (a.z + b.z + c.z) / 3 + n.z * 0.15, bottom);
+          prevBottom = bottom;
+          prevFloor = floor;
+          if (bottom - floor < 0.35) for (let k = 0; k < 3; k++) contact[t + k] = pos.getY(t + k) - floor;
+        }
+        prev[0].copy(a);
+        prev[1].copy(b);
+        prev[2].copy(c);
+        for (let k = 0; k < 3; k++) prevLight[k] = lights[k];
+        prevN.copy(n);
+      }
       geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
+      geo.setAttribute("contact", new THREE.BufferAttribute(contact, 1));
       lit.push(geo);
     } else {
       const list = other.get(mat);
@@ -317,6 +403,36 @@ export function mergeChunk(root: THREE.Object3D): THREE.Group {
   return out;
 }
 
+/**
+ * Merges the meshes directly under `g` into one mesh per material, leaving its sub-groups and
+ * the meshes in `keep` as they are; the merged mesh casts a shadow if any of its parts did. A
+ * figure is built from dozens of boxes for its shape; drawn one by one each costs a draw call,
+ * twice with shadows.
+ */
+function compact(g: THREE.Object3D, keep: readonly THREE.Object3D[] = []): void {
+  const groups = new Map<THREE.Material, { shadow: boolean; geos: THREE.BufferGeometry[] }>();
+  for (const o of [...g.children]) {
+    if (!(o instanceof THREE.Mesh) || keep.includes(o)) continue;
+    o.updateMatrix();
+    const geo = (o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone()).applyMatrix4(o.matrix);
+    for (const name of Object.keys(geo.attributes)) if (!["position", "normal"].includes(name)) geo.deleteAttribute(name);
+    const mat = o.material as THREE.Material;
+    const entry = groups.get(mat) ?? { shadow: false, geos: [] };
+    entry.shadow ||= o.castShadow;
+    entry.geos.push(geo);
+    groups.set(mat, entry);
+    g.remove(o);
+    o.geometry.dispose();
+  }
+  for (const [mat, { shadow, geos }] of groups) {
+    const merged = mergeGeometries(geos, false);
+    if (!merged) continue;
+    const m = new THREE.Mesh(merged, mat);
+    m.castShadow = m.receiveShadow = shadow;
+    g.add(m);
+  }
+}
+
 export interface EnemyModel {
   root: THREE.Group;
   body: THREE.Group; // rotated to the robot's yaw
@@ -324,8 +440,67 @@ export interface EnemyModel {
   eyeHalo: THREE.Sprite;
   shield: THREE.Mesh;
   legs: THREE.Object3D[];
+  /** The lower leg of each of `legs` (same order), bent at the knee as it walks; empty when the legs are one piece. */
+  knees: THREE.Object3D[];
   mats: THREE.MeshLambertMaterial[]; // flashed white on hits
 }
+
+/**
+ * A box spanning from `a` to `b` (its length) with a cross-section `w` by `d`: a limb's segment
+ * between two joints, so arms and legs are posed by where their joints are.
+ */
+function limb(a: THREE.Vector3Like, b: THREE.Vector3Like, w: number, d: number, mat: THREE.Material, shadow = true): THREE.Mesh {
+  const from = new THREE.Vector3(a.x, a.y, a.z);
+  const dir = new THREE.Vector3(b.x, b.y, b.z).sub(from);
+  const m = mesh(new THREE.BoxGeometry(w, dir.length(), d), mat, 0, 0, 0, shadow);
+  m.position.copy(from).addScaledVector(dir, 0.5);
+  m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
+  return m;
+}
+
+const v3 = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
+
+/** The parts of a walking machine's leg, from hip to sole, in metres. */
+interface LegSpec {
+  hipX: number;
+  hipY: number;
+  thigh: number;
+  shin: number;
+  /** Thigh and shin width (x) and depth (z). */
+  w: number;
+  d: number;
+  /** The foot's length (z), height and width. */
+  foot: [number, number, number];
+}
+
+/**
+ * Two legs of a walking robot: a thigh hung from the hip and a shin hung from the knee, each a
+ * group turned about its joint, so the walk swings the thigh and bends the knee. The sole lands
+ * at y 0 when the legs are straight.
+ */
+function robotLegs(body: THREE.Group, spec: LegSpec, armor: THREE.Material, light: THREE.Material, legs: THREE.Object3D[], knees: THREE.Object3D[]) {
+  const [fl, fh, fw] = spec.foot;
+  for (const s of [-1, 1]) {
+    const leg = new THREE.Group();
+    leg.position.set(s * spec.hipX, spec.hipY, 0);
+    leg.add(mesh(new THREE.BoxGeometry(spec.w, spec.thigh * 0.86, spec.d), armor, 0, -spec.thigh / 2, 0));
+    const knee = new THREE.Group();
+    knee.position.y = -spec.thigh;
+    // The knee joint, the knee cap and the shin's front plate in the lighter armour, the rest in
+    // the armour: two materials a segment, so a leg costs few draw calls.
+    knee.add(mesh(new THREE.BoxGeometry(spec.w * 0.86, spec.w * 0.7, spec.d * 0.9), light, 0, 0, 0));
+    knee.add(mesh(new THREE.BoxGeometry(spec.w * 0.8, spec.w * 0.55, 0.06), light, 0, 0.02, -spec.d * 0.52));
+    knee.add(mesh(new THREE.BoxGeometry(spec.w * 0.9, spec.shin * 0.82, spec.d * 0.92), armor, 0, -spec.shin * 0.48, 0));
+    knee.add(mesh(new THREE.BoxGeometry(spec.w * 0.7, spec.shin * 0.5, 0.05), light, 0, -spec.shin * 0.42, -spec.d * 0.48));
+    knee.add(mesh(new THREE.BoxGeometry(spec.w * 0.6, 0.08, spec.d * 0.6), light, 0, -spec.shin + fh + 0.02, 0));
+    knee.add(mesh(new THREE.BoxGeometry(fw, fh, fl), armor, 0, -spec.shin + fh / 2, -fl * 0.18));
+    leg.add(knee);
+    body.add(leg);
+    legs.push(leg);
+    knees.push(knee);
+  }
+}
+
 
 export function buildEnemy(kind: EnemyKind): EnemyModel {
   const k = ENEMIES[kind];
@@ -336,6 +511,7 @@ export function buildEnemy(kind: EnemyKind): EnemyModel {
   const light = new THREE.MeshLambertMaterial({ color: PAL.armorLight, flatShading: true });
   const joint = flat(PAL.joint);
   const legs: THREE.Object3D[] = [];
+  const knees: THREE.Object3D[] = [];
   const eye = new THREE.Mesh(new THREE.SphereGeometry(k.weakR * 0.75, 10, 8), glow(PAL.eye));
   const eyeHalo = haloSprite(PAL.eye, k.weakR * 4, 0.6);
   // Forward is -z in the body's frame (yaw 0 looks toward -z).
@@ -351,21 +527,45 @@ export function buildEnemy(kind: EnemyKind): EnemyModel {
       break;
     }
     case "grunt": {
-      body.add(mesh(new THREE.BoxGeometry(0.95, 0.85, 0.6), armor, 0, 1.25, 0));
-      body.add(mesh(new THREE.BoxGeometry(0.7, 0.35, 0.5), light, 0, 0.72, 0));
-      const head = mesh(new THREE.BoxGeometry(0.5, 0.4, 0.5), armor, 0, k.weakY, 0);
-      body.add(head);
+      // About 2.2 m: legs of a metre (thigh, knee, shin, foot), a narrow waist, a chest 0.75 m
+      // across with pads on the shoulders, two-part arms holding a rifle, and a sensor head on a
+      // neck whose lens is the weak point (weakY). A man-sized machine, not a toy's proportions.
+      robotLegs(body, { hipX: 0.17, hipY: 1.0, thigh: 0.48, shin: 0.52, w: 0.2, d: 0.24, foot: [0.36, 0.09, 0.2] }, armor, light, legs, knees);
+      body.add(mesh(new THREE.BoxGeometry(0.46, 0.2, 0.3), joint, 0, 1.04, 0));
+      body.add(mesh(new THREE.BoxGeometry(0.26, 0.18, 0.22), joint, 0, 1.2, 0));
+      body.add(mesh(new THREE.BoxGeometry(0.5, 0.2, 0.36), light, 0, 1.32, 0));
+      body.add(mesh(new THREE.BoxGeometry(0.75, 0.42, 0.46), armor, 0, 1.56, 0));
+      body.add(mesh(new THREE.BoxGeometry(0.54, 0.22, 0.05), light, 0, 1.62, -0.24));
+      // A pack on the back, with a whip antenna (thin: it may stand out of the hit volume).
+      body.add(mesh(new THREE.BoxGeometry(0.46, 0.4, 0.2), joint, 0, 1.55, 0.32));
+      body.add(mesh(new THREE.CylinderGeometry(0.012, 0.018, 0.6, 4), joint, 0.16, 2.0, 0.36, false));
       for (const s of [-1, 1]) {
-        const leg = new THREE.Group();
-        leg.position.set(s * 0.25, 0.62, 0);
-        leg.add(mesh(new THREE.BoxGeometry(0.22, 0.62, 0.26), joint, 0, -0.31, 0));
-        body.add(leg);
-        legs.push(leg);
-        body.add(mesh(new THREE.BoxGeometry(0.2, 0.7, 0.22), light, s * 0.62, 1.15, -0.05));
+        const pad = mesh(new THREE.BoxGeometry(0.24, 0.14, 0.34), light, s * 0.45, 1.79, 0);
+        pad.rotation.z = -s * 0.25;
+        body.add(pad);
+        const shoulder = v3(s * 0.45, 1.68, 0);
+        const elbow = v3(s * 0.47, 1.36, -0.08);
+        // Both hands meet the rifle: the right on the grip, the left under the barrel.
+        const hand = s > 0 ? v3(0.17, 1.3, -0.36) : v3(0.08, 1.33, -0.58);
+        body.add(mesh(new THREE.BoxGeometry(0.15, 0.15, 0.15), joint, shoulder.x, shoulder.y, 0));
+        body.add(limb(shoulder, elbow, 0.14, 0.15, armor));
+        body.add(mesh(new THREE.BoxGeometry(0.12, 0.12, 0.12), joint, elbow.x, elbow.y, elbow.z));
+        body.add(limb(elbow, hand, 0.13, 0.14, light));
+        body.add(mesh(new THREE.BoxGeometry(0.11, 0.11, 0.12), joint, hand.x, hand.y, hand.z));
       }
-      body.add(mesh(new THREE.BoxGeometry(0.14, 0.14, 0.7), joint, 0.62, 1.0, -0.4));
+      body.add(mesh(new THREE.BoxGeometry(0.1, 0.15, 0.72), joint, 0.13, 1.37, -0.48));
+      body.add(mesh(new THREE.BoxGeometry(0.05, 0.05, 0.3), joint, 0.13, 1.4, -0.98));
+      body.add(mesh(new THREE.BoxGeometry(0.08, 0.16, 0.1), joint, 0.13, 1.24, -0.42));
+      body.add(mesh(new THREE.BoxGeometry(0.14, 0.12, 0.14), joint, 0, 1.79, 0));
+      // The head: a squat sensor block, a brow over the lens, and a short sensor mast on top.
+      body.add(mesh(new THREE.BoxGeometry(0.42, 0.3, 0.38), armor, 0, k.weakY + 0.02, 0));
+      body.add(mesh(new THREE.BoxGeometry(0.44, 0.06, 0.14), light, 0, k.weakY + 0.15, -0.14));
+      for (const s of [-1, 1]) body.add(mesh(new THREE.BoxGeometry(0.06, 0.14, 0.16), joint, s * 0.24, k.weakY, -0.02));
+      body.add(mesh(new THREE.BoxGeometry(0.05, 0.12, 0.05), joint, -0.1, k.weakY + 0.23, 0.08, false));
+      eye.geometry.dispose();
+      eye.geometry = new THREE.SphereGeometry(k.weakR * 0.55, 10, 8).scale(1.15, 0.7, 0.55);
       eye.position.copy(front(k.weakY));
-      eye.position.z -= 0.2;
+      eye.position.z -= 0.12;
       break;
     }
     case "charger": {
@@ -385,20 +585,35 @@ export function buildEnemy(kind: EnemyKind): EnemyModel {
       break;
     }
     case "heavy": {
-      body.add(mesh(new THREE.BoxGeometry(1.6, 1.3, 1.0), armor, 0, 1.55, 0));
-      body.add(mesh(new THREE.BoxGeometry(1.1, 0.4, 0.8), light, 0, 0.8, 0));
-      body.add(mesh(new THREE.BoxGeometry(0.62, 0.48, 0.62), armor, 0, k.weakY, 0));
+      // A long-legged walker with a broad chest and shoulders that carry its rocket pods; its
+      // arms hang heavy at its sides. The lens on its head is the weak point (weakY).
+      robotLegs(body, { hipX: 0.3, hipY: 1.15, thigh: 0.56, shin: 0.59, w: 0.3, d: 0.36, foot: [0.52, 0.12, 0.32] }, armor, light, legs, knees);
+      body.add(mesh(new THREE.BoxGeometry(0.72, 0.26, 0.46), joint, 0, 1.2, 0));
+      body.add(mesh(new THREE.BoxGeometry(0.5, 0.2, 0.4), joint, 0, 1.38, 0));
+      body.add(mesh(new THREE.BoxGeometry(0.95, 0.3, 0.7), light, 0, 1.52, 0));
+      body.add(mesh(new THREE.BoxGeometry(1.3, 0.62, 0.86), armor, 0, 1.94, 0));
+      body.add(mesh(new THREE.BoxGeometry(0.9, 0.3, 0.06), light, 0, 2.0, -0.45));
+      body.add(mesh(new THREE.BoxGeometry(0.8, 0.5, 0.3), joint, 0, 1.9, 0.55));
       for (const s of [-1, 1]) {
-        const leg = new THREE.Group();
-        leg.position.set(s * 0.4, 0.75, 0);
-        leg.add(mesh(new THREE.BoxGeometry(0.36, 0.75, 0.42), joint, 0, -0.37, 0));
-        body.add(leg);
-        legs.push(leg);
-        const pod = mesh(new THREE.BoxGeometry(0.5, 0.5, 0.9), light, s * 1.05, 1.9, 0);
-        body.add(pod);
+        // Shoulder pads, and the rocket pods slung behind them, their tubes' mouths facing forward.
+        body.add(mesh(new THREE.BoxGeometry(0.46, 0.22, 0.6), light, s * 0.82, 2.26, 0));
+        body.add(mesh(new THREE.BoxGeometry(0.36, 0.34, 0.66), light, s * 0.98, 2.36, 0.22));
+        for (let j = 0; j < 2; j++) body.add(mesh(new THREE.BoxGeometry(0.11, 0.11, 0.04), joint, s * 0.98 + (j - 0.5) * 0.15, 2.38, -0.12, false));
+        const shoulder = v3(s * 0.8, 2.1, 0);
+        const elbow = v3(s * 0.86, 1.62, 0.02);
+        const hand = v3(s * 0.8, 1.2, -0.22);
+        body.add(limb(shoulder, elbow, 0.26, 0.28, armor));
+        body.add(mesh(new THREE.BoxGeometry(0.22, 0.22, 0.22), joint, elbow.x, elbow.y, elbow.z));
+        body.add(limb(elbow, hand, 0.3, 0.3, light));
+        body.add(mesh(new THREE.BoxGeometry(0.24, 0.2, 0.24), joint, hand.x, hand.y - 0.05, hand.z));
       }
+      body.add(mesh(new THREE.BoxGeometry(0.26, 0.14, 0.26), joint, 0, 2.28, 0));
+      body.add(mesh(new THREE.BoxGeometry(0.54, 0.34, 0.5), armor, 0, k.weakY + 0.04, 0));
+      body.add(mesh(new THREE.BoxGeometry(0.56, 0.07, 0.16), light, 0, k.weakY + 0.2, -0.2));
+      eye.geometry.dispose();
+      eye.geometry = new THREE.SphereGeometry(k.weakR * 0.55, 10, 8).scale(1.15, 0.7, 0.55);
       eye.position.copy(front(k.weakY));
-      eye.position.z -= 0.3;
+      eye.position.z -= 0.16;
       break;
     }
     case "titan": {
@@ -422,22 +637,24 @@ export function buildEnemy(kind: EnemyKind): EnemyModel {
   }
   eyeHalo.position.copy(eye.position);
   body.add(eye, eyeHalo);
+  compact(body, [eye]);
+  for (const part of [...legs, ...knees]) compact(part);
   const shield = new THREE.Mesh(
     new THREE.IcosahedronGeometry(k.radius * (kind === "titan" ? 1.6 : 1.5), 1),
-    new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, wireframe: true, depthWrite: false }),
+    new THREE.MeshBasicMaterial({ toneMapped: false, color: 0xffffff, transparent: true, opacity: 0, wireframe: true, depthWrite: false }),
   );
   shield.position.y = k.bodyY;
   root.add(shield);
   const mats: THREE.MeshLambertMaterial[] = [armor, light];
-  return { root, body, eye, eyeHalo, shield, legs, mats };
+  return { root, body, eye, eyeHalo, shield, legs, knees, mats };
 }
 
 /** The front of each kind's body that a plate covers: width, height, centre height, and the face's z. */
 const CHEST: Record<EnemyKind, { w: number; h: number; y: number; z: number }> = {
   drone: { w: 0.5, h: 0.32, y: 0.12, z: -0.42 },
-  grunt: { w: 0.85, h: 0.75, y: 1.25, z: -0.3 },
+  grunt: { w: 0.66, h: 0.5, y: 1.52, z: -0.24 },
   charger: { w: 0.7, h: 0.32, y: 1.0, z: -0.42 },
-  heavy: { w: 1.4, h: 1.15, y: 1.55, z: -0.5 },
+  heavy: { w: 1.15, h: 0.78, y: 1.86, z: -0.44 },
   titan: { w: 3.4, h: 2.2, y: 3.6, z: -1.7 },
 };
 
@@ -458,13 +675,16 @@ export interface AllyModel {
   /** Turns with the teammate's yaw; tipped over when it is down. */
   body: THREE.Group;
   legs: THREE.Object3D[];
+  /** The lower leg of each of `legs`, bent at the knee as it walks. */
+  knees: THREE.Object3D[];
   /** Arms and rifle, pitched toward what it aims at. */
   arms: THREE.Group;
 }
 
 /**
- * The teammate: a person in a teal suit and sand vest, so it reads as one of
- * ours at a glance against the navy robots. Nothing on it glows.
+ * The teammate: a person about 1.8 m tall in a teal suit and sand vest, so it reads as one of
+ * ours at a glance against the navy robots. A neck and a helmet, knees, and arms in two parts
+ * that hold the rifle at the shoulder. Nothing on it glows.
  */
 export function buildAlly(): AllyModel {
   const root = new THREE.Group();
@@ -473,30 +693,57 @@ export function buildAlly(): AllyModel {
   const suit = flat(PAL.teal);
   const vest = flat(PAL.sand);
   const dark = flat(PAL.joint);
+  const skin = flat(PAL.concrete);
   const legs: THREE.Object3D[] = [];
+  const knees: THREE.Object3D[] = [];
   for (const s of [-1, 1]) {
     const leg = new THREE.Group();
-    leg.position.set(s * 0.13, 0.86, 0);
-    leg.add(mesh(new THREE.BoxGeometry(0.2, 0.84, 0.24), suit, 0, -0.42, 0));
-    leg.add(mesh(new THREE.BoxGeometry(0.22, 0.14, 0.32), dark, 0, -0.8, -0.04));
+    leg.position.set(s * 0.12, 0.92, 0);
+    leg.add(mesh(new THREE.BoxGeometry(0.17, 0.44, 0.2), suit, 0, -0.22, 0));
+    const knee = new THREE.Group();
+    knee.position.y = -0.45;
+    knee.add(mesh(new THREE.BoxGeometry(0.15, 0.12, 0.06), dark, 0, 0, -0.1));
+    knee.add(mesh(new THREE.BoxGeometry(0.15, 0.4, 0.17), suit, 0, -0.21, 0));
+    knee.add(mesh(new THREE.BoxGeometry(0.17, 0.11, 0.29), dark, 0, -0.415, -0.04));
+    leg.add(knee);
     body.add(leg);
     legs.push(leg);
+    knees.push(knee);
   }
-  body.add(mesh(new THREE.BoxGeometry(0.5, 0.62, 0.3), suit, 0, 1.18, 0));
-  body.add(mesh(new THREE.BoxGeometry(0.54, 0.42, 0.34), vest, 0, 1.24, 0));
-  body.add(mesh(new THREE.BoxGeometry(0.36, 0.44, 0.2), flat(PAL.ochre), 0, 1.22, 0.26));
-  body.add(mesh(new THREE.BoxGeometry(0.28, 0.28, 0.3), flat(PAL.concrete), 0, 1.66, 0));
-  body.add(mesh(new THREE.BoxGeometry(0.32, 0.14, 0.34), suit, 0, 1.78, 0.01));
-  body.add(mesh(new THREE.BoxGeometry(0.24, 0.09, 0.04), dark, 0, 1.67, -0.16));
+  body.add(mesh(new THREE.BoxGeometry(0.38, 0.14, 0.24), dark, 0, 0.95, 0));
+  body.add(mesh(new THREE.BoxGeometry(0.42, 0.52, 0.26), suit, 0, 1.22, 0));
+  body.add(mesh(new THREE.BoxGeometry(0.46, 0.36, 0.3), vest, 0, 1.27, 0));
+  body.add(mesh(new THREE.BoxGeometry(0.32, 0.42, 0.18), flat(PAL.ochre), 0, 1.24, 0.23));
+  body.add(mesh(new THREE.BoxGeometry(0.11, 0.1, 0.11), skin, 0, 1.53, 0));
+  // The head: the face under a teal helmet with a brim, a dark visor band across the eyes.
+  body.add(mesh(new THREE.BoxGeometry(0.2, 0.22, 0.22), skin, 0, 1.66, 0));
+  body.add(mesh(new THREE.BoxGeometry(0.25, 0.13, 0.27), suit, 0, 1.77, 0.01));
+  body.add(mesh(new THREE.BoxGeometry(0.27, 0.03, 0.31), suit, 0, 1.715, -0.01));
+  body.add(mesh(new THREE.BoxGeometry(0.21, 0.06, 0.03), dark, 0, 1.67, -0.115));
   const arms = new THREE.Group();
-  arms.position.set(0, 1.38, 0);
-  for (const s of [-1, 1]) arms.add(mesh(new THREE.BoxGeometry(0.14, 0.14, 0.5), suit, s * 0.22, -0.06, -0.22));
-  arms.add(mesh(new THREE.BoxGeometry(0.08, 0.12, 0.75), flat(PAL.gun), 0.08, -0.02, -0.5));
-  arms.add(mesh(new THREE.BoxGeometry(0.06, 0.16, 0.1), flat(PAL.gunLight), 0.08, -0.12, -0.36));
+  arms.position.set(0, 1.42, 0);
+  for (const s of [-1, 1]) {
+    const shoulder = v3(s * 0.25, 0, 0);
+    const elbow = v3(s * 0.24, -0.25, -0.12);
+    const hand = s > 0 ? v3(0.09, -0.12, -0.36) : v3(0.03, -0.08, -0.58);
+    arms.add(limb(shoulder, elbow, 0.11, 0.12, suit));
+    arms.add(limb(elbow, hand, 0.1, 0.11, suit));
+    arms.add(mesh(new THREE.BoxGeometry(0.08, 0.09, 0.09), dark, hand.x, hand.y, hand.z));
+  }
+  arms.add(mesh(new THREE.BoxGeometry(0.07, 0.11, 0.75), flat(PAL.gun), 0.06, -0.04, -0.48));
+  arms.add(mesh(new THREE.BoxGeometry(0.06, 0.15, 0.08), flat(PAL.gunLight), 0.06, -0.15, -0.42));
   body.add(arms);
-  return { root, body, legs, arms };
+  for (const part of [body, arms, ...legs, ...knees]) compact(part);
+  return { root, body, legs, knees, arms };
 }
 
+/** Each gun's length from muzzle to stock, metres before the first-person scale. */
+const GUN_LEN: Record<WeaponKind, number> = { pike: 0.75, hornet: 0.5, maul: 0.8, lance: 1.0, talon: 1.25 };
+
+/**
+ * A gun, its muzzle toward -z: a slim receiver with an ejection port on its right, a rail along
+ * its top, a barrel, a grip, a magazine and a stock, with a stripe in its rarity colour.
+ */
 export function buildGun(kind: WeaponKind, rarity: Rarity): THREE.Group {
   const g = new THREE.Group();
   const dark = flat(PAL.gun);
@@ -508,15 +755,24 @@ export function buildGun(kind: WeaponKind, rarity: Rarity): THREE.Group {
     g.add(o);
     return o;
   };
-  const len = { pike: 0.75, hornet: 0.5, maul: 0.8, lance: 1.0, talon: 1.25 }[kind];
-  add(new THREE.BoxGeometry(0.09, 0.13, len * 0.6), dark, 0, 0, 0);
-  add(new THREE.BoxGeometry(0.05, 0.05, len * 0.5), mid, 0, 0.03, -len * 0.5);
-  add(new THREE.BoxGeometry(0.07, 0.16, 0.08), dark, 0, -0.12, 0.1);
-  add(new THREE.BoxGeometry(0.06, 0.1, 0.24), mid, 0, -0.02, len * 0.38);
-  add(new THREE.BoxGeometry(0.094, 0.018, len * 0.3), stripe, 0, 0.035, -0.02);
-  add(new THREE.BoxGeometry(0.03, 0.03, len * 0.3), mid, 0, 0.085, 0.02);
-  if (kind === "pike" || kind === "hornet") add(new THREE.BoxGeometry(0.06, 0.18, 0.08), dark, 0, -0.13, -0.12);
-  if (kind === "maul") add(new THREE.BoxGeometry(0.11, 0.08, len * 0.4), mid, 0, -0.08, -len * 0.3);
+  const len = GUN_LEN[kind];
+  add(new THREE.BoxGeometry(0.075, 0.12, len * 0.6), dark, 0, 0, 0);
+  add(new THREE.BoxGeometry(0.06, 0.08, len * 0.26), mid, 0, -0.01, -len * 0.42);
+  add(new THREE.BoxGeometry(0.04, 0.04, len * 0.5), mid, 0, 0.03, -len * 0.5);
+  add(new THREE.BoxGeometry(0.06, 0.15, 0.075), dark, 0, -0.12, 0.1);
+  add(new THREE.BoxGeometry(0.05, 0.09, 0.24), mid, 0, -0.02, len * 0.38);
+  add(new THREE.BoxGeometry(0.078, 0.016, len * 0.3), stripe, 0, 0.035, -0.02);
+  // The rail along the top, notched, and the port the cases leave by on the right.
+  add(new THREE.BoxGeometry(0.024, 0.014, len * 0.42), mid, 0, 0.067, -0.02);
+  for (let t = -len * 0.19; t <= len * 0.17; t += 0.035) add(new THREE.BoxGeometry(0.03, 0.006, 0.012), dark, 0, 0.077, t - 0.02);
+  add(new THREE.BoxGeometry(0.006, 0.04, 0.11), flat(0x16181d), 0.04, 0.02, -0.03);
+  add(new THREE.BoxGeometry(0.004, 0.012, 0.07), mid, 0.044, 0.045, -0.03);
+  // The magazine: a long curved box for the rifles, a short one for the long guns, a tube for the shotgun.
+  if (kind === "pike" || kind === "hornet") {
+    const mag = add(new THREE.BoxGeometry(0.05, 0.2, 0.08), dark, 0, -0.15, -0.12);
+    mag.rotation.x = -0.18;
+  } else if (kind === "maul") add(new THREE.BoxGeometry(0.09, 0.07, len * 0.4), mid, 0, -0.08, -len * 0.3);
+  else add(new THREE.BoxGeometry(0.05, 0.11, 0.09), dark, 0, -0.11, -0.1);
   if (kind === "talon") {
     // A long scope with its two lenses, and a bolt handle.
     add(new THREE.CylinderGeometry(0.05, 0.05, 0.42, 10).rotateX(Math.PI / 2), dark, 0, 0.13, -0.05);
@@ -525,6 +781,40 @@ export function buildGun(kind: WeaponKind, rarity: Rarity): THREE.Group {
     add(new THREE.BoxGeometry(0.1, 0.025, 0.025), mid, 0.07, 0.04, 0.12);
   }
   if (kind === "lance") add(new THREE.CylinderGeometry(0.045, 0.045, 0.32, 8).rotateX(Math.PI / 2), mid, 0, 0.12, -0.05);
+  compact(g);
+  return g;
+}
+
+/**
+ * The player's own hands on a gun from buildGun, in its frame: gloved hands on the grip and under
+ * the fore end, and the teal sleeves of the forearms reaching back and down out of the view. They
+ * show the player's own size against the world, which a floating gun alone does not.
+ */
+export function buildHands(kind: WeaponKind): THREE.Group {
+  const g = new THREE.Group();
+  const len = GUN_LEN[kind];
+  // Leather gloves, lighter than the gun so the hands read against it; the cuffs a darker teal.
+  const glove = flat(PAL.ochre);
+  const sleeve = flat(PAL.teal);
+  const cuff = flat(0x1f5a5f);
+  // Right: the hand round the grip, the wrist behind it, the forearm back to the elbow below the view.
+  const grip = v3(0.0, -0.11, 0.1);
+  g.add(mesh(new THREE.BoxGeometry(0.1, 0.1, 0.12), glove, 0.012, grip.y, grip.z, false));
+  g.add(mesh(new THREE.BoxGeometry(0.03, 0.04, 0.1), glove, -0.045, -0.06, 0.06, false));
+  const rw = v3(0.03, -0.15, 0.19);
+  g.add(limb(rw, v3(0.05, -0.18, 0.24), 0.09, 0.09, cuff, false));
+  g.add(limb(v3(0.05, -0.18, 0.24), v3(0.2, -0.5, 0.75), 0.11, 0.12, sleeve, false));
+  // Left: the hand cupping the fore end from below and its left side (the side the eye sees), the
+  // forearm reaching back and down across the view.
+  const fore = v3(0, -0.06, -len * 0.38);
+  g.add(mesh(new THREE.BoxGeometry(0.1, 0.05, 0.13), glove, fore.x, fore.y - 0.035, fore.z, false));
+  g.add(mesh(new THREE.BoxGeometry(0.025, 0.09, 0.12), glove, -0.042, fore.y + 0.0, fore.z, false));
+  g.add(mesh(new THREE.BoxGeometry(0.02, 0.05, 0.1), glove, 0.04, fore.y - 0.01, fore.z, false));
+  const lw = v3(-0.05, -0.12, -len * 0.38 + 0.08);
+  g.add(limb(fore, lw, 0.08, 0.08, glove, false));
+  g.add(limb(lw, v3(-0.1, -0.16, -len * 0.38 + 0.15), 0.09, 0.09, cuff, false));
+  g.add(limb(v3(-0.1, -0.16, -len * 0.38 + 0.15), v3(-0.6, -0.55, 0.2), 0.11, 0.12, sleeve, false));
+  compact(g);
   return g;
 }
 
@@ -614,7 +904,7 @@ export function buildLootItem(kind: LootKind, rarity: Rarity, weapon?: WeaponKin
     // The loot beam: visible from across the map, coloured by rarity.
     const beam = new THREE.Mesh(
       new THREE.CylinderGeometry(0.05, 0.12, 7, 6, 1, true),
-      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: rarity === 3 ? 0.55 : 0.35, depthWrite: false, blending: THREE.AdditiveBlending }),
+      new THREE.MeshBasicMaterial({ toneMapped: false, color, transparent: true, opacity: rarity === 3 ? 0.55 : 0.35, depthWrite: false, blending: THREE.AdditiveBlending }),
     );
     beam.position.y = 3.6;
     g.add(beam);

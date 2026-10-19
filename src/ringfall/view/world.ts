@@ -6,7 +6,8 @@ import { groundAt } from "../sim/geom";
 import { cliffGround, DAM_FACE, floorLevel, groundOf, highGround, LANDS, LEVEL, offshore, steepAt, surfaceAt, terrainHeight, type Ground } from "../sim/terrain";
 import { callLeft, type GameEvent, type State, type Vec3 } from "../sim/state";
 import { QUALITY, type Quality, type Tier } from "./quality";
-import { PAL, RARITY_COLOR, SCOPE_IN, buildAlly, buildBin, buildBoat, buildBox, buildDepot, buildEntryMark, mergeChunk, buildCare, buildDropship, buildEnemy, buildGun, buildLootItem, addPlates, flat, glow, haloSprite, type EnemyModel } from "./models";
+import { SHADE, contactAt, coverAt, floorUnder } from "./shade";
+import { PAL, RARITY_COLOR, SCOPE_IN, buildAlly, buildBin, buildBoat, buildBox, buildDepot, buildEntryMark, mergeChunk, type ChunkShade, buildCare, buildDropship, buildEnemy, buildGun, buildHands, buildLootItem, addPlates, flat, glow, haloSprite, type EnemyModel } from "./models";
 
 /*
  * Renders a State in first person. It reads the state and the tick's events and
@@ -15,6 +16,15 @@ import { PAL, RARITY_COLOR, SCOPE_IN, buildAlly, buildBin, buildBoat, buildBox, 
  */
 
 const EYE_LERP = 12;
+
+/**
+ * The light of a clear midday, tone mapped (ACES filmic) so the sun can be strong without the
+ * sunlit sand clipping. The sky's fill is kept low against the sun, about 1 to 4, so that a
+ * shaded face, a doorway or a room under a roof reads darker than the open ground, as it does
+ * at full scale; with the fill near the sun's strength everything reads lit alike, like a model
+ * on a table. `haze` is the fog: the horizon's peach greyed, as air far off looks.
+ */
+const LIGHT = { exposure: 1.05, sun: 3.2, sky: 0.72, haze: 0xdcd2c0, gunSun: 2.8, gunSky: 1.3 } as const;
 
 /**
  * The view is set by its horizontal angle, as shooters' settings are: about 90° across, so the
@@ -61,6 +71,8 @@ const MATE_LIGHT = 0x6fd0cf;
 const PLATE_SPARK = 0x9aa3b5;
 /** Smoke from a robot below half its health and shield, and from a wreck. */
 const SMOKE = 0x3b3a3c;
+/** The shade baked into a chunk's merged statics (shade.ts). */
+const CHUNK_SHADE: ChunkShade = { cover: coverAt, floor: floorUnder, base: SHADE.wallBase, baseUp: SHADE.wallBaseUp };
 /** Seconds a wreck lies where it fell, then sinks away over `WRECK_SINK`. At most `WRECK_MAX` lie at once. */
 const WRECK_TIME = 7;
 const WRECK_SINK = 1.2;
@@ -262,7 +274,7 @@ export class World {
   readonly camera = new THREE.PerspectiveCamera(hipFov(16 / 9), 16 / 9, 0.05, 900);
   private gunScene = new THREE.Scene();
   private gunCam = new THREE.PerspectiveCamera(55, 16 / 9, 0.01, 10);
-  private sun = new THREE.DirectionalLight(0xfff1d6, 2.2);
+  private sun = new THREE.DirectionalLight(0xfff1d6, LIGHT.sun);
   private enemies = new Map<number, EnemyView>();
   private wrecks: Wreck[] = [];
   private ally = buildAlly();
@@ -325,14 +337,16 @@ export class World {
     this.renderer = new THREE.WebGLRenderer({ antialias: QUALITY[opts.tier].antialias, powerPreference: "high-performance" });
     this.renderer.setPixelRatio(opts.ratio);
     this.renderer.shadowMap.enabled = true;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = LIGHT.exposure;
     this.renderer.autoClear = false;
     // Counted over the whole frame (both passes and the shadows), not just the last call.
     this.renderer.info.autoReset = false;
     container.appendChild(this.renderer.domElement);
 
-    this.scene.fog = new THREE.Fog(PAL.skyHorizon, 110, 420);
+    this.scene.fog = new THREE.Fog(LIGHT.haze, QUALITY.high.fogNear, QUALITY.high.fogFar);
     this.scene.add(this.skyDome);
-    this.scene.add(new THREE.HemisphereLight(0xcfe9ff, 0xb98a55, 1.15));
+    this.scene.add(new THREE.HemisphereLight(0xcfe9ff, 0xb98a55, LIGHT.sky));
     this.sun.position.set(-40, 80, 30);
     this.sun.castShadow = true;
     this.sun.shadow.camera.near = 1;
@@ -345,7 +359,7 @@ export class World {
     this.addClouds();
 
 
-    this.partMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: 0xffffff }), 700);
+    this.partMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ toneMapped: false, color: 0xffffff }), 700);
     this.partMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.partMesh.count = 0;
     this.partMesh.frustumCulled = false;
@@ -353,7 +367,7 @@ export class World {
 
     this.careBeam = new THREE.Mesh(
       new THREE.CylinderGeometry(0.6, 0.6, 120, 10, 1, true),
-      new THREE.MeshBasicMaterial({ color: RARITY_COLOR[3], transparent: true, opacity: 0.22, depthWrite: false, blending: THREE.AdditiveBlending }),
+      new THREE.MeshBasicMaterial({ toneMapped: false, color: RARITY_COLOR[3], transparent: true, opacity: 0.22, depthWrite: false, blending: THREE.AdditiveBlending }),
     );
     this.careBeam.visible = false;
     this.scene.add(this.careBeam);
@@ -402,8 +416,8 @@ export class World {
     this.scene.add(this.stompRing);
 
     // First-person gun, drawn in its own pass so it never clips into walls.
-    this.gunScene.add(new THREE.HemisphereLight(0xdff2ff, 0x8a6a3a, 1.6));
-    const gl = new THREE.DirectionalLight(0xfff1d6, 1.6);
+    this.gunScene.add(new THREE.HemisphereLight(0xdff2ff, 0x8a6a3a, LIGHT.gunSky));
+    const gl = new THREE.DirectionalLight(0xfff1d6, LIGHT.gunSun);
     gl.position.set(-1, 2, 1);
     this.gunScene.add(gl);
     this.gunScene.add(this.gun);
@@ -417,17 +431,21 @@ export class World {
       side: THREE.BackSide,
       depthWrite: false,
       fog: false,
-      uniforms: { top: { value: new THREE.Color(PAL.skyTop) }, horizon: { value: new THREE.Color(PAL.skyHorizon) } },
+      // The sky is drawn in the palette's own colours (not tone mapped), and meets the fog's haze
+      // at the horizon, where the fogged ground far off ends.
+      uniforms: { top: { value: new THREE.Color(PAL.skyTop) }, horizon: { value: new THREE.Color(PAL.skyHorizon) }, haze: { value: new THREE.Color(LIGHT.haze) } },
       vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
-      fragmentShader: `uniform vec3 top; uniform vec3 horizon; varying vec3 vDir;
+      fragmentShader: `uniform vec3 top; uniform vec3 horizon; uniform vec3 haze; varying vec3 vDir;
         void main(){
           float h = clamp(vDir.y, 0.0, 1.0);
           vec3 c = mix(horizon, top, pow(h, 0.55));
+          c = mix(haze, c, smoothstep(0.0, 0.12, h));
           vec3 sunDir = normalize(vec3(-0.45, 0.6, 0.35));
           float s = max(dot(vDir, sunDir), 0.0);
           c += vec3(1.0, 0.92, 0.75) * (pow(s, 600.0) * 1.2 + pow(s, 12.0) * 0.18);
-          if (vDir.y < 0.0) c = horizon;
+          if (vDir.y < 0.0) c = haze;
           gl_FragColor = vec4(c, 1.0);
+          #include <colorspace_fragment>
         }`,
     });
     const m = new THREE.Mesh(new THREE.SphereGeometry(800, 32, 16), mat);
@@ -536,10 +554,12 @@ export class World {
     const t0 = performance.now();
     this.emptyChunk(c);
     c.built = true;
+    const routes = this.routeBoxes();
     c.ground = this.groundMesh(
       this.ticks.xs.filter((v) => v >= c.x0 && v <= c.x1),
       this.ticks.zs.filter((v) => v >= c.z0 && v <= c.z1),
       () => true,
+      (x, y, z) => coverAt(x, y + 0.2, z) * contactAt(x, y, z, routes),
     );
     c.group.add(c.ground);
     // The map's boxes and the boulders first, then the routes', merged in that order.
@@ -554,10 +574,10 @@ export class World {
     }
     const root = new THREE.Group();
     root.add(statics);
-    this.routeBoxes().forEach((b, n) => {
+    routes.forEach((b, n) => {
       if (this.chunkOf(b) === c) root.add(buildBox(b, BOXES.length + n));
     });
-    c.merged = statics.children.length || root.children.length > 1 ? mergeChunk(root) : null;
+    c.merged = statics.children.length || root.children.length > 1 ? mergeChunk(root, CHUNK_SHADE) : null;
     // The meshes built for the merge are let go; only their geometry's copies in the merge stay.
     root.traverse((m) => m instanceof THREE.Mesh && m.geometry !== this.boulderGeo && m.geometry.dispose());
     if (c.merged) c.group.add(c.merged);
@@ -620,12 +640,20 @@ export class World {
     for (const c of this.chunks) if (c.built && reached(c)) this.fillChunk(c);
   }
 
-  /** The ground over the grid of `xs` by `zs`, keeping the quads whose middle `keep` accepts. */
-  private groundMesh(xs: number[], zs: number[], keep: (x: number, z: number) => boolean): THREE.Mesh {
+  /**
+   * The ground over the grid of `xs` by `zs`, keeping the quads whose middle `keep` accepts. With
+   * `shade`, each grid point's colour is scaled by the light it keeps (under a roof, at a wall's foot).
+   */
+  private groundMesh(xs: number[], zs: number[], keep: (x: number, z: number) => boolean, shade?: (x: number, y: number, z: number) => number): THREE.Mesh {
     const n = xs.length;
     const pos = new Float32Array(n * zs.length * 3);
+    const light = new Float32Array(n * zs.length).fill(1);
     for (let j = 0; j < zs.length; j++)
-      for (let i = 0; i < n; i++) pos.set([xs[i], terrainHeight(xs[i], zs[j]), zs[j]], (j * n + i) * 3);
+      for (let i = 0; i < n; i++) {
+        const y = terrainHeight(xs[i], zs[j]);
+        pos.set([xs[i], y, zs[j]], (j * n + i) * 3);
+        if (shade) light[j * n + i] = shade(xs[i], y, zs[j]);
+      }
     const idx: number[] = [];
     for (let j = 0; j < zs.length - 1; j++)
       for (let i = 0; i < n - 1; i++) {
@@ -653,7 +681,11 @@ export class World {
         hi = Math.max(hi, p.getY(t + k));
       }
       groundColour(c, x, z, lo, hi);
-      for (let k = 0; k < 3; k++) colors.set([c.r, c.g, c.b], (t + k) * 3);
+      // toNonIndexed lays the vertices out in the index's order, so idx[t + k] is the grid point.
+      for (let k = 0; k < 3; k++) {
+        const l = light[idx[t + k]];
+        colors.set([c.r * l, c.g * l, c.b * l], (t + k) * 3);
+      }
     }
     flatGeo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
     flatGeo.computeVertexNormals();
@@ -769,6 +801,7 @@ export class World {
       const tipMax = w.kind === "drone" ? 0.9 : w.kind === "titan" ? 0.55 : 1.42;
       lean(m.body, w.yaw, w.fallYaw, tipMax * ease - bounce);
       m.legs.forEach((leg) => (leg.rotation.x = -0.5 * Math.sin(Math.PI * f)));
+      m.knees.forEach((knee) => (knee.rotation.x = -0.9 * Math.sin(Math.PI * f)));
       const sink = w.t > WRECK_TIME ? ((w.t - WRECK_TIME) / WRECK_SINK) * (ENEMIES[w.kind].bodyY + ENEMIES[w.kind].radius + 0.5) : 0;
       const settle = w.kind === "drone" ? 0 : ENEMIES[w.kind].radius * 0.35 * ease;
       m.root.position.set(w.x, w.ground + (w.y0 - w.ground) * (1 - ease) + settle - sink, w.z);
@@ -801,7 +834,7 @@ export class World {
   private tracer(from: Vec3, to: Vec3, color: number, width: number) {
     let t = this.tracers.find((x) => x.life <= 0);
     if (!t) {
-      const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ toneMapped: false, color, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
       t = { mesh, life: 0 };
       this.tracers.push(t);
       this.scene.add(mesh);
@@ -820,7 +853,7 @@ export class World {
 
   /** Where the gun's muzzle is in the world, for tracers. */
   private muzzleWorld(): THREE.Vector3 {
-    const v = new THREE.Vector3(0.22, -0.2, -0.7);
+    const v = new THREE.Vector3(0.22, -0.2, -0.78);
     return v.applyMatrix4(this.camera.matrixWorld);
   }
 
@@ -1016,6 +1049,8 @@ export class World {
       this.allyWalk += dt * sp * 2.2;
       const swing = Math.sin(this.allyWalk) * Math.min(1, sp / 3) * 0.6;
       am.legs.forEach((l, i) => (l.rotation.x = i ? swing : -swing));
+      const reach = Math.min(1, sp / 3) * 0.9;
+      am.knees.forEach((k, i) => (k.rotation.x = -Math.max(0, Math.cos(this.allyWalk) * (i ? 1 : -1)) * reach));
       am.arms.rotation.x = a.target ? a.pitch : -0.25;
       if (a.down > 0) {
         // Down: kneeling over, rifle lowered.
@@ -1041,7 +1076,7 @@ export class World {
         this.scene.add(m.root);
         const beam = new THREE.Mesh(
           new THREE.CylinderGeometry(0.06, ENEMIES[e.kind].radius * 0.45, 40, 8, 1, true),
-          new THREE.MeshBasicMaterial({ color: PAL.eye, transparent: true, opacity: 0.3, depthWrite: false, blending: THREE.AdditiveBlending }),
+          new THREE.MeshBasicMaterial({ toneMapped: false, color: PAL.eye, transparent: true, opacity: 0.3, depthWrite: false, blending: THREE.AdditiveBlending }),
         );
         beam.position.set(e.pos.x, e.pos.y + 20, e.pos.z);
         this.scene.add(beam);
@@ -1084,7 +1119,10 @@ export class World {
       if (v.spawnBeam) (v.spawnBeam.material as THREE.MeshBasicMaterial).opacity = 0.15 + Math.random() * 0.1;
       const sp = Math.hypot(e.vel.x, e.vel.z);
       v.walk += dt * sp * (e.kind === "titan" ? 0.9 : 2.6);
-      m.legs.forEach((leg, i) => (leg.rotation.x = Math.sin(v!.walk + i * Math.PI) * Math.min(0.6, sp * 0.15)));
+      // The thigh swings; the knee bends while its leg comes forward, and straightens to land.
+      const stride = Math.min(0.6, sp * 0.15);
+      m.legs.forEach((leg, i) => (leg.rotation.x = Math.sin(v!.walk + i * Math.PI) * stride));
+      m.knees.forEach((knee, i) => (knee.rotation.x = -Math.max(0, Math.cos(v!.walk + i * Math.PI)) * stride * 1.6));
       if (k.fly > 0) m.body.rotation.z = Math.sin(this.time * 2 + e.id) * 0.15;
       const winding = e.mode === "telegraph" || e.mode === "stomp";
       const tele = winding ? 1 + Math.sin(this.time * 40) * 0.25 + 0.6 : e.mode === "stunned" ? 0.4 : staggered ? 0.5 + Math.random() * 0.5 : 1;
@@ -1159,7 +1197,7 @@ export class World {
       if (!m) {
         m = new THREE.Mesh(
           new THREE.CylinderGeometry(1, 1, 1, 72, 1, true),
-          new THREE.MeshBasicMaterial({ color: PAL.orb, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }),
+          new THREE.MeshBasicMaterial({ toneMapped: false, color: PAL.orb, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }),
         );
         this.wavePool.push(m);
         this.scene.add(m);
@@ -1297,6 +1335,7 @@ export class World {
       this.gun.clear();
       if (w0) {
         const g = buildGun(w0.kind, w0.rarity);
+        g.add(buildHands(w0.kind));
         g.scale.setScalar(0.55);
         g.rotation.y = -0.06;
         this.gun.add(g);
@@ -1310,7 +1349,7 @@ export class World {
     const ads = p.ads;
     const gx = 0.2 * (1 - ads);
     const gy = -0.2 + 0.07 * ads - (lowered ? 0.4 : 0) - (reloading ? 0.08 : 0) + Math.sin(this.bob * 2) * 0.01 * (1 - ads);
-    const gz = -0.42 + Math.max(0, this.gunKick) * 0.05;
+    const gz = -0.5 + Math.max(0, this.gunKick) * 0.05;
     this.gun.position.set(gx + Math.cos(this.bob) * 0.01 * (1 - ads), gy, gz);
     this.gun.rotation.set(Math.max(0, this.gunKick) * 0.12 + (reloading ? 0.5 : 0) - (p.sliding ? 0.05 : 0), 0, (reloading ? 0.35 : 0) + (p.sliding ? 0.25 : 0));
     this.flash.position.set(this.gun.position.x - 0.02, this.gun.position.y + 0.03, this.gun.position.z - 0.4);
