@@ -4,9 +4,10 @@ import { routeBoxesOpen } from "./geom";
 import { highGround, offshore, steepAt, terrainHeight } from "./terrain";
 
 /*
- * How hunting squads (reinforcements and raiders) find their way to where they think
- * the player is. Robots otherwise walk straight at their goal, which on an island of
- * levels joined by ramps ends at the first cliff. A distance field over the ground
+ * How hunting squads (reinforcements and raiders), and fighting squads that have lost the
+ * player (see PURSUE), find their way to where they think the player is. A straight walk
+ * at the goal, on an island of levels joined by ramps, ends at the first cliff. A distance
+ * field over the ground
  * gives every cell the walking distance to the target; a hunter heads for the cell
  * a few steps down that field. Cliffs, high ground and anything built that a walker
  * cannot step over close a cell, so the way goes up the ramps and round the houses;
@@ -335,11 +336,24 @@ export function fieldTo(x: number, z: number, reach = Infinity): Field | null {
   fieldsBuilt++;
   cache.set(target, f);
   if (cache.size > CACHE) {
-    const oldest = cache.keys().next().value!;
-    spare.push(cache.get(oldest)!);
-    cache.delete(oldest);
+    // A short field (a squad chasing the player nearby, see PURSUE) goes before a whole-world
+    // one: those cost the most to build again, and the hunters following them keep at it.
+    let drop = cache.keys().next().value!;
+    for (const [k, g] of cache)
+      if (g.reach < Infinity && g !== f) {
+        drop = k;
+        break;
+      }
+    spare.push(cache.get(drop)!);
+    cache.delete(drop);
   }
   return f;
+}
+
+/** Whether (x, z) is in a cell of the main walkable ground: a walker there can follow a field. */
+export function onMainGround(x: number, z: number): boolean {
+  const { main } = grid();
+  return !!main[idxZ(z) * NX + idxX(x)];
 }
 
 /** Walking distance from (x, z) along the field, or Infinity when no way leads there. */

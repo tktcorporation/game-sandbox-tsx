@@ -1,5 +1,5 @@
 import { ALLY, ASSIST, DEG, DODGE, ELITE, ENEMIES, FLANK, KICK_PATTERN, KICK_RESET, NOISE, PLATE, PLAYER, RARITY, ROBOT_DROPS, STAGGER, TICK, ULT, VALUABLES, WEAPONS, type Flank, type Rarity, type ValuableKind, type WeaponSpec } from "./config";
-import { engageSquad, located, makeNoise } from "./awareness";
+import { engageSquad, learnSpot, located, makeNoise } from "./awareness";
 import { POIS } from "./map";
 import { los, lookAngles, norm, rayWorld, raySphere, wrapAngle } from "./geom";
 import { forward, rand, type Enemy, type State, type Vec3, type Weapon } from "./state";
@@ -194,7 +194,7 @@ export function damageEnemy(s: State, e: Enemy, raw: number, crit: boolean, at: 
   engageSquad(s, e.squad, e);
   const sq = s.squads[e.squad];
   const shooter = by === "ally" ? s.ally.pos : s.player.pos;
-  if (sq) sq.last = { x: shooter.x, z: shooter.z };
+  if (sq) learnSpot(s, e.squad, shooter.x, shooter.z);
   const before = e.hp + e.shield;
   const hadShield = e.shield > 0;
   const toShield = Math.min(e.shield, raw);

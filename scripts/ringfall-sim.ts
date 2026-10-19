@@ -1876,6 +1876,113 @@ function checkPinch(): string | null {
   return null;
 }
 
+/**
+ * Hit and run does not shake a squad off: three grunts trade fire with the player for 2 s, the
+ * player sprints by a real path to a spot 20-30 m away that breaks every grunt's sight within
+ * its first 6 m, waits 3 s and does it again from there. In most of the first scenarios found
+ * round the POIs the squad is still fighting 12 s later and has found the player again.
+ */
+function checkPursuit(): string | null {
+  const flat = (x: number, z: number) => inWorld(x, z, 5) && !offLowGround(x, z) && !steepAt(x, z) && !solidAt(x, terrainHeight(x, z) + 1, z) && !solidAt(x, terrainHeight(x, z) + 0.3, z);
+  const chestAt = (x: number, z: number) => ({ x, y: terrainHeight(x, z) + 1.2, z });
+  // A spot 20-30 m away by a path of at most 50 m, out of every robot's sight after the path's first 6 m.
+  const hideSpot = (s: State) => {
+    const p = s.player;
+    const eyes = s.enemies.map((f) => ({ x: f.pos.x, y: f.pos.y + KINDS.grunt.weakY, z: f.pos.z }));
+    const seen = (x: number, z: number) => eyes.some((e) => los(e, chestAt(x, z)));
+    let best: { pts: { x: number; z: number }[]; len: number } | null = null;
+    for (let r = 20; r <= 30; r += 2)
+      for (let b = 0; b < 2 * Math.PI; b += Math.PI / 12) {
+        const x = p.pos.x + Math.cos(b) * r;
+        const z = p.pos.z + Math.sin(b) * r;
+        if (!flat(x, z) || Math.abs(terrainHeight(x, z) - p.pos.y) > 4 || seen(x, z) || s.enemies.some((f) => dist2d(f.pos, { x, z }) < 20)) continue;
+        const path = findPath(p.pos.x, p.pos.z, x, z);
+        if (!path) continue;
+        const pts = [{ x: p.pos.x, z: p.pos.z }, ...path, { x, z }];
+        let len = 0;
+        let late = false;
+        for (let i = 1; i < pts.length && !late; i++) {
+          const d = dist2d(pts[i - 1], pts[i]);
+          for (let u = 0; u < d && !late; u++) late = len + u > 6 && seen(pts[i - 1].x + ((pts[i].x - pts[i - 1].x) * u) / d, pts[i - 1].z + ((pts[i].z - pts[i - 1].z) * u) / d);
+          len += d;
+        }
+        if (!late && len <= 50 && (!best || len < best.len)) best = { pts, len };
+      }
+    return best;
+  };
+  let tried = 0;
+  let caught = 0;
+  const log: string[] = [];
+  for (let pi = 0; pi < POIS.length && tried < 4; pi++) {
+    if (POIS[pi].boss) continue;
+    for (const r0 of [20, 28, 38, 48])
+      for (let a = 0; a < 2 * Math.PI && tried < 4; a += Math.PI / 9) {
+        const p0 = { x: POIS[pi].x + Math.cos(a) * r0, z: POIS[pi].z + Math.sin(a) * r0 };
+        if (!flat(p0.x, p0.z)) continue;
+        const ux = Math.cos(a);
+        const uz = Math.sin(a);
+        const at = [-1, 0, 1].map((k) => ({ x: p0.x + ux * 18 - uz * k * 2.5, z: p0.z + uz * 18 + ux * k * 2.5 }));
+        if (!at.every((f) => flat(f.x, f.z) && los({ x: f.x, y: terrainHeight(f.x, f.z) + KINDS.grunt.weakY, z: f.z }, chestAt(p0.x, p0.z)))) continue;
+        const s = padRun();
+        const p = s.player;
+        s.ally.active = false;
+        const hold = (q: { x: number; z: number }) => {
+          p.pos = { x: q.x, y: groundAt(q.x, q.z, 0.4, terrainHeight(q.x, q.z) + 2), z: q.z };
+          p.vel = { x: 0, y: 0, z: 0 };
+        };
+        hold(p0);
+        const squad = s.squads.length;
+        s.squads.push({ name: "test", poi: -1, patrol: [], leg: 0, engaged: false, roam: false, sinceSeen: 0, last: { ...p0 } });
+        const foes = at.map((f) => spawnEnemy(s, "grunt", f.x, f.z, -1, squad, { face: Math.atan2(-ux, uz) }));
+        engageSquad(s, squad, foes[0]);
+        for (const e of foes) {
+          e.blind = 0;
+          e.sawAt = { ...p0 };
+        }
+        // The player does not go down: it is the squad's moves being measured.
+        const tick = (q?: { x: number; z: number }) => {
+          p.hp = 1e4;
+          p.shield = 0;
+          step(s, idleInput(), false);
+          if (q) hold(q);
+        };
+        const run = (pts: { x: number; z: number }[]) => {
+          for (let i = 1; i < pts.length; i++) {
+            const d = dist2d(pts[i - 1], pts[i]);
+            if (d < 1e-3) continue;
+            const n = Math.ceil(d / (PLAYER.sprint * TICK));
+            for (let k = 1; k <= n; k++) {
+              tick({ x: pts[i - 1].x + ((pts[i].x - pts[i - 1].x) * k) / n, z: pts[i - 1].z + ((pts[i].z - pts[i - 1].z) * k) / n });
+              p.vel = { x: ((pts[i].x - pts[i - 1].x) / d) * PLAYER.sprint, y: 0, z: ((pts[i].z - pts[i - 1].z) / d) * PLAYER.sprint };
+            }
+          }
+        };
+        for (let i = 0; i < 2 / TICK; i++) tick(p0);
+        const first = hideSpot(s);
+        if (!first) continue;
+        run(first.pts);
+        const mid = { x: p.pos.x, z: p.pos.z };
+        for (let i = 0; i < 3 / TICK; i++) tick(mid);
+        const again = hideSpot(s);
+        if (!again) continue;
+        run(again.pts);
+        if (s.squads[squad].sinceSeen < 0.5) continue; // still in sight on arrival: not hidden
+        tried++;
+        const hide = { x: p.pos.x, z: p.pos.z };
+        let found = false;
+        for (let i = 0; i < 12 / TICK; i++) {
+          tick(hide);
+          found ||= s.squads[squad].sinceSeen === 0;
+        }
+        if (found && s.squads[squad].engaged) caught++;
+        log.push(`${POIS[pi].id} at ${r0} m, ${Math.round((a * 180) / Math.PI)} deg: ${found ? "found" : "not found"}`);
+      }
+  }
+  if (tried < 4) return `pursuit scenario: only ${tried} scenarios with a way to hide`;
+  if (caught < 3) return `pursuit scenario: a squad hit and run from twice found the player again in ${caught} of ${tried} (${log.join("; ")})`;
+  return null;
+}
+
 /** Healing is heard: a robot 7 m away looking the other way comes to look. */
 function checkHealHeard(): string | null {
   const s = padRun();
@@ -2399,7 +2506,7 @@ function checkTools(): string | null {
   if (v9?.routes.join() !== "dam,gangway") return `tool scenario: a v9 save loaded with routes ${JSON.stringify(v9?.routes)}`;
   return null;
 }
-for (const err of [checkTerrainIndex(20_000), checkRoutes(), checkRouteObstacles(), checkTools(), checkTimeToKill(), checkStagger(), checkWindupMoves(), checkDepots(), checkDepotBudget(), checkPlates(), checkHideout(), checkBoltNoTunnel(), checkPickupWavesRouted(), checkLaterWaveFights(), checkSidestepHit(), checkWallStops(), checkPinch(), checkHealHeard(), checkPositionMatters(), checkPullWhenAiming(), checkVault(), checkQuests(), checkSettle(), checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkBoatCall(), checkSecondPickup(), checkEntries(), checkKnownEntries(), checkConnections(), checkAllySelfUp(), checkStompHeight(), checkFieldsReused(), checkFieldsFollowRunner(), checkCliffsStop(), checkNoPits(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill(), checkLeap(), checkLeapLeavesAllyBelow(), checkLeapDowned(), checkLeapAllyCatchesUp(), checkLeapAllyDowned(), checkLeapWithItem(), checkLeapClocks(), checkLeapOffHighGround(), checkLeapUnderRoof()]) {
+for (const err of [checkTerrainIndex(20_000), checkRoutes(), checkRouteObstacles(), checkTools(), checkTimeToKill(), checkStagger(), checkWindupMoves(), checkDepots(), checkDepotBudget(), checkPlates(), checkHideout(), checkBoltNoTunnel(), checkPickupWavesRouted(), checkLaterWaveFights(), checkSidestepHit(), checkWallStops(), checkPinch(), checkPursuit(), checkHealHeard(), checkPositionMatters(), checkPullWhenAiming(), checkVault(), checkQuests(), checkSettle(), checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkBoatCall(), checkSecondPickup(), checkEntries(), checkKnownEntries(), checkConnections(), checkAllySelfUp(), checkStompHeight(), checkFieldsReused(), checkFieldsFollowRunner(), checkCliffsStop(), checkNoPits(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill(), checkLeap(), checkLeapLeavesAllyBelow(), checkLeapDowned(), checkLeapAllyCatchesUp(), checkLeapAllyDowned(), checkLeapWithItem(), checkLeapClocks(), checkLeapOffHighGround(), checkLeapUnderRoof()]) {
   if (err) {
     console.error(err);
     process.exit(1);
