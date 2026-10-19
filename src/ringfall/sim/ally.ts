@@ -252,7 +252,7 @@ function shootAt(s: State, e: Enemy) {
     const off = (rand(s) - 0.5) * 2 * r;
     s.events.push({ t: "allyShot", from, to: { x: c.x + Math.cos(a.yaw) * off, y: c.y + (rand(s) - 0.4) * r, z: c.z + Math.sin(a.yaw) * off }, hit: false });
   }
-  makeNoise(s, a.pos.x, a.pos.z, ALLY.noise, true);
+  makeNoise(s, a.pos.x, a.pos.z, ALLY.noise, true, false, a.pos.y);
 }
 
 /**

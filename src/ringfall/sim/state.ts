@@ -226,6 +226,17 @@ export interface SquadState {
   /** Where the squad has had the player pinned, and for how long (see PINCH); unset until it engages. */
   pin?: Point;
   pinT?: number;
+  /** The player's motion when last seen, and how long they have been seen backing away (see PINCH). */
+  vel?: Point;
+  backT?: number;
+  /**
+   * Where the squad goes after the player while it has lost them (see PURSUE), and the way it
+   * came at it from (a unit vector); unset while it sees them.
+   */
+  chase?: Point;
+  chaseDir?: Point;
+  /** Seconds since the squad last saw, heard or was hit by the player (see AWARE.chaseTime). */
+  chaseT?: number;
 }
 
 export interface Orb {

@@ -1,6 +1,7 @@
-import { AWARE, DEG, ENEMIES, FLANK, NOISE, PINCH, SIGHT, TICK } from "./config";
-import { dist2d, los, lookAngles, wrapAngle } from "./geom";
-import type { Enemy, State, Vec3 } from "./state";
+import { AWARE, DEG, ENEMIES, FLANK, NOISE, PINCH, PURSUE, SIGHT, TICK } from "./config";
+import { dist2d, los, lookAngles, solidAt, wrapAngle } from "./geom";
+import { steepAt, terrainHeight } from "./terrain";
+import type { Enemy, Point, State, Vec3 } from "./state";
 
 /*
  * What robots know about the player: sight that fills slowly, sounds that make
@@ -24,14 +25,23 @@ export function mayEngage(s: State, e: Enemy): boolean {
   return fighting < AWARE.maxSquads;
 }
 
-export function engageSquad(s: State, squad: number, by: Enemy) {
+/**
+ * `from` is where a fight the player did not start came from (the teammate's shot or sound):
+ * the squad turns there and has not seen the player until a member does.
+ */
+export function engageSquad(s: State, squad: number, by: Enemy, from?: { x: number; z: number }) {
   const sq = s.squads[squad];
   if (!sq || sq.engaged) return;
   sq.engaged = true;
-  sq.sinceSeen = 0;
-  sq.last = { x: s.player.pos.x, z: s.player.pos.z };
+  sq.sinceSeen = from ? AWARE.trackTime : 0;
+  sq.chaseT = 0;
+  sq.last = from ? { x: from.x, z: from.z } : { x: s.player.pos.x, z: s.player.pos.z };
+  // The player's motion from an earlier fight says nothing about where they go now.
+  sq.vel = undefined;
   sq.pin = { ...sq.last };
   sq.pinT = 0;
+  sq.backT = 0;
+  sq.chase = sq.chaseDir = undefined;
   for (const e of s.enemies) {
     if (e.squad !== squad) continue;
     e.aware = "engaged";
@@ -58,15 +68,22 @@ export function alertSquad(s: State, squad: number, x: number, z: number, by: En
  * A sound at (x, z) carrying `radius` metres. Robots inside it come to look;
  * close ones that can see the spot engage at once. Gunfire carries further to the
  * squads out on the roads (NOISE.roamMult); footsteps and searching do not.
+ * `player` is false for the teammate's sounds: they do not tell where the player is. `y` is the
+ * height of whoever made the sound, which sight to it is tested against.
  */
-export function makeNoise(s: State, x: number, z: number, radius: number, gunfire = false) {
-  const spot = { x, y: s.player.pos.y + 1.2, z };
+export function makeNoise(s: State, x: number, z: number, radius: number, gunfire = false, player = true, y = s.player.pos.y) {
+  const spot = { x, y: y + 1.2, z };
+  // A squad fighting the player that has lost them hears where they are now (see PURSUE).
+  if (player)
+    s.squads.forEach((sq, i) => {
+      if (sq.engaged && sq.sinceSeen >= AWARE.trackTime && s.enemies.some((e) => e.squad === i && dist2d(e.pos, spot) < radius * PURSUE.hear)) learnSpot(s, i, x, z);
+    });
   const alerted = new Set<number>();
   for (const e of s.enemies) {
     if (e.aware === "engaged" || e.mode === "spawning") continue;
     const d = dist2d(e.pos, spot);
     if (d > radius * (gunfire && s.squads[e.squad]?.roam ? NOISE.roamMult : 1)) continue;
-    if (d < radius * NOISE.engageInside && los(headOf(e), spot) && mayEngage(s, e)) engageSquad(s, e.squad, e);
+    if (d < radius * NOISE.engageInside && los(headOf(e), spot) && mayEngage(s, e)) engageSquad(s, e.squad, e, player ? undefined : { x, z });
     else if (!alerted.has(e.squad)) {
       alerted.add(e.squad);
       alertSquad(s, e.squad, x, z, e);
@@ -121,7 +138,10 @@ export function sense(s: State, e: Enemy): boolean {
     }
     if (seen && engaged && sq) {
       sq.sinceSeen = 0;
+      sq.chaseT = 0;
       sq.last = { x: p.pos.x, z: p.pos.z };
+      sq.vel = { x: p.vel.x, z: p.vel.z };
+      sq.chase = sq.chaseDir = undefined;
     }
   }
   if (!seen && e.aware !== "engaged") e.detect = Math.max(0, e.detect - AWARE.decay * TICK);
@@ -141,15 +161,122 @@ export const located = (s: State, e: Enemy) =>
 
 /**
  * Where a fighting robot believes the player is: the true position while its squad
- * has eyes on them, else the last place they were seen.
+ * has eyes on them, else where the squad is going after them (see PURSUE).
  */
 export function knownSpot(s: State, e: Enemy): { x: number; z: number; live: boolean } {
   const sq = s.squads[e.squad];
   if (!sq || sq.sinceSeen < AWARE.trackTime) return { x: s.player.pos.x, z: s.player.pos.z, live: true };
-  return { x: sq.last.x, z: sq.last.z, live: false };
+  const at = sq.chase ?? sq.last;
+  return { x: at.x, z: at.z, live: false };
 }
 
-/** A squad that lost the player for long enough goes back to searching where it was last seen. */
+/** Whether a robot could stand at (x, z) on the ground: not a cliff, not inside something built. */
+export function standable(x: number, z: number): boolean {
+  const g = terrainHeight(x, z);
+  return !steepAt(x, z) && !solidAt(x, g + 0.4, z) && !solidAt(x, g + 1.2, z);
+}
+
+/** The squad's members walking after the player, in a fixed order: the first goes straight at the spot. */
+const chasers = (s: State, squad: number) => s.enemies.filter((e) => e.squad === squad && e.mode !== "spawning").sort((a, b) => a.id - b.id);
+
+/**
+ * The squad has lost the player and now goes after them at `to` (see PURSUE): each member
+ * picks its way there afresh, coming at it along the line from where the squad stands.
+ */
+function chaseTo(s: State, squad: number, to: Point) {
+  const sq = s.squads[squad];
+  const mates = chasers(s, squad);
+  let cx = 0;
+  let cz = 0;
+  for (const e of mates) {
+    cx += e.pos.x / mates.length;
+    cz += e.pos.z / mates.length;
+  }
+  const dx = to.x - cx;
+  const dz = to.z - cz;
+  const d = Math.hypot(dx, dz);
+  sq.chase = { ...to };
+  sq.chaseDir = d > 1e-3 ? { x: dx / d, z: dz / d } : { x: 0, z: 1 };
+  for (const e of mates) e.goal = null;
+}
+
+/**
+ * A fighting squad that has lost the player learns where they are now (it heard them, or
+ * one of it was hit): it goes after that spot, though nobody has seen them there.
+ */
+export function learnSpot(s: State, squad: number, x: number, z: number) {
+  const sq = s.squads[squad];
+  if (!sq?.engaged) return;
+  sq.last = { x, z };
+  sq.chaseT = 0;
+  if (sq.sinceSeen >= AWARE.trackTime) chaseTo(s, squad, { x, z });
+}
+
+/**
+ * Where a squad that just lost the player goes after them: the last sighting carried on
+ * along their motion then, pulled back toward the sighting until it is on open ground
+ * and within a storey of it.
+ */
+function aheadOfSighting(sq: { last: Point; vel?: Point }): Point {
+  const v = sq.vel ?? { x: 0, z: 0 };
+  let ox = v.x * PURSUE.lead;
+  let oz = v.z * PURSUE.lead;
+  const len = Math.hypot(ox, oz);
+  if (len > PURSUE.leadMax) {
+    ox *= PURSUE.leadMax / len;
+    oz *= PURSUE.leadMax / len;
+  }
+  const g = terrainHeight(sq.last.x, sq.last.z);
+  for (const f of [1, 0.66, 0.33]) {
+    const x = sq.last.x + ox * f;
+    const z = sq.last.z + oz * f;
+    if (standable(x, z) && Math.abs(terrainHeight(x, z) - g) < 2.5) return { x, z };
+  }
+  return { ...sq.last };
+}
+
+/**
+ * Where a member of a squad that has lost the player walks (see PURSUE): the first straight
+ * at the spot it is going after, the others at points to either side of it across the squad's
+ * line of approach; after `PURSUE.approach` seconds, a new point round the spot every
+ * `PURSUE.sweepEvery` seconds, a different one for each member.
+ */
+export function pursuitSpot(s: State, e: Enemy, known: Point): Point {
+  const sq = s.squads[e.squad];
+  const dir = sq?.chaseDir ?? { x: 0, z: 1 };
+  const n = Math.max(0, chasers(s, e.squad).indexOf(e));
+  const t = sq?.chaseT ?? 0;
+  let ox = 0;
+  let oz = 0;
+  if (t < PURSUE.approach) {
+    if (n > 0) {
+      const side = n % 2 ? 1 : -1;
+      ox = -dir.z * side * PURSUE.spread;
+      oz = dir.x * side * PURSUE.spread;
+    }
+  } else {
+    // Sweep: each member walks a different round of points about the spot, near and far in turn.
+    const k = 1 + Math.floor((t - PURSUE.approach) / PURSUE.sweepEvery);
+    const a = Math.atan2(dir.x, dir.z) + n * 2.1 + k * 2.4;
+    const r = PURSUE.sweep * ((k + n) % 2 ? 1 : 0.55);
+    ox = Math.sin(a) * r;
+    oz = Math.cos(a) * r;
+  }
+  if (ox === 0 && oz === 0) return known;
+  const g = terrainHeight(known.x, known.z);
+  for (const f of [1, 0.5]) {
+    const x = known.x + ox * f;
+    const z = known.z + oz * f;
+    if (standable(x, z) && Math.abs(terrainHeight(x, z) - g) < 2.5) return { x, z };
+  }
+  return known;
+}
+
+/**
+ * Each engaged squad's bookkeeping, every tick: how long the player has stayed on one spot or
+ * been seen backing away (see PINCH), where it goes after them once it loses sight (see PURSUE),
+ * and giving up to search after `AWARE.chaseTime` without news of them.
+ */
 export function stepSquads(s: State) {
   s.squads.forEach((sq, i) => {
     if (!sq.engaged) return;
@@ -164,22 +291,40 @@ export function stepSquads(s: State) {
       sq.sinceSeen = 0;
       return;
     }
-    // How long the spot the squad believes the player is at has stayed put (see PINCH).
+    // How long the player has been seen staying put (see PINCH). A squad that has lost them
+    // does not count the time: its chase and sweep stand in for the pinch.
     if (!sq.pin || dist2d(sq.pin, sq.last) > PINCH.radius) {
       sq.pin = { ...sq.last };
       sq.pinT = 0;
-    } else sq.pinT = (sq.pinT ?? 0) + TICK;
+    } else if (sq.sinceSeen < AWARE.trackTime) sq.pinT = (sq.pinT ?? 0) + TICK;
+    // Seen backing away from the squad's front member (see PINCH): the time builds while they
+    // do and wears off twice as fast while they do not.
+    const lead = chasers(s, i)[0];
+    const live = sq.sinceSeen < AWARE.trackTime;
+    let away = 0;
+    if (live && lead && sq.vel) {
+      const lx = sq.last.x - lead.pos.x;
+      const lz = sq.last.z - lead.pos.z;
+      const ll = Math.hypot(lx, lz) || 1;
+      away = (sq.vel.x * lx + sq.vel.z * lz) / ll;
+    }
+    sq.backT = away > PINCH.backSpeed ? (sq.backT ?? 0) + TICK : Math.max(0, (sq.backT ?? 0) - 2 * TICK);
     sq.sinceSeen += TICK;
-    if (sq.sinceSeen < AWARE.loseTime) return;
+    sq.chaseT = (sq.chaseT ?? 0) + TICK;
+    // Sight lost this tick: go after where the player was heading.
+    if (sq.sinceSeen >= AWARE.trackTime && !sq.chase) chaseTo(s, i, aheadOfSighting(sq));
+    if (sq.chaseT < AWARE.chaseTime) return;
     sq.pinT = 0;
+    sq.backT = 0;
     sq.engaged = false;
     for (const e of members) {
       e.aware = "alert";
       e.detect = AWARE.suspicious;
-      e.goal = { ...sq.last };
+      e.goal = { ...(sq.chase ?? sq.last) };
       e.searchT = AWARE.searchTime;
       e.cover = e.peek = null;
     }
+    sq.chase = sq.chaseDir = undefined;
     s.events.push({ t: "calm", squad: i });
   });
 }

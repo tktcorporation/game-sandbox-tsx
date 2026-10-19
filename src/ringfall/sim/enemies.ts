@@ -1,9 +1,9 @@
-import { ALLY, AWARE, CHARGER, COVER, DEG, DODGE, ELITE, ENEMIES, FALLBACK, PINCH, PLAYER, SHOT, STAGGER, TICK, TITAN, TURN, WORLD, type EnemyKind, type Rarity } from "./config";
+import { ALLY, AWARE, CHARGER, COVER, DEG, DODGE, ELITE, ENEMIES, FALLBACK, PINCH, PLAYER, PURSUE, SHOT, STAGGER, TICK, TITAN, TURN, WORLD, type EnemyKind, type Rarity } from "./config";
 import { clampToWorld, collide, dist2d, groundAt, groundLevel, los, lookAngles, onTerrain, solidAt, wrapAngle } from "./geom";
 import { steepAt, terrainHeight } from "./terrain";
-import { engageSquad, knownSpot, located, sense, stepSquads } from "./awareness";
+import { engageSquad, knownSpot, located, pursuitSpot, sense, stepSquads } from "./awareness";
 import { coversNear, type CoverPoint } from "./cover";
-import { fieldTo, nextStep } from "./hunt";
+import { fieldTo, nextStep, onMainGround, routeLength } from "./hunt";
 
 /** Walkers refuse to step off a ledge higher than this, so rooftop robots stay on their roof. */
 const LEDGE = 1.0;
@@ -254,25 +254,32 @@ export function stepEnemies(s: State) {
     const tUp = atAlly ? allyUp(s) : p.downed <= 0;
     const tVel = atAlly ? s.ally.vel : p.vel;
     const known = atAlly ? { x: tPos.x, z: tPos.z, live: true } : knownSpot(s, e);
-    // Its squad has the player pinned to one spot: this member goes round it (see PINCH).
+    // Its squad has the player pinned to one spot, or backing away: this member goes round (see PINCH).
     const round = atAlly ? null : pinchSpot(s, e, known);
     const dx = known.x - e.pos.x;
     const dz = known.z - e.pos.z;
     const d = Math.hypot(dx, dz) || 1e-3;
-    if (e.mode !== "lunge" && d > 0.5) turnAt(e, Math.atan2(dx, -dz), TURN[e.kind] * (e.elite ? ELITE.turn : 1));
+    // The squad has lost the player: this member goes after them, to its own side of the spot (see PURSUE).
+    const after = known.live || round ? null : pursuitSpot(s, e, known);
+    const afterVia = after && dist2d(e.pos, after) > 1.5 ? sideStep(s, e, after, known, PURSUE.spread) : null;
+    // Out on the way there it looks where it walks, round the corner ahead; at the spot, at the spot.
+    const look = afterVia && dist2d(e.pos, known) > 6 ? afterVia : known;
+    const lx = look.x - e.pos.x;
+    const lz = look.z - e.pos.z;
+    if (e.mode !== "lunge" && Math.hypot(lx, lz) > 0.5) turnAt(e, Math.atan2(lx, -lz), TURN[e.kind] * (e.elite ? ELITE.turn : 1));
     // Raiders do not hide: they press in and go round. Nor does a grunt on its way round a pinned player.
     if (e.kind === "grunt" && !e.elite && !round && fromCover(s, e, known, tChest, tUp, tVel)) continue;
     switch (e.mode) {
       case "move": {
         const sees = known.live && facing(e, tPos) && los(muzzle(e), tChest);
-        // Out of sight, a walker that came from afar closes in by the ground's way, not through a cliff.
-        const via = sees ? known : huntStep(s, e, known);
+        // Out of sight it closes in by the ground's way, round the cliff or the house between.
+        const via = sees ? known : (afterVia ?? (after ? after : huntStep(s, e, known)));
         const vd = Math.hypot(via.x - e.pos.x, via.z - e.pos.z) || 1e-3;
         const ux = (via.x - e.pos.x) / vd;
         const uz = (via.z - e.pos.z) / vd;
         let along = 0;
-        // At the last sighting with nobody in view, it stands and turns: the squad's search begins.
-        if (!sees && !known.live && d < 2) along = 0;
+        // At its point of the search with nobody in view, it stands and looks until the next.
+        if (after && !afterVia) along = 0;
         else if (sees && hurtAlone(s, e) && d < k.range + 8) along = -1; // hurt and alone: it gives ground
         else if (!sees || d > k.range + 4) along = 1;
         // In line with the player it has not found, and not making them out from here: it closes in to look.
@@ -287,7 +294,7 @@ export function stepEnemies(s: State) {
         const wide = round ?? (e.elite && !atAlly ? flankSpot(s, e, known) : null);
         if (wide && dist2d(e.pos, wide) > 3) {
           // Out of sight it gets there by the ground's way, round the cliff or the house between.
-          const to = sees ? wide : huntStep(s, e, wide);
+          const to = sees ? wide : sideStep(s, e, wide, known, PINCH.dist);
           const fd = dist2d(e.pos, to) || 1e-3;
           let ux2 = (to.x - e.pos.x) / fd;
           let uz2 = (to.z - e.pos.z) / fd;
@@ -498,9 +505,14 @@ function sightOn(e: Enemy, at: { x: number; z: number }, chestAt: Vec3): boolean
  * pinning, and for robots that cannot walk round (posted up high, the titan, heavies). Raiders
  * have their own way round (`flankSpot`).
  */
-function pinchSpot(s: State, e: Enemy, known: { x: number; z: number }): Point | null {
+function pinchSpot(s: State, e: Enemy, known: { x: number; z: number; live: boolean }): Point | null {
   const sq = s.squads[e.squad];
-  if (!sq || !sq.engaged || e.elite || (sq.pinT ?? 0) < PINCH.after) return null;
+  if (!sq || !sq.engaged || e.elite) return null;
+  // A pinch holds only while the squad sees the player: once they are lost, every member chases and sweeps.
+  const pinned = known.live && (sq.pinT ?? 0) >= PINCH.after;
+  // Backing away in sight: the squad goes round where the player is heading, not where they stand.
+  const backing = !pinned && known.live && (sq.backT ?? 0) >= PINCH.retreat;
+  if (!pinned && !backing) return null;
   const mates = s.enemies.filter((o) => o.squad === e.squad && o.mode !== "spawning");
   if (mates.length < 2) return null;
   const walks = (o: Enemy) => (o.kind === "grunt" || o.kind === "charger" || o.kind === "drone") && (ENEMIES[o.kind].fly > 0 || (onTerrain(o.pos) && o.home.y <= groundLevel(o.home.x, o.home.z) + 0.6));
@@ -509,13 +521,17 @@ function pinchSpot(s: State, e: Enemy, known: { x: number; z: number }): Point |
   const lead = mates.find((o) => !walks(o)) ?? [...mates].sort((a, b) => a.id - b.id)[0];
   if (lead === e) return null;
   const n = mates.filter((o) => o !== lead).sort((a, b) => a.id - b.id).indexOf(e);
-  const lx = known.x - lead.pos.x;
-  const lz = known.z - lead.pos.z;
+  const v = sq.vel ?? { x: 0, z: 0 };
+  const at = backing ? { x: known.x + v.x * PINCH.lead, z: known.z + v.z * PINCH.lead } : known;
+  const lx = at.x - lead.pos.x;
+  const lz = at.z - lead.pos.z;
   const ll = Math.hypot(lx, lz) || 1;
-  const side = n % 2 ? -1 : 1;
+  // The first goes round on the side the player is heading for, cutting the retreat off.
+  const toward = backing && -lz * v.x + lx * v.z < 0 ? -1 : 1;
+  const side = (n % 2 ? -1 : 1) * toward;
   for (const d of [PINCH.dist, PINCH.dist * 0.6]) {
-    const x = known.x + (-lz / ll) * d * side;
-    const z = known.z + (lx / ll) * d * side;
+    const x = at.x + (-lz / ll) * d * side;
+    const z = at.z + (lx / ll) * d * side;
     if (!steepAt(x, z) && terrainHeight(x, z) <= terrainHeight(known.x, known.z) + 1.5 && !solidAt(x, terrainHeight(x, z) + 1, z)) return { x, z };
   }
   return null;
@@ -540,14 +556,57 @@ function walkTo(e: Enemy, to: Point, speed: number, face = true): boolean {
   return false;
 }
 
+/** A walker on the island's main walkable ground, which the ground's distance fields cover (hunt.ts). */
+const onWalkable = (e: Enemy) => ENEMIES[e.kind].fly === 0 && onTerrain(e.pos) && onMainGround(e.pos.x, e.pos.z);
+
 /**
- * Where a robot heads next on its way to `goal`: straight at it, except that the walkers
- * of a squad beamed in from afar follow the ground's distance field round cliffs and up ramps.
+ * Where a robot heads next on its way to `goal`: straight at it, except that walkers follow
+ * the ground's distance field round cliffs, up ramps and round houses: those of a squad beamed
+ * in from afar always, and the others of a fighting squad within `PURSUE.reach` of walking
+ * (further, or off the open ground, as on a roof or inside a building, they walk straight).
  */
 function huntStep(s: State, e: Enemy, goal: Point): Point {
-  if (!s.squads[e.squad]?.routed || ENEMIES[e.kind].fly > 0) return goal;
-  const f = fieldTo(goal.x, goal.z);
+  const routed = !!s.squads[e.squad]?.routed;
+  if (ENEMIES[e.kind].fly > 0 || (!routed && (e.aware !== "engaged" || !onWalkable(e)))) return goal;
+  const f = fieldTo(goal.x, goal.z, routed ? Infinity : PURSUE.reach);
   return f ? nextStep(f, e.pos.x, e.pos.z, goal) : goal;
+}
+
+/**
+ * Where a member of a fighting squad heads on its way to its own point `to` beside the spot
+ * `centre` the squad is after (a pursuit or a pinch, `off` metres from the spot at most): far
+ * off, by the squad's one field toward the spot, so the squad builds a single field, not one
+ * per member; within `off` + 6 m of its point, straight at it. A squad beamed in from afar
+ * follows a field to the point itself.
+ */
+function sideStep(s: State, e: Enemy, to: Point, centre: Point, off: number): Point {
+  if (s.squads[e.squad]?.routed) return huntStep(s, e, to);
+  return to === centre || dist2d(e.pos, to) > off + 6 ? huntStep(s, e, centre) : to;
+}
+
+/** A robot this far from its post, or from the leg of its patrol it walks, has strayed (a chase took it off). */
+const STRAY = 12;
+
+/**
+ * Where a robot that has strayed from its post or its patrol heads on its way back: by the
+ * ground's way once it is on the open ground, straight otherwise. A squad beamed in from afar
+ * has no post to go back to and walks straight. One drawn further than a short field reaches
+ * finds its way by the whole world's.
+ */
+function homeStep(s: State, e: Enemy, to: Point): Point {
+  if (s.squads[e.squad]?.routed || !onWalkable(e)) return to;
+  let f = fieldTo(to.x, to.z, PURSUE.reach);
+  if (f && !Number.isFinite(routeLength(f, e.pos.x, e.pos.z))) f = fieldTo(to.x, to.z);
+  return f ? nextStep(f, e.pos.x, e.pos.z, to) : to;
+}
+
+/** Distance from (x, z) to the segment from a to b. */
+function toSegment(p: Point, a: Point, b: Point): number {
+  const dx = b.x - a.x;
+  const dz = b.z - a.z;
+  const l2 = dx * dx + dz * dz;
+  const t = l2 > 0 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.z - a.z) * dz) / l2)) : 0;
+  return Math.hypot(p.x - a.x - dx * t, p.z - a.z - dz * t);
 }
 
 /** Out of combat: hold the post or walk the patrol; when alerted, go and look. */
@@ -584,10 +643,13 @@ function calm(s: State, e: Enemy) {
     const slot = members.indexOf(e);
     const wp = sq.patrol[sq.leg % sq.patrol.length];
     const to = { x: wp.x + (slot % 2 ? 1.6 : -1.6) * Math.min(slot, 1), z: wp.z + slot * 1.4 };
-    if (walkTo(e, to, slow) && slot === 0) sq.leg++;
+    // The authored legs are walked straight; a robot a chase took off its leg finds its way back.
+    const prev = sq.patrol[(sq.leg + sq.patrol.length - 1) % sq.patrol.length];
+    const via = toSegment(e.pos, prev, to) > STRAY ? homeStep(s, e, to) : to;
+    if (walkTo(e, via, slow) && via === to && slot === 0) sq.leg++;
     return;
   }
-  if (dist2d(e.pos, e.home) > 0.8) walkTo(e, e.home, slow);
+  if (dist2d(e.pos, e.home) > 0.8) walkTo(e, dist2d(e.pos, e.home) > STRAY ? homeStep(s, e, e.home) : e.home, slow);
   else {
     moveBody(e, 0, 0);
     turnTo(e, e.face + Math.sin(e.lookT * 0.45) * 0.7, 1.5);

@@ -4,9 +4,10 @@ import { routeBoxesOpen } from "./geom";
 import { highGround, offshore, steepAt, terrainHeight } from "./terrain";
 
 /*
- * How hunting squads (reinforcements and raiders) find their way to where they think
- * the player is. Robots otherwise walk straight at their goal, which on an island of
- * levels joined by ramps ends at the first cliff. A distance field over the ground
+ * How hunting squads (reinforcements and raiders), and fighting squads that have lost the
+ * player (see PURSUE), find their way to where they think the player is. A straight walk
+ * at the goal, on an island of levels joined by ramps, ends at the first cliff. A distance
+ * field over the ground
  * gives every cell the walking distance to the target; a hunter heads for the cell
  * a few steps down that field. Cliffs, high ground and anything built that a walker
  * cannot step over close a cell, so the way goes up the ramps and round the houses;
@@ -113,9 +114,11 @@ function stepMask(): Uint8Array {
 /**
  * Scratch for `fieldTo()`: which cells it has settled, its ring of buckets (a pending
  * distance is at most the longest move past the bucket being settled, so four buckets of RES
- * go round), and the cells of the bucket being settled.
+ * go round), and the cells of the bucket being settled. A cell's mark counts only for the build
+ * that wrote it (`stamp`), so a short build does not clear the whole grid first.
  */
-let settled = new Uint8Array(0);
+let settled = new Uint32Array(0);
+let stamp = 0;
 const RING = 4;
 const ring = Array.from({ length: RING }, () => new Int32Array(1 << 12));
 const ringSize = new Int32Array(RING);
@@ -197,9 +200,11 @@ export function forgetFields() {
 /*
  * The arrays of fields dropped from the cache, for the next fields to fill. A field's arrays
  * span the whole grid, and fresh memory costs a page fault for each page it first touches;
- * reused, it does not. Nothing keeps a field past the next `fieldTo()` call.
+ * reused, it does not. A field's distances are finite only at its `order` cells, so putting
+ * those back to Infinity readies its arrays for the next: a short field costs its reach, not
+ * the grid. Nothing keeps a field past the next `fieldTo()` call.
  */
-const spare: { dist: Float32Array; order: Int32Array }[] = [];
+const spare: { dist: Float32Array; order: Int32Array; count: number }[] = [];
 
 /** Fields built so far: the sim gate checks that alternating targets reuse them. */
 export let fieldsBuilt = 0;
@@ -253,7 +258,11 @@ export function fieldTo(x: number, z: number, reach = Infinity): Field | null {
   for (const f of cache.values()) {
     const fi = f.target % NX;
     const d = Math.max(Math.abs(fi - ti), Math.abs((f.target - fi) / NX - tj));
-    if (d <= NEAR && d < hitD && f.reach >= reach) {
+    // A field serves a target that moved only a short walk from its own (not a few cells off
+    // across a cliff), and a short one only while it reaches every cell the new target's field
+    // would: one within `reach` of the new target is within `reach` plus that walk of the old.
+    const walk = f.dist[target];
+    if (d <= NEAR && d < hitD && walk <= NEAR * RES * 1.5 && f.reach >= reach + (f.reach < Infinity ? walk : 0)) {
       hit = f;
       hitD = d;
     }
@@ -264,16 +273,27 @@ export function fieldTo(x: number, z: number, reach = Infinity): Field | null {
     cache.set(hit.target, hit);
     return hit;
   }
+  // A short field is built a little past its reach, so a target that moves a few cells still
+  // finds it in the cache (see above).
+  if (reach < Infinity) reach += NEAR * RES * 1.5;
   const mask = stepMask();
   const reused = spare.pop();
-  const dist = (reused?.dist ?? new Float32Array(CELLS)).fill(Infinity);
+  const dist = reused?.dist ?? new Float32Array(CELLS).fill(Infinity);
+  if (reused) for (let e = 0; e < reused.count; e++) dist[reused.order[e]] = Infinity;
   dist[target] = 0;
   // Dijkstra with the cells kept in buckets RES wide by distance, the cost of the shortest
   // move: a cell relaxed from one in bucket b lands in bucket b + 1 or later, so every cell
   // in a bucket is settled by the time the bucket comes up, and the buckets are taken in turn
   // without a heap. The distances are the same as a heap's (each cell's is the least over its
   // settled neighbours). `order` runs bucket by bucket, nearest bucket first.
-  const done = settled.length === CELLS ? settled.fill(0) : (settled = new Uint8Array(CELLS));
+  if (settled.length !== CELLS) {
+    settled = new Uint32Array(CELLS);
+    stamp = 0;
+  }
+  const done = settled;
+  // This build's marks: taken from its bucket, and settled. Older builds' marks are below both.
+  const taken = (stamp += 2);
+  const isSettled = taken + 1;
   const order = reused?.order ?? new Int32Array(CELLS);
   let count = 0;
   const bucketOf = (d: number) => Math.floor(d / RES) & (RING - 1);
@@ -302,8 +322,8 @@ export function fieldTo(x: number, z: number, reach = Infinity): Field | null {
     let m = 0;
     for (let e = 0; e < n; e++) {
       const k = list[e];
-      if (done[k] || Math.floor(dist[k] / RES) !== b) continue;
-      done[k] = 2;
+      if (done[k] >= taken || Math.floor(dist[k] / RES) !== b) continue;
+      done[k] = taken;
       if (dist[k] > reach) {
         dist[k] = Infinity;
         past = true;
@@ -311,13 +331,13 @@ export function fieldTo(x: number, z: number, reach = Infinity): Field | null {
     }
     for (let e = 0; e < m; e++) {
       const k = bucket[e];
-      done[k] = 1;
+      done[k] = isSettled;
       order[count++] = k;
       const bits = mask[k];
       for (let q0 = 0; q0 < 8; q0++) {
         if (!(bits & (1 << q0))) continue;
         const q = k + OFFSET[q0];
-        if (done[q]) continue;
+        if (done[q] >= taken) continue;
         const d = dist[k] + COST[q0];
         if (d < dist[q]) {
           dist[q] = d;
@@ -330,16 +350,35 @@ export function fieldTo(x: number, z: number, reach = Infinity): Field | null {
   // Cells reached but not settled lie past the reach: their distances so far are not theirs.
   if (past)
     for (let r = 0; r < RING; r++)
-      for (let e = 0; e < ringSize[r]; e++) if (done[ring[r][e]] !== 1) dist[ring[r][e]] = Infinity;
+      for (let e = 0; e < ringSize[r]; e++) if (done[ring[r][e]] !== isSettled) dist[ring[r][e]] = Infinity;
   const f = { target, dist, reach, order, count };
   fieldsBuilt++;
+  // A longer field for a cell that already has a short one replaces it: its arrays go back to `spare`.
+  const replaced = cache.get(target);
+  if (replaced) {
+    cache.delete(target);
+    spare.push(replaced);
+  }
   cache.set(target, f);
   if (cache.size > CACHE) {
-    const oldest = cache.keys().next().value!;
-    spare.push(cache.get(oldest)!);
-    cache.delete(oldest);
+    // A short field (a squad chasing the player nearby, see PURSUE) goes before a whole-world
+    // one: those cost the most to build again, and the hunters following them keep at it.
+    let drop = cache.keys().next().value!;
+    for (const [k, g] of cache)
+      if (g.reach < Infinity && g !== f) {
+        drop = k;
+        break;
+      }
+    spare.push(cache.get(drop)!);
+    cache.delete(drop);
   }
   return f;
+}
+
+/** Whether (x, z) is in a cell of the main walkable ground: a walker there can follow a field. */
+export function onMainGround(x: number, z: number): boolean {
+  const { main } = grid();
+  return !!main[idxZ(z) * NX + idxX(x)];
 }
 
 /** Walking distance from (x, z) along the field, or Infinity when no way leads there. */

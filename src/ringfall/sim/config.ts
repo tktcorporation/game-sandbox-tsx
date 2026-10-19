@@ -592,8 +592,30 @@ export const ELITE = {
  * member keeps facing and shooting at the spot, the others walk to points `dist` metres
  * to either side of it, across the line from that member. Staying put in front of a squad
  * gets the player caught between two; moving or breaking line of sight is the answer.
+ *
+ * Backing away does not shake it either: once the squad has seen the player moving away
+ * from its front member faster than `backSpeed` m/s for `retreat` seconds (the time
+ * decays twice as fast while they do not), it goes round the spot `lead` seconds ahead
+ * along the player's way instead, the first of the others on the side the player is
+ * heading for: one presses in, another cuts off the retreat.
  */
-export const PINCH = { after: 4, radius: 4, dist: 10 };
+export const PINCH = { after: 4, radius: 4, dist: 10, retreat: 1.5, backSpeed: 1.5, lead: 1.2 };
+
+/**
+ * A fighting squad that loses sight of the player goes after them rather than standing at
+ * the last sighting. It carries that spot on along the player's last seen motion (`lead`
+ * seconds of it, at most `leadMax` metres), and its walkers make for it by the ground's
+ * way round cliffs and buildings (hunt.ts, `reach` metres of walking at most): the first
+ * member straight at it, the others at points `spread` metres to either side, across the
+ * squad's line of approach, so the corner the player hides behind is come round from more
+ * than one side. After `approach` seconds each sweeps the ground round the spot, a new
+ * point up to `sweep` metres from it every `sweepEvery` seconds. Any sound the player makes
+ * within `hear` times its radius of a member (a shot, a heal, a sprint) tells the squad
+ * where they are now, and so does a hit by them (not the teammate's sounds or hits): breaking
+ * sight buys a few seconds and a new angle to shoot from, not a reset. A squad that has gone `AWARE.chaseTime` without seeing,
+ * hearing or being hit by the player gives up and searches.
+ */
+export const PURSUE = { lead: 1.5, leadMax: 9, reach: 90, spread: 7, approach: 5, sweep: 10, sweepEvery: 3.5, hear: 2 };
 
 /**
  * Robot fire: shots are fast enough that a sidestep in the open does not get out of the
@@ -631,8 +653,16 @@ export const AWARE = {
   decay: 0.25,
   /** An alerted robot searches this long before going back to its post. */
   searchTime: 9,
-  /** An engaged squad that has not seen the player this long goes back to searching. */
+  /**
+   * A fighting robot that has not seen the player this long has lost them, even if they
+   * did not move (see `located()`).
+   */
   loseTime: 8,
+  /**
+   * An engaged squad that has gone this long without seeing, hearing or being hit by the
+   * player goes back to searching (see PURSUE).
+   */
+  chaseTime: 18,
   idleSpeed: 0.45, // fraction of combat speed while patrolling or searching
   /**
    * At most this many squads fight at once. Another squad that spots the player
@@ -694,9 +724,9 @@ export const FLANK = {
    * never saw the player are still there for the taking, and so is a squad that lost the
    * player behind cover and is shot from somewhere new.
    */
-  blindTime: 1.5,
+  blindTime: 2.5,
   /** Metres the player must move from where a robot last saw them for it to lose them. */
-  moved: 4,
+  moved: 6,
 };
 
 /**
