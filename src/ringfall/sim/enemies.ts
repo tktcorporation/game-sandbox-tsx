@@ -3,7 +3,7 @@ import { clampToWorld, collide, dist2d, groundAt, groundLevel, los, lookAngles, 
 import { steepAt, terrainHeight } from "./terrain";
 import { engageSquad, knownSpot, located, pursuitSpot, sense, stepSquads } from "./awareness";
 import { coversNear, type CoverPoint } from "./cover";
-import { fieldTo, nextStep, onMainGround } from "./hunt";
+import { fieldTo, nextStep, onMainGround, routeLength } from "./hunt";
 
 /** Walkers refuse to step off a ledge higher than this, so rooftop robots stay on their roof. */
 const LEDGE = 1.0;
@@ -590,11 +590,13 @@ const STRAY = 12;
 /**
  * Where a robot that has strayed from its post or its patrol heads on its way back: by the
  * ground's way once it is on the open ground, straight otherwise. A squad beamed in from afar
- * has no post to go back to and walks straight.
+ * has no post to go back to and walks straight. One drawn further than a short field reaches
+ * finds its way by the whole world's.
  */
 function homeStep(s: State, e: Enemy, to: Point): Point {
   if (s.squads[e.squad]?.routed || !onWalkable(e)) return to;
-  const f = fieldTo(to.x, to.z, PURSUE.reach);
+  let f = fieldTo(to.x, to.z, PURSUE.reach);
+  if (f && !Number.isFinite(routeLength(f, e.pos.x, e.pos.z))) f = fieldTo(to.x, to.z);
   return f ? nextStep(f, e.pos.x, e.pos.z, to) : to;
 }
 
