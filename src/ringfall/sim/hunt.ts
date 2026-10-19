@@ -258,10 +258,11 @@ export function fieldTo(x: number, z: number, reach = Infinity): Field | null {
   for (const f of cache.values()) {
     const fi = f.target % NX;
     const d = Math.max(Math.abs(fi - ti), Math.abs((f.target - fi) / NX - tj));
-    // A short field serves a target that moved only while it reaches every cell the new
-    // target's field would: one within `reach` of the new target is within `reach` plus the
-    // walk from there to the old target of the old one.
-    if (d <= NEAR && d < hitD && f.reach >= reach + (f.reach < Infinity ? f.dist[target] : 0)) {
+    // A field serves a target that moved only a short walk from its own (not a few cells off
+    // across a cliff), and a short one only while it reaches every cell the new target's field
+    // would: one within `reach` of the new target is within `reach` plus that walk of the old.
+    const walk = f.dist[target];
+    if (d <= NEAR && d < hitD && walk <= NEAR * RES * 1.5 && f.reach >= reach + (f.reach < Infinity ? walk : 0)) {
       hit = f;
       hitD = d;
     }
