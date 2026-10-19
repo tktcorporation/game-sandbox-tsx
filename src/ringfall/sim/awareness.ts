@@ -32,6 +32,8 @@ export function engageSquad(s: State, squad: number, by: Enemy) {
   sq.sinceSeen = 0;
   sq.chaseT = 0;
   sq.last = { x: s.player.pos.x, z: s.player.pos.z };
+  // The player's motion from an earlier fight says nothing about where they go now.
+  sq.vel = undefined;
   sq.pin = { ...sq.last };
   sq.pinT = 0;
   sq.backT = 0;
