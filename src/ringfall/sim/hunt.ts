@@ -258,7 +258,10 @@ export function fieldTo(x: number, z: number, reach = Infinity): Field | null {
   for (const f of cache.values()) {
     const fi = f.target % NX;
     const d = Math.max(Math.abs(fi - ti), Math.abs((f.target - fi) / NX - tj));
-    if (d <= NEAR && d < hitD && f.reach >= reach) {
+    // A short field serves a target that moved only while it reaches every cell the new
+    // target's field would: one within `reach` of the new target is within `reach` plus the
+    // walk from there to the old target of the old one.
+    if (d <= NEAR && d < hitD && f.reach >= reach + (f.reach < Infinity ? f.dist[target] : 0)) {
       hit = f;
       hitD = d;
     }
@@ -269,6 +272,9 @@ export function fieldTo(x: number, z: number, reach = Infinity): Field | null {
     cache.set(hit.target, hit);
     return hit;
   }
+  // A short field is built a little past its reach, so a target that moves a few cells still
+  // finds it in the cache (see above).
+  if (reach < Infinity) reach += NEAR * RES * 1.5;
   const mask = stepMask();
   const reused = spare.pop();
   const dist = reused?.dist ?? new Float32Array(CELLS).fill(Infinity);
