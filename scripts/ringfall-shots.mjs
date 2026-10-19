@@ -512,12 +512,25 @@ const harborTour = [
   // Each POI's landmark from the way in, and the smelter's roofs from the bridge between its halls.
   ["tour-38-supply-silos", ...at("supply", 20, 1.7, 170), -0.16, 0.08],
   // The supply depot at its own scale, from eye height: the tanker's bow over the beach, the
-  // street between the office block and the east warehouse, the yard from the east dune's crest.
+  // street between the assembly hall and the long shed, the yard from the east dune's crest.
   ["tour-46-supply-tanker-from-beach", ...at("supply", 30, 1.7, 160), 0.2, 0.15],
-  ["tour-47-supply-street", ...at("supply", 10, 1.7, 0), 0, 0.06],
+  ["tour-47-supply-street", ...at("supply", -40, 1.7, -15), 1.62, 0.1],
   ["tour-48-supply-dune-crest", ...at("supply", 90, 1.7, 22), -2.2, -0.04],
+  // The ring-segment assembly hall: its south face torn open over the segment, the floor from its
+  // west end along the segment and the cranes, and the hall from the crane runway's walkway.
+  ["tour-65-assembly-hall", ...at("supply", 0, 1.7, 8), -0.15, 0.32],
+  ["tour-66-assembly-floor", ...at("supply", -64, 1.7, -30), 1.4, 0.15],
+  ["tour-67-assembly-crane-walk", ...at("supply", -66, 28.8, -58.4), 1.85, -0.4, true],
   ["tour-39-quarry-plant", ...at("quarry", -10, 1.7, 25), 0, 0.2],
-  ["tour-40-relay-mast", ...at("relay", -20, 1.7, 20), 0.91, 0.35],
+  // The bucket-wheel excavator from the rim yard, from beside its crawlers, and down its boom from the machine house's roof.
+  ["tour-68-quarry-excavator", ...at("quarry", 60, 1.7, -95), 3.05, 0.15],
+  ["tour-69-excavator-crawlers", ...at("quarry", 70, 1.7, 40), 0.71, 0.35],
+  ["tour-70-excavator-boom", ...at("quarry", 96, 11.6, 12), -1.57, -0.2, true],
+  ["tour-40-relay-mast", ...at("relay", -20, 1.7, 20), -0.57, 0.35],
+  // The big dish: from the mesa's top, from its gallery into the bowl, and over the works from the south-west.
+  ["tour-71-relay-dish", ...at("relay", -20, 1.7, 20), 1.2, 0.35],
+  ["tour-72-dish-gallery", ...at("relay", 14.5, 39.3, -5), 1.57, 0.25, true],
+  ["tour-73-dish-from-works", ...at("relay", -60, 1.7, 230), 0.2, 0.12],
   ["tour-41-pad-hangars", ...at("pad", 0, 1.7, 60), 0, 0.1],
   // The reservoir's POIs and districts at their own scale, from eye height: the quarry's
   // terraces from its floor and its tunnel, the mesa from its foot and from its ledge road,

@@ -116,6 +116,8 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   `catwalk()`, `gantry()`, `rowHouses()`, `compound()` (a walled yard with gates), `tank()` and
   `lattice()` (an open steel tower with stairs); `lift()`
   raises a structure onto a deck and `paint()` repaints its walls (a ship's hull as steel plate).
+  `mezzanine()` is `hall()`'s mezzanine on its own, `disc()` a round of columns, `dish()` a tilted
+  parabolic dish of columns, and `strand()` / `stay()` a cable as blocks stepping along it.
   Each POI's buildings are a function of its own (`supply()`, `quarry()`, `relay()`, `pad()`,
   `wreck()`, `yard()`, `smelter()`), as is each district's (`heartTown()`, `damFace()`,
   `plateau()`, `village()`, `factory()`). The helpers take their sizes from a `Scale` (storey,
@@ -126,18 +128,27 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   than one floor returns `Floors` (each group of boxes with the level it stands on; a `loose` group,
   such as a catwalk out over a cliff, is lifted without pressing the ground under it). The
   reservoir's POIs, built to these scales:
-  - the supply depot (`WORKS`, about 220 m across, on the dune coast): warehouses 40 to 66 m long
-    and 9 to 13.5 m high, a four-storey office block, silos 32 m high, a beached tanker whose bow
-    rises 38 m, a watchtower sunk two storeys into a dune, dunes up to 13 m and a bluff 26 m over
-    its west side;
+  - the supply depot (`WORKS`, about 220 m across, on the dune coast), the base's plant for the
+    ring's segments: the assembly hall (`ASSEMBLY`, 150 by 40 m and 40 m high) with a ring segment
+    60 m long half built on its floor (`SEGMENT`, `ringSegment()`), overhead cranes whose runway is
+    walked from an open stair tower to a cab, one crane fallen onto the floor in steps walked up to
+    a mezzanine, its south cladding torn open over the segment (`GASH`) and the rails out of its
+    segment door; a long shed 66 m long, a four-storey office block, silos 32 m high, a beached
+    tanker whose bow rises 38 m, a watchtower sunk two storeys into a dune, dunes up to 13 m and a
+    bluff 26 m over its west side;
   - the quarry (about 250 by 140 m of terraces, rust-red bedrock): a rim yard at 0 with the
     processing plant, terraces at -7 and -16 and the floor at -25, joined by haul roads, iron
     stairs bolted to the terrace walls and a tunnel cut from the top terrace down to the floor
-    under the middle one; its landmark is the conveyor from the plant down to the floor;
+    under the middle one; its landmarks are the bucket-wheel excavator on the top terrace's east
+    end (`BWE`, `excavator()`: a machine house climbed by a stair tower, a mast 48 m high, and a
+    boom whose walkway steps down over the middle terrace to a cab, the wheel 18 m across cutting
+    into the pit's edge) and the conveyor from the plant down to the floor;
   - the relay (an orange sandstone mesa, 170 by 100 m on top at +27.5, cliffs 22 m to its foot):
-    a red-and-white mast 62 m over the top, the equipment block and a walled compound, reached by
-    a road up the scree and a ledge cut into the south face, or by a stair tower bolted to the
-    west cliff;
+    the base's station for talking to the ring: a dish 56 m across tilted west (`BIG_DISH`,
+    `dish()`), its rim 49 m over the top and its lowest edge reached by a stair tower, two small
+    dishes, a red-and-white mast 62 m over the top, the equipment block and a walled compound,
+    reached by a road up the scree and a ledge cut into the south face, or by a stair tower bolted
+    to the west cliff;
   - the landing pad (a concrete plateau 245 by 135 m at +16 on top of a dam 30 m high over the
     lakebed): the titan's arena, a runway, two hangars, the control tower, and in front of the
     dam the intake tower (stairs down from the crest, windows over the lakebed, shut at the

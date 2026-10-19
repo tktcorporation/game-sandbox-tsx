@@ -384,6 +384,34 @@ interface HallOpts {
   scale?: Scale;
 }
 
+/** A mezzanine along the inside of one wall of a shed `w` by `d` round (cx, cz), as `HallOpts.mezz` writes it, with its flight `stair` wide. */
+type Mezz = NonNullable<HallOpts["mezz"]>[number];
+function mezzanine(cx: number, cz: number, w: number, d: number, WALL: number, m: Mezz, sw: number): Box[] {
+  const out: Box[] = [];
+  const x0 = cx - w / 2 + WALL;
+  const x1 = cx + w / 2 - WALL;
+  const z0 = cz - d / 2 + WALL;
+  const z1 = cz + d / 2 - WALL;
+  const alongX = m.side === "n" || m.side === "s";
+  const half = (alongX ? x1 - x0 : z1 - z0) / 2;
+  const from = m.from ?? -half;
+  const to = m.to ?? half;
+  // The slab, its edge rail (open over the stairs' landing), and the flight up into the hall.
+  const [a0, a1] = alongX ? [cx + from, cx + to] : [cz + from, cz + to];
+  const edge = m.side === "n" ? z0 + m.depth : m.side === "s" ? z1 - m.depth : m.side === "w" ? x0 + m.depth : x1 - m.depth;
+  const inner = m.side === "n" || m.side === "w" ? 1 : -1;
+  if (alongX) out.push(rect(a0, Math.min(edge, m.side === "n" ? z0 : z1), a1, Math.max(edge, m.side === "n" ? z0 : z1), m.y - 0.3, m.y, "slab"));
+  else out.push(rect(Math.min(edge, m.side === "w" ? x0 : x1), a0, Math.max(edge, m.side === "w" ? x0 : x1), a1, m.y - 0.3, m.y, "slab"));
+  const s = m.stair ?? 0;
+  const railTo = (p: number, q: number) =>
+    alongX ? rect(p, edge - (inner > 0 ? 0.15 : 0), q, edge + (inner > 0 ? 0 : 0.15), m.y, m.y + 1.0, "steel", 2) : rect(edge - (inner > 0 ? 0.15 : 0), p, edge + (inner > 0 ? 0 : 0.15), q, m.y, m.y + 1.0, "steel", 2);
+  const sc = (alongX ? cx : cz) + s;
+  out.push(railTo(a0, sc - sw / 2), railTo(sc + sw / 2, a1));
+  const away: Side = m.side === "n" ? "s" : m.side === "s" ? "n" : m.side === "w" ? "e" : "w";
+  out.push(...(alongX ? stairs(sc, edge, away, sw, m.y) : stairs(edge, sc, away, sw, m.y)));
+  return out;
+}
+
 /**
  * A large single-volume shed (a warehouse, a hangar, a works hall) of height H: thin walls with
  * wide roller doors, a flat roof, mezzanines inside along its walls with stairs up to them, and
@@ -409,30 +437,7 @@ function hall(cx: number, cz: number, w: number, d: number, H: number, o: HallOp
   out.push(box(cx, cz, w, d, H, "slab", 0, H - 0.3));
   out.push(...parapet(cx, cz, w, d, H, [...(o.open ?? []), ...(o.roof ? [o.roof] : [])]));
   if (o.roof) out.push(...roofStairs(cx, cz, w, d, H, o.roof, size.stair));
-  const x0 = cx - w / 2 + WALL;
-  const x1 = cx + w / 2 - WALL;
-  const z0 = cz - d / 2 + WALL;
-  const z1 = cz + d / 2 - WALL;
-  for (const m of o.mezz ?? []) {
-    const alongX = m.side === "n" || m.side === "s";
-    const half = (alongX ? x1 - x0 : z1 - z0) / 2;
-    const from = m.from ?? -half;
-    const to = m.to ?? half;
-    // The slab, its edge rail (open over the stairs' landing), and the flight up into the hall.
-    const [a0, a1] = alongX ? [cx + from, cx + to] : [cz + from, cz + to];
-    const edge = m.side === "n" ? z0 + m.depth : m.side === "s" ? z1 - m.depth : m.side === "w" ? x0 + m.depth : x1 - m.depth;
-    const inner = m.side === "n" || m.side === "w" ? 1 : -1;
-    if (alongX) out.push(rect(a0, Math.min(edge, m.side === "n" ? z0 : z1), a1, Math.max(edge, m.side === "n" ? z0 : z1), m.y - 0.3, m.y, "slab"));
-    else out.push(rect(Math.min(edge, m.side === "w" ? x0 : x1), a0, Math.max(edge, m.side === "w" ? x0 : x1), a1, m.y - 0.3, m.y, "slab"));
-    const s = m.stair ?? 0;
-    const sw = size.stair;
-    const railTo = (p: number, q: number) =>
-      alongX ? rect(p, edge - (inner > 0 ? 0.15 : 0), q, edge + (inner > 0 ? 0 : 0.15), m.y, m.y + 1.0, "steel", 2) : rect(edge - (inner > 0 ? 0.15 : 0), p, edge + (inner > 0 ? 0 : 0.15), q, m.y, m.y + 1.0, "steel", 2);
-    const sc = (alongX ? cx : cz) + s;
-    out.push(railTo(a0, sc - sw / 2), railTo(sc + sw / 2, a1));
-    const away: Side = m.side === "n" ? "s" : m.side === "s" ? "n" : m.side === "w" ? "e" : "w";
-    out.push(...(alongX ? stairs(sc, edge, away, sw, m.y) : stairs(edge, sc, away, sw, m.y)));
-  }
+  out.push(...(o.mezz ?? []).flatMap((m) => mezzanine(cx, cz, w, d, WALL, m, size.stair)));
   if (o.columns) {
     const long = w >= d;
     const len = long ? w : d;
@@ -695,11 +700,60 @@ const watchFloor = (x: number, z: number, k: number) => WATCH.base + k * WORKS.s
 const TANKER = { x0: 40, x1: 62, z0: 72, z1: 112, deck: 9 } as const;
 
 /**
+ * The ring-segment assembly hall, in the supply depot's frame: 150 m along x, 40 m deep and 40 m
+ * high, its concrete plinth `plinth` high under teal steel cladding. The gantry cranes run along
+ * its length on girders at `crane`, the height of the open steel stair tower (`lattice()`) in its
+ * north-west corner, so the walk from the tower's top out along the north runway to a crane's
+ * bridge stays level.
+ */
+const ASSEMBLY = { x0: -102, x1: 48, z0: -60, z1: -20, H: 40, plinth: 9, crane: 8 * STOREY } as const;
+/** The gash torn in the hall's south cladding over the segment, where the debris of the ring's fall came through: x and heights. */
+const GASH = { x0: -12, x1: 18, y0: 14, y1: 32 } as const;
+/** Where the cranes' bridges stand along the hall: the one with its walkway and cab, the one over the segment, and the one that fell. */
+const BRIDGES = { cab: -45, over: 27, fallen: -72 } as const;
+
+/**
+ * The bucket-wheel excavator that dug the ring's material, on the quarry's top terrace, in the
+ * quarry's frame, its heights over the top terrace: crawlers, a turntable, the machine house (its
+ * roof `roof` high, reached by an open stair tower south of it), an A-frame mast `mast` high
+ * with stays to both booms, the counterweight boom east, and the wheel boom running west out over
+ * the middle terrace down to the wheel (`wheel`, beside the boom's tip) cutting into the pit's edge.
+ * A walkway steps down the wheel boom from the roof in `steps` steps a body walks, flat for a
+ * landing at the operator's cab (`cab`, the steps it spans) near the wheel.
+ */
+const BWE = { root: 92, tip: 40, roof: 17, end: 2, mast: 48, steps: 40, cab: [31, 33], wheel: { x: 40, y: 0, r: 9, z0: 7, z1: 10 } } as const;
+/** The wheel boom's walkway steps, from the roof out: x from, x to, and the top of each. */
+const BOOM_STEPS = (() => {
+  const { root, tip, roof, end, steps, cab } = BWE;
+  const L = (root - tip) / steps;
+  const flat = cab[1] - cab[0];
+  const rise = (roof - end) / (steps - flat);
+  let y = roof;
+  return Array.from({ length: steps }, (_, k) => {
+    if (k <= cab[0] || k > cab[1]) y -= rise;
+    return { x0: root - (k + 1) * L, x1: root - k * L, y };
+  });
+})();
+/** The cab's floor over the top terrace, and its walls round it. */
+const BWE_CAB = (() => {
+  const a = BOOM_STEPS[BWE.cab[1]].x0;
+  const b = BOOM_STEPS[BWE.cab[0]].x1;
+  return { x0: a - 0.5, x1: b + 1.1, z0: 13.5, z1: 17.6, y: BOOM_STEPS[BWE.cab[0]].y, door: (a + b) / 2 };
+})();
+
+/**
  * Each POI is written in its own frame (its data and its boxes below) and moved
  * into place by this offset (`POI_AT` in areas.ts, which sets each in its area's frame).
  * The harbor's POIs are written round their own middle.
  */
 const AT = (["supply", "quarry", "relay", "pad", "wreck", "yard", "smelter"] as const).map((id) => POI_AT[id]);
+
+/** The big dish on the mesa, in the relay's frame (`dish()`), its heights over the mesa's top. */
+const BIG_DISH = { x: 45, z: -5, y: 23, r: 28, f: 22.4, tilt: Math.PI / 4, cell: 2.5 } as const;
+/** The big dish's bowl, and the stair tower west of its lowest rim, its top the gallery's floor. */
+const BIG_BOWL = dish(BIG_DISH.x, BIG_DISH.y, BIG_DISH.z, { r: BIG_DISH.r, f: BIG_DISH.f, tilt: BIG_DISH.tilt, face: "w", cell: BIG_DISH.cell, thick: 0.6, rim: 2.5, feed: 2 });
+const DISH_RIM_X = Math.min(...BIG_BOWL.filter((b) => b.z0 < BIG_DISH.z && b.z1 > BIG_DISH.z).map((b) => b.x0));
+const DISH_STAIRS = { x: DISH_RIM_X - 4, z: BIG_DISH.z, floors: 3 } as const;
 
 const POI_FRAMES: Poi[] = [
   {
@@ -710,28 +764,30 @@ const POI_FRAMES: Poi[] = [
     trigger: 95,
     entry: { x: 0, z: 114, yaw: 0 },
     squads: [
-      // Two squads, one in the west warehouse and one out on the east dune by the tanker: a fight
+      // Two squads, one in the assembly hall and one out on the east dune by the tanker: a fight
       // with one leaves the other a flank to come round, across a yard 30 m wide.
-      { name: "倉庫", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: -76, z: -30, face: W }, { kind: "grunt", x: -50, z: -9, face: S }] },
+      { name: "組立棟", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: -76, z: -30, face: W }, { kind: "grunt", x: -50, z: -9, face: S }] },
       { name: "砂丘", members: [{ kind: "grunt", x: 74, z: 18, face: W }, { kind: "charger", x: 26, z: 44, face: W }] },
     ],
     bins: [
-      { x: -12, z: -35, y: WORKS.storey * 3 },
+      { x: 24, z: 8, y: WORKS.storey * 3 },
       { x: -46, z: 25 },
-      { x: -56, z: -22 },
-      { x: 28, z: -42 },
+      { x: -56, z: -23 },
+      { x: 40, z: -28 },
       { x: 43.5, z: 78, y: TANKER.deck },
       { x: WATCH.x - 3, z: WATCH.z, y: watchFloor(WATCH.x - 3, WATCH.z, 3) },
-      { x: 54, z: -44, y: WORKS.storey },
-      { x: -84, z: -38, y: WORKS.storey, vault: true },
+      { x: 30, z: -56.5, y: WORKS.storey },
+      // The cab of the crane whose walkway the stair tower climbs to.
+      { x: BRIDGES.cab, z: -26.5, y: ASSEMBLY.crane },
+      { x: -84, z: -56.5, y: WORKS.storey, vault: true },
     ],
     keyFrom: "pad",
     loot: { weapon: [["hornet", 1], ["maul", 0], ["lance", 0], ["pike", 1]], armor: [1], heals: 1, valuable: [["fuse", 3], ["parts", 4], ["wire", 2], ["drive", 1]] },
     floor: [
       { x: 6, z: 104, weapon: ["hornet", 0] },
       { x: -6, z: 104, heal: "syringe" },
-      { x: -10, z: -36, y: WORKS.storey, armor: 1 },
-      { x: -36, z: -18, y: WORKS.storey * 2, heal: "battery" },
+      { x: 26, z: 7, y: WORKS.storey, armor: 1 },
+      { x: -36, z: -23, y: WORKS.storey * 2, heal: "battery" },
     ],
   },
   {
@@ -753,6 +809,8 @@ const POI_FRAMES: Poi[] = [
       { x: 52, z: 6 },
       { x: -28, z: 32 },
       { x: 4, z: 6 },
+      // The excavator's cab, out on its boom over the middle terrace.
+      { x: (BWE_CAB.x0 + BWE_CAB.x1) / 2, z: 16, y: LEVEL.quarryTop + BWE_CAB.y - LEVEL.quarryMid },
       { x: -31, z: -55, y: WORKS.storey * 2, vault: true },
     ],
     keyFrom: "supply",
@@ -768,13 +826,15 @@ const POI_FRAMES: Poi[] = [
     trigger: 100,
     entry: { x: -20, z: 20, yaw: 2.36 },
     squads: [
-      { name: "マスト", members: [{ kind: "grunt", x: 36, z: -28, face: W }, { kind: "heavy", x: 18, z: 2, face: SW }] },
+      { name: "アンテナ", members: [{ kind: "grunt", x: 36, z: -28, face: W }, { kind: "heavy", x: 18, z: 2, face: SW }] },
       { name: "機器棟", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: -22, z: -5, face: W }, { kind: "grunt", x: -8, z: -36, face: W }, { kind: "charger", x: 4, z: 14, face: SW }] },
     ],
     bins: [
       { x: 8, z: 18 },
       { x: -42, z: -30 },
-      { x: 46, z: -2 },
+      { x: 62, z: 8 },
+      // The gallery at the big dish's lowest rim, on its stair tower's top.
+      { x: DISH_STAIRS.x - 1.5, z: DISH_STAIRS.z + 2, y: DISH_STAIRS.floors * STOREY },
       { x: -29, z: -20, y: WORKS.storey, vault: true },
     ],
     keyFrom: "quarry",
@@ -1262,6 +1322,7 @@ export const LANDMARKS: readonly { name: string; x: number; z: number }[] = [
   at("heart", { name: "教会", x: -25, z: -24 }),
   at("heart", { name: "取水塔", x: -35, z: -86 }),
   at("supply", { name: "座礁したタンカー", x: 51, z: 128 }),
+  at("supply", { name: "組立工場", x: -27, z: -40 }),
   at("supply", { name: "砂丘の崖", x: -140, z: 15 }),
   at("heart", { name: "堤", x: 0, z: -121 }),
   at("heart", { name: "放水路", x: 122, z: -125 }),
@@ -1272,9 +1333,11 @@ export const LANDMARKS: readonly { name: string; x: number; z: number }[] = [
   at("village", { name: "段々畑", x: 10, z: 30 }),
   at("village", { name: "風車", x: -35, z: -82 }),
   at("relay", { name: "鉄の階段", x: -120, z: 0 }),
+  at("relay", { name: "パラボラアンテナ", x: 45, z: -5 }),
   at("anchor", { name: "アンカー", x: 0, z: 0 }),
   at("anchor", { name: "倒れた昇降路", x: -160, z: 16 }),
   at("quarry", { name: "コンベヤー", x: 10, z: -40 }),
+  at("quarry", { name: "バケット掘削機", x: 100, z: 12 }),
   at("pass", { name: "峠", x: -60, z: -236 }),
   at("railway", { name: "鉄橋", x: 140, z: -190 }),
   at("railway", { name: "駅", x: 108, z: -228 }),
@@ -1422,10 +1485,80 @@ const stone = (boxes: Box[]): Box[] => paint(boxes, "wall", "wall", () => 3, (b)
 const PLANT = { x: 10, z: -104 } as const;
 const BELT = { x: 10, z0: -91, z1: 18, y0: 9, y1: LEVEL.pit + 6 } as const;
 
+/** A stay cable from (xa, ya) to (xb, yb) at z: blocks stepping along it, not overlapping along x. */
+function stay(xa: number, ya: number, xb: number, yb: number, z: number): Box[] {
+  const n = Math.ceil(Math.abs(xb - xa) / 0.8);
+  const out: Box[] = [];
+  for (let i = 0; i < n; i++) {
+    const [a, b] = [xa + ((xb - xa) * i) / n, xa + ((xb - xa) * (i + 1)) / n];
+    const [p, q] = [ya + ((yb - ya) * i) / n, ya + ((yb - ya) * (i + 1)) / n];
+    out.push(rect(Math.min(a, b), z - 0.15, Math.max(a, b), z + 0.15, Math.min(p, q) - 0.15, Math.max(p, q) + 0.15, "steel", 2));
+  }
+  return out;
+}
+
+/**
+ * The excavator (`BWE`): what stands on the top terrace, and what reaches out over the terraces
+ * below (laid without pressing them flat).
+ */
+function excavator(): { on: Box[]; out: Box[] } {
+  const { root, roof: R, mast: M, wheel: W } = BWE;
+  const on: Box[] = [];
+  // Crawlers, the frame between them, the turntable, the deck the house stands on: 10 m inside the
+  // top terrace's edges, so the ground pressed flat under them leaves the terraces' walls as they are.
+  on.push(rect(88, 2, 112, 7, 0, 4.5, "steel", 1), rect(88, 17, 112, 22, 0, 4.5, "steel", 1), rect(92, 7, 108, 17, 1.5, 4.5, "steel", 2));
+  on.push(...disc(100, 12, 9, 2, 4.5, 6, "steel", 2), rect(88, 4, 112, 20, 6, 7, "steel", 0));
+  // The machine house, its roof walked on: a band of windows down each side, knee rails round the
+  // roof open where the boom's walkway leaves it and where the stair tower's bridge comes in.
+  on.push(rect(root, 5, 112, 19, 7, R, "steel", 0));
+  for (const x of [95, 101, 107]) on.push(rect(x, 4.94, x + 3.5, 5, 12, 14.5, "steel", 3), rect(x, 19, x + 3.5, 19.06, 12, 14.5, "steel", 3));
+  on.push(rect(root, 5, 112, 5.15, R, R + 0.5, "steel", 2), rect(root, 18.85, 101.5, 19, R, R + 0.5, "steel", 2), rect(104.5, 18.85, 112, 19, R, R + 0.5, "steel", 2));
+  on.push(rect(root, 5.15, root + 0.15, 10.5, R, R + 0.5, "steel", 2), rect(root, 13.5, root + 0.15, 18.85, R, R + 0.5, "steel", 2), rect(111.85, 5.15, 112, 18.85, R, R + 0.5, "steel", 2));
+  // The stair tower south of the house, on past the crawlers, and its bridge onto the roof.
+  on.push(...lattice(103, 26.5, 6, 7, 5, R + 0.6, ["n"]), rect(101.5, 19, 104.5, 23, R - 0.3, R, "slab", 1));
+  on.push(rect(101.5, 19, 101.65, 23, R, R + 0.5, "steel", 2), rect(104.35, 19, 104.5, 23, R, R + 0.5, "steel", 2));
+  // The mast: two legs from the roof, a brace and a head.
+  on.push(rect(101, 7.5, 102.2, 8.7, R, M, "steel", 0), rect(101, 15.3, 102.2, 16.5, R, M, "steel", 0), rect(101.1, 8.7, 102.1, 15.3, 32, 33, "steel", 0), rect(100.6, 7.1, 102.6, 16.9, M, M + 1.6, "steel", 0));
+  const out: Box[] = [];
+  // The wheel boom: per step its box girder, the walkway on it and knee rails, the south rail open at the cab.
+  BOOM_STEPS.forEach(({ x0, x1, y }, k) => {
+    out.push(rect(x0, 10.2, x1, 13.8, y - 3, y - 0.5, "steel", 0), rect(x0, 10.5, x1, 13.5, y - 0.5, y, "slab", 1), rect(x0, 10.5, x1, 10.7, y, y + 0.5, "steel", 2));
+    if (k < BWE.cab[0] || k > BWE.cab[1]) out.push(rect(x0, 13.3, x1, 13.5, y, y + 0.5, "steel", 2));
+  });
+  // The counterweight boom on its post, out over the terrace's east edge, the weight at its end, and the stays.
+  out.push(rect(104, 10, 110, 14, R, 20.5, "steel", 0), rect(104.5, 10.3, 122, 13.7, 20.5, 22.5, "steel", 2), rect(120, 8, 128, 16, 15, 23.5, "steel", 1));
+  out.push(...stay(101.6, M, 124, 23.5, 12), ...stay(101.6, M, 44, 6, 12));
+  // The boom's head and the wheel's axle; the wheel beside it: a rim of rows, two spokes, buckets round it.
+  out.push(rect(W.x - 2, 9.8, W.x, 14.2, -3, BWE.end + 0.5, "steel", 0), rect(W.x - 1.2, W.z0 - 1, W.x + 1.2, 14, W.y - 1.2, W.y + 1.2, "steel", 2));
+  const ri = W.r - 2.5;
+  for (let y = -W.r; y < W.r; y += 1) {
+    const m = y + 0.5;
+    const wo = Math.sqrt(W.r * W.r - m * m);
+    if (Math.abs(m) < ri) {
+      const wi = Math.sqrt(ri * ri - m * m);
+      out.push(rect(W.x - wo, W.z0, W.x - wi, W.z1, W.y + y, W.y + y + 1, "steel", 0), rect(W.x + wi, W.z0, W.x + wo, W.z1, W.y + y, W.y + y + 1, "steel", 0));
+    } else out.push(rect(W.x - wo, W.z0, W.x + wo, W.z1, W.y + y, W.y + y + 1, "steel", 0));
+  }
+  const hub = Math.sqrt(ri * ri - 0.25);
+  out.push(rect(W.x - hub, W.z0 + 1, W.x + hub, W.z1 - 1, W.y - 0.5, W.y + 0.5, "steel", 2), rect(W.x - 0.5, W.z0 + 0.8, W.x + 0.5, W.z1 - 0.8, W.y - ri, W.y + ri, "steel", 2));
+  for (let k = 0; k < 12; k++) {
+    const a = ((k + 0.5) * Math.PI) / 6;
+    const [x, y] = [W.x + 9.7 * Math.cos(a), W.y + 9.7 * Math.sin(a)];
+    out.push(rect(x - 0.95, W.z0 - 0.2, x + 0.95, W.z1 + 0.2, y - 0.95, y + 0.95, "steel", 1));
+  }
+  // The operator's cab beside the walkway's landing, hung off the boom, its bin inside.
+  const c = BWE_CAB;
+  const [cx, cz] = [(c.x0 + c.x1) / 2, (c.z0 + 0.3 + c.z1) / 2];
+  out.push(rect(c.x0, c.z0, c.x1, c.z1, c.y - 0.3, c.y, "slab", 1), rect(c.x0 + 0.6, 13.8, c.x1 - 0.6, 14.8, c.y - 2.8, c.y - 0.3, "steel", 0));
+  const holes: Hole[] = [{ side: "n", at: c.door - cx, w: 2.2, head: 2.2 }, { side: "w", w: 2, sill: 1, head: 2.1 }, { side: "e", w: 2, sill: 1, head: 2.1 }, { side: "s", w: 3, sill: 1, head: 2.1 }];
+  out.push(...shell(cx, cz, c.x1 - c.x0, c.z1 - c.z0 - 0.3, c.y, c.y + 2.5, holes, "steel", 3, 0.25), rect(c.x0 - 0.1, c.z0 + 0.2, c.x1 + 0.1, c.z1 + 0.1, c.y + 2.5, c.y + 2.8, "slab", 1));
+  return { on, out };
+}
+
 /**
  * The quarry, in its own frame, built to `WORKS`: the processing plant and its hoppers on the rim
- * yard, the office tower (`HIGH_RISES`) on the top terrace, a shed, dump trucks on the terraces, an
- * excavator and spoil heaps on the floor. The conveyor down into it, the iron stairs between its
+ * yard, the office tower (`HIGH_RISES`) and the bucket-wheel excavator (`BWE`) on the top terrace, a
+ * shed, dump trucks on the terraces, a digger and spoil heaps on the floor. The conveyor down into it, the iron stairs between its
  * terraces and the tunnel's roof are laid once the ground is (`QUARRY_WORKS`). Each part is lifted
  * to the floor it stands on.
  */
@@ -1470,7 +1603,10 @@ function quarry(): Floors {
       box(-80, -10, 5, 6, 3, "rock", 1),
     ],
   ]);
-  // The floor: the excavator at work, spoil heaps and crates, a rock face to fight round.
+  // The bucket-wheel excavator on the top terrace's east end, its boom out over the middle terrace.
+  const bwe = excavator();
+  out.push([LEVEL.quarryTop, bwe.on], [LEVEL.quarryTop, bwe.out, "loose"]);
+  // The floor: a digger at work, spoil heaps and crates, a rock face to fight round.
   out.push([
     LEVEL.pit,
     [
@@ -1492,14 +1628,137 @@ function quarry(): Floors {
 }
 
 /**
- * The relay station on the sandstone mesa, in its own frame, built to `WORKS`: the red-and-white
- * mast (62 m over the top, seen across the island), the equipment block (`HIGH_RISES`) and a
- * generator hall inside a walled compound, a hut where the ledge road comes up, a fuel tank.
+ * A parabolic dish antenna of aperture radius `r` and focal length `f`, its vertex at (vx, vy, vz),
+ * its axis tilted `tilt` from the vertical toward `face`. The bowl is columns over a plan grid
+ * `cell` wide that do not overlap, each from the lowest point of the bowl over it (less `thick`) to
+ * the highest, so it reads as one stepped shell: white paint, its outer ring grey. The tilt stays
+ * under the bowl's own slope at its rim from the vertical, so a column meets the bowl once. Its
+ * feed legs from the rim's sides to the receiver at the focus are blocks stepping along them.
+ */
+interface DishOpts {
+  r: number;
+  f: number;
+  tilt: number;
+  face: Side;
+  cell: number;
+  thick: number;
+  /** How wide the grey ring round the rim is. */
+  rim: number;
+  /** The receiver's cabin at the focus, its half size, and whether feed legs carry it. */
+  feed?: number;
+}
+/** Plan axes of a dish facing `face`: local X runs back from its face, local Z across it. */
+function dishAxes(face: Side) {
+  const [dx, dz] = DIR[face];
+  return { X: [-dx, -dz] as const, Z: [dz, -dx] as const };
+}
+/** A point of a dish at local (X, y, Z) in the world, for its vertex at (vx, vz). */
+function dishPoint(vx: number, vz: number, face: Side, X: number, Z: number): [number, number] {
+  const a = dishAxes(face);
+  return [vx + X * a.X[0] + Z * a.Z[0], vz + X * a.X[1] + Z * a.Z[1]];
+}
+/** Blocks stepping from p to q, `t` thick, along the axis they run furthest on, not overlapping along it. */
+function strand(p: readonly [number, number, number], q: readonly [number, number, number], t: number, tint: number): Box[] {
+  const d = [q[0] - p[0], q[1] - p[1], q[2] - p[2]];
+  const ax = Math.abs(d[0]) >= Math.abs(d[2]) ? 0 : 2;
+  const n = Math.max(1, Math.ceil(Math.abs(d[ax]) / 0.8));
+  const out: Box[] = [];
+  for (let i = 0; i < n; i++) {
+    const a = p.map((v, j) => v + (d[j] * i) / n);
+    const b = p.map((v, j) => v + (d[j] * (i + 1)) / n);
+    const lo = a.map((v, j) => (j === ax ? Math.min(v, b[j]) : Math.min(v, b[j]) - t / 2));
+    const hi = a.map((v, j) => (j === ax ? Math.max(v, b[j]) : Math.max(v, b[j]) + t / 2));
+    out.push(rect(lo[0], lo[2], hi[0], hi[2], lo[1], hi[1], "steel", tint));
+  }
+  return out;
+}
+function dish(vx: number, vy: number, vz: number, o: DishOpts): Box[] {
+  const { r, f, tilt, face, cell, thick } = o;
+  const [c, s] = [Math.cos(tilt), Math.sin(tilt)];
+  const k = s / (4 * f);
+  // The bowl's height over local plan (X, Z), and its distance from the axis there squared, or null off it.
+  const at = (X: number, Z: number): { y: number; d2: number } | null => {
+    const D = c * c - 4 * k * (X + k * Z * Z);
+    if (D < 0) return null;
+    const u = (c - Math.sqrt(D)) / (2 * k);
+    const d2 = u * u + Z * Z;
+    return d2 <= r * r ? { y: vy + u * s + (d2 / (4 * f)) * c, d2 } : null;
+  };
+  const depth = (r * r) / (4 * f);
+  const [x0, x1] = [-r * c - depth * s, r * c - depth * s];
+  const out: Box[] = [];
+  for (let X = x0; X < x1; X += cell)
+    for (let Z = -r; Z < r; Z += cell) {
+      const mid = at(X + cell / 2, Z + cell / 2);
+      if (!mid) continue;
+      const ys = [mid.y];
+      for (const [a, b] of [[X, Z], [X + cell, Z], [X, Z + cell], [X + cell, Z + cell]]) {
+        const q = at(a, b);
+        if (q) ys.push(q.y);
+      }
+      const [px, pz] = dishPoint(vx, vz, face, X, Z);
+      const [qx, qz] = dishPoint(vx, vz, face, X + cell, Z + cell);
+      const rim = mid.d2 > (r - o.rim) ** 2;
+      const [ax, az, bx, bz, lo] = [Math.min(px, qx), Math.min(pz, qz), Math.max(px, qx), Math.max(pz, qz), Math.min(...ys) - thick];
+      out.push(rect(ax, az, bx, bz, lo, Math.max(...ys), "steel", rim ? 2 : 4));
+      // The backing trusses under the bowl: a cross through the axis and a ring half way out.
+      const d = Math.sqrt(mid.d2);
+      const back = Math.abs(Z + cell / 2) < cell / 2 || Math.abs(X + cell / 2) < cell / 2 || Math.abs(d - r * 0.55) < cell / 2;
+      if (back && !rim) out.push(rect(ax, az, bx, bz, lo - 1.4, lo, "steel", 2));
+    }
+  if (o.feed) {
+    // The receiver at the focus, on legs from the rim either side of the axis and from its far edge.
+    const [fx, fz] = dishPoint(vx, vz, face, -f * s, 0);
+    const fy = vy + f * c;
+    const h = o.feed;
+    out.push(rect(fx - h, fz - h, fx + h, fz + h, fy - h, fy + h, "steel", 2));
+    const foot = (X: number, Z: number, y: number): [number, number, number] => {
+      const [x, z] = dishPoint(vx, vz, face, X, Z);
+      return [x, y, z];
+    };
+    for (const side of [-1, 1]) out.push(...strand(foot(-depth * s, side * (r - cell / 2), vy + depth * c), [fx, fy, fz], 0.5, 2));
+    out.push(...strand(foot(r * c - depth * s - cell / 2, 0, vy + r * s + depth * c), [fx, fy, fz], 0.5, 2));
+  }
+  return out;
+}
+
+
+/**
+ * The relay station on the sandstone mesa, in its own frame, built to `WORKS`: the base's station
+ * for talking to the ring. The big dish (`BIG_DISH`, 56 m across, its rim 49 m over the top) faces
+ * west over the island on its pedestal, an open stair tower up to a gallery at its lowest rim; two
+ * small dishes, the red-and-white mast (62 m) towards the north-west corner, the equipment block
+ * (`HIGH_RISES`) and a generator hall inside a walled compound, a hut where the ledge road comes
+ * up, a fuel tank.
  */
 function relay(): Floors {
   const S = WORKS.storey;
+  const D = BIG_DISH;
+  // The pedestal: a concrete drum, the turntable on it, the yoke's two arms and the elevation axle
+  // behind the dish's vertex, and the hub between the axle and the dish.
+  const B = { x: D.x + 6 * Math.sin(D.tilt), y: D.y - 6 * Math.cos(D.tilt) };
+  const pedestal: Box[] = [
+    ...disc(B.x, D.z, 7, 2, 0, 12, "wall", 0),
+    rect(B.x - 6, D.z - 13, B.x + 6, D.z + 13, 12, 13, "steel", 2),
+    rect(B.x - 2.5, D.z - 12.5, B.x + 2.5, D.z - 10, 13, B.y + 1.6, "steel", 0),
+    rect(B.x - 2.5, D.z + 10, B.x + 2.5, D.z + 12.5, 13, B.y + 1.6, "steel", 0),
+    rect(B.x - 1.2, D.z - 10, B.x + 1.2, D.z + 10, B.y - 1.2, B.y + 1.2, "steel", 2),
+  ];
+  for (const t of [0.25, 0.6]) {
+    const [hx, hy] = [B.x + (D.x - B.x) * t, B.y + (D.y - B.y) * t];
+    pedestal.push(rect(hx - 1.6, D.z - 4.3, hx + 1.6, D.z + 4.3, hy - 1.6, hy + 1.6, "steel", 2));
+  }
+  const big = BIG_BOWL;
+  // The stair tower to the gallery at the dish's lowest rim, the gallery from its top to the rim.
+  const [T, rimX, G] = [DISH_STAIRS, DISH_RIM_X, DISH_STAIRS.floors * STOREY];
+  const gallery = [...lattice(T.x, T.z, 6, 7, T.floors, G + 0.6, ["e"]), rect(T.x + 3, T.z - 2, rimX, T.z + 2, G - 0.3, G, "slab", 1)];
+  gallery.push(rect(T.x + 3, T.z - 2, rimX, T.z - 1.85, G, G + 0.5, "steel", 2), rect(T.x + 3, T.z + 1.85, rimX, T.z + 2, G, G + 0.5, "steel", 2));
+  // Two small dishes on concrete posts: one facing south by the north cliff, one west by the generators.
+  const small = (x: number, z: number, face: Side) => [rect(x - 1.4, z - 1.4, x + 1.4, z + 1.4, 0, 5.2, "wall", 0), ...dish(x, 6.2, z, { r: 6, f: 4.8, tilt: Math.PI / 4, face, cell: 1.25, thick: 0.3, rim: 0.7, feed: 0.5 })];
   const top: Box[] = [
-    ...mast(25, -15, 7, 4, 62),
+    ...pedestal,
+    ...gallery,
+    ...mast(-48, -28, 7, 4, 62),
     ...hall(45, 22, 20, 14, S + 2.5, { scale: WORKS, steel: 3, doors: [{ side: "w" }], hatches: [{ side: "s", at: 4 }], windows: ["n", "s"] }),
     ...tank(60, -30, 4, 8, "w"),
     ...compound(5, -5, 110, 70, 2.4, [
@@ -1515,7 +1774,7 @@ function relay(): Floors {
     box(-40, -12, 6.2, 2.5, 2.6, "container", 0),
     box(10, -32, 1.2, 1.2, 0.9, "crate"),
     box(11.2, -32, 1.2, 1.2, 1.8, "crate"),
-    box(40, -10, 4, 0.6, 2.4, "wall"),
+    box(34, -16, 4, 0.6, 2.4, "wall"),
     box(-60, 10, 0.6, 5, 1.2, "wall"),
   ];
   // The iron stairs bolted to the west cliff: a stair tower of five storeys from the foot, its
@@ -1523,6 +1782,9 @@ function relay(): Floors {
   const stairsTower = paint(tower(-106, 0, 8, 8, 5, { scale: WORKS, doors: [["w", "s"]], windows: [[], ["w"], ["w"], ["w"], ["w"]], open: ["e"] }), "wall", "steel", () => 2, (b) => b.tint === 0);
   return [
     [LEVEL.mesa, top],
+    // The dishes stand on the top as it is: their bowls hang out past their posts, and pressing the
+    // ground flat under a box near the edge would pull the cliff's foot up toward the top.
+    [LEVEL.mesa, [...big, ...small(-25, -36, "s"), ...small(64, 20, "w")], "loose"],
     [LEVEL.foot, stairsTower],
     [LEVEL.foot, catwalk(-102, 0, -80, 0, LEVEL.mesa - LEVEL.foot, 2.2, 2), "loose"],
   ];
@@ -1960,45 +2222,250 @@ function factory(): Box[] {
 }
 
 /**
- * The supply depot on the dune coast, in its own frame, built to `WORKS`: two warehouses and a
- * long shed round a yard, the office block between them, three feed silos north of it all that
- * stand over the shore, the beached tanker on the beach to the south-east and trailers and
- * containers about the yard. The streets between the buildings are 14 to 30 m wide.
+ * The hall's shell: the segment door the full height of a segment in its east end (its shutter
+ * half down), roller doors and plain doors through the plinth, low windows to shoot from, a band
+ * of tall windows high in the cladding over the cranes, pilasters outside every 10 m, a cornice,
+ * and a roof of four strips with skylights between them, torn open over the fallen crane; the
+ * south cladding torn away over the segment (`GASH`), so the sun reaches it and it is seen from the street.
  */
-function supply(): Box[] {
+function assemblyShell(): Box[] {
+  const { x0, x1, z0, z1, H, plinth: P } = ASSEMBLY;
+  const cx = (x0 + x1) / 2;
+  const cz = (z0 + z1) / 2;
+  const w = x1 - x0;
+  const d = z1 - z0;
+  const along = (x: number) => x - cx;
+  const roller = (side: Side, at: number): Hole => ({ side, at, w: 8, head: 7 });
+  const hatch = (side: Side, at: number): Hole => ({ side, at, w: WORKS.door, head: WORKS.doorHead });
+  const low = (side: Side, at: number): Hole => ({ side, at, w: WORKS.window, sill: WORKS.sill, head: WORKS.windowHead });
+  const DOOR = { w: 26, head: 30 };
+  const plinthHoles: Hole[] = [
+    { side: "e", at: 0, w: DOOR.w, head: DOOR.head },
+    roller("w", 0),
+    roller("s", along(-70)),
+    roller("s", along(12)),
+    hatch("s", along(-30)),
+    hatch("n", along(-60)),
+    roller("n", along(0)),
+    ...[-90, -50, -10, 30].map((x) => low("s", along(x))),
+    ...[-85, -40, 20, 38].map((x) => low("n", along(x))),
+    low("w", -12),
+    low("w", 12),
+  ];
+  // The tall windows over the cranes, between the pilasters; the segment door runs on up through
+  // the cladding. Over the segment the south cladding is torn away (`GASH`), its pilasters left standing.
+  const high: Hole[] = [{ side: "e", at: 0, w: DOOR.w, head: DOOR.head - P }, { side: "s", at: along((GASH.x0 + GASH.x1) / 2), w: GASH.x1 - GASH.x0, sill: GASH.y0 - P, head: GASH.y1 - P }];
+  const pane = (side: Side, at: number): Hole => ({ side, at, w: 4, sill: 30 - P, head: 37 - P });
+  for (let x = x0 + 5; x < x1; x += 10) {
+    high.push(pane("n", along(x)));
+    if (x + 2 < GASH.x0 || x - 2 > GASH.x1) high.push(pane("s", along(x)));
+  }
+  for (const z of [-10, 0, 10]) high.push(pane("w", z));
+  // The plinth stands 0.2 m proud of the cladding, so a ledge runs round the hall at its top.
+  const out: Box[] = [...shell(cx, cz, w + 0.4, d + 0.4, 0, P, plinthHoles, "wall", 0, 0.8), ...shell(cx, cz, w, d, P, H - 0.5, high, "steel", 3, 0.5)];
+  // Torn cladding left hanging into the gash and standing up from its foot, set into the wall's thickness.
+  for (const [a, b, lo, hi] of [[GASH.x0, GASH.x0 + 5, GASH.y0, GASH.y0 + 4], [GASH.x0 + 4, GASH.x0 + 9, GASH.y1 - 5, GASH.y1], [GASH.x1 - 12, GASH.x1 - 7, GASH.y1 - 3, GASH.y1], [GASH.x1 - 6, GASH.x1, GASH.y0, GASH.y0 + 3]] as const) out.push(rect(a + 0.05, z1 - 0.45, b - 0.05, z1 - 0.05, lo, hi, "steel", 3));
+  // The shutter of the segment door, half down, and its drum outside over the opening.
+  out.push(rect(x1 - 0.4, cz - DOOR.w / 2, x1 - 0.1, cz + DOOR.w / 2, 23, DOOR.head, "steel", 2), rect(x1, cz - DOOR.w / 2 - 1, x1 + 1.3, cz + DOOR.w / 2 + 1, DOOR.head, DOOR.head + 1.6, "steel", 2));
+  // Pilasters up the long sides, from the plinth's ledge to the cornice.
+  for (let x = x0 + 10; x < x1 - 1; x += 10) out.push(rect(x - 0.45, z0 - 0.6, x + 0.45, z0 + 0.1, P, H - 1.6, "steel", 2), rect(x - 0.45, z1 - 0.1, x + 0.45, z1 + 0.6, P, H - 1.6, "steel", 2));
+  // The cornice: the long sides' run the full length, the ends' between them.
+  out.push(
+    rect(x0 - 0.4, z0 - 0.4, x1 + 0.4, z0, H - 1.6, H + 0.5, "steel", 2),
+    rect(x0 - 0.4, z1, x1 + 0.4, z1 + 0.4, H - 1.6, H + 0.5, "steel", 2),
+    rect(x0 - 0.4, z0, x0, z1, H - 1.6, H + 0.5, "steel", 2),
+    rect(x1, z0, x1 + 0.4, z1, H - 1.6, H + 0.5, "steel", 2),
+  );
+  // The roof in four strips along the hall, skylights between them; the middle two torn open
+  // where the ring's debris came through and brought the crane down.
+  // Steel deck, so its underside reads grey from the floor.
+  const strips: [number, number, boolean][] = [
+    [z0, -53, false],
+    [-48, -42.5, true],
+    [-37.5, -32, true],
+    [-27, z1, false],
+  ];
+  const skylights = [[-53, -48], [-42.5, -37.5], [-32, -27]] as const;
+  const torn = [BRIDGES.fallen - 9, BRIDGES.fallen + 7];
+  for (const [a, b, middle] of strips)
+    if (middle) out.push(rect(x0, a, torn[0], b, H - 0.5, H, "steel", 2), rect(torn[1], a, x1, b, H - 0.5, H, "steel", 2));
+    else out.push(rect(x0, a, x1, b, H - 0.5, H, "steel", 2));
+  // Purlins across the skylights every 10 m, under the roof's plane.
+  for (let x = x0 + 5; x < x1; x += 10) for (const [a, b] of skylights) if (x < torn[0] || x > torn[1] || a === -53 || a === -32) out.push(rect(x - 0.2, a, x + 0.2, b, H - 1.1, H - 0.6, "steel", 2));
+  return out;
+}
+
+/**
+ * Inside the hall: the mezzanines along its walls, the open stair tower up to the crane runway in
+ * its north-west corner, the runway's walkway along the north wall to the cab crane's bridge (its cab
+ * at the south end holds a bin), the crane over the segment lowering a frame into it, the crane that
+ * fell, its bridge lying from the floor up onto the south mezzanine, the roof's debris round it,
+ * rails along the floor out of the segment door, and the stock and the work benches on the floor.
+ */
+function assemblyFloor(): Box[] {
   const S = WORKS.storey;
+  const { x0, x1, z0, z1, crane: C } = ASSEMBLY;
+  const cx = (x0 + x1) / 2;
+  const cz = (z0 + z1) / 2;
+  const w = x1 - x0;
+  const d = z1 - z0;
+  // The plinth's inner face: the mezzanines stop at it.
+  const WALL = 0.6;
+  const along = (x: number) => x - cx;
+  // A concrete floor over the dune's sand.
+  const out: Box[] = [rect(x0 + 0.6, z0 + 0.6, x1 - 0.6, z1 - 0.6, 0, 0.1, "step", 0)];
+  // The north mezzanine in two lengths (a flight up to each), east of the stair tower; the south
+  // one a storey higher, from the west end to the plain door, its rail open where the fallen bridge lands.
+  out.push(
+    ...mezzanine(cx, cz, w, d, WALL, { side: "n", depth: 6, y: S, stair: along(-60), from: along(-88), to: along(-20) }, WORKS.stair),
+    ...mezzanine(cx, cz, w, d, WALL, { side: "n", depth: 6, y: S, stair: along(20), from: along(-20) }, WORKS.stair),
+    ...mezzanine(cx, cz, w, d, WALL, { side: "s", depth: 5, y: 2 * S, stair: along(-84), to: along(BRIDGES.fallen - 2) }, WORKS.stair),
+    ...mezzanine(cx, cz, w, d, WALL, { side: "s", depth: 5, y: 2 * S, stair: along(-40), from: along(BRIDGES.fallen + 2), to: along(-32) }, WORKS.stair),
+    rect(BRIDGES.fallen - 2, z1 - WALL - 5, BRIDGES.fallen + 2, z1 - WALL, 2 * S - 0.3, 2 * S, "slab"),
+  );
+  // The stair tower, open onto the walkway at its top.
+  const T = { x: -95, z: -52 };
+  out.push(...lattice(T.x, T.z, 7, 6, 8, C + 1, ["n"]), ...catwalk(T.x + 2, T.z - 3, T.x + 2, -57.6, C, 1.6, 2));
+  // The runway's walkway along the north wall: its rail toward the hall open at the tower and at the cab crane's bridge.
+  out.push(rect(T.x + 0.5, -59.2, x1 - WALL, -57.6, C - 0.3, C, "slab", 1));
+  const gaps = [[T.x + 1.1, T.x + 2.9], [BRIDGES.cab - 1.2, BRIDGES.cab + 1.2]];
+  let at = T.x + 0.5;
+  for (const [a, b] of gaps) {
+    out.push(rect(at, -57.8, a, -57.55, C, C + 0.5, "steel", 2));
+    at = b;
+  }
+  out.push(rect(at, -57.8, x1 - WALL, -57.55, C, C + 0.5, "steel", 2));
+  // The runway girders along both walls, on posts every 10 m (none in front of a door).
+  out.push(rect(x0 + 0.6, -59.4, x1 - 0.6, -57.4, C - 1.6, C - 0.3, "steel", 2), rect(x0 + 0.6, z1 - 2.6, x1 - 0.6, z1 - 0.6, C - 1.6, C - 0.3, "steel", 2));
+  const doorsAt = { n: [-60, 0], s: [-70, 12, -30] };
+  for (let x = x0 + 5; x < x1; x += 10) {
+    if (doorsAt.n.every((dx) => Math.abs(x - dx) > 5.5)) out.push(rect(x - 0.4, -59.3, x + 0.4, -58.5, 0, C - 1.6, "steel", 2));
+    if (doorsAt.s.every((dx) => Math.abs(x - dx) > 5.5)) out.push(rect(x - 0.4, z1 - 1.5, x + 0.4, z1 - 0.7, 0, C - 1.6, "steel", 2));
+  }
+  // A crane's bridge across the hall at x: its two box girders under the runway's height.
+  const girders = (x: number) => [rect(x - 1.75, z0 + 1, x - 1.2, z1 - 1, C - 2.4, C - 0.1, "steel", 0), rect(x + 1.2, z0 + 1, x + 1.75, z1 - 1, C - 2.4, C - 0.1, "steel", 0)];
+  // The cab crane: a walkway across from the runway's to the cab at its south end, the cab's bin inside.
+  const xb = BRIDGES.cab;
+  out.push(...girders(xb), ...catwalk(xb, -57.6, xb, -29.5, C, 2.2, 0));
+  out.push(rect(xb - 2.5, -29.5, xb + 2.5, -24.5, C - 0.35, C, "slab", 1));
+  out.push(...walls(xb, -27, 5, 5, C, C + 2.5, ["n"], ["e", "w", "s"]).map((b) => ({ ...b, kind: "steel" as const, tint: 0 })));
+  out.push(rect(xb - 2.6, -29.6, xb + 2.6, -24.4, C + 2.5, C + 2.8, "slab", 1));
+  // The crane over the segment: its trolley, and the cable down to the spreader holding a frame
+  // a few metres over its place in the segment (`SEGMENT`).
+  const xo = BRIDGES.over;
+  const hung = segmentFrame(xo, 2.5);
+  const top = Math.max(...hung.map((b) => b.h));
+  out.push(...girders(xo), rect(xo - 2.2, -42.2, xo + 2.2, -37.8, C - 0.1, C + 1.6, "steel", 0), ...hung);
+  out.push(rect(xo - 0.15, -44.15, xo + 0.15, -43.85, top, top + 1.5, "steel", 2), rect(xo - 0.15, -36.15, xo + 0.15, -35.85, top, top + 1.5, "steel", 2));
+  out.push(rect(xo - 0.4, -44.6, xo + 0.4, -35.4, top + 1.5, top + 1.9, "steel", 0), rect(xo - 0.7, -40.7, xo + 0.7, -39.3, top + 1.9, top + 3.1, "steel", 0));
+  out.push(rect(xo - 0.12, -40.12, xo + 0.12, -39.88, top + 3.1, C - 0.1, "steel", 2));
+  // The fallen crane: its bridge lying from the floor by the north mezzanine up onto the south one
+  // in steps a body walks up, its trolley and its cab on the floor beside it.
+  const xf = BRIDGES.fallen;
+  const [za, zb] = [-54, z1 - WALL - 5];
+  const n = Math.ceil(zb - za);
+  for (let k = 0; k < n; k++) {
+    const t = 2 * S * ((k + 1) / n);
+    out.push(rect(xf - 1.7, za + ((zb - za) * k) / n, xf + 1.7, za + ((zb - za) * (k + 1)) / n, Math.max(0, t - 2.2), t, "steel", k < 3 ? 7 : 0));
+  }
+  out.push(rect(xf + 3, -49, xf + 7.4, -44.6, 0, 1.7, "steel", 0), rect(xf - 7.5, -40, xf - 2.5, -35, 0, 2.5, "steel", 0), rect(xf - 7.3, -39.8, xf - 2.7, -35.2, 2.5, 2.8, "slab", 1));
+  // The roof's debris under the hole it tore.
+  for (const [x, z, w, dd, h] of [[-78, -46, 4, 3, 1.4], [-66, -38, 3, 4, 2.0], [-62, -46, 2.4, 2.4, 0.9], [-80, -33, 3, 2, 1.1]] as const) out.push(box(x, z, w, dd, h, "wall", 1));
+  // Rails the segments rolled out on, from the buffer stop at the west end through the segment door.
+  for (const z of [-44, -36]) out.push(rect(x0 + 2, z - 0.12, x1, z + 0.12, 0, 0.18, "steel", 2));
+  out.push(rect(x0 + 1, -45, x0 + 2, -35, 0, 1.2, "steel", 0));
+  // Stock and benches about the floor: skin panels stacked under the north mezzanine, spare frames
+  // in a rack, containers of parts, a site office, crates.
+  for (const x of [-30, -8]) for (let k = 0; k < 3; k++) out.push(rect(x - 3, -52.6, x + 3, -50, k * 0.5, k * 0.5 + 0.45, "steel", 5));
+  for (const x of [-12, -9.5, -7]) out.push(rect(x, -28, x + 0.6, -23.5, 0, 4.2, "steel", 2));
+  out.push(box(-55, -45, 6.1, 2.5, 2.6, "container", 1), box(-55, -45, 6.1, 2.5, 5.2, "container", 0, 2.6), box(-90, -30, 2.5, 6.1, 2.6, "container", 2));
+  out.push(...building(-22, -26, 8, 6, 3.4, { doors: ["w", "e"], windows: ["n"] }));
+  out.push(box(38, -52, 1.2, 1.2, 1.8, "crate"), box(39.3, -52, 1.2, 1.2, 0.9, "crate"), box(42, -26, 1.2, 1.2, 1.8, "crate"), box(-98, -26, 1.2, 1.2, 0.9, "crate"), box(-38, -48, 1.2, 1.2, 1.8, "crate"));
+  return out;
+}
+
+/**
+ * The ring segment on the hall's floor (`SEGMENT`): a length of the ring's box section curved up
+ * like an arch, 60 m along the rails, 12 m across and 8 m deep, its ends on cradles 3 m high, so
+ * the floor under its middle is open, 12 m high. Columns 2 m wide along x, not overlapping. The
+ * west half is finished, in the ring's pale composite with darker ribs; the east half is still its
+ * keel and its frames standing on it, one more frame hung over its place by the crane.
+ */
+const SEGMENT = { x0: -25, cols: 30, step: 2, z0: -46, z1: -34, end: 3, sag: 9, deep: 8, done: 17 } as const;
+/** The segment's underside and top at x. */
+function segmentAt(x: number): { lo: number; hi: number } {
+  const { x0, cols, step, end, sag, deep } = SEGMENT;
+  const half = (cols * step) / 2;
+  const mid = x0 + half;
+  const R = (half * half + sag * sag) / (2 * sag);
+  const y = end + sag - R;
+  return { lo: y + Math.sqrt(R * R - (x - mid) ** 2), hi: y + Math.sqrt((R + deep) ** 2 - (x - mid) ** 2) };
+}
+/** A frame of the segment's section at x, `lift` metres over the keel: flanges top and bottom, webs at its sides. */
+function segmentFrame(x: number, lift: number): Box[] {
+  const { z0, z1 } = SEGMENT;
+  const { lo, hi } = segmentAt(x);
+  const b = lo + 0.6 + lift;
+  const t = hi + lift;
+  return [rect(x - 0.4, z0, x + 0.4, z1, b, b + 0.8, "steel", 2), rect(x - 0.4, z0, x + 0.4, z1, t - 0.8, t, "steel", 2), rect(x - 0.4, z0, x + 0.4, z0 + 0.8, b + 0.8, t - 0.8, "steel", 2), rect(x - 0.4, z1 - 0.8, x + 0.4, z1, b + 0.8, t - 0.8, "steel", 2)];
+}
+function ringSegment(): Box[] {
+  const { x0, cols, step, z0, z1, done } = SEGMENT;
   const out: Box[] = [];
-  // The west warehouse, three storeys high: a mezzanine along the north wall (the vault on it),
-  // a higher one along the south, stairs outside the west end up to its roof.
-  out.push(
-    ...hall(-62, -28, 64, 26, S * 3, {
-      scale: WORKS,
-      doors: [{ side: "s", at: -12, w: 7 }, { side: "e", at: 2, w: 7 }],
-      hatches: [{ side: "n", at: 18 }, { side: "w", at: -4 }],
-      windows: ["n", "s"],
-      mezz: [
-        { side: "n", depth: 6, y: S, stair: -10 },
-        { side: "s", depth: 5, y: S * 2, stair: 14, from: 0 },
-      ],
-      columns: 8,
-      roof: "w",
-    }),
-  );
+  for (let i = 0; i < cols; i++) {
+    const a = x0 + i * step;
+    const { lo, hi } = segmentAt(a + step / 2);
+    if (i < done) {
+      // Finished: skin, a rib every 8 m (and at the finished end) standing proud of it.
+      if (i % 4 === 0) out.push(rect(a, z0 - 0.3, a + step, z1 + 0.3, lo - 0.3, hi + 0.3, "steel", 6));
+      else out.push(rect(a, z0, a + step, z1, lo, hi, "steel", 5));
+    } else out.push(rect(a, z0, a + step, z1, lo, lo + 0.6, "steel", 5));
+    // Cradles under its ends, trestles at its sides under its middle and its keel.
+    const cradle = i < 2 || i >= cols - 2;
+    const trestle = i === 14 || i === 23;
+    const under = i % 4 === 0 && i < done ? lo - 0.3 : lo;
+    if (cradle) out.push(rect(a, z0 + 1, a + step, z1 - 1, 0, under, "steel", 0));
+    if (trestle) out.push(rect(a, z0 + 0.2, a + step, z0 + 1.6, 0, under, "steel", 0), rect(a, z1 - 1.6, a + step, z1 - 0.2, 0, under, "steel", 0));
+  }
+  // The frames standing on the keel, at the middle of every third column.
+  for (const i of [done + 1, done + 4, done + 7, done + 10, cols - 1]) out.push(...segmentFrame(x0 + i * step + step / 2, 0));
+  return out;
+}
+
+/**
+ * A finished length of segment that never shipped, on the flat car outside the segment door: 22 m
+ * of the same section, its arch barely showing over that length, its east end run into the dune.
+ */
+function shippedSegment(): Box[] {
+  const { z0, z1, deep } = SEGMENT;
+  const out: Box[] = [];
+  for (let i = 0; i < 11; i++) {
+    const a = 51 + i * 2;
+    const t = (a + 1 - 62) / 11;
+    const lo = 1.2 + 0.9 * (1 - t * t);
+    const rib = i % 4 === 1;
+    out.push(rib ? rect(a, z0 - 0.3, a + 2, z1 + 0.3, lo - 0.3, lo + deep + 0.3, "steel", 6) : rect(a, z0, a + 2, z1, lo, lo + deep, "steel", 5));
+    // Chocks on the car under it.
+    if (a >= 52 && a + 2 <= 62) out.push(rect(a, z0 + 1, a + 2, z1 - 1, 1.2, rib ? lo - 0.3 : lo, "steel", 2));
+  }
+  return out;
+}
+
+/** Rails out of the segment door, on under the east dune's sand: laid without pressing the dune flat. */
+const BURIED_RAILS: Box[] = [-44, -36].map((z) => rect(ASSEMBLY.x1, z - 0.12, 100, z + 0.12, -0.3, 0.18, "steel", 2));
+
+/**
+ * The supply depot on the dune coast, in its own frame, built to `WORKS`: the base's assembly plant
+ * for the ring's segments. The assembly hall north of the yard (`ASSEMBLY`), the long shed of stores
+ * south of it and the office block east of that, round a street 31 m wide; the material silos north
+ * of the hall, fed by their conveyor house and feeding it by a gallery; the beached tanker on the
+ * beach to the south-east, and trailers and containers about the yard.
+ */
+function supply(): Floors {
+  const S = WORKS.storey;
+  const out: Box[] = [...assemblyShell(), ...assemblyFloor(), ...ringSegment()];
   // The office block, four storeys, stairs inside up to its roof.
-  out.push(...tower(-6, -38, 16, 12, 4, { scale: WORKS, doors: [["s", "e"]], windows: [["w"], ["s", "e", "w"], ["s", "e", "w"], ["n", "s", "e", "w"]] }));
-  // The east warehouse, a steel shed with a mezzanine along its east wall.
-  out.push(
-    ...hall(38, -36, 40, 24, 12, {
-      scale: WORKS,
-      steel: 1,
-      doors: [{ side: "w", at: 4, w: 7 }, { side: "s", at: 8, w: 7 }],
-      hatches: [{ side: "n", at: -12 }, { side: "e", at: 6 }],
-      windows: ["n", "s"],
-      mezz: [{ side: "e", depth: 7, y: S, stair: 6 }],
-      columns: 8,
-      roof: "s",
-    }),
-  );
+  out.push(...tower(30, 5, 16, 12, 4, { scale: WORKS, doors: [["s", "w"]], windows: [["e"], ["s", "w", "e"], ["s", "w", "e"], ["n", "s", "e", "w"]] }));
   // The long shed south of the yard, two storeys, a mezzanine along its south wall.
   out.push(
     ...hall(-30, 22, 66, 22, S * 2, {
@@ -2010,16 +2477,22 @@ function supply(): Box[] {
       columns: 11,
     }),
   );
-  // The feed silos, 32 m high, and the conveyor house over them.
+  // The material silos, 32 m high, the conveyor house over them and its gallery into the hall.
   for (const x of [-40, -22, -4]) out.push(...tank(x, -84, 6.5, 32, "s"));
-  out.push(box(-22, -84, 44, 4, 35, "steel", 0, 32));
-  // About the yard: trailers left at the doors, a stack of containers, a fuel tank.
+  out.push(box(-22, -84, 44, 4, 35, "steel", 0, 32), rect(-24, -82, -20, ASSEMBLY.z0, 32.2, 34.6, "steel", 2));
+  // About the yard: trailers left at the doors, a stack of containers, a fuel tank; a flat car on the
+  // rails outside the segment door with a length of segment on it.
   out.push(box(-14, -6, 2.6, 13, 4, "container", 1), box(-44, 2, 13, 2.6, 4, "container", 0), box(30, -14, 13, 2.6, 4, "container", 2));
   out.push(box(10, 10, 6.1, 2.5, 2.6, "container", 0), box(10, 10, 6.1, 2.5, 5.2, "container", 2, 2.6), box(10, 13, 6.1, 2.5, 2.6, "container", 1));
-  out.push(box(-24, -60, 6.1, 2.5, 2.6, "container", 2), box(-17, -60, 6.1, 2.5, 2.6, "container", 0), box(-17, -60, 6.1, 2.5, 5.2, "container", 1, 2.6));
+  out.push(box(-24, -69, 6.1, 2.5, 2.6, "container", 2), box(-17, -69, 6.1, 2.5, 2.6, "container", 0), box(-17, -69, 6.1, 2.5, 5.2, "container", 1, 2.6));
+  out.push(rect(52, -46, 62, -34, 0, 1.2, "steel", 0));
   out.push(...tank(48, 2, 3.5, 7, "w", 0));
   out.push(...tankerBow());
-  return out;
+  return [
+    [LEVEL.shore, out],
+    // The rails and the shipped segment run on into the east dune, which they leave as it is.
+    [LEVEL.shore, [...BURIED_RAILS, ...shippedSegment()], "loose"],
+  ];
 }
 
 /** The tanker's hull (`TANKER`): solid at the bow and the stern, its hold between open. */
@@ -2321,7 +2794,7 @@ const PAD_AT = AT[poiIndex("pad")];
 const AUTHORED: Box[] = [
   ...HARBOR,
   ...HAMLETS.flatMap((h) => h.boxes),
-  ...onLevel(LEVEL.shore, place(AT[0][0], AT[0][1], supply())),
+  ...onFloors(AT[0][0], AT[0][1], supply()),
   ...place(AT[0][0], AT[0][1], watchtower()),
   ...onFloors(AT[1][0], AT[1][1], quarry()),
   ...onFloors(AT[2][0], AT[2][1], relay()),
