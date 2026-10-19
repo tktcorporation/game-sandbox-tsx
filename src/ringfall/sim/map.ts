@@ -2907,18 +2907,17 @@ function authoredKeep(): Keep {
 }
 
 /**
- * The ground scattered with cover, each with its own grid and seed so that adding to one
- * region leaves the other's cover as it was. On the salt flats only one candidate in two
+ * The ground scattered with cover, each region with its own seed and grid (`step`, metres
+ * between candidate spots), so that adding to one region leaves the other's cover as it was.
+ * On the salt flats only one candidate in two
  * stands, and only a container, a truck or a rock: the most open ground, yet with a wreck to get behind
  * a few steps away, since in the open a robot's burst lands. The
  * channel, under water, gets none.
  */
 const SCATTER = [
-  { x0: WORLD.x0, x1: WORLD.x1, z0: -350, z1: WORLD.z1, seed: 7_332 },
-  { x0: WORLD.x0, x1: WORLD.x1, z0: WORLD.z0, z1: -351, seed: 4_517 },
+  { x0: WORLD.x0, x1: WORLD.x1, z0: -350, z1: WORLD.z1, seed: 7_332, step: 13 },
+  { x0: WORLD.x0, x1: WORLD.x1, z0: WORLD.z0, z1: -351, seed: 4_517, step: 14 },
 ];
-/** Metres between candidate spots for a scattered set piece. */
-const SCATTER_STEP = 14;
 /** Where cover is sparse: the salt flats, and the supply depot's dune coast, whose dunes are its cover. */
 const SPARSE = new Set(["塩田", "補給所"]);
 /** The harbor's channel, which holds water: nothing is scattered in it. */
@@ -3019,7 +3018,7 @@ function scatterArea(near: Clearance, area: (typeof SCATTER)[number]): Box[] {
     const at = (u: number, v: number, l: number, w: number, h: number, kind: BoxKind, tint = 0, y0 = 0): Box =>
       alongX ? box(x + u, z + v * flip, l, w, h, kind, tint, y0) : box(x + v * flip, z + u, w, l, h, kind, tint, y0);
     const kind = rnd();
-    if (kind < 0.17) {
+    if (kind < 0.12) {
       // A sandbag line, 1.1 m high, bent in two or three lengths: hides a crouching player.
       const n = 2 + Math.floor(rnd() * 2);
       const out: Box[] = [];
@@ -3031,13 +3030,13 @@ function scatterArea(near: Clearance, area: (typeof SCATTER)[number]): Box[] {
       }
       return out;
     }
-    if (kind < 0.31) {
+    if (kind < 0.24) {
       // A row of concrete road barriers, 3 m long and 1.1 m high, one knocked askew.
       const n = 2 + Math.floor(rnd() * 3);
       const askew = Math.floor(rnd() * n);
       return Array.from({ length: n }, (_, i) => at(i * 3.35, i === askew ? len(-0.9, 0.9) : 0, 3, 0.65, 1.1, "prop", PROP.barrier));
     }
-    if (kind < 0.47) {
+    if (kind < 0.42) {
       // Stacked pallets of goods, two rows of two or three stacks from 1 m to 2.2 m, one of them full height.
       const cols = 2 + Math.floor(rnd() * 2);
       const tall = Math.floor(rnd() * cols * 2);
@@ -3050,7 +3049,7 @@ function scatterArea(near: Clearance, area: (typeof SCATTER)[number]): Box[] {
         }
       return out;
     }
-    if (kind < 0.62) {
+    if (kind < 0.58) {
       // Shipping containers side by side, staggered, one of them stacked two high.
       const n = 2 + Math.floor(rnd() * 2);
       const tint = Math.floor(rnd() * 3);
@@ -3062,13 +3061,13 @@ function scatterArea(near: Clearance, area: (typeof SCATTER)[number]): Box[] {
       }
       return out;
     }
-    if (kind < 0.74) {
+    if (kind < 0.71) {
       // A wrecked flatbed truck: a 3 m cab and a 5 m bed under a tarp, often a car left beside it.
       const out = [at(1.15, 0, 2.3, 2.5, 3.0, "prop", PROP.cab), at(2.3 + 2.5, 0, 5, 2.5, 2.3, "prop", PROP.bed)];
       if (rnd() < 0.55) out.push(at(len(1, 4), 3.9, 4.5, 1.9, 1.5, "prop", PROP.car));
       return out;
     }
-    if (kind < 0.84) {
+    if (kind < 0.82) {
       // An outcrop: two or three rocks leaning together.
       const n = 2 + Math.floor(rnd() * 2);
       const tint = Math.floor(rnd() * 2);
@@ -3147,8 +3146,8 @@ function scatterArea(near: Clearance, area: (typeof SCATTER)[number]): Box[] {
   // Candidates on a grid from 11 m inside the area's bounds, each nudged at random: set pieces
   // up to 10 m across, few enough that the open ground reads as open.
   const edge = 11;
-  for (let gx = area.x0 + edge; gx <= area.x1 - edge; gx += SCATTER_STEP)
-    for (let gz = area.z0 + edge; gz <= area.z1 - edge; gz += SCATTER_STEP) {
+  for (let gx = area.x0 + edge; gx <= area.x1 - edge; gx += area.step)
+    for (let gz = area.z0 + edge; gz <= area.z1 - edge; gz += area.step) {
       const x = gx + (rnd() - 0.5) * 7;
       const z = gz + (rnd() - 0.5) * 7;
       const at = surfaceAt(x, z);
