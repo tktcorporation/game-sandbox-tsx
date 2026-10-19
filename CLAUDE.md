@@ -225,8 +225,12 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   Robot shots (`SHOT`) are fast and led, re-aimed for every shot while the robot sees its target, and
   stray more with distance; a burst starts only with the target in sight, so the glow means "get
   behind something", not "step aside". A squad of two or more that has had the player pinned to one
-  spot for a few seconds sends members round it to either side (`PINCH`, `pinchSpot()` in
-  `enemies.ts`). Aim pull (`ASSIST.pull`) works while aiming down sights, not for hip fire on the
+  spot for a few seconds, or has seen them backing away, sends members round it to either side
+  (`PINCH`, `pinchSpot()` in `enemies.ts`). A squad that loses sight goes after the player
+  (`PURSUE`, `stepSquads()` and `pursuitSpot()`): to the last sighting carried on along their
+  motion, its members split to either side of it and then sweep round it; the player's sounds
+  and hits on it tell it where they are now (`learnSpot()`), and it gives up only after
+  `AWARE.chaseTime` without news. Aim pull (`ASSIST.pull`) works while aiming down sights, not for hip fire on the
   move; healing is slow and heard (`HEALS`, `NOISE.heal`).
   `cover.ts` precomputes the spots grunts hide behind. The sim gate's `crowd` column is the most
   squads / robots fighting at once, and `flank` the share of hits from behind or by ambush; keep them
@@ -255,7 +259,10 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   see whom they are after, fight or not. They beam in a walk of `REINFORCE.dist` away along it,
   and keep re-learning where the player is (`stepReinforce()` in `world.ts`) until one of their
   walkers has found the player itself: a fight only their drone joined, over a cliff, does not
-  end the hunt. Every other robot walks straight at its goal, and nobody paths inside a building.
+  end the hunt. Walkers of any fighting squad follow such a field too while they cannot see the
+  player, out to `PURSUE.reach` metres of walking (`huntStep()` in `enemies.ts`), and robots far
+  from their post after a fight walk back by one (`homeStep()`). Robots off the open ground (on a
+  roof, inside a building) walk straight at their goal, and nobody paths inside a building.
   The fields are kept for reuse within a raid only: `newRun()` drops them, so a raid plays the
   same whatever ran before it, which is what lets the sim gate share raids among processes.
   The bot (`bot.ts`) opens only bins on the ground and does not climb: each POI keeps ground bins
