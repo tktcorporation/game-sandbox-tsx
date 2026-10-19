@@ -506,8 +506,9 @@ export class Bot {
       const rel = wrapAngle(want.yaw - p.yaw);
       inp.moveX = inp.moveZ * Math.sin(rel);
       inp.moveZ *= Math.cos(rel);
-      // Slide now and then on long runs, like people do, but only on level ground.
-      if (p.sprinting && d > 12 && levelRun(p.pos, Math.sin(want.yaw), -Math.cos(want.yaw)) && this.rnd() < TICK * 0.4) this.crouch = true;
+      // Slide now and then on long runs, like people do, but only on level ground. The lottery
+      // draws on every long run either way, so a slope does not shift the raid's later draws.
+      if (p.sprinting && d > 12 && this.rnd() < TICK * 0.4 && levelRun(p.pos, Math.sin(want.yaw), -Math.cos(want.yaw))) this.crouch = true;
       this.interactT -= TICK;
       if (d < 1.8 && this.interactT <= 0) {
         inp.interact = true;
