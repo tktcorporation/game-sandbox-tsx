@@ -724,9 +724,9 @@ export const FLANK = {
    * never saw the player are still there for the taking, and so is a squad that lost the
    * player behind cover and is shot from somewhere new.
    */
-  blindTime: 1.5,
+  blindTime: 2.5,
   /** Metres the player must move from where a robot last saw them for it to lose them. */
-  moved: 4,
+  moved: 6,
 };
 
 /**
