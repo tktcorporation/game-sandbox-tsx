@@ -575,7 +575,8 @@ export class World {
     for (const c of this.chunks) {
       if (!c.built) continue;
       const d = World.away(c, x, z);
-      if (c.trim && d > trimFar * DROP_AT) this.emptyTrim(c);
+      // A tier with no trim drops it everywhere, the camera's own chunk too (d is 0 there).
+      if (c.trim && (trimFar <= 0 || d > trimFar * DROP_AT)) this.emptyTrim(c);
       else if (!c.trim && !c.trimless && d < trimFar) trims.push({ c, d });
     }
     trims.sort((a, b) => a.d - b.d);
