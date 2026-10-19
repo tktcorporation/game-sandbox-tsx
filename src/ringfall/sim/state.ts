@@ -198,6 +198,12 @@ export interface Enemy {
    */
   opener: boolean;
   /**
+   * Seconds a grunt has been walking toward its cover or peek spot (`stuckTo`) without getting
+   * any closer: pressed against a corner its body does not fit past (see COVER.stuck).
+   */
+  stuckT: number;
+  stuckTo: Point | null;
+  /**
    * Seconds since this robot itself last saw the player or was hit by them, and where
    * the player was then. A squad that fights shares where it believes the player is,
    * but each member locates the player only with its own eyes (see `located()`).

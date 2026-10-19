@@ -833,6 +833,13 @@ export const COVER = {
   level: 1.2,
   minFromPlayer: 6,
   maxFromPlayer: 34,
+  /**
+   * A grunt walking to its cover or peek spot that gets closer by less than `progress` of its
+   * speed for `time` seconds counts the spot as reached: its body is caught on a corner. The
+   * time is well past the few ticks it takes to speed up from standing, so a normal step out
+   * of cover is never cut short.
+   */
+  stuck: { progress: 0.2, time: 0.4 },
   /** Seconds a robot stays behind cover between shots. */
   hide: [1.4, 2.4] as const,
 };

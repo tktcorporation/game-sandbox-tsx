@@ -88,6 +88,8 @@ export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi:
     steady: 0,
     peekSide: rand(s) < 0.5 ? -1 : 1,
     opener: true,
+    stuckT: 0,
+    stuckTo: null,
     // Not located: a robot that appears mid-fight must find the player with its own eyes too.
     blind: AWARE.loseTime,
     sawAt: null,
@@ -724,10 +726,17 @@ function fromCover(s: State, e: Enemy, known: { x: number; z: number; live: bool
   if (!e.cover || !e.peek) return false;
   e.cooldown -= TICK;
   const out = e.cooldown <= 0;
-  const bx = e.pos.x;
-  const bz = e.pos.z;
-  // A spot it is pressed against but cannot reach (a corner its body does not fit past) counts as reached.
-  const there = walkTo(e, out ? e.peek : e.cover, k.speed, false) || Math.hypot(e.pos.x - bx, e.pos.z - bz) < k.speed * TICK * 0.2;
+  const to = out ? e.peek : e.cover;
+  if (!e.stuckTo || dist2d(e.stuckTo, to) > 0.01) {
+    e.stuckTo = { ...to };
+    e.stuckT = 0;
+  }
+  const before = dist2d(e.pos, to);
+  const arrived = walkTo(e, to, k.speed, false);
+  // Getting no closer for a while (not just the first steps, while it speeds up from standing):
+  // a spot it is pressed against but cannot reach, a corner its body does not fit past, counts as reached.
+  e.stuckT = before - dist2d(e.pos, to) < k.speed * TICK * COVER.stuck.progress ? e.stuckT + TICK : 0;
+  const there = arrived || e.stuckT >= COVER.stuck.time;
   const shows = out && known.live && tUp && facing(e, tChest) && los({ ...e.pos, y: e.pos.y + k.weakY }, tChest);
   // Stepping out, it winds up as soon as it has the target in sight, before it reaches the spot.
   if (out && (there || shows)) {
