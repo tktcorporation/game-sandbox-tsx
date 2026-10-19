@@ -352,6 +352,12 @@ export function fieldTo(x: number, z: number, reach = Infinity): Field | null {
       for (let e = 0; e < ringSize[r]; e++) if (done[ring[r][e]] !== isSettled) dist[ring[r][e]] = Infinity;
   const f = { target, dist, reach, order, count };
   fieldsBuilt++;
+  // A longer field for a cell that already has a short one replaces it: its arrays go back to `spare`.
+  const replaced = cache.get(target);
+  if (replaced) {
+    cache.delete(target);
+    spare.push(replaced);
+  }
   cache.set(target, f);
   if (cache.size > CACHE) {
     // A short field (a squad chasing the player nearby, see PURSUE) goes before a whole-world
