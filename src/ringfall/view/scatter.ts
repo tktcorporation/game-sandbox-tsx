@@ -23,7 +23,7 @@ export const SCATTER = {
   /** Over the last this many metres of the reach things shrink away, so the edge does not pop. */
   fade: 6,
   /** Grass grows only where nothing is overhead within about this radius (an open roof's beams included). */
-  shelter: 5,
+  shelter: 8,
   /** The most of each mesh drawn at once. */
   max: 2600,
 } as const;
