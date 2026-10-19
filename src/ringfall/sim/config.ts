@@ -611,8 +611,8 @@ export const PINCH = { after: 4, radius: 4, dist: 10, retreat: 1.5, backSpeed: 1
  * than one side. After `approach` seconds each sweeps the ground round the spot, a new
  * point up to `sweep` metres from it every `sweepEvery` seconds. Any sound the player makes
  * within `hear` times its radius of a member (a shot, a heal, a sprint) tells the squad
- * where they are now, and so does a hit: breaking sight buys a few seconds and a new angle
- * to shoot from, not a reset. A squad that has gone `AWARE.chaseTime` without seeing,
+ * where they are now, and so does a hit by them (not the teammate's sounds or hits): breaking
+ * sight buys a few seconds and a new angle to shoot from, not a reset. A squad that has gone `AWARE.chaseTime` without seeing,
  * hearing or being hit by the player gives up and searches.
  */
 export const PURSUE = { lead: 1.5, leadMax: 9, reach: 90, spread: 7, approach: 5, sweep: 10, sweepEvery: 3.5, hear: 2 };

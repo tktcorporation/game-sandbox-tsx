@@ -114,9 +114,11 @@ function stepMask(): Uint8Array {
 /**
  * Scratch for `fieldTo()`: which cells it has settled, its ring of buckets (a pending
  * distance is at most the longest move past the bucket being settled, so four buckets of RES
- * go round), and the cells of the bucket being settled.
+ * go round), and the cells of the bucket being settled. A cell's mark counts only for the build
+ * that wrote it (`stamp`), so a short build does not clear the whole grid first.
  */
-let settled = new Uint8Array(0);
+let settled = new Uint32Array(0);
+let stamp = 0;
 const RING = 4;
 const ring = Array.from({ length: RING }, () => new Int32Array(1 << 12));
 const ringSize = new Int32Array(RING);
@@ -198,9 +200,11 @@ export function forgetFields() {
 /*
  * The arrays of fields dropped from the cache, for the next fields to fill. A field's arrays
  * span the whole grid, and fresh memory costs a page fault for each page it first touches;
- * reused, it does not. Nothing keeps a field past the next `fieldTo()` call.
+ * reused, it does not. A field's distances are finite only at its `order` cells, so putting
+ * those back to Infinity readies its arrays for the next: a short field costs its reach, not
+ * the grid. Nothing keeps a field past the next `fieldTo()` call.
  */
-const spare: { dist: Float32Array; order: Int32Array }[] = [];
+const spare: { dist: Float32Array; order: Int32Array; count: number }[] = [];
 
 /** Fields built so far: the sim gate checks that alternating targets reuse them. */
 export let fieldsBuilt = 0;
@@ -267,14 +271,22 @@ export function fieldTo(x: number, z: number, reach = Infinity): Field | null {
   }
   const mask = stepMask();
   const reused = spare.pop();
-  const dist = (reused?.dist ?? new Float32Array(CELLS)).fill(Infinity);
+  const dist = reused?.dist ?? new Float32Array(CELLS).fill(Infinity);
+  if (reused) for (let e = 0; e < reused.count; e++) dist[reused.order[e]] = Infinity;
   dist[target] = 0;
   // Dijkstra with the cells kept in buckets RES wide by distance, the cost of the shortest
   // move: a cell relaxed from one in bucket b lands in bucket b + 1 or later, so every cell
   // in a bucket is settled by the time the bucket comes up, and the buckets are taken in turn
   // without a heap. The distances are the same as a heap's (each cell's is the least over its
   // settled neighbours). `order` runs bucket by bucket, nearest bucket first.
-  const done = settled.length === CELLS ? settled.fill(0) : (settled = new Uint8Array(CELLS));
+  if (settled.length !== CELLS) {
+    settled = new Uint32Array(CELLS);
+    stamp = 0;
+  }
+  const done = settled;
+  // This build's marks: taken from its bucket, and settled. Older builds' marks are below both.
+  const taken = (stamp += 2);
+  const isSettled = taken + 1;
   const order = reused?.order ?? new Int32Array(CELLS);
   let count = 0;
   const bucketOf = (d: number) => Math.floor(d / RES) & (RING - 1);
@@ -303,8 +315,8 @@ export function fieldTo(x: number, z: number, reach = Infinity): Field | null {
     let m = 0;
     for (let e = 0; e < n; e++) {
       const k = list[e];
-      if (done[k] || Math.floor(dist[k] / RES) !== b) continue;
-      done[k] = 2;
+      if (done[k] >= taken || Math.floor(dist[k] / RES) !== b) continue;
+      done[k] = taken;
       if (dist[k] > reach) {
         dist[k] = Infinity;
         past = true;
@@ -312,13 +324,13 @@ export function fieldTo(x: number, z: number, reach = Infinity): Field | null {
     }
     for (let e = 0; e < m; e++) {
       const k = bucket[e];
-      done[k] = 1;
+      done[k] = isSettled;
       order[count++] = k;
       const bits = mask[k];
       for (let q0 = 0; q0 < 8; q0++) {
         if (!(bits & (1 << q0))) continue;
         const q = k + OFFSET[q0];
-        if (done[q]) continue;
+        if (done[q] >= taken) continue;
         const d = dist[k] + COST[q0];
         if (d < dist[q]) {
           dist[q] = d;
@@ -331,7 +343,7 @@ export function fieldTo(x: number, z: number, reach = Infinity): Field | null {
   // Cells reached but not settled lie past the reach: their distances so far are not theirs.
   if (past)
     for (let r = 0; r < RING; r++)
-      for (let e = 0; e < ringSize[r]; e++) if (done[ring[r][e]] !== 1) dist[ring[r][e]] = Infinity;
+      for (let e = 0; e < ringSize[r]; e++) if (done[ring[r][e]] !== isSettled) dist[ring[r][e]] = Infinity;
   const f = { target, dist, reach, order, count };
   fieldsBuilt++;
   cache.set(target, f);

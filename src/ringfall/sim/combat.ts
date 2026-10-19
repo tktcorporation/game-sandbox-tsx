@@ -194,7 +194,9 @@ export function damageEnemy(s: State, e: Enemy, raw: number, crit: boolean, at: 
   engageSquad(s, e.squad, e);
   const sq = s.squads[e.squad];
   const shooter = by === "ally" ? s.ally.pos : s.player.pos;
-  if (sq) learnSpot(s, e.squad, shooter.x, shooter.z);
+  // Only the player's own shot tells a squad that has lost them where they are now (see PURSUE).
+  if (sq && by === "player") learnSpot(s, e.squad, shooter.x, shooter.z);
+  else if (sq) sq.last = { x: shooter.x, z: shooter.z };
   const before = e.hp + e.shield;
   const hadShield = e.shield > 0;
   const toShield = Math.min(e.shield, raw);

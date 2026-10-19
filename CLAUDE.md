@@ -260,8 +260,12 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   and keep re-learning where the player is (`stepReinforce()` in `world.ts`) until one of their
   walkers has found the player itself: a fight only their drone joined, over a cliff, does not
   end the hunt. Walkers of any fighting squad follow such a field too while they cannot see the
-  player, out to `PURSUE.reach` metres of walking (`huntStep()` in `enemies.ts`), and robots far
-  from their post after a fight walk back by one (`homeStep()`). Robots off the open ground (on a
+  player, out to `PURSUE.reach` metres of walking (`huntStep()` in `enemies.ts`): one field per
+  squad, toward the spot it is after, each member leaving it for its own point beside the spot
+  only near it (`sideStep()`). Patrols walk their legs straight; a robot a chase took more than
+  `STRAY` metres off its post or its leg walks back by a field (`homeStep()`). A short field
+  costs its reach, not the grid. Only the player's own sounds and shots re-locate a squad, not
+  the teammate's. Robots off the open ground (on a
   roof, inside a building) walk straight at their goal, and nobody paths inside a building.
   The fields are kept for reuse within a raid only: `newRun()` drops them, so a raid plays the
   same whatever ran before it, which is what lets the sim gate share raids among processes.

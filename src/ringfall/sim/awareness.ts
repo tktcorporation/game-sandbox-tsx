@@ -62,13 +62,15 @@ export function alertSquad(s: State, squad: number, x: number, z: number, by: En
  * A sound at (x, z) carrying `radius` metres. Robots inside it come to look;
  * close ones that can see the spot engage at once. Gunfire carries further to the
  * squads out on the roads (NOISE.roamMult); footsteps and searching do not.
+ * `player` is false for the teammate's sounds: they do not tell where the player is.
  */
-export function makeNoise(s: State, x: number, z: number, radius: number, gunfire = false) {
+export function makeNoise(s: State, x: number, z: number, radius: number, gunfire = false, player = true) {
   const spot = { x, y: s.player.pos.y + 1.2, z };
   // A squad fighting the player that has lost them hears where they are now (see PURSUE).
-  s.squads.forEach((sq, i) => {
-    if (sq.engaged && sq.sinceSeen >= AWARE.trackTime && s.enemies.some((e) => e.squad === i && dist2d(e.pos, spot) < radius * PURSUE.hear)) learnSpot(s, i, x, z);
-  });
+  if (player)
+    s.squads.forEach((sq, i) => {
+      if (sq.engaged && sq.sinceSeen >= AWARE.trackTime && s.enemies.some((e) => e.squad === i && dist2d(e.pos, spot) < radius * PURSUE.hear)) learnSpot(s, i, x, z);
+    });
   const alerted = new Set<number>();
   for (const e of s.enemies) {
     if (e.aware === "engaged" || e.mode === "spawning") continue;

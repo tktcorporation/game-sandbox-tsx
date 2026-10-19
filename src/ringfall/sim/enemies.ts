@@ -261,7 +261,7 @@ export function stepEnemies(s: State) {
     const d = Math.hypot(dx, dz) || 1e-3;
     // The squad has lost the player: this member goes after them, to its own side of the spot (see PURSUE).
     const after = known.live || round ? null : pursuitSpot(s, e, known);
-    const afterVia = after && dist2d(e.pos, after) > 1.5 ? huntStep(s, e, after) : null;
+    const afterVia = after && dist2d(e.pos, after) > 1.5 ? sideStep(s, e, after, known, PURSUE.spread) : null;
     // Out on the way there it looks where it walks, round the corner ahead; at the spot, at the spot.
     const look = afterVia && dist2d(e.pos, known) > 6 ? afterVia : known;
     const lx = look.x - e.pos.x;
@@ -294,7 +294,7 @@ export function stepEnemies(s: State) {
         const wide = round ?? (e.elite && !atAlly ? flankSpot(s, e, known) : null);
         if (wide && dist2d(e.pos, wide) > 3) {
           // Out of sight it gets there by the ground's way, round the cliff or the house between.
-          const to = sees ? wide : huntStep(s, e, wide);
+          const to = sees ? wide : sideStep(s, e, wide, known, PINCH.dist);
           const fd = dist2d(e.pos, to) || 1e-3;
           let ux2 = (to.x - e.pos.x) / fd;
           let uz2 = (to.z - e.pos.z) / fd;
@@ -572,13 +572,38 @@ function huntStep(s: State, e: Enemy, goal: Point): Point {
 }
 
 /**
- * Where a robot that has strayed from its post or its patrol after a fight heads on its way
- * back: by the ground's way once it is far and on the open ground, straight otherwise.
+ * Where a member of a fighting squad heads on its way to its own point `to` beside the spot
+ * `centre` the squad is after (a pursuit or a pinch, `off` metres from the spot at most): far
+ * off, by the squad's one field toward the spot, so the squad builds a single field, not one
+ * per member; within `off` + 6 m of its point, straight at it. A squad beamed in from afar
+ * follows a field to the point itself.
  */
-function homeStep(e: Enemy, to: Point): Point {
-  if (dist2d(e.pos, to) < 12 || !onWalkable(e)) return to;
+function sideStep(s: State, e: Enemy, to: Point, centre: Point, off: number): Point {
+  if (s.squads[e.squad]?.routed) return huntStep(s, e, to);
+  return to === centre || dist2d(e.pos, to) > off + 6 ? huntStep(s, e, centre) : to;
+}
+
+/** A robot this far from its post, or from the leg of its patrol it walks, has strayed (a chase took it off). */
+const STRAY = 12;
+
+/**
+ * Where a robot that has strayed from its post or its patrol heads on its way back: by the
+ * ground's way once it is on the open ground, straight otherwise. A squad beamed in from afar
+ * has no post to go back to and walks straight.
+ */
+function homeStep(s: State, e: Enemy, to: Point): Point {
+  if (s.squads[e.squad]?.routed || !onWalkable(e)) return to;
   const f = fieldTo(to.x, to.z, PURSUE.reach);
   return f ? nextStep(f, e.pos.x, e.pos.z, to) : to;
+}
+
+/** Distance from (x, z) to the segment from a to b. */
+function toSegment(p: Point, a: Point, b: Point): number {
+  const dx = b.x - a.x;
+  const dz = b.z - a.z;
+  const l2 = dx * dx + dz * dz;
+  const t = l2 > 0 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.z - a.z) * dz) / l2)) : 0;
+  return Math.hypot(p.x - a.x - dx * t, p.z - a.z - dz * t);
 }
 
 /** Out of combat: hold the post or walk the patrol; when alerted, go and look. */
@@ -615,11 +640,13 @@ function calm(s: State, e: Enemy) {
     const slot = members.indexOf(e);
     const wp = sq.patrol[sq.leg % sq.patrol.length];
     const to = { x: wp.x + (slot % 2 ? 1.6 : -1.6) * Math.min(slot, 1), z: wp.z + slot * 1.4 };
-    const via = homeStep(e, to);
+    // The authored legs are walked straight; a robot a chase took off its leg finds its way back.
+    const prev = sq.patrol[(sq.leg + sq.patrol.length - 1) % sq.patrol.length];
+    const via = toSegment(e.pos, prev, to) > STRAY ? homeStep(s, e, to) : to;
     if (walkTo(e, via, slow) && via === to && slot === 0) sq.leg++;
     return;
   }
-  if (dist2d(e.pos, e.home) > 0.8) walkTo(e, homeStep(e, e.home), slow);
+  if (dist2d(e.pos, e.home) > 0.8) walkTo(e, dist2d(e.pos, e.home) > STRAY ? homeStep(s, e, e.home) : e.home, slow);
   else {
     moveBody(e, 0, 0);
     turnTo(e, e.face + Math.sin(e.lookT * 0.45) * 0.7, 1.5);
