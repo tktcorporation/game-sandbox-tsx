@@ -76,6 +76,8 @@ const look = { x: 0, y: 0 };
 const stick = { x: 0, z: 0 };
 let fire = false;
 let ads = false;
+/** F's switched-on aim in the toggle mode, kept apart so the right button held and released does not undo it. */
+let adsLatch = false;
 type AdsMode = "hold" | "toggle";
 const ADS_KEY = "ringfall-ads-mode";
 function loadAdsMode(): AdsMode {
@@ -129,7 +131,7 @@ $("map-pause").addEventListener("click", () => {
 addEventListener("keydown", (e) => {
   if (e.repeat) return;
   // F aims on its own key, for trackpads that cannot hold the right button while clicking to fire.
-  if (e.code === "KeyF" && adsMode === "toggle" && running && !paused) ads = !ads;
+  if (e.code === "KeyF" && adsMode === "toggle" && running && !paused) adsLatch = !adsLatch;
   // The map opens over the game straight from the key, whoever is at the controls.
   if (e.code === "KeyM" && running) hud.toggleMap();
   if (e.code === "KeyN" && running) hud.toggleMapView();
@@ -161,7 +163,7 @@ addEventListener("wheel", () => edges.add("Wheel"), { passive: true });
 addEventListener("contextmenu", (e) => e.preventDefault());
 addEventListener("blur", () => {
   keys.clear();
-  fire = ads = false;
+  fire = ads = adsLatch = false;
 });
 
 function readInput(): Input {
@@ -178,7 +180,7 @@ function readInput(): Input {
   inp.lookY = -look.y * k;
   look.x = look.y = 0;
   inp.fire = fire;
-  inp.ads = ads || (adsMode === "hold" && keys.has("KeyF"));
+  inp.ads = ads || adsLatch || (adsMode === "hold" && keys.has("KeyF"));
   inp.crouch = keys.has("KeyC") || keys.has("ControlLeft");
   inp.jump = edges.has("Space");
   inp.reload = edges.has("KeyR");
@@ -373,7 +375,7 @@ function finish() {
   running = false;
   keepAwake(false);
   document.body.classList.remove("playing");
-  fire = ads = false;
+  fire = ads = adsLatch = false;
   $("banner").className = "";
   hud.show(false);
   hud.results(state, settlement ?? undefined);
@@ -388,7 +390,7 @@ function setPaused(on: boolean) {
   if (!running || bot || manual) return;
   paused = on;
   $("pause").hidden = !on;
-  if (on) fire = ads = false;
+  if (on) fire = ads = adsLatch = false;
 }
 
 document.addEventListener("pointerlockerror", () => (noLock = true));
@@ -445,7 +447,7 @@ for (const id of ["adsmode", "adsmode2"]) {
   el.addEventListener("change", () => {
     adsMode = el.value === "toggle" ? "toggle" : "hold";
     saveAdsMode(adsMode);
-    ads = false;
+    ads = adsLatch = false;
     ($("adsmode") as HTMLSelectElement).value = adsMode;
     ($("adsmode2") as HTMLSelectElement).value = adsMode;
   });

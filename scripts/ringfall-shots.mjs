@@ -422,6 +422,11 @@ if (!(after.player.z < before.player.z - 3)) errors.push(`keyboard: W did not mo
   });
   await page.keyboard.press("KeyF");
   const switchedOn = await adsAfter(500);
+  // The right button held and let go leaves F's switched-on aim as it was.
+  await page.mouse.down({ button: "right" });
+  await adsAfter(200);
+  await page.mouse.up({ button: "right" });
+  const afterRight = await adsAfter(500);
   await page.keyboard.press("KeyF");
   const switchedOff = await adsAfter(500);
   await page.evaluate(() => {
@@ -429,7 +434,7 @@ if (!(after.player.z < before.player.z - 3)) errors.push(`keyboard: W did not mo
     el.value = "hold";
     el.dispatchEvent(new Event("change"));
   });
-  if (!(held > 0.9 && let_go < 0.1 && switchedOn > 0.9 && switchedOff < 0.1)) errors.push(`F aim: held ${held}, let go ${let_go}, switched on ${switchedOn}, off ${switchedOff}`);
+  if (!(held > 0.9 && let_go < 0.1 && switchedOn > 0.9 && afterRight > 0.9 && switchedOff < 0.1)) errors.push(`F aim: held ${held}, let go ${let_go}, switched on ${switchedOn}, after the right button ${afterRight}, off ${switchedOff}`);
 }
 await page.screenshot({ path: `${out}/01-start.png` });
 // The start's banner names the way in and sends the player to the map (M), since the HUD has no markers to follow.
