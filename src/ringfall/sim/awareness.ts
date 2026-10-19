@@ -124,7 +124,8 @@ export function sense(s: State, e: Enemy): boolean {
     seen = inView && los(eye, target);
     // A fighting robot that has lost the player, or never had them itself, takes a moment
     // to find them again; one that is not fighting yet is filling its detection instead.
-    if (!seen) e.finding = 0;
+    // A glimpse broken for a moment (a post, its own strafe) keeps most of what it had found.
+    if (!seen) e.finding = Math.max(0, e.finding - TICK / AWARE.findKeep);
     else {
       if (engaged && !located(s, e) && d >= AWARE.closeSense) e.finding += (TICK / ((AWARE.fillNear + AWARE.fillFar * (d / range)) * AWARE.locate)) * (low ? AWARE.crouchRate : 1);
       else e.finding = 1;
