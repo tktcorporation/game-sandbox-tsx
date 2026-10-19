@@ -251,17 +251,19 @@ export function buildBox(b: Box, i: number): THREE.Object3D {
 
 /** The scattered cover's own colours (`prop` boxes): muted, so the set pieces read as worn things, not toys. */
 const PROP_PAL = {
-  wood: 0x8a6d47,
-  wraps: [0x9b9583, 0x7f7a63, 0xa48d66] as const,
+  wood: 0x9c7d52,
+  wraps: [0xa8a28e, 0x9a9476, 0xb39a70] as const,
   bag: 0xb3a07a,
   bagSeam: 0x958360,
   barrier: 0xc8c1b0,
   barrierFoot: 0xa39c8b,
-  cab: 0x6b766a,
-  tarp: 0x7a7155,
-  car: 0x8b8478,
-  glass: 0x3a4248,
-  tyre: 0x2b2c2e,
+  cab: 0x98a48e,
+  tarp: 0xab9d72,
+  car: 0xa89f8f,
+  glass: 0x67757a,
+  /** The frame rail under a truck and the slats under a pallet: sun-dried grey, not black. */
+  chassis: 0x6a6660,
+  tyre: 0x3e3f42,
 } as const;
 
 /** A wheel for a vehicle prop: a dark disc standing at (x, z) on the ground, its axle across the vehicle, which runs along x when `alongX`. */
@@ -296,7 +298,7 @@ function buildProp(b: Box, i: number): THREE.Object3D {
       for (let y = 0; y < h - 0.05; y += 1.0) {
         const top = Math.min(h, y + 1.0);
         g.add(part(L, W, y, y + 0.14, PROP_PAL.wood));
-        for (const t of [-L / 2 + 0.1, 0, L / 2 - 0.1]) g.add(part(0.12, W + 0.02, y + 0.02, y + 0.1, PROP_PAL.tyre, t, false));
+        for (const t of [-L / 2 + 0.1, 0, L / 2 - 0.1]) g.add(part(0.12, W + 0.02, y + 0.02, y + 0.1, PROP_PAL.chassis, t, false));
         g.add(part(L - 0.08, W - 0.08, y + 0.14, top, wrap));
       }
       break;
@@ -319,14 +321,14 @@ function buildProp(b: Box, i: number): THREE.Object3D {
     case PROP.cab:
     case PROP.bed: {
       const cab = b.tint === PROP.cab;
-      // Wheels and chassis below, a dark frame rail between them.
+      // Wheels and chassis below, a grey frame rail between them.
       const r = 0.5;
       // The cab is wider (2.5 m) than it is long, so the truck runs across its longer side.
       const run = cab ? d > w : long;
       for (const t of cab ? [0] : [-L / 2 + 1.0, L / 2 - 1.2]) for (const s of [-1, 1]) wheel(g, run ? t : s * ((run ? d : w) / 2 - 0.17), run ? s * ((run ? d : w) / 2 - 0.17) : t, r, run, b.y0);
-      g.add(part(L, W * 0.6, 0.35, 0.95, PROP_PAL.tyre));
+      g.add(part(L, W * 0.6, 0.35, 0.95, PROP_PAL.chassis));
       if (cab) {
-        // The cab: a faded body, a band of dark glass all round, a bumper.
+        // The cab: a faded body, a band of dusty glass all round, a bumper.
         g.add(part(L, W, 0.95, h - 0.95, PROP_PAL.cab));
         g.add(part(L - 0.1, W - 0.1, h - 0.95, h - 0.12, PROP_PAL.glass));
         g.add(part(L, W, h - 0.12, h, PROP_PAL.cab));
@@ -334,7 +336,7 @@ function buildProp(b: Box, i: number): THREE.Object3D {
         // The bed: a steel deck and its load under a tarp, the tarp's ribs showing.
         g.add(part(L, W, 0.95, 1.2, PAL.steel));
         g.add(part(L - 0.1, W - 0.06, 1.2, h, PROP_PAL.tarp));
-        for (let t = -L / 2 + 0.6; t < L / 2 - 0.3; t += 1.2) g.add(part(0.1, W, 1.2, h, new THREE.Color(PROP_PAL.tarp).multiplyScalar(0.8).getHex(), t, false));
+        for (let t = -L / 2 + 0.6; t < L / 2 - 0.3; t += 1.2) g.add(part(0.1, W, 1.2, h, new THREE.Color(PROP_PAL.tarp).multiplyScalar(0.88).getHex(), t, false));
       }
       break;
     }
