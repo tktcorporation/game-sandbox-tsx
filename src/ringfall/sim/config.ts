@@ -234,9 +234,9 @@ export interface EnemySpec {
 
 export const ENEMIES: Record<EnemyKind, EnemySpec> = {
   drone: { hp: 70, shield: 0, shieldTier: 0, radius: 0.55, bodyY: 0, weakY: 0, weakR: 0.24, weakFwd: 0.42, speed: 4.2, fly: 3.4, range: 14, telegraph: 0.55, cooldown: 1.6, shots: 1, shotGap: 0, spread: 0, orbSpeed: 120, orbDmg: 21, orbR: 0.2, ult: 1 },
-  grunt: { hp: 140, shield: 70, shieldTier: 1, radius: 0.6, bodyY: 1.1, weakY: 1.86, weakR: 0.27, weakFwd: 0.08, speed: 3.2, fly: 0, range: 15, telegraph: 0.6, cooldown: 1.5, shots: 3, shotGap: 0.16, spread: 0, orbSpeed: 140, orbDmg: 20, orbR: 0.18, ult: 1 },
+  grunt: { hp: 140, shield: 70, shieldTier: 1, radius: 0.65, bodyY: 1.2, weakY: 2.0, weakR: 0.27, weakFwd: 0.08, speed: 3.2, fly: 0, range: 15, telegraph: 0.6, cooldown: 1.5, shots: 3, shotGap: 0.16, spread: 0, orbSpeed: 140, orbDmg: 20, orbR: 0.18, ult: 1 },
   charger: { hp: 120, shield: 50, shieldTier: 0, radius: 0.72, bodyY: 0.75, weakY: 0.95, weakR: 0.3, weakFwd: 0.62, speed: 6.4, fly: 0, range: 0, telegraph: 0.6, cooldown: 1.2, shots: 0, shotGap: 0, spread: 0, orbSpeed: 0, orbDmg: 40, orbR: 0, ult: 1 },
-  heavy: { hp: 270, shield: 130, shieldTier: 2, radius: 0.95, bodyY: 1.4, weakY: 2.35, weakR: 0.36, weakFwd: 0.1, speed: 2.0, fly: 0, range: 18, telegraph: 0.85, cooldown: 3.2, shots: 5, shotGap: 0, spread: 5, orbSpeed: 110, orbDmg: 18, orbR: 0.26, ult: 1 },
+  heavy: { hp: 270, shield: 130, shieldTier: 2, radius: 1.1, bodyY: 1.8, weakY: 3.0, weakR: 0.4, weakFwd: 0.1, speed: 2.0, fly: 0, range: 18, telegraph: 0.85, cooldown: 3.2, shots: 5, shotGap: 0, spread: 5, orbSpeed: 110, orbDmg: 18, orbR: 0.26, ult: 1 },
   titan: { hp: 3200, shield: 1000, shieldTier: 3, radius: 2.3, bodyY: 3.2, weakY: 3.4, weakR: 0.75, weakFwd: 2.1, speed: 1.6, fly: 0, range: 20, telegraph: 1.0, cooldown: 3.0, shots: 6, shotGap: 0.16, spread: 0, orbSpeed: 13, orbDmg: 9, orbR: 0.48, ult: 0.5 },
 };
 
@@ -826,7 +826,17 @@ export const NOISE = {
   engageInside: 0.35,
 };
 
+/**
+ * A grunt behind its cover squats: its body and its head drop by these many metres, `rate` of
+ * the way a second, so its head (2 m standing, its lens 0.27 m round) sinks under the top of
+ * cover `COVER.tall` high. It stands to step out and shoot. Its sight drops with its head:
+ * squatting, it cannot see over its cover either.
+ */
+export const DUCK = { body: 0.8, head: 0.8, rate: 5 };
+
 export const COVER = {
+  /** Height of the cover a robot hides behind: a squatting grunt's head is under it (DUCK). */
+  tall: 1.5,
   /** Gap between a cover point and the box face. */
   offset: 0.9,
   spacing: 1.6,

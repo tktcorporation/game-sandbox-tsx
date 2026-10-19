@@ -1,13 +1,13 @@
 import * as THREE from "three";
-import { ENEMIES, PLAYER, TITAN, WEAPONS, WORLD, type EnemyKind } from "../sim/config";
+import { DUCK, ENEMIES, PLAYER, TITAN, WEAPONS, WORLD, type EnemyKind } from "../sim/config";
 import { BOXES, DEPOTS, ENTRIES, EXTRACTS, ROUTES, type Box } from "../sim/map";
 import { worldKey } from "../sim/routes";
 import { groundAt } from "../sim/geom";
 import { cliffGround, DAM_FACE, floorLevel, groundOf, highGround, LANDS, LEVEL, offshore, steepAt, surfaceAt, terrainHeight, type Ground } from "../sim/terrain";
-import { callLeft, type GameEvent, type State, type Vec3 } from "../sim/state";
+import { bodyY, callLeft, type GameEvent, type State, type Vec3 } from "../sim/state";
 import { QUALITY, type Quality, type Tier } from "./quality";
 import { SHADE, contactAt, coverAt, floorUnder } from "./shade";
-import { PAL, RARITY_COLOR, SCOPE_IN, buildAlly, buildBin, buildBoat, buildBox, buildDepot, buildEntryMark, mergeChunk, type ChunkShade, buildCare, buildDropship, buildEnemy, buildGun, buildHands, buildLootItem, addPlates, flat, glow, haloSprite, type EnemyModel } from "./models";
+import { PAL, RARITY_COLOR, SCOPE_IN, buildAlly, buildBin, buildBoat, buildStatic, buildDepot, buildEntryMark, mergeChunk, type ChunkShade, buildCare, buildDropship, buildEnemy, buildGun, buildHands, buildLootItem, addPlates, flat, glow, haloSprite, type EnemyModel } from "./models";
 
 /*
  * Renders a State in first person. It reads the state and the tick's events and
@@ -564,7 +564,7 @@ export class World {
     c.group.add(c.ground);
     // The map's boxes and the boulders first, then the routes', merged in that order.
     const statics = new THREE.Group();
-    for (const n of c.boxes) statics.add(buildBox(BOXES[n], n));
+    for (const n of c.boxes) statics.add(buildStatic(BOXES[n], n));
     for (const b of c.boulders) {
       const m = new THREE.Mesh(this.boulderGeo, flat(b.color));
       m.scale.set(b.sc, b.sy, b.sc);
@@ -575,7 +575,7 @@ export class World {
     const root = new THREE.Group();
     root.add(statics);
     routes.forEach((b, n) => {
-      if (this.chunkOf(b) === c) root.add(buildBox(b, BOXES.length + n));
+      if (this.chunkOf(b) === c) root.add(buildStatic(b, BOXES.length + n));
     });
     c.merged = statics.children.length || root.children.length > 1 ? mergeChunk(root, CHUNK_SHADE) : null;
     // The meshes built for the merge are let go; only their geometry's copies in the merge stay.
@@ -772,6 +772,8 @@ export class World {
     m.eye.visible = false;
     m.eyeHalo.visible = false;
     m.shield.visible = false;
+    // A robot destroyed while squatting goes over from its feet like any other.
+    m.body.position.y = 0;
     for (const mat of m.mats) {
       mat.emissive.setHex(0x000000);
       mat.color.lerp(new THREE.Color(0x1a1a1e), 0.55);
@@ -1123,6 +1125,17 @@ export class World {
       const stride = Math.min(0.6, sp * 0.15);
       m.legs.forEach((leg, i) => (leg.rotation.x = Math.sin(v!.walk + i * Math.PI) * stride));
       m.knees.forEach((knee, i) => (knee.rotation.x = -Math.max(0, Math.cos(v!.walk + i * Math.PI)) * stride * 1.6));
+      // Squatting behind its cover (DUCK), the body sinks by as much as its hit volumes do and the
+      // legs fold, thigh forward and shin back, so the feet stay where they stood.
+      const drop = e.duck * DUCK.body;
+      m.body.position.y = -drop;
+      m.shield.position.y = bodyY(e);
+      if (drop > 0 && m.knees.length) {
+        const hip = m.legs[0].position.y;
+        const fold = Math.acos(Math.max(0.05, (hip - drop) / hip));
+        m.legs.forEach((leg) => (leg.rotation.x = fold));
+        m.knees.forEach((knee) => (knee.rotation.x = -2 * fold));
+      }
       if (k.fly > 0) m.body.rotation.z = Math.sin(this.time * 2 + e.id) * 0.15;
       const winding = e.mode === "telegraph" || e.mode === "stomp";
       const tele = winding ? 1 + Math.sin(this.time * 40) * 0.25 + 0.6 : e.mode === "stunned" ? 0.4 : staggered ? 0.5 + Math.random() * 0.5 : 1;

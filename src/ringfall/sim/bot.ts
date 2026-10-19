@@ -1,9 +1,9 @@
-import { AWARE, DEG, ENEMIES, HEALS, PLAYER, TICK, ULT } from "./config";
+import { AWARE, DEG, HEALS, PLAYER, TICK, ULT } from "./config";
 import { bodyCenter, eyePos, flankOf, magSize, weakPoint } from "./combat";
 import { ceilingAt, dist2d, inWorld, groundAt, groundLevel, los, onTerrain, lookAngles, solidAt, wrapAngle } from "./geom";
 import { EXTRACTS, POIS, regionOf, type ExtractPoint } from "./map";
 import { clearLine, findPath, type Avoid } from "./nav";
-import { callLeft, enemyMax, idleInput, type Enemy, type Input, type State } from "./state";
+import { callLeft, enemyMax, idleInput, weakY, type Enemy, type Input, type State } from "./state";
 import { pickHeal } from "./player";
 import { makeRoom } from "./world";
 import { offLowGround, offshore, terrainHeight } from "./terrain";
@@ -49,7 +49,7 @@ function levelRun(pos: { x: number; z: number }, dx: number, dz: number): boolea
 }
 
 /** Where a robot's shots leave from, near its head. */
-const muzzleOf = (e: Enemy) => ({ x: e.pos.x, y: e.pos.y + Math.max(ENEMIES[e.kind].weakY - 0.1, 0.2), z: e.pos.z });
+const muzzleOf = (e: Enemy) => ({ x: e.pos.x, y: e.pos.y + Math.max(weakY(e) - 0.1, 0.2), z: e.pos.z });
 
 /** Distance it likes to fight at with each weapon: off at the edge of a robot's reach, where its fire strays. */
 const PREF: Record<string, number> = { pike: 22, hornet: 11, maul: 6, lance: 26, talon: 32 };

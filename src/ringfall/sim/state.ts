@@ -1,4 +1,4 @@
-import { ALLY, BOOST, DEPOT, ELITE, ENEMIES, META, RAIDERS, REINFORCE, VALUABLES, WORLD, type ValuableKind, PLAYER, ULT, type EnemyKind, type Flank, type HealKind, type Rarity, type ToolKind, type WeaponKind } from "./config";
+import { ALLY, BOOST, DEPOT, DUCK, ELITE, ENEMIES, META, RAIDERS, REINFORCE, VALUABLES, WORLD, type ValuableKind, PLAYER, ULT, type EnemyKind, type Flank, type HealKind, type Rarity, type ToolKind, type WeaponKind } from "./config";
 import { DEPOTS, depotIndex, entryOf, EXTRA_BINS, POIS, poiIndex, poiRegion, regionOf, type EntryId, type ExtractId, type PoiId, type RegionId, type RouteId } from "./map";
 import { openRoutes, useRoutes } from "./routes";
 import { populate } from "./enemies";
@@ -212,7 +212,13 @@ export interface Enemy {
   sawAt: Point | null;
   /** Progress (0..1) toward finding the player again after losing them (see AWARE.locate). */
   finding: number;
+  /** How far down a grunt has crouched behind its cover (0 standing, 1 crouched; see DUCK). */
+  duck: number;
 }
+
+/** A robot's body-sphere centre and weak point above its feet, lowered while it crouches. */
+export const bodyY = (e: Enemy) => ENEMIES[e.kind].bodyY - e.duck * DUCK.body;
+export const weakY = (e: Enemy) => ENEMIES[e.kind].weakY - e.duck * DUCK.head;
 
 export interface SquadState {
   name: string;
