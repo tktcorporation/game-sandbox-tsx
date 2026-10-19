@@ -34,6 +34,20 @@ export const SKILLS: Skill[] = [
   { name: "good", aimErr: 1.1, turn: 0.32, react: 0.15, dodge: 0.9, heads: true, abilities: 3, flank: 0.85, retreat: 0.95, raid: 4 },
 ];
 
+/**
+ * Whether the ground a few metres ahead along (dx, dz) and to either side stays within a metre
+ * of the ground here. A slide barely steers and gathers speed downhill, so one along a path
+ * that follows a cliff's edge carries the body over it, to the foot of the cliff and the long
+ * way round back up.
+ */
+function levelRun(pos: { x: number; z: number }, dx: number, dz: number): boolean {
+  const h = terrainHeight(pos.x, pos.z);
+  for (const ahead of [0, 3, 6])
+    for (const side of [-2.5, 0, 2.5])
+      if (Math.abs(terrainHeight(pos.x + dx * ahead - dz * side, pos.z + dz * ahead + dx * side) - h) > 1) return false;
+  return true;
+}
+
 /** Where a robot's shots leave from, near its head. */
 const muzzleOf = (e: Enemy) => ({ x: e.pos.x, y: e.pos.y + Math.max(ENEMIES[e.kind].weakY - 0.1, 0.2), z: e.pos.z });
 
@@ -419,7 +433,10 @@ export class Bot {
           }
         } else {
           inp.moveZ = !sees ? 1 : d > pref + 3 ? 1 : d < pref - 3 ? -0.8 : 0;
-          inp.moveX = this.side * (sk.dodge > 0.5 ? 0.9 : 0.5);
+          // Strafing does not look where it goes: not off a ledge, out of the fight to the foot of it.
+          const level = (k: number) => levelRun(p.pos, k * Math.cos(p.yaw), k * Math.sin(p.yaw));
+          if (!level(this.side)) this.side = -this.side;
+          inp.moveX = level(this.side) ? this.side * (sk.dodge > 0.5 ? 0.9 : 0.5) : 0;
         }
       }
 
@@ -489,8 +506,9 @@ export class Bot {
       const rel = wrapAngle(want.yaw - p.yaw);
       inp.moveX = inp.moveZ * Math.sin(rel);
       inp.moveZ *= Math.cos(rel);
-      // Slide now and then on long runs, like people do.
-      if (p.sprinting && d > 12 && this.rnd() < TICK * 0.4) this.crouch = true;
+      // Slide now and then on long runs, like people do, but only on level ground. The lottery
+      // draws on every long run either way, so a slope does not shift the raid's later draws.
+      if (p.sprinting && d > 12 && this.rnd() < TICK * 0.4 && levelRun(p.pos, Math.sin(want.yaw), -Math.cos(want.yaw))) this.crouch = true;
       this.interactT -= TICK;
       if (d < 1.8 && this.interactT <= 0) {
         inp.interact = true;
@@ -499,7 +517,10 @@ export class Bot {
     }
     if (this.crouch) {
       inp.crouch = true;
-      if (!p.sliding && Math.hypot(p.vel.x, p.vel.z) < 5) this.crouch = false;
+      const v = Math.hypot(p.vel.x, p.vel.z);
+      if (!p.sliding && v < 5) this.crouch = false;
+      // A slide that runs on toward a drop is ended: it hardly steers and slopes speed it up.
+      else if (p.sliding && v > 0 && !levelRun(p.pos, p.vel.x / v, p.vel.z / v)) this.crouch = inp.crouch = false;
     }
 
     // Unstick: little progress for a second -> jump and step sideways. The sidestep's own
@@ -512,6 +533,9 @@ export class Bot {
         // Each repeated stall tries the other side, for longer.
         this.stuckCount++;
         this.unstickSide = this.stuckCount % 2 ? 1 : -1;
+        // Not off a ledge: the step aside is blind, and from the foot of a cliff the way back is long.
+        const side = (k: number) => levelRun(p.pos, k * Math.cos(p.yaw), k * Math.sin(p.yaw));
+        if (!side(this.unstickSide) && side(-this.unstickSide)) this.unstickSide = -this.unstickSide;
         this.unstick = Math.min(3, 0.8 + this.stuckCount * 0.5);
       } else if (moved > 3) this.stuckCount = 0;
       this.lastPos = { x: p.pos.x, z: p.pos.z };
@@ -946,11 +970,16 @@ export class Bot {
     // Only things on the terrain: the bot plans on the ground and does not climb to floors or roofs.
     const reachable = (c: { x: number; z: number; y?: number }) => (c.y ?? 0) < terrainHeight(c.x, c.z) + 0.6 && !this.skip.has(`${Math.round(c.x)},${Math.round(c.z)}`);
 
-    const cands: { x: number; z: number; d: number; weapon?: true }[] = [];
-    for (const b of s.bins) if (!b.open && (!b.vault || p.keys.includes(b.poi)) && dist2d(b, p.pos) < 26 && reachable(b)) cands.push({ x: b.x, z: b.z, d: dist2d(b, p.pos) });
-    if (s.care && s.care.landed && !s.care.open) cands.push({ x: s.care.x, z: s.care.z, d: dist2d(s.care, p.pos) });
+    // The thing it is after keeps a longer reach: one near the edge whose way round leads off
+    // first (down a ramp to the tier below) drops out of reach a few steps along it, and the bot
+    // turns back for the POI until it is in reach again, round and round. The 10 s it is given
+    // below still bounds the detour.
+    const reach = (c: { x: number; z: number }, r: number) => dist2d(c, p.pos) < (`${Math.round(c.x)},${Math.round(c.z)}` === this.lootKey ? r * 2.5 : r);
+    const cands: { x: number; z: number; d: number; weapon?: true; care?: true }[] = [];
+    for (const b of s.bins) if (!b.open && (!b.vault || p.keys.includes(b.poi)) && reach(b, 26) && reachable(b)) cands.push({ x: b.x, z: b.z, d: dist2d(b, p.pos) });
+    if (s.care && s.care.landed && !s.care.open) cands.push({ x: s.care.x, z: s.care.z, d: dist2d(s.care, p.pos), care: true });
     for (const l of s.loot) {
-      if (l.age < 0.6 || dist2d(l.pos, p.pos) > 22 || !reachable(l.pos)) continue;
+      if (l.age < 0.6 || !reach(l.pos, 22) || !reachable(l.pos)) continue;
       if (l.kind === "weapon" && l.weapon && l.rarity > worst) cands.push({ x: l.pos.x, z: l.pos.z, d: dist2d(l.pos, p.pos), weapon: true });
       if (l.kind === "armor" && l.rarity > p.armor) cands.push({ x: l.pos.x, z: l.pos.z, d: dist2d(l.pos, p.pos) });
       if (l.kind === "heal" && l.heal && p.heals[l.heal] < HEALS[l.heal].max) cands.push({ x: l.pos.x, z: l.pos.z, d: dist2d(l.pos, p.pos) });
@@ -964,6 +993,22 @@ export class Bot {
     if (!best) return null;
     const k = `${Math.round(best.x)},${Math.round(best.z)}`;
     if (k !== this.lootKey) {
+      // Near as the crow flies is not near on foot: a bin on the tier below a ledge is a walk
+      // down the ramp and back. One that far round is let be, as a player would.
+      // The care package is gone for from anywhere: it is what the bot came for, not a bin on the way.
+      if (!best.care && onTerrain(p.pos) && !clearLine(p.pos.x, p.pos.z, best.x, best.z)) {
+        const way = findPath(p.pos.x, p.pos.z, best.x, best.z, this.avoid);
+        let len = 0;
+        let at: { x: number; z: number } = p.pos;
+        for (const q of way ?? []) {
+          len += dist2d(q, at);
+          at = q;
+        }
+        if (!way || len > 45) {
+          this.skip.add(k);
+          return null;
+        }
+      }
       this.lootKey = k;
       this.lootT = 0;
     } else if ((this.lootT += TICK) > 10) this.skip.add(k);
