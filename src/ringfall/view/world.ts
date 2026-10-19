@@ -3,11 +3,14 @@ import { ENEMIES, PLAYER, TITAN, WEAPONS, WORLD, type EnemyKind } from "../sim/c
 import { BOXES, DEPOTS, ENTRIES, EXTRACTS, ROUTES, type Box } from "../sim/map";
 import { worldKey } from "../sim/routes";
 import { groundAt } from "../sim/geom";
-import { cliffGround, DAM_FACE, floorLevel, groundOf, highGround, LANDS, LEVEL, offshore, steepAt, surfaceAt, terrainHeight, type Ground } from "../sim/terrain";
+import { LANDS, offshore, terrainHeight } from "../sim/terrain";
+import { groundColour, groundMat } from "./ground";
 import { callLeft, type GameEvent, type State, type Vec3 } from "../sim/state";
 import { QUALITY, type Quality, type Tier } from "./quality";
 import { SHADE, contactAt, coverAt, floorUnder } from "./shade";
-import { PAL, RARITY_COLOR, SCOPE_IN, buildAlly, buildBin, buildBoat, buildBox, buildDepot, buildEntryMark, mergeChunk, type ChunkShade, buildCare, buildDropship, buildEnemy, buildGun, buildHands, buildLootItem, addPlates, flat, glow, haloSprite, type EnemyModel } from "./models";
+import { GroundScatter } from "./scatter";
+import { trimBox, type TrimPiece, type TrimSite } from "./trim";
+import { PAL, RARITY_COLOR, SCOPE_IN, buildAlly, buildBin, buildBoat, buildBox, buildDepot, buildEntryMark, mergeChunk, mergeTrim, type ChunkShade, buildCare, buildDropship, buildEnemy, buildGun, buildHands, buildLootItem, addPlates, flat, glow, haloSprite, type EnemyModel } from "./models";
 
 /*
  * Renders a State in first person. It reads the state and the tick's events and
@@ -73,6 +76,8 @@ const PLATE_SPARK = 0x9aa3b5;
 const SMOKE = 0x3b3a3c;
 /** The shade baked into a chunk's merged statics (shade.ts). */
 const CHUNK_SHADE: ChunkShade = { cover: coverAt, floor: floorUnder, base: SHADE.wallBase, baseUp: SHADE.wallBaseUp };
+/** Where trim finds the floors, the cover and the ground its boxes stand on (trim.ts). */
+const TRIM_SITE: TrimSite = { floor: floorUnder, cover: coverAt, ground: terrainHeight };
 /** Seconds a wreck lies where it fell, then sinks away over `WRECK_SINK`. At most `WRECK_MAX` lie at once. */
 const WRECK_TIME = 7;
 const WRECK_SINK = 1.2;
@@ -124,6 +129,10 @@ interface Chunk {
   /** Its ground and its merged statics, as built for the world in place (`built`); null while not built. */
   ground: THREE.Mesh | null;
   merged: THREE.Group | null;
+  /** Its architectural trim, built only while the chunk is within the tier's `trimFar` (trim.ts). */
+  trim: THREE.Mesh | null;
+  /** Built and found to have no trim at all: not tried again until the chunk is built again. */
+  trimless: boolean;
   built: boolean;
   /** Indices into BOXES of the map's boxes whose middle lies in it, in BOXES order. */
   boxes: number[];
@@ -132,86 +141,6 @@ interface Chunk {
   z0: number;
   x1: number;
   z1: number;
-}
-
-const hash = (x: number, z: number) => {
-  const v = Math.sin(x * 12.9898 + z * 78.233) * 43758.5453;
-  return v - Math.floor(v);
-};
-/** Smooth value noise in 0..1 for colouring the ground. */
-function noise(x: number, z: number): number {
-  const xi = Math.floor(x);
-  const zi = Math.floor(z);
-  const u = (x - xi) * (x - xi) * (3 - 2 * (x - xi));
-  const v = (z - zi) * (z - zi) * (3 - 2 * (z - zi));
-  const a = hash(xi, zi);
-  const b = hash(xi + 1, zi);
-  const c = hash(xi, zi + 1);
-  const d = hash(xi + 1, zi + 1);
-  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
-}
-
-const COL = {
-  sand: new THREE.Color(PAL.sand),
-  dark: new THREE.Color(PAL.sandDark),
-  rock: new THREE.Color(PAL.rock),
-  rockDark: new THREE.Color(PAL.rockDark),
-  mud: new THREE.Color(PAL.mud),
-  mudDark: new THREE.Color(PAL.mudDark),
-  tide: new THREE.Color(PAL.tide),
-  concrete: new THREE.Color(PAL.concrete),
-  concreteDark: new THREE.Color(PAL.concreteDark),
-};
-const groundMat = new THREE.MeshLambertMaterial({ vertexColors: true });
-
-/**
- * How each kind of ground (`Ground`, given to the shapes in terrain.ts) is painted: its colour, a
- * darker one, and how much of the darker shows where, from the noise `k` at (x, z).
- */
-const GROUND: Record<Ground, { base: THREE.Color; dark: THREE.Color; mix: (x: number, z: number, k: number) => number }> = {
-  // Salt crust split by darker cracks.
-  salt: { base: new THREE.Color(PAL.salt), dark: new THREE.Color(PAL.saltDark), mix: (x, z, k) => (noise(x * 0.35, z * 0.35) > 0.62 ? 0.8 : k * 0.25) },
-  // Pale blown sand, ripples running across it.
-  dune: { base: new THREE.Color(PAL.dune), dark: new THREE.Color(PAL.duneDark), mix: (x, z, k) => (Math.sin(x * 0.9 + z * 0.35 + noise(x * 0.05, z * 0.05) * 6) > 0.7 ? 0.45 : k * 0.3) },
-  paved: { base: new THREE.Color(PAL.paved), dark: new THREE.Color(PAL.pavedDark), mix: (x, z, k) => (noise(x * 0.5, z * 0.5) > 0.66 ? 0.6 : k * 0.25) },
-  // Cracked grey clay.
-  mud: { base: new THREE.Color(PAL.mud), dark: new THREE.Color(PAL.mudDark), mix: (x, z, k) => (noise(x * 0.4, z * 0.4) > 0.6 ? 0.6 : k * 0.3) },
-  // Red bedrock, in bands along the benches it was cut in.
-  quarry: { base: new THREE.Color(PAL.quarry), dark: new THREE.Color(PAL.quarryDark), mix: (x, z, k) => (noise(x * 0.25, z * 0.6) > 0.64 ? 0.7 : k * 0.35) },
-  sandstone: { base: new THREE.Color(PAL.sandstone), dark: new THREE.Color(PAL.sandstoneDark), mix: (x, z, k) => (noise(x * 0.12, z * 0.3) > 0.6 ? 0.55 : k * 0.3) },
-  // Sage-green scrub in clumps over dry soil.
-  scrub: { base: new THREE.Color(PAL.scrub), dark: new THREE.Color(PAL.scrubDark), mix: (x, z) => (noise(x * 0.45, z * 0.45) > 0.55 ? 0.75 : 0.15) },
-  // Concrete with black oil stains.
-  oiled: { base: new THREE.Color(PAL.oiled), dark: new THREE.Color(PAL.oiledDark), mix: (x, z, k) => (noise(x * 0.2, z * 0.2) > 0.68 ? 0.85 : k * 0.2) },
-  concrete: { base: new THREE.Color(PAL.concrete), dark: new THREE.Color(PAL.concreteDark), mix: (x, z, k) => (noise(x * 0.3, z * 0.3) > 0.7 ? 0.4 : k * 0.2) },
-};
-
-/** The colour of a ground triangle centred on (x, z), spanning heights lo..hi. */
-function groundColour(c: THREE.Color, x: number, z: number, lo: number, hi: number) {
-  const h = (lo + hi) / 2;
-  const cliff = steepAt(x, z) || hi - lo > 2.2;
-  const k = noise(x * 0.08, z * 0.08);
-  const rock = cliff ? cliffGround(x, z) : undefined;
-  if (cliff && DAM_FACE(x, z)) c.copy(COL.concrete).lerp(COL.concreteDark, noise(x * 0.5, h * 0.3) * 0.35);
-  // The quarry's and the mesa's cliffs show their own rock, in bands along the height.
-  else if (rock) c.copy(GROUND[rock].base).lerp(GROUND[rock].dark, 0.35 + noise(x * 0.3, h * 0.5) * 0.5);
-  // Below the old waterline the walls are bleached in bands; above it, bare red rock.
-  else if (cliff && h < LEVEL.shore) c.copy(COL.tide).lerp(COL.rock, Math.max(0, Math.min(1, (h - LEVEL.shore) / 3 + 1)) * 0.5 + noise(x * 0.3, h * 0.6) * 0.2);
-  else if (cliff) c.copy(COL.rock).lerp(COL.rockDark, noise(x * 0.3, z * 0.1 + h * 0.2));
-  // The unclimbable high ground: weathered rock, darker than anything walked on.
-  else if (highGround(x, z)) c.copy(COL.rockDark).lerp(COL.rock, k * 0.6);
-  else {
-    const at = surfaceAt(x, z);
-    const ground = groundOf(at) ?? (at === "水路" || floorLevel(x, z) <= LEVEL.lakebed + 0.5 ? "mud" : undefined);
-    if (ground) c.copy(GROUND[ground].base).lerp(GROUND[ground].dark, GROUND[ground].mix(x, z, k));
-    else {
-      c.copy(COL.sand).lerp(COL.dark, k > 0.62 ? 0.7 : k * 0.3);
-      // The ground between the areas in broad patches of redder soil, so the basins read as clearings.
-      if (at === "野") c.lerp(COL.rock, Math.max(0, noise(x * 0.015 + 3, z * 0.015) - 0.4) * 0.45);
-      // Higher levels a touch lighter, so the steps read from afar.
-      c.offsetHSL(0, 0, Math.max(-0.05, Math.min(0.05, h * 0.006)));
-    }
-  }
 }
 
 interface Particle {
@@ -331,6 +260,10 @@ export class World {
   private shadowFrom = new THREE.Vector3();
   /** Chunks built so far and the milliseconds they took, for `stats()`. */
   private filled = { n: 0, ms: 0 };
+  /** The same for the chunks' trim. */
+  private trimmed = { n: 0, ms: 0 };
+  /** Stones, stains, cracks and tufts on the ground near the camera. */
+  private scatter = new GroundScatter();
 
   /** `tier` and `ratio`: what the page starts drawing at; the tier's antialiasing is fixed from then on. */
   constructor(container: HTMLElement, opts: { tier: Tier; ratio: number }) {
@@ -355,6 +288,7 @@ export class World {
     this.setTier(opts.tier);
     this.scene.add(this.sun, this.sun.target);
     this.buildChunks();
+    this.scene.add(this.scatter.group);
     this.scene.add(this.ally.root);
     this.addClouds();
 
@@ -486,7 +420,7 @@ export class World {
         const z0 = WORLD.z0 + j * CHUNK;
         const x1 = Math.min(WORLD.x1, x0 + CHUNK);
         const z1 = Math.min(WORLD.z1, z0 + CHUNK);
-        this.chunks.push({ group: new THREE.Group(), x0, z0, x1, z1, ground: null, merged: null, built: false, boxes: [], boulders: [] });
+        this.chunks.push({ group: new THREE.Group(), x0, z0, x1, z1, ground: null, merged: null, trim: null, trimless: false, built: false, boxes: [], boulders: [] });
       }
     BOXES.forEach((b, n) => this.chunkOf(b).boxes.push(n));
     // Boulders along the foot of the coast's cliffs, where a land's coast is the world's.
@@ -540,6 +474,7 @@ export class World {
 
   /** Lets a chunk's meshes go: it holds only its data until it is built again. */
   private emptyChunk(c: Chunk) {
+    this.emptyTrim(c);
     for (const o of [c.ground, c.merged])
       if (o) {
         c.group.remove(o);
@@ -547,6 +482,7 @@ export class World {
       }
     c.ground = c.merged = null;
     c.built = false;
+    c.trimless = false;
   }
 
   /** (Re)builds a chunk's ground and merged statics for the world now in place, with the routes' boxes in it. */
@@ -585,6 +521,27 @@ export class World {
     this.filled.ms += performance.now() - t0;
   }
 
+  /** Lets a chunk's trim go. */
+  private emptyTrim(c: Chunk) {
+    if (!c.trim) return;
+    c.group.remove(c.trim);
+    c.trim.geometry.dispose();
+    c.trim = null;
+  }
+
+  /** Builds a built chunk's trim, for the boxes its statics were built from. */
+  private fillTrim(c: Chunk) {
+    const t0 = performance.now();
+    const pieces: TrimPiece[] = [];
+    for (const n of c.boxes) trimBox(BOXES[n], pieces, TRIM_SITE);
+    for (const b of this.routeBoxes()) if (this.chunkOf(b) === c) trimBox(b, pieces, TRIM_SITE);
+    c.trim = mergeTrim(pieces, coverAt);
+    if (c.trim) c.group.add(c.trim);
+    this.trimmed.n++;
+    this.trimmed.ms += performance.now() - t0;
+    return c.trim;
+  }
+
   /** Distance on the ground from (x, z) to a chunk's square. */
   private static away(c: Chunk, x: number, z: number) {
     return Math.hypot(Math.max(c.x0 - x, 0, x - c.x1), Math.max(c.z0 - z, 0, z - c.z1));
@@ -612,6 +569,21 @@ export class World {
       this.fillChunk(c);
       if (performance.now() - t0 >= this.q.streamMs) break;
     }
+    // Trim follows within `trimFar`, nearest first, in what is left of the frame's time (one at least).
+    const trimFar = this.q.trimFar;
+    const trims: { c: Chunk; d: number }[] = [];
+    for (const c of this.chunks) {
+      if (!c.built) continue;
+      const d = World.away(c, x, z);
+      if (c.trim && d > trimFar * DROP_AT) this.emptyTrim(c);
+      else if (!c.trim && !c.trimless && d < trimFar) trims.push({ c, d });
+    }
+    trims.sort((a, b) => a.d - b.d);
+    const t1 = performance.now();
+    for (const { c } of trims) {
+      c.trimless = !this.fillTrim(c);
+      if (performance.now() - t1 >= this.q.streamMs) break;
+    }
   }
 
   /**
@@ -622,6 +594,7 @@ export class World {
     this.syncRoutes();
     const far = this.streamFar();
     for (const c of this.chunks) if (!c.built && points.some((q) => World.away(c, q.x, q.z) < far)) this.fillChunk(c);
+    for (const c of this.chunks) if (c.built && !c.trim && !c.trimless && points.some((q) => World.away(c, q.x, q.z) < this.q.trimFar)) c.trimless = !this.fillTrim(c);
   }
 
   /** How far round the camera chunks are built: one chunk past the fog. */
@@ -637,6 +610,7 @@ export class World {
     if (worldKey() === this.built) return;
     this.built = worldKey();
     this.shadowAt = -Infinity;
+    this.scatter.invalidate();
     for (const c of this.chunks) if (c.built && reached(c)) this.fillChunk(c);
   }
 
@@ -1031,6 +1005,7 @@ export class World {
 
     this.syncRoutes();
     this.streamChunks(fx, fz);
+    this.scatter.update(fx, fz, this.q.scatterFar);
     // Chunks wholly past the fog are skipped (the camera's view culls the rest), and so are
     // robots, bins and loot far off.
     const fogFar = this.q.fogFar;
@@ -1393,6 +1368,11 @@ export class World {
       ratio: this.renderer.getPixelRatio(),
       /** Average milliseconds a chunk took to build, over every build so far. */
       fillMs: this.filled.n ? +(this.filled.ms / this.filled.n).toFixed(1) : 0,
+      /** The same for a chunk's trim, and how many chunks carry trim now. */
+      trimMs: this.trimmed.n ? +(this.trimmed.ms / this.trimmed.n).toFixed(1) : 0,
+      trims: this.chunks.filter((c) => c.trim).length,
+      /** Milliseconds the ground scatter last took to lay. */
+      layMs: +this.scatter.layMs.toFixed(1),
     };
   }
 
