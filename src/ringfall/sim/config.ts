@@ -673,6 +673,22 @@ export const PURSUE = { lead: 1.5, leadMax: 9, reach: 90, spread: 7, approach: 5
 export const SHOT = { lead: 0.85, spread: 1.5 };
 
 /**
+ * Being shot from beyond a robot's sight is answered. For `time` seconds after each of the
+ * player's hits on a squad from beyond the hit robot's fighting sight (`SIGHT` times
+ * `AWARE.engagedRange`), its members notice the player and fire at them out to `range` metres
+ * (eye to chest, as sight is measured) in place of their fighting sight, while they face the
+ * player and have a clear line: the hit already told the squad where the shot came from, and it
+ * turns there. The kinds with no range here (the drone, the charger) close in instead, and a
+ * member with no line walks toward the shooter by the ground's way until it has one. Bolts that
+ * far off land as SHOT's stray decides: a burst at 130 m mostly flies past and now and then
+ * hits, enough to send a sniper behind something.
+ */
+export const RETURN = {
+  time: 7,
+  range: { drone: 0, grunt: 140, charger: 0, heavy: 140, titan: 0 } satisfies Record<EnemyKind, number>,
+};
+
+/**
  * How robots notice the player. Each robot has a view cone; while it sees the
  * player its detection fills (faster up close), and at full the whole squad
  * engages. Crouching shrinks the range and slows the fill.

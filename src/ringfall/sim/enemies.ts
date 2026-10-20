@@ -1,7 +1,7 @@
 import { ALLY, AWARE, CHARGER, COVER, DEG, DODGE, DUCK, ELITE, ENEMIES, FALLBACK, PACK, PARTY, PINCH, PLAYER, PURSUE, SHOT, SIGHT, STAGGER, TICK, TITAN, TURN, WORLD, type EnemyKind, type Rarity } from "./config";
 import { clampToWorld, collide, dist2d, groundAt, groundLevel, los, lookAngles, onTerrain, solidAt, wrapAngle } from "./geom";
 import { steepAt, terrainHeight } from "./terrain";
-import { engageSquad, headOf, knownSpot, located, pursuitSpot, sense, stepSquads } from "./awareness";
+import { engageSquad, fireRange, headOf, knownSpot, located, pursuitSpot, sense, stepSquads } from "./awareness";
 import { coversNear, type CoverPoint } from "./cover";
 import { fieldTo, nextStep, onMainGround, routeLength } from "./hunt";
 
@@ -341,11 +341,13 @@ export function stepEnemies(s: State) {
         }
         e.cooldown -= TICK;
         const ready = e.cooldown <= 0 && sees && tUp && (atAlly || located(s, e));
-        // It fires as far as it can see while fighting, measured eye to chest as sight is; its
-        // preferred distance only steers where it walks.
+        // It fires as far as it can see while fighting (further when answering the player's shots
+        // from afar, see RETURN), measured eye to chest as sight is; its preferred distance only
+        // steers where it walks. The teammate is fought within its fighting sight alone.
         const eye = headOf(e);
         const reach = Math.hypot(tChest.x - eye.x, tChest.y - eye.y, tChest.z - eye.z);
-        if (ready && (e.kind === "charger" ? d < CHARGER.lungeRange : reach < SIGHT[e.kind].range * AWARE.engagedRange)) {
+        const far = atAlly ? SIGHT[e.kind].range * AWARE.engagedRange : fireRange(s, e);
+        if (ready && (e.kind === "charger" ? d < CHARGER.lungeRange : reach < far)) {
           e.mode = "telegraph";
           e.timer = k.telegraph;
           leadAim(e, tChest, tVel);

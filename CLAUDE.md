@@ -37,8 +37,9 @@ own included; `stepEntries()` in `world.ts`, an `entryFound` event for the HUD's
 with no known way in and no depot on cannot be chosen (`canStartIn()`); the HUD and the world map
 are handed the known list (`Hud.setKnown()`), and each way in has a campfire and signboard in the
 view (scenery, no boxes).
-Robots are squads placed in the world from the start (`POIS[].squads`, two squads of two or three
-per POI (the pad holds the titan and its drones), and a few `ROAMERS` in `map.ts`, most of them patrolling the roads), drone
+Robots are squads placed in the world from the start (`POIS[].squads`, four squads per POI, of two
+robots but for the relay's equipment shed and the wreck's beach, which have three: eight or nine a
+POI, fought a squad or two at a time (the pad holds the titan and its drones)), and a few `ROAMERS` in `map.ts`, most of them patrolling the roads), drone
 packs that fly long loops over the ground between the POIs (`PACKS` in `map.ts`, `PACK` in
 `config.ts`: a squad's `sight` noticing from further than its kind's `SIGHT`), and hunting parties
 that walk from stop to stop of their region (`PARTY_STOPS` in `map.ts`, `PARTY` in `config.ts`,
@@ -238,7 +239,11 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   in about 0.3 s, too fast to sidestep once seen; they are led, re-aimed for every shot while the
   robot sees its target, and stray more with distance. A fighting robot fires at a target it sees
   out to its engaged sight (`SIGHT[].range` times `AWARE.engagedRange`); its preferred distance
-  (`ENEMIES[].range`) only steers where it walks. A burst starts only with the target in sight, so
+  (`ENEMIES[].range`) only steers where it walks. A hit from beyond the robot's engaged sight is
+  answered (`RETURN`, `shotFromAfar()` and `fireRange()` in `awareness.ts`): for a few seconds after
+  each such hit the squad's grunts and heavies see and fire out to `RETURN.range`, and members
+  without a line walk toward the shot; that far off the bolts' stray makes the fire mostly
+  suppressing. A burst starts only with the target in sight, so
   the glow means "get behind something", not "step aside". A squad of two or more that has had the
   player pinned to one spot for a few seconds, or has seen them backing away, sends members round it to either side
   (`PINCH`, `pinchSpot()` in `enemies.ts`). A squad that loses sight goes after the player

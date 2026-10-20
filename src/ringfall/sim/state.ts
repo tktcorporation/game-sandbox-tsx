@@ -246,6 +246,8 @@ export interface SquadState {
   /** A hunting party (`PARTY`): the stop of `PARTY_STOPS[region]` it is making for or lingering at. */
   party?: PartyTrip;
   sinceSeen: number; // seconds since any member saw the player while engaged
+  /** Seconds left in which its members answer the player's shots from as far as `RETURN.range` (see RETURN). */
+  shotT?: number;
   /** Seconds the squad has kept the player in hand from behind cover since a member last saw them (see AWARE.coverHold). */
   hold?: number;
   last: Point; // where the squad last saw the player

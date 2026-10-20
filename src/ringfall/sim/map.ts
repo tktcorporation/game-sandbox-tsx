@@ -768,10 +768,13 @@ const POI_FRAMES: Poi[] = [
     trigger: 95,
     entry: { x: 0, z: 114, yaw: 0 },
     squads: [
-      // Two squads, one in the assembly hall and one out on the east dune by the tanker: a fight
-      // with one leaves the other a flank to come round, across a yard 30 m wide.
+      // Four squads of two, each a fight of its own: the west and the east of the assembly hall, the
+      // east dune and the beach round the tanker. A fight with one leaves another a flank to come
+      // round, across a yard 30 m wide.
       { name: "組立棟", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: -76, z: -30, face: W }, { kind: "grunt", x: -50, z: -9, face: S }] },
+      { name: "組立棟東", members: [{ kind: "grunt", x: 10, z: -44, face: W }, { kind: "drone", x: 20, z: -36 }] },
       { name: "砂丘", members: [{ kind: "grunt", x: 74, z: 18, face: W }, { kind: "charger", x: 26, z: 44, face: W }] },
+      { name: "タンカー", members: [{ kind: "grunt", x: 24, z: 84, face: E }, { kind: "drone", x: 52, z: 66 }] },
     ],
     bins: [
       { x: 24, z: 8, y: WORKS.storey * 3 },
@@ -802,10 +805,13 @@ const POI_FRAMES: Poi[] = [
     trigger: 140,
     entry: { x: 55, z: -100, yaw: Math.PI },
     squads: [
-      // One squad on the top terrace by the haul road's foot, one on the floor: the deeper the
-      // player goes, the more of the terraces look down on them.
+      // Three squads on the top terrace (by the haul road's foot, at the head of the ramp down, and
+      // round the excavator) and one on the floor: the deeper the player goes, the more of the
+      // terraces look down on them.
       { name: "上段", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: -12, z: -46, face: S }, { kind: "grunt", x: 88, z: -28, face: SW }] },
+      { name: "坂上", members: [{ kind: "grunt", x: 30, z: -50, face: S }, { kind: "drone", x: 40, z: -40 }] },
       { name: "採掘穴", members: [{ kind: "charger", x: -8, z: 28, face: E }, { kind: "grunt", x: -32, z: 8, face: E }] },
+      { name: "掘削機", members: [{ kind: "grunt", x: 85, z: 40, face: W }, { kind: "drone", x: 110, z: 40 }] },
     ],
     bins: [
       { x: 104, z: -14 },
@@ -831,6 +837,9 @@ const POI_FRAMES: Poi[] = [
     entry: { x: -20, z: 20, yaw: 2.36 },
     squads: [
       { name: "アンテナ", members: [{ kind: "grunt", x: 36, z: -28, face: W }, { kind: "heavy", x: 18, z: 2, face: SW }] },
+      { name: "大皿", members: [{ kind: "grunt", x: 50, z: -25, face: W }, { kind: "drone", x: 45, z: 22 }] },
+      // Two drones over the mesa's south-east rim, beyond the dish from the way in.
+      { name: "南東の縁", members: [{ kind: "drone", x: 60, z: 40 }, { kind: "drone", x: 66, z: 34 }] },
       { name: "機器棟", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: -22, z: -5, face: W }, { kind: "grunt", x: -8, z: -36, face: W }, { kind: "charger", x: 4, z: 14, face: SW }] },
     ],
     bins: [
@@ -884,6 +893,8 @@ const POI_FRAMES: Poi[] = [
         members: [{ kind: "grunt", x: -12, z: 16, face: S }, { kind: "grunt", x: -9.5, z: 17, face: S }, { kind: "drone", x: -78, z: 18 }],
         patrol: [{ x: -78, z: 18 }, { x: 70, z: 18 }, { x: 70, z: -16 }, { x: -78, z: -16 }],
       },
+      { name: "北の浜", members: [{ kind: "grunt", x: -20, z: -18, face: N }, { kind: "drone", x: 12, z: -15 }] },
+      { name: "舳先", members: [{ kind: "charger", x: 30, z: -24, face: W }, { kind: "drone", x: 40, z: -20 }] },
     ],
     bins: [
       { x: -32, z: 3 },
@@ -909,6 +920,12 @@ const POI_FRAMES: Poi[] = [
     squads: [
       { name: "クレーン", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 24.35, z: -2, y: CRANE, face: E }, { kind: "heavy", x: 2, z: -13.5, face: E }] },
       { name: "通路", members: [{ kind: "grunt", x: -20, z: 13.5, face: W }, { kind: "grunt", x: -23, z: 22.5, face: W }] },
+      { name: "北の列", members: [{ kind: "grunt", x: -6, z: -24, face: E }, { kind: "drone", x: -40, z: -24 }] },
+      {
+        name: "東の列",
+        members: [{ kind: "grunt", x: 40, z: -24, face: W }, { kind: "drone", x: 38, z: -24 }],
+        patrol: [{ x: 40, z: -24 }, { x: 40, z: 12 }, { x: 10, z: 12 }, { x: 10, z: -24 }],
+      },
     ],
     bins: [
       { x: -30, z: -13.5 },
@@ -934,6 +951,9 @@ const POI_FRAMES: Poi[] = [
     squads: [
       { name: "制御棟", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 41, z: -1.8, y: STOREY * 4, face: S }, { kind: "grunt", x: 16, z: -2, face: S }] },
       { name: "炉", members: [{ kind: "heavy", x: -18, z: -1, face: S }, { kind: "charger", x: -26, z: 12, face: E }] },
+      // Behind the works, away from the way in: the last of the POI, or the first for a player who goes round.
+      { name: "裏手", members: [{ kind: "grunt", x: 0, z: -42, face: S }, { kind: "drone", x: -30, z: -30 }] },
+      { name: "北東", members: [{ kind: "grunt", x: 36, z: -30, face: S }, { kind: "drone", x: 44, z: -36 }] },
     ],
     bins: [
       { x: -24, z: -3 },
