@@ -561,7 +561,7 @@ const harborTour = [
   ["tour-79-pipeline", 330, 1.7, -800, -1.2, 0.12],
   ["tour-80-harbor-from-above", 0, 230, -520, 0, -0.5, true],
   ["tour-81-wharf", ...at("荷揚げ場", 30, 1.7, 40), -0.64, 0.12],
-  ["tour-82-engine-depot", ...at("保線基地", -50, 1.7, 30), 1.03, 0.08],
+  ["tour-82-engine-depot", ...at("保線基地", -35, 1.7, 40), 0.72, 0.08],
   ["tour-83-east-substation", ...at("東の変電所", -45, 1.7, 30), 0.98, 0.12],
   ["tour-84-pumping-station", ...at("揚水ポンプ場", -45, 1.7, 35), 0.91, 0.08],
 ];

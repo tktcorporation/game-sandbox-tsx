@@ -1093,7 +1093,7 @@ function substationYard(): Box[] {
 }
 
 /**
- * The harbor's outposts:/**
+/**
  * Outposts: settlements (as `HAMLET_FRAMES`) larger than a hamlet, each a piece of the base's
  * works that joins its region's POIs, held by a squad of two. They stand in the open ground
  * between the POIs, so a walk from one POI to the next passes one, and the lines that leave each
@@ -1201,7 +1201,7 @@ const OUTPOSTS: Hamlet[] = [
   },
   {
     // West of the wreck, on the old shore: where ore came in by rail and went out by ship. An
-    // open loading shed with a mezzanine, ore heaps, a crane tower climbed to its boom, the end of
+    // open loading shed with a mezzanine, ore heaps, a crane tower climbed three storeys under its boom, the end of
     // the freight line's spur with wagons on it, the wharf office.
     name: "荷揚げ場",
     x: -280,
@@ -1259,7 +1259,7 @@ const OUTPOSTS: Hamlet[] = [
       ...engine(4, -9),
       ...engine(-26, -2),
       ...tank(24, 14, 3.5, 6, "w", 4),
-      ...tower(-16, 14, 8, 8, 2, { doors: [["e", "n"]], windows: [["w"], ["n", "e", "s", "w"]] }),
+      ...tower(-16, 14, 8, 8, 2, { doors: [["e", "s"]], windows: [["w"], ["n", "e", "s", "w"]] }),
       box(4, 14, 6.2, 2.5, 2.6, "container", 1),
       box(-35, -9, 1.0, 2.6, 1.3, "steel", 0),
       box(-35, -2, 1.0, 2.6, 1.3, "steel", 0),
@@ -3692,6 +3692,16 @@ export const DEPOTS: Depot[] = POIS.map((p) => {
   return { poi: p.id, x: at.x, y: at.y, z: at.z, yaw: Math.atan2(p.x - at.x, -(p.z - at.z)) };
 });
 
+function outpost(name: string): Hamlet {
+  const o = OUTPOSTS.find((h) => h.name === name);
+  if (!o) throw new Error(`no outpost named ${name}`);
+  return o;
+}
+const SUBSTATION = outpost("変電所");
+const EAST_SUBSTATION = outpost("東の変電所");
+const FUEL_DEPOT = outpost("燃料基地");
+const ENGINE_DEPOT = outpost("保線基地");
+const PUMPS = outpost("揚水ポンプ場");
 /**
  * The works that join the POIs and outposts, in the world's coordinates, laid on the ground once
  * it is built (they do not press it flat): what fed the POIs, so a line seen from anywhere leads
@@ -3705,16 +3715,6 @@ export const DEPOTS: Depot[] = POIS.map((p) => {
  *   wagons left on them as cover along the way.
  * Each run is a list of legs along x or along z.
  */
-function outpost(name: string): Hamlet {
-  const o = OUTPOSTS.find((h) => h.name === name);
-  if (!o) throw new Error(`no outpost named ${name}`);
-  return o;
-}
-const SUBSTATION = outpost("変電所");
-const EAST_SUBSTATION = outpost("東の変電所");
-const FUEL_DEPOT = outpost("燃料基地");
-const ENGINE_DEPOT = outpost("保線基地");
-const PUMPS = outpost("揚水ポンプ場");
 const POWER_LINES: { from: [number, number, number]; pylons: [number, number][] }[] = [
   // The harbor.
   ...[
@@ -3734,7 +3734,7 @@ const PIPELINES: [number, number][][] = [
   [[FUEL_DEPOT.x - 27, -770], [212, -770]],
   [[FUEL_DEPOT.x, FUEL_DEPOT.z - 22], [FUEL_DEPOT.x, -905], [160, -905], [160, -960]],
   [[FUEL_DEPOT.x, FUEL_DEPOT.z + 22], [FUEL_DEPOT.x, -640], [280, -640], [280, ENGINE_DEPOT.z + 14], [ENGINE_DEPOT.x + 28, ENGINE_DEPOT.z + 14]],
-  [[PUMPS.x - 30, PUMPS.z + 10], [300, PUMPS.z + 10], [300, 222], [128, 222]],
+  [[PUMPS.x - 21, PUMPS.z + 14], [300, PUMPS.z + 14], [300, 222], [128, 222]],
 ];
 /** The main line from the marshalling yard to the smelter (a buffer stop at its end), and the spur north from it to the wharf. */
 const FREIGHT_LINES: [number, number][][] = [
