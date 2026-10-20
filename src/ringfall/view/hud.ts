@@ -5,7 +5,7 @@ import { eyePos, magSize } from "../sim/combat";
 import { dist2d, los } from "../sim/geom";
 import { DEPOTS, entryOf, EXTRACTS, POIS, poiIndex, regionHere, regionOf, routeOf, type EntryId } from "../sim/map";
 import { routeBefore } from "../sim/routes";
-import { bagLoad, depotBlocked, depotInReach, extractHere, extractReady, makeRoom, poiAt, roomForTool, searchTime, useTarget } from "../sim/world";
+import { bagLoad, depotBlocked, depotInReach, extractHere, extractReady, homeReady, makeRoom, poiAt, roomForTool, searchTime, useTarget } from "../sim/world";
 import { callLeft, enemyHp, enemyShield, weakY, type GameEvent, type State, type Vec3 } from "../sim/state";
 import { haulValue, rank } from "../sim/results";
 import { pickHeal } from "../sim/player";
@@ -287,7 +287,7 @@ export class Hud {
     const remaining = s.enemies.filter((e) => e.poi === here).length;
     let text = "";
     if (p.leap) text = isTouch() ? "滑空中：スティックで着地点を選ぶ" : "滑空中：WASD で着地点を選ぶ";
-    else if (s.phase === "done") text = s.outcome === "extracted" ? "生還" : "行方不明";
+    else if (s.phase === "done") text = s.home ? "帰った" : s.outcome === "extracted" ? "生還" : "行方不明";
     else if (poi) text = poi.boss ? "タイタンの縄張り" : `${poi.name}：部隊 残り ${remaining}`;
     else text = "探索して脱出せよ";
     $("obj-text").textContent = text;
@@ -684,6 +684,8 @@ export class Hud {
     if (!t) {
       // At a depot that is on, which useTarget passes over while a squad is fighting: say why.
       if (depotBlocked(s) && depotInReach(s) >= 0) return "中継ボックス：戦闘中は使えない";
+      // Back in the camp's yard with a fight close by: it takes the player home once that is over.
+      if (homeReady(s) && depotBlocked(s)) return "戦っているロボットが近くにいる間は帰れない";
       // Standing on a valuable that will not go in, and nothing in the bag is worth less.
       const left = s.loot.find((l) => (l.kind === "valuable" || l.kind === "tool") && l.age >= 0.4 && dist2d(l.pos, p.pos) < PLAYER.pickupRange && Math.abs(l.pos.y - p.pos.y) < 2);
       if (left?.valuable) return `バッグがいっぱい：${VALUABLES[left.valuable].label}は入らない`;
@@ -728,7 +730,7 @@ export class Hud {
   results(s: State, settled?: Settlement) {
     const r = rank(s);
     $("rank").textContent = r.rank;
-    $("result-title").textContent = s.outcome === "extracted" ? "生還" : "行方不明";
+    $("result-title").textContent = s.home ? "帰った" : s.outcome === "extracted" ? "生還" : "行方不明";
     $("total").textContent = String(r.score);
     const st = s.stats;
     const acc = st.shots ? Math.round((st.hits / st.shots) * 100) : 0;
@@ -740,7 +742,7 @@ export class Hud {
       ["弱点命中", `${crit}%`],
       ["ダウン", st.downs],
       ["レイド時間", clock(s.time)],
-      ["脱出", s.leftAt ? `${POIS[poiIndex(s.leftAt)].name}の中継ボックス` : (EXTRACTS.find((x) => x.id === s.extractedAt)?.short ?? "-")],
+      ["脱出", s.home ? "野営地" : s.leftAt ? `${POIS[poiIndex(s.leftAt)].name}の中継ボックス` : (EXTRACTS.find((x) => x.id === s.extractedAt)?.short ?? "-")],
       [`${ALLY.name}の撃破`, st.allyKills],
       [`${ALLY.name}に救助`, st.allyRescues],
     ]

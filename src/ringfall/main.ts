@@ -1,12 +1,14 @@
-import { AWARE, TICK, VALUABLES, WEAPONS } from "./sim/config";
+import { AWARE, PLAYER, TICK, VALUABLES, WEAPONS } from "./sim/config";
 import { Bot, SKILLS } from "./sim/bot";
-import { dist2d, groundAt } from "./sim/geom";
+import { collide, groundAt } from "./sim/geom";
 import { terrainHeight } from "./sim/terrain";
 import { callLeft, freeKit, idleInput, newRun, type GameEvent, type Input, type Kit, type State } from "./sim/state";
-import { entryOf, FRAMES, POIS, poiIndex, regionOf, type EntryId, type PoiId, type RegionId } from "./sim/map";
+import { CAMP, entryOf, FRAMES, POIS, poiIndex, type CampSpot, type RegionId, type StationId } from "./sim/map";
+import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
 import { settle, type Settlement } from "./meta/profile";
 import { loadProfile, saveProfile } from "./meta/storage";
-import { Hub } from "./view/hub";
+import { Hub, type Launch } from "./view/hub";
+import { CampView } from "./view/camp";
 import { step } from "./sim/step";
 import { hurtAlly, placeAlly } from "./sim/ally";
 import { haulValue } from "./sim/results";
@@ -57,7 +59,12 @@ function applyLevel(l: Level) {
 const hud = new Hud();
 
 let state: State = newRun(Date.now() & 0xffff);
+/** A raid is under way. */
 let running = false;
+/** The player is in the camp between raids (`state` is the camp's). */
+let camping = false;
+/** The truck's fade to a raid is under way. */
+let fading = false;
 let paused = false;
 let manual = false; // automation drives time through advanceTime()
 /** Automation stepped without drawing: the frame loop leaves the canvas as automation last drew it. */
@@ -130,6 +137,11 @@ $("map-pause").addEventListener("click", () => {
 
 addEventListener("keydown", (e) => {
   if (e.repeat) return;
+  // Esc closes a camp station's panel (the pointer is already free while one is open).
+  if (e.code === "Escape" && hub.station) {
+    hub.close();
+    return;
+  }
   // F aims on its own key, for trackpads that cannot hold the right button while clicking to fire.
   if (e.code === "KeyF" && adsMode === "toggle" && running && !paused) adsLatch = !adsLatch;
   // The map opens over the game straight from the key, whoever is at the controls.
@@ -146,7 +158,7 @@ addEventListener("keyup", (e) => keys.delete(e.code));
  */
 let noLock = false;
 addEventListener("mousemove", (e) => {
-  if (document.pointerLockElement !== stage && !(noLock && running && !paused)) return;
+  if (document.pointerLockElement !== stage && !(noLock && (running || (camping && !campFrozen())) && !paused)) return;
   look.x += e.movementX;
   look.y += e.movementY;
 });
@@ -202,13 +214,14 @@ function onEvent(e: GameEvent, s: State) {
   if (e.t === "done") {
     // Settle and save at once; only the results screen waits for the moment to play out.
     settlement = settle(hub.profile, s);
-    hub.profile = settlement.profile;
+    hub.reload(settlement.profile);
     saveProfile(hub.profile);
     setTimeout(finish, s.outcome === "extracted" ? 1400 : 2400);
   }
 }
 
 function tick() {
+  if (camping) return campTick();
   const inp = bot ? bot.input(state) : readInput();
   step(state, inp, prevCrouch);
   prevCrouch = inp.crouch;
@@ -272,7 +285,7 @@ function frame(now: number) {
   // negative step would grow every fade in the view (the muzzle flash and its light) instead.
   const dt = Math.max(0, Math.min(0.1, (now - last) / 1000));
   last = now;
-  if (running && !paused && !manual) {
+  if ((running || (camping && !campFrozen())) && !paused && !manual) {
     let simDt = dt;
     if (hitstop > 0) {
       hitstop -= dt;
@@ -298,6 +311,7 @@ function frame(now: number) {
   if (drawn) {
     world.render(state, drawDt);
     if (running) hud.frame(state, world, drawDt, dims.w, dims.h);
+    if (camping) campFrame();
     drawDt = 0;
     if (!automated && running && !paused && !manual) {
       const l = governor.frame(now - drawnAt);
@@ -307,7 +321,7 @@ function frame(now: number) {
     // The deadline runs only on the capped rungs; off them it is cleared, so the first capped frame draws at once.
     capDue = !governor.level.cap30 ? 0 : now - capDue > CAP_MS ? now + CAP_MS : capDue + CAP_MS;
   } else if (manual) drawDt = 0;
-  sound.frame(state, world.camera, dt, running && !paused);
+  sound.frame(state, world.camera, dt, (running || camping) && !paused);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
@@ -331,18 +345,110 @@ function lock() {
 let kit: Kit = freeKit();
 let region: RegionId = "reservoir";
 let settlement: Settlement | null = null;
-const hub = new Hub(loadProfile(), start);
+const hub = new Hub(loadProfile(), () => lock(), () => lock());
+const campView = new CampView();
 
-function openHub() {
-  $("title").hidden = true;
-  $("results").hidden = true;
-  hub.open();
+/** The camp stands still while a station's panel, the truck's fade or the ending is up. */
+const campFrozen = () => hub.station !== null || fading || !$("ending").hidden;
+
+/** Fades the screen to the camp's dark and back: `on` covers it at once when `now`, else over its transition. */
+function fade(on: boolean, now = false) {
+  const el = $("fade");
+  if (now) {
+    el.style.transition = "none";
+    el.classList.toggle("on", on);
+    void el.offsetWidth;
+    el.style.transition = "";
+  } else el.classList.toggle("on", on);
 }
 
-/** `from`: a depot to start at, instead of the way in `entry` of `r`. */
-function start(k: Kit, r: RegionId, seed: number, { from, entry }: { from?: PoiId; entry: EntryId }) {
-  kit = k;
-  region = r;
+/** Wakes the player in the camp, the teammate beside them: from the title, after the results. */
+function openCamp() {
+  $("title").hidden = true;
+  $("results").hidden = true;
+  $("pause").hidden = true;
+  $("ending").hidden = true;
+  hub.close(false);
+  running = false;
+  camping = true;
+  paused = false;
+  fading = false;
+  fire = ads = adsLatch = false;
+  unlock();
+  world.reset();
+  sound.reset();
+  state = newCamp(hub.profile.seed, hub.profile.routes);
+  world.campMode = true;
+  world.prebuild([state.player.pos]);
+  acc = hitstop = slowmo = 0;
+  hud.show(false);
+  // The raid's red edge and the leap's glow stay where the raid left them: the camp starts clear of both.
+  $("fx-hurt").style.opacity = $("fx-ult").style.opacity = "0";
+  campView.show(true);
+  document.body.classList.add("playing", "camp");
+  keepAwake(true);
+  fade(true, true);
+  requestAnimationFrame(() => fade(false));
+  lock();
+}
+
+/** Opens a station's panel: the camp stands still and the pointer is let go. */
+function openPanel(id: StationId) {
+  keys.clear();
+  stick.x = stick.z = 0;
+  fire = ads = adsLatch = false;
+  hub.open(id);
+  if (document.pointerLockElement) document.exitPointerLock();
+}
+
+/** The truck: a fade, then the raid at the start the map table chose. */
+function ride() {
+  if (fading || hub.rideRefused()) return;
+  fading = true;
+  sfx.deploy();
+  fade(true);
+  setTimeout(() => {
+    const go = hub.launch(false);
+    fading = false;
+    if (go) start(go);
+    requestAnimationFrame(() => fade(false));
+  }, 480);
+}
+
+/** The use key in the camp: the panel of the station in reach, or the truck. */
+function useInCamp() {
+  const spot = campSpotAt(state.player.pos);
+  if (!spot) return;
+  if (spot.id === "vehicle") ride();
+  else openPanel(spot.id);
+}
+
+function campTick() {
+  const inp = readInput();
+  stepCamp(state, inp, prevCrouch);
+  prevCrouch = inp.crouch;
+  world.handle(state, state.events);
+  for (const e of state.events) sound.event(e, state);
+  if (inp.interact) useInCamp();
+  // Out of the gate: the raid starts where the player stands, as one from the reservoir's first way in.
+  else if (outOfCamp(state)) {
+    const go = hub.launch(true);
+    if (go) {
+      sfx.deploy();
+      start(go, state);
+    }
+  }
+}
+
+function campFrame() {
+  const near = campFrozen() ? null : campSpotAt(state.player.pos);
+  campView.frame(state, world, dims.w, dims.h, { near, marks: hub.marks(), ride: { to: hub.rideTo(), refused: hub.rideRefused() }, cash: hub.profile.cash.toLocaleString("ja-JP"), touch: touchMode });
+}
+
+/** `from`: the camp the player walked out of, carried over into the raid where they stand. */
+function start(go: Launch, from?: State) {
+  kit = go.kit;
+  region = go.region;
   settlement = null;
   unlock();
   if (touchMode) {
@@ -350,13 +456,19 @@ function start(k: Kit, r: RegionId, seed: number, { from, entry }: { from?: PoiI
     document.documentElement.requestFullscreen?.().catch(() => undefined);
     (screen.orientation as unknown as { lock?: (o: string) => Promise<void> } | undefined)?.lock?.("landscape").catch(() => undefined);
   }
+  hub.close(false);
+  camping = false;
+  campView.show(false);
+  document.body.classList.remove("camp");
   document.body.classList.add("playing");
   keepAwake(true);
   world.reset();
   sound.reset();
-  state = newRun(seed, kit, region, { depots: hub.profile.depots, seen: hub.profile.seen, from, entry, routes: hub.profile.routes });
+  state = newRun(go.seed, kit, region, { depots: hub.profile.depots, seen: hub.profile.seen, from: go.from, entry: go.entry, routes: hub.profile.routes });
+  world.campMode = false;
+  if (from) walkOut(state, from);
   // The ground round where the raid starts is built before its first frame.
-  world.prebuild([state.player.pos]);
+  else world.prebuild([state.player.pos]);
   governor.settle();
   acc = hitstop = slowmo = 0;
   running = true;
@@ -366,8 +478,8 @@ function start(k: Kit, r: RegionId, seed: number, { from, entry }: { from?: PoiI
   $("pause").hidden = true;
   hud.show(true);
   hud.setKnown(hub.profile.entries);
-  const depot = from && hub.profile.depots.includes(from) ? from : null;
-  hud.banner(depot ? `${POIS[poiIndex(depot)].name}の中継ボックス` : entryOf(entry).name, `ここから探索する。拠点と脱出地点は${touchMode ? "地図ボタン" : " M "}の地図で見る`);
+  const depot = go.from && hub.profile.depots.includes(go.from) ? go.from : null;
+  hud.banner(depot ? `${POIS[poiIndex(depot)].name}の中継ボックス` : entryOf(go.entry).name, `ここから探索する。拠点と脱出地点は${touchMode ? "地図ボタン" : " M "}の地図で見る`);
   lock();
 }
 
@@ -387,7 +499,7 @@ function finish() {
 }
 
 function setPaused(on: boolean) {
-  if (!running || bot || manual) return;
+  if (!(running || (camping && !campFrozen())) || bot || manual) return;
   paused = on;
   $("pause").hidden = !on;
   if (on) fire = ads = adsLatch = false;
@@ -395,7 +507,7 @@ function setPaused(on: boolean) {
 
 document.addEventListener("pointerlockerror", () => (noLock = true));
 document.addEventListener("pointerlockchange", () => {
-  if (document.pointerLockElement !== stage && running && state.phase !== "done") setPaused(true);
+  if (document.pointerLockElement !== stage && ((running && state.phase !== "done") || camping)) setPaused(true);
 });
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) setPaused(true);
@@ -404,15 +516,15 @@ document.addEventListener("visibilitychange", () => {
   if (!document.hidden && running) keepAwake(true);
   if (!document.hidden) governor.settle();
 });
-$("start").addEventListener("click", openHub);
-$("restart").addEventListener("click", openHub);
+$("start").addEventListener("click", openCamp);
+$("restart").addEventListener("click", openCamp);
 $("resume").addEventListener("click", () => {
   unlock();
   governor.settle();
   setPaused(false);
   lock();
 });
-stage.addEventListener("click", () => !touchMode && running && !paused && document.pointerLockElement !== stage && lock());
+stage.addEventListener("click", () => !touchMode && (running || (camping && !campFrozen())) && !paused && document.pointerLockElement !== stage && lock());
 // Browsers start sound only after a gesture; any press on the page counts.
 addEventListener("pointerdown", unlock);
 addEventListener("keydown", unlock);
@@ -478,6 +590,14 @@ declare global {
     ringfallTerrain: (x: number, z: number) => number;
     ringfallFrames: () => Record<string, { x: number; z: number }>;
     ringfallPlace: (x: number, z: number, yaw: number) => void;
+    ringfallCamp: {
+      spots: () => CampSpot[];
+      walkTo: (id: CampSpot["id"]) => boolean;
+      toGate: () => void;
+      use: () => void;
+      open: (id: StationId) => void;
+      close: () => void;
+    };
   }
 }
 
@@ -485,7 +605,8 @@ window.render_game_to_text = () => {
   const s = state;
   const p = s.player;
   return JSON.stringify({
-    screen: running ? "game" : !$("results").hidden ? "results" : !$("hub").hidden ? "hub" : !$("ending").hidden ? "ending" : "title",
+    screen: running ? "game" : !$("results").hidden ? "results" : !$("ending").hidden ? "ending" : camping ? "camp" : "title",
+    camp: camping ? { panel: hub.station, near: campSpotAt(p.pos)?.id ?? null, lent: hub.lent, ride: { to: hub.rideTo(), refused: hub.rideRefused() }, marks: hub.marks(), fading } : null,
     profile: { cash: hub.profile.cash, stash: hub.profile.stash.length, raids: hub.profile.raids, hideout: hub.profile.hideout, escaped: !!hub.profile.escaped, seed: hub.profile.seed, routes: hub.profile.routes, entries: hub.profile.entries },
     boost: { ...s.boost, name: POIS[s.boost.poi].name },
     settled: settlement && { home: settlement.home.length, sold: settlement.sold.length, quests: settlement.quests.map((q) => q.id), opened: settlement.opened, learned: settlement.learned },
@@ -504,6 +625,8 @@ window.render_game_to_text = () => {
     sent: { items: s.sent, value: s.sent.reduce((n, k) => n + VALUABLES[k].value, 0) },
     leaving: s.leaving && +s.leaving.t.toFixed(1),
     leftAt: s.leftAt,
+    home: s.home,
+    away: +s.away.toFixed(1),
     found: s.found,
     // A count only: the whole explored map is too long for a line of state.
     seenCells: s.seen.reduce((n, c) => n + c, 0),
@@ -530,10 +653,11 @@ function advance(ms: number, draw: boolean) {
   manual = true;
   quiet = !draw;
   const n = Math.round(ms / 1000 / TICK);
-  for (let i = 0; i < n && running; i++) tick();
+  for (let i = 0; i < n && (running || (camping && !campFrozen())); i++) tick();
   if (draw) world.render(state, ms / 1000);
   else world.sync(state, ms / 1000);
   if (running) hud.frame(state, world, ms / 1000, dims.w, dims.h);
+  if (camping) campFrame();
 }
 window.advanceTime = (ms) => advance(ms, true);
 
@@ -615,4 +739,55 @@ window.ringfallYaw = () => state.player.yaw;
 
 window.ringfallBot = (skill: string) => {
   bot = new Bot(SKILLS.find((k) => k.name === skill) ?? SKILLS[1], 31);
+};
+
+/**
+ * Automation only: the camp. `walkTo` stands the player within reach of a station or the truck,
+ * facing it, on the side toward the yard's middle (false out of the camp); `toGate` stands them
+ * just inside the gate facing out; `use` presses the use key where they stand; `open` and `close`
+ * open and close a station's panel.
+ */
+window.ringfallCamp = {
+  spots: () => CAMP.spots,
+  walkTo: (id) => {
+    const c = CAMP.spots.find((q) => q.id === id);
+    if (!camping || !c) return false;
+    const mx = (CAMP.x0 + CAMP.x1) / 2;
+    const mz = (CAMP.z0 + CAMP.z1) / 2;
+    const toward = Math.atan2(mx - c.x, mz - c.z);
+    const p = state.player;
+    for (let k = 0; k < 24; k++) {
+      const a = toward + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * (Math.PI / 12);
+      for (const d of [c.reach - 0.3, c.reach - 0.7, c.reach - 1.2]) {
+        const x = c.x + Math.sin(a) * d;
+        const z = c.z + Math.cos(a) * d;
+        const y = groundAt(x, z, 0.4, CAMP.y + 0.5);
+        if (Math.abs(y - CAMP.y) > 0.3 || collide({ x, y, z }, 0.45)) continue;
+        p.pos = { x, y, z };
+        p.vel = { x: 0, y: 0, z: 0 };
+        p.yaw = Math.atan2(c.x - x, -(c.z - z));
+        // Looking at the station's middle, a metre over the floor.
+        p.pitch = Math.atan2(1 - PLAYER.eye, d);
+        p.onGround = true;
+        placeAlly(state);
+        return true;
+      }
+    }
+    return false;
+  },
+  toGate: () => {
+    if (!camping) return;
+    const p = state.player;
+    const x = (CAMP.gate.x0 + CAMP.gate.x1) / 2;
+    const z = CAMP.gate.z + 3;
+    p.pos = { x, y: groundAt(x, z, 0.4, CAMP.y + 0.5), z };
+    p.vel = { x: 0, y: 0, z: 0 };
+    p.yaw = 0;
+    p.pitch = 0;
+    p.onGround = true;
+    placeAlly(state);
+  },
+  use: () => camping && !campFrozen() && useInCamp(),
+  open: (id) => camping && openPanel(id),
+  close: () => hub.close(),
 };

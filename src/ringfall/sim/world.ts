@@ -1,7 +1,7 @@
-import { ALLY, AWARE, BAG, DEPOT, ENEMIES, ENTRY, HEALS, PARTY, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, TICK, TOOL_KINDS, TOOLS, TOP_BINS, VALUABLES, VAULT, WORLD, type HealKind, type ToolKind } from "./config";
+import { ALLY, AWARE, BAG, DEPOT, ENEMIES, ENTRY, HEALS, HOME, PARTY, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, TICK, TOOL_KINDS, TOOLS, TOP_BINS, VALUABLES, VAULT, WORLD, type HealKind, type ToolKind } from "./config";
 import { dist2d, groundAt, los, solidAt } from "./geom";
 import { highGround, steepAt, terrainHeight } from "./terrain";
-import { DEPOTS, ENTRIES, EXTRACTS, PARTY_STOPS, POIS, REGIONS, type ExtractPoint } from "./map";
+import { DEPOTS, ENTRIES, EXTRACTS, inCamp, PARTY_STOPS, POIS, REGIONS, type ExtractPoint } from "./map";
 import { spawnEnemy, spawnSpot } from "./enemies";
 import { cellsAround, fieldTo, nextStep, onMainGround } from "./hunt";
 import { raiseAlly, startHelp } from "./ally";
@@ -113,7 +113,7 @@ function hiddenPosts(s: State, kinds: readonly EnemyKind[], x: number, z: number
   const p = s.player;
   const eye = { x: p.pos.x, y: p.pos.y + 1.5, z: p.pos.z };
   const g = groundAt(x, z, 1, 99);
-  if (steepAt(x, z) || g > terrainHeight(x, z) + 0.3) return null;
+  if (steepAt(x, z) || g > terrainHeight(x, z) + 0.3 || inCamp({ x, z }, 4)) return null;
   const spots = posts(kinds, x, z);
   if (spots.some((q) => steepAt(q.mx, q.mz) || highGround(q.mx, q.mz))) return null;
   if (dist2d(p.pos, { x, z }) < seen && (los(eye, { x, y: g + 1.5, z }) || spots.some((q) => los(eye, q) || los(eye, { x: q.x, y: q.mid, z: q.z })))) return null;
@@ -669,6 +669,27 @@ export function stepDepots(s: State) {
   s.outcome = "extracted";
   s.events.push({ t: "done" });
 }
+
+/**
+ * The camp's yard (`HOME`): back in it after time away, with no robot fighting the player near,
+ * the raid ends alive with what the player carries.
+ */
+export function stepHome(s: State) {
+  if (s.phase !== "play") return;
+  const p = s.player;
+  if (!inCamp(p.pos)) {
+    s.away += TICK;
+    return;
+  }
+  if (!homeReady(s) || depotBlocked(s)) return;
+  s.home = true;
+  s.phase = "done";
+  s.outcome = "extracted";
+  s.events.push({ t: "done" });
+}
+
+/** Whether the player is in the camp's yard after time enough away for it to take them home (fight or not). */
+export const homeReady = (s: State) => s.phase === "play" && s.player.downed <= 0 && s.away >= HOME.away && inCamp(s.player.pos);
 
 /** Marks the ways in the player walks to, on their ground: the base learns them if the raid ends alive. */
 export function stepEntries(s: State) {

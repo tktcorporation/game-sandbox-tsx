@@ -10,12 +10,13 @@
  * are played in one worker process per core; RINGFALL_SIM_JOBS sets how many (1 plays them
  * in this process, in turn).
  */
-import { ALLY, BAG, DEPOT, ELITE, ENEMIES, HEALS, NOISE, PACK, PARTY, PLATE, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, SIGHT, STAGGER, TACTICAL, TICK, VALUABLES, VAULT, WEAPONS, WORLD } from "../src/ringfall/sim/config";
+import { ALLY, BAG, DEPOT, ELITE, HOME, ENEMIES, HEALS, NOISE, PACK, PARTY, PLATE, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, SIGHT, STAGGER, TACTICAL, TICK, VALUABLES, VAULT, WEAPONS, WORLD } from "../src/ringfall/sim/config";
 import { engageSquad, makeNoise } from "../src/ringfall/sim/awareness";
 import { spawnEnemy } from "../src/ringfall/sim/enemies";
 import { COVERS } from "../src/ringfall/sim/cover";
 import { ENEMIES as KINDS, type EnemyKind, type Rarity } from "../src/ringfall/sim/config";
-import { BOXES, DECKS, DEPOTS, depotIndex, ENTRIES, entryOf, EXTRA_BINS, EXTRACTS, PACKS, PARTY_STOPS, POIS, poiIndex, REGIONS, regionHere, regionOf, ROAMERS, ROUTES, STOPS, type RegionId, type RouteId, type Squad } from "../src/ringfall/sim/map";
+import { BOXES, CAMP, DECKS, DEPOTS, depotIndex, ENTRIES, entryOf, EXTRA_BINS, EXTRACTS, inCamp, PACKS, PARTY_STOPS, POIS, poiIndex, REGIONS, regionHere, regionOf, ROAMERS, ROUTES, STOPS, type RegionId, type RouteId, type Squad } from "../src/ringfall/sim/map";
+import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "../src/ringfall/sim/camp";
 import { inArea } from "../src/ringfall/sim/areas";
 import { routeBefore, useRoutes, worldKey } from "../src/ringfall/sim/routes";
 import { findPath } from "../src/ringfall/sim/nav";
@@ -160,6 +161,22 @@ function checkLayout(): string[] {
   }
   // An extract is used standing on whatever is highest there (the pad, a rock top), as the game checks it.
   for (const x of EXTRACTS) point(`extract ${x.id}`, x.x, x.z, groundAt(x.x, x.z, 0.4, 99));
+  // The camp: where the player wakes, the gate from both sides, and somewhere to stand in reach of each station and the truck.
+  point("camp wake", CAMP.wake.x, CAMP.wake.z, CAMP.y);
+  const gx = (CAMP.gate.x0 + CAMP.gate.x1) / 2;
+  point("camp gate inside", gx, CAMP.gate.z + 2, CAMP.y);
+  point("camp gate outside", gx, CAMP.gate.z - 3, terrainHeight(gx, CAMP.gate.z - 3));
+  for (const c of CAMP.spots) {
+    let found = false;
+    for (let a = 0; a < Math.PI * 2 && !found; a += Math.PI / 16)
+      for (const d of [c.reach - 0.3, c.reach - 0.8]) {
+        const x = c.x + Math.sin(a) * d;
+        const z = c.z + Math.cos(a) * d;
+        const g = groundAt(x, z, 0.4, CAMP.y + 0.3);
+        if (Math.abs(g - CAMP.y) < 0.05 && !collide({ x, y: g, z }, 0.45) && campSpotAt({ x, z })?.id === c.id) found = true;
+      }
+    if (!found) bad.push(`camp ${c.id}: no place to stand in its reach`);
+  }
   return bad;
 }
 
@@ -734,6 +751,78 @@ function checkSecondPickup(): string | null {
  * (the reservoir's first when none is given, or when the way named is another region's), with
  * the teammate beside the player; and standing still there for 15 s, no squad fights it.
  */
+/**
+ * The camp: walking from where the player wakes to the gate leaves it there, with no shot fired
+ * whatever is pressed; a raid begun where the player walked out has no fight in its first
+ * seconds, and stepping straight back in does not end it. Back in the yard after time away,
+ * the raid ends alive with the bag, settled as an extraction, but not while a robot fights the
+ * player within `DEPOT.safe`. A robot set on a player in the yard from outside never walks in.
+ */
+function checkCamp(): string | null {
+  const camp = newCamp(5);
+  const p = camp.player;
+  if (!inCamp(p.pos) || !camp.ally.active || camp.enemies.length || dist2d(camp.ally.pos, p.pos) > 4) return `camp: wakes at ${p.pos.x.toFixed(1)},${p.pos.z.toFixed(1)} with ${camp.enemies.length} robots, teammate ${camp.ally.active}`;
+  const gate = { x: (CAMP.gate.x0 + CAMP.gate.x1) / 2, z: CAMP.gate.z - 6 };
+  let left = -1;
+  for (let i = 0; i < 40 / TICK && left < 0; i++) {
+    const inp = { ...idleInput(), moveZ: 1, fire: true, ads: true, tactical: true, ult: true };
+    // Turn toward the middle of the yard first, then out through the gate.
+    const to = p.pos.z > CAMP.gate.z + 4 && Math.abs(p.pos.x - gate.x) > 1 ? { x: gate.x, z: CAMP.gate.z + 3 } : gate;
+    p.yaw = Math.atan2(to.x - p.pos.x, -(to.z - p.pos.z));
+    stepCamp(camp, inp, false);
+    if (outOfCamp(camp)) left = i;
+  }
+  if (left < 0) return `camp: walking to the gate never left the yard (stuck at ${p.pos.x.toFixed(1)},${p.pos.z.toFixed(1)})`;
+  if (p.pos.x < CAMP.gate.x0 || p.pos.x > CAMP.gate.x1) return `camp: left the yard at ${p.pos.x.toFixed(1)},${p.pos.z.toFixed(1)}, not through the gate`;
+  if (camp.stats.shots > 0 || camp.time !== 0) return `camp: ${camp.stats.shots} shots fired, the clock at ${camp.time}`;
+  const inside = { x: gate.x, y: CAMP.y, z: CAMP.gate.z + 5 };
+  const stand = (s: State) => {
+    s.player.pos = { ...inside };
+    s.player.vel = { x: 0, y: 0, z: 0 };
+    s.player.onGround = true;
+  };
+  for (const seed of [11, 777]) {
+    const s = newRun(seed, freeKit(), "reservoir", { entry: FIRST_ENTRY });
+    walkOut(s, camp);
+    if (dist2d(s.player.pos, p.pos) > 0.01 || dist2d(s.ally.pos, camp.ally.pos) > 0.01 || !s.ally.active) return "camp: walking out did not carry the player and the teammate over where they stood";
+    // A step back through the gate at once is not a return.
+    const back = structuredClone(s);
+    ticks(back, 1);
+    stand(back);
+    ticks(back, 2);
+    if (back.phase !== "play") return `camp: stepping back into the yard a second after walking out ended the raid (${back.outcome})`;
+    ticks(s, 15);
+    if (s.squads.some((sq) => sq.engaged) || s.player.hp < PLAYER.hp) return `camp: a raid walked out of the gate (seed ${seed}) was in a fight within 15 s`;
+    // Back in with a full bag and no fight: home alive, the bag kept.
+    s.player.haul = ["board", "parts"];
+    stand(s);
+    ticks(s, 0.5);
+    if (s.phase !== "done" || s.outcome !== "extracted" || !s.home || s.player.haul.length !== 2) return `camp: walking back into the yard left phase ${s.phase}, outcome ${s.outcome}, home ${s.home}`;
+    const settled = settle(newProfile(), s);
+    if (settled.profile.extracted !== 1 || settled.home.filter((i) => i.t === "valuable").length !== 2) return `camp: a raid ended in the yard settled ${settled.profile.extracted} extractions and ${settled.home.length} items home`;
+  }
+  // Back in the yard with a grunt fighting the player close by: the raid goes on until it is gone.
+  const f = newRun(3, freeKit(), "reservoir", { entry: FIRST_ENTRY });
+  f.ally.active = false;
+  f.away = HOME.away;
+  stand(f);
+  const squad = f.squads.length;
+  f.squads.push({ name: "test", poi: -1, patrol: [], leg: 0, engaged: false, roam: false, sinceSeen: 0, last: { x: inside.x, z: inside.z } });
+  const g = spawnEnemy(f, "grunt", inside.x, CAMP.gate.z - 25, -1, squad, { face: Math.PI });
+  engageSquad(f, squad, g);
+  for (let i = 0; i < 6 / TICK && f.phase === "play"; i++) {
+    step(f, idleInput(), false);
+    stand(f);
+    f.player.hp = PLAYER.hp;
+    if (inCamp(g.pos)) return `camp: a grunt walked into the yard (${g.pos.x.toFixed(1)},${g.pos.z.toFixed(1)})`;
+  }
+  if (f.phase !== "play" || f.home) return `camp: back in the yard with a grunt fighting ${dist2d(g.pos, inside).toFixed(0)} m off, the raid ended (${f.outcome})`;
+  f.enemies = [];
+  ticks(f, 0.5);
+  if (f.phase !== "done" || !f.home) return "camp: back in the yard with the fight over, the raid did not end";
+  return null;
+}
+
 function checkEntries(): string | null {
   const dflt = newRun(3);
   const first = entryOf(regionOf("reservoir").entries[0]);
@@ -2734,7 +2823,7 @@ function checkTools(): string | null {
   if (v9?.routes.join() !== "dam,gangway") return `tool scenario: a v9 save loaded with routes ${JSON.stringify(v9?.routes)}`;
   return null;
 }
-for (const err of [checkTerrainIndex(20_000), checkParties(), checkPacks(), checkRoutes(), checkRouteObstacles(), checkTools(), checkTimeToKill(), checkStagger(), checkWindupMoves(), checkDepots(), checkDepotBudget(), checkPlates(), checkHideout(), checkBoltNoTunnel(), checkPickupWavesRouted(), checkLaterWaveFights(), checkSidestepHit(), checkReturnFire(), checkWallStops(), checkPinch(), checkPursuit(), checkHealHeard(), checkPositionMatters(), checkPullWhenAiming(), checkVault(), checkQuests(), checkSettle(), checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkBoatCall(), checkSecondPickup(), checkEntries(), checkKnownEntries(), checkConnections(), checkAllySelfUp(), checkStompHeight(), checkFieldsReused(), checkFieldsFollowRunner(), checkCliffsStop(), checkNoPits(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill(), checkLeap(), checkLeapLeavesAllyBelow(), checkLeapDowned(), checkLeapAllyCatchesUp(), checkLeapAllyDowned(), checkLeapWithItem(), checkLeapClocks(), checkLeapOffHighGround(), checkLeapUnderRoof()]) {
+for (const err of [checkTerrainIndex(20_000), checkParties(), checkPacks(), checkRoutes(), checkRouteObstacles(), checkTools(), checkTimeToKill(), checkStagger(), checkWindupMoves(), checkDepots(), checkDepotBudget(), checkPlates(), checkHideout(), checkBoltNoTunnel(), checkPickupWavesRouted(), checkLaterWaveFights(), checkSidestepHit(), checkReturnFire(), checkWallStops(), checkPinch(), checkPursuit(), checkHealHeard(), checkPositionMatters(), checkPullWhenAiming(), checkVault(), checkQuests(), checkSettle(), checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkBoatCall(), checkSecondPickup(), checkEntries(), checkCamp(), checkKnownEntries(), checkConnections(), checkAllySelfUp(), checkStompHeight(), checkFieldsReused(), checkFieldsFollowRunner(), checkCliffsStop(), checkNoPits(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill(), checkLeap(), checkLeapLeavesAllyBelow(), checkLeapDowned(), checkLeapAllyCatchesUp(), checkLeapAllyDowned(), checkLeapWithItem(), checkLeapClocks(), checkLeapOffHighGround(), checkLeapUnderRoof()]) {
   if (err) {
     console.error(err);
     process.exit(1);

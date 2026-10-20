@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { DUCK, ENEMIES, PLAYER, TITAN, WEAPONS, WORLD, type EnemyKind } from "../sim/config";
-import { BOXES, DEPOTS, ENTRIES, EXTRACTS, ROUTES, type Box } from "../sim/map";
+import { BOXES, CAMP, DEPOTS, ENTRIES, EXTRACTS, ROUTES, type Box } from "../sim/map";
 import { worldKey } from "../sim/routes";
 import { groundAt } from "../sim/geom";
 import { LANDS, offshore, terrainHeight } from "../sim/terrain";
@@ -239,6 +239,9 @@ export class World {
   private dummy = new THREE.Object3D();
   private boulderGeo = new THREE.DodecahedronGeometry(1, 0);
 
+  /** The camp between raids is drawn: the weapons are down. */
+  campMode = false;
+
   /** Automation only: a fixed camera that replaces the player's view. */
   cameraOverride: { x: number; y: number; z: number; yaw: number; pitch: number } | null = null;
 
@@ -342,6 +345,15 @@ export class World {
       };
       put(fire, 2.5, 1.6);
       put(sign, 4.5, -0.8);
+    }
+    {
+      // The camp's fire, in the open yard between the map table and the tent.
+      const { fire } = buildEntryMark();
+      const x = (CAMP.x0 + CAMP.x1) / 2 - 3;
+      const z = (CAMP.z0 + CAMP.z1) / 2 + 4;
+      fire.position.set(x, groundAt(x, z, 0.4, 99), z);
+      this.scene.add(fire);
+      this.entryMarks.push(fire);
     }
 
     this.stompRing = new THREE.Mesh(new THREE.RingGeometry(0.96, 1, 64), glow(PAL.orb, 0.5));
@@ -1334,7 +1346,7 @@ export class World {
     }
     this.gunKick += (0 - this.gunKick) * Math.min(1, dt * 14);
     const reloading = p.reload > 0;
-    const lowered = !!p.healing || !!p.mantle || !!p.leap || p.downed > 0 || s.phase === "done";
+    const lowered = !!p.healing || !!p.mantle || !!p.leap || p.downed > 0 || s.phase === "done" || this.campMode;
     const ads = p.ads;
     const gx = 0.2 * (1 - ads);
     const gy = -0.2 + 0.07 * ads - (lowered ? 0.4 : 0) - (reloading ? 0.08 : 0) + Math.sin(this.bob * 2) * 0.01 * (1 - ads);

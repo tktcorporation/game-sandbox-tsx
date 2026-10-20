@@ -16,12 +16,12 @@ import { buildTerrain, type Carve, type FlatShape, floorLevel, highGround, LEVEL
 /**
  * `steel` is painted plate: ship hulls, cranes, girders, carriages (its tint picks the paint).
  * `fence` is a gate of steel bars, solid as any box.
- * `prop` is a piece of the cover scattered over the open ground; its tint is what it is (`PROP`).
+ * `prop` is a piece of the cover scattered over the open ground, or of the camp's furniture; its tint is what it is (`PROP`).
  */
 export type BoxKind = "crate" | "container" | "wall" | "rock" | "pad" | "tower" | "slab" | "step" | "steel" | "fence" | "prop";
 
 /** What a `prop` box is, by its tint: the renderer draws each as that thing. */
-export const PROP = { pallets: 0, sandbags: 1, barrier: 2, cab: 3, bed: 4, car: 5, rubble: 6 } as const;
+export const PROP = { pallets: 0, sandbags: 1, barrier: 2, cab: 3, bed: 4, car: 5, rubble: 6, tarp: 7, table: 8, board: 9, shelf: 10, counter: 11, bench: 12, bedroll: 13 } as const;
 
 /** A solid spanning y0..h. Floors, roofs and bridges have y0 > 0 and leave open space below. */
 export interface Box {
@@ -3058,7 +3058,9 @@ function scatterCover(authored: Box[], { points, segments }: Keep): Box[] {
   for (const b of authored) near.authored.add(b.x0, b.z0, b.x1, b.z1, b);
   // Each depot keeps room round it and round the start behind it.
   const depots = POIS.map((p) => ({ ...depotSpot(p), r: 6 }));
-  for (const q of [...points, ...depots]) near.points.add(q.x - q.r, q.z - q.r, q.x + q.r, q.z + q.r, q);
+  // The camp's yard keeps clear: a circle round it, out past its corners.
+  const yard = { x: CAMP_AT[0], z: CAMP_AT[1], r: Math.hypot(CAMP_HALF.x, CAMP_HALF.z) + 1 };
+  for (const q of [...points, ...depots, yard]) near.points.add(q.x - q.r, q.z - q.r, q.x + q.r, q.z + q.r, q);
   // A trench's line keeps cover off as far as its walls may lower the ground.
   for (const c of [TUNNEL, GALLERY]) {
     const [[ax, az], [bx, bz]] = c.line;
@@ -3268,6 +3270,114 @@ const BRIDGE: Box[] = placeIn("heart", [
   bridge(90, -94.2, 122, -89.8, LEVEL.terrace),
 ]);
 
+/**
+ * The camp between raids, on the south beach behind the reservoir's first way in: a yard of
+ * sheet fence 34 by 28 m with its gate facing north into the region, the stations a raid is
+ * made ready at, the truck that drives the player to another start, and the tent they wake in.
+ * Written in its own frame round (0, 0), north = -z, on ground at 0; `CAMP` gives its places in
+ * the world. Robots never walk in (`inCamp()`), and a raid ends alive when the player walks back
+ * into it (`HOME`).
+ */
+const CAMP_AT: [number, number] = [2, 616];
+/** The camp's floor, pressed flat over the whole yard. */
+const CAMP_LEVEL = 1;
+const CAMP_HALF = { x: 17, z: 14 };
+/** Half the gate's width, in the middle of the north fence. */
+const CAMP_GATE = 4.25;
+
+export type StationId = "map" | "quests" | "stash" | "shop" | "workshop";
+
+/** A place in the camp the use key acts at: a station's panel, or the truck. */
+export interface CampSpot {
+  id: StationId | "vehicle";
+  name: string;
+  /** The middle of what stands there; the use key works within `reach` of it. */
+  x: number;
+  y: number;
+  z: number;
+  reach: number;
+  /** Where its name floats, over the camp's floor. */
+  top: number;
+}
+
+/** A thin tarp roof `w` by `d` at height `y` round (cx, cz), on a grey post at each corner. */
+function tarp(cx: number, cz: number, w: number, d: number, y: number): Box[] {
+  const out = [box(cx, cz, w, d, y + 0.1, "prop", PROP.tarp, y)];
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) out.push(box(cx + sx * (w / 2 - 0.15), cz + sz * (d / 2 - 0.15), 0.12, 0.12, y, "steel", 2));
+  return out;
+}
+
+function camp(): Box[] {
+  const { x: X, z: Z } = CAMP_HALF;
+  const out: Box[] = [];
+  // The fence: panels of rust and teal sheet between grey posts, open over the gate.
+  const panel = (k: number) => (k % 3 === 1 ? 3 : 0);
+  for (let k = 0; k < 8; k++) {
+    const u0 = -X + k * 4.25;
+    const u1 = u0 + 4.25;
+    out.push(rect(u0, Z - 0.1, u1, Z + 0.1, 0, 2.4, "steel", panel(k + 1)));
+    if (u1 <= -CAMP_GATE + 0.01 || u0 >= CAMP_GATE - 0.01) out.push(rect(u0, -Z - 0.1, u1, -Z + 0.1, 0, 2.4, "steel", panel(k)));
+  }
+  for (let k = 0; k < 7; k++) {
+    const v0 = -Z + k * 4;
+    out.push(rect(-X - 0.1, v0, -X + 0.1, v0 + 4, 0, 2.4, "steel", panel(k + 2)), rect(X - 0.1, v0, X + 0.1, v0 + 4, 0, 2.4, "steel", panel(k)));
+  }
+  for (let k = 0; k <= 8; k++) for (const v of [-Z, Z]) if (v === Z || Math.abs(-X + k * 4.25) >= CAMP_GATE) out.push(box(-X + k * 4.25, v, 0.22, 0.3, 2.6, "steel", 2));
+  for (let k = 1; k < 7; k++) for (const u of [-X, X]) out.push(box(u, -Z + k * 4, 0.3, 0.22, 2.6, "steel", 2));
+  // The gate: tall posts, a white bar over them, and its two leaves swung back along the fence.
+  for (const s of [-1, 1]) out.push(box(s * (CAMP_GATE + 0.15), -Z, 0.3, 0.3, 3.6, "steel", 2), rect(s > 0 ? CAMP_GATE + 0.3 : -CAMP_GATE - 4.1, -Z + 0.15, s > 0 ? CAMP_GATE + 4.1 : -CAMP_GATE - 0.3, -Z + 0.27, 0.05, 2.0, "fence"));
+  out.push(rect(-CAMP_GATE - 0.3, -Z - 0.15, CAMP_GATE + 0.3, -Z + 0.15, 3.3, 3.6, "steel", 4));
+  // The truck by the gate, its cab toward the gate.
+  out.push(box(8, -9.5, 2.3, 2.5, 3.0, "prop", PROP.cab), box(11.65, -9.5, 5, 2.5, 2.3, "prop", PROP.bed));
+  // The quest board west of the gate, on two posts.
+  out.push(box(-8, -10.5, 3, 0.12, 2.3, "prop", PROP.board, 0.9));
+  for (const u of [-9.4, -6.6]) out.push(box(u, -10.6, 0.14, 0.14, 2.4, "steel", 2));
+  // The map table in the middle of the yard, in the open sun.
+  out.push(box(-1, -3, 2.6, 1.6, 0.92, "prop", PROP.table));
+  // The trader's stall against the east fence, south of the shelves: a counter in the sun, its
+  // goods behind it under an awning whose shade falls on the fence (the sun stands to the south-west).
+  out.push(box(14, 7.5, 1, 3.4, 1.05, "prop", PROP.counter), box(15.9, 6.2, 1.2, 1.2, 1.2, "crate"), box(16, 7.7, 1.0, 1.2, 0.9, "crate"), box(15.8, 9.1, 1.2, 1.0, 1.6, "crate"), ...tarp(15.6, 7.5, 2.6, 4.6, 2.9));
+  // The workshop in the south-west corner: a bench, crates, a container of parts on the south fence.
+  out.push(box(-10, 10.5, 3, 1.1, 0.95, "prop", PROP.bench), box(-14.6, 12.4, 1.4, 1.4, 1.4, "crate"), box(-13.2, 12.6, 1.1, 1.1, 0.9, "crate"));
+  out.push(box(-1.5, 12.35, 6.1, 2.44, 2.6, "container", 1));
+  // Spare crates and sandbags along the west fence.
+  out.push(box(-15.4, 1.6, 1.2, 1.2, 1.2, "crate"), box(-15.5, 3.2, 1.0, 1.2, 0.9, "crate"), box(-15.9, -3, 0.85, 3.6, 1.1, "prop", PROP.sandbags));
+  // The stash's shelves against the east fence.
+  out.push(box(15.9, -0.6, 0.8, 2.8, 2.0, "prop", PROP.shelf), box(15.9, 2.4, 0.8, 2.8, 2.0, "prop", PROP.shelf));
+  // The tent on the south fence: two bedrolls under a tarp.
+  out.push(box(4.8, 11.6, 0.8, 2.0, 0.22, "prop", PROP.bedroll), box(7.2, 11.6, 0.8, 2.0, 0.22, "prop", PROP.bedroll), ...tarp(6, 11.4, 5, 4.4, 2.3));
+  return out;
+}
+
+const CAMP_BOXES: Box[] = onLevel(CAMP_LEVEL, place(CAMP_AT[0], CAMP_AT[1], camp()));
+FLAT.push({ x0: CAMP_AT[0] - CAMP_HALF.x, z0: CAMP_AT[1] - CAMP_HALF.z, x1: CAMP_AT[0] + CAMP_HALF.x, z1: CAMP_AT[1] + CAMP_HALF.z, y: CAMP_LEVEL });
+
+const campSpot = (id: CampSpot["id"], name: string, u: number, v: number, reach: number, top: number): CampSpot => ({ id, name, x: CAMP_AT[0] + u, y: CAMP_LEVEL, z: CAMP_AT[1] + v, reach, top });
+
+/** The camp's places in the world. */
+export const CAMP = {
+  x0: CAMP_AT[0] - CAMP_HALF.x,
+  x1: CAMP_AT[0] + CAMP_HALF.x,
+  z0: CAMP_AT[1] - CAMP_HALF.z,
+  z1: CAMP_AT[1] + CAMP_HALF.z,
+  y: CAMP_LEVEL,
+  /** The gate's opening in the north fence. */
+  gate: { x0: CAMP_AT[0] - CAMP_GATE, x1: CAMP_AT[0] + CAMP_GATE, z: CAMP_AT[1] - CAMP_HALF.z },
+  /** Where the player wakes between raids, in front of the tent, facing the gate. */
+  wake: { x: CAMP_AT[0] + 6, z: CAMP_AT[1] + 8, yaw: 0 },
+  spots: [
+    campSpot("map", "地図の机", -1, -3, 2.8, 1.9),
+    campSpot("quests", "依頼板", -8, -10.5, 2.6, 2.9),
+    campSpot("stash", "倉庫の棚", 15.9, 0.9, 3.0, 2.6),
+    campSpot("shop", "商人の屋台", 14, 7.5, 2.6, 3.3),
+    campSpot("workshop", "作業場", -10, 10.5, 2.6, 2.0),
+    campSpot("vehicle", "車両", 9.8, -9.5, 3.4, 3.5),
+  ] satisfies CampSpot[],
+};
+
+/** Whether (x, z) lies in the camp's yard, or within `r` of its fence. */
+export const inCamp = (at: { x: number; z: number }, r = 0) => at.x > CAMP.x0 - r && at.x < CAMP.x1 + r && at.z > CAMP.z0 - r && at.z < CAMP.z1 + r;
+
 const KEEP = authoredKeep();
 // Hand-built things keep flat ground around them, at their level.
 buildTerrain([
@@ -3365,7 +3475,8 @@ export const DEPOTS: Depot[] = POIS.map((p) => {
   return { poi: p.id, x: at.x, y: at.y, z: at.z, yaw: Math.atan2(p.x - at.x, -(p.z - at.z)) };
 });
 
-export const BOXES: Box[] = [...AUTHORED, ...BRIDGE, ...RAILWAY, ...QUAY, ...LAID, ...scatterCover([...AUTHORED, ...BRIDGE, ...RAILWAY, ...QUAY, ...LAID], KEEP)];
+// The camp comes last: what was laid before it keeps its place in the list (the cover spots, the walkers' grids).
+export const BOXES: Box[] = [...AUTHORED, ...BRIDGE, ...RAILWAY, ...QUAY, ...LAID, ...scatterCover([...AUTHORED, ...BRIDGE, ...RAILWAY, ...QUAY, ...LAID, ...CAMP_BOXES], KEEP), ...CAMP_BOXES];
 
 /** The bridge deck's height at (x, z) when it lies on a deck that path finding walks (DECKS), else null. */
 export function deckAt(x: number, z: number): number | null {

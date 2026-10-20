@@ -265,6 +265,11 @@ const PROP_PAL = {
   /** The frame rail under a truck and the slats under a pallet: sun-dried grey, not black. */
   chassis: 0x6a6660,
   tyre: 0x3e3f42,
+  /** The camp's khaki tarps, the yellow notice among the white on its board, a bedroll, the land on the map table's map. */
+  canvas: 0xb9a37a,
+  note: 0xeedc8a,
+  mat: 0x6f7e5c,
+  mapLand: 0xd9a868,
 } as const;
 
 /** A wheel for a vehicle prop: a dark disc standing at (x, z) on the ground, its axle across the vehicle, which runs along x when `alongX`. */
@@ -347,6 +352,73 @@ function buildProp(b: Box, i: number): THREE.Object3D {
       g.add(part(L, W, 0.3, 0.92, PROP_PAL.car));
       g.add(part(L * 0.55, W - 0.2, 0.92, h, PROP_PAL.glass, -L * 0.05));
       g.add(part(L * 0.55 - 0.1, W - 0.1, h - 0.06, h, PROP_PAL.car, -L * 0.05));
+      break;
+    }
+    case PROP.tarp: {
+      // A canvas sheet stretched flat over a camp's station, its hem a shade darker; teal or khaki by turns.
+      const cloth = i % 2 ? PROP_PAL.canvas : PAL.teal;
+      g.add(part(L, W, 0, h, cloth));
+      g.add(part(L + 0.04, W + 0.04, -0.12, 0.02, new THREE.Color(cloth).multiplyScalar(0.8).getHex(), 0, false));
+      break;
+    }
+    case PROP.table:
+    case PROP.bench: {
+      // A timber top on four legs. The map table carries the island's map, the bench a vice and its tools.
+      const top = 0.08;
+      g.add(part(L, W, h - top, h, PROP_PAL.wood));
+      for (const t of [-L / 2 + 0.12, L / 2 - 0.12]) for (const v of [-W / 2 + 0.1, W / 2 - 0.1]) g.add(mesh(new THREE.BoxGeometry(0.09, h - top, 0.09), flat(PROP_PAL.chassis), long ? t : v, b.y0 + (h - top) / 2, long ? v : t));
+      if (b.tint === PROP.table) {
+        g.add(part(L * 0.8, W * 0.75, h, h + 0.01, PAL.paint, 0, false));
+        g.add(part(L * 0.3, W * 0.4, h + 0.01, h + 0.02, PROP_PAL.mapLand, -L * 0.12, false));
+        g.add(part(L * 0.22, W * 0.3, h + 0.01, h + 0.02, PROP_PAL.mapLand, L * 0.22, false));
+        g.add(part(0.06, W * 0.6, h + 0.02, h + 0.025, PAL.ring, L * 0.05, false));
+      } else {
+        g.add(part(0.3, 0.22, h, h + 0.22, PAL.gun, -L / 2 + 0.35));
+        g.add(part(0.7, 0.3, h, h + 0.12, PAL.rust, 0.2));
+        g.add(part(0.5, 0.08, h, h + 0.05, PAL.gunLight, L / 2 - 0.5, false));
+        g.add(part(L * 0.9, 0.06, 0.25, 0.32, PROP_PAL.wood, 0, false));
+      }
+      break;
+    }
+    case PROP.board: {
+      // A board of timber with notices pinned to it, white and one pale yellow, a teal band across the top.
+      g.add(part(L, W, 0, h, PROP_PAL.wood));
+      g.add(part(L, W + 0.02, h - 0.14, h - 0.04, PAL.teal, 0, false));
+      const notes: [number, number, number][] = [[-0.95, 0.55, 0.42], [-0.3, 0.75, 0.36], [0.35, 0.5, 0.44], [0.95, 0.7, 0.34], [-0.6, 0.15, 0.3], [0.6, 0.12, 0.3]];
+      notes.forEach(([t, y, sz], n) => {
+        const paper = mesh(new THREE.BoxGeometry(long ? sz : W + 0.03, sz * 1.25, long ? W + 0.03 : sz), flat(n === 2 ? PROP_PAL.note : PAL.paint), long ? t * (L / 3) : 0, b.y0 + y + 0.15, long ? 0 : t * (L / 3), false);
+        g.add(paper);
+      });
+      break;
+    }
+    case PROP.shelf: {
+      // Grey steel shelving, three boards high, with crates and wrapped goods on them.
+      const posts = flat(PAL.steel);
+      for (const t of [-L / 2 + 0.04, L / 2 - 0.04]) for (const v of [-W / 2 + 0.04, W / 2 - 0.04]) g.add(mesh(new THREE.BoxGeometry(0.06, h, 0.06), posts, long ? t : v, mid, long ? v : t, false));
+      [0.15, 0.85, 1.55].forEach((y, k) => {
+        g.add(part(L, W, y, y + 0.04, PAL.steel));
+        for (let n = 0; n < 3; n++) {
+          if ((n + k) % 4 === 3) continue;
+          const t = -L / 2 + (n + 0.5) * (L / 3);
+          const hgt = 0.3 + ((n * 7 + k * 3) % 4) * 0.08;
+          g.add(part(L / 3 - 0.12, W - 0.1, y + 0.04, y + 0.04 + hgt, (n + k) % 2 ? PAL.crate : PROP_PAL.wraps[(n + k) % 3], t));
+        }
+      });
+      break;
+    }
+    case PROP.counter: {
+      // The stall's counter: crates of timber for a front, a plank on top, goods laid out on it.
+      g.add(part(L, W, 0, h - 0.06, PAL.crate));
+      for (let t = -L / 2 + 0.6; t < L / 2 - 0.3; t += 0.9) g.add(part(0.06, W + 0.02, 0.1, h - 0.1, PAL.ochre, t, false));
+      g.add(part(L + 0.1, W + 0.15, h - 0.06, h, PROP_PAL.wood));
+      g.add(part(0.4, 0.3, h, h + 0.18, PAL.teal, -L / 4, false));
+      g.add(part(0.3, 0.3, h, h + 0.12, PROP_PAL.wraps[1], L / 6, false));
+      break;
+    }
+    case PROP.bedroll: {
+      // A sleeping mat rolled out on the sand, its rolled head a little higher.
+      g.add(part(L, W, 0, h * 0.55, PROP_PAL.mat));
+      g.add(part(0.45, W, 0, h, new THREE.Color(PROP_PAL.mat).multiplyScalar(0.85).getHex(), -L / 2 + 0.25));
       break;
     }
     default: {

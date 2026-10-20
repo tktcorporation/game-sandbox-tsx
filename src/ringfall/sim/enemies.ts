@@ -10,7 +10,7 @@ const LEDGE = 1.0;
 /** Walkers posted on the ground climb no higher than this above the terrain (stairs onto a roof). */
 const CLIMB = 1.2;
 const bodyHeight = (k: { bodyY: number; radius: number }) => k.bodyY + k.radius;
-import { PACKS, PARTY_STOPS, POIS, ROAMERS, type Squad } from "./map";
+import { inCamp, PACKS, PARTY_STOPS, POIS, ROAMERS, type Squad } from "./map";
 import { bodyCenter, weakPoint } from "./combat";
 import { hurtPlayer } from "./player";
 import { allyChest, allyUp, hurtAlly } from "./ally";
@@ -185,6 +185,13 @@ function moveBody(e: Enemy, vx: number, vz: number) {
   const bz = e.pos.z;
   e.pos.x += e.vel.x * TICK;
   e.pos.z += e.vel.z * TICK;
+  // No robot comes into the camp, over its fence or through its gate.
+  if (inCamp(e.pos, k.radius + 0.5) && !inCamp({ x: bx, z: bz }, k.radius + 0.5)) {
+    e.pos.x = bx;
+    e.pos.z = bz;
+    e.vel.x = e.vel.z = 0;
+    return true;
+  }
   if (k.fly > 0) {
     e.pos.y += (flyHeight(e.pos.x, e.pos.z) - e.pos.y) * Math.min(1, TICK * 2.5);
     clampToWorld(e.pos, 1);

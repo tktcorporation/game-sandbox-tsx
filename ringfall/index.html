@@ -71,6 +71,7 @@
     </div>
     <div id="rotate">横向きにすると遊べます</div>
 
+    <div id="fade" aria-hidden="true"></div>
     <div id="banner" aria-live="polite"><b id="banner-head"></b><span id="banner-sub"></span></div>
 
     <section id="title" class="screen">
@@ -85,22 +86,28 @@
           <li><kbd>E</kbd>調べる・拾う <kbd>R</kbd>リロード <kbd>1</kbd><kbd>2</kbd>持ち替え <kbd>M</kbd>地図</li>
           <li><kbd>Q</kbd>アーク（自動で狙う） <kbd>Z</kbd>離脱ジャンプ <kbd>H</kbd>バッテリー</li>
         </ul>
-        <button id="start" type="button">拠点へ</button>
+        <button id="start" type="button">野営地へ</button>
         <div class="settings"><label class="sens">マウス感度 <input id="sens" type="range" min="0.4" max="2.5" step="0.05" value="1" /></label><label class="sens vol">音量 <input id="vol" type="range" min="0" max="1" step="0.05" value="0.8" /></label><label class="sens adsmode">覗き方（F） <select id="adsmode"><option value="hold">押している間</option><option value="toggle">押すたびに切り替え</option></select></label><label class="sens quality">画質 <select id="quality"><option value="auto">自動</option><option value="high">高</option><option value="medium">中</option><option value="low">低</option></select></label></div>
         <p class="install-help" id="install-help" hidden>iPhone では、共有ボタンから「ホーム画面に追加」して開くと、ブラウザのバーが消えて画面いっぱいで遊べる。</p>
         <p class="note">マウスとキーボード、またはスマホを横向きにして遊ぶ。<a href="/">ゲーム一覧に戻る</a></p>
       </div>
     </section>
 
+    <div id="camp" hidden>
+      <div id="camp-labels" aria-hidden="true"></div>
+      <div id="camp-head"><b>野営地</b><span><small>クレジット</small><b id="camp-cash"></b></span><small id="camp-hint"></small></div>
+      <p id="camp-prompt"></p>
+    </div>
+
     <section id="hub" class="screen" hidden>
       <div class="hub-inner">
         <header class="hub-head">
-          <h2>拠点</h2>
-          <div class="hub-tabs"><button type="button" data-act="tab" data-arg="kit">出撃準備</button><button type="button" data-act="tab" data-arg="shop">商人</button><button type="button" data-act="tab" data-arg="quests">依頼<i id="hub-quest-badge"></i></button><button type="button" data-act="tab" data-arg="hideout">隠れ家<i id="hub-build-badge"></i></button></div>
+          <h2 id="hub-title"></h2>
           <div class="hub-cash"><small>クレジット</small><b id="hub-cash"></b><small id="hub-record"></small></div>
+          <button id="hub-close" class="ghost" type="button" data-act="close">閉じる<kbd>Esc</kbd></button>
         </header>
-        <div class="hub-cols">
-          <div class="hub-col">
+        <div class="hub-cols" id="hub-cols">
+          <div class="hub-col" id="hub-stash-col">
             <h3>倉庫 <small id="hub-stash-count"></small></h3>
             <div class="hub-list" id="hub-stash"></div>
           </div>
@@ -109,12 +116,9 @@
             <div class="hub-list" id="hub-side"></div>
           </div>
         </div>
-        <footer class="hub-foot">
-          <p class="hub-lock" id="hub-lock" hidden></p>
-          <div class="hub-region" id="hub-region"></div>
-          <button id="hub-go" type="button" data-act="go">この装備で出撃</button>
-          <button id="hub-free" class="ghost" type="button" data-act="free">貸出装備で出撃</button>
-          <button id="hub-back" class="ghost" type="button" data-act="back">戻る</button>
+        <footer class="hub-foot" id="hub-foot">
+          <button id="hub-free" class="ghost toggle" type="button" data-act="lent" aria-pressed="false">貸出装備で出る <b id="hub-free-state">オフ</b></button>
+          <span class="hub-foot-note" id="hub-foot-note"></span>
         </footer>
       </div>
     </section>
@@ -126,8 +130,8 @@
         <p>機関がかかり、船体が水を切った。干上がった湖も、港のクレーンも、霧の向こうへ小さくなっていく。ロボットたちは岸に並んだまま、追ってこなかった。</p>
         <p>何度も降りて、何度も拾って帰った。その全部が、この船の中にある。</p>
         <div class="ending-stats" id="ending-stats"></div>
-        <p class="ending-note">隠れ家は残る。島へはまたいつでも降りられる。</p>
-        <button id="ending-back" type="button">拠点へ戻る</button>
+        <p class="ending-note">野営地は残る。島へはまたいつでも出られる。</p>
+        <button id="ending-back" type="button">野営地へ戻る</button>
       </div>
     </section>
 
@@ -146,7 +150,7 @@
         <div id="stats"></div>
         <div id="pois"></div>
         <div id="home"></div>
-        <button id="restart" type="button">拠点に戻る</button>
+        <button id="restart" type="button">野営地に戻る</button>
       </div>
     </section>
 
