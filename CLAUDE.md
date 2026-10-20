@@ -212,11 +212,12 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   built (`LAID`). The ways into the lakebed, the quarry, the pad, up the mesa and through the
   fields are among `KEPT_ROADS`: kept clear of scattered cover and pressed along their middle.
   Hamlets (`HAMLET_FRAMES` in `map.ts`: a few buildings and a bin or two, no robots) stand on the
-  ground between, each flat at the level under its middle. The harbor's outposts (`OUTPOSTS`: a
-  substation, a fuel depot, a marshalling yard) are larger ones, each with a squad of two
-  (`Hamlet.guard`, joined to `ROAMERS`) and its whole yard pressed flat. From them the works run
-  to the POIs (`HARBOR_LINES`, laid once the ground is built): power lines on pylons, a pipeline
-  high enough to walk under, and a freight line with wagons left on it as cover.
+  ground between, each flat at the level under its middle. Outposts (`OUTPOSTS`: in the harbor a
+  substation, a fuel depot, a marshalling yard, a wharf and an engine depot; in the reservoir a
+  substation and a pumping station) are larger ones, each with a squad of two (`Hamlet.guard`,
+  joined to `ROAMERS`) and its whole yard pressed flat. From them the works run to the POIs
+  (`WORKS_LINES`, laid once the ground is built): power lines on pylons, pipelines high enough to
+  walk under, and a freight line and its spur with wagons left on them as cover.
   `scatterCover()` then fills the open ground with set pieces in real sizes (sandbag lines,
   road-barrier rows, pallet stacks, container clusters, wrecked trucks, rock outcrops and roofless
   ruins, the vehicles and small things as `prop` boxes drawn by `buildProp()`), each
