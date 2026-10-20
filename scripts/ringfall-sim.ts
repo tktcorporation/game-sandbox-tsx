@@ -666,7 +666,7 @@ function checkBagSwap(): string | null {
 }
 /** A swap throws out the cheapest set that makes room, not just the cheapest items for their size. */
 function checkBagSwapCheapest(): string | null {
-  const out = makeRoom(["parts", "board", "core", "core"], "core");
+  const out = makeRoom(["parts", "board", "core", "core"], "core", [], 0);
   if (out?.join() !== "1") return `bag scenario: to fit a core into parts+board+core+core it drops ${out?.join() ?? "nothing"}, not the board alone`;
   return null;
 }

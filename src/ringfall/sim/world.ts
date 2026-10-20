@@ -489,7 +489,7 @@ function bagOut(p: Player, out: number[]): { kind: ValuableKind; from: number }[
  * the cheapest one is worth as much as `kind`. The bag holds at most `BAG.slots` items, so
  * trying every set is cheap.
  */
-export function makeRoom(haul: ValuableKind[], kind: ValuableKind, tools: ToolKind[] = [], records = 0): number[] | null {
+export function makeRoom(haul: ValuableKind[], kind: ValuableKind, tools: ToolKind[], records: number): number[] | null {
   return roomFor(haul, VALUABLES[kind].size + toolsUsed(tools) + records, VALUABLES[kind].value);
 }
 

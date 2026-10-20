@@ -757,7 +757,7 @@ export class Hud {
     }
     if (t.kind === "swap") {
       const v = t.loot.valuable!;
-      const out = (makeRoom(p.haul, v, p.tools) ?? []).map((i) => VALUABLES[p.haul[i]].label);
+      const out = (makeRoom(p.haul, v, p.tools, p.records.length) ?? []).map((i) => VALUABLES[p.haul[i]].label);
       return `${key("E")}${VALUABLES[v].label}と入れ替える（${out.join("・")}を捨てる）`;
     }
     if (t.kind === "care") return `${key("E")}補給ポッドを開ける`;
