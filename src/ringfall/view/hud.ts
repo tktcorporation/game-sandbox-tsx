@@ -6,7 +6,7 @@ import { dist2d, los } from "../sim/geom";
 import { DEPOTS, entryOf, EXTRACTS, POIS, poiIndex, regionHere, regionOf, routeOf, type EntryId } from "../sim/map";
 import { routeBefore } from "../sim/routes";
 import { bagLoad, depotBlocked, depotInReach, extractHere, extractReady, makeRoom, poiAt, roomForTool, searchTime, useTarget } from "../sim/world";
-import { callLeft, enemyHp, enemyShield, type GameEvent, type State, type Vec3 } from "../sim/state";
+import { callLeft, enemyHp, enemyShield, weakY, type GameEvent, type State, type Vec3 } from "../sim/state";
 import { haulValue, rank } from "../sim/results";
 import { pickHeal } from "../sim/player";
 import { RARITY_CSS, SCOPE_IN } from "./models";
@@ -412,7 +412,7 @@ export class Hud {
         this.barEls.set(e.id, el);
       }
       const k = ENEMIES[e.kind];
-      const sp = view.project({ x: e.pos.x, y: e.pos.y + k.weakY + 0.7, z: e.pos.z }, w, h);
+      const sp = view.project({ x: e.pos.x, y: e.pos.y + weakY(e) + 0.7, z: e.pos.z }, w, h);
       el.style.display = sp.behind ? "none" : "";
       el.style.left = `${sp.x}px`;
       el.style.top = `${sp.y}px`;
@@ -529,12 +529,12 @@ export class Hud {
         // every robot in its range shows through walls, with the reveal's mark when out of sight.
         if (!cls || e.kind === "titan") continue;
         if (cls !== "reveal") {
-          const head = { x: e.pos.x, y: e.pos.y + ENEMIES[e.kind].weakY, z: e.pos.z };
+          const head = { x: e.pos.x, y: e.pos.y + weakY(e), z: e.pos.z };
           const inSight = d <= MARK_RANGE && los(eyePos(s), head);
           if (!inSight && revealed) cls = "reveal";
           else if (!inSight) continue;
         }
-        const top = cls === "reveal" ? ENEMIES[e.kind].weakY : ENEMIES[e.kind].weakY + 1.4;
+        const top = cls === "reveal" ? weakY(e) : weakY(e) + 1.4;
         const sp = view.project({ x: e.pos.x, y: e.pos.y + top, z: e.pos.z }, w, h);
         if (sp.behind || sp.x < 0 || sp.x > w || sp.y < 0 || sp.y > h) continue;
         seen.add(e.id);

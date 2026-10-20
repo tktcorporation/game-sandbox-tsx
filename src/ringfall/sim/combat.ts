@@ -2,18 +2,18 @@ import { ALLY, ASSIST, DEG, DODGE, ELITE, ENEMIES, FLANK, KICK_PATTERN, KICK_RES
 import { engageSquad, learnSpot, located, makeNoise } from "./awareness";
 import { POIS } from "./map";
 import { los, lookAngles, norm, rayWorld, raySphere, wrapAngle } from "./geom";
-import { forward, rand, type Enemy, type State, type Vec3, type Weapon } from "./state";
+import { bodyY, forward, rand, weakY, type Enemy, type State, type Vec3, type Weapon } from "./state";
 
 /*
  * Everything about the player's shots landing on robots: hit boxes, aim assist,
  * damage through shields, kills and their drops.
  */
 
-export const bodyCenter = (e: Enemy): Vec3 => ({ x: e.pos.x, y: e.pos.y + ENEMIES[e.kind].bodyY, z: e.pos.z });
+export const bodyCenter = (e: Enemy): Vec3 => ({ x: e.pos.x, y: e.pos.y + bodyY(e), z: e.pos.z });
 
 export function weakPoint(e: Enemy): Vec3 {
   const k = ENEMIES[e.kind];
-  return { x: e.pos.x + Math.sin(e.yaw) * k.weakFwd, y: e.pos.y + k.weakY, z: e.pos.z - Math.cos(e.yaw) * k.weakFwd };
+  return { x: e.pos.x + Math.sin(e.yaw) * k.weakFwd, y: e.pos.y + weakY(e), z: e.pos.z - Math.cos(e.yaw) * k.weakFwd };
 }
 
 export const eyePos = (s: State): Vec3 => {

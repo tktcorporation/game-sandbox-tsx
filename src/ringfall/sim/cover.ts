@@ -4,8 +4,8 @@ import { BOXES } from "./map";
 import type { Point } from "./state";
 
 /**
- * Spots next to anything tall enough to hide a robot (walls, containers, rocks,
- * stacked crates), computed once from the map, on whatever the box stands on: the
+ * Spots next to anything tall enough to hide a squatting robot (`COVER.tall`: walls, containers,
+ * rocks, stacked pallets, a truck), computed once from the map, on whatever the box stands on: the
  * ground at any level, a mesa, a deck, a roof. `y` is that surface, so a robot takes
  * only cover on its own level. `tx, tz` run along the face, so a robot steps that
  * way to peek out.
@@ -23,7 +23,7 @@ for (const b of BOXES) {
   const cx0 = (b.x0 + b.x1) / 2;
   const cz0 = (b.z0 + b.z1) / 2;
   const base = groundAt(cx0, cz0, 0.3, b.y0 + 0.3 - WORLD.stepUp);
-  if (!Number.isFinite(base) || b.y0 - base > 0.3 || b.h - base < 1.3) continue;
+  if (!Number.isFinite(base) || b.y0 - base > 0.3 || b.h - base < COVER.tall) continue;
   const w = b.x1 - b.x0;
   const d = b.z1 - b.z0;
   const cx = (b.x0 + b.x1) / 2;

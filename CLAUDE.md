@@ -205,7 +205,9 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   fields are among `KEPT_ROADS`: kept clear of scattered cover and pressed along their middle.
   Hamlets (`HAMLET_FRAMES` in `map.ts`: a few buildings and a bin or two, no robots) stand on the
   ground between, each flat at the level under its middle.
-  `scatterCover()` then fills the open ground with low walls, crates, containers and ruins, each
+  `scatterCover()` then fills the open ground with set pieces in real sizes (sandbag lines,
+  road-barrier rows, pallet stacks, container clusters, wrecked trucks, rock outcrops and roofless
+  ruins, the vehicles and small things as `prop` boxes drawn by `buildProp()`), each
   region from its own grid and seed (`SCATTER`), sparse on the salt flats and only in clumps
   (`clump()`) on the ground between, keeping clear of
   authored points, patrol routes and the roads that are the only ways between areas (`KEPT_ROADS`,

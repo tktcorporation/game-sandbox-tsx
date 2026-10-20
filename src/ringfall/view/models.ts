@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { ENEMIES, type EnemyKind, type HealKind, type Rarity, type ToolKind, type ValuableKind, type WeaponKind } from "../sim/config";
 import type { LootKind } from "../sim/state";
-import type { Box } from "../sim/map";
+import { PROP, type Box } from "../sim/map";
 import type { TrimPiece } from "./trim";
 
 /*
@@ -61,7 +61,8 @@ export const PAL = {
   rust: 0xb5482b,
   teal: 0x2f7f86,
   ochre: 0x8a6a3a,
-  crate: 0xd99a3e,
+  /** Crates: weathered timber, a warm brown under the sun rather than a toy orange. */
+  crate: 0xb08a58,
   armor: 0x34407a,
   armorLight: 0x5563a0,
   joint: 0x151935,
@@ -247,6 +248,120 @@ export function buildBox(b: Box, i: number): THREE.Object3D {
     }
   }
   return g;
+}
+
+/** The scattered cover's own colours (`prop` boxes): muted, so the set pieces read as worn things, not toys. */
+const PROP_PAL = {
+  wood: 0x9c7d52,
+  wraps: [0xa8a28e, 0x9a9476, 0xb39a70] as const,
+  bag: 0xb3a07a,
+  bagSeam: 0x958360,
+  barrier: 0xc8c1b0,
+  barrierFoot: 0xa39c8b,
+  cab: 0x98a48e,
+  tarp: 0xab9d72,
+  car: 0xa89f8f,
+  glass: 0x67757a,
+  /** The frame rail under a truck and the slats under a pallet: sun-dried grey, not black. */
+  chassis: 0x6a6660,
+  tyre: 0x3e3f42,
+} as const;
+
+/** A wheel for a vehicle prop: a dark disc standing at (x, z) on the ground, its axle across the vehicle, which runs along x when `alongX`. */
+function wheel(g: THREE.Group, x: number, z: number, r: number, alongX: boolean, ground: number) {
+  const m = mesh(new THREE.CylinderGeometry(r, r, 0.32, 10), flat(PROP_PAL.tyre), x, ground + r, z);
+  m.rotation[alongX ? "x" : "z"] = Math.PI / 2;
+  g.add(m);
+}
+
+/**
+ * A piece of the cover scattered over the open ground (`prop` boxes, map.ts), drawn inside its
+ * box as the thing it is: stacked pallets, a sandbag line, a road barrier, a truck's cab or bed,
+ * a car, a heap of rubble.
+ */
+function buildProp(b: Box, i: number): THREE.Object3D {
+  const w = b.x1 - b.x0;
+  const d = b.z1 - b.z0;
+  const h = b.h - b.y0;
+  const mid = b.y0 + h / 2;
+  const long = w >= d;
+  const L = long ? w : d;
+  const W = long ? d : w;
+  // A box `l` long and `wd` across the piece, from height y0 to y1, at `t` along it.
+  const part = (l: number, wd: number, y0: number, y1: number, color: number, t = 0, shadow = true) =>
+    mesh(new THREE.BoxGeometry(long ? l : wd, y1 - y0, long ? wd : l), flat(color), long ? t : 0, b.y0 + (y0 + y1) / 2, long ? 0 : t, shadow);
+  const g = new THREE.Group();
+  g.position.set((b.x0 + b.x1) / 2, 0, (b.z0 + b.z1) / 2);
+  switch (b.tint) {
+    case PROP.pallets: {
+      // A pallet under every metre of goods, the goods shrink-wrapped in one of three colours.
+      const wrap = PROP_PAL.wraps[i % 3];
+      for (let y = 0; y < h - 0.05; y += 1.0) {
+        const top = Math.min(h, y + 1.0);
+        g.add(part(L, W, y, y + 0.14, PROP_PAL.wood));
+        for (const t of [-L / 2 + 0.1, 0, L / 2 - 0.1]) g.add(part(0.12, W + 0.02, y + 0.02, y + 0.1, PROP_PAL.chassis, t, false));
+        g.add(part(L - 0.08, W - 0.08, y + 0.14, top, wrap));
+      }
+      break;
+    }
+    case PROP.sandbags: {
+      // Lumpy bags in courses, a seam between each course.
+      const geo = new THREE.BoxGeometry(w, h, d, Math.max(2, Math.round(L / 0.5)), 4, 2).toNonIndexed();
+      chip(geo, i + 7, 0.08, w, h, d);
+      g.add(mesh(geo, flat(PROP_PAL.bag), 0, mid, 0));
+      for (let y = 0.27; y < h - 0.1; y += 0.27) g.add(part(L - 0.06, W + 0.01, y - 0.025, y + 0.025, PROP_PAL.bagSeam, 0, false));
+      break;
+    }
+    case PROP.barrier: {
+      // A concrete road barrier: a wide foot, a sloped waist, a narrow top, scuffed dark at the foot.
+      g.add(part(L, W, 0, 0.32, PROP_PAL.barrierFoot));
+      g.add(part(L, W * 0.72, 0.32, 0.55, PROP_PAL.barrier));
+      g.add(part(L, W * 0.42, 0.55, h, PROP_PAL.barrier));
+      break;
+    }
+    case PROP.cab:
+    case PROP.bed: {
+      const cab = b.tint === PROP.cab;
+      // Wheels and chassis below, a grey frame rail between them.
+      const r = 0.5;
+      // The cab is wider (2.5 m) than it is long, so the truck runs across its longer side.
+      const run = cab ? d > w : long;
+      for (const t of cab ? [0] : [-L / 2 + 1.0, L / 2 - 1.2]) for (const s of [-1, 1]) wheel(g, run ? t : s * ((run ? d : w) / 2 - 0.17), run ? s * ((run ? d : w) / 2 - 0.17) : t, r, run, b.y0);
+      g.add(part(L, W * 0.6, 0.35, 0.95, PROP_PAL.chassis));
+      if (cab) {
+        // The cab: a faded body, a band of dusty glass all round, a bumper.
+        g.add(part(L, W, 0.95, h - 0.95, PROP_PAL.cab));
+        g.add(part(L - 0.1, W - 0.1, h - 0.95, h - 0.12, PROP_PAL.glass));
+        g.add(part(L, W, h - 0.12, h, PROP_PAL.cab));
+      } else {
+        // The bed: a steel deck and its load under a tarp, the tarp's ribs showing.
+        g.add(part(L, W, 0.95, 1.2, PAL.steel));
+        g.add(part(L - 0.1, W - 0.06, 1.2, h, PROP_PAL.tarp));
+        for (let t = -L / 2 + 0.6; t < L / 2 - 0.3; t += 1.2) g.add(part(0.1, W, 1.2, h, new THREE.Color(PROP_PAL.tarp).multiplyScalar(0.88).getHex(), t, false));
+      }
+      break;
+    }
+    case PROP.car: {
+      // A car left on its rims: a faded body to the waist, a glass house on top, set in from its sides.
+      for (const t of [-L / 2 + 0.85, L / 2 - 0.85]) for (const s of [-1, 1]) wheel(g, long ? t : s * (W / 2 - 0.16), long ? s * (W / 2 - 0.16) : t, 0.34, long, b.y0);
+      g.add(part(L, W, 0.3, 0.92, PROP_PAL.car));
+      g.add(part(L * 0.55, W - 0.2, 0.92, h, PROP_PAL.glass, -L * 0.05));
+      g.add(part(L * 0.55 - 0.1, W - 0.1, h - 0.06, h, PROP_PAL.car, -L * 0.05));
+      break;
+    }
+    default: {
+      // Rubble: a broken heap of concrete.
+      const geo = new THREE.BoxGeometry(w, h, d, 3, 2, 3).toNonIndexed();
+      chip(geo, i + 11, 0.3, w, h, d);
+      g.add(mesh(geo, flat(PAL.concreteDark), 0, mid, 0));
+    }
+  }
+  return g;
+}
+
+/** A static box of the world as drawn: the scattered cover by `buildProp()`, the rest by `buildBox()`. */
+export function buildStatic(b: Box, i: number): THREE.Object3D {
+  return b.kind === "prop" ? buildProp(b, i) : buildBox(b, i);
 }
 
 /**
@@ -581,36 +696,36 @@ export function buildEnemy(kind: EnemyKind): EnemyModel {
       break;
     }
     case "grunt": {
-      // About 2.2 m: legs of a metre (thigh, knee, shin, foot), a narrow waist, a chest 0.75 m
+      // About 2.3 m: legs of 1.1 m (thigh, knee, shin, foot), a narrow waist, a chest 0.75 m
       // across with pads on the shoulders, two-part arms holding a rifle, and a sensor head on a
-      // neck whose lens is the weak point (weakY). A man-sized machine, not a toy's proportions.
-      robotLegs(body, { hipX: 0.17, hipY: 1.0, thigh: 0.48, shin: 0.52, w: 0.2, d: 0.24, foot: [0.36, 0.09, 0.2] }, armor, light, legs, knees);
-      body.add(mesh(new THREE.BoxGeometry(0.46, 0.2, 0.3), joint, 0, 1.04, 0));
-      body.add(mesh(new THREE.BoxGeometry(0.26, 0.18, 0.22), joint, 0, 1.2, 0));
-      body.add(mesh(new THREE.BoxGeometry(0.5, 0.2, 0.36), light, 0, 1.32, 0));
-      body.add(mesh(new THREE.BoxGeometry(0.75, 0.42, 0.46), armor, 0, 1.56, 0));
-      body.add(mesh(new THREE.BoxGeometry(0.54, 0.22, 0.05), light, 0, 1.62, -0.24));
+      // neck whose lens is the weak point (weakY). The chest fills the body sphere (bodyY, radius).
+      robotLegs(body, { hipX: 0.17, hipY: 1.08, thigh: 0.52, shin: 0.56, w: 0.21, d: 0.25, foot: [0.38, 0.09, 0.21] }, armor, light, legs, knees);
+      body.add(mesh(new THREE.BoxGeometry(0.48, 0.2, 0.3), joint, 0, 1.12, 0));
+      body.add(mesh(new THREE.BoxGeometry(0.28, 0.2, 0.22), joint, 0, 1.29, 0));
+      body.add(mesh(new THREE.BoxGeometry(0.54, 0.22, 0.38), light, 0, 1.42, 0));
+      body.add(mesh(new THREE.BoxGeometry(0.8, 0.46, 0.5), armor, 0, 1.68, 0));
+      body.add(mesh(new THREE.BoxGeometry(0.58, 0.24, 0.05), light, 0, 1.74, -0.26));
       // A pack on the back, with a whip antenna (thin: it may stand out of the hit volume).
-      body.add(mesh(new THREE.BoxGeometry(0.46, 0.4, 0.2), joint, 0, 1.55, 0.32));
-      body.add(mesh(new THREE.CylinderGeometry(0.012, 0.018, 0.6, 4), joint, 0.16, 2.0, 0.36, false));
+      body.add(mesh(new THREE.BoxGeometry(0.48, 0.44, 0.22), joint, 0, 1.66, 0.34));
+      body.add(mesh(new THREE.CylinderGeometry(0.012, 0.018, 0.6, 4), joint, 0.16, 2.12, 0.38, false));
       for (const s of [-1, 1]) {
-        const pad = mesh(new THREE.BoxGeometry(0.24, 0.14, 0.34), light, s * 0.45, 1.79, 0);
+        const pad = mesh(new THREE.BoxGeometry(0.26, 0.15, 0.36), light, s * 0.48, 1.92, 0);
         pad.rotation.z = -s * 0.25;
         body.add(pad);
-        const shoulder = v3(s * 0.45, 1.68, 0);
-        const elbow = v3(s * 0.47, 1.36, -0.08);
+        const shoulder = v3(s * 0.48, 1.8, 0);
+        const elbow = v3(s * 0.5, 1.46, -0.08);
         // Both hands meet the rifle: the right on the grip, the left under the barrel.
-        const hand = s > 0 ? v3(0.17, 1.3, -0.36) : v3(0.08, 1.33, -0.58);
-        body.add(mesh(new THREE.BoxGeometry(0.15, 0.15, 0.15), joint, shoulder.x, shoulder.y, 0));
-        body.add(limb(shoulder, elbow, 0.14, 0.15, armor));
-        body.add(mesh(new THREE.BoxGeometry(0.12, 0.12, 0.12), joint, elbow.x, elbow.y, elbow.z));
-        body.add(limb(elbow, hand, 0.13, 0.14, light));
-        body.add(mesh(new THREE.BoxGeometry(0.11, 0.11, 0.12), joint, hand.x, hand.y, hand.z));
+        const hand = s > 0 ? v3(0.17, 1.4, -0.38) : v3(0.08, 1.43, -0.6);
+        body.add(mesh(new THREE.BoxGeometry(0.16, 0.16, 0.16), joint, shoulder.x, shoulder.y, 0));
+        body.add(limb(shoulder, elbow, 0.15, 0.16, armor));
+        body.add(mesh(new THREE.BoxGeometry(0.13, 0.13, 0.13), joint, elbow.x, elbow.y, elbow.z));
+        body.add(limb(elbow, hand, 0.14, 0.15, light));
+        body.add(mesh(new THREE.BoxGeometry(0.12, 0.12, 0.13), joint, hand.x, hand.y, hand.z));
       }
-      body.add(mesh(new THREE.BoxGeometry(0.1, 0.15, 0.72), joint, 0.13, 1.37, -0.48));
-      body.add(mesh(new THREE.BoxGeometry(0.05, 0.05, 0.3), joint, 0.13, 1.4, -0.98));
-      body.add(mesh(new THREE.BoxGeometry(0.08, 0.16, 0.1), joint, 0.13, 1.24, -0.42));
-      body.add(mesh(new THREE.BoxGeometry(0.14, 0.12, 0.14), joint, 0, 1.79, 0));
+      body.add(mesh(new THREE.BoxGeometry(0.1, 0.15, 0.74), joint, 0.13, 1.47, -0.5));
+      body.add(mesh(new THREE.BoxGeometry(0.05, 0.05, 0.3), joint, 0.13, 1.5, -1.01));
+      body.add(mesh(new THREE.BoxGeometry(0.08, 0.16, 0.1), joint, 0.13, 1.34, -0.44));
+      body.add(mesh(new THREE.BoxGeometry(0.15, 0.14, 0.15), joint, 0, 1.92, 0));
       // The head: a squat sensor block, a brow over the lens, and a short sensor mast on top.
       body.add(mesh(new THREE.BoxGeometry(0.42, 0.3, 0.38), armor, 0, k.weakY + 0.02, 0));
       body.add(mesh(new THREE.BoxGeometry(0.44, 0.06, 0.14), light, 0, k.weakY + 0.15, -0.14));
@@ -639,35 +754,36 @@ export function buildEnemy(kind: EnemyKind): EnemyModel {
       break;
     }
     case "heavy": {
-      // A long-legged walker with a broad chest and shoulders that carry its rocket pods; its
-      // arms hang heavy at its sides. The lens on its head is the weak point (weakY).
-      robotLegs(body, { hipX: 0.3, hipY: 1.15, thigh: 0.56, shin: 0.59, w: 0.3, d: 0.36, foot: [0.52, 0.12, 0.32] }, armor, light, legs, knees);
-      body.add(mesh(new THREE.BoxGeometry(0.72, 0.26, 0.46), joint, 0, 1.2, 0));
-      body.add(mesh(new THREE.BoxGeometry(0.5, 0.2, 0.4), joint, 0, 1.38, 0));
-      body.add(mesh(new THREE.BoxGeometry(0.95, 0.3, 0.7), light, 0, 1.52, 0));
-      body.add(mesh(new THREE.BoxGeometry(1.3, 0.62, 0.86), armor, 0, 1.94, 0));
-      body.add(mesh(new THREE.BoxGeometry(0.9, 0.3, 0.06), light, 0, 2.0, -0.45));
-      body.add(mesh(new THREE.BoxGeometry(0.8, 0.5, 0.3), joint, 0, 1.9, 0.55));
+      // About 3.3 m: a long-legged walker with a chest 1.5 m across and shoulders that carry its
+      // rocket pods; its arms hang heavy at its sides. The lens on its head is the weak point
+      // (weakY); the chest and shoulders fill the body sphere (bodyY, radius).
+      robotLegs(body, { hipX: 0.35, hipY: 1.47, thigh: 0.72, shin: 0.75, w: 0.35, d: 0.42, foot: [0.6, 0.14, 0.37] }, armor, light, legs, knees);
+      body.add(mesh(new THREE.BoxGeometry(0.84, 0.33, 0.53), joint, 0, 1.54, 0));
+      body.add(mesh(new THREE.BoxGeometry(0.58, 0.26, 0.46), joint, 0, 1.77, 0));
+      body.add(mesh(new THREE.BoxGeometry(1.1, 0.38, 0.81), light, 0, 1.95, 0));
+      body.add(mesh(new THREE.BoxGeometry(1.5, 0.8, 1.0), armor, 0, 2.48, 0));
+      body.add(mesh(new THREE.BoxGeometry(1.05, 0.38, 0.07), light, 0, 2.56, -0.52));
+      body.add(mesh(new THREE.BoxGeometry(0.93, 0.64, 0.35), joint, 0, 2.43, 0.64));
       for (const s of [-1, 1]) {
         // Shoulder pads, and the rocket pods slung behind them, their tubes' mouths facing forward.
-        body.add(mesh(new THREE.BoxGeometry(0.46, 0.22, 0.6), light, s * 0.82, 2.26, 0));
-        body.add(mesh(new THREE.BoxGeometry(0.36, 0.34, 0.66), light, s * 0.98, 2.36, 0.22));
-        for (let j = 0; j < 2; j++) body.add(mesh(new THREE.BoxGeometry(0.11, 0.11, 0.04), joint, s * 0.98 + (j - 0.5) * 0.15, 2.38, -0.12, false));
-        const shoulder = v3(s * 0.8, 2.1, 0);
-        const elbow = v3(s * 0.86, 1.62, 0.02);
-        const hand = v3(s * 0.8, 1.2, -0.22);
-        body.add(limb(shoulder, elbow, 0.26, 0.28, armor));
-        body.add(mesh(new THREE.BoxGeometry(0.22, 0.22, 0.22), joint, elbow.x, elbow.y, elbow.z));
-        body.add(limb(elbow, hand, 0.3, 0.3, light));
-        body.add(mesh(new THREE.BoxGeometry(0.24, 0.2, 0.24), joint, hand.x, hand.y - 0.05, hand.z));
+        body.add(mesh(new THREE.BoxGeometry(0.53, 0.28, 0.7), light, s * 0.95, 2.9, 0));
+        body.add(mesh(new THREE.BoxGeometry(0.42, 0.44, 0.77), light, s * 1.14, 3.02, 0.26));
+        for (let j = 0; j < 2; j++) body.add(mesh(new THREE.BoxGeometry(0.13, 0.13, 0.05), joint, s * 1.14 + (j - 0.5) * 0.17, 3.04, -0.14, false));
+        const shoulder = v3(s * 0.93, 2.69, 0);
+        const elbow = v3(s * 1.0, 2.07, 0.02);
+        const hand = v3(s * 0.93, 1.54, -0.26);
+        body.add(limb(shoulder, elbow, 0.3, 0.32, armor));
+        body.add(mesh(new THREE.BoxGeometry(0.26, 0.26, 0.26), joint, elbow.x, elbow.y, elbow.z));
+        body.add(limb(elbow, hand, 0.35, 0.35, light));
+        body.add(mesh(new THREE.BoxGeometry(0.28, 0.24, 0.28), joint, hand.x, hand.y - 0.06, hand.z));
       }
-      body.add(mesh(new THREE.BoxGeometry(0.26, 0.14, 0.26), joint, 0, 2.28, 0));
-      body.add(mesh(new THREE.BoxGeometry(0.54, 0.34, 0.5), armor, 0, k.weakY + 0.04, 0));
-      body.add(mesh(new THREE.BoxGeometry(0.56, 0.07, 0.16), light, 0, k.weakY + 0.2, -0.2));
+      body.add(mesh(new THREE.BoxGeometry(0.3, 0.18, 0.3), joint, 0, 2.92, 0));
+      body.add(mesh(new THREE.BoxGeometry(0.63, 0.42, 0.58), armor, 0, k.weakY + 0.05, 0));
+      body.add(mesh(new THREE.BoxGeometry(0.65, 0.08, 0.19), light, 0, k.weakY + 0.25, -0.24));
       eye.geometry.dispose();
       eye.geometry = new THREE.SphereGeometry(k.weakR * 0.55, 10, 8).scale(1.15, 0.7, 0.55);
       eye.position.copy(front(k.weakY));
-      eye.position.z -= 0.16;
+      eye.position.z -= 0.19;
       break;
     }
     case "titan": {
@@ -706,9 +822,9 @@ export function buildEnemy(kind: EnemyKind): EnemyModel {
 /** The front of each kind's body that a plate covers: width, height, centre height, and the face's z. */
 const CHEST: Record<EnemyKind, { w: number; h: number; y: number; z: number }> = {
   drone: { w: 0.5, h: 0.32, y: 0.12, z: -0.42 },
-  grunt: { w: 0.66, h: 0.5, y: 1.52, z: -0.24 },
+  grunt: { w: 0.7, h: 0.54, y: 1.64, z: -0.26 },
   charger: { w: 0.7, h: 0.32, y: 1.0, z: -0.42 },
-  heavy: { w: 1.15, h: 0.78, y: 1.86, z: -0.44 },
+  heavy: { w: 1.33, h: 0.9, y: 2.38, z: -0.51 },
   titan: { w: 3.4, h: 2.2, y: 3.6, z: -1.7 },
 };
 

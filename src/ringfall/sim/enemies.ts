@@ -1,4 +1,4 @@
-import { ALLY, AWARE, CHARGER, COVER, DEG, DODGE, ELITE, ENEMIES, FALLBACK, PINCH, PLAYER, PURSUE, SHOT, SIGHT, STAGGER, TICK, TITAN, TURN, WORLD, type EnemyKind, type Rarity } from "./config";
+import { ALLY, AWARE, CHARGER, COVER, DEG, DODGE, DUCK, ELITE, ENEMIES, FALLBACK, PINCH, PLAYER, PURSUE, SHOT, SIGHT, STAGGER, TICK, TITAN, TURN, WORLD, type EnemyKind, type Rarity } from "./config";
 import { clampToWorld, collide, dist2d, groundAt, groundLevel, los, lookAngles, onTerrain, solidAt, wrapAngle } from "./geom";
 import { steepAt, terrainHeight } from "./terrain";
 import { engageSquad, headOf, knownSpot, located, pursuitSpot, sense, stepSquads } from "./awareness";
@@ -14,7 +14,7 @@ import { POIS, ROAMERS, type Squad } from "./map";
 import { bodyCenter, weakPoint } from "./combat";
 import { hurtPlayer } from "./player";
 import { allyChest, allyUp, hurtAlly } from "./ally";
-import { rand, type Enemy, type Point, type State, type Vec3 } from "./state";
+import { rand, weakY, type Enemy, type Point, type State, type Vec3 } from "./state";
 
 /*
  * Robot behaviour. Out of combat a robot holds its post or walks its squad's
@@ -94,6 +94,7 @@ export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi:
     blind: AWARE.loseTime,
     sawAt: null,
     finding: 0,
+    duck: 0,
   };
   s.enemies.push(e);
   if (o.appear) s.events.push({ t: "spawn", id: e.id, pos: { ...pos } });
@@ -118,7 +119,7 @@ const chest = (s: State): Vec3 => {
 };
 
 function muzzle(e: Enemy): Vec3 {
-  return e.kind === "drone" ? weakPoint(e) : { ...bodyCenter(e), y: e.pos.y + ENEMIES[e.kind].weakY - 0.1 };
+  return e.kind === "drone" ? weakPoint(e) : { ...bodyCenter(e), y: e.pos.y + weakY(e) - 0.1 };
 }
 
 function fireOrb(s: State, e: Enemy, yawOff = 0, homing = false) {
@@ -214,6 +215,8 @@ export function stepEnemies(s: State) {
     e.jink = Math.max(0, e.jink - TICK);
     e.steady = Math.max(0, e.steady - TICK);
     e.stagger *= Math.exp(-TICK / STAGGER.window);
+    // A robot stands up unless it is hiding at its cover this tick (fromCover() keeps it down).
+    e.duck = Math.max(0, e.duck - DUCK.rate * TICK);
     if (e.mode === "spawning") {
       e.timer -= TICK;
       if (e.timer <= 0) {
@@ -290,6 +293,9 @@ export function stepEnemies(s: State) {
         else if (d < k.range - 4) along = -0.7;
         // In sight it strafes across the target's view; a jink after a hit is a quicker step the other way.
         const side = (e.kind === "charger" ? 0.55 : sees ? DODGE.strafe : 0.8) * (e.jink > 0 ? DODGE.jinkSpeed : 1);
+        // Sideways it keeps to its own level: ground falling away to that side (a ramp down off a
+        // quarry's tier) turns the strafe round, so it does not drift off where the fight is.
+        if (onTerrain(e.pos) && terrainHeight(e.pos.x - uz * e.strafe * 1.5, e.pos.z + ux * e.strafe * 1.5) < terrainHeight(e.pos.x, e.pos.z) - 0.5) e.strafe = -e.strafe;
         let vx = (ux * along - uz * e.strafe * side) * k.speed;
         let vz = (uz * along + ux * e.strafe * side) * k.speed;
         // A flanking raider, or a member going round a pinned player, runs wide to its spot
@@ -695,7 +701,7 @@ function findCover(s: State, e: Enemy, threat: Point, threatY: number): { cover:
     .sort((a, b) => a.d + Math.abs(a.dp - 16) * 0.3 - (b.d + Math.abs(b.dp - 16) * 0.3))
     .slice(0, 14);
   for (const { c } of cands) {
-    if (los({ x: c.x, y: c.y + 1.3, z: c.z }, head)) continue;
+    if (los({ x: c.x, y: c.y + COVER.tall, z: c.z }, head)) continue;
     if (!sameFloor(e.pos, c)) continue;
     // The side it did not show itself at last time first, so it is not where the player's sights wait.
     for (const sign of [e.peekSide, -e.peekSide]) {
@@ -744,7 +750,9 @@ function fromCover(s: State, e: Enemy, known: { x: number; z: number; live: bool
   // a spot it is pressed against but cannot reach, a corner its body does not fit past, counts as reached.
   e.stuckT = before - dist2d(e.pos, to) < k.speed * TICK * COVER.stuck.progress ? e.stuckT + TICK : 0;
   const there = arrived || e.stuckT >= COVER.stuck.time;
-  const shows = out && known.live && tUp && facing(e, tChest) && los({ ...e.pos, y: e.pos.y + k.weakY }, tChest);
+  // Behind its cover it crouches, so cover lower than itself hides all of it (DUCK); stepping out it stands.
+  if (!out && there) e.duck = Math.min(1, e.duck + 2 * DUCK.rate * TICK);
+  const shows = out && known.live && tUp && facing(e, tChest) && los({ ...e.pos, y: e.pos.y + weakY(e) }, tChest);
   // Stepping out, it winds up as soon as it has the target in sight, before it reaches the spot.
   if (out && (there || shows)) {
     if (shows) {

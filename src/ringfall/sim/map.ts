@@ -16,8 +16,12 @@ import { buildTerrain, type Carve, type FlatShape, floorLevel, highGround, LEVEL
 /**
  * `steel` is painted plate: ship hulls, cranes, girders, carriages (its tint picks the paint).
  * `fence` is a gate of steel bars, solid as any box.
+ * `prop` is a piece of the cover scattered over the open ground; its tint is what it is (`PROP`).
  */
-export type BoxKind = "crate" | "container" | "wall" | "rock" | "pad" | "tower" | "slab" | "step" | "steel" | "fence";
+export type BoxKind = "crate" | "container" | "wall" | "rock" | "pad" | "tower" | "slab" | "step" | "steel" | "fence" | "prop";
+
+/** What a `prop` box is, by its tint: the renderer draws each as that thing. */
+export const PROP = { pallets: 0, sandbags: 1, barrier: 2, cab: 3, bed: 4, car: 5, rubble: 6 } as const;
 
 /** A solid spanning y0..h. Floors, roofs and bridges have y0 > 0 and leave open space below. */
 export interface Box {
@@ -72,8 +76,8 @@ interface Scale {
   stair: number;
 }
 const HOUSE: Scale = { storey: STOREY, wall: WALL, door: 2.2, doorHead: 2.5, window: 1.4, sill: 1.1, windowHead: 2.1, roller: 4.4, stair: 1.4 };
-/** Industrial scale: storeys of 4.5 m, half-metre walls, doors 2.4 by 2.8 m (wide enough for a heavy), roller doors 6 m high. */
-const WORKS: Scale = { storey: 4.5, wall: 0.5, door: 2.4, doorHead: 2.8, window: 2.0, sill: 1.2, windowHead: 2.8, roller: 6, stair: 1.8 };
+/** Industrial scale: storeys of 4.5 m, half-metre walls, doors 2.4 by 3 m (a heavy, 2.2 m across and 2.9 m tall, walks through), roller doors 6 m high. */
+const WORKS: Scale = { storey: 4.5, wall: 0.5, door: 2.4, doorHead: 3.0, window: 2.0, sill: 1.2, windowHead: 2.8, roller: 6, stair: 1.8 };
 /** Homes and farms built to the scale of real ones: storeys of 3.2 m, doors 2.2 by 2.4 m, larger windows. */
 const HOME: Scale = { storey: 3.2, wall: 0.3, door: 2.2, doorHead: 2.4, window: 1.6, sill: 1.0, windowHead: 2.3, roller: 4.5, stair: 1.4 };
 /** The dam's intake tower: storeys of 5 m, six of them from the lakebed to the crest. */
@@ -2903,15 +2907,16 @@ function authoredKeep(): Keep {
 }
 
 /**
- * The ground scattered with cover, each with its own grid and seed so that adding to one
- * region leaves the other's cover as it was. On the salt flats only one candidate in two
- * stands, and only a container or a rock: the most open ground, yet with a wreck to get behind
+ * The ground scattered with cover, each region with its own seed and grid (`step`, metres
+ * between candidate spots), so that adding to one region leaves the other's cover as it was.
+ * On the salt flats only one candidate in two
+ * stands, and only a container, a truck or a rock: the most open ground, yet with a wreck to get behind
  * a few steps away, since in the open a robot's burst lands. The
  * channel, under water, gets none.
  */
 const SCATTER = [
-  { x0: WORLD.x0, x1: WORLD.x1, z0: -350, z1: WORLD.z1, seed: 7_332 },
-  { x0: WORLD.x0, x1: WORLD.x1, z0: WORLD.z0, z1: -351, seed: 4_517 },
+  { x0: WORLD.x0, x1: WORLD.x1, z0: -350, z1: WORLD.z1, seed: 7_332, step: 13 },
+  { x0: WORLD.x0, x1: WORLD.x1, z0: WORLD.z0, z1: -351, seed: 4_517, step: 14 },
 ];
 /** Where cover is sparse: the salt flats, and the supply depot's dune coast, whose dunes are its cover. */
 const SPARSE = new Set(["塩田", "補給所"]);
@@ -2961,10 +2966,20 @@ interface Clearance {
   along: Near<{ x: number; z: number }>;
 }
 
+/** Where a POI's depot stands (`DEPOTS`): on the road out from its entry. */
+function depotSpot(p: Poi): { x: number; z: number } {
+  const ax = p.entry.x - p.x;
+  const az = p.entry.z - p.z;
+  const len = Math.hypot(ax, az);
+  return { x: +(p.entry.x + (ax / len) * DEPOT_OUT[p.id]).toFixed(1), z: +(p.entry.z + (az / len) * DEPOT_OUT[p.id]).toFixed(1) };
+}
+
 function scatterCover(authored: Box[], { points, segments }: Keep): Box[] {
   const near: Clearance = { authored: new Near(), laid: new Near(), points: new Near(), along: new Near() };
   for (const b of authored) near.authored.add(b.x0, b.z0, b.x1, b.z1, b);
-  for (const q of points) near.points.add(q.x - q.r, q.z - q.r, q.x + q.r, q.z + q.r, q);
+  // Each depot keeps room round it and round the start behind it.
+  const depots = POIS.map((p) => ({ ...depotSpot(p), r: 6 }));
+  for (const q of [...points, ...depots]) near.points.add(q.x - q.r, q.z - q.r, q.x + q.r, q.z + q.r, q);
   // A trench's line keeps cover off as far as its walls may lower the ground.
   for (const c of [TUNNEL, GALLERY]) {
     const [[ax, az], [bx, bz]] = c.line;
@@ -2992,54 +3007,121 @@ function scatterCover(authored: Box[], { points, segments }: Keep): Box[] {
 function scatterArea(near: Clearance, area: (typeof SCATTER)[number]): Box[] {
   let seed = area.seed;
   const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-  const pick = <T,>(xs: readonly T[]) => xs[Math.floor(rnd() * xs.length)];
 
+  const len = (a: number, b: number) => a + rnd() * (b - a);
+  // Set pieces in real sizes, each a group of boxes written along u (its length) and v (across),
+  // laid along x or z: low cover to crouch behind (sandbags, barriers, a car, about 1.1 m) and tall
+  // cover to stand behind (pallets to 2.2 m, a truck, containers, ruins with 3.2 m walls).
   const pieceAt = (x: number, z: number): Box[] => {
     const alongX = rnd() < 0.5;
-    const len = (a: number, b: number) => a + rnd() * (b - a);
+    const flip = rnd() < 0.5 ? 1 : -1;
+    const at = (u: number, v: number, l: number, w: number, h: number, kind: BoxKind, tint = 0, y0 = 0): Box =>
+      alongX ? box(x + u, z + v * flip, l, w, h, kind, tint, y0) : box(x + v * flip, z + u, w, l, h, kind, tint, y0);
     const kind = rnd();
-    if (kind < 0.24) {
-      // A low wall: hides a crouching player, a standing one shoots over it.
-      const l = len(4, 6.5);
-      return [alongX ? box(x, z, l, 0.5, 1.15, "wall", 1) : box(x, z, 0.5, l, 1.15, "wall", 1)];
-    }
-    if (kind < 0.42) {
-      // An L of full-height wall.
-      const a = len(3, 5);
-      const b = len(2.5, 4);
-      const sx = rnd() < 0.5 ? 1 : -1;
-      const sz = rnd() < 0.5 ? 1 : -1;
-      return [box(x + (sx * a) / 2, z, a, 0.4, 2.4, "wall"), box(x, z + (sz * b) / 2, 0.4, b, 2.4, "wall")];
-    }
-    if (kind < 0.58) {
-      // A stack of crates.
+    if (kind < 0.12) {
+      // A sandbag line, 1.1 m high, bent in two or three lengths: hides a crouching player.
       const n = 2 + Math.floor(rnd() * 2);
       const out: Box[] = [];
+      let u = 0;
       for (let i = 0; i < n; i++) {
-        const ox = alongX ? i * 1.25 : (rnd() - 0.5) * 0.4;
-        const oz = alongX ? (rnd() - 0.5) * 0.4 : i * 1.25;
-        out.push(box(x + ox, z + oz, 1.2, 1.2, pick([0.9, 1.8, 1.8]), "crate"));
+        const l = len(1.7, 2.2);
+        out.push(at(u + l / 2, i === 1 ? 0.45 : i === 2 ? 1.2 : 0, l + 0.1, 0.85, 1.1, "prop", PROP.sandbags));
+        u += l;
       }
       return out;
     }
-    if (kind < 0.67) return [alongX ? box(x, z, 6.2, 2.5, 2.6, "container", Math.floor(rnd() * 3)) : box(x, z, 2.5, 6.2, 2.6, "container", Math.floor(rnd() * 3))];
-    if (kind < 0.8) return [box(x, z, len(2.5, 5), len(2.5, 5), len(1.4, 3.2), "rock", Math.floor(rnd() * 2))];
-    if (kind < 0.9) {
-      // A sandbag ring, open on one side.
-      const open = pick(SIDES);
-      return SIDES.filter((s) => s !== open).map((s) =>
-        s === "n" ? box(x, z - 1.5, 3.4, 0.5, 1.15, "wall", 1) : s === "s" ? box(x, z + 1.5, 3.4, 0.5, 1.15, "wall", 1) : s === "e" ? box(x + 1.5, z, 0.5, 3.4, 1.15, "wall", 1) : box(x - 1.5, z, 0.5, 3.4, 1.15, "wall", 1),
-      );
+    if (kind < 0.24) {
+      // A row of concrete road barriers, 3 m long and 1.1 m high, one knocked askew.
+      const n = 2 + Math.floor(rnd() * 3);
+      const askew = Math.floor(rnd() * n);
+      return Array.from({ length: n }, (_, i) => at(i * 3.35, i === askew ? len(-0.9, 0.9) : 0, 3, 0.65, 1.1, "prop", PROP.barrier));
     }
-    // A roofless ruin with two ways in.
-    const doors: Side[] = rnd() < 0.5 ? ["n", "s"] : ["e", "w"];
-    return walls(x, z, 6, 6, 0, 2.4, doors, doors[0] === "n" ? ["e"] : ["n"]);
+    if (kind < 0.42) {
+      // Stacked pallets of goods, two rows of two or three stacks from 1 m to 2.2 m, one of them full height.
+      const cols = 2 + Math.floor(rnd() * 2);
+      const tall = Math.floor(rnd() * cols * 2);
+      const out: Box[] = [];
+      for (let i = 0; i < cols; i++)
+        for (let j = 0; j < 2; j++) {
+          const n = i * 2 + j;
+          if (n !== tall && rnd() < 0.2) continue;
+          out.push(at(i * 1.32, j * 1.12, 1.22, 1.02, n === tall ? 2.2 : [1.0, 1.4, 1.8, 2.2][Math.floor(rnd() * 4)], "prop", PROP.pallets));
+        }
+      return out;
+    }
+    if (kind < 0.58) {
+      // Shipping containers side by side, staggered, one of them stacked two high.
+      const n = 2 + Math.floor(rnd() * 2);
+      const tint = Math.floor(rnd() * 3);
+      const out: Box[] = [];
+      for (let i = 0; i < n; i++) out.push(at(len(-1.6, 1.6), i * 2.6, 6.1, 2.44, 2.6, "container", (tint + i) % 3));
+      if (rnd() < 0.6) {
+        const under = out[Math.floor(rnd() * n)];
+        out.push({ ...under, y0: 2.6, h: 5.2, tint: (under.tint + 1) % 3 });
+      }
+      return out;
+    }
+    if (kind < 0.71) {
+      // A wrecked flatbed truck: a 3 m cab and a 5 m bed under a tarp, often a car left beside it.
+      const out = [at(1.15, 0, 2.3, 2.5, 3.0, "prop", PROP.cab), at(2.3 + 2.5, 0, 5, 2.5, 2.3, "prop", PROP.bed)];
+      if (rnd() < 0.55) out.push(at(len(1, 4), 3.9, 4.5, 1.9, 1.5, "prop", PROP.car));
+      return out;
+    }
+    if (kind < 0.82) {
+      // An outcrop: two or three rocks leaning together.
+      const n = 2 + Math.floor(rnd() * 2);
+      const tint = Math.floor(rnd() * 2);
+      return Array.from({ length: n }, (_, i) => at(i * 3 + len(-0.5, 0.5), len(-1, 1), len(2.6, 4.5), len(2.4, 4), i === 0 ? len(2.4, 3.4) : len(1.3, 2.6), "rock", tint));
+    }
+    return ruin(at, len(7.5, 9.5), len(6.5, 8.5));
+  };
+  /**
+   * A roofless ruin: walls 0.45 m thick and up to 3.2 m high, broken into lengths of about 2 m
+   * whose tops step down and up again, a doorway at each end and a breach in one side, and a
+   * heap of rubble inside.
+   */
+  const ruin = (at: (u: number, v: number, l: number, w: number, h: number, kind: BoxKind, tint?: number, y0?: number) => Box, w: number, d: number): Box[] => {
+    const T = 0.45;
+    const out: Box[] = [];
+    let top = 3.2;
+    const ragged = () => (top = Math.max(1.4, Math.min(3.2, top + [-0.9, -0.5, 0, 0.5, 0.9][Math.floor(rnd() * 5)])));
+    const breach = Math.floor(rnd() * 2);
+    // One wall: along u from u0 to u1 at v, with a doorway (2 m) in its middle when `door`, a gap when `gap`.
+    const run = (u0: number, u1: number, v: number, alongU: boolean, door: boolean, gap: boolean) => {
+      const mid = (u0 + u1) / 2;
+      const holes = door ? [[mid - 1, mid + 1]] : gap ? [[mid - 0.4 + len(-1, 1), mid + 1.4]] : [];
+      let a = u0;
+      while (a < u1 - 0.05) {
+        let b = Math.min(u1, a + len(1.6, 2.4));
+        const hole = holes.find(([h0, h1]) => b > h0 && a < h1);
+        if (hole && a < hole[0]) b = hole[0];
+        else if (hole) {
+          a = hole[1];
+          continue;
+        }
+        if (u1 - b < 0.6) b = u1;
+        if (b - a < 0.3) {
+          a = b;
+          continue;
+        }
+        const h = ragged();
+        out.push(alongU ? at((a + b) / 2, v, b - a, T, h, "wall", 0) : at(v, (a + b) / 2, T, b - a, h, "wall", 0));
+        a = b;
+      }
+    };
+    run(-w / 2, w / 2, -d / 2, true, false, breach === 0);
+    run(-w / 2, w / 2, d / 2, true, false, breach === 1);
+    run(-d / 2 + T, d / 2 - T, -w / 2 + T / 2, false, true, false);
+    run(-d / 2 + T, d / 2 - T, w / 2 - T / 2, false, true, false);
+    out.push(at(len(-w / 4, w / 4), len(-d / 4, d / 4), len(1.6, 2.6), len(1.2, 2), len(0.5, 0.9), "prop", PROP.rubble));
+    return out;
   };
 
   const clear = (b: Box, gap: number) => (o: Box) => b.x1 + gap <= o.x0 || o.x1 + gap <= b.x0 || b.z1 + gap <= o.z0 || o.z1 + gap <= b.z0;
   const distToBox = (b: Box, x: number, z: number) => Math.hypot(Math.max(b.x0 - x, 0, x - b.x1), Math.max(b.z0 - z, 0, z - b.z1));
   // A piece goes only on low ground that is not a cliff. It starts at the lowest ground
-  // under it and keeps its full height above the highest, so it never floats or sinks.
+  // under it and keeps its full height above the highest, so it never floats or sinks; what is
+  // stacked on it (a container two high) sits on its top.
   const groundUnder = (piece: Box[]): { lo: number; hi: number } | null => {
     let lo = Infinity;
     let hi = -Infinity;
@@ -3053,14 +3135,19 @@ function scatterArea(near: Clearance, area: (typeof SCATTER)[number]): Box[] {
       }
     return hi - lo > 1.2 ? null : { lo, hi };
   };
-  // Wrecks out on the salt flats: a rusted container or a rock.
-  const wreckAt = (x: number, z: number): Box[] =>
-    rnd() < 0.6 ? [rnd() < 0.5 ? box(x, z, 6.2, 2.5, 2.6, "container", 0) : box(x, z, 2.5, 6.2, 2.6, "container", 0)] : [box(x, z, 2.5 + rnd() * 2.5, 2.5 + rnd() * 2.5, 1.4 + rnd() * 1.4, "rock", Math.floor(rnd() * 2))];
+  // Wrecks out on the salt flats: a rusted container, a truck left where it stopped, or a rock.
+  const wreckAt = (x: number, z: number): Box[] => {
+    const r = rnd();
+    if (r < 0.5) return [rnd() < 0.5 ? box(x, z, 6.1, 2.44, 2.6, "container", 0) : box(x, z, 2.44, 6.1, 2.6, "container", 0)];
+    if (r < 0.75) return rnd() < 0.5 ? [box(x, z, 2.3, 2.5, 3.0, "prop", PROP.cab), box(x + 3.65, z, 5, 2.5, 2.3, "prop", PROP.bed)] : [box(x, z, 2.5, 2.3, 3.0, "prop", PROP.cab), box(x, z + 3.65, 2.5, 5, 2.3, "prop", PROP.bed)];
+    return [box(x, z, 2.6 + rnd() * 2.5, 2.6 + rnd() * 2.5, 1.5 + rnd() * 1.5, "rock", Math.floor(rnd() * 2))];
+  };
   const placed: Box[] = [];
-  // Candidates on a 12 m grid from 11 m inside the area's bounds, each nudged at random.
+  // Candidates on a grid from 11 m inside the area's bounds, each nudged at random: set pieces
+  // up to 10 m across, few enough that the open ground reads as open.
   const edge = 11;
-  for (let gx = area.x0 + edge; gx <= area.x1 - edge; gx += 12)
-    for (let gz = area.z0 + edge; gz <= area.z1 - edge; gz += 12) {
+  for (let gx = area.x0 + edge; gx <= area.x1 - edge; gx += area.step)
+    for (let gz = area.z0 + edge; gz <= area.z1 - edge; gz += area.step) {
       const x = gx + (rnd() - 0.5) * 7;
       const z = gz + (rnd() - 0.5) * 7;
       const at = surfaceAt(x, z);
@@ -3073,7 +3160,7 @@ function scatterArea(near: Clearance, area: (typeof SCATTER)[number]): Box[] {
       const base = groundUnder(piece);
       if (base === null) continue;
       for (const b of piece) {
-        b.y0 += base.lo;
+        b.y0 += b.y0 > 0 ? base.hi : base.lo;
         b.h += base.hi;
       }
       const ok = piece.every(
@@ -3190,15 +3277,12 @@ for (const { x, z, table } of [at("heart", { x: 108, z: -100, table: "relay" as 
 
 /**
  * One depot per POI, on the road out from its entry: in reach on the way in or out, yet
- * outside the fight round the POI. They are not boxes and keep no ground clear, so the
- * island's cover is laid out the same with or without them. They are placed on the built
- * ground, so each stands at the floor level the walkers find there.
+ * outside the fight round the POI. They are not boxes and do not press the ground flat; the
+ * scattered cover only keeps off them (`depotSpot()`). They are placed on the built ground, so
+ * each stands at the floor level the walkers find there.
  */
 export const DEPOTS: Depot[] = POIS.map((p) => {
-  const ax = p.entry.x - p.x;
-  const az = p.entry.z - p.z;
-  const len = Math.hypot(ax, az);
-  const at = onFloor({ x: +(p.entry.x + (ax / len) * DEPOT_OUT[p.id]).toFixed(1), z: +(p.entry.z + (az / len) * DEPOT_OUT[p.id]).toFixed(1) });
+  const at = onFloor(depotSpot(p));
   return { poi: p.id, x: at.x, y: at.y, z: at.z, yaw: Math.atan2(p.x - at.x, -(p.z - at.z)) };
 });
 

@@ -1,14 +1,14 @@
-import { AWARE, DEG, ENEMIES, FLANK, NOISE, PINCH, PURSUE, SIGHT, TICK } from "./config";
+import { AWARE, DEG, FLANK, NOISE, PINCH, PURSUE, SIGHT, TICK } from "./config";
 import { dist2d, los, lookAngles, solidAt, wrapAngle } from "./geom";
 import { steepAt, terrainHeight } from "./terrain";
-import type { Enemy, Point, State, Vec3 } from "./state";
+import { weakY, type Enemy, type Point, type State, type Vec3 } from "./state";
 
 /*
  * What robots know about the player: sight that fills slowly, sounds that make
  * them come and look, and squads that start fighting together.
  */
 
-export const headOf = (e: Enemy): Vec3 => ({ x: e.pos.x, y: e.pos.y + Math.max(ENEMIES[e.kind].weakY, 0.2), z: e.pos.z });
+export const headOf = (e: Enemy): Vec3 => ({ x: e.pos.x, y: e.pos.y + Math.max(weakY(e), 0.2), z: e.pos.z });
 
 /** The player is a valid target for robots: on the ground and not knocked down. */
 const visibleNow = (s: State) => s.phase === "play" && s.player.downed <= 0;
