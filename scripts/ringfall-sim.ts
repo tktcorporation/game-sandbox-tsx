@@ -1997,24 +1997,32 @@ function checkReturnFire(): string | null {
   return null;
 }
 
-/** A grunt's burst at 15 m in the open finds a player who sidesteps through the glow and the shots. */
+/**
+ * A grunt's burst at 15 m in the open finds a player who sidesteps through the glow and the
+ * shots: two of its three shots on average over bursts with different draws of its spread, so
+ * the check holds whatever the rest of the world spent of the random stream first.
+ */
 function checkSidestepHit(): string | null {
   const at = openSpot(16, 2, 9);
   if (!at) return "sidestep scenario: no open ground for the test";
-  const { s, foes } = standoff(at, 15, ["grunt"]);
-  const g = foes[0];
-  g.mode = "telegraph";
-  g.timer = KINDS.grunt.telegraph;
-  g.cooldown = 99;
-  const strafe = idleInput();
-  strafe.moveX = 1;
+  const BURSTS = 12;
   let hits = 0;
-  for (let i = 0; i < 1.6 / TICK; i++) {
-    step(s, strafe, false);
-    hits += s.events.filter((e) => e.t === "hurt").length;
-    s.player.iframes = 0;
+  for (let k = 0; k < BURSTS; k++) {
+    const { s, foes } = standoff(at, 15, ["grunt"]);
+    s.rng = 1000 + k * 7919;
+    const g = foes[0];
+    g.mode = "telegraph";
+    g.timer = KINDS.grunt.telegraph;
+    g.cooldown = 99;
+    const strafe = idleInput();
+    strafe.moveX = 1;
+    for (let i = 0; i < 1.6 / TICK; i++) {
+      step(s, strafe, false);
+      hits += s.events.filter((e) => e.t === "hurt").length;
+      s.player.iframes = 0;
+    }
   }
-  if (hits < 2) return `sidestep scenario: a player strafing in the open at 15 m took ${hits} of a grunt's 3 shots`;
+  if (hits < 2 * BURSTS) return `sidestep scenario: a player strafing in the open at 15 m took ${(hits / BURSTS).toFixed(2)} of a grunt's 3 shots on average`;
   return null;
 }
 

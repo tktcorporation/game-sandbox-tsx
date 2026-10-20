@@ -551,6 +551,15 @@ const harborTour = [
   ["tour-43-yard-gantries", ...at("yard", 0, 1.7, 60), 0, 0.12],
   ["tour-44-smelter-chimneys", ...at("smelter", 20, 1.7, 70), -0.28, 0.18],
   ["tour-45-smelter-roofs", ...at("smelter", -6, 3 + 13.6 + 1.7, -6), Math.PI / 2, -0.08, true],
+  // The outposts between the POIs, and the works that lead from one to the next: the power line
+  // north from the substation toward the quay, the freight line east past the yard.
+  ["tour-74-substation", ...at("変電所", -40, 1.7, 25), 1.01, 0.12],
+  ["tour-75-fuel-depot", ...at("燃料基地", -45, 1.7, 30), 0.98, 0.1],
+  ["tour-76-marshalling-yard", ...at("貨物操車場", 45, 1.7, 40), -0.84, 0.08],
+  ["tour-77-power-line", 112, 1.7, -660, -0.08, 0.15],
+  ["tour-78-freight-line", -175, 1.7, -775, 1.4, 0.04],
+  ["tour-79-pipeline", 330, 1.7, -800, -1.2, 0.12],
+  ["tour-80-harbor-from-above", 0, 230, -520, 0, -0.5, true],
 ];
 for (const [name, x, dy, z, yaw, pitch, abs] of harborTour) {
   const y = abs ? dy : (await page.evaluate(([x, z]) => window.ringfallTerrain(x, z), [x, z])) + dy;

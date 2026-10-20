@@ -469,6 +469,32 @@ function catwalk(ax: number, az: number, bx: number, bz: number, y: number, widt
 }
 
 /**
+ * A length of railway along x or along z on ground at 0: a dark ballast bed 3 m wide and two
+ * rails on it, both under the step-up height, so it is walked over and seen, never climbed.
+ */
+function track(ax: number, az: number, bx: number, bz: number, y = 0): Box[] {
+  const alongX = Math.abs(bx - ax) >= Math.abs(bz - az);
+  const [a, b] = alongX ? [Math.min(ax, bx), Math.max(ax, bx)] : [Math.min(az, bz), Math.max(az, bz)];
+  const c = alongX ? az : ax;
+  const run = (lo: number, hi: number, y0: number, h: number, kind: BoxKind, tint: number) => (alongX ? rect(a, c + lo, b, c + hi, y0, h, kind, tint) : rect(c + lo, a, c + hi, b, y0, h, kind, tint));
+  return [run(-1.5, 1.5, y - 0.2, y + 0.12, "step", 1), run(-0.8, -0.66, y + 0.12, y + 0.26, "steel", 2), run(0.66, 0.8, y + 0.12, y + 0.26, "steel", 2)];
+}
+
+/**
+ * A goods wagon 13 m long left on a track along x (`alongX`) or z, on ground at 0: its dark
+ * underframe, and on it a container (`box`), an open hopper (`hopper`) or a low load of pipe
+ * (`flat`). A box wagon is cover a heavy hides behind; a flat one, cover to crouch at.
+ */
+function wagon(cx: number, cz: number, alongX: boolean, load: "box" | "hopper" | "flat", tint: number, y = 0): Box[] {
+  const at = (l: number, w: number, y0: number, h: number, kind: BoxKind, t: number) => (alongX ? box(cx, cz, l, w, h, kind, t, y0) : box(cx, cz, w, l, h, kind, t, y0));
+  const out = [at(12.4, 2.4, y, y + 1.2, "steel", 1)];
+  if (load === "box") out.push(at(12.2, 2.6, y + 1.2, y + 3.8, "container", tint));
+  else if (load === "hopper") out.push(at(11.6, 2.8, y + 1.2, y + 3.4, "steel", 3));
+  else out.push(at(11, 2.2, y + 1.2, y + 2.0, "steel", 2));
+  return out;
+}
+
+/**
  * A gantry crane straddling a lane along z at x = cx: a stair tower for one leg (its foot on
  * the north, z0 - 8 .. z0), a railed catwalk at height H from it to the far leg at z1, the
  * driver's cab on the catwalk round `cab`, and the boom running out over all of it.
@@ -1028,6 +1054,136 @@ export const EXTRACTS: ExtractPoint[] = [
 export const EXTRACT = EXTRACTS[0];
 
 /**
+ * The harbor's outposts: settlements (as `HAMLET_FRAMES`) larger than a hamlet, each a piece of
+ * the works that joins the harbor's POIs, held by a squad of two. They stand in the open ground
+ * between the POIs, so a walk from one POI to the next passes one, and the lines that leave each
+ * (`HARBOR_LINES`) lead the eye from it to the POIs it serves.
+ */
+const OUTPOSTS: Hamlet[] = [
+  {
+    // Between the yard, the smelter and the quay: the power the cranes and the furnaces ran on.
+    // A walled yard of transformers under a busbar frame, a two-storey control house, a store.
+    name: "変電所",
+    x: 75,
+    z: -675,
+    boxes: [
+      ...compound(0, 0, 48, 36, 2.4, [
+        { side: "w", w: 8 },
+        { side: "e", w: 8 },
+        { side: "n", at: 10, w: 6 },
+      ]),
+      ...[-12, 0, 12].flatMap((x) => [
+        box(x, -7, 4.4, 3.2, 3.4, "steel", 2),
+        box(x, -7, 5.2, 1.0, 2.8, "steel", 1, 0.4),
+        ...[-1.2, 0, 1.2].map((dx) => box(x + dx, -7.6, 0.3, 0.3, 4.8, "steel", 4, 3.4)),
+      ]),
+      // The busbar frame over the transformers: two rows of posts, beams across at 10 m and 8 m.
+      ...[-18, -6, 6, 18].map((x) => box(x, -11, 0.5, 0.5, 10, "steel", 2)),
+      rect(-18.3, -11.3, 18.3, -10.7, 9.6, 10.2, "steel", 2),
+      ...[-18, -6, 6, 18].map((x) => box(x, -3, 0.5, 0.5, 8, "steel", 2)),
+      rect(-18.3, -3.3, 18.3, -2.7, 7.6, 8.2, "steel", 2),
+      ...tower(10, 9, 12, 8, 2, { doors: [["w", "s"]], windows: [["e"], ["n", "e", "s", "w"]] }),
+      ...building(-12, 10, 8, 6, 3.4, { doors: ["e", "n"], windows: ["w"] }),
+      // Cable drums and a spare transformer waiting by the west gate.
+      box(-20, 12, 2.2, 2.2, 2.2, "crate"),
+      box(-17.4, 12, 2.2, 2.2, 2.2, "crate"),
+      box(-6, 14, 3.6, 2.6, 2.8, "steel", 2),
+    ],
+    bins: [
+      { x: 6.5, z: 10, y: STOREY, table: "smelter" },
+      { x: -12, z: 10, table: "yard" },
+    ],
+    // Its guards watch the yard inside the walls, not the gates: the substation is passed on
+    // the way between the POIs, and is fought by walking in, not met by walking by.
+    guard: {
+      name: "変電所の守備",
+      members: [
+        { kind: "grunt", x: 0, z: 2, face: S },
+        { kind: "grunt", x: 18, z: 4, face: S },
+      ],
+    },
+  },
+  {
+    // East of the smelter: the fuel the furnaces and the ships burned. White tanks inside a low
+    // bund wall, a pump house, a loading bay under a canopy with a tanker left in it.
+    name: "燃料基地",
+    x: 350,
+    z: -750,
+    boxes: [
+      ...tank(-16, -10, 6.5, 9, "s", 4),
+      ...tank(2, -10, 6.5, 9, "s", 4),
+      ...tank(-16, 10, 6.5, 9, "n", 4),
+      ...tank(2, 10, 6.5, 9, "n", 4),
+      // The bund: knee-high, broken where the aisles leave it.
+      rect(-25, -19.5, 11, -19, 0, 1.1, "wall", 1),
+      rect(-25, 19, 11, 19.5, 0, 1.1, "wall", 1),
+      rect(-25.5, -19.5, -25, -4, 0, 1.1, "wall", 1),
+      rect(-25.5, 4, -25, 19.5, 0, 1.1, "wall", 1),
+      // Pipes between the tanks and the pump house.
+      rect(-16, -0.9, 16, -0.3, 2.9, 3.5, "steel", 2),
+      rect(-16, 0.3, 16, 0.9, 2.9, 3.5, "steel", 3),
+      ...[-12, -4, 6, 14].map((x) => box(x, 0, 0.4, 2.2, 2.9, "steel", 2)),
+      ...tower(20, -8, 10, 8, 2, { doors: [["w", "s"]], windows: [["e"], ["n", "e", "s", "w"]] }),
+      // The loading bay's canopy on four posts, and the tanker under it.
+      ...[[14, 8], [26, 8], [14, 20], [26, 20]].map(([x, z]) => box(x, z, 0.4, 0.4, 5.6, "steel", 2)),
+      rect(13.6, 7.6, 26.4, 20.4, 5.6, 6.0, "slab", 1),
+      box(20, 14, 2.6, 7, 3.2, "steel", 4, 0.9),
+      box(20, 18.6, 2.5, 2.2, 3.0, "steel", 3),
+      box(20, 14, 2.4, 9.2, 0.9, "steel", 1),
+    ],
+    bins: [
+      { x: 16.5, z: -8, y: STOREY, table: "smelter" },
+      { x: 22.6, z: 11, table: "smelter" },
+    ],
+    // Its guards face the pump house and the coast beyond it, away from the ways in from the POIs.
+    guard: {
+      name: "燃料基地の守備",
+      members: [
+        { kind: "grunt", x: -7, z: 0, face: E },
+        { kind: "charger", x: 9, z: 14, face: E },
+      ],
+    },
+  },
+  {
+    // West of the yard: where the freight line ended and trains were made up for the yard.
+    // Three sidings with wagons left on them, a loading shed with a mezzanine, the yard office.
+    name: "貨物操車場",
+    x: -335,
+    z: -700,
+    boxes: [
+      ...hall(0, -16, 40, 14, 7.5, {
+        doors: [{ side: "s", at: -10 }, { side: "s", at: 10 }],
+        hatches: [{ side: "w" }, { side: "e" }, { side: "n" }],
+        windows: ["n"],
+        steel: 3,
+        columns: 8,
+        mezz: [{ side: "n", depth: 3.2, y: 3.6, stair: 12 }],
+      }),
+      ...[2, 9, 16].flatMap((z) => track(-40, z, 40, z)),
+      ...wagon(-22, 2, true, "box", 0),
+      ...wagon(-8, 2, true, "flat", 1),
+      ...wagon(24, 9, true, "hopper", 2),
+      ...wagon(-26, 16, true, "box", 2),
+      ...wagon(4, 16, true, "box", 1),
+      ...tower(30, 27, 8, 8, 2, { doors: [["w", "s"]], windows: [["e"], ["n", "e", "s", "w"]] }),
+      // Buffer stops at the sidings' west ends.
+      ...[2, 9, 16].map((z) => box(-41, z, 1.0, 2.6, 1.3, "steel", 0)),
+    ],
+    bins: [
+      { x: -6, z: -21.4, y: 3.6, table: "yard" },
+      { x: 27.5, z: 27, y: STOREY, table: "yard" },
+    ],
+    guard: {
+      name: "操車場の守備",
+      members: [
+        { kind: "grunt", x: 0, z: 24, face: N },
+        { kind: "drone", x: -18, z: 24, face: W },
+      ],
+    },
+  },
+];
+
+/**
  * Squads between the POIs. Beating them is optional. Most of the ground between the POIs is
  * quiet: one squad holds the drowned town, and a few walk the roads and the open ground
  * between the areas, met on the way rather than found at a post.
@@ -1094,7 +1250,16 @@ export const ROAMERS: Squad[] = (
       },
     ],
   ] satisfies [AreaId | null, Squad][]
-).map(([a, sq]) => (a ? placeSquad(sq, AREA[a][0], AREA[a][1]) : placeSquad(sq, 0, 0)));
+)
+  .map(([a, sq]) => (a ? placeSquad(sq, AREA[a][0], AREA[a][1]) : placeSquad(sq, 0, 0)))
+  .concat(
+    // Each outpost's guard stands on its outpost's ground, flat at the level under its middle (as `HAMLETS`).
+    OUTPOSTS.flatMap((o) => {
+      if (!o.guard) return [];
+      const level = floorLevel(o.x, o.z);
+      return [{ ...o.guard, members: o.guard.members.map((m) => ({ ...m, x: m.x + o.x, z: m.z + o.z, y: level + (m.y ?? 0) })) }];
+    }),
+  );
 
 /**
  * Drone packs (`PACK` in config.ts), in the world's coordinates: each flies its loop over the open
@@ -1205,8 +1370,8 @@ export function regionHere(at: { x: number; z: number }): Region {
 
 /**
  * A small settlement out on the open ground between the areas: a few buildings to look into
- * and fight round, and a bin or two. No robots post there; the roads' patrols and the
- * reinforcements pass by.
+ * and fight round, and a bin or two. No robots post at a hamlet; the roads' patrols and the
+ * reinforcements pass by. An outpost (`OUTPOSTS`) is a larger one with a squad of its own.
  */
 interface Hamlet {
   name: string;
@@ -1216,6 +1381,8 @@ interface Hamlet {
   boxes: Box[];
   /** Its bins in the same frame, with the POI whose loot table each uses. */
   bins: { x: number; z: number; y?: number; table: PoiId }[];
+  /** An outpost's squad, written in the same frame (`OUTPOSTS`); a hamlet has none. */
+  guard?: Squad;
 }
 
 const HAMLET_FRAMES: Hamlet[] = [
@@ -1364,6 +1531,7 @@ const HAMLET_FRAMES: Hamlet[] = [
     ],
     bins: [{ x: -6, z: 0, table: "smelter" }],
   },
+  ...OUTPOSTS,
 ];
 
 /**
@@ -1408,6 +1576,11 @@ export const LANDMARKS: readonly { name: string; x: number; z: number }[] = [
   at("bay", { name: "塩田", x: -10, z: -480 }),
   at("bay", { name: "灯台", x: -116, z: -538 }),
   at("bay", { name: "水路", x: 140, z: -604 }),
+  // The outposts and the works between the harbor's POIs.
+  ...OUTPOSTS.map((o) => ({ name: o.name, x: o.x, z: o.z })),
+  { name: "貨物線", x: -130, z: -770 },
+  { name: "送電線", x: 100, z: -860 },
+  { name: "パイプライン", x: 260, z: -910 },
 ];
 
 /**
@@ -1454,9 +1627,13 @@ function stopAt(name: string, dx = 0, dz = 0): { name: string; x: number; z: num
   return { name, x: at.x + dx, z: at.z + dz };
 }
 
-/** The hamlets placed, each flat at the level of the ground under its middle. */
+/** The hamlets placed, each flat at the level of the ground under its middle (an outpost's whole yard, a few metres round its boxes). */
 const HAMLETS = HAMLET_FRAMES.map((h) => {
   const level = floorLevel(h.x, h.z);
+  if (h.guard) {
+    const at = place(h.x, h.z, h.boxes);
+    FLAT.push({ x0: Math.min(...at.map((b) => b.x0)) - 4, z0: Math.min(...at.map((b) => b.z0)) - 4, x1: Math.max(...at.map((b) => b.x1)) + 4, z1: Math.max(...at.map((b) => b.z1)) + 4, y: level });
+  }
   return {
     ...h,
     boxes: onLevel(level, place(h.x, h.z, h.boxes)),
@@ -3365,7 +3542,123 @@ export const DEPOTS: Depot[] = POIS.map((p) => {
   return { poi: p.id, x: at.x, y: at.y, z: at.z, yaw: Math.atan2(p.x - at.x, -(p.z - at.z)) };
 });
 
-export const BOXES: Box[] = [...AUTHORED, ...BRIDGE, ...RAILWAY, ...QUAY, ...LAID, ...scatterCover([...AUTHORED, ...BRIDGE, ...RAILWAY, ...QUAY, ...LAID], KEEP)];
+/**
+ * The works that join the harbor's POIs and outposts, in the world's coordinates, laid on the
+ * ground once it is built (they do not press it flat): what fed the smelter, the yard and the
+ * quay, so a line seen from anywhere leads to the next place worth going.
+ * - Power lines on lattice pylons from the substation to the yard, the smelter and the quay.
+ * - The fuel pipeline from the fuel depot to the smelter and the quay, on supports high enough
+ *   to walk under.
+ * - The freight line from the marshalling yard round the north of the container yard, past the
+ *   signal box, to the smelter, with wagons left on it as cover along the way.
+ * Each run is a list of legs along x or along z.
+ */
+const SUBSTATION = OUTPOSTS[0];
+const FUEL_DEPOT = OUTPOSTS[1];
+const POWER_LINES: { from: [number, number]; pylons: [number, number][] }[] = [
+  { from: [SUBSTATION.x - 18, SUBSTATION.z - 11], pylons: [[46, -685], [0, -685], [-50, -685], [-100, -685]] },
+  { from: [SUBSTATION.x + 18, SUBSTATION.z - 11], pylons: [[104, -685], [150, -685]] },
+  { from: [SUBSTATION.x + 6, SUBSTATION.z - 11], pylons: [[95, -698], [95, -750], [95, -820], [95, -890], [95, -950]] },
+];
+const PIPELINES: [number, number][][] = [
+  [[FUEL_DEPOT.x - 27, -770], [212, -770]],
+  [[FUEL_DEPOT.x, FUEL_DEPOT.z - 22], [FUEL_DEPOT.x, -905], [160, -905], [160, -960]],
+];
+const FREIGHT_LINE: [number, number][] = [[-295, -691], [-245, -691], [-245, -765], [-10, -765], [-10, -712], [118, -712]];
+const FREIGHT_WAGONS: { x: number; z: number; alongX: boolean; load: "box" | "hopper" | "flat"; tint: number }[] = [
+  { x: -200, z: -765, alongX: true, load: "box", tint: 0 },
+  { x: -185.5, z: -765, alongX: true, load: "flat", tint: 0 },
+  { x: -95, z: -765, alongX: true, load: "hopper", tint: 0 },
+  { x: -40, z: -765, alongX: true, load: "box", tint: 1 },
+  { x: -10, z: -740, alongX: false, load: "box", tint: 2 },
+  { x: 40, z: -712, alongX: true, load: "flat", tint: 0 },
+  { x: 54.5, z: -712, alongX: true, load: "box", tint: 0 },
+];
+/** A pylon's height, the height its cross-arm carries the wires at, and how far out either side. */
+const PYLON = { top: 24, arm: 19.6, reach: 3.4 } as const;
+
+/** A lattice pylon on ground at `g` for a line along x (`alongX`) or z: four legs, bands, a cross-arm and a peak. */
+function pylon(cx: number, cz: number, alongX: boolean, g: number): Box[] {
+  const out: Box[] = [];
+  for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+    out.push(box(cx + sx * 2, cz + sz * 2, 0.45, 0.45, g + PYLON.arm - 1, "steel", 2, g - 0.3));
+    out.push(box(cx + sx * 1, cz + sz * 1, 0.35, 0.35, g + PYLON.top, "steel", 2, g + PYLON.arm - 1));
+  }
+  for (let y = g + 4; y < g + PYLON.arm - 1; y += 4)
+    out.push(...(alongX ? [rect(cx - 2.2, cz - 2.2, cx + 2.2, cz - 1.9, y - 0.25, y, "steel", 2), rect(cx - 2.2, cz + 1.9, cx + 2.2, cz + 2.2, y - 0.25, y, "steel", 2)] : [rect(cx - 2.2, cz - 2.2, cx - 1.9, cz + 2.2, y - 0.25, y, "steel", 2), rect(cx + 1.9, cz - 2.2, cx + 2.2, cz + 2.2, y - 0.25, y, "steel", 2)]));
+  const r = PYLON.reach + 0.4;
+  out.push(alongX ? rect(cx - 0.3, cz - r, cx + 0.3, cz + r, g + PYLON.arm, g + PYLON.arm + 0.5, "steel", 2) : rect(cx - r, cz - 0.3, cx + r, cz + 0.3, g + PYLON.arm, g + PYLON.arm + 0.5, "steel", 2));
+  return out;
+}
+
+/**
+ * A wire from p to q ([x, y, z]) sagging `sag` metres at its middle: lengths stepping along it,
+ * short enough that none rises more than a hand's width, so it reads as a line and not as steps.
+ */
+function wire(p: readonly [number, number, number], q: readonly [number, number, number], sag: number): Box[] {
+  const rise = Math.abs(q[1] - p[1]) + 2 * sag;
+  const n = Math.max(2, Math.ceil(Math.hypot(q[0] - p[0], q[2] - p[2]) / 3), Math.ceil(rise / 0.12));
+  const at = (t: number): [number, number, number] => [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t - sag * 4 * t * (1 - t), p[2] + (q[2] - p[2]) * t];
+  const out: Box[] = [];
+  for (let i = 0; i < n; i++) {
+    const a = at(i / n);
+    const b = at((i + 1) / n);
+    if (Math.abs(a[0] - b[0]) < 0.01 || Math.abs(a[2] - b[2]) < 0.01)
+      out.push(rect(Math.min(a[0], b[0]) - 0.06, Math.min(a[2], b[2]) - 0.06, Math.max(a[0], b[0]) + 0.06, Math.max(a[2], b[2]) + 0.06, Math.min(a[1], b[1]) - 0.06, Math.max(a[1], b[1]) + 0.06, "steel", 2));
+    else out.push(...strand(a, b, 0.12, 2));
+  }
+  return out;
+}
+
+/** The legs of a run, cut into lengths of about `step` metres: each length's ends and whether it runs along x. */
+function lengths(run: readonly [number, number][], step: number): { a: [number, number]; b: [number, number]; alongX: boolean }[] {
+  const out: { a: [number, number]; b: [number, number]; alongX: boolean }[] = [];
+  for (let i = 0; i + 1 < run.length; i++) {
+    const [p, q] = [run[i], run[i + 1]];
+    const n = Math.max(1, Math.round(Math.hypot(q[0] - p[0], q[1] - p[1]) / step));
+    for (let k = 0; k < n; k++)
+      out.push({ a: [p[0] + ((q[0] - p[0]) * k) / n, p[1] + ((q[1] - p[1]) * k) / n], b: [p[0] + ((q[0] - p[0]) * (k + 1)) / n, p[1] + ((q[1] - p[1]) * (k + 1)) / n], alongX: Math.abs(q[0] - p[0]) >= Math.abs(q[1] - p[1]) });
+  }
+  return out;
+}
+
+const HARBOR_LINES: Box[] = (() => {
+  const out: Box[] = [];
+  const g = (x: number, z: number) => terrainHeight(x, z);
+  // Power: each line leaves the substation's busbar frame for its first pylon, then runs pylon to pylon.
+  const busbar = floorLevel(SUBSTATION.x, SUBSTATION.z) + 10;
+  for (const line of POWER_LINES) {
+    const tips = line.pylons.map(([x, z], i) => {
+      const next = line.pylons[Math.min(i + 1, line.pylons.length - 1)];
+      const prev = line.pylons[Math.max(i - 1, 0)];
+      const alongX = Math.abs(next[0] - prev[0]) >= Math.abs(next[1] - prev[1]);
+      const base = Math.min(g(x - 2, z - 2), g(x + 2, z - 2), g(x - 2, z + 2), g(x + 2, z + 2));
+      out.push(...pylon(x, z, alongX, base));
+      const y = base + PYLON.arm - 0.4;
+      return (alongX ? [-1, 1].map((s) => [x, y, z + s * PYLON.reach]) : [-1, 1].map((s) => [x + s * PYLON.reach, y, z])) as [number, number, number][];
+    });
+    for (const t of tips[0]) out.push(...wire([line.from[0], busbar, line.from[1]], t, 0.6));
+    for (let i = 0; i + 1 < tips.length; i++) for (let k = 0; k < 2; k++) out.push(...wire(tips[i][k], tips[i + 1][k], 2.2));
+  }
+  // Fuel: two pipes side by side on a support every length, high enough for a heavy to walk under.
+  for (const run of PIPELINES)
+    for (const { a, b, alongX } of lengths(run, 10)) {
+      const y = Math.max(g(a[0], a[1]), g(b[0], b[1])) + 4;
+      for (const [off, tint] of [[-0.5, 2], [0.5, 3]] as const)
+        out.push(alongX ? rect(Math.min(a[0], b[0]), a[1] + off - 0.35, Math.max(a[0], b[0]), a[1] + off + 0.35, y, y + 0.7, "steel", tint) : rect(a[0] + off - 0.35, Math.min(a[1], b[1]), a[0] + off + 0.35, Math.max(a[1], b[1]), y, y + 0.7, "steel", tint));
+      const base = g(a[0], a[1]);
+      for (const off of [-1.1, 1.1]) out.push(alongX ? box(a[0], a[1] + off, 0.35, 0.35, y, "steel", 2, base - 0.3) : box(a[0] + off, a[1], 0.35, 0.35, y, "steel", 2, base - 0.3));
+      out.push(alongX ? box(a[0], a[1], 0.35, 2.6, y, "steel", 2, y - 0.3) : box(a[0], a[1], 2.6, 0.35, y, "steel", 2, y - 0.3));
+    }
+  // Freight: the track in lengths that follow the ground, a buffer stop at its east end, the wagons.
+  for (const { a, b } of lengths(FREIGHT_LINE, 6)) out.push(...track(a[0], a[1], b[0], b[1], g((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)));
+  const [ex, ez] = FREIGHT_LINE[FREIGHT_LINE.length - 1];
+  out.push(box(ex + 0.5, ez, 1.0, 2.6, g(ex, ez) + 1.3, "steel", 0, g(ex, ez) - 0.2));
+  for (const w of FREIGHT_WAGONS) out.push(...wagon(w.x, w.z, w.alongX, w.load, w.tint, Math.min(g(w.x - 6, w.z), g(w.x + 6, w.z), g(w.x, w.z - 6), g(w.x, w.z + 6)) - 0.1));
+  return out;
+})();
+
+export const BOXES: Box[] = [...AUTHORED, ...BRIDGE, ...RAILWAY, ...QUAY, ...LAID, ...HARBOR_LINES, ...scatterCover([...AUTHORED, ...BRIDGE, ...RAILWAY, ...QUAY, ...LAID, ...HARBOR_LINES], KEEP)];
 
 /** The bridge deck's height at (x, z) when it lies on a deck that path finding walks (DECKS), else null. */
 export function deckAt(x: number, z: number): number | null {
