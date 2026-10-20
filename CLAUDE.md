@@ -225,10 +225,13 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   Members get their first shot one after another, nearest first (`AWARE.react`); a grunt fires its
   first burst from the open, strafing (`Enemy.opener`), and takes cover after it. A robot turns at `TURN`
   and fires only ahead, and takes more damage from behind (`FLANK`): going round is the intended play.
-  Robot shots (`SHOT`) are fast and led, re-aimed for every shot while the robot sees its target, and
-  stray more with distance; a burst starts only with the target in sight, so the glow means "get
-  behind something", not "step aside". A squad of two or more that has had the player pinned to one
-  spot for a few seconds, or has seen them backing away, sends members round it to either side
+  Robot shots (`SHOT`, `ENEMIES[].orbSpeed`: 110 to 140 m/s, all but the titan's rockets) cross 40 m
+  in about 0.3 s, too fast to sidestep once seen; they are led, re-aimed for every shot while the
+  robot sees its target, and stray more with distance. A fighting robot fires at a target it sees
+  out to its engaged sight (`SIGHT[].range` times `AWARE.engagedRange`); its preferred distance
+  (`ENEMIES[].range`) only steers where it walks. A burst starts only with the target in sight, so
+  the glow means "get behind something", not "step aside". A squad of two or more that has had the
+  player pinned to one spot for a few seconds, or has seen them backing away, sends members round it to either side
   (`PINCH`, `pinchSpot()` in `enemies.ts`). A squad that loses sight goes after the player
   (`PURSUE`, `stepSquads()` and `pursuitSpot()`): to the last sighting carried on along their
   motion, its members split to either side of it and then sweep round it; the player's sounds

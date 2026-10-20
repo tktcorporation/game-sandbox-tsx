@@ -233,10 +233,10 @@ export interface EnemySpec {
 }
 
 export const ENEMIES: Record<EnemyKind, EnemySpec> = {
-  drone: { hp: 70, shield: 0, shieldTier: 0, radius: 0.55, bodyY: 0, weakY: 0, weakR: 0.24, weakFwd: 0.42, speed: 4.2, fly: 3.4, range: 14, telegraph: 0.55, cooldown: 1.6, shots: 1, shotGap: 0, spread: 0, orbSpeed: 62, orbDmg: 21, orbR: 0.2, ult: 1 },
-  grunt: { hp: 140, shield: 70, shieldTier: 1, radius: 0.6, bodyY: 1.1, weakY: 1.86, weakR: 0.27, weakFwd: 0.08, speed: 3.2, fly: 0, range: 15, telegraph: 0.6, cooldown: 1.5, shots: 3, shotGap: 0.16, spread: 0, orbSpeed: 76, orbDmg: 20, orbR: 0.18, ult: 1 },
+  drone: { hp: 70, shield: 0, shieldTier: 0, radius: 0.55, bodyY: 0, weakY: 0, weakR: 0.24, weakFwd: 0.42, speed: 4.2, fly: 3.4, range: 14, telegraph: 0.55, cooldown: 1.6, shots: 1, shotGap: 0, spread: 0, orbSpeed: 120, orbDmg: 21, orbR: 0.2, ult: 1 },
+  grunt: { hp: 140, shield: 70, shieldTier: 1, radius: 0.6, bodyY: 1.1, weakY: 1.86, weakR: 0.27, weakFwd: 0.08, speed: 3.2, fly: 0, range: 15, telegraph: 0.6, cooldown: 1.5, shots: 3, shotGap: 0.16, spread: 0, orbSpeed: 140, orbDmg: 20, orbR: 0.18, ult: 1 },
   charger: { hp: 120, shield: 50, shieldTier: 0, radius: 0.72, bodyY: 0.75, weakY: 0.95, weakR: 0.3, weakFwd: 0.62, speed: 6.4, fly: 0, range: 0, telegraph: 0.6, cooldown: 1.2, shots: 0, shotGap: 0, spread: 0, orbSpeed: 0, orbDmg: 40, orbR: 0, ult: 1 },
-  heavy: { hp: 270, shield: 130, shieldTier: 2, radius: 0.95, bodyY: 1.4, weakY: 2.35, weakR: 0.36, weakFwd: 0.1, speed: 2.0, fly: 0, range: 18, telegraph: 0.85, cooldown: 3.2, shots: 5, shotGap: 0, spread: 9, orbSpeed: 54, orbDmg: 18, orbR: 0.26, ult: 1 },
+  heavy: { hp: 270, shield: 130, shieldTier: 2, radius: 0.95, bodyY: 1.4, weakY: 2.35, weakR: 0.36, weakFwd: 0.1, speed: 2.0, fly: 0, range: 18, telegraph: 0.85, cooldown: 3.2, shots: 5, shotGap: 0, spread: 5, orbSpeed: 110, orbDmg: 18, orbR: 0.26, ult: 1 },
   titan: { hp: 3200, shield: 1000, shieldTier: 3, radius: 2.3, bodyY: 3.2, weakY: 3.4, weakR: 0.75, weakFwd: 2.1, speed: 1.6, fly: 0, range: 20, telegraph: 1.0, cooldown: 3.0, shots: 6, shotGap: 0.16, spread: 0, orbSpeed: 13, orbDmg: 9, orbR: 0.48, ult: 0.5 },
 };
 
@@ -619,7 +619,9 @@ export const PURSUE = { lead: 1.5, leadMax: 9, reach: 90, spread: 7, approach: 5
 
 /**
  * Robot fire: shots are fast enough that a sidestep in the open does not get out of the
- * way at fighting ranges, so the glow before a burst means "get behind something". Each
+ * way at fighting ranges, so the glow before a burst means "get behind something". Getting a
+ * body's width (about 0.6 m) off the aim point takes a person some 0.2 s to react to the bolt
+ * and 0.15 s to step; `orbSpeed` of 110-140 m/s brings a shot across 40 m in about 0.3 s. Each
  * shot aims at the target's chest led by `lead` of its motion over the flight time, and is
  * aimed afresh for every shot of a burst while the robot sees its target. Every shot also
  * strays by a random angle (`spread` degrees, standard deviation), which matters only far
@@ -682,7 +684,9 @@ export const AWARE = {
    * A fighting robot that has not located the player (see FLANK.blindTime) finds them in
    * this share of the time a calm one takes to notice them at that distance.
    */
-  locate: 0.75,
+  locate: 0.5,
+  /** Seconds out of sight over which a fighting robot's progress toward finding the player drains away. */
+  findKeep: 1,
   /**
    * Seconds from a squad engaging to each member's first chance to fire: `react[0]` for the
    * first member, `react[1]` more for each after it, so a squad's opening bursts come one
