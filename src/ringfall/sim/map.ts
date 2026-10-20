@@ -3564,7 +3564,7 @@ const PIPELINES: [number, number][][] = [
   [[FUEL_DEPOT.x - 27, -770], [212, -770]],
   [[FUEL_DEPOT.x, FUEL_DEPOT.z - 22], [FUEL_DEPOT.x, -905], [160, -905], [160, -960]],
 ];
-const FREIGHT_LINE: [number, number][] = [[-295, -691], [-245, -691], [-245, -765], [-10, -765], [-10, -712], [118, -712]];
+const FREIGHT_LINE: [number, number][] = [[-295, -691], [-258, -691], [-258, -765], [-10, -765], [-10, -712], [118, -712]];
 const FREIGHT_WAGONS: { x: number; z: number; alongX: boolean; load: "box" | "hopper" | "flat"; tint: number }[] = [
   { x: -200, z: -765, alongX: true, load: "box", tint: 0 },
   { x: -185.5, z: -765, alongX: true, load: "flat", tint: 0 },
