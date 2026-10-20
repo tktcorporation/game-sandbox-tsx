@@ -2,6 +2,7 @@ import { ALLY, BOOST, DEPOT, DUCK, ELITE, ENEMIES, META, RAIDERS, REINFORCE, VAL
 import { DEPOTS, depotIndex, entryOf, EXTRA_BINS, POIS, poiIndex, poiRegion, regionOf, type EntryId, type ExtractId, type PoiId, type RegionId, type RouteId } from "./map";
 import { openRoutes, useRoutes } from "./routes";
 import { populate } from "./enemies";
+import { placeParties } from "./world";
 import { placeAlly } from "./ally";
 import { groundAt } from "./geom";
 import { forgetFields } from "./hunt";
@@ -238,6 +239,12 @@ export interface SquadState {
   routed?: boolean;
   /** Raiders: elite members, and a closer hunt. */
   elite?: boolean;
+  /** How far its members notice the player, in place of their kind's `SIGHT` range: a drone pack (`PACK`). */
+  sight?: number;
+  /** A drone pack: it flies its loop at `PACK.pace`. */
+  pack?: boolean;
+  /** A hunting party (`PARTY`): the stop of `PARTY_STOPS[region]` it is making for or lingering at. */
+  party?: PartyTrip;
   sinceSeen: number; // seconds since any member saw the player while engaged
   /** Seconds the squad has kept the player in hand from behind cover since a member last saw them (see AWARE.coverHold). */
   hold?: number;
@@ -423,6 +430,26 @@ export interface Stats {
   vaults: number[];
 }
 
+/**
+ * A hunting party's way between its region's stops: the stop it is going to, the seconds it still
+ * lingers there once arrived (0 while walking), and where its leader stood when the walk was last
+ * checked for being stuck, and for how long since (see PARTY.stuck).
+ */
+export interface PartyTrip {
+  region: RegionId;
+  stop: number;
+  linger: number;
+  mark: Point;
+  markT: number;
+}
+
+/** One of a region's hunting parties: its squad while it lives (-1 once wiped out), and the seconds until its replacement beams in. */
+export interface PartySlot {
+  region: RegionId;
+  squad: number;
+  wait: number;
+}
+
 /** A called pickup on its way: seconds until it is there (0 = there), and the robots that beam in meanwhile. */
 export interface Call {
   t: number;
@@ -442,6 +469,12 @@ export interface State {
   /** The raid's seed, for what is decided without drawing on `rng` (the tools in the bins). */
   seed: number;
   rng: number;
+  /**
+   * The random numbers of the drone packs' starts and the hunting parties' stops, spawns and
+   * waits (`roamRand()`): a stream of their own, so the robots between the POIs do not shift
+   * what the rest of the raid draws.
+   */
+  roamRng: number;
   nextId: number;
   player: Player;
   ally: Ally;
@@ -469,6 +502,8 @@ export interface State {
   extractTime: number;
   /** The pickups called so far (the dropship, the boat), by extraction point. */
   calls: Partial<Record<ExtractId, Call>>;
+  /** The hunting parties, `PARTY.count` per region. */
+  parties: PartySlot[];
   /** The way the player left the island. */
   extractedAt: ExtractId | null;
   /** The depots switched on, by place in `DEPOTS`: those of earlier raids and those walked up to in this one. */
@@ -647,6 +682,7 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
     routes,
     seed: seed >>> 0,
     rng: seed >>> 0 || 1,
+    roamRng: mix(seed) || 1,
     nextId: id,
     player: {
       pos: { x: entry.x, y: groundAt(entry.x, entry.z, PLAYER.radius, 99), z: entry.z },
@@ -709,6 +745,7 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
     outcome: null,
     extractTime: 0,
     calls: {},
+    parties: [],
     extractedAt: null,
     depots: DEPOTS.map((d) => !!start.depots?.includes(d.poi)),
     sent: [],
@@ -732,6 +769,7 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
   }
   placeAlly(s);
   populate(s);
+  placeParties(s);
   return s;
 }
 
@@ -761,16 +799,25 @@ export function newAlly(at: { x: number; z: number; yaw: number }): Ally {
   };
 }
 
-/** Deterministic xorshift; the state is the seed so runs replay exactly. */
-export function rand(s: State): number {
-  let x = s.rng;
+/** One step of a deterministic xorshift. */
+function xorshift(x: number): number {
   x ^= x << 13;
   x >>>= 0;
   x ^= x >>> 17;
   x ^= x << 5;
-  x >>>= 0;
-  s.rng = x || 1;
+  return x >>> 0 || 1;
+}
+
+/** Deterministic xorshift; the state is the seed so runs replay exactly. */
+export function rand(s: State): number {
+  s.rng = xorshift(s.rng);
   return (s.rng % 1_000_000) / 1_000_000;
+}
+
+/** The same on the packs' and parties' own stream (`State.roamRng`). */
+export function roamRand(s: State): number {
+  s.roamRng = xorshift(s.roamRng);
+  return (s.roamRng % 1_000_000) / 1_000_000;
 }
 
 /** Full health and shield of a robot; raiders have more. */

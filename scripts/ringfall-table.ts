@@ -42,6 +42,13 @@ export type RaidResult = {
     rescues: number;
     helped: number;
     exit?: string;
+    /** Seconds from the start to the first squad engaging the player (the raid's length if none did). */
+    firstMeet: number;
+    /** Distinct squads that engaged the player, and how many of them belong to no POI. */
+    met: number;
+    metAway: number;
+    /** The longest stretch of seconds in which no robot was fighting the player. */
+    quiet: number;
   };
 };
 
@@ -96,6 +103,10 @@ export function playRaid(region: RegionId, skillName: string, r: number): RaidRe
   let peakSq = 0;
   let peakBots = 0;
   let ults = 0;
+  let firstMeet = -1;
+  const met = new Set<number>();
+  let fightAt = 0;
+  let quiet = 0;
   try {
     while (s.phase !== "done" && s.time < LIMIT) {
       const inp = bot.input(s);
@@ -105,6 +116,14 @@ export function playRaid(region: RegionId, skillName: string, r: number): RaidRe
       if (end >= 0 && end < s.events.length - 1) throw new Error(`${region} ${skill.name}#${r}: events after the raid ended: ${s.events.slice(end + 1).map((e) => e.t).join(",")}`);
       for (const e of s.events) {
         if (e.t === "leap") ults++;
+        if (e.t === "engage") {
+          if (firstMeet < 0) firstMeet = s.time;
+          met.add(e.squad);
+        }
+      }
+      if (s.enemies.some((e) => e.aware === "engaged" && e.mode !== "spawning")) {
+        quiet = Math.max(quiet, s.time - fightAt);
+        fightAt = s.time;
       }
       if (!s.enemies.some((e) => e.kind === "titan" && e.aware === "engaged")) {
         const fighting = s.enemies.filter((e) => e.aware === "engaged" && e.mode !== "spawning");
@@ -145,6 +164,10 @@ export function playRaid(region: RegionId, skillName: string, r: number): RaidRe
       rescues: s.stats.allyRescues,
       helped: s.stats.allyHelped,
       exit: s.extractedAt ?? undefined,
+      firstMeet: firstMeet < 0 ? s.time : firstMeet,
+      met: met.size,
+      metAway: [...met].filter((i) => s.squads[i]?.poi === -1).length,
+      quiet: Math.max(quiet, s.time - fightAt),
     },
   };
 }
@@ -175,6 +198,10 @@ export function summarize(region: RegionId, skillName: string, raids: RaidResult
   const exits: Record<string, number> = Object.fromEntries(EXTRACTS.map((x) => [x.id, 0]));
   const crowdSq: number[] = [];
   const crowdBots: number[] = [];
+  const firstMeets: number[] = [];
+  const quiets: number[] = [];
+  let met = 0;
+  let metAway = 0;
   const ranks: Record<string, number> = { S: 0, A: 0, B: 0, C: 0, "-": 0 };
   for (const raid of raids) {
     ults += raid.ults;
@@ -208,6 +235,10 @@ export function summarize(region: RegionId, skillName: string, raids: RaidResult
     rescues += e.rescues;
     helped += e.helped;
     if (e.exit) exits[e.exit]++;
+    firstMeets.push(e.firstMeet);
+    quiets.push(e.quiet);
+    met += e.met;
+    metAway += e.metAway;
   }
   const n = Math.max(ended, 1);
   out.lines.push({
@@ -226,6 +257,7 @@ export function summarize(region: RegionId, skillName: string, raids: RaidResult
       `${median(crowdSq)}/${median(crowdBots)}`.padEnd(5),
       `${Math.round((flanks / Math.max(hits - titanHits, 1)) * 100)}%`.padEnd(5),
       String(median(waves)).padEnd(5),
+      `${Math.round(median(firstMeets))}s ${Math.round(median(quiets))}s ${(met / n).toFixed(1)}/${(metAway / n).toFixed(1)}`.padEnd(18),
       `${Math.round((allyDmg / n) * 100)}% ${(allyDowns / n).toFixed(1)}d ${(rescues / n).toFixed(1)}r ${(helped / n).toFixed(1)}h`.padEnd(18),
       `S${ranks.S} A${ranks.A} B${ranks.B} C${ranks.C} -${ranks["-"]}`.padEnd(18),
       regionOf(region).exits.map((id) => `${id} ${exits[id]}`).join(" "),

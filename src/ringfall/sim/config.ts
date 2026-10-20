@@ -1,4 +1,4 @@
-import type { PoiId } from "./map";
+import type { PoiId, RegionId } from "./map";
 /**
  * Every tuning number of RINGFALL. Units are metres, seconds and degrees unless noted.
  * Change a number here only together with a re-run of `npm run sim:ringfall` and an
@@ -557,6 +557,49 @@ export const REINFORCE = {
     ["grunt", "drone", "charger"],
     ["grunt", "grunt", "drone", "charger"],
     ["heavy", "grunt", "drone", "drone"],
+  ] as EnemyKind[][],
+};
+
+/**
+ * Drone packs (`PACKS` in map.ts): a few drones flying long loops over the open ground between
+ * the POIs, quicker than a patrol walks (`pace`, a share of their combat speed) and noticing the
+ * player from further than other drones (`sight` metres, in place of `SIGHT.drone`'s range; they
+ * still fire only as far as a drone sees), so crossing the ground between POIs brings one into
+ * view. A raid starts each pack at a waypoint of its loop at least `away` metres from the player,
+ * drawn from the packs' and parties' own random numbers (`roamRand()`): one sighting `sight`
+ * metres off takes more than the first seconds of a raid to fly into.
+ */
+export const PACK = { sight: 75, pace: 0.9, away: 140 };
+
+/**
+ * Hunting parties: `count` ground squads in each region that walk from stop to stop of their
+ * region (`PARTY_STOPS` in map.ts) by the ground's way (hunt.ts's field), at `pace` of their
+ * slowest member's combat speed, and stay `linger` seconds at each stop before going on to
+ * another. They fight what they meet as any squad does. A party wiped out is replaced `respawn`
+ * seconds later by one that beams in within `scatter` metres of a stop of its region, out of the
+ * player's sight and at least `away` metres from them; the raid's first parties are placed by the
+ * same rule. Past `seen` metres, as far as the view draws a robot, one counts as out of sight
+ * whatever lies between. Each is drawn from `squads`. A party whose leader has moved less than
+ * `stuck.moved` metres in `stuck.time` seconds of walking makes for another stop. Line-ups,
+ * stops, spawns and waits are drawn from their own random numbers (`roamRand()`).
+ */
+export const PARTY = {
+  count: { reservoir: 2, harbor: 2 } satisfies Record<RegionId, number>,
+  name: "遊撃隊",
+  pace: 0.7,
+  linger: [20, 40] as const,
+  respawn: [60, 120] as const,
+  away: 100,
+  seen: 220,
+  scatter: 10,
+  /** Metres from its stop at which a party's leader has arrived there. */
+  arrive: 4,
+  stuck: { time: 15, moved: 3 },
+  squads: [
+    ["grunt", "grunt"],
+    ["grunt", "charger"],
+    ["grunt", "drone"],
+    ["heavy", "grunt"],
   ] as EnemyKind[][],
 };
 

@@ -1,4 +1,4 @@
-import { ALLY, AWARE, CHARGER, COVER, DEG, DODGE, DUCK, ELITE, ENEMIES, FALLBACK, PINCH, PLAYER, PURSUE, SHOT, SIGHT, STAGGER, TICK, TITAN, TURN, WORLD, type EnemyKind, type Rarity } from "./config";
+import { ALLY, AWARE, CHARGER, COVER, DEG, DODGE, DUCK, ELITE, ENEMIES, FALLBACK, PACK, PARTY, PINCH, PLAYER, PURSUE, SHOT, SIGHT, STAGGER, TICK, TITAN, TURN, WORLD, type EnemyKind, type Rarity } from "./config";
 import { clampToWorld, collide, dist2d, groundAt, groundLevel, los, lookAngles, onTerrain, solidAt, wrapAngle } from "./geom";
 import { steepAt, terrainHeight } from "./terrain";
 import { engageSquad, headOf, knownSpot, located, pursuitSpot, sense, stepSquads } from "./awareness";
@@ -10,11 +10,11 @@ const LEDGE = 1.0;
 /** Walkers posted on the ground climb no higher than this above the terrain (stairs onto a roof). */
 const CLIMB = 1.2;
 const bodyHeight = (k: { bodyY: number; radius: number }) => k.bodyY + k.radius;
-import { POIS, ROAMERS, type Squad } from "./map";
+import { PACKS, PARTY_STOPS, POIS, ROAMERS, type Squad } from "./map";
 import { bodyCenter, weakPoint } from "./combat";
 import { hurtPlayer } from "./player";
 import { allyChest, allyUp, hurtAlly } from "./ally";
-import { rand, weakY, type Enemy, type Point, type State, type Vec3 } from "./state";
+import { rand, roamRand, weakY, type Enemy, type Point, type State, type Vec3 } from "./state";
 
 /*
  * Robot behaviour. Out of combat a robot holds its post or walks its squad's
@@ -33,6 +33,8 @@ interface SpawnOpts {
   elite?: boolean;
   /** Its armour plate's tier (see PLATE); none when omitted. */
   plate?: Rarity;
+  /** A drone pack's or a hunting party's: drawn from their own random numbers (`roamRand()`). */
+  roam?: boolean;
 }
 
 /** Where a robot asked to appear at (x, z) on `floor` (the ground when omitted) ends up: pushed out of solids, on its floor or at hover height. */
@@ -46,8 +48,9 @@ export function spawnSpot(kind: EnemyKind, x: number, z: number, floor = terrain
 
 export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi: number, squad: number, o: SpawnOpts = {}): Enemy {
   const k = ENEMIES[kind];
+  const draw = o.roam ? roamRand : rand;
   const pos = spawnSpot(kind, x, z, o.floor);
-  const face = o.face ?? rand(s) * Math.PI * 2;
+  const face = o.face ?? draw(s) * Math.PI * 2;
   const e: Enemy = {
     id: s.nextId++,
     kind,
@@ -60,7 +63,7 @@ export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi:
     timer: o.appear ? 0.9 : 0,
     cooldown: 0,
     shotsLeft: 0,
-    strafe: rand(s) < 0.5 ? -1 : 1,
+    strafe: draw(s) < 0.5 ? -1 : 1,
     poi,
     lastHit: 99,
     aimYaw: 0,
@@ -71,7 +74,7 @@ export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi:
     detect: 0,
     home: { ...pos },
     face,
-    lookT: rand(s) * 10,
+    lookT: draw(s) * 10,
     goal: null,
     searchT: 0,
     cover: null,
@@ -82,11 +85,11 @@ export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi:
     allyHit: 99,
     elite: !!o.elite,
     plate: o.plate ?? 0,
-    strafeT: rand(s),
+    strafeT: draw(s),
     jink: 0,
     stagger: 0,
     steady: 0,
-    peekSide: rand(s) < 0.5 ? -1 : 1,
+    peekSide: draw(s) < 0.5 ? -1 : 1,
     opener: true,
     stuckT: 0,
     stuckTo: null,
@@ -101,7 +104,7 @@ export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi:
   return e;
 }
 
-/** Put every squad on the island at the start of a run. */
+/** Put every squad on the island at the start of a run (the hunting parties come after, see `placeParties()`). */
 export function populate(s: State) {
   const add = (sq: Squad, poi: number) => {
     const index = s.squads.length;
@@ -110,6 +113,17 @@ export function populate(s: State) {
   };
   POIS.forEach((p, i) => p.squads.forEach((sq) => add(sq, i)));
   ROAMERS.forEach((sq) => add(sq, -1));
+  // Each drone pack starts at a waypoint of its loop well away from the player, and flies on from there.
+  const p0 = s.player.pos;
+  for (const sq of PACKS) {
+    const loop = sq.patrol ?? [];
+    const far = loop.map((_, i) => i).filter((i) => dist2d(loop[i], p0) >= PACK.away);
+    const leg = far[Math.floor(roamRand(s) * far.length)] ?? 0;
+    const index = s.squads.length;
+    s.squads.push({ name: sq.name, poi: -1, patrol: loop, leg, engaged: false, roam: !!sq.roam, pack: true, sight: PACK.sight, sinceSeen: 0, last: { x: 0, z: 0 } });
+    const at = loop[leg];
+    sq.members.forEach((m, i) => spawnEnemy(s, m.kind, at.x + (i % 2 ? 1.6 : -1.6) * Math.min(i, 1), at.z + i * 1.4, -1, index, { roam: true }));
+  }
 }
 
 /** Where robots aim at the player: the chest, lower while crouched or sliding, so a low wall covers. */
@@ -587,6 +601,17 @@ function huntStep(s: State, e: Enemy, goal: Point): Point {
 }
 
 /**
+ * Where a walker of a hunting party on its way to its stop heads next: by the whole world's field
+ * toward the stop while on the open ground, straight otherwise. Its fights it fights as any
+ * squad does, not as a squad beamed in from afar.
+ */
+function tripStep(e: Enemy, to: Point): Point {
+  if (!onWalkable(e)) return to;
+  const f = fieldTo(to.x, to.z);
+  return f ? nextStep(f, e.pos.x, e.pos.z, to) : to;
+}
+
+/**
  * Where a member of a fighting squad heads on its way to its own point `to` beside the spot
  * `centre` the squad is after (a pursuit or a pinch, `off` metres from the spot at most): far
  * off, by the squad's one field toward the spot, so the squad builds a single field, not one
@@ -651,6 +676,22 @@ function calm(s: State, e: Enemy) {
     return;
   }
   const sq = s.squads[e.squad];
+  if (sq?.party) {
+    // A hunting party walks to its stop by the ground's way, the first living member leading and
+    // the others beside it, all at the pace of the slowest; there it stands and looks round
+    // until stepParties() sends it on.
+    const members = s.enemies.filter((o) => o.squad === e.squad);
+    const slot = members.indexOf(e);
+    const stop = PARTY_STOPS[sq.party.region][sq.party.stop];
+    const to = { x: stop.x + (slot % 2 ? 1.6 : -1.6) * Math.min(slot, 1), z: stop.z + slot * 1.4 };
+    const pace = Math.min(...members.map((o) => ENEMIES[o.kind].speed)) * PARTY.pace;
+    if (dist2d(e.pos, to) > 0.8) walkTo(e, tripStep(e, to), pace);
+    else {
+      moveBody(e, 0, 0);
+      e.yaw += Math.sin(e.lookT * 0.7) * TICK * 0.9;
+    }
+    return;
+  }
   if (sq && sq.patrol.length && e.kind !== "titan") {
     // The first living member leads; the others follow at an offset.
     const members = s.enemies.filter((o) => o.squad === e.squad);
@@ -660,7 +701,7 @@ function calm(s: State, e: Enemy) {
     // The authored legs are walked straight; a robot a chase took off its leg finds its way back.
     const prev = sq.patrol[(sq.leg + sq.patrol.length - 1) % sq.patrol.length];
     const via = toSegment(e.pos, prev, to) > STRAY ? homeStep(s, e, to) : to;
-    if (walkTo(e, via, slow) && via === to && slot === 0) sq.leg++;
+    if (walkTo(e, via, sq.pack ? k.speed * PACK.pace : slow) && via === to && slot === 0) sq.leg++;
     return;
   }
   if (dist2d(e.pos, e.home) > 0.8) walkTo(e, dist2d(e.pos, e.home) > STRAY ? homeStep(s, e, e.home) : e.home, slow);

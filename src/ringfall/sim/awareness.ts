@@ -115,7 +115,7 @@ export function sense(s: State, e: Enemy): boolean {
     const d = Math.hypot(target.x - eye.x, target.y - eye.y, target.z - eye.z);
     const sight = SIGHT[e.kind];
     const engaged = e.aware === "engaged";
-    const range = sight.range * (engaged ? AWARE.engagedRange : low ? AWARE.crouchRange : 1);
+    const range = (sq?.sight ?? sight.range) * (engaged ? AWARE.engagedRange : low ? AWARE.crouchRange : 1);
     let inView = d < AWARE.closeSense;
     if (!inView && d < range) {
       const fov = sight.fov * (engaged ? AWARE.engagedFov : 1);

@@ -1076,6 +1076,44 @@ export const ROAMERS: Squad[] = (
   ] satisfies [AreaId | null, Squad][]
 ).map(([a, sq]) => (a ? placeSquad(sq, AREA[a][0], AREA[a][1]) : placeSquad(sq, 0, 0)));
 
+/**
+ * Drone packs (`PACK` in config.ts), in the world's coordinates: each flies its loop over the open
+ * ground between the POIs and along the roads, clear of every POI's own ground, and is met on the
+ * way from one POI to the next. A raid starts each at one of its waypoints far from the player,
+ * so the members' places here only say how many there are and of what kind.
+ */
+export const PACKS: Squad[] = [
+  // The reservoir: the ground south of the lakebed that the ways between the quarry, the supply
+  // depot and the relay share, its west half with the quarry's side and its east half with the
+  // relay's side up to the landing pad; and an arc north of the pad.
+  {
+    name: "西の野のドローン群",
+    members: [{ kind: "drone", x: -200, z: 260 }, { kind: "drone", x: -200, z: 260 }],
+    patrol: [{ x: -200, z: 260 }, { x: -60, z: 250 }, { x: -110, z: 140 }, { x: -185, z: 105 }],
+  },
+  {
+    name: "東の野のドローン群",
+    members: [{ kind: "drone", x: 60, z: 250 }, { kind: "drone", x: 60, z: 250 }],
+    patrol: [{ x: 60, z: 250 }, { x: 200, z: 230 }, { x: 170, z: 110 }, { x: 140, z: -40 }, { x: 110, z: 120 }],
+  },
+  {
+    name: "発着場の北のドローン群",
+    members: [{ kind: "drone", x: -200, z: 0 }, { kind: "drone", x: -200, z: 0 }],
+    patrol: [{ x: -200, z: 0 }, { x: -130, z: -170 }, { x: 60, z: -230 }, { x: 190, z: -110 }, { x: 60, z: -230 }, { x: -130, z: -170 }],
+  },
+  // The harbor: over the ground between the yard and the smelter, and round the wreck.
+  {
+    name: "港の野のドローン群",
+    members: [{ kind: "drone", x: -90, z: -640 }, { kind: "drone", x: -90, z: -640 }],
+    patrol: [{ x: -90, z: -640 }, { x: -60, z: -800 }, { x: 80, z: -800 }, { x: 90, z: -640 }],
+  },
+  {
+    name: "湾のドローン群",
+    members: [{ kind: "drone", x: -200, z: -860 }, { kind: "drone", x: -200, z: -860 }],
+    patrol: [{ x: -200, z: -860 }, { x: -130, z: -1010 }, { x: 60, z: -1010 }, { x: 110, z: -880 }],
+  },
+];
+
 export type RegionId = "reservoir" | "harbor";
 
 export type EntryId = "beach" | "checkpoint" | "jetty" | "outskirts" | "quay" | "shore";
@@ -1374,6 +1412,27 @@ export const STOPS: readonly { name: string; x: number; z: number }[] = [
   at("bay", { name: "塩田", x: 10, z: -500 }),
   at("bay", { name: "岬", x: -122, z: -545 }),
 ];
+
+/**
+ * Where hunting parties (`PARTY` in config.ts) go, by region: stops on the open ground between
+ * the POIs and hamlets (`STOPS`, `FRAMES`), all on the ground the parties' field covers. A POI's
+ * way in would put a party beside the POI's own squads, where a raid's first fight there would
+ * meet both; the village, the plateau and the salt flats by the wreck, beside the quieter ways
+ * off and a depot, are left out too, and so is the headland, which the ground's field reaches up
+ * a slope too steep for a walker.
+ */
+export const PARTY_STOPS: Record<RegionId, readonly { name: string; x: number; z: number }[]> = {
+  reservoir: [stopAt("工場"), stopAt("住宅地"), stopAt("放水路"), stopAt("昇降路の通路"), stopAt("西の飯場"), stopAt("南の漁師小屋")],
+  // The signal box's own middle is its house: the party stands on the open ground south of it.
+  harbor: [stopAt("港町"), stopAt("高架下"), stopAt("信号所", 0, 14), stopAt("西の漁村"), stopAt("東の丘の家")],
+};
+
+/** A party's stop at the stop or hamlet `name`, `dx`, `dz` metres off it. */
+function stopAt(name: string, dx = 0, dz = 0): { name: string; x: number; z: number } {
+  const at = STOPS.find((q) => q.name === name) ?? FRAMES[name];
+  if (!at) throw new Error(`no stop or hamlet named ${name}`);
+  return { name, x: at.x + dx, z: at.z + dz };
+}
 
 /** The hamlets placed, each flat at the level of the ground under its middle. */
 const HAMLETS = HAMLET_FRAMES.map((h) => {

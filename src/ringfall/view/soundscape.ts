@@ -20,6 +20,8 @@ const RAYS_PER_FRAME = 4;
 /** How long a wall test stays good for a source, in seconds. */
 const RAY_TTL = 0.35;
 
+/** Metres within which a drone pack's hum plays: past its sight (`PACK.sight`), so the pack is heard first. */
+const SWARM_FAR = 120;
 const lift = (p: P3, dy: number): P3 => ({ x: p.x, y: p.y + dy, z: p.z });
 const ground = (x: number, z: number, dy = 1): P3 => ({ x, y: terrainHeight(x, z) + dy, z });
 
@@ -53,6 +55,8 @@ export class Soundscape {
   private rush: Loop | null = null;
   /** Engines of the extraction craft that have been called: the dropship, the boat. */
   private crafts = new Map<ExtractId, { loop: Loop; y: number }>();
+  /** Seconds until each drone pack's hum is played again, by squad. */
+  private swarmT = new Map<number, number>();
   private steps = new Map<number, { x: number; z: number; t: number; n: number }>();
   /** Robot step sounds allowed in the current window (rate limit). */
   private stepTokens = 4;
@@ -86,6 +90,7 @@ export class Soundscape {
     this.craft(s, play, ear);
     if (play && s.phase === "play") {
       this.robotSteps(s, ear, dt);
+      this.swarms(s, ear, dt);
       this.ambience(ear, dt);
     }
   }
@@ -180,6 +185,26 @@ export class Soundscape {
     if (this.steps.size > seen.size) for (const id of this.steps.keys()) if (!seen.has(id)) this.steps.delete(id);
   }
 
+  /** Each drone pack within earshot hums from its member nearest the listener, so a pack is heard before it is seen. */
+  private swarms(s: State, ear: P3, dt: number) {
+    for (const [i, sq] of s.squads.entries()) {
+      if (!sq.pack) continue;
+      let near: (typeof s.enemies)[number] | null = null;
+      let d = SWARM_FAR;
+      for (const e of s.enemies) {
+        if (e.squad !== i || e.mode === "spawning") continue;
+        const de = Math.hypot(e.pos.x - ear.x, e.pos.z - ear.z);
+        if (de < d) {
+          d = de;
+          near = e;
+        }
+      }
+      const t = (this.swarmT.get(i) ?? Math.random()) - dt;
+      if (near && t <= 0) sfx.swarm(lift(near.pos, 0.2));
+      this.swarmT.set(i, t <= 0 ? 1 : t);
+    }
+  }
+
   /** Now and then, far off: a metal creak, machinery, gulls by the cliffs. */
   private ambience(ear: P3, dt: number) {
     this.ambT -= dt;
@@ -211,6 +236,7 @@ export class Soundscape {
     for (const c of this.crafts.values()) c.loop.stop();
     this.crafts.clear();
     this.steps.clear();
+    this.swarmT.clear();
   }
 
   event(e: GameEvent, s: State) {

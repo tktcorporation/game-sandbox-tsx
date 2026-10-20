@@ -38,9 +38,16 @@ with no known way in and no depot on cannot be chosen (`canStartIn()`); the HUD 
 are handed the known list (`Hud.setKnown()`), and each way in has a campfire and signboard in the
 view (scenery, no boxes).
 Robots are squads placed in the world from the start (`POIS[].squads`, two squads of two or three
-per POI (the pad holds the titan and its drones), and a few `ROAMERS` in `map.ts`, most of them patrolling the roads), plus reinforcements (`REINFORCE` in `config.ts`) that beam in
+per POI (the pad holds the titan and its drones), and a few `ROAMERS` in `map.ts`, most of them patrolling the roads), drone
+packs that fly long loops over the ground between the POIs (`PACKS` in `map.ts`, `PACK` in
+`config.ts`: a squad's `sight` noticing from further than its kind's `SIGHT`), and hunting parties
+that walk from stop to stop of their region (`PARTY_STOPS` in `map.ts`, `PARTY` in `config.ts`,
+`stepParties()` in `world.ts`), replaced out of sight a while after they are wiped out; plus
+reinforcements (`REINFORCE` in `config.ts`) that beam in
 out of sight on a timer and come looking, and once per raid an elite squad (`RAIDERS` / `ELITE`)
-that flanks. Bins take time to search (`SEARCH`) and valuables fill a bag of `BAG.slots`. The HUD
+that flanks. The packs' starts and the parties' line-ups, stops, spawns and waits draw on a
+random stream of their own (`roamRand()`, `State.roamRng`), so they do not shift the rest of the
+raid's draws. Bins take time to search (`SEARCH`) and valuables fill a bag of `BAG.slots`. The HUD
 shows no markers or distances, and lists only the ways off of the region the player is in
 (`regionHere()`); the world map (`view/map.ts`, M) is where the POIs and exits of both regions are; it opens framed
 on the region the player is in (`Region.bounds`) and N switches it to the whole world.
@@ -242,7 +249,9 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   move; healing is slow and heard (`HEALS`, `NOISE.heal`).
   `cover.ts` precomputes the spots grunts hide behind. The sim gate's `crowd` column is the most
   squads / robots fighting at once, and `flank` the share of hits from behind or by ambush; keep them
-  within the targets in `docs/ringfall/balance.md`.
+  within the targets in `docs/ringfall/balance.md`. Its `meet` column is how often the player meets
+  robots: the seconds to the first fight, the longest stretch with none, and the squads met per
+  raid (of them, those of no POI).
 - Some robots wear armour plates (`Enemy.plate`, a rarity tier): body hits from a weapon of lower
   rarity are cut by `PLATE` in `config.ts`, weak points pass in full. Each POI's vault guard
   (`Member.plate` in `map.ts`) and the raiders (`RAIDERS.plate`) wear them.
@@ -270,7 +279,8 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   end the hunt. Walkers of any fighting squad follow such a field too while they cannot see the
   player, out to `PURSUE.reach` metres of walking (`huntStep()` in `enemies.ts`): one field per
   squad, toward the spot it is after, each member leaving it for its own point beside the spot
-  only near it (`sideStep()`). Patrols walk their legs straight; a robot a chase took more than
+  only near it (`sideStep()`). Hunting parties walk to their stops by the whole world's field
+  (`tripStep()`) but fight as any squad does. Patrols walk their legs straight; a robot a chase took more than
   `STRAY` metres off its post or its leg walks back by a field (`homeStep()`). A short field
   costs its reach, not the grid. Only the player's own sounds and shots re-locate a squad, not
   the teammate's. Robots off the open ground (on a

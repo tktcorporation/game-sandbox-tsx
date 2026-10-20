@@ -3,6 +3,7 @@ import { bodyCenter, eyePos, flankOf, magSize, weakPoint } from "./combat";
 import { ceilingAt, dist2d, inWorld, groundAt, groundLevel, los, onTerrain, lookAngles, solidAt, wrapAngle } from "./geom";
 import { EXTRACTS, POIS, regionOf, type ExtractPoint } from "./map";
 import { clearLine, findPath, type Avoid } from "./nav";
+import { onMainGround } from "./hunt";
 import { callLeft, enemyMax, idleInput, weakY, type Enemy, type Input, type State } from "./state";
 import { pickHeal } from "./player";
 import { makeRoom } from "./world";
@@ -674,7 +675,8 @@ export class Bot {
    * Open low ground a glide's length away, as far as can be from the robots fighting it:
    * the way a player would pick where to leap to. Open means no building within a couple
    * of metres of it or tall under the way, so it comes down on the ground it plans on, not on
-   * a roof or into a stairwell (it does not take stairs).
+   * a roof or into a stairwell (it does not take stairs), and on the ground joined to the rest
+   * of the world (hunt.ts), not a shelf walled in by slopes it could not walk off.
    */
   private escapeSpot(s: State, from: Enemy[]): { x: number; z: number } | null {
     const p = s.player;
@@ -685,7 +687,7 @@ export class Bot {
       const a = (i / 12) * Math.PI * 2;
       const x = p.pos.x + Math.cos(a) * reach;
       const z = p.pos.z + Math.sin(a) * reach;
-      if (offLowGround(x, z) || offshore(x, z) > -12) continue;
+      if (offLowGround(x, z) || offshore(x, z) > -12 || !onMainGround(x, z)) continue;
       const t = terrainHeight(x, z);
       if (ceilingAt(x, z, 2, t + 40, t) < Infinity || groundAt(x, z, 2, t + 40) > t + 0.5) continue;
       // Nothing tall under the way there either: the glide may run out of height over it.

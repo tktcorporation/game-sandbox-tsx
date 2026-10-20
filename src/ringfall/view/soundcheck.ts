@@ -100,6 +100,7 @@ export const CUES: Cue[] = [
   { id: "lunge", label: "突進（後ろ 6 m）", group: "敵", run: () => walls(null, () => sfx.lunge(around(180, 6))) },
   { id: "stomp", label: "タイタンの踏みつけ", group: "敵", run: () => walls(null, () => sfx.stomp(around(30, 14))) },
   ...ROBOTS.map(([k, n]) => ({ id: `step-${k}`, label: `${n}の足音（右 5 m）`, group: "敵", run: () => walls(null, () => sfx.step(around(90, 5), k, true)) })),
+  { id: "swarm", label: "ドローンの群れ（遠く 60 m）", group: "敵", run: () => walls(null, () => sfx.swarm(around(60, 60, 4))) },
   { id: "spawn", label: "ロボットの転送", group: "敵", run: () => walls(null, () => sfx.spawn(around(300, 15))) },
   { id: "arrive", label: "増援の着地（遠く）", group: "敵", run: () => walls(null, () => sfx.arrive(around(120, 70, 2), false)) },
   { id: "arrive-raiders", label: "レイダーの着地（遠く）", group: "敵", run: () => walls(null, () => sfx.arrive(around(240, 70, 2), true)) },
