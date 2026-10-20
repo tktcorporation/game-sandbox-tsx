@@ -34,12 +34,20 @@ export interface Quality {
    * one is built each frame that has any waiting, so streaming keeps ahead of a walker.
    */
   streamMs: number;
+  /**
+   * Chunks nearer than this carry their architectural trim (trim.ts: storey bands, panel joints,
+   * lintels and sills, coping, cladding ribs, fittings); 0 draws none. Farther off it is a few
+   * pixels wide and only costs triangles.
+   */
+  trimFar: number;
+  /** Stones, stains, cracks and tufts lie on the ground out to this distance (scatter.ts); 0 lays none. */
+  scatterFar: number;
 }
 
 export const QUALITY: Record<Tier, Quality> = {
-  high: { maxRatio: 2, minRatio: 1, antialias: true, shadowSize: 2048, shadowSpan: 55, shadowHz: Infinity, fogNear: 160, fogFar: 420, thingsFar: 220, streamMs: 6 },
-  medium: { maxRatio: 1.5, minRatio: 0.75, antialias: false, shadowSize: 1024, shadowSpan: 50, shadowHz: 30, fogNear: 130, fogFar: 320, thingsFar: 180, streamMs: 4 },
-  low: { maxRatio: 1.25, minRatio: 0.6, antialias: false, shadowSize: 1024, shadowSpan: 42, shadowHz: 15, fogNear: 100, fogFar: 240, thingsFar: 150, streamMs: 3 },
+  high: { maxRatio: 2, minRatio: 1, antialias: true, shadowSize: 2048, shadowSpan: 55, shadowHz: Infinity, fogNear: 160, fogFar: 420, thingsFar: 220, streamMs: 6, trimFar: 150, scatterFar: 34 },
+  medium: { maxRatio: 1.5, minRatio: 0.75, antialias: false, shadowSize: 1024, shadowSpan: 50, shadowHz: 30, fogNear: 130, fogFar: 320, thingsFar: 180, streamMs: 4, trimFar: 80, scatterFar: 24 },
+  low: { maxRatio: 1.25, minRatio: 0.6, antialias: false, shadowSize: 1024, shadowSpan: 42, shadowHz: 15, fogNear: 100, fogFar: 240, thingsFar: 150, streamMs: 3, trimFar: 0, scatterFar: 14 },
 };
 
 /** What the browser tells about the device; any of it may be missing. */

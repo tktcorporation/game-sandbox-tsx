@@ -473,7 +473,7 @@ declare global {
     ringfallDownAlly: () => void;
     ringfallChargeUlt: () => void;
     ringfallCamera: (x?: number, y?: number, z?: number, yaw?: number, pitch?: number) => void;
-    ringfallFrameCost: (frames: number) => { ms: number; syncMs: number; calls: number; triangles: number; chunks: number; built: number; of: number; tier: Tier; ratio: number; fillMs: number };
+    ringfallFrameCost: (frames: number) => { ms: number; syncMs: number; calls: number; triangles: number; chunks: number; built: number; of: number; tier: Tier; ratio: number; fillMs: number; trimMs: number; trims: number; layMs: number };
     ringfallQuality: (tier?: Tier) => { tier: Tier; ratio: number };
     ringfallTerrain: (x: number, z: number) => number;
     ringfallFrames: () => Record<string, { x: number; z: number }>;

@@ -3,6 +3,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import { ENEMIES, type EnemyKind, type HealKind, type Rarity, type ToolKind, type ValuableKind, type WeaponKind } from "../sim/config";
 import type { LootKind } from "../sim/state";
 import { PROP, type Box } from "../sim/map";
+import type { TrimPiece } from "./trim";
 
 /*
  * Low-poly, flat-shaded models built from primitives. Colours come only from the
@@ -516,6 +517,59 @@ export function mergeChunk(root: THREE.Object3D, shade?: ChunkShade): THREE.Grou
     out.add(m);
   }
   return out;
+}
+
+/** A unit box's faces, two triangles each, six vertices in a row: positions and normals. */
+const UNIT_BOX = (() => {
+  const g = new THREE.BoxGeometry(1, 1, 1).toNonIndexed();
+  return { pos: g.attributes.position.array as Float32Array, nor: g.attributes.normal.array as Float32Array };
+})();
+
+/**
+ * Merges a chunk's trim (trim.ts) into one mesh on the chunks' material that casts no shadow.
+ * Trim is many small boxes, so each face is lit by one lookup at its middle (`cover`, the light
+ * left by what covers it) rather than one per corner, and no foot of it is darkened.
+ */
+export function mergeTrim(pieces: readonly TrimPiece[], cover: (x: number, y: number, z: number) => number): THREE.Mesh | null {
+  if (!pieces.length) return null;
+  const n = UNIT_BOX.pos.length;
+  const pos = new Float32Array(pieces.length * n);
+  const nor = new Float32Array(pieces.length * n);
+  const col = new Float32Array(pieces.length * n);
+  const c = new THREE.Color();
+  let o = 0;
+  for (const p of pieces) {
+    c.setHex(p.color);
+    for (let f = 0; f < n; f += 18) {
+      // The face's middle is its unit normal times half the box, from the box's middle.
+      const nx = UNIT_BOX.nor[f];
+      const ny = UNIT_BOX.nor[f + 1];
+      const nz = UNIT_BOX.nor[f + 2];
+      const light = cover(p.x + nx * (p.sx / 2 + 0.1), p.y + ny * (p.sy / 2 + 0.1), p.z + nz * (p.sz / 2 + 0.1));
+      for (let v = f; v < f + 18; v += 3) {
+        pos[o + v] = p.x + UNIT_BOX.pos[v] * p.sx;
+        pos[o + v + 1] = p.y + UNIT_BOX.pos[v + 1] * p.sy;
+        pos[o + v + 2] = p.z + UNIT_BOX.pos[v + 2] * p.sz;
+        nor[o + v] = nx;
+        nor[o + v + 1] = ny;
+        nor[o + v + 2] = nz;
+        col[o + v] = c.r * light;
+        col[o + v + 1] = c.g * light;
+        col[o + v + 2] = c.b * light;
+      }
+    }
+    o += n;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute("normal", new THREE.BufferAttribute(nor, 3));
+  geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
+  geo.setAttribute("contact", new THREE.BufferAttribute(new Float32Array(pos.length / 3).fill(NO_FLOOR), 1));
+  geo.computeBoundingSphere();
+  const mesh = new THREE.Mesh(geo, chunkMat);
+  mesh.castShadow = false;
+  mesh.receiveShadow = true;
+  return mesh;
 }
 
 /**
