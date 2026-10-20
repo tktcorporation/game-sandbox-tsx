@@ -218,6 +218,10 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   joined to `ROAMERS`) and its whole yard pressed flat. From them the works run to the POIs
   (`WORKS_LINES`, laid once the ground is built): power lines on pylons, pipelines high enough to
   walk under, and a freight line and its spur with wagons left on them as cover.
+  Perimeter fences (`FENCES` / `FENCE_RUNS` in `map.ts`, boxes of kind `fence`) close the open
+  ground round some of the base's works: they stop bodies, not sight or shots (`rayWorld()` in
+  `geom.ts` passes them, `cover.ts` offers no cover behind them), and leave a gate wherever a
+  street or a kept road crosses and a gap wherever something built stands in the way.
   Towns (`TOWN_FRAMES` in `map.ts`: the lakeside town on the reservoir's ring road) are streets of
   houses, shops and a filling station, each building at the level of the ground under its own
   middle so a town follows the land, with a squad walking their streets (joined to `ROAMERS`).

@@ -3933,8 +3933,77 @@ const WORKS_LINES: Box[] = (() => {
  * street, the other lane left clear. Queues stand only on lengths that run along x or z (their
  * vehicles are boxes along the axes) and away from bends, junctions and authored points.
  */
+/**
+ * Perimeter fences round the base's works, in the world's coordinates: steel bars 2.6 m high in
+ * panels that follow the ground, which stop a body but not a look or a shot (`rayWorld` passes
+ * them, `cover.ts` takes none behind them). A fence is the way a place is entered only by its
+ * gates: each run is a line of legs along x or z, and a panel is left out where a street or a
+ * kept road crosses it (a gate, a white post each side), where anything built stands in its way
+ * (the freight line's track, a wall) and on cliffs, so it closes the open ground between and
+ * nothing else.
+ */
+const FENCES: { name: string; line: [number, number][] }[] = [
+  { name: "コンテナヤードの外周", line: [[-250, -664], [-98, -664], [-98, -762], [-250, -762], [-250, -664]] },
+  { name: "製錬所の外周", line: [[120, -698], [212, -698], [212, -780], [120, -780], [120, -698]] },
+  { name: "補給所の境界", line: [[-115, 300], [128, 300], [128, 480]] },
+];
+const FENCE_RUNS: Box[] = (() => {
+  const out: Box[] = [];
+  const standing = [...AUTHORED, ...BRIDGE, ...RAILWAY, ...QUAY, ...LAID, ...WORKS_LINES].filter((b) => b.y0 < terrainHeight((b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2) + 3);
+  const roads = KEPT_ROADS.flatMap((name) => {
+    const line = roadLine(name);
+    return line.slice(1).map((q, k) => [line[k], q] as const);
+  });
+  const toRoad = (x: number, z: number) =>
+    Math.min(
+      ...roads.map(([p, q]) => {
+        const dx = q[0] - p[0];
+        const dz = q[1] - p[1];
+        const t = Math.max(0, Math.min(1, ((x - p[0]) * dx + (z - p[1]) * dz) / (dx * dx + dz * dz || 1)));
+        return Math.hypot(x - p[0] - dx * t, z - p[1] - dz * t);
+      }),
+    );
+  const gatePost = (x: number, z: number) => {
+    const g = terrainHeight(x, z);
+    out.push(box(x, z, 0.3, 0.3, g + 3.0, "steel", 4, g - 0.3));
+  };
+  for (const f of FENCES) {
+    // Whether the last panel stood, and whether the gap since was a street's.
+    let open = false;
+    let gate = false;
+    for (const { a, b, alongX } of lengths(f.line, 3)) {
+      const mx = (a[0] + b[0]) / 2;
+      const mz = (a[1] + b[1]) / 2;
+      const panel = alongX ? rect(Math.min(a[0], b[0]), mz - 0.04, Math.max(a[0], b[0]), mz + 0.04, 0, 1, "fence", 0) : rect(mx - 0.04, Math.min(a[1], b[1]), mx + 0.04, Math.max(a[1], b[1]), 0, 1, "fence", 0);
+      const street = offStreet(mx, mz) < 2 || toRoad(mx, mz) < 7;
+      const blocked =
+        street ||
+        steepAt(mx, mz) ||
+        steepAt(a[0], a[1]) ||
+        steepAt(b[0], b[1]) ||
+        offshore(mx, mz) > -2 ||
+        standing.some((o) => o.x1 + 0.8 > panel.x0 && panel.x1 + 0.8 > o.x0 && o.z1 + 0.8 > panel.z0 && panel.z1 + 0.8 > o.z0) ||
+        KEEP.points.some((q) => Math.hypot(Math.max(panel.x0 - q.x, 0, q.x - panel.x1), Math.max(panel.z0 - q.z, 0, q.z - panel.z1)) < q.r);
+      if (blocked) {
+        // A gate where a street or road passes: a white post at either side of it.
+        if (open && street) gatePost(a[0], a[1]);
+        gate = street;
+        open = false;
+        continue;
+      }
+      if (gate) gatePost(a[0], a[1]);
+      const g = Math.min(terrainHeight(a[0], a[1]), terrainHeight(b[0], b[1]), terrainHeight(mx, mz));
+      out.push({ ...panel, y0: g - 0.2, h: g + 2.6 });
+      out.push(box(a[0], a[1], 0.14, 0.14, g + 2.8, "steel", 2, g - 0.3));
+      open = true;
+      gate = false;
+    }
+  }
+  return out;
+})();
+
 /** Everything placed by hand or laid by rule before the streets are lined: what `scripts/ringfall-roads.ts` routes them round. */
-export const PLACED: Box[] = [...AUTHORED, ...BRIDGE, ...RAILWAY, ...QUAY, ...LAID, ...WORKS_LINES];
+export const PLACED: Box[] = [...AUTHORED, ...BRIDGE, ...RAILWAY, ...QUAY, ...LAID, ...WORKS_LINES, ...FENCE_RUNS];
 const STREET_SIDE: Box[] = (() => {
   const out: Box[] = [];
   const near = PLACED;

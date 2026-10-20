@@ -224,6 +224,8 @@ export function rayWorld(o: Vec3, d: Vec3, maxT: number, paths = false): number 
         if (seenBy[i] === rayId) continue;
         seenBy[i] = rayId;
         if (paths && obstacles.has(b)) continue;
+        // A fence of bars or mesh stops a body, not a look or a shot.
+        if (b.kind === "fence") continue;
         const bt = rayBox(o, d, b, t);
         if (bt < t) t = bt;
       }
