@@ -1948,9 +1948,10 @@ function longLine(dist: number): { p: { x: number; z: number }; g: { x: number; 
       for (let a = 0; a < 2 * Math.PI; a += Math.PI / 6) {
         const gx = x + Math.sin(a) * dist;
         const gz = z - Math.cos(a) * dist;
-        // A second grunt stands 2.5 m to the side of the first.
-        const sx = Math.cos(a) * 2.5;
-        const sz = Math.sin(a) * 2.5;
+        // A second grunt stands 2.5 m to the side of the first, where checkReturnFire() puts it
+        // (its bearing to the player is a + π).
+        const sx = -Math.cos(a) * 2.5;
+        const sz = -Math.sin(a) * 2.5;
         if (!ok(gx, gz) || !ok(gx + sx, gz + sz) || Math.abs(terrainHeight(gx, gz) - terrainHeight(x, z)) > 3) continue;
         // Clear from the player's knees to their head to each grunt's legs and eyes: open ground
         // between, not a line that only grazes over a crest at one height.

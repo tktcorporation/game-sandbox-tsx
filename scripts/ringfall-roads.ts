@@ -16,9 +16,11 @@ const NZ = Math.ceil((WORLD.z1 - WORLD.z0) / CELL);
 const cx = (i: number) => WORLD.x0 + (i + 0.5) * CELL;
 const cz = (j: number) => WORLD.z0 + (j + 0.5) * CELL;
 
-// Blocked: cliffs, high ground, the sea and the channel, and within 3 m of anything built that stands
-// on the ground (a roof or a deck overhead does not block).
+// Blocked: cliffs, high ground, the sea and the channel; and, for each street, the cells nearer to
+// anything built that stands on the ground (a roof or a deck overhead does not count) than its half
+// width and a little room, so its asphalt stays clear of walls.
 const blocked = new Uint8Array(NX * NZ);
+const ROOM = 0.5;
 const nearBuilt = new Float32Array(NX * NZ).fill(99);
 for (let j = 0; j < NZ; j++)
   for (let i = 0; i < NX; i++) {
@@ -38,11 +40,11 @@ for (const b of PLACED) {
       const d = Math.hypot(Math.max(b.x0 - cx(i), 0, cx(i) - b.x1), Math.max(b.z0 - cz(j), 0, cz(j) - b.z1));
       const k = j * NX + i;
       nearBuilt[k] = Math.min(nearBuilt[k], d);
-      if (d < 3.5) blocked[k] = 1;
     }
 }
 
-function route(a: readonly [number, number], b: readonly [number, number]): [number, number][] {
+function route(a: readonly [number, number], b: readonly [number, number], half: number): [number, number][] {
+  const shut = (k: number) => blocked[k] === 1 || nearBuilt[k] < half + ROOM;
   const toCell = (p: readonly [number, number]) => [Math.floor((p[0] - WORLD.x0) / CELL), Math.floor((p[1] - WORLD.z0) / CELL)];
   const [ai, aj] = toCell(a);
   const [bi, bj] = toCell(b);
@@ -96,7 +98,7 @@ function route(a: readonly [number, number], b: readonly [number, number]): [num
       const n = nj * NX + ni;
       // A street may start or end in a gate or beside a wall: the last few metres at either end are open.
       const ends = Math.min(Math.hypot(ni - ai, nj - aj), Math.hypot(ni - bi, nj - bj)) * CELL < 10;
-      if (blocked[n] && !ends) continue;
+      if (shut(n) && !ends) continue;
       const run = Math.hypot(di, dj) * CELL;
       const rise = Math.abs(terrainHeight(cx(ni), cz(nj)) - y);
       // Level ground first, then room from buildings, so a street keeps to the open.
@@ -114,16 +116,16 @@ function route(a: readonly [number, number], b: readonly [number, number]): [num
   path.reverse();
   path[0] = [a[0], a[1]];
   path[path.length - 1] = [b[0], b[1]];
-  return simplify(path);
+  return simplify(path, shut);
 }
 
 /** Whether the straight line from p to q stays on open cells. */
-function clearLine(p: [number, number], q: [number, number]): boolean {
+function clearLine(p: [number, number], q: [number, number], shut: (k: number) => boolean): boolean {
   const n = Math.ceil(Math.hypot(q[0] - p[0], q[1] - p[1]) / 1);
   for (let s = 1; s < n; s++) {
     const x = p[0] + ((q[0] - p[0]) * s) / n;
     const z = p[1] + ((q[1] - p[1]) * s) / n;
-    if (blocked[Math.floor((z - WORLD.z0) / CELL) * NX + Math.floor((x - WORLD.x0) / CELL)]) return false;
+    if (shut(Math.floor((z - WORLD.z0) / CELL) * NX + Math.floor((x - WORLD.x0) / CELL))) return false;
   }
   return true;
 }
@@ -133,12 +135,12 @@ function clearLine(p: [number, number], q: [number, number]): boolean {
  * point of the path still in clear sight, so a street runs in long straight lengths and turns
  * only where something stands in its way.
  */
-function simplify(path: [number, number][]): [number, number][] {
+function simplify(path: [number, number][], shut: (k: number) => boolean): [number, number][] {
   const out = [path[0]];
   let a = 0;
   while (a < path.length - 1) {
     let b = path.length - 1;
-    while (b > a + 1 && !clearLine(path[a], path[b])) b--;
+    while (b > a + 1 && !clearLine(path[a], path[b], shut)) b--;
     out.push(path[b]);
     a = b;
   }
@@ -158,7 +160,7 @@ function simplify(path: [number, number][]): [number, number][] {
 for (const r of ROUTE_PLAN) {
   const line: [number, number][] = [];
   for (let k = 0; k + 1 < r.via.length; k++) {
-    const leg = route(r.via[k], r.via[k + 1]);
+    const leg = route(r.via[k], r.via[k + 1], r.half);
     line.push(...(k === 0 ? leg : leg.slice(1)));
   }
   console.log(`  { name: ${JSON.stringify(r.name)}, half: ${r.half}, line: ${JSON.stringify(line)} },`);

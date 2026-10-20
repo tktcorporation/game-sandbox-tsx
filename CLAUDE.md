@@ -39,7 +39,7 @@ are handed the known list (`Hud.setKnown()`), and each way in has a campfire and
 view (scenery, no boxes).
 Robots are squads placed in the world from the start (`POIS[].squads`, four squads per POI, of two
 robots but for the relay's equipment shed and the wreck's beach, which have three: eight or nine a
-POI, fought a squad or two at a time (the pad holds the titan and its drones)), and a few `ROAMERS` in `map.ts`, most of them patrolling the roads), drone
+POI, fought a squad or two at a time (the pad holds the titan and its drones), and a few `ROAMERS` in `map.ts`, most of them patrolling the roads), drone
 packs that fly long loops over the ground between the POIs (`PACKS` in `map.ts`, `PACK` in
 `config.ts`: a squad's `sight` noticing from further than its kind's `SIGHT`), and hunting parties
 that walk from stop to stop of their region (`PARTY_STOPS` in `map.ts`, `PARTY` in `config.ts`,

@@ -7,7 +7,7 @@ import { buildTerrain, type Carve, type FlatShape, floorLevel, highGround, LEVEL
  * The world: two regions, a dried-up reservoir in the south and a dry harbor in the
  * north, joined by a pass road and a railway (see terrain.ts for their levels).
  * Everything solid is an axis-aligned box, so collision, line of sight and standing on
- * top are all the same cheap test. North is -z. The player chooses the region to start
+ * top are all the same cheap test (a fence stops only bodies). North is -z. The player chooses the region to start
  * in; every POI, district and way off in both regions is open from the start.
  *
  * Boxes and points are written relative to the ground of their area and lifted to
@@ -16,7 +16,7 @@ import { buildTerrain, type Carve, type FlatShape, floorLevel, highGround, LEVEL
 
 /**
  * `steel` is painted plate: ship hulls, cranes, girders, carriages (its tint picks the paint).
- * `fence` is a gate of steel bars, solid as any box.
+ * `fence` is a fence or gate of steel bars: it stops a body but not a look or a shot (`rayWorld()`).
  * `prop` is a piece of the cover scattered over the open ground; its tint is what it is (`PROP`).
  */
 export type BoxKind = "crate" | "container" | "wall" | "rock" | "pad" | "tower" | "slab" | "step" | "steel" | "fence" | "prop";
@@ -3927,13 +3927,6 @@ const WORKS_LINES: Box[] = (() => {
 })();
 
 /**
- * What lines the streets (streets.ts), laid on the ground once it is built: lamp posts along every
- * length on alternate sides, a signpost where each street leaves its first junction, and traffic
- * left where it stopped on the day the ring fell, a queue of cars and lorries in one lane of a
- * street, the other lane left clear. Queues stand only on lengths that run along x or z (their
- * vehicles are boxes along the axes) and away from bends, junctions and authored points.
- */
-/**
  * Perimeter fences round the base's works, in the world's coordinates: steel bars 2.6 m high in
  * panels that follow the ground, which stop a body but not a look or a shot (`rayWorld` passes
  * them, `cover.ts` takes none behind them). A fence is the way a place is entered only by its
@@ -4004,13 +3997,41 @@ const FENCE_RUNS: Box[] = (() => {
 
 /** Everything placed by hand or laid by rule before the streets are lined: what `scripts/ringfall-roads.ts` routes them round. */
 export const PLACED: Box[] = [...AUTHORED, ...BRIDGE, ...RAILWAY, ...QUAY, ...LAID, ...WORKS_LINES, ...FENCE_RUNS];
+/**
+ * What lines the streets (streets.ts), laid on the ground once it is built: lamp posts along every
+ * length on alternate sides, a signpost where each street leaves its first junction, and traffic
+ * left where it stopped on the day the ring fell, a queue of cars and lorries in one lane of a
+ * street, the other lane left clear. Queues stand only on lengths that run along x or z (their
+ * vehicles are boxes along the axes) and away from bends, junctions, authored points,
+ * patrol legs and kept roads.
+ */
 const STREET_SIDE: Box[] = (() => {
   const out: Box[] = [];
   const near = PLACED;
   const free = (b: Box, gap: number) =>
     !steepAt((b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2) &&
     near.every((o) => o.x1 + gap <= b.x0 || b.x1 + gap <= o.x0 || o.z1 + gap <= b.z0 || b.z1 + gap <= o.z0 || o.y0 > terrainHeight((o.x0 + o.x1) / 2, (o.z0 + o.z1) / 2) + 3) &&
-    KEEP.points.every((q) => Math.hypot(Math.max(b.x0 - q.x, 0, q.x - b.x1), Math.max(b.z0 - q.z, 0, q.z - b.z1)) > q.r + 1);
+    KEEP.points.every((q) => Math.hypot(Math.max(b.x0 - q.x, 0, q.x - b.x1), Math.max(b.z0 - q.z, 0, q.z - b.z1)) > q.r + 1) &&
+    KEEP.segments.every((sg) => toSegment(sg, (b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2) > Math.hypot(b.x1 - b.x0, b.z1 - b.z0) / 2 + 2.5);
+  const toSegment = (sg: Keep["segments"][number], x: number, z: number) => {
+    const dx = sg.bx - sg.ax;
+    const dz = sg.bz - sg.az;
+    const t = Math.max(0, Math.min(1, ((x - sg.ax) * dx + (z - sg.az) * dz) / (dx * dx + dz * dz || 1)));
+    return Math.hypot(x - sg.ax - dx * t, z - sg.az - dz * t);
+  };
+  // A vehicle stands on the lowest ground under its corners and keeps its height over the highest;
+  // ground that rises more than half a metre under one is too rough to have stopped on.
+  const underVehicle = (cx: number, cz: number, w: number, d: number): { lo: number; hi: number } | null => {
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const [x, z] of [[cx - w / 2, cz - d / 2], [cx + w / 2, cz - d / 2], [cx - w / 2, cz + d / 2], [cx + w / 2, cz + d / 2], [cx, cz]]) {
+      if (steepAt(x, z)) return null;
+      const g = terrainHeight(x, z);
+      lo = Math.min(lo, g);
+      hi = Math.max(hi, g);
+    }
+    return hi - lo > 0.5 ? null : { lo, hi };
+  };
   const bends = STREETS.flatMap((st) => st.line);
   const nearBend = (x: number, z: number, r: number) => bends.some(([bx, bz]) => Math.hypot(bx - x, bz - z) < r);
   let seed = 9_041;
@@ -4051,12 +4072,14 @@ const STREET_SIDE: Box[] = (() => {
         const cx = l.ax + ux * (at + long / 2) - uz * lane;
         const cz = l.az + uz * (at + long / 2) + ux * lane;
         if (nearBend(cx, cz, h + 12)) break;
-        const g = terrainHeight(cx, cz);
+        const under = alongX ? underVehicle(cx, cz, long, 2.5) : underVehicle(cx, cz, 2.5, long);
+        if (!under) break;
+        const { lo, hi } = under;
         const piece = lorry
           ? alongX
-            ? [box(cx - (2.55 * Math.sign(ux)), cz, 2.3, 2.5, g + 3.0, "prop", PROP.cab, g), box(cx + (1.15 * Math.sign(ux)), cz, 5, 2.5, g + 2.3, "prop", PROP.bed, g)]
-            : [box(cx, cz - (2.55 * Math.sign(uz)), 2.5, 2.3, g + 3.0, "prop", PROP.cab, g), box(cx, cz + (1.15 * Math.sign(uz)), 2.5, 5, g + 2.3, "prop", PROP.bed, g)]
-          : [alongX ? box(cx, cz, 4.5, 1.9, g + 1.5, "prop", PROP.car, g) : box(cx, cz, 1.9, 4.5, g + 1.5, "prop", PROP.car, g)];
+            ? [box(cx - (2.55 * Math.sign(ux)), cz, 2.3, 2.5, hi + 3.0, "prop", PROP.cab, lo), box(cx + (1.15 * Math.sign(ux)), cz, 5, 2.5, hi + 2.3, "prop", PROP.bed, lo)]
+            : [box(cx, cz - (2.55 * Math.sign(uz)), 2.5, 2.3, hi + 3.0, "prop", PROP.cab, lo), box(cx, cz + (1.15 * Math.sign(uz)), 2.5, 5, hi + 2.3, "prop", PROP.bed, lo)]
+          : [alongX ? box(cx, cz, 4.5, 1.9, hi + 1.5, "prop", PROP.car, lo) : box(cx, cz, 1.9, 4.5, hi + 1.5, "prop", PROP.car, lo)];
         if (!piece.every((b) => free(b, 1.5))) break;
         queue.push(...piece);
         at += long + 1.5 + rnd() * 3;

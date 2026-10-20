@@ -94,7 +94,7 @@ export function streetMeshes(box: { x0: number; z0: number; x1: number; z1: numb
       const mz = l.az + ((l.bz - l.az) * (t + t1)) / 2 / len;
       if (!inside(mx, mz)) continue;
       strip(asphalt, l, t, t1, 0, 2 * h, 5, LIFT);
-      // Edge lines just inside the asphalt's edges, broken where another street joins.
+      // Edge lines just inside the asphalt's edges.
       for (const s of [-1, 1]) strip(paint, l, t, t1, s * (h - 0.45), 0.15, 2, PAINT);
       // A dashed centre line on a street of two lanes: 3 m painted, 3 m bare.
       if (h >= 4 && Math.floor(t / 3) % 2 === 0) strip(paint, l, t, t1, 0, 0.15, 2, PAINT);

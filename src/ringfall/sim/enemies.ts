@@ -1,5 +1,5 @@
 import { ALLY, AWARE, CHARGER, COVER, DEG, DODGE, DUCK, ELITE, ENEMIES, FALLBACK, PACK, PARTY, PINCH, PLAYER, PURSUE, SHOT, SIGHT, STAGGER, TICK, TITAN, TURN, WORLD, type EnemyKind, type Rarity } from "./config";
-import { clampToWorld, collide, dist2d, groundAt, groundLevel, los, lookAngles, onTerrain, solidAt, wrapAngle } from "./geom";
+import { clampToWorld, collide, dist2d, fenceBetween, groundAt, groundLevel, los, lookAngles, onTerrain, solidAt, wrapAngle } from "./geom";
 import { steepAt, terrainHeight } from "./terrain";
 import { engageSquad, fireRange, headOf, knownSpot, located, pursuitSpot, sense, stepSquads } from "./awareness";
 import { coversNear, type CoverPoint } from "./cover";
@@ -292,8 +292,8 @@ export function stepEnemies(s: State) {
     switch (e.mode) {
       case "move": {
         const sees = known.live && facing(e, tPos) && los(muzzle(e), tChest);
-        // Out of sight it closes in by the ground's way, round the cliff or the house between.
-        const via = sees ? known : (afterVia ?? (after ? after : huntStep(s, e, known)));
+        // Out of sight, or seen through a fence, it closes in by the ground's way, round the cliff, the house or the fence between.
+        const via = sees && !fenceBetween(e.pos, tPos) ? known : (afterVia ?? (after ? after : huntStep(s, e, known)));
         const vd = Math.hypot(via.x - e.pos.x, via.z - e.pos.z) || 1e-3;
         const ux = (via.x - e.pos.x) / vd;
         const uz = (via.z - e.pos.z) / vd;
