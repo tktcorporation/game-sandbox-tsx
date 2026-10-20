@@ -1,5 +1,5 @@
-import { ISLAND } from "./config";
-import { POIS, type Squad } from "./map";
+import { ISLAND, NETWORK } from "./config";
+import { PACKS, POIS, REGIONS, regionHere, type Squad } from "./map";
 import { mix } from "./state";
 
 /*
@@ -35,3 +35,28 @@ export function garrison(poi: number, hold: PoiHold, seed: number): Squad[] {
   // In authored order, so the squads come up in the raid as they would held.
   return all.filter((sq) => kept.has(sq));
 }
+
+/** A hash of the raid's seed and a salt, for choices that must not draw on the raid's random numbers. */
+const seeded = (seed: number, salt: number, k: number) => mix(Math.imul(seed + 1, 0x9e3779b1) ^ Math.imul(salt, 0x85ebca6b) ^ Math.imul(k + 1, 0xc2b2ae35));
+
+/**
+ * The drone packs flying in a raid from `seed` at network `level`: in each region, as many of
+ * its packs as the level gives, picked from the seed. All of them at the levels that fly every pack.
+ */
+export function activePacks(seed: number, level: number): Squad[] {
+  const want = NETWORK.levels[level].packs;
+  const keep = new Set<Squad>();
+  for (const r of REGIONS) {
+    const mine = PACKS.map((sq, i) => ({ sq, i })).filter(({ sq }) => regionHere(sq.patrol?.[0] ?? { x: 0, z: 0 }).id === r.id);
+    const n = Math.min(mine.length, want[r.id]);
+    if (n >= mine.length) mine.forEach(({ sq }) => keep.add(sq));
+    else [...mine].sort((a, b) => seeded(seed, 0x51, a.i) - seeded(seed, 0x51, b.i)).slice(0, n).forEach(({ sq }) => keep.add(sq));
+  }
+  return PACKS.filter((sq) => keep.has(sq));
+}
+
+/** Whether a plain grunt or heavy numbered `id` in a raid from `seed` wears a tier-1 plate at network `level`. */
+export const netPlated = (seed: number, level: number, id: number) => {
+  const share = NETWORK.levels[level].plate;
+  return share > 0 && (seeded(seed, 0x9a, id) % 10_000) / 10_000 < share;
+};

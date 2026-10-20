@@ -1204,6 +1204,48 @@ export function buildDepot(): { root: THREE.Group; lamp: THREE.Mesh; slot: THREE
 }
 
 /**
+ * A relay mast of the robots' network, `height` metres to its eye: a three-legged lattice in the
+ * robots' armour blue on a concrete footing, braced every few metres, tapering to a housing with
+ * the red eye on top and a halo round it, so a standing mast reads from across the open ground.
+ * Its post (the legs, within `radius`) is what a shot hits; the eye is its weak point.
+ */
+export function buildRelayMast(height: number, radius: number, eyeR: number): { root: THREE.Group; eye: THREE.Mesh; halo: THREE.Sprite } {
+  const root = new THREE.Group();
+  root.add(mesh(new THREE.CylinderGeometry(radius + 0.7, radius + 0.9, 0.4, 6), flat(PAL.concreteDark), 0, 0.2, 0));
+  const legMat = flat(PAL.armor);
+  const braceMat = flat(PAL.armorLight);
+  const at = (k: number, y: number) => {
+    // A leg's distance from the axis narrows from the footing to the housing.
+    const r = radius * (1 - (y / height) * 0.65);
+    const a = (k / 3) * Math.PI * 2;
+    return new THREE.Vector3(Math.cos(a) * r, y, Math.sin(a) * r);
+  };
+  const strut = (a: THREE.Vector3, b: THREE.Vector3, w: number, mat: THREE.Material) => {
+    const d = b.clone().sub(a);
+    const m = mesh(new THREE.CylinderGeometry(w, w, d.length(), 5), mat);
+    m.position.copy(a.clone().add(b).multiplyScalar(0.5));
+    m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize());
+    return m;
+  };
+  const top = height - eyeR * 0.9;
+  for (let k = 0; k < 3; k++) root.add(strut(at(k, 0.3), at(k, top), 0.09, legMat));
+  for (let y = 1.6; y < top - 0.5; y += 2.2)
+    for (let k = 0; k < 3; k++) {
+      root.add(strut(at(k, y), at(k + 1, y), 0.045, braceMat));
+      root.add(strut(at(k, y), at(k + 1, y + 2.2), 0.035, braceMat));
+    }
+  root.add(mesh(new THREE.CylinderGeometry(radius * 0.45, radius * 0.6, 0.9, 6), flat(PAL.armor), 0, top, 0));
+  root.add(mesh(new THREE.CylinderGeometry(radius * 0.8, radius * 0.8, 0.12, 8), flat(PAL.gun), 0, top - 0.5, 0));
+  const eye = new THREE.Mesh(new THREE.SphereGeometry(eyeR, 14, 10), glow(PAL.eye));
+  eye.position.set(0, height + eyeR * 0.6, 0);
+  root.add(eye);
+  const halo = haloSprite(PAL.eye, eyeR * 7, 0.65);
+  halo.position.copy(eye.position);
+  root.add(halo);
+  return { root, eye, halo };
+}
+
+/**
  * The mark of a way in on foot: a cold campfire ring with a signboard behind it, the camp the
  * player and the teammate set out from. It is only scenery: nothing in it is solid, and it does
  * not glow, so it is found by walking the open ground, not seen from afar. The board faces +z.

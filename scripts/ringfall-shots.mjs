@@ -1145,6 +1145,95 @@ const readOf = async (pg) => JSON.parse(await pg.evaluate(() => window.render_ga
 }
 
 /*
+ * The network some days in, at level 4: the camp's map table flags it and shows the meter and
+ * 明日の島 (the network's rise, a thin quarry the network will take back); in the raid the relay
+ * masts stand, on the map and in the world; shooting the named mast down does the destroy
+ * contract, and the results show the network's change and its causes. The phone looks at the
+ * map table and the raid's map.
+ */
+{
+  /** Where each mast is seen whole from, on open ground (the view checked against the boxes in the sim). */
+  const MAST_VIEW = { west: [-150, 322], east: [150, 218], salt: [-90, -778], hill: [90, -808] };
+  const netGame = {
+    v: 15, cash: 3200, stash: [], raids: 11, extracted: 8, time: 6000, region: "reservoir", entry: "beach", entries: ["beach", "checkpoint", "jetty", "outskirts", "quay", "shore"], seed: 4321, day: 12,
+    network: 4, pressure: 1.5, depots: ["supply"],
+    quests: { progress: {}, done: ["grunts", "village", "power", "parts"] },
+    hideout: { generator: 1, infirmary: 1, workbench: 0, storage: 0, radio: 0, pouch: 0, craft: 0 },
+    records: [],
+    poiState: { supply: { state: "freed", lastVisit: 11, since: 0 }, quarry: { state: "thin", lastVisit: 8, since: 11 } },
+  };
+  for (const phone of [false, true]) {
+    const ctx = await browser.newContext(phone ? { viewport: { width: 740, height: 360 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true } : { viewport: { width: 1280, height: 720 } });
+    const pg = await withProfile(ctx, netGame);
+    await toCamp(pg, phone);
+    const cdp = phone ? await ctx.newCDPSession(pg) : undefined;
+    const c0 = await readOf(pg);
+    if (!/網 4/.test(c0.camp?.marks.map ?? "") || c0.profile.network !== 4) errors.push(`network: at level 4 the map table's mark reads "${c0.camp?.marks.map}" (network ${c0.profile.network})`);
+    await useStation(pg, "map", cdp);
+    const meter = await pg.textContent("#hub-side .hub-net");
+    const tomorrow = await pg.textContent("#hub-side .tomorrow");
+    if (!/網 4/.test(meter) || (await pg.locator("#hub-side .net-meter i.on").count()) !== 5) errors.push(`network: the meter reads "${meter}"`);
+    if (!/採掘場は手薄。網が強く/.test(tomorrow) || !/網は/.test(tomorrow)) errors.push(`network: 明日の島 reads "${tomorrow}"`);
+    const fit = await spills(pg);
+    if (fit.length) errors.push(`network map table${phone ? " on a phone" : ""}: ${[...new Set(fit)].join(", ")}`);
+    await pg.locator("#hub-side .hub-net").scrollIntoViewIfNeeded();
+    await pg.screenshot({ path: `${out}/${phone ? "m17" : "52"}-map-network.png` });
+    await closePanel(pg, phone);
+    const id = await pg.evaluate(() => window.ringfallContract.take("destroy"));
+    if (!id) errors.push("network: the board at level 4 offers no mast to destroy");
+    await walkOutOfGate(pg);
+    await pg.evaluate(() => window.advanceTime(3000));
+    const r0 = await readOf(pg);
+    if (r0.network !== 4 || r0.relays.length !== 4 || r0.contract?.t !== "destroy") errors.push(`network: a raid at level 4 stands ${r0.relays.length} masts at network ${r0.network}, contract ${JSON.stringify(r0.contract)}`);
+    await pg.keyboard.press("KeyM");
+    await pg.evaluate(() => window.advanceTime(100));
+    await draw(pg);
+    await pg.screenshot({ path: `${out}/${phone ? "m17" : "53"}-map-relay.png` });
+    await pg.keyboard.press("KeyM");
+    await pg.evaluate(() => window.advanceTime(100));
+    if (!phone) {
+      // The named mast from a spot of open ground with a clear view of it (the scattered cover
+      // stands close round some), a little raised, looking up at its eye; the player stands there.
+      const m = r0.relays.find((x) => x.id === r0.contract?.relay) ?? r0.relays[0];
+      const [vx, vz] = MAST_VIEW[m.id];
+      const yaw = Math.atan2(m.x - vx, -(m.z - vz));
+      const cam = () => pg.evaluate(([x, z, w, q]) => window.ringfallCamera(x, window.ringfallTerrain(x, z) + 4.5, z, w, 0.22 + 0 * q.y), [vx, vz, yaw, m]);
+      await pg.evaluate(([x, z, w]) => window.ringfallPlace(x, z, w), [vx, vz, yaw]);
+      await pg.evaluate(() => window.advanceTime(200));
+      await cam();
+      await draw(pg);
+      await pg.screenshot({ path: `${out}/54-relay-mast.png` });
+      await pg.evaluate(() => window.ringfallCamera());
+      const shots = await pg.evaluate(() => window.ringfallContract.destroyTarget());
+      const r1 = await quietStep(pg, 600);
+      if (!shots || r1.relays.find((x) => x.id === m.id)?.hp !== 0 || !r1.contract?.met || !r1.stats.relays.includes(m.id)) errors.push(`network: shooting the mast (${shots} shots) left ${JSON.stringify({ relay: r1.relays.find((x) => x.id === m.id), contract: r1.contract })}`);
+      await cam();
+      await draw(pg);
+      await pg.screenshot({ path: `${out}/55-relay-down.png` });
+      await pg.evaluate(() => window.ringfallCamera());
+      // At the supply depot's start, freed and on: an empty bag leaves the raid there.
+      await pg.evaluate(() => window.ringfallPlace(0, 554.5, 0));
+      await pg.evaluate(() => window.advanceTime(300));
+      const leave = await pg.textContent("#prompt");
+      await pg.keyboard.press("KeyE");
+      await pg.evaluate(() => window.advanceTime(1000));
+      const going = await readOf(pg);
+      if (going.leaving === null) errors.push(`network: at the supply depot the prompt reads "${leave}" and the use key did not start leaving`);
+      await pg.evaluate(() => window.advanceTime(5000));
+      await pg.waitForFunction(() => !document.getElementById("results").hidden, null, { timeout: 10000 }).catch(() => undefined);
+      const r2 = await readOf(pg);
+      const home = await pg.textContent("#home");
+      if (r2.screen !== "results" || r2.settled?.network?.relays !== 1 || r2.settled?.contract?.t !== "destroy" || !r2.settled.contract.done || !/中継器 −1/.test(home)) errors.push(`network: the results after the mast read ${JSON.stringify({ screen: r2.screen, settled: r2.settled && { network: r2.settled.network, contract: r2.settled.contract } })}`);
+      await pg.screenshot({ path: `${out}/56-results-network.png` });
+      await pg.locator("#home .net-change").scrollIntoViewIfNeeded();
+      await pg.screenshot({ path: `${out}/56-results-network-detail.png` });
+    }
+    await ctx.close();
+  }
+  lap("network");
+}
+
+/*
  * A depot: the base offers the depots on as starts, the raid begins on the ground beside one
  * with its prompt, the map lies under fog except round where the player has been, and leaving
  * there ends the raid as extracted at that depot.
@@ -1339,7 +1428,8 @@ const islandDay = {
   await useStation(pg, "map");
   await pg.waitForTimeout(300);
   const lines = await pg.locator("#hub-side .tomorrow li").allTextContents();
-  if (lines.length < 3 || !/補給所は次のレイドで訪れないと手薄になる/.test(lines[0]) || !lines.some((l) => /採掘場は手薄/.test(l))) errors.push(`island: the map table's 明日の島 reads ${JSON.stringify(lines)}`);
+  // The network's next step comes first, then the POIs, the most pressing first.
+  if (lines.length < 4 || !/^網は/.test(lines[0]) || !/補給所は次のレイドで訪れないと手薄になる/.test(lines[1]) || !lines.some((l) => /採掘場は手薄/.test(l))) errors.push(`island: the map table's 明日の島 reads ${JSON.stringify(lines)}`);
   const fit = await spills(pg);
   if (fit.length) errors.push(`island map table (1280x720): ${fit.join(", ")}`);
   await pg.screenshot({ path: `${out}/71-island-panel.png` });

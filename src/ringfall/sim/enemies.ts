@@ -10,11 +10,11 @@ const LEDGE = 1.0;
 /** Walkers posted on the ground climb no higher than this above the terrain (stairs onto a roof). */
 const CLIMB = 1.2;
 const bodyHeight = (k: { bodyY: number; radius: number }) => k.bodyY + k.radius;
-import { inCamp, PACKS, PARTY_STOPS, POIS, ROAMERS, type Squad } from "./map";
+import { inCamp, PARTY_STOPS, POIS, RELAYS, relayIndex, ROAMERS, type Squad } from "./map";
 import { bodyCenter, weakPoint } from "./combat";
 import { hurtPlayer } from "./player";
 import { allyChest, allyUp, hurtAlly } from "./ally";
-import { garrison } from "./island";
+import { activePacks, garrison, netPlated } from "./island";
 import { rand, roamRand, weakY, type Enemy, type Point, type State, type Vec3 } from "./state";
 
 /*
@@ -52,8 +52,11 @@ export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi:
   const draw = o.roam ? roamRand : rand;
   const pos = spawnSpot(kind, x, z, o.floor);
   const face = o.face ?? draw(s) * Math.PI * 2;
+  const id = s.nextId++;
+  // A strong network plates some of the plain grunts and heavies, picked without drawing on the raid's numbers.
+  const plate = o.plate ?? ((kind === "grunt" || kind === "heavy") && !o.elite && netPlated(s.seed, s.network, id) ? 1 : 0);
   const e: Enemy = {
-    id: s.nextId++,
+    id,
     kind,
     pos,
     vel: { x: 0, y: 0, z: 0 },
@@ -85,7 +88,7 @@ export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi:
     targetT: 0,
     allyHit: 99,
     elite: !!o.elite,
-    plate: o.plate ?? 0,
+    plate: plate as Rarity,
     strafeT: draw(s),
     jink: 0,
     stagger: 0,
@@ -115,9 +118,12 @@ export function populate(s: State) {
   // A POI stands with the garrison its standing on the island gives it (`garrison()`).
   POIS.forEach((_, i) => garrison(i, s.hold[i], s.seed).forEach((sq) => add(sq, i)));
   ROAMERS.forEach((sq) => add(sq, -1));
+  // Each relay mast standing this raid has its two guards at its foot.
+  for (const m of s.relays) add(RELAYS[relayIndex(m.id)].guards, -1);
   // Each drone pack starts at a waypoint of its loop well away from the player, and flies on from there.
   const p0 = s.player.pos;
-  for (const sq of PACKS) {
+  // As many packs fly as the network gives (`activePacks()`): all of them at the sim gate's level.
+  for (const sq of activePacks(s.seed, s.network)) {
     const loop = sq.patrol ?? [];
     const far = loop.map((_, i) => i).filter((i) => dist2d(loop[i], p0) >= PACK.away);
     const leg = far[Math.floor(roamRand(s) * far.length)] ?? 0;

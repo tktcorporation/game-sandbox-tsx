@@ -1,5 +1,5 @@
-import { ALLY, BOOST, DEPOT, DUCK, ELITE, ENEMIES, META, RAIDERS, REINFORCE, VALUABLES, WORLD, type ValuableKind, PLAYER, ULT, type EnemyKind, type Flank, type HealKind, type Rarity, type ToolKind, type WeaponKind } from "./config";
-import { DEPOTS, depotIndex, entryOf, EXTRA_BINS, POIS, poiIndex, poiRegion, recordSpot, regionOf, type EntryId, type ExtractId, type PoiId, type RecordId, type RegionId, type RouteId } from "./map";
+import { ALLY, BOOST, DEPOT, DUCK, ELITE, ENEMIES, META, NETWORK, RELAY, VALUABLES, WORLD, type ValuableKind, PLAYER, ULT, type EnemyKind, type Flank, type HealKind, type Rarity, type ToolKind, type WeaponKind } from "./config";
+import { DEPOTS, depotIndex, entryOf, EXTRA_BINS, POIS, poiIndex, poiRegion, recordSpot, regionOf, type EntryId, type ExtractId, type PoiId, type RecordId, type RegionId, type RelayId, type RouteId, RELAYS } from "./map";
 import { openRoutes, useRoutes } from "./routes";
 import { populate } from "./enemies";
 import { placeParties } from "./world";
@@ -353,6 +353,8 @@ export type GameEvent =
   | { t: "shieldBreak"; id: number; pos: Vec3; tier: Rarity }
   /** A robot reels from the damage it took; a wind-up it was in is lost. `fromX/Z` is where the shot came from. */
   | { t: "stagger"; id: number; pos: Vec3; fromX: number; fromZ: number; interrupted: boolean }
+  | { t: "relayHit"; id: RelayId; pos: Vec3; dmg: number; eye: boolean }
+  | { t: "relayDown"; id: RelayId; pos: Vec3 }
   | { t: "kill"; id: number; kind: EnemyKind; pos: Vec3; crit: boolean; last: boolean; ally: boolean; /** Where the killing shot came from, so the wreck falls away from it. */ fromX: number; fromZ: number }
   | { t: "allyShot"; from: Vec3; to: Vec3; hit: boolean }
   | { t: "allyHurt"; dmg: number }
@@ -443,6 +445,18 @@ export interface Stats {
   vaults: number[];
   /** Squads destroyed to the last member, by `squadKey()`: an intercept contract names one. */
   wiped: string[];
+  /** Relay masts destroyed, in the order they fell: each takes the network a step down overnight. */
+  relays: RelayId[];
+}
+
+/** A relay mast standing in the raid (`RELAYS`, `RELAY`): its health, 0 once destroyed. */
+export interface RelayMast {
+  id: RelayId;
+  x: number;
+  /** The ground at its foot. */
+  y: number;
+  z: number;
+  hp: number;
 }
 
 /**
@@ -515,6 +529,10 @@ export interface State {
   reinforceN: number;
   /** Seconds until the raiders beam in (Infinity once they have). */
   raiderT: number;
+  /** The robots' network level the raid is played at (`NETWORK.levels`): it sets the hunters' times and numbers. */
+  network: number;
+  /** The relay masts standing this raid, destroyed ones with no health left; none below `NETWORK.relayAt`. */
+  relays: RelayMast[];
   /** This raid's POI whose bins lean to a rare kind (`BOOST`), as a POI index. */
   boost: { poi: number; kind: ValuableKind };
   /**
@@ -683,7 +701,12 @@ export interface Start {
   record?: RecordId;
   /** The fetch contract taken: `n` of its POI's bins hold its valuable this raid (`State.fetch`). */
   fetch?: { poi: PoiId; kind: ValuableKind; n: number };
+  /** The robots' network level (0 to 5); left out, `NETWORK.play`, the level the sim gate plays. */
+  network?: number;
 }
+
+/** What a network level sets in a raid. */
+export const netLevel = (s: Pick<State, "network">) => NETWORK.levels[s.network];
 
 /**
  * A raid in `region`, on the ground with the teammate beside the player: at one of the region's
@@ -697,6 +720,8 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
   // same spots: a raid starts with none, so it plays the same whatever was played before it.
   forgetFields();
   const hold = POIS.map((p): PoiHold => (p.boss ? "held" : (start.island?.[p.id] ?? "held")));
+  const network = Math.max(0, Math.min(NETWORK.max, Math.round(start.network ?? NETWORK.play)));
+  const level = NETWORK.levels[network];
   const freed = (poi: PoiId) => hold[poiIndex(poi)] === "freed";
   // A freed POI's depot is on, so a raid may start from it too.
   const depotsOn = DEPOTS.map((d) => !!start.depots?.includes(d.poi) || freed(d.poi));
@@ -785,9 +810,11 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
     // A freed POI has nothing left to clear: it is not cleared again, and does not count as cleared this raid.
     cleared: hold.map((h) => h === "freed"),
     hold,
-    reinforceT: REINFORCE.first,
+    reinforceT: level.reinforce.first,
     reinforceN: 0,
-    raiderT: RAIDERS.at,
+    raiderT: level.raiders,
+    network,
+    relays: network >= NETWORK.relayAt ? RELAYS.map((r) => ({ id: r.id, x: r.x, y: groundAt(r.x, r.z, 0.3, 99), z: r.z, hp: RELAY.hp })) : [],
     boost: boostFor(seed, region),
     fetch: fetchBins(seed, bins, start.fetch),
     outcome: null,
@@ -809,7 +836,7 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
     seen: start.seen ? decodeSeen(start.seen) : emptySeen(),
     cell: -1,
     events: [],
-    stats: { kills: 0, damage: 0, shots: 0, hits: 0, crits: 0, flankHits: 0, titanHits: 0, downs: 0, wipes: 0, cleared: [], allyDamage: 0, allyKills: 0, allyDowns: 0, allyRescues: 0, allyHelped: 0, killsBy: { drone: 0, grunt: 0, charger: 0, heavy: 0, titan: 0 }, vaults: [], wiped: [] },
+    stats: { kills: 0, damage: 0, shots: 0, hits: 0, crits: 0, flankHits: 0, titanHits: 0, downs: 0, wipes: 0, cleared: [], allyDamage: 0, allyKills: 0, allyDowns: 0, allyRescues: 0, allyHelped: 0, killsBy: { drone: 0, grunt: 0, charger: 0, heavy: 0, titan: 0 }, vaults: [], wiped: [], relays: [] },
   };
   if (from) {
     const p = s.player;

@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { DUCK, ENEMIES, PLAYER, TITAN, WEAPONS, WORLD, type EnemyKind } from "../sim/config";
+import { DUCK, ENEMIES, PLAYER, RELAY, TITAN, WEAPONS, WORLD, type EnemyKind } from "../sim/config";
 import { BOXES, CAMP, DEPOTS, ENTRIES, EXTRACTS, ROUTES, type Box } from "../sim/map";
 import { worldKey } from "../sim/routes";
 import { groundAt } from "../sim/geom";
@@ -10,7 +10,7 @@ import { QUALITY, type Quality, type Tier } from "./quality";
 import { SHADE, contactAt, coverAt, floorUnder } from "./shade";
 import { GroundScatter } from "./scatter";
 import { trimBox, type TrimPiece, type TrimSite } from "./trim";
-import { PAL, RARITY_COLOR, SCOPE_IN, buildAlly, buildBin, buildBoat, buildStatic, buildDepot, buildEntryMark, mergeChunk, mergeTrim, type ChunkShade, buildCare, buildDropship, buildEnemy, buildGun, buildHands, buildLootItem, addPlates, flat, glow, haloSprite, type EnemyModel } from "./models";
+import { PAL, RARITY_COLOR, SCOPE_IN, buildAlly, buildBin, buildBoat, buildStatic, buildDepot, buildEntryMark, buildRelayMast, mergeChunk, mergeTrim, type ChunkShade, buildCare, buildDropship, buildEnemy, buildGun, buildHands, buildLootItem, addPlates, flat, glow, haloSprite, type EnemyModel } from "./models";
 
 /*
  * Renders a State in first person. It reads the state and the tick's events and
@@ -210,6 +210,8 @@ export class World {
   private allyWalk = 0;
   private loot = new Map<number, THREE.Group>();
   private bins = new Map<number, ReturnType<typeof buildBin>>();
+  /** The relay masts standing in the raid, by id; a destroyed one is left as its stump. */
+  private masts = new Map<string, ReturnType<typeof buildRelayMast> & { down: boolean }>();
   private orbPool: THREE.Group[] = [];
   private wavePool: THREE.Mesh[] = [];
   private tracers: Tracer[] = [];
@@ -952,6 +954,15 @@ export class World {
           this.shake = Math.max(this.shake, 0.5);
           this.burst({ x: e.x, y: (s.care?.y ?? terrainHeight(e.x, e.z)) + 0.2, z: e.z }, PAL.sand, 40, 7, 0.14, 8, 1.0);
           break;
+        case "relayHit":
+          this.burst(e.pos, e.eye ? PAL.eye : 0xffc070, e.eye ? 8 : 5, 5, 0.06, 8, 0.35);
+          break;
+        case "relayDown":
+          this.burst(e.pos, PAL.eye, 30, 8, 0.1, 6, 0.9);
+          this.burst(e.pos, PAL.armorLight, 40, 9, 0.16, 14, 1.4);
+          this.shake = Math.max(this.shake, 0.6);
+          hitstop = Math.max(hitstop, 0.08);
+          break;
         case "binOpen":
           break;
         case "spawn":
@@ -1241,6 +1252,23 @@ export class World {
       (v.seam.material as THREE.MeshBasicMaterial).color.setHex(b.open ? 0x3a3f4a : 0xffffff);
     }
     for (const m of this.entryMarks) near(m);
+    for (const r of s.relays) {
+      let v = this.masts.get(r.id);
+      if (!v) {
+        v = { ...buildRelayMast(RELAY.height, RELAY.radius, RELAY.eyeR), down: false };
+        v.root.position.set(r.x, r.y, r.z);
+        this.masts.set(r.id, v);
+        this.scene.add(v.root);
+      }
+      // A destroyed mast falls to a stump below its first braces: the eye and the lattice above it go.
+      if (r.hp <= 0 && !v.down) {
+        v.down = true;
+        v.eye.visible = v.halo.visible = false;
+        v.root.scale.y = 0.18;
+      }
+      // A standing eye pulses slowly, the robots' red.
+      if (!v.down) v.halo.material.opacity = 0.5 + 0.2 * Math.sin(this.time * 2.4);
+    }
     this.depots.forEach((v, i) => {
       if (!near(v.root)) return;
       const on = !!s.depots[i];
@@ -1416,6 +1444,8 @@ export class World {
     this.loot.clear();
     for (const b of this.bins.values()) this.scene.remove(b.root);
     this.bins.clear();
+    for (const m of this.masts.values()) this.scene.remove(m.root);
+    this.masts.clear();
     if (this.care) this.scene.remove(this.care);
     this.care = null;
     this.careBeam.visible = false;
