@@ -1952,8 +1952,14 @@ function longLine(dist: number): { p: { x: number; z: number }; g: { x: number; 
         const sx = Math.cos(a) * 2.5;
         const sz = Math.sin(a) * 2.5;
         if (!ok(gx, gz) || !ok(gx + sx, gz + sz) || Math.abs(terrainHeight(gx, gz) - terrainHeight(x, z)) > 3) continue;
-        const chest = { x, y: terrainHeight(x, z) + 1.1, z };
-        if (!los(chest, { x: gx, y: terrainHeight(gx, gz) + KINDS.grunt.weakY, z: gz }) || !los(chest, { x: gx + sx, y: terrainHeight(gx + sx, gz + sz) + KINDS.grunt.weakY, z: gz + sz })) continue;
+        // Clear from the player's knees to their head to each grunt's legs and eyes: open ground
+        // between, not a line that only grazes over a crest at one height.
+        const seen = [0.5, 1.1, 1.6].every((py) =>
+          [[gx, gz], [gx + sx, gz + sz]].every(([qx, qz]) =>
+            [1.0, KINDS.grunt.weakY].every((qy) => los({ x, y: terrainHeight(x, z) + py, z }, { x: qx, y: terrainHeight(qx, qz) + qy, z: qz })),
+          ),
+        );
+        if (!seen) continue;
         return { p: { x, z }, g: { x: gx, z: gz } };
       }
     }

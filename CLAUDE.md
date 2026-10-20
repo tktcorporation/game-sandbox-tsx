@@ -218,11 +218,18 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   joined to `ROAMERS`) and its whole yard pressed flat. From them the works run to the POIs
   (`WORKS_LINES`, laid once the ground is built): power lines on pylons, pipelines high enough to
   walk under, and a freight line and its spur with wagons left on them as cover.
+  Streets (`STREETS` in `streets.ts`) join the POIs, outposts, hamlets and ways in over the open
+  ground. They change no ground: `scripts/ringfall-roads.ts` routes them round cliffs, high ground,
+  water and `BUILT` (everything placed before the scatter) and prints the lines pasted into
+  `STREETS` from `ROUTE_PLAN`; the view lays their asphalt and paint (`view/streets.ts`, merged into
+  each chunk), the world map draws them, and `STREET_SIDE` in `map.ts` lines them with lamp posts,
+  signposts and queues of abandoned traffic. `offStreet()` is the lookup the scatter and the view use.
   `scatterCover()` then fills the open ground with set pieces in real sizes (sandbag lines,
   road-barrier rows, pallet stacks, container clusters, wrecked trucks, rock outcrops and roofless
   ruins, the vehicles and small things as `prop` boxes drawn by `buildProp()`), each
-  region from its own grid and seed (`SCATTER`), sparse on the salt flats and only in clumps
-  (`clump()`) on the ground between, keeping clear of
+  region from its own grid and seed (`SCATTER`), sparse on the salt flats, off the streets'
+  asphalt, and on the ground between gathered along the streets with only a few clumps
+  (`clump()`) away from them, keeping clear of the stops and parties' stops (`STOPS`, `PARTY_STOPS`),
   authored points, patrol routes and the roads that are the only ways between areas (`KEPT_ROADS`,
   also pressed to their own floor). Its clearance tests and the terrain's shapes are looked up in
   spatial buckets (`Near` in `map.ts`, `BUCKETS` in `terrain.ts`, checked against a full scan by

@@ -1,5 +1,6 @@
 import { VAULT, WORLD, type EnemyKind, type HealKind, type Rarity, type ToolKind, type ValuableKind, type WeaponKind } from "./config";
 import { AREA, inArea, POI_AT, type AreaId } from "./areas";
+import { LENGTHS, offStreet, STREETS } from "./streets";
 import { buildTerrain, type Carve, type FlatShape, floorLevel, highGround, LEVEL, offshore, roadLine, steepAt, surfaceAt, terrainHeight } from "./terrain";
 
 /**
@@ -3385,7 +3386,9 @@ function scatterCover(authored: Box[], { points, segments }: Keep): Box[] {
   for (const b of authored) near.authored.add(b.x0, b.z0, b.x1, b.z1, b);
   // Each depot keeps room round it and round the start behind it.
   const depots = POIS.map((p) => ({ ...depotSpot(p), r: 6 }));
-  for (const q of [...points, ...depots]) near.points.add(q.x - q.r, q.z - q.r, q.x + q.r, q.z + q.r, q);
+  // Where a raid stops and where hunting parties stand stay open too, without pressing the ground.
+  const stops = [...STOPS, ...Object.values(PARTY_STOPS).flat()].map((q) => ({ x: q.x, z: q.z, r: 8 }));
+  for (const q of [...points, ...depots, ...stops]) near.points.add(q.x - q.r, q.z - q.r, q.x + q.r, q.z + q.r, q);
   // A trench's line keeps cover off as far as its walls may lower the ground.
   for (const c of [TUNNEL, GALLERY]) {
     const [[ax, az], [bx, bz]] = c.line;
@@ -3559,9 +3562,12 @@ function scatterArea(near: Clearance, area: (typeof SCATTER)[number]): Box[] {
       const at = surfaceAt(x, z);
       const sparse = SPARSE.has(at);
       if ((sparse && rnd() > 0.5) || at === WATER) continue;
-      // The ground between the areas is bare but for clumps of cover a hundred metres or so
-      // across, some way apart: open stretches to cross, and somewhere to break the sightline.
-      if (at === BETWEEN && (rnd() > 0.6 || clump(x, z) < 0.55)) continue;
+      // The streets' asphalt stays clear. On the ground between the areas, cover gathers along
+      // the streets (what was left by the roadside) and in a few clumps a hundred metres or so
+      // across away from them: open country to cross, broken by places to break the sightline.
+      const road = offStreet(x, z);
+      if (road < 2) continue;
+      if (at === BETWEEN && (road < 22 ? rnd() > 0.55 || clump(x, z) < 0.45 : rnd() > 0.4 || clump(x, z) < 0.62)) continue;
       const piece = sparse ? wreckAt(x, z) : pieceAt(x, z);
       const base = groundUnder(piece);
       if (base === null) continue;
@@ -3574,7 +3580,8 @@ function scatterArea(near: Clearance, area: (typeof SCATTER)[number]): Box[] {
           near.authored.every(b.x0 - 3, b.z0 - 3, b.x1 + 3, b.z1 + 3, clear(b, 3)) &&
           near.laid.every(b.x0 - 2.5, b.z0 - 2.5, b.x1 + 2.5, b.z1 + 2.5, clear(b, 2.5)) &&
           near.points.every(b.x0, b.z0, b.x1, b.z1, (q) => distToBox(b, q.x, q.z) > q.r) &&
-          near.along.every(b.x0, b.z0, b.x1, b.z1, (q) => distToBox(b, q.x, q.z) >= 2.5),
+          near.along.every(b.x0, b.z0, b.x1, b.z1, (q) => distToBox(b, q.x, q.z) >= 2.5) &&
+          [[b.x0, b.z0], [b.x1, b.z0], [b.x0, b.z1], [b.x1, b.z1], [(b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2]].every(([px, pz]) => offStreet(px, pz) > 0.8),
       );
       if (ok) {
         placed.push(...piece);
@@ -3836,7 +3843,91 @@ const WORKS_LINES: Box[] = (() => {
   return out;
 })();
 
-export const BOXES: Box[] = [...AUTHORED, ...BRIDGE, ...RAILWAY, ...QUAY, ...LAID, ...WORKS_LINES, ...scatterCover([...AUTHORED, ...BRIDGE, ...RAILWAY, ...QUAY, ...LAID, ...WORKS_LINES], KEEP)];
+/**
+ * What lines the streets (streets.ts), laid on the ground once it is built: lamp posts along every
+ * length on alternate sides, a signpost where each street leaves its first junction, and traffic
+ * left where it stopped on the day the ring fell, a queue of cars and lorries in one lane of a
+ * street, the other lane left clear. Queues stand only on lengths that run along x or z (their
+ * vehicles are boxes along the axes) and away from bends, junctions and authored points.
+ */
+const STREET_SIDE: Box[] = (() => {
+  const out: Box[] = [];
+  const near = [...AUTHORED, ...BRIDGE, ...RAILWAY, ...QUAY, ...LAID, ...WORKS_LINES];
+  const free = (b: Box, gap: number) =>
+    !steepAt((b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2) &&
+    near.every((o) => o.x1 + gap <= b.x0 || b.x1 + gap <= o.x0 || o.z1 + gap <= b.z0 || b.z1 + gap <= o.z0 || o.y0 > terrainHeight((o.x0 + o.x1) / 2, (o.z0 + o.z1) / 2) + 3) &&
+    KEEP.points.every((q) => Math.hypot(Math.max(b.x0 - q.x, 0, q.x - b.x1), Math.max(b.z0 - q.z, 0, q.z - b.z1)) > q.r + 1);
+  const bends = STREETS.flatMap((st) => st.line);
+  const nearBend = (x: number, z: number, r: number) => bends.some(([bx, bz]) => Math.hypot(bx - x, bz - z) < r);
+  let seed = 9_041;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (const l of LENGTHS) {
+    const len = Math.hypot(l.bx - l.ax, l.bz - l.az);
+    const ux = (l.bx - l.ax) / len;
+    const uz = (l.bz - l.az) / len;
+    const h = l.street.half;
+    // Lamp posts every 40 m, alternate sides, their arms reaching over the road.
+    for (let t = 20, k = 0; t < len - 10; t += 40, k++) {
+      const s = k % 2 === 0 ? 1 : -1;
+      const x = l.ax + ux * t - uz * s * (h + 0.9);
+      const z = l.az + uz * t + ux * s * (h + 0.9);
+      if (offStreet(x, z) < 0.4 || nearBend(x, z, h + 6)) continue;
+      const g = terrainHeight(x, z);
+      const post = box(x, z, 0.22, 0.22, g + 7, "steel", 2, g - 0.3);
+      if (!free(post, 0.6)) continue;
+      // The arm along whichever axis points most nearly across the road, toward it.
+      const ax = Math.abs(uz) > Math.abs(ux);
+      const toward = ax ? Math.sign(uz * s) : -Math.sign(ux * s);
+      const arm = ax ? rect(Math.min(x, x + toward * 1.8), z - 0.08, Math.max(x, x + toward * 1.8), z + 0.08, g + 6.8, g + 7, "steel", 2) : rect(x - 0.08, Math.min(z, z + toward * 1.8), x + 0.08, Math.max(z, z + toward * 1.8), g + 6.8, g + 7, "steel", 2);
+      const head = ax ? box(x + toward * 1.8, z, 0.6, 0.3, g + 6.9, "steel", 4, g + 6.6) : box(x, z + toward * 1.8, 0.3, 0.6, g + 6.9, "steel", 4, g + 6.6);
+      out.push(post, arm, head);
+    }
+    // A queue of traffic: on lengths along an axis, one every 140 m or so, in one lane.
+    const alongX = Math.abs(ux) > 0.94;
+    const alongZ = Math.abs(uz) > 0.94;
+    if (!alongX && !alongZ) continue;
+    for (let t = 30 + rnd() * 40; t < len - 30; t += 120 + rnd() * 60) {
+      const lane = (rnd() < 0.5 ? 1 : -1) * h * 0.45;
+      const queue: Box[] = [];
+      let at = t;
+      const n = 3 + Math.floor(rnd() * 3);
+      for (let i = 0; i < n && at < len - 20; i++) {
+        const lorry = rnd() < 0.3;
+        const long = lorry ? 7.4 : 4.5;
+        const cx = l.ax + ux * (at + long / 2) - uz * lane;
+        const cz = l.az + uz * (at + long / 2) + ux * lane;
+        if (nearBend(cx, cz, h + 12)) break;
+        const g = terrainHeight(cx, cz);
+        const piece = lorry
+          ? alongX
+            ? [box(cx - (2.55 * Math.sign(ux)), cz, 2.3, 2.5, g + 3.0, "prop", PROP.cab, g), box(cx + (1.15 * Math.sign(ux)), cz, 5, 2.5, g + 2.3, "prop", PROP.bed, g)]
+            : [box(cx, cz - (2.55 * Math.sign(uz)), 2.5, 2.3, g + 3.0, "prop", PROP.cab, g), box(cx, cz + (1.15 * Math.sign(uz)), 2.5, 5, g + 2.3, "prop", PROP.bed, g)]
+          : [alongX ? box(cx, cz, 4.5, 1.9, g + 1.5, "prop", PROP.car, g) : box(cx, cz, 1.9, 4.5, g + 1.5, "prop", PROP.car, g)];
+        if (!piece.every((b) => free(b, 1.5))) break;
+        queue.push(...piece);
+        at += long + 1.5 + rnd() * 3;
+      }
+      if (queue.length >= 2) out.push(...queue);
+    }
+  }
+  // A signpost at the start of each street, on its right.
+  for (const st of STREETS) {
+    const [[x0, z0], [x1, z1]] = st.line;
+    const len = Math.hypot(x1 - x0, z1 - z0);
+    const ux = (x1 - x0) / len;
+    const uz = (z1 - z0) / len;
+    const x = x0 + ux * (st.half + 8) - uz * (st.half + 1.6);
+    const z = z0 + uz * (st.half + 8) + ux * (st.half + 1.6);
+    const g = terrainHeight(x, z);
+    const sign = [box(x, z, 0.16, 0.16, g + 3.2, "steel", 2, g - 0.3), Math.abs(ux) > Math.abs(uz) ? box(x, z, 0.1, 1.8, g + 3.3, "steel", 3, g + 2.3) : box(x, z, 1.8, 0.1, g + 3.3, "steel", 3, g + 2.3)];
+    if (offStreet(x, z) > 0.3 && sign.every((b) => free(b, 0.5))) out.push(...sign);
+  }
+  return out;
+})();
+
+/** Everything placed by hand or laid by rule, before the scattered cover fills the ground round it. */
+export const BUILT: Box[] = [...AUTHORED, ...BRIDGE, ...RAILWAY, ...QUAY, ...LAID, ...WORKS_LINES, ...STREET_SIDE];
+export const BOXES: Box[] = [...BUILT, ...scatterCover(BUILT, KEEP)];
 
 /** The bridge deck's height at (x, z) when it lies on a deck that path finding walks (DECKS), else null. */
 export function deckAt(x: number, z: number): number | null {
