@@ -37,10 +37,18 @@ own included; `stepEntries()` in `world.ts`, an `entryFound` event for the HUD's
 with no known way in and no depot on cannot be chosen (`canStartIn()`); the HUD and the world map
 are handed the known list (`Hud.setKnown()`), and each way in has a campfire and signboard in the
 view (scenery, no boxes).
-Robots are squads placed in the world from the start (`POIS[].squads`, two squads of two or three
-per POI (the pad holds the titan and its drones), and a few `ROAMERS` in `map.ts`, most of them patrolling the roads), plus reinforcements (`REINFORCE` in `config.ts`) that beam in
+Robots are squads placed in the world from the start (`POIS[].squads`, four squads per POI, of two
+robots but for the relay's equipment shed and the wreck's beach, which have three: eight or nine a
+POI, fought a squad or two at a time (the pad holds the titan and its drones)), and a few `ROAMERS` in `map.ts`, most of them patrolling the roads), drone
+packs that fly long loops over the ground between the POIs (`PACKS` in `map.ts`, `PACK` in
+`config.ts`: a squad's `sight` noticing from further than its kind's `SIGHT`), and hunting parties
+that walk from stop to stop of their region (`PARTY_STOPS` in `map.ts`, `PARTY` in `config.ts`,
+`stepParties()` in `world.ts`), replaced out of sight a while after they are wiped out; plus
+reinforcements (`REINFORCE` in `config.ts`) that beam in
 out of sight on a timer and come looking, and once per raid an elite squad (`RAIDERS` / `ELITE`)
-that flanks. Bins take time to search (`SEARCH`) and valuables fill a bag of `BAG.slots`. The HUD
+that flanks. The packs' starts and the parties' line-ups, stops, spawns and waits draw on a
+random stream of their own (`roamRand()`, `State.roamRng`), so they do not shift the rest of the
+raid's draws. Bins take time to search (`SEARCH`) and valuables fill a bag of `BAG.slots`. The HUD
 shows no markers or distances, and lists only the ways off of the region the player is in
 (`regionHere()`); the world map (`view/map.ts`, M) is where the POIs and exits of both regions are; it opens framed
 on the region the player is in (`Region.bounds`) and N switches it to the whole world.
@@ -231,7 +239,11 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   in about 0.3 s, too fast to sidestep once seen; they are led, re-aimed for every shot while the
   robot sees its target, and stray more with distance. A fighting robot fires at a target it sees
   out to its engaged sight (`SIGHT[].range` times `AWARE.engagedRange`); its preferred distance
-  (`ENEMIES[].range`) only steers where it walks. A burst starts only with the target in sight, so
+  (`ENEMIES[].range`) only steers where it walks. A hit from beyond the robot's engaged sight is
+  answered (`RETURN`, `shotFromAfar()` and `fireRange()` in `awareness.ts`): for a few seconds after
+  each such hit the squad's grunts and heavies see and fire out to `RETURN.range`, and members
+  without a line walk toward the shot; that far off the bolts' stray makes the fire mostly
+  suppressing. A burst starts only with the target in sight, so
   the glow means "get behind something", not "step aside". A squad of two or more that has had the
   player pinned to one spot for a few seconds, or has seen them backing away, sends members round it to either side
   (`PINCH`, `pinchSpot()` in `enemies.ts`). A squad that loses sight goes after the player
@@ -242,7 +254,9 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   move; healing is slow and heard (`HEALS`, `NOISE.heal`).
   `cover.ts` precomputes the spots grunts hide behind. The sim gate's `crowd` column is the most
   squads / robots fighting at once, and `flank` the share of hits from behind or by ambush; keep them
-  within the targets in `docs/ringfall/balance.md`.
+  within the targets in `docs/ringfall/balance.md`. Its `meet` column is how often the player meets
+  robots: the seconds to the first fight, the longest stretch with none, and the squads met per
+  raid (of them, those of no POI).
 - Some robots wear armour plates (`Enemy.plate`, a rarity tier): body hits from a weapon of lower
   rarity are cut by `PLATE` in `config.ts`, weak points pass in full. Each POI's vault guard
   (`Member.plate` in `map.ts`) and the raiders (`RAIDERS.plate`) wear them.
@@ -270,7 +284,8 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   end the hunt. Walkers of any fighting squad follow such a field too while they cannot see the
   player, out to `PURSUE.reach` metres of walking (`huntStep()` in `enemies.ts`): one field per
   squad, toward the spot it is after, each member leaving it for its own point beside the spot
-  only near it (`sideStep()`). Patrols walk their legs straight; a robot a chase took more than
+  only near it (`sideStep()`). Hunting parties walk to their stops by the whole world's field
+  (`tripStep()`) but fight as any squad does. Patrols walk their legs straight; a robot a chase took more than
   `STRAY` metres off its post or its leg walks back by a field (`homeStep()`). A short field
   costs its reach, not the grid. Only the player's own sounds and shots re-locate a squad, not
   the teammate's. Robots off the open ground (on a

@@ -416,6 +416,14 @@ export const sfx = {
       if (servo) tone(vary(kind === "charger" ? 1300 : 900, 0.1), 0.14, { type: "sawtooth", to: vary(1400, 0.1), vol: 0.025, attack: 0.03, at: 0.03 });
     });
   },
+  /** A drone pack's rotors in chorus, carrying across open ground far past one drone's hover (soundscape.ts repeats it). */
+  swarm(pos: P3) {
+    at(pos, { level: 0.35, ref: 14, maxDist: 130, send: 0.35 }, () => {
+      tone(vary(180, 0.03), 1.1, { type: "sawtooth", vol: 0.05, wobble: [19, 30], attack: 0.3 });
+      tone(vary(232, 0.03), 1.1, { type: "sawtooth", vol: 0.035, wobble: [27, 25], attack: 0.35 });
+      hiss(1.1, { freq: 1400, q: 2, vol: 0.04, attack: 0.35 });
+    });
+  },
   /** Reinforcements or raiders landing somewhere out of sight. */
   arrive(pos: P3, elite: boolean) {
     at(pos, { level: 0.8, ref: 25, maxDist: 400, send: 0.6 }, () => {

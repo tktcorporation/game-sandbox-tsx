@@ -768,10 +768,13 @@ const POI_FRAMES: Poi[] = [
     trigger: 95,
     entry: { x: 0, z: 114, yaw: 0 },
     squads: [
-      // Two squads, one in the assembly hall and one out on the east dune by the tanker: a fight
-      // with one leaves the other a flank to come round, across a yard 30 m wide.
+      // Four squads of two, each a fight of its own: the west and the east of the assembly hall, the
+      // east dune and the beach round the tanker. A fight with one leaves another a flank to come
+      // round, across a yard 30 m wide.
       { name: "組立棟", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: -76, z: -30, face: W }, { kind: "grunt", x: -50, z: -9, face: S }] },
+      { name: "組立棟東", members: [{ kind: "grunt", x: 10, z: -44, face: W }, { kind: "drone", x: 20, z: -36 }] },
       { name: "砂丘", members: [{ kind: "grunt", x: 74, z: 18, face: W }, { kind: "charger", x: 26, z: 44, face: W }] },
+      { name: "タンカー", members: [{ kind: "grunt", x: 24, z: 84, face: E }, { kind: "drone", x: 52, z: 66 }] },
     ],
     bins: [
       { x: 24, z: 8, y: WORKS.storey * 3 },
@@ -802,10 +805,13 @@ const POI_FRAMES: Poi[] = [
     trigger: 140,
     entry: { x: 55, z: -100, yaw: Math.PI },
     squads: [
-      // One squad on the top terrace by the haul road's foot, one on the floor: the deeper the
-      // player goes, the more of the terraces look down on them.
+      // Three squads on the top terrace (by the haul road's foot, at the head of the ramp down, and
+      // round the excavator) and one on the floor: the deeper the player goes, the more of the
+      // terraces look down on them.
       { name: "上段", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: -12, z: -46, face: S }, { kind: "grunt", x: 88, z: -28, face: SW }] },
+      { name: "坂上", members: [{ kind: "grunt", x: 30, z: -50, face: S }, { kind: "drone", x: 40, z: -40 }] },
       { name: "採掘穴", members: [{ kind: "charger", x: -8, z: 28, face: E }, { kind: "grunt", x: -32, z: 8, face: E }] },
+      { name: "掘削機", members: [{ kind: "grunt", x: 85, z: 40, face: W }, { kind: "drone", x: 110, z: 40 }] },
     ],
     bins: [
       { x: 104, z: -14 },
@@ -831,6 +837,9 @@ const POI_FRAMES: Poi[] = [
     entry: { x: -20, z: 20, yaw: 2.36 },
     squads: [
       { name: "アンテナ", members: [{ kind: "grunt", x: 36, z: -28, face: W }, { kind: "heavy", x: 18, z: 2, face: SW }] },
+      { name: "大皿", members: [{ kind: "grunt", x: 50, z: -25, face: W }, { kind: "drone", x: 45, z: 22 }] },
+      // Two drones over the mesa's south-east rim, beyond the dish from the way in.
+      { name: "南東の縁", members: [{ kind: "drone", x: 60, z: 40 }, { kind: "drone", x: 66, z: 34 }] },
       { name: "機器棟", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: -22, z: -5, face: W }, { kind: "grunt", x: -8, z: -36, face: W }, { kind: "charger", x: 4, z: 14, face: SW }] },
     ],
     bins: [
@@ -884,6 +893,8 @@ const POI_FRAMES: Poi[] = [
         members: [{ kind: "grunt", x: -12, z: 16, face: S }, { kind: "grunt", x: -9.5, z: 17, face: S }, { kind: "drone", x: -78, z: 18 }],
         patrol: [{ x: -78, z: 18 }, { x: 70, z: 18 }, { x: 70, z: -16 }, { x: -78, z: -16 }],
       },
+      { name: "北の浜", members: [{ kind: "grunt", x: -20, z: -18, face: N }, { kind: "drone", x: 12, z: -15 }] },
+      { name: "舳先", members: [{ kind: "charger", x: 30, z: -24, face: W }, { kind: "drone", x: 40, z: -20 }] },
     ],
     bins: [
       { x: -32, z: 3 },
@@ -909,6 +920,12 @@ const POI_FRAMES: Poi[] = [
     squads: [
       { name: "クレーン", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 24.35, z: -2, y: CRANE, face: E }, { kind: "heavy", x: 2, z: -13.5, face: E }] },
       { name: "通路", members: [{ kind: "grunt", x: -20, z: 13.5, face: W }, { kind: "grunt", x: -23, z: 22.5, face: W }] },
+      { name: "北の列", members: [{ kind: "grunt", x: -6, z: -24, face: E }, { kind: "drone", x: -40, z: -24 }] },
+      {
+        name: "東の列",
+        members: [{ kind: "grunt", x: 40, z: -24, face: W }, { kind: "drone", x: 38, z: -24 }],
+        patrol: [{ x: 40, z: -24 }, { x: 40, z: 12 }, { x: 10, z: 12 }, { x: 10, z: -24 }],
+      },
     ],
     bins: [
       { x: -30, z: -13.5 },
@@ -934,6 +951,9 @@ const POI_FRAMES: Poi[] = [
     squads: [
       { name: "制御棟", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 41, z: -1.8, y: STOREY * 4, face: S }, { kind: "grunt", x: 16, z: -2, face: S }] },
       { name: "炉", members: [{ kind: "heavy", x: -18, z: -1, face: S }, { kind: "charger", x: -26, z: 12, face: E }] },
+      // Behind the works, away from the way in: the last of the POI, or the first for a player who goes round.
+      { name: "裏手", members: [{ kind: "grunt", x: 0, z: -42, face: S }, { kind: "drone", x: -30, z: -30 }] },
+      { name: "北東", members: [{ kind: "grunt", x: 36, z: -30, face: S }, { kind: "drone", x: 44, z: -36 }] },
     ],
     bins: [
       { x: -24, z: -3 },
@@ -1075,6 +1095,44 @@ export const ROAMERS: Squad[] = (
     ],
   ] satisfies [AreaId | null, Squad][]
 ).map(([a, sq]) => (a ? placeSquad(sq, AREA[a][0], AREA[a][1]) : placeSquad(sq, 0, 0)));
+
+/**
+ * Drone packs (`PACK` in config.ts), in the world's coordinates: each flies its loop over the open
+ * ground between the POIs and along the roads, clear of every POI's own ground, and is met on the
+ * way from one POI to the next. A raid starts each at one of its waypoints far from the player,
+ * so the members' places here only say how many there are and of what kind.
+ */
+export const PACKS: Squad[] = [
+  // The reservoir: the ground south of the lakebed that the ways between the quarry, the supply
+  // depot and the relay share, its west half with the quarry's side and its east half with the
+  // relay's side up to the landing pad; and an arc north of the pad.
+  {
+    name: "西の野のドローン群",
+    members: [{ kind: "drone", x: -200, z: 260 }, { kind: "drone", x: -200, z: 260 }],
+    patrol: [{ x: -200, z: 260 }, { x: -60, z: 250 }, { x: -110, z: 140 }, { x: -185, z: 105 }],
+  },
+  {
+    name: "東の野のドローン群",
+    members: [{ kind: "drone", x: 60, z: 250 }, { kind: "drone", x: 60, z: 250 }],
+    patrol: [{ x: 60, z: 250 }, { x: 200, z: 230 }, { x: 170, z: 110 }, { x: 140, z: -40 }, { x: 110, z: 120 }],
+  },
+  {
+    name: "発着場の北のドローン群",
+    members: [{ kind: "drone", x: -200, z: 0 }, { kind: "drone", x: -200, z: 0 }],
+    patrol: [{ x: -200, z: 0 }, { x: -130, z: -170 }, { x: 60, z: -230 }, { x: 190, z: -110 }, { x: 60, z: -230 }, { x: -130, z: -170 }],
+  },
+  // The harbor: over the ground between the yard and the smelter, and round the wreck.
+  {
+    name: "港の野のドローン群",
+    members: [{ kind: "drone", x: -90, z: -640 }, { kind: "drone", x: -90, z: -640 }],
+    patrol: [{ x: -90, z: -640 }, { x: -60, z: -800 }, { x: 80, z: -800 }, { x: 90, z: -640 }],
+  },
+  {
+    name: "湾のドローン群",
+    members: [{ kind: "drone", x: -200, z: -860 }, { kind: "drone", x: -200, z: -860 }],
+    patrol: [{ x: -200, z: -860 }, { x: -130, z: -1010 }, { x: 60, z: -1010 }, { x: 110, z: -880 }],
+  },
+];
 
 export type RegionId = "reservoir" | "harbor";
 
@@ -1374,6 +1432,27 @@ export const STOPS: readonly { name: string; x: number; z: number }[] = [
   at("bay", { name: "塩田", x: 10, z: -500 }),
   at("bay", { name: "岬", x: -122, z: -545 }),
 ];
+
+/**
+ * Where hunting parties (`PARTY` in config.ts) go, by region: stops on the open ground between
+ * the POIs and hamlets (`STOPS`, `FRAMES`), all on the ground the parties' field covers. A POI's
+ * way in would put a party beside the POI's own squads, where a raid's first fight there would
+ * meet both; the village, the plateau and the salt flats by the wreck, beside the quieter ways
+ * off and a depot, are left out too, and so is the headland, which the ground's field reaches up
+ * a slope too steep for a walker.
+ */
+export const PARTY_STOPS: Record<RegionId, readonly { name: string; x: number; z: number }[]> = {
+  reservoir: [stopAt("工場"), stopAt("住宅地"), stopAt("放水路"), stopAt("昇降路の通路"), stopAt("西の飯場"), stopAt("南の漁師小屋")],
+  // The signal box's own middle is its house: the party stands on the open ground south of it.
+  harbor: [stopAt("港町"), stopAt("高架下"), stopAt("信号所", 0, 14), stopAt("西の漁村"), stopAt("東の丘の家")],
+};
+
+/** A party's stop at the stop or hamlet `name`, `dx`, `dz` metres off it. */
+function stopAt(name: string, dx = 0, dz = 0): { name: string; x: number; z: number } {
+  const at = STOPS.find((q) => q.name === name) ?? FRAMES[name];
+  if (!at) throw new Error(`no stop or hamlet named ${name}`);
+  return { name, x: at.x + dx, z: at.z + dz };
+}
 
 /** The hamlets placed, each flat at the level of the ground under its middle. */
 const HAMLETS = HAMLET_FRAMES.map((h) => {

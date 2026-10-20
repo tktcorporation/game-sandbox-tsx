@@ -1,4 +1,4 @@
-import { AWARE, DEG, FLANK, NOISE, PINCH, PURSUE, SIGHT, TICK } from "./config";
+import { AWARE, DEG, FLANK, NOISE, PINCH, PURSUE, RETURN, SIGHT, TICK } from "./config";
 import { dist2d, los, lookAngles, solidAt, wrapAngle } from "./geom";
 import { steepAt, terrainHeight } from "./terrain";
 import { weakY, type Enemy, type Point, type State, type Vec3 } from "./state";
@@ -9,6 +9,34 @@ import { weakY, type Enemy, type Point, type State, type Vec3 } from "./state";
  */
 
 export const headOf = (e: Enemy): Vec3 => ({ x: e.pos.x, y: e.pos.y + Math.max(weakY(e), 0.2), z: e.pos.z });
+
+/** Whether a robot's squad is answering the player's hits on it from afar (see RETURN). */
+const answering = (s: State, e: Enemy) => (s.squads[e.squad]?.shotT ?? 0) > 0;
+
+/**
+ * How far a fighting robot fires at the player, eye to chest: as far as it sees while fighting,
+ * or further for a while after the player hit its squad from afar (see RETURN).
+ */
+export function fireRange(s: State, e: Enemy): number {
+  const sight = SIGHT[e.kind].range * AWARE.engagedRange;
+  return answering(s, e) ? Math.max(sight, RETURN.range[e.kind]) : sight;
+}
+
+/** The point of the player that robots look at: the chest, lower when crouched. */
+const sightTarget = (s: State): Vec3 => {
+  const p = s.player;
+  return { x: p.pos.x, y: p.pos.y + (p.crouch && !p.sliding ? 1.0 : 1.5), z: p.pos.z };
+};
+
+/**
+ * The player shot this robot from beyond its fighting sight: its squad answers from afar for a
+ * while (see RETURN). A hit from within it is an ordinary fight, which the squad sees for itself.
+ */
+export function shotFromAfar(s: State, e: Enemy): boolean {
+  const eye = headOf(e);
+  const t = sightTarget(s);
+  return Math.hypot(t.x - eye.x, t.y - eye.y, t.z - eye.z) > SIGHT[e.kind].range * AWARE.engagedRange;
+}
 
 /** The player is a valid target for robots: on the ground and not knocked down. */
 const visibleNow = (s: State) => s.phase === "play" && s.player.downed <= 0;
@@ -110,12 +138,13 @@ export function sense(s: State, e: Enemy): boolean {
   let seen = false;
   if (visibleNow(s)) {
     const low = p.crouch && !p.sliding;
-    const target = { x: p.pos.x, y: p.pos.y + (low ? 1.0 : 1.5), z: p.pos.z };
+    const target = sightTarget(s);
     const eye = headOf(e);
     const d = Math.hypot(target.x - eye.x, target.y - eye.y, target.z - eye.z);
     const sight = SIGHT[e.kind];
     const engaged = e.aware === "engaged";
-    const range = sight.range * (engaged ? AWARE.engagedRange : low ? AWARE.crouchRange : 1);
+    let range = (sq?.sight ?? sight.range) * (engaged ? AWARE.engagedRange : low ? AWARE.crouchRange : 1);
+    if (engaged && answering(s, e)) range = Math.max(range, RETURN.range[e.kind]);
     let inView = d < AWARE.closeSense;
     if (!inView && d < range) {
       const fov = sight.fov * (engaged ? AWARE.engagedFov : 1);
@@ -293,6 +322,7 @@ export function pursuitSpot(s: State, e: Enemy, known: Point): Point {
  */
 export function stepSquads(s: State) {
   s.squads.forEach((sq, i) => {
+    if (sq.shotT) sq.shotT = Math.max(0, sq.shotT - TICK);
     if (!sq.engaged) return;
     const members = s.enemies.filter((e) => e.squad === i);
     // A squad with no one left is simply over, not searching.

@@ -1,5 +1,5 @@
-import { ALLY, ASSIST, DEG, DODGE, ELITE, ENEMIES, FLANK, KICK_PATTERN, KICK_RESET, NOISE, PLATE, PLAYER, RARITY, ROBOT_DROPS, STAGGER, TICK, ULT, VALUABLES, WEAPONS, type Flank, type Rarity, type ValuableKind, type WeaponSpec } from "./config";
-import { engageSquad, learnSpot, located, makeNoise } from "./awareness";
+import { ALLY, ASSIST, DEG, DODGE, ELITE, ENEMIES, FLANK, KICK_PATTERN, KICK_RESET, NOISE, PLATE, PLAYER, RARITY, RETURN, ROBOT_DROPS, STAGGER, TICK, ULT, VALUABLES, WEAPONS, type Flank, type Rarity, type ValuableKind, type WeaponSpec } from "./config";
+import { engageSquad, learnSpot, located, makeNoise, shotFromAfar } from "./awareness";
 import { POIS } from "./map";
 import { los, lookAngles, norm, rayWorld, raySphere, wrapAngle } from "./geom";
 import { bodyY, forward, rand, weakY, type Enemy, type State, type Vec3, type Weapon } from "./state";
@@ -194,8 +194,12 @@ export function damageEnemy(s: State, e: Enemy, raw: number, crit: boolean, at: 
   const shooter = by === "ally" ? s.ally.pos : s.player.pos;
   engageSquad(s, e.squad, e, by === "ally" ? shooter : undefined);
   const sq = s.squads[e.squad];
-  // Only the player's own shot tells a squad where they are now (see PURSUE).
-  if (sq && by === "player") learnSpot(s, e.squad, shooter.x, shooter.z);
+  // Only the player's own shot tells a squad where they are now (see PURSUE), and only the
+  // player's shots from beyond the robot's sight are answered from afar (see RETURN).
+  if (sq && by === "player") {
+    learnSpot(s, e.squad, shooter.x, shooter.z);
+    if (shotFromAfar(s, e)) sq.shotT = RETURN.time;
+  }
   const before = e.hp + e.shield;
   const hadShield = e.shield > 0;
   const toShield = Math.min(e.shield, raw);

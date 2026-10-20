@@ -1,11 +1,11 @@
-import { ALLY, AWARE, BAG, DEPOT, ENEMIES, ENTRY, HEALS, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, TICK, TOOL_KINDS, TOOLS, TOP_BINS, VALUABLES, VAULT, WORLD, type HealKind, type ToolKind } from "./config";
+import { ALLY, AWARE, BAG, DEPOT, ENEMIES, ENTRY, HEALS, PARTY, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, TICK, TOOL_KINDS, TOOLS, TOP_BINS, VALUABLES, VAULT, WORLD, type HealKind, type ToolKind } from "./config";
 import { dist2d, groundAt, los, solidAt } from "./geom";
 import { highGround, steepAt, terrainHeight } from "./terrain";
-import { DEPOTS, ENTRIES, EXTRACTS, POIS, type ExtractPoint } from "./map";
+import { DEPOTS, ENTRIES, EXTRACTS, PARTY_STOPS, POIS, REGIONS, type ExtractPoint } from "./map";
 import { spawnEnemy, spawnSpot } from "./enemies";
-import { cellsAround, fieldTo, nextStep } from "./hunt";
+import { cellsAround, fieldTo, nextStep, onMainGround } from "./hunt";
 import { raiseAlly, startHelp } from "./ally";
-import { boosted, callLeft, cellOf, exploreSize, mix, rand, type Bin, type Input, type Loot, type Player, type State, type Weapon } from "./state";
+import { boosted, callLeft, cellOf, exploreSize, mix, rand, roamRand, type Bin, type Input, type Loot, type PartySlot, type PartyTrip, type Player, type Point, type State, type Weapon } from "./state";
 import type { EnemyKind, ValuableKind } from "./config";
 import { located, makeNoise } from "./awareness";
 
@@ -88,22 +88,42 @@ export function stepReinforce(s: State) {
   s.reinforceN++;
 }
 
+/**
+ * Where each member of a squad of `kinds` beamed in at (x, z) stands, and the top and the middle
+ * of its body there.
+ */
+function posts(kinds: readonly EnemyKind[], x: number, z: number) {
+  return kinds.map((kind, i) => {
+    const mx = x + (i % 2 ? 1.8 : -1.8) * Math.min(i, 1);
+    const mz = z + i * 1.6;
+    const at = spawnSpot(kind, mx, mz);
+    const mid = at.y + ENEMIES[kind].bodyY;
+    return { x: at.x, y: mid + ENEMIES[kind].radius, mid, z: at.z, mx, mz };
+  });
+}
+
+/**
+ * The members' posts of a squad of `kinds` beamed in at (x, z), or null when that is no place to
+ * beam in: not open ground (a slope too steep, a roof), a member on the high ground beside it, or
+ * any of them in the player's sight within `seen` metres, a hovering drone included. Both the top
+ * and the middle of each body are tested, since a window or a gap under a roof can show the one
+ * and hide the other.
+ */
+function hiddenPosts(s: State, kinds: readonly EnemyKind[], x: number, z: number, seen = Infinity) {
+  const p = s.player;
+  const eye = { x: p.pos.x, y: p.pos.y + 1.5, z: p.pos.z };
+  const g = groundAt(x, z, 1, 99);
+  if (steepAt(x, z) || g > terrainHeight(x, z) + 0.3) return null;
+  const spots = posts(kinds, x, z);
+  if (spots.some((q) => steepAt(q.mx, q.mz) || highGround(q.mx, q.mz))) return null;
+  if (dist2d(p.pos, { x, z }) < seen && (los(eye, { x, y: g + 1.5, z }) || spots.some((q) => los(eye, q) || los(eye, { x: q.x, y: q.mid, z: q.z })))) return null;
+  return spots;
+}
+
 /** Beam a hunting squad in somewhere the player cannot see; false when no such spot turned up. */
 function beamIn(s: State, kinds: readonly EnemyKind[], name: string, elite: boolean): boolean {
   const p = s.player;
-  const eye = { x: p.pos.x, y: p.pos.y + 1.5, z: p.pos.z };
   const [near, far] = REINFORCE.dist;
-  // Where each member stands round the squad's spot, and the top and the middle of its body
-  // there: every one of them must be out of sight, a hovering drone included. Both, since a
-  // window or a gap under a roof can show the one and hide the other.
-  const posts = (x: number, z: number) =>
-    kinds.map((kind, i) => {
-      const mx = x + (i % 2 ? 1.8 : -1.8) * Math.min(i, 1);
-      const mz = z + i * 1.6;
-      const at = spawnSpot(kind, mx, mz);
-      const mid = at.y + ENEMIES[kind].bodyY;
-      return { x: at.x, y: mid + ENEMIES[kind].radius, mid, z: at.z, mx, mz };
-    });
   // Somewhere on open ground a walk of the right length away (along the ramps, not as the
   // crow flies), out of sight; the best of a few tries. The first tries also want the first
   // stretch of that walk clear of cover a robot cannot step over; failing that, any will do.
@@ -114,12 +134,7 @@ function beamIn(s: State, kinds: readonly EnemyKind[], name: string, elite: bool
     const c = cells[Math.floor(rand(s) * cells.length)];
     const x = c.x + (rand(s) - 0.5) * 1.5;
     const z = c.z + (rand(s) - 0.5) * 1.5;
-    const g = groundAt(x, z, 1, 99);
-    if (steepAt(x, z) || g > terrainHeight(x, z) + 0.3) continue; // open ground, not a roof
-    const spots = posts(x, z);
-    // Every member lands on the same open ground, not up on the high ground beside it.
-    if (spots.some((q) => steepAt(q.mx, q.mz) || highGround(q.mx, q.mz))) continue;
-    if (los(eye, { x, y: g + 1.5, z }) || spots.some((q) => los(eye, q) || los(eye, { x: q.x, y: q.mid, z: q.z }))) continue;
+    if (!hiddenPosts(s, kinds, x, z)) continue;
     const next = nextStep(field!, x, z, p.pos);
     if (i < 40 && !clearWalk(x, z, next.x, next.z)) continue;
     at = { x, z };
@@ -127,7 +142,7 @@ function beamIn(s: State, kinds: readonly EnemyKind[], name: string, elite: bool
   if (!at) return false;
   const squad = s.squads.length;
   s.squads.push({ name, poi: -1, patrol: [], leg: 0, engaged: false, roam: true, hunt: true, routed: true, elite, sinceSeen: 0, last: { x: p.pos.x, z: p.pos.z } });
-  const spots = posts(at.x, at.z);
+  const spots = posts(kinds, at.x, at.z);
   kinds.forEach((kind, i) => {
     const e = spawnEnemy(s, kind, spots[i].mx, spots[i].mz, -1, squad, { appear: true, elite, plate: elite ? RAIDERS.plate : 0 });
     e.aware = "alert";
@@ -137,6 +152,97 @@ function beamIn(s: State, kinds: readonly EnemyKind[], name: string, elite: bool
   });
   s.events.push({ t: elite ? "raiders" : "reinforce", x: at.x, z: at.z });
   return true;
+}
+
+/** The raid's first hunting parties, `PARTY.count` in each region, placed as a wiped-out one's replacement is. */
+export function placeParties(s: State) {
+  for (const region of REGIONS)
+    for (let i = 0; i < PARTY.count[region.id]; i++) {
+      const slot = { region: region.id, squad: -1, wait: 0 };
+      s.parties.push(slot);
+      sendParty(s, slot, false);
+    }
+}
+
+/**
+ * Hunting parties: each walks to its stop, lingers there, then makes for another stop of its
+ * region; one wiped out is replaced after a while (see PARTY).
+ */
+export function stepParties(s: State) {
+  if (s.phase !== "play") return;
+  for (const slot of s.parties) {
+    if (slot.squad < 0) {
+      slot.wait -= TICK;
+      if (slot.wait <= 0 && !sendParty(s, slot, true)) slot.wait = 5; // try again shortly
+      continue;
+    }
+    const sq = s.squads[slot.squad];
+    const lead = s.enemies.find((e) => e.squad === slot.squad);
+    const trip = sq.party;
+    if (!lead || !trip) {
+      slot.squad = -1;
+      slot.wait = PARTY.respawn[0] + roamRand(s) * (PARTY.respawn[1] - PARTY.respawn[0]);
+      continue;
+    }
+    // Only a calm party goes on its way: one that is looking or fighting comes back to it after.
+    if (sq.engaged || s.enemies.some((e) => e.squad === slot.squad && e.aware !== "idle")) {
+      trip.mark = { x: lead.pos.x, z: lead.pos.z };
+      trip.markT = 0;
+      continue;
+    }
+    const stop = PARTY_STOPS[trip.region][trip.stop];
+    if (trip.linger > 0) {
+      trip.linger -= TICK;
+      if (trip.linger <= 0) nextStop(s, trip, lead.pos);
+    } else if (dist2d(lead.pos, stop) < PARTY.arrive) trip.linger = PARTY.linger[0] + roamRand(s) * (PARTY.linger[1] - PARTY.linger[0]);
+    else if ((trip.markT += TICK) >= PARTY.stuck.time) {
+      // Held up on the way (a corner its body does not fit past): it makes for another stop.
+      if (dist2d(lead.pos, trip.mark) < PARTY.stuck.moved) nextStop(s, trip, lead.pos);
+      trip.mark = { x: lead.pos.x, z: lead.pos.z };
+      trip.markT = 0;
+    }
+  }
+}
+
+/** Sends the party, its leader at `from`, on to another stop of its region than the one it is at, drawn at random. */
+function nextStop(s: State, trip: PartyTrip, from: Point) {
+  const n = PARTY_STOPS[trip.region].length;
+  trip.stop = (trip.stop + 1 + Math.floor(roamRand(s) * (n - 1))) % n;
+  trip.linger = 0;
+  trip.mark = { x: from.x, z: from.z };
+  trip.markT = 0;
+}
+
+/**
+ * A hunting party for `slot`: a squad drawn from `PARTY.squads` beamed in near a stop of the
+ * slot's region that no other party has, out of the player's sight and at least `PARTY.away`
+ * from them; it lingers at that stop first. `appear` plays the beaming in. False when no such
+ * spot turned up.
+ */
+function sendParty(s: State, slot: PartySlot, appear: boolean): boolean {
+  const stops = PARTY_STOPS[slot.region];
+  const kinds = PARTY.squads[Math.floor(roamRand(s) * PARTY.squads.length)];
+  // Not a stop another party is at or making for, while there is another.
+  const taken = new Set(s.parties.flatMap((q) => (q.region === slot.region && q.squad >= 0 && s.squads[q.squad].party ? [s.squads[q.squad].party!.stop] : [])));
+  const free = stops.map((_, i) => i).filter((i) => !taken.has(i));
+  const pick = free.length ? free : stops.map((_, i) => i);
+  for (let i = 0; i < 40; i++) {
+    const stop = pick[Math.floor(roamRand(s) * pick.length)];
+    const a = roamRand(s) * Math.PI * 2;
+    const r = roamRand(s) * PARTY.scatter;
+    const x = stops[stop].x + Math.cos(a) * r;
+    const z = stops[stop].z + Math.sin(a) * r;
+    if (dist2d(s.player.pos, { x, z }) < PARTY.away || !onMainGround(x, z)) continue;
+    const spots = hiddenPosts(s, kinds, x, z, PARTY.seen);
+    if (!spots) continue;
+    const squad = s.squads.length;
+    const linger = PARTY.linger[0] + roamRand(s) * (PARTY.linger[1] - PARTY.linger[0]);
+    s.squads.push({ name: PARTY.name, poi: -1, patrol: [], leg: 0, engaged: false, roam: false, party: { region: slot.region, stop, linger, mark: { x, z }, markT: 0 }, sinceSeen: 0, last: { x: 0, z: 0 } });
+    kinds.forEach((kind, k) => spawnEnemy(s, kind, spots[k].mx, spots[k].mz, -1, squad, { appear, roam: true }));
+    slot.squad = squad;
+    return true;
+  }
+  return false;
 }
 
 /** Half the width of the lane a walking robot needs: the heavy's body radius. */

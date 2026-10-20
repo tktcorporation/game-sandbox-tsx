@@ -1,4 +1,4 @@
-import type { PoiId } from "./map";
+import type { PoiId, RegionId } from "./map";
 /**
  * Every tuning number of RINGFALL. Units are metres, seconds and degrees unless noted.
  * Change a number here only together with a re-run of `npm run sim:ringfall` and an
@@ -561,6 +561,49 @@ export const REINFORCE = {
 };
 
 /**
+ * Drone packs (`PACKS` in map.ts): a few drones flying long loops over the open ground between
+ * the POIs, quicker than a patrol walks (`pace`, a share of their combat speed) and noticing the
+ * player from further than other drones (`sight` metres, in place of `SIGHT.drone`'s range; they
+ * still fire only as far as a drone sees), so crossing the ground between POIs brings one into
+ * view. A raid starts each pack at a waypoint of its loop at least `away` metres from the player,
+ * drawn from the packs' and parties' own random numbers (`roamRand()`): one sighting `sight`
+ * metres off takes more than the first seconds of a raid to fly into.
+ */
+export const PACK = { sight: 75, pace: 0.9, away: 140 };
+
+/**
+ * Hunting parties: `count` ground squads in each region that walk from stop to stop of their
+ * region (`PARTY_STOPS` in map.ts) by the ground's way (hunt.ts's field), at `pace` of their
+ * slowest member's combat speed, and stay `linger` seconds at each stop before going on to
+ * another. They fight what they meet as any squad does. A party wiped out is replaced `respawn`
+ * seconds later by one that beams in within `scatter` metres of a stop of its region, out of the
+ * player's sight and at least `away` metres from them; the raid's first parties are placed by the
+ * same rule. Past `seen` metres, as far as the view draws a robot, one counts as out of sight
+ * whatever lies between. Each is drawn from `squads`. A party whose leader has moved less than
+ * `stuck.moved` metres in `stuck.time` seconds of walking makes for another stop. Line-ups,
+ * stops, spawns and waits are drawn from their own random numbers (`roamRand()`).
+ */
+export const PARTY = {
+  count: { reservoir: 2, harbor: 2 } satisfies Record<RegionId, number>,
+  name: "遊撃隊",
+  pace: 0.7,
+  linger: [20, 40] as const,
+  respawn: [60, 120] as const,
+  away: 100,
+  seen: 220,
+  scatter: 10,
+  /** Metres from its stop at which a party's leader has arrived there. */
+  arrive: 4,
+  stuck: { time: 15, moved: 3 },
+  squads: [
+    ["grunt", "grunt"],
+    ["grunt", "charger"],
+    ["grunt", "drone"],
+    ["heavy", "grunt"],
+  ] as EnemyKind[][],
+};
+
+/**
  * The raiders: one elite squad that beams in once the raid has gone on a while and hunts
  * the player down, closer on their heels than reinforcements. In a fight one member holds
  * the player's attention while the others go wide to the sides.
@@ -628,6 +671,22 @@ export const PURSUE = { lead: 1.5, leadMax: 9, reach: 90, spread: 7, approach: 5
  * off: up close a burst lands, from beyond 30 m a good part of it misses.
  */
 export const SHOT = { lead: 0.85, spread: 1.5 };
+
+/**
+ * Being shot from beyond a robot's sight is answered. For `time` seconds after each of the
+ * player's hits on a squad from beyond the hit robot's fighting sight (`SIGHT` times
+ * `AWARE.engagedRange`), its members notice the player and fire at them out to `range` metres
+ * (eye to chest, as sight is measured) in place of their fighting sight, while they face the
+ * player and have a clear line: the hit already told the squad where the shot came from, and it
+ * turns there. The kinds with no range here (the drone, the charger) close in instead, and a
+ * member with no line walks toward the shooter by the ground's way until it has one. Bolts that
+ * far off land as SHOT's stray decides: a burst at 130 m mostly flies past and now and then
+ * hits, enough to send a sniper behind something.
+ */
+export const RETURN = {
+  time: 7,
+  range: { drone: 0, grunt: 140, charger: 0, heavy: 140, titan: 0 } satisfies Record<EnemyKind, number>,
+};
 
 /**
  * How robots notice the player. Each robot has a view cone; while it sees the

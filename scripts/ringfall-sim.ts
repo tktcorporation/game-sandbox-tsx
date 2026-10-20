@@ -10,16 +10,16 @@
  * are played in one worker process per core; RINGFALL_SIM_JOBS sets how many (1 plays them
  * in this process, in turn).
  */
-import { ALLY, BAG, DEPOT, ELITE, ENEMIES, HEALS, NOISE, PLATE, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, SIGHT, STAGGER, TACTICAL, TICK, VALUABLES, VAULT, WEAPONS, WORLD } from "../src/ringfall/sim/config";
+import { ALLY, BAG, DEPOT, ELITE, ENEMIES, HEALS, NOISE, PACK, PARTY, PLATE, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, SIGHT, STAGGER, TACTICAL, TICK, VALUABLES, VAULT, WEAPONS, WORLD } from "../src/ringfall/sim/config";
 import { engageSquad, makeNoise } from "../src/ringfall/sim/awareness";
 import { spawnEnemy } from "../src/ringfall/sim/enemies";
 import { COVERS } from "../src/ringfall/sim/cover";
 import { ENEMIES as KINDS, type EnemyKind, type Rarity } from "../src/ringfall/sim/config";
-import { BOXES, DECKS, DEPOTS, depotIndex, ENTRIES, entryOf, EXTRA_BINS, EXTRACTS, POIS, poiIndex, REGIONS, regionHere, regionOf, ROAMERS, ROUTES, STOPS, type RegionId, type RouteId, type Squad } from "../src/ringfall/sim/map";
+import { BOXES, DECKS, DEPOTS, depotIndex, ENTRIES, entryOf, EXTRA_BINS, EXTRACTS, PACKS, PARTY_STOPS, POIS, poiIndex, REGIONS, regionHere, regionOf, ROAMERS, ROUTES, STOPS, type RegionId, type RouteId, type Squad } from "../src/ringfall/sim/map";
 import { inArea } from "../src/ringfall/sim/areas";
 import { routeBefore, useRoutes, worldKey } from "../src/ringfall/sim/routes";
 import { findPath } from "../src/ringfall/sim/nav";
-import { fieldTo, fieldsBuilt, routeLength } from "../src/ringfall/sim/hunt";
+import { fieldTo, fieldsBuilt, onMainGround, routeLength } from "../src/ringfall/sim/hunt";
 import { collide, dist2d, groundAt, inWorld, los, solidAt } from "../src/ringfall/sim/geom";
 import { checkTerrainIndex, floorLevel, highGround, landAt, LEVEL, offLowGround, offshore, steepAt, surfaceAt, terrainHeight } from "../src/ringfall/sim/terrain";
 import { SKILLS } from "../src/ringfall/sim/bot";
@@ -137,6 +137,27 @@ function checkLayout(): string[] {
     point(`depot ${d.poi} start`, +(d.x - Math.sin(d.yaw) * DEPOT.back).toFixed(2), +(d.z + Math.cos(d.yaw) * DEPOT.back).toFixed(2), d.y);
   }
   ROAMERS.forEach((sq) => squad(`roamer ${sq.name}`, sq));
+  // Hunting parties stand at their stops on the ground their field covers; drone packs fly their
+  // loops over the land, never across a POI's own ground.
+  for (const r of REGIONS)
+    for (const q of PARTY_STOPS[r.id]) {
+      point(`party stop ${q.name}`, q.x, q.z);
+      if (!onMainGround(q.x, q.z) || regionHere(q).id !== r.id) bad.push(`party stop ${q.name} is off the walkable ground or nearer another region's POIs`);
+    }
+  for (const sq of PACKS) {
+    const loop = sq.patrol ?? [];
+    if (loop.length < 2 || sq.members.some((m) => m.kind !== "drone")) bad.push(`pack ${sq.name}: not a loop of drones`);
+    loop.forEach((a, i) => {
+      const b = loop[(i + 1) % loop.length];
+      if (!inWorld(a.x, a.z, 5) || offshore(a.x, a.z) > -5) bad.push(`pack ${sq.name} waypoint ${a.x},${a.z} is off the land`);
+      for (const poi of POIS) {
+        const dx = b.x - a.x;
+        const dz = b.z - a.z;
+        const t = Math.max(0, Math.min(1, ((poi.x - a.x) * dx + (poi.z - a.z) * dz) / (dx * dx + dz * dz || 1)));
+        if (Math.hypot(a.x + dx * t - poi.x, a.z + dz * t - poi.z) < poi.trigger) bad.push(`pack ${sq.name} flies over ${poi.name} between ${a.x},${a.z} and ${b.x},${b.z}`);
+      }
+    });
+  }
   // An extract is used standing on whatever is highest there (the pad, a rock top), as the game checks it.
   for (const x of EXTRACTS) point(`extract ${x.id}`, x.x, x.z, groundAt(x.x, x.z, 0.4, 99));
   return bad;
@@ -325,6 +346,128 @@ function checkFieldsFollowRunner(): string | null {
   const built = fieldsBuilt - before;
   return built > 8 ? `field cache scenario: ${built} fields built for a target running 40 m` : null;
 }
+/**
+ * Hunting parties: a raid starts with `PARTY.count` in each region, each out of the player's sight
+ * (or past `PARTY.seen`) and `PARTY.away` from them, at stops no other party has; every stop of a region is a walk from
+ * every other; left alone, each walks from stop to stop and lingers at each, never held up on the
+ * way; and one wiped out is replaced after `PARTY.respawn` seconds, beamed in by the same rule.
+ */
+function checkParties(): string | null {
+  const hidden = (s: State, members: Enemy[]) => {
+    const p = s.player.pos;
+    const eye = { x: p.x, y: p.y + 1.5, z: p.z };
+    return members.every((e) => dist2d(e.pos, p) >= PARTY.away - 4 && (dist2d(e.pos, p) > PARTY.seen || !los(eye, { x: e.pos.x, y: e.pos.y + KINDS[e.kind].bodyY, z: e.pos.z })));
+  };
+  const members = (s: State, squad: number) => s.enemies.filter((e) => e.squad === squad);
+  for (const e of ENTRIES)
+    for (const seed of [11, 222]) {
+      const s = newRun(seed, freeKit(), e.region, { entry: e.id });
+      for (const r of REGIONS) {
+        const mine = s.parties.filter((q) => q.region === r.id);
+        if (mine.length !== PARTY.count[r.id] || mine.some((q) => q.squad < 0)) return `party scenario: a raid at ${e.id} (seed ${seed}) started with ${mine.filter((q) => q.squad >= 0).length} parties in ${r.id}`;
+        if (new Set(mine.map((q) => s.squads[q.squad].party!.stop)).size !== mine.length) return `party scenario: two parties of ${r.id} start at the same stop (seed ${seed})`;
+        if (!mine.every((q) => hidden(s, members(s, q.squad)))) return `party scenario: a raid at ${e.id} (seed ${seed}) placed a party in sight or within ${PARTY.away} m`;
+      }
+    }
+  for (const r of REGIONS)
+    for (const to of PARTY_STOPS[r.id]) {
+      const f = fieldTo(to.x, to.z);
+      const cut = PARTY_STOPS[r.id].find((q) => !f || !Number.isFinite(routeLength(f, q.x, q.z)));
+      if (cut) return `party scenario: no way on foot from ${cut.name} to ${to.name}`;
+    }
+  // Left alone (the player in the other region), each party goes round its stops.
+  for (const seed of [3, 17])
+    for (const r of REGIONS) {
+      const s = newRun(seed, freeKit(), REGIONS.find((q) => q.id !== r.id)!.id);
+      s.player.iframes = 1e9;
+      s.reinforceT = s.raiderT = 1e9;
+      s.parties = s.parties.filter((q) => q.region === r.id);
+      s.enemies = s.enemies.filter((e) => s.parties.some((q) => q.squad === e.squad));
+      const arrivals = new Map<number, number>();
+      const at = new Map<number, number>();
+      const going = new Map(s.parties.map((q) => [q.squad, s.squads[q.squad].party!.stop]));
+      for (let i = 0; i < 600 / TICK; i++) {
+        step(s, idleInput(), false);
+        for (const q of s.parties) {
+          const trip = s.squads[q.squad].party!;
+          if (trip.linger > 0 && at.get(q.squad) !== trip.stop) {
+            at.set(q.squad, trip.stop);
+            arrivals.set(q.squad, (arrivals.get(q.squad) ?? 0) + 1);
+          }
+          // Making for another stop before it lingered at the one it was going to: held up on the way.
+          if (trip.stop !== going.get(q.squad) && at.get(q.squad) !== going.get(q.squad)) {
+            const lead = s.enemies.find((e) => e.squad === q.squad)!;
+            return `party scenario: a party of ${r.id} (seed ${seed}) was held up at ${lead.pos.x.toFixed(0)},${lead.pos.z.toFixed(0)} on its way to ${PARTY_STOPS[r.id][going.get(q.squad)!].name}`;
+          }
+          going.set(q.squad, trip.stop);
+        }
+      }
+      for (const q of s.parties) if ((arrivals.get(q.squad) ?? 0) < 2) return `party scenario: a party of ${r.id} (seed ${seed}) reached ${arrivals.get(q.squad) ?? 0} stops in 600 s`;
+    }
+  // Wiped out, a party comes back after a while, out of sight and away from the player.
+  const s = newRun(5);
+  s.reinforceT = s.raiderT = 1e9;
+  s.player.iframes = 1e9;
+  const slot = s.parties[0];
+  const gone = slot.squad;
+  s.enemies = s.enemies.filter((e) => e.squad !== gone);
+  step(s, idleInput(), false);
+  if (slot.squad !== -1 || slot.wait < PARTY.respawn[0] - 1 || slot.wait > PARTY.respawn[1]) return `party scenario: a wiped-out party left its slot at squad ${slot.squad}, ${slot.wait.toFixed(0)} s to wait`;
+  ticks(s, slot.wait + 0.5);
+  if (slot.squad < 0 || slot.squad === gone) return "party scenario: a wiped-out party was not replaced";
+  const fresh = members(s, slot.squad);
+  if (!fresh.length || !hidden(s, fresh) || !fresh.every((e) => e.mode === "spawning" || e.aware === "idle")) return "party scenario: a party's replacement beamed in where the player can see, or close by";
+  return null;
+}
+
+/**
+ * A drone pack notices the player from further than other drones: a pack drone `PACK.sight` - 5 m
+ * off, facing the player across open ground, fights within a few seconds; a plain drone there
+ * does not notice them.
+ */
+function checkPacks(): string | null {
+  const notices = (pack: boolean) => {
+    const s = padRun();
+    s.ally.active = false;
+    const p = s.player;
+    const d = PACK.sight - 5;
+    // Somewhere on the reservoir's open ground with a clear view to a drone hovering `d` m off.
+    for (const [cx, cz] of [[-180, 190], [150, 170], [-60, 300], [200, 300]])
+      for (let a = 0; a < 2 * Math.PI; a += Math.PI / 8) {
+        const x = cx + Math.cos(a) * d;
+        const z = cz + Math.sin(a) * d;
+        const g = groundAt(cx, cz, 0.4, 99);
+        if (steepAt(cx, cz) || g > terrainHeight(cx, cz) + 0.3) continue;
+        const squad = s.squads.length;
+        s.squads.push({ name: "test", poi: -1, patrol: [], leg: 0, engaged: false, roam: false, sinceSeen: 0, last: { x: 0, z: 0 }, pack, sight: pack ? PACK.sight : undefined });
+        const yaw = Math.atan2(cx - x, -(cz - z));
+        const e = spawnEnemy(s, "drone", x, z, -1, squad, { face: yaw });
+        if (!los({ x: cx, y: g + 1.5, z: cz }, { x: e.pos.x, y: e.pos.y, z: e.pos.z }) || dist2d(e.pos, { x: cx, z: cz }) < d - 1) {
+          s.enemies = [];
+          s.squads.pop();
+          continue;
+        }
+        p.pos = { x: cx, y: g, z: cz };
+        p.onGround = true;
+        p.iframes = 1e9;
+        for (let i = 0; i < 6 / TICK; i++) {
+          step(s, idleInput(), false);
+          s.player.pos = { x: cx, y: g, z: cz };
+          e.pos.x = x;
+          e.pos.z = z;
+          e.yaw = yaw;
+        }
+        return s.squads[squad].engaged;
+      }
+    return null;
+  };
+  const pack = notices(true);
+  if (pack === null) return "pack scenario: no open ground with a view to test from";
+  if (!pack) return `pack scenario: a pack drone ${PACK.sight - 5} m off did not notice the player in 6 s`;
+  if (notices(false)) return `pack scenario: a plain drone noticed the player ${PACK.sight - 5} m off`;
+  return null;
+}
+
 /** Places on the island a player waits in: the POI entries and the districts between them. */
 const WAIT_SPOTS: [string, number, number][] = [
   ...POIS.map((p): [string, number, number] => [p.name, p.entry.x, p.entry.z]),
@@ -338,6 +481,7 @@ function checkCliffsStop(): string | null {
     const s = newRun(1);
     s.phase = "play";
     s.enemies = [];
+    s.parties = [];
     s.reinforceT = s.raiderT = 1e9;
     const p = s.player;
     p.pos = { x, y: groundAt(x, z, 0.4, 0), z };
@@ -407,6 +551,9 @@ function checkReinforceEverywhere(): string | null {
       s.raiderT = 1e9;
       // Only the reinforcements: the island's own robots would fight and shove the player off the spot.
       s.enemies = [];
+      s.parties = [];
+      // Where the wave lands is drawn afresh from the seed, not from what placing the island's robots left of it.
+      s.rng = seed;
       const p = s.player;
       p.pos = { x, y: groundAt(x, z, 0.4, terrainHeight(x, z) + 2), z };
       p.onGround = true;
@@ -712,6 +859,7 @@ function padRun(): State {
   s.visited = POIS.map(() => true);
   s.reinforceT = 1e9;
   s.raiderT = 1e9;
+  s.parties = [];
   const p = s.player;
   p.pos = { x: POIS[PAD].x, y: 0, z: POIS[PAD].z };
   p.pos.y = groundAt(p.pos.x, p.pos.z, 0.4, terrainHeight(p.pos.x, p.pos.z) + 2);
@@ -1779,11 +1927,74 @@ function checkLaterWaveFights(): string | null {
   holdSpot(s, SHIP_WAVES.first + 0.2);
   const first = s.enemies.find((e) => s.squads[e.squad]?.name === SHIP_SQUAD);
   if (!first) return "later-wave scenario: no first wave";
+  // No teammate: its fire could bring the first wave down before the next one joins it.
+  s.ally.active = false;
   engageSquad(s, first.squad, first);
   holdSpot(s, SHIP_WAVES.every + 0.2);
   const idle = s.enemies.filter((e) => e.squad === first.squad && e.aware !== "engaged");
   if (s.enemies.filter((e) => e.squad === first.squad).length < 3) return "later-wave scenario: the second wave did not come";
   return idle.length ? `later-wave scenario: ${idle.length} robots of a later wave joined a fighting squad without fighting` : null;
+}
+
+/**
+ * A clear line of `dist` metres over the walkable ground: the player's spot and a squad's spot
+ * that far away, both on open level ground with nothing between the player's chest and a grunt's eye.
+ */
+function longLine(dist: number): { p: { x: number; z: number }; g: { x: number; z: number } } | null {
+  const ok = (x: number, z: number) => inWorld(x, z, 5) && onMainGround(x, z) && !offLowGround(x, z) && !steepAt(x, z) && !solidAt(x, terrainHeight(x, z) + 0.4, z) && !solidAt(x, terrainHeight(x, z) + 1.2, z);
+  for (let x = WORLD.x0 + 20; x < WORLD.x1 - 20; x += 23)
+    for (let z = WORLD.z0 + 20; z < WORLD.z1 - 20; z += 23) {
+      if (!ok(x, z)) continue;
+      for (let a = 0; a < 2 * Math.PI; a += Math.PI / 6) {
+        const gx = x + Math.sin(a) * dist;
+        const gz = z - Math.cos(a) * dist;
+        // A second grunt stands 2.5 m to the side of the first.
+        const sx = Math.cos(a) * 2.5;
+        const sz = Math.sin(a) * 2.5;
+        if (!ok(gx, gz) || !ok(gx + sx, gz + sz) || Math.abs(terrainHeight(gx, gz) - terrainHeight(x, z)) > 3) continue;
+        const chest = { x, y: terrainHeight(x, z) + 1.1, z };
+        if (!los(chest, { x: gx, y: terrainHeight(gx, gz) + KINDS.grunt.weakY, z: gz }) || !los(chest, { x: gx + sx, y: terrainHeight(gx + sx, gz + sz) + KINDS.grunt.weakY, z: gz + sz })) continue;
+        return { p: { x, z }, g: { x: gx, z: gz } };
+      }
+    }
+  return null;
+}
+
+/**
+ * Shots from beyond a robot's sight are answered (see RETURN): a squad of two grunts minding
+ * their posts 90 m or 130 m off, side-on to the player, with a clear line between, is hit once
+ * and fires back within 4 s. At 130 m a squad that is not shot does not notice the player at all.
+ */
+function checkReturnFire(): string | null {
+  for (const dist of [90, 130]) {
+    const line = longLine(dist);
+    if (!line) return `return-fire scenario: no clear line of ${dist} m for the test`;
+    for (const hit of [true, false]) {
+      if (!hit && dist < 130) continue;
+      const s = padRun();
+      s.ally.active = false;
+      const p = s.player;
+      p.pos = { x: line.p.x, y: groundAt(line.p.x, line.p.z, 0.4, terrainHeight(line.p.x, line.p.z) + 2), z: line.p.z };
+      p.vel = { x: 0, y: 0, z: 0 };
+      p.onGround = true;
+      const squad = s.squads.length;
+      s.squads.push({ name: "test", poi: -1, patrol: [], leg: 0, engaged: false, roam: false, sinceSeen: 0, last: { ...line.g } });
+      const toPlayer = Math.atan2(line.p.x - line.g.x, -(line.p.z - line.g.z));
+      const sx = Math.cos(toPlayer) * 2.5;
+      const sz = Math.sin(toPlayer) * 2.5;
+      const foes = [spawnEnemy(s, "grunt", line.g.x, line.g.z, -1, squad, { face: toPlayer + Math.PI / 2 }), spawnEnemy(s, "grunt", line.g.x + sx, line.g.z + sz, -1, squad, { face: toPlayer + Math.PI / 2 })];
+      if (hit) damageEnemy(s, foes[0], 30, false, bodyCenter(foes[0]), "ambush", "player", 0);
+      let fired = 0;
+      for (let i = 0; i < (hit ? 4 : 8) / TICK && s.phase === "play"; i++) {
+        p.iframes = 1;
+        step(s, idleInput(), false);
+        fired += s.events.filter((e) => e.t === "enemyFire" && foes.some((f) => f.id === e.id)).length;
+      }
+      if (hit && !fired) return `return-fire scenario: a grunt squad shot from ${dist} m did not fire back within 4 s (${foes.map((f) => `${f.aware} ${f.mode} ${dist2d(f.pos, p.pos).toFixed(0)} m`).join(", ")})`;
+      if (!hit && foes.some((f) => f.aware !== "idle")) return `return-fire scenario: a grunt squad ${dist} m off noticed a player who did not shoot it (${foes.map((f) => f.aware).join(", ")})`;
+    }
+  }
+  return null;
 }
 
 /** A grunt's burst at 15 m in the open finds a player who sidesteps through the glow and the shots. */
@@ -1817,7 +2028,8 @@ function checkWallStops(): string | null {
       const gx = c.x - nx * 15;
       const gz = c.z - nz * 15;
       const g0 = terrainHeight(c.x, c.z);
-      if (offLowGround(c.x, c.z) || offLowGround(gx, gz) || Math.abs(terrainHeight(gx, gz) - g0) > 0.8 || solidAt(gx, terrainHeight(gx, gz) + 1, gz)) continue;
+      // The player stands where the spot is: not on the ground beneath an upper floor's spot, nor up on a crate beside it.
+      if (Math.abs(c.y - g0) > 0.5 || Math.abs(groundAt(c.x, c.z, 0.4, g0 + 2) - g0) > 0.3 || offLowGround(c.x, c.z) || offLowGround(gx, gz) || Math.abs(terrainHeight(gx, gz) - g0) > 0.8 || solidAt(gx, terrainHeight(gx, gz) + 1, gz)) continue;
       const s = padRun();
       s.ally.active = false;
       const p = s.player;
@@ -1828,7 +2040,9 @@ function checkWallStops(): string | null {
       s.squads.push({ name: "test", poi: -1, patrol: [], leg: 0, engaged: false, roam: false, sinceSeen: 0, last: { x: c.x, z: c.z } });
       const g = spawnEnemy(s, "grunt", gx, gz, -1, squad, { face: Math.atan2(c.x - gx, -(c.z - gz)) });
       if (los({ x: g.pos.x, y: g.pos.y + 1.8, z: g.pos.z }, { x: p.pos.x, y: p.pos.y + 0.9, z: p.pos.z })) continue;
-      if (!los({ x: g.pos.x, y: g.pos.y + 1.8, z: g.pos.z }, { x: p.pos.x + nx * 3, y: p.pos.y + 1.1, z: p.pos.z + nz * 3 })) continue;
+      // A step out along the face would put the player in the grunt's sight: only the cover is in the way.
+      const out = (k: number) => los({ x: g.pos.x, y: g.pos.y + 1.8, z: g.pos.z }, { x: p.pos.x + c.tx * k, y: p.pos.y + 1.1, z: p.pos.z + c.tz * k });
+      if (!out(4) && !out(-4)) continue;
       engageSquad(s, squad, g);
       // It saw the player stand up a moment ago and aims where it saw them.
       const aim = lookAngles({ x: g.pos.x, y: g.pos.y + KINDS.grunt.weakY - 0.1, z: g.pos.z }, { x: p.pos.x, y: p.pos.y + 1.1, z: p.pos.z });
@@ -2520,7 +2734,7 @@ function checkTools(): string | null {
   if (v9?.routes.join() !== "dam,gangway") return `tool scenario: a v9 save loaded with routes ${JSON.stringify(v9?.routes)}`;
   return null;
 }
-for (const err of [checkTerrainIndex(20_000), checkRoutes(), checkRouteObstacles(), checkTools(), checkTimeToKill(), checkStagger(), checkWindupMoves(), checkDepots(), checkDepotBudget(), checkPlates(), checkHideout(), checkBoltNoTunnel(), checkPickupWavesRouted(), checkLaterWaveFights(), checkSidestepHit(), checkWallStops(), checkPinch(), checkPursuit(), checkHealHeard(), checkPositionMatters(), checkPullWhenAiming(), checkVault(), checkQuests(), checkSettle(), checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkBoatCall(), checkSecondPickup(), checkEntries(), checkKnownEntries(), checkConnections(), checkAllySelfUp(), checkStompHeight(), checkFieldsReused(), checkFieldsFollowRunner(), checkCliffsStop(), checkNoPits(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill(), checkLeap(), checkLeapLeavesAllyBelow(), checkLeapDowned(), checkLeapAllyCatchesUp(), checkLeapAllyDowned(), checkLeapWithItem(), checkLeapClocks(), checkLeapOffHighGround(), checkLeapUnderRoof()]) {
+for (const err of [checkTerrainIndex(20_000), checkParties(), checkPacks(), checkRoutes(), checkRouteObstacles(), checkTools(), checkTimeToKill(), checkStagger(), checkWindupMoves(), checkDepots(), checkDepotBudget(), checkPlates(), checkHideout(), checkBoltNoTunnel(), checkPickupWavesRouted(), checkLaterWaveFights(), checkSidestepHit(), checkReturnFire(), checkWallStops(), checkPinch(), checkPursuit(), checkHealHeard(), checkPositionMatters(), checkPullWhenAiming(), checkVault(), checkQuests(), checkSettle(), checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkBoatCall(), checkSecondPickup(), checkEntries(), checkKnownEntries(), checkConnections(), checkAllySelfUp(), checkStompHeight(), checkFieldsReused(), checkFieldsFollowRunner(), checkCliffsStop(), checkNoPits(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill(), checkLeap(), checkLeapLeavesAllyBelow(), checkLeapDowned(), checkLeapAllyCatchesUp(), checkLeapAllyDowned(), checkLeapWithItem(), checkLeapClocks(), checkLeapOffHighGround(), checkLeapUnderRoof()]) {
   if (err) {
     console.error(err);
     process.exit(1);
@@ -2528,11 +2742,12 @@ for (const err of [checkTerrainIndex(20_000), checkRoutes(), checkRouteObstacles
 }
 
 let failed = false;
-const head = ["skill    ", "alive", "time(med)", "cleared", "haul(med)", "score(med)", "downs", "acc", "crit", "leap", "crowd", "flank", "waves", "ally".padEnd(18), "rank".padEnd(18), "exit"];
+const head = ["skill    ", "alive", "time(med)", "cleared", "haul(med)", "score(med)", "downs", "acc", "crit", "leap", "crowd", "flank", "waves", "meet".padEnd(18), "ally".padEnd(18), "rank".padEnd(18), "exit"];
 console.log(`${runs} runs per skill and region. alive: share of raids that got off (the rest were wiped out)`);
 console.log("time: minutes from the start to leaving; cleared: median POIs cleared; haul and score: medians over raids that got off");
 console.log("flank: share of hits from behind a robot or before it noticed or located the player (the titan, hit alike from every side, not counted)");
 console.log("waves: median reinforcement squads that beamed in during a raid");
+console.log("meet: medians of the seconds to the first squad engaging the player and of the longest stretch with no robot fighting them; squads that engaged per run / of them belonging to no POI");
 console.log("ally: teammate's share of the damage, its downs, times it picked the player up (r) and was picked up (h), per run");
 console.log("exit: raids that left by each extraction point of the region (the bot's choice depends on skill)");
 console.log("crowd: median over runs of the most squads / robots fighting the player at once outside the titan fight");

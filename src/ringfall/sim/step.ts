@@ -1,7 +1,7 @@
 import { stepEnemies, stepOrbs, stepWaves } from "./enemies";
 import { stepPlayer, tickReveal } from "./player";
 import { stepAlly } from "./ally";
-import { stepDepots, stepEntries, stepExtract, stepLoot, stepPoi, stepReinforce } from "./world";
+import { stepDepots, stepEntries, stepExtract, stepLoot, stepParties, stepPoi, stepReinforce } from "./world";
 import { TICK } from "./config";
 import type { Input, State } from "./state";
 import { useRoutes } from "./routes";
@@ -26,6 +26,7 @@ export function step(s: State, input: Input, prevCrouch: boolean) {
     (s) => stepLoot(s, input),
     stepPoi,
     stepReinforce,
+    stepParties,
     stepExtract,
     stepDepots,
     stepEntries,
