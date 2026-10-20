@@ -1507,6 +1507,50 @@ export const EXTRA_BINS: ExtraBin[] = (
   .map((b): ExtraBin => onFloor(b))
   .concat(HAMLETS.flatMap((h) => h.bins));
 
+/** The records the story contracts send the player for (meta/story.ts), one to each. */
+export type RecordId = "tether" | "dam" | "ship" | "network" | "smelter";
+
+/**
+ * Where each record lies: a fixed spot inside a named building (`place`), on its floor. Only the
+ * record of the story contract under way lies there in a raid. `poi` is the POI the building
+ * stands in, when it stands in one.
+ */
+export interface RecordSpot {
+  id: RecordId;
+  /** The record itself, as the HUD and the board name it. */
+  name: string;
+  place: string;
+  region: RegionId;
+  poi?: PoiId;
+  x: number;
+  y: number;
+  z: number;
+}
+
+/** A spot in the heart's frame at the height `y`. */
+const heartAt = (fx: number, fz: number, y: number) => {
+  const [x, z] = inArea("heart", fx, fz);
+  return { x, z, y };
+};
+
+/** A spot in POI `id`'s own frame, `y` over the floor under it. */
+const inPoi = (id: PoiId, x: number, z: number, y: number) => onFloor({ x: x + POI_AT[id][0], z: z + POI_AT[id][1], y });
+
+export const RECORD_SPOTS: RecordSpot[] = [
+  // On the clamp ring inside the anchor's shaft, at the scaffold's foot across from its bin.
+  { id: "tether", name: "昇降路の記録", place: "アンカーの縦穴", region: "reservoir", ...onFloor({ ...anchorBin(-7.5, -7.5, ANCHOR.ringTop) }) },
+  // The intake tower's fourth storey, on the side by the dam's face.
+  { id: "dam", name: "ダムの運転日誌", place: "取水塔の制御室", region: "reservoir", ...heartAt(-37, -97, LEVEL.lakebed + INTAKE.storey * 3) },
+  // The bridge at the top of the wreck's stern, beside its vault.
+  { id: "ship", name: "最後の航海日誌", place: "難破船の船橋", region: "harbor", poi: "wreck", ...inPoi("wreck", 42, 0, SHIP_DECK + STOREY * 2) },
+  // The equipment building's third floor.
+  { id: "network", name: "網の設計記録", place: "中継塔の機器棟", region: "reservoir", poi: "relay", ...inPoi("relay", -24, -14, WORKS.storey * 2) },
+  // The control building's top floor, over the vault.
+  { id: "smelter", name: "製錬所の出荷台帳", place: "製錬所の制御棟", region: "harbor", poi: "smelter", ...inPoi("smelter", 43, -6, STOREY * 3) },
+];
+
+export const recordSpot = (id: RecordId): RecordSpot => RECORD_SPOTS.find((r) => r.id === id) ?? RECORD_SPOTS[0];
+
 
 /**
  * A ramp of shallow steps (risers of 0.2 m) over [x0, x1] x [z0, z1] from height `from` at one end

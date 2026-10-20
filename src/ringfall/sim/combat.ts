@@ -2,7 +2,7 @@ import { ALLY, ASSIST, DEG, DODGE, ELITE, ENEMIES, FLANK, KICK_PATTERN, KICK_RES
 import { engageSquad, learnSpot, located, makeNoise, shotFromAfar } from "./awareness";
 import { POIS } from "./map";
 import { los, lookAngles, norm, rayWorld, raySphere, wrapAngle } from "./geom";
-import { bodyY, forward, rand, weakY, type Enemy, type State, type Vec3, type Weapon } from "./state";
+import { bodyY, forward, rand, squadKey, weakY, type Enemy, type State, type Vec3, type Weapon } from "./state";
 
 /*
  * Everything about the player's shots landing on robots: hit boxes, aim assist,
@@ -268,6 +268,8 @@ const SHARDS = { drone: 1, grunt: 1, charger: 1, heavy: 3, titan: 0 } as const;
 
 export function kill(s: State, e: Enemy, crit: boolean, by: "player" | "ally" = "player") {
   s.enemies = s.enemies.filter((o) => o !== e);
+  const sq = s.squads[e.squad];
+  if (sq && !s.enemies.some((o) => o.squad === e.squad)) s.stats.wiped.push(squadKey(sq));
   s.stats.kills++;
   if (by === "ally") s.stats.allyKills++;
   else s.stats.killsBy[e.kind]++;

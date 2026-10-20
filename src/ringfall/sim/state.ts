@@ -1,5 +1,5 @@
 import { ALLY, BOOST, DEPOT, DUCK, ELITE, ENEMIES, META, RAIDERS, REINFORCE, VALUABLES, WORLD, type ValuableKind, PLAYER, ULT, type EnemyKind, type Flank, type HealKind, type Rarity, type ToolKind, type WeaponKind } from "./config";
-import { DEPOTS, depotIndex, entryOf, EXTRA_BINS, POIS, poiIndex, poiRegion, regionOf, type EntryId, type ExtractId, type PoiId, type RegionId, type RouteId } from "./map";
+import { DEPOTS, depotIndex, entryOf, EXTRA_BINS, POIS, poiIndex, poiRegion, recordSpot, regionOf, type EntryId, type ExtractId, type PoiId, type RecordId, type RegionId, type RouteId } from "./map";
 import { openRoutes, useRoutes } from "./routes";
 import { populate } from "./enemies";
 import { placeParties } from "./world";
@@ -83,6 +83,13 @@ export interface Player {
   flares: number;
   /** Valuables carried; their worth is the raid's score if the player gets off the island. */
   haul: ValuableKind[];
+  /**
+   * The POI (index) whose bin each valuable of `haul` came out of, at the same place; -1 for one
+   * found anywhere else. A fetch contract counts only those of its POI.
+   */
+  haulAt: number[];
+  /** Story records carried (meta/story.ts): a bag slot each, never sold, kept on the profile once home. */
+  records: RecordId[];
   /** Keys on the ring, as the POIs whose vaults they open (copies included). They take no bag space. */
   keys: number[];
   /** Tools carried (`TOOLS`): they fill bag slots beside the haul and score nothing, but open a route once home. */
@@ -287,7 +294,7 @@ export interface Shockwave {
   allyHit?: boolean;
 }
 
-export type LootKind = "weapon" | "armor" | "heal" | "shard" | "flare" | "valuable" | "key" | "tool";
+export type LootKind = "weapon" | "armor" | "heal" | "shard" | "flare" | "valuable" | "key" | "tool" | "record";
 
 export interface Loot {
   id: number;
@@ -298,6 +305,9 @@ export interface Loot {
   /** For a key: the POI whose vault it opens. */
   key?: number;
   tool?: ToolKind;
+  record?: RecordId;
+  /** For a valuable: the POI (index) whose bin it came out of, kept through the bag (`Player.haulAt`). */
+  from?: number;
   /** Armour the player took off: it can be put back on with the use key, and its shield is not refilled. */
   worn?: boolean;
   rarity: Rarity;
@@ -431,6 +441,8 @@ export interface Stats {
   killsBy: Record<EnemyKind, number>;
   /** POIs whose vault the player opened. */
   vaults: number[];
+  /** Squads destroyed to the last member, by `squadKey()`: an intercept contract names one. */
+  wiped: string[];
 }
 
 /**
@@ -520,6 +532,10 @@ export interface State {
   sent: ValuableKind[];
   /** Tools sent home the same way. */
   sentTools: ToolKind[];
+  /** Where each of `sent` came from, as `Player.haulAt`. */
+  sentAt: number[];
+  /** Story records sent home the same way. */
+  sentRecords: RecordId[];
   /** Credits' worth sent home through each depot this raid, by place in `DEPOTS`: it levels that depot (`DEPOT.levels`). */
   sentVia: number[];
   /** Leaving at a depot: which one, and the seconds still to stand there. */
@@ -658,6 +674,8 @@ export interface Start {
   routes?: RouteId[];
   /** Who holds each POI (meta/island.ts); left out, every POI is held. The titan's pad is always held. */
   island?: Partial<Record<PoiId, PoiHold>>;
+  /** The record of the story contract under way: it lies at its spot (`RECORD_SPOTS`) this raid. */
+  record?: RecordId;
 }
 
 /**
@@ -735,6 +753,8 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
       lentHeals: { ...kit.lentHeals },
       flares: 0,
       haul: [],
+      haulAt: [],
+      records: [],
       keys: [...kit.keys],
       tools: [],
       search: null,
@@ -770,6 +790,8 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
     depots: depotsOn,
     sent: [],
     sentTools: [],
+    sentAt: [],
+    sentRecords: [],
     sentVia: DEPOTS.map(() => 0),
     leaving: null,
     leftAt: null,
@@ -779,7 +801,7 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
     seen: start.seen ? decodeSeen(start.seen) : emptySeen(),
     cell: -1,
     events: [],
-    stats: { kills: 0, damage: 0, shots: 0, hits: 0, crits: 0, flankHits: 0, titanHits: 0, downs: 0, wipes: 0, cleared: [], allyDamage: 0, allyKills: 0, allyDowns: 0, allyRescues: 0, allyHelped: 0, killsBy: { drone: 0, grunt: 0, charger: 0, heavy: 0, titan: 0 }, vaults: [] },
+    stats: { kills: 0, damage: 0, shots: 0, hits: 0, crits: 0, flankHits: 0, titanHits: 0, downs: 0, wipes: 0, cleared: [], allyDamage: 0, allyKills: 0, allyDowns: 0, allyRescues: 0, allyHelped: 0, killsBy: { drone: 0, grunt: 0, charger: 0, heavy: 0, titan: 0 }, vaults: [], wiped: [] },
   };
   if (from) {
     const p = s.player;
@@ -792,8 +814,22 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
   placeAlly(s);
   populate(s);
   placeParties(s);
+  // An id of its own below every other, so a raid with a record numbers the rest as one without.
+  if (start.record) {
+    const r = recordSpot(start.record);
+    s.loot.push({ id: -1_000_000, kind: "record", record: r.id, rarity: 3, pos: { x: r.x, y: r.y, z: r.z }, vel: { x: 0, y: 0, z: 0 }, age: 99 });
+  }
   return s;
 }
+
+/**
+ * A squad's name for a contract to point at: a drone pack by its own name, a hunting party by
+ * its region (its line-up changes from raid to raid), any other squad by its name.
+ */
+export const squadKey = (sq: Pick<SquadState, "name" | "party">) => (sq.party ? partyKey(sq.party.region) : sq.name);
+
+/** The key every hunting party of `region` is destroyed under. */
+export const partyKey = (region: RegionId) => `party:${region}`;
 
 /** The teammate before it is stood beside the player (`placeAlly()`), at `at`. */
 export function newAlly(at: { x: number; z: number; yaw: number }): Ally {

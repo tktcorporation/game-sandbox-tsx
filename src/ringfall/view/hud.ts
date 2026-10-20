@@ -12,6 +12,9 @@ import { haulValue, rank } from "../sim/results";
 import { pickHeal } from "../sim/player";
 import { RARITY_CSS, SCOPE_IN } from "./models";
 import { IslandMap } from "./map";
+import { CONTRACT_NAME, contractMark, contractProgress, contractText, type Contract } from "../meta/contracts";
+import { storyOf } from "../meta/story";
+import { recordSpot, type RecordId } from "../sim/map";
 import type { World } from "./world";
 
 /*
@@ -20,6 +23,13 @@ import type { World } from "./world";
  * (shield cells, health, ammo, ability charge).
  */
 
+const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
+/** Replaces an element's markup only when it changes: the objective card is redrawn every frame. */
+const setHtml = (el: HTMLElement, html: string) => {
+  if (el.dataset.html === html) return;
+  el.dataset.html = html;
+  el.innerHTML = html;
+};
 const clock = (t: number) => `${Math.floor(Math.max(0, t) / 60)}:${String(Math.floor(Math.max(0, t) % 60)).padStart(2, "0")}`;
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 /** Wording follows the controls in use: keys on a PC, on-screen buttons on a phone. */
@@ -108,6 +118,16 @@ export class Hud {
 
   show(on: boolean) {
     this.root.hidden = !on;
+  }
+
+  /** The contract taken for this raid (null for none) and the story record lying on the island (null for none). */
+  private contract: Contract | null = null;
+  private record: RecordId | null = null;
+
+  setContract(c: Contract | null, record: RecordId | null) {
+    this.contract = c;
+    this.record = record;
+    this.map.contract = c && contractMark(c);
   }
 
   /** The ways in the base offers, for the raid about to start: the HUD and the map tell the others apart. */
@@ -299,6 +319,22 @@ export class Hud {
     else if (poi) text = poi.boss ? "タイタンの縄張り" : `${poi.name}：部隊 残り ${remaining}`;
     else text = "探索して脱出せよ";
     $("obj-text").textContent = text;
+    // The contract's line and how far it has gone, and the story record's, under the place.
+    const oc = $("obj-contract");
+    oc.hidden = !this.contract;
+    if (this.contract) {
+      const pr = contractProgress(this.contract, s);
+      setHtml(oc, `<span class="lead">依頼・${CONTRACT_NAME[this.contract.t]}：</span>${esc(pr.line)}`);
+      oc.classList.toggle("met", pr.met);
+    }
+    const os = $("obj-story");
+    os.hidden = !this.record;
+    if (this.record) {
+      const r = recordSpot(this.record);
+      const held = p.records.includes(this.record) || s.sentRecords.includes(this.record);
+      setHtml(os, `<span class="lead">記録：</span>${esc(held ? `${r.name}を持っている。持ち帰る` : `${r.place}の${r.name}`)}`);
+      os.classList.toggle("met", held);
+    }
     $("obj-count").textContent = `回収 ${haulValue(s)}`;
     $("obj-bag").textContent = `バッグ ${bagLoad(p)}/${BAG.slots}`;
     const raid = s.phase === "play" ? `${clock(s.time)}` : "";
@@ -695,9 +731,10 @@ export class Hud {
       // Back in the camp's yard with a fight close by: it takes the player home once that is over.
       if (homeReady(s) && depotBlocked(s)) return "戦っているロボットが近くにいる間は帰れない";
       // Standing on a valuable that will not go in, and nothing in the bag is worth less.
-      const left = s.loot.find((l) => (l.kind === "valuable" || l.kind === "tool") && l.age >= 0.4 && dist2d(l.pos, p.pos) < PLAYER.pickupRange && Math.abs(l.pos.y - p.pos.y) < 2);
+      const left = s.loot.find((l) => (l.kind === "valuable" || l.kind === "tool" || l.kind === "record") && l.age >= 0.4 && dist2d(l.pos, p.pos) < PLAYER.pickupRange && Math.abs(l.pos.y - p.pos.y) < 2);
       if (left?.valuable) return `バッグがいっぱい：${VALUABLES[left.valuable].label}は入らない`;
       if (left?.tool) return `バッグがいっぱい：${TOOLS[left.tool].label}は入らない`;
+      if (left?.record) return `バッグがいっぱい：${recordSpot(left.record).name}は 1 枠空けると拾える`;
       // Before a closed route's obstacle: which tool opens it.
       const r = routeBefore(p.pos, s.routes);
       if (!r) return "";
@@ -725,9 +762,9 @@ export class Hud {
     }
     if (t.kind === "care") return `${key("E")}補給ポッドを開ける`;
     if (t.kind === "depot") {
-      if (!p.haul.length && !p.tools.length) return `${key("E")}ここで切り上げる（${DEPOT.leave} 秒そばに立つ）`;
+      if (!p.haul.length && !p.tools.length && !p.records.length) return `${key("E")}ここで切り上げる（${DEPOT.leave} 秒そばに立つ）`;
       const value = p.haul.reduce((n, k) => n + VALUABLES[k].value, 0);
-      return `${key("E")}倉庫へ送る（${p.haul.length + p.tools.length} 点・${value}）`;
+      return `${key("E")}倉庫へ送る（${p.haul.length + p.tools.length + p.records.length} 点・${value}）`;
     }
     if (t.kind === "armor") return `${key("E")}<span class="r" style="color:${RARITY_CSS[t.loot.rarity]}">アーマー Lv${t.loot.rarity}</span>に着替える（Lv${p.armor} を置く）`;
     const wl = t.loot;
@@ -791,7 +828,13 @@ export class Hud {
         (settled.freed.length ? `<h3>解放した拠点</h3><p>${settled.freed.map((id) => `<span class="freed">${POIS[poiIndex(id)].name}</span>`).join("")}</p>` : "") +
         `<h3>明日の島</h3><ul class="tomorrow">${(islandNotes(settled.profile, settled).map((n) => `<li class="${n.t}${n.t === "fading" && n.days <= 1 ? " soon" : ""}">${noteText(n)}</li>`).join("")) || "<li>島は変わらない。支配の拠点の守備隊を片付けて生きて帰ると、その拠点は解放になる</li>"}</ul>`
       : "";
-    $("home").innerHTML = island + (quests.length ? `<h3>済んだ依頼</h3><p>${quests.map((q) => `<span>${q.title}（${q.reward.cash} クレジット${rewardList(q).map(([i, n]) => `・${itemName(i)}${n > 1 ? ` × ${n}` : ""}`).join("")}）</span>`).join("")}</p>` : "") + (settled
+    // The contract taken for the raid: done and paid, or not done (it goes with the day).
+    const c = settled?.contract;
+    const contract = c
+      ? `<h3>依頼</h3><p><span class="contract ${c.done ? "done" : "failed"}">${CONTRACT_NAME[c.c.t]}：${contractText(c.c)}<b>${c.done ? `達成・${c.c.reward.cash} クレジット${rewardList(c.c).map(([i, n]) => `・${itemName(i)}${n > 1 ? ` × ${n}` : ""}`).join("")}` : "未達成（依頼は今日で消える）"}</b></span></p>`
+      : "";
+    const story = settled?.story ? `<h3>記録を持ち帰った</h3><p><span class="contract done">${storyOf(settled.story.id).title}：${recordSpot(settled.story.id).name}<b>${settled.story.cash} クレジット・依頼板で読める</b></span></p>` : "";
+    $("home").innerHTML = island + contract + story + (quests.length ? `<h3>済んだ依頼</h3><p>${quests.map((q) => `<span>${q.title}（${q.reward.cash} クレジット${rewardList(q).map(([i, n]) => `・${itemName(i)}${n > 1 ? ` × ${n}` : ""}`).join("")}）</span>`).join("")}</p>` : "") + (settled
       ? (sent.length ? `<h3>中継ボックスから倉庫へ送った物</h3><p>${count(sent)}</p>` : "") +
         `<h3>${lost ? "ポーチに残った物" : "持ち帰った物"}</h3><p>${home.length ? count(home) : "<span>なし</span>"}</p>` +
         (settled.learned.length ? `<h3>次から選べる入口</h3><p>${settled.learned.map((id) => `<span>${entryOf(id).name}（${regionOf(entryOf(id).region).name}）</span>`).join("")}</p>` : "") +

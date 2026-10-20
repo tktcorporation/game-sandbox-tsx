@@ -7,6 +7,10 @@ import { CAMP, entryOf, FRAMES, POIS, poiIndex, type CampSpot, type RegionId, ty
 import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
 import { settle, type Settlement } from "./meta/profile";
 import { holds } from "./meta/island";
+import { contractProgress, targetKey } from "./meta/contracts";
+import { currentStory } from "./meta/story";
+import { kill } from "./sim/combat";
+import { squadKey } from "./sim/state";
 import { loadProfile, saveProfile } from "./meta/storage";
 import { Hub, type Launch } from "./view/hub";
 import { CampView } from "./view/camp";
@@ -465,7 +469,10 @@ function start(go: Launch, from?: State) {
   keepAwake(true);
   world.reset();
   sound.reset();
-  state = newRun(go.seed, kit, region, { depots: hub.profile.depots, seen: hub.profile.seen, from: go.from, entry: go.entry, routes: hub.profile.routes, island: holds(hub.profile) });
+  // The story record under way lies on the island, whichever contract was taken.
+  const record = currentStory(hub.profile.records)?.id;
+  state = newRun(go.seed, kit, region, { depots: hub.profile.depots, seen: hub.profile.seen, from: go.from, entry: go.entry, routes: hub.profile.routes, island: holds(hub.profile), record });
+  hud.setContract(hub.contract(), record ?? null);
   world.campMode = false;
   if (from) walkOut(state, from);
   // The ground round where the raid starts is built before its first frame.
@@ -591,6 +598,10 @@ declare global {
     ringfallTerrain: (x: number, z: number) => number;
     ringfallFrames: () => Record<string, { x: number; z: number }>;
     ringfallPlace: (x: number, z: number, yaw: number) => void;
+    ringfallContract: {
+      take: (type: string) => string | null;
+      destroyTarget: () => number;
+    };
     ringfallCamp: {
       spots: () => CampSpot[];
       walkTo: (id: CampSpot["id"]) => boolean;
@@ -607,10 +618,12 @@ window.render_game_to_text = () => {
   const p = s.player;
   return JSON.stringify({
     screen: running ? "game" : !$("results").hidden ? "results" : !$("ending").hidden ? "ending" : camping ? "camp" : "title",
-    camp: camping ? { panel: hub.station, near: campSpotAt(p.pos)?.id ?? null, lent: hub.lent, ride: { to: hub.rideTo(), refused: hub.rideRefused() }, marks: hub.marks(), fading } : null,
+    camp: camping ? { panel: hub.station, near: campSpotAt(p.pos)?.id ?? null, lent: hub.lent, ride: { to: hub.rideTo(), refused: hub.rideRefused() }, marks: hub.marks(), fading, board: hub.profile.board.contracts.map((c) => ({ id: c.id, t: c.t })), taken: hub.profile.taken, story: currentStory(hub.profile.records)?.id ?? null } : null,
     profile: { cash: hub.profile.cash, stash: hub.profile.stash.length, raids: hub.profile.raids, hideout: hub.profile.hideout, escaped: !!hub.profile.escaped, seed: hub.profile.seed, routes: hub.profile.routes, entries: hub.profile.entries, day: hub.profile.day, poiState: hub.profile.poiState },
     boost: { ...s.boost, name: POIS[s.boost.poi].name },
-    settled: settlement && { home: settlement.home.length, sold: settlement.sold.length, quests: settlement.quests.map((q) => q.id), opened: settlement.opened, learned: settlement.learned, day: settlement.day, freed: settlement.freed, thinned: settlement.thinned },
+    settled: settlement && { home: settlement.home.length, sold: settlement.sold.length, quests: settlement.quests.map((q) => q.id), opened: settlement.opened, learned: settlement.learned, day: settlement.day, freed: settlement.freed, thinned: settlement.thinned, contract: settlement.contract && { id: settlement.contract.c.id, t: settlement.contract.c.t, done: settlement.contract.done }, story: settlement.story?.id ?? null },
+    contract: running && hub.contract() ? { t: hub.contract()!.t, ...contractProgress(hub.contract()!, s) } : null,
+    records: s.player.records,
     vaults: s.bins.filter((b) => b.vault).map((b) => ({ poi: b.poi, x: b.x, y: b.y, z: b.z, open: b.open })),
     keys: p.keys,
     phase: s.phase,
@@ -741,6 +754,30 @@ window.ringfallYaw = () => state.player.yaw;
 
 window.ringfallBot = (skill: string) => {
   bot = new Bot(SKILLS.find((k) => k.name === skill) ?? SKILLS[1], 31);
+};
+
+/**
+ * Automation only: the contract board. `take` takes the day's first contract of `type` in the
+ * camp (its id, or null with none); `destroyTarget` destroys every robot of the taken intercept
+ * contract's squad in the raid under way, as the player's shots would (the robots destroyed).
+ */
+window.ringfallContract = {
+  take: (type) => {
+    const c = hub.profile.board.contracts.find((o) => o.t === type);
+    if (!camping || !c) return null;
+    hub.profile = { ...hub.profile, taken: c.id };
+    saveProfile(hub.profile);
+    if (hub.station) hub.render();
+    return c.id;
+  },
+  destroyTarget: () => {
+    const c = hub.contract();
+    if (!running || c?.t !== "intercept") return 0;
+    const key = targetKey(c.target);
+    const foes = state.enemies.filter((e) => state.squads[e.squad] && squadKey(state.squads[e.squad]) === key);
+    for (const e of foes) kill(state, e, false);
+    return foes.length;
+  },
 };
 
 /**
