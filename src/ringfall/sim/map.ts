@@ -3995,8 +3995,180 @@ const FENCE_RUNS: Box[] = (() => {
   return out;
 })();
 
+/**
+ * The ring's own wreckage: lengths of the orbital ring that came down on the island on the day it
+ * fell, lying on the open ground between the POIs in the world's coordinates. Each is a box girder
+ * 20 m across whose back stands about 18 m over the highest ground under it, sunk into the ground
+ * along its length, so nothing crosses it but where it is broken: gaps between its lengths to go
+ * through, a hollow length to walk through as a tunnel (its sides torn open where `tunnel` says),
+ * and heaps of rubble against one side (`rubble`) to climb onto its back, from which the far side
+ * is a drop with no way back up. A broken-off length may lie leaning across one (`lean`): its foot
+ * on the ground, its top resting on the back, a ramp up whose high end is an arch to walk under.
+ * They are the big shapes that close the open ground into ways.
+ */
+const RING = {
+  /** Half its width, and how high its back stands over the highest ground under it. */
+  half: 10,
+  back: 18,
+  /** The lengths its sides follow the ground in, and the tunnel's roof over that highest ground. */
+  step: 8,
+  tunnel: 6,
+  /** Each step of a rubble heap: its rise, its tread out from the side, and how wide it runs along. */
+  rise: 1.5,
+  tread: 1.8,
+  heap: 7,
+  /** A leaning length: half its width, its girder's depth under its deck, the most a stride of it rises. */
+  leanHalf: 5,
+  leanDepth: 3.5,
+  leanRise: 0.42,
+};
+interface RingWreck {
+  name: string;
+  /** It lies along `along` from `a` to `b`, its middle `at` across. */
+  along: "x" | "z";
+  at: number;
+  a: number;
+  b: number;
+  broken: { a?: true; b?: true };
+  /** Hollow: a tunnel the length of it, its sides torn open over these ranges along it on side -1 or +1. */
+  tunnel?: { side: -1 | 1; a: number; b: number }[];
+  /** Heaps of rubble against side -1 or +1, centred `u` along it. */
+  rubble?: { side: -1 | 1; u: number }[];
+  /** A length leaning across it at `u`, its foot on the ground `length` metres out on `side`. */
+  lean?: { side: -1 | 1; u: number; length: number };
+}
+const RING_WRECKS: RingWreck[] = [
+  // South of the quarry: three lengths stepping east, the middle one hollow, between the quarry's
+  // rim and the dunes of the coast.
+  { name: "採掘場の南の残骸（西）", along: "x", at: 215, a: -455, b: -380, broken: { b: true }, rubble: [{ side: 1, u: -420 }] },
+  { name: "採掘場の南の残骸（中）", along: "x", at: 230, a: -366, b: -296, broken: { a: true, b: true }, tunnel: [{ side: -1, a: -352, b: -342 }, { side: 1, a: -322, b: -312 }], lean: { side: 1, u: -334, length: 62 } },
+  { name: "採掘場の南の残骸（東）", along: "x", at: 250, a: -282, b: -214, broken: { a: true }, rubble: [{ side: -1, u: -240 }] },
+  // North of the relay's mesa: lengths across the fields, broken where the roads, a patrol and a
+  // power line pass.
+  { name: "中継塔の北の残骸（西）", along: "x", at: -115, a: 110, b: 168, broken: { b: true }, rubble: [{ side: 1, u: 140 }] },
+  { name: "中継塔の北の残骸（西の端）", along: "x", at: -117, a: 196, b: 230, broken: { a: true, b: true } },
+  { name: "中継塔の北の残骸（中）", along: "x", at: -112, a: 252, b: 318, broken: { a: true, b: true }, tunnel: [{ side: 1, a: 266, b: 276 }, { side: -1, a: 294, b: 304 }], lean: { side: 1, u: 286, length: 56 } },
+  // The east coast: two lengths along it, the northern one hollow, between the relay's mesa and the
+  // shore, the gap between them the way along it.
+  { name: "東の浜の残骸（北）", along: "z", at: 440, a: 40, b: 118, broken: { b: true }, tunnel: [{ side: -1, a: 70, b: 80 }] },
+  { name: "東の浜の残骸（南）", along: "z", at: 432, a: 134, b: 200, broken: { a: true }, rubble: [{ side: -1, u: 180 }] },
+  // The west: two lengths along the coast west of the quarry, a length leaning across the
+  // southern one from the quarry's side.
+  { name: "西の残骸（北）", along: "z", at: -500, a: -56, b: 6, broken: { b: true }, rubble: [{ side: 1, u: -40 }] },
+  { name: "西の残骸（南）", along: "z", at: -498, a: 22, b: 96, broken: { a: true }, lean: { side: 1, u: 60, length: 50 } },
+  // The harbor: lengths on its open ground in each quarter, between the town, the yard, the smelter
+  // and the wreck.
+  { name: "難破船の西の残骸（北）", along: "x", at: -1060, a: -260, b: -190, broken: { b: true }, rubble: [{ side: 1, u: -230 }] },
+  { name: "難破船の西の残骸（南）", along: "z", at: -210, a: -1035, b: -975, broken: { a: true }, tunnel: [{ side: -1, a: -1015, b: -1005 }] },
+  { name: "港町の西の残骸（西）", along: "x", at: -565, a: -350, b: -290, broken: { b: true }, rubble: [{ side: -1, u: -320 }] },
+  { name: "港町の西の残骸（東）", along: "x", at: -556, a: -276, b: -205, broken: { a: true }, lean: { side: 1, u: -240, length: 46 } },
+  { name: "港町の東の残骸（北）", along: "z", at: 300, a: -628, b: -572, broken: { b: true }, tunnel: [{ side: -1, a: -606, b: -596 }] },
+  { name: "港町の東の残骸（南）", along: "z", at: 308, a: -556, b: -486, broken: { a: true }, rubble: [{ side: 1, u: -520 }] },
+  { name: "製錬所の北の残骸（西）", along: "x", at: -1060, a: 140, b: 205, broken: { b: true }, rubble: [{ side: 1, u: 172 }] },
+  { name: "製錬所の北の残骸（東）", along: "x", at: -1024, a: 216, b: 285, broken: { a: true }, lean: { side: 1, u: 250, length: 46 } },
+  { name: "中継塔の北の残骸（東）", along: "x", at: -105, a: 340, b: 388, broken: { a: true }, rubble: [{ side: 1, u: 362 }] },
+];
+const RING_RUNS: Box[] = (() => {
+  const out: Box[] = [];
+  const SCORCH = 1.6;
+  for (const w of RING_WRECKS) {
+    // A box in the wreck's own terms: u along it, v across it from its middle.
+    const R = (u0: number, v0: number, u1: number, v1: number, y0: number, h: number, kind: BoxKind, tint = 0): Box =>
+      w.along === "x" ? rect(Math.min(u0, u1), w.at + Math.min(v0, v1), Math.max(u0, u1), w.at + Math.max(v0, v1), y0, h, kind, tint) : rect(w.at + Math.min(v0, v1), Math.min(u0, u1), w.at + Math.max(v0, v1), Math.max(u0, u1), y0, h, kind, tint);
+    const ground = (u: number, v: number) => (w.along === "x" ? terrainHeight(u, w.at + v) : terrainHeight(w.at + v, u));
+    const H = RING.half;
+    let high = -Infinity;
+    for (let u = w.a; u <= w.b; u += 2) for (const v of [-H, 0, H]) high = Math.max(high, ground(u, v));
+    const top = high + RING.back;
+    const side = top - 4;
+    const shoulder = top - 2;
+    // A run from u0 to u1, its broken ends scorched, `reach` running it on past the sides there.
+    const run = (v0: number, v1: number, y0: number, h: number, reach = 0, u0 = w.a, u1 = w.b) => {
+      const ua = w.broken.a && u0 === w.a ? u0 - reach : u0;
+      const ub = w.broken.b && u1 === w.b ? u1 + reach : u1;
+      const lo = w.broken.a && u0 === w.a ? ua + SCORCH : ua;
+      const hi = w.broken.b && u1 === w.b ? ub - SCORCH : ub;
+      out.push(R(lo, v0, hi, v1, y0, h, "steel", 5));
+      if (lo > ua) out.push(R(ua, v0, lo, v1, y0, h, "steel", 7));
+      if (hi < ub) out.push(R(hi, v0, ub, v1, y0, h, "steel", 7));
+    };
+    // The lowest ground under each length, where its sides start: sunk a metre into it.
+    const foot = (u0: number, u1: number) => {
+      let lo = Infinity;
+      for (let u = u0; u <= u1 + 0.01; u += 2) for (const v of [-H - 0.5, 0, H + 0.5]) lo = Math.min(lo, ground(u, v));
+      return lo - 1;
+    };
+    const lengthsAlong: [number, number][] = [];
+    for (let u = w.a; u < w.b - 0.01; u += RING.step) lengthsAlong.push([u, Math.min(w.b, u + RING.step)]);
+    const torn = (sd: -1 | 1, u: number) => (w.tunnel ?? []).some((g) => g.side === sd && u > g.a && u < g.b);
+    if (!w.tunnel) {
+      for (const [u0, u1] of lengthsAlong) run(-H, H, foot(u0, u1), side, 0, u0, u1);
+    } else {
+      // Its sides, torn open where breached, its roof over the tunnel, the back over that.
+      const roof = high + RING.tunnel;
+      for (const sd of [-1, 1] as const)
+        for (const [u0, u1] of lengthsAlong) {
+          const f = foot(u0, u1);
+          let cur = u0;
+          for (const g of (w.tunnel ?? []).filter((g) => g.side === sd && g.b > u0 && g.a < u1).sort((p, q) => p.a - q.a)) {
+            if (g.a > cur) run(sd * (H - 1.8), sd * H, f, side, 0, cur, g.a);
+            cur = Math.max(cur, g.b);
+          }
+          if (cur < u1) run(sd * (H - 1.8), sd * H, f, side, 0, cur, u1);
+        }
+      run(-H + 1.8, H - 1.8, roof, side);
+    }
+    run(-H + 1.5, H - 1.5, side, shoulder, 1.2);
+    run(-H + 4, H - 4, shoulder, top, 2.5);
+    // Darker ribs round it every 12 m.
+    for (let u = w.a + 6; u + 0.8 < w.b - 2; u += 12) {
+      const f = foot(u, u + 0.8);
+      for (const sd of [-1, 1] as const) if (!torn(sd, u) && !torn(sd, u + 0.8)) out.push(R(u, sd * H, u + 0.8, sd * (H + 0.3), f, side + 0.3, "steel", 6));
+      out.push(R(u, -H + 1.2, u + 0.8, H - 1.2, side, shoulder + 0.3, "steel", 6));
+      out.push(R(u, -H + 3.7, u + 0.8, H - 3.7, shoulder, top + 0.3, "steel", 6));
+    }
+    // Rubble heaped against a side, stepping up to the top of its side: from there a climb of two
+    // shoulders onto its back.
+    for (const r of w.rubble ?? []) {
+      const g0 = ground(r.u, r.side * (H + 4));
+      const n = Math.max(1, Math.ceil((side - g0) / RING.rise));
+      for (let k = 0; k < n; k++) {
+        const out0 = H + (n - k) * RING.tread;
+        const wob = ((k * 37) % 5) - 2;
+        const lo = Math.min(ground(r.u, r.side * out0), ground(r.u - RING.heap / 2, r.side * out0), ground(r.u + RING.heap / 2, r.side * out0)) - 0.5;
+        out.push(R(r.u - RING.heap / 2 + wob * 0.3, r.side * (H - 0.5), r.u + RING.heap / 2 + wob * 0.3, r.side * out0, lo, Math.min(side, g0 + (k + 1) * RING.rise), "rock", k % 2));
+      }
+    }
+    // The leaning length: strides up from the ground to a little over the back, each a girder
+    // `leanDepth` deep under its deck or down to the ground where that is nearer, so its low end
+    // is solid and its high end an arch. It is crossed only by its deck.
+    if (w.lean) {
+      const { side: sd, u, length } = w.lean;
+      const L = RING.leanHalf;
+      const v1 = sd * (H + length);
+      const g0 = Math.min(ground(u - L, v1), ground(u + L, v1));
+      const end = top + 0.3;
+      const n = Math.ceil((end - g0) / RING.leanRise);
+      const stride = (length + H - 4) / n;
+      for (let k = 0; k < n; k++) {
+        const va = v1 - sd * k * stride;
+        const vb = v1 - sd * (k + 1) * stride;
+        const deck = g0 + (k + 1) * ((end - g0) / n);
+        const under = Math.min(ground(u - L, va), ground(u + L, va), ground(u - L, vb), ground(u + L, vb)) - 0.5;
+        const y0 = deck - RING.leanDepth < under + 2.6 ? under : deck - RING.leanDepth;
+        out.push(R(u - L, va, u + L, vb, y0, deck, "steel", k % 6 === 5 ? 6 : 5));
+        // Its webs standing a little over the deck along both edges, so it reads as a girder, not a stair.
+        for (const e of [-1, 1]) out.push(R(u + e * L, va, u + e * (L - 0.5), vb, deck, deck + 1.1, "steel", 6));
+      }
+      // Its foot torn off and scorched where it broke.
+      out.push(R(u - L - 0.3, v1, u + L + 0.3, v1 - sd * 1.6, g0 - 1, g0 + 0.9, "steel", 7));
+    }
+  }
+  return out;
+})();
+
 /** Everything placed by hand or laid by rule before the streets are lined: what `scripts/ringfall-roads.ts` routes them round. */
-export const PLACED: Box[] = [...AUTHORED, ...BRIDGE, ...RAILWAY, ...QUAY, ...LAID, ...WORKS_LINES, ...FENCE_RUNS];
+export const PLACED: Box[] = [...AUTHORED, ...BRIDGE, ...RAILWAY, ...QUAY, ...LAID, ...WORKS_LINES, ...FENCE_RUNS, ...RING_RUNS];
 /**
  * What lines the streets (streets.ts), laid on the ground once it is built: lamp posts along every
  * length on alternate sides, a signpost where each street leaves its first junction, and traffic

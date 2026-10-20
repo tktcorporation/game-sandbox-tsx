@@ -570,6 +570,12 @@ const harborTour = [
   ["tour-87-ring-road-traffic", 170, 1.7, 212, -1.6, 0.02],
   ["tour-88-yard-fence", -120, 1.7, -648, -0.67, 0.05],
   ["tour-89-supply-fence", -30, 1.7, 285, 3.14, 0.05],
+  // The ring's wreckage: a gap between lengths, the tunnel, a leaning length, the canyon on the east shore.
+  ["tour-90-ring-wreck-south-of-quarry", -300, 1.7, 320, -0.4, 0.1],
+  ["tour-91-ring-wreck-tunnel", -340, 1.7, 230, 1.57, 0],
+  ["tour-92-ring-wreck-leaning", -334, 22, 300, 0, -0.1],
+  ["tour-93-ring-wreck-east-shore", 400, 1.7, 125, 1.57, 0.06],
+  ["tour-94-ring-wreck-harbor", -240, 1.7, -490, 0, 0.08],
 ];
 for (const [name, x, dy, z, yaw, pitch, abs] of harborTour) {
   const y = abs ? dy : (await page.evaluate(([x, z]) => window.ringfallTerrain(x, z), [x, z])) + dy;

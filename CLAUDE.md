@@ -222,6 +222,13 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   ground round some of the base's works: they stop bodies, not sight or shots (`rayWorld()` in
   `geom.ts` passes them, `cover.ts` offers no cover behind them), and leave a gate wherever a
   street or a kept road crosses and a gap wherever something built stands in the way.
+  The ring's own wreckage (`RING_WRECKS` / `RING_RUNS` in `map.ts`, laid once the ground is built)
+  lies on the open ground of both regions: box girders 20 m across whose backs stand 18 m over the
+  ground, in lengths along x or z that close the open ground into ways. They are crossed only where
+  they are broken (gaps between lengths), through a hollow length (`tunnel`, its sides torn open),
+  over a length leaning across one (`lean`, its high end an arch to walk under) or up a heap of
+  rubble (`rubble`) onto the back, whose far side is a drop with no way back up. Like the fences
+  they are in `PLACED`, so the streets route round them.
   Towns (`TOWN_FRAMES` in `map.ts`: the lakeside town on the reservoir's ring road) are streets of
   houses, shops and a filling station, each building at the level of the ground under its own
   middle so a town follows the land, with a squad walking their streets (joined to `ROAMERS`).
