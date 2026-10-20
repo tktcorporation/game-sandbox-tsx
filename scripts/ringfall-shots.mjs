@@ -1242,6 +1242,88 @@ for (const [size, name] of [[{ width: 1280, height: 720 }, "44-ending"], [{ widt
   await ctx.close();
 }
 lap("ending");
+/*
+ * The island's state, from a saved profile on day 6: the supply depot freed and unvisited since
+ * day 3 (it goes thin unless the next raid comes into it), the wreck freed yesterday, the quarry
+ * thin. The map table colours the POIs and lists 明日の島, its mark warns of the depot, the raid's
+ * map shows the standings, and coming home ends the day on the results with 明日の島.
+ */
+const islandDay = {
+  v: 13, cash: 2400, stash: [], raids: 5, extracted: 4, time: 3600, region: "reservoir", entry: "beach", seed: 4242, escaped: null,
+  entries: ["beach", "checkpoint", "jetty", "outskirts", "quay", "shore"], depots: ["supply", "wreck"], seen: "f".repeat(4000),
+  quests: { progress: {}, done: [] }, day: 6,
+  poiState: { supply: { state: "freed", lastVisit: 3 }, quarry: { state: "thin", lastVisit: 4 }, relay: { state: "held", lastVisit: 0 }, pad: { state: "held", lastVisit: 0 }, wreck: { state: "freed", lastVisit: 5 }, yard: { state: "held", lastVisit: 0 }, smelter: { state: "held", lastVisit: 0 } },
+};
+{
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+  const pg = await withProfile(ctx, islandDay);
+  await toCamp(pg);
+  const c = await readOf(pg);
+  if (c.profile.day !== 6 || c.profile.poiState.quarry.state !== "thin" || !/あす手薄：補給所/.test(c.camp.marks.map)) errors.push(`island: the camp reads day ${c.profile.day}, marks ${JSON.stringify(c.camp.marks)}`);
+  await pg.evaluate(() => window.ringfallCamp.walkTo("map"));
+  await pg.evaluate(() => window.advanceTime(100));
+  await pg.screenshot({ path: `${out}/70-island-camp-mark.png` });
+  await useStation(pg, "map");
+  await pg.waitForTimeout(300);
+  const lines = await pg.locator("#hub-side .tomorrow li").allTextContents();
+  if (lines.length < 3 || !/補給所は次のレイドで訪れないと手薄になる/.test(lines[0]) || !lines.some((l) => /採掘場は手薄/.test(l))) errors.push(`island: the map table's 明日の島 reads ${JSON.stringify(lines)}`);
+  const fit = await spills(pg);
+  if (fit.length) errors.push(`island map table (1280x720): ${fit.join(", ")}`);
+  await pg.screenshot({ path: `${out}/71-island-panel.png` });
+  await closePanel(pg);
+  const run = await walkOutOfGate(pg);
+  const at = (id) => run.enemies.filter((e) => run.squads[e.squad].poi === id).length;
+  if (run.hold.join() !== "freed,thin,held,held,freed,held,held" || at(0) !== 0 || at(4) !== 0 || !(at(1) > 0)) errors.push(`island raid: holds ${run.hold.join()}, robots at the supply depot ${at(0)}, the wreck ${at(4)}, the quarry ${at(1)}`);
+  // The way in's banner has gone by the time the map is opened.
+  await pg.evaluate(() => window.ringfallStep(4000));
+  await pg.keyboard.press("KeyM");
+  await pg.evaluate(() => window.advanceTime(100));
+  await pg.screenshot({ path: `${out}/72-island-map.png` });
+  await pg.keyboard.press("KeyN");
+  await pg.evaluate(() => window.advanceTime(100));
+  await pg.screenshot({ path: `${out}/73-island-map-whole.png` });
+  await pg.keyboard.press("KeyN");
+  await pg.keyboard.press("KeyM");
+  // Home again after time away: the raid ends alive, the day with it.
+  await pg.evaluate(() => window.ringfallStep(7000));
+  await pg.evaluate(() => {
+    const m = window.ringfallCamp.spots().find((q) => q.id === "map");
+    window.ringfallPlace(m.x + 7, m.z + 11, 0);
+  });
+  await pg.evaluate(() => window.advanceTime(200));
+  await pg.waitForFunction(() => !document.getElementById("results").hidden, null, { timeout: 10000 }).catch(() => undefined);
+  const r = await readOf(pg);
+  const home = await pg.textContent("#home");
+  if (r.screen !== "results" || r.settled?.day !== 6 || r.profile.day !== 7 || !/6 日目の終わり/.test(home) || !/明日の島/.test(home) || !/補給所(はあと 3 日訪れないと|は訪れないうちに)手薄にな/.test(home)) errors.push(`island results: ${r.screen}, day ${r.settled?.day} -> ${r.profile.day}, home "${home}"`);
+  console.log(`island results: ${JSON.stringify(await pg.locator("#home .tomorrow li").allTextContents())}`);
+  await pg.screenshot({ path: `${out}/74-island-results.png` });
+  await pg.setViewportSize({ width: 740, height: 360 });
+  await pg.waitForTimeout(300);
+  await pg.screenshot({ path: `${out}/m20-island-results.png` });
+  await ctx.close();
+}
+{
+  const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+  const pg = await withProfile(ctx, islandDay);
+  await pg.evaluate(() => Object.defineProperty(screen, "orientation", { value: undefined, configurable: true }));
+  await toCamp(pg, true);
+  const cdp = await ctx.newCDPSession(pg);
+  await useStation(pg, "map", cdp);
+  await pg.waitForTimeout(300);
+  const fit = await spills(pg);
+  if (fit.length) errors.push(`island map table (phone): ${fit.join(", ")}`);
+  await pg.screenshot({ path: `${out}/m21-island-panel.png` });
+  await closePanel(pg, true);
+  await rideOut(pg, cdp);
+  await pg.evaluate(() => window.ringfallStep(4000));
+  const bb = await pg.locator("#t-map").boundingBox();
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: bb.x + bb.width / 2, y: bb.y + bb.height / 2, id: 1 }] });
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await pg.evaluate(() => window.advanceTime(200));
+  await pg.screenshot({ path: `${out}/m22-island-map.png` });
+  await ctx.close();
+}
+lap("island");
 console.log(`screens: ${[...taken].join(", ")}`);
 await browser.close();
 server.close();

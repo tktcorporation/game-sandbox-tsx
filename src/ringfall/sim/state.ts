@@ -6,6 +6,7 @@ import { placeParties } from "./world";
 import { placeAlly } from "./ally";
 import { groundAt } from "./geom";
 import { forgetFields } from "./hunt";
+import type { PoiHold } from "./island";
 
 export interface Vec3 {
   x: number;
@@ -492,6 +493,11 @@ export interface State {
   /** POIs the player has come into (for the arrival banner), and those cleared of robots. */
   visited: boolean[];
   cleared: boolean[];
+  /**
+   * Who holds each POI on the island this raid, by POI index (`PoiHold`): its garrison. A freed
+   * POI starts cleared, with no robots, its vault open to search and its depot on.
+   */
+  hold: PoiHold[];
   /** Seconds until the next reinforcement squad beams in, and how many have come. */
   reinforceT: number;
   reinforceN: number;
@@ -650,6 +656,8 @@ export interface Start {
   seen?: string;
   /** The routes opened in earlier raids: the raid's world has them open. */
   routes?: RouteId[];
+  /** Who holds each POI (meta/island.ts); left out, every POI is held. The titan's pad is always held. */
+  island?: Partial<Record<PoiId, PoiHold>>;
 }
 
 /**
@@ -663,7 +671,11 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
   // The hunters' fields kept from an earlier raid would steer this one's hunters near the
   // same spots: a raid starts with none, so it plays the same whatever was played before it.
   forgetFields();
-  const from = start.from && start.depots?.includes(start.from) ? DEPOTS[depotIndex(start.from)] : null;
+  const hold = POIS.map((p): PoiHold => (p.boss ? "held" : (start.island?.[p.id] ?? "held")));
+  const freed = (poi: PoiId) => hold[poiIndex(poi)] === "freed";
+  // A freed POI's depot is on, so a raid may start from it too.
+  const depotsOn = DEPOTS.map((d) => !!start.depots?.includes(d.poi) || freed(d.poi));
+  const from = start.from && (start.depots?.includes(start.from) || freed(start.from)) ? DEPOTS[depotIndex(start.from)] : null;
   if (from) region = poiRegion(from.poi).id;
   const ways = regionOf(region).entries;
   const entry = entryOf(start.entry && ways.includes(start.entry) ? start.entry : ways[0]);
@@ -743,7 +755,9 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
     bins,
     care: null,
     visited: POIS.map(() => false),
-    cleared: POIS.map(() => false),
+    // A freed POI has nothing left to clear: it is not cleared again, and does not count as cleared this raid.
+    cleared: hold.map((h) => h === "freed"),
+    hold,
     reinforceT: REINFORCE.first,
     reinforceN: 0,
     raiderT: RAIDERS.at,
@@ -753,7 +767,7 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
     calls: {},
     parties: [],
     extractedAt: null,
-    depots: DEPOTS.map((d) => !!start.depots?.includes(d.poi)),
+    depots: depotsOn,
     sent: [],
     sentTools: [],
     sentVia: DEPOTS.map(() => 0),

@@ -1,0 +1,37 @@
+import { ISLAND } from "./config";
+import { POIS, type Squad } from "./map";
+import { mix } from "./state";
+
+/*
+ * What a POI's standing on the island (meta/island.ts) means inside a raid: how many of its
+ * robots stand there. The rules that move a POI from one standing to another live in the meta.
+ */
+
+/** Who holds a POI: the robots in full (支配), the robots thinly (手薄), or the player (解放). */
+export type PoiHold = "held" | "thin" | "freed";
+
+export const HOLD_NAME: Record<PoiHold, string> = { held: "支配", thin: "手薄", freed: "解放" };
+
+/** The squad guarding a POI's vault: the one with a member in armour plate. */
+export const isVaultGuard = (sq: Squad) => sq.members.some((m) => m.plate !== undefined);
+
+/**
+ * The squads of POI `poi` that stand in a raid from `seed`: all of them while it is held, none
+ * once freed. A thin POI keeps its vault guard and enough of the others, picked from the seed
+ * without drawing on the raid's random numbers, to make `ISLAND.thinKeep` of its squads.
+ */
+export function garrison(poi: number, hold: PoiHold, seed: number): Squad[] {
+  const all = POIS[poi].squads;
+  if (hold === "held") return all;
+  if (hold === "freed") return [];
+  const keep = Math.max(1, Math.ceil(all.length * ISLAND.thinKeep));
+  const guard = all.filter(isVaultGuard);
+  const rest = all
+    .map((sq, i) => ({ sq, h: mix(Math.imul(seed + 1, 0x9e3779b1) ^ Math.imul(poi + 1, 0x85ebca6b) ^ Math.imul(i + 1, 0xc2b2ae35)) }))
+    .filter(({ sq }) => !isVaultGuard(sq))
+    .sort((a, b) => a.h - b.h)
+    .map(({ sq }) => sq);
+  const kept = new Set([...guard, ...rest].slice(0, Math.max(keep, guard.length)));
+  // In authored order, so the squads come up in the raid as they would held.
+  return all.filter((sq) => kept.has(sq));
+}

@@ -14,6 +14,7 @@ import { inCamp, PACKS, PARTY_STOPS, POIS, ROAMERS, type Squad } from "./map";
 import { bodyCenter, weakPoint } from "./combat";
 import { hurtPlayer } from "./player";
 import { allyChest, allyUp, hurtAlly } from "./ally";
+import { garrison } from "./island";
 import { rand, roamRand, weakY, type Enemy, type Point, type State, type Vec3 } from "./state";
 
 /*
@@ -111,7 +112,8 @@ export function populate(s: State) {
     s.squads.push({ name: sq.name, poi, patrol: sq.patrol ?? [], leg: 0, engaged: false, roam: !!sq.roam, sinceSeen: 0, last: { x: 0, z: 0 } });
     for (const m of sq.members) spawnEnemy(s, m.kind, m.x, m.z, poi, index, { floor: m.y, face: m.face, plate: m.plate });
   };
-  POIS.forEach((p, i) => p.squads.forEach((sq) => add(sq, i)));
+  // A POI stands with the garrison its standing on the island gives it (`garrison()`).
+  POIS.forEach((_, i) => garrison(i, s.hold[i], s.seed).forEach((sq) => add(sq, i)));
   ROAMERS.forEach((sq) => add(sq, -1));
   // Each drone pack starts at a waypoint of its loop well away from the player, and flies on from there.
   const p0 = s.player.pos;

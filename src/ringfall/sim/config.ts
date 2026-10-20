@@ -362,6 +362,19 @@ export const DEPOT = {
 export const HOME = { away: 10 };
 
 /**
+ * The island's state between raids (meta/island.ts): each raid is one day, and each POI is
+ * held, thin or freed. A POI cleared in a raid the player gets off alive is freed; one freed and
+ * left unvisited for `thinAfter` days goes thin. A thin POI's garrison keeps `thinKeep` of its
+ * squads (the vault guard's among them), so going back to it is a smaller fight than the first.
+ */
+export const ISLAND = {
+  /** Days a freed POI stays freed without a visit. */
+  thinAfter: 3,
+  /** Share of a thin POI's squads that stand, rounded up. */
+  thinKeep: 0.5,
+};
+
+/**
  * The ways in on foot (`ENTRIES`) a player has walked to: one reached in a raid that ends with
  * the player off alive can be chosen at the base from then on. A player starts knowing only
  * the reservoir's first.

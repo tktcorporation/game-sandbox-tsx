@@ -6,6 +6,7 @@ import { callLeft, freeKit, idleInput, newRun, type GameEvent, type Input, type 
 import { CAMP, entryOf, FRAMES, POIS, poiIndex, type CampSpot, type RegionId, type StationId } from "./sim/map";
 import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
 import { settle, type Settlement } from "./meta/profile";
+import { holds } from "./meta/island";
 import { loadProfile, saveProfile } from "./meta/storage";
 import { Hub, type Launch } from "./view/hub";
 import { CampView } from "./view/camp";
@@ -464,7 +465,7 @@ function start(go: Launch, from?: State) {
   keepAwake(true);
   world.reset();
   sound.reset();
-  state = newRun(go.seed, kit, region, { depots: hub.profile.depots, seen: hub.profile.seen, from: go.from, entry: go.entry, routes: hub.profile.routes });
+  state = newRun(go.seed, kit, region, { depots: hub.profile.depots, seen: hub.profile.seen, from: go.from, entry: go.entry, routes: hub.profile.routes, island: holds(hub.profile) });
   world.campMode = false;
   if (from) walkOut(state, from);
   // The ground round where the raid starts is built before its first frame.
@@ -607,9 +608,9 @@ window.render_game_to_text = () => {
   return JSON.stringify({
     screen: running ? "game" : !$("results").hidden ? "results" : !$("ending").hidden ? "ending" : camping ? "camp" : "title",
     camp: camping ? { panel: hub.station, near: campSpotAt(p.pos)?.id ?? null, lent: hub.lent, ride: { to: hub.rideTo(), refused: hub.rideRefused() }, marks: hub.marks(), fading } : null,
-    profile: { cash: hub.profile.cash, stash: hub.profile.stash.length, raids: hub.profile.raids, hideout: hub.profile.hideout, escaped: !!hub.profile.escaped, seed: hub.profile.seed, routes: hub.profile.routes, entries: hub.profile.entries },
+    profile: { cash: hub.profile.cash, stash: hub.profile.stash.length, raids: hub.profile.raids, hideout: hub.profile.hideout, escaped: !!hub.profile.escaped, seed: hub.profile.seed, routes: hub.profile.routes, entries: hub.profile.entries, day: hub.profile.day, poiState: hub.profile.poiState },
     boost: { ...s.boost, name: POIS[s.boost.poi].name },
-    settled: settlement && { home: settlement.home.length, sold: settlement.sold.length, quests: settlement.quests.map((q) => q.id), opened: settlement.opened, learned: settlement.learned },
+    settled: settlement && { home: settlement.home.length, sold: settlement.sold.length, quests: settlement.quests.map((q) => q.id), opened: settlement.opened, learned: settlement.learned, day: settlement.day, freed: settlement.freed, thinned: settlement.thinned },
     vaults: s.bins.filter((b) => b.vault).map((b) => ({ poi: b.poi, x: b.x, y: b.y, z: b.z, open: b.open })),
     keys: p.keys,
     phase: s.phase,
@@ -618,6 +619,7 @@ window.render_game_to_text = () => {
     raid: +s.time.toFixed(1),
     visited: s.visited,
     cleared: s.cleared,
+    hold: s.hold,
     reinforce: { next: +s.reinforceT.toFixed(1), came: s.reinforceN },
     haul: { items: s.player.haul, tools: s.player.tools, value: haulValue(s), bag: bagLoad(s.player) },
     routes: s.routes,

@@ -93,8 +93,9 @@ export function raidCredit(g: Goal, s: State): number {
   switch (g.t) {
     case "kill":
       return s.stats.killsBy[g.kind];
+    // A freed POI has no robots left to clear: coming into it counts, so a quest opened after it was freed can still be done.
     case "clear":
-      return s.stats.cleared.some((i) => POIS[i].id === g.poi) ? 1 : 0;
+      return s.stats.cleared.some((i) => POIS[i].id === g.poi) || POIS.some((p, i) => p.id === g.poi && s.hold?.[i] === "freed" && s.visited[i]) ? 1 : 0;
     case "vault":
       return s.stats.vaults.some((i) => !g.poi || POIS[i].id === g.poi) ? 1 : 0;
     case "extract":
