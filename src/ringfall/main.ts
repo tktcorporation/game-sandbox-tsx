@@ -252,7 +252,7 @@ const ios = /iP(hone|od)/.test(navigator.userAgent);
 const homeScreen = matchMedia("(display-mode: standalone), (display-mode: fullscreen)").matches || (navigator as Navigator & { standalone?: boolean }).standalone === true;
 $("install-help").hidden = !(ios && !homeScreen);
 
-/** Keeps the phone's screen awake during a raid; let go when the page is hidden, taken again on return. */
+/** Keeps the phone's screen awake in a raid and in the camp; let go when the page is hidden, taken again on return. */
 let wake: { release(): Promise<void> } | null = null;
 function keepAwake(on: boolean) {
   const lock = (navigator as Navigator & { wakeLock?: { request(type: "screen"): Promise<{ release(): Promise<void> }> } }).wakeLock;
@@ -514,7 +514,7 @@ document.addEventListener("visibilitychange", () => {
   if (document.hidden) setPaused(true);
   // The system drops the wake lock while the page is hidden.
   wake = null;
-  if (!document.hidden && running) keepAwake(true);
+  if (!document.hidden && (running || camping)) keepAwake(true);
   if (!document.hidden) governor.settle();
 });
 $("start").addEventListener("click", openCamp);
