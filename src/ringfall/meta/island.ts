@@ -158,11 +158,18 @@ export function riseIn(p: Pick<IslandDay, "network" | "pressure" | "poiState">):
   return Math.max(1, Math.ceil((NETWORK.riseEvery - p.pressure) / netGain(p.poiState) - 1e-9));
 }
 
-/** Days a thin POI has left before the network takes it back (counting the coming raid), or null when it will not. */
-export function retakeIn(p: Pick<IslandDay, "day" | "network" | "poiState">, id: PoiId): number | null {
+/**
+ * Days a thin POI has left before the network takes it back (counting the coming raid), or null
+ * when it will not unless the player lets the network rise further. The night's rise comes before
+ * its retakes (`advanceDay()`), so a network one step short takes the POI back on the night it rises.
+ */
+export function retakeIn(p: Pick<IslandDay, "day" | "network" | "pressure" | "poiState">, id: PoiId): number | null {
   const st = p.poiState[id];
-  if (st.state !== "thin" || p.network < NETWORK.retakeAt) return null;
-  return Math.max(1, st.since + NETWORK.retakeAfter - p.day);
+  if (st.state !== "thin") return null;
+  const old = Math.max(1, st.since + NETWORK.retakeAfter - p.day);
+  if (p.network >= NETWORK.retakeAt) return old;
+  const rise = p.network + 1 >= NETWORK.retakeAt ? riseIn(p) : null;
+  return rise === null ? null : Math.max(old, rise);
 }
 
 /** Whether the relay masts stand in a raid at network `level`. */

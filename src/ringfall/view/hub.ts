@@ -1,4 +1,4 @@
-import { ALLY, HEALS as HEAL_SPECS, HIDEOUT, NETWORK, RAIDERS, RARITY, TOOLS, VALUABLES, WEAPONS, type ModuleId, type ValuableKind } from "../sim/config";
+import { ALLY, HEALS as HEAL_SPECS, HIDEOUT, NETWORK, RARITY, TOOLS, VALUABLES, WEAPONS, type ModuleId, type ValuableKind } from "../sim/config";
 import { boostFor, freeKit, type Kit } from "../sim/state";
 import { entryOf, POIS, poiIndex, poiRegion, REGIONS, regionOf, ROUTES, type EntryId, type PoiId, type RegionId, type StationId } from "../sim/map";
 import { build, buildState, buy, buyPrice, canBuild, canStartIn, deliver, deliverable, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, itemCost, HEALS, healCount, healRoom, keyName, lentHeals, loadoutCost, price, sell, sellPrice, startsIn, take, takeKit, takenContract, wanted, wares, type Item, type Loadout, type Profile } from "../meta/profile";
@@ -431,7 +431,7 @@ export class Hub {
     const b = boostFor(this.profile.seed, this.region);
     const where = esc(POIS[b.poi].name);
     if (lv === 1) return `${where}の箱に珍しい物が多い`;
-    return `${where}の箱に${esc(VALUABLES[b.kind].label)}が多い。レイダーはレイドの始めからおよそ ${Math.round(RAIDERS.at / 60)} 分後に降りる`;
+    return `${where}の箱に${esc(VALUABLES[b.kind].label)}が多い。レイダーはレイドの始めからおよそ ${Math.round(NETWORK.levels[this.profile.network].raiders / 60)} 分後に降りる`;
   }
 
   /** The routes a tool opens: open or closed, and for a closed one, the tool and where it lies. */

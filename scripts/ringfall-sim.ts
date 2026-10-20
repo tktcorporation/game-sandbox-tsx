@@ -2020,7 +2020,11 @@ function checkNetwork(): string | null {
   if (one.profile.poiState.quarry.state !== "thin" || two.profile.poiState.quarry.state !== "held" || two.change.retaken.join() !== "quarry") return `network scenario: a thin quarry at network ${NETWORK.retakeAt} is ${one.profile.poiState.quarry.state} then ${two.profile.poiState.quarry.state}`;
   let weak: Profile = { ...at(NETWORK.retakeAt - 1), day: 6, poiState: thinIsland(6) };
   for (let d = 0; d < 4; d++) weak = { ...advanceDay(weak, day()).profile, network: NETWORK.retakeAt - 1, pressure: 0 };
-  if (weak.poiState.quarry.state !== "thin" || retakeIn(weak, "quarry") !== null) return "network scenario: a thin POI went back to held at a weak network";
+  if (weak.poiState.quarry.state !== "thin") return "network scenario: a thin POI went back to held at a weak network";
+  // One step short, the night the network rises to `retakeAt` is the night it takes the POI back;
+  // two steps short, it does not before the player lets it rise further.
+  if (retakeIn(weak, "quarry") !== riseIn(weak)) return `network scenario: a thin quarry one step short of a retake is told ${retakeIn(weak, "quarry")} days, the rise ${riseIn(weak)}`;
+  if (retakeIn({ ...weak, network: NETWORK.retakeAt - 2 }, "quarry") !== null) return "network scenario: a thin quarry two steps short of a retake is told it will be taken back";
   // A POI gone thin overnight is not taken back the same night.
   const fade: Profile = { ...at(5), day: 9, poiState: { ...newIsland(), supply: { state: "freed", lastVisit: 2, since: 0 } } };
   const faded = advanceDay(fade, day());
