@@ -2051,6 +2051,8 @@ function checkNetwork(): string | null {
   // Saves: before v15 a profile starts at NETWORK.start; a v15 one keeps its level and pressure.
   const v14 = parseProfile(JSON.parse(JSON.stringify({ ...newProfile(), v: 14, network: undefined, pressure: undefined })));
   if (!v14 || v14.network !== NETWORK.start || v14.pressure !== 0) return `network scenario: a v14 save loaded at network ${v14?.network}`;
+  // Its board was made before the network chose the packs that fly: it is made anew at the migrated level.
+  if (JSON.stringify(v14.board) !== JSON.stringify(makeBoard({ ...v14, board: undefined } as unknown as Profile))) return "network scenario: a v14 save kept a board made before the network";
   const v15 = parseProfile(JSON.parse(JSON.stringify({ ...newProfile(), network: 4, pressure: 1.25 })));
   if (!v15 || v15.network !== 4 || v15.pressure !== 1.25) return `network scenario: a v15 save loaded at network ${v15?.network} with pressure ${v15?.pressure}`;
   return null;

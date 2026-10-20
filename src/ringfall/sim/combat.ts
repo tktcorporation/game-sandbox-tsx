@@ -154,8 +154,9 @@ export function fireRay(s: State, w: Weapon, dir: Vec3, touch = false) {
     assisted = { e, t: d - k.radius * 0.5, angle: rank };
   }
   const muzzle = { x: eye.x, y: eye.y - 0.15, z: eye.z };
-  // A relay mast in front of every robot on the line takes the shot (no aim assist leads onto one).
-  const mast = s.relays.length ? rayRelay(s, eye, dir, Math.min(wallT, raw?.t ?? Infinity)) : null;
+  // A relay mast in front of the robot the shot goes to takes it (no aim assist leads onto one):
+  // the robot on the line, else the one aim assist chose.
+  const mast = s.relays.length ? rayRelay(s, eye, dir, Math.min(wallT, raw?.t ?? assisted?.t ?? Infinity)) : null;
   if (mast) {
     const at = { x: eye.x + dir.x * mast.t, y: eye.y + dir.y * mast.t, z: eye.z + dir.z * mast.t };
     s.events.push({ t: "tracer", from: muzzle, to: at, hit: true });

@@ -649,7 +649,8 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     pressure: o.v === 15 && typeof o.pressure === "number" && o.pressure >= 0 && o.pressure < NETWORK.riseEvery ? o.pressure : 0,
   };
   // The day's board as saved, so it stands however the stash changed since; else the day's from now.
-  const board = (o.v === 14 || o.v === 15 ? parseBoard(o.board, day) : null) ?? makeBoard(out);
+  // A board saved before the network may name a pack the migrated level does not fly: made anew.
+  const board = (o.v === 15 ? parseBoard(o.board, day) : null) ?? makeBoard(out);
   const taken = typeof o.taken === "string" && board.contracts.some((c) => c.id === o.taken) ? o.taken : null;
   return { ...out, board, taken };
 }
