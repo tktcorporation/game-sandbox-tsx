@@ -289,7 +289,11 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   every screen. `world.ts` cuts the ground and everything built into `CHUNK`-metre
   chunks, each merged into a mesh or two with its colours in the vertices, and skips chunks past
   the fog and robots, bins and loot past the tier's `thingsFar`, so the draw calls stay bounded
-  however large the world grows. Chunks are built only near the camera (`streamChunks()`: at once
+  however large the world grows. Chunks within the tier's `trimFar` also carry a shadowless mesh
+  of architectural trim (`trim.ts`: storey bands, panel joints, lintels, sills, coping, cladding
+  ribs, fittings placed from each box's own numbers), and `scatter.ts` lays stones, stains, cracks
+  and tufts on the ground out to `scatterFar` in two instanced meshes, from a hash of each cell.
+  Chunks are built only near the camera (`streamChunks()`: at once
   inside the fog, nearest first for the tier's `streamMs` a frame out to a chunk past it) and let
   go past `DROP_AT` times that, and `prebuild()` builds round where a raid starts before its first
   frame. How much is drawn is a quality tier (`quality.ts`: `QUALITY` holds high / medium / low,
