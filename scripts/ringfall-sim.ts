@@ -15,7 +15,7 @@ import { engageSquad, makeNoise } from "../src/ringfall/sim/awareness";
 import { spawnEnemy } from "../src/ringfall/sim/enemies";
 import { COVERS } from "../src/ringfall/sim/cover";
 import { ENEMIES as KINDS, type EnemyKind, type Rarity } from "../src/ringfall/sim/config";
-import { BOXES, CAMP, DECKS, DEPOTS, depotIndex, ENTRIES, entryOf, EXTRA_BINS, EXTRACTS, inCamp, PACKS, PARTY_STOPS, POIS, poiIndex, REGIONS, regionHere, regionOf, ROAMERS, ROUTES, STOPS, type RegionId, type RouteId, type Squad } from "../src/ringfall/sim/map";
+import { BOXES, CAMP, DECKS, DEPOTS, depotIndex, ENTRIES, entryOf, EXTRA_BINS, EXTRACTS, inCamp, PACKS, PARTY_STOPS, POIS, poiIndex, poiRegion, REGIONS, regionHere, regionOf, ROAMERS, ROUTES, STOPS, type RegionId, type RouteId, type Squad } from "../src/ringfall/sim/map";
 import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "../src/ringfall/sim/camp";
 import { inArea } from "../src/ringfall/sim/areas";
 import { routeBefore, useRoutes, worldKey } from "../src/ringfall/sim/routes";
@@ -1933,6 +1933,10 @@ function checkContracts(): string | null {
                 return l && !unmet(hideout, l).length ? l.items.map(([k]) => k) : [];
               }).filter((k) => POIS.some((o) => o.loot.valuable.some(([v]) => v === k)));
               if (lacking.length && !lacking.includes(c.kind)) return `contract scenario: ${where} asks for ${c.kind}, which no buildable level lacks (${lacking.join()})`;
+              // The raid the contract is taken into holds that many in the POI's own bins, whatever they roll.
+              const raid = newRun(seed, freeKit(), poiRegion(c.poi).id, { fetch: { poi: c.poi, kind: c.kind, n: c.n } });
+              const held = raid.fetch?.bins.filter((id) => raid.bins.some((x) => x.id === id && x.poi === poisOf(c) && !x.vault && !x.outside)).length ?? 0;
+              if (held !== c.n || raid.fetch?.kind !== c.kind) return `contract scenario: ${where}'s raid holds ${held} of the ${c.n} ${c.kind} its fetch contract asks of ${c.poi}`;
             }
             if (c.t === "intercept" && !(c.target.t === "pack" ? PACKS.some((q) => q.name === (c.target as { name: string }).name) : PARTY.count[c.target.region] > 0)) return `contract scenario: ${where} names a target that does not exist: ${JSON.stringify(c.target)}`;
           }

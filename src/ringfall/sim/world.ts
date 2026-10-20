@@ -317,7 +317,8 @@ function openBin(s: State, binIndex: number) {
   // One valuable per bin; the high-rises' top floors are worth the climb.
   // In the raid's boosted POI, its own bins lean to one rare kind (`BOOST`).
   const kinds = !b.outside && b.poi === s.boost.poi ? boosted(table.valuable, s.boost.kind) : table.valuable;
-  spillValuable(s, b, b.flare ? weighted(s, TOP_BINS) : weighted(s, kinds), b.outside ? -1 : b.poi);
+  const rolled = b.flare ? weighted(s, TOP_BINS) : weighted(s, kinds);
+  spillValuable(s, b, s.fetch?.bins.includes(b.id) ? s.fetch.kind : rolled, b.outside ? -1 : b.poi);
   // Keys lie only in the POIs themselves, so each one is found where the route says.
   if (!b.outside && rand(s) < VAULT.keyChance) {
     const vault = POIS.findIndex((v) => v.keyFrom === POIS[b.poi].id);

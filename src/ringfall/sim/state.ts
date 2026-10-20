@@ -517,6 +517,11 @@ export interface State {
   raiderT: number;
   /** This raid's POI whose bins lean to a rare kind (`BOOST`), as a POI index. */
   boost: { poi: number; kind: ValuableKind };
+  /**
+   * The bins (ids) that hold the taken fetch contract's valuable this raid, whatever their roll:
+   * the contract asks for as many as its POI's bins can give, so the raid must hold them.
+   */
+  fetch: { kind: ValuableKind; bins: number[] } | null;
   outcome: Outcome | null;
   /** Seconds the player has stood ready in an extraction point. */
   extractTime: number;
@@ -676,6 +681,8 @@ export interface Start {
   island?: Partial<Record<PoiId, PoiHold>>;
   /** The record of the story contract under way: it lies at its spot (`RECORD_SPOTS`) this raid. */
   record?: RecordId;
+  /** The fetch contract taken: `n` of its POI's bins hold its valuable this raid (`State.fetch`). */
+  fetch?: { poi: PoiId; kind: ValuableKind; n: number };
 }
 
 /**
@@ -782,6 +789,7 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
     reinforceN: 0,
     raiderT: RAIDERS.at,
     boost: boostFor(seed, region),
+    fetch: fetchBins(seed, bins, start.fetch),
     outcome: null,
     extractTime: 0,
     calls: {},
@@ -820,6 +828,17 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
     s.loot.push({ id: -1_000_000, kind: "record", record: r.id, rarity: 3, pos: { x: r.x, y: r.y, z: r.z }, vel: { x: 0, y: 0, z: 0 }, age: 99 });
   }
   return s;
+}
+
+/**
+ * The fetch contract's bins: `n` of its POI's ordinary bins, picked by a hash of the seed and the
+ * bin so that the raid's random numbers are drawn as in a raid without the contract.
+ */
+function fetchBins(seed: number, bins: Bin[], fetch: Start["fetch"]): State["fetch"] {
+  if (!fetch) return null;
+  const poi = poiIndex(fetch.poi);
+  const order = bins.filter((b) => b.poi === poi && !b.vault && !b.outside).sort((a, b) => mix(seed * 31 + a.id) - mix(seed * 31 + b.id));
+  return { kind: fetch.kind, bins: order.slice(0, fetch.n).map((b) => b.id) };
 }
 
 /**

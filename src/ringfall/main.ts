@@ -471,7 +471,9 @@ function start(go: Launch, from?: State) {
   sound.reset();
   // The story record under way lies on the island, whichever contract was taken.
   const record = currentStory(hub.profile.records)?.id;
-  state = newRun(go.seed, kit, region, { depots: hub.profile.depots, seen: hub.profile.seen, from: go.from, entry: go.entry, routes: hub.profile.routes, island: holds(hub.profile), record });
+  const taken = hub.contract();
+  const fetch = taken?.t === "fetch" ? { poi: taken.poi, kind: taken.kind, n: taken.n } : undefined;
+  state = newRun(go.seed, kit, region, { depots: hub.profile.depots, seen: hub.profile.seen, from: go.from, entry: go.entry, routes: hub.profile.routes, island: holds(hub.profile), record, fetch });
   hud.setContract(hub.contract(), record ?? null);
   world.campMode = false;
   if (from) walkOut(state, from);
