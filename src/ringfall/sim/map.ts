@@ -1335,6 +1335,83 @@ const OUTPOSTS: Hamlet[] = [
 ];
 
 /**
+ * A town: where the base's people lived, built along a street as a town is, its houses facing the
+ * road, shops across from them, a filling station on the corner and a side street off the main
+ * one, with a squad walking its streets. Each building (a group of boxes) stands at the level of
+ * the ground under its own middle, so the town follows the lie of the land and its streets are the
+ * open ground between; a bin names the building it is in.
+ */
+interface Town {
+  name: string;
+  x: number;
+  z: number;
+  /** Its buildings, each written round the town's middle on ground at 0. */
+  buildings: Box[][];
+  bins: { building: number; x: number; z: number; y?: number; table: PoiId }[];
+  /** Written in the town's frame; its members stand on the ground. */
+  guard: Squad;
+}
+
+const TOWN_FRAMES: Town[] = [
+  {
+    // On the lakebed's south shore, the ring road its main street (z about -8 in its frame), the
+    // side street south off it at x = 3 (`STREETS`' 町の横通り).
+    name: "湖畔の町",
+    x: -55,
+    z: 245,
+    buildings: [
+      // North of the main street: a row of two-storey houses, their doors on the street, a small
+      // square, and the block of flats the town is seen by.
+      rowHouses(-38, -19.5, 5, 8, 10, 2),
+      [box(7, -20, 2.4, 2.4, 0.8, "wall", 1), box(4, -14.5, 2.2, 0.6, 0.5, "crate"), box(10, -14.5, 2.2, 0.6, 0.5, "crate")],
+      tower(24, -19.5, 14, 10, 3, { doors: [["s", "w"]], windows: [["e"], ["n", "e", "s", "w"], ["n", "e", "s", "w"]] }),
+      // South of it: a row of shops, their doors on the street, outside stairs up to two roofs.
+      ...[-34, -25, -16, -7].map((x, i) => building(x, 5, 8, 9, 3.6, { doors: ["n"], windows: ["s"], ...(i % 2 === 0 ? { roof: "s" as const } : {}) })),
+      // The filling station on the corner: a canopy over two pumps, the kiosk behind.
+      [
+        ...[[16, 0], [30, 0], [16, 10], [30, 10]].map(([x, z]) => box(x, z, 0.4, 0.4, 5.2, "steel", 2)),
+        rect(15.5, -0.5, 30.5, 10.5, 5.2, 5.7, "slab", 1),
+        box(20, 5, 1.0, 1.6, 1.8, "steel", 3),
+        box(26, 5, 1.0, 1.6, 1.8, "steel", 3),
+      ],
+      building(23, 18, 10, 6, 3.4, { doors: ["n", "w"], windows: ["e"] }),
+      // Along the side street: a house each side, a yard wall behind one.
+      [...tower(-10, 30, 10, 8, 2, { doors: [["e", "s"]], windows: [["w"], ["n", "e", "w"]] }), rect(-16, 37, -4, 37.4, 0, 1.6, "wall", 1)],
+      building(16, 32, 9, 8, 3.4, { doors: ["w"], windows: ["e", "s"] }),
+    ],
+    bins: [
+      { building: 2, x: 19, z: -19.5, y: STOREY * 2, table: "supply" },
+      { building: 4, x: -25, z: 5, table: "supply" },
+      { building: 8, x: 23, z: 18, table: "quarry" },
+      { building: 9, x: -12.5, z: 30, y: STOREY, table: "quarry" },
+    ],
+    // A pair walking the main street and the side street.
+    guard: {
+      name: "町の見回り",
+      members: [
+        { kind: "grunt", x: -40, z: -6, face: E },
+        { kind: "charger", x: -38.6, z: -4.6, face: E },
+      ],
+      patrol: [{ x: -40, z: -6 }, { x: 36, z: -6 }, { x: 3, z: -6 }, { x: 3, z: 40 }, { x: 3, z: -6 }],
+    },
+  },
+];
+
+/** The towns placed: each building at the level of the ground under its middle, the bins in theirs. */
+const TOWNS = TOWN_FRAMES.map((t) => {
+  const levels = t.buildings.map((b) => {
+    const xs = b.flatMap((q) => [q.x0, q.x1]);
+    const zs = b.flatMap((q) => [q.z0, q.z1]);
+    return floorLevel(t.x + (Math.min(...xs) + Math.max(...xs)) / 2, t.z + (Math.min(...zs) + Math.max(...zs)) / 2);
+  });
+  return {
+    ...t,
+    boxes: t.buildings.flatMap((b, k) => onLevel(levels[k], place(t.x, t.z, b))),
+    bins: t.bins.map((b) => ({ x: b.x + t.x, z: b.z + t.z, y: levels[b.building] + (b.y ?? 0), table: b.table })),
+  };
+});
+
+/**
  * Squads between the POIs. Beating them is optional. Most of the ground between the POIs is
  * quiet: one squad holds the drowned town, and a few walk the roads and the open ground
  * between the areas, met on the way rather than found at a post.
@@ -1408,8 +1485,11 @@ export const ROAMERS: Squad[] = (
     OUTPOSTS.flatMap((o) => {
       if (!o.guard) return [];
       const level = floorLevel(o.x, o.z);
-      return [{ ...o.guard, members: o.guard.members.map((m) => ({ ...m, x: m.x + o.x, z: m.z + o.z, y: level + (m.y ?? 0) })) }];
+      const members = o.guard.members.map((m) => ({ ...m, x: m.x + o.x, z: m.z + o.z, y: level + (m.y ?? 0) }));
+      return [{ ...o.guard, members, patrol: o.guard.patrol?.map((q) => ({ x: q.x + o.x, z: q.z + o.z })) }];
     }),
+    // Each town's guard walks its streets, on the ground as a roamer does.
+    TOWN_FRAMES.map((t) => placeSquad(t.guard, t.x, t.z)),
   );
 
 /**
@@ -1693,6 +1773,7 @@ const HAMLET_FRAMES: Hamlet[] = [
 export const FRAMES: Record<string, { x: number; z: number }> = Object.fromEntries([
   ...POI_FRAMES.map((p, i): [string, { x: number; z: number }] => [p.id, { x: AT[i][0], z: AT[i][1] }]),
   ...HAMLET_FRAMES.map((h): [string, { x: number; z: number }] => [h.name, { x: h.x, z: h.z }]),
+  ...TOWN_FRAMES.map((t): [string, { x: number; z: number }] => [t.name, { x: t.x, z: t.z }]),
   // The areas' frames (areas.ts), as "area:" and the area's id.
   ...Object.entries(AREA).map(([id, [x, z]]): [string, { x: number; z: number }] => [`area:${id}`, { x, z }]),
 ]);
@@ -1728,7 +1809,7 @@ export const LANDMARKS: readonly { name: string; x: number; z: number }[] = [
   at("bay", { name: "灯台", x: -116, z: -538 }),
   at("bay", { name: "水路", x: 140, z: -604 }),
   // The outposts and the works between the harbor's POIs.
-  ...OUTPOSTS.map((o) => ({ name: o.name, x: o.x, z: o.z })),
+  ...[...OUTPOSTS, ...TOWN_FRAMES].map((o) => ({ name: o.name, x: o.x, z: o.z })),
   { name: "貨物線", x: -130, z: -770 },
   { name: "送電線", x: 100, z: -860 },
   { name: "パイプライン", x: 260, z: -910 },
@@ -1833,7 +1914,8 @@ export const EXTRA_BINS: ExtraBin[] = (
   ] satisfies ExtraBin[]
 )
   .map((b): ExtraBin => onFloor(b))
-  .concat(HAMLETS.flatMap((h) => h.bins));
+  .concat(HAMLETS.flatMap((h) => h.bins))
+  .concat(TOWNS.flatMap((t) => t.bins));
 
 
 /**
@@ -3205,6 +3287,7 @@ const PAD_AT = AT[poiIndex("pad")];
 const AUTHORED: Box[] = [
   ...HARBOR,
   ...HAMLETS.flatMap((h) => h.boxes),
+  ...TOWNS.flatMap((t) => t.boxes),
   ...onFloors(AT[0][0], AT[0][1], supply()),
   ...place(AT[0][0], AT[0][1], watchtower()),
   ...onFloors(AT[1][0], AT[1][1], quarry()),
@@ -3850,9 +3933,11 @@ const WORKS_LINES: Box[] = (() => {
  * street, the other lane left clear. Queues stand only on lengths that run along x or z (their
  * vehicles are boxes along the axes) and away from bends, junctions and authored points.
  */
+/** Everything placed by hand or laid by rule before the streets are lined: what `scripts/ringfall-roads.ts` routes them round. */
+export const PLACED: Box[] = [...AUTHORED, ...BRIDGE, ...RAILWAY, ...QUAY, ...LAID, ...WORKS_LINES];
 const STREET_SIDE: Box[] = (() => {
   const out: Box[] = [];
-  const near = [...AUTHORED, ...BRIDGE, ...RAILWAY, ...QUAY, ...LAID, ...WORKS_LINES];
+  const near = PLACED;
   const free = (b: Box, gap: number) =>
     !steepAt((b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2) &&
     near.every((o) => o.x1 + gap <= b.x0 || b.x1 + gap <= o.x0 || o.z1 + gap <= b.z0 || b.z1 + gap <= o.z0 || o.y0 > terrainHeight((o.x0 + o.x1) / 2, (o.z0 + o.z1) / 2) + 3) &&
@@ -3926,7 +4011,7 @@ const STREET_SIDE: Box[] = (() => {
 })();
 
 /** Everything placed by hand or laid by rule, before the scattered cover fills the ground round it. */
-export const BUILT: Box[] = [...AUTHORED, ...BRIDGE, ...RAILWAY, ...QUAY, ...LAID, ...WORKS_LINES, ...STREET_SIDE];
+export const BUILT: Box[] = [...PLACED, ...STREET_SIDE];
 export const BOXES: Box[] = [...BUILT, ...scatterCover(BUILT, KEEP)];
 
 /** The bridge deck's height at (x, z) when it lies on a deck that path finding walks (DECKS), else null. */

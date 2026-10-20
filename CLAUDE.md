@@ -218,9 +218,12 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   joined to `ROAMERS`) and its whole yard pressed flat. From them the works run to the POIs
   (`WORKS_LINES`, laid once the ground is built): power lines on pylons, pipelines high enough to
   walk under, and a freight line and its spur with wagons left on them as cover.
+  Towns (`TOWN_FRAMES` in `map.ts`: the lakeside town on the reservoir's ring road) are streets of
+  houses, shops and a filling station, each building at the level of the ground under its own
+  middle so a town follows the land, with a squad walking their streets (joined to `ROAMERS`).
   Streets (`STREETS` in `streets.ts`) join the POIs, outposts, hamlets and ways in over the open
   ground. They change no ground: `scripts/ringfall-roads.ts` routes them round cliffs, high ground,
-  water and `BUILT` (everything placed before the scatter) and prints the lines pasted into
+  water and `PLACED` (everything placed before the streets are lined) and prints the lines pasted into
   `STREETS` from `ROUTE_PLAN`; the view lays their asphalt and paint (`view/streets.ts`, merged into
   each chunk), the world map draws them, and `STREET_SIDE` in `map.ts` lines them with lamp posts,
   signposts and queues of abandoned traffic. `offStreet()` is the lookup the scatter and the view use.

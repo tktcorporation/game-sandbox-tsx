@@ -1,12 +1,12 @@
 /**
  * Routes the streets between the places the world names, for laying them out by hand rather
  * than at load: `npx tsx scripts/ringfall-roads.ts` prints each street's line, found on a 2 m
- * grid round cliffs, high ground, water and everything built (`BUILT`), preferring level ground,
+ * grid round cliffs, high ground, water and everything built (`PLACED`), preferring level ground,
  * and simplified to as few points as keep it clear. Paste the lines into `STREETS` in
  * `src/ringfall/sim/streets.ts`; run it again when what a street passes changes.
  */
 import { WORLD } from "../src/ringfall/sim/config";
-import { BUILT } from "../src/ringfall/sim/map";
+import { PLACED } from "../src/ringfall/sim/map";
 import { highGround, offshore, steepAt, surfaceAt, terrainHeight } from "../src/ringfall/sim/terrain";
 import { ROUTE_PLAN } from "../src/ringfall/sim/streets";
 
@@ -26,7 +26,7 @@ for (let j = 0; j < NZ; j++)
     const z = cz(j);
     if (steepAt(x, z) || highGround(x, z) || offshore(x, z) > -10 || surfaceAt(x, z) === "水路") blocked[j * NX + i] = 1;
   }
-for (const b of BUILT) {
+for (const b of PLACED) {
   const g = terrainHeight((b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2);
   if (b.y0 > g + 2.6) continue;
   const i0 = Math.max(0, Math.floor((b.x0 - 8 - WORLD.x0) / CELL));
@@ -100,7 +100,7 @@ function route(a: readonly [number, number], b: readonly [number, number]): [num
       const run = Math.hypot(di, dj) * CELL;
       const rise = Math.abs(terrainHeight(cx(ni), cz(nj)) - y);
       // Level ground first, then room from buildings, so a street keeps to the open.
-      const cost = run * (1 + 6 * (rise / run) ** 2 + (nearBuilt[n] < 8 ? 0.6 : 0));
+      const cost = run * (1 + 6 * (rise / run) ** 2 + (nearBuilt[n] < 5 ? 0.3 : 0));
       if (g[k] + cost < g[n]) {
         g[n] = g[k] + cost;
         from[n] = k;
