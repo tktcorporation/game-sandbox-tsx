@@ -1,5 +1,5 @@
 import { ISLAND, NETWORK } from "./config";
-import { PACKS, POIS, REGIONS, regionHere, type Squad } from "./map";
+import { PACKS, POIS, REGIONS, regionHere, type DebrisId, type PoiId, type Squad } from "./map";
 import { mix } from "./state";
 
 /*
@@ -60,3 +60,12 @@ export const netPlated = (seed: number, level: number, id: number) => {
   const share = NETWORK.levels[level].plate;
   return share > 0 && (seeded(seed, 0x9a, id) % 10_000) / 10_000 < share;
 };
+
+/**
+ * The day's island event (`EVENTS`), as a raid plays it: a piece of the ring down at a spot, a
+ * squad sent to retake a freed POI, a storm, or a second salvage crew.
+ */
+export type IslandEvent = { t: "debris"; spot: DebrisId } | { t: "retake"; poi: PoiId } | { t: "storm" } | { t: "crews" };
+
+/** The salvage crews coming into the raid's starting region at network `level` on a day with `event`. */
+export const crewsFor = (level: number, event: IslandEvent | null) => NETWORK.levels[level].crews + (event?.t === "crews" ? 1 : 0);

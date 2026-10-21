@@ -1,12 +1,12 @@
-import { ALLY, BOOST, DEPOT, DUCK, ELITE, ENEMIES, META, NETWORK, RELAY, VALUABLES, WORLD, type ValuableKind, PLAYER, ULT, type EnemyKind, type Flank, type HealKind, type Rarity, type ToolKind, type WeaponKind } from "./config";
-import { DEPOTS, depotIndex, entryOf, EXTRA_BINS, POIS, poiIndex, poiRegion, recordSpot, regionOf, type EntryId, type ExtractId, type PoiId, type RecordId, type RegionId, type RelayId, type RouteId, RELAYS } from "./map";
+import { ALLY, BOOST, CREW, DEPOT, RETAKE, STORM, DUCK, ELITE, ENEMIES, META, NETWORK, RELAY, VALUABLES, WORLD, type ValuableKind, PLAYER, ULT, type EnemyKind, type Flank, type HealKind, type Rarity, type ToolKind, type WeaponKind } from "./config";
+import { DEPOTS, depotIndex, entryOf, EXTRA_BINS, POIS, poiIndex, poiRegion, recordSpot, regionOf, type EntryId, type ExtractId, type PoiId, type RecordId, type RegionId, type RelayId, type RouteId, RELAYS, DEBRIS_SPOTS, debrisIndex } from "./map";
 import { openRoutes, useRoutes } from "./routes";
-import { populate } from "./enemies";
+import { populate, spawnEnemy } from "./enemies";
 import { placeParties } from "./world";
 import { placeAlly } from "./ally";
 import { groundAt } from "./geom";
 import { forgetFields } from "./hunt";
-import type { PoiHold } from "./island";
+import { crewsFor, type IslandEvent, type PoiHold } from "./island";
 
 export interface Vec3 {
   x: number;
@@ -223,6 +223,8 @@ export interface Enemy {
   finding: number;
   /** How far down a grunt has crouched behind its cover (0 standing, 1 crouched; see DUCK). */
   duck: number;
+  /** A salvage crew's, the retake squad's or the debris guards': it draws on the crews' stream (`crewRand()`). */
+  own?: boolean;
 }
 
 /** A robot's body-sphere centre and weak point above its feet, lowered while it crouches. */
@@ -253,6 +255,15 @@ export interface SquadState {
   pack?: boolean;
   /** A hunting party (`PARTY`): the stop of `PARTY_STOPS[region]` it is making for or lingering at. */
   party?: PartyTrip;
+  /** Where a calm squad walks by the ground's way, and stands once there: a salvage crew's bin or way off, the retake squad's POI. */
+  walk?: Point;
+  /** A salvage crew (`CREW`): what it is about. */
+  crew?: CrewTrip;
+  /** A salvage crew's bag: the valuables it has taken, and the POI (index) whose bin each came out of. */
+  bag?: ValuableKind[];
+  bagAt?: number[];
+  /** The retake squad (`RETAKE`): the POI (index) it was sent to take back. */
+  retake?: number;
   sinceSeen: number; // seconds since any member saw the player while engaged
   /** Seconds left in which its members answer the player's shots from as far as `RETURN.range` (see RETURN). */
   shotT?: number;
@@ -327,6 +338,8 @@ export interface Bin {
   flare: boolean;
   /** Locked: opened only with the key of its POI. */
   vault: boolean;
+  /** The crate of a debris fall (`DEBRIS`): it holds that table, not its POI's. */
+  debris?: boolean;
   /** Out on the island between the POIs: `poi` only picks its loot table, and it never holds a key. */
   outside: boolean;
 }
@@ -417,6 +430,12 @@ export type GameEvent =
   /** The player chose to leave at a depot, and the countdown started or was broken off. */
   | { t: "leaveStart" }
   | { t: "leaveCancel" }
+  /** A salvage crew beamed in, took a bin's valuable, or beamed out with its bag. */
+  | { t: "crewIn"; x: number; z: number }
+  | { t: "crewLoot"; id: number; squad: number }
+  | { t: "crewOut"; x: number; z: number; n: number }
+  /** The retake squad beamed in, on its way to the POI it was sent to. */
+  | { t: "retakeIn"; x: number; z: number; poi: number }
   | { t: "done" };
 
 export interface Stats {
@@ -447,6 +466,11 @@ export interface Stats {
   wiped: string[];
   /** Relay masts destroyed, in the order they fell: each takes the network a step down overnight. */
   relays: RelayId[];
+  /** Salvage crews that came, were destroyed to the last member, and got off with their bags; bins they took. */
+  crewsIn: number;
+  crewsDown: number;
+  crewsOut: number;
+  crewBins: number;
 }
 
 /** A relay mast standing in the raid (`RELAYS`, `RELAY`): its health, 0 once destroyed. */
@@ -470,6 +494,25 @@ export interface PartyTrip {
   linger: number;
   mark: Point;
   markT: number;
+}
+
+/**
+ * A salvage crew's errand: its region, the bin (index into `State.bins`) it is making for or
+ * searching (-1 for none yet), the seconds searched there, the bins it gave up on, whether it is
+ * leaving and by which way off, the seconds since it beamed in, and where its leader stood when
+ * its walk was last checked for being stuck (see CREW.stuck), for how long since, and how often
+ * it was held up on its way off.
+ */
+export interface CrewTrip {
+  region: RegionId;
+  bin: number;
+  searchT: number;
+  skip: number[];
+  leaving: ExtractId | null;
+  t: number;
+  mark: Point;
+  markT: number;
+  held: number;
 }
 
 /** One of a region's hunting parties: its squad while it lives (-1 once wiped out), and the seconds until its replacement beams in. */
@@ -504,6 +547,11 @@ export interface State {
    * what the rest of the raid draws.
    */
   roamRng: number;
+  /**
+   * The random numbers of the salvage crews and the retake squad (`crewRand()`): a stream of
+   * their own, so they do not shift what the rest of the raid draws.
+   */
+  crewRng: number;
   nextId: number;
   player: Player;
   ally: Ally;
@@ -533,6 +581,15 @@ export interface State {
   network: number;
   /** The relay masts standing this raid, destroyed ones with no health left; none below `NETWORK.relayAt`. */
   relays: RelayMast[];
+  /** The day's island event, or null on a quiet day. */
+  event: IslandEvent | null;
+  /** Robots see `STORM.sight` as far today. */
+  storm: boolean;
+  /** Raid times (seconds) at which salvage crews are still to beam in, soonest first. */
+  crewsDue: number[];
+  /** Seconds until the retake squad beams in (Infinity with none to come), and the POI (index) it goes to, -1 for none. */
+  retakeT: number;
+  retakePoi: number;
   /** This raid's POI whose bins lean to a rare kind (`BOOST`), as a POI index. */
   boost: { poi: number; kind: ValuableKind };
   /**
@@ -703,6 +760,8 @@ export interface Start {
   fetch?: { poi: PoiId; kind: ValuableKind; n: number };
   /** The robots' network level (0 to 5); left out, `NETWORK.play`, the level the sim gate plays. */
   network?: number;
+  /** The day's island event; left out, none. A retake whose POI is not freed sends no one. */
+  event?: IslandEvent | null;
 }
 
 /** What a network level sets in a raid. */
@@ -751,6 +810,7 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
     seed: seed >>> 0,
     rng: seed >>> 0 || 1,
     roamRng: mix(seed) || 1,
+    crewRng: mix(seed ^ 0x5bd1e995) || 1,
     nextId: id,
     player: {
       pos: { x: entry.x, y: groundAt(entry.x, entry.z, PLAYER.radius, 99), z: entry.z },
@@ -815,6 +875,11 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
     raiderT: level.raiders,
     network,
     relays: network >= NETWORK.relayAt ? RELAYS.map((r) => ({ id: r.id, x: r.x, y: groundAt(r.x, r.z, 0.3, 99), z: r.z, hp: RELAY.hp })) : [],
+    event: start.event ?? null,
+    storm: start.event?.t === "storm",
+    crewsDue: [],
+    retakeT: Infinity,
+    retakePoi: -1,
     boost: boostFor(seed, region),
     fetch: fetchBins(seed, bins, start.fetch),
     outcome: null,
@@ -836,7 +901,7 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
     seen: start.seen ? decodeSeen(start.seen) : emptySeen(),
     cell: -1,
     events: [],
-    stats: { kills: 0, damage: 0, shots: 0, hits: 0, crits: 0, flankHits: 0, titanHits: 0, downs: 0, wipes: 0, cleared: [], allyDamage: 0, allyKills: 0, allyDowns: 0, allyRescues: 0, allyHelped: 0, killsBy: { drone: 0, grunt: 0, charger: 0, heavy: 0, titan: 0 }, vaults: [], wiped: [], relays: [] },
+    stats: { kills: 0, damage: 0, shots: 0, hits: 0, crits: 0, flankHits: 0, titanHits: 0, downs: 0, wipes: 0, cleared: [], allyDamage: 0, allyKills: 0, allyDowns: 0, allyRescues: 0, allyHelped: 0, killsBy: { drone: 0, grunt: 0, charger: 0, heavy: 0, titan: 0 }, vaults: [], wiped: [], relays: [], crewsIn: 0, crewsDown: 0, crewsOut: 0, crewBins: 0 },
   };
   if (from) {
     const p = s.player;
@@ -849,6 +914,7 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
   placeAlly(s);
   populate(s);
   placeParties(s);
+  placeEvent(s);
   // An id of its own below every other, so a raid with a record numbers the rest as one without.
   if (start.record) {
     const r = recordSpot(start.record);
@@ -856,6 +922,35 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
   }
   return s;
 }
+
+/**
+ * What the day's event and the network bring to the raid beyond the POIs' garrisons: the salvage
+ * crews' arrival times, the debris crate and its guards, and the retake squad's beaming in (only
+ * for a POI that is freed). The crate's id lies above every other bin's and loot's, and its guards
+ * draw on the crews' stream: the bins and the raid's random numbers stand as on a day without it.
+ */
+function placeEvent(s: State) {
+  for (let i = crewsFor(s.network, s.event); i > 0; i--) s.crewsDue.push(CREW.arrive[0] + crewRand(s) * (CREW.arrive[1] - CREW.arrive[0]));
+  s.crewsDue.sort((a, b) => a - b);
+  const ev = s.event;
+  if (ev?.t === "debris") {
+    const d = DEBRIS_SPOTS[debrisIndex(ev.spot)];
+    if (d) {
+      const poi = poiIndex(regionOf(d.region).pois[0]);
+      s.bins.push({ id: 900_000 + debrisIndex(ev.spot), x: d.x, y: groundAt(d.x, d.z, 0.3, 99), z: d.z, poi, open: false, flare: false, vault: false, outside: true, debris: true });
+      const index = s.squads.length;
+      s.squads.push({ name: d.guards.name, poi: -1, patrol: [], leg: 0, engaged: false, roam: false, sinceSeen: 0, last: { x: 0, z: 0 } });
+      for (const m of d.guards.members) spawnEnemy(s, m.kind, m.x, m.z, -1, index, { face: m.face, crew: true });
+    }
+  }
+  if (ev?.t === "retake" && s.hold[poiIndex(ev.poi)] === "freed") {
+    s.retakePoi = poiIndex(ev.poi);
+    s.retakeT = RETAKE.at;
+  }
+}
+
+/** The debris crate of the raid's debris fall, or null on another day. */
+export const debrisBin = (s: Pick<State, "bins">) => s.bins.find((b) => b.debris) ?? null;
 
 /**
  * The fetch contract's bins: `n` of its POI's ordinary bins, picked by a hash of the seed and the
@@ -872,10 +967,17 @@ function fetchBins(seed: number, bins: Bin[], fetch: Start["fetch"]): State["fet
  * A squad's name for a contract to point at: a drone pack by its own name, a hunting party by
  * its region (its line-up changes from raid to raid), any other squad by its name.
  */
-export const squadKey = (sq: Pick<SquadState, "name" | "party">) => (sq.party ? partyKey(sq.party.region) : sq.name);
+export const squadKey = (sq: Pick<SquadState, "name" | "party" | "crew" | "retake">) =>
+  sq.party ? partyKey(sq.party.region) : sq.crew ? crewKey(sq.crew.region) : sq.retake !== undefined ? retakeKey(POIS[sq.retake].id) : sq.name;
 
 /** The key every hunting party of `region` is destroyed under. */
 export const partyKey = (region: RegionId) => `party:${region}`;
+
+/** The key every salvage crew of `region` is destroyed under. */
+export const crewKey = (region: RegionId) => `crew:${region}`;
+
+/** The key the squad sent to retake `poi` is destroyed under. */
+export const retakeKey = (poi: PoiId) => `retake:${poi}`;
 
 /** The teammate before it is stood beside the player (`placeAlly()`), at `at`. */
 export function newAlly(at: { x: number; z: number; yaw: number }): Ally {
@@ -923,6 +1025,15 @@ export function roamRand(s: State): number {
   s.roamRng = xorshift(s.roamRng);
   return (s.roamRng % 1_000_000) / 1_000_000;
 }
+
+/** The same on the salvage crews' and the retake squad's own stream (`State.crewRng`). */
+export function crewRand(s: State): number {
+  s.crewRng = xorshift(s.crewRng);
+  return (s.crewRng % 1_000_000) / 1_000_000;
+}
+
+/** How far robots see today, as a share of a clear day's: less in a storm (`STORM`). */
+export const sightScale = (s: Pick<State, "storm">) => (s.storm ? STORM.sight : 1);
 
 /** Full health and shield of a robot; raiders have more. */
 export const enemyHp = (e: Enemy) => ENEMIES[e.kind].hp * (e.elite ? ELITE.hp : 1);

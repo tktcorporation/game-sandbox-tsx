@@ -1,7 +1,7 @@
-import { ISLAND, NETWORK } from "../sim/config";
-import type { PoiHold } from "../sim/island";
-import { DEPOTS, POIS, poiIndex, RELAYS, relayIndex, type PoiId, type RelayId } from "../sim/map";
-import type { State } from "../sim/state";
+import { EVENTS, ISLAND, NETWORK, type EventKind } from "../sim/config";
+import { crewsFor, type IslandEvent, type PoiHold } from "../sim/island";
+import { DEBRIS_SPOTS, debrisIndex, DEPOTS, POIS, poiIndex, RELAYS, relayIndex, type DebrisId, type PoiId, type RelayId } from "../sim/map";
+import { mix, retakeKey, type State } from "../sim/state";
 
 /*
  * The island between raids: one raid is one day, and every POI is held (支配), thin (手薄) or
@@ -34,6 +34,10 @@ export interface RaidDay {
   visited: PoiId[];
   titan: boolean;
   relays: RelayId[];
+  /** Salvage crews that got off with their bags. */
+  crews?: number;
+  /** The freed POI whose retake squad the raid left alive, or null. */
+  retake?: PoiId | null;
 }
 
 /**
@@ -41,12 +45,15 @@ export interface RaidDay {
  * has visited none, and one from before the masts destroyed none. The titan fell when its pad
  * was cleared: its fall takes the pad's other robots with it.
  */
-export const raidDay = (s: Pick<State, "outcome" | "stats"> & { visited?: boolean[] }): RaidDay => ({
+export const raidDay = (s: Pick<State, "outcome" | "stats"> & { visited?: boolean[]; event?: IslandEvent | null }): RaidDay => ({
   alive: s.outcome === "extracted",
   cleared: s.stats.cleared.map((i) => POIS[i].id),
   visited: POIS.filter((_, i) => s.visited?.[i]).map((p) => p.id),
   titan: s.stats.cleared.some((i) => !!POIS[i].boss),
   relays: (s.stats.relays ?? []).filter((id, n, all) => relayIndex(id) >= 0 && all.indexOf(id) === n),
+  crews: s.stats.crewsOut ?? 0,
+  // A retake squad that never beamed in (the raid was over first) was not destroyed either.
+  retake: s.event?.t === "retake" && !(s.stats.wiped ?? []).includes(retakeKey(s.event.poi)) ? s.event.poi : null,
 });
 
 /** The island part of a profile that a day moves. */
@@ -58,7 +65,14 @@ export interface IslandDay {
   network: number;
   /** What the network has gathered toward its next step (`NETWORK.riseEvery` makes one). */
   pressure: number;
+  /** The next raid's seed: the day after tomorrow's event is drawn from it and the day. */
+  seed?: number;
+  /** The island's events: today's (the next raid's) and tomorrow's, announced a day ahead. */
+  events?: DayEvents;
 }
+
+/** Today's event and tomorrow's: each null on a quiet day. */
+export type DayEvents = [IslandEvent | null, IslandEvent | null];
 
 /** How the network moved overnight, and why: the steps each cause took it down, and the steps it rose. */
 export interface NetChange {
@@ -68,6 +82,8 @@ export interface NetChange {
   titan: number;
   relays: number;
   rise: number;
+  /** Steps up for the salvage crews that got off. */
+  crews?: number;
 }
 
 /** What moved overnight: POIs freed by the raid, freed ones gone thin for want of visits, thin ones taken back, and the network. */
@@ -75,6 +91,8 @@ export interface DayChange {
   freed: PoiId[];
   thinned: PoiId[];
   retaken: PoiId[];
+  /** Freed POIs gone thin because the day's retake squad was left alive. */
+  overrun: PoiId[];
   network: NetChange;
 }
 
@@ -105,6 +123,7 @@ export function advanceDay<P extends IslandDay>(p: P, r: RaidDay): { profile: P;
   const freed: PoiId[] = [];
   const thinned: PoiId[] = [];
   const retaken: PoiId[] = [];
+  const overrun: PoiId[] = [];
   const poiState = { ...p.poiState };
   for (const { id } of POIS) {
     const was = p.poiState[id];
@@ -115,6 +134,11 @@ export function advanceDay<P extends IslandDay>(p: P, r: RaidDay): { profile: P;
     else if (state !== "freed" && r.alive && r.cleared.includes(id)) {
       state = "freed";
       freed.push(id);
+    } else if (state === "freed" && r.retake === id) {
+      // The retake squad stood at its way in when the day ended: the network has half of it back.
+      state = "thin";
+      since = today + 1;
+      overrun.push(id);
     } else if (state === "freed" && today - lastVisit >= ISLAND.thinAfter) {
       state = "thin";
       since = today + 1;
@@ -135,7 +159,9 @@ export function advanceDay<P extends IslandDay>(p: P, r: RaidDay): { profile: P;
     pressure -= NETWORK.riseEvery;
     rise++;
   }
-  const network = down + rise;
+  // Each salvage crew that got off with its bag fed the network: a step on top of the day's rise.
+  const crews = Math.min(r.crews ?? 0, NETWORK.max - down - rise);
+  const network = down + rise + crews;
   if (network >= NETWORK.max) pressure = 0;
   if (network >= NETWORK.retakeAt)
     for (const { id } of POIS) {
@@ -146,10 +172,85 @@ export function advanceDay<P extends IslandDay>(p: P, r: RaidDay): { profile: P;
       }
     }
   const depots = DEPOTS.map((d) => d.poi).filter((id) => p.depots.includes(id) || freed.includes(id));
+  // Yesterday's forecast becomes today's event, and tomorrow's is drawn on the island as it now stands.
+  const events: DayEvents = [settleEvent(p.events?.[1] ?? null, p.seed ?? 0, today + 1, poiState), eventFor(p.seed ?? 0, today + 2, poiState)];
   return {
-    profile: { ...p, day: today + 1, poiState, depots, network, pressure },
-    change: { freed, thinned, retaken, network: { from: p.network, to: network, ...steps, rise } },
+    profile: { ...p, day: today + 1, poiState, depots, network, pressure, events },
+    change: { freed, thinned, retaken, overrun, network: { from: p.network, to: network, ...steps, rise, crews } },
   };
+}
+
+/** A hash of the seed, the day and a salt: the event schedule draws on nothing else. */
+const dayHash = (seed: number, day: number, k: number) => mix(Math.imul(seed + 1, 0x9e3779b1) ^ Math.imul(day + 11, 0x85ebca6b) ^ Math.imul(k + 1, 0xc2b2ae35));
+
+/** The POIs a retake may be sent to: those freed. */
+const retakable = (poiState: Record<PoiId, { state: PoiHold }>) => POIS.filter((o) => poiState[o.id].state === "freed").map((o) => o.id);
+
+/**
+ * The event of day `day`, drawn from `seed` and the day: one day in `1 / EVENTS.chance` or so has
+ * one, picked by `EVENTS.weights` among those the island allows. A retake needs a freed POI, and
+ * comes more often the more are freed (its weight grows with them up to three); it names one of them.
+ */
+export function eventFor(seed: number, day: number, poiState: Record<PoiId, { state: PoiHold }>): IslandEvent | null {
+  if ((dayHash(seed, day, 0) % 10_000) / 10_000 >= EVENTS.chance) return null;
+  const freed = retakable(poiState);
+  const weights = (Object.keys(EVENTS.weights) as EventKind[]).map((k): [EventKind, number] => [k, k === "retake" ? (EVENTS.weights.retake * Math.min(freed.length, 3)) / 2 : EVENTS.weights[k]]).filter(([, w]) => w > 0);
+  let r = ((dayHash(seed, day, 1) % 10_000) / 10_000) * weights.reduce((n, [, w]) => n + w, 0);
+  const kind = weights.find(([, w]) => (r -= w) < 0)?.[0] ?? weights[weights.length - 1][0];
+  switch (kind) {
+    case "debris":
+      return { t: "debris", spot: DEBRIS_SPOTS[dayHash(seed, day, 2) % DEBRIS_SPOTS.length].id };
+    case "retake":
+      return { t: "retake", poi: freed[dayHash(seed, day, 3) % freed.length] };
+    case "storm":
+      return { t: "storm" };
+    case "crews":
+      return { t: "crews" };
+  }
+}
+
+/**
+ * The forecast event as it comes on its day: a retake whose POI is no longer freed goes to
+ * another freed one (drawn as the forecast was), and with none freed it does not come.
+ */
+function settleEvent(ev: IslandEvent | null, seed: number, day: number, poiState: Record<PoiId, { state: PoiHold }>): IslandEvent | null {
+  if (ev?.t !== "retake" || poiState[ev.poi].state === "freed") return ev;
+  const freed = retakable(poiState);
+  return freed.length ? { t: "retake", poi: freed[dayHash(seed, day, 3) % freed.length] } : null;
+}
+
+/** The schedule of a profile before the first raid: a quiet first day, and the second's drawn. */
+export const firstEvents = (seed: number, poiState: Record<PoiId, { state: PoiHold }>): DayEvents => [null, eventFor(seed, 2, poiState)];
+
+/** A saved event; null for anything unreadable. */
+export function parseEvent(raw: unknown): IslandEvent | null {
+  if (!raw || typeof raw !== "object") return null;
+  const x = raw as Record<string, unknown>;
+  if (x.t === "storm" || x.t === "crews") return { t: x.t };
+  if (x.t === "debris" && typeof x.spot === "string" && debrisIndex(x.spot as DebrisId) >= 0) return { t: "debris", spot: x.spot as DebrisId };
+  if (x.t === "retake" && typeof x.poi === "string" && poiIndex(x.poi as PoiId) >= 0 && !unfreeable(x.poi as PoiId)) return { t: "retake", poi: x.poi as PoiId };
+  return null;
+}
+
+/** An event's name. */
+export const eventName = (ev: IslandEvent) => EVENTS.names[ev.t];
+
+/** What an event does, in a line, for a raid at network `level`. */
+export function eventText(ev: IslandEvent, level: number): string {
+  switch (ev.t) {
+    case "debris": {
+      const d = DEBRIS_SPOTS[debrisIndex(ev.spot)];
+      return `${d.place}に輪の破片が落ちる。珍しい回収品の箱を、ヘビーとドローン 2 機が守る`;
+    }
+    case "retake": {
+      const name = POIS[poiIndex(ev.poi)].name;
+      return `網が${name}へ奪還部隊を送る。倒さないと、その夜に${name}が手薄になる`;
+    }
+    case "storm":
+      return "自分の視界も、ロボットの見える距離も 6 割になる。近づいてから撃つ日";
+    case "crews":
+      return `回収部隊が ${crewsFor(level, ev)} 組来て、箱を先に漁る。迎撃の依頼が出る`;
+  }
 }
 
 /** Days until the network rises a step at today's pace (counting the coming raid), or null at the top. */
@@ -183,7 +284,7 @@ export function networkText(level: number): string {
 
 /** The overnight change of the network, with its causes: 「網 2 → 3（解放 −1・日の経過 +1）」. */
 export function netChangeText(n: NetChange): string {
-  const why = [n.freed ? `解放 −${n.freed}` : "", n.titan ? `タイタン −${n.titan}` : "", n.relays ? `中継器 −${n.relays}` : "", n.rise ? `日の経過 +${n.rise}` : ""].filter(Boolean);
+  const why = [n.freed ? `解放 −${n.freed}` : "", n.titan ? `タイタン −${n.titan}` : "", n.relays ? `中継器 −${n.relays}` : "", n.rise ? `日の経過 +${n.rise}` : "", n.crews ? `回収部隊 +${n.crews}` : ""].filter(Boolean);
   return `網 ${n.from} → ${n.to}${why.length ? `（${why.join("・")}）` : "（変わらず）"}`;
 }
 
@@ -208,23 +309,28 @@ export type IslandNote =
   | { t: "retake"; poi: PoiId; days: number }
   | { t: "retaken"; poi: PoiId }
   | { t: "rise"; days: number; to: number }
-  | { t: "top" };
+  | { t: "top" }
+  | { t: "overrun"; poi: PoiId }
+  | { t: "crews"; n: number };
 
 /**
  * The island's coming changes, for the map table and the results' 明日の島: POIs just freed or
  * gone thin overnight (when `change` is given), every freed POI's days left before it goes thin,
  * soonest first, and the thin POIs waiting to be freed again.
  */
-export function islandNotes(p: Pick<IslandDay, "day" | "poiState" | "network" | "pressure">, change?: Pick<DayChange, "thinned" | "retaken">): IslandNote[] {
+export function islandNotes(p: Pick<IslandDay, "day" | "poiState" | "network" | "pressure">, change?: Pick<DayChange, "thinned" | "retaken"> & Partial<Pick<DayChange, "overrun" | "network">>): IslandNote[] {
   const out: IslandNote[] = [];
   const rise = riseIn(p);
   out.push(rise === null ? { t: "top" } : { t: "rise", days: rise, to: p.network + 1 });
+  if (change?.network?.crews) out.push({ t: "crews", n: change.network.crews });
+  for (const poi of change?.overrun ?? []) out.push({ t: "overrun", poi });
   for (const poi of change?.retaken ?? []) out.push({ t: "retaken", poi });
   for (const poi of change?.thinned ?? []) out.push({ t: "thinned", poi });
+  const overrun = change?.overrun ?? [];
   const fading = POIS.map((o) => ({ poi: o.id, days: daysLeft(p, o.id) })).filter((x): x is { poi: PoiId; days: number } => x.days !== null);
   for (const f of fading.sort((a, b) => a.days - b.days)) out.push({ t: "fading", ...f });
   for (const o of POIS) {
-    if (p.poiState[o.id].state !== "thin" || change?.thinned.includes(o.id)) continue;
+    if (p.poiState[o.id].state !== "thin" || change?.thinned.includes(o.id) || overrun.includes(o.id)) continue;
     const days = retakeIn(p, o.id);
     out.push(days === null ? { t: "thin", poi: o.id } : { t: "retake", poi: o.id, days });
   }
@@ -235,6 +341,7 @@ export function islandNotes(p: Pick<IslandDay, "day" | "poiState" | "network" | 
 export function noteText(n: IslandNote): string {
   if (n.t === "rise") return n.days <= 1 ? `網は次のレイドの後に ${n.to} に上がる` : `網はあと ${n.days} 日で ${n.to} に上がる`;
   if (n.t === "top") return "網は最大。拠点を解放するか中継器を壊すと下がる";
+  if (n.t === "crews") return `回収部隊が ${n.n} 組、カバンを持って逃げた。網が ${n.n} 段多く上がった`;
   const name = POIS[poiIndex(n.poi)].name;
   switch (n.t) {
     case "retake":
@@ -243,6 +350,8 @@ export function noteText(n: IslandNote): string {
       return `${name}は網に取り戻され、支配に戻った`;
     case "fading":
       return n.days <= 1 ? `${name}は次のレイドで訪れないと手薄になる` : `${name}はあと ${n.days} 日訪れないと手薄になる`;
+    case "overrun":
+      return `${name}は奪還部隊に取られ、手薄になった。片付けて生きて帰れば解放に戻る`;
     case "thinned":
       return `${name}は訪れないうちに手薄になった。片付けて生きて帰れば解放に戻る`;
     case "thin":

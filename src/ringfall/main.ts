@@ -10,7 +10,7 @@ import { holds } from "./meta/island";
 import { contractProgress, targetKey } from "./meta/contracts";
 import { currentStory } from "./meta/story";
 import { eyePos, fireRay, kill } from "./sim/combat";
-import { squadKey } from "./sim/state";
+import { retakeKey, squadKey } from "./sim/state";
 import { loadProfile, saveProfile } from "./meta/storage";
 import { Hub, type Launch } from "./view/hub";
 import { CampView } from "./view/camp";
@@ -473,7 +473,7 @@ function start(go: Launch, from?: State) {
   const record = currentStory(hub.profile.records)?.id;
   const taken = hub.contract();
   const fetch = taken?.t === "fetch" ? { poi: taken.poi, kind: taken.kind, n: taken.n } : undefined;
-  state = newRun(go.seed, kit, region, { depots: hub.profile.depots, seen: hub.profile.seen, from: go.from, entry: go.entry, routes: hub.profile.routes, island: holds(hub.profile), record, fetch, network: hub.profile.network });
+  state = newRun(go.seed, kit, region, { depots: hub.profile.depots, seen: hub.profile.seen, from: go.from, entry: go.entry, routes: hub.profile.routes, island: holds(hub.profile), record, fetch, network: hub.profile.network, event: hub.profile.events[0] });
   hud.setContract(hub.contract(), record ?? null);
   world.campMode = false;
   if (from) walkOut(state, from);
@@ -621,11 +621,16 @@ window.render_game_to_text = () => {
   return JSON.stringify({
     screen: running ? "game" : !$("results").hidden ? "results" : !$("ending").hidden ? "ending" : camping ? "camp" : "title",
     camp: camping ? { panel: hub.station, near: campSpotAt(p.pos)?.id ?? null, lent: hub.lent, ride: { to: hub.rideTo(), refused: hub.rideRefused() }, marks: hub.marks(), fading, board: hub.profile.board.contracts.map((c) => ({ id: c.id, t: c.t })), taken: hub.profile.taken, story: currentStory(hub.profile.records)?.id ?? null } : null,
-    profile: { cash: hub.profile.cash, stash: hub.profile.stash.length, raids: hub.profile.raids, hideout: hub.profile.hideout, escaped: !!hub.profile.escaped, seed: hub.profile.seed, routes: hub.profile.routes, entries: hub.profile.entries, day: hub.profile.day, poiState: hub.profile.poiState, network: hub.profile.network },
+    profile: { events: hub.profile.events, cash: hub.profile.cash, stash: hub.profile.stash.length, raids: hub.profile.raids, hideout: hub.profile.hideout, escaped: !!hub.profile.escaped, seed: hub.profile.seed, routes: hub.profile.routes, entries: hub.profile.entries, day: hub.profile.day, poiState: hub.profile.poiState, network: hub.profile.network },
     boost: { ...s.boost, name: POIS[s.boost.poi].name },
     network: s.network,
     relays: s.relays.map((m) => ({ id: m.id, x: m.x, y: +m.y.toFixed(1), z: m.z, hp: Math.round(m.hp) })),
-    settled: settlement && { network: settlement.network, retaken: settlement.retaken, home: settlement.home.length, sold: settlement.sold.length, quests: settlement.quests.map((q) => q.id), opened: settlement.opened, learned: settlement.learned, day: settlement.day, freed: settlement.freed, thinned: settlement.thinned, contract: settlement.contract && { id: settlement.contract.c.id, t: settlement.contract.c.t, done: settlement.contract.done }, story: settlement.story?.id ?? null },
+    event: s.event,
+    storm: s.storm,
+    debris: s.bins.filter((b) => b.debris).map((b) => ({ x: b.x, y: +b.y.toFixed(1), z: b.z, open: b.open }))[0] ?? null,
+    crews: s.squads.flatMap((q, i) => (q.crew ? [{ squad: i, members: s.enemies.filter((e) => e.squad === i).map((e) => ({ x: Math.round(e.pos.x), y: +e.pos.y.toFixed(1), z: Math.round(e.pos.z) })), bin: q.crew.bin >= 0 ? { x: s.bins[q.crew.bin].x, y: s.bins[q.crew.bin].y, z: s.bins[q.crew.bin].z } : null, searching: q.crew.searchT > 0, bag: q.bag ?? [], leaving: q.crew.leaving }] : [])),
+    retake: { poi: s.retakePoi, next: Number.isFinite(s.retakeT) ? +s.retakeT.toFixed(1) : null, left: s.enemies.filter((e) => s.squads[e.squad]?.retake !== undefined).length },
+    settled: settlement && { overrun: settlement.overrun, event: settlement.event, network: settlement.network, retaken: settlement.retaken, home: settlement.home.length, sold: settlement.sold.length, quests: settlement.quests.map((q) => q.id), opened: settlement.opened, learned: settlement.learned, day: settlement.day, freed: settlement.freed, thinned: settlement.thinned, contract: settlement.contract && { id: settlement.contract.c.id, t: settlement.contract.c.t, done: settlement.contract.done }, story: settlement.story?.id ?? null },
     contract: running && hub.contract() ? { t: hub.contract()!.t, ...(hub.contract()!.t === "destroy" ? { relay: (hub.contract() as { relay: string }).relay } : {}), ...contractProgress(hub.contract()!, s) } : null,
     records: s.player.records,
     vaults: s.bins.filter((b) => b.vault).map((b) => ({ poi: b.poi, x: b.x, y: b.y, z: b.z, open: b.open })),
@@ -793,8 +798,8 @@ window.ringfallContract = {
       }
       return shots;
     }
-    if (!running || c?.t !== "intercept") return 0;
-    const key = targetKey(c.target);
+    if (!running || (c?.t !== "intercept" && c?.t !== "defend")) return 0;
+    const key = c.t === "defend" ? retakeKey(c.poi) : targetKey(c.target);
     const foes = state.enemies.filter((e) => state.squads[e.squad] && squadKey(state.squads[e.squad]) === key);
     for (const e of foes) kill(state, e, false);
     return foes.length;

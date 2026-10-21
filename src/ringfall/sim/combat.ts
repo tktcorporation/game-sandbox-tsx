@@ -2,7 +2,7 @@ import { ALLY, ASSIST, DEG, DODGE, ELITE, ENEMIES, FLANK, KICK_PATTERN, KICK_RES
 import { engageSquad, learnSpot, located, makeNoise, shotFromAfar } from "./awareness";
 import { POIS } from "./map";
 import { los, lookAngles, norm, rayWorld, raySphere, wrapAngle } from "./geom";
-import { bodyY, forward, rand, squadKey, weakY, type Enemy, type RelayMast, type State, type Vec3, type Weapon } from "./state";
+import { bodyY, forward, rand, squadKey, weakY, type Enemy, type RelayMast, type SquadState, type State, type Vec3, type Weapon } from "./state";
 
 /*
  * Everything about the player's shots landing on robots: hit boxes, aim assist,
@@ -312,12 +312,30 @@ function react(s: State, e: Enemy, weight: number, broke: boolean, quiet: boolea
   }
 }
 
+/**
+ * A salvage crew's last member is down: its bag falls at its feet, each valuable as from the bin
+ * it was taken out of, so a fetch contract counts it. Thrown round in a ring, drawing nothing.
+ */
+function dropBag(s: State, sq: SquadState, at: Vec3) {
+  s.stats.crewsDown++;
+  const bag = sq.bag ?? [];
+  bag.forEach((v, n) => {
+    const a = (n / Math.max(1, bag.length)) * Math.PI * 2;
+    s.loot.push({ id: s.nextId++, kind: "valuable", valuable: v, rarity: VALUABLES[v].rarity, from: sq.bagAt?.[n] ?? -1, pos: { ...at }, vel: { x: Math.cos(a) * 1.8, y: 4.5, z: Math.sin(a) * 1.8 }, age: 0 });
+  });
+  sq.bag = [];
+  sq.bagAt = [];
+}
+
 const SHARDS = { drone: 1, grunt: 1, charger: 1, heavy: 3, titan: 0 } as const;
 
 export function kill(s: State, e: Enemy, crit: boolean, by: "player" | "ally" = "player") {
   s.enemies = s.enemies.filter((o) => o !== e);
   const sq = s.squads[e.squad];
-  if (sq && !s.enemies.some((o) => o.squad === e.squad)) s.stats.wiped.push(squadKey(sq));
+  if (sq && !s.enemies.some((o) => o.squad === e.squad)) {
+    s.stats.wiped.push(squadKey(sq));
+    if (sq.crew) dropBag(s, sq, bodyCenter(e));
+  }
   s.stats.kills++;
   if (by === "ally") s.stats.allyKills++;
   else s.stats.killsBy[e.kind]++;

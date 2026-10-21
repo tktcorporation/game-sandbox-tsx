@@ -1,4 +1,4 @@
-import { ALLY, AWARE, CHARGER, COVER, DEG, DODGE, DUCK, ELITE, ENEMIES, FALLBACK, PACK, PARTY, PINCH, PLAYER, PURSUE, SHOT, SIGHT, STAGGER, TICK, TITAN, TURN, WORLD, type EnemyKind, type Rarity } from "./config";
+import { ALLY, AWARE, CHARGER, COVER, CREW, DEG, DODGE, DUCK, ELITE, ENEMIES, FALLBACK, PACK, PARTY, PINCH, PLAYER, PURSUE, SHOT, SIGHT, STAGGER, TICK, TITAN, TURN, WORLD, type EnemyKind, type Rarity } from "./config";
 import { clampToWorld, collide, dist2d, groundAt, groundLevel, los, lookAngles, onTerrain, solidAt, wrapAngle } from "./geom";
 import { steepAt, terrainHeight } from "./terrain";
 import { engageSquad, fireRange, headOf, knownSpot, located, pursuitSpot, sense, stepSquads } from "./awareness";
@@ -15,7 +15,7 @@ import { bodyCenter, weakPoint } from "./combat";
 import { hurtPlayer } from "./player";
 import { allyChest, allyUp, hurtAlly } from "./ally";
 import { activePacks, garrison, netPlated } from "./island";
-import { rand, roamRand, weakY, type Enemy, type Point, type State, type Vec3 } from "./state";
+import { crewRand, rand, roamRand, sightScale, weakY, type Enemy, type Point, type State, type Vec3 } from "./state";
 
 /*
  * Robot behaviour. Out of combat a robot holds its post or walks its squad's
@@ -36,7 +36,12 @@ interface SpawnOpts {
   plate?: Rarity;
   /** A drone pack's or a hunting party's: drawn from their own random numbers (`roamRand()`). */
   roam?: boolean;
+  /** A salvage crew's, the retake squad's or the debris guards': drawn from theirs (`crewRand()`). */
+  crew?: boolean;
 }
+
+/** The random numbers robot `e` draws on: the crews' stream for a crew's, the retake squad's or the debris guards' (`Enemy.own`), else the raid's. */
+const draw = (s: State, e: Enemy) => (e.own ? crewRand(s) : rand(s));
 
 /** Where a robot asked to appear at (x, z) on `floor` (the ground when omitted) ends up: pushed out of solids, on its floor or at hover height. */
 export function spawnSpot(kind: EnemyKind, x: number, z: number, floor = terrainHeight(x, z)): Vec3 {
@@ -49,9 +54,9 @@ export function spawnSpot(kind: EnemyKind, x: number, z: number, floor = terrain
 
 export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi: number, squad: number, o: SpawnOpts = {}): Enemy {
   const k = ENEMIES[kind];
-  const draw = o.roam ? roamRand : rand;
+  const pick = o.crew ? crewRand : o.roam ? roamRand : rand;
   const pos = spawnSpot(kind, x, z, o.floor);
-  const face = o.face ?? draw(s) * Math.PI * 2;
+  const face = o.face ?? pick(s) * Math.PI * 2;
   const id = s.nextId++;
   // A strong network plates some of the plain grunts and heavies, picked without drawing on the raid's numbers.
   const plate = o.plate ?? ((kind === "grunt" || kind === "heavy") && !o.elite && netPlated(s.seed, s.network, id) ? 1 : 0);
@@ -67,7 +72,7 @@ export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi:
     timer: o.appear ? 0.9 : 0,
     cooldown: 0,
     shotsLeft: 0,
-    strafe: draw(s) < 0.5 ? -1 : 1,
+    strafe: pick(s) < 0.5 ? -1 : 1,
     poi,
     lastHit: 99,
     aimYaw: 0,
@@ -78,7 +83,7 @@ export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi:
     detect: 0,
     home: { ...pos },
     face,
-    lookT: draw(s) * 10,
+    lookT: pick(s) * 10,
     goal: null,
     searchT: 0,
     cover: null,
@@ -89,11 +94,11 @@ export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi:
     allyHit: 99,
     elite: !!o.elite,
     plate: plate as Rarity,
-    strafeT: draw(s),
+    strafeT: pick(s),
     jink: 0,
     stagger: 0,
     steady: 0,
-    peekSide: draw(s) < 0.5 ? -1 : 1,
+    peekSide: pick(s) < 0.5 ? -1 : 1,
     opener: true,
     stuckT: 0,
     stuckTo: null,
@@ -102,6 +107,7 @@ export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi:
     sawAt: null,
     finding: 0,
     duck: 0,
+    own: !!o.crew,
   };
   s.enemies.push(e);
   if (o.appear) s.events.push({ t: "spawn", id: e.id, pos: { ...pos } });
@@ -149,8 +155,8 @@ function fireOrb(s: State, e: Enemy, yawOff = 0, homing = false) {
   const from = muzzle(e);
   // A random stray (see SHOT.spread); the titan's homing rockets find their own way.
   const stray = homing ? 0 : SHOT.spread * DEG;
-  const r = Math.sqrt(-2 * Math.log(rand(s) + 1e-9));
-  const a = rand(s) * Math.PI * 2;
+  const r = Math.sqrt(-2 * Math.log(draw(s, e) + 1e-9));
+  const a = draw(s, e) * Math.PI * 2;
   const yaw = e.aimYaw + yawOff + r * Math.cos(a) * stray;
   const pitch = e.aimPitch + r * Math.sin(a) * stray;
   const c = Math.cos(pitch);
@@ -250,7 +256,7 @@ export function stepEnemies(s: State) {
       e.timer -= TICK;
       if (e.timer <= 0) {
         e.mode = "move";
-        e.cooldown = k.cooldown * (0.4 + rand(s) * 0.5);
+        e.cooldown = k.cooldown * (0.4 + draw(s, e) * 0.5);
       }
       continue;
     }
@@ -351,8 +357,8 @@ export function stepEnemies(s: State) {
         }
         if (moveBody(e, vx, vz)) e.strafe = -e.strafe;
         else if (e.jink <= 0 && (e.strafeT -= TICK) <= 0) {
-          e.strafeT = DODGE.every[0] + rand(s) * (DODGE.every[1] - DODGE.every[0]);
-          if (rand(s) < DODGE.flip) e.strafe = -e.strafe;
+          e.strafeT = DODGE.every[0] + draw(s, e) * (DODGE.every[1] - DODGE.every[0]);
+          if (draw(s, e) < DODGE.flip) e.strafe = -e.strafe;
         }
         e.cooldown -= TICK;
         const ready = e.cooldown <= 0 && sees && tUp && (atAlly || located(s, e));
@@ -361,7 +367,7 @@ export function stepEnemies(s: State) {
         // steers where it walks. The teammate is fought within its fighting sight alone.
         const eye = headOf(e);
         const reach = Math.hypot(tChest.x - eye.x, tChest.y - eye.y, tChest.z - eye.z);
-        const far = atAlly ? SIGHT[e.kind].range * AWARE.engagedRange : fireRange(s, e);
+        const far = atAlly ? SIGHT[e.kind].range * sightScale(s) * AWARE.engagedRange : fireRange(s, e);
         if (ready && (e.kind === "charger" ? d < CHARGER.lungeRange : reach < far)) {
           e.mode = "telegraph";
           e.timer = k.telegraph;
@@ -414,11 +420,11 @@ export function stepEnemies(s: State) {
         if (e.shotsLeft <= 0) {
           e.mode = "move";
           e.opener = false;
-          e.cooldown = k.cooldown * (0.8 + rand(s) * 0.4) * (e.elite ? ELITE.cooldown : 1);
+          e.cooldown = k.cooldown * (0.8 + draw(s, e) * 0.4) * (e.elite ? ELITE.cooldown : 1);
           // A grunt in cover shows itself next from the other side of it; hurt and alone, it stays hidden longer.
           e.peekSide = -e.peekSide;
           e.coverT = 0;
-          if (e.kind === "grunt" && hurtAlone(s, e)) e.cooldown = Math.max(e.cooldown, FALLBACK.hide[0] + rand(s) * (FALLBACK.hide[1] - FALLBACK.hide[0]));
+          if (e.kind === "grunt" && hurtAlone(s, e)) e.cooldown = Math.max(e.cooldown, FALLBACK.hide[0] + draw(s, e) * (FALLBACK.hide[1] - FALLBACK.hide[0]));
         }
         break;
       }
@@ -449,7 +455,7 @@ export function stepEnemies(s: State) {
         e.timer -= TICK;
         if (e.timer <= 0) {
           e.mode = "move";
-          e.cooldown = k.cooldown * (0.8 + rand(s) * 0.4);
+          e.cooldown = k.cooldown * (0.8 + draw(s, e) * 0.4);
         }
         break;
       }
@@ -693,6 +699,20 @@ function calm(s: State, e: Enemy) {
     return;
   }
   const sq = s.squads[e.squad];
+  if (sq?.walk) {
+    // A salvage crew or the retake squad walks to its point as a party walks to its stop, and
+    // stands there looking round until the raid gives it another (world.ts).
+    const members = s.enemies.filter((o) => o.squad === e.squad);
+    const slot = members.indexOf(e);
+    const to = { x: sq.walk.x + (slot % 2 ? 1.6 : -1.6) * Math.min(slot, 1), z: sq.walk.z + slot * 1.4 };
+    const pace = Math.min(...members.map((o) => ENEMIES[o.kind].speed)) * (sq.crew ? CREW.pace : PARTY.pace);
+    if (dist2d(e.pos, to) > 0.8) walkTo(e, tripStep(e, to), pace);
+    else {
+      moveBody(e, 0, 0);
+      e.yaw += Math.sin(e.lookT * 0.7) * TICK * 0.9;
+    }
+    return;
+  }
   if (sq?.party) {
     // A hunting party walks to its stop by the ground's way, the first living member leading and
     // the others beside it, all at the pace of the slowest; there it stands and looks round

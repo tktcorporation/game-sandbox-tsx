@@ -1,11 +1,12 @@
-import { ALLY, AWARE, BAG, DEPOT, ENEMIES, ENTRY, HEALS, HOME, PARTY, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, TICK, TOOL_KINDS, TOOLS, TOP_BINS, VALUABLES, VAULT, WORLD, type HealKind, type ToolKind } from "./config";
+import { ALLY, AWARE, BAG, CREW, DEBRIS, DEPOT, RETAKE, ENEMIES, ENTRY, HEALS, HOME, PARTY, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, TICK, TOOL_KINDS, TOOLS, TOP_BINS, VALUABLES, VAULT, WORLD, type HealKind, type ToolKind } from "./config";
 import { dist2d, groundAt, los, solidAt } from "./geom";
 import { highGround, steepAt, terrainHeight } from "./terrain";
-import { DEPOTS, ENTRIES, EXTRACTS, inCamp, PARTY_STOPS, POIS, recordSpot, REGIONS, type ExtractPoint, type RecordId } from "./map";
+import { DEPOTS, ENTRIES, EXTRACTS, inCamp, PARTY_STOPS, POIS, recordSpot, REGIONS, regionOf, type ExtractPoint, type RecordId } from "./map";
 import { spawnEnemy, spawnSpot } from "./enemies";
 import { cellsAround, fieldTo, nextStep, onMainGround } from "./hunt";
+import type { CrewTrip, SquadState } from "./state";
 import { raiseAlly, startHelp } from "./ally";
-import { boosted, callLeft, netLevel, cellOf, exploreSize, mix, rand, roamRand, type Bin, type Input, type Loot, type PartySlot, type PartyTrip, type Player, type Point, type State, type Weapon } from "./state";
+import { boosted, callLeft, crewRand, netLevel, cellOf, exploreSize, mix, rand, roamRand, type Bin, type Input, type Loot, type PartySlot, type PartyTrip, type Player, type Point, type State, type Weapon } from "./state";
 import type { EnemyKind, ValuableKind } from "./config";
 import { located, makeNoise } from "./awareness";
 
@@ -245,6 +246,188 @@ function sendParty(s: State, slot: PartySlot, appear: boolean): boolean {
   return false;
 }
 
+/**
+ * The day's visitors beyond the POIs: salvage crews beam in on their times (`State.crewsDue`) and
+ * go about their errand, and the retake squad beams in once, `RETAKE.at` into the raid.
+ */
+export function stepCrews(s: State) {
+  if (s.phase !== "play") return;
+  if (s.crewsDue.length && s.time >= s.crewsDue[0]) {
+    if (sendCrew(s)) s.crewsDue.shift();
+    else s.crewsDue[0] = s.time + 5; // try again shortly
+  }
+  if (s.retakePoi >= 0 && s.retakeT < Infinity) {
+    s.retakeT -= TICK;
+    if (s.retakeT <= 0) s.retakeT = sendRetake(s) ? Infinity : 5;
+  }
+  s.squads.forEach((sq, i) => sq.crew && stepCrew(s, sq, i));
+}
+
+/** Whether a crew can loot bin `b`: one of its region's POIs' ordinary bins, unopened, on the open ground its walkers' field covers. */
+const crewBin = (b: Bin, c: CrewTrip) =>
+  !b.open && !b.vault && !b.outside && regionOf(c.region).pois.includes(POIS[b.poi].id) && onMainGround(b.x, b.z) && Math.abs(b.y - terrainHeight(b.x, b.z)) < 0.6;
+
+/** A salvage crew's errand (see CREW): to the nearest bin, search it, and with a full bag (or out of time or bins) to its way off. */
+function stepCrew(s: State, sq: SquadState, i: number) {
+  const c = sq.crew!;
+  const members = s.enemies.filter((e) => e.squad === i);
+  const lead = members[0];
+  if (!lead) return;
+  c.t += TICK;
+  // Only a calm crew goes about its errand: a fight breaks a search off, and the walk resumes after.
+  if (sq.engaged || members.some((e) => e.aware !== "idle")) {
+    c.searchT = 0;
+    c.mark = { x: lead.pos.x, z: lead.pos.z };
+    c.markT = 0;
+    return;
+  }
+  if (!c.leaving && ((sq.bag?.length ?? 0) >= CREW.bag || c.t >= CREW.leaveAfter)) leave(s, sq, lead);
+  if (c.leaving) {
+    const x = EXTRACTS.find((o) => o.id === c.leaving)!;
+    const arrived = dist2d(lead.pos, x) < CREW.out;
+    if (arrived || stuck(c, lead, () => c.held++) && c.held >= CREW.stuck.tries) beamOut(s, sq, i, members);
+    return;
+  }
+  if (c.bin < 0 || s.bins[c.bin].open) {
+    c.searchT = 0;
+    const pick = s.bins
+      .map((b, n) => ({ b, n }))
+      // It keeps to bins the player is not at: a crew comes upon the player, it does not walk into their fight.
+      .filter(({ b, n }) => crewBin(b, c) && !c.skip.includes(n) && dist2d(b, s.player.pos) > CREW.wary)
+      .sort((a, b) => dist2d(a.b, lead.pos) - dist2d(b.b, lead.pos))[0];
+    if (!pick) {
+      leave(s, sq, lead);
+      return;
+    }
+    c.bin = pick.n;
+    sq.walk = { x: pick.b.x, z: pick.b.z };
+    c.mark = { x: lead.pos.x, z: lead.pos.z };
+    c.markT = 0;
+  }
+  const b = s.bins[c.bin];
+  if (members.some((e) => dist2d(e.pos, b) < CREW.reach + 1 && Math.abs(e.pos.y - b.y) < 1.6)) {
+    // A member stands at the bin for as long as the player would take to search it.
+    c.markT = 0;
+    c.searchT += TICK;
+    if (c.searchT >= SEARCH.time) {
+      crewLoot(s, sq, i, c.bin);
+      c.bin = -1;
+    }
+    return;
+  }
+  // Held up on the way (a corner its body does not fit past): it gives that bin up.
+  stuck(c, lead, () => {
+    c.skip.push(c.bin);
+    c.bin = -1;
+  });
+}
+
+/** Whether a crew walking to its point has moved less than `CREW.stuck.moved` in `CREW.stuck.time` seconds; `then` runs when it has. */
+function stuck(c: CrewTrip, lead: { pos: Point }, then: () => void): boolean {
+  if ((c.markT += TICK) < CREW.stuck.time) return false;
+  const held = dist2d(lead.pos, c.mark) < CREW.stuck.moved;
+  c.mark = { x: lead.pos.x, z: lead.pos.z };
+  c.markT = 0;
+  if (held) then();
+  return held;
+}
+
+/** The crew makes for the nearest way off of its region. */
+function leave(s: State, sq: SquadState, lead: { pos: Point }) {
+  const c = sq.crew!;
+  const x = regionOf(c.region)
+    .exits.map((id) => EXTRACTS.find((o) => o.id === id)!)
+    .sort((a, b) => dist2d(a, lead.pos) - dist2d(b, lead.pos))[0];
+  c.leaving = x.id;
+  c.bin = -1;
+  c.searchT = 0;
+  c.markT = 0;
+  c.mark = { x: lead.pos.x, z: lead.pos.z };
+  sq.walk = { x: x.x, z: x.z };
+}
+
+/** The crew beams out with its bag, which is lost to the island; overnight it raises the network a step. */
+function beamOut(s: State, sq: SquadState, i: number, members: { pos: Point }[]) {
+  const at = members[0].pos;
+  s.enemies = s.enemies.filter((e) => e.squad !== i);
+  s.stats.crewsOut++;
+  s.events.push({ t: "crewOut", x: at.x, z: at.z, n: sq.bag?.length ?? 0 });
+  sq.walk = undefined;
+}
+
+/** The crew opens bin `n`: its valuable goes into the crew's bag (drawn on the crews' stream), the rest of what it held is lost. */
+function crewLoot(s: State, sq: SquadState, i: number, n: number) {
+  const b = s.bins[n];
+  b.open = true;
+  s.events.push({ t: "binOpen", id: b.id }, { t: "crewLoot", id: b.id, squad: i });
+  const table = POIS[b.poi].loot.valuable;
+  const kinds = b.poi === s.boost.poi ? boosted(table, s.boost.kind) : table;
+  const kind = s.fetch?.bins.includes(b.id) ? s.fetch.kind : weighted(s, kinds, crewRand);
+  (sq.bag ??= []).push(kind);
+  (sq.bagAt ??= []).push(b.poi);
+  s.stats.crewBins++;
+}
+
+/**
+ * A salvage crew beamed in near a stop of the starting region, out of the player's sight within
+ * `PARTY.seen` and at least `CREW.away` from them; false when no such spot turned up.
+ */
+function sendCrew(s: State): boolean {
+  const stops = PARTY_STOPS[s.region];
+  const kinds = CREW.squads[Math.floor(crewRand(s) * CREW.squads.length)];
+  for (let k = 0; k < 40; k++) {
+    const stop = stops[Math.floor(crewRand(s) * stops.length)];
+    const a = crewRand(s) * Math.PI * 2;
+    const r = crewRand(s) * PARTY.scatter;
+    const x = stop.x + Math.cos(a) * r;
+    const z = stop.z + Math.sin(a) * r;
+    if (dist2d(s.player.pos, { x, z }) < CREW.away || !onMainGround(x, z)) continue;
+    const spots = hiddenPosts(s, kinds, x, z, PARTY.seen);
+    if (!spots) continue;
+    const squad = s.squads.length;
+    s.squads.push({ name: CREW.name, poi: -1, patrol: [], leg: 0, engaged: false, roam: false, crew: { region: s.region, bin: -1, searchT: 0, skip: [], leaving: null, t: 0, mark: { x, z }, markT: 0, held: 0 }, bag: [], bagAt: [], sinceSeen: 0, last: { x: 0, z: 0 } });
+    kinds.forEach((kind, m) => spawnEnemy(s, kind, spots[m].mx, spots[m].mz, -1, squad, { appear: true, crew: true }));
+    s.stats.crewsIn++;
+    s.events.push({ t: "crewIn", x, z });
+    return true;
+  }
+  return false;
+}
+
+/**
+ * The retake squad beamed in a `RETAKE.dist` walk from the freed POI's way in, out of the
+ * player's sight and at least `RETAKE.away` from them, walking to the way in; false when no
+ * such spot turned up.
+ */
+function sendRetake(s: State): boolean {
+  const poi = POIS[s.retakePoi];
+  const field = fieldTo(poi.entry.x, poi.entry.z);
+  const cells = field ? cellsAround(field, RETAKE.dist[0], RETAKE.dist[1]) : [];
+  const kinds = RETAKE.kinds[Math.floor(crewRand(s) * RETAKE.kinds.length)];
+  for (let k = 0; k < 80 && cells.length; k++) {
+    const c = cells[Math.floor(crewRand(s) * cells.length)];
+    const x = c.x + (crewRand(s) - 0.5) * 1.5;
+    const z = c.z + (crewRand(s) - 0.5) * 1.5;
+    if (dist2d(s.player.pos, { x, z }) < RETAKE.away) continue;
+    const spots = hiddenPosts(s, kinds, x, z);
+    if (!spots) continue;
+    const squad = s.squads.length;
+    s.squads.push({ name: RETAKE.name, poi: -1, patrol: [], leg: 0, engaged: false, roam: false, retake: s.retakePoi, walk: { x: poi.entry.x, z: poi.entry.z }, sinceSeen: 0, last: { x: 0, z: 0 } });
+    const plate = RETAKE.plate[s.network];
+    kinds.forEach((kind, m) => spawnEnemy(s, kind, spots[m].mx, spots[m].mz, -1, squad, { appear: true, crew: true, plate: plate && (kind === "grunt" || kind === "heavy") ? plate : undefined }));
+    s.events.push({ t: "retakeIn", x, z, poi: s.retakePoi });
+    return true;
+  }
+  return false;
+}
+
+/** The salvage crews' members the player can see from where they stand (within `PARTY.seen`): only these show on the map. */
+export function crewsInSight(s: State): Point[] {
+  const p = s.player;
+  const eye = { x: p.pos.x, y: p.pos.y + 1.5, z: p.pos.z };
+  return s.enemies.filter((e) => s.squads[e.squad]?.crew && dist2d(e.pos, p.pos) < PARTY.seen && los(eye, { x: e.pos.x, y: e.pos.y + 1.2, z: e.pos.z })).map((e) => ({ x: e.pos.x, z: e.pos.z }));
+}
+
 /** Half the width of the lane a walking robot needs: the heavy's body radius. */
 const LANE = 1;
 
@@ -281,9 +464,9 @@ function rollHeal(s: State): HealKind {
   return r < 0.33 ? "cell" : r < 0.66 ? "syringe" : r < 0.83 ? "battery" : "medkit";
 }
 
-/** A pick from `[item, weight]` pairs. */
-function weighted<T>(s: State, list: [T, number][]): T {
-  let r = rand(s) * list.reduce((n, [, w]) => n + w, 0);
+/** A pick from `[item, weight]` pairs, drawn from `draw` (the raid's numbers by default). */
+function weighted<T>(s: State, list: [T, number][], draw: (s: State) => number = rand): T {
+  let r = draw(s) * list.reduce((n, [, w]) => n + w, 0);
   for (const [item, w] of list) if ((r -= w) < 0) return item;
   return list[list.length - 1][0];
 }
@@ -296,6 +479,12 @@ function openBin(s: State, binIndex: number) {
   const b = s.bins[binIndex];
   b.open = true;
   s.events.push({ t: "binOpen", id: b.id });
+  if (b.debris) {
+    // The ring's crate holds its own table, from no POI: no fetch contract counts it.
+    for (let i = 0; i < DEBRIS.heals; i++) spill(s, b.x, b.y, b.z, { kind: "heal", heal: rollHeal(s), rarity: 1 });
+    for (let i = 0; i < DEBRIS.count; i++) spillValuable(s, b, weighted(s, DEBRIS.valuables), -1);
+    return;
+  }
   if (b.vault) {
     const [kind, rarity] = VAULT.weapon[Math.floor(rand(s) * VAULT.weapon.length)];
     spill(s, b.x, b.y, b.z, { kind: "weapon", rarity, weapon: { kind, rarity, mag: -1 } });

@@ -1,6 +1,6 @@
 import { DEPOT, NETWORK, RELAY, WORLD } from "../sim/config";
-import { BOXES, DEPOTS, ENTRIES, EXTRACTS, LANDMARKS, POIS, REGIONS, regionOf, RELAYS, relayIndex, ROUTES, regionHere, type EntryId, type PoiId, type RegionId, type RouteId } from "../sim/map";
-import { HOLD_NAME, type PoiHold } from "../sim/island";
+import { BOXES, DEBRIS_SPOTS, debrisIndex, DEPOTS, ENTRIES, EXTRACTS, LANDMARKS, POIS, REGIONS, regionOf, RELAYS, relayIndex, ROUTES, regionHere, type EntryId, type PoiId, type RegionId, type RouteId } from "../sim/map";
+import { HOLD_NAME, type IslandEvent, type PoiHold } from "../sim/island";
 import { worldKey } from "../sim/routes";
 import { DAM_FACE, floorLevel, groundOf, highGround, LEVEL, steepAt, surfaceAt, terrainHeight, type Ground } from "../sim/terrain";
 import { cellOf, decodeSeen, exploreSize, type Ally, type Player, type RelayMast, type State } from "../sim/state";
@@ -47,10 +47,17 @@ export type MapScene = Pick<State, "seen" | "cleared" | "hold" | "depots" | "rou
   ally?: Pick<Ally, "active" | "pos" | "down">;
   /** The relay masts standing (none while the network is too weak for them), destroyed ones with no health left. */
   relays?: readonly Pick<RelayMast, "id" | "hp">[];
+  /** The debris crate of the day's debris fall, or null. */
+  debris?: { x: number; z: number; open: boolean } | null;
+  /** The salvage crews' members in the player's sight. */
+  crews?: readonly { x: number; z: number }[];
 };
 
 /** The camp's picture of the island between raids, from the profile's explored map, depots, routes and POI standings. */
-export function islandScene(p: { seen: string; depots: readonly PoiId[]; routes: readonly RouteId[]; poiState: Record<PoiId, { state: PoiHold }>; network: number }): MapScene {
+export function islandScene(p: { seen: string; depots: readonly PoiId[]; routes: readonly RouteId[]; poiState: Record<PoiId, { state: PoiHold }>; network: number; events?: readonly (IslandEvent | null)[] }): MapScene {
+  // Today's debris fall is marked on the map table where the piece will lie.
+  const ev = p.events?.[0];
+  const spot = ev?.t === "debris" ? DEBRIS_SPOTS[debrisIndex(ev.spot)] : null;
   return {
     seen: decodeSeen(p.seen),
     cleared: POIS.map(() => false),
@@ -59,6 +66,7 @@ export function islandScene(p: { seen: string; depots: readonly PoiId[]; routes:
     routes: [...p.routes],
     found: [],
     relays: p.network >= NETWORK.relayAt ? RELAYS.map((r) => ({ id: r.id, hp: RELAY.hp })) : [],
+    debris: spot && { x: spot.x, z: spot.z, open: false },
   };
 }
 
@@ -444,6 +452,40 @@ export class IslandMap {
         taken.push(spot);
         label(text, p.x, p.y + 14 * dpr, m.hp > 0 ? "#ffb4a2" : "#9c9586", 9);
       }
+    }
+    // The debris crate: a gold shard, grey once opened.
+    if (s.debris) {
+      const p = at(s.debris.x, s.debris.z);
+      const d = 7 * dpr;
+      g.save();
+      g.lineWidth = 2.5 * dpr;
+      g.strokeStyle = "rgba(20,24,40,0.9)";
+      g.fillStyle = s.debris.open ? "#6b6f78" : "#e0a33a";
+      g.beginPath();
+      g.moveTo(p.x + d * 0.2, p.y - d);
+      g.lineTo(p.x + d * 0.8, p.y - d * 0.1);
+      g.lineTo(p.x - d * 0.1, p.y + d);
+      g.lineTo(p.x - d * 0.7, p.y + d * 0.05);
+      g.closePath();
+      g.fill();
+      g.stroke();
+      g.restore();
+      const text = s.debris.open ? "破片（空）" : "破片";
+      const spot = box(text, p.x, p.y + 14 * dpr, 9);
+      if (free(spot)) {
+        taken.push(spot);
+        label(text, p.x, p.y + 14 * dpr, s.debris.open ? "#9c9586" : "#ffd58a", 9);
+      }
+    }
+    // Salvage crew members in sight: small rust squares.
+    for (const c of s.crews ?? []) {
+      const p = at(c.x, c.z);
+      const r = 3 * dpr;
+      g.fillStyle = "#c86f3a";
+      g.strokeStyle = "rgba(20,24,40,0.9)";
+      g.lineWidth = 1.5 * dpr;
+      g.strokeRect(p.x - r, p.y - r, r * 2, r * 2);
+      g.fillRect(p.x - r, p.y - r, r * 2, r * 2);
     }
     // Each POI's mark at its centre, coloured by who holds it: a disc, or the titan's hexagon.
     POIS.forEach((poi, i) => {

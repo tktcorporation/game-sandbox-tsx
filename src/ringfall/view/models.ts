@@ -1304,3 +1304,49 @@ export function buildDropship(): THREE.Group {
   }
   return g;
 }
+
+/**
+ * A piece of the ring come down (a debris fall's day): a few panels of the tether's pale composite
+ * half buried and tilted in a scorched scar, their seams banded dark, their broken ends burnt, with
+ * glowing cracks where it is still hot. Scenery only: nothing in it is solid (the sim knows only
+ * the crate beside it), so the wreck never changes how the ground is walked. `vents` are where the
+ * view lets smoke rise from, above the root.
+ */
+export function buildRingDebris(): { root: THREE.Group; vents: THREE.Vector3[] } {
+  const root = new THREE.Group();
+  // The scorched scar, in patches the view lays each on the ground under it (named "scar").
+  for (const [x, z, r] of [[0, 0, 5], [-4, 4, 4], [4, 3, 4], [-1, -5, 3.5], [5, -2, 3], [-6, -2, 3]] as const) {
+    const scar = mesh(new THREE.CircleGeometry(r, 9), flat(PAL.scorch), x, 0.06, z, false);
+    scar.rotation.x = -Math.PI / 2;
+    scar.receiveShadow = true;
+    scar.name = "scar";
+    root.add(scar);
+  }
+  const skin = flat(PAL.tether);
+  const rib = flat(PAL.tetherDark);
+  const burnt = flat(PAL.scorch);
+  const hot = glow(0xff7a2a);
+  // [x, z, width, height, length, yaw, tilt]: one long panel buried at an angle, two shorter thrown beside it.
+  const panels: [number, number, number, number, number, number, number][] = [
+    [-1.5, -1, 4.6, 2.4, 13, 0.5, 0.42],
+    [4.6, 3, 3.2, 1.7, 6.4, -0.7, -0.28],
+    [-6, 4.4, 2.6, 1.4, 4.6, 1.4, 0.2],
+  ];
+  for (const [x, z, w, h, l, yaw, tilt] of panels) {
+    const g = new THREE.Group();
+    g.position.set(x, h * 0.45, z);
+    g.rotation.set(tilt, yaw, tilt * 0.6);
+    g.add(mesh(new THREE.BoxGeometry(w, h, l), skin));
+    for (let k = -1; k <= 1; k += 2) g.add(mesh(new THREE.BoxGeometry(w + 0.06, h + 0.06, 0.25), rib, 0, 0, (k * l) / 4));
+    // The broken end, burnt, with a hot seam across it.
+    g.add(mesh(new THREE.BoxGeometry(w * 1.02, h * 1.02, 0.4), burnt, 0, 0, l / 2));
+    g.add(mesh(new THREE.BoxGeometry(w * 0.7, 0.08, 0.06), hot, 0, h * 0.2, l / 2 + 0.21, false));
+    root.add(g);
+  }
+  // Clods thrown up round the scar.
+  for (let i = 0; i < 7; i++) {
+    const a = (i / 7) * Math.PI * 2 + 0.3;
+    root.add(mesh(new THREE.DodecahedronGeometry(0.45 + (i % 3) * 0.2, 0), burnt, Math.cos(a) * 10, 0.2, Math.sin(a) * 10));
+  }
+  return { root, vents: [new THREE.Vector3(1.2, 2.6, 5.5), new THREE.Vector3(5.8, 1.4, 5.8), new THREE.Vector3(-7.2, 1, 5.6), new THREE.Vector3(-2.5, 1.5, -4)] };
+}

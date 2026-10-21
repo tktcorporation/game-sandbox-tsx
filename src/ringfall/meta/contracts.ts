@@ -1,7 +1,7 @@
-import { CONTRACT, NETWORK, PARTY, RELAY, VALUABLES, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
+import { CONTRACT, CREW, NETWORK, PARTY, RELAY, RETAKE, VALUABLES, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
 import { PACKS, POIS, poiIndex, regionHere, REGIONS, regionOf, RELAYS, relayIndex, type PoiId, type RegionId, type RelayId } from "../sim/map";
-import { activePacks, garrison, type PoiHold } from "../sim/island";
-import { mix, partyKey, squadKey, type State } from "../sim/state";
+import { activePacks, garrison, type IslandEvent, type PoiHold } from "../sim/island";
+import { crewKey, mix, partyKey, retakeKey, squadKey, type State } from "../sim/state";
 import { haulOrigins } from "../sim/world";
 import { MODULES, nextLevel, unmet, type Hideout } from "./hideout";
 import type { RewardItem } from "./quests";
@@ -18,8 +18,8 @@ export interface Reward {
   items: RewardItem[];
 }
 
-/** What an intercept contract names: one of the drone packs (`PACKS`), or a region's hunting party (`PARTY`). */
-export type InterceptTarget = { t: "pack"; name: string } | { t: "party"; region: RegionId };
+/** What an intercept contract names: one of the drone packs (`PACKS`), a region's hunting party (`PARTY`), or its salvage crew (`CREW`). */
+export type InterceptTarget = { t: "pack"; name: string } | { t: "party"; region: RegionId } | { t: "crew"; region: RegionId };
 
 /** A contract, told apart by `t`: each type asks for one thing the raid already holds. */
 export type Contract =
@@ -30,11 +30,13 @@ export type Contract =
   /** Destroy every member of the named squad. */
   | { t: "intercept"; id: string; target: InterceptTarget; reward: Reward }
   /** Destroy the named relay mast (it stands only while the network is strong). */
-  | { t: "destroy"; id: string; relay: RelayId; reward: Reward };
+  | { t: "destroy"; id: string; relay: RelayId; reward: Reward }
+  /** Destroy the squad the network sends to retake the named freed POI (on a retake's day). */
+  | { t: "defend"; id: string; poi: PoiId; reward: Reward };
 
 export type ContractType = Contract["t"];
 
-export const CONTRACT_NAME: Record<ContractType, string> = { free: "解放", fetch: "回収", intercept: "迎撃", destroy: "破壊" };
+export const CONTRACT_NAME: Record<ContractType, string> = { free: "解放", fetch: "回収", intercept: "迎撃", destroy: "破壊", defend: "防衛" };
 
 /** A day's board. */
 export interface Board {
@@ -53,6 +55,8 @@ export interface BoardBasis {
   depots: readonly PoiId[];
   /** The network level the next raid is played at: it decides which packs fly and whether relay masts stand. */
   network: number;
+  /** Today's event and tomorrow's: today's may bring a contract of its own. */
+  events?: readonly (IslandEvent | null)[];
 }
 
 const round50 = (n: number) => Math.round(n / 50) * 50;
@@ -64,14 +68,17 @@ const packRegion = (name: string) => regionHere(PACKS.find((p) => p.name === nam
 export function contractRegion(c: Contract): RegionId {
   if (c.t === "destroy") return regionHere(RELAYS[relayIndex(c.relay)]).id;
   if (c.t !== "intercept") return regionOf(REGIONS.find((r) => r.pois.includes(c.poi))?.id ?? "reservoir").id;
-  return c.target.t === "party" ? c.target.region : packRegion(c.target.name);
+  return targetRegion(c.target);
 }
 
+/** The region an intercept's target is in. */
+const targetRegion = (t: InterceptTarget): RegionId => (t.t === "pack" ? packRegion(t.name) : t.region);
+
 /** The squad key (`squadKey()`) an intercept's target is destroyed under. */
-export const targetKey = (t: InterceptTarget) => (t.t === "party" ? partyKey(t.region) : t.name);
+export const targetKey = (t: InterceptTarget) => (t.t === "party" ? partyKey(t.region) : t.t === "crew" ? crewKey(t.region) : t.name);
 
 /** The target's name. */
-export const targetName = (t: InterceptTarget) => (t.t === "party" ? `${regionOf(t.region).name}の${PARTY.name}` : t.name);
+export const targetName = (t: InterceptTarget) => (t.t === "party" ? `${regionOf(t.region).name}の${PARTY.name}` : t.t === "crew" ? `${CREW.name}（${regionOf(t.region).name}）` : t.name);
 
 /** The contract's ask, in a line. */
 export function contractText(c: Contract): string {
@@ -84,6 +91,8 @@ export function contractText(c: Contract): string {
       return `${targetName(c.target)}を全滅させる`;
     case "destroy":
       return `${RELAYS[relayIndex(c.relay)].name}を壊す（網が 1 段下がる）`;
+    case "defend":
+      return `${POIS[poiIndex(c.poi)].name}を守る（来る${RETAKE.name}を倒す。倒さないと手薄になる）`;
   }
 }
 
@@ -110,6 +119,11 @@ export function makeBoard(p: BoardBasis): Board {
   const poiRegionOf = (id: PoiId) => REGIONS.find((r) => r.pois.includes(id))!.id;
   const out: Contract[] = [];
   const id = () => `d${p.day}-${out.length}`;
+  const today = p.events?.[0] ?? null;
+
+  // Defend: on a retake's day, the freed POI the network sends its squad to, first on the board.
+  if (today?.t === "retake" && p.poiState[today.poi].state === "freed")
+    out.push({ t: "defend", id: id(), poi: today.poi, reward: { cash: round50(CONTRACT.defend * factor(poiRegionOf(today.poi))), items: [] } });
 
   // Free: a POI the robots hold, paid by the garrison that stands there in the next raid.
   const frees = shuffle(near(POIS.filter((o) => !o.boss && p.poiState[o.id].state !== "freed").map((o) => o.id), poiRegionOf), 1);
@@ -155,16 +169,17 @@ export function makeBoard(p: BoardBasis): Board {
     reward: { cash: Math.max(CONTRACT.fetchMin, round50(n * VALUABLES[kind].value * CONTRACT.fetchShare * factor(poiRegionOf(at.id)))), items: [{ t: "valuable", kind }] },
   });
 
-  // Intercept: a drone pack or a region's hunting party.
-  const targets = shuffle(
-    near(
-      [...activePacks(p.seed, p.network).map((q): InterceptTarget => ({ t: "pack", name: q.name })), ...REGIONS.filter((r) => NETWORK.levels[p.network].parties[r.id] > 0).map((r): InterceptTarget => ({ t: "party", region: r.id }))],
-      (t) => (t.t === "party" ? t.region : packRegion(t.name)),
+  // Intercept: a drone pack or a region's hunting party; on a crews' visit, the salvage crews first.
+  const crews = today?.t === "crews" ? shuffle(near(REGIONS.map((r): InterceptTarget => ({ t: "crew", region: r.id })), targetRegion), 11).slice(0, 1) : [];
+  const targets = [
+    ...crews,
+    ...shuffle(
+      near([...activePacks(p.seed, p.network).map((q): InterceptTarget => ({ t: "pack", name: q.name })), ...REGIONS.filter((r) => NETWORK.levels[p.network].parties[r.id] > 0).map((r): InterceptTarget => ({ t: "party", region: r.id }))], targetRegion),
+      5,
     ),
-    5,
-  );
+  ];
   const interceptOf = (target: InterceptTarget, salt: number): Contract => {
-    const region = target.t === "party" ? target.region : packRegion(target.name);
+    const region = targetRegion(target);
     const h = hash(salt);
     const rarity = Math.min(3, 1 + Math.floor((p.day - 1) / CONTRACT.rarityEvery)) as Rarity;
     const items: RewardItem[] = h % 3 === 0 ? [{ t: "weapon", kind: PAY_WEAPONS[(h >>> 4) % PAY_WEAPONS.length], rarity: rarity as 0 | 1 | 2 | 3 }] : h % 3 === 1 ? [{ t: "heal", kind: (h >>> 4) % 2 ? "battery" : "medkit" }] : [];
@@ -213,9 +228,25 @@ export function contractProgress(c: Contract, s: State): { line: string; met: bo
       if (!m) return { line: `${name}：網が弱く、今日は立っていない`, met: false };
       return m.hp <= 0 ? { line: `${name}：壊した`, met: true } : { line: `${name}を壊す：残り ${Math.ceil((m.hp / RELAY.hp) * 100)}%`, met: false };
     }
+    case "defend": {
+      const i = poiIndex(c.poi);
+      const name = POIS[i].name;
+      if (s.stats.wiped.includes(retakeKey(c.poi))) return { line: `${name}：${RETAKE.name}を倒した`, met: true };
+      if (s.retakePoi !== i) return { line: `${name}：今日は${RETAKE.name}が来ない`, met: false };
+      const left = s.enemies.filter((e) => s.squads[e.squad]?.retake === i).length;
+      return { line: left ? `${name}を守る：${RETAKE.name} 残り ${left}` : `${name}を守る：${RETAKE.name}は${Math.max(0, Math.ceil(s.retakeT))} 秒ほどで来る`, met: false };
+    }
     case "intercept": {
       const key = targetKey(c.target);
       if (s.stats.wiped.includes(key)) return { line: `${targetName(c.target)}：全滅させた`, met: true };
+      if (c.target.t === "crew") {
+        const region = c.target.region;
+        if (region !== s.region) return { line: `${targetName(c.target)}：今日はこの地域に来ていない`, met: false };
+        const here = s.squads.map((q, n) => ({ q, n })).filter(({ q, n }) => q.crew && s.enemies.some((e) => e.squad === n));
+        if (!here.length) return { line: s.crewsDue.length ? `${targetName(c.target)}：まだ来ていない` : `${targetName(c.target)}：逃げられた`, met: false };
+        const left = here.map(({ n }) => s.enemies.filter((e) => e.squad === n).length);
+        return { line: `${targetName(c.target)}：残り ${Math.min(...left)}`, met: false };
+      }
       const squads = s.squads.map((q, n) => ({ q, n })).filter(({ q }) => squadKey(q) === key);
       const left = squads.map(({ n }) => s.enemies.filter((e) => e.squad === n).length).filter((k) => k > 0);
       return { line: `${targetName(c.target)}：残り ${left.length ? Math.min(...left) : "-"}`, met: false };
@@ -243,6 +274,8 @@ export function contractDone(c: Contract, r: { freed: PoiId[]; home: Fetched[]; 
       return r.wiped.includes(targetKey(c.target));
     case "destroy":
       return r.relays.includes(c.relay);
+    case "defend":
+      return r.wiped.includes(retakeKey(c.poi));
   }
 }
 
@@ -258,7 +291,7 @@ export function contractMark(c: Contract): ContractMark {
     const o = POIS[poiIndex(c.poi)];
     return { t: "poi", x: o.x, z: o.z };
   }
-  if (c.target.t === "party") return { t: "region", region: c.target.region };
+  if (c.target.t !== "pack") return { t: "region", region: c.target.region };
   const name = c.target.name;
   return { t: "loop", points: [...(PACKS.find((q) => q.name === name)?.patrol ?? [])] };
 }
@@ -277,9 +310,10 @@ export function parseBoard(raw: unknown, day: number): Board | null {
     if (x.t === "free") return poi(x.poi);
     if (x.t === "fetch") return poi(x.poi) && typeof x.kind === "string" && x.kind in VALUABLES && Number.isInteger(x.n) && (x.n as number) > 0;
     if (x.t === "destroy") return typeof x.relay === "string" && relayIndex(x.relay as RelayId) >= 0;
+    if (x.t === "defend") return poi(x.poi);
     if (x.t === "intercept") {
       const t = x.target as Record<string, unknown> | undefined;
-      return !!t && ((t.t === "pack" && PACKS.some((q) => q.name === t.name)) || (t.t === "party" && REGIONS.some((r) => r.id === t.region)));
+      return !!t && ((t.t === "pack" && PACKS.some((q) => q.name === t.name)) || ((t.t === "party" || t.t === "crew") && REGIONS.some((r) => r.id === t.region)));
     }
     return false;
   };

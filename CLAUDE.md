@@ -76,23 +76,36 @@ craft's line; credited from a raid's `stats` by `creditRaid()` inside `settle()`
 also holds the day's contracts (`meta/contracts.ts`): `makeBoard()` builds 3 or 4 from
 `Profile.seed`, `Profile.day`, the island and the hideout (free a POI, fetch a valuable from a
 POI's bins, destroy a drone pack or a region's hunting party, and while the network is strong a
-relay mast; numbers in `CONTRACT`), kept in
+relay mast; on a retake's day, defend the POI first; numbers in `CONTRACT`), kept in
 `Profile.board` for the day; the player takes one (`Profile.taken`) or none, and `settle()` pays it
 when `contractDone()` holds (fetch counts only valuables tagged with their bin's POI,
-`Player.haulAt` / `State.sentAt`; intercept reads `Stats.wiped`, by `squadKey()`; destroy reads `Stats.relays`). Five story
+`Player.haulAt` / `State.sentAt`; intercept and defend read `Stats.wiped`, by `squadKey()`; destroy reads `Stats.relays`). Five story
 contracts (`meta/story.ts`) follow one at a time: the one under way lays its record at its
 `RECORD_SPOTS` place in `map.ts` (`Start.record`), a bag slot that comes home into
 `Profile.records`. The bots take no contract and carry no record. Each POI has one locked bin (`vault: true` in its `bins`), opened
 only with that POI's key; keys drop from the bins of the POI named by its `keyFrom` (`VAULT`).
 POIs have a stable `id` (`PoiId` in `map.ts`); saves, quests, `keyFrom` and `EXTRA_BINS` refer to a
 POI by it, never by its place in `POIS` (the run's state may index `POIS` internally). The profile
-is versioned (`Profile.v`, which is 15), and `parseProfile()` moves older saves forward (a save from
+is versioned (`Profile.v`, which is 16), and `parseProfile()` moves older saves forward (a save from
 before the ways in starts at its region's first way in; a save from before ways in were learned
 knows them all; a save from before v12 drops its explored map, since `cellOf()` follows `WORLD`,
 which then grew wider; a save from before v13 starts on the day after its raids with every POI
 held; a save from before v14 keeps only the quests that still exist; a save from before v15 starts
-at network `NETWORK.start`) and moves its
+at network `NETWORK.start`; a save from before v16 has a quiet day and tomorrow's event drawn) and moves its
 start to one it may choose (`allowedStart()`).
+Each island day has at most one event (`EVENTS` in `config.ts`, `IslandEvent` in `sim/island.ts`):
+`advanceDay()` turns yesterday's forecast into today's and draws tomorrow's from `Profile.seed` and
+the day (`eventFor()` in `meta/island.ts`), kept in `Profile.events` (today, tomorrow) and passed to
+the raid as `Start.event`. A debris fall puts a crate (`Bin.debris`, `DEBRIS`) and its guards at one
+of `DEBRIS_SPOTS` (`map.ts`; the wreck is drawn by the view only); a retake beams `RETAKE`'s squad
+in to walk to a freed POI's way in, and left alive it thins that POI overnight (`RaidDay.retake`,
+`DayChange.overrun`); a storm scales the robots' sight (`sightScale()`, `STORM`); a crews' visit adds
+a salvage crew. Salvage crews (`CREW`, `NETWORK.levels[].crews`, `stepCrews()` in `world.ts`) beam
+into the starting region, walk to the nearest unopened ground-level POI bins, take each one's
+valuable into `SquadState.bag` (dropped with its bins' POIs when the last member dies, in
+`combat.ts`) and leave by the region's nearest way off; each that gets out (`Stats.crewsOut`)
+raises the network a step overnight. Crews, the retake squad and the debris guards draw on their
+own stream (`crewRand()`), so the raid's other random numbers are drawn as without them.
 Each POI has a depot on its road (`DEPOTS` in `map.ts`, run by `stepDepots()` in `world.ts`): walking
 up switches it on for good, its use key sends the bag home (it survives a wipe) or, with the bag empty,
 leaves the raid there; neither works while a robot fighting the player is within `DEPOT.safe`. The profile keeps the depots on (`Profile.depots`), from

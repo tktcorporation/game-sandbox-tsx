@@ -6,8 +6,8 @@ import { dist2d, los } from "../sim/geom";
 import { DEPOTS, entryOf, EXTRACTS, POIS, poiIndex, regionHere, regionOf, routeOf, type EntryId } from "../sim/map";
 import { routeBefore } from "../sim/routes";
 import { islandNotes, netChangeText, noteText, relayName } from "../meta/island";
-import { bagLoad, canOpen, depotBlocked, depotInReach, extractHere, extractReady, homeReady, makeRoom, poiAt, roomForTool, searchTime, useTarget } from "../sim/world";
-import { callLeft, enemyHp, enemyShield, weakY, type GameEvent, type State, type Vec3 } from "../sim/state";
+import { bagLoad, canOpen, crewsInSight, depotBlocked, depotInReach, extractHere, extractReady, homeReady, makeRoom, poiAt, roomForTool, searchTime, useTarget } from "../sim/world";
+import { callLeft, debrisBin, enemyHp, retakeKey, enemyShield, weakY, type GameEvent, type State, type Vec3 } from "../sim/state";
 import { haulValue, rank } from "../sim/results";
 import { pickHeal } from "../sim/player";
 import { RARITY_CSS, SCOPE_IN } from "./models";
@@ -16,6 +16,8 @@ import { CONTRACT_NAME, contractMark, contractProgress, contractText, type Contr
 import { storyOf } from "../meta/story";
 import { recordSpot, type RecordId } from "../sim/map";
 import type { World } from "./world";
+import { eventRow, raidEventLine } from "./events";
+import { CREW, RETAKE } from "../sim/config";
 
 /*
  * The DOM layer: everything the player reads. The screen always answers two
@@ -304,6 +306,13 @@ export class Hud {
       case "leaveCancel":
         this.toast("切り上げを取り消した", 0);
         break;
+      case "retakeIn":
+        this.toast(`${RETAKE.name}が${POIS[e.poi].name}へ向かっている`, 0, 4000);
+        break;
+      case "crewOut":
+        // Heard over the radio wherever the player is: the network has the bag now.
+        this.toast(`${CREW.name}が回収品 ${e.n} 個を持って島を出た`, 0, 4000);
+        break;
       case "ultReady":
         this.toast(isTouch() ? "離脱ジャンプ 準備完了" : "離脱ジャンプ 準備完了（Z）", 3);
         break;
@@ -314,7 +323,11 @@ export class Hud {
     const p = s.player;
     if (this.mapOpen) {
       if (s.phase === "done") this.toggleMap(false);
-      else this.map.draw(s);
+      // The debris crate is marked; a salvage crew only while the player can see one of it.
+      else {
+        const crate = debrisBin(s);
+        this.map.draw({ ...s, debris: crate && { x: crate.x, z: crate.z, open: crate.open }, crews: crewsInSight(s) });
+      }
       // The masts' key only on the days they stand.
       $("map-mast-key").hidden = !s.relays.length;
     }
@@ -346,6 +359,9 @@ export class Hud {
       setHtml(os, `<span class="lead">記録：</span>${esc(held ? `${r.name}を持っている。持ち帰る` : `${r.place}の${r.name}`)}`);
       os.classList.toggle("met", held);
     }
+    const oe = $("obj-event");
+    oe.hidden = !s.event;
+    if (s.event) setHtml(oe, raidEventLine(s));
     $("obj-count").textContent = `回収 ${haulValue(s)}`;
     $("obj-bag").textContent = `バッグ ${bagLoad(p)}/${BAG.slots}`;
     const raid = s.phase === "play" ? `${clock(s.time)}` : "";
@@ -845,8 +861,21 @@ export class Hud {
     const contract = c
       ? `<h3>依頼</h3><p><span class="contract ${c.done ? "done" : "failed"}">${CONTRACT_NAME[c.c.t]}：${contractText(c.c)}<b>${c.done ? `達成・${c.c.reward.cash} クレジット${rewardList(c.c).map(([i, n]) => `・${itemName(i)}${n > 1 ? ` × ${n}` : ""}`).join("")}` : "未達成（依頼は今日で消える）"}</b></span></p>`
       : "";
+    // The day's event and how it went: the retake squad stopped or not, the salvage crews met.
+    const ev = settled?.event ?? s.event;
+    const outcome: string[] = [];
+    if (ev?.t === "retake" && s.retakePoi >= 0) {
+      const name = POIS[s.retakePoi].name;
+      outcome.push(s.stats.wiped.includes(retakeKey(ev.poi)) ? `<span class="contract done">${RETAKE.name}を倒した<b>${name}は解放のまま</b></span>` : `<span class="contract failed">${RETAKE.name}を倒せなかった<b>${name}は手薄になった</b></span>`);
+    }
+    const st2 = s.stats;
+    if (st2.crewsIn)
+      outcome.push(
+        `<span class="contract${st2.crewsOut ? " failed" : " done"}">${CREW.name}：${st2.crewsIn} 組が来て、箱を ${st2.crewBins} 個漁った<b>${[st2.crewsDown ? `${st2.crewsDown} 組を倒した` : "", st2.crewsOut ? `${st2.crewsOut} 組に逃げられた（網 +${st2.crewsOut}）` : ""].filter(Boolean).join("・") || "まだ島にいた"}</b></span>`,
+      );
+    const events = ev || outcome.length ? `<h3>島の出来事</h3><p>${ev ? eventRow(ev, s.network) : ""}${outcome.join("")}</p>` : "";
     const story = settled?.story ? `<h3>記録を持ち帰った</h3><p><span class="contract done">${storyOf(settled.story.id).title}：${recordSpot(settled.story.id).name}<b>${settled.story.cash} クレジット・依頼板で読める</b></span></p>` : "";
-    $("home").innerHTML = island + contract + story + (quests.length ? `<h3>済んだ依頼</h3><p>${quests.map((q) => `<span>${q.title}（${q.reward.cash} クレジット${rewardList(q).map(([i, n]) => `・${itemName(i)}${n > 1 ? ` × ${n}` : ""}`).join("")}）</span>`).join("")}</p>` : "") + (settled
+    $("home").innerHTML = island + events + contract + story + (quests.length ? `<h3>済んだ依頼</h3><p>${quests.map((q) => `<span>${q.title}（${q.reward.cash} クレジット${rewardList(q).map(([i, n]) => `・${itemName(i)}${n > 1 ? ` × ${n}` : ""}`).join("")}）</span>`).join("")}</p>` : "") + (settled
       ? (sent.length ? `<h3>中継ボックスから倉庫へ送った物</h3><p>${count(sent)}</p>` : "") +
         `<h3>${lost ? "ポーチに残った物" : "持ち帰った物"}</h3><p>${home.length ? count(home) : "<span>なし</span>"}</p>` +
         (settled.learned.length ? `<h3>次から選べる入口</h3><p>${settled.learned.map((id) => `<span>${entryOf(id).name}（${regionOf(entryOf(id).region).name}）</span>`).join("")}</p>` : "") +

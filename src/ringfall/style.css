@@ -190,6 +190,24 @@ kbd {
   color: var(--sky);
 }
 
+/* The day's island event, under the place: the haze's grey, its icon in its own colour. */
+#obj-event {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  font-weight: 700;
+  color: #d9d2c4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#obj-event[hidden] {
+  display: none;
+}
+#obj-event .ev-icon {
+  vertical-align: -3px;
+  margin-right: 4px;
+}
+
 #obj-stealth {
   grid-column: 1 / -1;
   font-size: 13px;
@@ -2108,6 +2126,11 @@ body.touch #obj-story .lead {
 body.touch #obj-contract:not([hidden]) ~ #obj-story {
   display: none;
 }
+body.touch #obj-event {
+  order: 3;
+  flex-basis: 100%;
+  font-size: 11px;
+}
 body.touch #obj-exits {
   order: 3;
   flex-basis: 100%;
@@ -2590,4 +2613,39 @@ body.touch.camp #t-use {
 body.touch #camp-prompt {
   bottom: 30%;
   font-size: 16px;
+}
+
+/* The island's events on the map table and the results: today's and tomorrow's, an icon and a line each. */
+.ev {
+  display: block;
+  font-size: 13px;
+  line-height: 1.35;
+}
+.ev .ev-icon {
+  vertical-align: -3px;
+  margin-right: 5px;
+}
+.ev b {
+  margin-right: 6px;
+}
+.ev.quiet {
+  color: var(--muted);
+}
+.hub-island ul.events li {
+  display: grid;
+  grid-template-columns: 2.6em 1fr;
+  align-items: baseline;
+  padding: 3px 0;
+}
+.hub-island ul.events li small {
+  color: var(--muted);
+  font-size: 12px;
+}
+#home .ev {
+  display: inline-block;
+  margin: 2px 8px 2px 0;
+}
+.tomorrow li.crews,
+.tomorrow li.overrun {
+  box-shadow: inset 3px 0 0 #b8412f;
 }

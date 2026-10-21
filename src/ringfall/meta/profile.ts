@@ -5,7 +5,8 @@ import { encodeSeen, type Kit, type State } from "../sim/state";
 import { haulOrigins } from "../sim/world";
 import { contractDone, makeBoard, parseBoard, sentOrigins, type Board, type Contract, type Fetched } from "./contracts";
 import { craftDone, emptyHideout, infirmaryHeals, MODULES, nextLevel, onSale, pouchSlots, shopRarity, stashCap, stillNeeded, unmet, type Hideout } from "./hideout";
-import { advanceDay, newIsland, parseIsland, raidDay, type Island, type NetChange } from "./island";
+import { advanceDay, eventFor, firstEvents, newIsland, parseEvent, parseIsland, raidDay, type DayEvents, type Island, type NetChange } from "./island";
+import type { IslandEvent } from "../sim/island";
 import { built, creditRaid, emptyLog, need, offered, QUEST_IDS, type Quest, type QuestLog } from "./quests";
 import { currentStory, STORIES, type Story } from "./story";
 
@@ -28,7 +29,7 @@ export interface Escape {
 
 /** What persists between raids. */
 export interface Profile {
-  v: 15;
+  v: 16;
   cash: number;
   stash: Item[];
   raids: number;
@@ -69,6 +70,8 @@ export interface Profile {
   network: number;
   /** What the network has gathered toward its next step, carried from day to day. */
   pressure: number;
+  /** The island's events: today's (the next raid's) and tomorrow's, announced a day ahead (meta/island.ts). */
+  events: DayEvents;
 }
 
 export const HEALS: HealKind[] = ["cell", "battery", "syringe", "medkit"];
@@ -94,7 +97,7 @@ export const canStartIn = (p: Profile, region: RegionId) => {
 export function newProfile(seed = 1): Profile {
   const stash: Item[] = META.start.weapons.map((w) => ({ t: "weapon", ...w }));
   for (const k of HEALS) for (let i = 0; i < META.start.heals[k]; i++) stash.push({ t: "heal", kind: k });
-  const p: Omit<Profile, "board"> = { v: 15, cash: META.start.cash, stash, raids: 0, extracted: 0, time: 0, quests: emptyLog(), region: "reservoir", entry: FIRST_ENTRY, entries: [FIRST_ENTRY], hideout: emptyHideout(), escaped: null, seed: seed & 0xffff, depots: [], depotSent: {}, seen: "", routes: [], day: 1, poiState: newIsland(), taken: null, records: [], network: NETWORK.start, pressure: 0 };
+  const p: Omit<Profile, "board"> = { v: 16, cash: META.start.cash, stash, raids: 0, extracted: 0, time: 0, quests: emptyLog(), region: "reservoir", entry: FIRST_ENTRY, entries: [FIRST_ENTRY], hideout: emptyHideout(), escaped: null, seed: seed & 0xffff, depots: [], depotSent: {}, seen: "", routes: [], day: 1, poiState: newIsland(), taken: null, records: [], network: NETWORK.start, pressure: 0, events: firstEvents(seed & 0xffff, newIsland()) };
   return { ...p, board: makeBoard(p) };
 }
 
@@ -361,6 +364,10 @@ export interface Settlement {
   freed: PoiId[];
   thinned: PoiId[];
   retaken: PoiId[];
+  /** Freed POIs the day's retake squad, left alive, turned thin. */
+  overrun: PoiId[];
+  /** The day's island event the raid was played on, or null. */
+  event: IslandEvent | null;
   /** How the network moved overnight, and why. */
   network: NetChange;
   /** The contract taken for the raid, and whether the raid did it (its reward paid when it did). */
@@ -471,7 +478,7 @@ export function settle(p: Profile, s: State): Settlement {
   const claimed = claimBuilt(next);
   // The new day's board, for the next raid's seed; yesterday's contract goes with yesterday's board.
   const fresh = { ...claimed.profile, taken: null, board: makeBoard(claimed.profile) };
-  return { profile: fresh, home, opened, learned, quests: [...finished, ...claimed.quests], sold: [...sold, ...claimed.sold], soldFor: soldFor + claimed.soldFor, day: p.day, ...change, contract, story: told };
+  return { profile: fresh, home, opened, learned, quests: [...finished, ...claimed.quests], sold: [...sold, ...claimed.sold], soldFor: soldFor + claimed.soldFor, day: p.day, ...change, event: s.event ?? null, contract, story: told };
 }
 
 /** Finishes and pays every offered build quest the hideout already meets, and those they open. */
@@ -583,11 +590,12 @@ const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
  * quests, most of them now done by the board: such a profile keeps the quests there still are
  * (credited nothing for the others, its stash as it was), no record of the story, and a fresh board.
  * Before v15 the island had no network: such a profile starts at `NETWORK.start`, with nothing gathered.
+ * Before v16 the island had no events: such a profile's day is quiet, and tomorrow's is drawn as it now stands.
  */
 export function parseProfile(raw: unknown, seed = 1): Profile | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
+  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
   const old = o.v === 1 || o.v === 2;
   const migrate = (i: unknown): unknown => {
     if (!old || !i || typeof i !== "object" || (i as Record<string, unknown>).t !== "key") return i;
@@ -620,12 +628,12 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   const entries = typeof o.v === "number" && o.v < 11 ? ENTRIES.map((e) => e.id) : knownEntries(Array.isArray(o.entries) ? o.entries.filter((e): e is string => typeof e === "string") : []);
   const { region, entry } = allowedStart({ entries, depots } as Profile, REGIONS.find((r) => r.id === o.region)?.id ?? "reservoir", o.entry);
   const raids = num(o.raids);
-  const day = (o.v === 13 || o.v === 14 || o.v === 15) && Number.isInteger(o.day) && (o.day as number) >= 1 ? (o.day as number) : raids + 1;
+  const day = (o.v === 13 || o.v === 14 || o.v === 15 || o.v === 16) && Number.isInteger(o.day) && (o.day as number) >= 1 ? (o.day as number) : raids + 1;
   const recordIds = STORIES.map((t) => t.id);
-  const records = (o.v === 14 || o.v === 15) && Array.isArray(o.records) ? recordIds.filter((id) => (o.records as unknown[]).includes(id)) : [];
-  const network = o.v === 15 && Number.isInteger(o.network) ? Math.max(0, Math.min(NETWORK.max, o.network as number)) : NETWORK.start;
-  const out: Omit<Profile, "board" | "taken"> = {
-    v: 15,
+  const records = (o.v === 14 || o.v === 15 || o.v === 16) && Array.isArray(o.records) ? recordIds.filter((id) => (o.records as unknown[]).includes(id)) : [];
+  const network = (o.v === 15 || o.v === 16) && Number.isInteger(o.network) ? Math.max(0, Math.min(NETWORK.max, o.network as number)) : NETWORK.start;
+  const out: Omit<Profile, "board" | "taken" | "events"> = {
+    v: 16,
     cash: Math.max(0, Math.floor(o.cash)),
     stash: o.stash.map(migrate).filter(ok).slice(0, stashCap(hideout)),
     raids,
@@ -640,20 +648,26 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     seed: Number.isInteger(o.seed) ? (o.seed as number) & 0xffff : seed & 0xffff,
     depots,
     depotSent,
-    seen: (o.v === 12 || o.v === 13 || o.v === 14 || o.v === 15) && typeof o.seen === "string" && /^[0-9a-f]*$/.test(o.seen) ? o.seen : "",
+    seen: (o.v === 12 || o.v === 13 || o.v === 14 || o.v === 15 || o.v === 16) && typeof o.seen === "string" && /^[0-9a-f]*$/.test(o.seen) ? o.seen : "",
     routes: typeof o.v === "number" && o.v >= 9 && Array.isArray(o.routes) ? openRoutes(o.routes.filter((r): r is string => typeof r === "string")) : [],
     day,
-    poiState: o.v === 13 || o.v === 14 || o.v === 15 ? parseIsland(o.poiState, day) : newIsland(),
+    poiState: o.v === 13 || o.v === 14 || o.v === 15 || o.v === 16 ? parseIsland(o.poiState, day) : newIsland(),
     records,
     network,
-    pressure: o.v === 15 && typeof o.pressure === "number" && o.pressure >= 0 && o.pressure < NETWORK.riseEvery ? o.pressure : 0,
+    pressure: (o.v === 15 || o.v === 16) && typeof o.pressure === "number" && o.pressure >= 0 && o.pressure < NETWORK.riseEvery ? o.pressure : 0,
   };
+  const events: DayEvents = o.v === 16 && Array.isArray(o.events) && o.events.length === 2 ? [validEvent(parseEvent(o.events[0]), out.poiState), validEvent(parseEvent(o.events[1]), out.poiState)] : [null, null];
+  if (o.v !== 16) events[1] = eventFor(out.seed, day + 1, out.poiState);
+  const withEvents = { ...out, events };
   // The day's board as saved, so it stands however the stash changed since; else the day's from now.
   // A board saved before the network may name a pack the migrated level does not fly: made anew.
-  const board = (o.v === 15 ? parseBoard(o.board, day) : null) ?? makeBoard(out);
+  const board = (o.v === 15 || o.v === 16 ? parseBoard(o.board, day) : null) ?? makeBoard(withEvents);
   const taken = typeof o.taken === "string" && board.contracts.some((c) => c.id === o.taken) ? o.taken : null;
-  return { ...out, board, taken };
+  return { ...withEvents, board, taken };
 }
+
+/** A saved event kept only while it can come: a retake needs its POI freed. */
+const validEvent = (ev: IslandEvent | null, poiState: Island): IslandEvent | null => (ev?.t === "retake" && poiState[ev.poi].state !== "freed" ? null : ev);
 
 /**
  * The start the base offers first: `region` and `entry` when they may be chosen, else the

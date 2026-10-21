@@ -7,7 +7,8 @@ import { currentStory, STORIES, storyOf, storyWhere } from "../meta/story";
 import { craftDone, maxLevel, MODULES, nextLevel, pouchSlots, sources, stashCap, stillNeeded, type Source } from "../meta/hideout";
 import { need, offered, type Quest, type RewardItem } from "../meta/quests";
 import { saveProfile } from "../meta/storage";
-import { islandNotes, networkText, noteText, relaysUp, thinTomorrow, unfreeable } from "../meta/island";
+import { eventName, islandNotes, networkText, noteText, relaysUp, thinTomorrow, unfreeable } from "../meta/island";
+import { eventRow } from "./events";
 import { HOLD_NAME } from "../sim/island";
 import { HOLD_CSS, IslandMap, islandScene, TITAN_CSS } from "./map";
 import { sfx } from "./sfx";
@@ -411,7 +412,9 @@ export class Hub {
     // A POI that goes thin unless the next raid comes into it is the map table's most pressing news.
     const fading = thinTomorrow(p).map((id) => POIS[poiIndex(id)].name);
     // A strong network is news too: from level 4 every raid is a hard one.
-    const map = [p.network >= 4 ? `網 ${p.network}` : "", fading.length ? `あす手薄：${fading.join("・")}` : "", p.hideout.radio ? "知らせ" : ""].filter(Boolean).join("・");
+    // Tomorrow's event is announced here a day ahead.
+    const coming = p.events[1];
+    const map = [p.network >= 4 ? `網 ${p.network}` : "", coming ? `明日：${eventName(coming)}` : "", fading.length ? `あす手薄：${fading.join("・")}` : "", p.hideout.radio ? "知らせ" : ""].filter(Boolean).join("・");
     // The board wants looking at while it has contracts and none is taken.
     const open = !takenContract(p) && p.board.contracts.length ? `依頼 ${p.board.contracts.length}` : "";
     return { map, quests: [ready ? `納品 ${ready}` : "", open].filter(Boolean).join("・"), stash: "", shop: "", workshop: buildable ? `作れる ${buildable}` : "" };
@@ -542,6 +545,7 @@ export class Hub {
       `<div class="hub-island"><canvas id="hub-island-map"></canvas><div class="hub-island-side">` +
       `<div class="hub-day"><small>島の日</small><b>${p.day}</b><small>日目</small></div>` +
       this.networkMeter() +
+      `<small>島の出来事</small><ul class="events"><li><small>今日</small>${eventRow(p.events[0], p.network, "今日は何も起きない")}</li><li><small>明日</small>${eventRow(p.events[1], p.network, "明日は何も起きない")}</li></ul>` +
       `<ul class="hold-key">${key}</ul>` +
       `<small>明日の島</small><ul class="tomorrow">${lines}</ul>` +
       (taken ? `<small>受けた依頼（${esc(regionOf(contractRegion(taken)).name)}・地図の金の破線）</small><p class="hub-taken">${CONTRACT_NAME[taken.t]}：${esc(contractText(taken))}</p>` : "") +
