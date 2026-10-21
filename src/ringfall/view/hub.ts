@@ -1,7 +1,7 @@
-import { ALLY, HEALS as HEAL_SPECS, HIDEOUT, NETWORK, RARITY, TOOLS, VALUABLES, WEAPONS, type ModuleId, type ValuableKind } from "../sim/config";
-import { boostFor, freeKit, type Kit } from "../sim/state";
+import { ALLY, HEALS as HEAL_SPECS, HIDEOUT, MOD_KINDS, NETWORK, RARITY, THREAT, TOOLS, VALUABLES, WEAPONS, type ModuleId, type ValuableKind } from "../sim/config";
+import { boostFor, freeKit, raidClock, type Kit } from "../sim/state";
 import { entryOf, POIS, poiIndex, poiRegion, REGIONS, regionOf, ROUTES, type EntryId, type PoiId, type RegionId, type StationId } from "../sim/map";
-import { build, buildState, buy, buyPrice, canBuild, canStartIn, deliver, deliverable, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, itemCost, HEALS, healCount, healRoom, keyName, lentHeals, loadoutCost, price, sell, sellPrice, startsIn, take, takeKit, takenContract, wanted, wares, type Item, type Loadout, type Profile } from "../meta/profile";
+import { build, buildState, buy, buyPrice, canBuild, canStartIn, deliver, deliverable, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, itemCost, HEALS, healCount, healRoom, keyName, lentHeals, loadoutCost, price, sell, sellPrice, setThreat, startsIn, threatPay, take, takeKit, takenContract, wanted, wares, type Item, type Loadout, type Profile } from "../meta/profile";
 import { CONTRACT_NAME, contractMark, contractRegion, contractText, type Contract, type Reward } from "../meta/contracts";
 import { currentStory, STORIES, storyOf, storyWhere } from "../meta/story";
 import { craftDone, maxLevel, MODULES, nextLevel, pouchSlots, sources, stashCap, stillNeeded, type Source } from "../meta/hideout";
@@ -276,6 +276,9 @@ export class Hub {
       // The entry follows the depot's region, so a later start from an entry is one of its own.
       this.entry = this.entryIn(this.region);
       sfx.click();
+    } else if (act === "threat") {
+      this.set(setThreat(this.profile, Number(arg)));
+      sfx.click();
     } else if (act === "lent") {
       this.lent = !this.lent;
       sfx.click();
@@ -434,7 +437,7 @@ export class Hub {
     const b = boostFor(this.profile.seed, this.region);
     const where = esc(POIS[b.poi].name);
     if (lv === 1) return `${where}の箱に珍しい物が多い`;
-    return `${where}の箱に${esc(VALUABLES[b.kind].label)}が多い。レイダーはレイドの始めからおよそ ${Math.round(NETWORK.levels[this.profile.network].raiders / 60)} 分後に降りる`;
+    return `${where}の箱に${esc(VALUABLES[b.kind].label)}が多い。レイダーはレイドの始めからおよそ ${Math.round(raidClock(this.profile.network, this.profile.threat).raiders / 60)} 分後に降りる`;
   }
 
   /** The routes a tool opens: open or closed, and for a closed one, the tool and where it lies. */
@@ -488,7 +491,7 @@ export class Hub {
     const on = taken?.id === c.id;
     const btn = on ? `<button type="button" class="untake" data-act="take" data-arg="">取り消す</button>` : `<button type="button" data-act="take" data-arg="${c.id}">${taken ? "こちらに替える" : "受ける"}</button>`;
     const where = esc(regionOf(contractRegion(c)).name);
-    return `<div class="quest contract${on ? " taken" : ""}" data-type="${c.t}"><div><strong><em>${CONTRACT_NAME[c.t]}</em>${on ? `<i class="taken-tag">受けている</i>` : ""}</strong><span>${esc(contractText(c))}</span><small>${where}・報酬：${this.reward(c.reward)}</small></div>${btn}</div>`;
+    return `<div class="quest contract${on ? " taken" : ""}" data-type="${c.t}"><div><strong><em>${CONTRACT_NAME[c.t]}</em>${on ? `<i class="taken-tag">受けている</i>` : ""}</strong><span>${esc(contractText(c))}</span><small>${where}・報酬：${this.reward({ ...c.reward, cash: threatPay(c.reward.cash, this.profile.threat) })}${this.profile.threat ? `（脅威度 ${this.profile.threat}）` : ""}</small></div>${btn}</div>`;
   }
 
   /** The story section: the record under way, then what the records home have told, the latest first. */
@@ -603,9 +606,29 @@ export class Hub {
       (p.depots.length ? `<small>中継ボックス</small><div class="row">${p.depots.map((d) => `<button type="button" class="depot${this.from === d ? " on" : ""}" data-act="from" data-arg="${d}">${esc(POIS[poiIndex(d)].name)}（${esc(poiRegion(d).name)}）</button>`).join("")}</div>` : "") +
       `</div>` +
       `<p class="hub-lock" id="hub-lock"${locked.length ? "" : " hidden"}>${esc(locked.map((r) => `${r.name}：${r.locked ?? ""}`).join("　"))}</p>` +
+      this.threatPanel() +
       `<div class="slot ride"><small>車両の行き先</small><span>${line}</span></div>` +
       this.depotSlot() +
       `<p class="hint">門から歩いて出ると、${esc(entryOf(FIRST_ENTRY).name)}からレイドが始まる。ここで選んだ出撃地点へは、門の脇の車両で送ってもらう。</p>`
+    );
+  }
+
+  /**
+   * The map table's threat: a button for each threat 0 to `THREAT.max`, what the chosen one asks
+   * and pays, the POIs freed at a threat above 0 (their best), and the mod kinds known.
+   */
+  private threatPanel(): string {
+    const p = this.profile;
+    const t = THREAT.levels[p.threat];
+    const pct = (k: number) => `${Math.round((1 - k) * 100)}%`;
+    const asks = p.threat
+      ? `増援とレイダーが ${pct(t.reinforce)}・${pct(t.raiders)} 早い。装甲板が +${Math.round(t.plate * 100)}%。撃ち返しが ${t.range} 倍遠くまで届く。依頼の報酬 ${t.reward} 倍、改造パーツ ${t.mods} 倍${p.threat >= THREAT.freeAt ? "。解放すると網がもう 1 段下がる" : ""}`
+      : "網の段階のとおりの島。上げるほど敵が強く、報酬と改造パーツが増える";
+    const best = POIS.filter((o) => (p.freedAt[o.id] ?? 0) > 0).map((o) => `${o.name} ${p.freedAt[o.id]}`);
+    const buttons = Array.from({ length: THREAT.max + 1 }, (_, n) => `<button type="button" data-act="threat" data-arg="${n}"${n === p.threat ? ' class="on"' : ""}>${n}</button>`).join("");
+    return (
+      `<div class="hub-threat"><small>脅威度</small><div class="row">${buttons}</div><p>${esc(asks)}</p>` +
+      `<p class="sub">${best.length ? `解放した最高の脅威度：${esc(best.join("・"))}・` : ""}改造パーツは ${p.known.length} / ${MOD_KINDS.length} 種類を知っている</p></div>`
     );
   }
 

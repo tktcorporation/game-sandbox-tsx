@@ -52,10 +52,12 @@ export type MapScene = Pick<State, "seen" | "cleared" | "hold" | "depots" | "rou
   debris?: { x: number; z: number; open: boolean } | null;
   /** The salvage crews' members in the player's sight. */
   crews?: readonly { x: number; z: number }[];
+  /** The highest threat each POI was freed at (by POI index), shown by its mark when above 0. */
+  best?: readonly number[];
 };
 
 /** The camp's picture of the island between raids, from the profile's explored map, depots, routes and POI standings. */
-export function islandScene(p: { seen: string; depots: readonly PoiId[]; routes: readonly RouteId[]; poiState: Record<PoiId, { state: PoiHold }>; network: number; events?: readonly (IslandEvent | null)[] }): MapScene {
+export function islandScene(p: { seen: string; depots: readonly PoiId[]; routes: readonly RouteId[]; poiState: Record<PoiId, { state: PoiHold }>; network: number; events?: readonly (IslandEvent | null)[]; freedAt?: Partial<Record<PoiId, number>> }): MapScene {
   // Today's debris fall is marked on the map table where the piece will lie.
   const ev = p.events?.[0];
   const spot = ev?.t === "debris" ? DEBRIS_SPOTS[debrisIndex(ev.spot)] : null;
@@ -68,6 +70,7 @@ export function islandScene(p: { seen: string; depots: readonly PoiId[]; routes:
     found: [],
     relays: p.network >= NETWORK.relayAt ? RELAYS.map((r) => ({ id: r.id, hp: RELAY.hp })) : [],
     debris: spot && { x: spot.x, z: spot.z, open: false },
+    best: POIS.map((o) => p.freedAt?.[o.id] ?? 0),
   };
 }
 
@@ -531,6 +534,19 @@ export class IslandMap {
         g.beginPath();
         g.arc(p.x, p.y, r * 0.38, 0, Math.PI * 2);
         g.fill();
+      }
+      // The highest threat it was freed at, as a gold number on a dark tab at the mark's lower right.
+      const best = s.best?.[i] ?? 0;
+      if (best > 0) {
+        g.font = `900 ${10 * dpr}px system-ui, sans-serif`;
+        g.textAlign = "center";
+        g.textBaseline = "middle";
+        const bx = p.x + r * 1.15;
+        const by = p.y + r * 0.9;
+        g.fillStyle = "rgba(20,24,40,0.92)";
+        g.fillRect(bx - 6 * dpr, by - 6 * dpr, 12 * dpr, 12 * dpr);
+        g.fillStyle = "#ffcf5a";
+        g.fillText(String(best), bx, by + 0.5 * dpr);
       }
       g.restore();
     });

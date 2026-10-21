@@ -402,7 +402,8 @@ export interface NetworkLevel {
  * the ground sees it climb a step every three days or so. A day that starts at the top gathers
  * nothing, so a step taken off the top holds for a while. Freeing a held POI takes it down a
  * step (`relayPoi` two; a thin one a step less, since the network had half lost it already),
- * killing the titan a step, and destroying a relay mast a step. A thin POI goes back to held
+ * killing the titan a step, and destroying a relay mast a step (`relayHigh.steps` on a day that
+ * started at `relayHigh.at` or higher). A thin POI goes back to held
  * once it has been thin `retakeAfter` days while the network stands at `retakeAt` or higher;
  * relay masts (`RELAYS`) stand in the raid from `relayAt`.
  *
@@ -424,6 +425,8 @@ export const NETWORK = {
   retakeAt: 3,
   retakeAfter: 2,
   relayAt: 3,
+  /** A relay mast destroyed on a day that started at network `at` or higher takes it `steps` down. */
+  relayHigh: { at: 4, steps: 2 },
   levels: [
     { name: "途切れ", note: "増援は遅く、群れと遊撃隊は少ない", reinforce: { first: 390, every: 330 }, raiders: 960, parties: { reservoir: 1, harbor: 1 }, packs: { reservoir: 1, harbor: 1 }, plate: 0, crews: 0 },
     { name: "弱い", note: "増援は遅く、群れは少ない", reinforce: { first: 330, every: 270 }, raiders: 840, parties: { reservoir: 1, harbor: 1 }, packs: { reservoir: 2, harbor: 1 }, plate: 0, crews: 0 },
@@ -730,6 +733,102 @@ export const VAULT = {
   guardPlate: 1 as Rarity,
   valuables: [["reactor"], ["core", "drive"], ["gyro", "drive", "drive"]] as ValuableKind[][],
   heals: 2,
+};
+
+export type ModKind =
+  | "leech"
+  | "hush"
+  | "grip"
+  | "medic"
+  | "probe"
+  | "damper"
+  | "scrambler"
+  | "deflector"
+  | "medlink"
+  | "carrier"
+  | "piercer"
+  | "jolt"
+  | "lock"
+  | "stalker"
+  | "capacitor"
+  | "surge"
+  | "sponge"
+  | "mender"
+  | "stride"
+  | "stock";
+
+/**
+ * Mod parts (改造パーツ): the raid's own build. Each one sets a single number of a system the
+ * sim already has, read where that system is (`modScale()` in sim/mods.ts), so the bot and the
+ * player meet the same rules. `value` is that number: a factor on what the system does (or,
+ * for `leech`, the shield it gives back). `start` marks the kinds a new profile knows; the others
+ * are learned by analysing one the player brought out alive (`analyse()` in meta/profile.ts).
+ */
+export const MODS: Record<ModKind, { name: string; short: string; note: string; value: number; start?: true }> = {
+  leech: { name: "吸電コイル", short: "コイル", note: "弱点に当てるとシールドが 4 戻る", value: 4, start: true },
+  hush: { name: "消音ソール", short: "ソール", note: "しゃがんでいると、ロボットに気づかれる距離が 2 割縮む", value: 0.8, start: true },
+  grip: { name: "速装グリップ", short: "グリップ", note: "リロードが 2 割速い", value: 0.8, start: true },
+  medic: { name: "応急パッチ", short: "パッチ", note: "回復にかかる時間が 3 割短い", value: 0.7, start: true },
+  probe: { name: "探査ピック", short: "ピック", note: "箱を漁る時間が 3 割短い", value: 0.7, start: true },
+  damper: { name: "静歩ダンパー", short: "ダンパー", note: "走る足音の届く距離が半分になる", value: 0.5, start: true },
+  scrambler: { name: "電波撹乱器", short: "撹乱器", note: "ドローンの視界に入っても、検知が 4 割遅くたまる", value: 0.6 },
+  deflector: { name: "偏向膜", short: "偏向膜", note: "自分を狙うロボットの弾が 1.6 倍それる", value: 1.6 },
+  medlink: { name: "救命リンク", short: "リンク", note: "リオが自分を起こす時間が 4 割短い", value: 0.6 },
+  carrier: { name: "搬送ベルト", short: "ベルト", note: "リオを起こす時間が 4 割短い", value: 0.6 },
+  piercer: { name: "貫通弾芯", short: "弾芯", note: "装甲板に止められる威力が半分になる", value: 0.5 },
+  jolt: { name: "衝撃弾", short: "衝撃弾", note: "ロボットのよろめきが 3 割たまりやすい", value: 1.3 },
+  lock: { name: "照準補正器", short: "補正器", note: "覗き込んだときの照準の吸い付きが 1.5 倍", value: 1.5 },
+  stalker: { name: "背撃モジュール", short: "背撃", note: "背後から撃ったときの威力が 15% 上がる", value: 1.15 },
+  capacitor: { name: "放電コンデンサ", short: "アーク", note: "アークの再使用が 3 割早い", value: 0.7 },
+  surge: { name: "加速炉", short: "加速炉", note: "離脱ジャンプのたまりが 3 割速い", value: 1.3 },
+  sponge: { name: "欠片吸収体", short: "吸収体", note: "欠片で戻るシールドが 1.5 倍", value: 1.5 },
+  mender: { name: "自己修復材", short: "修復材", note: "体力の自然回復が 2 倍速い", value: 2 },
+  stride: { name: "軽量フレーム", short: "フレーム", note: "動きが 8% 速い", value: 1.08 },
+  stock: { name: "安定ストック", short: "ストック", note: "反動が 3 割小さい", value: 0.7 },
+};
+export const MOD_KINDS = Object.keys(MODS) as ModKind[];
+/** The kinds a new profile knows. */
+export const MOD_START = MOD_KINDS.filter((k) => MODS[k].start);
+
+/**
+ * Where mod parts come from and how many a body holds. A body wears `slots` of them; they take no
+ * bag slots. A bin other than a vault holds one with `bin`, of a kind the profile knows; a robot
+ * drops one as it falls with `robot`, a salvage crew's member or a raider with `elite` and the
+ * titan always, of any kind, so new kinds are found on robots. Each chance is multiplied by the
+ * raid's threat (`THREAT.levels[].mods`). Which bin or robot holds one, and of which kind, is
+ * decided from the raid's seed and the bin or robot, never from the raid's random numbers, so a
+ * raid in which nothing is picked up plays out as one without mods.
+ */
+export const MOD = { slots: 3, bin: 0.08, robot: 0.03, elite: 0.3 };
+
+/**
+ * The threat (脅威度) the player chooses for a raid at the map table, 0 to `max`: on top of the
+ * network's numbers (`NETWORK.levels`), the reinforcements come `reinforce` times as soon and as
+ * often, the raiders `raiders` times as soon, `plate` more of the plain grunts and heavies wear a
+ * tier-1 plate, and robots answer shots from afar `range` times as far (`RETURN`). In return the
+ * taken contract pays `reward` times its credits, mod parts turn up `mods` times as often, and a
+ * POI freed at `freeAt` or higher takes the network a step further down. Threat 0 is the raid as
+ * the network alone sets it.
+ */
+export interface ThreatLevel {
+  reinforce: number;
+  raiders: number;
+  plate: number;
+  range: number;
+  reward: number;
+  mods: number;
+}
+export const THREAT = {
+  max: 5,
+  freeAt: 3,
+  levels: [
+    { reinforce: 1, raiders: 1, plate: 0, range: 1, reward: 1, mods: 1 },
+    { reinforce: 0.9, raiders: 0.92, plate: 0.05, range: 1.1, reward: 1.15, mods: 1.25 },
+    { reinforce: 0.8, raiders: 0.84, plate: 0.1, range: 1.2, reward: 1.3, mods: 1.5 },
+    { reinforce: 0.72, raiders: 0.76, plate: 0.15, range: 1.3, reward: 1.5, mods: 1.75 },
+    { reinforce: 0.64, raiders: 0.68, plate: 0.22, range: 1.4, reward: 1.75, mods: 2 },
+    { reinforce: 0.56, raiders: 0.6, plate: 0.3, range: 1.5, reward: 2, mods: 2.5 },
+  ] satisfies ThreatLevel[],
 };
 
 export type ToolKind = "cutter" | "charge";

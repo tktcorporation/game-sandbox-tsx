@@ -1,4 +1,4 @@
-import { EVENTS, ISLAND, NETWORK, type EventKind } from "../sim/config";
+import { EVENTS, ISLAND, NETWORK, THREAT, type EventKind } from "../sim/config";
 import { crewsFor, type IslandEvent, type PoiHold } from "../sim/island";
 import { DEBRIS_SPOTS, debrisIndex, DEPOTS, POIS, poiIndex, RELAYS, relayIndex, type DebrisId, type PoiId, type RelayId } from "../sim/map";
 import { mix, retakeKey, type State } from "../sim/state";
@@ -38,6 +38,8 @@ export interface RaidDay {
   crews?: number;
   /** The freed POI whose retake squad the raid left alive, or null. */
   retake?: PoiId | null;
+  /** The threat the raid was played at (`THREAT`); left out, 0. */
+  threat?: number;
 }
 
 /**
@@ -45,7 +47,7 @@ export interface RaidDay {
  * has visited none, and one from before the masts destroyed none. The titan fell when its pad
  * was cleared: its fall takes the pad's other robots with it.
  */
-export const raidDay = (s: Pick<State, "outcome" | "stats"> & { visited?: boolean[]; event?: IslandEvent | null }): RaidDay => ({
+export const raidDay = (s: Pick<State, "outcome" | "stats"> & { visited?: boolean[]; event?: IslandEvent | null; threat?: number }): RaidDay => ({
   alive: s.outcome === "extracted",
   cleared: s.stats.cleared.map((i) => POIS[i].id),
   visited: POIS.filter((_, i) => s.visited?.[i]).map((p) => p.id),
@@ -54,6 +56,7 @@ export const raidDay = (s: Pick<State, "outcome" | "stats"> & { visited?: boolea
   crews: s.stats.crewsOut ?? 0,
   // A retake squad that never beamed in (the raid was over first) was not destroyed either.
   retake: s.event?.t === "retake" && !(s.stats.wiped ?? []).includes(retakeKey(s.event.poi)) ? s.event.poi : null,
+  threat: s.threat ?? 0,
 });
 
 /** The island part of a profile that a day moves. */
@@ -84,6 +87,8 @@ export interface NetChange {
   rise: number;
   /** Steps up for the salvage crews that got off. */
   crews?: number;
+  /** Steps down on top of `freed` for POIs freed at a high threat (`THREAT.freeAt`). */
+  threat?: number;
 }
 
 /** What moved overnight: POIs freed by the raid, freed ones gone thin for want of visits, thin ones taken back, and the network. */
@@ -109,8 +114,10 @@ const clampNet = (n: number) => Math.max(0, Math.min(NETWORK.max, n));
  * today; a POI held or thin that the raid cleared is freed if the player got off alive (its
  * depot switched on with it); a freed POI not visited for `ISLAND.thinAfter` days goes thin.
  *
- * Then the network: down a step for each POI freed from held (the relay two; one less from thin), for the titan's fall and
- * for each relay mast destroyed, then up a step for each `NETWORK.riseEvery` of pressure the
+ * Then the network: down a step for each POI freed from held (the relay two; one less from thin)
+ * and one more for each when the raid was played at `THREAT.freeAt` or higher, a step for the
+ * titan's fall, and a step for each relay mast destroyed (`NETWORK.relayHigh.steps` on a day that
+ * started at `NETWORK.relayHigh.at` or higher), then up a step for each `NETWORK.riseEvery` of pressure the
  * day adds (`netGain()`, counted on the POIs as they stand once freed). The pressure is carried
  * from day to day, so a step down never wipes what the network has gathered. A day that starts
  * with the network at the top adds no pressure, even when the raid takes it down, and the
@@ -152,9 +159,10 @@ export function advanceDay<P extends IslandDay>(p: P, r: RaidDay): { profile: P;
     // A thin POI was half lost to the network already: freeing it again costs the network a step less.
     freed: freed.reduce((n, id) => n + (id === "relay" ? NETWORK.relayPoi : 1) - (p.poiState[id].state === "thin" ? 1 : 0), 0),
     titan: r.titan ? 1 : 0,
-    relays: r.relays.length,
+    relays: r.relays.length * (p.network >= NETWORK.relayHigh.at ? NETWORK.relayHigh.steps : 1),
+    threat: (r.threat ?? 0) >= THREAT.freeAt ? freed.length : 0,
   };
-  const down = clampNet(p.network - steps.freed - steps.titan - steps.relays);
+  const down = clampNet(p.network - steps.freed - steps.threat - steps.titan - steps.relays);
   let pressure = p.pressure + (p.network < NETWORK.max ? netGain(poiState) : 0);
   let rise = 0;
   while (pressure >= NETWORK.riseEvery && down + rise < NETWORK.max) {
@@ -300,7 +308,7 @@ export function networkText(level: number): string {
 
 /** The overnight change of the network, with its causes: 「網 2 → 3（解放 −1・日の経過 +1）」. */
 export function netChangeText(n: NetChange): string {
-  const why = [n.freed ? `解放 −${n.freed}` : "", n.titan ? `タイタン −${n.titan}` : "", n.relays ? `中継器 −${n.relays}` : "", n.rise ? `日の経過 +${n.rise}` : "", n.crews ? `回収部隊 +${n.crews}` : ""].filter(Boolean);
+  const why = [n.freed ? `解放 −${n.freed}` : "", n.threat ? `脅威度 −${n.threat}` : "", n.titan ? `タイタン −${n.titan}` : "", n.relays ? `中継器 −${n.relays}` : "", n.rise ? `日の経過 +${n.rise}` : "", n.crews ? `回収部隊 +${n.crews}` : ""].filter(Boolean);
   return `網 ${n.from} → ${n.to}${why.length ? `（${why.join("・")}）` : "（変わらず）"}`;
 }
 

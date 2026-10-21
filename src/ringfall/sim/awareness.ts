@@ -2,6 +2,10 @@ import { AWARE, DEG, FLANK, NOISE, PINCH, PURSUE, RETURN, SIGHT, TICK } from "./
 import { dist2d, los, lookAngles, solidAt, wrapAngle } from "./geom";
 import { steepAt, terrainHeight } from "./terrain";
 import { sightScale, weakY, type Enemy, type Point, type State, type Vec3 } from "./state";
+import { modScale, threatOf } from "./mods";
+
+/** How far a robot answers shots from afar (see RETURN): further at a higher threat, less in a storm. */
+const returnRange = (s: State, e: Enemy) => RETURN.range[e.kind] * threatOf(s).range * sightScale(s);
 
 /*
  * What robots know about the player: sight that fills slowly, sounds that make
@@ -19,7 +23,7 @@ const answering = (s: State, e: Enemy) => (s.squads[e.squad]?.shotT ?? 0) > 0;
  */
 export function fireRange(s: State, e: Enemy): number {
   const sight = SIGHT[e.kind].range * sightScale(s) * AWARE.engagedRange;
-  return answering(s, e) ? Math.max(sight, RETURN.range[e.kind] * sightScale(s)) : sight;
+  return answering(s, e) ? Math.max(sight, returnRange(s, e)) : sight;
 }
 
 /** The point of the player that robots look at: the chest, lower when crouched. */
@@ -145,8 +149,8 @@ export function sense(s: State, e: Enemy): boolean {
     const engaged = e.aware === "engaged";
     // A storm shortens every robot's sight alike: its kind's, a pack's, and the range it answers from.
     const scale = sightScale(s);
-    let range = (sq?.sight ?? sight.range) * scale * (engaged ? AWARE.engagedRange : low ? AWARE.crouchRange : 1);
-    if (engaged && answering(s, e)) range = Math.max(range, RETURN.range[e.kind] * scale);
+    let range = (sq?.sight ?? sight.range) * scale * (engaged ? AWARE.engagedRange : low ? AWARE.crouchRange * modScale(p, "hush") : 1);
+    if (engaged && answering(s, e)) range = Math.max(range, returnRange(s, e));
     let inView = d < AWARE.closeSense;
     if (!inView && d < range) {
       const fov = sight.fov * (engaged ? AWARE.engagedFov : 1);
@@ -167,7 +171,7 @@ export function sense(s: State, e: Enemy): boolean {
       }
     }
     if (seen && !engaged) {
-      const rate = (1 / (AWARE.fillNear + AWARE.fillFar * (d / range))) * (low ? AWARE.crouchRate : 1) * (e.aware === "alert" ? 1.6 : 1);
+      const rate = (1 / (AWARE.fillNear + AWARE.fillFar * (d / range))) * (low ? AWARE.crouchRate : 1) * (e.aware === "alert" ? 1.6 : 1) * (e.kind === "drone" ? modScale(p, "scrambler") : 1);
       e.detect = Math.min(1, e.detect + rate * TICK);
       if (e.detect >= 1 && !mayEngage(s, e)) e.detect = 0.95;
       if (e.detect >= 1) engageSquad(s, e.squad, e);

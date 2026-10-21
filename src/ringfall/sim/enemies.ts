@@ -15,6 +15,7 @@ import { bodyCenter, weakPoint } from "./combat";
 import { hurtPlayer } from "./player";
 import { allyChest, allyUp, hurtAlly } from "./ally";
 import { activePacks, garrison, netPlated } from "./island";
+import { modScale } from "./mods";
 import { crewRand, rand, roamRand, sightScale, weakY, type Enemy, type Point, type State, type Vec3 } from "./state";
 
 /*
@@ -59,7 +60,7 @@ export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi:
   const face = o.face ?? pick(s) * Math.PI * 2;
   const id = s.nextId++;
   // A strong network plates some of the plain grunts and heavies, picked without drawing on the raid's numbers.
-  const plate = o.plate ?? ((kind === "grunt" || kind === "heavy") && !o.elite && netPlated(s.seed, s.network, id) ? 1 : 0);
+  const plate = o.plate ?? ((kind === "grunt" || kind === "heavy") && !o.elite && netPlated(s.seed, s.network, id, s.threat ?? 0) ? 1 : 0);
   const e: Enemy = {
     id,
     kind,
@@ -154,7 +155,7 @@ function fireOrb(s: State, e: Enemy, yawOff = 0, homing = false) {
   const k = ENEMIES[e.kind];
   const from = muzzle(e);
   // A random stray (see SHOT.spread); the titan's homing rockets find their own way.
-  const stray = homing ? 0 : SHOT.spread * DEG;
+  const stray = homing ? 0 : SHOT.spread * DEG * (e.target === "player" ? modScale(s.player, "deflector") : 1);
   const r = Math.sqrt(-2 * Math.log(draw(s, e) + 1e-9));
   const a = draw(s, e) * Math.PI * 2;
   const yaw = e.aimYaw + yawOff + r * Math.cos(a) * stray;

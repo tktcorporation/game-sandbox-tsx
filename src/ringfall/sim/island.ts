@@ -1,4 +1,4 @@
-import { ISLAND, NETWORK } from "./config";
+import { ISLAND, NETWORK, THREAT } from "./config";
 import { PACKS, POIS, REGIONS, regionHere, type DebrisId, type PoiId, type Squad } from "./map";
 import { mix } from "./state";
 
@@ -55,9 +55,9 @@ export function activePacks(seed: number, level: number): Squad[] {
   return PACKS.filter((sq) => keep.has(sq));
 }
 
-/** Whether a plain grunt or heavy numbered `id` in a raid from `seed` wears a tier-1 plate at network `level`. */
-export const netPlated = (seed: number, level: number, id: number) => {
-  const share = NETWORK.levels[level].plate;
+/** Whether a plain grunt or heavy numbered `id` in a raid from `seed` wears a tier-1 plate at network `level` and threat `threat`. */
+export const netPlated = (seed: number, level: number, id: number, threat = 0) => {
+  const share = NETWORK.levels[level].plate + THREAT.levels[threat].plate;
   return share > 0 && (seeded(seed, 0x9a, id) % 10_000) / 10_000 < share;
 };
 

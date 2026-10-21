@@ -1248,7 +1248,7 @@ const readOf = async (pg) => JSON.parse(await pg.evaluate(() => window.render_ga
       await pg.waitForFunction(() => !document.getElementById("results").hidden, null, { timeout: 10000 }).catch(() => undefined);
       const r2 = await readOf(pg);
       const home = await pg.textContent("#home");
-      if (r2.screen !== "results" || r2.settled?.network?.relays !== 1 || r2.settled?.contract?.t !== "destroy" || !r2.settled.contract.done || !/中継器 −1/.test(home)) errors.push(`network: the results after the mast read ${JSON.stringify({ screen: r2.screen, settled: r2.settled && { network: r2.settled.network, contract: r2.settled.contract } })}`);
+      if (r2.screen !== "results" || r2.settled?.network?.relays !== 2 || r2.settled?.contract?.t !== "destroy" || !r2.settled.contract.done || !/中継器 −2/.test(home)) errors.push(`network: the results after the mast read ${JSON.stringify({ screen: r2.screen, settled: r2.settled && { network: r2.settled.network, contract: r2.settled.contract } })}`);
       await pg.screenshot({ path: `${out}/56-results-network.png` });
       await pg.locator("#home .net-change").scrollIntoViewIfNeeded();
       await pg.screenshot({ path: `${out}/56-results-network-detail.png` });
@@ -1646,6 +1646,110 @@ lap("island");
     await ctx.close();
   }
   lap("events");
+}
+/*
+ * Mod parts and the threat. The map table's threat picker (desktop and phone) sets the next
+ * raid's threat, which the objective card names, and the map marks each POI's best threat; three
+ * parts worn show on the HUD (desktop and phone), the vitals still clear of the objective card;
+ * a part on the ground is drawn and named by the prompt, and the use key swaps it in for the
+ * oldest; home alive, the results offer the parts for analysis, and analysing one learns its kind.
+ */
+{
+  const modGame = {
+    v: 17, cash: 2400, stash: [], raids: 8, extracted: 6, time: 5000, region: "reservoir", entry: "beach", entries: ["beach", "checkpoint", "jetty", "outskirts", "quay", "shore"], seed: 2468, day: 9,
+    network: 2, pressure: 0.5, depots: ["supply"], events: [null, null], threat: 0, known: ["leech", "hush", "grip", "medic", "probe", "damper"], freedAt: { supply: 3 },
+    quests: { progress: {}, done: ["grunts", "village", "power", "parts"] },
+    hideout: { generator: 1, infirmary: 1, workbench: 0, storage: 0, radio: 0, pouch: 0, craft: 0 },
+    records: [],
+    poiState: { supply: { state: "freed", lastVisit: 8, since: 0 } },
+  };
+  const overlap = (pg) =>
+    pg.evaluate(() => {
+      const a = document.getElementById("objective").getBoundingClientRect();
+      const b = document.getElementById("vitals").getBoundingClientRect();
+      const m = document.getElementById("mods").getBoundingClientRect();
+      const out = [];
+      if (a.bottom > b.top && a.top < b.bottom && a.right > b.left && a.left < b.right) out.push(`the objective card (to ${Math.round(a.bottom)}) runs into the vitals (from ${Math.round(b.top)})`);
+      if (m.right > b.right + 1 || m.left < b.left - 1) out.push("the mod chips spill out of the vitals");
+      for (const i of document.querySelectorAll("#mods i")) if (i.scrollWidth > i.clientWidth + 1 && !/…/.test(i.textContent)) out.push(`the chip "${i.textContent}" is cut`);
+      return out;
+    });
+  for (const phone of [false, true]) {
+    const tag = (d, m) => `${out}/${phone ? m : d}`;
+    const ctx = await browser.newContext(phone ? { viewport: { width: 740, height: 360 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true } : { viewport: { width: 1280, height: 720 } });
+    const pg = await withProfile(ctx, modGame);
+    await toCamp(pg, phone);
+    const cdp = phone ? await ctx.newCDPSession(pg) : undefined;
+    await useStation(pg, "map", cdp);
+    const pick = "#hub-side .hub-threat [data-act=threat][data-arg='3']";
+    await (phone ? pg.tap(pick) : pg.click(pick));
+    await pg.waitForTimeout(100);
+    const c1 = await readOf(pg);
+    const text = await pg.textContent("#hub-side .hub-threat");
+    if (c1.profile.threat !== 3 || !/解放すると網がもう 1 段下がる/.test(text) || !/補給所 3/.test(text)) errors.push(`threat: the picker left threat ${c1.profile.threat} and reads "${text}"`);
+    const fit = await spills(pg);
+    if (fit.length) errors.push(`threat picker${phone ? " on a phone" : ""}: ${[...new Set(fit)].join(", ")}`);
+    await pg.locator("#hub-side .hub-threat").scrollIntoViewIfNeeded();
+    await pg.screenshot({ path: tag("80-map-threat.png", "m30-map-threat.png") });
+    await pg.locator("#hub-island-map").scrollIntoViewIfNeeded();
+    await pg.screenshot({ path: tag("80-map-threat-best.png", "m30-map-threat-best.png") });
+    await closePanel(pg, phone);
+    if (phone) await rideOut(pg, cdp);
+    else await walkOutOfGate(pg);
+    await pg.evaluate(() => window.ringfallStep(1500));
+    const r0 = await readOf(pg);
+    if (r0.threat !== 3 || !/脅威度 3/.test(await pg.textContent("#obj-raid"))) errors.push(`threat: the raid plays at ${r0.threat} and the card reads "${await pg.textContent("#obj-raid")}"`);
+    await pg.evaluate(() => window.ringfallMods.wear(["leech", "scrambler", "capacitor"]));
+    await pg.evaluate(() => window.advanceTime(100));
+    const chips = await pg.locator("#mods i").allTextContents();
+    if (chips.join() !== "コイル,撹乱器,アーク") errors.push(`mods: the HUD shows ${chips.join()}`);
+    const lay = await overlap(pg);
+    if (lay.length) errors.push(`mods HUD${phone ? " on a phone" : ""}: ${lay.join(", ")}`);
+    await pg.screenshot({ path: tag("81-hud-mods.png", "m31-hud-mods.png") });
+    if (!phone) {
+      // A part on the ground before the player: its chip drawn and named by the prompt; the use key swaps it in.
+      await pg.evaluate(() => window.ringfallMods.drop("deflector", 1.8));
+      await pg.evaluate(() => window.advanceTime(300));
+      const prompt = await pg.textContent("#prompt");
+      if (!/偏向膜/.test(prompt) || !/吸電コイルを外す/.test(prompt)) errors.push(`mods: at a part on the ground the prompt reads "${prompt}"`);
+      // Looking down at the part from just behind the player: the chip and its beam, with the prompt.
+      await pg.evaluate(() => {
+        const st = JSON.parse(window.render_game_to_text()).player;
+        const yaw = window.ringfallYaw();
+        window.ringfallCamera(st.x - Math.sin(yaw) * 1.2, st.y + 2.2, st.z + Math.cos(yaw) * 1.2, yaw, -0.7);
+      });
+      await draw(pg);
+      await pg.screenshot({ path: `${out}/82-mod-floor.png` });
+      await pg.evaluate(() => window.ringfallCamera());
+      await pg.keyboard.press("KeyE");
+      await pg.evaluate(() => window.advanceTime(200));
+      const r1 = await readOf(pg);
+      if (r1.mods.join() !== "scrambler,capacitor,deflector" || !r1.modsAround.some((m) => m.mod === "leech")) errors.push(`mods: the use key left ${r1.mods.join()} worn and ${JSON.stringify(r1.modsAround)} on the ground`);
+    }
+    // Home through the camp's yard, alive with the parts: the results offer them for analysis.
+    await pg.evaluate(() => window.ringfallStep(9000));
+    await pg.evaluate(() => {
+      const m = window.ringfallCamp.spots().find((q) => q.id === "map");
+      window.ringfallPlace(m.x + 7, m.z + 11, 0);
+    });
+    await pg.evaluate(() => window.advanceTime(200));
+    await pg.waitForFunction(() => !document.getElementById("results").hidden, null, { timeout: 10000 }).catch(() => undefined);
+    const r2 = await readOf(pg);
+    const cards = await pg.locator("#home .analyse [data-analyse]").count();
+    if (r2.screen !== "results" || r2.settled?.threat !== 3 || r2.settled?.analysable?.length !== 3 || cards !== 3) errors.push(`mods: the results offer ${JSON.stringify(r2.settled && { threat: r2.settled.threat, analysable: r2.settled.analysable })} (${cards} cards)`);
+    await pg.locator("#home .analyse").scrollIntoViewIfNeeded().catch(() => undefined);
+    await pg.screenshot({ path: tag("83-results-analysis.png", "m33-results-analysis.png") });
+    const card = "#home .analyse [data-analyse=scrambler]";
+    await (phone ? pg.tap(card) : pg.click(card));
+    await pg.waitForTimeout(100);
+    const r3 = await readOf(pg);
+    const after = await pg.textContent("#home .analyse");
+    if (!r3.profile.known.includes("scrambler") || r3.settled?.analysed !== "scrambler" || !/解析した/.test(after) || (await pg.locator("#home .analyse button:not([disabled])").count())) errors.push(`mods: analysing the scrambler left ${JSON.stringify({ known: r3.profile.known, analysed: r3.settled?.analysed })} "${after}"`);
+    await pg.locator("#home .analyse").scrollIntoViewIfNeeded().catch(() => undefined);
+    await pg.screenshot({ path: tag("84-results-analysed.png", "m34-results-analysed.png") });
+    await ctx.close();
+  }
+  lap("mods");
 }
 console.log(`screens: ${[...taken].join(", ")}`);
 await browser.close();

@@ -1139,6 +1139,11 @@ export function buildLootItem(kind: LootKind, rarity: Rarity, weapon?: WeaponKin
     g.add(mesh(new THREE.BoxGeometry(0.36, 0.26, 0.24), flat(0xd8742c), 0, 0.22, 0, false));
     g.add(mesh(new THREE.BoxGeometry(0.38, 0.05, 0.26), flat(PAL.gun), 0, 0.12, 0, false));
     g.add(mesh(new THREE.BoxGeometry(0.16, 0.08, 0.02), glow(color), 0, 0.26, 0.125, false));
+  } else if (kind === "mod") {
+    // A mod part: a flat hexagonal chip in a dark frame, its core lit in the rarity's colour.
+    g.add(mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.06, 6), flat(PAL.gun), 0, 0.32, 0, false));
+    g.add(mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.08, 6), glow(color), 0, 0.32, 0, false));
+    for (const a of [0, (Math.PI * 2) / 3, (Math.PI * 4) / 3]) g.add(mesh(new THREE.BoxGeometry(0.06, 0.03, 0.12), flat(PAL.steel), Math.cos(a) * 0.25, 0.32, Math.sin(a) * 0.25, false));
   } else if (kind === "flare") {
     // A road flare: a red tube with a cap.
     const tube = mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.42, 8), flat(HEAL_RED), 0, 0.3, 0, false);

@@ -1,11 +1,12 @@
 import { ALLY, ASSIST, DEG, HEALS, type HealKind, MANTLE, NOISE, PLAYER, RARITY, RELAY, REVEAL, SEMI_HOLD, TACTICAL, TICK, ULT, WEAPONS, WORLD } from "./config";
 import { makeNoise } from "./awareness";
+import { modScale } from "./mods";
 import { allyChest, allyUp, besidePlayer, placeAlly } from "./ally";
 import { POIS } from "./map";
 import { applyPull, assistTarget, bodyCenter, damageEnemy, eyePos, magSize, shoot } from "./combat";
 import { ceilingAt, collide, groundAt, los } from "./geom";
 import { floorLevel, offLowGround, terrainGrad, terrainHeight, towardLowGround } from "./terrain";
-import type { Input, State } from "./state";
+import type { Input, Player, State } from "./state";
 
 /*
  * The player: movement (sprint, slide, jump, the ult's leap), weapons, abilities, and taking damage.
@@ -38,7 +39,7 @@ export function stepPlayer(s: State, input: Input, prevCrouch: boolean) {
       s.events.push({ t: "revive" });
     }
   } else if (p.sinceHurt > PLAYER.regenDelay && p.hp < PLAYER.regenCap) {
-    p.hp = Math.min(PLAYER.regenCap, p.hp + PLAYER.regenPerSec * TICK);
+    p.hp = Math.min(PLAYER.regenCap, p.hp + PLAYER.regenPerSec * modScale(p, "mender") * TICK);
   }
 
   move(s, input, prevCrouch);
@@ -129,7 +130,7 @@ function move(s: State, input: Input, prevCrouch: boolean) {
   p.stepNoise -= TICK;
   if (p.sprinting && p.stepNoise <= 0) {
     p.stepNoise = 0.35;
-    makeNoise(s, p.pos.x, p.pos.z, NOISE.sprintStep);
+    makeNoise(s, p.pos.x, p.pos.z, NOISE.sprintStep * modScale(p, "damper"));
   }
 
   if (input.crouch && !prevCrouch && p.onGround && !p.sliding && speed > PLAYER.walk + 0.3 && p.downed <= 0) {
@@ -160,7 +161,7 @@ function move(s: State, input: Input, prevCrouch: boolean) {
       p.crouch = input.crouch && p.onGround;
     }
   } else {
-    let top = p.downed > 0 ? 1.4 : p.crouch ? PLAYER.crouch : p.sprinting ? PLAYER.sprint : PLAYER.walk;
+    let top = p.downed > 0 ? 1.4 : (p.crouch ? PLAYER.crouch : p.sprinting ? PLAYER.sprint : PLAYER.walk) * modScale(p, "stride");
     if (p.ads > 0.5) top *= 0.75;
     if (p.healing) top *= 0.5;
     if (p.onGround) {
@@ -276,7 +277,7 @@ function weapons(s: State, input: Input) {
   }
   const startReload = () => {
     if (p.reload > 0 || w.mag >= size) return;
-    p.reload = spec.reload * RARITY.reload[w.rarity];
+    p.reload = spec.reload * RARITY.reload[w.rarity] * modScale(p, "grip");
     s.events.push({ t: "reload", time: p.reload });
   };
   if (input.reload) startReload();
@@ -425,10 +426,16 @@ function clocks(s: State) {
   p.cooldown = Math.max(0, p.cooldown - TICK);
   p.tactical = Math.max(0, p.tactical - TICK);
   if (p.ult < 1 && !p.leap) {
-    p.ult = Math.min(1, p.ult + ULT.perSec * TICK);
+    p.ult = Math.min(1, p.ult + ULT.perSec * modScale(p, "surge") * TICK);
     if (p.ult >= 1) s.events.push({ t: "ultReady" });
   }
 }
+
+/** Seconds the arc takes to come back: sooner with the capacitor worn. */
+export const tacticalCooldown = (p: Pick<Player, "mods">) => TACTICAL.cooldown * modScale(p, "capacitor");
+
+/** Seconds a heal of `kind` takes: shorter with the patch worn. */
+export const healTime = (p: Pick<Player, "mods">, kind: HealKind) => HEALS[kind].time * modScale(p, "medic");
 
 function abilities(s: State, input: Input) {
   const p = s.player;
@@ -452,10 +459,10 @@ function abilities(s: State, input: Input) {
     p.reveal = REVEAL.time;
     makeNoise(s, p.pos.x, p.pos.z, NOISE.arc);
     if (!targets.length) {
-      p.tactical = TACTICAL.cooldown * 0.5;
+      p.tactical = tacticalCooldown(p) * 0.5;
       s.events.push({ t: "tacticalMiss" });
     } else {
-      p.tactical = TACTICAL.cooldown;
+      p.tactical = tacticalCooldown(p);
       s.events.push({ t: "tactical", targets: targets.map((t) => t.c) });
       for (const { e, c } of targets) {
         if (e.kind !== "titan") {
@@ -488,7 +495,7 @@ function abilities(s: State, input: Input) {
   } else if (input.heal) {
     const kind = pickHeal(s);
     if (kind) {
-      p.healing = { kind, t: HEALS[kind].time };
+      p.healing = { kind, t: healTime(p, kind) };
       p.reload = 0;
       s.events.push({ t: "healStart", kind });
       makeNoise(s, p.pos.x, p.pos.z, NOISE.heal);

@@ -1,4 +1,4 @@
-import { ALLY, BOOST, CREW, DEPOT, RETAKE, STORM, DUCK, ELITE, ENEMIES, META, NETWORK, RELAY, VALUABLES, WORLD, type ValuableKind, PLAYER, ULT, type EnemyKind, type Flank, type HealKind, type Rarity, type ToolKind, type WeaponKind } from "./config";
+import { ALLY, BOOST, CREW, DEPOT, RETAKE, STORM, DUCK, ELITE, ENEMIES, META, MOD_START, NETWORK, RELAY, THREAT, VALUABLES, WORLD, type ModKind, type ValuableKind, PLAYER, ULT, type EnemyKind, type Flank, type HealKind, type Rarity, type ToolKind, type WeaponKind } from "./config";
 import { DEPOTS, depotIndex, entryOf, EXTRA_BINS, POIS, poiIndex, poiRegion, recordSpot, regionOf, type EntryId, type ExtractId, type PoiId, type RecordId, type RegionId, type RelayId, type RouteId, RELAYS, DEBRIS_SPOTS, debrisIndex } from "./map";
 import { openRoutes, useRoutes } from "./routes";
 import { populate, spawnEnemy } from "./enemies";
@@ -94,6 +94,8 @@ export interface Player {
   keys: number[];
   /** Tools carried (`TOOLS`): they fill bag slots beside the haul and score nothing, but open a route once home. */
   tools: ToolKind[];
+  /** Mod parts worn (`MODS`), the one worn longest first: at most `MOD.slots`, gone when the raid ends. */
+  mods: ModKind[];
   /** The bin being searched and for how long, or null. */
   search: { bin: number; t: number } | null;
   /** The item being used and the seconds left; shooting cancels it without using it. */
@@ -305,7 +307,7 @@ export interface Shockwave {
   allyHit?: boolean;
 }
 
-export type LootKind = "weapon" | "armor" | "heal" | "shard" | "flare" | "valuable" | "key" | "tool" | "record";
+export type LootKind = "weapon" | "armor" | "heal" | "shard" | "flare" | "valuable" | "key" | "tool" | "record" | "mod";
 
 export interface Loot {
   id: number;
@@ -317,6 +319,7 @@ export interface Loot {
   key?: number;
   tool?: ToolKind;
   record?: RecordId;
+  mod?: ModKind;
   /** For a valuable: the POI (index) whose bin it came out of, kept through the bag (`Player.haulAt`). */
   from?: number;
   /** Armour the player took off: it can be put back on with the use key, and its shield is not refilled. */
@@ -579,6 +582,12 @@ export interface State {
   raiderT: number;
   /** The robots' network level the raid is played at (`NETWORK.levels`): it sets the hunters' times and numbers. */
   network: number;
+  /** The threat the player chose for the raid (`THREAT.levels`), on top of the network's numbers. */
+  threat: number;
+  /** The mod kinds the profile knows: the bins hold only these (`binMod()`). */
+  known: ModKind[];
+  /** A factor on every mod part's chance: 1, or 0 for a raid without parts (the sim gate's check of their independence). */
+  modOdds: number;
   /** The relay masts standing this raid, destroyed ones with no health left; none below `NETWORK.relayAt`. */
   relays: RelayMast[];
   /** The day's island event, or null on a quiet day. */
@@ -659,6 +668,8 @@ export interface Input {
   keepArmor?: boolean;
   /** The use key never takes up a tool: the bot plays the gate's raids as they stand without tools. */
   leaveTools?: boolean;
+  /** Mod parts are neither put on by walking over them nor by the use key: the bot plays without them. */
+  leaveMods?: boolean;
 }
 
 export const idleInput = (): Input => ({
@@ -762,10 +773,27 @@ export interface Start {
   network?: number;
   /** The day's island event; left out, none. A retake whose POI is not freed sends no one. */
   event?: IslandEvent | null;
+  /** The threat chosen at the map table, 0 to `THREAT.max`; left out, 0. */
+  threat?: number;
+  /** The mod kinds the profile knows; left out, `MOD_START`. */
+  known?: ModKind[];
+  /** No mod part anywhere in the raid (for the sim gate's check that they draw on nothing). */
+  noMods?: boolean;
 }
 
 /** What a network level sets in a raid. */
 export const netLevel = (s: Pick<State, "network">) => NETWORK.levels[s.network];
+
+/**
+ * The reinforcements' first time and interval and the raiders' time of a raid at network
+ * `network` and threat `threat`: the network's numbers, sooner by the threat's factors (to the second).
+ */
+export function raidClock(network: number, threat: number) {
+  const l = NETWORK.levels[network];
+  const t = THREAT.levels[threat];
+  const at = (n: number, k: number) => (k === 1 ? n : Math.round(n * k));
+  return { first: at(l.reinforce.first, t.reinforce), every: at(l.reinforce.every, t.reinforce), raiders: at(l.raiders, t.raiders) };
+}
 
 /**
  * A raid in `region`, on the ground with the teammate beside the player: at one of the region's
@@ -780,7 +808,8 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
   forgetFields();
   const hold = POIS.map((p): PoiHold => (p.boss ? "held" : (start.island?.[p.id] ?? "held")));
   const network = Math.max(0, Math.min(NETWORK.max, Math.round(start.network ?? NETWORK.play)));
-  const level = NETWORK.levels[network];
+  const threat = Math.max(0, Math.min(THREAT.max, Math.round(start.threat ?? 0)));
+  const clock = raidClock(network, threat);
   const freed = (poi: PoiId) => hold[poiIndex(poi)] === "freed";
   // A freed POI's depot is on, so a raid may start from it too.
   const depotsOn = DEPOTS.map((d) => !!start.depots?.includes(d.poi) || freed(d.poi));
@@ -849,6 +878,7 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
       records: [],
       keys: [...kit.keys],
       tools: [],
+      mods: [],
       search: null,
       healing: null,
       sinceHurt: 99,
@@ -870,10 +900,13 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
     // A freed POI has nothing left to clear: it is not cleared again, and does not count as cleared this raid.
     cleared: hold.map((h) => h === "freed"),
     hold,
-    reinforceT: level.reinforce.first,
+    reinforceT: clock.first,
     reinforceN: 0,
-    raiderT: level.raiders,
+    raiderT: clock.raiders,
     network,
+    threat,
+    known: [...(start.known ?? MOD_START)],
+    modOdds: start.noMods ? 0 : 1,
     relays: network >= NETWORK.relayAt ? RELAYS.map((r) => ({ id: r.id, x: r.x, y: groundAt(r.x, r.z, 0.3, 99), z: r.z, hp: RELAY.hp })) : [],
     event: start.event ?? null,
     storm: start.event?.t === "storm",
