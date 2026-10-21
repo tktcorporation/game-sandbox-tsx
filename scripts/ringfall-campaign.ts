@@ -10,8 +10,8 @@
  *
  *   npx tsx scripts/ringfall-campaign.ts [days]
  *
- * The skills are played in one worker process each, side by side; the gate prints the table
- * after the hideout's pacing (scripts/ringfall-sim.ts).
+ * The skills are played in one worker process each, side by side; the gate starts them beside
+ * its tables and prints the table after the hideout's pacing (scripts/ringfall-sim.ts).
  */
 import { NETWORK } from "../src/ringfall/sim/config";
 import { ENTRIES, POIS, REGIONS, regionOf, type RegionId } from "../src/ringfall/sim/map";
@@ -87,6 +87,10 @@ export async function campaigns(days = DAYS, jobs = SKILLS.length): Promise<Camp
       (k) =>
         new Promise<Campaign>((done, fail) => {
           const w = fork(worker, { serialization: "advanced" });
+          // A month runs for minutes without looking up: a gate that exits early stops it now.
+          const stop = () => w.kill();
+          process.on("exit", stop);
+          w.once("exit", () => process.off("exit", stop));
           w.once("message", (c: Campaign) => {
             done(c);
             w.disconnect();

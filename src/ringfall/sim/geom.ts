@@ -8,43 +8,79 @@ import type { Vec3 } from "./state";
  * A coarse grid finds the boxes near a point, and rays walk the cells they cross.
  */
 const CELL = 8;
-const grid = new Map<number, Box[]>();
-const key = (cx: number, cz: number) => (cx + 1000) * 4096 + (cz + 1000);
-/** The grid cells a box spans, as keys. */
-function cellsOf(b: Box): number[] {
-  const out: number[] = [];
-  for (let cx = Math.floor(b.x0 / CELL); cx <= Math.floor(b.x1 / CELL); cx++) for (let cz = Math.floor(b.z0 / CELL); cz <= Math.floor(b.z1 / CELL); cz++) out.push(key(cx, cz));
-  return out;
-}
-const addToGrid = (b: Box) => {
-  for (const k of cellsOf(b)) {
-    const list = grid.get(k);
-    if (list) list.push(b);
-    else grid.set(k, [b]);
-  }
-};
-for (const b of BOXES) addToGrid(b);
 /** Every box any world may hold: the map's, then each route's, closed and open. */
 const ALL = [...BOXES, ...ROUTES.flatMap((r) => [...r.closed, ...r.open])];
 const indexOf = new Map(ALL.map((b, i) => [b, i]));
+/**
+ * The grid, as a flat array over the cells any box spans (a cell outside them holds none). A
+ * cell's boxes are kept as boxes and, beside them, as their places in `ALL`, in the same order.
+ */
+let minCx = Infinity;
+let maxCx = -Infinity;
+let minCz = Infinity;
+let maxCz = -Infinity;
+for (const b of ALL) {
+  minCx = Math.min(minCx, Math.floor(b.x0 / CELL));
+  maxCx = Math.max(maxCx, Math.floor(b.x1 / CELL));
+  minCz = Math.min(minCz, Math.floor(b.z0 / CELL));
+  maxCz = Math.max(maxCz, Math.floor(b.z1 / CELL));
+}
+const SPAN_Z = maxCz - minCz + 1;
+const cellBoxes: (Box[] | undefined)[] = new Array((maxCx - minCx + 1) * SPAN_Z);
+const cellIds: (number[] | undefined)[] = new Array(cellBoxes.length);
+/** The place of cell (cx, cz) in the grid's arrays, or -1 when no box can lie there. */
+const cellAt = (cx: number, cz: number) => (cx < minCx || cx > maxCx || cz < minCz || cz > maxCz ? -1 : (cx - minCx) * SPAN_Z + (cz - minCz));
+/** The grid cells a box spans, as places in the grid's arrays. */
+function cellsOf(b: Box): number[] {
+  const out: number[] = [];
+  for (let cx = Math.floor(b.x0 / CELL); cx <= Math.floor(b.x1 / CELL); cx++) for (let cz = Math.floor(b.z0 / CELL); cz <= Math.floor(b.z1 / CELL); cz++) out.push(cellAt(cx, cz));
+  return out;
+}
+const addToGrid = (b: Box) => {
+  const i = indexOf.get(b)!;
+  for (const c of cellsOf(b)) {
+    const list = cellBoxes[c];
+    if (list) {
+      list.push(b);
+      cellIds[c]!.push(i);
+    } else {
+      cellBoxes[c] = [b];
+      cellIds[c] = [i];
+    }
+  }
+};
+for (const b of BOXES) addToGrid(b);
 const seenBy = new Int32Array(ALL.length);
 let rayId = 0;
 /** Each box once, in the order the cells list them; a box spanning cells is kept by its stamp. */
 const scratch: Box[] = [];
 const nearBy = new Int32Array(ALL.length);
 let nearId = 0;
-function near(x: number, z: number, r: number): Iterable<Box> {
+const NONE: readonly Box[] = [];
+function near(x: number, z: number, r: number): readonly Box[] {
+  const cx0 = Math.floor((x - r) / CELL);
+  const cx1 = Math.floor((x + r) / CELL);
+  const cz0 = Math.floor((z - r) / CELL);
+  const cz1 = Math.floor((z + r) / CELL);
+  // Within one cell its list holds each box once already.
+  if (cx0 === cx1 && cz0 === cz1) {
+    const c = cellAt(cx0, cz0);
+    return (c >= 0 && cellBoxes[c]) || NONE;
+  }
   scratch.length = 0;
   nearId++;
-  for (let cx = Math.floor((x - r) / CELL); cx <= Math.floor((x + r) / CELL); cx++)
-    for (let cz = Math.floor((z - r) / CELL); cz <= Math.floor((z + r) / CELL); cz++) {
-      const list = grid.get(key(cx, cz));
+  for (let cx = cx0; cx <= cx1; cx++)
+    for (let cz = cz0; cz <= cz1; cz++) {
+      const c = cellAt(cx, cz);
+      if (c < 0) continue;
+      const list = cellBoxes[c];
       if (!list) continue;
-      for (const b of list) {
-        const i = indexOf.get(b)!;
+      const ids = cellIds[c]!;
+      for (let n = 0; n < list.length; n++) {
+        const i = ids[n];
         if (nearBy[i] === nearId) continue;
         nearBy[i] = nearId;
-        scratch.push(b);
+        scratch.push(list[n]);
       }
     }
   return scratch;
@@ -52,8 +88,8 @@ function near(x: number, z: number, r: number): Iterable<Box> {
 
 /** The routes' boxes in the grid now: the obstacles of those closed and what stands on those open. */
 let routeBoxes: Box[] = [];
-/** The closed routes' obstacles among them. */
-let obstacles = new Set<Box>();
+/** The closed routes' obstacles among them: 1 at their places in `ALL`. */
+const obstacle = new Uint8Array(ALL.length);
 /**
  * What stands on the open routes (a roof, a gangway). Path finding (nav.ts, hunt.ts) counts these
  * as it counts the map's boxes, but not a closed route's obstacles: they stand in the cliff a
@@ -62,6 +98,9 @@ let obstacles = new Set<Box>();
  */
 export let routeBoxesOpen: readonly Box[] = [];
 
+/** Counts the worlds put in place (`setRouteBoxes()`): an answer of `groundAt()` kept from an earlier world is stale. */
+export let worldVersion = 0;
+
 /**
  * Puts the routes' boxes for one set of open routes into the grid (routes.ts), after the map's
  * own: a cell's boxes keep their order, so a world with every route closed meets the map's
@@ -69,15 +108,21 @@ export let routeBoxesOpen: readonly Box[] = [];
  */
 export function setRouteBoxes(closed: Box[], open: Box[]) {
   for (const b of routeBoxes)
-    for (const k of cellsOf(b)) {
-      const list = grid.get(k)!.filter((o) => o !== b);
-      if (list.length) grid.set(k, list);
-      else grid.delete(k);
+    for (const c of cellsOf(b)) {
+      const list = cellBoxes[c]!;
+      const ids = cellIds[c]!;
+      const keep = list.flatMap((o, n) => (o !== b ? [n] : []));
+      if (keep.length) {
+        cellBoxes[c] = keep.map((n) => list[n]);
+        cellIds[c] = keep.map((n) => ids[n]);
+      } else cellBoxes[c] = cellIds[c] = undefined;
     }
+  for (const b of routeBoxes) obstacle[indexOf.get(b)!] = 0;
   routeBoxes = [...closed, ...open];
-  obstacles = new Set(closed);
+  for (const b of closed) obstacle[indexOf.get(b)!] = 1;
   for (const b of routeBoxes) addToGrid(b);
   routeBoxesOpen = open;
+  worldVersion++;
 }
 setRouteBoxes(
   ROUTES.flatMap((r) => r.closed),
@@ -175,21 +220,49 @@ export function solidAt(x: number, y: number, z: number): boolean {
 }
 
 function rayBox(o: Vec3, d: Vec3, b: Box, maxT: number): number {
+  // The slab of each axis in turn (x, y, z), narrowing [t0, t1]; written out per axis so a test allocates nothing.
   let t0 = 0;
   let t1 = maxT;
-  const axes: [number, number, number, number][] = [
-    [o.x, d.x, b.x0, b.x1],
-    [o.y, d.y, b.y0, b.h],
-    [o.z, d.z, b.z0, b.z1],
-  ];
-  for (const [oo, dd, lo, hi] of axes) {
-    if (Math.abs(dd) < 1e-9) {
-      if (oo < lo || oo > hi) return Infinity;
-      continue;
+  let a: number;
+  let c: number;
+  if (Math.abs(d.x) < 1e-9) {
+    if (o.x < b.x0 || o.x > b.x1) return Infinity;
+  } else {
+    a = (b.x0 - o.x) / d.x;
+    c = (b.x1 - o.x) / d.x;
+    if (a > c) {
+      const swap = a;
+      a = c;
+      c = swap;
     }
-    let a = (lo - oo) / dd;
-    let c = (hi - oo) / dd;
-    if (a > c) [a, c] = [c, a];
+    if (a > t0) t0 = a;
+    if (c < t1) t1 = c;
+    if (t0 > t1) return Infinity;
+  }
+  if (Math.abs(d.y) < 1e-9) {
+    if (o.y < b.y0 || o.y > b.h) return Infinity;
+  } else {
+    a = (b.y0 - o.y) / d.y;
+    c = (b.h - o.y) / d.y;
+    if (a > c) {
+      const swap = a;
+      a = c;
+      c = swap;
+    }
+    if (a > t0) t0 = a;
+    if (c < t1) t1 = c;
+    if (t0 > t1) return Infinity;
+  }
+  if (Math.abs(d.z) < 1e-9) {
+    if (o.z < b.z0 || o.z > b.z1) return Infinity;
+  } else {
+    a = (b.z0 - o.z) / d.z;
+    c = (b.z1 - o.z) / d.z;
+    if (a > c) {
+      const swap = a;
+      a = c;
+      c = swap;
+    }
     if (a > t0) t0 = a;
     if (c < t1) t1 = c;
     if (t0 > t1) return Infinity;
@@ -218,18 +291,22 @@ export function rayWorld(o: Vec3, d: Vec3, maxT: number, paths = false, fences =
   let nextX = ax > 1e-9 ? (d.x > 0 ? (cx + 1) * CELL - o.x : o.x - cx * CELL) / ax : Infinity;
   let nextZ = az > 1e-9 ? (d.z > 0 ? (cz + 1) * CELL - o.z : o.z - cz * CELL) / az : Infinity;
   for (;;) {
-    const list = grid.get(key(cx, cz));
-    if (list)
-      for (const b of list) {
-        const i = indexOf.get(b) ?? 0;
+    const c = cellAt(cx, cz);
+    const list = c >= 0 ? cellBoxes[c] : undefined;
+    if (list) {
+      const ids = cellIds[c]!;
+      for (let n = 0; n < list.length; n++) {
+        const b = list[n];
+        const i = ids[n];
         if (seenBy[i] === rayId) continue;
         seenBy[i] = rayId;
-        if (paths && obstacles.has(b)) continue;
+        if (paths && obstacle[i]) continue;
         // A fence of bars or mesh stops a body, not a look or a shot.
         if ((b.kind === "fence") !== fences) continue;
         const bt = rayBox(o, d, b, t);
         if (bt < t) t = bt;
       }
+    }
     if (Math.min(nextX, nextZ) > t) return fences ? t : rayTerrain(o, d, t);
     if (nextX < nextZ) {
       cx += stepX;

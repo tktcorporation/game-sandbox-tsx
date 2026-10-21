@@ -1104,6 +1104,7 @@ const OUTPOSTS: Hamlet[] = [
   {
     // Between the yard, the smelter and the quay: the power the cranes and the furnaces ran on.
     // A walled yard of transformers under a busbar frame, a two-storey control house, a store.
+    id: "substation",
     name: "変電所",
     x: 75,
     z: -675,
@@ -1125,6 +1126,7 @@ const OUTPOSTS: Hamlet[] = [
   {
     // East of the smelter: the fuel the furnaces and the ships burned. White tanks inside a low
     // bund wall, a pump house, a loading bay under a canopy with a tanker left in it.
+    id: "fuel",
     name: "燃料基地",
     x: 350,
     z: -750,
@@ -1166,6 +1168,7 @@ const OUTPOSTS: Hamlet[] = [
   {
     // West of the yard: where the freight line ended and trains were made up for the yard.
     // Three sidings with wagons left on them, a loading shed with a mezzanine, the yard office.
+    id: "freight",
     name: "貨物操車場",
     x: -335,
     z: -700,
@@ -1204,6 +1207,7 @@ const OUTPOSTS: Hamlet[] = [
     // West of the wreck, on the old shore: where ore came in by rail and went out by ship. An
     // open loading shed with a mezzanine, ore heaps, a crane tower climbed three storeys under its boom, the end of
     // the freight line's spur with wagons on it, the wharf office.
+    id: "wharf",
     name: "荷揚げ場",
     x: -280,
     z: -965,
@@ -1245,6 +1249,7 @@ const OUTPOSTS: Hamlet[] = [
     // East of the viaduct, where the railway came down into the harbor: the locomotives' shed with
     // its tracks in through roller doors, one engine left inside and one outside, a fuel tank fed
     // by the pipeline from the fuel depot, the two-storey depot office.
+    id: "engine",
     name: "保線基地",
     x: 215,
     z: -510,
@@ -1282,6 +1287,7 @@ const OUTPOSTS: Hamlet[] = [
   {
     // North of the relay's mesa, past the railway: the dam's power stepped down for the relay and
     // the works. The same yard as the harbor's substation.
+    id: "eastSubstation",
     name: "東の変電所",
     x: 300,
     z: -175,
@@ -1302,6 +1308,7 @@ const OUTPOSTS: Hamlet[] = [
   {
     // Between the relay and the east coast: the pumps that lifted water for the works, the housing
     // and the water tower. A pump hall with a mezzanine, two low settling tanks, pipes between, an office.
+    id: "pumps",
     name: "揚水ポンプ場",
     x: 375,
     z: 185,
@@ -1530,6 +1537,112 @@ export const PACKS: Squad[] = [
   },
 ];
 
+/** Stable names for the outposts (`OUTPOSTS`): territory, and the front's links, refer to an outpost by these. */
+export type OutpostId = "substation" | "fuel" | "freight" | "wharf" | "engine" | "eastSubstation" | "pumps";
+
+/** The robots' two factions (see FACTION): the network (網) and the rogues that broke off it (野良機). */
+export type Faction = "net" | "rogue";
+
+/** An outpost as the factions see it: where it stands, its region, and the name of the squad that holds it. */
+export interface OutpostSite {
+  id: OutpostId;
+  name: string;
+  region: RegionId;
+  x: number;
+  z: number;
+  guard: string;
+}
+
+export const OUTPOST_SITES: OutpostSite[] = OUTPOSTS.map((o) => ({
+  id: o.id!,
+  name: o.name,
+  // The reservoir lies south of the mountain belt (+z), the harbor north of it.
+  region: o.z > -350 ? "reservoir" : "harbor",
+  x: o.x,
+  z: o.z,
+  guard: o.guard?.name ?? "",
+}));
+
+export const outpostSite = (id: OutpostId): OutpostSite => OUTPOST_SITES.find((o) => o.id === id) ?? OUTPOST_SITES[0];
+
+/**
+ * The factions' territory: who holds each outpost at each network level. An outpost is the
+ * rogues' while the network stands below its `rogueBelow` (never at 0), so a weaker network has
+ * lost more of the island to them; its guards are rogues then, and its own patrol (`MOBILES` with
+ * `outpost`) walks. The POIs are always the network's (`State.hold` says how firmly). The front
+ * (docs/ringfall/liberation-front.md) paints the third colour from this.
+ */
+export const TERRITORY: Record<OutpostId, { rogueBelow: number }> = {
+  pumps: { rogueBelow: 6 },
+  eastSubstation: { rogueBelow: 2 },
+  fuel: { rogueBelow: 6 },
+  wharf: { rogueBelow: 3 },
+  engine: { rogueBelow: 2 },
+  freight: { rogueBelow: 1 },
+  substation: { rogueBelow: 0 },
+};
+
+/** Who holds each outpost at network `level` (see TERRITORY). */
+export function territory(level: number): Record<OutpostId, Faction> {
+  return Object.fromEntries(OUTPOST_SITES.map((o) => [o.id, level < TERRITORY[o.id].rogueBelow ? "rogue" : "net"])) as Record<OutpostId, Faction>;
+}
+
+/**
+ * Squads that walk out between the POIs, outposts and roads (`STREETS`) rather than hold a post,
+ * in the world's coordinates. Each walks its `nodes` out and back by the ground's way (hunt.ts's
+ * `walkLine()`), so a node is a place on its walk (a junction, an outpost's gate, a POI's way
+ * in), not a straight leg. A beat is walked by squads of a POI's garrison (`from`): about half of
+ * each POI's strength, so a POI is a smaller fight and the ground between is where most squads
+ * are met. A patrol walks a road; a convoy, heavier, walks the network's nodes from one end of the
+ * region to the other. Rogue walks (`faction: "rogue"`) are the rogues': those with `rank` while
+ * the network is weak enough (`ROGUE.patrols`), those with `outpost` while it is theirs.
+ */
+export interface Mobile {
+  name: string;
+  kind: "beat" | "patrol" | "convoy";
+  faction: Faction;
+  region: RegionId;
+  /** A beat: the POI whose garrison squad (by name) walks it. */
+  from?: { poi: PoiId; squad: string };
+  /** A patrol's or convoy's members. */
+  members?: EnemyKind[];
+  outpost?: OutpostId;
+  rank?: number;
+  nodes: (readonly [number, number])[];
+}
+
+export const MOBILES: Mobile[] = [
+  // --- the reservoir: the ring of roads south of the lakebed, the mesa's foot, the ways north-west.
+  { name: "補給所の北の巡回", kind: "beat", faction: "net", region: "reservoir", from: { poi: "supply", squad: "組立棟東" }, nodes: [[0, 296], [0, 236], [88, 204], [160, 205]] },
+  { name: "湖畔の巡回", kind: "beat", faction: "net", region: "reservoir", from: { poi: "supply", squad: "砂丘" }, nodes: [[0, 296], [0, 236], [-110, 238]] },
+  { name: "西の環状路の巡回", kind: "beat", faction: "net", region: "reservoir", from: { poi: "quarry", squad: "坂上" }, nodes: [[-110, 238], [-170, 110], [-265, 10]] },
+  { name: "北西の道の巡回", kind: "beat", faction: "net", region: "reservoir", from: { poi: "quarry", squad: "掘削機" }, nodes: [[-265, 10], [-209, -77], [-215, -95]] },
+  { name: "台地の麓の巡回", kind: "beat", faction: "net", region: "reservoir", from: { poi: "relay", squad: "大皿" }, nodes: [[125, 75], [200, 108], [187, 32], [210, -50]] },
+  { name: "台地の東の巡回", kind: "beat", faction: "net", region: "reservoir", from: { poi: "relay", squad: "南東の縁" }, nodes: [[210, -50], [271, -148], [360, -60]] },
+  { name: "環状路の警邏", kind: "patrol", faction: "net", region: "reservoir", members: ["grunt", "drone"], nodes: [[0, 236], [88, 204], [250, 205], [200, 108]] },
+  { name: "補給の車列", kind: "convoy", faction: "net", region: "reservoir", members: ["heavy", "grunt", "drone"], nodes: [[0, 296], [0, 236], [88, 204], [250, 205], [200, 108], [187, 32], [210, -50], [271, -148]] },
+  { name: "ポンプ場の野良機", kind: "patrol", faction: "rogue", region: "reservoir", outpost: "pumps", members: ["grunt", "grunt", "charger"], nodes: [[342, 190], [309, 191], [250, 205], [200, 108]] },
+  { name: "変電所の野良機", kind: "patrol", faction: "rogue", region: "reservoir", outpost: "eastSubstation", members: ["grunt", "grunt"], nodes: [[271, -148], [210, -50], [187, 32]] },
+  { name: "西の野良機", kind: "patrol", faction: "rogue", region: "reservoir", rank: 0, members: ["grunt", "grunt", "drone"], nodes: [[-170, -40], [-117, 274]] },
+  { name: "湖畔の野良機", kind: "patrol", faction: "rogue", region: "reservoir", rank: 1, members: ["grunt", "charger"], nodes: [[-117, 274], [-190, 470]] },
+  { name: "東の野良機", kind: "patrol", faction: "rogue", region: "reservoir", rank: 2, members: ["grunt", "grunt"], nodes: [[116, 230], [270, 320]] },
+  // --- the harbor: the yard's, the smelter's and the wreck's roads, the town, the wharf.
+  { name: "難破船の西の巡回", kind: "beat", faction: "net", region: "harbor", from: { poi: "wreck", squad: "北の浜" }, nodes: [[-63, -943], [-117, -973], [-245, -965]] },
+  { name: "難破船の北の巡回", kind: "beat", faction: "net", region: "harbor", from: { poi: "wreck", squad: "舳先" }, nodes: [[-63, -943], [-67, -800], [-67, -760]] },
+  { name: "操車場の道の巡回", kind: "beat", faction: "net", region: "harbor", from: { poi: "yard", squad: "北の列" }, nodes: [[-167, -690], [-240, -680], [-335, -665]] },
+  { name: "信号所の巡回", kind: "beat", faction: "net", region: "harbor", from: { poi: "yard", squad: "東の列" }, nodes: [[-167, -690], [-61, -745], [40, -620]] },
+  { name: "変電所の通りの巡回", kind: "beat", faction: "net", region: "harbor", from: { poi: "smelter", squad: "裏手" }, nodes: [[166, -697], [105, -675], [40, -620]] },
+  { name: "燃料基地への道の巡回", kind: "beat", faction: "net", region: "harbor", from: { poi: "smelter", squad: "北東" }, nodes: [[205, -735], [275, -763]] },
+  { name: "港町の警邏", kind: "patrol", faction: "net", region: "harbor", members: ["grunt", "drone"], nodes: [[40, -590], [240, -625], [215, -540]] },
+  { name: "燃料基地の野良機", kind: "patrol", faction: "rogue", region: "harbor", outpost: "fuel", members: ["grunt", "grunt", "charger"], nodes: [[315, -750], [262, -845], [235, -890]] },
+  { name: "荷揚げ場の野良機", kind: "patrol", faction: "rogue", region: "harbor", outpost: "wharf", members: ["grunt", "grunt", "drone"], nodes: [[-245, -965], [-287, -925], [-300, -815]] },
+  { name: "保線基地の野良機", kind: "patrol", faction: "rogue", region: "harbor", outpost: "engine", members: ["grunt", "charger"], nodes: [[215, -540], [240, -625], [205, -735]] },
+  { name: "操車場の野良機", kind: "patrol", faction: "rogue", region: "harbor", outpost: "freight", members: ["grunt", "grunt"], nodes: [[-335, -665], [-300, -815]] },
+  { name: "漁村の野良機", kind: "patrol", faction: "rogue", region: "harbor", rank: 0, members: ["grunt", "charger"], nodes: [[-277, -835], [-281, -588]] },
+  { name: "港町の野良機", kind: "patrol", faction: "rogue", region: "harbor", rank: 1, members: ["grunt", "grunt"], nodes: [[240, -625], [264, -864]] },
+  { name: "丘の野良機", kind: "patrol", faction: "rogue", region: "harbor", rank: 2, members: ["grunt", "drone"], nodes: [[240, -625], [105, -675], [166, -697]] },
+];
+
 /** Stable names for the relay masts: saves and contracts refer to a mast by these. */
 export type RelayId = "west" | "east" | "salt" | "hill";
 
@@ -1685,6 +1798,8 @@ export function regionHere(at: { x: number; z: number }): Region {
  * reinforcements pass by. An outpost (`OUTPOSTS`) is a larger one with a squad of its own.
  */
 interface Hamlet {
+  /** An outpost's stable name (`OutpostId`): territory and saves refer to it by this. */
+  id?: OutpostId;
   name: string;
   x: number;
   z: number;
@@ -4274,6 +4389,8 @@ const FENCES: { name: string; line: [number, number][] }[] = [
   { name: "製錬所の外周", line: [[104, -696], [224, -696], [224, -780], [104, -780], [104, -696]] },
   { name: "補給所の境界", line: [[-115, 300], [128, 300], [128, 480]] },
 ];
+/** Where a street or a kept road passes through a fence (`FENCES`): the middle of the gate's first missing panel. */
+export const GATES: { name: string; x: number; z: number }[] = [];
 const FENCE_RUNS: Box[] = (() => {
   const out: Box[] = [];
   const standing = [...AUTHORED, ...BRIDGE, ...RAILWAY, ...QUAY, ...LAID, ...WORKS_LINES].filter((b) => b.y0 < terrainHeight((b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2) + 3);
@@ -4314,6 +4431,7 @@ const FENCE_RUNS: Box[] = (() => {
       if (blocked) {
         // A gate where a street or road passes: a white post at either side of it.
         if (open && street) gatePost(a[0], a[1]);
+        if (street && !gate) GATES.push({ name: f.name, x: mx, z: mz });
         gate = street;
         open = false;
         continue;
@@ -4410,6 +4528,23 @@ const RING_WRECKS: RingWreck[] = [
   { name: "製錬所の北の残骸（東）", along: "x", at: -1024, a: 216, b: 285, broken: { a: true }, lean: { side: 1, u: 250, length: 46 } },
   { name: "中継塔の北の残骸（東）", along: "x", at: -105, a: 340, b: 388, broken: { a: true }, rubble: [{ side: 1, u: 362 }] },
 ];
+/**
+ * The ways through the ring's wreckage on foot: the gap between two lengths lying end to end on
+ * one line, at its middle, and a hollow length's tunnel, at each of its torn openings.
+ */
+export const RING_GAPS: { name: string; x: number; z: number }[] = (() => {
+  const out: { name: string; x: number; z: number }[] = [];
+  const at = (w: RingWreck, u: number, v: number) => (w.along === "x" ? { x: u, z: w.at + v } : { x: w.at + v, z: u });
+  for (const w of RING_WRECKS) {
+    for (const o of RING_WRECKS) {
+      if (o === w || o.along !== w.along || Math.abs(o.at - w.at) > 25 || !w.broken.b || !o.broken.a) continue;
+      const gap = o.a - w.b;
+      if (gap > 0 && gap < 40) out.push({ name: w.name, ...at(w, (w.b + o.a) / 2, (w.at + o.at) / 2 - w.at) });
+    }
+    for (const t of w.tunnel ?? []) out.push({ name: w.name, ...at(w, (t.a + t.b) / 2, t.side * (RING.half + 4)) });
+  }
+  return out;
+})();
 const RING_RUNS: Box[] = (() => {
   const out: Box[] = [];
   const SCORCH = 1.6;

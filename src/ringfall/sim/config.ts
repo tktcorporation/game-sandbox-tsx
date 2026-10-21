@@ -428,9 +428,9 @@ export const NETWORK = {
   /** A relay mast destroyed on a day that started at network `at` or higher takes it `steps` down. */
   relayHigh: { at: 4, steps: 2 },
   levels: [
-    { name: "途切れ", note: "増援は遅く、群れと遊撃隊は少ない", reinforce: { first: 390, every: 330 }, raiders: 960, parties: { reservoir: 1, harbor: 1 }, packs: { reservoir: 1, harbor: 1 }, plate: 0, crews: 0 },
-    { name: "弱い", note: "増援は遅く、群れは少ない", reinforce: { first: 330, every: 270 }, raiders: 840, parties: { reservoir: 1, harbor: 1 }, packs: { reservoir: 2, harbor: 1 }, plate: 0, crews: 0 },
-    { name: "並", note: "いつもの島", reinforce: { first: 270, every: 225 }, raiders: 720, parties: { reservoir: 2, harbor: 2 }, packs: { reservoir: 3, harbor: 2 }, plate: 0, crews: 0 },
+    { name: "途切れ", note: "増援は遅く、群れと遊撃隊は少ない", reinforce: { first: 420, every: 330 }, raiders: 960, parties: { reservoir: 1, harbor: 1 }, packs: { reservoir: 1, harbor: 1 }, plate: 0, crews: 0 },
+    { name: "弱い", note: "増援は遅く、群れは少ない", reinforce: { first: 375, every: 270 }, raiders: 840, parties: { reservoir: 1, harbor: 1 }, packs: { reservoir: 2, harbor: 1 }, plate: 0, crews: 0 },
+    { name: "並", note: "いつもの島", reinforce: { first: 330, every: 225 }, raiders: 720, parties: { reservoir: 2, harbor: 2 }, packs: { reservoir: 3, harbor: 2 }, plate: 0, crews: 0 },
     { name: "強い", note: "増援が早い・中継器が立つ", reinforce: { first: 240, every: 195 }, raiders: 600, parties: { reservoir: 2, harbor: 2 }, packs: { reservoir: 3, harbor: 2 }, plate: 0.15, crews: 1 },
     { name: "厳しい", note: "増援が早い・遊撃隊が増える・装甲板が増える", reinforce: { first: 210, every: 170 }, raiders: 540, parties: { reservoir: 3, harbor: 3 }, packs: { reservoir: 3, harbor: 2 }, plate: 0.3, crews: 2 },
     { name: "最大", note: "増援が次々来る・遊撃隊が増える・装甲板が多い", reinforce: { first: 180, every: 140 }, raiders: 480, parties: { reservoir: 3, harbor: 3 }, packs: { reservoir: 3, harbor: 2 }, plate: 0.45, crews: 2 },
@@ -853,7 +853,7 @@ export const TOOL_KINDS = Object.keys(TOOLS) as ToolKind[];
  * between waves leaves a quiet walk between the fights a wave brings.
  */
 export const REINFORCE = {
-  first: 270,
+  first: 330,
   every: 225,
   /** Seconds between fresh guesses of where the player is while a reinforcement squad hunts. */
   huntEvery: 8,
@@ -1190,6 +1190,79 @@ export const NOISE = {
   /** Within this fraction of a sound's radius, a robot that can see the spot engages at once. */
   engageInside: 0.35,
 };
+
+/**
+ * The robots' two factions. The network (網) is the island's own; rogues (野良機) are robots that
+ * broke off it: they hold some outposts (`TERRITORY` in map.ts) and walk patrols of their own
+ * (`MOBILES`), and the salvage crews are theirs. Each is hostile to the other and to the player
+ * and the teammate.
+ *
+ * A squad out between the POIs that is not fighting the player looks for the other faction's
+ * robots every `scan` seconds, out to `sight` of its members' sight range: a member that sees one
+ * (in its view cone, or within `close` metres whatever way it faces) sets the squad on it, and the
+ * squad fights it with the shots it fires at the player until it is down or has gone `forget`
+ * seconds unseen. A robot hit by the other faction turns on whoever shot it. The garrisons of the
+ * POIs hold their posts and take no part, so a POI is only ever cleared by the player. Firing at
+ * the other faction lands `dmg` of its damage, so a fight between squads goes on for a while, long
+ * enough to be heard and come to, and leaves its winner worn. Firing at
+ * the other faction carries `noise` metres (`NOISE.roamMult` further to squads out on the roads,
+ * which come to look) and is heard by the player out to `hear` metres, where it marks the map
+ * (`State.contacts`) for `keep` seconds.
+ */
+export const FACTION = { scan: 0.25, sight: 1, close: 12, forget: 8, noise: 40, hear: 380, keep: 60, every: 1.5, dmg: 0.8, apart: 90 };
+
+/**
+ * Rogue patrols (`MOBILES` with `rank`) walk while their rank is below `patrols[level]` for the
+ * network's level: a weaker network loses more robots to them. A rogue-held outpost's own patrol
+ * walks while the outpost is theirs (`TERRITORY`).
+ */
+export const ROGUE = { patrols: [3, 3, 2, 1, 1, 0] as const };
+
+/**
+ * Squads that go out from their posts (`MOBILES`): each walks its nodes out and back by the
+ * ground's way (`walkLine()` in hunt.ts), at the patrol pace (`AWARE.idleSpeed`). A raid starts
+ * each at a point of its walk at least `away` metres from the player, picked from the seed. A
+ * patrol whose leader has gone `stuck.time` seconds without moving `stuck.moved` metres makes for
+ * its next point. On the move a squad watches the way ahead more than its flanks: until it fights,
+ * it notices the player at `sight` of its kind's range, so a player who sees it first has the shot.
+ */
+export const PATROL = { away: 150, stuck: { time: 10, moved: 2.5 }, sight: 0.65 };
+
+/**
+ * A squad out between the POIs, a hunting party or a reinforcement squad that hears the player
+ * (or is told where they are) makes for where they are heading rather than for the sound: along
+ * the player's motion when they move faster than `minSpeed`, else toward the nearest way off of
+ * their region once their bag is half full or the raiders are due; a player standing for any other
+ * reason (fighting or looting at a POI) is where they are. It looks ahead the time it takes to walk there, between `lead[0]` and
+ * `lead[1]` seconds, at the player's pace or `pace`, no more than `max` metres.
+ */
+export const INTERCEPT = { minSpeed: 1.2, lead: [4, 16] as const, pace: 3.5, max: 45 };
+
+/**
+ * A fighting squad of `min` or more out between the POIs (not a POI's garrison, which keeps to
+ * the ground round its posts and pinches as `PINCH` says) splits at once (`after` seconds into the fight): the first
+ * member, and the second of four or more, hold the front and shoot from cover; the others go round
+ * to the player's side and back, `dist` metres out, `back` of that past the player from the front.
+ */
+export const SPLIT = { min: 3, after: 2, dist: 12, back: 0.6 };
+
+/**
+ * When the player comes within `near` metres of a way off of their region with their bag at least
+ * `bag` full, up to `squads` calm squads out between the POIs (`MOBILES`) leave their walk for the choke points within `reach`
+ * of it (gates in the fences, gaps in the ring's wreckage, the approaches to the way off) and wait
+ * there facing the player's side, for `hold` seconds or until the player is twice `near` off.
+ */
+export const AMBUSH = { near: 150, reach: 230, squads: 1, hold: 120, every: 2, bag: 0.3 };
+
+/**
+ * The network keeps the player found: once no robot has fought them for `quiet` seconds, it sends
+ * the nearest calm squad of its own out between the POIs (on a walk, or a hunting party) within
+ * `reach` metres after them at `pace` of its fighting speed, told every `every` seconds where they
+ * are heading (see INTERCEPT), for `time` seconds or until it fights them. One is sent at a time.
+ * The walk in counts `start` seconds more before the first, so the first is sent no sooner than
+ * `start` + `quiet` seconds into a raid with no fight.
+ */
+export const SWEEP = { start: 60, quiet: 30, reach: 300, pace: 0.85, every: 6, time: 60 };
 
 /**
  * A grunt behind its cover squats: its body and its head drop by these many metres, `rate` of

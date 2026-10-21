@@ -358,9 +358,14 @@ export class Soundscape {
         break;
       case "enemyFire": {
         const en = s.enemies.find((x) => x.id === e.id);
-        sfx.enemyFire(e.pos, en?.kind);
+        // Fire between the factions past a stone's throw is heard as a distant firefight (see FACTION).
+        if (e.foe && Math.hypot(e.pos.x - p.pos.x, e.pos.z - p.pos.z) > 50) sfx.farFire(e.pos, en?.kind);
+        else sfx.enemyFire(e.pos, en?.kind);
         break;
       }
+      case "fall":
+        sfx.collapse(lift(e.pos, -0.5), e.kind === "heavy");
+        break;
       case "lunge":
         sfx.lunge(enemyAt(e.id));
         break;

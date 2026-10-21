@@ -1,22 +1,23 @@
-import { ALLY, AWARE, CHARGER, COVER, CREW, DEG, DODGE, DUCK, ELITE, ENEMIES, FALLBACK, PACK, PARTY, PINCH, PLAYER, PURSUE, SHOT, SIGHT, STAGGER, TICK, TITAN, TURN, WORLD, type EnemyKind, type Rarity } from "./config";
-import { clampToWorld, collide, dist2d, fenceBetween, groundAt, groundLevel, los, lookAngles, onTerrain, solidAt, wrapAngle } from "./geom";
+import { ALLY, AWARE, CHARGER, COVER, CREW, DEG, DODGE, DUCK, ELITE, ENEMIES, FALLBACK, PACK, PARTY, PINCH, SPLIT, SWEEP, PLAYER, PURSUE, SHOT, SIGHT, STAGGER, TICK, TITAN, TURN, WORLD, type EnemyKind, type Rarity } from "./config";
+import { clampToWorld, collide, dist2d, fenceBetween, groundAt, groundLevel, los, lookAngles, onTerrain, solidAt, worldVersion, wrapAngle } from "./geom";
 import { steepAt, terrainHeight } from "./terrain";
 import { engageSquad, fireRange, headOf, knownSpot, located, pursuitSpot, sense, stepSquads } from "./awareness";
 import { coversNear, type CoverPoint } from "./cover";
-import { fieldTo, nextStep, onMainGround, routeLength } from "./hunt";
+import { fieldTo, forgetFields, nextStep, onMainGround, routeLength } from "./hunt";
 
 /** Walkers refuse to step off a ledge higher than this, so rooftop robots stay on their roof. */
 const LEDGE = 1.0;
 /** Walkers posted on the ground climb no higher than this above the terrain (stairs onto a roof). */
 const CLIMB = 1.2;
 const bodyHeight = (k: { bodyY: number; radius: number }) => k.bodyY + k.radius;
-import { inCamp, PARTY_STOPS, POIS, RELAYS, relayIndex, ROAMERS, type Squad } from "./map";
+import { inCamp, MOBILES, OUTPOST_SITES, PARTY_STOPS, POIS, RELAYS, relayIndex, ROAMERS, type Mobile, type Squad } from "./map";
+import { beatOf, damageRobot, fightHeard, foeOf, mobileWalks, placeMobile } from "./factions";
 import { bodyCenter, weakPoint } from "./combat";
 import { hurtPlayer } from "./player";
 import { allyChest, allyUp, hurtAlly } from "./ally";
 import { activePacks, garrison, netPlated } from "./island";
 import { modScale } from "./mods";
-import { crewRand, rand, roamRand, sightScale, weakY, type Enemy, type Point, type State, type Vec3 } from "./state";
+import { crewRand, mix, rand, roamRand, sightScale, weakY, type Enemy, type Point, type State, type Vec3 } from "./state";
 
 /*
  * Robot behaviour. Out of combat a robot holds its post or walks its squad's
@@ -39,6 +40,10 @@ interface SpawnOpts {
   roam?: boolean;
   /** A salvage crew's, the retake squad's or the debris guards': drawn from theirs (`crewRand()`). */
   crew?: boolean;
+  /** One of the rogues (see FACTION). */
+  rogue?: boolean;
+  /** A squad on a walk (`MOBILES`): its own draws are a hash of the seed and its id, so it shifts none of the raid's streams. */
+  hashed?: boolean;
 }
 
 /** The random numbers robot `e` draws on: the crews' stream for a crew's, the retake squad's or the debris guards' (`Enemy.own`), else the raid's. */
@@ -55,10 +60,12 @@ export function spawnSpot(kind: EnemyKind, x: number, z: number, floor = terrain
 
 export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi: number, squad: number, o: SpawnOpts = {}): Enemy {
   const k = ENEMIES[kind];
-  const pick = o.crew ? crewRand : o.roam ? roamRand : rand;
+  const id = s.nextId++;
+  let k0 = 0;
+  const hashed = () => mix(Math.imul(s.seed + 1, 0x85ebca6b) ^ Math.imul(id, 0x9e3779b1) ^ Math.imul(++k0, 0xc2b2ae35)) / 4294967296;
+  const pick = o.hashed ? hashed : o.crew ? crewRand : o.roam ? roamRand : rand;
   const pos = spawnSpot(kind, x, z, o.floor);
   const face = o.face ?? pick(s) * Math.PI * 2;
-  const id = s.nextId++;
   // A strong network plates some of the plain grunts and heavies, picked without drawing on the raid's numbers.
   const plate = o.plate ?? ((kind === "grunt" || kind === "heavy") && !o.elite && netPlated(s.seed, s.network, id, s.threat ?? 0) ? 1 : 0);
   const e: Enemy = {
@@ -109,6 +116,7 @@ export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi:
     finding: 0,
     duck: 0,
     own: !!o.crew,
+    rogue: o.rogue || undefined,
   };
   s.enemies.push(e);
   if (o.appear) s.events.push({ t: "spawn", id: e.id, pos: { ...pos } });
@@ -117,14 +125,30 @@ export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi:
 
 /** Put every squad on the island at the start of a run (the hunting parties come after, see `placeParties()`). */
 export function populate(s: State) {
-  const add = (sq: Squad, poi: number) => {
+  const add = (sq: Squad, poi: number, rogue = false) => {
     const index = s.squads.length;
-    s.squads.push({ name: sq.name, poi, patrol: sq.patrol ?? [], leg: 0, engaged: false, roam: !!sq.roam, sinceSeen: 0, last: { x: 0, z: 0 } });
-    for (const m of sq.members) spawnEnemy(s, m.kind, m.x, m.z, poi, index, { floor: m.y, face: m.face, plate: m.plate });
+    s.squads.push({ name: sq.name, poi, patrol: sq.patrol ?? [], leg: 0, engaged: false, roam: !!sq.roam, sinceSeen: 0, last: { x: 0, z: 0 }, rogue: rogue || undefined });
+    for (const m of sq.members) spawnEnemy(s, m.kind, m.x, m.z, poi, index, { floor: m.y, face: m.face, plate: m.plate, rogue });
   };
-  // A POI stands with the garrison its standing on the island gives it (`garrison()`).
-  POIS.forEach((_, i) => garrison(i, s.hold[i], s.seed).forEach((sq) => add(sq, i)));
-  ROAMERS.forEach((sq) => add(sq, -1));
+  const walker = (st: State, kind: EnemyKind, x: number, z: number, squad: number, face: number, rogue: boolean) => void spawnEnemy(st, kind, x, z, -1, squad, { face, hashed: true, rogue });
+  // A POI stands with the garrison its standing on the island gives it (`garrison()`); the squads
+  // of it that walk a beat (`MOBILES`) are out on it, no longer the POI's.
+  const beats: { m: Mobile; kinds: EnemyKind[] }[] = [];
+  POIS.forEach((p, i) =>
+    garrison(i, s.hold[i], s.seed).forEach((sq) => {
+      const beat = beatOf(p.id, sq.name);
+      if (beat) beats.push({ m: beat, kinds: sq.members.map((m) => m.kind) });
+      else add(sq, i);
+    }),
+  );
+  // An outpost the rogues hold has rogue guards (`TERRITORY`).
+  const rogueGuards = new Set(OUTPOST_SITES.filter((o) => s.territory[o.id] === "rogue").map((o) => o.guard));
+  ROAMERS.forEach((sq) => add(sq, -1, rogueGuards.has(sq.name)));
+  for (const b of beats) placeMobile(s, b.m, b.kinds, walker);
+  for (const m of MOBILES) if (mobileWalks(s, m)) placeMobile(s, m, m.members ?? [], walker);
+  // The walks are built by fields (`mobileWalk()`): the raid starts with none, whichever walks
+  // this process built before, so it plays the same wherever it is played.
+  forgetFields();
   // Each relay mast standing this raid has its two guards at its foot.
   for (const m of s.relays) add(RELAYS[relayIndex(m.id)].guards, -1);
   // Each drone pack starts at a waypoint of its loop well away from the player, and flies on from there.
@@ -151,11 +175,11 @@ function muzzle(e: Enemy): Vec3 {
   return e.kind === "drone" ? weakPoint(e) : { ...bodyCenter(e), y: e.pos.y + weakY(e) - 0.1 };
 }
 
-function fireOrb(s: State, e: Enemy, yawOff = 0, homing = false) {
+function fireOrb(s: State, e: Enemy, yawOff = 0, homing = false, foe?: Enemy) {
   const k = ENEMIES[e.kind];
   const from = muzzle(e);
   // A random stray (see SHOT.spread); the titan's homing rockets find their own way.
-  const stray = homing ? 0 : SHOT.spread * DEG * (e.target === "player" ? modScale(s.player, "deflector") : 1);
+  const stray = homing ? 0 : SHOT.spread * DEG * (!foe && e.target === "player" ? modScale(s.player, "deflector") : 1);
   const r = Math.sqrt(-2 * Math.log(draw(s, e) + 1e-9));
   const a = draw(s, e) * Math.PI * 2;
   const yaw = e.aimYaw + yawOff + r * Math.cos(a) * stray;
@@ -169,8 +193,10 @@ function fireOrb(s: State, e: Enemy, yawOff = 0, homing = false) {
     dmg: k.orbDmg * (e.elite ? ELITE.dmg : 1),
     life: 5,
     homing,
+    by: foe ? e.id : undefined,
+    rogue: e.rogue || undefined,
   });
-  s.events.push({ t: "enemyFire", id: e.id, pos: from });
+  s.events.push(foe ? { t: "enemyFire", id: e.id, pos: from, foe: bodyCenter(foe), rogue: !!e.rogue } : { t: "enemyFire", id: e.id, pos: from, rogue: e.rogue || undefined });
 }
 
 function lockAim(e: Enemy, at: Vec3) {
@@ -190,6 +216,29 @@ function leadAim(e: Enemy, at: Vec3, vel: Vec3) {
 /** Drones keep their hover height above the ground, and clear whatever is built under them. */
 function flyHeight(x: number, z: number): number {
   return Math.max(terrainHeight(x, z) + ENEMIES.drone.fly, groundAt(x, z, 1.2, 99) + 2.4);
+}
+
+/*
+ * Each walker's last `groundAt()` question and answer. `moveBody()` asks for the ground where the
+ * walker stood and where it steps to: a walker standing still asks the same twice, and where it
+ * stood is mostly where it stepped to the tick before. The same question in the same world has
+ * the same answer.
+ */
+type GroundAsked = { x: number; z: number; r: number; feet: number; world: number; g: number };
+const groundAsked = new WeakMap<Enemy, GroundAsked>();
+function groundUnder(e: Enemy, x: number, z: number, r: number, feet: number): number {
+  const a = groundAsked.get(e);
+  if (a && a.world === worldVersion && Object.is(a.x, x) && Object.is(a.z, z) && Object.is(a.feet, feet) && a.r === r) return a.g;
+  const g = groundAt(x, z, r, feet);
+  if (a) {
+    a.x = x;
+    a.z = z;
+    a.r = r;
+    a.feet = feet;
+    a.world = worldVersion;
+    a.g = g;
+  } else groundAsked.set(e, { x, z, r, feet, world: worldVersion, g });
+  return g;
 }
 
 function moveBody(e: Enemy, vx: number, vz: number) {
@@ -213,8 +262,8 @@ function moveBody(e: Enemy, vx: number, vz: number) {
     return false;
   }
   const blocked = collide(e.pos, k.radius, bodyHeight(k));
-  const here = groundAt(bx, bz, k.radius, e.pos.y);
-  const there = groundAt(e.pos.x, e.pos.z, k.radius, e.pos.y);
+  const here = groundUnder(e, bx, bz, k.radius, e.pos.y);
+  const there = groundUnder(e, e.pos.x, e.pos.z, k.radius, e.pos.y);
   // A drop ahead stays on this floor. A robot posted up high (a roof, a tower tier)
   // never leaves its floor at all: it could not find the way back up. A robot posted
   // on the ground does not climb stairs onto roofs or upper floors either.
@@ -242,7 +291,13 @@ function moveBody(e: Enemy, vx: number, vz: number) {
 export function stepEnemies(s: State) {
   const p = s.player;
   stepSquads(s);
+  const byId = new Map(s.enemies.map((e) => [e.id, e]));
+  // A robot destroyed takes a new list (`kill()`, `fall()`): only then are the rest looked up in it.
+  const start = s.enemies;
+  const gone = (e: Enemy) => s.enemies !== start && !s.enemies.includes(e);
   for (const e of [...s.enemies]) {
+    // Destroyed earlier this tick (by the other faction's fire, or the titan's fall).
+    if (gone(e)) continue;
     if (s.phase === "done") return; // a robot ahead in the list ended the raid
     const k = ENEMIES[e.kind];
     e.lastHit += TICK;
@@ -276,7 +331,10 @@ export function stepEnemies(s: State) {
       // The titan wakes when the player walks into its arena.
       if (e.kind === "titan" && dist2d(e.pos, p.pos) < 24 && p.downed <= 0 && s.phase === "play") engageSquad(s, e.squad, e);
       else {
-        calm(s, e);
+        // Not fighting the player: it fights the other faction's robot its squad is on, if any (see FACTION).
+        const foe = foeOf(s, e, byId);
+        if (foe && !gone(foe)) fightFoe(s, e, foe);
+        else calm(s, e);
         continue;
       }
     }
@@ -493,6 +551,105 @@ function chooseTarget(s: State, e: Enemy) {
 }
 
 /**
+ * A robot whose squad is fighting `foe`, a robot of the other faction (see FACTION), and not the
+ * player: the same rhythm as at the player (move, wind up, fire) with plain aim. It keeps its own
+ * distance strafing while it sees the foe, closes in by the ground's way while it does not, and
+ * fires as far as it sees while fighting. A charger runs in and strikes. Its squad's fire is heard
+ * (`fightHeard()`).
+ */
+function fightFoe(s: State, e: Enemy, foe: Enemy) {
+  const k = ENEMIES[e.kind];
+  const at = bodyCenter(foe);
+  const dx = foe.pos.x - e.pos.x;
+  const dz = foe.pos.z - e.pos.z;
+  const d = Math.hypot(dx, dz) || 1e-3;
+  const ux = dx / d;
+  const uz = dz / d;
+  if (e.mode !== "telegraph" && e.mode !== "fire") e.mode = "move";
+  turnAt(e, Math.atan2(dx, -dz), TURN[e.kind]);
+  const sees = sightOn(e, foe.pos, at);
+  switch (e.mode) {
+    case "move": {
+      let vx: number;
+      let vz: number;
+      if (!sees) {
+        // Out of sight: in by the ground's way, round what stands between.
+        const sq = s.squads[e.squad];
+        const goal = sq?.foeAt ?? foe.pos;
+        const to = dist2d(e.pos, goal) > 3 ? homeStep(s, e, goal) : goal;
+        const td = dist2d(e.pos, to) || 1e-3;
+        vx = ((to.x - e.pos.x) / td) * k.speed;
+        vz = ((to.z - e.pos.z) / td) * k.speed;
+      } else {
+        const along = e.kind === "charger" || d > k.range + 4 ? 1 : d < k.range - 4 ? -0.7 : 0;
+        const side = e.kind === "charger" ? 0.3 : DODGE.strafe;
+        vx = (ux * along - uz * e.strafe * side) * k.speed;
+        vz = (uz * along + ux * e.strafe * side) * k.speed;
+      }
+      if (moveBody(e, vx, vz)) e.strafe = -e.strafe;
+      else if ((e.strafeT -= TICK) <= 0) {
+        e.strafeT = DODGE.every[0] + draw(s, e) * (DODGE.every[1] - DODGE.every[0]);
+        if (draw(s, e) < DODGE.flip) e.strafe = -e.strafe;
+      }
+      e.cooldown -= TICK;
+      if (e.kind === "charger") {
+        if (e.cooldown <= 0 && d < CHARGER.hitRadius + ENEMIES[foe.kind].radius + 0.4 && Math.abs(foe.pos.y - e.pos.y) < 1.6) {
+          e.cooldown = k.cooldown;
+          fightHeard(s, e);
+          damageRobot(s, foe, k.orbDmg, e);
+        }
+        break;
+      }
+      const eye = headOf(e);
+      const reach = Math.hypot(at.x - eye.x, at.y - eye.y, at.z - eye.z);
+      if (e.cooldown <= 0 && sees && reach < SIGHT[e.kind].range * sightScale(s) * AWARE.engagedRange) {
+        e.mode = "telegraph";
+        e.timer = k.telegraph;
+        leadAim(e, at, foe.vel);
+      }
+      break;
+    }
+    case "telegraph": {
+      windupStep(e, ux, uz);
+      e.timer -= TICK;
+      if (sees) leadAim(e, at, foe.vel);
+      if (e.timer <= 0) {
+        if (sees) {
+          e.mode = "fire";
+          e.timer = 0;
+          e.shotsLeft = k.shots;
+        } else {
+          e.mode = "move";
+          e.cooldown = 0.5;
+        }
+      }
+      break;
+    }
+    case "fire": {
+      windupStep(e, ux, uz);
+      e.timer -= TICK;
+      if (e.timer <= 0 && e.shotsLeft > 0) {
+        if (sees) leadAim(e, at, foe.vel);
+        fightHeard(s, e);
+        if (k.spread > 0) {
+          for (let i = 0; i < k.shots; i++) fireOrb(s, e, ((i - (k.shots - 1) / 2) * k.spread * Math.PI) / 180, false, foe);
+          e.shotsLeft = 0;
+        } else {
+          fireOrb(s, e, 0, false, foe);
+          e.shotsLeft--;
+          e.timer = k.shotGap;
+        }
+      }
+      if (e.shotsLeft <= 0) {
+        e.mode = "move";
+        e.cooldown = k.cooldown * (0.8 + draw(s, e) * 0.4);
+      }
+      break;
+    }
+  }
+}
+
+/**
  * A step through a wind-up or burst: sideways across the line to the target at
  * `DODGE.windup` of its speed (none for the kinds that plant their feet to fire).
  * `ux, uz` is the unit direction to the target.
@@ -560,18 +717,21 @@ function sightOn(e: Enemy, at: { x: number; z: number }, chestAt: Vec3): boolean
 function pinchSpot(s: State, e: Enemy, known: { x: number; z: number; live: boolean }): Point | null {
   const sq = s.squads[e.squad];
   if (!sq || !sq.engaged || e.elite) return null;
+  const mates = s.enemies.filter((o) => o.squad === e.squad && o.mode !== "spawning");
   // A pinch holds only while the squad sees the player: once they are lost, every member chases and sweeps.
   const pinned = known.live && (sq.pinT ?? 0) >= PINCH.after;
   // Backing away in sight: the squad goes round where the player is heading, not where they stand.
   const backing = !pinned && known.live && (sq.backT ?? 0) >= PINCH.retreat;
-  if (!pinned && !backing) return null;
-  const mates = s.enemies.filter((o) => o.squad === e.squad && o.mode !== "spawning");
+  // A squad of three or more out between the POIs splits from the start of the fight (see SPLIT).
+  const split = known.live && sq.poi < 0 && mates.length >= SPLIT.min && (sq.fightT ?? 0) >= SPLIT.after;
+  if (!pinned && !backing && !split) return null;
   if (mates.length < 2) return null;
   const walks = (o: Enemy) => (o.kind === "grunt" || o.kind === "charger" || o.kind === "drone") && (ENEMIES[o.kind].fly > 0 || (onTerrain(o.pos) && o.home.y <= groundLevel(o.home.x, o.home.z) + 0.6));
   if (!walks(e)) return null;
   // The front: a member that cannot go round if there is one, else the first of the squad.
   const lead = mates.find((o) => !walks(o)) ?? [...mates].sort((a, b) => a.id - b.id)[0];
   if (lead === e) return null;
+  if (split && !pinned && !backing) return splitSpot(e, lead, mates.filter((o) => o !== lead && walks(o)).sort((a, b) => a.id - b.id), known);
   const n = mates.filter((o) => o !== lead).sort((a, b) => a.id - b.id).indexOf(e);
   const v = sq.vel ?? { x: 0, z: 0 };
   const at = backing ? { x: known.x + v.x * PINCH.lead, z: known.z + v.z * PINCH.lead } : known;
@@ -584,6 +744,30 @@ function pinchSpot(s: State, e: Enemy, known: { x: number; z: number; live: bool
   for (const d of [PINCH.dist, PINCH.dist * 0.6]) {
     const x = at.x + (-lz / ll) * d * side;
     const z = at.z + (lx / ll) * d * side;
+    if (!steepAt(x, z) && terrainHeight(x, z) <= terrainHeight(known.x, known.z) + 1.5 && !solidAt(x, terrainHeight(x, z) + 1, z)) return { x, z };
+  }
+  return null;
+}
+
+/**
+ * Where member `e` of a squad that has split (see SPLIT) goes: none for the second front member of
+ * a squad of four or more, which holds the front with `lead`; for the others, in turn on either
+ * side, a point `SPLIT.dist` to the side of the spot the player is believed at and `SPLIT.back` of
+ * that beyond it, seen from the front. Nearer in, or none, where that is a cliff, high ground or
+ * inside something built.
+ */
+function splitSpot(e: Enemy, lead: Enemy, others: Enemy[], known: Point): Point | null {
+  const front = others.length >= 3 ? others.slice(0, 1) : [];
+  if (front.includes(e)) return null;
+  const n = others.filter((o) => !front.includes(o)).indexOf(e);
+  if (n < 0) return null;
+  const lx = known.x - lead.pos.x;
+  const lz = known.z - lead.pos.z;
+  const ll = Math.hypot(lx, lz) || 1;
+  const side = n % 2 ? -1 : 1;
+  for (const d of [SPLIT.dist, SPLIT.dist * 0.6]) {
+    const x = known.x + (-lz / ll) * d * side + (lx / ll) * d * SPLIT.back;
+    const z = known.z + (lx / ll) * d * side + (lz / ll) * d * SPLIT.back;
     if (!steepAt(x, z) && terrainHeight(x, z) <= terrainHeight(known.x, known.z) + 1.5 && !solidAt(x, terrainHeight(x, z) + 1, z)) return { x, z };
   }
   return null;
@@ -672,11 +856,38 @@ function toSegment(p: Point, a: Point, b: Point): number {
   return Math.hypot(p.x - a.x - dx * t, p.z - a.z - dz * t);
 }
 
+/*
+ * Each squad's robots, in the order of `s.enemies`, for `calm()`, which asks for them once per
+ * member every tick. `s.enemies` changes only by a push (a robot spawned) or by a new list (one
+ * destroyed), and a robot never changes squad, so the lists hold until its length or identity
+ * changes.
+ */
+let membersFrom: Enemy[] | null = null;
+let membersLength = -1;
+const bySquad = new Map<number, Enemy[]>();
+const NO_MEMBERS: Enemy[] = [];
+/** The robots of squad `squad`, as `s.enemies.filter((o) => o.squad === squad)` gives them. Read only. */
+function squadMembers(s: State, squad: number): readonly Enemy[] {
+  if (membersFrom !== s.enemies || membersLength !== s.enemies.length) {
+    membersFrom = s.enemies;
+    membersLength = s.enemies.length;
+    bySquad.clear();
+    for (const o of s.enemies) {
+      const list = bySquad.get(o.squad);
+      if (list) list.push(o);
+      else bySquad.set(o.squad, [o]);
+    }
+  }
+  return bySquad.get(squad) ?? NO_MEMBERS;
+}
+
 /** Out of combat: hold the post or walk the patrol; when alerted, go and look. */
 function calm(s: State, e: Enemy) {
   const k = ENEMIES[e.kind];
   const slow = k.speed * AWARE.idleSpeed;
   e.lookT += TICK;
+  // A wind-up or burst at a foe that is gone ends here.
+  if (e.mode !== "move" && e.mode !== "spawning") e.mode = "move";
   if (e.aware === "alert" && e.poi >= 0 && POIS[e.poi].boss) {
     // The boss arena holds its ground: it looks, but does not leave.
     e.searchT -= TICK;
@@ -688,7 +899,8 @@ function calm(s: State, e: Enemy) {
   }
   if (e.aware === "alert") {
     e.searchT -= TICK;
-    if (e.goal && dist2d(e.pos, e.goal) > 2.5) walkTo(e, huntStep(s, e, e.goal), slow * 1.4);
+    // A squad sent after the player (see SWEEP) goes at nearly its fighting speed.
+    if (e.goal && dist2d(e.pos, e.goal) > 2.5) walkTo(e, huntStep(s, e, e.goal), s.squads[e.squad]?.sweep ? k.speed * SWEEP.pace : slow * 1.4);
     else {
       moveBody(e, 0, 0);
       e.yaw += Math.sin(e.lookT * 1.3) * TICK * 1.6; // looking around
@@ -703,7 +915,7 @@ function calm(s: State, e: Enemy) {
   if (sq?.walk) {
     // A salvage crew or the retake squad walks to its point as a party walks to its stop, and
     // stands there looking round until the raid gives it another (world.ts).
-    const members = s.enemies.filter((o) => o.squad === e.squad);
+    const members = squadMembers(s, e.squad);
     const slot = members.indexOf(e);
     const to = { x: sq.walk.x + (slot % 2 ? 1.6 : -1.6) * Math.min(slot, 1), z: sq.walk.z + slot * 1.4 };
     const pace = Math.min(...members.map((o) => ENEMIES[o.kind].speed)) * (sq.crew ? CREW.pace : PARTY.pace);
@@ -718,7 +930,7 @@ function calm(s: State, e: Enemy) {
     // A hunting party walks to its stop by the ground's way, the first living member leading and
     // the others beside it, all at the pace of the slowest; there it stands and looks round
     // until stepParties() sends it on.
-    const members = s.enemies.filter((o) => o.squad === e.squad);
+    const members = squadMembers(s, e.squad);
     const slot = members.indexOf(e);
     const stop = PARTY_STOPS[sq.party.region][sq.party.stop];
     const to = { x: stop.x + (slot % 2 ? 1.6 : -1.6) * Math.min(slot, 1), z: stop.z + slot * 1.4 };
@@ -730,9 +942,21 @@ function calm(s: State, e: Enemy) {
     }
     return;
   }
+  if (sq?.ambush) {
+    // Waiting at a choke point for the player (see AMBUSH): there by the ground's way, then still, facing their side.
+    const members = squadMembers(s, e.squad);
+    const slot = members.indexOf(e);
+    const to = { x: sq.ambush.at.x + (slot % 2 ? 2.2 : -2.2) * Math.min(slot, 1), z: sq.ambush.at.z + slot * 1.8 };
+    if (dist2d(e.pos, to) > 1) walkTo(e, dist2d(e.pos, to) > STRAY ? homeStep(s, e, to) : to, slow * 1.6);
+    else {
+      moveBody(e, 0, 0);
+      turnTo(e, sq.ambush.face + Math.sin(e.lookT * 0.5) * 0.4, 2);
+    }
+    return;
+  }
   if (sq && sq.patrol.length && e.kind !== "titan") {
     // The first living member leads; the others follow at an offset.
-    const members = s.enemies.filter((o) => o.squad === e.squad);
+    const members = squadMembers(s, e.squad);
     const slot = members.indexOf(e);
     const wp = sq.patrol[sq.leg % sq.patrol.length];
     const to = { x: wp.x + (slot % 2 ? 1.6 : -1.6) * Math.min(slot, 1), z: wp.z + slot * 1.4 };
@@ -856,25 +1080,55 @@ function fromCover(s: State, e: Enemy, known: { x: number; z: number; live: bool
 /** Keep walkers from stacking into one blob. */
 /** Coarse cells for `separate()`: robots more than a cell apart cannot touch. */
 const SEP_CELL = 8;
+/** Each walker's cell for `separate()`, kept between ticks so a tick allocates none. */
+let sepX = new Int32Array(256);
+let sepZ = new Int32Array(256);
 function separate(s: State) {
   const list = s.enemies.filter((e) => ENEMIES[e.kind].fly === 0 && e.mode !== "spawning");
-  const cx = list.map((e) => Math.floor(e.pos.x / SEP_CELL));
-  const cz = list.map((e) => Math.floor(e.pos.z / SEP_CELL));
-  for (let i = 0; i < list.length; i++)
-    for (let j = i + 1; j < list.length; j++) {
-      if (Math.abs(cx[i] - cx[j]) > 1 || Math.abs(cz[i] - cz[j]) > 1) continue;
-      const a = list[i];
-      const b = list[j];
-      const r = ENEMIES[a.kind].radius + ENEMIES[b.kind].radius;
-      const dx = b.pos.x - a.pos.x;
-      const dz = b.pos.z - a.pos.z;
-      const d = Math.hypot(dx, dz);
-      // Robots on different floors (a tower's tiers) do not touch.
-      if (d >= r || d < 1e-4 || Math.abs(a.pos.y - b.pos.y) > 1) continue;
-      const push = (r - d) / 2;
-      nudge(a, (-dx / d) * push, (-dz / d) * push);
-      nudge(b, (dx / d) * push, (dz / d) * push);
+  const pair = (a: Enemy, b: Enemy) => {
+    const r = ENEMIES[a.kind].radius + ENEMIES[b.kind].radius;
+    const dx = b.pos.x - a.pos.x;
+    const dz = b.pos.z - a.pos.z;
+    const d = Math.hypot(dx, dz);
+    // Robots on different floors (a tower's tiers) do not touch.
+    if (d >= r || d < 1e-4 || Math.abs(a.pos.y - b.pos.y) > 1) return;
+    const push = (r - d) / 2;
+    nudge(a, (-dx / d) * push, (-dz / d) * push);
+    nudge(b, (dx / d) * push, (dz / d) * push);
+  };
+  // The cells are fixed before any robot is nudged.
+  const n = list.length;
+  if (sepX.length < n) {
+    sepX = new Int32Array(n * 2);
+    sepZ = new Int32Array(n * 2);
+  }
+  let whole = true;
+  for (let i = 0; i < n; i++) {
+    const x = Math.floor(list[i].pos.x / SEP_CELL);
+    const z = Math.floor(list[i].pos.z / SEP_CELL);
+    // A cell that is not a small whole number (a robot off the world, or not a number) is not kept as one.
+    if (!(Math.abs(x) < 1e9 && Math.abs(z) < 1e9)) whole = false;
+    sepX[i] = x;
+    sepZ[i] = z;
+  }
+  if (!whole) {
+    const cx = list.map((e) => Math.floor(e.pos.x / SEP_CELL));
+    const cz = list.map((e) => Math.floor(e.pos.z / SEP_CELL));
+    for (let i = 0; i < n; i++)
+      for (let j = i + 1; j < n; j++) {
+        if (Math.abs(cx[i] - cx[j]) > 1 || Math.abs(cz[i] - cz[j]) > 1) continue;
+        pair(list[i], list[j]);
+      }
+    return;
+  }
+  for (let i = 0; i < n; i++) {
+    const xi = sepX[i];
+    const zi = sepZ[i];
+    for (let j = i + 1; j < n; j++) {
+      if (Math.abs(xi - sepX[j]) > 1 || Math.abs(zi - sepZ[j]) > 1) continue;
+      pair(list[i], list[j]);
     }
+  }
 }
 
 /** Shift a walker sideways, but never into a wall or off the floor it stands on. */
@@ -1039,6 +1293,24 @@ export function stepOrbs(s: State) {
   const c = chest(s);
   // A hit can wipe the squad, and wipe() clears the air; do not write the old list back over it.
   const wipes = s.stats.wipes;
+  // The robots a shot at the other faction may hit, by 8 m square, gathered once there is such a shot (see FACTION).
+  let targets: Map<number, Enemy[]> | null = null;
+  const square = (x: number, z: number) => (Math.floor(x / 8) + 4096) * 8192 + (Math.floor(z / 8) + 4096);
+  const robotsNear = (x: number, z: number): Enemy[] => {
+    if (!targets) {
+      targets = new Map();
+      for (const v of s.enemies) {
+        if (v.poi >= 0 || v.kind === "titan" || v.mode === "spawning") continue;
+        const k = square(v.pos.x, v.pos.z);
+        const l = targets.get(k);
+        if (l) l.push(v);
+        else targets.set(k, [v]);
+      }
+    }
+    const out: Enemy[] = [];
+    for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) out.push(...(targets.get(square(x + dx * 8, z + dz * 8)) ?? []));
+    return out;
+  };
   const kept = s.orbs.filter((o) => {
     // Once a hit has wiped the squad, the rest of the air is gone: nothing may hit the team at the entry.
     if (s.stats.wipes !== wipes) return false;
@@ -1069,6 +1341,19 @@ export function stepOrbs(s: State) {
     const onAlly = allyUp(s) ? sweptHit(from, o.pos, o.r + ALLY.radius, s.ally.pos, 1.7) : null;
     const playerHit = onPlayer && clear(onPlayer.at) ? onPlayer : null;
     const allyHit = onAlly && clear(onAlly.at) ? onAlly : null;
+    // A shot at the other faction hits its robots too: the first body along the way takes it.
+    let robot: { v: Enemy; s: number } | null = null;
+    if (o.by !== undefined)
+      for (const v of robotsNear(o.pos.x, o.pos.z)) {
+        if (!!v.rogue === !!o.rogue || !s.enemies.includes(v)) continue;
+        const k = ENEMIES[v.kind];
+        const h = sweptHit(from, o.pos, o.r + k.radius, v.pos, bodyHeight(k));
+        if (h && (!robot || h.s < robot.s) && clear(h.at)) robot = { v, s: h.s };
+      }
+    if (robot && (!playerHit || robot.s < playerHit.s) && (!allyHit || robot.s < allyHit.s)) {
+      damageRobot(s, robot.v, o.dmg, s.enemies.find((e) => e.id === o.by) ?? null);
+      return false;
+    }
     if (allyHit && (!playerHit || allyHit.s < playerHit.s)) {
       hurtAlly(s, o.dmg);
       return false;

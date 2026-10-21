@@ -1,3 +1,4 @@
+import { spawnEnemy } from "./sim/enemies";
 import { AWARE, PLAYER, RELAY, TICK, VALUABLES, WEAPONS } from "./sim/config";
 import { Bot, SKILLS } from "./sim/bot";
 import { collide, groundAt } from "./sim/geom";
@@ -619,6 +620,7 @@ declare global {
     ringfallTerrain: (x: number, z: number) => number;
     ringfallFrames: () => Record<string, { x: number; z: number }>;
     ringfallPlace: (x: number, z: number, yaw: number) => void;
+    ringfallFight: (x: number, z: number, apart?: number) => { x: number; z: number }[];
     ringfallContract: {
       take: (type: string) => string | null;
       destroyTarget: () => number;
@@ -687,8 +689,10 @@ window.render_game_to_text = () => {
     awaitAlly: p.awaitAlly,
     region: s.region,
     extract: { ship: +callLeft(s, "ship").toFixed(1), boat: +callLeft(s, "boat").toFixed(1), hold: +s.extractTime.toFixed(1), at: s.extractedAt, flares: p.flares },
-    enemies: s.enemies.map((e) => ({ kind: e.kind, x: Math.round(e.pos.x), z: Math.round(e.pos.z), y: +e.pos.y.toFixed(1), hp: Math.round(e.hp + e.shield), mode: e.mode, aware: e.aware, detect: +e.detect.toFixed(2), squad: e.squad, target: e.target, ...(e.plate ? { plate: e.plate } : {}) })),
-    squads: s.squads.map((q) => ({ name: q.name, poi: q.poi, engaged: q.engaged, lost: q.engaged && q.sinceSeen >= AWARE.trackTime })),
+    enemies: s.enemies.map((e) => ({ kind: e.kind, x: Math.round(e.pos.x), z: Math.round(e.pos.z), y: +e.pos.y.toFixed(1), hp: Math.round(e.hp + e.shield), mode: e.mode, aware: e.aware, detect: +e.detect.toFixed(2), squad: e.squad, target: e.target, ...(e.plate ? { plate: e.plate } : {}), ...(e.rogue ? { rogue: true } : {}) })),
+    squads: s.squads.map((q) => ({ name: q.name, poi: q.poi, engaged: q.engaged, lost: q.engaged && q.sinceSeen >= AWARE.trackTime, ...(q.rogue ? { rogue: true } : {}), ...(q.mobile ? { mobile: true } : {}), ...(q.foe !== undefined ? { foe: q.foe } : {}), ...(q.ambush ? { ambush: true } : {}) })),
+    territory: s.territory,
+    contacts: s.contacts.map((c) => ({ squad: c.squad, x: c.x, z: c.z, age: +(s.time - c.t).toFixed(1), rogue: c.rogue, fight: c.fight })),
     orbs: s.orbs.length,
     // The first robot shot in the air, for a screenshot of one in flight.
     bolt: s.orbs[0] ? { x: s.orbs[0].pos.x, y: s.orbs[0].pos.y, z: s.orbs[0].pos.z, vx: s.orbs[0].vel.x, vy: s.orbs[0].vel.y, vz: s.orbs[0].vel.z } : null,
@@ -786,6 +790,28 @@ window.ringfallPlace = (x, z, yaw) => {
 
 /** The player's exact view yaw (render_game_to_text rounds it away). */
 window.ringfallYaw = () => state.player.yaw;
+
+/**
+ * Automation only: two squads of the factions set down `apart` metres either side of (x, z) on the
+ * ground, facing each other and each set on the other (see FACTION), for a screenshot of a fight
+ * between them. Returns where each squad stands.
+ */
+window.ringfallFight = (x, z, apart = 34) => {
+  const s = state;
+  const at: { x: number; z: number }[] = [];
+  for (const rogue of [false, true]) {
+    const index = s.squads.length;
+    const cx = x + (rogue ? apart / 2 : -apart / 2);
+    s.squads.push({ name: rogue ? "野良機" : "網", poi: -1, patrol: [], leg: 0, engaged: false, roam: false, rogue: rogue || undefined, sinceSeen: 0, last: { x: 0, z: 0 } });
+    for (const [k, kind] of (["grunt", "grunt", "drone"] as const).entries()) spawnEnemy(s, kind, cx, z + (k - 1) * 3, -1, index, { face: rogue ? -Math.PI / 2 : Math.PI / 2, rogue });
+    at.push({ x: cx, z });
+  }
+  const [a, b] = [s.squads.length - 2, s.squads.length - 1];
+  s.squads[a].foe = s.enemies.find((e) => e.squad === b)?.id;
+  s.squads[b].foe = s.enemies.find((e) => e.squad === a)?.id;
+  s.squads[a].foeT = s.squads[b].foeT = 0;
+  return at;
+};
 
 window.ringfallBot = (skill: string) => {
   bot = new Bot(SKILLS.find((k) => k.name === skill) ?? SKILLS[1], 31);

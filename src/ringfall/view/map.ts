@@ -1,10 +1,10 @@
-import { DEPOT, NETWORK, RELAY, WORLD } from "../sim/config";
-import { BOXES, DEBRIS_SPOTS, debrisIndex, DEPOTS, ENTRIES, EXTRACTS, LANDMARKS, POIS, REGIONS, regionOf, RELAYS, relayIndex, ROUTES, regionHere, type EntryId, type PoiId, type RegionId, type RouteId } from "../sim/map";
+import { DEPOT, FACTION, NETWORK, RELAY, WORLD } from "../sim/config";
+import { BOXES, DEBRIS_SPOTS, debrisIndex, DEPOTS, ENTRIES, EXTRACTS, LANDMARKS, OUTPOST_SITES, POIS, REGIONS, regionOf, RELAYS, relayIndex, ROUTES, regionHere, territory, type EntryId, type Faction, type OutpostId, type PoiId, type RegionId, type RouteId } from "../sim/map";
 import { HOLD_NAME, type IslandEvent, type PoiHold } from "../sim/island";
 import { STREETS } from "../sim/streets";
 import { worldKey } from "../sim/routes";
 import { DAM_FACE, floorLevel, groundOf, highGround, LEVEL, steepAt, surfaceAt, terrainHeight, type Ground } from "../sim/terrain";
-import { cellOf, decodeSeen, exploreSize, type Ally, type Player, type RelayMast, type State } from "../sim/state";
+import { cellOf, decodeSeen, exploreSize, type Ally, type Contact, type Player, type RelayMast, type State } from "../sim/state";
 import { PAL } from "./models";
 import type { ContractMark } from "../meta/contracts";
 
@@ -38,6 +38,8 @@ const css = (c: number) => `#${c.toString(16).padStart(6, "0")}`;
  */
 export const HOLD_CSS: Record<PoiHold, string> = { held: "#b8412f", thin: "#d4892c", freed: "#3f7cae" };
 export const TITAN_CSS = "#262d52";
+/** The rogues' (野良機) amber, as their eyes burn: their outposts are squares, apart from the thin POIs' discs and the ways off' yellow diamonds. */
+export const ROGUE_CSS = "#e8a628";
 
 /**
  * What the map draws: a raid's state, or the camp's picture of the island between raids (the
@@ -54,6 +56,11 @@ export type MapScene = Pick<State, "seen" | "cleared" | "hold" | "depots" | "rou
   crews?: readonly { x: number; z: number }[];
   /** The highest threat each POI was freed at (by POI index), shown by its mark when above 0. */
   best?: readonly number[];
+  /** Who holds each outpost (`territory()`): the rogues' are marked in their yellow. */
+  territory?: Record<OutpostId, Faction>;
+  /** The squads the player has seen or heard out between the POIs, and the raid's clock they are timed by. */
+  contacts?: readonly Contact[];
+  time?: number;
 };
 
 /** The camp's picture of the island between raids, from the profile's explored map, depots, routes and POI standings. */
@@ -71,6 +78,7 @@ export function islandScene(p: { seen: string; depots: readonly PoiId[]; routes:
     relays: p.network >= NETWORK.relayAt ? RELAYS.map((r) => ({ id: r.id, hp: RELAY.hp })) : [],
     debris: spot && { x: spot.x, z: spot.z, open: false },
     best: POIS.map((o) => p.freedAt?.[o.id] ?? 0),
+    territory: territory(p.network),
   };
 }
 
@@ -503,6 +511,59 @@ export class IslandMap {
       g.lineWidth = 1.5 * dpr;
       g.strokeRect(p.x - r, p.y - r, r * 2, r * 2);
       g.fillRect(p.x - r, p.y - r, r * 2, r * 2);
+    }
+    // The outposts: a square in the colour of the faction that holds it, the rogues' named.
+    for (const o of OUTPOST_SITES) {
+      const rogue = s.territory?.[o.id] === "rogue";
+      const p = at(o.x, o.z);
+      const r = 4.5 * dpr;
+      g.save();
+      g.lineWidth = 2 * dpr;
+      g.strokeStyle = "rgba(20,24,40,0.9)";
+      g.fillStyle = rogue ? ROGUE_CSS : HOLD_CSS.held;
+      g.strokeRect(p.x - r, p.y - r, r * 2, r * 2);
+      g.fillRect(p.x - r, p.y - r, r * 2, r * 2);
+      g.restore();
+      if (!rogue) continue;
+      const text = `${o.name}（野良機）`;
+      const spot = box(text, p.x, p.y + 12 * dpr, 9);
+      if (free(spot)) {
+        taken.push(spot);
+        label(text, p.x, p.y + 12 * dpr, ROGUE_CSS, 9);
+      }
+    }
+    // Squads seen or heard out between the POIs, fading over `FACTION.keep`: a dot in their
+    // faction's colour where they were, and a burst where the factions were heard fighting.
+    for (const c of s.contacts ?? []) {
+      const age = (s.time ?? c.t) - c.t;
+      const p = at(c.x, c.z);
+      g.save();
+      g.globalAlpha = Math.max(0.25, 1 - age / FACTION.keep);
+      g.fillStyle = c.rogue ? ROGUE_CSS : "#ff5a4f";
+      g.strokeStyle = "rgba(20,24,40,0.9)";
+      g.lineWidth = 1.5 * dpr;
+      g.beginPath();
+      if (c.fight) {
+        const r0 = 3 * dpr;
+        const r1 = 7 * dpr;
+        for (let k = 0; k < 16; k++) {
+          const a = (k / 16) * Math.PI * 2;
+          const r = k % 2 ? r0 : r1;
+          if (k) g.lineTo(p.x + Math.cos(a) * r, p.y + Math.sin(a) * r);
+          else g.moveTo(p.x + Math.cos(a) * r, p.y + Math.sin(a) * r);
+        }
+        g.closePath();
+      } else g.arc(p.x, p.y, 3 * dpr, 0, Math.PI * 2);
+      g.fill();
+      g.stroke();
+      g.restore();
+      if (c.fight && age < 20) {
+        const spot = box("交戦", p.x, p.y - 11 * dpr, 9);
+        if (free(spot)) {
+          taken.push(spot);
+          label("交戦", p.x, p.y - 11 * dpr, "#ffe2a8", 9);
+        }
+      }
     }
     // Each POI's mark at its centre, coloured by who holds it: a disc, or the titan's hexagon.
     POIS.forEach((poi, i) => {
