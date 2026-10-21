@@ -5,6 +5,7 @@ import { stepCrews, stepDepots, stepEntries, stepExtract, stepHome, stepLoot, st
 import { TICK } from "./config";
 import type { Input, State } from "./state";
 import { useRoutes } from "./routes";
+import { stepAmbush, stepContacts, stepFactions, stepMobiles, stepSweep } from "./factions";
 
 /** Read afresh: each system may have ended the raid. */
 const ended = (s: State) => s.phase === "done";
@@ -20,6 +21,7 @@ export function step(s: State, input: Input, prevCrouch: boolean) {
     (s) => stepPlayer(s, input, prevCrouch),
     tickReveal,
     stepAlly,
+    stepFactions,
     stepEnemies,
     stepOrbs,
     stepWaves,
@@ -27,11 +29,15 @@ export function step(s: State, input: Input, prevCrouch: boolean) {
     stepPoi,
     stepReinforce,
     stepParties,
+    stepMobiles,
+    stepAmbush,
+    stepSweep,
     stepCrews,
     stepExtract,
     stepDepots,
     stepHome,
     stepEntries,
+    stepContacts,
   ];
   for (const run of systems) {
     run(s);

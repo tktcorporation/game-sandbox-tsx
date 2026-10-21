@@ -1,4 +1,5 @@
-import { AWARE, DEG, FLANK, NOISE, PINCH, PURSUE, RETURN, SIGHT, TICK } from "./config";
+import { AWARE, BAG, DEG, ENEMIES, FLANK, INTERCEPT, NOISE, PATROL, PINCH, PURSUE, RETURN, SIGHT, TICK, VALUABLES } from "./config";
+import { EXTRACTS, POIS, regionHere } from "./map";
 import { dist2d, los, lookAngles, solidAt, wrapAngle } from "./geom";
 import { steepAt, terrainHeight } from "./terrain";
 import { sightScale, weakY, type Enemy, type Point, type State, type Vec3 } from "./state";
@@ -75,6 +76,10 @@ export function engageSquad(s: State, squad: number, by: Enemy, from?: { x: numb
   sq.backT = 0;
   sq.chase = sq.chaseDir = undefined;
   sq.hold = 0;
+  sq.fightT = 0;
+  // Fighting the player, it leaves the other faction be (see FACTION).
+  sq.foe = sq.foeAt = undefined;
+  sq.ambush = undefined;
   // Each member gets a moment to react, the nearest to the player first (AWARE.react), and opens fire from where it stands.
   const byNear = chasers(s, squad).sort((a, b) => dist2d(a.pos, s.player.pos) - dist2d(b.pos, s.player.pos));
   byNear.forEach((e, n) => {
@@ -93,13 +98,17 @@ export function engageSquad(s: State, squad: number, by: Enemy, from?: { x: numb
   s.events.push({ t: "engage", squad, id: by.id });
 }
 
-/** Send a squad to look at a spot (the "?" state). */
-export function alertSquad(s: State, squad: number, x: number, z: number, by: Enemy) {
+/**
+ * Send a squad to look at a spot (the "?" state). `player` says the spot is where the player made
+ * a sound: a squad that moves about makes for where they are heading instead (`interceptSpot()`).
+ */
+export function alertSquad(s: State, squad: number, x: number, z: number, by: Enemy, player = false) {
   if (by.aware === "idle") s.events.push({ t: "suspect", id: by.id });
+  const goal = player ? interceptSpot(s, squad, x, z) : { x, z };
   for (const e of s.enemies) {
     if (e.squad !== squad || e.aware === "engaged") continue;
     e.aware = "alert";
-    e.goal = { x, z };
+    e.goal = { ...goal };
     e.searchT = AWARE.searchTime;
     e.detect = Math.max(e.detect, AWARE.suspicious);
   }
@@ -127,9 +136,66 @@ export function makeNoise(s: State, x: number, z: number, radius: number, gunfir
     if (d < radius * NOISE.engageInside && los(headOf(e), spot) && mayEngage(s, e)) engageSquad(s, e.squad, e, player ? undefined : { x, z });
     else if (!alerted.has(e.squad)) {
       alerted.add(e.squad);
-      alertSquad(s, e.squad, x, z, e);
+      alertSquad(s, e.squad, x, z, e, player);
     }
   }
+}
+
+/**
+ * Where a squad that moves about (out on the roads, on a walk, a hunting party or a squad beamed
+ * in to hunt) makes for when told the player is at (x, z): where they are heading (see INTERCEPT),
+ * as far ahead as it takes the squad to walk there. A squad posted at a POI or an outpost, or a
+ * player not heading anywhere, gives (x, z).
+ */
+export function interceptSpot(s: State, squad: number, x: number, z: number): Point {
+  const sq = s.squads[squad];
+  const here = { x, z };
+  if (!sq || !(sq.roam || sq.hunt || sq.party || sq.mobile)) return here;
+  const mates = s.enemies.filter((e) => e.squad === squad && e.mode !== "spawning");
+  if (!mates.length) return here;
+  const p = s.player;
+  const speed = Math.hypot(p.vel.x, p.vel.z);
+  let dir: Point | null = null;
+  let pace = INTERCEPT.pace;
+  if (speed > INTERCEPT.minSpeed) {
+    dir = { x: p.vel.x / speed, z: p.vel.z / speed };
+    pace = speed;
+  } else {
+    const to = headedFor(s);
+    const d = to ? Math.hypot(to.x - x, to.z - z) : 0;
+    if (to && d > 10) dir = { x: (to.x - x) / d, z: (to.z - z) / d };
+  }
+  if (!dir) return here;
+  let cx = 0;
+  let cz = 0;
+  for (const e of mates) {
+    cx += e.pos.x / mates.length;
+    cz += e.pos.z / mates.length;
+  }
+  const walk = Math.min(...mates.map((e) => ENEMIES[e.kind].speed)) * AWARE.idleSpeed * 1.4;
+  const t = Math.max(INTERCEPT.lead[0], Math.min(INTERCEPT.lead[1], Math.hypot(cx - x, cz - z) / Math.max(walk, 0.5)));
+  const ahead = Math.min(INTERCEPT.max, pace * t);
+  const g = terrainHeight(x, z);
+  for (const f of [1, 0.66, 0.33]) {
+    const ax = x + dir.x * ahead * f;
+    const az = z + dir.z * ahead * f;
+    if (standable(ax, az) && Math.abs(terrainHeight(ax, az) - g) < 4) return { x: ax, z: az };
+  }
+  return here;
+}
+
+/**
+ * Where a player standing still is believed to be heading: the nearest way off of the region they
+ * are in once their bag is half full or the raiders are due within a minute; null otherwise (one
+ * standing at a POI, looting or fighting, is where they are).
+ */
+function headedFor(s: State): Point | null {
+  const p = s.player;
+  const region = regionHere(p.pos);
+  const near = <T extends Point>(list: T[]) => list.sort((a, b) => dist2d(a, p.pos) - dist2d(b, p.pos))[0] ?? null;
+  const load = p.haul.reduce((n, k) => n + VALUABLES[k].size, 0);
+  if (load * 2 >= BAG.slots || s.raiderT < 60) return near(EXTRACTS.filter((q) => region.exits.includes(q.id)));
+  return null;
 }
 
 /**
@@ -149,7 +215,7 @@ export function sense(s: State, e: Enemy): boolean {
     const engaged = e.aware === "engaged";
     // A storm shortens every robot's sight alike: its kind's, a pack's, and the range it answers from.
     const scale = sightScale(s);
-    let range = (sq?.sight ?? sight.range) * scale * (engaged ? AWARE.engagedRange : low ? AWARE.crouchRange * modScale(p, "hush") : 1);
+    let range = (sq?.sight ?? sight.range) * scale * (engaged ? AWARE.engagedRange : low ? AWARE.crouchRange * modScale(p, "hush") : 1) * (sq?.mobile && !engaged ? PATROL.sight : 1);
     if (engaged && answering(s, e)) range = Math.max(range, returnRange(s, e));
     let inView = d < AWARE.closeSense;
     if (!inView && d < range) {
@@ -369,6 +435,7 @@ export function stepSquads(s: State) {
       members.some((e) => e.cover && e.aware === "engaged" && located(s, e));
     if (holds) sq.hold = (sq.hold ?? 0) + TICK;
     else sq.sinceSeen += TICK;
+    if (live) sq.fightT = (sq.fightT ?? 0) + TICK;
     sq.chaseT = (sq.chaseT ?? 0) + TICK;
     // Sight lost this tick: go after where the player was heading.
     if (sq.sinceSeen >= AWARE.trackTime && !sq.chase) chaseTo(s, i, aheadOfSighting(sq));

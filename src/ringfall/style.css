@@ -2360,6 +2360,10 @@ body.touch #title h1 {
 #map .map-key.freed {
   color: #3f7cae;
 }
+/* The rogues' outposts (view/map.ts ROGUE_CSS). */
+#map .map-key.rogue {
+  color: #e8a628;
+}
 /* The titan's navy, lightened to read on the dark under the map. */
 #map .map-key.titan {
   color: #7f89c4;

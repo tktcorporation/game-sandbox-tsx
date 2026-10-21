@@ -463,3 +463,30 @@ export function cellAt(x: number, z: number): { open: boolean; height: number; m
   const k = idxZ(z) * NX + idxX(x);
   return { open: !!open[k], height: height[k], main: !!main[k] };
 }
+
+/**
+ * The way a walker takes on the ground from `a` to `b`, as points down the field toward `b` (a
+ * cell's centre every `every` cells), ending at `b`; just `[b]` when no way leads there. For walks
+ * fixed in advance (a patrol's, see `MOBILES`): it builds a field, so a caller that must leave the
+ * fields as they were forgets them after (`forgetFields()`).
+ */
+export function walkLine(a: { x: number; z: number }, b: { x: number; z: number }, every = 3): { x: number; z: number }[] {
+  const f = fieldTo(b.x, b.z, Math.max(80, Math.hypot(b.x - a.x, b.z - a.z) * 3 + 40));
+  if (!f) return [b];
+  const { open, height } = grid();
+  let k = openCell(a.x, a.z);
+  if (k < 0 || !Number.isFinite(f.dist[k])) return [b];
+  const out: { x: number; z: number }[] = [];
+  for (let n = 1; n < 20_000 && k !== f.target; n++) {
+    let best = k;
+    for (let q0 = 0; q0 < 8; q0++) {
+      const q = steps(open, height, k, q0);
+      if (q >= 0 && f.dist[q] < f.dist[best]) best = q;
+    }
+    if (best === k) break;
+    k = best;
+    if (n % every === 0) out.push({ x: centreX(k % NX), z: centreZ((k - (k % NX)) / NX) });
+  }
+  out.push({ x: b.x, z: b.z });
+  return out;
+}

@@ -95,6 +95,7 @@ export const CUES: Cue[] = [
   { id: "depot-on", label: "中継ボックス起動", group: "拾う", run: () => sfx.depotOn() },
   { id: "deposit", label: "倉庫へ送る", group: "拾う", run: () => sfx.deposit() },
   ...ROBOTS.map(([k, n]) => ({ id: `enemy-fire-${k}`, label: `${n}の射撃（正面 12 m）`, group: "敵", run: () => walls(null, () => sfx.enemyFire(around(0, 12), k)) })),
+  { id: "far-fire", label: "遠くの撃ち合い（200 m）", group: "敵", run: () => walls(null, () => sfx.farFire(around(40, 200, 2), "grunt")) },
   { id: "telegraph", label: "予兆（右 8 m）", group: "敵", run: () => walls(null, () => sfx.telegraph(false, around(90, 8))) },
   { id: "telegraph-big", label: "予兆・大（左 12 m）", group: "敵", run: () => walls(null, () => sfx.telegraph(true, around(270, 12))) },
   { id: "lunge", label: "突進（後ろ 6 m）", group: "敵", run: () => walls(null, () => sfx.lunge(around(180, 6))) },

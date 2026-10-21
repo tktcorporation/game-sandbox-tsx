@@ -74,6 +74,15 @@ export const PAL = {
   ring: 0xff5a2a,
   /** Raiders' armour: the plain robots' navy turned a dark red, so the elite squad reads at a glance. */
   eliteArmor: 0x6a1f2a,
+  /**
+   * The rogues (野良機): the same robots off the network, their navy weathered to a dull amber and
+   * their eyes and bolts burning yellow-orange in place of the network's red and magenta, so a
+   * rogue reads apart at any distance its eye or its fire is seen.
+   */
+  rogueArmor: 0x8a6526,
+  rogueArmorLight: 0xb38a3e,
+  rogueEye: 0xffb21f,
+  rogueOrb: 0xffc23a,
   hot: 0xffe23d,
   white: 0xffffff,
   gun: 0x2b2f38,

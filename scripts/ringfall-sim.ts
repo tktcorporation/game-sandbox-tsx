@@ -69,6 +69,9 @@ import { analyse, setThreat } from "../src/ringfall/meta/profile";
 import { raidClock } from "../src/ringfall/sim/state";
 import { netChangeText } from "../src/ringfall/meta/island";
 import { pacing, type Pool } from "./ringfall-pacing";
+import { MOBILES, OUTPOST_SITES } from "../src/ringfall/sim/map";
+import { beatOf, mobileWalk, placeMobile } from "../src/ringfall/sim/factions";
+import { interceptSpot } from "../src/ringfall/sim/awareness";
 import { campaignLines, campaigns, DAYS } from "./ringfall-campaign";
 import { playTable, summarize, type RaidResult, type TableResult } from "./ringfall-table";
 import type { RaidJob } from "./ringfall-table-worker";
@@ -172,6 +175,26 @@ function checkLayout(): string[] {
     point(`depot ${d.poi} start`, +(d.x - Math.sin(d.yaw) * DEPOT.back).toFixed(2), +(d.z + Math.cos(d.yaw) * DEPOT.back).toFixed(2), d.y);
   }
   ROAMERS.forEach((sq) => squad(`roamer ${sq.name}`, sq));
+  // Each walk (`MOBILES`) runs from node to node over the main ground of its region: its nodes stand
+  // on the floor, every point of its walk is on the ground a walker's field covers, and no step of it
+  // is longer than a few cells (each leg found a way). A beat's squad stands in its POI's garrison.
+  for (const m of MOBILES) {
+    for (const [x, z] of m.nodes) {
+      // A node lies on the open ground between the areas, not on an area's pressed floor: on the ground as it lies.
+      point(`walk ${m.name} node`, x, z, terrainHeight(x, z));
+      if (regionHere({ x, z }).id !== m.region) bad.push(`walk ${m.name}: node ${x},${z} lies in ${regionHere({ x, z }).id}, not ${m.region}`);
+    }
+    const walk = mobileWalk(m);
+    walk.forEach((q, i) => {
+      if (!onMainGround(q.x, q.z)) bad.push(`walk ${m.name}: point ${q.x.toFixed(0)},${q.z.toFixed(0)} is off the main ground`);
+      const next = walk[(i + 1) % walk.length];
+      if (dist2d(q, next) > 14) bad.push(`walk ${m.name}: a step of ${dist2d(q, next).toFixed(0)} m from ${q.x.toFixed(0)},${q.z.toFixed(0)} (no way between its nodes)`);
+    });
+    if (m.from && !POIS[poiIndex(m.from.poi)].squads.some((sq) => sq.name === m.from!.squad && !isVaultGuard(sq))) bad.push(`walk ${m.name}: ${m.from.poi} has no squad ${m.from.squad} to walk it (or it is the vault guard)`);
+    if (!m.from && !m.members?.length) bad.push(`walk ${m.name}: no members`);
+  }
+  // Every outpost's guards stand on its floor (they are among ROAMERS), and the territory names every outpost.
+  for (const o of OUTPOST_SITES) if (!ROAMERS.some((sq) => sq.name === o.guard)) bad.push(`outpost ${o.id}: no guard squad ${o.guard}`);
   // A relay mast stands on open ground of its region, clear of every box and every POI, with its guards at its foot.
   for (const r of RELAYS) {
     point(`relay mast ${r.id}`, r.x, r.z);
@@ -1898,9 +1921,11 @@ function checkIsland(): string | null {
   if (JSON.stringify(plain.enemies) !== JSON.stringify(allHeld.enemies) || plain.rng !== allHeld.rng) return "island scenario: a raid with every POI held is not the raid with no island given";
   const mixed = { ...newIsland(), supply: { state: "thin" as const, lastVisit: 1 }, quarry: { state: "freed" as const, lastVisit: 1 }, pad: { state: "freed" as const, lastVisit: 1 } };
   const m = newRun(77, freeKit(), "reservoir", { island: holds({ poiState: mixed }) });
-  const full = (i: number) => POIS[i].squads.reduce((n, sq) => n + sq.members.length, 0);
+  // A POI's squads that walk a beat (`MOBILES`) are out on it, not counted among the POI's own.
+  const posted = (i: number, list: Squad[]) => list.filter((sq) => !beatOf(POIS[i].id, sq.name)).reduce((n, sq) => n + sq.members.length, 0);
+  const full = (i: number) => posted(i, POIS[i].squads);
   const thinSquads = garrison(SUPPLY, "thin", 77);
-  const want = thinSquads.reduce((n, sq) => n + sq.members.length, 0);
+  const want = posted(SUPPLY, thinSquads);
   if (thinSquads.length !== Math.ceil(POIS[SUPPLY].squads.length * ISLAND.thinKeep) || !thinSquads.some(isVaultGuard)) return `island scenario: a thin supply depot keeps ${thinSquads.map((sq) => sq.name).join()}`;
   if (count(m, SUPPLY) !== want || want >= full(SUPPLY) || !m.enemies.some((e) => e.poi === SUPPLY && e.plate > 0)) return `island scenario: a thin supply depot stands ${count(m, SUPPLY)} robots (want ${want} of ${full(SUPPLY)}, the vault guard among them)`;
   if (garrison(SUPPLY, "thin", 77).map((sq) => sq.name).join() !== thinSquads.map((sq) => sq.name).join()) return "island scenario: a thin garrison is not fixed by the seed";
@@ -2647,6 +2672,164 @@ function checkPinch(): string | null {
     }
   }
   if (widest < 60 * (Math.PI / 180)) return `pinch scenario: after 14 s standing still, the widest grunt was ${(widest * 180 / Math.PI).toFixed(0)} deg off the front grunt`;
+  return null;
+}
+
+/**
+ * The walks (`MOBILES`): each region's, walked alone and all of one faction for 240 s with the
+ * player away in the other region, keep going along their loops (each leader passes 20 points of
+ * its walk or more), and none is held up for good.
+ */
+function checkPatrols(): string | null {
+  for (const region of REGIONS) {
+    const s = padRun();
+    s.ally.active = false;
+    s.squads = [];
+    const away = REGIONS.find((r) => r.id !== region.id)!;
+    const far = POIS[poiIndex(away.pois[0])];
+    s.player.pos = { x: far.entry.x, y: groundAt(far.entry.x, far.entry.z, 0.4, terrainHeight(far.entry.x, far.entry.z) + 2), z: far.entry.z };
+    const kindsOf = (m: (typeof MOBILES)[number]): EnemyKind[] => m.members ?? POIS[poiIndex(m.from!.poi)].squads.find((sq) => sq.name === m.from!.squad)!.members.map((q) => q.kind);
+    const mine = MOBILES.filter((m) => m.region === region.id);
+    for (const m of mine) placeMobile(s, { ...m, faction: "net" }, kindsOf(m), (st, kind, x, z, squad, face) => void spawnEnemy(st, kind, x, z, -1, squad, { face }));
+    const legs = s.squads.map(() => 0);
+    const last = s.squads.map((q) => q.leg);
+    for (let i = 0; i < 240 / TICK; i++) {
+      s.player.iframes = 1;
+      step(s, idleInput(), false);
+      s.squads.forEach((q, n) => {
+        if (q.leg !== last[n]) legs[n]++;
+        last[n] = q.leg;
+      });
+    }
+    const slow = s.squads.map((q, n) => ({ q, n })).filter(({ n }) => legs[n] < 20);
+    if (slow.length) return `patrols: in ${region.id}, ${slow.map(({ q, n }) => `${q.name} passed ${legs[n]} points (leader at ${s.enemies.find((e) => e.squad === n)?.pos.x.toFixed(0)},${s.enemies.find((e) => e.squad === n)?.pos.z.toFixed(0)}, ${s.enemies.find((e) => e.squad === n)?.aware})`).join("; ")} in 240 s`;
+  }
+  return null;
+}
+
+/**
+ * The factions (see FACTION and TERRITORY):
+ * - a network squad and a rogue squad 30 m apart on open ground, the player far off, find each
+ *   other, both take damage, at least one robot falls within 40 s, and the player hears it (a
+ *   fight marked among the contacts);
+ * - a POI's garrison takes no part: a rogue squad set down beside one does not fight it;
+ * - the rogues grow as the network weakens: more rogue robots at network 0 than at 2, and at 2
+ *   than at 5, in each region; a rogue-held outpost's guards are rogues.
+ */
+function checkFactions(): string | null {
+  const at = openSpot(24, 18, 18);
+  if (!at) return "factions: no open ground for the test";
+  const s = padRun();
+  s.ally.active = false;
+  const sides = [false, true].map((rogue) => {
+    const squad = s.squads.length;
+    s.squads.push({ name: "test", poi: -1, patrol: [], leg: 0, engaged: false, roam: false, sinceSeen: 0, last: { x: 0, z: 0 }, rogue: rogue || undefined });
+    const x = at.x + (rogue ? 15 : -15);
+    return ["grunt", "grunt"].map((k, i) => spawnEnemy(s, k as EnemyKind, x, at.z - 14 + i * 3, -1, squad, { face: rogue ? -Math.PI / 2 : Math.PI / 2, rogue }));
+  });
+  const full = sides.map((side) => side.reduce((n, e) => n + e.hp + e.shield, 0));
+  let fell = 0;
+  let found = -1;
+  for (let i = 0; i < 40 / TICK && s.phase === "play"; i++) {
+    step(s, idleInput(), false);
+    fell += s.events.filter((e) => e.t === "fall").length;
+    if (found < 0 && s.squads.some((q) => q.name === "test" && q.foe !== undefined)) found = s.time;
+  }
+  const left = sides.map((side) => side.filter((e) => s.enemies.includes(e)).reduce((n, e) => n + e.hp + e.shield, 0));
+  if (found < 0) return `factions: a network and a rogue squad 30 m apart in the open never found each other`;
+  if (left.some((l, k) => l >= full[k])) return `factions: one side took no damage (left ${left.map(Math.round).join(" / ")} of ${full.join(" / ")})`;
+  if (!fell) return `factions: no robot fell in 40 s of a fight between the factions (left ${left.map(Math.round).join(" / ")})`;
+  if (!s.contacts.some((c) => c.fight)) return `factions: the player ${dist2d(s.player.pos, at).toFixed(0)} m off did not hear the fight`;
+  // A POI's garrison holds its post: a rogue squad beside it, in plain view, is not fought.
+  const g = padRun();
+  g.ally.active = false;
+  const poi = POIS[SUPPLY];
+  g.enemies = [];
+  const sq = poi.squads[0];
+  const gi = g.squads.length;
+  g.squads.push({ name: sq.name, poi: SUPPLY, patrol: [], leg: 0, engaged: false, roam: false, sinceSeen: 0, last: { x: 0, z: 0 } });
+  const posted = sq.members.map((m) => spawnEnemy(g, m.kind, m.x, m.z, SUPPLY, gi, { floor: m.y, face: m.face }));
+  const ri = g.squads.length;
+  g.squads.push({ name: "test", poi: -1, patrol: [], leg: 0, engaged: false, roam: false, sinceSeen: 0, last: { x: 0, z: 0 }, rogue: true });
+  spawnEnemy(g, "grunt", posted[0].pos.x + 8, posted[0].pos.z, -1, ri, { rogue: true, face: -Math.PI / 2 });
+  ticks(g, 8);
+  if (g.squads[gi].foe !== undefined || g.squads[ri].foe !== undefined || g.events.some((e) => e.t === "fall")) return "factions: a POI's garrison fought a rogue squad beside it";
+  // The territory: fewer rogues as the network grows stronger.
+  for (const region of REGIONS) {
+    const rogues = [0, 2, 5].map((network) => newRun(9, freeKit(), region.id, { network }).enemies.filter((e) => e.rogue && regionHere(e.pos).id === region.id).length);
+    if (!(rogues[0] > rogues[1] && rogues[1] > rogues[2])) return `factions: rogues in ${region.id} at network 0 / 2 / 5 are ${rogues.join(" / ")}, not fewer as it strengthens`;
+  }
+  const r2 = newRun(9, freeKit(), "reservoir", { network: NETWORK.play });
+  for (const o of OUTPOST_SITES) {
+    const guards = r2.enemies.filter((e) => r2.squads[e.squad]?.name === o.guard);
+    if (guards.some((e) => !!e.rogue !== (r2.territory[o.id] === "rogue"))) return `factions: ${o.name}'s guards are not of the faction that holds it (${r2.territory[o.id]})`;
+  }
+  return null;
+}
+
+/**
+ * A squad out on the roads that hears the player running makes for where they are heading, not
+ * for the sound: the player runs along open ground and fires once, a roaming pair of grunts 40 m
+ * to the side (facing away) hears it, and its goal and, 8 s on, its leader lie ahead of the spot
+ * the shot came from along the player's way (by 12 m and 6 m or more).
+ */
+function checkIntercept(): string | null {
+  const at = openSpot(60, 4, 4);
+  if (!at) return "intercept: no open ground for the test";
+  const side = [40, -40].find((dx) => onMainGround(at.x + dx, at.z - 4) && !steepAt(at.x + dx, at.z - 4));
+  if (side === undefined) return "intercept: no ground beside the open strip for the pair";
+  const s = padRun();
+  s.ally.active = false;
+  const p = s.player;
+  p.pos = { x: at.x, y: groundAt(at.x, at.z, 0.4, terrainHeight(at.x, at.z) + 2), z: at.z };
+  p.yaw = 0;
+  p.onGround = true;
+  const squad = s.squads.length;
+  s.squads.push({ name: "test", poi: -1, patrol: [], leg: 0, engaged: false, roam: true, sinceSeen: 0, last: { x: 0, z: 0 } });
+  const away = side > 0 ? Math.PI / 2 : -Math.PI / 2;
+  const pair = [spawnEnemy(s, "grunt", at.x + side, at.z - 4, -1, squad, { face: away }), spawnEnemy(s, "grunt", at.x + side, at.z - 1, -1, squad, { face: away })];
+  const run = { ...idleInput(), moveZ: 1 };
+  ticks(s, 1.5, run);
+  const heard = { x: p.pos.x, z: p.pos.z };
+  makeNoise(s, heard.x, heard.z, NOISE.talon, true);
+  const goal = pair[0].goal;
+  const ahead = (q: { x: number; z: number }) => -(q.z - heard.z);
+  if (!goal || pair[0].aware !== "alert") return `intercept: the roaming pair did not hear the shot 40 m off (${pair[0].aware})`;
+  if (ahead(goal) < 12) return `intercept: the pair heard a running player and made for ${ahead(goal).toFixed(1)} m ahead of the shot, not where they were heading`;
+  ticks(s, 8, run);
+  if (ahead(pair[0].pos) < 6) return `intercept: 8 s on, the pair's leader stands ${ahead(pair[0].pos).toFixed(1)} m ahead of the shot along the player's way`;
+  // A squad posted at a POI looks at the sound itself.
+  const posted = { ...s.squads[squad], roam: false };
+  s.squads.push(posted);
+  const still = interceptSpot(s, s.squads.length - 1, heard.x, heard.z);
+  if (dist2d(still, heard) > 0.01) return "intercept: a squad without a walk made for somewhere other than the sound";
+  return null;
+}
+
+/**
+ * A squad of three or more splits at once (see SPLIT): three grunts 18 m off a player standing in
+ * the open have members on both sides of the line from their front member to the player, each
+ * 30 degrees or more off it, within 5 s, before a pinch would start.
+ */
+function checkSplit(): string | null {
+  const at = openSpot(19, 8, 8);
+  if (!at) return "split: no open ground for the test";
+  const { s, foes } = standoff(at, 18, ["grunt", "grunt", "grunt"]);
+  const p = s.player;
+  const lead = foes[0];
+  const sides = new Set<number>();
+  for (let i = 0; i < 5 / TICK; i++) {
+    p.iframes = 1;
+    step(s, idleInput(), false);
+    const la = Math.atan2(lead.pos.x - p.pos.x, lead.pos.z - p.pos.z);
+    for (const e of foes.slice(1)) {
+      if (!s.enemies.includes(e)) continue;
+      const a = Math.atan2(e.pos.x - p.pos.x, e.pos.z - p.pos.z) - la;
+      const off = Math.atan2(Math.sin(a), Math.cos(a));
+      if (Math.abs(off) >= 30 * (Math.PI / 180)) sides.add(Math.sign(off));
+    }
+  }
+  if (sides.size < 2) return `split: within 5 s three grunts went round on ${sides.size} side(s) of the player`;
   return null;
 }
 
@@ -3401,9 +3584,11 @@ function checkEvents(): string | null {
   }
   // A crew that never meets the player draws nothing from the raid's numbers: they stand as on a raid without crews.
   // The crew of seed 1000 beams in about 200 m of walking from its first bin, and has searched it by 330 s.
+  // The crews are the rogues', and the network's squads out between the POIs would fight them (see
+  // FACTION, checked by checkFactions()): these scenarios are played without those squads.
   {
     const quietRun = (crews: boolean) => {
-      const t = newRun(1000, freeKit(), "reservoir", { event: { t: "crews" } });
+      const t = withoutWalkers(newRun(1000, freeKit(), "reservoir", { event: { t: "crews" } }));
       if (!crews) t.crewsDue = [];
       for (let k = 0; k < 330 / TICK; k++) step(t, idleInput(), false);
       return t;
@@ -3415,7 +3600,7 @@ function checkEvents(): string | null {
   }
   // Crews: one comes, takes a bin's valuable into its bag (nothing spills), and drops the bag when destroyed.
   // At the gate's network level crews come only on a crews' visit.
-  const c = newRun(1000, freeKit(), "reservoir", { event: { t: "crews" } });
+  const c = withoutWalkers(newRun(1000, freeKit(), "reservoir", { event: { t: "crews" } }));
   c.player.hp = 1e9;
   let looted = -1;
   for (let t = 0; t < 400 / TICK && looted < 0; t++) {
@@ -3435,7 +3620,7 @@ function checkEvents(): string | null {
   if (!dropped.length && !c.loot.slice(before).some((l) => l.kind === "valuable" && l.from === bin.poi)) return "event scenario: a destroyed crew dropped no bag";
   if (c.stats.crewsDown !== 1 || !c.stats.wiped.includes(crewKey("reservoir"))) return "event scenario: a destroyed crew was not counted";
   // A crew that gets off is counted, and raises the network a step overnight on top of the day's rise.
-  const o = newRun(1000, freeKit(), "reservoir", { event: { t: "crews" } });
+  const o = withoutWalkers(newRun(1000, freeKit(), "reservoir", { event: { t: "crews" } }));
   for (let t = 0; t < 80 / TICK; t++) step(o, idleInput(), false);
   const oq = o.squads.findIndex((x) => x.crew);
   if (oq < 0) return "event scenario: no crew came in 80 s";
@@ -3452,6 +3637,13 @@ function checkEvents(): string | null {
   if (raidDay(o).crews !== 1 || withCrew.profile.network !== without.profile.network + 1 || withCrew.change.network.crews !== 1) return `event scenario: a crew that got off left the network at ${withCrew.profile.network}, not ${without.profile.network + 1}`;
   return null;
 }
+/** The raid `s` without the robots out between the POIs (on walks, on the roads, at the outposts, the packs and the parties): its POIs' garrisons only. */
+function withoutWalkers(s: State): State {
+  s.enemies = s.enemies.filter((e) => e.poi >= 0);
+  s.parties = [];
+  return s;
+}
+
 /**
  * Mod parts: which bin or robot holds one is a hash of the seed, so a bot raid that picks none
  * up plays out as a raid without them; each part changes the number it claims; parts go on by
@@ -3753,7 +3945,7 @@ function checkThreat(): string | null {
   if (!weird || weird.threat !== THREAT.max || weird.known.filter((k) => k === "stock").length !== 1 || weird.known.includes("nope" as ModKind)) return "threat scenario: a v17 save with bad fields was not cleaned";
   return null;
 }
-for (const err of [checkMods(), checkThreat(), checkEvents(), checkTerrainIndex(20_000), checkParties(), checkPacks(), checkRoutes(), checkRouteObstacles(), checkTools(), checkTimeToKill(), checkStagger(), checkWindupMoves(), checkDepots(), checkDepotBudget(), checkPlates(), checkHideout(), checkBoltNoTunnel(), checkPickupWavesRouted(), checkLaterWaveFights(), checkSidestepHit(), checkReturnFire(), checkWallStops(), checkPinch(), checkPursuit(), checkHealHeard(), checkPositionMatters(), checkPullWhenAiming(), checkVault(), checkIsland(), checkNetwork(), checkContracts(), checkQuests(), checkSettle(), checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkBoatCall(), checkSecondPickup(), checkEntries(), checkCamp(), checkKnownEntries(), checkConnections(), checkAllySelfUp(), checkStompHeight(), checkFieldsReused(), checkFieldsFollowRunner(), checkCliffsStop(), checkNoPits(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill(), checkLeap(), checkLeapLeavesAllyBelow(), checkLeapDowned(), checkLeapAllyCatchesUp(), checkLeapAllyDowned(), checkLeapWithItem(), checkLeapClocks(), checkLeapOffHighGround(), checkLeapUnderRoof()]) {
+for (const err of [checkFactions(), checkIntercept(), checkSplit(), checkPatrols(), checkMods(), checkThreat(), checkEvents(), checkTerrainIndex(20_000), checkParties(), checkPacks(), checkRoutes(), checkRouteObstacles(), checkTools(), checkTimeToKill(), checkStagger(), checkWindupMoves(), checkDepots(), checkDepotBudget(), checkPlates(), checkHideout(), checkBoltNoTunnel(), checkPickupWavesRouted(), checkLaterWaveFights(), checkSidestepHit(), checkReturnFire(), checkWallStops(), checkPinch(), checkPursuit(), checkHealHeard(), checkPositionMatters(), checkPullWhenAiming(), checkVault(), checkIsland(), checkNetwork(), checkContracts(), checkQuests(), checkSettle(), checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkBoatCall(), checkSecondPickup(), checkEntries(), checkCamp(), checkKnownEntries(), checkConnections(), checkAllySelfUp(), checkStompHeight(), checkFieldsReused(), checkFieldsFollowRunner(), checkCliffsStop(), checkNoPits(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill(), checkLeap(), checkLeapLeavesAllyBelow(), checkLeapDowned(), checkLeapAllyCatchesUp(), checkLeapAllyDowned(), checkLeapWithItem(), checkLeapClocks(), checkLeapOffHighGround(), checkLeapUnderRoof()]) {
   if (err) {
     console.error(err);
     process.exit(1);
@@ -3761,12 +3953,13 @@ for (const err of [checkMods(), checkThreat(), checkEvents(), checkTerrainIndex(
 }
 
 let failed = false;
-const head = ["skill    ", "alive", "time(med)", "cleared", "haul(med)", "score(med)", "downs", "acc", "crit", "leap", "crowd", "flank", "waves", "meet".padEnd(18), "ally".padEnd(18), "rank".padEnd(18), "exit"];
+const head = ["skill    ", "alive", "time(med)", "cleared", "haul(med)", "score(med)", "downs", "acc", "crit", "leap", "crowd", "flank", "waves", "meet".padEnd(18), "c/min", "ally".padEnd(18), "rank".padEnd(18), "exit"];
 console.log(`${runs} runs per skill and region. alive: share of raids that got off (the rest were wiped out)`);
 console.log("time: minutes from the start to leaving; cleared: median POIs cleared; haul and score: medians over raids that got off");
 console.log("flank: share of hits from behind a robot or before it noticed or located the player (the titan, hit alike from every side, not counted)");
 console.log("waves: median reinforcement squads that beamed in during a raid");
 console.log("meet: medians of the seconds to the first squad engaging the player and of the longest stretch with no robot fighting them; squads that engaged per run / of them belonging to no POI");
+console.log("c/min: contacts per minute, squads that engaged the player over the minutes of every raid");
 console.log("ally: teammate's share of the damage, its downs, times it picked the player up (r) and was picked up (h), per run");
 console.log("exit: raids that left by each extraction point of the region (the bot's choice depends on skill)");
 console.log("crowd: median over runs of the most squads / robots fighting the player at once outside the titan fight");

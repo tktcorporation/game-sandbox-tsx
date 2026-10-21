@@ -1,5 +1,5 @@
-import { ALLY, BOOST, CREW, DEPOT, RETAKE, STORM, DUCK, ELITE, ENEMIES, META, MOD_START, NETWORK, RELAY, THREAT, VALUABLES, WORLD, type ModKind, type ValuableKind, PLAYER, ULT, type EnemyKind, type Flank, type HealKind, type Rarity, type ToolKind, type WeaponKind } from "./config";
-import { DEPOTS, depotIndex, entryOf, EXTRA_BINS, POIS, poiIndex, poiRegion, recordSpot, regionOf, type EntryId, type ExtractId, type PoiId, type RecordId, type RegionId, type RelayId, type RouteId, RELAYS, DEBRIS_SPOTS, debrisIndex } from "./map";
+import { ALLY, BOOST, CREW, DEPOT, RETAKE, STORM, SWEEP, DUCK, ELITE, ENEMIES, META, MOD_START, NETWORK, RELAY, THREAT, VALUABLES, WORLD, type ModKind, type ValuableKind, PLAYER, ULT, type EnemyKind, type Flank, type HealKind, type Rarity, type ToolKind, type WeaponKind } from "./config";
+import { DEPOTS, depotIndex, entryOf, EXTRA_BINS, POIS, poiIndex, poiRegion, recordSpot, regionOf, type EntryId, type ExtractId, type PoiId, type RecordId, type RegionId, type RelayId, type RouteId, RELAYS, DEBRIS_SPOTS, debrisIndex, territory, type Faction, type OutpostId } from "./map";
 import { openRoutes, useRoutes } from "./routes";
 import { populate, spawnEnemy } from "./enemies";
 import { placeParties } from "./world";
@@ -227,6 +227,8 @@ export interface Enemy {
   duck: number;
   /** A salvage crew's, the retake squad's or the debris guards': it draws on the crews' stream (`crewRand()`). */
   own?: boolean;
+  /** One of the rogues (野良機, see FACTION); the network's otherwise. */
+  rogue?: boolean;
 }
 
 /** A robot's body-sphere centre and weak point above its feet, lowered while it crouches. */
@@ -286,6 +288,25 @@ export interface SquadState {
   chaseDir?: Point;
   /** Seconds since the squad last saw, heard or was hit by the player (see AWARE.chaseTime). */
   chaseT?: number;
+  /** A rogue squad (see FACTION). */
+  rogue?: boolean;
+  /** The other faction's robot (id) the squad is fighting while it is not fighting the player, the seconds since a member last saw it, and where. */
+  foe?: number;
+  foeT?: number;
+  foeAt?: Point;
+  /** Seconds until its fire at the other faction is next heard (see FACTION.every). */
+  heardT?: number;
+  /** A squad walking one of `MOBILES` (its `patrol` is the walk, out and back). */
+  mobile?: string;
+  /** Where its leader stood when its walk was last checked for being stuck, and for how long since (see PATROL.stuck). */
+  mark?: Point;
+  markT?: number;
+  /** Waiting at a choke point for the player (see AMBUSH): where, facing which way, for how much longer. */
+  ambush?: { at: Point; face: number; t: number };
+  /** Seconds it has fought the player this time, while it sees them (see SPLIT). */
+  fightT?: number;
+  /** Seconds left of being sent after the player (see SWEEP). */
+  sweep?: number;
 }
 
 export interface Orb {
@@ -296,6 +317,10 @@ export interface Orb {
   dmg: number;
   life: number;
   homing: boolean;
+  /** A shot at the other faction (see FACTION): the robot (id) that fired it, which hits robots of the other faction too. */
+  by?: number;
+  /** Fired by a rogue. */
+  rogue?: boolean;
 }
 
 export interface Shockwave {
@@ -402,7 +427,10 @@ export type GameEvent =
   | { t: "healStart"; kind: HealKind }
   | { t: "healDone"; kind: HealKind }
   | { t: "telegraph"; id: number }
-  | { t: "enemyFire"; id: number; pos: Vec3 }
+  | { t: "enemyFire"; id: number; pos: Vec3; /** At the other faction (see FACTION), toward this point. */ foe?: Vec3; rogue?: boolean }
+  /** A robot hit by the other faction's fire, and one destroyed by it (see FACTION). */
+  | { t: "robotHit"; id: number; pos: Vec3 }
+  | { t: "fall"; id: number; kind: EnemyKind; pos: Vec3; rogue: boolean; fromX: number; fromZ: number }
   | { t: "lunge"; id: number }
   | { t: "spawn"; id: number; pos: Vec3 }
   | { t: "suspect"; id: number }
@@ -525,6 +553,16 @@ export interface PartySlot {
   wait: number;
 }
 
+/** A squad of robots the player has seen or heard out between the POIs (`State.contacts`). */
+export interface Contact {
+  squad: number;
+  x: number;
+  z: number;
+  t: number;
+  rogue: boolean;
+  fight: boolean;
+}
+
 /** A called pickup on its way: seconds until it is there (0 = there), and the robots that beam in meanwhile. */
 export interface Call {
   t: number;
@@ -635,6 +673,20 @@ export interface State {
   away: number;
   /** The raid ended by walking back into the camp. */
   home: boolean;
+  /** Who holds each outpost this raid (`territory()`, from the network's level). */
+  territory: Record<OutpostId, Faction>;
+  /**
+   * What the player has seen or heard of the robots out between the POIs, for the map: each squad
+   * (by index) where it was last seen or heard, when, whether it is the rogues', and whether that
+   * was fighting the other faction (see FACTION).
+   */
+  contacts: Contact[];
+  /** Seconds until the factions next look for each other, the contacts are next updated, and ambushes next thought about. */
+  factionT: number;
+  contactT: number;
+  ambushT: number;
+  /** Seconds since a robot last fought the player (see SWEEP). */
+  quietT: number;
   /** The ways in walked to this raid (`ENTRY`), the start's own first unless it began at a depot: the base learns them if the player gets off alive. */
   found: EntryId[];
   /** The explored map, one 0 / 1 per cell (`exploreSize()`, `cellOf()`), carried over from earlier raids. */
@@ -931,6 +983,13 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
     away: 0,
     home: false,
     found: from ? [] : [entry.id],
+    territory: territory(network),
+    contacts: [],
+    factionT: 0,
+    contactT: 0,
+    ambushT: 0,
+    // The walk in from the edge is quiet by design: no sweep before the first fight, or a minute and more in (see SWEEP).
+    quietT: -SWEEP.start,
     seen: start.seen ? decodeSeen(start.seen) : emptySeen(),
     cell: -1,
     events: [],

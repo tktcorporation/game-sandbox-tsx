@@ -723,6 +723,62 @@ for (const [name, x, dy, z, yaw, pitch, abs] of harborTour) {
   await page.evaluate(([x, y, z, yaw, pitch]) => window.ringfallCamera(x, y, z, yaw, pitch), [x, y, z, yaw, pitch]);
   await page.screenshot({ path: `${out}/${name}.png` });
 }
+
+// The robots out between the POIs: a rogue squad and a network patrol on its walk up close, a fight
+// between the factions seen from far off, and the map with the rogues' outposts and the fight heard.
+{
+  // A camera `d` metres from the robot `e`, `side` radians round from the way it faces, `up` metres over the ground, looking at it.
+  const lookAt = async (name, e, d, side, up) => {
+    const a = side;
+    const x = e.x + Math.sin(a) * d;
+    const z = e.z - Math.cos(a) * d;
+    const g = await page.evaluate(([x, z]) => window.ringfallTerrain(x, z), [x, z]);
+    const y = Math.max(g, e.y) + up;
+    const yaw = Math.atan2(e.x - x, -(e.z - z));
+    const pitch = Math.atan2(e.y + 1.2 - y, Math.hypot(e.x - x, e.z - z));
+    await page.evaluate(([x, y, z, yaw, pitch]) => window.ringfallCamera(x, y, z, yaw, pitch), [x, y, z, yaw, pitch]);
+    await page.screenshot({ path: `${out}/${name}.png` });
+  };
+  const st = await read();
+  const lead = (pick) => {
+    const i = st.squads.findIndex(pick);
+    return i < 0 ? null : (st.enemies.find((e) => e.squad === i && e.kind !== "drone") ?? st.enemies.find((e) => e.squad === i) ?? null);
+  };
+  const rogue = lead((q) => q.rogue && q.mobile);
+  if (!rogue) errors.push("factions: no rogue squad on a walk at the start of a reservoir raid");
+  else await lookAt("faction-1-rogue-squad", rogue, 9, 2.2, 1.8);
+  const patrol = lead((q) => q.mobile && !q.rogue && /警邏|車列/.test(q.name));
+  if (!patrol) errors.push("factions: no network patrol on a walk at the start of a reservoir raid");
+  else await lookAt("faction-2-patrol-road", patrol, 13, 2.6, 2.4);
+  // A fight staged on the open ground south of the lakebed, in earshot of the player at the beach.
+  await page.evaluate(() => window.ringfallFight(60, 250));
+  await page.evaluate(() => window.ringfallStep(2500));
+  let bolts = 0;
+  for (let i = 0; i < 120 && !bolts; i++) bolts = (await quietStep(page, 30)).orbs;
+  const fx = 150;
+  const fz = 330;
+  const fy = (await page.evaluate(([x, z]) => window.ringfallTerrain(x, z), [fx, fz])) + 30;
+  await page.evaluate(([x, y, z, yaw, pitch]) => window.ringfallCamera(x, y, z, yaw, pitch), [fx, fy, fz, Math.atan2(60 - fx, -(250 - fz)), -0.2]);
+  await page.screenshot({ path: `${out}/faction-3-firefight-far.png` });
+  const heard = await read();
+  if (!bolts) errors.push("factions: the staged fight fired no bolt in 6 s");
+  if (!heard.contacts.some((c) => c.fight)) errors.push(`factions: the player ${Math.round(Math.hypot(heard.player.x - 60, heard.player.z - 250))} m off did not hear the staged fight`);
+  await page.evaluate(() => {
+    window.ringfallCamera();
+    document.getElementById("hud").hidden = false;
+  });
+  await page.keyboard.press("KeyM");
+  await page.evaluate(() => window.advanceTime(50));
+  await page.keyboard.press("KeyN");
+  await page.evaluate(() => window.advanceTime(50));
+  await page.screenshot({ path: `${out}/faction-4-map-rogue-outposts.png` });
+  await page.keyboard.press("KeyN");
+  await page.keyboard.press("KeyM");
+  await page.evaluate(() => window.advanceTime(50));
+  await page.evaluate(() => {
+    document.getElementById("hud").hidden = true;
+  });
+}
 await page.evaluate(() => {
   window.ringfallCamera();
   document.getElementById("hud").hidden = false;
