@@ -976,7 +976,7 @@ const POI_FRAMES: Poi[] = [
     trigger: 58,
     entry: { x: 8, z: 40, yaw: 0 },
     squads: [
-      { name: "制御棟", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 35, z: -5, y: WORKS.storey * 5, face: S }, { kind: "grunt", x: 30, z: -1, face: S }] },
+      { name: "制御棟", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 35, z: 4, y: WORKS.storey * 3, face: S }, { kind: "grunt", x: 30, z: -1, face: S }] },
       { name: "炉", members: [{ kind: "heavy", x: -14, z: 10, face: S }, { kind: "charger", x: -6, z: 20, face: E }] },
       // Behind the works, away from the way in: the last of the POI, or the first for a player who goes round.
       { name: "裏手", members: [{ kind: "grunt", x: 0, z: -42, face: S }, { kind: "drone", x: -30, z: -30 }] },
