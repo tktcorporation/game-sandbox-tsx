@@ -109,6 +109,7 @@ export function resetNav() {
   fields = [];
   weighted = { disk: null, fields: [] };
   landmarkCells = null;
+  searched.clear();
 }
 function areas(): Uint16Array | Int32Array {
   if (area.length) return area;
@@ -555,6 +556,30 @@ export function findPath(
   const start = s[1] * NX + s[0];
   const goal = g[1] * NX + g[0];
   if (areas()[start] !== area[goal]) return null;
+  const key = searchKey(start, goal, avoid);
+  let cells = searched.get(key);
+  if (cells === undefined) {
+    cells = searchCells(s, g, start, goal, avoid);
+    if (searched.size >= SEARCHED_KEPT) searched.delete(searched.keys().next().value!);
+    searched.set(key, cells);
+  }
+  return cells && smooth(cells, ax, az, bx, bz, avoid);
+}
+
+/*
+ * The cells of the last few searches, by their start and goal cells and the disk they went
+ * round. A bot held up re-plans from the cell it stood in to the same goal many times, and
+ * each search of a long way round costs as much as a whole raid's other thinking; the search
+ * depends on nothing else, so its cells are taken again and only smoothed from where the bot
+ * now stands. resetNav() forgets them with the grid.
+ */
+const SEARCHED_KEPT = 16;
+const searched = new Map<string, number[] | null>();
+const searchKey = (start: number, goal: number, avoid: Avoid | undefined) =>
+  avoid ? `${start} ${goal} ${avoid.x} ${avoid.z} ${avoid.r} ${avoid.home ? `${avoid.home.x} ${avoid.home.z} ${avoid.home.r}` : "-"}` : `${start} ${goal}`;
+
+/** A* from cell `start` to cell `goal`: the cells of a shortest way, or null if the search found none. */
+function searchCells(s: [number, number], g: [number, number], start: number, goal: number, avoid: Avoid | undefined): number[] | null {
   if (++search === 0xffff) {
     stamp.fill(0);
     search = 1;
@@ -619,7 +644,12 @@ export function findPath(
   if (came[goal] === NONE && goal !== start) return null;
   const cells: number[] = [goal];
   for (let c = goal; c !== start; c -= MOVE_OFF[came[c]]) cells.push(c - MOVE_OFF[came[c]]);
-  cells.reverse();
+  return cells.reverse();
+}
+
+/** Waypoints along `cells` from (ax, az) to (bx, bz): only the cells where a straight walk would be blocked. */
+function smooth(cells: number[], ax: number, az: number, bx: number, bz: number, avoid: Avoid | undefined): { x: number; z: number }[] {
+  const ar2 = avoid ? avoid.r * avoid.r : 0;
   // A straight walk may not reach deeper into `avoid` than its two ends do, or smoothing undoes the way round.
   const cutsAvoid = (px: number, pz: number, qx: number, qz: number): boolean => {
     if (!avoid) return false;

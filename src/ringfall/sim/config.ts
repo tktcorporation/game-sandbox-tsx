@@ -464,9 +464,9 @@ export const NETWORK = {
   /** A relay mast destroyed on a day that started at network `at` or higher takes it `steps` down. */
   relayHigh: { at: 4, steps: 2 },
   levels: [
-    { name: "途切れ", note: "増援は遅く、群れと遊撃隊は少ない", reinforce: { first: 420, every: 330 }, raiders: 960, parties: { reservoir: 1, harbor: 1 }, packs: { reservoir: 1, harbor: 1 }, plate: 0, crews: 0 },
-    { name: "弱い", note: "増援は遅く、群れは少ない", reinforce: { first: 375, every: 270 }, raiders: 840, parties: { reservoir: 1, harbor: 1 }, packs: { reservoir: 2, harbor: 1 }, plate: 0, crews: 0 },
-    { name: "並", note: "いつもの島", reinforce: { first: 330, every: 225 }, raiders: 720, parties: { reservoir: 2, harbor: 2 }, packs: { reservoir: 3, harbor: 2 }, plate: 0, crews: 0 },
+    { name: "途切れ", note: "増援は遅く、群れと遊撃隊は少ない", reinforce: { first: 480, every: 360 }, raiders: 1020, parties: { reservoir: 1, harbor: 1 }, packs: { reservoir: 1, harbor: 1 }, plate: 0, crews: 0 },
+    { name: "弱い", note: "増援は遅く、群れは少ない", reinforce: { first: 435, every: 300 }, raiders: 900, parties: { reservoir: 1, harbor: 1 }, packs: { reservoir: 2, harbor: 1 }, plate: 0, crews: 0 },
+    { name: "並", note: "いつもの島", reinforce: { first: 390, every: 270 }, raiders: 780, parties: { reservoir: 2, harbor: 2 }, packs: { reservoir: 3, harbor: 2 }, plate: 0, crews: 0 },
     { name: "強い", note: "増援が早い・中継器が立つ", reinforce: { first: 240, every: 195 }, raiders: 600, parties: { reservoir: 2, harbor: 2 }, packs: { reservoir: 3, harbor: 2 }, plate: 0.15, crews: 1 },
     { name: "厳しい", note: "増援が早い・遊撃隊が増える・装甲板が増える", reinforce: { first: 210, every: 170 }, raiders: 540, parties: { reservoir: 3, harbor: 3 }, packs: { reservoir: 3, harbor: 2 }, plate: 0.3, crews: 2 },
     { name: "最大", note: "増援が次々来る・遊撃隊が増える・装甲板が多い", reinforce: { first: 180, every: 140 }, raiders: 480, parties: { reservoir: 3, harbor: 3 }, packs: { reservoir: 3, harbor: 2 }, plate: 0.45, crews: 2 },
@@ -889,8 +889,8 @@ export const TOOL_KINDS = Object.keys(TOOLS) as ToolKind[];
  * between waves leaves a quiet walk between the fights a wave brings.
  */
 export const REINFORCE = {
-  first: 330,
-  every: 225,
+  first: 390,
+  every: 270,
   /** Seconds between fresh guesses of where the player is while a reinforcement squad hunts. */
   huntEvery: 8,
   dist: [80, 165] as const,
@@ -951,7 +951,7 @@ export const PARTY = {
  * the player's attention while the others go wide to the sides.
  */
 export const RAIDERS = {
-  at: 720,
+  at: 780,
   name: "レイダー",
   kinds: ["grunt", "grunt", "grunt"] as EnemyKind[],
   huntEvery: 4,
@@ -1010,9 +1010,12 @@ export const PURSUE = { lead: 1.5, leadMax: 9, reach: 90, spread: 7, approach: 5
  * shot aims at the target's chest led by `lead` of its motion over the flight time, and is
  * aimed afresh for every shot of a burst while the robot sees its target. Every shot also
  * strays by a random angle (`spread` degrees, standard deviation), which matters only far
- * off: up close a burst lands, from beyond 30 m a good part of it misses.
+ * off: up close a burst lands, from beyond 30 m a good part of it misses. A squad out on a walk
+ * between the POIs (`MOBILES`) strays `walker` times as far at the player and the teammate, and
+ * its shots land `walkerDmg` of their damage: the ground between is crossed under many eyes, so
+ * meeting a walker is a short fight that costs a little, not one of the POIs' hard fights.
  */
-export const SHOT = { lead: 0.85, spread: 1.5 };
+export const SHOT = { lead: 0.85, spread: 1.5, walker: 2, walkerDmg: 0.6 };
 
 /**
  * Being shot from beyond a robot's sight is answered. For `time` seconds after each of the
@@ -1260,9 +1263,21 @@ export const ROGUE = { patrols: [3, 3, 2, 1, 1, 0] as const };
  * each at a point of its walk at least `away` metres from the player, picked from the seed. A
  * patrol whose leader has gone `stuck.time` seconds without moving `stuck.moved` metres makes for
  * its next point. On the move a squad watches the way ahead more than its flanks: until it fights,
- * it notices the player at `sight` of its kind's range, so a player who sees it first has the shot.
+ * it notices the player at `sight` of its kind's range, so a player who sees it first has the shot;
+ * a squad sent after the player (see SWEEP) looks out at its kind's full range.
+ * It walks at `pace` of the patrol pace, a brisk walk that crosses the player's way more often.
  */
-export const PATROL = { away: 150, stuck: { time: 10, moved: 2.5 }, sight: 0.65 };
+export const PATROL = { away: 150, stuck: { time: 10, moved: 2.5 }, sight: 0.6, pace: 1.35 };
+
+/**
+ * A squad with no member within `dist` metres of the player or the teammate thinks less often:
+ * its calm robots (holding a post, walking a patrol, going to look) take one step of `every`
+ * ticks' worth of time on their squad's turn, so they walk as fast as when they step each tick.
+ * `dist` is beyond every robot's sight (`SIGHT`, `PACK.sight`), and a squad near either is judged
+ * whole each tick, so whatever can see or reach the player steps every tick. A robot fighting
+ * the player or the other faction always does.
+ */
+export const FAR_THINK = { dist: 120, every: 4 };
 
 /**
  * A squad out between the POIs, a hunting party or a reinforcement squad that hears the player
@@ -1298,7 +1313,7 @@ export const AMBUSH = { near: 150, reach: 230, squads: 1, hold: 120, every: 2, b
  * The walk in counts `start` seconds more before the first, so the first is sent no sooner than
  * `start` + `quiet` seconds into a raid with no fight.
  */
-export const SWEEP = { start: 60, quiet: 30, reach: 300, pace: 0.85, every: 6, time: 60 };
+export const SWEEP = { start: 60, quiet: 15, reach: 220, pace: 1.2, every: 6, time: 60 };
 
 /**
  * A grunt behind its cover squats: its body and its head drop by these many metres, `rate` of
