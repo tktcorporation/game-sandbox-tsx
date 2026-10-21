@@ -220,9 +220,12 @@ export function shoot(s: State, w: Weapon, touch = false) {
 export function flankOf(s: State, e: Enemy, from?: Vec3): Flank {
   if (e.kind === "titan") return "none";
   if (e.aware !== "engaged" || (!from && !located(s, e))) return "ambush";
-  const off = Math.abs(wrapAngle(lookAngles(e.pos, from ?? s.player.pos).yaw - e.yaw)) / DEG;
+  const off = offFacing(e, from ?? s.player.pos);
   return off < FLANK.frontArc ? "front" : off > FLANK.backArc ? "back" : "side";
 }
+
+/** Degrees between where a robot faces and the direction to `from`. */
+const offFacing = (e: Enemy, from: Vec3) => Math.abs(wrapAngle(lookAngles(e.pos, from).yaw - e.yaw)) / DEG;
 
 /**
  * `flank` is where a weapon shot met the robot (see flankOf); the arc and other
@@ -236,7 +239,9 @@ export function damageEnemy(s: State, e: Enemy, raw: number, crit: boolean, at: 
   if (!s.enemies.includes(e)) return;
   const k = ENEMIES[e.kind];
   raw *= flank === "ambush" && (e.kind === "heavy" || e.elite) ? FLANK.ambushTough : FLANK.mult[flank];
-  if (flank === "back" && by === "player") raw *= modScale(s.player, "stalker");
+  // The back-shot part takes any hit from behind, an ambush on an unaware robot included.
+  const behind = flank === "back" || (flank === "ambush" && e.kind !== "titan" && offFacing(e, s.player.pos) > FLANK.backArc);
+  if (behind && by === "player") raw *= modScale(s.player, "stalker");
   const quiet = Math.min(e.lastHit, e.allyHit) > DODGE.jinkQuiet;
   const blocked = !crit && rarity !== undefined && e.plate > rarity;
   // A robot hit by the player knows where they are from now on.

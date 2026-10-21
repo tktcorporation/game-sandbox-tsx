@@ -4392,18 +4392,22 @@ interface RingWreck {
 const RING_WRECKS: RingWreck[] = [
   // South of the quarry: three lengths stepping east, the middle one hollow, between the quarry's
   // rim and the dunes of the coast.
+  { name: "採掘場の南の残骸（西の端）", along: "x", at: 202, a: -506, b: -470, broken: { b: true } },
   { name: "採掘場の南の残骸（西）", along: "x", at: 215, a: -455, b: -380, broken: { b: true }, rubble: [{ side: 1, u: -420 }] },
   { name: "採掘場の南の残骸（中）", along: "x", at: 230, a: -366, b: -296, broken: { a: true, b: true }, tunnel: [{ side: -1, a: -352, b: -342 }, { side: 1, a: -322, b: -312 }], lean: { side: 1, u: -334, length: 62 } },
   { name: "採掘場の南の残骸（東）", along: "x", at: 250, a: -282, b: -214, broken: { a: true }, rubble: [{ side: -1, u: -240 }] },
   // North of the relay's mesa: lengths across the fields, broken where the roads, a patrol and a
   // power line pass.
+  { name: "西の残骸（桟橋の北）", along: "z", at: -498, a: 112, b: 178, broken: { a: true }, rubble: [{ side: 1, u: 150 }] },
   { name: "中継塔の北の残骸（西）", along: "x", at: -115, a: 110, b: 168, broken: { b: true }, rubble: [{ side: 1, u: 140 }] },
   { name: "中継塔の北の残骸（西の端）", along: "x", at: -117, a: 196, b: 230, broken: { a: true, b: true } },
   { name: "中継塔の北の残骸（中）", along: "x", at: -112, a: 252, b: 318, broken: { a: true, b: true }, tunnel: [{ side: 1, a: 266, b: 276 }, { side: -1, a: 294, b: 304 }], lean: { side: 1, u: 286, length: 56 } },
   // The east coast: two lengths along it, the northern one hollow, between the relay's mesa and the
   // shore, the gap between them the way along it.
+  { name: "東の浜の残骸（検問道の南）", along: "z", at: 440, a: -34, b: 26, broken: { a: true, b: true }, lean: { side: -1, u: -4, length: 48 } },
   { name: "東の浜の残骸（北）", along: "z", at: 440, a: 40, b: 118, broken: { b: true }, tunnel: [{ side: -1, a: 70, b: 80 }] },
   { name: "東の浜の残骸（南）", along: "z", at: 432, a: 134, b: 200, broken: { a: true }, rubble: [{ side: -1, u: 180 }] },
+  { name: "東の浜の残骸（工場の東）", along: "z", at: 436, a: 262, b: 318, broken: { a: true }, tunnel: [{ side: -1, a: 284, b: 294 }] },
   // The west: two lengths along the coast west of the quarry, a length leaning across the
   // southern one from the quarry's side.
   { name: "西の残骸（北）", along: "z", at: -500, a: -56, b: 6, broken: { b: true }, rubble: [{ side: 1, u: -40 }] },
@@ -4412,10 +4416,14 @@ const RING_WRECKS: RingWreck[] = [
   // and the wreck.
   { name: "難破船の西の残骸（北）", along: "x", at: -1060, a: -260, b: -190, broken: { b: true }, rubble: [{ side: 1, u: -230 }] },
   { name: "難破船の西の残骸（南）", along: "z", at: -210, a: -1035, b: -975, broken: { a: true }, tunnel: [{ side: -1, a: -1015, b: -1005 }] },
+  { name: "難破船の西の残骸（漁村の東）", along: "z", at: -214, a: -960, b: -908, broken: { a: true }, rubble: [{ side: 1, u: -934 }] },
+  { name: "港町の西の残骸（町の外れ）", along: "x", at: -560, a: -190, b: -140, broken: { a: true }, tunnel: [{ side: 1, a: -170, b: -160 }] },
+  { name: "港町の東の残骸（線路の北）", along: "z", at: 334, a: -720, b: -654, broken: { b: true }, rubble: [{ side: -1, u: -700 }] },
   { name: "港町の西の残骸（西）", along: "x", at: -565, a: -350, b: -290, broken: { b: true }, rubble: [{ side: -1, u: -320 }] },
   { name: "港町の西の残骸（東）", along: "x", at: -556, a: -276, b: -205, broken: { a: true }, lean: { side: 1, u: -240, length: 46 } },
   { name: "港町の東の残骸（北）", along: "z", at: 300, a: -628, b: -572, broken: { b: true }, tunnel: [{ side: -1, a: -606, b: -596 }] },
   { name: "港町の東の残骸（南）", along: "z", at: 308, a: -556, b: -486, broken: { a: true }, rubble: [{ side: 1, u: -520 }] },
+  { name: "製錬所の北の残骸（難破船の北）", along: "x", at: -1062, a: 56, b: 124, broken: { b: true }, tunnel: [{ side: 1, a: 84, b: 94 }] },
   { name: "製錬所の北の残骸（西）", along: "x", at: -1060, a: 140, b: 205, broken: { b: true }, rubble: [{ side: 1, u: 172 }] },
   { name: "製錬所の北の残骸（東）", along: "x", at: -1024, a: 216, b: 285, broken: { a: true }, lean: { side: 1, u: 250, length: 46 } },
   { name: "中継塔の北の残骸（東）", along: "x", at: -105, a: 340, b: 388, broken: { a: true }, rubble: [{ side: 1, u: 362 }] },
