@@ -18,7 +18,7 @@ import { engageSquad, makeNoise } from "../src/ringfall/sim/awareness";
 import { spawnEnemy } from "../src/ringfall/sim/enemies";
 import { COVERS } from "../src/ringfall/sim/cover";
 import { ENEMIES as KINDS, type EnemyKind, type Rarity } from "../src/ringfall/sim/config";
-import { RELAYS, relayIndex, type RelayId, BOXES, CAMP, DECKS, DEPOTS, depotIndex, ENTRIES, entryOf, EXTRA_BINS, EXTRACTS, inCamp, PACKS, PARTY_STOPS, POIS, poiIndex, poiRegion, REGIONS, regionHere, regionOf, ROAMERS, ROUTES, STOPS, type RegionId, type RouteId, type Squad } from "../src/ringfall/sim/map";
+import { RELAYS, relayIndex, type RelayId, BOXES, CAMP, DECKS, DEPOTS, depotIndex, ENTRIES, entryOf, EXTRA_BINS, EXTRACTS, inCamp, PACKS, PARTY_STOPS, POIS, poiIndex, poiRegion, REGIONS, regionHere, regionOf, ROAMERS, ROUTES, STOPS, type PoiId, type RegionId, type RouteId, type Squad } from "../src/ringfall/sim/map";
 import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "../src/ringfall/sim/camp";
 import { inArea } from "../src/ringfall/sim/areas";
 import { routeBefore, useRoutes, worldKey } from "../src/ringfall/sim/routes";
@@ -40,7 +40,7 @@ import { build, buildState, buy, canBuild, deliver, depotAllowance, depotBudget,
 import { emptyHideout, maxLevel, MODULES, poisWith, sources, stashCap } from "../src/ringfall/meta/hideout";
 import { boostFor, boosted } from "../src/ringfall/sim/state";
 import { HIDEOUT, ISLAND, TOOL_KINDS, TOOLS, VAULT } from "../src/ringfall/sim/config";
-import { advanceDay, daysLeft, holds, islandNotes, netGain, newIsland, noteText, retakeIn, riseIn, thinTomorrow, type RaidDay } from "../src/ringfall/meta/island";
+import { advanceDay, daysLeft, FORECAST_DAYS, holds, islandNotes, netGain, newIsland, noteText, retakeIn, riseIn, thinTomorrow, type RaidDay } from "../src/ringfall/meta/island";
 import { activePacks } from "../src/ringfall/sim/island";
 import { garrison, isVaultGuard } from "../src/ringfall/sim/island";
 import { QUESTS, offered, raidCredit } from "../src/ringfall/meta/quests";
@@ -1992,6 +1992,7 @@ function checkNetwork(): string | null {
   if (p.pressure !== 0) return "network scenario: the network at the top kept gathering";
   // The steps down, each in its own night, and the order: down first, then the day's rise.
   const at = (network: number, pressure = 0): Profile => ({ ...newProfile(3), network, pressure });
+  const idle = (from: Profile, days: number): Profile => Array.from({ length: days }).reduce<Profile>((q) => advanceDay(q, day()).profile, from);
   const freedOne = advanceDay(at(4), day({ cleared: ["supply"] })).change.network;
   const freedRelay = advanceDay(at(4), day({ cleared: ["relay"] })).change.network;
   const titan = advanceDay(at(4), day({ titan: true })).change.network;
@@ -2014,7 +2015,7 @@ function checkNetwork(): string | null {
   const thinIsland = (since: number) => ({ ...newIsland(), quarry: { state: "thin" as const, lastVisit: 1, since } });
   const strong: Profile = { ...at(NETWORK.retakeAt), day: 6, poiState: thinIsland(6) };
   const told = islandNotes(strong).map(noteText);
-  if (retakeIn(strong, "quarry") !== NETWORK.retakeAfter || !told.some((t) => t === `採掘場は手薄。網が強く、あと ${NETWORK.retakeAfter} 日で支配に戻る`)) return `network scenario: a thin quarry at a strong network is told as ${told.join(" / ")}`;
+  if (retakeIn(strong, "quarry") !== NETWORK.retakeAfter || !told.some((t) => t === `採掘場は手薄。放っておくと、あと ${NETWORK.retakeAfter} 日で支配に戻る`)) return `network scenario: a thin quarry at a strong network is told as ${told.join(" / ")}`;
   const one = advanceDay(strong, day());
   const two = advanceDay(one.profile, day());
   if (one.profile.poiState.quarry.state !== "thin" || two.profile.poiState.quarry.state !== "held" || two.change.retaken.join() !== "quarry") return `network scenario: a thin quarry at network ${NETWORK.retakeAt} is ${one.profile.poiState.quarry.state} then ${two.profile.poiState.quarry.state}`;
@@ -2022,9 +2023,45 @@ function checkNetwork(): string | null {
   for (let d = 0; d < 4; d++) weak = { ...advanceDay(weak, day()).profile, network: NETWORK.retakeAt - 1, pressure: 0 };
   if (weak.poiState.quarry.state !== "thin") return "network scenario: a thin POI went back to held at a weak network";
   // One step short, the night the network rises to `retakeAt` is the night it takes the POI back;
-  // two steps short, it does not before the player lets it rise further.
+  // two steps short, the night of the second rise.
   if (retakeIn(weak, "quarry") !== riseIn(weak)) return `network scenario: a thin quarry one step short of a retake is told ${retakeIn(weak, "quarry")} days, the rise ${riseIn(weak)}`;
-  if (retakeIn({ ...weak, network: NETWORK.retakeAt - 2 }, "quarry") !== null) return "network scenario: a thin quarry two steps short of a retake is told it will be taken back";
+  const weaker: Profile = { ...weak, network: NETWORK.retakeAt - 2 };
+  const firstRise = riseIn(weaker);
+  const afterFirst = firstRise === null ? null : idle(weaker, firstRise);
+  const secondRise = afterFirst && riseIn(afterFirst);
+  if (firstRise === null || !secondRise || retakeIn(weaker, "quarry") !== firstRise + secondRise) return `network scenario: a thin quarry two steps short of a retake is told ${retakeIn(weaker, "quarry")} days, the rises ${firstRise} and ${secondRise}`;
+  // A day that starts at the top gathers no pressure, whatever takes the network down in the raid.
+  for (const cut of [day({ relays: ["west", "east"] }), day({ titan: true }), day({ cleared: ["supply"] })]) {
+    const off = advanceDay(at(NETWORK.max), cut);
+    if (off.profile.pressure !== 0 || off.change.network.rise !== 0 || off.profile.network >= NETWORK.max) return `network scenario: a day starting at the top that took the network down ended with ${JSON.stringify({ net: off.change.network, pressure: off.profile.pressure })}`;
+  }
+  // Every forecast is what stepping idle days through advanceDay() shows.
+  const mixed = (freed: PoiId[], thin: PoiId[]): Profile["poiState"] => ({ ...newIsland(), ...Object.fromEntries(freed.map((id) => [id, { state: "freed" as const, lastVisit: 7, since: 0 }])), ...Object.fromEntries(thin.map((id) => [id, { state: "thin" as const, lastVisit: 2, since: 6 }])) });
+  const islands = [newIsland(), mixed(["supply"], ["quarry"]), mixed(["supply", "yard"], []), mixed([], ["quarry", "wreck"]), mixed(["relay", "smelter"], ["supply"])];
+  for (const poiState of islands)
+    for (const network of [0, 1, NETWORK.retakeAt - 1, NETWORK.retakeAt, NETWORK.max])
+      for (const pressure of network >= NETWORK.max ? [0] : [0, 0.9, 1.95]) {
+        const f: Profile = { ...at(network, pressure), day: 8, poiState };
+        let g: Profile = f;
+        let rose: number | null = null;
+        const back = new Map<PoiId, number>();
+        const fades = new Map<PoiId, number>();
+        for (let d = 1; d <= FORECAST_DAYS; d++) {
+          const prev = g;
+          g = advanceDay(g, day()).profile;
+          if (rose === null && g.network > f.network) rose = d;
+          for (const o of POIS) {
+            if (f.poiState[o.id].state === "thin" && !back.has(o.id) && g.poiState[o.id].state === "held") back.set(o.id, d);
+            if (f.poiState[o.id].state === "freed" && !fades.has(o.id) && prev.poiState[o.id].state === "freed" && g.poiState[o.id].state !== "freed") fades.set(o.id, d);
+          }
+        }
+        if (riseIn(f) !== rose) return `network scenario: at network ${network}, pressure ${pressure}, the rise is told in ${riseIn(f)} days but comes after ${rose}`;
+        for (const o of POIS) {
+          const thin = f.poiState[o.id].state === "thin" ? (back.get(o.id) ?? null) : null;
+          const freed = f.poiState[o.id].state === "freed" ? (fades.get(o.id) ?? null) : null;
+          if (retakeIn(f, o.id) !== thin || daysLeft(f, o.id) !== freed) return `network scenario: at network ${network}, pressure ${pressure}, ${o.id} is told ${retakeIn(f, o.id)} / ${daysLeft(f, o.id)} days but stepping shows ${thin} / ${freed}`;
+        }
+      }
   // A POI gone thin overnight is not taken back the same night.
   const fade: Profile = { ...at(5), day: 9, poiState: { ...newIsland(), supply: { state: "freed", lastVisit: 2, since: 0 } } };
   const faded = advanceDay(fade, day());

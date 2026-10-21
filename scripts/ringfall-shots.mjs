@@ -1173,7 +1173,7 @@ const readOf = async (pg) => JSON.parse(await pg.evaluate(() => window.render_ga
     const meter = await pg.textContent("#hub-side .hub-net");
     const tomorrow = await pg.textContent("#hub-side .tomorrow");
     if (!/網 4/.test(meter) || (await pg.locator("#hub-side .net-meter i.on").count()) !== 5) errors.push(`network: the meter reads "${meter}"`);
-    if (!/採掘場は手薄。網が強く/.test(tomorrow) || !/網は/.test(tomorrow)) errors.push(`network: 明日の島 reads "${tomorrow}"`);
+    if (!/採掘場は手薄。放っておくと/.test(tomorrow) || !/網は/.test(tomorrow)) errors.push(`network: 明日の島 reads "${tomorrow}"`);
     const fit = await spills(pg);
     if (fit.length) errors.push(`network map table${phone ? " on a phone" : ""}: ${[...new Set(fit)].join(", ")}`);
     await pg.locator("#hub-side .hub-net").scrollIntoViewIfNeeded();
