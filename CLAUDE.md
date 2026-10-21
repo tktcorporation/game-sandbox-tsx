@@ -24,7 +24,7 @@ one to the other. The world is about 1200 by 1880 m (`WORLD` in `config.ts`): th
 (about 1120 by 820 m) with the dune coast bulging south of it, a mountain belt at z about -350, and
 the harbor's land (radius about 425 m). The reservoir is built at the scale of real places, its
 neighbouring POIs and districts 250 to 400 m apart; the harbor's POIs stand 270 to 330 m apart;
-of them the smelter and the container yard are built at that scale, the wreck still at the older one.
+all three are built at that scale.
 `REGIONS` in `map.ts` gives each region its POIs, ways off and ways in on foot (`ENTRIES`: a named
 point out on its open ground, facing in, out of every robot's sight for the first seconds);
 `newRun(seed, kit, region, { entry })` starts on the ground there with the teammate beside the
@@ -214,7 +214,7 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   walls, doors, windows, roller doors, stair width): `WORKS` for industry (4.5 m storeys,
   half-metre walls, doors 2.4 by 2.8 m, roller doors 6 m high), `HOME` for homes and farms
   (3.2 m storeys, larger rooms and windows), `INTAKE` for the dam's intake tower (5 m storeys), and
-  the older `HOUSE` (3.4 m) for the harbor's wreck and the drowned town. A function that builds on more
+  the older `HOUSE` (3.4 m) for the drowned town and the harbor's smaller buildings. A function that builds on more
   than one floor returns `Floors` (each group of boxes with the level it stands on; a `loose` group,
   such as a catwalk out over a cliff, is lifted without pressing the ground under it). The
   reservoir's POIs, built to these scales:
@@ -260,7 +260,12 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   the south-east where the street and the roads from the viaduct come in, the three-storey
   terminal office and the gate house; north of its fence two quay cranes (`QUAY_CRANES`,
   `quayCrane()`) straddle the freight line, their booms 40 m up over the old sea floor, the east
-  one climbed by an open stair tower to its deck 34 m up.
+  one climbed by an open stair tower to its deck 34 m up. The wreck (`SHIP`, `wreck()`) is a
+  container feeder 140 m long and 26 m in the beam lying on the old bay floor: three `WORKS`
+  storeys of hull holed on both sides, bulkheads cutting the holds, stairs at both ends to the
+  main deck, deck cargo stacked in bays (`DECK_BAYS`) with gaps between them, the accommodation
+  block five storeys over the deck with the bridge's wings over both sides, the funnel, and
+  containers lost overboard on the sand. Its gangway route climbs the north side to the deck.
   The world was the ground base of an orbital ring (the brief's 「世界の由来」), and the fallen
   tether lies east and west through the anchor in four lengths 12 m across (`TETHER`, each a
   `tetherPiece()`): the root end, its back level with the plinth's top; a corridor through the
