@@ -19,6 +19,8 @@ export interface CoverPoint extends Point {
 export const COVERS: CoverPoint[] = [];
 
 for (const b of BOXES) {
+  // A fence is seen and shot through: no cover behind it.
+  if (b.kind === "fence") continue;
   // The surface under the box (ground or a box below it), found as a walker standing on it would.
   const cx0 = (b.x0 + b.x1) / 2;
   const cz0 = (b.z0 + b.z1) / 2;
