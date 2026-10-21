@@ -1,6 +1,7 @@
 import { DEPOT, WORLD } from "../sim/config";
 import { BOXES, DEPOTS, ENTRIES, EXTRACTS, LANDMARKS, POIS, REGIONS, regionOf, ROUTES, regionHere, type EntryId, type PoiId, type RegionId, type RouteId } from "../sim/map";
 import { HOLD_NAME, type PoiHold } from "../sim/island";
+import { STREETS } from "../sim/streets";
 import { worldKey } from "../sim/routes";
 import { DAM_FACE, floorLevel, groundOf, highGround, LEVEL, steepAt, surfaceAt, terrainHeight, type Ground } from "../sim/terrain";
 import { cellOf, decodeSeen, exploreSize, type Ally, type Player, type State } from "../sim/state";
@@ -196,6 +197,19 @@ export class IslandMap {
         img.data[k + 3] = 255;
       }
     g.putImageData(img, 0, 0);
+    // The streets, as wide as they are, in the asphalt's colour.
+    g.strokeStyle = css(PAL.asphalt);
+    g.lineCap = g.lineJoin = "round";
+    for (const st of STREETS) {
+      g.lineWidth = Math.max(1.5, this.px(st.half * 2, 0).x - this.px(0, 0).x);
+      g.beginPath();
+      st.line.forEach(([x, z], n) => {
+        const p = this.px(x, z);
+        if (n) g.lineTo(p.x, p.y);
+        else g.moveTo(p.x, p.y);
+      });
+      g.stroke();
+    }
     g.fillStyle = css(PAL.concreteDark);
     for (const b of BOXES) {
       const a = this.px(b.x0, b.z0);
