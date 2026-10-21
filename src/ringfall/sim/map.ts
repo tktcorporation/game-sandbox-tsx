@@ -4842,6 +4842,14 @@ export const FRONT_LINKS: readonly (readonly ["camp" | NodeId, NodeId])[] = [
 ];
 
 /**
+ * The nodes next to ground the network never gives up, always on the front's edge however much
+ * round them the player holds: the titan's pad (no node) by its west ramp and the mesa's road,
+ * and the harbor's north shore, where the network's boats come in. They go thin and are retaken
+ * as any node on the edge, so the whole island is never held for good.
+ */
+export const NET_EDGE: readonly NodeId[] = ["quarry", "relay", "wreck", "wharf"];
+
+/**
  * The core's spot of the node standing at (x, z): the open, level ground nearest its middle with
  * room round it and nothing overhead, clear of the authored points, the patrol legs, the kept
  * roads and the depots, so it closes no way a walker takes. Looked for on rings out from the middle.

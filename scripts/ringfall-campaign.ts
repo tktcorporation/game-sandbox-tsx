@@ -33,7 +33,7 @@ const MARKS = [5, 10, 20, 30];
 /** One skill's month: the island at the end of each day, and how each raid ended. */
 export interface Campaign {
   skill: string;
-  days: { network: number; freed: number; thin: number; nodes: number; front: string[]; alive: boolean; region: RegionId; relays: number; event: string | null; crewsIn: number; crewsOut: number; overrun: number }[];
+  days: { network: number; freed: number; thin: number; nodes: number; harbor: number; front: string[]; alive: boolean; region: RegionId; relays: number; event: string | null; crewsIn: number; crewsOut: number; overrun: number }[];
   errors: string[];
 }
 
@@ -57,7 +57,7 @@ export function playCampaign(skill: string, days = DAYS): Campaign {
     p = settled.profile;
     const count = (h: "freed" | "thin") => POIS.filter((o) => p.poiState[o.id].state === h).length;
     const h = islandHolds(p);
-    out.days.push({ network: p.network, freed: count("freed"), thin: count("thin"), nodes: h.filter((x) => x === "freed").length, front: NODES.filter((_, i) => frontNodes(h)[i]).map((n) => n.id), alive: s.outcome === "extracted", region, relays: s.stats.relays.length, event: s.event?.t ?? null, crewsIn: s.stats.crewsIn, crewsOut: s.stats.crewsOut, overrun: settled.overrun.length });
+    out.days.push({ network: p.network, freed: count("freed"), thin: count("thin"), nodes: h.filter((x) => x === "freed").length, harbor: NODES.filter((n, i) => n.region === "harbor" && h[i] === "freed").length, front: NODES.filter((_, i) => frontNodes(h)[i]).map((n) => n.id), alive: s.outcome === "extracted", region, relays: s.stats.relays.length, event: s.event?.t ?? null, crewsIn: s.stats.crewsIn, crewsOut: s.stats.crewsOut, overrun: settled.overrun.length });
   }
   return out;
 }
@@ -81,6 +81,9 @@ export function campaignLines(runs: Campaign[]): string[] {
     );
   }
   lines.push(`network by day: ${runs.map((c) => `${c.skill} ${c.days.map((d) => d.network).join("")}`).join(" / ")}`);
+  // The nodes held each day (in base 36: a is 10), and the harbor's among them.
+  lines.push(`nodes by day: ${runs.map((c) => `${c.skill} ${c.days.map((d) => d.nodes.toString(36)).join("")}`).join(" / ")}`);
+  lines.push(`harbor nodes by day: ${runs.map((c) => `${c.skill} ${c.days.map((d) => d.harbor.toString(36)).join("")}`).join(" / ")}`);
   // Where the front stands at the end of the month: the nodes the player could take next.
   for (const c of runs) lines.push(`front on day ${c.days.length} (${c.skill}): ${c.days.at(-1)?.front.join(" ") || "-"}`);
   lines.push("events: days with a debris fall / retake / storm / crews' visit; crews in/out: salvage crews that came and got off; lost: freed POIs a retake left alive turned thin");

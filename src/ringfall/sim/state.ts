@@ -1,5 +1,5 @@
 import { ALLY, BOOST, CREW, DEPOT, RETAKE, STORM, SWEEP, DUCK, ELITE, ENEMIES, META, MOD_START, NETWORK, RELAY, THREAT, VALUABLES, WORLD, type ModKind, type ValuableKind, PLAYER, ULT, type EnemyKind, type Flank, type HealKind, type Rarity, type ToolKind, type WeaponKind } from "./config";
-import { DEPOTS, depotIndex, entryOf, EXTRA_BINS, POIS, poiIndex, poiRegion, recordSpot, regionOf, type EntryId, type ExtractId, type PoiId, type RecordId, type RegionId, type RelayId, type RouteId, RELAYS, DEBRIS_SPOTS, debrisIndex, territory, type Faction, type OutpostId, type NodeId } from "./map";
+import { DEPOTS, depotIndex, entryOf, EXTRA_BINS, POIS, poiIndex, poiRegion, recordSpot, regionOf, type EntryId, type ExtractId, type PoiId, type RecordId, type RegionId, type RelayId, type RouteId, RELAYS, DEBRIS_SPOTS, debrisIndex, territory, type Faction, type OutpostId, type NodeId, NODES } from "./map";
 import { openRoutes, useRoutes } from "./routes";
 import { populate, spawnEnemy } from "./enemies";
 import { placeParties } from "./world";
@@ -693,6 +693,8 @@ export interface State {
    * filled this tick, the seconds to the push's next wave, and the waves sent; null for none.
    */
   capture: { node: number; t: number; held: boolean; pushT: number; waves: number } | null;
+  /** The nodes the player came near this raid (`FRONT.visit` of a core): an outpost visited does not lapse. */
+  nodeVisited: boolean[];
   /**
    * What the player has seen or heard of the robots out between the POIs, for the map: each squad
    * (by index) where it was last seen or heard, when, whether it is the rogues', and whether that
@@ -860,6 +862,9 @@ function outpostTerritory(network: number, outposts: Start["outposts"]): Record<
   return t;
 }
 
+/** A flag for each node of the front, all down. */
+const s0NodesFalse = () => NODES.map(() => false);
+
 /** What a network level sets in a raid. */
 export const netLevel = (s: Pick<State, "network">) => NETWORK.levels[s.network];
 
@@ -1013,6 +1018,7 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
     territory: outpostTerritory(network, start.outposts),
     nodes: nodeHolds((id) => hold[poiIndex(id)], start.outposts, network),
     capture: null,
+    nodeVisited: s0NodesFalse(),
     contacts: [],
     factionT: 0,
     contactT: 0,

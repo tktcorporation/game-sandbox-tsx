@@ -97,7 +97,8 @@ kbd {
   top: 14px;
   left: 50%;
   width: 420px;
-  height: 30px;
+  height: 46px;
+  pointer-events: none;
   margin-left: -210px;
   overflow: hidden;
   -webkit-mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
@@ -184,7 +185,7 @@ kbd {
 /* The objective's marker on the compass: the only marker the HUD shows, with its distance. */
 #compass-mark {
   position: absolute;
-  top: 0;
+  top: 19px;
   transform: translateX(-50%);
   font-style: normal;
   pointer-events: none;
@@ -200,7 +201,7 @@ kbd {
   height: 0;
   border-left: 6px solid transparent;
   border-right: 6px solid transparent;
-  border-top: 9px solid #ffe27a;
+  border-bottom: 9px solid #ffe27a;
 }
 #compass-mark span {
   display: block;
@@ -211,7 +212,7 @@ kbd {
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
 }
 #compass-mark.edge::before {
-  border-top-color: #c9b25a;
+  border-bottom-color: #c9b25a;
 }
 #obj-count {
   font-family: var(--num);
@@ -2279,8 +2280,16 @@ body.touch #objective::after {
   flex-basis: 100%;
   order: 1;
 }
+/* On a phone the objective's title gives way; its step counter leads the step's row. */
 body.touch #obj-head {
+  display: contents;
+}
+body.touch #obj-title {
   display: none;
+}
+body.touch #obj-n {
+  font-size: 11px;
+  font-weight: 800;
 }
 body.touch #obj-until {
   order: 2;
@@ -2338,7 +2347,8 @@ body.touch #obj-exits {
   font-size: 11px;
   gap: 0;
 }
-body.touch #obj-exits div:not(.near):not(.live) {
+/* On a phone the step's line takes the row the nearest exit had: the exit shows only when it is news (a pickup called, a flare in hand). */
+body.touch #obj-exits div:not(.live) {
   display: none;
 }
 body.touch #obj-exits div:not(.live) span {

@@ -397,12 +397,15 @@ export const FRONT = {
   /** Half the core's footprint, in metres. */
   half: 0.45,
   zone: 30,
+  /** Metres from a core within which the player counts as having come to the node (an outpost freed lapses unvisited, as a POI). */
+  visit: 60,
   retreat: 8,
   /** The waves of the push, by network level: the members of each squad. */
-  push: [["grunt"], ["grunt", "drone"], ["grunt", "drone"], ["grunt", "grunt", "drone"], ["grunt", "grunt", "charger"], ["heavy", "grunt", "grunt"]] as EnemyKind[][],
-  pushMax: 2,
-  /** Waves of the push at most, per capture. */
-  pushWaves: 2,
+  push: [["grunt"], ["grunt"], ["grunt", "drone"], ["grunt", "drone"], ["grunt", "grunt"], ["grunt", "grunt", "drone"]] as EnemyKind[][],
+  /** Neighbouring nodes that send a squad, at most, by network level. */
+  pushMax: [1, 1, 1, 2, 2, 2],
+  /** Waves of the push at most, per capture, by network level. */
+  pushWaves: [1, 1, 1, 1, 2, 2],
   pushAt: 6,
   pushEvery: 30,
   pushDist: [70, 130] as const,
@@ -437,7 +440,7 @@ export interface NetworkLevel {
  * frees nothing sees it climb from `start` to the top in about nine days, and one who holds
  * the ground sees it climb a step every three days or so. A day that starts at the top gathers
  * nothing, so a step taken off the top holds for a while. Freeing a held POI takes it down a
- * step (`relayPoi` two; a thin one a step less, since the network had half lost it already),
+ * step (`relayPoi` two; from thin as from held, since each takes a capture of its core),
  * killing the titan a step, and destroying a relay mast a step (`relayHigh.steps` on a day that
  * started at `relayHigh.at` or higher). A thin POI goes back to held
  * once it has been thin `retakeAfter` days while the network stands at `retakeAt` or higher;

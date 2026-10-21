@@ -19,7 +19,7 @@ import { engageSquad, makeNoise } from "../src/ringfall/sim/awareness";
 import { spawnEnemy } from "../src/ringfall/sim/enemies";
 import { COVERS } from "../src/ringfall/sim/cover";
 import { ENEMIES as KINDS, type EnemyKind, type Rarity } from "../src/ringfall/sim/config";
-import { NODES, FRONT_LINKS, nodeIndex, type NodeId, RELAYS, relayIndex, type RelayId, BOXES, CAMP, DECKS, DEPOTS, depotIndex, ENTRIES, entryOf, EXTRA_BINS, EXTRACTS, inCamp, PACKS, PARTY_STOPS, POIS, poiIndex, poiRegion, REGIONS, regionHere, regionOf, ROAMERS, ROUTES, STOPS, type PoiId, type RegionId, type RouteId, type Squad } from "../src/ringfall/sim/map";
+import { NET_EDGE, NODES, FRONT_LINKS, nodeIndex, type NodeId, RELAYS, relayIndex, type RelayId, BOXES, CAMP, DECKS, DEPOTS, depotIndex, ENTRIES, entryOf, EXTRA_BINS, EXTRACTS, inCamp, PACKS, PARTY_STOPS, POIS, poiIndex, poiRegion, REGIONS, regionHere, regionOf, ROAMERS, ROUTES, STOPS, type PoiId, type RegionId, type RouteId, type Squad } from "../src/ringfall/sim/map";
 import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "../src/ringfall/sim/camp";
 import { inArea } from "../src/ringfall/sim/areas";
 import { routeBefore, useRoutes, worldKey } from "../src/ringfall/sim/routes";
@@ -4066,7 +4066,7 @@ function checkFront(): string | null {
   if (!s.capture || s.capture.t > 0.05 || s.capture.held) return `front: the meter ran with a robot on the core's ground (${s.capture?.t})`;
   s.enemies = s.enemies.filter((e) => e !== g);
   // Held: nothing else may come near meanwhile (the push is kept off for this scenario).
-  s.capture.waves = FRONT.pushWaves;
+  s.capture.waves = FRONT.pushWaves[s.network];
   s.enemies = [];
   for (let i = 0; i < (FRONT.capture + 1) / TICK && s.nodes[SUP] !== "freed"; i++) {
     step(s, idleInput(), false);
@@ -4099,6 +4099,16 @@ function checkFront(): string | null {
   if (frontIncome(deep) !== 3 * FRONT.income + Math.round(FRONT.income * FRONT.outpost)) return `front: the income of three POIs and an outpost is ${frontIncome(deep)}`;
   const out = advanceDay(fresh, day({ captured: ["pumps"] }));
   if (out.profile.outposts.pumps !== "freed" || out.change.outposts.join() !== "pumps" || out.change.network.freed) return `front: capturing an outpost left ${out.profile.outposts.pumps}, network ${JSON.stringify(out.change.network)}`;
+  // A freed outpost on the edge lapses unvisited as a POI goes thin; one come near is kept.
+  let lapse = out.profile;
+  for (let d = 0; d < ISLAND.thinAfter; d++) lapse = advanceDay(lapse, day()).profile;
+  let kept = out.profile;
+  for (let d = 0; d < ISLAND.thinAfter; d++) kept = advanceDay(kept, day({ outposts: ["pumps"] })).profile;
+  if (lapse.outposts.pumps === "freed" || kept.outposts.pumps !== "freed") return `front: an outpost unvisited ${ISLAND.thinAfter} days is ${lapse.outposts.pumps}, one visited ${kept.outposts.pumps}`;
+  // The nodes by the titan's pad and the harbor's north shore are never deep in the player's ground.
+  const all = { ...fresh, poiState: Object.fromEntries(POIS.map((o) => [o.id, { state: o.boss ? "held" : "freed", lastVisit: 1, since: 0 }])) as Profile["poiState"], outposts: Object.fromEntries(OUTPOST_SITES.map((o) => [o.id, "freed"])) as Profile["outposts"] };
+  const deepAll = interiorNodes(islandHolds(all));
+  if (NODES.some((n, i) => deepAll[i] === NET_EDGE.includes(n.id))) return `front: with every node held, the deep ones are ${NODES.filter((_, i) => deepAll[i]).map((n) => n.id).join()}`;
   // A freed outpost stands no guards and its walk does not walk; the territory of the others is kept.
   const r = newRun(9, freeKit(), "reservoir", { island: holds(deep), outposts: deep.outposts, network: 0 });
   const pumps = OUTPOST_SITES.find((o) => o.id === "pumps")!;
@@ -4123,7 +4133,7 @@ function checkFront(): string | null {
     ps.player.pos = { x: core.x + 1.4, y: core.y, z: core.z };
   }
   const pushed = ps.squads.filter((q) => q.name.endsWith("からの増援"));
-  if (!pushed.length || pushed.length > FRONT.pushMax || !pushed.every((q) => q.routed)) return `front: the push sent ${pushed.map((q) => q.name).join()}`;
+  if (!pushed.length || pushed.length > FRONT.pushMax[ps.network] || !pushed.every((q) => q.routed)) return `front: the push sent ${pushed.map((q) => q.name).join()}`;
   return null;
 }
 

@@ -1,6 +1,6 @@
 import { ALLY, ENEMIES, FRONT, PLAYER, TICK } from "./config";
 import { dist2d } from "./geom";
-import { depotIndex, FRONT_LINKS, NODES, nodeIndex, OUTPOST_SITES, POIS, poiIndex, territory, type NodeId, type OutpostId, type PoiId } from "./map";
+import { depotIndex, FRONT_LINKS, NODES, NET_EDGE, nodeIndex, OUTPOST_SITES, POIS, poiIndex, territory, type NodeId, type OutpostId, type PoiId } from "./map";
 import { cellsAround, fieldTo } from "./hunt";
 import { spawnEnemy } from "./enemies";
 import { hiddenPosts } from "./world";
@@ -41,10 +41,11 @@ const touchesPlayer = (holds: readonly NodeHold[], i: number) => CAMP_NEXT.inclu
 export const frontNodes = (holds: readonly NodeHold[]): boolean[] => NODES.map((_, i) => holds[i] !== "freed" && touchesPlayer(holds, i));
 
 /**
- * The nodes deep in the player's ground: freed, with every neighbour the player's too. Such a node
+ * The nodes deep in the player's ground: freed, with every neighbour the player's too, and not
+ * next to ground the network never gives up (`NET_EDGE`). Such a node
  * never goes thin for want of visits, and the network sends no retake to it.
  */
-export const interiorNodes = (holds: readonly NodeHold[]): boolean[] => NODES.map((_, i) => holds[i] === "freed" && NEIGHBOURS[i].every((k) => holds[k] === "freed"));
+export const interiorNodes = (holds: readonly NodeHold[]): boolean[] => NODES.map((n, i) => holds[i] === "freed" && !NET_EDGE.includes(n.id) && NEIGHBOURS[i].every((k) => holds[k] === "freed"));
 
 /** An outpost's standing as the island keeps it: the network's or the rogues' (`territory()`), or the player's. */
 export type OutpostHold = "held" | "rogue" | "freed";
@@ -159,6 +160,10 @@ export function stepFront(s: State) {
     sq.walk = undefined;
     s.enemies = s.enemies.filter((e) => e.squad !== k);
   });
+  const p = s.player.pos;
+  NODES.forEach((n, i) => {
+    if (!s.nodeVisited[i] && Math.abs(n.core.x - p.x) < FRONT.visit && Math.abs(n.core.z - p.z) < FRONT.visit && dist2d(n.core, p) < FRONT.visit) s.nodeVisited[i] = true;
+  });
   const c = s.capture;
   if (!c || s.phase !== "play") return;
   if (s.nodes[c.node] === "freed") {
@@ -168,7 +173,7 @@ export function stepFront(s: State) {
   c.held = onCore(s, c.node) && !contesting(s, c.node);
   if (c.held) c.t += TICK;
   const near = dist2d(s.player.pos, NODES[c.node].core) < FRONT.radius * 5;
-  if (near && c.waves < FRONT.pushWaves) {
+  if (near && c.waves < FRONT.pushWaves[s.network]) {
     c.pushT -= TICK;
     if (c.pushT <= 0) {
       c.pushT = sendPush(s, c.node) ? FRONT.pushEvery : 5;
@@ -189,7 +194,7 @@ function sendPush(s: State, i: number): boolean {
   const from = NEIGHBOURS[i]
     .filter((k) => s.nodes[k] !== "freed")
     .sort((a, b) => dist2d(NODES[a], n.core) - dist2d(NODES[b], n.core))
-    .slice(0, FRONT.pushMax);
+    .slice(0, FRONT.pushMax[s.network]);
   if (!from.length) return true;
   const field = fieldTo(n.core.x, n.core.z);
   const cells = field ? cellsAround(field, FRONT.pushDist[0], FRONT.pushDist[1]) : [];

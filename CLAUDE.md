@@ -183,7 +183,9 @@ and squads push in from the neighbouring nodes. A node taken is the player's at 
 enters `FRONT.zone`) and freed overnight if the raid gets off alive (`advanceDay()` in
 `meta/island.ts`, which also keeps nodes deep in the player's ground from going thin and pays the
 day's income); clearing a POI of its robots no longer frees it. `Profile.outposts` keeps the
-outposts' standing. The bot captures the front's cores it can reach in its region.
+outposts' standing (an outpost on the edge lapses unvisited, as a POI goes thin; the nodes in
+`NET_EDGE` are never deep in the player's ground). The bot captures the front's cores in its region,
+`Skill.capture` a raid, and then leaves.
 The hideout is the long-term goal: modules built level by level from specific valuables and
 credits taken from the stash (`build()` in `profile.ts`; levels, costs and prerequisites in
 `HIDEOUT`, effects in `HIDEOUT_EFFECT`, both in `config.ts`; `meta/hideout.ts` holds the pure

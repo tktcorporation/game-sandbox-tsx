@@ -698,7 +698,7 @@ export class Hud {
     }
     const lines: string[] = [];
     const exits = regionHere(p.pos).exits.map((id) => EXTRACTS.find((x) => x.id === id)!);
-    // The phone layout keeps only the nearest exit's line, so the card stays above the vitals.
+    // The phone layout keeps only a live exit's line (style.css), so the card stays above the vitals; `near` marks the nearest for the desktop.
     const nearest = exits.reduce((best, x, i) => (dist2d(p.pos, x) < dist2d(p.pos, exits[best]) ? i : best), 0);
     exits.forEach((x, i) => {
       const ready = extractReady(s, x);
@@ -785,7 +785,8 @@ export class Hud {
 
   private compassMark(s: State, at: { x: number; z: number } | null) {
     const p = s.player.pos;
-    this.mark = at && s.phase === "play" ? { bearing: (((Math.atan2(at.x - p.x, -(at.z - p.z)) * 180) / Math.PI) % 360 + 360) % 360, d: dist2d(p, at) } : null;
+    // Standing at the place already, the marker would only point at the player's feet.
+    this.mark = at && s.phase === "play" && dist2d(p, at) > 8 ? { bearing: (((Math.atan2(at.x - p.x, -(at.z - p.z)) * 180) / Math.PI) % 360 + 360) % 360, d: dist2d(p, at) } : null;
   }
 
   /**

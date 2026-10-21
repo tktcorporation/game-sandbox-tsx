@@ -63,6 +63,8 @@ export interface Profile {
   poiState: Island;
   /** Who holds each outpost: the network, the rogues, or the player (sim/front.ts). */
   outposts: Record<OutpostId, OutpostHold>;
+  /** The last day the player came to each freed outpost (or freed it): one on the edge lapses after `ISLAND.thinAfter` days. */
+  outpostVisit: Partial<Record<OutpostId, number>>;
   /** The day's contract board (meta/contracts.ts), built when the day began. */
   board: Board;
   /** The id of the board's contract taken for the next raid, or null for none. */
@@ -106,7 +108,7 @@ export const canStartIn = (p: Profile, region: RegionId) => {
 export function newProfile(seed = 1): Profile {
   const stash: Item[] = META.start.weapons.map((w) => ({ t: "weapon", ...w }));
   for (const k of HEALS) for (let i = 0; i < META.start.heals[k]; i++) stash.push({ t: "heal", kind: k });
-  const p: Omit<Profile, "board"> = { v: 18, cash: META.start.cash, stash, raids: 0, extracted: 0, time: 0, quests: emptyLog(), region: "reservoir", entry: FIRST_ENTRY, entries: [FIRST_ENTRY], hideout: emptyHideout(), escaped: null, seed: seed & 0xffff, depots: [], depotSent: {}, seen: "", routes: [], day: 1, poiState: newIsland(), outposts: newOutposts(NETWORK.start), taken: null, records: [], network: NETWORK.start, pressure: 0, events: firstEvents(seed & 0xffff, newIsland()), known: [...MOD_START], threat: 0, freedAt: {} };
+  const p: Omit<Profile, "board"> = { v: 18, cash: META.start.cash, stash, raids: 0, extracted: 0, time: 0, quests: emptyLog(), region: "reservoir", entry: FIRST_ENTRY, entries: [FIRST_ENTRY], hideout: emptyHideout(), escaped: null, seed: seed & 0xffff, depots: [], depotSent: {}, seen: "", routes: [], day: 1, poiState: newIsland(), outposts: newOutposts(NETWORK.start), outpostVisit: {}, taken: null, records: [], network: NETWORK.start, pressure: 0, events: firstEvents(seed & 0xffff, newIsland()), known: [...MOD_START], threat: 0, freedAt: {} };
   return { ...p, board: makeBoard(p) };
 }
 
@@ -708,6 +710,7 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     day,
     poiState: typeof o.v === "number" && o.v >= 13 ? parseIsland(o.poiState, day) : newIsland(),
     outposts: parseOutposts(o.v === 18 ? o.outposts : undefined, network),
+    outpostVisit: parseOutpostVisit(o.v === 18 ? o.outpostVisit : undefined, day),
     records,
     network,
     known: knownMods(v17 && Array.isArray(o.known) ? o.known : []),
@@ -727,6 +730,15 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
 
 /** A saved event kept only while it can come: a retake needs its POI freed on the front's edge. */
 const validEvent = (ev: IslandEvent | null, p: { poiState: Island; outposts: Record<OutpostId, OutpostHold> }): IslandEvent | null => (ev?.t === "retake" && !retakable(p.poiState, p.outposts).includes(ev.poi) ? null : ev);
+
+/** The saved days each outpost was last come to, kept within the island's days. */
+function parseOutpostVisit(raw: unknown, day: number): Partial<Record<OutpostId, number>> {
+  const out: Partial<Record<OutpostId, number>> = {};
+  if (!raw || typeof raw !== "object") return out;
+  const o = raw as Record<string, unknown>;
+  for (const { id } of OUTPOST_SITES) if (Number.isInteger(o[id])) out[id] = Math.max(0, Math.min(day, o[id] as number));
+  return out;
+}
 
 /** Saved outposts; any unreadable stands as `territory()` gives it at `network`, a freed one stays freed. */
 function parseOutposts(raw: unknown, network: number): Record<OutpostId, OutpostHold> {
