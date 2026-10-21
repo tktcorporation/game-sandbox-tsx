@@ -100,8 +100,9 @@ the raid as `Start.event`. A debris fall puts a crate (`Bin.debris`, `DEBRIS`) a
 of `DEBRIS_SPOTS` (`map.ts`; the wreck is drawn by the view only); a retake beams `RETAKE`'s squad
 in to walk to a freed POI's way in, and left alive it thins that POI overnight (`RaidDay.retake`,
 `DayChange.overrun`); a storm scales the robots' sight (`sightScale()`, `STORM`); a crews' visit adds
-a salvage crew. Salvage crews (`CREW`, `NETWORK.levels[].crews`, `stepCrews()` in `world.ts`) beam
-into the starting region, walk to the nearest unopened ground-level POI bins, take each one's
+a salvage crew. Salvage crews (`CREW`, `NETWORK.levels[].crews`: one from network 3, two from 4, none
+below 3 but on a crews' visit; `stepCrews()` in `world.ts`) beam into the starting region, walk to
+the unopened ground-level POI bins nearest by the walk, take each one's
 valuable into `SquadState.bag` (dropped with its bins' POIs when the last member dies, in
 `combat.ts`) and leave by the region's nearest way off; each that gets out (`Stats.crewsOut`)
 raises the network a step overnight. Crews, the retake squad and the debris guards draw on their

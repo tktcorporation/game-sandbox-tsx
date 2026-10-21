@@ -3367,7 +3367,11 @@ function checkEvents(): string | null {
   // A crews' visit brings a second crew and a crew intercept on the board.
   const visit = makeBoard({ ...left, events: [{ t: "crews" }, null] });
   if (!visit.contracts.some((c) => c.t === "intercept" && c.target.t === "crew")) return "event scenario: a crews' visit has no intercept of the crew";
-  if (newRun(77, freeKit(), "reservoir", { event: { t: "crews" } }).crewsDue.length !== NETWORK.levels[NETWORK.play].crews + 1) return "event scenario: a crews' visit does not bring one crew more";
+  for (const network of [NETWORK.play, 3, NETWORK.max]) {
+    const due = (event: { t: "crews" } | null) => newRun(77, freeKit(), "reservoir", { network, event }).crewsDue.length;
+    if (due(null) !== NETWORK.levels[network].crews || due({ t: "crews" }) !== NETWORK.levels[network].crews + 1) return `event scenario: at network ${network} ${due(null)} crews come, ${due({ t: "crews" })} on a crews' visit`;
+  }
+  if (NETWORK.levels[NETWORK.play].crews !== 0) return "event scenario: crews come at the gate's network level without a crews' visit";
   // Storm: a grunt sees the player at 0.8 of its range on a clear day, not in a storm.
   const spot = openSpot(40, 4, 4);
   if (!spot) return "event scenario: no open ground for the storm";
@@ -3385,7 +3389,7 @@ function checkEvents(): string | null {
   // The crew of seed 1000 beams in about 200 m of walking from its first bin, and has searched it by 330 s.
   {
     const quietRun = (crews: boolean) => {
-      const t = newRun(1000, freeKit(), "reservoir");
+      const t = newRun(1000, freeKit(), "reservoir", { event: { t: "crews" } });
       if (!crews) t.crewsDue = [];
       for (let k = 0; k < 330 / TICK; k++) step(t, idleInput(), false);
       return t;
@@ -3396,7 +3400,8 @@ function checkEvents(): string | null {
     if (a.rng !== b.rng || a.roamRng !== b.roamRng) return `event scenario: a crew out of the player's way left the raid's numbers ${a.rng}/${a.roamRng}, not ${b.rng}/${b.roamRng} (${a.stats.crewBins} bins taken)`;
   }
   // Crews: one comes, takes a bin's valuable into its bag (nothing spills), and drops the bag when destroyed.
-  const c = newRun(1000, freeKit(), "reservoir");
+  // At the gate's network level crews come only on a crews' visit.
+  const c = newRun(1000, freeKit(), "reservoir", { event: { t: "crews" } });
   c.player.hp = 1e9;
   let looted = -1;
   for (let t = 0; t < 400 / TICK && looted < 0; t++) {
@@ -3416,7 +3421,7 @@ function checkEvents(): string | null {
   if (!dropped.length && !c.loot.slice(before).some((l) => l.kind === "valuable" && l.from === bin.poi)) return "event scenario: a destroyed crew dropped no bag";
   if (c.stats.crewsDown !== 1 || !c.stats.wiped.includes(crewKey("reservoir"))) return "event scenario: a destroyed crew was not counted";
   // A crew that gets off is counted, and raises the network a step overnight on top of the day's rise.
-  const o = newRun(1000, freeKit(), "reservoir");
+  const o = newRun(1000, freeKit(), "reservoir", { event: { t: "crews" } });
   for (let t = 0; t < 80 / TICK; t++) step(o, idleInput(), false);
   const oq = o.squads.findIndex((x) => x.crew);
   if (oq < 0) return "event scenario: no crew came in 80 s";

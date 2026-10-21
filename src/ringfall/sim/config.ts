@@ -410,7 +410,8 @@ export interface NetworkLevel {
  * reinforcement times, raider time, parties and packs of `REINFORCE`, `RAIDERS`, `PARTY` and
  * `PACKS`, with no plates added. Lower levels give more time and fewer hunters; higher ones
  * bring every wave sooner, more parties, and plates on the plain robots. A salvage crew (`CREW`)
- * comes into the starting region from level 1, two from level 4.
+ * comes into the starting region from level 3, two from level 4; below level 3 crews come only
+ * on a crews' visit, which adds one at every level, so `levels[2]` plays as the island without crews.
  */
 export const NETWORK = {
   start: 1,
@@ -425,8 +426,8 @@ export const NETWORK = {
   relayAt: 3,
   levels: [
     { name: "途切れ", note: "増援は遅く、群れと遊撃隊は少ない", reinforce: { first: 390, every: 330 }, raiders: 960, parties: { reservoir: 1, harbor: 1 }, packs: { reservoir: 1, harbor: 1 }, plate: 0, crews: 0 },
-    { name: "弱い", note: "増援は遅く、群れは少ない", reinforce: { first: 330, every: 270 }, raiders: 840, parties: { reservoir: 1, harbor: 1 }, packs: { reservoir: 2, harbor: 1 }, plate: 0, crews: 1 },
-    { name: "並", note: "いつもの島", reinforce: { first: 270, every: 225 }, raiders: 720, parties: { reservoir: 2, harbor: 2 }, packs: { reservoir: 3, harbor: 2 }, plate: 0, crews: 1 },
+    { name: "弱い", note: "増援は遅く、群れは少ない", reinforce: { first: 330, every: 270 }, raiders: 840, parties: { reservoir: 1, harbor: 1 }, packs: { reservoir: 2, harbor: 1 }, plate: 0, crews: 0 },
+    { name: "並", note: "いつもの島", reinforce: { first: 270, every: 225 }, raiders: 720, parties: { reservoir: 2, harbor: 2 }, packs: { reservoir: 3, harbor: 2 }, plate: 0, crews: 0 },
     { name: "強い", note: "増援が早い・中継器が立つ", reinforce: { first: 240, every: 195 }, raiders: 600, parties: { reservoir: 2, harbor: 2 }, packs: { reservoir: 3, harbor: 2 }, plate: 0.15, crews: 1 },
     { name: "厳しい", note: "増援が早い・遊撃隊が増える・装甲板が増える", reinforce: { first: 210, every: 170 }, raiders: 540, parties: { reservoir: 3, harbor: 3 }, packs: { reservoir: 3, harbor: 2 }, plate: 0.3, crews: 2 },
     { name: "最大", note: "増援が次々来る・遊撃隊が増える・装甲板が多い", reinforce: { first: 180, every: 140 }, raiders: 480, parties: { reservoir: 3, harbor: 3 }, packs: { reservoir: 3, harbor: 2 }, plate: 0.45, crews: 2 },
@@ -524,7 +525,8 @@ export const RETAKE = {
 export const STORM = { sight: 0.6, fog: 0.6 };
 
 /**
- * Salvage crews (回収部隊): squads drawn from `squads` that beam in out of the player's sight,
+ * Salvage crews (回収部隊), as many as `NETWORK.levels[].crews` plus one on a crews' visit: squads
+ * drawn from `squads` that beam in out of the player's sight,
  * `away` metres from them or more, `arrive` seconds into the raid (each crew its own draw), at a
  * stop of the starting region (`PARTY_STOPS`). Most are pairs: a crew met in the open is a
  * fight on top of whatever the player is in, and three of them more often turns it. They walk by
