@@ -3382,16 +3382,18 @@ function checkEvents(): string | null {
     if (Math.abs(fireRange(t, e) - want) > 1e-6) return `event scenario: a grunt fires out to ${fireRange(t, e)} m, not ${want}, ${storm ? "in a storm" : "on a clear day"}`;
   }
   // A crew that never meets the player draws nothing from the raid's numbers: they stand as on a raid without crews.
+  // The crew of seed 1000 beams in about 200 m of walking from its first bin, and has searched it by 330 s.
   {
     const quietRun = (crews: boolean) => {
       const t = newRun(1000, freeKit(), "reservoir");
       if (!crews) t.crewsDue = [];
-      for (let k = 0; k < 200 / TICK; k++) step(t, idleInput(), false);
+      for (let k = 0; k < 330 / TICK; k++) step(t, idleInput(), false);
       return t;
     };
     const a = quietRun(true);
     const b = quietRun(false);
-    if (!a.stats.crewBins || a.rng !== b.rng || a.roamRng !== b.roamRng) return `event scenario: a crew out of the player's way left the raid's numbers ${a.rng}/${a.roamRng}, not ${b.rng}/${b.roamRng} (${a.stats.crewBins} bins taken)`;
+    if (!a.stats.crewBins) return "event scenario: the quiet crew took no bin in 330 s";
+    if (a.rng !== b.rng || a.roamRng !== b.roamRng) return `event scenario: a crew out of the player's way left the raid's numbers ${a.rng}/${a.roamRng}, not ${b.rng}/${b.roamRng} (${a.stats.crewBins} bins taken)`;
   }
   // Crews: one comes, takes a bin's valuable into its bag (nothing spills), and drops the bag when destroyed.
   const c = newRun(1000, freeKit(), "reservoir");

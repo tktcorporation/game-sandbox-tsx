@@ -1600,7 +1600,7 @@ const debrisGuards = (place: string, x: number, z: number): Squad => ({
 export const DEBRIS_SPOTS: DebrisSpot[] = (
   [
     ["southwest", "reservoir", "南西の野", -200, 400],
-    ["easthill", "reservoir", "東の丘", 270, 230],
+    ["easthill", "reservoir", "東の丘", 275, 145],
     ["quarryeast", "reservoir", "採掘場の東の野", -160, 60],
     ["townwest", "harbor", "港町の西の野", -110, -580],
     ["eastshore", "harbor", "東の浜の野", 290, -670],

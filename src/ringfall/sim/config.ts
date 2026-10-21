@@ -528,8 +528,8 @@ export const STORM = { sight: 0.6, fog: 0.6 };
  * `away` metres from them or more, `arrive` seconds into the raid (each crew its own draw), at a
  * stop of the starting region (`PARTY_STOPS`). Most are pairs: a crew met in the open is a
  * fight on top of whatever the player is in, and three of them more often turns it. They walk by
- * the ground's way, at `pace` of their slowest member's speed, to the nearest unopened bin of the
- * region's POIs that stands on the open ground (not a vault) and lies beyond `wary` of the
+ * the ground's way, at `pace` of their slowest member's speed, to the unopened bin of the region's
+ * POIs nearest by that walk that stands on the open ground (not a vault) and lies beyond `wary` of the
  * player, stand `SEARCH.time` within `reach` of it, and take its valuable into their bag (the
  * rest of what it holds is lost). With `bag` valuables, or `leaveAfter` seconds after
  * arriving, or no bin left, they walk to the region's nearest way off and beam out there (or where

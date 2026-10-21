@@ -3,7 +3,7 @@ import { dist2d, groundAt, los, solidAt } from "./geom";
 import { highGround, steepAt, terrainHeight } from "./terrain";
 import { DEPOTS, ENTRIES, EXTRACTS, inCamp, PARTY_STOPS, POIS, recordSpot, REGIONS, regionOf, type ExtractPoint, type RecordId } from "./map";
 import { spawnEnemy, spawnSpot } from "./enemies";
-import { cellsAround, fieldTo, nextStep, onMainGround } from "./hunt";
+import { cellsAround, fieldTo, nextStep, onMainGround, routeLength } from "./hunt";
 import type { CrewTrip, SquadState } from "./state";
 import { raiseAlly, startHelp } from "./ally";
 import { boosted, callLeft, crewRand, netLevel, cellOf, exploreSize, mix, rand, roamRand, type Bin, type Input, type Loot, type PartySlot, type PartyTrip, type Player, type Point, type State, type Weapon } from "./state";
@@ -267,7 +267,7 @@ export function stepCrews(s: State) {
 const crewBin = (b: Bin, c: CrewTrip) =>
   !b.open && !b.vault && !b.outside && regionOf(c.region).pois.includes(POIS[b.poi].id) && onMainGround(b.x, b.z) && Math.abs(b.y - terrainHeight(b.x, b.z)) < 0.6;
 
-/** A salvage crew's errand (see CREW): to the nearest bin, search it, and with a full bag (or out of time or bins) to its way off. */
+/** A salvage crew's errand (see CREW): to the bin nearest by the walk, search it, and with a full bag (or out of time or bins) to its way off. */
 function stepCrew(s: State, sq: SquadState, i: number) {
   const c = sq.crew!;
   const members = s.enemies.filter((e) => e.squad === i);
@@ -290,11 +290,15 @@ function stepCrew(s: State, sq: SquadState, i: number) {
   }
   if (c.bin < 0 || s.bins[c.bin].open) {
     c.searchT = 0;
+    // Nearest by the walk: a bin a fence or a cliff puts a long way round is left for later.
+    // The field runs to the crew, so its lengths are the walks from the bins, which on the main
+    // ground are the walks to them.
+    const field = fieldTo(lead.pos.x, lead.pos.z);
     const pick = s.bins
-      .map((b, n) => ({ b, n }))
+      .map((b, n) => ({ b, n, walk: field ? routeLength(field, b.x, b.z) : Infinity, line: dist2d(b, lead.pos) }))
       // It keeps to bins the player is not at: a crew comes upon the player, it does not walk into their fight.
       .filter(({ b, n }) => crewBin(b, c) && !c.skip.includes(n) && dist2d(b, s.player.pos) > CREW.wary)
-      .sort((a, b) => dist2d(a.b, lead.pos) - dist2d(b.b, lead.pos))[0];
+      .sort((a, b) => (a.walk === b.walk ? a.line - b.line : a.walk - b.walk))[0];
     if (!pick) {
       leave(s, sq, lead);
       return;
