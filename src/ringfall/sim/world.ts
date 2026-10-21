@@ -278,8 +278,8 @@ function stepCrew(s: State, sq: SquadState, i: number) {
   const lead = members[0];
   if (!lead) return;
   c.t += TICK;
-  // Only a calm crew goes about its errand: a fight breaks a search off, and the walk resumes after.
-  if (sq.engaged || members.some((e) => e.aware !== "idle")) {
+  // Only a calm crew goes about its errand: a fight, with the player or the other faction, breaks a search off, and the walk resumes after.
+  if (sq.engaged || sq.foe !== undefined || members.some((e) => e.aware !== "idle")) {
     c.searchT = 0;
     c.mark = { x: lead.pos.x, z: lead.pos.z };
     c.markT = 0;
