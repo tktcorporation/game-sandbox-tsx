@@ -467,6 +467,14 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   Change a number in `config.ts` or `map.ts` only together with a re-run and an update to that file.
   While tuning, `npm run sim:ringfall -- 10` (10 raids per skill and region, about a third of the
   time) is enough to see which way a change moves the tables; the record in that file is 30.
+- The sim gate's speed is kept up as a matter of course, without being asked. Every change that
+  touches `src/ringfall/sim/` or the sim scripts records the `npm run sim:ringfall -- 30` time
+  beside the one before it, both taken back to back on the same machine, in the 測った重さ section of
+  `docs/ringfall/balance.md`. When the gate has grown by a fifth or more since the last speed-up
+  recorded there, profile it (`node --cpu-prof` on a few raids) and make the hot paths cheaper in
+  the same change or the next one. A speed-up must leave the gate's output identical line for line;
+  one that changes the output (thinking less often for far squads, say) is a tuning change,
+  recorded with a re-run like any other.
 
 ## HITMARK
 
