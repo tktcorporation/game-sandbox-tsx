@@ -372,6 +372,18 @@ export const sfx = {
       tone(90, 0.08, { type: "sine", to: 50, vol: 0.3 });
     });
   },
+  /**
+   * Robots fighting each other far off (see FACTION): the bolt's crack dulled by the distance, a low
+   * thump and a long rolling tail, carrying several hundred metres so a fight can be heard and found.
+   */
+  farFire(pos: P3, kind: EnemyKind = "grunt") {
+    const [f] = BOLT[kind];
+    at(pos, { level: 0.55, ref: 55, maxDist: 520, send: 0.5 }, () => {
+      hiss(0.09, { type: "bandpass", freq: vary(f * 2.2, 0.08), to: f, q: 1.4, vol: 0.32 });
+      tone(vary(120, 0.1), 0.12, { type: "sine", to: 55, vol: 0.4 });
+      hiss(0.7, { type: "lowpass", brown: true, freq: 520, to: 140, vol: 0.28, attack: 0.03, at: 0.05 });
+    });
+  },
   lunge(pos?: P3) {
     const body = () => {
       hiss(0.3, { freq: 400, to: 1400, vol: 0.45 });

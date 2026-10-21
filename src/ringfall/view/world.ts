@@ -225,6 +225,8 @@ export class World {
   private orbPool: THREE.Group[] = [];
   private wavePool: THREE.Mesh[] = [];
   private tracers: Tracer[] = [];
+  /** Far muzzle flashes and blasts (`flashAt()`): sprites reused as they fade. */
+  private flashes: { sprite: THREE.Sprite; life: number; max: number }[] = [];
   private particles: Particle[] = [];
   private partMesh: THREE.InstancedMesh;
   private care: THREE.Group | null = null;
@@ -852,7 +854,7 @@ export class World {
     }
   }
 
-  private tracer(from: Vec3, to: Vec3, color: number, width: number) {
+  private tracer(from: Vec3, to: Vec3, color: number, width: number, life = 0.07) {
     let t = this.tracers.find((x) => x.life <= 0);
     if (!t) {
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ toneMapped: false, color, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
@@ -869,7 +871,22 @@ export class World {
     (t.mesh.material as THREE.MeshBasicMaterial).color.setHex(color);
     (t.mesh.material as THREE.MeshBasicMaterial).opacity = 0.9;
     t.mesh.visible = true;
-    t.life = 0.07;
+    t.life = life;
+  }
+
+  /** A brief glow of `size` metres at `at`: a muzzle or a blast seen from far off, where particles are too small to see. */
+  private flashAt(at: Vec3, color: number, size: number) {
+    let f = this.flashes.find((x) => x.life <= 0);
+    if (!f) {
+      f = { sprite: haloSprite(color, 1, 0), life: 0, max: 0.1 };
+      this.flashes.push(f);
+      this.scene.add(f.sprite);
+    }
+    f.sprite.position.set(at.x, at.y, at.z);
+    f.sprite.scale.setScalar(size);
+    (f.sprite.material as THREE.SpriteMaterial).color.setHex(color);
+    f.life = f.max = 0.1;
+    f.sprite.visible = true;
   }
 
   /** Where the gun's muzzle is in the world, for tracers. */
@@ -973,9 +990,35 @@ export class World {
           this.fovKick = Math.max(this.fovKick, 10);
           this.shake = Math.max(this.shake, 0.5);
           break;
-        case "enemyFire":
-          this.burst(e.pos, PAL.orb, 3, 2, 0.06, 0, 0.25);
+        case "enemyFire": {
+          const hue = e.rogue ? PAL.rogueOrb : PAL.orb;
+          this.burst(e.pos, hue, 3, 2, 0.06, 0, 0.25);
+          if (e.foe) {
+            // Fire between the factions: a tracer and a flash that read from far off, thicker with distance (see FACTION).
+            const far = Math.hypot(e.pos.x - s.player.pos.x, e.pos.z - s.player.pos.z);
+            this.tracer(e.pos, e.foe, hue, 0.04 + far * 0.0016, 0.12);
+            this.flashAt(e.pos, hue, 1.2 + far * 0.012);
+          }
           break;
+        }
+        case "robotHit":
+          this.burst(e.pos, 0xffc070, 4, 4, 0.05, 8, 0.3);
+          break;
+        case "fall": {
+          // Destroyed by the other faction: it goes down as a wreck, with no feel of the player's own kill.
+          const v = this.enemies.get(e.id);
+          const big = e.kind === "heavy" ? 2 : 1;
+          this.burst(e.pos, e.rogue ? PAL.rogueArmorLight : PAL.armorLight, 14 * big, 7, 0.16, 14, 1.1);
+          this.burst(e.pos, 0xffc070, 8 * big, 9, 0.06, 2, 0.35);
+          this.flashAt(e.pos, 0xffc070, 3 + Math.hypot(e.pos.x - s.player.pos.x, e.pos.z - s.player.pos.z) * 0.02);
+          if (v) {
+            if (v.lane) this.scene.remove(v.lane);
+            if (v.spawnBeam) this.scene.remove(v.spawnBeam);
+            this.enemies.delete(e.id);
+            this.wreck(v, Math.atan2(e.pos.x - e.fromX, -(e.pos.z - e.fromZ)));
+          }
+          break;
+        }
         case "stomp":
           this.shake = Math.max(this.shake, 0.9);
           this.burst({ x: e.x, y: terrainHeight(e.x, e.z) + 0.2, z: e.z }, PAL.sand, 60, 10, 0.18, 10, 1.0);
@@ -1107,6 +1150,13 @@ export class World {
               o.material.color.setHex(PAL.eliteArmor);
             }
           });
+        // A rogue: the same robot in weathered amber, its eye yellow (see FACTION).
+        if (e.rogue) {
+          // The model's armour materials are its own (`mats`: the armour and its lighter panels).
+          m.mats[0].color.setHex(PAL.rogueArmor);
+          m.mats[1]?.color.setHex(PAL.rogueArmorLight);
+          (m.eyeHalo.material as THREE.SpriteMaterial).color.setHex(PAL.rogueEye);
+        }
         if (e.plate > 0) addPlates(m, e.kind, e.plate);
         this.scene.add(m.root);
         const beam = new THREE.Mesh(
@@ -1175,7 +1225,7 @@ export class World {
       m.eye.scale.setScalar(tele);
       m.eyeHalo.scale.setScalar(k.weakR * (winding ? 9 : 4));
       (m.eyeHalo.material as THREE.SpriteMaterial).opacity = winding ? 0.95 : 0.55;
-      (m.eye.material as THREE.MeshBasicMaterial).color.setHex(e.mode === "stunned" ? 0x9fe8ff : PAL.eye);
+      (m.eye.material as THREE.MeshBasicMaterial).color.setHex(e.mode === "stunned" ? 0x9fe8ff : e.rogue ? PAL.rogueEye : PAL.eye);
       v.flash = Math.max(0, v.flash - dt);
       for (const mat of m.mats) mat.emissive.setHex(v.flash > 0 ? 0xffffff : e.mode === "stunned" ? 0x1f4b5c : 0x000000);
       v.shieldFlash = Math.max(0, v.shieldFlash - dt);
@@ -1230,6 +1280,10 @@ export class World {
         this.scene.add(g);
       }
       g.visible = true;
+      // The rogues' bolts burn yellow, the network's magenta.
+      const hue = o.rogue ? PAL.rogueOrb : PAL.orb;
+      ((g.children[0] as THREE.Mesh).material as THREE.MeshBasicMaterial).color.setHex(hue);
+      ((g.children[2] as THREE.Sprite).material as THREE.SpriteMaterial).color.setHex(hue);
       g.position.set(o.pos.x, o.pos.y, o.pos.z);
       // A fast shot reads as a bolt: stretched along its flight, short and round when slow (the titan's rockets).
       const r = o.r * (1 + Math.sin(this.time * 30 + o.id) * 0.08);
@@ -1432,8 +1486,14 @@ export class World {
       if (t.life <= 0) continue;
       t.life -= dt;
       const mat = t.mesh.material as THREE.MeshBasicMaterial;
-      mat.opacity = Math.max(0, t.life / 0.07) * 0.9;
+      mat.opacity = Math.min(1, Math.max(0, t.life / 0.07)) * 0.9;
       if (t.life <= 0) t.mesh.visible = false;
+    }
+    for (const f of this.flashes) {
+      if (f.life <= 0) continue;
+      f.life -= dt;
+      (f.sprite.material as THREE.SpriteMaterial).opacity = Math.max(0, f.life / f.max);
+      if (f.life <= 0) f.sprite.visible = false;
     }
 
     // --- gun

@@ -38,8 +38,11 @@ with no known way in and no depot on cannot be chosen (`canStartIn()`); the HUD 
 are handed the known list (`Hud.setKnown()`), and each way in has a campfire and signboard in the
 view (scenery, no boxes).
 Robots are squads placed in the world from the start (`POIS[].squads`, four squads per POI, of two
-robots but for the relay's equipment shed and the wreck's beach, which have three: eight or nine a
-POI, fought a squad or two at a time (the pad holds the titan and its drones), and a few `ROAMERS` in `map.ts`, most of them patrolling the roads), drone
+robots but for the relay's equipment shed and the wreck's beach, which have three; about half of
+them walk a beat outside their POI (`MOBILES`), so four or five stand at a POI, fought a squad or
+two at a time (the pad holds the titan and its drones), a few `ROAMERS` in `map.ts`, most of them
+patrolling the roads, and the walks of `MOBILES`: the beats, the network's patrols and convoy and
+the rogues' walks, see `factions.ts` below), drone
 packs that fly long loops over the ground between the POIs (`PACKS` in `map.ts`, `PACK` in
 `config.ts`: a squad's `sight` noticing from further than its kind's `SIGHT`), and hunting parties
 that walk from stop to stop of their region (`PARTY_STOPS` in `map.ts`, `PARTY` in `config.ts`,
@@ -186,7 +189,8 @@ npm run sim:ringfall     # gate 2: bots of three skills play whole raids headles
                          # then the hideout's pacing replays the meta with those raids, then each
                          # skill plays 30 days on one profile with the network carried
                          # (scripts/ringfall-campaign.ts, also runnable alone); raids run
-                         # in parallel, one process per core, the reservoir's (the longest) first
+                         # in parallel, one process per core, the reservoir's (the longest) first,
+                         # beside the campaign's months (a process per skill, started first)
                          # (RINGFALL_SIM_JOBS=n to set, 1 = in turn)
 npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir raid to the end, a harbor raid
                          # to its first fight, a tour of both); screenshots in shots/ringfall/
@@ -379,7 +383,21 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   squads / robots fighting at once, and `flank` the share of hits from behind or by ambush; keep them
   within the targets in `docs/ringfall/balance.md`. Its `meet` column is how often the player meets
   robots: the seconds to the first fight, the longest stretch with none, and the squads met per
-  raid (of them, those of no POI).
+  raid (of them, those of no POI); `c/min` is the squads met per minute of raid.
+- `factions.ts` is the robots between the POIs. The walks of `MOBILES` (`map.ts`) go out and back
+  between nodes by a way traced once per world on the ground's fields (`walkLine()` in `hunt.ts`;
+  the fields are forgotten at the raid's start, so a raid plays the same in any process). The robots
+  are of two factions (`FACTION`): the network (red) and the rogues (yellow, `Enemy.rogue`), hostile
+  to each other and to the player. `TERRITORY` gives the outposts the rogues hold by network level
+  (`territory()`, `State.territory`; the front will paint it), and `ROGUE` how many rogue walks go
+  out. Squads out between the POIs find the other faction by square and fight it with the shots
+  they fire at the player (`fightFoe()` in `enemies.ts`, `damageRobot()`, `fall()` in `combat.ts`);
+  POI garrisons take no part. Squads that move about make for where the player is heading
+  (`interceptSpot()` in `awareness.ts`, `INTERCEPT`), squads of three or more split at once
+  (`SPLIT`), calm walks wait at choke points for a loaded player near a way off (`AMBUSH`, `GATES`,
+  `RING_GAPS`), and the network sends one after a quiet stretch (`SWEEP`). What the player saw or
+  heard of them is `State.contacts`, drawn on the map. `checkFactions()`, `checkPatrols()`,
+  `checkIntercept()` and `checkSplit()` in the sim gate check them.
 - Some robots wear armour plates (`Enemy.plate`, a rarity tier): body hits from a weapon of lower
   rarity are cut by `PLATE` in `config.ts`, weak points pass in full. Each POI's vault guard
   (`Member.plate` in `map.ts`) and the raiders (`RAIDERS.plate`) wear them.
@@ -469,6 +487,14 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   Change a number in `config.ts` or `map.ts` only together with a re-run and an update to that file.
   While tuning, `npm run sim:ringfall -- 10` (10 raids per skill and region, about a third of the
   time) is enough to see which way a change moves the tables; the record in that file is 30.
+- The sim gate's speed is kept up as a matter of course, without being asked. Every change that
+  touches `src/ringfall/sim/` or the sim scripts records the `npm run sim:ringfall -- 30` time
+  beside the one before it, both taken back to back on the same machine, in the 測った重さ section of
+  `docs/ringfall/balance.md`. When the gate has grown by a fifth or more since the last speed-up
+  recorded there, profile it (`node --cpu-prof` on a few raids) and make the hot paths cheaper in
+  the same change or the next one. A speed-up must leave the gate's output identical line for line;
+  one that changes the output (thinking less often for far squads, say) is a tuning change,
+  recorded with a re-run like any other.
 
 ## HITMARK
 

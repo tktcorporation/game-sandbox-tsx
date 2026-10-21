@@ -49,6 +49,8 @@ export type RaidResult = {
     metAway: number;
     /** The longest stretch of seconds in which no robot was fighting the player. */
     quiet: number;
+    /** Minutes from the start to the raid's end, got off or wiped out. */
+    minutes: number;
   };
 };
 
@@ -173,6 +175,7 @@ export function playState(s: State, skillName: string, r: number): RaidResult {
       met: met.size,
       metAway: [...met].filter((i) => s.squads[i]?.poi === -1).length,
       quiet: Math.max(quiet, s.time - fightAt),
+      minutes: s.time / 60,
     },
   };
 }
@@ -207,6 +210,7 @@ export function summarize(region: RegionId, skillName: string, raids: RaidResult
   const quiets: number[] = [];
   let met = 0;
   let metAway = 0;
+  let minutes = 0;
   const ranks: Record<string, number> = { S: 0, A: 0, B: 0, C: 0, "-": 0 };
   for (const raid of raids) {
     ults += raid.ults;
@@ -244,6 +248,7 @@ export function summarize(region: RegionId, skillName: string, raids: RaidResult
     quiets.push(e.quiet);
     met += e.met;
     metAway += e.metAway;
+    minutes += e.minutes;
   }
   const n = Math.max(ended, 1);
   out.lines.push({
@@ -263,6 +268,7 @@ export function summarize(region: RegionId, skillName: string, raids: RaidResult
       `${Math.round((flanks / Math.max(hits - titanHits, 1)) * 100)}%`.padEnd(5),
       String(median(waves)).padEnd(5),
       `${Math.round(median(firstMeets))}s ${Math.round(median(quiets))}s ${(met / n).toFixed(1)}/${(metAway / n).toFixed(1)}`.padEnd(18),
+      (met / Math.max(minutes, 1e-9)).toFixed(2).padEnd(5),
       `${Math.round((allyDmg / n) * 100)}% ${(allyDowns / n).toFixed(1)}d ${(rescues / n).toFixed(1)}r ${(helped / n).toFixed(1)}h`.padEnd(18),
       `S${ranks.S} A${ranks.A} B${ranks.B} C${ranks.C} -${ranks["-"]}`.padEnd(18),
       regionOf(region).exits.map((id) => `${id} ${exits[id]}`).join(" "),

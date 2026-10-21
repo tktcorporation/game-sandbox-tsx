@@ -330,8 +330,8 @@ function react(s: State, e: Enemy, weight: number, broke: boolean, quiet: boolea
  * A salvage crew's last member is down: its bag falls at its feet, each valuable as from the bin
  * it was taken out of, so a fetch contract counts it. Thrown round in a ring, drawing nothing.
  */
-function dropBag(s: State, sq: SquadState, at: Vec3) {
-  s.stats.crewsDown++;
+function dropBag(s: State, sq: SquadState, at: Vec3, byPlayer = true) {
+  if (byPlayer) s.stats.crewsDown++;
   const bag = sq.bag ?? [];
   bag.forEach((v, n) => {
     const a = (n / Math.max(1, bag.length)) * Math.PI * 2;
@@ -357,6 +357,35 @@ export function kill(s: State, e: Enemy, crit: boolean, by: "player" | "ally" = 
   const w = p.weapons[p.slot];
   if (w && w.rarity === 3 && by === "player") w.mag = magSize(w);
   const c = bodyCenter(e);
+  spoils(s, e, c);
+  const last = e.poi >= 0 && !s.enemies.some((o) => o.poi === e.poi);
+  const from = by === "ally" ? s.ally.pos : s.player.pos;
+  s.events.push({ t: "kill", id: e.id, kind: e.kind, pos: c, crit, last, ally: by === "ally", fromX: from.x, fromZ: from.z });
+  if (e.kind === "titan") {
+    // The titan's fall takes its summons and everything in the air with it.
+    s.orbs = [];
+    s.waves = [];
+    for (const o of [...s.enemies]) if (o.poi === e.poi) kill(s, o, false, by);
+  }
+}
+
+/**
+ * A robot destroyed by the other faction's fire (see FACTION): it drops what it would for the
+ * player, and a salvage crew's last its bag, for whoever comes by after the fight; none of it
+ * counts as the player's (no kill, no squad destroyed for a contract).
+ */
+export function fall(s: State, e: Enemy, by: Enemy | null) {
+  s.enemies = s.enemies.filter((o) => o !== e);
+  const sq = s.squads[e.squad];
+  const c = bodyCenter(e);
+  if (sq?.crew && !s.enemies.some((o) => o.squad === e.squad)) dropBag(s, sq, c, false);
+  spoils(s, e, c);
+  const from = by?.pos ?? e.pos;
+  s.events.push({ t: "fall", id: e.id, kind: e.kind, pos: c, rogue: !!e.rogue, fromX: from.x, fromZ: from.z });
+}
+
+/** What a destroyed robot leaves at `c`: shield shards, now and then a heal, a valuable by its kind, perhaps a mod part. */
+function spoils(s: State, e: Enemy, c: Vec3) {
   for (let i = 0; i < SHARDS[e.kind]; i++) {
     const a = rand(s) * Math.PI * 2;
     s.loot.push({ id: s.nextId++, kind: "shard", rarity: 1, pos: { ...c }, vel: { x: Math.cos(a) * 2.5, y: 4, z: Math.sin(a) * 2.5 }, age: 0 });
@@ -377,13 +406,4 @@ export function kill(s: State, e: Enemy, crit: boolean, by: "player" | "ally" = 
   }
   // A mod part, decided by its own hash: the raid's numbers are drawn as without it.
   dropRobotMod(s, e, c);
-  const last = e.poi >= 0 && !s.enemies.some((o) => o.poi === e.poi);
-  const from = by === "ally" ? s.ally.pos : s.player.pos;
-  s.events.push({ t: "kill", id: e.id, kind: e.kind, pos: c, crit, last, ally: by === "ally", fromX: from.x, fromZ: from.z });
-  if (e.kind === "titan") {
-    // The titan's fall takes its summons and everything in the air with it.
-    s.orbs = [];
-    s.waves = [];
-    for (const o of [...s.enemies]) if (o.poi === e.poi) kill(s, o, false, by);
-  }
 }

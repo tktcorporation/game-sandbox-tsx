@@ -8,7 +8,7 @@ import type { CrewTrip, SquadState } from "./state";
 import { raiseAlly, startHelp } from "./ally";
 import { boosted, callLeft, crewRand, netLevel, raidClock, cellOf, exploreSize, mix, rand, roamRand, type Bin, type Input, type Loot, type PartySlot, type PartyTrip, type Player, type Point, type State, type Weapon } from "./state";
 import type { EnemyKind, ValuableKind } from "./config";
-import { located, makeNoise } from "./awareness";
+import { interceptSpot, located, makeNoise } from "./awareness";
 import { hasMod, modScale, spillBinMod, wearMod } from "./mods";
 import { MOD } from "./config";
 
@@ -68,9 +68,11 @@ export function stepReinforce(s: State) {
     }
     const every = q.elite ? RAIDERS.huntEvery : REINFORCE.huntEvery;
     if (tick % Math.round(every / TICK) !== 0) return;
+    // It is told where the player is, and makes for where they are heading (see INTERCEPT).
+    const goal = interceptSpot(s, i, p0.x, p0.z);
     for (const e of s.enemies)
       if (e.squad === i && e.aware === "alert") {
-        e.goal = { x: p0.x, z: p0.z };
+        e.goal = { ...goal };
         e.searchT = Math.max(e.searchT, every + 2);
       }
   });
@@ -276,8 +278,8 @@ function stepCrew(s: State, sq: SquadState, i: number) {
   const lead = members[0];
   if (!lead) return;
   c.t += TICK;
-  // Only a calm crew goes about its errand: a fight breaks a search off, and the walk resumes after.
-  if (sq.engaged || members.some((e) => e.aware !== "idle")) {
+  // Only a calm crew goes about its errand: a fight, with the player or the other faction, breaks a search off, and the walk resumes after.
+  if (sq.engaged || sq.foe !== undefined || members.some((e) => e.aware !== "idle")) {
     c.searchT = 0;
     c.mark = { x: lead.pos.x, z: lead.pos.z };
     c.markT = 0;
@@ -391,8 +393,9 @@ function sendCrew(s: State): boolean {
     const spots = hiddenPosts(s, kinds, x, z, PARTY.seen);
     if (!spots) continue;
     const squad = s.squads.length;
-    s.squads.push({ name: CREW.name, poi: -1, patrol: [], leg: 0, engaged: false, roam: false, crew: { region: s.region, bin: -1, searchT: 0, skip: [], leaving: null, t: 0, mark: { x, z }, markT: 0, held: 0 }, bag: [], bagAt: [], sinceSeen: 0, last: { x: 0, z: 0 } });
-    kinds.forEach((kind, m) => spawnEnemy(s, kind, spots[m].mx, spots[m].mz, -1, squad, { appear: true, crew: true }));
+    s.squads.push({ name: CREW.name, poi: -1, patrol: [], leg: 0, engaged: false, roam: false, crew: { region: s.region, bin: -1, searchT: 0, skip: [], leaving: null, t: 0, mark: { x, z }, markT: 0, held: 0 }, bag: [], bagAt: [], sinceSeen: 0, last: { x: 0, z: 0 }, rogue: true });
+    // The salvage crews are the rogues' (see FACTION): they scavenge what the network guards.
+    kinds.forEach((kind, m) => spawnEnemy(s, kind, spots[m].mx, spots[m].mz, -1, squad, { appear: true, crew: true, rogue: true }));
     s.stats.crewsIn++;
     s.events.push({ t: "crewIn", x, z });
     return true;
