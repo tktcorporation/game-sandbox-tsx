@@ -399,7 +399,8 @@ export interface NetworkLevel {
  * Each day adds `base + perHeld` for each POI held (`thinWeight` for one thin) to a pressure,
  * and the network rises a step each time the pressure reaches `riseEvery`, so a player who
  * frees nothing sees it climb from `start` to the top in about nine days, and one who holds
- * the ground sees it climb a step every three days or so. Freeing a held POI takes it down a
+ * the ground sees it climb a step every three days or so. A day that starts at the top gathers
+ * nothing, so a step taken off the top holds for a while. Freeing a held POI takes it down a
  * step (`relayPoi` two; a thin one a step less, since the network had half lost it already),
  * killing the titan a step, and destroying a relay mast a step. A thin POI goes back to held
  * once it has been thin `retakeAfter` days while the network stands at `retakeAt` or higher;

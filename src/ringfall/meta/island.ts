@@ -112,8 +112,10 @@ const clampNet = (n: number) => Math.max(0, Math.min(NETWORK.max, n));
  * Then the network: down a step for each POI freed from held (the relay two; one less from thin), for the titan's fall and
  * for each relay mast destroyed, then up a step for each `NETWORK.riseEvery` of pressure the
  * day adds (`netGain()`, counted on the POIs as they stand once freed). The pressure is carried
- * from day to day, so a step down never wipes what the network has gathered; while the network
- * stands at the top it gathers none, so a step taken off it holds for a while.
+ * from day to day, so a step down never wipes what the network has gathered. A day that starts
+ * with the network at the top adds no pressure, even when the raid takes it down, and the
+ * pressure is empty whenever the network ends the day at the top: a step taken off the top holds
+ * for a while instead of springing back the next night.
  *
  * Last, a thin POI thin for `NETWORK.retakeAfter` days goes back to held while the network
  * stands at `NETWORK.retakeAt` or higher; otherwise it stays thin until it is cleared again.
@@ -153,7 +155,7 @@ export function advanceDay<P extends IslandDay>(p: P, r: RaidDay): { profile: P;
     relays: r.relays.length,
   };
   const down = clampNet(p.network - steps.freed - steps.titan - steps.relays);
-  let pressure = p.pressure + netGain(poiState);
+  let pressure = p.pressure + (p.network < NETWORK.max ? netGain(poiState) : 0);
   let rise = 0;
   while (pressure >= NETWORK.riseEvery && down + rise < NETWORK.max) {
     pressure -= NETWORK.riseEvery;
@@ -253,24 +255,38 @@ export function eventText(ev: IslandEvent, level: number): string {
   }
 }
 
-/** Days until the network rises a step at today's pace (counting the coming raid), or null at the top. */
-export function riseIn(p: Pick<IslandDay, "network" | "pressure" | "poiState">): number | null {
-  if (p.network >= NETWORK.max) return null;
-  return Math.max(1, Math.ceil((NETWORK.riseEvery - p.pressure) / netGain(p.poiState) - 1e-9));
+/** How far ahead the forecasts look: an event further off than this is told as not coming. */
+export const FORECAST_DAYS = 30;
+
+/** The day the forecasts assume for every coming raid: nothing visited, cleared or destroyed. */
+const IDLE: RaidDay = { alive: true, cleared: [], visited: [], titan: false, relays: [] };
+
+/**
+ * The first of the coming idle days (1 being the coming raid's) after which `done` holds of the
+ * island, stepping `advanceDay()` itself so that a forecast follows every nightly rule; null if
+ * none within `FORECAST_DAYS`.
+ */
+function idleDaysUntil(p: Pick<IslandDay, "day" | "network" | "pressure" | "poiState">, done: (q: IslandDay) => boolean): number | null {
+  let q: IslandDay = { day: p.day, poiState: p.poiState, depots: [], network: p.network, pressure: p.pressure };
+  for (let d = 1; d <= FORECAST_DAYS; d++) {
+    q = advanceDay(q, IDLE).profile;
+    if (done(q)) return d;
+  }
+  return null;
+}
+
+/** Days until the network rises above its level if the player frees nothing (counting the coming raid), or null when it does not in `FORECAST_DAYS`, as at the top. */
+export function riseIn(p: Pick<IslandDay, "day" | "network" | "pressure" | "poiState">): number | null {
+  return idleDaysUntil(p, (q) => q.network > p.network);
 }
 
 /**
- * Days a thin POI has left before the network takes it back (counting the coming raid), or null
- * when it will not unless the player lets the network rise further. The night's rise comes before
- * its retakes (`advanceDay()`), so a network one step short takes the POI back on the night it rises.
+ * Days until the network takes a thin POI back to held if the player frees nothing (counting
+ * the coming raid), or null for a POI that is not thin or is not taken back in `FORECAST_DAYS`.
  */
 export function retakeIn(p: Pick<IslandDay, "day" | "network" | "pressure" | "poiState">, id: PoiId): number | null {
-  const st = p.poiState[id];
-  if (st.state !== "thin") return null;
-  const old = Math.max(1, st.since + NETWORK.retakeAfter - p.day);
-  if (p.network >= NETWORK.retakeAt) return old;
-  const rise = p.network + 1 >= NETWORK.retakeAt ? riseIn(p) : null;
-  return rise === null ? null : Math.max(old, rise);
+  if (p.poiState[id].state !== "thin") return null;
+  return idleDaysUntil(p, (q) => q.poiState[id].state === "held");
 }
 
 /** Whether the relay masts stand in a raid at network `level`. */
@@ -295,10 +311,9 @@ export const relayName = (id: RelayId) => RELAYS[relayIndex(id)].name;
  * Days a freed POI has left before it goes thin, counting the coming raid: 1 means it goes thin
  * unless the next raid comes into it. Null for a POI that is not freed.
  */
-export function daysLeft(p: Pick<IslandDay, "day" | "poiState">, id: PoiId): number | null {
-  const st = p.poiState[id];
-  if (st.state !== "freed") return null;
-  return Math.max(1, ISLAND.thinAfter - (p.day - 1 - st.lastVisit));
+export function daysLeft(p: Pick<IslandDay, "day" | "network" | "pressure" | "poiState">, id: PoiId): number | null {
+  if (p.poiState[id].state !== "freed") return null;
+  return idleDaysUntil(p, (q) => q.poiState[id].state !== "freed");
 }
 
 /** One line of 明日の島: what the island does next unless the player acts. */
@@ -345,7 +360,7 @@ export function noteText(n: IslandNote): string {
   const name = POIS[poiIndex(n.poi)].name;
   switch (n.t) {
     case "retake":
-      return n.days <= 1 ? `${name}は手薄。網が強く、次のレイドの後に支配に戻る` : `${name}は手薄。網が強く、あと ${n.days} 日で支配に戻る`;
+      return n.days <= 1 ? `${name}は手薄。放っておくと、次のレイドの後に支配に戻る` : `${name}は手薄。放っておくと、あと ${n.days} 日で支配に戻る`;
     case "retaken":
       return `${name}は網に取り戻され、支配に戻った`;
     case "fading":
@@ -360,7 +375,7 @@ export function noteText(n: IslandNote): string {
 }
 
 /** POIs that go thin unless the next raid comes into them. */
-export const thinTomorrow = (p: Pick<IslandDay, "day" | "poiState">) => POIS.map((o) => o.id).filter((id) => daysLeft(p, id) === 1);
+export const thinTomorrow = (p: Pick<IslandDay, "day" | "network" | "pressure" | "poiState">) => POIS.map((o) => o.id).filter((id) => daysLeft(p, id) === 1);
 
 /** Each POI's standing for a raid's start (`Start.island`). */
 export const holds = (p: Pick<IslandDay, "poiState">): Partial<Record<PoiId, PoiHold>> => Object.fromEntries(POIS.map((o) => [o.id, p.poiState[o.id].state]));

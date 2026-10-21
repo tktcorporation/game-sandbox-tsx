@@ -39,7 +39,7 @@ are handed the known list (`Hud.setKnown()`), and each way in has a campfire and
 view (scenery, no boxes).
 Robots are squads placed in the world from the start (`POIS[].squads`, four squads per POI, of two
 robots but for the relay's equipment shed and the wreck's beach, which have three: eight or nine a
-POI, fought a squad or two at a time (the pad holds the titan and its drones)), and a few `ROAMERS` in `map.ts`, most of them patrolling the roads), drone
+POI, fought a squad or two at a time (the pad holds the titan and its drones), and a few `ROAMERS` in `map.ts`, most of them patrolling the roads), drone
 packs that fly long loops over the ground between the POIs (`PACKS` in `map.ts`, `PACK` in
 `config.ts`: a squad's `sight` noticing from further than its kind's `SIGHT`), and hunting parties
 that walk from stop to stop of their region (`PARTY_STOPS` in `map.ts`, `PARTY` in `config.ts`,
@@ -276,12 +276,38 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   built (`LAID`). The ways into the lakebed, the quarry, the pad, up the mesa and through the
   fields are among `KEPT_ROADS`: kept clear of scattered cover and pressed along their middle.
   Hamlets (`HAMLET_FRAMES` in `map.ts`: a few buildings and a bin or two, no robots) stand on the
-  ground between, each flat at the level under its middle.
+  ground between, each flat at the level under its middle. Outposts (`OUTPOSTS`: in the harbor a
+  substation, a fuel depot, a marshalling yard, a wharf and an engine depot; in the reservoir a
+  substation and a pumping station) are larger ones, each with a squad of two (`Hamlet.guard`,
+  joined to `ROAMERS`) and its whole yard pressed flat. From them the works run to the POIs
+  (`WORKS_LINES`, laid once the ground is built): power lines on pylons, pipelines high enough to
+  walk under, and a freight line and its spur with wagons left on them as cover.
+  Perimeter fences (`FENCES` / `FENCE_RUNS` in `map.ts`, boxes of kind `fence`) close the open
+  ground round some of the base's works: they stop bodies, not sight or shots (`rayWorld()` in
+  `geom.ts` passes them, `cover.ts` offers no cover behind them), and leave a gate wherever a
+  street or a kept road crosses and a gap wherever something built stands in the way.
+  The ring's own wreckage (`RING_WRECKS` / `RING_RUNS` in `map.ts`, laid once the ground is built)
+  lies on the open ground of both regions: box girders 20 m across whose backs stand 18 m over the
+  ground, in lengths along x or z that close the open ground into ways. They are crossed only where
+  they are broken (gaps between lengths), through a hollow length (`tunnel`, its sides torn open),
+  over a length leaning across one (`lean`, its high end an arch to walk under) or up a heap of
+  rubble (`rubble`) onto the back, whose far side is a drop with no way back up. Like the fences
+  they are in `PLACED`, so the streets route round them.
+  Towns (`TOWN_FRAMES` in `map.ts`: the lakeside town on the reservoir's ring road) are streets of
+  houses, shops and a filling station, each building at the level of the ground under its own
+  middle so a town follows the land, with a squad walking their streets (joined to `ROAMERS`).
+  Streets (`STREETS` in `streets.ts`) join the POIs, outposts, hamlets and ways in over the open
+  ground. They change no ground: `scripts/ringfall-roads.ts` routes them round cliffs, high ground,
+  water and `PLACED` (everything placed before the streets are lined) and prints the lines pasted into
+  `STREETS` from `ROUTE_PLAN`; the view lays their asphalt and paint (`view/streets.ts`, merged into
+  each chunk), the world map draws them, and `STREET_SIDE` in `map.ts` lines them with lamp posts,
+  signposts and queues of abandoned traffic. `offStreet()` is the lookup the scatter and the view use.
   `scatterCover()` then fills the open ground with set pieces in real sizes (sandbag lines,
   road-barrier rows, pallet stacks, container clusters, wrecked trucks, rock outcrops and roofless
   ruins, the vehicles and small things as `prop` boxes drawn by `buildProp()`), each
-  region from its own grid and seed (`SCATTER`), sparse on the salt flats and only in clumps
-  (`clump()`) on the ground between, keeping clear of
+  region from its own grid and seed (`SCATTER`), sparse on the salt flats, off the streets'
+  asphalt, and on the ground between gathered along the streets with only a few clumps
+  (`clump()`) away from them, keeping clear of the stops and parties' stops (`STOPS`, `PARTY_STOPS`),
   authored points, patrol routes and the roads that are the only ways between areas (`KEPT_ROADS`,
   also pressed to their own floor). Its clearance tests and the terrain's shapes are looked up in
   spatial buckets (`Near` in `map.ts`, `BUCKETS` in `terrain.ts`, checked against a full scan by

@@ -1,5 +1,5 @@
 import { ALLY, AWARE, CHARGER, COVER, CREW, DEG, DODGE, DUCK, ELITE, ENEMIES, FALLBACK, PACK, PARTY, PINCH, PLAYER, PURSUE, SHOT, SIGHT, STAGGER, TICK, TITAN, TURN, WORLD, type EnemyKind, type Rarity } from "./config";
-import { clampToWorld, collide, dist2d, groundAt, groundLevel, los, lookAngles, onTerrain, solidAt, wrapAngle } from "./geom";
+import { clampToWorld, collide, dist2d, fenceBetween, groundAt, groundLevel, los, lookAngles, onTerrain, solidAt, wrapAngle } from "./geom";
 import { steepAt, terrainHeight } from "./terrain";
 import { engageSquad, fireRange, headOf, knownSpot, located, pursuitSpot, sense, stepSquads } from "./awareness";
 import { coversNear, type CoverPoint } from "./cover";
@@ -313,8 +313,8 @@ export function stepEnemies(s: State) {
     switch (e.mode) {
       case "move": {
         const sees = known.live && facing(e, tPos) && los(muzzle(e), tChest);
-        // Out of sight it closes in by the ground's way, round the cliff or the house between.
-        const via = sees ? known : (afterVia ?? (after ? after : huntStep(s, e, known)));
+        // Out of sight, or seen through a fence, it closes in by the ground's way, round the cliff, the house or the fence between.
+        const via = sees && !fenceBetween(e.pos, tPos) ? known : (afterVia ?? (after ? after : huntStep(s, e, known)));
         const vd = Math.hypot(via.x - e.pos.x, via.z - e.pos.z) || 1e-3;
         const ux = (via.x - e.pos.x) / vd;
         const uz = (via.z - e.pos.z) / vd;
@@ -884,7 +884,9 @@ function nudge(e: Enemy, dx: number, dz: number) {
   e.pos.x += dx;
   e.pos.z += dz;
   collide(e.pos, k.radius, bodyHeight(k));
-  if (Math.abs(groundAt(e.pos.x, e.pos.z, k.radius, e.pos.y) - e.pos.y) > 0.3) {
+  // A crowd at the camp's gate does not shove its front robot in (the same line as `moveBody()`).
+  const intoCamp = inCamp(e.pos, k.radius + 0.5) && !inCamp({ x: bx, z: bz }, k.radius + 0.5);
+  if (intoCamp || Math.abs(groundAt(e.pos.x, e.pos.z, k.radius, e.pos.y) - e.pos.y) > 0.3) {
     e.pos.x = bx;
     e.pos.z = bz;
   }
