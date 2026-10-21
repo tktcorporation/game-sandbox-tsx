@@ -241,7 +241,31 @@ function groundUnder(e: Enemy, x: number, z: number, r: number, feet: number): n
   return g;
 }
 
-function moveBody(e: Enemy, vx: number, vz: number) {
+/*
+ * Each walker's last `moveBody()` that left it where it was, standing still, and what it
+ * returned. A step depends only on the body, its home, the speed asked and the world, so the
+ * same step from the same stand has the same outcome: a third of all steps are of robots
+ * standing at their posts, and each would test the boxes round them again for nothing.
+ * Numbers are matched with Object.is, so a -0 is never taken for a 0.
+ */
+type Stood = { x: number; y: number; z: number; hx: number; hy: number; hz: number; world: number; out: boolean };
+const stood = new WeakMap<Enemy, Stood>();
+const still = (e: Enemy) => Object.is(e.vel.x, 0) && Object.is(e.vel.y, 0) && Object.is(e.vel.z, 0);
+
+function moveBody(e: Enemy, vx: number, vz: number): boolean {
+  if (!Object.is(vx, 0) || !Object.is(vz, 0) || !still(e)) return stepBody(e, vx, vz);
+  const { pos, home } = e;
+  const a = stood.get(e);
+  if (a && a.world === worldVersion && Object.is(a.x, pos.x) && Object.is(a.y, pos.y) && Object.is(a.z, pos.z) && Object.is(a.hx, home.x) && Object.is(a.hy, home.y) && Object.is(a.hz, home.z)) return a.out;
+  const x = pos.x;
+  const y = pos.y;
+  const z = pos.z;
+  const out = stepBody(e, 0, 0);
+  if (Object.is(pos.x, x) && Object.is(pos.y, y) && Object.is(pos.z, z) && still(e)) stood.set(e, { x, y, z, hx: home.x, hy: home.y, hz: home.z, world: worldVersion, out });
+  return out;
+}
+
+function stepBody(e: Enemy, vx: number, vz: number): boolean {
   const k = ENEMIES[e.kind];
   e.vel.x += (vx - e.vel.x) * Math.min(1, TICK * 8);
   e.vel.z += (vz - e.vel.z) * Math.min(1, TICK * 8);
