@@ -11,6 +11,7 @@ import { SHADE, contactAt, coverAt, floorUnder } from "./shade";
 import { GroundScatter } from "./scatter";
 import { trimBox, type TrimPiece, type TrimSite } from "./trim";
 import { PAL, RARITY_COLOR, SCOPE_IN, buildAlly, buildBin, buildBoat, buildStatic, buildDepot, buildEntryMark, mergeChunk, mergeTrim, type ChunkShade, buildCare, buildDropship, buildEnemy, buildGun, buildHands, buildLootItem, addPlates, flat, glow, haloSprite, type EnemyModel } from "./models";
+import { streetMeshes } from "./streets";
 
 /*
  * Renders a State in first person. It reads the state and the tick's events and
@@ -501,6 +502,7 @@ export class World {
     // The map's boxes and the boulders first, then the routes', merged in that order.
     const statics = new THREE.Group();
     for (const n of c.boxes) statics.add(buildStatic(BOXES[n], n));
+    for (const m of streetMeshes(c)) statics.add(m);
     for (const b of c.boulders) {
       const m = new THREE.Mesh(this.boulderGeo, flat(b.color));
       m.scale.set(b.sc, b.sy, b.sc);

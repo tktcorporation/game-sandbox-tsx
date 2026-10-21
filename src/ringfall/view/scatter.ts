@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { ceilingAt, solidAt } from "../sim/geom";
+import { offStreet } from "../sim/streets";
 import { groundOf, highGround, roadLine, steepAt, surfaceAt, terrainGrad, terrainHeight, type Ground } from "../sim/terrain";
 import { GROUND, groundColour } from "./ground";
 import { PAL } from "./models";
@@ -166,6 +167,8 @@ export class GroundScatter {
     const x = (i + 0.15 + 0.7 * h(i, j, 2)) * cell;
     const z = (j + 0.15 + 0.7 * h(i, j, 3)) * cell;
     if (steepAt(x, z) || highGround(x, z)) return null;
+    // Nothing grows or lies on a street's asphalt (streets.ts).
+    if (offStreet(x, z) < 0.3) return null;
     const at = surfaceAt(x, z);
     const road = roadLine(at).length > 0;
     const ground = groundOf(at) ?? (at === "水路" ? "mud" : "soil");
