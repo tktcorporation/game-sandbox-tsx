@@ -5,6 +5,9 @@ import { build, buildState, buy, buyPrice, canBuild, canStartIn, deliver, delive
 import { craftDone, maxLevel, MODULES, nextLevel, pouchSlots, sources, stashCap, stillNeeded, type Source } from "../meta/hideout";
 import { need, offered, type Quest, type RewardItem } from "../meta/quests";
 import { saveProfile } from "../meta/storage";
+import { islandNotes, noteText, thinTomorrow, unfreeable } from "../meta/island";
+import { HOLD_NAME } from "../sim/island";
+import { HOLD_CSS, IslandMap, islandScene, TITAN_CSS } from "./map";
 import { sfx } from "./sfx";
 
 const RARITY_CSS = ["var(--r0)", "var(--r1)", "var(--r2)", "var(--r3)"];
@@ -395,7 +398,10 @@ export class Hub {
     const p = this.profile;
     const ready = offered(p.quests).filter((q) => deliverable(p, q)).length;
     const buildable = MODULES.filter((m) => canBuild(p, m)).length;
-    return { map: p.hideout.radio ? "知らせ" : "", quests: ready ? `納品 ${ready}` : "", stash: "", shop: "", workshop: buildable ? `作れる ${buildable}` : "" };
+    // A POI that goes thin unless the next raid comes into it is the map table's most pressing news.
+    const fading = thinTomorrow(p).map((id) => POIS[poiIndex(id)].name);
+    const map = [fading.length ? `あす手薄：${fading.join("・")}` : "", p.hideout.radio ? "知らせ" : ""].filter(Boolean).join("・");
+    return { map, quests: ready ? `納品 ${ready}` : "", stash: "", shop: "", workshop: buildable ? `作れる ${buildable}` : "" };
   }
 
   private item(item: Item, body: { act?: string; arg?: string; on?: boolean; right?: string; count?: number; need?: Record<ValuableKind, number>; warn?: boolean }) {
@@ -476,6 +482,35 @@ export class Hub {
     return `<div class="slot depot${allow.cost > allow.budget ? " over" : ""}"><small>持ち込み枠</small><span>中継ボックス Lv${allow.level}<b>${allow.cost} / ${allow.budget}</b></span><small>${
       allow.cost > allow.budget ? `枠を ${allow.cost - allow.budget} 超えている。この装備では車両でこの中継ボックスへ出られない` : allow.next === null ? "最大レベル" : `Lv${allow.level + 1} まで、あと ${yen(allow.next)} クレジット分を送る`
     }</small></div>`;
+  }
+
+  /**
+   * The map table's island: the map with each POI coloured by who holds it, the day, the key to
+   * the colours and 明日の島, what the island does next unless the player acts.
+   */
+  private islandPanel(): string {
+    const p = this.profile;
+    const notes = islandNotes(p);
+    const count = (h: "held" | "thin" | "freed") => POIS.filter((o) => !unfreeable(o.id) && p.poiState[o.id].state === h).length;
+    const key = (["held", "thin", "freed"] as const).map((h) => `<li><i style="background:${HOLD_CSS[h]}"></i>${HOLD_NAME[h]}<b>${count(h)}</b></li>`).join("") + `<li><i class="titan" style="background:${TITAN_CSS}"></i>タイタン</li>`;
+    const lines = notes.length ? notes.map((n) => `<li class="${n.t}${n.t === "fading" && n.days <= 1 ? " soon" : ""}">${esc(noteText(n))}</li>`).join("") : `<li>島は変わらない。支配の拠点の守備隊を片付けて生きて帰ると、その拠点は解放になる</li>`;
+    return (
+      `<div class="hub-island"><canvas id="hub-island-map"></canvas><div class="hub-island-side">` +
+      `<div class="hub-day"><small>島の日</small><b>${p.day}</b><small>日目</small></div>` +
+      `<ul class="hold-key">${key}</ul>` +
+      `<small>明日の島</small><ul class="tomorrow">${lines}</ul>` +
+      `</div></div>`
+    );
+  }
+
+  /** Draws the map table's island into its canvas, framed on the region the truck is set for. */
+  private drawIsland() {
+    const canvas = document.getElementById("hub-island-map") as HTMLCanvasElement | null;
+    if (!canvas) return;
+    const map = new IslandMap(canvas);
+    map.known = this.profile.entries;
+    map.region = this.from ? poiRegion(this.from).id : this.region;
+    map.draw(islandScene(this.profile));
   }
 
   /** The map table: the truck's start (the regions, the chosen region's ways in, the depots on), its allowance, the radio's report. */
@@ -563,7 +598,7 @@ export class Hub {
           })
           .join("") || `<p class="empty">倉庫は空。商人で買うか、貸出装備で出て持ち帰る。</p>`;
     }
-    $("hub-side-title").textContent = shop ? "売り物" : st === "quests" ? "商人の依頼" : st === "workshop" ? "隠れ家" : st === "map" ? "出撃地点" : "持っていく物";
+    $("hub-side-title").textContent = shop ? "売り物" : st === "quests" ? "商人の依頼" : st === "workshop" ? "隠れ家" : st === "map" ? "島と出撃地点" : "持っていく物";
     if (st === "workshop") {
       const done = p.escaped ? `<div class="escaped"><span>脱出艇は直った。いつでも島を出られる</span><button type="button" data-act="ending">エンディング</button></div>` : "";
       $("hub-side").innerHTML =
@@ -579,7 +614,13 @@ export class Hub {
       $("hub-side").innerHTML =
         (open.map((q) => this.quest(q)).join("") || `<p class="empty">いまある依頼はすべて片付けた。</p>`) +
         `<p class="hint">倒した数・制圧・保管庫は倒れても数える。脱出の依頼は生還したときだけ。済んだ依頼の報酬は倉庫に届く。</p>`;
-    } else if (st === "map") $("hub-side").innerHTML = this.startsPanel();
+    } else if (st === "map") {
+      // The island goes under the region and start buttons, which stay in sight on a phone's short screen.
+      const starts = this.startsPanel();
+      const at = starts.indexOf('<p class="hub-lock"');
+      $("hub-side").innerHTML = starts.slice(0, at) + this.islandPanel() + starts.slice(at);
+      this.drawIsland();
+    }
     else $("hub-side").innerHTML = this.kitPanel();
     // The shelves' footer: whether the next raid goes out with the lent kit.
     $("hub-foot").hidden = !kit;

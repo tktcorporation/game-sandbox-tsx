@@ -521,10 +521,13 @@ function swapInto(s: State, l: Loot) {
   s.events.push({ t: "pickup", kind: "valuable", rarity: l.rarity, label: `${v.label} +${v.value}（${dropped.map((k) => VALUABLES[k].label).join("・")}を捨てた）` });
 }
 
+/** Whether the player may search a bin: a vault takes its POI's key, unless the POI is freed. */
+export const canOpen = (s: State, b: Bin) => !b.vault || s.player.keys.includes(b.poi) || s.hold[b.poi] === "freed";
+
 function startSearch(s: State, bin: number) {
   const p = s.player;
   if (p.search?.bin === bin) return;
-  if (s.bins[bin].vault && !p.keys.includes(s.bins[bin].poi)) {
+  if (!canOpen(s, s.bins[bin])) {
     s.events.push({ t: "locked", poi: s.bins[bin].poi });
     return;
   }

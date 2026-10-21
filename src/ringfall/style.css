@@ -1050,8 +1050,10 @@ body.touch .mate-bars {
   background: rgba(20, 26, 51, 0.9);
   box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.12), 6px 6px 0 rgba(0, 0, 0, 0.25);
 }
-/* A station with one list of its own (the map table, the board, the workshop): a narrower panel. */
-#hub[data-station="map"] .hub-inner,
+/* A station with one list of its own (the board, the workshop): a narrower panel. The map table is wider, for the island's map beside its notes. */
+#hub[data-station="map"] .hub-inner {
+  width: min(960px, 100%);
+}
 #hub[data-station="quests"] .hub-inner,
 #hub[data-station="workshop"] .hub-inner {
   width: min(720px, 100%);
@@ -1322,6 +1324,116 @@ body.touch #hub-close kbd {
 .hub-list .slot.depot.over > small:last-child {
   color: var(--ring);
   font-weight: 800;
+}
+/* The map table's island: the map coloured by who holds each POI, the day and 明日の島 beside it. */
+.hub-island {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 300px);
+  gap: 12px;
+  margin-bottom: 8px;
+}
+#hub-island-map {
+  width: 100%;
+  height: min(46vh, 400px);
+  background: #1c1f2a;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.12);
+}
+.hub-island-side {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.hub-island-side > small {
+  color: var(--muted);
+  font-size: 13px;
+}
+.hub-day {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.hub-day small {
+  color: var(--muted);
+  font-size: 13px;
+}
+.hub-day b {
+  font-family: var(--num);
+  font-size: 34px;
+  line-height: 1;
+}
+.hub-island ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.hold-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 13px;
+  font-weight: 800;
+}
+.hold-key li {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.hold-key i {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1.5px rgba(20, 24, 40, 0.9);
+}
+.hold-key i.titan {
+  border-radius: 2px;
+}
+.hold-key b {
+  font-family: var(--num);
+  color: var(--muted);
+}
+.tomorrow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 14px;
+}
+.tomorrow li {
+  padding: 6px 10px;
+  background: var(--plate);
+  box-shadow: inset 3px 0 0 #3f7cae;
+}
+.tomorrow li.thin,
+.tomorrow li.thinned,
+.tomorrow li.soon {
+  box-shadow: inset 3px 0 0 #d4892c;
+}
+.tomorrow li.soon,
+.tomorrow li.thinned {
+  font-weight: 800;
+}
+@media (max-height: 500px) {
+  .hub-island {
+    grid-template-columns: minmax(0, 1fr) minmax(180px, 240px);
+    gap: 8px;
+  }
+  #hub-island-map {
+    height: 54vh;
+  }
+  .hub-day b {
+    font-size: 26px;
+  }
+  .tomorrow {
+    font-size: 12px;
+  }
+  .tomorrow li {
+    padding: 4px 8px;
+  }
+}
+@media (orientation: portrait) and (max-width: 600px) {
+  .hub-island {
+    grid-template-columns: 1fr;
+  }
 }
 /* What a pick costs of a depot start's allowance. */
 #hub .item b.cost {
@@ -1614,6 +1726,19 @@ body.touch #hub-close kbd {
   flex-wrap: wrap;
   gap: 4px 16px;
   font-weight: 800;
+}
+/* The island's day after a raid: its end, the POIs it freed, and 明日の島. */
+#home h3.day-end {
+  margin-top: 0;
+  font-size: 20px;
+}
+#home .freed {
+  color: #8db9de;
+}
+#home .tomorrow {
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 #home .sold {
   font-size: 13px;
@@ -1973,6 +2098,20 @@ body.touch #title h1 {
 #map .map-key.depot {
   color: var(--mate-light);
 }
+/* The POI marks' colours (view/map.ts HOLD_CSS). */
+#map .map-key.held {
+  color: #b8412f;
+}
+#map .map-key.thin {
+  color: #d4892c;
+}
+#map .map-key.freed {
+  color: #3f7cae;
+}
+/* The titan's navy, lightened to read on the dark under the map. */
+#map .map-key.titan {
+  color: #7f89c4;
+}
 body.touch #map .map-close {
   display: none;
 }
@@ -2107,6 +2246,16 @@ body:not(.playing) #banner {
   #home p {
     font-size: 12px;
     gap: 2px 10px;
+  }
+  #home h3.day-end {
+    font-size: 15px;
+  }
+  #home .tomorrow {
+    font-size: 12px;
+    gap: 2px;
+  }
+  #home .tomorrow li {
+    padding: 3px 8px;
   }
 }
 /* The routes under the hideout's modules: a closed one in the warning colour, an open one quiet. */

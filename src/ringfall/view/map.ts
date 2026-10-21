@@ -1,9 +1,10 @@
 import { DEPOT, WORLD } from "../sim/config";
-import { BOXES, DEPOTS, ENTRIES, EXTRACTS, LANDMARKS, POIS, REGIONS, ROUTES, regionHere, type EntryId } from "../sim/map";
+import { BOXES, DEPOTS, ENTRIES, EXTRACTS, LANDMARKS, POIS, REGIONS, regionOf, ROUTES, regionHere, type EntryId, type PoiId, type RegionId, type RouteId } from "../sim/map";
+import { HOLD_NAME, type PoiHold } from "../sim/island";
 import { STREETS } from "../sim/streets";
 import { worldKey } from "../sim/routes";
 import { DAM_FACE, floorLevel, groundOf, highGround, LEVEL, steepAt, surfaceAt, terrainHeight, type Ground } from "../sim/terrain";
-import { cellOf, exploreSize, type State } from "../sim/state";
+import { cellOf, decodeSeen, exploreSize, type Ally, type Player, type State } from "../sim/state";
 import { PAL } from "./models";
 
 /*
@@ -29,10 +30,39 @@ const CELL = 1.5;
 
 const css = (c: number) => `#${c.toString(16).padStart(6, "0")}`;
 
+/**
+ * Each POI's standing in the map's marks: muted brick red, amber and steel blue, which read on
+ * the sand and stay apart from the loot's colours and the robots' red eyes. The titan's pad,
+ * never freed, has a mark of its own in the robots' armour.
+ */
+export const HOLD_CSS: Record<PoiHold, string> = { held: "#b8412f", thin: "#d4892c", freed: "#3f7cae" };
+export const TITAN_CSS = "#262d52";
+
+/**
+ * What the map draws: a raid's state, or the camp's picture of the island between raids (the
+ * explored map, the depots on, the routes open, each POI's standing) with no one on it.
+ */
+export type MapScene = Pick<State, "seen" | "cleared" | "hold" | "depots" | "routes" | "found"> & {
+  player?: Pick<Player, "pos" | "yaw">;
+  ally?: Pick<Ally, "active" | "pos" | "down">;
+};
+
+/** The camp's picture of the island between raids, from the profile's explored map, depots, routes and POI standings. */
+export function islandScene(p: { seen: string; depots: readonly PoiId[]; routes: readonly RouteId[]; poiState: Record<PoiId, { state: PoiHold }> }): MapScene {
+  return {
+    seen: decodeSeen(p.seen),
+    cleared: POIS.map(() => false),
+    hold: POIS.map((o) => p.poiState[o.id].state),
+    depots: DEPOTS.map((d) => p.depots.includes(d.poi)),
+    routes: [...p.routes],
+    found: [],
+  };
+}
+
+/** The ground image, shared by every map on the page: drawing it takes a while, and it changes only with the world (`worldKey()`). */
+let shared: { key: string; image: HTMLCanvasElement } | null = null;
+
 export class IslandMap {
-  private base: HTMLCanvasElement | null = null;
-  /** The world (`worldKey()`) the ground image was drawn from: a raid with other routes open redraws it. */
-  private baseKey = "";
   /** One pixel per explored-map cell, redrawn each open frame and scaled over the ground. */
   private fog: HTMLCanvasElement | null = null;
   private readonly width = Math.ceil((WORLD.x1 - WORLD.x0) / CELL);
@@ -42,6 +72,8 @@ export class IslandMap {
   whole = false;
   /** The ways in the base offers; null when the map is drawn without a profile, as all of them. */
   known: EntryId[] | null = null;
+  /** The region framed when the scene has no player on it (the camp's map table). */
+  region: RegionId = "reservoir";
   /** The shape last given to the page, which sizes the map by it. */
   private aspect = 0;
 
@@ -56,8 +88,9 @@ export class IslandMap {
    * The part of the world on show: the region the player is in, or all of it. The region's frame
    * grows to take in the player, who may stand on the way between the regions outside it.
    */
-  view(s: State): View {
+  view(s: MapScene): View {
     if (this.whole) return WHOLE;
+    if (!s.player) return regionOf(this.region).bounds;
     const b = regionHere(s.player.pos).bounds;
     const { x, z } = s.player.pos;
     const pad = 40;
@@ -162,10 +195,9 @@ export class IslandMap {
     return c;
   }
 
-  draw(s: State) {
-    if (this.baseKey !== worldKey()) this.base = null;
-    this.baseKey = worldKey();
-    this.base ??= this.build();
+  draw(s: MapScene) {
+    if (shared?.key !== worldKey()) shared = { key: worldKey(), image: this.build() };
+    const base = shared.image;
     const g = this.canvas.getContext("2d")!;
     const v = this.view(s);
     const aspect = (v.x1 - v.x0) / (v.z1 - v.z0);
@@ -184,7 +216,7 @@ export class IslandMap {
     g.fillStyle = "#1c1f2a";
     g.fillRect(0, 0, w, h);
     g.imageSmoothingEnabled = true;
-    g.drawImage(this.base, ox, oy, this.width * CELL * m, this.height * CELL * m);
+    g.drawImage(base, ox, oy, this.width * CELL * m, this.height * CELL * m);
     // Smoothed, so the fog's edge is soft rather than a staircase of 20 m squares.
     const { cols, rows } = exploreSize();
     g.drawImage(this.fogImage(s.seen), ox, oy, cols * DEPOT.cell * m, rows * DEPOT.cell * m);
@@ -219,10 +251,13 @@ export class IslandMap {
     };
     const taken: Rect[] = [];
     const free = (r: Rect) => !taken.some((t) => r.x0 < t.x1 && r.x1 > t.x0 && r.y0 < t.y1 && r.y1 > t.y0);
-    const poiText = (i: number) => (s.cleared[i] ? `${POIS[i].name}（制圧）` : POIS[i].name);
+    // A POI cleared this raid says so; otherwise its standing on the island, when it is not held.
+    const hold = (i: number): PoiHold => s.hold?.[i] ?? "held";
+    const poiText = (i: number) => (s.cleared[i] && hold(i) !== "freed" ? `${POIS[i].name}（制圧）` : hold(i) === "held" ? POIS[i].name : `${POIS[i].name}（${HOLD_NAME[hold(i)]}）`);
     POIS.forEach((poi, i) => {
       const p = at(poi.x, poi.z);
-      taken.push(box(poiText(i), p.x, p.y - 9 * dpr, 12));
+      taken.push(box(poiText(i), p.x, p.y - 15 * dpr, 12));
+      taken.push({ x0: p.x - 8 * dpr, y0: p.y - 8 * dpr, x1: p.x + 8 * dpr, y1: p.y + 8 * dpr });
     });
     for (const x of EXTRACTS) {
       const p = at(x.x, x.z);
@@ -344,12 +379,45 @@ export class IslandMap {
       g.strokeRect(p.x - r, p.y - r, r * 2, r * 2);
       g.fillRect(p.x - r, p.y - r, r * 2, r * 2);
     });
-    // POI names go on top, a little above their centre, so an exit nearby does not hide them.
+    // Each POI's mark at its centre, coloured by who holds it: a disc, or the titan's hexagon.
     POIS.forEach((poi, i) => {
       const p = at(poi.x, poi.z);
-      label(poiText(i), p.x, p.y - 9 * dpr, s.cleared[i] ? "#cfd6e0" : "#ffffff", 12);
+      const r = 7 * dpr;
+      g.save();
+      g.lineWidth = 2.5 * dpr;
+      g.strokeStyle = "rgba(20,24,40,0.9)";
+      g.beginPath();
+      if (poi.boss) {
+        for (let k = 0; k < 6; k++) {
+          const a = (Math.PI / 3) * k + Math.PI / 6;
+          const x = p.x + Math.cos(a) * r * 1.15;
+          const y = p.y + Math.sin(a) * r * 1.15;
+          if (k) g.lineTo(x, y);
+          else g.moveTo(x, y);
+        }
+        g.closePath();
+        g.fillStyle = TITAN_CSS;
+      } else {
+        g.arc(p.x, p.y, r, 0, Math.PI * 2);
+        g.fillStyle = HOLD_CSS[hold(i)];
+      }
+      g.fill();
+      g.stroke();
+      if (poi.boss) {
+        // The titan's eye, in the robots' red.
+        g.fillStyle = HOLD_CSS.held;
+        g.beginPath();
+        g.arc(p.x, p.y, r * 0.38, 0, Math.PI * 2);
+        g.fill();
+      }
+      g.restore();
     });
-    if (s.ally.active) {
+    // POI names go on top, a little above their mark, so an exit nearby does not hide them.
+    POIS.forEach((poi, i) => {
+      const p = at(poi.x, poi.z);
+      label(poiText(i), p.x, p.y - 15 * dpr, s.cleared[i] ? "#cfd6e0" : "#ffffff", 12);
+    });
+    if (s.ally?.active) {
       const a = at(s.ally.pos.x, s.ally.pos.z);
       g.fillStyle = s.ally.down > 0 ? "#ff5a4f" : "#6fd0cf";
       g.beginPath();
@@ -358,6 +426,7 @@ export class IslandMap {
     }
     // The player: an arrow pointing the way they face.
     const p = s.player;
+    if (!p) return;
     const me = at(p.pos.x, p.pos.z);
     g.save();
     g.translate(me.x, me.y);

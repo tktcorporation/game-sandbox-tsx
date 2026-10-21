@@ -29,14 +29,16 @@ import { step } from "../src/ringfall/sim/step";
 import { hurtPlayer } from "../src/ringfall/sim/player";
 import { hurtAlly, placeAlly } from "../src/ringfall/sim/ally";
 import { haulValue, rank } from "../src/ringfall/sim/results";
-import { SHIP_SQUAD, bagLoad, bagUsed, makeRoom, toolIn, useTarget } from "../src/ringfall/sim/world";
+import { SHIP_SQUAD, bagLoad, bagUsed, canOpen, makeRoom, toolIn, useTarget } from "../src/ringfall/sim/world";
 import { bodyCenter, damageEnemy, eyePos, fireRay, magSize, weakPoint } from "../src/ringfall/sim/combat";
 import { lookAngles } from "../src/ringfall/sim/geom";
 import { forward } from "../src/ringfall/sim/state";
 import { build, buildState, buy, canBuild, deliver, depotAllowance, depotBudget, emptyLoadout, fitsStart, healRoom, itemCost, FIRST_ENTRY, loadoutCost, newProfile, parseProfile, pouch, price, sell, sellPrice, settle, takeKit, wares, type Item, type Profile } from "../src/ringfall/meta/profile";
 import { emptyHideout, maxLevel, MODULES, poisWith, sources, stashCap } from "../src/ringfall/meta/hideout";
 import { boostFor, boosted } from "../src/ringfall/sim/state";
-import { HIDEOUT, TOOL_KINDS, TOOLS, VAULT } from "../src/ringfall/sim/config";
+import { HIDEOUT, ISLAND, TOOL_KINDS, TOOLS, VAULT } from "../src/ringfall/sim/config";
+import { daysLeft, holds, islandNotes, newIsland, thinTomorrow } from "../src/ringfall/meta/island";
+import { garrison, isVaultGuard } from "../src/ringfall/sim/island";
 import { QUESTS, offered, raidCredit } from "../src/ringfall/meta/quests";
 import { META } from "../src/ringfall/sim/config";
 import { pacing, type Pool } from "./ringfall-pacing";
@@ -851,7 +853,7 @@ function checkEntries(): string | null {
  */
 function checkKnownEntries(): string | null {
   const fresh = newProfile();
-  if (FIRST_ENTRY !== "beach" || fresh.v !== 12 || fresh.entries.join() !== "beach") return `known entries: a fresh profile knows ${fresh.entries.join()}`;
+  if (FIRST_ENTRY !== "beach" || fresh.v !== 13 || fresh.entries.join() !== "beach") return `known entries: a fresh profile knows ${fresh.entries.join()}`;
   const far = entryOf("checkpoint");
   const at = (s: State, dx: number, lift: number) => {
     const x = far.x + dx;
@@ -884,7 +886,7 @@ function checkKnownEntries(): string | null {
   const save = (p: object) => parseProfile(JSON.parse(JSON.stringify(p)));
   if (save(won.profile)?.entries.join() !== "beach,checkpoint") return "known entries: the known ways in do not survive a save";
   const v10 = save({ ...fresh, v: 10, entries: undefined, region: "harbor", entry: "quay" });
-  if (v10?.v !== 12 || v10.entries.length !== ENTRIES.length || v10.region !== "harbor" || v10.entry !== "quay") return `known entries: a v10 save loaded as ${JSON.stringify(v10 && { v: v10.v, entries: v10.entries, region: v10.region, entry: v10.entry })}`;
+  if (v10?.v !== 13 || v10.entries.length !== ENTRIES.length || v10.region !== "harbor" || v10.entry !== "quay") return `known entries: a v10 save loaded as ${JSON.stringify(v10 && { v: v10.v, entries: v10.entries, region: v10.region, entry: v10.entry })}`;
   // A harbor start with no harbor way in known moves to the reservoir; with a harbor depot on it stays.
   const shut = save({ ...fresh, region: "harbor", entry: "quay", entries: ["beach", "nowhere"] });
   if (shut?.region !== "reservoir" || shut.entry !== "beach" || shut.entries.join() !== "beach") return `known entries: a harbor start with no harbor way in loaded as ${shut?.region} / ${shut?.entry}`;
@@ -1537,19 +1539,19 @@ function checkDepots(): string | null {
   // Saves from before the depots load with none on and nothing explored; unknown depots are dropped.
   const { depots: _d, seen: _s, ...v5 } = newProfile();
   const loaded = parseProfile(JSON.parse(JSON.stringify({ ...v5, v: 5 })));
-  if (loaded?.v !== 12 || loaded.depots.length || loaded.seen !== "") return `depot scenario: a v5 save loaded as ${JSON.stringify(loaded && { v: loaded.v, depots: loaded.depots, seen: loaded.seen })}`;
+  if (loaded?.v !== 13 || loaded.depots.length || loaded.seen !== "") return `depot scenario: a v5 save loaded as ${JSON.stringify(loaded && { v: loaded.v, depots: loaded.depots, seen: loaded.seen })}`;
   const kept = parseProfile(JSON.parse(JSON.stringify({ ...after.profile, depots: ["pad", "nowhere", "pad"] })));
   if (kept?.depots.join() !== "pad" || kept.seen !== after.profile.seen) return `depot scenario: a v7 save loaded depots ${kept?.depots.join()}`;
   // A v6 save's explored map was drawn over the world before it widened: it is dropped, the depots stay.
   const v6 = parseProfile(JSON.parse(JSON.stringify({ ...after.profile, v: 6 })));
-  if (v6?.v !== 12 || v6.seen !== "" || v6.depots.join() !== after.profile.depots.join()) return `depot scenario: a v6 save loaded as ${JSON.stringify(v6 && { v: v6.v, depots: v6.depots, seen: v6.seen.length })}`;
+  if (v6?.v !== 13 || v6.seen !== "" || v6.depots.join() !== after.profile.depots.join()) return `depot scenario: a v6 save loaded as ${JSON.stringify(v6 && { v: v6.v, depots: v6.depots, seen: v6.seen.length })}`;
   // A v9 save dropped from the air over a smaller world: it starts at its region's first way in, its explored map dropped.
   if (!after.profile.seen) return "depot scenario: the raid explored nothing to save";
   // A v11 save's explored map was drawn over the narrower world: it is dropped, the rest stays.
   const v11 = parseProfile(JSON.parse(JSON.stringify({ ...after.profile, v: 11 })));
-  if (v11?.v !== 12 || v11.seen !== "" || v11.depots.join() !== after.profile.depots.join() || v11.entries.join() !== after.profile.entries.join()) return `depot scenario: a v11 save loaded as ${JSON.stringify(v11 && { v: v11.v, seen: v11.seen.length, entries: v11.entries })}`;
+  if (v11?.v !== 13 || v11.seen !== "" || v11.depots.join() !== after.profile.depots.join() || v11.entries.join() !== after.profile.entries.join()) return `depot scenario: a v11 save loaded as ${JSON.stringify(v11 && { v: v11.v, seen: v11.seen.length, entries: v11.entries })}`;
   const v9 = parseProfile(JSON.parse(JSON.stringify({ ...after.profile, v: 9, entry: undefined, region: "harbor" })));
-  if (v9?.v !== 12 || v9.seen !== "" || v9.entry !== regionOf("harbor").entries[0] || v9.depots.join() !== after.profile.depots.join()) return `depot scenario: a v9 save loaded as ${JSON.stringify(v9 && { v: v9.v, entry: v9.entry, seen: v9.seen.length })}`;
+  if (v9?.v !== 13 || v9.seen !== "" || v9.entry !== regionOf("harbor").entries[0] || v9.depots.join() !== after.profile.depots.join()) return `depot scenario: a v9 save loaded as ${JSON.stringify(v9 && { v: v9.v, entry: v9.entry, seen: v9.seen.length })}`;
   return null;
 }
 
@@ -1626,7 +1628,7 @@ function checkDepotBudget(): string | null {
   // A v7 save loads with nothing sent through each depot on (and its explored map, over the smaller world, dropped); a current save keeps only its depots' records.
   const { depotSent: _ds, ...v7 } = { ...p3, v: 7 };
   const m7 = parseProfile(JSON.parse(JSON.stringify(v7)));
-  if (m7?.v !== 12 || JSON.stringify(m7.depotSent) !== JSON.stringify(Object.fromEntries(p3.depots.map((x) => [x, 0]))) || m7.seen !== "") return `depot budget: a v7 save loaded as ${JSON.stringify(m7 && { v: m7.v, depotSent: m7.depotSent })}`;
+  if (m7?.v !== 13 || JSON.stringify(m7.depotSent) !== JSON.stringify(Object.fromEntries(p3.depots.map((x) => [x, 0]))) || m7.seen !== "") return `depot budget: a v7 save loaded as ${JSON.stringify(m7 && { v: m7.v, depotSent: m7.depotSent })}`;
   const odd = parseProfile(JSON.parse(JSON.stringify({ ...p3, depotSent: { pad: 2000, supply: -5, nowhere: 9, quarry: 7000 } })));
   if (JSON.stringify(odd?.depotSent) !== JSON.stringify({ supply: 0, pad: 2000, wreck: 0 })) return `depot budget: a save's odd records loaded as ${JSON.stringify(odd?.depotSent)}`;
 
@@ -1752,7 +1754,7 @@ function checkHideout(): string | null {
   // Saves: a v4 profile keeps its stash and starts with an empty hideout; a v5 one keeps its hideout.
   const v4 = { v: 4, cash: 900, stash: [{ t: "valuable", kind: "gyro" }, { t: "weapon", kind: "pike", rarity: 2 }, { t: "key", poi: "yard" }], raids: 9, extracted: 7, quests: { progress: {}, done: ["grunts"] }, region: "harbor" };
   const m4 = parseProfile(JSON.parse(JSON.stringify(v4)));
-  if (!m4 || m4.v !== 12 || m4.stash.length !== 3 || m4.raids !== 9 || MODULES.some((m) => m4.hideout[m] !== 0) || m4.escaped || m4.region !== "harbor") return `storage scenario: a v4 save loaded as ${JSON.stringify(m4)}`;
+  if (!m4 || m4.v !== 13 || m4.stash.length !== 3 || m4.raids !== 9 || MODULES.some((m) => m4.hideout[m] !== 0) || m4.escaped || m4.region !== "harbor") return `storage scenario: a v4 save loaded as ${JSON.stringify(m4)}`;
   const m5 = parseProfile(JSON.parse(JSON.stringify(end)));
   if (!m5 || m5.hideout.craft !== maxLevel("craft") || m5.escaped?.raids !== 31 || m5.seed !== end.seed) return "storage scenario: a v5 save lost its hideout";
   // With one slot left, a valuable the hideout wants takes it ahead of gear; one it does not want is sold first.
@@ -1806,6 +1808,85 @@ function checkVault(): string | null {
   return null;
 }
 
+/**
+ * The island's state: one settled raid is one day; a POI cleared in a raid the player gets off
+ * alive is freed (its depot on), a freed one unvisited for `ISLAND.thinAfter` days goes thin, a
+ * thin one cleared again is freed, and the titan's pad is never freed. A raid's garrison follows:
+ * full while held, the vault guard and half the squads while thin, nobody once freed.
+ */
+function checkIsland(): string | null {
+  const PADD = poiIndex("pad");
+  const raid = (seed: number, o: { alive: boolean; cleared?: number[]; visited?: number[] }, island?: Profile["poiState"]) => {
+    const s = newRun(seed, freeKit(), "reservoir", island ? { island: holds({ poiState: island }) } : {});
+    s.outcome = o.alive ? "extracted" : "dead";
+    s.stats.cleared = [...(o.cleared ?? [])];
+    for (const i of o.visited ?? []) s.visited[i] = true;
+    return s;
+  };
+  let p = newProfile();
+  if (p.day !== 1 || POIS.some((o) => p.poiState[o.id].state !== "held")) return `island scenario: a new profile is on day ${p.day} with ${JSON.stringify(p.poiState)}`;
+  // A wipe after clearing frees nothing, but it is a day.
+  const wiped = settle(p, raid(11, { alive: false, cleared: [SUPPLY], visited: [SUPPLY] }));
+  if (wiped.profile.day !== 2 || wiped.day !== 1 || wiped.freed.length || wiped.profile.poiState.supply.state !== "held") return `island scenario: a wipe after clearing the supply depot left ${JSON.stringify({ day: wiped.profile.day, freed: wiped.freed, supply: wiped.profile.poiState.supply })}`;
+  // Getting off after clearing the supply depot and the titan's pad frees the depot only.
+  const won = settle(p, raid(11, { alive: true, cleared: [SUPPLY, PADD], visited: [SUPPLY, PADD] }));
+  p = won.profile;
+  if (won.freed.join() !== "supply" || p.poiState.supply.state !== "freed" || p.poiState.pad.state !== "held" || !p.depots.includes("supply")) return `island scenario: clearing the supply depot and the pad and getting off freed ${won.freed.join()} with depots ${p.depots.join()}`;
+  if (daysLeft(p, "supply") !== ISLAND.thinAfter) return `island scenario: a POI freed today has ${daysLeft(p, "supply")} days before it goes thin, not ${ISLAND.thinAfter}`;
+  // Days pass without a visit: the last of them is announced, then the depot goes thin.
+  const quiet = (q: Profile, seed: number) => settle(q, raid(seed, { alive: true, visited: [QUARRY] }, q.poiState));
+  let q = p;
+  for (let d = 1; d < ISLAND.thinAfter; d++) q = quiet(q, 20 + d).profile;
+  if (q.poiState.supply.state !== "freed" || thinTomorrow(q).join() !== "supply" || !islandNotes(q).some((n) => n.t === "fading" && n.poi === "supply" && n.days === 1)) return `island scenario: a day before it goes thin, the supply depot is ${q.poiState.supply.state} and tomorrow says ${JSON.stringify(islandNotes(q))}`;
+  const thinned = quiet(q, 30);
+  if (thinned.thinned.join() !== "supply" || thinned.profile.poiState.supply.state !== "thin" || thinned.profile.day !== p.day + ISLAND.thinAfter) return `island scenario: ${ISLAND.thinAfter} days unvisited left the supply depot ${thinned.profile.poiState.supply.state} on day ${thinned.profile.day}`;
+  // A visit puts it off: the depot freed on day 1 and visited on day 3 is still freed on day 5.
+  let v = settle(p, raid(40, { alive: true, visited: [QUARRY] }, p.poiState)).profile;
+  v = settle(v, raid(41, { alive: true, visited: [SUPPLY] }, v.poiState)).profile;
+  v = settle(v, raid(42, { alive: true }, v.poiState)).profile;
+  if (v.poiState.supply.state !== "freed" || daysLeft(v, "supply") !== ISLAND.thinAfter - 1) return `island scenario: a visit did not put off going thin (${JSON.stringify(v.poiState.supply)} on day ${v.day})`;
+  // Thin stays thin while left alone, and clearing it again frees it.
+  let t = thinned.profile;
+  for (let d = 0; d < 4; d++) t = quiet(t, 50 + d).profile;
+  if (t.poiState.supply.state !== "thin") return `island scenario: a thin POI left alone became ${t.poiState.supply.state}`;
+  const again = settle(t, raid(60, { alive: true, cleared: [SUPPLY], visited: [SUPPLY] }, t.poiState));
+  if (again.freed.join() !== "supply" || again.profile.poiState.supply.state !== "freed") return "island scenario: clearing a thin POI and getting off did not free it";
+  // The garrisons: held in full and as with no island given, thin with half the squads and the vault guard, freed empty.
+  const count = (s: State, i: number) => s.enemies.filter((e) => e.poi === i).length;
+  const plain = newRun(77);
+  const allHeld = newRun(77, freeKit(), "reservoir", { island: holds({ poiState: newIsland() }) });
+  if (JSON.stringify(plain.enemies) !== JSON.stringify(allHeld.enemies) || plain.rng !== allHeld.rng) return "island scenario: a raid with every POI held is not the raid with no island given";
+  const mixed = { ...newIsland(), supply: { state: "thin" as const, lastVisit: 1 }, quarry: { state: "freed" as const, lastVisit: 1 }, pad: { state: "freed" as const, lastVisit: 1 } };
+  const m = newRun(77, freeKit(), "reservoir", { island: holds({ poiState: mixed }) });
+  const full = (i: number) => POIS[i].squads.reduce((n, sq) => n + sq.members.length, 0);
+  const thinSquads = garrison(SUPPLY, "thin", 77);
+  const want = thinSquads.reduce((n, sq) => n + sq.members.length, 0);
+  if (thinSquads.length !== Math.ceil(POIS[SUPPLY].squads.length * ISLAND.thinKeep) || !thinSquads.some(isVaultGuard)) return `island scenario: a thin supply depot keeps ${thinSquads.map((sq) => sq.name).join()}`;
+  if (count(m, SUPPLY) !== want || want >= full(SUPPLY) || !m.enemies.some((e) => e.poi === SUPPLY && e.plate > 0)) return `island scenario: a thin supply depot stands ${count(m, SUPPLY)} robots (want ${want} of ${full(SUPPLY)}, the vault guard among them)`;
+  if (garrison(SUPPLY, "thin", 77).map((sq) => sq.name).join() !== thinSquads.map((sq) => sq.name).join()) return "island scenario: a thin garrison is not fixed by the seed";
+  if (count(m, QUARRY) !== 0 || !m.cleared[QUARRY] || !m.depots[depotIndex("quarry")]) return `island scenario: a freed quarry stands ${count(m, QUARRY)} robots, cleared ${m.cleared[QUARRY]}, depot ${m.depots[depotIndex("quarry")]}`;
+  if (count(m, PADD) !== full(PADD) || m.hold[PADD] !== "held") return "island scenario: the titan's pad was freed";
+  for (const i of [poiIndex("relay"), poiIndex("wreck"), poiIndex("yard"), poiIndex("smelter")]) if (count(m, i) !== full(i)) return `island scenario: a held ${POIS[i].id} stands ${count(m, i)} robots, not ${full(i)}`;
+  // A freed POI is not cleared again in the raid, and its vault opens without the key.
+  m.reinforceT = m.raiderT = 1e9;
+  ticks(m, 1);
+  if (m.stats.cleared.includes(QUARRY)) return "island scenario: a freed POI counted as cleared in the raid";
+  const vault = m.bins.find((b) => b.poi === QUARRY && b.vault)!;
+  const locked = m.bins.find((b) => b.poi === SUPPLY && b.vault)!;
+  if (!canOpen(m, vault) || canOpen(m, locked)) return "island scenario: a freed POI's vault took its key, or a thin one's did not";
+  // A quest to clear a POI freed before it was offered is done by coming into it.
+  m.visited[QUARRY] = false;
+  if (raidCredit({ t: "clear", poi: "quarry" }, m)) return "island scenario: a freed POI not come into counted for a quest to clear it";
+  m.visited[QUARRY] = true;
+  if (raidCredit({ t: "clear", poi: "quarry" }, m) !== 1) return "island scenario: coming into a freed POI did not count for a quest to clear it";
+  // Saves: a v12 one is on the day after its raids with every POI held; a v13 one keeps its island, the pad held.
+  const v12 = parseProfile(JSON.parse(JSON.stringify({ ...newProfile(), v: 12, raids: 6, day: undefined, poiState: undefined })));
+  if (!v12 || v12.v !== 13 || v12.day !== 7 || POIS.some((o) => v12.poiState[o.id].state !== "held")) return `island scenario: a v12 save loaded on day ${v12?.day} with ${JSON.stringify(v12?.poiState)}`;
+  const back = parseProfile(JSON.parse(JSON.stringify({ ...thinned.profile, poiState: { ...thinned.profile.poiState, pad: { state: "freed", lastVisit: 2 } } })));
+  if (!back || back.day !== thinned.profile.day || back.poiState.supply.state !== "thin" || back.poiState.pad.state !== "held") return `island scenario: a v13 save loaded as ${JSON.stringify(back && { day: back.day, poiState: back.poiState })}`;
+  return null;
+}
+
 /** Quests open in order, count raids (kills even on a wipe), pay on finishing, and take deliveries. */
 function checkQuests(): string | null {
   let p = newProfile();
@@ -1855,14 +1936,14 @@ function checkQuests(): string | null {
   const last = tr.profile.stash.at(-1);
   if (tr.quests[0]?.id !== "relay" || last?.t !== "key" || !tr.sold.some((i) => i.t === "valuable")) return `quest scenario: with one slot left the stash kept ${JSON.stringify(last)} and sold ${JSON.stringify(tr.sold)}`;
   const v1 = parseProfile({ v: 1, cash: 10, stash: [], raids: 2, extracted: 1 });
-  if (!v1 || v1.v !== 12 || v1.quests.done.length || v1.region !== "reservoir") return "storage scenario: a v1 save does not load";
+  if (!v1 || v1.v !== 13 || v1.quests.done.length || v1.region !== "reservoir") return "storage scenario: a v1 save does not load";
   // v2 saves named a key's POI by its place in the list; it loads as that POI's id.
   const v2 = parseProfile({ v: 2, cash: 10, stash: [{ t: "key", poi: 2 }, { t: "key", poi: 9 }], raids: 1, extracted: 1, quests: { progress: {}, done: [] } });
   const v2Key = v2?.stash[0];
-  if (!v2 || v2.v !== 12 || v2.stash.length !== 1 || v2Key?.t !== "key" || v2Key.poi !== "relay") return `storage scenario: a v2 save's key 2 loaded as ${JSON.stringify(v2?.stash)}, not the relay key`;
+  if (!v2 || v2.v !== 13 || v2.stash.length !== 1 || v2Key?.t !== "key" || v2Key.poi !== "relay") return `storage scenario: a v2 save's key 2 loaded as ${JSON.stringify(v2?.stash)}, not the relay key`;
   // A v3 save keeps its keys by id and drops into the reservoir; the landing choice is kept.
   const v3 = parseProfile({ v: 3, cash: 10, stash: [{ t: "key", poi: "wreck" }], raids: 1, extracted: 1, quests: { progress: {}, done: [] } });
-  if (!v3 || v3.v !== 12 || v3.stash.length !== 1 || v3.region !== "reservoir") return `storage scenario: a v3 save loaded as ${JSON.stringify(v3)}`;
+  if (!v3 || v3.v !== 13 || v3.stash.length !== 1 || v3.region !== "reservoir") return `storage scenario: a v3 save loaded as ${JSON.stringify(v3)}`;
   if (parseProfile(JSON.parse(JSON.stringify({ ...newProfile(), region: "harbor", entries: ["beach", "outskirts"] })))?.region !== "harbor") return "storage scenario: the landing choice did not survive a save";
   // The harbor quests: the yard's vault counts only that vault, the harbor haul only a raid dropped into the harbor.
   const late = { ...newProfile(), quests: { progress: {}, done: QUESTS.filter((q) => !["yardVault", "harborHaul", "craft", "navigator", "control", "furnace", "escape"].includes(q.id)).map((q) => q.id) } };
@@ -2833,12 +2914,12 @@ function checkTools(): string | null {
   if (spare.opened.length || !kept || sellPrice(kept) !== TOOLS.cutter.value) return "tool scenario: a cutter with its routes all open was not kept to sell at its value";
   // Saves: a v8 one has every route closed; a v9 one keeps its routes, unknown ones dropped.
   const v8 = parseProfile(JSON.parse(JSON.stringify({ ...p, v: 8 })));
-  if (!v8 || v8.v !== 12 || v8.routes.length) return `tool scenario: a v8 save loaded with routes ${JSON.stringify(v8?.routes)}`;
+  if (!v8 || v8.v !== 13 || v8.routes.length) return `tool scenario: a v8 save loaded with routes ${JSON.stringify(v8?.routes)}`;
   const v9 = parseProfile(JSON.parse(JSON.stringify({ ...p, routes: ["gangway", "nowhere", "dam"] })));
   if (v9?.routes.join() !== "dam,gangway") return `tool scenario: a v9 save loaded with routes ${JSON.stringify(v9?.routes)}`;
   return null;
 }
-for (const err of [checkTerrainIndex(20_000), checkParties(), checkPacks(), checkRoutes(), checkRouteObstacles(), checkTools(), checkTimeToKill(), checkStagger(), checkWindupMoves(), checkDepots(), checkDepotBudget(), checkPlates(), checkHideout(), checkBoltNoTunnel(), checkPickupWavesRouted(), checkLaterWaveFights(), checkSidestepHit(), checkReturnFire(), checkWallStops(), checkPinch(), checkPursuit(), checkHealHeard(), checkPositionMatters(), checkPullWhenAiming(), checkVault(), checkQuests(), checkSettle(), checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkBoatCall(), checkSecondPickup(), checkEntries(), checkCamp(), checkKnownEntries(), checkConnections(), checkAllySelfUp(), checkStompHeight(), checkFieldsReused(), checkFieldsFollowRunner(), checkCliffsStop(), checkNoPits(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill(), checkLeap(), checkLeapLeavesAllyBelow(), checkLeapDowned(), checkLeapAllyCatchesUp(), checkLeapAllyDowned(), checkLeapWithItem(), checkLeapClocks(), checkLeapOffHighGround(), checkLeapUnderRoof()]) {
+for (const err of [checkTerrainIndex(20_000), checkParties(), checkPacks(), checkRoutes(), checkRouteObstacles(), checkTools(), checkTimeToKill(), checkStagger(), checkWindupMoves(), checkDepots(), checkDepotBudget(), checkPlates(), checkHideout(), checkBoltNoTunnel(), checkPickupWavesRouted(), checkLaterWaveFights(), checkSidestepHit(), checkReturnFire(), checkWallStops(), checkPinch(), checkPursuit(), checkHealHeard(), checkPositionMatters(), checkPullWhenAiming(), checkVault(), checkIsland(), checkQuests(), checkSettle(), checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkBoatCall(), checkSecondPickup(), checkEntries(), checkCamp(), checkKnownEntries(), checkConnections(), checkAllySelfUp(), checkStompHeight(), checkFieldsReused(), checkFieldsFollowRunner(), checkCliffsStop(), checkNoPits(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill(), checkLeap(), checkLeapLeavesAllyBelow(), checkLeapDowned(), checkLeapAllyCatchesUp(), checkLeapAllyDowned(), checkLeapWithItem(), checkLeapClocks(), checkLeapOffHighGround(), checkLeapUnderRoof()]) {
   if (err) {
     console.error(err);
     process.exit(1);

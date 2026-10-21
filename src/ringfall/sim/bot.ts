@@ -6,7 +6,7 @@ import { clearLine, findPath, type Avoid } from "./nav";
 import { onMainGround } from "./hunt";
 import { callLeft, enemyMax, idleInput, weakY, type Enemy, type Input, type State } from "./state";
 import { pickHeal } from "./player";
-import { makeRoom } from "./world";
+import { canOpen, makeRoom } from "./world";
 import { offLowGround, offshore, terrainHeight } from "./terrain";
 
 /**
@@ -978,7 +978,7 @@ export class Bot {
     // below still bounds the detour.
     const reach = (c: { x: number; z: number }, r: number) => dist2d(c, p.pos) < (`${Math.round(c.x)},${Math.round(c.z)}` === this.lootKey ? r * 2.5 : r);
     const cands: { x: number; z: number; d: number; weapon?: true; care?: true }[] = [];
-    for (const b of s.bins) if (!b.open && (!b.vault || p.keys.includes(b.poi)) && reach(b, 26) && reachable(b)) cands.push({ x: b.x, z: b.z, d: dist2d(b, p.pos) });
+    for (const b of s.bins) if (!b.open && canOpen(s, b) && reach(b, 26) && reachable(b)) cands.push({ x: b.x, z: b.z, d: dist2d(b, p.pos) });
     if (s.care && s.care.landed && !s.care.open) cands.push({ x: s.care.x, z: s.care.z, d: dist2d(s.care, p.pos), care: true });
     for (const l of s.loot) {
       if (l.age < 0.6 || !reach(l.pos, 22) || !reachable(l.pos)) continue;

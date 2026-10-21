@@ -76,10 +76,11 @@ The trader's quests are data in `meta/quests.ts` (`QUESTS`, credited from a raid
 only with that POI's key; keys drop from the bins of the POI named by its `keyFrom` (`VAULT`).
 POIs have a stable `id` (`PoiId` in `map.ts`); saves, quests, `keyFrom` and `EXTRA_BINS` refer to a
 POI by it, never by its place in `POIS` (the run's state may index `POIS` internally). The profile
-is versioned (`Profile.v`, which is 12), and `parseProfile()` moves older saves forward (a save from
+is versioned (`Profile.v`, which is 13), and `parseProfile()` moves older saves forward (a save from
 before the ways in starts at its region's first way in; a save from before ways in were learned
 knows them all; a save from before v12 drops its explored map, since `cellOf()` follows `WORLD`,
-which then grew wider) and moves its
+which then grew wider; a save from before v13 starts on the day after its raids with every POI
+held) and moves its
 start to one it may choose (`allowedStart()`).
 Each POI has a depot on its road (`DEPOTS` in `map.ts`, run by `stepDepots()` in `world.ts`): walking
 up switches it on for good, its use key sends the bag home (it survives a wipe) or, with the bag empty,
@@ -104,6 +105,16 @@ the collision grid (`setRouteBoxes()` in `geom.ts`) and dropping the bot's and t
 changes. With every route closed the terrain, the map's boxes and the walkers' grids are the ones
 before routes existed, and the obstacles stand in cliffs and on a deck where path finding does not
 go (its grids and its sight checks, `los(a, b, true)`, leave them out).
+The island has a state between raids (`docs/ringfall/living-island.md`): one settled raid is one
+day (`Profile.day`), and each POI is held, thin or freed (`Profile.poiState`, with the last day it
+was visited). `meta/island.ts` holds the pure rules: `advanceDay()` (called by `settle()`) frees a
+POI cleared in a raid the player got off alive and switches its depot on, and turns a freed POI
+unvisited for `ISLAND.thinAfter` days thin; `islandNotes()` gives 明日の島 for the map table and
+the results. The titan's pad is never freed. A raid reads the standings through
+`newRun(seed, kit, region, { island })` (`State.hold`): `garrison()` in `sim/island.ts` stands
+every squad of a held POI, the vault guard and half the squads of a thin one (picked from the
+seed), and none of a freed one, which starts cleared, its vault open without the key (`canOpen()`
+in `world.ts`) and its depot on. With no `island` every POI is held, which the sim gate plays.
 The hideout is the long-term goal: modules built level by level from specific valuables and
 credits taken from the stash (`build()` in `profile.ts`; levels, costs and prerequisites in
 `HIDEOUT`, effects in `HIDEOUT_EFFECT`, both in `config.ts`; `meta/hideout.ts` holds the pure

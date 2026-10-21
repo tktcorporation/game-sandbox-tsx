@@ -5,7 +5,8 @@ import { eyePos, magSize } from "../sim/combat";
 import { dist2d, los } from "../sim/geom";
 import { DEPOTS, entryOf, EXTRACTS, POIS, poiIndex, regionHere, regionOf, routeOf, type EntryId } from "../sim/map";
 import { routeBefore } from "../sim/routes";
-import { bagLoad, depotBlocked, depotInReach, extractHere, extractReady, homeReady, makeRoom, poiAt, roomForTool, searchTime, useTarget } from "../sim/world";
+import { islandNotes, noteText } from "../meta/island";
+import { bagLoad, canOpen, depotBlocked, depotInReach, extractHere, extractReady, homeReady, makeRoom, poiAt, roomForTool, searchTime, useTarget } from "../sim/world";
 import { callLeft, enemyHp, enemyShield, weakY, type GameEvent, type State, type Vec3 } from "../sim/state";
 import { haulValue, rank } from "../sim/results";
 import { pickHeal } from "../sim/player";
@@ -206,10 +207,17 @@ export class Hud {
         if (e.kind !== "shard") this.toast(`${e.label}${e.kind === "weapon" ? `（${RARITY.names[e.rarity]}）` : e.kind === "armor" ? `（${RARITY.names[e.rarity]}）` : ""}`, e.rarity);
         break;
       case "poiStart":
-        this.banner(POIS[e.poi].boss ? "タイタンの縄張り" : `${POIS[e.poi].name}`, POIS[e.poi].boss ? "足元の衝撃波はジャンプでかわせる" : "部隊を全滅させると制圧になる");
+        {
+          // What the POI's standing on the island means on arrival.
+          const h = s.hold?.[e.poi] ?? "held";
+          const name = POIS[e.poi].name;
+          if (POIS[e.poi].boss) this.banner("タイタンの縄張り", "足元の衝撃波はジャンプでかわせる");
+          else if (h === "freed") this.banner(`${name}（解放）`, "守備隊はいない。保管庫は鍵なしで開く");
+          else this.banner(h === "thin" ? `${name}（手薄）` : name, h === "thin" ? "守備隊は半分。全滅させて生還すると解放に戻る" : "部隊を全滅させて生還すると解放になる");
+        }
         break;
       case "poiClear":
-        this.banner(`${POIS[e.poi].name} 制圧`, POIS[e.poi].boss ? "タイタン撃破。データコアを拾って脱出せよ" : `生還すれば +${SCORE.poi} 点。自己蘇生が戻った`, true, POIS[e.poi].boss ? 3.2 : 2.4);
+        this.banner(`${POIS[e.poi].name} 制圧`, POIS[e.poi].boss ? "タイタン撃破。データコアを拾って脱出せよ" : `生還すれば解放になり +${SCORE.poi} 点。自己蘇生が戻った`, true, POIS[e.poi].boss ? 3.2 : 2.4);
         break;
       case "reinforce":
         this.banner("増援が降下した", "ロボット部隊がこちらを探している");
@@ -707,7 +715,7 @@ export class Hud {
       const b = s.bins[t.index];
       const what = b.vault ? "保管庫" : "補給箱";
       if (q?.bin === t.index) return `${what}を調べている… ${Math.floor((q.t / searchTime(b)) * 100)}%（撃つ・離れると中断）`;
-      if (b.vault && !p.keys.includes(b.poi)) return `保管庫：${POIS[b.poi].name}の鍵が要る`;
+      if (!canOpen(s, b)) return `保管庫：${POIS[b.poi].name}の鍵が要る`;
       return `${key("E")}${what}を${b.vault ? "開ける" : "調べる"}（音が出る）`;
     }
     if (t.kind === "swap") {
@@ -758,7 +766,7 @@ export class Hud {
       // The POIs of the region dropped into, and any visited in the other.
       ...POIS.map((p, i) => ({ p, i }))
         .filter(({ p, i }) => regionOf(s.region).pois.includes(p.id) || s.visited[i])
-        .map(({ p, i }) => `<span>${p.name}<b>${s.cleared[i] ? "制圧" : s.visited[i] ? "立ち寄り" : "-"}</b></span>`),
+        .map(({ p, i }) => `<span>${p.name}<b>${settled?.freed.includes(p.id) ? "制圧・解放" : s.hold?.[i] === "freed" ? (s.visited[i] ? "解放済み・立ち寄り" : "解放済み") : s.cleared[i] ? "制圧" : s.visited[i] ? "立ち寄り" : "-"}</b></span>`),
       // What came home is listed beside the results; what was lost is struck through here.
       ...(lost ? haul.map(([label, n]) => `<span class="lost">${label}<b>× ${n}</b></span>`) : []),
       // What went home from a depot is kept on a wipe too, so a lost raid shows the two apart.
@@ -777,7 +785,13 @@ export class Hud {
     const quests = settled?.quests ?? [];
     // A record of a raid kept from before ways in were learned has walked to none.
     const forgot = (s.found ?? []).filter((id) => !this.known.includes(id));
-    $("home").innerHTML = (quests.length ? `<h3>済んだ依頼</h3><p>${quests.map((q) => `<span>${q.title}（${q.reward.cash} クレジット${rewardList(q).map(([i, n]) => `・${itemName(i)}${n > 1 ? ` × ${n}` : ""}`).join("")}）</span>`).join("")}</p>` : "") + (settled
+    // The island's day the raid was, what it freed, and what the island does next unless the player acts.
+    const island = settled
+      ? `<h3 class="day-end">${settled.day} 日目の終わり</h3>` +
+        (settled.freed.length ? `<h3>解放した拠点</h3><p>${settled.freed.map((id) => `<span class="freed">${POIS[poiIndex(id)].name}</span>`).join("")}</p>` : "") +
+        `<h3>明日の島</h3><ul class="tomorrow">${(islandNotes(settled.profile, settled).map((n) => `<li class="${n.t}${n.t === "fading" && n.days <= 1 ? " soon" : ""}">${noteText(n)}</li>`).join("")) || "<li>島は変わらない。支配の拠点の守備隊を片付けて生きて帰ると、その拠点は解放になる</li>"}</ul>`
+      : "";
+    $("home").innerHTML = island + (quests.length ? `<h3>済んだ依頼</h3><p>${quests.map((q) => `<span>${q.title}（${q.reward.cash} クレジット${rewardList(q).map(([i, n]) => `・${itemName(i)}${n > 1 ? ` × ${n}` : ""}`).join("")}）</span>`).join("")}</p>` : "") + (settled
       ? (sent.length ? `<h3>中継ボックスから倉庫へ送った物</h3><p>${count(sent)}</p>` : "") +
         `<h3>${lost ? "ポーチに残った物" : "持ち帰った物"}</h3><p>${home.length ? count(home) : "<span>なし</span>"}</p>` +
         (settled.learned.length ? `<h3>次から選べる入口</h3><p>${settled.learned.map((id) => `<span>${entryOf(id).name}（${regionOf(entryOf(id).region).name}）</span>`).join("")}</p>` : "") +
