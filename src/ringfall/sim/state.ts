@@ -560,7 +560,9 @@ export interface Contact {
   z: number;
   t: number;
   rogue: boolean;
+  /** Whether the squad was heard fighting lately, and when it last was (seeing it does not refresh this). */
   fight: boolean;
+  fightT: number;
 }
 
 /** A called pickup on its way: seconds until it is there (0 = there), and the robots that beam in meanwhile. */

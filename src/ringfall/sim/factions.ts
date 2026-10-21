@@ -250,8 +250,10 @@ function note(s: State, squad: number, at: Point, rogue: boolean, fight: boolean
   const c = s.contacts.find((q) => q.squad === squad);
   const x = Math.round(at.x);
   const z = Math.round(at.z);
-  if (c) Object.assign(c, { x, z, t: s.time, rogue, fight: fight || (c.fight && s.time - c.t < FACTION.every * 2) });
-  else s.contacts.push({ squad, x, z, t: s.time, rogue, fight });
+  const fightT = fight ? s.time : (c?.fightT ?? -Infinity);
+  const fighting = s.time - fightT < FACTION.every * 2;
+  if (c) Object.assign(c, { x, z, t: s.time, rogue, fight: fighting, fightT });
+  else s.contacts.push({ squad, x, z, t: s.time, rogue, fight: fighting, fightT });
 }
 
 /** How far the player sees the robots out between the POIs for the map: as far as the view draws them. */

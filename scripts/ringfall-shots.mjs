@@ -626,9 +626,10 @@ const harborTour = [
   ["tour-15-viaduct", 165, 1.7, -622, -1.42, 0.16],
   ["tour-16-wreck", ...at("wreck", -12, 1.7, 40), 0.12, 0.1],
   ["tour-17-wreck-deck", ...at("wreck", -50, 8.8, 2), 1.5, 0.02, true],
-  ["tour-18-yard-alley", ...at("yard", -38, 1.7, -13.5), 1.57, 0.02],
-  ["tour-19-yard-crane", ...at("yard", 24, 13.6 + 1.6, -5), 3.1, -0.42, true],
-  ["tour-20-smelter", ...at("smelter", -22, 1.7, 32), 0.4, 0.16],
+  ["tour-18-yard-alley", ...at("yard", -46, 1.7, -29.5), 1.57, 0.02],
+  ["tour-19-yard-crane", ...at("yard", 46.4, 13.6 + 1.6, 14), 0, -0.2, true],
+  ["tour-19b-yard-quay-crane", ...at("yard", 46, 34 + 1.7, -45), Math.PI, -0.3, true],
+  ["tour-20-smelter", ...at("smelter", 8, 1.7, 44), 0, 0.14],
   ["tour-21-lighthouse", ...at("area:bay", -66, 1.7, -514), -0.97, 0.22],
   ["tour-22-lighthouse-view", ...at("area:bay", -112.9, 33.4, -552), 1.45, -0.2, true],
   ["tour-23-salt-flats", ...at("area:bay", -40, 1.7, -468), 0.75, 0.0],
@@ -691,7 +692,7 @@ const harborTour = [
   ["tour-42-wreck-length", ...at("wreck", 40, 1.7, 50), -0.67, 0.12],
   ["tour-43-yard-gantries", ...at("yard", 0, 1.7, 60), 0, 0.12],
   ["tour-44-smelter-chimneys", ...at("smelter", 20, 1.7, 70), -0.28, 0.18],
-  ["tour-45-smelter-roofs", ...at("smelter", -6, 3 + 13.6 + 1.7, -6), Math.PI / 2, -0.08, true],
+  ["tour-45-smelter-deck", ...at("smelter", -14, 3 + 34 + 1.7, -4), Math.PI / 2, -0.22, true],
   // The outposts between the POIs, and the works that lead from one to the next: the power line
   // north from the substation toward the quay, the freight line east past the yard.
   ["tour-74-substation", ...at("変電所", -40, 1.7, 25), 1.01, 0.12],
