@@ -1,7 +1,7 @@
 import { ALLY, HEALS as HEAL_SPECS, HIDEOUT, RAIDERS, RARITY, TOOLS, VALUABLES, WEAPONS, type ModuleId, type ValuableKind } from "../sim/config";
-import { boostFor, type Kit } from "../sim/state";
-import { entryOf, POIS, poiIndex, poiRegion, REGIONS, regionOf, ROUTES, type EntryId, type PoiId, type RegionId } from "../sim/map";
-import { build, buildState, buy, buyPrice, canBuild, canStartIn, deliver, deliverable, depotAllowance, emptyLoadout, fitsStart, itemCost, HEALS, healCount, healRoom, keyName, lentHeals, loadoutCost, price, sell, sellPrice, shortfall, startsIn, takeKit, wanted, wares, type Item, type Loadout, type Profile } from "../meta/profile";
+import { boostFor, freeKit, type Kit } from "../sim/state";
+import { entryOf, POIS, poiIndex, poiRegion, REGIONS, regionOf, ROUTES, type EntryId, type PoiId, type RegionId, type StationId } from "../sim/map";
+import { build, buildState, buy, buyPrice, canBuild, canStartIn, deliver, deliverable, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, itemCost, HEALS, healCount, healRoom, keyName, lentHeals, loadoutCost, price, sell, sellPrice, startsIn, takeKit, wanted, wares, type Item, type Loadout, type Profile } from "../meta/profile";
 import { craftDone, maxLevel, MODULES, nextLevel, pouchSlots, sources, stashCap, stillNeeded, type Source } from "../meta/hideout";
 import { need, offered, type Quest, type RewardItem } from "../meta/quests";
 import { saveProfile } from "../meta/storage";
@@ -79,7 +79,23 @@ const $ = (id: string) => document.getElementById(id)!;
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
 const yen = (n: number) => n.toLocaleString("ja-JP");
 
-type Tab = "kit" | "shop" | "quests" | "hideout";
+/** The panel each camp station opens: the panel's title and whether the stash's column stands beside its own. */
+const PANELS: Record<StationId, { title: string; stash: boolean }> = {
+  map: { title: "地図の机", stash: false },
+  quests: { title: "依頼板", stash: false },
+  stash: { title: "倉庫の棚", stash: true },
+  shop: { title: "商人の屋台", stash: true },
+  workshop: { title: "作業場", stash: false },
+};
+
+/** A raid the camp hands over to start: the kit taken, where, and from which start. */
+export interface Launch {
+  kit: Kit;
+  region: RegionId;
+  seed: number;
+  from?: PoiId;
+  entry: EntryId;
+}
 
 /** Seconds as hours and minutes. */
 const clock = (sec: number) => {
@@ -101,17 +117,22 @@ export function whereLine(kind: ValuableKind): string {
 }
 
 /**
- * The base between raids: the stash, the loadout for the next raid, where it starts (a way in
- * of a region, or a depot already on), the trader and their quests. It changes only the
- * profile; the raid itself starts from the kit, the region and the way in or depot it hands over.
+ * The camp's station panels between raids: the stash and the loadout for the next raid (the
+ * shelves), where the truck drives to (a way in of a region, or a depot already on; the map
+ * table), the trader, their quests (the board) and the hideout (the workshop). One panel is open
+ * at a time. It changes only the profile; a raid starts from the kit, the region and the way in or
+ * depot `launch()` hands over.
  */
 export class Hub {
-  private tab: Tab = "kit";
+  /** The station whose panel is open, or null with none open. */
+  station: StationId | null = null;
   private load: Loadout = emptyLoadout();
+  /** Whether the next raid goes out with the lent kit, whatever the loadout holds. */
+  lent = false;
   private region: RegionId;
-  /** The way in of `region` to start at, when not at a depot; null when the region is open only through a depot. */
+  /** The way in of `region` the truck drives to, when not to a depot; null when the region is open only through a depot. */
   private entry: EntryId | null;
-  /** A depot to start at instead of a way in; null for a way in. */
+  /** A depot the truck drives to instead of a way in; null for a way in. */
   private from: PoiId | null = null;
   /** The hideout module opened to show what its next level takes. */
   private module: ModuleId | null = null;
@@ -120,7 +141,8 @@ export class Hub {
 
   constructor(
     public profile: Profile,
-    private deploy: (kit: Kit, region: RegionId, seed: number, start: { from?: PoiId; entry: EntryId }) => void,
+    private closed: () => void,
+    private ended: () => void,
   ) {
     this.region = profile.region;
     this.entry = this.entryIn(profile.region);
@@ -132,7 +154,7 @@ export class Hub {
     $("ending-back").addEventListener("click", () => {
       sfx.click();
       $("ending").hidden = true;
-      this.open();
+      this.ended();
     });
   }
 
@@ -140,7 +162,7 @@ export class Hub {
   showEnding() {
     const e = this.profile.escaped;
     if (!e) return;
-    $("hub").hidden = true;
+    this.close(false);
     $("ending-stats").innerHTML = [
       ["出撃", `${e.raids} 回`],
       ["生還", `${e.extracted} 回`],
@@ -152,20 +174,37 @@ export class Hub {
     $("ending").hidden = false;
   }
 
-  open() {
+  open(station: StationId) {
+    this.station = station;
     this.load = this.fit(this.load);
     $("hub").hidden = false;
+    $("hub-side").scrollTop = 0;
+    $("hub-stash").scrollTop = 0;
+    sfx.tab();
     this.render();
   }
 
-  close() {
+  /** `tell`: let the camp know, so it takes the controls back. */
+  close(tell = true) {
+    if (this.station === null) return;
+    this.station = null;
+    this.module = null;
+    this.armed = "";
     $("hub").hidden = true;
+    if (tell) this.closed();
   }
 
   private set(p: Profile) {
     this.profile = p;
     saveProfile(p);
     this.load = this.fit(this.load);
+  }
+
+  /** Takes a profile settled after a raid: the loadout's picks are dropped, the start kept where the profile allows it. */
+  reload(p: Profile) {
+    this.profile = p;
+    this.load = emptyLoadout();
+    this.fixStart();
   }
 
   /** Drops loadout picks the stash no longer has at those indices. */
@@ -193,10 +232,9 @@ export class Hub {
   private act(act: string, arg: string) {
     const pick = arg.split(",").map(Number);
     if (act !== "sell") this.armed = "";
-    if (act === "tab") {
-      this.tab = arg as Tab;
-      $("hub-side").scrollTop = 0;
-      sfx.tab();
+    if (act === "close") {
+      sfx.click();
+      return this.close();
     } else if (act === "mod") {
       this.module = this.module === arg ? null : (arg as ModuleId);
       sfx.click();
@@ -232,6 +270,9 @@ export class Hub {
       // The entry follows the depot's region, so a later start from an entry is one of its own.
       this.entry = this.entryIn(this.region);
       sfx.click();
+    } else if (act === "lent") {
+      this.lent = !this.lent;
+      sfx.click();
     } else if (act === "pick") {
       sfx.click();
       const n = pick[0];
@@ -240,6 +281,8 @@ export class Hub {
       if (it?.t === "weapon") {
         const w = this.load.weapons;
         this.load.weapons = w.includes(n) ? w.filter((x) => x !== n) : w.length < 2 ? [...w, n] : [w[1], n];
+        // Picking a weapon means going out with it.
+        if (this.load.weapons.length) this.lent = false;
       } else if (it?.t === "armor") this.load.armor = this.load.armor === n ? null : n;
       else if (it?.t === "key") this.load.keys = toggle(this.load.keys);
       // Taking or leaving a weapon decides whether the free kit's heals are lent.
@@ -276,24 +319,6 @@ export class Hub {
         this.set(deliver(this.profile, arg));
         sfx.deliver();
       }
-    } else if (act === "go" || act === "free") {
-      const l = this.startLoad(act);
-      const taken = takeKit(this.profile, l, this.from);
-      if (!taken) return this.render();
-      const { profile, kit } = taken;
-      this.set({ ...profile, region: this.region, entry: this.entry ?? profile.entry });
-      this.load = emptyLoadout();
-      this.close();
-      sfx.deploy();
-      const from = this.from ?? undefined;
-      this.from = null;
-      this.deploy(kit, this.region, this.profile.seed, { from, entry: this.entry ?? this.profile.entry });
-      return;
-    } else if (act === "back") {
-      sfx.click();
-      this.close();
-      $("title").hidden = false;
-      return;
     }
     this.render();
   }
@@ -320,16 +345,57 @@ export class Hub {
     if (!this.entry && !this.from) this.from = startsIn(p, this.region).depots[0] ?? null;
   }
 
-  /** The loadout a start button takes: the free one keeps only the heals and keys picked. */
-  private startLoad(act: "go" | "free"): Loadout {
-    return act === "free" ? { ...emptyLoadout(), heals: this.load.heals, keys: this.load.keys } : this.load;
+  /** The loadout the next raid takes: with the lent kit, or with no weapon picked, only the heals and keys picked. */
+  private startLoad(): Loadout {
+    return this.lent || !this.load.weapons.length ? { ...emptyLoadout(), heals: this.load.heals, keys: this.load.keys } : this.load;
   }
 
-  /** The chosen depot's allowance and what each start button's loadout costs of it, or null for a way in. */
+  /** The truck's depot's allowance and what the loadout costs of it, or null when it drives to a way in. */
   private allowance() {
     if (!this.from) return null;
     const a = depotAllowance(this.profile, this.from);
-    return { ...a, go: loadoutCost(this.profile, this.startLoad("go")), free: loadoutCost(this.profile, this.startLoad("free")) };
+    return { ...a, cost: loadoutCost(this.profile, this.startLoad()) };
+  }
+
+  /** Where the truck drives to, as a name. */
+  rideTo(): string {
+    this.fixStart();
+    return this.from ? `${POIS[poiIndex(this.from)].name}の中継ボックス` : entryOf(this.entry ?? this.profile.entry).name;
+  }
+
+  /** Why the truck cannot start now (the loadout over the depot's allowance), or "" when it can. */
+  rideRefused(): string {
+    this.fixStart();
+    const a = this.allowance();
+    return a && !fitsStart(this.profile, this.startLoad(), this.from) ? `持ち込み枠を超えている（${a.cost} / ${a.budget}）` : "";
+  }
+
+  /**
+   * Takes the loadout out of the stash for a raid. `walk`: out of the gate, which is the
+   * reservoir's first way in, with no allowance to keep to; else by truck to the start the map
+   * table chose. Null when the truck cannot start (`rideRefused()`).
+   */
+  launch(walk: boolean): Launch | null {
+    this.fixStart();
+    const from = walk ? null : this.from;
+    const region = walk ? "reservoir" : this.region;
+    const entry = walk ? FIRST_ENTRY : (this.entry ?? this.profile.entry);
+    const taken = takeKit(this.profile, this.startLoad(), from);
+    if (!taken) return null;
+    const { profile, kit } = taken;
+    // The start the profile remembers is the truck's, kept for the next visit to the map table.
+    this.set({ ...profile, region: this.region, entry: this.entry ?? profile.entry });
+    this.load = emptyLoadout();
+    this.lent = false;
+    return { kit, region, seed: this.profile.seed, from: from ?? undefined, entry };
+  }
+
+  /** What each station has to act on, as its mark's text ("" for none): quests to hand in, modules to build, the radio's report. */
+  marks(): Record<StationId, string> {
+    const p = this.profile;
+    const ready = offered(p.quests).filter((q) => deliverable(p, q)).length;
+    const buildable = MODULES.filter((m) => canBuild(p, m)).length;
+    return { map: p.hideout.radio ? "知らせ" : "", quests: ready ? `納品 ${ready}` : "", stash: "", shop: "", workshop: buildable ? `作れる ${buildable}` : "" };
   }
 
   private item(item: Item, body: { act?: string; arg?: string; on?: boolean; right?: string; count?: number; need?: Record<ValuableKind, number>; warn?: boolean }) {
@@ -368,7 +434,6 @@ export class Hub {
     const lv = p.hideout[m];
     const next = nextLevel(p.hideout, m);
     const pips = Array.from({ length: maxLevel(m) }, (_, n) => `<i class="${n < lv ? "on" : ""}"></i>`).join("");
-    const short = shortfall(p, m);
     const state = buildState(p, m);
     const open = this.module === m;
     let body = "";
@@ -404,32 +469,102 @@ export class Hub {
     return `<div class="quest"><div><strong>${esc(q.title)}</strong><span>${esc(q.text)}</span><small>報酬：${reward}</small></div>${state}</div>`;
   }
 
+  /** The truck's depot allowance, as a slot: the depot's level, what the loadout uses of it, and the way to the next level. */
+  private depotSlot(): string {
+    const allow = this.allowance();
+    if (!allow) return "";
+    return `<div class="slot depot${allow.cost > allow.budget ? " over" : ""}"><small>持ち込み枠</small><span>中継ボックス Lv${allow.level}<b>${allow.cost} / ${allow.budget}</b></span><small>${
+      allow.cost > allow.budget ? `枠を ${allow.cost - allow.budget} 超えている。この装備では車両でこの中継ボックスへ出られない` : allow.next === null ? "最大レベル" : `Lv${allow.level + 1} まで、あと ${yen(allow.next)} クレジット分を送る`
+    }</small></div>`;
+  }
+
+  /** The map table: the truck's start (the regions, the chosen region's ways in, the depots on), its allowance, the radio's report. */
+  private startsPanel(): string {
+    const p = this.profile;
+    const allow = this.allowance();
+    const on = (yes: boolean) => (yes ? ' class="on"' : "");
+    const known = startsIn(p, this.region).entries;
+    const unseen = regionOf(this.region).entries.length - known.length;
+    const locked = REGIONS.filter((r) => !canStartIn(p, r.id));
+    const intel = this.intel();
+    const line = this.from && allow
+      ? `${esc(POIS[poiIndex(this.from)].name)}の中継ボックス（Lv${allow.level}・持ち込み枠 ${allow.budget}）の前から、${ALLY.name}と歩いて始める`
+      : `${esc(entryOf(this.entry ?? p.entry).name)}から${ALLY.name}と歩いて始める。${esc(regionOf(this.region).note)}${unseen ? `。ほかの入口 ${unseen} つは、歩いて見つけて生きて帰ると選べる` : ""}`;
+    return (
+      (intel ? `<div class="slot intel"><small>無線</small><span>${intel}</span></div>` : "") +
+      `<div class="hub-region" id="hub-region"><small>地域</small><div class="row">` +
+      REGIONS.map((r) =>
+        canStartIn(p, r.id)
+          ? `<button type="button" data-act="region" data-arg="${r.id}"${on(!this.from && r.id === this.region)}>${esc(r.name)}</button>`
+          : `<button type="button" class="locked" disabled title="${esc(r.locked ?? "")}">${esc(r.name)}（未踏）</button>`,
+      ).join("") +
+      `</div>` +
+      (this.from ? "" : `<small>入口</small><div class="row entries">${known.map((e) => `<button type="button" class="entry${e === this.entry ? " on" : ""}" data-act="entry" data-arg="${e}">${esc(entryOf(e).name)}</button>`).join("")}</div>`) +
+      (p.depots.length ? `<small>中継ボックス</small><div class="row">${p.depots.map((d) => `<button type="button" class="depot${this.from === d ? " on" : ""}" data-act="from" data-arg="${d}">${esc(POIS[poiIndex(d)].name)}（${esc(poiRegion(d).name)}）</button>`).join("")}</div>` : "") +
+      `</div>` +
+      `<p class="hub-lock" id="hub-lock"${locked.length ? "" : " hidden"}>${esc(locked.map((r) => `${r.name}：${r.locked ?? ""}`).join("　"))}</p>` +
+      `<div class="slot ride"><small>車両の行き先</small><span>${line}</span></div>` +
+      this.depotSlot() +
+      `<p class="hint">門から歩いて出ると、${esc(entryOf(FIRST_ENTRY).name)}からレイドが始まる。ここで選んだ出撃地点へは、門の脇の車両で送ってもらう。</p>`
+    );
+  }
+
+  /** The shelves: the loadout's slots, the heals to take, the truck's allowance when it drives to a depot. */
+  private kitPanel(): string {
+    const p = this.profile;
+    const slot = (label: string, n: number | null | undefined) => `<div class="slot"><small>${label}</small><span${n == null ? ' class="none"' : ` style="color:${color(p.stash[n])}"`}>${n == null ? "なし" : esc(itemName(p.stash[n]))}</span></div>`;
+    const lentKit = this.lent || !this.load.weapons.length;
+    const lent = lentHeals(p, lentKit);
+    const heal = (k: (typeof HEALS)[number]) =>
+      `<div class="slot count"><small>${HEAL_SPECS[k].label}</small><button type="button" data-act="heal-" data-arg="${k}">−</button><b>${this.load.heals[k]}</b><button type="button" data-act="heal+" data-arg="${k}">+</button><small>倉庫 ${healCount(p, k)}${lent[k] ? `・貸出 ${lent[k]}` : ""}</small></div>`;
+    const keys = this.load.keys.map((n) => esc(itemName(p.stash[n]))).join("・");
+    const weapons = lentKit ? `<div class="slot lent"><small>武器</small><span>貸出装備（${freeKit().weapons.map((w) => WEAPONS[w.kind].name).join(" と ")}）</span></div>` : slot("武器 1", this.load.weapons[0]) + slot("武器 2", this.load.weapons[1]);
+    return (
+      this.depotSlot() +
+      weapons +
+      (lentKit ? "" : slot("アーマー", this.load.armor)) +
+      `<div class="slot"><small>鍵</small><span${keys ? ` style="color:${RARITY_CSS[3]}"` : ' class="none"'}>${keys || "なし"}</span></div>` +
+      HEALS.map(heal).join("") +
+      `<p class="hint">倒れると、持ち込んだ物と回収品は失う。ポーチ（${pouchSlots(p.hideout)} 枠）に入る分の回収品だけは残る。${p.hideout.infirmary ? "医務室の回復は、どちらの装備にも貸し出される。" : ""}${
+        this.from ? "車両で中継ボックスへ出るときは、武器・アーマー・鍵が持ち込み枠を使う。貸出装備と回復は枠を使わない。門から歩いて出るなら枠はない。" : ""
+      }</p>`
+    );
+  }
+
   render() {
     const p = this.profile;
+    const st = this.station;
+    if (!st) return;
+    const panel = PANELS[st];
+    $("hub-title").textContent = panel.title;
     $("hub-cash").textContent = yen(p.cash);
     $("hub-record").textContent = `出撃 ${p.raids} ・ 生還 ${p.extracted} ・ ${craftDone(p.hideout) ? "脱出艇 完成" : `脱出艇 ${p.hideout.craft} / ${maxLevel("craft")}`}`;
     $("hub-stash-count").textContent = `${p.stash.length} / ${stashCap(p.hideout)}`;
+    $("hub").dataset.station = st;
+    $("hub-stash-col").hidden = !panel.stash;
+    $("hub-cols").classList.toggle("one", !panel.stash);
     const want = wanted(p);
     const need = stillNeeded(p.hideout);
-    document.querySelectorAll<HTMLElement>("#hub [data-act=tab]").forEach((b) => b.classList.toggle("on", b.dataset.arg === this.tab));
-    const shop = this.tab === "shop";
+    const shop = st === "shop";
+    const kit = st === "stash";
     // A start chosen in an earlier visit may not be allowed by a profile loaded since.
     this.fixStart();
-    const allow = this.allowance();
-    const used = new Set([...this.load.weapons, ...this.load.keys, ...(this.load.armor === null ? [] : [this.load.armor])]);
-    $("hub-stash").innerHTML =
-      rows(p.stash)
-        .map(({ item, index }) => {
-          const on = this.tab === "kit" && used.has(index[0]);
-          // Starting from a depot, each pick shows what it costs of the depot's allowance.
-          const cost = this.tab === "kit" && this.from && (item.t === "weapon" || item.t === "armor" || item.t === "key") ? `枠 ${itemCost(item)}` : "";
-          const right = shop ? `<b>売る ${yen(sellPrice(item))}</b>` : on ? `<b>持っていく${cost ? `・${cost}` : ""}</b>` : cost ? `<b class="cost">${cost}</b>` : item.t === "valuable" ? `<b>${yen(price(item))}</b>` : "";
-          const act = shop ? "sell" : this.tab === "kit" && (item.t === "weapon" || item.t === "armor" || item.t === "key") ? "pick" : undefined;
-          return this.item(item, { act, arg: index.join(","), on, right, count: index.length, need, warn: shop && this.armed === index.join(",") });
-        })
-        .join("") || `<p class="empty">倉庫は空。商人で買うか、貸出装備で降りて持ち帰る。</p>`;
-    $("hub-side-title").textContent = shop ? "商人" : this.tab === "quests" ? "商人の依頼" : this.tab === "hideout" ? "隠れ家" : "持っていく物";
-    if (this.tab === "hideout") {
+    if (panel.stash) {
+      const used = new Set([...this.load.weapons, ...this.load.keys, ...(this.load.armor === null ? [] : [this.load.armor])]);
+      $("hub-stash").innerHTML =
+        rows(p.stash)
+          .map(({ item, index }) => {
+            const on = kit && used.has(index[0]);
+            // When the truck drives to a depot, each pick shows what it costs of the depot's allowance.
+            const cost = kit && this.from && (item.t === "weapon" || item.t === "armor" || item.t === "key") ? `枠 ${itemCost(item)}` : "";
+            const right = shop ? `<b>売る ${yen(sellPrice(item))}</b>` : on ? `<b>持っていく${cost ? `・${cost}` : ""}</b>` : cost ? `<b class="cost">${cost}</b>` : item.t === "valuable" ? `<b>${yen(price(item))}</b>` : "";
+            const act = shop ? "sell" : kit && (item.t === "weapon" || item.t === "armor" || item.t === "key") ? "pick" : undefined;
+            return this.item(item, { act, arg: index.join(","), on, right, count: index.length, need, warn: shop && this.armed === index.join(",") });
+          })
+          .join("") || `<p class="empty">倉庫は空。商人で買うか、貸出装備で出て持ち帰る。</p>`;
+    }
+    $("hub-side-title").textContent = shop ? "売り物" : st === "quests" ? "商人の依頼" : st === "workshop" ? "隠れ家" : st === "map" ? "出撃地点" : "持っていく物";
+    if (st === "workshop") {
       const done = p.escaped ? `<div class="escaped"><span>脱出艇は直った。いつでも島を出られる</span><button type="button" data-act="ending">エンディング</button></div>` : "";
       $("hub-side").innerHTML =
         done + MODULES.map((m) => this.moduleCard(m)).join("") + `<p class="hint">回収品とクレジットで設備を作る。足りない物は、押すと出やすい場所が出る。脱出艇を直せば島を出られる。</p>` + this.routes();
@@ -439,67 +574,19 @@ export class Hub {
       $("hub-side").innerHTML = wares(p)
         .map((item, n) => `<button type="button" class="item" data-act="buy" data-arg="${n}" ${p.cash < buyPrice(item) || full ? "disabled" : ""}><span style="color:${color(item)}">${esc(itemName(item))}</span><small>${item.t === "valuable" ? (want[item.kind] > 0 ? `隠れ家の材料・あと ${want[item.kind]} 個要る` : "隠れ家の材料") : itemNote(item)}</small><b>${yen(buyPrice(item))}</b></button>`)
         .join("");
-    } else if (this.tab === "quests") {
+    } else if (st === "quests") {
       const open = offered(p.quests);
       $("hub-side").innerHTML =
         (open.map((q) => this.quest(q)).join("") || `<p class="empty">いまある依頼はすべて片付けた。</p>`) +
         `<p class="hint">倒した数・制圧・保管庫は倒れても数える。脱出の依頼は生還したときだけ。済んだ依頼の報酬は倉庫に届く。</p>`;
-    } else {
-      const slot = (label: string, n: number | null | undefined) => `<div class="slot"><small>${label}</small><span${n == null ? ' class="none"' : ` style="color:${color(p.stash[n])}"`}>${n == null ? "なし" : esc(itemName(p.stash[n]))}</span></div>`;
-      const lent = lentHeals(p, !this.load.weapons.length);
-      const heal = (k: (typeof HEALS)[number]) =>
-        `<div class="slot count"><small>${HEAL_SPECS[k].label}</small><button type="button" data-act="heal-" data-arg="${k}">−</button><b>${this.load.heals[k]}</b><button type="button" data-act="heal+" data-arg="${k}">+</button><small>倉庫 ${healCount(p, k)}${lent[k] ? `・貸出 ${lent[k]}` : ""}</small></div>`;
-      const keys = this.load.keys.map((n) => esc(itemName(p.stash[n]))).join("・");
-      const intel = this.intel();
-      const depot = allow
-        ? `<div class="slot depot${allow.go > allow.budget ? " over" : ""}"><small>持ち込み枠</small><span>中継ボックス Lv${allow.level}<b>${allow.go} / ${allow.budget}</b></span><small>${
-            allow.go > allow.budget ? `枠を ${allow.go - allow.budget} 超えている。この中継ボックスからは出撃できない` : allow.next === null ? "最大レベル" : `Lv${allow.level + 1} まで、あと ${yen(allow.next)} クレジット分を送る`
-          }</small></div>`
-        : "";
-      $("hub-side").innerHTML =
-        depot +
-        (intel ? `<div class="slot intel"><small>無線</small><span>${intel}</span></div>` : "") +
-        slot("武器 1", this.load.weapons[0]) + slot("武器 2", this.load.weapons[1]) + slot("アーマー", this.load.armor) +
-        `<div class="slot"><small>鍵</small><span${keys ? ` style="color:${RARITY_CSS[3]}"` : ' class="none"'}>${keys || "なし"}</span></div>` +
-        HEALS.map(heal).join("") +
-        `<p class="hint">倒れると、持ち込んだ物と回収品は失う。ポーチ（${pouchSlots(p.hideout)} 枠）に入る分の回収品だけは残る。${p.hideout.infirmary ? "医務室の回復は、どちらの装備にも貸し出される。" : ""}${
-          allow ? "中継ボックスから出撃するときは、武器・アーマー・鍵が持ち込み枠を使う。貸出装備と回復は枠を使わない。この中継ボックスから倉庫へ送るほど枠が広がる。地域の入口から出撃するなら枠はない。" : ""
-        }</p>`;
-    }
-    const on = (yes: boolean) => (yes ? ' class="on"' : "");
-    const known = startsIn(p, this.region).entries;
-    const unseen = regionOf(this.region).entries.length - known.length;
-    const locked = REGIONS.filter((r) => !canStartIn(p, r.id));
-    $("hub-region").innerHTML =
-      `<small>出撃地点</small>` +
-      REGIONS.map((r) =>
-        canStartIn(p, r.id)
-          ? `<button type="button" data-act="region" data-arg="${r.id}"${on(!this.from && r.id === this.region)}>${esc(r.name)}</button>`
-          : `<button type="button" class="locked" disabled title="${esc(r.locked ?? "")}">${esc(r.name)}（未踏）</button>`,
-      ).join("") +
-      (this.from ? "" : `<div class="entries">${known.map((e) => `<button type="button" class="entry${e === this.entry ? " on" : ""}" data-act="entry" data-arg="${e}">${esc(entryOf(e).name)}から</button>`).join("")}</div>`) +
-      p.depots.map((d) => `<button type="button" class="depot${this.from === d ? " on" : ""}" data-act="from" data-arg="${d}">中継ボックス：${esc(POIS[poiIndex(d)].name)}（${esc(poiRegion(d).name)}）</button>`).join("") +
-      `<span>${
-        this.from && allow
-          ? `${esc(POIS[poiIndex(this.from)].name)}の中継ボックス（Lv${allow.level}・持ち込み枠 ${allow.budget}）の前から、${ALLY.name}と歩いて始める`
-          : `${esc(entryOf(this.entry ?? p.entry).name)}から${ALLY.name}と歩いて始める。${esc(regionOf(this.region).note)}${unseen ? `。ほかの入口 ${unseen} つは、歩いて見つけて生きて帰ると選べる` : ""}`
-      }</span>`;
-    // How to open a locked region: a line of its own over the start choice, kept on a phone too.
-    $("hub-lock").hidden = !locked.length;
-    $("hub-lock").textContent = locked.map((r) => `${r.name}：${r.locked ?? ""}`).join("　");
-    $("hub-go").textContent = "この装備で出撃";
-    $("hub-free").textContent = "貸出装備で出撃";
-    // Both buttons go through fitsStart(), as takeKit() does: a loadout over a depot's allowance cannot start there.
-    const go = $("hub-go") as HTMLButtonElement;
-    const free = $("hub-free") as HTMLButtonElement;
-    const over = (act: "go" | "free") => (allow && !fitsStart(p, this.startLoad(act), this.from) ? `持ち込み枠を超えている（${allow[act]} / ${allow.budget}）` : "");
-    go.disabled = this.load.weapons.length === 0 || !!over("go");
-    free.disabled = !!over("free");
-    go.title = over("go");
-    free.title = over("free");
-    const ready = offered(p.quests).filter((q) => deliverable(p, q)).length;
-    $("hub-quest-badge").textContent = ready ? String(ready) : "";
-    const buildable = MODULES.filter((m) => canBuild(p, m)).length;
-    $("hub-build-badge").textContent = buildable ? String(buildable) : "";
+    } else if (st === "map") $("hub-side").innerHTML = this.startsPanel();
+    else $("hub-side").innerHTML = this.kitPanel();
+    // The shelves' footer: whether the next raid goes out with the lent kit.
+    $("hub-foot").hidden = !kit;
+    const lentBtn = $("hub-free");
+    lentBtn.classList.toggle("on", this.lent);
+    lentBtn.setAttribute("aria-pressed", String(this.lent));
+    $("hub-free-state").textContent = this.lent ? "オン" : "オフ";
+    $("hub-foot-note").textContent = this.lent || !this.load.weapons.length ? "貸出装備で出る。武器を選ぶと、その装備で出る" : `選んだ装備で出る${this.from ? `。車両で${this.rideTo()}へ出るときは持ち込み枠を使う` : ""}`;
   }
 }

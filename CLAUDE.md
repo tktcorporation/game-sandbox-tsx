@@ -28,8 +28,8 @@ and are still to be rebuilt the same way.
 `REGIONS` in `map.ts` gives each region its POIs, ways off and ways in on foot (`ENTRIES`: a named
 point out on its open ground, facing in, out of every robot's sight for the first seconds);
 `newRun(seed, kit, region, { entry })` starts on the ground there with the teammate beside the
-player (the reservoir and its first way in by default), and the base picks the region and the way
-in. There is no drop from the air. The base offers only the ways in the player knows
+player (the reservoir and its first way in by default), and the camp's map table picks the region and the way
+in. There is no drop from the air. The map table offers only the ways in the player knows
 (`Profile.entries`): a new profile knows the reservoir's first (`FIRST_ENTRY`), and a raid marks
 each way in the player walks to, within `ENTRY.radius` on its ground, in `State.found` (the start's
 own included; `stepEntries()` in `world.ts`, an `entryFound` event for the HUD's toast), which
@@ -53,7 +53,19 @@ shows no markers or distances, and lists only the ways off of the region the pla
 (`regionHere()`); the world map (`view/map.ts`, M) is where the POIs and exits of both regions are; it opens framed
 on the region the player is in (`Region.bounds`) and N switches it to the whole world.
 A wipe ends the raid and loses the haul; `results.ts` scores the haul plus cleared POIs.
-Between raids the base (`view/hub.ts`) keeps a stash, a trader and the loadout for the next raid:
+Between raids the player walks a camp in the world (`CAMP` in `map.ts`, a fenced yard on the south
+beach behind the reservoir's first way in): `sim/camp.ts` holds its state (`newCamp()`, a raid's
+emptied of robots, its clock standing) and its step (`stepCamp()`: walking only, weapons lowered).
+Its stations (map table, quest board, shelves, stall, workshop) open the panels of `view/hub.ts` by
+the use key; walking out of the gate starts a raid from `FIRST_ENTRY` where the player stands
+(`walkOut()`), and the truck by the gate starts one at the map table's choice after a fade. No robot
+walks into the yard (`inCamp()` in `enemies.ts`); during a raid they see and shoot into it as
+anywhere. Walking back into it during a raid, after `HOME.away` seconds outside and with no robot
+fighting the player within `DEPOT.safe`, ends the raid alive with the bag (`stepHome()` in
+`world.ts`, `State.home`). The hunters' field (`hunt.ts`) leaves the camp's boxes out and nothing
+beams in by the yard, so the gate's raids play as without it.
+`window.ringfallCamp` stands the player at a station or the gate for the shots gate. The base
+keeps a stash, a trader and the loadout for the next raid:
 `src/ringfall/meta/profile.ts` is its pure logic (`takeKit()` out of the stash, `settle()` after a
 raid, the pouch that survives a wipe), `meta/storage.ts` saves it in localStorage, and `META` in
 `config.ts` holds its numbers. `newRun(seed, kit, region)` starts a raid from a kit; the default is
@@ -100,10 +112,10 @@ up to `shopRarity()`, `stashCap()` and `pouchSlots()` grow, and the radio report
 boosted POI. Every raid leans one POI's bins of its region to a rare kind (`State.boost`, from
 `boostFor(seed, region)` in `state.ts`, without drawing on the raid's random numbers);
 `Profile.seed` is the next raid's seed, fixed at the base so the report comes true. The escape
-craft is the last module: its last stage records `Profile.escaped` and the hub shows the ending
+craft is the last module: its last stage records `Profile.escaped` and the workshop's panel shows the ending
 once; play goes on. Build quests (`{ t: "build" }`) finish at the base (`claimBuilt()`).
 `sources()` derives where each valuable is found from the loot data (`loot.valuable`, `TOP_BINS`,
-`VAULT`, `ROBOT_DROPS`), for the hub's hints.
+`VAULT`, `ROBOT_DROPS`), for the workshop's hints.
 
 ```bash
 npm run sim:ringfall     # gate 2: bots of three skills play whole raids headless, in each region,

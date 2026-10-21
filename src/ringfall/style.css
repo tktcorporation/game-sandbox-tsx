@@ -1033,19 +1033,56 @@ body.touch .mate-bars {
 }
 
 /* --- the base between raids */
+/* --- a camp station's panel, over the camp it stands in */
 #hub {
-  place-items: stretch;
-  padding: max(16px, env(safe-area-inset-top)) max(16px, var(--edge-r, 0px)) max(16px, var(--edge-b, 0px)) max(16px, env(safe-area-inset-left));
-  background: rgba(20, 26, 51, 0.88);
+  place-items: center;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  background: rgba(20, 26, 51, 0.5);
 }
 .hub-inner {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 12px;
   width: min(1080px, 100%);
-  height: 100%;
-  margin: 0 auto;
+  height: min(720px, 100%);
   min-height: 0;
+  padding: 16px 18px;
+  background: rgba(20, 26, 51, 0.9);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.12), 6px 6px 0 rgba(0, 0, 0, 0.25);
+}
+/* A station with one list of its own (the map table, the board, the workshop): a narrower panel. */
+#hub[data-station="map"] .hub-inner,
+#hub[data-station="quests"] .hub-inner,
+#hub[data-station="workshop"] .hub-inner {
+  width: min(720px, 100%);
+}
+/* The map table's and the board's few lines fit any screen but a phone's: there the panel keeps the screen's height and its list scrolls. */
+@media (min-height: 501px) {
+  #hub[data-station="map"] .hub-inner,
+  #hub[data-station="quests"] .hub-inner {
+    height: auto;
+    max-height: 100%;
+  }
+}
+.hub-cols.one {
+  grid-template-columns: 1fr;
+}
+#hub .hub-head #hub-close {
+  font-size: 15px;
+  padding: 7px 14px;
+  box-shadow: inset 0 0 0 2px var(--white);
+}
+#hub-close kbd {
+  margin: 0 0 0 8px;
+  background: none;
+  font-size: 12px;
+  color: var(--muted);
+}
+.hub-col[hidden] {
+  display: none;
+}
+body.touch #hub-close kbd {
+  display: none;
 }
 .hub-head {
   display: flex;
@@ -1055,23 +1092,32 @@ body.touch .mate-bars {
 }
 .hub-head h2 {
   margin: 0;
-  font-size: 32px;
+  font-size: 28px;
 }
-.hub-tabs {
-  display: flex;
-  gap: 6px;
-}
-#hub .hub-tabs button {
-  font-size: 16px;
-  padding: 8px 18px;
-  background: transparent;
-  color: var(--white);
-  box-shadow: inset 0 0 0 2px var(--muted);
-}
-#hub .hub-tabs button.on {
-  background: var(--white);
-  color: var(--ink);
-  box-shadow: none;
+@media (max-height: 500px) {
+  #hub {
+    padding: max(8px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+  }
+  .hub-inner {
+    height: 100%;
+    gap: 8px;
+    padding: 10px 12px;
+  }
+  .hub-head {
+    gap: 12px;
+  }
+  .hub-cash small:first-child {
+    display: none;
+  }
+  .hub-cash b {
+    font-size: 24px;
+  }
+  .hub-cash small {
+    font-size: 12px;
+  }
+  .hub-foot-note {
+    font-size: 12px;
+  }
 }
 .hub-cash {
   margin-left: auto;
@@ -1164,9 +1210,13 @@ body.touch .mate-bars {
 .hub-list .slot {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 12px;
+  min-width: 0;
   padding: 8px 12px;
   background: var(--plate);
+  border-right: 0;
+  opacity: 1;
   font-weight: 800;
 }
 .hub-list .slot > small:first-child {
@@ -1199,17 +1249,6 @@ body.touch .mate-bars {
   margin: 6px 0 0;
   font-size: 13px;
   color: var(--muted);
-}
-#hub .hub-tabs i {
-  font-style: normal;
-  font-family: var(--num);
-  margin-left: 6px;
-  padding: 0 6px;
-  background: var(--ring);
-  color: var(--white);
-}
-#hub .hub-tabs i:empty {
-  display: none;
 }
 .hub-list .quest {
   display: flex;
@@ -1465,20 +1504,47 @@ body.touch .mate-bars {
 }
 .hub-foot {
   display: flex;
-  gap: 12px;
+  align-items: center;
+  gap: 14px;
   flex-wrap: wrap;
 }
-/* Where the raid starts: the two regions, the chosen region's ways in, then the depots on, and the choice's line, on a row of its own above the buttons. */
-.hub-region {
+.hub-foot[hidden] {
+  display: none;
+}
+#hub .hub-foot button.toggle {
+  font-size: 16px;
+  padding: 9px 18px;
+}
+#hub .hub-foot button.toggle b {
+  margin-left: 8px;
+  font-family: var(--num);
+}
+#hub .hub-foot button.toggle.on {
+  background: var(--hot);
+  color: var(--ink);
+  box-shadow: none;
+}
+.hub-foot-note {
+  font-size: 13px;
+  color: var(--muted);
+}
+/* The map table's starts: the regions, the chosen region's ways in, the depots on, each a row of buttons under its label. */
+.hub-list .hub-region {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px 10px;
+  background: var(--plate);
+}
+.hub-region > small {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 4px;
+}
+.hub-region .row {
+  display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  flex-basis: 100%;
-}
-.hub-region small {
-  color: var(--muted);
-  margin-right: 4px;
 }
 #hub .hub-region button {
   font-size: 15px;
@@ -1499,20 +1565,9 @@ body.touch .mate-bars {
   color: var(--ink);
   box-shadow: none;
 }
-/* The chosen region's ways in, a step smaller than the regions: a choice within the region's. */
-.hub-region .entries {
-  display: flex;
-  gap: 6px;
-  flex: none;
-}
 #hub .hub-region button.entry {
-  font-size: 13px;
-  padding: 6px 11px;
-}
-.hub-region span {
-  margin-left: 8px;
-  font-size: 13px;
-  color: var(--muted);
+  font-size: 14px;
+  padding: 6px 12px;
 }
 /* A region with no way in known and no depot on: shown, so the player knows it is there, but not chosen. */
 #hub .hub-region button.locked {
@@ -1521,53 +1576,24 @@ body.touch .mate-bars {
   box-shadow: inset 0 0 0 2px var(--muted);
   border: 0;
 }
-/* How to open a locked region: a line of its own over the start choice. */
+/* How to open a locked region, under the starts. */
 .hub-lock {
-  flex-basis: 100%;
-  /* Close to the start choice it explains: the footer's row gap would push the lists up. */
-  margin: 0 0 -8px;
+  margin: 2px 0 0;
   font-size: 13px;
   color: var(--muted);
 }
-/* A phone on its side: the choice shares the buttons' row, without its line, so the lists keep their room. */
-@media (max-height: 500px) {
-  /* With depots on there are more starts than fit: the row scrolls sideways instead of wrapping. */
-  /* A zero width keeps its buttons out of the hub's own width, which grows to fit its content. */
-  .hub-region {
-    flex: 1 1 0;
-    width: 0;
-    min-width: 0;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    margin-right: auto;
-  }
-  #hub .hub-region button {
-    flex: none;
-    white-space: nowrap;
-  }
-  /* The heading, four tabs and the credits on one row. */
-  .hub-head {
-    gap: 12px;
-  }
-  #hub .hub-tabs button {
-    font-size: 15px;
-    padding: 6px 12px;
-  }
-  .hub-cash small:first-child {
-    display: none;
-  }
-  .hub-cash b {
-    font-size: 26px;
-  }
-  .hub-cash small {
-    font-size: 12px;
-  }
-  .hub-region span {
-    display: none;
-  }
-  .hub-lock {
-    font-size: 12px;
-  }
+.hub-lock[hidden] {
+  display: none;
+}
+/* Where the truck drives, and the lent kit's line on the shelves. */
+.hub-list .slot.ride,
+.hub-list .slot.lent {
+  font-weight: 400;
+  font-size: 14px;
+  box-shadow: inset 3px 0 0 var(--hot);
+}
+.hub-list .slot.lent span {
+  font-weight: 800;
 }
 #hub .hub-foot button:disabled {
   opacity: 0.4;
@@ -2091,4 +2117,137 @@ body:not(.playing) #banner {
 }
 .hub-list .quest.route.open > b {
   color: var(--sky);
+}
+
+/* --- the camp between raids: the stations' names over them, the use key's prompt, the credits */
+#camp {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  font-family: var(--jp);
+}
+#camp[hidden] {
+  display: none;
+}
+.camp-label {
+  position: absolute;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  transform: translate(-50%, -100%);
+  white-space: nowrap;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
+.camp-label b {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--white);
+  padding: 2px 10px;
+  background: rgba(20, 26, 51, 0.55);
+}
+.camp-label.near b {
+  background: var(--white);
+  color: var(--ink);
+  text-shadow: none;
+}
+/* Something to act on there: a quest to hand in, a module to build, the radio's report. */
+.camp-label span {
+  order: -1;
+  margin-bottom: 3px;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--ink);
+  background: var(--hot);
+  padding: 1px 8px;
+  text-shadow: none;
+}
+.camp-label span:empty {
+  display: none;
+}
+.camp-label.vehicle b {
+  box-shadow: inset 0 -3px 0 var(--mate-light);
+}
+#camp-head {
+  position: absolute;
+  top: max(14px, env(safe-area-inset-top));
+  left: max(18px, env(safe-area-inset-left));
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+#camp-head > b {
+  font-size: 22px;
+  font-weight: 800;
+}
+#camp-head span small {
+  margin-right: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+#camp-head span b {
+  font-family: var(--num);
+  font-size: 24px;
+  color: var(--hot);
+}
+#camp-hint {
+  font-size: 13px;
+  font-weight: 800;
+}
+#camp-prompt {
+  position: absolute;
+  left: 50%;
+  bottom: 22%;
+  margin: 0;
+  transform: translateX(-50%);
+  font-size: 18px;
+  font-weight: 800;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
+#camp-prompt kbd {
+  margin-right: 8px;
+  padding: 1px 8px;
+  font-family: var(--num);
+  background: var(--white);
+  color: var(--ink);
+  text-shadow: none;
+}
+#camp-prompt .warn {
+  color: var(--ring);
+}
+/* The truck's fade to a raid, and waking in the camp. */
+#fade {
+  position: fixed;
+  inset: 0;
+  z-index: 3;
+  background: var(--ink);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.45s;
+}
+#fade.on {
+  opacity: 1;
+}
+/* In the camp the weapons are down: only the stick, the view, jumping, crouching and the use button. */
+body.touch.camp #t-fire,
+body.touch.camp #t-fire2,
+body.touch.camp #t-ads,
+body.touch.camp #t-reload,
+body.touch.camp #t-tac,
+body.touch.camp #t-ult,
+body.touch.camp #t-battery,
+body.touch.camp #t-map {
+  display: none;
+}
+body.touch.camp #t-use {
+  right: calc(var(--edge-r) + 20px);
+  bottom: calc(var(--edge-b) + 96px);
+  height: 52px;
+  border-radius: 26px;
+  font-size: 16px;
+}
+body.touch #camp-prompt {
+  bottom: 30%;
+  font-size: 16px;
 }

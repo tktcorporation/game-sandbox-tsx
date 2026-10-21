@@ -1,5 +1,5 @@
 import { WORLD } from "./config";
-import { BOXES, DECKS } from "./map";
+import { BOXES, DECKS, inCamp } from "./map";
 import { routeBoxesOpen } from "./geom";
 import { highGround, offshore, steepAt, terrainHeight } from "./terrain";
 
@@ -53,7 +53,10 @@ function grid() {
       open[k] = clear ? 1 : 0;
     }
   // Boxes in a walker's way: higher than a step above the ground and low enough to walk into.
+  // The camp's are left out: no hunter goes in (`inCamp()` stops it at the fence), so its fence
+  // and furniture leave the field over the beach round it as the open sand it would be without them.
   for (const b of [...BOXES, ...routeBoxesOpen]) {
+    if (inCamp({ x: (b.x0 + b.x1) / 2, z: (b.z0 + b.z1) / 2 }, 0.5)) continue;
     const t = terrainHeight((b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2);
     if (b.h - t <= WORLD.stepUp || b.y0 - t >= 1.75) continue;
     for (let j = idxZ(b.z0 - BODY); j <= idxZ(b.z1 + BODY); j++)

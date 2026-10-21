@@ -354,6 +354,14 @@ export const DEPOT = {
 };
 
 /**
+ * Walking back into the camp's yard during a raid ends it alive with the bag, as an extraction
+ * does, once no robot fighting the player is within `DEPOT.safe`. Only a return counts: the yard
+ * takes the player home after `away` seconds outside it, so walking out of the gate starts a raid
+ * and a step back through it does not end one.
+ */
+export const HOME = { away: 10 };
+
+/**
  * The ways in on foot (`ENTRIES`) a player has walked to: one reached in a raid that ends with
  * the player off alive can be chosen at the base from then on. A player starts knowing only
  * the reservoir's first.

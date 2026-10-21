@@ -70,9 +70,80 @@ const lap = (name) => {
 };
 
 /*
- * Phone in landscape: real touch events (through the DevTools protocol) must move
- * the player with the stick, turn the view, and fire. Then the bot plays to the
- * first fight so the touch layout is captured with enemies on screen.
+ * The camp between raids (src/ringfall/sim/camp.ts): the title's start wakes the player in it,
+ * a station's panel opens by the use key (or the use button) standing at it, the gate leads out
+ * into a raid from the south beach, and the truck drives to the start the map table chose.
+ */
+const readPage = async (pg) => JSON.parse(await pg.evaluate(() => window.render_game_to_text()));
+/** Until the fade to and from the camp's dark (under a second) has cleared the screen. */
+const faded = async (pg) => {
+  await pg.waitForFunction(() => getComputedStyle(document.getElementById("fade")).opacity === "0", null, { timeout: 8000 }).catch(() => errors.push("camp: the fade never cleared the screen"));
+  await pg.waitForTimeout(100);
+};
+/** The camp after the title's start: waking fades in from dark, so the screen is let clear first. */
+const toCamp = async (pg, touch = false) => {
+  await (touch ? pg.tap("#start") : pg.click("#start"));
+  await faded(pg);
+};
+/** Stands at a station (or the truck) and presses the use key, or taps the use button with `cdp`; the camp's state after. */
+const useStation = async (pg, id, cdp) => {
+  if (!(await pg.evaluate((i) => window.ringfallCamp.walkTo(i), id))) errors.push(`camp: could not stand at ${id}`);
+  await pg.evaluate(() => window.advanceTime(100));
+  if (cdp) {
+    const bb = await pg.locator("#t-use").boundingBox();
+    if (!bb) errors.push(`camp: no use button at ${id}`);
+    else {
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: bb.x + bb.width / 2, y: bb.y + bb.height / 2, id: 41 }] });
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    }
+  } else await pg.keyboard.press("KeyE");
+  await pg.evaluate(() => window.advanceTime(50));
+  await pg.waitForTimeout(100);
+  const st = await readPage(pg);
+  if (id !== "vehicle" && st.camp?.panel !== id) errors.push(`camp: the use key at ${id} opened ${st.camp?.panel}`);
+  return st;
+};
+/** Closes the station's panel open now by its close button. */
+const closePanel = async (pg, touch = false) => {
+  await (touch ? pg.tap("#hub-close") : pg.click("#hub-close"));
+  if ((await readPage(pg)).camp?.panel) errors.push("camp: the close button left the panel open");
+};
+/** Out of the camp's gate on foot, W held: the raid starts on the way out. The state once out. */
+const walkOutOfGate = async (pg) => {
+  await pg.evaluate(() => window.ringfallCamp.toGate());
+  await pg.keyboard.down("KeyW");
+  let st = await readPage(pg);
+  for (let i = 0; i < 30 && st.screen !== "game"; i++) st = JSON.parse(await pg.evaluate(() => (window.advanceTime(200), window.render_game_to_text())));
+  await pg.keyboard.up("KeyW");
+  if (st.screen !== "game") errors.push(`camp: walking out of the gate left the screen at ${st.screen} (${st.player.x},${st.player.z})`);
+  return st;
+};
+/** By the truck from its use key, or its use button with `cdp`: a fade, then the raid. The state once it is under way. */
+const rideOut = async (pg, cdp) => {
+  await useStation(pg, "vehicle", cdp);
+  await pg.waitForFunction(() => JSON.parse(window.render_game_to_text()).screen === "game", null, { timeout: 5000 }).catch(() => undefined);
+  await faded(pg);
+  const st = await readPage(pg);
+  if (st.screen !== "game") errors.push(`camp: the truck did not start a raid (${st.screen})`);
+  return st;
+};
+/** Camp panel parts that spill past the screen, or lists that scroll sideways. */
+const spills = (pg) =>
+  pg.evaluate(() => {
+    const out = [];
+    for (const el of document.querySelectorAll("#hub .hub-inner, #hub .hub-head, #hub-side, #hub-stash, #hub-region, #hub .hub-foot, #ending .ending-inner, #ending-back")) {
+      const r = el.getBoundingClientRect();
+      if (r.width && (r.right > innerWidth + 1 || r.bottom > innerHeight + 1)) out.push(`${el.id || el.className} ends at ${Math.round(r.right)}x${Math.round(r.bottom)}`);
+      if (el.scrollWidth > el.clientWidth + 1) out.push(`${el.id || el.className} scrolls sideways`);
+    }
+    return out;
+  });
+
+/*
+ * Phone in landscape: real touch events (through the DevTools protocol) open a camp station's
+ * panel by the use button and walk out of the gate on the stick, then move the player with the
+ * stick, turn the view, and fire. Then the bot plays to the first fight so the touch layout is
+ * captured with enemies on screen.
  */
 {
   const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
@@ -101,16 +172,33 @@ const lap = (name) => {
   await page.waitForTimeout(300);
   // Some phone browsers and web views have no Screen Orientation API; starting must not depend on it.
   await page.evaluate(() => Object.defineProperty(screen, "orientation", { value: undefined, configurable: true }));
-  await page.tap("#start");
-  await page.waitForTimeout(200);
-  await page.screenshot({ path: `${out}/m0-hub.png` });
-  await page.tap("#hub-free");
+  await toCamp(page, true);
+  await page.screenshot({ path: `${out}/m0-camp.png` });
   if (!(await page.evaluate(() => document.body.classList.contains("touch")))) errors.push("mobile: touch mode did not turn on");
-  if (!(await page.evaluate(() => document.body.classList.contains("playing")))) errors.push("mobile: the start button did not start the game");
+  if ((await readPage(page)).screen !== "camp") errors.push("mobile: the start button did not wake the player in the camp");
   const cdp = await ctx.newCDPSession(page);
   const touch = (type, points) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints: points });
   const read = async () => JSON.parse(await page.evaluate(() => window.render_game_to_text()));
   const step = (ms) => page.evaluate((t) => window.advanceTime(t), ms);
+  // The shelves' panel by the use button: it fits the phone's screen, and its close button closes it.
+  await page.evaluate(() => window.ringfallCamp.walkTo("stash"));
+  await step(100);
+  await page.screenshot({ path: `${out}/m0-camp-stash.png` });
+  await useStation(page, "stash", cdp);
+  const panelFit = await spills(page);
+  if (panelFit.length) errors.push(`mobile: the shelves' panel ${panelFit.join(", ")} (844x390)`);
+  await page.screenshot({ path: `${out}/m0-panel-stash.png` });
+  await closePanel(page, true);
+  // Out of the gate on the stick: the raid starts where the player walks out.
+  await page.evaluate(() => window.ringfallCamp.toGate());
+  await step(100);
+  await page.screenshot({ path: `${out}/m0-camp-gate.png` });
+  await touch("touchStart", [{ x: 150, y: 260, id: 1 }]);
+  await touch("touchMove", [{ x: 150, y: 200, id: 1 }]);
+  for (let i = 0; i < 20 && (await read()).screen !== "game"; i++) await step(200);
+  await touch("touchEnd", []);
+  if ((await read()).screen !== "game") errors.push("mobile: walking out of the gate on the stick did not start the raid");
+  if (!(await page.evaluate(() => document.body.classList.contains("playing")))) errors.push("mobile: the raid is not playing");
 
   // Stick: press on the left, push up -> forward.
   const s0 = await read();
@@ -256,14 +344,14 @@ const lap = (name) => {
   await page.goto(`http://localhost:${port}/ringfall/`, { waitUntil: "load" });
   await page.waitForTimeout(400);
   await page.evaluate(() => Object.defineProperty(screen, "orientation", { value: undefined, configurable: true }));
-  await page.tap("#start");
-  await page.waitForTimeout(200);
+  await toCamp(page, true);
+  await useStation(page, "map", await ctx.newCDPSession(page));
   const lock = await page.evaluate(() => {
     const el = document.querySelector("#hub-lock");
     return el && !el.hidden && el.textContent ? getComputedStyle(el).display : "missing";
   });
   if (lock === "none" || lock === "missing") errors.push(`mobile: the locked region's hint is not shown (${lock})`);
-  await page.screenshot({ path: `${out}/m7-hub-locked.png` });
+  await page.screenshot({ path: `${out}/m7-map-locked.png` });
   await ctx.close();
 }
 {
@@ -275,14 +363,22 @@ const lap = (name) => {
   await page.goto(`http://localhost:${port}/ringfall/`, { waitUntil: "load" });
   await page.waitForTimeout(400);
   await page.evaluate(() => Object.defineProperty(screen, "orientation", { value: undefined, configurable: true }));
-  await page.tap("#start");
-  await page.waitForTimeout(200);
+  await toCamp(page, true);
+  const cdp = await ctx.newCDPSession(page);
+  await useStation(page, "map", cdp);
   await page.tap("#hub-region [data-arg=harbor]");
   await page.waitForTimeout(100);
   await page.tap("#hub-region [data-act=entry][data-arg=quay]");
   await page.waitForTimeout(100);
-  await page.screenshot({ path: `${out}/m6-hub-harbor.png` });
-  await page.tap("#hub-free");
+  await page.screenshot({ path: `${out}/m6-map-harbor.png` });
+  await closePanel(page, true);
+  // The truck's prompt names the quay; the use button rides there.
+  await page.evaluate(() => window.ringfallCamp.walkTo("vehicle"));
+  await page.evaluate(() => window.advanceTime(100));
+  const truck = await page.textContent("#camp-prompt");
+  if (!/埠頭の東の道/.test(truck)) errors.push(`mobile harbor: the truck's prompt reads "${truck}"`);
+  await page.screenshot({ path: `${out}/m6-camp-truck.png` });
+  await rideOut(page, cdp);
   const read = async () => JSON.parse(await page.evaluate(() => window.render_game_to_text()));
   const step = (ms) => page.evaluate((t) => window.advanceTime(t), ms);
   const st = await read();
@@ -291,7 +387,6 @@ const lap = (name) => {
   await step(300);
   await page.screenshot({ path: `${out}/m7-harbor-start.png` });
   const bb = await page.locator("#t-map").boundingBox();
-  const cdp = await ctx.newCDPSession(page);
   await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: bb.x + bb.width / 2, y: bb.y + bb.height / 2, id: 1 }] });
   await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
   await step(200);
@@ -319,15 +414,13 @@ const lap = (name) => {
     Element.prototype.requestPointerLock = undefined;
   });
   await p2.goto(`http://localhost:${port}/ringfall/`, { waitUntil: "load" });
-  await p2.click("#start");
-  await p2.click("#hub-free");
-  await p2.waitForTimeout(300);
+  await toCamp(p2);
   const y0 = await p2.evaluate(() => window.ringfallYaw());
   await p2.mouse.move(640, 360);
   await p2.mouse.move(840, 360, { steps: 10 });
   await p2.waitForTimeout(300);
   const y1 = await p2.evaluate(() => window.ringfallYaw());
-  if (!(Math.abs(y1 - y0) > 0.05)) errors.push(`no pointer lock: the mouse did not turn the view (${y0.toFixed(2)} -> ${y1.toFixed(2)})`);
+  if (!(Math.abs(y1 - y0) > 0.05)) errors.push(`no pointer lock: the mouse did not turn the view in the camp (${y0.toFixed(2)} -> ${y1.toFixed(2)})`);
   await p2.close();
   lap("no pointer lock");
 }
@@ -338,8 +431,8 @@ const lap = (name) => {
   pg.on("pageerror", (e) => errors.push(`way in pageerror: ${e.message}`));
   pg.on("console", (m) => m.type() === "error" && !/fonts\.g|ERR_TUNNEL|net::/.test(m.text()) && errors.push(`way in console: ${m.text()}`));
   await pg.goto(`http://localhost:${port}/ringfall/`, { waitUntil: "load" });
-  await pg.click("#start");
-  await pg.click("#hub-free");
+  await toCamp(pg);
+  await walkOutOfGate(pg);
   await pg.evaluate(() => window.advanceTime(100));
   // The east checkpoint's way in (470, -30) faces west: stand 8 m inside it, looking out at its camp.
   await pg.evaluate(() => window.ringfallPlace(462, -30, Math.PI / 2));
@@ -367,38 +460,64 @@ await page.screenshot({ path: `${out}/00-title.png` });
 await page.click("#start");
 const read = async () => JSON.parse(await page.evaluate(() => window.render_game_to_text()));
 
-// The base: buy a rare PIKE from the trader, then take it and a stash weapon into the raid.
+// The camp: each station seen and its panel opened by the use key; a rare PIKE bought from the
+// trader, then taken with a stash weapon out of the gate into the raid.
 {
+  await faded(page);
   const h0 = await read();
-  if (h0.screen !== "hub") errors.push(`hub: the start button opened ${h0.screen}, not the base`);
-  await page.screenshot({ path: `${out}/00-hub.png` });
-  await page.click('#hub [data-act=tab][data-arg=shop]');
+  if (h0.screen !== "camp" || h0.camp?.panel !== null) errors.push(`camp: the start button opened ${h0.screen}, not the camp`);
+  await page.screenshot({ path: `${out}/00-camp.png` });
+  const seen = async (id) => {
+    await page.evaluate((i) => window.ringfallCamp.walkTo(i), id);
+    await page.evaluate(() => window.advanceTime(100));
+    const prompt = await page.textContent("#camp-prompt");
+    if (!prompt) errors.push(`camp: no prompt at ${id}`);
+    await page.screenshot({ path: `${out}/00-camp-${id}.png` });
+  };
+  await seen("shop");
+  await useStation(page, "shop");
+  await page.screenshot({ path: `${out}/00-panel-shop.png` });
   await page.click('#hub-side [data-act=buy][data-arg="1"]');
   const h1 = await read();
-  if (!(h1.profile.cash < h0.profile.cash && h1.profile.stash === h0.profile.stash + 1)) errors.push(`hub: buying did not take cash and fill the stash (${JSON.stringify(h0.profile)} -> ${JSON.stringify(h1.profile)})`);
-  await page.screenshot({ path: `${out}/00-hub-shop.png` });
-  await page.click('#hub [data-act=tab][data-arg=quests]');
+  if (!(h1.profile.cash < h0.profile.cash && h1.profile.stash === h0.profile.stash + 1)) errors.push(`camp: buying did not take cash and fill the stash (${JSON.stringify(h0.profile)} -> ${JSON.stringify(h1.profile)})`);
+  // Esc closes a panel, and the camp walks on.
+  await page.keyboard.press("Escape");
+  if ((await read()).camp?.panel) errors.push("camp: Esc did not close the trader's panel");
+  await seen("quests");
+  await useStation(page, "quests");
   const quests = await page.locator("#hub-side .quest").count();
-  if (quests !== 2) errors.push(`hub: the trader offers ${quests} quests at the start, not 2`);
-  await page.screenshot({ path: `${out}/00-hub-quests.png` });
-  await page.click('#hub [data-act=tab][data-arg=kit]');
+  if (quests !== 2) errors.push(`camp: the board offers ${quests} quests at the start, not 2`);
+  await page.screenshot({ path: `${out}/00-panel-quests.png` });
+  await closePanel(page);
+  await seen("workshop");
+  await useStation(page, "workshop");
+  await page.screenshot({ path: `${out}/00-panel-workshop.png` });
+  await closePanel(page);
+  // The start choice: a fresh profile knows only the reservoir's first way in, so the harbor is shown locked, with how to open it.
+  await seen("map");
+  await useStation(page, "map");
+  const harborLocked = await page.locator("#hub-region button.locked").count();
+  const entriesOffered = await page.locator("#hub-region [data-act=entry]").count();
+  await page.screenshot({ path: `${out}/00-panel-map.png` });
+  if (harborLocked !== 1 || entriesOffered !== 1 || !/港湾地帯：峠/.test(await page.evaluate(() => document.getElementById("hub-lock").textContent))) errors.push(`camp: a fresh profile offers ${entriesOffered} ways in and ${harborLocked} locked regions, or the harbor's hint did not show`);
+  await closePanel(page);
+  await seen("stash");
+  await useStation(page, "stash");
   const picks = page.locator("#hub-stash [data-act=pick]");
   await picks.nth(2).click();
   await picks.nth(1).click();
-  await page.screenshot({ path: `${out}/00-hub-kit.png` });
-  // The start choice: the harbor shows its line, and the raid below starts in the reservoir.
-  // A fresh profile knows only the reservoir's first way in: the harbor is shown locked, with how to open it.
-  const harborLocked = await page.locator("#hub-region button.locked").count();
-  const entriesOffered = await page.locator("#hub-region [data-act=entry]").count();
-  await page.screenshot({ path: `${out}/00-hub-region.png` });
-  if (harborLocked !== 1 || entriesOffered !== 1 || !/港湾地帯：峠/.test(await page.evaluate(() => document.getElementById("hub-lock").textContent))) errors.push(`hub: a fresh profile offers ${entriesOffered} ways in and ${harborLocked} locked regions, or the harbor's hint did not show`);
-  await page.click("#hub-go");
-  const h2 = await read();
-  if (h2.screen !== "game") errors.push(`hub: deploying did not start the raid (${h2.screen})`);
+  await page.screenshot({ path: `${out}/00-panel-stash.png` });
+  await closePanel(page);
+  await seen("vehicle");
+  await page.evaluate(() => window.ringfallCamp.toGate());
+  await page.evaluate(() => window.advanceTime(100));
+  await page.screenshot({ path: `${out}/00-camp-gate.png` });
+  const h2 = await walkOutOfGate(page);
   // The magazine is left out: the frame loop may already have stepped the raid and loaded it.
-  if (h2.player.weapons.map((w) => w?.split(":")[0]).join() !== "pike1,hornet0") errors.push(`hub: the raid did not start with the picked weapons (${h2.player.weapons.join()})`);
-  if (h2.profile.stash !== h1.profile.stash - 2) errors.push(`hub: the picked weapons stayed in the stash (${h1.profile.stash} -> ${h2.profile.stash})`);
-  lap("base");
+  if (h2.player.weapons.map((w) => w?.split(":")[0]).join() !== "pike1,hornet0") errors.push(`camp: the raid did not start with the picked weapons (${h2.player.weapons.join()})`);
+  if (h2.profile.stash !== h1.profile.stash - 2) errors.push(`camp: the picked weapons stayed in the stash (${h1.profile.stash} -> ${h2.profile.stash})`);
+  if (h2.region !== "reservoir" || h2.phase !== "play" || !h2.ally.active || Math.hypot(h2.ally.x - h2.player.x, h2.ally.z - h2.player.z) > 6) errors.push(`camp: out of the gate the raid is ${h2.region} ${h2.phase}, teammate ${JSON.stringify(h2.ally)}`);
+  lap("camp");
 }
 
 // Real keyboard input must reach the sim: holding W at the start moves the player north (the beach faces north).
@@ -816,9 +935,9 @@ console.log(JSON.stringify((await read()).stats));
   if (!r.settled) errors.push("results: the raid was not settled into the profile");
   await page.click("#restart");
   const h = await read();
-  if (h.screen !== "hub" || h.profile.raids !== 1) errors.push(`results: back to base shows ${h.screen} with ${h.profile.raids} raids`);
-  await page.waitForTimeout(200);
-  await page.screenshot({ path: `${out}/14-hub-after.png` });
+  if (h.screen !== "camp" || h.profile.raids !== 1 || h.camp.panel !== null) errors.push(`results: back to the camp shows ${h.screen} with ${h.profile.raids} raids`);
+  await faded(page);
+  await page.screenshot({ path: `${out}/14-camp-after.png` });
   lap("results");
 }
 
@@ -830,11 +949,13 @@ console.log(JSON.stringify((await read()).stats));
     localStorage.setItem(k, JSON.stringify({ ...p, entries: ["beach", "checkpoint", "jetty", "outskirts", "quay", "shore"] }));
   }, KEY);
   await page.reload({ waitUntil: "load" });
-  await page.click("#start");
+  await toCamp(page);
   await page.evaluate((s) => window.ringfallBot(s), skill);
+  await useStation(page, "map");
   await page.click("#hub-region [data-arg=harbor]");
-  await page.screenshot({ path: `${out}/27-hub-harbor.png` });
-  await page.click("#hub-free");
+  await page.screenshot({ path: `${out}/27-map-harbor.png` });
+  await closePanel(page);
+  await rideOut(page);
   await page.evaluate(() => window.advanceTime(1500));
   await draw(page);
   await page.screenshot({ path: `${out}/28-harbor-start.png` });
@@ -891,24 +1012,21 @@ const withProfile = async (ctx, profile) => {
   return pg;
 };
 const readOf = async (pg) => JSON.parse(await pg.evaluate(() => window.render_game_to_text()));
-/** Hub and ending parts that spill past the screen, or lists that scroll sideways. */
-const spills = (pg) =>
-  pg.evaluate(() => {
-    const out = [];
-    for (const el of document.querySelectorAll("#hub .hub-inner, #hub .hub-tabs, #hub-side, #hub-stash, #hub .hub-foot, #ending .ending-inner, #ending-back")) {
-      const r = el.getBoundingClientRect();
-      if (r.width && (r.right > innerWidth + 1 || r.bottom > innerHeight + 1)) out.push(`${el.id || el.className} ends at ${Math.round(r.right)}x${Math.round(r.bottom)}`);
-      if (el.scrollWidth > el.clientWidth + 1) out.push(`${el.id || el.className} scrolls sideways`);
-    }
-    return out;
-  });
 {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
   const pg = await withProfile(ctx, midGame);
-  await pg.click("#start");
+  await toCamp(pg);
+  // The stations with something to act on carry a mark over them: the workshop has a module to build, the map table the radio's report.
+  const c0 = await readOf(pg);
+  if (!c0.camp.marks.workshop || !c0.camp.marks.map) errors.push(`camp: the marks read ${JSON.stringify(c0.camp.marks)}`);
+  await pg.evaluate(() => window.ringfallCamp.walkTo("map"));
+  await pg.evaluate(() => window.advanceTime(100));
+  await pg.screenshot({ path: `${out}/40-camp-marks.png` });
   // The radio (Lv1) names the POI whose bins lean rare in the next raid.
+  await useStation(pg, "map");
   const intel = await pg.evaluate(() => document.querySelector("#hub-side .intel")?.textContent ?? "");
-  await pg.click('#hub [data-act=tab][data-arg=hideout]');
+  await closePanel(pg);
+  await useStation(pg, "workshop");
   const mods = await pg.locator("#hub-side .mod").count();
   if (mods !== 7) errors.push(`hideout: the tab lists ${mods} modules, not 7`);
   await pg.screenshot({ path: `${out}/40-hideout.png` });
@@ -926,7 +1044,8 @@ const spills = (pg) =>
   if (h1.profile.hideout.storage !== 2 || h1.profile.stash >= h0.profile.stash || !/\/ 60/.test(await pg.textContent("#hub-stash-count"))) errors.push(`hideout: building the storage left ${JSON.stringify(h1.profile)}`);
   await pg.screenshot({ path: `${out}/42-hideout-built.png` });
   // Selling a part the hideout still needs asks a second press.
-  await pg.click('#hub [data-act=tab][data-arg=shop]');
+  await closePanel(pg);
+  await useStation(pg, "shop");
   const board = pg.locator("#hub-stash [data-act=sell]", { hasText: "回路基板" });
   await board.click();
   const warned = await pg.locator("#hub-stash .warn").count();
@@ -935,10 +1054,13 @@ const spills = (pg) =>
   await pg.screenshot({ path: `${out}/43-hub-sell-warn.png` });
   await board.click();
   if ((await readOf(pg)).profile.stash !== h1.profile.stash - 1) errors.push("hideout: the second press did not sell the board");
-  // The raid deployed next is the one the radio told of.
-  await pg.click('#hub [data-act=tab][data-arg=kit]');
+  // The raid walked out to next is the one the radio told of.
+  await closePanel(pg);
+  await useStation(pg, "stash");
   await pg.click("#hub-free");
-  const raid = await readOf(pg);
+  if (!(await readOf(pg)).camp.lent) errors.push("camp: the shelves' toggle did not choose the lent kit");
+  await closePanel(pg);
+  const raid = await walkOutOfGate(pg);
   if (!intel.includes(raid.boost.name)) errors.push(`hideout: the radio said "${intel}", the raid boosts ${raid.boost.name}`);
   await ctx.close();
   lap("hideout");
@@ -946,8 +1068,9 @@ const spills = (pg) =>
 {
   const ctx = await browser.newContext({ viewport: { width: 740, height: 360 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
   const pg = await withProfile(ctx, midGame);
-  await pg.tap("#start");
-  await pg.tap('#hub [data-act=tab][data-arg=hideout]');
+  await toCamp(pg, true);
+  const cdp = await ctx.newCDPSession(pg);
+  await useStation(pg, "workshop", cdp);
   await pg.waitForTimeout(100);
   let fit = await spills(pg);
   await pg.screenshot({ path: `${out}/m10-hideout.png` });
@@ -955,15 +1078,20 @@ const spills = (pg) =>
   await pg.locator("#hub-side .mod.open").scrollIntoViewIfNeeded();
   fit = fit.concat(await spills(pg));
   await pg.screenshot({ path: `${out}/m11-hideout-craft.png` });
-  await pg.tap('#hub [data-act=tab][data-arg=kit]');
+  await closePanel(pg, true);
+  await useStation(pg, "map", cdp);
   fit = fit.concat(await spills(pg));
-  await pg.screenshot({ path: `${out}/m12-hub-intel.png` });
-  // The starts row holds the depots too; it scrolls on its own and stays inside the screen.
+  await pg.screenshot({ path: `${out}/m12-map-intel.png` });
+  // The starts hold the depots too, and stay inside the screen.
   await pg.tap("#hub-region [data-act=from][data-arg=wreck]");
   fit = fit.concat(await spills(pg));
   const row = await pg.evaluate(() => document.getElementById("hub-region").getBoundingClientRect().right);
   if (row > 741) fit.push(`hub-region ends at ${Math.round(row)}`);
-  await pg.screenshot({ path: `${out}/m14-hub-depot.png` });
+  await pg.screenshot({ path: `${out}/m14-map-depot.png` });
+  await closePanel(pg, true);
+  await useStation(pg, "shop", cdp);
+  fit = fit.concat(await spills(pg));
+  await pg.screenshot({ path: `${out}/m15-panel-shop.png` });
   if (fit.length) errors.push(`hideout on a phone: ${[...new Set(fit)].join(", ")} (740x360)`);
   await ctx.close();
   lap("hideout, phone");
@@ -977,26 +1105,43 @@ const spills = (pg) =>
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
   // An epic armour in the stash: with the rare PIKE (2) it is over a level 0 depot's allowance (2).
   const pg = await withProfile(ctx, { ...midGame, stash: [...midGame.stash, { t: "armor", tier: 2 }] });
-  await pg.click("#start");
+  await toCamp(pg);
+  await useStation(pg, "map");
   const starts = await pg.locator("#hub-region [data-act=from]").count();
-  if (starts !== 2) errors.push(`depot: the base offers ${starts} depots to start from, not 2`);
+  if (starts !== 2) errors.push(`depot: the map table offers ${starts} depots to start from, not 2`);
   await pg.click("#hub-region [data-act=from][data-arg=quarry]");
-  await pg.screenshot({ path: `${out}/46-hub-depots.png` });
-  // The depot's allowance: the PIKE fits it, the armour on top does not, and a start at a way in lifts the limit.
+  await pg.screenshot({ path: `${out}/46-map-depots.png` });
+  await closePanel(pg);
+  // The depot's allowance: the PIKE fits it, the armour on top does not (the truck refuses), and a start at a way in lifts the limit.
   const allowance = () => pg.evaluate(() => document.querySelector("#hub-side .slot.depot")?.textContent ?? "");
-  const goOff = () => pg.locator("#hub-go").isDisabled();
+  const refused = async () => (await readOf(pg)).camp.ride.refused;
+  await useStation(pg, "stash");
   await pg.locator("#hub-stash [data-act=pick]", { hasText: "PIKE" }).click();
   const fits = await allowance();
-  if (!/Lv0/.test(fits) || !/2 \/ 2/.test(fits) || !/1,500/.test(fits) || (await goOff())) errors.push(`depot: with the PIKE the allowance reads "${fits}", start ${(await goOff()) ? "disabled" : "enabled"}`);
-  await pg.screenshot({ path: `${out}/46-hub-depot-budget.png` });
+  if (!/Lv0/.test(fits) || !/2 \/ 2/.test(fits) || !/1,500/.test(fits) || (await refused())) errors.push(`depot: with the PIKE the allowance reads "${fits}", the truck ${(await refused()) || "goes"}`);
+  await pg.screenshot({ path: `${out}/46-stash-depot-budget.png` });
   await pg.locator("#hub-stash [data-act=pick]", { hasText: "アーマー" }).click();
   const over = await allowance();
-  if (!/4 \/ 2/.test(over) || !(await goOff()) || !/持ち込み枠/.test(await pg.getAttribute("#hub-go", "title"))) errors.push(`depot: over the allowance it reads "${over}" and the start is ${(await goOff()) ? "disabled" : "enabled"}`);
-  await pg.screenshot({ path: `${out}/46-hub-depot-over.png` });
+  if (!/4 \/ 2/.test(over) || !/持ち込み枠/.test(await refused())) errors.push(`depot: over the allowance it reads "${over}" and the truck ${(await refused()) || "goes"}`);
+  await pg.screenshot({ path: `${out}/46-stash-depot-over.png` });
+  await closePanel(pg);
+  await pg.evaluate(() => window.ringfallCamp.walkTo("vehicle"));
+  await pg.evaluate(() => window.advanceTime(100));
+  const truck = await pg.textContent("#camp-prompt");
+  await pg.keyboard.press("KeyE");
+  await pg.evaluate(() => window.advanceTime(100));
+  await pg.waitForTimeout(700);
+  if (!/持ち込み枠/.test(truck) || (await readOf(pg)).screen !== "camp") errors.push(`depot: over the allowance the truck's prompt reads "${truck}" and the use key left ${(await readOf(pg)).screen}`);
+  await pg.screenshot({ path: `${out}/46-camp-truck-refused.png` });
+  await useStation(pg, "map");
   await pg.click("#hub-region [data-arg=reservoir]");
-  if ((await goOff()) || (await allowance())) errors.push("depot: switching to a way in did not lift the allowance");
+  if ((await refused()) || (await allowance())) errors.push("depot: switching to a way in did not lift the allowance");
   await pg.click("#hub-region [data-act=from][data-arg=quarry]");
+  await closePanel(pg);
+  await useStation(pg, "stash");
   await pg.click("#hub-free");
+  await closePanel(pg);
+  await rideOut(pg);
   await pg.evaluate(() => window.advanceTime(500));
   const d0 = await readOf(pg);
   if (d0.screen !== "game" || d0.phase !== "play" || d0.region !== "reservoir" || !d0.ally.active) errors.push(`depot: starting at the quarry depot left ${d0.screen} ${d0.phase} in ${d0.region}, ally ${d0.ally.active}`);
@@ -1032,15 +1177,14 @@ const spills = (pg) =>
 {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
   const pg = await withProfile(ctx, { ...midGame, v: 9, routes: [] });
-  await pg.click("#start");
-  await pg.click('#hub [data-act=tab][data-arg=hideout]');
+  await toCamp(pg);
+  await useStation(pg, "workshop");
   const shut = await pg.locator("#hub-side .route").allTextContents();
   if (shut.length !== 3 || !shut.every((t) => /閉鎖/.test(t) && /箱にある/.test(t))) errors.push(`routes: the hideout lists ${JSON.stringify(shut)}`);
   await pg.locator("#hub-side .route").first().scrollIntoViewIfNeeded();
-  await pg.screenshot({ path: `${out}/51-hub-routes.png` });
-  await pg.click('#hub [data-act=tab][data-arg=kit]');
-  await pg.click("#hub-region [data-arg=reservoir]");
-  await pg.click("#hub-free");
+  await pg.screenshot({ path: `${out}/51-workshop-routes.png` });
+  await closePanel(pg);
+  await walkOutOfGate(pg);
   await pg.evaluate(() => window.advanceTime(3000));
   // Before the dam's gallery door, facing it.
   await pg.evaluate(() => {
@@ -1060,13 +1204,12 @@ const spills = (pg) =>
 {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
   const pg = await withProfile(ctx, { ...midGame, v: 9, routes: ["tunnel", "dam", "gangway"] });
-  await pg.click("#start");
-  await pg.click('#hub [data-act=tab][data-arg=hideout]');
+  await toCamp(pg);
+  await useStation(pg, "workshop");
   const open = await pg.locator("#hub-side .route").allTextContents();
   if (open.length !== 3 || !open.every((t) => /開通/.test(t))) errors.push(`routes: with every route open the hideout lists ${JSON.stringify(open)}`);
-  await pg.click('#hub [data-act=tab][data-arg=kit]');
-  await pg.click("#hub-region [data-arg=reservoir]");
-  await pg.click("#hub-free");
+  await closePanel(pg);
+  await walkOutOfGate(pg);
   await pg.evaluate(() => window.advanceTime(3000));
   const r = await readOf(pg);
   if (r.routes.join() !== "tunnel,dam,gangway") errors.push(`routes: the raid's world has ${r.routes.join() || "none"} open`);
@@ -1101,8 +1244,8 @@ for (const [size, name] of [[{ width: 1280, height: 720 }, "44-ending"], [{ widt
   const ctx = await browser.newContext({ viewport: size, ...(phone ? { deviceScaleFactor: 2, isMobile: true, hasTouch: true } : {}) });
   const pg = await withProfile(ctx, lastStage);
   const press = (sel) => (phone ? pg.tap(sel) : pg.click(sel));
-  await press("#start");
-  await press('#hub [data-act=tab][data-arg=hideout]');
+  await toCamp(pg, phone);
+  await useStation(pg, "workshop", phone ? await ctx.newCDPSession(pg) : undefined);
   await press('#hub-side [data-act=mod][data-arg=craft]');
   await press('#hub-side [data-act=build][data-arg=craft]');
   await pg.waitForTimeout(200);
@@ -1115,10 +1258,10 @@ for (const [size, name] of [[{ width: 1280, height: 720 }, "44-ending"], [{ widt
   await pg.screenshot({ path: `${out}/${name}.png` });
   await press("#ending-back");
   const back = await readOf(pg);
-  if (back.screen !== "hub" || !/完成/.test(await pg.textContent("#hub-record"))) errors.push(`ending: going on left ${back.screen} without the craft marked done`);
+  if (back.screen !== "camp" || back.camp.panel !== null) errors.push(`ending: going on left ${back.screen} (panel ${back.camp?.panel})`);
   if (!phone) {
-    await press('#hub [data-act=tab][data-arg=hideout]');
-    if (!(await pg.locator("#hub-side .escaped").count())) errors.push("ending: the hideout does not show the craft done");
+    await useStation(pg, "workshop");
+    if (!(await pg.locator("#hub-side .escaped").count()) || !/完成/.test(await pg.textContent("#hub-record"))) errors.push("ending: the workshop does not show the craft done");
     await pg.screenshot({ path: `${out}/45-hideout-done.png` });
   }
   await ctx.close();

@@ -520,6 +520,10 @@ export interface State {
   leaving: { depot: number; t: number } | null;
   /** The depot the raid ended at, if it ended at one. */
   leftAt: PoiId | null;
+  /** Seconds the player has spent outside the camp's yard this raid (`HOME`). */
+  away: number;
+  /** The raid ended by walking back into the camp. */
+  home: boolean;
   /** The ways in walked to this raid (`ENTRY`), the start's own first unless it began at a depot: the base learns them if the player gets off alive. */
   found: EntryId[];
   /** The explored map, one 0 / 1 per cell (`exploreSize()`, `cellOf()`), carried over from earlier raids. */
@@ -755,6 +759,8 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
     sentVia: DEPOTS.map(() => 0),
     leaving: null,
     leftAt: null,
+    away: 0,
+    home: false,
     found: from ? [] : [entry.id],
     seen: start.seen ? decodeSeen(start.seen) : emptySeen(),
     cell: -1,
