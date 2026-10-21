@@ -362,6 +362,205 @@ export const DEPOT = {
 export const HOME = { away: 10 };
 
 /**
+ * The island's state between raids (meta/island.ts): each raid is one day, and each POI is
+ * held, thin or freed. A POI cleared in a raid the player gets off alive is freed; one freed and
+ * left unvisited for `thinAfter` days goes thin. A thin POI's garrison keeps `thinKeep` of its
+ * squads (the vault guard's among them), so going back to it is a smaller fight than the first.
+ */
+export const ISLAND = {
+  /** Days a freed POI stays freed without a visit. */
+  thinAfter: 3,
+  /** Share of a thin POI's squads that stand, rounded up. */
+  thinKeep: 0.5,
+};
+
+/** What one network level sets in a raid (`NETWORK.levels`). */
+export interface NetworkLevel {
+  /** A short word for the level, for the map table's meter. */
+  name: string;
+  /** What the level does, in a few words, beside the meter. */
+  note: string;
+  /** Seconds to the first reinforcement squad and between the next (`REINFORCE.first`, `REINFORCE.every`). */
+  reinforce: { first: number; every: number };
+  /** Seconds to the raiders (`RAIDERS.at`). */
+  raiders: number;
+  /** Hunting parties in each region (`PARTY.count`). */
+  parties: Record<RegionId, number>;
+  /** Drone packs flying in each region, of the region's `PACKS`. */
+  packs: Record<RegionId, number>;
+  /** Share of the grunts and heavies, raiders aside, that wear a tier-1 plate (see PLATE). */
+  plate: number;
+  /** Salvage crews (`CREW`) that come into the region the raid starts in. */
+  crews: number;
+}
+
+/**
+ * The robots' network (網の段階), 0 to 5, kept on the profile: how hard the whole island is.
+ * Each day adds `base + perHeld` for each POI held (`thinWeight` for one thin) to a pressure,
+ * and the network rises a step each time the pressure reaches `riseEvery`, so a player who
+ * frees nothing sees it climb from `start` to the top in about nine days, and one who holds
+ * the ground sees it climb a step every three days or so. A day that starts at the top gathers
+ * nothing, so a step taken off the top holds for a while. Freeing a held POI takes it down a
+ * step (`relayPoi` two; a thin one a step less, since the network had half lost it already),
+ * killing the titan a step, and destroying a relay mast a step. A thin POI goes back to held
+ * once it has been thin `retakeAfter` days while the network stands at `retakeAt` or higher;
+ * relay masts (`RELAYS`) stand in the raid from `relayAt`.
+ *
+ * `levels[2]` is the island the bots' balance tables are played on: its numbers are the
+ * reinforcement times, raider time, parties and packs of `REINFORCE`, `RAIDERS`, `PARTY` and
+ * `PACKS`, with no plates added. Lower levels give more time and fewer hunters; higher ones
+ * bring every wave sooner, more parties, and plates on the plain robots. A salvage crew (`CREW`)
+ * comes into the starting region from level 3, two from level 4; below level 3 crews come only
+ * on a crews' visit, which adds one at every level, so `levels[2]` plays as the island without crews.
+ */
+export const NETWORK = {
+  start: 1,
+  max: 5,
+  riseEvery: 2,
+  base: 0.55,
+  perHeld: 0.05,
+  thinWeight: 0.5,
+  relayPoi: 2,
+  retakeAt: 3,
+  retakeAfter: 2,
+  relayAt: 3,
+  levels: [
+    { name: "途切れ", note: "増援は遅く、群れと遊撃隊は少ない", reinforce: { first: 390, every: 330 }, raiders: 960, parties: { reservoir: 1, harbor: 1 }, packs: { reservoir: 1, harbor: 1 }, plate: 0, crews: 0 },
+    { name: "弱い", note: "増援は遅く、群れは少ない", reinforce: { first: 330, every: 270 }, raiders: 840, parties: { reservoir: 1, harbor: 1 }, packs: { reservoir: 2, harbor: 1 }, plate: 0, crews: 0 },
+    { name: "並", note: "いつもの島", reinforce: { first: 270, every: 225 }, raiders: 720, parties: { reservoir: 2, harbor: 2 }, packs: { reservoir: 3, harbor: 2 }, plate: 0, crews: 0 },
+    { name: "強い", note: "増援が早い・中継器が立つ", reinforce: { first: 240, every: 195 }, raiders: 600, parties: { reservoir: 2, harbor: 2 }, packs: { reservoir: 3, harbor: 2 }, plate: 0.15, crews: 1 },
+    { name: "厳しい", note: "増援が早い・遊撃隊が増える・装甲板が増える", reinforce: { first: 210, every: 170 }, raiders: 540, parties: { reservoir: 3, harbor: 3 }, packs: { reservoir: 3, harbor: 2 }, plate: 0.3, crews: 2 },
+    { name: "最大", note: "増援が次々来る・遊撃隊が増える・装甲板が多い", reinforce: { first: 180, every: 140 }, raiders: 480, parties: { reservoir: 3, harbor: 3 }, packs: { reservoir: 3, harbor: 2 }, plate: 0.45, crews: 2 },
+  ] satisfies NetworkLevel[],
+  /** The level the sim gate's raids are played at, and a raid's when the start names none. */
+  play: 2,
+};
+
+/**
+ * A relay mast (網の中継器, `RELAYS` in map.ts): a lattice mast `height` metres tall with a red
+ * eye at the top, hit as a post of `radius` (up to `top` metres under the eye, where the lattice
+ * narrows) and the eye as a weak point of `eyeR`, taking
+ * `hp` of weapon damage (the eye `eyeMult` times). It stands only at networks of
+ * `NETWORK.relayAt` and up, guarded by a squad of two.
+ */
+export const RELAY = { hp: 900, height: 13, radius: 0.85, top: 1.5, eyeR: 0.7, eyeMult: 2 };
+
+/**
+ * The camp's contract board (meta/contracts.ts): `count` contracts a day, built from the island
+ * and the profile, of which the player takes one or none. Rewards, in credits:
+ * - free a POI: `freePerRobot` for each robot of its garrison that day;
+ * - bring home valuables from a POI's bins: `fetchShare` of their worth, at least `fetchMin`,
+ *   asking for as many as its bins hold on average, up to `fetchMax`, and one more of them on top;
+ * - destroy a drone pack or a hunting party: `intercept` by target, and on some days a heal or a
+ *   weapon, one step rarer every `rarityEvery` days;
+ * - destroy a named relay mast: `destroy`;
+ * - destroy the squad the network sends to retake a freed POI: `defend`.
+ * Each is multiplied by the region's `region` factor: the harbor is the harder ground.
+ */
+export const CONTRACT = {
+  count: [3, 4] as const,
+  freePerRobot: 150,
+  fetchShare: 0.6,
+  fetchMin: 300,
+  fetchMax: 3,
+  intercept: { pack: 500, party: 800, crew: 900 },
+  /** Destroying a named relay mast: credits, and the network a step lower overnight. */
+  destroy: 1000,
+  /** Destroying the retake squad sent to a freed POI: credits, and the POI stays freed. */
+  defend: 1000,
+  rarityEvery: 6,
+  region: { reservoir: 1, harbor: 1.4 } satisfies Record<RegionId, number>,
+};
+
+/** The island's events (島の出来事): at most one a day, announced the day before (meta/island.ts). */
+export type EventKind = "debris" | "retake" | "storm" | "crews";
+
+/**
+ * How often each event comes: a day has one with `chance`, picked by `weights` among those the
+ * island allows (a retake only while some POI is freed). Drawn from the profile's seed and the
+ * day alone, so the schedule is fixed as soon as it is announced.
+ */
+export const EVENTS = {
+  chance: 0.5,
+  weights: { debris: 3, retake: 3, storm: 2, crews: 2 } satisfies Record<EventKind, number>,
+  names: { debris: "破片の落下", retake: "奪還", storm: "嵐", crews: "回収部隊の来訪" } satisfies Record<EventKind, string>,
+};
+
+/**
+ * A debris fall (破片の落下): a piece of the ring lies at one of `DEBRIS_SPOTS` (map.ts) for the
+ * day, with a crate (a bin out on the island, so it counts for no fetch contract) that holds
+ * `count` valuables drawn from `valuables` and `heals` heals, guarded by `guards` at its foot.
+ */
+export const DEBRIS = {
+  valuables: [["drive", 4], ["gyro", 3], ["core", 2]] as [ValuableKind, number][],
+  count: 3,
+  heals: 1,
+  guards: ["heavy", "drone", "drone"] as EnemyKind[],
+};
+
+/**
+ * A retake (奪還): `at` seconds into the raid the network beams a squad of `kinds` in out of the
+ * player's sight, `dist` metres' walk from a freed POI, and it walks to the POI's way in and holds
+ * it there. Its plain grunts and heavies wear plates of `plate[level]` (none at 0). Left alive by
+ * the end of the day's raid, it turns the POI thin overnight.
+ */
+export const RETAKE = {
+  at: 90,
+  name: "奪還部隊",
+  kinds: [
+    ["grunt", "grunt", "charger"],
+    ["grunt", "grunt", "heavy"],
+    ["grunt", "grunt", "charger", "drone"],
+    ["heavy", "grunt", "grunt", "drone"],
+  ] as EnemyKind[][],
+  plate: [0, 0, 1, 1, 2, 2] as Rarity[],
+  dist: [110, 200] as const,
+  away: 90,
+};
+
+/**
+ * A storm (嵐): robots see `sight` as far (their kind's `SIGHT`, a pack's sight, and the range
+ * they answer from afar, `RETURN`), and the view draws the fog `fog` times as near.
+ */
+export const STORM = { sight: 0.6, fog: 0.6 };
+
+/**
+ * Salvage crews (回収部隊), as many as `NETWORK.levels[].crews` plus one on a crews' visit: squads
+ * drawn from `squads` that beam in out of the player's sight,
+ * `away` metres from them or more, `arrive` seconds into the raid (each crew its own draw), at a
+ * stop of the starting region (`PARTY_STOPS`). Most are pairs: a crew met in the open is a
+ * fight on top of whatever the player is in, and three of them more often turns it. They walk by
+ * the ground's way, at `pace` of their slowest member's speed, to the unopened bin of the region's
+ * POIs nearest by that walk that stands on the open ground (not a vault) and lies beyond `wary` of the
+ * player, stand `SEARCH.time` within `reach` of it, and take its valuable into their bag (the
+ * rest of what it holds is lost). With `bag` valuables, or `leaveAfter` seconds after
+ * arriving, or no bin left, they walk to the region's nearest way off and beam out there (or where
+ * they stand, held up `stuck.tries` times on the way). A crew that gets out raises the network a
+ * step overnight; the last one of a crew to fall drops the bag. Like a hunting party, it fights
+ * what it meets and does not come to distant gunfire. Its choices come from a stream of its own.
+ */
+export const CREW = {
+  name: "回収部隊",
+  squads: [
+    ["grunt", "grunt"],
+    ["grunt", "charger"],
+    ["grunt", "grunt"],
+    ["grunt", "grunt", "charger"],
+  ] as EnemyKind[][],
+  arrive: [20, 70] as const,
+  away: 100,
+  /** Metres from the player inside which a crew picking its next bin passes a bin over. */
+  wary: 80,
+  pace: 0.7,
+  reach: 2.2,
+  bag: 4,
+  leaveAfter: 300,
+  /** Metres from its way off at which a leaving crew beams out. */
+  out: 6,
+  stuck: { time: 15, moved: 3, tries: 3 },
+};
+
+/**
  * The ways in on foot (`ENTRIES`) a player has walked to: one reached in a raid that ends with
  * the player off alive can be chosen at the base from then on. A player starts knowing only
  * the reservoir's first.

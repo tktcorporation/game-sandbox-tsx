@@ -189,6 +189,17 @@ const spills = (pg) =>
   if (panelFit.length) errors.push(`mobile: the shelves' panel ${panelFit.join(", ")} (844x390)`);
   await page.screenshot({ path: `${out}/m0-panel-stash.png` });
   await closePanel(page, true);
+  // The board by the use button: it fits the screen, and a tap takes the day's fetch.
+  await useStation(page, "quests", cdp);
+  const boardFit = await spills(page);
+  if (boardFit.length) errors.push(`mobile: the board's panel ${boardFit.join(", ")} (844x390)`);
+  await page.screenshot({ path: `${out}/m0-panel-quests.png` });
+  await page.tap("#hub-side .quest.contract[data-type=fetch] [data-act=take]");
+  const mt = (await read()).camp;
+  if (mt.board.find((c) => c.id === mt.taken)?.t !== "fetch") errors.push("mobile: tapping the fetch did not take it");
+  await page.locator("#hub-side .quest.contract.taken").scrollIntoViewIfNeeded();
+  await page.screenshot({ path: `${out}/m0-panel-quests-taken.png` });
+  await closePanel(page, true);
   // Out of the gate on the stick: the raid starts where the player walks out.
   await page.evaluate(() => window.ringfallCamp.toGate());
   await step(100);
@@ -206,6 +217,7 @@ const spills = (pg) =>
   await touch("touchMove", [{ x: 150, y: 200, id: 1 }]);
   await step(600);
   await page.screenshot({ path: `${out}/m1-stick.png` });
+  if (!(await page.evaluate(() => !document.getElementById("obj-contract").hidden && /回収/.test(document.getElementById("obj-contract").textContent)))) errors.push("mobile: the objective card does not show the fetch taken");
   await touch("touchEnd", []);
   const s1 = await read();
   if (!(s1.player.z < s0.player.z - 3)) errors.push(`mobile: stick did not move the player (${s0.player.z} -> ${s1.player.z})`);
@@ -484,10 +496,20 @@ const read = async () => JSON.parse(await page.evaluate(() => window.render_game
   await page.keyboard.press("Escape");
   if ((await read()).camp?.panel) errors.push("camp: Esc did not close the trader's panel");
   await seen("quests");
+  if (!/依頼/.test((await read()).camp.marks.quests)) errors.push(`camp: the board carries no mark with contracts on it and none taken (${JSON.stringify((await read()).camp.marks)})`);
   await useStation(page, "quests");
-  const quests = await page.locator("#hub-side .quest").count();
-  if (quests !== 2) errors.push(`camp: the board offers ${quests} quests at the start, not 2`);
+  const quests = await page.locator("#hub-side .quest:not(.contract):not(.story)").count();
+  const contracts = await page.locator("#hub-side .quest.contract").count();
+  const stories = await page.locator("#hub-side .quest.story").count();
+  if (quests !== 2 || contracts < 3 || contracts > 4 || stories !== 1) errors.push(`camp: the board offers ${quests} intro quests (not 2), ${contracts} contracts and ${stories} story contracts at the start`);
   await page.screenshot({ path: `${out}/00-panel-quests.png` });
+  // Taking the day's intercept: it is marked taken, and the board's mark goes.
+  await page.click("#hub-side .quest.contract[data-type=intercept] [data-act=take]");
+  const tk = await read();
+  if (!tk.camp.taken || tk.camp.board.find((c) => c.id === tk.camp.taken)?.t !== "intercept" || !(await page.locator("#hub-side .quest.contract.taken").count()) || /依頼/.test(tk.camp.marks.quests)) errors.push(`camp: taking the intercept left ${JSON.stringify(tk.camp)}`);
+  await page.screenshot({ path: `${out}/00-panel-quests-taken.png` });
+  await page.locator("#hub-side .quest.story").scrollIntoViewIfNeeded();
+  await page.screenshot({ path: `${out}/00-panel-quests-story.png` });
   await closePanel(page);
   await seen("workshop");
   await useStation(page, "workshop");
@@ -793,6 +815,10 @@ for (let i = 0; i < 25 * 60 * 10; i++) {
   const at = (poi) => live.some((e) => s.squads[e.squad].poi === poi);
   if (s.phase === "play" && !taken.has("02-start")) {
     await shot("02-start");
+    // The taken intercept is on the objective card, and the map marks where it is.
+    const line = await page.evaluate(() => (document.getElementById("obj-contract").hidden ? "" : document.getElementById("obj-contract").textContent));
+    if (!/迎撃/.test(line) || s.contract?.t !== "intercept") errors.push(`contract: the objective card reads "${line}" for ${JSON.stringify(s.contract)}`);
+    await page.locator("#objective").screenshot({ path: `${out}/02-objective-contract.png` });
     // The ways off the island are open from the start and listed on the objective card.
     const lines = await page.evaluate(() => document.getElementById("obj-exits").children.length);
     if (lines !== 3) errors.push(`start: the objective card lists ${lines} ways out, not 3`);
@@ -815,6 +841,10 @@ for (let i = 0; i < 25 * 60 * 10; i++) {
     await page.evaluate(() => window.advanceTime(100));
     const closed = await page.evaluate(() => document.getElementById("map").hidden);
     if (!open || !closed) errors.push(`map: M opened ${open}, closed again ${closed}`);
+    // The intercept's squad is destroyed, as the player's shots would: the results show it done.
+    const gone = await page.evaluate(() => window.ringfallContract.destroyTarget());
+    const struck = await quietStep(page, 100);
+    if (!gone || !struck.contract?.met) errors.push(`contract: destroying the target (${gone} robots) left ${JSON.stringify(struck.contract)}`);
     console.log(`desktop reservoir frame: ${JSON.stringify(await page.evaluate(() => window.ringfallFrameCost(20)))}`);
     // A vault, from just in front of it: the locked crate reads apart from the supply bins.
     // The quarry's stands on an open terrace, so the camera has a clear view of it.
@@ -933,6 +963,7 @@ console.log(JSON.stringify((await read()).stats));
 {
   const r = await read();
   if (!r.settled) errors.push("results: the raid was not settled into the profile");
+  if (!r.settled?.contract?.done || !(await page.evaluate(() => !!document.querySelector("#home .contract.done")))) errors.push(`results: the intercept destroyed shows ${JSON.stringify(r.settled?.contract)}`);
   await page.click("#restart");
   const h = await read();
   if (h.screen !== "camp" || h.profile.raids !== 1 || h.camp.panel !== null) errors.push(`results: back to the camp shows ${h.screen} with ${h.profile.raids} raids`);
@@ -1096,6 +1127,137 @@ const readOf = async (pg) => JSON.parse(await pg.evaluate(() => window.render_ga
   await ctx.close();
   lap("hideout, phone");
 }
+/*
+ * The board some days in, from a saved profile: the intro quests done, two records home and their
+ * text on the board, a contract to free a POI taken, on the desktop and a phone on its side.
+ */
+{
+  const storyGame = {
+    v: 14, cash: 3200, stash: [], raids: 8, extracted: 6, time: 4000, region: "reservoir", entry: "beach", entries: ["beach", "checkpoint", "jetty", "outskirts", "quay", "shore"], seed: 4321, day: 9,
+    quests: { progress: {}, done: ["grunts", "village", "power", "parts"] },
+    hideout: { generator: 1, infirmary: 1, workbench: 0, storage: 0, radio: 0, pouch: 0, craft: 0 },
+    records: ["tether", "dam"],
+  };
+  for (const phone of [false, true]) {
+    const ctx = await browser.newContext(phone ? { viewport: { width: 740, height: 360 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true } : { viewport: { width: 1280, height: 720 } });
+    const pg = await withProfile(ctx, storyGame);
+    await toCamp(pg, phone);
+    const cdp = phone ? await ctx.newCDPSession(pg) : undefined;
+    await useStation(pg, "quests", cdp);
+    const intro = await pg.locator("#hub-side .quest:not(.contract):not(.story)").count();
+    const told = await pg.locator("#hub-side details.told").count();
+    const now = await pg.textContent("#hub-side .quest.story strong");
+    if (told !== 2 || !/最後の船/.test(now)) errors.push(`board: with two records home it shows ${told} told and "${now}" under way`);
+    const sel = "#hub-side .quest.contract[data-type=free] [data-act=take]";
+    await (phone ? pg.tap(sel) : pg.click(sel));
+    const st = await readOf(pg);
+    if (st.camp.board.find((c) => c.id === st.camp.taken)?.t !== "free") errors.push(`board: taking the free contract left ${JSON.stringify(st.camp)}`);
+    let fit = await spills(pg);
+    await pg.screenshot({ path: `${out}/${phone ? "m16" : "50"}-board.png` });
+    await pg.locator("#hub-side details.told[open]").scrollIntoViewIfNeeded();
+    fit = fit.concat(await spills(pg));
+    await pg.screenshot({ path: `${out}/${phone ? "m16" : "50"}-board-story.png` });
+    // The map table marks the taken contract's POI on the island.
+    await closePanel(pg, phone);
+    await useStation(pg, "map", cdp);
+    if (!(await pg.locator("#hub-side .hub-taken").count())) errors.push("board: the map table does not name the contract taken");
+    fit = fit.concat(await spills(pg));
+    await pg.screenshot({ path: `${out}/${phone ? "m16" : "50"}-map-contract.png` });
+    if (fit.length) errors.push(`board${phone ? " on a phone" : ""}: ${[...new Set(fit)].join(", ")}`);
+    await ctx.close();
+  }
+  lap("board");
+}
+
+/*
+ * The network some days in, at level 4: the camp's map table flags it and shows the meter and
+ * 明日の島 (the network's rise, a thin quarry the network will take back); in the raid the relay
+ * masts stand, on the map and in the world; shooting the named mast down does the destroy
+ * contract, and the results show the network's change and its causes. The phone looks at the
+ * map table and the raid's map.
+ */
+{
+  /** Where each mast is seen whole from, on open ground (the view checked against the boxes in the sim). */
+  const MAST_VIEW = { west: [-150, 322], east: [150, 218], salt: [-90, -778], hill: [90, -808] };
+  const netGame = {
+    v: 15, cash: 3200, stash: [], raids: 11, extracted: 8, time: 6000, region: "reservoir", entry: "beach", entries: ["beach", "checkpoint", "jetty", "outskirts", "quay", "shore"], seed: 4321, day: 12,
+    network: 4, pressure: 1.5, depots: ["supply"],
+    quests: { progress: {}, done: ["grunts", "village", "power", "parts"] },
+    hideout: { generator: 1, infirmary: 1, workbench: 0, storage: 0, radio: 0, pouch: 0, craft: 0 },
+    records: [],
+    poiState: { supply: { state: "freed", lastVisit: 11, since: 0 }, quarry: { state: "thin", lastVisit: 8, since: 11 } },
+  };
+  for (const phone of [false, true]) {
+    const ctx = await browser.newContext(phone ? { viewport: { width: 740, height: 360 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true } : { viewport: { width: 1280, height: 720 } });
+    const pg = await withProfile(ctx, netGame);
+    await toCamp(pg, phone);
+    const cdp = phone ? await ctx.newCDPSession(pg) : undefined;
+    const c0 = await readOf(pg);
+    if (!/網 4/.test(c0.camp?.marks.map ?? "") || c0.profile.network !== 4) errors.push(`network: at level 4 the map table's mark reads "${c0.camp?.marks.map}" (network ${c0.profile.network})`);
+    await useStation(pg, "map", cdp);
+    const meter = await pg.textContent("#hub-side .hub-net");
+    const tomorrow = await pg.textContent("#hub-side .tomorrow");
+    if (!/網 4/.test(meter) || (await pg.locator("#hub-side .net-meter i.on").count()) !== 5) errors.push(`network: the meter reads "${meter}"`);
+    if (!/採掘場は手薄。放っておくと/.test(tomorrow) || !/網は/.test(tomorrow)) errors.push(`network: 明日の島 reads "${tomorrow}"`);
+    const fit = await spills(pg);
+    if (fit.length) errors.push(`network map table${phone ? " on a phone" : ""}: ${[...new Set(fit)].join(", ")}`);
+    await pg.locator("#hub-side .hub-net").scrollIntoViewIfNeeded();
+    await pg.screenshot({ path: `${out}/${phone ? "m17" : "52"}-map-network.png` });
+    await closePanel(pg, phone);
+    const id = await pg.evaluate(() => window.ringfallContract.take("destroy"));
+    if (!id) errors.push("network: the board at level 4 offers no mast to destroy");
+    await walkOutOfGate(pg);
+    await pg.evaluate(() => window.advanceTime(3000));
+    const r0 = await readOf(pg);
+    if (r0.network !== 4 || r0.relays.length !== 4 || r0.contract?.t !== "destroy") errors.push(`network: a raid at level 4 stands ${r0.relays.length} masts at network ${r0.network}, contract ${JSON.stringify(r0.contract)}`);
+    await pg.keyboard.press("KeyM");
+    await pg.evaluate(() => window.advanceTime(100));
+    await draw(pg);
+    await pg.screenshot({ path: `${out}/${phone ? "m17" : "53"}-map-relay.png` });
+    await pg.keyboard.press("KeyM");
+    await pg.evaluate(() => window.advanceTime(100));
+    if (!phone) {
+      // The named mast from a spot of open ground with a clear view of it (the scattered cover
+      // stands close round some), a little raised, looking up at its eye; the player stands there.
+      const m = r0.relays.find((x) => x.id === r0.contract?.relay) ?? r0.relays[0];
+      const [vx, vz] = MAST_VIEW[m.id];
+      const yaw = Math.atan2(m.x - vx, -(m.z - vz));
+      const cam = () => pg.evaluate(([x, z, w, q]) => window.ringfallCamera(x, window.ringfallTerrain(x, z) + 4.5, z, w, 0.22 + 0 * q.y), [vx, vz, yaw, m]);
+      await pg.evaluate(([x, z, w]) => window.ringfallPlace(x, z, w), [vx, vz, yaw]);
+      await pg.evaluate(() => window.advanceTime(200));
+      await cam();
+      await draw(pg);
+      await pg.screenshot({ path: `${out}/54-relay-mast.png` });
+      await pg.evaluate(() => window.ringfallCamera());
+      const shots = await pg.evaluate(() => window.ringfallContract.destroyTarget());
+      const r1 = await quietStep(pg, 600);
+      if (!shots || r1.relays.find((x) => x.id === m.id)?.hp !== 0 || !r1.contract?.met || !r1.stats.relays.includes(m.id)) errors.push(`network: shooting the mast (${shots} shots) left ${JSON.stringify({ relay: r1.relays.find((x) => x.id === m.id), contract: r1.contract })}`);
+      await cam();
+      await draw(pg);
+      await pg.screenshot({ path: `${out}/55-relay-down.png` });
+      await pg.evaluate(() => window.ringfallCamera());
+      // At the supply depot's start, freed and on: an empty bag leaves the raid there.
+      await pg.evaluate(() => window.ringfallPlace(0, 554.5, 0));
+      await pg.evaluate(() => window.advanceTime(300));
+      const leave = await pg.textContent("#prompt");
+      await pg.keyboard.press("KeyE");
+      await pg.evaluate(() => window.advanceTime(1000));
+      const going = await readOf(pg);
+      if (going.leaving === null) errors.push(`network: at the supply depot the prompt reads "${leave}" and the use key did not start leaving`);
+      await pg.evaluate(() => window.advanceTime(5000));
+      await pg.waitForFunction(() => !document.getElementById("results").hidden, null, { timeout: 10000 }).catch(() => undefined);
+      const r2 = await readOf(pg);
+      const home = await pg.textContent("#home");
+      if (r2.screen !== "results" || r2.settled?.network?.relays !== 1 || r2.settled?.contract?.t !== "destroy" || !r2.settled.contract.done || !/中継器 −1/.test(home)) errors.push(`network: the results after the mast read ${JSON.stringify({ screen: r2.screen, settled: r2.settled && { network: r2.settled.network, contract: r2.settled.contract } })}`);
+      await pg.screenshot({ path: `${out}/56-results-network.png` });
+      await pg.locator("#home .net-change").scrollIntoViewIfNeeded();
+      await pg.screenshot({ path: `${out}/56-results-network-detail.png` });
+    }
+    await ctx.close();
+  }
+  lap("network");
+}
+
 /*
  * A depot: the base offers the depots on as starts, the raid begins on the ground beside one
  * with its prompt, the map lies under fog except round where the player has been, and leaving
@@ -1267,6 +1429,224 @@ for (const [size, name] of [[{ width: 1280, height: 720 }, "44-ending"], [{ widt
   await ctx.close();
 }
 lap("ending");
+/*
+ * The island's state, from a saved profile on day 6: the supply depot freed and unvisited since
+ * day 3 (it goes thin unless the next raid comes into it), the wreck freed yesterday, the quarry
+ * thin. The map table colours the POIs and lists 明日の島, its mark warns of the depot, the raid's
+ * map shows the standings, and coming home ends the day on the results with 明日の島.
+ */
+const islandDay = {
+  v: 13, cash: 2400, stash: [], raids: 5, extracted: 4, time: 3600, region: "reservoir", entry: "beach", seed: 4242, escaped: null,
+  entries: ["beach", "checkpoint", "jetty", "outskirts", "quay", "shore"], depots: ["supply", "wreck"], seen: "f".repeat(4000),
+  quests: { progress: {}, done: [] }, day: 6,
+  poiState: { supply: { state: "freed", lastVisit: 3 }, quarry: { state: "thin", lastVisit: 4 }, relay: { state: "held", lastVisit: 0 }, pad: { state: "held", lastVisit: 0 }, wreck: { state: "freed", lastVisit: 5 }, yard: { state: "held", lastVisit: 0 }, smelter: { state: "held", lastVisit: 0 } },
+};
+{
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+  const pg = await withProfile(ctx, islandDay);
+  await toCamp(pg);
+  const c = await readOf(pg);
+  if (c.profile.day !== 6 || c.profile.poiState.quarry.state !== "thin" || !/あす手薄：補給所/.test(c.camp.marks.map)) errors.push(`island: the camp reads day ${c.profile.day}, marks ${JSON.stringify(c.camp.marks)}`);
+  await pg.evaluate(() => window.ringfallCamp.walkTo("map"));
+  await pg.evaluate(() => window.advanceTime(100));
+  await pg.screenshot({ path: `${out}/70-island-camp-mark.png` });
+  await useStation(pg, "map");
+  await pg.waitForTimeout(300);
+  const lines = await pg.locator("#hub-side .tomorrow li").allTextContents();
+  // The network's next step comes first, then the POIs, the most pressing first.
+  if (lines.length < 4 || !/^網は/.test(lines[0]) || !/補給所は次のレイドで訪れないと手薄になる/.test(lines[1]) || !lines.some((l) => /採掘場は手薄/.test(l))) errors.push(`island: the map table's 明日の島 reads ${JSON.stringify(lines)}`);
+  const fit = await spills(pg);
+  if (fit.length) errors.push(`island map table (1280x720): ${fit.join(", ")}`);
+  await pg.screenshot({ path: `${out}/71-island-panel.png` });
+  await closePanel(pg);
+  const run = await walkOutOfGate(pg);
+  const at = (id) => run.enemies.filter((e) => run.squads[e.squad].poi === id).length;
+  if (run.hold.join() !== "freed,thin,held,held,freed,held,held" || at(0) !== 0 || at(4) !== 0 || !(at(1) > 0)) errors.push(`island raid: holds ${run.hold.join()}, robots at the supply depot ${at(0)}, the wreck ${at(4)}, the quarry ${at(1)}`);
+  // The way in's banner has gone by the time the map is opened.
+  await pg.evaluate(() => window.ringfallStep(4000));
+  await pg.keyboard.press("KeyM");
+  await pg.evaluate(() => window.advanceTime(100));
+  await pg.screenshot({ path: `${out}/72-island-map.png` });
+  await pg.keyboard.press("KeyN");
+  await pg.evaluate(() => window.advanceTime(100));
+  await pg.screenshot({ path: `${out}/73-island-map-whole.png` });
+  await pg.keyboard.press("KeyN");
+  await pg.keyboard.press("KeyM");
+  // Home again after time away: the raid ends alive, the day with it.
+  await pg.evaluate(() => window.ringfallStep(7000));
+  await pg.evaluate(() => {
+    const m = window.ringfallCamp.spots().find((q) => q.id === "map");
+    window.ringfallPlace(m.x + 7, m.z + 11, 0);
+  });
+  await pg.evaluate(() => window.advanceTime(200));
+  await pg.waitForFunction(() => !document.getElementById("results").hidden, null, { timeout: 10000 }).catch(() => undefined);
+  const r = await readOf(pg);
+  const home = await pg.textContent("#home");
+  if (r.screen !== "results" || r.settled?.day !== 6 || r.profile.day !== 7 || !/6 日目の終わり/.test(home) || !/明日の島/.test(home) || !/補給所(はあと 3 日訪れないと|は訪れないうちに)手薄にな/.test(home)) errors.push(`island results: ${r.screen}, day ${r.settled?.day} -> ${r.profile.day}, home "${home}"`);
+  console.log(`island results: ${JSON.stringify(await pg.locator("#home .tomorrow li").allTextContents())}`);
+  await pg.screenshot({ path: `${out}/74-island-results.png` });
+  await pg.setViewportSize({ width: 740, height: 360 });
+  await pg.waitForTimeout(300);
+  await pg.screenshot({ path: `${out}/m20-island-results.png` });
+  await ctx.close();
+}
+{
+  const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+  const pg = await withProfile(ctx, islandDay);
+  await pg.evaluate(() => Object.defineProperty(screen, "orientation", { value: undefined, configurable: true }));
+  await toCamp(pg, true);
+  const cdp = await ctx.newCDPSession(pg);
+  await useStation(pg, "map", cdp);
+  await pg.waitForTimeout(300);
+  const fit = await spills(pg);
+  if (fit.length) errors.push(`island map table (phone): ${fit.join(", ")}`);
+  await pg.screenshot({ path: `${out}/m21-island-panel.png` });
+  await closePanel(pg, true);
+  await rideOut(pg, cdp);
+  await pg.evaluate(() => window.ringfallStep(4000));
+  const bb = await pg.locator("#t-map").boundingBox();
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: bb.x + bb.width / 2, y: bb.y + bb.height / 2, id: 1 }] });
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await pg.evaluate(() => window.advanceTime(200));
+  await pg.screenshot({ path: `${out}/m22-island-map.png` });
+  await ctx.close();
+}
+lap("island");
+
+/*
+ * The island's events: the map table lists today's and tomorrow's (a debris fall, then a storm)
+ * and its mark names tomorrow's; a debris fall's day puts the ring's piece, its crate and its
+ * guards on the ground between and a mark on the map; a storm brings the fog in; a crews' visit
+ * sends salvage crews to the bins; on a retake's day the defend contract is done by destroying
+ * the squad, and the results tell how the retake went. Phones look at the map table, the storm
+ * and the results.
+ */
+{
+  const evGame = (events) => ({
+    v: 16, cash: 2400, stash: [], raids: 8, extracted: 6, time: 5000, region: "reservoir", entry: "beach", entries: ["beach", "checkpoint", "jetty", "outskirts", "quay", "shore"], seed: 2468, day: 9,
+    network: 2, pressure: 0.5, depots: ["supply"], events,
+    quests: { progress: {}, done: ["grunts", "village", "power", "parts"] },
+    hideout: { generator: 1, infirmary: 1, workbench: 0, storage: 0, radio: 0, pouch: 0, craft: 0 },
+    records: [],
+    poiState: { supply: { state: "freed", lastVisit: 8, since: 0 } },
+  });
+  const raidOf = async (pg, phone, cdp) => {
+    if (phone) await rideOut(pg, cdp);
+    else await walkOutOfGate(pg);
+    await pg.evaluate(() => window.ringfallStep(3000));
+    return readOf(pg);
+  };
+  // The map table, today a debris fall and tomorrow a storm.
+  for (const phone of [false, true]) {
+    const ctx = await browser.newContext(phone ? { viewport: { width: 740, height: 360 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true } : { viewport: { width: 1280, height: 720 } });
+    const pg = await withProfile(ctx, evGame([{ t: "debris", spot: "southwest" }, { t: "storm" }]));
+    await toCamp(pg, phone);
+    const cdp = phone ? await ctx.newCDPSession(pg) : undefined;
+    const c0 = await readOf(pg);
+    if (!/明日：嵐/.test(c0.camp?.marks.map ?? "")) errors.push(`events: the map table's mark reads "${c0.camp?.marks.map}"`);
+    await useStation(pg, "map", cdp);
+    const list = await pg.textContent("#hub-side .events");
+    if (!/破片の落下/.test(list) || !/南西の野/.test(list) || !/嵐/.test(list) || (await pg.locator("#hub-side .events .ev-icon").count()) !== 2) errors.push(`events: the map table lists "${list}"`);
+    const fit = await spills(pg);
+    if (fit.length) errors.push(`events map table${phone ? " on a phone" : ""}: ${[...new Set(fit)].join(", ")}`);
+    await pg.locator("#hub-side .events").scrollIntoViewIfNeeded();
+    await pg.screenshot({ path: `${out}/${phone ? "m23" : "57"}-map-events.png` });
+    await closePanel(pg, phone);
+    if (!phone) {
+      // The debris fall in the raid: the crate and its guards at the spot, the wreck beside it, a mark on the map.
+      const r = await raidOf(pg, phone, cdp);
+      if (r.event?.t !== "debris" || !r.debris || Math.hypot(r.debris.x + 200, r.debris.z - 400) > 1) errors.push(`events: the debris raid has ${JSON.stringify({ event: r.event, debris: r.debris })}`);
+      if (!/破片の落下/.test(await pg.textContent("#obj-event"))) errors.push("events: the objective card does not name the debris fall");
+      await pg.keyboard.press("KeyM");
+      await pg.evaluate(() => window.advanceTime(100));
+      await pg.screenshot({ path: `${out}/59-map-debris.png` });
+      await pg.keyboard.press("KeyM");
+      const d = r.debris;
+      const [vx, vz] = [d.x + 20, d.z - 18];
+      const yaw = Math.atan2(d.x - 5 - vx, -(d.z + 6 - vz));
+      await pg.evaluate(([x, z, w]) => window.ringfallPlace(x, z, w), [vx, vz, yaw]);
+      for (let i = 0; i < 40; i++) await pg.evaluate(() => window.advanceTime(100));
+      await pg.evaluate(([x, z, w]) => window.ringfallCamera(x, window.ringfallTerrain(x, z) + 5, z, w, -0.1), [vx, vz, yaw]);
+      await draw(pg);
+      await pg.screenshot({ path: `${out}/58-debris.png` });
+      await pg.evaluate(() => window.ringfallCamera());
+    }
+    await ctx.close();
+  }
+  // A storm: the fog in close and the light grey, in the robots' sight as in the view.
+  for (const phone of [false, true]) {
+    const ctx = await browser.newContext(phone ? { viewport: { width: 740, height: 360 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true } : { viewport: { width: 1280, height: 720 } });
+    const pg = await withProfile(ctx, evGame([{ t: "storm" }, null]));
+    await toCamp(pg, phone);
+    const cdp = phone ? await ctx.newCDPSession(pg) : undefined;
+    const r = await raidOf(pg, phone, cdp);
+    if (!r.storm) errors.push(`events: the storm raid is not stormy (${JSON.stringify(r.event)})`);
+    await pg.evaluate(() => window.advanceTime(500));
+    await pg.screenshot({ path: `${out}/${phone ? "m24" : "60"}-storm.png` });
+    await ctx.close();
+  }
+  // A crews' visit: the intercept names the salvage crews; one of them is caught searching a bin.
+  {
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    const pg = await withProfile(ctx, evGame([{ t: "crews" }, null]));
+    await toCamp(pg);
+    const id = await pg.evaluate(() => window.ringfallContract.take("intercept"));
+    if (!id) errors.push("events: a crews' visit offers no intercept");
+    const r0 = await raidOf(pg, false);
+    if (!/回収部隊/.test(r0.contract?.line ?? "")) errors.push(`events: the intercept taken on a crews' visit reads ${JSON.stringify(r0.contract)}`);
+    const st = await stepWhile(pg, 500, 900, (x) => x.phase === "play" && !x.crews.some((c) => c.searching && c.members.length));
+    const c = st.crews.find((q) => q.searching && q.members.length);
+    if (!c) errors.push(`events: no salvage crew searched a bin (${JSON.stringify(st.crews)})`);
+    else {
+      const b = c.bin;
+      const m = c.members[0];
+      const dx = m.x - b.x;
+      const dz = m.z - b.z;
+      const len = Math.hypot(dx, dz) || 1;
+      // From the bin's side away from the crew, 10 m back and raised, looking at both.
+      const vx = b.x - (dx / len) * 10 + 3;
+      const vz = b.z - (dz / len) * 10 + 3;
+      const yaw = Math.atan2((b.x + m.x) / 2 - vx, -((b.z + m.z) / 2 - vz));
+      await pg.evaluate(([x, z, w]) => window.ringfallCamera(x, window.ringfallTerrain(x, z) + 3.5, z, w, -0.18), [vx, vz, yaw]);
+      await draw(pg);
+      await pg.screenshot({ path: `${out}/61-crew-loot.png` });
+      await pg.evaluate(() => window.ringfallCamera());
+      console.log(`crew: searching at ${b.x},${b.z} with bag ${c.bag.join(",") || "-"} at ${st.time} s`);
+    }
+    await ctx.close();
+  }
+  // A retake: the defend contract, the squad destroyed, then home; the results tell the retake's outcome.
+  for (const phone of [false, true]) {
+    const ctx = await browser.newContext(phone ? { viewport: { width: 740, height: 360 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true } : { viewport: { width: 1280, height: 720 } });
+    const pg = await withProfile(ctx, evGame([{ t: "retake", poi: "supply" }, null]));
+    await toCamp(pg, phone);
+    const cdp = phone ? await ctx.newCDPSession(pg) : undefined;
+    const c0 = await readOf(pg);
+    if (c0.camp?.board[0]?.t !== "defend") errors.push(`events: a retake's board starts with ${c0.camp?.board[0]?.t}`);
+    await pg.evaluate(() => window.ringfallContract.take("defend"));
+    await walkOutOfGate(pg);
+    const st = await stepWhile(pg, 500, 400, (x) => x.phase === "play" && !x.retake.left);
+    if (!st.retake.left) errors.push(`events: the retake squad never came (${JSON.stringify(st.retake)})`);
+    const killed = await pg.evaluate(() => window.ringfallContract.destroyTarget());
+    const r1 = await quietStep(pg, 300);
+    if (!killed || !r1.contract?.met) errors.push(`events: destroying the retake squad (${killed}) left the contract ${JSON.stringify(r1.contract)}`);
+    // Home through the camp's yard, the day ended alive.
+    await pg.evaluate(() => window.ringfallStep(8000));
+    await pg.evaluate(() => {
+      const m = window.ringfallCamp.spots().find((q) => q.id === "map");
+      window.ringfallPlace(m.x + 7, m.z + 11, 0);
+    });
+    await pg.evaluate(() => window.advanceTime(200));
+    await pg.waitForFunction(() => !document.getElementById("results").hidden, null, { timeout: 10000 }).catch(() => undefined);
+    const r = await readOf(pg);
+    const home = await pg.textContent("#home");
+    if (r.screen !== "results" || r.settled?.event?.t !== "retake" || r.settled?.overrun?.length || !/奪還部隊を倒した/.test(home) || r.profile.poiState.supply.state !== "freed" || !r.settled?.contract?.done) errors.push(`events: the retake's results read ${JSON.stringify({ screen: r.screen, settled: r.settled && { event: r.settled.event, overrun: r.settled.overrun, contract: r.settled.contract }, supply: r.profile.poiState.supply })} "${home.slice(0, 200)}"`);
+    await pg.locator("#home h3", { hasText: "島の出来事" }).scrollIntoViewIfNeeded().catch(() => undefined);
+    await pg.screenshot({ path: `${out}/${phone ? "m25" : "62"}-results-retake.png` });
+    await ctx.close();
+  }
+  lap("events");
+}
 console.log(`screens: ${[...taken].join(", ")}`);
 await browser.close();
 server.close();

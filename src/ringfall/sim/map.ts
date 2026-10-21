@@ -1530,6 +1530,86 @@ export const PACKS: Squad[] = [
   },
 ];
 
+/** Stable names for the relay masts: saves and contracts refer to a mast by these. */
+export type RelayId = "west" | "east" | "salt" | "hill";
+
+/**
+ * A relay mast of the robots' network (網の中継器, `RELAY` in config.ts): a tall thin mast with a
+ * red eye, standing on open ground between the POIs only while the network is strong
+ * (`NETWORK.relayAt`), with a squad of two at its foot. Nothing is built for it in the map:
+ * the ground round each spot is already clear, so the world is the same with or without it.
+ */
+export interface Relay {
+  id: RelayId;
+  name: string;
+  x: number;
+  z: number;
+  guards: Squad;
+}
+
+/** The guards of a mast at (x, z): two grunts either side of it, facing out. */
+const mastGuards = (name: string, x: number, z: number): Squad => ({
+  name: `${name}の見張り`,
+  members: [
+    { kind: "grunt", x: x - 4, z, face: W },
+    { kind: "grunt", x: x + 4, z: z + 1, face: E },
+  ],
+});
+
+/** The relay masts, in the world's coordinates: two on each region's ground between the POIs. */
+export const RELAYS: Relay[] = (
+  [
+    // The reservoir: between the quarry and the supply depot, and between the supply depot and the relay.
+    ["west", "西の野の中継器", -150, 300],
+    ["east", "東の野の中継器", 150, 200],
+    // The harbor: between the yard and the wreck, and between the smelter and the wreck.
+    ["salt", "塩田の中継器", -90, -800],
+    ["hill", "東の浜の中継器", 90, -830],
+  ] as const
+).map(([id, name, x, z]) => ({ id, name, x, z, guards: mastGuards(name, x, z) }));
+
+export const relayIndex = (id: RelayId) => RELAYS.findIndex((r) => r.id === id);
+
+export type DebrisId = "southwest" | "easthill" | "quarryeast" | "townwest" | "eastshore" | "saltwest";
+
+/**
+ * Where a piece of the ring can come down on a debris fall's day (`DEBRIS`): open, flat ground
+ * between the POIs, clear of boxes, away from the ways in, the stops and the masts, so the wreck
+ * (drawn by the view only) and its guards stand alone in the open. `region` is the region it
+ * lies in; `place` words where it is for the event's line.
+ */
+export interface DebrisSpot {
+  id: DebrisId;
+  region: RegionId;
+  place: string;
+  x: number;
+  z: number;
+  guards: Squad;
+}
+
+/** The debris crate's guards at (x, z): a heavy beside it, two drones over it. */
+const debrisGuards = (place: string, x: number, z: number): Squad => ({
+  name: `${place}の破片の守り`,
+  members: [
+    { kind: "heavy", x: x + 4, z: z + 3, face: E },
+    { kind: "drone", x: x - 5, z: z - 2, face: W },
+    { kind: "drone", x: x + 1, z: z - 6, face: N },
+  ],
+});
+
+export const DEBRIS_SPOTS: DebrisSpot[] = (
+  [
+    ["southwest", "reservoir", "南西の野", -200, 400],
+    ["easthill", "reservoir", "東の丘", 275, 145],
+    ["quarryeast", "reservoir", "採掘場の東の野", -160, 60],
+    ["townwest", "harbor", "港町の西の野", -110, -580],
+    ["eastshore", "harbor", "東の浜の野", 290, -670],
+    ["saltwest", "harbor", "塩田の西", -200, -880],
+  ] as const
+).map(([id, region, place, x, z]) => ({ id, region, place, x, z, guards: debrisGuards(place, x, z) }));
+
+export const debrisIndex = (id: DebrisId) => DEBRIS_SPOTS.findIndex((d) => d.id === id);
+
 export type RegionId = "reservoir" | "harbor";
 
 export type EntryId = "beach" | "checkpoint" | "jetty" | "outskirts" | "quay" | "shore";
@@ -1916,6 +1996,50 @@ export const EXTRA_BINS: ExtraBin[] = (
   .map((b): ExtraBin => onFloor(b))
   .concat(HAMLETS.flatMap((h) => h.bins))
   .concat(TOWNS.flatMap((t) => t.bins));
+
+/** The records the story contracts send the player for (meta/story.ts), one to each. */
+export type RecordId = "tether" | "dam" | "ship" | "network" | "smelter";
+
+/**
+ * Where each record lies: a fixed spot inside a named building (`place`), on its floor. Only the
+ * record of the story contract under way lies there in a raid. `poi` is the POI the building
+ * stands in, when it stands in one.
+ */
+export interface RecordSpot {
+  id: RecordId;
+  /** The record itself, as the HUD and the board name it. */
+  name: string;
+  place: string;
+  region: RegionId;
+  poi?: PoiId;
+  x: number;
+  y: number;
+  z: number;
+}
+
+/** A spot in the heart's frame at the height `y`. */
+const heartAt = (fx: number, fz: number, y: number) => {
+  const [x, z] = inArea("heart", fx, fz);
+  return { x, z, y };
+};
+
+/** A spot in POI `id`'s own frame, `y` over the floor under it. */
+const inPoi = (id: PoiId, x: number, z: number, y: number) => onFloor({ x: x + POI_AT[id][0], z: z + POI_AT[id][1], y });
+
+export const RECORD_SPOTS: RecordSpot[] = [
+  // On the clamp ring inside the anchor's shaft, at the scaffold's foot across from its bin.
+  { id: "tether", name: "昇降路の記録", place: "アンカーの縦穴", region: "reservoir", ...onFloor({ ...anchorBin(-7.5, -7.5, ANCHOR.ringTop) }) },
+  // The intake tower's fourth storey, on the side by the dam's face.
+  { id: "dam", name: "ダムの運転日誌", place: "取水塔の制御室", region: "reservoir", ...heartAt(-37, -97, LEVEL.lakebed + INTAKE.storey * 3) },
+  // The bridge at the top of the wreck's stern, beside its vault.
+  { id: "ship", name: "最後の航海日誌", place: "難破船の船橋", region: "harbor", poi: "wreck", ...inPoi("wreck", 42, 0, SHIP_DECK + STOREY * 2) },
+  // The equipment building's third floor.
+  { id: "network", name: "網の設計記録", place: "中継塔の機器棟", region: "reservoir", poi: "relay", ...inPoi("relay", -24, -14, WORKS.storey * 2) },
+  // The control building's top floor, over the vault.
+  { id: "smelter", name: "製錬所の出荷台帳", place: "製錬所の制御棟", region: "harbor", poi: "smelter", ...inPoi("smelter", 43, -6, STOREY * 3) },
+];
+
+export const recordSpot = (id: RecordId): RecordSpot => RECORD_SPOTS.find((r) => r.id === id) ?? RECORD_SPOTS[0];
 
 
 /**

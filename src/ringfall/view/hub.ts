@@ -1,10 +1,16 @@
-import { ALLY, HEALS as HEAL_SPECS, HIDEOUT, RAIDERS, RARITY, TOOLS, VALUABLES, WEAPONS, type ModuleId, type ValuableKind } from "../sim/config";
+import { ALLY, HEALS as HEAL_SPECS, HIDEOUT, NETWORK, RARITY, TOOLS, VALUABLES, WEAPONS, type ModuleId, type ValuableKind } from "../sim/config";
 import { boostFor, freeKit, type Kit } from "../sim/state";
 import { entryOf, POIS, poiIndex, poiRegion, REGIONS, regionOf, ROUTES, type EntryId, type PoiId, type RegionId, type StationId } from "../sim/map";
-import { build, buildState, buy, buyPrice, canBuild, canStartIn, deliver, deliverable, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, itemCost, HEALS, healCount, healRoom, keyName, lentHeals, loadoutCost, price, sell, sellPrice, startsIn, takeKit, wanted, wares, type Item, type Loadout, type Profile } from "../meta/profile";
+import { build, buildState, buy, buyPrice, canBuild, canStartIn, deliver, deliverable, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, itemCost, HEALS, healCount, healRoom, keyName, lentHeals, loadoutCost, price, sell, sellPrice, startsIn, take, takeKit, takenContract, wanted, wares, type Item, type Loadout, type Profile } from "../meta/profile";
+import { CONTRACT_NAME, contractMark, contractRegion, contractText, type Contract, type Reward } from "../meta/contracts";
+import { currentStory, STORIES, storyOf, storyWhere } from "../meta/story";
 import { craftDone, maxLevel, MODULES, nextLevel, pouchSlots, sources, stashCap, stillNeeded, type Source } from "../meta/hideout";
 import { need, offered, type Quest, type RewardItem } from "../meta/quests";
 import { saveProfile } from "../meta/storage";
+import { eventName, islandNotes, networkText, noteText, relaysUp, thinTomorrow, unfreeable } from "../meta/island";
+import { eventRow } from "./events";
+import { HOLD_NAME } from "../sim/island";
+import { HOLD_CSS, IslandMap, islandScene, TITAN_CSS } from "./map";
 import { sfx } from "./sfx";
 
 const RARITY_CSS = ["var(--r0)", "var(--r1)", "var(--r2)", "var(--r3)"];
@@ -64,8 +70,8 @@ function rows(stash: Item[]): { item: Item; index: number[] }[] {
   return out.sort((a, b) => order[a.item.t] - order[b.item.t]);
 }
 
-/** A quest's reward items, alike ones counted together. */
-export function rewardList(q: Quest): [RewardItem, number][] {
+/** A quest's or a contract's reward items, alike ones counted together. */
+export function rewardList(q: { reward: Reward }): [RewardItem, number][] {
   const out: [RewardItem, number][] = [];
   for (const i of q.reward.items) {
     const same = out.find(([o]) => itemName(o) === itemName(i));
@@ -311,6 +317,9 @@ export class Hub {
         this.set(next);
         sfx.buy();
       }
+    } else if (act === "take") {
+      this.set(take(this.profile, arg || null));
+      sfx.click();
     } else if (act === "deliver") {
       const q = offered(this.profile.quests).find((o) => o.id === arg);
       const take = q && deliverable(this.profile, q);
@@ -390,12 +399,25 @@ export class Hub {
     return { kit, region, seed: this.profile.seed, from: from ?? undefined, entry };
   }
 
+  /** The contract taken for the next raid, or null. */
+  contract(): Contract | null {
+    return takenContract(this.profile);
+  }
+
   /** What each station has to act on, as its mark's text ("" for none): quests to hand in, modules to build, the radio's report. */
   marks(): Record<StationId, string> {
     const p = this.profile;
     const ready = offered(p.quests).filter((q) => deliverable(p, q)).length;
     const buildable = MODULES.filter((m) => canBuild(p, m)).length;
-    return { map: p.hideout.radio ? "知らせ" : "", quests: ready ? `納品 ${ready}` : "", stash: "", shop: "", workshop: buildable ? `作れる ${buildable}` : "" };
+    // A POI that goes thin unless the next raid comes into it is the map table's most pressing news.
+    const fading = thinTomorrow(p).map((id) => POIS[poiIndex(id)].name);
+    // A strong network is news too: from level 4 every raid is a hard one.
+    // Tomorrow's event is announced here a day ahead.
+    const coming = p.events[1];
+    const map = [p.network >= 4 ? `網 ${p.network}` : "", coming ? `明日：${eventName(coming)}` : "", fading.length ? `あす手薄：${fading.join("・")}` : "", p.hideout.radio ? "知らせ" : ""].filter(Boolean).join("・");
+    // The board wants looking at while it has contracts and none is taken.
+    const open = !takenContract(p) && p.board.contracts.length ? `依頼 ${p.board.contracts.length}` : "";
+    return { map, quests: [ready ? `納品 ${ready}` : "", open].filter(Boolean).join("・"), stash: "", shop: "", workshop: buildable ? `作れる ${buildable}` : "" };
   }
 
   private item(item: Item, body: { act?: string; arg?: string; on?: boolean; right?: string; count?: number; need?: Record<ValuableKind, number>; warn?: boolean }) {
@@ -412,7 +434,7 @@ export class Hub {
     const b = boostFor(this.profile.seed, this.region);
     const where = esc(POIS[b.poi].name);
     if (lv === 1) return `${where}の箱に珍しい物が多い`;
-    return `${where}の箱に${esc(VALUABLES[b.kind].label)}が多い。レイダーはレイドの始めからおよそ ${Math.round(RAIDERS.at / 60)} 分後に降りる`;
+    return `${where}の箱に${esc(VALUABLES[b.kind].label)}が多い。レイダーはレイドの始めからおよそ ${Math.round(NETWORK.levels[this.profile.network].raiders / 60)} 分後に降りる`;
   }
 
   /** The routes a tool opens: open or closed, and for a closed one, the tool and where it lies. */
@@ -456,11 +478,41 @@ export class Hub {
     );
   }
 
+  /** A reward, in a line: the credits, then the items counted. */
+  private reward(r: Reward): string {
+    return [...(r.cash ? [`${yen(r.cash)} クレジット`] : []), ...rewardList({ reward: r }).map(([i, n]) => `<span style="color:${color(i)}">${esc(itemName(i))}${n > 1 ? ` × ${n}` : ""}</span>`)].join("・");
+  }
+
+  /** One of the day's contracts: its type, its ask and reward, and the button that takes it or lets it go. */
+  private contractCard(c: Contract, taken: Contract | null): string {
+    const on = taken?.id === c.id;
+    const btn = on ? `<button type="button" class="untake" data-act="take" data-arg="">取り消す</button>` : `<button type="button" data-act="take" data-arg="${c.id}">${taken ? "こちらに替える" : "受ける"}</button>`;
+    const where = esc(regionOf(contractRegion(c)).name);
+    return `<div class="quest contract${on ? " taken" : ""}" data-type="${c.t}"><div><strong><em>${CONTRACT_NAME[c.t]}</em>${on ? `<i class="taken-tag">受けている</i>` : ""}</strong><span>${esc(contractText(c))}</span><small>${where}・報酬：${this.reward(c.reward)}</small></div>${btn}</div>`;
+  }
+
+  /** The story section: the record under way, then what the records home have told, the latest first. */
+  private storyPanel(): string {
+    const p = this.profile;
+    const now = currentStory(p.records);
+    const cur = now
+      ? `<div class="quest story"><div><strong>${esc(now.title)}<small class="story-n">${STORIES.indexOf(now) + 1} / ${STORIES.length}</small></strong><span>${esc(now.ask)}</span><small>${esc(storyWhere(now))}（バッグ 1 枠・売れない）・報酬：${yen(now.cash)} クレジット</small></div><b>調査中</b></div>`
+      : `<p class="story-done">記録はすべて集まった。島は変わらず動いている。</p>`;
+    const told = [...p.records]
+      .reverse()
+      .map((id) => {
+        const t = storyOf(id);
+        return `<details class="told"${id === p.records.at(-1) ? " open" : ""}><summary>${esc(t.title)}<small>${esc(storyWhere(t))}</small></summary>${t.told.map((l) => `<p>${esc(l)}</p>`).join("")}</details>`;
+      })
+      .join("");
+    return `<h3 class="hub-sub">物語の依頼</h3>${cur}${told}`;
+  }
+
   private quest(q: Quest) {
     const p = this.profile;
     const got = p.quests.progress[q.id] ?? 0;
     const g = q.goal;
-    const reward = [`${yen(q.reward.cash)} クレジット`, ...rewardList(q).map(([i, n]) => `<span style="color:${color(i)}">${esc(itemName(i))}${n > 1 ? ` × ${n}` : ""}</span>`)].join("・");
+    const reward = this.reward(q.reward);
     let state: string;
     if (g.t === "deliver") {
       const have = p.stash.filter((i) => i.t === "valuable" && i.kind === g.valuable).length;
@@ -476,6 +528,54 @@ export class Hub {
     return `<div class="slot depot${allow.cost > allow.budget ? " over" : ""}"><small>持ち込み枠</small><span>中継ボックス Lv${allow.level}<b>${allow.cost} / ${allow.budget}</b></span><small>${
       allow.cost > allow.budget ? `枠を ${allow.cost - allow.budget} 超えている。この装備では車両でこの中継ボックスへ出られない` : allow.next === null ? "最大レベル" : `Lv${allow.level + 1} まで、あと ${yen(allow.next)} クレジット分を送る`
     }</small></div>`;
+  }
+
+  /**
+   * The map table's island: the map with each POI coloured by who holds it, the day, the key to
+   * the colours and 明日の島, what the island does next unless the player acts.
+   */
+  private islandPanel(): string {
+    const p = this.profile;
+    const notes = islandNotes(p);
+    const taken = takenContract(p);
+    const count = (h: "held" | "thin" | "freed") => POIS.filter((o) => !unfreeable(o.id) && p.poiState[o.id].state === h).length;
+    const key = (["held", "thin", "freed"] as const).map((h) => `<li><i style="background:${HOLD_CSS[h]}"></i>${HOLD_NAME[h]}<b>${count(h)}</b></li>`).join("") + `<li><i class="titan" style="background:${TITAN_CSS}"></i>タイタン</li>`;
+    const lines = notes.length ? notes.map((n) => `<li class="${n.t}${n.t === "fading" && n.days <= 1 ? " soon" : ""}">${esc(noteText(n))}</li>`).join("") : `<li>島は変わらない。支配の拠点の守備隊を片付けて生きて帰ると、その拠点は解放になる</li>`;
+    return (
+      `<div class="hub-island"><canvas id="hub-island-map"></canvas><div class="hub-island-side">` +
+      `<div class="hub-day"><small>島の日</small><b>${p.day}</b><small>日目</small></div>` +
+      this.networkMeter() +
+      `<small>島の出来事</small><ul class="events"><li><small>今日</small>${eventRow(p.events[0], p.network, "今日は何も起きない")}</li><li><small>明日</small>${eventRow(p.events[1], p.network, "明日は何も起きない")}</li></ul>` +
+      `<ul class="hold-key">${key}</ul>` +
+      `<small>明日の島</small><ul class="tomorrow">${lines}</ul>` +
+      (taken ? `<small>受けた依頼（${esc(regionOf(contractRegion(taken)).name)}・地図の金の破線）</small><p class="hub-taken">${CONTRACT_NAME[taken.t]}：${esc(contractText(taken))}</p>` : "") +
+      `</div></div>`
+    );
+  }
+
+  /**
+   * The network's meter: a cell for each level up to `NETWORK.max`, lit up to the current one,
+   * and what the level means in a line (`networkText()`), with the masts' word when they stand.
+   */
+  private networkMeter(): string {
+    const n = this.profile.network;
+    const cells = Array.from({ length: NETWORK.max + 1 }, (_, i) => `<i class="${i <= n ? "on" : ""}${i === n ? " now" : ""}"></i>`).join("");
+    return (
+      `<div class="hub-net lv${n}"><small>網の段階</small><div class="net-meter" role="meter" aria-valuemin="0" aria-valuemax="${NETWORK.max}" aria-valuenow="${n}">${cells}</div>` +
+      `<b>${n}・${esc(NETWORK.levels[n].name)}</b><p>${esc(networkText(n))}${relaysUp(n) ? "。地図の赤い三角が中継器" : ""}</p></div>`
+    );
+  }
+
+  /** Draws the map table's island into its canvas, framed on the region the truck is set for. */
+  private drawIsland() {
+    const canvas = document.getElementById("hub-island-map") as HTMLCanvasElement | null;
+    if (!canvas) return;
+    const map = new IslandMap(canvas);
+    map.known = this.profile.entries;
+    map.region = this.from ? poiRegion(this.from).id : this.region;
+    const c = takenContract(this.profile);
+    map.contract = c && contractMark(c);
+    map.draw(islandScene(this.profile));
   }
 
   /** The map table: the truck's start (the regions, the chosen region's ways in, the depots on), its allowance, the radio's report. */
@@ -563,7 +663,7 @@ export class Hub {
           })
           .join("") || `<p class="empty">倉庫は空。商人で買うか、貸出装備で出て持ち帰る。</p>`;
     }
-    $("hub-side-title").textContent = shop ? "売り物" : st === "quests" ? "商人の依頼" : st === "workshop" ? "隠れ家" : st === "map" ? "出撃地点" : "持っていく物";
+    $("hub-side-title").textContent = shop ? "売り物" : st === "quests" ? "依頼と記録" : st === "workshop" ? "隠れ家" : st === "map" ? "島と出撃地点" : "持っていく物";
     if (st === "workshop") {
       const done = p.escaped ? `<div class="escaped"><span>脱出艇は直った。いつでも島を出られる</span><button type="button" data-act="ending">エンディング</button></div>` : "";
       $("hub-side").innerHTML =
@@ -576,10 +676,23 @@ export class Hub {
         .join("");
     } else if (st === "quests") {
       const open = offered(p.quests);
+      const intro = open.filter((q) => q.intro);
+      const craft = open.filter((q) => !q.intro);
+      const taken = takenContract(p);
       $("hub-side").innerHTML =
-        (open.map((q) => this.quest(q)).join("") || `<p class="empty">いまある依頼はすべて片付けた。</p>`) +
-        `<p class="hint">倒した数・制圧・保管庫は倒れても数える。脱出の依頼は生還したときだけ。済んだ依頼の報酬は倉庫に届く。</p>`;
-    } else if (st === "map") $("hub-side").innerHTML = this.startsPanel();
+        (intro.length ? `<h3 class="hub-sub first">入門の依頼</h3>${intro.map((q) => this.quest(q)).join("")}` : "") +
+        `<h3 class="hub-sub${intro.length ? "" : " first"}">今日の依頼<small>${p.day} 日目</small></h3>` +
+        p.board.contracts.map((c) => this.contractCard(c, taken)).join("") +
+        `<p class="hint">次のレイドに 1 件だけ受けて出られる。受けなくても出撃できる。済ませなかった依頼は、その日が終わると板から消え、翌日は新しい依頼が並ぶ。迎撃は倒れても数える。報酬は倉庫に届く。</p>` +
+        (craft.length ? `<h3 class="hub-sub">商人の依頼</h3>${craft.map((q) => this.quest(q)).join("")}` : "") +
+        this.storyPanel();
+    } else if (st === "map") {
+      // The island goes under the region and start buttons, which stay in sight on a phone's short screen.
+      const starts = this.startsPanel();
+      const at = starts.indexOf('<p class="hub-lock"');
+      $("hub-side").innerHTML = starts.slice(0, at) + this.islandPanel() + starts.slice(at);
+      this.drawIsland();
+    }
     else $("hub-side").innerHTML = this.kitPanel();
     // The shelves' footer: whether the next raid goes out with the lent kit.
     $("hub-foot").hidden = !kit;

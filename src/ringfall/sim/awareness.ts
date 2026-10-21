@@ -1,7 +1,7 @@
 import { AWARE, DEG, FLANK, NOISE, PINCH, PURSUE, RETURN, SIGHT, TICK } from "./config";
 import { dist2d, los, lookAngles, solidAt, wrapAngle } from "./geom";
 import { steepAt, terrainHeight } from "./terrain";
-import { weakY, type Enemy, type Point, type State, type Vec3 } from "./state";
+import { sightScale, weakY, type Enemy, type Point, type State, type Vec3 } from "./state";
 
 /*
  * What robots know about the player: sight that fills slowly, sounds that make
@@ -18,8 +18,8 @@ const answering = (s: State, e: Enemy) => (s.squads[e.squad]?.shotT ?? 0) > 0;
  * or further for a while after the player hit its squad from afar (see RETURN).
  */
 export function fireRange(s: State, e: Enemy): number {
-  const sight = SIGHT[e.kind].range * AWARE.engagedRange;
-  return answering(s, e) ? Math.max(sight, RETURN.range[e.kind]) : sight;
+  const sight = SIGHT[e.kind].range * sightScale(s) * AWARE.engagedRange;
+  return answering(s, e) ? Math.max(sight, RETURN.range[e.kind] * sightScale(s)) : sight;
 }
 
 /** The point of the player that robots look at: the chest, lower when crouched. */
@@ -35,7 +35,7 @@ const sightTarget = (s: State): Vec3 => {
 export function shotFromAfar(s: State, e: Enemy): boolean {
   const eye = headOf(e);
   const t = sightTarget(s);
-  return Math.hypot(t.x - eye.x, t.y - eye.y, t.z - eye.z) > SIGHT[e.kind].range * AWARE.engagedRange;
+  return Math.hypot(t.x - eye.x, t.y - eye.y, t.z - eye.z) > SIGHT[e.kind].range * sightScale(s) * AWARE.engagedRange;
 }
 
 /** The player is a valid target for robots: on the ground and not knocked down. */
@@ -143,8 +143,10 @@ export function sense(s: State, e: Enemy): boolean {
     const d = Math.hypot(target.x - eye.x, target.y - eye.y, target.z - eye.z);
     const sight = SIGHT[e.kind];
     const engaged = e.aware === "engaged";
-    let range = (sq?.sight ?? sight.range) * (engaged ? AWARE.engagedRange : low ? AWARE.crouchRange : 1);
-    if (engaged && answering(s, e)) range = Math.max(range, RETURN.range[e.kind]);
+    // A storm shortens every robot's sight alike: its kind's, a pack's, and the range it answers from.
+    const scale = sightScale(s);
+    let range = (sq?.sight ?? sight.range) * scale * (engaged ? AWARE.engagedRange : low ? AWARE.crouchRange : 1);
+    if (engaged && answering(s, e)) range = Math.max(range, RETURN.range[e.kind] * scale);
     let inView = d < AWARE.closeSense;
     if (!inView && d < range) {
       const fov = sight.fov * (engaged ? AWARE.engagedFov : 1);
