@@ -685,7 +685,15 @@ const SW = (-3 * Math.PI) / 4;
 
 
 /** The beached ship's main deck (the roof of its three-storey hull) and the gantry crane's catwalk, above their ground. */
-const SHIP_DECK = STOREY * 3;
+/**
+ * The wreck's hull in its frame: its middle along x, length, beam, the middle line it lies on,
+ * and the accommodation block's middle along it (that and `DECK_BAYS` from the hull's middle).
+ */
+const SHIP = { x: 6, length: 140, beam: 26, z: -8, block: 52 } as const;
+/** The wreck's main deck, over its three storeys of hull. */
+const SHIP_DECK = WORKS.storey * 3;
+/** The middles of the deck cargo's bays, forward of the accommodation block. */
+const DECK_BAYS = [-52, -36, -20, -4, 12, 28] as const;
 const CRANE = STOREY * 4;
 
 /** Moves a squad authored in a district's own frame into place. */
@@ -913,28 +921,28 @@ const POI_FRAMES: Poi[] = [
     trigger: 46,
     entry: { x: 4, z: 26, yaw: 0 },
     squads: [
-      // Up high, robots stand at the parapet: seen from the ground below, and seeing it.
-      { name: "甲板", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 34, z: 7.1, y: SHIP_DECK, face: S }, { kind: "heavy", x: 6, z: 6.75, y: SHIP_DECK, face: S }] },
+      // Up high, robots stand on the deck: seen from the ground below, and seeing it.
+      { name: "甲板", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 46, z: -8, y: SHIP_DECK, face: S }, { kind: "heavy", x: 26, z: -3, y: SHIP_DECK, face: S }] },
       {
         name: "浜",
-        members: [{ kind: "grunt", x: -12, z: 16, face: S }, { kind: "grunt", x: -9.5, z: 17, face: S }, { kind: "drone", x: -78, z: 18 }],
-        patrol: [{ x: -78, z: 18 }, { x: 70, z: 18 }, { x: 70, z: -16 }, { x: -78, z: -16 }],
+        members: [{ kind: "grunt", x: -12, z: 15, face: S }, { kind: "grunt", x: -9.5, z: 16, face: S }, { kind: "drone", x: -96, z: 14 }],
+        patrol: [{ x: -96, z: 14 }, { x: 82, z: 14 }],
       },
-      { name: "北の浜", members: [{ kind: "grunt", x: -20, z: -18, face: N }, { kind: "drone", x: 12, z: -15 }] },
-      { name: "舳先", members: [{ kind: "charger", x: 30, z: -24, face: W }, { kind: "drone", x: 40, z: -20 }] },
+      { name: "北の浜", members: [{ kind: "grunt", x: -20, z: -26, face: N }, { kind: "drone", x: 12, z: -25 }] },
+      { name: "舳先", members: [{ kind: "charger", x: 30, z: -31, face: W }, { kind: "drone", x: 40, z: -29 }] },
     ],
     bins: [
-      { x: -32, z: 3 },
-      { x: 26, z: -3 },
-      { x: -10, z: 4, y: STOREY },
-      { x: -36, z: -3, y: SHIP_DECK },
-      { x: 40.5, z: 2, y: SHIP_DECK + STOREY * 2, vault: true },
+      { x: -26, z: -4 },
+      { x: 32, z: -12 },
+      { x: -4, z: -4, y: WORKS.storey },
+      { x: -22, z: -8, y: SHIP_DECK },
+      { x: 54, z: -10, y: SHIP_DECK + STOREY * 3, vault: true },
     ],
     keyFrom: "smelter",
     loot: { weapon: [["talon", 2], ["lance", 2], ["maul", 2], ["pike", 2]], armor: [2, 3], heals: 2, valuable: [["board", 3], ["drive", 3], ["gyro", 2], ["core", 1]] },
     floor: [
-      { x: -4, z: 4, y: STOREY, heal: "medkit" },
-      { x: 12, z: -5, y: SHIP_DECK, weapon: ["lance", 2] },
+      { x: 2, z: -4, y: WORKS.storey, heal: "medkit" },
+      { x: 10, z: -8, y: SHIP_DECK, weapon: ["lance", 2] },
     ],
   },
   {
@@ -2032,7 +2040,7 @@ export const RECORD_SPOTS: RecordSpot[] = [
   // The intake tower's fourth storey, on the side by the dam's face.
   { id: "dam", name: "ダムの運転日誌", place: "取水塔の制御室", region: "reservoir", ...heartAt(-37, -97, LEVEL.lakebed + INTAKE.storey * 3) },
   // The bridge at the top of the wreck's stern, beside its vault.
-  { id: "ship", name: "最後の航海日誌", place: "難破船の船橋", region: "harbor", poi: "wreck", ...inPoi("wreck", 42, 0, SHIP_DECK + STOREY * 2) },
+  { id: "ship", name: "最後の航海日誌", place: "難破船の船橋", region: "harbor", poi: "wreck", ...inPoi("wreck", 56, -8, SHIP_DECK + STOREY * 4) },
   // The equipment building's third floor.
   { id: "network", name: "網の設計記録", place: "中継塔の機器棟", region: "reservoir", poi: "relay", ...inPoi("relay", -24, -14, WORKS.storey * 2) },
   // The control building's top floor, over the vault.
@@ -3168,43 +3176,62 @@ function watchtower(): Box[] {
 }
 
 /**
- * The beached cargo ship, in its own frame: a three-storey hull 112 m long lying east to west on
- * the old bay floor, holed on both sides of its hold, with stairs inside at both ends up to the
- * main deck, bulkheads cutting each deck into holds, a three-storey bridge house on the deck
- * with its own stairs, a funnel and three masts. The pointed bow is solid.
+ * The beached container ship, in its own frame, at the size of a real feeder: a hull 140 m long
+ * and 26 m in the beam, three `WORKS` storeys deep, lying east to west on the old bay floor north
+ * of its middle line (`SHIP`), holed on both sides of its hold, with stairs inside at both ends up
+ * to the main deck and bulkheads cutting each deck into holds. Forward of the accommodation block
+ * the deck is stacked with containers in bays (`DECK_BAYS`) with gaps between them, a maze with a
+ * narrow way along each side; the block aft rises five storeys over the deck to the bridge, its
+ * wings reaching out over both sides, the funnel behind it. Containers lost overboard lie on the
+ * sand beside it. The pointed bow is solid.
  */
 function wreck(): Box[] {
+  const { z: cz, beam } = SHIP;
+  const [zn, zs] = [cz - beam / 2, cz + beam / 2];
   const hull = paint(
-    tower(0, 0, 112, 16, 3, { doors: [["s", "n"], [], []], windows: [["e", "w"], ["n", "s"], ["n", "s"]], twin: true }),
+    tower(0, cz, SHIP.length, beam, 3, { scale: WORKS, doors: [["s", "n"], [], []], windows: [["e", "w"], ["n", "s"], ["n", "s"]], twin: true }),
     "wall",
     "steel",
-    (b) => (b.y0 < STOREY ? 1 : 0),
+    (b) => (b.y0 < WORKS.storey ? 1 : 0),
   );
   const out: Box[] = [...hull];
   // Bulkheads across the holds and the decks above, each with a door in the middle.
-  for (const x of [-35, -14, 14, 35])
+  for (const x of [-47, -23, 23, 47])
     for (let k = 0; k < 3; k++) {
-      const y0 = k * STOREY;
-      out.push(box(x, -4.5, 0.35, 6.3, y0 + STOREY - 0.3, "steel", 2, y0), box(x, 4.5, 0.35, 6.3, y0 + STOREY - 0.3, "steel", 2, y0));
-      out.push(box(x, 0, 0.35, 2.7, y0 + STOREY - 0.3, "steel", 2, y0 + 2.5));
+      const y0 = k * WORKS.storey;
+      const y1 = y0 + WORKS.storey - 0.3;
+      out.push(rect(x - 0.2, zn + 0.5, x + 0.2, cz - 1.4, y0, y1, "steel", 2), rect(x - 0.2, cz + 1.4, x + 0.2, zs - 0.5, y0, y1, "steel", 2));
+      out.push(rect(x - 0.2, cz - 1.4, x + 0.2, cz + 1.4, y0 + 3.0, y1, "steel", 2));
     }
   // The bow, narrowing in steps to a point, and a blunt stern.
-  out.push(box(-58.5, 0, 5, 13, SHIP_DECK + 0.7, "steel", 1), box(-63, 0, 4, 9, SHIP_DECK + 1, "steel", 1), box(-66.5, 0, 3, 4.6, SHIP_DECK + 1.3, "steel", 1));
-  out.push(box(57.5, 0, 3, 14, SHIP_DECK, "steel", 1));
-  // The bridge house and the funnel behind it.
-  const house = tower(44, 0, 12, 12, 3, { doors: [["w", "s"]], windows: [["n"], ["n", "s", "w"], ["n", "s", "w", "e"]] });
-  out.push(...lift(SHIP_DECK, house));
-  out.push(box(53, 0, 3, 4, SHIP_DECK + 14, "steel", 3, SHIP_DECK), box(53, 0, 3.2, 4.2, SHIP_DECK + 15, "steel", 1, SHIP_DECK + 14));
-  // Cargo hatches on the deck (cover up there), three masts with their cross-trees.
-  for (const x of [-44, -24, -6]) out.push(box(x, 0, 7, 8, SHIP_DECK + 0.9, "steel", 2, SHIP_DECK));
-  for (const x of [-34, -15, 4]) out.push(box(x, 0, 0.6, 0.6, SHIP_DECK + 12, "steel", 2, SHIP_DECK), box(x, 0, 0.4, 7, SHIP_DECK + 10.4, "steel", 2, SHIP_DECK + 10));
+  out.push(box(-73.5, cz, 7, 20, SHIP_DECK + 0.7, "steel", 1), box(-79, cz, 4, 15, SHIP_DECK + 1, "steel", 1), box(-83, cz, 4, 8, SHIP_DECK + 1.3, "steel", 1), box(-86, cz, 2, 3, SHIP_DECK + 1.5, "steel", 1));
+  out.push(box(71.5, cz, 3, beam - 2, SHIP_DECK, "steel", 1));
+  // The deck cargo: bays of containers across the beam, some stacks gone (holes to cut through).
+  DECK_BAYS.forEach((x, i) => {
+    for (let r = 0; r < 9; r++) {
+      const n = STACK[(i * 4 + r * 5 + 3) % STACK.length] % 4;
+      for (let k = 0; k < n; k++) out.push(box(x, cz + (r - 4) * 2.5, 12.2, 2.5, SHIP_DECK + 2.6 * (k + 1), "container", (i + r + k) % 3, SHIP_DECK + 2.6 * k));
+    }
+  });
+  // The accommodation block with the bridge on top, its wings over both sides, and the funnel.
+  const block = tower(SHIP.block, cz, 14, 18, 5, { doors: [["w", "s"], [], [], [], ["n", "s"]], windows: [["n"], ["n", "s", "w"], ["n", "s", "w"], ["n", "s", "w"], ["n", "s", "w", "e"]] });
+  out.push(...lift(SHIP_DECK, block));
+  const wing = SHIP_DECK + STOREY * 4;
+  for (const [a, b] of [[zn, cz - 9], [cz + 9, zs]] as const) {
+    out.push(rect(SHIP.block - 4, a, SHIP.block + 4, b, wing - 0.3, wing, "slab", 1));
+    const edge = a === zn ? a : b - 0.15;
+    out.push(rect(SHIP.block - 4, edge, SHIP.block + 4, edge + 0.15, wing, wing + 0.9, "steel", 2));
+    for (const x of [SHIP.block - 4, SHIP.block + 3.85]) out.push(rect(x, a, x + 0.15, b, wing, wing + 0.9, "steel", 2));
+  }
+  out.push(box(63, cz, 4, 7, SHIP_DECK + 26, "steel", 3, SHIP_DECK), box(63, cz, 4.4, 7.4, SHIP_DECK + 27, "steel", 1, SHIP_DECK + 26));
+  out.push(box(-66, cz, 0.8, 0.8, SHIP_DECK + 14, "steel", 2, SHIP_DECK), box(-66, cz, 0.5, 9, SHIP_DECK + 11.4, "steel", 2, SHIP_DECK + 11));
   // In the holds: containers and crates that came loose.
-  out.push(box(-31, -3, 6.2, 2.5, 2.6, "container", 0), box(21.5, -3.5, 2.5, 6.2, 2.6, "container", 1), box(-19, 3, 1.2, 1.2, 0.9, "crate"), box(-20.2, 3, 1.2, 1.2, 1.8, "crate"), box(5, -5, 1.2, 1.2, 0.9, "crate"));
-  out.push(box(-45, 3.5, 6.2, 2.5, 2.6, "container", 2), box(44, -4, 2.5, 6.2, 2.6, "container", 2));
-  // A container fallen onto the deck, and the plates torn out round the breach.
-  out.push(box(-36, 4.6, 6.2, 2.5, SHIP_DECK + 2.6, "container", 2, SHIP_DECK));
-  out.push(box(3.8, 10, 2, 1.4, 1.0, "rock", 1), box(-4.2, 10.6, 1.6, 1.2, 0.7, "rock"));
-  return out;
+  out.push(box(-40, cz - 4, 12.2, 2.5, 2.6, "container", 0), box(36, cz + 4, 12.2, 2.5, 2.6, "container", 1), box(-14, cz + 4, 2.5, 6.2, 2.6, "container", 2));
+  out.push(box(-19, cz - 7, 1.2, 1.2, 0.9, "crate"), box(-20.2, cz - 7, 1.2, 1.2, 1.8, "crate"), box(5, cz + 8, 1.2, 1.2, 0.9, "crate"));
+  // Lost overboard: containers on the sand beside the hull, one crushed under another.
+  out.push(box(-10, zs + 3.5, 12.2, 2.5, 2.6, "container", 1), box(15, zs + 3.5, 6.2, 2.5, 2.6, "container", 0), box(15.4, zs + 3.5, 6.2, 2.5, 4.6, "container", 2, 2.6));
+  out.push(box(24, zn - 8, 12.2, 2.5, 2.6, "container", 2), box(3.8, zs + 5.5, 2, 1.4, 1.0, "rock", 1), box(-4.2, zs + 6, 1.6, 1.2, 0.7, "rock"));
+  return place(SHIP.x, 0, out);
 }
 
 /**
@@ -3617,6 +3644,8 @@ function authoredKeep(): Keep {
   // The boat's point keeps less flat ground round it: the channel's water starts a few metres off.
   for (const x of EXTRACTS) points.push({ x: x.x, z: x.z, r: x.id === "boat" ? 6 : 10 });
   for (const e of ENTRIES) points.push({ x: e.x, z: e.z, r: 6 });
+  // The relay masts stand only while the network is strong, on ground the scatter leaves clear at every level.
+  for (const r of RELAYS) points.push({ x: r.x, z: r.z, r: 5 });
   return { points, segments };
 }
 
@@ -4755,14 +4784,15 @@ export const ROUTES: Route[] = (() => {
   const [hx, hz] = AREA.heart;
   const dx = dam.line[0][0];
   const dFoot = cliffFoot(dx, -100 + hz, -1);
-  // The wreck's gangway: up the hull's north side to its main deck, near the bow, written in the
-  // wreck's frame (its hull's north face is 8 m north of its middle) so it moves with the wreck.
-  const deck = LEVEL.seabed + STOREY * 3;
+  // The wreck's gangway: up the hull's north side to its main deck, forward of the middle,
+  // written in the wreck's frame (from its hull's north face, `n`) so it moves with the wreck.
+  const deck = LEVEL.seabed + SHIP_DECK;
   const [wx, wz] = AT[poiIndex("wreck")];
-  const gx = wx - 32.4;
-  const gz = wz - 9.3;
+  const n = wz + SHIP.z - SHIP.beam / 2;
+  const gx = wx + SHIP.x - 32.4;
+  const gz = n - 1.3;
   // The deck's rail along the hull's north side: the gangway is chained against it, and lands over it.
-  const rail = wz - 7.75;
+  const rail = n + 0.25;
   const gangway = paint(lift(LEVEL.seabed, stairs(gx, gz, "w", 2.0, deck + 0.7 - LEVEL.seabed)), "step", "steel", () => 2);
   return [
     {
@@ -4792,16 +4822,16 @@ export const ROUTES: Route[] = (() => {
       name: "難破船の舷梯",
       tool: "cutter",
       note: "難破船の北側から甲板へ直に上がる。船内の階段を通らない",
-      path: [{ x: gx - 15.5, z: gz }, { x: gx + 1.2, z: wz - 5 }],
+      path: [{ x: gx - 21, z: gz }, { x: gx + 1.2, z: n + 3 }],
       at: [{ x: gx, y: LEVEL.seabed, z: gz - 1.4 }],
       // Hauled aboard and stood up against the deck's rail, over the place it lands, chained there.
       closed: [
-        rect(gx - 1.0, rail, gx + 1.0, wz - 7.45, deck, deck + 2.8, "steel", 2),
-        rect(gx - 1.15, wz - 7.45, gx + 1.15, wz - 7.3, deck + 1.0, deck + 1.15, "steel", 2),
-        rect(gx - 0.18, wz - 7.3, gx + 0.18, wz - 7.1, deck + 0.75, deck + 1.2, "steel", 0),
+        rect(gx - 1.0, rail, gx + 1.0, n + 0.55, deck, deck + 2.8, "steel", 2),
+        rect(gx - 1.15, n + 0.55, gx + 1.15, n + 0.7, deck + 1.0, deck + 1.15, "steel", 2),
+        rect(gx - 0.18, n + 0.7, gx + 0.18, n + 0.9, deck + 0.75, deck + 1.2, "steel", 0),
       ],
       // Its flight, and a landing over the deck's rail that steps down onto the deck.
-      open: [...gangway, rect(gx, gz - 1.0, gx + 2.4, wz - 7.45, deck + 0.4, deck + 0.7, "steel", 2)],
+      open: [...gangway, rect(gx, gz - 1.0, gx + 2.4, n + 0.55, deck + 0.4, deck + 0.7, "steel", 2)],
     },
   ];
 })();

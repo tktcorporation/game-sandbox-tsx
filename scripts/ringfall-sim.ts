@@ -3143,7 +3143,7 @@ function checkRoutes(): string | null {
     if (!(c.nav > o.nav * 1.5) || !(c.field > o.field * 1.5)) return `route scenario: ${r.id} closed is still walked in ${c.nav.toFixed(0)} m by the bot and ${c.field.toFixed(0)} m by robots (open: ${o.nav.toFixed(0)} m)`;
   }
   const deck = walkGangway(true);
-  if (Math.abs(deck - (LEVEL.seabed + 10.2)) > 0.3) return `route scenario: walking up the open gangway ended at height ${deck.toFixed(2)}, not on the deck`;
+  if (Math.abs(deck - (LEVEL.seabed + 13.5)) > 0.3) return `route scenario: walking up the open gangway ended at height ${deck.toFixed(2)}, not on the deck`;
   // No box of the map hangs over ground a trench lowered, and no cover spot lies in a trench.
   for (const r of carved) {
     const [[x, za], [, zb]] = r.carve!.line;

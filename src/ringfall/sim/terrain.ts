@@ -289,7 +289,7 @@ const BASINS: Open[] = [
   { name: "コンテナヤード", line: inPoi("yard", [[-44, 0], [44, 0]]), half: 42, level: LEVEL.shore , ground: "paved" },
   { name: "製錬所", line: inPoi("smelter", [[-34, 0], [40, 0]]), half: 34, level: LEVEL.terrace , ground: "paved" },
   { name: "塩田", line: inArea("bay", [[-60, -500], [80, -500]]), half: 40, level: LEVEL.seabed , ground: "salt" },
-  { name: "難破船", line: inPoi("wreck", [[-66, 0], [72, 0]]), half: 24, level: LEVEL.seabed , ground: "salt" },
+  { name: "難破船", line: inPoi("wreck", [[-84, -8], [78, -8]]), half: 22, level: LEVEL.seabed , ground: "salt" },
   { name: "埠頭", line: inArea("bay", [[60, -565], [140, -568]]), half: 22, level: LEVEL.seabed , ground: "paved" },
   { name: "水路", line: inArea("bay", [[96, -592], [162, -592]]), half: 8, level: LEVEL.channel, walled: true },
   { name: "岬", line: inArea("bay", [[-120, -545], [-106, -560]]), half: 13, level: LEVEL.headland, walled: true },

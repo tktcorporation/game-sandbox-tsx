@@ -625,7 +625,8 @@ const harborTour = [
   // Under the viaduct's corner, looking west along it.
   ["tour-15-viaduct", 165, 1.7, -622, -1.42, 0.16],
   ["tour-16-wreck", ...at("wreck", -12, 1.7, 40), 0.12, 0.1],
-  ["tour-17-wreck-deck", ...at("wreck", -50, 8.8, 2), 1.5, 0.02, true],
+  ["tour-17-wreck-deck", ...at("wreck", -38, -3 + 13.5 + 1.7, 4), 1.5, 0.02, true],
+  ["tour-17b-wreck-bridge-wing", ...at("wreck", 58, -3 + 13.5 + 13.6 + 1.7, -19), -1.57, -0.18, true],
   ["tour-18-yard-alley", ...at("yard", -46, 1.7, -29.5), 1.57, 0.02],
   ["tour-19-yard-crane", ...at("yard", 46.4, 13.6 + 1.6, 14), 0, -0.2, true],
   ["tour-19b-yard-quay-crane", ...at("yard", 46, 34 + 1.7, -45), Math.PI, -0.3, true],
@@ -650,7 +651,7 @@ const harborTour = [
   // The open ground north of the landing pad, toward the mountains, and the harbor's south plain from the pass.
   ["tour-36-north-of-pad", ...at("pad", -30, 1.7, -110), 0.2, 0.05],
   ["tour-37-harbor-plain", -96, 1.7, -440, 0.3, -0.04],
-  ["tour-35-gangway-hauled", ...at("wreck", -37, 1.7, -17), Math.PI - 0.45, 0.5],
+  ["tour-35-gangway-hauled", ...at("wreck", -31, 1.7, -30), Math.PI - 0.45, 0.5],
   // Each POI's landmark from the way in, and the smelter's roofs from the bridge between its halls.
   ["tour-38-supply-silos", ...at("supply", 20, 1.7, 170), -0.16, 0.08],
   // The supply depot at its own scale, from eye height: the tanker's bow over the beach, the
@@ -1383,7 +1384,7 @@ const readOf = async (pg) => JSON.parse(await pg.evaluate(() => window.render_ga
   const views = [
     ["54-tunnel-open", 40, 1.6, -306, 0, 0.05],
     ["55-dam-gallery-open", 20 + fr["area:heart"].x, 1.6, -101 + fr["area:heart"].z, 0, 0.32],
-    ["56-gangway-open", -40 + fr.wreck.x, 1.7, -16 + fr.wreck.z, Math.PI - 0.6, 0.35],
+    ["56-gangway-open", -40 + fr.wreck.x, 1.7, -31 + fr.wreck.z, Math.PI - 0.6, 0.35],
   ];
   for (const [name, x, dy, z, yaw, pitch] of views) {
     const y = (await pg.evaluate(([x, z]) => window.ringfallTerrain(x, z), [x, z])) + dy;
