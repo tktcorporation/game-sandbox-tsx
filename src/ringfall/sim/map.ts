@@ -17,12 +17,12 @@ import { buildTerrain, type Carve, type FlatShape, floorLevel, highGround, LEVEL
 /**
  * `steel` is painted plate: ship hulls, cranes, girders, carriages (its tint picks the paint).
  * `fence` is a fence or gate of steel bars: it stops a body but not a look or a shot (`rayWorld()`).
- * `prop` is a piece of the cover scattered over the open ground; its tint is what it is (`PROP`).
+ * `prop` is a piece of the cover scattered over the open ground, or of the camp's furniture; its tint is what it is (`PROP`).
  */
 export type BoxKind = "crate" | "container" | "wall" | "rock" | "pad" | "tower" | "slab" | "step" | "steel" | "fence" | "prop";
 
 /** What a `prop` box is, by its tint: the renderer draws each as that thing. */
-export const PROP = { pallets: 0, sandbags: 1, barrier: 2, cab: 3, bed: 4, car: 5, rubble: 6 } as const;
+export const PROP = { pallets: 0, sandbags: 1, barrier: 2, cab: 3, bed: 4, car: 5, rubble: 6, tarp: 7, table: 8, board: 9, shelf: 10, counter: 11, bench: 12, bedroll: 13 } as const;
 
 /** A solid spanning y0..h. Floors, roofs and bridges have y0 > 0 and leave open space below. */
 export interface Box {
@@ -1530,6 +1530,86 @@ export const PACKS: Squad[] = [
   },
 ];
 
+/** Stable names for the relay masts: saves and contracts refer to a mast by these. */
+export type RelayId = "west" | "east" | "salt" | "hill";
+
+/**
+ * A relay mast of the robots' network (網の中継器, `RELAY` in config.ts): a tall thin mast with a
+ * red eye, standing on open ground between the POIs only while the network is strong
+ * (`NETWORK.relayAt`), with a squad of two at its foot. Nothing is built for it in the map:
+ * the ground round each spot is already clear, so the world is the same with or without it.
+ */
+export interface Relay {
+  id: RelayId;
+  name: string;
+  x: number;
+  z: number;
+  guards: Squad;
+}
+
+/** The guards of a mast at (x, z): two grunts either side of it, facing out. */
+const mastGuards = (name: string, x: number, z: number): Squad => ({
+  name: `${name}の見張り`,
+  members: [
+    { kind: "grunt", x: x - 4, z, face: W },
+    { kind: "grunt", x: x + 4, z: z + 1, face: E },
+  ],
+});
+
+/** The relay masts, in the world's coordinates: two on each region's ground between the POIs. */
+export const RELAYS: Relay[] = (
+  [
+    // The reservoir: between the quarry and the supply depot, and between the supply depot and the relay.
+    ["west", "西の野の中継器", -150, 300],
+    ["east", "東の野の中継器", 150, 200],
+    // The harbor: between the yard and the wreck, and between the smelter and the wreck.
+    ["salt", "塩田の中継器", -90, -800],
+    ["hill", "東の浜の中継器", 90, -830],
+  ] as const
+).map(([id, name, x, z]) => ({ id, name, x, z, guards: mastGuards(name, x, z) }));
+
+export const relayIndex = (id: RelayId) => RELAYS.findIndex((r) => r.id === id);
+
+export type DebrisId = "southwest" | "easthill" | "quarryeast" | "townwest" | "eastshore" | "saltwest";
+
+/**
+ * Where a piece of the ring can come down on a debris fall's day (`DEBRIS`): open, flat ground
+ * between the POIs, clear of boxes, away from the ways in, the stops and the masts, so the wreck
+ * (drawn by the view only) and its guards stand alone in the open. `region` is the region it
+ * lies in; `place` words where it is for the event's line.
+ */
+export interface DebrisSpot {
+  id: DebrisId;
+  region: RegionId;
+  place: string;
+  x: number;
+  z: number;
+  guards: Squad;
+}
+
+/** The debris crate's guards at (x, z): a heavy beside it, two drones over it. */
+const debrisGuards = (place: string, x: number, z: number): Squad => ({
+  name: `${place}の破片の守り`,
+  members: [
+    { kind: "heavy", x: x + 4, z: z + 3, face: E },
+    { kind: "drone", x: x - 5, z: z - 2, face: W },
+    { kind: "drone", x: x + 1, z: z - 6, face: N },
+  ],
+});
+
+export const DEBRIS_SPOTS: DebrisSpot[] = (
+  [
+    ["southwest", "reservoir", "南西の野", -200, 400],
+    ["easthill", "reservoir", "東の丘", 275, 145],
+    ["quarryeast", "reservoir", "採掘場の東の野", -160, 60],
+    ["townwest", "harbor", "港町の西の野", -110, -580],
+    ["eastshore", "harbor", "東の浜の野", 290, -670],
+    ["saltwest", "harbor", "塩田の西", -200, -880],
+  ] as const
+).map(([id, region, place, x, z]) => ({ id, region, place, x, z, guards: debrisGuards(place, x, z) }));
+
+export const debrisIndex = (id: DebrisId) => DEBRIS_SPOTS.findIndex((d) => d.id === id);
+
 export type RegionId = "reservoir" | "harbor";
 
 export type EntryId = "beach" | "checkpoint" | "jetty" | "outskirts" | "quay" | "shore";
@@ -1916,6 +1996,50 @@ export const EXTRA_BINS: ExtraBin[] = (
   .map((b): ExtraBin => onFloor(b))
   .concat(HAMLETS.flatMap((h) => h.bins))
   .concat(TOWNS.flatMap((t) => t.bins));
+
+/** The records the story contracts send the player for (meta/story.ts), one to each. */
+export type RecordId = "tether" | "dam" | "ship" | "network" | "smelter";
+
+/**
+ * Where each record lies: a fixed spot inside a named building (`place`), on its floor. Only the
+ * record of the story contract under way lies there in a raid. `poi` is the POI the building
+ * stands in, when it stands in one.
+ */
+export interface RecordSpot {
+  id: RecordId;
+  /** The record itself, as the HUD and the board name it. */
+  name: string;
+  place: string;
+  region: RegionId;
+  poi?: PoiId;
+  x: number;
+  y: number;
+  z: number;
+}
+
+/** A spot in the heart's frame at the height `y`. */
+const heartAt = (fx: number, fz: number, y: number) => {
+  const [x, z] = inArea("heart", fx, fz);
+  return { x, z, y };
+};
+
+/** A spot in POI `id`'s own frame, `y` over the floor under it. */
+const inPoi = (id: PoiId, x: number, z: number, y: number) => onFloor({ x: x + POI_AT[id][0], z: z + POI_AT[id][1], y });
+
+export const RECORD_SPOTS: RecordSpot[] = [
+  // On the clamp ring inside the anchor's shaft, at the scaffold's foot across from its bin.
+  { id: "tether", name: "昇降路の記録", place: "アンカーの縦穴", region: "reservoir", ...onFloor({ ...anchorBin(-7.5, -7.5, ANCHOR.ringTop) }) },
+  // The intake tower's fourth storey, on the side by the dam's face.
+  { id: "dam", name: "ダムの運転日誌", place: "取水塔の制御室", region: "reservoir", ...heartAt(-37, -97, LEVEL.lakebed + INTAKE.storey * 3) },
+  // The bridge at the top of the wreck's stern, beside its vault.
+  { id: "ship", name: "最後の航海日誌", place: "難破船の船橋", region: "harbor", poi: "wreck", ...inPoi("wreck", 42, 0, SHIP_DECK + STOREY * 2) },
+  // The equipment building's third floor.
+  { id: "network", name: "網の設計記録", place: "中継塔の機器棟", region: "reservoir", poi: "relay", ...inPoi("relay", -24, -14, WORKS.storey * 2) },
+  // The control building's top floor, over the vault.
+  { id: "smelter", name: "製錬所の出荷台帳", place: "製錬所の制御棟", region: "harbor", poi: "smelter", ...inPoi("smelter", 43, -6, STOREY * 3) },
+];
+
+export const recordSpot = (id: RecordId): RecordSpot => RECORD_SPOTS.find((r) => r.id === id) ?? RECORD_SPOTS[0];
 
 
 /**
@@ -3469,9 +3593,11 @@ function scatterCover(authored: Box[], { points, segments }: Keep): Box[] {
   for (const b of authored) near.authored.add(b.x0, b.z0, b.x1, b.z1, b);
   // Each depot keeps room round it and round the start behind it.
   const depots = POIS.map((p) => ({ ...depotSpot(p), r: 6 }));
+  // The camp's yard keeps clear: a circle round it, out past its corners.
+  const yard = { x: CAMP_AT[0], z: CAMP_AT[1], r: Math.hypot(CAMP_HALF.x, CAMP_HALF.z) + 1 };
   // Where a raid stops and where hunting parties stand stay open too, without pressing the ground.
   const stops = [...STOPS, ...Object.values(PARTY_STOPS).flat()].map((q) => ({ x: q.x, z: q.z, r: 8 }));
-  for (const q of [...points, ...depots, ...stops]) near.points.add(q.x - q.r, q.z - q.r, q.x + q.r, q.z + q.r, q);
+  for (const q of [...points, ...depots, ...stops, yard]) near.points.add(q.x - q.r, q.z - q.r, q.x + q.r, q.z + q.r, q);
   // A trench's line keeps cover off as far as its walls may lower the ground.
   for (const c of [TUNNEL, GALLERY]) {
     const [[ax, az], [bx, bz]] = c.line;
@@ -3684,6 +3810,114 @@ const BRIDGE: Box[] = placeIn("heart", [
   box(114, -92, 4, 4, LEVEL.terrace - 0.3, "rock", 1, -18),
   bridge(90, -94.2, 122, -89.8, LEVEL.terrace),
 ]);
+
+/**
+ * The camp between raids, on the south beach behind the reservoir's first way in: a yard of
+ * sheet fence 34 by 28 m with its gate facing north into the region, the stations a raid is
+ * made ready at, the truck that drives the player to another start, and the tent they wake in.
+ * Written in its own frame round (0, 0), north = -z, on ground at 0; `CAMP` gives its places in
+ * the world. Robots never walk in (`inCamp()`), and a raid ends alive when the player walks back
+ * into it (`HOME`).
+ */
+const CAMP_AT: [number, number] = [2, 616];
+/** The camp's floor, pressed flat over the whole yard. */
+const CAMP_LEVEL = 1;
+const CAMP_HALF = { x: 17, z: 14 };
+/** Half the gate's width, in the middle of the north fence. */
+const CAMP_GATE = 4.25;
+
+export type StationId = "map" | "quests" | "stash" | "shop" | "workshop";
+
+/** A place in the camp the use key acts at: a station's panel, or the truck. */
+export interface CampSpot {
+  id: StationId | "vehicle";
+  name: string;
+  /** The middle of what stands there; the use key works within `reach` of it. */
+  x: number;
+  y: number;
+  z: number;
+  reach: number;
+  /** Where its name floats, over the camp's floor. */
+  top: number;
+}
+
+/** A thin tarp roof `w` by `d` at height `y` round (cx, cz), on a grey post at each corner. */
+function tarp(cx: number, cz: number, w: number, d: number, y: number): Box[] {
+  const out = [box(cx, cz, w, d, y + 0.1, "prop", PROP.tarp, y)];
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) out.push(box(cx + sx * (w / 2 - 0.15), cz + sz * (d / 2 - 0.15), 0.12, 0.12, y, "steel", 2));
+  return out;
+}
+
+function camp(): Box[] {
+  const { x: X, z: Z } = CAMP_HALF;
+  const out: Box[] = [];
+  // The fence: panels of rust and teal sheet between grey posts, open over the gate.
+  const panel = (k: number) => (k % 3 === 1 ? 3 : 0);
+  for (let k = 0; k < 8; k++) {
+    const u0 = -X + k * 4.25;
+    const u1 = u0 + 4.25;
+    out.push(rect(u0, Z - 0.1, u1, Z + 0.1, 0, 2.4, "steel", panel(k + 1)));
+    if (u1 <= -CAMP_GATE + 0.01 || u0 >= CAMP_GATE - 0.01) out.push(rect(u0, -Z - 0.1, u1, -Z + 0.1, 0, 2.4, "steel", panel(k)));
+  }
+  for (let k = 0; k < 7; k++) {
+    const v0 = -Z + k * 4;
+    out.push(rect(-X - 0.1, v0, -X + 0.1, v0 + 4, 0, 2.4, "steel", panel(k + 2)), rect(X - 0.1, v0, X + 0.1, v0 + 4, 0, 2.4, "steel", panel(k)));
+  }
+  for (let k = 0; k <= 8; k++) for (const v of [-Z, Z]) if (v === Z || Math.abs(-X + k * 4.25) >= CAMP_GATE) out.push(box(-X + k * 4.25, v, 0.22, 0.3, 2.6, "steel", 2));
+  for (let k = 1; k < 7; k++) for (const u of [-X, X]) out.push(box(u, -Z + k * 4, 0.3, 0.22, 2.6, "steel", 2));
+  // The gate: tall posts, a white bar over them, and its two leaves swung back along the fence.
+  for (const s of [-1, 1]) out.push(box(s * (CAMP_GATE + 0.15), -Z, 0.3, 0.3, 3.6, "steel", 2), rect(s > 0 ? CAMP_GATE + 0.3 : -CAMP_GATE - 4.1, -Z + 0.15, s > 0 ? CAMP_GATE + 4.1 : -CAMP_GATE - 0.3, -Z + 0.27, 0.05, 2.0, "fence"));
+  out.push(rect(-CAMP_GATE - 0.3, -Z - 0.15, CAMP_GATE + 0.3, -Z + 0.15, 3.3, 3.6, "steel", 4));
+  // The truck by the gate, its cab toward the gate.
+  out.push(box(8, -9.5, 2.3, 2.5, 3.0, "prop", PROP.cab), box(11.65, -9.5, 5, 2.5, 2.3, "prop", PROP.bed));
+  // The quest board west of the gate, on two posts.
+  out.push(box(-8, -10.5, 3, 0.12, 2.3, "prop", PROP.board, 0.9));
+  for (const u of [-9.4, -6.6]) out.push(box(u, -10.6, 0.14, 0.14, 2.4, "steel", 2));
+  // The map table in the middle of the yard, in the open sun.
+  out.push(box(-1, -3, 2.6, 1.6, 0.92, "prop", PROP.table));
+  // The trader's stall against the east fence, south of the shelves: a counter in the sun, its
+  // goods behind it under an awning whose shade falls on the fence (the sun stands to the south-west).
+  out.push(box(14, 7.5, 1, 3.4, 1.05, "prop", PROP.counter), box(15.9, 6.2, 1.2, 1.2, 1.2, "crate"), box(16, 7.7, 1.0, 1.2, 0.9, "crate"), box(15.8, 9.1, 1.2, 1.0, 1.6, "crate"), ...tarp(15.6, 7.5, 2.6, 4.6, 2.9));
+  // The workshop in the south-west corner: a bench, crates, a container of parts on the south fence.
+  out.push(box(-10, 10.5, 3, 1.1, 0.95, "prop", PROP.bench), box(-14.6, 12.4, 1.4, 1.4, 1.4, "crate"), box(-13.2, 12.6, 1.1, 1.1, 0.9, "crate"));
+  out.push(box(-1.5, 12.35, 6.1, 2.44, 2.6, "container", 1));
+  // Spare crates and sandbags along the west fence.
+  out.push(box(-15.4, 1.6, 1.2, 1.2, 1.2, "crate"), box(-15.5, 3.2, 1.0, 1.2, 0.9, "crate"), box(-15.9, -3, 0.85, 3.6, 1.1, "prop", PROP.sandbags));
+  // The stash's shelves against the east fence.
+  out.push(box(15.9, -0.6, 0.8, 2.8, 2.0, "prop", PROP.shelf), box(15.9, 2.4, 0.8, 2.8, 2.0, "prop", PROP.shelf));
+  // The tent on the south fence: two bedrolls under a tarp.
+  out.push(box(4.8, 11.6, 0.8, 2.0, 0.22, "prop", PROP.bedroll), box(7.2, 11.6, 0.8, 2.0, 0.22, "prop", PROP.bedroll), ...tarp(6, 11.4, 5, 4.4, 2.3));
+  return out;
+}
+
+const CAMP_BOXES: Box[] = onLevel(CAMP_LEVEL, place(CAMP_AT[0], CAMP_AT[1], camp()));
+FLAT.push({ x0: CAMP_AT[0] - CAMP_HALF.x, z0: CAMP_AT[1] - CAMP_HALF.z, x1: CAMP_AT[0] + CAMP_HALF.x, z1: CAMP_AT[1] + CAMP_HALF.z, y: CAMP_LEVEL });
+
+const campSpot = (id: CampSpot["id"], name: string, u: number, v: number, reach: number, top: number): CampSpot => ({ id, name, x: CAMP_AT[0] + u, y: CAMP_LEVEL, z: CAMP_AT[1] + v, reach, top });
+
+/** The camp's places in the world. */
+export const CAMP = {
+  x0: CAMP_AT[0] - CAMP_HALF.x,
+  x1: CAMP_AT[0] + CAMP_HALF.x,
+  z0: CAMP_AT[1] - CAMP_HALF.z,
+  z1: CAMP_AT[1] + CAMP_HALF.z,
+  y: CAMP_LEVEL,
+  /** The gate's opening in the north fence. */
+  gate: { x0: CAMP_AT[0] - CAMP_GATE, x1: CAMP_AT[0] + CAMP_GATE, z: CAMP_AT[1] - CAMP_HALF.z },
+  /** Where the player wakes between raids, in front of the tent, facing the gate. */
+  wake: { x: CAMP_AT[0] + 6, z: CAMP_AT[1] + 8, yaw: 0 },
+  spots: [
+    campSpot("map", "地図の机", -1, -3, 2.8, 1.9),
+    campSpot("quests", "依頼板", -8, -10.5, 2.6, 2.9),
+    campSpot("stash", "倉庫の棚", 15.9, 0.9, 3.0, 2.6),
+    campSpot("shop", "商人の屋台", 14, 7.5, 2.6, 3.3),
+    campSpot("workshop", "作業場", -10, 10.5, 2.6, 2.0),
+    campSpot("vehicle", "車両", 9.8, -9.5, 3.4, 3.5),
+  ] satisfies CampSpot[],
+};
+
+/** Whether (x, z) lies in the camp's yard, or within `r` of its fence. */
+export const inCamp = (at: { x: number; z: number }, r = 0) => at.x > CAMP.x0 - r && at.x < CAMP.x1 + r && at.z > CAMP.z0 - r && at.z < CAMP.z1 + r;
 
 const KEEP = authoredKeep();
 // Hand-built things keep flat ground around them, at their level.
@@ -4064,9 +4298,9 @@ const RING_WRECKS: RingWreck[] = [
   // and the wreck.
   { name: "難破船の西の残骸（北）", along: "x", at: -1060, a: -260, b: -190, broken: { b: true }, rubble: [{ side: 1, u: -230 }] },
   { name: "難破船の西の残骸（南）", along: "z", at: -210, a: -1035, b: -975, broken: { a: true }, tunnel: [{ side: -1, a: -1015, b: -1005 }] },
-  { name: "難破船の西の残骸（漁村の東）", along: "z", at: -214, a: -960, b: -892, broken: { a: true }, rubble: [{ side: 1, u: -920 }] },
-  { name: "港町の西の残骸（町の外れ）", along: "x", at: -560, a: -190, b: -125, broken: { a: true }, tunnel: [{ side: 1, a: -165, b: -155 }] },
-  { name: "港町の東の残骸（線路の北）", along: "z", at: 304, a: -720, b: -654, broken: { b: true }, rubble: [{ side: 1, u: -690 }] },
+  { name: "難破船の西の残骸（漁村の東）", along: "z", at: -214, a: -960, b: -908, broken: { a: true }, rubble: [{ side: 1, u: -934 }] },
+  { name: "港町の西の残骸（町の外れ）", along: "x", at: -560, a: -190, b: -140, broken: { a: true }, tunnel: [{ side: 1, a: -170, b: -160 }] },
+  { name: "港町の東の残骸（線路の北）", along: "z", at: 334, a: -720, b: -654, broken: { b: true }, rubble: [{ side: -1, u: -700 }] },
   { name: "港町の西の残骸（西）", along: "x", at: -565, a: -350, b: -290, broken: { b: true }, rubble: [{ side: -1, u: -320 }] },
   { name: "港町の西の残骸（東）", along: "x", at: -556, a: -276, b: -205, broken: { a: true }, lean: { side: 1, u: -240, length: 46 } },
   { name: "港町の東の残骸（北）", along: "z", at: 300, a: -628, b: -572, broken: { b: true }, tunnel: [{ side: -1, a: -606, b: -596 }] },
@@ -4284,7 +4518,8 @@ const STREET_SIDE: Box[] = (() => {
 
 /** Everything placed by hand or laid by rule, before the scattered cover fills the ground round it. */
 export const BUILT: Box[] = [...PLACED, ...STREET_SIDE];
-export const BOXES: Box[] = [...BUILT, ...scatterCover(BUILT, KEEP)];
+// The camp comes last: what was laid before it keeps its place in the list (the cover spots, the walkers' grids).
+export const BOXES: Box[] = [...BUILT, ...scatterCover([...BUILT, ...CAMP_BOXES], KEEP), ...CAMP_BOXES];
 
 /** The bridge deck's height at (x, z) when it lies on a deck that path finding walks (DECKS), else null. */
 export function deckAt(x: number, z: number): number | null {

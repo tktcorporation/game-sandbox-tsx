@@ -1,16 +1,16 @@
 import * as THREE from "three";
-import { DUCK, ENEMIES, PLAYER, TITAN, WEAPONS, WORLD, type EnemyKind } from "../sim/config";
-import { BOXES, DEPOTS, ENTRIES, EXTRACTS, ROUTES, type Box } from "../sim/map";
+import { DUCK, ENEMIES, PLAYER, RELAY, STORM, TITAN, WEAPONS, WORLD, type EnemyKind } from "../sim/config";
+import { BOXES, CAMP, DEPOTS, ENTRIES, EXTRACTS, ROUTES, type Box } from "../sim/map";
 import { worldKey } from "../sim/routes";
 import { groundAt } from "../sim/geom";
 import { LANDS, offshore, terrainHeight } from "../sim/terrain";
 import { groundColour, groundMat } from "./ground";
-import { bodyY, callLeft, type GameEvent, type State, type Vec3 } from "../sim/state";
+import { bodyY, callLeft, debrisBin, type GameEvent, type State, type Vec3 } from "../sim/state";
 import { QUALITY, type Quality, type Tier } from "./quality";
 import { SHADE, contactAt, coverAt, floorUnder } from "./shade";
 import { GroundScatter } from "./scatter";
 import { trimBox, type TrimPiece, type TrimSite } from "./trim";
-import { PAL, RARITY_COLOR, SCOPE_IN, buildAlly, buildBin, buildBoat, buildStatic, buildDepot, buildEntryMark, mergeChunk, mergeTrim, type ChunkShade, buildCare, buildDropship, buildEnemy, buildGun, buildHands, buildLootItem, addPlates, flat, glow, haloSprite, type EnemyModel } from "./models";
+import { PAL, RARITY_COLOR, SCOPE_IN, buildAlly, buildBin, buildBoat, buildStatic, buildDepot, buildEntryMark, buildRelayMast, buildRingDebris, mergeChunk, mergeTrim, type ChunkShade, buildCare, buildDropship, buildEnemy, buildGun, buildHands, buildLootItem, addPlates, flat, glow, haloSprite, type EnemyModel } from "./models";
 import { streetMeshes } from "./streets";
 
 /*
@@ -75,6 +75,10 @@ const MATE_LIGHT = 0x6fd0cf;
 const PLATE_SPARK = 0x9aa3b5;
 /** Smoke from a robot below half its health and shield, and from a wreck. */
 const SMOKE = 0x3b3a3c;
+/** The ring's piece smokes paler than a wreck, so its column reads against the red rock from afar. */
+const DEBRIS_SMOKE = 0x77736e;
+const PUFF_LIFE = 5;
+const PUFF_GEO = new THREE.IcosahedronGeometry(1, 0);
 /** The shade baked into a chunk's merged statics (shade.ts). */
 const CHUNK_SHADE: ChunkShade = { cover: coverAt, floor: floorUnder, base: SHADE.wallBase, baseUp: SHADE.wallBaseUp };
 /** Where trim finds the floors, the cover and the ground its boxes stand on (trim.ts). */
@@ -211,6 +215,13 @@ export class World {
   private allyWalk = 0;
   private loot = new Map<number, THREE.Group>();
   private bins = new Map<number, ReturnType<typeof buildBin>>();
+  /** The relay masts standing in the raid, by id; a destroyed one is left as its stump. */
+  private masts = new Map<string, ReturnType<typeof buildRelayMast> & { down: boolean }>();
+  /** The ring's piece on a debris fall's day, beside its crate, and the seconds to its next puff of smoke. */
+  private debris: (ReturnType<typeof buildRingDebris> & { smoke: number; puffs: { m: THREE.Mesh; t: number }[] }) | null = null;
+  /** The weather drawn: a storm brings the fog in and greys the light (`STORM`). */
+  private storm = false;
+  private hemi = new THREE.HemisphereLight(0xcfe9ff, 0xb98a55, LIGHT.sky);
   private orbPool: THREE.Group[] = [];
   private wavePool: THREE.Mesh[] = [];
   private tracers: Tracer[] = [];
@@ -239,6 +250,9 @@ export class World {
   private readonly skyDome = this.sky();
   private dummy = new THREE.Object3D();
   private boulderGeo = new THREE.DodecahedronGeometry(1, 0);
+
+  /** The camp between raids is drawn: the weapons are down. */
+  campMode = false;
 
   /** Automation only: a fixed camera that replaces the player's view. */
   cameraOverride: { x: number; y: number; z: number; yaw: number; pitch: number } | null = null;
@@ -280,7 +294,7 @@ export class World {
 
     this.scene.fog = new THREE.Fog(LIGHT.haze, QUALITY.high.fogNear, QUALITY.high.fogFar);
     this.scene.add(this.skyDome);
-    this.scene.add(new THREE.HemisphereLight(0xcfe9ff, 0xb98a55, LIGHT.sky));
+    this.scene.add(this.hemi);
     this.sun.position.set(-40, 80, 30);
     this.sun.castShadow = true;
     this.sun.shadow.camera.near = 1;
@@ -343,6 +357,15 @@ export class World {
       };
       put(fire, 2.5, 1.6);
       put(sign, 4.5, -0.8);
+    }
+    {
+      // The camp's fire, in the open yard between the map table and the tent.
+      const { fire } = buildEntryMark();
+      const x = (CAMP.x0 + CAMP.x1) / 2 - 3;
+      const z = (CAMP.z0 + CAMP.z1) / 2 + 4;
+      fire.position.set(x, groundAt(x, z, 0.4, 99), z);
+      this.scene.add(fire);
+      this.entryMarks.push(fire);
     }
 
     this.stompRing = new THREE.Mesh(new THREE.RingGeometry(0.96, 1, 64), glow(PAL.orb, 0.5));
@@ -698,9 +721,7 @@ export class World {
     const q = QUALITY[tier];
     this.tierNow = tier;
     this.q = q;
-    const fog = this.scene.fog as THREE.Fog;
-    fog.near = q.fogNear;
-    fog.far = q.fogFar;
+    this.applyWeather();
     const shadow = this.sun.shadow;
     if (shadow.mapSize.x !== q.shadowSize) {
       shadow.map?.dispose();
@@ -713,6 +734,27 @@ export class World {
     sc.updateProjectionMatrix();
     this.renderer.shadowMap.autoUpdate = !Number.isFinite(q.shadowHz);
     this.shadowAt = -Infinity;
+  }
+
+  /**
+   * The fog and the light for the weather drawn: the tier's on a clear day; in a storm the fog
+   * comes `STORM.fog` as near, greyed, and the sun is dimmed under the cloud while the sky's fill
+   * holds, so the day reads flat and grey. The view only: the robots' sight is the sim's.
+   */
+  private applyWeather() {
+    const fog = this.scene.fog as THREE.Fog;
+    const f = this.storm ? STORM.fog : 1;
+    // The storm's haze starts close: a fog far `STORM.fog` as near would leave mid-range ground clear.
+    fog.near = this.q.fogNear * (this.storm ? 0.15 : 1);
+    fog.far = this.q.fogFar * f;
+    fog.color.setHex(this.storm ? 0x9ea4a6 : LIGHT.haze);
+    this.sun.intensity = this.storm ? LIGHT.sun * 0.45 : LIGHT.sun;
+    this.hemi.color.setHex(this.storm ? 0xc3c8cc : 0xcfe9ff);
+    this.hemi.intensity = this.storm ? LIGHT.sky * 1.15 : LIGHT.sky;
+    // The clear sky gives way to the storm's cloud: the dome is hidden and the frame cleared to the fog's grey.
+    this.skyDome.visible = !this.storm;
+    this.scene.background = this.storm ? fog.color.clone() : null;
+    this.renderer.toneMappingExposure = this.storm ? LIGHT.exposure * 0.85 : LIGHT.exposure;
   }
 
   /** Device pixels per CSS pixel the canvas is drawn at; the canvas keeps its size on the page. */
@@ -942,6 +984,15 @@ export class World {
           this.shake = Math.max(this.shake, 0.5);
           this.burst({ x: e.x, y: (s.care?.y ?? terrainHeight(e.x, e.z)) + 0.2, z: e.z }, PAL.sand, 40, 7, 0.14, 8, 1.0);
           break;
+        case "relayHit":
+          this.burst(e.pos, e.eye ? PAL.eye : 0xffc070, e.eye ? 8 : 5, 5, 0.06, 8, 0.35);
+          break;
+        case "relayDown":
+          this.burst(e.pos, PAL.eye, 30, 8, 0.1, 6, 0.9);
+          this.burst(e.pos, PAL.armorLight, 40, 9, 0.16, 14, 1.4);
+          this.shake = Math.max(this.shake, 0.6);
+          hitstop = Math.max(hitstop, 0.08);
+          break;
         case "binOpen":
           break;
         case "spawn":
@@ -1007,6 +1058,10 @@ export class World {
     this.sun.target.position.set(fx, 0, fz);
 
     for (const c of this.clouds) c.visible = p.pos.y > 30;
+    if (s.storm !== this.storm) {
+      this.storm = s.storm;
+      this.applyWeather();
+    }
 
     this.syncRoutes();
     this.streamChunks(fx, fz);
@@ -1231,6 +1286,67 @@ export class World {
       (v.seam.material as THREE.MeshBasicMaterial).color.setHex(b.open ? 0x3a3f4a : 0xffffff);
     }
     for (const m of this.entryMarks) near(m);
+    // The ring's piece lies beside the debris crate, smoking.
+    const crate = debrisBin(s);
+    if (crate && !this.debris) {
+      // A column of grey puffs over the wreck, each rising, swelling and thinning over `PUFF_LIFE` seconds.
+      const puffs = Array.from({ length: 14 }, () => {
+        const m = new THREE.Mesh(PUFF_GEO, new THREE.MeshLambertMaterial({ color: DEBRIS_SMOKE, transparent: true, opacity: 0, depthWrite: false, flatShading: true }));
+        m.visible = false;
+        return { m, t: PUFF_LIFE };
+      });
+      this.debris = { ...buildRingDebris(), smoke: 0, puffs };
+      for (const q of puffs) this.scene.add(q.m);
+      this.debris.root.position.set(crate.x - 9, crate.y, crate.z + 10);
+      this.debris.root.rotation.y = 0.4;
+      this.debris.root.updateMatrixWorld(true);
+      // Each scar patch lies on the ground under it, which slopes a little across the wreck.
+      for (const c of this.debris.root.children)
+        if (c.name === "scar") {
+          const w = c.getWorldPosition(new THREE.Vector3());
+          c.position.y = terrainHeight(w.x, w.z) - crate.y + 0.06;
+        }
+      this.scene.add(this.debris.root);
+    }
+    if (this.debris) {
+      const d = this.debris;
+      const seen = near(d.root);
+      if (seen && (d.smoke -= dt) <= 0) {
+        const q = d.puffs.find((o) => o.t >= PUFF_LIFE);
+        if (q) {
+          d.smoke = PUFF_LIFE / d.puffs.length;
+          q.t = 0;
+          q.m.position.copy(d.vents[Math.floor(Math.random() * d.vents.length)].clone().applyMatrix4(d.root.matrixWorld));
+          q.m.rotation.set(Math.random() * 3, Math.random() * 3, 0);
+        }
+      }
+      for (const q of d.puffs) {
+        q.t = Math.min(PUFF_LIFE, q.t + dt);
+        const f = q.t / PUFF_LIFE;
+        q.m.visible = seen && f < 1;
+        q.m.position.y += dt * 1.6;
+        q.m.position.x += dt * 0.5;
+        q.m.scale.setScalar(0.8 + f * 2.6);
+        (q.m.material as THREE.MeshLambertMaterial).opacity = 0.55 * Math.min(1, f * 6) * (1 - f);
+      }
+    }
+    for (const r of s.relays) {
+      let v = this.masts.get(r.id);
+      if (!v) {
+        v = { ...buildRelayMast(RELAY.height, RELAY.radius, RELAY.eyeR), down: false };
+        v.root.position.set(r.x, r.y, r.z);
+        this.masts.set(r.id, v);
+        this.scene.add(v.root);
+      }
+      // A destroyed mast falls to a stump below its first braces: the eye and the lattice above it go.
+      if (r.hp <= 0 && !v.down) {
+        v.down = true;
+        v.eye.visible = v.halo.visible = false;
+        v.root.scale.y = 0.18;
+      }
+      // A standing eye pulses slowly, the robots' red.
+      if (!v.down) v.halo.material.opacity = 0.5 + 0.2 * Math.sin(this.time * 2.4);
+    }
     this.depots.forEach((v, i) => {
       if (!near(v.root)) return;
       const on = !!s.depots[i];
@@ -1336,7 +1452,7 @@ export class World {
     }
     this.gunKick += (0 - this.gunKick) * Math.min(1, dt * 14);
     const reloading = p.reload > 0;
-    const lowered = !!p.healing || !!p.mantle || !!p.leap || p.downed > 0 || s.phase === "done";
+    const lowered = !!p.healing || !!p.mantle || !!p.leap || p.downed > 0 || s.phase === "done" || this.campMode;
     const ads = p.ads;
     const gx = 0.2 * (1 - ads);
     const gy = -0.2 + 0.07 * ads - (lowered ? 0.4 : 0) - (reloading ? 0.08 : 0) + Math.sin(this.bob * 2) * 0.01 * (1 - ads);
@@ -1406,6 +1522,13 @@ export class World {
     this.loot.clear();
     for (const b of this.bins.values()) this.scene.remove(b.root);
     this.bins.clear();
+    for (const m of this.masts.values()) this.scene.remove(m.root);
+    this.masts.clear();
+    if (this.debris) {
+      this.scene.remove(this.debris.root);
+      for (const q of this.debris.puffs) this.scene.remove(q.m);
+    }
+    this.debris = null;
     if (this.care) this.scene.remove(this.care);
     this.care = null;
     this.careBeam.visible = false;

@@ -1,11 +1,12 @@
-import { ALLY, AWARE, BAG, DEPOT, ENEMIES, ENTRY, HEALS, PARTY, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, TICK, TOOL_KINDS, TOOLS, TOP_BINS, VALUABLES, VAULT, WORLD, type HealKind, type ToolKind } from "./config";
+import { ALLY, AWARE, BAG, CREW, DEBRIS, DEPOT, RETAKE, ENEMIES, ENTRY, HEALS, HOME, PARTY, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, TICK, TOOL_KINDS, TOOLS, TOP_BINS, VALUABLES, VAULT, WORLD, type HealKind, type ToolKind } from "./config";
 import { dist2d, groundAt, los, solidAt } from "./geom";
 import { highGround, steepAt, terrainHeight } from "./terrain";
-import { DEPOTS, ENTRIES, EXTRACTS, PARTY_STOPS, POIS, REGIONS, type ExtractPoint } from "./map";
+import { DEPOTS, ENTRIES, EXTRACTS, inCamp, PARTY_STOPS, POIS, recordSpot, REGIONS, regionOf, type ExtractPoint, type RecordId } from "./map";
 import { spawnEnemy, spawnSpot } from "./enemies";
-import { cellsAround, fieldTo, nextStep, onMainGround } from "./hunt";
+import { cellsAround, fieldTo, nextStep, onMainGround, routeLength } from "./hunt";
+import type { CrewTrip, SquadState } from "./state";
 import { raiseAlly, startHelp } from "./ally";
-import { boosted, callLeft, cellOf, exploreSize, mix, rand, roamRand, type Bin, type Input, type Loot, type PartySlot, type PartyTrip, type Player, type Point, type State, type Weapon } from "./state";
+import { boosted, callLeft, crewRand, netLevel, cellOf, exploreSize, mix, rand, roamRand, type Bin, type Input, type Loot, type PartySlot, type PartyTrip, type Player, type Point, type State, type Weapon } from "./state";
 import type { EnemyKind, ValuableKind } from "./config";
 import { located, makeNoise } from "./awareness";
 
@@ -84,7 +85,7 @@ export function stepReinforce(s: State) {
     s.reinforceT = 5; // try again shortly
     return;
   }
-  s.reinforceT = REINFORCE.every;
+  s.reinforceT = netLevel(s).reinforce.every;
   s.reinforceN++;
 }
 
@@ -113,7 +114,7 @@ function hiddenPosts(s: State, kinds: readonly EnemyKind[], x: number, z: number
   const p = s.player;
   const eye = { x: p.pos.x, y: p.pos.y + 1.5, z: p.pos.z };
   const g = groundAt(x, z, 1, 99);
-  if (steepAt(x, z) || g > terrainHeight(x, z) + 0.3) return null;
+  if (steepAt(x, z) || g > terrainHeight(x, z) + 0.3 || inCamp({ x, z }, 4)) return null;
   const spots = posts(kinds, x, z);
   if (spots.some((q) => steepAt(q.mx, q.mz) || highGround(q.mx, q.mz))) return null;
   if (dist2d(p.pos, { x, z }) < seen && (los(eye, { x, y: g + 1.5, z }) || spots.some((q) => los(eye, q) || los(eye, { x: q.x, y: q.mid, z: q.z })))) return null;
@@ -144,7 +145,7 @@ function beamIn(s: State, kinds: readonly EnemyKind[], name: string, elite: bool
   s.squads.push({ name, poi: -1, patrol: [], leg: 0, engaged: false, roam: true, hunt: true, routed: true, elite, sinceSeen: 0, last: { x: p.pos.x, z: p.pos.z } });
   const spots = posts(kinds, at.x, at.z);
   kinds.forEach((kind, i) => {
-    const e = spawnEnemy(s, kind, spots[i].mx, spots[i].mz, -1, squad, { appear: true, elite, plate: elite ? RAIDERS.plate : 0 });
+    const e = spawnEnemy(s, kind, spots[i].mx, spots[i].mz, -1, squad, { appear: true, elite, plate: elite ? RAIDERS.plate : undefined });
     e.aware = "alert";
     e.goal = { x: p.pos.x, z: p.pos.z };
     e.searchT = 40;
@@ -154,10 +155,10 @@ function beamIn(s: State, kinds: readonly EnemyKind[], name: string, elite: bool
   return true;
 }
 
-/** The raid's first hunting parties, `PARTY.count` in each region, placed as a wiped-out one's replacement is. */
+/** The raid's first hunting parties, as many in each region as the network gives, placed as a wiped-out one's replacement is. */
 export function placeParties(s: State) {
   for (const region of REGIONS)
-    for (let i = 0; i < PARTY.count[region.id]; i++) {
+    for (let i = 0; i < netLevel(s).parties[region.id]; i++) {
       const slot = { region: region.id, squad: -1, wait: 0 };
       s.parties.push(slot);
       sendParty(s, slot, false);
@@ -245,6 +246,192 @@ function sendParty(s: State, slot: PartySlot, appear: boolean): boolean {
   return false;
 }
 
+/**
+ * The day's visitors beyond the POIs: salvage crews beam in on their times (`State.crewsDue`) and
+ * go about their errand, and the retake squad beams in once, `RETAKE.at` into the raid.
+ */
+export function stepCrews(s: State) {
+  if (s.phase !== "play") return;
+  if (s.crewsDue.length && s.time >= s.crewsDue[0]) {
+    if (sendCrew(s)) s.crewsDue.shift();
+    else s.crewsDue[0] = s.time + 5; // try again shortly
+  }
+  if (s.retakePoi >= 0 && s.retakeT < Infinity) {
+    s.retakeT -= TICK;
+    if (s.retakeT <= 0) s.retakeT = sendRetake(s) ? Infinity : 5;
+  }
+  s.squads.forEach((sq, i) => sq.crew && stepCrew(s, sq, i));
+}
+
+/** Whether a crew can loot bin `b`: one of its region's POIs' ordinary bins, unopened, on the open ground its walkers' field covers. */
+const crewBin = (b: Bin, c: CrewTrip) =>
+  !b.open && !b.vault && !b.outside && regionOf(c.region).pois.includes(POIS[b.poi].id) && onMainGround(b.x, b.z) && Math.abs(b.y - terrainHeight(b.x, b.z)) < 0.6;
+
+/** A salvage crew's errand (see CREW): to the bin nearest by the walk, search it, and with a full bag (or out of time or bins) to its way off. */
+function stepCrew(s: State, sq: SquadState, i: number) {
+  const c = sq.crew!;
+  const members = s.enemies.filter((e) => e.squad === i);
+  const lead = members[0];
+  if (!lead) return;
+  c.t += TICK;
+  // Only a calm crew goes about its errand: a fight breaks a search off, and the walk resumes after.
+  if (sq.engaged || members.some((e) => e.aware !== "idle")) {
+    c.searchT = 0;
+    c.mark = { x: lead.pos.x, z: lead.pos.z };
+    c.markT = 0;
+    return;
+  }
+  if (!c.leaving && ((sq.bag?.length ?? 0) >= CREW.bag || c.t >= CREW.leaveAfter)) leave(s, sq, lead);
+  if (c.leaving) {
+    const x = EXTRACTS.find((o) => o.id === c.leaving)!;
+    const arrived = dist2d(lead.pos, x) < CREW.out;
+    if (arrived || stuck(c, lead, () => c.held++) && c.held >= CREW.stuck.tries) beamOut(s, sq, i, members);
+    return;
+  }
+  if (c.bin < 0 || s.bins[c.bin].open) {
+    c.searchT = 0;
+    // Nearest by the walk: a bin a fence or a cliff puts a long way round is left for later.
+    // The field runs to the crew, so its lengths are the walks from the bins, which on the main
+    // ground are the walks to them.
+    const field = fieldTo(lead.pos.x, lead.pos.z);
+    const pick = s.bins
+      .map((b, n) => ({ b, n, walk: field ? routeLength(field, b.x, b.z) : Infinity, line: dist2d(b, lead.pos) }))
+      // It keeps to bins the player is not at: a crew comes upon the player, it does not walk into their fight.
+      .filter(({ b, n }) => crewBin(b, c) && !c.skip.includes(n) && dist2d(b, s.player.pos) > CREW.wary)
+      .sort((a, b) => (a.walk === b.walk ? a.line - b.line : a.walk - b.walk))[0];
+    if (!pick) {
+      leave(s, sq, lead);
+      return;
+    }
+    c.bin = pick.n;
+    sq.walk = { x: pick.b.x, z: pick.b.z };
+    c.mark = { x: lead.pos.x, z: lead.pos.z };
+    c.markT = 0;
+  }
+  const b = s.bins[c.bin];
+  if (members.some((e) => dist2d(e.pos, b) < CREW.reach + 1 && Math.abs(e.pos.y - b.y) < 1.6)) {
+    // A member stands at the bin for as long as the player would take to search it.
+    c.markT = 0;
+    c.searchT += TICK;
+    if (c.searchT >= SEARCH.time) {
+      crewLoot(s, sq, i, c.bin);
+      c.bin = -1;
+    }
+    return;
+  }
+  // Held up on the way (a corner its body does not fit past): it gives that bin up.
+  stuck(c, lead, () => {
+    c.skip.push(c.bin);
+    c.bin = -1;
+  });
+}
+
+/** Whether a crew walking to its point has moved less than `CREW.stuck.moved` in `CREW.stuck.time` seconds; `then` runs when it has. */
+function stuck(c: CrewTrip, lead: { pos: Point }, then: () => void): boolean {
+  if ((c.markT += TICK) < CREW.stuck.time) return false;
+  const held = dist2d(lead.pos, c.mark) < CREW.stuck.moved;
+  c.mark = { x: lead.pos.x, z: lead.pos.z };
+  c.markT = 0;
+  if (held) then();
+  return held;
+}
+
+/** The crew makes for the nearest way off of its region. */
+function leave(s: State, sq: SquadState, lead: { pos: Point }) {
+  const c = sq.crew!;
+  const x = regionOf(c.region)
+    .exits.map((id) => EXTRACTS.find((o) => o.id === id)!)
+    .sort((a, b) => dist2d(a, lead.pos) - dist2d(b, lead.pos))[0];
+  c.leaving = x.id;
+  c.bin = -1;
+  c.searchT = 0;
+  c.markT = 0;
+  c.mark = { x: lead.pos.x, z: lead.pos.z };
+  sq.walk = { x: x.x, z: x.z };
+}
+
+/** The crew beams out with its bag, which is lost to the island; overnight it raises the network a step. */
+function beamOut(s: State, sq: SquadState, i: number, members: { pos: Point }[]) {
+  const at = members[0].pos;
+  s.enemies = s.enemies.filter((e) => e.squad !== i);
+  s.stats.crewsOut++;
+  s.events.push({ t: "crewOut", x: at.x, z: at.z, n: sq.bag?.length ?? 0 });
+  sq.walk = undefined;
+}
+
+/** The crew opens bin `n`: its valuable goes into the crew's bag (drawn on the crews' stream), the rest of what it held is lost. */
+function crewLoot(s: State, sq: SquadState, i: number, n: number) {
+  const b = s.bins[n];
+  b.open = true;
+  s.events.push({ t: "binOpen", id: b.id }, { t: "crewLoot", id: b.id, squad: i });
+  const table = POIS[b.poi].loot.valuable;
+  const kinds = b.poi === s.boost.poi ? boosted(table, s.boost.kind) : table;
+  const kind = s.fetch?.bins.includes(b.id) ? s.fetch.kind : weighted(s, kinds, crewRand);
+  (sq.bag ??= []).push(kind);
+  (sq.bagAt ??= []).push(b.poi);
+  s.stats.crewBins++;
+}
+
+/**
+ * A salvage crew beamed in near a stop of the starting region, out of the player's sight within
+ * `PARTY.seen` and at least `CREW.away` from them; false when no such spot turned up.
+ */
+function sendCrew(s: State): boolean {
+  const stops = PARTY_STOPS[s.region];
+  const kinds = CREW.squads[Math.floor(crewRand(s) * CREW.squads.length)];
+  for (let k = 0; k < 40; k++) {
+    const stop = stops[Math.floor(crewRand(s) * stops.length)];
+    const a = crewRand(s) * Math.PI * 2;
+    const r = crewRand(s) * PARTY.scatter;
+    const x = stop.x + Math.cos(a) * r;
+    const z = stop.z + Math.sin(a) * r;
+    if (dist2d(s.player.pos, { x, z }) < CREW.away || !onMainGround(x, z)) continue;
+    const spots = hiddenPosts(s, kinds, x, z, PARTY.seen);
+    if (!spots) continue;
+    const squad = s.squads.length;
+    s.squads.push({ name: CREW.name, poi: -1, patrol: [], leg: 0, engaged: false, roam: false, crew: { region: s.region, bin: -1, searchT: 0, skip: [], leaving: null, t: 0, mark: { x, z }, markT: 0, held: 0 }, bag: [], bagAt: [], sinceSeen: 0, last: { x: 0, z: 0 } });
+    kinds.forEach((kind, m) => spawnEnemy(s, kind, spots[m].mx, spots[m].mz, -1, squad, { appear: true, crew: true }));
+    s.stats.crewsIn++;
+    s.events.push({ t: "crewIn", x, z });
+    return true;
+  }
+  return false;
+}
+
+/**
+ * The retake squad beamed in a `RETAKE.dist` walk from the freed POI's way in, out of the
+ * player's sight and at least `RETAKE.away` from them, walking to the way in; false when no
+ * such spot turned up.
+ */
+function sendRetake(s: State): boolean {
+  const poi = POIS[s.retakePoi];
+  const field = fieldTo(poi.entry.x, poi.entry.z);
+  const cells = field ? cellsAround(field, RETAKE.dist[0], RETAKE.dist[1]) : [];
+  const kinds = RETAKE.kinds[Math.floor(crewRand(s) * RETAKE.kinds.length)];
+  for (let k = 0; k < 80 && cells.length; k++) {
+    const c = cells[Math.floor(crewRand(s) * cells.length)];
+    const x = c.x + (crewRand(s) - 0.5) * 1.5;
+    const z = c.z + (crewRand(s) - 0.5) * 1.5;
+    if (dist2d(s.player.pos, { x, z }) < RETAKE.away) continue;
+    const spots = hiddenPosts(s, kinds, x, z);
+    if (!spots) continue;
+    const squad = s.squads.length;
+    s.squads.push({ name: RETAKE.name, poi: -1, patrol: [], leg: 0, engaged: false, roam: false, retake: s.retakePoi, walk: { x: poi.entry.x, z: poi.entry.z }, sinceSeen: 0, last: { x: 0, z: 0 } });
+    const plate = RETAKE.plate[s.network];
+    kinds.forEach((kind, m) => spawnEnemy(s, kind, spots[m].mx, spots[m].mz, -1, squad, { appear: true, crew: true, plate: plate && (kind === "grunt" || kind === "heavy") ? plate : undefined }));
+    s.events.push({ t: "retakeIn", x, z, poi: s.retakePoi });
+    return true;
+  }
+  return false;
+}
+
+/** The salvage crews' members the player can see from where they stand (within `PARTY.seen`): only these show on the map. */
+export function crewsInSight(s: State): Point[] {
+  const p = s.player;
+  const eye = { x: p.pos.x, y: p.pos.y + 1.5, z: p.pos.z };
+  return s.enemies.filter((e) => s.squads[e.squad]?.crew && dist2d(e.pos, p.pos) < PARTY.seen && los(eye, { x: e.pos.x, y: e.pos.y + 1.2, z: e.pos.z })).map((e) => ({ x: e.pos.x, z: e.pos.z }));
+}
+
 /** Half the width of the lane a walking robot needs: the heavy's body radius. */
 const LANE = 1;
 
@@ -281,26 +468,33 @@ function rollHeal(s: State): HealKind {
   return r < 0.33 ? "cell" : r < 0.66 ? "syringe" : r < 0.83 ? "battery" : "medkit";
 }
 
-/** A pick from `[item, weight]` pairs. */
-function weighted<T>(s: State, list: [T, number][]): T {
-  let r = rand(s) * list.reduce((n, [, w]) => n + w, 0);
+/** A pick from `[item, weight]` pairs, drawn from `draw` (the raid's numbers by default). */
+function weighted<T>(s: State, list: [T, number][], draw: (s: State) => number = rand): T {
+  let r = draw(s) * list.reduce((n, [, w]) => n + w, 0);
   for (const [item, w] of list) if ((r -= w) < 0) return item;
   return list[list.length - 1][0];
 }
 
-const spillValuable = (s: State, b: { x: number; y: number; z: number }, valuable: ValuableKind) =>
-  spill(s, b.x, b.y, b.z, { kind: "valuable", valuable, rarity: VALUABLES[valuable].rarity });
+/** `from`: the POI (index) whose bin it came out of, or -1. */
+const spillValuable = (s: State, b: { x: number; y: number; z: number }, valuable: ValuableKind, from: number) =>
+  spill(s, b.x, b.y, b.z, { kind: "valuable", valuable, rarity: VALUABLES[valuable].rarity, from });
 
 function openBin(s: State, binIndex: number) {
   const b = s.bins[binIndex];
   b.open = true;
   s.events.push({ t: "binOpen", id: b.id });
+  if (b.debris) {
+    // The ring's crate holds its own table, from no POI: no fetch contract counts it.
+    for (let i = 0; i < DEBRIS.heals; i++) spill(s, b.x, b.y, b.z, { kind: "heal", heal: rollHeal(s), rarity: 1 });
+    for (let i = 0; i < DEBRIS.count; i++) spillValuable(s, b, weighted(s, DEBRIS.valuables), -1);
+    return;
+  }
   if (b.vault) {
     const [kind, rarity] = VAULT.weapon[Math.floor(rand(s) * VAULT.weapon.length)];
     spill(s, b.x, b.y, b.z, { kind: "weapon", rarity, weapon: { kind, rarity, mag: -1 } });
     spill(s, b.x, b.y, b.z, { kind: "armor", rarity: VAULT.armor });
     for (let i = 0; i < VAULT.heals; i++) spill(s, b.x, b.y, b.z, { kind: "heal", heal: rollHeal(s), rarity: 1 });
-    for (const v of VAULT.valuables[Math.floor(rand(s) * VAULT.valuables.length)]) spillValuable(s, b, v);
+    for (const v of VAULT.valuables[Math.floor(rand(s) * VAULT.valuables.length)]) spillValuable(s, b, v, b.poi);
     if (!s.stats.vaults.includes(b.poi)) s.stats.vaults.push(b.poi);
     return;
   }
@@ -316,7 +510,8 @@ function openBin(s: State, binIndex: number) {
   // One valuable per bin; the high-rises' top floors are worth the climb.
   // In the raid's boosted POI, its own bins lean to one rare kind (`BOOST`).
   const kinds = !b.outside && b.poi === s.boost.poi ? boosted(table.valuable, s.boost.kind) : table.valuable;
-  spillValuable(s, b, b.flare ? weighted(s, TOP_BINS) : weighted(s, kinds));
+  const rolled = b.flare ? weighted(s, TOP_BINS) : weighted(s, kinds);
+  spillValuable(s, b, s.fetch?.bins.includes(b.id) ? s.fetch.kind : rolled, b.outside ? -1 : b.poi);
   // Keys lie only in the POIs themselves, so each one is found where the route says.
   if (!b.outside && rand(s) < VAULT.keyChance) {
     const vault = POIS.findIndex((v) => v.keyFrom === POIS[b.poi].id);
@@ -395,9 +590,14 @@ export function stepLoot(s: State, input: Input) {
       return false;
     }
     if (l.kind === "valuable" && l.valuable && bagLoad(p) + VALUABLES[l.valuable].size <= BAG.slots) {
-      p.haul.push(l.valuable);
+      bagIn(p, l.valuable, l.from ?? -1);
       const v = VALUABLES[l.valuable];
       s.events.push({ t: "pickup", kind: "valuable", rarity: l.rarity, label: `${v.label} +${v.value}` });
+      return false;
+    }
+    if (l.kind === "record" && l.record && bagLoad(p) + 1 <= BAG.slots) {
+      p.records.push(l.record);
+      s.events.push({ t: "pickup", kind: "record", rarity: 3, label: recordSpot(l.record).name });
       return false;
     }
     if (l.kind === "key" && l.key !== undefined) {
@@ -456,8 +656,26 @@ export const bagUsed = (haul: ValuableKind[]) => haul.reduce((n, k) => n + VALUA
 /** Bag slots the tools take up. */
 export const toolsUsed = (tools: ToolKind[]) => tools.reduce((n, k) => n + TOOLS[k].size, 0);
 
-/** Bag slots taken, the haul and the tools together. */
-export const bagLoad = (p: Pick<Player, "haul" | "tools">) => bagUsed(p.haul) + toolsUsed(p.tools);
+/** Bag slots taken, the haul, the tools and the story records (a slot each) together. */
+export const bagLoad = (p: Pick<Player, "haul" | "tools"> & { records?: RecordId[] }) => bagUsed(p.haul) + toolsUsed(p.tools) + (p.records?.length ?? 0);
+
+/** Where each valuable in the bag came from (`Player.haulAt`); all -1 when the haul was set without them. */
+export const haulOrigins = (p: Pick<Player, "haul"> & { haulAt?: number[] }): number[] => (p.haulAt?.length === p.haul.length ? p.haulAt : p.haul.map(() => -1));
+
+/** Puts a valuable from `from` (a POI index, or -1) in the bag. */
+function bagIn(p: Player, kind: ValuableKind, from: number) {
+  p.haulAt = [...haulOrigins(p), from];
+  p.haul.push(kind);
+}
+
+/** Takes the valuables at `out` (indices) out of the bag, with where each came from. */
+function bagOut(p: Player, out: number[]): { kind: ValuableKind; from: number }[] {
+  const at = haulOrigins(p);
+  const gone = out.map((i) => ({ kind: p.haul[i], from: at[i] }));
+  p.haul = p.haul.filter((_, i) => !out.includes(i));
+  p.haulAt = at.filter((_, i) => !out.includes(i));
+  return gone;
+}
 
 /**
  * What would make room for `kind` in a full bag: the set of items (their indices) that frees
@@ -465,8 +683,8 @@ export const bagLoad = (p: Pick<Player, "haul" | "tools">) => bagUsed(p.haul) + 
  * the cheapest one is worth as much as `kind`. The bag holds at most `BAG.slots` items, so
  * trying every set is cheap.
  */
-export function makeRoom(haul: ValuableKind[], kind: ValuableKind, tools: ToolKind[] = []): number[] | null {
-  return roomFor(haul, VALUABLES[kind].size + toolsUsed(tools), VALUABLES[kind].value);
+export function makeRoom(haul: ValuableKind[], kind: ValuableKind, tools: ToolKind[], records: number): number[] | null {
+  return roomFor(haul, VALUABLES[kind].size + toolsUsed(tools) + records, VALUABLES[kind].value);
 }
 
 /**
@@ -491,7 +709,7 @@ function roomFor(haul: ValuableKind[], size: number, worth: number): number[] | 
  * they are worth, since a tool is carried for the route it opens. Null when even the whole
  * haul does not make room (other tools fill the bag).
  */
-export const roomForTool = (p: Pick<Player, "haul" | "tools">, k: ToolKind) => roomFor(p.haul, TOOLS[k].size + toolsUsed(p.tools), Infinity);
+export const roomForTool = (p: Pick<Player, "haul" | "tools"> & { records?: RecordId[] }, k: ToolKind) => roomFor(p.haul, TOOLS[k].size + toolsUsed(p.tools) + (p.records?.length ?? 0), Infinity);
 
 /** Takes a tool up, dropping what `roomForTool()` throws out. */
 function takeTool(s: State, l: Loot) {
@@ -499,32 +717,33 @@ function takeTool(s: State, l: Loot) {
   const k = l.tool;
   const out = k ? roomForTool(p, k) : null;
   if (!k || !out) return;
-  const dropped = out.map((i) => p.haul[i]);
-  p.haul = p.haul.filter((_, i) => !out.includes(i));
-  for (const v of dropped) spillValuable(s, p.pos, v);
+  const dropped = bagOut(p, out);
+  for (const v of dropped) spillValuable(s, p.pos, v.kind, v.from);
   s.loot = s.loot.filter((o) => o !== l);
   p.tools.push(k);
-  s.events.push({ t: "pickup", kind: "tool", rarity: 3, label: `${TOOLS[k].label}${dropped.length ? `（${dropped.map((v) => VALUABLES[v].label).join("・")}を捨てた）` : ""}` });
+  s.events.push({ t: "pickup", kind: "tool", rarity: 3, label: `${TOOLS[k].label}${dropped.length ? `（${dropped.map((v) => VALUABLES[v.kind].label).join("・")}を捨てた）` : ""}` });
 }
 
 /** Drop the cheapest items on the ground and bag the better one. */
 function swapInto(s: State, l: Loot) {
   const p = s.player;
-  const out = l.valuable ? makeRoom(p.haul, l.valuable, p.tools) : null;
+  const out = l.valuable ? makeRoom(p.haul, l.valuable, p.tools, p.records.length) : null;
   if (!out || !l.valuable) return;
-  const dropped = out.map((i) => p.haul[i]);
-  p.haul = p.haul.filter((_, i) => !out.includes(i));
-  for (const k of dropped) spillValuable(s, p.pos, k);
+  const dropped = bagOut(p, out);
+  for (const k of dropped) spillValuable(s, p.pos, k.kind, k.from);
   s.loot = s.loot.filter((o) => o !== l);
-  p.haul.push(l.valuable);
+  bagIn(p, l.valuable, l.from ?? -1);
   const v = VALUABLES[l.valuable];
-  s.events.push({ t: "pickup", kind: "valuable", rarity: l.rarity, label: `${v.label} +${v.value}（${dropped.map((k) => VALUABLES[k].label).join("・")}を捨てた）` });
+  s.events.push({ t: "pickup", kind: "valuable", rarity: l.rarity, label: `${v.label} +${v.value}（${dropped.map((k) => VALUABLES[k.kind].label).join("・")}を捨てた）` });
 }
+
+/** Whether the player may search a bin: a vault takes its POI's key, unless the POI is freed. */
+export const canOpen = (s: State, b: Bin) => !b.vault || s.player.keys.includes(b.poi) || s.hold[b.poi] === "freed";
 
 function startSearch(s: State, bin: number) {
   const p = s.player;
   if (p.search?.bin === bin) return;
-  if (s.bins[bin].vault && !p.keys.includes(s.bins[bin].poi)) {
+  if (!canOpen(s, s.bins[bin])) {
     s.events.push({ t: "locked", poi: s.bins[bin].poi });
     return;
   }
@@ -588,7 +807,7 @@ export function useTarget(s: State, armor = true, tools = true): UseTarget | nul
     // It yields to a bin or a weapon at the same distance, since it lies where the upgrade was found.
     else if (armor && l.kind === "armor" && l.worn && l.rarity !== p.armor) picks.push({ d: dist2d(l.pos, p.pos) + 0.3, t: { kind: "armor", loot: l } });
     // A valuable that does not fit is worth a press when something cheaper can make way.
-    else if (l.kind === "valuable" && l.valuable && makeRoom(p.haul, l.valuable, p.tools)?.length) picks.push({ d: dist2d(l.pos, p.pos) - 0.3, t: { kind: "swap", loot: l } });
+    else if (l.kind === "valuable" && l.valuable && makeRoom(p.haul, l.valuable, p.tools, p.records.length)?.length) picks.push({ d: dist2d(l.pos, p.pos) - 0.3, t: { kind: "swap", loot: l } });
     // A tool is taken by the use key, throwing cheaper things out of a full bag.
     else if (tools && l.kind === "tool" && l.tool && roomForTool(p, l.tool)) picks.push({ d: dist2d(l.pos, p.pos) - 0.3, t: { kind: "tool", loot: l } });
   }
@@ -610,19 +829,23 @@ export function depotInReach(s: State): number {
 /** The use key at a depot: a bag with anything in it goes home; an empty one means leaving the raid there. */
 function useDepot(s: State, index: number) {
   const p = s.player;
-  if (p.haul.length || p.tools.length) {
+  if (p.haul.length || p.tools.length || p.records.length) {
     // Something picked up while leaving breaks the leaving off, even when it is sent at once.
     if (s.leaving) {
       s.leaving = null;
       s.events.push({ t: "leaveCancel" });
     }
     const value = p.haul.reduce((n, k) => n + VALUABLES[k].value, 0);
-    s.events.push({ t: "deposit", n: p.haul.length + p.tools.length, value });
+    s.events.push({ t: "deposit", n: p.haul.length + p.tools.length + p.records.length, value });
+    s.sentAt.push(...haulOrigins(p));
     s.sent.push(...p.haul);
     s.sentTools.push(...p.tools);
+    s.sentRecords.push(...p.records);
     s.sentVia[index] += value;
     p.haul = [];
+    p.haulAt = [];
     p.tools = [];
+    p.records = [];
   } else if (!s.leaving) {
     s.leaving = { depot: index, t: DEPOT.leave };
     s.events.push({ t: "leaveStart" });
@@ -656,7 +879,7 @@ export function stepDepots(s: State) {
   }
   const l = s.leaving;
   if (!l) return;
-  if (!up || p.haul.length || p.tools.length || dist2d(DEPOTS[l.depot], p.pos) > PLAYER.interactRange + 1.5 || depotBlocked(s)) {
+  if (!up || p.haul.length || p.tools.length || p.records.length || dist2d(DEPOTS[l.depot], p.pos) > PLAYER.interactRange + 1.5 || depotBlocked(s)) {
     s.leaving = null;
     s.events.push({ t: "leaveCancel" });
     return;
@@ -669,6 +892,27 @@ export function stepDepots(s: State) {
   s.outcome = "extracted";
   s.events.push({ t: "done" });
 }
+
+/**
+ * The camp's yard (`HOME`): back in it after time away, with no robot fighting the player near,
+ * the raid ends alive with what the player carries.
+ */
+export function stepHome(s: State) {
+  if (s.phase !== "play") return;
+  const p = s.player;
+  if (!inCamp(p.pos)) {
+    s.away += TICK;
+    return;
+  }
+  if (!homeReady(s) || depotBlocked(s)) return;
+  s.home = true;
+  s.phase = "done";
+  s.outcome = "extracted";
+  s.events.push({ t: "done" });
+}
+
+/** Whether the player is in the camp's yard after time enough away for it to take them home (fight or not). */
+export const homeReady = (s: State) => s.phase === "play" && s.player.downed <= 0 && s.away >= HOME.away && inCamp(s.player.pos);
 
 /** Marks the ways in the player walks to, on their ground: the base learns them if the raid ends alive. */
 export function stepEntries(s: State) {

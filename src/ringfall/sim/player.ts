@@ -1,4 +1,4 @@
-import { ALLY, ASSIST, DEG, HEALS, type HealKind, MANTLE, NOISE, PLAYER, RARITY, REVEAL, SEMI_HOLD, TACTICAL, TICK, ULT, WEAPONS, WORLD } from "./config";
+import { ALLY, ASSIST, DEG, HEALS, type HealKind, MANTLE, NOISE, PLAYER, RARITY, RELAY, REVEAL, SEMI_HOLD, TACTICAL, TICK, ULT, WEAPONS, WORLD } from "./config";
 import { makeNoise } from "./awareness";
 import { allyChest, allyUp, besidePlayer, placeAlly } from "./ally";
 import { POIS } from "./map";
@@ -211,6 +211,18 @@ function move(s: State, input: Input, prevCrouch: boolean) {
     if (d < r && d > 1e-4) {
       p.pos.x = e.pos.x + (dx / d) * r;
       p.pos.z = e.pos.z + (dz / d) * r;
+    }
+  }
+  // A relay mast standing is a post the body goes round.
+  for (const m of s.relays) {
+    if (m.hp <= 0 || p.pos.y > m.y + RELAY.height || p.pos.y + 1.8 < m.y) continue;
+    const r = PLAYER.radius + RELAY.radius;
+    const dx = p.pos.x - m.x;
+    const dz = p.pos.z - m.z;
+    const d = Math.hypot(dx, dz);
+    if (d < r && d > 1e-4) {
+      p.pos.x = m.x + (dx / d) * r;
+      p.pos.z = m.z + (dz / d) * r;
     }
   }
   collide(p.pos, PLAYER.radius);

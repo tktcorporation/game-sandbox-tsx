@@ -268,6 +268,11 @@ const PROP_PAL = {
   /** The frame rail under a truck and the slats under a pallet: sun-dried grey, not black. */
   chassis: 0x6a6660,
   tyre: 0x3e3f42,
+  /** The camp's khaki tarps, the yellow notice among the white on its board, a bedroll, the land on the map table's map. */
+  canvas: 0xb9a37a,
+  note: 0xeedc8a,
+  mat: 0x6f7e5c,
+  mapLand: 0xd9a868,
 } as const;
 
 /** A wheel for a vehicle prop: a dark disc standing at (x, z) on the ground, its axle across the vehicle, which runs along x when `alongX`. */
@@ -350,6 +355,73 @@ function buildProp(b: Box, i: number): THREE.Object3D {
       g.add(part(L, W, 0.3, 0.92, PROP_PAL.car));
       g.add(part(L * 0.55, W - 0.2, 0.92, h, PROP_PAL.glass, -L * 0.05));
       g.add(part(L * 0.55 - 0.1, W - 0.1, h - 0.06, h, PROP_PAL.car, -L * 0.05));
+      break;
+    }
+    case PROP.tarp: {
+      // A canvas sheet stretched flat over a camp's station, its hem a shade darker; teal or khaki by turns.
+      const cloth = i % 2 ? PROP_PAL.canvas : PAL.teal;
+      g.add(part(L, W, 0, h, cloth));
+      g.add(part(L + 0.04, W + 0.04, -0.12, 0.02, new THREE.Color(cloth).multiplyScalar(0.8).getHex(), 0, false));
+      break;
+    }
+    case PROP.table:
+    case PROP.bench: {
+      // A timber top on four legs. The map table carries the island's map, the bench a vice and its tools.
+      const top = 0.08;
+      g.add(part(L, W, h - top, h, PROP_PAL.wood));
+      for (const t of [-L / 2 + 0.12, L / 2 - 0.12]) for (const v of [-W / 2 + 0.1, W / 2 - 0.1]) g.add(mesh(new THREE.BoxGeometry(0.09, h - top, 0.09), flat(PROP_PAL.chassis), long ? t : v, b.y0 + (h - top) / 2, long ? v : t));
+      if (b.tint === PROP.table) {
+        g.add(part(L * 0.8, W * 0.75, h, h + 0.01, PAL.paint, 0, false));
+        g.add(part(L * 0.3, W * 0.4, h + 0.01, h + 0.02, PROP_PAL.mapLand, -L * 0.12, false));
+        g.add(part(L * 0.22, W * 0.3, h + 0.01, h + 0.02, PROP_PAL.mapLand, L * 0.22, false));
+        g.add(part(0.06, W * 0.6, h + 0.02, h + 0.025, PAL.ring, L * 0.05, false));
+      } else {
+        g.add(part(0.3, 0.22, h, h + 0.22, PAL.gun, -L / 2 + 0.35));
+        g.add(part(0.7, 0.3, h, h + 0.12, PAL.rust, 0.2));
+        g.add(part(0.5, 0.08, h, h + 0.05, PAL.gunLight, L / 2 - 0.5, false));
+        g.add(part(L * 0.9, 0.06, 0.25, 0.32, PROP_PAL.wood, 0, false));
+      }
+      break;
+    }
+    case PROP.board: {
+      // A board of timber with notices pinned to it, white and one pale yellow, a teal band across the top.
+      g.add(part(L, W, 0, h, PROP_PAL.wood));
+      g.add(part(L, W + 0.02, h - 0.14, h - 0.04, PAL.teal, 0, false));
+      const notes: [number, number, number][] = [[-0.95, 0.55, 0.42], [-0.3, 0.75, 0.36], [0.35, 0.5, 0.44], [0.95, 0.7, 0.34], [-0.6, 0.15, 0.3], [0.6, 0.12, 0.3]];
+      notes.forEach(([t, y, sz], n) => {
+        const paper = mesh(new THREE.BoxGeometry(long ? sz : W + 0.03, sz * 1.25, long ? W + 0.03 : sz), flat(n === 2 ? PROP_PAL.note : PAL.paint), long ? t * (L / 3) : 0, b.y0 + y + 0.15, long ? 0 : t * (L / 3), false);
+        g.add(paper);
+      });
+      break;
+    }
+    case PROP.shelf: {
+      // Grey steel shelving, three boards high, with crates and wrapped goods on them.
+      const posts = flat(PAL.steel);
+      for (const t of [-L / 2 + 0.04, L / 2 - 0.04]) for (const v of [-W / 2 + 0.04, W / 2 - 0.04]) g.add(mesh(new THREE.BoxGeometry(0.06, h, 0.06), posts, long ? t : v, mid, long ? v : t, false));
+      [0.15, 0.85, 1.55].forEach((y, k) => {
+        g.add(part(L, W, y, y + 0.04, PAL.steel));
+        for (let n = 0; n < 3; n++) {
+          if ((n + k) % 4 === 3) continue;
+          const t = -L / 2 + (n + 0.5) * (L / 3);
+          const hgt = 0.3 + ((n * 7 + k * 3) % 4) * 0.08;
+          g.add(part(L / 3 - 0.12, W - 0.1, y + 0.04, y + 0.04 + hgt, (n + k) % 2 ? PAL.crate : PROP_PAL.wraps[(n + k) % 3], t));
+        }
+      });
+      break;
+    }
+    case PROP.counter: {
+      // The stall's counter: crates of timber for a front, a plank on top, goods laid out on it.
+      g.add(part(L, W, 0, h - 0.06, PAL.crate));
+      for (let t = -L / 2 + 0.6; t < L / 2 - 0.3; t += 0.9) g.add(part(0.06, W + 0.02, 0.1, h - 0.1, PAL.ochre, t, false));
+      g.add(part(L + 0.1, W + 0.15, h - 0.06, h, PROP_PAL.wood));
+      g.add(part(0.4, 0.3, h, h + 0.18, PAL.teal, -L / 4, false));
+      g.add(part(0.3, 0.3, h, h + 0.12, PROP_PAL.wraps[1], L / 6, false));
+      break;
+    }
+    case PROP.bedroll: {
+      // A sleeping mat rolled out on the sand, its rolled head a little higher.
+      g.add(part(L, W, 0, h * 0.55, PROP_PAL.mat));
+      g.add(part(0.45, W, 0, h, new THREE.Color(PROP_PAL.mat).multiplyScalar(0.85).getHex(), -L / 2 + 0.25));
       break;
     }
     default: {
@@ -1062,6 +1134,11 @@ export function buildLootItem(kind: LootKind, rarity: Rarity, weapon?: WeaponKin
     g.add(mesh(new THREE.BoxGeometry(0.46, 0.05, 0.32), flat(PAL.gun), 0, 0.26, 0, false));
     g.add(mesh(new THREE.BoxGeometry(0.12, 0.1, 0.1), flat(PAL.gun), 0.1, 0.38, 0, false));
     g.add(mesh(new THREE.SphereGeometry(0.03, 6, 4), glow(HEAL_RED), 0.1, 0.45, 0, false));
+  } else if (kind === "record") {
+    // A story record: a battered orange recorder case with a lit read-out on its face.
+    g.add(mesh(new THREE.BoxGeometry(0.36, 0.26, 0.24), flat(0xd8742c), 0, 0.22, 0, false));
+    g.add(mesh(new THREE.BoxGeometry(0.38, 0.05, 0.26), flat(PAL.gun), 0, 0.12, 0, false));
+    g.add(mesh(new THREE.BoxGeometry(0.16, 0.08, 0.02), glow(color), 0, 0.26, 0.125, false));
   } else if (kind === "flare") {
     // A road flare: a red tube with a cap.
     const tube = mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.42, 8), flat(HEAL_RED), 0, 0.3, 0, false);
@@ -1130,6 +1207,48 @@ export function buildDepot(): { root: THREE.Group; lamp: THREE.Mesh; slot: THREE
 }
 
 /**
+ * A relay mast of the robots' network, `height` metres to its eye: a three-legged lattice in the
+ * robots' armour blue on a concrete footing, braced every few metres, tapering to a housing with
+ * the red eye on top and a halo round it, so a standing mast reads from across the open ground.
+ * Its post (the legs, within `radius`) is what a shot hits; the eye is its weak point.
+ */
+export function buildRelayMast(height: number, radius: number, eyeR: number): { root: THREE.Group; eye: THREE.Mesh; halo: THREE.Sprite } {
+  const root = new THREE.Group();
+  root.add(mesh(new THREE.CylinderGeometry(radius + 0.7, radius + 0.9, 0.4, 6), flat(PAL.concreteDark), 0, 0.2, 0));
+  const legMat = flat(PAL.armor);
+  const braceMat = flat(PAL.armorLight);
+  const at = (k: number, y: number) => {
+    // A leg's distance from the axis narrows from the footing to the housing.
+    const r = radius * (1 - (y / height) * 0.65);
+    const a = (k / 3) * Math.PI * 2;
+    return new THREE.Vector3(Math.cos(a) * r, y, Math.sin(a) * r);
+  };
+  const strut = (a: THREE.Vector3, b: THREE.Vector3, w: number, mat: THREE.Material) => {
+    const d = b.clone().sub(a);
+    const m = mesh(new THREE.CylinderGeometry(w, w, d.length(), 5), mat);
+    m.position.copy(a.clone().add(b).multiplyScalar(0.5));
+    m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize());
+    return m;
+  };
+  const top = height - eyeR * 0.9;
+  for (let k = 0; k < 3; k++) root.add(strut(at(k, 0.3), at(k, top), 0.09, legMat));
+  for (let y = 1.6; y < top - 0.5; y += 2.2)
+    for (let k = 0; k < 3; k++) {
+      root.add(strut(at(k, y), at(k + 1, y), 0.045, braceMat));
+      root.add(strut(at(k, y), at(k + 1, y + 2.2), 0.035, braceMat));
+    }
+  root.add(mesh(new THREE.CylinderGeometry(radius * 0.45, radius * 0.6, 0.9, 6), flat(PAL.armor), 0, top, 0));
+  root.add(mesh(new THREE.CylinderGeometry(radius * 0.8, radius * 0.8, 0.12, 8), flat(PAL.gun), 0, top - 0.5, 0));
+  const eye = new THREE.Mesh(new THREE.SphereGeometry(eyeR, 14, 10), glow(PAL.eye));
+  eye.position.set(0, height + eyeR * 0.6, 0);
+  root.add(eye);
+  const halo = haloSprite(PAL.eye, eyeR * 7, 0.65);
+  halo.position.copy(eye.position);
+  root.add(halo);
+  return { root, eye, halo };
+}
+
+/**
  * The mark of a way in on foot: a cold campfire ring with a signboard behind it, the camp the
  * player and the teammate set out from. It is only scenery: nothing in it is solid, and it does
  * not glow, so it is found by walking the open ground, not seen from afar. The board faces +z.
@@ -1187,4 +1306,50 @@ export function buildDropship(): THREE.Group {
     g.add(flame);
   }
   return g;
+}
+
+/**
+ * A piece of the ring come down (a debris fall's day): a few panels of the tether's pale composite
+ * half buried and tilted in a scorched scar, their seams banded dark, their broken ends burnt, with
+ * glowing cracks where it is still hot. Scenery only: nothing in it is solid (the sim knows only
+ * the crate beside it), so the wreck never changes how the ground is walked. `vents` are where the
+ * view lets smoke rise from, above the root.
+ */
+export function buildRingDebris(): { root: THREE.Group; vents: THREE.Vector3[] } {
+  const root = new THREE.Group();
+  // The scorched scar, in patches the view lays each on the ground under it (named "scar").
+  for (const [x, z, r] of [[0, 0, 5], [-4, 4, 4], [4, 3, 4], [-1, -5, 3.5], [5, -2, 3], [-6, -2, 3]] as const) {
+    const scar = mesh(new THREE.CircleGeometry(r, 9), flat(PAL.scorch), x, 0.06, z, false);
+    scar.rotation.x = -Math.PI / 2;
+    scar.receiveShadow = true;
+    scar.name = "scar";
+    root.add(scar);
+  }
+  const skin = flat(PAL.tether);
+  const rib = flat(PAL.tetherDark);
+  const burnt = flat(PAL.scorch);
+  const hot = glow(0xff7a2a);
+  // [x, z, width, height, length, yaw, tilt]: one long panel buried at an angle, two shorter thrown beside it.
+  const panels: [number, number, number, number, number, number, number][] = [
+    [-1.5, -1, 4.6, 2.4, 13, 0.5, 0.42],
+    [4.6, 3, 3.2, 1.7, 6.4, -0.7, -0.28],
+    [-6, 4.4, 2.6, 1.4, 4.6, 1.4, 0.2],
+  ];
+  for (const [x, z, w, h, l, yaw, tilt] of panels) {
+    const g = new THREE.Group();
+    g.position.set(x, h * 0.45, z);
+    g.rotation.set(tilt, yaw, tilt * 0.6);
+    g.add(mesh(new THREE.BoxGeometry(w, h, l), skin));
+    for (let k = -1; k <= 1; k += 2) g.add(mesh(new THREE.BoxGeometry(w + 0.06, h + 0.06, 0.25), rib, 0, 0, (k * l) / 4));
+    // The broken end, burnt, with a hot seam across it.
+    g.add(mesh(new THREE.BoxGeometry(w * 1.02, h * 1.02, 0.4), burnt, 0, 0, l / 2));
+    g.add(mesh(new THREE.BoxGeometry(w * 0.7, 0.08, 0.06), hot, 0, h * 0.2, l / 2 + 0.21, false));
+    root.add(g);
+  }
+  // Clods thrown up round the scar.
+  for (let i = 0; i < 7; i++) {
+    const a = (i / 7) * Math.PI * 2 + 0.3;
+    root.add(mesh(new THREE.DodecahedronGeometry(0.45 + (i % 3) * 0.2, 0), burnt, Math.cos(a) * 10, 0.2, Math.sin(a) * 10));
+  }
+  return { root, vents: [new THREE.Vector3(1.2, 2.6, 5.5), new THREE.Vector3(5.8, 1.4, 5.8), new THREE.Vector3(-7.2, 1, 5.6), new THREE.Vector3(-2.5, 1.5, -4)] };
 }

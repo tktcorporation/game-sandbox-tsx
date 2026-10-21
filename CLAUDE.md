@@ -28,8 +28,8 @@ and are still to be rebuilt the same way.
 `REGIONS` in `map.ts` gives each region its POIs, ways off and ways in on foot (`ENTRIES`: a named
 point out on its open ground, facing in, out of every robot's sight for the first seconds);
 `newRun(seed, kit, region, { entry })` starts on the ground there with the teammate beside the
-player (the reservoir and its first way in by default), and the base picks the region and the way
-in. There is no drop from the air. The base offers only the ways in the player knows
+player (the reservoir and its first way in by default), and the camp's map table picks the region and the way
+in. There is no drop from the air. The map table offers only the ways in the player knows
 (`Profile.entries`): a new profile knows the reservoir's first (`FIRST_ENTRY`), and a raid marks
 each way in the player walks to, within `ENTRY.radius` on its ground, in `State.found` (the start's
 own included; `stepEntries()` in `world.ts`, an `entryFound` event for the HUD's toast), which
@@ -53,22 +53,60 @@ shows no markers or distances, and lists only the ways off of the region the pla
 (`regionHere()`); the world map (`view/map.ts`, M) is where the POIs and exits of both regions are; it opens framed
 on the region the player is in (`Region.bounds`) and N switches it to the whole world.
 A wipe ends the raid and loses the haul; `results.ts` scores the haul plus cleared POIs.
-Between raids the base (`view/hub.ts`) keeps a stash, a trader and the loadout for the next raid:
+Between raids the player walks a camp in the world (`CAMP` in `map.ts`, a fenced yard on the south
+beach behind the reservoir's first way in): `sim/camp.ts` holds its state (`newCamp()`, a raid's
+emptied of robots, its clock standing) and its step (`stepCamp()`: walking only, weapons lowered).
+Its stations (map table, quest board, shelves, stall, workshop) open the panels of `view/hub.ts` by
+the use key; walking out of the gate starts a raid from `FIRST_ENTRY` where the player stands
+(`walkOut()`), and the truck by the gate starts one at the map table's choice after a fade. No robot
+walks into the yard (`inCamp()` in `enemies.ts`); during a raid they see and shoot into it as
+anywhere. Walking back into it during a raid, after `HOME.away` seconds outside and with no robot
+fighting the player within `DEPOT.safe`, ends the raid alive with the bag (`stepHome()` in
+`world.ts`, `State.home`). The hunters' field (`hunt.ts`) leaves the camp's boxes out and nothing
+beams in by the yard, so the gate's raids play as without it.
+`window.ringfallCamp` stands the player at a station or the gate for the shots gate. The base
+keeps a stash, a trader and the loadout for the next raid:
 `src/ringfall/meta/profile.ts` is its pure logic (`takeKit()` out of the stash, `settle()` after a
 raid, the pouch that survives a wipe), `meta/storage.ts` saves it in localStorage, and `META` in
 `config.ts` holds its numbers. `newRun(seed, kit, region)` starts a raid from a kit; the default is
 the lent free kit, which is what the sim gate plays; `Profile.region` and `Profile.entry` remember
 the last start.
-The trader's quests are data in `meta/quests.ts` (`QUESTS`, credited from a raid's `stats` by
-`creditRaid()` inside `settle()`). Each POI has one locked bin (`vault: true` in its `bins`), opened
+The trader's quests are data in `meta/quests.ts` (`QUESTS`: four intro quests, then the escape
+craft's line; credited from a raid's `stats` by `creditRaid()` inside `settle()`). The quest board
+also holds the day's contracts (`meta/contracts.ts`): `makeBoard()` builds 3 or 4 from
+`Profile.seed`, `Profile.day`, the island and the hideout (free a POI, fetch a valuable from a
+POI's bins, destroy a drone pack or a region's hunting party, and while the network is strong a
+relay mast; on a retake's day, defend the POI first; numbers in `CONTRACT`), kept in
+`Profile.board` for the day; the player takes one (`Profile.taken`) or none, and `settle()` pays it
+when `contractDone()` holds (fetch counts only valuables tagged with their bin's POI,
+`Player.haulAt` / `State.sentAt`; intercept and defend read `Stats.wiped`, by `squadKey()`; destroy reads `Stats.relays`). Five story
+contracts (`meta/story.ts`) follow one at a time: the one under way lays its record at its
+`RECORD_SPOTS` place in `map.ts` (`Start.record`), a bag slot that comes home into
+`Profile.records`. The bots take no contract and carry no record. Each POI has one locked bin (`vault: true` in its `bins`), opened
 only with that POI's key; keys drop from the bins of the POI named by its `keyFrom` (`VAULT`).
 POIs have a stable `id` (`PoiId` in `map.ts`); saves, quests, `keyFrom` and `EXTRA_BINS` refer to a
 POI by it, never by its place in `POIS` (the run's state may index `POIS` internally). The profile
-is versioned (`Profile.v`, which is 12), and `parseProfile()` moves older saves forward (a save from
+is versioned (`Profile.v`, which is 16), and `parseProfile()` moves older saves forward (a save from
 before the ways in starts at its region's first way in; a save from before ways in were learned
 knows them all; a save from before v12 drops its explored map, since `cellOf()` follows `WORLD`,
-which then grew wider) and moves its
+which then grew wider; a save from before v13 starts on the day after its raids with every POI
+held; a save from before v14 keeps only the quests that still exist; a save from before v15 starts
+at network `NETWORK.start`; a save from before v16 has a quiet day and tomorrow's event drawn) and moves its
 start to one it may choose (`allowedStart()`).
+Each island day has at most one event (`EVENTS` in `config.ts`, `IslandEvent` in `sim/island.ts`):
+`advanceDay()` turns yesterday's forecast into today's and draws tomorrow's from `Profile.seed` and
+the day (`eventFor()` in `meta/island.ts`), kept in `Profile.events` (today, tomorrow) and passed to
+the raid as `Start.event`. A debris fall puts a crate (`Bin.debris`, `DEBRIS`) and its guards at one
+of `DEBRIS_SPOTS` (`map.ts`; the wreck is drawn by the view only); a retake beams `RETAKE`'s squad
+in to walk to a freed POI's way in, and left alive it thins that POI overnight (`RaidDay.retake`,
+`DayChange.overrun`); a storm scales the robots' sight (`sightScale()`, `STORM`); a crews' visit adds
+a salvage crew. Salvage crews (`CREW`, `NETWORK.levels[].crews`: one from network 3, two from 4, none
+below 3 but on a crews' visit; `stepCrews()` in `world.ts`) beam into the starting region, walk to
+the unopened ground-level POI bins nearest by the walk, take each one's
+valuable into `SquadState.bag` (dropped with its bins' POIs when the last member dies, in
+`combat.ts`) and leave by the region's nearest way off; each that gets out (`Stats.crewsOut`)
+raises the network a step overnight. Crews, the retake squad and the debris guards draw on their
+own stream (`crewRand()`), so the raid's other random numbers are drawn as without them.
 Each POI has a depot on its road (`DEPOTS` in `map.ts`, run by `stepDepots()` in `world.ts`): walking
 up switches it on for good, its use key sends the bag home (it survives a wipe) or, with the bag empty,
 leaves the raid there; neither works while a robot fighting the player is within `DEPOT.safe`. The profile keeps the depots on (`Profile.depots`), from
@@ -92,6 +130,31 @@ the collision grid (`setRouteBoxes()` in `geom.ts`) and dropping the bot's and t
 changes. With every route closed the terrain, the map's boxes and the walkers' grids are the ones
 before routes existed, and the obstacles stand in cliffs and on a deck where path finding does not
 go (its grids and its sight checks, `los(a, b, true)`, leave them out).
+The island has a state between raids (`docs/ringfall/living-island.md`): one settled raid is one
+day (`Profile.day`), and each POI is held, thin or freed (`Profile.poiState`, with the last day it
+was visited). `meta/island.ts` holds the pure rules: `advanceDay()` (called by `settle()`) frees a
+POI cleared in a raid the player got off alive and switches its depot on, and turns a freed POI
+unvisited for `ISLAND.thinAfter` days thin; `islandNotes()` gives 明日の島 for the map table and
+the results. The titan's pad is never freed. A raid reads the standings through
+`newRun(seed, kit, region, { island })` (`State.hold`): `garrison()` in `sim/island.ts` stands
+every squad of a held POI, the vault guard and half the squads of a thin one (picked from the
+seed), and none of a freed one, which starts cleared, its vault open without the key (`canOpen()`
+in `world.ts`) and its depot on. With no `island` every POI is held, which the sim gate plays.
+The robots' network (網の段階, `Profile.network`, 0 to 5, with the pressure toward its next step
+carried in `Profile.pressure`) is moved by `advanceDay()` too: down a step for each POI freed from
+held (the relay two, a thin one a step less), for the titan's fall (its pad cleared) and for each
+relay mast destroyed (`Stats.relays`), then up a step for each `NETWORK.riseEvery` of pressure the
+day adds (`netGain()`, more the more POIs held); a thin POI thin for `NETWORK.retakeAfter` days goes
+back to held while the network is at `NETWORK.retakeAt` or more (`Settlement.network`,
+`.retaken`). A raid is played at a level through `newRun(seed, kit, region, { network })`
+(`State.network`, `netLevel()`): `NETWORK.levels` sets the reinforcement and raider times, the
+hunting parties per region, the drone packs flying (`activePacks()`, from the seed) and the share of
+plain grunts and heavies with a tier-1 plate (`netPlated()`, a hash of the seed and the robot's id).
+From `NETWORK.relayAt` the relay masts (`RELAYS` in `map.ts`, `RELAY` in `config.ts`,
+`State.relays`) stand on open ground with two guards each: a post and an eye that the player's
+shots hit (`rayRelay()` in `combat.ts`), never built into the map, so the world is the same at
+every level. With no `network` a raid is played at `NETWORK.play` (2), whose numbers are the
+island's own, so the sim gate's tables do not change.
 The hideout is the long-term goal: modules built level by level from specific valuables and
 credits taken from the stash (`build()` in `profile.ts`; levels, costs and prerequisites in
 `HIDEOUT`, effects in `HIDEOUT_EFFECT`, both in `config.ts`; `meta/hideout.ts` holds the pure
@@ -100,14 +163,16 @@ up to `shopRarity()`, `stashCap()` and `pouchSlots()` grow, and the radio report
 boosted POI. Every raid leans one POI's bins of its region to a rare kind (`State.boost`, from
 `boostFor(seed, region)` in `state.ts`, without drawing on the raid's random numbers);
 `Profile.seed` is the next raid's seed, fixed at the base so the report comes true. The escape
-craft is the last module: its last stage records `Profile.escaped` and the hub shows the ending
+craft is the last module: its last stage records `Profile.escaped` and the workshop's panel shows the ending
 once; play goes on. Build quests (`{ t: "build" }`) finish at the base (`claimBuilt()`).
 `sources()` derives where each valuable is found from the loot data (`loot.valuable`, `TOP_BINS`,
-`VAULT`, `ROBOT_DROPS`), for the hub's hints.
+`VAULT`, `ROBOT_DROPS`), for the workshop's hints.
 
 ```bash
 npm run sim:ringfall     # gate 2: bots of three skills play whole raids headless, in each region,
-                         # then the hideout's pacing replays the meta with those raids; raids run
+                         # then the hideout's pacing replays the meta with those raids, then each
+                         # skill plays 30 days on one profile with the network carried
+                         # (scripts/ringfall-campaign.ts, also runnable alone); raids run
                          # in parallel, one process per core, the reservoir's (the longest) first
                          # (RINGFALL_SIM_JOBS=n to set, 1 = in turn)
 npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir raid to the end, a harbor raid
@@ -366,7 +431,9 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   undrawn while it only waits on the state, and draws before each screenshot and every few steps.
 - `docs/ringfall/balance.md` holds the target curve and the latest `npm run sim:ringfall -- 30` output
   (a table per region, and the hideout's pacing table from `scripts/ringfall-pacing.ts`: each skill's
-  recorded raids settled in sequence with a greedy spender, the raid at which each level is built).
+  recorded raids settled in sequence with a greedy spender, the raid at which each level is built,
+  and the island campaign from `scripts/ringfall-campaign.ts`: the network and the POIs freed at
+  days 5, 10, 20 and 30 of a month on one profile per skill).
   Change a number in `config.ts` or `map.ts` only together with a re-run and an update to that file.
   While tuning, `npm run sim:ringfall -- 10` (10 raids per skill and region, about a third of the
   time) is enough to see which way a change moves the tables; the record in that file is 30.

@@ -1,8 +1,8 @@
-import { ALLY, ASSIST, DEG, DODGE, ELITE, ENEMIES, FLANK, KICK_PATTERN, KICK_RESET, NOISE, PLATE, PLAYER, RARITY, RETURN, ROBOT_DROPS, STAGGER, TICK, ULT, VALUABLES, WEAPONS, type Flank, type Rarity, type ValuableKind, type WeaponSpec } from "./config";
+import { ALLY, ASSIST, DEG, DODGE, ELITE, ENEMIES, FLANK, KICK_PATTERN, KICK_RESET, NOISE, PLATE, PLAYER, RARITY, RELAY, RETURN, ROBOT_DROPS, STAGGER, TICK, ULT, VALUABLES, WEAPONS, type Flank, type Rarity, type ValuableKind, type WeaponSpec } from "./config";
 import { engageSquad, learnSpot, located, makeNoise, shotFromAfar } from "./awareness";
 import { POIS } from "./map";
 import { los, lookAngles, norm, rayWorld, raySphere, wrapAngle } from "./geom";
-import { bodyY, forward, rand, weakY, type Enemy, type State, type Vec3, type Weapon } from "./state";
+import { bodyY, forward, rand, squadKey, weakY, type Enemy, type RelayMast, type SquadState, type State, type Vec3, type Weapon } from "./state";
 
 /*
  * Everything about the player's shots landing on robots: hit boxes, aim assist,
@@ -80,6 +80,48 @@ export function applyPull(s: State, firing: boolean, touch = false) {
   p.pitch += (want.pitch - p.pitch) * k;
 }
 
+/** A relay mast's eye, at the top of its post. */
+export const mastEye = (m: RelayMast): Vec3 => ({ x: m.x, y: m.y + RELAY.height + RELAY.eyeR * 0.6, z: m.z });
+
+/**
+ * Where a ray from `eye` along `dir` first meets a standing relay mast nearer than `limit`:
+ * its post (a vertical cylinder up to `RELAY.top` under its eye) or its eye (a sphere on top), or null.
+ */
+export function rayRelay(s: State, eye: Vec3, dir: Vec3, limit: number): { m: RelayMast; t: number; eye: boolean } | null {
+  let best: { m: RelayMast; t: number; eye: boolean } | null = null;
+  for (const m of s.relays) {
+    if (m.hp <= 0) continue;
+    const te = raySphere(eye, dir, mastEye(m), RELAY.eyeR);
+    if (te < limit && (!best || te < best.t)) best = { m, t: te, eye: true };
+    // The post: the ray's ground track against the circle, then the height where it meets it.
+    const ox = eye.x - m.x;
+    const oz = eye.z - m.z;
+    const a = dir.x * dir.x + dir.z * dir.z;
+    if (a < 1e-9) continue;
+    const b = ox * dir.x + oz * dir.z;
+    const c = ox * ox + oz * oz - RELAY.radius * RELAY.radius;
+    const disc = b * b - a * c;
+    if (disc < 0) continue;
+    const t = (-b - Math.sqrt(disc)) / a;
+    const y = eye.y + dir.y * t;
+    // The lattice narrows to the housing under the eye: a shot that high goes past it or meets the eye.
+    if (t > 0 && t < limit && y >= m.y && y <= m.y + RELAY.height - RELAY.top && (!best || t < best.t)) best = { m, t, eye: false };
+  }
+  return best;
+}
+
+/** A weapon's hit on a relay mast: it loses health, and falls at none (counted for the night's network). */
+function damageRelay(s: State, m: RelayMast, dmg: number, eye: boolean, at: Vec3) {
+  m.hp = Math.max(0, m.hp - dmg);
+  // A hit on a mast counts toward accuracy like one on a robot; its eye is its weak point.
+  s.stats.hits++;
+  if (eye) s.stats.crits++;
+  s.events.push({ t: "relayHit", id: m.id, pos: at, dmg: Math.round(dmg), eye });
+  if (m.hp > 0) return;
+  s.stats.relays.push(m.id);
+  s.events.push({ t: "relayDown", id: m.id, pos: mastEye(m) });
+}
+
 function falloff(spec: WeaponSpec, d: number): number {
   if (d <= spec.falloffStart) return 1;
   if (d >= spec.falloffEnd) return spec.falloffMin;
@@ -114,8 +156,17 @@ export function fireRay(s: State, w: Weapon, dir: Vec3, touch = false) {
     if (!los(eye, c)) continue;
     assisted = { e, t: d - k.radius * 0.5, angle: rank };
   }
-  const hit = raw ?? (assisted ? { e: assisted.e, t: assisted.t, crit: false } : null);
   const muzzle = { x: eye.x, y: eye.y - 0.15, z: eye.z };
+  // A relay mast in front of the robot the shot goes to takes it (no aim assist leads onto one):
+  // the robot on the line, else the one aim assist chose.
+  const mast = s.relays.length ? rayRelay(s, eye, dir, Math.min(wallT, raw?.t ?? assisted?.t ?? Infinity)) : null;
+  if (mast) {
+    const at = { x: eye.x + dir.x * mast.t, y: eye.y + dir.y * mast.t, z: eye.z + dir.z * mast.t };
+    s.events.push({ t: "tracer", from: muzzle, to: at, hit: true });
+    damageRelay(s, mast.m, spec.dmg * RARITY.dmg[w.rarity] * falloff(spec, mast.t) * (mast.eye ? RELAY.eyeMult : 1), mast.eye, at);
+    return;
+  }
+  const hit = raw ?? (assisted ? { e: assisted.e, t: assisted.t, crit: false } : null);
   if (!hit) {
     const end = { x: eye.x + dir.x * wallT, y: eye.y + dir.y * wallT, z: eye.z + dir.z * wallT };
     s.events.push({ t: "tracer", from: muzzle, to: end, hit: false });
@@ -264,10 +315,30 @@ function react(s: State, e: Enemy, weight: number, broke: boolean, quiet: boolea
   }
 }
 
+/**
+ * A salvage crew's last member is down: its bag falls at its feet, each valuable as from the bin
+ * it was taken out of, so a fetch contract counts it. Thrown round in a ring, drawing nothing.
+ */
+function dropBag(s: State, sq: SquadState, at: Vec3) {
+  s.stats.crewsDown++;
+  const bag = sq.bag ?? [];
+  bag.forEach((v, n) => {
+    const a = (n / Math.max(1, bag.length)) * Math.PI * 2;
+    s.loot.push({ id: s.nextId++, kind: "valuable", valuable: v, rarity: VALUABLES[v].rarity, from: sq.bagAt?.[n] ?? -1, pos: { ...at }, vel: { x: Math.cos(a) * 1.8, y: 4.5, z: Math.sin(a) * 1.8 }, age: 0 });
+  });
+  sq.bag = [];
+  sq.bagAt = [];
+}
+
 const SHARDS = { drone: 1, grunt: 1, charger: 1, heavy: 3, titan: 0 } as const;
 
 export function kill(s: State, e: Enemy, crit: boolean, by: "player" | "ally" = "player") {
   s.enemies = s.enemies.filter((o) => o !== e);
+  const sq = s.squads[e.squad];
+  if (sq && !s.enemies.some((o) => o.squad === e.squad)) {
+    s.stats.wiped.push(squadKey(sq));
+    if (sq.crew) dropBag(s, sq, bodyCenter(e));
+  }
   s.stats.kills++;
   if (by === "ally") s.stats.allyKills++;
   else s.stats.killsBy[e.kind]++;

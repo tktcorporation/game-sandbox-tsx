@@ -173,6 +173,41 @@ kbd {
   display: none;
 }
 
+/* The contract taken and the story record: gold like the loot, turning to the sky's blue once met. */
+#obj-contract,
+#obj-story {
+  grid-column: 1 / -1;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--r3);
+}
+#obj-contract[hidden],
+#obj-story[hidden] {
+  display: none;
+}
+#obj-contract.met,
+#obj-story.met {
+  color: var(--sky);
+}
+
+/* The day's island event, under the place: the haze's grey, its icon in its own colour. */
+#obj-event {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  font-weight: 700;
+  color: #d9d2c4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#obj-event[hidden] {
+  display: none;
+}
+#obj-event .ev-icon {
+  vertical-align: -3px;
+  margin-right: 4px;
+}
+
 #obj-stealth {
   grid-column: 1 / -1;
   font-size: 13px;
@@ -1033,19 +1068,58 @@ body.touch .mate-bars {
 }
 
 /* --- the base between raids */
+/* --- a camp station's panel, over the camp it stands in */
 #hub {
-  place-items: stretch;
-  padding: max(16px, env(safe-area-inset-top)) max(16px, var(--edge-r, 0px)) max(16px, var(--edge-b, 0px)) max(16px, env(safe-area-inset-left));
-  background: rgba(20, 26, 51, 0.88);
+  place-items: center;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  background: rgba(20, 26, 51, 0.5);
 }
 .hub-inner {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 12px;
   width: min(1080px, 100%);
-  height: 100%;
-  margin: 0 auto;
+  height: min(720px, 100%);
   min-height: 0;
+  padding: 16px 18px;
+  background: rgba(20, 26, 51, 0.9);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.12), 6px 6px 0 rgba(0, 0, 0, 0.25);
+}
+/* A station with one list of its own (the board, the workshop): a narrower panel. The map table is wider, for the island's map beside its notes. */
+#hub[data-station="map"] .hub-inner {
+  width: min(960px, 100%);
+}
+#hub[data-station="quests"] .hub-inner,
+#hub[data-station="workshop"] .hub-inner {
+  width: min(720px, 100%);
+}
+/* The map table's and the board's few lines fit any screen but a phone's: there the panel keeps the screen's height and its list scrolls. */
+@media (min-height: 501px) {
+  #hub[data-station="map"] .hub-inner,
+  #hub[data-station="quests"] .hub-inner {
+    height: auto;
+    max-height: 100%;
+  }
+}
+.hub-cols.one {
+  grid-template-columns: 1fr;
+}
+#hub .hub-head #hub-close {
+  font-size: 15px;
+  padding: 7px 14px;
+  box-shadow: inset 0 0 0 2px var(--white);
+}
+#hub-close kbd {
+  margin: 0 0 0 8px;
+  background: none;
+  font-size: 12px;
+  color: var(--muted);
+}
+.hub-col[hidden] {
+  display: none;
+}
+body.touch #hub-close kbd {
+  display: none;
 }
 .hub-head {
   display: flex;
@@ -1055,23 +1129,32 @@ body.touch .mate-bars {
 }
 .hub-head h2 {
   margin: 0;
-  font-size: 32px;
+  font-size: 28px;
 }
-.hub-tabs {
-  display: flex;
-  gap: 6px;
-}
-#hub .hub-tabs button {
-  font-size: 16px;
-  padding: 8px 18px;
-  background: transparent;
-  color: var(--white);
-  box-shadow: inset 0 0 0 2px var(--muted);
-}
-#hub .hub-tabs button.on {
-  background: var(--white);
-  color: var(--ink);
-  box-shadow: none;
+@media (max-height: 500px) {
+  #hub {
+    padding: max(8px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+  }
+  .hub-inner {
+    height: 100%;
+    gap: 8px;
+    padding: 10px 12px;
+  }
+  .hub-head {
+    gap: 12px;
+  }
+  .hub-cash small:first-child {
+    display: none;
+  }
+  .hub-cash b {
+    font-size: 24px;
+  }
+  .hub-cash small {
+    font-size: 12px;
+  }
+  .hub-foot-note {
+    font-size: 12px;
+  }
 }
 .hub-cash {
   margin-left: auto;
@@ -1164,9 +1247,13 @@ body.touch .mate-bars {
 .hub-list .slot {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 12px;
+  min-width: 0;
   padding: 8px 12px;
   background: var(--plate);
+  border-right: 0;
+  opacity: 1;
   font-weight: 800;
 }
 .hub-list .slot > small:first-child {
@@ -1199,17 +1286,6 @@ body.touch .mate-bars {
   margin: 6px 0 0;
   font-size: 13px;
   color: var(--muted);
-}
-#hub .hub-tabs i {
-  font-style: normal;
-  font-family: var(--num);
-  margin-left: 6px;
-  padding: 0 6px;
-  background: var(--ring);
-  color: var(--white);
-}
-#hub .hub-tabs i:empty {
-  display: none;
 }
 .hub-list .quest {
   display: flex;
@@ -1283,6 +1359,175 @@ body.touch .mate-bars {
 .hub-list .slot.depot.over > small:last-child {
   color: var(--ring);
   font-weight: 800;
+}
+/* The map table's island: the map coloured by who holds each POI, the day and 明日の島 beside it. */
+.hub-island {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 300px);
+  gap: 12px;
+  margin-bottom: 8px;
+}
+#hub-island-map {
+  width: 100%;
+  height: min(46vh, 400px);
+  background: #1c1f2a;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.12);
+}
+.hub-island-side {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.hub-island-side > small {
+  color: var(--muted);
+  font-size: 13px;
+}
+.hub-day {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.hub-day small {
+  color: var(--muted);
+  font-size: 13px;
+}
+.hub-day b {
+  font-family: var(--num);
+  font-size: 34px;
+  line-height: 1;
+}
+/* The network's meter on the map table: a cell per level, lit up to the current one; red from 3. */
+.hub-net {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 2px 10px;
+  padding: 6px 10px;
+  background: var(--plate);
+}
+.hub-net small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 13px;
+}
+.hub-net b {
+  font-family: var(--num);
+  font-size: 16px;
+  white-space: nowrap;
+}
+.hub-net p {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 13px;
+}
+.net-meter {
+  display: flex;
+  gap: 3px;
+  grid-column: 1;
+  grid-row: 2;
+}
+.hub-net b {
+  grid-column: 2;
+  grid-row: 2;
+}
+.net-meter i {
+  width: 16px;
+  height: 12px;
+  background: rgba(255, 255, 255, 0.12);
+}
+.net-meter i.on {
+  background: #d4892c;
+}
+.hub-net.lv3 .net-meter i.on,
+.hub-net.lv4 .net-meter i.on,
+.hub-net.lv5 .net-meter i.on {
+  background: #b8412f;
+}
+.net-meter i.now {
+  box-shadow: 0 0 0 2px #fff3e0;
+}
+.tomorrow li.rise,
+.tomorrow li.top,
+.tomorrow li.retake,
+.tomorrow li.retaken {
+  box-shadow: inset 3px 0 0 #b8412f;
+}
+.tomorrow li.retaken {
+  font-weight: 800;
+}
+.hub-island ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.hold-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 13px;
+  font-weight: 800;
+}
+.hold-key li {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.hold-key i {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1.5px rgba(20, 24, 40, 0.9);
+}
+.hold-key i.titan {
+  border-radius: 2px;
+}
+.hold-key b {
+  font-family: var(--num);
+  color: var(--muted);
+}
+.tomorrow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 14px;
+}
+.tomorrow li {
+  padding: 6px 10px;
+  background: var(--plate);
+  box-shadow: inset 3px 0 0 #3f7cae;
+}
+.tomorrow li.thin,
+.tomorrow li.thinned,
+.tomorrow li.soon {
+  box-shadow: inset 3px 0 0 #d4892c;
+}
+.tomorrow li.soon,
+.tomorrow li.thinned {
+  font-weight: 800;
+}
+@media (max-height: 500px) {
+  .hub-island {
+    grid-template-columns: minmax(0, 1fr) minmax(180px, 240px);
+    gap: 8px;
+  }
+  #hub-island-map {
+    height: 54vh;
+  }
+  .hub-day b {
+    font-size: 26px;
+  }
+  .tomorrow {
+    font-size: 12px;
+  }
+  .tomorrow li {
+    padding: 4px 8px;
+  }
+}
+@media (orientation: portrait) and (max-width: 600px) {
+  .hub-island {
+    grid-template-columns: 1fr;
+  }
 }
 /* What a pick costs of a depot start's allowance. */
 #hub .item b.cost {
@@ -1465,20 +1710,47 @@ body.touch .mate-bars {
 }
 .hub-foot {
   display: flex;
-  gap: 12px;
+  align-items: center;
+  gap: 14px;
   flex-wrap: wrap;
 }
-/* Where the raid starts: the two regions, the chosen region's ways in, then the depots on, and the choice's line, on a row of its own above the buttons. */
-.hub-region {
+.hub-foot[hidden] {
+  display: none;
+}
+#hub .hub-foot button.toggle {
+  font-size: 16px;
+  padding: 9px 18px;
+}
+#hub .hub-foot button.toggle b {
+  margin-left: 8px;
+  font-family: var(--num);
+}
+#hub .hub-foot button.toggle.on {
+  background: var(--hot);
+  color: var(--ink);
+  box-shadow: none;
+}
+.hub-foot-note {
+  font-size: 13px;
+  color: var(--muted);
+}
+/* The map table's starts: the regions, the chosen region's ways in, the depots on, each a row of buttons under its label. */
+.hub-list .hub-region {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px 10px;
+  background: var(--plate);
+}
+.hub-region > small {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 4px;
+}
+.hub-region .row {
+  display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  flex-basis: 100%;
-}
-.hub-region small {
-  color: var(--muted);
-  margin-right: 4px;
 }
 #hub .hub-region button {
   font-size: 15px;
@@ -1499,20 +1771,9 @@ body.touch .mate-bars {
   color: var(--ink);
   box-shadow: none;
 }
-/* The chosen region's ways in, a step smaller than the regions: a choice within the region's. */
-.hub-region .entries {
-  display: flex;
-  gap: 6px;
-  flex: none;
-}
 #hub .hub-region button.entry {
-  font-size: 13px;
-  padding: 6px 11px;
-}
-.hub-region span {
-  margin-left: 8px;
-  font-size: 13px;
-  color: var(--muted);
+  font-size: 14px;
+  padding: 6px 12px;
 }
 /* A region with no way in known and no depot on: shown, so the player knows it is there, but not chosen. */
 #hub .hub-region button.locked {
@@ -1521,53 +1782,24 @@ body.touch .mate-bars {
   box-shadow: inset 0 0 0 2px var(--muted);
   border: 0;
 }
-/* How to open a locked region: a line of its own over the start choice. */
+/* How to open a locked region, under the starts. */
 .hub-lock {
-  flex-basis: 100%;
-  /* Close to the start choice it explains: the footer's row gap would push the lists up. */
-  margin: 0 0 -8px;
+  margin: 2px 0 0;
   font-size: 13px;
   color: var(--muted);
 }
-/* A phone on its side: the choice shares the buttons' row, without its line, so the lists keep their room. */
-@media (max-height: 500px) {
-  /* With depots on there are more starts than fit: the row scrolls sideways instead of wrapping. */
-  /* A zero width keeps its buttons out of the hub's own width, which grows to fit its content. */
-  .hub-region {
-    flex: 1 1 0;
-    width: 0;
-    min-width: 0;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    margin-right: auto;
-  }
-  #hub .hub-region button {
-    flex: none;
-    white-space: nowrap;
-  }
-  /* The heading, four tabs and the credits on one row. */
-  .hub-head {
-    gap: 12px;
-  }
-  #hub .hub-tabs button {
-    font-size: 15px;
-    padding: 6px 12px;
-  }
-  .hub-cash small:first-child {
-    display: none;
-  }
-  .hub-cash b {
-    font-size: 26px;
-  }
-  .hub-cash small {
-    font-size: 12px;
-  }
-  .hub-region span {
-    display: none;
-  }
-  .hub-lock {
-    font-size: 12px;
-  }
+.hub-lock[hidden] {
+  display: none;
+}
+/* Where the truck drives, and the lent kit's line on the shelves. */
+.hub-list .slot.ride,
+.hub-list .slot.lent {
+  font-weight: 400;
+  font-size: 14px;
+  box-shadow: inset 3px 0 0 var(--hot);
+}
+.hub-list .slot.lent span {
+  font-weight: 800;
 }
 #hub .hub-foot button:disabled {
   opacity: 0.4;
@@ -1588,6 +1820,42 @@ body.touch .mate-bars {
   flex-wrap: wrap;
   gap: 4px 16px;
   font-weight: 800;
+}
+/* The island's day after a raid: its end, the POIs it freed, and 明日の島. */
+#home h3.day-end {
+  margin-top: 0;
+  font-size: 20px;
+}
+#home .freed {
+  color: #8db9de;
+}
+#home .net {
+  font-family: var(--num);
+}
+#home .net.up {
+  color: #ff9c86;
+}
+#home .net.down {
+  color: #8db9de;
+}
+/* The contract's outcome after a raid: done and its reward, or not done. */
+#home .contract {
+  display: flex;
+  flex-direction: column;
+}
+#home .contract b {
+  font-size: 13px;
+}
+#home .contract.done b {
+  color: var(--r3);
+}
+#home .contract.failed {
+  color: var(--muted);
+}
+#home .tomorrow {
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 #home .sold {
   font-size: 13px;
@@ -1837,6 +2105,32 @@ body.touch #obj-stealth {
   order: 2;
   font-size: 11px;
 }
+/*
+ * On a phone the contract shares the second row with the bag and the clock, shortened to its
+ * progress, so the card still ends above the vitals; the story record takes that place only
+ * while no contract is taken.
+ */
+body.touch #obj-contract,
+body.touch #obj-story {
+  order: 2;
+  flex: 1 1 0;
+  min-width: 0;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+body.touch #obj-contract .lead,
+body.touch #obj-story .lead {
+  display: none;
+}
+body.touch #obj-contract:not([hidden]) ~ #obj-story {
+  display: none;
+}
+body.touch #obj-event {
+  order: 3;
+  flex-basis: 100%;
+  font-size: 11px;
+}
 body.touch #obj-exits {
   order: 3;
   flex-basis: 100%;
@@ -1946,6 +2240,20 @@ body.touch #title h1 {
 }
 #map .map-key.depot {
   color: var(--mate-light);
+}
+/* The POI marks' colours (view/map.ts HOLD_CSS). */
+#map .map-key.held {
+  color: #b8412f;
+}
+#map .map-key.thin {
+  color: #d4892c;
+}
+#map .map-key.freed {
+  color: #3f7cae;
+}
+/* The titan's navy, lightened to read on the dark under the map. */
+#map .map-key.titan {
+  color: #7f89c4;
 }
 body.touch #map .map-close {
   display: none;
@@ -2082,6 +2390,16 @@ body:not(.playing) #banner {
     font-size: 12px;
     gap: 2px 10px;
   }
+  #home h3.day-end {
+    font-size: 15px;
+  }
+  #home .tomorrow {
+    font-size: 12px;
+    gap: 2px;
+  }
+  #home .tomorrow li {
+    padding: 3px 8px;
+  }
 }
 /* The routes under the hideout's modules: a closed one in the warning colour, an open one quiet. */
 .hub-list .hub-sub {
@@ -2091,4 +2409,243 @@ body:not(.playing) #banner {
 }
 .hub-list .quest.route.open > b {
   color: var(--sky);
+}
+.hub-island .hub-taken {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--r3);
+}
+.hub-list .hub-sub.first {
+  margin-top: 0;
+}
+.hub-list .hub-sub small {
+  margin-left: 8px;
+  font-size: 12px;
+}
+/* The day's contracts: a tag for the type, and the taken one outlined in the loot's gold. */
+.hub-list .quest.contract strong em {
+  font-style: normal;
+  font-size: 12px;
+  padding: 1px 7px;
+  margin-right: 8px;
+  vertical-align: 2px;
+  background: rgba(255, 255, 255, 0.14);
+}
+.hub-list .quest.contract.taken {
+  box-shadow: inset 0 0 0 2px var(--r3);
+}
+.hub-list .quest.contract .taken-tag {
+  font-style: normal;
+  font-size: 12px;
+  margin-left: 8px;
+  color: var(--r3);
+}
+#hub .quest.contract button.untake {
+  background: transparent;
+  color: var(--white);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.5);
+}
+/* The story: the record under way, then what the records home told. */
+.hub-list .quest.story {
+  box-shadow: inset 3px 0 0 var(--sand);
+}
+.hub-list .quest.story .story-n {
+  margin-left: 8px;
+}
+.hub-list .quest.story > b {
+  color: var(--sand);
+  font-family: var(--jp);
+  font-size: 14px;
+}
+.hub-list .story-done {
+  margin: 4px 0;
+  font-weight: 800;
+  color: var(--sand);
+}
+.hub-list details.told {
+  background: var(--plate);
+  padding: 7px 12px;
+}
+.hub-list details.told summary {
+  cursor: pointer;
+  font-weight: 800;
+}
+.hub-list details.told summary small {
+  margin-left: 8px;
+  font-weight: 400;
+  color: var(--muted);
+}
+.hub-list details.told p {
+  margin: 4px 0 0;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+/* --- the camp between raids: the stations' names over them, the use key's prompt, the credits */
+#camp {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  font-family: var(--jp);
+}
+#camp[hidden] {
+  display: none;
+}
+.camp-label {
+  position: absolute;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  transform: translate(-50%, -100%);
+  white-space: nowrap;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
+.camp-label b {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--white);
+  padding: 2px 10px;
+  background: rgba(20, 26, 51, 0.55);
+}
+.camp-label.near b {
+  background: var(--white);
+  color: var(--ink);
+  text-shadow: none;
+}
+/* Something to act on there: a quest to hand in, a module to build, the radio's report. */
+.camp-label span {
+  order: -1;
+  margin-bottom: 3px;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--ink);
+  background: var(--hot);
+  padding: 1px 8px;
+  text-shadow: none;
+}
+.camp-label span:empty {
+  display: none;
+}
+.camp-label.vehicle b {
+  box-shadow: inset 0 -3px 0 var(--mate-light);
+}
+#camp-head {
+  position: absolute;
+  top: max(14px, env(safe-area-inset-top));
+  left: max(18px, env(safe-area-inset-left));
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+#camp-head > b {
+  font-size: 22px;
+  font-weight: 800;
+}
+#camp-head span small {
+  margin-right: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+#camp-head span b {
+  font-family: var(--num);
+  font-size: 24px;
+  color: var(--hot);
+}
+#camp-hint {
+  font-size: 13px;
+  font-weight: 800;
+}
+#camp-prompt {
+  position: absolute;
+  left: 50%;
+  bottom: 22%;
+  margin: 0;
+  transform: translateX(-50%);
+  font-size: 18px;
+  font-weight: 800;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
+#camp-prompt kbd {
+  margin-right: 8px;
+  padding: 1px 8px;
+  font-family: var(--num);
+  background: var(--white);
+  color: var(--ink);
+  text-shadow: none;
+}
+#camp-prompt .warn {
+  color: var(--ring);
+}
+/* The truck's fade to a raid, and waking in the camp. */
+#fade {
+  position: fixed;
+  inset: 0;
+  z-index: 3;
+  background: var(--ink);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.45s;
+}
+#fade.on {
+  opacity: 1;
+}
+/* In the camp the weapons are down: only the stick, the view, jumping, crouching and the use button. */
+body.touch.camp #t-fire,
+body.touch.camp #t-fire2,
+body.touch.camp #t-ads,
+body.touch.camp #t-reload,
+body.touch.camp #t-tac,
+body.touch.camp #t-ult,
+body.touch.camp #t-battery,
+body.touch.camp #t-map {
+  display: none;
+}
+body.touch.camp #t-use {
+  right: calc(var(--edge-r) + 20px);
+  bottom: calc(var(--edge-b) + 96px);
+  height: 52px;
+  border-radius: 26px;
+  font-size: 16px;
+}
+body.touch #camp-prompt {
+  bottom: 30%;
+  font-size: 16px;
+}
+
+/* The island's events on the map table and the results: today's and tomorrow's, an icon and a line each. */
+.ev {
+  display: block;
+  font-size: 13px;
+  line-height: 1.35;
+}
+.ev .ev-icon {
+  vertical-align: -3px;
+  margin-right: 5px;
+}
+.ev b {
+  margin-right: 6px;
+}
+.ev.quiet {
+  color: var(--muted);
+}
+.hub-island ul.events li {
+  display: grid;
+  grid-template-columns: 2.6em 1fr;
+  align-items: baseline;
+  padding: 3px 0;
+}
+.hub-island ul.events li small {
+  color: var(--muted);
+  font-size: 12px;
+}
+#home .ev {
+  display: inline-block;
+  margin: 2px 8px 2px 0;
+}
+.tomorrow li.crews,
+.tomorrow li.overrun {
+  box-shadow: inset 3px 0 0 #b8412f;
 }
