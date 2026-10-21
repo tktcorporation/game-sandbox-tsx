@@ -13,7 +13,7 @@
  * are played in one worker process per core; RINGFALL_SIM_JOBS sets how many (1 plays them
  * in this process, in turn).
  */
-import { NETWORK, RELAY as MAST, ALLY, BAG, DEPOT, ELITE, HOME, ENEMIES, HEALS, NOISE, PACK, PARTY, PLATE, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, SIGHT, STAGGER, TACTICAL, TICK, VALUABLES, VAULT, WEAPONS, WORLD } from "../src/ringfall/sim/config";
+import { CONTRACT, NETWORK, RELAY as MAST, ALLY, BAG, DEPOT, ELITE, HOME, ENEMIES, HEALS, NOISE, PACK, PARTY, PLATE, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, SIGHT, STAGGER, TACTICAL, TICK, VALUABLES, VAULT, WEAPONS, WORLD } from "../src/ringfall/sim/config";
 import { engageSquad, makeNoise } from "../src/ringfall/sim/awareness";
 import { spawnEnemy } from "../src/ringfall/sim/enemies";
 import { COVERS } from "../src/ringfall/sim/cover";
@@ -3363,6 +3363,10 @@ function checkEvents(): string | null {
   const board = makeBoard({ ...left, events: [{ t: "retake", poi }, null] });
   const defend = board.contracts.find((c) => c.t === "defend");
   if (!defend || board.contracts[0] !== defend) return `event scenario: a retake's board has ${board.contracts.map((c) => c.t).join()}`;
+  for (let day = 1; day <= 12; day++) {
+    const strong = makeBoard({ ...left, day, network: NETWORK.relayAt, events: [{ t: "retake", poi }, null] });
+    if (strong.contracts.length > Math.max(...CONTRACT.count)) return `event scenario: a retake's board at network ${NETWORK.relayAt} on day ${day} has ${strong.contracts.map((c) => c.t).join()}`;
+  }
   if (!contractDone(defend, { freed: [], home: [], wiped: s.stats.wiped, relays: [] }) || contractDone(defend, { freed: [], home: [], wiped: [], relays: [] })) return "event scenario: the defend contract does not follow the retake squad's fall";
   // A crews' visit brings a second crew and a crew intercept on the board.
   const visit = makeBoard({ ...left, events: [{ t: "crews" }, null] });

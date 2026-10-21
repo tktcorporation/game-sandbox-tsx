@@ -121,8 +121,10 @@ export function makeBoard(p: BoardBasis): Board {
   const id = () => `d${p.day}-${out.length}`;
   const today = p.events?.[0] ?? null;
 
-  // Defend: on a retake's day, the freed POI the network sends its squad to, first on the board.
-  if (today?.t === "retake" && p.poiState[today.poi].state === "freed")
+  // Defend: on a retake's day, the freed POI the network sends its squad to, first on the board,
+  // in the place of the day's POI to free, so the board keeps to `CONTRACT.count`.
+  const defend = today?.t === "retake" && p.poiState[today.poi].state === "freed";
+  if (defend)
     out.push({ t: "defend", id: id(), poi: today.poi, reward: { cash: round50(CONTRACT.defend * factor(poiRegionOf(today.poi))), items: [] } });
 
   // Free: a POI the robots hold, paid by the garrison that stands there in the next raid.
@@ -131,7 +133,8 @@ export function makeBoard(p: BoardBasis): Board {
     const robots = garrison(poiIndex(poi), p.poiState[poi].state, p.seed).reduce((n, sq) => n + sq.members.length, 0);
     return { t: "free", id: id(), poi, reward: { cash: round50(robots * CONTRACT.freePerRobot * factor(poiRegionOf(poi))), items: [] } };
   };
-  if (frees.length) out.push(freeOf(frees[0]));
+  let nextFree = 0;
+  if (!defend && frees.length) out.push(freeOf(frees[nextFree++]));
 
   // Fetch: what the next level the hideout could build still lacks, from the POI whose bins hold it most.
   const have = (k: ValuableKind) => p.stash.filter((i) => i.t === "valuable" && i.kind === k).length;
@@ -196,7 +199,7 @@ export function makeBoard(p: BoardBasis): Board {
   // On some days a fourth: another POI to free, else another target.
   const count = CONTRACT.count[hash(8) % CONTRACT.count.length];
   if (count > out.length) {
-    if (frees.length > 1) out.push(freeOf(frees[1]));
+    if (frees.length > nextFree) out.push(freeOf(frees[nextFree]));
     else if (targets.length > 1) out.push(interceptOf(targets[1], 9));
   }
   return { day: p.day, contracts: out };
