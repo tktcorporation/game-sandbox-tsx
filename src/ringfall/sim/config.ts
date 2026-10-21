@@ -375,6 +375,27 @@ export const ISLAND = {
 };
 
 /**
+ * The camp's contract board (meta/contracts.ts): `count` contracts a day, built from the island
+ * and the profile, of which the player takes one or none. Rewards, in credits:
+ * - free a POI: `freePerRobot` for each robot of its garrison that day;
+ * - bring home valuables from a POI's bins: `fetchShare` of their worth, at least `fetchMin`,
+ *   asking for as many as its bins hold on average, up to `fetchMax`, and one more of them on top;
+ * - destroy a drone pack or a hunting party: `intercept` by target, and on some days a heal or a
+ *   weapon, one step rarer every `rarityEvery` days.
+ * Each is multiplied by the region's `region` factor: the harbor is the harder ground.
+ */
+export const CONTRACT = {
+  count: [3, 4] as const,
+  freePerRobot: 150,
+  fetchShare: 0.6,
+  fetchMin: 300,
+  fetchMax: 3,
+  intercept: { pack: 500, party: 800 },
+  rarityEvery: 6,
+  region: { reservoir: 1, harbor: 1.4 } satisfies Record<RegionId, number>,
+};
+
+/**
  * The ways in on foot (`ENTRIES`) a player has walked to: one reached in a raid that ends with
  * the player off alive can be chosen at the base from then on. A player starts knowing only
  * the reservoir's first.

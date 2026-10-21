@@ -71,16 +71,25 @@ raid, the pouch that survives a wipe), `meta/storage.ts` saves it in localStorag
 `config.ts` holds its numbers. `newRun(seed, kit, region)` starts a raid from a kit; the default is
 the lent free kit, which is what the sim gate plays; `Profile.region` and `Profile.entry` remember
 the last start.
-The trader's quests are data in `meta/quests.ts` (`QUESTS`, credited from a raid's `stats` by
-`creditRaid()` inside `settle()`). Each POI has one locked bin (`vault: true` in its `bins`), opened
+The trader's quests are data in `meta/quests.ts` (`QUESTS`: four intro quests, then the escape
+craft's line; credited from a raid's `stats` by `creditRaid()` inside `settle()`). The quest board
+also holds the day's contracts (`meta/contracts.ts`): `makeBoard()` builds 3 or 4 from
+`Profile.seed`, `Profile.day`, the island and the hideout (free a POI, fetch a valuable from a
+POI's bins, destroy a drone pack or a region's hunting party; numbers in `CONTRACT`), kept in
+`Profile.board` for the day; the player takes one (`Profile.taken`) or none, and `settle()` pays it
+when `contractDone()` holds (fetch counts only valuables tagged with their bin's POI,
+`Player.haulAt` / `State.sentAt`; intercept reads `Stats.wiped`, by `squadKey()`). Five story
+contracts (`meta/story.ts`) follow one at a time: the one under way lays its record at its
+`RECORD_SPOTS` place in `map.ts` (`Start.record`), a bag slot that comes home into
+`Profile.records`. The bots take no contract and carry no record. Each POI has one locked bin (`vault: true` in its `bins`), opened
 only with that POI's key; keys drop from the bins of the POI named by its `keyFrom` (`VAULT`).
 POIs have a stable `id` (`PoiId` in `map.ts`); saves, quests, `keyFrom` and `EXTRA_BINS` refer to a
 POI by it, never by its place in `POIS` (the run's state may index `POIS` internally). The profile
-is versioned (`Profile.v`, which is 13), and `parseProfile()` moves older saves forward (a save from
+is versioned (`Profile.v`, which is 14), and `parseProfile()` moves older saves forward (a save from
 before the ways in starts at its region's first way in; a save from before ways in were learned
 knows them all; a save from before v12 drops its explored map, since `cellOf()` follows `WORLD`,
 which then grew wider; a save from before v13 starts on the day after its raids with every POI
-held) and moves its
+held; a save from before v14 keeps only the quests that still exist) and moves its
 start to one it may choose (`allowedStart()`).
 Each POI has a depot on its road (`DEPOTS` in `map.ts`, run by `stepDepots()` in `world.ts`): walking
 up switches it on for good, its use key sends the bag home (it survives a wipe) or, with the bag empty,

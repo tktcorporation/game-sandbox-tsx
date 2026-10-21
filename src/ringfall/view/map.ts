@@ -6,6 +6,7 @@ import { worldKey } from "../sim/routes";
 import { DAM_FACE, floorLevel, groundOf, highGround, LEVEL, steepAt, surfaceAt, terrainHeight, type Ground } from "../sim/terrain";
 import { cellOf, decodeSeen, exploreSize, type Ally, type Player, type State } from "../sim/state";
 import { PAL } from "./models";
+import type { ContractMark } from "../meta/contracts";
 
 /*
  * The world map (M, or the map button on a phone): both regions and the ways between
@@ -74,6 +75,8 @@ export class IslandMap {
   known: EntryId[] | null = null;
   /** The region framed when the scene has no player on it (the camp's map table). */
   region: RegionId = "reservoir";
+  /** Where the contract taken for the raid points, marked in the loot's gold; null with none taken. */
+  contract: ContractMark | null = null;
   /** The shape last given to the page, which sizes the map by it. */
   private aspect = 0;
 
@@ -100,6 +103,49 @@ export class IslandMap {
       x1: Math.min(WORLD.x1, Math.max(b.x1, x + pad)),
       z1: Math.min(WORLD.z1, Math.max(b.z1, z + pad)),
     };
+  }
+
+  /**
+   * The taken contract's place, dashed in gold under the POI marks: a ring round its POI, a pack's
+   * loop, or the frame of the region a hunting party walks, each with 依頼 beside it.
+   */
+  private drawContract(g: CanvasRenderingContext2D, at: (x: number, z: number) => { x: number; y: number }, dpr: number, label: (text: string, x: number, y: number, color: string, size: number) => void) {
+    const c = this.contract;
+    if (!c) return;
+    const gold = "#ffc93a";
+    g.save();
+    g.strokeStyle = gold;
+    g.lineWidth = 2.5 * dpr;
+    g.setLineDash([5 * dpr, 4 * dpr]);
+    g.beginPath();
+    let tag: { x: number; y: number };
+    if (c.t === "poi") {
+      const p = at(c.x, c.z);
+      g.arc(p.x, p.y, 15 * dpr, 0, Math.PI * 2);
+      tag = { x: p.x + 30 * dpr, y: p.y + 2 * dpr };
+    } else if (c.t === "loop") {
+      c.points.forEach((q, n) => {
+        const p = at(q.x, q.z);
+        if (n) g.lineTo(p.x, p.y);
+        else g.moveTo(p.x, p.y);
+      });
+      g.closePath();
+      const first = at(c.points[0].x, c.points[0].z);
+      tag = { x: first.x, y: first.y - 12 * dpr };
+    } else {
+      const b = regionOf(c.region).bounds;
+      const a = at(b.x0, b.z0);
+      const z = at(b.x1, b.z1);
+      const inset = 6 * dpr;
+      g.rect(a.x + inset, a.y + inset, z.x - a.x - inset * 2, z.y - a.y - inset * 2);
+      const l = at(regionOf(c.region).label.x, regionOf(c.region).label.z);
+      tag = { x: l.x + 40 * dpr, y: l.y + 20 * dpr };
+    }
+    g.stroke();
+    g.restore();
+    g.strokeStyle = "rgba(20,24,40,0.85)";
+    g.lineWidth = 3 * dpr;
+    label("依頼", tag.x, tag.y, gold, 11);
   }
 
   /**
@@ -370,6 +416,7 @@ export class IslandMap {
       }
       g.textAlign = "center";
     }
+    this.drawContract(g, at, dpr, label);
     // Depots that are on: a teal square each, a place a later raid can start from.
     DEPOTS.forEach((d, i) => {
       if (!s.depots[i]) return;

@@ -1134,6 +1134,11 @@ export function buildLootItem(kind: LootKind, rarity: Rarity, weapon?: WeaponKin
     g.add(mesh(new THREE.BoxGeometry(0.46, 0.05, 0.32), flat(PAL.gun), 0, 0.26, 0, false));
     g.add(mesh(new THREE.BoxGeometry(0.12, 0.1, 0.1), flat(PAL.gun), 0.1, 0.38, 0, false));
     g.add(mesh(new THREE.SphereGeometry(0.03, 6, 4), glow(HEAL_RED), 0.1, 0.45, 0, false));
+  } else if (kind === "record") {
+    // A story record: a battered orange recorder case with a lit read-out on its face.
+    g.add(mesh(new THREE.BoxGeometry(0.36, 0.26, 0.24), flat(0xd8742c), 0, 0.22, 0, false));
+    g.add(mesh(new THREE.BoxGeometry(0.38, 0.05, 0.26), flat(PAL.gun), 0, 0.12, 0, false));
+    g.add(mesh(new THREE.BoxGeometry(0.16, 0.08, 0.02), glow(color), 0, 0.26, 0.125, false));
   } else if (kind === "flare") {
     // A road flare: a red tube with a cap.
     const tube = mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.42, 8), flat(HEAL_RED), 0, 0.3, 0, false);

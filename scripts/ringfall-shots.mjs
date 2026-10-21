@@ -189,6 +189,17 @@ const spills = (pg) =>
   if (panelFit.length) errors.push(`mobile: the shelves' panel ${panelFit.join(", ")} (844x390)`);
   await page.screenshot({ path: `${out}/m0-panel-stash.png` });
   await closePanel(page, true);
+  // The board by the use button: it fits the screen, and a tap takes the day's fetch.
+  await useStation(page, "quests", cdp);
+  const boardFit = await spills(page);
+  if (boardFit.length) errors.push(`mobile: the board's panel ${boardFit.join(", ")} (844x390)`);
+  await page.screenshot({ path: `${out}/m0-panel-quests.png` });
+  await page.tap("#hub-side .quest.contract[data-type=fetch] [data-act=take]");
+  const mt = (await read()).camp;
+  if (mt.board.find((c) => c.id === mt.taken)?.t !== "fetch") errors.push("mobile: tapping the fetch did not take it");
+  await page.locator("#hub-side .quest.contract.taken").scrollIntoViewIfNeeded();
+  await page.screenshot({ path: `${out}/m0-panel-quests-taken.png` });
+  await closePanel(page, true);
   // Out of the gate on the stick: the raid starts where the player walks out.
   await page.evaluate(() => window.ringfallCamp.toGate());
   await step(100);
@@ -206,6 +217,7 @@ const spills = (pg) =>
   await touch("touchMove", [{ x: 150, y: 200, id: 1 }]);
   await step(600);
   await page.screenshot({ path: `${out}/m1-stick.png` });
+  if (!(await page.evaluate(() => !document.getElementById("obj-contract").hidden && /回収/.test(document.getElementById("obj-contract").textContent)))) errors.push("mobile: the objective card does not show the fetch taken");
   await touch("touchEnd", []);
   const s1 = await read();
   if (!(s1.player.z < s0.player.z - 3)) errors.push(`mobile: stick did not move the player (${s0.player.z} -> ${s1.player.z})`);
@@ -484,10 +496,20 @@ const read = async () => JSON.parse(await page.evaluate(() => window.render_game
   await page.keyboard.press("Escape");
   if ((await read()).camp?.panel) errors.push("camp: Esc did not close the trader's panel");
   await seen("quests");
+  if (!/依頼/.test((await read()).camp.marks.quests)) errors.push(`camp: the board carries no mark with contracts on it and none taken (${JSON.stringify((await read()).camp.marks)})`);
   await useStation(page, "quests");
-  const quests = await page.locator("#hub-side .quest").count();
-  if (quests !== 2) errors.push(`camp: the board offers ${quests} quests at the start, not 2`);
+  const quests = await page.locator("#hub-side .quest:not(.contract):not(.story)").count();
+  const contracts = await page.locator("#hub-side .quest.contract").count();
+  const stories = await page.locator("#hub-side .quest.story").count();
+  if (quests !== 2 || contracts < 3 || contracts > 4 || stories !== 1) errors.push(`camp: the board offers ${quests} intro quests (not 2), ${contracts} contracts and ${stories} story contracts at the start`);
   await page.screenshot({ path: `${out}/00-panel-quests.png` });
+  // Taking the day's intercept: it is marked taken, and the board's mark goes.
+  await page.click("#hub-side .quest.contract[data-type=intercept] [data-act=take]");
+  const tk = await read();
+  if (!tk.camp.taken || tk.camp.board.find((c) => c.id === tk.camp.taken)?.t !== "intercept" || !(await page.locator("#hub-side .quest.contract.taken").count()) || /依頼/.test(tk.camp.marks.quests)) errors.push(`camp: taking the intercept left ${JSON.stringify(tk.camp)}`);
+  await page.screenshot({ path: `${out}/00-panel-quests-taken.png` });
+  await page.locator("#hub-side .quest.story").scrollIntoViewIfNeeded();
+  await page.screenshot({ path: `${out}/00-panel-quests-story.png` });
   await closePanel(page);
   await seen("workshop");
   await useStation(page, "workshop");
@@ -793,6 +815,10 @@ for (let i = 0; i < 25 * 60 * 10; i++) {
   const at = (poi) => live.some((e) => s.squads[e.squad].poi === poi);
   if (s.phase === "play" && !taken.has("02-start")) {
     await shot("02-start");
+    // The taken intercept is on the objective card, and the map marks where it is.
+    const line = await page.evaluate(() => (document.getElementById("obj-contract").hidden ? "" : document.getElementById("obj-contract").textContent));
+    if (!/迎撃/.test(line) || s.contract?.t !== "intercept") errors.push(`contract: the objective card reads "${line}" for ${JSON.stringify(s.contract)}`);
+    await page.locator("#objective").screenshot({ path: `${out}/02-objective-contract.png` });
     // The ways off the island are open from the start and listed on the objective card.
     const lines = await page.evaluate(() => document.getElementById("obj-exits").children.length);
     if (lines !== 3) errors.push(`start: the objective card lists ${lines} ways out, not 3`);
@@ -815,6 +841,10 @@ for (let i = 0; i < 25 * 60 * 10; i++) {
     await page.evaluate(() => window.advanceTime(100));
     const closed = await page.evaluate(() => document.getElementById("map").hidden);
     if (!open || !closed) errors.push(`map: M opened ${open}, closed again ${closed}`);
+    // The intercept's squad is destroyed, as the player's shots would: the results show it done.
+    const gone = await page.evaluate(() => window.ringfallContract.destroyTarget());
+    const struck = await quietStep(page, 100);
+    if (!gone || !struck.contract?.met) errors.push(`contract: destroying the target (${gone} robots) left ${JSON.stringify(struck.contract)}`);
     console.log(`desktop reservoir frame: ${JSON.stringify(await page.evaluate(() => window.ringfallFrameCost(20)))}`);
     // A vault, from just in front of it: the locked crate reads apart from the supply bins.
     // The quarry's stands on an open terrace, so the camera has a clear view of it.
@@ -933,6 +963,7 @@ console.log(JSON.stringify((await read()).stats));
 {
   const r = await read();
   if (!r.settled) errors.push("results: the raid was not settled into the profile");
+  if (!r.settled?.contract?.done || !(await page.evaluate(() => !!document.querySelector("#home .contract.done")))) errors.push(`results: the intercept destroyed shows ${JSON.stringify(r.settled?.contract)}`);
   await page.click("#restart");
   const h = await read();
   if (h.screen !== "camp" || h.profile.raids !== 1 || h.camp.panel !== null) errors.push(`results: back to the camp shows ${h.screen} with ${h.profile.raids} raids`);
@@ -1096,6 +1127,48 @@ const readOf = async (pg) => JSON.parse(await pg.evaluate(() => window.render_ga
   await ctx.close();
   lap("hideout, phone");
 }
+/*
+ * The board some days in, from a saved profile: the intro quests done, two records home and their
+ * text on the board, a contract to free a POI taken, on the desktop and a phone on its side.
+ */
+{
+  const storyGame = {
+    v: 14, cash: 3200, stash: [], raids: 8, extracted: 6, time: 4000, region: "reservoir", entry: "beach", entries: ["beach", "checkpoint", "jetty", "outskirts", "quay", "shore"], seed: 4321, day: 9,
+    quests: { progress: {}, done: ["grunts", "village", "power", "parts"] },
+    hideout: { generator: 1, infirmary: 1, workbench: 0, storage: 0, radio: 0, pouch: 0, craft: 0 },
+    records: ["tether", "dam"],
+  };
+  for (const phone of [false, true]) {
+    const ctx = await browser.newContext(phone ? { viewport: { width: 740, height: 360 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true } : { viewport: { width: 1280, height: 720 } });
+    const pg = await withProfile(ctx, storyGame);
+    await toCamp(pg, phone);
+    const cdp = phone ? await ctx.newCDPSession(pg) : undefined;
+    await useStation(pg, "quests", cdp);
+    const intro = await pg.locator("#hub-side .quest:not(.contract):not(.story)").count();
+    const told = await pg.locator("#hub-side details.told").count();
+    const now = await pg.textContent("#hub-side .quest.story strong");
+    if (told !== 2 || !/最後の船/.test(now)) errors.push(`board: with two records home it shows ${told} told and "${now}" under way`);
+    const sel = "#hub-side .quest.contract[data-type=free] [data-act=take]";
+    await (phone ? pg.tap(sel) : pg.click(sel));
+    const st = await readOf(pg);
+    if (st.camp.board.find((c) => c.id === st.camp.taken)?.t !== "free") errors.push(`board: taking the free contract left ${JSON.stringify(st.camp)}`);
+    let fit = await spills(pg);
+    await pg.screenshot({ path: `${out}/${phone ? "m16" : "50"}-board.png` });
+    await pg.locator("#hub-side details.told[open]").scrollIntoViewIfNeeded();
+    fit = fit.concat(await spills(pg));
+    await pg.screenshot({ path: `${out}/${phone ? "m16" : "50"}-board-story.png` });
+    // The map table marks the taken contract's POI on the island.
+    await closePanel(pg, phone);
+    await useStation(pg, "map", cdp);
+    if (!(await pg.locator("#hub-side .hub-taken").count())) errors.push("board: the map table does not name the contract taken");
+    fit = fit.concat(await spills(pg));
+    await pg.screenshot({ path: `${out}/${phone ? "m16" : "50"}-map-contract.png` });
+    if (fit.length) errors.push(`board${phone ? " on a phone" : ""}: ${[...new Set(fit)].join(", ")}`);
+    await ctx.close();
+  }
+  lap("board");
+}
+
 /*
  * A depot: the base offers the depots on as starts, the raid begins on the ground beside one
  * with its prompt, the map lies under fog except round where the player has been, and leaving

@@ -1,7 +1,7 @@
 import { ALLY, AWARE, BAG, DEPOT, ENEMIES, ENTRY, HEALS, HOME, PARTY, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, TICK, TOOL_KINDS, TOOLS, TOP_BINS, VALUABLES, VAULT, WORLD, type HealKind, type ToolKind } from "./config";
 import { dist2d, groundAt, los, solidAt } from "./geom";
 import { highGround, steepAt, terrainHeight } from "./terrain";
-import { DEPOTS, ENTRIES, EXTRACTS, inCamp, PARTY_STOPS, POIS, REGIONS, type ExtractPoint } from "./map";
+import { DEPOTS, ENTRIES, EXTRACTS, inCamp, PARTY_STOPS, POIS, recordSpot, REGIONS, type ExtractPoint, type RecordId } from "./map";
 import { spawnEnemy, spawnSpot } from "./enemies";
 import { cellsAround, fieldTo, nextStep, onMainGround } from "./hunt";
 import { raiseAlly, startHelp } from "./ally";
@@ -288,8 +288,9 @@ function weighted<T>(s: State, list: [T, number][]): T {
   return list[list.length - 1][0];
 }
 
-const spillValuable = (s: State, b: { x: number; y: number; z: number }, valuable: ValuableKind) =>
-  spill(s, b.x, b.y, b.z, { kind: "valuable", valuable, rarity: VALUABLES[valuable].rarity });
+/** `from`: the POI (index) whose bin it came out of, or -1. */
+const spillValuable = (s: State, b: { x: number; y: number; z: number }, valuable: ValuableKind, from: number) =>
+  spill(s, b.x, b.y, b.z, { kind: "valuable", valuable, rarity: VALUABLES[valuable].rarity, from });
 
 function openBin(s: State, binIndex: number) {
   const b = s.bins[binIndex];
@@ -300,7 +301,7 @@ function openBin(s: State, binIndex: number) {
     spill(s, b.x, b.y, b.z, { kind: "weapon", rarity, weapon: { kind, rarity, mag: -1 } });
     spill(s, b.x, b.y, b.z, { kind: "armor", rarity: VAULT.armor });
     for (let i = 0; i < VAULT.heals; i++) spill(s, b.x, b.y, b.z, { kind: "heal", heal: rollHeal(s), rarity: 1 });
-    for (const v of VAULT.valuables[Math.floor(rand(s) * VAULT.valuables.length)]) spillValuable(s, b, v);
+    for (const v of VAULT.valuables[Math.floor(rand(s) * VAULT.valuables.length)]) spillValuable(s, b, v, b.poi);
     if (!s.stats.vaults.includes(b.poi)) s.stats.vaults.push(b.poi);
     return;
   }
@@ -316,7 +317,8 @@ function openBin(s: State, binIndex: number) {
   // One valuable per bin; the high-rises' top floors are worth the climb.
   // In the raid's boosted POI, its own bins lean to one rare kind (`BOOST`).
   const kinds = !b.outside && b.poi === s.boost.poi ? boosted(table.valuable, s.boost.kind) : table.valuable;
-  spillValuable(s, b, b.flare ? weighted(s, TOP_BINS) : weighted(s, kinds));
+  const rolled = b.flare ? weighted(s, TOP_BINS) : weighted(s, kinds);
+  spillValuable(s, b, s.fetch?.bins.includes(b.id) ? s.fetch.kind : rolled, b.outside ? -1 : b.poi);
   // Keys lie only in the POIs themselves, so each one is found where the route says.
   if (!b.outside && rand(s) < VAULT.keyChance) {
     const vault = POIS.findIndex((v) => v.keyFrom === POIS[b.poi].id);
@@ -395,9 +397,14 @@ export function stepLoot(s: State, input: Input) {
       return false;
     }
     if (l.kind === "valuable" && l.valuable && bagLoad(p) + VALUABLES[l.valuable].size <= BAG.slots) {
-      p.haul.push(l.valuable);
+      bagIn(p, l.valuable, l.from ?? -1);
       const v = VALUABLES[l.valuable];
       s.events.push({ t: "pickup", kind: "valuable", rarity: l.rarity, label: `${v.label} +${v.value}` });
+      return false;
+    }
+    if (l.kind === "record" && l.record && bagLoad(p) + 1 <= BAG.slots) {
+      p.records.push(l.record);
+      s.events.push({ t: "pickup", kind: "record", rarity: 3, label: recordSpot(l.record).name });
       return false;
     }
     if (l.kind === "key" && l.key !== undefined) {
@@ -456,8 +463,26 @@ export const bagUsed = (haul: ValuableKind[]) => haul.reduce((n, k) => n + VALUA
 /** Bag slots the tools take up. */
 export const toolsUsed = (tools: ToolKind[]) => tools.reduce((n, k) => n + TOOLS[k].size, 0);
 
-/** Bag slots taken, the haul and the tools together. */
-export const bagLoad = (p: Pick<Player, "haul" | "tools">) => bagUsed(p.haul) + toolsUsed(p.tools);
+/** Bag slots taken, the haul, the tools and the story records (a slot each) together. */
+export const bagLoad = (p: Pick<Player, "haul" | "tools"> & { records?: RecordId[] }) => bagUsed(p.haul) + toolsUsed(p.tools) + (p.records?.length ?? 0);
+
+/** Where each valuable in the bag came from (`Player.haulAt`); all -1 when the haul was set without them. */
+export const haulOrigins = (p: Pick<Player, "haul"> & { haulAt?: number[] }): number[] => (p.haulAt?.length === p.haul.length ? p.haulAt : p.haul.map(() => -1));
+
+/** Puts a valuable from `from` (a POI index, or -1) in the bag. */
+function bagIn(p: Player, kind: ValuableKind, from: number) {
+  p.haulAt = [...haulOrigins(p), from];
+  p.haul.push(kind);
+}
+
+/** Takes the valuables at `out` (indices) out of the bag, with where each came from. */
+function bagOut(p: Player, out: number[]): { kind: ValuableKind; from: number }[] {
+  const at = haulOrigins(p);
+  const gone = out.map((i) => ({ kind: p.haul[i], from: at[i] }));
+  p.haul = p.haul.filter((_, i) => !out.includes(i));
+  p.haulAt = at.filter((_, i) => !out.includes(i));
+  return gone;
+}
 
 /**
  * What would make room for `kind` in a full bag: the set of items (their indices) that frees
@@ -465,8 +490,8 @@ export const bagLoad = (p: Pick<Player, "haul" | "tools">) => bagUsed(p.haul) + 
  * the cheapest one is worth as much as `kind`. The bag holds at most `BAG.slots` items, so
  * trying every set is cheap.
  */
-export function makeRoom(haul: ValuableKind[], kind: ValuableKind, tools: ToolKind[] = []): number[] | null {
-  return roomFor(haul, VALUABLES[kind].size + toolsUsed(tools), VALUABLES[kind].value);
+export function makeRoom(haul: ValuableKind[], kind: ValuableKind, tools: ToolKind[], records: number): number[] | null {
+  return roomFor(haul, VALUABLES[kind].size + toolsUsed(tools) + records, VALUABLES[kind].value);
 }
 
 /**
@@ -491,7 +516,7 @@ function roomFor(haul: ValuableKind[], size: number, worth: number): number[] | 
  * they are worth, since a tool is carried for the route it opens. Null when even the whole
  * haul does not make room (other tools fill the bag).
  */
-export const roomForTool = (p: Pick<Player, "haul" | "tools">, k: ToolKind) => roomFor(p.haul, TOOLS[k].size + toolsUsed(p.tools), Infinity);
+export const roomForTool = (p: Pick<Player, "haul" | "tools"> & { records?: RecordId[] }, k: ToolKind) => roomFor(p.haul, TOOLS[k].size + toolsUsed(p.tools) + (p.records?.length ?? 0), Infinity);
 
 /** Takes a tool up, dropping what `roomForTool()` throws out. */
 function takeTool(s: State, l: Loot) {
@@ -499,26 +524,24 @@ function takeTool(s: State, l: Loot) {
   const k = l.tool;
   const out = k ? roomForTool(p, k) : null;
   if (!k || !out) return;
-  const dropped = out.map((i) => p.haul[i]);
-  p.haul = p.haul.filter((_, i) => !out.includes(i));
-  for (const v of dropped) spillValuable(s, p.pos, v);
+  const dropped = bagOut(p, out);
+  for (const v of dropped) spillValuable(s, p.pos, v.kind, v.from);
   s.loot = s.loot.filter((o) => o !== l);
   p.tools.push(k);
-  s.events.push({ t: "pickup", kind: "tool", rarity: 3, label: `${TOOLS[k].label}${dropped.length ? `（${dropped.map((v) => VALUABLES[v].label).join("・")}を捨てた）` : ""}` });
+  s.events.push({ t: "pickup", kind: "tool", rarity: 3, label: `${TOOLS[k].label}${dropped.length ? `（${dropped.map((v) => VALUABLES[v.kind].label).join("・")}を捨てた）` : ""}` });
 }
 
 /** Drop the cheapest items on the ground and bag the better one. */
 function swapInto(s: State, l: Loot) {
   const p = s.player;
-  const out = l.valuable ? makeRoom(p.haul, l.valuable, p.tools) : null;
+  const out = l.valuable ? makeRoom(p.haul, l.valuable, p.tools, p.records.length) : null;
   if (!out || !l.valuable) return;
-  const dropped = out.map((i) => p.haul[i]);
-  p.haul = p.haul.filter((_, i) => !out.includes(i));
-  for (const k of dropped) spillValuable(s, p.pos, k);
+  const dropped = bagOut(p, out);
+  for (const k of dropped) spillValuable(s, p.pos, k.kind, k.from);
   s.loot = s.loot.filter((o) => o !== l);
-  p.haul.push(l.valuable);
+  bagIn(p, l.valuable, l.from ?? -1);
   const v = VALUABLES[l.valuable];
-  s.events.push({ t: "pickup", kind: "valuable", rarity: l.rarity, label: `${v.label} +${v.value}（${dropped.map((k) => VALUABLES[k].label).join("・")}を捨てた）` });
+  s.events.push({ t: "pickup", kind: "valuable", rarity: l.rarity, label: `${v.label} +${v.value}（${dropped.map((k) => VALUABLES[k.kind].label).join("・")}を捨てた）` });
 }
 
 /** Whether the player may search a bin: a vault takes its POI's key, unless the POI is freed. */
@@ -591,7 +614,7 @@ export function useTarget(s: State, armor = true, tools = true): UseTarget | nul
     // It yields to a bin or a weapon at the same distance, since it lies where the upgrade was found.
     else if (armor && l.kind === "armor" && l.worn && l.rarity !== p.armor) picks.push({ d: dist2d(l.pos, p.pos) + 0.3, t: { kind: "armor", loot: l } });
     // A valuable that does not fit is worth a press when something cheaper can make way.
-    else if (l.kind === "valuable" && l.valuable && makeRoom(p.haul, l.valuable, p.tools)?.length) picks.push({ d: dist2d(l.pos, p.pos) - 0.3, t: { kind: "swap", loot: l } });
+    else if (l.kind === "valuable" && l.valuable && makeRoom(p.haul, l.valuable, p.tools, p.records.length)?.length) picks.push({ d: dist2d(l.pos, p.pos) - 0.3, t: { kind: "swap", loot: l } });
     // A tool is taken by the use key, throwing cheaper things out of a full bag.
     else if (tools && l.kind === "tool" && l.tool && roomForTool(p, l.tool)) picks.push({ d: dist2d(l.pos, p.pos) - 0.3, t: { kind: "tool", loot: l } });
   }
@@ -613,19 +636,23 @@ export function depotInReach(s: State): number {
 /** The use key at a depot: a bag with anything in it goes home; an empty one means leaving the raid there. */
 function useDepot(s: State, index: number) {
   const p = s.player;
-  if (p.haul.length || p.tools.length) {
+  if (p.haul.length || p.tools.length || p.records.length) {
     // Something picked up while leaving breaks the leaving off, even when it is sent at once.
     if (s.leaving) {
       s.leaving = null;
       s.events.push({ t: "leaveCancel" });
     }
     const value = p.haul.reduce((n, k) => n + VALUABLES[k].value, 0);
-    s.events.push({ t: "deposit", n: p.haul.length + p.tools.length, value });
+    s.events.push({ t: "deposit", n: p.haul.length + p.tools.length + p.records.length, value });
+    s.sentAt.push(...haulOrigins(p));
     s.sent.push(...p.haul);
     s.sentTools.push(...p.tools);
+    s.sentRecords.push(...p.records);
     s.sentVia[index] += value;
     p.haul = [];
+    p.haulAt = [];
     p.tools = [];
+    p.records = [];
   } else if (!s.leaving) {
     s.leaving = { depot: index, t: DEPOT.leave };
     s.events.push({ t: "leaveStart" });
@@ -659,7 +686,7 @@ export function stepDepots(s: State) {
   }
   const l = s.leaving;
   if (!l) return;
-  if (!up || p.haul.length || p.tools.length || dist2d(DEPOTS[l.depot], p.pos) > PLAYER.interactRange + 1.5 || depotBlocked(s)) {
+  if (!up || p.haul.length || p.tools.length || p.records.length || dist2d(DEPOTS[l.depot], p.pos) > PLAYER.interactRange + 1.5 || depotBlocked(s)) {
     s.leaving = null;
     s.events.push({ t: "leaveCancel" });
     return;
