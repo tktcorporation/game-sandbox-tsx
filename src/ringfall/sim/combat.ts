@@ -113,6 +113,9 @@ export function rayRelay(s: State, eye: Vec3, dir: Vec3, limit: number): { m: Re
 /** A weapon's hit on a relay mast: it loses health, and falls at none (counted for the night's network). */
 function damageRelay(s: State, m: RelayMast, dmg: number, eye: boolean, at: Vec3) {
   m.hp = Math.max(0, m.hp - dmg);
+  // A hit on a mast counts toward accuracy like one on a robot; its eye is its weak point.
+  s.stats.hits++;
+  if (eye) s.stats.crits++;
   s.events.push({ t: "relayHit", id: m.id, pos: at, dmg: Math.round(dmg), eye });
   if (m.hp > 0) return;
   s.stats.relays.push(m.id);
