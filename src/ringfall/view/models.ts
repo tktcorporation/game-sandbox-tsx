@@ -47,6 +47,9 @@ export const PAL = {
   saltDark: 0xd6c9ad,
   paved: 0xc9b896,
   pavedDark: 0xb3a27f,
+  /** The streets' worn asphalt, and the paint of their edge and centre lines. */
+  asphalt: 0x6b6862,
+  roadPaint: 0xe8e2d2,
   /** The last water, left in the harbor's tidal channel. */
   water: 0x5fa8a6,
   /** Painted steel: a ship's hull below the old waterline, girders and posts. */

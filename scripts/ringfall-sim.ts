@@ -2118,12 +2118,19 @@ function longLine(dist: number): { p: { x: number; z: number }; g: { x: number; 
       for (let a = 0; a < 2 * Math.PI; a += Math.PI / 6) {
         const gx = x + Math.sin(a) * dist;
         const gz = z - Math.cos(a) * dist;
-        // A second grunt stands 2.5 m to the side of the first.
-        const sx = Math.cos(a) * 2.5;
-        const sz = Math.sin(a) * 2.5;
+        // A second grunt stands 2.5 m to the side of the first, where checkReturnFire() puts it
+        // (its bearing to the player is a + π).
+        const sx = -Math.cos(a) * 2.5;
+        const sz = -Math.sin(a) * 2.5;
         if (!ok(gx, gz) || !ok(gx + sx, gz + sz) || Math.abs(terrainHeight(gx, gz) - terrainHeight(x, z)) > 3) continue;
-        const chest = { x, y: terrainHeight(x, z) + 1.1, z };
-        if (!los(chest, { x: gx, y: terrainHeight(gx, gz) + KINDS.grunt.weakY, z: gz }) || !los(chest, { x: gx + sx, y: terrainHeight(gx + sx, gz + sz) + KINDS.grunt.weakY, z: gz + sz })) continue;
+        // Clear from the player's knees to their head to each grunt's legs and eyes: open ground
+        // between, not a line that only grazes over a crest at one height.
+        const seen = [0.5, 1.1, 1.6].every((py) =>
+          [[gx, gz], [gx + sx, gz + sz]].every(([qx, qz]) =>
+            [1.0, KINDS.grunt.weakY].every((qy) => los({ x, y: terrainHeight(x, z) + py, z }, { x: qx, y: terrainHeight(qx, qz) + qy, z: qz })),
+          ),
+        );
+        if (!seen) continue;
         return { p: { x, z }, g: { x: gx, z: gz } };
       }
     }
@@ -2167,24 +2174,32 @@ function checkReturnFire(): string | null {
   return null;
 }
 
-/** A grunt's burst at 15 m in the open finds a player who sidesteps through the glow and the shots. */
+/**
+ * A grunt's burst at 15 m in the open finds a player who sidesteps through the glow and the
+ * shots: two of its three shots on average over bursts with different draws of its spread, so
+ * the check holds whatever the rest of the world spent of the random stream first.
+ */
 function checkSidestepHit(): string | null {
   const at = openSpot(16, 2, 9);
   if (!at) return "sidestep scenario: no open ground for the test";
-  const { s, foes } = standoff(at, 15, ["grunt"]);
-  const g = foes[0];
-  g.mode = "telegraph";
-  g.timer = KINDS.grunt.telegraph;
-  g.cooldown = 99;
-  const strafe = idleInput();
-  strafe.moveX = 1;
+  const BURSTS = 12;
   let hits = 0;
-  for (let i = 0; i < 1.6 / TICK; i++) {
-    step(s, strafe, false);
-    hits += s.events.filter((e) => e.t === "hurt").length;
-    s.player.iframes = 0;
+  for (let k = 0; k < BURSTS; k++) {
+    const { s, foes } = standoff(at, 15, ["grunt"]);
+    s.rng = 1000 + k * 7919;
+    const g = foes[0];
+    g.mode = "telegraph";
+    g.timer = KINDS.grunt.telegraph;
+    g.cooldown = 99;
+    const strafe = idleInput();
+    strafe.moveX = 1;
+    for (let i = 0; i < 1.6 / TICK; i++) {
+      step(s, strafe, false);
+      hits += s.events.filter((e) => e.t === "hurt").length;
+      s.player.iframes = 0;
+    }
   }
-  if (hits < 2) return `sidestep scenario: a player strafing in the open at 15 m took ${hits} of a grunt's 3 shots`;
+  if (hits < 2 * BURSTS) return `sidestep scenario: a player strafing in the open at 15 m took ${(hits / BURSTS).toFixed(2)} of a grunt's 3 shots on average`;
   return null;
 }
 

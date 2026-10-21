@@ -199,9 +199,10 @@ function rayBox(o: Vec3, d: Vec3, b: Box, maxT: number): number {
 
 /**
  * Distance along a unit ray to the first box or the ground, capped at maxT. `paths` leaves the
- * closed routes' obstacles out, as the walkers' grids do (`routeBoxesOpen`).
+ * closed routes' obstacles out, as the walkers' grids do (`routeBoxesOpen`). Fences are seen and
+ * shot through, so they are left out too; `fences` asks for the fences alone, and no ground.
  */
-export function rayWorld(o: Vec3, d: Vec3, maxT: number, paths = false): number {
+export function rayWorld(o: Vec3, d: Vec3, maxT: number, paths = false, fences = false): number {
   let t = maxT;
   // Walk the grid cells under the ray in order. A box in a cell entered beyond the
   // nearest hit so far cannot be nearer, so the walk stops there.
@@ -224,10 +225,12 @@ export function rayWorld(o: Vec3, d: Vec3, maxT: number, paths = false): number 
         if (seenBy[i] === rayId) continue;
         seenBy[i] = rayId;
         if (paths && obstacles.has(b)) continue;
+        // A fence of bars or mesh stops a body, not a look or a shot.
+        if ((b.kind === "fence") !== fences) continue;
         const bt = rayBox(o, d, b, t);
         if (bt < t) t = bt;
       }
-    if (Math.min(nextX, nextZ) > t) return rayTerrain(o, d, t);
+    if (Math.min(nextX, nextZ) > t) return fences ? t : rayTerrain(o, d, t);
     if (nextX < nextZ) {
       cx += stepX;
       nextX += dtX;
@@ -273,6 +276,15 @@ export function los(a: Vec3, b: Vec3, paths = false): boolean {
   const len = Math.hypot(dx, dy, dz);
   if (len < 1e-6) return true;
   return rayWorld(a, { x: dx / len, y: dy / len, z: dz / len }, len, paths) >= len - 0.05;
+}
+
+/** Whether a fence stands between a and b (at a's knee height): a robot that sees through one cannot walk through it. */
+export function fenceBetween(a: Vec3, b: Vec3): boolean {
+  const dx = b.x - a.x;
+  const dz = b.z - a.z;
+  const len = Math.hypot(dx, dz);
+  if (len < 1e-6) return false;
+  return rayWorld({ x: a.x, y: a.y + 0.5, z: a.z }, { x: dx / len, y: 0, z: dz / len }, len, false, true) < len - 0.05;
 }
 
 /** Distance along a unit ray to a sphere, or Infinity. */
