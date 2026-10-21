@@ -5,7 +5,8 @@ import { terrainHeight } from "./sim/terrain";
 import { callLeft, freeKit, idleInput, newRun, type GameEvent, type Input, type Kit, type State } from "./sim/state";
 import { CAMP, entryOf, FRAMES, POIS, poiIndex, type CampSpot, type RegionId, type StationId } from "./sim/map";
 import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
-import { settle, type Settlement } from "./meta/profile";
+import { analyse, settle, type Settlement } from "./meta/profile";
+import { MOD, MODS, type ModKind } from "./sim/config";
 import { holds } from "./meta/island";
 import { contractProgress, targetKey } from "./meta/contracts";
 import { currentStory } from "./meta/story";
@@ -218,6 +219,8 @@ function onEvent(e: GameEvent, s: State) {
   sound.event(e, s);
   if (e.t === "done") {
     // Settle and save at once; only the results screen waits for the moment to play out.
+    knownBefore = [...hub.profile.known];
+    analysed = null;
     settlement = settle(hub.profile, s);
     hub.reload(settlement.profile);
     saveProfile(hub.profile);
@@ -350,6 +353,9 @@ function lock() {
 let kit: Kit = freeKit();
 let region: RegionId = "reservoir";
 let settlement: Settlement | null = null;
+/** The mod kinds known when the raid ended, and the one analysed on its results (one at most). */
+let knownBefore: ModKind[] = [];
+let analysed: ModKind | null = null;
 const hub = new Hub(loadProfile(), () => lock(), () => lock());
 const campView = new CampView();
 
@@ -473,7 +479,7 @@ function start(go: Launch, from?: State) {
   const record = currentStory(hub.profile.records)?.id;
   const taken = hub.contract();
   const fetch = taken?.t === "fetch" ? { poi: taken.poi, kind: taken.kind, n: taken.n } : undefined;
-  state = newRun(go.seed, kit, region, { depots: hub.profile.depots, seen: hub.profile.seen, from: go.from, entry: go.entry, routes: hub.profile.routes, island: holds(hub.profile), record, fetch, network: hub.profile.network, event: hub.profile.events[0] });
+  state = newRun(go.seed, kit, region, { depots: hub.profile.depots, seen: hub.profile.seen, from: go.from, entry: go.entry, routes: hub.profile.routes, island: holds(hub.profile), record, fetch, network: hub.profile.network, event: hub.profile.events[0], threat: hub.profile.threat, known: hub.profile.known });
   hud.setContract(hub.contract(), record ?? null);
   world.campMode = false;
   if (from) walkOut(state, from);
@@ -500,13 +506,26 @@ function finish() {
   fire = ads = adsLatch = false;
   $("banner").className = "";
   hud.show(false);
-  hud.results(state, settlement ?? undefined);
+  hud.results(state, settlement ?? undefined, knownBefore, analysed);
   if (state.outcome === "extracted") sfx.extracted();
   else sfx.lost();
   sound.reset();
   $("results").hidden = false;
   if (document.pointerLockElement) document.exitPointerLock();
 }
+
+// Analysing a mod part on the results: its kind is known from now on, and the card says so.
+$("home").addEventListener("click", (e) => {
+  const k = (e.target as HTMLElement).closest<HTMLElement>("[data-analyse]")?.dataset.analyse as ModKind | undefined;
+  if (!k || !settlement || analysed) return;
+  const next = analyse(hub.profile, settlement, k);
+  if (!next) return;
+  analysed = k;
+  hub.reload(next);
+  saveProfile(hub.profile);
+  sfx.click();
+  hud.results(state, settlement, knownBefore, analysed);
+});
 
 function setPaused(on: boolean) {
   if (!(running || (camping && !campFrozen())) || bot || manual) return;
@@ -604,6 +623,10 @@ declare global {
       take: (type: string) => string | null;
       destroyTarget: () => number;
     };
+    ringfallMods: {
+      wear: (kinds: string[]) => void;
+      drop: (kind: string, ahead: number) => void;
+    };
     ringfallCamp: {
       spots: () => CampSpot[];
       walkTo: (id: CampSpot["id"]) => boolean;
@@ -621,16 +644,19 @@ window.render_game_to_text = () => {
   return JSON.stringify({
     screen: running ? "game" : !$("results").hidden ? "results" : !$("ending").hidden ? "ending" : camping ? "camp" : "title",
     camp: camping ? { panel: hub.station, near: campSpotAt(p.pos)?.id ?? null, lent: hub.lent, ride: { to: hub.rideTo(), refused: hub.rideRefused() }, marks: hub.marks(), fading, board: hub.profile.board.contracts.map((c) => ({ id: c.id, t: c.t })), taken: hub.profile.taken, story: currentStory(hub.profile.records)?.id ?? null } : null,
-    profile: { events: hub.profile.events, cash: hub.profile.cash, stash: hub.profile.stash.length, raids: hub.profile.raids, hideout: hub.profile.hideout, escaped: !!hub.profile.escaped, seed: hub.profile.seed, routes: hub.profile.routes, entries: hub.profile.entries, day: hub.profile.day, poiState: hub.profile.poiState, network: hub.profile.network },
+    profile: { events: hub.profile.events, cash: hub.profile.cash, stash: hub.profile.stash.length, raids: hub.profile.raids, hideout: hub.profile.hideout, escaped: !!hub.profile.escaped, seed: hub.profile.seed, routes: hub.profile.routes, entries: hub.profile.entries, day: hub.profile.day, poiState: hub.profile.poiState, network: hub.profile.network, threat: hub.profile.threat, known: hub.profile.known, freedAt: hub.profile.freedAt },
     boost: { ...s.boost, name: POIS[s.boost.poi].name },
     network: s.network,
+    threat: s.threat,
+    mods: p.mods,
+    modsAround: s.loot.filter((l) => l.kind === "mod").map((l) => ({ mod: l.mod, x: +l.pos.x.toFixed(1), y: +l.pos.y.toFixed(1), z: +l.pos.z.toFixed(1) })),
     relays: s.relays.map((m) => ({ id: m.id, x: m.x, y: +m.y.toFixed(1), z: m.z, hp: Math.round(m.hp) })),
     event: s.event,
     storm: s.storm,
     debris: s.bins.filter((b) => b.debris).map((b) => ({ x: b.x, y: +b.y.toFixed(1), z: b.z, open: b.open }))[0] ?? null,
     crews: s.squads.flatMap((q, i) => (q.crew ? [{ squad: i, members: s.enemies.filter((e) => e.squad === i).map((e) => ({ x: Math.round(e.pos.x), y: +e.pos.y.toFixed(1), z: Math.round(e.pos.z) })), bin: q.crew.bin >= 0 ? { x: s.bins[q.crew.bin].x, y: s.bins[q.crew.bin].y, z: s.bins[q.crew.bin].z } : null, searching: q.crew.searchT > 0, bag: q.bag ?? [], leaving: q.crew.leaving }] : [])),
     retake: { poi: s.retakePoi, next: Number.isFinite(s.retakeT) ? +s.retakeT.toFixed(1) : null, left: s.enemies.filter((e) => s.squads[e.squad]?.retake !== undefined).length },
-    settled: settlement && { overrun: settlement.overrun, event: settlement.event, network: settlement.network, retaken: settlement.retaken, home: settlement.home.length, sold: settlement.sold.length, quests: settlement.quests.map((q) => q.id), opened: settlement.opened, learned: settlement.learned, day: settlement.day, freed: settlement.freed, thinned: settlement.thinned, contract: settlement.contract && { id: settlement.contract.c.id, t: settlement.contract.c.t, done: settlement.contract.done }, story: settlement.story?.id ?? null },
+    settled: settlement && { overrun: settlement.overrun, event: settlement.event, network: settlement.network, retaken: settlement.retaken, home: settlement.home.length, sold: settlement.sold.length, quests: settlement.quests.map((q) => q.id), opened: settlement.opened, learned: settlement.learned, day: settlement.day, freed: settlement.freed, thinned: settlement.thinned, contract: settlement.contract && { id: settlement.contract.c.id, t: settlement.contract.c.t, done: settlement.contract.done }, story: settlement.story?.id ?? null, threat: settlement.threat, analysable: settlement.analysable, analysed },
     contract: running && hub.contract() ? { t: hub.contract()!.t, ...(hub.contract()!.t === "destroy" ? { relay: (hub.contract() as { relay: string }).relay } : {}), ...contractProgress(hub.contract()!, s) } : null,
     records: s.player.records,
     vaults: s.bins.filter((b) => b.vault).map((b) => ({ poi: b.poi, x: b.x, y: b.y, z: b.z, open: b.open })),
@@ -803,6 +829,24 @@ window.ringfallContract = {
     const foes = state.enemies.filter((e) => state.squads[e.squad] && squadKey(state.squads[e.squad]) === key);
     for (const e of foes) kill(state, e, false);
     return foes.length;
+  },
+};
+
+/**
+ * Automation only: mod parts. `wear` puts these kinds on the player in the raid under way (up to
+ * the slots); `drop` lays a part of `kind` on the ground `ahead` metres in front of the player.
+ */
+window.ringfallMods = {
+  wear: (kinds) => {
+    if (!running) return;
+    state.player.mods = kinds.filter((k): k is ModKind => k in MODS).slice(0, MOD.slots);
+  },
+  drop: (kind, ahead) => {
+    if (!running || !(kind in MODS)) return;
+    const p = state.player;
+    const x = p.pos.x + Math.sin(p.yaw) * ahead;
+    const z = p.pos.z - Math.cos(p.yaw) * ahead;
+    state.loot.push({ id: -9_000_000 - state.loot.length, kind: "mod", mod: kind as ModKind, rarity: 2, pos: { x, y: groundAt(x, z, 0.2, p.pos.y + 1), z }, vel: { x: 0, y: 0, z: 0 }, age: 1 });
   },
 };
 

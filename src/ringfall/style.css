@@ -496,6 +496,32 @@ kbd {
   background: var(--plate);
   padding: 10px 12px;
 }
+/* The mod parts worn: a chip per slot in the epic purple, an empty frame for a free one. */
+#mods {
+  display: flex;
+  gap: 4px;
+}
+#mods i {
+  flex: 1;
+  min-width: 0;
+  font-style: normal;
+  font-family: var(--jp);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 16px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--white);
+  background: rgba(168, 92, 255, 0.28);
+  border: 1px solid var(--r2);
+  padding: 0 3px;
+}
+#mods i.free {
+  background: none;
+  border: 1px dashed rgba(255, 255, 255, 0.18);
+}
 #shield-cells {
   display: flex;
   gap: 3px;
@@ -1759,6 +1785,47 @@ body.touch #hub-close kbd {
   color: var(--white);
   box-shadow: inset 0 0 0 2px var(--muted);
 }
+/* The map table's threat: six buttons 0 to 5, the chosen one in the hot colour, what the choice asks and pays under them. */
+.hub-list .hub-threat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px 10px;
+  background: var(--plate);
+}
+.hub-threat > small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.hub-threat .row {
+  display: flex;
+  gap: 6px;
+}
+#hub .hub-threat button {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 56px;
+  font-family: var(--num);
+  font-size: 17px;
+  padding: 5px 0;
+  background: transparent;
+  color: var(--white);
+  box-shadow: inset 0 0 0 2px var(--muted);
+}
+#hub .hub-threat button.on {
+  background: var(--hot);
+  color: var(--ink);
+  box-shadow: none;
+}
+.hub-threat p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.hub-threat p.sub {
+  color: var(--muted);
+  font-size: 12px;
+}
 /* A depot is a start on the ground: teal, the colour the map and the world give a depot that is on. */
 #hub .hub-region button.depot {
   box-shadow: inset 0 0 0 2px var(--mate);
@@ -1851,6 +1918,44 @@ body.touch #hub-close kbd {
 }
 #home .contract.failed {
   color: var(--muted);
+}
+/* The results' analysis: a card per mod part brought out, the one analysed lit. */
+#home .analyse {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+#home .analyse button.mod {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  flex: 1 1 180px;
+  max-width: 260px;
+  margin: 0;
+  padding: 6px 10px;
+  font-size: 14px;
+  text-align: left;
+  color: var(--white);
+  background: rgba(168, 92, 255, 0.22);
+  box-shadow: inset 0 0 0 2px var(--r2);
+}
+#home .analyse button.mod small {
+  font-size: 12px;
+  font-weight: 400;
+}
+#home .analyse button.mod em {
+  font-style: normal;
+  font-size: 12px;
+  color: var(--r3);
+}
+#home .analyse button.mod:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+#home .analyse button.mod.done {
+  opacity: 1;
+  background: rgba(168, 92, 255, 0.45);
 }
 #home .tomorrow {
   margin: 0;
@@ -2060,6 +2165,10 @@ body.touch.playing #touch {
 body.touch #abilities,
 body.touch #cells {
   display: none;
+}
+body.touch #mods i {
+  font-size: 10px;
+  line-height: 14px;
 }
 body.touch #vitals {
   top: 92px;

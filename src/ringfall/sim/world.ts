@@ -6,9 +6,11 @@ import { spawnEnemy, spawnSpot } from "./enemies";
 import { cellsAround, fieldTo, nextStep, onMainGround, routeLength } from "./hunt";
 import type { CrewTrip, SquadState } from "./state";
 import { raiseAlly, startHelp } from "./ally";
-import { boosted, callLeft, crewRand, netLevel, cellOf, exploreSize, mix, rand, roamRand, type Bin, type Input, type Loot, type PartySlot, type PartyTrip, type Player, type Point, type State, type Weapon } from "./state";
+import { boosted, callLeft, crewRand, netLevel, raidClock, cellOf, exploreSize, mix, rand, roamRand, type Bin, type Input, type Loot, type PartySlot, type PartyTrip, type Player, type Point, type State, type Weapon } from "./state";
 import type { EnemyKind, ValuableKind } from "./config";
 import { located, makeNoise } from "./awareness";
+import { hasMod, modScale, spillBinMod, wearMod } from "./mods";
+import { MOD } from "./config";
 
 /*
  * The raid's structure: POIs that fall when their robots are beaten, loot and bins,
@@ -85,7 +87,7 @@ export function stepReinforce(s: State) {
     s.reinforceT = 5; // try again shortly
     return;
   }
-  s.reinforceT = netLevel(s).reinforce.every;
+  s.reinforceT = raidClock(s.network, s.threat ?? 0).every;
   s.reinforceN++;
 }
 
@@ -483,6 +485,8 @@ function openBin(s: State, binIndex: number) {
   const b = s.bins[binIndex];
   b.open = true;
   s.events.push({ t: "binOpen", id: b.id });
+  // A mod part comes out first, by its own hash and id: the rest of the bin is drawn as without it.
+  spillBinMod(s, b);
   if (b.debris) {
     // The ring's crate holds its own table, from no POI: no fetch contract counts it.
     for (let i = 0; i < DEBRIS.heals; i++) spill(s, b.x, b.y, b.z, { kind: "heal", heal: rollHeal(s), rarity: 1 });
@@ -553,6 +557,7 @@ export function stepLoot(s: State, input: Input) {
   }
   const alive = p.downed <= 0 && s.phase === "play";
   const shed: Loot[] = [];
+  const worn: Loot[] = [];
   s.loot = s.loot.filter((l) => {
     l.age += TICK;
     const d = Math.hypot(l.pos.x - p.pos.x, l.pos.z - p.pos.z, l.pos.y - (p.pos.y + 0.8));
@@ -563,8 +568,9 @@ export function stepLoot(s: State, input: Input) {
       l.pos.y += l.vel.y * TICK;
       l.pos.z += l.vel.z * TICK;
       if (d < 0.9) {
-        if (p.shield < maxShield) p.shield = Math.min(maxShield, p.shield + PLAYER.shardShield);
-        else p.hp = Math.min(PLAYER.hp, p.hp + PLAYER.shardShield / 2);
+        const shard = PLAYER.shardShield * modScale(p, "sponge");
+        if (p.shield < maxShield) p.shield = Math.min(maxShield, p.shield + shard);
+        else p.hp = Math.min(PLAYER.hp, p.hp + shard / 2);
         s.events.push({ t: "pickup", kind: "shard", rarity: 1, label: "" });
         return false;
       }
@@ -615,14 +621,21 @@ export function stepLoot(s: State, input: Input) {
       wearArmor(s, l, shed);
       return false;
     }
+    // A part goes on by walking over it while a slot is free; with all worn, the use key swaps it in.
+    if (l.kind === "mod" && l.mod && !input.leaveMods && p.mods.length < MOD.slots && !hasMod(p, l.mod)) {
+      worn.push(l);
+      return true;
+    }
     return true;
   });
   s.loot.push(...shed);
+  for (const l of worn) if (p.mods.length < MOD.slots) wearMod(s, l);
 
   stepSearch(s, alive);
   if (!input.interact || !alive) return;
-  const t = useTarget(s, !input.keepArmor, !input.leaveTools);
+  const t = useTarget(s, !input.keepArmor, !input.leaveTools, !input.leaveMods);
   if (t?.kind === "ally") startHelp(s);
+  else if (t?.kind === "mod") wearMod(s, t.loot);
   else if (t?.kind === "tool") takeTool(s, t.loot);
   else if (t?.kind === "bin") startSearch(s, t.index);
   else if (t?.kind === "care") openCare(s);
@@ -765,13 +778,16 @@ function stepSearch(s: State, alive: boolean) {
     return;
   }
   q.t += TICK;
-  if (q.t >= searchTime(b)) {
+  if (q.t >= searchFor(p, b)) {
     p.search = null;
     openBin(s, q.bin);
   }
 }
 
 export const searchTime = (b: { flare: boolean; vault: boolean }) => (b.vault ? SEARCH.vaultTime : b.flare ? SEARCH.flareTime : SEARCH.time);
+
+/** Seconds the player takes to search bin `b`: quicker with the probe worn. */
+export const searchFor = (p: Pick<Player, "mods">, b: { flare: boolean; vault: boolean }) => searchTime(b) * modScale(p, "probe");
 
 /** What one press of the use key acts on. The HUD shows its prompt from the same choice. */
 export type UseTarget =
@@ -782,14 +798,15 @@ export type UseTarget =
   | { kind: "swap"; loot: Loot }
   | { kind: "armor"; loot: Loot }
   | { kind: "depot"; index: number }
-  | { kind: "tool"; loot: Loot };
+  | { kind: "tool"; loot: Loot }
+  | { kind: "mod"; loot: Loot };
 
 /**
  * A downed teammate within reach comes first, however close any loot is; otherwise
  * the closest of bin, care package or weapon within reach; and only when none of those
  * is, a depot that is on, so a press meant for loot never sends the bag home or ends the raid.
  */
-export function useTarget(s: State, armor = true, tools = true): UseTarget | null {
+export function useTarget(s: State, armor = true, tools = true, mods = true): UseTarget | null {
   const p = s.player;
   const level = (y: number) => Math.abs(y - p.pos.y) < 1.5;
   const a = s.ally;
@@ -810,6 +827,8 @@ export function useTarget(s: State, armor = true, tools = true): UseTarget | nul
     else if (l.kind === "valuable" && l.valuable && makeRoom(p.haul, l.valuable, p.tools, p.records.length)?.length) picks.push({ d: dist2d(l.pos, p.pos) - 0.3, t: { kind: "swap", loot: l } });
     // A tool is taken by the use key, throwing cheaper things out of a full bag.
     else if (tools && l.kind === "tool" && l.tool && roomForTool(p, l.tool)) picks.push({ d: dist2d(l.pos, p.pos) - 0.3, t: { kind: "tool", loot: l } });
+    // A part of a kind not worn goes on with the use key, in place of the one worn longest when every slot is taken.
+    else if (mods && l.kind === "mod" && l.mod && !hasMod(p, l.mod)) picks.push({ d: dist2d(l.pos, p.pos) - 0.3, t: { kind: "mod", loot: l } });
   }
   const pick = picks.filter((k) => k.d < PLAYER.interactRange).sort((x, y) => x.d - y.d)[0]?.t;
   if (pick) return pick;

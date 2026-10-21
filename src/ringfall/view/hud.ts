@@ -1,4 +1,5 @@
 import type { Settlement } from "../meta/profile";
+import type { ModKind } from "../sim/config";
 import { itemName, rewardList } from "./hub";
 import { ALLY, AWARE, BAG, DEPOT, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, SCORE, TACTICAL, TOOL_KINDS, TOOLS, VALUABLES, WEAPONS, type Flank } from "../sim/config";
 import { eyePos, magSize } from "../sim/combat";
@@ -6,7 +7,9 @@ import { dist2d, los } from "../sim/geom";
 import { DEPOTS, entryOf, EXTRACTS, POIS, poiIndex, regionHere, regionOf, routeOf, type EntryId } from "../sim/map";
 import { routeBefore } from "../sim/routes";
 import { islandNotes, netChangeText, noteText, relayName } from "../meta/island";
-import { bagLoad, canOpen, crewsInSight, depotBlocked, depotInReach, extractHere, extractReady, homeReady, makeRoom, poiAt, roomForTool, searchTime, useTarget } from "../sim/world";
+import { bagLoad, canOpen, crewsInSight, depotBlocked, depotInReach, extractHere, extractReady, homeReady, makeRoom, poiAt, roomForTool, searchFor, useTarget } from "../sim/world";
+import { healTime, tacticalCooldown } from "../sim/player";
+import { helpTime, reviveTime } from "../sim/ally";
 import { callLeft, debrisBin, enemyHp, retakeKey, enemyShield, weakY, type GameEvent, type State, type Vec3 } from "../sim/state";
 import { haulValue, rank } from "../sim/results";
 import { pickHeal } from "../sim/player";
@@ -17,7 +20,7 @@ import { storyOf } from "../meta/story";
 import { recordSpot, type RecordId } from "../sim/map";
 import type { World } from "./world";
 import { eventRow, raidEventLine } from "./events";
-import { CREW, RETAKE } from "../sim/config";
+import { CREW, MOD, MODS, NETWORK, RETAKE } from "../sim/config";
 
 /*
  * The DOM layer: everything the player reads. The screen always answers two
@@ -193,7 +196,7 @@ export class Hud {
       case "relayDown":
         this.hitT = 0.4;
         $("hitmark").className = "kill";
-        this.banner(`${relayName(e.id)}を壊した`, "網は今夜 1 段下がる");
+        this.banner(`${relayName(e.id)}を壊した`, `網は今夜 ${s.network >= NETWORK.relayHigh.at ? NETWORK.relayHigh.steps : 1} 段下がる`);
         break;
       case "stagger": {
         // Fire that knocks a robot out of its wind-up says so on its number.
@@ -364,7 +367,8 @@ export class Hud {
     if (s.event) setHtml(oe, raidEventLine(s));
     $("obj-count").textContent = `回収 ${haulValue(s)}`;
     $("obj-bag").textContent = `バッグ ${bagLoad(p)}/${BAG.slots}`;
-    const raid = s.phase === "play" ? `${clock(s.time)}` : "";
+    // A raid above threat 0 says so before its clock.
+    const raid = (s.threat ? `脅威度 ${s.threat}　` : "") + (s.phase === "play" ? `${clock(s.time)}` : "");
     const next = s.phase !== "play" || s.reinforceT >= 60 ? "" : s.reinforceT > 0 ? `　増援まで ${Math.ceil(s.reinforceT)} 秒` : "　増援が来る";
     $("obj-raid").textContent = raid + next;
 
@@ -396,10 +400,12 @@ export class Hud {
     $("hp-fill").style.width = `${(p.hp / PLAYER.hp) * 100}%`;
     $("hp").className = p.hp < 35 ? "low" : "";
     for (const k of HEAL_KINDS) $(`n-${k}`).textContent = String(p.heals[k]);
+    // The mod parts worn, oldest first (the one a full set swaps out), with an empty frame per free slot.
+    setHtml($("mods"), Array.from({ length: MOD.slots }, (_, i) => (p.mods[i] ? `<i title="${esc(MODS[p.mods[i]].note)}">${esc(MODS[p.mods[i]].short)}</i>` : `<i class="free"></i>`)).join(""));
 
     // Abilities.
     const tac = $("ab-tac");
-    tac.style.setProperty("--p", String(1 - p.tactical / TACTICAL.cooldown));
+    tac.style.setProperty("--p", String(1 - p.tactical / tacticalCooldown(p)));
     tac.className = p.tactical <= 0 ? "ab ready" : "ab cool";
     const ult = $("ab-ult");
     ult.style.setProperty("--p", String(p.ult));
@@ -408,7 +414,7 @@ export class Hud {
     $("fx-ult").style.opacity = p.leap ? "1" : "0";
     // The same charge on the touch buttons.
     const tTac = $("t-tac");
-    tTac.style.setProperty("--p", String(1 - p.tactical / TACTICAL.cooldown));
+    tTac.style.setProperty("--p", String(1 - p.tactical / tacticalCooldown(p)));
     tTac.classList.toggle("ready", p.tactical <= 0);
     const tUlt = $("t-ult");
     tUlt.style.setProperty("--p", String(p.ult));
@@ -544,7 +550,7 @@ export class Hud {
     if (p.awaitAlly) {
       const a = s.ally;
       $("downed-sub").textContent = a.rescue > 0 ? `${ALLY.name}が起こしている` : `${ALLY.name}を待っている（${Math.ceil(p.downed)} 秒）`;
-      $("downed-bar").style.width = `${(a.rescue / ALLY.reviveTime) * 100}%`;
+      $("downed-bar").style.width = `${(a.rescue / reviveTime(p)) * 100}%`;
     } else {
       $("downed-sub").textContent = "自己蘇生中";
       $("downed-bar").style.width = `${(1 - p.downed / PLAYER.downedTime) * 100}%`;
@@ -553,7 +559,7 @@ export class Hud {
     $("battery").className = p.healing ? "on" : "";
     if (p.healing) {
       $("heal-label").textContent = `${HEALS[p.healing.kind].label}を使用中`;
-      $("battery-bar").style.width = `${(1 - p.healing.t / HEALS[p.healing.kind].time) * 100}%`;
+      $("battery-bar").style.width = `${(1 - p.healing.t / healTime(p, p.healing.kind)) * 100}%`;
       $("battery-bar").style.background = HEALS[p.healing.kind].shield ? "" : "var(--hp-heal)";
     }
 
@@ -702,7 +708,7 @@ export class Hud {
     const down = a.down > 0;
     const state = down
       ? a.helped > 0
-        ? `起こしている ${Math.floor((a.helped / ALLY.helpTime) * 100)}%`
+        ? `起こしている ${Math.floor((a.helped / helpTime(s.player)) * 100)}%`
         : `ダウン ${Math.ceil(a.down)}秒`
       : a.rescue > 0
         ? "あなたを起こしている"
@@ -735,7 +741,7 @@ export class Hud {
       tag.style.left = `${x}px`;
       tag.style.top = `${y}px`;
       tag.className = down ? "down" : "";
-      $("mate-tag-sub").textContent = down ? (a.helped > 0 ? `${Math.floor((a.helped / ALLY.helpTime) * 100)}%` : `ダウン ${Math.round(d)}m`) : `${Math.round(d)}m`;
+      $("mate-tag-sub").textContent = down ? (a.helped > 0 ? `${Math.floor((a.helped / helpTime(s.player)) * 100)}%` : `ダウン ${Math.round(d)}m`) : `${Math.round(d)}m`;
     }
   }
 
@@ -758,7 +764,8 @@ export class Hud {
       // Back in the camp's yard with a fight close by: it takes the player home once that is over.
       if (homeReady(s) && depotBlocked(s)) return "戦っているロボットが近くにいる間は帰れない";
       // Standing on a valuable that will not go in, and nothing in the bag is worth less.
-      const left = s.loot.find((l) => (l.kind === "valuable" || l.kind === "tool" || l.kind === "record") && l.age >= 0.4 && dist2d(l.pos, p.pos) < PLAYER.pickupRange && Math.abs(l.pos.y - p.pos.y) < 2);
+      const left = s.loot.find((l) => (l.kind === "valuable" || l.kind === "tool" || l.kind === "record" || l.kind === "mod") && l.age >= 0.4 && dist2d(l.pos, p.pos) < PLAYER.pickupRange && Math.abs(l.pos.y - p.pos.y) < 2);
+      if (left?.mod) return `改造パーツ：${MODS[left.mod].name}はもう付けている`;
       if (left?.valuable) return `バッグがいっぱい：${VALUABLES[left.valuable].label}は入らない`;
       if (left?.tool) return `バッグがいっぱい：${TOOLS[left.tool].label}は入らない`;
       if (left?.record) return `バッグがいっぱい：${recordSpot(left.record).name}は 1 枠空けると拾える`;
@@ -773,12 +780,17 @@ export class Hud {
       const out = (roomForTool(p, k) ?? []).map((i) => VALUABLES[p.haul[i]].label);
       return `${key("E")}<span class="r" style="color:${RARITY_CSS[3]}">${TOOLS[k].label}</span>を持つ（${TOOLS[k].size} 枠${out.length ? `・${out.join("・")}を捨てる` : ""}）`;
     }
+    if (t.kind === "mod") {
+      const k = t.loot.mod!;
+      const off = p.mods.length >= MOD.slots ? p.mods[0] : null;
+      return `${key("E")}<span class="r" style="color:${RARITY_CSS[2]}">改造パーツ：${MODS[k].name}</span>を付ける（${esc(MODS[k].note)}${off ? `・${MODS[off].name}を外す` : ""}）`;
+    }
     if (t.kind === "ally") return s.ally.helped > 0 ? `${ALLY.name}を起こしている…（撃つ・離れると中断）` : `${key("E")}${ALLY.name}を起こす`;
     if (t.kind === "bin") {
       const q = p.search;
       const b = s.bins[t.index];
       const what = b.vault ? "保管庫" : "補給箱";
-      if (q?.bin === t.index) return `${what}を調べている… ${Math.floor((q.t / searchTime(b)) * 100)}%（撃つ・離れると中断）`;
+      if (q?.bin === t.index) return `${what}を調べている… ${Math.floor((q.t / searchFor(p, b)) * 100)}%（撃つ・離れると中断）`;
       if (!canOpen(s, b)) return `保管庫：${POIS[b.poi].name}の鍵が要る`;
       return `${key("E")}${what}を${b.vault ? "開ける" : "調べる"}（音が出る）`;
     }
@@ -799,7 +811,24 @@ export class Hud {
     return `${key("E")}<span class="r" style="color:${RARITY_CSS[wl.rarity]}">${WEAPONS[wl.weapon!.kind].name}</span> ${RARITY.names[wl.rarity]}を拾う${swap}`;
   }
 
-  results(s: State, settled?: Settlement) {
+  /**
+   * The results' analysis: the mod parts brought out alive, one of which the player may analyse
+   * (its kind then turns up in bins), `known` the kinds known before, `done` the one analysed.
+   */
+  private analysis(s: State, settled: Settlement | undefined, known: readonly ModKind[], done: ModKind | null): string {
+    const worn = s.player.mods ?? [];
+    if (!settled || !worn.length) return "";
+    if (!settled.analysable.length) return `<p class="sold">生きて帰れなかったので、付けていた改造パーツ（${worn.map((k) => MODS[k].name).join("・")}）は解析できない</p>`;
+    const row = (k: ModKind) => {
+      const old = known.includes(k);
+      const state = k === done ? "解析した。次のレイドから補給箱に出る" : old ? "解析済みの種類" : done ? "" : "新しい種類。解析すると補給箱に出るようになる";
+      return `<button type="button" class="mod${k === done ? " done" : ""}" data-analyse="${k}"${done || old ? " disabled" : ""}><b>${esc(MODS[k].name)}</b><small>${esc(MODS[k].note)}</small>${state ? `<em>${state}</em>` : ""}</button>`;
+    };
+    const head = done ? "改造パーツを解析した" : settled.analysable.some((k) => !known.includes(k)) ? "改造パーツを 1 つ解析する" : "改造パーツ（どれも解析済み）";
+    return `<h3>${head}</h3><div class="analyse">${settled.analysable.map(row).join("")}</div><p class="sold">改造パーツはレイドが終わると消える。解析は生きて帰ったときに 1 つだけ</p>`;
+  }
+
+  results(s: State, settled?: Settlement, known: readonly ModKind[] = [], analysed: ModKind | null = null) {
     const r = rank(s);
     $("rank").textContent = r.rank;
     $("result-title").textContent = s.home ? "帰った" : s.outcome === "extracted" ? "生還" : "行方不明";
@@ -859,7 +888,7 @@ export class Hud {
     // The contract taken for the raid: done and paid, or not done (it goes with the day).
     const c = settled?.contract;
     const contract = c
-      ? `<h3>依頼</h3><p><span class="contract ${c.done ? "done" : "failed"}">${CONTRACT_NAME[c.c.t]}：${contractText(c.c)}<b>${c.done ? `達成・${c.c.reward.cash} クレジット${rewardList(c.c).map(([i, n]) => `・${itemName(i)}${n > 1 ? ` × ${n}` : ""}`).join("")}` : "未達成（依頼は今日で消える）"}</b></span></p>`
+      ? `<h3>依頼</h3><p><span class="contract ${c.done ? "done" : "failed"}">${CONTRACT_NAME[c.c.t]}：${contractText(c.c)}<b>${c.done ? `達成・${c.cash ?? c.c.reward.cash} クレジット${rewardList(c.c).map(([i, n]) => `・${itemName(i)}${n > 1 ? ` × ${n}` : ""}`).join("")}` : "未達成（依頼は今日で消える）"}</b></span></p>`
       : "";
     // The day's event and how it went: the retake squad stopped or not, the salvage crews met.
     const ev = settled?.event ?? s.event;
@@ -875,7 +904,7 @@ export class Hud {
       );
     const events = ev || outcome.length ? `<h3>島の出来事</h3><p>${ev ? eventRow(ev, s.network) : ""}${outcome.join("")}</p>` : "";
     const story = settled?.story ? `<h3>記録を持ち帰った</h3><p><span class="contract done">${storyOf(settled.story.id).title}：${recordSpot(settled.story.id).name}<b>${settled.story.cash} クレジット・依頼板で読める</b></span></p>` : "";
-    $("home").innerHTML = island + events + contract + story + (quests.length ? `<h3>済んだ依頼</h3><p>${quests.map((q) => `<span>${q.title}（${q.reward.cash} クレジット${rewardList(q).map(([i, n]) => `・${itemName(i)}${n > 1 ? ` × ${n}` : ""}`).join("")}）</span>`).join("")}</p>` : "") + (settled
+    $("home").innerHTML = this.analysis(s, settled, known, analysed) + island + events + contract + story + (quests.length ? `<h3>済んだ依頼</h3><p>${quests.map((q) => `<span>${q.title}（${q.reward.cash} クレジット${rewardList(q).map(([i, n]) => `・${itemName(i)}${n > 1 ? ` × ${n}` : ""}`).join("")}）</span>`).join("")}</p>` : "") + (settled
       ? (sent.length ? `<h3>中継ボックスから倉庫へ送った物</h3><p>${count(sent)}</p>` : "") +
         `<h3>${lost ? "ポーチに残った物" : "持ち帰った物"}</h3><p>${home.length ? count(home) : "<span>なし</span>"}</p>` +
         (settled.learned.length ? `<h3>次から選べる入口</h3><p>${settled.learned.map((id) => `<span>${entryOf(id).name}（${regionOf(entryOf(id).region).name}）</span>`).join("")}</p>` : "") +

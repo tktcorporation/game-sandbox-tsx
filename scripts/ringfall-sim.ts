@@ -58,6 +58,16 @@ import { DEBRIS_SPOTS } from "../src/ringfall/sim/map";
 import { crewKey, debrisBin } from "../src/ringfall/sim/state";
 import { nextSeed } from "../src/ringfall/meta/profile";
 import { raidDay, unfreeable } from "../src/ringfall/meta/island";
+import { MOD_KINDS, MOD_START, MODS, RETURN, THREAT, type ModKind } from "../src/ringfall/sim/config";
+import { binMod, robotMod } from "../src/ringfall/sim/mods";
+import { Bot } from "../src/ringfall/sim/bot";
+import { searchFor } from "../src/ringfall/sim/world";
+import { healTime, tacticalCooldown } from "../src/ringfall/sim/player";
+import { helpTime, reviveTime } from "../src/ringfall/sim/ally";
+import { shoot } from "../src/ringfall/sim/combat";
+import { analyse, setThreat } from "../src/ringfall/meta/profile";
+import { raidClock } from "../src/ringfall/sim/state";
+import { netChangeText } from "../src/ringfall/meta/island";
 import { pacing, type Pool } from "./ringfall-pacing";
 import { campaignLines, campaigns, DAYS } from "./ringfall-campaign";
 import { playTable, summarize, type RaidResult, type TableResult } from "./ringfall-table";
@@ -885,7 +895,7 @@ function checkEntries(): string | null {
  */
 function checkKnownEntries(): string | null {
   const fresh = newProfile();
-  if (FIRST_ENTRY !== "beach" || fresh.v !== 16 || fresh.entries.join() !== "beach") return `known entries: a fresh profile knows ${fresh.entries.join()}`;
+  if (FIRST_ENTRY !== "beach" || fresh.v !== 17 || fresh.entries.join() !== "beach") return `known entries: a fresh profile knows ${fresh.entries.join()}`;
   const far = entryOf("checkpoint");
   const at = (s: State, dx: number, lift: number) => {
     const x = far.x + dx;
@@ -918,7 +928,7 @@ function checkKnownEntries(): string | null {
   const save = (p: object) => parseProfile(JSON.parse(JSON.stringify(p)));
   if (save(won.profile)?.entries.join() !== "beach,checkpoint") return "known entries: the known ways in do not survive a save";
   const v10 = save({ ...fresh, v: 10, entries: undefined, region: "harbor", entry: "quay" });
-  if (v10?.v !== 16 || v10.entries.length !== ENTRIES.length || v10.region !== "harbor" || v10.entry !== "quay") return `known entries: a v10 save loaded as ${JSON.stringify(v10 && { v: v10.v, entries: v10.entries, region: v10.region, entry: v10.entry })}`;
+  if (v10?.v !== 17 || v10.entries.length !== ENTRIES.length || v10.region !== "harbor" || v10.entry !== "quay") return `known entries: a v10 save loaded as ${JSON.stringify(v10 && { v: v10.v, entries: v10.entries, region: v10.region, entry: v10.entry })}`;
   // A harbor start with no harbor way in known moves to the reservoir; with a harbor depot on it stays.
   const shut = save({ ...fresh, region: "harbor", entry: "quay", entries: ["beach", "nowhere"] });
   if (shut?.region !== "reservoir" || shut.entry !== "beach" || shut.entries.join() !== "beach") return `known entries: a harbor start with no harbor way in loaded as ${shut?.region} / ${shut?.entry}`;
@@ -1569,19 +1579,19 @@ function checkDepots(): string | null {
   // Saves from before the depots load with none on and nothing explored; unknown depots are dropped.
   const { depots: _d, seen: _s, ...v5 } = newProfile();
   const loaded = parseProfile(JSON.parse(JSON.stringify({ ...v5, v: 5 })));
-  if (loaded?.v !== 16 || loaded.depots.length || loaded.seen !== "") return `depot scenario: a v5 save loaded as ${JSON.stringify(loaded && { v: loaded.v, depots: loaded.depots, seen: loaded.seen })}`;
+  if (loaded?.v !== 17 || loaded.depots.length || loaded.seen !== "") return `depot scenario: a v5 save loaded as ${JSON.stringify(loaded && { v: loaded.v, depots: loaded.depots, seen: loaded.seen })}`;
   const kept = parseProfile(JSON.parse(JSON.stringify({ ...after.profile, depots: ["pad", "nowhere", "pad"] })));
   if (kept?.depots.join() !== "pad" || kept.seen !== after.profile.seen) return `depot scenario: a v7 save loaded depots ${kept?.depots.join()}`;
   // A v6 save's explored map was drawn over the world before it widened: it is dropped, the depots stay.
   const v6 = parseProfile(JSON.parse(JSON.stringify({ ...after.profile, v: 6 })));
-  if (v6?.v !== 16 || v6.seen !== "" || v6.depots.join() !== after.profile.depots.join()) return `depot scenario: a v6 save loaded as ${JSON.stringify(v6 && { v: v6.v, depots: v6.depots, seen: v6.seen.length })}`;
+  if (v6?.v !== 17 || v6.seen !== "" || v6.depots.join() !== after.profile.depots.join()) return `depot scenario: a v6 save loaded as ${JSON.stringify(v6 && { v: v6.v, depots: v6.depots, seen: v6.seen.length })}`;
   // A v9 save dropped from the air over a smaller world: it starts at its region's first way in, its explored map dropped.
   if (!after.profile.seen) return "depot scenario: the raid explored nothing to save";
   // A v11 save's explored map was drawn over the narrower world: it is dropped, the rest stays.
   const v11 = parseProfile(JSON.parse(JSON.stringify({ ...after.profile, v: 11 })));
-  if (v11?.v !== 16 || v11.seen !== "" || v11.depots.join() !== after.profile.depots.join() || v11.entries.join() !== after.profile.entries.join()) return `depot scenario: a v11 save loaded as ${JSON.stringify(v11 && { v: v11.v, seen: v11.seen.length, entries: v11.entries })}`;
+  if (v11?.v !== 17 || v11.seen !== "" || v11.depots.join() !== after.profile.depots.join() || v11.entries.join() !== after.profile.entries.join()) return `depot scenario: a v11 save loaded as ${JSON.stringify(v11 && { v: v11.v, seen: v11.seen.length, entries: v11.entries })}`;
   const v9 = parseProfile(JSON.parse(JSON.stringify({ ...after.profile, v: 9, entry: undefined, region: "harbor" })));
-  if (v9?.v !== 16 || v9.seen !== "" || v9.entry !== regionOf("harbor").entries[0] || v9.depots.join() !== after.profile.depots.join()) return `depot scenario: a v9 save loaded as ${JSON.stringify(v9 && { v: v9.v, entry: v9.entry, seen: v9.seen.length })}`;
+  if (v9?.v !== 17 || v9.seen !== "" || v9.entry !== regionOf("harbor").entries[0] || v9.depots.join() !== after.profile.depots.join()) return `depot scenario: a v9 save loaded as ${JSON.stringify(v9 && { v: v9.v, entry: v9.entry, seen: v9.seen.length })}`;
   return null;
 }
 
@@ -1658,7 +1668,7 @@ function checkDepotBudget(): string | null {
   // A v7 save loads with nothing sent through each depot on (and its explored map, over the smaller world, dropped); a current save keeps only its depots' records.
   const { depotSent: _ds, ...v7 } = { ...p3, v: 7 };
   const m7 = parseProfile(JSON.parse(JSON.stringify(v7)));
-  if (m7?.v !== 16 || JSON.stringify(m7.depotSent) !== JSON.stringify(Object.fromEntries(p3.depots.map((x) => [x, 0]))) || m7.seen !== "") return `depot budget: a v7 save loaded as ${JSON.stringify(m7 && { v: m7.v, depotSent: m7.depotSent })}`;
+  if (m7?.v !== 17 || JSON.stringify(m7.depotSent) !== JSON.stringify(Object.fromEntries(p3.depots.map((x) => [x, 0]))) || m7.seen !== "") return `depot budget: a v7 save loaded as ${JSON.stringify(m7 && { v: m7.v, depotSent: m7.depotSent })}`;
   const odd = parseProfile(JSON.parse(JSON.stringify({ ...p3, depotSent: { pad: 2000, supply: -5, nowhere: 9, quarry: 7000 } })));
   if (JSON.stringify(odd?.depotSent) !== JSON.stringify({ supply: 0, pad: 2000, wreck: 0 })) return `depot budget: a save's odd records loaded as ${JSON.stringify(odd?.depotSent)}`;
 
@@ -1784,7 +1794,7 @@ function checkHideout(): string | null {
   // Saves: a v4 profile keeps its stash and starts with an empty hideout; a v5 one keeps its hideout.
   const v4 = { v: 4, cash: 900, stash: [{ t: "valuable", kind: "gyro" }, { t: "weapon", kind: "pike", rarity: 2 }, { t: "key", poi: "yard" }], raids: 9, extracted: 7, quests: { progress: {}, done: ["grunts"] }, region: "harbor" };
   const m4 = parseProfile(JSON.parse(JSON.stringify(v4)));
-  if (!m4 || m4.v !== 16 || m4.stash.length !== 3 || m4.raids !== 9 || MODULES.some((m) => m4.hideout[m] !== 0) || m4.escaped || m4.region !== "harbor") return `storage scenario: a v4 save loaded as ${JSON.stringify(m4)}`;
+  if (!m4 || m4.v !== 17 || m4.stash.length !== 3 || m4.raids !== 9 || MODULES.some((m) => m4.hideout[m] !== 0) || m4.escaped || m4.region !== "harbor") return `storage scenario: a v4 save loaded as ${JSON.stringify(m4)}`;
   const m5 = parseProfile(JSON.parse(JSON.stringify(end)));
   if (!m5 || m5.hideout.craft !== maxLevel("craft") || m5.escaped?.raids !== 31 || m5.seed !== end.seed) return "storage scenario: a v5 save lost its hideout";
   // With one slot left, a valuable the hideout wants takes it ahead of gear; one it does not want is sold first.
@@ -1911,7 +1921,7 @@ function checkIsland(): string | null {
   if (raidCredit({ t: "clear", poi: "quarry" }, m) !== 1) return "island scenario: coming into a freed POI did not count for a quest to clear it";
   // Saves: a v12 one is on the day after its raids with every POI held; a v13 one keeps its island, the pad held.
   const v12 = parseProfile(JSON.parse(JSON.stringify({ ...newProfile(), v: 12, raids: 6, day: undefined, poiState: undefined })));
-  if (!v12 || v12.v !== 16 || v12.day !== 7 || POIS.some((o) => v12.poiState[o.id].state !== "held")) return `island scenario: a v12 save loaded on day ${v12?.day} with ${JSON.stringify(v12?.poiState)}`;
+  if (!v12 || v12.v !== 17 || v12.day !== 7 || POIS.some((o) => v12.poiState[o.id].state !== "held")) return `island scenario: a v12 save loaded on day ${v12?.day} with ${JSON.stringify(v12?.poiState)}`;
   const back = parseProfile(JSON.parse(JSON.stringify({ ...thinned.profile, poiState: { ...thinned.profile.poiState, pad: { state: "freed", lastVisit: 2 } } })));
   if (!back || back.day !== thinned.profile.day || back.poiState.supply.state !== "thin" || back.poiState.pad.state !== "held") return `island scenario: a v13 save loaded as ${JSON.stringify(back && { day: back.day, poiState: back.poiState })}`;
   return null;
@@ -2003,12 +2013,12 @@ function checkNetwork(): string | null {
   const freedOne = advanceDay(at(4), day({ cleared: ["supply"] })).change.network;
   const freedRelay = advanceDay(at(4), day({ cleared: ["relay"] })).change.network;
   const titan = advanceDay(at(4), day({ titan: true })).change.network;
-  const masts = advanceDay(at(4), day({ relays: ["west", "east"] })).change.network;
+  const masts = advanceDay(at(3), day({ relays: ["west", "east"] })).change.network;
   const all = advanceDay(at(2), day({ cleared: ["relay", "quarry"], titan: true, relays: ["west"] })).change.network;
-  const wipe = advanceDay(at(4), day({ alive: false, cleared: ["supply"], titan: true, relays: ["west"] })).change.network;
-  if (freedOne.to !== 3 || freedOne.freed !== 1 || freedRelay.to !== 2 || freedRelay.freed !== 2 || titan.to !== 3 || masts.to !== 2 || masts.relays !== 2) return `network scenario: steps down ${JSON.stringify({ freedOne, freedRelay, titan, masts })}`;
+  const wipe = advanceDay(at(3), day({ alive: false, cleared: ["supply"], titan: true, relays: ["west"] })).change.network;
+  if (freedOne.to !== 3 || freedOne.freed !== 1 || freedRelay.to !== 2 || freedRelay.freed !== 2 || titan.to !== 3 || masts.to !== 1 || masts.relays !== 2) return `network scenario: steps down ${JSON.stringify({ freedOne, freedRelay, titan, masts })}`;
   if (all.to !== 0 || all.from !== 2) return `network scenario: steps below 0 left ${JSON.stringify(all)}`;
-  if (wipe.freed !== 0 || wipe.titan !== 1 || wipe.relays !== 1 || wipe.to !== 2) return `network scenario: a wipe counted ${JSON.stringify(wipe)} (the titan and the mast count, the POI is not freed)`;
+  if (wipe.freed !== 0 || wipe.titan !== 1 || wipe.relays !== 1 || wipe.to !== 1) return `network scenario: a wipe counted ${JSON.stringify(wipe)} (the titan and the mast count, the POI is not freed)`;
   // The pressure is carried: a night that frees a POI keeps what was gathered, and the step comes when it fills.
   const kept = advanceDay(at(3, 1.5), day({ cleared: ["supply"] }));
   if (kept.change.network.rise !== 1 || kept.profile.network !== 3 || Math.abs(kept.profile.pressure - (1.5 + netGain(kept.profile.poiState) - NETWORK.riseEvery)) > 1e-9) return `network scenario: freeing with pressure 1.5 left ${JSON.stringify({ net: kept.change.network, pressure: kept.profile.pressure })}`;
@@ -2314,19 +2324,19 @@ function checkQuests(): string | null {
   const last = tr.profile.stash.at(-1);
   if (tr.quests[0]?.id !== "furnace" || last?.t !== "valuable" || last.kind !== "reactor" || !tr.sold.some((i) => i.t === "valuable" && i.kind === "fuse")) return `quest scenario: with one slot left the stash kept ${JSON.stringify(last)} and sold ${JSON.stringify(tr.sold)}`;
   const v1 = parseProfile({ v: 1, cash: 10, stash: [], raids: 2, extracted: 1 });
-  if (!v1 || v1.v !== 16 || v1.quests.done.length || v1.region !== "reservoir") return "storage scenario: a v1 save does not load";
+  if (!v1 || v1.v !== 17 || v1.quests.done.length || v1.region !== "reservoir") return "storage scenario: a v1 save does not load";
   // v2 saves named a key's POI by its place in the list; it loads as that POI's id.
   const v2 = parseProfile({ v: 2, cash: 10, stash: [{ t: "key", poi: 2 }, { t: "key", poi: 9 }], raids: 1, extracted: 1, quests: { progress: {}, done: [] } });
   const v2Key = v2?.stash[0];
-  if (!v2 || v2.v !== 16 || v2.stash.length !== 1 || v2Key?.t !== "key" || v2Key.poi !== "relay") return `storage scenario: a v2 save's key 2 loaded as ${JSON.stringify(v2?.stash)}, not the relay key`;
+  if (!v2 || v2.v !== 17 || v2.stash.length !== 1 || v2Key?.t !== "key" || v2Key.poi !== "relay") return `storage scenario: a v2 save's key 2 loaded as ${JSON.stringify(v2?.stash)}, not the relay key`;
   // A v3 save keeps its keys by id and drops into the reservoir; the landing choice is kept.
   const v3 = parseProfile({ v: 3, cash: 10, stash: [{ t: "key", poi: "wreck" }], raids: 1, extracted: 1, quests: { progress: {}, done: [] } });
-  if (!v3 || v3.v !== 16 || v3.stash.length !== 1 || v3.region !== "reservoir") return `storage scenario: a v3 save loaded as ${JSON.stringify(v3)}`;
+  if (!v3 || v3.v !== 17 || v3.stash.length !== 1 || v3.region !== "reservoir") return `storage scenario: a v3 save loaded as ${JSON.stringify(v3)}`;
   if (parseProfile(JSON.parse(JSON.stringify({ ...newProfile(), region: "harbor", entries: ["beach", "outskirts"] })))?.region !== "harbor") return "storage scenario: the landing choice did not survive a save";
   // The intro quests come first, the craft's line after the generator; a quest chain from before the board loads with the quests there still are.
   if (QUESTS.filter((q) => q.intro).map((q) => q.id).join() !== "grunts,village,power,parts") return `quest scenario: the intro quests are ${QUESTS.filter((q) => q.intro).map((q) => q.id).join()}`;
   const v13 = parseProfile(JSON.parse(JSON.stringify({ ...newProfile(), v: 13, board: undefined, taken: undefined, records: undefined, stash: [{ t: "weapon", kind: "talon", rarity: 3 }, { t: "key", poi: "yard" }], quests: { progress: { drones: 2, heavies: 1, parts: 0 }, done: ["grunts", "drones", "quarry", "relay", "power"] } })));
-  if (!v13 || v13.v !== 16 || v13.quests.done.join() !== "grunts,power" || Object.keys(v13.quests.progress).join() !== "parts" || v13.stash.length !== 2 || v13.records.length || v13.taken !== null || v13.board.day !== v13.day || !v13.board.contracts.length)
+  if (!v13 || v13.v !== 17 || v13.quests.done.join() !== "grunts,power" || Object.keys(v13.quests.progress).join() !== "parts" || v13.stash.length !== 2 || v13.records.length || v13.taken !== null || v13.board.day !== v13.day || !v13.board.contracts.length)
     return `quest scenario: a v13 save with the old quests loaded as ${JSON.stringify(v13 && { v: v13.v, quests: v13.quests, stash: v13.stash.length, board: v13.board.contracts.length })}`;
   if (offered(v13.quests).map((q) => q.id).join() !== "village,parts,craft") return `quest scenario: the migrated save is offered ${offered(v13.quests).map((q) => q.id).join()}`;
   return null;
@@ -3279,7 +3289,7 @@ function checkTools(): string | null {
   if (spare.opened.length || !kept || sellPrice(kept) !== TOOLS.cutter.value) return "tool scenario: a cutter with its routes all open was not kept to sell at its value";
   // Saves: a v8 one has every route closed; a v9 one keeps its routes, unknown ones dropped.
   const v8 = parseProfile(JSON.parse(JSON.stringify({ ...p, v: 8 })));
-  if (!v8 || v8.v !== 16 || v8.routes.length) return `tool scenario: a v8 save loaded with routes ${JSON.stringify(v8?.routes)}`;
+  if (!v8 || v8.v !== 17 || v8.routes.length) return `tool scenario: a v8 save loaded with routes ${JSON.stringify(v8?.routes)}`;
   const v9 = parseProfile(JSON.parse(JSON.stringify({ ...p, routes: ["gangway", "nowhere", "dam"] })));
   if (v9?.routes.join() !== "dam,gangway") return `tool scenario: a v9 save loaded with routes ${JSON.stringify(v9?.routes)}`;
   return null;
@@ -3442,7 +3452,317 @@ function checkEvents(): string | null {
   if (raidDay(o).crews !== 1 || withCrew.profile.network !== without.profile.network + 1 || withCrew.change.network.crews !== 1) return `event scenario: a crew that got off left the network at ${withCrew.profile.network}, not ${without.profile.network + 1}`;
   return null;
 }
-for (const err of [checkEvents(), checkTerrainIndex(20_000), checkParties(), checkPacks(), checkRoutes(), checkRouteObstacles(), checkTools(), checkTimeToKill(), checkStagger(), checkWindupMoves(), checkDepots(), checkDepotBudget(), checkPlates(), checkHideout(), checkBoltNoTunnel(), checkPickupWavesRouted(), checkLaterWaveFights(), checkSidestepHit(), checkReturnFire(), checkWallStops(), checkPinch(), checkPursuit(), checkHealHeard(), checkPositionMatters(), checkPullWhenAiming(), checkVault(), checkIsland(), checkNetwork(), checkContracts(), checkQuests(), checkSettle(), checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkBoatCall(), checkSecondPickup(), checkEntries(), checkCamp(), checkKnownEntries(), checkConnections(), checkAllySelfUp(), checkStompHeight(), checkFieldsReused(), checkFieldsFollowRunner(), checkCliffsStop(), checkNoPits(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill(), checkLeap(), checkLeapLeavesAllyBelow(), checkLeapDowned(), checkLeapAllyCatchesUp(), checkLeapAllyDowned(), checkLeapWithItem(), checkLeapClocks(), checkLeapOffHighGround(), checkLeapUnderRoof()]) {
+/**
+ * Mod parts: which bin or robot holds one is a hash of the seed, so a bot raid that picks none
+ * up plays out as a raid without them; each part changes the number it claims; parts go on by
+ * walking over them or by the use key; only a raid got off alive may analyse one.
+ */
+function checkMods(): string | null {
+  if (MOD_START.length !== 6 || MOD_KINDS.length < 18) return `mod scenario: ${MOD_START.length} kinds known from the start of ${MOD_KINDS.length}`;
+  // The same raid with parts and without: the bot leaves the parts lying, and every random number and id is drawn alike.
+  let dropped = 0;
+  // Played one after the other: each raid starts with the hunters' fields empty, as a raid of the tables does.
+  const play = (seed: number, region: RegionId, noMods: boolean) => {
+    const s = newRun(seed, freeKit(), region, { threat: THREAT.max, noMods });
+    const bot = new Bot(SKILLS[2], 7);
+    let prev = false;
+    while (s.time < 420 && s.phase !== "done") {
+      const inp = bot.input(s);
+      step(s, inp, prev);
+      prev = inp.crouch;
+      dropped = Math.max(dropped, s.loot.filter((l) => l.kind === "mod").length);
+    }
+    return s;
+  };
+  for (const [seed, region] of [[71, "reservoir"], [233, "harbor"]] as const) {
+    const a = play(seed, region, false);
+    const b = play(seed, region, true);
+    const look = (s: State) => JSON.stringify([s.time, s.rng, s.roamRng, s.crewRng, s.nextId, s.player.pos, s.player.hp, s.player.haul, s.stats, s.enemies.map((e) => [e.id, e.pos, e.hp]), s.loot.filter((l) => l.kind !== "mod")]);
+    if (look(a) !== look(b)) return `mod scenario: a ${region} raid (seed ${seed}) with mod parts lying about played out unlike the same raid without them`;
+    if (a.player.mods.length) return "mod scenario: the bot put a mod part on";
+  }
+  if (!dropped) return "mod scenario: no mod part turned up in two bot raids at the top threat";
+  // Bins hold only known kinds, robots any; more of them at a higher threat; the same for the same seed.
+  let low = 0;
+  let high = 0;
+  const robotKinds = new Set<string>();
+  for (let seed = 1; seed <= 40; seed++) {
+    const s0 = newRun(seed, freeKit(), "reservoir", { known: ["leech", "hush"] });
+    const s5 = newRun(seed, freeKit(), "reservoir", { threat: 5, known: ["leech", "hush"] });
+    for (const b of s0.bins) {
+      const m = binMod(s0, b);
+      if (m) low++;
+      if (m && !["leech", "hush"].includes(m)) return `mod scenario: a bin holds ${m}, which the profile does not know`;
+      if (b.vault && m) return "mod scenario: a vault holds a mod part";
+      if (m !== binMod(newRun(seed, freeKit(), "reservoir", { known: ["leech", "hush"] }), b)) return "mod scenario: a bin's part is not fixed by the seed";
+    }
+    for (const b of s5.bins) if (binMod(s5, b)) high++;
+    for (const e of s5.enemies) {
+      const m = robotMod(s5, e);
+      if (m) robotKinds.add(m);
+    }
+  }
+  if (!(low > 0) || !(high > low * 1.8)) return `mod scenario: ${low} bins hold a part at threat 0 and ${high} at threat 5`;
+  if (![...robotKinds].some((k) => !MOD_START.includes(k as ModKind))) return "mod scenario: robots never drop a kind the profile does not know";
+  // Robots drop theirs where they fall, under an id of their own.
+  {
+    const s = newRun(9, freeKit(), "reservoir", { threat: 5 });
+    const e = s.enemies.find((o) => robotMod(s, o));
+    if (!e) return "mod scenario: no robot of a threat-5 raid carries a part";
+    kill(s, e, false);
+    const l = s.loot.find((o) => o.kind === "mod");
+    if (!l || l.mod !== robotMod(s, e) || l.id >= 0) return "mod scenario: a robot carrying a part fell without dropping it";
+    const plain = newRun(9, freeKit(), "reservoir", { threat: 5, noMods: true });
+    kill(plain, plain.enemies.find((o) => o.id === e.id)!, false);
+    if (plain.rng !== s.rng || plain.nextId !== s.nextId) return "mod scenario: a robot's part drew on the raid's numbers";
+  }
+  // Putting parts on: walking over one with a slot free, the use key swapping the oldest out, never two of a kind, never for the bot.
+  {
+    const s = padRun();
+    s.ally.active = false;
+    const p = s.player;
+    const lay = (mod: ModKind, id: number) => s.loot.push({ id, kind: "mod", mod, rarity: 2, pos: { ...p.pos }, vel: { x: 0, y: 0, z: 0 }, age: 1 });
+    lay("leech", -1);
+    ticks(s, 0.1, { ...idleInput(), leaveMods: true });
+    if (p.mods.length) return "mod scenario: an input that leaves parts put one on";
+    ticks(s, 0.1);
+    if (p.mods.join() !== "leech") return `mod scenario: walking over a part with slots free left ${p.mods.join()}`;
+    lay("leech", -2);
+    ticks(s, 0.1);
+    if (p.mods.length !== 1 || !s.loot.some((l) => l.id === -2)) return "mod scenario: a second part of a kind worn went on";
+    s.loot = s.loot.filter((l) => l.id !== -2);
+    lay("grip", -3);
+    lay("medic", -4);
+    ticks(s, 0.1);
+    if (p.mods.join() !== "leech,grip,medic") return `mod scenario: three parts went on as ${p.mods.join()}`;
+    lay("probe", -5);
+    ticks(s, 0.1);
+    if (p.mods.length !== 3 || !s.loot.some((l) => l.id === -5)) return "mod scenario: a fourth part went on without the use key";
+    const t = useTarget(s);
+    if (t?.kind !== "mod") return `mod scenario: the use key at a part with every slot worn points at ${t?.kind}`;
+    step(s, { ...idleInput(), interact: true }, false);
+    if (p.mods.join() !== "grip,medic,probe" || !s.loot.some((l) => l.kind === "mod" && l.mod === "leech")) return `mod scenario: the use key swapped a part in as ${p.mods.join()}`;
+  }
+  // Each part changes the number it names.
+  {
+    const bare = { mods: [] as ModKind[] };
+    const one = (k: ModKind) => ({ mods: [k] });
+    if (searchFor(one("probe"), { flare: false, vault: false }) >= searchFor(bare, { flare: false, vault: false })) return "mod scenario: the probe does not shorten a search";
+    if (healTime(one("medic"), "cell") >= healTime(bare, "cell")) return "mod scenario: the patch does not shorten a heal";
+    if (tacticalCooldown(one("capacitor")) >= tacticalCooldown(bare)) return "mod scenario: the capacitor does not shorten the arc's wait";
+    if (reviveTime(one("medlink")) >= reviveTime(bare) || helpTime(one("carrier")) >= helpTime(bare)) return "mod scenario: the link or the belt does not shorten a revive";
+    // Reloading, regaining health and charging the ult, run in a raid.
+    const timed = (mods: ModKind[], what: "reload" | "regen" | "ult" | "walk" | "recoil") => {
+      const s = padRun();
+      s.ally.active = false;
+      const p = s.player;
+      p.mods = mods;
+      if (what === "reload") {
+        p.weapons[0] = { kind: "pike", rarity: 0, mag: 0 };
+        step(s, { ...idleInput(), reload: true }, false);
+        return p.reload;
+      }
+      if (what === "regen") {
+        p.hp = 10;
+        p.sinceHurt = 99;
+        ticks(s, 1);
+        return p.hp;
+      }
+      if (what === "ult") {
+        p.ult = 0;
+        ticks(s, 2);
+        return p.ult;
+      }
+      if (what === "recoil") {
+        p.weapons[0] = { kind: "pike", rarity: 0, mag: -1 };
+        shoot(s, p.weapons[0]!);
+        return p.recoil;
+      }
+      ticks(s, 1.5, { ...idleInput(), moveX: 1 });
+      return Math.hypot(p.vel.x, p.vel.z);
+    };
+    if (timed(["grip"], "reload") >= timed([], "reload")) return "mod scenario: the grip does not quicken a reload";
+    if (timed(["mender"], "regen") <= timed([], "regen")) return "mod scenario: the mender does not quicken health coming back";
+    if (timed(["surge"], "ult") <= timed([], "ult")) return "mod scenario: the surge does not quicken the ult's charge";
+    if (timed(["stride"], "walk") <= timed([], "walk") + 0.1) return "mod scenario: the frame does not quicken walking";
+    if (timed(["stock"], "recoil") >= timed([], "recoil")) return "mod scenario: the stock does not lessen the recoil";
+    // Shots on a robot: the leech's shield, the piercer through a plate, the jolt's stagger, the back's damage.
+    const at = openSpot(16, 2, 2);
+    const far = openSpot(24, 2, 2);
+    if (!at || !far) return "mod scenario: no open ground for the shots";
+    const shot = (mods: ModKind[], how: "weak" | "plate" | "jolt" | "back" | "ambush-back" | "ambush-front") => {
+      const { s, foes } = standoff(at, 12, ["grunt"]);
+      const g = foes[0];
+      const p = s.player;
+      p.mods = mods;
+      p.iframes = 99;
+      p.shield = 0;
+      g.shield = 0;
+      g.hp = 1e6;
+      if (how === "weak") {
+        const a = lookAngles(eyePos(s), weakPoint(g));
+        fireRay(s, { kind: "pike", rarity: 0, mag: -1 }, forward(a.yaw, a.pitch));
+        return p.shield;
+      }
+      if (how === "plate") {
+        g.plate = 2;
+        damageEnemy(s, g, 100, false, bodyCenter(g), "front", "player", 0);
+        return 1e6 - g.hp;
+      }
+      if (how === "jolt") {
+        damageEnemy(s, g, 10, false, bodyCenter(g), "front", "player", 0);
+        return g.stagger;
+      }
+      if (how === "ambush-back" || how === "ambush-front") {
+        // An unaware robot, its back to the player or facing them.
+        g.aware = "idle";
+        g.yaw = lookAngles(g.pos, s.player.pos).yaw + (how === "ambush-back" ? Math.PI : 0);
+        damageEnemy(s, g, 100, false, bodyCenter(g), "ambush", "player", 0);
+        return 1e6 - g.hp;
+      }
+      damageEnemy(s, g, 100, false, bodyCenter(g), "back", "player", 0);
+      return 1e6 - g.hp;
+    };
+    if (!(shot(["leech"], "weak") >= MODS.leech.value - 1e-9) || shot([], "weak") !== 0) return `mod scenario: a weak-point hit gave ${shot(["leech"], "weak")} shield with the coil and ${shot([], "weak")} without`;
+    if (shot(["piercer"], "plate") <= shot([], "plate")) return "mod scenario: the piercer does not get more through a plate";
+    if (shot(["jolt"], "jolt") <= shot([], "jolt")) return "mod scenario: the jolt does not build a stagger faster";
+    if (shot(["stalker"], "back") <= shot([], "back")) return "mod scenario: the stalker does not add to a hit from behind";
+    if (shot(["stalker"], "ambush-back") <= shot([], "ambush-back")) return "mod scenario: the stalker does not add to an ambush from behind";
+    if (shot(["stalker"], "ambush-front") !== shot([], "ambush-front")) return "mod scenario: the stalker adds to an ambush from the front";
+    // A drone watching the player fills its detection slower with the scrambler worn.
+    const watched = (mods: ModKind[]) => {
+      const { s, foes } = standoff(at, 14, ["drone"]);
+      const d = foes[0];
+      s.player.mods = mods;
+      s.squads[d.squad].engaged = false;
+      d.aware = "idle";
+      d.detect = 0;
+      ticks(s, 0.2);
+      return d.detect;
+    };
+    if (!(watched([]) > 0) || watched(["scrambler"]) >= watched([])) return `mod scenario: a drone's detection filled ${watched(["scrambler"])} with the scrambler and ${watched([])} without`;
+    // Crouched, the player is noticed from less far with the soles worn.
+    const crouched = (mods: ModKind[]) => {
+      // Further than the soles let it see, nearer than a crouch alone: 0.55 × 45 = 24.75 m; with the soles 19.8 m.
+      const { s, foes } = standoff(far, 22, ["grunt"]);
+      const g = foes[0];
+      s.player.mods = mods;
+      s.squads[g.squad].engaged = false;
+      g.aware = "idle";
+      g.detect = 0;
+      ticks(s, 0.3, { ...idleInput(), crouch: true });
+      return g.detect;
+    };
+    if (!(crouched([]) > 0) || crouched(["hush"]) !== 0) return `mod scenario: a crouched player at 22 m filled ${crouched([])} without the soles and ${crouched(["hush"])} with them`;
+  }
+  // Analysis: only a part worn out of a raid got off alive, only a kind not yet known, and its kind then turns up in bins.
+  {
+    const p = newProfile(4);
+    const out = newRun(p.seed);
+    out.player.mods = ["scrambler", "leech"];
+    out.outcome = "extracted";
+    const settled = settle(p, out);
+    if (settled.analysable.join() !== "scrambler,leech") return `mod scenario: a raid got off alive may analyse ${settled.analysable.join()}`;
+    if (analyse(settled.profile, settled, "leech")) return "mod scenario: a known kind was analysed again";
+    const learnt = analyse(settled.profile, settled, "scrambler");
+    if (!learnt?.known.includes("scrambler") || learnt.known.length !== MOD_START.length + 1) return `mod scenario: analysing the scrambler left ${learnt?.known.join()}`;
+    if (analyse(settled.profile, settled, "stock")) return "mod scenario: a part not worn was analysed";
+    const lost = newRun(p.seed);
+    lost.player.mods = ["scrambler"];
+    lost.outcome = "dead";
+    const dead = settle(p, lost);
+    if (dead.analysable.length || analyse(dead.profile, dead, "scrambler")) return "mod scenario: a wiped raid analysed a part";
+    if (settle(p, out).profile.known.length !== MOD_START.length) return "mod scenario: settling learned a kind without analysis";
+    const next = newRun(learnt.seed, freeKit(), "reservoir", { known: learnt.known });
+    if (!next.known.includes("scrambler")) return "mod scenario: an analysed kind is not in the next raid's bins";
+  }
+  return null;
+}
+
+/**
+ * The threat: 0 is the network's own raid; 5 changes every number it names; it pays the contract
+ * more and turns up more parts; a POI freed at `THREAT.freeAt` or higher takes the network a step
+ * further down, and is recorded at that threat. A mast destroyed on a day that started at
+ * `NETWORK.relayHigh.at` takes it `relayHigh.steps` down. Saves before v17 load at threat 0.
+ */
+function checkThreat(): string | null {
+  for (let n = 0; n <= NETWORK.max; n++) {
+    const l = NETWORK.levels[n];
+    for (const seed of [5, 91]) {
+      const plain = newRun(seed, freeKit(), "reservoir", { network: n });
+      const zero = newRun(seed, freeKit(), "reservoir", { network: n, threat: 0 });
+      if (zero.reinforceT !== l.reinforce.first || zero.raiderT !== l.raiders || raidClock(n, 0).every !== l.reinforce.every) return `threat scenario: threat 0 at network ${n} waits ${zero.reinforceT} s and ${zero.raiderT} s`;
+      if (JSON.stringify([plain.enemies, plain.squads, plain.rng, plain.nextId]) !== JSON.stringify([zero.enemies, zero.squads, zero.rng, zero.nextId])) return `threat scenario: threat 0 at network ${n} is not the network's raid`;
+      const top = newRun(seed, freeKit(), "reservoir", { network: n, threat: THREAT.max });
+      const clock = raidClock(n, THREAT.max);
+      if (!(top.reinforceT < l.reinforce.first) || !(clock.every < l.reinforce.every) || !(top.raiderT < l.raiders) || top.reinforceT !== clock.first || top.raiderT !== clock.raiders) return `threat scenario: threat ${THREAT.max} at network ${n} waits ${top.reinforceT} s and ${top.raiderT} s`;
+      const plated = (s: State) => s.enemies.filter((e) => (e.kind === "grunt" || e.kind === "heavy") && !e.elite && e.plate > 0).length;
+      if (!(plated(top) > plated(zero))) return `threat scenario: threat ${THREAT.max} at network ${n} plates ${plated(top)} robots, threat 0 ${plated(zero)}`;
+    }
+  }
+  // Robots answer shots from afar from further at a higher threat.
+  const answer = (threat: number) => {
+    const s = newRun(5, freeKit(), "reservoir", { threat });
+    const g = s.enemies.find((e) => e.kind === "grunt")!;
+    s.squads[g.squad].shotT = 5;
+    return fireRange(s, g);
+  };
+  if (answer(0) !== RETURN.range.grunt || !(answer(THREAT.max) > answer(0))) return `threat scenario: a grunt answers from ${answer(0)} m at threat 0 and ${answer(THREAT.max)} m at threat ${THREAT.max}`;
+  // A contract done at a high threat pays more.
+  {
+    let q: Profile = { ...newProfile(5), network: NETWORK.relayAt, entries: ENTRIES.map((e) => e.id) };
+    q = { ...q, board: makeBoard(q) };
+    const job = q.board.contracts.find((c) => c.t === "destroy")!;
+    q = take(q, job.id);
+    for (const threat of [0, 3]) {
+      const r = newRun(q.seed, freeKit(), "reservoir", { network: q.network, threat });
+      r.outcome = "dead";
+      r.stats.relays = [(job as { relay: RelayId }).relay];
+      const paid = settle({ ...q, threat }, r);
+      const want = threat ? Math.round(job.reward.cash * THREAT.levels[threat].reward) : job.reward.cash;
+      if (!paid.contract?.done || paid.profile.cash !== q.cash + want || paid.contract.cash !== want) return `threat scenario: the contract at threat ${threat} paid ${paid.profile.cash - q.cash}, not ${want}`;
+    }
+  }
+  // Freeing at threat 3 or higher takes the network a step further down; a mast on a strong day two.
+  const day = (o: Partial<RaidDay> = {}): RaidDay => ({ alive: true, cleared: [], visited: [], titan: false, relays: [], ...o });
+  const at = (network: number): Profile => ({ ...newProfile(3), network, pressure: 0 });
+  const free2 = advanceDay(at(4), day({ cleared: ["supply"], threat: THREAT.freeAt - 1 })).change.network;
+  const free3 = advanceDay(at(4), day({ cleared: ["supply"], threat: THREAT.freeAt })).change.network;
+  const freeTwo = advanceDay(at(5), day({ cleared: ["supply", "quarry"], threat: THREAT.max })).change.network;
+  const freeDead = advanceDay(at(4), day({ alive: false, cleared: ["supply"], threat: THREAT.max })).change.network;
+  if (free2.to !== 3 || free2.threat || free3.to !== 2 || free3.threat !== 1 || freeTwo.to !== 1 || freeDead.to !== 4) return `threat scenario: freeing at a high threat moved the network ${JSON.stringify({ free2, free3, freeTwo, freeDead })}`;
+  if (!netChangeText(free3).includes("脅威度 −1")) return `threat scenario: the night's change reads ${netChangeText(free3)}`;
+  const mast3 = advanceDay(at(NETWORK.relayHigh.at - 1), day({ relays: ["west"] })).change.network;
+  const mast4 = advanceDay(at(NETWORK.relayHigh.at), day({ relays: ["west"] })).change.network;
+  const mast5 = advanceDay(at(NETWORK.max), day({ relays: ["west", "east"] })).change.network;
+  if (mast3.relays !== 1 || mast3.to !== NETWORK.relayHigh.at - 2 || mast4.relays !== NETWORK.relayHigh.steps || mast4.to !== NETWORK.relayHigh.at - NETWORK.relayHigh.steps || mast5.to !== NETWORK.max - 4) return `threat scenario: masts moved the network ${JSON.stringify({ mast3, mast4, mast5 })}`;
+  // The best threat each POI was freed at, kept through a later freeing at a lower one.
+  {
+    let p = newProfile(6);
+    const freeSupply = (threat: number) => {
+      const s = newRun(p.seed, freeKit(), "reservoir", { threat, island: holds(p) });
+      s.outcome = "extracted";
+      s.stats.cleared = [SUPPLY];
+      return settle({ ...p, threat }, s);
+    };
+    p = freeSupply(4).profile;
+    if (p.freedAt.supply !== 4) return `threat scenario: freeing the supply depot at threat 4 recorded ${p.freedAt.supply}`;
+    p = { ...p, poiState: { ...p.poiState, supply: { state: "held", lastVisit: p.day - 1, since: 0 } } };
+    p = freeSupply(1).profile;
+    if (p.freedAt.supply !== 4 || p.freedAt.quarry !== undefined) return `threat scenario: a later freeing at threat 1 left the record ${JSON.stringify(p.freedAt)}`;
+  }
+  // Saves: before v17 a profile knows the starting kinds, plays at threat 0 and has freed nothing at a threat; a v17 one keeps them.
+  const v16 = parseProfile(JSON.parse(JSON.stringify({ ...newProfile(), v: 16, known: undefined, threat: undefined, freedAt: undefined })));
+  if (!v16 || v16.v !== 17 || v16.known.join() !== MOD_START.join() || v16.threat !== 0 || Object.keys(v16.freedAt).length) return `threat scenario: a v16 save loaded as ${JSON.stringify(v16 && { v: v16.v, known: v16.known, threat: v16.threat, freedAt: v16.freedAt })}`;
+  const v16junk = parseProfile(JSON.parse(JSON.stringify({ ...newProfile(), v: 16, known: ["stock"], threat: 4, freedAt: { supply: 5 } })));
+  if (!v16junk || v16junk.known.includes("stock") || v16junk.threat !== 0 || v16junk.freedAt.supply !== undefined) return "threat scenario: a v16 save took fields it could not have had";
+  const v17 = parseProfile(JSON.parse(JSON.stringify(setThreat({ ...newProfile(), known: [...MOD_START, "stock"], freedAt: { supply: 3, pad: 9 as number } }, 4))));
+  if (!v17 || v17.threat !== 4 || !v17.known.includes("stock") || v17.freedAt.supply !== 3 || v17.freedAt.pad !== THREAT.max) return `threat scenario: a v17 save loaded as ${JSON.stringify(v17 && { known: v17.known, threat: v17.threat, freedAt: v17.freedAt })}`;
+  const weird = parseProfile(JSON.parse(JSON.stringify({ ...newProfile(), known: ["nope", "stock", "stock"], threat: 99 })));
+  if (!weird || weird.threat !== THREAT.max || weird.known.filter((k) => k === "stock").length !== 1 || weird.known.includes("nope" as ModKind)) return "threat scenario: a v17 save with bad fields was not cleaned";
+  return null;
+}
+for (const err of [checkMods(), checkThreat(), checkEvents(), checkTerrainIndex(20_000), checkParties(), checkPacks(), checkRoutes(), checkRouteObstacles(), checkTools(), checkTimeToKill(), checkStagger(), checkWindupMoves(), checkDepots(), checkDepotBudget(), checkPlates(), checkHideout(), checkBoltNoTunnel(), checkPickupWavesRouted(), checkLaterWaveFights(), checkSidestepHit(), checkReturnFire(), checkWallStops(), checkPinch(), checkPursuit(), checkHealHeard(), checkPositionMatters(), checkPullWhenAiming(), checkVault(), checkIsland(), checkNetwork(), checkContracts(), checkQuests(), checkSettle(), checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkBoatCall(), checkSecondPickup(), checkEntries(), checkCamp(), checkKnownEntries(), checkConnections(), checkAllySelfUp(), checkStompHeight(), checkFieldsReused(), checkFieldsFollowRunner(), checkCliffsStop(), checkNoPits(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill(), checkLeap(), checkLeapLeavesAllyBelow(), checkLeapDowned(), checkLeapAllyCatchesUp(), checkLeapAllyDowned(), checkLeapWithItem(), checkLeapClocks(), checkLeapOffHighGround(), checkLeapUnderRoof()]) {
   if (err) {
     console.error(err);
     process.exit(1);

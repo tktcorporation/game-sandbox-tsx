@@ -1,4 +1,5 @@
-import { ALLY, ASSIST, DEG, DODGE, ELITE, ENEMIES, FLANK, KICK_PATTERN, KICK_RESET, NOISE, PLATE, PLAYER, RARITY, RELAY, RETURN, ROBOT_DROPS, STAGGER, TICK, ULT, VALUABLES, WEAPONS, type Flank, type Rarity, type ValuableKind, type WeaponSpec } from "./config";
+import { MODS, ALLY, ASSIST, DEG, DODGE, ELITE, ENEMIES, FLANK, KICK_PATTERN, KICK_RESET, NOISE, PLATE, PLAYER, RARITY, RELAY, RETURN, ROBOT_DROPS, STAGGER, TICK, ULT, VALUABLES, WEAPONS, type Flank, type Rarity, type ValuableKind, type WeaponSpec } from "./config";
+import { dropRobotMod, hasMod, modScale } from "./mods";
 import { engageSquad, learnSpot, located, makeNoise, shotFromAfar } from "./awareness";
 import { POIS } from "./map";
 import { los, lookAngles, norm, rayWorld, raySphere, wrapAngle } from "./geom";
@@ -75,7 +76,7 @@ export function applyPull(s: State, firing: boolean, touch = false) {
   const t = assistTarget(s, ASSIST.pullCone);
   if (!t) return;
   const want = lookAngles(eyePos(s), bodyCenter(t.e));
-  const k = Math.min(1, ASSIST.pull * (touch ? ASSIST.touchPull : 1) * TICK);
+  const k = Math.min(1, ASSIST.pull * modScale(s.player, "lock") * (touch ? ASSIST.touchPull : 1) * TICK);
   p.yaw += wrapAngle(want.yaw - p.yaw) * k;
   p.pitch += (want.pitch - p.pitch) * k;
 }
@@ -183,6 +184,9 @@ export function fireRay(s: State, w: Weapon, dir: Vec3, touch = false) {
   if (flank === "back" || flank === "ambush") s.stats.flankHits++;
   if (hit.e.kind === "titan") s.stats.titanHits++;
   damageEnemy(s, hit.e, dmg, hit.crit, c, flank, "player", w.rarity);
+  // The leech gives shield back for every weak-point hit.
+  const p = s.player;
+  if (hit.crit && hasMod(p, "leech")) p.shield = Math.min(PLAYER.shieldByTier[p.armor], p.shield + MODS.leech.value);
 }
 
 /** Fire the active weapon once: spread, pellets, recoil. */
@@ -198,7 +202,7 @@ export function shoot(s: State, w: Weapon, touch = false) {
     s.stats.shots++;
     fireRay(s, w, norm(forward(aimYaw + Math.cos(a) * r, aimPitch + Math.sin(a) * r)), touch);
   }
-  const steady = 1 - 0.5 * p.ads;
+  const steady = (1 - 0.5 * p.ads) * modScale(p, "stock");
   p.recoil += spec.recoil * steady;
   if (s.time - p.lastShot > KICK_RESET) p.spray = 0;
   p.recoilYaw += spec.kick * KICK_PATTERN[p.spray % KICK_PATTERN.length] * steady;
@@ -216,9 +220,12 @@ export function shoot(s: State, w: Weapon, touch = false) {
 export function flankOf(s: State, e: Enemy, from?: Vec3): Flank {
   if (e.kind === "titan") return "none";
   if (e.aware !== "engaged" || (!from && !located(s, e))) return "ambush";
-  const off = Math.abs(wrapAngle(lookAngles(e.pos, from ?? s.player.pos).yaw - e.yaw)) / DEG;
+  const off = offFacing(e, from ?? s.player.pos);
   return off < FLANK.frontArc ? "front" : off > FLANK.backArc ? "back" : "side";
 }
+
+/** Degrees between where a robot faces and the direction to `from`. */
+const offFacing = (e: Enemy, from: Vec3) => Math.abs(wrapAngle(lookAngles(e.pos, from).yaw - e.yaw)) / DEG;
 
 /**
  * `flank` is where a weapon shot met the robot (see flankOf); the arc and other
@@ -232,6 +239,9 @@ export function damageEnemy(s: State, e: Enemy, raw: number, crit: boolean, at: 
   if (!s.enemies.includes(e)) return;
   const k = ENEMIES[e.kind];
   raw *= flank === "ambush" && (e.kind === "heavy" || e.elite) ? FLANK.ambushTough : FLANK.mult[flank];
+  // The back-shot part takes any hit from behind, an ambush on an unaware robot included.
+  const behind = flank === "back" || (flank === "ambush" && e.kind !== "titan" && offFacing(e, s.player.pos) > FLANK.backArc);
+  if (behind && by === "player") raw *= modScale(s.player, "stalker");
   const quiet = Math.min(e.lastHit, e.allyHit) > DODGE.jinkQuiet;
   const blocked = !crit && rarity !== undefined && e.plate > rarity;
   // A robot hit by the player knows where they are from now on.
@@ -239,7 +249,8 @@ export function damageEnemy(s: State, e: Enemy, raw: number, crit: boolean, at: 
     e.blind = 0;
     e.sawAt = { x: s.player.pos.x, z: s.player.pos.z };
   }
-  if (blocked) raw *= PLATE.mult[e.plate - rarity];
+  // The piercer halves what the plate stops of the player's shot.
+  if (blocked) raw *= by === "player" && hasMod(s.player, "piercer") ? 1 - (1 - PLATE.mult[e.plate - rarity]) * MODS.piercer.value : PLATE.mult[e.plate - rarity];
   // Being shot gives the player away to the whole squad. A squad already fighting
   // learns where the shot came from and turns there, at its usual turning speed.
   const shooter = by === "ally" ? s.ally.pos : s.player.pos;
@@ -267,10 +278,10 @@ export function damageEnemy(s: State, e: Enemy, raw: number, crit: boolean, at: 
   s.events.push({ t: "hit", id: e.id, pos: at, dmg: Math.round(raw), crit, shield: toShield > 0, tier: k.shieldTier, flank, ally: by === "ally", blocked });
   const broke = hadShield && e.shield <= 0;
   if (broke) s.events.push({ t: "shieldBreak", id: e.id, pos: at, tier: k.shieldTier });
-  if (e.hp > 0) react(s, e, dealt * (crit ? STAGGER.weak : 1), broke, quiet, shooter);
+  if (e.hp > 0) react(s, e, dealt * (crit ? STAGGER.weak : 1) * (by === "player" ? modScale(s.player, "jolt") : 1), broke, quiet, shooter);
   const p = s.player;
   if (!p.leap && p.ult < 1) {
-    p.ult = Math.min(1, p.ult + (dealt / ULT.dmgPerCharge) * k.ult * (by === "ally" ? ALLY.ultShare : 1));
+    p.ult = Math.min(1, p.ult + (dealt / ULT.dmgPerCharge) * k.ult * (by === "ally" ? ALLY.ultShare : 1) * modScale(p, "surge"));
     if (p.ult >= 1) s.events.push({ t: "ultReady" });
   }
   if (e.hp <= 0) kill(s, e, crit, by);
@@ -364,6 +375,8 @@ export function kill(s: State, e: Enemy, crit: boolean, by: "player" | "ally" = 
     const a = rand(s) * Math.PI * 2;
     s.loot.push({ id: s.nextId++, kind: "valuable", valuable: v, rarity: VALUABLES[v].rarity, pos: { ...c }, vel: { x: Math.cos(a) * 1.5, y: 5, z: Math.sin(a) * 1.5 }, age: 0 });
   }
+  // A mod part, decided by its own hash: the raid's numbers are drawn as without it.
+  dropRobotMod(s, e, c);
   const last = e.poi >= 0 && !s.enemies.some((o) => o.poi === e.poi);
   const from = by === "ally" ? s.ally.pos : s.player.pos;
   s.events.push({ t: "kill", id: e.id, kind: e.kind, pos: c, crit, last, ally: by === "ally", fromX: from.x, fromZ: from.z });

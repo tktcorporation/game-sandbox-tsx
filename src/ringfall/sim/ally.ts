@@ -3,7 +3,14 @@ import { makeNoise } from "./awareness";
 import { bodyCenter, damageEnemy, flankOf, weakPoint } from "./combat";
 import { collide, dist2d, groundAt, los, lookAngles, wrapAngle } from "./geom";
 import { wipe } from "./player";
-import { rand, type Ally, type Enemy, type State, type Vec3 } from "./state";
+import { rand, type Ally, type Enemy, type Player, type State, type Vec3 } from "./state";
+import { modScale } from "./mods";
+
+/** Seconds the teammate takes to pick the player up: shorter with the life link worn. */
+export const reviveTime = (p: Pick<Player, "mods">) => ALLY.reviveTime * modScale(p, "medlink");
+
+/** Seconds the player takes to pick the teammate up: shorter with the belt worn. */
+export const helpTime = (p: Pick<Player, "mods">) => ALLY.helpTime * modScale(p, "carrier");
 
 /*
  * The teammate. It has no map knowledge of its own: it walks the footsteps the
@@ -146,7 +153,7 @@ export function stepAlly(s: State) {
       const beside = dist2d(a.pos, p.pos) < PLAYER.interactRange + 0.6 && Math.abs(a.pos.y - p.pos.y) < 1.5;
       if (beside && p.downed <= 0 && !p.triggerHeld && !p.healing) a.helped += TICK;
       else a.helped = 0;
-      if (a.helped >= ALLY.helpTime) raiseAlly(s, "player", ALLY.reviveHp);
+      if (a.helped >= helpTime(p)) raiseAlly(s, "player", ALLY.reviveHp);
     }
     if (a.down <= 0) raiseAlly(s, "self", 40);
     return;
@@ -163,7 +170,7 @@ export function stepAlly(s: State) {
       move(a, 0, 0);
       turn(a, lookAngles(a.pos, p.pos).yaw);
       a.rescue += TICK;
-      if (a.rescue >= ALLY.reviveTime) {
+      if (a.rescue >= reviveTime(p)) {
         a.rescue = 0;
         p.downed = 0;
         p.awaitAlly = false;

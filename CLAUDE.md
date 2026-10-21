@@ -86,12 +86,13 @@ contracts (`meta/story.ts`) follow one at a time: the one under way lays its rec
 only with that POI's key; keys drop from the bins of the POI named by its `keyFrom` (`VAULT`).
 POIs have a stable `id` (`PoiId` in `map.ts`); saves, quests, `keyFrom` and `EXTRA_BINS` refer to a
 POI by it, never by its place in `POIS` (the run's state may index `POIS` internally). The profile
-is versioned (`Profile.v`, which is 16), and `parseProfile()` moves older saves forward (a save from
+is versioned (`Profile.v`, which is 17), and `parseProfile()` moves older saves forward (a save from
 before the ways in starts at its region's first way in; a save from before ways in were learned
 knows them all; a save from before v12 drops its explored map, since `cellOf()` follows `WORLD`,
 which then grew wider; a save from before v13 starts on the day after its raids with every POI
 held; a save from before v14 keeps only the quests that still exist; a save from before v15 starts
-at network `NETWORK.start`; a save from before v16 has a quiet day and tomorrow's event drawn) and moves its
+at network `NETWORK.start`; a save from before v16 has a quiet day and tomorrow's event drawn; a save from before v17 knows
+the starting mod kinds and plays at threat 0) and moves its
 start to one it may choose (`allowedStart()`).
 Each island day has at most one event (`EVENTS` in `config.ts`, `IslandEvent` in `sim/island.ts`):
 `advanceDay()` turns yesterday's forecast into today's and draws tomorrow's from `Profile.seed` and
@@ -143,7 +144,8 @@ in `world.ts`) and its depot on. With no `island` every POI is held, which the s
 The robots' network (網の段階, `Profile.network`, 0 to 5, with the pressure toward its next step
 carried in `Profile.pressure`) is moved by `advanceDay()` too: down a step for each POI freed from
 held (the relay two, a thin one a step less), for the titan's fall (its pad cleared) and for each
-relay mast destroyed (`Stats.relays`), then up a step for each `NETWORK.riseEvery` of pressure the
+relay mast destroyed (`Stats.relays`; `NETWORK.relayHigh.steps` on a day that started at
+`NETWORK.relayHigh.at` or more), then up a step for each `NETWORK.riseEvery` of pressure the
 day adds (`netGain()`, more the more POIs held); a thin POI thin for `NETWORK.retakeAfter` days goes
 back to held while the network is at `NETWORK.retakeAt` or more (`Settlement.network`,
 `.retaken`). A raid is played at a level through `newRun(seed, kit, region, { network })`
@@ -155,6 +157,17 @@ From `NETWORK.relayAt` the relay masts (`RELAYS` in `map.ts`, `RELAY` in `config
 shots hit (`rayRelay()` in `combat.ts`), never built into the map, so the world is the same at
 every level. With no `network` a raid is played at `NETWORK.play` (2), whose numbers are the
 island's own, so the sim gate's tables do not change.
+Mod parts (`MODS` in `config.ts`, `sim/mods.ts`) are the raid's own build: three body slots
+(`Player.mods`), lost when the raid ends, each setting one number the sim already reads
+(`modScale()`). Bins hold kinds the profile knows (`State.known`, `Profile.known`), robots any;
+which bin or robot holds one is a hash of the seed and the bin or robot (`binMod()`, `robotMod()`),
+never `rand(s)`, and the bot passes `Input.leaveMods`, so the gate's raids play as without them. A
+raid got off alive may analyse one worn part on its results (`analyse()` in `profile.ts`). The
+threat (脅威度, `THREAT`, `Profile.threat`, `newRun(..., { threat })`) is chosen at the map table:
+0 is the network's raid; higher scales the network's times and plates (`raidClock()`,
+`netPlated()`), the range robots answer shots from afar, and the contract's pay (`threatPay()`), and
+a POI freed at `THREAT.freeAt` or higher takes the network a step further down (`RaidDay.threat`).
+`Profile.freedAt` keeps each POI's best threat for the map table.
 The hideout is the long-term goal: modules built level by level from specific valuables and
 credits taken from the stash (`build()` in `profile.ts`; levels, costs and prerequisites in
 `HIDEOUT`, effects in `HIDEOUT_EFFECT`, both in `config.ts`; `meta/hideout.ts` holds the pure

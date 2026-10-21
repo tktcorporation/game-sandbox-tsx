@@ -1,4 +1,4 @@
-import { DEPOT, HEALS as HEAL_SPECS, HIDEOUT, META, NETWORK, TOOLS, VALUABLES, type HealKind, type ModuleId, type Rarity, type ToolKind, type ValuableKind, type WeaponKind } from "../sim/config";
+import { DEPOT, HEALS as HEAL_SPECS, HIDEOUT, META, MOD_KINDS, MOD_START, NETWORK, THREAT, TOOLS, VALUABLES, type ModKind, type HealKind, type ModuleId, type Rarity, type ToolKind, type ValuableKind, type WeaponKind } from "../sim/config";
 import { depotIndex, DEPOTS, ENTRIES, POIS, poiIndex, REGIONS, regionOf, ROUTES, type EntryId, type PoiId, type RecordId, type RegionId, type RouteId } from "../sim/map";
 import { openRoutes } from "../sim/routes";
 import { encodeSeen, type Kit, type State } from "../sim/state";
@@ -29,7 +29,7 @@ export interface Escape {
 
 /** What persists between raids. */
 export interface Profile {
-  v: 16;
+  v: 17;
   cash: number;
   stash: Item[];
   raids: number;
@@ -72,6 +72,12 @@ export interface Profile {
   pressure: number;
   /** The island's events: today's (the next raid's) and tomorrow's, announced a day ahead (meta/island.ts). */
   events: DayEvents;
+  /** The mod kinds known (`MODS`), in `MOD_KINDS` order: the bins hold these; more are learned by analysis. */
+  known: ModKind[];
+  /** The threat chosen at the map table for the next raid, 0 to `THREAT.max`. */
+  threat: number;
+  /** The highest threat each POI was freed at. */
+  freedAt: Partial<Record<PoiId, number>>;
 }
 
 export const HEALS: HealKind[] = ["cell", "battery", "syringe", "medkit"];
@@ -97,7 +103,7 @@ export const canStartIn = (p: Profile, region: RegionId) => {
 export function newProfile(seed = 1): Profile {
   const stash: Item[] = META.start.weapons.map((w) => ({ t: "weapon", ...w }));
   for (const k of HEALS) for (let i = 0; i < META.start.heals[k]; i++) stash.push({ t: "heal", kind: k });
-  const p: Omit<Profile, "board"> = { v: 16, cash: META.start.cash, stash, raids: 0, extracted: 0, time: 0, quests: emptyLog(), region: "reservoir", entry: FIRST_ENTRY, entries: [FIRST_ENTRY], hideout: emptyHideout(), escaped: null, seed: seed & 0xffff, depots: [], depotSent: {}, seen: "", routes: [], day: 1, poiState: newIsland(), taken: null, records: [], network: NETWORK.start, pressure: 0, events: firstEvents(seed & 0xffff, newIsland()) };
+  const p: Omit<Profile, "board"> = { v: 17, cash: META.start.cash, stash, raids: 0, extracted: 0, time: 0, quests: emptyLog(), region: "reservoir", entry: FIRST_ENTRY, entries: [FIRST_ENTRY], hideout: emptyHideout(), escaped: null, seed: seed & 0xffff, depots: [], depotSent: {}, seen: "", routes: [], day: 1, poiState: newIsland(), taken: null, records: [], network: NETWORK.start, pressure: 0, events: firstEvents(seed & 0xffff, newIsland()), known: [...MOD_START], threat: 0, freedAt: {} };
   return { ...p, board: makeBoard(p) };
 }
 
@@ -370,11 +376,34 @@ export interface Settlement {
   event: IslandEvent | null;
   /** How the network moved overnight, and why. */
   network: NetChange;
-  /** The contract taken for the raid, and whether the raid did it (its reward paid when it did). */
-  contract: { c: Contract; done: boolean } | null;
+  /** The contract taken for the raid, the credits it pays at the raid's threat, and whether the raid did it (its reward paid when it did). */
+  contract: { c: Contract; cash: number; done: boolean } | null;
   /** The story contract whose record the raid brought home (its credits paid). */
   story: Story | null;
+  /** The threat the raid was played at. */
+  threat: number;
+  /** The mod parts worn when the raid ended, which may be analysed (`analyse()`): none unless the player got off alive. */
+  analysable: ModKind[];
 }
+
+/** Mod kinds as a known list: real ones only, once each, in `MOD_KINDS` order, always with `MOD_START`. */
+export const knownMods = (ids: readonly unknown[]): ModKind[] => MOD_KINDS.filter((k) => MOD_START.includes(k) || ids.includes(k));
+
+/**
+ * Analyses one mod part the settled raid brought out (`Settlement.analysable`): its kind joins the
+ * known ones, so the bins hold it from the next raid on. Null for a kind the raid did not bring
+ * out alive, or one already known.
+ */
+export function analyse(p: Profile, settled: Pick<Settlement, "analysable">, kind: ModKind): Profile | null {
+  if (!settled.analysable.includes(kind) || p.known.includes(kind)) return null;
+  return { ...p, known: knownMods([...p.known, kind]) };
+}
+
+/** A contract's credits `cash` as paid at threat `threat`: `THREAT.levels[].reward` times, to the credit. */
+export const threatPay = (cash: number, threat: number) => (threat > 0 ? Math.round(cash * THREAT.levels[threat].reward) : cash);
+
+/** Sets the threat of the next raid, kept within 0 and `THREAT.max`. */
+export const setThreat = (p: Profile, threat: number): Profile => ({ ...p, threat: Math.max(0, Math.min(THREAT.max, Math.round(threat) || 0)) });
 
 /** Valuables the hideout still asks for beyond what the stash holds, by kind. */
 export function wanted(p: Profile): Record<ValuableKind, number> {
@@ -457,12 +486,14 @@ export function settle(p: Profile, s: State): Settlement {
   const day = raidDay(s);
   const { change } = advanceDay(p, day);
   const taken = takenContract(p);
-  const contract = taken && { c: taken, done: contractDone(taken, { freed: change.freed, home: fetched, wiped: s.stats.wiped ?? [], relays: day.relays }) };
+  const contract = taken && { c: taken, cash: threatPay(taken.reward.cash, s.threat ?? 0), done: contractDone(taken, { freed: change.freed, home: fetched, wiped: s.stats.wiped ?? [], relays: day.relays }) };
   const story = currentStory(p.records);
   const told = story && records.includes(story.id) ? story : null;
   // What came home and what the quests and the contract pay claim stash room together, in one `keepOrder()`.
   const { log, finished } = creditRaid(p.quests, s);
-  const paid = contract?.done ? [contract.c.reward] : [];
+  // A contract done at a higher threat pays its credits `THREAT.levels[].reward` times.
+  const threat = s.threat ?? 0;
+  const paid = contract?.done ? [{ ...contract.c.reward, cash: threatPay(contract.c.reward.cash, threat) }] : [];
   const rewards = [...finished.map((q) => q.reward), ...paid].flatMap((r) => r.items.map((i): Item => ({ ...i })));
   const cash = [...finished.map((q) => q.reward), ...paid].reduce((n, r) => n + r.cash, 0) + (told?.cash ?? 0);
   const { profile, sold, soldFor } = store({ ...p, cash: p.cash + cash, routes: openRoutes([...p.routes, ...opened]) }, [...home.filter((i) => !spent.has(i)), ...rewards]);
@@ -472,13 +503,15 @@ export function settle(p: Profile, s: State): Settlement {
   const learned = s.outcome === "extracted" ? knownEntries(s.found ?? []).filter((e) => !p.entries.includes(e)) : [];
   const entries = knownEntries([...p.entries, ...learned]);
   const kept = STORIES.map((t) => t.id).filter((id) => p.records.includes(id) || told?.id === id);
-  const settled = { ...profile, entries, quests: log, raids: p.raids + 1, extracted: p.extracted + (s.outcome === "extracted" ? 1 : 0), time: p.time + s.time, seed: nextSeed(p.seed), depots, depotSent, seen: encodeSeen(s.seen), records: kept };
+  const freedAt = { ...p.freedAt };
+  for (const id of change.freed) freedAt[id] = Math.max(freedAt[id] ?? 0, threat);
+  const settled = { ...profile, freedAt, entries, quests: log, raids: p.raids + 1, extracted: p.extracted + (s.outcome === "extracted" ? 1 : 0), time: p.time + s.time, seed: nextSeed(p.seed), depots, depotSent, seen: encodeSeen(s.seen), records: kept };
   const { profile: next } = advanceDay(settled, day);
   // Quests the raid opened may ask for a hideout level already built.
   const claimed = claimBuilt(next);
   // The new day's board, for the next raid's seed; yesterday's contract goes with yesterday's board.
   const fresh = { ...claimed.profile, taken: null, board: makeBoard(claimed.profile) };
-  return { profile: fresh, home, opened, learned, quests: [...finished, ...claimed.quests], sold: [...sold, ...claimed.sold], soldFor: soldFor + claimed.soldFor, day: p.day, ...change, event: s.event ?? null, contract, story: told };
+  return { profile: fresh, home, opened, learned, quests: [...finished, ...claimed.quests], sold: [...sold, ...claimed.sold], soldFor: soldFor + claimed.soldFor, day: p.day, ...change, event: s.event ?? null, contract, story: told, threat, analysable: s.outcome === "extracted" ? [...(pl.mods ?? [])] : [] };
 }
 
 /** Finishes and pays every offered build quest the hideout already meets, and those they open. */
@@ -591,11 +624,13 @@ const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
  * (credited nothing for the others, its stash as it was), no record of the story, and a fresh board.
  * Before v15 the island had no network: such a profile starts at `NETWORK.start`, with nothing gathered.
  * Before v16 the island had no events: such a profile's day is quiet, and tomorrow's is drawn as it now stands.
+ * Before v17 there were no mod parts and no threat: such a profile knows the starting kinds
+ * (`MOD_START`), plays at threat 0, and has freed no POI at any threat.
  */
 export function parseProfile(raw: unknown, seed = 1): Profile | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
+  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
   const old = o.v === 1 || o.v === 2;
   const migrate = (i: unknown): unknown => {
     if (!old || !i || typeof i !== "object" || (i as Record<string, unknown>).t !== "key") return i;
@@ -628,12 +663,16 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   const entries = typeof o.v === "number" && o.v < 11 ? ENTRIES.map((e) => e.id) : knownEntries(Array.isArray(o.entries) ? o.entries.filter((e): e is string => typeof e === "string") : []);
   const { region, entry } = allowedStart({ entries, depots } as Profile, REGIONS.find((r) => r.id === o.region)?.id ?? "reservoir", o.entry);
   const raids = num(o.raids);
-  const day = (o.v === 13 || o.v === 14 || o.v === 15 || o.v === 16) && Number.isInteger(o.day) && (o.day as number) >= 1 ? (o.day as number) : raids + 1;
+  const day = (typeof o.v === "number" && o.v >= 13) && Number.isInteger(o.day) && (o.day as number) >= 1 ? (o.day as number) : raids + 1;
   const recordIds = STORIES.map((t) => t.id);
-  const records = (o.v === 14 || o.v === 15 || o.v === 16) && Array.isArray(o.records) ? recordIds.filter((id) => (o.records as unknown[]).includes(id)) : [];
-  const network = (o.v === 15 || o.v === 16) && Number.isInteger(o.network) ? Math.max(0, Math.min(NETWORK.max, o.network as number)) : NETWORK.start;
+  const records = (typeof o.v === "number" && o.v >= 14) && Array.isArray(o.records) ? recordIds.filter((id) => (o.records as unknown[]).includes(id)) : [];
+  const network = (typeof o.v === "number" && o.v >= 15) && Number.isInteger(o.network) ? Math.max(0, Math.min(NETWORK.max, o.network as number)) : NETWORK.start;
+  const v17 = o.v === 17;
+  const fa = (v17 && o.freedAt && typeof o.freedAt === "object" ? o.freedAt : {}) as Record<string, unknown>;
+  const freedAt: Partial<Record<PoiId, number>> = {};
+  for (const { id } of POIS) if (Number.isInteger(fa[id])) freedAt[id] = Math.max(0, Math.min(THREAT.max, fa[id] as number));
   const out: Omit<Profile, "board" | "taken" | "events"> = {
-    v: 16,
+    v: 17,
     cash: Math.max(0, Math.floor(o.cash)),
     stash: o.stash.map(migrate).filter(ok).slice(0, stashCap(hideout)),
     raids,
@@ -648,20 +687,23 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     seed: Number.isInteger(o.seed) ? (o.seed as number) & 0xffff : seed & 0xffff,
     depots,
     depotSent,
-    seen: (o.v === 12 || o.v === 13 || o.v === 14 || o.v === 15 || o.v === 16) && typeof o.seen === "string" && /^[0-9a-f]*$/.test(o.seen) ? o.seen : "",
+    seen: (typeof o.v === "number" && o.v >= 12) && typeof o.seen === "string" && /^[0-9a-f]*$/.test(o.seen) ? o.seen : "",
     routes: typeof o.v === "number" && o.v >= 9 && Array.isArray(o.routes) ? openRoutes(o.routes.filter((r): r is string => typeof r === "string")) : [],
     day,
-    poiState: o.v === 13 || o.v === 14 || o.v === 15 || o.v === 16 ? parseIsland(o.poiState, day) : newIsland(),
+    poiState: typeof o.v === "number" && o.v >= 13 ? parseIsland(o.poiState, day) : newIsland(),
     records,
     network,
-    pressure: (o.v === 15 || o.v === 16) && typeof o.pressure === "number" && o.pressure >= 0 && o.pressure < NETWORK.riseEvery ? o.pressure : 0,
+    known: knownMods(v17 && Array.isArray(o.known) ? o.known : []),
+    threat: v17 && Number.isInteger(o.threat) ? Math.max(0, Math.min(THREAT.max, o.threat as number)) : 0,
+    freedAt,
+    pressure: (typeof o.v === "number" && o.v >= 15) && typeof o.pressure === "number" && o.pressure >= 0 && o.pressure < NETWORK.riseEvery ? o.pressure : 0,
   };
-  const events: DayEvents = o.v === 16 && Array.isArray(o.events) && o.events.length === 2 ? [validEvent(parseEvent(o.events[0]), out.poiState), validEvent(parseEvent(o.events[1]), out.poiState)] : [null, null];
-  if (o.v !== 16) events[1] = eventFor(out.seed, day + 1, out.poiState);
+  const events: DayEvents = (o.v === 16 || o.v === 17) && Array.isArray(o.events) && o.events.length === 2 ? [validEvent(parseEvent(o.events[0]), out.poiState), validEvent(parseEvent(o.events[1]), out.poiState)] : [null, null];
+  if (o.v !== 16 && o.v !== 17) events[1] = eventFor(out.seed, day + 1, out.poiState);
   const withEvents = { ...out, events };
   // The day's board as saved, so it stands however the stash changed since; else the day's from now.
   // A board saved before the network may name a pack the migrated level does not fly: made anew.
-  const board = (o.v === 15 || o.v === 16 ? parseBoard(o.board, day) : null) ?? makeBoard(withEvents);
+  const board = (typeof o.v === "number" && o.v >= 15 ? parseBoard(o.board, day) : null) ?? makeBoard(withEvents);
   const taken = typeof o.taken === "string" && board.contracts.some((c) => c.id === o.taken) ? o.taken : null;
   return { ...withEvents, board, taken };
 }
