@@ -858,7 +858,9 @@ function nudge(e: Enemy, dx: number, dz: number) {
   e.pos.x += dx;
   e.pos.z += dz;
   collide(e.pos, k.radius, bodyHeight(k));
-  if (Math.abs(groundAt(e.pos.x, e.pos.z, k.radius, e.pos.y) - e.pos.y) > 0.3) {
+  // A crowd at the camp's gate does not shove its front robot in (the same line as `moveBody()`).
+  const intoCamp = inCamp(e.pos, k.radius + 0.5) && !inCamp({ x: bx, z: bz }, k.radius + 0.5);
+  if (intoCamp || Math.abs(groundAt(e.pos.x, e.pos.z, k.radius, e.pos.y) - e.pos.y) > 0.3) {
     e.pos.x = bx;
     e.pos.z = bz;
   }
