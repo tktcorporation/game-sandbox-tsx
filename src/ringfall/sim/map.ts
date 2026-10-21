@@ -942,30 +942,30 @@ const POI_FRAMES: Poi[] = [
     name: "コンテナヤード",
     x: 0,
     z: 0,
-    trigger: 46,
+    trigger: 70,
     entry: { x: 0, z: 46, yaw: 0 },
     squads: [
-      { name: "クレーン", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 24.35, z: -2, y: CRANE, face: E }, { kind: "heavy", x: 2, z: -13.5, face: E }] },
-      { name: "通路", members: [{ kind: "grunt", x: -20, z: 13.5, face: W }, { kind: "grunt", x: -23, z: 22.5, face: W }] },
-      { name: "北の列", members: [{ kind: "grunt", x: -6, z: -24, face: E }, { kind: "drone", x: -40, z: -24 }] },
+      { name: "クレーン", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 46.75, z: 16, y: CRANE, face: W }, { kind: "heavy", x: 0, z: -8, face: E }] },
+      { name: "通路", members: [{ kind: "grunt", x: -50, z: -29.5, face: E }, { kind: "grunt", x: -46, z: 21.7, face: E }] },
+      { name: "北の列", members: [{ kind: "grunt", x: 12, z: -38, face: S }, { kind: "drone", x: -40, z: -45 }] },
       {
         name: "東の列",
-        members: [{ kind: "grunt", x: 40, z: -24, face: W }, { kind: "drone", x: 38, z: -24 }],
-        patrol: [{ x: 40, z: -24 }, { x: 40, z: 12 }, { x: 10, z: 12 }, { x: 10, z: -24 }],
+        members: [{ kind: "grunt", x: 60, z: -12, face: W }, { kind: "drone", x: 58, z: -12 }],
+        patrol: [{ x: 60, z: -12 }, { x: 60, z: 0 }, { x: 24, z: 0 }, { x: 24, z: -12 }],
       },
     ],
     bins: [
-      { x: -30, z: -13.5 },
-      { x: 10, z: 13.5 },
-      { x: -70, z: 2 },
-      { x: -6.6, z: -9, y: 2.6 },
-      { x: 25.4, z: 6.5, y: CRANE, vault: true },
+      { x: -29.7, z: -29.5 },
+      { x: 38.4, z: 21.7 },
+      { x: -73, z: 1 },
+      { x: -73, z: -1, y: WORKS.storey },
+      { x: 47.8, z: 22, y: CRANE, vault: true },
     ],
     keyFrom: "wreck",
     loot: { weapon: [["hornet", 2], ["maul", 2], ["pike", 2], ["lance", 1]], armor: [2], heals: 2, valuable: [["wire", 3], ["board", 3], ["drive", 2], ["gyro", 1]] },
     floor: [
-      { x: 12, z: -13.5, heal: "battery" },
-      { x: -70, z: 3, y: 3.4, armor: 2 },
+      { x: 14, z: -12, heal: "battery" },
+      { x: -67, z: -1, y: WORKS.storey * 2, armor: 2 },
     ],
   },
   {
@@ -3208,42 +3208,97 @@ function wreck(): Box[] {
 }
 
 /**
- * Container stacks in the yard: per row (its z), the heights of the stacks at each of `YARD_X`
- * (0 = an alley across). Three blocks of columns, split by the two lanes the gantries straddle.
+ * The yard's stacking blocks of 40-foot containers laid along x: per block the middles of its bays
+ * (12.2 m long, end to end but for the alleys between blocks) and of its rows (2.5 m wide, side
+ * by side in groups of three or two, an alley between the groups). The north road leaves between
+ * the north blocks, the street from the marshalling yard and the roads from the viaduct come in between the south
+ * ones, onto an apron, and
+ * the main lane runs east and west between north and south, a low island of boxes down its middle.
  */
-const YARD_X = [-57.2, -50.8, -44.4, -38, -31.6, -13, -6.6, 6.6, 13, 31.6, 38, 44.4, 50.8, 57.2];
-const YARD_ROWS: [number, number[]][] = [
-  [-27, [1, 2, 0, 2, 1, 2, 0, 0, 0, 2, 0, 3, 2, 1]],
-  [-18, [2, 3, 2, 1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2]],
-  [-9, [1, 2, 3, 0, 1, 2, 1, 2, 2, 3, 0, 2, 1, 2]],
-  [9, [3, 2, 1, 2, 2, 1, 2, 2, 1, 2, 3, 1, 2, 3]],
-  [18, [2, 1, 0, 3, 2, 2, 3, 1, 2, 2, 1, 0, 2, 1]],
-  [27, [1, 2, 3, 1, 0, 1, 2, 0, 0, 0, 2, 3, 1, 2]],
+const NORTH_ROWS = [[-38.5, -35.9, -33.3], [-25.7, -23.1, -20.5]];
+const SOUTH_ROWS = [[13.3, 15.9, 18.5], [25, 27.6]];
+const YARD_BLOCKS: { bays: number[]; rows: number[][] }[] = [
+  { bays: [-64, -51.2, -38.4], rows: NORTH_ROWS },
+  { bays: [-21, -8.2], rows: NORTH_ROWS },
+  { bays: [32, 44.8, 57.6], rows: NORTH_ROWS },
+  { bays: [-64, -51.2, -38.4], rows: SOUTH_ROWS },
+  { bays: [46.4, 59.2], rows: SOUTH_ROWS },
 ];
-/** The two gantries: the lanes' middles, and where each cab sits along its catwalk. */
+/** How high each stack stands, from its block, bay and row: 0 (a hole) to 4, never over the gantries' catwalks. */
+const STACK = [2, 3, 1, 4, 2, 0, 3, 2, 4, 1, 3, 2, 0, 4, 3];
+/**
+ * The rubber-tyred gantries, each straddling a block's rows across z at `x`, its stair-tower leg
+ * in the main lane (`z0`, the end it climbs from) and its far leg at `z1`, the cab at `cab`.
+ */
 const GANTRIES = [
-  { x: -24, cab: -6 },
-  { x: 24, cab: 6.5 },
+  { x: -38.4, z0: -17, z1: -42, cab: -30 },
+  { x: 46.4, z0: 10, z1: 31, cab: 22 },
 ] as const;
+/** The quay cranes over the freight line north of the fence: their middles along x; the east one is climbed. */
+const QUAY_CRANES = [-40, 46] as const;
 
 /**
- * The container yard, in its own frame: six rows of stacked containers in three blocks with a
- * lane down between each pair of blocks and alleys across, a gantry crane over each lane (one
- * leg a stair tower up to the catwalk along its top, the driver's cab on the catwalk), and the
- * yard office at its west end.
+ * A ship-to-shore quay crane at `cx`, landmark of the yard: four legs straddling the freight
+ * line, the portal and the deck over it 34 m up with the machinery house, the boom 40 m up
+ * reaching out north over the old sea floor and back over the yard, and the A-frame holding it
+ * by its stays. With `stair` an open stair tower beside its east legs climbs to the deck.
+ */
+function quayCrane(cx: number, stair: boolean): Box[] {
+  const out: Box[] = [];
+  const [zs, zn, deck] = [-43, -57, 34];
+  for (const x of [cx - 9, cx + 9]) {
+    for (const z of [zs, zn]) out.push(box(x, z, 1.6, 1.6, deck - 0.3, "steel", 2));
+    out.push(rect(x - 0.6, zn, x + 0.6, zs, 12, 13.2, "steel", 2));
+  }
+  for (const z of [zs, zn]) out.push(rect(cx - 9.8, z - 0.8, cx + 9.8, z + 0.8, deck - 2, deck - 0.3, "steel", 2));
+  out.push(rect(cx - 10, zn - 1, cx + 10, zs + 1, deck - 0.3, deck, "slab", 1));
+  for (const b of parapet(cx, (zs + zn) / 2, 20, zs - zn + 2, deck, stair ? ["e"] : [])) out.push({ ...b, kind: "steel", tint: 2, h: deck + 0.5 });
+  if (stair) {
+    out.push(rect(cx + 9.85, zn - 1, cx + 10, -53, deck, deck + 0.5, "steel", 2), rect(cx + 9.85, -47, cx + 10, zs + 1, deck, deck + 0.5, "steel", 2));
+    out.push(...lattice(cx + 13, -50, 6, 6, 10, deck + 4, ["w"]));
+  }
+  out.push(box(cx - 3, -50, 9, 9, deck + 6, "steel", 3, deck));
+  out.push(rect(cx - 1.6, -110, cx + 1.6, -34, 40, 42.4, "steel", 3));
+  out.push(box(cx, -50, 2, 2, 58, "steel", 3, 42.4), ...strand([cx, 58, -50], [cx, 42.4, -104], 0.3, 2), ...strand([cx, 58, -50], [cx, 42.4, -36], 0.3, 2));
+  return out;
+}
+
+/** A road trailer with a container on it, along x: cover in the lanes. */
+const trailer = (cx: number, cz: number, tint: number): Box[] => [box(cx, cz, 12.4, 2.5, 1.4, "steel", 1), box(cx, cz, 12.2, 2.5, 4.0, "container", tint, 1.4)];
+
+/**
+ * The container yard, in its own frame, at the scale of a real terminal: stacking blocks of
+ * 40-foot containers up to four high with alleys between their groups of rows, a rubber-tyred
+ * gantry over a north and a south block (one leg a stair tower up to the catwalk along its top,
+ * the driver's cab on the catwalk), the main lane between north and south with trailers left in
+ * it, two quay cranes over the freight line beyond the north fence, the three-storey terminal
+ * office at the west end and the gate house by the way in.
  */
 function yard(): Box[] {
   const out: Box[] = [];
-  YARD_ROWS.forEach(([z, heights], r) =>
-    heights.forEach((n, i) => {
-      for (let k = 0; k < n; k++) out.push(box(YARD_X[i], z, 6.2, 2.5, 2.6 * (k + 1), "container", (r + i + k) % 3, 2.6 * k));
-    }),
+  YARD_BLOCKS.forEach(({ bays, rows }, b) =>
+    bays.forEach((x, i) =>
+      rows.flat().forEach((z, r) => {
+        const n = STACK[(b * 5 + i * 3 + r * 7) % STACK.length];
+        for (let k = 0; k < n; k++) out.push(box(x, z, 12.2, 2.5, 2.6 * (k + 1), "container", (b + i + r + k) % 3, 2.6 * k));
+      }),
+    ),
   );
-  for (const g of GANTRIES) out.push(...gantry(g.x, -32, 32, CRANE, g.cab));
-  // The yard office, with stairs up to its roof, and a reefer stack by it.
-  out.push(...building(-70, 2, 8, 7, 3.4, { doors: ["e", "s"], windows: ["n"], roof: "w" }));
-  out.push(box(-70, 14, 2.5, 6.2, 2.6, "container", 1), box(-70, 14, 2.5, 6.2, 5.2, "container", 2, 2.6));
-  out.push(box(-4, 38, 1.2, 1.2, 0.9, "crate"), box(64, -36, 1.2, 1.2, 1.8, "crate"));
+  // The island down the main lane: two rows, one or two high.
+  [-12.8, 0, 12.8].forEach((x, i) => [-1.3, 1.3].forEach((z, r) => {
+    const n = (i + r) % 2 === 0 ? 2 : 1;
+    for (let k = 0; k < n; k++) out.push(box(x, z, 12.2, 2.5, 2.6 * (k + 1), "container", (i + r + k + 1) % 3, 2.6 * k));
+  }));
+  for (const g of GANTRIES) {
+    const crane = gantry(g.x, Math.min(g.z0, g.z1), Math.max(g.z0, g.z1), CRANE, g.cab);
+    // The helper climbs from its north end; a gantry climbed from the south is the same, mirrored.
+    out.push(...(g.z0 < g.z1 ? crane : crane.map((b) => ({ ...b, z0: g.z0 + g.z1 - b.z1, z1: g.z0 + g.z1 - b.z0 }))));
+  }
+  QUAY_CRANES.forEach((x, i) => out.push(...quayCrane(x, i === QUAY_CRANES.length - 1)));
+  out.push(...trailer(-22, -12, 0), ...trailer(-62, 6, 2), ...trailer(34, -8, 1), ...trailer(30, 14, 2));
+  // The terminal office, and the gate house by the way in.
+  out.push(...tower(-70, 0, 12, 10, 3, { scale: WORKS, doors: [["e", "s"]], windows: [["n"], ["n", "e", "s"], ["n", "e", "s"]] }));
+  out.push(...building(-10, 44, 6, 4, WORKS.storey, { scale: WORKS, doors: ["e"], windows: ["s", "w"] }));
   return out;
 }
 
