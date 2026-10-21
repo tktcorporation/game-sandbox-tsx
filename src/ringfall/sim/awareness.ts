@@ -215,7 +215,7 @@ export function sense(s: State, e: Enemy): boolean {
     const engaged = e.aware === "engaged";
     // A storm shortens every robot's sight alike: its kind's, a pack's, and the range it answers from.
     const scale = sightScale(s);
-    let range = (sq?.sight ?? sight.range) * scale * (engaged ? AWARE.engagedRange : low ? AWARE.crouchRange * modScale(p, "hush") : 1) * (sq?.mobile && !engaged ? PATROL.sight : 1);
+    let range = (sq?.sight ?? sight.range) * scale * (engaged ? AWARE.engagedRange : low ? AWARE.crouchRange * modScale(p, "hush") : 1) * (sq?.mobile && !engaged && sq.sweep === undefined ? PATROL.sight : 1);
     if (engaged && answering(s, e)) range = Math.max(range, returnRange(s, e));
     let inView = d < AWARE.closeSense;
     if (!inView && d < range) {

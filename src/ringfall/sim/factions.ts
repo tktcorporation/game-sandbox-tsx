@@ -76,8 +76,8 @@ export function placeMobile(s: State, m: Mobile, kinds: readonly EnemyKind[], sp
   const leg = pick[mix(Math.imul(s.seed + 1, 0x9e3779b1) ^ nameHash(m.name)) % pick.length];
   const index = s.squads.length;
   // The network's patrols and convoys come to distant gunfire as the squads on the roads do; a POI's
-  // beat stays near its POI's fights only as close as its posts would, and the rogues keep to their own.
-  const roam = m.kind !== "beat" && !rogue;
+  // beat and a round through the POIs come to fights only as close as a post would, and the rogues keep to their own.
+  const roam = m.kind !== "beat" && m.kind !== "round" && !rogue;
   s.squads.push({ name: m.name, poi: -1, patrol: walk, leg: (leg + 1) % walk.length, engaged: false, roam, mobile: m.name, rogue: rogue || undefined, sinceSeen: 0, last: { x: 0, z: 0 } });
   const at = walk[leg];
   const next = walk[(leg + 1) % walk.length];
