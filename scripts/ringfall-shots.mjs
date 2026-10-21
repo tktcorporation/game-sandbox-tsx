@@ -779,7 +779,9 @@ const shot = async (name) => {
   if (taken.has(name)) return;
   taken.add(name);
   await draw(page);
-  await page.screenshot({ path: `${out}/${name}.png` });
+  // A frame in the middle of a fight, effects and bolts in it, can take software drawing well over
+  // the default 30 s; the shot waits for it rather than failing the gate.
+  await page.screenshot({ path: `${out}/${name}.png`, timeout: 180000 });
 };
 let prevKey = "";
 let prevFlank = 0;
