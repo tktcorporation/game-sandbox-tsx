@@ -1,4 +1,4 @@
-import { ALLY, AWARE, CHARGER, COVER, CREW, DEG, DODGE, DUCK, ELITE, ENEMIES, FALLBACK, PACK, PARTY, PINCH, SPLIT, SWEEP, PLAYER, PURSUE, SHOT, SIGHT, STAGGER, TICK, TITAN, TURN, WORLD, type EnemyKind, type Rarity } from "./config";
+import { ALLY, AWARE, CHARGER, COVER, CREW, DEG, DODGE, DUCK, ELITE, ENEMIES, FALLBACK, FAR_THINK, PACK, PARTY, PATROL, PINCH, SPLIT, SWEEP, PLAYER, PURSUE, SHOT, SIGHT, STAGGER, TICK, TITAN, TURN, WORLD, type EnemyKind, type Rarity } from "./config";
 import { clampToWorld, collide, dist2d, fenceBetween, groundAt, groundLevel, los, lookAngles, onTerrain, solidAt, worldVersion, wrapAngle } from "./geom";
 import { steepAt, terrainHeight } from "./terrain";
 import { engageSquad, fireRange, headOf, knownSpot, located, pursuitSpot, sense, stepSquads } from "./awareness";
@@ -179,7 +179,7 @@ function fireOrb(s: State, e: Enemy, yawOff = 0, homing = false, foe?: Enemy) {
   const k = ENEMIES[e.kind];
   const from = muzzle(e);
   // A random stray (see SHOT.spread); the titan's homing rockets find their own way.
-  const stray = homing ? 0 : SHOT.spread * DEG * (!foe && e.target === "player" ? modScale(s.player, "deflector") : 1);
+  const stray = homing ? 0 : SHOT.spread * DEG * (!foe && e.target === "player" ? modScale(s.player, "deflector") : 1) * (!foe && s.squads[e.squad]?.mobile ? SHOT.walker : 1);
   const r = Math.sqrt(-2 * Math.log(draw(s, e) + 1e-9));
   const a = draw(s, e) * Math.PI * 2;
   const yaw = e.aimYaw + yawOff + r * Math.cos(a) * stray;
@@ -190,7 +190,7 @@ function fireOrb(s: State, e: Enemy, yawOff = 0, homing = false, foe?: Enemy) {
     pos: from,
     vel: { x: Math.sin(yaw) * c * k.orbSpeed, y: Math.sin(pitch) * k.orbSpeed, z: -Math.cos(yaw) * c * k.orbSpeed },
     r: k.orbR,
-    dmg: k.orbDmg * (e.elite ? ELITE.dmg : 1),
+    dmg: k.orbDmg * (e.elite ? ELITE.dmg : 1) * (!foe && s.squads[e.squad]?.mobile ? SHOT.walkerDmg : 1),
     life: 5,
     homing,
     by: foe ? e.id : undefined,
@@ -241,14 +241,43 @@ function groundUnder(e: Enemy, x: number, z: number, r: number, feet: number): n
   return g;
 }
 
+/**
+ * The seconds a robot's movement covers in this call: a tick, or `FAR_THINK.every` ticks for a
+ * calm robot of a far squad thinking on its turn (see FAR_THINK). Set only round `calm()`.
+ */
+let dt = TICK;
+
+/** Each squad's slot in this tick's `nearSquads`: 1 when a member is within `FAR_THINK.dist` of the player or the teammate. */
+let nearSquads = new Uint8Array(0);
+
+/**
+ * Marks the squads with a member near the player or the teammate (see FAR_THINK). Squads are
+ * judged whole, so a walk's members keep step with its leader.
+ */
+function markNear(s: State) {
+  if (nearSquads.length < s.squads.length) nearSquads = new Uint8Array(Math.max(s.squads.length, nearSquads.length * 2, 64));
+  else nearSquads.fill(0);
+  const p = s.player.pos;
+  const a = s.ally.pos;
+  const r2 = FAR_THINK.dist * FAR_THINK.dist;
+  for (const e of s.enemies) {
+    if (e.squad < 0 || nearSquads[e.squad]) continue;
+    const px = e.pos.x - p.x;
+    const pz = e.pos.z - p.z;
+    const ax = e.pos.x - a.x;
+    const az = e.pos.z - a.z;
+    if (px * px + pz * pz < r2 || ax * ax + az * az < r2) nearSquads[e.squad] = 1;
+  }
+}
+
 function moveBody(e: Enemy, vx: number, vz: number) {
   const k = ENEMIES[e.kind];
-  e.vel.x += (vx - e.vel.x) * Math.min(1, TICK * 8);
-  e.vel.z += (vz - e.vel.z) * Math.min(1, TICK * 8);
+  e.vel.x += (vx - e.vel.x) * Math.min(1, dt * 8);
+  e.vel.z += (vz - e.vel.z) * Math.min(1, dt * 8);
   const bx = e.pos.x;
   const bz = e.pos.z;
-  e.pos.x += e.vel.x * TICK;
-  e.pos.z += e.vel.z * TICK;
+  e.pos.x += e.vel.x * dt;
+  e.pos.z += e.vel.z * dt;
   // No robot comes into the camp, over its fence or through its gate.
   if (inCamp(e.pos, k.radius + 0.5) && !inCamp({ x: bx, z: bz }, k.radius + 0.5)) {
     e.pos.x = bx;
@@ -257,7 +286,7 @@ function moveBody(e: Enemy, vx: number, vz: number) {
     return true;
   }
   if (k.fly > 0) {
-    e.pos.y += (flyHeight(e.pos.x, e.pos.z) - e.pos.y) * Math.min(1, TICK * 2.5);
+    e.pos.y += (flyHeight(e.pos.x, e.pos.z) - e.pos.y) * Math.min(1, dt * 2.5);
     clampToWorld(e.pos, 1);
     return false;
   }
@@ -280,17 +309,19 @@ function moveBody(e: Enemy, vx: number, vz: number) {
     e.pos.y = there;
     e.vel.y = 0;
   } else {
-    e.vel.y -= WORLD.gravity * TICK;
-    e.pos.y = Math.max(there, e.pos.y + e.vel.y * TICK);
+    e.vel.y -= WORLD.gravity * dt;
+    e.pos.y = Math.max(there, e.pos.y + e.vel.y * dt);
     if (e.pos.y === there) e.vel.y = 0;
   }
   // Moved much less than asked: the way is blocked.
-  return blocked && Math.hypot(e.pos.x - bx, e.pos.z - bz) < Math.hypot(vx, vz) * TICK * 0.4;
+  return blocked && Math.hypot(e.pos.x - bx, e.pos.z - bz) < Math.hypot(vx, vz) * dt * 0.4;
 }
 
 export function stepEnemies(s: State) {
   const p = s.player;
   stepSquads(s);
+  markNear(s);
+  const tick = Math.round(s.time / TICK);
   const byId = new Map(s.enemies.map((e) => [e.id, e]));
   // A robot destroyed takes a new list (`kill()`, `fall()`): only then are the rest looked up in it.
   const start = s.enemies;
@@ -334,7 +365,13 @@ export function stepEnemies(s: State) {
         // Not fighting the player: it fights the other faction's robot its squad is on, if any (see FACTION).
         const foe = foeOf(s, e, byId);
         if (foe && !gone(foe)) fightFoe(s, e, foe);
-        else calm(s, e);
+        else if (e.squad < 0 || nearSquads[e.squad]) calm(s, e);
+        else if ((tick + e.squad) % FAR_THINK.every === 0) {
+          // A far squad thinks on its turn, over the ticks since its last (see FAR_THINK).
+          dt = TICK * FAR_THINK.every;
+          calm(s, e);
+          dt = TICK;
+        }
         continue;
       }
     }
@@ -775,7 +812,7 @@ function splitSpot(e: Enemy, lead: Enemy, others: Enemy[], known: Point): Point 
 
 /** Turn toward a yaw at a robot's turning speed. */
 function turnTo(e: Enemy, yaw: number, rate = 3) {
-  e.yaw += wrapAngle(yaw - e.yaw) * Math.min(1, TICK * rate);
+  e.yaw += wrapAngle(yaw - e.yaw) * Math.min(1, dt * rate);
 }
 
 /** Walk toward a point; returns true once there. */
@@ -885,12 +922,12 @@ function squadMembers(s: State, squad: number): readonly Enemy[] {
 function calm(s: State, e: Enemy) {
   const k = ENEMIES[e.kind];
   const slow = k.speed * AWARE.idleSpeed;
-  e.lookT += TICK;
+  e.lookT += dt;
   // A wind-up or burst at a foe that is gone ends here.
   if (e.mode !== "move" && e.mode !== "spawning") e.mode = "move";
   if (e.aware === "alert" && e.poi >= 0 && POIS[e.poi].boss) {
     // The boss arena holds its ground: it looks, but does not leave.
-    e.searchT -= TICK;
+    e.searchT -= dt;
     if (e.goal) turnTo(e, Math.atan2(e.goal.x - e.pos.x, -(e.goal.z - e.pos.z)), 2);
     if (dist2d(e.pos, e.home) > 0.8) walkTo(e, e.home, slow, false);
     else moveBody(e, 0, 0);
@@ -898,12 +935,12 @@ function calm(s: State, e: Enemy) {
     return;
   }
   if (e.aware === "alert") {
-    e.searchT -= TICK;
+    e.searchT -= dt;
     // A squad sent after the player (see SWEEP) goes at nearly its fighting speed.
     if (e.goal && dist2d(e.pos, e.goal) > 2.5) walkTo(e, huntStep(s, e, e.goal), s.squads[e.squad]?.sweep ? k.speed * SWEEP.pace : slow * 1.4);
     else {
       moveBody(e, 0, 0);
-      e.yaw += Math.sin(e.lookT * 1.3) * TICK * 1.6; // looking around
+      e.yaw += Math.sin(e.lookT * 1.3) * dt * 1.6; // looking around
     }
     if (e.searchT <= 0) {
       e.aware = "idle";
@@ -922,7 +959,7 @@ function calm(s: State, e: Enemy) {
     if (dist2d(e.pos, to) > 0.8) walkTo(e, tripStep(e, to), pace);
     else {
       moveBody(e, 0, 0);
-      e.yaw += Math.sin(e.lookT * 0.7) * TICK * 0.9;
+      e.yaw += Math.sin(e.lookT * 0.7) * dt * 0.9;
     }
     return;
   }
@@ -938,7 +975,7 @@ function calm(s: State, e: Enemy) {
     if (dist2d(e.pos, to) > 0.8) walkTo(e, tripStep(e, to), pace);
     else {
       moveBody(e, 0, 0);
-      e.yaw += Math.sin(e.lookT * 0.7) * TICK * 0.9;
+      e.yaw += Math.sin(e.lookT * 0.7) * dt * 0.9;
     }
     return;
   }
@@ -963,7 +1000,7 @@ function calm(s: State, e: Enemy) {
     // The authored legs are walked straight; a robot a chase took off its leg finds its way back.
     const prev = sq.patrol[(sq.leg + sq.patrol.length - 1) % sq.patrol.length];
     const via = toSegment(e.pos, prev, to) > STRAY ? homeStep(s, e, to) : to;
-    if (walkTo(e, via, sq.pack ? k.speed * PACK.pace : slow) && via === to && slot === 0) sq.leg++;
+    if (walkTo(e, via, sq.pack ? k.speed * PACK.pace : sq.mobile ? slow * PATROL.pace : slow) && via === to && slot === 0) sq.leg++;
     return;
   }
   if (dist2d(e.pos, e.home) > 0.8) walkTo(e, dist2d(e.pos, e.home) > STRAY ? homeStep(s, e, e.home) : e.home, slow);

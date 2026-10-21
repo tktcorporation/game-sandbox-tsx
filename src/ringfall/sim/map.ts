@@ -1602,12 +1602,15 @@ export function territory(level: number): Record<OutpostId, Faction> {
  * in), not a straight leg. A beat is walked by squads of a POI's garrison (`from`): about half of
  * each POI's strength, so a POI is a smaller fight and the ground between is where most squads
  * are met. A patrol walks a road; a convoy, heavier, walks the network's nodes from one end of the
- * region to the other. Rogue walks (`faction: "rogue"`) are the rogues': those with `rank` while
+ * region to the other. A round is a pair whose walk runs through POIs' grounds, past their posts
+ * and bins, so a player looting there meets walkers; like a beat it comes to gunfire only as
+ * near as a post would, so it does not pile onto every fight at the POIs it passes. Rogue walks
+ * (`faction: "rogue"`) are the rogues': those with `rank` while
  * the network is weak enough (`ROGUE.patrols`), those with `outpost` while it is theirs.
  */
 export interface Mobile {
   name: string;
-  kind: "beat" | "patrol" | "convoy";
+  kind: "beat" | "patrol" | "convoy" | "round";
   faction: Faction;
   region: RegionId;
   /** A beat: the POI whose garrison squad (by name) walks it. */
@@ -1629,11 +1632,20 @@ export const MOBILES: Mobile[] = [
   { name: "台地の東の巡回", kind: "beat", faction: "net", region: "reservoir", from: { poi: "relay", squad: "南東の縁" }, nodes: [[210, -50], [271, -148], [360, -60]] },
   { name: "環状路の警邏", kind: "patrol", faction: "net", region: "reservoir", members: ["grunt", "drone"], nodes: [[0, 236], [88, 204], [250, 205], [200, 108]] },
   { name: "補給の車列", kind: "convoy", faction: "net", region: "reservoir", members: ["heavy", "grunt", "drone"], nodes: [[0, 296], [0, 236], [88, 204], [250, 205], [200, 108], [187, 32], [210, -50], [271, -148]] },
-  { name: "ポンプ場の野良機", kind: "patrol", faction: "rogue", region: "reservoir", outpost: "pumps", members: ["grunt", "grunt", "charger"], nodes: [[342, 190], [309, 191], [250, 205], [200, 108]] },
+  { name: "ポンプ場の野良機", kind: "patrol", faction: "rogue", region: "reservoir", outpost: "pumps", members: ["grunt", "charger"], nodes: [[342, 190], [309, 191], [250, 205], [200, 108]] },
   { name: "変電所の野良機", kind: "patrol", faction: "rogue", region: "reservoir", outpost: "eastSubstation", members: ["grunt", "grunt"], nodes: [[271, -148], [210, -50], [187, 32]] },
-  { name: "西の野良機", kind: "patrol", faction: "rogue", region: "reservoir", rank: 0, members: ["grunt", "grunt", "drone"], nodes: [[-170, -40], [-117, 274]] },
+  { name: "西の野良機", kind: "patrol", faction: "rogue", region: "reservoir", rank: 0, members: ["grunt", "drone"], nodes: [[-170, -40], [-117, 274]] },
   { name: "湖畔の野良機", kind: "patrol", faction: "rogue", region: "reservoir", rank: 1, members: ["grunt", "charger"], nodes: [[-117, 274], [-190, 470]] },
   { name: "東の野良機", kind: "patrol", faction: "rogue", region: "reservoir", rank: 2, members: ["grunt", "grunt"], nodes: [[116, 230], [270, 320]] },
+  // Pairs whose walks run through the POIs' grounds, past the posts and bins, so a player looting meets walkers.
+  { name: "補給所を抜ける警邏", kind: "round", faction: "net", region: "reservoir", members: ["grunt", "drone"], nodes: [[-110, 238], [-50, 411], [24, 504], [0, 534], [74, 438], [88, 204]] },
+  { name: "採掘場を抜ける警邏", kind: "round", faction: "net", region: "reservoir", members: ["grunt", "drone"], nodes: [[-265, 10], [-290, 60], [-352, 118], [-235, 150], [-170, 110]] },
+  { name: "浜の道の警邏", kind: "round", faction: "net", region: "reservoir", members: ["grunt", "drone"], nodes: [[20, 585], [0, 534], [24, 504], [-50, 411], [-110, 238]] },
+  { name: "湖底の町の警邏", kind: "round", faction: "net", region: "reservoir", members: ["grunt", "charger"], nodes: [[-52, 238], [-52, 290], [0, 296], [0, 236], [88, 204]] },
+  { name: "採掘穴の警邏", kind: "round", faction: "net", region: "reservoir", members: ["grunt", "drone"], nodes: [[-268, 116], [-316, 116], [-348, 142], [-260, 162]] },
+  { name: "発着場の北の警邏", kind: "round", faction: "net", region: "reservoir", members: ["grunt", "drone"], nodes: [[0, -64], [-105, -90], [-215, -95], [-265, 10]] },
+  { name: "廃村の外れの警邏", kind: "round", faction: "net", region: "reservoir", members: ["grunt", "drone"], nodes: [[-265, 10], [-215, -95], [-345, -88]] },
+  { name: "東の環状路の警邏", kind: "round", faction: "net", region: "reservoir", members: ["grunt", "drone"], nodes: [[0, 236], [88, 204], [250, 205], [200, 108], [187, 32]] },
   // --- the harbor: the yard's, the smelter's and the wreck's roads, the town, the wharf.
   { name: "難破船の西の巡回", kind: "beat", faction: "net", region: "harbor", from: { poi: "wreck", squad: "北の浜" }, nodes: [[-63, -943], [-117, -973], [-245, -965]] },
   { name: "難破船の北の巡回", kind: "beat", faction: "net", region: "harbor", from: { poi: "wreck", squad: "舳先" }, nodes: [[-63, -943], [-67, -800], [-67, -760]] },
@@ -1649,6 +1661,10 @@ export const MOBILES: Mobile[] = [
   { name: "漁村の野良機", kind: "patrol", faction: "rogue", region: "harbor", rank: 0, members: ["grunt", "charger"], nodes: [[-277, -835], [-281, -588]] },
   { name: "港町の野良機", kind: "patrol", faction: "rogue", region: "harbor", rank: 1, members: ["grunt", "grunt"], nodes: [[240, -625], [264, -864]] },
   { name: "丘の野良機", kind: "patrol", faction: "rogue", region: "harbor", rank: 2, members: ["grunt", "drone"], nodes: [[240, -625], [105, -675], [166, -697]] },
+  { name: "ヤードを抜ける警邏", kind: "round", faction: "net", region: "harbor", members: ["grunt", "drone"], nodes: [[-167, -690], [-218, -693], [-172, -723], [-160, -753], [-61, -745]] },
+  { name: "製錬所を抜ける警邏", kind: "round", faction: "net", region: "harbor", members: ["grunt", "drone"], nodes: [[105, -675], [166, -697], [152, -717], [158, -779], [198, -765], [205, -735]] },
+  { name: "難破船の浜の警邏", kind: "round", faction: "net", region: "harbor", members: ["grunt", "drone"], nodes: [[-245, -965], [-28, -984], [-20, -943], [-4, -932], [110, -955]] },
+  { name: "塩田の警邏", kind: "round", faction: "net", region: "harbor", members: ["grunt", "charger"], nodes: [[45, -675], [-61, -745], [-67, -800], [-63, -943]] },
 ];
 
 /** Stable names for the relay masts: saves and contracts refer to a mast by these. */
