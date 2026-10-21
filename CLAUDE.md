@@ -189,7 +189,8 @@ npm run sim:ringfall     # gate 2: bots of three skills play whole raids headles
                          # then the hideout's pacing replays the meta with those raids, then each
                          # skill plays 30 days on one profile with the network carried
                          # (scripts/ringfall-campaign.ts, also runnable alone); raids run
-                         # in parallel, one process per core, the reservoir's (the longest) first
+                         # in parallel, one process per core, the reservoir's (the longest) first,
+                         # beside the campaign's months (a process per skill, started first)
                          # (RINGFALL_SIM_JOBS=n to set, 1 = in turn)
 npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir raid to the end, a harbor raid
                          # to its first fight, a tour of both); screenshots in shots/ringfall/

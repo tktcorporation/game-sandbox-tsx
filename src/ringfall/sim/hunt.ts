@@ -99,6 +99,9 @@ function steps(open: Uint8Array, height: Float32Array, k: number, n: number): nu
 
 /** Neighbour n's index from a cell's. */
 const OFFSET = DI.map((di, n) => DJ[n] * NX + di);
+/** `OFFSET` and `COST` as typed arrays, for the inner loop of `build()`. */
+const MOVE_OFFSET = Int32Array.from(OFFSET);
+const MOVE_COST = Float64Array.from(COST);
 /** For each cell, bit n set when `steps()` lets a walker go to its n-th neighbour; built on first use. */
 let mask: Uint8Array | null = null;
 function stepMask(): Uint8Array {
@@ -192,6 +195,8 @@ const NEAR = 3;
 export function resetHunt() {
   open = height = main = mask = null;
   forgetFields();
+  kept.clear();
+  keptCells = 0;
 }
 
 /** Forgets every field but keeps the grid: a raid starts with none (`newRun()`). */
@@ -208,6 +213,20 @@ export function forgetFields() {
  * the grid. Nothing keeps a field past the next `fieldTo()` call.
  */
 const spare: { dist: Float32Array; order: Int32Array; count: number }[] = [];
+
+/*
+ * Copies of the fields built lately, by target cell and reach, kept after the cache above has
+ * dropped them. A field is fixed by its target cell, its reach and the grid, so one built again
+ * for the same target and reach is the copy, written back instead of found again. Squads posted
+ * round a few spots ask for the same fields over and over, more of them than the cache keeps;
+ * the cache decides which field a squad follows, as before, and only the building of a field it
+ * has dropped comes from here. A copy holds the field's `order` cells and their distances; every
+ * other cell of a field is at Infinity. Kept across raids, since the grid is the same; dropped
+ * with the grid (`resetHunt()`). The oldest copies go once they hold more than `KEPT_CELLS` cells.
+ */
+const kept = new Map<string, { order: Int32Array; dist: Float32Array }>();
+let keptCells = 0;
+const KEPT_CELLS = 16_000_000;
 
 /** Fields built so far: the sim gate checks that alternating targets reuse them. */
 export let fieldsBuilt = 0;
@@ -246,6 +265,102 @@ function openCell(x: number, z: number): number {
 }
 
 
+/** A kept copy written back into a field's arrays (cleared to Infinity), as `build()` would write it; returns its cell count. */
+function restore(copy: { order: Int32Array; dist: Float32Array }, dist: Float32Array, order: Int32Array, name: string): number {
+  // Most recently used goes last, so the oldest is dropped first.
+  kept.delete(name);
+  kept.set(name, copy);
+  const n = copy.order.length;
+  order.set(copy.order);
+  for (let e = 0; e < n; e++) dist[copy.order[e]] = copy.dist[e];
+  return n;
+}
+
+/** Finds the field toward `target` out to `reach` into `dist` (Infinity everywhere) and `order`, keeps a copy, and returns its cell count. */
+function build(target: number, reach: number, dist: Float32Array, order: Int32Array, name: string): number {
+  const mask = stepMask();
+  dist[target] = 0;
+  // Dijkstra with the cells kept in buckets RES wide by distance, the cost of the shortest
+  // move: a cell relaxed from one in bucket b lands in bucket b + 1 or later, so every cell
+  // in a bucket is settled by the time the bucket comes up, and the buckets are taken in turn
+  // without a heap. The distances are the same as a heap's (each cell's is the least over its
+  // settled neighbours). `order` runs bucket by bucket, nearest bucket first.
+  if (settled.length !== CELLS) {
+    settled = new Uint32Array(CELLS);
+    stamp = 0;
+  }
+  const done = settled;
+  // This build's marks: taken from its bucket, and settled. Older builds' marks are below both.
+  const taken = (stamp += 2);
+  const isSettled = taken + 1;
+  let count = 0;
+  for (let r = 0; r < RING; r++) ringSize[r] = 0;
+  ring[0][ringSize[0]++] = target;
+  let pending = 1;
+  let past = false;
+  for (let b = 0; pending && !past; b++) {
+    const r = b & (RING - 1);
+    const list = ring[r];
+    const n = ringSize[r];
+    ringSize[r] = 0;
+    pending -= n;
+    // This bucket's cells, once each. A bucket that reaches past the reach is the last: the
+    // cells in it past the reach are not settled, and nor is any cell after it.
+    if (bucket.length < n) bucket = new Int32Array(n * 2);
+    let m = 0;
+    for (let e = 0; e < n; e++) {
+      const k = list[e];
+      if (done[k] >= taken || Math.floor(dist[k] / RES) !== b) continue;
+      done[k] = taken;
+      if (dist[k] > reach) {
+        dist[k] = Infinity;
+        past = true;
+      } else bucket[m++] = k;
+    }
+    for (let e = 0; e < m; e++) {
+      const k = bucket[e];
+      done[k] = isSettled;
+      order[count++] = k;
+      const bits = mask[k];
+      if (!bits) continue;
+      const dk = dist[k];
+      for (let q0 = 0; q0 < 8; q0++) {
+        if (!(bits & (1 << q0))) continue;
+        const q = k + MOVE_OFFSET[q0];
+        if (done[q] >= taken) continue;
+        const d = dk + MOVE_COST[q0];
+        if (d < dist[q]) {
+          dist[q] = d;
+          // Into the ring by its distance as stored, a bucket RES wide.
+          const into = Math.floor(dist[q] / RES) & (RING - 1);
+          let cells = ring[into];
+          if (ringSize[into] === cells.length) {
+            const grown = new Int32Array(cells.length * 2);
+            grown.set(cells);
+            cells = ring[into] = grown;
+          }
+          cells[ringSize[into]++] = q;
+          pending++;
+        }
+      }
+    }
+  }
+  // Cells reached but not settled lie past the reach: their distances so far are not theirs.
+  if (past)
+    for (let r = 0; r < RING; r++)
+      for (let e = 0; e < ringSize[r]; e++) if (done[ring[r][e]] !== isSettled) dist[ring[r][e]] = Infinity;
+  const copy = { order: order.slice(0, count), dist: new Float32Array(count) };
+  for (let e = 0; e < count; e++) copy.dist[e] = dist[order[e]];
+  kept.set(name, copy);
+  keptCells += count;
+  while (keptCells > KEPT_CELLS && kept.size > 1) {
+    const [oldest, c] = kept.entries().next().value!;
+    kept.delete(oldest);
+    keptCells -= c.order.length;
+  }
+  return count;
+}
+
 /**
  * The field toward (x, z), by Dijkstra over open cells, out to `reach` metres of walking (all
  * the way by default). Fields are shared: squads hunting the same spot share one, and a few
@@ -279,81 +394,13 @@ export function fieldTo(x: number, z: number, reach = Infinity): Field | null {
   // A short field is built a little past its reach, so a target that moves a few cells still
   // finds it in the cache (see above).
   if (reach < Infinity) reach += NEAR * RES * 1.5;
-  const mask = stepMask();
   const reused = spare.pop();
   const dist = reused?.dist ?? new Float32Array(CELLS).fill(Infinity);
   if (reused) for (let e = 0; e < reused.count; e++) dist[reused.order[e]] = Infinity;
-  dist[target] = 0;
-  // Dijkstra with the cells kept in buckets RES wide by distance, the cost of the shortest
-  // move: a cell relaxed from one in bucket b lands in bucket b + 1 or later, so every cell
-  // in a bucket is settled by the time the bucket comes up, and the buckets are taken in turn
-  // without a heap. The distances are the same as a heap's (each cell's is the least over its
-  // settled neighbours). `order` runs bucket by bucket, nearest bucket first.
-  if (settled.length !== CELLS) {
-    settled = new Uint32Array(CELLS);
-    stamp = 0;
-  }
-  const done = settled;
-  // This build's marks: taken from its bucket, and settled. Older builds' marks are below both.
-  const taken = (stamp += 2);
-  const isSettled = taken + 1;
   const order = reused?.order ?? new Int32Array(CELLS);
-  let count = 0;
-  const bucketOf = (d: number) => Math.floor(d / RES) & (RING - 1);
-  for (let r = 0; r < RING; r++) ringSize[r] = 0;
-  const put = (k: number, d: number) => {
-    const r = bucketOf(d);
-    if (ringSize[r] === ring[r].length) {
-      const grown = new Int32Array(ring[r].length * 2);
-      grown.set(ring[r]);
-      ring[r] = grown;
-    }
-    ring[r][ringSize[r]++] = k;
-  };
-  put(target, 0);
-  let pending = 1;
-  let past = false;
-  for (let b = 0; pending && !past; b++) {
-    const r = b & (RING - 1);
-    const list = ring[r];
-    const n = ringSize[r];
-    ringSize[r] = 0;
-    pending -= n;
-    // This bucket's cells, once each. A bucket that reaches past the reach is the last: the
-    // cells in it past the reach are not settled, and nor is any cell after it.
-    if (bucket.length < n) bucket = new Int32Array(n * 2);
-    let m = 0;
-    for (let e = 0; e < n; e++) {
-      const k = list[e];
-      if (done[k] >= taken || Math.floor(dist[k] / RES) !== b) continue;
-      done[k] = taken;
-      if (dist[k] > reach) {
-        dist[k] = Infinity;
-        past = true;
-      } else bucket[m++] = k;
-    }
-    for (let e = 0; e < m; e++) {
-      const k = bucket[e];
-      done[k] = isSettled;
-      order[count++] = k;
-      const bits = mask[k];
-      for (let q0 = 0; q0 < 8; q0++) {
-        if (!(bits & (1 << q0))) continue;
-        const q = k + OFFSET[q0];
-        if (done[q] >= taken) continue;
-        const d = dist[k] + COST[q0];
-        if (d < dist[q]) {
-          dist[q] = d;
-          put(q, dist[q]);
-          pending++;
-        }
-      }
-    }
-  }
-  // Cells reached but not settled lie past the reach: their distances so far are not theirs.
-  if (past)
-    for (let r = 0; r < RING; r++)
-      for (let e = 0; e < ringSize[r]; e++) if (done[ring[r][e]] !== isSettled) dist[ring[r][e]] = Infinity;
+  const name = `${target}:${reach}`;
+  const copy = kept.get(name);
+  const count = copy ? restore(copy, dist, order, name) : build(target, reach, dist, order, name);
   const f = { target, dist, reach, order, count };
   fieldsBuilt++;
   // A longer field for a cell that already has a short one replaces it: its arrays go back to `spare`.

@@ -1,5 +1,5 @@
 import { ALLY, AWARE, CHARGER, COVER, CREW, DEG, DODGE, DUCK, ELITE, ENEMIES, FALLBACK, PACK, PARTY, PINCH, SPLIT, SWEEP, PLAYER, PURSUE, SHOT, SIGHT, STAGGER, TICK, TITAN, TURN, WORLD, type EnemyKind, type Rarity } from "./config";
-import { clampToWorld, collide, dist2d, fenceBetween, groundAt, groundLevel, los, lookAngles, onTerrain, solidAt, wrapAngle } from "./geom";
+import { clampToWorld, collide, dist2d, fenceBetween, groundAt, groundLevel, los, lookAngles, onTerrain, solidAt, worldVersion, wrapAngle } from "./geom";
 import { steepAt, terrainHeight } from "./terrain";
 import { engageSquad, fireRange, headOf, knownSpot, located, pursuitSpot, sense, stepSquads } from "./awareness";
 import { coversNear, type CoverPoint } from "./cover";
@@ -218,6 +218,29 @@ function flyHeight(x: number, z: number): number {
   return Math.max(terrainHeight(x, z) + ENEMIES.drone.fly, groundAt(x, z, 1.2, 99) + 2.4);
 }
 
+/*
+ * Each walker's last `groundAt()` question and answer. `moveBody()` asks for the ground where the
+ * walker stood and where it steps to: a walker standing still asks the same twice, and where it
+ * stood is mostly where it stepped to the tick before. The same question in the same world has
+ * the same answer.
+ */
+type GroundAsked = { x: number; z: number; r: number; feet: number; world: number; g: number };
+const groundAsked = new WeakMap<Enemy, GroundAsked>();
+function groundUnder(e: Enemy, x: number, z: number, r: number, feet: number): number {
+  const a = groundAsked.get(e);
+  if (a && a.world === worldVersion && Object.is(a.x, x) && Object.is(a.z, z) && Object.is(a.feet, feet) && a.r === r) return a.g;
+  const g = groundAt(x, z, r, feet);
+  if (a) {
+    a.x = x;
+    a.z = z;
+    a.r = r;
+    a.feet = feet;
+    a.world = worldVersion;
+    a.g = g;
+  } else groundAsked.set(e, { x, z, r, feet, world: worldVersion, g });
+  return g;
+}
+
 function moveBody(e: Enemy, vx: number, vz: number) {
   const k = ENEMIES[e.kind];
   e.vel.x += (vx - e.vel.x) * Math.min(1, TICK * 8);
@@ -239,8 +262,8 @@ function moveBody(e: Enemy, vx: number, vz: number) {
     return false;
   }
   const blocked = collide(e.pos, k.radius, bodyHeight(k));
-  const here = groundAt(bx, bz, k.radius, e.pos.y);
-  const there = groundAt(e.pos.x, e.pos.z, k.radius, e.pos.y);
+  const here = groundUnder(e, bx, bz, k.radius, e.pos.y);
+  const there = groundUnder(e, e.pos.x, e.pos.z, k.radius, e.pos.y);
   // A drop ahead stays on this floor. A robot posted up high (a roof, a tower tier)
   // never leaves its floor at all: it could not find the way back up. A robot posted
   // on the ground does not climb stairs onto roofs or upper floors either.
@@ -833,6 +856,31 @@ function toSegment(p: Point, a: Point, b: Point): number {
   return Math.hypot(p.x - a.x - dx * t, p.z - a.z - dz * t);
 }
 
+/*
+ * Each squad's robots, in the order of `s.enemies`, for `calm()`, which asks for them once per
+ * member every tick. `s.enemies` changes only by a push (a robot spawned) or by a new list (one
+ * destroyed), and a robot never changes squad, so the lists hold until its length or identity
+ * changes.
+ */
+let membersFrom: Enemy[] | null = null;
+let membersLength = -1;
+const bySquad = new Map<number, Enemy[]>();
+const NO_MEMBERS: Enemy[] = [];
+/** The robots of squad `squad`, as `s.enemies.filter((o) => o.squad === squad)` gives them. Read only. */
+function squadMembers(s: State, squad: number): readonly Enemy[] {
+  if (membersFrom !== s.enemies || membersLength !== s.enemies.length) {
+    membersFrom = s.enemies;
+    membersLength = s.enemies.length;
+    bySquad.clear();
+    for (const o of s.enemies) {
+      const list = bySquad.get(o.squad);
+      if (list) list.push(o);
+      else bySquad.set(o.squad, [o]);
+    }
+  }
+  return bySquad.get(squad) ?? NO_MEMBERS;
+}
+
 /** Out of combat: hold the post or walk the patrol; when alerted, go and look. */
 function calm(s: State, e: Enemy) {
   const k = ENEMIES[e.kind];
@@ -867,7 +915,7 @@ function calm(s: State, e: Enemy) {
   if (sq?.walk) {
     // A salvage crew or the retake squad walks to its point as a party walks to its stop, and
     // stands there looking round until the raid gives it another (world.ts).
-    const members = s.enemies.filter((o) => o.squad === e.squad);
+    const members = squadMembers(s, e.squad);
     const slot = members.indexOf(e);
     const to = { x: sq.walk.x + (slot % 2 ? 1.6 : -1.6) * Math.min(slot, 1), z: sq.walk.z + slot * 1.4 };
     const pace = Math.min(...members.map((o) => ENEMIES[o.kind].speed)) * (sq.crew ? CREW.pace : PARTY.pace);
@@ -882,7 +930,7 @@ function calm(s: State, e: Enemy) {
     // A hunting party walks to its stop by the ground's way, the first living member leading and
     // the others beside it, all at the pace of the slowest; there it stands and looks round
     // until stepParties() sends it on.
-    const members = s.enemies.filter((o) => o.squad === e.squad);
+    const members = squadMembers(s, e.squad);
     const slot = members.indexOf(e);
     const stop = PARTY_STOPS[sq.party.region][sq.party.stop];
     const to = { x: stop.x + (slot % 2 ? 1.6 : -1.6) * Math.min(slot, 1), z: stop.z + slot * 1.4 };
@@ -896,7 +944,7 @@ function calm(s: State, e: Enemy) {
   }
   if (sq?.ambush) {
     // Waiting at a choke point for the player (see AMBUSH): there by the ground's way, then still, facing their side.
-    const members = s.enemies.filter((o) => o.squad === e.squad);
+    const members = squadMembers(s, e.squad);
     const slot = members.indexOf(e);
     const to = { x: sq.ambush.at.x + (slot % 2 ? 2.2 : -2.2) * Math.min(slot, 1), z: sq.ambush.at.z + slot * 1.8 };
     if (dist2d(e.pos, to) > 1) walkTo(e, dist2d(e.pos, to) > STRAY ? homeStep(s, e, to) : to, slow * 1.6);
@@ -908,7 +956,7 @@ function calm(s: State, e: Enemy) {
   }
   if (sq && sq.patrol.length && e.kind !== "titan") {
     // The first living member leads; the others follow at an offset.
-    const members = s.enemies.filter((o) => o.squad === e.squad);
+    const members = squadMembers(s, e.squad);
     const slot = members.indexOf(e);
     const wp = sq.patrol[sq.leg % sq.patrol.length];
     const to = { x: wp.x + (slot % 2 ? 1.6 : -1.6) * Math.min(slot, 1), z: wp.z + slot * 1.4 };
@@ -1032,25 +1080,55 @@ function fromCover(s: State, e: Enemy, known: { x: number; z: number; live: bool
 /** Keep walkers from stacking into one blob. */
 /** Coarse cells for `separate()`: robots more than a cell apart cannot touch. */
 const SEP_CELL = 8;
+/** Each walker's cell for `separate()`, kept between ticks so a tick allocates none. */
+let sepX = new Int32Array(256);
+let sepZ = new Int32Array(256);
 function separate(s: State) {
   const list = s.enemies.filter((e) => ENEMIES[e.kind].fly === 0 && e.mode !== "spawning");
-  const cx = list.map((e) => Math.floor(e.pos.x / SEP_CELL));
-  const cz = list.map((e) => Math.floor(e.pos.z / SEP_CELL));
-  for (let i = 0; i < list.length; i++)
-    for (let j = i + 1; j < list.length; j++) {
-      if (Math.abs(cx[i] - cx[j]) > 1 || Math.abs(cz[i] - cz[j]) > 1) continue;
-      const a = list[i];
-      const b = list[j];
-      const r = ENEMIES[a.kind].radius + ENEMIES[b.kind].radius;
-      const dx = b.pos.x - a.pos.x;
-      const dz = b.pos.z - a.pos.z;
-      const d = Math.hypot(dx, dz);
-      // Robots on different floors (a tower's tiers) do not touch.
-      if (d >= r || d < 1e-4 || Math.abs(a.pos.y - b.pos.y) > 1) continue;
-      const push = (r - d) / 2;
-      nudge(a, (-dx / d) * push, (-dz / d) * push);
-      nudge(b, (dx / d) * push, (dz / d) * push);
+  const pair = (a: Enemy, b: Enemy) => {
+    const r = ENEMIES[a.kind].radius + ENEMIES[b.kind].radius;
+    const dx = b.pos.x - a.pos.x;
+    const dz = b.pos.z - a.pos.z;
+    const d = Math.hypot(dx, dz);
+    // Robots on different floors (a tower's tiers) do not touch.
+    if (d >= r || d < 1e-4 || Math.abs(a.pos.y - b.pos.y) > 1) return;
+    const push = (r - d) / 2;
+    nudge(a, (-dx / d) * push, (-dz / d) * push);
+    nudge(b, (dx / d) * push, (dz / d) * push);
+  };
+  // The cells are fixed before any robot is nudged.
+  const n = list.length;
+  if (sepX.length < n) {
+    sepX = new Int32Array(n * 2);
+    sepZ = new Int32Array(n * 2);
+  }
+  let whole = true;
+  for (let i = 0; i < n; i++) {
+    const x = Math.floor(list[i].pos.x / SEP_CELL);
+    const z = Math.floor(list[i].pos.z / SEP_CELL);
+    // A cell that is not a small whole number (a robot off the world, or not a number) is not kept as one.
+    if (!(Math.abs(x) < 1e9 && Math.abs(z) < 1e9)) whole = false;
+    sepX[i] = x;
+    sepZ[i] = z;
+  }
+  if (!whole) {
+    const cx = list.map((e) => Math.floor(e.pos.x / SEP_CELL));
+    const cz = list.map((e) => Math.floor(e.pos.z / SEP_CELL));
+    for (let i = 0; i < n; i++)
+      for (let j = i + 1; j < n; j++) {
+        if (Math.abs(cx[i] - cx[j]) > 1 || Math.abs(cz[i] - cz[j]) > 1) continue;
+        pair(list[i], list[j]);
+      }
+    return;
+  }
+  for (let i = 0; i < n; i++) {
+    const xi = sepX[i];
+    const zi = sepZ[i];
+    for (let j = i + 1; j < n; j++) {
+      if (Math.abs(xi - sepX[j]) > 1 || Math.abs(zi - sepZ[j]) > 1) continue;
+      pair(list[i], list[j]);
     }
+  }
 }
 
 /** Shift a walker sideways, but never into a wall or off the floor it stands on. */

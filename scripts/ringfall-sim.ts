@@ -10,8 +10,9 @@
  * plays a month per skill on one profile with the network carried (scripts/ringfall-campaign.ts).
  *
  * With a region id after the count, only that region's table is played. The tables' raids
- * are played in one worker process per core; RINGFALL_SIM_JOBS sets how many (1 plays them
- * in this process, in turn).
+ * are played in one worker process per core, and the campaign's months in a worker each beside
+ * them; RINGFALL_SIM_JOBS sets how many workers play the tables (1 plays everything in this
+ * process, in turn).
  */
 import { CONTRACT, NETWORK, RELAY as MAST, ALLY, BAG, DEPOT, ELITE, HOME, ENEMIES, HEALS, NOISE, PACK, PARTY, PLATE, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, SIGHT, STAGGER, TACTICAL, TICK, VALUABLES, VAULT, WEAPONS, WORLD } from "../src/ringfall/sim/config";
 import { engageSquad, makeNoise } from "../src/ringfall/sim/awareness";
@@ -77,7 +78,7 @@ import { playTable, summarize, type RaidResult, type TableResult } from "./ringf
 import type { RaidJob } from "./ringfall-table-worker";
 import { fork, type ChildProcess } from "node:child_process";
 import { writeFileSync } from "node:fs";
-import { availableParallelism } from "node:os";
+import { availableParallelism, setPriority } from "node:os";
 import { fileURLToPath } from "node:url";
 
 const runs = Number(process.argv[2] ?? 12);
@@ -90,6 +91,16 @@ const only = process.argv[3];
  * The results are printed in table order, the same as when played in turn.
  */
 const jobs = Math.max(1, Number(process.env.RINGFALL_SIM_JOBS ?? availableParallelism()) || 1);
+/*
+ * The island campaign does not use the tables' raids, and each skill's month is a chain of raids
+ * played one after another, the longest single piece of the gate. With workers, its months start
+ * now, beside the tables, and the tables' workers run at a lower priority: the months get the
+ * cores they need and the tables' raids, short pieces, fill the rest. The campaign table is
+ * still printed last.
+ */
+const months = jobs > 1 && runs > 0 && !only ? campaigns(DAYS, SKILLS.length) : null;
+// A month that fails is reported where its table is printed, not when it fails.
+months?.catch(() => {});
 const TABLES = REGIONS.filter((r) => !only || r.id === only).flatMap((r) => SKILLS.map((k) => ({ region: r.id, skill: k.name })));
 const tableIndex = (region: RegionId, skill: string) => TABLES.findIndex((t) => t.region === region && t.skill === skill);
 const tables: (() => Promise<TableResult>)[] = jobs === 1 ? TABLES.map((t) => async () => playTable(t.region, t.skill, runs)) : playInWorkers(Math.min(jobs, TABLES.length * runs));
@@ -117,6 +128,13 @@ function playInWorkers(n: number): (() => Promise<TableResult>)[] {
   for (let k = 0; k < n; k++) {
     const w = fork(fileURLToPath(new URL("./ringfall-table-worker.ts", import.meta.url)), { serialization: "advanced" });
     workers.push(w);
+    if (months && w.pid !== undefined) {
+      try {
+        setPriority(w.pid, 10);
+      } catch {
+        // Without the lower priority the tables only share the cores evenly with the months.
+      }
+    }
     let playing: RaidJob | null = null;
     const give = () => {
       if (next < queue.length) w.send((playing = queue[next++]) satisfies RaidJob);
@@ -4001,9 +4019,9 @@ if (runs > 0 && !only) {
 if (runs > 0 && !only) {
   console.log("");
   console.log("island campaign: a month on one profile per skill, the network carried (scripts/ringfall-campaign.ts)");
-  const months = await campaigns(DAYS, jobs === 1 ? 1 : SKILLS.length);
-  for (const l of campaignLines(months)) console.log(l);
-  for (const e of months.flatMap((c) => c.errors)) {
+  const month = await (months ?? campaigns(DAYS, 1));
+  for (const l of campaignLines(month)) console.log(l);
+  for (const e of month.flatMap((c) => c.errors)) {
     failed = true;
     console.error(e);
   }
