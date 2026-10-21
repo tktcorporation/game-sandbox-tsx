@@ -1,6 +1,8 @@
-import { CONTRACT, CREW, NETWORK, PARTY, RELAY, RETAKE, VALUABLES, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
-import { PACKS, POIS, poiIndex, regionHere, REGIONS, regionOf, RELAYS, relayIndex, type PoiId, type RegionId, type RelayId } from "../sim/map";
+import { CONTRACT, CREW, FRONT, NETWORK, PARTY, RELAY, RETAKE, VALUABLES, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
+import { nodeIndex, PACKS, POIS, poiIndex, regionHere, REGIONS, regionOf, RELAYS, relayIndex, type OutpostId, type PoiId, type RegionId, type RelayId } from "../sim/map";
 import { activePacks, garrison, type IslandEvent, type PoiHold } from "../sim/island";
+import { frontNodes, nodeHolds, type OutpostHold } from "../sim/front";
+import type { Task } from "../sim/objective";
 import { crewKey, mix, partyKey, retakeKey, squadKey, type State } from "../sim/state";
 import { haulOrigins } from "../sim/world";
 import { MODULES, nextLevel, unmet, type Hideout } from "./hideout";
@@ -57,6 +59,8 @@ export interface BoardBasis {
   network: number;
   /** Today's event and tomorrow's: today's may bring a contract of its own. */
   events?: readonly (IslandEvent | null)[];
+  /** Who holds each outpost: with the POIs, it decides which nodes are on the front. */
+  outposts?: Partial<Record<OutpostId, OutpostHold>>;
 }
 
 const round50 = (n: number) => Math.round(n / 50) * 50;
@@ -84,7 +88,7 @@ export const targetName = (t: InterceptTarget) => (t.t === "party" ? `${regionOf
 export function contractText(c: Contract): string {
   switch (c.t) {
     case "free":
-      return `${POIS[poiIndex(c.poi)].name}を解放する（守備隊を片付けて生きて帰る）`;
+      return `${POIS[poiIndex(c.poi)].name}を解放する（核を制圧して生きて帰る）`;
     case "fetch":
       return `${POIS[poiIndex(c.poi)].name}の補給箱から、${VALUABLES[c.kind].label}を ${c.n} 個持ち帰る`;
     case "intercept":
@@ -127,8 +131,9 @@ export function makeBoard(p: BoardBasis): Board {
   if (defend)
     out.push({ t: "defend", id: id(), poi: today.poi, reward: { cash: round50(CONTRACT.defend * factor(poiRegionOf(today.poi))), items: [] } });
 
-  // Free: a POI the robots hold, paid by the garrison that stands there in the next raid.
-  const frees = shuffle(near(POIS.filter((o) => !o.boss && p.poiState[o.id].state !== "freed").map((o) => o.id), poiRegionOf), 1);
+  // Free: a POI on the front (only those can be taken), paid by the garrison that stands there in the next raid.
+  const front = frontNodes(nodeHolds((id) => p.poiState[id].state, p.outposts, p.network));
+  const frees = shuffle(near(POIS.filter((o) => !o.boss && p.poiState[o.id].state !== "freed" && front[nodeIndex(o.id)]).map((o) => o.id), poiRegionOf), 1);
   const freeOf = (poi: PoiId): Contract => {
     const robots = garrison(poiIndex(poi), p.poiState[poi].state, p.seed).reduce((n, sq) => n + sq.members.length, 0);
     return { t: "free", id: id(), poi, reward: { cash: round50(robots * CONTRACT.freePerRobot * factor(poiRegionOf(poi))), items: [] } };
@@ -217,8 +222,10 @@ export function contractProgress(c: Contract, s: State): { line: string; met: bo
     case "free": {
       const i = poiIndex(c.poi);
       const name = POIS[i].name;
-      if (s.cleared[i]) return { line: `${name}：制圧した。生きて帰れば解放`, met: true };
-      return { line: `${name}を解放：守備隊 残り ${s.enemies.filter((e) => e.poi === i).length}`, met: false };
+      const node = nodeIndex(c.poi);
+      if (s.nodes[node] === "freed") return { line: `${name}：核を制圧した。生きて帰れば解放`, met: true };
+      if (s.capture?.node === node) return { line: `${name}の核を制圧中 ${Math.floor(s.capture.t)}/${FRONT.capture} 秒`, met: false };
+      return { line: `${name}を解放：核を制圧する`, met: false };
     }
     case "fetch": {
       const i = poiIndex(c.poi);
@@ -321,4 +328,22 @@ export function parseBoard(raw: unknown, day: number): Board | null {
     return false;
   };
   return o.contracts.every(ok) ? { day, contracts: o.contracts as Contract[] } : null;
+}
+
+/** What a contract asks of the raid, as the objective's steps read it (sim/objective.ts). */
+export function contractTask(c: Contract): Task {
+  switch (c.t) {
+    case "free":
+      return { t: "capture", node: nodeIndex(c.poi) };
+    case "fetch":
+      return { t: "fetch", poi: c.poi, kind: c.kind, n: c.n };
+    case "destroy":
+      return { t: "destroy", relay: c.relay };
+    case "defend":
+      return { t: "defend", poi: c.poi };
+    case "intercept": {
+      const loop = c.target.t === "pack" ? (PACKS.find((q) => q.name === (c.target as { name: string }).name)?.patrol?.[0] ?? undefined) : undefined;
+      return { t: "intercept", key: targetKey(c.target), name: targetName(c.target), region: targetRegion(c.target), at: loop };
+    }
+  }
 }

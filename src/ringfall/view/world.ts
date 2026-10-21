@@ -1,6 +1,7 @@
 import * as THREE from "three";
-import { DUCK, ENEMIES, PLAYER, RELAY, STORM, TITAN, WEAPONS, WORLD, type EnemyKind } from "../sim/config";
-import { BOXES, CAMP, DEPOTS, ENTRIES, EXTRACTS, ROUTES, type Box } from "../sim/map";
+import { DUCK, ENEMIES, FRONT, PLAYER, RELAY, STORM, TITAN, WEAPONS, WORLD, type EnemyKind } from "../sim/config";
+import { BOXES, CAMP, DEPOTS, ENTRIES, EXTRACTS, NODES, ROUTES, type Box } from "../sim/map";
+import { frontNodes } from "../sim/front";
 import { worldKey } from "../sim/routes";
 import { groundAt } from "../sim/geom";
 import { LANDS, offshore, terrainHeight } from "../sim/terrain";
@@ -10,7 +11,7 @@ import { QUALITY, type Quality, type Tier } from "./quality";
 import { SHADE, contactAt, coverAt, floorUnder } from "./shade";
 import { GroundScatter } from "./scatter";
 import { trimBox, type TrimPiece, type TrimSite } from "./trim";
-import { PAL, RARITY_COLOR, SCOPE_IN, buildAlly, buildBin, buildBoat, buildStatic, buildDepot, buildEntryMark, buildRelayMast, buildRingDebris, mergeChunk, mergeTrim, type ChunkShade, buildCare, buildDropship, buildEnemy, buildGun, buildHands, buildLootItem, addPlates, flat, glow, haloSprite, type EnemyModel } from "./models";
+import { PAL, RARITY_COLOR, SCOPE_IN, buildAlly, buildBeacon, buildBin, buildCore, buildBoat, buildStatic, buildDepot, buildEntryMark, buildRelayMast, buildRingDebris, mergeChunk, mergeTrim, type ChunkShade, buildCare, buildDropship, buildEnemy, buildGun, buildHands, buildLootItem, addPlates, flat, glow, haloSprite, type EnemyModel } from "./models";
 import { streetMeshes } from "./streets";
 
 /*
@@ -231,6 +232,11 @@ export class World {
   private partMesh: THREE.InstancedMesh;
   private care: THREE.Group | null = null;
   private careBeam: THREE.Mesh;
+  /** The cores of the front's nodes (`NODES`), built once, lit as who holds each; and the colour each was last lit in. */
+  private cores: (ReturnType<typeof buildCore> & { key: string })[] = [];
+  /** The objective's beacon (`setBeacon()`), and where it stands; null for none. */
+  private beacon: THREE.Mesh;
+  private beaconAt: { x: number; y: number; z: number } | null = null;
   private dropship: THREE.Group | null = null;
   private extractRings: THREE.Mesh[] = [];
   /** The campfire and signboard at each way in (`ENTRIES`), built once: scenery only. */
@@ -322,6 +328,16 @@ export class World {
     );
     this.careBeam.visible = false;
     this.scene.add(this.careBeam);
+
+    for (const n of NODES) {
+      const v = { ...buildCore(FRONT.height, FRONT.half), key: "" };
+      v.root.position.set(n.core.x, n.core.y, n.core.z);
+      this.scene.add(v.root);
+      this.cores.push(v);
+    }
+    this.beacon = buildBeacon();
+    this.beacon.visible = false;
+    this.scene.add(this.beacon);
 
     for (const x of EXTRACTS) {
       const ring = new THREE.Mesh(new THREE.RingGeometry(x.radius - 0.4, x.radius, 48), glow(PAL.hot, 0.8));
@@ -1413,6 +1429,35 @@ export class World {
       // A lit lamp blinks slowly, so an on depot reads as working from down the road.
       if (on) v.lamp.visible = Math.sin(this.time * 3 + i) > -0.6;
     });
+    // --- the front's cores: red while the network holds the node, amber the rogues', blue the player's
+    // (with a flag up); a node off the front wears the network's shield. Lit from far off, past the things' range.
+    const front = frontNodes(s.nodes);
+    this.cores.forEach((v, i) => {
+      const h = s.nodes[i];
+      const key = `${h}${front[i] ? "f" : ""}${s.capture?.node === i ? "c" : ""}`;
+      v.root.visible = Math.hypot(v.root.position.x - fx, v.root.position.z - fz) < thingsFar * 4;
+      if (key !== v.key) {
+        v.key = key;
+        const col = h === "freed" ? 0x3d8cff : h === "rogue" ? 0xffb02e : h === "thin" ? 0xff8a3d : 0xff3b30;
+        (v.band.material as THREE.MeshBasicMaterial).color.setHex(col);
+        v.halo.material.color.setHex(col);
+        v.flag.visible = h === "freed";
+        v.shield.visible = h !== "freed" && !front[i];
+      }
+      if (!v.root.visible) return;
+      // A core under capture pulses fast; the others breathe slowly.
+      const pulse = s.capture?.node === i ? 0.55 + 0.4 * Math.sin(this.time * 9) : 0.6 + 0.15 * Math.sin(this.time * 1.7 + i);
+      v.halo.material.opacity = pulse;
+      if (v.flag.visible) v.cloth.rotation.y = 0.15 * Math.sin(this.time * 2.3 + i);
+    });
+    // --- the objective's beacon
+    this.beacon.visible = !!this.beaconAt && s.phase === "play";
+    if (this.beaconAt) {
+      this.beacon.position.set(this.beaconAt.x, this.beaconAt.y + 128, this.beaconAt.z);
+      // Fades out as the player walks up to it, so it never fills the screen.
+      const d = Math.hypot(this.beaconAt.x - fx, this.beaconAt.z - fz);
+      (this.beacon.material as THREE.MeshBasicMaterial).opacity = Math.min(0.32, Math.max(0.06, (d - 6) / 120)) * (0.85 + 0.15 * Math.sin(this.time * 2));
+    }
     if (s.care) {
       if (!this.care) {
         this.care = buildCare();
@@ -1568,8 +1613,14 @@ export class World {
     };
   }
 
+  /** Stands the objective's beacon at `at` (the current step's place, sim/objective.ts), or takes it down. */
+  setBeacon(at: { x: number; y: number; z: number } | null) {
+    this.beaconAt = at;
+  }
+
   /** Drop everything that belongs to a run, before starting another. */
   reset() {
+    this.beaconAt = null;
     for (const v of this.enemies.values()) {
       this.scene.remove(v.m.root);
       if (v.lane) this.scene.remove(v.lane);

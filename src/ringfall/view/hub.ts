@@ -1,16 +1,17 @@
 import { ALLY, HEALS as HEAL_SPECS, HIDEOUT, MOD_KINDS, NETWORK, RARITY, THREAT, TOOLS, VALUABLES, WEAPONS, type ModuleId, type ValuableKind } from "../sim/config";
 import { boostFor, freeKit, raidClock, type Kit } from "../sim/state";
-import { entryOf, POIS, poiIndex, poiRegion, REGIONS, regionOf, ROUTES, type EntryId, type PoiId, type RegionId, type StationId } from "../sim/map";
+import { entryOf, NODES, POIS, poiIndex, poiRegion, REGIONS, regionOf, ROUTES, type EntryId, type PoiId, type RegionId, type StationId } from "../sim/map";
 import { build, buildState, buy, buyPrice, canBuild, canStartIn, deliver, deliverable, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, itemCost, HEALS, healCount, healRoom, keyName, lentHeals, loadoutCost, price, sell, sellPrice, setThreat, startsIn, threatPay, take, takeKit, takenContract, wanted, wares, type Item, type Loadout, type Profile } from "../meta/profile";
 import { CONTRACT_NAME, contractMark, contractRegion, contractText, type Contract, type Reward } from "../meta/contracts";
 import { currentStory, STORIES, storyOf, storyWhere } from "../meta/story";
 import { craftDone, maxLevel, MODULES, nextLevel, pouchSlots, sources, stashCap, stillNeeded, type Source } from "../meta/hideout";
 import { need, offered, type Quest, type RewardItem } from "../meta/quests";
 import { saveProfile } from "../meta/storage";
-import { eventName, islandNotes, networkText, noteText, relaysUp, thinTomorrow, unfreeable } from "../meta/island";
+import { eventName, frontIncome, islandHolds, islandNotes, networkText, noteText, relaysUp, thinTomorrow, unfreeable } from "../meta/island";
 import { eventRow } from "./events";
 import { HOLD_NAME } from "../sim/island";
-import { HOLD_CSS, IslandMap, islandScene, TITAN_CSS } from "./map";
+import { HOLD_CSS, IslandMap, islandScene, NODE_CSS, TITAN_CSS } from "./map";
+import { frontNodes, type NodeHold } from "../sim/front";
 import { sfx } from "./sfx";
 
 const RARITY_CSS = ["var(--r0)", "var(--r1)", "var(--r2)", "var(--r3)"];
@@ -542,8 +543,16 @@ export class Hub {
     const notes = islandNotes(p);
     const taken = takenContract(p);
     const count = (h: "held" | "thin" | "freed") => POIS.filter((o) => !unfreeable(o.id) && p.poiState[o.id].state === h).length;
-    const key = (["held", "thin", "freed"] as const).map((h) => `<li><i style="background:${HOLD_CSS[h]}"></i>${HOLD_NAME[h]}<b>${count(h)}</b></li>`).join("") + `<li><i class="titan" style="background:${TITAN_CSS}"></i>タイタン</li>`;
-    const lines = notes.length ? notes.map((n) => `<li class="${n.t}${n.t === "fading" && n.days <= 1 ? " soon" : ""}">${esc(noteText(n))}</li>`).join("") : `<li>島は変わらない。支配の拠点の守備隊を片付けて生きて帰ると、その拠点は解放になる</li>`;
+    const holds = islandHolds(p);
+    const front = frontNodes(holds);
+    const outposts = (h: NodeHold) => NODES.filter((n, i) => n.kind === "outpost" && holds[i] === h).length;
+    const key =
+      (["held", "thin", "freed"] as const).map((h) => `<li><i style="background:${HOLD_CSS[h]}"></i>${HOLD_NAME[h]}<b>${count(h)}${outposts(h) ? `＋小${outposts(h)}` : ""}</b></li>`).join("") +
+      `<li><i style="background:${NODE_CSS.rogue}"></i>野良機<b>小${outposts("rogue")}</b></li>` +
+      `<li><i class="titan" style="background:${TITAN_CSS}"></i>タイタン</li>` +
+      `<li class="front"><i></i>前線（攻められる節）<b>${NODES.filter((_, i) => front[i]).map((n) => esc(n.name)).join("・") || "なし"}</b></li>` +
+      `<li class="income">毎日の収入<b>${frontIncome(p).toLocaleString()} クレジット</b></li>`;
+    const lines = notes.length ? notes.map((n) => `<li class="${n.t}${n.t === "fading" && n.days <= 1 ? " soon" : ""}">${esc(noteText(n))}</li>`).join("") : `<li>島は変わらない。前線の節の核を制圧して生きて帰ると、その節は解放になる</li>`;
     return (
       `<div class="hub-island"><canvas id="hub-island-map"></canvas><div class="hub-island-side">` +
       `<div class="hub-day"><small>島の日</small><b>${p.day}</b><small>日目</small></div>` +

@@ -393,6 +393,15 @@ export class Soundscape {
         sfx.raiders();
         sfx.arrive(ground(e.x, e.z, 2), true);
         break;
+      case "coreStart":
+        sfx.alarm();
+        break;
+      case "coreTaken":
+        sfx.coreTaken();
+        break;
+      case "coreShielded":
+        sfx.locked();
+        break;
       case "depotOn":
         sfx.depotOn();
         break;

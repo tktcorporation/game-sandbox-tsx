@@ -52,7 +52,10 @@ out of sight on a timer and come looking, and once per raid an elite squad (`RAI
 that flanks. The packs' starts and the parties' line-ups, stops, spawns and waits draw on a
 random stream of their own (`roamRand()`, `State.roamRng`), so they do not shift the rest of the
 raid's draws. Bins take time to search (`SEARCH`) and valuables fill a bag of `BAG.slots`. The HUD
-shows no markers or distances, and lists only the ways off of the region the player is in
+shows no markers or distances but one: the current objective step's destination, as a light
+beacon in the world and a marker with its distance on the compass (the steps come from
+`objectiveSteps()` in `sim/objective.ts`, which the HUD, the bot and the sim gate all read). It
+lists only the ways off of the region the player is in
 (`regionHere()`); the world map (`view/map.ts`, M) is where the POIs and exits of both regions are; it opens framed
 on the region the player is in (`Region.bounds`) and N switches it to the whole world.
 A wipe ends the raid and loses the haul; `results.ts` scores the haul plus cleared POIs.
@@ -89,7 +92,7 @@ contracts (`meta/story.ts`) follow one at a time: the one under way lays its rec
 only with that POI's key; keys drop from the bins of the POI named by its `keyFrom` (`VAULT`).
 POIs have a stable `id` (`PoiId` in `map.ts`); saves, quests, `keyFrom` and `EXTRA_BINS` refer to a
 POI by it, never by its place in `POIS` (the run's state may index `POIS` internally). The profile
-is versioned (`Profile.v`, which is 17), and `parseProfile()` moves older saves forward (a save from
+is versioned (`Profile.v`, which is 18), and `parseProfile()` moves older saves forward (a save from
 before the ways in starts at its region's first way in; a save from before ways in were learned
 knows them all; a save from before v12 drops its explored map, since `cellOf()` follows `WORLD`,
 which then grew wider; a save from before v13 starts on the day after its raids with every POI
@@ -171,6 +174,16 @@ threat (脅威度, `THREAT`, `Profile.threat`, `newRun(..., { threat })`) is cho
 `netPlated()`), the range robots answer shots from afar, and the contract's pay (`threatPay()`), and
 a POI freed at `THREAT.freeAt` or higher takes the network a step further down (`RaidDay.threat`).
 `Profile.freedAt` keeps each POI's best threat for the map table.
+The front (`docs/ringfall/liberation-front.md`): the six freeable POIs and the seven outposts are
+nodes (`NODES` in `map.ts`, linked along the roads by `FRONT_LINKS`), and `sim/front.ts` holds the
+rules. A node next to the player's ground (the camp and the nodes freed) is on the front; only its
+core, a pillar near its middle, can be captured (`FRONT` in `config.ts`): the use key starts it,
+the meter fills while the player holds the core's ground with no robot on it, the garrison comes
+and squads push in from the neighbouring nodes. A node taken is the player's at once (no robot
+enters `FRONT.zone`) and freed overnight if the raid gets off alive (`advanceDay()` in
+`meta/island.ts`, which also keeps nodes deep in the player's ground from going thin and pays the
+day's income); clearing a POI of its robots no longer frees it. `Profile.outposts` keeps the
+outposts' standing. The bot captures the front's cores it can reach in its region.
 The hideout is the long-term goal: modules built level by level from specific valuables and
 credits taken from the stash (`build()` in `profile.ts`; levels, costs and prerequisites in
 `HIDEOUT`, effects in `HIDEOUT_EFFECT`, both in `config.ts`; `meta/hideout.ts` holds the pure

@@ -1,4 +1,4 @@
-import { VAULT, WORLD, type EnemyKind, type HealKind, type Rarity, type ToolKind, type ValuableKind, type WeaponKind } from "./config";
+import { FRONT, VAULT, WORLD, type EnemyKind, type HealKind, type Rarity, type ToolKind, type ValuableKind, type WeaponKind } from "./config";
 import { AREA, inArea, POI_AT, type AreaId } from "./areas";
 import { LENGTHS, offStreet, STREETS } from "./streets";
 import { buildTerrain, type Carve, type FlatShape, floorLevel, highGround, LEVEL, offshore, roadLine, steepAt, surfaceAt, terrainHeight } from "./terrain";
@@ -4782,8 +4782,115 @@ const STREET_SIDE: Box[] = (() => {
 
 /** Everything placed by hand or laid by rule, before the scattered cover fills the ground round it. */
 export const BUILT: Box[] = [...PLACED, ...STREET_SIDE];
+
+/** The nodes of the front (docs/ringfall/liberation-front.md): every POI the player can free, and every outpost. */
+export type NodeId = Exclude<PoiId, "pad"> | OutpostId;
+
+/**
+ * A node of the front: a freeable POI or an outpost, where it stands (its middle), and its core
+ * (`FRONT`): the pillar whose capture frees it, on the ground near the middle.
+ */
+export interface FrontNode {
+  id: NodeId;
+  kind: "poi" | "outpost";
+  name: string;
+  region: RegionId;
+  x: number;
+  z: number;
+  core: { x: number; y: number; z: number };
+}
+
+/**
+ * Which nodes are next to which, along the roads between them: the camp to the supply depot, the
+ * reservoir's ring road and the mesa's roads, the pass from the quarry's road to the harbor's
+ * town and the railway from the mesa's foot to the engine depot, and the harbor's streets. Kept
+ * as data, so routing the streets afresh does not move the front; the sim gate walks each link.
+ */
+export const FRONT_LINKS: readonly (readonly ["camp" | NodeId, NodeId])[] = [
+  ["camp", "supply"],
+  ["supply", "quarry"],
+  ["supply", "relay"],
+  ["supply", "pumps"],
+  ["relay", "pumps"],
+  ["relay", "eastSubstation"],
+  ["quarry", "substation"],
+  ["eastSubstation", "engine"],
+  ["substation", "yard"],
+  ["substation", "smelter"],
+  ["engine", "smelter"],
+  ["smelter", "fuel"],
+  ["fuel", "wreck"],
+  ["yard", "freight"],
+  ["freight", "wharf"],
+  ["wharf", "wreck"],
+];
+
+/**
+ * The core's spot of the node standing at (x, z): the open, level ground nearest its middle with
+ * room round it and nothing overhead, clear of the authored points, the patrol legs, the kept
+ * roads and the depots, so it closes no way a walker takes. Looked for on rings out from the middle.
+ */
+function coreSpot(x: number, z: number, near: Box[]): { x: number; y: number; z: number } {
+  const ROOM = 3;
+  const depots = POIS.map(depotSpot);
+  const toSeg = (sg: Keep["segments"][number], px: number, pz: number) => {
+    const dx = sg.bx - sg.ax;
+    const dz = sg.bz - sg.az;
+    const t = Math.max(0, Math.min(1, ((px - sg.ax) * dx + (pz - sg.az) * dz) / (dx * dx + dz * dz || 1)));
+    return Math.hypot(px - sg.ax - dx * t, pz - sg.az - dz * t);
+  };
+  for (let r = 0; r <= 60; r += 3)
+    for (let k = 0, n = r ? Math.max(8, Math.round((2 * Math.PI * r) / 3)) : 1; k < n; k++) {
+      const a = (k / n) * 2 * Math.PI;
+      const px = +(x + Math.sin(a) * r).toFixed(1);
+      const pz = +(z - Math.cos(a) * r).toFixed(1);
+      const g = terrainHeight(px, pz);
+      if (offshore(px, pz) > -6 || highGround(px, pz)) continue;
+      if ([[0, 0], [ROOM, 0], [-ROOM, 0], [0, ROOM], [0, -ROOM]].some(([dx, dz]) => steepAt(px + dx, pz + dz) || Math.abs(terrainHeight(px + dx, pz + dz) - g) > 0.6)) continue;
+      if (near.some((b) => b.x1 > px - ROOM && b.x0 < px + ROOM && b.z1 > pz - ROOM && b.z0 < pz + ROOM && b.h > g + 0.15 && b.y0 < g + 8)) continue;
+      if (KEEP.points.some((q) => Math.hypot(q.x - px, q.z - pz) < q.r + ROOM)) continue;
+      if (KEEP.segments.some((sg) => toSeg(sg, px, pz) < ROOM + 1)) continue;
+      if (depots.some((d) => Math.hypot(d.x - px, d.z - pz) < 8)) continue;
+      if (deckAt(px, pz) !== null) continue;
+      return { x: px, y: g, z: pz };
+    }
+  throw new Error(`no spot for a core near ${x},${z}`);
+}
+
+/**
+ * Where a core is looked for, off its node's middle, for a node whose middle lies in ground the
+ * walkers do not reach (the wharf's middle is its walled stacks): the open quay in front of them.
+ */
+const CORE_FROM: Partial<Record<NodeId, readonly [number, number]>> = { wharf: [0, 24] };
+
+/** The front's nodes: the freeable POIs in `POIS` order, then the outposts in `OUTPOST_SITES` order. */
+export const NODES: FrontNode[] = (() => {
+  const at = (id: NodeId, x0: number, z0: number) => {
+    const [dx, dz] = CORE_FROM[id] ?? [0, 0];
+    const x = x0 + dx;
+    const z = z0 + dz;
+    return coreSpot(x, z, [...BUILT, ...CAMP_BOXES].filter((b) => b.x1 > x - 70 && b.x0 < x + 70 && b.z1 > z - 70 && b.z0 < z + 70));
+  };
+  return [
+    ...POIS.filter((p) => !p.boss).map((p): FrontNode => ({ id: p.id as NodeId, kind: "poi", name: p.name, region: poiRegion(p.id).id, x: p.x, z: p.z, core: at(p.id as NodeId, p.x, p.z) })),
+    ...OUTPOST_SITES.map((o): FrontNode => ({ id: o.id, kind: "outpost", name: o.name, region: o.region, x: o.x, z: o.z, core: at(o.id, o.x, o.z) })),
+  ];
+})();
+
+/** A node's place in `NODES` (and in the run's per-node state), from its id; -1 for none. */
+export const nodeIndex = (id: string) => NODES.findIndex((n) => n.id === id);
+
+/** The cores, as boxes: standing pillars the player walks round and shoots past. */
+const CORE_BOXES: Box[] = NODES.map((n) => box(n.core.x, n.core.z, 2 * FRONT.half, 2 * FRONT.half, n.core.y + FRONT.height, "steel", 2, n.core.y - 0.3));
+
 // The camp comes last: what was laid before it keeps its place in the list (the cover spots, the walkers' grids).
-export const BOXES: Box[] = [...BUILT, ...scatterCover([...BUILT, ...CAMP_BOXES], KEEP), ...CAMP_BOXES];
+// The cores keep the scattered cover off the ground they are taken from, and come after the camp.
+export const BOXES: Box[] = [
+  ...BUILT,
+  ...scatterCover([...BUILT, ...CAMP_BOXES, ...CORE_BOXES], { points: [...KEEP.points, ...NODES.map((n) => ({ x: n.core.x, z: n.core.z, r: 6 }))], segments: KEEP.segments }),
+  ...CAMP_BOXES,
+  ...CORE_BOXES,
+];
 
 /** The bridge deck's height at (x, z) when it lies on a deck that path finding walks (DECKS), else null. */
 export function deckAt(x: number, z: number): number | null {

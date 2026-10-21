@@ -1,5 +1,5 @@
 import { ALLY, BOOST, CREW, DEPOT, RETAKE, STORM, SWEEP, DUCK, ELITE, ENEMIES, META, MOD_START, NETWORK, RELAY, THREAT, VALUABLES, WORLD, type ModKind, type ValuableKind, PLAYER, ULT, type EnemyKind, type Flank, type HealKind, type Rarity, type ToolKind, type WeaponKind } from "./config";
-import { DEPOTS, depotIndex, entryOf, EXTRA_BINS, POIS, poiIndex, poiRegion, recordSpot, regionOf, type EntryId, type ExtractId, type PoiId, type RecordId, type RegionId, type RelayId, type RouteId, RELAYS, DEBRIS_SPOTS, debrisIndex, territory, type Faction, type OutpostId } from "./map";
+import { DEPOTS, depotIndex, entryOf, EXTRA_BINS, POIS, poiIndex, poiRegion, recordSpot, regionOf, type EntryId, type ExtractId, type PoiId, type RecordId, type RegionId, type RelayId, type RouteId, RELAYS, DEBRIS_SPOTS, debrisIndex, territory, type Faction, type OutpostId, type NodeId } from "./map";
 import { openRoutes, useRoutes } from "./routes";
 import { populate, spawnEnemy } from "./enemies";
 import { placeParties } from "./world";
@@ -7,6 +7,7 @@ import { placeAlly } from "./ally";
 import { groundAt } from "./geom";
 import { forgetFields } from "./hunt";
 import { crewsFor, type IslandEvent, type PoiHold } from "./island";
+import { nodeHolds, useZones, type NodeHold, type OutpostHold } from "./front";
 
 export interface Vec3 {
   x: number;
@@ -307,6 +308,8 @@ export interface SquadState {
   fightT?: number;
   /** Seconds left of being sent after the player (see SWEEP). */
   sweep?: number;
+  /** Seconds left of walking off a node the player took (`FRONT.retreat`): it fights nobody, and is gone at 0. */
+  retreat?: number;
 }
 
 export interface Orb {
@@ -467,6 +470,10 @@ export type GameEvent =
   | { t: "crewOut"; x: number; z: number; n: number }
   /** The retake squad beamed in, on its way to the POI it was sent to. */
   | { t: "retakeIn"; x: number; z: number; poi: number }
+  /** A core's capture started (the alarm), was refused off the front, and the node was taken (places in `NODES`). */
+  | { t: "coreStart"; node: number }
+  | { t: "coreShielded"; node: number }
+  | { t: "coreTaken"; node: number }
   | { t: "done" };
 
 export interface Stats {
@@ -502,6 +509,8 @@ export interface Stats {
   crewsDown: number;
   crewsOut: number;
   crewBins: number;
+  /** The nodes taken by their cores (`NODES` ids), in the order they fell: the island frees them if the player gets off alive. */
+  captured: NodeId[];
 }
 
 /** A relay mast standing in the raid (`RELAYS`, `RELAY`): its health, 0 once destroyed. */
@@ -675,8 +684,15 @@ export interface State {
   away: number;
   /** The raid ended by walking back into the camp. */
   home: boolean;
-  /** Who holds each outpost this raid (`territory()`, from the network's level). */
+  /** Who holds each outpost this raid (`territory()`, from the network's level, or the island's standing). */
   territory: Record<OutpostId, Faction>;
+  /** Who holds each node of the front (`NODES` order) this raid: as the island stood at the start, a node taken turning freed. */
+  nodes: NodeHold[];
+  /**
+   * The core capture under way (`FRONT`): its node, the seconds of the meter filled, whether it
+   * filled this tick, the seconds to the push's next wave, and the waves sent; null for none.
+   */
+  capture: { node: number; t: number; held: boolean; pushT: number; waves: number } | null;
   /**
    * What the player has seen or heard of the robots out between the POIs, for the map: each squad
    * (by index) where it was last seen or heard, when, whether it is the rogues', and whether that
@@ -825,6 +841,8 @@ export interface Start {
   fetch?: { poi: PoiId; kind: ValuableKind; n: number };
   /** The robots' network level (0 to 5); left out, `NETWORK.play`, the level the sim gate plays. */
   network?: number;
+  /** Who holds each outpost (meta/island.ts); one left out stands as `territory()` gives it at the network's level. */
+  outposts?: Partial<Record<OutpostId, OutpostHold>>;
   /** The day's island event; left out, none. A retake whose POI is not freed sends no one. */
   event?: IslandEvent | null;
   /** The threat chosen at the map table, 0 to `THREAT.max`; left out, 0. */
@@ -833,6 +851,13 @@ export interface Start {
   known?: ModKind[];
   /** No mod part anywhere in the raid (for the sim gate's check that they draw on nothing). */
   noMods?: boolean;
+}
+
+/** The outposts' factions in a raid: `territory()` at the level, but as the island keeps any it names (a freed one as the level gives it). */
+function outpostTerritory(network: number, outposts: Start["outposts"]): Record<OutpostId, Faction> {
+  const t = territory(network);
+  for (const id of Object.keys(t) as OutpostId[]) if (outposts?.[id] === "held" || outposts?.[id] === "rogue") t[id] = outposts[id] === "rogue" ? "rogue" : "net";
+  return t;
 }
 
 /** What a network level sets in a raid. */
@@ -985,7 +1010,9 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
     away: 0,
     home: false,
     found: from ? [] : [entry.id],
-    territory: territory(network),
+    territory: outpostTerritory(network, start.outposts),
+    nodes: nodeHolds((id) => hold[poiIndex(id)], start.outposts, network),
+    capture: null,
     contacts: [],
     factionT: 0,
     contactT: 0,
@@ -995,7 +1022,7 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
     seen: start.seen ? decodeSeen(start.seen) : emptySeen(),
     cell: -1,
     events: [],
-    stats: { kills: 0, damage: 0, shots: 0, hits: 0, crits: 0, flankHits: 0, titanHits: 0, downs: 0, wipes: 0, cleared: [], allyDamage: 0, allyKills: 0, allyDowns: 0, allyRescues: 0, allyHelped: 0, killsBy: { drone: 0, grunt: 0, charger: 0, heavy: 0, titan: 0 }, vaults: [], wiped: [], relays: [], crewsIn: 0, crewsDown: 0, crewsOut: 0, crewBins: 0 },
+    stats: { kills: 0, damage: 0, shots: 0, hits: 0, crits: 0, flankHits: 0, titanHits: 0, downs: 0, wipes: 0, cleared: [], allyDamage: 0, allyKills: 0, allyDowns: 0, allyRescues: 0, allyHelped: 0, killsBy: { drone: 0, grunt: 0, charger: 0, heavy: 0, titan: 0 }, vaults: [], wiped: [], relays: [], crewsIn: 0, crewsDown: 0, crewsOut: 0, crewBins: 0, captured: [] },
   };
   if (from) {
     const p = s.player;
@@ -1005,6 +1032,7 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
     p.pos = { x, y: groundAt(x, z, PLAYER.radius, from.y + 0.3), z };
     p.yaw = from.yaw;
   }
+  useZones(s);
   placeAlly(s);
   populate(s);
   placeParties(s);

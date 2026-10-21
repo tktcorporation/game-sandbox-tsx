@@ -145,9 +145,73 @@ kbd {
   padding: 8px 14px 8px 12px;
   font-family: var(--jp);
 }
+/* The objective's current step, large; its title and the step's place in the list above it; what finishes it under it. */
+#obj-head {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--muted);
+}
+#obj-title {
+  font-style: normal;
+}
+#obj-n {
+  font-style: normal;
+  font-family: var(--num);
+  color: var(--hot);
+}
 #obj-text {
   font-weight: 800;
-  font-size: 17px;
+  font-size: 20px;
+}
+#obj-until {
+  grid-column: 1 / -1;
+  font-size: 13px;
+  font-weight: 800;
+  color: #f4e9c8;
+}
+#obj-until b {
+  font-family: var(--num);
+  color: var(--r3);
+  margin-left: 6px;
+}
+#obj-until:empty {
+  display: none;
+}
+/* The objective's marker on the compass: the only marker the HUD shows, with its distance. */
+#compass-mark {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  font-style: normal;
+  pointer-events: none;
+}
+#compass-mark[hidden] {
+  display: none;
+}
+#compass-mark::before {
+  content: "";
+  display: block;
+  margin: 0 auto;
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-top: 9px solid #ffe27a;
+}
+#compass-mark span {
+  display: block;
+  font-family: var(--num);
+  font-size: 11px;
+  font-weight: 800;
+  color: #ffe27a;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+}
+#compass-mark.edge::before {
+  border-top-color: #c9b25a;
 }
 #obj-count {
   font-family: var(--num);
@@ -1512,6 +1576,24 @@ body.touch #hub-close kbd {
   font-family: var(--num);
   color: var(--muted);
 }
+/* The front's nodes and the day's income take a row each: they are words, not counts. */
+.hold-key li.front,
+.hold-key li.income {
+  flex-basis: 100%;
+}
+.hold-key li.front i {
+  background: transparent;
+  border: 2px dashed #f4f7ff;
+  box-shadow: none;
+}
+.hold-key li.income {
+  padding-left: 17px;
+}
+.hold-key li.front b,
+.hold-key li.income b {
+  font-family: var(--jp);
+  color: #f4f7ff;
+}
 .tomorrow {
   display: flex;
   flex-direction: column;
@@ -2197,8 +2279,18 @@ body.touch #objective::after {
   flex-basis: 100%;
   order: 1;
 }
+body.touch #obj-head {
+  display: none;
+}
+body.touch #obj-until {
+  order: 2;
+  flex-basis: 100%;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 body.touch #obj-text {
-  font-size: 13px;
+  font-size: 14px;
   overflow: hidden;
   text-overflow: ellipsis;
   flex: 1 1 0;
@@ -2761,4 +2853,21 @@ body.touch #camp-prompt {
 .tomorrow li.crews,
 .tomorrow li.overrun {
   box-shadow: inset 3px 0 0 #b8412f;
+}
+
+/* The results' 戦況: nodes gained in the player's blue, lost in the thin orange. */
+.front-change span {
+  display: inline-block;
+  margin: 0 8px 4px 0;
+  padding: 2px 8px;
+  font-weight: 800;
+  background: rgba(20, 24, 40, 0.6);
+}
+.front-change span.freed {
+  color: #8cc4ff;
+  box-shadow: inset 3px 0 0 #3f7cae;
+}
+.front-change span.lost {
+  color: #ffbe7a;
+  box-shadow: inset 3px 0 0 #d4892c;
 }
