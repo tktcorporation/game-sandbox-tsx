@@ -971,27 +971,27 @@ const POI_FRAMES: Poi[] = [
   {
     id: "smelter",
     name: "製錬所",
-    x: 4,
+    x: 8,
     z: 0,
-    trigger: 46,
+    trigger: 58,
     entry: { x: 8, z: 40, yaw: 0 },
     squads: [
-      { name: "制御棟", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 41, z: -1.8, y: STOREY * 4, face: S }, { kind: "grunt", x: 16, z: -2, face: S }] },
-      { name: "炉", members: [{ kind: "heavy", x: -18, z: -1, face: S }, { kind: "charger", x: -26, z: 12, face: E }] },
+      { name: "制御棟", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 35, z: 4, y: WORKS.storey * 3, face: S }, { kind: "grunt", x: 24, z: -1, face: S }] },
+      { name: "炉", members: [{ kind: "heavy", x: -14, z: 10, face: S }, { kind: "charger", x: -6, z: 20, face: E }] },
       // Behind the works, away from the way in: the last of the POI, or the first for a player who goes round.
       { name: "裏手", members: [{ kind: "grunt", x: 0, z: -42, face: S }, { kind: "drone", x: -30, z: -30 }] },
-      { name: "北東", members: [{ kind: "grunt", x: 36, z: -30, face: S }, { kind: "drone", x: 44, z: -36 }] },
+      { name: "北東", members: [{ kind: "grunt", x: 40, z: -28, face: S }, { kind: "drone", x: 44, z: -36 }] },
     ],
     bins: [
-      { x: -24, z: -3 },
-      { x: 21, z: -3 },
-      { x: -24, z: -12.5, y: STOREY * 2 },
-      { x: -38, z: 20 },
-      { x: 41, z: -4, y: STOREY * 2, vault: true },
+      { x: -29, z: 10 },
+      { x: 18.5, z: 14 },
+      { x: -14, z: -3.5, y: 34 },
+      { x: -34, z: 17 },
+      { x: 35, z: -7, y: WORKS.storey * 2, vault: true },
     ],
     keyFrom: "yard",
     loot: { weapon: [["pike", 3], ["lance", 2], ["maul", 2], ["talon", 1], ["hornet", 3]], armor: [2, 3], heals: 2, valuable: [["wire", 2], ["gyro", 3], ["drive", 2], ["board", 2], ["reactor", 1]] },
-    floor: [{ x: 41, z: -6, y: STOREY * 3, weapon: ["talon", 2] }],
+    floor: [{ x: 37, z: -9, y: WORKS.storey * 3, weapon: ["talon", 2] }],
   },
 ];
 
@@ -2036,7 +2036,7 @@ export const RECORD_SPOTS: RecordSpot[] = [
   // The equipment building's third floor.
   { id: "network", name: "網の設計記録", place: "中継塔の機器棟", region: "reservoir", poi: "relay", ...inPoi("relay", -24, -14, WORKS.storey * 2) },
   // The control building's top floor, over the vault.
-  { id: "smelter", name: "製錬所の出荷台帳", place: "製錬所の制御棟", region: "harbor", poi: "smelter", ...inPoi("smelter", 43, -6, STOREY * 3) },
+  { id: "smelter", name: "製錬所の出荷台帳", place: "製錬所の制御棟", region: "harbor", poi: "smelter", ...inPoi("smelter", 35, -8, WORKS.storey * 4) },
 ];
 
 export const recordSpot = (id: RecordId): RecordSpot => RECORD_SPOTS.find((r) => r.id === id) ?? RECORD_SPOTS[0];
@@ -3248,46 +3248,91 @@ function yard(): Box[] {
 }
 
 /**
- * The smelter, in its own frame: a furnace hall and a casting hall four storeys high, joined at
- * roof height by a railed bridge, the four-storey control block bridged to the casting hall,
- * and an open stair tower up the furnace hall's west end, so the roofs make one high way across
- * the works. Two chimneys stand over it all, seen from anywhere in the harbor.
+ * The smelter, in its own frame, built to `WORKS`: the blast furnace in the middle, its hearth
+ * against the north wall of the cast house, its shaft rising to a railed platform 34 m up,
+ * reached by an open stair tower beside it, and its top and gas uptakes over 50 m. Three
+ * hot-blast stoves stand in a row east of it, the skip incline climbs to its top from the ore
+ * heaps along the north edge, and the dust catcher and two stacks stand to the west. South of the
+ * stoves the rolling mill, joined at roof height to the cast house by a railed bridge and to the
+ * five-storey control block north of it; a cooling tower stands south-west and slag heaps east.
+ * The stoves, the furnace and the halls close the works into lanes: one between the stoves and
+ * the mill, one along the north under the incline, and the alley between the two halls.
  */
 function smelter(): Box[] {
-  const H = STOREY * 4;
+  const S = WORKS.storey;
+  const H = S * 3;
   const out: Box[] = [];
+  // The cast house: the tapping floor on a mezzanine along the furnace side, ladles below.
   out.push(
-    ...hall(-28, -6, 28, 18, H, {
-      doors: [{ side: "s", at: -4, w: 6 }],
-      hatches: [{ side: "e", at: 4 }, { side: "w", at: 4 }],
-      windows: ["n", "s"],
-      mezz: [{ side: "n", depth: 4, y: STOREY * 2, stair: 8 }],
-      columns: 7,
-      open: ["w", "e"],
+    ...hall(-14, 5, 36, 16, H, {
+      scale: WORKS,
+      doors: [{ side: "s", at: -6, w: 7 }],
+      hatches: [{ side: "w", at: 3 }, { side: "e", at: -3 }],
+      windows: ["s", "w"],
+      mezz: [{ side: "n", depth: 5, y: S, stair: 12 }],
+      columns: 9,
+      open: ["e"],
+      roof: "w",
     }),
   );
-  out.push(box(-34, -8, 6, 6, 5.1, "steel", 2), box(-34, -8, 3, 3, H - 0.3, "steel", 3, 5.1));
-  out.push(...lattice(-44.5, -6, 5, 5, 4, H + 2, ["e"]));
+  out.push(box(-24, 9, 3.2, 3.2, 3, "steel", 3), box(-4, 9, 3.2, 3.2, 3, "steel", 3), rect(-26, 5.5, -2, 6.1, 0, 0.4, "steel", 1));
+  // The furnace: hearth, shaft, the platform round its throat, the top and the uptakes.
+  const F = { x: -14, z: -10, deck: 34 } as const;
+  out.push(box(F.x, F.z, 14, 14, 16, "steel", 2));
+  out.push(box(F.x, F.z, 11, 11, F.deck - 0.3, "steel", 3, 16));
+  out.push(box(F.x, F.z, 16, 16, F.deck, "slab", 1, F.deck - 0.3));
+  for (const b of parapet(F.x, F.z, 16, 16, F.deck, ["w"])) out.push({ ...b, kind: "steel", tint: 2, h: F.deck + 0.5 });
+  out.push(rect(F.x - 8, F.z - 8, F.x - 7.85, F.z - 1.4, F.deck, F.deck + 0.5, "steel", 2), rect(F.x - 8, F.z + 1.4, F.x - 7.85, F.z + 8, F.deck, F.deck + 0.5, "steel", 2));
+  out.push(box(F.x, F.z, 8, 8, F.deck + 10, "steel", 3, F.deck), box(F.x, F.z, 10, 6, F.deck + 14, "steel", 1, F.deck + 10));
+  for (const [dx, dz] of [[-3, -1.8], [3, -1.8], [-3, 1.8], [3, 1.8]] as const) out.push(box(F.x + dx, F.z + dz, 1.2, 1.2, F.deck + 21, "steel", 2, F.deck + 14));
+  out.push(...lattice(-26.5, F.z, 6, 6, 10, 40, ["e"]));
+  out.push(...catwalk(-23.5, F.z, F.x - 8, F.z, F.deck, 2.4, 2));
+  // The downcomer from the top to the dust catcher, west of the stair tower.
+  out.push(...tank(-35, F.z, 3.5, 18, "s", 1));
+  out.push(rect(-35.8, F.z - 0.8, F.x - 4, F.z + 0.8, F.deck + 12, F.deck + 13.6, "steel", 2), box(-35, F.z, 1.6, 1.6, F.deck + 12, "steel", 2, 18.6));
+  // Three hot-blast stoves, their main running to the furnace's tuyeres.
+  for (const x of [8, 18, 28]) out.push(...tank(x, F.z, 4.5, 32, "s", 2));
+  out.push(rect(F.x + 5.5, F.z - 0.9, 28, F.z + 0.9, 22, 23.8, "steel", 1));
+  // The skip incline: a gallery climbing from its hopper by the heaps to the furnace top, on legs.
+  const inc = { x0: 32, x1: F.x + 4, z: -17, top: F.deck + 10 } as const;
+  const steps = Math.round((inc.x0 - inc.x1) / 2);
+  for (let i = 0; i < steps; i++) {
+    const xa = inc.x0 - i * 2;
+    const y = (inc.top * i) / steps;
+    out.push(rect(xa - 2, inc.z - 1.5, xa, inc.z + 1.5, Math.max(0, y - 0.6), y + 2.4, "steel", 3));
+  }
+  for (const x of [22, 12, 2, -8]) out.push(box(x, inc.z, 0.8, 0.8, (inc.top * (inc.x0 - x)) / (inc.x0 - inc.x1) - 0.6, "steel", 2));
+  // The ore heaps along the north edge, either side of the road out north.
+  for (const [x0, x1] of [[-36, -12], [4, 34]] as const)
+    for (let x = x0; x < x1; x += 4) {
+      const t = Math.sin((Math.PI * (x - x0 + 2)) / (x1 - x0));
+      out.push(rect(x, -28, x + 4, -21, 0, 1.2 + 4.2 * t, "rock", 1), rect(x + 0.6, -27, x + 3.4, -22, 0, 1.8 + 5.4 * t, "rock", 0));
+    }
+  // The rolling mill: roll stands along it, its roof bridged to the cast house and the control block.
   out.push(
-    ...hall(14, -6, 26, 18, H, {
-      doors: [{ side: "s", w: 6 }],
-      hatches: [{ side: "e", at: 5 }],
-      windows: ["n", "s"],
-      columns: 6.5,
-      open: ["w", "e"],
+    ...hall(25, 11, 34, 18, H, {
+      scale: WORKS,
+      doors: [{ side: "s", at: -15, w: 7 }],
+      hatches: [{ side: "e", at: 4 }, { side: "w", at: 4 }, { side: "n", at: -6 }],
+      windows: ["n", "s", "e"],
+      mezz: [{ side: "s", depth: 4, y: S * 2, stair: 6 }],
+      columns: 8,
+      open: ["w", "n"],
     }),
   );
-  out.push(box(10, -9, 3, 3, 2.4, "steel", 2), box(18, -9, 3, 3, 2.4, "steel", 2));
-  out.push(...tower(44, -6, 10, 10, 4, { doors: [["w", "s"]], windows: [["e"], ["n", "w", "s"], ["n", "w", "s"], ["n", "e", "s"]], open: ["w"] }));
-  // Roof bridges, railed.
-  for (const [x0, x1] of [[-14, 1], [27, 39]] as const) out.push(bridge(x0, -7, x1, -5, H), rect(x0, -7, x1, -6.8, H, H + 0.8, "wall", 1), rect(x0, -5.2, x1, -5, H, H + 0.8, "wall", 1));
-  // The chimneys with their rusted tops, and a pipe from each across to the halls.
-  out.push(box(-6, 14, 4, 4, 34, "tower"), box(-6, 14, 4.2, 4.2, 40, "steel", 0, 34));
-  out.push(box(6, 17, 3.4, 3.4, 28, "tower"), box(6, 17, 3.6, 3.6, 33, "steel", 0, 28));
-  out.push(box(-6, 7.5, 1, 9, 9, "steel", 2, 8), box(6, 9, 1, 12, 10, "steel", 2, 9));
-  // A fuel tank, and slag heaps.
+  for (const x of [15, 22, 29, 36]) out.push(box(x, 9, 3, 4, 3.4, "steel", 2));
+  out.push(bridge(4, 7, 8, 9.5, H), rect(4, 7, 8, 7.2, H, H + 0.8, "steel", 2), rect(4, 9.3, 8, 9.5, H, H + 0.8, "steel", 2));
+  out.push(...tower(38, -8, 10, 10, 5, { scale: WORKS, doors: [["w", "s"], [], [], ["s"]], windows: [["e"], ["n", "e"], ["n", "e"], ["n", "e"], ["n", "e", "w"]] }));
+  out.push(bridge(37, -3, 39.5, 2, H), rect(37, -3, 37.2, 2, H, H + 0.8, "steel", 2), rect(39.3, -3, 39.5, 2, H, H + 0.8, "steel", 2));
+  // The stacks, flued from the cast house.
+  out.push(box(-44, 4, 5, 5, 56, "tower"), box(-44, 4, 5.4, 5.4, 60, "steel", 0, 56));
+  out.push(box(-44, -6, 4, 4, 44, "tower"), box(-44, -6, 4.4, 4.4, 48, "steel", 0, 44));
+  out.push(rect(-41.5, 3.2, -32, 4.8, 9, 10.6, "steel", 2));
+  // The cooling tower, waisted and open to nobody.
+  for (const [r, y0, h] of [[8, 0, 7], [7.2, 7, 13], [6.6, 13, 19], [7, 19, 24]] as const) out.push(...disc(-22, 24, r, 2, y0, h, "wall", 0));
+  // The fuel tank, and slag heaps past the mill.
   out.push(...tank(58, 14, 4, 9, "w", 0));
-  out.push(box(-50, 16, 7, 5, 2.6, "rock", 1), box(-30, 24, 5, 4, 1.8, "rock"), box(34, 20, 6, 4, 2.2, "rock", 1));
+  out.push(box(50, 24, 7, 5, 2.6, "rock", 1), box(58, 26, 5, 4, 1.8, "rock"), box(48, 14, 4, 6, 2.2, "rock", 1));
   return out;
 }
 
@@ -4171,7 +4216,7 @@ const WORKS_LINES: Box[] = (() => {
  */
 const FENCES: { name: string; line: [number, number][] }[] = [
   { name: "コンテナヤードの外周", line: [[-250, -664], [-98, -664], [-98, -762], [-250, -762], [-250, -664]] },
-  { name: "製錬所の外周", line: [[120, -698], [212, -698], [212, -780], [120, -780], [120, -698]] },
+  { name: "製錬所の外周", line: [[104, -696], [224, -696], [224, -780], [104, -780], [104, -696]] },
   { name: "補給所の境界", line: [[-115, 300], [128, 300], [128, 480]] },
 ];
 const FENCE_RUNS: Box[] = (() => {

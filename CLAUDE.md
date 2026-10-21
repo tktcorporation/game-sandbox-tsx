@@ -23,8 +23,8 @@ the east mesa, a bridge over a gorge, a viaduct into the harbor) join them, so a
 one to the other. The world is about 1200 by 1880 m (`WORLD` in `config.ts`): the reservoir's island
 (about 1120 by 820 m) with the dune coast bulging south of it, a mountain belt at z about -350, and
 the harbor's land (radius about 425 m). The reservoir is built at the scale of real places, its
-neighbouring POIs and districts 250 to 400 m apart; the harbor's POIs stand 170 to 330 m apart
-and are still to be rebuilt the same way.
+neighbouring POIs and districts 250 to 400 m apart; the harbor's POIs stand 270 to 330 m apart;
+of them the smelter is built at that scale, the wreck and the yard still at the older one.
 `REGIONS` in `map.ts` gives each region its POIs, ways off and ways in on foot (`ENTRIES`: a named
 point out on its open ground, facing in, out of every robot's sight for the first seconds);
 `newRun(seed, kit, region, { entry })` starts on the ground there with the teammate beside the
@@ -210,7 +210,7 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   walls, doors, windows, roller doors, stair width): `WORKS` for industry (4.5 m storeys,
   half-metre walls, doors 2.4 by 2.8 m, roller doors 6 m high), `HOME` for homes and farms
   (3.2 m storeys, larger rooms and windows), `INTAKE` for the dam's intake tower (5 m storeys), and
-  the older `HOUSE` (3.4 m) for the harbor and the drowned town. A function that builds on more
+  the older `HOUSE` (3.4 m) for the harbor's wreck and yard and the drowned town. A function that builds on more
   than one floor returns `Floors` (each group of boxes with the level it stands on; a `loose` group,
   such as a catwalk out over a cliff, is lifted without pressing the ground under it). The
   reservoir's POIs, built to these scales:
@@ -243,6 +243,13 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
     with the pad and so walked onto from it (stairs up from the ground on its north and west), a
     clamp ring on it, and the tether's broken shaft, 22 m square and up to 104 m over the pad,
     with a steel scaffold nine storeys up inside it to a windowed gallery.
+  In the harbor the smelter (`WORKS`, about 110 by 60 m inside its fence) is a blast furnace
+  works: the furnace's hearth against the cast house, its shaft to a railed deck 34 m up reached
+  by an open stair tower, its top and uptakes past 50 m; three hot-blast stoves 32 m high in a
+  row east of it, the skip incline climbing to its top over the north lane, ore heaps along the
+  north edge either side of the road out, the rolling mill bridged at roof height to the cast
+  house and to the five-storey control block, the dust catcher, two stacks (60 and 48 m) and a
+  cooling tower to the west and south-west, slag heaps to the east.
   The world was the ground base of an orbital ring (the brief's 「世界の由来」), and the fallen
   tether lies east and west through the anchor in four lengths 12 m across (`TETHER`, each a
   `tetherPiece()`): the root end, its back level with the plinth's top; a corridor through the
