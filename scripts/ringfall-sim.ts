@@ -3590,7 +3590,7 @@ function checkMods(): string | null {
     const at = openSpot(16, 2, 2);
     const far = openSpot(24, 2, 2);
     if (!at || !far) return "mod scenario: no open ground for the shots";
-    const shot = (mods: ModKind[], how: "weak" | "plate" | "jolt" | "back") => {
+    const shot = (mods: ModKind[], how: "weak" | "plate" | "jolt" | "back" | "ambush-back" | "ambush-front") => {
       const { s, foes } = standoff(at, 12, ["grunt"]);
       const g = foes[0];
       const p = s.player;
@@ -3613,6 +3613,13 @@ function checkMods(): string | null {
         damageEnemy(s, g, 10, false, bodyCenter(g), "front", "player", 0);
         return g.stagger;
       }
+      if (how === "ambush-back" || how === "ambush-front") {
+        // An unaware robot, its back to the player or facing them.
+        g.aware = "idle";
+        g.yaw = lookAngles(g.pos, s.player.pos).yaw + (how === "ambush-back" ? Math.PI : 0);
+        damageEnemy(s, g, 100, false, bodyCenter(g), "ambush", "player", 0);
+        return 1e6 - g.hp;
+      }
       damageEnemy(s, g, 100, false, bodyCenter(g), "back", "player", 0);
       return 1e6 - g.hp;
     };
@@ -3620,6 +3627,8 @@ function checkMods(): string | null {
     if (shot(["piercer"], "plate") <= shot([], "plate")) return "mod scenario: the piercer does not get more through a plate";
     if (shot(["jolt"], "jolt") <= shot([], "jolt")) return "mod scenario: the jolt does not build a stagger faster";
     if (shot(["stalker"], "back") <= shot([], "back")) return "mod scenario: the stalker does not add to a hit from behind";
+    if (shot(["stalker"], "ambush-back") <= shot([], "ambush-back")) return "mod scenario: the stalker does not add to an ambush from behind";
+    if (shot(["stalker"], "ambush-front") !== shot([], "ambush-front")) return "mod scenario: the stalker adds to an ambush from the front";
     // A drone watching the player fills its detection slower with the scrambler worn.
     const watched = (mods: ModKind[]) => {
       const { s, foes } = standoff(at, 14, ["drone"]);
