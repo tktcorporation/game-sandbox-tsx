@@ -1530,6 +1530,46 @@ export const PACKS: Squad[] = [
   },
 ];
 
+/** Stable names for the relay masts: saves and contracts refer to a mast by these. */
+export type RelayId = "west" | "east" | "salt" | "hill";
+
+/**
+ * A relay mast of the robots' network (網の中継器, `RELAY` in config.ts): a tall thin mast with a
+ * red eye, standing on open ground between the POIs only while the network is strong
+ * (`NETWORK.relayAt`), with a squad of two at its foot. Nothing is built for it in the map:
+ * the ground round each spot is already clear, so the world is the same with or without it.
+ */
+export interface Relay {
+  id: RelayId;
+  name: string;
+  x: number;
+  z: number;
+  guards: Squad;
+}
+
+/** The guards of a mast at (x, z): two grunts either side of it, facing out. */
+const mastGuards = (name: string, x: number, z: number): Squad => ({
+  name: `${name}の見張り`,
+  members: [
+    { kind: "grunt", x: x - 4, z, face: W },
+    { kind: "grunt", x: x + 4, z: z + 1, face: E },
+  ],
+});
+
+/** The relay masts, in the world's coordinates: two on each region's ground between the POIs. */
+export const RELAYS: Relay[] = (
+  [
+    // The reservoir: between the quarry and the supply depot, and between the supply depot and the relay.
+    ["west", "西の野の中継器", -150, 300],
+    ["east", "東の野の中継器", 150, 200],
+    // The harbor: between the yard and the wreck, and between the smelter and the wreck.
+    ["salt", "塩田の中継器", -90, -800],
+    ["hill", "東の浜の中継器", 90, -830],
+  ] as const
+).map(([id, name, x, z]) => ({ id, name, x, z, guards: mastGuards(name, x, z) }));
+
+export const relayIndex = (id: RelayId) => RELAYS.findIndex((r) => r.id === id);
+
 export type RegionId = "reservoir" | "harbor";
 
 export type EntryId = "beach" | "checkpoint" | "jetty" | "outskirts" | "quay" | "shore";

@@ -1,6 +1,6 @@
-import { CONTRACT, PARTY, VALUABLES, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
-import { PACKS, POIS, poiIndex, regionHere, REGIONS, regionOf, type PoiId, type RegionId } from "../sim/map";
-import { garrison, type PoiHold } from "../sim/island";
+import { CONTRACT, NETWORK, PARTY, RELAY, VALUABLES, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
+import { PACKS, POIS, poiIndex, regionHere, REGIONS, regionOf, RELAYS, relayIndex, type PoiId, type RegionId, type RelayId } from "../sim/map";
+import { activePacks, garrison, type PoiHold } from "../sim/island";
 import { mix, partyKey, squadKey, type State } from "../sim/state";
 import { haulOrigins } from "../sim/world";
 import { MODULES, nextLevel, unmet, type Hideout } from "./hideout";
@@ -28,11 +28,13 @@ export type Contract =
   /** Bring home `n` of a valuable taken out of the named POI's bins. */
   | { t: "fetch"; id: string; poi: PoiId; kind: ValuableKind; n: number; reward: Reward }
   /** Destroy every member of the named squad. */
-  | { t: "intercept"; id: string; target: InterceptTarget; reward: Reward };
+  | { t: "intercept"; id: string; target: InterceptTarget; reward: Reward }
+  /** Destroy the named relay mast (it stands only while the network is strong). */
+  | { t: "destroy"; id: string; relay: RelayId; reward: Reward };
 
 export type ContractType = Contract["t"];
 
-export const CONTRACT_NAME: Record<ContractType, string> = { free: "解放", fetch: "回収", intercept: "迎撃" };
+export const CONTRACT_NAME: Record<ContractType, string> = { free: "解放", fetch: "回収", intercept: "迎撃", destroy: "破壊" };
 
 /** A day's board. */
 export interface Board {
@@ -49,6 +51,8 @@ export interface BoardBasis {
   stash: readonly { t: string; kind?: string }[];
   entries: readonly string[];
   depots: readonly PoiId[];
+  /** The network level the next raid is played at: it decides which packs fly and whether relay masts stand. */
+  network: number;
 }
 
 const round50 = (n: number) => Math.round(n / 50) * 50;
@@ -58,6 +62,7 @@ const packRegion = (name: string) => regionHere(PACKS.find((p) => p.name === nam
 
 /** The region a contract sends the player to. */
 export function contractRegion(c: Contract): RegionId {
+  if (c.t === "destroy") return regionHere(RELAYS[relayIndex(c.relay)]).id;
   if (c.t !== "intercept") return regionOf(REGIONS.find((r) => r.pois.includes(c.poi))?.id ?? "reservoir").id;
   return c.target.t === "party" ? c.target.region : packRegion(c.target.name);
 }
@@ -77,6 +82,8 @@ export function contractText(c: Contract): string {
       return `${POIS[poiIndex(c.poi)].name}の補給箱から、${VALUABLES[c.kind].label}を ${c.n} 個持ち帰る`;
     case "intercept":
       return `${targetName(c.target)}を全滅させる`;
+    case "destroy":
+      return `${RELAYS[relayIndex(c.relay)].name}を壊す（網が 1 段下がる）`;
   }
 }
 
@@ -151,7 +158,7 @@ export function makeBoard(p: BoardBasis): Board {
   // Intercept: a drone pack or a region's hunting party.
   const targets = shuffle(
     near(
-      [...PACKS.map((q): InterceptTarget => ({ t: "pack", name: q.name })), ...REGIONS.filter((r) => PARTY.count[r.id] > 0).map((r): InterceptTarget => ({ t: "party", region: r.id }))],
+      [...activePacks(p.seed, p.network).map((q): InterceptTarget => ({ t: "pack", name: q.name })), ...REGIONS.filter((r) => NETWORK.levels[p.network].parties[r.id] > 0).map((r): InterceptTarget => ({ t: "party", region: r.id }))],
       (t) => (t.t === "party" ? t.region : packRegion(t.name)),
     ),
     5,
@@ -165,6 +172,12 @@ export function makeBoard(p: BoardBasis): Board {
   };
   out.push(interceptOf(targets[0], 6));
 
+  // While the network is strong enough for its masts to stand, one of them to destroy, in place of the fourth.
+  if (p.network >= NETWORK.relayAt) {
+    const masts = shuffle(near(RELAYS.map((r) => r.id), (id) => regionHere(RELAYS[relayIndex(id)]).id), 10);
+    const region = regionHere(RELAYS[relayIndex(masts[0])]).id;
+    out.push({ t: "destroy", id: id(), relay: masts[0], reward: { cash: round50(CONTRACT.destroy * factor(region)), items: [] } });
+  }
   // On some days a fourth: another POI to free, else another target.
   const count = CONTRACT.count[hash(8) % CONTRACT.count.length];
   if (count > out.length) {
@@ -194,6 +207,12 @@ export function contractProgress(c: Contract, s: State): { line: string; met: bo
       const got = [...haulOrigins(s.player).map((from, n) => ({ kind: s.player.haul[n], from })), ...sentOrigins(s)].filter((v) => v.kind === c.kind && v.from === i).length;
       return { line: `${VALUABLES[c.kind].label} ${Math.min(got, c.n)}/${c.n}（${POIS[i].name}）`, met: got >= c.n };
     }
+    case "destroy": {
+      const m = s.relays.find((r) => r.id === c.relay);
+      const name = RELAYS[relayIndex(c.relay)].name;
+      if (!m) return { line: `${name}：網が弱く、今日は立っていない`, met: false };
+      return m.hp <= 0 ? { line: `${name}：壊した`, met: true } : { line: `${name}を壊す：残り ${Math.ceil((m.hp / RELAY.hp) * 100)}%`, met: false };
+    }
     case "intercept": {
       const key = targetKey(c.target);
       if (s.stats.wiped.includes(key)) return { line: `${targetName(c.target)}：全滅させた`, met: true };
@@ -214,7 +233,7 @@ export function sentOrigins(s: Pick<State, "sent"> & { sentAt?: number[] }): Fet
  * Whether a settled raid did what a contract asked: the POI freed overnight, the valuables of
  * its POI's bins come home (`home`), or the squad destroyed (which counts on a wipe too).
  */
-export function contractDone(c: Contract, r: { freed: PoiId[]; home: Fetched[]; wiped: readonly string[] }): boolean {
+export function contractDone(c: Contract, r: { freed: PoiId[]; home: Fetched[]; wiped: readonly string[]; relays: readonly RelayId[] }): boolean {
   switch (c.t) {
     case "free":
       return r.freed.includes(c.poi);
@@ -222,6 +241,8 @@ export function contractDone(c: Contract, r: { freed: PoiId[]; home: Fetched[]; 
       return r.home.filter((v) => v.kind === c.kind && v.from === poiIndex(c.poi)).length >= c.n;
     case "intercept":
       return r.wiped.includes(targetKey(c.target));
+    case "destroy":
+      return r.relays.includes(c.relay);
   }
 }
 
@@ -229,6 +250,10 @@ export function contractDone(c: Contract, r: { freed: PoiId[]; home: Fetched[]; 
 export type ContractMark = { t: "poi"; x: number; z: number } | { t: "loop"; points: { x: number; z: number }[] } | { t: "region"; region: RegionId };
 
 export function contractMark(c: Contract): ContractMark {
+  if (c.t === "destroy") {
+    const m = RELAYS[relayIndex(c.relay)];
+    return { t: "poi", x: m.x, z: m.z };
+  }
   if (c.t !== "intercept") {
     const o = POIS[poiIndex(c.poi)];
     return { t: "poi", x: o.x, z: o.z };
@@ -251,6 +276,7 @@ export function parseBoard(raw: unknown, day: number): Board | null {
     if (typeof x.id !== "string" || !reward(x.reward)) return false;
     if (x.t === "free") return poi(x.poi);
     if (x.t === "fetch") return poi(x.poi) && typeof x.kind === "string" && x.kind in VALUABLES && Number.isInteger(x.n) && (x.n as number) > 0;
+    if (x.t === "destroy") return typeof x.relay === "string" && relayIndex(x.relay as RelayId) >= 0;
     if (x.t === "intercept") {
       const t = x.target as Record<string, unknown> | undefined;
       return !!t && ((t.t === "pack" && PACKS.some((q) => q.name === t.name)) || (t.t === "party" && REGIONS.some((r) => r.id === t.region)));

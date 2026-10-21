@@ -1,4 +1,4 @@
-import { AWARE, PLAYER, TICK, VALUABLES, WEAPONS } from "./sim/config";
+import { AWARE, PLAYER, RELAY, TICK, VALUABLES, WEAPONS } from "./sim/config";
 import { Bot, SKILLS } from "./sim/bot";
 import { collide, groundAt } from "./sim/geom";
 import { terrainHeight } from "./sim/terrain";
@@ -9,7 +9,7 @@ import { settle, type Settlement } from "./meta/profile";
 import { holds } from "./meta/island";
 import { contractProgress, targetKey } from "./meta/contracts";
 import { currentStory } from "./meta/story";
-import { kill } from "./sim/combat";
+import { eyePos, fireRay, kill } from "./sim/combat";
 import { squadKey } from "./sim/state";
 import { loadProfile, saveProfile } from "./meta/storage";
 import { Hub, type Launch } from "./view/hub";
@@ -473,7 +473,7 @@ function start(go: Launch, from?: State) {
   const record = currentStory(hub.profile.records)?.id;
   const taken = hub.contract();
   const fetch = taken?.t === "fetch" ? { poi: taken.poi, kind: taken.kind, n: taken.n } : undefined;
-  state = newRun(go.seed, kit, region, { depots: hub.profile.depots, seen: hub.profile.seen, from: go.from, entry: go.entry, routes: hub.profile.routes, island: holds(hub.profile), record, fetch });
+  state = newRun(go.seed, kit, region, { depots: hub.profile.depots, seen: hub.profile.seen, from: go.from, entry: go.entry, routes: hub.profile.routes, island: holds(hub.profile), record, fetch, network: hub.profile.network });
   hud.setContract(hub.contract(), record ?? null);
   world.campMode = false;
   if (from) walkOut(state, from);
@@ -621,10 +621,12 @@ window.render_game_to_text = () => {
   return JSON.stringify({
     screen: running ? "game" : !$("results").hidden ? "results" : !$("ending").hidden ? "ending" : camping ? "camp" : "title",
     camp: camping ? { panel: hub.station, near: campSpotAt(p.pos)?.id ?? null, lent: hub.lent, ride: { to: hub.rideTo(), refused: hub.rideRefused() }, marks: hub.marks(), fading, board: hub.profile.board.contracts.map((c) => ({ id: c.id, t: c.t })), taken: hub.profile.taken, story: currentStory(hub.profile.records)?.id ?? null } : null,
-    profile: { cash: hub.profile.cash, stash: hub.profile.stash.length, raids: hub.profile.raids, hideout: hub.profile.hideout, escaped: !!hub.profile.escaped, seed: hub.profile.seed, routes: hub.profile.routes, entries: hub.profile.entries, day: hub.profile.day, poiState: hub.profile.poiState },
+    profile: { cash: hub.profile.cash, stash: hub.profile.stash.length, raids: hub.profile.raids, hideout: hub.profile.hideout, escaped: !!hub.profile.escaped, seed: hub.profile.seed, routes: hub.profile.routes, entries: hub.profile.entries, day: hub.profile.day, poiState: hub.profile.poiState, network: hub.profile.network },
     boost: { ...s.boost, name: POIS[s.boost.poi].name },
-    settled: settlement && { home: settlement.home.length, sold: settlement.sold.length, quests: settlement.quests.map((q) => q.id), opened: settlement.opened, learned: settlement.learned, day: settlement.day, freed: settlement.freed, thinned: settlement.thinned, contract: settlement.contract && { id: settlement.contract.c.id, t: settlement.contract.c.t, done: settlement.contract.done }, story: settlement.story?.id ?? null },
-    contract: running && hub.contract() ? { t: hub.contract()!.t, ...contractProgress(hub.contract()!, s) } : null,
+    network: s.network,
+    relays: s.relays.map((m) => ({ id: m.id, x: m.x, y: +m.y.toFixed(1), z: m.z, hp: Math.round(m.hp) })),
+    settled: settlement && { network: settlement.network, retaken: settlement.retaken, home: settlement.home.length, sold: settlement.sold.length, quests: settlement.quests.map((q) => q.id), opened: settlement.opened, learned: settlement.learned, day: settlement.day, freed: settlement.freed, thinned: settlement.thinned, contract: settlement.contract && { id: settlement.contract.c.id, t: settlement.contract.c.t, done: settlement.contract.done }, story: settlement.story?.id ?? null },
+    contract: running && hub.contract() ? { t: hub.contract()!.t, ...(hub.contract()!.t === "destroy" ? { relay: (hub.contract() as { relay: string }).relay } : {}), ...contractProgress(hub.contract()!, s) } : null,
     records: s.player.records,
     vaults: s.bins.filter((b) => b.vault).map((b) => ({ poi: b.poi, x: b.x, y: b.y, z: b.z, open: b.open })),
     keys: p.keys,
@@ -761,7 +763,9 @@ window.ringfallBot = (skill: string) => {
 /**
  * Automation only: the contract board. `take` takes the day's first contract of `type` in the
  * camp (its id, or null with none); `destroyTarget` destroys every robot of the taken intercept
- * contract's squad in the raid under way, as the player's shots would (the robots destroyed).
+ * contract's squad in the raid under way, as the player's shots would (the robots destroyed), or
+ * shoots the taken destroy contract's mast down with the gun in hand from where the player
+ * stands (the shots fired; 0 when it is out of the line of fire).
  */
 window.ringfallContract = {
   take: (type) => {
@@ -774,6 +778,21 @@ window.ringfallContract = {
   },
   destroyTarget: () => {
     const c = hub.contract();
+    if (running && c?.t === "destroy") {
+      const m = state.relays.find((r) => r.id === c.relay);
+      const w = state.player.weapons[state.player.slot];
+      if (!m || !w) return 0;
+      let shots = 0;
+      for (; m.hp > 0 && shots < 400; shots++) {
+        const eye = eyePos(state);
+        const to = { x: m.x - eye.x, y: m.y + RELAY.height * 0.4 - eye.y, z: m.z - eye.z };
+        const len = Math.hypot(to.x, to.y, to.z);
+        const before = m.hp;
+        fireRay(state, w, { x: to.x / len, y: to.y / len, z: to.z / len });
+        if (m.hp === before) return 0;
+      }
+      return shots;
+    }
     if (!running || c?.t !== "intercept") return 0;
     const key = targetKey(c.target);
     const foes = state.enemies.filter((e) => state.squads[e.squad] && squadKey(state.squads[e.squad]) === key);

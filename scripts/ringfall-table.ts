@@ -94,10 +94,15 @@ const skillNamed = (name: string): Skill => {
 
 /** Raid `r` of a table: fixed by its seed, the same wherever and after whatever it is played. */
 export function playRaid(region: RegionId, skillName: string, r: number): RaidResult {
-  const skill = skillNamed(skillName);
   // Each raid starts at one of the region's ways in, in turn.
   const ways = regionOf(region).entries;
-  const s = newRun(1000 + r * 7919, freeKit(), region, { entry: ways[r % ways.length] });
+  return playState(newRun(1000 + r * 7919, freeKit(), region, { entry: ways[r % ways.length] }), skillName, r);
+}
+
+/** A bot of `skillName` plays the raid `s` to its end (its own numbers drawn from `r`); `s` is left as the raid ended. */
+export function playState(s: State, skillName: string, r: number): RaidResult {
+  const region = s.region;
+  const skill = skillNamed(skillName);
   const bot = new Bot(skill, 31 + r);
   let prevCrouch = false;
   let peakSq = 0;

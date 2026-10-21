@@ -5,7 +5,7 @@ import { DEPOTS, ENTRIES, EXTRACTS, inCamp, PARTY_STOPS, POIS, recordSpot, REGIO
 import { spawnEnemy, spawnSpot } from "./enemies";
 import { cellsAround, fieldTo, nextStep, onMainGround } from "./hunt";
 import { raiseAlly, startHelp } from "./ally";
-import { boosted, callLeft, cellOf, exploreSize, mix, rand, roamRand, type Bin, type Input, type Loot, type PartySlot, type PartyTrip, type Player, type Point, type State, type Weapon } from "./state";
+import { boosted, callLeft, netLevel, cellOf, exploreSize, mix, rand, roamRand, type Bin, type Input, type Loot, type PartySlot, type PartyTrip, type Player, type Point, type State, type Weapon } from "./state";
 import type { EnemyKind, ValuableKind } from "./config";
 import { located, makeNoise } from "./awareness";
 
@@ -84,7 +84,7 @@ export function stepReinforce(s: State) {
     s.reinforceT = 5; // try again shortly
     return;
   }
-  s.reinforceT = REINFORCE.every;
+  s.reinforceT = netLevel(s).reinforce.every;
   s.reinforceN++;
 }
 
@@ -144,7 +144,7 @@ function beamIn(s: State, kinds: readonly EnemyKind[], name: string, elite: bool
   s.squads.push({ name, poi: -1, patrol: [], leg: 0, engaged: false, roam: true, hunt: true, routed: true, elite, sinceSeen: 0, last: { x: p.pos.x, z: p.pos.z } });
   const spots = posts(kinds, at.x, at.z);
   kinds.forEach((kind, i) => {
-    const e = spawnEnemy(s, kind, spots[i].mx, spots[i].mz, -1, squad, { appear: true, elite, plate: elite ? RAIDERS.plate : 0 });
+    const e = spawnEnemy(s, kind, spots[i].mx, spots[i].mz, -1, squad, { appear: true, elite, plate: elite ? RAIDERS.plate : undefined });
     e.aware = "alert";
     e.goal = { x: p.pos.x, z: p.pos.z };
     e.searchT = 40;
@@ -154,10 +154,10 @@ function beamIn(s: State, kinds: readonly EnemyKind[], name: string, elite: bool
   return true;
 }
 
-/** The raid's first hunting parties, `PARTY.count` in each region, placed as a wiped-out one's replacement is. */
+/** The raid's first hunting parties, as many in each region as the network gives, placed as a wiped-out one's replacement is. */
 export function placeParties(s: State) {
   for (const region of REGIONS)
-    for (let i = 0; i < PARTY.count[region.id]; i++) {
+    for (let i = 0; i < netLevel(s).parties[region.id]; i++) {
       const slot = { region: region.id, squad: -1, wait: 0 };
       s.parties.push(slot);
       sendParty(s, slot, false);

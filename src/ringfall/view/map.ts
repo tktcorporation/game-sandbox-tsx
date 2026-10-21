@@ -1,10 +1,10 @@
-import { DEPOT, WORLD } from "../sim/config";
-import { BOXES, DEPOTS, ENTRIES, EXTRACTS, LANDMARKS, POIS, REGIONS, regionOf, ROUTES, regionHere, type EntryId, type PoiId, type RegionId, type RouteId } from "../sim/map";
+import { DEPOT, NETWORK, RELAY, WORLD } from "../sim/config";
+import { BOXES, DEPOTS, ENTRIES, EXTRACTS, LANDMARKS, POIS, REGIONS, regionOf, RELAYS, relayIndex, ROUTES, regionHere, type EntryId, type PoiId, type RegionId, type RouteId } from "../sim/map";
 import { HOLD_NAME, type PoiHold } from "../sim/island";
 import { STREETS } from "../sim/streets";
 import { worldKey } from "../sim/routes";
 import { DAM_FACE, floorLevel, groundOf, highGround, LEVEL, steepAt, surfaceAt, terrainHeight, type Ground } from "../sim/terrain";
-import { cellOf, decodeSeen, exploreSize, type Ally, type Player, type State } from "../sim/state";
+import { cellOf, decodeSeen, exploreSize, type Ally, type Player, type RelayMast, type State } from "../sim/state";
 import { PAL } from "./models";
 import type { ContractMark } from "../meta/contracts";
 
@@ -46,10 +46,12 @@ export const TITAN_CSS = "#262d52";
 export type MapScene = Pick<State, "seen" | "cleared" | "hold" | "depots" | "routes" | "found"> & {
   player?: Pick<Player, "pos" | "yaw">;
   ally?: Pick<Ally, "active" | "pos" | "down">;
+  /** The relay masts standing (none while the network is too weak for them), destroyed ones with no health left. */
+  relays?: readonly Pick<RelayMast, "id" | "hp">[];
 };
 
 /** The camp's picture of the island between raids, from the profile's explored map, depots, routes and POI standings. */
-export function islandScene(p: { seen: string; depots: readonly PoiId[]; routes: readonly RouteId[]; poiState: Record<PoiId, { state: PoiHold }> }): MapScene {
+export function islandScene(p: { seen: string; depots: readonly PoiId[]; routes: readonly RouteId[]; poiState: Record<PoiId, { state: PoiHold }>; network: number }): MapScene {
   return {
     seen: decodeSeen(p.seen),
     cleared: POIS.map(() => false),
@@ -57,6 +59,7 @@ export function islandScene(p: { seen: string; depots: readonly PoiId[]; routes:
     depots: DEPOTS.map((d) => p.depots.includes(d.poi)),
     routes: [...p.routes],
     found: [],
+    relays: p.network >= NETWORK.relayAt ? RELAYS.map((r) => ({ id: r.id, hp: RELAY.hp })) : [],
   };
 }
 
@@ -426,6 +429,36 @@ export class IslandMap {
       g.strokeRect(p.x - r, p.y - r, r * 2, r * 2);
       g.fillRect(p.x - r, p.y - r, r * 2, r * 2);
     });
+    // The relay masts standing: a red triangle with the mast's eye, struck through once destroyed.
+    for (const m of s.relays ?? []) {
+      const r = RELAYS[relayIndex(m.id)];
+      const p = at(r.x, r.z);
+      const d = 7 * dpr;
+      g.save();
+      g.lineWidth = 2.5 * dpr;
+      g.strokeStyle = "rgba(20,24,40,0.9)";
+      g.fillStyle = m.hp > 0 ? HOLD_CSS.held : "#6b6f78";
+      g.beginPath();
+      g.moveTo(p.x, p.y - d);
+      g.lineTo(p.x + d * 0.9, p.y + d * 0.65);
+      g.lineTo(p.x - d * 0.9, p.y + d * 0.65);
+      g.closePath();
+      g.fill();
+      g.stroke();
+      if (m.hp > 0) {
+        g.fillStyle = "#ffd0c4";
+        g.beginPath();
+        g.arc(p.x, p.y + d * 0.1, d * 0.22, 0, Math.PI * 2);
+        g.fill();
+      }
+      g.restore();
+      const text = m.hp > 0 ? r.name : `${r.name}（破壊）`;
+      const spot = box(text, p.x, p.y + 14 * dpr, 9);
+      if (free(spot)) {
+        taken.push(spot);
+        label(text, p.x, p.y + 14 * dpr, m.hp > 0 ? "#ffb4a2" : "#9c9586", 9);
+      }
+    }
     // Each POI's mark at its centre, coloured by who holds it: a disc, or the titan's hexagon.
     POIS.forEach((poi, i) => {
       const p = at(poi.x, poi.z);

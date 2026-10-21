@@ -75,21 +75,23 @@ The trader's quests are data in `meta/quests.ts` (`QUESTS`: four intro quests, t
 craft's line; credited from a raid's `stats` by `creditRaid()` inside `settle()`). The quest board
 also holds the day's contracts (`meta/contracts.ts`): `makeBoard()` builds 3 or 4 from
 `Profile.seed`, `Profile.day`, the island and the hideout (free a POI, fetch a valuable from a
-POI's bins, destroy a drone pack or a region's hunting party; numbers in `CONTRACT`), kept in
+POI's bins, destroy a drone pack or a region's hunting party, and while the network is strong a
+relay mast; numbers in `CONTRACT`), kept in
 `Profile.board` for the day; the player takes one (`Profile.taken`) or none, and `settle()` pays it
 when `contractDone()` holds (fetch counts only valuables tagged with their bin's POI,
-`Player.haulAt` / `State.sentAt`; intercept reads `Stats.wiped`, by `squadKey()`). Five story
+`Player.haulAt` / `State.sentAt`; intercept reads `Stats.wiped`, by `squadKey()`; destroy reads `Stats.relays`). Five story
 contracts (`meta/story.ts`) follow one at a time: the one under way lays its record at its
 `RECORD_SPOTS` place in `map.ts` (`Start.record`), a bag slot that comes home into
 `Profile.records`. The bots take no contract and carry no record. Each POI has one locked bin (`vault: true` in its `bins`), opened
 only with that POI's key; keys drop from the bins of the POI named by its `keyFrom` (`VAULT`).
 POIs have a stable `id` (`PoiId` in `map.ts`); saves, quests, `keyFrom` and `EXTRA_BINS` refer to a
 POI by it, never by its place in `POIS` (the run's state may index `POIS` internally). The profile
-is versioned (`Profile.v`, which is 14), and `parseProfile()` moves older saves forward (a save from
+is versioned (`Profile.v`, which is 15), and `parseProfile()` moves older saves forward (a save from
 before the ways in starts at its region's first way in; a save from before ways in were learned
 knows them all; a save from before v12 drops its explored map, since `cellOf()` follows `WORLD`,
 which then grew wider; a save from before v13 starts on the day after its raids with every POI
-held; a save from before v14 keeps only the quests that still exist) and moves its
+held; a save from before v14 keeps only the quests that still exist; a save from before v15 starts
+at network `NETWORK.start`) and moves its
 start to one it may choose (`allowedStart()`).
 Each POI has a depot on its road (`DEPOTS` in `map.ts`, run by `stepDepots()` in `world.ts`): walking
 up switches it on for good, its use key sends the bag home (it survives a wipe) or, with the bag empty,
@@ -124,6 +126,21 @@ the results. The titan's pad is never freed. A raid reads the standings through
 every squad of a held POI, the vault guard and half the squads of a thin one (picked from the
 seed), and none of a freed one, which starts cleared, its vault open without the key (`canOpen()`
 in `world.ts`) and its depot on. With no `island` every POI is held, which the sim gate plays.
+The robots' network (網の段階, `Profile.network`, 0 to 5, with the pressure toward its next step
+carried in `Profile.pressure`) is moved by `advanceDay()` too: down a step for each POI freed from
+held (the relay two, a thin one a step less), for the titan's fall (its pad cleared) and for each
+relay mast destroyed (`Stats.relays`), then up a step for each `NETWORK.riseEvery` of pressure the
+day adds (`netGain()`, more the more POIs held); a thin POI thin for `NETWORK.retakeAfter` days goes
+back to held while the network is at `NETWORK.retakeAt` or more (`Settlement.network`,
+`.retaken`). A raid is played at a level through `newRun(seed, kit, region, { network })`
+(`State.network`, `netLevel()`): `NETWORK.levels` sets the reinforcement and raider times, the
+hunting parties per region, the drone packs flying (`activePacks()`, from the seed) and the share of
+plain grunts and heavies with a tier-1 plate (`netPlated()`, a hash of the seed and the robot's id).
+From `NETWORK.relayAt` the relay masts (`RELAYS` in `map.ts`, `RELAY` in `config.ts`,
+`State.relays`) stand on open ground with two guards each: a post and an eye that the player's
+shots hit (`rayRelay()` in `combat.ts`), never built into the map, so the world is the same at
+every level. With no `network` a raid is played at `NETWORK.play` (2), whose numbers are the
+island's own, so the sim gate's tables do not change.
 The hideout is the long-term goal: modules built level by level from specific valuables and
 credits taken from the stash (`build()` in `profile.ts`; levels, costs and prerequisites in
 `HIDEOUT`, effects in `HIDEOUT_EFFECT`, both in `config.ts`; `meta/hideout.ts` holds the pure
@@ -139,7 +156,9 @@ once; play goes on. Build quests (`{ t: "build" }`) finish at the base (`claimBu
 
 ```bash
 npm run sim:ringfall     # gate 2: bots of three skills play whole raids headless, in each region,
-                         # then the hideout's pacing replays the meta with those raids; raids run
+                         # then the hideout's pacing replays the meta with those raids, then each
+                         # skill plays 30 days on one profile with the network carried
+                         # (scripts/ringfall-campaign.ts, also runnable alone); raids run
                          # in parallel, one process per core, the reservoir's (the longest) first
                          # (RINGFALL_SIM_JOBS=n to set, 1 = in turn)
 npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir raid to the end, a harbor raid
@@ -398,7 +417,9 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   undrawn while it only waits on the state, and draws before each screenshot and every few steps.
 - `docs/ringfall/balance.md` holds the target curve and the latest `npm run sim:ringfall -- 30` output
   (a table per region, and the hideout's pacing table from `scripts/ringfall-pacing.ts`: each skill's
-  recorded raids settled in sequence with a greedy spender, the raid at which each level is built).
+  recorded raids settled in sequence with a greedy spender, the raid at which each level is built,
+  and the island campaign from `scripts/ringfall-campaign.ts`: the network and the POIs freed at
+  days 5, 10, 20 and 30 of a month on one profile per skill).
   Change a number in `config.ts` or `map.ts` only together with a re-run and an update to that file.
   While tuning, `npm run sim:ringfall -- 10` (10 raids per skill and region, about a third of the
   time) is enough to see which way a change moves the tables; the record in that file is 30.

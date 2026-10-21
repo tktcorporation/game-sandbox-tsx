@@ -1,4 +1,4 @@
-import { ALLY, HEALS as HEAL_SPECS, HIDEOUT, RAIDERS, RARITY, TOOLS, VALUABLES, WEAPONS, type ModuleId, type ValuableKind } from "../sim/config";
+import { ALLY, HEALS as HEAL_SPECS, HIDEOUT, NETWORK, RARITY, TOOLS, VALUABLES, WEAPONS, type ModuleId, type ValuableKind } from "../sim/config";
 import { boostFor, freeKit, type Kit } from "../sim/state";
 import { entryOf, POIS, poiIndex, poiRegion, REGIONS, regionOf, ROUTES, type EntryId, type PoiId, type RegionId, type StationId } from "../sim/map";
 import { build, buildState, buy, buyPrice, canBuild, canStartIn, deliver, deliverable, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, itemCost, HEALS, healCount, healRoom, keyName, lentHeals, loadoutCost, price, sell, sellPrice, startsIn, take, takeKit, takenContract, wanted, wares, type Item, type Loadout, type Profile } from "../meta/profile";
@@ -7,7 +7,7 @@ import { currentStory, STORIES, storyOf, storyWhere } from "../meta/story";
 import { craftDone, maxLevel, MODULES, nextLevel, pouchSlots, sources, stashCap, stillNeeded, type Source } from "../meta/hideout";
 import { need, offered, type Quest, type RewardItem } from "../meta/quests";
 import { saveProfile } from "../meta/storage";
-import { islandNotes, noteText, thinTomorrow, unfreeable } from "../meta/island";
+import { islandNotes, networkText, noteText, relaysUp, thinTomorrow, unfreeable } from "../meta/island";
 import { HOLD_NAME } from "../sim/island";
 import { HOLD_CSS, IslandMap, islandScene, TITAN_CSS } from "./map";
 import { sfx } from "./sfx";
@@ -410,7 +410,8 @@ export class Hub {
     const buildable = MODULES.filter((m) => canBuild(p, m)).length;
     // A POI that goes thin unless the next raid comes into it is the map table's most pressing news.
     const fading = thinTomorrow(p).map((id) => POIS[poiIndex(id)].name);
-    const map = [fading.length ? `あす手薄：${fading.join("・")}` : "", p.hideout.radio ? "知らせ" : ""].filter(Boolean).join("・");
+    // A strong network is news too: from level 4 every raid is a hard one.
+    const map = [p.network >= 4 ? `網 ${p.network}` : "", fading.length ? `あす手薄：${fading.join("・")}` : "", p.hideout.radio ? "知らせ" : ""].filter(Boolean).join("・");
     // The board wants looking at while it has contracts and none is taken.
     const open = !takenContract(p) && p.board.contracts.length ? `依頼 ${p.board.contracts.length}` : "";
     return { map, quests: [ready ? `納品 ${ready}` : "", open].filter(Boolean).join("・"), stash: "", shop: "", workshop: buildable ? `作れる ${buildable}` : "" };
@@ -430,7 +431,7 @@ export class Hub {
     const b = boostFor(this.profile.seed, this.region);
     const where = esc(POIS[b.poi].name);
     if (lv === 1) return `${where}の箱に珍しい物が多い`;
-    return `${where}の箱に${esc(VALUABLES[b.kind].label)}が多い。レイダーはレイドの始めからおよそ ${Math.round(RAIDERS.at / 60)} 分後に降りる`;
+    return `${where}の箱に${esc(VALUABLES[b.kind].label)}が多い。レイダーはレイドの始めからおよそ ${Math.round(NETWORK.levels[this.profile.network].raiders / 60)} 分後に降りる`;
   }
 
   /** The routes a tool opens: open or closed, and for a closed one, the tool and where it lies. */
@@ -540,10 +541,24 @@ export class Hub {
     return (
       `<div class="hub-island"><canvas id="hub-island-map"></canvas><div class="hub-island-side">` +
       `<div class="hub-day"><small>島の日</small><b>${p.day}</b><small>日目</small></div>` +
+      this.networkMeter() +
       `<ul class="hold-key">${key}</ul>` +
       `<small>明日の島</small><ul class="tomorrow">${lines}</ul>` +
       (taken ? `<small>受けた依頼（${esc(regionOf(contractRegion(taken)).name)}・地図の金の破線）</small><p class="hub-taken">${CONTRACT_NAME[taken.t]}：${esc(contractText(taken))}</p>` : "") +
       `</div></div>`
+    );
+  }
+
+  /**
+   * The network's meter: a cell for each level up to `NETWORK.max`, lit up to the current one,
+   * and what the level means in a line (`networkText()`), with the masts' word when they stand.
+   */
+  private networkMeter(): string {
+    const n = this.profile.network;
+    const cells = Array.from({ length: NETWORK.max + 1 }, (_, i) => `<i class="${i <= n ? "on" : ""}${i === n ? " now" : ""}"></i>`).join("");
+    return (
+      `<div class="hub-net lv${n}"><small>網の段階</small><div class="net-meter" role="meter" aria-valuemin="0" aria-valuemax="${NETWORK.max}" aria-valuenow="${n}">${cells}</div>` +
+      `<b>${n}・${esc(NETWORK.levels[n].name)}</b><p>${esc(networkText(n))}${relaysUp(n) ? "。地図の赤い三角が中継器" : ""}</p></div>`
     );
   }
 

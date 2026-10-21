@@ -374,6 +374,73 @@ export const ISLAND = {
   thinKeep: 0.5,
 };
 
+/** What one network level sets in a raid (`NETWORK.levels`). */
+export interface NetworkLevel {
+  /** A short word for the level, for the map table's meter. */
+  name: string;
+  /** What the level does, in a few words, beside the meter. */
+  note: string;
+  /** Seconds to the first reinforcement squad and between the next (`REINFORCE.first`, `REINFORCE.every`). */
+  reinforce: { first: number; every: number };
+  /** Seconds to the raiders (`RAIDERS.at`). */
+  raiders: number;
+  /** Hunting parties in each region (`PARTY.count`). */
+  parties: Record<RegionId, number>;
+  /** Drone packs flying in each region, of the region's `PACKS`. */
+  packs: Record<RegionId, number>;
+  /** Share of the grunts and heavies, raiders aside, that wear a tier-1 plate (see PLATE). */
+  plate: number;
+}
+
+/**
+ * The robots' network (網の段階), 0 to 5, kept on the profile: how hard the whole island is.
+ * Each day adds `base + perHeld` for each POI held (`thinWeight` for one thin) to a pressure,
+ * and the network rises a step each time the pressure reaches `riseEvery`, so a player who
+ * frees nothing sees it climb from `start` to the top in about nine days, and one who holds
+ * the ground sees it climb a step every three days or so. A day that starts at the top gathers
+ * nothing, so a step taken off the top holds for a while. Freeing a held POI takes it down a
+ * step (`relayPoi` two; a thin one a step less, since the network had half lost it already),
+ * killing the titan a step, and destroying a relay mast a step. A thin POI goes back to held
+ * once it has been thin `retakeAfter` days while the network stands at `retakeAt` or higher;
+ * relay masts (`RELAYS`) stand in the raid from `relayAt`.
+ *
+ * `levels[2]` is the island the bots' balance tables are played on: its numbers are the
+ * reinforcement times, raider time, parties and packs of `REINFORCE`, `RAIDERS`, `PARTY` and
+ * `PACKS`, with no plates added. Lower levels give more time and fewer hunters; higher ones
+ * bring every wave sooner, more parties, and plates on the plain robots.
+ */
+export const NETWORK = {
+  start: 1,
+  max: 5,
+  riseEvery: 2,
+  base: 0.55,
+  perHeld: 0.05,
+  thinWeight: 0.5,
+  relayPoi: 2,
+  retakeAt: 3,
+  retakeAfter: 2,
+  relayAt: 3,
+  levels: [
+    { name: "途切れ", note: "増援は遅く、群れと遊撃隊は少ない", reinforce: { first: 390, every: 330 }, raiders: 960, parties: { reservoir: 1, harbor: 1 }, packs: { reservoir: 1, harbor: 1 }, plate: 0 },
+    { name: "弱い", note: "増援は遅く、群れは少ない", reinforce: { first: 330, every: 270 }, raiders: 840, parties: { reservoir: 1, harbor: 1 }, packs: { reservoir: 2, harbor: 1 }, plate: 0 },
+    { name: "並", note: "いつもの島", reinforce: { first: 270, every: 225 }, raiders: 720, parties: { reservoir: 2, harbor: 2 }, packs: { reservoir: 3, harbor: 2 }, plate: 0 },
+    { name: "強い", note: "増援が早い・中継器が立つ", reinforce: { first: 240, every: 195 }, raiders: 600, parties: { reservoir: 2, harbor: 2 }, packs: { reservoir: 3, harbor: 2 }, plate: 0.15 },
+    { name: "厳しい", note: "増援が早い・遊撃隊が増える・装甲板が増える", reinforce: { first: 210, every: 170 }, raiders: 540, parties: { reservoir: 3, harbor: 3 }, packs: { reservoir: 3, harbor: 2 }, plate: 0.3 },
+    { name: "最大", note: "増援が次々来る・遊撃隊が増える・装甲板が多い", reinforce: { first: 180, every: 140 }, raiders: 480, parties: { reservoir: 3, harbor: 3 }, packs: { reservoir: 3, harbor: 2 }, plate: 0.45 },
+  ] satisfies NetworkLevel[],
+  /** The level the sim gate's raids are played at, and a raid's when the start names none. */
+  play: 2,
+};
+
+/**
+ * A relay mast (網の中継器, `RELAYS` in map.ts): a lattice mast `height` metres tall with a red
+ * eye at the top, hit as a post of `radius` (up to `top` metres under the eye, where the lattice
+ * narrows) and the eye as a weak point of `eyeR`, taking
+ * `hp` of weapon damage (the eye `eyeMult` times). It stands only at networks of
+ * `NETWORK.relayAt` and up, guarded by a squad of two.
+ */
+export const RELAY = { hp: 900, height: 13, radius: 0.85, top: 1.5, eyeR: 0.7, eyeMult: 2 };
+
 /**
  * The camp's contract board (meta/contracts.ts): `count` contracts a day, built from the island
  * and the profile, of which the player takes one or none. Rewards, in credits:
@@ -381,7 +448,8 @@ export const ISLAND = {
  * - bring home valuables from a POI's bins: `fetchShare` of their worth, at least `fetchMin`,
  *   asking for as many as its bins hold on average, up to `fetchMax`, and one more of them on top;
  * - destroy a drone pack or a hunting party: `intercept` by target, and on some days a heal or a
- *   weapon, one step rarer every `rarityEvery` days.
+ *   weapon, one step rarer every `rarityEvery` days;
+ * - destroy a named relay mast: `destroy`.
  * Each is multiplied by the region's `region` factor: the harbor is the harder ground.
  */
 export const CONTRACT = {
@@ -391,6 +459,8 @@ export const CONTRACT = {
   fetchMin: 300,
   fetchMax: 3,
   intercept: { pack: 500, party: 800 },
+  /** Destroying a named relay mast: credits, and the network a step lower overnight. */
+  destroy: 1000,
   rarityEvery: 6,
   region: { reservoir: 1, harbor: 1.4 } satisfies Record<RegionId, number>,
 };

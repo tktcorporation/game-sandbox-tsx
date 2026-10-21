@@ -1379,6 +1379,65 @@ body.touch #hub-close kbd {
   font-size: 34px;
   line-height: 1;
 }
+/* The network's meter on the map table: a cell per level, lit up to the current one; red from 3. */
+.hub-net {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 2px 10px;
+  padding: 6px 10px;
+  background: var(--plate);
+}
+.hub-net small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 13px;
+}
+.hub-net b {
+  font-family: var(--num);
+  font-size: 16px;
+  white-space: nowrap;
+}
+.hub-net p {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 13px;
+}
+.net-meter {
+  display: flex;
+  gap: 3px;
+  grid-column: 1;
+  grid-row: 2;
+}
+.hub-net b {
+  grid-column: 2;
+  grid-row: 2;
+}
+.net-meter i {
+  width: 16px;
+  height: 12px;
+  background: rgba(255, 255, 255, 0.12);
+}
+.net-meter i.on {
+  background: #d4892c;
+}
+.hub-net.lv3 .net-meter i.on,
+.hub-net.lv4 .net-meter i.on,
+.hub-net.lv5 .net-meter i.on {
+  background: #b8412f;
+}
+.net-meter i.now {
+  box-shadow: 0 0 0 2px #fff3e0;
+}
+.tomorrow li.rise,
+.tomorrow li.top,
+.tomorrow li.retake,
+.tomorrow li.retaken {
+  box-shadow: inset 3px 0 0 #b8412f;
+}
+.tomorrow li.retaken {
+  font-weight: 800;
+}
 .hub-island ul {
   margin: 0;
   padding: 0;
@@ -1750,6 +1809,15 @@ body.touch #hub-close kbd {
   font-size: 20px;
 }
 #home .freed {
+  color: #8db9de;
+}
+#home .net {
+  font-family: var(--num);
+}
+#home .net.up {
+  color: #ff9c86;
+}
+#home .net.down {
   color: #8db9de;
 }
 /* The contract's outcome after a raid: done and its reward, or not done. */

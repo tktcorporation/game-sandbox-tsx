@@ -5,7 +5,7 @@ import { eyePos, magSize } from "../sim/combat";
 import { dist2d, los } from "../sim/geom";
 import { DEPOTS, entryOf, EXTRACTS, POIS, poiIndex, regionHere, regionOf, routeOf, type EntryId } from "../sim/map";
 import { routeBefore } from "../sim/routes";
-import { islandNotes, noteText } from "../meta/island";
+import { islandNotes, netChangeText, noteText, relayName } from "../meta/island";
 import { bagLoad, canOpen, depotBlocked, depotInReach, extractHere, extractReady, homeReady, makeRoom, poiAt, roomForTool, searchTime, useTarget } from "../sim/world";
 import { callLeft, enemyHp, enemyShield, weakY, type GameEvent, type State, type Vec3 } from "../sim/state";
 import { haulValue, rank } from "../sim/results";
@@ -184,6 +184,15 @@ export class Hud {
         cur.el.style.color = cur.crit ? "" : e.shield ? RARITY_CSS[e.tier] : "#ffffff";
         break;
       }
+      case "relayHit":
+        this.hitT = 0.08;
+        $("hitmark").className = e.eye ? "crit" : "";
+        break;
+      case "relayDown":
+        this.hitT = 0.4;
+        $("hitmark").className = "kill";
+        this.banner(`${relayName(e.id)}を壊した`, "網は今夜 1 段下がる");
+        break;
       case "stagger": {
         // Fire that knocks a robot out of its wind-up says so on its number.
         const n = e.interrupted ? this.nums.find((x) => x.id === e.id && x.age === 0) : undefined;
@@ -306,6 +315,8 @@ export class Hud {
     if (this.mapOpen) {
       if (s.phase === "done") this.toggleMap(false);
       else this.map.draw(s);
+      // The masts' key only on the days they stand.
+      $("map-mast-key").hidden = !s.relays.length;
     }
 
     // Objective card.
@@ -826,6 +837,7 @@ export class Hud {
     const island = settled
       ? `<h3 class="day-end">${settled.day} 日目の終わり</h3>` +
         (settled.freed.length ? `<h3>解放した拠点</h3><p>${settled.freed.map((id) => `<span class="freed">${POIS[poiIndex(id)].name}</span>`).join("")}</p>` : "") +
+        `<h3>網の段階</h3><p class="net-change"><span class="net${settled.network.to > settled.network.from ? " up" : settled.network.to < settled.network.from ? " down" : ""}">${netChangeText(settled.network)}</span></p>` +
         `<h3>明日の島</h3><ul class="tomorrow">${(islandNotes(settled.profile, settled).map((n) => `<li class="${n.t}${n.t === "fading" && n.days <= 1 ? " soon" : ""}">${noteText(n)}</li>`).join("")) || "<li>島は変わらない。支配の拠点の守備隊を片付けて生きて帰ると、その拠点は解放になる</li>"}</ul>`
       : "";
     // The contract taken for the raid: done and paid, or not done (it goes with the day).
