@@ -4,7 +4,7 @@ import { openRoutes } from "../sim/routes";
 import { encodeSeen, type Kit, type State } from "../sim/state";
 import { haulOrigins } from "../sim/world";
 import { contractDone, makeBoard, parseBoard, sentOrigins, type Board, type Contract, type Fetched } from "./contracts";
-import { craftDone, emptyHideout, infirmaryHeals, MODULES, nextLevel, onSale, pouchSlots, shopRarity, stashCap, stillNeeded, unmet, type Hideout } from "./hideout";
+import { emptyHideout, infirmaryHeals, MODULES, nextLevel, onSale, pouchSlots, shopRarity, stashCap, stillNeeded, type Hideout } from "./hideout";
 import { advanceDay, eventFor, firstEvents, frontIncome, newIsland, parseEvent, parseIsland, raidDay, retakable, type BattleChange, type DayEvents, type Island, type NetChange } from "./island";
 import { newOutposts, type OutpostHold } from "../sim/front";
 import type { IslandEvent } from "../sim/island";
@@ -20,17 +20,9 @@ export type Item =
   | { t: "key"; poi: PoiId }
   | { t: "tool"; kind: ToolKind };
 
-/** The playthrough's record when the escape craft was finished, for the ending. */
-export interface Escape {
-  raids: number;
-  extracted: number;
-  /** Seconds spent in raids. */
-  time: number;
-}
-
 /** What persists between raids. */
 export interface Profile {
-  v: 20;
+  v: 21;
   cash: number;
   stash: Item[];
   raids: number;
@@ -45,8 +37,6 @@ export interface Profile {
   /** The ways in the base offers (`ENTRIES` order): the reservoir's first, and those walked to in raids the player got off alive. */
   entries: EntryId[];
   hideout: Hideout;
-  /** Set once, when the escape craft is finished. */
-  escaped: Escape | null;
   /** The next raid's seed: fixed before the raid, so the radio can tell what that raid holds. */
   seed: number;
   /** The depots switched on in any raid: they stay on, and a raid may start from one. */
@@ -136,7 +126,7 @@ export const canStartIn = (p: Profile, region: RegionId) => {
 export function newProfile(seed = 1): Profile {
   const stash: Item[] = META.start.weapons.map((w) => ({ t: "weapon", ...w }));
   for (const k of HEALS) for (let i = 0; i < META.start.heals[k]; i++) stash.push({ t: "heal", kind: k });
-  const p: Omit<Profile, "board"> = { v: 20, cash: META.start.cash, stash, raids: 0, extracted: 0, time: 0, quests: emptyLog(), region: "reservoir", entry: FIRST_ENTRY, entries: [FIRST_ENTRY], hideout: emptyHideout(), escaped: null, seed: seed & 0xffff, depots: [], depotSent: {}, seen: "", routes: [], day: 1, poiState: newIsland(), outposts: newOutposts(NETWORK.start), outpostVisit: {}, taken: null, records: [], network: NETWORK.start, pressure: 0, events: firstEvents(seed & 0xffff, newIsland()), known: [...MOD_START], threat: 0, freedAt: {}, factory: 0, scores: [], lastKit: null };
+  const p: Omit<Profile, "board"> = { v: 21, cash: META.start.cash, stash, raids: 0, extracted: 0, time: 0, quests: emptyLog(), region: "reservoir", entry: FIRST_ENTRY, entries: [FIRST_ENTRY], hideout: emptyHideout(), seed: seed & 0xffff, depots: [], depotSent: {}, seen: "", routes: [], day: 1, poiState: newIsland(), outposts: newOutposts(NETWORK.start), outpostVisit: {}, taken: null, records: [], network: NETWORK.start, pressure: 0, events: firstEvents(seed & 0xffff, newIsland()), known: [...MOD_START], threat: 0, freedAt: {}, factory: 0, scores: [], lastKit: null };
   return { ...p, board: makeBoard(p) };
 }
 
@@ -656,26 +646,24 @@ export function claimBuilt(p: Profile): { profile: Profile; quests: Quest[]; sol
   return { profile: p, quests, sold, soldFor };
 }
 
-/** What stands between a module and its next level: items short (kind, have, need), credits short, levels unbuilt. */
-export function shortfall(p: Profile, m: ModuleId): { items: [ValuableKind, number, number][]; cash: number; needs: [ModuleId, number][] } | null {
+/** What stands between a module and its next level: items short (kind, have, need) and credits short. */
+export function shortfall(p: Profile, m: ModuleId): { items: [ValuableKind, number, number][]; cash: number } | null {
   const l = nextLevel(p.hideout, m);
   if (!l) return null;
   const have = (k: ValuableKind) => p.stash.filter((i) => i.t === "valuable" && i.kind === k).length;
   return {
     items: l.items.filter(([k, n]) => have(k) < n).map(([k, n]) => [k, have(k), n]),
     cash: Math.max(0, l.cash - p.cash),
-    needs: unmet(p.hideout, l),
   };
 }
 
 /**
  * What the module card says about its next level: done, buildable, or the first thing in the
- * way (a module it needs, then the parts still missing, then only the credits).
+ * way (the parts still missing, then only the credits).
  */
 export function buildState(p: Profile, m: ModuleId): string {
   const s = shortfall(p, m);
   if (!s) return "完成";
-  if (s.needs.length) return "設備が足りない";
   const missing = s.items.reduce((n, [, have, need]) => n + need - have, 0);
   if (missing) return `あと ${missing} 個`;
   if (s.cash) return `あと ${s.cash.toLocaleString()} クレジット`;
@@ -684,12 +672,12 @@ export function buildState(p: Profile, m: ModuleId): string {
 
 export const canBuild = (p: Profile, m: ModuleId) => {
   const s = shortfall(p, m);
-  return !!s && !s.items.length && !s.cash && !s.needs.length;
+  return !!s && !s.items.length && !s.cash;
 };
 
 /**
  * Builds a module's next level, taking its items and credits from the stash; null when it
- * cannot be built. Finishing the escape craft records the playthrough for the ending.
+ * cannot be built.
  */
 export function build(p: Profile, m: ModuleId): Profile | null {
   const l = nextLevel(p.hideout, m);
@@ -705,9 +693,7 @@ export function build(p: Profile, m: ModuleId): Profile | null {
     });
   }
   const hideout = { ...p.hideout, [m]: p.hideout[m] + 1 };
-  let next: Profile = { ...p, cash: p.cash - l.cash, stash: p.stash.filter((_, at) => !take.has(at)), hideout };
-  if (craftDone(hideout) && !p.escaped) next = { ...next, escaped: { raids: p.raids, extracted: p.extracted, time: p.time } };
-  return claimBuilt(next).profile;
+  return claimBuilt({ ...p, cash: p.cash - l.cash, stash: p.stash.filter((_, at) => !take.has(at)), hideout }).profile;
 }
 
 /** Stash entries (indices) a delivery quest would take, or null when the stash lacks them. */
@@ -758,11 +744,14 @@ const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
  * Before v19 there was no battle: such a profile has the factory the camp starts with (level 0)
  * and no battle on record.
  * Before v20 the shelves did not remember a loadout: such a profile has none (`lastKit` null).
+ * Before v21 the hideout had a generator and an escape craft: such a profile keeps its other
+ * modules' levels and loses those two, with what was spent on them, and the ending's record;
+ * its intro quest to build the generator, if done, counts as the one to build the infirmary.
  */
 export function parseProfile(raw: unknown, seed = 1): Profile | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
+  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
   const old = o.v === 1 || o.v === 2;
   const migrate = (i: unknown): unknown => {
     if (!old || !i || typeof i !== "object" || (i as Record<string, unknown>).t !== "key") return i;
@@ -786,8 +775,6 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   const h = (o.hideout ?? {}) as Record<string, unknown>;
   const hideout = emptyHideout();
   for (const m of MODULES) if (Number.isInteger(h[m])) hideout[m] = Math.max(0, Math.min(HIDEOUT[m].levels.length, h[m] as number));
-  const e = o.escaped as Record<string, unknown> | null | undefined;
-  const escaped = craftDone(hideout) ? { raids: Number(e?.raids) || 0, extracted: Number(e?.extracted) || 0, time: Number(e?.time) || 0 } : null;
   const num = (x: unknown) => (typeof x === "number" && x >= 0 ? x : 0);
   const depots = Array.isArray(o.depots) ? [...new Set(o.depots.filter((d): d is PoiId => typeof d === "string" && poiIndex(d as PoiId) >= 0))] : [];
   const ds = (typeof o.v === "number" && o.v >= 8 && o.depotSent && typeof o.depotSent === "object" ? o.depotSent : {}) as Record<string, unknown>;
@@ -799,26 +786,26 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   const recordIds = STORIES.map((t) => t.id);
   const records = (typeof o.v === "number" && o.v >= 14) && Array.isArray(o.records) ? recordIds.filter((id) => (o.records as unknown[]).includes(id)) : [];
   const network = (typeof o.v === "number" && o.v >= 15) && Number.isInteger(o.network) ? Math.max(0, Math.min(NETWORK.max, o.network as number)) : NETWORK.start;
-  const v17 = o.v === 17 || o.v === 18 || o.v === 19 || o.v === 20;
-  const v18 = o.v === 18 || o.v === 19 || o.v === 20;
-  const v19 = o.v === 19 || o.v === 20;
-  const v20 = o.v === 20;
+  const v17 = typeof o.v === "number" && o.v >= 17;
+  const v18 = typeof o.v === "number" && o.v >= 18;
+  const v19 = typeof o.v === "number" && o.v >= 19;
+  const v20 = typeof o.v === "number" && o.v >= 20;
   const fa = (v17 && o.freedAt && typeof o.freedAt === "object" ? o.freedAt : {}) as Record<string, unknown>;
   const freedAt: Partial<Record<PoiId, number>> = {};
   for (const { id } of POIS) if (Number.isInteger(fa[id])) freedAt[id] = Math.max(0, Math.min(THREAT.max, fa[id] as number));
   const out: Omit<Profile, "board" | "taken" | "events"> = {
-    v: 20,
+    v: 21,
     cash: Math.max(0, Math.floor(o.cash)),
     stash: o.stash.map(migrate).filter(ok).slice(0, stashCap(hideout)),
     raids,
     extracted: num(o.extracted),
     time: num(o.time),
-    quests: { progress, done: Array.isArray(q.done) ? q.done.filter((d): d is string => typeof d === "string" && QUEST_IDS.has(d)) : [] },
+    // The intro quest to build the generator, done, counts as the one to build the infirmary.
+    quests: { progress, done: Array.isArray(q.done) ? [...new Set(q.done.map((d) => (d === "power" ? "medbay" : d)))].filter((d): d is string => typeof d === "string" && QUEST_IDS.has(d)) : [] },
     region,
     entry,
     entries,
     hideout,
-    escaped,
     seed: Number.isInteger(o.seed) ? (o.seed as number) & 0xffff : seed & 0xffff,
     depots,
     depotSent,

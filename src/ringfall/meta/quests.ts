@@ -36,22 +36,15 @@ export interface Quest {
 }
 
 /**
- * The trader's quests, in the order they open up. The intro quests teach the basics (fighting a
- * squad, getting off, building, handing items in) and are listed above the board until done; the
- * day's contracts send the player round the island after them. The escape craft's line opens once
- * the generator is built: each of its quests points at where the craft's parts are and pays some
- * of them, and the last is the craft itself.
+ * The trader's quests: the intro quests, teaching the basics (fighting a squad, getting off,
+ * building, handing items in), listed above the board until done; the day's contracts send the
+ * player round the island after them.
  */
 export const QUESTS: Quest[] = [
   { id: "grunts", title: "見張りの間引き", text: "グラントを 8 体倒す", goal: { t: "kill", kind: "grunt", n: 8 }, after: [], reward: { cash: 600, items: [{ t: "heal", kind: "cell" }, { t: "heal", kind: "cell" }] }, intro: true },
   { id: "village", title: "静かな帰り道", text: "廃村から脱出する", goal: { t: "extract", exit: "village" }, after: [], reward: { cash: 500, items: [{ t: "heal", kind: "syringe" }, { t: "heal", kind: "syringe" }] }, intro: true },
-  { id: "power", title: "明かりを点ける", text: "隠れ家の発電機を Lv1 にする", goal: { t: "build", module: "generator", level: 1 }, after: ["grunts"], reward: { cash: 400, items: [{ t: "valuable", kind: "wire" }] }, intro: true },
+  { id: "medbay", title: "手当ての備え", text: "隠れ家の医務室を Lv1 にする", goal: { t: "build", module: "infirmary", level: 1 }, after: ["grunts"], reward: { cash: 400, items: [{ t: "valuable", kind: "wire" }] }, intro: true },
   { id: "parts", title: "部品の回収", text: "部品を 3 個納品する", goal: { t: "deliver", valuable: "parts", n: 3 }, after: ["grunts"], reward: { cash: 500, items: [{ t: "weapon", kind: "pike", rarity: 1 }] }, intro: true },
-  { id: "craft", title: "脱出艇の話", text: "隠れ家の脱出艇の船体を塞ぐ", goal: { t: "build", module: "craft", level: 1 }, after: ["power"], reward: { cash: 2000, items: [{ t: "valuable", kind: "gyro" }] } },
-  { id: "navigator", title: "航法装置", text: "脱出艇に航法装置を据える。ジャイロと記憶装置は難破船の箱に多い", goal: { t: "build", module: "craft", level: 2 }, after: ["craft"], reward: { cash: 2500, items: [{ t: "valuable", kind: "core" }, { t: "valuable", kind: "drive" }] } },
-  { id: "control", title: "制御系", text: "脱出艇の制御系をつなぐ。データコアは発着場のタイタンと最上階の箱", goal: { t: "build", module: "craft", level: 3 }, after: ["navigator"], reward: { cash: 3000, items: [{ t: "valuable", kind: "core" }] } },
-  { id: "furnace", title: "製錬所の炉", text: "製錬所の守備隊を掃討する（核を制圧して解放してもよい）。小型炉心はそこの箱に眠る", goal: { t: "clear", poi: "smelter" }, after: ["control"], reward: { cash: 3000, items: [{ t: "valuable", kind: "reactor" }] } },
-  { id: "escape", title: "島を出る", text: "脱出艇の機関に火を入れる", goal: { t: "build", module: "craft", level: 4 }, after: ["furnace"], reward: { cash: 0, items: [] } },
 ];
 
 /** How much a goal needs (a count, or 1 for a yes/no goal). */

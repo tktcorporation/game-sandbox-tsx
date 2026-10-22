@@ -87,8 +87,7 @@ own weapons or not, and armour and keys go with the lent weapons too. `takeKit()
 took (`Profile.lastKit`) and the shelves pick it again while the stash holds things like it
 (`recallLoadout()`). The valuables still wanted (`wanted()`, for the stash's notes and the order in
 which `settle()` keeps what fits) count the factory's levels as well as the hideout's.
-The trader's quests are data in `meta/quests.ts` (`QUESTS`: four intro quests, then the escape
-craft's line; credited from a raid's `stats` by `creditRaid()` inside `settle()`). The quest board
+The trader's quests are data in `meta/quests.ts` (`QUESTS`: four intro quests; credited from a raid's `stats` by `creditRaid()` inside `settle()`). The quest board
 also holds the day's contracts (`meta/contracts.ts`): `makeBoard()` builds 3 or 4 from
 `Profile.seed`, `Profile.day`, the island and the hideout (free a POI, fetch a valuable from a
 POI's bins, destroy a drone pack or a region's hunting party, and while the network is strong a
@@ -103,7 +102,7 @@ contracts (`meta/story.ts`) follow one at a time: the one under way lays its rec
 only with that POI's key; keys drop from the bins of the POI named by its `keyFrom` (`VAULT`).
 POIs have a stable `id` (`PoiId` in `map.ts`); saves, quests, `keyFrom` and `EXTRA_BINS` refer to a
 POI by it, never by its place in `POIS` (the run's state may index `POIS` internally). The profile
-is versioned (`Profile.v`, which is 20), and `parseProfile()` moves older saves forward (a save from
+is versioned (`Profile.v`, which is 21), and `parseProfile()` moves older saves forward (a save from
 before the ways in starts at its region's first way in; a save from before ways in were learned
 knows them all; a save from before v12 drops its explored map, since `cellOf()` follows `WORLD`,
 which then grew wider; a save from before v13 starts on the day after its raids with every POI
@@ -227,16 +226,16 @@ got off, and turns thin those taken from the player; a node the player captured 
 still theirs at the end. `Profile.scores` keeps the last days' battles for the map table and the
 factory's panel. `battleFocus()` gives the objective (`objectiveSteps()`) and the bot a node of the
 player's under attack, or one their robots are taking.
-The hideout is the long-term goal: modules built level by level from specific valuables and
-credits taken from the stash (`build()` in `profile.ts`; levels, costs and prerequisites in
-`HIDEOUT`, effects in `HIDEOUT_EFFECT`, both in `config.ts`; `meta/hideout.ts` holds the pure
+The long-term goal is pushing the island's front back (the battles and the nodes freed); there is
+no ending. The hideout is the mid-term one: five modules built level by level from specific
+valuables and credits taken from the stash, each level needing only the module's level before it
+(`build()` in `profile.ts`; levels and costs in `HIDEOUT`, effects in `HIDEOUT_EFFECT`, both in `config.ts`; `meta/hideout.ts` holds the pure
 helpers). Their benefits act in the meta: `takeKit()` lends the infirmary's heals, `wares()` sells
 up to `shopRarity()`, `stashCap()` and `pouchSlots()` grow, and the radio reports the next raid's
 boosted POI. Every raid leans one POI's bins of its region to a rare kind (`State.boost`, from
 `boostFor(seed, region)` in `state.ts`, without drawing on the raid's random numbers);
-`Profile.seed` is the next raid's seed, fixed at the base so the report comes true. The escape
-craft is the last module: its last stage records `Profile.escaped` and the workshop's panel shows the ending
-once; play goes on. Build quests (`{ t: "build" }`) finish at the base (`claimBuilt()`).
+`Profile.seed` is the next raid's seed, fixed at the base so the report comes true. The top levels
+ask for the data core or the small reactor. Build quests (`{ t: "build" }`) finish at the base (`claimBuilt()`).
 `sources()` derives where each valuable is found from the loot data (`loot.valuable`, `TOP_BINS`,
 `VAULT`, `ROBOT_DROPS`), for the workshop's hints.
 
@@ -538,7 +537,8 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   undrawn while it only waits on the state, and draws before each screenshot and every few steps.
 - `docs/ringfall/balance.md` holds the target curve and the latest `npm run sim:ringfall -- 30` output
   (a table per region, and the hideout's pacing table from `scripts/ringfall-pacing.ts`: each skill's
-  recorded raids settled in sequence with a greedy spender, the raid at which each level is built,
+  recorded raids settled in sequence with a greedy spender, the raid at which each level is built
+  and every module stands at its top level,
   and the island campaign from `scripts/ringfall-campaign.ts`: the network, the POIs freed and the
   factory's level at days 5, 10, 20 and 30 of a month on one profile per skill, and its battles:
   the days won, the points by day and the nodes that changed hands).

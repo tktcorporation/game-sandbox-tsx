@@ -722,84 +722,63 @@ export const META = {
   materials: { markup: 2 },
 };
 
-export type ModuleId = "generator" | "infirmary" | "workbench" | "storage" | "radio" | "pouch" | "craft";
+export type ModuleId = "infirmary" | "workbench" | "storage" | "radio" | "pouch";
 
-/** One level of a hideout module: what it takes from the stash, and the module levels it needs first. */
+/** One level of a hideout module: what it takes from the stash. Level N is built only on level N - 1. */
 export interface ModuleLevel {
   items: [ValuableKind, number][];
   cash: number;
-  needs: [ModuleId, number][];
   /** What this level does, in a line, for the base. */
   does: string;
 }
 
 /**
  * The hideout at the base: modules built level by level from specific valuables and some
- * credits, all taken from the stash. The generator powers the rest; the escape craft is the
- * last project, and finishing it ends the playthrough (the game goes on after).
- * Each level's effect is the number at its place in the module's own list below
- * (index 0 is the module unbuilt).
+ * credits, all taken from the stash. The top levels ask for the rarest valuables (the data core,
+ * the small reactor). Each level's effect is the number at its place in the module's own list
+ * below (index 0 is the module unbuilt).
  */
 export const HIDEOUT: Record<ModuleId, { name: string; note: string; levels: ModuleLevel[] }> = {
-  generator: {
-    name: "発電機",
-    note: "ほかの設備の上の段に電気を回す",
-    levels: [
-      { items: [["fuse", 4], ["wire", 1]], cash: 300, needs: [], does: "設備の Lv1 を動かせる" },
-      { items: [["fuse", 4], ["wire", 3], ["board", 3]], cash: 1500, needs: [], does: "設備の Lv2 を動かせる" },
-      { items: [["board", 4], ["drive", 3], ["gyro", 2]], cash: 4000, needs: [["workbench", 1]], does: "設備の Lv3 と脱出艇の制御系を動かせる" },
-    ],
-  },
   infirmary: {
     name: "医務室",
     note: "毎回のレイドに回復を持たせる（貸出装備でも）",
     levels: [
-      { items: [["parts", 3], ["fuse", 2]], cash: 500, needs: [["generator", 1]], does: "注射器 +1" },
-      { items: [["parts", 3], ["board", 3]], cash: 1500, needs: [["generator", 2]], does: "注射器 +1、シールドセル +2" },
-      { items: [["board", 3], ["drive", 2], ["gyro", 2]], cash: 3000, needs: [["generator", 3]], does: "注射器 +2、シールドセル +2、医療キット +1" },
+      { items: [["parts", 3], ["fuse", 3]], cash: 500, does: "注射器 +1" },
+      { items: [["parts", 3], ["board", 3], ["fuse", 2]], cash: 2000, does: "注射器 +1、シールドセル +2" },
+      { items: [["board", 3], ["drive", 2], ["gyro", 2], ["reactor", 1]], cash: 6000, does: "注射器 +2、シールドセル +2、医療キット +1" },
     ],
   },
   workbench: {
     name: "作業台",
     note: "商人が売る武器とアーマー、材料の質が上がる",
     levels: [
-      { items: [["parts", 4], ["wire", 2]], cash: 800, needs: [["generator", 1]], does: "商人がエピックまで売る。回路基板と記憶装置も売る" },
-      { items: [["board", 4], ["drive", 2], ["gyro", 3]], cash: 3500, needs: [["generator", 2]], does: "商人がレジェンドまで売る。ジャイロ、データコア、小型炉心も売る" },
+      { items: [["parts", 4], ["wire", 2], ["fuse", 2]], cash: 800, does: "商人がエピックまで売る。回路基板と記憶装置も売る" },
+      { items: [["board", 5], ["drive", 3], ["gyro", 3]], cash: 6000, does: "商人がレジェンドまで売る。ジャイロ、データコア、小型炉心も売る" },
     ],
   },
   storage: {
     name: "倉庫",
     note: "倉庫に置ける数が増える",
     levels: [
-      { items: [["parts", 3], ["wire", 2]], cash: 600, needs: [], does: "倉庫 +10" },
-      { items: [["wire", 3], ["board", 3]], cash: 1500, needs: [["generator", 1]], does: "倉庫 +10" },
-      { items: [["board", 3], ["drive", 2], ["gyro", 2]], cash: 3000, needs: [["generator", 2]], does: "倉庫 +10" },
+      { items: [["parts", 3], ["wire", 2]], cash: 600, does: "倉庫 +10" },
+      { items: [["wire", 3], ["board", 3], ["fuse", 2]], cash: 2000, does: "倉庫 +10" },
+      { items: [["board", 3], ["drive", 2], ["gyro", 2], ["core", 1]], cash: 6000, does: "倉庫 +10" },
     ],
   },
   radio: {
     name: "無線機",
     note: "出撃前に島の様子が分かる",
     levels: [
-      { items: [["wire", 2], ["board", 2], ["drive", 1]], cash: 1200, needs: [["generator", 1]], does: "珍しい物が多い拠点が分かる" },
-      { items: [["board", 3], ["drive", 2], ["gyro", 2]], cash: 3000, needs: [["generator", 2]], does: "その拠点で出やすい物と、レイダーの降りる時刻も分かる" },
+      { items: [["wire", 2], ["board", 2], ["drive", 1]], cash: 1200, does: "珍しい物が多い拠点が分かる" },
+      { items: [["board", 3], ["drive", 2], ["gyro", 2], ["core", 1]], cash: 6000, does: "その拠点で出やすい物と、レイダーの降りる時刻も分かる" },
     ],
   },
   pouch: {
     name: "ポーチ",
     note: "倒れても残る枠が増える",
     levels: [
-      { items: [["wire", 2], ["board", 2]], cash: 1000, needs: [], does: "ポーチ 3 枠" },
-      { items: [["drive", 3], ["gyro", 2]], cash: 2500, needs: [["generator", 2]], does: "ポーチ 4 枠" },
-    ],
-  },
-  craft: {
-    name: "脱出艇",
-    note: "直せば島を出られる",
-    levels: [
-      { items: [["wire", 4], ["board", 4]], cash: 12500, needs: [["generator", 2], ["workbench", 1]], does: "船体を塞ぐ" },
-      { items: [["gyro", 5], ["drive", 4], ["board", 4]], cash: 25000, needs: [["radio", 1]], does: "航法装置を据える" },
-      { items: [["core", 3], ["board", 6], ["gyro", 4]], cash: 40000, needs: [["generator", 3], ["radio", 2]], does: "制御系をつなぐ" },
-      { items: [["reactor", 1], ["core", 1], ["gyro", 4], ["drive", 3]], cash: 60000, needs: [["workbench", 2]], does: "機関に火を入れる" },
+      { items: [["wire", 2], ["board", 2]], cash: 1000, does: "ポーチ 3 枠" },
+      { items: [["drive", 3], ["gyro", 2], ["core", 1]], cash: 5000, does: "ポーチ 4 枠" },
     ],
   },
 };
