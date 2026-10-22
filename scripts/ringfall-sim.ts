@@ -4058,7 +4058,7 @@ function checkBattle(): string | null {
   r.outcome = "extracted";
   r.nodes[SUP] = "held";
   r.nodes[nodeIndex("quarry")] = "freed";
-  finishBattle(r);
+  r.battle!.done = true;
   const night = settle(both, r);
   if (playerNodes(night.profile).join() !== playerNodes({ poiState: { ...newIsland(), quarry: { state: "freed" }, relay: { state: "freed" } } }).join() || night.front.lost.join() !== "supply" || night.front.gained.join() !== "quarry") return `battle: the night after a battle that ended with the quarry and the relay the player's left ${JSON.stringify({ nodes: playerNodes(night.profile), front: night.front })}`;
   if (night.income !== 2 * FRONT.income) return `battle: two nodes paid ${night.income}`;
