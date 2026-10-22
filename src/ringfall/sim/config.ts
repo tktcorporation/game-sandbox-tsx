@@ -745,7 +745,7 @@ export const HIDEOUT: Record<ModuleId, { name: string; note: string; levels: Mod
     levels: [
       { items: [["parts", 3], ["fuse", 3]], cash: 500, does: "注射器 +1" },
       { items: [["parts", 3], ["board", 3], ["fuse", 2]], cash: 2000, does: "注射器 +1、シールドセル +2" },
-      { items: [["board", 3], ["drive", 2], ["gyro", 2], ["reactor", 1]], cash: 4000, does: "注射器 +2、シールドセル +2、医療キット +1" },
+      { items: [["board", 3], ["drive", 2], ["gyro", 2], ["reactor", 1]], cash: 6000, does: "注射器 +2、シールドセル +2、医療キット +1" },
     ],
   },
   workbench: {
@@ -753,7 +753,7 @@ export const HIDEOUT: Record<ModuleId, { name: string; note: string; levels: Mod
     note: "商人が売る武器とアーマー、材料の質が上がる",
     levels: [
       { items: [["parts", 4], ["wire", 2], ["fuse", 2]], cash: 800, does: "商人がエピックまで売る。回路基板と記憶装置も売る" },
-      { items: [["board", 5], ["drive", 3], ["gyro", 3]], cash: 5000, does: "商人がレジェンドまで売る。ジャイロ、データコア、小型炉心も売る" },
+      { items: [["board", 5], ["drive", 3], ["gyro", 3]], cash: 6000, does: "商人がレジェンドまで売る。ジャイロ、データコア、小型炉心も売る" },
     ],
   },
   storage: {
@@ -762,7 +762,7 @@ export const HIDEOUT: Record<ModuleId, { name: string; note: string; levels: Mod
     levels: [
       { items: [["parts", 3], ["wire", 2]], cash: 600, does: "倉庫 +10" },
       { items: [["wire", 3], ["board", 3], ["fuse", 2]], cash: 2000, does: "倉庫 +10" },
-      { items: [["board", 3], ["drive", 2], ["gyro", 2], ["core", 1]], cash: 4000, does: "倉庫 +10" },
+      { items: [["board", 3], ["drive", 2], ["gyro", 2], ["core", 1]], cash: 6000, does: "倉庫 +10" },
     ],
   },
   radio: {
@@ -770,7 +770,7 @@ export const HIDEOUT: Record<ModuleId, { name: string; note: string; levels: Mod
     note: "出撃前に島の様子が分かる",
     levels: [
       { items: [["wire", 2], ["board", 2], ["drive", 1]], cash: 1200, does: "珍しい物が多い拠点が分かる" },
-      { items: [["board", 3], ["drive", 2], ["gyro", 2], ["core", 1]], cash: 4000, does: "その拠点で出やすい物と、レイダーの降りる時刻も分かる" },
+      { items: [["board", 3], ["drive", 2], ["gyro", 2], ["core", 1]], cash: 6000, does: "その拠点で出やすい物と、レイダーの降りる時刻も分かる" },
     ],
   },
   pouch: {
@@ -778,7 +778,7 @@ export const HIDEOUT: Record<ModuleId, { name: string; note: string; levels: Mod
     note: "倒れても残る枠が増える",
     levels: [
       { items: [["wire", 2], ["board", 2]], cash: 1000, does: "ポーチ 3 枠" },
-      { items: [["drive", 3], ["gyro", 2], ["core", 1]], cash: 3500, does: "ポーチ 4 枠" },
+      { items: [["drive", 3], ["gyro", 2], ["core", 1]], cash: 5000, does: "ポーチ 4 枠" },
     ],
   },
 };
