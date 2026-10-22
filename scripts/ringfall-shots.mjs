@@ -1646,7 +1646,7 @@ const islandDay = {
   await pg.click("#restart");
   await faded(pg);
   const plan = await pg.textContent("#camp-plan");
-  if (!/今日の作戦/.test(plan) || !/攻める節/.test(plan) || !/7 日目/.test(await pg.textContent("#camp-hint"))) errors.push(`island: the camp after the results reads "${plan}" / "${await pg.textContent("#camp-hint")}"`);
+  if (!/今日の作戦/.test(plan) || !/攻める節|守る節/.test(plan) || !/7 日目/.test(await pg.textContent("#camp-hint"))) errors.push(`island: the camp after the results reads "${plan}" / "${await pg.textContent("#camp-hint")}"`);
   await pg.screenshot({ path: `${out}/m20-camp-today.png` });
   await ctx.close();
 }
@@ -1974,7 +1974,7 @@ for (const phone of [false, true]) {
   await closePanel(pg, phone);
   // The camp's line of the day and 今日の作戦: the battles on record make yesterday's known.
   const today = await pg.textContent("#camp");
-  if (!/9 日目/.test(today) || !/昨日の陣取り戦：勝ち/.test(today) || !/攻める節/.test(today)) errors.push(`battle: the camp's day reads "${today.slice(0, 300)}"`);
+  if (!/9 日目/.test(today) || !/昨日の陣取り戦：勝ち/.test(today) || !/攻める節|守る節/.test(today)) errors.push(`battle: the camp's day reads "${today.slice(0, 300)}"`);
   await pg.screenshot({ path: tag(6, "camp-today") });
   const run = await walkOutOfGate(pg);
   if (!run.battle || run.battle.factory !== 3) errors.push(`battle: the raid out of the gate has ${JSON.stringify(run.battle && { factory: run.battle.factory })}`);

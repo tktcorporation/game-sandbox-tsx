@@ -828,7 +828,8 @@ export class Hub {
     const k = this.kitLines();
     const c = takenContract(p);
     const story = takenStory(p) ? currentStory(p.records) : null;
-    const goal = c ? `${CONTRACT_NAME[c.t]}：${contractText(c)}${p.threat ? `（強度 ${p.threat}）` : ""}` : story ? `記録：${story.title}` : `前線：${this.frontPick()?.name ?? "島を探索する"}（依頼なし・強度 通常）`;
+    const front = this.frontPick();
+    const goal = c ? `${CONTRACT_NAME[c.t]}：${contractText(c)}${p.threat ? `（強度 ${p.threat}）` : ""}` : story ? `記録：${story.title}` : `${front?.fading ? "守る" : "前線"}：${front?.name ?? "島を探索する"}（依頼なし・強度 通常）`;
     const rows: [string, string][] = [
       ["出撃地点", walk ? `${entryOf(FIRST_ENTRY).name}（門から歩いて）` : this.rideTo()],
       ["武器", k.weapons],
@@ -876,7 +877,8 @@ export class Hub {
     const story = takenStory(p) ? currentStory(p.records) : null;
     const k = this.kitLines();
     const plan: [string, string][] = [
-      ["攻める節", pick ? `${pick.name}${pick.fading ? "（あす手薄になる）" : ""}：核を制圧して生きて帰ると解放${pick.poi ? "・網 −1" : ""}` : "前線の節はない"],
+      // A freed POI about to thin is kept by a visit; its core is the player's and cannot be captured.
+      pick?.fading ? ["守る節", `${pick.name}：次のレイドで訪れないと手薄になる`] : ["攻める節", pick ? `${pick.name}：核を制圧して生きて帰ると解放${pick.poi ? "・網 −1" : ""}` : "前線の節はない"],
       ["依頼", c ? `${CONTRACT_NAME[c.t]}：${contractText(c)}${p.threat ? `（強度 ${p.threat}）` : ""}` : story ? `記録：${story.title}` : "なし（依頼板で受ける。受けないと前線の節が目的になる）"],
       ["装備", `${k.weapons}・アーマー ${k.armor}`],
     ];
