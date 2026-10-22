@@ -72,7 +72,7 @@ import { netChangeText } from "../src/ringfall/meta/island";
 import { pacing, type Pool } from "./ringfall-pacing";
 import { MOBILES, OUTPOST_SITES, territory } from "../src/ringfall/sim/map";
 import { frontNodes, garrisonOf, interiorNodes, useCore, type NodeHold } from "../src/ringfall/sim/front";
-import { battleRate, nodePoint } from "../src/ringfall/sim/battle";
+import { battleRate, finishBattle, nodePoint } from "../src/ringfall/sim/battle";
 import { currentStep, objectiveSteps } from "../src/ringfall/sim/objective";
 import { beatOf, mobileWalk, placeMobile } from "../src/ringfall/sim/factions";
 import { interceptSpot } from "../src/ringfall/sim/awareness";
@@ -4207,6 +4207,23 @@ function checkBattle(): string | null {
   lod.player.pos = { ...start };
   ticks(lod, 2);
   if (net.squad >= 0 || lod.enemies.some((e) => e.battle === net.id)) return "battle: the network's squad stayed in the world away from the player";
+  // A squad in the world come to its side's node holds it, and so no longer counts against the factory's limit.
+  const live = mk();
+  live.ally.active = false;
+  const come = sendSquad(live, 0, SUP, [grunt()], SUP, "attack");
+  live.player.pos = { x: come.x + 20, y: groundAt(come.x + 20, come.z, PLAYER.radius, 99), z: come.z };
+  ticks(live, 2);
+  if (come.squad < 0 || come.task !== "hold") return `battle: the player's squad in the world at its own node is ${come.task} (squad ${come.squad})`;
+  // A squad whose robots all fell in the world fights no more once the raid ends.
+  const gone = mk();
+  gone.ally.active = false;
+  const lost = sendSquad(gone, 0, far, [grunt()], far, "hold");
+  gone.player.pos = { x: lost.x + 30, y: groundAt(lost.x + 30, lost.z, PLAYER.radius, 99), z: lost.z };
+  ticks(gone, 2);
+  if (lost.squad < 0) return "battle: the squad near the player stayed numbers";
+  gone.friends = gone.friends.filter((e) => e.battle !== lost.id);
+  finishBattle(gone);
+  if (gone.battle!.squads.some((x) => x.id === lost.id)) return "battle: a squad whose robots all fell went on fighting after the raid";
   // The player's own robots' shots pass the player and the teammate.
   const shot = mk();
   const pl = shot.player;

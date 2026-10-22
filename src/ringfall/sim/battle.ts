@@ -269,6 +269,7 @@ export function finishBattle(s: State) {
   const b = s.battle;
   if (!b || b.done) return;
   for (const q of b.squads) if (q.squad >= 0) toNumbers(s, q);
+  b.squads = b.squads.filter((q) => q.units.length);
   while (b.now + CONQUEST.tick <= b.end + 1e-6) reckon(s, b);
   b.won = b.score[0] > b.score[1];
   b.done = true;
@@ -359,8 +360,9 @@ function toWorld(s: State, q: BattleSquad, appear: boolean) {
 /** Battle squad `q` leaves the world: its members' kinds, health and shield, where its leader stood. */
 function toNumbers(s: State, q: BattleSquad) {
   const members = membersOf(s, q);
+  // The roster is the survivors, none if all of them fell since the last reckoning.
+  q.units = members.map((e) => ({ kind: e.kind, hp: e.hp, shield: e.shield }));
   if (members.length) {
-    q.units = members.map((e) => ({ kind: e.kind, hp: e.hp, shield: e.shield }));
     q.x = members[0].pos.x;
     q.z = members[0].pos.z;
   }
@@ -507,8 +509,8 @@ function march(s: State, b: Battle, dt: number) {
     q.x = at.x;
     q.z = at.z;
   }
-  // A squad come to a node its side holds holds it.
-  for (const q of b.squads) if (q.squad < 0 && q.task !== "post" && arrived(q) && sideOf(s.nodes[q.to]) === q.side) q.task = "hold";
+  // A squad come to a node its side holds holds it, in the world or not, so it no longer counts against its side's limit.
+  for (const q of b.squads) if (q.task !== "post" && arrived(q) && sideOf(s.nodes[q.to]) === q.side) q.task = "hold";
   // One squad holds a node nobody comes at; the others there go on to take the next.
   NODES.forEach((_, i) => {
     const side = sideOf(s.nodes[i]);
