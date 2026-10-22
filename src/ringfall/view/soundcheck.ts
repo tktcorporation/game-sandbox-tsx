@@ -58,6 +58,8 @@ export const CUES: Cue[] = [
   ...KINDS.map((k) => ({ id: `reload-${k}`, label: `${k.toUpperCase()} リロード`, group: "武器", run: () => sfx.reload(k === "maul" ? 1.6 : k === "talon" ? 1.5 : 1.2, k) })),
   ...KINDS.map((k) => ({ id: `reloaded-${k}`, label: `${k.toUpperCase()} 装填完了`, group: "武器", run: () => sfx.reloaded(k) })),
   ...(["pike", "maul", "talon"] as WeaponKind[]).map((k) => ({ id: `dry-${k}`, label: `${k.toUpperCase()} 弾切れ`, group: "武器", run: () => sfx.dry(k) })),
+  { id: "alarm", label: "核の警報（制圧開始）", group: "前線", run: () => sfx.alarm() },
+  { id: "core-taken", label: "節の制圧", group: "前線", run: () => sfx.coreTaken() },
   { id: "hit", label: "命中（本体）", group: "命中", run: () => sfx.hit(false, false) },
   { id: "hit-shield", label: "命中（シールド）", group: "命中", run: () => sfx.hit(false, true) },
   { id: "hit-crit", label: "弱点命中", group: "命中", run: () => sfx.hit(true, false) },

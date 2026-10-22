@@ -11,6 +11,7 @@ import type { EnemyKind, ValuableKind } from "./config";
 import { interceptSpot, located, makeNoise } from "./awareness";
 import { hasMod, modScale, spillBinMod, wearMod } from "./mods";
 import { MOD } from "./config";
+import { coreInReach, inZone, useCore } from "./front";
 
 /*
  * The raid's structure: POIs that fall when their robots are beaten, loot and bins,
@@ -97,7 +98,7 @@ export function stepReinforce(s: State) {
  * Where each member of a squad of `kinds` beamed in at (x, z) stands, and the top and the middle
  * of its body there.
  */
-function posts(kinds: readonly EnemyKind[], x: number, z: number) {
+export function posts(kinds: readonly EnemyKind[], x: number, z: number) {
   return kinds.map((kind, i) => {
     const mx = x + (i % 2 ? 1.8 : -1.8) * Math.min(i, 1);
     const mz = z + i * 1.6;
@@ -114,11 +115,11 @@ function posts(kinds: readonly EnemyKind[], x: number, z: number) {
  * and the middle of each body are tested, since a window or a gap under a roof can show the one
  * and hide the other.
  */
-function hiddenPosts(s: State, kinds: readonly EnemyKind[], x: number, z: number, seen = Infinity) {
+export function hiddenPosts(s: State, kinds: readonly EnemyKind[], x: number, z: number, seen = Infinity) {
   const p = s.player;
   const eye = { x: p.pos.x, y: p.pos.y + 1.5, z: p.pos.z };
   const g = groundAt(x, z, 1, 99);
-  if (steepAt(x, z) || g > terrainHeight(x, z) + 0.3 || inCamp({ x, z }, 4)) return null;
+  if (steepAt(x, z) || g > terrainHeight(x, z) + 0.3 || inCamp({ x, z }, 4) || inZone(x, z, 4)) return null;
   const spots = posts(kinds, x, z);
   if (spots.some((q) => steepAt(q.mx, q.mz) || highGround(q.mx, q.mz))) return null;
   if (dist2d(p.pos, { x, z }) < seen && (los(eye, { x, y: g + 1.5, z }) || spots.some((q) => los(eye, q) || los(eye, { x: q.x, y: q.mid, z: q.z })))) return null;
@@ -645,6 +646,7 @@ export function stepLoot(s: State, input: Input) {
   else if (t?.kind === "weapon") takeWeapon(s, t.loot);
   else if (t?.kind === "swap") swapInto(s, t.loot);
   else if (t?.kind === "depot") useDepot(s, t.index);
+  else if (t?.kind === "core") useCore(s, t.node);
   else if (t?.kind === "armor") {
     const shed: Loot[] = [];
     s.loot = s.loot.filter((o) => o !== t.loot);
@@ -802,7 +804,8 @@ export type UseTarget =
   | { kind: "armor"; loot: Loot }
   | { kind: "depot"; index: number }
   | { kind: "tool"; loot: Loot }
-  | { kind: "mod"; loot: Loot };
+  | { kind: "mod"; loot: Loot }
+  | { kind: "core"; node: number };
 
 /**
  * A downed teammate within reach comes first, however close any loot is; otherwise
@@ -835,6 +838,8 @@ export function useTarget(s: State, armor = true, tools = true, mods = true): Us
   }
   const pick = picks.filter((k) => k.d < PLAYER.interactRange).sort((x, y) => x.d - y.d)[0]?.t;
   if (pick) return pick;
+  const core = coreInReach(s);
+  if (core >= 0) return { kind: "core", node: core };
   const depot = depotInReach(s);
   return depot >= 0 && !depotBlocked(s) ? { kind: "depot", index: depot } : null;
 }

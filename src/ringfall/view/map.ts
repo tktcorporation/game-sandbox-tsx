@@ -1,5 +1,7 @@
-import { DEPOT, FACTION, NETWORK, RELAY, WORLD } from "../sim/config";
-import { BOXES, DEBRIS_SPOTS, debrisIndex, DEPOTS, ENTRIES, EXTRACTS, LANDMARKS, OUTPOST_SITES, POIS, REGIONS, regionOf, RELAYS, relayIndex, ROUTES, regionHere, territory, type EntryId, type Faction, type OutpostId, type PoiId, type RegionId, type RouteId } from "../sim/map";
+import { DEPOT, FACTION, FRONT, NETWORK, RELAY, WORLD } from "../sim/config";
+import { frontNodes, nodeHolds, type NodeHold, type OutpostHold } from "../sim/front";
+import { offshore } from "../sim/terrain";
+import { BOXES, CAMP, DEBRIS_SPOTS, NODES, debrisIndex, DEPOTS, ENTRIES, EXTRACTS, LANDMARKS, OUTPOST_SITES, POIS, REGIONS, regionOf, RELAYS, relayIndex, ROUTES, regionHere, territory, type EntryId, type Faction, type OutpostId, type PoiId, type RegionId, type RouteId } from "../sim/map";
 import { HOLD_NAME, type IslandEvent, type PoiHold } from "../sim/island";
 import { STREETS } from "../sim/streets";
 import { worldKey } from "../sim/routes";
@@ -61,10 +63,14 @@ export type MapScene = Pick<State, "seen" | "cleared" | "hold" | "depots" | "rou
   /** The squads the player has seen or heard out between the POIs, and the raid's clock they are timed by. */
   contacts?: readonly Contact[];
   time?: number;
+  /** Who holds each node of the front (`NODES` order): the map paints the territory and the front line from it. */
+  nodes?: readonly NodeHold[];
+  /** The core capture under way, drawn as its meter round the node. */
+  capture?: { node: number; t: number } | null;
 };
 
 /** The camp's picture of the island between raids, from the profile's explored map, depots, routes and POI standings. */
-export function islandScene(p: { seen: string; depots: readonly PoiId[]; routes: readonly RouteId[]; poiState: Record<PoiId, { state: PoiHold }>; network: number; events?: readonly (IslandEvent | null)[]; freedAt?: Partial<Record<PoiId, number>> }): MapScene {
+export function islandScene(p: { seen: string; depots: readonly PoiId[]; routes: readonly RouteId[]; poiState: Record<PoiId, { state: PoiHold }>; outposts?: Partial<Record<OutpostId, OutpostHold>>; network: number; events?: readonly (IslandEvent | null)[]; freedAt?: Partial<Record<PoiId, number>> }): MapScene {
   // Today's debris fall is marked on the map table where the piece will lie.
   const ev = p.events?.[0];
   const spot = ev?.t === "debris" ? DEBRIS_SPOTS[debrisIndex(ev.spot)] : null;
@@ -79,7 +85,91 @@ export function islandScene(p: { seen: string; depots: readonly PoiId[]; routes:
     debris: spot && { x: spot.x, z: spot.z, open: false },
     best: POIS.map((o) => p.freedAt?.[o.id] ?? 0),
     territory: territory(p.network),
+    nodes: nodeHolds((id) => p.poiState[id].state, p.outposts, p.network),
   };
+}
+
+/** Each node's colour on the 戦況図: the player's blue, the network's red, thin orange, the rogues' amber. */
+export const NODE_CSS: Record<NodeHold, string> = { freed: "#3f7cae", held: "#b8412f", thin: "#d4892c", rogue: "#e8a628" };
+
+/** Metres per cell of the territory's paint. */
+const LAND = 10;
+/** Ground further than this from every node and the camp is nobody's. */
+const LAND_REACH = 320;
+
+/**
+ * The territory as cells (`LAND` metres): each cell of land belongs to the nearest node of its
+ * region, or to the camp (the player's); -2 for the camp, -1 for none. Fixed by the map, so built once.
+ */
+let landOwner: Int16Array | null = null;
+const landSize = () => ({ cols: Math.ceil((WORLD.x1 - WORLD.x0) / LAND), rows: Math.ceil((WORLD.z1 - WORLD.z0) / LAND) });
+function owners(): Int16Array {
+  if (landOwner) return landOwner;
+  const { cols, rows } = landSize();
+  const out = new Int16Array(cols * rows).fill(-1);
+  const camp = { x: (CAMP.x0 + CAMP.x1) / 2, z: (CAMP.z0 + CAMP.z1) / 2 };
+  for (let j = 0; j < rows; j++)
+    for (let i = 0; i < cols; i++) {
+      const x = WORLD.x0 + (i + 0.5) * LAND;
+      const z = WORLD.z0 + (j + 0.5) * LAND;
+      if (offshore(x, z) > 0) continue;
+      const region = regionHere({ x, z }).id;
+      let best = LAND_REACH;
+      let who = -1;
+      NODES.forEach((n, k) => {
+        if (n.region !== region) return;
+        const d = Math.hypot(n.x - x, n.z - z);
+        if (d < best) [best, who] = [d, k];
+      });
+      // The camp's own ground, on the beach round it.
+      if (region === "reservoir" && Math.hypot(camp.x - x, camp.z - z) < Math.min(best, 110)) who = -2;
+      out[j * cols + i] = who;
+    }
+  return (landOwner = out);
+}
+
+/** The territory painted (one pixel a cell) and the front line between the player's ground and the rest, for a set of holds. */
+let landPaint: { key: string; image: HTMLCanvasElement; line: [number, number, number, number][] } | null = null;
+function paintLand(nodes: readonly NodeHold[]) {
+  const key = nodes.join(",");
+  if (landPaint?.key === key) return landPaint;
+  const { cols, rows } = landSize();
+  const own = owners();
+  const c = document.createElement("canvas");
+  c.width = cols;
+  c.height = rows;
+  const g = c.getContext("2d")!;
+  const img = g.createImageData(cols, rows);
+  const rgb = (css: string) => [parseInt(css.slice(1, 3), 16), parseInt(css.slice(3, 5), 16), parseInt(css.slice(5, 7), 16)];
+  const cols4 = { freed: rgb(NODE_CSS.freed), held: rgb(NODE_CSS.held), thin: rgb(NODE_CSS.thin), rogue: rgb(NODE_CSS.rogue) };
+  const mine = (k: number) => k === -2 || (k >= 0 && nodes[k] === "freed");
+  for (let n = 0; n < cols * rows; n++) {
+    const k = own[n];
+    if (k === -1) continue;
+    const col = k === -2 ? cols4.freed : cols4[nodes[k]];
+    img.data[n * 4] = col[0];
+    img.data[n * 4 + 1] = col[1];
+    img.data[n * 4 + 2] = col[2];
+    img.data[n * 4 + 3] = 110;
+  }
+  g.putImageData(img, 0, 0);
+  // The front line: every cell edge between the player's ground and a node the player does not hold.
+  const line: [number, number, number, number][] = [];
+  const at = (i: number, j: number) => own[j * cols + i];
+  for (let j = 0; j < rows; j++)
+    for (let i = 0; i < cols; i++) {
+      const a = at(i, j);
+      if (a === -1) continue;
+      if (i + 1 < cols) {
+        const b = at(i + 1, j);
+        if (b !== -1 && mine(a) !== mine(b)) line.push([i + 1, j, i + 1, j + 1]);
+      }
+      if (j + 1 < rows) {
+        const b = at(i, j + 1);
+        if (b !== -1 && mine(a) !== mine(b)) line.push([i, j + 1, i + 1, j + 1]);
+      }
+    }
+  return (landPaint = { key, image: c, line });
 }
 
 /** The ground image, shared by every map on the page: drawing it takes a while, and it changes only with the world (`worldKey()`). */
@@ -289,6 +379,26 @@ export class IslandMap {
     const { cols, rows } = exploreSize();
     g.drawImage(this.fogImage(s.seen), ox, oy, cols * DEPOT.cell * m, rows * DEPOT.cell * m);
     const at = (x: number, z: number) => ({ x: ox + (x - WORLD.x0) * m, y: oy + (z - WORLD.z0) * m });
+    // The 戦況図: each node's ground in the colour of who holds it, and the front line drawn thick
+    // between the player's ground and the rest.
+    if (s.nodes) {
+      const land = paintLand(s.nodes);
+      const { cols: lc, rows: lr } = landSize();
+      g.imageSmoothingEnabled = false;
+      g.drawImage(land.image, ox, oy, lc * LAND * m, lr * LAND * m);
+      g.imageSmoothingEnabled = true;
+      g.save();
+      g.strokeStyle = "#f4f7ff";
+      g.lineWidth = 3 * dpr;
+      g.lineCap = "round";
+      g.beginPath();
+      for (const [x0, y0, x1, y1] of land.line) {
+        g.moveTo(ox + x0 * LAND * m, oy + y0 * LAND * m);
+        g.lineTo(ox + x1 * LAND * m, oy + y1 * LAND * m);
+      }
+      g.stroke();
+      g.restore();
+    }
     g.textAlign = "center";
     g.textBaseline = "middle";
     g.lineWidth = 3 * dpr;
@@ -512,15 +622,16 @@ export class IslandMap {
       g.strokeRect(p.x - r, p.y - r, r * 2, r * 2);
       g.fillRect(p.x - r, p.y - r, r * 2, r * 2);
     }
-    // The outposts: a square in the colour of the faction that holds it, the rogues' named.
+    // The outposts: a square in the colour of whoever holds it, the rogues' named.
     for (const o of OUTPOST_SITES) {
-      const rogue = s.territory?.[o.id] === "rogue";
+      const node = s.nodes?.[NODES.findIndex((n) => n.id === o.id)];
+      const rogue = node ? node === "rogue" : s.territory?.[o.id] === "rogue";
       const p = at(o.x, o.z);
       const r = 4.5 * dpr;
       g.save();
       g.lineWidth = 2 * dpr;
       g.strokeStyle = "rgba(20,24,40,0.9)";
-      g.fillStyle = rogue ? ROGUE_CSS : HOLD_CSS.held;
+      g.fillStyle = node === "freed" ? NODE_CSS.freed : rogue ? ROGUE_CSS : HOLD_CSS.held;
       g.strokeRect(p.x - r, p.y - r, r * 2, r * 2);
       g.fillRect(p.x - r, p.y - r, r * 2, r * 2);
       g.restore();
@@ -611,6 +722,38 @@ export class IslandMap {
       }
       g.restore();
     });
+    // The nodes on the front: a white ring with 前線 by it, where the player can strike next; the
+    // capture under way as its meter round the ring.
+    if (s.nodes) {
+      const front = frontNodes(s.nodes);
+      NODES.forEach((n, i) => {
+        if (!front[i] && s.capture?.node !== i) return;
+        const p = at(n.x, n.z);
+        const r = 12 * dpr;
+        g.save();
+        g.lineWidth = 2 * dpr;
+        g.strokeStyle = "#f4f7ff";
+        g.setLineDash([3 * dpr, 2.5 * dpr]);
+        g.beginPath();
+        g.arc(p.x, p.y, r, 0, Math.PI * 2);
+        g.stroke();
+        g.setLineDash([]);
+        if (s.capture?.node === i) {
+          g.lineWidth = 4 * dpr;
+          g.strokeStyle = "#ffc93a";
+          g.beginPath();
+          g.arc(p.x, p.y, r + 3 * dpr, -Math.PI / 2, -Math.PI / 2 + (Math.min(s.capture.t, FRONT.capture) / FRONT.capture) * Math.PI * 2);
+          g.stroke();
+        }
+        g.restore();
+        const text = s.capture?.node === i ? `制圧中 ${Math.floor((s.capture.t / FRONT.capture) * 100)}%` : "前線";
+        const spot = box(text, p.x + r + 16 * dpr, p.y, 9);
+        if (free(spot)) {
+          taken.push(spot);
+          label(text, p.x + r + 16 * dpr, p.y, "#f4f7ff", 9);
+        }
+      });
+    }
     // POI names go on top, a little above their mark, so an exit nearby does not hide them.
     POIS.forEach((poi, i) => {
       const p = at(poi.x, poi.z);

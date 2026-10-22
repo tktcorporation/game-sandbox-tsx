@@ -1367,3 +1367,42 @@ export function buildRingDebris(): { root: THREE.Group; vents: THREE.Vector3[] }
   }
   return { root, vents: [new THREE.Vector3(1.2, 2.6, 5.5), new THREE.Vector3(5.8, 1.4, 5.8), new THREE.Vector3(-7.2, 1, 5.6), new THREE.Vector3(-2.5, 1.5, -4)] };
 }
+
+/**
+ * A node's core (`FRONT`): the steel pillar itself is a box of the map, so this is what lights it.
+ * A glowing band round its top and a halo above, in the colour of who holds the node; a flag on a
+ * pole beside it once the node is the player's; and a pale hex shield round it while the network
+ * keeps it off the front.
+ */
+export function buildCore(height: number, half: number): { root: THREE.Group; band: THREE.Mesh; halo: THREE.Sprite; flag: THREE.Group; cloth: THREE.Mesh; shield: THREE.Mesh } {
+  const root = new THREE.Group();
+  const band = mesh(new THREE.BoxGeometry(half * 2 + 0.12, 0.5, half * 2 + 0.12), glow(0xff3b30), 0, height - 0.6, 0, false);
+  root.add(band);
+  root.add(mesh(new THREE.BoxGeometry(half * 2 + 0.12, 0.18, half * 2 + 0.12), glow(0xff3b30), 0, 1.0, 0, false));
+  const halo = haloSprite(0xff3b30, 7, 0.75);
+  halo.position.y = height + 0.6;
+  root.add(halo);
+  const flag = new THREE.Group();
+  flag.add(mesh(new THREE.CylinderGeometry(0.06, 0.07, 7, 6), flat(PAL.steel), 0, 3.5, 0));
+  const cloth = mesh(new THREE.BoxGeometry(1.8, 1.1, 0.05), flat(0x2f7fe0), 0.95, 6.3, 0, false);
+  flag.add(cloth);
+  flag.position.set(-2, 0, 0.6);
+  root.add(flag);
+  const shield = new THREE.Mesh(
+    new THREE.CylinderGeometry(half + 1.1, half + 1.1, height + 1.2, 6, 1, true),
+    new THREE.MeshBasicMaterial({ toneMapped: false, color: 0xff6a5a, transparent: true, opacity: 0.18, depthWrite: false, side: THREE.DoubleSide, wireframe: true }),
+  );
+  shield.position.y = (height + 1.2) / 2 - 0.2;
+  root.add(shield);
+  return { root, band, halo, flag, cloth, shield };
+}
+
+/** The objective's beacon: a tall pale shaft of light, seen from across the island (the fog does not hide it). */
+export function buildBeacon(): THREE.Mesh {
+  const m = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.9, 0.9, 260, 12, 1, true),
+    new THREE.MeshBasicMaterial({ toneMapped: false, color: 0xfff2b0, transparent: true, opacity: 0.32, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }),
+  );
+  m.frustumCulled = false;
+  return m;
+}

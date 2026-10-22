@@ -128,6 +128,25 @@ const rideOut = async (pg, cdp) => {
   return st;
 };
 /** Camp panel parts that spill past the screen, or lists that scroll sideways. */
+/**
+ * The objective step's beacon (sim/objective.ts) from far off: a fixed camera 170 m short of the
+ * step's place on the player's side, 30 m over the ground, facing it; then back to the player.
+ * False when the step has no place.
+ */
+const beaconShot = async (pg, name) => {
+  const s = JSON.parse(await pg.evaluate(() => window.render_game_to_text()));
+  const at = s.objective?.steps[s.objective.current]?.at;
+  if (!at) return false;
+  const d = Math.hypot(s.player.x - at.x, s.player.z - at.z) || 1;
+  const x = at.x + ((s.player.x - at.x) / d) * 170;
+  const z = at.z + ((s.player.z - at.z) / d) * 170;
+  const y = (await pg.evaluate(([qx, qz]) => window.ringfallTerrain(qx, qz), [x, z])) + 30;
+  await pg.evaluate(([cx, cy, cz, yaw, pitch]) => window.ringfallCamera(cx, cy, cz, yaw, pitch), [x, y, z, Math.atan2(at.x - x, -(at.z - z)), -0.12]);
+  await pg.screenshot({ path: `${out}/${name}.png` });
+  await pg.evaluate(() => window.ringfallCamera());
+  return true;
+};
+
 const spills = (pg) =>
   pg.evaluate(() => {
     const out = [];
@@ -217,10 +236,15 @@ const spills = (pg) =>
   await touch("touchMove", [{ x: 150, y: 200, id: 1 }]);
   await step(600);
   await page.screenshot({ path: `${out}/m1-stick.png` });
-  if (!(await page.evaluate(() => !document.getElementById("obj-contract").hidden && /回収/.test(document.getElementById("obj-contract").textContent)))) errors.push("mobile: the objective card does not show the fetch taken");
+  // The objective card shows the fetch taken as its steps: the title, the step and what finishes it.
+  if (!(await page.evaluate(() => /回収/.test(document.getElementById("obj-title").textContent) && document.getElementById("obj-text").textContent.length > 0))) errors.push("mobile: the objective card does not show the fetch taken");
+  await page.screenshot({ path: `${out}/m1-objective.png`, clip: { x: 0, y: 0, width: 844, height: 110 } });
+  if (!(await page.evaluate(() => !document.getElementById("compass-mark").hidden && /\d+m/.test(document.getElementById("compass-mark").textContent)))) errors.push("mobile: no compass marker for the objective's step");
   await touch("touchEnd", []);
   const s1 = await read();
   if (!(s1.player.z < s0.player.z - 3)) errors.push(`mobile: stick did not move the player (${s0.player.z} -> ${s1.player.z})`);
+  // The objective step's beacon from far off.
+  if (!(await beaconShot(page, "m1-beacon"))) errors.push(`mobile: the objective's step has no place (${JSON.stringify(s1.objective)})`);
 
   // Turn the view by dragging on the right half.
   const yaw0 = await page.evaluate(() => window.ringfallYaw());
@@ -875,10 +899,16 @@ for (let i = 0; i < 25 * 60 * 10; i++) {
   const at = (poi) => live.some((e) => s.squads[e.squad].poi === poi);
   if (s.phase === "play" && !taken.has("02-start")) {
     await shot("02-start");
-    // The taken intercept is on the objective card, and the map marks where it is.
-    const line = await page.evaluate(() => (document.getElementById("obj-contract").hidden ? "" : document.getElementById("obj-contract").textContent));
-    if (!/迎撃/.test(line) || s.contract?.t !== "intercept") errors.push(`contract: the objective card reads "${line}" for ${JSON.stringify(s.contract)}`);
+    // The taken intercept is the objective card's objective, as its steps, and the map marks where it is.
+    const line = await page.evaluate(() => document.getElementById("obj-title").textContent + "｜" + document.getElementById("obj-text").textContent + "｜" + document.getElementById("obj-n").textContent);
+    if (!/迎撃/.test(line) || !/1\/3/.test(line) || s.contract?.t !== "intercept") errors.push(`contract: the objective card reads "${line}" for ${JSON.stringify(s.contract)}`);
     await page.locator("#objective").screenshot({ path: `${out}/02-objective-contract.png` });
+    // The compass's one marker, at the objective step's place, with its distance.
+    const mark = await page.evaluate(() => ({ hidden: document.getElementById("compass-mark").hidden, text: document.getElementById("compass-mark").textContent }));
+    if (mark.hidden || !/\d+m/.test(mark.text)) errors.push(`objective: the compass marker is ${JSON.stringify(mark)}`);
+    await page.screenshot({ path: `${out}/front-1-compass.png`, clip: { x: 1280 / 2 - 260, y: 0, width: 520, height: 120 } });
+    // The beacon from far off: a camera 170 m short of the step's place, over the roofs, facing it.
+    if (!(await beaconShot(page, "front-2-beacon-far"))) errors.push(`objective: the first step has no place (${JSON.stringify(s.objective)})`);
     // The ways off the island are open from the start and listed on the objective card.
     const lines = await page.evaluate(() => document.getElementById("obj-exits").children.length);
     if (lines !== 3) errors.push(`start: the objective card lists ${lines} ways out, not 3`);
@@ -926,6 +956,22 @@ for (let i = 0; i < 25 * 60 * 10; i++) {
     }
   }
   if (at(0) && live.length >= 2 && s.orbs >= 1) await shot("03-fight-supply");
+  // The capture of a core: the step card on the hold with its seconds, the core's light pulsing; then the node taken.
+  if (s.front?.capture && s.front.capture.t > 8 && !taken.has("front-3-capture")) {
+    await shot("front-3-capture");
+    await page.locator("#objective").screenshot({ path: `${out}/front-3-step-card.png` });
+    if (s.objective?.steps[s.objective.current]?.label !== "核を守り抜く") errors.push(`objective: during a capture the step is ${JSON.stringify(s.objective)}`);
+  }
+  // The node taken: its core from a few metres off, lit blue with the flag up.
+  if (s.stats.captured?.length && !taken.has("front-4-taken")) {
+    const c = s.front.cores.find((k) => k.id === s.stats.captured[0]);
+    const x = c.x - 9;
+    const z = c.z + 9;
+    await page.evaluate(([cx, cy, cz, yaw]) => window.ringfallCamera(cx, cy, cz, yaw, 0.05), [x, c.y + 2.2, z, Math.atan2(c.x - x, -(c.z - z))]);
+    await shot("front-4-taken");
+    await page.evaluate(() => window.ringfallCamera());
+    if (s.front.nodes[s.front.cores.indexOf(c)] !== "freed") errors.push(`front: the node captured is ${s.front.nodes[s.front.cores.indexOf(c)]}`);
+  }
   // A robot reeling from a burst, close enough to see its pose.
   if (live.some((e) => e.mode === "staggered" && near(e) < 30)) await shot("32-stagger");
   if (s.stats.kills > prevKills && wreckAt < 0 && !taken.has("33-wreck")) {

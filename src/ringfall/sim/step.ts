@@ -5,6 +5,7 @@ import { stepCrews, stepDepots, stepEntries, stepExtract, stepHome, stepLoot, st
 import { TICK } from "./config";
 import type { Input, State } from "./state";
 import { useRoutes } from "./routes";
+import { stepFront, useZones } from "./front";
 import { stepAmbush, stepContacts, stepFactions, stepMobiles, stepSweep } from "./factions";
 
 /** Read afresh: each system may have ended the raid. */
@@ -13,6 +14,7 @@ const ended = (s: State) => s.phase === "done";
 /** Advance the run by one fixed 1/60 s tick. Pure: no DOM, no clock, no Math.random. */
 export function step(s: State, input: Input, prevCrouch: boolean) {
   useRoutes(s.routes);
+  useZones(s);
   s.events = [];
   if (s.phase === "done") return;
   s.time += TICK;
@@ -27,6 +29,7 @@ export function step(s: State, input: Input, prevCrouch: boolean) {
     stepWaves,
     (s) => stepLoot(s, input),
     stepPoi,
+    stepFront,
     stepReinforce,
     stepParties,
     stepMobiles,

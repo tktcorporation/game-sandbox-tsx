@@ -64,7 +64,7 @@ export function mayEngage(s: State, e: Enemy): boolean {
  */
 export function engageSquad(s: State, squad: number, by: Enemy, from?: { x: number; z: number }) {
   const sq = s.squads[squad];
-  if (!sq || sq.engaged) return;
+  if (!sq || sq.engaged || sq.retreat !== undefined) return;
   sq.engaged = true;
   sq.sinceSeen = from ? AWARE.trackTime : 0;
   sq.chaseT = 0;
@@ -103,6 +103,7 @@ export function engageSquad(s: State, squad: number, by: Enemy, from?: { x: numb
  * a sound: a squad that moves about makes for where they are heading instead (`interceptSpot()`).
  */
 export function alertSquad(s: State, squad: number, x: number, z: number, by: Enemy, player = false) {
+  if (s.squads[squad]?.retreat !== undefined) return;
   if (by.aware === "idle") s.events.push({ t: "suspect", id: by.id });
   const goal = player ? interceptSpot(s, squad, x, z) : { x, z };
   for (const e of s.enemies) {
@@ -205,6 +206,8 @@ function headedFor(s: State): Point | null {
 export function sense(s: State, e: Enemy): boolean {
   const p = s.player;
   const sq = s.squads[e.squad];
+  // Walking off a node the player took: it looks for nobody.
+  if (sq?.retreat !== undefined) return false;
   let seen = false;
   if (visibleNow(s)) {
     const low = p.crouch && !p.sliding;

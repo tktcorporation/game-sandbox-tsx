@@ -1,6 +1,6 @@
 import { AMBUSH, AWARE, BAG, DEG, FACTION, NOISE, PATROL, ROGUE, SIGHT, SWEEP, TICK, VALUABLES, type EnemyKind } from "./config";
 import { dist2d, los, lookAngles, wrapAngle } from "./geom";
-import { EXTRACTS, GATES, MOBILES, RING_GAPS, regionHere, type Mobile, type RegionId } from "./map";
+import { EXTRACTS, GATES, MOBILES, nodeIndex, RING_GAPS, regionHere, type Mobile, type RegionId } from "./map";
 import { onMainGround, walkLine } from "./hunt";
 import { worldKey } from "./routes";
 import { mix, sightScale, type Enemy, type Point, type State } from "./state";
@@ -46,9 +46,10 @@ export function mobileWalk(m: Mobile): Point[] {
 }
 
 /** Whether a patrol or convoy of `MOBILES` walks in this raid (a beat walks whenever its garrison squad stands). */
-export function mobileWalks(s: Pick<State, "territory" | "network">, m: Mobile): boolean {
+export function mobileWalks(s: Pick<State, "territory" | "network"> & Partial<Pick<State, "nodes">>, m: Mobile): boolean {
   if (m.from) return false;
-  if (m.outpost) return s.territory[m.outpost] === "rogue";
+  // An outpost's own walk is the rogues' while they hold it, and nobody's once the player freed it.
+  if (m.outpost) return s.territory[m.outpost] === "rogue" && s.nodes?.[nodeIndex(m.outpost)] !== "freed";
   if (m.rank !== undefined) return m.rank < ROGUE.patrols[s.network];
   return true;
 }

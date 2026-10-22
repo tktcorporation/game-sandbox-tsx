@@ -4,9 +4,9 @@ import { itemName, rewardList } from "./hub";
 import { ALLY, AWARE, BAG, DEPOT, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, SCORE, TACTICAL, TOOL_KINDS, TOOLS, VALUABLES, WEAPONS, type Flank } from "../sim/config";
 import { eyePos, magSize } from "../sim/combat";
 import { dist2d, los } from "../sim/geom";
-import { DEPOTS, entryOf, EXTRACTS, POIS, poiIndex, regionHere, regionOf, routeOf, type EntryId } from "../sim/map";
+import { DEPOTS, entryOf, EXTRACTS, NODES, POIS, poiIndex, regionHere, regionOf, routeOf, type EntryId } from "../sim/map";
 import { routeBefore } from "../sim/routes";
-import { islandNotes, netChangeText, noteText, relayName } from "../meta/island";
+import { islandHolds, islandNotes, netChangeText, noteText, relayName } from "../meta/island";
 import { bagLoad, canOpen, crewsInSight, depotBlocked, depotInReach, extractHere, extractReady, homeReady, makeRoom, poiAt, roomForTool, searchFor, useTarget } from "../sim/world";
 import { healTime, tacticalCooldown } from "../sim/player";
 import { helpTime, reviveTime } from "../sim/ally";
@@ -15,12 +15,14 @@ import { haulValue, rank } from "../sim/results";
 import { pickHeal } from "../sim/player";
 import { RARITY_CSS, SCOPE_IN } from "./models";
 import { IslandMap } from "./map";
-import { CONTRACT_NAME, contractMark, contractProgress, contractText, type Contract } from "../meta/contracts";
+import { CONTRACT_NAME, contractMark, contractTask, contractText, type Contract } from "../meta/contracts";
+import { currentStep, objectiveSteps, type Objective, type Task } from "../sim/objective";
 import { storyOf } from "../meta/story";
 import { recordSpot, type RecordId } from "../sim/map";
 import type { World } from "./world";
 import { eventRow, raidEventLine } from "./events";
-import { CREW, MOD, MODS, NETWORK, RETAKE } from "../sim/config";
+import { CREW, FRONT, MOD, MODS, NETWORK, RETAKE } from "../sim/config";
+import { capturable, frontNodes } from "../sim/front";
 
 /*
  * The DOM layer: everything the player reads. The screen always answers two
@@ -128,10 +130,17 @@ export class Hud {
   /** The contract taken for this raid (null for none) and the story record lying on the island (null for none). */
   private contract: Contract | null = null;
   private record: RecordId | null = null;
+  /** What the raid is out to do (the contract, else the story record), for the objective's steps; and those steps as last drawn. */
+  private task: Task | null = null;
+  private obj: Objective | null = null;
+  /** The objective and step last shown, so moving to the next step is told with a toast. */
+  private lastStep = "";
 
   setContract(c: Contract | null, record: RecordId | null) {
     this.contract = c;
     this.record = record;
+    this.task = c ? contractTask(c) : record ? { t: "record", id: record } : null;
+    this.lastStep = "";
     this.map.contract = c && contractMark(c);
   }
 
@@ -309,6 +318,15 @@ export class Hud {
       case "leaveCancel":
         this.toast("切り上げを取り消した", 0);
         break;
+      case "coreStart":
+        this.toast(`警報：${NODES[e.node].name}の制圧を始めた。核の ${FRONT.radius} m 以内を守り抜け`, 0, 4000);
+        break;
+      case "coreShielded":
+        this.toast(`${NODES[e.node].name}の核は網に守られている：陣地に隣り合う前線の節だけ制圧できる`, 0, 4000);
+        break;
+      case "coreTaken":
+        this.toast(`${NODES[e.node].name}を制圧した。生きて帰れば解放のまま残る`, 1, 5000);
+        break;
       case "retakeIn":
         this.toast(`${RETAKE.name}が${POIS[e.poi].name}へ向かっている`, 0, 4000);
         break;
@@ -335,28 +353,38 @@ export class Hud {
       $("map-mast-key").hidden = !s.relays.length;
     }
 
-    // Objective card.
+    // Objective card: the objective's current step, large, what finishes it and how far it has
+    // gone under it, and the step's place in the list (sim/objective.ts).
     const here = poiAt(s);
     const poi = POIS[here];
     const active = here >= 0;
     const remaining = s.enemies.filter((e) => e.poi === here).length;
+    const obj = objectiveSteps(s, this.task);
+    this.obj = obj;
+    const step = currentStep(obj);
     let text = "";
     if (p.leap) text = isTouch() ? "滑空中：スティックで着地点を選ぶ" : "滑空中：WASD で着地点を選ぶ";
     else if (s.phase === "done") text = s.home ? "帰った" : s.outcome === "extracted" ? "生還" : "行方不明";
-    else if (poi) text = poi.boss ? "タイタンの縄張り" : `${poi.name}：部隊 残り ${remaining}`;
-    else text = "探索して脱出せよ";
+    else text = step?.label ?? "探索して脱出せよ";
     $("obj-text").textContent = text;
-    // The contract's line and how far it has gone, and the story record's, under the place.
+    $("obj-title").textContent = obj.title;
+    $("obj-n").textContent = `${Math.min(obj.current + 1, obj.steps.length)}/${obj.steps.length}`;
+    setHtml($("obj-until"), s.phase === "play" && step ? `${esc(step.until)}${step.progress ? `<b>${esc(step.progress)}</b>` : ""}` : "");
+    // A step done moves the card on to the next, told with a short toast.
+    const key = `${obj.title}|${obj.current}`;
+    if (this.lastStep && key !== this.lastStep && s.phase === "play" && step && this.lastStep.split("|")[0] === obj.title) this.toast(`次：${step.label}`, 3, 2600);
+    this.lastStep = key;
+    view.setBeacon(s.phase === "play" ? (step?.at ?? null) : null);
+    this.compassMark(s, step?.at ?? null);
+    // The POI the player is in and its garrison left, under the step.
     const oc = $("obj-contract");
-    oc.hidden = !this.contract;
-    if (this.contract) {
-      const pr = contractProgress(this.contract, s);
-      setHtml(oc, `<span class="lead">依頼・${CONTRACT_NAME[this.contract.t]}：</span>${esc(pr.line)}`);
-      oc.classList.toggle("met", pr.met);
-    }
+    oc.hidden = !poi || s.phase !== "play";
+    if (poi) setHtml(oc, esc(poi.boss ? "タイタンの縄張り" : `${poi.name}：部隊 残り ${remaining}`));
+    oc.classList.remove("met");
+    // The story record has a line of its own while a contract is the objective.
     const os = $("obj-story");
-    os.hidden = !this.record;
-    if (this.record) {
+    os.hidden = !this.record || !this.contract;
+    if (this.record && this.contract) {
       const r = recordSpot(this.record);
       const held = p.records.includes(this.record) || s.sentRecords.includes(this.record);
       setHtml(os, `<span class="lead">記録：</span>${esc(held ? `${r.name}を持っている。持ち帰る` : `${r.place}の${r.name}`)}`);
@@ -377,6 +405,7 @@ export class Hud {
     const heading = ((((p.yaw * 180) / Math.PI) % 360) + 360) % 360;
     const half = $("compass").clientWidth / 2;
     $("compass-strip").style.transform = `translateX(${half - (heading + 360) * 2}px)`;
+    this.placeMark(heading, half);
     this.exits(s);
 
     // Vitals.
@@ -669,7 +698,7 @@ export class Hud {
     }
     const lines: string[] = [];
     const exits = regionHere(p.pos).exits.map((id) => EXTRACTS.find((x) => x.id === id)!);
-    // The phone layout keeps only the nearest exit's line, so the card stays above the vitals.
+    // The phone layout keeps only a live exit's line (style.css), so the card stays above the vitals; `near` marks the nearest for the desktop.
     const nearest = exits.reduce((best, x, i) => (dist2d(p.pos, x) < dist2d(p.pos, exits[best]) ? i : best), 0);
     exits.forEach((x, i) => {
       const ready = extractReady(s, x);
@@ -745,6 +774,38 @@ export class Hud {
     }
   }
 
+  /** The objective as last drawn: its title, the step it is on, and each step's words, spot and state (for automation). */
+  objective() {
+    const o = this.obj;
+    return o && { title: o.title, current: o.current, steps: o.steps.map((st) => ({ label: st.label, until: st.until, progress: st.progress ?? null, at: st.at && { x: +st.at.x.toFixed(1), y: +st.at.y.toFixed(1), z: +st.at.z.toFixed(1) }, done: st.done })) };
+  }
+
+  /** Where the objective's compass marker points: the bearing (degrees from north) and metres to the current step's place. */
+  private mark: { bearing: number; d: number } | null = null;
+
+  private compassMark(s: State, at: { x: number; z: number } | null) {
+    const p = s.player.pos;
+    // Standing at the place already, the marker would only point at the player's feet.
+    this.mark = at && s.phase === "play" && dist2d(p, at) > 8 ? { bearing: (((Math.atan2(at.x - p.x, -(at.z - p.z)) * 180) / Math.PI) % 360 + 360) % 360, d: dist2d(p, at) } : null;
+  }
+
+  /**
+   * The compass's one marker: the current objective step's bearing, held at the strip's edge when
+   * it is behind, with its distance. It is the only marker or distance the HUD shows.
+   */
+  private placeMark(heading: number, half: number) {
+    const el = $("compass-mark");
+    el.hidden = !this.mark;
+    if (!this.mark) return;
+    const rel = ((this.mark.bearing - heading + 540) % 360) - 180;
+    const max = (half * 0.62) / 2;
+    const off = Math.max(-max, Math.min(max, rel));
+    el.style.left = `${half + off * 2}px`;
+    el.classList.toggle("edge", off !== rel);
+    const label = `${Math.round(this.mark.d)}m`;
+    if (el.firstElementChild!.textContent !== label) el.firstElementChild!.textContent = label;
+  }
+
   private prompt(s: State): string {
     const p = s.player;
     if (p.downed > 0 || s.phase !== "play") return "";
@@ -769,6 +830,9 @@ export class Hud {
       if (left?.valuable) return `バッグがいっぱい：${VALUABLES[left.valuable].label}は入らない`;
       if (left?.tool) return `バッグがいっぱい：${TOOLS[left.tool].label}は入らない`;
       if (left?.record) return `バッグがいっぱい：${recordSpot(left.record).name}は 1 枠空けると拾える`;
+      // At the objective step's place: what to do there.
+      const st = this.obj && currentStep(this.obj);
+      if (st?.near && st.at && dist2d(st.at, p.pos) < 8 && Math.abs(st.at.y - p.pos.y) < 4) return st.near;
       // Before a closed route's obstacle: which tool opens it.
       const r = routeBefore(p.pos, s.routes);
       if (!r) return "";
@@ -806,9 +870,34 @@ export class Hud {
       return `${key("E")}倉庫へ送る（${p.haul.length + p.tools.length + p.records.length} 点・${value}）`;
     }
     if (t.kind === "armor") return `${key("E")}<span class="r" style="color:${RARITY_CSS[t.loot.rarity]}">アーマー Lv${t.loot.rarity}</span>に着替える（Lv${p.armor} を置く）`;
+    if (t.kind === "core") {
+      const n = NODES[t.node];
+      if (!capturable(s, t.node)) return `${n.name}の核：網に守られている。陣地に隣り合う前線の節だけ制圧できる`;
+      if (s.capture?.node === t.node) return `${n.name}を制圧中 ${Math.floor((s.capture.t / FRONT.capture) * 100)}%（半径 ${FRONT.radius} m にとどまる）`;
+      return `${key("E")}${n.name}の核を起動して制圧を始める（警報が鳴る）`;
+    }
     const wl = t.loot;
     const swap = p.weapons.includes(null) ? "" : `（${WEAPONS[p.weapons[p.slot]!.kind].name} と交換）`;
     return `${key("E")}<span class="r" style="color:${RARITY_CSS[wl.rarity]}">${WEAPONS[wl.weapon!.kind].name}</span> ${RARITY.names[wl.rarity]}を拾う${swap}`;
+  }
+
+  /**
+   * The results' 戦況: the nodes that turned the player's overnight and those lost, the POIs a wipe
+   * left thin after their core was taken, the front as it now stands, and the day's income.
+   */
+  private frontChange(settled: Settlement): string {
+    const name = (id: string) => esc(NODES.find((n) => n.id === id)?.name ?? id);
+    const holds = islandHolds(settled.profile);
+    const front = NODES.filter((_, i) => frontNodes(holds)[i]).map((n) => n.name);
+    const rows = [
+      ...(settled.front?.gained ?? []).map((id) => `<span class="freed">＋${name(id)}</span>`),
+      ...(settled.front?.lost ?? []).map((id) => `<span class="lost">−${name(id)}</span>`),
+      ...(settled.dropped ?? []).map((id) => `<span class="lost">${name(id)}（制圧したが倒れた：手薄）</span>`),
+    ];
+    return (
+      `<h3>戦況</h3><p class="front-change">${rows.join("") || "<span>前線は動かなかった</span>"}</p>` +
+      `<p class="sold">前線：${esc(front.join("・") || "なし")}${settled.income ? `　陣地の収入 ${settled.income.toLocaleString()} クレジット` : ""}</p>`
+    );
   }
 
   /**
@@ -881,9 +970,9 @@ export class Hud {
     // The island's day the raid was, what it freed, and what the island does next unless the player acts.
     const island = settled
       ? `<h3 class="day-end">${settled.day} 日目の終わり</h3>` +
-        (settled.freed.length ? `<h3>解放した拠点</h3><p>${settled.freed.map((id) => `<span class="freed">${POIS[poiIndex(id)].name}</span>`).join("")}</p>` : "") +
+        this.frontChange(settled) +
         `<h3>網の段階</h3><p class="net-change"><span class="net${settled.network.to > settled.network.from ? " up" : settled.network.to < settled.network.from ? " down" : ""}">${netChangeText(settled.network)}</span></p>` +
-        `<h3>明日の島</h3><ul class="tomorrow">${(islandNotes(settled.profile, settled).map((n) => `<li class="${n.t}${n.t === "fading" && n.days <= 1 ? " soon" : ""}">${noteText(n)}</li>`).join("")) || "<li>島は変わらない。支配の拠点の守備隊を片付けて生きて帰ると、その拠点は解放になる</li>"}</ul>`
+        `<h3>明日の島</h3><ul class="tomorrow">${(islandNotes(settled.profile, settled).map((n) => `<li class="${n.t}${n.t === "fading" && n.days <= 1 ? " soon" : ""}">${noteText(n)}</li>`).join("")) || "<li>島は変わらない。前線の節の核を制圧して生きて帰ると、その節は解放になる</li>"}</ul>`
       : "";
     // The contract taken for the raid: done and paid, or not done (it goes with the day).
     const c = settled?.contract;

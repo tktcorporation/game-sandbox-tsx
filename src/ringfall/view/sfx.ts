@@ -502,6 +502,23 @@ export const sfx = {
       for (let i = 0; i < 3; i++) tone(700, 0.18, { type: "square", vol: 0.045, at: i * 0.28 });
     });
   },
+  /** A core's capture starts: the network's alarm, a rising two-tone wail three times over. */
+  alarm() {
+    ui(0.3, () => {
+      for (let i = 0; i < 3; i++) {
+        tone(520, 0.32, { type: "sawtooth", to: 880, vol: 0.05, at: i * 0.7 });
+        tone(880, 0.3, { type: "sawtooth", to: 520, vol: 0.05, at: i * 0.7 + 0.34 });
+      }
+    });
+  },
+  /** A node taken: the network's signal dies and the camp's answers, a falling note and a bright rising pair. */
+  coreTaken() {
+    ui(0.3, () => {
+      tone(330, 0.5, { type: "sawtooth", to: 90, vol: 0.06 });
+      tone(523, 0.25, { type: "triangle", vol: 0.1, at: 0.45 });
+      tone(784, 0.45, { type: "triangle", vol: 0.1, at: 0.62 });
+    });
+  },
   /** The raiders arrive: a low two-note horn. */
   raiders() {
     ui(0.3, () => {

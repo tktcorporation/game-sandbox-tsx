@@ -1,7 +1,9 @@
-import { AWARE, DEG, HEALS, PLAYER, TICK, ULT } from "./config";
+import { AWARE, DEG, FRONT, HEALS, PLAYER, TICK, ULT } from "./config";
+import { frontNodes } from "./front";
+import { currentStep, objectiveSteps } from "./objective";
 import { bodyCenter, eyePos, flankOf, magSize, weakPoint } from "./combat";
 import { ceilingAt, dist2d, inWorld, groundAt, groundLevel, los, onTerrain, lookAngles, solidAt, wrapAngle } from "./geom";
-import { EXTRACTS, POIS, regionOf, type ExtractPoint } from "./map";
+import { EXTRACTS, NODES, POIS, poiIndex, regionOf, type ExtractPoint, type PoiId } from "./map";
 import { clearLine, findPath, type Avoid } from "./nav";
 import { onMainGround } from "./hunt";
 import { callLeft, enemyMax, idleInput, weakY, type Enemy, type Input, type State } from "./state";
@@ -27,12 +29,13 @@ export interface Skill {
   flank: number; // chance to leave a robot that faces it and come back from its side or back
   retreat: number; // chance to break line of sight and back off when two robots see it or its shield is gone
   raid: number; // POIs it clears before heading for a way out
+  capture: number; // cores it captures in one raid at most
 }
 
 export const SKILLS: Skill[] = [
-  { name: "beginner", aimErr: 6.5, turn: 0.1, react: 0.45, dodge: 0.4, heads: false, abilities: 0.25, flank: 0.2, retreat: 0.5, raid: 2 },
-  { name: "casual", aimErr: 3.2, turn: 0.18, react: 0.28, dodge: 0.6, heads: false, abilities: 0.8, flank: 0.5, retreat: 0.8, raid: 4 },
-  { name: "good", aimErr: 1.1, turn: 0.32, react: 0.15, dodge: 0.9, heads: true, abilities: 3, flank: 0.85, retreat: 0.95, raid: 3 },
+  { name: "beginner", aimErr: 6.5, turn: 0.1, react: 0.45, dodge: 0.4, heads: false, abilities: 0.25, flank: 0.2, retreat: 0.5, raid: 2, capture: 1 },
+  { name: "casual", aimErr: 3.2, turn: 0.18, react: 0.28, dodge: 0.6, heads: false, abilities: 0.8, flank: 0.5, retreat: 0.8, raid: 4, capture: 1 },
+  { name: "good", aimErr: 1.1, turn: 0.32, react: 0.15, dodge: 0.9, heads: true, abilities: 3, flank: 0.85, retreat: 0.95, raid: 3, capture: 2 },
 ];
 
 /**
@@ -78,6 +81,12 @@ const titanSight = (t: Enemy): Avoid => ({ x: t.pos.x, z: t.pos.z, r: AVOID_TITA
 
 /** Seconds a fighting robot may stay out of sight before the bot stops waiting for it. */
 const GIVE_UP = 25;
+
+/** Seconds without headway on a core's meter (or twice that on the way to it) before the bot leaves it. */
+const CORE_GIVE_UP = 60;
+
+/** Where the bot stands to work core `i`: beside it, on the ground kept clear round it. */
+const standBy = (i: number) => ({ x: NODES[i].core.x + 1.4, z: NODES[i].core.z });
 
 export class Bot {
   private nx = 0;
@@ -170,8 +179,14 @@ export class Bot {
     this.from = { x: p.pos.x, z: p.pos.z };
     if (s.events.some((e) => e.t === "raiders")) this.raidersIn = true;
     const live = s.enemies.filter((e) => e.mode !== "spawning");
+    // A core to capture comes before the next POI: the one under way first, then a front node
+    // whose POI it has cleared (or an outpost), nearest first (see nextCore()).
+    const core = this.nextCore(s);
+    // Holding the core is the objective's step the bot reads, as the HUD shows it (sim/objective.ts).
+    const capturing = core >= 0 && s.capture?.node === core && currentStep(objectiveSteps(s))?.kind === "hold";
+    const coreAt = core >= 0 ? standBy(core) : null;
     // Only fight robots that are after us or stand at the POI we are taking; leave the rest alone.
-    let aim = this.nextPoi(s);
+    let aim = capturing ? -1 : this.nextPoi(s);
     // Until it means to take the titan on, its paths go round the titan's sight.
     const titan = s.enemies.find((e) => e.kind === "titan" && e.hp > 0 && e.aware !== "engaged");
     this.avoid = titan && !(aim >= 0 && POIS[aim].boss) ? titanSight(titan) : undefined;
@@ -191,7 +206,7 @@ export class Bot {
       const rest = live.filter((e) => e.poi === aim);
       if (rest.length && rest.every(given)) {
         this.left.add(aim);
-        aim = this.nextPoi(s);
+        aim = capturing ? -1 : this.nextPoi(s);
         this.avoid = titan && !(aim >= 0 && POIS[aim].boss) ? titanSight(titan) : undefined;
       }
     }
@@ -216,7 +231,7 @@ export class Bot {
     // Where to go.
     let goal: { x: number; z: number } | null = null;
     let fight = false;
-    if (aim < 0 && (callLeft(s, this.exit(s).id) === 0 || !tgt || dist2d(tgt.pos, p.pos) > 70 || this.slipAway(s, live))) {
+    if (aim < 0 && core < 0 && (callLeft(s, this.exit(s).id) === 0 || !tgt || dist2d(tgt.pos, p.pos) > 70 || this.slipAway(s, live))) {
       goal = this.waitSpot(s) ?? this.exit(s);
     } else if (tgt && (dist2d(tgt.pos, p.pos) < 70 || (aim >= 0 && tgt.poi === aim && (tgt.id === this.chasing || dist2d(p.pos, POIS[aim]) < 30)))) {
       // Once on its way to a robot of the POI it is taking it keeps after it, however far the
@@ -228,8 +243,9 @@ export class Bot {
       // Pick the teammate up before looting or moving on.
       goal = { x: s.ally.pos.x, z: s.ally.pos.z };
     } else {
-      const lg = this.lootGoal(s);
-      goal = lg ?? (aim >= 0 ? POIS[aim] : this.exit(s));
+      // Standing on a core under capture, it does not wander off after loot.
+      const lg = capturing ? null : this.lootGoal(s);
+      goal = lg ?? (coreAt && (aim < 0 || dist2d(coreAt, p.pos) < dist2d(POIS[aim], p.pos)) ? coreAt : aim >= 0 ? POIS[aim] : this.exit(s));
       // Swap a better weapon in for the worse one, never for the one in hand.
       if (lg?.weapon) {
         const r = p.weapons.map((w) => (w ? w.rarity : -1));
@@ -483,6 +499,13 @@ export class Bot {
           this.swapT = 3;
         }
       }
+      // Holding a core: it fights from the ground the core is taken from, not off after a robot.
+      if (capturing && coreAt && !this.retreat && !p.leap && dist2d(p.pos, coreAt) > FRONT.radius * 0.6) {
+        const step = this.via(s, coreAt);
+        const rel = lookAngles(p.pos, { x: step.x, y: 0, z: step.z }).yaw - p.yaw;
+        inp.moveZ = Math.cos(rel);
+        inp.moveX = Math.sin(rel);
+      }
       // Out of every fighting robot's sight and with none close, top up between exchanges.
       const close = live.some((e) => dist2d(e.pos, p.pos) < 8);
       if (needHeal && !close && !watching.length && !p.healing && !inp.fire) inp.heal = true;
@@ -603,13 +626,16 @@ export class Bot {
   }
 
   /**
-   * The POI to take next: the nearest one not yet cleared in the region it dropped into,
-   * until the bot has cleared as many as its skill dares (`Skill.raid`). The titan's
+   * The POI to take next: the nearest one not yet cleared in the region it dropped into, those on
+   * the front first, until the bot has cleared as many as its skill dares (`Skill.raid`) or
+   * captured as many cores (`Skill.capture`). The titan's
    * landing pad comes only last, and only for a bot that takes on every POI. -1 means it
    * is time to leave.
    */
   private nextPoi(s: State): number {
     if (s.stats.cleared.length >= this.skill.raid) return -1;
+    // The cores it meant to take are taken: home with them, as a wipe now would lose them.
+    if (s.stats.captured.length >= this.skill.capture) return -1;
     // The raiders are down: cut the raid short, as soon as the POIs it promised itself are halved.
     if (this.raidersIn && s.stats.cleared.length >= Math.ceil(this.skill.raid / 2)) return -1;
     // Hurt with nothing left to heal with: one more fight is one too many.
@@ -622,9 +648,59 @@ export class Bot {
     const mine = regionOf(s.region).pois;
     const others = POIS.filter((poi) => !poi.boss && mine.includes(poi.id)).length;
     const open = POIS.map((poi, i) => ({ poi, i })).filter(({ poi, i }) => mine.includes(poi.id) && !s.cleared[i] && !this.left.has(i) && (!poi.boss || s.stats.cleared.length >= others));
-    open.sort((a, b) => dist2d(a.poi, p.pos) - dist2d(b.poi, p.pos));
+    // A POI on the front first, which it can free by its core once cleared; then the nearest.
+    const front = frontNodes(s.nodes);
+    const onFront = (i: number) => (NODES.findIndex((n) => n.id === POIS[i].id) >= 0 && front[NODES.findIndex((n) => n.id === POIS[i].id)] ? 0 : 1);
+    open.sort((a, b) => onFront(a.i) - onFront(b.i) || dist2d(a.poi, p.pos) - dist2d(b.poi, p.pos));
     return open[0]?.i ?? -1;
   }
+
+  /**
+   * The core to capture next, as a place in `NODES`, or -1: the capture under way; else, in the
+   * region it started in, a node on the front that it can take now, nearest first, while it has
+   * captured fewer than its skill dares in one raid (`Skill.capture`), the raiders are not down
+   * and it is not too hurt to fight on (as `nextPoi()`). A POI's core waits until it has cleared
+   * the POI; an outpost's it takes while its POIs taken and cores captured are fewer than
+   * `Skill.raid`. A core it has made no headway on for
+   * `CORE_GIVE_UP` seconds is left for the raid.
+   */
+  private nextCore(s: State): number {
+    if (s.capture && s.nodes[s.capture.node] !== "freed") {
+      const c = s.capture;
+      if (c.t > (this.coreT.get(c.node)?.t ?? -1)) this.coreT.set(c.node, { t: c.t, at: s.time });
+      if (s.time - (this.coreT.get(c.node)?.at ?? s.time) < CORE_GIVE_UP) return c.node;
+      this.coreLeft.add(c.node);
+    }
+    const p = s.player;
+    const front = frontNodes(s.nodes);
+    const left = (p.hp + p.shield) / (PLAYER.hp + PLAYER.shieldByTier[p.armor]);
+    const spent = (left < 0.6 && !pickHeal(s)) || p.selfRevive <= 0 || this.raidersIn;
+    const done = new Set([...s.stats.cleared, ...s.stats.captured.map((id) => poiIndex(id as PoiId)).filter((i) => i >= 0)]).size + s.stats.captured.filter((id) => poiIndex(id as PoiId) < 0).length;
+    // As many cores a raid as its skill dares (`Skill.capture`), and none once it is spent.
+    if (spent || s.stats.captured.length >= this.skill.capture) return -1;
+    const open = NODES.map((n, i) => ({ n, i })).filter(({ n, i }) => {
+      if (!front[i] || n.region !== s.region || this.coreLeft.has(i)) return false;
+      if (n.kind === "poi") return s.cleared[poiIndex(n.id as PoiId)];
+      return done < this.skill.raid;
+    });
+    // A POI's core before an outpost's: a POI freed takes the network down, an outpost does not.
+    open.sort((a, b) => (a.n.kind === "poi" ? 0 : 1) - (b.n.kind === "poi" ? 0 : 1) || dist2d(a.n.core, p.pos) - dist2d(b.n.core, p.pos));
+    const pick = open[0]?.i ?? -1;
+    if (pick >= 0) {
+      // Time on the way there counts too: a core it cannot get to is given up as one it cannot hold.
+      const was = this.coreT.get(pick);
+      if (!was) this.coreT.set(pick, { t: -1, at: s.time });
+      else if (s.time - was.at > CORE_GIVE_UP * 2) {
+        this.coreLeft.add(pick);
+        return -1;
+      }
+    }
+    return pick;
+  }
+
+  /** Cores it gave up on, and for each core the meter's best and when it last grew (or was first aimed at). */
+  private coreLeft = new Set<number>();
+  private coreT = new Map<number, { t: number; at: number }>();
 
   /** POIs it walked away from with robots of theirs still about (see input()). */
   private left = new Set<number>();

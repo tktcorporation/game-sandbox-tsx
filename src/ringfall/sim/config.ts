@@ -374,6 +374,45 @@ export const ISLAND = {
   thinKeep: 0.5,
 };
 
+/**
+ * The front (解放戦線, docs/ringfall/liberation-front.md): the freeable POIs and the outposts are
+ * the island's nodes (`NODES`, `FRONT_LINKS` in map.ts), and only a node next to the player's
+ * ground (the camp and the nodes freed) can be taken, by its core (`core`): a pillar `height`
+ * metres tall near the node's middle. The use key starts the capture; the meter fills over
+ * `capture` seconds while the player stands within `radius` of the core (and within `rise` of
+ * its foot's height) with no robot within the same radius. The node's garrison makes for the
+ * core, and `push` squads come from each neighbouring node the player does not hold (at most
+ * `pushMax`), beamed in a walk of `pushDist` from the core on the side of their node, `pushAt`
+ * seconds after the start and again every `pushEvery` seconds while the capture lasts and the
+ * player stays near (at most `pushWaves` times). Once
+ * taken, what is left of the garrison walks off for `retreat` seconds and is gone, and no robot
+ * comes within `zone` metres of the core again (the node is the player's, as the camp is). Each
+ * node the player holds pays `income` credits a day at the settle (an outpost `outpost` of it).
+ */
+export const FRONT = {
+  capture: 45,
+  radius: 12,
+  rise: 4,
+  height: 4,
+  /** Half the core's footprint, in metres. */
+  half: 0.45,
+  zone: 30,
+  /** Metres from a core within which the player counts as having come to the node (an outpost freed lapses unvisited, as a POI). */
+  visit: 60,
+  retreat: 8,
+  /** The waves of the push, by network level: the members of each squad. */
+  push: [["grunt"], ["grunt"], ["grunt", "drone"], ["grunt", "drone"], ["grunt", "grunt"], ["grunt", "grunt", "drone"]] as EnemyKind[][],
+  /** Neighbouring nodes that send a squad, at most, by network level. */
+  pushMax: [1, 1, 1, 2, 2, 2],
+  /** Waves of the push at most, per capture, by network level. */
+  pushWaves: [1, 1, 1, 1, 2, 2],
+  pushAt: 6,
+  pushEvery: 30,
+  pushDist: [70, 130] as const,
+  income: 150,
+  outpost: 0.5,
+};
+
 /** What one network level sets in a raid (`NETWORK.levels`). */
 export interface NetworkLevel {
   /** A short word for the level, for the map table's meter. */
@@ -401,7 +440,7 @@ export interface NetworkLevel {
  * frees nothing sees it climb from `start` to the top in about nine days, and one who holds
  * the ground sees it climb a step every three days or so. A day that starts at the top gathers
  * nothing, so a step taken off the top holds for a while. Freeing a held POI takes it down a
- * step (`relayPoi` two; a thin one a step less, since the network had half lost it already),
+ * step (`relayPoi` two; from thin as from held, since each takes a capture of its core),
  * killing the titan a step, and destroying a relay mast a step (`relayHigh.steps` on a day that
  * started at `relayHigh.at` or higher). A thin POI goes back to held
  * once it has been thin `retakeAfter` days while the network stands at `retakeAt` or higher;

@@ -10,7 +10,8 @@ const LEDGE = 1.0;
 /** Walkers posted on the ground climb no higher than this above the terrain (stairs onto a roof). */
 const CLIMB = 1.2;
 const bodyHeight = (k: { bodyY: number; radius: number }) => k.bodyY + k.radius;
-import { inCamp, MOBILES, OUTPOST_SITES, PARTY_STOPS, POIS, RELAYS, relayIndex, ROAMERS, type Mobile, type Squad } from "./map";
+import { inZone } from "./front";
+import { inCamp, MOBILES, nodeIndex, OUTPOST_SITES, PARTY_STOPS, POIS, RELAYS, relayIndex, ROAMERS, type Mobile, type Squad } from "./map";
 import { beatOf, damageRobot, fightHeard, foeOf, mobileWalks, placeMobile } from "./factions";
 import { bodyCenter, weakPoint } from "./combat";
 import { hurtPlayer } from "./player";
@@ -141,9 +142,10 @@ export function populate(s: State) {
       else add(sq, i);
     }),
   );
-  // An outpost the rogues hold has rogue guards (`TERRITORY`).
+  // An outpost the rogues hold has rogue guards (`TERRITORY`); one the player freed has none.
   const rogueGuards = new Set(OUTPOST_SITES.filter((o) => s.territory[o.id] === "rogue").map((o) => o.guard));
-  ROAMERS.forEach((sq) => add(sq, -1, rogueGuards.has(sq.name)));
+  const freedGuards = new Set(OUTPOST_SITES.filter((o) => s.nodes[nodeIndex(o.id)] === "freed").map((o) => o.guard));
+  ROAMERS.forEach((sq) => !freedGuards.has(sq.name) && add(sq, -1, rogueGuards.has(sq.name)));
   for (const b of beats) placeMobile(s, b.m, b.kinds, walker);
   for (const m of MOBILES) if (mobileWalks(s, m)) placeMobile(s, m, m.members ?? [], walker);
   // The walks are built by fields (`mobileWalk()`): the raid starts with none, whichever walks
@@ -302,8 +304,8 @@ function stepBody(e: Enemy, vx: number, vz: number): boolean {
   const bz = e.pos.z;
   e.pos.x += e.vel.x * dt;
   e.pos.z += e.vel.z * dt;
-  // No robot comes into the camp, over its fence or through its gate.
-  if (inCamp(e.pos, k.radius + 0.5) && !inCamp({ x: bx, z: bz }, k.radius + 0.5)) {
+  // No robot comes into the camp, over its fence or through its gate, nor onto a node the player holds.
+  if ((inCamp(e.pos, k.radius + 0.5) && !inCamp({ x: bx, z: bz }, k.radius + 0.5)) || (inZone(e.pos.x, e.pos.z, k.radius) && !inZone(bx, bz, k.radius))) {
     e.pos.x = bx;
     e.pos.z = bz;
     e.vel.x = e.vel.z = 0;
@@ -1201,7 +1203,7 @@ function nudge(e: Enemy, dx: number, dz: number) {
   e.pos.z += dz;
   collide(e.pos, k.radius, bodyHeight(k));
   // A crowd at the camp's gate does not shove its front robot in (the same line as `moveBody()`).
-  const intoCamp = inCamp(e.pos, k.radius + 0.5) && !inCamp({ x: bx, z: bz }, k.radius + 0.5);
+  const intoCamp = (inCamp(e.pos, k.radius + 0.5) && !inCamp({ x: bx, z: bz }, k.radius + 0.5)) || (inZone(e.pos.x, e.pos.z, k.radius) && !inZone(bx, bz, k.radius));
   if (intoCamp || Math.abs(groundAt(e.pos.x, e.pos.z, k.radius, e.pos.y) - e.pos.y) > 0.3) {
     e.pos.x = bx;
     e.pos.z = bz;
