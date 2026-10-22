@@ -1486,6 +1486,8 @@ const islandDay = {
   await toCamp(pg);
   const c = await readOf(pg);
   const own = (sel) => pg.locator(`${sel} .node-row .node.own`).count();
+  // The nodes a profile holds: the day's battle, reckoned to its end, may have taken some back.
+  const mine = (p) => Object.entries(p.poiState).filter(([id, o]) => id !== "pad" && o.state === "freed").length;
   if (c.profile.day !== 6 || c.profile.poiState.quarry.state !== "freed" || (await own("#camp-row")) !== 3) errors.push(`island: the camp reads day ${c.profile.day}, the quarry ${c.profile.poiState.quarry.state}, ${await own("#camp-row")} of the row filled`);
   await pg.evaluate(() => window.ringfallCamp.walkTo("map"));
   await pg.evaluate(() => window.advanceTime(100));
@@ -1500,10 +1502,10 @@ const islandDay = {
   const run = await walkOutOfGate(pg);
   const at = (id) => run.enemies.filter((e) => run.squads[e.squad].poi === id).length;
   if (run.hold.join() !== "freed,freed,held,held,freed,held,held" || at(0) !== 0 || at(1) !== 0 || at(4) !== 0 || !(at(2) > 0)) errors.push(`island raid: holds ${run.hold.join()}, robots at the supply depot ${at(0)}, the quarry ${at(1)}, the wreck ${at(4)}, the relay ${at(2)}`);
-  if ((await own("#island-row")) !== 3) errors.push(`island raid: the HUD's row fills ${await own("#island-row")}`);
-  // The way in's banner has gone by the time the map is opened.
+  // The way in's banner has gone by the time the map is opened; the HUD is drawn for the screenshot.
   await pg.evaluate(() => window.ringfallStep(4000));
   await pg.screenshot({ path: `${out}/72-island-hud-row.png`, clip: { x: 1280 / 2 - 260, y: 0, width: 520, height: 120 } });
+  if ((await own("#island-row")) !== 3) errors.push(`island raid: the HUD's row fills ${await own("#island-row")}`);
   await pg.keyboard.press("KeyM");
   await pg.evaluate(() => window.advanceTime(100));
   await pg.screenshot({ path: `${out}/72-island-map.png` });
@@ -1521,7 +1523,7 @@ const islandDay = {
   await pg.evaluate(() => window.advanceTime(200));
   await pg.waitForFunction(() => !document.getElementById("results").hidden, null, { timeout: 10000 }).catch(() => undefined);
   const r = await readOf(pg);
-  if (r.screen !== "results" || r.settled?.day !== 6 || r.profile.day !== 7 || (await own("#day-result")) !== 3 || !(await pg.locator("#day-map").count())) errors.push(`island results: ${r.screen}, day ${r.settled?.day} -> ${r.profile.day}, ${await own("#day-result")} of the row filled`);
+  if (r.screen !== "results" || r.settled?.day !== 6 || r.profile.day !== 7 || (await own("#day-result")) !== mine(r.profile) || !(await pg.locator("#day-map").count())) errors.push(`island results: ${r.screen}, day ${r.settled?.day} -> ${r.profile.day}, ${await own("#day-result")} of the row filled for ${mine(r.profile)} nodes held`);
   await pg.waitForTimeout(1200);
   await pg.screenshot({ path: `${out}/74-island-results.png` });
   await pg.setViewportSize({ width: 740, height: 360 });
@@ -1531,7 +1533,7 @@ const islandDay = {
   await pg.click("#restart");
   await faded(pg);
   const plan = await pg.textContent("#camp-plan");
-  if (!/今日の作戦/.test(plan) || !/攻める拠点/.test(plan) || !/7 日目/.test(await pg.textContent("#camp-hint")) || (await own("#camp-row")) !== 3) errors.push(`island: the camp after the results reads "${plan}" / "${await pg.textContent("#camp-hint")}"`);
+  if (!/今日の作戦/.test(plan) || !/攻める拠点/.test(plan) || !/7 日目/.test(await pg.textContent("#camp-hint")) || (await own("#camp-row")) !== mine(r.profile)) errors.push(`island: the camp after the results reads "${plan}" / "${await pg.textContent("#camp-hint")}"`);
   await pg.screenshot({ path: `${out}/m20-camp-today.png` });
   await ctx.close();
 }

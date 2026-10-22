@@ -2459,9 +2459,11 @@ body.touch .map-buttons button {
   flex-direction: column;
   gap: 6px;
 }
+/* As tall as the island is long: the map frames the whole island with no empty sides. */
 #day-map {
-  width: 100%;
+  align-self: flex-start;
   height: min(40vh, 330px);
+  aspect-ratio: 2 / 3;
   background: #1c1f2a;
   box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.12);
 }
