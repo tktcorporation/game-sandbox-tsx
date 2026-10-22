@@ -73,7 +73,7 @@ const SHADOW_MOVE = 4;
 /** The teammate's HUD teal: a depot that is on is lit in the colour that means "ours". */
 const MATE_LIGHT = 0x6fd0cf;
 /** Sparks off a plate that took part of a hit: grey like its damage number. */
-const PLATE_SPARK = 0x9aa3b5;
+const PLATE_SPARK = 0xffc56a;
 /** Smoke from a robot below half its health and shield, and from a wreck. */
 const SMOKE = 0x3b3a3c;
 /** The ring's piece smokes paler than a wreck, so its column reads against the red rock from afar. */
@@ -173,6 +173,8 @@ interface EnemyView {
   walk: number;
   spawnBeam: THREE.Mesh | null;
   lane: THREE.Mesh | null;
+  /** The plates it wears (`addPlates()`), knocked off when the plate breaks. */
+  plates: THREE.Mesh[];
 }
 
 /** A robot's model left lying where it was destroyed. */
@@ -947,9 +949,22 @@ export class World {
             const from = e.ally ? s.ally.pos : s.player.pos;
             v.pushYaw = Math.atan2(e.pos.x - from.x, -(e.pos.z - from.z));
           }
-          // A plate turning a hit aside throws grey sparks, so the player sees the gun is too weak.
-          if (e.blocked) this.burst(e.pos, PLATE_SPARK, 7, 6, 0.05, 9, 0.25);
+          // A plate turning a hit aside throws a spray of hot sparks off it, so the player sees the gun is too weak.
+          if (e.blocked && !e.crit) {
+            this.burst(e.pos, PLATE_SPARK, 12, 9, 0.035, 14, 0.22);
+            this.burst(e.pos, 0xffffff, 3, 4, 0.06, 0, 0.06);
+          }
           else this.burst(e.pos, e.crit ? PAL.hot : e.shield ? RARITY_COLOR[e.tier] : 0xffffff, e.crit ? 7 : 4, 4, 0.06, 6, 0.3);
+          break;
+        }
+        case "plateBreak": {
+          // The plate cracks and its pieces fall off in its colour.
+          const v = this.enemies.get(e.id);
+          if (v) {
+            for (const o of v.plates) o.removeFromParent();
+            v.plates = [];
+          }
+          this.burst(e.pos, RARITY_COLOR[e.tier], 14, 3.5, 0.16, 12, 0.9);
           break;
         }
         case "shieldBreak":
@@ -1188,7 +1203,7 @@ export class World {
           m.mats[1]?.color.setHex(PAL.friendArmorLight);
           (m.eyeHalo.material as THREE.SpriteMaterial).color.setHex(PAL.friendEye);
         }
-        if (e.plate > 0) addPlates(m, e.kind, e.plate);
+        const plates = e.plate > 0 ? addPlates(m, e.kind, e.plate) : [];
         this.scene.add(m.root);
         const beam = new THREE.Mesh(
           new THREE.CylinderGeometry(0.06, ENEMIES[e.kind].radius * 0.45, 40, 8, 1, true),
@@ -1197,7 +1212,7 @@ export class World {
         beam.position.set(e.pos.x, e.pos.y + 20, e.pos.z);
         this.scene.add(beam);
         m.body.rotation.order = "YXZ";
-        v = { m, kind: e.kind, flash: 0, flinch: 0, pushYaw: 0, smoke: 0, shieldFlash: 0, walk: 0, spawnBeam: beam, lane: null };
+        v = { m, kind: e.kind, flash: 0, flinch: 0, pushYaw: 0, smoke: 0, shieldFlash: 0, walk: 0, spawnBeam: beam, lane: null, plates };
         this.enemies.set(e.id, v);
       }
       const k = ENEMIES[e.kind];

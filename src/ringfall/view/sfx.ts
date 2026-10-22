@@ -108,12 +108,14 @@ export const sfx = {
         tone(4700, 0.04, { type: "triangle", vol: 0.1 });
         hiss(0.02, { freq: 6000, q: 2, vol: 0.3 });
       } else if (plate) {
-        // A plate turning the round aside: a dull clank of struck steel, partials out of
-        // tune with each other, in place of the body hit's bright tick.
-        tone(vary(430, 0.04), 0.09, { type: "square", vol: 0.14, to: 390 });
-        tone(vary(1170, 0.03), 0.12, { type: "sine", vol: 0.22 });
-        tone(vary(2630, 0.03), 0.07, { type: "sine", vol: 0.12 });
-        hiss(0.03, { freq: 3200, q: 4, vol: 0.4 });
+        // A plate turning the round aside: a high metallic ping, partials out of tune with each
+        // other, and the round whining off, in place of the body hit's bright tick.
+        const f = vary(3100, 0.05);
+        tone(f, 0.16, { type: "sine", vol: 0.26 });
+        tone(f * 1.47, 0.11, { type: "sine", vol: 0.14 });
+        tone(f * 2.13, 0.07, { type: "sine", vol: 0.08 });
+        tone(vary(5200, 0.06), 0.14, { type: "triangle", vol: 0.05, to: 2200, at: 0.02 });
+        hiss(0.02, { freq: 7000, q: 3, vol: 0.35 });
       } else if (shield) {
         tone(vary(1250, 0.04), 0.05, { type: "square", vol: 0.2, to: 900 });
         tone(vary(2900, 0.04), 0.04, { type: "triangle", vol: 0.3, to: 2200 });
@@ -134,6 +136,18 @@ export const sfx = {
       for (let i = 0; i < 6; i++) tone(base * (1 + i * 0.37 + Math.random() * 0.08), 0.12 + i * 0.05, { type: "sine", vol: 0.06, at: i * 0.017 + Math.random() * 0.01 });
       // Shards tinkling down.
       for (let i = 0; i < 5; i++) tone(vary(base * 2.2, 0.25), 0.05, { type: "sine", vol: 0.03, at: 0.1 + Math.random() * 0.3 });
+    });
+  },
+  /** A plate cracking and falling off a robot (rarity colour `tier`): a crack, then plates clattering down. */
+  plateBreak(tier: Rarity) {
+    ui(0.55, () => {
+      const base = [900, 1000, 1150, 1300][tier];
+      hiss(0.06, { type: "highpass", freq: 2500, vol: 0.35 });
+      tone(vary(base, 0.04), 0.1, { type: "square", vol: 0.1, to: base * 0.6 });
+      tone(vary(base * 2.7, 0.04), 0.14, { type: "sine", vol: 0.12 });
+      // The pieces hit the ground a moment later.
+      for (let i = 0; i < 3; i++) tone(vary(base * 1.9, 0.12), 0.05, { type: "triangle", vol: 0.06, at: 0.16 + i * 0.07 });
+      hiss(0.05, { brown: true, type: "lowpass", freq: 900, vol: 0.2, at: 0.18 });
     });
   },
   kill(crit: boolean) {

@@ -299,6 +299,25 @@ body.touch #obj-raid .why {
 #compass-mark.edge::before {
   border-bottom-color: #c9b25a;
 }
+/* Where the last reinforcements beamed in, while a node held shows it (UNLOCKS.scout): a red chevron on the strip. */
+#compass-scout {
+  position: absolute;
+  top: 2px;
+  width: 0;
+  height: 0;
+  transform: translateX(-50%);
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  border-top: 10px solid #ff4d4d;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.7));
+  pointer-events: none;
+}
+#compass-scout[hidden] {
+  display: none;
+}
+#compass-scout.edge {
+  border-top-color: #b8433f;
+}
 #obj-bag {
   grid-column: 1 / -1;
   color: var(--muted);
@@ -603,6 +622,11 @@ body.touch #obj-raid .why {
 }
 #hitmark.crit i {
   background: var(--hot);
+}
+/* A round a plate turned aside: a short grey mark, no number. */
+#hitmark.plate i {
+  background: #8d96a8;
+  height: 6px;
 }
 #hitmark.kill i {
   background: var(--ring);

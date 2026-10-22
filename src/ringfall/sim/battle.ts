@@ -1,6 +1,6 @@
 import { CONQUEST, ENEMIES, FACTORY, TICK, type EnemyKind } from "./config";
 import { dist2d } from "./geom";
-import { CAMP, depotIndex, FRONT_LINKS, NET_EDGE, NODES, nodeIndex, type NodeId } from "./map";
+import { CAMP, depotIndex, FRONT_LINKS, NET_EDGE, NODES, nodeIndex, UNLOCKS, type NodeId, type NodeUnlock } from "./map";
 import { forgetFields, onMainGround, walkLine } from "./hunt";
 import { worldKey } from "./routes";
 import { spawnEnemy } from "./enemies";
@@ -447,7 +447,8 @@ function enemyPlan(s: State, b: Battle, side: Side): { from: number; to: number 
     const fromOk = (k: number) => (side === 2 || sideOf(s.nodes[k]) === side) && !nearPlayer(s, nodePoint(k), CONQUEST.near);
     let from = NEIGHBOURS[i].filter(fromOk).sort((a, c) => dist2d(nodePoint(a), nodePoint(i)) - dist2d(nodePoint(c), nodePoint(i)))[0];
     // The enemy lands on a node by the ground it never gives up, out of the player's sight.
-    if (from === undefined && side === 1 && NET_EDGE.includes(n.id) && !nearPlayer(s, nodePoint(i), CONQUEST.near)) from = i;
+    // The north shore's boats stop landing while the player holds the node that watches it.
+    if (from === undefined && side === 1 && NET_EDGE.includes(n.id) && !(UNLOCKS[n.id].shore && owner === 0) && !nearPlayer(s, nodePoint(i), CONQUEST.near)) from = i;
     if (from === undefined) return;
     const v = (side === 1 && owner === 0 ? 10 : 0) - 2 * heldBy(s, b, i) - 3 * goingTo(b, side, i);
     if (!best || v > best.v) best = { from, to: i, v };
@@ -455,12 +456,18 @@ function enemyPlan(s: State, b: Battle, side: Side): { from: number; to: number 
   return best;
 }
 
+/** The nodes the player holds now that open `key` (`UNLOCKS`): it lasts while they are held. */
+export const heldUnlocks = (nodes: State["nodes"], key: keyof NodeUnlock): NodeId[] => NODES.filter((n, i) => nodes[i] === "freed" && UNLOCKS[n.id][key]).map((n) => n.id);
+
+/** The squads the factory keeps out at once: its level's, and one more for each node held that opens one. */
+export const factoryMax = (s: Pick<State, "nodes">, f: number) => FACTORY.max[f] + heldUnlocks(s.nodes, "squad").reduce((n, id) => n + (UNLOCKS[id].squad ?? 0), 0);
+
 /** Each side's work toward its next squad, and the squad once it is due and the side has room. */
 function produce(s: State, b: Battle, dt: number) {
   // The player's factory.
   const f = b.factory;
   b.made[0] = Math.min(FACTORY.every[f], b.made[0] + dt);
-  if (b.made[0] >= FACTORY.every[f] && walking(b, 0) < FACTORY.max[f]) {
+  if (b.made[0] >= FACTORY.every[f] && walking(b, 0) < factoryMax(s, f)) {
     const plan = playerPlan(s, b);
     if (plan) {
       const q = addSquad(b, 0, FACTORY.kinds[f], plan.from, plan.to, plan.task);
@@ -475,7 +482,8 @@ function produce(s: State, b: Battle, dt: number) {
     const theirs = NODES.reduce((n, _, i) => n + (sideOf(s.nodes[i]) === 1 ? 1 : 0), 0);
     // The enemy answers the player's ground: each node of theirs works for it as one of its own would.
     const mine = NODES.length - theirs;
-    const work = side === 1 ? theirs + CONQUEST.net.edge + CONQUEST.net.answer * mine : 1;
+    const shore = heldUnlocks(s.nodes, "shore").length ? CONQUEST.net.shore : 0;
+    const work = side === 1 ? theirs + CONQUEST.net.edge - shore + CONQUEST.net.answer * mine : 1;
     const every = side === 1 ? CONQUEST.net.every[s.strength] : CONQUEST.rogue.every;
     const max = side === 1 ? CONQUEST.net.max[s.strength] + Math.floor(mine / 3) : CONQUEST.rogue.max;
     b.made[side] = Math.min(every, b.made[side] + work * dt);
