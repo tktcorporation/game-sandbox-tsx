@@ -13,12 +13,16 @@ const bodyHeight = (k: { bodyY: number; radius: number }) => k.bodyY + k.radius;
 import { inZone } from "./front";
 import { inCamp, MOBILES, nodeIndex, OUTPOST_SITES, PARTY_STOPS, POIS, RELAYS, relayIndex, ROAMERS, type Mobile, type Squad } from "./map";
 import { beatOf, damageRobot, fightHeard, foeOf, mobileWalks, placeMobile } from "./factions";
+import { robotSide, type Side } from "./battle";
 import { bodyCenter, weakPoint } from "./combat";
 import { hurtPlayer } from "./player";
 import { allyChest, allyUp, hurtAlly } from "./ally";
 import { activePacks, garrison, netPlated } from "./island";
 import { modScale } from "./mods";
 import { crewRand, mix, rand, roamRand, sightScale, weakY, type Enemy, type Point, type State, type Vec3 } from "./state";
+
+/** The side an orb was fired for (sim/battle.ts `Side`). */
+const orbSide = (o: { friend?: boolean; rogue?: boolean }): Side => (o.friend ? 0 : o.rogue ? 2 : 1);
 
 /*
  * Robot behaviour. Out of combat a robot holds its post or walks its squad's
@@ -197,8 +201,9 @@ function fireOrb(s: State, e: Enemy, yawOff = 0, homing = false, foe?: Enemy) {
     homing,
     by: foe ? e.id : undefined,
     rogue: e.rogue || undefined,
+    friend: e.friend || undefined,
   });
-  s.events.push(foe ? { t: "enemyFire", id: e.id, pos: from, foe: bodyCenter(foe), rogue: !!e.rogue } : { t: "enemyFire", id: e.id, pos: from, rogue: e.rogue || undefined });
+  s.events.push(foe ? { t: "enemyFire", id: e.id, pos: from, foe: bodyCenter(foe), rogue: !!e.rogue, friend: e.friend || undefined } : { t: "enemyFire", id: e.id, pos: from, rogue: e.rogue || undefined });
 }
 
 function lockAim(e: Enemy, at: Vec3) {
@@ -305,7 +310,8 @@ function stepBody(e: Enemy, vx: number, vz: number): boolean {
   e.pos.x += e.vel.x * dt;
   e.pos.z += e.vel.z * dt;
   // No robot comes into the camp, over its fence or through its gate, nor onto a node the player holds.
-  if ((inCamp(e.pos, k.radius + 0.5) && !inCamp({ x: bx, z: bz }, k.radius + 0.5)) || (inZone(e.pos.x, e.pos.z, k.radius) && !inZone(bx, bz, k.radius))) {
+  // A battle's squads (sim/battle.ts) come onto the player's nodes to take them.
+  if ((inCamp(e.pos, k.radius + 0.5) && !inCamp({ x: bx, z: bz }, k.radius + 0.5)) || (!e.battle && inZone(e.pos.x, e.pos.z, k.radius) && !inZone(bx, bz, k.radius))) {
     e.pos.x = bx;
     e.pos.z = bz;
     e.vel.x = e.vel.z = 0;
@@ -348,10 +354,12 @@ export function stepEnemies(s: State) {
   stepSquads(s);
   markNear(s);
   const tick = Math.round(s.time / TICK);
-  const byId = new Map(s.enemies.map((e) => [e.id, e]));
+  // The player's own robots are foes too (see FACTION), looked up with the rest.
+  const byId = new Map((s.friends.length ? [...s.enemies, ...s.friends] : s.enemies).map((e) => [e.id, e]));
   // A robot destroyed takes a new list (`kill()`, `fall()`): only then are the rest looked up in it.
   const start = s.enemies;
-  const gone = (e: Enemy) => s.enemies !== start && !s.enemies.includes(e);
+  const friendsAt = s.friends;
+  const gone = (e: Enemy) => (e.friend ? s.friends !== friendsAt && !s.friends.includes(e) : s.enemies !== start && !s.enemies.includes(e));
   for (const e of [...s.enemies]) {
     // Destroyed earlier this tick (by the other faction's fire, or the titan's fall).
     if (gone(e)) continue;
@@ -649,7 +657,9 @@ function fightFoe(s: State, e: Enemy, foe: Enemy) {
         vx = (ux * along - uz * e.strafe * side) * k.speed;
         vz = (uz * along + ux * e.strafe * side) * k.speed;
       }
-      if (moveBody(e, vx, vz)) e.strafe = -e.strafe;
+      // A turret stands at its core.
+      if (e.post) moveBody(e, 0, 0);
+      else if (moveBody(e, vx, vz)) e.strafe = -e.strafe;
       else if ((e.strafeT -= TICK) <= 0) {
         e.strafeT = DODGE.every[0] + draw(s, e) * (DODGE.every[1] - DODGE.every[0]);
         if (draw(s, e) < DODGE.flip) e.strafe = -e.strafe;
@@ -1026,7 +1036,7 @@ function calm(s: State, e: Enemy) {
     // The authored legs are walked straight; a robot a chase took off its leg finds its way back.
     const prev = sq.patrol[(sq.leg + sq.patrol.length - 1) % sq.patrol.length];
     const via = toSegment(e.pos, prev, to) > STRAY ? homeStep(s, e, to) : to;
-    if (walkTo(e, via, sq.pack ? k.speed * PACK.pace : sq.mobile ? slow * PATROL.pace : slow) && via === to && slot === 0) sq.leg++;
+    if (walkTo(e, via, sq.pack ? k.speed * PACK.pace : sq.mobile || sq.battle ? slow * PATROL.pace : slow) && via === to && slot === 0) sq.leg++;
     return;
   }
   if (dist2d(e.pos, e.home) > 0.8) walkTo(e, dist2d(e.pos, e.home) > STRAY ? homeStep(s, e, e.home) : e.home, slow);
@@ -1351,6 +1361,54 @@ function sweptHit(a: Vec3, b: Vec3, r: number, at: Vec3, top: number): { at: Vec
   return { at: point(hi), s: hi };
 }
 
+/**
+ * The player's own robots in the world (`State.friends`, sim/battle.ts), every tick: a squad set
+ * on a robot of the network or the rogues (see FACTION) fights it as any squad fights the other
+ * faction; otherwise it walks its way to its node (its squad's `patrol`, the first living member
+ * leading) and stands at the core. They never fight the player or the teammate, nor look for them.
+ */
+export function stepFriends(s: State) {
+  if (!s.friends.length) return;
+  const byId = new Map([...s.enemies, ...s.friends].map((e) => [e.id, e]));
+  for (const e of [...s.friends]) {
+    if (!s.friends.includes(e)) continue;
+    if (s.phase === "done") return;
+    const k = ENEMIES[e.kind];
+    e.steady = Math.max(0, e.steady - TICK);
+    if (e.mode === "spawning") {
+      e.timer -= TICK;
+      if (e.timer <= 0) {
+        e.mode = "move";
+        e.cooldown = k.cooldown * 0.6;
+      }
+      continue;
+    }
+    if (e.mode === "stunned" || e.mode === "staggered" || e.mode === "lunge" || e.mode === "recover") e.mode = "move";
+    const sq = s.squads[e.squad];
+    const foe = sq?.foe !== undefined ? byId.get(sq.foe) : undefined;
+    if (foe && s.enemies.includes(foe)) {
+      fightFoe(s, e, foe);
+      continue;
+    }
+    if (e.mode !== "move") e.mode = "move";
+    const members = s.friends.filter((o) => o.squad === e.squad);
+    const slot = members.indexOf(e);
+    if (!sq || !sq.patrol.length || e.post) {
+      moveBody(e, 0, 0);
+      e.lookT += TICK;
+      turnTo(e, e.face + Math.sin(e.lookT * 0.45) * 0.9, 1.5);
+      continue;
+    }
+    const lastLeg = sq.patrol.length - 1;
+    const leg = Math.min(sq.leg, lastLeg);
+    const wp = sq.patrol[leg];
+    const to = { x: wp.x + (slot % 2 ? 1.8 : -1.8) * Math.min(slot, 1), z: wp.z + slot * 1.6 };
+    const prev = sq.patrol[Math.max(0, leg - 1)];
+    const via = toSegment(e.pos, prev, to) > STRAY ? homeStep(s, e, to) : to;
+    if (walkTo(e, via, k.speed * AWARE.idleSpeed * PATROL.pace) && via === to && slot === 0 && leg < lastLeg) sq.leg = leg + 1;
+  }
+}
+
 export function stepOrbs(s: State) {
   const p = s.player;
   const c = chest(s);
@@ -1362,8 +1420,9 @@ export function stepOrbs(s: State) {
   const robotsNear = (x: number, z: number): Enemy[] => {
     if (!targets) {
       targets = new Map();
-      for (const v of s.enemies) {
-        if (v.poi >= 0 || v.kind === "titan" || v.mode === "spawning") continue;
+      // A battle's robots fight the garrisons too (see `hostile()`), and the player's own robots are hit by the others' shots.
+      for (const v of s.friends.length ? [...s.enemies, ...s.friends] : s.enemies) {
+        if ((v.poi >= 0 && !s.battle) || v.kind === "titan" || v.mode === "spawning") continue;
         const k = square(v.pos.x, v.pos.z);
         const l = targets.get(k);
         if (l) l.push(v);
@@ -1400,22 +1459,28 @@ export function stepOrbs(s: State) {
     const from = { x: o.pos.x - o.vel.x * TICK, y: o.pos.y - o.vel.y * TICK, z: o.pos.z - o.vel.z * TICK };
     const clear = (to: Vec3) => los(from, to) && los({ ...from, y: from.y - o.r }, { ...to, y: to.y - o.r });
     // Whichever body the orb enters first along its way this tick takes the hit.
-    const onPlayer = sweptHit(from, o.pos, o.r + PLAYER.radius, p.pos, p.crouch || p.sliding ? 1.1 : 1.7);
-    const onAlly = allyUp(s) ? sweptHit(from, o.pos, o.r + ALLY.radius, s.ally.pos, 1.7) : null;
+    // The player's own robots' shots pass the player and the teammate.
+    const onPlayer = o.friend ? null : sweptHit(from, o.pos, o.r + PLAYER.radius, p.pos, p.crouch || p.sliding ? 1.1 : 1.7);
+    const onAlly = allyUp(s) && !o.friend ? sweptHit(from, o.pos, o.r + ALLY.radius, s.ally.pos, 1.7) : null;
     const playerHit = onPlayer && clear(onPlayer.at) ? onPlayer : null;
     const allyHit = onAlly && clear(onAlly.at) ? onAlly : null;
     // A shot at the other faction hits its robots too: the first body along the way takes it.
     let robot: { v: Enemy; s: number } | null = null;
-    if (o.by !== undefined)
+    if (o.by !== undefined) {
+      let shooter: Enemy | null | undefined;
+      const by = () => (shooter === undefined ? (shooter = s.enemies.find((e) => e.id === o.by) ?? s.friends.find((e) => e.id === o.by) ?? null) : shooter);
       for (const v of robotsNear(o.pos.x, o.pos.z)) {
-        if (!!v.rogue === !!o.rogue || !s.enemies.includes(v)) continue;
+        if (orbSide(o) === robotSide(v) || !(v.friend ? s.friends : s.enemies).includes(v)) continue;
+        // A garrison's robot is hit only by a battle's or the player's own robots' shots (see `hostile()`).
+        if (v.poi >= 0 && !o.friend && !by()?.battle) continue;
         const k = ENEMIES[v.kind];
         const h = sweptHit(from, o.pos, o.r + k.radius, v.pos, bodyHeight(k));
         if (h && (!robot || h.s < robot.s) && clear(h.at)) robot = { v, s: h.s };
       }
-    if (robot && (!playerHit || robot.s < playerHit.s) && (!allyHit || robot.s < allyHit.s)) {
-      damageRobot(s, robot.v, o.dmg, s.enemies.find((e) => e.id === o.by) ?? null);
-      return false;
+      if (robot && (!playerHit || robot.s < playerHit.s) && (!allyHit || robot.s < allyHit.s)) {
+        damageRobot(s, robot.v, o.dmg, by());
+        return false;
+      }
     }
     if (allyHit && (!playerHit || allyHit.s < playerHit.s)) {
       hurtAlly(s, o.dmg);

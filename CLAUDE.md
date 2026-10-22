@@ -62,7 +62,7 @@ A wipe ends the raid and loses the haul; `results.ts` scores the haul plus clear
 Between raids the player walks a camp in the world (`CAMP` in `map.ts`, a fenced yard on the south
 beach behind the reservoir's first way in): `sim/camp.ts` holds its state (`newCamp()`, a raid's
 emptied of robots, its clock standing) and its step (`stepCamp()`: walking only, weapons lowered).
-Its stations (map table, quest board, shelves, stall, workshop) open the panels of `view/hub.ts` by
+Its stations (map table, quest board, shelves, stall, workshop, factory) open the panels of `view/hub.ts` by
 the use key; walking out of the gate starts a raid from `FIRST_ENTRY` where the player stands
 (`walkOut()`), and the truck by the gate starts one at the map table's choice after a fade. No robot
 walks into the yard (`inCamp()` in `enemies.ts`); during a raid they see and shoot into it as
@@ -92,13 +92,14 @@ contracts (`meta/story.ts`) follow one at a time: the one under way lays its rec
 only with that POI's key; keys drop from the bins of the POI named by its `keyFrom` (`VAULT`).
 POIs have a stable `id` (`PoiId` in `map.ts`); saves, quests, `keyFrom` and `EXTRA_BINS` refer to a
 POI by it, never by its place in `POIS` (the run's state may index `POIS` internally). The profile
-is versioned (`Profile.v`, which is 18), and `parseProfile()` moves older saves forward (a save from
+is versioned (`Profile.v`, which is 19), and `parseProfile()` moves older saves forward (a save from
 before the ways in starts at its region's first way in; a save from before ways in were learned
 knows them all; a save from before v12 drops its explored map, since `cellOf()` follows `WORLD`,
 which then grew wider; a save from before v13 starts on the day after its raids with every POI
 held; a save from before v14 keeps only the quests that still exist; a save from before v15 starts
 at network `NETWORK.start`; a save from before v16 has a quiet day and tomorrow's event drawn; a save from before v17 knows
-the starting mod kinds and plays at threat 0) and moves its
+the starting mod kinds and plays at threat 0; a save from before v19 has the factory at level 0 and
+no battle on record) and moves its
 start to one it may choose (`allowedStart()`).
 Each island day has at most one event (`EVENTS` in `config.ts`, `IslandEvent` in `sim/island.ts`):
 `advanceDay()` turns yesterday's forecast into today's and draws tomorrow's from `Profile.seed` and
@@ -185,7 +186,32 @@ enters `FRONT.zone`) and freed overnight if the raid gets off alive (`advanceDay
 day's income); clearing a POI of its robots no longer frees it. `Profile.outposts` keeps the
 outposts' standing (an outpost on the edge lapses unvisited, as a POI goes thin; the nodes in
 `NET_EDGE` are never deep in the player's ground). The bot captures the front's cores in its region,
-`Skill.capture` a raid, and then leaves.
+`Skill.capture` a raid (`Skill.battle` in a battle), and then leaves.
+A raid of the island is one battle (陣取り戦, `sim/battle.ts`, `CONQUEST` in `config.ts`), given by
+`newRun(..., { battle: { factory } })` (`State.battle`); a raid without it, as the sim gate's tables
+play, has none. Over `CONQUEST.time` seconds, the raid's time limit (`timeUp`: still out is a wipe),
+every node scores its holder each second (the camp scores the player too), and the battle is won
+when the player outscores the network: `settle()` pays `CONQUEST.win`, and a lost battle hands the
+network a node on the edge of the player's ground overnight (`forfeitNode()` in `meta/island.ts`;
+never one at the camp's gate). Squads (`BattleSquad`) come out of the nodes: the player's from the
+camp's factory (`FACTORY`, `Profile.factory`, built at its station like a hideout module,
+`buildFactory()`), the network's and the rogues' more the more they hold (the network also from
+`NET_EDGE` and in answer to the player's ground). They walk the links (`walkLine()` paths traced as
+the raid starts, then forgotten), attack a neighbouring node or defend one of their side's, and take
+a node by standing at its core for `CONQUEST.capture` seconds with none of its holders there (its
+garrison counts wherever it stands and comes to the core). Near the player or the teammate
+(`CONQUEST.near`) a squad is robots in the world: the player's own in `State.friends` (`Enemy.friend`,
+blue; they fight the other sides with the faction rules and their shots never hit the player or the
+teammate, `stepFriends()` in `enemies.ts`), the others in `State.enemies` (`Enemy.battle`, which may
+walk onto the player's nodes and which garrisons fight, `hostile()`); beyond `CONQUEST.far` it is
+numbers again, with each member's health as it was. Away from both, fights and captures are
+reckoned every `CONQUEST.tick` seconds in numbers, and when the raid ends early `finishBattle()`
+reckons the rest so; it pushes no event. The night counts the nodes as the battle ended:
+`RaidDay.battle` (`battleDay()`) frees the nodes the player's robots took whether or not the player
+got off, and turns thin those taken from the player; a node the player captured counts only if it was
+still theirs at the end. `Profile.scores` keeps the last days' battles for the map table and the
+factory's panel. `battleFocus()` gives the objective (`objectiveSteps()`) and the bot a node of the
+player's under attack, or one their robots are taking.
 The hideout is the long-term goal: modules built level by level from specific valuables and
 credits taken from the stash (`build()` in `profile.ts`; levels, costs and prerequisites in
 `HIDEOUT`, effects in `HIDEOUT_EFFECT`, both in `config.ts`; `meta/hideout.ts` holds the pure
@@ -202,7 +228,8 @@ once; play goes on. Build quests (`{ t: "build" }`) finish at the base (`claimBu
 ```bash
 npm run sim:ringfall     # gate 2: bots of three skills play whole raids headless, in each region,
                          # then the hideout's pacing replays the meta with those raids, then each
-                         # skill plays 30 days on one profile with the network carried
+                         # skill plays 30 days on one profile with the network carried, each
+                         # raid a battle with the factory the profile has built
                          # (scripts/ringfall-campaign.ts, also runnable alone); raids run
                          # in parallel, one process per core, the reservoir's (the longest) first,
                          # beside the campaign's months (a process per skill, started first)
@@ -497,8 +524,9 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
 - `docs/ringfall/balance.md` holds the target curve and the latest `npm run sim:ringfall -- 30` output
   (a table per region, and the hideout's pacing table from `scripts/ringfall-pacing.ts`: each skill's
   recorded raids settled in sequence with a greedy spender, the raid at which each level is built,
-  and the island campaign from `scripts/ringfall-campaign.ts`: the network and the POIs freed at
-  days 5, 10, 20 and 30 of a month on one profile per skill).
+  and the island campaign from `scripts/ringfall-campaign.ts`: the network, the POIs freed and the
+  factory's level at days 5, 10, 20 and 30 of a month on one profile per skill, and its battles:
+  the days won, the points by day and the nodes that changed hands).
   Change a number in `config.ts` or `map.ts` only together with a re-run and an update to that file.
   While tuning, `npm run sim:ringfall -- 10` (10 raids per skill and region, about a third of the
   time) is enough to see which way a change moves the tables; the record in that file is 30.

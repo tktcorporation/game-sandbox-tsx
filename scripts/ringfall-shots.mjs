@@ -1858,6 +1858,90 @@ lap("island");
   lap("mods");
 }
 console.log(`screens: ${[...taken].join(", ")}`);
+/*
+ * The day's battle (陣取り戦): a profile on day 9 with the supply depot and the quarry freed, the
+ * factory at level 3 and the last days' battles on record. The factory's panel and the map
+ * table's battles by day; out of the gate, the battle's points under the compass, one of the
+ * player's own squads fighting one of the network's in front of the player, and the battle map
+ * with the squads, on the desktop and a phone on its side.
+ */
+const battleDay = {
+  v: 19, cash: 26000, raids: 8, extracted: 6, time: 5400, region: "reservoir", entry: "beach", seed: 5151, escaped: null,
+  stash: [{ t: "valuable", kind: "board" }, { t: "valuable", kind: "board" }, { t: "valuable", kind: "drive" }],
+  entries: ["beach", "checkpoint", "jetty", "outskirts", "quay", "shore"], depots: ["supply", "quarry"], seen: "f".repeat(4000),
+  quests: { progress: {}, done: [] }, day: 9, network: 1, factory: 3,
+  poiState: { supply: { state: "freed", lastVisit: 8 }, quarry: { state: "freed", lastVisit: 8 }, relay: { state: "held", lastVisit: 0 }, pad: { state: "held", lastVisit: 0 }, wreck: { state: "held", lastVisit: 0 }, yard: { state: "held", lastVisit: 0 }, smelter: { state: "held", lastVisit: 0 } },
+  scores: [
+    { day: 4, score: [19800, 26400, 7100], won: false },
+    { day: 5, score: [23900, 20200, 6800], won: true },
+    { day: 6, score: [22100, 23300, 7500], won: false },
+    { day: 7, score: [26800, 18100, 6600], won: true },
+    { day: 8, score: [29400, 15900, 6200], won: true },
+  ],
+};
+for (const phone of [false, true]) {
+  const ctx = phone ? await browser.newContext({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true }) : await browser.newContext({ viewport: { width: 1280, height: 720 } });
+  const pg = await withProfile(ctx, battleDay);
+  if (phone) await pg.evaluate(() => Object.defineProperty(screen, "orientation", { value: undefined, configurable: true }));
+  const tag = (n, name) => `${out}/${phone ? `m${40 + n}` : `${90 + n}`}-${name}.png`;
+  await toCamp(pg, phone);
+  const cdp = phone ? await ctx.newCDPSession(pg) : undefined;
+  const c = await readOf(pg);
+  if (c.profile.factory !== 3 || c.profile.scores.length !== 5) errors.push(`battle: the camp reads the factory at ${c.profile.factory}, ${c.profile.scores.length} battles`);
+  if (!phone) {
+    // The station from the yard: its container on the south fence, the blue robot by it, its name over it.
+    await pg.evaluate(() => window.ringfallCamp.walkTo("factory"));
+    const f = await pg.evaluate(() => window.ringfallCamp.spots().find((q) => q.id === "factory"));
+    await pg.evaluate(([x, y, z]) => window.ringfallCamera(x, y, z, Math.PI, -0.18), [f.x + 1, f.y + 2.6, f.z - 8]);
+    await pg.evaluate(() => window.advanceTime(100));
+    await pg.screenshot({ path: tag(0, "camp-factory") });
+    await pg.evaluate(() => window.ringfallCamera());
+  }
+  await useStation(pg, "factory", cdp);
+  await pg.waitForTimeout(200);
+  const panel = await pg.textContent("#hub-side");
+  if (!/Lv3/.test(panel) || !/Lv4 にする/.test(panel) || !/最近の陣取り戦/.test(panel)) errors.push(`battle: the factory's panel reads "${panel.slice(0, 200)}"`);
+  const fit = await spills(pg);
+  if (fit.length) errors.push(`battle factory panel (${phone ? "phone" : "1280x720"}): ${fit.join(", ")}`);
+  await pg.screenshot({ path: tag(1, "panel-factory") });
+  await closePanel(pg, phone);
+  await useStation(pg, "map", cdp);
+  await pg.waitForTimeout(300);
+  if ((await pg.locator("#hub-side .score-days .score-row").count()) !== 5) errors.push("battle: the map table does not list the 5 battles");
+  await pg.locator("#hub-side .score-days").scrollIntoViewIfNeeded();
+  await pg.screenshot({ path: tag(2, "panel-map-battles") });
+  await closePanel(pg, phone);
+  const run = await walkOutOfGate(pg);
+  if (!run.battle || run.battle.factory !== 3) errors.push(`battle: the raid out of the gate has ${JSON.stringify(run.battle && { factory: run.battle.factory })}`);
+  // The way in's banner has gone; the turrets stand at the nodes the player holds.
+  await pg.evaluate(() => window.ringfallStep(4000));
+  const hud = await pg.evaluate(() => ({ hidden: document.getElementById("battle").hidden, text: document.getElementById("battle").textContent }));
+  if (hud.hidden || !/自軍/.test(hud.text) || !/残り/.test(hud.text)) errors.push(`battle: the score bar reads ${JSON.stringify(hud)}`);
+  const st = await readOf(pg);
+  if (st.battle.squads.filter((q) => q.side === 0).length < 2) errors.push(`battle: ${st.battle.squads.filter((q) => q.side === 0).length} of the player's squads at the start (the turrets at two nodes)`);
+  // A fight in front of the player: the player's squad on the left, the network's on the right.
+  const p = st.player;
+  const yaw = await pg.evaluate(() => window.ringfallYaw());
+  const fx = p.x + Math.sin(yaw) * 30;
+  const fz = p.z - Math.cos(yaw) * 30;
+  await pg.evaluate(([x, z]) => window.ringfallBattle(x, z, 22), [fx, fz]);
+  const hp = (q) => q.battle.friends.reduce((n, e) => n + e.hp, 0) + q.enemies.filter((e) => Math.hypot(e.x - fx, e.z - fz) < 40).reduce((n, e) => n + e.hp, 0);
+  const h0 = hp(await readOf(pg));
+  await pg.evaluate(() => window.advanceTime(3200));
+  await pg.screenshot({ path: tag(3, "battle-fight") });
+  const after = await readOf(pg);
+  if (!(hp(after) < h0)) errors.push(`battle: the player's squad and the network's did not fight (${h0} -> ${hp(after)})`);
+  await pg.keyboard.press("KeyM");
+  await pg.evaluate(() => window.advanceTime(100));
+  await pg.screenshot({ path: tag(4, "battle-map") });
+  await pg.keyboard.press("KeyN");
+  await pg.evaluate(() => window.advanceTime(100));
+  await pg.screenshot({ path: tag(5, "battle-map-whole") });
+  await pg.keyboard.press("KeyN");
+  await pg.keyboard.press("KeyM");
+  lap(`battle, ${phone ? "phone" : "desktop"}`);
+  await ctx.close();
+}
 await browser.close();
 server.close();
 if (errors.length) {

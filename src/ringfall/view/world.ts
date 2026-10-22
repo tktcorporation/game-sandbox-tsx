@@ -261,6 +261,8 @@ export class World {
 
   /** The camp between raids is drawn: the weapons are down. */
   campMode = false;
+  /** The robot standing by the camp's factory, shown while the camp is drawn. */
+  private factoryBot: THREE.Object3D | null = null;
 
   /** Automation only: a fixed camera that replaces the player's view. */
   cameraOverride: { x: number; y: number; z: number; yaw: number; pitch: number } | null = null;
@@ -1007,7 +1009,7 @@ export class World {
           this.shake = Math.max(this.shake, 0.5);
           break;
         case "enemyFire": {
-          const hue = e.rogue ? PAL.rogueOrb : PAL.orb;
+          const hue = e.friend ? PAL.friendOrb : e.rogue ? PAL.rogueOrb : PAL.orb;
           this.burst(e.pos, hue, 3, 2, 0.06, 0, 0.25);
           if (e.foe) {
             // Fire between the factions: a tracer and a flash that read from far off, thicker with distance (see FACTION).
@@ -1024,7 +1026,7 @@ export class World {
           // Destroyed by the other faction: it goes down as a wreck, with no feel of the player's own kill.
           const v = this.enemies.get(e.id);
           const big = e.kind === "heavy" ? 2 : 1;
-          this.burst(e.pos, e.rogue ? PAL.rogueArmorLight : PAL.armorLight, 14 * big, 7, 0.16, 14, 1.1);
+          this.burst(e.pos, e.friend ? PAL.friendArmorLight : e.rogue ? PAL.rogueArmorLight : PAL.armorLight, 14 * big, 7, 0.16, 14, 1.1);
           this.burst(e.pos, 0xffc070, 8 * big, 9, 0.06, 2, 0.35);
           this.flashAt(e.pos, 0xffc070, 3 + Math.hypot(e.pos.x - s.player.pos.x, e.pos.z - s.player.pos.z) * 0.02);
           if (v) {
@@ -1154,8 +1156,26 @@ export class World {
       }
     }
 
-    // --- enemies
-    for (const e of s.enemies) {
+    // --- the camp's factory: one of the player's own robots stands by the parts container (scenery, no box)
+    if (this.campMode && !this.factoryBot) {
+      const spot = CAMP.spots.find((c) => c.id === "factory");
+      if (spot) {
+        const m = buildEnemy("grunt");
+        m.mats[0].color.setHex(PAL.friendArmor);
+        m.mats[1]?.color.setHex(PAL.friendArmorLight);
+        (m.eyeHalo.material as THREE.SpriteMaterial).color.setHex(PAL.friendEye);
+        (m.eye.material as THREE.MeshBasicMaterial).color.setHex(PAL.friendEye);
+        m.root.position.set(spot.x + 2.7, spot.y, spot.z + 0.4);
+        m.body.rotation.y = 0.3;
+        this.scene.add(m.root);
+        this.factoryBot = m.root;
+      }
+    }
+    if (this.factoryBot) this.factoryBot.visible = this.campMode;
+
+    // --- enemies, and the player's own robots among them
+    const robots = s.friends.length ? [...s.enemies, ...s.friends] : s.enemies;
+    for (const e of robots) {
       let v = this.enemies.get(e.id);
       if (!v) {
         const m = buildEnemy(e.kind);
@@ -1173,11 +1193,17 @@ export class World {
           m.mats[1]?.color.setHex(PAL.rogueArmorLight);
           (m.eyeHalo.material as THREE.SpriteMaterial).color.setHex(PAL.rogueEye);
         }
+        // One of the player's own: the same robot in blue, its eye cyan (sim/battle.ts).
+        if (e.friend) {
+          m.mats[0].color.setHex(PAL.friendArmor);
+          m.mats[1]?.color.setHex(PAL.friendArmorLight);
+          (m.eyeHalo.material as THREE.SpriteMaterial).color.setHex(PAL.friendEye);
+        }
         if (e.plate > 0) addPlates(m, e.kind, e.plate);
         this.scene.add(m.root);
         const beam = new THREE.Mesh(
           new THREE.CylinderGeometry(0.06, ENEMIES[e.kind].radius * 0.45, 40, 8, 1, true),
-          new THREE.MeshBasicMaterial({ toneMapped: false, color: PAL.eye, transparent: true, opacity: 0.3, depthWrite: false, blending: THREE.AdditiveBlending }),
+          new THREE.MeshBasicMaterial({ toneMapped: false, color: e.friend ? PAL.friendEye : PAL.eye, transparent: true, opacity: 0.3, depthWrite: false, blending: THREE.AdditiveBlending }),
         );
         beam.position.set(e.pos.x, e.pos.y + 20, e.pos.z);
         this.scene.add(beam);
@@ -1241,7 +1267,7 @@ export class World {
       m.eye.scale.setScalar(tele);
       m.eyeHalo.scale.setScalar(k.weakR * (winding ? 9 : 4));
       (m.eyeHalo.material as THREE.SpriteMaterial).opacity = winding ? 0.95 : 0.55;
-      (m.eye.material as THREE.MeshBasicMaterial).color.setHex(e.mode === "stunned" ? 0x9fe8ff : e.rogue ? PAL.rogueEye : PAL.eye);
+      (m.eye.material as THREE.MeshBasicMaterial).color.setHex(e.mode === "stunned" ? 0x9fe8ff : e.friend ? PAL.friendEye : e.rogue ? PAL.rogueEye : PAL.eye);
       v.flash = Math.max(0, v.flash - dt);
       for (const mat of m.mats) mat.emissive.setHex(v.flash > 0 ? 0xffffff : e.mode === "stunned" ? 0x1f4b5c : 0x000000);
       v.shieldFlash = Math.max(0, v.shieldFlash - dt);
@@ -1274,7 +1300,7 @@ export class World {
       }
     }
     for (const [id, v] of this.enemies) {
-      if (!s.enemies.some((e) => e.id === id)) {
+      if (!robots.some((e) => e.id === id)) {
         this.scene.remove(v.m.root);
         if (v.lane) this.scene.remove(v.lane);
         if (v.spawnBeam) this.scene.remove(v.spawnBeam);
@@ -1297,7 +1323,7 @@ export class World {
       }
       g.visible = true;
       // The rogues' bolts burn yellow, the network's magenta.
-      const hue = o.rogue ? PAL.rogueOrb : PAL.orb;
+      const hue = o.friend ? PAL.friendOrb : o.rogue ? PAL.rogueOrb : PAL.orb;
       ((g.children[0] as THREE.Mesh).material as THREE.MeshBasicMaterial).color.setHex(hue);
       ((g.children[2] as THREE.Sprite).material as THREE.SpriteMaterial).color.setHex(hue);
       g.position.set(o.pos.x, o.pos.y, o.pos.z);

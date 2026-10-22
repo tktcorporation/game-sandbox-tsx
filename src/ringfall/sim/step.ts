@@ -1,4 +1,5 @@
-import { stepEnemies, stepOrbs, stepWaves } from "./enemies";
+import { stepEnemies, stepFriends, stepOrbs, stepWaves } from "./enemies";
+import { finishBattle, stepBattle } from "./battle";
 import { stepPlayer, tickReveal } from "./player";
 import { stepAlly } from "./ally";
 import { stepCrews, stepDepots, stepEntries, stepExtract, stepHome, stepLoot, stepParties, stepPoi, stepReinforce } from "./world";
@@ -25,11 +26,13 @@ export function step(s: State, input: Input, prevCrouch: boolean) {
     stepAlly,
     stepFactions,
     stepEnemies,
+    stepFriends,
     stepOrbs,
     stepWaves,
     (s) => stepLoot(s, input),
     stepPoi,
     stepFront,
+    stepBattle,
     stepReinforce,
     stepParties,
     stepMobiles,
@@ -44,6 +47,10 @@ export function step(s: State, input: Input, prevCrouch: boolean) {
   ];
   for (const run of systems) {
     run(s);
-    if (ended(s)) return;
+    if (ended(s)) {
+      // The raid is over before the battle may be: the rest of it is reckoned now (sim/battle.ts).
+      finishBattle(s);
+      return;
+    }
   }
 }

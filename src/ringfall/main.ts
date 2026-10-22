@@ -6,6 +6,7 @@ import { terrainHeight } from "./sim/terrain";
 import { callLeft, freeKit, idleInput, newRun, type GameEvent, type Input, type Kit, type State } from "./sim/state";
 import { CAMP, entryOf, FRAMES, NODES, POIS, poiIndex, type CampSpot, type RegionId, type StationId } from "./sim/map";
 import { frontNodes } from "./sim/front";
+import { battleMarks, battleRate, placeBattleSquad } from "./sim/battle";
 import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
 import { analyse, settle, type Settlement } from "./meta/profile";
 import { MOD, MODS, type ModKind } from "./sim/config";
@@ -481,7 +482,7 @@ function start(go: Launch, from?: State) {
   const record = currentStory(hub.profile.records)?.id;
   const taken = hub.contract();
   const fetch = taken?.t === "fetch" ? { poi: taken.poi, kind: taken.kind, n: taken.n } : undefined;
-  state = newRun(go.seed, kit, region, { depots: hub.profile.depots, seen: hub.profile.seen, from: go.from, entry: go.entry, routes: hub.profile.routes, island: holds(hub.profile), outposts: hub.profile.outposts, record, fetch, network: hub.profile.network, event: hub.profile.events[0], threat: hub.profile.threat, known: hub.profile.known });
+  state = newRun(go.seed, kit, region, { depots: hub.profile.depots, seen: hub.profile.seen, from: go.from, entry: go.entry, routes: hub.profile.routes, island: holds(hub.profile), outposts: hub.profile.outposts, record, fetch, network: hub.profile.network, event: hub.profile.events[0], threat: hub.profile.threat, known: hub.profile.known, battle: { factory: hub.profile.factory } });
   hud.setContract(hub.contract(), record ?? null);
   world.campMode = false;
   if (from) walkOut(state, from);
@@ -622,6 +623,7 @@ declare global {
     ringfallFrames: () => Record<string, { x: number; z: number }>;
     ringfallPlace: (x: number, z: number, yaw: number) => void;
     ringfallFight: (x: number, z: number, apart?: number) => { x: number; z: number }[];
+    ringfallBattle: (x: number, z: number, apart?: number) => { x: number; z: number }[] | null;
     ringfallContract: {
       take: (type: string) => string | null;
       destroyTarget: () => number;
@@ -647,7 +649,7 @@ window.render_game_to_text = () => {
   return JSON.stringify({
     screen: running ? "game" : !$("results").hidden ? "results" : !$("ending").hidden ? "ending" : camping ? "camp" : "title",
     camp: camping ? { panel: hub.station, near: campSpotAt(p.pos)?.id ?? null, lent: hub.lent, ride: { to: hub.rideTo(), refused: hub.rideRefused() }, marks: hub.marks(), fading, board: hub.profile.board.contracts.map((c) => ({ id: c.id, t: c.t })), taken: hub.profile.taken, story: currentStory(hub.profile.records)?.id ?? null } : null,
-    profile: { events: hub.profile.events, cash: hub.profile.cash, stash: hub.profile.stash.length, raids: hub.profile.raids, hideout: hub.profile.hideout, escaped: !!hub.profile.escaped, seed: hub.profile.seed, routes: hub.profile.routes, entries: hub.profile.entries, day: hub.profile.day, poiState: hub.profile.poiState, network: hub.profile.network, threat: hub.profile.threat, known: hub.profile.known, freedAt: hub.profile.freedAt, outposts: hub.profile.outposts },
+    profile: { events: hub.profile.events, cash: hub.profile.cash, stash: hub.profile.stash.length, raids: hub.profile.raids, hideout: hub.profile.hideout, escaped: !!hub.profile.escaped, seed: hub.profile.seed, routes: hub.profile.routes, entries: hub.profile.entries, day: hub.profile.day, poiState: hub.profile.poiState, network: hub.profile.network, threat: hub.profile.threat, known: hub.profile.known, freedAt: hub.profile.freedAt, outposts: hub.profile.outposts, factory: hub.profile.factory, scores: hub.profile.scores },
     boost: { ...s.boost, name: POIS[s.boost.poi].name },
     network: s.network,
     threat: s.threat,
@@ -659,7 +661,7 @@ window.render_game_to_text = () => {
     debris: s.bins.filter((b) => b.debris).map((b) => ({ x: b.x, y: +b.y.toFixed(1), z: b.z, open: b.open }))[0] ?? null,
     crews: s.squads.flatMap((q, i) => (q.crew ? [{ squad: i, members: s.enemies.filter((e) => e.squad === i).map((e) => ({ x: Math.round(e.pos.x), y: +e.pos.y.toFixed(1), z: Math.round(e.pos.z) })), bin: q.crew.bin >= 0 ? { x: s.bins[q.crew.bin].x, y: s.bins[q.crew.bin].y, z: s.bins[q.crew.bin].z } : null, searching: q.crew.searchT > 0, bag: q.bag ?? [], leaving: q.crew.leaving }] : [])),
     retake: { poi: s.retakePoi, next: Number.isFinite(s.retakeT) ? +s.retakeT.toFixed(1) : null, left: s.enemies.filter((e) => s.squads[e.squad]?.retake !== undefined).length },
-    settled: settlement && { overrun: settlement.overrun, event: settlement.event, network: settlement.network, retaken: settlement.retaken, home: settlement.home.length, sold: settlement.sold.length, quests: settlement.quests.map((q) => q.id), opened: settlement.opened, learned: settlement.learned, day: settlement.day, freed: settlement.freed, thinned: settlement.thinned, front: settlement.front, income: settlement.income, dropped: settlement.dropped, outposts: settlement.outposts, contract: settlement.contract && { id: settlement.contract.c.id, t: settlement.contract.c.t, done: settlement.contract.done }, story: settlement.story?.id ?? null, threat: settlement.threat, analysable: settlement.analysable, analysed },
+    settled: settlement && { overrun: settlement.overrun, event: settlement.event, network: settlement.network, retaken: settlement.retaken, home: settlement.home.length, sold: settlement.sold.length, quests: settlement.quests.map((q) => q.id), opened: settlement.opened, learned: settlement.learned, day: settlement.day, freed: settlement.freed, thinned: settlement.thinned, front: settlement.front, income: settlement.income, dropped: settlement.dropped, outposts: settlement.outposts, contract: settlement.contract && { id: settlement.contract.c.id, t: settlement.contract.c.t, done: settlement.contract.done }, story: settlement.story?.id ?? null, threat: settlement.threat, analysable: settlement.analysable, analysed, battle: settlement.battle },
     contract: running && hub.contract() ? { t: hub.contract()!.t, ...(hub.contract()!.t === "destroy" ? { relay: (hub.contract() as { relay: string }).relay } : {}), ...contractProgress(hub.contract()!, s) } : null,
     records: s.player.records,
     vaults: s.bins.filter((b) => b.vault).map((b) => ({ poi: b.poi, x: b.x, y: b.y, z: b.z, open: b.open })),
@@ -693,6 +695,18 @@ window.render_game_to_text = () => {
     enemies: s.enemies.map((e) => ({ kind: e.kind, x: Math.round(e.pos.x), z: Math.round(e.pos.z), y: +e.pos.y.toFixed(1), hp: Math.round(e.hp + e.shield), mode: e.mode, aware: e.aware, detect: +e.detect.toFixed(2), squad: e.squad, target: e.target, ...(e.plate ? { plate: e.plate } : {}), ...(e.rogue ? { rogue: true } : {}) })),
     squads: s.squads.map((q) => ({ name: q.name, poi: q.poi, engaged: q.engaged, lost: q.engaged && q.sinceSeen >= AWARE.trackTime, ...(q.rogue ? { rogue: true } : {}), ...(q.mobile ? { mobile: true } : {}), ...(q.foe !== undefined ? { foe: q.foe } : {}), ...(q.ambush ? { ambush: true } : {}) })),
     territory: s.territory,
+    battle: s.battle && {
+      score: s.battle.score.map(Math.round),
+      rate: battleRate(s),
+      left: Math.max(0, Math.round(s.battle.end - s.battle.now)),
+      factory: s.battle.factory,
+      done: s.battle.done,
+      won: s.battle.won,
+      taken: s.battle.taken,
+      meters: NODES.map((n, i) => s.battle!.meter[i] && { id: n.id, side: s.battle!.meter[i]!.side, t: +s.battle!.meter[i]!.t.toFixed(1) }).filter(Boolean),
+      squads: battleMarks(s).map((m) => ({ ...m, x: Math.round(m.x), z: Math.round(m.z), to: NODES[m.to]?.id ?? "camp" })),
+      friends: s.friends.map((e) => ({ kind: e.kind, x: Math.round(e.pos.x), y: +e.pos.y.toFixed(1), z: Math.round(e.pos.z), hp: Math.round(e.hp + e.shield), mode: e.mode, squad: e.squad, ...(e.post ? { post: true } : {}) })),
+    },
     front: { nodes: s.nodes, onFront: frontNodes(s.nodes), capture: s.capture && { node: NODES[s.capture.node].id, t: +s.capture.t.toFixed(1), held: s.capture.held, waves: s.capture.waves }, cores: NODES.map((n) => ({ id: n.id, x: n.core.x, y: +n.core.y.toFixed(1), z: n.core.z })) },
     objective: running ? hud.objective() : null,
     contacts: s.contacts.map((c) => ({ squad: c.squad, x: c.x, z: c.z, age: +(s.time - c.t).toFixed(1), rogue: c.rogue, fight: c.fight })),
@@ -814,6 +828,25 @@ window.ringfallFight = (x, z, apart = 34) => {
   s.squads[b].foe = s.enemies.find((e) => e.squad === a)?.id;
   s.squads[a].foeT = s.squads[b].foeT = 0;
   return at;
+};
+
+/**
+ * Automation only: one of the player's own squads and one of the network's set down `apart`
+ * metres either side of (x, z) in the day's battle, each set on the other, for a screenshot of a
+ * fight between them. Returns where each stands, or null in a raid with no battle.
+ */
+window.ringfallBattle = (x, z, apart = 30) => {
+  const s = state;
+  if (!s.battle) return null;
+  const ours = placeBattleSquad(s, 0, ["grunt", "heavy", "drone"], x - apart / 2, z);
+  const theirs = placeBattleSquad(s, 1, ["grunt", "grunt", "drone"], x + apart / 2, z);
+  s.squads[ours].foe = s.enemies.find((e) => e.squad === theirs)?.id;
+  s.squads[theirs].foe = s.friends.find((e) => e.squad === ours)?.id;
+  s.squads[ours].foeT = s.squads[theirs].foeT = 0;
+  return [
+    { x: x - apart / 2, z },
+    { x: x + apart / 2, z },
+  ];
 };
 
 window.ringfallBot = (skill: string) => {

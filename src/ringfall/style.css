@@ -133,6 +133,84 @@ kbd {
   display: none;
 }
 
+/* The day's battle (陣取り戦): the points of the player, the network and the rogues, and the time left. */
+#battle {
+  position: absolute;
+  top: 58px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  background: var(--plate);
+  font-family: var(--jp);
+  font-weight: 800;
+  font-size: 12px;
+  pointer-events: none;
+  white-space: nowrap;
+}
+#battle[hidden] {
+  display: none;
+}
+#battle .side {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+#battle .side small {
+  color: var(--muted);
+  font-size: 11px;
+}
+#battle .side b {
+  font-family: var(--num);
+  font-size: 15px;
+}
+#battle .you b {
+  color: #6fb0ff;
+}
+#battle .net b {
+  color: #ff6a5c;
+}
+#battle .rogue b {
+  color: #ffc04d;
+  font-size: 12px;
+}
+#battle.winning .you b::after {
+  content: " ▲";
+  font-size: 10px;
+}
+#battle.losing .net b::after {
+  content: " ▲";
+  font-size: 10px;
+}
+#battle-bar {
+  display: flex;
+  width: 150px;
+  height: 7px;
+  background: rgba(255, 255, 255, 0.12);
+}
+#battle-bar i {
+  display: block;
+  height: 100%;
+}
+#battle-bar .you {
+  background: #3d8cff;
+}
+#battle-bar .net {
+  background: #ff3b30;
+}
+#battle-bar .rogue {
+  background: #ffb02e;
+}
+#battle-left {
+  font-family: var(--num);
+  color: #f4e9c8;
+}
+#battle-left.late {
+  color: #ff8a6a;
+}
+
 #objective {
   position: absolute;
   top: 16px;
@@ -2467,6 +2545,13 @@ body.touch #title h1 {
   color: #e8a628;
 }
 /* The titan's navy, lightened to read on the dark under the map. */
+/* The battle's squads on the map: chevrons in the side's colour. */
+#map .map-key.squad.you {
+  color: #4f9bff;
+}
+#map .map-key.squad.net {
+  color: #ff4a3d;
+}
 #map .map-key.titan {
   color: #7f89c4;
 }
@@ -2880,4 +2965,194 @@ body.touch #camp-prompt {
 .front-change span.lost {
   color: #ffbe7a;
   box-shadow: inset 3px 0 0 #d4892c;
+}
+
+/* On a phone in landscape the battle's bar sits tighter under the compass's mark, clear of the
+   map button: the rogues' points and the words are left to the map. */
+@media (max-height: 500px) {
+  #battle {
+    top: 58px;
+    gap: 4px;
+    padding: 2px 6px;
+    font-size: 10px;
+  }
+  #battle .side b {
+    font-size: 12px;
+  }
+  #battle .side small,
+  #battle .rogue,
+  #battle-left .lbl {
+    display: none;
+  }
+  #battle-bar {
+    width: 60px;
+    height: 5px;
+  }
+}
+
+/* The day's battle on the results: won or lost, each side's points and their shares. */
+.battle-result {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  align-items: center;
+  padding: 8px 12px;
+  margin: 4px 0 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border-left: 4px solid #ff3b30;
+}
+.battle-result.won {
+  border-left-color: #3d8cff;
+}
+.battle-result strong {
+  grid-row: span 2;
+  font-size: 26px;
+}
+.battle-result.won strong {
+  color: #6fb0ff;
+}
+.battle-result.lost strong {
+  color: #ff6a5c;
+}
+.battle-scores {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+  font-weight: 800;
+}
+.battle-scores b {
+  font-family: var(--num);
+}
+.battle-scores .you b {
+  color: #6fb0ff;
+}
+.battle-scores .net b {
+  color: #ff6a5c;
+}
+.battle-scores .rogue b {
+  color: #ffc04d;
+}
+.battle-share {
+  display: flex;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+}
+.battle-share i {
+  display: block;
+}
+.battle-share .you {
+  background: #3d8cff;
+}
+.battle-share .net {
+  background: #ff3b30;
+}
+.battle-share .rogue {
+  background: #ffb02e;
+}
+.battle-result small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+/* The factory's panel and the battles by day (the map table and the factory). */
+.factory-head {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 8px 0 10px;
+}
+.factory-head > small {
+  color: var(--muted);
+  font-weight: 800;
+}
+.factory-head b {
+  font-family: var(--num);
+  font-size: 20px;
+  color: #6fb0ff;
+}
+.factory-head p {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-weight: 800;
+}
+.factory-head .pips,
+.factory-next .pips {
+  display: flex;
+  gap: 3px;
+}
+.factory-head .pips i {
+  width: 14px;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.16);
+}
+.factory-head .pips i.on {
+  background: #3d8cff;
+}
+.factory-next .mod-head {
+  cursor: default;
+}
+.factory-top {
+  font-weight: 800;
+  color: #6fb0ff;
+}
+.score-days {
+  display: grid;
+  gap: 3px;
+  margin: 2px 0 8px;
+}
+.score-row {
+  display: grid;
+  grid-template-columns: 4.2em 1.6em 1fr auto;
+  align-items: center;
+  gap: 6px;
+  font-weight: 800;
+  font-size: 12px;
+}
+.score-row small {
+  color: var(--muted);
+}
+.score-row.won b {
+  color: #6fb0ff;
+}
+.score-row.lost b {
+  color: #ff6a5c;
+}
+.score-bar {
+  display: flex;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+}
+.score-bar i {
+  display: block;
+}
+.score-bar .you {
+  background: #3d8cff;
+}
+.score-bar .net {
+  background: #ff3b30;
+}
+.score-bar .rogue {
+  background: #ffb02e;
+}
+.score-nums {
+  display: flex;
+  gap: 6px;
+  font-family: var(--num);
+  font-size: 11px;
+}
+.score-nums em {
+  font-style: normal;
+}
+.score-nums .you {
+  color: #6fb0ff;
+}
+.score-nums .net {
+  color: #ff6a5c;
+}
+.score-none {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 2px 0 8px;
 }

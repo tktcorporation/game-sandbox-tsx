@@ -1,4 +1,5 @@
-import { AWARE, DEG, FRONT, HEALS, PLAYER, TICK, ULT } from "./config";
+import { AWARE, CONQUEST, DEG, FRONT, HEALS, PLAYER, TICK, ULT } from "./config";
+import { battleFocus } from "./battle";
 import { frontNodes } from "./front";
 import { currentStep, objectiveSteps } from "./objective";
 import { bodyCenter, eyePos, flankOf, magSize, weakPoint } from "./combat";
@@ -30,12 +31,13 @@ export interface Skill {
   retreat: number; // chance to break line of sight and back off when two robots see it or its shield is gone
   raid: number; // POIs it clears before heading for a way out
   capture: number; // cores it captures in one raid at most
+  battle: number; // cores it captures in one raid of the island's battle at most (sim/battle.ts)
 }
 
 export const SKILLS: Skill[] = [
-  { name: "beginner", aimErr: 6.5, turn: 0.1, react: 0.45, dodge: 0.4, heads: false, abilities: 0.25, flank: 0.2, retreat: 0.5, raid: 2, capture: 1 },
-  { name: "casual", aimErr: 3.2, turn: 0.18, react: 0.28, dodge: 0.6, heads: false, abilities: 0.8, flank: 0.5, retreat: 0.8, raid: 4, capture: 1 },
-  { name: "good", aimErr: 1.1, turn: 0.32, react: 0.15, dodge: 0.9, heads: true, abilities: 3, flank: 0.85, retreat: 0.95, raid: 3, capture: 2 },
+  { name: "beginner", aimErr: 6.5, turn: 0.1, react: 0.45, dodge: 0.4, heads: false, abilities: 0.25, flank: 0.2, retreat: 0.5, raid: 2, capture: 1, battle: 1 },
+  { name: "casual", aimErr: 3.2, turn: 0.18, react: 0.28, dodge: 0.6, heads: false, abilities: 0.8, flank: 0.5, retreat: 0.8, raid: 4, capture: 1, battle: 1 },
+  { name: "good", aimErr: 1.1, turn: 0.32, react: 0.15, dodge: 0.9, heads: true, abilities: 3, flank: 0.85, retreat: 0.95, raid: 3, capture: 2, battle: 3 },
 ];
 
 /**
@@ -231,7 +233,12 @@ export class Bot {
     // Where to go.
     let goal: { x: number; z: number } | null = null;
     let fight = false;
-    if (aim < 0 && core < 0 && (callLeft(s, this.exit(s).id) === 0 || !tgt || dist2d(tgt.pos, p.pos) > 70 || this.slipAway(s, live))) {
+    // A node of its own being taken comes first while no fight is on: back to it, to fight there.
+    const guard = core < 0 && !capturing ? this.guardCore(s) : -1;
+    if (guard >= 0) this.guarded += TICK;
+    if (guard >= 0 && (!tgt || dist2d(tgt.pos, p.pos) > 70)) {
+      goal = standBy(guard);
+    } else if (aim < 0 && core < 0 && (callLeft(s, this.exit(s).id) === 0 || !tgt || dist2d(tgt.pos, p.pos) > 70 || this.slipAway(s, live))) {
       goal = this.waitSpot(s) ?? this.exit(s);
     } else if (tgt && (dist2d(tgt.pos, p.pos) < 70 || (aim >= 0 && tgt.poi === aim && (tgt.id === this.chasing || dist2d(p.pos, POIS[aim]) < 30)))) {
       // Once on its way to a robot of the POI it is taking it keeps after it, however far the
@@ -635,7 +642,7 @@ export class Bot {
   private nextPoi(s: State): number {
     if (s.stats.cleared.length >= this.skill.raid) return -1;
     // The cores it meant to take are taken: home with them, as a wipe now would lose them.
-    if (s.stats.captured.length >= this.skill.capture) return -1;
+    if (s.stats.captured.length >= this.cores(s)) return -1;
     // The raiders are down: cut the raid short, as soon as the POIs it promised itself are halved.
     if (this.raidersIn && s.stats.cleared.length >= Math.ceil(this.skill.raid / 2)) return -1;
     // Hurt with nothing left to heal with: one more fight is one too many.
@@ -677,7 +684,7 @@ export class Bot {
     const spent = (left < 0.6 && !pickHeal(s)) || p.selfRevive <= 0 || this.raidersIn;
     const done = new Set([...s.stats.cleared, ...s.stats.captured.map((id) => poiIndex(id as PoiId)).filter((i) => i >= 0)]).size + s.stats.captured.filter((id) => poiIndex(id as PoiId) < 0).length;
     // As many cores a raid as its skill dares (`Skill.capture`), and none once it is spent.
-    if (spent || s.stats.captured.length >= this.skill.capture) return -1;
+    if (spent || s.stats.captured.length >= this.cores(s)) return -1;
     const open = NODES.map((n, i) => ({ n, i })).filter(({ n, i }) => {
       if (!front[i] || n.region !== s.region || this.coreLeft.has(i)) return false;
       if (n.kind === "poi") return s.cleared[poiIndex(n.id as PoiId)];
@@ -696,6 +703,29 @@ export class Bot {
       }
     }
     return pick;
+  }
+
+  /** The cores it means to capture this raid: more in the island's battle (`Skill.battle`), where every node held scores. */
+  private cores(s: State) {
+    return s.battle ? this.skill.battle : this.skill.capture;
+  }
+
+  /** Seconds it has spent going back to its own nodes under attack this raid (see `guardCore()`). */
+  private guarded = 0;
+
+  /**
+   * In the island's battle, a node of its own in the region it started in that the other sides
+   * are taking (`battleFocus()`), as a place in `NODES`, while it has the time for it
+   * (`CONQUEST.botDefend` all told), is within 350 m, and is not too hurt to fight on; else -1.
+   */
+  private guardCore(s: State): number {
+    const f = battleFocus(s);
+    if (!f || f.kind !== "defend" || this.guarded > CONQUEST.botDefend) return -1;
+    const n = NODES[f.node];
+    const p = s.player;
+    const left = (p.hp + p.shield) / (PLAYER.hp + PLAYER.shieldByTier[p.armor]);
+    if (n.region !== s.region || dist2d(n.core, p.pos) > 350 || p.selfRevive <= 0 || (left < 0.6 && !pickHeal(s))) return -1;
+    return f.node;
   }
 
   /** Cores it gave up on, and for each core the meter's best and when it last grew (or was first aimed at). */

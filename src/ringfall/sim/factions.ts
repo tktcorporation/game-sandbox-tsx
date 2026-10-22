@@ -6,6 +6,7 @@ import { worldKey } from "./routes";
 import { mix, sightScale, type Enemy, type Point, type State } from "./state";
 import { alertSquad, headOf, standable } from "./awareness";
 import { bodyCenter, fall } from "./combat";
+import { robotSide } from "./battle";
 import { terrainHeight } from "./terrain";
 
 /*
@@ -15,10 +16,19 @@ import { terrainHeight } from "./terrain";
  */
 
 /**
- * Whether robots `a` and `b` fight each other: of different factions, neither the titan nor a
- * POI's garrison (which hold their posts), neither still beaming in.
+ * Whether robots `a` and `b` fight each other: of different sides (the network, the rogues, the
+ * player's own robots), neither the titan, neither still beaming in, and neither a garrison's
+ * (which hold their posts) unless the other is one of a battle's squads (sim/battle.ts), which
+ * come to take the node the garrison stands for.
  */
-export const hostile = (a: Enemy, b: Enemy) => !!a.rogue !== !!b.rogue && a.poi < 0 && b.poi < 0 && a.kind !== "titan" && b.kind !== "titan" && a.mode !== "spawning" && b.mode !== "spawning";
+export const hostile = (a: Enemy, b: Enemy) =>
+  robotSide(a) !== robotSide(b) && (a.poi < 0 || !!b.battle) && (b.poi < 0 || !!a.battle) && a.kind !== "titan" && b.kind !== "titan" && a.mode !== "spawning" && b.mode !== "spawning";
+
+/** Whether robot `e` is still in the raid: among the robots, or among the player's own. */
+const present = (s: State, e: Enemy) => (e.friend ? s.friends : s.enemies).includes(e);
+
+/** Whether a robot with id `id` is in the raid. */
+const anyWithId = (s: State, id: number) => s.enemies.some((e) => e.id === id) || s.friends.some((e) => e.id === id);
 
 /** A short hash of a name, so each walk starts from its own point of a raid's seed. */
 const nameHash = (name: string) => {
@@ -121,8 +131,10 @@ export function stepMobiles(s: State) {
 /** Where a robot `e` of a squad fighting the other faction is fighting: its foe, while there is one (see FACTION). */
 export function foeOf(s: State, e: Enemy, byId: Map<number, Enemy>): Enemy | null {
   const sq = s.squads[e.squad];
-  if (!sq || sq.foe === undefined || sq.engaged || e.poi >= 0 || e.kind === "titan") return null;
-  return byId.get(sq.foe) ?? null;
+  if (!sq || sq.foe === undefined || sq.engaged || e.kind === "titan") return null;
+  const foe = byId.get(sq.foe) ?? null;
+  // A garrison leaves its post only for a battle's squad come to take its node.
+  return foe && e.poi >= 0 && !foe.battle ? null : foe;
 }
 
 /** The robots that may fight the other faction, by `CELL`-metre square. */
@@ -163,13 +175,15 @@ export function stepFactions(s: State) {
     if (sq.foe === undefined) continue;
     sq.foeT = (sq.foeT ?? 0) + TICK;
     sq.heardT = Math.max(0, (sq.heardT ?? 0) - TICK);
-    if (sq.engaged || sq.foeT > FACTION.forget || !s.enemies.some((e) => e.id === sq.foe)) sq.foe = sq.foeAt = undefined;
+    if (sq.engaged || sq.foeT > FACTION.forget || !anyWithId(s, sq.foe)) sq.foe = sq.foeAt = undefined;
   }
   s.factionT -= TICK;
   if (s.factionT > 0) return;
   s.factionT = FACTION.scan;
-  const list = s.enemies.filter((e) => e.poi < 0 && e.kind !== "titan" && e.mode !== "spawning");
-  if (!list.some((e) => e.rogue) || !list.some((e) => !e.rogue)) return;
+  // While a battle's squads are in the world, the garrisons look for them too, and the player's own robots look for everyone else.
+  const battling = s.friends.length > 0 || (!!s.battle && s.enemies.some((e) => e.battle));
+  const list = (s.friends.length ? [...s.enemies, ...s.friends] : s.enemies).filter((e) => (e.poi < 0 || battling) && e.kind !== "titan" && e.mode !== "spawning");
+  if (new Set(list.map(robotSide)).size < 2) return;
   const b = buckets(list);
   const scale = sightScale(s) * FACTION.sight;
   const bySquad = new Map<number, Enemy[]>();
@@ -196,7 +210,7 @@ export function stepFactions(s: State) {
       if (seen) break;
     }
     if (!seen) continue;
-    if (!fighting || seen.id === sq.foe || !s.enemies.some((e) => e.id === sq.foe)) sq.foe = seen.id;
+    if (!fighting || seen.id === sq.foe || !anyWithId(s, sq.foe!)) sq.foe = seen.id;
     if (sq.foe === seen.id) {
       sq.foeT = 0;
       sq.foeAt = { x: seen.pos.x, z: seen.pos.z };
@@ -210,19 +224,24 @@ export function stepFactions(s: State) {
  * already, turns on whoever shot it. At no health left it falls (`fall()`).
  */
 export function damageRobot(s: State, v: Enemy, dmg: number, by: Enemy | null) {
-  if (!s.enemies.includes(v)) return;
+  if (!present(s, v)) return;
   dmg *= FACTION.dmg;
   const toShield = Math.min(v.shield, dmg);
   v.shield -= toShield;
   v.hp -= dmg - toShield;
   s.events.push({ t: "robotHit", id: v.id, pos: bodyCenter(v) });
   const sq = s.squads[v.squad];
-  if (sq && by && !sq.engaged && s.enemies.includes(by) && hostile(v, by) && (sq.foe === undefined || !s.enemies.some((e) => e.id === sq.foe))) {
+  if (sq && by && !sq.engaged && present(s, by) && hostile(v, by) && (sq.foe === undefined || !anyWithId(s, sq.foe))) {
     sq.foe = by.id;
     sq.foeT = 0;
     sq.foeAt = { x: by.pos.x, z: by.pos.z };
   }
-  if (v.hp <= 0) fall(s, v, by);
+  if (v.hp > 0) return;
+  if (!v.friend) return fall(s, v, by);
+  // One of the player's own goes down: a wreck, and nothing to pick up.
+  s.friends = s.friends.filter((o) => o !== v);
+  const from = by?.pos ?? v.pos;
+  s.events.push({ t: "fall", id: v.id, kind: v.kind, pos: bodyCenter(v), rogue: false, friend: true, fromX: from.x, fromZ: from.z });
 }
 
 /**
@@ -243,7 +262,8 @@ export function fightHeard(s: State, e: Enemy) {
     told.add(o.squad);
     alertSquad(s, o.squad, e.pos.x, e.pos.z, e);
   }
-  if (dist2d(e.pos, s.player.pos) < FACTION.hear) note(s, e.squad, e.pos, !!e.rogue, true);
+  // The map marks the others' fights; the player's own robots are on it as the battle's squads.
+  if (!e.friend && dist2d(e.pos, s.player.pos) < FACTION.hear) note(s, e.squad, e.pos, !!e.rogue, true);
 }
 
 /** Marks squad `squad` on the player's map at `at` (see `State.contacts`). */

@@ -1,7 +1,7 @@
-import { ALLY, HEALS as HEAL_SPECS, HIDEOUT, MOD_KINDS, NETWORK, RARITY, THREAT, TOOLS, VALUABLES, WEAPONS, type ModuleId, type ValuableKind } from "../sim/config";
+import { ALLY, FACTORY, HEALS as HEAL_SPECS, HIDEOUT, MOD_KINDS, NETWORK, RARITY, THREAT, TOOLS, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type ValuableKind } from "../sim/config";
 import { boostFor, freeKit, raidClock, type Kit } from "../sim/state";
 import { entryOf, NODES, POIS, poiIndex, poiRegion, REGIONS, regionOf, ROUTES, type EntryId, type PoiId, type RegionId, type StationId } from "../sim/map";
-import { build, buildState, buy, buyPrice, canBuild, canStartIn, deliver, deliverable, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, itemCost, HEALS, healCount, healRoom, keyName, lentHeals, loadoutCost, price, sell, sellPrice, setThreat, startsIn, threatPay, take, takeKit, takenContract, wanted, wares, type Item, type Loadout, type Profile } from "../meta/profile";
+import { build, buildFactory, buildState, buy, buyPrice, canBuild, canBuildFactory, nextFactory, canStartIn, deliver, deliverable, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, itemCost, HEALS, healCount, healRoom, keyName, lentHeals, loadoutCost, price, sell, sellPrice, setThreat, startsIn, threatPay, take, takeKit, takenContract, wanted, wares, type Item, type Loadout, type Profile } from "../meta/profile";
 import { CONTRACT_NAME, contractMark, contractRegion, contractText, type Contract, type Reward } from "../meta/contracts";
 import { currentStory, STORIES, storyOf, storyWhere } from "../meta/story";
 import { craftDone, maxLevel, MODULES, nextLevel, pouchSlots, sources, stashCap, stillNeeded, type Source } from "../meta/hideout";
@@ -15,6 +15,16 @@ import { frontNodes, type NodeHold } from "../sim/front";
 import { sfx } from "./sfx";
 
 const RARITY_CSS = ["var(--r0)", "var(--r1)", "var(--r2)", "var(--r3)"];
+
+/** The robots' kinds by name, for the factory. */
+const ENEMY_NAME: Record<EnemyKind, string> = { grunt: "グラント", heavy: "ヘビー", drone: "ドローン", charger: "チャージャー", titan: "タイタン" };
+
+/** A day's points as a bar: the player's share in blue, the rogues' in amber, the network's in red, with the player's and the network's points. */
+function scoreBar(sc: [number, number, number]): string {
+  const all = Math.max(1, sc[0] + sc[1] + sc[2]);
+  const k = (n: number) => `${(n / 1000).toFixed(1)}k`;
+  return `<span class="score-bar"><i class="you" style="width:${(sc[0] / all) * 100}%"></i><i class="rogue" style="width:${(sc[2] / all) * 100}%"></i><i class="net" style="width:${(sc[1] / all) * 100}%"></i></span><span class="score-nums"><em class="you">${k(sc[0])}</em><em class="net">${k(sc[1])}</em></span>`;
+}
 
 export function itemName(i: Item | RewardItem): string {
   switch (i.t) {
@@ -93,6 +103,7 @@ const PANELS: Record<StationId, { title: string; stash: boolean }> = {
   stash: { title: "倉庫の棚", stash: true },
   shop: { title: "商人の屋台", stash: true },
   workshop: { title: "作業場", stash: false },
+  factory: { title: "工場", stash: false },
 };
 
 /** A raid the camp hands over to start: the kit taken, where, and from which start. */
@@ -256,6 +267,13 @@ export class Hub {
         this.set(next);
         sfx.deliver();
         if (next.escaped && !before.escaped) return this.showEnding();
+      }
+    } else if (act === "factory") {
+      const next = buildFactory(this.profile);
+      if (next) {
+        this.load = emptyLoadout();
+        this.set(next);
+        sfx.deliver();
       }
     } else if (act === "ending") {
       sfx.click();
@@ -421,7 +439,7 @@ export class Hub {
     const map = [p.network >= 4 ? `網 ${p.network}` : "", coming ? `明日：${eventName(coming)}` : "", fading.length ? `あす手薄：${fading.join("・")}` : "", p.hideout.radio ? "知らせ" : ""].filter(Boolean).join("・");
     // The board wants looking at while it has contracts and none is taken.
     const open = !takenContract(p) && p.board.contracts.length ? `依頼 ${p.board.contracts.length}` : "";
-    return { map, quests: [ready ? `納品 ${ready}` : "", open].filter(Boolean).join("・"), stash: "", shop: "", workshop: buildable ? `作れる ${buildable}` : "" };
+    return { map, quests: [ready ? `納品 ${ready}` : "", open].filter(Boolean).join("・"), stash: "", shop: "", workshop: buildable ? `作れる ${buildable}` : "", factory: canBuildFactory(p) ? `Lv${p.factory + 1} にできる` : "" };
   }
 
   private item(item: Item, body: { act?: string; arg?: string; on?: boolean; right?: string; count?: number; need?: Record<ValuableKind, number>; warn?: boolean }) {
@@ -439,6 +457,43 @@ export class Hub {
     const where = esc(POIS[b.poi].name);
     if (lv === 1) return `${where}の箱に珍しい物が多い`;
     return `${where}の箱に${esc(VALUABLES[b.kind].label)}が多い。レイダーはレイドの始めからおよそ ${Math.round(raidClock(this.profile.network, this.profile.threat).raiders / 60)} 分後に降りる`;
+  }
+
+  /** What the factory at level `lv` makes, in a line: how often, how many at once, of what, and its turrets. */
+  private factoryLine(lv: number): string {
+    const kinds = FACTORY.kinds[lv].map((k) => ENEMY_NAME[k]).join("・");
+    const turrets = FACTORY.turrets[lv] ? `。解放した拠点${lv >= FACTORY.turretOutposts ? "と小拠点" : ""}に砲台 ${FACTORY.turrets[lv]} 基` : "";
+    return `${FACTORY.every[lv]} 秒ごとに 1 部隊（${kinds}）。同時に ${FACTORY.max[lv]} 部隊まで出す${turrets}`;
+  }
+
+  /**
+   * The factory's panel: its level and what it makes, its next level (what it takes and does,
+   * and the button that builds it), how its squads fight the day's battle, and the last battles.
+   */
+  private factoryPanel(): string {
+    const p = this.profile;
+    const lv = p.factory;
+    const next = nextFactory(p);
+    const pips = Array.from({ length: FACTORY.levels.length }, (_, n) => `<i class="${n < lv ? "on" : ""}"></i>`).join("");
+    let card = `<p class="factory-top">工場は最大まで強くなった。</p>`;
+    if (next) {
+      const have = (k: ValuableKind) => p.stash.filter((i) => i.t === "valuable" && i.kind === k).length;
+      const rows = next.items
+        .map(([k, n]) => `<div class="req${have(k) >= n ? " ok" : ""}"><span style="color:${RARITY_CSS[VALUABLES[k].rarity]}">${esc(VALUABLES[k].label)}</span><b>${Math.min(have(k), n)} / ${n}</b><small>${esc(whereLine(k))}</small></div>`)
+        .join("");
+      const cash = `<div class="req${p.cash >= next.cash ? " ok" : ""}"><span>クレジット</span><b>${yen(Math.min(p.cash, next.cash))} / ${yen(next.cash)}</b></div>`;
+      card = `<div class="mod open factory-next"><div class="mod-head"><strong>Lv${lv + 1}</strong><small>${esc(next.does)}</small></div><div class="mod-body">${rows}${cash}<button type="button" data-act="factory" ${canBuildFactory(p) ? "" : "disabled"}>Lv${lv + 1} にする</button></div></div>`;
+    }
+    const last = p.scores.slice(-5).reverse();
+    const history = last.length
+      ? `<h3 class="hub-sub">最近の陣取り戦</h3>${last.map((d) => `<div class="score-row ${d.won ? "won" : "lost"}"><small>${d.day} 日目</small><b>${d.won ? "勝" : "負"}</b>${scoreBar(d.score)}</div>`).join("")}`
+      : "";
+    return (
+      `<div class="factory-head"><small>工場</small><span class="pips">${pips}</span><b>Lv${lv}</b><p>${esc(this.factoryLine(lv))}</p></div>` +
+      card +
+      `<p class="hint">工場の部隊は、解放した節と野営地から出て道を歩き、前線の隣の節の核を取りに行く。自軍の節に網や野良機の部隊が来ると、その守りに出る。青いロボットが自軍で、プレイヤーとリオは撃たない。取った節は、レイドを全滅で終えても自軍のまま残る。</p>` +
+      history
+    );
   }
 
   /** The routes a tool opens: open or closed, and for a closed one, the tool and where it lies. */
@@ -559,9 +614,29 @@ export class Hub {
       this.networkMeter() +
       `<small>島の出来事</small><ul class="events"><li><small>今日</small>${eventRow(p.events[0], p.network, "今日は何も起きない")}</li><li><small>明日</small>${eventRow(p.events[1], p.network, "明日は何も起きない")}</li></ul>` +
       `<ul class="hold-key">${key}</ul>` +
+      this.scoreHistory() +
       `<small>明日の島</small><ul class="tomorrow">${lines}</ul>` +
       (taken ? `<small>受けた依頼（${esc(regionOf(contractRegion(taken)).name)}・地図の金の破線）</small><p class="hub-taken">${CONTRACT_NAME[taken.t]}：${esc(contractText(taken))}</p>` : "") +
       `</div></div>`
+    );
+  }
+
+  /**
+   * The battles by day on the map table: each day's win or loss and its points on a bar, the
+   * latest first, with the tally of the days kept (`SCORE_DAYS`).
+   */
+  private scoreHistory(): string {
+    const all = this.profile.scores;
+    if (!all.length) return `<small>陣取り戦</small><p class="score-none">まだ戦っていない。レイドの間、自軍と網と野良機が節を取り合い、押さえた節の点で勝ち負けが決まる</p>`;
+    const won = all.filter((d) => d.won).length;
+    return (
+      `<small>陣取り戦（${all.length} 日で ${won} 勝 ${all.length - won} 敗）</small><div class="score-days">` +
+      [...all]
+        .reverse()
+        .slice(0, 10)
+        .map((d) => `<div class="score-row ${d.won ? "won" : "lost"}"><small>${d.day} 日目</small><b>${d.won ? "勝" : "負"}</b>${scoreBar(d.score)}</div>`)
+        .join("") +
+      `</div>`
     );
   }
 
@@ -695,8 +770,9 @@ export class Hub {
           })
           .join("") || `<p class="empty">倉庫は空。商人で買うか、貸出装備で出て持ち帰る。</p>`;
     }
-    $("hub-side-title").textContent = shop ? "売り物" : st === "quests" ? "依頼と記録" : st === "workshop" ? "隠れ家" : st === "map" ? "島と出撃地点" : "持っていく物";
-    if (st === "workshop") {
+    $("hub-side-title").textContent = shop ? "売り物" : st === "quests" ? "依頼と記録" : st === "workshop" ? "隠れ家" : st === "factory" ? "自軍のロボット" : st === "map" ? "島と出撃地点" : "持っていく物";
+    if (st === "factory") $("hub-side").innerHTML = this.factoryPanel();
+    else if (st === "workshop") {
       const done = p.escaped ? `<div class="escaped"><span>脱出艇は直った。いつでも島を出られる</span><button type="button" data-act="ending">エンディング</button></div>` : "";
       $("hub-side").innerHTML =
         done + MODULES.map((m) => this.moduleCard(m)).join("") + `<p class="hint">回収品とクレジットで設備を作る。足りない物は、押すと出やすい場所が出る。脱出艇を直せば島を出られる。</p>` + this.routes();

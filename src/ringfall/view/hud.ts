@@ -23,6 +23,7 @@ import type { World } from "./world";
 import { eventRow, raidEventLine } from "./events";
 import { CREW, FRONT, MOD, MODS, NETWORK, RETAKE } from "../sim/config";
 import { capturable, frontNodes } from "../sim/front";
+import { SIDE_NAME } from "../sim/battle";
 
 /*
  * The DOM layer: everything the player reads. The screen always answers two
@@ -327,6 +328,18 @@ export class Hud {
       case "coreTaken":
         this.toast(`${NODES[e.node].name}を制圧した。生きて帰れば解放のまま残る`, 1, 5000);
         break;
+      case "nodeTaken": {
+        const name = NODES[e.node].name;
+        if (e.side === 0) this.toast(`自軍が${name}を取った`, 1, 4000);
+        else this.toast(`${SIDE_NAME[e.side]}が${name}を取った`, 0, 4000);
+        break;
+      }
+      case "squadOut":
+        this.toast(s.nodes[e.node] === "freed" ? `工場の部隊が${NODES[e.node].name}の守りに出た` : `工場の部隊が${NODES[e.node].name}へ攻めに出た`, 1, 3000);
+        break;
+      case "timeUp":
+        this.banner("時間切れ", "戦いは終わった。脱出できず、持ち物は島に残った");
+        break;
       case "retakeIn":
         this.toast(`${RETAKE.name}が${POIS[e.poi].name}へ向かっている`, 0, 4000);
         break;
@@ -338,6 +351,30 @@ export class Hud {
         this.toast(isTouch() ? "離脱ジャンプ 準備完了" : "離脱ジャンプ 準備完了（Z）", 3);
         break;
     }
+  }
+
+  /** The day's battle under the compass: each side's points, their shares on a bar, who is ahead, and the time left. */
+  private battleBar(s: State) {
+    const b = s.battle;
+    const el = $("battle");
+    el.hidden = !b;
+    if (!b) return;
+    const k = (n: number) => (n >= 10_000 ? `${(n / 1000).toFixed(1)}k` : `${Math.round(n)}`);
+    const [you, net, rogue] = b.score;
+    $("battle-you").textContent = k(you);
+    $("battle-net").textContent = k(net);
+    $("battle-rogue").textContent = k(rogue);
+    const all = Math.max(1, you + net + rogue);
+    const bar = $("battle-bar").children as HTMLCollectionOf<HTMLElement>;
+    bar[0].style.width = `${(you / all) * 100}%`;
+    bar[1].style.width = `${(rogue / all) * 100}%`;
+    bar[2].style.width = `${(net / all) * 100}%`;
+    el.classList.toggle("winning", you > net);
+    el.classList.toggle("losing", net >= you);
+    const left = Math.max(0, b.end - s.time);
+    const lt = $("battle-left");
+    lt.innerHTML = `<span class="lbl">残り </span>${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, "0")}`;
+    lt.classList.toggle("late", left < 120);
   }
 
   frame(s: State, view: World, dt: number, w: number, h: number) {
@@ -399,6 +436,7 @@ export class Hud {
     const raid = (s.threat ? `脅威度 ${s.threat}　` : "") + (s.phase === "play" ? `${clock(s.time)}` : "");
     const next = s.phase !== "play" || s.reinforceT >= 60 ? "" : s.reinforceT > 0 ? `　増援まで ${Math.ceil(s.reinforceT)} 秒` : "　増援が来る";
     $("obj-raid").textContent = raid + next;
+    this.battleBar(s);
 
 
     // Compass: 2 px per degree, centred on the current heading.
@@ -917,6 +955,34 @@ export class Hud {
     return `<h3>${head}</h3><div class="analyse">${settled.analysable.map(row).join("")}</div><p class="sold">改造パーツはレイドが終わると消える。解析は生きて帰ったときに 1 つだけ</p>`;
   }
 
+  /**
+   * The day's battle on the results: won or lost, each side's points on a bar, what a win paid,
+   * the nodes the player's own robots took and those taken from the player, the node a lost
+   * battle hands the network, and how long the battle went on after the raid ended.
+   */
+  private battleResult(s: State, settled?: Settlement): string {
+    const b = s.battle;
+    if (!b) return "";
+    const bt = settled?.battle;
+    const [you, net, rogue] = b.score.map(Math.round);
+    const all = Math.max(1, you + net + rogue);
+    const name = (id: string) => NODES.find((n) => n.id === id)?.name ?? id;
+    const after = Math.max(0, Math.round((b.end - s.time) / 60));
+    const lines = [
+      bt?.gained.length ? `<span class="contract done">自軍が取った節<b>${bt.gained.map(name).join("・")}</b></span>` : "",
+      bt?.lost.length ? `<span class="contract failed">網と野良機に取られた節<b>${bt.lost.map(name).join("・")}</b></span>` : "",
+      bt?.forfeit ? `<span class="contract failed">負けたので網に渡した節<b>${name(bt.forfeit)}</b></span>` : "",
+      after > 0 ? `<span>レイドの後も自軍が ${after} 分戦った</span>` : "",
+    ].join("");
+    return (
+      `<h3>陣取り戦</h3><div class="battle-result ${b.won ? "won" : "lost"}"><strong>${b.won ? "勝ち" : "負け"}</strong>` +
+      `<span class="battle-scores"><span class="you">自軍 <b>${you.toLocaleString()}</b></span><span class="net">網 <b>${net.toLocaleString()}</b></span><span class="rogue">野良機 <b>${rogue.toLocaleString()}</b></span></span>` +
+      `<span class="battle-share"><i class="you" style="width:${(you / all) * 100}%"></i><i class="rogue" style="width:${(rogue / all) * 100}%"></i><i class="net" style="width:${(net / all) * 100}%"></i></span>` +
+      `<small>${b.won ? `網より多く点を取った。${bt?.pay ? `${bt.pay.toLocaleString()} クレジット` : ""}` : bt?.forfeit ? `網の点の方が多かった。前線の端の${name(bt.forfeit)}を網に渡す` : "網の点の方が多かった。渡す節はない（野営地の門の前の節は渡さない）"}</small></div>` +
+      (lines ? `<p>${lines}</p>` : "")
+    );
+  }
+
   results(s: State, settled?: Settlement, known: readonly ModKind[] = [], analysed: ModKind | null = null) {
     const r = rank(s);
     $("rank").textContent = r.rank;
@@ -993,7 +1059,7 @@ export class Hud {
       );
     const events = ev || outcome.length ? `<h3>島の出来事</h3><p>${ev ? eventRow(ev, s.network) : ""}${outcome.join("")}</p>` : "";
     const story = settled?.story ? `<h3>記録を持ち帰った</h3><p><span class="contract done">${storyOf(settled.story.id).title}：${recordSpot(settled.story.id).name}<b>${settled.story.cash} クレジット・依頼板で読める</b></span></p>` : "";
-    $("home").innerHTML = this.analysis(s, settled, known, analysed) + island + events + contract + story + (quests.length ? `<h3>済んだ依頼</h3><p>${quests.map((q) => `<span>${q.title}（${q.reward.cash} クレジット${rewardList(q).map(([i, n]) => `・${itemName(i)}${n > 1 ? ` × ${n}` : ""}`).join("")}）</span>`).join("")}</p>` : "") + (settled
+    $("home").innerHTML = this.analysis(s, settled, known, analysed) + this.battleResult(s, settled) + island + events + contract + story + (quests.length ? `<h3>済んだ依頼</h3><p>${quests.map((q) => `<span>${q.title}（${q.reward.cash} クレジット${rewardList(q).map(([i, n]) => `・${itemName(i)}${n > 1 ? ` × ${n}` : ""}`).join("")}）</span>`).join("")}</p>` : "") + (settled
       ? (sent.length ? `<h3>中継ボックスから倉庫へ送った物</h3><p>${count(sent)}</p>` : "") +
         `<h3>${lost ? "ポーチに残った物" : "持ち帰った物"}</h3><p>${home.length ? count(home) : "<span>なし</span>"}</p>` +
         (settled.learned.length ? `<h3>次から選べる入口</h3><p>${settled.learned.map((id) => `<span>${entryOf(id).name}（${regionOf(entryOf(id).region).name}）</span>`).join("")}</p>` : "") +
