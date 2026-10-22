@@ -3061,3 +3061,44 @@ body.touch #obj-raid .short {
 #camp-plan {
   z-index: 1;
 }
+
+/* The trader's shelf by rarity: a swatch per rarity, lit up to what the nodes held open, with the nodes that open each. */
+.shelf-tiers {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0 0 10px;
+}
+.shelf-tiers .tier {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 4px;
+  border-radius: 6px;
+  background: rgba(20, 26, 51, 0.6);
+  opacity: 0.45;
+}
+.shelf-tiers .tier.on {
+  opacity: 1;
+  box-shadow: 0 0 0 2px var(--c) inset;
+}
+.shelf-tiers .tier i {
+  display: block;
+  width: 34px;
+  height: 12px;
+  background: var(--c);
+  clip-path: polygon(0 30%, 22% 30%, 22% 10%, 70% 10%, 70% 30%, 100% 30%, 100% 50%, 70% 50%, 46% 50%, 46% 100%, 34% 100%, 34% 70%, 22% 70%, 0 70%);
+}
+.shelf-tiers .tier span {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 2px 6px;
+  min-height: 1.2em;
+  font-size: 11px;
+  font-weight: 800;
+}
+.shelf-tiers .tier em {
+  font-style: normal;
+}
