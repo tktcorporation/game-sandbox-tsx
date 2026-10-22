@@ -41,7 +41,7 @@ Robots are squads placed in the world from the start (`POIS[].squads`, four squa
 robots but for the relay's equipment shed and the wreck's beach, which have three; about half of
 them walk a beat outside their POI (`MOBILES`), so four or five stand at a POI, fought a squad or
 two at a time (the pad holds the titan and its drones), a few `ROAMERS` in `map.ts`, most of them
-patrolling the roads, and the walks of `MOBILES`: the beats, the network's patrols and convoy and
+patrolling the roads, and the walks of `MOBILES`: the beats, the enemy's patrols and convoy and
 the rogues' walks, see `factions.ts` below), drone
 packs that fly long loops over the ground between the POIs (`PACKS` in `map.ts`, `PACK` in
 `config.ts`: a squad's `sight` noticing from further than its kind's `SIGHT`), and hunting parties
@@ -59,8 +59,8 @@ lists only the ways off of the region the player is in
 (`regionHere()`); the world map (`view/map.ts`, M) is where the POIs and exits of both regions are; it opens framed
 on the region the player is in (`Region.bounds`) and N switches it to the whole world.
 A wipe ends the raid and loses the haul (`haulValue()` in `results.ts` is its worth). The results
-screen gives no grade or score: it leads with the day (the battle won or lost with each side's
-points, the front's moves and the network's step, all from the settled profile), then the haul.
+screen gives no grade or score: it leads with the day (the island's map and its row of six nodes,
+those the day changed ringed and turning to their new colour, from the settled profile), then the haul.
 Clearing a POI's garrison is 掃討 in the UI; 制圧 is only the capture of a core.
 Between raids the player walks a camp in the world (`CAMP` in `map.ts`, a fenced yard on the south
 beach behind the reservoir's first way in): `sim/camp.ts` holds its state (`newCamp()`, a raid's
@@ -89,41 +89,40 @@ took (`Profile.lastKit`) and the shelves pick it again while the stash holds thi
 which `settle()` keeps what fits) count the factory's levels as well as the hideout's.
 The trader's quests are data in `meta/quests.ts` (`QUESTS`: four intro quests; credited from a raid's `stats` by `creditRaid()` inside `settle()`). The quest board
 also holds the day's contracts (`meta/contracts.ts`): `makeBoard()` builds 3 or 4 from
-`Profile.seed`, `Profile.day`, the island and the hideout (free a POI, fetch a valuable from a
-POI's bins, destroy a drone pack or a region's hunting party, and while the network is strong a
-relay mast; on a retake's day, defend the POI first; numbers in `CONTRACT`), kept in
+`Profile.seed`, `Profile.day`, the island and the hideout (take a POI on the front by its core,
+fetch a valuable from a POI's bins, destroy a drone pack or a region's hunting party; numbers in
+`CONTRACT`), kept in
 `Profile.board` for the day; the player takes one (`Profile.taken`), the story record under way
 (`STORY_TAKEN`, which makes the record the objective), or none, and `settle()` pays it
 when `contractDone()` holds (fetch counts only valuables tagged with their bin's POI,
-`Player.haulAt` / `State.sentAt`; intercept and defend read `Stats.wiped`, by `squadKey()`; destroy reads `Stats.relays`). Five story
+`Player.haulAt` / `State.sentAt`; intercept reads `Stats.wiped`, by `squadKey()`). Five story
 contracts (`meta/story.ts`) follow one at a time: the one under way lays its record at its
 `RECORD_SPOTS` place in `map.ts` (`Start.record`), a bag slot that comes home into
 `Profile.records`. The bots take no contract and carry no record. Each POI has one locked bin (`vault: true` in its `bins`), opened
 only with that POI's key; keys drop from the bins of the POI named by its `keyFrom` (`VAULT`).
 POIs have a stable `id` (`PoiId` in `map.ts`); saves, quests, `keyFrom` and `EXTRA_BINS` refer to a
 POI by it, never by its place in `POIS` (the run's state may index `POIS` internally). The profile
-is versioned (`Profile.v`, which is 21), and `parseProfile()` moves older saves forward (a save from
+is versioned (`Profile.v`, which is 22), and `parseProfile()` moves older saves forward (a save from
 before the ways in starts at its region's first way in; a save from before ways in were learned
 knows them all; a save from before v12 drops its explored map, since `cellOf()` follows `WORLD`,
 which then grew wider; a save from before v13 starts on the day after its raids with every POI
-held; a save from before v14 keeps only the quests that still exist; a save from before v15 starts
-at network `NETWORK.start`; a save from before v16 has a quiet day and tomorrow's event drawn; a save from before v17 knows
-the starting mod kinds and plays at threat 0; a save from before v19 has the factory at level 0 and
-no battle on record; a save from before v20 remembers no loadout) and moves its
+held; a save from before v14 keeps only the quests that still exist; a save from before v16 has a
+quiet day and tomorrow's event drawn; a save from before v17 knows the starting mod kinds and plays
+at threat 0; a save from before v19 has the factory at level 0; a save from before v20 remembers no
+loadout; a save from before v22 has its POIs freed or thin the player's and the rest the enemy's,
+and drops the network, its pressure, the outposts' standing and the battles' points) and moves its
 start to one it may choose (`allowedStart()`).
 Each island day has at most one event (`EVENTS` in `config.ts`, `IslandEvent` in `sim/island.ts`):
 `advanceDay()` turns yesterday's forecast into today's and draws tomorrow's from `Profile.seed` and
 the day (`eventFor()` in `meta/island.ts`), kept in `Profile.events` (today, tomorrow) and passed to
 the raid as `Start.event`. A debris fall puts a crate (`Bin.debris`, `DEBRIS`) and its guards at one
-of `DEBRIS_SPOTS` (`map.ts`; the wreck is drawn by the view only); a retake beams `RETAKE`'s squad
-in to walk to a freed POI's way in, and left alive it thins that POI overnight (`RaidDay.retake`,
-`DayChange.overrun`); a storm scales the robots' sight (`sightScale()`, `STORM`); a crews' visit adds
-a salvage crew. Salvage crews (`CREW`, `NETWORK.levels[].crews`: one from network 3, two from 4, none
-below 3 but on a crews' visit; `stepCrews()` in `world.ts`) beam into the starting region, walk to
+of `DEBRIS_SPOTS` (`map.ts`; the wreck is drawn by the view only); a storm scales the robots' sight
+(`sightScale()`, `STORM`); a crews' visit brings a salvage crew. Salvage crews (`CREW`, only on a
+crews' visit, `crewsFor()`; `stepCrews()` in `world.ts`) beam into the starting region, walk to
 the unopened ground-level POI bins nearest by the walk, take each one's
 valuable into `SquadState.bag` (dropped with its bins' POIs when the last member dies, in
-`combat.ts`) and leave by the region's nearest way off; each that gets out (`Stats.crewsOut`)
-raises the network a step overnight. Crews, the retake squad and the debris guards draw on their
+`combat.ts`) and leave by the region's nearest way off (`Stats.crewsOut`), the bag lost. Crews and
+the debris guards draw on their
 own stream (`crewRand()`), so the raid's other random numbers are drawn as without them.
 Each POI has a depot on its road (`DEPOTS` in `map.ts`, run by `stepDepots()` in `world.ts`): walking
 up switches it on for good, its use key sends the bag home (it survives a wipe) or, with the bag empty,
@@ -148,32 +147,25 @@ the collision grid (`setRouteBoxes()` in `geom.ts`) and dropping the bot's and t
 changes. With every route closed the terrain, the map's boxes and the walkers' grids are the ones
 before routes existed, and the obstacles stand in cliffs and on a deck where path finding does not
 go (its grids and its sight checks, `los(a, b, true)`, leave them out).
-The island has a state between raids (`docs/ringfall/living-island.md`): one settled raid is one
-day (`Profile.day`), and each POI is held, thin or freed (`Profile.poiState`, with the last day it
-was visited). `meta/island.ts` holds the pure rules: `advanceDay()` (called by `settle()`) frees a
-POI cleared in a raid the player got off alive and switches its depot on, and turns a freed POI
-unvisited for `ISLAND.thinAfter` days thin; `islandNotes()` gives 明日の島 for the map table and
-the results. The titan's pad is never freed. A raid reads the standings through
-`newRun(seed, kit, region, { island })` (`State.hold`): `garrison()` in `sim/island.ts` stands
-every squad of a held POI, the vault guard and half the squads of a thin one (picked from the
-seed), and none of a freed one, which starts cleared, its vault open without the key (`canOpen()`
-in `world.ts`) and its depot on. With no `island` every POI is held, which the sim gate plays.
-The robots' network (網の段階, `Profile.network`, 0 to 5, with the pressure toward its next step
-carried in `Profile.pressure`) is moved by `advanceDay()` too: down a step for each POI freed from
-held (the relay two, a thin one a step less), for the titan's fall (its pad cleared) and for each
-relay mast destroyed (`Stats.relays`; `NETWORK.relayHigh.steps` on a day that started at
-`NETWORK.relayHigh.at` or more), then up a step for each `NETWORK.riseEvery` of pressure the
-day adds (`netGain()`, more the more POIs held); a thin POI thin for `NETWORK.retakeAfter` days goes
-back to held while the network is at `NETWORK.retakeAt` or more (`Settlement.network`,
-`.retaken`). A raid is played at a level through `newRun(seed, kit, region, { network })`
-(`State.network`, `netLevel()`): `NETWORK.levels` sets the reinforcement and raider times, the
-hunting parties per region, the drone packs flying (`activePacks()`, from the seed) and the share of
-plain grunts and heavies with a tier-1 plate (`netPlated()`, a hash of the seed and the robot's id).
-From `NETWORK.relayAt` the relay masts (`RELAYS` in `map.ts`, `RELAY` in `config.ts`,
-`State.relays`) stand on open ground with two guards each: a post and an eye that the player's
-shots hit (`rayRelay()` in `combat.ts`), never built into the map, so the world is the same at
-every level. With no `network` a raid is played at `NETWORK.play` (2), whose numbers are the
-island's own, so the sim gate's tables do not change.
+The island has a state between raids (`docs/ringfall/island-v2.md`): one settled raid is one
+day (`Profile.day`), and each POI is the enemy's (`held`) or the player's (`freed`)
+(`Profile.poiState`). `meta/island.ts` holds the pure rules: `advanceDay()` (called by `settle()`)
+makes the player's each node whose core the raid captured, however the raid ended, or with a
+battle takes every node as the battle ended (`RaidDay.battle`), switches the player's depots on,
+and pays `FRONT.income` a node (`frontIncome()`). A node is lost only when the enemy's squads take
+it in a battle; nothing goes thin and nothing lapses. The titan's pad is never the player's. A
+raid reads the standings through `newRun(seed, kit, region, { island })` (`State.hold`):
+`garrison()` in `sim/island.ts` stands every squad of a held POI and none of a freed one, which
+starts cleared, its vault open without the key (`canOpen()` in `world.ts`) and its depot on. With
+no `island` every POI is held, which the sim gate plays.
+The enemy's strength (`STRENGTH` in `config.ts`, `State.strength`, `strengthLevel()`) follows the
+nodes the enemy holds (`STRENGTH.byHeld`, `strengthFor()` in `state.ts`, `enemyNodes()` in
+`front.ts`): it sets the reinforcement and raider times, the hunting parties per region, the drone
+packs flying (`activePacks()`, from the seed), the rogue patrols (`ROGUE.patrols`), the capture's
+push (`FRONT.push`) and the battle's enemy squads (`CONQUEST.net`). With every node the enemy's a
+raid plays at `STRENGTH.play` (2), whose numbers are the island's own, so the sim gate's tables
+keep the island's numbers. Plain grunts and heavies wear a tier-1 plate only at a raised threat
+(`netPlated()`, a hash of the seed and the robot's id).
 Mod parts (`MODS` in `config.ts`, `sim/mods.ts`) are the raid's own build: three body slots
 (`Player.mods`), lost when the raid ends, each setting one number the sim already reads
 (`modScale()`). Bins hold kinds the profile knows (`State.known`, `Profile.known`), robots any;
@@ -182,35 +174,31 @@ never `rand(s)`, and the bot passes `Input.leaveMods`, so the gate's raids play 
 raid got off alive may analyse one worn part on its results (`analyse()` in `profile.ts`). The
 強度 (`THREAT`, `Profile.threat`, `newRun(..., { threat })`) belongs to the contract taken: it is
 chosen on that contract's card on the board, taking another contract starts it at 0, and a raid
-with no contract plays at 0 (`raidThreat()`). 0 is the network's raid; higher scales the network's
-times and plates (`raidClock()`, `netPlated()`), the range robots answer shots from afar, the mod
-parts' odds, and the contract's pay (`threatPay()`), and a POI freed at `THREAT.freeAt` or higher
-takes the network a step further down (`RaidDay.threat`). `Profile.freedAt` keeps each POI's best
-強度 for the map.
-The front (`docs/ringfall/liberation-front.md`): the six freeable POIs and the seven outposts are
-nodes (`NODES` in `map.ts`, linked along the roads by `FRONT_LINKS`), and `sim/front.ts` holds the
-rules. A node next to the player's ground (the camp and the nodes freed) is on the front; only its
-core, a pillar near its middle, can be captured (`FRONT` in `config.ts`): the use key starts it,
-the meter fills while the player holds the core's ground with no robot on it, the garrison comes
-and squads push in from the neighbouring nodes. A node taken is the player's at once (no robot
-enters `FRONT.zone`) and freed overnight if the raid gets off alive (`advanceDay()` in
-`meta/island.ts`, which also keeps nodes deep in the player's ground from going thin and pays the
-day's income); clearing a POI of its robots no longer frees it. `Profile.outposts` keeps the
-outposts' standing (an outpost on the edge lapses unvisited, as a POI goes thin; the nodes in
-`NET_EDGE` are never deep in the player's ground). The bot captures the front's cores in its region,
+with no contract plays at 0 (`raidThreat()`). 0 is the island's raid at the enemy's strength;
+higher scales its times and plates (`raidClock()`, `netPlated()`), the range robots answer shots
+from afar, the mod parts' odds, and the contract's pay (`threatPay()`). `Profile.freedAt` keeps
+each POI's best 強度 for the map.
+The front (`docs/ringfall/island-v2.md`): the six freeable POIs are the nodes (`NODES` in
+`map.ts`, linked along the roads by the seven `FRONT_LINKS`, each with its depth `TIER`); the
+outposts are places to loot with an enemy guard, no nodes, and the rogues hold no ground.
+`sim/front.ts` holds the rules. A node next to the player's ground (the camp and the player's
+nodes) is on the front; only its core, a pillar near its middle, can be captured (`FRONT` in
+`config.ts`): the use key starts it, the meter fills while the player holds the core's ground with
+no robot on it, the garrison comes and squads push in from the neighbouring nodes. A node taken is
+the player's at once (no robot enters `FRONT.zone`) and stays so overnight; clearing a POI of its
+robots does not take it. The bot captures the front's cores in its region,
 `Skill.capture` a raid (`Skill.battle` in a battle), and then leaves. With no contract taken (and
 the story record not taken), the objective card points at the front (`objectiveSteps()`), and the
 record has a line of its own.
 A raid of the island is one battle (陣取り戦, `sim/battle.ts`, `CONQUEST` in `config.ts`), given by
 `newRun(..., { battle: { factory } })` (`State.battle`); a raid without it, as the sim gate's tables
-play, has none. Over `CONQUEST.time` seconds, the raid's time limit (`timeUp`: still out is a wipe),
-every node scores its holder each second (the camp scores the player too), and the battle is won
-when the player outscores the network: `settle()` pays `CONQUEST.win`, and a lost battle hands the
-network a node on the edge of the player's ground overnight (`forfeitNode()` in `meta/island.ts`;
-never one at the camp's gate). Squads (`BattleSquad`) come out of the nodes: the player's from the
-camp's factory (`FACTORY`, `Profile.factory`, built at its station like a hideout module,
-`buildFactory()`), the network's and the rogues' more the more they hold (the network also from
-`NET_EDGE` and in answer to the player's ground). They walk the links (`walkLine()` paths traced as
+play, has none. It lasts `CONQUEST.time` seconds, the raid's time limit (`timeUp`: still out is a
+wipe); there are no points and no winner: whoever holds each node as it ends holds it the next day.
+Squads (`BattleSquad`) come out of the nodes: the player's from the camp's factory (`FACTORY`,
+`Profile.factory`, built at its station like a hideout module, `buildFactory()`), the enemy's the
+more the more it holds (also from `NET_EDGE` and in answer to the player's ground), and the
+rogues' from the wild now and then (`CONQUEST.rogue`), which fight at a node and move on but take
+none. They walk the links (`walkLine()` paths traced as
 the raid starts, then forgotten), attack a neighbouring node or defend one of their side's, and take
 a node by standing at its core for `CONQUEST.capture` seconds with none of its holders there (its
 garrison counts wherever it stands and comes to the core). Near the player or the teammate
@@ -220,14 +208,11 @@ teammate, `stepFriends()` in `enemies.ts`), the others in `State.enemies` (`Enem
 walk onto the player's nodes and which garrisons fight, `hostile()`); beyond `CONQUEST.far` it is
 numbers again, with each member's health as it was. Away from both, fights and captures are
 reckoned every `CONQUEST.tick` seconds in numbers, and when the raid ends early `finishBattle()`
-reckons the rest so; it pushes no event. The night counts the nodes as the battle ended:
-`RaidDay.battle` (`battleDay()`) frees the nodes the player's robots took whether or not the player
-got off, and turns thin those taken from the player; a node the player captured counts only if it was
-still theirs at the end. `Profile.scores` keeps the last days' battles for the map table and the
-factory's panel. `battleFocus()` gives the objective (`objectiveSteps()`) and the bot a node of the
+reckons the rest so; it pushes no event. The night counts the nodes as the battle ended
+(`RaidDay.battle`). `battleFocus()` gives the objective (`objectiveSteps()`) and the bot a node of the
 player's under attack, or one their robots are taking.
-The long-term goal is pushing the island's front back (the battles and the nodes freed); there is
-no ending. The hideout is the mid-term one: five modules built level by level from specific
+The long-term goal is how many of the six nodes the player holds (`view/row.ts` draws them as a
+row at the HUD's top, the camp's line, the map table and the results); there is no ending. The hideout is the mid-term one: five modules built level by level from specific
 valuables and credits taken from the stash, each level needing only the module's level before it
 (`build()` in `profile.ts`; levels and costs in `HIDEOUT`, effects in `HIDEOUT_EFFECT`, both in `config.ts`; `meta/hideout.ts` holds the pure
 helpers). Their benefits act in the meta: `takeKit()` lends the infirmary's heals, `wares()` sells
@@ -242,7 +227,7 @@ ask for the data core or the small reactor. Build quests (`{ t: "build" }`) fini
 ```bash
 npm run sim:ringfall     # gate 2: bots of three skills play whole raids headless, in each region,
                          # then the hideout's pacing replays the meta with those raids, then each
-                         # skill plays 30 days on one profile with the network carried, each
+                         # skill plays 30 days on one profile with the island carried, each
                          # raid a battle with the factory the profile has built
                          # (scripts/ringfall-campaign.ts, also runnable alone); raids run
                          # in parallel, one process per core, the reservoir's (the longest) first,
@@ -443,15 +428,14 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
 - `factions.ts` is the robots between the POIs. The walks of `MOBILES` (`map.ts`) go out and back
   between nodes by a way traced once per world on the ground's fields (`walkLine()` in `hunt.ts`;
   the fields are forgotten at the raid's start, so a raid plays the same in any process). The robots
-  are of two factions (`FACTION`): the network (red) and the rogues (yellow, `Enemy.rogue`), hostile
-  to each other and to the player. `TERRITORY` gives the outposts the rogues hold by network level
-  (`territory()`, `State.territory`; the front will paint it), and `ROGUE` how many rogue walks go
-  out. Squads out between the POIs find the other faction by square and fight it with the shots
+  are of two factions (`FACTION`): the enemy (red) and the rogues (yellow, `Enemy.rogue`), hostile
+  to each other and to the player. The rogues hold no ground (every outpost's guard is the
+  enemy's); `ROGUE` gives how many of their ranked walks go out at the enemy's strength. Squads out between the POIs find the other faction by square and fight it with the shots
   they fire at the player (`fightFoe()` in `enemies.ts`, `damageRobot()`, `fall()` in `combat.ts`);
   POI garrisons take no part. Squads that move about make for where the player is heading
   (`interceptSpot()` in `awareness.ts`, `INTERCEPT`), squads of three or more split at once
   (`SPLIT`), calm walks wait at choke points for a loaded player near a way off (`AMBUSH`, `GATES`,
-  `RING_GAPS`), and the network sends one after a quiet stretch (`SWEEP`). What the player saw or
+  `RING_GAPS`), and the enemy sends one after a quiet stretch (`SWEEP`). What the player saw or
   heard of them is `State.contacts`, drawn on the map. `checkFactions()`, `checkPatrols()`,
   `checkIntercept()` and `checkSplit()` in the sim gate check them.
 - Some robots wear armour plates (`Enemy.plate`, a rarity tier): body hits from a weapon of lower

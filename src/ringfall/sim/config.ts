@@ -426,7 +426,7 @@ export const CONQUEST = {
     max: [2, 2, 3],
     kinds: [["grunt", "grunt"], ["grunt", "grunt"], ["grunt", "drone"]] as EnemyKind[][],
   },
-  rogue: { every: 1500, max: 1, kinds: ["grunt", "grunt"] as EnemyKind[] },
+  rogue: { every: 600, max: 1, kinds: ["grunt", "grunt"] as EnemyKind[] },
   /** Seconds the bot gives to coming back to a node of its own under attack, all told in a raid. */
   botDefend: 150,
 };
