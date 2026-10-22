@@ -1,5 +1,5 @@
-import { ALLY, BOOST, CREW, DEPOT, RETAKE, STORM, SWEEP, DUCK, ELITE, ENEMIES, META, MOD_START, NETWORK, RELAY, THREAT, VALUABLES, WORLD, type ModKind, type ValuableKind, PLAYER, ULT, type EnemyKind, type Flank, type HealKind, type Rarity, type ToolKind, type WeaponKind } from "./config";
-import { DEPOTS, depotIndex, entryOf, EXTRA_BINS, POIS, poiIndex, poiRegion, recordSpot, regionOf, type EntryId, type ExtractId, type PoiId, type RecordId, type RegionId, type RelayId, type RouteId, RELAYS, DEBRIS_SPOTS, debrisIndex, territory, type Faction, type OutpostId, type NodeId, NODES } from "./map";
+import { ALLY, BOOST, CREW, DEPOT, STORM, SWEEP, DUCK, ELITE, ENEMIES, META, MOD_START, STRENGTH, THREAT, VALUABLES, WORLD, type ModKind, type ValuableKind, PLAYER, ULT, type EnemyKind, type Flank, type HealKind, type Rarity, type ToolKind, type WeaponKind } from "./config";
+import { DEPOTS, depotIndex, entryOf, EXTRA_BINS, POIS, poiIndex, poiRegion, recordSpot, regionOf, type EntryId, type ExtractId, type PoiId, type RecordId, type RegionId, type RouteId, DEBRIS_SPOTS, debrisIndex, type NodeId } from "./map";
 import { openRoutes, useRoutes } from "./routes";
 import { populate, spawnEnemy } from "./enemies";
 import { placeParties } from "./world";
@@ -7,7 +7,7 @@ import { placeAlly } from "./ally";
 import { groundAt } from "./geom";
 import { forgetFields } from "./hunt";
 import { crewsFor, type IslandEvent, type PoiHold } from "./island";
-import { nodeHolds, useZones, type NodeHold, type OutpostHold } from "./front";
+import { enemyNodes, nodeHolds, useZones, type NodeHold } from "./front";
 import { initBattle, type Battle, type BattleStart, type Side } from "./battle";
 
 export interface Vec3 {
@@ -227,7 +227,7 @@ export interface Enemy {
   finding: number;
   /** How far down a grunt has crouched behind its cover (0 standing, 1 crouched; see DUCK). */
   duck: number;
-  /** A salvage crew's, the retake squad's or the debris guards': it draws on the crews' stream (`crewRand()`). */
+  /** A salvage crew's or the debris guards': it draws on the crews' stream (`crewRand()`). */
   own?: boolean;
   /** One of the rogues (野良機, see FACTION); the network's otherwise. */
   rogue?: boolean;
@@ -267,15 +267,13 @@ export interface SquadState {
   pack?: boolean;
   /** A hunting party (`PARTY`): the stop of `PARTY_STOPS[region]` it is making for or lingering at. */
   party?: PartyTrip;
-  /** Where a calm squad walks by the ground's way, and stands once there: a salvage crew's bin or way off, the retake squad's POI. */
+  /** Where a calm squad walks by the ground's way, and stands once there: a salvage crew's bin or way off. */
   walk?: Point;
   /** A salvage crew (`CREW`): what it is about. */
   crew?: CrewTrip;
   /** A salvage crew's bag: the valuables it has taken, and the POI (index) whose bin each came out of. */
   bag?: ValuableKind[];
   bagAt?: number[];
-  /** The retake squad (`RETAKE`): the POI (index) it was sent to take back. */
-  retake?: number;
   sinceSeen: number; // seconds since any member saw the player while engaged
   /** Seconds left in which its members answer the player's shots from as far as `RETURN.range` (see RETURN). */
   shotT?: number;
@@ -410,8 +408,6 @@ export type GameEvent =
   | { t: "shieldBreak"; id: number; pos: Vec3; tier: Rarity }
   /** A robot reels from the damage it took; a wind-up it was in is lost. `fromX/Z` is where the shot came from. */
   | { t: "stagger"; id: number; pos: Vec3; fromX: number; fromZ: number; interrupted: boolean }
-  | { t: "relayHit"; id: RelayId; pos: Vec3; dmg: number; eye: boolean }
-  | { t: "relayDown"; id: RelayId; pos: Vec3 }
   | { t: "kill"; id: number; kind: EnemyKind; pos: Vec3; crit: boolean; last: boolean; ally: boolean; /** Where the killing shot came from, so the wreck falls away from it. */ fromX: number; fromZ: number }
   | { t: "allyShot"; from: Vec3; to: Vec3; hit: boolean }
   | { t: "allyHurt"; dmg: number }
@@ -481,8 +477,6 @@ export type GameEvent =
   | { t: "crewIn"; x: number; z: number }
   | { t: "crewLoot"; id: number; squad: number }
   | { t: "crewOut"; x: number; z: number; n: number }
-  /** The retake squad beamed in, on its way to the POI it was sent to. */
-  | { t: "retakeIn"; x: number; z: number; poi: number }
   /** A core's capture started (the alarm), was refused off the front, and the node was taken (places in `NODES`). */
   | { t: "coreStart"; node: number }
   | { t: "coreShielded"; node: number }
@@ -519,25 +513,13 @@ export interface Stats {
   vaults: number[];
   /** Squads destroyed to the last member, by `squadKey()`: an intercept contract names one. */
   wiped: string[];
-  /** Relay masts destroyed, in the order they fell: each takes the network a step down overnight. */
-  relays: RelayId[];
   /** Salvage crews that came, were destroyed to the last member, and got off with their bags; bins they took. */
   crewsIn: number;
   crewsDown: number;
   crewsOut: number;
   crewBins: number;
-  /** The nodes taken by their cores (`NODES` ids), in the order they fell: the island frees them if the player gets off alive. */
+  /** The nodes taken by their cores (`NODES` ids), in the order they fell. */
   captured: NodeId[];
-}
-
-/** A relay mast standing in the raid (`RELAYS`, `RELAY`): its health, 0 once destroyed. */
-export interface RelayMast {
-  id: RelayId;
-  x: number;
-  /** The ground at its foot. */
-  y: number;
-  z: number;
-  hp: number;
 }
 
 /**
@@ -617,7 +599,7 @@ export interface State {
    */
   roamRng: number;
   /**
-   * The random numbers of the salvage crews and the retake squad (`crewRand()`): a stream of
+   * The random numbers of the salvage crews (`crewRand()`): a stream of
    * their own, so they do not shift what the rest of the raid draws.
    */
   crewRng: number;
@@ -648,25 +630,20 @@ export interface State {
   reinforceN: number;
   /** Seconds until the raiders beam in (Infinity once they have). */
   raiderT: number;
-  /** The robots' network level the raid is played at (`NETWORK.levels`): it sets the hunters' times and numbers. */
-  network: number;
-  /** The threat the player chose for the raid (`THREAT.levels`), on top of the network's numbers. */
+  /** The enemy's strength the raid is played at (`STRENGTH.levels`), from the nodes it holds: it sets the hunters' times and numbers. */
+  strength: number;
+  /** The threat the player chose for the raid (`THREAT.levels`), on top of the enemy's strength. */
   threat: number;
   /** The mod kinds the profile knows: the bins hold only these (`binMod()`). */
   known: ModKind[];
   /** A factor on every mod part's chance: 1, or 0 for a raid without parts (the sim gate's check of their independence). */
   modOdds: number;
-  /** The relay masts standing this raid, destroyed ones with no health left; none below `NETWORK.relayAt`. */
-  relays: RelayMast[];
   /** The day's island event, or null on a quiet day. */
   event: IslandEvent | null;
   /** Robots see `STORM.sight` as far today. */
   storm: boolean;
   /** Raid times (seconds) at which salvage crews are still to beam in, soonest first. */
   crewsDue: number[];
-  /** Seconds until the retake squad beams in (Infinity with none to come), and the POI (index) it goes to, -1 for none. */
-  retakeT: number;
-  retakePoi: number;
   /** This raid's POI whose bins lean to a rare kind (`BOOST`), as a POI index. */
   boost: { poi: number; kind: ValuableKind };
   /**
@@ -703,17 +680,13 @@ export interface State {
   away: number;
   /** The raid ended by walking back into the camp. */
   home: boolean;
-  /** Who holds each outpost this raid (`territory()`, from the network's level, or the island's standing). */
-  territory: Record<OutpostId, Faction>;
-  /** Who holds each node of the front (`NODES` order) this raid: as the island stood at the start, a node taken turning freed. */
+  /** Who holds each node of the front (`NODES` order) this raid: as the island stood at the start, then as it changes hands. */
   nodes: NodeHold[];
   /**
    * The core capture under way (`FRONT`): its node, the seconds of the meter filled, whether it
    * filled this tick, the seconds to the push's next wave, and the waves sent; null for none.
    */
   capture: { node: number; t: number; held: boolean; pushT: number; waves: number } | null;
-  /** The nodes the player came near this raid (`FRONT.visit` of a core): an outpost visited does not lapse. */
-  nodeVisited: boolean[];
   /**
    * What the player has seen or heard of the robots out between the POIs, for the map: each squad
    * (by index) where it was last seen or heard, when, whether it is the rogues', and whether that
@@ -862,11 +835,7 @@ export interface Start {
   record?: RecordId;
   /** The fetch contract taken: `n` of its POI's bins hold its valuable this raid (`State.fetch`). */
   fetch?: { poi: PoiId; kind: ValuableKind; n: number };
-  /** The robots' network level (0 to 5); left out, `NETWORK.play`, the level the sim gate plays. */
-  network?: number;
-  /** Who holds each outpost (meta/island.ts); one left out stands as `territory()` gives it at the network's level. */
-  outposts?: Partial<Record<OutpostId, OutpostHold>>;
-  /** The day's island event; left out, none. A retake whose POI is not freed sends no one. */
+  /** The day's island event; left out, none. */
   event?: IslandEvent | null;
   /** The threat chosen at the map table, 0 to `THREAT.max`; left out, 0. */
   threat?: number;
@@ -878,25 +847,18 @@ export interface Start {
   battle?: BattleStart;
 }
 
-/** The outposts' factions in a raid: `territory()` at the level, but as the island keeps any it names (a freed one as the level gives it). */
-function outpostTerritory(network: number, outposts: Start["outposts"]): Record<OutpostId, Faction> {
-  const t = territory(network);
-  for (const id of Object.keys(t) as OutpostId[]) if (outposts?.[id] === "held" || outposts?.[id] === "rogue") t[id] = outposts[id] === "rogue" ? "rogue" : "net";
-  return t;
-}
+/** What the enemy's strength sets in a raid. */
+export const strengthLevel = (s: Pick<State, "strength">) => STRENGTH.levels[s.strength];
 
-/** A flag for each node of the front, all down. */
-const s0NodesFalse = () => NODES.map(() => false);
-
-/** What a network level sets in a raid. */
-export const netLevel = (s: Pick<State, "network">) => NETWORK.levels[s.network];
+/** The enemy's strength with `held` of the nodes its own (`STRENGTH.byHeld`). */
+export const strengthFor = (held: number) => STRENGTH.byHeld[Math.max(0, Math.min(STRENGTH.byHeld.length - 1, held))];
 
 /**
- * The reinforcements' first time and interval and the raiders' time of a raid at network
- * `network` and threat `threat`: the network's numbers, sooner by the threat's factors (to the second).
+ * The reinforcements' first time and interval and the raiders' time of a raid at the enemy's
+ * strength `strength` and threat `threat`: the strength's numbers, sooner by the threat's factors (to the second).
  */
-export function raidClock(network: number, threat: number) {
-  const l = NETWORK.levels[network];
+export function raidClock(strength: number, threat: number) {
+  const l = STRENGTH.levels[strength];
   const t = THREAT.levels[threat];
   const at = (n: number, k: number) => (k === 1 ? n : Math.round(n * k));
   return { first: at(l.reinforce.first, t.reinforce), every: at(l.reinforce.every, t.reinforce), raiders: at(l.raiders, t.raiders) };
@@ -914,9 +876,10 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
   // same spots: a raid starts with none, so it plays the same whatever was played before it.
   forgetFields();
   const hold = POIS.map((p): PoiHold => (p.boss ? "held" : (start.island?.[p.id] ?? "held")));
-  const network = Math.max(0, Math.min(NETWORK.max, Math.round(start.network ?? NETWORK.play)));
+  const nodes = nodeHolds((id) => hold[poiIndex(id)]);
+  const strength = strengthFor(enemyNodes(nodes));
   const threat = Math.max(0, Math.min(THREAT.max, Math.round(start.threat ?? 0)));
-  const clock = raidClock(network, threat);
+  const clock = raidClock(strength, threat);
   const freed = (poi: PoiId) => hold[poiIndex(poi)] === "freed";
   // A freed POI's depot is on, so a raid may start from it too.
   const depotsOn = DEPOTS.map((d) => !!start.depots?.includes(d.poi) || freed(d.poi));
@@ -1011,16 +974,13 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
     reinforceT: clock.first,
     reinforceN: 0,
     raiderT: clock.raiders,
-    network,
+    strength,
     threat,
     known: [...(start.known ?? MOD_START)],
     modOdds: start.noMods ? 0 : 1,
-    relays: network >= NETWORK.relayAt ? RELAYS.map((r) => ({ id: r.id, x: r.x, y: groundAt(r.x, r.z, 0.3, 99), z: r.z, hp: RELAY.hp })) : [],
     event: start.event ?? null,
     storm: start.event?.t === "storm",
     crewsDue: [],
-    retakeT: Infinity,
-    retakePoi: -1,
     boost: boostFor(seed, region),
     fetch: fetchBins(seed, bins, start.fetch),
     outcome: null,
@@ -1039,10 +999,8 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
     away: 0,
     home: false,
     found: from ? [] : [entry.id],
-    territory: outpostTerritory(network, start.outposts),
-    nodes: nodeHolds((id) => hold[poiIndex(id)], start.outposts, network),
+    nodes,
     capture: null,
-    nodeVisited: s0NodesFalse(),
     contacts: [],
     factionT: 0,
     contactT: 0,
@@ -1053,7 +1011,7 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
     seen: start.seen ? decodeSeen(start.seen) : emptySeen(),
     cell: -1,
     events: [],
-    stats: { kills: 0, damage: 0, shots: 0, hits: 0, crits: 0, flankHits: 0, titanHits: 0, downs: 0, wipes: 0, cleared: [], allyDamage: 0, allyKills: 0, allyDowns: 0, allyRescues: 0, allyHelped: 0, killsBy: { drone: 0, grunt: 0, charger: 0, heavy: 0, titan: 0 }, vaults: [], wiped: [], relays: [], crewsIn: 0, crewsDown: 0, crewsOut: 0, crewBins: 0, captured: [] },
+    stats: { kills: 0, damage: 0, shots: 0, hits: 0, crits: 0, flankHits: 0, titanHits: 0, downs: 0, wipes: 0, cleared: [], allyDamage: 0, allyKills: 0, allyDowns: 0, allyRescues: 0, allyHelped: 0, killsBy: { drone: 0, grunt: 0, charger: 0, heavy: 0, titan: 0 }, vaults: [], wiped: [], crewsIn: 0, crewsDown: 0, crewsOut: 0, crewBins: 0, captured: [] },
   };
   if (from) {
     const p = s.player;
@@ -1079,13 +1037,12 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
 }
 
 /**
- * What the day's event and the network bring to the raid beyond the POIs' garrisons: the salvage
- * crews' arrival times, the debris crate and its guards, and the retake squad's beaming in (only
- * for a POI that is freed). The crate's id lies above every other bin's and loot's, and its guards
+ * What the day's event brings to the raid beyond the POIs' garrisons: the salvage crews' arrival
+ * times, and the debris crate and its guards. The crate's id lies above every other bin's and loot's, and its guards
  * draw on the crews' stream: the bins and the raid's random numbers stand as on a day without it.
  */
 function placeEvent(s: State) {
-  for (let i = crewsFor(s.network, s.event); i > 0; i--) s.crewsDue.push(CREW.arrive[0] + crewRand(s) * (CREW.arrive[1] - CREW.arrive[0]));
+  for (let i = crewsFor(s.event); i > 0; i--) s.crewsDue.push(CREW.arrive[0] + crewRand(s) * (CREW.arrive[1] - CREW.arrive[0]));
   s.crewsDue.sort((a, b) => a - b);
   const ev = s.event;
   if (ev?.t === "debris") {
@@ -1097,10 +1054,6 @@ function placeEvent(s: State) {
       s.squads.push({ name: d.guards.name, poi: -1, patrol: [], leg: 0, engaged: false, roam: false, sinceSeen: 0, last: { x: 0, z: 0 } });
       for (const m of d.guards.members) spawnEnemy(s, m.kind, m.x, m.z, -1, index, { face: m.face, crew: true });
     }
-  }
-  if (ev?.t === "retake" && s.hold[poiIndex(ev.poi)] === "freed") {
-    s.retakePoi = poiIndex(ev.poi);
-    s.retakeT = RETAKE.at;
   }
 }
 
@@ -1122,17 +1075,13 @@ function fetchBins(seed: number, bins: Bin[], fetch: Start["fetch"]): State["fet
  * A squad's name for a contract to point at: a drone pack by its own name, a hunting party by
  * its region (its line-up changes from raid to raid), any other squad by its name.
  */
-export const squadKey = (sq: Pick<SquadState, "name" | "party" | "crew" | "retake">) =>
-  sq.party ? partyKey(sq.party.region) : sq.crew ? crewKey(sq.crew.region) : sq.retake !== undefined ? retakeKey(POIS[sq.retake].id) : sq.name;
+export const squadKey = (sq: Pick<SquadState, "name" | "party" | "crew">) => (sq.party ? partyKey(sq.party.region) : sq.crew ? crewKey(sq.crew.region) : sq.name);
 
 /** The key every hunting party of `region` is destroyed under. */
 export const partyKey = (region: RegionId) => `party:${region}`;
 
 /** The key every salvage crew of `region` is destroyed under. */
 export const crewKey = (region: RegionId) => `crew:${region}`;
-
-/** The key the squad sent to retake `poi` is destroyed under. */
-export const retakeKey = (poi: PoiId) => `retake:${poi}`;
 
 /** The teammate before it is stood beside the player (`placeAlly()`), at `at`. */
 export function newAlly(at: { x: number; z: number; yaw: number }): Ally {
@@ -1181,7 +1130,7 @@ export function roamRand(s: State): number {
   return (s.roamRng % 1_000_000) / 1_000_000;
 }
 
-/** The same on the salvage crews' and the retake squad's own stream (`State.crewRng`). */
+/** The same on the salvage crews' own stream (`State.crewRng`). */
 export function crewRand(s: State): number {
   s.crewRng = xorshift(s.crewRng);
   return (s.crewRng % 1_000_000) / 1_000_000;

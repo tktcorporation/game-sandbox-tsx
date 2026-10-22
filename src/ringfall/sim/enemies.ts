@@ -11,7 +11,7 @@ const LEDGE = 1.0;
 const CLIMB = 1.2;
 const bodyHeight = (k: { bodyY: number; radius: number }) => k.bodyY + k.radius;
 import { inZone } from "./front";
-import { inCamp, MOBILES, nodeIndex, OUTPOST_SITES, PARTY_STOPS, POIS, RELAYS, relayIndex, ROAMERS, type Mobile, type Squad } from "./map";
+import { inCamp, MOBILES, PARTY_STOPS, POIS, ROAMERS, type Mobile, type Squad } from "./map";
 import { beatOf, damageRobot, fightHeard, foeOf, mobileWalks, placeMobile } from "./factions";
 import { robotSide, type Side } from "./battle";
 import { bodyCenter, weakPoint } from "./combat";
@@ -71,8 +71,8 @@ export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi:
   const pick = o.hashed ? hashed : o.crew ? crewRand : o.roam ? roamRand : rand;
   const pos = spawnSpot(kind, x, z, o.floor);
   const face = o.face ?? pick(s) * Math.PI * 2;
-  // A strong network plates some of the plain grunts and heavies, picked without drawing on the raid's numbers.
-  const plate = o.plate ?? ((kind === "grunt" || kind === "heavy") && !o.elite && netPlated(s.seed, s.network, id, s.threat ?? 0) ? 1 : 0);
+  // A raised threat plates some of the plain grunts and heavies, picked without drawing on the raid's numbers.
+  const plate = o.plate ?? ((kind === "grunt" || kind === "heavy") && !o.elite && netPlated(s.seed, id, s.threat ?? 0) ? 1 : 0);
   const e: Enemy = {
     id,
     kind,
@@ -140,27 +140,22 @@ export function populate(s: State) {
   // of it that walk a beat (`MOBILES`) are out on it, no longer the POI's.
   const beats: { m: Mobile; kinds: EnemyKind[] }[] = [];
   POIS.forEach((p, i) =>
-    garrison(i, s.hold[i], s.seed).forEach((sq) => {
+    garrison(i, s.hold[i]).forEach((sq) => {
       const beat = beatOf(p.id, sq.name);
       if (beat) beats.push({ m: beat, kinds: sq.members.map((m) => m.kind) });
       else add(sq, i);
     }),
   );
-  // An outpost the rogues hold has rogue guards (`TERRITORY`); one the player freed has none.
-  const rogueGuards = new Set(OUTPOST_SITES.filter((o) => s.territory[o.id] === "rogue").map((o) => o.guard));
-  const freedGuards = new Set(OUTPOST_SITES.filter((o) => s.nodes[nodeIndex(o.id)] === "freed").map((o) => o.guard));
-  ROAMERS.forEach((sq) => !freedGuards.has(sq.name) && add(sq, -1, rogueGuards.has(sq.name)));
+  ROAMERS.forEach((sq) => add(sq, -1));
   for (const b of beats) placeMobile(s, b.m, b.kinds, walker);
   for (const m of MOBILES) if (mobileWalks(s, m)) placeMobile(s, m, m.members ?? [], walker);
   // The walks are built by fields (`mobileWalk()`): the raid starts with none, whichever walks
   // this process built before, so it plays the same wherever it is played.
   forgetFields();
-  // Each relay mast standing this raid has its two guards at its foot.
-  for (const m of s.relays) add(RELAYS[relayIndex(m.id)].guards, -1);
   // Each drone pack starts at a waypoint of its loop well away from the player, and flies on from there.
   const p0 = s.player.pos;
-  // As many packs fly as the network gives (`activePacks()`): all of them at the sim gate's level.
-  for (const sq of activePacks(s.seed, s.network)) {
+  // As many packs fly as the enemy's strength gives (`activePacks()`): all of them at the sim gate's level.
+  for (const sq of activePacks(s.seed, s.strength)) {
     const loop = sq.patrol ?? [];
     const far = loop.map((_, i) => i).filter((i) => dist2d(loop[i], p0) >= PACK.away);
     const leg = far[Math.floor(roamRand(s) * far.length)] ?? 0;

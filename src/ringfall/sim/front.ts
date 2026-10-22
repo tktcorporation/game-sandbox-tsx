@@ -1,6 +1,6 @@
 import { ALLY, ENEMIES, FRONT, PLAYER, TICK } from "./config";
 import { dist2d } from "./geom";
-import { depotIndex, FRONT_LINKS, NODES, NET_EDGE, nodeIndex, OUTPOST_SITES, POIS, poiIndex, territory, type NodeId, type OutpostId, type PoiId } from "./map";
+import { depotIndex, FRONT_LINKS, NODES, nodeIndex, POIS, poiIndex, type NodeId, type PoiId } from "./map";
 import { cellsAround, fieldTo } from "./hunt";
 import { spawnEnemy } from "./enemies";
 import { hiddenPosts } from "./world";
@@ -9,18 +9,14 @@ import type { PoiHold } from "./island";
 import type { State } from "./state";
 
 /*
- * The front (docs/ringfall/liberation-front.md): the freeable POIs and the outposts are nodes
- * joined along the roads (`FRONT_LINKS`). The player holds the camp and the nodes freed; a node
- * next to that ground is on the front, and only a node on the front can be taken, by capturing
- * its core (`FRONT`). The pure rules here serve the raid, the island's nights (meta/island.ts)
- * and the maps alike.
+ * The front (docs/ringfall/island-v2.md): the six freeable POIs are nodes joined along the roads
+ * (`FRONT_LINKS`). The player holds the camp and the nodes taken; a node next to that ground is
+ * on the front, and only a node on the front can be taken, by capturing its core (`FRONT`). The
+ * pure rules here serve the raid, the island's nights (meta/island.ts) and the maps alike.
  */
 
-/** Who holds a node: the network fully or thinly, the rogues (an outpost only), or the player. */
-export type NodeHold = PoiHold | "rogue";
-
-/** A node's standing in words, for the maps. */
-export const NODE_HOLD_NAME: Record<NodeHold, string> = { held: "支配", thin: "手薄", rogue: "野良機", freed: "解放" };
+/** Who holds a node: the enemy or the player. */
+export type NodeHold = PoiHold;
 
 /** Each node's neighbours, as places in `NODES`. */
 export const NEIGHBOURS: number[][] = NODES.map((_, i) =>
@@ -40,41 +36,19 @@ const touchesPlayer = (holds: readonly NodeHold[], i: number) => CAMP_NEXT.inclu
 /** The nodes on the front: not the player's, and next to the player's ground. Only these can be taken. */
 export const frontNodes = (holds: readonly NodeHold[]): boolean[] => NODES.map((_, i) => holds[i] !== "freed" && touchesPlayer(holds, i));
 
-/**
- * The nodes deep in the player's ground: freed, with every neighbour the player's too, and not
- * next to ground the network never gives up (`NET_EDGE`). Such a node
- * never goes thin for want of visits, and the network sends no retake to it.
- */
-export const interiorNodes = (holds: readonly NodeHold[]): boolean[] => NODES.map((n, i) => holds[i] === "freed" && !NET_EDGE.includes(n.id) && NEIGHBOURS[i].every((k) => holds[k] === "freed"));
+/** Each node's standing, from the POIs'. */
+export const nodeHolds = (poi: (id: PoiId) => PoiHold): NodeHold[] => NODES.map((n) => poi(n.id));
 
-/** An outpost's standing as the island keeps it: the network's or the rogues' (`territory()`), or the player's. */
-export type OutpostHold = "held" | "rogue" | "freed";
-
-/** Each node's standing, from the POIs' and the outposts' (an outpost left out stands as `territory()` gives it at `network`). */
-export function nodeHolds(poi: (id: PoiId) => PoiHold, outposts: Partial<Record<OutpostId, OutpostHold>> | undefined, network: number): NodeHold[] {
-  const t = territory(network);
-  return NODES.map((n) => (n.kind === "poi" ? poi(n.id as PoiId) : (outposts?.[n.id as OutpostId] ?? (t[n.id as OutpostId] === "rogue" ? "rogue" : "held"))));
-}
-
-/** The outposts' standing at a profile's start: the rogues' where `territory()` gives them at `network`, the network's elsewhere. */
-export const newOutposts = (network: number): Record<OutpostId, OutpostHold> => {
-  const t = territory(network);
-  return Object.fromEntries(OUTPOST_SITES.map((o) => [o.id, t[o.id] === "rogue" ? "rogue" : "held"])) as Record<OutpostId, OutpostHold>;
-};
+/** How many nodes the enemy holds. */
+export const enemyNodes = (holds: readonly NodeHold[]) => holds.filter((h) => h !== "freed").length;
 
 /** The node of POI `poi` (a place in `POIS`), or -1 for the titan's pad. */
 export const poiNode = (poi: number) => nodeIndex(POIS[poi].id);
 
-/** The outpost guard squad's name of node `i`, or null for a POI. */
-const guardOf = (i: number) => (NODES[i].kind === "outpost" ? (OUTPOST_SITES.find((o) => o.id === NODES[i].id)?.guard ?? null) : null);
-
-/** Whether squad `squad` stands for node `i`: one of its POI's garrison, or its outpost's guard. */
+/** Whether squad `squad` stands for node `i`: one of its POI's garrison. */
 export function garrisonOf(s: State, i: number, squad: number): boolean {
-  const n = NODES[i];
   const sq = s.squads[squad];
-  if (!sq || sq.retreat !== undefined) return false;
-  if (n.kind === "poi") return sq.poi === poiIndex(n.id as PoiId);
-  return sq.name === guardOf(i) && sq.poi < 0;
+  return !!sq && sq.retreat === undefined && sq.poi === poiIndex(NODES[i].id);
 }
 
 /*
@@ -108,7 +82,7 @@ export function coreInReach(s: State): number {
 export const capturable = (s: Pick<State, "nodes">, i: number) => frontNodes(s.nodes)[i];
 
 /**
- * The use key at core `i`: a core off the front is shielded by the network and refuses; one on it
+ * The use key at core `i`: a core off the front is shielded by the enemy and refuses; one on it
  * starts its capture (a capture of this core already under way goes on as it was). The alarm
  * sends the node's garrison to the core.
  */
@@ -160,10 +134,6 @@ export function stepFront(s: State) {
     sq.walk = undefined;
     s.enemies = s.enemies.filter((e) => e.squad !== k);
   });
-  const p = s.player.pos;
-  NODES.forEach((n, i) => {
-    if (!s.nodeVisited[i] && Math.abs(n.core.x - p.x) < FRONT.visit && Math.abs(n.core.z - p.z) < FRONT.visit && dist2d(n.core, p) < FRONT.visit) s.nodeVisited[i] = true;
-  });
   const c = s.capture;
   if (!c || s.phase !== "play") return;
   if (s.nodes[c.node] === "freed") {
@@ -173,7 +143,7 @@ export function stepFront(s: State) {
   c.held = onCore(s, c.node) && !contesting(s, c.node);
   if (c.held) c.t += TICK;
   const near = dist2d(s.player.pos, NODES[c.node].core) < FRONT.radius * 5;
-  if (near && c.waves < FRONT.pushWaves[s.network]) {
+  if (near && c.waves < FRONT.pushWaves[s.strength]) {
     c.pushT -= TICK;
     if (c.pushT <= 0) {
       c.pushT = sendPush(s, c.node) ? FRONT.pushEvery : 5;
@@ -186,32 +156,31 @@ export function stepFront(s: State) {
 /**
  * The push on a capture: a squad from each neighbouring node the player does not hold (the
  * nearest `FRONT.pushMax`), beamed in out of sight a walk of `FRONT.pushDist` from the core on its
- * node's side, and walking in by the ground's way; the rogues' from a rogue outpost. True when one
- * came, or when none has anywhere to come from.
+ * node's side, and walking in by the ground's way. True when one came, or when none has anywhere
+ * to come from.
  */
 function sendPush(s: State, i: number): boolean {
   const n = NODES[i];
   const from = NEIGHBOURS[i]
     .filter((k) => s.nodes[k] !== "freed")
     .sort((a, b) => dist2d(NODES[a], n.core) - dist2d(NODES[b], n.core))
-    .slice(0, FRONT.pushMax[s.network]);
+    .slice(0, FRONT.pushMax[s.strength]);
   if (!from.length) return true;
   const field = fieldTo(n.core.x, n.core.z);
   const cells = field ? cellsAround(field, FRONT.pushDist[0], FRONT.pushDist[1]) : [];
-  const kinds = FRONT.push[s.network];
+  const kinds = FRONT.push[s.strength];
   let sent = false;
   for (const k of from) {
     const src = NODES[k];
-    const rogue = s.nodes[k] === "rogue";
     const order = cells.map((q) => ({ q, d: dist2d(q, src) })).sort((a, b) => a.d - b.d).slice(0, 60);
     for (const { q } of order) {
       if (dist2d(q, s.player.pos) < FRONT.pushDist[0] * 0.6 || inZone(q.x, q.z, 4)) continue;
       const spots = hiddenPosts(s, kinds, q.x, q.z);
       if (!spots) continue;
       const squad = s.squads.length;
-      s.squads.push({ name: `${src.name}からの増援`, poi: -1, patrol: [], leg: 0, engaged: false, roam: true, hunt: true, routed: true, sinceSeen: 0, last: { x: n.core.x, z: n.core.z }, rogue: rogue || undefined });
+      s.squads.push({ name: `${src.name}からの増援`, poi: -1, patrol: [], leg: 0, engaged: false, roam: true, hunt: true, routed: true, sinceSeen: 0, last: { x: n.core.x, z: n.core.z } });
       kinds.forEach((kind, m) => {
-        const e = spawnEnemy(s, kind, spots[m].mx, spots[m].mz, -1, squad, { appear: true, rogue });
+        const e = spawnEnemy(s, kind, spots[m].mx, spots[m].mz, -1, squad, { appear: true });
         e.aware = "alert";
         e.goal = { x: n.core.x, z: n.core.z };
         e.searchT = 60;
@@ -229,7 +198,7 @@ function sendPush(s: State, i: number): boolean {
  * Node `i` is the player's: its depot comes on, the self-revive comes back and the teammate gets
  * up (as when a POI is cleared), and what is left of its garrison walks off toward the nearest
  * node the robots still hold, to be gone after `FRONT.retreat` seconds. No robot comes onto its
- * ground again this raid; the island keeps it freed if the player gets off alive.
+ * ground again this raid; the island keeps it the player's unless the enemy takes it back in the battle.
  */
 export function takeNode(s: State, i: number) {
   const n = NODES[i];
@@ -237,14 +206,11 @@ export function takeNode(s: State, i: number) {
   s.capture = null;
   s.stats.captured.push(n.id);
   useZones(s);
-  if (n.kind === "poi") {
-    const poi = poiIndex(n.id as PoiId);
-    s.cleared[poi] = true;
-    const d = depotIndex(n.id as PoiId);
-    if (d >= 0 && !s.depots[d]) {
-      s.depots[d] = true;
-      s.events.push({ t: "depotOn", poi: n.id as PoiId });
-    }
+  s.cleared[poiIndex(n.id)] = true;
+  const d = depotIndex(n.id);
+  if (d >= 0 && !s.depots[d]) {
+    s.depots[d] = true;
+    s.events.push({ t: "depotOn", poi: n.id });
   }
   s.player.selfRevive = 1;
   raiseAlly(s, "self", ALLY.reviveHp);

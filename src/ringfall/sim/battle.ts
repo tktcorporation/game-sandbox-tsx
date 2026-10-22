@@ -1,6 +1,6 @@
 import { CONQUEST, ENEMIES, FACTORY, TICK, type EnemyKind } from "./config";
 import { dist2d } from "./geom";
-import { CAMP, depotIndex, FRONT_LINKS, NET_EDGE, NODES, nodeIndex, type NodeId, type PoiId } from "./map";
+import { CAMP, depotIndex, FRONT_LINKS, NET_EDGE, NODES, nodeIndex, type NodeId } from "./map";
 import { forgetFields, onMainGround, walkLine } from "./hunt";
 import { worldKey } from "./routes";
 import { spawnEnemy } from "./enemies";
@@ -9,23 +9,21 @@ import { allyUp } from "./ally";
 import type { Enemy, GameEvent, Point, State } from "./state";
 
 /*
- * 陣取り戦 (docs/ringfall/liberation-front.md, `CONQUEST`): a raid of the island is one battle over
- * every node at once. Each side's squads walk the links between the nodes and take them; each
- * node held scores its holder every second. A squad near the player or the teammate is robots in
- * the world (`State.friends` for the player's, `State.enemies` for the others), and the robots
- * fight as any robots do; a squad away from both is numbers (`BattleSquad`), and its fights and
+ * 陣取り戦 (docs/ringfall/island-v2.md, `CONQUEST`): a raid of the island is one battle over every
+ * node at once. The player's and the enemy's squads walk the links between the nodes and take
+ * them, and the rogues' fight both. A squad near the player or the teammate is robots in the
+ * world (`State.friends` for the player's, `State.enemies` for the others), and the robots fight
+ * as any robots do; a squad away from both is numbers (`BattleSquad`), and its fights and
  * captures are reckoned every `CONQUEST.tick` seconds here. When the raid ends before the battle
- * does, the rest of it is reckoned in numbers alone (`finishBattle()`), so the day's result is
- * the whole battle's.
+ * does, the rest of it is reckoned in numbers alone (`finishBattle()`); whoever holds each node
+ * at the battle's end holds it the next day.
  */
 
-/** A side of the battle: the player (0), the network (1), the rogues (2). */
+/** A side of the battle: the player (0), the enemy (1), the rogues (2). */
 export type Side = 0 | 1 | 2;
 
-export const SIDE_NAME: Record<Side, string> = { 0: "自軍", 1: "網", 2: "野良機" };
-
-/** Who a node's standing belongs to. */
-export const sideOf = (h: NodeHold): Side => (h === "freed" ? 0 : h === "rogue" ? 2 : 1);
+/** Who a node's standing belongs to: the player or the enemy (the rogues hold none). */
+export const sideOf = (h: NodeHold): Side => (h === "freed" ? 0 : 1);
 
 /** The side of a robot in the world. */
 export const robotSide = (e: Pick<Enemy, "friend" | "rogue">): Side => (e.friend ? 0 : e.rogue ? 2 : 1);
@@ -70,8 +68,6 @@ export interface Battle {
   now: number;
   /** Seconds to the next reckoning. */
   t: number;
-  /** Points, by side. */
-  score: [number, number, number];
   squads: BattleSquad[];
   nextId: number;
   /** Seconds of work toward each side's next squad. */
@@ -84,9 +80,8 @@ export interface Battle {
   start: NodeHold[];
   /** The nodes that changed hands in the battle, in order: which, to whom, when. */
   taken: { node: NodeId; side: Side; t: number }[];
-  /** Reckoned to its end, and whether the player won it. */
+  /** Reckoned to its end. */
   done: boolean;
-  won: boolean;
 }
 
 /** What a raid of the island brings to its battle: the factory's level. */
@@ -166,9 +161,6 @@ const unit = (kind: EnemyKind): Unit => ({ kind, hp: ENEMIES[kind].hp, shield: E
 /** A squad's pace while it walks a link: `CONQUEST.pace` of its slowest member's. */
 const paceOf = (b: BattleSquad) => CONQUEST.pace * Math.min(...b.units.map((u) => ENEMIES[u.kind].speed));
 
-/** The node points a side scores for holding node `i` a second. */
-const pointsOf = (i: number) => (NODES[i].kind === "poi" ? CONQUEST.points.poi : CONQUEST.points.outpost);
-
 /** The battle a raid of the island starts with: the factory's turrets at the nodes the player holds, nothing else out yet. */
 export function initBattle(s: State, start: BattleStart): Battle {
   traceLinks();
@@ -178,7 +170,6 @@ export function initBattle(s: State, start: BattleStart): Battle {
     end: CONQUEST.time,
     now: 0,
     t: CONQUEST.tick,
-    score: [0, 0, 0],
     squads: [],
     nextId: 1,
     made: [0, 0, 0],
@@ -187,12 +178,10 @@ export function initBattle(s: State, start: BattleStart): Battle {
     start: [...s.nodes],
     taken: [],
     done: false,
-    won: false,
   };
-  NODES.forEach((n, i) => {
+  NODES.forEach((_, i) => {
     if (s.nodes[i] !== "freed") return;
-    const turrets = n.kind === "poi" || factory >= FACTORY.turretOutposts ? FACTORY.turrets[factory] : 0;
-    for (let k = 0; k < turrets; k++) addSquad(b, 0, ["heavy"], i, i, "post");
+    for (let k = 0; k < FACTORY.turrets[factory]; k++) addSquad(b, 0, ["heavy"], i, i, "post");
   });
   return b;
 }
@@ -230,7 +219,7 @@ export function stepBattle(s: State) {
   const b = s.battle;
   if (!b || b.done || s.phase !== "play") return;
   if (s.time >= b.end) {
-    // Time is up with the player still out: the network has the island, and what they carried with it.
+    // Time is up with the player still out: the enemy has what they carried.
     s.orbs = [];
     s.waves = [];
     s.phase = "done";
@@ -246,7 +235,7 @@ export function stepBattle(s: State) {
 
 /**
  * One reckoning of the battle at its clock: squads come and go from the world by the player's
- * nearness, walk, fight in numbers where nobody watches, take nodes, and each side scores.
+ * nearness, walk, fight in numbers where nobody watches, and take nodes.
  */
 function reckon(s: State, b: Battle) {
   const dt = CONQUEST.tick;
@@ -256,14 +245,12 @@ function reckon(s: State, b: Battle) {
   march(s, b, dt);
   fightApart(s, b, dt);
   capture(s, b, dt);
-  b.score[0] += CONQUEST.camp * dt;
-  NODES.forEach((_, i) => (b.score[sideOf(s.nodes[i])] += pointsOf(i) * dt));
 }
 
 /**
  * The battle's rest, once the raid has ended before it: the robots of its squads become numbers
- * where they stand, and it is reckoned in numbers alone to its end, with nobody near. Then the
- * day's result. Pushes no event: the raid is over.
+ * where they stand, and it is reckoned in numbers alone to its end, with nobody near. Pushes no
+ * event: the raid is over.
  */
 export function finishBattle(s: State) {
   const b = s.battle;
@@ -271,7 +258,6 @@ export function finishBattle(s: State) {
   for (const q of b.squads) if (q.squad >= 0) toNumbers(s, q);
   b.squads = b.squads.filter((q) => q.units.length);
   while (b.now + CONQUEST.tick <= b.end + 1e-6) reckon(s, b);
-  b.won = b.score[0] > b.score[1];
   b.done = true;
 }
 
@@ -326,7 +312,7 @@ function settleAt(s: State, q: BattleSquad) {
 }
 
 /** The name of a battle squad's squad in the world. */
-const squadName = (q: BattleSquad) => (q.task === "post" ? "自軍の砲台" : q.side === 0 ? "自軍の部隊" : q.side === 1 ? "網の攻撃部隊" : "野良機の攻撃部隊");
+const squadName = (q: BattleSquad) => (q.task === "post" ? "自軍の砲台" : q.side === 0 ? "自軍の部隊" : q.side === 1 ? "敵の攻撃部隊" : "野良機の部隊");
 
 /**
  * Battle squad `q` comes into the world where its numbers say it is, its members spread round
@@ -389,7 +375,7 @@ function unitsAt(s: State, b: Battle, i: number, side: Side): number {
   return b.squads.filter((q) => q.side === side && q.to === i && (arrived(q) || q.squad >= 0)).reduce((n, q) => n + (q.squad >= 0 ? membersOf(s, q).length : q.units.length), 0);
 }
 
-/** The robots of node `i`'s garrison still standing (its POI's squads, or its outpost's guard): they hold it for the network or the rogues wherever they are. */
+/** The robots of node `i`'s garrison still standing (its POI's squads): they hold it for the enemy wherever they are. */
 function garrisonAt(s: State, i: number): Enemy[] {
   return s.enemies.filter((e) => !e.battle && garrisonOf(s, i, e.squad));
 }
@@ -423,10 +409,10 @@ function playerPlan(s: State, b: Battle): { from: number; to: number; task: Batt
 }
 
 /**
- * The best node for `side` to take from one of `from` (nodes it holds, the camp -1 for the
- * player): one next to them held by another side, worth the most against how strongly it is
- * held, joining an attack of its own already under way, the player's nodes first for the
- * network and the rogues; walked to from the nearest of `from`. Null for none.
+ * The best node for `side` to take (or, for the rogues, to fall on) from one of `from` (nodes it
+ * holds, the camp -1 for the player, where a rogue squad stands): one next to them held by
+ * another side, the most weakly held, joining an attack of its own already under way, the
+ * player's nodes first for the enemy; walked to from the nearest of `from`. Null for none.
  */
 function attackFrom(s: State, b: Battle, side: Side, from: number[]): { from: number; to: number; task: BattleSquad["task"] } | null {
   let best = -1;
@@ -434,7 +420,7 @@ function attackFrom(s: State, b: Battle, side: Side, from: number[]): { from: nu
   NODES.forEach((_, i) => {
     const owner = sideOf(s.nodes[i]);
     if (owner === side || !nextTo(i).some((k) => from.includes(k))) return;
-    const v = 6 * goingTo(b, side, i) + pointsOf(i) - 2 * heldBy(s, b, i) + (side !== 0 && owner === 0 ? 10 : 0);
+    const v = 6 * goingTo(b, side, i) - 2 * heldBy(s, b, i) + (side === 1 && owner === 0 ? 10 : 0);
     if (v > bestV) {
       best = i;
       bestV = v;
@@ -447,17 +433,23 @@ function attackFrom(s: State, b: Battle, side: Side, from: number[]): { from: nu
   return { from: start, to: best, task: "attack" };
 }
 
-/** Where the network's or the rogues' next squad goes: a node next to theirs held by another side, the player's first, from a node of theirs the player is not near. */
+/**
+ * Where the enemy's next squad goes: a node of the player's next to one of its own, from a node
+ * of its own the player is not near, or one it lands on by the ground it never gives up. The
+ * rogues' come out of the wild by any node the player is not near and fall on the most weakly
+ * held. Null for none.
+ */
 function enemyPlan(s: State, b: Battle, side: Side): { from: number; to: number } | null {
   let best: { from: number; to: number; v: number } | null = null;
   NODES.forEach((n, i) => {
     const owner = sideOf(s.nodes[i]);
     if (owner === side) return;
-    let from = NEIGHBOURS[i].filter((k) => sideOf(s.nodes[k]) === side && !nearPlayer(s, nodePoint(k), CONQUEST.near)).sort((a, c) => dist2d(nodePoint(a), nodePoint(i)) - dist2d(nodePoint(c), nodePoint(i)))[0];
-    // The network lands on a node by the ground it never gives up, out of the player's sight.
+    const fromOk = (k: number) => (side === 2 || sideOf(s.nodes[k]) === side) && !nearPlayer(s, nodePoint(k), CONQUEST.near);
+    let from = NEIGHBOURS[i].filter(fromOk).sort((a, c) => dist2d(nodePoint(a), nodePoint(i)) - dist2d(nodePoint(c), nodePoint(i)))[0];
+    // The enemy lands on a node by the ground it never gives up, out of the player's sight.
     if (from === undefined && side === 1 && NET_EDGE.includes(n.id) && !nearPlayer(s, nodePoint(i), CONQUEST.near)) from = i;
     if (from === undefined) return;
-    const v = (owner === 0 ? 10 : 0) + pointsOf(i) - 2 * heldBy(s, b, i) - 3 * goingTo(b, side, i);
+    const v = (side === 1 && owner === 0 ? 10 : 0) - 2 * heldBy(s, b, i) - 3 * goingTo(b, side, i);
     if (!best || v > best.v) best = { from, to: i, v };
   });
   return best;
@@ -477,21 +469,20 @@ function produce(s: State, b: Battle, dt: number) {
       tell(s, { t: "squadOut", side: 0, node: plan.to });
     }
   }
-  // The network's and the rogues' nodes work for them: the more they hold, the sooner.
+  // The enemy's nodes work for it, the more it holds the sooner; the rogues come at their own pace.
   for (const side of [1, 2] as const) {
-    // The network works from the ground it never gives up too (the titan's pad, the north shore, `NET_EDGE`).
-    const weight = (i: number) => (NODES[i].kind === "poi" ? 1 : CONQUEST.net.outpost);
-    const theirs = NODES.reduce((n, _, i) => n + (sideOf(s.nodes[i]) === side ? weight(i) : 0), 0);
-    // The network answers the player's ground: each node of theirs works for it as one of its own would.
-    const mine = NODES.reduce((n, _, i) => n + (s.nodes[i] === "freed" ? weight(i) : 0), 0);
-    const work = side === 1 ? theirs + CONQUEST.net.edge + CONQUEST.net.answer * mine : theirs;
-    const every = side === 1 ? CONQUEST.net.every[s.network] : CONQUEST.rogue.every;
-    const max = side === 1 ? CONQUEST.net.max[s.network] + Math.floor(NODES.filter((_, i) => s.nodes[i] === "freed").length / 3) : CONQUEST.rogue.max;
+    // The enemy works from the ground it never gives up too (the titan's pad, the north shore, `NET_EDGE`).
+    const theirs = NODES.reduce((n, _, i) => n + (sideOf(s.nodes[i]) === 1 ? 1 : 0), 0);
+    // The enemy answers the player's ground: each node of theirs works for it as one of its own would.
+    const mine = NODES.length - theirs;
+    const work = side === 1 ? theirs + CONQUEST.net.edge + CONQUEST.net.answer * mine : 1;
+    const every = side === 1 ? CONQUEST.net.every[s.strength] : CONQUEST.rogue.every;
+    const max = side === 1 ? CONQUEST.net.max[s.strength] + Math.floor(mine / 3) : CONQUEST.rogue.max;
     b.made[side] = Math.min(every, b.made[side] + work * dt);
     if (b.made[side] < every || walking(b, side) >= max) continue;
     const plan = enemyPlan(s, b, side);
     if (!plan) continue;
-    addSquad(b, side, side === 1 ? CONQUEST.net.kinds[s.network] : CONQUEST.rogue.kinds, plan.from, plan.to, "attack");
+    addSquad(b, side, side === 1 ? CONQUEST.net.kinds[s.strength] : CONQUEST.rogue.kinds, plan.from, plan.to, "attack");
     b.made[side] = 0;
   }
 }
@@ -511,6 +502,12 @@ function march(s: State, b: Battle, dt: number) {
   }
   // A squad come to a node its side holds holds it, in the world or not, so it no longer counts against its side's limit.
   for (const q of b.squads) if (q.task !== "post" && arrived(q) && sideOf(s.nodes[q.to]) === q.side) q.task = "hold";
+  // A rogue squad at a node with nobody left to fight there goes on to the next.
+  for (const q of b.squads) {
+    if (q.side !== 2 || q.squad >= 0 || !arrived(q) || heldBy(s, b, q.to) > 0) continue;
+    const plan = attackFrom(s, b, 2, [q.to]);
+    if (plan) Object.assign(q, { from: q.to, to: plan.to, d: 0, task: "attack" });
+  }
   // One squad holds a node nobody comes at; the others there go on to take the next.
   NODES.forEach((_, i) => {
     const side = sideOf(s.nodes[i]);
@@ -611,10 +608,11 @@ function fightApart(s: State, b: Battle, dt: number) {
 const spread = (qs: BattleSquad[]): Fighter[] => qs.flatMap((q) => q.units.map((u) => unitFighter(q, u)));
 
 /**
- * The nodes taken by squads: a side whose squads stand at a node held by another (in numbers, or
- * as robots within `CONQUEST.zone` of its core), with none of the holder's there, fills the node's
- * meter, and takes the node at `CONQUEST.capture` seconds. The player and the teammate hold the
- * player's nodes; any robot of the holder's side by the core holds a node of the network's or the rogues'.
+ * The nodes taken by squads: the player's or the enemy's squads standing at a node the other
+ * holds (in numbers, or as robots within `CONQUEST.zone` of its core), with none of the holder's
+ * there, fill the node's meter, and take the node at `CONQUEST.capture` seconds. The player and
+ * the teammate hold the player's nodes; any enemy robot by the core holds a node of the enemy's.
+ * The rogues take nothing, though their robots by a core keep the others from taking it.
  */
 function capture(s: State, b: Battle, dt: number) {
   NODES.forEach((n, i) => {
@@ -625,7 +623,7 @@ function capture(s: State, b: Battle, dt: number) {
     for (const q of b.squads) {
       if (q.to !== i || q.squad >= 0 || !arrived(q)) continue;
       if (q.side === owner) def++;
-      else if (q.task === "attack") att.add(q.side);
+      else if (q.task === "attack" && q.side !== 2) att.add(q.side);
     }
     const zone = CONQUEST.zone;
     const within = (e: Enemy) => Math.abs(e.pos.x - c.x) < zone && Math.abs(e.pos.z - c.z) < zone && dist2d(e.pos, c) < zone && e.mode !== "spawning";
@@ -635,7 +633,7 @@ function capture(s: State, b: Battle, dt: number) {
         if (!within(e) || e.kind === "titan") continue;
         const side = robotSide(e);
         if (side === owner) def++;
-        else if (e.battle) att.add(side);
+        else if (e.battle && side !== 2) att.add(side);
       }
       if (owner === 0 && s.player.downed <= 0 && dist2d(s.player.pos, c) < zone && s.phase === "play") def++;
       if (owner === 0 && allyUp(s) && dist2d(s.ally.pos, c) < zone && s.phase === "play") def++;
@@ -666,14 +664,14 @@ function callToCore(e: Enemy, c: Point) {
 }
 
 /**
- * Node `i` is `side`'s: its meter clears, the squads of that side at it hold it, and those of
+ * Node `i` is `side`'s (the player's or the enemy's): its meter clears, the squads of that side at it hold it, and those of
  * the side that held it come at it again. Taken for the player, its garrison walks off and its
  * depot comes on, as when the player takes it (`takeNode()`), though the player gets nothing for it.
  */
 function seize(s: State, b: Battle, i: number, side: Side) {
   const was = sideOf(s.nodes[i]);
   const n = NODES[i];
-  s.nodes[i] = side === 0 ? "freed" : side === 2 ? "rogue" : "held";
+  s.nodes[i] = side === 0 ? "freed" : "held";
   b.meter[i] = null;
   b.taken.push({ node: n.id, side, t: Math.round(b.now) });
   for (const q of b.squads) {
@@ -683,12 +681,10 @@ function seize(s: State, b: Battle, i: number, side: Side) {
   }
   if (side === 0) {
     garrisonLeaves(s, i);
-    if (n.kind === "poi") {
-      const d = depotIndex(n.id as PoiId);
-      if (d >= 0 && !s.depots[d]) {
-        s.depots[d] = true;
-        tell(s, { t: "depotOn", poi: n.id as PoiId });
-      }
+    const d = depotIndex(n.id);
+    if (d >= 0 && !s.depots[d]) {
+      s.depots[d] = true;
+      tell(s, { t: "depotOn", poi: n.id });
     }
   }
   // A capture the player had under way at a node the player now holds is done with.
@@ -723,13 +719,6 @@ export function battleMarks(s: Pick<State, "battle" | "friends" | "enemies">): {
     const lead = members[0];
     return { side: q.side, x: lead ? lead.pos.x : q.x, z: lead ? lead.pos.z : q.z, live: q.squad >= 0, n: q.squad >= 0 ? members.length : q.units.length, to: q.to };
   });
-}
-
-/** The node points each side scores a second now, the camp's for the player included. */
-export function battleRate(s: Pick<State, "nodes">): [number, number, number] {
-  const r: [number, number, number] = [CONQUEST.camp, 0, 0];
-  NODES.forEach((_, i) => (r[sideOf(s.nodes[i])] += pointsOf(i)));
-  return r;
 }
 
 /** The node the battle most wants the player at: one of theirs being taken, else one their squads are taking; -1 for none. */

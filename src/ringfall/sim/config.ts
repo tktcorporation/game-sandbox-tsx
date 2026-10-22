@@ -345,32 +345,19 @@ export const DEPOT = {
 export const HOME = { away: 10 };
 
 /**
- * The island's state between raids (meta/island.ts): each raid is one day, and each POI is
- * held, thin or freed. A POI cleared in a raid the player gets off alive is freed; one freed and
- * left unvisited for `thinAfter` days goes thin. A thin POI's garrison keeps `thinKeep` of its
- * squads (the vault guard's among them), so going back to it is a smaller fight than the first.
- */
-export const ISLAND = {
-  /** Days a freed POI stays freed without a visit. */
-  thinAfter: 3,
-  /** Share of a thin POI's squads that stand, rounded up. */
-  thinKeep: 0.5,
-};
-
-/**
- * The front (解放戦線, docs/ringfall/liberation-front.md): the freeable POIs and the outposts are
- * the island's nodes (`NODES`, `FRONT_LINKS` in map.ts), and only a node next to the player's
- * ground (the camp and the nodes freed) can be taken, by its core (`core`): a pillar `height`
- * metres tall near the node's middle. The use key starts the capture; the meter fills over
- * `capture` seconds while the player stands within `radius` of the core (and within `rise` of
- * its foot's height) with no robot within the same radius. The node's garrison makes for the
- * core, and `push` squads come from each neighbouring node the player does not hold (at most
- * `pushMax`), beamed in a walk of `pushDist` from the core on the side of their node, `pushAt`
- * seconds after the start and again every `pushEvery` seconds while the capture lasts and the
- * player stays near (at most `pushWaves` times). Once
- * taken, what is left of the garrison walks off for `retreat` seconds and is gone, and no robot
- * comes within `zone` metres of the core again (the node is the player's, as the camp is). Each
- * node the player holds pays `income` credits a day at the settle (an outpost `outpost` of it).
+ * The front (docs/ringfall/island-v2.md): the six freeable POIs are the island's nodes (`NODES`,
+ * `FRONT_LINKS` in map.ts), and only a node next to the player's ground (the camp and the nodes
+ * the player holds) can be taken, by its core (`core`): a pillar `height` metres tall near the
+ * node's middle. The use key starts the capture; the meter fills over `capture` seconds while
+ * the player stands within `radius` of the core (and within `rise` of its foot's height) with no
+ * robot within the same radius. The node's garrison makes for the core, and `push` squads come
+ * from each neighbouring node the enemy holds (at most `pushMax`), beamed in a walk of
+ * `pushDist` from the core on the side of their node, `pushAt` seconds after the start and again
+ * every `pushEvery` seconds while the capture lasts and the player stays near (at most
+ * `pushWaves` times); each of these is by the enemy's strength (`STRENGTH`). Once taken, what is
+ * left of the garrison walks off for `retreat` seconds and is gone, and no robot comes within
+ * `zone` metres of the core again in the raid. Each node the player holds pays `income` credits
+ * a day at the settle.
  */
 export const FRONT = {
   capture: 45,
@@ -380,30 +367,25 @@ export const FRONT = {
   /** Half the core's footprint, in metres. */
   half: 0.45,
   zone: 30,
-  /** Metres from a core within which the player counts as having come to the node (an outpost freed lapses unvisited, as a POI). */
-  visit: 60,
   retreat: 8,
-  /** The waves of the push, by network level: the members of each squad. */
-  push: [["grunt"], ["grunt"], ["grunt", "drone"], ["grunt", "drone"], ["grunt", "grunt"], ["grunt", "grunt", "drone"]] as EnemyKind[][],
-  /** Neighbouring nodes that send a squad, at most, by network level. */
-  pushMax: [1, 1, 1, 2, 2, 2],
-  /** Waves of the push at most, per capture, by network level. */
-  pushWaves: [1, 1, 1, 1, 2, 2],
+  /** The waves of the push, by the enemy's strength: the members of each squad. */
+  push: [["grunt"], ["grunt"], ["grunt", "drone"]] as EnemyKind[][],
+  /** Neighbouring nodes that send a squad, at most, by the enemy's strength. */
+  pushMax: [1, 1, 1],
+  /** Waves of the push at most, per capture, by the enemy's strength. */
+  pushWaves: [1, 1, 1],
   pushAt: 6,
   pushEvery: 30,
   pushDist: [70, 130] as const,
   income: 150,
-  outpost: 0.5,
 };
 
 /**
- * 陣取り戦 (docs/ringfall/liberation-front.md): a raid of the island (`Start.battle`) is one battle
- * of `time` seconds, the raid's time limit, over every node at once. Each node held scores its
- * holder `points` a second (the player, the network, the rogues), and the camp scores the player
- * `camp`; the battle is won when the player's score beats the network's, which pays `win` credits.
- * A battle lost hands the network one node on the edge of the player's ground overnight.
+ * 陣取り戦 (docs/ringfall/island-v2.md): a raid of the island (`Start.battle`) is one battle of
+ * `time` seconds, the raid's time limit, over every node at once. Whoever holds each node when
+ * it ends (the rest reckoned in numbers when the raid ends first) holds it the next day.
  *
- * Squads come out of the nodes (the player's from the factory, `FACTORY`; the network's and the
+ * Squads come out of the nodes (the player's from the factory, `FACTORY`; the enemy's and the
  * rogues' below) and walk the links between them (`FRONT_LINKS`) at `pace` of their slowest
  * member's speed (a patrol's walk, `AWARE.idleSpeed` times `PATROL.pace`). A squad within `near` metres of the player or the teammate is robots in the
  * world; one further than `far` from both, and not fighting the player, is numbers again: its
@@ -411,22 +393,22 @@ export const FRONT = {
  * battle is reckoned every `tick` seconds: squads within `meet` metres of a hostile one fight it,
  * and a squad at a node fights its holders there (abstract squads, and the node's garrison,
  * which comes to its core); each member deals `dps` of its kind times `hit` a second to
- * the first of the other side's. A node is taken by a side whose squads stand within `zone` of its
- * core (robots in the world) or at it (numbers) for `capture` seconds with none of its holder's
- * there: the player and the teammate hold their own nodes too.
+ * the first of the other side's. A node is taken by the player's or the enemy's squads standing
+ * within `zone` of its core (robots in the world) or at it (numbers) for `capture` seconds with
+ * none of its holder's there: the player and the teammate hold their own nodes too.
  *
- * The network makes a squad each time its nodes have worked `net.every[level]` seconds (a POI 1,
- * an outpost `net.outpost`, and the ground it never gives up, the titan's pad and the north
- * shore, `net.edge`), more the more nodes it holds; it answers the player's ground too, working
- * `net.answer` for each node the player holds as for one of its own, and keeps at most
- * `net.max[level]` squads out at once, one more for each three nodes the player holds; the rogues likewise by `rogue`. A node makes nothing while the player is within `near`
- * of it, and the network lands a squad on a node of `NET_EDGE` it does not hold from beyond it.
+ * The enemy makes a squad each time its nodes have worked `net.every[strength]` seconds (a node
+ * 1, and the ground it never gives up, the titan's pad and the north shore, `net.edge`), more the
+ * more nodes it holds; it answers the player's ground too, working `net.answer` for each node the
+ * player holds as for one of its own, and keeps at most `net.max[strength]` squads out at once,
+ * one more for each three nodes the player holds. A node makes nothing while the player is within
+ * `near` of it, and the enemy lands a squad on a node of `NET_EDGE` it does not hold from beyond
+ * it. The rogues hold no node: a squad of theirs comes out of the wild every `rogue.every`
+ * seconds (at most `rogue.max` out), goes for the weakest-held node it can reach, fights whoever
+ * holds it, and moves on; it never takes a node.
  */
 export const CONQUEST = {
   time: 1500,
-  points: { poi: 3, outpost: 1 },
-  camp: 10,
-  win: 400,
   tick: 1,
   near: 250,
   far: 300,
@@ -438,12 +420,11 @@ export const CONQUEST = {
   /** Damage a second of each kind at full accuracy: its burst over its cooldown, wind-up and burst. */
   dps: { drone: 10, grunt: 25, charger: 30, heavy: 22, titan: 0 } as Record<EnemyKind, number>,
   net: {
-    every: [1500, 1350, 1200, 1050, 900, 750],
+    every: [1500, 1350, 1200],
     edge: 3,
     answer: 1,
-    max: [2, 2, 3, 3, 4, 4],
-    outpost: 0.5,
-    kinds: [["grunt", "grunt"], ["grunt", "grunt"], ["grunt", "drone"], ["grunt", "grunt", "drone"], ["grunt", "heavy"], ["grunt", "grunt", "heavy"]] as EnemyKind[][],
+    max: [2, 2, 3],
+    kinds: [["grunt", "grunt"], ["grunt", "grunt"], ["grunt", "drone"]] as EnemyKind[][],
   },
   rogue: { every: 1500, max: 1, kinds: ["grunt", "grunt"] as EnemyKind[] },
   /** Seconds the bot gives to coming back to a node of its own under attack, all told in a raid. */
@@ -462,7 +443,7 @@ export interface FactoryLevel {
  * camp starts with) it makes a squad of `kinds` every `every` seconds of the battle, keeps at most
  * `max` out walking at once (squads that hold a node they took or defended do not count), and
  * stands `turrets` turrets (a robot that never leaves the core) at each node the player holds at
- * the raid's start: a POI's, and from `turretOutposts` an outpost's too. `levels[n]` is what
+ * the raid's start. `levels[n]` is what
  * building level n + 1 takes.
  */
 export const FACTORY = {
@@ -471,21 +452,16 @@ export const FACTORY = {
   max: [1, 1, 2, 2, 3],
   kinds: [["grunt", "grunt"], ["grunt", "grunt"], ["grunt", "heavy"], ["grunt", "heavy", "drone"], ["grunt", "grunt", "heavy", "drone"]] as EnemyKind[][],
   turrets: [0, 0, 0, 1, 1],
-  turretOutposts: 4,
   levels: [
     { items: [["parts", 3], ["fuse", 2]], cash: 2500, does: "作る間隔が 210 秒" },
     { items: [["parts", 4], ["wire", 2]], cash: 7000, does: "ヘビーを作る・作る間隔が 180 秒・同時に 2 部隊" },
     { items: [["wire", 3], ["board", 2]], cash: 14000, does: "ドローンを作る・作る間隔が 150 秒・解放した拠点に砲台" },
-    { items: [["board", 3], ["drive", 2]], cash: 24000, does: "4 体の部隊・作る間隔が 120 秒・同時に 3 部隊・小拠点にも砲台" },
+    { items: [["board", 3], ["drive", 2]], cash: 24000, does: "4 体の部隊・作る間隔が 120 秒・同時に 3 部隊" },
   ] as FactoryLevel[],
 };
 
-/** What one network level sets in a raid (`NETWORK.levels`). */
-export interface NetworkLevel {
-  /** A short word for the level, for the map table's meter. */
-  name: string;
-  /** What the level does, in a few words, beside the meter. */
-  note: string;
+/** What one level of the enemy's strength sets in a raid (`STRENGTH.levels`). */
+export interface StrengthLevel {
   /** Seconds to the first reinforcement squad and between the next (`REINFORCE.first`, `REINFORCE.every`). */
   reinforce: { first: number; every: number };
   /** Seconds to the raiders (`RAIDERS.at`). */
@@ -494,65 +470,28 @@ export interface NetworkLevel {
   parties: Record<RegionId, number>;
   /** Drone packs flying in each region, of the region's `PACKS`. */
   packs: Record<RegionId, number>;
-  /** Share of the grunts and heavies, raiders aside, that wear a tier-1 plate (see PLATE). */
-  plate: number;
-  /** Salvage crews (`CREW`) that come into the region the raid starts in. */
-  crews: number;
 }
 
 /**
- * The robots' network (網の段階), 0 to 5, kept on the profile: how hard the whole island is.
- * Each day adds `base + perHeld` for each POI held (`thinWeight` for one thin) to a pressure,
- * and the network rises a step each time the pressure reaches `riseEvery`, so a player who
- * frees nothing sees it climb from `start` to the top in about nine days, and one who holds
- * the ground sees it climb a step every three days or so. A day that starts at the top gathers
- * nothing, so a step taken off the top holds for a while. Freeing a held POI takes it down a
- * step (`relayPoi` two; from thin as from held, since each takes a capture of its core),
- * killing the titan a step, and destroying a relay mast a step (`relayHigh.steps` on a day that
- * started at `relayHigh.at` or higher). A thin POI goes back to held
- * once it has been thin `retakeAfter` days while the network stands at `retakeAt` or higher;
- * relay masts (`RELAYS`) stand in the raid from `relayAt`.
+ * The enemy's strength in a raid (docs/ringfall/island-v2.md): the more of the six nodes the
+ * enemy holds, the sooner and the more its reinforcements, raiders and hunters come.
+ * `byHeld[n]` is the level of a raid with `n` nodes the enemy's, so the island before the first
+ * capture plays at the top level and every node taken eases it.
  *
- * `levels[2]` is the island the bots' balance tables are played on: its numbers are the
- * reinforcement times, raider time, parties and packs of `REINFORCE`, `RAIDERS`, `PARTY` and
- * `PACKS`, with no plates added. Lower levels give more time and fewer hunters; higher ones
- * bring every wave sooner, more parties, and plates on the plain robots. A salvage crew (`CREW`)
- * comes into the starting region from level 3, two from level 4; below level 3 crews come only
- * on a crews' visit, which adds one at every level, so `levels[2]` plays as the island without crews.
+ * `levels[play]` is the island the bots' balance tables are played on, with every node the
+ * enemy's: its numbers are the reinforcement times, raider time, parties and packs of
+ * `REINFORCE`, `RAIDERS`, `PARTY` and `PACKS`. Lower levels give more time and fewer hunters.
  */
-export const NETWORK = {
-  start: 1,
-  max: 5,
-  riseEvery: 2,
-  base: 0.55,
-  perHeld: 0.05,
-  thinWeight: 0.5,
-  relayPoi: 2,
-  retakeAt: 3,
-  retakeAfter: 2,
-  relayAt: 3,
-  /** A relay mast destroyed on a day that started at network `at` or higher takes it `steps` down. */
-  relayHigh: { at: 4, steps: 2 },
+export const STRENGTH = {
+  byHeld: [0, 0, 0, 1, 1, 1, 2],
   levels: [
-    { name: "途切れ", note: "増援は遅く、群れと遊撃隊は少ない", reinforce: { first: 480, every: 360 }, raiders: 1020, parties: { reservoir: 1, harbor: 1 }, packs: { reservoir: 1, harbor: 1 }, plate: 0, crews: 0 },
-    { name: "弱い", note: "増援は遅く、群れは少ない", reinforce: { first: 435, every: 300 }, raiders: 900, parties: { reservoir: 1, harbor: 1 }, packs: { reservoir: 2, harbor: 1 }, plate: 0, crews: 0 },
-    { name: "並", note: "いつもの島", reinforce: { first: 390, every: 270 }, raiders: 780, parties: { reservoir: 2, harbor: 2 }, packs: { reservoir: 3, harbor: 2 }, plate: 0, crews: 0 },
-    { name: "強い", note: "増援が早い・中継器が立つ", reinforce: { first: 240, every: 195 }, raiders: 600, parties: { reservoir: 2, harbor: 2 }, packs: { reservoir: 3, harbor: 2 }, plate: 0.15, crews: 1 },
-    { name: "厳しい", note: "増援が早い・遊撃隊が増える・装甲板が増える", reinforce: { first: 210, every: 170 }, raiders: 540, parties: { reservoir: 3, harbor: 3 }, packs: { reservoir: 3, harbor: 2 }, plate: 0.3, crews: 2 },
-    { name: "最大", note: "増援が次々来る・遊撃隊が増える・装甲板が多い", reinforce: { first: 180, every: 140 }, raiders: 480, parties: { reservoir: 3, harbor: 3 }, packs: { reservoir: 3, harbor: 2 }, plate: 0.45, crews: 2 },
-  ] satisfies NetworkLevel[],
-  /** The level the sim gate's raids are played at, and a raid's when the start names none. */
+    { reinforce: { first: 480, every: 360 }, raiders: 1020, parties: { reservoir: 1, harbor: 1 }, packs: { reservoir: 1, harbor: 1 } },
+    { reinforce: { first: 435, every: 300 }, raiders: 900, parties: { reservoir: 1, harbor: 1 }, packs: { reservoir: 2, harbor: 1 } },
+    { reinforce: { first: 390, every: 270 }, raiders: 780, parties: { reservoir: 2, harbor: 2 }, packs: { reservoir: 3, harbor: 2 } },
+  ] satisfies StrengthLevel[],
+  /** The level the sim gate's raids are played at, and a raid's when the start names no island: every node the enemy's. */
   play: 2,
 };
-
-/**
- * A relay mast (網の中継器, `RELAYS` in map.ts): a lattice mast `height` metres tall with a red
- * eye at the top, hit as a post of `radius` (up to `top` metres under the eye, where the lattice
- * narrows) and the eye as a weak point of `eyeR`, taking
- * `hp` of weapon damage (the eye `eyeMult` times). It stands only at networks of
- * `NETWORK.relayAt` and up, guarded by a squad of two.
- */
-export const RELAY = { hp: 900, height: 13, radius: 0.85, top: 1.5, eyeR: 0.7, eyeMult: 2 };
 
 /**
  * The camp's contract board (meta/contracts.ts): `count` contracts a day, built from the island
@@ -561,9 +500,7 @@ export const RELAY = { hp: 900, height: 13, radius: 0.85, top: 1.5, eyeR: 0.7, e
  * - bring home valuables from a POI's bins: `fetchShare` of their worth, at least `fetchMin`,
  *   asking for as many as its bins hold on average, up to `fetchMax`, and one more of them on top;
  * - destroy a drone pack or a hunting party: `intercept` by target, and on some days a heal or a
- *   weapon, one step rarer every `rarityEvery` days;
- * - destroy a named relay mast: `destroy`;
- * - destroy the squad the network sends to retake a freed POI: `defend`.
+ *   weapon, one step rarer every `rarityEvery` days.
  * Each is multiplied by the region's `region` factor: the harbor is the harder ground.
  */
 export const CONTRACT = {
@@ -573,26 +510,21 @@ export const CONTRACT = {
   fetchMin: 300,
   fetchMax: 3,
   intercept: { pack: 500, party: 800, crew: 900 },
-  /** Destroying a named relay mast: credits, and the network a step lower overnight. */
-  destroy: 1000,
-  /** Destroying the retake squad sent to a freed POI: credits, and the POI stays freed. */
-  defend: 1000,
   rarityEvery: 6,
   region: { reservoir: 1, harbor: 1.4 } satisfies Record<RegionId, number>,
 };
 
 /** The island's events (島の出来事): at most one a day, announced the day before (meta/island.ts). */
-export type EventKind = "debris" | "retake" | "storm" | "crews";
+export type EventKind = "debris" | "storm" | "crews";
 
 /**
- * How often each event comes: a day has one with `chance`, picked by `weights` among those the
- * island allows (a retake only while some POI is freed). Drawn from the profile's seed and the
- * day alone, so the schedule is fixed as soon as it is announced.
+ * How often each event comes: a day has one with `chance`, picked by `weights`. Drawn from the
+ * profile's seed and the day alone, so the schedule is fixed as soon as it is announced.
  */
 export const EVENTS = {
   chance: 0.5,
-  weights: { debris: 3, retake: 3, storm: 2, crews: 2 } satisfies Record<EventKind, number>,
-  names: { debris: "破片の落下", retake: "奪還", storm: "嵐", crews: "回収部隊の来訪" } satisfies Record<EventKind, string>,
+  weights: { debris: 3, storm: 2, crews: 2 } satisfies Record<EventKind, number>,
+  names: { debris: "破片の落下", storm: "嵐", crews: "回収部隊の来訪" } satisfies Record<EventKind, string>,
 };
 
 /**
@@ -608,34 +540,13 @@ export const DEBRIS = {
 };
 
 /**
- * A retake (奪還): `at` seconds into the raid the network beams a squad of `kinds` in out of the
- * player's sight, `dist` metres' walk from a freed POI, and it walks to the POI's way in and holds
- * it there. Its plain grunts and heavies wear plates of `plate[level]` (none at 0). Left alive by
- * the end of the day's raid, it turns the POI thin overnight.
- */
-export const RETAKE = {
-  at: 90,
-  name: "奪還部隊",
-  kinds: [
-    ["grunt", "grunt", "charger"],
-    ["grunt", "grunt", "heavy"],
-    ["grunt", "grunt", "charger", "drone"],
-    ["heavy", "grunt", "grunt", "drone"],
-  ] as EnemyKind[][],
-  plate: [0, 0, 1, 1, 2, 2] as Rarity[],
-  dist: [110, 200] as const,
-  away: 90,
-};
-
-/**
  * A storm (嵐): robots see `sight` as far (their kind's `SIGHT`, a pack's sight, and the range
  * they answer from afar, `RETURN`), and the view draws the fog `fog` times as near.
  */
 export const STORM = { sight: 0.6, fog: 0.6 };
 
 /**
- * Salvage crews (回収部隊), as many as `NETWORK.levels[].crews` plus one on a crews' visit: squads
- * drawn from `squads` that beam in out of the player's sight,
+ * Salvage crews (回収部隊), one on a crews' visit (`EVENTS`): squads drawn from `squads` that beam in out of the player's sight,
  * `away` metres from them or more, `arrive` seconds into the raid (each crew its own draw), at a
  * stop of the starting region (`PARTY_STOPS`). Most are pairs: a crew met in the open is a
  * fight on top of whatever the player is in, and three of them more often turns it. They walk by
@@ -644,8 +555,7 @@ export const STORM = { sight: 0.6, fog: 0.6 };
  * player, stand `SEARCH.time` within `reach` of it, and take its valuable into their bag (the
  * rest of what it holds is lost). With `bag` valuables, or `leaveAfter` seconds after
  * arriving, or no bin left, they walk to the region's nearest way off and beam out there (or where
- * they stand, held up `stuck.tries` times on the way). A crew that gets out raises the network a
- * step overnight; the last one of a crew to fall drops the bag. Like a hunting party, it fights
+ * they stand, held up `stuck.tries` times on the way). The last one of a crew to fall drops the bag. Like a hunting party, it fights
  * what it meets and does not come to distant gunfire. Its choices come from a stream of its own.
  */
 export const CREW = {
@@ -888,12 +798,11 @@ export const MOD = { slots: 3, bin: 0.08, robot: 0.03, elite: 0.3 };
 
 /**
  * The threat (脅威度) the player chooses for a raid at the map table, 0 to `max`: on top of the
- * network's numbers (`NETWORK.levels`), the reinforcements come `reinforce` times as soon and as
- * often, the raiders `raiders` times as soon, `plate` more of the plain grunts and heavies wear a
+ * enemy's strength (`STRENGTH.levels`), the reinforcements come `reinforce` times as soon and as
+ * often, the raiders `raiders` times as soon, `plate` of the plain grunts and heavies wear a
  * tier-1 plate, and robots answer shots from afar `range` times as far (`RETURN`). In return the
- * taken contract pays `reward` times its credits, mod parts turn up `mods` times as often, and a
- * POI freed at `freeAt` or higher takes the network a step further down. Threat 0 is the raid as
- * the network alone sets it.
+ * taken contract pays `reward` times its credits, and mod parts turn up `mods` times as often.
+ * Threat 0 is the raid as the enemy's strength alone sets it.
  */
 export interface ThreatLevel {
   reinforce: number;
@@ -905,7 +814,6 @@ export interface ThreatLevel {
 }
 export const THREAT = {
   max: 5,
-  freeAt: 3,
   levels: [
     { reinforce: 1, raiders: 1, plate: 0, range: 1, reward: 1, mods: 1 },
     { reinforce: 0.9, raiders: 0.92, plate: 0.05, range: 1.1, reward: 1.15, mods: 1.25 },
@@ -1280,8 +1188,8 @@ export const NOISE = {
 };
 
 /**
- * The robots' two factions. The network (網) is the island's own; rogues (野良機) are robots that
- * broke off it: they hold some outposts (`TERRITORY` in map.ts) and walk patrols of their own
+ * The robots' two factions. The enemy (the network, red on the maps) is the island's own; rogues
+ * (野良機) are robots that broke off it: they hold no ground, walk patrols of their own
  * (`MOBILES`), and the salvage crews are theirs. Each is hostile to the other and to the player
  * and the teammate.
  *
@@ -1300,11 +1208,11 @@ export const NOISE = {
 export const FACTION = { scan: 0.25, sight: 1, close: 12, forget: 8, noise: 40, hear: 380, keep: 60, every: 1.5, dmg: 0.8, apart: 90 };
 
 /**
- * Rogue patrols (`MOBILES` with `rank`) walk while their rank is below `patrols[level]` for the
- * network's level: a weaker network loses more robots to them. A rogue-held outpost's own patrol
- * walks while the outpost is theirs (`TERRITORY`).
+ * Rogue patrols (`MOBILES` with `rank`) walk while their rank is below `patrols[strength]` for the
+ * enemy's strength (`STRENGTH`): a weaker enemy loses more robots to them. The rogues hold no
+ * ground; those without a rank walk in every raid.
  */
-export const ROGUE = { patrols: [3, 3, 2, 1, 1, 0] as const };
+export const ROGUE = { patrols: [3, 3, 2] as const };
 
 /**
  * Squads that go out from their posts (`MOBILES`): each walks its nodes out and back by the

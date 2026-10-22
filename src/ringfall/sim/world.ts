@@ -1,4 +1,4 @@
-import { ALLY, AWARE, BAG, CREW, DEBRIS, DEPOT, RETAKE, ENEMIES, ENTRY, HEALS, HOME, PARTY, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, TICK, TOOL_KINDS, TOOLS, TOP_BINS, VALUABLES, VAULT, WORLD, type HealKind, type ToolKind } from "./config";
+import { ALLY, AWARE, BAG, CREW, DEBRIS, DEPOT, ENEMIES, ENTRY, HEALS, HOME, PARTY, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, TICK, TOOL_KINDS, TOOLS, TOP_BINS, VALUABLES, VAULT, WORLD, type HealKind, type ToolKind } from "./config";
 import { dist2d, groundAt, los, solidAt } from "./geom";
 import { highGround, steepAt, terrainHeight } from "./terrain";
 import { DEPOTS, ENTRIES, EXTRACTS, inCamp, PARTY_STOPS, POIS, recordSpot, REGIONS, regionOf, type ExtractPoint, type RecordId } from "./map";
@@ -6,7 +6,7 @@ import { spawnEnemy, spawnSpot } from "./enemies";
 import { cellsAround, fieldTo, nextStep, onMainGround, routeLength } from "./hunt";
 import type { CrewTrip, SquadState } from "./state";
 import { raiseAlly, startHelp } from "./ally";
-import { boosted, callLeft, crewRand, netLevel, raidClock, cellOf, exploreSize, mix, rand, roamRand, type Bin, type Input, type Loot, type PartySlot, type PartyTrip, type Player, type Point, type State, type Weapon } from "./state";
+import { boosted, callLeft, crewRand, strengthLevel, raidClock, cellOf, exploreSize, mix, rand, roamRand, type Bin, type Input, type Loot, type PartySlot, type PartyTrip, type Player, type Point, type State, type Weapon } from "./state";
 import type { EnemyKind, ValuableKind } from "./config";
 import { interceptSpot, located, makeNoise } from "./awareness";
 import { hasMod, modScale, spillBinMod, wearMod } from "./mods";
@@ -90,7 +90,7 @@ export function stepReinforce(s: State) {
     s.reinforceT = 5; // try again shortly
     return;
   }
-  s.reinforceT = raidClock(s.network, s.threat ?? 0).every;
+  s.reinforceT = raidClock(s.strength, s.threat ?? 0).every;
   s.reinforceN++;
 }
 
@@ -160,10 +160,10 @@ function beamIn(s: State, kinds: readonly EnemyKind[], name: string, elite: bool
   return true;
 }
 
-/** The raid's first hunting parties, as many in each region as the network gives, placed as a wiped-out one's replacement is. */
+/** The raid's first hunting parties, as many in each region as the enemy's strength gives, placed as a wiped-out one's replacement is. */
 export function placeParties(s: State) {
   for (const region of REGIONS)
-    for (let i = 0; i < netLevel(s).parties[region.id]; i++) {
+    for (let i = 0; i < strengthLevel(s).parties[region.id]; i++) {
       const slot = { region: region.id, squad: -1, wait: 0 };
       s.parties.push(slot);
       sendParty(s, slot, false);
@@ -253,17 +253,13 @@ function sendParty(s: State, slot: PartySlot, appear: boolean): boolean {
 
 /**
  * The day's visitors beyond the POIs: salvage crews beam in on their times (`State.crewsDue`) and
- * go about their errand, and the retake squad beams in once, `RETAKE.at` into the raid.
+ * go about their errand.
  */
 export function stepCrews(s: State) {
   if (s.phase !== "play") return;
   if (s.crewsDue.length && s.time >= s.crewsDue[0]) {
     if (sendCrew(s)) s.crewsDue.shift();
     else s.crewsDue[0] = s.time + 5; // try again shortly
-  }
-  if (s.retakePoi >= 0 && s.retakeT < Infinity) {
-    s.retakeT -= TICK;
-    if (s.retakeT <= 0) s.retakeT = sendRetake(s) ? Infinity : 5;
   }
   s.squads.forEach((sq, i) => sq.crew && stepCrew(s, sq, i));
 }
@@ -355,7 +351,7 @@ function leave(s: State, sq: SquadState, lead: { pos: Point }) {
   sq.walk = { x: x.x, z: x.z };
 }
 
-/** The crew beams out with its bag, which is lost to the island; overnight it raises the network a step. */
+/** The crew beams out with its bag, which is lost to the island. */
 function beamOut(s: State, sq: SquadState, i: number, members: { pos: Point }[]) {
   const at = members[0].pos;
   s.enemies = s.enemies.filter((e) => e.squad !== i);
@@ -395,37 +391,10 @@ function sendCrew(s: State): boolean {
     if (!spots) continue;
     const squad = s.squads.length;
     s.squads.push({ name: CREW.name, poi: -1, patrol: [], leg: 0, engaged: false, roam: false, crew: { region: s.region, bin: -1, searchT: 0, skip: [], leaving: null, t: 0, mark: { x, z }, markT: 0, held: 0 }, bag: [], bagAt: [], sinceSeen: 0, last: { x: 0, z: 0 }, rogue: true });
-    // The salvage crews are the rogues' (see FACTION): they scavenge what the network guards.
+    // The salvage crews are the rogues' (see FACTION): they scavenge what the enemy guards.
     kinds.forEach((kind, m) => spawnEnemy(s, kind, spots[m].mx, spots[m].mz, -1, squad, { appear: true, crew: true, rogue: true }));
     s.stats.crewsIn++;
     s.events.push({ t: "crewIn", x, z });
-    return true;
-  }
-  return false;
-}
-
-/**
- * The retake squad beamed in a `RETAKE.dist` walk from the freed POI's way in, out of the
- * player's sight and at least `RETAKE.away` from them, walking to the way in; false when no
- * such spot turned up.
- */
-function sendRetake(s: State): boolean {
-  const poi = POIS[s.retakePoi];
-  const field = fieldTo(poi.entry.x, poi.entry.z);
-  const cells = field ? cellsAround(field, RETAKE.dist[0], RETAKE.dist[1]) : [];
-  const kinds = RETAKE.kinds[Math.floor(crewRand(s) * RETAKE.kinds.length)];
-  for (let k = 0; k < 80 && cells.length; k++) {
-    const c = cells[Math.floor(crewRand(s) * cells.length)];
-    const x = c.x + (crewRand(s) - 0.5) * 1.5;
-    const z = c.z + (crewRand(s) - 0.5) * 1.5;
-    if (dist2d(s.player.pos, { x, z }) < RETAKE.away) continue;
-    const spots = hiddenPosts(s, kinds, x, z);
-    if (!spots) continue;
-    const squad = s.squads.length;
-    s.squads.push({ name: RETAKE.name, poi: -1, patrol: [], leg: 0, engaged: false, roam: false, retake: s.retakePoi, walk: { x: poi.entry.x, z: poi.entry.z }, sinceSeen: 0, last: { x: 0, z: 0 } });
-    const plate = RETAKE.plate[s.network];
-    kinds.forEach((kind, m) => spawnEnemy(s, kind, spots[m].mx, spots[m].mz, -1, squad, { appear: true, crew: true, plate: plate && (kind === "grunt" || kind === "heavy") ? plate : undefined }));
-    s.events.push({ t: "retakeIn", x, z, poi: s.retakePoi });
     return true;
   }
   return false;

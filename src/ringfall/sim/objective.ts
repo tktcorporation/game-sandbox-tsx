@@ -1,10 +1,10 @@
-import { CONQUEST, FRONT, RELAY, VALUABLES, type ValuableKind } from "./config";
-import { battleFocus, meterOf, SIDE_NAME } from "./battle";
+import { CONQUEST, FRONT, VALUABLES, type ValuableKind } from "./config";
+import { battleFocus, meterOf } from "./battle";
 import { dist2d } from "./geom";
-import { CAMP, DEPOTS, EXTRACTS, NODES, POIS, poiIndex, recordSpot, regionHere, RELAYS, relayIndex, type PoiId, type RecordId, type RegionId, type RelayId } from "./map";
+import { CAMP, DEPOTS, EXTRACTS, NODES, POIS, poiIndex, recordSpot, regionHere, type PoiId, type RecordId, type RegionId } from "./map";
 import { frontNodes } from "./front";
 import { haulOrigins } from "./world";
-import { retakeKey, squadKey, type State } from "./state";
+import { squadKey, type State } from "./state";
 
 /*
  * The raid's objective as an ordered list of steps (`objectiveSteps()`): what to do now, what
@@ -14,15 +14,12 @@ import { retakeKey, squadKey, type State } from "./state";
 
 /**
  * What the raid is out to do, as the sim sees it: a node to take by its core, a valuable to bring
- * from a POI's bins, a relay mast to destroy, a POI to defend from its retake squad, a squad to
- * destroy (by `squadKey()`), or a story record to bring home. The contracts (meta/contracts.ts)
+ * from a POI's bins, a squad to destroy (by `squadKey()`), or a story record to bring home. The contracts (meta/contracts.ts)
  * and the story give a raid one.
  */
 export type Task =
   | { t: "capture"; node: number }
   | { t: "fetch"; poi: PoiId; kind: ValuableKind; n: number }
-  | { t: "destroy"; relay: RelayId }
-  | { t: "defend"; poi: PoiId }
   | { t: "intercept"; key: string; name: string; region: RegionId; at?: { x: number; z: number } }
   | { t: "record"; id: RecordId };
 
@@ -130,7 +127,7 @@ function defendSteps(s: State, i: number): Objective {
       kind: "act",
       label: "攻めてくる部隊を追い払う",
       until: `核の ${CONQUEST.zone} m 以内に立ち、近づくロボットを倒す`,
-      progress: !held ? "取られた" : m ? `${SIDE_NAME[m.side]}が制圧中 ${Math.round(m.share * 100)}%` : near ? `敵 ${near} 体` : undefined,
+      progress: !held ? "取られた" : m ? `敵が制圧中 ${Math.round(m.share * 100)}%` : near ? `敵 ${near} 体` : undefined,
       at: core,
       done: !held || !coming,
       near: `核の ${CONQUEST.zone} m 以内で守る`,
@@ -181,28 +178,6 @@ function taskSteps(s: State, task: Task): Objective {
       return settle(`${VALUABLES[task.kind].label}の回収`, [
         { kind: "go", label: `${poi.name}へ向かう`, until: `${poi.name}に入る`, at: ground(poi.x, poi.z), done: got > 0 || dist2d(p, poi) < poi.trigger },
         { kind: "act", label: `${poi.name}の補給箱を開ける`, until: `${VALUABLES[task.kind].label}を ${task.n} 個見つける`, progress: `${Math.min(got, task.n)}/${task.n}`, at: bin ? ground(bin.x, bin.z, bin.y) : null, done: got >= task.n, near: "補給箱を調べる" },
-        extractStep(s),
-      ]);
-    }
-    case "destroy": {
-      const r = RELAYS[relayIndex(task.relay)];
-      const m = s.relays.find((o) => o.id === task.relay);
-      const at = ground(r.x, r.z, m?.y ?? 0);
-      return settle(`${r.name}の破壊`, [
-        { kind: "go", label: `${r.name}へ向かう`, until: `${ARRIVE} m 以内に着く`, at, done: dist2d(p, at) < ARRIVE || (!!m && m.hp <= 0) },
-        { kind: "act", label: `${r.name}を壊す`, until: m ? "中継器を撃ち倒す" : "網が弱く、今日は立っていない", progress: m ? `残り ${Math.ceil((m.hp / RELAY.hp) * 100)}%` : undefined, at, done: !!m && m.hp <= 0, near: "中継器の赤い目を撃つ" },
-        extractStep(s),
-      ]);
-    }
-    case "defend": {
-      const i = poiIndex(task.poi);
-      const poi = POIS[i];
-      const at = ground(poi.entry.x, poi.entry.z);
-      const left = s.enemies.filter((e) => s.squads[e.squad]?.retake === i).length;
-      const beaten = s.stats.wiped.includes(retakeKey(task.poi));
-      return settle(`${poi.name}の防衛`, [
-        { kind: "go", label: `${poi.name}へ向かう`, until: `入口の ${ARRIVE} m 以内に着く`, at, done: beaten || dist2d(p, at) < ARRIVE },
-        { kind: "act", label: "奪還部隊を倒す", until: s.retakePoi === i ? "来る部隊を全滅させる" : "今日は来ない", progress: left ? `残り ${left}` : s.retakeT < Infinity ? `${Math.max(0, Math.ceil(s.retakeT))} 秒ほどで来る` : undefined, at, done: beaten },
         extractStep(s),
       ]);
     }
