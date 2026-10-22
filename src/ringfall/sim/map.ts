@@ -4769,6 +4769,12 @@ export const FRONT_LINKS: readonly (readonly ["camp" | NodeId, NodeId])[] = [
 ];
 
 /**
+ * Each node's tier (docs/ringfall/island-v2.md, 拠点の段): how deep it lies from the camp, 0 by
+ * the camp's gate to 3 at the far end of the harbor.
+ */
+export const TIER: Record<NodeId, number> = { supply: 0, quarry: 1, relay: 1, yard: 2, smelter: 2, wreck: 3 };
+
+/**
  * The nodes next to ground the enemy never gives up, where its squads land in the battle however
  * much round them the player holds: the titan's pad (no node) by the quarry's road and the mesa's,
  * and the harbor's north shore, where the enemy's boats come in.
