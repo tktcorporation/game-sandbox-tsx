@@ -45,7 +45,11 @@ export class CampView {
    * `near`: the spot in reach; `marks`: each station's mark ("" for none); `ride`: where the truck
    * drives and why it cannot ("" when it can); `touch`: the prompt names the use button, not the key.
    */
-  frame(s: State, world: World, w: number, h: number, o: { near: CampSpot | null; marks: Record<StationId, string>; ride: { to: string; refused: string }; cash: string; touch: boolean }) {
+  /**
+   * `today`: the day's line and the 今日の作戦 card (`Hub.today()`); `panel`: a panel or the
+   * departure's check is up, so the card steps aside.
+   */
+  frame(s: State, world: World, w: number, h: number, o: { near: CampSpot | null; marks: Record<StationId, string>; ride: { to: string; refused: string }; cash: string; touch: boolean; today: { head: string; plan: [string, string][] }; panel: boolean }) {
     const eye = { x: s.player.pos.x, z: s.player.pos.z };
     const shown: { el: HTMLElement; x: number; y: number; d: number }[] = [];
     for (const c of CAMP.spots) {
@@ -66,6 +70,8 @@ export class CampView {
     }
     // Names that would cover one another: the nearer station keeps its place, a farther one is lifted clear above it.
     shown.sort((a, b) => a.d - b.d);
+    $("camp-plan").hidden = o.panel;
+    const covers = [$("camp-head"), $("camp-plan")].filter((e) => !e.hidden).map((e) => e.getBoundingClientRect());
     const placed: { x0: number; x1: number; y0: number; y1: number }[] = [];
     for (const q of shown) {
       const lw = q.el.offsetWidth;
@@ -82,9 +88,18 @@ export class CampView {
       placed.push({ x0: q.x - lw / 2, x1: q.x + lw / 2, y0: y - lh, y1: y });
       q.el.style.left = `${q.x.toFixed(0)}px`;
       q.el.style.top = `${y.toFixed(0)}px`;
+      // A name that would sit under the day's line or the card is not shown: it would show through them.
+      const under = covers.some((r) => q.x - lw / 2 < r.right && q.x + lw / 2 > r.left && y - lh < r.bottom && y > r.top);
+      if (under) q.el.style.display = "none";
     }
     $("camp-cash").textContent = o.cash;
-    $("camp-hint").textContent = `門を出ると${entryOf(regionOf("reservoir").entries[0]).name}からレイドが始まる`;
+    $("camp-hint").textContent = o.today.head;
+    const plan = o.today.plan.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("") + `<dt class="wide">出撃</dt><dd class="wide">${esc(`門を出ると${entryOf(regionOf("reservoir").entries[0]).name}から。車両なら地図の机で選んだ地点から`)}</dd>`;
+    const list = $("camp-plan-list");
+    if (list.dataset.html !== plan) {
+      list.dataset.html = plan;
+      list.innerHTML = plan;
+    }
     const key = o.touch ? "" : "<kbd>E</kbd>";
     let prompt = "";
     if (o.near?.id === "vehicle") prompt = o.ride.refused ? `<span class="warn">車両で${esc(o.ride.to)}へ：${esc(o.ride.refused)}</span>` : `${key}車両で${esc(o.ride.to)}へ出る`;

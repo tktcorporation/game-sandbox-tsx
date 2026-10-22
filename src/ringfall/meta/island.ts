@@ -458,7 +458,7 @@ export function networkText(level: number): string {
 
 /** The overnight change of the network, with its causes: 「網 2 → 3（解放 −1・日の経過 +1）」. */
 export function netChangeText(n: NetChange): string {
-  const why = [n.freed ? `解放 −${n.freed}` : "", n.threat ? `脅威度 −${n.threat}` : "", n.titan ? `タイタン −${n.titan}` : "", n.relays ? `中継器 −${n.relays}` : "", n.rise ? `日の経過 +${n.rise}` : "", n.crews ? `回収部隊 +${n.crews}` : ""].filter(Boolean);
+  const why = [n.freed ? `解放 −${n.freed}` : "", n.threat ? `強度 −${n.threat}` : "", n.titan ? `タイタン −${n.titan}` : "", n.relays ? `中継器 −${n.relays}` : "", n.rise ? `日の経過 +${n.rise}` : "", n.crews ? `回収部隊 +${n.crews}` : ""].filter(Boolean);
   return `網 ${n.from} → ${n.to}${why.length ? `（${why.join("・")}）` : "（変わらず）"}`;
 }
 

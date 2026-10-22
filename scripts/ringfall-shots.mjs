@@ -108,19 +108,37 @@ const closePanel = async (pg, touch = false) => {
   await (touch ? pg.tap("#hub-close") : pg.click("#hub-close"));
   if ((await readPage(pg)).camp?.panel) errors.push("camp: the close button left the panel open");
 };
-/** Out of the camp's gate on foot, W held: the raid starts on the way out. The state once out. */
-const walkOutOfGate = async (pg) => {
+/**
+ * The departure's check, once it is up: it lists the kit and the objective; `shot` saves it; the
+ * confirm (Enter, or a tap with `touch`) starts the raid.
+ */
+const confirmDepart = async (pg, { touch = false, shot = "" } = {}) => {
+  await pg.waitForFunction(() => !document.getElementById("depart").hidden, null, { timeout: 4000 }).catch(() => undefined);
+  const st = await readPage(pg);
+  const text = await pg.textContent("#depart");
+  if (!st.camp?.depart || !/武器/.test(text) || !/回復/.test(text) || !/目的/.test(text)) errors.push(`depart: the check reads ${JSON.stringify(st.camp?.depart)} "${text}"`);
+  if (shot) await pg.screenshot({ path: `${out}/${shot}.png` });
+  await (touch ? pg.tap("#depart-go") : pg.keyboard.press("Enter"));
+  return st.camp?.depart;
+};
+/** Out of the camp's gate on foot, W held: the departure's check comes up at the gate, and the raid starts once it is confirmed. The state once out. */
+const walkOutOfGate = async (pg, shot = "") => {
   await pg.evaluate(() => window.ringfallCamp.toGate());
   await pg.keyboard.down("KeyW");
   let st = await readPage(pg);
-  for (let i = 0; i < 30 && st.screen !== "game"; i++) st = JSON.parse(await pg.evaluate(() => (window.advanceTime(200), window.render_game_to_text())));
+  for (let i = 0; i < 30 && st.screen !== "game" && !st.camp?.depart; i++) st = JSON.parse(await pg.evaluate(() => (window.advanceTime(200), window.render_game_to_text())));
   await pg.keyboard.up("KeyW");
+  if (st.camp?.depart) {
+    await confirmDepart(pg, { shot });
+    st = await readPage(pg);
+  }
   if (st.screen !== "game") errors.push(`camp: walking out of the gate left the screen at ${st.screen} (${st.player.x},${st.player.z})`);
   return st;
 };
-/** By the truck from its use key, or its use button with `cdp`: a fade, then the raid. The state once it is under way. */
-const rideOut = async (pg, cdp) => {
+/** By the truck from its use key, or its use button with `cdp`: the departure's check, a fade, then the raid. The state once it is under way. */
+const rideOut = async (pg, cdp, shot = "") => {
   await useStation(pg, "vehicle", cdp);
+  await confirmDepart(pg, { touch: !!cdp, shot });
   await pg.waitForFunction(() => JSON.parse(window.render_game_to_text()).screen === "game", null, { timeout: 5000 }).catch(() => undefined);
   await faded(pg);
   const st = await readPage(pg);
@@ -225,8 +243,31 @@ const spills = (pg) =>
   await page.screenshot({ path: `${out}/m0-camp-gate.png` });
   await touch("touchStart", [{ x: 150, y: 260, id: 1 }]);
   await touch("touchMove", [{ x: 150, y: 200, id: 1 }]);
-  for (let i = 0; i < 20 && (await read()).screen !== "game"; i++) await step(200);
+  for (let i = 0; i < 20 && (await read()).screen !== "game" && !(await read()).camp?.depart; i++) await step(200);
   await touch("touchEnd", []);
+  // The departure's check at the gate: cancelled once (back inside, turned round), then confirmed.
+  if ((await read()).camp?.depart) {
+    const fit = await page.evaluate(() => {
+      const r = document.querySelector("#depart .depart-inner").getBoundingClientRect();
+      return r.bottom <= innerHeight + 1 && r.right <= innerWidth + 1;
+    });
+    if (!fit) errors.push("mobile: the departure's check spills past the screen");
+    await page.screenshot({ path: `${out}/m0-depart.png` });
+    await page.tap("#depart-cancel");
+    const back = await read();
+    if (back.camp?.depart || back.screen !== "camp") errors.push(`mobile: cancelling the departure left ${back.screen} ${JSON.stringify(back.camp?.depart)}`);
+    await touch("touchStart", [{ x: 150, y: 260, id: 1 }]);
+    await touch("touchMove", [{ x: 150, y: 140, id: 1 }]);
+    await step(400);
+    await touch("touchEnd", []);
+    await page.evaluate(() => window.ringfallCamp.toGate());
+    await touch("touchStart", [{ x: 150, y: 260, id: 1 }]);
+    await touch("touchMove", [{ x: 150, y: 200, id: 1 }]);
+    for (let i = 0; i < 20 && !(await read()).camp?.depart && (await read()).screen !== "game"; i++) await step(200);
+    await touch("touchEnd", []);
+    await confirmDepart(page, { touch: true });
+    await step(50);
+  }
   if ((await read()).screen !== "game") errors.push("mobile: walking out of the gate on the stick did not start the raid");
   if (!(await page.evaluate(() => document.body.classList.contains("playing")))) errors.push("mobile: the raid is not playing");
 
@@ -552,13 +593,16 @@ const read = async () => JSON.parse(await page.evaluate(() => window.render_game
   const picks = page.locator("#hub-stash [data-act=pick]");
   await picks.nth(2).click();
   await picks.nth(1).click();
+  // Each weapon shows its numbers, in the stash's list and in the picked slots.
+  const stats = await page.locator("#hub-side .slot .stat").allTextContents();
+  if (stats.length !== 2 || !stats.every((t) => /威力 \d+.*毎分 \d+ 発.*弾倉 \d+/.test(t)) || !(await page.locator("#hub-stash .item small", { hasText: "毎分" }).count())) errors.push(`camp: the shelves' weapons show ${JSON.stringify(stats)}`);
   await page.screenshot({ path: `${out}/00-panel-stash.png` });
   await closePanel(page);
   await seen("vehicle");
   await page.evaluate(() => window.ringfallCamp.toGate());
   await page.evaluate(() => window.advanceTime(100));
   await page.screenshot({ path: `${out}/00-camp-gate.png` });
-  const h2 = await walkOutOfGate(page);
+  const h2 = await walkOutOfGate(page, "00-depart");
   // The magazine is left out: the frame loop may already have stepped the raid and loaded it.
   if (h2.player.weapons.map((w) => w?.split(":")[0]).join() !== "pike1,hornet0") errors.push(`camp: the raid did not start with the picked weapons (${h2.player.weapons.join()})`);
   if (h2.profile.stash !== h1.profile.stash - 2) errors.push(`camp: the picked weapons stayed in the stash (${h1.profile.stash} -> ${h2.profile.stash})`);
@@ -1055,12 +1099,15 @@ console.log(JSON.stringify((await read()).stats));
   await page.waitForTimeout(300);
   const fit = await page.evaluate(() => {
     const out = [];
-    for (const id of ["home", "restart", "stats", "pois"]) {
+    for (const id of ["home", "restart", "day-result", "haul-line", "stats-box"]) {
       const r = document.getElementById(id).getBoundingClientRect();
       if (r.width && (r.right > innerWidth + 1 || r.bottom > innerHeight + 1)) out.push(`${id} ${Math.round(r.right)}x${Math.round(r.bottom)}`);
     }
     return out;
   });
+  // The day's outcome leads the results: the battle won or lost with the sides' points, the front and the network, no grade or score.
+  const head = await page.textContent("#day-result");
+  if (!/陣取り戦/.test(head) || !/(勝ち|負け)/.test(head) || !/自軍/.test(head) || !/前線/.test(head) || !/網の段階/.test(head) || (await page.locator("#rank, #total").count())) errors.push(`results: the headline reads "${head}"`);
   if (fit.length) errors.push(`results on a phone: ${fit.join(", ")} past the 740x360 screen`);
   await page.screenshot({ path: `${out}/m9-results.png` });
   await page.setViewportSize({ width: 1280, height: 720 });
@@ -1092,7 +1139,7 @@ console.log(JSON.stringify((await read()).stats));
   await page.click("#hub-region [data-arg=harbor]");
   await page.screenshot({ path: `${out}/27-map-harbor.png` });
   await closePanel(page);
-  await rideOut(page);
+  await rideOut(page, undefined, "27-depart-truck");
   await page.evaluate(() => window.advanceTime(1500));
   await draw(page);
   await page.screenshot({ path: `${out}/28-harbor-start.png` });
@@ -1194,8 +1241,8 @@ const readOf = async (pg) => JSON.parse(await pg.evaluate(() => window.render_ga
   // The raid walked out to next is the one the radio told of.
   await closePanel(pg);
   await useStation(pg, "stash");
-  await pg.click("#hub-free");
-  if (!(await readOf(pg)).camp.lent) errors.push("camp: the shelves' toggle did not choose the lent kit");
+  await pg.click("#hub-side [data-act=lent]");
+  if (!(await readOf(pg)).camp.lent) errors.push("camp: the shelves' lent kit button did not choose the lent kit");
   await closePanel(pg);
   const raid = await walkOutOfGate(pg);
   if (!intel.includes(raid.boost.name)) errors.push(`hideout: the radio said "${intel}", the raid boosts ${raid.boost.name}`);
@@ -1353,10 +1400,10 @@ const readOf = async (pg) => JSON.parse(await pg.evaluate(() => window.render_ga
       await pg.evaluate(() => window.advanceTime(5000));
       await pg.waitForFunction(() => !document.getElementById("results").hidden, null, { timeout: 10000 }).catch(() => undefined);
       const r2 = await readOf(pg);
-      const home = await pg.textContent("#home");
+      const home = await pg.textContent("#results");
       if (r2.screen !== "results" || r2.settled?.network?.relays !== 2 || r2.settled?.contract?.t !== "destroy" || !r2.settled.contract.done || !/中継器 −2/.test(home)) errors.push(`network: the results after the mast read ${JSON.stringify({ screen: r2.screen, settled: r2.settled && { network: r2.settled.network, contract: r2.settled.contract } })}`);
       await pg.screenshot({ path: `${out}/56-results-network.png` });
-      await pg.locator("#home .net-change").scrollIntoViewIfNeeded();
+      await pg.locator("#day-result .net-change").scrollIntoViewIfNeeded();
       await pg.screenshot({ path: `${out}/56-results-network-detail.png` });
     }
     await ctx.close();
@@ -1407,7 +1454,8 @@ const readOf = async (pg) => JSON.parse(await pg.evaluate(() => window.render_ga
   await pg.click("#hub-region [data-act=from][data-arg=quarry]");
   await closePanel(pg);
   await useStation(pg, "stash");
-  await pg.click("#hub-free");
+  await pg.click("#hub-side [data-act=lent]");
+  await pg.locator("#hub-stash [data-act=pick]", { hasText: "アーマー" }).click();
   await closePanel(pg);
   await rideOut(pg);
   await pg.evaluate(() => window.advanceTime(500));
@@ -1594,6 +1642,12 @@ const islandDay = {
   await pg.setViewportSize({ width: 740, height: 360 });
   await pg.waitForTimeout(300);
   await pg.screenshot({ path: `${out}/m20-island-results.png` });
+  // Back in the camp after the results: the day's line and 今日の作戦, on the phone-sized screen.
+  await pg.click("#restart");
+  await faded(pg);
+  const plan = await pg.textContent("#camp-plan");
+  if (!/今日の作戦/.test(plan) || !/攻める節/.test(plan) || !/7 日目/.test(await pg.textContent("#camp-hint"))) errors.push(`island: the camp after the results reads "${plan}" / "${await pg.textContent("#camp-hint")}"`);
+  await pg.screenshot({ path: `${out}/m20-camp-today.png` });
   await ctx.close();
 }
 {
@@ -1754,8 +1808,8 @@ lap("island");
   lap("events");
 }
 /*
- * Mod parts and the threat. The map table's threat picker (desktop and phone) sets the next
- * raid's threat, which the objective card names, and the map marks each POI's best threat; three
+ * Mod parts and the 強度. A contract taken on the board is given 強度 3 (desktop and phone), which
+ * the raid plays at and the objective card names, and the map marks each POI's best; three
  * parts worn show on the HUD (desktop and phone), the vitals still clear of the objective card;
  * a part on the ground is drawn and named by the prompt, and the use key swaps it in for the
  * oldest; home alive, the results offer the parts for analysis, and analysing one learns its kind.
@@ -1786,17 +1840,24 @@ lap("island");
     const pg = await withProfile(ctx, modGame);
     await toCamp(pg, phone);
     const cdp = phone ? await ctx.newCDPSession(pg) : undefined;
-    await useStation(pg, "map", cdp);
-    const pick = "#hub-side .hub-threat [data-act=threat][data-arg='3']";
+    // The 強度 is chosen for a contract on the board: the taken card offers it, what it gives first.
+    await useStation(pg, "quests", cdp);
+    const first = "#hub-side .quest.contract [data-act=take]";
+    await (phone ? pg.tap(first) : pg.click(first));
+    const pick = "#hub-side .quest.contract.taken .strength [data-act=strength][data-arg$=':3']";
     await (phone ? pg.tap(pick) : pg.click(pick));
     await pg.waitForTimeout(100);
     const c1 = await readOf(pg);
-    const text = await pg.textContent("#hub-side .hub-threat");
-    if (c1.profile.threat !== 3 || !/解放すると網がもう 1 段下がる/.test(text) || !/補給所 3/.test(text)) errors.push(`threat: the picker left threat ${c1.profile.threat} and reads "${text}"`);
+    const text = await pg.textContent("#hub-side .quest.contract.taken");
+    if (c1.profile.threat !== 3 || !c1.camp.taken || !/解放すると網がもう 1 段下がる/.test(text) || !/補給所 3/.test(text) || !/得るもの/.test(text)) errors.push(`threat: the board's 強度 left ${c1.profile.threat} (taken ${c1.camp.taken}) and reads "${text}"`);
     const fit = await spills(pg);
-    if (fit.length) errors.push(`threat picker${phone ? " on a phone" : ""}: ${[...new Set(fit)].join(", ")}`);
-    await pg.locator("#hub-side .hub-threat").scrollIntoViewIfNeeded();
-    await pg.screenshot({ path: tag("80-map-threat.png", "m30-map-threat.png") });
+    if (fit.length) errors.push(`board 強度${phone ? " on a phone" : ""}: ${[...new Set(fit)].join(", ")}`);
+    await pg.locator("#hub-side .quest.contract.taken").scrollIntoViewIfNeeded();
+    await pg.screenshot({ path: tag("80-board-strength.png", "m30-board-strength.png") });
+    // The map table has no 強度 of its own; it marks each POI's best.
+    await closePanel(pg, phone);
+    await useStation(pg, "map", cdp);
+    if (await pg.locator("#hub-side .hub-threat, #hub-side [data-act=threat]").count()) errors.push("threat: the map table still offers a threat of its own");
     await pg.locator("#hub-island-map").scrollIntoViewIfNeeded();
     await pg.screenshot({ path: tag("80-map-threat-best.png", "m30-map-threat-best.png") });
     await closePanel(pg, phone);
@@ -1804,7 +1865,7 @@ lap("island");
     else await walkOutOfGate(pg);
     await pg.evaluate(() => window.ringfallStep(1500));
     const r0 = await readOf(pg);
-    if (r0.threat !== 3 || !/脅威度 3/.test(await pg.textContent("#obj-raid"))) errors.push(`threat: the raid plays at ${r0.threat} and the card reads "${await pg.textContent("#obj-raid")}"`);
+    if (r0.threat !== 3 || !/強度 3/.test(await pg.textContent("#obj-raid"))) errors.push(`threat: the raid plays at ${r0.threat} and the card reads "${await pg.textContent("#obj-raid")}"`);
     await pg.evaluate(() => window.ringfallMods.wear(["leech", "scrambler", "capacitor"]));
     await pg.evaluate(() => window.advanceTime(100));
     const chips = await pg.locator("#mods i").allTextContents();
@@ -1911,12 +1972,22 @@ for (const phone of [false, true]) {
   await pg.locator("#hub-side .score-days").scrollIntoViewIfNeeded();
   await pg.screenshot({ path: tag(2, "panel-map-battles") });
   await closePanel(pg, phone);
+  // The camp's line of the day and 今日の作戦: the battles on record make yesterday's known.
+  const today = await pg.textContent("#camp");
+  if (!/9 日目/.test(today) || !/昨日の陣取り戦：勝ち/.test(today) || !/攻める節/.test(today)) errors.push(`battle: the camp's day reads "${today.slice(0, 300)}"`);
+  await pg.screenshot({ path: tag(6, "camp-today") });
   const run = await walkOutOfGate(pg);
   if (!run.battle || run.battle.factory !== 3) errors.push(`battle: the raid out of the gate has ${JSON.stringify(run.battle && { factory: run.battle.factory })}`);
   // The way in's banner has gone; the turrets stand at the nodes the player holds.
   await pg.evaluate(() => window.ringfallStep(4000));
+  // With no contract taken, the objective is the front, not the story record, which has a line of its own.
+  const card = await pg.evaluate(() => ({ title: document.getElementById("obj-title").textContent, story: document.getElementById("obj-story").hidden ? "" : document.getElementById("obj-story").textContent }));
+  if (/記録/.test(card.title) || !/(前線|陣取り戦|制圧)/.test(card.title) || !/記録/.test(card.story)) errors.push(`battle: with no contract the objective card reads ${JSON.stringify(card)}`);
+  await draw(pg);
+  await pg.screenshot({ path: tag(7, "objective-front") });
   const hud = await pg.evaluate(() => ({ hidden: document.getElementById("battle").hidden, text: document.getElementById("battle").textContent }));
-  if (hud.hidden || !/自軍/.test(hud.text) || !/残り/.test(hud.text)) errors.push(`battle: the score bar reads ${JSON.stringify(hud)}`);
+  const deadline = await pg.textContent("#obj-raid");
+  if (hud.hidden || !/自軍/.test(hud.text) || !/網/.test(hud.text) || !/\+\d+\/秒/.test(hud.text) || !/締め切り/.test(deadline)) errors.push(`battle: the score bar reads ${JSON.stringify(hud)}, the card "${deadline}"`);
   const st = await readOf(pg);
   if (st.battle.squads.filter((q) => q.side === 0).length < 2) errors.push(`battle: ${st.battle.squads.filter((q) => q.side === 0).length} of the player's squads at the start (the turrets at two nodes)`);
   // A fight in front of the player: the player's squad on the left, the network's on the right.

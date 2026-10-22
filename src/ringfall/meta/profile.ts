@@ -30,7 +30,7 @@ export interface Escape {
 
 /** What persists between raids. */
 export interface Profile {
-  v: 19;
+  v: 20;
   cash: number;
   stash: Item[];
   raids: number;
@@ -79,14 +79,28 @@ export interface Profile {
   events: DayEvents;
   /** The mod kinds known (`MODS`), in `MOD_KINDS` order: the bins hold these; more are learned by analysis. */
   known: ModKind[];
-  /** The threat chosen at the map table for the next raid, 0 to `THREAT.max`. */
+  /**
+   * The 強度 chosen on the board for the contract taken, 0 to `THREAT.max` (`THREAT.levels`). It
+   * counts only while a contract is taken: a raid with none plays at 0 (`raidThreat()`).
+   */
   threat: number;
-  /** The highest threat each POI was freed at. */
+  /** The highest 強度 each POI was freed at. */
   freedAt: Partial<Record<PoiId, number>>;
   /** The camp's factory's level (`FACTORY`): 0 is the factory the camp starts with. */
   factory: number;
   /** Each day's battle (陣取り戦), the latest last: the day, the points by side, and whether the player won. At most `SCORE_DAYS`. */
   scores: DayScore[];
+  /** What the last raid took out of the stash, so the shelves pick it again while the stash still holds it (`recallLoadout()`). */
+  lastKit: KitPicks | null;
+}
+
+/** A loadout by what it holds rather than by stash index: what `Profile.lastKit` keeps. */
+export interface KitPicks {
+  weapons: { kind: WeaponKind; rarity: Rarity }[];
+  /** The armour's tier, 0 for none. */
+  armor: Rarity;
+  keys: PoiId[];
+  heals: Record<HealKind, number>;
 }
 
 /** A day's battle as the map table lists it. */
@@ -122,15 +136,30 @@ export const canStartIn = (p: Profile, region: RegionId) => {
 export function newProfile(seed = 1): Profile {
   const stash: Item[] = META.start.weapons.map((w) => ({ t: "weapon", ...w }));
   for (const k of HEALS) for (let i = 0; i < META.start.heals[k]; i++) stash.push({ t: "heal", kind: k });
-  const p: Omit<Profile, "board"> = { v: 19, cash: META.start.cash, stash, raids: 0, extracted: 0, time: 0, quests: emptyLog(), region: "reservoir", entry: FIRST_ENTRY, entries: [FIRST_ENTRY], hideout: emptyHideout(), escaped: null, seed: seed & 0xffff, depots: [], depotSent: {}, seen: "", routes: [], day: 1, poiState: newIsland(), outposts: newOutposts(NETWORK.start), outpostVisit: {}, taken: null, records: [], network: NETWORK.start, pressure: 0, events: firstEvents(seed & 0xffff, newIsland()), known: [...MOD_START], threat: 0, freedAt: {}, factory: 0, scores: [] };
+  const p: Omit<Profile, "board"> = { v: 20, cash: META.start.cash, stash, raids: 0, extracted: 0, time: 0, quests: emptyLog(), region: "reservoir", entry: FIRST_ENTRY, entries: [FIRST_ENTRY], hideout: emptyHideout(), escaped: null, seed: seed & 0xffff, depots: [], depotSent: {}, seen: "", routes: [], day: 1, poiState: newIsland(), outposts: newOutposts(NETWORK.start), outpostVisit: {}, taken: null, records: [], network: NETWORK.start, pressure: 0, events: firstEvents(seed & 0xffff, newIsland()), known: [...MOD_START], threat: 0, freedAt: {}, factory: 0, scores: [], lastKit: null };
   return { ...p, board: makeBoard(p) };
 }
+
+/** What `Profile.taken` holds when the story record under way is taken from the board instead of a contract. */
+export const STORY_TAKEN = "story";
 
 /** The board's contract taken for the next raid, or null. */
 export const takenContract = (p: Pick<Profile, "board" | "taken" | "day">): Contract | null => (p.board.day === p.day ? (p.board.contracts.find((c) => c.id === p.taken) ?? null) : null);
 
-/** Takes a contract of the day's board for the next raid (null takes none); one not on the board takes none. */
-export const take = (p: Profile, id: string | null): Profile => ({ ...p, taken: p.board.contracts.some((c) => c.id === id) ? id : null });
+/** Whether the board's story record is what the next raid is out for (its objective), rather than a contract or the front. */
+export const takenStory = (p: Pick<Profile, "taken" | "records">): boolean => p.taken === STORY_TAKEN && !!currentStory(p.records);
+
+/**
+ * Takes a contract of the day's board for the next raid (null takes none, `STORY_TAKEN` the story
+ * record under way); one not on the board takes none. A contract taken anew starts at 強度 0.
+ */
+export const take = (p: Profile, id: string | null): Profile => {
+  const taken = p.board.contracts.some((c) => c.id === id) || (id === STORY_TAKEN && !!currentStory(p.records)) ? id : null;
+  return { ...p, taken, threat: taken === p.taken ? p.threat : 0 };
+};
+
+/** The 強度 the next raid plays at: the taken contract's, or 0 with no contract taken. */
+export const raidThreat = (p: Pick<Profile, "board" | "taken" | "day" | "threat">) => (takenContract(p) ? p.threat : 0);
 
 /** The seed of the raid after one started from `seed`. */
 export const nextSeed = (seed: number) => ((Math.imul(seed + 1, 1103515245) + 12345) >>> 8) & 0xffff;
@@ -202,16 +231,63 @@ export const emptyLoadout = (): Loadout => ({ weapons: [], armor: null, heals: {
 /** How many of a heal the stash holds. */
 export const healCount = (p: Profile, k: HealKind) => p.stash.filter((i) => i.t === "heal" && i.kind === k).length;
 
-/** Heals a raid is lent: the free kit's when it carries no weapon of the stash, and the infirmary's. */
-export function lentHeals(p: Profile, free: boolean): Record<HealKind, number> {
+/** Heals every raid is lent, whatever weapons it carries: the free kit's and the infirmary's. */
+export function lentHeals(p: Pick<Profile, "hideout">): Record<HealKind, number> {
   const sick = infirmaryHeals(p.hideout);
-  return Object.fromEntries(HEALS.map((k) => [k, Math.min(HEAL_SPECS[k].max, (free ? META.free.heals[k] : 0) + sick[k])])) as Record<HealKind, number>;
+  return Object.fromEntries(HEALS.map((k) => [k, Math.min(HEAL_SPECS[k].max, META.free.heals[k] + sick[k])])) as Record<HealKind, number>;
 }
 
 /** How many heals of a kind a loadout can take from the stash: what it holds, up to what the lent ones leave room for. */
-export function healRoom(p: Profile, l: Loadout, k: HealKind): number {
-  const free = !l.weapons.some((n) => p.stash[n]?.t === "weapon");
-  return Math.max(0, Math.min(healCount(p, k), HEAL_SPECS[k].max - lentHeals(p, free)[k]));
+export function healRoom(p: Profile, _l: Loadout, k: HealKind): number {
+  return Math.max(0, Math.min(healCount(p, k), HEAL_SPECS[k].max - lentHeals(p)[k]));
+}
+
+/** What a loadout takes, by what it holds: `Profile.lastKit` after a raid starts with it. */
+export function kitPicks(p: Profile, l: Loadout): KitPicks {
+  const k = picks(p, l);
+  const a = k.armor === null ? undefined : p.stash[k.armor];
+  return {
+    weapons: k.weapons.flatMap((n) => {
+      const i = p.stash[n];
+      return i?.t === "weapon" ? [{ kind: i.kind, rarity: i.rarity }] : [];
+    }),
+    armor: a?.t === "armor" ? a.tier : 0,
+    keys: k.keys.flatMap((n) => {
+      const i = p.stash[n];
+      return i?.t === "key" ? [i.poi] : [];
+    }),
+    heals: Object.fromEntries(HEALS.map((h) => [h, Math.max(0, Math.min(l.heals[h], healRoom(p, l, h)))])) as Record<HealKind, number>,
+  };
+}
+
+/**
+ * The last raid's loadout picked again from the stash as it stands: each weapon, the armour and
+ * each key while the stash still holds one like it, and the heals up to what it holds now.
+ */
+export function recallLoadout(p: Profile): Loadout {
+  const l = emptyLoadout();
+  const last = p.lastKit;
+  if (!last) return l;
+  const used = new Set<number>();
+  const find = (match: (i: Item) => boolean) => {
+    const n = p.stash.findIndex((i, at) => !used.has(at) && match(i));
+    if (n >= 0) used.add(n);
+    return n;
+  };
+  for (const w of last.weapons.slice(0, 2)) {
+    const n = find((i) => i.t === "weapon" && i.kind === w.kind && i.rarity === w.rarity);
+    if (n >= 0) l.weapons.push(n);
+  }
+  if (last.armor > 0) {
+    const n = find((i) => i.t === "armor" && i.tier === last.armor);
+    if (n >= 0) l.armor = n;
+  }
+  for (const poi of last.keys) {
+    const n = find((i) => i.t === "key" && i.poi === poi);
+    if (n >= 0) l.keys.push(n);
+  }
+  for (const h of HEALS) l.heals[h] = Math.max(0, Math.min(last.heals[h] ?? 0, healRoom(p, l, h)));
+  return l;
 }
 
 /**
@@ -276,9 +352,10 @@ export function fitsStart(p: Profile, l: Loadout, from: PoiId | null): boolean {
 }
 
 /**
- * Takes a loadout out of the stash. Picking no weapon means the free kit: its weapons and
- * heals are lent, and any heals picked from the stash come on top of them. The hideout's
- * infirmary lends its heals to either kit. A start from a depot is held to its allowance.
+ * Takes a loadout out of the stash. Picking no weapon means the free kit's weapons, lent. The free
+ * kit's heals and the hideout's infirmary's are lent to every raid, and any heals picked from the
+ * stash come on top of them; armour and keys picked go with either. A start from a depot is held
+ * to its allowance. The profile remembers the loadout (`Profile.lastKit`) for the next raid.
  */
 export function takeKit(p: Profile, l: Loadout): { profile: Profile; kit: Kit };
 /** For a start from a depot (`from`), null when the loadout does not fit its allowance (`fitsStart()`). */
@@ -301,7 +378,7 @@ export function takeKit(p: Profile, l: Loadout, from: PoiId | null = null): { pr
     armor = a.tier;
   }
   const free = weapons.length === 0;
-  const lent = lentHeals(p, free);
+  const lent = lentHeals(p);
   const heals = { cell: 0, battery: 0, syringe: 0, medkit: 0 } as Record<HealKind, number>;
   for (const k of HEALS) {
     // A kind holds at most HEAL_SPECS[k].max, lent ones included.
@@ -329,7 +406,7 @@ export function takeKit(p: Profile, l: Loadout, from: PoiId | null = null): { pr
     heals: Object.fromEntries(HEALS.map((k) => [k, heals[k] + lent[k]])) as Record<HealKind, number>,
     lentHeals: lent,
   };
-  return { profile: { ...p, stash: p.stash.filter((_, n) => !take.has(n)) }, kit };
+  return { profile: { ...p, stash: p.stash.filter((_, n) => !take.has(n)), lastKit: kitPicks(p, l) }, kit };
 }
 
 /**
@@ -407,7 +484,7 @@ export interface Settlement {
   contract: { c: Contract; cash: number; done: boolean } | null;
   /** The story contract whose record the raid brought home (its credits paid). */
   story: Story | null;
-  /** The threat the raid was played at. */
+  /** The 強度 the raid was played at. */
   threat: number;
   /** The mod parts worn when the raid ended, which may be analysed (`analyse()`): none unless the player got off alive. */
   analysable: ModKind[];
@@ -428,15 +505,31 @@ export function analyse(p: Profile, settled: Pick<Settlement, "analysable">, kin
   return { ...p, known: knownMods([...p.known, kind]) };
 }
 
-/** A contract's credits `cash` as paid at threat `threat`: `THREAT.levels[].reward` times, to the credit. */
+/** A contract's credits `cash` as paid at 強度 `threat`: `THREAT.levels[].reward` times, to the credit. */
 export const threatPay = (cash: number, threat: number) => (threat > 0 ? Math.round(cash * THREAT.levels[threat].reward) : cash);
 
-/** Sets the threat of the next raid, kept within 0 and `THREAT.max`. */
+/** Sets the 強度 of the contract taken, kept within 0 and `THREAT.max`. */
 export const setThreat = (p: Profile, threat: number): Profile => ({ ...p, threat: Math.max(0, Math.min(THREAT.max, Math.round(threat) || 0)) });
 
+/** Valuables the factory's levels not yet built still ask for, by kind. */
+export function factoryNeeded(p: Pick<Profile, "factory">): Record<ValuableKind, number> {
+  const out = Object.fromEntries(Object.keys(VALUABLES).map((k) => [k, 0])) as Record<ValuableKind, number>;
+  for (const l of FACTORY.levels.slice(p.factory)) for (const [k, n] of l.items) out[k] += n;
+  return out;
+}
+
 /** Valuables the hideout still asks for beyond what the stash holds, by kind. */
+export function hideoutWanted(p: Profile): Record<ValuableKind, number> {
+  const out = stillNeeded(p.hideout);
+  for (const i of p.stash) if (i.t === "valuable") out[i.kind]--;
+  return out;
+}
+
+/** Valuables the hideout and the factory still ask for beyond what the stash holds, by kind. */
 export function wanted(p: Profile): Record<ValuableKind, number> {
   const out = stillNeeded(p.hideout);
+  const fac = factoryNeeded(p);
+  for (const k of Object.keys(out) as ValuableKind[]) out[k] += fac[k];
   for (const i of p.stash) if (i.t === "valuable") out[i.kind]--;
   return out;
 }
@@ -664,11 +757,12 @@ const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
  * its network (the rogues' rogue, the others held), none freed.
  * Before v19 there was no battle: such a profile has the factory the camp starts with (level 0)
  * and no battle on record.
+ * Before v20 the shelves did not remember a loadout: such a profile has none (`lastKit` null).
  */
 export function parseProfile(raw: unknown, seed = 1): Profile | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
+  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
   const old = o.v === 1 || o.v === 2;
   const migrate = (i: unknown): unknown => {
     if (!old || !i || typeof i !== "object" || (i as Record<string, unknown>).t !== "key") return i;
@@ -705,14 +799,15 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   const recordIds = STORIES.map((t) => t.id);
   const records = (typeof o.v === "number" && o.v >= 14) && Array.isArray(o.records) ? recordIds.filter((id) => (o.records as unknown[]).includes(id)) : [];
   const network = (typeof o.v === "number" && o.v >= 15) && Number.isInteger(o.network) ? Math.max(0, Math.min(NETWORK.max, o.network as number)) : NETWORK.start;
-  const v17 = o.v === 17 || o.v === 18 || o.v === 19;
-  const v18 = o.v === 18 || o.v === 19;
-  const v19 = o.v === 19;
+  const v17 = o.v === 17 || o.v === 18 || o.v === 19 || o.v === 20;
+  const v18 = o.v === 18 || o.v === 19 || o.v === 20;
+  const v19 = o.v === 19 || o.v === 20;
+  const v20 = o.v === 20;
   const fa = (v17 && o.freedAt && typeof o.freedAt === "object" ? o.freedAt : {}) as Record<string, unknown>;
   const freedAt: Partial<Record<PoiId, number>> = {};
   for (const { id } of POIS) if (Number.isInteger(fa[id])) freedAt[id] = Math.max(0, Math.min(THREAT.max, fa[id] as number));
   const out: Omit<Profile, "board" | "taken" | "events"> = {
-    v: 19,
+    v: 20,
     cash: Math.max(0, Math.floor(o.cash)),
     stash: o.stash.map(migrate).filter(ok).slice(0, stashCap(hideout)),
     raids,
@@ -735,6 +830,7 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     outpostVisit: parseOutpostVisit(v18 ? o.outpostVisit : undefined, day),
     factory: v19 && Number.isInteger(o.factory) ? Math.max(0, Math.min(FACTORY.levels.length, o.factory as number)) : 0,
     scores: v19 ? parseScores(o.scores, day) : [],
+    lastKit: v20 ? parseKitPicks(o.lastKit) : null,
     records,
     network,
     known: knownMods(v17 && Array.isArray(o.known) ? o.known : []),
@@ -748,8 +844,23 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   // The day's board as saved, so it stands however the stash changed since; else the day's from now.
   // A board saved before the network may name a pack the migrated level does not fly: made anew.
   const board = (typeof o.v === "number" && o.v >= 15 ? parseBoard(o.board, day) : null) ?? makeBoard(withEvents);
-  const taken = typeof o.taken === "string" && board.contracts.some((c) => c.id === o.taken) ? o.taken : null;
+  const taken = typeof o.taken === "string" && (board.contracts.some((c) => c.id === o.taken) || (o.taken === STORY_TAKEN && !!currentStory(records))) ? o.taken : null;
   return { ...withEvents, board, taken };
+}
+
+/** A saved `lastKit`: well-formed picks only, at most two weapons and a key per POI; anything unreadable, none. */
+function parseKitPicks(raw: unknown): KitPicks | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const weapons = (Array.isArray(r.weapons) ? r.weapons : [])
+    .filter((w): w is { kind: WeaponKind; rarity: Rarity } => !!w && typeof w === "object" && typeof (w as Record<string, unknown>).kind === "string" && ((w as Record<string, unknown>).kind as string) in META.weapon && [0, 1, 2, 3].includes((w as Record<string, unknown>).rarity as number))
+    .slice(0, 2)
+    .map((w) => ({ kind: w.kind, rarity: w.rarity }));
+  const armor = ([0, 1, 2, 3].includes(r.armor as number) ? r.armor : 0) as Rarity;
+  const keys = [...new Set((Array.isArray(r.keys) ? r.keys : []).filter((k): k is PoiId => typeof k === "string" && poiIndex(k as PoiId) >= 0))];
+  const h = (r.heals && typeof r.heals === "object" ? r.heals : {}) as Record<string, unknown>;
+  const heals = Object.fromEntries(HEALS.map((k) => [k, Number.isInteger(h[k]) ? Math.max(0, Math.min(HEAL_SPECS[k].max, h[k] as number)) : 0])) as Record<HealKind, number>;
+  return { weapons, armor, keys, heals };
 }
 
 /** Saved battles: well-formed ones of days before `day`, the latest `SCORE_DAYS`. */

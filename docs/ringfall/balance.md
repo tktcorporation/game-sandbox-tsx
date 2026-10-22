@@ -6,7 +6,7 @@
 
 ## 目標
 
-| 腕前 | 生還（alive） | 制圧する拠点（cleared） | ダウン / 周 | 弱点命中率 | 同時に戦う数（crowd） | 背後と奇襲（flank） |
+| 腕前 | 生還（alive） | 掃討する拠点（cleared） | ダウン / 周 | 弱点命中率 | 同時に戦う数（crowd） | 背後と奇襲（flank） |
 | ---- | ------------- | ----------------------- | ----------- | ---------- | --------------------- | ------------------- |
 | 初心者 | 70% 以上 | 2 | 1 以下 | 指標にしない | 2 部隊・4 体以下 | 指標にしない |
 | 普通 | 55〜75% | 2〜3 | 1.5 以下 | 15〜25% | 2 部隊・4 体以下 | 15% 以上 |
@@ -25,13 +25,13 @@ c/min（1 分あたりに戦いに入った部隊の数）には目標を置か�
 
 ロボットは数発でプレイヤーを倒す強さにしてあり、拠点を多く回るほど全滅の危険が上がる。全滅の多くは、拠点を回り終えて島を出る前後に、13 分後に降りるレイダーや増援と戦う周で起きる。
 
-全滅するとレイドは終わり、スコアは 0 になる。ボットは腕前ごとに制圧する拠点の数を決めてから脱出する（`bot.ts` の `Skill.raid`：初心者 2、普通 4、上手い 3）が、上の引き際で切り上げることもある。近い順に回り、タイタンは他の拠点をすべて制圧した後にだけ狙う。上手いの予定の 3 拠点は、ダム湖ではタイタンを除く 3 拠点になるので、上手いはタイタンと戦わない。普通は 4 拠点を予定するが、引き際で切り上げる周が多く、タイタンまで行く周は少ない。弱点の大きいタイタンへの命中は弱点命中率を押し上げるので、タイタンと戦う周が減ると弱点命中率が下がる。
+全滅するとレイドは終わり、カバンの物は持ち帰れない。ボットは腕前ごとに制圧する拠点の数を決めてから脱出する（`bot.ts` の `Skill.raid`：初心者 2、普通 4、上手い 3）が、上の引き際で切り上げることもある。近い順に回り、タイタンは他の拠点をすべて制圧した後にだけ狙う。上手いの予定の 3 拠点は、ダム湖ではタイタンを除く 3 拠点になるので、上手いはタイタンと戦わない。普通は 4 拠点を予定するが、引き際で切り上げる周が多く、タイタンまで行く周は少ない。弱点の大きいタイタンへの命中は弱点命中率を押し上げるので、タイタンと戦う周が減ると弱点命中率が下がる。
 
 味方（リオ）は、与ダメージの 1〜2 割を担い、交戦中のロボットの 15% 前後に狙われる程度に留める。主役はプレイヤーのままにし、味方は攻撃を散らして、全滅の手前で拾い上げる役にする。ally 列は、与ダメージに占める割合、1 周あたりのダウン（d）、プレイヤーを起こした回数（r）、プレイヤーに起こされた回数（h）。
 
 脱出地点はレイドの始めから開いている。ドロップシップが最も早く（呼んで 20 秒、増援と戦う）、廃村が最も遅く静か（15 秒待つ）になるように置く。台地は発煙筒があれば最も早く静かだが、ボットは高い建物に登らないので使わない（`checkFlareExtract` が別に確かめる）。exit 列は、各地点から脱出した周の数。ボットは初心者と、タイタンが残っているときと、レイダーが降りた後は廃村を選び、それ以外はドロップシップを選ぶ。
 
-スコアは、生還したときの回収の価値（8 種類、ヒューズ 60〜小型炉心 2200、`config.ts` の `VALUABLES`）と、制圧した拠点 1 つにつき 400 点、タイタン 1500 点の合計。ランクは S 4500 / A 3000 / B 1500 点以上（`config.ts` の `SCORE`）。
+haul 列は、生還したレイドの回収の価値（8 種類、ヒューズ 60〜小型炉心 2200、`config.ts` の `VALUABLES`）の中央値。cleared 列は守備隊を全滅させた（掃討した）拠点の数で、解放（核の制圧）とは別に数える。レイドに評価とスコアはない。
 
 カバン（`BAG.slots`）は 10 枠で、回収品は 1〜4 枠を取る。haul の中央値は枠で頭打ちになる。補給箱から出る回収品の種類は拠点ごとの重み（`map.ts` の `POIS[].loot.valuable`）で決まる。補給箱は調べるのに 2.2 秒（最上階 3.5 秒）かかり、9 m 先まで音が届く（`SEARCH`）。
 
@@ -62,7 +62,7 @@ c/min（1 分あたりに戦いに入った部隊の数）には目標を置か�
 
 ```
 30 runs per skill and region. alive: share of raids that got off (the rest were wiped out)
-time: minutes from the start to leaving; cleared: median POIs cleared; haul and score: medians over raids that got off
+time: minutes from the start to leaving; cleared: median POIs whose garrison was wiped out; haul: median over raids that got off
 flank: share of hits from behind a robot or before it noticed or located the player (the titan, hit alike from every side, not counted)
 waves: median reinforcement squads that beamed in during a raid
 meet: medians of the seconds to the first squad engaging the player and of the longest stretch with no robot fighting them; squads that engaged per run / of them belonging to no POI
@@ -72,16 +72,16 @@ exit: raids that left by each extraction point of the region (the bot's choice d
 crowd: median over runs of the most squads / robots fighting the player at once outside the titan fight
 
 region: reservoir (ダム湖)
-skill     alive time(med) cleared haul(med) score(med) downs acc crit leap crowd flank waves meet               c/min ally               rank               exit
-beginner  63%   6.2m      1       260       660        1.2   46% 3%   1.2 2/4   6%    0     50s 60s 10.4/8.7   1.88  48% 0.4d 0.0r 0.0h S0 A0 B1 C18 -11   ship 0 flare 0 village 19
-casual    73%   6.7m      1       340       740        0.8   67% 5%   1.3 2/4   10%   1     51s 62s 12.3/10.3  1.85  49% 0.5d 0.0r 0.0h S0 A0 B1 C21 -8    ship 0 flare 0 village 22
-good      80%   9.5m      2       1080      1880       0.5   75% 25%  0.4 2/4   20%   1     50s 65s 17.9/14.5  1.98  32% 0.7d 0.0r 0.1h S0 A0 B19 C5 -6    ship 0 flare 0 village 24
+skill     alive time(med) cleared haul(med) downs acc crit leap crowd flank waves meet               c/min ally               exit
+beginner  63%   6.2m      1       260       1.2   46% 3%   1.2 2/4   6%    0     50s 60s 10.4/8.7   1.88  48% 0.4d 0.0r 0.0h ship 0 flare 0 village 19
+casual    73%   6.7m      1       340       0.8   67% 5%   1.3 2/4   10%   1     51s 62s 12.3/10.3  1.85  49% 0.5d 0.0r 0.0h ship 0 flare 0 village 22
+good      80%   9.5m      2       1080      0.5   75% 25%  0.4 2/4   20%   1     50s 65s 17.9/14.5  1.98  32% 0.7d 0.0r 0.1h ship 0 flare 0 village 24
 
 region: harbor (港湾地帯)
-skill     alive time(med) cleared haul(med) score(med) downs acc crit leap crowd flank waves meet               c/min ally               rank               exit
-beginner  23%   6.5m      1       850       1250       1.9   49% 3%   0.9 2/4   5%    0     26s 32s 7.9/5.4    1.82  45% 1.1d 0.0r 0.0h S0 A0 B3 C4 -23    boat 7
-casual    53%   7.8m      1       1780      2520       1.2   73% 3%   0.8 2/4   12%   0     26s 32s 11.6/7.9   1.99  39% 0.9d 0.1r 0.1h S2 A3 B5 C6 -14    boat 16
-good      57%   7.7m      1       1090      2070       1.1   73% 24%  0.6 3/5   16%   1     25s 43s 12.6/8.5   1.92  31% 1.1d 0.0r 0.1h S0 A1 B11 C5 -13   boat 17
+skill     alive time(med) cleared haul(med) downs acc crit leap crowd flank waves meet               c/min ally               exit
+beginner  23%   6.5m      1       850       1.9   49% 3%   0.9 2/4   5%    0     26s 32s 7.9/5.4    1.82  45% 1.1d 0.0r 0.0h boat 7
+casual    53%   7.8m      1       1780      1.2   73% 3%   0.8 2/4   12%   0     26s 32s 11.6/7.9   1.99  39% 0.9d 0.1r 0.1h boat 16
+good      57%   7.7m      1       1090      1.1   73% 24%  0.6 3/5   16%   1     25s 43s 12.6/8.5   1.92  31% 1.1d 0.0r 0.1h boat 17
 ```
 
 目標から外れている値:
@@ -399,7 +399,7 @@ events: days with a debris fall / retake / storm / crews' visit; crews in/out: s
 - 解放戦線（PR #85）の 30 日と比べると、上手いの持つ節は 0〜6 から 0〜11 に、勝ちの続く日は自軍の部隊と工場で前線が伸びる。普通は 0〜4 から 0〜3、初心者は 0〜3 から 0〜2 で、負けた夜に端の節を網に渡す分だけ押し戻される。網の平均は 0.6 / 0.8 / 1.9 から 0.7 / 0.9 / 0.8 になった。初心者の網が下がったのは、自軍の部隊が取った拠点も網を 1 段下げるため
 - 生還は 87% / 87% / 50% から 73% / 67% / 73% になった。上手いは 1 レイドに核を 3 つ制圧するまで帰らず、レイドが 8.6 分（中央値）と長い。普通の生還が下がった分は、ボットの守りの戻り（`CONQUEST.botDefend`）を 0 にしても 30 日のうち生還 20 日で変わらず、陣取り戦の部隊が歩く島そのものによる。1 つの保存データで 30 日を遊ぶ表なので、1 日の結果の違いが後の日まで続く
 - 島の出来事はどの腕前でも 30 日のうち 12 日に起きる
-- ボットは中継器を狙わないので、masts は 0 本。中継器の効き目は `checkNetwork` で確かめる。改造パーツは拾わず、脅威度 0 で遊ぶ。改造パーツの効き目と脅威度の数は `checkMods` と `checkThreat` で確かめる
+- ボットは中継器を狙わないので、masts は 0 本。中継器の効き目は `checkNetwork` で確かめる。改造パーツは拾わず、依頼を受けないので強度 0 で遊ぶ。改造パーツの効き目と強度の数は `checkMods` と `checkThreat` で確かめる
 - 陣取り戦のないレイド（上の地域ごとの表と、隠れ家の進み方の表）は、陣取り戦を入れる前と 1 行も変わらない
 
 陣取り戦の数を決めた試し：野営地の点を毎秒 12 にすると、普通が 30 日のうち 28 日勝ち、初心者は 0 日だった（10 にすると普通 22 日）。負けた夜に網が野営地の門の前の補給所も取ると、初心者は毎日補給所を制圧し直しては渡し、30 日で 1 日も勝てなかった。工場の段のクレジットを 600〜5000 にすると、普通も上手いも 7 日目までに 13 節を全部持った。網がプレイヤーの節に応えて作る分（`CONQUEST.net.answer`）と、網が手放さない土地からの分（`CONQUEST.net.edge`）を入れる前は、網の節が減るほど網の部隊が減り、前線が島の端まで一気に伸びた。普通の核の数を 2 にすると、普通も 24 日勝った。
@@ -611,3 +611,14 @@ desktop harbor frame: {"calls":255,"triangles":458658,"chunks":164,"built":212,"
 
 ゲートは 11% 重くなった。地域ごとの表と隠れ家の進み方の表のレイドは陣取り戦を持たず、出力も重さも変わらないので、増えた分はすべて 30 日の表の分になる。30 日は腕前ごとに 1 プロセスで順に遊ぶ鎖で、陣取り戦の部隊のロボット（プレイヤーから 250 m 以内の分）、レイドの始めに 16 本のつながりの道を引く距離場、ボットが帰った後の残り時間を 1 秒ごとに数で計算する分が加わる。3 つの鎖を単独で回すと（`npx tsx scripts/ringfall-campaign.ts 30`）約 4 分 15 秒かかる。
 
+
+画面の整理（結果の画面から評価とスコアを外し、陣取り戦の結果を見出しにした。装備を覚え、貸出の回復をどの装備にも付け、脅威度を受けた依頼の強度にした）の後（同じ機械で、他の重い作業が無いときに測った。比べる版は PR #86 の `1c43774`）:
+
+| 何を | 値 | 比べる版 |
+| ---- | -- | -------- |
+| `npm run sim:ringfall -- 30` | 438 秒 | 441 秒 |
+| 30 日の表の 8 日分を 1 プロセスで（CPU のユーザー時間） | 165 秒 | 166 秒 |
+
+ゲートの重さは変わらない。レイドの結果の `got` は、遊んだ分を `minutes` の名前で持つ。`time` の名前にすると、整数の `time` で始まる設定（`PATROL.stuck` など）と V8 の中で同じ形を共有し、そこに小数が入ることで形が作り直され、毎ティックその設定を読む `stepMobiles()` の最適化が外れ続けて、30 日の表が 2 割ほど重くなる。
+
+ゲートの出力は表の列から score(med) と rank を外しただけで、ほかの値は 1 行も変わらない。ボットは依頼を受けないので強度 0 で遊び、貸出装備で出るので貸出の回復も変わらない。工場の材料を倉庫に残す順に数えるようにしたが、隠れ家の進み方の表は変わらない（ボットの売り方は隠れ家の分だけを見る `hideoutWanted()` のまま）。

@@ -41,8 +41,11 @@ const css = (c: number) => `#${c.toString(16).padStart(6, "0")}`;
  */
 export const HOLD_CSS: Record<PoiHold, string> = { held: "#b8412f", thin: "#d4892c", freed: "#3f7cae" };
 export const TITAN_CSS = "#262d52";
-/** The rogues' (野良機) amber, as their eyes burn: their outposts are squares, apart from the thin POIs' discs and the ways off' yellow diamonds. */
-export const ROGUE_CSS = "#e8a628";
+/**
+ * The rogues' (野良機) colour on maps and score bars: a violet, kept apart from the thin POIs'
+ * orange, the ways off' yellow diamonds and the contract's gold (on the island their armour stays amber).
+ */
+export const ROGUE_CSS = "#a47be0";
 
 /**
  * What the map draws: a raid's state, or the camp's picture of the island between raids (the
@@ -77,7 +80,7 @@ export type MapScene = Pick<State, "seen" | "cleared" | "hold" | "depots" | "rou
 /** A label's box on the canvas, so labels do not overlap. */
 type Rect = { x0: number; y0: number; x1: number; y1: number };
 
-/** The sides' colours on the battle map: the player's blue, the network's red, the rogues' amber. */
+/** The sides' colours on the battle map: the player's blue, the network's red, the rogues' violet. */
 export const SIDE_CSS: Record<Side, string> = { 0: "#4f9bff", 1: "#ff4a3d", 2: ROGUE_CSS };
 
 /** The camp's picture of the island between raids, from the profile's explored map, depots, routes and POI standings. */
@@ -100,8 +103,8 @@ export function islandScene(p: { seen: string; depots: readonly PoiId[]; routes:
   };
 }
 
-/** Each node's colour on the 戦況図: the player's blue, the network's red, thin orange, the rogues' amber. */
-export const NODE_CSS: Record<NodeHold, string> = { freed: "#3f7cae", held: "#b8412f", thin: "#d4892c", rogue: "#e8a628" };
+/** Each node's colour on the 戦況図: the player's blue, the network's red, thin orange, the rogues' violet. */
+export const NODE_CSS: Record<NodeHold, string> = { freed: "#3f7cae", held: "#b8412f", thin: "#d4892c", rogue: ROGUE_CSS };
 
 /** Metres per cell of the territory's paint. */
 const LAND = 10;
@@ -425,8 +428,8 @@ export class IslandMap {
     const left = Math.max(0, b.end - b.now);
     const parts: [string, string][] = [
       [`自軍 ${k(b.score[0])}`, SIDE_CSS[0]],
-      [`網 ${k(b.score[1])}`, SIDE_CSS[1]],
       [`野良機 ${k(b.score[2])}`, SIDE_CSS[2]],
+      [`網 ${k(b.score[1])}`, SIDE_CSS[1]],
       [b.done ? (b.won ? "勝ち" : "負け") : `残り ${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, "0")}`, "#f4e9c8"],
     ];
     g.save();
@@ -528,7 +531,7 @@ export class IslandMap {
     const free = (r: Rect) => !taken.some((t) => r.x0 < t.x1 && r.x1 > t.x0 && r.y0 < t.y1 && r.y1 > t.y0);
     // A POI cleared this raid says so; otherwise its standing on the island, when it is not held.
     const hold = (i: number): PoiHold => s.hold?.[i] ?? "held";
-    const poiText = (i: number) => (s.cleared[i] && hold(i) !== "freed" ? `${POIS[i].name}（制圧）` : hold(i) === "held" ? POIS[i].name : `${POIS[i].name}（${HOLD_NAME[hold(i)]}）`);
+    const poiText = (i: number) => (s.cleared[i] && hold(i) !== "freed" ? `${POIS[i].name}（掃討）` : hold(i) === "held" ? POIS[i].name : `${POIS[i].name}（${HOLD_NAME[hold(i)]}）`);
     POIS.forEach((poi, i) => {
       const p = at(poi.x, poi.z);
       taken.push(box(poiText(i), p.x, p.y - 15 * dpr, 12));

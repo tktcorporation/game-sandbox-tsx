@@ -253,23 +253,6 @@ export const TITAN = {
   enrageAt: 0.5,
 };
 
-/**
- * What a raid scores when the player gets off the island: the value carried out,
- * plus a bonus for each POI cleared and for the titan. A raid that ends in a wipe
- * scores nothing.
- */
-export const SCORE = {
-  poi: 400,
-  titan: 1500,
-  /** Lowest score for each rank, best first. */
-  ranks: [
-    ["S", 4500],
-    ["A", 3000],
-    ["B", 1500],
-    ["C", 0],
-  ] as const,
-};
-
 export type ValuableKind = "fuse" | "parts" | "wire" | "board" | "drive" | "gyro" | "core" | "reactor";
 
 /**
