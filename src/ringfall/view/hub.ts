@@ -4,7 +4,7 @@ import { CAMP, entryOf, NODES, POIS, poiIndex, poiRegion, REGIONS, regionOf, ROU
 import { build, buildFactory, buildState, buy, buyPrice, canBuild, canBuildFactory, factoryNeeded, nextFactory, canStartIn, deliver, deliverable, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, itemCost, HEALS, healCount, healRoom, keyName, kitPicks, lentHeals, loadoutCost, price, raidThreat, recallLoadout, sell, sellPrice, setThreat, startsIn, STORY_TAKEN, takenStory, threatPay, take, takeKit, takenContract, wanted, wares, type Item, type Loadout, type Profile } from "../meta/profile";
 import { CONTRACT_NAME, contractMark, contractRegion, contractText, type Contract, type Reward } from "../meta/contracts";
 import { currentStory, STORIES, storyOf, storyWhere } from "../meta/story";
-import { craftDone, maxLevel, MODULES, nextLevel, pouchSlots, sources, stashCap, stillNeeded, type Source } from "../meta/hideout";
+import { maxLevel, MODULES, nextLevel, pouchSlots, sources, stashCap, stillNeeded, type Source } from "../meta/hideout";
 import { need, offered, type Quest, type RewardItem } from "../meta/quests";
 import { saveProfile } from "../meta/storage";
 import { eventName, frontIncome, islandHolds, islandNotes, networkText, noteText, relaysUp, thinTomorrow, unfreeable } from "../meta/island";
@@ -133,12 +133,6 @@ export interface Launch {
   entry: EntryId;
 }
 
-/** Seconds as hours and minutes. */
-const clock = (sec: number) => {
-  const m = Math.round(sec / 60);
-  return m >= 60 ? `${Math.floor(m / 60)} 時間 ${m % 60} 分` : `${m} 分`;
-};
-
 /**
  * Where a valuable is found, as a line: the POIs whose bins hold it most often (with the
  * chance per bin), then the likeliest other place.
@@ -177,7 +171,6 @@ export class Hub {
   constructor(
     public profile: Profile,
     private closed: () => void,
-    private ended: () => void,
   ) {
     this.region = profile.region;
     this.entry = this.entryIn(profile.region);
@@ -187,27 +180,6 @@ export class Hub {
       const el = (e.target as HTMLElement).closest<HTMLElement>("[data-act]");
       if (el && !(el as HTMLButtonElement).disabled) this.act(el.dataset.act!, el.dataset.arg ?? "");
     });
-    $("ending-back").addEventListener("click", () => {
-      sfx.click();
-      $("ending").hidden = true;
-      this.ended();
-    });
-  }
-
-  /** The ending: the escape craft's last stage is built. The game goes on after it. */
-  showEnding() {
-    const e = this.profile.escaped;
-    if (!e) return;
-    this.close(false);
-    $("ending-stats").innerHTML = [
-      ["出撃", `${e.raids} 回`],
-      ["生還", `${e.extracted} 回`],
-      ["行方不明", `${e.raids - e.extracted} 回`],
-      ["島で過ごした時間", clock(e.time)],
-    ]
-      .map(([k, v]) => `<div><small>${k}</small><b>${v}</b></div>`)
-      .join("");
-    $("ending").hidden = false;
   }
 
   open(station: StationId) {
@@ -290,12 +262,10 @@ export class Hub {
       const m = arg as ModuleId;
       const next = build(this.profile, m);
       if (next) {
-        const before = this.profile;
         if (!nextLevel(next.hideout, m)) this.module = null;
         // Building takes stash entries: the loadout's picks are found again by what they are.
         this.keepPicks(next);
         sfx.deliver();
-        if (next.escaped && !before.escaped) return this.showEnding();
       }
     } else if (act === "factory") {
       const next = buildFactory(this.profile);
@@ -303,9 +273,6 @@ export class Hub {
         this.keepPicks(next);
         sfx.deliver();
       }
-    } else if (act === "ending") {
-      sfx.click();
-      return this.showEnding();
     } else if (act === "region" && canStartIn(this.profile, regionOf(arg as RegionId).id)) {
       this.region = regionOf(arg as RegionId).id;
       this.entry = this.entryIn(this.region);
@@ -568,11 +535,10 @@ export class Hub {
         })
         .join("");
       const cash = `<div class="req${p.cash >= next.cash ? " ok" : ""}"><span>クレジット</span><b>${yen(Math.min(p.cash, next.cash))} / ${yen(next.cash)}</b></div>`;
-      const needs = next.needs.map(([o, n]) => `<div class="req${p.hideout[o] >= n ? " ok" : ""}"><span>${esc(HIDEOUT[o].name)} Lv${n}</span><b>${p.hideout[o] >= n ? "済" : `いま Lv${p.hideout[o]}`}</b></div>`).join("");
-      body = `<div class="mod-body">${rows}${cash}${needs}<button type="button" data-act="build" data-arg="${m}" ${canBuild(p, m) ? "" : "disabled"}>${lv ? `Lv${lv + 1} にする` : "作る"}</button></div>`;
+      body = `<div class="mod-body">${rows}${cash}<button type="button" data-act="build" data-arg="${m}" ${canBuild(p, m) ? "" : "disabled"}>${lv ? `Lv${lv + 1} にする` : "作る"}</button></div>`;
     }
     return (
-      `<div class="mod${open ? " open" : ""}${m === "craft" ? " craft" : ""}"><button type="button" class="mod-head" data-act="mod" data-arg="${m}">` +
+      `<div class="mod${open ? " open" : ""}"><button type="button" class="mod-head" data-act="mod" data-arg="${m}">` +
       `<strong>${esc(spec.name)}</strong><span class="pips">${pips}</span><b class="${state === "作れる" ? "go" : ""}">${state}</b>` +
       `<small>${esc(next ? `Lv${lv + 1}：${next.does}` : spec.note)}</small></button>${body}</div>`
     );
@@ -892,7 +858,8 @@ export class Hub {
     const panel = PANELS[st];
     $("hub-title").textContent = panel.title;
     $("hub-cash").textContent = yen(p.cash);
-    $("hub-record").textContent = `出撃 ${p.raids} ・ 生還 ${p.extracted} ・ ${craftDone(p.hideout) ? "脱出艇 完成" : `脱出艇 ${p.hideout.craft} / ${maxLevel("craft")}`}`;
+    // The long run is the island's front pushed back: the nodes freed, of all the front's.
+    $("hub-record").textContent = `出撃 ${p.raids} ・ 生還 ${p.extracted} ・ 解放 ${islandHolds(p).filter((h) => h === "freed").length} / ${NODES.length}`;
     $("hub-stash-count").textContent = `${p.stash.length} / ${stashCap(p.hideout)}`;
     $("hub").dataset.station = st;
     $("hub-stash-col").hidden = !panel.stash;
@@ -920,9 +887,8 @@ export class Hub {
     $("hub-side-title").textContent = shop ? "売り物" : st === "quests" ? "依頼と記録" : st === "workshop" ? "隠れ家" : st === "factory" ? "自軍のロボット" : st === "map" ? "島と出撃地点" : "持っていく物";
     if (st === "factory") $("hub-side").innerHTML = this.factoryPanel();
     else if (st === "workshop") {
-      const done = p.escaped ? `<div class="escaped"><span>脱出艇は直った。いつでも島を出られる</span><button type="button" data-act="ending">エンディング</button></div>` : "";
       $("hub-side").innerHTML =
-        done + MODULES.map((m) => this.moduleCard(m)).join("") + `<p class="hint">回収品とクレジットで設備を作る。足りない物は、押すと出やすい場所が出る。脱出艇を直せば島を出られる。</p>` + this.routes();
+        MODULES.map((m) => this.moduleCard(m)).join("") + `<p class="hint">回収品とクレジットで設備を作る。足りない物は、押すと出やすい場所が出る。上の段にはデータコアや小型炉心が要る。</p>` + this.routes();
       $("hub-side").querySelector(".mod.open .mod-body")?.parentElement?.scrollIntoView({ block: "nearest" });
     } else if (shop) {
       const full = p.stash.length >= stashCap(p.hideout);

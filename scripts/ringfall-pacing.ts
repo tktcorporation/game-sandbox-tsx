@@ -10,7 +10,7 @@
 import { BAG, HIDEOUT, META, VALUABLES, type ModuleId, type ValuableKind } from "../src/ringfall/sim/config";
 import { ENTRIES, POIS, REGIONS, type RegionId } from "../src/ringfall/sim/map";
 import type { State } from "../src/ringfall/sim/state";
-import { craftDone, MODULES, maxLevel, nextLevel, onSale, pouchSlots, stashCap } from "../src/ringfall/meta/hideout";
+import { hideoutDone, MODULES, maxLevel, nextLevel, onSale, pouchSlots, stashCap } from "../src/ringfall/meta/hideout";
 import { build, buy, canBuild, deliver, deliverable, hideoutWanted as wanted, newProfile, pouch, sell, settle, shortfall, type Profile } from "../src/ringfall/meta/profile";
 import { offered } from "../src/ringfall/meta/quests";
 
@@ -79,7 +79,7 @@ function spend(p: Profile): Profile {
   for (let q = offered(p.quests).find((o) => deliverable(p, o)); q; q = offered(p.quests).find((o) => deliverable(p, o))) p = deliver(p, q.id);
   for (let built = true; built; ) {
     built = false;
-    const open = MODULES.filter((m) => !shortfall(p, m)?.needs.length && nextLevel(p.hideout, m)).sort((a, b) => cost(p, a) - cost(p, b));
+    const open = MODULES.filter((m) => nextLevel(p.hideout, m)).sort((a, b) => cost(p, a) - cost(p, b));
     for (const m of open) {
       const short = shortfall(p, m)!;
       if (short.items.some(([k]) => !onSale(p.hideout).includes(k))) continue;
@@ -128,17 +128,22 @@ export function playthrough(pool: Partial<Record<RegionId, RaidRecord[]>>, seed:
   // Knowing every way in, as a player some raids in does: the region is chosen by what its raids bring home.
   let p: Profile = { ...newProfile(seed), entries: ENTRIES.map((e) => e.id) };
   const reached: Record<string, number> = {};
-  for (let raid = 1; raid <= CAP && !craftDone(p.hideout); raid++) {
+  for (let raid = 1; raid <= CAP && !hideoutDone(p.hideout); raid++) {
     const raids = pool[pickRegion(p, pool)]!;
     const r = raids[Math.floor(draw() * raids.length)];
     p = spend(settle(p, r as unknown as State).profile);
     for (const m of MODULES) for (let l = 1; l <= p.hideout[m]; l++) reached[`${m}${l}`] ??= raid;
+    if (hideoutDone(p.hideout)) reached.all = raid;
   }
   for (const m of MODULES) for (let l = 1; l <= maxLevel(m); l++) reached[`${m}${l}`] ??= CAP + 1;
+  reached.all ??= CAP + 1;
   return reached;
 }
 
-/** The pacing table: per skill, the median raid at which each level was built. Fails when a level is never built. */
+/**
+ * The pacing table: per skill, the median raid at which each level was built, and the last row the
+ * raid at which every module stood at its top level. Fails when a level is never built.
+ */
 export function pacing(pool: Pool, trials = 25): { lines: string[]; unreached: string[] } {
   const skills = Object.keys(pool);
   const results = Object.fromEntries(skills.map((s) => [s, Array.from({ length: trials }, (_, t) => playthrough(pool[s], 101 + t * 37))]));
@@ -156,5 +161,10 @@ export function pacing(pool: Pool, trials = 25): { lines: string[]; unreached: s
       });
       lines.push([`${HIDEOUT[m].name} Lv${l}`.padEnd(14 - [...`${HIDEOUT[m].name}`].length), ...cells].join(" "));
     }
+  const all = skills.map((s) => {
+    const xs = results[s].map((r) => r.all).sort((a, b) => a - b);
+    return `${median(xs)} (${xs[Math.floor(trials * 0.1)]}-${xs[Math.floor(trials * 0.9)]})`.padEnd(14);
+  });
+  lines.push(["全設備 最上段".padEnd(14 - 6), ...all].join(" "));
   return { lines, unreached };
 }
