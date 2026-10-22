@@ -248,6 +248,16 @@ export function takeNode(s: State, i: number) {
   }
   s.player.selfRevive = 1;
   raiseAlly(s, "self", ALLY.reviveHp);
+  garrisonLeaves(s, i);
+  s.events.push({ t: "coreTaken", node: i });
+}
+
+/**
+ * What is left of node `i`'s garrison walks off toward the nearest node the robots still hold, to
+ * be gone after `FRONT.retreat` seconds: the node is the player's.
+ */
+export function garrisonLeaves(s: State, i: number) {
+  const n = NODES[i];
   const away = NEIGHBOURS[i].filter((k) => s.nodes[k] !== "freed").sort((a, b) => dist2d(NODES[a], n.core) - dist2d(NODES[b], n.core))[0];
   s.squads.forEach((sq, k) => {
     if (!garrisonOf(s, i, k)) return;
@@ -272,7 +282,6 @@ export function takeNode(s: State, i: number) {
       e.cover = e.peek = null;
     }
   });
-  s.events.push({ t: "coreTaken", node: i });
 }
 
 /** The node ids the raid took, as the island counts them (a record from before the front took none). */

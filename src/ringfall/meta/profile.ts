@@ -1,11 +1,11 @@
-import { DEPOT, HEALS as HEAL_SPECS, HIDEOUT, META, MOD_KINDS, MOD_START, NETWORK, THREAT, TOOLS, VALUABLES, type ModKind, type HealKind, type ModuleId, type Rarity, type ToolKind, type ValuableKind, type WeaponKind } from "../sim/config";
+import { CONQUEST, DEPOT, FACTORY, HEALS as HEAL_SPECS, HIDEOUT, META, MOD_KINDS, MOD_START, NETWORK, THREAT, TOOLS, VALUABLES, type ModKind, type HealKind, type ModuleId, type Rarity, type ToolKind, type ValuableKind, type WeaponKind, type FactoryLevel } from "../sim/config";
 import { depotIndex, DEPOTS, ENTRIES, OUTPOST_SITES, POIS, poiIndex, REGIONS, regionOf, ROUTES, type EntryId, type NodeId, type OutpostId, type PoiId, type RecordId, type RegionId, type RouteId } from "../sim/map";
 import { openRoutes } from "../sim/routes";
 import { encodeSeen, type Kit, type State } from "../sim/state";
 import { haulOrigins } from "../sim/world";
 import { contractDone, makeBoard, parseBoard, sentOrigins, type Board, type Contract, type Fetched } from "./contracts";
 import { craftDone, emptyHideout, infirmaryHeals, MODULES, nextLevel, onSale, pouchSlots, shopRarity, stashCap, stillNeeded, unmet, type Hideout } from "./hideout";
-import { advanceDay, eventFor, firstEvents, frontIncome, newIsland, parseEvent, parseIsland, raidDay, retakable, type DayEvents, type Island, type NetChange } from "./island";
+import { advanceDay, eventFor, firstEvents, frontIncome, newIsland, parseEvent, parseIsland, raidDay, retakable, type BattleChange, type DayEvents, type Island, type NetChange } from "./island";
 import { newOutposts, type OutpostHold } from "../sim/front";
 import type { IslandEvent } from "../sim/island";
 import { built, creditRaid, emptyLog, need, offered, QUEST_IDS, type Quest, type QuestLog } from "./quests";
@@ -30,7 +30,7 @@ export interface Escape {
 
 /** What persists between raids. */
 export interface Profile {
-  v: 18;
+  v: 19;
   cash: number;
   stash: Item[];
   raids: number;
@@ -83,7 +83,21 @@ export interface Profile {
   threat: number;
   /** The highest threat each POI was freed at. */
   freedAt: Partial<Record<PoiId, number>>;
+  /** The camp's factory's level (`FACTORY`): 0 is the factory the camp starts with. */
+  factory: number;
+  /** Each day's battle (陣取り戦), the latest last: the day, the points by side, and whether the player won. At most `SCORE_DAYS`. */
+  scores: DayScore[];
 }
+
+/** A day's battle as the map table lists it. */
+export interface DayScore {
+  day: number;
+  score: [number, number, number];
+  won: boolean;
+}
+
+/** How many days of battles the profile keeps. */
+export const SCORE_DAYS = 30;
 
 export const HEALS: HealKind[] = ["cell", "battery", "syringe", "medkit"];
 
@@ -108,7 +122,7 @@ export const canStartIn = (p: Profile, region: RegionId) => {
 export function newProfile(seed = 1): Profile {
   const stash: Item[] = META.start.weapons.map((w) => ({ t: "weapon", ...w }));
   for (const k of HEALS) for (let i = 0; i < META.start.heals[k]; i++) stash.push({ t: "heal", kind: k });
-  const p: Omit<Profile, "board"> = { v: 18, cash: META.start.cash, stash, raids: 0, extracted: 0, time: 0, quests: emptyLog(), region: "reservoir", entry: FIRST_ENTRY, entries: [FIRST_ENTRY], hideout: emptyHideout(), escaped: null, seed: seed & 0xffff, depots: [], depotSent: {}, seen: "", routes: [], day: 1, poiState: newIsland(), outposts: newOutposts(NETWORK.start), outpostVisit: {}, taken: null, records: [], network: NETWORK.start, pressure: 0, events: firstEvents(seed & 0xffff, newIsland()), known: [...MOD_START], threat: 0, freedAt: {} };
+  const p: Omit<Profile, "board"> = { v: 19, cash: META.start.cash, stash, raids: 0, extracted: 0, time: 0, quests: emptyLog(), region: "reservoir", entry: FIRST_ENTRY, entries: [FIRST_ENTRY], hideout: emptyHideout(), escaped: null, seed: seed & 0xffff, depots: [], depotSent: {}, seen: "", routes: [], day: 1, poiState: newIsland(), outposts: newOutposts(NETWORK.start), outpostVisit: {}, taken: null, records: [], network: NETWORK.start, pressure: 0, events: firstEvents(seed & 0xffff, newIsland()), known: [...MOD_START], threat: 0, freedAt: {}, factory: 0, scores: [] };
   return { ...p, board: makeBoard(p) };
 }
 
@@ -397,6 +411,8 @@ export interface Settlement {
   threat: number;
   /** The mod parts worn when the raid ended, which may be analysed (`analyse()`): none unless the player got off alive. */
   analysable: ModKind[];
+  /** The day's battle and the credits a won one paid, or null for a raid that had none. */
+  battle: (BattleChange & { pay: number }) | null;
 }
 
 /** Mod kinds as a known list: real ones only, once each, in `MOD_KINDS` order, always with `MOD_START`. */
@@ -520,14 +536,16 @@ export function settle(p: Profile, s: State): Settlement {
   for (const id of change.freed) freedAt[id] = Math.max(freedAt[id] ?? 0, threat);
   const settled = { ...profile, freedAt, entries, quests: log, raids: p.raids + 1, extracted: p.extracted + (s.outcome === "extracted" ? 1 : 0), time: p.time + s.time, seed: nextSeed(p.seed), depots, depotSent, seen: encodeSeen(s.seen), records: kept };
   const { profile: night } = advanceDay(settled, day);
-  // The nodes the player holds once the night is over pay their day's credits.
+  // The nodes the player holds once the night is over pay their day's credits, and a battle won pays its own.
   const income = frontIncome(night);
-  const next = { ...night, cash: night.cash + income };
+  const won = change.battle?.won ? CONQUEST.win : 0;
+  const scores = change.battle ? [...night.scores, { day: p.day, score: change.battle.score, won: change.battle.won }].slice(-SCORE_DAYS) : night.scores;
+  const next = { ...night, cash: night.cash + income + won, scores };
   // Quests the raid opened may ask for a hideout level already built.
   const claimed = claimBuilt(next);
   // The new day's board, for the next raid's seed; yesterday's contract goes with yesterday's board.
   const fresh = { ...claimed.profile, taken: null, board: makeBoard(claimed.profile) };
-  return { profile: fresh, home, opened, learned, quests: [...finished, ...claimed.quests], sold: [...sold, ...claimed.sold], soldFor: soldFor + claimed.soldFor, day: p.day, ...change, income, event: s.event ?? null, contract, story: told, threat, analysable: s.outcome === "extracted" ? [...(pl.mods ?? [])] : [] };
+  return { profile: fresh, home, opened, learned, quests: [...finished, ...claimed.quests], sold: [...sold, ...claimed.sold], soldFor: soldFor + claimed.soldFor, day: p.day, ...change, income, event: s.event ?? null, contract, story: told, threat, analysable: s.outcome === "extracted" ? [...(pl.mods ?? [])] : [], battle: change.battle && { ...change.battle, pay: won } };
 }
 
 /** Finishes and pays every offered build quest the hideout already meets, and those they open. */
@@ -644,11 +662,13 @@ const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
  * (`MOD_START`), plays at threat 0, and has freed no POI at any threat.
  * Before v18 there was no front: such a profile's outposts stand as `territory()` gives them at
  * its network (the rogues' rogue, the others held), none freed.
+ * Before v19 there was no battle: such a profile has the factory the camp starts with (level 0)
+ * and no battle on record.
  */
 export function parseProfile(raw: unknown, seed = 1): Profile | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
+  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
   const old = o.v === 1 || o.v === 2;
   const migrate = (i: unknown): unknown => {
     if (!old || !i || typeof i !== "object" || (i as Record<string, unknown>).t !== "key") return i;
@@ -685,12 +705,14 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   const recordIds = STORIES.map((t) => t.id);
   const records = (typeof o.v === "number" && o.v >= 14) && Array.isArray(o.records) ? recordIds.filter((id) => (o.records as unknown[]).includes(id)) : [];
   const network = (typeof o.v === "number" && o.v >= 15) && Number.isInteger(o.network) ? Math.max(0, Math.min(NETWORK.max, o.network as number)) : NETWORK.start;
-  const v17 = o.v === 17 || o.v === 18;
+  const v17 = o.v === 17 || o.v === 18 || o.v === 19;
+  const v18 = o.v === 18 || o.v === 19;
+  const v19 = o.v === 19;
   const fa = (v17 && o.freedAt && typeof o.freedAt === "object" ? o.freedAt : {}) as Record<string, unknown>;
   const freedAt: Partial<Record<PoiId, number>> = {};
   for (const { id } of POIS) if (Number.isInteger(fa[id])) freedAt[id] = Math.max(0, Math.min(THREAT.max, fa[id] as number));
   const out: Omit<Profile, "board" | "taken" | "events"> = {
-    v: 18,
+    v: 19,
     cash: Math.max(0, Math.floor(o.cash)),
     stash: o.stash.map(migrate).filter(ok).slice(0, stashCap(hideout)),
     raids,
@@ -709,8 +731,10 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     routes: typeof o.v === "number" && o.v >= 9 && Array.isArray(o.routes) ? openRoutes(o.routes.filter((r): r is string => typeof r === "string")) : [],
     day,
     poiState: typeof o.v === "number" && o.v >= 13 ? parseIsland(o.poiState, day) : newIsland(),
-    outposts: parseOutposts(o.v === 18 ? o.outposts : undefined, network),
-    outpostVisit: parseOutpostVisit(o.v === 18 ? o.outpostVisit : undefined, day),
+    outposts: parseOutposts(v18 ? o.outposts : undefined, network),
+    outpostVisit: parseOutpostVisit(v18 ? o.outpostVisit : undefined, day),
+    factory: v19 && Number.isInteger(o.factory) ? Math.max(0, Math.min(FACTORY.levels.length, o.factory as number)) : 0,
+    scores: v19 ? parseScores(o.scores, day) : [],
     records,
     network,
     known: knownMods(v17 && Array.isArray(o.known) ? o.known : []),
@@ -718,14 +742,61 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     freedAt,
     pressure: (typeof o.v === "number" && o.v >= 15) && typeof o.pressure === "number" && o.pressure >= 0 && o.pressure < NETWORK.riseEvery ? o.pressure : 0,
   };
-  const events: DayEvents = (o.v === 16 || o.v === 17 || o.v === 18) && Array.isArray(o.events) && o.events.length === 2 ? [validEvent(parseEvent(o.events[0]), out), validEvent(parseEvent(o.events[1]), out)] : [null, null];
-  if (o.v !== 16 && o.v !== 17 && o.v !== 18) events[1] = eventFor(out.seed, day + 1, out.poiState, out.outposts);
+  const events: DayEvents = (o.v === 16 || v17) && Array.isArray(o.events) && o.events.length === 2 ? [validEvent(parseEvent(o.events[0]), out), validEvent(parseEvent(o.events[1]), out)] : [null, null];
+  if (o.v !== 16 && !v17) events[1] = eventFor(out.seed, day + 1, out.poiState, out.outposts);
   const withEvents = { ...out, events };
   // The day's board as saved, so it stands however the stash changed since; else the day's from now.
   // A board saved before the network may name a pack the migrated level does not fly: made anew.
   const board = (typeof o.v === "number" && o.v >= 15 ? parseBoard(o.board, day) : null) ?? makeBoard(withEvents);
   const taken = typeof o.taken === "string" && board.contracts.some((c) => c.id === o.taken) ? o.taken : null;
   return { ...withEvents, board, taken };
+}
+
+/** Saved battles: well-formed ones of days before `day`, the latest `SCORE_DAYS`. */
+function parseScores(raw: unknown, day: number): DayScore[] {
+  if (!Array.isArray(raw)) return [];
+  const out: DayScore[] = [];
+  for (const x of raw) {
+    if (!x || typeof x !== "object") continue;
+    const r = x as Record<string, unknown>;
+    const sc = r.score;
+    if (!Number.isInteger(r.day) || (r.day as number) < 1 || (r.day as number) >= day || !Array.isArray(sc) || sc.length !== 3 || !sc.every((n) => typeof n === "number" && n >= 0)) continue;
+    out.push({ day: r.day as number, score: [sc[0], sc[1], sc[2]], won: r.won === true });
+  }
+  return out.sort((a, b) => a.day - b.day).slice(-SCORE_DAYS);
+}
+
+/** The factory's next level, or null once it is at its top. */
+export const nextFactory = (p: Pick<Profile, "factory">): FactoryLevel | null => FACTORY.levels[p.factory] ?? null;
+
+/** What stands between the factory and its next level: items short (kind, have, need) and credits short; null at the top. */
+export function factoryShortfall(p: Profile): { items: [ValuableKind, number, number][]; cash: number } | null {
+  const l = nextFactory(p);
+  if (!l) return null;
+  const have = (k: ValuableKind) => p.stash.filter((i) => i.t === "valuable" && i.kind === k).length;
+  return { items: l.items.filter(([k, n]) => have(k) < n).map(([k, n]) => [k, have(k), n]), cash: Math.max(0, l.cash - p.cash) };
+}
+
+export const canBuildFactory = (p: Profile) => {
+  const s = factoryShortfall(p);
+  return !!s && !s.items.length && !s.cash;
+};
+
+/** Raises the factory a level, taking its items and credits from the stash; null when it cannot. */
+export function buildFactory(p: Profile): Profile | null {
+  const l = nextFactory(p);
+  if (!l || !canBuildFactory(p)) return null;
+  const take = new Set<number>();
+  for (const [k, n] of l.items) {
+    let left = n;
+    p.stash.forEach((i, at) => {
+      if (left > 0 && i.t === "valuable" && i.kind === k && !take.has(at)) {
+        take.add(at);
+        left--;
+      }
+    });
+  }
+  return { ...p, cash: p.cash - l.cash, stash: p.stash.filter((_, at) => !take.has(at)), factory: p.factory + 1 };
 }
 
 /** A saved event kept only while it can come: a retake needs its POI freed on the front's edge. */

@@ -413,6 +413,90 @@ export const FRONT = {
   outpost: 0.5,
 };
 
+/**
+ * 陣取り戦 (docs/ringfall/liberation-front.md): a raid of the island (`Start.battle`) is one battle
+ * of `time` seconds, the raid's time limit, over every node at once. Each node held scores its
+ * holder `points` a second (the player, the network, the rogues), and the camp scores the player
+ * `camp`; the battle is won when the player's score beats the network's, which pays `win` credits.
+ * A battle lost hands the network one node on the edge of the player's ground overnight.
+ *
+ * Squads come out of the nodes (the player's from the factory, `FACTORY`; the network's and the
+ * rogues' below) and walk the links between them (`FRONT_LINKS`) at `pace` of their slowest
+ * member's speed (a patrol's walk, `AWARE.idleSpeed` times `PATROL.pace`). A squad within `near` metres of the player or the teammate is robots in the
+ * world; one further than `far` from both, and not fighting the player, is numbers again: its
+ * members' kinds, health and shield, and where it is on its link. Away from the player the
+ * battle is reckoned every `tick` seconds: squads within `meet` metres of a hostile one fight it,
+ * and a squad at a node fights its holders there (abstract squads, and the node's garrison,
+ * which comes to its core); each member deals `dps` of its kind times `hit` a second to
+ * the first of the other side's. A node is taken by a side whose squads stand within `zone` of its
+ * core (robots in the world) or at it (numbers) for `capture` seconds with none of its holder's
+ * there: the player and the teammate hold their own nodes too.
+ *
+ * The network makes a squad each time its nodes have worked `net.every[level]` seconds (a POI 1,
+ * an outpost `net.outpost`, and the ground it never gives up, the titan's pad and the north
+ * shore, `net.edge`), more the more nodes it holds; it answers the player's ground too, working
+ * `net.answer` for each node the player holds as for one of its own, and keeps at most
+ * `net.max[level]` squads out at once, one more for each three nodes the player holds; the rogues likewise by `rogue`. A node makes nothing while the player is within `near`
+ * of it, and the network lands a squad on a node of `NET_EDGE` it does not hold from beyond it.
+ */
+export const CONQUEST = {
+  time: 1500,
+  points: { poi: 3, outpost: 1 },
+  camp: 10,
+  win: 400,
+  tick: 1,
+  near: 250,
+  far: 300,
+  meet: 35,
+  zone: 20,
+  capture: 30,
+  hit: 0.4,
+  pace: 0.6,
+  /** Damage a second of each kind at full accuracy: its burst over its cooldown, wind-up and burst. */
+  dps: { drone: 10, grunt: 25, charger: 30, heavy: 22, titan: 0 } as Record<EnemyKind, number>,
+  net: {
+    every: [1500, 1350, 1200, 1050, 900, 750],
+    edge: 3,
+    answer: 1,
+    max: [2, 2, 3, 3, 4, 4],
+    outpost: 0.5,
+    kinds: [["grunt", "grunt"], ["grunt", "grunt"], ["grunt", "drone"], ["grunt", "grunt", "drone"], ["grunt", "heavy"], ["grunt", "grunt", "heavy"]] as EnemyKind[][],
+  },
+  rogue: { every: 1500, max: 1, kinds: ["grunt", "grunt"] as EnemyKind[] },
+  /** Seconds the bot gives to coming back to a node of its own under attack, all told in a raid. */
+  botDefend: 150,
+};
+
+/** One level of the factory: what it takes from the stash, as a hideout module's level does (`ModuleLevel`). */
+export interface FactoryLevel {
+  items: [ValuableKind, number][];
+  cash: number;
+  does: string;
+}
+
+/**
+ * The camp's factory (工場): the player's own robots. At each level (index 0 is the factory the
+ * camp starts with) it makes a squad of `kinds` every `every` seconds of the battle, keeps at most
+ * `max` out walking at once (squads that hold a node they took or defended do not count), and
+ * stands `turrets` turrets (a robot that never leaves the core) at each node the player holds at
+ * the raid's start: a POI's, and from `turretOutposts` an outpost's too. `levels[n]` is what
+ * building level n + 1 takes.
+ */
+export const FACTORY = {
+  name: "工場",
+  every: [240, 210, 180, 150, 120],
+  max: [1, 1, 2, 2, 3],
+  kinds: [["grunt", "grunt"], ["grunt", "grunt"], ["grunt", "heavy"], ["grunt", "heavy", "drone"], ["grunt", "grunt", "heavy", "drone"]] as EnemyKind[][],
+  turrets: [0, 0, 0, 1, 1],
+  turretOutposts: 4,
+  levels: [
+    { items: [["parts", 3], ["fuse", 2]], cash: 2500, does: "作る間隔が 210 秒" },
+    { items: [["parts", 4], ["wire", 2]], cash: 7000, does: "ヘビーを作る・作る間隔が 180 秒・同時に 2 部隊" },
+    { items: [["wire", 3], ["board", 2]], cash: 14000, does: "ドローンを作る・作る間隔が 150 秒・解放した拠点に砲台" },
+    { items: [["board", 3], ["drive", 2]], cash: 24000, does: "4 体の部隊・作る間隔が 120 秒・同時に 3 部隊・小拠点にも砲台" },
+  ] as FactoryLevel[],
+};
+
 /** What one network level sets in a raid (`NETWORK.levels`). */
 export interface NetworkLevel {
   /** A short word for the level, for the map table's meter. */

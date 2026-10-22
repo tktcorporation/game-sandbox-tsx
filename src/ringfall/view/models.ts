@@ -83,6 +83,14 @@ export const PAL = {
   rogueArmorLight: 0xb38a3e,
   rogueEye: 0xffb21f,
   rogueOrb: 0xffc23a,
+  /**
+   * The player's own robots (the factory's, sim/battle.ts): the same robots in a pale sky-blue coat with white panels,
+   * their eyes and bolts cyan, the colour the maps give the player's ground.
+   */
+  friendArmor: 0x5d9fe6,
+  friendArmorLight: 0xd8ecff,
+  friendEye: 0x52d6ff,
+  friendOrb: 0x6be0ff,
   hot: 0xffe23d,
   white: 0xffffff,
   gun: 0x2b2f38,

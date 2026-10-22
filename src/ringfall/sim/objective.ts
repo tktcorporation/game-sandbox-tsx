@@ -1,4 +1,5 @@
-import { FRONT, RELAY, VALUABLES, type ValuableKind } from "./config";
+import { CONQUEST, FRONT, RELAY, VALUABLES, type ValuableKind } from "./config";
+import { battleFocus, meterOf, SIDE_NAME } from "./battle";
 import { dist2d } from "./geom";
 import { CAMP, DEPOTS, EXTRACTS, NODES, POIS, poiIndex, recordSpot, regionHere, RELAYS, relayIndex, type PoiId, type RecordId, type RegionId, type RelayId } from "./map";
 import { frontNodes } from "./front";
@@ -115,14 +116,42 @@ function captureSteps(s: State, i: number, title: string): Objective {
 /** The squads (by index) that count for a task destroyed under `key`, with members left. */
 const squadsUnder = (s: State, key: string) => s.squads.map((q, k) => ({ q, k })).filter(({ q, k }) => squadKey(q) === key && s.enemies.some((e) => e.squad === k));
 
+/** The steps of holding node `i`, the player's, against the squads coming to take it (sim/battle.ts). */
+function defendSteps(s: State, i: number): Objective {
+  const n = NODES[i];
+  const core = ground(n.core.x, n.core.z, n.core.y);
+  const m = s.battle ? meterOf(s.battle, i) : null;
+  const near = s.enemies.filter((e) => e.battle && dist2d(e.pos, n.core) < CONQUEST.zone * 2).length;
+  const coming = !!s.battle && s.battle.squads.some((q) => q.side !== 0 && q.to === i && q.task === "attack");
+  const held = s.nodes[i] === "freed";
+  return settle(`陣取り戦：${n.name}を守る`, [
+    { kind: "go", label: `${n.name}へ向かう`, until: `核の ${ARRIVE} m 以内に着く`, at: core, done: !held || !coming || dist2d(s.player.pos, core) < ARRIVE },
+    {
+      kind: "act",
+      label: "攻めてくる部隊を追い払う",
+      until: `核の ${CONQUEST.zone} m 以内に立ち、近づくロボットを倒す`,
+      progress: !held ? "取られた" : m ? `${SIDE_NAME[m.side]}が制圧中 ${Math.round(m.share * 100)}%` : near ? `敵 ${near} 体` : undefined,
+      at: core,
+      done: !held || !coming,
+      near: `核の ${CONQUEST.zone} m 以内で守る`,
+    },
+    extractStep(s),
+  ]);
+}
+
 /**
  * The raid's objective now: a capture under way comes first, then the task the raid was given,
- * then the last node taken (its way out), and with none of those the nearest node on the front in
- * the region the player is in (its capture), or else to explore and get off.
+ * then in the day's battle the node it most wants the player at (one of theirs being taken, or
+ * one their own robots are taking, `battleFocus()`), then the last node taken (its way out), and
+ * with none of those the nearest node on the front in the region the player is in (its capture),
+ * or else to explore and get off.
  */
 export function objectiveSteps(s: State, task: Task | null = null): Objective {
   if (s.capture && s.nodes[s.capture.node] !== "freed") return captureSteps(s, s.capture.node, `${NODES[s.capture.node].name}の制圧`);
   if (task) return taskSteps(s, task);
+  const focus = s.phase === "play" ? battleFocus(s) : null;
+  if (focus?.kind === "defend") return defendSteps(s, focus.node);
+  if (focus?.kind === "attack") return captureSteps(s, focus.node, `陣取り戦：自軍と${NODES[focus.node].name}を取る`);
   const last = s.stats.captured[s.stats.captured.length - 1];
   if (last) return captureSteps(s, NODES.findIndex((n) => n.id === last), `${NODES.find((n) => n.id === last)?.name}の制圧`);
   const front = frontNodes(s.nodes);

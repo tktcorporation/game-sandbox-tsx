@@ -8,6 +8,7 @@ import { groundAt } from "./geom";
 import { forgetFields } from "./hunt";
 import { crewsFor, type IslandEvent, type PoiHold } from "./island";
 import { nodeHolds, useZones, type NodeHold, type OutpostHold } from "./front";
+import { initBattle, type Battle, type BattleStart, type Side } from "./battle";
 
 export interface Vec3 {
   x: number;
@@ -230,6 +231,12 @@ export interface Enemy {
   own?: boolean;
   /** One of the rogues (野良機, see FACTION); the network's otherwise. */
   rogue?: boolean;
+  /** One of the player's own robots (`State.friends`, the factory's): it fights the network and the rogues, never the player or the teammate. */
+  friend?: boolean;
+  /** A robot of a battle squad (`BattleSquad.id`, sim/battle.ts): it walks onto the player's nodes, and the garrisons fight it. */
+  battle?: number;
+  /** A turret: it never leaves the core it stands at. */
+  post?: boolean;
 }
 
 /** A robot's body-sphere centre and weak point above its feet, lowered while it crouches. */
@@ -310,6 +317,10 @@ export interface SquadState {
   sweep?: number;
   /** Seconds left of walking off a node the player took (`FRONT.retreat`): it fights nobody, and is gone at 0. */
   retreat?: number;
+  /** The player's own squad (its robots are in `State.friends`). */
+  friend?: boolean;
+  /** The battle squad it is in the world (`BattleSquad.id`, sim/battle.ts). */
+  battle?: number;
 }
 
 export interface Orb {
@@ -324,6 +335,8 @@ export interface Orb {
   by?: number;
   /** Fired by a rogue. */
   rogue?: boolean;
+  /** Fired by one of the player's own robots: it never hits the player or the teammate. */
+  friend?: boolean;
 }
 
 export interface Shockwave {
@@ -430,10 +443,10 @@ export type GameEvent =
   | { t: "healStart"; kind: HealKind }
   | { t: "healDone"; kind: HealKind }
   | { t: "telegraph"; id: number }
-  | { t: "enemyFire"; id: number; pos: Vec3; /** At the other faction (see FACTION), toward this point. */ foe?: Vec3; rogue?: boolean }
+  | { t: "enemyFire"; id: number; pos: Vec3; /** At the other faction (see FACTION), toward this point. */ foe?: Vec3; rogue?: boolean; /** One of the player's own robots. */ friend?: boolean }
   /** A robot hit by the other faction's fire, and one destroyed by it (see FACTION). */
   | { t: "robotHit"; id: number; pos: Vec3 }
-  | { t: "fall"; id: number; kind: EnemyKind; pos: Vec3; rogue: boolean; fromX: number; fromZ: number }
+  | { t: "fall"; id: number; kind: EnemyKind; pos: Vec3; rogue: boolean; friend?: boolean; fromX: number; fromZ: number }
   | { t: "lunge"; id: number }
   | { t: "spawn"; id: number; pos: Vec3 }
   | { t: "suspect"; id: number }
@@ -474,6 +487,10 @@ export type GameEvent =
   | { t: "coreStart"; node: number }
   | { t: "coreShielded"; node: number }
   | { t: "coreTaken"; node: number }
+  /** The battle (sim/battle.ts): a node changed hands, a squad came out of the factory, and the battle's time ran out with the player still out. */
+  | { t: "nodeTaken"; node: number; side: Side }
+  | { t: "squadOut"; side: Side; node: number }
+  | { t: "timeUp" }
   | { t: "done" };
 
 export interface Stats {
@@ -610,6 +627,8 @@ export interface State {
   /** The player's footsteps on the ground, about a metre apart; the teammate walks them. */
   trail: Vec3[];
   enemies: Enemy[];
+  /** The player's own robots in the world (the factory's squads near the player, sim/battle.ts). */
+  friends: Enemy[];
   squads: SquadState[];
   orbs: Orb[];
   waves: Shockwave[];
@@ -707,6 +726,8 @@ export interface State {
   ambushT: number;
   /** Seconds since a robot last fought the player (see SWEEP). */
   quietT: number;
+  /** The day's battle (陣取り戦, sim/battle.ts), or null for a raid that has none (the sim gate's tables). */
+  battle: Battle | null;
   /** The ways in walked to this raid (`ENTRY`), the start's own first unless it began at a depot: the base learns them if the player gets off alive. */
   found: EntryId[];
   /** The explored map, one 0 / 1 per cell (`exploreSize()`, `cellOf()`), carried over from earlier raids. */
@@ -853,6 +874,8 @@ export interface Start {
   known?: ModKind[];
   /** No mod part anywhere in the raid (for the sim gate's check that they draw on nothing). */
   noMods?: boolean;
+  /** The day's battle (陣取り戦) and what the player brings to it; left out, the raid has none. */
+  battle?: BattleStart;
 }
 
 /** The outposts' factions in a raid: `territory()` at the level, but as the island keeps any it names (a freed one as the level gives it). */
@@ -974,6 +997,7 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
     ally: newAlly(entry),
     trail: [],
     enemies: [],
+    friends: [],
     squads: [],
     orbs: [],
     waves: [],
@@ -1025,6 +1049,7 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
     ambushT: 0,
     // The walk in from the edge is quiet by design: no sweep before the first fight, or a minute and more in (see SWEEP).
     quietT: -SWEEP.start,
+    battle: null,
     seen: start.seen ? decodeSeen(start.seen) : emptySeen(),
     cell: -1,
     events: [],
@@ -1041,6 +1066,8 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
   useZones(s);
   placeAlly(s);
   populate(s);
+  // The battle's walks are traced now, and the fields that traced them forgotten, before anything else builds one.
+  if (start.battle) s.battle = initBattle(s, start.battle);
   placeParties(s);
   placeEvent(s);
   // An id of its own below every other, so a raid with a record numbers the rest as one without.

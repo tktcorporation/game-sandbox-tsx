@@ -1,12 +1,13 @@
 import { DEPOT, FACTION, FRONT, NETWORK, RELAY, WORLD } from "../sim/config";
 import { frontNodes, nodeHolds, type NodeHold, type OutpostHold } from "../sim/front";
+import { battleMarks, meterOf, SIDE_NAME, type Battle, type Side } from "../sim/battle";
 import { offshore } from "../sim/terrain";
 import { BOXES, CAMP, DEBRIS_SPOTS, NODES, debrisIndex, DEPOTS, ENTRIES, EXTRACTS, LANDMARKS, OUTPOST_SITES, POIS, REGIONS, regionOf, RELAYS, relayIndex, ROUTES, regionHere, territory, type EntryId, type Faction, type OutpostId, type PoiId, type RegionId, type RouteId } from "../sim/map";
 import { HOLD_NAME, type IslandEvent, type PoiHold } from "../sim/island";
 import { STREETS } from "../sim/streets";
 import { worldKey } from "../sim/routes";
 import { DAM_FACE, floorLevel, groundOf, highGround, LEVEL, steepAt, surfaceAt, terrainHeight, type Ground } from "../sim/terrain";
-import { cellOf, decodeSeen, exploreSize, type Ally, type Contact, type Player, type RelayMast, type State } from "../sim/state";
+import { cellOf, decodeSeen, exploreSize, type Ally, type Contact, type Enemy, type Player, type RelayMast, type State } from "../sim/state";
 import { PAL } from "./models";
 import type { ContractMark } from "../meta/contracts";
 
@@ -67,7 +68,17 @@ export type MapScene = Pick<State, "seen" | "cleared" | "hold" | "depots" | "rou
   nodes?: readonly NodeHold[];
   /** The core capture under way, drawn as its meter round the node. */
   capture?: { node: number; t: number } | null;
+  /** The day's battle (sim/battle.ts): its squads, the nodes the sides are taking, and the points. */
+  battle?: Battle | null;
+  friends?: readonly Enemy[];
+  enemies?: readonly Enemy[];
 };
+
+/** A label's box on the canvas, so labels do not overlap. */
+type Rect = { x0: number; y0: number; x1: number; y1: number };
+
+/** The sides' colours on the battle map: the player's blue, the network's red, the rogues' amber. */
+export const SIDE_CSS: Record<Side, string> = { 0: "#4f9bff", 1: "#ff4a3d", 2: ROGUE_CSS };
 
 /** The camp's picture of the island between raids, from the profile's explored map, depots, routes and POI standings. */
 export function islandScene(p: { seen: string; depots: readonly PoiId[]; routes: readonly RouteId[]; poiState: Record<PoiId, { state: PoiHold }>; outposts?: Partial<Record<OutpostId, OutpostHold>>; network: number; events?: readonly (IslandEvent | null)[]; freedAt?: Partial<Record<PoiId, number>> }): MapScene {
@@ -353,6 +364,93 @@ export class IslandMap {
     return c;
   }
 
+  /**
+   * The day's battle on the map: each squad as a chevron in its side's colour pointing to the node
+   * it walks to (filled while its robots are in the world, an outline while it is numbers, its
+   * members' count beside it), each node a side's squads are taking with its meter round it, and
+   * the points and the time left along the top.
+   */
+  private drawBattle(g: CanvasRenderingContext2D, s: MapScene, at: (x: number, z: number) => { x: number; y: number }, dpr: number, label: (t: string, x: number, y: number, c: string, size: number) => void, box: (t: string, x: number, y: number, size: number) => Rect, free: (r: Rect) => boolean, taken: Rect[]) {
+    const b = s.battle!;
+    for (const m of battleMarks({ battle: b, friends: (s.friends ?? []) as Enemy[], enemies: (s.enemies ?? []) as Enemy[] })) {
+      const p = at(m.x, m.z);
+      const to = m.to >= 0 ? at(NODES[m.to].core.x, NODES[m.to].core.z) : p;
+      const a = Math.atan2(to.y - p.y, to.x - p.x);
+      const r = 6 * dpr;
+      g.save();
+      g.translate(p.x, p.y);
+      if (Math.hypot(to.x - p.x, to.y - p.y) > r) g.rotate(a);
+      g.beginPath();
+      g.moveTo(r, 0);
+      g.lineTo(-r * 0.8, r * 0.75);
+      g.lineTo(-r * 0.35, 0);
+      g.lineTo(-r * 0.8, -r * 0.75);
+      g.closePath();
+      g.lineWidth = 1.6 * dpr;
+      g.strokeStyle = "rgba(20,24,40,0.95)";
+      g.fillStyle = SIDE_CSS[m.side];
+      if (m.live) {
+        g.fill();
+        g.stroke();
+      } else {
+        g.fillStyle = "rgba(20,24,40,0.6)";
+        g.fill();
+        g.strokeStyle = SIDE_CSS[m.side];
+        g.stroke();
+      }
+      g.restore();
+      label(String(m.n), p.x + 9 * dpr, p.y + 6 * dpr, SIDE_CSS[m.side], 8);
+    }
+    NODES.forEach((n, i) => {
+      const mt = meterOf(b, i);
+      if (!mt) return;
+      const p = at(n.x, n.z);
+      const r = 15 * dpr;
+      g.save();
+      g.lineWidth = 4 * dpr;
+      g.strokeStyle = SIDE_CSS[mt.side];
+      g.beginPath();
+      g.arc(p.x, p.y, r, -Math.PI / 2, -Math.PI / 2 + mt.share * Math.PI * 2);
+      g.stroke();
+      g.restore();
+      const text = `${SIDE_NAME[mt.side]}が制圧中 ${Math.round(mt.share * 100)}%`;
+      const spot = box(text, p.x, p.y + r + 10 * dpr, 9);
+      if (free(spot)) {
+        taken.push(spot);
+        label(text, p.x, p.y + r + 10 * dpr, SIDE_CSS[mt.side], 9);
+      }
+    });
+    // The points along the top, the leader's in bold.
+    const k = (v: number) => (v >= 10_000 ? `${(v / 1000).toFixed(1)}k` : `${Math.round(v)}`);
+    const left = Math.max(0, b.end - b.now);
+    const parts: [string, string][] = [
+      [`自軍 ${k(b.score[0])}`, SIDE_CSS[0]],
+      [`網 ${k(b.score[1])}`, SIDE_CSS[1]],
+      [`野良機 ${k(b.score[2])}`, SIDE_CSS[2]],
+      [b.done ? (b.won ? "勝ち" : "負け") : `残り ${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, "0")}`, "#f4e9c8"],
+    ];
+    g.save();
+    // Smaller on a narrow map (the whole world on a phone), so the strip stays whole.
+    g.font = `900 ${11 * dpr}px system-ui, sans-serif`;
+    const fits = (g.canvas.width - 16 * dpr) / parts.reduce((n, [t]) => n + g.measureText(t).width + 14 * dpr, 0);
+    const size = 11 * Math.min(1, fits);
+    g.font = `900 ${size * dpr}px system-ui, sans-serif`;
+    const widths = parts.map(([t]) => g.measureText(t).width + size * 1.27 * dpr);
+    const total = widths.reduce((n, w) => n + w, 0);
+    let x = (g.canvas.width - total) / 2;
+    const y = 14 * dpr;
+    g.fillStyle = "rgba(20,24,40,0.82)";
+    g.fillRect(x - 6 * dpr, y - 10 * dpr, total + 12 * dpr, 20 * dpr);
+    g.textAlign = "left";
+    g.textBaseline = "middle";
+    parts.forEach(([t, c], n) => {
+      g.fillStyle = c;
+      g.fillText(t, x + (size * 0.64) * dpr, y);
+      x += widths[n];
+    });
+    g.restore();
+  }
+
   draw(s: MapScene) {
     if (shared?.key !== worldKey()) shared = { key: worldKey(), image: this.build() };
     const base = shared.image;
@@ -419,7 +517,6 @@ export class IslandMap {
     };
     // Where POI and exit names will go. On a small map, a district or region name that would
     // cover one of them is left out: those are the names the player navigates by.
-    type Rect = { x0: number; y0: number; x1: number; y1: number };
     const box = (text: string, x: number, y: number, size: number, left = false): Rect => {
       g.font = font(size);
       const w = g.measureText(text).width;
@@ -754,6 +851,7 @@ export class IslandMap {
         }
       });
     }
+    if (s.battle && s.nodes) this.drawBattle(g, s, at, dpr, label, box, free, taken);
     // POI names go on top, a little above their mark, so an exit nearby does not hide them.
     POIS.forEach((poi, i) => {
       const p = at(poi.x, poi.z);

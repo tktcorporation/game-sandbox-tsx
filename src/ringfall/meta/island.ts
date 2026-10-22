@@ -1,7 +1,8 @@
 import { EVENTS, FRONT, ISLAND, NETWORK, THREAT, type EventKind } from "../sim/config";
 import { crewsFor, type IslandEvent, type PoiHold } from "../sim/island";
-import { DEBRIS_SPOTS, debrisIndex, DEPOTS, NODES, OUTPOST_SITES, POIS, poiIndex, RELAYS, relayIndex, territory, type DebrisId, type NodeId, type OutpostId, type PoiId, type RelayId } from "../sim/map";
-import { capturedIds, interiorNodes, newOutposts, nodeHolds, type NodeHold, type OutpostHold } from "../sim/front";
+import { DEBRIS_SPOTS, debrisIndex, DEPOTS, NODES, nodeIndex, OUTPOST_SITES, POIS, poiIndex, RELAYS, relayIndex, territory, type DebrisId, type NodeId, type OutpostId, type PoiId, type RelayId } from "../sim/map";
+import { CAMP_NEXT, capturedIds, interiorNodes, NEIGHBOURS, newOutposts, nodeHolds, type NodeHold, type OutpostHold } from "../sim/front";
+import type { Battle } from "../sim/battle";
 import { mix, retakeKey, type State } from "../sim/state";
 
 /*
@@ -46,6 +47,20 @@ export interface RaidDay {
   retake?: PoiId | null;
   /** The threat the raid was played at (`THREAT`); left out, 0. */
   threat?: number;
+  /** The day's battle (sim/battle.ts), reckoned to its end; left out, the raid had none. */
+  battle?: BattleDay;
+}
+
+/**
+ * What the day's battle did to the island: whether the player won it and the points, the nodes
+ * the player's own robots took and held to the end (`gained`), and the nodes of the player's the
+ * other sides took and held (`lost`). The nodes the player took by their cores are in `captured`.
+ */
+export interface BattleDay {
+  won: boolean;
+  score: [number, number, number];
+  gained: NodeId[];
+  lost: NodeId[];
 }
 
 /**
@@ -53,10 +68,12 @@ export interface RaidDay {
  * has visited none, and one from before the masts destroyed none. The titan fell when its pad
  * was cleared: its fall takes the pad's other robots with it.
  */
-export const raidDay = (s: Pick<State, "outcome" | "stats"> & { visited?: boolean[]; nodeVisited?: boolean[]; event?: IslandEvent | null; threat?: number }): RaidDay => ({
+export const raidDay = (s: Pick<State, "outcome" | "stats"> & { visited?: boolean[]; nodeVisited?: boolean[]; event?: IslandEvent | null; threat?: number; battle?: Battle | null; nodes?: NodeHold[] }): RaidDay => ({
   alive: s.outcome === "extracted",
   cleared: s.stats.cleared.map((i) => POIS[i].id),
-  captured: capturedIds(s),
+  // In a battle, a node the player took counts only if it was still the player's at the battle's end.
+  captured: capturedIds(s).filter((id) => !s.battle || !s.nodes || s.nodes[nodeIndex(id)] === "freed"),
+  battle: s.battle && s.nodes ? battleDay(s.battle, s.nodes, capturedIds(s)) : undefined,
   outposts: OUTPOST_SITES.filter((o) => s.nodeVisited?.[NODES.findIndex((n) => n.id === o.id)]).map((o) => o.id),
   visited: POIS.filter((_, i) => s.visited?.[i]).map((p) => p.id),
   titan: s.stats.cleared.some((i) => !!POIS[i].boss),
@@ -66,6 +83,16 @@ export const raidDay = (s: Pick<State, "outcome" | "stats"> & { visited?: boolea
   retake: s.event?.t === "retake" && !(s.stats.wiped ?? []).includes(retakeKey(s.event.poi)) ? s.event.poi : null,
   threat: s.threat ?? 0,
 });
+
+/** What a battle reckoned to its end did, from the nodes as it began and as it ended. */
+export function battleDay(b: Battle, end: readonly NodeHold[], captured: NodeId[]): BattleDay {
+  return {
+    won: b.won,
+    score: [Math.round(b.score[0]), Math.round(b.score[1]), Math.round(b.score[2])],
+    gained: NODES.filter((n, i) => end[i] === "freed" && b.start[i] !== "freed" && !captured.includes(n.id)).map((n) => n.id),
+    lost: NODES.filter((_, i) => b.start[i] === "freed" && end[i] !== "freed").map((n) => n.id),
+  };
+}
 
 /** The island part of a profile that a day moves. */
 export interface IslandDay {
@@ -109,6 +136,15 @@ export interface NetChange {
   threat?: number;
 }
 
+/** The day's battle as the night counts it: won or lost, the points, and the node of the player's the network took for a lost battle (null for none). */
+export interface BattleChange {
+  won: boolean;
+  score: [number, number, number];
+  gained: NodeId[];
+  lost: NodeId[];
+  forfeit: NodeId | null;
+}
+
 /** What moved overnight: POIs freed by the raid, freed ones gone thin for want of visits, thin ones taken back, and the network. */
 export interface DayChange {
   freed: PoiId[];
@@ -123,6 +159,8 @@ export interface DayChange {
   /** Freed POIs gone thin because the day's retake squad was left alive. */
   overrun: PoiId[];
   network: NetChange;
+  /** The day's battle, or null for a raid that had none. */
+  battle: BattleChange | null;
 }
 
 /** The pressure a day adds to the network: more the more POIs the robots hold (the titan's pad aside, always theirs). */
@@ -165,7 +203,11 @@ export function advanceDay<P extends IslandDay>(p: P, r: RaidDay): { profile: P;
   const retaken: PoiId[] = [];
   const overrun: PoiId[] = [];
   const dropped: PoiId[] = [];
+  const bt = r.battle;
+  // The player's own robots' captures stand however the raid ended; the player's, only if they got off alive.
   const captured = r.captured ?? [];
+  const gained = bt?.gained ?? [];
+  const lostInBattle = bt?.lost ?? [];
   const before = islandHolds(p);
   const poiState = { ...p.poiState };
   const outposts = { ...(p.outposts ?? newOutposts(p.network)) };
@@ -175,7 +217,14 @@ export function advanceDay<P extends IslandDay>(p: P, r: RaidDay): { profile: P;
     let state = was.state;
     let since = was.since;
     if (unfreeable(id)) state = "held";
-    else if (state !== "freed" && captured.includes(id as NodeId)) {
+    else if (state === "freed" && lostInBattle.includes(id as NodeId)) {
+      // Taken by the network's or the rogues' squads in the battle, and held to its end.
+      state = "thin";
+      since = today + 1;
+    } else if (state !== "freed" && gained.includes(id as NodeId)) {
+      state = "freed";
+      freed.push(id);
+    } else if (state !== "freed" && captured.includes(id as NodeId)) {
       if (r.alive) {
         state = "freed";
         freed.push(id);
@@ -191,11 +240,19 @@ export function advanceDay<P extends IslandDay>(p: P, r: RaidDay): { profile: P;
   const freedOutposts: OutpostId[] = [];
   const outpostVisit: Partial<Record<OutpostId, number>> = {};
   for (const o of OUTPOST_SITES) {
-    if (outposts[o.id] !== "freed" && r.alive && captured.includes(o.id)) {
+    if (outposts[o.id] === "freed" && lostInBattle.includes(o.id)) outposts[o.id] = "held";
+    if (outposts[o.id] !== "freed" && ((r.alive && captured.includes(o.id)) || gained.includes(o.id))) {
       outposts[o.id] = "freed";
       freedOutposts.push(o.id);
     }
     if (outposts[o.id] === "freed") outpostVisit[o.id] = r.outposts?.includes(o.id) || captured.includes(o.id) ? today : (p.outpostVisit?.[o.id] ?? today);
+  }
+  // A battle lost: the network takes one node on the edge of the player's ground.
+  const forfeit = bt && !bt.won ? forfeitNode(nodeHolds((id) => poiState[id].state, outposts, p.network)) : null;
+  if (forfeit) {
+    const fi = NODES.findIndex((n) => n.id === forfeit);
+    if (NODES[fi].kind === "poi") poiState[forfeit as PoiId] = { ...poiState[forfeit as PoiId], state: "thin", since: today + 1 };
+    else outposts[forfeit as OutpostId] = "held";
   }
   // Going thin happens only on the front's edge: a freed POI with every neighbour the player's is safe.
   const deep = interiorNodes(nodeHolds((id) => poiState[id].state, outposts, p.network));
@@ -258,8 +315,20 @@ export function advanceDay<P extends IslandDay>(p: P, r: RaidDay): { profile: P;
   const events: DayEvents = [settleEvent(p.events?.[1] ?? null, p.seed ?? 0, today + 1, poiState, outposts), eventFor(p.seed ?? 0, today + 2, poiState, outposts)];
   return {
     profile: { ...p, day: today + 1, poiState, outposts, outpostVisit, depots, network, pressure, events },
-    change: { freed, outposts: freedOutposts, dropped, front, thinned, retaken, overrun, network: { from: p.network, to: network, ...steps, rise, crews } },
+    change: { freed, outposts: freedOutposts, dropped, front, thinned, retaken, overrun, network: { from: p.network, to: network, ...steps, rise, crews }, battle: bt ? { won: bt.won, score: bt.score, gained: bt.gained, lost: bt.lost, forfeit } : null },
   };
+}
+
+/**
+ * The node of the player's a lost battle hands the network: one on the edge of the player's
+ * ground (a neighbour not theirs), the one with the most such neighbours, an outpost before a POI,
+ * the first in `NODES` on a tie; null when the player holds none. The nodes at the camp's gate
+ * (`CAMP_NEXT`) are the camp's to keep: a lost battle does not hand them over.
+ */
+export function forfeitNode(holds: NodeHold[]): NodeId | null {
+  const front = NODES.map((n, i) => ({ n, i, out: NEIGHBOURS[i].filter((k) => holds[k] !== "freed").length })).filter(({ i, out }) => holds[i] === "freed" && out > 0 && !CAMP_NEXT.includes(i));
+  front.sort((a, b) => b.out - a.out || (a.n.kind === "outpost" ? 0 : 1) - (b.n.kind === "outpost" ? 0 : 1) || a.i - b.i);
+  return front[0]?.n.id ?? null;
 }
 
 /** The credits the island pays at the settle for the nodes the player holds: `FRONT.income` a POI, `FRONT.outpost` of it an outpost. */
