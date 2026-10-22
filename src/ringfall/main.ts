@@ -366,7 +366,7 @@ let settlement: Settlement | null = null;
 /** The mod kinds known when the raid ended, and the one analysed on its results (one at most). */
 let knownBefore: ModKind[] = [];
 let analysed: ModKind | null = null;
-const hub = new Hub(loadProfile(), () => lock(), () => lock());
+const hub = new Hub(loadProfile(), () => lock());
 const campView = new CampView();
 
 /**
@@ -377,8 +377,8 @@ let departing: { walk: boolean; back: { x: number; y: number; z: number; yaw: nu
 /** The last place inside the camp's yard the player stood, for turning back from the gate. */
 let inside: { x: number; y: number; z: number; yaw: number } | null = null;
 
-/** The camp stands still while a station's panel, the departure's check, the truck's fade or the ending is up. */
-const campFrozen = () => hub.station !== null || departing !== null || fading || !$("ending").hidden;
+/** The camp stands still while a station's panel, the departure's check or the truck's fade is up. */
+const campFrozen = () => hub.station !== null || departing !== null || fading;
 
 /** Fades the screen to the camp's dark and back: `on` covers it at once when `now`, else over its transition. */
 function fade(on: boolean, now = false) {
@@ -398,7 +398,6 @@ function openCamp() {
   $("title").hidden = true;
   $("results").hidden = true;
   $("pause").hidden = true;
-  $("ending").hidden = true;
   hub.close(false);
   running = false;
   camping = true;
@@ -706,9 +705,9 @@ window.render_game_to_text = () => {
   const s = state;
   const p = s.player;
   return JSON.stringify({
-    screen: running ? "game" : !$("results").hidden ? "results" : !$("ending").hidden ? "ending" : camping ? "camp" : "title",
+    screen: running ? "game" : !$("results").hidden ? "results" : camping ? "camp" : "title",
     camp: camping ? { panel: hub.station, depart: departing && { walk: departing.walk, ...hub.departure(departing.walk) }, today: hub.today(), near: campSpotAt(p.pos)?.id ?? null, lent: hub.lent, ride: { to: hub.rideTo(), refused: hub.rideRefused() }, marks: hub.marks(), fading, board: hub.profile.board.contracts.map((c) => ({ id: c.id, t: c.t })), taken: hub.profile.taken, story: currentStory(hub.profile.records)?.id ?? null } : null,
-    profile: { events: hub.profile.events, cash: hub.profile.cash, stash: hub.profile.stash.length, raids: hub.profile.raids, hideout: hub.profile.hideout, escaped: !!hub.profile.escaped, seed: hub.profile.seed, routes: hub.profile.routes, entries: hub.profile.entries, day: hub.profile.day, poiState: hub.profile.poiState, network: hub.profile.network, threat: hub.profile.threat, known: hub.profile.known, freedAt: hub.profile.freedAt, outposts: hub.profile.outposts, factory: hub.profile.factory, scores: hub.profile.scores },
+    profile: { events: hub.profile.events, cash: hub.profile.cash, stash: hub.profile.stash.length, raids: hub.profile.raids, hideout: hub.profile.hideout, seed: hub.profile.seed, routes: hub.profile.routes, entries: hub.profile.entries, day: hub.profile.day, poiState: hub.profile.poiState, network: hub.profile.network, threat: hub.profile.threat, known: hub.profile.known, freedAt: hub.profile.freedAt, outposts: hub.profile.outposts, factory: hub.profile.factory, scores: hub.profile.scores },
     boost: { ...s.boost, name: POIS[s.boost.poi].name },
     network: s.network,
     threat: s.threat,

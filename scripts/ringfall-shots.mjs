@@ -168,7 +168,7 @@ const beaconShot = async (pg, name) => {
 const spills = (pg) =>
   pg.evaluate(() => {
     const out = [];
-    for (const el of document.querySelectorAll("#hub .hub-inner, #hub .hub-head, #hub-side, #hub-stash, #hub-region, #hub .hub-foot, #ending .ending-inner, #ending-back")) {
+    for (const el of document.querySelectorAll("#hub .hub-inner, #hub .hub-head, #hub-side, #hub-stash, #hub-region, #hub .hub-foot")) {
       const r = el.getBoundingClientRect();
       if (r.width && (r.right > innerWidth + 1 || r.bottom > innerHeight + 1)) out.push(`${el.id || el.className} ends at ${Math.round(r.right)}x${Math.round(r.bottom)}`);
       if (el.scrollWidth > el.clientWidth + 1) out.push(`${el.id || el.className} scrolls sideways`);
@@ -1172,19 +1172,14 @@ await page.close();
 /*
  * The hideout, from saved profiles: a mid-game base (the tab, a module's needs with where
  * they are found, building, the radio's report, the warning before selling a needed part)
- * on the desktop and a phone on its side, then the escape craft's last stage and the ending.
+ * on the desktop and a phone on its side.
  */
 const bag = (list) => list.flatMap(([kind, n]) => Array.from({ length: n }, () => ({ t: "valuable", kind })));
 const midGame = {
-  v: 6, cash: 6400, raids: 14, extracted: 11, time: 9000, region: "reservoir", seed: 777, escaped: null, depots: ["quarry", "wreck"], seen: "",
-  quests: { progress: {}, done: ["grunts", "village", "power", "parts", "drones"] },
-  hideout: { generator: 2, infirmary: 1, workbench: 1, storage: 1, radio: 1, pouch: 1, craft: 0 },
+  v: 6, cash: 6400, raids: 14, extracted: 11, time: 9000, region: "reservoir", seed: 777, depots: ["quarry", "wreck"], seen: "",
+  quests: { progress: {}, done: ["grunts", "village", "medbay", "parts"] },
+  hideout: { infirmary: 1, workbench: 1, storage: 1, radio: 1, pouch: 1 },
   stash: [{ t: "weapon", kind: "pike", rarity: 1 }, { t: "heal", kind: "cell" }, ...bag([["fuse", 5], ["parts", 4], ["wire", 5], ["board", 4], ["drive", 1], ["gyro", 1]])],
-};
-const lastStage = {
-  ...midGame, cash: 63000, raids: 36, extracted: 29, time: 22000, seed: 31,
-  hideout: { generator: 3, infirmary: 3, workbench: 2, storage: 3, radio: 2, pouch: 2, craft: 3 },
-  stash: bag([["reactor", 1], ["core", 1], ["gyro", 4], ["drive", 3], ["board", 2]]),
 };
 const withProfile = async (ctx, profile) => {
   const pg = await ctx.newPage();
@@ -1212,13 +1207,13 @@ const readOf = async (pg) => JSON.parse(await pg.evaluate(() => window.render_ga
   await closePanel(pg);
   await useStation(pg, "workshop");
   const mods = await pg.locator("#hub-side .mod").count();
-  if (mods !== 7) errors.push(`hideout: the tab lists ${mods} modules, not 7`);
+  if (mods !== 5) errors.push(`hideout: the tab lists ${mods} modules, not 5`);
   await pg.screenshot({ path: `${out}/40-hideout.png` });
-  // The generator's next level lacks parts: each shows how many are short and where they are found.
-  await pg.click('#hub-side [data-act=mod][data-arg=generator]');
+  // The radio's top level lacks parts: each shows how many are short and where they are found.
+  await pg.click('#hub-side [data-act=mod][data-arg=radio]');
   const hints = await pg.locator("#hub-side .mod.open .req small").allTextContents();
-  if (hints.length < 2 || !hints.every((h) => /%/.test(h))) errors.push(`hideout: the generator's needs show no places to find them (${hints.join(" / ")})`);
-  if (!(await pg.locator("#hub-side .mod.open .req:not(.ok)").count()) || !(await pg.locator("#hub-side .mod.open [data-act=build]").isDisabled())) errors.push("hideout: the generator's missing parts are not marked, or it can be built");
+  if (hints.length < 2 || !hints.every((h) => /%/.test(h))) errors.push(`hideout: the radio's needs show no places to find them (${hints.join(" / ")})`);
+  if (!(await pg.locator("#hub-side .mod.open .req:not(.ok)").count()) || !(await pg.locator("#hub-side .mod.open [data-act=build]").isDisabled())) errors.push("hideout: the radio's missing parts are not marked, or it can be built");
   await pg.screenshot({ path: `${out}/41-hideout-needs.png` });
   // Building the storage's next level takes its parts and makes room.
   const h0 = await readOf(pg);
@@ -1258,10 +1253,10 @@ const readOf = async (pg) => JSON.parse(await pg.evaluate(() => window.render_ga
   await pg.waitForTimeout(100);
   let fit = await spills(pg);
   await pg.screenshot({ path: `${out}/m10-hideout.png` });
-  await pg.tap('#hub-side [data-act=mod][data-arg=craft]');
+  await pg.tap('#hub-side [data-act=mod][data-arg=pouch]');
   await pg.locator("#hub-side .mod.open").scrollIntoViewIfNeeded();
   fit = fit.concat(await spills(pg));
-  await pg.screenshot({ path: `${out}/m11-hideout-craft.png` });
+  await pg.screenshot({ path: `${out}/m11-hideout-module.png` });
   await closePanel(pg, true);
   await useStation(pg, "map", cdp);
   fit = fit.concat(await spills(pg));
@@ -1555,34 +1550,6 @@ const readOf = async (pg) => JSON.parse(await pg.evaluate(() => window.render_ga
   await pg.screenshot({ path: `${out}/58-map-routes-open.png` });
   await ctx.close();
 }
-for (const [size, name] of [[{ width: 1280, height: 720 }, "44-ending"], [{ width: 740, height: 360 }, "m13-ending"]]) {
-  const phone = size.width < 800;
-  const ctx = await browser.newContext({ viewport: size, ...(phone ? { deviceScaleFactor: 2, isMobile: true, hasTouch: true } : {}) });
-  const pg = await withProfile(ctx, lastStage);
-  const press = (sel) => (phone ? pg.tap(sel) : pg.click(sel));
-  await toCamp(pg, phone);
-  await useStation(pg, "workshop", phone ? await ctx.newCDPSession(pg) : undefined);
-  await press('#hub-side [data-act=mod][data-arg=craft]');
-  await press('#hub-side [data-act=build][data-arg=craft]');
-  await pg.waitForTimeout(200);
-  const e = await readOf(pg);
-  if (e.screen !== "ending" || !e.profile.escaped || e.profile.hideout.craft !== 4) errors.push(`ending: finishing the craft showed ${e.screen} (${JSON.stringify(e.profile.hideout)})`);
-  const stats = await pg.locator("#ending-stats > div").count();
-  if (stats !== 4) errors.push(`ending: ${stats} stats, not 4`);
-  const fit = await spills(pg);
-  if (fit.length) errors.push(`ending (${size.width}x${size.height}): ${fit.join(", ")}`);
-  await pg.screenshot({ path: `${out}/${name}.png` });
-  await press("#ending-back");
-  const back = await readOf(pg);
-  if (back.screen !== "camp" || back.camp.panel !== null) errors.push(`ending: going on left ${back.screen} (panel ${back.camp?.panel})`);
-  if (!phone) {
-    await useStation(pg, "workshop");
-    if (!(await pg.locator("#hub-side .escaped").count()) || !/完成/.test(await pg.textContent("#hub-record"))) errors.push("ending: the workshop does not show the craft done");
-    await pg.screenshot({ path: `${out}/45-hideout-done.png` });
-  }
-  await ctx.close();
-}
-lap("ending");
 /*
  * The island's state, from a saved profile on day 6: the supply depot freed and unvisited since
  * day 3 (it goes thin unless the next raid comes into it), the wreck freed yesterday, the quarry

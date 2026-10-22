@@ -5,7 +5,7 @@ import { frontNodes, nodeHolds, type OutpostHold } from "../sim/front";
 import type { Task } from "../sim/objective";
 import { crewKey, mix, partyKey, retakeKey, squadKey, type State } from "../sim/state";
 import { haulOrigins } from "../sim/world";
-import { MODULES, nextLevel, unmet, type Hideout } from "./hideout";
+import { MODULES, nextLevel, type Hideout } from "./hideout";
 import type { RewardItem } from "./quests";
 
 /*
@@ -146,7 +146,7 @@ export function makeBoard(p: BoardBasis): Board {
   const lacking: ValuableKind[] = [];
   for (const m of MODULES) {
     const l = nextLevel(p.hideout, m);
-    if (!l || unmet(p.hideout, l).length) continue;
+    if (!l) continue;
     for (const [k, n] of l.items) if (have(k) < n && !lacking.includes(k) && POIS.some((o) => o.loot.valuable.some(([v]) => v === k))) lacking.push(k);
   }
   const share = (poi: (typeof POIS)[number], k: ValuableKind) => (poi.loot.valuable.find(([v]) => v === k)?.[1] ?? 0) / poi.loot.valuable.reduce((n, [, w]) => n + w, 0);

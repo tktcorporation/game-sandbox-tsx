@@ -4,7 +4,7 @@ import { POIS, poiRegion, type PoiId } from "../sim/map";
 /** Each module's built level (0 is unbuilt). */
 export type Hideout = Record<ModuleId, number>;
 
-/** The modules in the order the base lists them; the escape craft last. */
+/** The modules in the order the base lists them. */
 export const MODULES = Object.keys(HIDEOUT) as ModuleId[];
 
 export const emptyHideout = (): Hideout => Object.fromEntries(MODULES.map((m) => [m, 0])) as Hideout;
@@ -14,11 +14,8 @@ export const maxLevel = (m: ModuleId) => HIDEOUT[m].levels.length;
 /** The level a module would build next, or null once it is complete. */
 export const nextLevel = (h: Hideout, m: ModuleId): ModuleLevel | null => HIDEOUT[m].levels[h[m]] ?? null;
 
-/** Module levels a level needs that are not built yet. */
-export const unmet = (h: Hideout, l: ModuleLevel): [ModuleId, number][] => l.needs.filter(([m, n]) => h[m] < n);
-
-/** The escape craft is repaired: the playthrough's end goal. */
-export const craftDone = (h: Hideout) => h.craft >= maxLevel("craft");
+/** Every module is at its top level. */
+export const hideoutDone = (h: Hideout) => MODULES.every((m) => h[m] >= maxLevel(m));
 
 /** Valuables every level not yet built still asks for, by kind. */
 export function stillNeeded(h: Hideout): Record<ValuableKind, number> {
