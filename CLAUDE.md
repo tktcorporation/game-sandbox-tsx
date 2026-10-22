@@ -523,9 +523,9 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   (a table per region, and the hideout's pacing table from `scripts/ringfall-pacing.ts`: each skill's
   recorded raids settled in sequence with a greedy spender, the raid at which each level is built
   and every module stands at its top level,
-  and the island campaign from `scripts/ringfall-campaign.ts`: the network, the POIs freed and the
-  factory's level at days 5, 10, 20 and 30 of a month on one profile per skill, and its battles:
-  the days won, the points by day and the nodes that changed hands).
+  and the island campaign from `scripts/ringfall-campaign.ts`: the nodes held, the enemy's strength
+  and the factory's level at days 5, 10, 20 and 30 of a month on one profile per skill, the first
+  day each tier was held, and the nodes held and changing hands by day).
   Change a number in `config.ts` or `map.ts` only together with a re-run and an update to that file.
   While tuning, `npm run sim:ringfall -- 10` (10 raids per skill and region, about a third of the
   time) is enough to see which way a change moves the tables; the record in that file is 30.
