@@ -23,8 +23,8 @@
 
     <div id="hud" hidden>
       <div id="compass"><div id="compass-strip"></div><b id="compass-deg">0</b><i id="compass-mark" hidden><span></span></i></div>
-      <div id="battle" hidden><small class="battle-name">陣取り戦</small><span class="side you"><small>自軍</small><b id="battle-you">0</b></span><span id="battle-bar"><i class="you"></i><i class="rogue"></i><i class="net"></i></span><span class="side rogue"><small>野良機</small><b id="battle-rogue">0</b></span><span class="side net"><small>網</small><b id="battle-net">0</b></span></div>
-      <div id="map" hidden><canvas id="map-canvas"></canvas><p><span class="map-key hold held">●</span> 支配 <span class="map-key hold thin">●</span> 手薄 <span class="map-key hold freed">●</span> 解放 <span class="map-key rogue">■</span> 野良機 <span class="map-key hold titan">⬢</span> タイタン　<span class="map-key front">━</span> 前線 <span class="map-key ring">◌</span> 攻められる節　<span class="map-key">◆</span> 脱出地点　<span class="map-key depot">■</span> 中継ボックス　<span class="map-key squad you">▶</span> 自軍の部隊 <span class="map-key squad net">▶</span> 網の部隊 <span class="map-key squad rogue">▶</span> 野良機の部隊<span id="map-mast-key" hidden>　<span class="map-key hold held">▲</span> 中継器</span><span class="map-close">　<kbd>N</kbd><span id="map-view-key">で全体を見る</span>　<kbd>M</kbd>で閉じる</span></p><span class="map-buttons"><button id="map-zoom" type="button">全体</button><button id="map-close" type="button">閉じる</button><button id="map-pause" type="button">一時停止</button></span></div>
+      <div id="island-row"></div>
+      <div id="map" hidden><canvas id="map-canvas"></canvas><p><span class="map-key hold freed">●</span> 自分 <span class="map-key hold held">●</span> 敵 <span class="map-key hold titan">⬢</span> タイタン　<span class="map-key front">━</span> 前線　<span class="map-key">◆</span> 脱出地点　<span class="map-key depot">■</span> 中継ボックス　<span class="map-key squad you">▶</span> 自軍 <span class="map-key squad net">▶</span> 敵 <span class="map-key squad rogue">▶</span> 野良機<span class="map-close">　<kbd>N</kbd><span id="map-view-key">で全体を見る</span>　<kbd>M</kbd>で閉じる</span></p><span class="map-buttons"><button id="map-zoom" type="button">全体</button><button id="map-close" type="button">閉じる</button><button id="map-pause" type="button">一時停止</button></span></div>
       <div id="objective"><span id="obj-head"><em id="obj-title"></em><i id="obj-n"></i></span><span id="obj-text"></span><small id="obj-until"></small><small id="obj-contract" hidden></small><small id="obj-story" hidden></small><small id="obj-event" hidden></small><small id="obj-bag"></small><small id="obj-raid"></small><small id="obj-stealth"></small><small id="obj-exits"></small></div>
       <div id="enemy-bars" aria-hidden="true"></div>
       <div id="aware-layer" aria-hidden="true"></div>
@@ -98,7 +98,7 @@
 
     <div id="camp" hidden>
       <div id="camp-labels" aria-hidden="true"></div>
-      <div id="camp-head"><b>野営地</b><span><small>クレジット</small><b id="camp-cash"></b></span><small id="camp-hint"></small></div>
+      <div id="camp-head"><b>野営地</b><span><small>クレジット</small><b id="camp-cash"></b></span><small id="camp-hint"></small><span id="camp-row"></span></div>
       <div id="camp-plan"><h3>今日の作戦</h3><dl id="camp-plan-list"></dl></div>
       <p id="camp-prompt"></p>
     </div>

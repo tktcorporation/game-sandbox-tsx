@@ -96,7 +96,7 @@ function captureSteps(s: State, i: number, title: string): Objective {
   const front = frontNodes(s.nodes)[i];
   return settle(title, [
     { kind: "go", label: `${n.name}へ向かう`, until: `核の ${ARRIVE} m 以内に着く`, at: core, done: freed || under || dist2d(s.player.pos, core) < ARRIVE },
-    { kind: "start", label: "核を起動する", until: front || freed ? "核に触れて使用キー（警報が鳴る）" : "前線の節ではない：網に守られている", at: core, done: freed || under, near: "核に触れて制圧を始める" },
+    { kind: "start", label: "核を起動する", until: front || freed ? "核に触れて使用キー（警報が鳴る）" : "前線の拠点ではない：敵に守られている", at: core, done: freed || under, near: "核に触れて制圧を始める" },
     {
       kind: "hold",
       label: "核を守り抜く",
