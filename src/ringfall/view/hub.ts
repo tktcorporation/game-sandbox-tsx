@@ -7,7 +7,7 @@ import { currentStory, STORIES, storyOf, storyWhere } from "../meta/story";
 import { maxLevel, MODULES, nextLevel, pouchSlots, sources, stashCap, stillNeeded, type Source } from "../meta/hideout";
 import { need, offered, type Quest, type RewardItem } from "../meta/quests";
 import { saveProfile } from "../meta/storage";
-import { eventName, frontIncome, islandHolds, unfreeable } from "../meta/island";
+import { departDepots, eventName, frontIncome, islandHolds, unfreeable } from "../meta/island";
 import { eventRow } from "./events";
 import { HOLD_CSS, IslandMap, islandScene, TITAN_CSS } from "./map";
 import { enemyNodes, frontNodes } from "../sim/front";
@@ -277,7 +277,7 @@ export class Hub {
       this.entry = arg as EntryId;
       this.from = null;
       sfx.click();
-    } else if (act === "from" && this.profile.depots.includes(arg as PoiId)) {
+    } else if (act === "from" && departDepots(this.profile).includes(arg as PoiId)) {
       this.from = arg as PoiId;
       this.region = poiRegion(this.from).id;
       // The entry follows the depot's region, so a later start from an entry is one of its own.
@@ -366,7 +366,7 @@ export class Hub {
    */
   private fixStart() {
     const p = this.profile;
-    if (this.from && !p.depots.includes(this.from)) this.from = null;
+    if (this.from && !departDepots(p).includes(this.from)) this.from = null;
     if (!canStartIn(p, this.region)) {
       this.region = "reservoir";
       this.from = null;
@@ -671,7 +671,7 @@ export class Hub {
       ).join("") +
       `</div>` +
       (this.from ? "" : `<small>入口</small><div class="row entries">${known.map((e) => `<button type="button" class="entry${e === this.entry ? " on" : ""}" data-act="entry" data-arg="${e}">${esc(entryOf(e).name)}</button>`).join("")}</div>`) +
-      (p.depots.length ? `<small>中継ボックス</small><div class="row">${p.depots.map((d) => `<button type="button" class="depot${this.from === d ? " on" : ""}" data-act="from" data-arg="${d}">${esc(POIS[poiIndex(d)].name)}（${esc(poiRegion(d).name)}）</button>`).join("")}</div>` : "") +
+      (departDepots(p).length ? `<small>中継ボックス</small><div class="row">${departDepots(p).map((d) => `<button type="button" class="depot${this.from === d ? " on" : ""}" data-act="from" data-arg="${d}">${esc(POIS[poiIndex(d)].name)}（${esc(poiRegion(d).name)}）</button>`).join("")}</div>` : "") +
       `</div>` +
       `<p class="hub-lock" id="hub-lock"${locked.length ? "" : " hidden"}>${esc(locked.map((r) => `${r.name}：${r.locked ?? ""}`).join("　"))}</p>` +
       `<div class="slot ride"><small>車両の行き先</small><span>${line}</span></div>` +

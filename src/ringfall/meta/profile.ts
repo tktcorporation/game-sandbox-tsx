@@ -4,8 +4,8 @@ import { openRoutes } from "../sim/routes";
 import { encodeSeen, type Kit, type State } from "../sim/state";
 import { haulOrigins } from "../sim/world";
 import { contractDone, makeBoard, parseBoard, sentOrigins, type Board, type Contract, type Fetched } from "./contracts";
-import { emptyHideout, infirmaryHeals, MODULES, nextLevel, onSale, pouchSlots, shopRarity, stashCap, stillNeeded, type Hideout } from "./hideout";
-import { advanceDay, eventFor, firstEvents, frontIncome, newIsland, parseEvent, parseIsland, raidDay, type DayEvents, type Island } from "./island";
+import { emptyHideout, infirmaryHeals, MODULES, nextLevel, onSale, pouchSlots, stashCap, stillNeeded, type Hideout } from "./hideout";
+import { advanceDay, departDepots, eventFor, firstEvents, frontIncome, newIsland, parseEvent, parseIsland, raidDay, shopRarity, type DayEvents, type Island } from "./island";
 import type { IslandEvent } from "../sim/island";
 import { built, creditRaid, emptyLog, need, offered, QUEST_IDS, type Quest, type QuestLog } from "./quests";
 import { currentStory, STORIES, type Story } from "./story";
@@ -90,14 +90,14 @@ export const FIRST_ENTRY: EntryId = regionOf("reservoir").entries[0];
 /** Ways in as a known list: real ones only, once each, in `ENTRIES` order, always with `FIRST_ENTRY`. */
 export const knownEntries = (ids: readonly string[]): EntryId[] => ENTRIES.filter((e) => e.id === FIRST_ENTRY || ids.includes(e.id)).map((e) => e.id);
 
-/** Where a raid may start in a region: its known ways in, and its depots on. */
-export const startsIn = (p: Profile, region: RegionId) => ({
+/** Where a raid may start in a region: its known ways in, and the depots on there that the nodes held open a start from (`departDepots()`). */
+export const startsIn = (p: Pick<Profile, "entries" | "depots" | "poiState">, region: RegionId) => ({
   entries: regionOf(region).entries.filter((e) => p.entries.includes(e)),
-  depots: p.depots.filter((d) => regionOf(region).pois.includes(d)),
+  depots: departDepots(p).filter((d) => regionOf(region).pois.includes(d)),
 });
 
 /** Whether a raid may start in a region at all: it needs a way in known there or a depot on. */
-export const canStartIn = (p: Profile, region: RegionId) => {
+export const canStartIn = (p: Pick<Profile, "entries" | "depots" | "poiState">, region: RegionId) => {
   const s = startsIn(p, region);
   return s.entries.length > 0 || s.depots.length > 0;
 };
@@ -160,9 +160,9 @@ export const sellPrice = (i: Item) => (i.t === "valuable" || i.t === "tool" ? pr
 /** Key names, for lists and the HUD. */
 export const keyName = (poi: PoiId) => `${POIS[poiIndex(poi)].name}の鍵`;
 
-/** Everything the trader sells: better with each level of the hideout's workbench. */
+/** Everything the trader sells: gear up to the rarity the nodes held open (`shopRarity()`), materials by the workbench. */
 export function wares(p: Profile): Item[] {
-  const best = shopRarity(p.hideout);
+  const best = shopRarity(p);
   const out: Item[] = [];
   for (const kind of Object.keys(META.weapon) as WeaponKind[])
     for (let r = 0; r <= best; r++) out.push({ t: "weapon", kind, rarity: r as Rarity });
@@ -313,11 +313,11 @@ export const depotBudget = (p: Profile, poi: PoiId) => depotAllowance(p, poi).bu
 
 /**
  * Whether a raid may start with this loadout: a start at a way in (`from` null) always may; a depot start
- * only from a depot on, and within its allowance.
+ * only from a depot on that a node held opens a start from (`departDepots()`), and within its allowance.
  */
 export function fitsStart(p: Profile, l: Loadout, from: PoiId | null): boolean {
   if (from === null) return true;
-  return p.depots.includes(from) && loadoutCost(p, l) <= depotBudget(p, from);
+  return departDepots(p).includes(from) && loadoutCost(p, l) <= depotBudget(p, from);
 }
 
 /**
@@ -845,9 +845,9 @@ export function buildFactory(p: Profile): Profile | null {
  * region's first known way in; a region with neither a known way in nor a depot on gives way
  * to the reservoir, where `FIRST_ENTRY` is always known.
  */
-export function allowedStart(p: Pick<Profile, "entries" | "depots">, region: RegionId, entry: unknown): { region: RegionId; entry: EntryId } {
+export function allowedStart(p: Pick<Profile, "entries" | "depots" | "poiState">, region: RegionId, entry: unknown): { region: RegionId; entry: EntryId } {
   const known = (r: RegionId) => regionOf(r).entries.filter((e) => p.entries.includes(e));
-  const reg = canStartIn(p as Profile, region) ? region : "reservoir";
+  const reg = canStartIn(p, region) ? region : "reservoir";
   const ways = known(reg);
   const want = ENTRIES.find((e) => e.id === entry && e.region === reg && ways.includes(e.id));
   // A region open only through a depot keeps a known way in elsewhere as the record of the last walk in.

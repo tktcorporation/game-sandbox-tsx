@@ -1,9 +1,10 @@
-import { MODS, ALLY, ASSIST, DEG, DODGE, ELITE, ENEMIES, FLANK, KICK_PATTERN, KICK_RESET, NOISE, PLATE, PLAYER, RARITY, RETURN, ROBOT_DROPS, STAGGER, TICK, ULT, VALUABLES, WEAPONS, type Flank, type Rarity, type ValuableKind, type WeaponSpec } from "./config";
+import { MODS, ALLY, ASSIST, DEG, DODGE, ELITE, ENEMIES, FLANK, KICK_PATTERN, KICK_RESET, NOISE, PLATE, PLAYER, RARITY, RETURN, ROBOT_DROPS, STAGGER, TICK, ULT, VALUABLES, WEAPONS, type Flank, type Rarity, type ValuableKind, type WeaponKind, type WeaponSpec } from "./config";
 import { dropRobotMod, hasMod, modScale } from "./mods";
 import { engageSquad, learnSpot, located, makeNoise, shotFromAfar } from "./awareness";
 import { POIS } from "./map";
+import { terrainHeight } from "./terrain";
 import { los, lookAngles, norm, rayWorld, raySphere, wrapAngle } from "./geom";
-import { bodyY, forward, rand, squadKey, weakY, type Enemy, type SquadState, type State, type Vec3, type Weapon } from "./state";
+import { bodyY, forward, mix, rand, squadKey, weakY, type Enemy, type SquadState, type State, type Vec3, type Weapon } from "./state";
 
 /*
  * Everything about the player's shots landing on robots: hit boxes, aim assist,
@@ -227,6 +228,11 @@ export function damageEnemy(s: State, e: Enemy, raw: number, crit: boolean, at: 
   s.events.push({ t: "hit", id: e.id, pos: at, dmg: Math.round(raw), crit, shield: toShield > 0, tier: k.shieldTier, flank, ally: by === "ally", blocked });
   const broke = hadShield && e.shield <= 0;
   if (broke) s.events.push({ t: "shieldBreak", id: e.id, pos: at, tier: k.shieldTier });
+  // A weapon that pierces the plate and takes the shield away breaks the plate off for good.
+  if (broke && e.plate > 0 && rarity !== undefined && rarity >= e.plate) {
+    s.events.push({ t: "plateBreak", id: e.id, pos: at, tier: e.plate });
+    e.plate = 0;
+  }
   if (e.hp > 0) react(s, e, dealt * (crit ? STAGGER.weak : 1) * (by === "player" ? modScale(s.player, "jolt") : 1), broke, quiet, shooter);
   const p = s.player;
   if (!p.leap && p.ult < 1) {
@@ -355,4 +361,29 @@ function spoils(s: State, e: Enemy, c: Vec3) {
   }
   // A mod part, decided by its own hash: the raid's numbers are drawn as without it.
   dropRobotMod(s, e, c);
+  // A plated robot's or a raider's gun, decided by its own hash, under an id of its own.
+  const gun = robotGear(s, e);
+  if (gun) {
+    const a = gearHash(s, e, 4) * Math.PI * 2;
+    const sp = c.y > terrainHeight(c.x, c.z) + 1.5 ? 1.2 : 2.2;
+    s.loot.push({ id: -(5_000_000 + e.id), kind: "weapon", rarity: gun.rarity, weapon: { kind: gun.kind, rarity: gun.rarity, mag: -1 }, pos: { ...c }, vel: { x: Math.cos(a) * sp, y: 4.5, z: Math.sin(a) * sp }, age: 0 });
+  }
+}
+
+/** A uniform number in [0, 1) from the raid's seed, robot `e` and a salt, drawing nothing from `rand`. */
+const gearHash = (s: State, e: Enemy, salt: number) => mix(Math.imul(s.seed ^ 0x3c6ef372, 0x9e3779b1) + Math.imul(e.id, 7919) + Math.imul(salt + 1, 104729)) / 4294967296;
+
+/**
+ * The gun robot `e` drops as it falls, or null: a robot that came plated drops one of its plate's
+ * rarity with the chance `PLATE.drop`, a raider one of its plate's rarity (a step better one time
+ * in four) with the chance `PLATE.elite`, and the titan a legendary one always. Decided from the
+ * raid's seed and the robot, so a raid draws the same random numbers whatever falls.
+ */
+export function robotGear(s: State, e: Enemy): { kind: WeaponKind; rarity: Rarity } | null {
+  if (e.friend) return null;
+  const tier = Math.max(e.plate, e.wore);
+  const chance = e.kind === "titan" ? 1 : e.elite ? PLATE.elite : tier > 0 ? PLATE.drop : 0;
+  if (chance <= 0 || gearHash(s, e, 1) >= chance) return null;
+  const rarity = (e.kind === "titan" ? 3 : e.elite ? Math.min(3, Math.max(1, tier) + (gearHash(s, e, 2) < 0.25 ? 1 : 0)) : tier) as Rarity;
+  return { kind: PLATE.weapons[Math.min(PLATE.weapons.length - 1, Math.floor(gearHash(s, e, 3) * PLATE.weapons.length))], rarity };
 }

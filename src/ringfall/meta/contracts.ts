@@ -1,6 +1,7 @@
 import { CONTRACT, CREW, FRONT, PARTY, STRENGTH, VALUABLES, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
 import { nodeIndex, PACKS, POIS, poiIndex, regionHere, REGIONS, regionOf, type PoiId, type RegionId } from "../sim/map";
 import { activePacks, garrison, type IslandEvent, type PoiHold } from "../sim/island";
+import { shopRarity } from "./island";
 import { enemyNodes, frontNodes, nodeHolds } from "../sim/front";
 import type { Task } from "../sim/objective";
 import { crewKey, mix, partyKey, squadKey, strengthFor, type State } from "../sim/state";
@@ -172,7 +173,8 @@ export function makeBoard(p: BoardBasis): Board {
   const interceptOf = (target: InterceptTarget, salt: number): Contract => {
     const region = targetRegion(target);
     const h = hash(salt);
-    const rarity = Math.min(3, 1 + Math.floor((p.day - 1) / CONTRACT.rarityEvery)) as Rarity;
+    // A weapon paid rises a step every few days, no better than the trader's shelf (at least rare).
+    const rarity = Math.min(3, 1 + Math.floor((p.day - 1) / CONTRACT.rarityEvery), Math.max(1, shopRarity(p))) as Rarity;
     const items: RewardItem[] = h % 3 === 0 ? [{ t: "weapon", kind: PAY_WEAPONS[(h >>> 4) % PAY_WEAPONS.length], rarity: rarity as 0 | 1 | 2 | 3 }] : h % 3 === 1 ? [{ t: "heal", kind: (h >>> 4) % 2 ? "battery" : "medkit" }] : [];
     return { t: "intercept", id: id(), target, reward: { cash: round50(CONTRACT.intercept[target.t] * factor(region)), items } };
   };

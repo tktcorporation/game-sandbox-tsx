@@ -1,6 +1,6 @@
-import { EVENTS, FRONT, type EventKind } from "../sim/config";
+import { EVENTS, FRONT, META, type EventKind, type Rarity } from "../sim/config";
 import type { IslandEvent, PoiHold } from "../sim/island";
-import { DEBRIS_SPOTS, debrisIndex, DEPOTS, NODES, POIS, poiIndex, type DebrisId, type NodeId, type PoiId } from "../sim/map";
+import { DEBRIS_SPOTS, debrisIndex, DEPOTS, NODES, POIS, poiIndex, UNLOCKS, type DebrisId, type NodeId, type NodeUnlock, type PoiId } from "../sim/map";
 import { capturedIds, nodeHolds, type NodeHold } from "../sim/front";
 import { mix, type State } from "../sim/state";
 
@@ -80,6 +80,27 @@ export const islandHolds = (p: Pick<IslandDay, "poiState">): NodeHold[] => nodeH
 
 /** The nodes the player holds on an island day. */
 export const playerNodes = (p: Pick<IslandDay, "poiState">): NodeId[] => NODES.filter((n) => p.poiState[n.id].state === "freed").map((n) => n.id);
+
+/** What the nodes the player holds open together (`UNLOCKS`): the best of each, the squads summed. */
+export function unlocked(p: Pick<IslandDay, "poiState">): Required<Omit<NodeUnlock, "depart">> & { depart: NodeId[] } {
+  const mine = playerNodes(p).map((id) => ({ id, u: UNLOCKS[id] }));
+  return {
+    shop: Math.max(META.shopRarity, ...mine.map(({ u }) => u.shop ?? 0)) as Rarity,
+    squad: mine.reduce((n, { u }) => n + (u.squad ?? 0), 0),
+    scout: mine.some(({ u }) => u.scout),
+    shore: mine.some(({ u }) => u.shore),
+    depart: mine.filter(({ u }) => u.depart).map(({ id }) => id),
+  } as Required<Omit<NodeUnlock, "depart">> & { depart: NodeId[] };
+}
+
+/** The best rarity of weapon and tier of armour the trader sells: what the nodes held open (`UNLOCKS`). */
+export const shopRarity = (p: Pick<IslandDay, "poiState">): Rarity => unlocked(p).shop;
+
+/** The depots a raid may start from: those on at the nodes held that open a start there (`UNLOCKS`). */
+export const departDepots = (p: Pick<IslandDay, "poiState" | "depots">): PoiId[] => {
+  const may = unlocked(p).depart;
+  return p.depots.filter((d) => may.includes(d as NodeId));
+};
 
 /** Today's event and tomorrow's: each null on a quiet day. */
 export type DayEvents = [IslandEvent | null, IslandEvent | null];
