@@ -50,7 +50,7 @@ export const QUESTS: Quest[] = [
   { id: "craft", title: "脱出艇の話", text: "隠れ家の脱出艇の船体を塞ぐ", goal: { t: "build", module: "craft", level: 1 }, after: ["power"], reward: { cash: 2000, items: [{ t: "valuable", kind: "gyro" }] } },
   { id: "navigator", title: "航法装置", text: "脱出艇に航法装置を据える。ジャイロと記憶装置は難破船の箱に多い", goal: { t: "build", module: "craft", level: 2 }, after: ["craft"], reward: { cash: 2500, items: [{ t: "valuable", kind: "core" }, { t: "valuable", kind: "drive" }] } },
   { id: "control", title: "制御系", text: "脱出艇の制御系をつなぐ。データコアは発着場のタイタンと最上階の箱", goal: { t: "build", module: "craft", level: 3 }, after: ["navigator"], reward: { cash: 3000, items: [{ t: "valuable", kind: "core" }] } },
-  { id: "furnace", title: "製錬所の炉", text: "製錬所を制圧する。小型炉心はそこの箱に眠る", goal: { t: "clear", poi: "smelter" }, after: ["control"], reward: { cash: 3000, items: [{ t: "valuable", kind: "reactor" }] } },
+  { id: "furnace", title: "製錬所の炉", text: "製錬所の守備隊を掃討する（核を制圧して解放してもよい）。小型炉心はそこの箱に眠る", goal: { t: "clear", poi: "smelter" }, after: ["control"], reward: { cash: 3000, items: [{ t: "valuable", kind: "reactor" }] } },
   { id: "escape", title: "島を出る", text: "脱出艇の機関に火を入れる", goal: { t: "build", module: "craft", level: 4 }, after: ["furnace"], reward: { cash: 0, items: [] } },
 ];
 

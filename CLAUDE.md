@@ -58,13 +58,19 @@ beacon in the world and a marker with its distance on the compass (the steps com
 lists only the ways off of the region the player is in
 (`regionHere()`); the world map (`view/map.ts`, M) is where the POIs and exits of both regions are; it opens framed
 on the region the player is in (`Region.bounds`) and N switches it to the whole world.
-A wipe ends the raid and loses the haul; `results.ts` scores the haul plus cleared POIs.
+A wipe ends the raid and loses the haul (`haulValue()` in `results.ts` is its worth). The results
+screen gives no grade or score: it leads with the day (the battle won or lost with each side's
+points, the front's moves and the network's step, all from the settled profile), then the haul.
+Clearing a POI's garrison is 掃討 in the UI; 制圧 is only the capture of a core.
 Between raids the player walks a camp in the world (`CAMP` in `map.ts`, a fenced yard on the south
 beach behind the reservoir's first way in): `sim/camp.ts` holds its state (`newCamp()`, a raid's
 emptied of robots, its clock standing) and its step (`stepCamp()`: walking only, weapons lowered).
 Its stations (map table, quest board, shelves, stall, workshop, factory) open the panels of `view/hub.ts` by
 the use key; walking out of the gate starts a raid from `FIRST_ENTRY` where the player stands
-(`walkOut()`), and the truck by the gate starts one at the map table's choice after a fade. No robot
+(`walkOut()`), and the truck by the gate starts one at the map table's choice after a fade. Either
+way a departure's check comes first (`Hub.departure()`, `#depart` in `main.ts`: the kit taken out,
+the start and the objective; Enter or the use key goes, Esc turns back into the yard), and the
+camp shows the day's line and a 今日の作戦 card (`Hub.today()`). No robot
 walks into the yard (`inCamp()` in `enemies.ts`); during a raid they see and shoot into it as
 anywhere. Walking back into it during a raid, after `HOME.away` seconds outside and with no robot
 fighting the player within `DEPOT.safe`, ends the raid alive with the bag (`stepHome()` in
@@ -76,14 +82,19 @@ keeps a stash, a trader and the loadout for the next raid:
 raid, the pouch that survives a wipe), `meta/storage.ts` saves it in localStorage, and `META` in
 `config.ts` holds its numbers. `newRun(seed, kit, region)` starts a raid from a kit; the default is
 the lent free kit, which is what the sim gate plays; `Profile.region` and `Profile.entry` remember
-the last start.
+the last start. The free kit's heals and the infirmary's are lent to every raid (`lentHeals()`),
+own weapons or not, and armour and keys go with the lent weapons too. `takeKit()` records what it
+took (`Profile.lastKit`) and the shelves pick it again while the stash holds things like it
+(`recallLoadout()`). The valuables still wanted (`wanted()`, for the stash's notes and the order in
+which `settle()` keeps what fits) count the factory's levels as well as the hideout's.
 The trader's quests are data in `meta/quests.ts` (`QUESTS`: four intro quests, then the escape
 craft's line; credited from a raid's `stats` by `creditRaid()` inside `settle()`). The quest board
 also holds the day's contracts (`meta/contracts.ts`): `makeBoard()` builds 3 or 4 from
 `Profile.seed`, `Profile.day`, the island and the hideout (free a POI, fetch a valuable from a
 POI's bins, destroy a drone pack or a region's hunting party, and while the network is strong a
 relay mast; on a retake's day, defend the POI first; numbers in `CONTRACT`), kept in
-`Profile.board` for the day; the player takes one (`Profile.taken`) or none, and `settle()` pays it
+`Profile.board` for the day; the player takes one (`Profile.taken`), the story record under way
+(`STORY_TAKEN`, which makes the record the objective), or none, and `settle()` pays it
 when `contractDone()` holds (fetch counts only valuables tagged with their bin's POI,
 `Player.haulAt` / `State.sentAt`; intercept and defend read `Stats.wiped`, by `squadKey()`; destroy reads `Stats.relays`). Five story
 contracts (`meta/story.ts`) follow one at a time: the one under way lays its record at its
@@ -92,14 +103,14 @@ contracts (`meta/story.ts`) follow one at a time: the one under way lays its rec
 only with that POI's key; keys drop from the bins of the POI named by its `keyFrom` (`VAULT`).
 POIs have a stable `id` (`PoiId` in `map.ts`); saves, quests, `keyFrom` and `EXTRA_BINS` refer to a
 POI by it, never by its place in `POIS` (the run's state may index `POIS` internally). The profile
-is versioned (`Profile.v`, which is 19), and `parseProfile()` moves older saves forward (a save from
+is versioned (`Profile.v`, which is 20), and `parseProfile()` moves older saves forward (a save from
 before the ways in starts at its region's first way in; a save from before ways in were learned
 knows them all; a save from before v12 drops its explored map, since `cellOf()` follows `WORLD`,
 which then grew wider; a save from before v13 starts on the day after its raids with every POI
 held; a save from before v14 keeps only the quests that still exist; a save from before v15 starts
 at network `NETWORK.start`; a save from before v16 has a quiet day and tomorrow's event drawn; a save from before v17 knows
 the starting mod kinds and plays at threat 0; a save from before v19 has the factory at level 0 and
-no battle on record) and moves its
+no battle on record; a save from before v20 remembers no loadout) and moves its
 start to one it may choose (`allowedStart()`).
 Each island day has at most one event (`EVENTS` in `config.ts`, `IslandEvent` in `sim/island.ts`):
 `advanceDay()` turns yesterday's forecast into today's and draws tomorrow's from `Profile.seed` and
@@ -170,11 +181,13 @@ Mod parts (`MODS` in `config.ts`, `sim/mods.ts`) are the raid's own build: three
 which bin or robot holds one is a hash of the seed and the bin or robot (`binMod()`, `robotMod()`),
 never `rand(s)`, and the bot passes `Input.leaveMods`, so the gate's raids play as without them. A
 raid got off alive may analyse one worn part on its results (`analyse()` in `profile.ts`). The
-threat (脅威度, `THREAT`, `Profile.threat`, `newRun(..., { threat })`) is chosen at the map table:
-0 is the network's raid; higher scales the network's times and plates (`raidClock()`,
-`netPlated()`), the range robots answer shots from afar, and the contract's pay (`threatPay()`), and
-a POI freed at `THREAT.freeAt` or higher takes the network a step further down (`RaidDay.threat`).
-`Profile.freedAt` keeps each POI's best threat for the map table.
+強度 (`THREAT`, `Profile.threat`, `newRun(..., { threat })`) belongs to the contract taken: it is
+chosen on that contract's card on the board, taking another contract starts it at 0, and a raid
+with no contract plays at 0 (`raidThreat()`). 0 is the network's raid; higher scales the network's
+times and plates (`raidClock()`, `netPlated()`), the range robots answer shots from afar, the mod
+parts' odds, and the contract's pay (`threatPay()`), and a POI freed at `THREAT.freeAt` or higher
+takes the network a step further down (`RaidDay.threat`). `Profile.freedAt` keeps each POI's best
+強度 for the map.
 The front (`docs/ringfall/liberation-front.md`): the six freeable POIs and the seven outposts are
 nodes (`NODES` in `map.ts`, linked along the roads by `FRONT_LINKS`), and `sim/front.ts` holds the
 rules. A node next to the player's ground (the camp and the nodes freed) is on the front; only its
@@ -186,7 +199,9 @@ enters `FRONT.zone`) and freed overnight if the raid gets off alive (`advanceDay
 day's income); clearing a POI of its robots no longer frees it. `Profile.outposts` keeps the
 outposts' standing (an outpost on the edge lapses unvisited, as a POI goes thin; the nodes in
 `NET_EDGE` are never deep in the player's ground). The bot captures the front's cores in its region,
-`Skill.capture` a raid (`Skill.battle` in a battle), and then leaves.
+`Skill.capture` a raid (`Skill.battle` in a battle), and then leaves. With no contract taken (and
+the story record not taken), the objective card points at the front (`objectiveSteps()`), and the
+record has a line of its own.
 A raid of the island is one battle (陣取り戦, `sim/battle.ts`, `CONQUEST` in `config.ts`), given by
 `newRun(..., { battle: { factory } })` (`State.battle`); a raid without it, as the sim gate's tables
 play, has none. Over `CONQUEST.time` seconds, the raid's time limit (`timeUp`: still out is a wipe),

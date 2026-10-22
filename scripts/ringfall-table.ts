@@ -11,7 +11,7 @@ import { inWorld } from "../src/ringfall/sim/geom";
 import { Bot, SKILLS, type Skill } from "../src/ringfall/sim/bot";
 import { freeKit, newRun, type State } from "../src/ringfall/sim/state";
 import { step } from "../src/ringfall/sim/step";
-import { rank } from "../src/ringfall/sim/results";
+import { haulValue } from "../src/ringfall/sim/results";
 import { recordOf, type RaidRecord } from "./ringfall-pacing";
 
 /** A table's printed lines in order (errors go to stderr), and the raids that ended. */
@@ -28,9 +28,12 @@ export type RaidResult = {
     peakBots: number;
     cleared: number;
     waves: number;
-    rank: string;
-    /** Minutes, haul and score of a raid that got off. */
-    got?: { time: number; haul: number; score: number };
+    /**
+     * Minutes and haul of a raid that got off. Not named `time`: config objects such as
+     * `PATROL.stuck` begin with an integer `time`, and an object of that shape holding a fraction
+     * there makes V8 rework the shape, which slows the sim that reads those configs every tick.
+     */
+    got?: { minutes: number; haul: number };
     downs: number;
     shots: number;
     hits: number;
@@ -149,7 +152,6 @@ export function playState(s: State, skillName: string, r: number): RaidResult {
       error: `${region} ${skill.name}#${r}: still on the island after ${LIMIT} s, cleared ${s.stats.cleared.join(",")} player ${p.x.toFixed(1)},${p.y.toFixed(1)},${p.z.toFixed(1)} enemies near: ${s.enemies.filter((e) => Math.hypot(e.pos.x - p.x, e.pos.z - p.z) < 60).map((e) => `${e.kind}@${e.pos.x.toFixed(0)},${e.pos.z.toFixed(0)}:${e.mode}:${e.aware}`).join(" ")}`,
     };
   }
-  const rk = rank(s);
   return {
     ults,
     ended: {
@@ -158,8 +160,7 @@ export function playState(s: State, skillName: string, r: number): RaidResult {
       peakBots,
       cleared: s.stats.cleared.length,
       waves: s.reinforceN,
-      rank: rk.rank,
-      got: s.outcome === "extracted" ? { time: s.time / 60, haul: rk.haul, score: rk.score } : undefined,
+      got: s.outcome === "extracted" ? { minutes: s.time / 60, haul: haulValue(s) } : undefined,
       downs: s.stats.downs,
       shots: s.stats.shots,
       hits: s.stats.hits,
@@ -188,7 +189,6 @@ export function summarize(region: RegionId, skillName: string, raids: RaidResult
   const times: number[] = [];
   const clearedN: number[] = [];
   const hauls: number[] = [];
-  const scores: number[] = [];
   const waves: number[] = [];
   let ended = 0;
   let alive = 0;
@@ -211,7 +211,6 @@ export function summarize(region: RegionId, skillName: string, raids: RaidResult
   let met = 0;
   let metAway = 0;
   let minutes = 0;
-  const ranks: Record<string, number> = { S: 0, A: 0, B: 0, C: 0, "-": 0 };
   for (const raid of raids) {
     ults += raid.ults;
     const e = raid.ended;
@@ -226,12 +225,10 @@ export function summarize(region: RegionId, skillName: string, raids: RaidResult
     crowdBots.push(e.peakBots);
     clearedN.push(e.cleared);
     waves.push(e.waves);
-    ranks[e.rank]++;
     if (e.got) {
       alive++;
-      times.push(e.got.time);
+      times.push(e.got.minutes);
       hauls.push(e.got.haul);
-      scores.push(e.got.score);
     }
     downs += e.downs;
     shots += e.shots;
@@ -259,7 +256,6 @@ export function summarize(region: RegionId, skillName: string, raids: RaidResult
       `${median(times).toFixed(1)}m`.padEnd(9),
       String(median(clearedN)).padEnd(7),
       String(median(hauls)).padEnd(9),
-      String(median(scores)).padEnd(10),
       (downs / n).toFixed(1).padEnd(5),
       `${Math.round((hits / Math.max(shots, 1)) * 100)}%`.padEnd(3),
       `${Math.round((crits / Math.max(hits, 1)) * 100)}%`.padEnd(4),
@@ -270,7 +266,6 @@ export function summarize(region: RegionId, skillName: string, raids: RaidResult
       `${Math.round(median(firstMeets))}s ${Math.round(median(quiets))}s ${(met / n).toFixed(1)}/${(metAway / n).toFixed(1)}`.padEnd(18),
       (met / Math.max(minutes, 1e-9)).toFixed(2).padEnd(5),
       `${Math.round((allyDmg / n) * 100)}% ${(allyDowns / n).toFixed(1)}d ${(rescues / n).toFixed(1)}r ${(helped / n).toFixed(1)}h`.padEnd(18),
-      `S${ranks.S} A${ranks.A} B${ranks.B} C${ranks.C} -${ranks["-"]}`.padEnd(18),
       regionOf(region).exits.map((id) => `${id} ${exits[id]}`).join(" "),
     ].join(" "),
   });

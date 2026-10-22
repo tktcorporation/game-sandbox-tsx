@@ -25,7 +25,7 @@ export type InterceptTarget = { t: "pack"; name: string } | { t: "party"; region
 
 /** A contract, told apart by `t`: each type asks for one thing the raid already holds. */
 export type Contract =
-  /** Free a named POI: clear its garrison and get off alive (the island's freed transition). */
+  /** Free a named POI: capture its core and get off alive (the island's freed transition). */
   | { t: "free"; id: string; poi: PoiId; reward: Reward }
   /** Bring home `n` of a valuable taken out of the named POI's bins. */
   | { t: "fetch"; id: string; poi: PoiId; kind: ValuableKind; n: number; reward: Reward }

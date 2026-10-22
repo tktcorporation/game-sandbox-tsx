@@ -23,9 +23,9 @@
 
     <div id="hud" hidden>
       <div id="compass"><div id="compass-strip"></div><b id="compass-deg">0</b><i id="compass-mark" hidden><span></span></i></div>
-      <div id="battle" hidden><span class="side you"><small>自軍</small><b id="battle-you">0</b></span><span id="battle-bar"><i class="you"></i><i class="rogue"></i><i class="net"></i></span><span class="side net"><b id="battle-net">0</b><small>網</small></span><span class="side rogue"><small>野良機</small><b id="battle-rogue">0</b></span><small id="battle-left"></small></div>
-      <div id="map" hidden><canvas id="map-canvas"></canvas><p><span class="map-key hold held">●</span> 支配 <span class="map-key hold thin">●</span> 手薄 <span class="map-key hold freed">●</span> 解放 <span class="map-key hold titan">⬢</span> タイタン　<span class="map-key">◆</span> 脱出地点　<span class="map-key depot">■</span> 中継ボックス　<span class="map-key rogue">■</span> 野良機の小拠点　<span class="map-key squad you">▶</span> 自軍の部隊 <span class="map-key squad net">▶</span> 網の部隊<span id="map-mast-key" hidden>　<span class="map-key hold held">▲</span> 中継器</span><span class="map-close">　<kbd>N</kbd><span id="map-view-key">で全体を見る</span>　<kbd>M</kbd>で閉じる</span></p><span class="map-buttons"><button id="map-zoom" type="button">全体</button><button id="map-close" type="button">閉じる</button><button id="map-pause" type="button">一時停止</button></span></div>
-      <div id="objective"><span id="obj-head"><em id="obj-title"></em><i id="obj-n"></i></span><span id="obj-text"></span><b id="obj-count"></b><small id="obj-until"></small><small id="obj-contract" hidden></small><small id="obj-story" hidden></small><small id="obj-event" hidden></small><small id="obj-bag"></small><small id="obj-raid"></small><small id="obj-stealth"></small><small id="obj-exits"></small></div>
+      <div id="battle" hidden><small class="battle-name">陣取り戦</small><span class="side you"><small>自軍</small><b id="battle-you">0</b></span><span id="battle-bar"><i class="you"></i><i class="rogue"></i><i class="net"></i></span><span class="side rogue"><small>野良機</small><b id="battle-rogue">0</b></span><span class="side net"><small>網</small><b id="battle-net">0</b></span></div>
+      <div id="map" hidden><canvas id="map-canvas"></canvas><p><span class="map-key hold held">●</span> 支配 <span class="map-key hold thin">●</span> 手薄 <span class="map-key hold freed">●</span> 解放 <span class="map-key rogue">■</span> 野良機 <span class="map-key hold titan">⬢</span> タイタン　<span class="map-key front">━</span> 前線 <span class="map-key ring">◌</span> 攻められる節　<span class="map-key">◆</span> 脱出地点　<span class="map-key depot">■</span> 中継ボックス　<span class="map-key squad you">▶</span> 自軍の部隊 <span class="map-key squad net">▶</span> 網の部隊 <span class="map-key squad rogue">▶</span> 野良機の部隊<span id="map-mast-key" hidden>　<span class="map-key hold held">▲</span> 中継器</span><span class="map-close">　<kbd>N</kbd><span id="map-view-key">で全体を見る</span>　<kbd>M</kbd>で閉じる</span></p><span class="map-buttons"><button id="map-zoom" type="button">全体</button><button id="map-close" type="button">閉じる</button><button id="map-pause" type="button">一時停止</button></span></div>
+      <div id="objective"><span id="obj-head"><em id="obj-title"></em><i id="obj-n"></i></span><span id="obj-text"></span><small id="obj-until"></small><small id="obj-contract" hidden></small><small id="obj-story" hidden></small><small id="obj-event" hidden></small><small id="obj-bag"></small><small id="obj-raid"></small><small id="obj-stealth"></small><small id="obj-exits"></small></div>
       <div id="enemy-bars" aria-hidden="true"></div>
       <div id="aware-layer" aria-hidden="true"></div>
       <div id="dmg-layer" aria-hidden="true"></div>
@@ -79,14 +79,15 @@
     <section id="title" class="screen">
       <div class="title-inner">
         <h1>RINGFALL</h1>
-        <p class="lede">降りて、漁って、生きて帰れ。相手はロボットだけ。</p>
+        <p class="lede">前線を押し上げ、島を取り返せ。相手はロボットだけ。</p>
+        <p class="lede-sub">毎日 1 回、野営地から出撃する。前線の拠点の核を制圧し、陣取り戦で網より多く点を取り、生きて帰る。</p>
         <p class="touch-help">左半分を押してスティック移動、右半分をなぞって視点。撃つボタンは押したまま動かすと狙いも動く。拠点と脱出地点は地図ボタンで確かめる。</p>
         <ul class="keys">
           <li><kbd>WASD</kbd>移動（前進で自動ダッシュ）</li>
           <li><kbd>左クリック</kbd>撃つ <kbd>右</kbd>または<kbd>F</kbd>覗く</li>
           <li><kbd>Space</kbd>ジャンプ <kbd>C</kbd>スライディング</li>
           <li><kbd>E</kbd>調べる・拾う <kbd>R</kbd>リロード <kbd>1</kbd><kbd>2</kbd>持ち替え <kbd>M</kbd>地図</li>
-          <li><kbd>Q</kbd>アーク（自動で狙う） <kbd>Z</kbd>離脱ジャンプ <kbd>H</kbd>バッテリー</li>
+          <li><kbd>Q</kbd>アーク（自動で狙う） <kbd>Z</kbd>離脱ジャンプ <kbd>H</kbd>回復</li>
         </ul>
         <button id="start" type="button">野営地へ</button>
         <div class="settings"><label class="sens">マウス感度 <input id="sens" type="range" min="0.4" max="2.5" step="0.05" value="1" /></label><label class="sens vol">音量 <input id="vol" type="range" min="0" max="1" step="0.05" value="0.8" /></label><label class="sens adsmode">覗き方（F） <select id="adsmode"><option value="hold">押している間</option><option value="toggle">押すたびに切り替え</option></select></label><label class="sens quality">画質 <select id="quality"><option value="auto">自動</option><option value="high">高</option><option value="medium">中</option><option value="low">低</option></select></label></div>
@@ -98,8 +99,18 @@
     <div id="camp" hidden>
       <div id="camp-labels" aria-hidden="true"></div>
       <div id="camp-head"><b>野営地</b><span><small>クレジット</small><b id="camp-cash"></b></span><small id="camp-hint"></small></div>
+      <div id="camp-plan"><h3>今日の作戦</h3><dl id="camp-plan-list"></dl></div>
       <p id="camp-prompt"></p>
     </div>
+
+    <section id="depart" class="screen" hidden>
+      <div class="depart-inner" role="dialog" aria-labelledby="depart-title">
+        <h2 id="depart-title">出撃の確認</h2>
+        <dl id="depart-list"></dl>
+        <p id="depart-warn" hidden></p>
+        <div class="depart-buttons"><button id="depart-go" type="button">出撃する<kbd>Enter</kbd></button><button id="depart-cancel" class="ghost" type="button">やめる<kbd>Esc</kbd></button></div>
+      </div>
+    </section>
 
     <section id="hub" class="screen" hidden>
       <div class="hub-inner">
@@ -119,7 +130,6 @@
           </div>
         </div>
         <footer class="hub-foot" id="hub-foot">
-          <button id="hub-free" class="ghost toggle" type="button" data-act="lent" aria-pressed="false">貸出装備で出る <b id="hub-free-state">オフ</b></button>
           <span class="hub-foot-note" id="hub-foot-note"></span>
         </footer>
       </div>
@@ -130,7 +140,7 @@
         <small class="ending-kicker">脱出艇</small>
         <h2>島を出る</h2>
         <p>機関がかかり、船体が水を切った。干上がった湖も、港のクレーンも、霧の向こうへ小さくなっていく。ロボットたちは岸に並んだまま、追ってこなかった。</p>
-        <p>何度も降りて、何度も拾って帰った。その全部が、この船の中にある。</p>
+        <p>何度も出撃し、島を少しずつ取り返し、拾った物を持ち帰った。その全部が、この船の中にある。</p>
         <div class="ending-stats" id="ending-stats"></div>
         <p class="ending-note">野営地は残る。島へはまたいつでも出られる。</p>
         <button id="ending-back" type="button">野営地へ戻る</button>
@@ -148,9 +158,9 @@
     <section id="results" class="screen" hidden>
       <div class="title-inner">
         <p class="label" id="result-title">生還</p>
-        <div class="rank-row"><b id="rank">S</b><div><span>スコア</span><strong id="total"></strong></div></div>
-        <div id="stats"></div>
-        <div id="pois"></div>
+        <div id="day-result"></div>
+        <div id="haul-line"></div>
+        <details id="stats-box"><summary>戦闘の記録</summary><div id="stats"></div></details>
         <div id="home"></div>
         <button id="restart" type="button">野営地に戻る</button>
       </div>

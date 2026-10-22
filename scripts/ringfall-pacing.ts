@@ -11,7 +11,7 @@ import { BAG, HIDEOUT, META, VALUABLES, type ModuleId, type ValuableKind } from 
 import { ENTRIES, POIS, REGIONS, type RegionId } from "../src/ringfall/sim/map";
 import type { State } from "../src/ringfall/sim/state";
 import { craftDone, MODULES, maxLevel, nextLevel, onSale, pouchSlots, stashCap } from "../src/ringfall/meta/hideout";
-import { build, buy, canBuild, deliver, deliverable, newProfile, pouch, sell, settle, shortfall, wanted, type Profile } from "../src/ringfall/meta/profile";
+import { build, buy, canBuild, deliver, deliverable, hideoutWanted as wanted, newProfile, pouch, sell, settle, shortfall, type Profile } from "../src/ringfall/meta/profile";
 import { offered } from "../src/ringfall/meta/quests";
 
 /** What settle() reads of a raid, kept from each bot run. */
