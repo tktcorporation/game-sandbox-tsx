@@ -5,7 +5,7 @@ import { collide, groundAt } from "./sim/geom";
 import { terrainHeight } from "./sim/terrain";
 import { callLeft, freeKit, idleInput, newRun, type GameEvent, type Input, type Kit, type State } from "./sim/state";
 import { CAMP, entryOf, FRAMES, NODES, POIS, poiIndex, type CampSpot, type RegionId, type StationId } from "./sim/map";
-import { frontNodes, useCore } from "./sim/front";
+import { frontNodes, garrisonOf, useCore } from "./sim/front";
 import { battleMarks, departNow, landNow, marchSquad, nodePoint, placeBattleSquad } from "./sim/battle";
 import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
 import { analyse, raidThreat, settle, takenStory, type Settlement } from "./meta/profile";
@@ -692,6 +692,7 @@ declare global {
       place: (side: 0 | 1 | 2, kinds: string[], x: number, z: number, attack?: boolean) => number;
       point: (i: number) => { x: number; z: number };
       core: (i: number) => void;
+      clear: (i: number) => void;
     };
     ringfallContract: {
       take: (type: string) => string | null;
@@ -924,7 +925,8 @@ window.ringfallBattle = (x, z, apart = 30) => {
  * a node's depot 100 + its place), `d` metres along, its robots in the world, and returns where
  * its first stands; `depart` has the factory send its next squad now; `place` sets a squad of
  * `side` down at (x, z) to hold the nearest node, or to attack it; `point` is where a squad
- * stands at such a place.
+ * stands at such a place; `core` starts the capture of node `i`'s core; `clear` takes node `i`'s
+ * garrison out of the raid.
  */
 window.ringfallWar = {
   land: (boat: boolean) => landNow(state, boat),
@@ -937,6 +939,9 @@ window.ringfallWar = {
   place: (side: 0 | 1 | 2, kinds: string[], x: number, z: number, attack = false) => placeBattleSquad(state, side, kinds as EnemyKind[], x, z, attack ? "attack" : "hold"),
   point: (i: number) => nodePoint(i),
   core: (i: number) => useCore(state, i),
+  clear: (i: number) => {
+    state.enemies = state.enemies.filter((e) => e.battle !== undefined || !garrisonOf(state, i, e.squad));
+  },
 };
 
 /**

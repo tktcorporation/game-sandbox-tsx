@@ -1431,7 +1431,7 @@ export function stepFriends(s: State) {
     const leg = Math.min(sq.leg, lastLeg);
     // Rallying to the player's attack, a squad goes at its fighting pace.
     const pace = sq.rush ? k.speed * 0.85 : k.speed * AWARE.idleSpeed * PATROL.pace;
-    if (slot > 0 && leg < lastLeg) {
+    if (slot > 0 && leg < lastLeg && !sq.rush) {
       inColumn(s, e, members[slot - 1], pace);
       continue;
     }

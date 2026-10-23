@@ -1918,20 +1918,21 @@ async function warShots(pg, phone, tag) {
   if (!gs.battle.departs.some((d) => d.from === -1 && gs.battle.now - d.at < 8)) errors.push(`war: no squad came out of the gate (${JSON.stringify(gs.battle.departs)})`);
   // 5. The player takes a core of the front (the relay), and the squads near gather round it.
   const r = st0.front.cores[idx("relay")];
-  // The player sets the capture going from down the road; two squads of the player's come up beside them and fight round the core.
+  // The player sets the capture going from down the road, its garrison already beaten; two squads of the player's come up and stand round the core.
+  await pg.evaluate(([i]) => window.ringfallWar.clear(i), [idx("relay")]);
   await stand(r.x - 50, r.z + 60, Math.atan2(50, -60));
   await pg.evaluate(([x, z]) => {
     window.ringfallWar.place(0, ["grunt", "grunt", "heavy"], x - 40, z + 45, true);
-    window.ringfallWar.place(0, ["grunt", "heavy", "drone"], x - 60, z + 75, true);
+    window.ringfallWar.place(0, ["grunt", "heavy", "drone"], x - 30, z + 55, true);
   }, [r.x, r.z]);
   await pg.evaluate(([i]) => window.ringfallWar.core(i), [idx("relay")]);
-  for (let k = 0; k < 8; k++) {
+  let ga = await readOf(pg);
+  const round = () => ga.battle.friends.filter((e) => !e.post && Math.hypot(e.x - r.x, e.z - r.z) < 22);
+  for (let k = 0; k < 16 && round().length < 5; k++) {
     await pg.evaluate(([x, z]) => window.ringfallPlace(x, z, Math.atan2(50, -60)), [r.x - 50, r.z + 60]);
-    await pg.evaluate(() => window.ringfallStep(5000));
+    ga = await quietStep(pg, 5000);
   }
-  const ga = await readOf(pg);
-  const round = ga.battle.friends.filter((e) => !e.post && Math.hypot(e.x - r.x, e.z - r.z) < 45);
-  if (ga.battle.rally !== "relay" || round.length < 3) errors.push(`war: rallying to the relay (${ga.battle.rally}), ${round.length} of the player's robots round its core`);
+  if (ga.battle.rally !== "relay" || round().length < 5) errors.push(`war: rallying to the relay (${ga.battle.rally}), ${round().length} of the player's robots round its core`);
   await look(r.x - 34, r.y + 9, r.z + 40, r.x, r.y + 1, r.z);
   await pg.evaluate(() => window.advanceTime(200));
   await pg.screenshot({ path: tag(7, "war-rally") });
