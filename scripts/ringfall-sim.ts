@@ -4111,6 +4111,23 @@ function checkBattle(): string | null {
   sendSquad(shared, 2, far, [tough()]);
   ticks(shared, CONQUEST.capture + 3);
   if (shared.nodes[far] === "freed") return `battle: the player's squad took ${NODES[far].id} with a rogue squad standing there`;
+  // Plates far from the player: a squad whose guns the plates turn still wears the garrison down to nothing.
+  const plated = mk();
+  plated.battle!.rarity = 0;
+  for (const e of plated.enemies) if (garrisonOf(plated, far, e.squad)) e.plate = 3;
+  sendSquad(plated, 0, far, [tough(), tough(), tough()]);
+  ticks(plated, 900);
+  if (plated.enemies.some((e) => garrisonOf(plated, far, e.squad))) return `battle: under-tier squads far from the player never brought down ${NODES[far].id}'s plated garrison`;
+  // And the rogues' fire is the rogues' rarity, whatever the trader sells the player.
+  const rogueHit = (rarity: Rarity) => {
+    const r = mk();
+    r.battle!.rarity = rarity;
+    for (const e of r.enemies) if (garrisonOf(r, far, e.squad)) e.plate = 3;
+    sendSquad(r, 2, far, [tough()]);
+    ticks(r, 3);
+    return r.enemies.filter((e) => garrisonOf(r, far, e.squad)).reduce((n, e) => n + e.hp + e.shield, 0);
+  };
+  if (rogueHit(0) !== rogueHit(3)) return "battle: a rogue squad's fire on plates went with the player's trader";
   // In the world and back: every member's health as it was.
   const lod = mk();
   lod.ally.active = false;
