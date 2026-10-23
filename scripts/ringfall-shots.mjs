@@ -413,7 +413,7 @@ const spills = (pg) =>
  * Phone again, starting in the harbor: the base's choice of region and way in works by touch,
  * the raid starts on the ground at that way in, and the map shows both regions.
  */
-// A fresh profile on a phone on its side: the harbor is locked, and the base still says how to open it.
+// A fresh profile on a phone on its side: the harbor is locked, its button showing its ways in still to find.
 {
   const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
   const page = await ctx.newPage();
@@ -424,10 +424,10 @@ const spills = (pg) =>
   await toCamp(page, true);
   await useStation(page, "map", await ctx.newCDPSession(page));
   const lock = await page.evaluate(() => {
-    const el = document.querySelector("#hub-lock");
-    return el && !el.hidden && el.textContent ? getComputedStyle(el).display : "missing";
+    const el = document.querySelector("#hub-region button.locked");
+    return el ? el.querySelectorAll(".ico.lock, .ico.entry").length : 0;
   });
-  if (lock === "none" || lock === "missing") errors.push(`mobile: the locked region's hint is not shown (${lock})`);
+  if (lock < 2) errors.push(`mobile: the locked region shows no padlock and ways in (${lock} marks)`);
   await page.screenshot({ path: `${out}/m7-map-locked.png` });
   await ctx.close();
 }
@@ -502,7 +502,7 @@ const spills = (pg) =>
   lap("no pointer lock");
 }
 
-// A fresh profile walks to a way in it does not know: the toast says it is remembered, the camp marks it, and the map tells it from those still unknown.
+// A fresh profile walks to a way in it does not know: the toast shows it as the map's dashed ring with its name, the camp marks it, and the map tells it from those still unknown.
 {
   const pg = await browser.newPage({ viewport: { width: 1280, height: 720 } });
   pg.on("pageerror", (e) => errors.push(`way in pageerror: ${e.message}`));
@@ -515,8 +515,8 @@ const spills = (pg) =>
   await pg.evaluate(() => window.ringfallPlace(462, -30, Math.PI / 2));
   await pg.evaluate(() => window.advanceTime(300));
   const st = JSON.parse(await pg.evaluate(() => window.render_game_to_text()));
-  const toast = await pg.evaluate(() => document.getElementById("toasts").textContent);
-  if (st.found.join() !== "beach,checkpoint" || !/この場所を覚えた：東の検問道/.test(toast)) errors.push(`way in: walking to the checkpoint found ${st.found.join()}, toast "${toast}"`);
+  const toast = await pg.evaluate(() => [...document.querySelectorAll("#toasts .toast")].map((t) => (t.querySelector(".ico.entry") ? "◯" : "") + t.textContent).join("|"));
+  if (st.found.join() !== "beach,checkpoint" || !/◯東の検問道/.test(toast)) errors.push(`way in: walking to the checkpoint found ${st.found.join()}, toast "${toast}"`);
   await pg.screenshot({ path: `${out}/32-entry-found.png` });
   await pg.keyboard.press("KeyM");
   await pg.evaluate(() => window.advanceTime(100));
@@ -581,13 +581,14 @@ const read = async () => JSON.parse(await page.evaluate(() => window.render_game
   await useStation(page, "workshop");
   await page.screenshot({ path: `${out}/00-panel-workshop.png` });
   await closePanel(page);
-  // The start choice: a fresh profile knows only the reservoir's first way in, so the harbor is shown locked, with how to open it.
+  // The start choice: a fresh profile knows only the reservoir's first way in, so the harbor is shown locked, with its ways in still to find.
   await seen("map");
   await useStation(page, "map");
   const harborLocked = await page.locator("#hub-region button.locked").count();
   const entriesOffered = await page.locator("#hub-region [data-act=entry]").count();
   await page.screenshot({ path: `${out}/00-panel-map.png` });
-  if (harborLocked !== 1 || entriesOffered !== 1 || !/港湾地帯：峠/.test(await page.evaluate(() => document.getElementById("hub-lock").textContent))) errors.push(`camp: a fresh profile offers ${entriesOffered} ways in and ${harborLocked} locked regions, or the harbor's hint did not show`);
+  const harborRings = await page.locator("#hub-region button.locked .ico.entry").count();
+  if (harborLocked !== 1 || entriesOffered !== 1 || harborRings !== 3) errors.push(`camp: a fresh profile offers ${entriesOffered} ways in and ${harborLocked} locked regions, the harbor showing ${harborRings} ways in to find`);
   await closePanel(page);
   await seen("stash");
   await useStation(page, "stash");
@@ -647,9 +648,9 @@ if (!(after.player.z < before.player.z - 3)) errors.push(`keyboard: W did not mo
   if (!(held > 0.9 && let_go < 0.1 && switchedOn > 0.9 && afterRight > 0.9 && switchedOff < 0.1)) errors.push(`F aim: held ${held}, let go ${let_go}, switched on ${switchedOn}, after the right button ${afterRight}, off ${switchedOff}`);
 }
 await page.screenshot({ path: `${out}/01-start.png` });
-// The start's banner names the way in and sends the player to the map (M), since the HUD has no markers to follow.
-const startBanner = await page.evaluate(() => document.getElementById("banner").textContent);
-if (!/地図/.test(startBanner) || /目印/.test(startBanner) || !/南の浜/.test(startBanner)) errors.push(`start banner does not name the way in and point at the map: ${startBanner}`);
+// The start's banner names the way in, and only that.
+const startBanner = await page.evaluate(() => ({ head: document.getElementById("banner-head").textContent, sub: document.getElementById("banner-sub").textContent }));
+if (!/南の浜/.test(startBanner.head) || startBanner.sub) errors.push(`start banner does not name only the way in: ${JSON.stringify(startBanner)}`);
 
 // A tour of the island's buildings and high ground, from fixed cameras.
 await page.evaluate(() => {
@@ -913,8 +914,9 @@ await page.evaluate(() => {
 await page.evaluate(() => window.ringfallDownAlly());
 await page.evaluate(() => window.advanceTime(300));
 await page.screenshot({ path: `${out}/18-teammate-down.png` });
-const downUi = await page.evaluate(() => ({ prompt: document.getElementById("prompt").textContent, tag: getComputedStyle(document.getElementById("mate-tag")).display, row: document.getElementById("mate-state").textContent }));
-if (!/リオを起こす/.test(downUi.prompt) || downUi.tag === "none" || !/ダウン/.test(downUi.row)) errors.push(`teammate down: HUD did not show it (${JSON.stringify(downUi)})`);
+// Down, the teammate's row shows a cross and its seconds, and the prompt the first-aid mark and its name.
+const downUi = await page.evaluate(() => ({ prompt: document.getElementById("prompt").textContent, aid: !!document.querySelector("#prompt .ico.revive"), tag: getComputedStyle(document.getElementById("mate-tag")).display, row: document.getElementById("mate").className, cross: !!document.querySelector("#mate-state .ico.cross") }));
+if (!/リオ/.test(downUi.prompt) || !downUi.aid || downUi.tag === "none" || downUi.row !== "down" || !downUi.cross) errors.push(`teammate down: HUD did not show it (${JSON.stringify(downUi)})`);
 await page.keyboard.press("KeyE");
 await page.evaluate(() => window.advanceTime(3400));
 const helped = await read();
@@ -1465,7 +1467,8 @@ const readOf = async (pg) => JSON.parse(await pg.evaluate(() => window.render_ga
   });
   await pg.evaluate(() => window.advanceTime(300));
   const prompt = await pg.textContent("#prompt");
-  if (!/ダムの点検通路/.test(prompt) || !/ボルトカッターがあれば開く/.test(prompt)) errors.push(`routes: before the dam's door the prompt reads "${prompt}"`);
+  const padlock = await pg.locator("#prompt .ico.lock").count();
+  if (!/ダムの点検通路/.test(prompt) || !/ボルトカッター/.test(prompt) || !padlock) errors.push(`routes: before the dam's door the prompt reads "${prompt}" (${padlock} padlocks)`);
   await pg.screenshot({ path: `${out}/52-route-closed.png` });
   await pg.keyboard.press("KeyM");
   await pg.evaluate(() => window.advanceTime(200));
@@ -1777,7 +1780,8 @@ lap("island");
       await pg.evaluate(() => window.ringfallMods.drop("deflector", 1.8));
       await pg.evaluate(() => window.advanceTime(300));
       const prompt = await pg.textContent("#prompt");
-      if (!/偏向膜/.test(prompt) || !/吸電コイルを外す/.test(prompt)) errors.push(`mods: at a part on the ground the prompt reads "${prompt}"`);
+      const off = await pg.evaluate(() => document.querySelector("#prompt s")?.textContent ?? "");
+      if (!/偏向膜/.test(prompt) || off !== "吸電コイル") errors.push(`mods: at a part on the ground the prompt reads "${prompt}", striking "${off}"`);
       // Looking down at the part from just behind the player: the chip and its beam, with the prompt.
       await pg.evaluate(() => {
         const st = JSON.parse(window.render_game_to_text()).player;
@@ -1810,7 +1814,7 @@ lap("island");
     await pg.waitForTimeout(100);
     const r3 = await readOf(pg);
     const after = await pg.textContent("#home .analyse");
-    if (!r3.profile.known.includes("scrambler") || r3.settled?.analysed !== "scrambler" || !/解析した/.test(after) || (await pg.locator("#home .analyse button:not([disabled])").count())) errors.push(`mods: analysing the scrambler left ${JSON.stringify({ known: r3.profile.known, analysed: r3.settled?.analysed })} "${after}"`);
+    if (!r3.profile.known.includes("scrambler") || r3.settled?.analysed !== "scrambler" || !(await pg.locator("#home .analyse [data-analyse=scrambler].done").count()) || (await pg.locator("#home .analyse button:not([disabled])").count())) errors.push(`mods: analysing the scrambler left ${JSON.stringify({ known: r3.profile.known, analysed: r3.settled?.analysed })} "${after}"`);
     await pg.locator("#home .analyse").scrollIntoViewIfNeeded().catch(() => undefined);
     await pg.screenshot({ path: tag("84-results-analysed.png", "m34-results-analysed.png") });
     await ctx.close();
@@ -2010,8 +2014,8 @@ for (const phone of [false, true]) {
   await draw(pg);
   await pg.screenshot({ path: tag(7, "objective-front") });
   const hud = await pg.evaluate(() => ({ own: document.querySelectorAll("#island-row .node.own").length, all: document.querySelectorAll("#island-row .node").length, text: document.getElementById("island-row").textContent }));
-  const deadline = await pg.textContent("#obj-raid");
-  if (hud.own !== 2 || hud.all !== 6 || hud.text.trim() || !/締め切り/.test(deadline)) errors.push(`battle: the HUD's row reads ${JSON.stringify(hud)}, the card "${deadline}"`);
+  const deadline = await pg.evaluate(() => document.querySelector("#obj-raid .deadline .ico.clock") ? document.querySelector("#obj-raid .deadline").textContent : "");
+  if (hud.own !== 2 || hud.all !== 6 || hud.text.trim() || !/^\d+:\d\d$/.test(deadline)) errors.push(`battle: the HUD's row reads ${JSON.stringify(hud)}, the card "${deadline}"`);
   const st = await readOf(pg);
   if (st.battle.squads.filter((q) => q.side === 0).length < 2) errors.push(`battle: ${st.battle.squads.filter((q) => q.side === 0).length} of the player's squads at the start (the turrets at two nodes)`);
   // A fight in front of the player: the player's squad on the left, the enemy's on the right.

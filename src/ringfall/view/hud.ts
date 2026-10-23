@@ -112,7 +112,7 @@ export class Hud {
     this.map.whole = whole;
     const to = whole ? "地域" : "全体";
     $("map-zoom").textContent = to;
-    $("map-view-key").textContent = `で${to}を見る`;
+    $("map-view-key").textContent = to;
   }
 
   constructor() {

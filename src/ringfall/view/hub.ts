@@ -1,3 +1,5 @@
+import { PLAYER } from "../sim/config";
+import { checkIcon, clockIcon, crossIcon, depotIcon, entryIcon, healIcon, lockIcon, robotIcon, routeIcon, SIDE, turretIcon, upIcon } from "./icons";
 import { ALLY, FACTORY, HEALS as HEAL_SPECS, HIDEOUT, MOD_KINDS, RARITY, THREAT, TOOLS, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
 import { boostFor, freeKit, raidClock, strengthFor, type Kit } from "../sim/state";
 import { CAMP, entryOf, NODES, POIS, UNLOCKS, poiIndex, poiRegion, REGIONS, regionOf, ROUTES, type EntryId, type PoiId, type RegionId, type StationId } from "../sim/map";
@@ -49,29 +51,29 @@ interface Needs {
   factory: Record<ValuableKind, number>;
 }
 
-/** `need`: valuables the hideout and the factory still ask for; `have`: how many of this one the stash holds. */
-function itemNote(i: Item, need?: Needs, have = 1): string {
+/**
+ * An item's line under its name, in names and numbers: a weapon's class and numbers, armour's
+ * shield, a heal's mark (blue shield, green health) and amount, and for a valuable the hideout's and
+ * the factory's count of it still to use (`need`). Keys and tools have none: the name says it.
+ */
+function itemNote(i: Item, need?: Needs): string {
   switch (i.t) {
     case "weapon":
       return `${WEAPONS[i.kind].label}・${weaponStats(i.kind, i.rarity)}`;
     case "valuable": {
       const h = need?.hideout[i.kind] ?? 0;
       const f = need?.factory[i.kind] ?? 0;
-      if (!h && !f) return "売却用";
-      const where = h && f ? "隠れ家と工場" : h ? "隠れ家" : "工場";
-      const n = h + f;
-      if (have > n) return `${where}で ${n} 個使う・残りは売れる`;
-      return have < n ? `${where}で使う・あと ${n - have} 個要る` : `${where}で使う`;
+      return [h ? `隠れ家 ${h}` : "", f ? `工場 ${f}` : ""].filter(Boolean).join("・");
     }
     case "armor":
-      return "シールド強化";
+      return `シールド ${PLAYER.shieldByTier[i.tier]}`;
     case "key":
-      return "保管庫を開ける";
     case "tool":
-      // One that reaches the stash is spent on a closed route, so one kept there has none left to open.
-      return "道はもう開いている・売れる";
-    case "heal":
-      return HEAL_SPECS[i.kind].shield ? "シールド回復" : "体力回復";
+      return "";
+    case "heal": {
+      const h = HEAL_SPECS[i.kind];
+      return `${healIcon(h.shield)}${h.amount ? `+${h.amount}` : "MAX"}`;
+    }
   }
 }
 
@@ -117,6 +119,12 @@ export function rewardList(q: { reward: Reward }): [RewardItem, number][] {
   return out;
 }
 
+/**
+ * A hideout level's effect as names and numbers. Most levels' `does` is already that; the radio's
+ * says what it tells in a sentence, so it is shown as what it marks.
+ */
+const moduleDoes = (m: ModuleId, lv: number, does: string) => (m === "radio" ? (lv === 1 ? "拠点 ★" : "拠点 ★・回収品・レイダーの時刻") : does);
+
 const $ = (id: string) => document.getElementById(id)!;
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
 const yen = (n: number) => n.toLocaleString("ja-JP");
@@ -148,8 +156,7 @@ export function whereLine(kind: ValuableKind): string {
   const all = sources(kind);
   const bins = all.filter((s) => s.from === "bin").slice(0, 3);
   const other = all.find((s) => s.from !== "bin");
-  const say = (s: Source) =>
-    s.from === "robot" ? (s.share >= 1 ? `${s.where}${s.region ? `（${s.region}）` : ""}が落とす` : `${s.where}が ${Math.round(s.share * 100)}% で落とす`) : `${s.where}${s.region ? `（${s.region}）` : ""} ${Math.round(s.share * 100)}%`;
+  const say = (s: Source) => `${s.where}${s.region ? `（${s.region}）` : ""} ${Math.round(Math.min(1, s.share) * 100)}%`;
   return [...bins, ...(other ? [other] : [])].map(say).join("・");
 }
 
@@ -411,7 +418,7 @@ export class Hub {
   rideRefused(): string {
     this.fixStart();
     const a = this.allowance();
-    return a && !fitsStart(this.profile, this.startLoad(), this.from) ? `持ち込み枠を超えている（${a.cost} / ${a.budget}）` : "";
+    return a && !fitsStart(this.profile, this.startLoad(), this.from) ? `持ち込み枠 ${a.cost} / ${a.budget}` : "";
   }
 
   /**
@@ -445,20 +452,22 @@ export class Hub {
     const buildable = MODULES.filter((m) => canBuild(p, m)).length;
     // Tomorrow's event is announced here a day ahead.
     const coming = p.events[1];
-    const map = [coming ? `明日：${eventName(coming)}` : "", p.hideout.radio ? "知らせ" : ""].filter(Boolean).join("・");
+    const map = [coming ? `明日 ${eventName(coming)}` : "", p.hideout.radio ? "無線" : ""].filter(Boolean).join("・");
     // The board wants looking at while it has contracts and none is taken.
     const open = !takenContract(p) && !takenStory(p) && p.board.contracts.length ? `依頼 ${p.board.contracts.length}` : "";
     // The shelves say when the next raid would go out with the lent kit's weapons though the stash holds some.
-    const kit = this.lent && p.stash.some((i) => i.t === "weapon") ? "装備：貸出" : "";
-    return { map, quests: [ready ? `納品 ${ready}` : "", open].filter(Boolean).join("・"), stash: kit, shop: "", workshop: buildable ? `作れる ${buildable}` : "", factory: canBuildFactory(p) ? `Lv${p.factory + 1} にできる` : "" };
+    const kit = this.lent && p.stash.some((i) => i.t === "weapon") ? "貸出装備" : "";
+    return { map, quests: [ready ? `納品 ${ready}` : "", open].filter(Boolean).join("・"), stash: kit, shop: "", workshop: buildable ? `▲ ${buildable}` : "", factory: canBuildFactory(p) ? `▲ Lv${p.factory + 1}` : "" };
   }
 
   private item(item: Item, body: { act?: string; arg?: string; on?: boolean; right?: string; count?: number; need?: Needs; warn?: boolean }) {
     const n = body.count && body.count > 1 ? ` <i>× ${body.count}</i>` : "";
     const needed = !!body.need && item.t === "valuable" && body.need.hideout[item.kind] + body.need.factory[item.kind] > 0;
-    const note = body.warn ? `<small class="warn">隠れ家か工場でまだ使う。もう一度押すと売る</small>` : `<small${needed ? ' class="need"' : ""}>${itemNote(item, body.need, body.count)}</small>`;
+    // A valuable still needed, pressed once to sell, turns red: the second press sells it.
+    const text = itemNote(item, body.need);
+    const note = text ? `<small class="${body.warn ? "warn" : needed ? "need" : ""}">${text}</small>` : "";
     const inner = `<span style="color:${color(item)}">${esc(itemName(item))}${n}</span>${note}${body.right ?? ""}`;
-    return body.act ? `<button type="button" class="item${body.on ? " on" : ""}" data-act="${body.act}" data-arg="${body.arg}">${inner}</button>` : `<div class="item">${inner}</div>`;
+    return body.act ? `<button type="button" class="item${body.on ? " on" : ""}${body.warn ? " armed" : ""}" data-act="${body.act}" data-arg="${body.arg}">${inner}</button>` : `<div class="item">${inner}</div>`;
   }
 
   /** The radio's report on the next raid into the chosen region, or null without a radio. */
@@ -467,15 +476,19 @@ export class Hub {
     if (!lv) return null;
     const b = boostFor(this.profile.seed, this.region);
     const where = esc(POIS[b.poi].name);
-    if (lv === 1) return `${where}の箱に珍しい物が多い`;
-    return `${where}の箱に${esc(VALUABLES[b.kind].label)}が多い。レイダーはレイドの始めからおよそ ${Math.round(raidClock(strengthFor(enemyNodes(islandHolds(this.profile))), raidThreat(this.profile)).raiders / 60)} 分後に降りる`;
+    if (lv === 1) return `${where} <b style="color:${RARITY_CSS[3]}">★</b>`;
+    const kind = VALUABLES[b.kind];
+    return `${where} <b style="color:${RARITY_CSS[kind.rarity]}">${esc(kind.label)}</b>　レイダー ${clockIcon()}${Math.round(raidClock(strengthFor(enemyNodes(islandHolds(this.profile))), raidThreat(this.profile)).raiders / 60)} 分`;
   }
 
-  /** What the factory at level `lv` makes, in a line: how often, how many at once, of what, and its turrets. */
+  /**
+   * What the factory at level `lv` makes, as marks and numbers: a blue robot per kind it builds, the
+   * seconds between squads, how many squads at once, and its turrets.
+   */
   private factoryLine(lv: number): string {
-    const kinds = FACTORY.kinds[lv].map((k) => ENEMY_NAME[k]).join("・");
-    const turrets = FACTORY.turrets[lv] ? `。自分の拠点に砲台 ${FACTORY.turrets[lv]} 基` : "";
-    return `${FACTORY.every[lv]} 秒ごとに 1 部隊（${kinds}）。同時に ${FACTORY.max[lv]} 部隊まで出す${turrets}`;
+    const kinds = FACTORY.kinds[lv].map((k) => `<span>${robotIcon(SIDE.own)}${ENEMY_NAME[k]}</span>`).join("");
+    const turrets = FACTORY.turrets[lv] ? `<span>${turretIcon(SIDE.own)}${FACTORY.turrets[lv]}</span>` : "";
+    return `<span class="factory-line">${kinds}<span>${clockIcon()}${FACTORY.every[lv]} 秒</span><span>部隊 ×${FACTORY.max[lv]}</span>${turrets}</span>`;
   }
 
   /**
@@ -487,30 +500,30 @@ export class Hub {
     const lv = p.factory;
     const next = nextFactory(p);
     const pips = Array.from({ length: FACTORY.levels.length }, (_, n) => `<i class="${n < lv ? "on" : ""}"></i>`).join("");
-    let card = `<p class="factory-top">工場は最大まで強くなった。</p>`;
+    let card = "";
     if (next) {
       const have = (k: ValuableKind) => p.stash.filter((i) => i.t === "valuable" && i.kind === k).length;
       const rows = next.items
         .map(([k, n]) => `<div class="req${have(k) >= n ? " ok" : ""}"><span style="color:${RARITY_CSS[VALUABLES[k].rarity]}">${esc(VALUABLES[k].label)}</span><b>${Math.min(have(k), n)} / ${n}</b><small>${esc(whereLine(k))}</small></div>`)
         .join("");
       const cash = `<div class="req${p.cash >= next.cash ? " ok" : ""}"><span>クレジット</span><b>${yen(Math.min(p.cash, next.cash))} / ${yen(next.cash)}</b></div>`;
-      card = `<div class="mod open factory-next"><div class="mod-head"><strong>Lv${lv + 1}</strong><small>${esc(next.does)}</small></div><div class="mod-body">${rows}${cash}<button type="button" data-act="factory" ${canBuildFactory(p) ? "" : "disabled"}>Lv${lv + 1} にする</button></div></div>`;
+      card = `<div class="mod open factory-next"><div class="mod-head"><strong>${upIcon()}Lv${lv + 1}</strong><small>${this.factoryLine(lv + 1)}</small></div><div class="mod-body">${rows}${cash}<button type="button" data-act="factory" ${canBuildFactory(p) ? "" : "disabled"}>Lv${lv + 1}</button></div></div>`;
     }
     return (
-      `<div class="factory-head"><small>工場</small><span class="pips">${pips}</span><b>Lv${lv}</b><p>${esc(this.factoryLine(lv))}</p></div>` +
-      card +
-      `<p class="hint">工場の部隊は、自分の拠点と野営地から出て道を歩き、前線の拠点の核を取りに行く。自分の拠点に敵の部隊が来ると、その守りに出る。青いロボットが自軍で、プレイヤーとリオは撃たない。</p>`
+      `<div class="factory-head"><small>工場</small><span class="pips">${pips}</span><b>Lv${lv}${next ? "" : " MAX"}</b><p>${this.factoryLine(lv)}</p></div>` +
+      card
     );
   }
 
   /** The routes a tool opens: open or closed, and for a closed one, the tool and where it lies. */
   private routes(): string {
     const p = this.profile;
+    // Each route as the map draws it (solid teal open, dashed orange shut); a shut one with the tool that opens it and the POI whose bins hold it.
     const rows = ROUTES.map((r) => {
       const open = p.routes.includes(r.id);
       const tool = TOOLS[r.tool];
-      const how = open ? r.note : `${tool.label}で開く。${tool.label}は${POIS[poiIndex(tool.from)].name}の補給箱にある。持ち帰るか中継ボックスから送れば開く`;
-      return `<div class="quest route${open ? " open" : ""}"><div><strong>${esc(r.name)}</strong><span>${esc(how)}</span>${open ? "" : `<small>${esc(r.note)}</small>`}</div><b>${open ? "開通" : "閉鎖"}</b></div>`;
+      const how = open ? "" : `<span>${lockIcon()}<em style="color:${RARITY_CSS[3]}">${esc(tool.label)}</em>　${esc(POIS[poiIndex(tool.from)].name)}</span>`;
+      return `<div class="quest route${open ? " open" : ""}"><div><strong>${routeIcon(open)}${esc(r.name)}</strong>${how}</div></div>`;
     });
     return `<h3 class="hub-sub">道</h3>${rows.join("")}`;
   }
@@ -534,12 +547,12 @@ export class Hub {
         })
         .join("");
       const cash = `<div class="req${p.cash >= next.cash ? " ok" : ""}"><span>クレジット</span><b>${yen(Math.min(p.cash, next.cash))} / ${yen(next.cash)}</b></div>`;
-      body = `<div class="mod-body">${rows}${cash}<button type="button" data-act="build" data-arg="${m}" ${canBuild(p, m) ? "" : "disabled"}>${lv ? `Lv${lv + 1} にする` : "作る"}</button></div>`;
+      body = `<div class="mod-body">${rows}${cash}<button type="button" data-act="build" data-arg="${m}" ${canBuild(p, m) ? "" : "disabled"}>Lv${lv + 1}</button></div>`;
     }
     return (
       `<div class="mod${open ? " open" : ""}"><button type="button" class="mod-head" data-act="mod" data-arg="${m}">` +
       `<strong>${esc(spec.name)}</strong><span class="pips">${pips}</span><b class="${state === "作れる" ? "go" : ""}">${state}</b>` +
-      `<small>${esc(next ? `Lv${lv + 1}：${next.does}` : spec.note)}</small></button>${body}</div>`
+      `<small>${next ? `${upIcon()}Lv${lv + 1}　${esc(moduleDoes(m, lv + 1, next.does))}` : "MAX"}</small></button>${body}</div>`
     );
   }
 
@@ -559,8 +572,8 @@ export class Hub {
     const n = on ? this.profile.threat : 0;
     const pay = this.reward({ ...c.reward, cash: threatPay(c.reward.cash, n) });
     return (
-      `<div class="quest contract${on ? " taken" : ""}" data-type="${c.t}"><div><strong><em>${CONTRACT_NAME[c.t]}</em>${on ? `<i class="taken-tag">受けている${n ? `・強度 ${n}` : ""}</i>` : ""}</strong><span>${esc(contractText(c))}</span>` +
-      `<small>${where}・報酬：${pay}${on ? "" : `（強度を上げると最大 ${THREAT.levels[THREAT.max].reward} 倍）`}</small>${on ? this.strengthRow(c) : ""}</div>${btn}</div>`
+      `<div class="quest contract${on ? " taken" : ""}" data-type="${c.t}"><div><strong><em>${CONTRACT_NAME[c.t]}</em>${on ? `<i class="taken-tag">${checkIcon()}${n ? `強度 ${n}` : ""}</i>` : ""}</strong><span>${esc(contractText(c))}</span>` +
+      `<small>${where}・報酬 ${pay}</small>${on ? this.strengthRow(c) : ""}</div>${btn}</div>`
     );
   }
 
@@ -575,12 +588,13 @@ export class Hub {
     const t = THREAT.levels[n];
     const pct = (k: number) => `${Math.round((1 - k) * 100)}%`;
     const buttons = Array.from({ length: THREAT.max + 1 }, (_, i) => `<button type="button" data-act="strength" data-arg="${c.id}:${i}"${i === n ? ' class="on"' : ""}>${i ? i : "通常"}</button>`).join("");
-    const gives = n ? `得るもの：報酬 ${t.reward} 倍・改造パーツが ${t.mods} 倍出る` : "強度を上げるほど報酬と改造パーツが増える";
-    const asks = n ? `払うもの：増援が ${pct(t.reinforce)}・レイダーが ${pct(t.raiders)} 早い・装甲板 +${Math.round(t.plate * 100)}%・撃ち返しが ${t.range} 倍遠くまで届く` : "通常は敵の持つ拠点の数のとおりの島";
+    // What the chosen 強度 gives (gold) and asks (red), each a name and a number; nothing at 通常.
+    const gives = n ? `${upIcon()}報酬 ×${t.reward}・改造パーツ ×${t.mods}` : "";
+    const asks = n ? `${upIcon()}増援 −${pct(t.reinforce)}・レイダー −${pct(t.raiders)}・装甲板 +${Math.round(t.plate * 100)}%・射程 ×${t.range}` : "";
     const best = POIS.filter((o) => (p.freedAt[o.id] ?? 0) > 0).map((o) => `${o.name} ${p.freedAt[o.id]}`);
     return (
-      `<div class="strength"><small>強度</small><div class="row">${buttons}</div><p class="gives">${esc(gives)}</p><p class="asks">${esc(asks)}</p>` +
-      `<p class="sub">${best.length ? `取った最高の強度：${esc(best.join("・"))}・` : ""}改造パーツは ${p.known.length} / ${MOD_KINDS.length} 種類を知っている</p></div>`
+      `<div class="strength"><small>強度</small><div class="row">${buttons}</div>${gives ? `<p class="gives">${gives}</p>` : ""}${asks ? `<p class="asks">${asks}</p>` : ""}` +
+      `<p class="sub">${best.length ? `最高 ${esc(best.join("・"))}・` : ""}改造パーツ ${p.known.length} / ${MOD_KINDS.length}</p></div>`
     );
   }
 
@@ -589,10 +603,10 @@ export class Hub {
     const p = this.profile;
     const now = currentStory(p.records);
     const on = takenStory(p);
-    const btn = on ? `<button type="button" class="untake" data-act="take" data-arg="">取り消す</button>` : `<button type="button" data-act="take" data-arg="${STORY_TAKEN}">${takenContract(p) ? "こちらに替える" : "目的にする"}</button>`;
+    const btn = on ? `<button type="button" class="untake" data-act="take" data-arg="">取り消す</button>` : `<button type="button" data-act="take" data-arg="${STORY_TAKEN}">${takenContract(p) ? "こちらに替える" : "受ける"}</button>`;
     const cur = now
-      ? `<div class="quest story${on ? " taken" : ""}"><div><strong>${esc(now.title)}<small class="story-n">${STORIES.indexOf(now) + 1} / ${STORIES.length}</small>${on ? `<i class="taken-tag">目的にしている</i>` : ""}</strong><span>${esc(now.ask)}</span><small>${esc(storyWhere(now))}（バッグ 1 枠・売れない）・報酬：${yen(now.cash)} クレジット。記録はいつでも島にあり、目的にすると行き先の光が記録を指す</small></div>${btn}</div>`
-      : `<p class="story-done">記録はすべて集まった。島は変わらず動いている。</p>`;
+      ? `<div class="quest story${on ? " taken" : ""}"><div><strong>${esc(now.title)}<small class="story-n">${STORIES.indexOf(now) + 1} / ${STORIES.length}</small>${on ? `<i class="taken-tag">${checkIcon()}</i>` : ""}</strong><span>${esc(storyWhere(now))}</span><small>報酬 ${yen(now.cash)} クレジット</small></div>${btn}</div>`
+      : `<p class="story-done">${STORIES.length} / ${STORIES.length} ${checkIcon()}</p>`;
     const told = [...p.records]
       .reverse()
       .map((id) => {
@@ -612,16 +626,17 @@ export class Hub {
     if (g.t === "deliver") {
       const have = p.stash.filter((i) => i.t === "valuable" && i.kind === g.valuable).length;
       state = deliverable(p, q) ? `<button type="button" data-act="deliver" data-arg="${q.id}">納品する</button>` : `<b>倉庫 ${have} / ${g.n}</b>`;
-    } else state = `<b>${need(g) > 1 ? `${got} / ${need(g)}` : "未達成"}</b>`;
-    return `<div class="quest"><div><strong>${esc(q.title)}</strong><span>${esc(q.text)}</span><small>報酬：${reward}</small></div>${state}</div>`;
+    } else state = `<b>${got} / ${need(g)}</b>`;
+    return `<div class="quest"><div><strong>${esc(q.title)}</strong><span>${esc(q.text)}</span><small>報酬 ${reward}</small></div>${state}</div>`;
   }
 
   /** The truck's depot allowance, as a slot: the depot's level, what the loadout uses of it, and the way to the next level. */
   private depotSlot(): string {
     const allow = this.allowance();
     if (!allow) return "";
-    return `<div class="slot depot${allow.cost > allow.budget ? " over" : ""}"><small>持ち込み枠</small><span>中継ボックス Lv${allow.level}<b>${allow.cost} / ${allow.budget}</b></span><small>${
-      allow.cost > allow.budget ? `枠を ${allow.cost - allow.budget} 超えている。この装備では車両でこの中継ボックスへ出られない` : allow.next === null ? "最大レベル" : `Lv${allow.level + 1} まで、あと ${yen(allow.next)} クレジット分を送る`
+    // Over the allowance it turns red with what it is over by; under it, the credits' worth still to send through this depot for its next level.
+    return `<div class="slot depot${allow.cost > allow.budget ? " over" : ""}"><small>持ち込み枠</small><span>${depotIcon()}Lv${allow.level}<b>${allow.cost} / ${allow.budget}</b></span><small>${
+      allow.cost > allow.budget ? `${crossIcon()}+${allow.cost - allow.budget}` : allow.next === null ? "MAX" : `${upIcon()}Lv${allow.level + 1}　${yen(allow.next)}`
     }</small></div>`;
   }
 
@@ -632,21 +647,21 @@ export class Hub {
   private islandPanel(): string {
     const p = this.profile;
     const taken = takenContract(p);
-    const count = (h: "held" | "freed") => POIS.filter((o) => !unfreeable(o.id) && p.poiState[o.id].state === h).length;
     const holds = islandHolds(p);
     const front = frontNodes(holds);
+    // How much of the island is the player's is the row of six marks above; the key only names the colours.
     const key =
-      (["freed", "held"] as const).map((h) => `<li><i style="background:${HOLD_CSS[h]}"></i>${h === "freed" ? "自分" : "敵"}<b>${count(h)}</b></li>`).join("") +
+      (["freed", "held"] as const).map((h) => `<li><i style="background:${HOLD_CSS[h]}"></i>${h === "freed" ? "自分" : "敵"}</li>`).join("") +
       `<li><i class="titan" style="background:${TITAN_CSS}"></i>タイタン</li>` +
-      `<li class="front"><i></i>前線<b>${NODES.filter((_, i) => front[i]).map((n) => esc(n.name)).join("・") || "なし"}</b></li>` +
-      `<li class="income">毎日の収入<b>${frontIncome(p).toLocaleString()} クレジット</b></li>`;
+      `<li class="front"><i></i>前線<b>${NODES.filter((_, i) => front[i]).map((n) => esc(n.name)).join("・") || "—"}</b></li>` +
+      `<li class="income">収入<b>${frontIncome(p).toLocaleString()} クレジット</b></li>`;
     return (
       `<div class="hub-island"><canvas id="hub-island-map"></canvas><div class="hub-island-side">` +
       `<div class="hub-day"><small>島の日</small><b>${p.day}</b><small>日目</small></div>` +
       `<div class="hub-row">${nodeRow(holds)}</div>` +
-      `<small>島の出来事</small><ul class="events"><li><small>今日</small>${eventRow(p.events[0], "今日は何も起きない")}</li><li><small>明日</small>${eventRow(p.events[1], "明日は何も起きない")}</li></ul>` +
+      `<small>島の出来事</small><ul class="events"><li><small>今日</small>${eventRow(p.events[0])}</li><li><small>明日</small>${eventRow(p.events[1])}</li></ul>` +
       `<ul class="hold-key">${key}</ul>` +
-      (taken ? `<small>受けた依頼（${esc(regionOf(contractRegion(taken)).name)}・地図の金の破線）</small><p class="hub-taken">${CONTRACT_NAME[taken.t]}：${esc(contractText(taken))}</p>` : "") +
+      (taken ? `<small>依頼　${esc(regionOf(contractRegion(taken)).name)}<i class="taken-line"></i></small><p class="hub-taken">${CONTRACT_NAME[taken.t]}：${esc(contractText(taken))}</p>` : "") +
       `</div></div>`
     );
   }
@@ -670,27 +685,24 @@ export class Hub {
     const on = (yes: boolean) => (yes ? ' class="on"' : "");
     const known = startsIn(p, this.region).entries;
     const unseen = regionOf(this.region).entries.length - known.length;
-    const locked = REGIONS.filter((r) => !canStartIn(p, r.id));
     const intel = this.intel();
-    const line = this.from && allow
-      ? `${esc(POIS[poiIndex(this.from)].name)}の中継ボックス（Lv${allow.level}・持ち込み枠 ${allow.budget}）の前から、${ALLY.name}と歩いて始める`
-      : `${esc(entryOf(this.entry ?? p.entry).name)}から${ALLY.name}と歩いて始める。${esc(regionOf(this.region).note)}${unseen ? `。ほかの入口 ${unseen} つは、歩いて見つけて生きて帰ると選べる` : ""}`;
+    const line = this.from && allow ? `${depotIcon()}${esc(POIS[poiIndex(this.from)].name)}` : `${entryIcon()}${esc(entryOf(this.entry ?? p.entry).name)}`;
     return (
       (intel ? `<div class="slot intel"><small>無線</small><span>${intel}</span></div>` : "") +
       `<div class="hub-region" id="hub-region"><small>地域</small><div class="row">` +
       REGIONS.map((r) =>
         canStartIn(p, r.id)
           ? `<button type="button" data-act="region" data-arg="${r.id}"${on(!this.from && r.id === this.region)}>${esc(r.name)}</button>`
-          : `<button type="button" class="locked" disabled title="${esc(r.locked ?? "")}">${esc(r.name)}（未踏）</button>`,
+          : // Shut until one of its ways in is walked to and the raid comes home: a padlock, and its ways in as the map's dashed rings.
+            `<button type="button" class="locked" disabled>${lockIcon()}${esc(r.name)}${r.entries.map(() => entryIcon(false)).join("")}</button>`,
       ).join("") +
       `</div>` +
-      (this.from ? "" : `<small>入口</small><div class="row entries">${known.map((e) => `<button type="button" class="entry${e === this.entry ? " on" : ""}" data-act="entry" data-arg="${e}">${esc(entryOf(e).name)}</button>`).join("")}</div>`) +
-      (departDepots(p).length ? `<small>中継ボックス</small><div class="row">${departDepots(p).map((d) => `<button type="button" class="depot${this.from === d ? " on" : ""}" data-act="from" data-arg="${d}">${esc(POIS[poiIndex(d)].name)}（${esc(poiRegion(d).name)}）</button>`).join("")}</div>` : "") +
+      // The ways in known, then one dashed ring per way in of the region not found yet (as the map draws them).
+      (this.from ? "" : `<small>入口</small><div class="row entries">${known.map((e) => `<button type="button" class="entry${e === this.entry ? " on" : ""}" data-act="entry" data-arg="${e}">${entryIcon()}${esc(entryOf(e).name)}</button>`).join("")}${Array.from({ length: unseen }, () => `<span class="unseen">${entryIcon(false)}</span>`).join("")}</div>`) +
+      (departDepots(p).length ? `<small>中継ボックス</small><div class="row">${departDepots(p).map((d) => `<button type="button" class="depot${this.from === d ? " on" : ""}" data-act="from" data-arg="${d}">${depotIcon()}${esc(POIS[poiIndex(d)].name)}（${esc(poiRegion(d).name)}）</button>`).join("")}</div>` : "") +
       `</div>` +
-      `<p class="hub-lock" id="hub-lock"${locked.length ? "" : " hidden"}>${esc(locked.map((r) => `${r.name}：${r.locked ?? ""}`).join("　"))}</p>` +
-      `<div class="slot ride"><small>車両の行き先</small><span>${line}</span></div>` +
-      this.depotSlot() +
-      `<p class="hint">門から歩いて出ると、${esc(entryOf(FIRST_ENTRY).name)}からレイドが始まる。ここで選んだ出撃地点へは、門の脇の車両で送ってもらう。</p>`
+      `<div class="slot ride"><small>車両</small><span>${line}</span></div>` +
+      this.depotSlot()
     );
   }
 
@@ -716,7 +728,7 @@ export class Hub {
     const weapons = this.lent
       ? `<div class="slot lent"><small>武器</small><span>${freeKit()
           .weapons.map((w) => `${WEAPONS[w.kind].name} ${RARITY.names[w.rarity]}`)
-          .join("・")}（貸出）</span><small class="stat">${esc(owns ? "左の倉庫で武器を押すと、その武器で出る" : "倉庫に武器がない")}</small></div>`
+          .join("・")}（貸出）</span></div>`
       : slot("武器 1", this.load.weapons[0], stat(this.load.weapons[0])) + slot("武器 2", this.load.weapons[1], stat(this.load.weapons[1]));
     return (
       this.depotSlot() +
@@ -725,9 +737,8 @@ export class Hub {
       slot("アーマー", this.load.armor) +
       `<div class="slot"><small>鍵</small><span${keys ? ` style="color:${RARITY_CSS[3]}"` : ' class="none"'}>${keys || "なし"}</span></div>` +
       HEALS.map(heal).join("") +
-      `<p class="hint">倒れると、持ち込んだ物と回収品は失う。ポーチ（${pouchSlots(p.hideout)} 枠）に入る分の回収品だけは残る。貸出の回復${p.hideout.infirmary ? "（医務室の分を含む）" : ""}は、どの装備でも付く。選んだ装備は次のレイドでも、倉庫にある限り選ばれたまま。${
-        this.from ? "車両で中継ボックスへ出るときは、武器・アーマー・鍵が持ち込み枠を使う。貸出装備と回復は枠を使わない。門から歩いて出るなら枠はない。" : ""
-      }</p>`
+      // The pouch: the slots of valuables a wipe leaves the player.
+      `<div class="slot"><small>ポーチ</small><span>${pouchSlots(p.hideout)} 枠</span></div>`
     );
   }
 
@@ -756,9 +767,9 @@ export class Hub {
     const c = takenContract(p);
     const story = takenStory(p) ? currentStory(p.records) : null;
     const front = this.frontPick();
-    const goal = c ? `${CONTRACT_NAME[c.t]}：${contractText(c)}${p.threat ? `（強度 ${p.threat}）` : ""}` : story ? `記録：${story.title}` : `前線：${front?.name ?? "島を探索する"}（依頼なし・強度 通常）`;
+    const goal = c ? `${CONTRACT_NAME[c.t]}：${contractText(c)}${p.threat ? `（強度 ${p.threat}）` : ""}` : story ? `記録：${story.title}` : front ? `前線：${front.name}` : "探索";
     const rows: [string, string][] = [
-      ["出撃地点", walk ? `${entryOf(FIRST_ENTRY).name}（門から歩いて）` : this.rideTo()],
+      ["出撃地点", walk ? `${entryOf(FIRST_ENTRY).name}（門）` : `${this.rideTo()}（車両）`],
       ["武器", k.weapons],
       ["アーマー", k.armor],
       ["回復", k.heals],
@@ -766,7 +777,7 @@ export class Hub {
       ["目的", goal],
     ];
     const warn: string[] = [];
-    if (this.lent && p.stash.some((i) => i.t === "weapon")) warn.push("倉庫に武器があるが、貸出装備で出る");
+    if (this.lent && p.stash.some((i) => i.t === "weapon")) warn.push("貸出装備");
     if (!walk && this.rideRefused()) warn.push(this.rideRefused());
     return { rows, warn };
   }
@@ -798,7 +809,7 @@ export class Hub {
     const k = this.kitLines();
     const plan: [string, string][] = [
       ["攻める拠点", pick ? pick.name : "なし"],
-      ["依頼", c ? `${CONTRACT_NAME[c.t]}：${contractText(c)}${p.threat ? `（強度 ${p.threat}）` : ""}` : story ? `記録：${story.title}` : "なし（依頼板で受ける。受けないと前線の拠点が目的になる）"],
+      ["依頼", c ? `${CONTRACT_NAME[c.t]}：${contractText(c)}${p.threat ? `（強度 ${p.threat}）` : ""}` : story ? `記録：${story.title}` : "なし"],
       ["装備", `${k.weapons}・アーマー ${k.armor}`],
     ];
     return { head, row: nodeRow(islandHolds(p)), plan };
@@ -834,18 +845,18 @@ export class Hub {
             const act = shop ? "sell" : kit && (item.t === "weapon" || item.t === "armor" || item.t === "key") ? "pick" : undefined;
             return this.item(item, { act, arg: index.join(","), on, right, count: index.length, need, warn: shop && this.armed === index.join(",") });
           })
-          .join("") || `<p class="empty">倉庫は空。商人で買うか、貸出装備で出て持ち帰る。</p>`;
+          .join("") || `<p class="empty">0 / ${stashCap(p.hideout)}</p>`;
     }
     $("hub-side-title").textContent = shop ? "売り物" : st === "quests" ? "依頼と記録" : st === "workshop" ? "隠れ家" : st === "factory" ? "自軍のロボット" : st === "map" ? "島と出撃地点" : "持っていく物";
     if (st === "factory") $("hub-side").innerHTML = this.factoryPanel();
     else if (st === "workshop") {
       $("hub-side").innerHTML =
-        MODULES.map((m) => this.moduleCard(m)).join("") + `<p class="hint">回収品とクレジットで設備を作る。足りない物は、押すと出やすい場所が出る。上の段にはデータコアや小型炉心が要る。</p>` + this.routes();
+        MODULES.map((m) => this.moduleCard(m)).join("") + this.routes();
       $("hub-side").querySelector(".mod.open .mod-body")?.parentElement?.scrollIntoView({ block: "nearest" });
     } else if (shop) {
       const full = p.stash.length >= stashCap(p.hideout);
       $("hub-side").innerHTML = shelfTiers(p) + wares(p)
-        .map((item, n) => `<button type="button" class="item" data-act="buy" data-arg="${n}" ${p.cash < buyPrice(item) || full ? "disabled" : ""}><span style="color:${color(item)}">${esc(itemName(item))}</span><small>${item.t === "valuable" ? (want[item.kind] > 0 ? `隠れ家と工場の材料・あと ${want[item.kind]} 個要る` : need.hideout[item.kind] + need.factory[item.kind] > 0 ? "隠れ家と工場の材料・足りている" : "売却用") : itemNote(item)}</small><b>${yen(buyPrice(item))}</b></button>`)
+        .map((item, n) => `<button type="button" class="item" data-act="buy" data-arg="${n}" ${p.cash < buyPrice(item) || full ? "disabled" : ""}><span style="color:${color(item)}">${esc(itemName(item))}</span><small${item.t === "valuable" && want[item.kind] > 0 ? ' class="need"' : ""}>${item.t === "valuable" ? (want[item.kind] > 0 ? `${upIcon()}${want[item.kind]}` : need.hideout[item.kind] + need.factory[item.kind] > 0 ? checkIcon() : "") : itemNote(item)}</small><b>${yen(buyPrice(item))}</b></button>`)
         .join("");
     } else if (st === "quests") {
       const open = offered(p.quests);
@@ -856,13 +867,12 @@ export class Hub {
         (intro.length ? `<h3 class="hub-sub first">入門の依頼</h3>${intro.map((q) => this.quest(q)).join("")}` : "") +
         `<h3 class="hub-sub${intro.length ? "" : " first"}">今日の依頼<small>${p.day} 日目</small></h3>` +
         p.board.contracts.map((c) => this.contractCard(c, taken)).join("") +
-        `<p class="hint">次のレイドに依頼か記録を 1 つだけ受けて出られる。受けた依頼には強度を選べ、強度を上げるほど敵が強く、報酬と改造パーツが増える。受けなければ強度は通常で、目的は前線の拠点になる。済ませなかった依頼は、その日が終わると板から消え、翌日は新しい依頼が並ぶ。迎撃は倒れても数える。報酬は倉庫に届く。</p>` +
         (craft.length ? `<h3 class="hub-sub">商人の依頼</h3>${craft.map((q) => this.quest(q)).join("")}` : "") +
         this.storyPanel();
     } else if (st === "map") {
       // The island goes under the region and start buttons, which stay in sight on a phone's short screen.
       const starts = this.startsPanel();
-      const at = starts.indexOf('<p class="hub-lock"');
+      const at = starts.indexOf('<div class="slot ride"');
       $("hub-side").innerHTML = starts.slice(0, at) + this.islandPanel() + starts.slice(at);
       this.drawIsland();
     }
@@ -871,7 +881,7 @@ export class Hub {
     $("hub-foot").hidden = !kit;
     if (kit) {
       const k = this.kitLines();
-      $("hub-foot-note").textContent = `出撃する装備：${k.weapons}・アーマー ${k.armor}・回復 ${k.heals}${this.from ? `。車両で${this.rideTo()}へ出るときは持ち込み枠を使う` : ""}`;
+      $("hub-foot-note").textContent = `${k.weapons}・アーマー ${k.armor}・${k.heals}`;
     }
   }
 }

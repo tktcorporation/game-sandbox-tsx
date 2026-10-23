@@ -1099,10 +1099,27 @@ body.touch .mate-bars {
   font-weight: 800;
   font-size: 20px;
 }
-.lede-sub {
-  margin: 0;
-  font-size: 14px;
-  color: var(--muted);
+/* The goal under the title: the island's six nodes, large, filled blue as this save takes them. */
+.title-row {
+  margin: 2px 0 4px;
+}
+.title-row .node-row {
+  gap: 8px;
+}
+.title-row .node-row i.node {
+  width: 20px;
+  height: 20px;
+  border-width: 3px;
+}
+.title-row .node-row i.node.gap {
+  margin-left: 12px;
+}
+.touch-help span {
+  margin-right: 18px;
+}
+.touch-help b {
+  margin-right: 6px;
+  color: var(--hot);
 }
 .keys {
   list-style: none;
@@ -3248,4 +3265,50 @@ body.touch #obj-exits div:not(.live) span {
   font-size: 11px;
   color: #1b1f2a;
   background: var(--r3);
+}
+/* The base's panels: marks in place of the lines that explained them. */
+#hub .item.armed {
+  box-shadow: inset 0 0 0 2px #ff6b5a;
+}
+.factory-line {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  align-items: baseline;
+}
+.factory-line > span {
+  white-space: nowrap;
+}
+.hub-list .quest.route strong .ico.route {
+  vertical-align: -3px;
+  margin-right: 6px;
+}
+.hub-list .quest.route em {
+  font-style: normal;
+  font-weight: 800;
+}
+.hub-region .row .unseen {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 2px;
+}
+.hub-region button.locked .ico.entry {
+  margin: 0 0 0 4px;
+}
+.hub-island-side .taken-line {
+  display: inline-block;
+  width: 22px;
+  margin-left: 6px;
+  vertical-align: middle;
+  border-top: 2px dashed var(--r3);
+}
+.strength .gives .ico,
+.strength .asks .ico {
+  vertical-align: -2px;
+}
+.taken-tag .ico {
+  vertical-align: -2px;
+}
+#camp-prompt .warn .ico {
+  vertical-align: -2px;
 }

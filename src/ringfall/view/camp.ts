@@ -1,4 +1,5 @@
-import { CAMP, entryOf, regionOf, type CampSpot, type StationId } from "../sim/map";
+import { CAMP, type CampSpot, type StationId } from "../sim/map";
+import { crossIcon } from "./icons";
 import type { State } from "../sim/state";
 import type { World } from "./world";
 
@@ -99,7 +100,7 @@ export class CampView {
       row.dataset.html = o.today.row;
       row.innerHTML = o.today.row;
     }
-    const plan = o.today.plan.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("") + `<dt class="wide">出撃</dt><dd class="wide">${esc(`門を出ると${entryOf(regionOf("reservoir").entries[0]).name}から。車両なら地図の机で選んだ地点から`)}</dd>`;
+    const plan = o.today.plan.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("");
     const list = $("camp-plan-list");
     if (list.dataset.html !== plan) {
       list.dataset.html = plan;
@@ -107,8 +108,9 @@ export class CampView {
     }
     const key = o.touch ? "" : "<kbd>E</kbd>";
     let prompt = "";
-    if (o.near?.id === "vehicle") prompt = o.ride.refused ? `<span class="warn">車両で${esc(o.ride.to)}へ：${esc(o.ride.refused)}</span>` : `${key}車両で${esc(o.ride.to)}へ出る`;
-    else if (o.near) prompt = `${key}${esc(o.near.name)}を使う`;
+    // The truck: where it drives, or, over the depot's allowance, a cross and the allowance in red.
+    if (o.near?.id === "vehicle") prompt = o.ride.refused ? `<span class="warn">${crossIcon()}${esc(o.ride.to)}　${esc(o.ride.refused)}</span>` : `${key}車両　${esc(o.ride.to)}`;
+    else if (o.near) prompt = `${key}${esc(o.near.name)}`;
     $("camp-prompt").innerHTML = prompt;
     const use = $("t-use");
     use.hidden = !o.near;
