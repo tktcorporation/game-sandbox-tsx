@@ -466,10 +466,10 @@ export const FACTORY = {
   kinds: [["grunt", "grunt"], ["grunt", "grunt", "grunt"], ["grunt", "heavy", "grunt"], ["grunt", "heavy", "drone", "grunt"], ["grunt", "grunt", "heavy", "drone", "grunt"]] as EnemyKind[][],
   turrets: [0, 0, 0, 1, 1],
   levels: [
-    { items: [["parts", 3], ["fuse", 2]], cash: 1250, does: "3 体の部隊・作る間隔が 170 秒・同時に 2 部隊" },
-    { items: [["parts", 4], ["wire", 2]], cash: 3500, does: "ヘビーを作る・作る間隔が 140 秒" },
-    { items: [["wire", 3], ["board", 2]], cash: 7000, does: "4 体の部隊・ドローンを作る・作る間隔が 110 秒・同時に 3 部隊・解放した拠点に砲台" },
-    { items: [["board", 3], ["drive", 2]], cash: 12000, does: "5 体の部隊・作る間隔が 90 秒・同時に 4 部隊" },
+    { items: [["parts", 3], ["fuse", 2]], cash: 1250, does: "3 体の部隊・作る間隔が 200 秒" },
+    { items: [["parts", 4], ["wire", 2]], cash: 3500, does: "ヘビーを作る・作る間隔が 170 秒・同時に 2 部隊" },
+    { items: [["wire", 3], ["board", 2]], cash: 7000, does: "4 体の部隊・ドローンを作る・作る間隔が 140 秒・解放した拠点に砲台" },
+    { items: [["board", 3], ["drive", 2]], cash: 12000, does: "5 体の部隊・作る間隔が 110 秒・同時に 3 部隊" },
   ] as FactoryLevel[],
 };
 
