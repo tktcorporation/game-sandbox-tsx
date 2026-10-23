@@ -122,7 +122,7 @@ const LAND_NEXT: Record<number, number[]> = {
  * depot, and the landings' (`PAD`, `SHORE`) where the dropships and the boats put the enemy ashore.
  */
 export const nodePoint = (() => {
-  const camp = { x: (CAMP.gate.x0 + CAMP.gate.x1) / 2, z: CAMP.gate.z - 10 };
+  const camp = { x: (CAMP.gate.x0 + CAMP.gate.x1) / 2, z: CAMP.gate.z - 4 };
   // Found on first use: the walkers' grid it reads is built then, never when a page loads the module.
   let at: Point[] | null = null;
   let depots: Point[] | null = null;
@@ -467,6 +467,7 @@ function rallyAt(s: State, q: BattleSquad) {
   if (sq && (sq.patrol.length !== 2 || sq.patrol[1].x !== at.x || sq.patrol[1].z !== at.z)) {
     sq.patrol = [{ x: q.x, z: q.z }, at];
     sq.leg = 1;
+    sq.rush = true;
   }
 }
 
@@ -484,6 +485,7 @@ function settleAt(s: State, q: BattleSquad) {
   if (sq && (sq.patrol.length !== 1 || sq.patrol[0].x !== at.x || sq.patrol[0].z !== at.z)) {
     sq.patrol = [at];
     sq.leg = 0;
+    sq.rush = undefined;
   }
 }
 

@@ -112,13 +112,13 @@ export class BattleView {
       const hinge = new THREE.Group();
       hinge.position.x = side * half;
       const leaf = new THREE.Mesh(
-        new THREE.PlaneGeometry(half, 2.6).translate((-side * half) / 2, 1.3, 0),
+        new THREE.PlaneGeometry(half, 3.2).translate((-side * half) / 2, 1.6, 0),
         new THREE.MeshBasicMaterial({ toneMapped: false, color: PAL.friendEye, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }),
       );
       hinge.add(leaf);
       this.leaves.push(leaf);
       this.gate.add(hinge);
-      const lamp = haloSprite(PAL.friendEye, 2.2, 0);
+      const lamp = haloSprite(PAL.friendEye, 3.2, 0);
       lamp.position.set(side * (half + 0.15), 3.9, 0);
       this.gateLamps.push(lamp);
       this.gate.add(lamp);
@@ -209,7 +209,7 @@ export class BattleView {
     const open = Math.min(1, Math.max(0, since / 1.4));
     this.leaves.forEach((leaf, i) => {
       leaf.parent!.rotation.y = (i ? -1 : 1) * open * (Math.PI / 2) * 0.95;
-      (leaf.material as THREE.MeshBasicMaterial).opacity = lit ? 0.5 * Math.min(1, (GATE_LIGHT - since) / 2) : 0;
+      (leaf.material as THREE.MeshBasicMaterial).opacity = lit ? 0.85 * Math.min(1, (GATE_LIGHT - since) / 2) : 0;
       leaf.visible = lit;
     });
     this.gateLamps.forEach((lamp) => ((lamp.material as THREE.SpriteMaterial).opacity = lit ? (Math.sin(this.time * 10) > 0 ? 1 : 0.3) : 0));

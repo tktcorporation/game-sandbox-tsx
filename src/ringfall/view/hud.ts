@@ -634,7 +634,10 @@ export class Hud {
    */
   private threatMarks(s: State, view: World, w: number, h: number) {
     const b = s.battle;
+    // Kept clear of the compass at the top and the buttons along the bottom.
     const M = 46;
+    const TOP = 110;
+    const BOTTOM = 140;
     NODES.forEach((n, i) => {
       const on = !!b && b.threat[i] && s.phase === "play";
       let el = this.threatEls.get(i);
@@ -652,17 +655,18 @@ export class Hud {
       let x = sp.x;
       let y = sp.y;
       let angle = 180;
-      if (sp.behind || x < M || x > w - M || y < M || y > h - M) {
+      const cy = (TOP + h - BOTTOM) / 2;
+      if (sp.behind || x < M || x > w - M || y < TOP || y > h - BOTTOM) {
         // Off screen: on the edge, the way to the core from the middle of the screen.
         let dx = x - w / 2;
-        let dy = y - h / 2;
+        let dy = y - cy;
         if (sp.behind) {
           dx = -dx;
           dy = Math.abs(dy) + h;
         }
-        const k = Math.min((w / 2 - M) / (Math.abs(dx) || 1e-6), (h / 2 - M) / (Math.abs(dy) || 1e-6));
+        const k = Math.min((w / 2 - M) / (Math.abs(dx) || 1e-6), ((h - BOTTOM - TOP) / 2) / (Math.abs(dy) || 1e-6));
         x = w / 2 + dx * k;
-        y = h / 2 + dy * k;
+        y = cy + dy * k;
         angle = (Math.atan2(dy, dx) * 180) / Math.PI + 90;
       }
       el.style.display = "";

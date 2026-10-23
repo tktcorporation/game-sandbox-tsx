@@ -3107,8 +3107,8 @@ body.touch #obj-raid .short {
    screen's edge pointing the way, pulsing (sim/battle.ts `threat`). */
 .threat-mark {
   position: absolute;
-  width: 26px;
-  height: 22px;
+  width: 36px;
+  height: 30px;
   transform: translate(-50%, -50%) rotate(var(--a, 180deg));
   background: #ff3b30;
   clip-path: polygon(50% 0, 100% 100%, 50% 72%, 0 100%);

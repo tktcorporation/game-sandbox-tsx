@@ -1429,15 +1429,18 @@ export function stepFriends(s: State) {
     }
     const lastLeg = sq.patrol.length - 1;
     const leg = Math.min(sq.leg, lastLeg);
+    // Rallying to the player's attack, a squad goes at its fighting pace.
+    const pace = sq.rush ? k.speed * 0.85 : k.speed * AWARE.idleSpeed * PATROL.pace;
     if (slot > 0 && leg < lastLeg) {
-      inColumn(s, e, members[slot - 1], k.speed * AWARE.idleSpeed * PATROL.pace);
+      inColumn(s, e, members[slot - 1], pace);
       continue;
     }
     const wp = sq.patrol[leg];
     const to = { x: wp.x + (slot % 2 ? 1.8 : -1.8) * Math.min(slot, 1), z: wp.z + slot * 1.6 };
     const prev = sq.patrol[Math.max(0, leg - 1)];
-    const via = toSegment(e.pos, prev, to) > STRAY ? homeStep(s, e, to) : to;
-    if (walkTo(e, via, k.speed * AWARE.idleSpeed * PATROL.pace) && via === to && slot === 0 && leg < lastLeg) sq.leg = leg + 1;
+    // Rallying, it goes by the ground's way: the straight line to the core may climb a cliff.
+    const via = (sq.rush && dist2d(e.pos, to) > 4) || toSegment(e.pos, prev, to) > STRAY ? homeStep(s, e, to) : to;
+    if (walkTo(e, via, pace) && via === to && slot === 0 && leg < lastLeg) sq.leg = leg + 1;
   }
 }
 

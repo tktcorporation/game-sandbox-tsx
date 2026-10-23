@@ -1865,7 +1865,7 @@ async function warShots(pg, phone, tag) {
   if (!col) errors.push("war: no column set walking");
   else {
     await stand(col.x + 120, col.z + 110);
-    await pg.evaluate(() => window.ringfallStep(5000));
+    await pg.evaluate(() => window.ringfallStep(8000));
     const st = await readOf(pg);
     const them = st.enemies.filter((e) => Math.hypot(e.x - col.x, e.z - col.z) < 40);
     const lead = them[0] ?? col;
@@ -1876,10 +1876,10 @@ async function warShots(pg, phone, tag) {
     // From the side of the column, a little ahead of its middle.
     const mx = (lead.x + back.x) / 2;
     const mz = (lead.z + back.z) / 2;
-    const cx = mx - (dz / l) * 16 + (dx / l) * 6;
-    const cz = mz + (dx / l) * 16 + (dz / l) * 6;
+    const cx = mx - (dz / l) * 20 + (dx / l) * 12;
+    const cz = mz + (dx / l) * 20 + (dz / l) * 12;
     const gy = await ground(cx, cz);
-    await look(cx, gy + 3.2, cz, mx, (await ground(mx, mz)) + 1.6, mz);
+    await look(cx, gy + 11, cz, mx, (await ground(mx, mz)) + 1.2, mz);
     await draw(pg);
     await pg.screenshot({ path: tag(2, "war-column") });
     if (them.length < 4 || l < 6) errors.push(`war: the column is ${them.length} robots ${Math.round(l)} m long`);
@@ -1909,28 +1909,30 @@ async function warShots(pg, phone, tag) {
   const gate = await pg.evaluate(() => window.ringfallWar.point(-1));
   await stand(gate.x + 30, gate.z - 70);
   await pg.evaluate(() => window.ringfallWar.depart());
-  await pg.evaluate(() => window.ringfallStep(3500));
-  const gy = await ground(gate.x - 9, gate.z - 22);
-  await look(gate.x - 9, gy + 3.5, gate.z - 22, gate.x, gy + 1.2, gate.z + 6);
+  await pg.evaluate(() => window.ringfallStep(2600));
+  const gy = await ground(gate.x - 12, gate.z - 20);
+  await look(gate.x - 12, gy + 4, gate.z - 20, gate.x, gy + 1.5, gate.z + 9);
   await pg.evaluate(() => window.advanceTime(300));
   await pg.screenshot({ path: tag(6, "war-gate") });
   const gs = await readOf(pg);
   if (!gs.battle.departs.some((d) => d.from === -1 && gs.battle.now - d.at < 8)) errors.push(`war: no squad came out of the gate (${JSON.stringify(gs.battle.departs)})`);
   // 5. The player takes a core of the front (the relay), and the squads near gather round it.
   const r = st0.front.cores[idx("relay")];
-  // The player sets the capture going and stands back up the road; three squads of the player's come up from behind them.
-  await stand(r.x - 70, r.z + 70, Math.atan2(70, -70));
+  // The player sets the capture going from down the road; two squads of the player's come up beside them and fight round the core.
+  await stand(r.x - 50, r.z + 60, Math.atan2(50, -60));
   await pg.evaluate(([x, z]) => {
-    window.ringfallWar.place(0, ["grunt", "grunt", "heavy"], x - 110, z + 60, true);
-    window.ringfallWar.place(0, ["grunt", "heavy", "drone"], x - 60, z + 120, true);
-    window.ringfallWar.place(0, ["grunt", "grunt", "grunt"], x - 120, z + 120, true);
+    window.ringfallWar.place(0, ["grunt", "grunt", "heavy"], x - 40, z + 45, true);
+    window.ringfallWar.place(0, ["grunt", "heavy", "drone"], x - 60, z + 75, true);
   }, [r.x, r.z]);
   await pg.evaluate(([i]) => window.ringfallWar.core(i), [idx("relay")]);
-  await pg.evaluate(() => window.ringfallStep(30000));
+  for (let k = 0; k < 8; k++) {
+    await pg.evaluate(([x, z]) => window.ringfallPlace(x, z, Math.atan2(50, -60)), [r.x - 50, r.z + 60]);
+    await pg.evaluate(() => window.ringfallStep(5000));
+  }
   const ga = await readOf(pg);
-  const round = ga.battle.friends.filter((e) => !e.post && Math.hypot(e.x - r.x, e.z - r.z) < 40);
+  const round = ga.battle.friends.filter((e) => !e.post && Math.hypot(e.x - r.x, e.z - r.z) < 45);
   if (ga.battle.rally !== "relay" || round.length < 3) errors.push(`war: rallying to the relay (${ga.battle.rally}), ${round.length} of the player's robots round its core`);
-  await look(r.x - 18, r.y + 11, r.z + 22, r.x, r.y + 1, r.z);
+  await look(r.x - 34, r.y + 9, r.z + 40, r.x, r.y + 1, r.z);
   await pg.evaluate(() => window.advanceTime(200));
   await pg.screenshot({ path: tag(7, "war-rally") });
   await pg.evaluate(() => window.ringfallCamera());

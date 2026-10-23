@@ -321,6 +321,8 @@ export interface SquadState {
   friend?: boolean;
   /** The battle squad it is in the world (`BattleSquad.id`, sim/battle.ts). */
   battle?: number;
+  /** A squad of the player's coming to the core of the node the player attacks: it goes at its fighting pace (sim/battle.ts `rally`). */
+  rush?: boolean;
 }
 
 export interface Orb {
