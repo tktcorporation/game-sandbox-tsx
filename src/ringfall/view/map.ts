@@ -1,13 +1,13 @@
-import { DEPOT, FACTION, FRONT, NETWORK, RELAY, WORLD } from "../sim/config";
-import { frontNodes, nodeHolds, type NodeHold, type OutpostHold } from "../sim/front";
-import { battleMarks, meterOf, SIDE_NAME, type Battle, type Side } from "../sim/battle";
+import { DEPOT, FACTION, FRONT, WORLD } from "../sim/config";
+import { frontNodes, nodeHolds, type NodeHold } from "../sim/front";
+import { battleMarks, meterOf, type Battle, type Side } from "../sim/battle";
 import { offshore } from "../sim/terrain";
-import { BOXES, CAMP, DEBRIS_SPOTS, NODES, debrisIndex, DEPOTS, ENTRIES, EXTRACTS, LANDMARKS, OUTPOST_SITES, POIS, REGIONS, regionOf, RELAYS, relayIndex, ROUTES, regionHere, territory, type EntryId, type Faction, type OutpostId, type PoiId, type RegionId, type RouteId } from "../sim/map";
-import { HOLD_NAME, type IslandEvent, type PoiHold } from "../sim/island";
+import { BOXES, CAMP, DEBRIS_SPOTS, NODES, nodeIndex, debrisIndex, DEPOTS, ENTRIES, EXTRACTS, LANDMARKS, OUTPOST_SITES, POIS, REGIONS, regionOf, ROUTES, regionHere, type EntryId, type NodeId, type PoiId, type RegionId, type RouteId } from "../sim/map";
+import type { IslandEvent, PoiHold } from "../sim/island";
 import { STREETS } from "../sim/streets";
 import { worldKey } from "../sim/routes";
 import { DAM_FACE, floorLevel, groundOf, highGround, LEVEL, steepAt, surfaceAt, terrainHeight, type Ground } from "../sim/terrain";
-import { cellOf, decodeSeen, exploreSize, type Ally, type Contact, type Enemy, type Player, type RelayMast, type State } from "../sim/state";
+import { cellOf, decodeSeen, exploreSize, type Ally, type Contact, type Enemy, type Player, type State } from "../sim/state";
 import { PAL } from "./models";
 import type { ContractMark } from "../meta/contracts";
 
@@ -35,15 +35,17 @@ const CELL = 1.5;
 const css = (c: number) => `#${c.toString(16).padStart(6, "0")}`;
 
 /**
- * Each POI's standing in the map's marks: muted brick red, amber and steel blue, which read on
- * the sand and stay apart from the loot's colours and the robots' red eyes. The titan's pad,
- * never freed, has a mark of its own in the robots' armour.
+ * Each node's holder on the maps and the island's row of marks: the enemy's red and the
+ * player's blue, which read on the sand and stay apart from the loot's colours. The titan's pad,
+ * the enemy's for good, has a mark of its own in the robots' armour.
  */
-export const HOLD_CSS: Record<PoiHold, string> = { held: "#b8412f", thin: "#d4892c", freed: "#3f7cae" };
+export const HOLD_CSS: Record<PoiHold, string> = { held: "#c8402f", freed: "#3f86c8" };
 export const TITAN_CSS = "#262d52";
+/** The outposts' mark: places to loot that nobody's colour claims. */
+const OUTPOST_CSS = "#8f8a7c";
 /**
- * The rogues' (野良機) colour on maps and score bars: a violet, kept apart from the thin POIs'
- * orange, the ways off' yellow diamonds and the contract's gold (on the island their armour stays amber).
+ * The rogues' (野良機) colour on maps: a violet, kept apart from the enemy's red, the ways off'
+ * yellow diamonds and the contract's gold (on the island their armour stays amber).
  */
 export const ROGUE_CSS = "#a47be0";
 
@@ -54,16 +56,12 @@ export const ROGUE_CSS = "#a47be0";
 export type MapScene = Pick<State, "seen" | "cleared" | "hold" | "depots" | "routes" | "found"> & {
   player?: Pick<Player, "pos" | "yaw">;
   ally?: Pick<Ally, "active" | "pos" | "down">;
-  /** The relay masts standing (none while the network is too weak for them), destroyed ones with no health left. */
-  relays?: readonly Pick<RelayMast, "id" | "hp">[];
   /** The debris crate of the day's debris fall, or null. */
   debris?: { x: number; z: number; open: boolean } | null;
   /** The salvage crews' members in the player's sight. */
   crews?: readonly { x: number; z: number }[];
   /** The highest threat each POI was freed at (by POI index), shown by its mark when above 0. */
   best?: readonly number[];
-  /** Who holds each outpost (`territory()`): the rogues' are marked in their yellow. */
-  territory?: Record<OutpostId, Faction>;
   /** The squads the player has seen or heard out between the POIs, and the raid's clock they are timed by. */
   contacts?: readonly Contact[];
   time?: number;
@@ -71,20 +69,22 @@ export type MapScene = Pick<State, "seen" | "cleared" | "hold" | "depots" | "rou
   nodes?: readonly NodeHold[];
   /** The core capture under way, drawn as its meter round the node. */
   capture?: { node: number; t: number } | null;
-  /** The day's battle (sim/battle.ts): its squads, the nodes the sides are taking, and the points. */
+  /** The day's battle (sim/battle.ts): its squads, and the nodes the sides are taking. */
   battle?: Battle | null;
   friends?: readonly Enemy[];
   enemies?: readonly Enemy[];
+  /** The nodes that changed hands overnight (the results): a ring in the colour they turned. */
+  changed?: { gained: readonly NodeId[]; lost: readonly NodeId[] };
 };
 
 /** A label's box on the canvas, so labels do not overlap. */
 type Rect = { x0: number; y0: number; x1: number; y1: number };
 
-/** The sides' colours on the battle map: the player's blue, the network's red, the rogues' violet. */
+/** The sides' colours on the battle map: the player's blue, the enemy's red, the rogues' violet. */
 export const SIDE_CSS: Record<Side, string> = { 0: "#4f9bff", 1: "#ff4a3d", 2: ROGUE_CSS };
 
 /** The camp's picture of the island between raids, from the profile's explored map, depots, routes and POI standings. */
-export function islandScene(p: { seen: string; depots: readonly PoiId[]; routes: readonly RouteId[]; poiState: Record<PoiId, { state: PoiHold }>; outposts?: Partial<Record<OutpostId, OutpostHold>>; network: number; events?: readonly (IslandEvent | null)[]; freedAt?: Partial<Record<PoiId, number>> }): MapScene {
+export function islandScene(p: { seen: string; depots: readonly PoiId[]; routes: readonly RouteId[]; poiState: Record<PoiId, { state: PoiHold }>; events?: readonly (IslandEvent | null)[]; freedAt?: Partial<Record<PoiId, number>> }): MapScene {
   // Today's debris fall is marked on the map table where the piece will lie.
   const ev = p.events?.[0];
   const spot = ev?.t === "debris" ? DEBRIS_SPOTS[debrisIndex(ev.spot)] : null;
@@ -95,16 +95,11 @@ export function islandScene(p: { seen: string; depots: readonly PoiId[]; routes:
     depots: DEPOTS.map((d) => p.depots.includes(d.poi)),
     routes: [...p.routes],
     found: [],
-    relays: p.network >= NETWORK.relayAt ? RELAYS.map((r) => ({ id: r.id, hp: RELAY.hp })) : [],
     debris: spot && { x: spot.x, z: spot.z, open: false },
     best: POIS.map((o) => p.freedAt?.[o.id] ?? 0),
-    territory: territory(p.network),
-    nodes: nodeHolds((id) => p.poiState[id].state, p.outposts, p.network),
+    nodes: nodeHolds((id) => p.poiState[id].state),
   };
 }
-
-/** Each node's colour on the 戦況図: the player's blue, the network's red, thin orange, the rogues' violet. */
-export const NODE_CSS: Record<NodeHold, string> = { freed: "#3f7cae", held: "#b8412f", thin: "#d4892c", rogue: ROGUE_CSS };
 
 /** Metres per cell of the territory's paint. */
 const LAND = 10;
@@ -155,7 +150,7 @@ function paintLand(nodes: readonly NodeHold[]) {
   const g = c.getContext("2d")!;
   const img = g.createImageData(cols, rows);
   const rgb = (css: string) => [parseInt(css.slice(1, 3), 16), parseInt(css.slice(3, 5), 16), parseInt(css.slice(5, 7), 16)];
-  const cols4 = { freed: rgb(NODE_CSS.freed), held: rgb(NODE_CSS.held), thin: rgb(NODE_CSS.thin), rogue: rgb(NODE_CSS.rogue) };
+  const cols4 = { freed: rgb(HOLD_CSS.freed), held: rgb(HOLD_CSS.held) };
   const mine = (k: number) => k === -2 || (k >= 0 && nodes[k] === "freed");
   for (let n = 0; n < cols * rows; n++) {
     const k = own[n];
@@ -370,10 +365,9 @@ export class IslandMap {
   /**
    * The day's battle on the map: each squad as a chevron in its side's colour pointing to the node
    * it walks to (filled while its robots are in the world, an outline while it is numbers, its
-   * members' count beside it), each node a side's squads are taking with its meter round it, and
-   * the points and the time left along the top.
+   * members' count beside it), and each node a side's squads are taking with its meter round it.
    */
-  private drawBattle(g: CanvasRenderingContext2D, s: MapScene, at: (x: number, z: number) => { x: number; y: number }, dpr: number, label: (t: string, x: number, y: number, c: string, size: number) => void, box: (t: string, x: number, y: number, size: number) => Rect, free: (r: Rect) => boolean, taken: Rect[]) {
+  private drawBattle(g: CanvasRenderingContext2D, s: MapScene, at: (x: number, z: number) => { x: number; y: number }, dpr: number, label: (t: string, x: number, y: number, c: string, size: number) => void) {
     const b = s.battle!;
     for (const m of battleMarks({ battle: b, friends: (s.friends ?? []) as Enemy[], enemies: (s.enemies ?? []) as Enemy[] })) {
       const p = at(m.x, m.z);
@@ -416,42 +410,7 @@ export class IslandMap {
       g.arc(p.x, p.y, r, -Math.PI / 2, -Math.PI / 2 + mt.share * Math.PI * 2);
       g.stroke();
       g.restore();
-      const text = `${SIDE_NAME[mt.side]}が制圧中 ${Math.round(mt.share * 100)}%`;
-      const spot = box(text, p.x, p.y + r + 10 * dpr, 9);
-      if (free(spot)) {
-        taken.push(spot);
-        label(text, p.x, p.y + r + 10 * dpr, SIDE_CSS[mt.side], 9);
-      }
     });
-    // The points along the top, the leader's in bold.
-    const k = (v: number) => (v >= 10_000 ? `${(v / 1000).toFixed(1)}k` : `${Math.round(v)}`);
-    const left = Math.max(0, b.end - b.now);
-    const parts: [string, string][] = [
-      [`自軍 ${k(b.score[0])}`, SIDE_CSS[0]],
-      [`野良機 ${k(b.score[2])}`, SIDE_CSS[2]],
-      [`網 ${k(b.score[1])}`, SIDE_CSS[1]],
-      [b.done ? (b.won ? "勝ち" : "負け") : `残り ${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, "0")}`, "#f4e9c8"],
-    ];
-    g.save();
-    // Smaller on a narrow map (the whole world on a phone), so the strip stays whole.
-    g.font = `900 ${11 * dpr}px system-ui, sans-serif`;
-    const fits = (g.canvas.width - 16 * dpr) / parts.reduce((n, [t]) => n + g.measureText(t).width + 14 * dpr, 0);
-    const size = 11 * Math.min(1, fits);
-    g.font = `900 ${size * dpr}px system-ui, sans-serif`;
-    const widths = parts.map(([t]) => g.measureText(t).width + size * 1.27 * dpr);
-    const total = widths.reduce((n, w) => n + w, 0);
-    let x = (g.canvas.width - total) / 2;
-    const y = 14 * dpr;
-    g.fillStyle = "rgba(20,24,40,0.82)";
-    g.fillRect(x - 6 * dpr, y - 10 * dpr, total + 12 * dpr, 20 * dpr);
-    g.textAlign = "left";
-    g.textBaseline = "middle";
-    parts.forEach(([t, c], n) => {
-      g.fillStyle = c;
-      g.fillText(t, x + (size * 0.64) * dpr, y);
-      x += widths[n];
-    });
-    g.restore();
   }
 
   draw(s: MapScene) {
@@ -529,9 +488,9 @@ export class IslandMap {
     };
     const taken: Rect[] = [];
     const free = (r: Rect) => !taken.some((t) => r.x0 < t.x1 && r.x1 > t.x0 && r.y0 < t.y1 && r.y1 > t.y0);
-    // A POI cleared this raid says so; otherwise its standing on the island, when it is not held.
+    // A POI cleared this raid says so; who holds it is its mark's colour.
     const hold = (i: number): PoiHold => s.hold?.[i] ?? "held";
-    const poiText = (i: number) => (s.cleared[i] && hold(i) !== "freed" ? `${POIS[i].name}（掃討）` : hold(i) === "held" ? POIS[i].name : `${POIS[i].name}（${HOLD_NAME[hold(i)]}）`);
+    const poiText = (i: number) => (s.cleared[i] && hold(i) !== "freed" ? `${POIS[i].name}（掃討）` : POIS[i].name);
     POIS.forEach((poi, i) => {
       const p = at(poi.x, poi.z);
       taken.push(box(poiText(i), p.x, p.y - 15 * dpr, 12));
@@ -658,36 +617,6 @@ export class IslandMap {
       g.strokeRect(p.x - r, p.y - r, r * 2, r * 2);
       g.fillRect(p.x - r, p.y - r, r * 2, r * 2);
     });
-    // The relay masts standing: a red triangle with the mast's eye, struck through once destroyed.
-    for (const m of s.relays ?? []) {
-      const r = RELAYS[relayIndex(m.id)];
-      const p = at(r.x, r.z);
-      const d = 7 * dpr;
-      g.save();
-      g.lineWidth = 2.5 * dpr;
-      g.strokeStyle = "rgba(20,24,40,0.9)";
-      g.fillStyle = m.hp > 0 ? HOLD_CSS.held : "#6b6f78";
-      g.beginPath();
-      g.moveTo(p.x, p.y - d);
-      g.lineTo(p.x + d * 0.9, p.y + d * 0.65);
-      g.lineTo(p.x - d * 0.9, p.y + d * 0.65);
-      g.closePath();
-      g.fill();
-      g.stroke();
-      if (m.hp > 0) {
-        g.fillStyle = "#ffd0c4";
-        g.beginPath();
-        g.arc(p.x, p.y + d * 0.1, d * 0.22, 0, Math.PI * 2);
-        g.fill();
-      }
-      g.restore();
-      const text = m.hp > 0 ? r.name : `${r.name}（破壊）`;
-      const spot = box(text, p.x, p.y + 14 * dpr, 9);
-      if (free(spot)) {
-        taken.push(spot);
-        label(text, p.x, p.y + 14 * dpr, m.hp > 0 ? "#ffb4a2" : "#9c9586", 9);
-      }
-    }
     // The debris crate: a gold shard, grey once opened.
     if (s.debris) {
       const p = at(s.debris.x, s.debris.z);
@@ -722,26 +651,17 @@ export class IslandMap {
       g.strokeRect(p.x - r, p.y - r, r * 2, r * 2);
       g.fillRect(p.x - r, p.y - r, r * 2, r * 2);
     }
-    // The outposts: a square in the colour of whoever holds it, the rogues' named.
+    // The outposts: a small grey square, a place to loot that is no node of the front.
     for (const o of OUTPOST_SITES) {
-      const node = s.nodes?.[NODES.findIndex((n) => n.id === o.id)];
-      const rogue = node ? node === "rogue" : s.territory?.[o.id] === "rogue";
       const p = at(o.x, o.z);
-      const r = 4.5 * dpr;
+      const r = 3.5 * dpr;
       g.save();
-      g.lineWidth = 2 * dpr;
+      g.lineWidth = 1.5 * dpr;
       g.strokeStyle = "rgba(20,24,40,0.9)";
-      g.fillStyle = node === "freed" ? NODE_CSS.freed : rogue ? ROGUE_CSS : HOLD_CSS.held;
+      g.fillStyle = OUTPOST_CSS;
       g.strokeRect(p.x - r, p.y - r, r * 2, r * 2);
       g.fillRect(p.x - r, p.y - r, r * 2, r * 2);
       g.restore();
-      if (!rogue) continue;
-      const text = `${o.name}（野良機）`;
-      const spot = box(text, p.x, p.y + 12 * dpr, 9);
-      if (free(spot)) {
-        taken.push(spot);
-        label(text, p.x, p.y + 12 * dpr, ROGUE_CSS, 9);
-      }
     }
     // Squads seen or heard out between the POIs, fading over `FACTION.keep`: a dot in their
     // faction's colour where they were, and a burst where the factions were heard fighting.
@@ -822,8 +742,8 @@ export class IslandMap {
       }
       g.restore();
     });
-    // The nodes on the front: a white ring with 前線 by it, where the player can strike next; the
-    // capture under way as its meter round the ring.
+    // The nodes on the front: a white ring, where the player can strike next; the capture under
+    // way as its meter round the ring, with its share.
     if (s.nodes) {
       const front = frontNodes(s.nodes);
       NODES.forEach((n, i) => {
@@ -846,7 +766,8 @@ export class IslandMap {
           g.stroke();
         }
         g.restore();
-        const text = s.capture?.node === i ? `制圧中 ${Math.floor((s.capture.t / FRONT.capture) * 100)}%` : "前線";
+        if (s.capture?.node !== i) return;
+        const text = `${Math.floor((s.capture.t / FRONT.capture) * 100)}%`;
         const spot = box(text, p.x + r + 16 * dpr, p.y, 9);
         if (free(spot)) {
           taken.push(spot);
@@ -854,7 +775,20 @@ export class IslandMap {
         }
       });
     }
-    if (s.battle && s.nodes) this.drawBattle(g, s, at, dpr, label, box, free, taken);
+    if (s.battle && s.nodes) this.drawBattle(g, s, at, dpr, label);
+    // The nodes that changed hands: a thick ring in the colour each turned.
+    for (const [ids, col] of [[s.changed?.gained ?? [], HOLD_CSS.freed], [s.changed?.lost ?? [], HOLD_CSS.held]] as const)
+      for (const id of ids) {
+        const n = NODES[nodeIndex(id)];
+        const p = at(n.x, n.z);
+        g.save();
+        g.lineWidth = 4 * dpr;
+        g.strokeStyle = col;
+        g.beginPath();
+        g.arc(p.x, p.y, 14 * dpr, 0, Math.PI * 2);
+        g.stroke();
+        g.restore();
+      }
     // POI names go on top, a little above their mark, so an exit nearby does not hide them.
     POIS.forEach((poi, i) => {
       const p = at(poi.x, poi.z);

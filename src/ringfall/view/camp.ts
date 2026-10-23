@@ -49,7 +49,7 @@ export class CampView {
    * `today`: the day's line and the 今日の作戦 card (`Hub.today()`); `panel`: a panel or the
    * departure's check is up, so the card steps aside.
    */
-  frame(s: State, world: World, w: number, h: number, o: { near: CampSpot | null; marks: Record<StationId, string>; ride: { to: string; refused: string }; cash: string; touch: boolean; today: { head: string; plan: [string, string][] }; panel: boolean }) {
+  frame(s: State, world: World, w: number, h: number, o: { near: CampSpot | null; marks: Record<StationId, string>; ride: { to: string; refused: string }; cash: string; touch: boolean; today: { head: string; row: string; plan: [string, string][] }; panel: boolean }) {
     const eye = { x: s.player.pos.x, z: s.player.pos.z };
     const shown: { el: HTMLElement; x: number; y: number; d: number }[] = [];
     for (const c of CAMP.spots) {
@@ -94,6 +94,11 @@ export class CampView {
     }
     $("camp-cash").textContent = o.cash;
     $("camp-hint").textContent = o.today.head;
+    const row = $("camp-row");
+    if (row.dataset.html !== o.today.row) {
+      row.dataset.html = o.today.row;
+      row.innerHTML = o.today.row;
+    }
     const plan = o.today.plan.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("") + `<dt class="wide">出撃</dt><dd class="wide">${esc(`門を出ると${entryOf(regionOf("reservoir").entries[0]).name}から。車両なら地図の机で選んだ地点から`)}</dd>`;
     const list = $("camp-plan-list");
     if (list.dataset.html !== plan) {

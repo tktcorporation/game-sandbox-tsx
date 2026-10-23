@@ -252,13 +252,6 @@ export class Soundscape {
       case "hit":
         if (!e.ally) sfx.hit(e.crit, e.shield, e.flank === "back" || e.flank === "ambush", e.blocked);
         break;
-      case "relayHit":
-        sfx.hit(e.eye, false, false, false);
-        break;
-      case "relayDown":
-        sfx.kill(true);
-        sfx.collapse(e.pos, true);
-        break;
       case "allyShot":
         sfx.allyShot(e.from);
         break;

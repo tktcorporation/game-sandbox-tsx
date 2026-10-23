@@ -133,84 +133,75 @@ kbd {
   display: none;
 }
 
-/* The day's battle (陣取り戦): each side's points and what it gains a second, in the bar's order. */
-#battle {
+/* The island's six nodes under the compass (view/row.ts): the player's filled blue, the enemy's hollow red. */
+#island-row {
   position: absolute;
   top: 58px;
   left: 50%;
   transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 10px;
+  padding: 4px 8px;
   background: var(--plate);
-  font-family: var(--jp);
-  font-weight: 800;
-  font-size: 12px;
   pointer-events: none;
-  white-space: nowrap;
 }
-#battle[hidden] {
+#island-row:empty {
   display: none;
 }
-#battle .side {
-  display: flex;
-  align-items: baseline;
-  gap: 4px;
+.node-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  vertical-align: middle;
 }
-#battle .side small {
-  color: var(--muted);
-  font-size: 11px;
-}
-#battle .side b {
-  font-family: var(--num);
-  font-size: 15px;
-}
-#battle .side b small {
-  margin-left: 3px;
-  font-size: 10px;
-  color: var(--muted);
-}
-#battle .battle-name {
-  color: var(--muted);
-  font-size: 11px;
-}
-#battle .you b {
-  color: #6fb0ff;
-}
-#battle .net b {
-  color: #ff6a5c;
-}
-#battle .rogue b {
-  color: #c3a6f0;
-  font-size: 12px;
-}
-#battle.winning .you b::after {
-  content: " ▲";
-  font-size: 10px;
-}
-#battle.losing .net b::after {
-  content: " ▲";
-  font-size: 10px;
-}
-#battle-bar {
-  display: flex;
-  width: 150px;
-  height: 7px;
-  background: rgba(255, 255, 255, 0.12);
-}
-#battle-bar i {
+.node-row i.node {
   display: block;
-  height: 100%;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid #c8402f;
+  background: rgba(200, 64, 47, 0.18);
 }
-#battle-bar .you {
-  background: #3d8cff;
+.node-row i.node.own {
+  border-color: #3f86c8;
+  background: #3f86c8;
 }
-#battle-bar .net {
-  background: #ff3b30;
+.node-row i.node.gap {
+  margin-left: 6px;
 }
-#battle-bar .rogue {
-  background: #a47be0;
+/* The results' row: a node taken that day turns blue, one lost turns red, each with a pulse. */
+.node-row i.node.gained {
+  animation: node-gained 1.4s ease-out 0.5s both;
+}
+.node-row i.node.lost {
+  border-color: #c8402f;
+  animation: node-lost 1.4s ease-out 0.5s both;
+}
+@keyframes node-gained {
+  from {
+    background: rgba(200, 64, 47, 0.18);
+    border-color: #c8402f;
+    box-shadow: 0 0 0 0 rgba(63, 134, 200, 0.9);
+  }
+  60% {
+    box-shadow: 0 0 0 7px rgba(63, 134, 200, 0);
+  }
+  to {
+    background: #3f86c8;
+    border-color: #3f86c8;
+  }
+}
+@keyframes node-lost {
+  from {
+    background: #3f86c8;
+    border-color: #3f86c8;
+    box-shadow: 0 0 0 0 rgba(200, 64, 47, 0.9);
+  }
+  60% {
+    box-shadow: 0 0 0 7px rgba(200, 64, 47, 0);
+  }
+  to {
+    background: #c8402f;
+    border-color: #c8402f;
+  }
 }
 #obj-raid.late {
   color: #ff8a6a;
@@ -1553,64 +1544,7 @@ body.touch #hub-close kbd {
   line-height: 1;
 }
 /* The network's meter on the map table: a cell per level, lit up to the current one; red from 3. */
-.hub-net {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  align-items: center;
-  gap: 2px 10px;
-  padding: 6px 10px;
-  background: var(--plate);
-}
-.hub-net small {
-  grid-column: 1 / -1;
-  color: var(--muted);
-  font-size: 13px;
-}
-.hub-net b {
-  font-family: var(--num);
-  font-size: 16px;
-  white-space: nowrap;
-}
-.hub-net p {
-  grid-column: 1 / -1;
-  margin: 0;
-  font-size: 13px;
-}
-.net-meter {
-  display: flex;
-  gap: 3px;
-  grid-column: 1;
-  grid-row: 2;
-}
-.hub-net b {
-  grid-column: 2;
-  grid-row: 2;
-}
-.net-meter i {
-  width: 16px;
-  height: 12px;
-  background: rgba(255, 255, 255, 0.12);
-}
-.net-meter i.on {
-  background: #d4892c;
-}
-.hub-net.lv3 .net-meter i.on,
-.hub-net.lv4 .net-meter i.on,
-.hub-net.lv5 .net-meter i.on {
-  background: #b8412f;
-}
-.net-meter i.now {
-  box-shadow: 0 0 0 2px #fff3e0;
-}
-.tomorrow li.rise,
-.tomorrow li.top,
-.tomorrow li.retake,
-.tomorrow li.retaken {
-  box-shadow: inset 3px 0 0 #b8412f;
-}
-.tomorrow li.retaken {
-  font-weight: 800;
-}
+
 .hub-island ul {
   margin: 0;
   padding: 0;
@@ -1659,26 +1593,7 @@ body.touch #hub-close kbd {
   font-family: var(--jp);
   color: #f4f7ff;
 }
-.tomorrow {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 14px;
-}
-.tomorrow li {
-  padding: 6px 10px;
-  background: var(--plate);
-  box-shadow: inset 3px 0 0 #3f7cae;
-}
-.tomorrow li.thin,
-.tomorrow li.thinned,
-.tomorrow li.soon {
-  box-shadow: inset 3px 0 0 #d4892c;
-}
-.tomorrow li.soon,
-.tomorrow li.thinned {
-  font-weight: 800;
-}
+
 @media (max-height: 500px) {
   .hub-island {
     grid-template-columns: minmax(0, 1fr) minmax(180px, 240px);
@@ -1689,12 +1604,6 @@ body.touch #hub-close kbd {
   }
   .hub-day b {
     font-size: 26px;
-  }
-  .tomorrow {
-    font-size: 12px;
-  }
-  .tomorrow li {
-    padding: 4px 8px;
   }
 }
 @media (orientation: portrait) and (max-width: 600px) {
@@ -2043,11 +1952,7 @@ body.touch #hub-close kbd {
   opacity: 1;
   background: rgba(168, 92, 255, 0.45);
 }
-#home .tomorrow {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
+
 #home .sold {
   font-size: 13px;
   font-weight: 400;
@@ -2454,17 +2359,10 @@ body.touch #title h1 {
 }
 /* The POI marks' colours (view/map.ts HOLD_CSS). */
 #map .map-key.held {
-  color: #b8412f;
-}
-#map .map-key.thin {
-  color: #d4892c;
+  color: #c8402f;
 }
 #map .map-key.freed {
-  color: #3f7cae;
-}
-/* The rogues' outposts (view/map.ts ROGUE_CSS). */
-#map .map-key.rogue {
-  color: #a47be0;
+  color: #3f86c8;
 }
 /* The titan's navy, lightened to read on the dark under the map. */
 /* The battle's squads on the map: chevrons in the side's colour. */
@@ -2477,9 +2375,8 @@ body.touch #title h1 {
 #map .map-key.squad.rogue {
   color: #a47be0;
 }
-/* The front line and the rings round the nodes the player can strike (view/map.ts). */
-#map .map-key.front,
-#map .map-key.ring {
+/* The front line (view/map.ts). */
+#map .map-key.front {
   color: #f4f7ff;
 }
 #map .map-key.titan {
@@ -2556,60 +2453,33 @@ body.touch .map-buttons button {
 #home:empty {
   display: none;
 }
-/* The headline: the battle won or lost, large, with each side's points and the bar under it. */
+/* The day's outcome: the island's map with the nodes that changed hands that day, and the row under it. */
 #day-result {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 10px 14px;
-  background: rgba(255, 255, 255, 0.06);
-  border-left: 5px solid var(--muted);
 }
-#day-result:has(.day-head.won) {
-  border-left-color: #3d8cff;
+/* As tall as the island is long: the map frames the whole island with no empty sides. */
+#day-map {
+  align-self: flex-start;
+  height: min(40vh, 330px);
+  aspect-ratio: 2 / 3;
+  background: #1c1f2a;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.12);
 }
-#day-result:has(.day-head.lost) {
-  border-left-color: #ff3b30;
-}
-#day-result .day-head {
+#day-result .day-row {
   display: flex;
-  align-items: baseline;
-  gap: 12px;
+  align-items: center;
+  gap: 10px;
+  font-weight: 800;
 }
-#day-result .day-head small {
+#day-result .day-row small {
   color: var(--muted);
-  font-size: 15px;
-  font-weight: 800;
+  font-size: 14px;
 }
-#day-result .day-head strong {
-  font-size: 40px;
-  line-height: 1;
-}
-#day-result .day-head.won strong {
-  color: #6fb0ff;
-}
-#day-result .day-head.lost strong {
-  color: #ff6a5c;
-}
-#day-result .day-scores {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px 16px;
-  font-weight: 800;
-  font-size: 15px;
-}
-#day-result .day-scores b {
-  font-family: var(--num);
-  font-size: 20px;
-}
-#day-result .day-scores .you b {
-  color: #6fb0ff;
-}
-#day-result .day-scores .net b {
-  color: #ff6a5c;
-}
-#day-result .day-scores .rogue b {
-  color: #c3a6f0;
+#day-result .day-row .node-row i.node {
+  width: 18px;
+  height: 18px;
 }
 #day-result p {
   margin: 0;
@@ -2625,24 +2495,7 @@ body.touch .map-buttons button {
   font-size: 12px;
   color: var(--muted);
 }
-#day-result p.day-why {
-  font-size: 13px;
-  color: #f4e9c8;
-}
-#day-result .front-change small {
-  margin-left: 4px;
-  font-size: 11px;
-  color: var(--muted);
-}
-#day-result .net {
-  font-family: var(--num);
-}
-#day-result .net.up {
-  color: #ff9c86;
-}
-#day-result .net.down {
-  color: #8db9de;
-}
+
 #haul-line {
   display: flex;
   flex-wrap: wrap;
@@ -2688,26 +2541,13 @@ body:not(.playing) #banner {
   }
   #day-result {
     gap: 3px;
-    padding: 6px 10px;
   }
-  #day-result .day-head small {
-    font-size: 12px;
-  }
-  #day-result .day-head strong {
-    font-size: 26px;
-  }
-  #day-result .day-scores {
-    font-size: 12px;
-  }
-  #day-result .day-scores b {
-    font-size: 15px;
+  #day-map {
+    height: 34vh;
   }
   #day-result p {
     font-size: 12px;
     gap: 1px 8px;
-  }
-  #day-result p.day-why {
-    font-size: 11px;
   }
   #haul-line {
     font-size: 12px;
@@ -2736,13 +2576,6 @@ body:not(.playing) #banner {
   }
   #home h3.day-end {
     font-size: 15px;
-  }
-  #home .tomorrow {
-    font-size: 12px;
-    gap: 2px;
-  }
-  #home .tomorrow li {
-    padding: 3px 8px;
   }
 }
 /* The routes under the hideout's modules: a closed one in the warning colour, an open one quiet. */
@@ -2902,6 +2735,16 @@ body:not(.playing) #banner {
   font-size: 13px;
   font-weight: 800;
 }
+#camp-row:empty {
+  display: none;
+}
+.hub-row {
+  margin: 4px 0 8px;
+}
+.hub-row .node-row i.node {
+  width: 16px;
+  height: 16px;
+}
 #camp-prompt {
   position: absolute;
   left: 50%;
@@ -2989,75 +2832,8 @@ body.touch #camp-prompt {
   display: inline-block;
   margin: 2px 8px 2px 0;
 }
-.tomorrow li.crews,
-.tomorrow li.overrun {
-  box-shadow: inset 3px 0 0 #b8412f;
-}
 
-/* The results' 戦況: nodes gained in the player's blue, lost in the thin orange. */
-.front-change span {
-  display: inline-block;
-  margin: 0 8px 4px 0;
-  padding: 2px 8px;
-  font-weight: 800;
-  background: rgba(20, 24, 40, 0.6);
-}
-.front-change span.freed {
-  color: #8cc4ff;
-  box-shadow: inset 3px 0 0 #3f7cae;
-}
-.front-change span.lost {
-  color: #ffbe7a;
-  box-shadow: inset 3px 0 0 #d4892c;
-}
-
-/* On a phone in landscape the battle's bar sits tighter under the compass's mark, clear of the
-   map button: the sides keep their names, the title and the rates shrink. */
-@media (max-height: 500px) {
-  #battle {
-    top: 58px;
-    gap: 4px;
-    padding: 2px 6px;
-    font-size: 10px;
-  }
-  #battle .side b {
-    font-size: 12px;
-  }
-  #battle .side small {
-    font-size: 9px;
-  }
-  #battle .side b small {
-    font-size: 8px;
-    margin-left: 2px;
-  }
-  #battle .battle-name {
-    display: none;
-  }
-  #battle-bar {
-    width: 50px;
-    height: 5px;
-  }
-}
-
-.battle-share {
-  display: flex;
-  height: 6px;
-  background: rgba(255, 255, 255, 0.1);
-}
-.battle-share i {
-  display: block;
-}
-.battle-share .you {
-  background: #3d8cff;
-}
-.battle-share .net {
-  background: #ff3b30;
-}
-.battle-share .rogue {
-  background: #a47be0;
-}
-
-/* The factory's panel and the battles by day (the map table and the factory). */
+/* The factory's panel. */
 .factory-head {
   display: grid;
   grid-template-columns: auto 1fr auto;
@@ -3098,65 +2874,6 @@ body.touch #camp-prompt {
 .factory-top {
   font-weight: 800;
   color: #6fb0ff;
-}
-.score-days {
-  display: grid;
-  gap: 3px;
-  margin: 2px 0 8px;
-}
-.score-row {
-  display: grid;
-  grid-template-columns: 4.2em 1.6em 1fr auto;
-  align-items: center;
-  gap: 6px;
-  font-weight: 800;
-  font-size: 12px;
-}
-.score-row small {
-  color: var(--muted);
-}
-.score-row.won b {
-  color: #6fb0ff;
-}
-.score-row.lost b {
-  color: #ff6a5c;
-}
-.score-bar {
-  display: flex;
-  height: 6px;
-  background: rgba(255, 255, 255, 0.1);
-}
-.score-bar i {
-  display: block;
-}
-.score-bar .you {
-  background: #3d8cff;
-}
-.score-bar .net {
-  background: #ff3b30;
-}
-.score-bar .rogue {
-  background: #a47be0;
-}
-.score-nums {
-  display: flex;
-  gap: 6px;
-  font-family: var(--num);
-  font-size: 11px;
-}
-.score-nums em {
-  font-style: normal;
-}
-.score-nums .you {
-  color: #6fb0ff;
-}
-.score-nums .net {
-  color: #ff6a5c;
-}
-.score-none {
-  color: var(--muted);
-  font-size: 12px;
-  margin: 2px 0 8px;
 }
 
 /* The camp's 今日の作戦: the node to go for, the contract or record taken, and the kit, under the head. */
@@ -3309,11 +3026,7 @@ body.touch #obj-bag .worth {
 body.touch #obj-raid .short {
   display: inline;
 }
-@media (max-height: 500px) {
-  #battle .side b small .per {
-    display: none;
-  }
-}
+
 @media (max-height: 500px) {
   #camp-plan .wide {
     display: none;

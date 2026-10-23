@@ -1545,7 +1545,7 @@ export const PACKS: Squad[] = [
   },
 ];
 
-/** Stable names for the outposts (`OUTPOSTS`): territory, and the front's links, refer to an outpost by these. */
+/** Stable names for the outposts (`OUTPOSTS`): places to loot with a guard squad of their own, not nodes of the front. */
 export type OutpostId = "substation" | "fuel" | "freight" | "wharf" | "engine" | "eastSubstation" | "pumps";
 
 /** The robots' two factions (see FACTION): the network (網) and the rogues that broke off it (野良機). */
@@ -1574,28 +1574,6 @@ export const OUTPOST_SITES: OutpostSite[] = OUTPOSTS.map((o) => ({
 export const outpostSite = (id: OutpostId): OutpostSite => OUTPOST_SITES.find((o) => o.id === id) ?? OUTPOST_SITES[0];
 
 /**
- * The factions' territory: who holds each outpost at each network level. An outpost is the
- * rogues' while the network stands below its `rogueBelow` (never at 0), so a weaker network has
- * lost more of the island to them; its guards are rogues then, and its own patrol (`MOBILES` with
- * `outpost`) walks. The POIs are always the network's (`State.hold` says how firmly). The front
- * (docs/ringfall/liberation-front.md) paints the third colour from this.
- */
-export const TERRITORY: Record<OutpostId, { rogueBelow: number }> = {
-  pumps: { rogueBelow: 6 },
-  eastSubstation: { rogueBelow: 2 },
-  fuel: { rogueBelow: 6 },
-  wharf: { rogueBelow: 3 },
-  engine: { rogueBelow: 2 },
-  freight: { rogueBelow: 1 },
-  substation: { rogueBelow: 0 },
-};
-
-/** Who holds each outpost at network `level` (see TERRITORY). */
-export function territory(level: number): Record<OutpostId, Faction> {
-  return Object.fromEntries(OUTPOST_SITES.map((o) => [o.id, level < TERRITORY[o.id].rogueBelow ? "rogue" : "net"])) as Record<OutpostId, Faction>;
-}
-
-/**
  * Squads that walk out between the POIs, outposts and roads (`STREETS`) rather than hold a post,
  * in the world's coordinates. Each walks its `nodes` out and back by the ground's way (hunt.ts's
  * `walkLine()`), so a node is a place on its walk (a junction, an outpost's gate, a POI's way
@@ -1606,7 +1584,7 @@ export function territory(level: number): Record<OutpostId, Faction> {
  * and bins, so a player looting there meets walkers; like a beat it comes to gunfire only as
  * near as a post would, so it does not pile onto every fight at the POIs it passes. Rogue walks
  * (`faction: "rogue"`) are the rogues': those with `rank` while
- * the network is weak enough (`ROGUE.patrols`), those with `outpost` while it is theirs.
+ * the enemy is weak enough (`ROGUE.patrols`), the others in every raid.
  */
 export interface Mobile {
   name: string;
@@ -1617,7 +1595,6 @@ export interface Mobile {
   from?: { poi: PoiId; squad: string };
   /** A patrol's or convoy's members. */
   members?: EnemyKind[];
-  outpost?: OutpostId;
   rank?: number;
   nodes: (readonly [number, number])[];
 }
@@ -1632,8 +1609,8 @@ export const MOBILES: Mobile[] = [
   { name: "台地の東の巡回", kind: "beat", faction: "net", region: "reservoir", from: { poi: "relay", squad: "南東の縁" }, nodes: [[210, -50], [271, -148], [360, -60]] },
   { name: "環状路の警邏", kind: "patrol", faction: "net", region: "reservoir", members: ["grunt", "drone"], nodes: [[0, 236], [88, 204], [250, 205], [200, 108]] },
   { name: "補給の車列", kind: "convoy", faction: "net", region: "reservoir", members: ["heavy", "grunt", "drone"], nodes: [[0, 296], [0, 236], [88, 204], [250, 205], [200, 108], [187, 32], [210, -50], [271, -148]] },
-  { name: "ポンプ場の野良機", kind: "patrol", faction: "rogue", region: "reservoir", outpost: "pumps", members: ["grunt", "charger"], nodes: [[342, 190], [309, 191], [250, 205], [200, 108]] },
-  { name: "変電所の野良機", kind: "patrol", faction: "rogue", region: "reservoir", outpost: "eastSubstation", members: ["grunt", "grunt"], nodes: [[271, -148], [210, -50], [187, 32]] },
+  { name: "ポンプ場の野良機", kind: "patrol", faction: "rogue", region: "reservoir", members: ["grunt", "charger"], nodes: [[342, 190], [309, 191], [250, 205], [200, 108]] },
+  { name: "変電所の野良機", kind: "patrol", faction: "rogue", region: "reservoir", members: ["grunt", "grunt"], nodes: [[271, -148], [210, -50], [187, 32]] },
   { name: "西の野良機", kind: "patrol", faction: "rogue", region: "reservoir", rank: 0, members: ["grunt", "drone"], nodes: [[-170, -40], [-117, 274]] },
   { name: "湖畔の野良機", kind: "patrol", faction: "rogue", region: "reservoir", rank: 1, members: ["grunt", "charger"], nodes: [[-117, 274], [-190, 470]] },
   { name: "東の野良機", kind: "patrol", faction: "rogue", region: "reservoir", rank: 2, members: ["grunt", "grunt"], nodes: [[116, 230], [270, 320]] },
@@ -1654,10 +1631,10 @@ export const MOBILES: Mobile[] = [
   { name: "変電所の通りの巡回", kind: "beat", faction: "net", region: "harbor", from: { poi: "smelter", squad: "裏手" }, nodes: [[166, -697], [105, -675], [40, -620]] },
   { name: "燃料基地への道の巡回", kind: "beat", faction: "net", region: "harbor", from: { poi: "smelter", squad: "北東" }, nodes: [[205, -735], [275, -763]] },
   { name: "港町の警邏", kind: "patrol", faction: "net", region: "harbor", members: ["grunt", "drone"], nodes: [[40, -590], [240, -625], [215, -540]] },
-  { name: "燃料基地の野良機", kind: "patrol", faction: "rogue", region: "harbor", outpost: "fuel", members: ["grunt", "grunt", "charger"], nodes: [[315, -750], [262, -845], [235, -890]] },
-  { name: "荷揚げ場の野良機", kind: "patrol", faction: "rogue", region: "harbor", outpost: "wharf", members: ["grunt", "grunt", "drone"], nodes: [[-245, -965], [-287, -925], [-300, -815]] },
-  { name: "保線基地の野良機", kind: "patrol", faction: "rogue", region: "harbor", outpost: "engine", members: ["grunt", "charger"], nodes: [[215, -540], [240, -625], [205, -735]] },
-  { name: "操車場の野良機", kind: "patrol", faction: "rogue", region: "harbor", outpost: "freight", members: ["grunt", "grunt"], nodes: [[-335, -665], [-300, -815]] },
+  { name: "燃料基地の野良機", kind: "patrol", faction: "rogue", region: "harbor", members: ["grunt", "grunt", "charger"], nodes: [[315, -750], [262, -845], [235, -890]] },
+  { name: "荷揚げ場の野良機", kind: "patrol", faction: "rogue", region: "harbor", members: ["grunt", "grunt", "drone"], nodes: [[-245, -965], [-287, -925], [-300, -815]] },
+  { name: "保線基地の野良機", kind: "patrol", faction: "rogue", region: "harbor", members: ["grunt", "charger"], nodes: [[215, -540], [240, -625], [205, -735]] },
+  { name: "操車場の野良機", kind: "patrol", faction: "rogue", region: "harbor", members: ["grunt", "grunt"], nodes: [[-335, -665], [-300, -815]] },
   { name: "漁村の野良機", kind: "patrol", faction: "rogue", region: "harbor", rank: 0, members: ["grunt", "charger"], nodes: [[-277, -835], [-281, -588]] },
   { name: "港町の野良機", kind: "patrol", faction: "rogue", region: "harbor", rank: 1, members: ["grunt", "grunt"], nodes: [[240, -625], [264, -864]] },
   { name: "丘の野良機", kind: "patrol", faction: "rogue", region: "harbor", rank: 2, members: ["grunt", "drone"], nodes: [[240, -625], [105, -675], [166, -697]] },
@@ -1667,51 +1644,11 @@ export const MOBILES: Mobile[] = [
   { name: "塩田の警邏", kind: "round", faction: "net", region: "harbor", members: ["grunt", "charger"], nodes: [[45, -675], [-61, -745], [-67, -800], [-63, -943]] },
 ];
 
-/** Stable names for the relay masts: saves and contracts refer to a mast by these. */
-export type RelayId = "west" | "east" | "salt" | "hill";
-
-/**
- * A relay mast of the robots' network (網の中継器, `RELAY` in config.ts): a tall thin mast with a
- * red eye, standing on open ground between the POIs only while the network is strong
- * (`NETWORK.relayAt`), with a squad of two at its foot. Nothing is built for it in the map:
- * the ground round each spot is already clear, so the world is the same with or without it.
- */
-export interface Relay {
-  id: RelayId;
-  name: string;
-  x: number;
-  z: number;
-  guards: Squad;
-}
-
-/** The guards of a mast at (x, z): two grunts either side of it, facing out. */
-const mastGuards = (name: string, x: number, z: number): Squad => ({
-  name: `${name}の見張り`,
-  members: [
-    { kind: "grunt", x: x - 4, z, face: W },
-    { kind: "grunt", x: x + 4, z: z + 1, face: E },
-  ],
-});
-
-/** The relay masts, in the world's coordinates: two on each region's ground between the POIs. */
-export const RELAYS: Relay[] = (
-  [
-    // The reservoir: between the quarry and the supply depot, and between the supply depot and the relay.
-    ["west", "西の野の中継器", -150, 300],
-    ["east", "東の野の中継器", 150, 200],
-    // The harbor: between the yard and the wreck, and between the smelter and the wreck.
-    ["salt", "塩田の中継器", -90, -800],
-    ["hill", "東の浜の中継器", 90, -830],
-  ] as const
-).map(([id, name, x, z]) => ({ id, name, x, z, guards: mastGuards(name, x, z) }));
-
-export const relayIndex = (id: RelayId) => RELAYS.findIndex((r) => r.id === id);
-
 export type DebrisId = "southwest" | "easthill" | "quarryeast" | "townwest" | "eastshore" | "saltwest";
 
 /**
  * Where a piece of the ring can come down on a debris fall's day (`DEBRIS`): open, flat ground
- * between the POIs, clear of boxes, away from the ways in, the stops and the masts, so the wreck
+ * between the POIs, clear of boxes, away from the ways in and the stops, so the wreck
  * (drawn by the view only) and its guards stand alone in the open. `region` is the region it
  * lies in; `place` words where it is for the event's line.
  */
@@ -1822,7 +1759,7 @@ export function regionHere(at: { x: number; z: number }): Region {
  * reinforcements pass by. An outpost (`OUTPOSTS`) is a larger one with a squad of its own.
  */
 interface Hamlet {
-  /** An outpost's stable name (`OutpostId`): territory and saves refer to it by this. */
+  /** An outpost's stable name (`OutpostId`). */
   id?: OutpostId;
   name: string;
   x: number;
@@ -3775,8 +3712,6 @@ function authoredKeep(): Keep {
   // The boat's point keeps less flat ground round it: the channel's water starts a few metres off.
   for (const x of EXTRACTS) points.push({ x: x.x, z: x.z, r: x.id === "boat" ? 6 : 10 });
   for (const e of ENTRIES) points.push({ x: e.x, z: e.z, r: 6 });
-  // The relay masts stand only while the network is strong, on ground the scatter leaves clear at every level.
-  for (const r of RELAYS) points.push({ x: r.x, z: r.z, r: 5 });
   return { points, segments };
 }
 
@@ -4801,16 +4736,15 @@ const STREET_SIDE: Box[] = (() => {
 /** Everything placed by hand or laid by rule, before the scattered cover fills the ground round it. */
 export const BUILT: Box[] = [...PLACED, ...STREET_SIDE];
 
-/** The nodes of the front (docs/ringfall/liberation-front.md): every POI the player can free, and every outpost. */
-export type NodeId = Exclude<PoiId, "pad"> | OutpostId;
+/** The nodes of the front (docs/ringfall/island-v2.md): the six POIs the player can take; the titan's pad is the enemy's for good. */
+export type NodeId = Exclude<PoiId, "pad">;
 
 /**
- * A node of the front: a freeable POI or an outpost, where it stands (its middle), and its core
- * (`FRONT`): the pillar whose capture frees it, on the ground near the middle.
+ * A node of the front: a freeable POI, where it stands (its middle), and its core (`FRONT`): the
+ * pillar whose capture takes it, on the ground near the middle.
  */
 export interface FrontNode {
   id: NodeId;
-  kind: "poi" | "outpost";
   name: string;
   region: RegionId;
   x: number;
@@ -4819,37 +4753,33 @@ export interface FrontNode {
 }
 
 /**
- * Which nodes are next to which, along the roads between them: the camp to the supply depot, the
- * reservoir's ring road and the mesa's roads, the pass from the quarry's road to the harbor's
- * town and the railway from the mesa's foot to the engine depot, and the harbor's streets. Kept
- * as data, so routing the streets afresh does not move the front; the sim gate walks each link.
+ * Which nodes are next to which, along the roads between them: the camp to the supply depot,
+ * the supply depot to the quarry and the relay, the pass road from the quarry to the yard and the
+ * railway from the relay to the smelter, and the harbor's two roads to the wreck. Kept as data,
+ * so routing the streets afresh does not move the front; the sim gate walks each link.
  */
 export const FRONT_LINKS: readonly (readonly ["camp" | NodeId, NodeId])[] = [
   ["camp", "supply"],
   ["supply", "quarry"],
   ["supply", "relay"],
-  ["supply", "pumps"],
-  ["relay", "pumps"],
-  ["relay", "eastSubstation"],
-  ["quarry", "substation"],
-  ["eastSubstation", "engine"],
-  ["substation", "yard"],
-  ["substation", "smelter"],
-  ["engine", "smelter"],
-  ["smelter", "fuel"],
-  ["fuel", "wreck"],
-  ["yard", "freight"],
-  ["freight", "wharf"],
-  ["wharf", "wreck"],
+  ["quarry", "yard"],
+  ["relay", "smelter"],
+  ["yard", "wreck"],
+  ["smelter", "wreck"],
 ];
 
 /**
- * The nodes next to ground the network never gives up, always on the front's edge however much
- * round them the player holds: the titan's pad (no node) by its west ramp and the mesa's road,
- * and the harbor's north shore, where the network's boats come in. They go thin and are retaken
- * as any node on the edge, so the whole island is never held for good.
+ * Each node's tier (docs/ringfall/island-v2.md, 拠点の段): how deep it lies from the camp, 0 by
+ * the camp's gate to 3 at the far end of the harbor.
  */
-export const NET_EDGE: readonly NodeId[] = ["quarry", "relay", "wreck", "wharf"];
+export const TIER: Record<NodeId, number> = { supply: 0, quarry: 1, relay: 1, yard: 2, smelter: 2, wreck: 3 };
+
+/**
+ * The nodes next to ground the enemy never gives up, where its squads land in the battle however
+ * much round them the player holds: the titan's pad (no node) by the quarry's road and the mesa's,
+ * and the harbor's north shore, where the enemy's boats come in.
+ */
+export const NET_EDGE: readonly NodeId[] = ["quarry", "relay", "wreck"];
 
 /**
  * The core's spot of the node standing at (x, z): the open, level ground nearest its middle with
@@ -4883,25 +4813,15 @@ function coreSpot(x: number, z: number, near: Box[]): { x: number; y: number; z:
   throw new Error(`no spot for a core near ${x},${z}`);
 }
 
-/**
- * Where a core is looked for, off its node's middle, for a node whose middle lies in ground the
- * walkers do not reach (the wharf's middle is its walled stacks): the open quay in front of them.
- */
-const CORE_FROM: Partial<Record<NodeId, readonly [number, number]>> = { wharf: [0, 24] };
-
-/** The front's nodes: the freeable POIs in `POIS` order, then the outposts in `OUTPOST_SITES` order. */
-export const NODES: FrontNode[] = (() => {
-  const at = (id: NodeId, x0: number, z0: number) => {
-    const [dx, dz] = CORE_FROM[id] ?? [0, 0];
-    const x = x0 + dx;
-    const z = z0 + dz;
-    return coreSpot(x, z, [...BUILT, ...CAMP_BOXES].filter((b) => b.x1 > x - 70 && b.x0 < x + 70 && b.z1 > z - 70 && b.z0 < z + 70));
-  };
-  return [
-    ...POIS.filter((p) => !p.boss).map((p): FrontNode => ({ id: p.id as NodeId, kind: "poi", name: p.name, region: poiRegion(p.id).id, x: p.x, z: p.z, core: at(p.id as NodeId, p.x, p.z) })),
-    ...OUTPOST_SITES.map((o): FrontNode => ({ id: o.id, kind: "outpost", name: o.name, region: o.region, x: o.x, z: o.z, core: at(o.id, o.x, o.z) })),
-  ];
-})();
+/** The front's nodes: the freeable POIs in `POIS` order. */
+export const NODES: FrontNode[] = POIS.filter((p) => !p.boss).map((p): FrontNode => ({
+  id: p.id as NodeId,
+  name: p.name,
+  region: poiRegion(p.id).id,
+  x: p.x,
+  z: p.z,
+  core: coreSpot(p.x, p.z, [...BUILT, ...CAMP_BOXES].filter((b) => b.x1 > p.x - 70 && b.x0 < p.x + 70 && b.z1 > p.z - 70 && b.z0 < p.z + 70)),
+}));
 
 /** A node's place in `NODES` (and in the run's per-node state), from its id; -1 for none. */
 export const nodeIndex = (id: string) => NODES.findIndex((n) => n.id === id);

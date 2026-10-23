@@ -182,7 +182,7 @@ export class Bot {
     if (s.events.some((e) => e.t === "raiders")) this.raidersIn = true;
     const live = s.enemies.filter((e) => e.mode !== "spawning");
     // A core to capture comes before the next POI: the one under way first, then a front node
-    // whose POI it has cleared (or an outpost), nearest first (see nextCore()).
+    // whose POI it has cleared nearest first (see nextCore()).
     const core = this.nextCore(s);
     // Holding the core is the objective's step the bot reads, as the HUD shows it (sim/objective.ts).
     const capturing = core >= 0 && s.capture?.node === core && currentStep(objectiveSteps(s))?.kind === "hold";
@@ -666,9 +666,8 @@ export class Bot {
    * The core to capture next, as a place in `NODES`, or -1: the capture under way; else, in the
    * region it started in, a node on the front that it can take now, nearest first, while it has
    * captured fewer than its skill dares in one raid (`Skill.capture`), the raiders are not down
-   * and it is not too hurt to fight on (as `nextPoi()`). A POI's core waits until it has cleared
-   * the POI; an outpost's it takes while its POIs taken and cores captured are fewer than
-   * `Skill.raid`. A core it has made no headway on for
+   * and it is not too hurt to fight on (as `nextPoi()`). A core waits until it has cleared the
+   * POI. A core it has made no headway on for
    * `CORE_GIVE_UP` seconds is left for the raid.
    */
   private nextCore(s: State): number {
@@ -682,16 +681,10 @@ export class Bot {
     const front = frontNodes(s.nodes);
     const left = (p.hp + p.shield) / (PLAYER.hp + PLAYER.shieldByTier[p.armor]);
     const spent = (left < 0.6 && !pickHeal(s)) || p.selfRevive <= 0 || this.raidersIn;
-    const done = new Set([...s.stats.cleared, ...s.stats.captured.map((id) => poiIndex(id as PoiId)).filter((i) => i >= 0)]).size + s.stats.captured.filter((id) => poiIndex(id as PoiId) < 0).length;
     // As many cores a raid as its skill dares (`Skill.capture`), and none once it is spent.
     if (spent || s.stats.captured.length >= this.cores(s)) return -1;
-    const open = NODES.map((n, i) => ({ n, i })).filter(({ n, i }) => {
-      if (!front[i] || n.region !== s.region || this.coreLeft.has(i)) return false;
-      if (n.kind === "poi") return s.cleared[poiIndex(n.id as PoiId)];
-      return done < this.skill.raid;
-    });
-    // A POI's core before an outpost's: a POI freed takes the network down, an outpost does not.
-    open.sort((a, b) => (a.n.kind === "poi" ? 0 : 1) - (b.n.kind === "poi" ? 0 : 1) || dist2d(a.n.core, p.pos) - dist2d(b.n.core, p.pos));
+    const open = NODES.map((n, i) => ({ n, i })).filter(({ n, i }) => front[i] && n.region === s.region && !this.coreLeft.has(i) && s.cleared[poiIndex(n.id)]);
+    open.sort((a, b) => dist2d(a.n.core, p.pos) - dist2d(b.n.core, p.pos));
     const pick = open[0]?.i ?? -1;
     if (pick >= 0) {
       // Time on the way there counts too: a core it cannot get to is given up as one it cannot hold.
@@ -705,7 +698,7 @@ export class Bot {
     return pick;
   }
 
-  /** The cores it means to capture this raid: more in the island's battle (`Skill.battle`), where every node held scores. */
+  /** The cores it means to capture this raid: more in the island's battle (`Skill.battle`). */
   private cores(s: State) {
     return s.battle ? this.skill.battle : this.skill.capture;
   }

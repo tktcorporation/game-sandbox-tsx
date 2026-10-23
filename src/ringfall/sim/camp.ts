@@ -25,7 +25,6 @@ export function newCamp(seed: number, routes: readonly RouteId[] = [], kit: Kit 
   s.care = null;
   s.reinforceT = s.raiderT = Infinity;
   s.crewsDue = [];
-  s.retakeT = Infinity;
   const p = s.player;
   const w = CAMP.wake;
   p.pos = { x: w.x, y: groundAt(w.x, w.z, PLAYER.radius, CAMP.y + 1), z: w.z };

@@ -794,8 +794,8 @@ for (const [name, x, dy, z, yaw, pitch, abs] of harborTour) {
   await page.screenshot({ path: `${out}/${name}.png` });
 }
 
-// The robots out between the POIs: a rogue squad and a network patrol on its walk up close, a fight
-// between the factions seen from far off, and the map with the rogues' outposts and the fight heard.
+// The robots out between the POIs: a rogue squad and an enemy patrol on its walk up close, a fight
+// between the factions seen from far off, and the map with the fight heard.
 {
   // A camera `d` metres from the robot `e`, `side` radians round from the way it faces, `up` metres over the ground, looking at it.
   const lookAt = async (name, e, d, side, up) => {
@@ -818,7 +818,7 @@ for (const [name, x, dy, z, yaw, pitch, abs] of harborTour) {
   if (!rogue) errors.push("factions: no rogue squad on a walk at the start of a reservoir raid");
   else await lookAt("faction-1-rogue-squad", rogue, 9, 2.2, 1.8);
   const patrol = lead((q) => q.mobile && !q.rogue && /警邏|車列/.test(q.name));
-  if (!patrol) errors.push("factions: no network patrol on a walk at the start of a reservoir raid");
+  if (!patrol) errors.push("factions: no enemy patrol on a walk at the start of a reservoir raid");
   else await lookAt("faction-2-patrol-road", patrol, 13, 2.6, 2.4);
   // A fight staged on the open ground south of the lakebed, in earshot of the player at the beach.
   await page.evaluate(() => window.ringfallFight(60, 250));
@@ -841,7 +841,7 @@ for (const [name, x, dy, z, yaw, pitch, abs] of harborTour) {
   await page.evaluate(() => window.advanceTime(50));
   await page.keyboard.press("KeyN");
   await page.evaluate(() => window.advanceTime(50));
-  await page.screenshot({ path: `${out}/faction-4-map-rogue-outposts.png` });
+  await page.screenshot({ path: `${out}/faction-4-map-fight.png` });
   await page.keyboard.press("KeyN");
   await page.keyboard.press("KeyM");
   await page.evaluate(() => window.advanceTime(50));
@@ -1105,9 +1105,15 @@ console.log(JSON.stringify((await read()).stats));
     }
     return out;
   });
-  // The day's outcome leads the results: the battle won or lost with the sides' points, the front and the network, no grade or score.
-  const head = await page.textContent("#day-result");
-  if (!/陣取り戦/.test(head) || !/(勝ち|負け)/.test(head) || !/自軍/.test(head) || !/前線/.test(head) || !/網の段階/.test(head) || (await page.locator("#rank, #total").count())) errors.push(`results: the headline reads "${head}"`);
+  // The day's outcome leads the results: the island's map and its row of six nodes, those the day changed marked; no grade, score or headline.
+  const day = await page.evaluate(() => ({
+    map: !!document.getElementById("day-map") && !document.getElementById("day-map").hidden && document.getElementById("day-map").getBoundingClientRect().height > 50,
+    nodes: document.querySelectorAll("#day-result .node-row .node").length,
+    gained: document.querySelectorAll("#day-result .node-row .node.gained").length,
+    text: document.getElementById("day-result").textContent,
+  }));
+  const settledDay = await read();
+  if (!day.map || day.nodes !== 6 || day.gained !== (settledDay.settled?.front.gained.length ?? -1) || /陣取り戦|勝ち|負け|網/.test(day.text) || (await page.locator("#rank, #total").count())) errors.push(`results: the day reads ${JSON.stringify(day)} for ${JSON.stringify(settledDay.settled?.front)}`);
   if (fit.length) errors.push(`results on a phone: ${fit.join(", ")} past the 740x360 screen`);
   await page.screenshot({ path: `${out}/m9-results.png` });
   await page.setViewportSize({ width: 1280, height: 720 });
@@ -1318,95 +1324,6 @@ const readOf = async (pg) => JSON.parse(await pg.evaluate(() => window.render_ga
 }
 
 /*
- * The network some days in, at level 4: the camp's map table flags it and shows the meter and
- * 明日の島 (the network's rise, a thin quarry the network will take back); in the raid the relay
- * masts stand, on the map and in the world; shooting the named mast down does the destroy
- * contract, and the results show the network's change and its causes. The phone looks at the
- * map table and the raid's map.
- */
-{
-  /** Where each mast is seen whole from, on open ground (the view checked against the boxes in the sim). */
-  const MAST_VIEW = { west: [-150, 322], east: [150, 218], salt: [-90, -778], hill: [90, -808] };
-  const netGame = {
-    v: 15, cash: 3200, stash: [], raids: 11, extracted: 8, time: 6000, region: "reservoir", entry: "beach", entries: ["beach", "checkpoint", "jetty", "outskirts", "quay", "shore"], seed: 4321, day: 12,
-    network: 4, pressure: 1.5, depots: ["supply"],
-    quests: { progress: {}, done: ["grunts", "village", "power", "parts"] },
-    hideout: { generator: 1, infirmary: 1, workbench: 0, storage: 0, radio: 0, pouch: 0, craft: 0 },
-    records: [],
-    poiState: { supply: { state: "freed", lastVisit: 11, since: 0 }, quarry: { state: "thin", lastVisit: 8, since: 11 } },
-  };
-  for (const phone of [false, true]) {
-    const ctx = await browser.newContext(phone ? { viewport: { width: 740, height: 360 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true } : { viewport: { width: 1280, height: 720 } });
-    const pg = await withProfile(ctx, netGame);
-    await toCamp(pg, phone);
-    const cdp = phone ? await ctx.newCDPSession(pg) : undefined;
-    const c0 = await readOf(pg);
-    if (!/網 4/.test(c0.camp?.marks.map ?? "") || c0.profile.network !== 4) errors.push(`network: at level 4 the map table's mark reads "${c0.camp?.marks.map}" (network ${c0.profile.network})`);
-    await useStation(pg, "map", cdp);
-    const meter = await pg.textContent("#hub-side .hub-net");
-    const tomorrow = await pg.textContent("#hub-side .tomorrow");
-    if (!/網 4/.test(meter) || (await pg.locator("#hub-side .net-meter i.on").count()) !== 5) errors.push(`network: the meter reads "${meter}"`);
-    if (!/採掘場は手薄。放っておくと/.test(tomorrow) || !/網は/.test(tomorrow)) errors.push(`network: 明日の島 reads "${tomorrow}"`);
-    const fit = await spills(pg);
-    if (fit.length) errors.push(`network map table${phone ? " on a phone" : ""}: ${[...new Set(fit)].join(", ")}`);
-    await pg.locator("#hub-side .hub-net").scrollIntoViewIfNeeded();
-    await pg.screenshot({ path: `${out}/${phone ? "m17" : "52"}-map-network.png` });
-    await closePanel(pg, phone);
-    const id = await pg.evaluate(() => window.ringfallContract.take("destroy"));
-    if (!id) errors.push("network: the board at level 4 offers no mast to destroy");
-    await walkOutOfGate(pg);
-    await pg.evaluate(() => window.advanceTime(3000));
-    const r0 = await readOf(pg);
-    if (r0.network !== 4 || r0.relays.length !== 4 || r0.contract?.t !== "destroy") errors.push(`network: a raid at level 4 stands ${r0.relays.length} masts at network ${r0.network}, contract ${JSON.stringify(r0.contract)}`);
-    await pg.keyboard.press("KeyM");
-    await pg.evaluate(() => window.advanceTime(100));
-    await draw(pg);
-    await pg.screenshot({ path: `${out}/${phone ? "m17" : "53"}-map-relay.png` });
-    await pg.keyboard.press("KeyM");
-    await pg.evaluate(() => window.advanceTime(100));
-    if (!phone) {
-      // The named mast from a spot of open ground with a clear view of it (the scattered cover
-      // stands close round some), a little raised, looking up at its eye; the player stands there.
-      const m = r0.relays.find((x) => x.id === r0.contract?.relay) ?? r0.relays[0];
-      const [vx, vz] = MAST_VIEW[m.id];
-      const yaw = Math.atan2(m.x - vx, -(m.z - vz));
-      const cam = () => pg.evaluate(([x, z, w, q]) => window.ringfallCamera(x, window.ringfallTerrain(x, z) + 4.5, z, w, 0.22 + 0 * q.y), [vx, vz, yaw, m]);
-      await pg.evaluate(([x, z, w]) => window.ringfallPlace(x, z, w), [vx, vz, yaw]);
-      await pg.evaluate(() => window.advanceTime(200));
-      await cam();
-      await draw(pg);
-      await pg.screenshot({ path: `${out}/54-relay-mast.png` });
-      await pg.evaluate(() => window.ringfallCamera());
-      const shots = await pg.evaluate(() => window.ringfallContract.destroyTarget());
-      const r1 = await quietStep(pg, 600);
-      if (!shots || r1.relays.find((x) => x.id === m.id)?.hp !== 0 || !r1.contract?.met || !r1.stats.relays.includes(m.id)) errors.push(`network: shooting the mast (${shots} shots) left ${JSON.stringify({ relay: r1.relays.find((x) => x.id === m.id), contract: r1.contract })}`);
-      await cam();
-      await draw(pg);
-      await pg.screenshot({ path: `${out}/55-relay-down.png` });
-      await pg.evaluate(() => window.ringfallCamera());
-      // At the supply depot's start, freed and on: an empty bag leaves the raid there.
-      await pg.evaluate(() => window.ringfallPlace(0, 554.5, 0));
-      await pg.evaluate(() => window.advanceTime(300));
-      const leave = await pg.textContent("#prompt");
-      await pg.keyboard.press("KeyE");
-      await pg.evaluate(() => window.advanceTime(1000));
-      const going = await readOf(pg);
-      if (going.leaving === null) errors.push(`network: at the supply depot the prompt reads "${leave}" and the use key did not start leaving`);
-      await pg.evaluate(() => window.advanceTime(5000));
-      await pg.waitForFunction(() => !document.getElementById("results").hidden, null, { timeout: 10000 }).catch(() => undefined);
-      const r2 = await readOf(pg);
-      const home = await pg.textContent("#results");
-      if (r2.screen !== "results" || r2.settled?.network?.relays !== 2 || r2.settled?.contract?.t !== "destroy" || !r2.settled.contract.done || !/中継器 −2/.test(home)) errors.push(`network: the results after the mast read ${JSON.stringify({ screen: r2.screen, settled: r2.settled && { network: r2.settled.network, contract: r2.settled.contract } })}`);
-      await pg.screenshot({ path: `${out}/56-results-network.png` });
-      await pg.locator("#day-result .net-change").scrollIntoViewIfNeeded();
-      await pg.screenshot({ path: `${out}/56-results-network-detail.png` });
-    }
-    await ctx.close();
-  }
-  lap("network");
-}
-
-/*
  * A depot: the base offers the depots on as starts, the raid begins on the ground beside one
  * with its prompt, the map lies under fog except round where the player has been, and leaving
  * there ends the raid as extracted at that depot.
@@ -1551,10 +1468,11 @@ const readOf = async (pg) => JSON.parse(await pg.evaluate(() => window.render_ga
   await ctx.close();
 }
 /*
- * The island's state, from a saved profile on day 6: the supply depot freed and unvisited since
- * day 3 (it goes thin unless the next raid comes into it), the wreck freed yesterday, the quarry
- * thin. The map table colours the POIs and lists 明日の島, its mark warns of the depot, the raid's
- * map shows the standings, and coming home ends the day on the results with 明日の島.
+ * The island's state, from a profile saved before the six-node island on day 6: the supply depot
+ * and the wreck freed, the quarry thin, which loads as three nodes the player's. The camp's line
+ * of the day and the map table fill three of the row's six marks, the raid's map paints the
+ * player's ground blue and the enemy's red with the front between, the HUD's row under the
+ * compass shows the same, and coming home ends the day on the results' map.
  */
 const islandDay = {
   v: 13, cash: 2400, stash: [], raids: 5, extracted: 4, time: 3600, region: "reservoir", entry: "beach", seed: 4242, escaped: null,
@@ -1567,24 +1485,27 @@ const islandDay = {
   const pg = await withProfile(ctx, islandDay);
   await toCamp(pg);
   const c = await readOf(pg);
-  if (c.profile.day !== 6 || c.profile.poiState.quarry.state !== "thin" || !/あす手薄：補給所/.test(c.camp.marks.map)) errors.push(`island: the camp reads day ${c.profile.day}, marks ${JSON.stringify(c.camp.marks)}`);
+  const own = (sel) => pg.locator(`${sel} .node-row .node.own`).count();
+  // The nodes a profile holds: the day's battle, reckoned to its end, may have taken some back.
+  const mine = (p) => Object.entries(p.poiState).filter(([id, o]) => id !== "pad" && o.state === "freed").length;
+  if (c.profile.day !== 6 || c.profile.poiState.quarry.state !== "freed" || (await own("#camp-row")) !== 3) errors.push(`island: the camp reads day ${c.profile.day}, the quarry ${c.profile.poiState.quarry.state}, ${await own("#camp-row")} of the row filled`);
   await pg.evaluate(() => window.ringfallCamp.walkTo("map"));
   await pg.evaluate(() => window.advanceTime(100));
-  await pg.screenshot({ path: `${out}/70-island-camp-mark.png` });
+  await pg.screenshot({ path: `${out}/70-island-camp-row.png` });
   await useStation(pg, "map");
   await pg.waitForTimeout(300);
-  const lines = await pg.locator("#hub-side .tomorrow li").allTextContents();
-  // The network's next step comes first, then the POIs, the most pressing first.
-  if (lines.length < 4 || !/^網は/.test(lines[0]) || !/補給所は次のレイドで訪れないと手薄になる/.test(lines[1]) || !lines.some((l) => /採掘場は手薄/.test(l))) errors.push(`island: the map table's 明日の島 reads ${JSON.stringify(lines)}`);
+  if ((await own("#hub-side .hub-row")) !== 3 || (await pg.locator("#hub-side .tomorrow, #hub-side .hub-net, #hub-side .score-days").count())) errors.push(`island: the map table fills ${await own("#hub-side .hub-row")} of the row, or still shows the network or the battles`);
   const fit = await spills(pg);
   if (fit.length) errors.push(`island map table (1280x720): ${fit.join(", ")}`);
   await pg.screenshot({ path: `${out}/71-island-panel.png` });
   await closePanel(pg);
   const run = await walkOutOfGate(pg);
   const at = (id) => run.enemies.filter((e) => run.squads[e.squad].poi === id).length;
-  if (run.hold.join() !== "freed,thin,held,held,freed,held,held" || at(0) !== 0 || at(4) !== 0 || !(at(1) > 0)) errors.push(`island raid: holds ${run.hold.join()}, robots at the supply depot ${at(0)}, the wreck ${at(4)}, the quarry ${at(1)}`);
-  // The way in's banner has gone by the time the map is opened.
+  if (run.hold.join() !== "freed,freed,held,held,freed,held,held" || at(0) !== 0 || at(1) !== 0 || at(4) !== 0 || !(at(2) > 0)) errors.push(`island raid: holds ${run.hold.join()}, robots at the supply depot ${at(0)}, the quarry ${at(1)}, the wreck ${at(4)}, the relay ${at(2)}`);
+  // The way in's banner has gone by the time the map is opened; the HUD is drawn for the screenshot.
   await pg.evaluate(() => window.ringfallStep(4000));
+  await pg.screenshot({ path: `${out}/72-island-hud-row.png`, clip: { x: 1280 / 2 - 260, y: 0, width: 520, height: 120 } });
+  if ((await own("#island-row")) !== 3) errors.push(`island raid: the HUD's row fills ${await own("#island-row")}`);
   await pg.keyboard.press("KeyM");
   await pg.evaluate(() => window.advanceTime(100));
   await pg.screenshot({ path: `${out}/72-island-map.png` });
@@ -1602,9 +1523,8 @@ const islandDay = {
   await pg.evaluate(() => window.advanceTime(200));
   await pg.waitForFunction(() => !document.getElementById("results").hidden, null, { timeout: 10000 }).catch(() => undefined);
   const r = await readOf(pg);
-  const home = await pg.textContent("#home");
-  if (r.screen !== "results" || r.settled?.day !== 6 || r.profile.day !== 7 || !/6 日目の終わり/.test(home) || !/明日の島/.test(home) || !/補給所(はあと 3 日訪れないと|は訪れないうちに)手薄にな/.test(home)) errors.push(`island results: ${r.screen}, day ${r.settled?.day} -> ${r.profile.day}, home "${home}"`);
-  console.log(`island results: ${JSON.stringify(await pg.locator("#home .tomorrow li").allTextContents())}`);
+  if (r.screen !== "results" || r.settled?.day !== 6 || r.profile.day !== 7 || (await own("#day-result")) !== mine(r.profile) || !(await pg.locator("#day-map").count())) errors.push(`island results: ${r.screen}, day ${r.settled?.day} -> ${r.profile.day}, ${await own("#day-result")} of the row filled for ${mine(r.profile)} nodes held`);
+  await pg.waitForTimeout(1200);
   await pg.screenshot({ path: `${out}/74-island-results.png` });
   await pg.setViewportSize({ width: 740, height: 360 });
   await pg.waitForTimeout(300);
@@ -1613,7 +1533,7 @@ const islandDay = {
   await pg.click("#restart");
   await faded(pg);
   const plan = await pg.textContent("#camp-plan");
-  if (!/今日の作戦/.test(plan) || !/攻める節|守る節/.test(plan) || !/7 日目/.test(await pg.textContent("#camp-hint"))) errors.push(`island: the camp after the results reads "${plan}" / "${await pg.textContent("#camp-hint")}"`);
+  if (!/今日の作戦/.test(plan) || !/攻める拠点/.test(plan) || !/7 日目/.test(await pg.textContent("#camp-hint")) || (await own("#camp-row")) !== mine(r.profile)) errors.push(`island: the camp after the results reads "${plan}" / "${await pg.textContent("#camp-hint")}"`);
   await pg.screenshot({ path: `${out}/m20-camp-today.png` });
   await ctx.close();
 }
@@ -1644,9 +1564,7 @@ lap("island");
  * The island's events: the map table lists today's and tomorrow's (a debris fall, then a storm)
  * and its mark names tomorrow's; a debris fall's day puts the ring's piece, its crate and its
  * guards on the ground between and a mark on the map; a storm brings the fog in; a crews' visit
- * sends salvage crews to the bins; on a retake's day the defend contract is done by destroying
- * the squad, and the results tell how the retake went. Phones look at the map table, the storm
- * and the results.
+ * sends salvage crews to the bins. Phones look at the map table and the storm.
  */
 {
   const evGame = (events) => ({
@@ -1742,36 +1660,6 @@ lap("island");
     }
     await ctx.close();
   }
-  // A retake: the defend contract, the squad destroyed, then home; the results tell the retake's outcome.
-  for (const phone of [false, true]) {
-    const ctx = await browser.newContext(phone ? { viewport: { width: 740, height: 360 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true } : { viewport: { width: 1280, height: 720 } });
-    const pg = await withProfile(ctx, evGame([{ t: "retake", poi: "supply" }, null]));
-    await toCamp(pg, phone);
-    const cdp = phone ? await ctx.newCDPSession(pg) : undefined;
-    const c0 = await readOf(pg);
-    if (c0.camp?.board[0]?.t !== "defend") errors.push(`events: a retake's board starts with ${c0.camp?.board[0]?.t}`);
-    await pg.evaluate(() => window.ringfallContract.take("defend"));
-    await walkOutOfGate(pg);
-    const st = await stepWhile(pg, 500, 400, (x) => x.phase === "play" && !x.retake.left);
-    if (!st.retake.left) errors.push(`events: the retake squad never came (${JSON.stringify(st.retake)})`);
-    const killed = await pg.evaluate(() => window.ringfallContract.destroyTarget());
-    const r1 = await quietStep(pg, 300);
-    if (!killed || !r1.contract?.met) errors.push(`events: destroying the retake squad (${killed}) left the contract ${JSON.stringify(r1.contract)}`);
-    // Home through the camp's yard, the day ended alive.
-    await pg.evaluate(() => window.ringfallStep(8000));
-    await pg.evaluate(() => {
-      const m = window.ringfallCamp.spots().find((q) => q.id === "map");
-      window.ringfallPlace(m.x + 7, m.z + 11, 0);
-    });
-    await pg.evaluate(() => window.advanceTime(200));
-    await pg.waitForFunction(() => !document.getElementById("results").hidden, null, { timeout: 10000 }).catch(() => undefined);
-    const r = await readOf(pg);
-    const home = await pg.textContent("#home");
-    if (r.screen !== "results" || r.settled?.event?.t !== "retake" || r.settled?.overrun?.length || !/奪還部隊を倒した/.test(home) || r.profile.poiState.supply.state !== "freed" || !r.settled?.contract?.done) errors.push(`events: the retake's results read ${JSON.stringify({ screen: r.screen, settled: r.settled && { event: r.settled.event, overrun: r.settled.overrun, contract: r.settled.contract }, supply: r.profile.poiState.supply })} "${home.slice(0, 200)}"`);
-    await pg.locator("#home h3", { hasText: "島の出来事" }).scrollIntoViewIfNeeded().catch(() => undefined);
-    await pg.screenshot({ path: `${out}/${phone ? "m25" : "62"}-results-retake.png` });
-    await ctx.close();
-  }
   lap("events");
 }
 /*
@@ -1816,7 +1704,7 @@ lap("island");
     await pg.waitForTimeout(100);
     const c1 = await readOf(pg);
     const text = await pg.textContent("#hub-side .quest.contract.taken");
-    if (c1.profile.threat !== 3 || !c1.camp.taken || !/解放すると網がもう 1 段下がる/.test(text) || !/補給所 3/.test(text) || !/得るもの/.test(text)) errors.push(`threat: the board's 強度 left ${c1.profile.threat} (taken ${c1.camp.taken}) and reads "${text}"`);
+    if (c1.profile.threat !== 3 || !c1.camp.taken || /網/.test(text) || !/補給所 3/.test(text) || !/得るもの/.test(text)) errors.push(`threat: the board's 強度 left ${c1.profile.threat} (taken ${c1.camp.taken}) and reads "${text}"`);
     const fit = await spills(pg);
     if (fit.length) errors.push(`board 強度${phone ? " on a phone" : ""}: ${[...new Set(fit)].join(", ")}`);
     await pg.locator("#hub-side .quest.contract.taken").scrollIntoViewIfNeeded();
@@ -1887,11 +1775,11 @@ lap("island");
 }
 console.log(`screens: ${[...taken].join(", ")}`);
 /*
- * The day's battle (陣取り戦): a profile on day 9 with the supply depot and the quarry freed, the
- * factory at level 3 and the last days' battles on record. The factory's panel and the map
- * table's battles by day; out of the gate, the battle's points under the compass, one of the
- * player's own squads fighting one of the network's in front of the player, and the battle map
- * with the squads, on the desktop and a phone on its side.
+ * The day's battle (陣取り戦): a profile on day 9 with the supply depot and the quarry the
+ * player's, the factory at level 3, saved with the last days' battles' points (dropped on load).
+ * The factory's panel and the map table's row; out of the gate, the row under the compass, one
+ * of the player's own squads fighting one of the enemy's in front of the player, and the battle
+ * map with the squads, on the desktop and a phone on its side.
  */
 const battleDay = {
   v: 19, cash: 26000, raids: 8, extracted: 6, time: 5400, region: "reservoir", entry: "beach", seed: 5151, escaped: null,
@@ -1915,7 +1803,7 @@ for (const phone of [false, true]) {
   await toCamp(pg, phone);
   const cdp = phone ? await ctx.newCDPSession(pg) : undefined;
   const c = await readOf(pg);
-  if (c.profile.factory !== 3 || c.profile.scores.length !== 5) errors.push(`battle: the camp reads the factory at ${c.profile.factory}, ${c.profile.scores.length} battles`);
+  if (c.profile.factory !== 3 || "scores" in c.profile) errors.push(`battle: the camp reads the factory at ${c.profile.factory}, battles ${JSON.stringify(c.profile.scores)}`);
   if (!phone) {
     // The station from the yard: its container on the south fence, the blue robot by it, its name over it.
     await pg.evaluate(() => window.ringfallCamp.walkTo("factory"));
@@ -1928,20 +1816,19 @@ for (const phone of [false, true]) {
   await useStation(pg, "factory", cdp);
   await pg.waitForTimeout(200);
   const panel = await pg.textContent("#hub-side");
-  if (!/Lv3/.test(panel) || !/Lv4 にする/.test(panel) || !/最近の陣取り戦/.test(panel)) errors.push(`battle: the factory's panel reads "${panel.slice(0, 200)}"`);
+  if (!/Lv3/.test(panel) || !/Lv4 にする/.test(panel) || /陣取り戦|網/.test(panel)) errors.push(`battle: the factory's panel reads "${panel.slice(0, 200)}"`);
   const fit = await spills(pg);
   if (fit.length) errors.push(`battle factory panel (${phone ? "phone" : "1280x720"}): ${fit.join(", ")}`);
   await pg.screenshot({ path: tag(1, "panel-factory") });
   await closePanel(pg, phone);
   await useStation(pg, "map", cdp);
   await pg.waitForTimeout(300);
-  if ((await pg.locator("#hub-side .score-days .score-row").count()) !== 5) errors.push("battle: the map table does not list the 5 battles");
-  await pg.locator("#hub-side .score-days").scrollIntoViewIfNeeded();
-  await pg.screenshot({ path: tag(2, "panel-map-battles") });
+  if ((await pg.locator("#hub-side .hub-row .node-row .node.own").count()) !== 2) errors.push("battle: the map table's row does not fill the two nodes held");
+  await pg.screenshot({ path: tag(2, "panel-map-row") });
   await closePanel(pg, phone);
-  // The camp's line of the day and 今日の作戦: the battles on record make yesterday's known.
+  // The camp's line of the day, its row, and 今日の作戦.
   const today = await pg.textContent("#camp");
-  if (!/9 日目/.test(today) || !/昨日の陣取り戦：勝ち/.test(today) || !/攻める節|守る節/.test(today)) errors.push(`battle: the camp's day reads "${today.slice(0, 300)}"`);
+  if (!/9 日目/.test(today) || !/攻める拠点/.test(today) || (await pg.locator("#camp-row .node-row .node.own").count()) !== 2) errors.push(`battle: the camp's day reads "${today.slice(0, 300)}"`);
   await pg.screenshot({ path: tag(6, "camp-today") });
   const run = await walkOutOfGate(pg);
   if (!run.battle || run.battle.factory !== 3) errors.push(`battle: the raid out of the gate has ${JSON.stringify(run.battle && { factory: run.battle.factory })}`);
@@ -1952,12 +1839,12 @@ for (const phone of [false, true]) {
   if (/記録/.test(card.title) || !/(前線|陣取り戦|制圧)/.test(card.title) || !/記録/.test(card.story)) errors.push(`battle: with no contract the objective card reads ${JSON.stringify(card)}`);
   await draw(pg);
   await pg.screenshot({ path: tag(7, "objective-front") });
-  const hud = await pg.evaluate(() => ({ hidden: document.getElementById("battle").hidden, text: document.getElementById("battle").textContent }));
+  const hud = await pg.evaluate(() => ({ own: document.querySelectorAll("#island-row .node.own").length, all: document.querySelectorAll("#island-row .node").length, text: document.getElementById("island-row").textContent }));
   const deadline = await pg.textContent("#obj-raid");
-  if (hud.hidden || !/自軍/.test(hud.text) || !/網/.test(hud.text) || !/\+\d+\/秒/.test(hud.text) || !/締め切り/.test(deadline)) errors.push(`battle: the score bar reads ${JSON.stringify(hud)}, the card "${deadline}"`);
+  if (hud.own !== 2 || hud.all !== 6 || hud.text.trim() || !/締め切り/.test(deadline)) errors.push(`battle: the HUD's row reads ${JSON.stringify(hud)}, the card "${deadline}"`);
   const st = await readOf(pg);
   if (st.battle.squads.filter((q) => q.side === 0).length < 2) errors.push(`battle: ${st.battle.squads.filter((q) => q.side === 0).length} of the player's squads at the start (the turrets at two nodes)`);
-  // A fight in front of the player: the player's squad on the left, the network's on the right.
+  // A fight in front of the player: the player's squad on the left, the enemy's on the right.
   const p = st.player;
   const yaw = await pg.evaluate(() => window.ringfallYaw());
   const fx = p.x + Math.sin(yaw) * 30;
@@ -1968,7 +1855,7 @@ for (const phone of [false, true]) {
   await pg.evaluate(() => window.advanceTime(3200));
   await pg.screenshot({ path: tag(3, "battle-fight") });
   const after = await readOf(pg);
-  if (!(hp(after) < h0)) errors.push(`battle: the player's squad and the network's did not fight (${h0} -> ${hp(after)})`);
+  if (!(hp(after) < h0)) errors.push(`battle: the player's squad and the enemy's did not fight (${h0} -> ${hp(after)})`);
   await pg.keyboard.press("KeyM");
   await pg.evaluate(() => window.advanceTime(100));
   await pg.screenshot({ path: tag(4, "battle-map") });
