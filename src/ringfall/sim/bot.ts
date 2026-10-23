@@ -9,7 +9,7 @@ import { clearLine, findPath, type Avoid } from "./nav";
 import { onMainGround } from "./hunt";
 import { callLeft, enemyMax, idleInput, weakY, type Enemy, type Input, type State } from "./state";
 import { pickHeal } from "./player";
-import { canOpen, makeRoom } from "./world";
+import { canOpen, makeRoom, useTarget } from "./world";
 import { offLowGround, offshore, terrainHeight } from "./terrain";
 
 /**
@@ -91,7 +91,7 @@ const GIVE_UP = 25;
 const CORE_GIVE_UP = 60;
 
 /** Where the bot stands to work core `i`: beside it, on the ground kept clear round it. */
-const standBy = (i: number) => ({ x: NODES[i].core.x + 1.4, z: NODES[i].core.z });
+const standBy = (i: number, side = 1) => ({ x: NODES[i].core.x + 1.4 * side, z: NODES[i].core.z });
 
 export class Bot {
   private nx = 0;
@@ -189,7 +189,7 @@ export class Bot {
     const core = this.nextCore(s);
     // Holding the core is the objective's step the bot reads, as the HUD shows it (sim/objective.ts).
     const capturing = core >= 0 && s.capture?.node === core && currentStep(objectiveSteps(s))?.kind === "hold";
-    const coreAt = core >= 0 ? standBy(core) : null;
+    const coreAt = core >= 0 ? standBy(core, this.coreSide) : null;
     // Only fight robots that are after us or stand at the POI we are taking; leave the rest alone.
     let aim = capturing ? -1 : this.nextPoi(s);
     // Until it means to take the titan on, its paths go round the titan's sight.
@@ -546,7 +546,10 @@ export class Bot {
       if (p.sprinting && d > 12 && this.rnd() < TICK * 0.4 && levelRun(p.pos, Math.sin(want.yaw), -Math.cos(want.yaw))) this.crouch = true;
       this.interactT -= TICK;
       if (d < 1.8 && this.interactT <= 0) {
-        inp.interact = true;
+        // At a core with something else in the use key's reach (a gun dropped on it), it would
+        // take that instead: it goes round to the core's other side.
+        if (goal === coreAt && useTarget(s)?.kind !== "core") this.coreSide = -this.coreSide;
+        else inp.interact = true;
         this.interactT = 0.5;
       }
     }
@@ -726,6 +729,9 @@ export class Bot {
     if (n.region !== s.region || dist2d(n.core, p.pos) > 350 || p.selfRevive <= 0 || (left < 0.6 && !pickHeal(s))) return -1;
     return f.node;
   }
+
+  /** Which side of a core it stands at to take it (`standBy()`). */
+  private coreSide = 1;
 
   /** Cores it gave up on, and for each core the meter's best and when it last grew (or was first aimed at). */
   private coreLeft = new Set<number>();
