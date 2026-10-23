@@ -126,8 +126,9 @@ the debris guards draw on their
 own stream (`crewRand()`), so the raid's other random numbers are drawn as without them.
 Each POI has a depot on its road (`DEPOTS` in `map.ts`, run by `stepDepots()` in `world.ts`): walking
 up switches it on for good, its use key sends the bag home (it survives a wipe) or, with the bag empty,
-leaves the raid there; neither works while a robot fighting the player is within `DEPOT.safe`. The profile keeps the depots on (`Profile.depots`), from
-which `newRun(seed, kit, region, start)` may begin on the ground, and the explored map (`Profile.seen`).
+leaves the raid there; neither works while a robot fighting the player is within `DEPOT.safe`. The profile keeps the depots on (`Profile.depots`) and the explored map (`Profile.seen`);
+`newRun(seed, kit, region, start)` may begin on the ground at a depot that a node held opens a start from
+(`departDepots()` in `meta/island.ts`: the supply depot's and the yard's, `UNLOCKS[].depart`).
 A start from a depot carries a limited loadout: `loadoutCost()` prices stash weapons, armour and keys
 (the lent kit and heals are free), `depotAllowance()` gives the depot's level and budget from the
 credits' worth sent through it (`Profile.depotSent`, added up in `settle()` from `State.sentVia`), and
@@ -164,8 +165,10 @@ nodes the enemy holds (`STRENGTH.byHeld`, `strengthFor()` in `state.ts`, `enemyN
 packs flying (`activePacks()`, from the seed), the rogue patrols (`ROGUE.patrols`), the capture's
 push (`FRONT.push`) and the battle's enemy squads (`CONQUEST.net`). With every node the enemy's a
 raid plays at `STRENGTH.play` (2), whose numbers are the island's own, so the sim gate's tables
-keep the island's numbers. Plain grunts and heavies wear a tier-1 plate only at a raised threat
-(`netPlated()`, a hash of the seed and the robot's id).
+keep the island's numbers. A node's garrison (its POI's squads, and those of them out on a beat)
+wears plates of the node's `TIER` (`tierPlated()` in `sim/island.ts`, `PLATE.garrison`, a hash of the
+seed and the robot's id), and plain grunts and heavies elsewhere wear a tier-1 plate only at a
+raised threat (`netPlated()`).
 Mod parts (`MODS` in `config.ts`, `sim/mods.ts`) are the raid's own build: three body slots
 (`Player.mods`), lost when the raid ends, each setting one number the sim already reads
 (`modScale()`). Bins hold kinds the profile knows (`State.known`, `Profile.known`), robots any;
@@ -186,8 +189,9 @@ nodes) is on the front; only its core, a pillar near its middle, can be captured
 `config.ts`): the use key starts it, the meter fills while the player holds the core's ground with
 no robot on it, the garrison comes and squads push in from the neighbouring nodes. A node taken is
 the player's at once (no robot enters `FRONT.zone`) and stays so overnight; clearing a POI of its
-robots does not take it. The bot captures the front's cores in its region,
-`Skill.capture` a raid (`Skill.battle` in a battle), and then leaves. With no contract taken (and
+robots does not take it. The bot captures the front's cores in its region whose garrison's plates
+its best gun pierces, `Skill.capture` a raid (`Skill.battle` in a battle), and then leaves; it takes on
+no POI two tiers past its best gun. With no contract taken (and
 the story record not taken), the objective card points at the front (`objectiveSteps()`), and the
 record has a line of its own.
 A raid of the island is one battle (陣取り戦, `sim/battle.ts`, `CONQUEST` in `config.ts`), given by
@@ -215,8 +219,8 @@ The long-term goal is how many of the six nodes the player holds (`view/row.ts` 
 row at the HUD's top, the camp's line, the map table and the results); there is no ending. The hideout is the mid-term one: five modules built level by level from specific
 valuables and credits taken from the stash, each level needing only the module's level before it
 (`build()` in `profile.ts`; levels and costs in `HIDEOUT`, effects in `HIDEOUT_EFFECT`, both in `config.ts`; `meta/hideout.ts` holds the pure
-helpers). Their benefits act in the meta: `takeKit()` lends the infirmary's heals, `wares()` sells
-up to `shopRarity()`, `stashCap()` and `pouchSlots()` grow, and the radio reports the next raid's
+helpers). Their benefits act in the meta: `takeKit()` lends the infirmary's heals, the workbench
+raises the valuables the trader sells (`materialRarity()`), `stashCap()` and `pouchSlots()` grow, and the radio reports the next raid's
 boosted POI. Every raid leans one POI's bins of its region to a rare kind (`State.boost`, from
 `boostFor(seed, region)` in `state.ts`, without drawing on the raid's random numbers);
 `Profile.seed` is the next raid's seed, fixed at the base so the report comes true. The top levels
@@ -438,9 +442,24 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   `RING_GAPS`), and the enemy sends one after a quiet stretch (`SWEEP`). What the player saw or
   heard of them is `State.contacts`, drawn on the map. `checkFactions()`, `checkPatrols()`,
   `checkIntercept()` and `checkSplit()` in the sim gate check them.
-- Some robots wear armour plates (`Enemy.plate`, a rarity tier): body hits from a weapon of lower
-  rarity are cut by `PLATE` in `config.ts`, weak points pass in full. Each POI's vault guard
-  (`Member.plate` in `map.ts`) and the raiders (`RAIDERS.plate`) wear them.
+- Some robots wear armour plates (`Enemy.plate`, a rarity tier, drawn in that rarity's colour on the
+  chest and shoulders): body hits from a weapon of lower rarity are cut by `PLATE.mult` in
+  `config.ts` and show no damage number (sparks and a ping instead), weak points pass in full. A
+  node's garrison wears its `TIER`'s plates (the vault guard, `Member.plate` in `map.ts`, at least
+  `VAULT.guardPlate`), the raiders `RAIDERS.plate`. A piercing hit that takes the shield breaks the
+  plate off (`plateBreak`; `Enemy.wore` keeps what it came with). The factory's robots hit plates as
+  the trader's shelf arms them (`factoryRarity()` in `battle.ts`), the rogues as `PLATE.robots`.
+  Plain bins hold gear seldom and never past rare (`BIN_GEAR`, a hash of the seed and the bin);
+  epic and legendary guns come from vaults, plated robots and raiders (`robotGear()` in
+  `combat.ts`, a hash of the seed and the robot), the titan and the trader.
+- What holding a node opens is data in `map.ts` (`UNLOCKS`, read through `unlocked()` in
+  `meta/island.ts` and `heldUnlocks()` in `battle.ts`), and lasts while it is held: the trader's
+  gear up to `shop` (`shopRarity()`, which `wares()` sells; common with no node), a start from its
+  depot (`depart`), the factory's extra squads (`squad`, `factoryMax()`), the reinforcements'
+  landing on the compass (`scout`, the HUD's red chevron), no boats on the north shore (`shore`,
+  `CONQUEST.net.shore`). The world map draws each node's plate as a shield and what it opens as
+  small marks beside it (`drawShield()`, `drawUnlocks()` in `view/map.ts`); the trader's shelf
+  shows the rarities lit by the nodes held.
 - `ally.ts` is the teammate: it walks the player's footsteps (`State.trail`), shoots only engaged
   robots, revives the player once the self-revive is spent, and is revived with the use key.
   Robots choose between the player and the teammate in `chooseTarget()` (`enemies.ts`); the sim
@@ -525,7 +544,9 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   and every module stands at its top level,
   and the island campaign from `scripts/ringfall-campaign.ts`: the nodes held, the enemy's strength
   and the factory's level at days 5, 10, 20 and 30 of a month on one profile per skill, the first
-  day each tier was held, and the nodes held and changing hands by day).
+  day each tier was held, and the nodes held, the best gun carried and the nodes changing hands by
+  day; the campaign's bot builds the factory, then buys the best rifle and armour the trader's shelf
+  holds and carries them).
   Change a number in `config.ts` or `map.ts` only together with a re-run and an update to that file.
   While tuning, `npm run sim:ringfall -- 10` (10 raids per skill and region, about a third of the
   time) is enough to see which way a change moves the tables; the record in that file is 30.
