@@ -151,6 +151,8 @@ export class Hud {
     this.task = c ? contractTask(c) : record && story ? { t: "record", id: record } : null;
     this.lastStep = "";
     this.map.contract = c && contractMark(c);
+    // A new raid restarts `s.time`, so a landing marked in the last raid would show again.
+    this.scout = null;
   }
 
   /** The ways in the base offers, for the raid about to start: the HUD and the map tell the others apart. */
