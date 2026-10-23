@@ -195,6 +195,8 @@ export interface Enemy {
    * rarity are reduced; weak-point hits pass in full.
    */
   plate: Rarity;
+  /** The plate it came with, kept once a piercing hit breaks it off: what it drops (`robotGear()`). */
+  wore: Rarity;
   /** Seconds until it may change strafe direction. */
   strafeT: number;
   /** Seconds left of a jink: a fast sidestep the other way after being hit. */
@@ -319,6 +321,8 @@ export interface SquadState {
   friend?: boolean;
   /** The battle squad it is in the world (`BattleSquad.id`, sim/battle.ts). */
   battle?: number;
+  /** A squad of the player's coming to the core of the node the player attacks: it goes at its fighting pace (sim/battle.ts `rally`). */
+  rush?: boolean;
 }
 
 export interface Orb {
@@ -406,6 +410,7 @@ export type GameEvent =
   | { t: "impact"; pos: Vec3 }
   | { t: "hit"; id: number; pos: Vec3; dmg: number; crit: boolean; shield: boolean; tier: Rarity; flank: Flank; ally: boolean; /** A plate took part of this hit. */ blocked: boolean }
   | { t: "shieldBreak"; id: number; pos: Vec3; tier: Rarity }
+  | { t: "plateBreak"; id: number; pos: Vec3; tier: Rarity }
   /** A robot reels from the damage it took; a wind-up it was in is lost. `fromX/Z` is where the shot came from. */
   | { t: "stagger"; id: number; pos: Vec3; fromX: number; fromZ: number; interrupted: boolean }
   | { t: "kill"; id: number; kind: EnemyKind; pos: Vec3; crit: boolean; last: boolean; ally: boolean; /** Where the killing shot came from, so the wreck falls away from it. */ fromX: number; fromZ: number }
@@ -481,9 +486,15 @@ export type GameEvent =
   | { t: "coreStart"; node: number }
   | { t: "coreShielded"; node: number }
   | { t: "coreTaken"; node: number }
-  /** The battle (sim/battle.ts): a node changed hands, a squad came out of the factory, and the battle's time ran out with the player still out. */
+  /**
+   * The battle (sim/battle.ts): a node changed hands; a squad of the factory came out of the camp's
+   * gate or a node's depot at (x, z); a dropship or a boat set off to land the enemy's squad at (x, z);
+   * the enemy's robots came to a core of the player's; and the battle's time ran out with the player still out.
+   */
   | { t: "nodeTaken"; node: number; side: Side }
-  | { t: "squadOut"; side: Side; node: number }
+  | { t: "squadOut"; side: Side; node: number; x: number; z: number; gate: boolean }
+  | { t: "landing"; boat: boolean; x: number; z: number }
+  | { t: "nodeThreat"; node: number }
   | { t: "timeUp" }
   | { t: "done" };
 

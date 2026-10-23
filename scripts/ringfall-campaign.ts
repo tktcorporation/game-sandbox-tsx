@@ -16,13 +16,14 @@
  * The skills are played in one worker process each, side by side; the gate starts them beside
  * its tables and prints the table after the hideout's pacing (scripts/ringfall-sim.ts).
  */
-import { ENTRIES, NODES, REGIONS, regionOf, TIER, type RegionId } from "../src/ringfall/sim/map";
+import { ENTRIES, NODES, POIS, REGIONS, regionOf, TIER, type NodeId, type RegionId } from "../src/ringfall/sim/map";
 import { SKILLS } from "../src/ringfall/sim/bot";
-import { freeKit, newRun, strengthFor } from "../src/ringfall/sim/state";
+import { newRun, strengthFor } from "../src/ringfall/sim/state";
 import { holds, islandHolds, unfreeable } from "../src/ringfall/meta/island";
 import { enemyNodes, frontNodes } from "../src/ringfall/sim/front";
-import { buildFactory, buy, buyPrice, factoryShortfall, newProfile, nextFactory, sell, settle, wares, type Profile } from "../src/ringfall/meta/profile";
-import { FACTORY, type ValuableKind } from "../src/ringfall/sim/config";
+import { buildFactory, buy, buyPrice, emptyLoadout, factoryShortfall, newProfile, nextFactory, sell, settle, takeKit, wares, type Item, type Profile } from "../src/ringfall/meta/profile";
+import { shopRarity } from "../src/ringfall/meta/island";
+import { FACTORY, VALUABLES, type Rarity, type ValuableKind, type WeaponKind } from "../src/ringfall/sim/config";
 import { playState } from "./ringfall-table";
 import { fork } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -34,25 +35,76 @@ const MARKS = [5, 10, 20, 30];
 /** One skill's month: the island at the end of each day, and how each raid ended. */
 export interface Campaign {
   skill: string;
-  days: { nodes: number; harbor: number; tier: number; strength: number; front: string[]; alive: boolean; region: RegionId; event: string | null; crewsIn: number; crewsOut: number; factory: number; gained: number; lost: number; minutes: number }[];
+  days: { cash: number; haul: number; gun: number; cleared: string[]; captured: string[]; nodes: number; harbor: number; tier: number; strength: number; front: string[]; alive: boolean; region: RegionId; event: string | null; crewsIn: number; crewsOut: number; factory: number; gained: number; lost: number; minutes: number }[];
   errors: string[];
 }
 
-/** Nodes on the front in a region, then POIs the enemy holds there: where the bot has most to do. */
-const work = (p: Profile, r: RegionId) => {
+/**
+ * Nodes on the front in a region that its gun pierces (`gun`, the best rarity carried), the deeper
+ * the better, then POIs the enemy holds there whose plates it pierces: where the bot has most to do.
+ */
+const work = (p: Profile, r: RegionId, gun: number) => {
   const front = frontNodes(islandHolds(p));
-  return 100 * NODES.filter((n, i) => front[i] && n.region === r).length + regionOf(r).pois.filter((id) => !unfreeable(id) && p.poiState[id].state === "held").length;
+  const tierOf = (id: string) => TIER[id as NodeId] ?? 0;
+  return NODES.reduce((sum, n, i) => sum + (front[i] && n.region === r && TIER[n.id] <= gun ? 100 + 50 * TIER[n.id] : 0), 0) + regionOf(r).pois.filter((id) => !unfreeable(id) && p.poiState[id].state === "held" && tierOf(id) <= gun).length;
 };
 
+/** The guns the bot carries, in this order: a rifle for the fight and the scoped rifle for its opening shots. */
+const KIT: WeaponKind[] = ["pike", "talon"];
+
+/** The stash's best weapon of `kind` and its best armour, as stash indices (-1 for none). */
+function bestGear(p: Profile): { weapons: number[]; armor: number } {
+  const best = (ok: (i: Item) => boolean, rank: (i: Item) => number) => p.stash.reduce((b, i, n) => (ok(i) && (b < 0 || rank(i) > rank(p.stash[b])) ? n : b), -1);
+  return {
+    weapons: KIT.map((kind) => best((i) => i.t === "weapon" && i.kind === kind, (i) => (i.t === "weapon" ? i.rarity : -1))),
+    armor: best((i) => i.t === "armor", (i) => (i.t === "armor" ? i.tier : -1)),
+  };
+}
+
 /**
- * The campaign's spending: everything in the stash the factory's levels still to build do not ask
- * for is sold, then the factory is raised as far as the stash and the credits allow.
+ * Gear from the trader as the nodes held open it (`shopRarity()`), saving for the factory's next
+ * level: a rifle that pierces the deepest node on the front the shelf can arm it for, bought
+ * whenever the credits cover it; a common scoped rifle and better armour only from what is left
+ * over the factory's next level.
+ */
+function gearUp(p: Profile): Profile {
+  const top = shopRarity(p);
+  const front = frontNodes(islandHolds(p));
+  const need = Math.max(0, ...NODES.filter((n, i) => front[i] && TIER[n.id] <= top).map((n) => TIER[n.id]));
+  const reserve = nextFactory(p)?.cash ?? 0;
+  const have = bestGear(p);
+  const rarityAt = (n: number) => {
+    const i = p.stash[n];
+    return i?.t === "weapon" ? i.rarity : i?.t === "armor" ? i.tier : -1;
+  };
+  const sold = (i: Item) => wares(p).some((w) => JSON.stringify(w) === JSON.stringify(i));
+  const rifle: Item = { t: "weapon", kind: "pike", rarity: need as Rarity };
+  if (rarityAt(have.weapons[0]) < need && sold(rifle) && p.cash >= buyPrice(rifle)) p = buy(p, rifle) ?? p;
+  const scope: Item = { t: "weapon", kind: "talon", rarity: 0 };
+  if (rarityAt(have.weapons[1]) < 0 && p.cash >= buyPrice(scope) + reserve) p = buy(p, scope) ?? p;
+  for (let t = top; t > rarityAt(have.armor) && t >= 1; t--) {
+    const armor: Item = { t: "armor", tier: t as Rarity };
+    if (sold(armor) && p.cash >= buyPrice(armor) + reserve) {
+      p = buy(p, armor) ?? p;
+      break;
+    }
+  }
+  return p;
+}
+
+/**
+ * The campaign's spending: better gear first (`gearUp()`), then everything in the stash that is not
+ * the kit and that the factory's levels still to build do not ask for is sold, then the factory is
+ * raised as far as the stash and the credits allow.
  */
 function spend(p: Profile): Profile {
   const want = new Map<ValuableKind, number>();
   for (const l of FACTORY.levels.slice(p.factory)) for (const [k, n] of l.items) want.set(k, (want.get(k) ?? 0) + n);
+  const kit = bestGear(p);
+  const keep = new Set([...kit.weapons, kit.armor].filter((n) => n >= 0).map((n) => p.stash[n]));
   for (let i = p.stash.length - 1; i >= 0; i--) {
     const it = p.stash[i];
+    if (keep.has(it)) continue;
     const left = it.t === "valuable" ? (want.get(it.kind) ?? 0) : 0;
     const kept = it.t === "valuable" ? p.stash.filter((o, k) => k < i && o.t === "valuable" && o.kind === it.kind).length : 0;
     if (kept >= left) p = sell(p, i);
@@ -71,7 +123,7 @@ function spend(p: Profile): Profile {
     if (!next) break;
     p = next;
   }
-  return p;
+  return gearUp(p);
 }
 
 /** A month of one skill on a fresh profile that knows every way in, as a player some raids in does. */
@@ -79,16 +131,27 @@ export function playCampaign(skill: string, days = DAYS): Campaign {
   let p: Profile = spend({ ...newProfile(17), entries: ENTRIES.map((e) => e.id) });
   const out: Campaign = { skill, days: [], errors: [] };
   for (let d = 1; d <= days; d++) {
-    const region = REGIONS.map((r) => r.id).reduce((a, b) => (work(p, b) > work(p, a) ? b : a));
+    // The kit: the stash's best guns and armour, or the lent kit while it holds no gun.
+    const gear = bestGear(p);
+    const gun = Math.max(0, ...gear.weapons.map((n) => { const i = p.stash[n]; return i?.t === "weapon" ? i.rarity : 0; }));
+    const region = REGIONS.map((r) => r.id).reduce((a, b) => (work(p, b, gun) > work(p, a, gun) ? b : a));
     const ways = regionOf(region).entries;
-    const s = newRun(p.seed, freeKit(), region, { depots: p.depots, seen: p.seen, routes: p.routes, island: holds(p), entry: ways[d % ways.length], event: p.events[0], battle: { factory: p.factory } });
+    const taken = takeKit(p, { ...emptyLoadout(), weapons: gear.weapons.filter((n) => n >= 0), armor: gear.armor >= 0 ? gear.armor : null });
+    p = taken.profile;
+    const s = newRun(p.seed, taken.kit, region, { depots: p.depots, seen: p.seen, routes: p.routes, island: holds(p), entry: ways[d % ways.length], event: p.events[0], battle: { factory: p.factory } });
     const res = playState(s, skill, 500 + d);
     if (res.error) out.errors.push(`campaign ${skill} day ${d}: ${res.error}`);
+    const before = p.cash + p.stash.reduce((n, i) => n + (i.t === "valuable" ? VALUABLES[i.kind].value : 0), 0);
     const settled = settle(p, s);
     p = spend(settled.profile);
     const h = islandHolds(p);
     const mine = NODES.filter((_, i) => h[i] === "freed");
     out.days.push({
+      gun: Math.max(-1, ...taken.kit.weapons.map((w) => w.rarity)),
+      cash: p.cash,
+      haul: settled.profile.stash.reduce((n, i) => n + (i.t === "valuable" ? VALUABLES[i.kind].value : 0), 0) + settled.profile.cash - before,
+      cleared: s.stats.cleared.map((i) => POIS[i].id),
+      captured: [...s.stats.captured],
       nodes: mine.length,
       harbor: mine.filter((n) => n.region === "harbor").length,
       tier: Math.max(-1, ...mine.map((n) => TIER[n.id])),
@@ -145,6 +208,7 @@ export function campaignLines(runs: Campaign[]): string[] {
   lines.push(`nodes by day: ${runs.map((c) => `${c.skill} ${c.days.map((d) => d.nodes).join("")}`).join(" / ")}`);
   lines.push(`harbor nodes by day: ${runs.map((c) => `${c.skill} ${c.days.map((d) => d.harbor).join("")}`).join(" / ")}`);
   lines.push(`deepest tier by day: ${runs.map((c) => `${c.skill} ${c.days.map((d) => (d.tier < 0 ? "-" : d.tier)).join("")}`).join(" / ")}`);
+  lines.push(`best gun carried by day (0 common to 3 legendary): ${runs.map((c) => `${c.skill} ${c.days.map((d) => d.gun).join("")}`).join(" / ")}`);
   lines.push(`strength by day: ${runs.map((c) => `${c.skill} ${c.days.map((d) => d.strength).join("")}`).join(" / ")}`);
   lines.push(`factory by day: ${runs.map((c) => `${c.skill} ${c.days.map((d) => d.factory).join("")}`).join(" / ")}`);
   // Where the front stands at the end of the month: the nodes the player could take next.

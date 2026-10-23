@@ -13,6 +13,7 @@ import { GroundScatter } from "./scatter";
 import { trimBox, type TrimPiece, type TrimSite } from "./trim";
 import { PAL, RARITY_COLOR, SCOPE_IN, buildAlly, buildBeacon, buildBin, buildCore, buildBoat, buildStatic, buildDepot, buildEntryMark, buildRingDebris, mergeChunk, mergeTrim, type ChunkShade, buildCare, buildDropship, buildEnemy, buildGun, buildHands, buildLootItem, addPlates, flat, glow, haloSprite, type EnemyModel } from "./models";
 import { streetMeshes } from "./streets";
+import { BattleView, CHANNEL } from "./battle";
 
 /*
  * Renders a State in first person. It reads the state and the tick's events and
@@ -73,7 +74,7 @@ const SHADOW_MOVE = 4;
 /** The teammate's HUD teal: a depot that is on is lit in the colour that means "ours". */
 const MATE_LIGHT = 0x6fd0cf;
 /** Sparks off a plate that took part of a hit: grey like its damage number. */
-const PLATE_SPARK = 0x9aa3b5;
+const PLATE_SPARK = 0xffc56a;
 /** Smoke from a robot below half its health and shield, and from a wreck. */
 const SMOKE = 0x3b3a3c;
 /** The ring's piece smokes paler than a wreck, so its column reads against the red rock from afar. */
@@ -91,9 +92,7 @@ const WRECK_MAX = 6;
 /** Seconds of the collapse after a kill. */
 const WRECK_FALL = 0.55;
 
-/** The harbor's tidal channel: its floor and the water over it. */
-/** The water channel the boat comes up, at the harbor's quay. */
-export const CHANNEL = { x0: 88, x1: 170, z0: -600, z1: -583, y: -5.55 };
+export { CHANNEL };
 /**
  * Where the boat is on the channel, `t` from 1 (waiting at the far end, mid-channel) to 0
  * (docked against the quay beside the pickup point, so the player boards it from there).
@@ -173,6 +172,8 @@ interface EnemyView {
   walk: number;
   spawnBeam: THREE.Mesh | null;
   lane: THREE.Mesh | null;
+  /** The plates it wears (`addPlates()`), knocked off when the plate breaks. */
+  plates: THREE.Mesh[];
 }
 
 /** A robot's model left lying where it was destroyed. */
@@ -256,6 +257,8 @@ export class World {
   private readonly skyDome = this.sky();
   private dummy = new THREE.Object3D();
   private boulderGeo = new THREE.DodecahedronGeometry(1, 0);
+  /** The day's battle seen from afar: the enemy's landings, the squads out to the fog, the gate and depots the factory's squads leave by. */
+  private battleView = new BattleView();
 
   /** The camp between raids is drawn: the weapons are down. */
   campMode = false;
@@ -338,6 +341,7 @@ export class World {
     this.beacon = buildBeacon();
     this.beacon.visible = false;
     this.scene.add(this.beacon);
+    this.scene.add(this.battleView.group);
 
     for (const x of EXTRACTS) {
       const ring = new THREE.Mesh(new THREE.RingGeometry(x.radius - 0.4, x.radius, 48), glow(PAL.hot, 0.8));
@@ -947,9 +951,22 @@ export class World {
             const from = e.ally ? s.ally.pos : s.player.pos;
             v.pushYaw = Math.atan2(e.pos.x - from.x, -(e.pos.z - from.z));
           }
-          // A plate turning a hit aside throws grey sparks, so the player sees the gun is too weak.
-          if (e.blocked) this.burst(e.pos, PLATE_SPARK, 7, 6, 0.05, 9, 0.25);
+          // A plate turning a hit aside throws a spray of hot sparks off it, so the player sees the gun is too weak.
+          if (e.blocked && !e.crit) {
+            this.burst(e.pos, PLATE_SPARK, 16, 10, 0.06, 14, 0.3);
+            this.burst(e.pos, 0xffffff, 3, 4, 0.06, 0, 0.06);
+          }
           else this.burst(e.pos, e.crit ? PAL.hot : e.shield ? RARITY_COLOR[e.tier] : 0xffffff, e.crit ? 7 : 4, 4, 0.06, 6, 0.3);
+          break;
+        }
+        case "plateBreak": {
+          // The plate cracks and its pieces fall off in its colour.
+          const v = this.enemies.get(e.id);
+          if (v) {
+            for (const o of v.plates) o.removeFromParent();
+            v.plates = [];
+          }
+          this.burst(e.pos, RARITY_COLOR[e.tier], 14, 3.5, 0.16, 12, 0.9);
           break;
         }
         case "shieldBreak":
@@ -1188,7 +1205,7 @@ export class World {
           m.mats[1]?.color.setHex(PAL.friendArmorLight);
           (m.eyeHalo.material as THREE.SpriteMaterial).color.setHex(PAL.friendEye);
         }
-        if (e.plate > 0) addPlates(m, e.kind, e.plate);
+        const plates = e.plate > 0 ? addPlates(m, e.kind, e.plate) : [];
         this.scene.add(m.root);
         const beam = new THREE.Mesh(
           new THREE.CylinderGeometry(0.06, ENEMIES[e.kind].radius * 0.45, 40, 8, 1, true),
@@ -1197,7 +1214,7 @@ export class World {
         beam.position.set(e.pos.x, e.pos.y + 20, e.pos.z);
         this.scene.add(beam);
         m.body.rotation.order = "YXZ";
-        v = { m, kind: e.kind, flash: 0, flinch: 0, pushYaw: 0, smoke: 0, shieldFlash: 0, walk: 0, spawnBeam: beam, lane: null };
+        v = { m, kind: e.kind, flash: 0, flinch: 0, pushYaw: 0, smoke: 0, shieldFlash: 0, walk: 0, spawnBeam: beam, lane: null, plates };
         this.enemies.set(e.id, v);
       }
       const k = ENEMIES[e.kind];
@@ -1298,6 +1315,7 @@ export class World {
     }
     if (!s.enemies.some((e) => e.kind === "titan" && e.mode === "stomp")) this.stompRing.visible = false;
     this.stepWrecks(dt, fx, fz);
+    this.battleView.update(s, dt, fx, fz, thingsFar, fogFar);
 
     // --- enemy fire
     s.orbs.forEach((o, i) => {
@@ -1432,7 +1450,9 @@ export class World {
     const front = frontNodes(s.nodes);
     this.cores.forEach((v, i) => {
       const h = s.nodes[i];
-      const key = `${h}${front[i] ? "f" : ""}${s.capture?.node === i ? "c" : ""}`;
+      // A core of the player's the enemy's robots have come to pulses red, seen from across the island.
+      const threat = !!s.battle?.threat[i] && s.phase === "play";
+      const key = `${h}${front[i] ? "f" : ""}${s.capture?.node === i ? "c" : ""}${threat ? "t" : ""}`;
       v.root.visible = Math.hypot(v.root.position.x - fx, v.root.position.z - fz) < thingsFar * 4;
       if (key !== v.key) {
         v.key = key;
@@ -1442,6 +1462,17 @@ export class World {
         v.flag.visible = h === "freed";
         v.shield.visible = h !== "freed" && !front[i];
       }
+      if (threat) {
+        v.root.visible = true;
+        const beat = Math.max(0, Math.sin(this.time * 7));
+        const col = beat > 0.5 ? 0xff3b30 : 0x3d8cff;
+        (v.band.material as THREE.MeshBasicMaterial).color.setHex(col);
+        v.halo.material.color.setHex(0xff3b30);
+        v.halo.material.opacity = 0.35 + 0.65 * beat;
+        v.halo.scale.setScalar(7 + 9 * beat);
+        return;
+      }
+      v.halo.scale.setScalar(7);
       if (!v.root.visible) return;
       // A core under capture pulses fast; the others breathe slowly.
       const pulse = s.capture?.node === i ? 0.55 + 0.4 * Math.sin(this.time * 9) : 0.6 + 0.15 * Math.sin(this.time * 1.7 + i);
@@ -1645,5 +1676,6 @@ export class World {
     this.boat = null;
     this.particles = [];
     this.shadowAt = -Infinity;
+    this.battleView.reset();
   }
 }

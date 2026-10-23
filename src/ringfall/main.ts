@@ -1,19 +1,19 @@
 import { spawnEnemy } from "./sim/enemies";
-import { AWARE, PLAYER, TICK, VALUABLES, WEAPONS } from "./sim/config";
+import { AWARE, PLAYER, TICK, VALUABLES, WEAPONS, type EnemyKind } from "./sim/config";
 import { Bot, SKILLS } from "./sim/bot";
 import { collide, groundAt } from "./sim/geom";
 import { terrainHeight } from "./sim/terrain";
 import { callLeft, freeKit, idleInput, newRun, type GameEvent, type Input, type Kit, type State } from "./sim/state";
 import { CAMP, entryOf, FRAMES, NODES, POIS, poiIndex, type CampSpot, type RegionId, type StationId } from "./sim/map";
-import { frontNodes } from "./sim/front";
-import { battleMarks, placeBattleSquad } from "./sim/battle";
+import { frontNodes, garrisonOf, useCore } from "./sim/front";
+import { battleMarks, departNow, landNow, marchSquad, nodePoint, placeBattleSquad } from "./sim/battle";
 import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
 import { analyse, raidThreat, settle, takenStory, type Settlement } from "./meta/profile";
 import { MOD, MODS, type ModKind } from "./sim/config";
-import { holds } from "./meta/island";
+import { departDepots, holds } from "./meta/island";
 import { contractProgress, targetKey } from "./meta/contracts";
 import { currentStory } from "./meta/story";
-import { kill } from "./sim/combat";
+import { bodyCenter, eyePos, fireRay, kill } from "./sim/combat";
 import { squadKey } from "./sim/state";
 import { loadProfile, saveProfile } from "./meta/storage";
 import { Hub, type Launch } from "./view/hub";
@@ -553,7 +553,7 @@ function start(go: Launch, from?: State) {
   $("pause").hidden = true;
   hud.show(true);
   hud.setKnown(hub.profile.entries);
-  const depot = go.from && hub.profile.depots.includes(go.from) ? go.from : null;
+  const depot = go.from && departDepots(hub.profile).includes(go.from) ? go.from : null;
   hud.banner(depot ? `${POIS[poiIndex(depot)].name}の中継ボックス` : entryOf(go.entry).name, `ここから探索する。拠点と脱出地点は${touchMode ? "地図ボタン" : " M "}の地図で見る`);
   lock();
 }
@@ -681,7 +681,19 @@ declare global {
     ringfallFrames: () => Record<string, { x: number; z: number }>;
     ringfallPlace: (x: number, z: number, yaw: number) => void;
     ringfallFight: (x: number, z: number, apart?: number) => { x: number; z: number }[];
+    ringfallPlates: (x: number, z: number, face?: number) => { id: number; x: number; y: number; z: number }[];
+    ringfallShoot: (id: number, rarity: number) => { plate: number; left: number } | null;
+    ringfallClearPlates: () => void;
     ringfallBattle: (x: number, z: number, apart?: number) => { x: number; z: number }[] | null;
+    ringfallWar: {
+      land: (boat: boolean) => { x: number; z: number } | null;
+      march: (side: 0 | 1 | 2, kinds: string[], from: number, to: number, d: number) => { x: number; z: number; squad: number } | null;
+      depart: () => void;
+      place: (side: 0 | 1 | 2, kinds: string[], x: number, z: number, attack?: boolean) => number;
+      point: (i: number) => { x: number; z: number };
+      core: (i: number) => void;
+      clear: (i: number) => void;
+    };
     ringfallContract: {
       take: (type: string) => string | null;
       destroyTarget: () => number;
@@ -758,6 +770,11 @@ window.render_game_to_text = () => {
       meters: NODES.map((n, i) => s.battle!.meter[i] && { id: n.id, side: s.battle!.meter[i]!.side, t: +s.battle!.meter[i]!.t.toFixed(1) }).filter(Boolean),
       squads: battleMarks(s).map((m) => ({ ...m, x: Math.round(m.x), z: Math.round(m.z), to: NODES[m.to]?.id ?? "camp" })),
       friends: s.friends.map((e) => ({ kind: e.kind, x: Math.round(e.pos.x), y: +e.pos.y.toFixed(1), z: Math.round(e.pos.z), hp: Math.round(e.hp + e.shield), mode: e.mode, squad: e.squad, ...(e.post ? { post: true } : {}) })),
+      landings: s.battle.landings.map((l) => ({ boat: l.boat, x: l.x, z: l.z, down: l.down })),
+      departs: s.battle.departs,
+      threat: NODES.filter((_, i) => s.battle!.threat[i]).map((n) => n.id),
+      rally: NODES[s.battle.rally]?.id ?? null,
+      now: s.battle.now,
     },
     front: { nodes: s.nodes, onFront: frontNodes(s.nodes), capture: s.capture && { node: NODES[s.capture.node].id, t: +s.capture.t.toFixed(1), held: s.capture.held, waves: s.capture.waves }, cores: NODES.map((n) => ({ id: n.id, x: n.core.x, y: +n.core.y.toFixed(1), z: n.core.z })) },
     objective: running ? hud.objective() : null,
@@ -899,6 +916,73 @@ window.ringfallBattle = (x, z, apart = 30) => {
     { x: x - apart / 2, z },
     { x: x + apart / 2, z },
   ];
+};
+
+/**
+ * Automation only, the day's battle: `land` sets the enemy landing a squad now (by boat on the
+ * north shore, else by dropship on the pad) and returns where; `march` sets a squad of `side`
+ * walking from node `from` to `to` (places in `NODES`, the camp -1, the pad -2, the shore -3,
+ * a node's depot 100 + its place), `d` metres along, its robots in the world, and returns where
+ * its first stands; `depart` has the factory send its next squad now; `place` sets a squad of
+ * `side` down at (x, z) to hold the nearest node, or to attack it; `point` is where a squad
+ * stands at such a place; `core` starts the capture of node `i`'s core; `clear` takes node `i`'s
+ * garrison out of the raid.
+ */
+window.ringfallWar = {
+  land: (boat: boolean) => landNow(state, boat),
+  march: (side: 0 | 1 | 2, kinds: string[], from: number, to: number, d: number) => {
+    const k = marchSquad(state, side, kinds as EnemyKind[], from, to, d);
+    const lead = [...state.enemies, ...state.friends].find((e) => e.squad === k);
+    return lead ? { x: lead.pos.x, z: lead.pos.z, squad: k } : null;
+  },
+  depart: () => departNow(state),
+  place: (side: 0 | 1 | 2, kinds: string[], x: number, z: number, attack = false) => placeBattleSquad(state, side, kinds as EnemyKind[], x, z, attack ? "attack" : "hold"),
+  point: (i: number) => nodePoint(i),
+  core: (i: number) => useCore(state, i),
+  clear: (i: number) => {
+    state.enemies = state.enemies.filter((e) => e.battle !== undefined || !garrisonOf(state, i, e.squad));
+  },
+};
+
+/**
+ * Automation only: a row of grunts and a heavy set down across (x, z), unaware and facing
+ * `face`, wearing plates of tiers 0 to 3 from west to east, for a screenshot of the plates'
+ * colours. Returns each one's id and where it stands.
+ */
+window.ringfallPlates = (x, z, face = 0) => {
+  const s = state;
+  const index = s.squads.length;
+  s.squads.push({ name: "装甲", poi: -1, patrol: [], leg: 0, engaged: false, roam: false, sinceSeen: 0, last: { x: 0, z: 0 } });
+  return (["grunt", "grunt", "grunt", "heavy"] as const).map((kind, k) => {
+    const e = spawnEnemy(s, kind, x + (k - 1.5) * 3.2, z, -1, index, { face, plate: k as 0 | 1 | 2 | 3 });
+    return { id: e.id, x: e.pos.x, y: e.pos.y, z: e.pos.z };
+  });
+};
+
+/** Automation only: takes the robots `ringfallPlates()` set down out of the raid, and the player back to full health, as before them. */
+window.ringfallClearPlates = () => {
+  const squads = new Set(state.squads.map((q, i) => (q.name === "装甲" ? i : -1)).filter((i) => i >= 0));
+  state.enemies = state.enemies.filter((e) => !squads.has(e.squad));
+  state.player.hp = PLAYER.hp;
+  state.player.shield = PLAYER.shieldByTier[state.player.armor];
+};
+
+/**
+ * Automation only: one PIKE round of `rarity` from the player's eyes into the body of robot `id`,
+ * its events handled as a step's are (sparks, sound, the HUD's number). The robot's plate and
+ * health and shield after it, or null with no such robot.
+ */
+window.ringfallShoot = (id, rarity) => {
+  const e = state.enemies.find((o) => o.id === id);
+  if (!e) return null;
+  const eye = eyePos(state);
+  const c = bodyCenter(e);
+  const d = Math.hypot(c.x - eye.x, c.y - eye.y, c.z - eye.z) || 1;
+  state.events = [];
+  fireRay(state, { kind: "pike", rarity: rarity as 0 | 1 | 2 | 3, mag: 1 }, { x: (c.x - eye.x) / d, y: (c.y - eye.y) / d, z: (c.z - eye.z) / d });
+  world.handle(state, state.events);
+  for (const ev of state.events) onEvent(ev, state);
+  return { plate: e.plate, left: Math.round(e.hp + e.shield) };
 };
 
 window.ringfallBot = (skill: string) => {

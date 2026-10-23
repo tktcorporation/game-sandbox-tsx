@@ -1,4 +1,4 @@
-import { ALLY, AWARE, CHARGER, COVER, CREW, DEG, DODGE, DUCK, ELITE, ENEMIES, FALLBACK, FAR_THINK, PACK, PARTY, PATROL, PINCH, SPLIT, SWEEP, PLAYER, PURSUE, SHOT, SIGHT, STAGGER, TICK, TITAN, TURN, WORLD, type EnemyKind, type Rarity } from "./config";
+import { ALLY, AWARE, CHARGER, CONQUEST, COVER, CREW, DEG, DODGE, DUCK, ELITE, ENEMIES, FALLBACK, FAR_THINK, PACK, PARTY, PATROL, PINCH, SPLIT, SWEEP, PLAYER, PURSUE, SHOT, SIGHT, STAGGER, TICK, TITAN, TURN, WORLD, type EnemyKind, type Rarity } from "./config";
 import { clampToWorld, collide, dist2d, fenceBetween, groundAt, groundLevel, los, lookAngles, onTerrain, solidAt, worldVersion, wrapAngle } from "./geom";
 import { steepAt, terrainHeight } from "./terrain";
 import { engageSquad, fireRange, headOf, knownSpot, located, pursuitSpot, sense, stepSquads } from "./awareness";
@@ -17,7 +17,7 @@ import { robotSide, type Side } from "./battle";
 import { bodyCenter, weakPoint } from "./combat";
 import { hurtPlayer } from "./player";
 import { allyChest, allyUp, hurtAlly } from "./ally";
-import { activePacks, garrison, netPlated } from "./island";
+import { activePacks, garrison, netPlated, poiTier, tierPlated } from "./island";
 import { modScale } from "./mods";
 import { crewRand, mix, rand, roamRand, sightScale, weakY, type Enemy, type Point, type State, type Vec3 } from "./state";
 
@@ -41,6 +41,8 @@ interface SpawnOpts {
   elite?: boolean;
   /** Its armour plate's tier (see PLATE); none when omitted. */
   plate?: Rarity;
+  /** The tier of the node whose garrison it stands in: a grunt or heavy may wear that tier's plate (`tierPlated()`). */
+  tier?: number;
   /** A drone pack's or a hunting party's: drawn from their own random numbers (`roamRand()`). */
   roam?: boolean;
   /** A salvage crew's, the retake squad's or the debris guards': drawn from theirs (`crewRand()`). */
@@ -72,7 +74,10 @@ export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi:
   const pos = spawnSpot(kind, x, z, o.floor);
   const face = o.face ?? pick(s) * Math.PI * 2;
   // A raised threat plates some of the plain grunts and heavies, picked without drawing on the raid's numbers.
-  const plate = o.plate ?? ((kind === "grunt" || kind === "heavy") && !o.elite && netPlated(s.seed, id, s.threat ?? 0) ? 1 : 0);
+  const plain = (kind === "grunt" || kind === "heavy") && !o.elite;
+  // A garrison's grunts and heavies wear its node's tier of plate, picked from the seed and the robot.
+  const tierPlate = plain && o.tier && tierPlated(s.seed, id, o.tier) ? o.tier : 0;
+  const plate = Math.max(o.plate ?? (plain && netPlated(s.seed, id, s.threat ?? 0) ? 1 : 0), tierPlate);
   const e: Enemy = {
     id,
     kind,
@@ -107,6 +112,7 @@ export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi:
     allyHit: 99,
     elite: !!o.elite,
     plate: plate as Rarity,
+    wore: plate as Rarity,
     strafeT: pick(s),
     jink: 0,
     stagger: 0,
@@ -133,21 +139,25 @@ export function populate(s: State) {
   const add = (sq: Squad, poi: number, rogue = false) => {
     const index = s.squads.length;
     s.squads.push({ name: sq.name, poi, patrol: sq.patrol ?? [], leg: 0, engaged: false, roam: !!sq.roam, sinceSeen: 0, last: { x: 0, z: 0 }, rogue: rogue || undefined });
-    for (const m of sq.members) spawnEnemy(s, m.kind, m.x, m.z, poi, index, { floor: m.y, face: m.face, plate: m.plate, rogue });
+    // A POI's own squads wear its node's plates; its vault guard wears one of at least that tier.
+    const tier = poi >= 0 ? poiTier(poi) : 0;
+    for (const m of sq.members) spawnEnemy(s, m.kind, m.x, m.z, poi, index, { floor: m.y, face: m.face, plate: m.plate === undefined ? undefined : (Math.max(m.plate, tier) as Rarity), tier, rogue });
   };
   const walker = (st: State, kind: EnemyKind, x: number, z: number, squad: number, face: number, rogue: boolean) => void spawnEnemy(st, kind, x, z, -1, squad, { face, hashed: true, rogue });
+  // A garrison's squad out on its beat still wears its node's plates.
+  const beatWalker = (tier: number) => (st: State, kind: EnemyKind, x: number, z: number, squad: number, face: number, rogue: boolean) => void spawnEnemy(st, kind, x, z, -1, squad, { face, hashed: true, rogue, tier });
   // A POI stands with the garrison its standing on the island gives it (`garrison()`); the squads
   // of it that walk a beat (`MOBILES`) are out on it, no longer the POI's.
-  const beats: { m: Mobile; kinds: EnemyKind[] }[] = [];
+  const beats: { m: Mobile; kinds: EnemyKind[]; tier: number }[] = [];
   POIS.forEach((p, i) =>
     garrison(i, s.hold[i]).forEach((sq) => {
       const beat = beatOf(p.id, sq.name);
-      if (beat) beats.push({ m: beat, kinds: sq.members.map((m) => m.kind) });
+      if (beat) beats.push({ m: beat, kinds: sq.members.map((m) => m.kind), tier: poiTier(i) });
       else add(sq, i);
     }),
   );
   ROAMERS.forEach((sq) => add(sq, -1));
-  for (const b of beats) placeMobile(s, b.m, b.kinds, walker);
+  for (const b of beats) placeMobile(s, b.m, b.kinds, beatWalker(b.tier));
   for (const m of MOBILES) if (mobileWalks(s, m)) placeMobile(s, m, m.members ?? [], walker);
   // The walks are built by fields (`mobileWalk()`): the raid starts with none, whichever walks
   // this process built before, so it plays the same wherever it is played.
@@ -903,6 +913,24 @@ function sideStep(s: State, e: Enemy, to: Point, centre: Point, off: number): Po
 const STRAY = 12;
 
 /**
+ * A member of a battle's squad on its way, behind the first: it keeps `CONQUEST.column` metres
+ * behind the member before it, on the line between them, so the squad walks a road in a column.
+ */
+function inColumn(s: State, e: Enemy, ahead: Enemy, speed: number) {
+  const dx = e.pos.x - ahead.pos.x;
+  const dz = e.pos.z - ahead.pos.z;
+  const l = Math.hypot(dx, dz) || 1;
+  if (l <= CONQUEST.column + 0.3) {
+    moveBody(e, 0, 0);
+    turnTo(e, ahead.yaw, 3);
+    return;
+  }
+  const to = { x: ahead.pos.x + (dx / l) * CONQUEST.column, z: ahead.pos.z + (dz / l) * CONQUEST.column };
+  // Far behind, it finds its way; close, it keeps the step of the one before, a little quicker to close up.
+  walkTo(e, l > STRAY ? homeStep(s, e, to) : to, speed * (l > CONQUEST.column * 2 ? 1.25 : 1));
+}
+
+/**
  * Where a robot that has strayed from its post or its patrol heads on its way back: by the
  * ground's way once it is on the open ground, straight otherwise. A squad beamed in from afar
  * has no post to go back to and walks straight. One drawn further than a short field reaches
@@ -1026,6 +1054,11 @@ function calm(s: State, e: Enemy) {
     // The first living member leads; the others follow at an offset.
     const members = squadMembers(s, e.squad);
     const slot = members.indexOf(e);
+    // A battle's squad on its way goes in a column.
+    if (sq.battle && sq.patrol.length > 1 && slot > 0) {
+      inColumn(s, e, members[slot - 1], slow * PATROL.pace);
+      return;
+    }
     const wp = sq.patrol[sq.leg % sq.patrol.length];
     const to = { x: wp.x + (slot % 2 ? 1.6 : -1.6) * Math.min(slot, 1), z: wp.z + slot * 1.4 };
     // The authored legs are walked straight; a robot a chase took off its leg finds its way back.
@@ -1396,11 +1429,18 @@ export function stepFriends(s: State) {
     }
     const lastLeg = sq.patrol.length - 1;
     const leg = Math.min(sq.leg, lastLeg);
+    // Rallying to the player's attack, a squad goes at its fighting pace.
+    const pace = sq.rush ? k.speed * 0.85 : k.speed * AWARE.idleSpeed * PATROL.pace;
+    if (slot > 0 && leg < lastLeg && !sq.rush) {
+      inColumn(s, e, members[slot - 1], pace);
+      continue;
+    }
     const wp = sq.patrol[leg];
     const to = { x: wp.x + (slot % 2 ? 1.8 : -1.8) * Math.min(slot, 1), z: wp.z + slot * 1.6 };
     const prev = sq.patrol[Math.max(0, leg - 1)];
-    const via = toSegment(e.pos, prev, to) > STRAY ? homeStep(s, e, to) : to;
-    if (walkTo(e, via, k.speed * AWARE.idleSpeed * PATROL.pace) && via === to && slot === 0 && leg < lastLeg) sq.leg = leg + 1;
+    // Rallying, it goes by the ground's way: the straight line to the core may climb a cliff.
+    const via = (sq.rush && dist2d(e.pos, to) > 4) || toSegment(e.pos, prev, to) > STRAY ? homeStep(s, e, to) : to;
+    if (walkTo(e, via, pace) && via === to && slot === 0 && leg < lastLeg) sq.leg = leg + 1;
   }
 }
 

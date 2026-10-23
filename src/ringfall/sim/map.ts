@@ -859,9 +859,9 @@ const POI_FRAMES: Poi[] = [
       { x: -31, z: -55, y: WORKS.storey * 2, vault: true },
     ],
     keyFrom: "supply",
-    loot: { weapon: [["pike", 2], ["maul", 1], ["lance", 1], ["hornet", 2], ["talon", 1]], armor: [2], heals: 2, valuable: [["parts", 3], ["wire", 4], ["fuse", 1], ["gyro", 1]] },
+    loot: { weapon: [["pike", 1], ["maul", 1], ["lance", 1], ["hornet", 1], ["talon", 1]], armor: [1], heals: 2, valuable: [["parts", 3], ["wire", 4], ["fuse", 1], ["gyro", 1]] },
     floor: [{ x: -20, z: 12, heal: "medkit" }],
-    carePackage: { x: -15, z: 22, weapon: ["lance", 3] },
+    carePackage: { x: -15, z: 22, weapon: ["lance", 1] },
   },
   {
     id: "relay",
@@ -886,9 +886,9 @@ const POI_FRAMES: Poi[] = [
       { x: -29, z: -20, y: WORKS.storey, vault: true },
     ],
     keyFrom: "quarry",
-    loot: { weapon: [["pike", 3], ["hornet", 2], ["maul", 2], ["lance", 2], ["talon", 2]], armor: [2, 3], heals: 2, valuable: [["board", 4], ["drive", 2], ["wire", 1], ["gyro", 1]] },
+    loot: { weapon: [["pike", 1], ["hornet", 1], ["maul", 1], ["lance", 1], ["talon", 1]], armor: [1], heals: 2, valuable: [["board", 4], ["drive", 2], ["wire", 1], ["gyro", 1]] },
     floor: [
-      { x: -20, z: -18, y: WORKS.storey, weapon: ["lance", 2] },
+      { x: -20, z: -18, y: WORKS.storey, weapon: ["lance", 1] },
       { x: -22, z: -18, y: WORKS.storey * 3, armor: 2 },
     ],
   },
@@ -908,7 +908,7 @@ const POI_FRAMES: Poi[] = [
       { x: 80, z: 4, y: WORKS.storey, vault: true },
     ],
     keyFrom: "relay",
-    loot: { weapon: [], armor: [3], heals: 2, valuable: [["board", 3], ["drive", 2], ["core", 1]] },
+    loot: { weapon: [], armor: [1], heals: 2, valuable: [["board", 3], ["drive", 2], ["core", 1]] },
     floor: [],
     boss: true,
   },
@@ -939,10 +939,10 @@ const POI_FRAMES: Poi[] = [
       { x: 54, z: -10, y: SHIP_DECK + STOREY * 3, vault: true },
     ],
     keyFrom: "smelter",
-    loot: { weapon: [["talon", 2], ["lance", 2], ["maul", 2], ["pike", 2]], armor: [2, 3], heals: 2, valuable: [["board", 3], ["drive", 3], ["gyro", 2], ["core", 1]] },
+    loot: { weapon: [["talon", 1], ["lance", 1], ["maul", 1], ["pike", 1]], armor: [1], heals: 2, valuable: [["board", 3], ["drive", 3], ["gyro", 2], ["core", 1]] },
     floor: [
       { x: 2, z: -4, y: WORKS.storey, heal: "medkit" },
-      { x: 10, z: -8, y: SHIP_DECK, weapon: ["lance", 2] },
+      { x: 10, z: -8, y: SHIP_DECK, weapon: ["lance", 1] },
     ],
   },
   {
@@ -970,7 +970,7 @@ const POI_FRAMES: Poi[] = [
       { x: 47.8, z: 22, y: CRANE, vault: true },
     ],
     keyFrom: "wreck",
-    loot: { weapon: [["hornet", 2], ["maul", 2], ["pike", 2], ["lance", 1]], armor: [2], heals: 2, valuable: [["wire", 3], ["board", 3], ["drive", 2], ["gyro", 1]] },
+    loot: { weapon: [["hornet", 1], ["maul", 1], ["pike", 1], ["lance", 1]], armor: [1], heals: 2, valuable: [["wire", 3], ["board", 3], ["drive", 2], ["gyro", 1]] },
     floor: [
       { x: 14, z: -12, heal: "battery" },
       { x: -67, z: -1, y: WORKS.storey * 2, armor: 2 },
@@ -998,8 +998,8 @@ const POI_FRAMES: Poi[] = [
       { x: 35, z: -7, y: WORKS.storey * 2, vault: true },
     ],
     keyFrom: "yard",
-    loot: { weapon: [["pike", 3], ["lance", 2], ["maul", 2], ["talon", 1], ["hornet", 3]], armor: [2, 3], heals: 2, valuable: [["wire", 2], ["gyro", 3], ["drive", 2], ["board", 2], ["reactor", 1]] },
-    floor: [{ x: 37, z: -9, y: WORKS.storey * 3, weapon: ["talon", 2] }],
+    loot: { weapon: [["pike", 1], ["lance", 1], ["maul", 1], ["talon", 1], ["hornet", 1]], armor: [1], heals: 2, valuable: [["wire", 2], ["gyro", 3], ["drive", 2], ["board", 2], ["reactor", 1]] },
+    floor: [{ x: 37, z: -9, y: WORKS.storey * 3, weapon: ["talon", 1] }],
   },
 ];
 
@@ -4773,6 +4773,29 @@ export const FRONT_LINKS: readonly (readonly ["camp" | NodeId, NodeId])[] = [
  * the camp's gate to 3 at the far end of the harbor.
  */
 export const TIER: Record<NodeId, number> = { supply: 0, quarry: 1, relay: 1, yard: 2, smelter: 2, wreck: 3 };
+
+/**
+ * What holding each node opens (docs/ringfall/island-v2.md, 拠点の段), for as long as it is held:
+ * `shop`, the best rarity of weapon (and tier of armour) the trader sells; `depart`, starts from
+ * its depot; `squad`, more squads the factory keeps out at once in the battle; `scout`, the
+ * direction reinforcements beam in from shown in the raid; `shore`, no enemy boats land on the
+ * harbor's north shore.
+ */
+export interface NodeUnlock {
+  shop?: Rarity;
+  depart?: true;
+  squad?: number;
+  scout?: true;
+  shore?: true;
+}
+export const UNLOCKS: Record<NodeId, NodeUnlock> = {
+  supply: { shop: 1, depart: true },
+  quarry: { shop: 2, squad: 1 },
+  relay: { shop: 2, scout: true },
+  yard: { shop: 3, depart: true },
+  smelter: { shop: 3, squad: 1 },
+  wreck: { shore: true },
+};
 
 /**
  * The nodes next to ground the enemy never gives up, where its squads land in the battle however
