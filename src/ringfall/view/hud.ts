@@ -930,11 +930,13 @@ export class Hud {
 
   /** Seconds after the results open at which the map turns to the day's end. */
   private dayTimer = 0;
+  private dayFrame = 0;
 
   /** Draws the results' map: the island as the day began, then, a moment later, as it ended with the changes ringed. */
   private drawDay(settled?: Settlement) {
     const canvas = document.getElementById("day-map") as HTMLCanvasElement | null;
     clearTimeout(this.dayTimer);
+    cancelAnimationFrame(this.dayFrame);
     if (!canvas || !settled) {
       if (canvas) canvas.hidden = true;
       return;
@@ -945,8 +947,11 @@ export class Hud {
     const end = islandScene(settled.profile);
     const { gained, lost } = settled.front;
     const was = (id: string, h: "held" | "freed") => (gained.includes(id as never) ? "held" : lost.includes(id as never) ? "freed" : h);
-    map.draw({ ...end, hold: end.hold.map((h, i) => was(POIS[i].id, h)), nodes: end.nodes?.map((h, i) => was(NODES[i].id, h)) });
-    if (gained.length || lost.length) this.dayTimer = window.setTimeout(() => map.draw({ ...end, changed: settled.front }), 900);
+    // Drawn once the results are shown, so the map is drawn at the canvas's size on screen.
+    this.dayFrame = requestAnimationFrame(() => {
+      map.draw({ ...end, hold: end.hold.map((h, i) => was(POIS[i].id, h)), nodes: end.nodes?.map((h, i) => was(NODES[i].id, h)) });
+      if (gained.length || lost.length) this.dayTimer = window.setTimeout(() => map.draw({ ...end, changed: settled.front }), 900);
+    });
   }
 
   results(s: State, settled?: Settlement, known: readonly ModKind[] = [], analysed: ModKind | null = null) {

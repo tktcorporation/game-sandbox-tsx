@@ -502,9 +502,9 @@ function march(s: State, b: Battle, dt: number) {
   }
   // A squad come to a node its side holds holds it, in the world or not, so it no longer counts against its side's limit.
   for (const q of b.squads) if (q.task !== "post" && arrived(q) && sideOf(s.nodes[q.to]) === q.side) q.task = "hold";
-  // A rogue squad at a node with nobody left to fight there goes on to the next.
+  // A rogue squad at a node with nobody left to fight there, the holder's or anyone come to take it, goes on to the next.
   for (const q of b.squads) {
-    if (q.side !== 2 || q.squad >= 0 || !arrived(q) || heldBy(s, b, q.to) > 0) continue;
+    if (q.side !== 2 || q.squad >= 0 || !arrived(q) || heldBy(s, b, q.to) + unitsAt(s, b, q.to, sideOf(s.nodes[q.to]) === 0 ? 1 : 0) > 0) continue;
     const plan = attackFrom(s, b, 2, [q.to]);
     if (plan) Object.assign(q, { from: q.to, to: plan.to, d: 0, task: "attack" });
   }
@@ -620,10 +620,13 @@ function capture(s: State, b: Battle, dt: number) {
     const c = n.core;
     const att = new Set<Side>();
     let def = 0;
+    // Rogues there take nothing, but keep the others from taking it.
+    let rogue = false;
     for (const q of b.squads) {
       if (q.to !== i || q.squad >= 0 || !arrived(q)) continue;
       if (q.side === owner) def++;
-      else if (q.task === "attack" && q.side !== 2) att.add(q.side);
+      else if (q.side === 2) rogue = true;
+      else if (q.task === "attack") att.add(q.side);
     }
     const zone = CONQUEST.zone;
     const within = (e: Enemy) => Math.abs(e.pos.x - c.x) < zone && Math.abs(e.pos.z - c.z) < zone && dist2d(e.pos, c) < zone && e.mode !== "spawning";
@@ -633,7 +636,8 @@ function capture(s: State, b: Battle, dt: number) {
         if (!within(e) || e.kind === "titan") continue;
         const side = robotSide(e);
         if (side === owner) def++;
-        else if (e.battle && side !== 2) att.add(side);
+        else if (side === 2) rogue = true;
+        else if (e.battle) att.add(side);
       }
       if (owner === 0 && s.player.downed <= 0 && dist2d(s.player.pos, c) < zone && s.phase === "play") def++;
       if (owner === 0 && allyUp(s) && dist2d(s.ally.pos, c) < zone && s.phase === "play") def++;
@@ -645,7 +649,7 @@ function capture(s: State, b: Battle, dt: number) {
       if (att.size && guards.length && !b.meter[i]) for (const e of guards) callToCore(e, c);
     }
     const m = b.meter[i];
-    if (att.size === 1 && def === 0) {
+    if (att.size === 1 && def === 0 && !rogue) {
       const side = [...att][0];
       if (m && m.side === side) m.t += dt;
       else b.meter[i] = { side, t: dt };
