@@ -66,7 +66,7 @@ export function drawShield(g: CanvasRenderingContext2D, x: number, y: number, r:
  */
 export function drawUnlocks(g: CanvasRenderingContext2D, x: number, y: number, id: NodeId, dpr: number, on: boolean) {
   const u = UNLOCKS[id];
-  const s = 5 * dpr;
+  const s = 6 * dpr;
   let cx = x;
   g.save();
   g.globalAlpha = on ? 1 : 0.5;
