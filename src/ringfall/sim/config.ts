@@ -377,7 +377,7 @@ export const FRONT = {
   pushAt: 6,
   pushEvery: 30,
   pushDist: [70, 130] as const,
-  income: 150,
+  income: 250,
 };
 
 /**
@@ -455,10 +455,10 @@ export const FACTORY = {
   kinds: [["grunt", "grunt"], ["grunt", "grunt"], ["grunt", "heavy"], ["grunt", "heavy", "drone"], ["grunt", "grunt", "heavy", "drone"]] as EnemyKind[][],
   turrets: [0, 0, 0, 1, 1],
   levels: [
-    { items: [["parts", 3], ["fuse", 2]], cash: 2500, does: "作る間隔が 210 秒" },
-    { items: [["parts", 4], ["wire", 2]], cash: 7000, does: "ヘビーを作る・作る間隔が 180 秒・同時に 2 部隊" },
-    { items: [["wire", 3], ["board", 2]], cash: 14000, does: "ドローンを作る・作る間隔が 150 秒・解放した拠点に砲台" },
-    { items: [["board", 3], ["drive", 2]], cash: 24000, does: "4 体の部隊・作る間隔が 120 秒・同時に 3 部隊" },
+    { items: [["parts", 3], ["fuse", 2]], cash: 1250, does: "作る間隔が 210 秒" },
+    { items: [["parts", 4], ["wire", 2]], cash: 3500, does: "ヘビーを作る・作る間隔が 180 秒・同時に 2 部隊" },
+    { items: [["wire", 3], ["board", 2]], cash: 7000, does: "ドローンを作る・作る間隔が 150 秒・解放した拠点に砲台" },
+    { items: [["board", 3], ["drive", 2]], cash: 12000, does: "4 体の部隊・作る間隔が 120 秒・同時に 3 部隊" },
   ] as FactoryLevel[],
 };
 
@@ -616,7 +616,7 @@ export const META = {
   },
   /** Trader prices. A weapon's price is its base times its rarity's factor. */
   weapon: { pike: 600, hornet: 500, maul: 700, lance: 900, talon: 1200 } as Record<WeaponKind, number>,
-  rarityFactor: [1, 2.5, 5, 9],
+  rarityFactor: [1, 2, 3.5, 5],
   /** Armour by tier (1 to 3); tier 0 is none. */
   armor: [0, 400, 1200, 3000],
   heal: { cell: 60, battery: 250, syringe: 60, medkit: 250 } as Record<HealKind, number>,
@@ -634,7 +634,7 @@ export const META = {
    * raised a step by each workbench level (`HIDEOUT_EFFECT.workbench`), so the common parts never
    * hold the hideout up and credits buy the rarer ones once the workbench is built.
    */
-  materials: { markup: 2, rarity: 1 },
+  materials: { markup: 1.5, rarity: 1 },
 };
 
 export type ModuleId = "infirmary" | "workbench" | "storage" | "radio" | "pouch";
@@ -658,42 +658,42 @@ export const HIDEOUT: Record<ModuleId, { name: string; note: string; levels: Mod
     name: "医務室",
     note: "毎回のレイドに回復を持たせる（貸出装備でも）",
     levels: [
-      { items: [["parts", 3], ["fuse", 3]], cash: 500, does: "注射器 +1" },
-      { items: [["parts", 3], ["board", 3], ["fuse", 2]], cash: 2000, does: "注射器 +1、シールドセル +2" },
-      { items: [["board", 3], ["drive", 2], ["gyro", 2], ["reactor", 1]], cash: 6000, does: "注射器 +2、シールドセル +2、医療キット +1" },
+      { items: [["parts", 3], ["fuse", 3]], cash: 250, does: "注射器 +1" },
+      { items: [["parts", 3], ["board", 3], ["fuse", 2]], cash: 1000, does: "注射器 +1、シールドセル +2" },
+      { items: [["board", 3], ["drive", 2], ["gyro", 2], ["reactor", 1]], cash: 3000, does: "注射器 +2、シールドセル +2、医療キット +1" },
     ],
   },
   workbench: {
     name: "作業台",
     note: "商人が売る材料",
     levels: [
-      { items: [["parts", 4], ["wire", 2], ["fuse", 2]], cash: 800, does: "回路基板・記憶装置" },
-      { items: [["board", 5], ["drive", 3], ["gyro", 3]], cash: 6000, does: "ジャイロ・データコア・小型炉心" },
+      { items: [["parts", 4], ["wire", 2], ["fuse", 2]], cash: 400, does: "回路基板・記憶装置" },
+      { items: [["board", 5], ["drive", 3], ["gyro", 3]], cash: 3000, does: "ジャイロ・データコア・小型炉心" },
     ],
   },
   storage: {
     name: "倉庫",
     note: "倉庫に置ける数が増える",
     levels: [
-      { items: [["parts", 3], ["wire", 2]], cash: 600, does: "倉庫 +10" },
-      { items: [["wire", 3], ["board", 3], ["fuse", 2]], cash: 2000, does: "倉庫 +10" },
-      { items: [["board", 3], ["drive", 2], ["gyro", 2], ["core", 1]], cash: 6000, does: "倉庫 +10" },
+      { items: [["parts", 3], ["wire", 2]], cash: 300, does: "倉庫 +10" },
+      { items: [["wire", 3], ["board", 3], ["fuse", 2]], cash: 1000, does: "倉庫 +10" },
+      { items: [["board", 3], ["drive", 2], ["gyro", 2], ["core", 1]], cash: 3000, does: "倉庫 +10" },
     ],
   },
   radio: {
     name: "無線機",
     note: "出撃前に島の様子が分かる",
     levels: [
-      { items: [["wire", 2], ["board", 2], ["drive", 1]], cash: 1200, does: "珍しい物が多い拠点が分かる" },
-      { items: [["board", 3], ["drive", 2], ["gyro", 2], ["core", 1]], cash: 6000, does: "その拠点で出やすい物と、レイダーの降りる時刻も分かる" },
+      { items: [["wire", 2], ["board", 2], ["drive", 1]], cash: 600, does: "珍しい物が多い拠点が分かる" },
+      { items: [["board", 3], ["drive", 2], ["gyro", 2], ["core", 1]], cash: 3000, does: "その拠点で出やすい物と、レイダーの降りる時刻も分かる" },
     ],
   },
   pouch: {
     name: "ポーチ",
     note: "倒れても残る枠が増える",
     levels: [
-      { items: [["wire", 2], ["board", 2]], cash: 1000, does: "ポーチ 3 枠" },
-      { items: [["drive", 3], ["gyro", 2], ["core", 1]], cash: 5000, does: "ポーチ 4 枠" },
+      { items: [["wire", 2], ["board", 2]], cash: 500, does: "ポーチ 3 枠" },
+      { items: [["drive", 3], ["gyro", 2], ["core", 1]], cash: 2500, does: "ポーチ 4 枠" },
     ],
   },
 };

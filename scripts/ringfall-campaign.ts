@@ -40,13 +40,13 @@ export interface Campaign {
 }
 
 /**
- * Nodes on the front in a region that its gun pierces (`gun`, the best rarity carried), then POIs
- * the enemy holds there within a step of it: where the bot has most to do.
+ * Nodes on the front in a region that its gun pierces (`gun`, the best rarity carried), the deeper
+ * the better, then POIs the enemy holds there whose plates it pierces: where the bot has most to do.
  */
 const work = (p: Profile, r: RegionId, gun: number) => {
   const front = frontNodes(islandHolds(p));
   const tierOf = (id: string) => TIER[id as NodeId] ?? 0;
-  return NODES.reduce((sum, n, i) => sum + (front[i] && n.region === r && TIER[n.id] <= gun ? 100 + 50 * TIER[n.id] : 0), 0) + regionOf(r).pois.filter((id) => !unfreeable(id) && p.poiState[id].state === "held" && tierOf(id) <= gun + 1).length;
+  return NODES.reduce((sum, n, i) => sum + (front[i] && n.region === r && TIER[n.id] <= gun ? 100 + 50 * TIER[n.id] : 0), 0) + regionOf(r).pois.filter((id) => !unfreeable(id) && p.poiState[id].state === "held" && tierOf(id) <= gun).length;
 };
 
 /** The guns the bot carries, in this order: a rifle for the fight and the scoped rifle for its opening shots. */
@@ -62,26 +62,32 @@ function bestGear(p: Profile): { weapons: number[]; armor: number } {
 }
 
 /**
- * Better gear from the trader as the nodes held open it (`shopRarity()`): the rifle and the armour at
- * the best rarity on the shelf the credits cover, when it beats what the stash holds, and a common
- * scoped rifle.
+ * Gear from the trader as the nodes held open it (`shopRarity()`), saving for the factory's next
+ * level: a rifle that pierces the deepest node on the front the shelf can arm it for, bought
+ * whenever the credits cover it; a common scoped rifle and better armour only from what is left
+ * over the factory's next level.
  */
 function gearUp(p: Profile): Profile {
   const top = shopRarity(p);
+  const front = frontNodes(islandHolds(p));
+  const need = Math.max(0, ...NODES.filter((n, i) => front[i] && TIER[n.id] <= top).map((n) => TIER[n.id]));
+  const reserve = nextFactory(p)?.cash ?? 0;
   const have = bestGear(p);
   const rarityAt = (n: number) => {
     const i = p.stash[n];
     return i?.t === "weapon" ? i.rarity : i?.t === "armor" ? i.tier : -1;
   };
-  // The rifle at the best rarity; the scoped rifle only common, for opening shots on the weak points.
-  const wants: Item[][] = [
-    ...KIT.map((kind, k) => Array.from({ length: kind === "talon" ? 1 : top + 1 }, (_, r) => ({ t: "weapon" as const, kind, rarity: r as Rarity })).filter((i) => i.rarity > rarityAt(have.weapons[k]))),
-    Array.from({ length: top }, (_, r) => ({ t: "armor" as const, tier: (r + 1) as Rarity })).filter((i) => i.tier > rarityAt(have.armor)),
-  ];
-  for (const list of wants) {
-    // The best that the credits cover.
-    const pick = [...list].reverse().find((i) => wares(p).some((w) => JSON.stringify(w) === JSON.stringify(i)) && p.cash >= buyPrice(i));
-    if (pick) p = buy(p, pick) ?? p;
+  const sold = (i: Item) => wares(p).some((w) => JSON.stringify(w) === JSON.stringify(i));
+  const rifle: Item = { t: "weapon", kind: "pike", rarity: need as Rarity };
+  if (rarityAt(have.weapons[0]) < need && sold(rifle) && p.cash >= buyPrice(rifle)) p = buy(p, rifle) ?? p;
+  const scope: Item = { t: "weapon", kind: "talon", rarity: 0 };
+  if (rarityAt(have.weapons[1]) < 0 && p.cash >= buyPrice(scope) + reserve) p = buy(p, scope) ?? p;
+  for (let t = top; t > rarityAt(have.armor) && t >= 1; t--) {
+    const armor: Item = { t: "armor", tier: t as Rarity };
+    if (sold(armor) && p.cash >= buyPrice(armor) + reserve) {
+      p = buy(p, armor) ?? p;
+      break;
+    }
   }
   return p;
 }
