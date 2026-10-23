@@ -4,6 +4,7 @@ import { CONQUEST, ENEMIES, type EnemyKind } from "../sim/config";
 import { CAMP, DEPOTS, depotIndex, NODES } from "../sim/map";
 import { columnPoints, nodePoint, type Battle, type Side } from "../sim/battle";
 import { terrainHeight } from "../sim/terrain";
+import { AREA } from "../sim/areas";
 import type { State } from "../sim/state";
 import { PAL, buildBoat, buildDropship, haloSprite } from "./models";
 
@@ -23,12 +24,14 @@ const SHIP_LEAVE = 10;
 /** The same for a boat: on the beach, then backing off to sea. */
 const BOAT_STAY = 8;
 const BOAT_LEAVE = 12;
-/** Metres a dropship comes down from, and a boat comes in from. */
+/** Metres a dropship comes down from. */
 const SHIP_DROP = 160;
-const BOAT_RUN = 240;
 /** Seconds the gate's light stays after a squad comes out, and a depot's beam. */
 const GATE_LIGHT = 7;
 const DEPOT_BEAM = 5;
+
+/** The water channel the boats come up, at the harbor's quay on the north shore (written in the bay's frame, `AREA.bay`). */
+export const CHANNEL = { x0: 88 + AREA.bay[0], x1: 170 + AREA.bay[0], z0: -600 + AREA.bay[1], z1: -583 + AREA.bay[1], y: -5.55 };
 
 /** The battle's clock between its reckonings, so what moves on it moves smoothly. */
 export const battleClock = (b: Battle) => b.now + (CONQUEST.tick - b.t);
@@ -39,11 +42,11 @@ export function landerSpot(l: Battle["landings"][number], t: number): { x: numbe
   if (l.boat) {
     const run = l.down - CONQUEST.land.boat;
     if (t < run || t > l.down + BOAT_STAY + BOAT_LEAVE) return null;
-    // In from the open sea to the north, nosing up the beach; it backs off the way it came.
+    // Up the channel from its far end along the north bank to beside where the squad goes ashore; it backs off the way it came.
     const k = t < l.down ? 1 - (t - run) / CONQUEST.land.boat : t < l.down + BOAT_STAY ? 0 : (t - l.down - BOAT_STAY) / BOAT_LEAVE;
-    const ease = k * k;
-    const sea = Math.min(ground, -1.2);
-    return { x: l.x, y: sea + 0.4 + Math.sin(t * 1.7) * 0.08, z: l.z - 10 - BOAT_RUN * ease, yaw: Math.PI / 2, burn: k > 0 ? 1 : 0.2 };
+    const ease = k * (2 - k);
+    const from = CHANNEL.x1 - 3;
+    return { x: l.x + (from - l.x) * ease, y: CHANNEL.y + 0.1 + Math.sin(t * 1.7) * 0.06, z: CHANNEL.z1 - 3.2, yaw: Math.PI, burn: k > 0 ? 1 : 0.2 };
   }
   const drop = l.down - CONQUEST.land.ship;
   if (t < drop || t > l.down + SHIP_STAY + SHIP_LEAVE) return null;
@@ -165,7 +168,7 @@ export class BattleView {
       if (!v) {
         const root = l.boat ? buildBoat() : buildDropship();
         // The enemy's craft are larger than the player's, so they read from across the island.
-        root.scale.setScalar(l.boat ? 1.8 : 2.2);
+        root.scale.setScalar(l.boat ? 1.3 : 2.2);
         const lights: THREE.Sprite[] = [];
         for (const [x, y, z] of l.boat ? [[-4.6, 3.2, 0], [4.6, 1.6, 0]] : [[-5.5, 1.2, 0.5], [5.5, 1.2, 0.5], [0, 1.6, -4.5]]) {
           const sp = haloSprite(PAL.eye, l.boat ? 3.2 : 4, 0.9);

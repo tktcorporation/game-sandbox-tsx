@@ -2,6 +2,7 @@ import { CONQUEST, ENEMIES, FACTORY, PLATE, TICK, type EnemyKind, type Rarity } 
 import { dist2d } from "./geom";
 import { CAMP, DEPOTS, depotIndex, FRONT_LINKS, NET_EDGE, NODES, nodeIndex, POIS, UNLOCKS, type NodeId, type NodeUnlock } from "./map";
 import { forgetFields, onMainGround, walkLine } from "./hunt";
+import { inArea } from "./areas";
 import { worldKey } from "./routes";
 import { spawnEnemy } from "./enemies";
 import { frontNodes, garrisonLeaves, garrisonOf, NEIGHBOURS, CAMP_NEXT, useZones, type NodeHold } from "./front";
@@ -157,8 +158,8 @@ export const nodePoint = (() => {
       return depots[i - DEPOT];
     }
     if (i <= PAD) {
-      // The pad's open apron south of its middle, and the beach at the north tip of the harbor's land.
-      lands ??= { [PAD]: ground(pad.x + 30, pad.z + 50), [SHORE]: ground(-40, -1176) };
+      // The pad's open apron south of its middle, and the north bank of the harbor's channel, where the boats come up.
+      lands ??= { [PAD]: ground(pad.x + 30, pad.z + 50), [SHORE]: ground(...inArea("bay", 132, -577)) };
       return lands[i];
     }
     return i < 0 ? camp : (at ??= find())[i];
@@ -583,6 +584,12 @@ function playerPlan(s: State, b: Battle): { from: number; to: number; task: Batt
     }
   });
   if (worst >= 0) return { from: worst, to: worst, task: "defend" };
+  // A node of the player's where the enemy comes ashore or next to the enemy's, with none of the player's squads there or going: one goes to hold it.
+  const bare = NODES.map((_, i) => i).filter((i) => s.nodes[i] === "freed" && !b.squads.some((q) => q.side === 0 && q.to === i && q.task !== "rally") && (NET_EDGE.includes(NODES[i].id) || NEIGHBOURS[i].some((k) => s.nodes[k] !== "freed")));
+  if (bare.length) {
+    const i = bare.sort((a, c) => +NET_EDGE.includes(NODES[c].id) - +NET_EDGE.includes(NODES[a].id))[0];
+    return { from: i, to: i, task: "defend" };
+  }
   return attackFrom(s, b, 0, ground);
 }
 
@@ -678,6 +685,25 @@ export const factoryRarity = (nodes: State["nodes"]): Rarity => Math.max(PLATE.r
 /** The squads the factory keeps out at once: its level's, and one more for each node held that opens one. */
 export const factoryMax = (s: Pick<State, "nodes">, f: number) => FACTORY.max[f] + heldUnlocks(s.nodes, "squad").reduce((n, id) => n + (UNLOCKS[id].squad ?? 0), 0);
 
+/**
+ * The factory's next squad sets off on `plan`: out of the camp's gate when it sets off from the
+ * camp or the node by it (walking through that node to one beyond), else out of the depot of the
+ * node it sets off from.
+ */
+function sendOut(s: State, b: Battle, plan: { from: number; to: number; task: BattleSquad["task"] }) {
+  const f = b.factory;
+  const gate = plan.from < 0 || CAMP_NEXT.includes(plan.from);
+  const from = gate ? -1 : DEPOT + plan.from;
+  const first = gate && plan.from >= 0 ? plan.from : plan.to;
+  const q = addSquad(b, 0, FACTORY.kinds[f], from, first, plan.task);
+  if (first !== plan.to) q.via = [plan.to];
+  b.made[0] = 0;
+  b.departs.push({ from: gate ? -1 : plan.from, at: b.now });
+  if (b.departs.length > 6) b.departs.shift();
+  if (nearPlayer(s, q, CONQUEST.near)) toWorld(s, q, false);
+  tell(s, { t: "squadOut", side: 0, node: plan.to, x: q.x, z: q.z, gate });
+}
+
 /** Each side's work toward its next squad, and the squad once it is due and the side has room. */
 function produce(s: State, b: Battle, dt: number) {
   // The player's factory.
@@ -685,16 +711,7 @@ function produce(s: State, b: Battle, dt: number) {
   b.made[0] = Math.min(FACTORY.every[f], b.made[0] + dt);
   if (b.made[0] >= FACTORY.every[f] && walking(b, 0) < factoryMax(s, f)) {
     const plan = playerPlan(s, b);
-    if (plan) {
-      // Out of the camp's gate, or out of the depot of the node it sets off from.
-      const from = plan.from < 0 ? plan.from : DEPOT + plan.from;
-      const q = addSquad(b, 0, FACTORY.kinds[f], from, plan.to, plan.task);
-      b.made[0] = 0;
-      b.departs.push({ from: plan.from, at: b.now });
-      if (b.departs.length > 6) b.departs.shift();
-      if (nearPlayer(s, q, CONQUEST.near)) toWorld(s, q, false);
-      tell(s, { t: "squadOut", side: 0, node: plan.to, x: q.x, z: q.z, gate: plan.from < 0 });
-    }
+    if (plan) sendOut(s, b, plan);
   }
   // The enemy's nodes work for it, the more it holds the sooner; the rogues come at their own pace.
   for (const side of [1, 2] as const) {
@@ -1012,12 +1029,11 @@ export function marchSquad(s: State, side: Side, kinds: readonly EnemyKind[], fr
   return q.squad;
 }
 
-/** Automation only: the factory sends its next squad now, as when its work comes due. */
+/** Automation only: the factory sends its next squad now, out of the camp's gate to the node by the camp. */
 export function departNow(s: State) {
   const b = s.battle;
   if (!b) return;
-  b.made[0] = FACTORY.every[b.factory];
-  b.t = Math.min(b.t, TICK);
+  sendOut(s, b, { from: -1, to: CAMP_NEXT[0], task: s.nodes[CAMP_NEXT[0]] === "freed" ? "defend" : "attack" });
 }
 
 /** The squads of the battle as the maps show them: each squad's side, where it is, whether it is robots in the world, and its members. */

@@ -13,7 +13,7 @@ import { GroundScatter } from "./scatter";
 import { trimBox, type TrimPiece, type TrimSite } from "./trim";
 import { PAL, RARITY_COLOR, SCOPE_IN, buildAlly, buildBeacon, buildBin, buildCore, buildBoat, buildStatic, buildDepot, buildEntryMark, buildRingDebris, mergeChunk, mergeTrim, type ChunkShade, buildCare, buildDropship, buildEnemy, buildGun, buildHands, buildLootItem, addPlates, flat, glow, haloSprite, type EnemyModel } from "./models";
 import { streetMeshes } from "./streets";
-import { BattleView } from "./battle";
+import { BattleView, CHANNEL } from "./battle";
 
 /*
  * Renders a State in first person. It reads the state and the tick's events and
@@ -92,9 +92,7 @@ const WRECK_MAX = 6;
 /** Seconds of the collapse after a kill. */
 const WRECK_FALL = 0.55;
 
-/** The harbor's tidal channel: its floor and the water over it. */
-/** The water channel the boat comes up, at the harbor's quay. */
-export const CHANNEL = { x0: 88, x1: 170, z0: -600, z1: -583, y: -5.55 };
+export { CHANNEL };
 /**
  * Where the boat is on the channel, `t` from 1 (waiting at the far end, mid-channel) to 0
  * (docked against the quay beside the pickup point, so the player boards it from there).

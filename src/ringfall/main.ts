@@ -5,7 +5,7 @@ import { collide, groundAt } from "./sim/geom";
 import { terrainHeight } from "./sim/terrain";
 import { callLeft, freeKit, idleInput, newRun, type GameEvent, type Input, type Kit, type State } from "./sim/state";
 import { CAMP, entryOf, FRAMES, NODES, POIS, poiIndex, type CampSpot, type RegionId, type StationId } from "./sim/map";
-import { frontNodes } from "./sim/front";
+import { frontNodes, useCore } from "./sim/front";
 import { battleMarks, departNow, landNow, marchSquad, nodePoint, placeBattleSquad } from "./sim/battle";
 import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
 import { analyse, raidThreat, settle, takenStory, type Settlement } from "./meta/profile";
@@ -691,6 +691,7 @@ declare global {
       depart: () => void;
       place: (side: 0 | 1 | 2, kinds: string[], x: number, z: number, attack?: boolean) => number;
       point: (i: number) => { x: number; z: number };
+      core: (i: number) => void;
     };
     ringfallContract: {
       take: (type: string) => string | null;
@@ -768,6 +769,11 @@ window.render_game_to_text = () => {
       meters: NODES.map((n, i) => s.battle!.meter[i] && { id: n.id, side: s.battle!.meter[i]!.side, t: +s.battle!.meter[i]!.t.toFixed(1) }).filter(Boolean),
       squads: battleMarks(s).map((m) => ({ ...m, x: Math.round(m.x), z: Math.round(m.z), to: NODES[m.to]?.id ?? "camp" })),
       friends: s.friends.map((e) => ({ kind: e.kind, x: Math.round(e.pos.x), y: +e.pos.y.toFixed(1), z: Math.round(e.pos.z), hp: Math.round(e.hp + e.shield), mode: e.mode, squad: e.squad, ...(e.post ? { post: true } : {}) })),
+      landings: s.battle.landings.map((l) => ({ boat: l.boat, x: l.x, z: l.z, down: l.down })),
+      departs: s.battle.departs,
+      threat: NODES.filter((_, i) => s.battle!.threat[i]).map((n) => n.id),
+      rally: NODES[s.battle.rally]?.id ?? null,
+      now: s.battle.now,
     },
     front: { nodes: s.nodes, onFront: frontNodes(s.nodes), capture: s.capture && { node: NODES[s.capture.node].id, t: +s.capture.t.toFixed(1), held: s.capture.held, waves: s.capture.waves }, cores: NODES.map((n) => ({ id: n.id, x: n.core.x, y: +n.core.y.toFixed(1), z: n.core.z })) },
     objective: running ? hud.objective() : null,
@@ -930,6 +936,7 @@ window.ringfallWar = {
   depart: () => departNow(state),
   place: (side: 0 | 1 | 2, kinds: string[], x: number, z: number, attack = false) => placeBattleSquad(state, side, kinds as EnemyKind[], x, z, attack ? "attack" : "hold"),
   point: (i: number) => nodePoint(i),
+  core: (i: number) => useCore(state, i),
 };
 
 /**
