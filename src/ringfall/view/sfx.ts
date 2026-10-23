@@ -464,7 +464,7 @@ export const sfx = {
    * over the pad, or a boat's horn and engine off the north shore. Heard across the island.
    */
   landing(pos: P3, boat: boolean) {
-    at(pos, { level: 1, ref: 150, maxDist: 1600, send: 0.7 }, () => {
+    at(pos, { level: 0.5, ref: 150, maxDist: 1600, send: 0.7 }, () => {
       if (boat) {
         // Two blasts of a deep horn, the engine under them.
         for (const k of [0, 1.5]) {
@@ -482,8 +482,8 @@ export const sfx = {
   },
   /** The enemy's craft down: a dropship's weight on the pad and its ramp, a boat's hull on the sand. */
   touchdown(pos: P3, boat: boolean) {
-    at(pos, { level: 1, ref: 120, maxDist: 1200, send: 0.6 }, () => {
-      tone(boat ? 60 : 46, 0.7, { type: "sine", to: 28, vol: 0.6 });
+    at(pos, { level: 0.5, ref: 120, maxDist: 1200, send: 0.6 }, () => {
+      tone(boat ? 60 : 46, 0.7, { type: "sine", to: 28, vol: 0.35 });
       hiss(0.8, { brown: true, type: "lowpass", freq: boat ? 900 : 600, to: 120, vol: 0.5 });
       // The ramp drops.
       hiss(0.12, { freq: 1800, q: 3, vol: 0.18, at: 0.6 });
@@ -501,18 +501,18 @@ export const sfx = {
   },
   /** A squad of the factory's coming out of a node's depot: a rising shimmer. */
   depotOut(pos: P3) {
-    at(pos, { level: 0.7, ref: 20, maxDist: 350, send: 0.4 }, () => {
+    at(pos, { level: 0.45, ref: 20, maxDist: 350, send: 0.4 }, () => {
       hiss(0.9, { freq: 900, to: 4200, q: 2.5, vol: 0.18, attack: 0.2 });
       tone(330, 0.9, { type: "triangle", to: 990, vol: 0.08, attack: 0.15 });
-      tone(48, 0.4, { type: "sine", to: 30, vol: 0.4, at: 0.8 });
+      tone(48, 0.4, { type: "sine", to: 30, vol: 0.25, at: 0.8 });
     });
   },
   /** The enemy's robots have come to a core of the player's: a low heartbeat of an alarm, three beats. */
   threat() {
     ui(0.32, () => {
       for (let i = 0; i < 3; i++) {
-        tone(110, 0.22, { type: "sine", to: 70, vol: 0.5, at: i * 0.55 });
-        tone(660, 0.18, { type: "square", to: 440, vol: 0.04, at: i * 0.55 + 0.02 });
+        tone(110, 0.22, { type: "sine", to: 70, vol: 0.16, at: i * 0.55 });
+        tone(660, 0.18, { type: "square", to: 440, vol: 0.03, at: i * 0.55 + 0.02 });
       }
     });
   },
