@@ -3102,3 +3102,28 @@ body.touch #obj-raid .short {
 .shelf-tiers .tier em {
   font-style: normal;
 }
+
+/* A node of the player's the enemy's robots have come to: a red arrow over its core, or at the
+   screen's edge pointing the way, pulsing (sim/battle.ts `threat`). */
+.threat-mark {
+  position: absolute;
+  width: 36px;
+  height: 30px;
+  transform: translate(-50%, -50%) rotate(var(--a, 180deg));
+  background: #ff3b30;
+  clip-path: polygon(50% 0, 100% 100%, 50% 72%, 0 100%);
+  filter: drop-shadow(0 0 6px rgba(255, 59, 48, 0.9));
+  animation: threat-pulse 0.9s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes threat-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    scale: 1.15;
+  }
+  50% {
+    opacity: 0.35;
+    scale: 0.85;
+  }
+}

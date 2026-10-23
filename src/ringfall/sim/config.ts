@@ -410,8 +410,19 @@ export const FRONT = {
 export const CONQUEST = {
   time: 1500,
   tick: 1,
-  near: 250,
-  far: 300,
+  near: 320,
+  far: 370,
+  /** Metres between the members of a squad walking a link in a column, one behind another. */
+  column: 2.8,
+  /** Seconds from a dropship's (`ship`) or a boat's (`boat`) setting off to the squad stepping ashore. */
+  land: { ship: 14, boat: 18 },
+  /**
+   * The player's squads near the node the player attacks fight beside them: the player is
+   * attacking a node on the front within `near` metres of its core (or capturing it), squads
+   * within `reach` of the core come, and stand round it `ring[0]` metres out while the player
+   * takes the core, `ring[1]` while they fight for it.
+   */
+  rally: { near: 130, reach: 260, ring: [9, 18] as const },
   meet: 35,
   zone: 20,
   capture: 30,
@@ -425,8 +436,8 @@ export const CONQUEST = {
     /** Of `edge`, the north shore's work: none while the player holds the node that opens `shore` (`UNLOCKS`). */
     shore: 1,
     answer: 1,
-    max: [2, 2, 3],
-    kinds: [["grunt", "grunt"], ["grunt", "grunt"], ["grunt", "drone"]] as EnemyKind[][],
+    max: [3, 3, 3],
+    kinds: [["grunt", "grunt", "grunt"], ["grunt", "grunt", "grunt"], ["grunt", "grunt", "drone"]] as EnemyKind[][],
   },
   rogue: { every: 600, max: 1, kinds: ["grunt", "grunt"] as EnemyKind[] },
   /** Seconds the bot gives to coming back to a node of its own under attack, all told in a raid. */
@@ -450,15 +461,15 @@ export interface FactoryLevel {
  */
 export const FACTORY = {
   name: "工場",
-  every: [240, 210, 180, 150, 120],
+  every: [230, 200, 170, 140, 110],
   max: [1, 1, 2, 2, 3],
-  kinds: [["grunt", "grunt"], ["grunt", "grunt"], ["grunt", "heavy"], ["grunt", "heavy", "drone"], ["grunt", "grunt", "heavy", "drone"]] as EnemyKind[][],
+  kinds: [["grunt", "grunt"], ["grunt", "grunt", "grunt"], ["grunt", "heavy", "grunt"], ["grunt", "heavy", "drone", "grunt"], ["grunt", "grunt", "heavy", "drone", "grunt"]] as EnemyKind[][],
   turrets: [0, 0, 0, 1, 1],
   levels: [
-    { items: [["parts", 3], ["fuse", 2]], cash: 1250, does: "作る間隔が 210 秒" },
-    { items: [["parts", 4], ["wire", 2]], cash: 3500, does: "ヘビーを作る・作る間隔が 180 秒・同時に 2 部隊" },
-    { items: [["wire", 3], ["board", 2]], cash: 7000, does: "ドローンを作る・作る間隔が 150 秒・解放した拠点に砲台" },
-    { items: [["board", 3], ["drive", 2]], cash: 12000, does: "4 体の部隊・作る間隔が 120 秒・同時に 3 部隊" },
+    { items: [["parts", 3], ["fuse", 2]], cash: 1250, does: "3 体の部隊・作る間隔が 200 秒" },
+    { items: [["parts", 4], ["wire", 2]], cash: 3500, does: "ヘビーを作る・作る間隔が 170 秒・同時に 2 部隊" },
+    { items: [["wire", 3], ["board", 2]], cash: 7000, does: "4 体の部隊・ドローンを作る・作る間隔が 140 秒・解放した拠点に砲台" },
+    { items: [["board", 3], ["drive", 2]], cash: 12000, does: "5 体の部隊・作る間隔が 110 秒・同時に 3 部隊" },
   ] as FactoryLevel[],
 };
 

@@ -1825,6 +1825,121 @@ console.log(`screens: ${[...taken].join(", ")}`);
  * of the player's own squads fighting one of the enemy's in front of the player, and the battle
  * map with the squads, on the desktop and a phone on its side.
  */
+/**
+ * The battle as it is seen and heard (docs/ringfall/island-v2.md, 手触り), in a raid of the battle
+ * day: a dropship coming down on the pad seen from afar, a column of the enemy's on its walk, a
+ * core of the player's pulsing with the enemy's robots at it (and the red mark at the screen's
+ * edge, then over the core, and the map's rings), the camp's gate lit as a column of the
+ * factory's walks out, and the player's squads gathered round a core the player takes.
+ */
+async function warShots(pg, phone, tag) {
+  const look = async (x, y, z, tx, ty, tz) => {
+    const d = Math.hypot(tx - x, tz - z);
+    await pg.evaluate(([cx, cy, cz, yaw, pitch]) => window.ringfallCamera(cx, cy, cz, yaw, pitch), [x, y, z, Math.atan2(tx - x, -(tz - z)), Math.atan2(ty - y, d)]);
+  };
+  const ground = (x, z) => pg.evaluate(([a, b]) => window.ringfallTerrain(a, b), [x, z]);
+  const st0 = await readOf(pg);
+  const idx = (id) => st0.front.cores.findIndex((c) => c.id === id);
+  // Stand the player where the scene is drawn from, out of the robots' way.
+  const stand = (x, z, yaw = 0) => pg.evaluate(([a, b, c]) => window.ringfallPlace(a, b, c), [x, z, yaw]);
+  // 1. A dropship comes down on the pad, seen from the ground 220 m off.
+  const land = await pg.evaluate(() => window.ringfallWar.land(false));
+  if (!land) errors.push("war: no landing in a battle raid");
+  else {
+    const vx = land.x - 160;
+    const vz = land.z + 150;
+    await stand(vx, vz);
+    await pg.evaluate(() => window.ringfallStep(7000));
+    const gy = await ground(vx, vz);
+    await look(vx, gy + 6, vz, land.x, gy + 60, land.z);
+    await draw(pg);
+    await pg.screenshot({ path: tag(0, "war-dropship-far") });
+    const st = await readOf(pg);
+    if (!st.battle.landings.some((l) => !l.boat && st.battle.now < l.down)) errors.push(`war: the dropship's landing is ${JSON.stringify(st.battle.landings)} at ${st.battle.now}`);
+    await pg.evaluate(() => window.ringfallStep(9000));
+    await draw(pg);
+    await pg.screenshot({ path: tag(1, "war-dropship-down") });
+  }
+  // 2. A column of the enemy's on its walk from the pad to the quarry, seen from beside the way.
+  const col = await pg.evaluate(([to]) => window.ringfallWar.march(1, ["grunt", "grunt", "grunt", "heavy"], -2, to, 140), [idx("quarry")]);
+  if (!col) errors.push("war: no column set walking");
+  else {
+    await stand(col.x + 120, col.z + 110);
+    await pg.evaluate(() => window.ringfallStep(8000));
+    const st = await readOf(pg);
+    const them = st.enemies.filter((e) => Math.hypot(e.x - col.x, e.z - col.z) < 40);
+    const lead = them[0] ?? col;
+    const back = them.at(-1) ?? col;
+    const dx = lead.x - back.x;
+    const dz = lead.z - back.z;
+    const l = Math.hypot(dx, dz) || 1;
+    // From the side of the column, a little ahead of its middle.
+    const mx = (lead.x + back.x) / 2;
+    const mz = (lead.z + back.z) / 2;
+    const cx = mx - (dz / l) * 20 + (dx / l) * 12;
+    const cz = mz + (dx / l) * 20 + (dz / l) * 12;
+    const gy = await ground(cx, cz);
+    await look(cx, gy + 11, cz, mx, (await ground(mx, mz)) + 1.2, mz);
+    await draw(pg);
+    await pg.screenshot({ path: tag(2, "war-column") });
+    if (them.length < 4 || l < 6) errors.push(`war: the column is ${them.length} robots ${Math.round(l)} m long`);
+  }
+  await pg.evaluate(() => window.ringfallCamera());
+  // 3. The enemy's robots at the quarry's core, the player's: the core pulses, a red mark at the screen's edge, rings on the map.
+  const q = st0.front.cores[idx("quarry")];
+  await pg.evaluate(([x, z]) => window.ringfallWar.place(1, ["grunt", "grunt", "heavy"], x, z), [q.x + 4, q.z + 3]);
+  // The player 160 m off, facing away from it.
+  await stand(q.x + 150, q.z + 60, Math.atan2(150, -60));
+  await pg.evaluate(() => window.ringfallStep(2500));
+  const th = await readOf(pg);
+  if (!th.battle.threat.includes("quarry")) errors.push(`war: robots at the quarry's core set no threat (${JSON.stringify(th.battle.threat)})`);
+  await draw(pg);
+  await pg.screenshot({ path: tag(3, "war-threat-edge") });
+  const mark = await pg.evaluate(() => [...document.querySelectorAll(".threat-mark")].filter((e) => e.style.display !== "none").map((e) => e.getBoundingClientRect()));
+  if (mark.length !== 1) errors.push(`war: ${mark.length} threat marks on the screen`);
+  await look(q.x + 26, q.y + 9, q.z + 30, q.x, q.y + 3, q.z);
+  await pg.evaluate(() => window.advanceTime(400));
+  await pg.screenshot({ path: tag(4, "war-threat-core") });
+  await pg.evaluate(() => window.ringfallCamera());
+  await pg.keyboard.press("KeyM");
+  await pg.evaluate(() => window.advanceTime(300));
+  await pg.screenshot({ path: tag(5, "war-threat-map") });
+  await pg.keyboard.press("KeyM");
+  // 4. The camp's gate lit as a squad of the factory's comes out, walking off in a column.
+  const gate = await pg.evaluate(() => window.ringfallWar.point(-1));
+  await stand(gate.x + 30, gate.z - 70);
+  await pg.evaluate(() => window.ringfallWar.depart());
+  await pg.evaluate(() => window.ringfallStep(2600));
+  const gy = await ground(gate.x - 12, gate.z - 20);
+  await look(gate.x - 12, gy + 4, gate.z - 20, gate.x, gy + 1.5, gate.z + 9);
+  await pg.evaluate(() => window.advanceTime(300));
+  await pg.screenshot({ path: tag(6, "war-gate") });
+  const gs = await readOf(pg);
+  if (!gs.battle.departs.some((d) => d.from === -1 && gs.battle.now - d.at < 8)) errors.push(`war: no squad came out of the gate (${JSON.stringify(gs.battle.departs)})`);
+  // 5. The player takes a core of the front (the relay), and the squads near gather round it.
+  const r = st0.front.cores[idx("relay")];
+  // The player sets the capture going from down the road, its garrison already beaten; two squads of the player's come up and stand round the core.
+  await pg.evaluate(([i]) => window.ringfallWar.clear(i), [idx("relay")]);
+  await stand(r.x - 50, r.z + 60, Math.atan2(50, -60));
+  await pg.evaluate(([x, z]) => {
+    window.ringfallWar.place(0, ["grunt", "grunt", "heavy"], x - 40, z + 45, true);
+    window.ringfallWar.place(0, ["grunt", "heavy", "drone"], x - 30, z + 55, true);
+  }, [r.x, r.z]);
+  await pg.evaluate(([i]) => window.ringfallWar.core(i), [idx("relay")]);
+  let ga = await readOf(pg);
+  const round = () => ga.battle.friends.filter((e) => !e.post && Math.hypot(e.x - r.x, e.z - r.z) < 22);
+  for (let k = 0; k < 16 && round().length < 5; k++) {
+    await pg.evaluate(([x, z]) => window.ringfallPlace(x, z, Math.atan2(50, -60)), [r.x - 50, r.z + 60]);
+    ga = await quietStep(pg, 5000);
+  }
+  if (ga.battle.rally !== "relay" || round().length < 5) errors.push(`war: rallying to the relay (${ga.battle.rally}), ${round().length} of the player's robots round its core`);
+  await look(r.x - 34, r.y + 9, r.z + 40, r.x, r.y + 1, r.z);
+  await pg.evaluate(() => window.advanceTime(200));
+  await pg.screenshot({ path: tag(7, "war-rally") });
+  await pg.evaluate(() => window.ringfallCamera());
+  console.log(`${phone ? "mobile" : "desktop"} war frame: ${JSON.stringify(await pg.evaluate(() => window.ringfallFrameCost(20)))}`);
+}
+
 const battleDay = {
   v: 19, cash: 26000, raids: 8, extracted: 6, time: 5400, region: "reservoir", entry: "beach", seed: 5151, escaped: null,
   stash: [{ t: "valuable", kind: "board" }, { t: "valuable", kind: "board" }, { t: "valuable", kind: "drive" }],
@@ -1909,6 +2024,7 @@ for (const phone of [false, true]) {
   const h0 = hp(await readOf(pg));
   await pg.evaluate(() => window.advanceTime(3200));
   await pg.screenshot({ path: tag(3, "battle-fight") });
+  console.log(`${phone ? "mobile" : "desktop"} battle frame: ${JSON.stringify(await pg.evaluate(() => window.ringfallFrameCost(20)))}`);
   const after = await readOf(pg);
   if (!(hp(after) < h0)) errors.push(`battle: the player's squad and the enemy's did not fight (${h0} -> ${hp(after)})`);
   await pg.keyboard.press("KeyM");
@@ -1920,6 +2036,8 @@ for (const phone of [false, true]) {
   await pg.keyboard.press("KeyN");
   await pg.keyboard.press("KeyM");
   lap(`battle, ${phone ? "phone" : "desktop"}`);
+  await warShots(pg, phone, (n, name) => `${out}/${phone ? `m${50 + n}` : `${100 + n}`}-${name}.png`);
+  lap(`war, ${phone ? "phone" : "desktop"}`);
   await ctx.close();
 }
 await browser.close();

@@ -1,4 +1,4 @@
-import { ALLY, AWARE, CHARGER, COVER, CREW, DEG, DODGE, DUCK, ELITE, ENEMIES, FALLBACK, FAR_THINK, PACK, PARTY, PATROL, PINCH, SPLIT, SWEEP, PLAYER, PURSUE, SHOT, SIGHT, STAGGER, TICK, TITAN, TURN, WORLD, type EnemyKind, type Rarity } from "./config";
+import { ALLY, AWARE, CHARGER, CONQUEST, COVER, CREW, DEG, DODGE, DUCK, ELITE, ENEMIES, FALLBACK, FAR_THINK, PACK, PARTY, PATROL, PINCH, SPLIT, SWEEP, PLAYER, PURSUE, SHOT, SIGHT, STAGGER, TICK, TITAN, TURN, WORLD, type EnemyKind, type Rarity } from "./config";
 import { clampToWorld, collide, dist2d, fenceBetween, groundAt, groundLevel, los, lookAngles, onTerrain, solidAt, worldVersion, wrapAngle } from "./geom";
 import { steepAt, terrainHeight } from "./terrain";
 import { engageSquad, fireRange, headOf, knownSpot, located, pursuitSpot, sense, stepSquads } from "./awareness";
@@ -913,6 +913,24 @@ function sideStep(s: State, e: Enemy, to: Point, centre: Point, off: number): Po
 const STRAY = 12;
 
 /**
+ * A member of a battle's squad on its way, behind the first: it keeps `CONQUEST.column` metres
+ * behind the member before it, on the line between them, so the squad walks a road in a column.
+ */
+function inColumn(s: State, e: Enemy, ahead: Enemy, speed: number) {
+  const dx = e.pos.x - ahead.pos.x;
+  const dz = e.pos.z - ahead.pos.z;
+  const l = Math.hypot(dx, dz) || 1;
+  if (l <= CONQUEST.column + 0.3) {
+    moveBody(e, 0, 0);
+    turnTo(e, ahead.yaw, 3);
+    return;
+  }
+  const to = { x: ahead.pos.x + (dx / l) * CONQUEST.column, z: ahead.pos.z + (dz / l) * CONQUEST.column };
+  // Far behind, it finds its way; close, it keeps the step of the one before, a little quicker to close up.
+  walkTo(e, l > STRAY ? homeStep(s, e, to) : to, speed * (l > CONQUEST.column * 2 ? 1.25 : 1));
+}
+
+/**
  * Where a robot that has strayed from its post or its patrol heads on its way back: by the
  * ground's way once it is on the open ground, straight otherwise. A squad beamed in from afar
  * has no post to go back to and walks straight. One drawn further than a short field reaches
@@ -1036,6 +1054,11 @@ function calm(s: State, e: Enemy) {
     // The first living member leads; the others follow at an offset.
     const members = squadMembers(s, e.squad);
     const slot = members.indexOf(e);
+    // A battle's squad on its way goes in a column.
+    if (sq.battle && sq.patrol.length > 1 && slot > 0) {
+      inColumn(s, e, members[slot - 1], slow * PATROL.pace);
+      return;
+    }
     const wp = sq.patrol[sq.leg % sq.patrol.length];
     const to = { x: wp.x + (slot % 2 ? 1.6 : -1.6) * Math.min(slot, 1), z: wp.z + slot * 1.4 };
     // The authored legs are walked straight; a robot a chase took off its leg finds its way back.
@@ -1406,11 +1429,18 @@ export function stepFriends(s: State) {
     }
     const lastLeg = sq.patrol.length - 1;
     const leg = Math.min(sq.leg, lastLeg);
+    // Rallying to the player's attack, a squad goes at its fighting pace.
+    const pace = sq.rush ? k.speed * 0.85 : k.speed * AWARE.idleSpeed * PATROL.pace;
+    if (slot > 0 && leg < lastLeg && !sq.rush) {
+      inColumn(s, e, members[slot - 1], pace);
+      continue;
+    }
     const wp = sq.patrol[leg];
     const to = { x: wp.x + (slot % 2 ? 1.8 : -1.8) * Math.min(slot, 1), z: wp.z + slot * 1.6 };
     const prev = sq.patrol[Math.max(0, leg - 1)];
-    const via = toSegment(e.pos, prev, to) > STRAY ? homeStep(s, e, to) : to;
-    if (walkTo(e, via, k.speed * AWARE.idleSpeed * PATROL.pace) && via === to && slot === 0 && leg < lastLeg) sq.leg = leg + 1;
+    // Rallying, it goes by the ground's way: the straight line to the core may climb a cliff.
+    const via = (sq.rush && dist2d(e.pos, to) > 4) || toSegment(e.pos, prev, to) > STRAY ? homeStep(s, e, to) : to;
+    if (walkTo(e, via, pace) && via === to && slot === 0 && leg < lastLeg) sq.leg = leg + 1;
   }
 }
 

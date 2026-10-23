@@ -85,6 +85,8 @@ export class Hud {
   private lastCells = -1;
   private awareLayer = $("aware-layer");
   private awEls = new Map<number, HTMLElement>();
+  /** A red mark per node of the player's the enemy's robots have come to, by its place in `NODES`. */
+  private threatEls = new Map<number, HTMLElement>();
   private spotted = new Map<number, number>(); // robot id -> seconds left to show "!"
 
   private map = new IslandMap($<HTMLCanvasElement>("map-canvas"));
@@ -342,9 +344,6 @@ export class Hud {
         else this.toast(`敵が${name}を取った`, 0, 4000);
         break;
       }
-      case "squadOut":
-        this.toast(s.nodes[e.node] === "freed" ? `工場の部隊が${NODES[e.node].name}の守りに出た` : `工場の部隊が${NODES[e.node].name}へ攻めに出た`, 1, 3000);
-        break;
       case "timeUp":
         this.banner("時間切れ", "戦いは終わった。脱出できず、持ち物は島に残った");
         break;
@@ -590,6 +589,7 @@ export class Hud {
       }
 
     this.awareness(s, view, dt, w, h);
+    this.threatMarks(s, view, w, h);
 
     // Damage direction arcs.
     this.dirs = this.dirs.filter((d) => {
@@ -629,6 +629,54 @@ export class Hud {
     if (this.bannerT <= 0) $("banner").className = "";
   }
 
+
+  /**
+   * A pulsing red arrow for each node of the player's the enemy's robots have come to: over its
+   * core when the core is on screen, otherwise at the screen's edge, pointing the way to it.
+   */
+  private threatMarks(s: State, view: World, w: number, h: number) {
+    const b = s.battle;
+    // Kept clear of the compass at the top and the buttons along the bottom.
+    const M = 46;
+    const TOP = 110;
+    const BOTTOM = 140;
+    NODES.forEach((n, i) => {
+      const on = !!b && b.threat[i] && s.phase === "play";
+      let el = this.threatEls.get(i);
+      if (!on) {
+        if (el) el.style.display = "none";
+        return;
+      }
+      if (!el) {
+        el = document.createElement("div");
+        el.className = "threat-mark";
+        this.awareLayer.appendChild(el);
+        this.threatEls.set(i, el);
+      }
+      const sp = view.project({ x: n.core.x, y: n.core.y + FRONT.height + 2.5, z: n.core.z }, w, h);
+      let x = sp.x;
+      let y = sp.y;
+      let angle = 180;
+      const cy = (TOP + h - BOTTOM) / 2;
+      if (sp.behind || x < M || x > w - M || y < TOP || y > h - BOTTOM) {
+        // Off screen: on the edge, the way to the core from the middle of the screen.
+        let dx = x - w / 2;
+        let dy = y - cy;
+        if (sp.behind) {
+          dx = -dx;
+          dy = Math.abs(dy) + h;
+        }
+        const k = Math.min((w / 2 - M) / (Math.abs(dx) || 1e-6), ((h - BOTTOM - TOP) / 2) / (Math.abs(dy) || 1e-6));
+        x = w / 2 + dx * k;
+        y = cy + dy * k;
+        angle = (Math.atan2(dy, dx) * 180) / Math.PI + 90;
+      }
+      el.style.display = "";
+      el.style.left = `${x}px`;
+      el.style.top = `${y}px`;
+      el.style.setProperty("--a", `${angle.toFixed(0)}deg`);
+    });
+  }
 
   /**
    * A mark over each robot that knows something, pinned to the screen edge when it

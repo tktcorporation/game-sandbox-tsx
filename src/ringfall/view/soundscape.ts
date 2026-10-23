@@ -7,6 +7,7 @@ import { terrainHeight } from "../sim/terrain";
 import { getMixer, loop, placeLoop, type Loop, type P3 } from "./audio";
 import { sfx } from "./sfx";
 import { boatSpot, CHANNEL } from "./world";
+import { battleClock, landerSpot } from "./battle";
 
 /*
  * The game side of the sound: puts the listener at the camera, decides which
@@ -55,6 +56,9 @@ export class Soundscape {
   private rush: Loop | null = null;
   /** Engines of the extraction craft that have been called: the dropship, the boat. */
   private crafts = new Map<ExtractId, { loop: Loop; y: number }>();
+  /** The engines of the enemy's dropships and boats landing squads in the battle, by landing; and the landings heard touching down. */
+  private landers = new Map<string, Loop>();
+  private touched = new Set<string>();
   /** Seconds until each drone pack's hum is played again, by squad. */
   private swarmT = new Map<number, number>();
   private steps = new Map<number, { x: number; z: number; t: number; n: number }>();
@@ -88,6 +92,7 @@ export class Soundscape {
     const play = running && s.phase !== "done";
     this.wind(s, ear, play);
     this.craft(s, play, ear);
+    this.landings(s, play, ear);
     if (play && s.phase === "play") {
       this.robotSteps(s, ear, dt);
       this.swarms(s, ear, dt);
@@ -152,6 +157,42 @@ export class Soundscape {
       const at = this.craftAt(x.id, s, c.y);
       placeLoop(c.loop, at, this.occ.blocked(ear, at));
     }
+  }
+
+  /** The enemy's craft landing squads (sim/battle.ts): their engines from where they are, and the touchdown. */
+  private landings(s: State, play: boolean, ear: P3) {
+    const b = s.battle;
+    const live = new Set<string>();
+    if (b && play && s.phase === "play") {
+      const t = battleClock(b);
+      for (const l of b.landings) {
+        const key = `${l.down}|${l.x}|${l.z}`;
+        const at = landerSpot(l, t);
+        if (!at) continue;
+        live.add(key);
+        if (t >= l.down && !this.touched.has(key)) {
+          this.touched.add(key);
+          sfx.touchdown(ground(l.x, l.z, 2), l.boat);
+        }
+        let lp = this.landers.get(key);
+        if (!lp) {
+          const made = l.boat
+            ? loop({ bus: "world", brown: true, type: "lowpass", freq: 240, q: 1.6, hum: 36, pos: at, ref: 60, send: 0.4 })
+            : loop({ bus: "world", brown: true, type: "lowpass", freq: 420, q: 1.2, hum: 52, pos: at, ref: 80, send: 0.45 });
+          if (!made) continue;
+          lp = made;
+          this.landers.set(key, lp);
+        }
+        lp.gain.gain.setTargetAtTime(0.25 + 0.3 * at.burn, getMixer()!.ctx.currentTime, 0.4);
+        placeLoop(lp, at, this.occ.blocked(ear, at));
+      }
+    }
+    for (const [key, lp] of this.landers)
+      if (!live.has(key)) {
+        lp.stop();
+        this.landers.delete(key);
+      }
+    if (this.touched.size > 40) this.touched.clear();
   }
 
   /** Footfalls and servo whine of robots walking near the listener. */
@@ -235,6 +276,9 @@ export class Soundscape {
   reset() {
     for (const c of this.crafts.values()) c.loop.stop();
     this.crafts.clear();
+    for (const lp of this.landers.values()) lp.stop();
+    this.landers.clear();
+    this.touched.clear();
     this.steps.clear();
     this.swarmT.clear();
   }
@@ -391,6 +435,16 @@ export class Soundscape {
         break;
       case "coreStart":
         sfx.alarm();
+        break;
+      case "landing":
+        sfx.landing(ground(e.x, e.z, e.boat ? 2 : 60), e.boat);
+        break;
+      case "squadOut":
+        if (e.gate) sfx.gate(ground(e.x, e.z, 2));
+        else sfx.depotOut(ground(e.x, e.z, 2));
+        break;
+      case "nodeThreat":
+        sfx.threat();
         break;
       case "coreTaken":
         sfx.coreTaken();

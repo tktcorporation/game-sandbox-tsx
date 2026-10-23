@@ -215,6 +215,22 @@ reckoned every `CONQUEST.tick` seconds in numbers, and when the raid ends early 
 reckons the rest so; it pushes no event. The night counts the nodes as the battle ended
 (`RaidDay.battle`). `battleFocus()` gives the objective (`objectiveSteps()`) and the bot a node of the
 player's under attack, or one their robots are taking.
+The battle is meant to be seen (island-v2.md, 手触り). The enemy's squads land (`landingPlan()`): by
+dropship on the titan's pad (`PAD`) or by boat up the harbor's channel on the north shore (`SHORE`,
+not while the player holds the wreck), stepping ashore `CONQUEST.land` seconds after setting off
+(`BattleSquad.ashore`; `Battle.landings` for the view, event `landing`), and walk across the enemy's
+nodes (`BattleSquad.via`) to a node of the player's. The factory's squads come out of the camp's
+gate (setting off from the camp or the node by it) or a held node's depot (`DEPOT + k`;
+`Battle.departs`, event `squadOut`), and one goes to hold each bare node of the player's next to
+the enemy before any attacks. Walking a link in the world a battle squad goes in a column
+(`CONQUEST.column`, `inColumn()` in `enemies.ts`). The player's squads within `CONQUEST.rally.reach`
+of the node the player attacks (a front node whose core is within `rally.near`, or the core being
+captured) come round its core (task `rally`, `Battle.rally`). The enemy's robots at a core of the
+player's set `Battle.threat` (event `nodeThreat`): the core pulses red in the world and on the
+map, and a red arrow at the screen's edge points to it (`threatMarks()` in `hud.ts`).
+`view/battle.ts` draws the battle from afar: the landing craft and their beams, the battle's
+robots past `thingsFar` and the squads that are numbers out to the fog as instanced figures
+(`columnPoints()`), and the gate's and the depots' light as the factory's squads come out.
 The long-term goal is how many of the six nodes the player holds (`view/row.ts` draws them as a
 row at the HUD's top, the camp's line, the map table and the results); there is no ending. The hideout is the mid-term one: five modules built level by level from specific
 valuables and credits taken from the stash, each level needing only the module's level before it

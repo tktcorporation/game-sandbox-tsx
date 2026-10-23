@@ -459,6 +459,63 @@ export const sfx = {
       hiss(0.5, { brown: true, type: "lowpass", freq: 500, to: 90, vol: 0.5, at: 1 });
     });
   },
+  /**
+   * The enemy's craft setting off to land a squad (sim/battle.ts): a dropship's jets howling down
+   * over the pad, or a boat's horn and engine off the north shore. Heard across the island.
+   */
+  landing(pos: P3, boat: boolean) {
+    at(pos, { level: 0.5, ref: 150, maxDist: 1600, send: 0.7 }, () => {
+      if (boat) {
+        // Two blasts of a deep horn, the engine under them.
+        for (const k of [0, 1.5]) {
+          tone(98, 1.1, { type: "sawtooth", vol: 0.16, attack: 0.08, at: k });
+          tone(147, 1.1, { type: "sawtooth", vol: 0.08, attack: 0.08, at: k });
+        }
+        hiss(3, { brown: true, type: "lowpass", freq: 220, vol: 0.35, attack: 0.6 });
+        return;
+      }
+      // A rising howl of jets, then the long roar coming down.
+      hiss(3.2, { freq: 600, to: 2400, q: 1.2, vol: 0.22, attack: 0.9 });
+      tone(180, 3.2, { type: "sawtooth", to: 95, vol: 0.06, attack: 1 });
+      hiss(3.4, { brown: true, type: "lowpass", freq: 520, to: 260, vol: 0.55, attack: 1.2 });
+    });
+  },
+  /** The enemy's craft down: a dropship's weight on the pad and its ramp, a boat's hull on the sand. */
+  touchdown(pos: P3, boat: boolean) {
+    at(pos, { level: 0.5, ref: 120, maxDist: 1200, send: 0.6 }, () => {
+      tone(boat ? 60 : 46, 0.7, { type: "sine", to: 28, vol: 0.35 });
+      hiss(0.8, { brown: true, type: "lowpass", freq: boat ? 900 : 600, to: 120, vol: 0.5 });
+      // The ramp drops.
+      hiss(0.12, { freq: 1800, q: 3, vol: 0.18, at: 0.6 });
+      tone(240, 0.2, { type: "square", to: 140, vol: 0.05, at: 0.62 });
+    });
+  },
+  /** The camp's gate opening for a squad of the factory's: a short klaxon and the gate's motor. */
+  gate(pos: P3) {
+    at(pos, { level: 0.8, ref: 25, maxDist: 450, send: 0.4 }, () => {
+      for (let i = 0; i < 2; i++) tone(392, 0.36, { type: "square", to: 523, vol: 0.06, at: i * 0.45 });
+      hiss(1.2, { brown: true, type: "lowpass", freq: 700, vol: 0.3, at: 0.2, attack: 0.15 });
+      tone(70, 1.2, { type: "sawtooth", vol: 0.05, at: 0.2, attack: 0.15, wobble: [9, 4] });
+      hiss(0.1, { freq: 2400, q: 3, vol: 0.2, at: 1.35 });
+    });
+  },
+  /** A squad of the factory's coming out of a node's depot: a rising shimmer. */
+  depotOut(pos: P3) {
+    at(pos, { level: 0.45, ref: 20, maxDist: 350, send: 0.4 }, () => {
+      hiss(0.9, { freq: 900, to: 4200, q: 2.5, vol: 0.18, attack: 0.2 });
+      tone(330, 0.9, { type: "triangle", to: 990, vol: 0.08, attack: 0.15 });
+      tone(48, 0.4, { type: "sine", to: 30, vol: 0.25, at: 0.8 });
+    });
+  },
+  /** The enemy's robots have come to a core of the player's: a low heartbeat of an alarm, three beats. */
+  threat() {
+    ui(0.32, () => {
+      for (let i = 0; i < 3; i++) {
+        tone(110, 0.22, { type: "sine", to: 70, vol: 0.16, at: i * 0.55 });
+        tone(660, 0.18, { type: "square", to: 440, vol: 0.03, at: i * 0.55 + 0.02 });
+      }
+    });
+  },
   /** The care package falling from the sky. */
   careDrop(pos?: P3) {
     const body = () => {

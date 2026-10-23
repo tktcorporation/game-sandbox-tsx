@@ -321,6 +321,8 @@ export interface SquadState {
   friend?: boolean;
   /** The battle squad it is in the world (`BattleSquad.id`, sim/battle.ts). */
   battle?: number;
+  /** A squad of the player's coming to the core of the node the player attacks: it goes at its fighting pace (sim/battle.ts `rally`). */
+  rush?: boolean;
 }
 
 export interface Orb {
@@ -484,9 +486,15 @@ export type GameEvent =
   | { t: "coreStart"; node: number }
   | { t: "coreShielded"; node: number }
   | { t: "coreTaken"; node: number }
-  /** The battle (sim/battle.ts): a node changed hands, a squad came out of the factory, and the battle's time ran out with the player still out. */
+  /**
+   * The battle (sim/battle.ts): a node changed hands; a squad of the factory came out of the camp's
+   * gate or a node's depot at (x, z); a dropship or a boat set off to land the enemy's squad at (x, z);
+   * the enemy's robots came to a core of the player's; and the battle's time ran out with the player still out.
+   */
   | { t: "nodeTaken"; node: number; side: Side }
-  | { t: "squadOut"; side: Side; node: number }
+  | { t: "squadOut"; side: Side; node: number; x: number; z: number; gate: boolean }
+  | { t: "landing"; boat: boolean; x: number; z: number }
+  | { t: "nodeThreat"; node: number }
   | { t: "timeUp" }
   | { t: "done" };
 

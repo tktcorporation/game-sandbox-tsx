@@ -1,10 +1,11 @@
 import { CONQUEST, ENEMIES, FACTORY, PLATE, TICK, type EnemyKind, type Rarity } from "./config";
 import { dist2d } from "./geom";
-import { CAMP, depotIndex, FRONT_LINKS, NET_EDGE, NODES, nodeIndex, UNLOCKS, type NodeId, type NodeUnlock } from "./map";
+import { CAMP, DEPOTS, depotIndex, FRONT_LINKS, NET_EDGE, NODES, nodeIndex, POIS, UNLOCKS, type NodeId, type NodeUnlock } from "./map";
 import { forgetFields, onMainGround, walkLine } from "./hunt";
+import { inArea } from "./areas";
 import { worldKey } from "./routes";
 import { spawnEnemy } from "./enemies";
-import { garrisonLeaves, garrisonOf, NEIGHBOURS, CAMP_NEXT, useZones, type NodeHold } from "./front";
+import { frontNodes, garrisonLeaves, garrisonOf, NEIGHBOURS, CAMP_NEXT, useZones, type NodeHold } from "./front";
 import { allyUp } from "./ally";
 import type { Enemy, GameEvent, Point, State } from "./state";
 
@@ -48,10 +49,14 @@ export interface BattleSquad {
   from: number;
   to: number;
   d: number;
-  task: "attack" | "defend" | "hold" | "post";
+  task: "attack" | "defend" | "hold" | "post" | "rally";
   squad: number;
   x: number;
   z: number;
+  /** The nodes it walks on to after `to`, in order: an enemy's squad landed at the pad or the shore crosses its side's nodes to the one it attacks. */
+  via: number[];
+  /** Seconds before it steps off the dropship or the boat that lands it; 0 once it is ashore. */
+  ashore: number;
 }
 
 /** A capture of a node by a side's squads under way: its side and the seconds held. */
@@ -84,6 +89,14 @@ export interface Battle {
   taken: { node: NodeId; side: Side; t: number }[];
   /** Reckoned to its end. */
   done: boolean;
+  /** The enemy's dropships and boats: where each comes down, whether a boat, and the battle's clock at its touchdown. The last few. */
+  landings: { boat: boolean; x: number; z: number; down: number }[];
+  /** The factory's squads come out: from the camp's gate (-1) or a node's depot (its place in `NODES`), at the battle's clock. The last few. */
+  departs: { from: number; at: number }[];
+  /** Each node of the player's whose core the enemy's robots have come to. */
+  threat: boolean[];
+  /** The node the player attacks, the player's squads near it coming to fight beside them; -1 for none. */
+  rally: number;
 }
 
 /** What a raid of the island brings to its battle: the factory's level. */
@@ -91,18 +104,66 @@ export interface BattleStart {
   factory: number;
 }
 
-/** Where a squad stands at node `i` and starts its walk from: beside the core on the open ground; the camp's is in front of its gate. */
+/** Where the enemy's squads come ashore: the titan's pad, where its dropships land, and the harbor's north shore, where its boats do. */
+export const PAD = -2;
+export const SHORE = -3;
+/** A squad of the factory's that comes out of node `k`'s depot starts from `DEPOT + k`. */
+export const DEPOT = 100;
+
+/** The nodes each landing is next to: the pad by the quarry's road and the mesa's, the north shore by the wreck (`NET_EDGE`). */
+const LAND_NEXT: Record<number, number[]> = {
+  [PAD]: NET_EDGE.map(nodeIndex).filter((i) => NODES[i].region === "reservoir"),
+  [SHORE]: NET_EDGE.map(nodeIndex).filter((i) => NODES[i].region === "harbor"),
+};
+
+/**
+ * Where a squad stands at node `i` and starts its walk from: beside the core on the open ground;
+ * the camp's is in front of its gate, a depot's (`DEPOT + k`) on the open ground by node `k`'s
+ * depot, and the landings' (`PAD`, `SHORE`) where the dropships and the boats put the enemy ashore.
+ */
 export const nodePoint = (() => {
-  const camp = { x: (CAMP.gate.x0 + CAMP.gate.x1) / 2, z: CAMP.gate.z - 10 };
+  const camp = { x: (CAMP.gate.x0 + CAMP.gate.x1) / 2, z: CAMP.gate.z - 4 };
   // Found on first use: the walkers' grid it reads is built then, never when a page loads the module.
   let at: Point[] | null = null;
+  let depots: Point[] | null = null;
+  let lands: Record<number, Point> | null = null;
+  /** The open ground nearest (x, z), looked for on rings out from it. */
+  const ground = (x: number, z: number): Point => {
+    for (let r = 0; r <= 30; r += 2)
+      for (let k = 0, n = r ? Math.round((2 * Math.PI * r) / 2) : 1; k < n; k++) {
+        const px = Math.round(x + Math.sin((k / n) * 2 * Math.PI) * r);
+        const pz = Math.round(z - Math.cos((k / n) * 2 * Math.PI) * r);
+        if (onMainGround(px, pz)) return { x: px, z: pz };
+      }
+    return { x, z };
+  };
   const find = () =>
     NODES.map((n) => {
       const c = n.core;
       for (const [dx, dz] of [[3, 0], [-3, 0], [0, 3], [0, -3]]) if (onMainGround(c.x + dx, c.z + dz)) return { x: c.x + dx, z: c.z + dz };
       return { x: c.x + 3, z: c.z };
     });
-  return (i: number): Point => (i < 0 ? camp : (at ??= find())[i]);
+  const pad = POIS.find((p) => p.boss)!;
+  return (i: number): Point => {
+    if (i >= DEPOT) {
+      depots ??= NODES.map((n, k) => {
+        const d = DEPOTS[depotIndex(n.id)];
+        if (!d) return (at ??= find())[k];
+        // A step off the depot toward the node, so the squad comes out in front of it.
+        const dx = n.core.x - d.x;
+        const dz = n.core.z - d.z;
+        const l = Math.hypot(dx, dz) || 1;
+        return ground(d.x + (dx / l) * 4, d.z + (dz / l) * 4);
+      });
+      return depots[i - DEPOT];
+    }
+    if (i <= PAD) {
+      // The pad's open apron south of its middle, and the north bank of the harbor's channel, where the boats come up.
+      lands ??= { [PAD]: ground(pad.x + 30, pad.z + 50), [SHORE]: ground(...inArea("bay", 132, -577)) };
+      return lands[i];
+    }
+    return i < 0 ? camp : (at ??= find())[i];
+  };
 })();
 
 /** A walk between two nodes: its points and the metres along it to each. */
@@ -121,8 +182,15 @@ const pathOfPoints = (pts: Point[]): Path => {
 /** The walks along every link, both ways, as traced in each world (`walkLine()`). */
 const walks = new Map<string, Path>();
 
-/** The links as places in `NODES`, the camp -1. */
-const LINKS: [number, number][] = FRONT_LINKS.map(([a, b]) => [a === "camp" ? -1 : nodeIndex(a), nodeIndex(b)]);
+/**
+ * The walks traced: the links as places in `NODES` (the camp -1), each landing to the nodes next
+ * to it, and each node's depot to the node and to its neighbours.
+ */
+const LINKS: [number, number][] = [
+  ...FRONT_LINKS.map(([a, b]): [number, number] => [a === "camp" ? -1 : nodeIndex(a), nodeIndex(b)]),
+  ...[PAD, SHORE].flatMap((l) => LAND_NEXT[l].map((i): [number, number] => [l, i])),
+  ...NODES.flatMap((_, k) => [k, ...NEIGHBOURS[k]].map((i): [number, number] => [DEPOT + k, i])),
+];
 
 /**
  * Traces every link's walk in the current world, once per world. It builds fields: the battle
@@ -181,6 +249,10 @@ export function initBattle(s: State, start: BattleStart): Battle {
     start: [...s.nodes],
     taken: [],
     done: false,
+    landings: [],
+    departs: [],
+    threat: NODES.map(() => false),
+    rally: -1,
   };
   NODES.forEach((_, i) => {
     if (s.nodes[i] !== "freed") return;
@@ -191,7 +263,7 @@ export function initBattle(s: State, start: BattleStart): Battle {
 
 function addSquad(b: Battle, side: Side, kinds: readonly EnemyKind[], from: number, to: number, task: BattleSquad["task"]): BattleSquad {
   const at = nodePoint(from);
-  const q: BattleSquad = { id: b.nextId++, side, units: kinds.map(unit), from, to, d: 0, task, squad: -1, x: at.x, z: at.z };
+  const q: BattleSquad = { id: b.nextId++, side, units: kinds.map(unit), from, to, d: 0, task, squad: -1, x: at.x, z: at.z, via: [], ashore: 0 };
   b.squads.push(q);
   return q;
 }
@@ -208,8 +280,8 @@ function membersOf(s: State, q: BattleSquad): Enemy[] {
   return (q.side === 0 ? s.friends : s.enemies).filter((e) => e.squad === q.squad);
 }
 
-/** Whether a squad stands at its node (walked its link to the end). */
-const arrived = (q: BattleSquad) => q.from === q.to || q.d >= pathOf(q.from, q.to).len - 0.5;
+/** Whether a squad stands at its node: walked its link to the end, or come round the core it rallies to. */
+const arrived = (q: BattleSquad) => (q.task === "rally" ? dist2d(q, NODES[q.to].core) < CONQUEST.rally.ring[1] + 8 : q.from === q.to || q.d >= pathOf(q.from, q.to).len - 0.5);
 
 /** Squads counted against a side's limit: those walking to take or defend a node. */
 const walking = (b: Battle, side: Side) => b.squads.filter((q) => q.side === side && (q.task === "attack" || q.task === "defend")).length;
@@ -243,6 +315,7 @@ export function stepBattle(s: State) {
 function reckon(s: State, b: Battle) {
   const dt = CONQUEST.tick;
   b.now += dt;
+  rally(s, b);
   lod(s, b);
   produce(s, b, dt);
   march(s, b, dt);
@@ -282,6 +355,12 @@ function lod(s: State, b: Battle) {
       const lead = members[0];
       q.x = lead.pos.x;
       q.z = lead.pos.z;
+      if (q.task === "rally") {
+        rallyAt(s, q);
+        const far = members.every((e) => !nearPlayer(s, e.pos, CONQUEST.far));
+        if (far && !members.some((e) => e.aware === "engaged")) toNumbers(s, q);
+        continue;
+      }
       if (q.task !== "post" && q.from !== q.to) {
         const p = pathOf(q.from, q.to);
         const sq = s.squads[q.squad];
@@ -292,8 +371,103 @@ function lod(s: State, b: Battle) {
       const far = members.every((e) => !nearPlayer(s, e.pos, CONQUEST.far));
       const fighting = members.some((e) => e.aware === "engaged");
       if (far && !fighting) toNumbers(s, q);
-      else if (arrived(q)) settleAt(s, q);
-    } else if (nearPlayer(s, q, CONQUEST.near)) toWorld(s, q, false);
+      else if (arrived(q) && q.via.length && walkOn(s, q)) {
+        const sq = s.squads[q.squad];
+        if (sq) {
+          sq.patrol = pathOf(q.from, q.to).pts.slice();
+          sq.leg = 1;
+        }
+      } else if (arrived(q)) settleAt(s, q);
+    } else if (q.ashore <= 0 && nearPlayer(s, q, CONQUEST.near)) toWorld(s, q, false);
+  }
+}
+
+/**
+ * A squad come to a node on its way to another walks on to the next while its side still holds
+ * the node; one its foes have taken in the meantime is where it fights. Whether it walks on.
+ */
+function walkOn(s: State, q: BattleSquad): boolean {
+  if (sideOf(s.nodes[q.to]) !== q.side) {
+    q.via = [];
+    return false;
+  }
+  q.from = q.to;
+  q.to = q.via.shift()!;
+  q.d = 0;
+  return true;
+}
+
+/* ---------- pushing together ---------- */
+
+/** The node the player attacks: the core of the capture under way, else a node on the front whose core the player is near; -1 for none. */
+function rallyNode(s: State): number {
+  if (s.phase !== "play") return -1;
+  if (s.capture && s.nodes[s.capture.node] !== "freed") return s.capture.node;
+  const front = frontNodes(s.nodes);
+  let best = -1;
+  let bestD: number = CONQUEST.rally.near;
+  NODES.forEach((n, i) => {
+    if (!front[i]) return;
+    const d = dist2d(n.core, s.player.pos);
+    if (d < bestD) {
+      best = i;
+      bestD = d;
+    }
+  });
+  return best;
+}
+
+/**
+ * The player's squads near the node the player attacks come to fight beside them, round its core
+ * (`CONQUEST.rally`): those on their way to attack anywhere, and those holding a node another of
+ * the player's squads also holds. Once the player has gone, those come to the core go on taking
+ * the node, or hold it if it has become the player's.
+ */
+function rally(s: State, b: Battle) {
+  b.rally = rallyNode(s);
+  if (b.rally >= 0) {
+    const c = NODES[b.rally].core;
+    for (const q of b.squads) {
+      if (q.side !== 0 || q.ashore > 0 || (q.task !== "attack" && q.task !== "hold") || dist2d(q, c) > CONQUEST.rally.reach) continue;
+      if (q.task === "hold" && (b.threat[q.to] || !b.squads.some((o) => o !== q && o.side === 0 && o.to === q.to && o.task === "hold"))) continue;
+      q.task = "rally";
+      q.from = q.to = b.rally;
+      q.via = [];
+      q.d = 0;
+    }
+  }
+  for (const q of b.squads) {
+    if (q.task !== "rally" || q.to === b.rally) continue;
+    const mine = sideOf(s.nodes[q.to]) === 0;
+    // Still on its way in to a node the enemy holds, it comes on, and takes up the attack there.
+    if (!mine && !arrived(q)) continue;
+    q.task = mine ? "hold" : "attack";
+    q.from = q.to;
+    q.d = 0;
+  }
+}
+
+/** Where squad `q` stands round the core it rallies to: close in while the player takes the core, a little out while they fight for it. On the open ground. */
+function rallySpot(s: State, q: BattleSquad): Point {
+  const c = NODES[q.to].core;
+  const r = s.capture?.node === q.to ? CONQUEST.rally.ring[0] : CONQUEST.rally.ring[1];
+  for (let k = 0; k < 12; k++) {
+    const a = q.id * 2.39996 + k * 0.52;
+    const x = Math.round(c.x + Math.sin(a) * r);
+    const z = Math.round(c.z - Math.cos(a) * r);
+    if (onMainGround(x, z)) return { x, z };
+  }
+  return nodePoint(q.to);
+}
+
+/** A squad in the world rallying to a core walks to its place round it. */
+function rallyAt(s: State, q: BattleSquad) {
+  const sq = s.squads[q.squad];
+  const at = rallySpot(s, q);
+  if (sq && (sq.patrol.length !== 2 || sq.patrol[1].x !== at.x || sq.patrol[1].z !== at.z)) {
+    sq.patrol = [{ x: q.x, z: q.z }, at];
+    sq.leg = 1;
+    sq.rush = true;
   }
 }
 
@@ -311,6 +485,7 @@ function settleAt(s: State, q: BattleSquad) {
   if (sq && (sq.patrol.length !== 1 || sq.patrol[0].x !== at.x || sq.patrol[0].z !== at.z)) {
     sq.patrol = [at];
     sq.leg = 0;
+    sq.rush = undefined;
   }
 }
 
@@ -329,9 +504,12 @@ function toWorld(s: State, q: BattleSquad, appear: boolean) {
   s.squads.push({ name: squadName(q), poi: -1, patrol: here, leg: 0, engaged: false, roam: !friend, sinceSeen: 0, last: { x: q.x, z: q.z }, rogue: q.side === 2 || undefined, friend: friend || undefined, battle: q.id });
   const next = here[Math.min(1, here.length - 1)];
   const face = Math.atan2(next.x - q.x, -(next.z - q.z)) || 0;
+  // Walking, the members come in one behind another along the way; standing, round where the squad stands.
+  const walk = q.task !== "post" && q.task !== "rally" && !arrived(q) ? p : null;
   q.units.forEach((u, m) => {
-    const x = q.x + (m % 2 ? 1.6 : -1.6) * Math.min(m, 1);
-    const z = q.z + m * 1.4;
+    const back = walk && m > 0 ? along(walk, q.d - m * CONQUEST.column) : null;
+    const x = back ? back.x : q.x + (m % 2 ? 1.6 : -1.6) * Math.min(m, 1);
+    const z = back ? back.z : q.z + m * 1.4;
     const e = spawnEnemy(s, u.kind, x, z, -1, index, { face, hashed: true, rogue: q.side === 2, appear, plate: friend ? 0 : undefined });
     e.hp = u.hp;
     e.shield = u.shield;
@@ -408,6 +586,12 @@ function playerPlan(s: State, b: Battle): { from: number; to: number; task: Batt
     }
   });
   if (worst >= 0) return { from: worst, to: worst, task: "defend" };
+  // A node of the player's where the enemy comes ashore or next to the enemy's, with none of the player's squads there or going: one goes to hold it.
+  const bare = NODES.map((_, i) => i).filter((i) => s.nodes[i] === "freed" && !b.squads.some((q) => q.side === 0 && q.to === i && q.task !== "rally") && (NET_EDGE.includes(NODES[i].id) || NEIGHBOURS[i].some((k) => s.nodes[k] !== "freed")));
+  if (bare.length) {
+    const i = bare.sort((a, c) => +NET_EDGE.includes(NODES[c].id) - +NET_EDGE.includes(NODES[a].id))[0];
+    return { from: i, to: i, task: "defend" };
+  }
   return attackFrom(s, b, 0, ground);
 }
 
@@ -423,7 +607,7 @@ function attackFrom(s: State, b: Battle, side: Side, from: number[]): { from: nu
   NODES.forEach((_, i) => {
     const owner = sideOf(s.nodes[i]);
     if (owner === side || !nextTo(i).some((k) => from.includes(k))) return;
-    const v = 6 * goingTo(b, side, i) - 2 * heldBy(s, b, i) + (side === 1 && owner === 0 ? 10 : 0);
+    const v = 6 * goingTo(b, side, i) - 2 * heldBy(s, b, i) + (side === 1 && owner === 0 ? 10 : 0) + (side === 0 && i === b.rally ? 8 : 0);
     if (v > bestV) {
       best = i;
       bestV = v;
@@ -437,25 +621,56 @@ function attackFrom(s: State, b: Battle, side: Side, from: number[]): { from: nu
 }
 
 /**
- * Where the enemy's next squad goes: a node of the player's next to one of its own, from a node
- * of its own the player is not near, or one it lands on by the ground it never gives up. The
- * rogues' come out of the wild by any node the player is not near and fall on the most weakly
- * held. Null for none.
+ * Where the next squad of `side` goes: the enemy's lands (`landingPlan()`); the rogues' come out
+ * of the wild by any node the player is not near and fall on the most weakly held. Null for none.
  */
-function enemyPlan(s: State, b: Battle, side: Side): { from: number; to: number } | null {
-  let best: { from: number; to: number; v: number } | null = null;
-  NODES.forEach((n, i) => {
-    const owner = sideOf(s.nodes[i]);
-    if (owner === side) return;
-    const fromOk = (k: number) => (side === 2 || sideOf(s.nodes[k]) === side) && !nearPlayer(s, nodePoint(k), CONQUEST.near);
-    let from = NEIGHBOURS[i].filter(fromOk).sort((a, c) => dist2d(nodePoint(a), nodePoint(i)) - dist2d(nodePoint(c), nodePoint(i)))[0];
-    // The enemy lands on a node by the ground it never gives up, out of the player's sight.
-    // The north shore's boats stop landing while the player holds the node that watches it.
-    if (from === undefined && side === 1 && NET_EDGE.includes(n.id) && !(UNLOCKS[n.id].shore && owner === 0) && !nearPlayer(s, nodePoint(i), CONQUEST.near)) from = i;
+function enemyPlan(s: State, b: Battle, side: Side): { from: number; to: number; via: number[] } | null {
+  if (side === 1) return landingPlan(s, b);
+  let best: { from: number; to: number; via: number[]; v: number } | null = null;
+  NODES.forEach((_, i) => {
+    const from = NEIGHBOURS[i].filter((k) => !nearPlayer(s, nodePoint(k), CONQUEST.near)).sort((a, c) => dist2d(nodePoint(a), nodePoint(i)) - dist2d(nodePoint(c), nodePoint(i)))[0];
     if (from === undefined) return;
-    const v = (side === 1 && owner === 0 ? 10 : 0) - 2 * heldBy(s, b, i) - 3 * goingTo(b, side, i);
-    if (!best || v > best.v) best = { from, to: i, v };
+    const v = -2 * heldBy(s, b, i) - 3 * goingTo(b, side, i);
+    if (!best || v > best.v) best = { from, to: i, via: [], v };
   });
+  return best;
+}
+
+/** Whether the enemy's boats land on the north shore: not while the player holds the node that watches it (`UNLOCKS.shore`). */
+const shoreOpen = (s: Pick<State, "nodes">) => !heldUnlocks(s.nodes, "shore").length;
+
+/**
+ * Where the enemy's next squad lands and goes: put ashore at the titan's pad or the north shore,
+ * it walks across the enemy's nodes to a node of the player's next to them, the most weakly
+ * held and the one its squads already go for first, the nearer of equals. Null when it can reach
+ * none of the player's nodes.
+ */
+function landingPlan(s: State, b: Battle): { from: number; to: number; via: number[] } | null {
+  let best: { from: number; to: number; via: number[]; v: number } | null = null;
+  for (const land of shoreOpen(s) ? [PAD, SHORE] : [PAD]) {
+    // Across the enemy's own nodes, breadth first, each node by the fewest links from the landing.
+    const prev = new Map<number, number>();
+    const queue = [...LAND_NEXT[land]];
+    for (const i of queue) prev.set(i, land);
+    for (let k = 0; k < queue.length; k++) {
+      const i = queue[k];
+      if (sideOf(s.nodes[i]) !== 1) continue;
+      for (const j of NEIGHBOURS[i])
+        if (!prev.has(j)) {
+          prev.set(j, i);
+          queue.push(j);
+        }
+    }
+    for (const i of queue) {
+      if (sideOf(s.nodes[i]) !== 0) continue;
+      const route = [i];
+      while (prev.get(route[0]) !== land) route.unshift(prev.get(route[0])!);
+      let len = dist2d(nodePoint(land), nodePoint(route[0]));
+      for (let k = 1; k < route.length; k++) len += dist2d(nodePoint(route[k - 1]), nodePoint(route[k]));
+      const v = 10 - 2 * heldBy(s, b, i) - 3 * goingTo(b, 1, i) - len / 400;
+      if (!best || v > best.v) best = { from: land, to: route[0], via: route.slice(1), v };
+    }
+  }
   return best;
 }
 
@@ -472,6 +687,25 @@ export const factoryRarity = (nodes: State["nodes"]): Rarity => Math.max(PLATE.r
 /** The squads the factory keeps out at once: its level's, and one more for each node held that opens one. */
 export const factoryMax = (s: Pick<State, "nodes">, f: number) => FACTORY.max[f] + heldUnlocks(s.nodes, "squad").reduce((n, id) => n + (UNLOCKS[id].squad ?? 0), 0);
 
+/**
+ * The factory's next squad sets off on `plan`: out of the camp's gate when it sets off from the
+ * camp or the node by it (walking through that node to one beyond), else out of the depot of the
+ * node it sets off from.
+ */
+function sendOut(s: State, b: Battle, plan: { from: number; to: number; task: BattleSquad["task"] }) {
+  const f = b.factory;
+  const gate = plan.from < 0 || CAMP_NEXT.includes(plan.from);
+  const from = gate ? -1 : DEPOT + plan.from;
+  const first = gate && plan.from >= 0 ? plan.from : plan.to;
+  const q = addSquad(b, 0, FACTORY.kinds[f], from, first, plan.task);
+  if (first !== plan.to) q.via = [plan.to];
+  b.made[0] = 0;
+  b.departs.push({ from: gate ? -1 : plan.from, at: b.now });
+  if (b.departs.length > 6) b.departs.shift();
+  if (nearPlayer(s, q, CONQUEST.near)) toWorld(s, q, false);
+  tell(s, { t: "squadOut", side: 0, node: plan.to, x: q.x, z: q.z, gate });
+}
+
 /** Each side's work toward its next squad, and the squad once it is due and the side has room. */
 function produce(s: State, b: Battle, dt: number) {
   // The player's factory.
@@ -479,12 +713,7 @@ function produce(s: State, b: Battle, dt: number) {
   b.made[0] = Math.min(FACTORY.every[f], b.made[0] + dt);
   if (b.made[0] >= FACTORY.every[f] && walking(b, 0) < factoryMax(s, f)) {
     const plan = playerPlan(s, b);
-    if (plan) {
-      const q = addSquad(b, 0, FACTORY.kinds[f], plan.from, plan.to, plan.task);
-      b.made[0] = 0;
-      if (nearPlayer(s, q, CONQUEST.near)) toWorld(s, q, true);
-      tell(s, { t: "squadOut", side: 0, node: plan.to });
-    }
+    if (plan) sendOut(s, b, plan);
   }
   // The enemy's nodes work for it, the more it holds the sooner; the rogues come at their own pace.
   for (const side of [1, 2] as const) {
@@ -500,8 +729,17 @@ function produce(s: State, b: Battle, dt: number) {
     if (b.made[side] < every || walking(b, side) >= max) continue;
     const plan = enemyPlan(s, b, side);
     if (!plan) continue;
-    addSquad(b, side, side === 1 ? CONQUEST.net.kinds[s.strength] : CONQUEST.rogue.kinds, plan.from, plan.to, "attack");
+    const q = addSquad(b, side, side === 1 ? CONQUEST.net.kinds[s.strength] : CONQUEST.rogue.kinds, plan.from, plan.to, "attack");
+    q.via = plan.via;
     b.made[side] = 0;
+    if (plan.from <= PAD) {
+      // A dropship comes down on the pad, or a boat runs up the beach, and puts the squad ashore.
+      const boat = plan.from === SHORE;
+      q.ashore = boat ? CONQUEST.land.boat : CONQUEST.land.ship;
+      b.landings.push({ boat, x: q.x, z: q.z, down: b.now + q.ashore });
+      if (b.landings.length > 6) b.landings.shift();
+      tell(s, { t: "landing", boat, x: q.x, z: q.z });
+    }
   }
 }
 
@@ -510,8 +748,25 @@ function produce(s: State, b: Battle, dt: number) {
 /** Squads in numbers walk their links, unless a hostile squad in numbers stands within `CONQUEST.meet`. */
 function march(s: State, b: Battle, dt: number) {
   for (const q of b.squads) {
-    if (q.squad >= 0 || q.task === "post" || arrived(q)) continue;
-    if (b.squads.some((o) => o.squad < 0 && o.side !== q.side && dist2d(o, q) < CONQUEST.meet)) continue;
+    if (q.ashore > 0) {
+      q.ashore = Math.max(0, q.ashore - dt);
+      continue;
+    }
+    if (q.squad >= 0 || q.task === "post") continue;
+    if (arrived(q)) {
+      // Come to a node on the way, it walks on to the next.
+      if (!q.via.length || !walkOn(s, q)) continue;
+    }
+    if (b.squads.some((o) => o.squad < 0 && o.ashore <= 0 && o.side !== q.side && dist2d(o, q) < CONQUEST.meet)) continue;
+    if (q.task === "rally") {
+      // Straight for its place round the core it rallies to.
+      const to = rallySpot(s, q);
+      const d = dist2d(q, to);
+      const k = Math.min(1, (paceOf(q) * dt) / (d || 1));
+      q.x += (to.x - q.x) * k;
+      q.z += (to.z - q.z) * k;
+      continue;
+    }
     const p = pathOf(q.from, q.to);
     q.d = Math.min(p.len, q.d + paceOf(q) * dt);
     const at = along(p, q.d);
@@ -519,7 +774,7 @@ function march(s: State, b: Battle, dt: number) {
     q.z = at.z;
   }
   // A squad come to a node its side holds holds it, in the world or not, so it no longer counts against its side's limit.
-  for (const q of b.squads) if (q.task !== "post" && arrived(q) && sideOf(s.nodes[q.to]) === q.side) q.task = "hold";
+  for (const q of b.squads) if (q.task !== "post" && q.task !== "rally" && !q.via.length && arrived(q) && sideOf(s.nodes[q.to]) === q.side) q.task = "hold";
   // A rogue squad at a node with nobody left to fight there, the holder's or anyone come to take it, goes on to the next.
   for (const q of b.squads) {
     if (q.side !== 2 || q.squad >= 0 || !arrived(q) || heldBy(s, b, q.to) + unitsAt(s, b, q.to, sideOf(s.nodes[q.to]) === 0 ? 1 : 0) > 0) continue;
@@ -606,7 +861,8 @@ function resolve(fighters: Fighter[], dt: number) {
  * gone, robots of a garrison taken out of the world.
  */
 function fightApart(s: State, b: Battle, dt: number) {
-  const apart = b.squads.filter((q) => q.squad < 0);
+  // A squad still in its dropship or boat is in nobody's way.
+  const apart = b.squads.filter((q) => q.squad < 0 && q.ashore <= 0);
   // On the way: clusters of squads within `meet` of a hostile one.
   const done = new Set<BattleSquad>();
   for (const q of apart) {
@@ -656,7 +912,7 @@ function capture(s: State, b: Battle, dt: number) {
       if (q.to !== i || q.squad >= 0 || !arrived(q)) continue;
       if (q.side === owner) def++;
       else if (q.side === 2) rogue = true;
-      else if (q.task === "attack") att.add(q.side);
+      else if (q.task === "attack" || q.task === "rally") att.add(q.side);
     }
     const zone = CONQUEST.zone;
     const within = (e: Enemy) => Math.abs(e.pos.x - c.x) < zone && Math.abs(e.pos.z - c.z) < zone && dist2d(e.pos, c) < zone && e.mode !== "spawning";
@@ -678,6 +934,10 @@ function capture(s: State, b: Battle, dt: number) {
       def += guards.length;
       if (att.size && guards.length && !b.meter[i]) for (const e of guards) callToCore(e, c);
     }
+    // The enemy's robots at a core of the player's: the core pulses, and the player is called to it.
+    const threat = owner === 0 && att.has(1);
+    if (threat && !b.threat[i]) tell(s, { t: "nodeThreat", node: i });
+    b.threat[i] = threat;
     const m = b.meter[i];
     if (att.size === 1 && def === 0 && !rogue) {
       const side = [...att][0];
@@ -731,11 +991,11 @@ function seize(s: State, b: Battle, i: number, side: Side) {
  * Automation only: a battle squad of `side` and `kinds` set down in the world at (x, z), holding
  * the node nearest it, its robots there at once. Its squad's index in `State.squads`.
  */
-export function placeBattleSquad(s: State, side: Side, kinds: readonly EnemyKind[], x: number, z: number): number {
+export function placeBattleSquad(s: State, side: Side, kinds: readonly EnemyKind[], x: number, z: number, task: BattleSquad["task"] = "hold"): number {
   const b = s.battle;
   if (!b) return -1;
   const to = NODES.map((n, i) => ({ i, d: dist2d(n.core, { x, z }) })).sort((a, c) => a.d - c.d)[0].i;
-  const q: BattleSquad = { id: b.nextId++, side, units: kinds.map(unit), from: to, to, d: 0, task: "hold", squad: -1, x, z };
+  const q: BattleSquad = { id: b.nextId++, side, units: kinds.map(unit), from: to, to, d: 0, task, squad: -1, x, z, via: [], ashore: 0 };
   b.squads.push(q);
   toWorld(s, q, false);
   const sq = s.squads[q.squad];
@@ -744,15 +1004,70 @@ export function placeBattleSquad(s: State, side: Side, kinds: readonly EnemyKind
   return q.squad;
 }
 
+/**
+ * Automation only: the enemy lands a squad now, by dropship on the pad or by boat on the north
+ * shore, bound for the node of the player's it would go for from there (or the node next to the
+ * landing when it can reach none). Where it comes ashore, or null in a raid with no battle.
+ */
+export function landNow(s: State, boat: boolean): Point | null {
+  const b = s.battle;
+  if (!b) return null;
+  const land = boat ? SHORE : PAD;
+  const plan = landingPlan(s, b);
+  const route = plan && plan.from === land ? plan : { from: land, to: LAND_NEXT[land][0], via: [] };
+  const q = addSquad(b, 1, CONQUEST.net.kinds[s.strength], route.from, route.to, "attack");
+  q.via = route.via;
+  q.ashore = boat ? CONQUEST.land.boat : CONQUEST.land.ship;
+  b.landings.push({ boat, x: q.x, z: q.z, down: b.now + q.ashore });
+  tell(s, { t: "landing", boat, x: q.x, z: q.z });
+  return { x: q.x, z: q.z };
+}
+
+/**
+ * Automation only: a squad of `side` and `kinds` `d` metres along the walk from `from` to `to`
+ * (places as `nodePoint()` takes them), on its way, its robots in the world at once. Its squad's
+ * index in `State.squads`, or -1 in a raid with no battle.
+ */
+export function marchSquad(s: State, side: Side, kinds: readonly EnemyKind[], from: number, to: number, d: number): number {
+  const b = s.battle;
+  if (!b) return -1;
+  const q = addSquad(b, side, kinds, from, to, "attack");
+  const p = pathOf(from, to);
+  q.d = Math.min(d, p.len - 1);
+  const at = along(p, q.d);
+  q.x = at.x;
+  q.z = at.z;
+  toWorld(s, q, false);
+  return q.squad;
+}
+
+/** Automation only: the factory sends its next squad now, out of the camp's gate to the node by the camp. */
+export function departNow(s: State) {
+  const b = s.battle;
+  if (!b) return;
+  sendOut(s, b, { from: -1, to: CAMP_NEXT[0], task: s.nodes[CAMP_NEXT[0]] === "freed" ? "defend" : "attack" });
+}
+
 /** The squads of the battle as the maps show them: each squad's side, where it is, whether it is robots in the world, and its members. */
 export function battleMarks(s: Pick<State, "battle" | "friends" | "enemies">): { side: Side; x: number; z: number; live: boolean; n: number; to: number }[] {
   const b = s.battle;
   if (!b) return [];
-  return b.squads.map((q) => {
+  return b.squads.filter((q) => q.ashore <= 0).map((q) => {
     const members = q.squad < 0 ? [] : (q.side === 0 ? s.friends : s.enemies).filter((e) => e.squad === q.squad);
     const lead = members[0];
     return { side: q.side, x: lead ? lead.pos.x : q.x, z: lead ? lead.pos.z : q.z, live: q.squad >= 0, n: q.squad >= 0 ? members.length : q.units.length, to: q.to };
   });
+}
+
+/**
+ * Where each member of battle squad `q` stands while it is numbers, its first `d` metres along its
+ * walk (or at `at` when it is not walking a link): on its way one behind another along the walk,
+ * `CONQUEST.column` apart; standing, round where it stands. For the view, which eases `d` and `at`.
+ */
+export function columnPoints(q: BattleSquad, d = q.d, at: Point = q): Point[] {
+  const walk = q.task !== "post" && q.task !== "rally" && q.from !== q.to ? pathOf(q.from, q.to) : null;
+  const going = walk && d < walk.len - 0.5;
+  return q.units.map((_, m) => (going ? along(walk, d - m * CONQUEST.column) : { x: at.x + (m % 2 ? 1.6 : -1.6) * Math.min(m, 1), z: at.z + m * 1.4 }));
 }
 
 /** The node the battle most wants the player at: one of theirs being taken, else one their squads are taking; -1 for none. */
