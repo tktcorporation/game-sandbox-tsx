@@ -3127,3 +3127,125 @@ body.touch #obj-raid .short {
     scale: 0.85;
   }
 }
+
+/*
+ * Icons (view/icons.ts) that stand in for sentences: a shape and a colour per meaning, sat on the
+ * text's baseline, with the number they go with right after them.
+ */
+.ico {
+  display: inline-block;
+  flex: none;
+  vertical-align: -2px;
+  margin-right: 3px;
+}
+.toast .ico,
+#prompt .ico,
+#banner .ico {
+  vertical-align: -1px;
+}
+#prompt b {
+  font-family: var(--num);
+  margin-left: 2px;
+}
+/* Something the action gives up (a weapon swapped, valuables dropped): its name struck through. */
+#prompt s {
+  margin-left: 8px;
+  color: #ff9a8a;
+  font-weight: 700;
+}
+#obj-until b.paused {
+  color: #ff9a3c;
+}
+#obj-contract b {
+  font-family: var(--num);
+  margin-left: 8px;
+}
+#obj-contract .ico.check,
+#obj-story .ico.check {
+  margin-left: 4px;
+}
+#obj-story .lead {
+  margin-right: 6px;
+  color: var(--muted);
+}
+#obj-story .at {
+  margin-left: 6px;
+  color: var(--muted);
+}
+#obj-raid {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+}
+#obj-raid .reinforce {
+  color: #ff8a7a;
+}
+#obj-raid .reinforce.now .ico {
+  animation: reinforce-now 0.8s ease-in-out infinite alternate;
+}
+@keyframes reinforce-now {
+  to {
+    opacity: 0.3;
+  }
+}
+#obj-exits div {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+}
+#obj-exits span {
+  font-family: var(--num);
+  font-weight: 800;
+}
+#obj-exits em {
+  font-style: normal;
+  color: var(--hot);
+}
+#obj-exits .locked .ico.exit {
+  opacity: 0.45;
+}
+body.touch #obj-exits {
+  flex-direction: row;
+  flex-wrap: wrap;
+  column-gap: 10px;
+}
+body.touch #obj-exits div:not(.live),
+body.touch #obj-exits div:not(.live) span {
+  display: flex;
+}
+#mate-state {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--num);
+  font-weight: 800;
+}
+#mate-state .ico.fight {
+  color: #ff8a7a;
+}
+#downed-sub:empty {
+  display: none;
+}
+#home h3 b {
+  margin-left: 8px;
+  font-family: var(--num);
+  color: var(--r3);
+}
+#home p .lost {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+#home p span b {
+  margin-left: 6px;
+}
+#home .analyse button.mod b .ico {
+  margin-left: 6px;
+  color: var(--sky);
+}
+#home .analyse button.mod em.new {
+  margin-left: 6px;
+  padding: 0 4px;
+  font-family: var(--num);
+  font-size: 11px;
+  color: #1b1f2a;
+  background: var(--r3);
+}

@@ -554,7 +554,7 @@ function start(go: Launch, from?: State) {
   hud.show(true);
   hud.setKnown(hub.profile.entries);
   const depot = go.from && departDepots(hub.profile).includes(go.from) ? go.from : null;
-  hud.banner(depot ? `${POIS[poiIndex(depot)].name}の中継ボックス` : entryOf(go.entry).name, `ここから探索する。拠点と脱出地点は${touchMode ? "地図ボタン" : " M "}の地図で見る`);
+  hud.banner(depot ? `${POIS[poiIndex(depot)].name}の中継ボックス` : entryOf(go.entry).name);
   lock();
 }
 

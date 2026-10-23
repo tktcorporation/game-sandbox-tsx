@@ -231,6 +231,8 @@ export class World {
   private partMesh: THREE.InstancedMesh;
   private care: THREE.Group | null = null;
   private careBeam: THREE.Mesh;
+  /** The ground a capture is held from (`FRONT.radius` round the core): blue while it counts, orange while it stands still. */
+  private captureRing: THREE.Mesh;
   /** The cores of the front's nodes (`NODES`), built once, lit as who holds each; and the colour each was last lit in. */
   private cores: (ReturnType<typeof buildCore> & { key: string })[] = [];
   /** The objective's beacon (`setBeacon()`), and where it stands; null for none. */
@@ -338,6 +340,10 @@ export class World {
       this.scene.add(v.root);
       this.cores.push(v);
     }
+    this.captureRing = new THREE.Mesh(new THREE.RingGeometry(FRONT.radius - 0.6, FRONT.radius, 96), glow(0x3f86c8, 0.7));
+    this.captureRing.rotation.x = -Math.PI / 2;
+    this.captureRing.visible = false;
+    this.scene.add(this.captureRing);
     this.beacon = buildBeacon();
     this.beacon.visible = false;
     this.scene.add(this.beacon);
@@ -1479,6 +1485,16 @@ export class World {
       v.halo.material.opacity = pulse;
       if (v.flag.visible) v.cloth.rotation.y = 0.15 * Math.sin(this.time * 2.3 + i);
     });
+    // --- the ring a capture is held inside
+    const cap = s.phase === "play" ? s.capture : null;
+    this.captureRing.visible = !!cap;
+    if (cap) {
+      const core = NODES[cap.node].core;
+      this.captureRing.position.set(core.x, core.y + 0.3, core.z);
+      const m = this.captureRing.material as THREE.MeshBasicMaterial;
+      m.color.setHex(cap.held ? 0x3f86c8 : 0xff8a3c);
+      m.opacity = 0.55 + 0.25 * Math.sin(this.time * (cap.held ? 3 : 9));
+    }
     // --- the objective's beacon
     this.beacon.visible = !!this.beaconAt && s.phase === "play";
     if (this.beaconAt) {
