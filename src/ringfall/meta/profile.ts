@@ -744,7 +744,8 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   const ds = (typeof o.v === "number" && o.v >= 8 && o.depotSent && typeof o.depotSent === "object" ? o.depotSent : {}) as Record<string, unknown>;
   const depotSent = Object.fromEntries(depots.map((d) => [d, num(ds[d])]));
   const entries = typeof o.v === "number" && o.v < 11 ? ENTRIES.map((e) => e.id) : knownEntries(Array.isArray(o.entries) ? o.entries.filter((e): e is string => typeof e === "string") : []);
-  const { region, entry } = allowedStart({ entries, depots } as Profile, REGIONS.find((r) => r.id === o.region)?.id ?? "reservoir", o.entry);
+  const poiState = typeof o.v === "number" && o.v >= 13 ? parseIsland(o.poiState) : newIsland();
+  const { region, entry } = allowedStart({ entries, depots, poiState }, REGIONS.find((r) => r.id === o.region)?.id ?? "reservoir", o.entry);
   const raids = num(o.raids);
   const day = (typeof o.v === "number" && o.v >= 13) && Number.isInteger(o.day) && (o.day as number) >= 1 ? (o.day as number) : raids + 1;
   const recordIds = STORIES.map((t) => t.id);
@@ -774,7 +775,7 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     seen: (typeof o.v === "number" && o.v >= 12) && typeof o.seen === "string" && /^[0-9a-f]*$/.test(o.seen) ? o.seen : "",
     routes: typeof o.v === "number" && o.v >= 9 && Array.isArray(o.routes) ? openRoutes(o.routes.filter((r): r is string => typeof r === "string")) : [],
     day,
-    poiState: typeof o.v === "number" && o.v >= 13 ? parseIsland(o.poiState) : newIsland(),
+    poiState,
     factory: v19 && Number.isInteger(o.factory) ? Math.max(0, Math.min(FACTORY.levels.length, o.factory as number)) : 0,
     lastKit: v20 ? parseKitPicks(o.lastKit) : null,
     records,

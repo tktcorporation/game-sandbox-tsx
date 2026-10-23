@@ -34,7 +34,7 @@ import { hurtPlayer } from "../src/ringfall/sim/player";
 import { hurtAlly, placeAlly } from "../src/ringfall/sim/ally";
 import { haulValue } from "../src/ringfall/sim/results";
 import { SHIP_SQUAD, bagLoad, bagUsed, canOpen, makeRoom, toolIn, useTarget } from "../src/ringfall/sim/world";
-import { bodyCenter, damageEnemy, eyePos, fireRay, magSize, weakPoint } from "../src/ringfall/sim/combat";
+import { bodyCenter, damageEnemy, eyePos, fireRay, magSize, robotGear, weakPoint } from "../src/ringfall/sim/combat";
 import { lookAngles } from "../src/ringfall/sim/geom";
 import { forward } from "../src/ringfall/sim/state";
 import { build, buildFactory, buildState, buy, canBuild, deliver, depotAllowance, depotBudget, emptyLoadout, fitsStart, healRoom, itemCost, FIRST_ENTRY, loadoutCost, newProfile, parseProfile, pouch, price, sell, sellPrice, settle, takeKit, wares, type Item, type Profile } from "../src/ringfall/meta/profile";
@@ -54,7 +54,7 @@ import { nextLevel } from "../src/ringfall/meta/hideout";
 import { take, takenContract } from "../src/ringfall/meta/profile";
 import { META } from "../src/ringfall/sim/config";
 import { fireRange, sense } from "../src/ringfall/sim/awareness";
-import { AWARE, CREW, DEBRIS, STORM } from "../src/ringfall/sim/config";
+import { AWARE, CREW, DEBRIS, RARITY, STORM } from "../src/ringfall/sim/config";
 import { DEBRIS_SPOTS } from "../src/ringfall/sim/map";
 import { crewKey, debrisBin } from "../src/ringfall/sim/state";
 import { nextSeed } from "../src/ringfall/meta/profile";
@@ -71,7 +71,9 @@ import { raidClock, strengthFor } from "../src/ringfall/sim/state";
 import { pacing, type Pool } from "./ringfall-pacing";
 import { MOBILES, OUTPOST_SITES } from "../src/ringfall/sim/map";
 import { enemyNodes, frontNodes, garrisonOf, useCore, type NodeHold } from "../src/ringfall/sim/front";
-import { finishBattle, nodePoint } from "../src/ringfall/sim/battle";
+import { factoryMax, factoryRarity, finishBattle, heldUnlocks, nodePoint } from "../src/ringfall/sim/battle";
+import { departDepots, shopRarity } from "../src/ringfall/meta/island";
+import { BIN_GEAR } from "../src/ringfall/sim/config";
 import { currentStep, objectiveSteps } from "../src/ringfall/sim/objective";
 import { beatOf, mobileWalk, placeMobile } from "../src/ringfall/sim/factions";
 import { interceptSpot } from "../src/ringfall/sim/awareness";
@@ -961,10 +963,12 @@ function checkKnownEntries(): string | null {
   if (save(won.profile)?.entries.join() !== "beach,checkpoint") return "known entries: the known ways in do not survive a save";
   const v10 = save({ ...fresh, v: 10, entries: undefined, region: "harbor", entry: "quay" });
   if (v10?.v !== 22 || v10.entries.length !== ENTRIES.length || v10.region !== "harbor" || v10.entry !== "quay") return `known entries: a v10 save loaded as ${JSON.stringify(v10 && { v: v10.v, entries: v10.entries, region: v10.region, entry: v10.entry })}`;
-  // A harbor start with no harbor way in known moves to the reservoir; with a harbor depot on it stays.
+  // A harbor start with no harbor way in known moves to the reservoir; with a harbor depot on that the node held opens a start from (the yard's) it stays.
   const shut = save({ ...fresh, region: "harbor", entry: "quay", entries: ["beach", "nowhere"] });
   if (shut?.region !== "reservoir" || shut.entry !== "beach" || shut.entries.join() !== "beach") return `known entries: a harbor start with no harbor way in loaded as ${shut?.region} / ${shut?.entry}`;
-  const depot = save({ ...fresh, region: "harbor", entry: "jetty", entries: ["jetty"], depots: ["wreck"] });
+  const depot = save({ ...fresh, region: "harbor", entry: "jetty", entries: ["jetty"], depots: ["yard"], poiState: { ...fresh.poiState, yard: { state: "freed" } } });
+  const shutDepot = save({ ...fresh, region: "harbor", entry: "jetty", entries: ["jetty"], depots: ["wreck"], poiState: { ...fresh.poiState, wreck: { state: "freed" } } });
+  if (shutDepot?.region !== "reservoir") return "known entries: a harbor start through a depot that opens no start loaded in the harbor";
   if (depot?.region !== "harbor" || depot.entry !== "jetty" || depot.entries.join() !== "beach,jetty") return `known entries: a harbor start through a depot loaded as ${depot?.region} / ${depot?.entry} / ${depot?.entries.join()}`;
   return null;
 }
@@ -1674,8 +1678,10 @@ function checkDepotBudget(): string | null {
   if (itemCost({ t: "armor", tier: 3 }) !== 3 || itemCost({ t: "key", poi: "pad" }) !== 1 || itemCost({ t: "heal", kind: "medkit" }) !== 0) return "depot budget: armour, keys or heals cost the wrong points";
   const base: Profile = {
     ...newProfile(3),
-    depots: ["pad", "supply"],
-    depotSent: { pad: 0, supply: 0 },
+    // Starts from a depot need the node that opens them held (`UNLOCKS`): the yard and the supply depot.
+    poiState: { ...newProfile(3).poiState, yard: { state: "freed" }, supply: { state: "freed" } },
+    depots: ["yard", "supply"],
+    depotSent: { yard: 0, supply: 0 },
     stash: [
       { t: "weapon", kind: "pike", rarity: 2 },
       { t: "weapon", kind: "hornet", rarity: 0 },
@@ -1695,21 +1701,21 @@ function checkDepotBudget(): string | null {
   if (loadoutCost(base, full) !== 3 + 1 + 2 + 1 + 1) return `depot budget: an epic, a common, tier 2 armour and two keys cost ${loadoutCost(base, full)}, not 8`;
 
   // The level, the allowance and what the next level still needs, from the credits sent through the depot.
-  const at = (sent: number) => depotAllowance({ ...base, depotSent: { pad: sent } }, "pad");
+  const at = (sent: number) => depotAllowance({ ...base, depotSent: { yard: sent } }, "yard");
   for (const [sent, level, budget, next] of [[0, 0, 2, 1500], [1499, 0, 2, 1], [1500, 1, 4, 3500], [4999, 1, 4, 1], [5000, 2, 6, 7000], [12000, 3, 9, null], [99999, 3, 9, null]] as const) {
     const a = at(sent);
     if (a.level !== level || a.budget !== budget || a.next !== next || a.sent !== sent) return `depot budget: ${sent} credits sent gave ${JSON.stringify(a)}`;
   }
   if (depotAllowance(base, "wreck").level !== 0) return "depot budget: a depot with nothing recorded is not level 0";
 
-  // Sending through the pad's depot raises the pad's level, across raids, and never the supply depot's.
-  const PADD = depotIndex("pad");
-  const d = DEPOTS[PADD];
+  // Sending through the yard's depot raises the yard's level, across raids, and never the supply depot's.
+  const YARDD = depotIndex("yard");
+  const d = DEPOTS[YARDD];
   const press = idleInput();
   press.interact = true;
   const raidSending = (haul: State["player"]["haul"]) => {
     const s = padRun();
-    s.depots[PADD] = true;
+    s.depots[YARDD] = true;
     s.depots[depotIndex("supply")] = true;
     s.player.pos = { x: d.x, y: groundAt(d.x, d.z, PLAYER.radius, d.y + 0.3), z: d.z };
     s.player.onGround = true;
@@ -1719,38 +1725,38 @@ function checkDepotBudget(): string | null {
     return s;
   };
   const r1 = raidSending(["core", "board"]);
-  if (r1.sentVia[PADD] !== 1300 || r1.sentVia.some((v, i) => i !== PADD && v !== 0)) return `depot budget: sending a core and a board through the pad recorded ${r1.sentVia.join()}`;
+  if (r1.sentVia[YARDD] !== 1300 || r1.sentVia.some((v, i) => i !== YARDD && v !== 0)) return `depot budget: sending a core and a board through the yard recorded ${r1.sentVia.join()}`;
   const p1 = settle(base, r1).profile;
-  if (p1.depotSent.pad !== 1300 || p1.depotSent.supply !== 0 || depotAllowance(p1, "pad").level !== 0) return `depot budget: after one raid the profile holds ${JSON.stringify(p1.depotSent)}`;
+  if (p1.depotSent.yard !== 1300 || p1.depotSent.supply !== 0 || depotAllowance(p1, "yard").level !== 0) return `depot budget: after one raid the profile holds ${JSON.stringify(p1.depotSent)}`;
   const p2 = settle(p1, raidSending(["board"])).profile;
-  if (p2.depotSent.pad !== 1600 || depotAllowance(p2, "pad").level !== 1 || depotBudget(p2, "pad") !== 4 || depotAllowance(p2, "supply").level !== 0 || depotBudget(p2, "supply") !== 2) return `depot budget: after two raids the profile holds ${JSON.stringify(p2.depotSent)}`;
+  if (p2.depotSent.yard !== 1600 || depotAllowance(p2, "yard").level !== 1 || depotBudget(p2, "yard") !== 4 || depotAllowance(p2, "supply").level !== 0 || depotBudget(p2, "supply") !== 2) return `depot budget: after two raids the profile holds ${JSON.stringify(p2.depotSent)}`;
   // A raid that sends nothing keeps the record, and a depot switched on in it starts at 0.
   const quiet = padRun();
   quiet.depots[depotIndex("wreck")] = true;
   quiet.outcome = "dead";
   const p3 = settle(p2, quiet).profile;
-  if (p3.depotSent.pad !== 1600 || p3.depotSent.wreck !== 0) return `depot budget: a raid sending nothing left ${JSON.stringify(p3.depotSent)}`;
+  if (p3.depotSent.yard !== 1600 || p3.depotSent.wreck !== 0) return `depot budget: a raid sending nothing left ${JSON.stringify(p3.depotSent)}`;
   if (JSON.stringify(parseProfile(JSON.parse(JSON.stringify(p3)))?.depotSent) !== JSON.stringify(p3.depotSent)) return "depot budget: the sent record does not survive a save";
 
   // A v7 save loads with nothing sent through each depot on (and its explored map, over the smaller world, dropped); a current save keeps only its depots' records.
   const { depotSent: _ds, ...v7 } = { ...p3, v: 7 };
   const m7 = parseProfile(JSON.parse(JSON.stringify(v7)));
   if (m7?.v !== 22 || JSON.stringify(m7.depotSent) !== JSON.stringify(Object.fromEntries(p3.depots.map((x) => [x, 0]))) || m7.seen !== "") return `depot budget: a v7 save loaded as ${JSON.stringify(m7 && { v: m7.v, depotSent: m7.depotSent })}`;
-  const odd = parseProfile(JSON.parse(JSON.stringify({ ...p3, depotSent: { pad: 2000, supply: -5, nowhere: 9, quarry: 7000 } })));
-  if (JSON.stringify(odd?.depotSent) !== JSON.stringify({ supply: 0, pad: 2000, wreck: 0 })) return `depot budget: a save's odd records loaded as ${JSON.stringify(odd?.depotSent)}`;
+  const odd = parseProfile(JSON.parse(JSON.stringify({ ...p3, depotSent: { yard: 2000, supply: -5, nowhere: 9, quarry: 7000 } })));
+  if (JSON.stringify(odd?.depotSent) !== JSON.stringify({ supply: 0, wreck: 0, yard: 2000 })) return `depot budget: a save's odd records loaded as ${JSON.stringify(odd?.depotSent)}`;
 
   // takeKit refuses a depot start over its allowance, and takes the same loadout as a drop.
   const epic = { ...emptyLoadout(), weapons: [0] };
-  if (takeKit(base, epic, "pad") !== null || fitsStart(base, epic, "pad")) return "depot budget: an epic weapon (3) started from a level 0 depot (2)";
+  if (takeKit(base, epic, "yard") !== null || fitsStart(base, epic, "yard")) return "depot budget: an epic weapon (3) started from a level 0 depot (2)";
   const dropped = takeKit(base, epic, null);
   if (!dropped || dropped.kit.weapons[0]?.kind !== "pike" || dropped.profile.stash.length !== base.stash.length - 1) return "depot budget: the same loadout was not taken for a start at a way in";
   if (takeKit(base, epic).kit.weapons[0]?.kind !== "pike") return "depot budget: takeKit without a start no longer takes the loadout";
-  if (!takeKit(base, free, "pad") || !takeKit(base, { ...emptyLoadout(), weapons: [1], keys: [5] }, "pad")) return "depot budget: a loadout within the allowance (the lent kit; a common and a key) was refused";
-  if (takeKit(base, { ...emptyLoadout(), weapons: [1], armor: 2 }, "pad") !== null) return "depot budget: a common and tier 2 armour (3) started from a level 0 depot (2)";
+  if (!takeKit(base, free, "yard") || !takeKit(base, { ...emptyLoadout(), weapons: [1], keys: [5] }, "yard")) return "depot budget: a loadout within the allowance (the lent kit; a common and a key) was refused";
+  if (takeKit(base, { ...emptyLoadout(), weapons: [1], armor: 2 }, "yard") !== null) return "depot budget: a common and tier 2 armour (3) started from a level 0 depot (2)";
   if (takeKit(base, epic, "wreck") !== null) return "depot budget: a start from a depot that is not on was allowed";
-  const levelled = takeKit(p2, { ...emptyLoadout(), weapons: [0, 1] }, "pad");
+  const levelled = takeKit(p2, { ...emptyLoadout(), weapons: [0, 1] }, "yard");
   if (!levelled || levelled.kit.weapons.length !== 2) return "depot budget: a level 1 depot (4) refused an epic and a common (4)";
-  if (takeKit(p2, { ...emptyLoadout(), weapons: [0, 1] }, "supply") !== null) return "depot budget: the supply depot was levelled by sends through the pad";
+  if (takeKit(p2, { ...emptyLoadout(), weapons: [0, 1] }, "supply") !== null) return "depot budget: the supply depot was levelled by sends through the yard";
   return null;
 }
 
@@ -1808,9 +1814,15 @@ function checkHideout(): string | null {
   const healed = newRun(13, ownKit);
   healed.outcome = "extracted";
   if (settle(sick, healed).home.some((i) => i.t === "heal")) return "hideout scenario: the infirmary's lent heals came home";
-  // The workbench raises the best rarity the trader sells.
-  const best = (lv: number) => Math.max(...wares({ ...newProfile(), hideout: { ...emptyHideout(), workbench: lv } }).map((i) => (i.t === "weapon" ? i.rarity : i.t === "armor" ? i.tier : 0)));
-  if (best(0) !== META.shopRarity || best(1) !== META.shopRarity + 1 || best(2) !== 3) return `hideout scenario: the trader sells up to ${best(0)}, ${best(1)}, ${best(2)} by workbench level`;
+  // The nodes held open the trader's gear (`UNLOCKS`): none common, the supply depot rare, a tier-1
+  // node epic, a tier-2 legendary; the workbench does not change it, and losing the node takes it away.
+  const shelf = (held: NodeId[], workbench = 0) => {
+    const p = { ...newProfile(), hideout: { ...emptyHideout(), workbench }, poiState: Object.fromEntries(POIS.map((o) => [o.id, { state: held.includes(o.id as NodeId) ? "freed" : "held" }])) as Profile["poiState"] };
+    return Math.max(...wares(p).map((i) => (i.t === "weapon" ? i.rarity : i.t === "armor" ? i.tier : 0)));
+  };
+  for (const [held, want] of [[[], 0], [["supply"], 1], [["supply", "quarry"], 2], [["supply", "relay"], 2], [["supply", "relay", "smelter"], 3], [["supply", "quarry", "yard"], 3], [["wreck"], 0], [[], 0]] as [NodeId[], number][])
+    if (shelf(held) !== want || shelf(held, 2) !== want) return `hideout scenario: holding ${held.join(",") || "nothing"} the trader sells gear up to ${shelf(held)} (${shelf(held, 2)} with the workbench), expected ${want}`;
+  if (META.shopRarity !== 0) return "hideout scenario: the trader sells better than common holding no node";
   // The storage holds more, and buying fills it.
   const roomy = { ...newProfile(), cash: 9999, hideout: { ...emptyHideout(), storage: 1 }, stash: Array.from({ length: META.stash }, (): Item => ({ t: "heal", kind: "cell" })) };
   if (stashCap(roomy.hideout) !== META.stash + 10 || !buy(roomy, wares(roomy)[0])) return "hideout scenario: the storage did not make room";
@@ -2025,9 +2037,10 @@ function checkStrength(): string | null {
         const mine = packs.filter((q) => regionHere(q.patrol[0]).id === r.id).length;
         if (mine !== Math.min(l.packs[r.id], regionPacks(r.id))) return `strength scenario: a raid at level ${n} flies ${mine} packs in ${r.id}, not ${l.packs[r.id]}`;
       }
-      // At threat 0 no plain grunt or heavy wears a plate: plates are the vault guards' and the raiders'.
-      const plain = s.enemies.filter((e) => (e.kind === "grunt" || e.kind === "heavy") && !e.elite && !POIS.some((o) => o.squads.some((sq) => sq.members.some((m) => m.plate !== undefined && Math.hypot(m.x - e.home.x, m.z - e.home.z) < 1.5))));
-      if (plain.some((e) => e.plate > 0)) return `strength scenario: a plain robot wears a plate at level ${n} (seed ${seed})`;
+      // At threat 0 plates are the garrisons' (by their node's tier) and the raiders': a roaming squad or a pack wears none.
+      const plain = s.enemies.filter((e) => e.poi < 0 && !e.elite && (s.squads[e.squad]?.roam || s.squads[e.squad]?.pack));
+      if (plain.some((e) => e.plate > 0)) return `strength scenario: a roaming robot wears a plate at level ${n} (seed ${seed})`;
+      if (s.enemies.some((e) => e.poi >= 0 && e.plate > 0 && e.plate !== Math.max(TIER[POIS[e.poi].id as NodeId] ?? 0, 1))) return `strength scenario: a garrison's robot wears a plate not of its node's tier at level ${n} (seed ${seed})`;
     }
   }
   const plainRun = newRun(321);
@@ -2902,25 +2915,29 @@ function checkPositionMatters(): string | null {
 }
 
 /**
- * Time to kill with the free kit's PIKE, every round on the body of a robot that faces the
- * player (the usual fight): a grunt falls in 1.5-2.5 s of fire, a heavy and a vault guard
- * in 3-4 s, a raider in 5-6.5 s, at 12 m and at 30 m. The kill says where the shot came from.
+ * Time to kill with a PIKE, every round on the body of a robot that faces the player (the usual
+ * fight), at 12 m and at 30 m: with the free kit's common one a grunt falls in 1.5-2.5 s of fire
+ * and a heavy in 3-4 s; a plate one step past the gun stretches a grunt to 5.5-8 s, and a gun that
+ * pierces it brings that back (a raider with an epic one in 2.3-3.5 s). The kill says where the shot came from.
  */
 function checkTimeToKill(): string | null {
   const at = openSpot(31, 3, 3);
   if (!at) return "ttk scenario: no open ground for the test";
-  const cases: [string, EnemyKind, (e: Enemy) => void, number, number][] = [
-    ["grunt", "grunt", () => {}, 1.5, 2.5],
-    ["heavy", "heavy", () => {}, 3, 4],
-    ["vault guard", "grunt", (e) => (e.plate = VAULT.guardPlate), 3, 4],
-    ["raider", "grunt", (e) => { e.elite = true; e.plate = RAIDERS.plate; e.hp *= ELITE.hp; e.shield *= ELITE.hp; }, 5, 6.5],
+  const cases: [string, EnemyKind, (e: Enemy) => void, number, number, Rarity][] = [
+    ["grunt", "grunt", () => {}, 1.5, 2.5, 0],
+    ["heavy", "heavy", () => {}, 3, 4, 0],
+    ["plate-1 grunt", "grunt", (e) => (e.plate = 1), 5.5, 8, 0],
+    ["plate-1 grunt", "grunt", (e) => (e.plate = 1), 1.5, 2.5, 1],
+    ["plate-2 grunt", "grunt", (e) => (e.plate = 2), 5.5, 8, 1],
+    ["plate-3 heavy", "heavy", (e) => (e.plate = 3), 3, 4, 3],
+    ["raider", "grunt", (e) => { e.elite = true; e.plate = RAIDERS.plate; e.hp *= ELITE.hp; e.shield *= ELITE.hp; }, 2.3, 3.5, 2],
   ];
   for (const dist of [12, 30])
-    for (const [name, kind, dress, lo, hi] of cases) {
+    for (const [name, kind, dress, lo, hi, rarity] of cases) {
       const { s, foes } = standoff(at, dist, [kind]);
       const e = foes[0];
       dress(e);
-      const gun = { kind: "pike" as const, rarity: 0 as Rarity, mag: -1 };
+      const gun = { kind: "pike" as const, rarity, mag: -1 };
       let n = 0;
       while (s.enemies.includes(e) && n < 400) {
         s.events = [];
@@ -2929,7 +2946,7 @@ function checkTimeToKill(): string | null {
         n++;
       }
       const t = (n - 1) * WEAPONS.pike.interval;
-      if (t < lo || t > hi) return `ttk scenario: a common PIKE took ${n} body rounds (${t.toFixed(1)} s of fire) to kill a ${name} facing the player at ${dist} m (want ${lo}-${hi} s)`;
+      if (t < lo || t > hi) return `ttk scenario: a ${RARITY.names[rarity]} PIKE took ${n} body rounds (${t.toFixed(1)} s of fire) to kill a ${name} facing the player at ${dist} m (want ${lo}-${hi} s)`;
       const k = s.events.find((x) => x.t === "kill");
       if (!k || k.t !== "kill" || Math.hypot(k.fromX - s.player.pos.x, k.fromZ - s.player.pos.z) > 0.01) return "ttk scenario: the kill does not say where the shot came from";
     }
@@ -3164,19 +3181,107 @@ function checkPlates(): string | null {
   step(raid, idleInput(), false);
   const raiders = raid.enemies.slice(was);
   if (raiders.length === 0 || raiders.some((e) => e.plate !== RAIDERS.plate)) return `plate scenario: raiders wear plates ${raiders.map((e) => e.plate).join(",")}, expected ${RAIDERS.plate}`;
+  // A garrison wears its node's tier of plate: every plated robot of it at that tier (the vault
+  // guard at least `VAULT.guardPlate`), only grunts and heavies, the supply depot's guard alone.
   const run = newRun(5);
+  const share: number[] = [0, 0, 0, 0];
+  const count: number[] = [0, 0, 0, 0];
   for (const [i, poi] of POIS.entries()) {
     const vault = poi.bins.find((b) => b.vault);
     if (!vault || poi.id === "pad") continue;
     const guards = poi.squads.flatMap((sq) => sq.members).filter((m) => m.kind === "grunt");
     const guard = guards.reduce((a, b) => (Math.hypot(b.x - vault.x, b.z - vault.z) < Math.hypot(a.x - vault.x, a.z - vault.z) ? b : a));
     if (guard.plate !== VAULT.guardPlate) return `plate scenario: ${poi.id}'s vault guard wears plate ${guard.plate ?? 0}, expected ${VAULT.guardPlate}`;
+    const tier = TIER[poi.id as NodeId];
+    const want = Math.max(tier, VAULT.guardPlate);
     const live = run.enemies.filter((e) => e.poi === i && e.plate > 0);
-    if (live.length !== 1 || live[0].plate !== VAULT.guardPlate) return `plate scenario: ${poi.id} spawns ${live.length} plated robots, expected its vault guard alone`;
+    if (live.some((e) => e.plate !== (tier || want) || (e.kind !== "grunt" && e.kind !== "heavy"))) return `plate scenario: ${poi.id} (tier ${tier}) spawns plates ${live.map((e) => `${e.kind}${e.plate}`).join(",")}`;
+    if (tier === 0 && live.length !== 1) return `plate scenario: the tier-0 ${poi.id} spawns ${live.length} plated robots, expected its vault guard alone`;
+    const plain = run.enemies.filter((e) => e.poi === i && (e.kind === "grunt" || e.kind === "heavy"));
+    share[tier] += live.length;
+    count[tier] += plain.length;
   }
+  for (const t of [1, 2, 3]) if (count[t] && share[t] / count[t] < PLATE.garrison[t] * 0.6) return `plate scenario: ${share[t]} of the ${count[t]} grunts and heavies of tier-${t} garrisons wear plates`;
+  // Which robots wear one is the seed's and the robot's, never the raid's random numbers: the same raid twice plates alike.
+  if (JSON.stringify(newRun(5).enemies.map((e) => e.plate)) !== JSON.stringify(run.enemies.map((e) => e.plate))) return "plate scenario: the same raid plated its robots differently";
+
+  // A piercing hit that takes a plated robot's shield breaks the plate off; a blocked one never does.
+  const pl = foes[0];
+  pl.plate = pl.wore = 2;
+  pl.hp = ENEMIES.grunt.hp;
+  pl.shield = 1;
+  s.events = [];
+  damageEnemy(s, pl, 5, false, bodyCenter(pl), "none", "player", 1);
+  if (pl.plate !== 2) return "plate scenario: a blocked hit broke a plate";
+  pl.shield = 1;
+  s.events = [];
+  damageEnemy(s, pl, 5, false, bodyCenter(pl), "none", "player", 2);
+  if (pl.plate !== 0 || pl.wore !== 2 || !s.events.some((e) => e.t === "plateBreak")) return `plate scenario: an epic hit through the shield of a plate-2 grunt left plate ${pl.plate}`;
+
+  // Guns from robots: a plated robot or a raider drops one of its plate's rarity by the raid's seed
+  // and the robot alone; a plain robot none; about `PLATE.drop` of plated robots.
+  const gs = newRun(9);
+  let platedN = 0;
+  let dropped = 0;
+  for (const e of gs.enemies) {
+    const g = robotGear(gs, e);
+    if (JSON.stringify(g) !== JSON.stringify(robotGear(gs, e))) return "plate scenario: a robot's gun is not the same when asked twice";
+    if (e.kind === "titan") {
+      if (g?.rarity !== 3) return "plate scenario: the titan does not drop a legendary gun";
+      continue;
+    }
+    if (e.wore === 0 && !e.elite && g) return `plate scenario: an unplated ${e.kind} drops a gun`;
+    if (e.wore > 0) {
+      platedN++;
+      if (g) {
+        dropped++;
+        if (g.rarity !== e.wore) return `plate scenario: a plate-${e.wore} ${e.kind} drops a rarity-${g.rarity} gun`;
+      }
+    }
+  }
+  if (platedN < 20 || dropped / platedN > PLATE.drop * 2.5 || dropped === 0) return `plate scenario: ${dropped} of ${platedN} plated robots drop a gun`;
   return null;
 }
 
+
+/**
+ * What holding a node opens (`UNLOCKS`, docs/ringfall/island-v2.md): starts only from the depots
+ * of the nodes that open them while held, the factory's extra squads, the north shore, the
+ * factory's arms; and plain bins hold gear seldom, common or rare only, by their own hash.
+ */
+function checkUnlocks(): string | null {
+  const holding = (ids: NodeId[]): Profile => ({ ...newProfile(2), depots: ["supply", "quarry", "yard"], poiState: Object.fromEntries(POIS.map((o) => [o.id, { state: ids.includes(o.id as NodeId) ? "freed" : "held" }])) as Profile["poiState"] });
+  if (departDepots(holding(["supply", "quarry"])).join() !== "supply") return `unlocks: holding the supply depot and the quarry, starts from ${departDepots(holding(["supply", "quarry"])).join()}`;
+  if (departDepots(holding(["supply", "quarry", "yard"])).join() !== "supply,yard") return "unlocks: holding the yard does not open a start from its depot";
+  if (departDepots(holding(["quarry"])).length) return "unlocks: a depot on at a node lost still opens a start";
+  if (takeKit(holding(["supply", "quarry"]), emptyLoadout(), "quarry") !== null || !takeKit(holding(["supply", "quarry"]), emptyLoadout(), "supply")) return "unlocks: a start from the quarry's depot was allowed, or the supply depot's refused";
+  if (shopRarity(holding(["supply", "quarry", "yard"])) !== 3) return "unlocks: holding the yard does not put legendary gear on the shelf";
+  const nodes = (ids: NodeId[]) => NODES.map((n) => (ids.includes(n.id) ? "freed" : "held")) as State["nodes"];
+  for (const [ids, extra] of [[[], 0], [["quarry"], 1], [["quarry", "smelter"], 2], [["supply", "relay", "yard", "wreck"], 0]] as [NodeId[], number][])
+    if (factoryMax({ nodes: nodes(ids) }, 2) !== FACTORY.max[2] + extra) return `unlocks: holding ${ids.join(",")} the factory keeps ${factoryMax({ nodes: nodes(ids) }, 2)} squads out`;
+  if (heldUnlocks(nodes(["wreck"]), "shore").join() !== "wreck" || heldUnlocks(nodes(["relay"]), "scout").join() !== "relay") return "unlocks: the wreck does not watch the shore or the relay the sky";
+  if (factoryRarity(nodes([])) !== PLATE.robots || factoryRarity(nodes(["supply", "quarry"])) !== 2 || factoryRarity(nodes(["supply", "yard"])) !== 3) return "unlocks: the factory's robots are not armed as the trader's shelf";
+  // Plain bins: gear only now and then, never past rare, the same for the same raid.
+  const open = (seed: number) => {
+    const r = padRun();
+    r.seed = seed;
+    const out: string[] = [];
+    for (const b of r.bins.filter((x) => !x.vault && !x.debris)) {
+      r.loot = [];
+      r.player.search = { bin: r.bins.indexOf(b), t: 99 };
+      r.player.pos = { x: b.x, y: b.y, z: b.z };
+      step(r, idleInput(), false);
+      for (const l of r.loot) if (l.kind === "weapon" || l.kind === "armor") out.push(`${b.id}:${l.kind}${l.rarity}`);
+    }
+    return { out, bins: r.bins.filter((x) => !x.vault && !x.debris).length };
+  };
+  const a = open(77);
+  if (a.out.join() !== open(77).out.join()) return "unlocks: the same raid's bins held different gear";
+  if (a.out.some((x) => !/(weapon|armor)[01]$/.test(x))) return `unlocks: plain bins held ${a.out.filter((x) => !/(weapon|armor)[01]$/.test(x)).join(",")}`;
+  const guns = a.out.filter((x) => x.includes("weapon")).length;
+  if (guns === 0 || guns / a.bins > BIN_GEAR.weapon * 2.5) return `unlocks: ${guns} guns from ${a.bins} plain bins`;
+  return null;
+}
 
 /** The two ends of a route's walk. */
 const ends = (id: RouteId) => {
@@ -4092,7 +4197,7 @@ function checkBattle(): string | null {
   return null;
 }
 
-for (const err of [checkFront(), checkBattle(), checkFactions(), checkIntercept(), checkSplit(), checkPatrols(), checkMods(), checkThreat(), checkEvents(), checkTerrainIndex(20_000), checkParties(), checkPacks(), checkRoutes(), checkRouteObstacles(), checkTools(), checkTimeToKill(), checkStagger(), checkWindupMoves(), checkDepots(), checkDepotBudget(), checkPlates(), checkHideout(), checkBoltNoTunnel(), checkPickupWavesRouted(), checkLaterWaveFights(), checkSidestepHit(), checkReturnFire(), checkWallStops(), checkPinch(), checkPursuit(), checkHealHeard(), checkPositionMatters(), checkPullWhenAiming(), checkVault(), checkIsland(), checkStrength(), checkContracts(), checkQuests(), checkLoadout(), checkSettle(), checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkBoatCall(), checkSecondPickup(), checkEntries(), checkCamp(), checkKnownEntries(), checkConnections(), checkAllySelfUp(), checkStompHeight(), checkFieldsReused(), checkFieldsFollowRunner(), checkCliffsStop(), checkNoPits(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill(), checkLeap(), checkLeapLeavesAllyBelow(), checkLeapDowned(), checkLeapAllyCatchesUp(), checkLeapAllyDowned(), checkLeapWithItem(), checkLeapClocks(), checkLeapOffHighGround(), checkLeapUnderRoof()]) {
+for (const err of [checkFront(), checkBattle(), checkFactions(), checkIntercept(), checkSplit(), checkPatrols(), checkMods(), checkThreat(), checkEvents(), checkTerrainIndex(20_000), checkParties(), checkPacks(), checkRoutes(), checkRouteObstacles(), checkTools(), checkTimeToKill(), checkStagger(), checkWindupMoves(), checkDepots(), checkDepotBudget(), checkPlates(), checkUnlocks(), checkHideout(), checkBoltNoTunnel(), checkPickupWavesRouted(), checkLaterWaveFights(), checkSidestepHit(), checkReturnFire(), checkWallStops(), checkPinch(), checkPursuit(), checkHealHeard(), checkPositionMatters(), checkPullWhenAiming(), checkVault(), checkIsland(), checkStrength(), checkContracts(), checkQuests(), checkLoadout(), checkSettle(), checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkBoatCall(), checkSecondPickup(), checkEntries(), checkCamp(), checkKnownEntries(), checkConnections(), checkAllySelfUp(), checkStompHeight(), checkFieldsReused(), checkFieldsFollowRunner(), checkCliffsStop(), checkNoPits(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill(), checkLeap(), checkLeapLeavesAllyBelow(), checkLeapDowned(), checkLeapAllyCatchesUp(), checkLeapAllyDowned(), checkLeapWithItem(), checkLeapClocks(), checkLeapOffHighGround(), checkLeapUnderRoof()]) {
   if (err) {
     console.error(err);
     process.exit(1);
