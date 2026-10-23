@@ -16,14 +16,14 @@
  * The skills are played in one worker process each, side by side; the gate starts them beside
  * its tables and prints the table after the hideout's pacing (scripts/ringfall-sim.ts).
  */
-import { ENTRIES, NODES, REGIONS, regionOf, TIER, type NodeId, type RegionId } from "../src/ringfall/sim/map";
+import { ENTRIES, NODES, POIS, REGIONS, regionOf, TIER, type NodeId, type RegionId } from "../src/ringfall/sim/map";
 import { SKILLS } from "../src/ringfall/sim/bot";
 import { newRun, strengthFor } from "../src/ringfall/sim/state";
 import { holds, islandHolds, unfreeable } from "../src/ringfall/meta/island";
 import { enemyNodes, frontNodes } from "../src/ringfall/sim/front";
 import { buildFactory, buy, buyPrice, emptyLoadout, factoryShortfall, newProfile, nextFactory, sell, settle, takeKit, wares, type Item, type Profile } from "../src/ringfall/meta/profile";
 import { shopRarity } from "../src/ringfall/meta/island";
-import { FACTORY, type Rarity, type ValuableKind, type WeaponKind } from "../src/ringfall/sim/config";
+import { FACTORY, VALUABLES, type Rarity, type ValuableKind, type WeaponKind } from "../src/ringfall/sim/config";
 import { playState } from "./ringfall-table";
 import { fork } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -35,7 +35,7 @@ const MARKS = [5, 10, 20, 30];
 /** One skill's month: the island at the end of each day, and how each raid ended. */
 export interface Campaign {
   skill: string;
-  days: { gun: number; nodes: number; harbor: number; tier: number; strength: number; front: string[]; alive: boolean; region: RegionId; event: string | null; crewsIn: number; crewsOut: number; factory: number; gained: number; lost: number; minutes: number }[];
+  days: { cash: number; haul: number; gun: number; cleared: string[]; captured: string[]; nodes: number; harbor: number; tier: number; strength: number; front: string[]; alive: boolean; region: RegionId; event: string | null; crewsIn: number; crewsOut: number; factory: number; gained: number; lost: number; minutes: number }[];
   errors: string[];
 }
 
@@ -92,7 +92,6 @@ function gearUp(p: Profile): Profile {
  * raised as far as the stash and the credits allow.
  */
 function spend(p: Profile): Profile {
-  p = gearUp(p);
   const want = new Map<ValuableKind, number>();
   for (const l of FACTORY.levels.slice(p.factory)) for (const [k, n] of l.items) want.set(k, (want.get(k) ?? 0) + n);
   const kit = bestGear(p);
@@ -118,7 +117,7 @@ function spend(p: Profile): Profile {
     if (!next) break;
     p = next;
   }
-  return p;
+  return gearUp(p);
 }
 
 /** A month of one skill on a fresh profile that knows every way in, as a player some raids in does. */
@@ -136,12 +135,17 @@ export function playCampaign(skill: string, days = DAYS): Campaign {
     const s = newRun(p.seed, taken.kit, region, { depots: p.depots, seen: p.seen, routes: p.routes, island: holds(p), entry: ways[d % ways.length], event: p.events[0], battle: { factory: p.factory } });
     const res = playState(s, skill, 500 + d);
     if (res.error) out.errors.push(`campaign ${skill} day ${d}: ${res.error}`);
+    const before = p.cash + p.stash.reduce((n, i) => n + (i.t === "valuable" ? VALUABLES[i.kind].value : 0), 0);
     const settled = settle(p, s);
     p = spend(settled.profile);
     const h = islandHolds(p);
     const mine = NODES.filter((_, i) => h[i] === "freed");
     out.days.push({
       gun: Math.max(-1, ...taken.kit.weapons.map((w) => w.rarity)),
+      cash: p.cash,
+      haul: settled.profile.stash.reduce((n, i) => n + (i.t === "valuable" ? VALUABLES[i.kind].value : 0), 0) + settled.profile.cash - before,
+      cleared: s.stats.cleared.map((i) => POIS[i].id),
+      captured: [...s.stats.captured],
       nodes: mine.length,
       harbor: mine.filter((n) => n.region === "harbor").length,
       tier: Math.max(-1, ...mine.map((n) => TIER[n.id])),
