@@ -509,6 +509,21 @@ export class IslandMap {
       g.restore();
       label(String(m.n), p.x + 9 * dpr, p.y + 6 * dpr, SIDE_CSS[m.side], 8);
     }
+    // A node of the player's the enemy's robots have come to: red rings beating out from it.
+    const beat = (performance.now() / 900) % 1;
+    NODES.forEach((n, i) => {
+      if (!b.threat?.[i]) return;
+      const p = at(n.x, n.z);
+      g.save();
+      for (const k of [beat, (beat + 0.5) % 1]) {
+        g.lineWidth = 3 * dpr;
+        g.strokeStyle = `rgba(255,59,48,${(1 - k).toFixed(2)})`;
+        g.beginPath();
+        g.arc(p.x, p.y, (12 + 22 * k) * dpr, 0, Math.PI * 2);
+        g.stroke();
+      }
+      g.restore();
+    });
     NODES.forEach((n, i) => {
       const mt = meterOf(b, i);
       if (!mt) return;

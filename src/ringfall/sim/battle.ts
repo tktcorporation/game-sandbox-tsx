@@ -962,17 +962,62 @@ function seize(s: State, b: Battle, i: number, side: Side) {
  * Automation only: a battle squad of `side` and `kinds` set down in the world at (x, z), holding
  * the node nearest it, its robots there at once. Its squad's index in `State.squads`.
  */
-export function placeBattleSquad(s: State, side: Side, kinds: readonly EnemyKind[], x: number, z: number): number {
+export function placeBattleSquad(s: State, side: Side, kinds: readonly EnemyKind[], x: number, z: number, task: BattleSquad["task"] = "hold"): number {
   const b = s.battle;
   if (!b) return -1;
   const to = NODES.map((n, i) => ({ i, d: dist2d(n.core, { x, z }) })).sort((a, c) => a.d - c.d)[0].i;
-  const q: BattleSquad = { id: b.nextId++, side, units: kinds.map(unit), from: to, to, d: 0, task: "hold", squad: -1, x, z, via: [], ashore: 0 };
+  const q: BattleSquad = { id: b.nextId++, side, units: kinds.map(unit), from: to, to, d: 0, task, squad: -1, x, z, via: [], ashore: 0 };
   b.squads.push(q);
   toWorld(s, q, false);
   const sq = s.squads[q.squad];
   // It stands where it was set down.
   sq.patrol = [{ x, z }];
   return q.squad;
+}
+
+/**
+ * Automation only: the enemy lands a squad now, by dropship on the pad or by boat on the north
+ * shore, bound for the node of the player's it would go for from there (or the node next to the
+ * landing when it can reach none). Where it comes ashore, or null in a raid with no battle.
+ */
+export function landNow(s: State, boat: boolean): Point | null {
+  const b = s.battle;
+  if (!b) return null;
+  const land = boat ? SHORE : PAD;
+  const plan = landingPlan(s, b);
+  const route = plan && plan.from === land ? plan : { from: land, to: LAND_NEXT[land][0], via: [] };
+  const q = addSquad(b, 1, CONQUEST.net.kinds[s.strength], route.from, route.to, "attack");
+  q.via = route.via;
+  q.ashore = boat ? CONQUEST.land.boat : CONQUEST.land.ship;
+  b.landings.push({ boat, x: q.x, z: q.z, down: b.now + q.ashore });
+  tell(s, { t: "landing", boat, x: q.x, z: q.z });
+  return { x: q.x, z: q.z };
+}
+
+/**
+ * Automation only: a squad of `side` and `kinds` `d` metres along the walk from `from` to `to`
+ * (places as `nodePoint()` takes them), on its way, its robots in the world at once. Its squad's
+ * index in `State.squads`, or -1 in a raid with no battle.
+ */
+export function marchSquad(s: State, side: Side, kinds: readonly EnemyKind[], from: number, to: number, d: number): number {
+  const b = s.battle;
+  if (!b) return -1;
+  const q = addSquad(b, side, kinds, from, to, "attack");
+  const p = pathOf(from, to);
+  q.d = Math.min(d, p.len - 1);
+  const at = along(p, q.d);
+  q.x = at.x;
+  q.z = at.z;
+  toWorld(s, q, false);
+  return q.squad;
+}
+
+/** Automation only: the factory sends its next squad now, as when its work comes due. */
+export function departNow(s: State) {
+  const b = s.battle;
+  if (!b) return;
+  b.made[0] = FACTORY.every[b.factory];
+  b.t = Math.min(b.t, TICK);
 }
 
 /** The squads of the battle as the maps show them: each squad's side, where it is, whether it is robots in the world, and its members. */
@@ -984,6 +1029,17 @@ export function battleMarks(s: Pick<State, "battle" | "friends" | "enemies">): {
     const lead = members[0];
     return { side: q.side, x: lead ? lead.pos.x : q.x, z: lead ? lead.pos.z : q.z, live: q.squad >= 0, n: q.squad >= 0 ? members.length : q.units.length, to: q.to };
   });
+}
+
+/**
+ * Where each member of battle squad `q` stands while it is numbers, its first `d` metres along its
+ * walk (or at `at` when it is not walking a link): on its way one behind another along the walk,
+ * `CONQUEST.column` apart; standing, round where it stands. For the view, which eases `d` and `at`.
+ */
+export function columnPoints(q: BattleSquad, d = q.d, at: Point = q): Point[] {
+  const walk = q.task !== "post" && q.task !== "rally" && q.from !== q.to ? pathOf(q.from, q.to) : null;
+  const going = walk && d < walk.len - 0.5;
+  return q.units.map((_, m) => (going ? along(walk, d - m * CONQUEST.column) : { x: at.x + (m % 2 ? 1.6 : -1.6) * Math.min(m, 1), z: at.z + m * 1.4 }));
 }
 
 /** The node the battle most wants the player at: one of theirs being taken, else one their squads are taking; -1 for none. */

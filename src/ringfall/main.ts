@@ -1,12 +1,12 @@
 import { spawnEnemy } from "./sim/enemies";
-import { AWARE, PLAYER, TICK, VALUABLES, WEAPONS } from "./sim/config";
+import { AWARE, PLAYER, TICK, VALUABLES, WEAPONS, type EnemyKind } from "./sim/config";
 import { Bot, SKILLS } from "./sim/bot";
 import { collide, groundAt } from "./sim/geom";
 import { terrainHeight } from "./sim/terrain";
 import { callLeft, freeKit, idleInput, newRun, type GameEvent, type Input, type Kit, type State } from "./sim/state";
 import { CAMP, entryOf, FRAMES, NODES, POIS, poiIndex, type CampSpot, type RegionId, type StationId } from "./sim/map";
 import { frontNodes } from "./sim/front";
-import { battleMarks, placeBattleSquad } from "./sim/battle";
+import { battleMarks, departNow, landNow, marchSquad, nodePoint, placeBattleSquad } from "./sim/battle";
 import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
 import { analyse, raidThreat, settle, takenStory, type Settlement } from "./meta/profile";
 import { MOD, MODS, type ModKind } from "./sim/config";
@@ -685,6 +685,13 @@ declare global {
     ringfallShoot: (id: number, rarity: number) => { plate: number; left: number } | null;
     ringfallClearPlates: () => void;
     ringfallBattle: (x: number, z: number, apart?: number) => { x: number; z: number }[] | null;
+    ringfallWar: {
+      land: (boat: boolean) => { x: number; z: number } | null;
+      march: (side: 0 | 1 | 2, kinds: string[], from: number, to: number, d: number) => { x: number; z: number; squad: number } | null;
+      depart: () => void;
+      place: (side: 0 | 1 | 2, kinds: string[], x: number, z: number, attack?: boolean) => number;
+      point: (i: number) => { x: number; z: number };
+    };
     ringfallContract: {
       take: (type: string) => string | null;
       destroyTarget: () => number;
@@ -902,6 +909,27 @@ window.ringfallBattle = (x, z, apart = 30) => {
     { x: x - apart / 2, z },
     { x: x + apart / 2, z },
   ];
+};
+
+/**
+ * Automation only, the day's battle: `land` sets the enemy landing a squad now (by boat on the
+ * north shore, else by dropship on the pad) and returns where; `march` sets a squad of `side`
+ * walking from node `from` to `to` (places in `NODES`, the camp -1, the pad -2, the shore -3,
+ * a node's depot 100 + its place), `d` metres along, its robots in the world, and returns where
+ * its first stands; `depart` has the factory send its next squad now; `place` sets a squad of
+ * `side` down at (x, z) to hold the nearest node, or to attack it; `point` is where a squad
+ * stands at such a place.
+ */
+window.ringfallWar = {
+  land: (boat: boolean) => landNow(state, boat),
+  march: (side: 0 | 1 | 2, kinds: string[], from: number, to: number, d: number) => {
+    const k = marchSquad(state, side, kinds as EnemyKind[], from, to, d);
+    const lead = [...state.enemies, ...state.friends].find((e) => e.squad === k);
+    return lead ? { x: lead.pos.x, z: lead.pos.z, squad: k } : null;
+  },
+  depart: () => departNow(state),
+  place: (side: 0 | 1 | 2, kinds: string[], x: number, z: number, attack = false) => placeBattleSquad(state, side, kinds as EnemyKind[], x, z, attack ? "attack" : "hold"),
+  point: (i: number) => nodePoint(i),
 };
 
 /**
