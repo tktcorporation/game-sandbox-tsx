@@ -377,7 +377,7 @@ export const FRONT = {
   pushAt: 6,
   pushEvery: 30,
   pushDist: [70, 130] as const,
-  income: 150,
+  income: 250,
 };
 
 /**
@@ -422,6 +422,8 @@ export const CONQUEST = {
   net: {
     every: [1500, 1350, 1200],
     edge: 3,
+    /** Of `edge`, the north shore's work: none while the player holds the node that opens `shore` (`UNLOCKS`). */
+    shore: 1,
     answer: 1,
     max: [2, 2, 3],
     kinds: [["grunt", "grunt"], ["grunt", "grunt"], ["grunt", "drone"]] as EnemyKind[][],
@@ -453,10 +455,10 @@ export const FACTORY = {
   kinds: [["grunt", "grunt"], ["grunt", "grunt"], ["grunt", "heavy"], ["grunt", "heavy", "drone"], ["grunt", "grunt", "heavy", "drone"]] as EnemyKind[][],
   turrets: [0, 0, 0, 1, 1],
   levels: [
-    { items: [["parts", 3], ["fuse", 2]], cash: 2500, does: "作る間隔が 210 秒" },
-    { items: [["parts", 4], ["wire", 2]], cash: 7000, does: "ヘビーを作る・作る間隔が 180 秒・同時に 2 部隊" },
-    { items: [["wire", 3], ["board", 2]], cash: 14000, does: "ドローンを作る・作る間隔が 150 秒・解放した拠点に砲台" },
-    { items: [["board", 3], ["drive", 2]], cash: 24000, does: "4 体の部隊・作る間隔が 120 秒・同時に 3 部隊" },
+    { items: [["parts", 3], ["fuse", 2]], cash: 1250, does: "作る間隔が 210 秒" },
+    { items: [["parts", 4], ["wire", 2]], cash: 3500, does: "ヘビーを作る・作る間隔が 180 秒・同時に 2 部隊" },
+    { items: [["wire", 3], ["board", 2]], cash: 7000, does: "ドローンを作る・作る間隔が 150 秒・解放した拠点に砲台" },
+    { items: [["board", 3], ["drive", 2]], cash: 12000, does: "4 体の部隊・作る間隔が 120 秒・同時に 3 部隊" },
   ] as FactoryLevel[],
 };
 
@@ -614,7 +616,7 @@ export const META = {
   },
   /** Trader prices. A weapon's price is its base times its rarity's factor. */
   weapon: { pike: 600, hornet: 500, maul: 700, lance: 900, talon: 1200 } as Record<WeaponKind, number>,
-  rarityFactor: [1, 2.5, 5, 9],
+  rarityFactor: [1, 2, 3.5, 5],
   /** Armour by tier (1 to 3); tier 0 is none. */
   armor: [0, 400, 1200, 3000],
   heal: { cell: 60, battery: 250, syringe: 60, medkit: 250 } as Record<HealKind, number>,
@@ -622,14 +624,17 @@ export const META = {
   key: 800,
   /** Share of the price the trader pays for gear (valuables sell at their full value). */
   sellShare: 0.4,
-  /** The best rarity of weapon and tier of armour the trader sells; better is found in raids. */
-  shopRarity: 1 as Rarity,
   /**
-   * The trader also sells valuables, at `markup` times their value: those no rarer than
-   * the gear it sells (`shopRarity`, raised by the workbench), so the common parts never
+   * The best rarity of weapon and tier of armour the trader sells holding no node: the nodes held
+   * raise it (`UNLOCKS` in map.ts), and it drops again with the node.
+   */
+  shopRarity: 0 as Rarity,
+  /**
+   * The trader also sells valuables, at `markup` times their value: those of rarity up to `rarity`,
+   * raised a step by each workbench level (`HIDEOUT_EFFECT.workbench`), so the common parts never
    * hold the hideout up and credits buy the rarer ones once the workbench is built.
    */
-  materials: { markup: 2 },
+  materials: { markup: 1.5, rarity: 1 },
 };
 
 export type ModuleId = "infirmary" | "workbench" | "storage" | "radio" | "pouch";
@@ -653,42 +658,42 @@ export const HIDEOUT: Record<ModuleId, { name: string; note: string; levels: Mod
     name: "医務室",
     note: "毎回のレイドに回復を持たせる（貸出装備でも）",
     levels: [
-      { items: [["parts", 3], ["fuse", 3]], cash: 500, does: "注射器 +1" },
-      { items: [["parts", 3], ["board", 3], ["fuse", 2]], cash: 2000, does: "注射器 +1、シールドセル +2" },
-      { items: [["board", 3], ["drive", 2], ["gyro", 2], ["reactor", 1]], cash: 6000, does: "注射器 +2、シールドセル +2、医療キット +1" },
+      { items: [["parts", 3], ["fuse", 3]], cash: 250, does: "注射器 +1" },
+      { items: [["parts", 3], ["board", 3], ["fuse", 2]], cash: 1000, does: "注射器 +1、シールドセル +2" },
+      { items: [["board", 3], ["drive", 2], ["gyro", 2], ["reactor", 1]], cash: 3000, does: "注射器 +2、シールドセル +2、医療キット +1" },
     ],
   },
   workbench: {
     name: "作業台",
-    note: "商人が売る武器とアーマー、材料の質が上がる",
+    note: "商人が売る材料",
     levels: [
-      { items: [["parts", 4], ["wire", 2], ["fuse", 2]], cash: 800, does: "商人がエピックまで売る。回路基板と記憶装置も売る" },
-      { items: [["board", 5], ["drive", 3], ["gyro", 3]], cash: 6000, does: "商人がレジェンドまで売る。ジャイロ、データコア、小型炉心も売る" },
+      { items: [["parts", 4], ["wire", 2], ["fuse", 2]], cash: 400, does: "回路基板・記憶装置" },
+      { items: [["board", 5], ["drive", 3], ["gyro", 3]], cash: 3000, does: "ジャイロ・データコア・小型炉心" },
     ],
   },
   storage: {
     name: "倉庫",
     note: "倉庫に置ける数が増える",
     levels: [
-      { items: [["parts", 3], ["wire", 2]], cash: 600, does: "倉庫 +10" },
-      { items: [["wire", 3], ["board", 3], ["fuse", 2]], cash: 2000, does: "倉庫 +10" },
-      { items: [["board", 3], ["drive", 2], ["gyro", 2], ["core", 1]], cash: 6000, does: "倉庫 +10" },
+      { items: [["parts", 3], ["wire", 2]], cash: 300, does: "倉庫 +10" },
+      { items: [["wire", 3], ["board", 3], ["fuse", 2]], cash: 1000, does: "倉庫 +10" },
+      { items: [["board", 3], ["drive", 2], ["gyro", 2], ["core", 1]], cash: 3000, does: "倉庫 +10" },
     ],
   },
   radio: {
     name: "無線機",
     note: "出撃前に島の様子が分かる",
     levels: [
-      { items: [["wire", 2], ["board", 2], ["drive", 1]], cash: 1200, does: "珍しい物が多い拠点が分かる" },
-      { items: [["board", 3], ["drive", 2], ["gyro", 2], ["core", 1]], cash: 6000, does: "その拠点で出やすい物と、レイダーの降りる時刻も分かる" },
+      { items: [["wire", 2], ["board", 2], ["drive", 1]], cash: 600, does: "珍しい物が多い拠点が分かる" },
+      { items: [["board", 3], ["drive", 2], ["gyro", 2], ["core", 1]], cash: 3000, does: "その拠点で出やすい物と、レイダーの降りる時刻も分かる" },
     ],
   },
   pouch: {
     name: "ポーチ",
     note: "倒れても残る枠が増える",
     levels: [
-      { items: [["wire", 2], ["board", 2]], cash: 1000, does: "ポーチ 3 枠" },
-      { items: [["drive", 3], ["gyro", 2], ["core", 1]], cash: 5000, does: "ポーチ 4 枠" },
+      { items: [["wire", 2], ["board", 2]], cash: 500, does: "ポーチ 3 枠" },
+      { items: [["drive", 3], ["gyro", 2], ["core", 1]], cash: 2500, does: "ポーチ 4 枠" },
     ],
   },
 };
@@ -697,7 +702,7 @@ export const HIDEOUT: Record<ModuleId, { name: string; note: string; levels: Mod
 export const HIDEOUT_EFFECT = {
   /** Heals the infirmary adds to every raid's kit, lent like the free kit's. */
   infirmary: [{}, { syringe: 1 }, { syringe: 1, cell: 2 }, { syringe: 2, cell: 2, medkit: 1 }] as Partial<Record<HealKind, number>>[],
-  /** Steps of rarity the trader sells above `META.shopRarity`. */
+  /** Steps of rarity of the valuables the trader sells above `META.materials.rarity`. */
   workbench: [0, 1, 2],
   /** Room in the stash above `META.stash`. */
   storage: [0, 10, 20, 30],
@@ -1108,15 +1113,36 @@ export const FLANK = {
 };
 
 /**
- * Armour plates. Some robots wear a plate of tier 1-3 (0 is none). A weapon pierces a
- * plate of tier up to its own rarity; a body hit from a weapon of lower rarity deals
- * `mult[plate - rarity]` of its damage. Weak-point hits always pass in full, and damage
- * that does not come from a weapon (the arc) is never reduced, so a plated robot is
- * an aim check or a reason to bring better gear, never a wall.
+ * Armour plates. Some robots wear a plate of tier 1-3 (0 is none), in the colour of the rarity
+ * that pierces it. A weapon pierces a plate of tier up to its own rarity; a body hit from a
+ * weapon of lower rarity deals `mult[plate - rarity]` of its damage and shows no number. Weak-point
+ * hits always pass in full, and damage that does not come from a weapon (the arc) is never
+ * reduced, so a plated robot is an aim check or a reason to bring better gear, never a wall.
+ *
+ * A node's garrison wears plates of its tier (`TIER` in map.ts): each grunt and heavy of it with
+ * the chance `garrison[tier]`, decided from the raid's seed and the robot (`tierPlated()`). A
+ * piercing hit that lands with a plated robot's shield gone breaks its plate off for good. A plated
+ * robot or a raider drops a weapon of its plate's rarity with the chance `drop` (`elite` for a
+ * raider), decided from the seed and the robot; these, the vaults and the trader are where epic
+ * and legendary guns come from.
  */
 export const PLATE = {
-  mult: [1, 0.6, 0.5, 0.35] as number[],
+  mult: [1, 0.3, 0.15, 0.1] as number[],
+  garrison: [0, 0.75, 0.85, 1] as number[],
+  drop: 0.15,
+  elite: 0.5,
+  /** The rarity the rogues' guns count as against a plate, and the least the factory's do (`factoryRarity()` in battle.ts): tier 1 only. */
+  robots: 1 as Rarity,
+  /** Weapons a plated robot or a raider drops, picked from the seed and the robot. */
+  weapons: ["pike", "lance", "hornet", "maul", "talon"] as WeaponKind[],
 };
+
+/**
+ * Gear in plain bins (not vaults): each bin holds a weapon of its POI's table with the chance
+ * `weapon` and armour with the chance `armor`, decided from the raid's seed and the bin. The
+ * tables hold common and rare only: better is earned from plated robots, raiders, vaults and the trader.
+ */
+export const BIN_GEAR = { weapon: 0.12, armor: 0.1 };
 
 /**
  * How a fighting robot moves. It strafes across the player's view while it sees them,

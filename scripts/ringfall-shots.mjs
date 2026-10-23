@@ -537,8 +537,8 @@ await page.screenshot({ path: `${out}/00-title.png` });
 await page.click("#start");
 const read = async () => JSON.parse(await page.evaluate(() => window.render_game_to_text()));
 
-// The camp: each station seen and its panel opened by the use key; a rare PIKE bought from the
-// trader, then taken with a stash weapon out of the gate into the raid.
+// The camp: each station seen and its panel opened by the use key; a common LANCE bought from the
+// trader (holding no node it sells common gear only), then taken with a stash weapon out of the gate into the raid.
 {
   await faded(page);
   const h0 = await read();
@@ -554,7 +554,8 @@ const read = async () => JSON.parse(await page.evaluate(() => window.render_game
   await seen("shop");
   await useStation(page, "shop");
   await page.screenshot({ path: `${out}/00-panel-shop.png` });
-  await page.click('#hub-side [data-act=buy][data-arg="1"]');
+  if ((await page.locator("#hub-side .shelf-tiers .tier.on").count()) !== 1 || (await page.locator("#hub-side [data-act=buy]", { hasText: "レア" }).count())) errors.push("camp: holding no node the trader's shelf is not common only");
+  await page.click('#hub-side [data-act=buy][data-arg="3"]');
   const h1 = await read();
   if (!(h1.profile.cash < h0.profile.cash && h1.profile.stash === h0.profile.stash + 1)) errors.push(`camp: buying did not take cash and fill the stash (${JSON.stringify(h0.profile)} -> ${JSON.stringify(h1.profile)})`);
   // Esc closes a panel, and the camp walks on.
@@ -604,7 +605,7 @@ const read = async () => JSON.parse(await page.evaluate(() => window.render_game
   await page.screenshot({ path: `${out}/00-camp-gate.png` });
   const h2 = await walkOutOfGate(page, "00-depart");
   // The magazine is left out: the frame loop may already have stepped the raid and loaded it.
-  if (h2.player.weapons.map((w) => w?.split(":")[0]).join() !== "pike1,hornet0") errors.push(`camp: the raid did not start with the picked weapons (${h2.player.weapons.join()})`);
+  if (h2.player.weapons.map((w) => w?.split(":")[0]).join() !== "lance0,hornet0") errors.push(`camp: the raid did not start with the picked weapons (${h2.player.weapons.join()})`);
   if (h2.profile.stash !== h1.profile.stash - 2) errors.push(`camp: the picked weapons stayed in the stash (${h1.profile.stash} -> ${h2.profile.stash})`);
   if (h2.region !== "reservoir" || h2.phase !== "play" || !h2.ally.active || Math.hypot(h2.ally.x - h2.player.x, h2.ally.z - h2.player.z) > 6) errors.push(`camp: out of the gate the raid is ${h2.region} ${h2.phase}, teammate ${JSON.stringify(h2.ally)}`);
   lap("camp");
@@ -854,6 +855,44 @@ await page.evaluate(() => {
   document.getElementById("hud").hidden = false;
 });
 lap("start and tour");
+
+// Armour plates up close: a row of robots in each plate's colour (none, rare blue, epic purple,
+// legendary gold); a common round off a purple plate (sparks, no number), then epic rounds
+// through it until the plate breaks off (numbers, and the plate gone).
+{
+  const p0 = await read();
+  const yaw0 = await page.evaluate(() => window.ringfallYaw());
+  const row = await page.evaluate(([x, z]) => window.ringfallPlates(x, z, Math.PI), [p0.player.x, p0.player.z - 10]);
+  const mid = { x: (row[1].x + row[2].x) / 2, y: row[1].y, z: row[1].z };
+  await page.evaluate(([x, y, z]) => window.ringfallCamera(x, y + 2, z + 6.5, 0, -0.12), [mid.x, mid.y, mid.z]);
+  await page.evaluate(() => window.advanceTime(16));
+  await page.screenshot({ path: `${out}/plates-1-colours.png` });
+  const purple = row[2];
+  await page.evaluate(([x, z, tx, tz]) => window.ringfallPlace(x, z, Math.atan2(tx - x, -(tz - z))), [purple.x, purple.z + 9, purple.x, purple.z]);
+  await page.evaluate(() => window.ringfallCamera());
+  await page.evaluate(() => window.advanceTime(16));
+  const before = await page.locator("#dmg-layer .dmg, .dmg").count();
+  const off = await page.evaluate((id) => window.ringfallShoot(id, 0), purple.id);
+  await page.evaluate(() => window.advanceTime(16));
+  const after = await page.locator("#dmg-layer .dmg, .dmg").count();
+  if (!off || off.plate !== 2 || after !== before || (await page.getAttribute("#hitmark", "class")) !== "plate") errors.push(`plates: a common round on a purple plate left ${JSON.stringify(off)}, ${after - before} new numbers, the hit mark "${await page.getAttribute("#hitmark", "class")}"`);
+  await page.screenshot({ path: `${out}/plates-2-deflect.png` });
+  let through = off;
+  for (let i = 0; i < 40 && through && through.plate > 0; i++) {
+    through = await page.evaluate((id) => window.ringfallShoot(id, 2), purple.id);
+    await page.evaluate(() => window.ringfallStep(50));
+  }
+  await page.evaluate(() => window.advanceTime(16));
+  if (!through || through.plate !== 0 || !(await page.locator(".dmg").count())) errors.push(`plates: epic rounds left the purple plate at ${JSON.stringify(through)}, numbers ${await page.locator(".dmg").count()}`);
+  await page.screenshot({ path: `${out}/plates-3-broken.png` });
+  // The rest of the gate plays on as if they had never come: the robots gone, the player back where they stood.
+  await page.evaluate(([x, z, yaw]) => {
+    window.ringfallClearPlates();
+    window.ringfallPlace(x, z, yaw);
+  }, [p0.player.x, p0.player.z, yaw0]);
+  await page.evaluate(() => window.advanceTime(16));
+  lap("plates");
+}
 
 // Knock the teammate down and pick it up by hand: its tag and the prompt show, one press
 // of E starts the help, and it stands up after standing by it.
@@ -1187,6 +1226,11 @@ const midGame = {
   hideout: { infirmary: 1, workbench: 1, storage: 1, radio: 1, pouch: 1 },
   stash: [{ t: "weapon", kind: "pike", rarity: 1 }, { t: "heal", kind: "cell" }, ...bag([["fuse", 5], ["parts", 4], ["wire", 5], ["board", 4], ["drive", 1], ["gyro", 1]])],
 };
+/** The mid-game base holding the supply depot and the yard, whose depots open starts (`UNLOCKS`). */
+const depotGame = {
+  ...midGame, v: 13, day: 15, depots: ["supply", "yard"],
+  poiState: { supply: { state: "freed" }, quarry: { state: "held" }, relay: { state: "held" }, pad: { state: "held" }, wreck: { state: "held" }, yard: { state: "freed" }, smelter: { state: "held" } },
+};
 const withProfile = async (ctx, profile) => {
   const pg = await ctx.newPage();
   pg.on("pageerror", (e) => errors.push(`hideout pageerror: ${e.message}`));
@@ -1252,7 +1296,7 @@ const readOf = async (pg) => JSON.parse(await pg.evaluate(() => window.render_ga
 }
 {
   const ctx = await browser.newContext({ viewport: { width: 740, height: 360 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
-  const pg = await withProfile(ctx, midGame);
+  const pg = await withProfile(ctx, depotGame);
   await toCamp(pg, true);
   const cdp = await ctx.newCDPSession(pg);
   await useStation(pg, "workshop", cdp);
@@ -1268,7 +1312,7 @@ const readOf = async (pg) => JSON.parse(await pg.evaluate(() => window.render_ga
   fit = fit.concat(await spills(pg));
   await pg.screenshot({ path: `${out}/m12-map-intel.png` });
   // The starts hold the depots too, and stay inside the screen.
-  await pg.tap("#hub-region [data-act=from][data-arg=wreck]");
+  await pg.tap("#hub-region [data-act=from][data-arg=yard]");
   fit = fit.concat(await spills(pg));
   const row = await pg.evaluate(() => document.getElementById("hub-region").getBoundingClientRect().right);
   if (row > 741) fit.push(`hub-region ends at ${Math.round(row)}`);
@@ -1331,12 +1375,12 @@ const readOf = async (pg) => JSON.parse(await pg.evaluate(() => window.render_ga
 {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
   // An epic armour in the stash: with the rare PIKE (2) it is over a level 0 depot's allowance (2).
-  const pg = await withProfile(ctx, { ...midGame, stash: [...midGame.stash, { t: "armor", tier: 2 }] });
+  const pg = await withProfile(ctx, { ...depotGame, stash: [...midGame.stash, { t: "armor", tier: 2 }] });
   await toCamp(pg);
   await useStation(pg, "map");
   const starts = await pg.locator("#hub-region [data-act=from]").count();
   if (starts !== 2) errors.push(`depot: the map table offers ${starts} depots to start from, not 2`);
-  await pg.click("#hub-region [data-act=from][data-arg=quarry]");
+  await pg.click("#hub-region [data-act=from][data-arg=supply]");
   await pg.screenshot({ path: `${out}/46-map-depots.png` });
   await closePanel(pg);
   // The depot's allowance: the PIKE fits it, the armour on top does not (the truck refuses), and a start at a way in lifts the limit.
@@ -1363,7 +1407,7 @@ const readOf = async (pg) => JSON.parse(await pg.evaluate(() => window.render_ga
   await useStation(pg, "map");
   await pg.click("#hub-region [data-arg=reservoir]");
   if ((await refused()) || (await allowance())) errors.push("depot: switching to a way in did not lift the allowance");
-  await pg.click("#hub-region [data-act=from][data-arg=quarry]");
+  await pg.click("#hub-region [data-act=from][data-arg=supply]");
   await closePanel(pg);
   await useStation(pg, "stash");
   await pg.click("#hub-side [data-act=lent]");
@@ -1372,7 +1416,7 @@ const readOf = async (pg) => JSON.parse(await pg.evaluate(() => window.render_ga
   await rideOut(pg);
   await pg.evaluate(() => window.advanceTime(500));
   const d0 = await readOf(pg);
-  if (d0.screen !== "game" || d0.phase !== "play" || d0.region !== "reservoir" || !d0.ally.active) errors.push(`depot: starting at the quarry depot left ${d0.screen} ${d0.phase} in ${d0.region}, ally ${d0.ally.active}`);
+  if (d0.screen !== "game" || d0.phase !== "play" || d0.region !== "reservoir" || !d0.ally.active) errors.push(`depot: starting at the supply depot left ${d0.screen} ${d0.phase} in ${d0.region}, ally ${d0.ally.active}`);
   const prompt = await pg.textContent("#prompt");
   if (!/切り上げる/.test(prompt)) errors.push(`depot: standing at it with an empty bag prompts "${prompt}"`);
   await pg.screenshot({ path: `${out}/47-depot.png` });
@@ -1391,7 +1435,7 @@ const readOf = async (pg) => JSON.parse(await pg.evaluate(() => window.render_ga
   await pg.evaluate(() => window.advanceTime(4000));
   await pg.waitForFunction(() => !document.getElementById("results").hidden, null, { timeout: 10000 }).catch(() => undefined);
   const d2 = await readOf(pg);
-  if (d2.outcome !== "extracted" || d2.leftAt !== "quarry" || d2.screen !== "results") errors.push(`depot: leaving ended ${d2.outcome} at ${d2.leftAt} on ${d2.screen}`);
+  if (d2.outcome !== "extracted" || d2.leftAt !== "supply" || d2.screen !== "results") errors.push(`depot: leaving ended ${d2.outcome} at ${d2.leftAt} on ${d2.screen}`);
   if (!/中継ボックス/.test(await pg.textContent("#stats"))) errors.push("depot: the results do not say the raid ended at the depot");
   await pg.screenshot({ path: `${out}/50-results-depot.png` });
   await ctx.close();
@@ -1820,6 +1864,17 @@ for (const phone of [false, true]) {
   const fit = await spills(pg);
   if (fit.length) errors.push(`battle factory panel (${phone ? "phone" : "1280x720"}): ${fit.join(", ")}`);
   await pg.screenshot({ path: tag(1, "panel-factory") });
+  await closePanel(pg, phone);
+  // The trader's shelf by the nodes held: the supply depot and the quarry light common, rare and epic.
+  await useStation(pg, "shop", cdp);
+  await pg.waitForTimeout(200);
+  const lit = await pg.locator("#hub-side .shelf-tiers .tier.on").count();
+  const epics = await pg.locator('#hub-side [data-act=buy]', { hasText: "エピック" }).count();
+  const legends = await pg.locator('#hub-side [data-act=buy]', { hasText: "レジェンド" }).count();
+  if (lit !== 3 || !epics || legends) errors.push(`battle: holding the supply depot and the quarry the shelf lights ${lit} rarities, sells ${epics} epic and ${legends} legendary things`);
+  const fitShop = await spills(pg);
+  if (fitShop.length) errors.push(`battle shop panel (${phone ? "phone" : "1280x720"}): ${fitShop.join(", ")}`);
+  await pg.screenshot({ path: tag(8, "panel-shop-nodes") });
   await closePanel(pg, phone);
   await useStation(pg, "map", cdp);
   await pg.waitForTimeout(300);

@@ -2,13 +2,13 @@ import { DEPOT, FACTION, FRONT, WORLD } from "../sim/config";
 import { frontNodes, nodeHolds, type NodeHold } from "../sim/front";
 import { battleMarks, meterOf, type Battle, type Side } from "../sim/battle";
 import { offshore } from "../sim/terrain";
-import { BOXES, CAMP, DEBRIS_SPOTS, NODES, nodeIndex, debrisIndex, DEPOTS, ENTRIES, EXTRACTS, LANDMARKS, OUTPOST_SITES, POIS, REGIONS, regionOf, ROUTES, regionHere, type EntryId, type NodeId, type PoiId, type RegionId, type RouteId } from "../sim/map";
+import { BOXES, CAMP, DEBRIS_SPOTS, NODES, nodeIndex, TIER, UNLOCKS, debrisIndex, DEPOTS, ENTRIES, EXTRACTS, LANDMARKS, OUTPOST_SITES, POIS, REGIONS, regionOf, ROUTES, regionHere, type EntryId, type NodeId, type PoiId, type RegionId, type RouteId } from "../sim/map";
 import type { IslandEvent, PoiHold } from "../sim/island";
 import { STREETS } from "../sim/streets";
 import { worldKey } from "../sim/routes";
 import { DAM_FACE, floorLevel, groundOf, highGround, LEVEL, steepAt, surfaceAt, terrainHeight, type Ground } from "../sim/terrain";
 import { cellOf, decodeSeen, exploreSize, type Ally, type Contact, type Enemy, type Player, type State } from "../sim/state";
-import { PAL } from "./models";
+import { PAL, RARITY_CSS } from "./models";
 import type { ContractMark } from "../meta/contracts";
 
 /*
@@ -40,6 +40,117 @@ const css = (c: number) => `#${c.toString(16).padStart(6, "0")}`;
  * the enemy's for good, has a mark of its own in the robots' armour.
  */
 export const HOLD_CSS: Record<PoiHold, string> = { held: "#c8402f", freed: "#3f86c8" };
+
+/** A heater shield centred on (x, y), `r` from its middle to its point, filled in `fill`. */
+export function drawShield(g: CanvasRenderingContext2D, x: number, y: number, r: number, fill: string) {
+  g.save();
+  g.beginPath();
+  g.moveTo(x - r * 0.8, y - r * 0.85);
+  g.lineTo(x + r * 0.8, y - r * 0.85);
+  g.lineTo(x + r * 0.8, y - r * 0.1);
+  g.quadraticCurveTo(x + r * 0.75, y + r * 0.6, x, y + r);
+  g.quadraticCurveTo(x - r * 0.75, y + r * 0.6, x - r * 0.8, y - r * 0.1);
+  g.closePath();
+  g.fillStyle = fill;
+  g.fill();
+  g.lineWidth = Math.max(1, r * 0.22);
+  g.strokeStyle = "rgba(20,24,40,0.9)";
+  g.stroke();
+  g.restore();
+}
+
+/**
+ * What a node opens (`UNLOCKS`) as a row of small marks from (x, y) rightward: a gun in the colour of
+ * the rarity the trader sells, an arrow out of a depot, a squad's flag, a red chevron for where
+ * reinforcements land, a boat struck through. Full while `on` (the player holds it), faint else.
+ */
+export function drawUnlocks(g: CanvasRenderingContext2D, x: number, y: number, id: NodeId, dpr: number, on: boolean) {
+  const u = UNLOCKS[id];
+  const s = 6 * dpr;
+  let cx = x;
+  g.save();
+  g.globalAlpha = on ? 1 : 0.5;
+  g.lineJoin = "round";
+  const plate = (w: number) => {
+    g.fillStyle = "rgba(20,24,40,0.82)";
+    g.fillRect(cx - s * 0.3, y - s * 1.05, w + s * 0.6, s * 2.1);
+  };
+  if (u.shop !== undefined) {
+    plate(s * 2.6);
+    // A rifle in profile: stock, body, barrel and magazine.
+    g.fillStyle = RARITY_CSS[u.shop];
+    g.fillRect(cx, y - s * 0.35, s * 0.7, s * 0.7);
+    g.fillRect(cx + s * 0.6, y - s * 0.5, s * 1.2, s * 0.6);
+    g.fillRect(cx + s * 1.7, y - s * 0.35, s * 0.9, s * 0.25);
+    g.fillRect(cx + s * 1.0, y + s * 0.05, s * 0.35, s * 0.6);
+    cx += s * 3.3;
+  }
+  if (u.depart) {
+    plate(s * 1.8);
+    // An arrow leaving a box: the start from its depot.
+    g.strokeStyle = "#f4f7ff";
+    g.lineWidth = 1.6 * dpr;
+    g.strokeRect(cx, y - s * 0.1, s * 0.9, s * 0.9);
+    g.beginPath();
+    g.moveTo(cx + s * 0.45, y + s * 0.35);
+    g.lineTo(cx + s * 1.6, y - s * 0.8);
+    g.moveTo(cx + s * 0.9, y - s * 0.8);
+    g.lineTo(cx + s * 1.6, y - s * 0.8);
+    g.lineTo(cx + s * 1.6, y - s * 0.1);
+    g.stroke();
+    cx += s * 2.5;
+  }
+  if (u.squad) {
+    plate(s * 1.4);
+    // A flag in the player's blue.
+    g.strokeStyle = "#f4f7ff";
+    g.lineWidth = 1.4 * dpr;
+    g.beginPath();
+    g.moveTo(cx + s * 0.2, y + s * 0.9);
+    g.lineTo(cx + s * 0.2, y - s * 0.9);
+    g.stroke();
+    g.fillStyle = HOLD_CSS.freed;
+    g.beginPath();
+    g.moveTo(cx + s * 0.2, y - s * 0.9);
+    g.lineTo(cx + s * 1.4, y - s * 0.5);
+    g.lineTo(cx + s * 0.2, y - s * 0.1);
+    g.closePath();
+    g.fill();
+    cx += s * 2.1;
+  }
+  if (u.scout) {
+    plate(s * 1.6);
+    // The compass's chevron for where reinforcements land.
+    g.fillStyle = "#ff4d4d";
+    g.beginPath();
+    g.moveTo(cx, y - s * 0.6);
+    g.lineTo(cx + s * 1.6, y - s * 0.6);
+    g.lineTo(cx + s * 0.8, y + s * 0.7);
+    g.closePath();
+    g.fill();
+    cx += s * 2.3;
+  }
+  if (u.shore) {
+    plate(s * 2.0);
+    // A red boat, struck through.
+    g.fillStyle = HOLD_CSS.held;
+    g.beginPath();
+    g.moveTo(cx, y);
+    g.lineTo(cx + s * 2, y);
+    g.lineTo(cx + s * 1.6, y + s * 0.6);
+    g.lineTo(cx + s * 0.4, y + s * 0.6);
+    g.closePath();
+    g.fill();
+    g.fillRect(cx + s * 0.9, y - s * 0.7, s * 0.25, s * 0.7);
+    g.strokeStyle = "#f4f7ff";
+    g.lineWidth = 1.6 * dpr;
+    g.beginPath();
+    g.moveTo(cx - s * 0.1, y + s * 0.8);
+    g.lineTo(cx + s * 2.1, y - s * 0.8);
+    g.stroke();
+  }
+  g.restore();
+}
 export const TITAN_CSS = "#262d52";
 /** The outposts' mark: places to loot that nobody's colour claims. */
 const OUTPOST_CSS = "#8f8a7c";
@@ -720,6 +831,12 @@ export class IslandMap {
       }
       g.fill();
       g.stroke();
+      if (!poi.boss) {
+        // The garrison's plate: a shield in the colour of the rarity that pierces it.
+        drawShield(g, p.x, p.y + r * 0.06, r * 0.62, RARITY_CSS[TIER[poi.id as NodeId] ?? 0]);
+        // What holding it opens, as small marks beside it: dim while the enemy holds it.
+        drawUnlocks(g, p.x + r * 1.45, p.y - r * 0.95, poi.id as NodeId, dpr, hold(i) === "freed");
+      }
       if (poi.boss) {
         // The titan's eye, in the robots' red.
         g.fillStyle = HOLD_CSS.held;

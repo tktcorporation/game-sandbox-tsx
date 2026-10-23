@@ -273,6 +273,9 @@ export class Soundscape {
       case "allyUp":
         sfx.allyUp();
         break;
+      case "plateBreak":
+        sfx.plateBreak(e.tier);
+        break;
       case "shieldBreak":
         sfx.shieldBreak(e.tier);
         break;

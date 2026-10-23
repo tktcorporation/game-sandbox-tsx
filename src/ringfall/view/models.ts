@@ -921,15 +921,27 @@ const CHEST: Record<EnemyKind, { w: number; h: number; y: number; z: number }> =
 };
 
 /**
- * Armour plates bolted over the front of a robot's body, in its plate's rarity colour:
- * the player tells at a glance which robots their gun cannot pierce.
+ * Armour plates bolted over the chest and the shoulders of a robot, in the colour of the rarity
+ * that pierces them: the player tells at a glance which robots their gun cannot pierce. Returns
+ * the plates, so they can be knocked off when the plate breaks.
  */
-export function addPlates(m: EnemyModel, kind: EnemyKind, tier: Rarity) {
+export function addPlates(m: EnemyModel, kind: EnemyKind, tier: Rarity): THREE.Mesh[] {
   const c = CHEST[kind];
   const mat = flat(RARITY_COLOR[tier]);
   const t = c.w * 0.07;
-  m.body.add(mesh(new THREE.BoxGeometry(c.w, c.h * 0.48, t), mat, 0, c.y + c.h * 0.22, c.z - t / 2));
-  m.body.add(mesh(new THREE.BoxGeometry(c.w * 0.75, c.h * 0.32, t), mat, 0, c.y - c.h * 0.22, c.z - t / 2));
+  const out = [
+    mesh(new THREE.BoxGeometry(c.w, c.h * 0.48, t), mat, 0, c.y + c.h * 0.22, c.z - t / 2),
+    mesh(new THREE.BoxGeometry(c.w * 0.75, c.h * 0.32, t), mat, 0, c.y - c.h * 0.22, c.z - t / 2),
+  ];
+  // Pauldrons on the shoulders, so the colour shows from the side and from behind too.
+  if (kind === "grunt" || kind === "heavy")
+    for (const side of [-1, 1]) {
+      const pad = mesh(new THREE.BoxGeometry(c.w * 0.3, c.h * 0.16, c.w * 0.5), mat, side * c.w * 0.62, c.y + c.h * 0.5, c.z + c.w * 0.28);
+      pad.rotation.z = side * -0.35;
+      out.push(pad);
+    }
+  for (const o of out) m.body.add(o);
+  return out;
 }
 
 export interface AllyModel {

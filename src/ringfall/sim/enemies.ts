@@ -17,7 +17,7 @@ import { robotSide, type Side } from "./battle";
 import { bodyCenter, weakPoint } from "./combat";
 import { hurtPlayer } from "./player";
 import { allyChest, allyUp, hurtAlly } from "./ally";
-import { activePacks, garrison, netPlated } from "./island";
+import { activePacks, garrison, netPlated, poiTier, tierPlated } from "./island";
 import { modScale } from "./mods";
 import { crewRand, mix, rand, roamRand, sightScale, weakY, type Enemy, type Point, type State, type Vec3 } from "./state";
 
@@ -41,6 +41,8 @@ interface SpawnOpts {
   elite?: boolean;
   /** Its armour plate's tier (see PLATE); none when omitted. */
   plate?: Rarity;
+  /** The tier of the node whose garrison it stands in: a grunt or heavy may wear that tier's plate (`tierPlated()`). */
+  tier?: number;
   /** A drone pack's or a hunting party's: drawn from their own random numbers (`roamRand()`). */
   roam?: boolean;
   /** A salvage crew's, the retake squad's or the debris guards': drawn from theirs (`crewRand()`). */
@@ -72,7 +74,10 @@ export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi:
   const pos = spawnSpot(kind, x, z, o.floor);
   const face = o.face ?? pick(s) * Math.PI * 2;
   // A raised threat plates some of the plain grunts and heavies, picked without drawing on the raid's numbers.
-  const plate = o.plate ?? ((kind === "grunt" || kind === "heavy") && !o.elite && netPlated(s.seed, id, s.threat ?? 0) ? 1 : 0);
+  const plain = (kind === "grunt" || kind === "heavy") && !o.elite;
+  // A garrison's grunts and heavies wear its node's tier of plate, picked from the seed and the robot.
+  const tierPlate = plain && o.tier && tierPlated(s.seed, id, o.tier) ? o.tier : 0;
+  const plate = Math.max(o.plate ?? (plain && netPlated(s.seed, id, s.threat ?? 0) ? 1 : 0), tierPlate);
   const e: Enemy = {
     id,
     kind,
@@ -107,6 +112,7 @@ export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi:
     allyHit: 99,
     elite: !!o.elite,
     plate: plate as Rarity,
+    wore: plate as Rarity,
     strafeT: pick(s),
     jink: 0,
     stagger: 0,
@@ -133,21 +139,25 @@ export function populate(s: State) {
   const add = (sq: Squad, poi: number, rogue = false) => {
     const index = s.squads.length;
     s.squads.push({ name: sq.name, poi, patrol: sq.patrol ?? [], leg: 0, engaged: false, roam: !!sq.roam, sinceSeen: 0, last: { x: 0, z: 0 }, rogue: rogue || undefined });
-    for (const m of sq.members) spawnEnemy(s, m.kind, m.x, m.z, poi, index, { floor: m.y, face: m.face, plate: m.plate, rogue });
+    // A POI's own squads wear its node's plates; its vault guard wears one of at least that tier.
+    const tier = poi >= 0 ? poiTier(poi) : 0;
+    for (const m of sq.members) spawnEnemy(s, m.kind, m.x, m.z, poi, index, { floor: m.y, face: m.face, plate: m.plate === undefined ? undefined : (Math.max(m.plate, tier) as Rarity), tier, rogue });
   };
   const walker = (st: State, kind: EnemyKind, x: number, z: number, squad: number, face: number, rogue: boolean) => void spawnEnemy(st, kind, x, z, -1, squad, { face, hashed: true, rogue });
+  // A garrison's squad out on its beat still wears its node's plates.
+  const beatWalker = (tier: number) => (st: State, kind: EnemyKind, x: number, z: number, squad: number, face: number, rogue: boolean) => void spawnEnemy(st, kind, x, z, -1, squad, { face, hashed: true, rogue, tier });
   // A POI stands with the garrison its standing on the island gives it (`garrison()`); the squads
   // of it that walk a beat (`MOBILES`) are out on it, no longer the POI's.
-  const beats: { m: Mobile; kinds: EnemyKind[] }[] = [];
+  const beats: { m: Mobile; kinds: EnemyKind[]; tier: number }[] = [];
   POIS.forEach((p, i) =>
     garrison(i, s.hold[i]).forEach((sq) => {
       const beat = beatOf(p.id, sq.name);
-      if (beat) beats.push({ m: beat, kinds: sq.members.map((m) => m.kind) });
+      if (beat) beats.push({ m: beat, kinds: sq.members.map((m) => m.kind), tier: poiTier(i) });
       else add(sq, i);
     }),
   );
   ROAMERS.forEach((sq) => add(sq, -1));
-  for (const b of beats) placeMobile(s, b.m, b.kinds, walker);
+  for (const b of beats) placeMobile(s, b.m, b.kinds, beatWalker(b.tier));
   for (const m of MOBILES) if (mobileWalks(s, m)) placeMobile(s, m, m.members ?? [], walker);
   // The walks are built by fields (`mobileWalk()`): the raid starts with none, whichever walks
   // this process built before, so it plays the same wherever it is played.

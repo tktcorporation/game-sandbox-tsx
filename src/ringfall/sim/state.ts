@@ -195,6 +195,8 @@ export interface Enemy {
    * rarity are reduced; weak-point hits pass in full.
    */
   plate: Rarity;
+  /** The plate it came with, kept once a piercing hit breaks it off: what it drops (`robotGear()`). */
+  wore: Rarity;
   /** Seconds until it may change strafe direction. */
   strafeT: number;
   /** Seconds left of a jink: a fast sidestep the other way after being hit. */
@@ -406,6 +408,7 @@ export type GameEvent =
   | { t: "impact"; pos: Vec3 }
   | { t: "hit"; id: number; pos: Vec3; dmg: number; crit: boolean; shield: boolean; tier: Rarity; flank: Flank; ally: boolean; /** A plate took part of this hit. */ blocked: boolean }
   | { t: "shieldBreak"; id: number; pos: Vec3; tier: Rarity }
+  | { t: "plateBreak"; id: number; pos: Vec3; tier: Rarity }
   /** A robot reels from the damage it took; a wind-up it was in is lost. `fromX/Z` is where the shot came from. */
   | { t: "stagger"; id: number; pos: Vec3; fromX: number; fromZ: number; interrupted: boolean }
   | { t: "kill"; id: number; kind: EnemyKind; pos: Vec3; crit: boolean; last: boolean; ally: boolean; /** Where the killing shot came from, so the wreck falls away from it. */ fromX: number; fromZ: number }

@@ -1,6 +1,6 @@
-import { CONQUEST, ENEMIES, FACTORY, TICK, type EnemyKind } from "./config";
+import { CONQUEST, ENEMIES, FACTORY, PLATE, TICK, type EnemyKind, type Rarity } from "./config";
 import { dist2d } from "./geom";
-import { CAMP, depotIndex, FRONT_LINKS, NET_EDGE, NODES, nodeIndex, type NodeId } from "./map";
+import { CAMP, depotIndex, FRONT_LINKS, NET_EDGE, NODES, nodeIndex, UNLOCKS, type NodeId, type NodeUnlock } from "./map";
 import { forgetFields, onMainGround, walkLine } from "./hunt";
 import { worldKey } from "./routes";
 import { spawnEnemy } from "./enemies";
@@ -76,6 +76,8 @@ export interface Battle {
   meter: (NodeMeter | null)[];
   /** The factory's level the battle was fought with. */
   factory: number;
+  /** The rarity the factory's robots' guns count as against plates (`factoryRarity()`), as the battle began. */
+  rarity: Rarity;
   /** Each node's standing as the battle began. */
   start: NodeHold[];
   /** The nodes that changed hands in the battle, in order: which, to whom, when. */
@@ -175,6 +177,7 @@ export function initBattle(s: State, start: BattleStart): Battle {
     made: [0, 0, 0],
     meter: NODES.map(() => null),
     factory,
+    rarity: factoryRarity(s.nodes),
     start: [...s.nodes],
     taken: [],
     done: false,
@@ -447,7 +450,8 @@ function enemyPlan(s: State, b: Battle, side: Side): { from: number; to: number 
     const fromOk = (k: number) => (side === 2 || sideOf(s.nodes[k]) === side) && !nearPlayer(s, nodePoint(k), CONQUEST.near);
     let from = NEIGHBOURS[i].filter(fromOk).sort((a, c) => dist2d(nodePoint(a), nodePoint(i)) - dist2d(nodePoint(c), nodePoint(i)))[0];
     // The enemy lands on a node by the ground it never gives up, out of the player's sight.
-    if (from === undefined && side === 1 && NET_EDGE.includes(n.id) && !nearPlayer(s, nodePoint(i), CONQUEST.near)) from = i;
+    // The north shore's boats stop landing while the player holds the node that watches it.
+    if (from === undefined && side === 1 && NET_EDGE.includes(n.id) && !(UNLOCKS[n.id].shore && owner === 0) && !nearPlayer(s, nodePoint(i), CONQUEST.near)) from = i;
     if (from === undefined) return;
     const v = (side === 1 && owner === 0 ? 10 : 0) - 2 * heldBy(s, b, i) - 3 * goingTo(b, side, i);
     if (!best || v > best.v) best = { from, to: i, v };
@@ -455,12 +459,25 @@ function enemyPlan(s: State, b: Battle, side: Side): { from: number; to: number 
   return best;
 }
 
+/** The nodes the player holds now that open `key` (`UNLOCKS`): it lasts while they are held. */
+export const heldUnlocks = (nodes: State["nodes"], key: keyof NodeUnlock): NodeId[] => NODES.filter((n, i) => nodes[i] === "freed" && UNLOCKS[n.id][key]).map((n) => n.id);
+
+/**
+ * The rarity the factory's robots' guns count as against plates: the best the trader sells for the
+ * nodes held (`UNLOCKS`), and never below the other robots' (`PLATE.robots`). The factory arms its
+ * robots as the player can arm themselves, so its squads break into a tier no sooner than the player.
+ */
+export const factoryRarity = (nodes: State["nodes"]): Rarity => Math.max(PLATE.robots, ...heldUnlocks(nodes, "shop").map((id) => UNLOCKS[id].shop ?? 0)) as Rarity;
+
+/** The squads the factory keeps out at once: its level's, and one more for each node held that opens one. */
+export const factoryMax = (s: Pick<State, "nodes">, f: number) => FACTORY.max[f] + heldUnlocks(s.nodes, "squad").reduce((n, id) => n + (UNLOCKS[id].squad ?? 0), 0);
+
 /** Each side's work toward its next squad, and the squad once it is due and the side has room. */
 function produce(s: State, b: Battle, dt: number) {
   // The player's factory.
   const f = b.factory;
   b.made[0] = Math.min(FACTORY.every[f], b.made[0] + dt);
-  if (b.made[0] >= FACTORY.every[f] && walking(b, 0) < FACTORY.max[f]) {
+  if (b.made[0] >= FACTORY.every[f] && walking(b, 0) < factoryMax(s, f)) {
     const plan = playerPlan(s, b);
     if (plan) {
       const q = addSquad(b, 0, FACTORY.kinds[f], plan.from, plan.to, plan.task);
@@ -475,7 +492,8 @@ function produce(s: State, b: Battle, dt: number) {
     const theirs = NODES.reduce((n, _, i) => n + (sideOf(s.nodes[i]) === 1 ? 1 : 0), 0);
     // The enemy answers the player's ground: each node of theirs works for it as one of its own would.
     const mine = NODES.length - theirs;
-    const work = side === 1 ? theirs + CONQUEST.net.edge + CONQUEST.net.answer * mine : 1;
+    const shore = heldUnlocks(s.nodes, "shore").length ? CONQUEST.net.shore : 0;
+    const work = side === 1 ? theirs + CONQUEST.net.edge - shore + CONQUEST.net.answer * mine : 1;
     const every = side === 1 ? CONQUEST.net.every[s.strength] : CONQUEST.rogue.every;
     const max = side === 1 ? CONQUEST.net.max[s.strength] + Math.floor(mine / 3) : CONQUEST.rogue.max;
     b.made[side] = Math.min(every, b.made[side] + work * dt);
@@ -521,8 +539,11 @@ function march(s: State, b: Battle, dt: number) {
   });
 }
 
-/** A fighter in a reckoned fight: a squad's member in numbers, or a garrison's robot in the world. */
-type Fighter = { side: Side; kind: EnemyKind; hit: (dmg: number) => void; left: () => number };
+/**
+ * A fighter in a reckoned fight: a squad's member in numbers, or a garrison's robot in the world.
+ * `takes(side)` is the share of a hit from `side` that lands (a plate turns what is below it).
+ */
+type Fighter = { side: Side; kind: EnemyKind; hit: (dmg: number) => void; left: () => number; takes: (from: Side) => number };
 
 const unitFighter = (q: BattleSquad, u: Unit): Fighter => ({
   side: q.side,
@@ -533,9 +554,11 @@ const unitFighter = (q: BattleSquad, u: Unit): Fighter => ({
     u.hp -= dmg - sh;
   },
   left: () => Math.max(0, u.hp) + Math.max(0, u.shield),
+  takes: () => 1,
 });
 
-const robotFighter = (e: Enemy): Fighter => ({
+/** A garrison's robot: its plate turns the factory's fire as a weapon of the factory's `rarity`, the rogues' as `PLATE.robots`. */
+const robotFighter = (rarity: Rarity) => (e: Enemy): Fighter => ({
   side: robotSide(e),
   kind: e.kind,
   hit: (dmg) => {
@@ -544,30 +567,37 @@ const robotFighter = (e: Enemy): Fighter => ({
     e.hp -= dmg - sh;
   },
   left: () => Math.max(0, e.hp) + Math.max(0, e.shield),
+  takes: (from) => {
+    const r = from === 0 ? rarity : PLATE.robots;
+    return e.plate > r ? PLATE.mult[e.plate - r] : 1;
+  },
 });
 
 /**
  * One reckoning of a fight between `fighters`: each side's members together deal their damage
  * (`CONQUEST.dps` times `CONQUEST.hit`) for `dt` seconds, shared among the hostile sides there,
- * each side's share landing on its members in order, the first until it is down.
+ * each side's share landing on its members in order, the first until it is down. A plate turns
+ * each attacker's share by that attacker's rarity before it lands, so a share that kills a
+ * member is spent only by what the kill took.
  */
 function resolve(fighters: Fighter[], dt: number) {
   const sides = [...new Set(fighters.map((f) => f.side))];
   if (sides.length < 2) return;
   const dmg = new Map<Side, number>();
   for (const f of fighters) dmg.set(f.side, (dmg.get(f.side) ?? 0) + CONQUEST.dps[f.kind] * CONQUEST.hit * dt);
-  const takes = new Map<Side, number>();
-  for (const a of sides) for (const t of sides) if (t !== a) takes.set(t, (takes.get(t) ?? 0) + (dmg.get(a) ?? 0) / (sides.length - 1));
-  for (const t of sides) {
-    let left = takes.get(t) ?? 0;
-    for (const f of fighters) {
-      if (f.side !== t || left <= 0 || f.left() <= 0) continue;
-      // What it has left of health and shield takes the damage; what goes past it falls on the next.
-      const dealt = Math.min(left, f.left());
-      f.hit(dealt);
-      left -= dealt;
+  for (const t of sides)
+    for (const a of sides) {
+      if (a === t) continue;
+      let left = (dmg.get(a) ?? 0) / (sides.length - 1);
+      for (const f of fighters) {
+        if (f.side !== t || left <= 0 || f.left() <= 0) continue;
+        const k = f.takes(a);
+        // What it has left of health and shield takes the damage; what goes past it falls on the next.
+        const lands = Math.min(left * k, f.left());
+        f.hit(lands);
+        left -= k > 0 ? lands / k : left;
+      }
     }
-  }
 }
 
 /**
@@ -596,7 +626,7 @@ function fightApart(s: State, b: Battle, dt: number) {
     if (!here.some((q) => q.side !== sideOf(s.nodes[i]))) return;
     // The whole garrison comes to its core to hold it.
     const guards = sideOf(s.nodes[i]) === 0 ? [] : garrisonAt(s, i);
-    resolve([...spread(here), ...guards.map(robotFighter)], dt);
+    resolve([...spread(here), ...guards.map(robotFighter(b.rarity))], dt);
     for (const e of guards) if (e.hp <= 0) gone.add(e);
   });
   if (gone.size) s.enemies = s.enemies.filter((e) => !gone.has(e));

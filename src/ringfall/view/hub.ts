@@ -1,13 +1,13 @@
 import { ALLY, FACTORY, HEALS as HEAL_SPECS, HIDEOUT, MOD_KINDS, RARITY, THREAT, TOOLS, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
 import { boostFor, freeKit, raidClock, strengthFor, type Kit } from "../sim/state";
-import { CAMP, entryOf, NODES, POIS, poiIndex, poiRegion, REGIONS, regionOf, ROUTES, type EntryId, type PoiId, type RegionId, type StationId } from "../sim/map";
+import { CAMP, entryOf, NODES, POIS, UNLOCKS, poiIndex, poiRegion, REGIONS, regionOf, ROUTES, type EntryId, type PoiId, type RegionId, type StationId } from "../sim/map";
 import { build, buildFactory, buildState, buy, buyPrice, canBuild, canBuildFactory, factoryNeeded, nextFactory, canStartIn, deliver, deliverable, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, itemCost, HEALS, healCount, healRoom, keyName, kitPicks, lentHeals, loadoutCost, price, raidThreat, recallLoadout, sell, sellPrice, setThreat, startsIn, STORY_TAKEN, takenStory, threatPay, take, takeKit, takenContract, wanted, wares, type Item, type Loadout, type Profile } from "../meta/profile";
 import { CONTRACT_NAME, contractMark, contractRegion, contractText, type Contract, type Reward } from "../meta/contracts";
 import { currentStory, STORIES, storyOf, storyWhere } from "../meta/story";
 import { maxLevel, MODULES, nextLevel, pouchSlots, sources, stashCap, stillNeeded, type Source } from "../meta/hideout";
 import { need, offered, type Quest, type RewardItem } from "../meta/quests";
 import { saveProfile } from "../meta/storage";
-import { eventName, frontIncome, islandHolds, unfreeable } from "../meta/island";
+import { departDepots, eventName, frontIncome, islandHolds, playerNodes, shopRarity, unfreeable } from "../meta/island";
 import { eventRow } from "./events";
 import { HOLD_CSS, IslandMap, islandScene, TITAN_CSS } from "./map";
 import { enemyNodes, frontNodes } from "../sim/front";
@@ -73,6 +73,20 @@ function itemNote(i: Item, need?: Needs, have = 1): string {
     case "heal":
       return HEAL_SPECS[i.kind].shield ? "シールド回復" : "体力回復";
   }
+}
+
+/**
+ * The trader's shelf by rarity: four swatches in the rarities' colours, lit up to the best the
+ * nodes held open, each with the nodes that open it (blue held, red the enemy's).
+ */
+function shelfTiers(p: Profile): string {
+  const best = shopRarity(p);
+  const mine = playerNodes(p);
+  const cells = ([0, 1, 2, 3] as Rarity[]).map((r) => {
+    const by = NODES.filter((n) => UNLOCKS[n.id].shop === r).map((n) => `<em style="color:${mine.includes(n.id) ? HOLD_CSS.freed : HOLD_CSS.held}">${esc(n.name)}</em>`);
+    return `<div class="tier${r <= best ? " on" : ""}" style="--c:${RARITY_CSS[r]}"><i></i><span>${by.join("")}</span></div>`;
+  });
+  return `<div class="shelf-tiers">${cells.join("")}</div>`;
 }
 
 const color = (i: Item | RewardItem) =>
@@ -277,7 +291,7 @@ export class Hub {
       this.entry = arg as EntryId;
       this.from = null;
       sfx.click();
-    } else if (act === "from" && this.profile.depots.includes(arg as PoiId)) {
+    } else if (act === "from" && departDepots(this.profile).includes(arg as PoiId)) {
       this.from = arg as PoiId;
       this.region = poiRegion(this.from).id;
       // The entry follows the depot's region, so a later start from an entry is one of its own.
@@ -366,7 +380,7 @@ export class Hub {
    */
   private fixStart() {
     const p = this.profile;
-    if (this.from && !p.depots.includes(this.from)) this.from = null;
+    if (this.from && !departDepots(p).includes(this.from)) this.from = null;
     if (!canStartIn(p, this.region)) {
       this.region = "reservoir";
       this.from = null;
@@ -671,7 +685,7 @@ export class Hub {
       ).join("") +
       `</div>` +
       (this.from ? "" : `<small>入口</small><div class="row entries">${known.map((e) => `<button type="button" class="entry${e === this.entry ? " on" : ""}" data-act="entry" data-arg="${e}">${esc(entryOf(e).name)}</button>`).join("")}</div>`) +
-      (p.depots.length ? `<small>中継ボックス</small><div class="row">${p.depots.map((d) => `<button type="button" class="depot${this.from === d ? " on" : ""}" data-act="from" data-arg="${d}">${esc(POIS[poiIndex(d)].name)}（${esc(poiRegion(d).name)}）</button>`).join("")}</div>` : "") +
+      (departDepots(p).length ? `<small>中継ボックス</small><div class="row">${departDepots(p).map((d) => `<button type="button" class="depot${this.from === d ? " on" : ""}" data-act="from" data-arg="${d}">${esc(POIS[poiIndex(d)].name)}（${esc(poiRegion(d).name)}）</button>`).join("")}</div>` : "") +
       `</div>` +
       `<p class="hub-lock" id="hub-lock"${locked.length ? "" : " hidden"}>${esc(locked.map((r) => `${r.name}：${r.locked ?? ""}`).join("　"))}</p>` +
       `<div class="slot ride"><small>車両の行き先</small><span>${line}</span></div>` +
@@ -830,7 +844,7 @@ export class Hub {
       $("hub-side").querySelector(".mod.open .mod-body")?.parentElement?.scrollIntoView({ block: "nearest" });
     } else if (shop) {
       const full = p.stash.length >= stashCap(p.hideout);
-      $("hub-side").innerHTML = wares(p)
+      $("hub-side").innerHTML = shelfTiers(p) + wares(p)
         .map((item, n) => `<button type="button" class="item" data-act="buy" data-arg="${n}" ${p.cash < buyPrice(item) || full ? "disabled" : ""}><span style="color:${color(item)}">${esc(itemName(item))}</span><small>${item.t === "valuable" ? (want[item.kind] > 0 ? `隠れ家と工場の材料・あと ${want[item.kind]} 個要る` : need.hideout[item.kind] + need.factory[item.kind] > 0 ? "隠れ家と工場の材料・足りている" : "売却用") : itemNote(item)}</small><b>${yen(buyPrice(item))}</b></button>`)
         .join("");
     } else if (st === "quests") {

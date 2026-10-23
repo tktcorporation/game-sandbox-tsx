@@ -299,6 +299,25 @@ body.touch #obj-raid .why {
 #compass-mark.edge::before {
   border-bottom-color: #c9b25a;
 }
+/* Where the last reinforcements beamed in, while a node held shows it (UNLOCKS.scout): a red chevron on the strip. */
+#compass-scout {
+  position: absolute;
+  top: 2px;
+  width: 0;
+  height: 0;
+  transform: translateX(-50%);
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  border-top: 10px solid #ff4d4d;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.7));
+  pointer-events: none;
+}
+#compass-scout[hidden] {
+  display: none;
+}
+#compass-scout.edge {
+  border-top-color: #b8433f;
+}
 #obj-bag {
   grid-column: 1 / -1;
   color: var(--muted);
@@ -603,6 +622,11 @@ body.touch #obj-raid .why {
 }
 #hitmark.crit i {
   background: var(--hot);
+}
+/* A round a plate turned aside: a short grey mark, no number. */
+#hitmark.plate i {
+  background: #8d96a8;
+  height: 6px;
 }
 #hitmark.kill i {
   background: var(--ring);
@@ -3036,4 +3060,45 @@ body.touch #obj-raid .short {
 #camp-head,
 #camp-plan {
   z-index: 1;
+}
+
+/* The trader's shelf by rarity: a swatch per rarity, lit up to what the nodes held open, with the nodes that open each. */
+.shelf-tiers {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0 0 10px;
+}
+.shelf-tiers .tier {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 4px;
+  border-radius: 6px;
+  background: rgba(20, 26, 51, 0.6);
+  opacity: 0.45;
+}
+.shelf-tiers .tier.on {
+  opacity: 1;
+  box-shadow: 0 0 0 2px var(--c) inset;
+}
+.shelf-tiers .tier i {
+  display: block;
+  width: 34px;
+  height: 12px;
+  background: var(--c);
+  clip-path: polygon(0 30%, 22% 30%, 22% 10%, 70% 10%, 70% 30%, 100% 30%, 100% 50%, 70% 50%, 46% 50%, 46% 100%, 34% 100%, 34% 70%, 22% 70%, 0 70%);
+}
+.shelf-tiers .tier span {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 2px 6px;
+  min-height: 1.2em;
+  font-size: 11px;
+  font-weight: 800;
+}
+.shelf-tiers .tier em {
+  font-style: normal;
 }

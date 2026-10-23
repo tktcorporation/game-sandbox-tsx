@@ -1,4 +1,4 @@
-import { ALLY, AWARE, BAG, CREW, DEBRIS, DEPOT, ENEMIES, ENTRY, HEALS, HOME, PARTY, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, TICK, TOOL_KINDS, TOOLS, TOP_BINS, VALUABLES, VAULT, WORLD, type HealKind, type ToolKind } from "./config";
+import { ALLY, AWARE, BAG, BIN_GEAR, CREW, DEBRIS, DEPOT, ENEMIES, ENTRY, HEALS, HOME, PARTY, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, TICK, TOOL_KINDS, TOOLS, TOP_BINS, VALUABLES, VAULT, WORLD, type HealKind, type ToolKind } from "./config";
 import { dist2d, groundAt, los, solidAt } from "./geom";
 import { highGround, steepAt, terrainHeight } from "./terrain";
 import { DEPOTS, ENTRIES, EXTRACTS, inCamp, PARTY_STOPS, POIS, recordSpot, REGIONS, regionOf, type ExtractPoint, type RecordId } from "./map";
@@ -477,11 +477,12 @@ function openBin(s: State, binIndex: number) {
   }
   const table = POIS[b.poi].loot;
   const nth = s.bins.filter((o) => o.poi === b.poi).indexOf(b);
-  if (table.weapon.length) {
-    const [kind, rarity] = table.weapon[Math.floor(rand(s) * table.weapon.length)];
+  // Gear is rare in plain bins, and decided by the bin's own hash (`BIN_GEAR`).
+  if (table.weapon.length && hashed(s, b, 11) < BIN_GEAR.weapon) {
+    const [kind, rarity] = table.weapon[Math.floor(hashed(s, b, 12) * table.weapon.length)];
     spill(s, b.x, b.y, b.z, { kind: "weapon", rarity, weapon: { kind, rarity, mag: -1 } });
   }
-  if (table.armor.length && nth !== 0) spill(s, b.x, b.y, b.z, { kind: "armor", rarity: table.armor[nth % table.armor.length] });
+  if (table.armor.length && nth !== 0 && hashed(s, b, 13) < BIN_GEAR.armor) spill(s, b.x, b.y, b.z, { kind: "armor", rarity: table.armor[nth % table.armor.length] });
   for (let i = 0; i < table.heals; i++) spill(s, b.x, b.y, b.z, { kind: "heal", heal: rollHeal(s), rarity: 1 });
   if (b.flare) spill(s, b.x, b.y, b.z, { kind: "flare", rarity: 3 });
   // One valuable per bin; the high-rises' top floors are worth the climb.

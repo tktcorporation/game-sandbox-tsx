@@ -10,10 +10,10 @@ import { battleMarks, placeBattleSquad } from "./sim/battle";
 import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
 import { analyse, raidThreat, settle, takenStory, type Settlement } from "./meta/profile";
 import { MOD, MODS, type ModKind } from "./sim/config";
-import { holds } from "./meta/island";
+import { departDepots, holds } from "./meta/island";
 import { contractProgress, targetKey } from "./meta/contracts";
 import { currentStory } from "./meta/story";
-import { kill } from "./sim/combat";
+import { bodyCenter, eyePos, fireRay, kill } from "./sim/combat";
 import { squadKey } from "./sim/state";
 import { loadProfile, saveProfile } from "./meta/storage";
 import { Hub, type Launch } from "./view/hub";
@@ -553,7 +553,7 @@ function start(go: Launch, from?: State) {
   $("pause").hidden = true;
   hud.show(true);
   hud.setKnown(hub.profile.entries);
-  const depot = go.from && hub.profile.depots.includes(go.from) ? go.from : null;
+  const depot = go.from && departDepots(hub.profile).includes(go.from) ? go.from : null;
   hud.banner(depot ? `${POIS[poiIndex(depot)].name}の中継ボックス` : entryOf(go.entry).name, `ここから探索する。拠点と脱出地点は${touchMode ? "地図ボタン" : " M "}の地図で見る`);
   lock();
 }
@@ -681,6 +681,9 @@ declare global {
     ringfallFrames: () => Record<string, { x: number; z: number }>;
     ringfallPlace: (x: number, z: number, yaw: number) => void;
     ringfallFight: (x: number, z: number, apart?: number) => { x: number; z: number }[];
+    ringfallPlates: (x: number, z: number, face?: number) => { id: number; x: number; y: number; z: number }[];
+    ringfallShoot: (id: number, rarity: number) => { plate: number; left: number } | null;
+    ringfallClearPlates: () => void;
     ringfallBattle: (x: number, z: number, apart?: number) => { x: number; z: number }[] | null;
     ringfallContract: {
       take: (type: string) => string | null;
@@ -899,6 +902,47 @@ window.ringfallBattle = (x, z, apart = 30) => {
     { x: x - apart / 2, z },
     { x: x + apart / 2, z },
   ];
+};
+
+/**
+ * Automation only: a row of grunts and a heavy set down across (x, z), unaware and facing
+ * `face`, wearing plates of tiers 0 to 3 from west to east, for a screenshot of the plates'
+ * colours. Returns each one's id and where it stands.
+ */
+window.ringfallPlates = (x, z, face = 0) => {
+  const s = state;
+  const index = s.squads.length;
+  s.squads.push({ name: "装甲", poi: -1, patrol: [], leg: 0, engaged: false, roam: false, sinceSeen: 0, last: { x: 0, z: 0 } });
+  return (["grunt", "grunt", "grunt", "heavy"] as const).map((kind, k) => {
+    const e = spawnEnemy(s, kind, x + (k - 1.5) * 3.2, z, -1, index, { face, plate: k as 0 | 1 | 2 | 3 });
+    return { id: e.id, x: e.pos.x, y: e.pos.y, z: e.pos.z };
+  });
+};
+
+/** Automation only: takes the robots `ringfallPlates()` set down out of the raid, and the player back to full health, as before them. */
+window.ringfallClearPlates = () => {
+  const squads = new Set(state.squads.map((q, i) => (q.name === "装甲" ? i : -1)).filter((i) => i >= 0));
+  state.enemies = state.enemies.filter((e) => !squads.has(e.squad));
+  state.player.hp = PLAYER.hp;
+  state.player.shield = PLAYER.shieldByTier[state.player.armor];
+};
+
+/**
+ * Automation only: one PIKE round of `rarity` from the player's eyes into the body of robot `id`,
+ * its events handled as a step's are (sparks, sound, the HUD's number). The robot's plate and
+ * health and shield after it, or null with no such robot.
+ */
+window.ringfallShoot = (id, rarity) => {
+  const e = state.enemies.find((o) => o.id === id);
+  if (!e) return null;
+  const eye = eyePos(state);
+  const c = bodyCenter(e);
+  const d = Math.hypot(c.x - eye.x, c.y - eye.y, c.z - eye.z) || 1;
+  state.events = [];
+  fireRay(state, { kind: "pike", rarity: rarity as 0 | 1 | 2 | 3, mag: 1 }, { x: (c.x - eye.x) / d, y: (c.y - eye.y) / d, z: (c.z - eye.z) / d });
+  world.handle(state, state.events);
+  for (const ev of state.events) onEvent(ev, state);
+  return { plate: e.plate, left: Math.round(e.hp + e.shield) };
 };
 
 window.ringfallBot = (skill: string) => {

@@ -3,6 +3,7 @@ import type { ModKind } from "../sim/config";
 import { itemName, rewardList } from "./hub";
 import { ALLY, AWARE, BAG, DEPOT, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, TACTICAL, TOOL_KINDS, TOOLS, VALUABLES, WEAPONS, type Flank } from "../sim/config";
 import { eyePos, magSize } from "../sim/combat";
+import { heldUnlocks } from "../sim/battle";
 import { dist2d, los } from "../sim/geom";
 import { DEPOTS, entryOf, EXTRACTS, nodeIndex, NODES, POIS, poiIndex, regionHere, regionOf, routeOf, type EntryId } from "../sim/map";
 import { routeBefore } from "../sim/routes";
@@ -67,6 +68,8 @@ const FLANK_RANK: Record<Flank, number> = { front: 0, none: 1, side: 1, back: 2,
 
 /** Metres within which a seen robot shows how aware it is. */
 const MARK_RANGE = 40;
+/** Seconds the compass shows where reinforcements beamed in (`UNLOCKS.scout`). */
+const SCOUT_SHOW = 25;
 
 export class Hud {
   private root = $("hud");
@@ -148,6 +151,8 @@ export class Hud {
     this.task = c ? contractTask(c) : record && story ? { t: "record", id: record } : null;
     this.lastStep = "";
     this.map.contract = c && contractMark(c);
+    // A new raid restarts `s.time`, so a landing marked in the last raid would show again.
+    this.scout = null;
   }
 
   /** The ways in the base offers, for the raid about to start: the HUD and the map tell the others apart. */
@@ -178,6 +183,11 @@ export class Hud {
         // The teammate's hits are not the player's: no marker, no number.
         if (e.ally) break;
         this.hitT = 0.08;
+        // A plate that turns the round aside shows no number: the sparks and the ping say it.
+        if (e.blocked && !e.crit) {
+          $("hitmark").className = "plate";
+          break;
+        }
         $("hitmark").className = e.crit ? "crit" : "";
         // Hits on the same robot in quick succession add up, for at most 1.2 s per number.
         const n = this.nums.find((x) => x.id === e.id && x.age < 0.4 && x.life < 1.2);
@@ -261,6 +271,8 @@ export class Hud {
         break;
       case "reinforce":
         this.banner("増援が降下した", "ロボット部隊がこちらを探している");
+        // A node held that watches the sky shows where they came down (`UNLOCKS.scout`).
+        if (heldUnlocks(s.nodes, "scout").length) this.scout = { x: e.x, z: e.z, until: s.time + SCOUT_SHOW };
         break;
       case "raiders":
         this.banner("レイダーが降下した", "精鋭部隊がこちらを狩りに来る。横から回り込んでくる");
@@ -277,7 +289,7 @@ export class Hud {
         this.toast("発煙筒を焚いた：回収を待て", 3);
         break;
       case "careDrop":
-        this.banner("補給ポッド投下", "金色の光の下にレジェンド武器", true);
+        this.banner("補給ポッド投下", "金色の光の下に武器", true);
         break;
       case "down":
         if (!s.player.awaitAlly) this.banner("ダウン", "3 秒で自己蘇生する");
@@ -426,6 +438,7 @@ export class Hud {
     const half = $("compass").clientWidth / 2;
     $("compass-strip").style.transform = `translateX(${half - (heading + 360) * 2}px)`;
     this.placeMark(heading, half);
+    this.placeScout(s, heading, half);
     this.exits(s);
 
     // Vitals.
@@ -807,6 +820,24 @@ export class Hud {
     const p = s.player.pos;
     // Standing at the place already, the marker would only point at the player's feet.
     this.mark = at && s.phase === "play" && dist2d(p, at) > 8 ? { bearing: (((Math.atan2(at.x - p.x, -(at.z - p.z)) * 180) / Math.PI) % 360 + 360) % 360, d: dist2d(p, at) } : null;
+  }
+
+  /** Where the last reinforcements beamed in, and until when the compass shows it; null for none. */
+  private scout: { x: number; z: number; until: number } | null = null;
+
+  /** The red chevron on the compass toward the last reinforcements' landing, held at the strip's edge when behind. */
+  private placeScout(s: State, heading: number, half: number) {
+    const el = $("compass-scout");
+    const at = this.scout && s.phase === "play" && s.time < this.scout.until ? this.scout : null;
+    el.hidden = !at;
+    if (!at) return;
+    const p = s.player.pos;
+    const bearing = ((((Math.atan2(at.x - p.x, -(at.z - p.z)) * 180) / Math.PI) % 360) + 360) % 360;
+    const rel = ((bearing - heading + 540) % 360) - 180;
+    const max = (half * 0.62) / 2;
+    const off = Math.max(-max, Math.min(max, rel));
+    el.style.left = `${half + off * 2}px`;
+    el.classList.toggle("edge", off !== rel);
   }
 
   /**
