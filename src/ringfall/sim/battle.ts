@@ -1,4 +1,4 @@
-import { CONQUEST, ENEMIES, FACTORY, TICK, type EnemyKind } from "./config";
+import { CONQUEST, ENEMIES, FACTORY, PLATE, TICK, type EnemyKind, type Rarity } from "./config";
 import { dist2d } from "./geom";
 import { CAMP, depotIndex, FRONT_LINKS, NET_EDGE, NODES, nodeIndex, UNLOCKS, type NodeId, type NodeUnlock } from "./map";
 import { forgetFields, onMainGround, walkLine } from "./hunt";
@@ -76,6 +76,8 @@ export interface Battle {
   meter: (NodeMeter | null)[];
   /** The factory's level the battle was fought with. */
   factory: number;
+  /** The rarity the factory's robots' guns count as against plates (`factoryRarity()`), as the battle began. */
+  rarity: Rarity;
   /** Each node's standing as the battle began. */
   start: NodeHold[];
   /** The nodes that changed hands in the battle, in order: which, to whom, when. */
@@ -175,6 +177,7 @@ export function initBattle(s: State, start: BattleStart): Battle {
     made: [0, 0, 0],
     meter: NODES.map(() => null),
     factory,
+    rarity: factoryRarity(s.nodes),
     start: [...s.nodes],
     taken: [],
     done: false,
@@ -459,6 +462,13 @@ function enemyPlan(s: State, b: Battle, side: Side): { from: number; to: number 
 /** The nodes the player holds now that open `key` (`UNLOCKS`): it lasts while they are held. */
 export const heldUnlocks = (nodes: State["nodes"], key: keyof NodeUnlock): NodeId[] => NODES.filter((n, i) => nodes[i] === "freed" && UNLOCKS[n.id][key]).map((n) => n.id);
 
+/**
+ * The rarity the factory's robots' guns count as against plates: the best the trader sells for the
+ * nodes held (`UNLOCKS`), and never below the other robots' (`PLATE.robots`). The factory arms its
+ * robots as the player can arm themselves, so its squads break into a tier no sooner than the player.
+ */
+export const factoryRarity = (nodes: State["nodes"]): Rarity => Math.max(PLATE.robots, ...heldUnlocks(nodes, "shop").map((id) => UNLOCKS[id].shop ?? 0)) as Rarity;
+
 /** The squads the factory keeps out at once: its level's, and one more for each node held that opens one. */
 export const factoryMax = (s: Pick<State, "nodes">, f: number) => FACTORY.max[f] + heldUnlocks(s.nodes, "squad").reduce((n, id) => n + (UNLOCKS[id].squad ?? 0), 0);
 
@@ -543,10 +553,12 @@ const unitFighter = (q: BattleSquad, u: Unit): Fighter => ({
   left: () => Math.max(0, u.hp) + Math.max(0, u.shield),
 });
 
-const robotFighter = (e: Enemy): Fighter => ({
+const robotFighter = (rarity: Rarity) => (e: Enemy): Fighter => ({
   side: robotSide(e),
   kind: e.kind,
   hit: (dmg) => {
+    // A garrison's plate turns the factory's fire as it turns a weapon of the factory's rarity.
+    if (e.plate > rarity) dmg *= PLATE.mult[e.plate - rarity];
     const sh = Math.min(e.shield, dmg);
     e.shield -= sh;
     e.hp -= dmg - sh;
@@ -604,7 +616,7 @@ function fightApart(s: State, b: Battle, dt: number) {
     if (!here.some((q) => q.side !== sideOf(s.nodes[i]))) return;
     // The whole garrison comes to its core to hold it.
     const guards = sideOf(s.nodes[i]) === 0 ? [] : garrisonAt(s, i);
-    resolve([...spread(here), ...guards.map(robotFighter)], dt);
+    resolve([...spread(here), ...guards.map(robotFighter(b.rarity))], dt);
     for (const e of guards) if (e.hp <= 0) gone.add(e);
   });
   if (gone.size) s.enemies = s.enemies.filter((e) => !gone.has(e));

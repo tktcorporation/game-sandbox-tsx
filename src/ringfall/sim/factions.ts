@@ -1,4 +1,4 @@
-import { AMBUSH, AWARE, BAG, DEG, FACTION, NOISE, PATROL, ROGUE, SIGHT, SWEEP, TICK, VALUABLES, type EnemyKind } from "./config";
+import { AMBUSH, AWARE, BAG, DEG, FACTION, NOISE, PATROL, PLATE, ROGUE, SIGHT, SWEEP, TICK, VALUABLES, type EnemyKind } from "./config";
 import { dist2d, los, lookAngles, wrapAngle } from "./geom";
 import { EXTRACTS, GATES, MOBILES, RING_GAPS, regionHere, type Mobile, type RegionId } from "./map";
 import { onMainGround, walkLine } from "./hunt";
@@ -217,13 +217,17 @@ export function stepFactions(s: State) {
 }
 
 /**
- * A robot hit by the other faction's fire (see FACTION): it takes `FACTION.dmg` of the damage, with
- * no flank or plate, and its squad, if it is not fighting the player or another foe
+ * A robot hit by the other faction's fire (see FACTION): it takes `FACTION.dmg` of the damage, cut
+ * by a plate their guns do not pierce but with no flank, and its squad, if it is not fighting the player or another foe
  * already, turns on whoever shot it. At no health left it falls (`fall()`).
  */
 export function damageRobot(s: State, v: Enemy, dmg: number, by: Enemy | null) {
   if (!present(s, v)) return;
   dmg *= FACTION.dmg;
+  // A plate turns the other robots' fire as it turns a weapon of their rarity: the factory's
+  // robots' as the battle arms them (`factoryRarity()`), the rogues' `PLATE.robots`.
+  const rarity = by?.friend && s.battle ? s.battle.rarity : PLATE.robots;
+  if (v.plate > rarity) dmg *= PLATE.mult[v.plate - rarity];
   const toShield = Math.min(v.shield, dmg);
   v.shield -= toShield;
   v.hp -= dmg - toShield;

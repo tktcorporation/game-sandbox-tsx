@@ -1131,6 +1131,8 @@ export const PLATE = {
   garrison: [0, 0.75, 0.85, 1] as number[],
   drop: 0.15,
   elite: 0.5,
+  /** The rarity the rogues' guns count as against a plate, and the least the factory's do (`factoryRarity()` in battle.ts): tier 1 only. */
+  robots: 1 as Rarity,
   /** Weapons a plated robot or a raider drops, picked from the seed and the robot. */
   weapons: ["pike", "lance", "hornet", "maul", "talon"] as WeaponKind[],
 };

@@ -4,7 +4,7 @@ import { frontNodes } from "./front";
 import { currentStep, objectiveSteps } from "./objective";
 import { bodyCenter, eyePos, flankOf, magSize, weakPoint } from "./combat";
 import { ceilingAt, dist2d, inWorld, groundAt, groundLevel, los, onTerrain, lookAngles, solidAt, wrapAngle } from "./geom";
-import { EXTRACTS, NODES, POIS, poiIndex, regionOf, type ExtractPoint, type PoiId } from "./map";
+import { EXTRACTS, NODES, POIS, poiIndex, regionOf, TIER, type ExtractPoint, type NodeId, type PoiId } from "./map";
 import { clearLine, findPath, type Avoid } from "./nav";
 import { onMainGround } from "./hunt";
 import { callLeft, enemyMax, idleInput, weakY, type Enemy, type Input, type State } from "./state";
@@ -70,6 +70,9 @@ function segmentNear(a: { x: number; z: number }, b: { x: number; z: number }, c
   const t = Math.max(0, Math.min(1, ((c.x - a.x) * dx + (c.z - a.z) * dz) / (dx * dx + dz * dz || 1)));
   return Math.hypot(a.x + dx * t - c.x, a.z + dz * t - c.z) < c.r;
 }
+
+/** The best rarity among the guns the player carries: the deepest plates it pierces (-1 with none). */
+const pierce = (s: State) => Math.max(-1, ...s.player.weapons.map((w) => (w ? w.rarity : -1)));
 
 /** Metres round a titan it is not out to fight that its paths keep out of where they can: past its sight. */
 const AVOID_TITAN = 70;
@@ -654,7 +657,9 @@ export class Bot {
     const p = s.player;
     const mine = regionOf(s.region).pois;
     const others = POIS.filter((poi) => !poi.boss && mine.includes(poi.id)).length;
-    const open = POIS.map((poi, i) => ({ poi, i })).filter(({ poi, i }) => mine.includes(poi.id) && !s.cleared[i] && !this.left.has(i) && (!poi.boss || s.stats.cleared.length >= others));
+    // Not into a garrison whose plates are two steps past its best gun: one step past is a fight for the weak points.
+    const reach = pierce(s) + 1;
+    const open = POIS.map((poi, i) => ({ poi, i })).filter(({ poi, i }) => mine.includes(poi.id) && !s.cleared[i] && !this.left.has(i) && (TIER[poi.id as NodeId] ?? 0) <= reach && (!poi.boss || s.stats.cleared.length >= others));
     // A POI on the front first, which it can free by its core once cleared; then the nearest.
     const front = frontNodes(s.nodes);
     const onFront = (i: number) => (NODES.findIndex((n) => n.id === POIS[i].id) >= 0 && front[NODES.findIndex((n) => n.id === POIS[i].id)] ? 0 : 1);
@@ -683,7 +688,8 @@ export class Bot {
     const spent = (left < 0.6 && !pickHeal(s)) || p.selfRevive <= 0 || this.raidersIn;
     // As many cores a raid as its skill dares (`Skill.capture`), and none once it is spent.
     if (spent || s.stats.captured.length >= this.cores(s)) return -1;
-    const open = NODES.map((n, i) => ({ n, i })).filter(({ n, i }) => front[i] && n.region === s.region && !this.coreLeft.has(i) && s.cleared[poiIndex(n.id)]);
+    // Only a node whose garrison's plates its best gun pierces: holding the core against more of them takes that.
+    const open = NODES.map((n, i) => ({ n, i })).filter(({ n, i }) => front[i] && n.region === s.region && !this.coreLeft.has(i) && s.cleared[poiIndex(n.id)] && TIER[n.id] <= pierce(s));
     open.sort((a, b) => dist2d(a.n.core, p.pos) - dist2d(b.n.core, p.pos));
     const pick = open[0]?.i ?? -1;
     if (pick >= 0) {
