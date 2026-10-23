@@ -4103,6 +4103,14 @@ function checkBattle(): string | null {
   sendSquad(rog, 2, far, [grunt(), grunt()]);
   ticks(rog, CONQUEST.capture + 3);
   if (rog.nodes[far] !== "held" || rog.battle!.taken.some((t) => t.side === 2)) return `battle: a rogue squad took ${NODES[far].id}`;
+  // Nor does the player's squad take a node while a rogue squad stands there with it.
+  const shared = mk();
+  shared.enemies = shared.enemies.filter((e) => !garrisonOf(shared, far, e.squad));
+  const tough = () => ({ kind: "heavy" as EnemyKind, hp: 1e6, shield: 0 });
+  sendSquad(shared, 0, far, [tough()]);
+  sendSquad(shared, 2, far, [tough()]);
+  ticks(shared, CONQUEST.capture + 3);
+  if (shared.nodes[far] === "freed") return `battle: the player's squad took ${NODES[far].id} with a rogue squad standing there`;
   // In the world and back: every member's health as it was.
   const lod = mk();
   lod.ally.active = false;
