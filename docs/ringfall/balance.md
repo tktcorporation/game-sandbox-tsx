@@ -379,17 +379,17 @@ island campaign: a month on one profile per skill, the network carried (scripts/
 skill     day 5      day 10     day 20     day 30     alive  n(mean)  n(max)  tier 0-3: first day held days in                events d/s/c  crews in/out
 beginner  n1 s1 f1   n1 s1 f1   n2 s1 f2   n3 s1 f3   60%    2.1      3       1/2/15/-                 reservoir 14 harbor 16 6/3/3         3/0
 casual    n2 s1 f1   n2 s1 f1   n6 s0 f3   n6 s0 f4   70%    3.5      6       1/2/17/18                reservoir 19 harbor 11 6/3/3         3/0
-good      n1 s1 f1   n1 s1 f1   n6 s0 f3   n6 s0 f4   80%    3.7      6       1/2/16/16                reservoir 24 harbor 6  6/3/3         3/0
+good      n1 s1 f1   n1 s1 f1   n6 s0 f3   n6 s0 f4   80%    4.2      6       1/2/11/11                reservoir 24 harbor 6  6/3/3         3/0
 front     nodes gained / lost overnight  raid min (med)
 beginner  10 / 7                         5.3
 casual    10 / 4                         3.6
-good      9 / 3                          4.0
-nodes by day: beginner 121212111122223332223322333333 / casual 122221122212211235666666666666 / good 122111221111222566666666666666
-harbor nodes by day: beginner 000000000000001000001100110000 / casual 000000000000000013333333333333 / good 000000000000000333333333333333
-deepest tier by day: beginner 010111111111112111112211221111 / casual 011110111111111123333333333333 / good 011111111110111333333333333333
-best gun carried by day (0 common to 3 legendary): beginner 010100022200122222222300231222 / casual 002222102200202223111111111111 / good 002020020220100222222222222222
-strength by day: beginner 111111111111111111111111111111 / casual 111111111111111110000000000000 / good 111111111111111000000000000000
-factory by day: beginner 111111111112222222222222222223 / casual 111111111111112222333333334444 / good 111111111112222233333333444444
+good      9 / 3                          2.9
+nodes by day: beginner 121212111122223332223322333333 / casual 122221122212211235666666666666 / good 122111221124565666666666666666
+harbor nodes by day: beginner 000000000000001000001100110000 / casual 000000000000000013333333333333 / good 000000000013333333333333333333
+deepest tier by day: beginner 010111111111112111112211221111 / casual 011110111111111123333333333333 / good 011111111133333333333333333333
+best gun carried by day (0 common to 3 legendary): beginner 010100022200122222222300231222 / casual 002222102200202223111111111111 / good 002020020222211111111111111111
+strength by day: beginner 111111111111111111111111111111 / casual 111111111111111110000000000000 / good 111111111110000000000000000000
+factory by day: beginner 111111111112222222222222222223 / casual 111111111111112222333333334444 / good 111111111112222333333344444444
 front on day 30 (beginner): yard smelter
 front on day 30 (casual): -
 front on day 30 (good): -
@@ -398,7 +398,7 @@ events: days with a debris fall / storm / crews' visit; crews in/out: salvage cr
 
 表の読み方：各日の欄は「n持っている拠点 s次の日の敵の強さ f工場の段」。tier 0-3 は各段の拠点を初めて持った日（- は 30 日のうちに無い）、held days in はダム湖と港湾地帯で遊んだ日数、events は出来事（破片の落下・嵐・回収部隊の来訪）の日数、crews in/out は来た回収部隊と引き上げた回収部隊。front の行は、30 日で夜に持ち主が自軍に変わった拠点と敵に変わった拠点の数、レイドの時間の中央値（分）。by day の行は日ごとの、持っている拠点、そのうち港湾地帯の拠点、持っている最も奥の段（0 は補給所だけか何も持たない日）、その日に持って出た最も良い銃の格（0 コモン〜3 レジェンド）、敵の強さ、工場の段。
 
-- 上手いは 2 日目に段 1、16 日目に段 2 と段 3（難破船）に届き、17 日目から 6 拠点すべてを持つ。生還は 80%
+- 上手いは 2 日目に段 1、11 日目に段 2 と段 3（難破船）に届き、16 日目から 6 拠点すべてを持つ。生還は 80%
 - 普通は 2 日目に段 1、17 日目に段 2、18 日目に段 3 に届き、19 日目から 6 拠点すべてを持つ。生還は 70%
 - 初心者は 2 日目に段 1、15 日目に段 2 に届く。持っている拠点は平均 2.1、多い日で 3。生還は 60%
 - 腕前ごとの目標（初心者は段 1、普通は段 2、上手いは段 3 に届く日がある）には、どの腕前も届く。どの腕前も、奥の段に届くのはその段の装甲板を貫く格の銃を持って出た後になる
