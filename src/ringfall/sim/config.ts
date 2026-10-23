@@ -412,6 +412,17 @@ export const CONQUEST = {
   tick: 1,
   near: 250,
   far: 300,
+  /** Metres between the members of a squad walking a link in a column, one behind another. */
+  column: 2.8,
+  /** Seconds from a dropship's (`ship`) or a boat's (`boat`) setting off to the squad stepping ashore. */
+  land: { ship: 14, boat: 18 },
+  /**
+   * The player's squads near the node the player attacks fight beside them: the player is
+   * attacking a node on the front within `near` metres of its core (or capturing it), squads
+   * within `reach` of the core come, and stand round it `ring[0]` metres out while the player
+   * takes the core, `ring[1]` while they fight for it.
+   */
+  rally: { near: 130, reach: 260, ring: [9, 18] as const },
   meet: 35,
   zone: 20,
   capture: 30,

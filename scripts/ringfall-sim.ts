@@ -4082,7 +4082,7 @@ function checkBattle(): string | null {
   const far = NODES.map((n, i) => ({ i, d: dist2d(n.core, s.player.pos) })).filter(({ i }) => s.nodes[i] !== "freed" && NODES[i].region === "reservoir").sort((x, y) => y.d - x.d)[0].i;
   const sendSquad = (r: State, side: 0 | 1 | 2, to: number, units: { kind: EnemyKind; hp: number; shield: number }[], from = to, task: "attack" | "hold" = "attack") => {
     const at = nodePoint(to);
-    const q = { id: r.battle!.nextId++, side, units, from, to, d: 1e9, task, squad: -1, x: at.x, z: at.z };
+    const q = { id: r.battle!.nextId++, side, units, from, to, d: 1e9, task, squad: -1, x: at.x, z: at.z, via: [] as number[], ashore: 0 };
     r.battle!.squads.push(q);
     return q;
   };
