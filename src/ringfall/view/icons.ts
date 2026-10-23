@@ -82,7 +82,11 @@ export const turretIcon = (c = "currentColor") => svg(`<rect x="3" y="10" width=
 
 /** A route a tool opens, as the map draws it: a solid teal line when open, a dashed orange one when shut. */
 export const routeIcon = (open: boolean) =>
-  svg(open ? `<path d="M1.5 8 H14.5" stroke="#6fd0cf" stroke-width="3" stroke-linecap="round"/>` : `<path d="M1.5 8 H14.5" stroke="#ff8a5c" stroke-width="3" stroke-dasharray="3 2.5"/><path d="M5.5 5 L10.5 11 M10.5 5 L5.5 11" stroke="#ff8a5c" stroke-width="1.8"/>`, "route", 22);
+  `<svg class="ico route ${open ? "open" : "shut"}" viewBox="0 0 24 12" width="24" height="12" aria-hidden="true">${
+    open
+      ? `<path d="M1.5 6 H22.5" stroke="#6fd0cf" stroke-width="3" stroke-linecap="round"/>`
+      : `<path d="M1.5 6 H22.5" stroke="#ff8a5c" stroke-width="3" stroke-dasharray="3.5 2.5"/><path d="M9 2 L15 10 M15 2 L9 10" stroke="#ff8a5c" stroke-width="2"/>`
+  }</svg>`;
 
 /** A heal by what it restores: a shield cell (blue) or health (green). */
 export const healIcon = (shield: boolean) => (shield ? svg(`<path d="M8 1.5 L14 4 V8.5 C14 11.8 11.3 14 8 15 C4.7 14 2 11.8 2 8.5 V4 Z" fill="#4fb6ff"/>`, "heal") : reviveIcon("#7fe08a"));

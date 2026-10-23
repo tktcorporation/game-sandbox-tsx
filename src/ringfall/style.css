@@ -3221,15 +3221,6 @@ body.touch #obj-raid .short {
 #obj-exits .locked .ico.exit {
   opacity: 0.45;
 }
-body.touch #obj-exits {
-  flex-direction: row;
-  flex-wrap: wrap;
-  column-gap: 10px;
-}
-body.touch #obj-exits div:not(.live),
-body.touch #obj-exits div:not(.live) span {
-  display: flex;
-}
 #mate-state {
   display: inline-flex;
   align-items: center;

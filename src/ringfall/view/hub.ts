@@ -486,7 +486,10 @@ export class Hub {
    * seconds between squads, how many squads at once, and its turrets.
    */
   private factoryLine(lv: number): string {
-    const kinds = FACTORY.kinds[lv].map((k) => `<span>${robotIcon(SIDE.own)}${ENEMY_NAME[k]}</span>`).join("");
+    const kinds = [...new Set(FACTORY.kinds[lv])].map((k) => {
+      const n = FACTORY.kinds[lv].filter((x) => x === k).length;
+      return `<span>${robotIcon(SIDE.own)}${ENEMY_NAME[k]}${n > 1 ? ` ×${n}` : ""}</span>`;
+    }).join("");
     const turrets = FACTORY.turrets[lv] ? `<span>${turretIcon(SIDE.own)}${FACTORY.turrets[lv]}</span>` : "";
     return `<span class="factory-line">${kinds}<span>${clockIcon()}${FACTORY.every[lv]} 秒</span><span>部隊 ×${FACTORY.max[lv]}</span>${turrets}</span>`;
   }
