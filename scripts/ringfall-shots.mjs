@@ -1454,7 +1454,7 @@ const readOf = async (pg) => JSON.parse(await pg.evaluate(() => window.render_ga
   await toCamp(pg);
   await useStation(pg, "workshop");
   // A shut route: the map's dashed line, a padlock, the tool that opens it and the POI whose bins hold it.
-  const shut = await pg.evaluate(() => [...document.querySelectorAll("#hub-side .route:not(.open)")].map((r) => (r.querySelector(".ico.route.shut") && r.querySelector(".ico.lock") ? "🔒" : "") + r.textContent));
+  const shut = await pg.evaluate(() => [...document.querySelectorAll("#hub-side .quest.route:not(.open)")].map((r) => (r.querySelector(".ico.route.shut") && r.querySelector(".ico.lock") ? "🔒" : "") + r.textContent));
   if (shut.length !== 3 || !shut.every((t) => /^🔒.*(キット|カッター).*(採掘場|コンテナヤード)/.test(t))) errors.push(`routes: the hideout lists ${JSON.stringify(shut)}`);
   await pg.locator("#hub-side .route").first().scrollIntoViewIfNeeded();
   await pg.screenshot({ path: `${out}/51-workshop-routes.png` });
@@ -1482,7 +1482,7 @@ const readOf = async (pg) => JSON.parse(await pg.evaluate(() => window.render_ga
   const pg = await withProfile(ctx, { ...midGame, v: 9, routes: ["tunnel", "dam", "gangway"] });
   await toCamp(pg);
   await useStation(pg, "workshop");
-  const open = await pg.evaluate(() => [...document.querySelectorAll("#hub-side .route")].map((r) => (r.classList.contains("open") && r.querySelector(".ico.route.open") && !r.querySelector(".ico.lock") ? "" : "shut:") + r.textContent));
+  const open = await pg.evaluate(() => [...document.querySelectorAll("#hub-side .quest.route")].map((r) => (r.classList.contains("open") && r.querySelector(".ico.route.open") && !r.querySelector(".ico.lock") ? "" : "shut:") + r.textContent));
   if (open.length !== 3 || open.some((t) => t.startsWith("shut:"))) errors.push(`routes: with every route open the hideout lists ${JSON.stringify(open)}`);
   await closePanel(pg);
   await walkOutOfGate(pg);
