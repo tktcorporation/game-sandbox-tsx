@@ -683,6 +683,7 @@ declare global {
     ringfallFight: (x: number, z: number, apart?: number) => { x: number; z: number }[];
     ringfallPlates: (x: number, z: number, face?: number) => { id: number; x: number; y: number; z: number }[];
     ringfallShoot: (id: number, rarity: number) => { plate: number; left: number } | null;
+    ringfallClearPlates: () => void;
     ringfallBattle: (x: number, z: number, apart?: number) => { x: number; z: number }[] | null;
     ringfallContract: {
       take: (type: string) => string | null;
@@ -916,6 +917,14 @@ window.ringfallPlates = (x, z, face = 0) => {
     const e = spawnEnemy(s, kind, x + (k - 1.5) * 3.2, z, -1, index, { face, plate: k as 0 | 1 | 2 | 3 });
     return { id: e.id, x: e.pos.x, y: e.pos.y, z: e.pos.z };
   });
+};
+
+/** Automation only: takes the robots `ringfallPlates()` set down out of the raid, and the player back to full health, as before them. */
+window.ringfallClearPlates = () => {
+  const squads = new Set(state.squads.map((q, i) => (q.name === "装甲" ? i : -1)).filter((i) => i >= 0));
+  state.enemies = state.enemies.filter((e) => !squads.has(e.squad));
+  state.player.hp = PLAYER.hp;
+  state.player.shield = PLAYER.shieldByTier[state.player.armor];
 };
 
 /**

@@ -861,6 +861,7 @@ lap("start and tour");
 // through it until the plate breaks off (numbers, and the plate gone).
 {
   const p0 = await read();
+  const yaw0 = await page.evaluate(() => window.ringfallYaw());
   const row = await page.evaluate(([x, z]) => window.ringfallPlates(x, z, Math.PI), [p0.player.x, p0.player.z - 10]);
   const mid = { x: (row[1].x + row[2].x) / 2, y: row[1].y, z: row[1].z };
   await page.evaluate(([x, y, z]) => window.ringfallCamera(x, y + 2, z + 6.5, 0, -0.12), [mid.x, mid.y, mid.z]);
@@ -884,6 +885,12 @@ lap("start and tour");
   await page.evaluate(() => window.advanceTime(16));
   if (!through || through.plate !== 0 || !(await page.locator(".dmg").count())) errors.push(`plates: epic rounds left the purple plate at ${JSON.stringify(through)}, numbers ${await page.locator(".dmg").count()}`);
   await page.screenshot({ path: `${out}/plates-3-broken.png` });
+  // The rest of the gate plays on as if they had never come: the robots gone, the player back where they stood.
+  await page.evaluate(([x, z, yaw]) => {
+    window.ringfallClearPlates();
+    window.ringfallPlace(x, z, yaw);
+  }, [p0.player.x, p0.player.z, yaw0]);
+  await page.evaluate(() => window.advanceTime(16));
   lap("plates");
 }
 

@@ -951,7 +951,7 @@ export class World {
           }
           // A plate turning a hit aside throws a spray of hot sparks off it, so the player sees the gun is too weak.
           if (e.blocked && !e.crit) {
-            this.burst(e.pos, PLATE_SPARK, 12, 9, 0.035, 14, 0.22);
+            this.burst(e.pos, PLATE_SPARK, 16, 10, 0.06, 14, 0.3);
             this.burst(e.pos, 0xffffff, 3, 4, 0.06, 0, 0.06);
           }
           else this.burst(e.pos, e.crit ? PAL.hot : e.shield ? RARITY_COLOR[e.tier] : 0xffffff, e.crit ? 7 : 4, 4, 0.06, 6, 0.3);
