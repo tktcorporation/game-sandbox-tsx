@@ -794,8 +794,11 @@ function march(s: State, b: Battle, dt: number) {
   });
 }
 
-/** A fighter in a reckoned fight: a squad's member in numbers, or a garrison's robot in the world. */
-type Fighter = { side: Side; kind: EnemyKind; hit: (dmg: number) => void; left: () => number };
+/**
+ * A fighter in a reckoned fight: a squad's member in numbers, or a garrison's robot in the world.
+ * `takes(side)` is the share of a hit from `side` that lands (a plate turns what is below it).
+ */
+type Fighter = { side: Side; kind: EnemyKind; hit: (dmg: number) => void; left: () => number; takes: (from: Side) => number };
 
 const unitFighter = (q: BattleSquad, u: Unit): Fighter => ({
   side: q.side,
@@ -806,43 +809,50 @@ const unitFighter = (q: BattleSquad, u: Unit): Fighter => ({
     u.hp -= dmg - sh;
   },
   left: () => Math.max(0, u.hp) + Math.max(0, u.shield),
+  takes: () => 1,
 });
 
+/** A garrison's robot: its plate turns the factory's fire as a weapon of the factory's `rarity`, the rogues' as `PLATE.robots`. */
 const robotFighter = (rarity: Rarity) => (e: Enemy): Fighter => ({
   side: robotSide(e),
   kind: e.kind,
   hit: (dmg) => {
-    // A garrison's plate turns the factory's fire as it turns a weapon of the factory's rarity.
-    if (e.plate > rarity) dmg *= PLATE.mult[e.plate - rarity];
     const sh = Math.min(e.shield, dmg);
     e.shield -= sh;
     e.hp -= dmg - sh;
   },
   left: () => Math.max(0, e.hp) + Math.max(0, e.shield),
+  takes: (from) => {
+    const r = from === 0 ? rarity : PLATE.robots;
+    return e.plate > r ? PLATE.mult[e.plate - r] : 1;
+  },
 });
 
 /**
  * One reckoning of a fight between `fighters`: each side's members together deal their damage
  * (`CONQUEST.dps` times `CONQUEST.hit`) for `dt` seconds, shared among the hostile sides there,
- * each side's share landing on its members in order, the first until it is down.
+ * each side's share landing on its members in order, the first until it is down. A plate turns
+ * each attacker's share by that attacker's rarity before it lands, so a share that kills a
+ * member is spent only by what the kill took.
  */
 function resolve(fighters: Fighter[], dt: number) {
   const sides = [...new Set(fighters.map((f) => f.side))];
   if (sides.length < 2) return;
   const dmg = new Map<Side, number>();
   for (const f of fighters) dmg.set(f.side, (dmg.get(f.side) ?? 0) + CONQUEST.dps[f.kind] * CONQUEST.hit * dt);
-  const takes = new Map<Side, number>();
-  for (const a of sides) for (const t of sides) if (t !== a) takes.set(t, (takes.get(t) ?? 0) + (dmg.get(a) ?? 0) / (sides.length - 1));
-  for (const t of sides) {
-    let left = takes.get(t) ?? 0;
-    for (const f of fighters) {
-      if (f.side !== t || left <= 0 || f.left() <= 0) continue;
-      // What it has left of health and shield takes the damage; what goes past it falls on the next.
-      const dealt = Math.min(left, f.left());
-      f.hit(dealt);
-      left -= dealt;
+  for (const t of sides)
+    for (const a of sides) {
+      if (a === t) continue;
+      let left = (dmg.get(a) ?? 0) / (sides.length - 1);
+      for (const f of fighters) {
+        if (f.side !== t || left <= 0 || f.left() <= 0) continue;
+        const k = f.takes(a);
+        // What it has left of health and shield takes the damage; what goes past it falls on the next.
+        const lands = Math.min(left * k, f.left());
+        f.hit(lands);
+        left -= k > 0 ? lands / k : left;
+      }
     }
-  }
 }
 
 /**
