@@ -435,7 +435,7 @@ export const CONQUEST = {
     edge: 3,
     /** Of `edge`, the north shore's work: none while the player holds the node that opens `shore` (`UNLOCKS`). */
     shore: 1,
-    answer: 1.5,
+    answer: 1,
     max: [3, 3, 3],
     kinds: [["grunt", "grunt", "grunt"], ["grunt", "grunt", "grunt"], ["grunt", "grunt", "drone"]] as EnemyKind[][],
   },
