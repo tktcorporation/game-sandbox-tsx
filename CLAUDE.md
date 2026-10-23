@@ -446,7 +446,7 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   chest and shoulders): body hits from a weapon of lower rarity are cut by `PLATE.mult` in
   `config.ts` and show no damage number (sparks and a ping instead), weak points pass in full. A
   node's garrison wears its `TIER`'s plates (the vault guard, `Member.plate` in `map.ts`, at least
-  `VAULT.guardPlate`), the raiders `RAIDERS.plate`. A piercing hit that takes the shield breaks the
+  `VAULT.guardPlate`), the raiders `RAIDERS.plate`. A piercing hit that lands with the shield gone breaks the
   plate off (`plateBreak`; `Enemy.wore` keeps what it came with). The factory's robots hit plates as
   the trader's shelf arms them (`factoryRarity()` in `battle.ts`), the rogues as `PLATE.robots`.
   Plain bins hold gear seldom and never past rare (`BIN_GEAR`, a hash of the seed and the bin);

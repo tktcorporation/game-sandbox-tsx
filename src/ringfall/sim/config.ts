@@ -1121,7 +1121,7 @@ export const FLANK = {
  *
  * A node's garrison wears plates of its tier (`TIER` in map.ts): each grunt and heavy of it with
  * the chance `garrison[tier]`, decided from the raid's seed and the robot (`tierPlated()`). A
- * piercing hit that takes a plated robot's shield away breaks its plate off for good. A plated
+ * piercing hit that lands with a plated robot's shield gone breaks its plate off for good. A plated
  * robot or a raider drops a weapon of its plate's rarity with the chance `drop` (`elite` for a
  * raider), decided from the seed and the robot; these, the vaults and the trader are where epic
  * and legendary guns come from.

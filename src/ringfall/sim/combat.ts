@@ -228,8 +228,8 @@ export function damageEnemy(s: State, e: Enemy, raw: number, crit: boolean, at: 
   s.events.push({ t: "hit", id: e.id, pos: at, dmg: Math.round(raw), crit, shield: toShield > 0, tier: k.shieldTier, flank, ally: by === "ally", blocked });
   const broke = hadShield && e.shield <= 0;
   if (broke) s.events.push({ t: "shieldBreak", id: e.id, pos: at, tier: k.shieldTier });
-  // A weapon that pierces the plate and takes the shield away breaks the plate off for good.
-  if (broke && e.plate > 0 && rarity !== undefined && rarity >= e.plate) {
+  // A weapon that pierces the plate and lands with the shield gone breaks the plate off for good.
+  if (e.shield <= 0 && e.plate > 0 && rarity !== undefined && rarity >= e.plate) {
     s.events.push({ t: "plateBreak", id: e.id, pos: at, tier: e.plate });
     e.plate = 0;
   }
