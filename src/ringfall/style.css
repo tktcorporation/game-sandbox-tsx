@@ -4123,7 +4123,6 @@ body.touch #obj-raid .short {
   padding: 5px 12px 5px 10px;
   background: var(--plate-strong);
   border-right: 4px solid var(--c, var(--r0));
-  animation: bag-card 0.22s ease-out;
 }
 .bag-card .bp-row,
 body.touch .bag-card .bp-row {
@@ -4131,12 +4130,6 @@ body.touch .bag-card .bp-row {
 }
 .bag-card .bp-uses {
   flex-wrap: nowrap;
-}
-@keyframes bag-card {
-  from {
-    opacity: 0;
-    transform: translateX(40px);
-  }
 }
 .bp-lost {
   display: flex;

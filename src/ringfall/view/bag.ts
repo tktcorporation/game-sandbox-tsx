@@ -137,6 +137,9 @@ function lostName(id: string): string {
 /** Seconds a pickup's card stays, and how many stand at once. */
 const CARD_LIFE = 2.2;
 const CARD_MAX = 3;
+/** Seconds a card takes to slide in, and to fade before it goes. */
+const CARD_IN = 0.18;
+const CARD_OUT = 0.3;
 
 export class BagView {
   private profile: Profile = newProfile();
@@ -177,6 +180,14 @@ export class BagView {
     for (const c of this.cards) c.t -= dt;
     for (const c of this.cards.filter((x) => x.t <= 0)) c.el.remove();
     this.cards = this.cards.filter((x) => x.t > 0);
+    // The slide in and the fade out follow the game's clock, not the page's animations.
+    for (const c of this.cards) {
+      const age = CARD_LIFE - c.t;
+      const inn = Math.min(1, age / CARD_IN);
+      const out = Math.min(1, c.t / CARD_OUT);
+      c.el.style.opacity = String(Math.min(inn, out));
+      c.el.style.transform = inn < 1 ? `translateX(${Math.round((1 - inn) * (1 - inn) * 40)}px)` : "";
+    }
     if (!this.open) return;
     const list = entries(this.profile, s);
     const worth = list.reduce((n, e) => n + (e.id.startsWith("r:") ? 0 : e.value), 0);
@@ -215,6 +226,7 @@ export class BagView {
       el.className = "bag-card";
       el.style.setProperty("--c", e?.color ?? (t === "m" ? RARITY_CSS[2] : RARITY_CSS[3]));
       el.innerHTML = body + out;
+      el.style.opacity = "0";
       this.cardsEl.appendChild(el);
       this.cards.push({ el, t: CARD_LIFE });
     }

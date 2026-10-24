@@ -62,6 +62,20 @@ export async function bagShots({ browser, port, out, errors }) {
     await pg.evaluate(([h, a]) => window.ringfallBag(h, { at: a, tools: ["cutter"], records: ["tether"], keys: ["relay"] }), [haul, at]);
     await pg.evaluate(() => window.ringfallMods.wear(["grip", "probe"]));
   };
+  /** The first pickup card, if it is on screen and seen: inside the window, opaque and visible, it and every parent. */
+  const cardSeen = (pg) =>
+    pg.evaluate(() => {
+      const c = document.querySelector("#bag-cards .bag-card");
+      if (!c) return { bad: ["a pickup showed no card"] };
+      const r = c.getBoundingClientRect();
+      const bad = [];
+      if (r.width < 20 || r.height < 10 || r.left < 0 || r.top < 0 || r.right > innerWidth || r.bottom > innerHeight) bad.push(`the card is off the screen (${JSON.stringify(r)})`);
+      for (let e = c; e; e = e.parentElement) {
+        const cs = getComputedStyle(e);
+        if (Number(cs.opacity) <= 0.5 || cs.visibility !== "visible" || cs.display === "none") bad.push(`the card is not seen (${e.id || e.className}: opacity ${cs.opacity}, ${cs.visibility}, ${cs.display})`);
+      }
+      return { bad, rect: { top: r.top, bottom: r.bottom, left: r.left, right: r.right } };
+    });
   /** Once its slide-in is over. */
   const fits = async (pg) => {
     await pg.waitForTimeout(300);
@@ -105,9 +119,10 @@ export async function bagShots({ browser, port, out, errors }) {
     if (!(await pg.evaluate(() => document.getElementById("bag-peek").hidden))) errors.push("bag: the peek stayed open after Tab was let go");
     // A pickup: a gyro enters the bag, what it took the place of struck through on its card.
     await fill(pg, fetch, true);
-    await pg.evaluate(() => window.advanceTime(100));
+    // Past the card's slide-in (0.18 s of the game's time).
+    await pg.evaluate(() => window.advanceTime(300));
     await pg.waitForTimeout(300);
-    if (!(await pg.locator("#bag-cards .bag-card").count())) errors.push("bag: a pickup showed no card");
+    for (const b of (await cardSeen(pg)).bad) errors.push(`bag (desktop): ${b}`);
     if (!(await pg.locator("#bag-cards .bag-card .bp-lost s").count())) errors.push("bag: the card does not strike through what the pickup left behind");
     await pg.evaluate(() => window.ringfallDraw());
     await pg.screenshot({ path: `${out}/bag-2-card.png` });
@@ -136,15 +151,12 @@ export async function bagShots({ browser, port, out, errors }) {
       if (!(await pg.evaluate(() => document.getElementById("bag-peek").hidden))) errors.push(`bag (${w}×${h}): the peek stayed open after the button was let go`);
     }
     await fill(pg, fetch, true);
-    await pg.evaluate(() => window.advanceTime(100));
+    // Past the card's slide-in (0.18 s of the game's time).
+    await pg.evaluate(() => window.advanceTime(300));
     await pg.waitForTimeout(300);
-    const card = await pg.evaluate(() => {
-      const c = document.querySelector("#bag-cards .bag-card");
-      const r = c?.getBoundingClientRect();
-      return r ? { top: r.top, bottom: r.bottom, left: r.left, right: r.right } : null;
-    });
-    if (!card) errors.push(`bag (${w}×${h}): a pickup showed no card`);
-    else if (card.bottom > h / 2 - 24 || card.left < 0 || card.right > w) errors.push(`bag (${w}×${h}): the card reaches the crosshair or the screen's edge (${JSON.stringify(card)})`);
+    const { bad, rect: card } = await cardSeen(pg);
+    for (const b of bad) errors.push(`bag (${w}×${h}): ${b}`);
+    if (card && card.bottom > h / 2 - 24) errors.push(`bag (${w}×${h}): the card reaches the crosshair (${JSON.stringify(card)})`);
     await pg.evaluate(() => window.ringfallDraw());
     await pg.screenshot({ path: `${out}/m-bag-2-card-${w}.png` });
     await ctx.close();
