@@ -2469,6 +2469,11 @@ body.touch #title h1 {
 #map .map-key.depot {
   color: var(--mate-light);
 }
+/* The ziplines up: the thin blue of their lines on the map (view/map.ts). */
+#map .map-key.zip {
+  color: #7cc0ff;
+  font-weight: 400;
+}
 /* The POI marks' colours (view/map.ts HOLD_CSS). */
 #map .map-key.held {
   color: #c8402f;

@@ -692,6 +692,7 @@ declare global {
     ringfallPlace: (x: number, z: number, yaw: number) => void;
     ringfallMove: {
       quiet: () => void;
+      look: (pitch: number) => void;
       hold: () => void;
       zips: () => { i: number; a: string; b: string; fixed: boolean; length: number; from: { x: number; y: number; z: number }; to: { x: number; y: number; z: number } }[];
       zip: (i: number, at: number) => boolean;
@@ -897,12 +898,17 @@ window.ringfallPlace = (x, z, yaw) => {
   p.yaw = yaw;
   p.pitch = 0;
   p.onGround = true;
+  // Whatever it was doing is left behind: a climb, a ride, a slide.
+  p.mantle = null;
+  p.zip = null;
+  p.zipFall = false;
+  p.sliding = false;
   placeAlly(state);
 };
 
 /**
  * Automation only, for the movement's screenshots: `quiet` takes every robot out of the raid and
- * keeps the hunters away; `hold` makes every node the player's, so every zipline is up; `zips`
+ * keeps the hunters away; `look` tilts the view; `hold` makes every node the player's, so every zipline is up; `zips`
  * lists the cables; `zip` takes hold of cable `i` at `at` metres along it; `quarry` gives where
  * each of the quarry's wide stairs is climbed from, facing it; `state` is how the player moves now.
  */
@@ -912,6 +918,9 @@ window.ringfallMove = {
     state.parties = [];
     state.crewsDue = [];
     state.reinforceT = state.raiderT = 1e9;
+  },
+  look: (pitch) => {
+    state.player.pitch = pitch;
   },
   hold: () => {
     state.nodes = state.nodes.map(() => "freed");

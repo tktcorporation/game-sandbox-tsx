@@ -540,7 +540,7 @@ export class Hud {
     $("ult-pct").textContent = p.ult >= 1 ? "離脱" : `${Math.floor(p.ult * 100)}%`;
     $("fx-ult").style.opacity = p.leap ? "1" : "0";
     // Streaks at the edges past a sprint's speed: a slide-jump faintly, a zipline fully; calmer on a phone.
-    const fast = Math.max(0, Math.min(1, (Math.hypot(p.vel.x, p.vel.y * (p.zip ? 1 : 0), p.vel.z) - PLAYER.sprint - 1) / 12));
+    const fast = Math.max(0, Math.min(1, (Math.hypot(p.vel.x, p.vel.y * (p.zip ? 1 : 0), p.vel.z) - PLAYER.sprint - 1) / 9));
     $("fx-speed").style.opacity = (fast * (isTouch() ? 0.35 : 0.7)).toFixed(2);
     // The same charge on the touch buttons.
     const tTac = $("t-tac");
