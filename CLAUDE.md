@@ -17,14 +17,16 @@ there. Read the game's brief before changing anything visual. A new page needs a
 An extraction raid against robots only: walk in from the edge of one of two regions of one world,
 explore it for valuables, and get off alive by one of its extraction points, all open from the start. No ring
 and no set order: the player chooses which POIs to take and when to leave. First person on three.js.
-The reservoir (south, +z) has four POIs and three ways off; the harbor (north, beyond a mountain
-belt) has three POIs and a boat. A pass road from the landing pad and a railway (an embankment from
+The reservoir (south, +z) has six POIs and three ways off; the harbor (north, beyond a mountain
+belt) has six POIs and a boat. A pass road from the landing pad and a railway (an embankment from
 the east mesa, a bridge over a gorge, a viaduct into the harbor) join them, so a raid may walk from
 one to the other. The world is about 1200 by 1880 m (`WORLD` in `config.ts`): the reservoir's island
 (about 1120 by 820 m) with the dune coast bulging south of it, a mountain belt at z about -350, and
 the harbor's land (radius about 425 m). The reservoir is built at the scale of real places, its
 neighbouring POIs and districts 250 to 400 m apart; the harbor's POIs stand 270 to 330 m apart;
-all three are built at that scale.
+all three are built at that scale. Five smaller walled works stand on the open ground between them
+(the weather station, the waterworks, the lodge at the pass's foot, the cannery, the cold store), each
+a POI of two squads 110 to 200 m from its neighbours.
 `REGIONS` in `map.ts` gives each region its POIs, ways off and ways in on foot (`ENTRIES`: a named
 point out on its open ground, facing in, out of every robot's sight for the first seconds);
 `newRun(seed, kit, region, { entry })` starts on the ground there with the teammate beside the
@@ -59,8 +61,10 @@ lists only the ways off of the region the player is in
 (`regionHere()`); the world map (`view/map.ts`, M) is where the POIs and exits of both regions are; it opens framed
 on the region the player is in (`Region.bounds`) and N switches it to the whole world.
 A wipe ends the raid and loses the haul (`haulValue()` in `results.ts` is its worth). The results
-screen gives no grade or score: it leads with the day (the island's map and its row of six nodes,
-those the day changed ringed and turning to their new colour, from the settled profile), then the haul.
+screen gives no grade or score: it leads with the day (the island's map and its tug-of-war bar, in
+beats: the nodes that changed hands in the raid, those the battle took after the player left under
+the depot's mark, and those the night took under the moon, each ringed and turning to its new
+colour, from the settlement's `raid`, `after` and `night`), then the haul.
 Clearing a POI's garrison is 掃討 in the UI; 制圧 is only the capture of a core.
 Between raids the player walks a camp in the world (`CAMP` in `map.ts`, a fenced yard on the south
 beach behind the reservoir's first way in): `sim/camp.ts` holds its state (`newCamp()`, a raid's
@@ -152,9 +156,11 @@ The island has a state between raids (`docs/ringfall/island-v2.md`): one settled
 day (`Profile.day`), and each POI is the enemy's (`held`) or the player's (`freed`)
 (`Profile.poiState`). `meta/island.ts` holds the pure rules: `advanceDay()` (called by `settle()`)
 makes the player's each node whose core the raid captured, however the raid ended, or with a
-battle takes every node as the battle ended (`RaidDay.battle`), switches the player's depots on,
-and pays `FRONT.income` a node (`frontIncome()`). A node is lost only when the enemy's squads take
-it in a battle; nothing goes thin and nothing lapses. The titan's pad is never the player's. A
+battle takes every node as the battle ended (`RaidDay.battle`), then the night's attacks
+(`nightRaids()`, `NIGHT` in `config.ts`: nodes next to the enemy's ground fall by chance, less when
+guarded and with the factory's level, a hash of the raid's seed, the day and the node), switches
+the player's depots on, and pays `FRONT.income` a node (`frontIncome()`). A node is lost only to the
+enemy's squads in a battle or to the night; nothing goes thin and nothing lapses. The titan's pad is never the player's. A
 raid reads the standings through `newRun(seed, kit, region, { island })` (`State.hold`):
 `garrison()` in `sim/island.ts` stands every squad of a held POI and none of a freed one, which
 starts cleared, its vault open without the key (`canOpen()` in `world.ts`) and its depot on. With
@@ -181,8 +187,8 @@ with no contract plays at 0 (`raidThreat()`). 0 is the island's raid at the enem
 higher scales its times and plates (`raidClock()`, `netPlated()`), the range robots answer shots
 from afar, the mod parts' odds, and the contract's pay (`threatPay()`). `Profile.freedAt` keeps
 each POI's best 強度 for the map.
-The front (`docs/ringfall/island-v2.md`): the six freeable POIs are the nodes (`NODES` in
-`map.ts`, linked along the roads by the seven `FRONT_LINKS`, each with its depth `TIER`); the
+The front (`docs/ringfall/island-v2.md`): the eleven freeable POIs are the nodes (`NODES` in
+`map.ts`, linked along the roads by the fifteen `FRONT_LINKS`, in loops, each with its depth `TIER`); the
 outposts are places to loot with an enemy guard, no nodes, and the rogues hold no ground.
 `sim/front.ts` holds the rules. A node next to the player's ground (the camp and the player's
 nodes) is on the front; only its core, a pillar near its middle, can be captured (`FRONT` in
@@ -227,12 +233,20 @@ the enemy before any attacks. Walking a link in the world a battle squad goes in
 of the node the player attacks (a front node whose core is within `rally.near`, or the core being
 captured) come round its core (task `rally`, `Battle.rally`). The enemy's robots at a core of the
 player's set `Battle.threat` (event `nodeThreat`): the core pulses red in the world and on the
-map, and a red arrow at the screen's edge points to it (`threatMarks()` in `hud.ts`).
+map, and a red arrow at the screen's edge points to it (`threatMarks()` in `hud.ts`). A node that
+turns the player's draws a counter-attack (`COUNTER`, `dueCounter()` in `front.ts`, `Battle.counters`):
+`COUNTER.delay` seconds on a squad lands bound for it (event `counter`, `BattleSquad.counter`), on top
+of the enemy's limit; `atRisk()` gives the player's nodes an enemy squad is bound for or is taking
+(a slower pulse on the map, the core and the bar's blue end), `countered()` those a landed
+counter-attack walks to (a smaller arrow at the screen's edge). `Battle.left` keeps the nodes as the
+player left, so the results tell the battle after leaving from the raid.
 `view/battle.ts` draws the battle from afar: the landing craft and their beams, the battle's
 robots past `thingsFar` and the squads that are numbers out to the fog as instanced figures
 (`columnPoints()`), and the gate's and the depots' light as the factory's squads come out.
-The long-term goal is how many of the six nodes the player holds (`view/row.ts` draws them as a
-row at the HUD's top, the camp's line, the map table and the results); there is no ending. The hideout is the mid-term one: five modules built level by level from specific
+The long-term goal is how many of the eleven nodes the player holds (`view/row.ts` draws them as
+one tug-of-war bar, blue from the left and red from the right, a segment a node, at the title, the
+HUD's top, the camp's line, the map table and the results; its boundary slides when a node changes
+hands and flickers while one is fought over); there is no ending. The hideout is the mid-term one: five modules built level by level from specific
 valuables and credits taken from the stash, each level needing only the module's level before it
 (`build()` in `profile.ts`; levels and costs in `HIDEOUT`, effects in `HIDEOUT_EFFECT`, both in `config.ts`; `meta/hideout.ts` holds the pure
 helpers). Their benefits act in the meta: `takeKit()` lends the infirmary's heals, the workbench
@@ -270,7 +284,7 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   `mezzanine()` is `hall()`'s mezzanine on its own, `disc()` a round of columns, `dish()` a tilted
   parabolic dish of columns, and `strand()` / `stay()` a cable as blocks stepping along it.
   Each POI's buildings are a function of its own (`supply()`, `quarry()`, `relay()`, `pad()`,
-  `wreck()`, `yard()`, `smelter()`), as is each district's (`heartTown()`, `damFace()`,
+  `wreck()`, `yard()`, `smelter()`, `station()`, `waterworks()`, `lodge()`, `cannery()`, `coldstore()`), as is each district's (`heartTown()`, `damFace()`,
   `plateau()`, `village()`, `factory()`). The helpers take their sizes from a `Scale` (storey,
   walls, doors, windows, roller doors, stair width): `WORKS` for industry (4.5 m storeys,
   half-metre walls, doors 2.4 by 2.8 m, roller doors 6 m high), `HOME` for homes and farms
