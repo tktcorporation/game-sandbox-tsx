@@ -354,8 +354,16 @@ export class IslandMap {
   contract: ContractMark | null = null;
   /** The shape last given to the page, which sizes the map by it. */
   private aspect = 0;
+  /** The last draw's scale and offset in CSS pixels, for `screenAt()`. */
+  private proj: { m: number; ox: number; oy: number } | null = null;
 
   constructor(private readonly canvas: HTMLCanvasElement) {}
+
+  /** Where a world point sat on the canvas at the last draw, in CSS pixels from its top left; null before one. */
+  screenAt(x: number, z: number): { x: number; y: number } | null {
+    const p = this.proj;
+    return p && { x: p.ox + (x - WORLD.x0) * p.m, y: p.oy + (z - WORLD.z0) * p.m };
+  }
 
   /** Map pixel of a world point. */
   private px(x: number, z: number) {
@@ -604,6 +612,7 @@ export class IslandMap {
     const m = Math.min(w / (v.x1 - v.x0), h / (v.z1 - v.z0));
     const ox = (w - (v.x1 - v.x0) * m) / 2 - (v.x0 - WORLD.x0) * m;
     const oy = (h - (v.z1 - v.z0) * m) / 2 - (v.z0 - WORLD.z0) * m;
+    this.proj = { m: m / dpr, ox: ox / dpr, oy: oy / dpr };
     g.fillStyle = "#1c1f2a";
     g.fillRect(0, 0, w, h);
     g.imageSmoothingEnabled = true;

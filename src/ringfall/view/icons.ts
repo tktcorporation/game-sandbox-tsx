@@ -119,3 +119,7 @@ export const gunIcon = (c = "currentColor") => svg(`<path d="M0.5 5 H12 V4 H15.5
 
 /** Body armour, in its level's colour. */
 export const armorIcon = (c = "currentColor") => svg(`<path d="M5 1.5 L8 3 L11 1.5 L14 4 L12.5 6.5 V14.5 H3.5 V6.5 L2 4 Z" fill="${c}"/><path d="M8 3 V14.5" stroke="rgba(20,24,40,0.6)" stroke-width="1"/>`, "armor");
+
+/** Where the raid starts: a pin in the player's colour, set on the chosen way in or depot. */
+export const startIcon = (c: string = SIDE.own) =>
+  svg(`<path d="M8 15 C4.5 10.6 2.8 8 2.8 5.9 a5.2 5.2 0 0 1 10.4 0 C13.2 8 11.5 10.6 8 15 Z" fill="${c}" stroke="#f4f7ff" stroke-width="1.3"/><circle cx="8" cy="5.9" r="2" fill="#f4f7ff"/>`, "start");
