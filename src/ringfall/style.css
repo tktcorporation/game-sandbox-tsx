@@ -80,6 +80,36 @@ kbd {
 #fx-ult {
   background: radial-gradient(ellipse at center, transparent 60%, rgba(214, 236, 255, 0.4) 100%);
 }
+/* Speed: faint streaks out at the screen's edges, flowing outward, as strong as the run is fast
+   past a sprint (hud.ts sets the opacity). The middle stays clear for aiming. */
+#fx-speed {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  opacity: 0;
+  -webkit-mask-image: radial-gradient(ellipse at center, transparent 42%, #000 85%);
+  mask-image: radial-gradient(ellipse at center, transparent 42%, #000 85%);
+}
+#fx-speed i {
+  position: absolute;
+  inset: -20%;
+  background: repeating-conic-gradient(from 3deg, rgba(240, 248, 255, 0.55) 0deg 0.7deg, transparent 0.7deg 5.3deg, rgba(240, 248, 255, 0.3) 5.3deg 5.8deg, transparent 5.8deg 11deg);
+  animation: speed-flow 0.32s linear infinite;
+}
+@keyframes speed-flow {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(1.12);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  #fx-speed i {
+    animation: none;
+  }
+}
 
 /* --- HUD */
 /* Above the scope and the touch controls (the weapon cards take taps on phones). */
@@ -2438,6 +2468,11 @@ body.touch #title h1 {
 }
 #map .map-key.depot {
   color: var(--mate-light);
+}
+/* The ziplines up: the thin blue of their lines on the map (view/map.ts). */
+#map .map-key.zip {
+  color: #7cc0ff;
+  font-weight: 400;
 }
 /* The POI marks' colours (view/map.ts HOLD_CSS). */
 #map .map-key.held {

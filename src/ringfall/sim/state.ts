@@ -55,8 +55,21 @@ export interface Player {
   onGround: boolean;
   crouch: boolean;
   sliding: boolean;
-  /** Climbing a ledge: rises at the start point, then moves onto the top. */
-  mantle: { t: number; dur: number; from: Vec3; to: Vec3 } | null;
+  /**
+   * Climbing a ledge: rises at the start point for `up` of the time, then moves onto the top.
+   * `climb` is a wall or a cliff climbed hand over hand (`CLIMB`), not a plain mantle.
+   */
+  mantle: { t: number; dur: number; from: Vec3; to: Vec3; up: number; climb: boolean } | null;
+  /** Seconds a jump pressed in the air waits for the ground (`PLAYER.jumpBuffer`). */
+  jumpBuf: number;
+  /** The height last stood at: in the air, a cliff's face above it is a wall. */
+  airFrom: number;
+  /** Riding a zipline (zips.ts): `at` metres along line `line`, going `dir` (+1 toward its end), at `speed`. */
+  zip: { line: number; at: number; dir: 1 | -1; speed: number; carry: boolean } | null;
+  /** Off a zipline with the teammate carried along: it comes down beside the player on landing. */
+  zipFall: boolean;
+  /** Seconds before a cable let go of can be taken hold of again (`ZIP.regrip`). */
+  zipRegrip: number;
   sprinting: boolean;
   forwardHeld: number;
   weapons: (Weapon | null)[];
@@ -427,9 +440,18 @@ export type GameEvent =
   | { t: "reload"; time: number }
   | { t: "reloaded" }
   | { t: "dry" }
-  | { t: "slide" }
+  /** A slide; `chain` when a landing with the crouch held slid on. */
+  | { t: "slide"; chain?: boolean }
   | { t: "jump" }
   | { t: "mantle" }
+  /** A wall or cliff climbed hand over hand, `rise` metres up; `top` when the hands reach its top. */
+  | { t: "climb"; rise: number }
+  | { t: "climbTop" }
+  /** A jump out of a slide, at `speed` along the ground. */
+  | { t: "slideJump"; speed: number }
+  /** On and off a zipline; `cut` when the line was cut under the rider (an end lost). */
+  | { t: "zipOn"; line: number }
+  | { t: "zipOff"; line: number; cut: boolean }
   | { t: "land"; speed: number }
   | { t: "pickup"; kind: LootKind; rarity: Rarity; label: string }
   | { t: "locked"; poi: number }
@@ -749,6 +771,11 @@ export interface Input {
   leaveTools?: boolean;
   /** Mod parts are neither put on by walking over them nor by the use key: the bot plays without them. */
   leaveMods?: boolean;
+  /**
+   * No climbing walls or cliffs (`CLIMB`): the bot's paths (nav.ts) run on the ground, so it only
+   * mantles low ledges in the air as it always has.
+   */
+  noClimb?: boolean;
 }
 
 export const idleInput = (): Input => ({
@@ -936,6 +963,11 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
       crouch: false,
       sliding: false,
       mantle: null,
+      jumpBuf: 0,
+      airFrom: 0,
+      zip: null,
+      zipFall: false,
+      zipRegrip: 0,
       sprinting: false,
       forwardHeld: 0,
       weapons: [0, 1].map((i) => (kit.weapons[i] ? { ...kit.weapons[i], mag: -1 } : null)),

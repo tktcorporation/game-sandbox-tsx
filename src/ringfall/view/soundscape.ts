@@ -1,5 +1,5 @@
 import { Vector3, type Camera } from "three";
-import { ENEMIES } from "../sim/config";
+import { ENEMIES, PLAYER } from "../sim/config";
 import { ceilingAt, los } from "../sim/geom";
 import { EXTRACTS, type ExtractId } from "../sim/map";
 import { callLeft, type GameEvent, type State } from "../sim/state";
@@ -110,14 +110,17 @@ export class Soundscape {
     const above = Math.max(0, ear.y - terrainHeight(ear.x, ear.z));
     const height = Math.min(1, Math.max(0, (ear.y + 8) / 32));
     const open = 1 - m.room * 0.85;
-    const falling = play && !!s.player.leap;
+    // The rush comes with the leap's fall, a cable's ride, and any run past a sprint's speed.
+    const pace = Math.hypot(s.player.vel.x, s.player.vel.z);
+    const falling = play && (!!s.player.leap || !!s.player.zip || pace > PLAYER.sprint + 1);
     const base = play ? (0.07 + 0.12 * height + Math.min(0.08, above * 0.004)) * open : 0;
     const swell = 0.6 + 0.4 * Math.sin(this.time * 0.37) * Math.sin(this.time * 0.11 + 1);
     this.breeze?.gain.gain.setTargetAtTime(base * (0.8 + 0.4 * swell), t, 0.4);
     this.gust?.gain.gain.setTargetAtTime(base * 0.35 * Math.max(0, swell - 0.5) * 2, t, 0.5);
     this.gust?.filter.frequency.setTargetAtTime(700 + 900 * swell, t, 0.6);
     const fall = falling ? Math.min(1, Math.hypot(s.player.vel.x, s.player.vel.y, s.player.vel.z) / 30) : 0;
-    this.rush?.gain.gain.setTargetAtTime(falling ? 0.16 + 0.12 * fall : 0, t, 0.12);
+    const level = s.player.leap ? 0.16 + 0.12 * fall : Math.min(0.24, 0.04 + 0.2 * fall);
+    this.rush?.gain.gain.setTargetAtTime(falling ? level : 0, t, 0.12);
     this.rush?.filter.frequency.setTargetAtTime(500 + 1600 * fall, t, 0.15);
   }
 
@@ -352,6 +355,21 @@ export class Soundscape {
         break;
       case "mantle":
         sfx.mantle();
+        break;
+      case "climb":
+        sfx.climb(e.rise);
+        break;
+      case "climbTop":
+        sfx.climbTop();
+        break;
+      case "slideJump":
+        sfx.slideJump(e.speed);
+        break;
+      case "zipOn":
+        sfx.zipOn();
+        break;
+      case "zipOff":
+        sfx.zipOff(e.cut);
         break;
       case "land":
         sfx.land(e.speed);

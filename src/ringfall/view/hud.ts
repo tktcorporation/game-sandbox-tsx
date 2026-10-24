@@ -5,7 +5,7 @@ import { ALLY, AWARE, BAG, META, DEPOT, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARI
 import { eyePos, magSize } from "../sim/combat";
 import { atRisk, countered, heldUnlocks } from "../sim/battle";
 import { dist2d, los } from "../sim/geom";
-import { DEPOTS, entryOf, EXTRACTS, nodeIndex, NODES, POIS, poiIndex, regionHere, regionOf, routeOf, type EntryId } from "../sim/map";
+import { DEPOTS, entryOf, EXTRACTS, nodeIndex, NODES, POIS, poiIndex, regionHere, regionOf, routeOf, ZIPS, type EntryId } from "../sim/map";
 import { routeBefore } from "../sim/routes";
 import { islandHolds } from "../meta/island";
 import { bagLoad, canOpen, crewsInSight, depotBlocked, depotInReach, extractHere, extractReady, homeReady, makeRoom, poiAt, roomForTool, searchFor, useTarget } from "../sim/world";
@@ -24,7 +24,8 @@ import { recordSpot, type RecordId } from "../sim/map";
 import type { World } from "./world";
 import { eventRow, raidEventLine } from "./events";
 import { CREW, FRONT, MOD, MODS } from "../sim/config";
-import { binPicture, modIcon, pouchIcon, routeIcon } from "./icons";
+import { binPicture, modIcon, pouchIcon, routeIcon, zipIcon } from "./icons";
+import { zipPoint } from "../sim/zips";
 import { bagIcon, callIcon, checkIcon, clockIcon, coreIcon, crossIcon, depotIcon, entryIcon, exitIcon, eyeIcon, fightIcon, flareIcon, keyIcon, lockIcon, noiseIcon, reinforceIcon, reviveIcon, SIDE, upIcon, nightIcon } from "./icons";
 import { capturable } from "../sim/front";
 
@@ -45,6 +46,8 @@ const clock = (t: number) => `${Math.floor(Math.max(0, t) / 60)}:${String(Math.f
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 /** Wording follows the controls in use: keys on a PC, on-screen buttons on a phone. */
 const isTouch = () => document.body.classList.contains("touch");
+/** A cable's end by name: a node's, the camp's, or for a lift the quarry's floor or rim. */
+const zipEndName = (id: string) => (id === "camp" ? "野営地" : id === "lift:quarry" ? "採掘場の底" : id.startsWith("lift:") ? "採掘場の縁" : (NODES.find((n) => n.id === id)?.name ?? ""));
 const key = (k: string) => (isTouch() ? "" : `<kbd>${k}</kbd> `);
 
 interface DmgNum {
@@ -536,6 +539,9 @@ export class Hud {
     ult.className = p.ult >= 1 ? "ab ult ready" : "ab ult";
     $("ult-pct").textContent = p.ult >= 1 ? "離脱" : `${Math.floor(p.ult * 100)}%`;
     $("fx-ult").style.opacity = p.leap ? "1" : "0";
+    // Streaks at the edges past a sprint's speed: a slide-jump faintly, a zipline fully; calmer on a phone.
+    const fast = Math.max(0, Math.min(1, (Math.hypot(p.vel.x, p.vel.y * (p.zip ? 1 : 0), p.vel.z) - PLAYER.sprint - 1) / 9));
+    $("fx-speed").style.opacity = (fast * (isTouch() ? 0.35 : 0.7)).toFixed(2);
     // The same charge on the touch buttons.
     const tTac = $("t-tac");
     tTac.style.setProperty("--p", String(1 - p.tactical / tacticalCooldown(p)));
@@ -581,7 +587,8 @@ export class Hud {
     // Interaction prompt.
     const prompt = this.prompt(s);
     $("prompt").innerHTML = prompt;
-    $("t-use").hidden = prompt === "";
+    // On a cable the prompt only tells where it goes: the jump button lets go, the use button has nothing to do.
+    $("t-use").hidden = prompt === "" || !!s.player.zip;
 
     // Damage numbers.
     this.nums = this.nums.filter((n) => {
@@ -981,6 +988,11 @@ export class Hud {
     const p = s.player;
     if (p.downed > 0 || s.phase !== "play") return "";
     if (s.leaving) return `${depotIcon()}<b>${Math.max(0, s.leaving.t).toFixed(1)}</b>`;
+    // On a cable: where it goes and the metres left.
+    if (p.zip) {
+      const l = ZIPS[p.zip.line];
+      return `${zipIcon(l.fixed ? "#c8ced8" : undefined)}${esc(zipEndName(p.zip.dir > 0 ? l.b : l.a))} <b>${Math.round(p.zip.dir > 0 ? l.length - p.zip.at : p.zip.at)}</b> m`;
+    }
     // The use key comes first: picking the teammate up or opening a bin works inside an extraction point too.
     const t = useTarget(s);
     const x = t ? null : extractHere(s);
@@ -1045,6 +1057,13 @@ export class Hud {
       if (!capturable(s, t.node)) return `${coreIcon(SIDE.enemy, true)}${esc(n.name)}`;
       if (s.capture?.node === t.node) return `${coreIcon(SIDE.enemy)}${esc(n.name)} <b>${Math.floor((s.capture.t / FRONT.capture) * 100)}%</b>`;
       return `${key("E")}${coreIcon(SIDE.enemy)}${esc(n.name)} ${noiseIcon()}`;
+    }
+    if (t.kind === "zip") {
+      // The way the rider would go: the end the player faces, and how far along the cable it is.
+      const l = ZIPS[t.line];
+      const at = zipPoint(l, t.at);
+      const toB = Math.sin(p.yaw) * at.dx - Math.cos(p.yaw) * at.dz >= 0;
+      return `${key("E")}${zipIcon(l.fixed ? "#c8ced8" : undefined)}${esc(zipEndName(toB ? l.b : l.a))} <b>${Math.round(toB ? l.length - t.at : t.at)}</b> m`;
     }
     const wl = t.loot;
     const swap = p.weapons.includes(null) ? "" : struck([WEAPONS[p.weapons[p.slot]!.kind].name]);

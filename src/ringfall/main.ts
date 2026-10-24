@@ -4,7 +4,9 @@ import { Bot, SKILLS } from "./sim/bot";
 import { collide, groundAt } from "./sim/geom";
 import { terrainHeight } from "./sim/terrain";
 import { callLeft, freeKit, idleInput, newRun, type GameEvent, type Input, type Kit, type State } from "./sim/state";
-import { CAMP, DEPOTS, entryOf, FRAMES, NODES, POIS, poiIndex, type CampSpot, type RegionId, type StationId } from "./sim/map";
+import { CAMP, DEPOTS, entryOf, FRAMES, NODES, POIS, poiIndex, QUARRY_EXITS, ZIPS, type CampSpot, type RegionId, type StationId } from "./sim/map";
+import { grabZip } from "./sim/zips";
+import { POI_AT } from "./sim/areas";
 import { frontNodes, garrisonOf, takeNode, useCore } from "./sim/front";
 import { atRisk, battleMarks, departNow, landNow, marchSquad, nodePoint, placeBattleSquad } from "./sim/battle";
 import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
@@ -688,6 +690,15 @@ declare global {
     ringfallTerrain: (x: number, z: number) => number;
     ringfallFrames: () => Record<string, { x: number; z: number }>;
     ringfallPlace: (x: number, z: number, yaw: number) => void;
+    ringfallMove: {
+      quiet: () => void;
+      look: (pitch: number) => void;
+      hold: () => void;
+      zips: () => { i: number; a: string; b: string; fixed: boolean; length: number; from: { x: number; y: number; z: number }; to: { x: number; y: number; z: number } }[];
+      zip: (i: number, at: number) => boolean;
+      quarry: () => { name: string; x: number; z: number; yaw: number }[];
+      state: () => { speed: number; y: number; zip: boolean; climb: boolean; mantle: boolean; sliding: boolean; onGround: boolean; fov: number };
+    };
     ringfallFight: (x: number, z: number, apart?: number) => { x: number; z: number }[];
     ringfallPlates: (x: number, z: number, face?: number) => { id: number; x: number; y: number; z: number }[];
     ringfallShoot: (id: number, rarity: number) => { plate: number; left: number } | null;
@@ -887,7 +898,43 @@ window.ringfallPlace = (x, z, yaw) => {
   p.yaw = yaw;
   p.pitch = 0;
   p.onGround = true;
+  // Whatever it was doing is left behind: a climb, a ride, a slide.
+  p.mantle = null;
+  p.zip = null;
+  p.zipFall = false;
+  p.sliding = false;
   placeAlly(state);
+};
+
+/**
+ * Automation only, for the movement's screenshots: `quiet` takes every robot out of the raid and
+ * keeps the hunters away; `look` tilts the view; `hold` makes every node the player's, so every zipline is up; `zips`
+ * lists the cables; `zip` takes hold of cable `i` at `at` metres along it; `quarry` gives where
+ * each of the quarry's wide stairs is climbed from, facing it; `state` is how the player moves now.
+ */
+window.ringfallMove = {
+  quiet: () => {
+    state.enemies = [];
+    state.parties = [];
+    state.crewsDue = [];
+    state.reinforceT = state.raiderT = 1e9;
+  },
+  look: (pitch) => {
+    state.player.pitch = pitch;
+  },
+  hold: () => {
+    state.nodes = state.nodes.map(() => "freed");
+  },
+  zips: () => ZIPS.map((l, i) => ({ i, a: l.a, b: l.b, fixed: !!l.fixed, length: l.length, from: l.pts[0], to: l.pts[l.pts.length - 1] })),
+  zip: (i, at) => {
+    grabZip(state, i, at);
+    return !!state.player.zip;
+  },
+  quarry: () => QUARRY_EXITS.map((q) => ({ name: q.name, x: q.x + POI_AT.quarry[0], z: q.z + POI_AT.quarry[1], yaw: { n: 0, e: Math.PI / 2, s: Math.PI, w: -Math.PI / 2 }[q.toward] })),
+  state: () => {
+    const p = state.player;
+    return { speed: Math.hypot(p.vel.x, p.vel.z), y: p.pos.y, zip: !!p.zip, climb: !!p.mantle?.climb, mantle: !!p.mantle, sliding: p.sliding, onGround: p.onGround, fov: world.fov() };
+  },
 };
 
 /** The player's exact view yaw (render_game_to_text rounds it away). */

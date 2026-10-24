@@ -1,6 +1,7 @@
-import { FRONT, VAULT, WORLD, type EnemyKind, type HealKind, type Rarity, type ToolKind, type ValuableKind, type WeaponKind } from "./config";
+import { FRONT, VAULT, WORLD, ZIP, type EnemyKind, type HealKind, type Rarity, type ToolKind, type ValuableKind, type WeaponKind } from "./config";
 import { AREA, inArea, POI_AT, type AreaId } from "./areas";
 import { LENGTHS, offStreet, STREETS } from "./streets";
+import { layZips, type ZipLine } from "./ziplayout";
 import { buildTerrain, type Carve, type FlatShape, floorLevel, highGround, LEVEL, offshore, roadLine, steepAt, surfaceAt, terrainHeight } from "./terrain";
 
 /**
@@ -2378,6 +2379,19 @@ function cliffStairs(a: AreaId, fx: number, fz: number, toward: Side, top: numbe
   throw new Error(`no lip at ${top} m from ${fx},${fz} in ${a} toward ${toward}`);
 }
 
+/**
+ * Stairs bolted to a cliff up to the open ground above it, whatever its height there: as
+ * `cliffStairs()`, its top the ground where the cliff's face ends.
+ */
+function rimStairs(a: AreaId, fx: number, fz: number, toward: Side, base: number, width: number, tint: number, kind: BoxKind = "step"): Box[] {
+  const [x, z] = inArea(a, fx, fz);
+  const [dx, dz] = DIR[toward];
+  let d = 0;
+  while (d < 40 && terrainHeight(x + dx * d, z + dz * d) < base + 2) d += 0.25;
+  while (d < 60 && terrainHeight(x + dx * (d + 0.5), z + dz * (d + 0.5)) - terrainHeight(x + dx * d, z + dz * d) > 0.15) d += 0.25;
+  return cliffStairs(a, fx, fz, toward, terrainHeight(x + dx * d, z + dz * d), base, width, tint, kind);
+}
+
 /** Paints the walls a building was built with (tint 0) as dry stone (wall tint 3): a farmhouse, a barn, a windmill. */
 const stone = (boxes: Box[]): Box[] => paint(boxes, "wall", "wall", () => 3, (b) => b.tint === 0);
 
@@ -4353,6 +4367,33 @@ buildTerrain([
  * runs under the middle terrace (a portal at its foot); the stone steps between the fields; and
  * the drowned town's roofs sticking out of the mud banks.
  */
+/**
+ * The quarry's wider iron stairs, in its frame: each from (x, z) on its floor toward the wall it
+ * climbs, to the terrace above or (no `top`) the open ground round the quarry. With the haul road,
+ * the ramps, the tunnel, the narrow stairs and the lifts (`QUARRY_LIFTS`) they are the quarry's
+ * ways up, which the sim gate walks (`checkQuarryExits()`).
+ */
+export const QUARRY_EXITS: readonly { name: string; x: number; z: number; toward: Side; base: number; top?: number }[] = [
+  { name: "上段から南西へ", x: -90, z: 50, toward: "s", base: LEVEL.quarryTop },
+  { name: "上段から南東へ", x: 70, z: 55, toward: "s", base: LEVEL.quarryTop },
+  { name: "上段から東へ", x: 105, z: -30, toward: "e", base: LEVEL.quarryTop },
+  { name: "上段から西へ", x: -108, z: -20, toward: "w", base: LEVEL.quarryTop },
+  { name: "上段から北西へ", x: -60, z: -52, toward: "n", base: LEVEL.quarryTop },
+  { name: "中段から東へ", x: 62, z: 12, toward: "e", base: LEVEL.quarryMid, top: LEVEL.quarryTop },
+  { name: "中段から北へ", x: 40, z: -15, toward: "n", base: LEVEL.quarryMid, top: LEVEL.quarryTop },
+  { name: "底から南へ", x: -20, z: 32, toward: "s", base: LEVEL.pit, top: LEVEL.quarryMid },
+  { name: "底から北へ", x: -5, z: 6, toward: "n", base: LEVEL.pit, top: LEVEL.quarryMid },
+];
+
+/**
+ * The quarry's lifts, in its frame: cables from its floor straight up over the terraces to the
+ * ground round it, ridden as the ziplines are but up whoever holds what (zips.ts).
+ */
+export const QUARRY_LIFTS: readonly { a: string; b: string; from: { x: number; z: number }; to: { x: number; z: number } }[] = [
+  { a: "lift:quarry", b: "lift:quarry-s", from: { x: -45, z: 36 }, to: { x: -53, z: 88 } },
+  { a: "lift:quarry", b: "lift:quarry-n", from: { x: -25, z: 6 }, to: { x: -25, z: -82 } },
+].map((l) => ({ ...l, from: { x: l.from.x + POI_AT.quarry[0], z: l.from.z + POI_AT.quarry[1] }, to: { x: l.to.x + POI_AT.quarry[0], z: l.to.z + POI_AT.quarry[1] } }));
+
 const LAID: Box[] = (() => {
   const [qx, qz] = AT[1];
   const out: Box[] = [];
@@ -4368,11 +4409,21 @@ const LAID: Box[] = (() => {
       if (y - 0.5 - g > 1) out.push(rect(bx - 0.4, za + 2.1, bx + 0.4, za + 2.9, g - 0.5, y - 0.5, "steel", 0));
     }
   }
-  // The iron stairs between the quarry's terraces.
+  // The iron stairs between the quarry's terraces, and from the top terrace up to the ground on
+  // every side the quarry is left by: south toward the station and the supply depot, east toward
+  // the reservoir, west to the coast, north-west to the pass.
   out.push(
     ...cliffStairs("quarry", -70, -20, "n", LEVEL.quarryTop, LEVEL.quarryMid, 1.8, 0, "steel"),
     ...cliffStairs("quarry", -86, 12, "w", LEVEL.quarryTop, LEVEL.quarryMid, 1.8, 0, "steel"),
     ...cliffStairs("quarry", 28, 18, "e", LEVEL.quarryMid, LEVEL.pit, 1.8, 0, "steel"),
+    ...QUARRY_EXITS.flatMap((q) => {
+      // From the floor as it lies at the foot (a terrace dips a little from its level), so the first riser is a step.
+      const [x, z] = inArea("quarry", q.x, q.z);
+      const [dx, dz] = DIR[q.toward];
+      let base = q.base;
+      for (let d = 0; d < 30 && terrainHeight(x + dx * d, z + dz * d) < q.base + 1; d += 0.5) base = Math.min(base, terrainHeight(x + dx * d, z + dz * d) - 0.02);
+      return q.top === undefined ? rimStairs("quarry", q.x, q.z, q.toward, base, 2.6, 0, "steel") : cliffStairs("quarry", q.x, q.z, q.toward, q.top, base, 2.6, 0, "steel");
+    }),
   );
   // The tunnel's roof, flush with the middle terrace over the cut, and its portal on the floor.
   out.push(...placeIn("quarry", [rect(-80, 13, -67, 30, LEVEL.quarryMid - 0.6, LEVEL.quarryMid, "slab", 1), rect(-67.6, 13, -66.8, 16.5, LEVEL.pit, LEVEL.quarryMid, "wall", 0), rect(-67.6, 26.5, -66.8, 30, LEVEL.pit, LEVEL.quarryMid, "wall", 0)]));
@@ -5089,13 +5140,70 @@ export const nodeIndex = (id: string) => NODES.findIndex((n) => n.id === id);
 /** The cores, as boxes: standing pillars the player walks round and shoots past. */
 const CORE_BOXES: Box[] = NODES.map((n) => box(n.core.x, n.core.z, 2 * FRONT.half, 2 * FRONT.half, n.core.y + FRONT.height, "steel", 2, n.core.y - 0.3));
 
+/**
+ * The spots a zipline mast may stand on near (x, z), at most `n`, each `apart` from the others:
+ * open, level ground at least `ZIP.fromCore` from a core and out to `reach`, clear of the authored
+ * points, the kept roads and patrol legs, the depots and anything built, looked for on rings out
+ * from there as `coreSpot()` looks for a core's.
+ */
+function mastSpots(x: number, z: number, near: Box[], reach = 70, n = 12, apart = 12): { x: number; z: number; r: number }[] {
+  const ROOM = 2;
+  const depots = POIS.map(depotSpot);
+  const toSeg = (sg: Keep["segments"][number], px: number, pz: number) => {
+    const dx = sg.bx - sg.ax;
+    const dz = sg.bz - sg.az;
+    const t = Math.max(0, Math.min(1, ((px - sg.ax) * dx + (pz - sg.az) * dz) / (dx * dx + dz * dz || 1)));
+    return Math.hypot(px - sg.ax - dx * t, pz - sg.az - dz * t);
+  };
+  const out: { x: number; z: number; r: number }[] = [];
+  for (let r = ZIP.fromCore; r <= reach && out.length < n; r += 3)
+    for (let k = 0, m = Math.max(8, Math.round((2 * Math.PI * r) / 3)); k < m && out.length < n; k++) {
+      const a = (k / m) * 2 * Math.PI;
+      const px = +(x + Math.sin(a) * r).toFixed(1);
+      const pz = +(z - Math.cos(a) * r).toFixed(1);
+      if (out.some((o) => Math.hypot(o.x - px, o.z - pz) < apart)) continue;
+      const g = terrainHeight(px, pz);
+      if (offshore(px, pz) > -6 || highGround(px, pz) || inCamp({ x: px, z: pz }, 2)) continue;
+      if ([[0, 0], [ROOM, 0], [-ROOM, 0], [0, ROOM], [0, -ROOM]].some(([dx, dz]) => steepAt(px + dx, pz + dz) || Math.abs(terrainHeight(px + dx, pz + dz) - g) > 0.6)) continue;
+      if (near.some((b) => b.x1 > px - ROOM - 1 && b.x0 < px + ROOM + 1 && b.z1 > pz - ROOM - 1 && b.z0 < pz + ROOM + 1 && b.h > g + 0.15 && b.y0 < g + 8)) continue;
+      if (KEEP.points.some((q) => Math.hypot(q.x - px, q.z - pz) < q.r + ROOM)) continue;
+      if (KEEP.segments.some((sg) => toSeg(sg, px, pz) < ROOM + 1)) continue;
+      if (depots.some((d) => Math.hypot(d.x - px, d.z - pz) < 8)) continue;
+      if (NODES.some((c) => Math.hypot(c.core.x - px, c.core.z - pz) < ZIP.fromCore)) continue;
+      if (deckAt(px, pz) !== null) continue;
+      out.push({ x: px, z: pz, r });
+    }
+  return out;
+}
+
+/** Where the ziplines' masts may stand: round each node's core, and outside the camp's gate. */
+const ZIP_SPOTS: Record<string, { x: number; z: number; r: number }[]> = (() => {
+  const built = [...BUILT, ...CAMP_BOXES, ...CORE_BOXES];
+  const around = (x: number, z: number) => built.filter((b) => b.x1 > x - 90 && b.x0 < x + 90 && b.z1 > z - 90 && b.z0 < z + 90);
+  const gx = (CAMP.gate.x0 + CAMP.gate.x1) / 2;
+  const gz = CAMP.gate.z - 6;
+  // The camp's mast stands off to the side of the way out of its gate, not in it.
+  const camp = mastSpots(gx, gz, around(gx, gz), 36, 24, 6).filter((q) => Math.abs(q.x - gx) > CAMP_GATE + 8).slice(0, 6);
+  return { camp, ...Object.fromEntries(NODES.map((c) => [c.id, mastSpots(c.core.x, c.core.z, around(c.core.x, c.core.z))])) };
+})();
+const ZIP_LAYOUT = layZips(ZIP_SPOTS, FRONT_LINKS, [...BUILT, ...CAMP_BOXES, ...CORE_BOXES], QUARRY_LIFTS);
+/** The ziplines, one for each link of `FRONT_LINKS` that could carry one; up while both ends are the player's (zips.ts). */
+export const ZIPS: readonly ZipLine[] = ZIP_LAYOUT.lines;
+/** The links that carry no zipline, and why. */
+export const ZIP_MISSING = ZIP_LAYOUT.missing;
+/** The ziplines' masts, arms and pylons (in `BOXES`, last). */
+export const ZIP_BOXES: readonly Box[] = ZIP_LAYOUT.boxes;
+/** Under a cable the scattered cover keeps clear, so the hanging body passes over all of it. */
+const ZIP_KEEP: Keep["segments"] = ZIPS.flatMap((l) => l.pts.slice(1).map((q, i) => ({ ax: l.pts[i].x, az: l.pts[i].z, bx: q.x, bz: q.z })));
+
 // The camp comes last: what was laid before it keeps its place in the list (the cover spots, the walkers' grids).
-// The cores keep the scattered cover off the ground they are taken from, and come after the camp.
+// The cores keep the scattered cover off the ground they are taken from, and come after the camp; the ziplines' masts and pylons after them.
 export const BOXES: Box[] = [
   ...BUILT,
-  ...scatterCover([...BUILT, ...CAMP_BOXES, ...CORE_BOXES], { points: [...KEEP.points, ...NODES.map((n) => ({ x: n.core.x, z: n.core.z, r: 6 }))], segments: KEEP.segments }),
+  ...scatterCover([...BUILT, ...CAMP_BOXES, ...CORE_BOXES, ...ZIP_LAYOUT.boxes], { points: [...KEEP.points, ...NODES.map((n) => ({ x: n.core.x, z: n.core.z, r: 6 }))], segments: [...KEEP.segments, ...ZIP_KEEP] }),
   ...CAMP_BOXES,
   ...CORE_BOXES,
+  ...ZIP_LAYOUT.boxes,
 ];
 
 /** The bridge deck's height at (x, z) when it lies on a deck that path finding walks (DECKS), else null. */

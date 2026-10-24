@@ -1,4 +1,5 @@
 import { ALLY, AWARE, BAG, BIN_GEAR, CREW, DEBRIS, DEPOT, ENEMIES, ENTRY, HEALS, HOME, PARTY, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, TICK, TOOL_KINDS, TOOLS, TOP_BINS, VALUABLES, VAULT, WORLD, type HealKind, type ToolKind } from "./config";
+import { grabZip, zipInReach } from "./zips";
 import { dist2d, groundAt, los, solidAt } from "./geom";
 import { highGround, steepAt, terrainHeight } from "./terrain";
 import { DEPOTS, ENTRIES, EXTRACTS, inCamp, PARTY_STOPS, POIS, recordSpot, REGIONS, regionOf, type ExtractPoint, type RecordId } from "./map";
@@ -607,7 +608,7 @@ export function stepLoot(s: State, input: Input) {
 
   stepSearch(s, alive);
   if (!input.interact || !alive) return;
-  const t = useTarget(s, !input.keepArmor, !input.leaveTools, !input.leaveMods);
+  const t = useTarget(s, !input.keepArmor, !input.leaveTools, !input.leaveMods, !input.noClimb);
   if (t?.kind === "ally") startHelp(s);
   else if (t?.kind === "mod") wearMod(s, t.loot);
   else if (t?.kind === "tool") takeTool(s, t.loot);
@@ -617,6 +618,7 @@ export function stepLoot(s: State, input: Input) {
   else if (t?.kind === "swap") swapInto(s, t.loot);
   else if (t?.kind === "depot") useDepot(s, t.index);
   else if (t?.kind === "core") useCore(s, t.node);
+  else if (t?.kind === "zip") grabZip(s, t.line, t.at);
   else if (t?.kind === "armor") {
     const shed: Loot[] = [];
     s.loot = s.loot.filter((o) => o !== t.loot);
@@ -775,14 +777,15 @@ export type UseTarget =
   | { kind: "depot"; index: number }
   | { kind: "tool"; loot: Loot }
   | { kind: "mod"; loot: Loot }
-  | { kind: "core"; node: number };
+  | { kind: "core"; node: number }
+  | { kind: "zip"; line: number; at: number };
 
 /**
  * A downed teammate within reach comes first, however close any loot is; otherwise
  * the closest of bin, care package or weapon within reach; and only when none of those
  * is, a depot that is on, so a press meant for loot never sends the bag home or ends the raid.
  */
-export function useTarget(s: State, armor = true, tools = true, mods = true): UseTarget | null {
+export function useTarget(s: State, armor = true, tools = true, mods = true, zips = true): UseTarget | null {
   const p = s.player;
   const level = (y: number) => Math.abs(y - p.pos.y) < 1.5;
   const a = s.ally;
@@ -810,6 +813,8 @@ export function useTarget(s: State, armor = true, tools = true, mods = true): Us
   if (pick) return pick;
   const core = coreInReach(s);
   if (core >= 0) return { kind: "core", node: core };
+  const zip = zips ? zipInReach(s) : null;
+  if (zip) return { kind: "zip", line: zip.line, at: zip.at };
   const depot = depotInReach(s);
   return depot >= 0 && !depotBlocked(s) ? { kind: "depot", index: depot } : null;
 }

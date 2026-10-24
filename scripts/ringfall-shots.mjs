@@ -11,6 +11,7 @@ import { createServer } from "node:http";
 import { readFile, mkdir } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { chromium } from "playwright-core";
+import { movementShots } from "./ringfall-shots-movement.mjs";
 
 const root = "dist/client";
 const types = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml" };
@@ -2361,6 +2362,8 @@ for (const phone of [false, true]) {
   await ctx.close();
   lap(`rules, ${phone ? "phone" : "desktop"}`);
 }
+await movementShots({ browser, port, out, errors });
+lap("movement");
 await browser.close();
 server.close();
 if (errors.length) {

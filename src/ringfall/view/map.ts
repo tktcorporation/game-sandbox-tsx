@@ -1,4 +1,6 @@
 import { DEPOT, FACTION, FRONT, WORLD } from "../sim/config";
+import { ZIPS } from "../sim/map";
+import { zipUp } from "../sim/zips";
 import { frontNodes, nodeHolds, type NodeHold } from "../sim/front";
 import { atRisk, battleMarks, meterOf, type Battle, type Side } from "../sim/battle";
 import { offshore } from "../sim/terrain";
@@ -643,6 +645,23 @@ export class IslandMap {
       g.stroke();
       g.restore();
     }
+    // The ziplines up, thin blue lines along their cables (the quarry's lifts in grey): the
+    // network the nodes held join.
+    g.save();
+    g.lineCap = "round";
+    ZIPS.forEach((l, i) => {
+      if (!zipUp({ nodes: s.nodes ?? [] }, i)) return;
+      g.strokeStyle = l.fixed ? "rgba(200,206,216,0.9)" : "#7cc0ff";
+      g.lineWidth = (l.fixed ? 1.2 : 1.6) * dpr;
+      g.beginPath();
+      l.pts.forEach((q, k) => {
+        const c = at(q.x, q.z);
+        if (k) g.lineTo(c.x, c.y);
+        else g.moveTo(c.x, c.y);
+      });
+      g.stroke();
+    });
+    g.restore();
     g.textAlign = "center";
     g.textBaseline = "middle";
     g.lineWidth = 3 * dpr;
