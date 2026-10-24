@@ -1086,13 +1086,12 @@ export const PURSUE = { lead: 1.5, leadMax: 9, reach: 90, spread: 7, approach: 5
  * leaves only `press` of the robot's pause before the next, and the next wind-up, begun within
  * `followWindow` s of the last burst, takes `follow` of its time: the glow still comes before
  * every burst, the gap between them shrinks. Facing one robot head-on, standing and trading shots
- * is about an even fight; moving across its line of fire (`moving`: the stray grows by this share
- * at a walk across it) keeps the bursts short and the pauses long, and wins it. Robots fighting
- * the same target share the work: each other robot winding up, firing or done with a burst within
- * `shareWindow` s adds `share` times the pause to a robot's next one, so two at once do not fire
- * twice as fast as one, and a squad's last robot fights as hard as a lone one.
+ * is about an even fight; moving keeps the bursts short and the pauses long, and wins it. Robots
+ * fighting the same target share the work: each other robot winding up, firing or done with a
+ * burst within `shareWindow` s adds `share` times the pause to a robot's next one, so two at once
+ * do not fire twice as fast as one, and a squad's last robot fights as hard as a lone one.
  */
-export const SHOT = { lead: 0.85, spread: 1.5, walker: 2, walkerDmg: 0.6, still: 1, steady: 0.77, extra: 1, press: 0.23, follow: 0.6, followWindow: 1.5, moving: 0.25, share: 5, shareWindow: 2.5 };
+export const SHOT = { lead: 0.85, spread: 1.5, walker: 2, walkerDmg: 0.6, still: 1, steady: 0.77, extra: 1, press: 0.23, follow: 0.6, followWindow: 1.5, share: 5, shareWindow: 2.5 };
 
 /**
  * Being shot from beyond a robot's sight is answered. For `time` seconds after each of the

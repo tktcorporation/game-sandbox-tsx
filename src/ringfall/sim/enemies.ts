@@ -190,7 +190,7 @@ function muzzle(e: Enemy): Vec3 {
 function fireOrb(s: State, e: Enemy, yawOff = 0, homing = false, foe?: Enemy, wide = 1) {
   const k = ENEMIES[e.kind];
   const from = muzzle(e);
-  // A random stray (see SHOT.spread), wider at a target moving across the line (`wide`, SHOT.moving); the titan's homing rockets find their own way.
+  // A random stray (see SHOT.spread), narrower at a target standing still (`wide`, SHOT.steady); the titan's homing rockets find their own way.
   const stray = homing ? 0 : SHOT.spread * wide * DEG * (!foe && e.target === "player" ? modScale(s.player, "deflector") : 1) * (!foe && s.squads[e.squad]?.mobile ? SHOT.walker : 1);
   const r = Math.sqrt(-2 * Math.log(draw(s, e) + 1e-9));
   const a = draw(s, e) * Math.PI * 2;
@@ -210,15 +210,6 @@ function fireOrb(s: State, e: Enemy, yawOff = 0, homing = false, foe?: Enemy, wi
     friend: e.friend || undefined,
   });
   s.events.push(foe ? { t: "enemyFire", id: e.id, pos: from, foe: bodyCenter(foe), rogue: !!e.rogue, friend: e.friend || undefined } : { t: "enemyFire", id: e.id, pos: from, rogue: e.rogue || undefined });
-}
-
-/** How fast the target moves across the line from this robot's muzzle, in m/s (see SHOT.moving). */
-function crossSpeed(e: Enemy, at: Vec3, vel: Vec3): number {
-  const from = muzzle(e);
-  const dx = at.x - from.x;
-  const dz = at.z - from.z;
-  const d = Math.hypot(dx, dz) || 1;
-  return Math.abs((vel.x * dz - vel.z * dx) / d);
 }
 
 function lockAim(e: Enemy, at: Vec3) {
@@ -554,7 +545,7 @@ export function stepEnemies(s: State) {
         if (e.timer <= 0 && e.shotsLeft > 0) {
           // Every shot of a burst is aimed afresh while the target is in sight.
           if (sightOn(e, tPos, tChest)) leadAim(e, tChest, tVel);
-          const wide = (Math.hypot(tVel.x, tVel.z) < SHOT.still ? SHOT.steady : 1) + SHOT.moving * Math.min(1, crossSpeed(e, tChest, tVel) / PLAYER.walk);
+          const wide = Math.hypot(tVel.x, tVel.z) < SHOT.still ? SHOT.steady : 1;
           if (k.spread > 0) {
             for (let i = 0; i < k.shots; i++) fireOrb(s, e, ((i - (k.shots - 1) / 2) * k.spread * Math.PI) / 180, false, undefined, wide);
             e.shotsLeft = 0;
