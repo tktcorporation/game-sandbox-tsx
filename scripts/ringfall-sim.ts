@@ -70,6 +70,7 @@ import { analyse, factoryNeeded, raidThreat, recallLoadout, setThreat, wanted } 
 import { raidClock, strengthFor } from "../src/ringfall/sim/state";
 import { pacing, type Pool } from "./ringfall-pacing";
 import { movementLines } from "./ringfall-movement";
+import { duelLines } from "./ringfall-duel";
 import { MOBILES, OUTPOST_SITES } from "../src/ringfall/sim/map";
 import { enemyNodes, frontNodes, garrisonOf, useCore, type NodeHold } from "../src/ringfall/sim/front";
 import { factoryMax, factoryRarity, finishBattle, heldUnlocks, nodePoint } from "../src/ringfall/sim/battle";
@@ -4340,6 +4341,14 @@ if (moved.errors.length) {
   process.exit(1);
 }
 for (const l of moved.lines) console.log(l);
+
+// One robot head-on: standing in the open trades about evenly with a grunt, and moving, going round or cover wins.
+const duels = duelLines();
+if (duels.errors.length) {
+  console.error(duels.errors.join("\n"));
+  process.exit(1);
+}
+for (const l of duels.lines) console.log(l);
 
 let failed = false;
 const head = ["skill    ", "alive", "time(med)", "cleared", "haul(med)", "downs", "acc", "crit", "leap", "crowd", "flank", "waves", "meet".padEnd(18), "c/min", "ally".padEnd(18), "exit"];

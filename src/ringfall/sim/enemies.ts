@@ -539,7 +539,7 @@ export function stepEnemies(s: State) {
           } else if (sightOn(e, tPos, tChest)) {
             e.mode = "fire";
             e.timer = 0;
-            e.shotsLeft = k.shots;
+            e.shotsLeft = k.shots + (k.spread === 0 && Math.hypot(tVel.x, tVel.z) < SHOT.still ? SHOT.extra : 0);
           } else {
             // The target got behind something or out of its cone during the glow: no burst.
             e.mode = "move";
@@ -554,7 +554,7 @@ export function stepEnemies(s: State) {
         if (e.timer <= 0 && e.shotsLeft > 0) {
           // Every shot of a burst is aimed afresh while the target is in sight.
           if (sightOn(e, tPos, tChest)) leadAim(e, tChest, tVel);
-          const wide = 1 + SHOT.moving * Math.min(1, crossSpeed(e, tChest, tVel) / PLAYER.walk);
+          const wide = (Math.hypot(tVel.x, tVel.z) < SHOT.still ? SHOT.steady : 1) + SHOT.moving * Math.min(1, crossSpeed(e, tChest, tVel) / PLAYER.walk);
           if (k.spread > 0) {
             for (let i = 0; i < k.shots; i++) fireOrb(s, e, ((i - (k.shots - 1) / 2) * k.spread * Math.PI) / 180, false, undefined, wide);
             e.shotsLeft = 0;
@@ -567,7 +567,7 @@ export function stepEnemies(s: State) {
         if (e.shotsLeft <= 0) {
           e.mode = "move";
           e.opener = false;
-          e.cooldown = k.cooldown * (0.8 + draw(s, e) * 0.4) * (e.elite ? ELITE.cooldown : 1) * (1 + SHOT.share * matesFiring(s, e));
+          e.cooldown = k.cooldown * (0.8 + draw(s, e) * 0.4) * (e.elite ? ELITE.cooldown : 1) * (Math.hypot(tVel.x, tVel.z) < SHOT.still ? SHOT.press : 1) * (1 + SHOT.share * othersFiring(s, e));
           e.fired = 0;
           // A grunt in cover shows itself next from the other side of it; hurt and alone, it stays hidden longer.
           e.peekSide = -e.peekSide;
@@ -615,14 +615,13 @@ export function stepEnemies(s: State) {
 }
 
 /**
- * Its squad-mates shooting at the same target as it: winding up, firing, or done with a burst
- * within `SHOT.shareWindow` seconds (see SHOT.share).
+ * The other robots shooting at the same target as it, of any squad: winding up, firing, or done
+ * with a burst within `SHOT.shareWindow` seconds (see SHOT.share).
  */
-function matesFiring(s: State, e: Enemy): number {
-  if (e.squad < 0) return 0;
+function othersFiring(s: State, e: Enemy): number {
   let n = 0;
-  for (const o of squadMembers(s, e.squad))
-    if (o !== e && o.aware === "engaged" && o.target === e.target && o.kind !== "titan" && (o.mode === "telegraph" || o.mode === "fire" || o.fired < SHOT.shareWindow)) n++;
+  for (const o of s.enemies)
+    if (o !== e && o.aware === "engaged" && o.target === e.target && o.kind !== "titan" && !o.friend && (o.mode === "telegraph" || o.mode === "fire" || o.fired < SHOT.shareWindow)) n++;
   return n;
 }
 
