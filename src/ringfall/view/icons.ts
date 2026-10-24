@@ -112,7 +112,7 @@ export const binPicture = (inside: string, cls = "") =>
   `<span class="bin-pic ${cls}"><span class="bin-in">${inside}</span><svg class="bin-box" viewBox="0 0 40 22" aria-hidden="true"><path d="M2 3 L38 3 L36 0.5 L4 0.5 Z" fill="#cfc8b8"/><rect x="3" y="4" width="34" height="16" rx="1" fill="#2f7f86"/><rect x="3" y="16.5" width="34" height="3.5" fill="#cfc8b8"/><path d="M3 4.6 H37" stroke="#ffffff" stroke-width="1"/></svg></span>`;
 
 /** A gun, side on, in its rarity's colour. */
-export const gunIcon = (c = "currentColor") => svg(`<path d="M1.5 5 H14.5 V8 H9 L8 10.5 H6 L6.5 8 H5.5 L4.5 13.5 H1.8 L2.8 8 H1.5 Z" fill="${c}"/>`, "gun");
+export const gunIcon = (c = "currentColor") => svg(`<path d="M0.5 5 H12 V4 H15.5 V6.6 H12 V8 H9.6 L9 11.8 H6.8 L7.2 8 H5.2 L4 13.5 H1.2 L2.4 8 H0.5 Z" fill="${c}"/>`, "gun");
 
 /** Body armour, in its level's colour. */
 export const armorIcon = (c = "currentColor") => svg(`<path d="M5 1.5 L8 3 L11 1.5 L14 4 L12.5 6.5 V14.5 H3.5 V6.5 L2 4 Z" fill="${c}"/><path d="M8 3 V14.5" stroke="rgba(20,24,40,0.6)" stroke-width="1"/>`, "armor");

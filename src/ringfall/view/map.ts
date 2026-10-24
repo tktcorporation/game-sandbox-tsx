@@ -47,6 +47,11 @@ export const HOLD_CSS: Record<PoiHold, string> = { held: "#c8402f", freed: "#3f8
  */
 export function drawFlare(g: CanvasRenderingContext2D, x: number, y: number, r: number, lit: boolean) {
   g.save();
+  // A dark disc behind it, so it reads on the red and blue ground alike.
+  g.fillStyle = "rgba(20,24,40,0.75)";
+  g.beginPath();
+  g.arc(x, y, r * 1.15, 0, Math.PI * 2);
+  g.fill();
   g.lineWidth = Math.max(1, r * 0.18);
   g.strokeStyle = lit ? "rgba(20,24,40,0.9)" : "#8a8f9c";
   const stick = () => {
@@ -738,13 +743,13 @@ export class IslandMap {
       g.stroke();
       label(x.short, exitAt[i].x, exitAt[i].y, css(PAL.hot), 10);
       // The plateau's pickup wants a flare: the flare's mark rides on its diamond's shoulder.
-      if (x.needsFlare) drawFlare(g, p.x + r * 1.15, p.y - r * 0.9, 5.5 * dpr, true);
+      if (x.needsFlare) drawFlare(g, p.x + r * 1.6, p.y - r * 1.2, 7 * dpr, true);
     });
     // Where the flares lie: the same mark on the tall buildings' top floors, grey once searched.
     const flares = s.bins ? s.bins.filter((b) => b.flare) : EXTRA_BINS.filter((b) => b.flare).map((b) => ({ ...b, open: false }));
     for (const b of flares) {
       const p = at(b.x, b.z);
-      drawFlare(g, p.x, p.y, 4.5 * dpr, !b.open);
+      drawFlare(g, p.x, p.y, 6.5 * dpr, !b.open);
     }
     // The routes a tool opens: open ones a solid line, closed ones dashed with a cross at each obstacle.
     for (const r of ROUTES) {

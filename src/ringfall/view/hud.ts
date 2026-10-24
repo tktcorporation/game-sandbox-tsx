@@ -1124,10 +1124,11 @@ export class Hud {
     // On a wipe, what the bag held splits in two: what the pouch kept, in the pouch's colour, and the rest struck through.
     const pouched = new Map<string, number>();
     if (lost) for (const i of home) pouched.set(itemName(i), (pouched.get(itemName(i)) ?? 0) + 1);
-    const split = carried.flatMap(([label, n]) => {
-      const kept = Math.min(n, pouched.get(label) ?? 0);
-      return [kept ? `<span class="pouch-kept">${pouchIcon()}${label}${kept > 1 ? ` × ${kept}` : ""}</span>` : "", n > kept ? `<span class="lost">${label}${n - kept > 1 ? ` × ${n - kept}` : ""}</span>` : ""];
-    });
+    const kept = (label: string, n: number) => Math.min(n, pouched.get(label) ?? 0);
+    const split = [
+      ...carried.filter(([label, n]) => kept(label, n)).map(([label, n]) => `<span class="pouch-kept">${pouchIcon()}${label}${kept(label, n) > 1 ? ` × ${kept(label, n)}` : ""}</span>`),
+      ...carried.filter(([label, n]) => n > kept(label, n)).map(([label, n]) => `<span class="lost">${label}${n - kept(label, n) > 1 ? ` × ${n - kept(label, n)}` : ""}</span>`),
+    ];
     // The haul's worth under the day's result; what a wipe lost is struck through, what went home from a depot is kept.
     $("haul-line").innerHTML =
       `<span${lost ? ' class="lost"' : ""}>回収の価値<b>${lost ? value - sentValue : value}</b></span>` +

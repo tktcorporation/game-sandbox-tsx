@@ -1404,7 +1404,7 @@ export class World {
         }
         smoke.visible = !b.open && s.phase === "play";
         const d = Math.hypot(b.x - fx, b.z - fz);
-        (smoke.material as THREE.MeshBasicMaterial).opacity = Math.min(0.34, Math.max(0.05, (d - 8) / 90)) * (0.8 + 0.2 * Math.sin(this.time * 3 + b.id));
+        (smoke.material as THREE.MeshBasicMaterial).opacity = Math.min(0.62, Math.max(0.08, (d - 8) / 60)) * (0.85 + 0.15 * Math.sin(this.time * 3 + b.id));
       }
       if (!near(v.root)) continue;
       v.lid.rotation.x += ((b.open ? -1.9 : 0) - v.lid.rotation.x) * Math.min(1, dt * 10);
