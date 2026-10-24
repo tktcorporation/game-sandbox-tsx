@@ -1,7 +1,8 @@
 import { atRisk } from "../sim/battle";
 import * as THREE from "three";
 import { DUCK, ENEMIES, FRONT, PLAYER, STORM, TITAN, WEAPONS, WORLD, type EnemyKind } from "../sim/config";
-import { BOXES, CAMP, DEPOTS, ENTRIES, EXTRACTS, NODES, ROUTES, type Box } from "../sim/map";
+import { BOXES, CAMP, DEPOTS, ENTRIES, EXTRACTS, NODES, ROUTES, ZIPS, type Box } from "../sim/map";
+import { zipUp } from "../sim/zips";
 import { frontNodes } from "../sim/front";
 import { worldKey } from "../sim/routes";
 import { groundAt } from "../sim/geom";
@@ -238,6 +239,11 @@ export class World {
   private captureRing: THREE.Mesh;
   /** The cores of the front's nodes (`NODES`), built once, lit as who holds each; and the colour each was last lit in. */
   private cores: (ReturnType<typeof buildCore> & { key: string })[] = [];
+  /** The ziplines' cables, `ZIPS` order: shown while up. */
+  private cables: THREE.Group[] = [];
+  /** Seconds into a climb's hand-over-hand rhythm, and the dip as the hands reach the top. */
+  private climbBeat = 0;
+  private climbDip = 0;
   /** The objective's beacon (`setBeacon()`), and where it stands; null for none. */
   private beacon: THREE.Mesh;
   private beaconAt: { x: number; y: number; z: number } | null = null;
@@ -342,6 +348,24 @@ export class World {
       v.root.position.set(n.core.x, n.core.y, n.core.z);
       this.scene.add(v.root);
       this.cores.push(v);
+    }
+    // The cables: a steel rope and, along it, a thin blue line that reads from afar; a lift's in steel alone.
+    const rope = new THREE.MeshLambertMaterial({ color: 0x3a3f48 });
+    const line = new THREE.LineBasicMaterial({ color: 0x5aa8f0, toneMapped: false, transparent: true, opacity: 0.85 });
+    for (const l of ZIPS) {
+      const g = new THREE.Group();
+      for (let i = 0; i + 1 < l.pts.length; i++) {
+        const a = new THREE.Vector3(l.pts[i].x, l.pts[i].y, l.pts[i].z);
+        const b = new THREE.Vector3(l.pts[i + 1].x, l.pts[i + 1].y, l.pts[i + 1].z);
+        const m = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, a.distanceTo(b), 5, 1), rope);
+        m.position.copy(a).add(b).multiplyScalar(0.5);
+        m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize());
+        g.add(m);
+      }
+      if (!l.fixed) g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(l.pts.map((q) => new THREE.Vector3(q.x, q.y + 0.06, q.z))), line));
+      g.visible = false;
+      this.scene.add(g);
+      this.cables.push(g);
     }
     this.captureRing = new THREE.Mesh(new THREE.RingGeometry(FRONT.radius - 0.6, FRONT.radius, 96), glow(0x3f86c8, 0.7));
     this.captureRing.rotation.x = -Math.PI / 2;
@@ -1013,8 +1037,18 @@ export class World {
         case "hurt":
           this.shake = Math.max(this.shake, 0.25 + e.dmg * 0.012);
           break;
+        case "climbTop":
+          this.climbDip = 0.12;
+          break;
+        case "slideJump":
+          this.fovKick = Math.max(this.fovKick, 3);
+          break;
+        case "zipOn":
+          this.fovKick = Math.max(this.fovKick, 4);
+          this.shake = Math.max(this.shake, 0.3);
+          break;
         case "slide":
-          this.fovKick = Math.max(this.fovKick, 8);
+          this.fovKick = Math.max(this.fovKick, e.chain ? 2 : 8);
           this.burst({ x: s.player.pos.x, y: s.player.pos.y + 0.1, z: s.player.pos.z }, PAL.sandDark, 8, 2, 0.08, 6, 0.5);
           break;
         case "land":
@@ -1100,18 +1134,29 @@ export class World {
     const speed = Math.hypot(p.vel.x, p.vel.z);
     if (p.onGround && speed > 0.5 && !p.sliding) this.bob += dt * speed * 1.6;
     this.landDip *= Math.exp(-dt * 8);
+    // A climb: the view nods with each pull of the hands and dips as they reach the top.
+    const climbing = !!p.mantle?.climb && p.mantle.t < p.mantle.dur * p.mantle.up;
+    this.climbBeat = climbing ? this.climbBeat + dt : 0;
+    this.climbDip *= Math.exp(-dt * 7);
     this.shake *= Math.exp(-dt * 7);
     this.recoilView *= Math.exp(-dt / 0.12);
     const shakeX = (Math.random() - 0.5) * this.shake * 0.05;
     const shakeY = (Math.random() - 0.5) * this.shake * 0.05;
     const bobY = Math.sin(this.bob * 2) * 0.035 * (p.ads > 0.5 ? 0.2 : 1);
-    this.camera.position.set(p.pos.x, p.pos.y + this.eyeY + bobY - this.landDip, p.pos.z);
-    this.camera.rotation.set(p.pitch + (p.recoil * Math.PI) / 180 + shakeY, -(p.yaw + (p.recoilYaw * Math.PI) / 180) + shakeX, p.sliding ? -0.04 : 0, "YXZ");
+    const pull = climbing ? Math.sin(this.climbBeat * Math.PI * 2 * 2.6) : 0;
+    // On a cable the body swings a little under the hands, slower the slower it rides.
+    const sway = p.zip ? Math.sin(this.time * 1.7) * 0.03 * Math.min(1, p.zip.speed / 20) : 0;
+    this.camera.position.set(p.pos.x, p.pos.y + this.eyeY + bobY - this.landDip - this.climbDip + pull * 0.05, p.pos.z);
+    this.camera.rotation.set(p.pitch + (p.recoil * Math.PI) / 180 + shakeY + pull * 0.015 - this.climbDip * 0.25, -(p.yaw + (p.recoilYaw * Math.PI) / 180) + shakeX, (p.sliding ? -0.04 : 0) + pull * 0.012 + sway, "YXZ");
     const spec = w0 ? WEAPONS[w0.kind] : WEAPONS.pike;
     // Widenings are written in degrees of the reference view and scaled to this screen's.
     const hip = hipFov(this.camera.aspect);
     const per = hip / FOV_REF;
-    const baseFov = hip + ((p.sprinting ? 4 : 0) + (p.leap ? 10 : 0)) * per;
+    // Past a sprint's speed the view widens with it (a slide-jump a few degrees, a zipline up to
+    // 12), half as much on a phone, where the screen is close and small.
+    const pace = p.zip ? p.zip.speed : speed;
+    const widen = Math.min(12, Math.max(0, pace - PLAYER.sprint - 0.3) * 1.1) * (document.body.classList.contains("touch") ? 0.5 : 1);
+    const baseFov = hip + ((p.sprinting ? 4 : 0) + (p.leap ? 10 : 0) + widen) * per;
     const fovTarget = baseFov + (zoomedFov(baseFov, spec.adsFov) - baseFov) * p.ads;
     this.fovKick *= Math.exp(-dt * 2.2);
     const fov = fovTarget + this.fovKick * per;
@@ -1139,6 +1184,7 @@ export class World {
       this.applyWeather();
     }
 
+    this.cables.forEach((g, i) => (g.visible = zipUp(s, i)));
     this.syncRoutes();
     this.streamChunks(fx, fz);
     this.scatter.update(fx, fz, this.q.scatterFar);
@@ -1631,9 +1677,11 @@ export class World {
     this.gunKick += (0 - this.gunKick) * Math.min(1, dt * 14);
     const reloading = p.reload > 0;
     const lowered = !!p.healing || !!p.mantle || !!p.leap || p.downed > 0 || s.phase === "done" || this.campMode;
+    // One hand on the cable's handle: the gun rides low and turned in.
+    const riding = !!p.zip;
     const ads = p.ads;
     const gx = 0.2 * (1 - ads);
-    const gy = -0.2 + 0.07 * ads - (lowered ? 0.4 : 0) - (reloading ? 0.08 : 0) + Math.sin(this.bob * 2) * 0.01 * (1 - ads);
+    const gy = -0.2 + 0.07 * ads - (lowered ? 0.4 : 0) - (riding ? 0.06 : 0) - (reloading ? 0.08 : 0) + Math.sin(this.bob * 2) * 0.01 * (1 - ads);
     const gz = -0.5 + Math.max(0, this.gunKick) * 0.05;
     this.gun.position.set(gx + Math.cos(this.bob) * 0.01 * (1 - ads), gy, gz);
     this.gun.rotation.set(Math.max(0, this.gunKick) * 0.12 + (reloading ? 0.5 : 0) - (p.sliding ? 0.05 : 0), 0, (reloading ? 0.35 : 0) + (p.sliding ? 0.25 : 0));

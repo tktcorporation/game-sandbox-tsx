@@ -341,7 +341,7 @@ function move(s: State, input: Input, prevCrouch: boolean) {
     if (!p.onGround && input.crouch && p.downed <= 0 && Math.hypot(p.vel.x, p.vel.z) > PLAYER.walk + 0.3) {
       p.sliding = true;
       p.crouch = false;
-      s.events.push({ t: "slide" });
+      s.events.push({ t: "slide", chain: true });
     }
     if (!p.onGround && p.zipFall) {
       p.zipFall = false;

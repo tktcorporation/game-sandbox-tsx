@@ -1013,7 +1013,7 @@ function checkConnections(): string | null {
   p.yaw = 0;
   let low = Infinity;
   for (let t = 0; t < 12 * 60 && p.pos.z > north; t++) {
-    step(s, { ...idleInput(), moveZ: 1 }, false);
+    step(s, { ...idleInput(), moveZ: 1, noClimb: true }, false);
     if (p.pos.z < deck.z1 && p.pos.z > deck.z0) low = Math.min(low, p.pos.y);
   }
   if (p.pos.z > north || low < deck.y - 0.5) return `connection scenario: walking the bridge ended at ${p.pos.x.toFixed(1)},${p.pos.y.toFixed(1)},${p.pos.z.toFixed(1)}, lowest ${low.toFixed(1)} m over the gorge`;
@@ -1534,6 +1534,7 @@ function checkDepots(): string | null {
   let early = false;
   const fwd = idleInput();
   fwd.moveZ = 1;
+  fwd.noClimb = true;
   for (let i = 0; i < 4 / TICK && dist2d(walk.player.pos, sup) > 1; i++) {
     step(walk, fwd, false);
     on += walk.events.filter((e) => e.t === "depotOn" && e.poi === "supply").length;
@@ -2721,7 +2722,7 @@ function checkIntercept(): string | null {
     s.squads.push({ name: "test", poi: -1, patrol: [], leg: 0, engaged: false, roam: true, sinceSeen: 0, last: { x: 0, z: 0 } });
     const away = side > 0 ? Math.PI / 2 : -Math.PI / 2;
     const pair = [spawnEnemy(s, "grunt", at.x + side, at.z - 4, -1, squad, { face: away }), spawnEnemy(s, "grunt", at.x + side, at.z - 1, -1, squad, { face: away })];
-    const run = { ...idleInput(), moveZ: 1 };
+    const run = { ...idleInput(), moveZ: 1, noClimb: true };
     ticks(s, 1.5, run);
     const heard = { x: p.pos.x, z: p.pos.z };
     makeNoise(s, heard.x, heard.z, NOISE.talon, true);
@@ -3323,7 +3324,7 @@ function walkGangway(open: boolean): number {
   p.pos = { x: foot.x - 1, y: LEVEL.seabed, z: foot.z };
   p.yaw = Math.PI / 2;
   s.ally.pos = { x: foot.x - 8, y: LEVEL.seabed, z: foot.z - 4 };
-  const walk = { ...idleInput(), moveZ: 1 };
+  const walk = { ...idleInput(), moveZ: 1, noClimb: true };
   for (let t = 0; t < 10 * 60 && p.pos.x < top.x; t++) step(s, walk, false);
   p.yaw = Math.PI;
   for (let t = 0; t < 3 * 60 && p.pos.z < top.z; t++) step(s, walk, false);

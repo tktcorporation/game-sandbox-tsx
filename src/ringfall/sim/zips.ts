@@ -15,13 +15,13 @@ import type { Input, State } from "./state";
  */
 
 /** Whether the player holds end `id` of a link: the camp always, a node while it is theirs. */
-const holdsEnd = (s: Pick<State, "nodes">, id: string) => id === "camp" || s.nodes[nodeIndex(id)] === "freed";
+const holdsEnd = (s: { readonly nodes: readonly string[] }, id: string) => id === "camp" || s.nodes[nodeIndex(id)] === "freed";
 
 /** Whether cable `i` is up: both its ends held. */
-export const zipUp = (s: Pick<State, "nodes">, i: number) => !!ZIPS[i].fixed || (holdsEnd(s, ZIPS[i].a) && holdsEnd(s, ZIPS[i].b));
+export const zipUp = (s: { readonly nodes: readonly string[] }, i: number) => !!ZIPS[i].fixed || (holdsEnd(s, ZIPS[i].a) && holdsEnd(s, ZIPS[i].b));
 
 /** The cables up, as their places in `ZIPS`. */
-export const zipsUp = (s: Pick<State, "nodes">): number[] => ZIPS.map((_, i) => i).filter((i) => zipUp(s, i));
+export const zipsUp = (s: { readonly nodes: readonly string[] }): number[] => ZIPS.map((_, i) => i).filter((i) => zipUp(s, i));
 
 /** The point `at` metres along a cable, and its direction there (toward `b`). */
 export function zipPoint(l: ZipLine, at: number): { p: ZipPoint; dx: number; dy: number; dz: number } {
@@ -139,7 +139,7 @@ export function grabInAir(s: State, input: Input) {
 }
 
 /** Which nodes' cables are up, as pairs of ends for the map (the camp as its own end). */
-export const zipEnds = (s: Pick<State, "nodes">) => zipsUp(s).map((i) => [ZIPS[i].a, ZIPS[i].b] as const);
+export const zipEnds = (s: { readonly nodes: readonly string[] }) => zipsUp(s).map((i) => [ZIPS[i].a, ZIPS[i].b] as const);
 
 /** The cable's ends' nodes, for a check that both are held: indices in `NODES`, -1 for the camp. */
 export const zipNodes = (i: number) => [ZIPS[i].a, ZIPS[i].b].map((id) => (id === "camp" ? -1 : NODES.findIndex((n) => n.id === id)));

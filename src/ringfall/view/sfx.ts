@@ -265,10 +265,52 @@ export const sfx = {
     });
   },
   land(speed: number) {
-    me(Math.min(0.6, speed * 0.04), () => {
-      tone(80, 0.12, { type: "sine", vol: Math.min(0.5, speed * 0.03), to: 45 });
+    // A thump in the chest even off a hop, heavier off a fall.
+    me(Math.min(0.6, 0.1 + speed * 0.035), () => {
+      tone(80, 0.12, { type: "sine", vol: Math.min(0.5, 0.12 + speed * 0.028), to: 45 });
       hiss(0.1, { freq: 300, vol: Math.min(0.3, speed * 0.02) });
       hiss(0.06, { freq: 2000, q: 2, vol: Math.min(0.1, speed * 0.008) });
+    });
+  },
+  /** A jump out of a slide: the air torn past the ears, rising with the speed carried. */
+  slideJump(speed: number) {
+    const k = Math.min(1, Math.max(0, (speed - 8) / 4));
+    me(0.32, () => {
+      hiss(0.35, { freq: 500 + 700 * k, to: 2600 + 1200 * k, vol: 0.16, q: 0.8, attack: 0.02 });
+      hiss(0.18, { brown: true, type: "lowpass", freq: 500, vol: 0.5 });
+    });
+  },
+  /** A climb's first grip, and the boots scraping up the face. */
+  climb(rise: number) {
+    const n = Math.max(2, Math.min(6, Math.round(rise)));
+    me(0.22, () => {
+      tone(140, 0.05, { type: "square", vol: 0.05, to: 90 });
+      for (let i = 0; i < n; i++) {
+        hiss(0.09, { freq: vary(1400, 0.2), to: 700, q: 1.6, vol: 0.09, at: 0.08 + i * 0.19 });
+        tone(vary(110, 0.15), 0.05, { type: "sine", vol: 0.12, at: 0.12 + i * 0.19 });
+      }
+    });
+  },
+  /** Over the top: the heave and the knee on the ledge. */
+  climbTop() {
+    me(0.24, () => {
+      hiss(0.16, { freq: 900, to: 400, vol: 0.12, q: 1.2 });
+      tone(85, 0.1, { type: "sine", vol: 0.25, to: 55, at: 0.04 });
+    });
+  },
+  /** Taking hold of a cable: the pulley's clack on the rope and its whine starting. */
+  zipOn() {
+    me(0.35, () => {
+      tone(1900, 0.03, { type: "square", vol: 0.06 });
+      hiss(0.04, { freq: 3200, q: 4, vol: 0.2 });
+      tone(420, 0.35, { type: "sawtooth", vol: 0.03, to: 880, attack: 0.03, at: 0.03 });
+    });
+  },
+  /** Letting go of a cable; `cut` when it went slack under the hands. */
+  zipOff(cut: boolean) {
+    me(0.3, () => {
+      hiss(0.12, { freq: 2400, to: 900, q: 2, vol: 0.12 });
+      if (cut) tone(260, 0.4, { type: "sawtooth", vol: 0.05, to: 70 });
     });
   },
   pickup(rarity: Rarity) {

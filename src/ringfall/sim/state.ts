@@ -440,7 +440,8 @@ export type GameEvent =
   | { t: "reload"; time: number }
   | { t: "reloaded" }
   | { t: "dry" }
-  | { t: "slide" }
+  /** A slide; `chain` when a landing with the crouch held slid on. */
+  | { t: "slide"; chain?: boolean }
   | { t: "jump" }
   | { t: "mantle" }
   /** A wall or cliff climbed hand over hand, `rise` metres up; `top` when the hands reach its top. */
