@@ -732,9 +732,9 @@ function produce(s: State, b: Battle, dt: number) {
     // The enemy answers the player's ground: each node of theirs works for it as one of its own would.
     const mine = NODES.length - theirs;
     const shore = heldUnlocks(s.nodes, "shore").length ? CONQUEST.net.shore : 0;
-    const work = side === 1 ? theirs + CONQUEST.net.edge - shore + CONQUEST.net.answer * mine : 1;
+    const work = side === 1 ? (theirs + CONQUEST.net.answer * mine) * CONQUEST.net.node + CONQUEST.net.edge - shore : 1;
     const every = side === 1 ? CONQUEST.net.every[s.strength] : CONQUEST.rogue.every;
-    const max = side === 1 ? CONQUEST.net.max[s.strength] + Math.floor(mine / 3) : CONQUEST.rogue.max;
+    const max = side === 1 ? CONQUEST.net.max[s.strength] + Math.floor((mine * CONQUEST.net.node) / 3) : CONQUEST.rogue.max;
     b.made[side] = Math.min(every, b.made[side] + work * dt);
     if (b.made[side] < every || walking(b, side) >= max) continue;
     const plan = enemyPlan(s, b, side);

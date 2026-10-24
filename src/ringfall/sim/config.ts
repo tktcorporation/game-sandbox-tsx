@@ -433,6 +433,8 @@ export const CONQUEST = {
   net: {
     every: [1500, 1350, 1200],
     edge: 3,
+    /** What each node works, of a node's share: the island's eleven nodes work as its first six did. */
+    node: 6 / 11,
     /** Of `edge`, the north shore's work: none while the player holds the node that opens `shore` (`UNLOCKS`). */
     shore: 1,
     answer: 1,
@@ -453,20 +455,23 @@ export const CONQUEST = {
  */
 export const COUNTER = {
   delay: 60,
-  kinds: [["grunt", "grunt", "grunt"], ["grunt", "grunt", "grunt"], ["grunt", "grunt", "heavy"]] as EnemyKind[][],
+  kinds: [["grunt", "grunt"], ["grunt", "grunt"], ["grunt", "grunt", "grunt"]] as EnemyKind[][],
 };
 
 /**
  * The night between two days (meta/island.ts `nightRaids()`): the enemy attacks the player's nodes
  * next to its own ground (a node of its, the pad or the north shore). Each such node falls with the
- * chance `chance[n - 1]` for `n` such neighbours (2 or more as 2), times `guarded` when the player's
- * squads stood at it as the battle ended, times `factory[level]`. At most `max` fall in a night. The
+ * chance `chance[n - 1]` for `n` such neighbours (2 or more as 2), times `spread` plus the share of
+ * the island's nodes the player holds (the further the player has spread, the harder the rest of
+ * the front is hit), times `guarded` when the player's squads stood at it as the battle ended,
+ * times `factory[level]`. At most `max` fall in a night. The
  * draw is a hash of the raid's seed, the day and the node, never the raid's random numbers.
  */
 export const NIGHT = {
   chance: [0.3, 0.5],
-  guarded: 0.35,
-  factory: [1, 0.9, 0.75, 0.6, 0.5],
+  spread: 0.5,
+  guarded: 0.5,
+  factory: [1, 0.9, 0.8, 0.7, 0.65],
   max: 2,
 };
 

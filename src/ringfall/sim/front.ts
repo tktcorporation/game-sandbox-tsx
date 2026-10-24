@@ -216,7 +216,11 @@ export function takeNode(s: State, i: number) {
   s.player.selfRevive = 1;
   raiseAlly(s, "self", ALLY.reviveHp);
   garrisonLeaves(s, i);
-  if (s.battle) dueCounter(s.battle, i);
+  if (s.battle) {
+    // The battle counts the player's own captures among the nodes that changed hands.
+    s.battle.taken.push({ node: n.id, side: 0, t: Math.round(s.battle.now) });
+    dueCounter(s.battle, i);
+  }
   s.events.push({ t: "coreTaken", node: i });
 }
 

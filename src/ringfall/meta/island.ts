@@ -166,7 +166,9 @@ export function nightRaids(held: readonly NodeId[], guarded: readonly NodeId[], 
     if (!held.includes(n.id) || out.length >= NIGHT.max) return;
     const foes = NEIGHBOURS[i].filter((k) => !held.includes(NODES[k].id)).length + (NET_EDGE.includes(n.id) ? 1 : 0);
     if (!foes) return;
-    const chance = NIGHT.chance[Math.min(foes, NIGHT.chance.length) - 1] * (guarded.includes(n.id) ? NIGHT.guarded : 1) * NIGHT.factory[Math.max(0, Math.min(FACTORY.levels.length, factory))];
+    // The more of the island the player holds, the more of the enemy's strength falls on what is left of the front.
+    const spread = NIGHT.spread + held.length / NODES.length;
+    const chance = NIGHT.chance[Math.min(foes, NIGHT.chance.length) - 1] * spread * (guarded.includes(n.id) ? NIGHT.guarded : 1) * NIGHT.factory[Math.max(0, Math.min(FACTORY.levels.length, factory))];
     if ((dayHash(seed, day, 100 + i) % 10_000) / 10_000 < chance) out.push(n.id);
   });
   return out;
