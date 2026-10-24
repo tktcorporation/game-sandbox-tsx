@@ -4109,7 +4109,11 @@ function checkPushPull(): string | null {
   }
   const q = r.battle!.squads.find((x) => x.counter);
   if (!landed || !q || (q.via.length ? q.via[q.via.length - 1] : q.to) !== SUP) return `push-pull: no counter-attack landed for the supply depot (${JSON.stringify(q && { to: q.to, via: q.via })})`;
-  // Left bare, the node falls back; `finishBattle()` carries it on after the player leaves.
+  // Left bare, the node falls back; `finishBattle()` carries it on after the player leaves. Only
+  // the counter-attack is out, and nothing more is made, so it alone decides the node.
+  r.battle!.squads = r.battle!.squads.filter((x) => x.counter);
+  r.battle!.made = [-1e9, -1e9, -1e9];
+  r.battle!.end = r.battle!.now + CONQUEST.time;
   r.outcome = "extracted";
   r.phase = "done";
   finishBattle(r);
