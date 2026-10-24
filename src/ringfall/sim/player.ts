@@ -313,9 +313,9 @@ function move(s: State, input: Input, prevCrouch: boolean) {
   }
   collide(p.pos, PLAYER.radius);
   // A cliff's face above the feet is a wall: on foot the body never rises onto it (`collide()`
-  // lets it stand a hair over its feet, and running along a face that rises would gain that hair
-  // every step), so it stays where it stood.
-  // A step blocked so slides along the face on one axis when that one is clear.
+  // lets it stand a hair over its feet, and a run along a face that rises would gain that hair
+  // every step, up the crags too). A step that would slides along the face on one axis when that
+  // one is clear, and otherwise stays where it stood. Stairs bolted to a face are walked as ever.
   const ontoFace = (x: number, z: number) => terrainHeight(x, z) > from.y + 0.005 && steepAt(x, z) && boxTopAt(x, z, from.y - 0.5, from.y + WORLD.stepUp).top < terrainHeight(x, z) - 0.05;
   if (wasOnGround && ontoFace(p.pos.x, p.pos.z)) {
     const [x, z] = !ontoFace(p.pos.x, from.z) ? [p.pos.x, from.z] : !ontoFace(from.x, p.pos.z) ? [from.x, p.pos.z] : [from.x, from.z];

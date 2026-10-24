@@ -313,7 +313,11 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
     under the middle one; its landmarks are the bucket-wheel excavator on the top terrace's east
     end (`BWE`, `excavator()`: a machine house climbed by a stair tower, a mast 48 m high, and a
     boom whose walkway steps down over the middle terrace to a cab, the wheel 18 m across cutting
-    into the pit's edge) and the conveyor from the plant down to the floor;
+    into the pit's edge) and the conveyor from the plant down to the floor; its ways up are wide iron
+    stairs from the top terrace onto the ground on five sides and between the terraces
+    (`QUARRY_EXITS`, `rimStairs()`, from the floor as it lies at each foot), and two lifts from the
+    floor to the south and north rim (`QUARRY_LIFTS`: cables ridden as the ziplines are, always up),
+    which the sim gate walks and rides (`checkQuarryExits()`);
   - the relay (an orange sandstone mesa, 170 by 100 m on top at +27.5, cliffs 22 m to its foot):
     the base's station for talking to the ring: a dish 56 m across tilted west (`BIG_DISH`,
     `dish()`), its rim 49 m over the top and its lowest edge reached by a stair tower, two small
@@ -436,6 +440,33 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   on a floor and not inside a box, and that the pass and the railway bridge are walkable end to end;
   `checkRoutes()` walks each route closed (the long way round) and open (straight through), with
   the authored points checked again in the world with every route open.
+- The player moves fast (`PLAYER`, `CLIMB`, `ZIP` in `config.ts`, `player.ts`): a sprint of 7.6 m/s;
+  a jump out of a slide adds `slideJumpBoost` up to `slideJumpMax` (a faster slide keeps its own
+  speed), the air keeps it, a landing with the crouch held slides on (event `slide` with `chain`),
+  and above a sprint's speed the ground bleeds the speed off at `overspeedDecel` while the player
+  pushes that way; a jump pressed in the air waits `jumpBuffer` for the ground. Running or jumping
+  into a wall or cliff whose top is within `CLIMB.reach` of the feet climbs it hand over hand and
+  mantles over (`tryClimb()`, `ledgeAhead()`, the wall read by `boxTopAt()` in `geom.ts`); the top
+  must be ground to stand on, never the high ground (`highGround()`), past the coast, or a fence,
+  and a ledge within `MANTLE.reach` in the air is the plain mantle as before. A cliff's face is a
+  wall at any speed: on foot the body never rises onto steep terrain above its feet (a step that
+  would slides along the face on one axis), and in the air never onto steep terrain above the
+  ground it left (`Player.airFrom`, `offFace()`), so neither running nor hopping creeps up the
+  crags. Ziplines (`zips.ts`): `layZips()` in `ziplayout.ts` lays a cable for each link of
+  `FRONT_LINKS` between mast spots near both ends' cores (`mastSpots()` in `map.ts`; the camp's
+  outside its gate), the tightest line over the ground and everything built, over pylons whose
+  legs stand on open ground, as `ZIPS` (`ZIP_MISSING` names a link with none, `ZIP_BOXES` the
+  masts and pylons, last in `BOXES`; the scattered cover keeps out from under the cables). A
+  cable is up while the player holds both ends (`zipUp()`; the camp always), so lines come and
+  go as nodes change hands, and a rider whose cable is cut falls. The use key near a cable that is
+  up (`useTarget()`, kind `zip`) or a jump into one (`grabInAir()`) takes hold; the rider goes the
+  way they face at `ZIP.speed`, slows over `ZIP.brake` to `ZIP.arrive` and lets go at the end, and
+  a jump lets go anywhere with the speed kept. A teammate beside the player in sight rides behind
+  them and comes down beside them on landing (`Player.zip.carry`, `zipFall`), as on the leap;
+  else it catches up as ever. Robots never ride; a rider is shot as anyone. The bot passes
+  `Input.noClimb`: it neither climbs nor rides, since its paths (`nav.ts`) run on the ground. The
+  sim gate checks all of it (`scripts/ringfall-movement.ts`) and prints the course times (sprint,
+  slide-jump chain, zipline over 120 m of the salt flats), the climbs and the cables in balance.md.
 - `awareness.ts` decides who knows about the player: sight cones fill a detection meter, noise
   (shots, sprinting) sends squads to look, and at most `AWARE.maxSquads` squads fight at once.
   A fighting squad tracks the player only while a member sees them (`knownSpot()`), or for up to
@@ -528,7 +559,7 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   roof, inside a building) walk straight at their goal, and nobody paths inside a building.
   The fields are kept for reuse within a raid only: `newRun()` drops them, so a raid plays the
   same whatever ran before it, which is what lets the sim gate share raids among processes.
-  The bot (`bot.ts`) opens only bins on the ground and does not climb: each POI keeps ground bins
+  The bot (`bot.ts`) opens only bins on the ground and does not climb or ride a zipline: each POI keeps ground bins
   by its ways in and floors, and the bot walks the ground's paths up to robots on higher ground (a
   terrace, the mesa) rather than looking for an angle on them from below.
 - `src/ringfall/touch.ts` is the phone layout (landscape): a floating stick on the left half, view
@@ -536,7 +567,12 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   with `input.touch` set so the sim applies `ASSIST.touchPull`. `npm run shots:ringfall` drives it with
   real touch events in a phone-sized viewport before the desktop run.
 - `src/ringfall/view/` renders and never changes rules: `world.ts` (three.js), `hud.ts` (DOM),
-  and synthesized sound. The view is set by its horizontal angle (`hipFov()` in `world.ts`): 90°
+  and synthesized sound. Past a sprint's speed the view widens with the speed (up to 12° on a
+  zipline, half on a phone), `#fx-speed` streaks the screen's edges (hud.ts sets its opacity) and
+  the wind's rush grows (soundscape.ts); a climb nods the view with each pull and dips it over the
+  top; the cables are drawn while up (`World.cables`), and the world map draws them as thin blue
+  lines (the quarry's lifts grey). `window.ringfallMove` stands the movement's shots up
+  (`scripts/ringfall-shots-movement.mjs`). The view is set by its horizontal angle (`hipFov()` in `world.ts`): 90°
   across, up to 95° on a wide phone, at most 70° up and down on a tall window; aiming narrows it by
   the ratio each weapon's `adsFov` gives against a 74° reference, so a sight zooms the same on
   every screen. `world.ts` cuts the ground and everything built into `CHUNK`-metre

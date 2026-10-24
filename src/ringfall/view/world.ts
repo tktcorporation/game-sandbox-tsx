@@ -1112,6 +1112,11 @@ export class World {
     return { hitstop, slowmo };
   }
 
+  /** The camera's vertical view angle now, in degrees (automation reads the speed's widening by it). */
+  fov() {
+    return this.camera.fov;
+  }
+
   /** Per-frame sync and draw. `dt` is real seconds since the last frame. */
   render(s: State, dt: number) {
     this.sync(s, dt);

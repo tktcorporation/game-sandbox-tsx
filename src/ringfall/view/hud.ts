@@ -46,6 +46,8 @@ const clock = (t: number) => `${Math.floor(Math.max(0, t) / 60)}:${String(Math.f
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 /** Wording follows the controls in use: keys on a PC, on-screen buttons on a phone. */
 const isTouch = () => document.body.classList.contains("touch");
+/** A cable's end by name: a node's, the camp's, or for a lift the quarry's floor or rim. */
+const zipEndName = (id: string) => (id === "camp" ? "野営地" : id === "lift:quarry" ? "採掘場の底" : id.startsWith("lift:") ? "採掘場の縁" : (NODES.find((n) => n.id === id)?.name ?? ""));
 const key = (k: string) => (isTouch() ? "" : `<kbd>${k}</kbd> `);
 
 interface DmgNum {
@@ -585,7 +587,8 @@ export class Hud {
     // Interaction prompt.
     const prompt = this.prompt(s);
     $("prompt").innerHTML = prompt;
-    $("t-use").hidden = prompt === "";
+    // On a cable the prompt only tells where it goes: the jump button lets go, the use button has nothing to do.
+    $("t-use").hidden = prompt === "" || !!s.player.zip;
 
     // Damage numbers.
     this.nums = this.nums.filter((n) => {
@@ -985,6 +988,11 @@ export class Hud {
     const p = s.player;
     if (p.downed > 0 || s.phase !== "play") return "";
     if (s.leaving) return `${depotIcon()}<b>${Math.max(0, s.leaving.t).toFixed(1)}</b>`;
+    // On a cable: where it goes and the metres left.
+    if (p.zip) {
+      const l = ZIPS[p.zip.line];
+      return `${zipIcon(l.fixed ? "#c8ced8" : undefined)}${esc(zipEndName(p.zip.dir > 0 ? l.b : l.a))} <b>${Math.round(p.zip.dir > 0 ? l.length - p.zip.at : p.zip.at)}</b> m`;
+    }
     // The use key comes first: picking the teammate up or opening a bin works inside an extraction point too.
     const t = useTarget(s);
     const x = t ? null : extractHere(s);
@@ -1055,9 +1063,7 @@ export class Hud {
       const l = ZIPS[t.line];
       const at = zipPoint(l, t.at);
       const toB = Math.sin(p.yaw) * at.dx - Math.cos(p.yaw) * at.dz >= 0;
-      const end = toB ? l.b : l.a;
-      const name = end === "camp" ? "野営地" : (NODES.find((n) => n.id === end)?.name ?? "");
-      return `${key("E")}${zipIcon()}${esc(name)} <b>${Math.round(toB ? l.length - t.at : t.at)}</b> m`;
+      return `${key("E")}${zipIcon(l.fixed ? "#c8ced8" : undefined)}${esc(zipEndName(toB ? l.b : l.a))} <b>${Math.round(toB ? l.length - t.at : t.at)}</b> m`;
     }
     const wl = t.loot;
     const swap = p.weapons.includes(null) ? "" : struck([WEAPONS[p.weapons[p.slot]!.kind].name]);

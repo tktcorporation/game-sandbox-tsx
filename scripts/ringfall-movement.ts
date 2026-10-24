@@ -165,7 +165,7 @@ export function checkChain(c: { len: number; sprint: number; chain: number }): s
  * A box standing alone on level ground whose top is `h` (±0.3) over the ground, with open ground
  * before its west, east, north or south face to run up from, and room on its top: where the climb is tried.
  */
-function climbSpot(lo: number, hi: number, onTop = true): { x: number; z: number; yaw: number; top: number } | null {
+export function climbSpot(lo: number, hi: number, onTop = true): { x: number; z: number; yaw: number; top: number } | null {
   for (const b of BOXES) {
     if (b.kind === "fence" || b.x1 - b.x0 < 2 || b.z1 - b.z0 < 2) continue;
     const cx = (b.x0 + b.x1) / 2;
