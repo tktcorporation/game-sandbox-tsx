@@ -20,6 +20,7 @@ import { squadKey } from "./sim/state";
 import { loadProfile, saveProfile } from "./meta/storage";
 import { Hub, type Launch } from "./view/hub";
 import { CampView } from "./view/camp";
+import { DepartPicker } from "./view/depart";
 import { step } from "./sim/step";
 import { hurtAlly, placeAlly } from "./sim/ally";
 import { haulValue } from "./sim/results";
@@ -152,6 +153,9 @@ addEventListener("keydown", (e) => {
   if (departing) {
     if (e.code === "Enter" || e.code === "NumpadEnter" || e.code === "KeyE") answerDepart(true);
     else if (e.code === "Escape" || e.code === "Backspace") answerDepart(false);
+    // The arrows (and A / D) step the start chosen on the map.
+    else if (["ArrowRight", "ArrowDown", "KeyD", "Tab"].includes(e.code)) picker.cycle(e.shiftKey && e.code === "Tab" ? -1 : 1);
+    else if (["ArrowLeft", "ArrowUp", "KeyA"].includes(e.code)) picker.cycle(-1);
     e.preventDefault();
     return;
   }
@@ -370,12 +374,14 @@ let knownBefore: ModKind[] = [];
 let analysed: ModKind | null = null;
 const hub = new Hub(loadProfile(), () => lock());
 const campView = new CampView();
+const picker = new DepartPicker(hub, () => answerDepart(true));
 // The title's one line on the goal: the island's six nodes, filled blue as far as this save has taken them.
 $("title-row").innerHTML = nodeRow(islandHolds(hub.profile));
 
 /**
- * The departure's check, while it is up: out of the gate on foot (`walk`, where the player stands
- * now; `back` is the last place inside the yard, for a cancel) or by truck.
+ * The departure, while it is up: its map of starts, the kit and the confirm. Opened at the gate on
+ * foot (`walk`, where the player stands now; `back` is the last place inside the yard, for a
+ * cancel) or at the truck. Either way the start is the one chosen on the map.
  */
 let departing: { walk: boolean; back: { x: number; y: number; z: number; yaw: number } | null } | null = null;
 /** The last place inside the camp's yard the player stood, for turning back from the gate. */
@@ -398,7 +404,7 @@ function fade(on: boolean, now = false) {
 /** Wakes the player in the camp, the teammate beside them: from the title, after the results. */
 function openCamp() {
   departing = inside = null;
-  $("depart").hidden = true;
+  picker.show(false);
   $("title").hidden = true;
   $("results").hidden = true;
   $("pause").hidden = true;
@@ -435,35 +441,31 @@ function openPanel(id: StationId) {
   if (document.pointerLockElement) document.exitPointerLock();
 }
 
-/** Puts up the departure's check: what the raid takes out of the stash, where it starts, and its objective. */
+/** Puts up the departure: the island with every start on it (the last one chosen), the kit and the objective. */
 function askDepart(walk: boolean) {
-  const d = hub.departure(walk);
   departing = { walk, back: walk ? inside : null };
   keys.clear();
   stick.x = stick.z = 0;
   fire = ads = adsLatch = false;
-  const esc = (t: string) => t.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
-  $("depart-title").textContent = walk ? "門から出撃する" : "車両で出撃する";
-  $("depart-list").innerHTML = d.rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("");
-  // A depot start's allowance as its boxes: what fills them, and what goes free beside them.
-  $("depart-carry").innerHTML = hub.departBoxes(walk);
-  const w = $("depart-warn");
-  w.hidden = !d.warn.length;
-  w.textContent = d.warn.join("・");
-  $("depart").hidden = false;
+  picker.show(true);
   if (document.pointerLockElement) document.exitPointerLock();
 }
 
-/** The departure's check answered: out into the raid, or back into the yard facing it (from the gate). */
+/**
+ * The departure answered: out into the raid, or back into the yard facing it (from the gate). A
+ * start at the gate's own way in walks out where the player stands; any other start, or one from
+ * the truck, comes after a fade. A depot the loadout does not fit cannot be departed from.
+ */
 function answerDepart(go: boolean) {
   const d = departing;
   if (!d || !camping) return;
+  if (go && hub.rideRefused()) return;
   departing = null;
-  $("depart").hidden = true;
+  picker.show(false);
   sfx.click();
   if (go) {
-    if (d.walk) {
-      const launch = hub.launch(true);
+    if (d.walk && hub.walksOut()) {
+      const launch = hub.launch();
       if (launch) {
         sfx.deploy();
         start(launch, state);
@@ -481,14 +483,14 @@ function answerDepart(go: boolean) {
   lock();
 }
 
-/** The truck: a fade, then the raid at the start the map table chose. */
+/** A start away from the gate: a fade, then the raid at the start chosen on the departure's map. */
 function ride() {
   if (fading || hub.rideRefused()) return;
   fading = true;
   sfx.deploy();
   fade(true);
   setTimeout(() => {
-    const go = hub.launch(false);
+    const go = hub.launch();
     fading = false;
     if (go) start(go);
     requestAnimationFrame(() => fade(false));
@@ -499,9 +501,8 @@ function ride() {
 function useInCamp() {
   const spot = campSpotAt(state.player.pos);
   if (!spot) return;
-  if (spot.id === "vehicle") {
-    if (!hub.rideRefused()) askDepart(false);
-  } else openPanel(spot.id);
+  if (spot.id === "vehicle") askDepart(false);
+  else openPanel(spot.id);
 }
 
 function campTick() {
@@ -511,14 +512,14 @@ function campTick() {
   world.handle(state, state.events);
   for (const e of state.events) sound.event(e, state);
   if (inp.interact) useInCamp();
-  // Out of the gate: the departure's check, then the raid starts where the player stands, as one from the reservoir's first way in.
+  // Out of the gate: the departure, then the raid starts where the player stands when its start is the gate's own way in.
   else if (outOfCamp(state)) askDepart(true);
   else inside = { ...state.player.pos, yaw: state.player.yaw };
 }
 
 function campFrame() {
   const near = campFrozen() ? null : campSpotAt(state.player.pos);
-  campView.frame(state, world, dims.w, dims.h, { near, marks: hub.marks(), ride: { to: hub.rideTo(), refused: hub.rideRefused() }, cash: hub.profile.cash.toLocaleString("ja-JP"), touch: touchMode, today: hub.today(), panel: hub.station !== null || departing !== null });
+  campView.frame(state, world, dims.w, dims.h, { near, marks: hub.marks(), cash: hub.profile.cash.toLocaleString("ja-JP"), touch: touchMode, today: hub.today(), panel: hub.station !== null || departing !== null });
 }
 
 /** `from`: the camp the player walked out of, carried over into the raid where they stand. */
@@ -727,7 +728,7 @@ window.render_game_to_text = () => {
   const p = s.player;
   return JSON.stringify({
     screen: running ? "game" : !$("results").hidden ? "results" : camping ? "camp" : "title",
-    camp: camping ? { panel: hub.station, depart: departing && { walk: departing.walk, ...hub.departure(departing.walk) }, today: hub.today(), near: campSpotAt(p.pos)?.id ?? null, lent: hub.lent, ride: { to: hub.rideTo(), refused: hub.rideRefused() }, marks: hub.marks(), fading, board: hub.profile.board.contracts.map((c) => ({ id: c.id, t: c.t })), taken: hub.profile.taken, story: currentStory(hub.profile.records)?.id ?? null } : null,
+    camp: camping ? { panel: hub.station, depart: departing && { walk: departing.walk, ...hub.departure(), start: hub.startPoints().find((q) => q.on) ?? null, starts: hub.startPoints().map((q) => ({ kind: q.kind, id: q.id, open: q.open, over: q.over })), refused: hub.rideRefused() }, today: hub.today(), near: campSpotAt(p.pos)?.id ?? null, lent: hub.lent, ride: { to: hub.rideTo(), refused: hub.rideRefused() }, marks: hub.marks(), fading, board: hub.profile.board.contracts.map((c) => ({ id: c.id, t: c.t })), taken: hub.profile.taken, story: currentStory(hub.profile.records)?.id ?? null } : null,
     profile: { events: hub.profile.events, cash: hub.profile.cash, stash: hub.profile.stash.length, raids: hub.profile.raids, hideout: hub.profile.hideout, seed: hub.profile.seed, routes: hub.profile.routes, entries: hub.profile.entries, day: hub.profile.day, poiState: hub.profile.poiState, threat: hub.profile.threat, known: hub.profile.known, freedAt: hub.profile.freedAt, factory: hub.profile.factory },
     boost: { ...s.boost, name: POIS[s.boost.poi].name },
     strength: s.strength,

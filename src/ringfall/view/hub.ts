@@ -1,8 +1,8 @@
 import { PLAYER } from "../sim/config";
-import { armorIcon, binPicture, checkIcon, clockIcon, crossIcon, depotIcon, entryIcon, gunIcon, healIcon, keyIcon, lockIcon, modIcon, pouchIcon, robotIcon, routeIcon, SIDE, turretIcon, upIcon } from "./icons";
+import { armorIcon, binPicture, checkIcon, clockIcon, crossIcon, depotIcon, gunIcon, healIcon, keyIcon, lockIcon, modIcon, pouchIcon, robotIcon, routeIcon, SIDE, turretIcon, upIcon } from "./icons";
 import { ALLY, FACTORY, HEALS as HEAL_SPECS, HIDEOUT, MOD_KINDS, RARITY, THREAT, TOOLS, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
 import { boostFor, freeKit, raidClock, strengthFor, type Kit } from "../sim/state";
-import { CAMP, entryOf, NODES, POIS, UNLOCKS, poiIndex, poiRegion, REGIONS, regionOf, ROUTES, type EntryId, type PoiId, type RegionId, type StationId } from "../sim/map";
+import { CAMP, DEPOTS, ENTRIES, entryOf, NODES, POIS, UNLOCKS, poiIndex, poiRegion, REGIONS, regionOf, ROUTES, type EntryId, type PoiId, type RegionId, type StationId } from "../sim/map";
 import { build, buildFactory, buildState, buy, buyPrice, canBuild, canBuildFactory, factoryNeeded, nextFactory, canStartIn, deliver, deliverable, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, itemCost, HEALS, healCount, healRoom, keyName, kitPicks, lentHeals, loadoutCost, price, raidThreat, recallLoadout, sell, sellPrice, setThreat, startsIn, STORY_TAKEN, takenStory, threatPay, take, takeKit, takenContract, wanted, wares, type Item, type Loadout, type Profile } from "../meta/profile";
 import { CONTRACT_NAME, contractMark, contractRegion, contractText, type Contract, type Reward } from "../meta/contracts";
 import { currentStory, STORIES, storyOf, storyWhere } from "../meta/story";
@@ -144,6 +144,26 @@ const PANELS: Record<StationId, { title: string; stash: boolean }> = {
   workshop: { title: "作業場", stash: false },
   factory: { title: "工場", stash: false },
 };
+
+/**
+ * A place the departure's map offers: a way in or a depot switched on. `open`: it may be chosen
+ * (a way in known, a depot a node held opens a start from); `on`: it is chosen. A depot has its
+ * level, allowance (`budget`) and what the loadout costs of it; `over` when that is past it.
+ */
+export interface StartPoint {
+  kind: "entry" | "depot";
+  id: string;
+  name: string;
+  x: number;
+  z: number;
+  region: RegionId;
+  open: boolean;
+  on: boolean;
+  over: boolean;
+  budget?: number;
+  cost?: number;
+  level?: number;
+}
 
 /** A raid the camp hands over to start: the kit taken, where, and from which start. */
 export interface Launch {
@@ -296,23 +316,6 @@ export class Hub {
         this.keepPicks(next);
         sfx.deliver();
       }
-    } else if (act === "region" && canStartIn(this.profile, regionOf(arg as RegionId).id)) {
-      this.region = regionOf(arg as RegionId).id;
-      this.entry = this.entryIn(this.region);
-      this.from = null;
-      // A region open only through a depot starts at its first depot on.
-      if (!this.entry) this.from = startsIn(this.profile, this.region).depots[0] ?? null;
-      sfx.click();
-    } else if (act === "entry" && startsIn(this.profile, this.region).entries.includes(arg as EntryId)) {
-      this.entry = arg as EntryId;
-      this.from = null;
-      sfx.click();
-    } else if (act === "from" && departDepots(this.profile).includes(arg as PoiId)) {
-      this.from = arg as PoiId;
-      this.region = poiRegion(this.from).id;
-      // The entry follows the depot's region, so a later start from an entry is one of its own.
-      this.entry = this.entryIn(this.region);
-      sfx.click();
     } else if (act === "strength") {
       // A 強度 is chosen for one contract: choosing it takes that contract.
       const [id, n] = arg.split(":");
@@ -417,36 +420,84 @@ export class Hub {
     return { ...a, cost: loadoutCost(this.profile, this.startLoad()) };
   }
 
-  /** Where the truck drives to, as a name. */
+  /** Where the raid starts, as a name. */
   rideTo(): string {
     this.fixStart();
     return this.from ? `${POIS[poiIndex(this.from)].name}の中継ボックス` : entryOf(this.entry ?? this.profile.entry).name;
   }
 
-  /** Why the truck cannot start now (the loadout over the depot's allowance), or "" when it can. */
+  /** Why the chosen start cannot be departed from now (the loadout over the depot's allowance), or "" when it can. */
   rideRefused(): string {
     this.fixStart();
     const a = this.allowance();
     return a && !fitsStart(this.profile, this.startLoad(), this.from) ? `持ち込み枠 ${a.cost} / ${a.budget}` : "";
   }
 
-  /**
-   * Takes the loadout out of the stash for a raid. `walk`: out of the gate, which is the
-   * reservoir's first way in, with no allowance to keep to; else by truck to the start the map
-   * table chose. Null when the truck cannot start (`rideRefused()`).
-   */
-  launch(walk: boolean): Launch | null {
+  /** Whether the chosen start is the gate's own way in: walking out of the gate then starts the raid where the player stands. */
+  walksOut(): boolean {
     this.fixStart();
-    const from = walk ? null : this.from;
-    const region = walk ? "reservoir" : this.region;
-    const entry = walk ? FIRST_ENTRY : (this.entry ?? this.profile.entry);
+    return !this.from && this.region === "reservoir" && (this.entry ?? FIRST_ENTRY) === FIRST_ENTRY;
+  }
+
+  /**
+   * Every place a raid may start, for the departure's map: each way in (`open` once known, in a
+   * region a raid may start in) and each depot switched on (`open` while a node held opens a start
+   * from it), with the chosen one `on`. A depot carries its allowance and what the loadout costs of
+   * it (`over` past it, when it cannot be departed from).
+   */
+  startPoints(): StartPoint[] {
+    this.fixStart();
+    const p = this.profile;
+    const may = departDepots(p);
+    const cost = loadoutCost(p, this.startLoad());
+    const ways: StartPoint[] = ENTRIES.map((e) => ({ kind: "entry", id: e.id, name: e.name, x: e.x, z: e.z, region: e.region, open: p.entries.includes(e.id) && canStartIn(p, e.region), on: !this.from && this.region === e.region && this.entry === e.id, over: false }));
+    const depots: StartPoint[] = DEPOTS.filter((d) => p.depots.includes(d.poi)).map((d) => {
+      const open = may.includes(d.poi);
+      const a = depotAllowance(p, d.poi);
+      return { kind: "depot", id: d.poi, name: POIS[poiIndex(d.poi)].name, x: d.x, z: d.z, region: poiRegion(d.poi).id, open, on: this.from === d.poi, over: open && !fitsStart(p, this.startLoad(), d.poi), budget: a.budget, cost, level: a.level };
+    });
+    return [...ways, ...depots];
+  }
+
+  /** The regions no raid may start in yet (no way in known, no depot open there), for the departure map's padlocks. */
+  lockedRegions(): RegionId[] {
+    return REGIONS.filter((r) => !canStartIn(this.profile, r.id)).map((r) => r.id);
+  }
+
+  /** Chooses where the next raid starts: a way in known, or a depot that opens a start. False when it may not start there. */
+  choose(kind: StartPoint["kind"], id: string): boolean {
+    const p = this.profile;
+    if (kind === "depot") {
+      if (!departDepots(p).includes(id as PoiId)) return false;
+      this.from = id as PoiId;
+      this.region = poiRegion(this.from).id;
+      // The entry follows the depot's region, so a later start from a way in is one of its own.
+      this.entry = this.entryIn(this.region);
+      return true;
+    }
+    const e = ENTRIES.find((w) => w.id === id);
+    if (!e || !p.entries.includes(e.id) || !canStartIn(p, e.region)) return false;
+    this.region = e.region;
+    this.entry = e.id;
+    this.from = null;
+    return true;
+  }
+
+  /**
+   * Takes the loadout out of the stash for a raid from the start chosen on the departure's map.
+   * Null when the loadout does not fit a depot's allowance (`rideRefused()`).
+   */
+  launch(): Launch | null {
+    this.fixStart();
+    const from = this.from;
+    const entry = this.entry ?? this.profile.entry;
     const taken = takeKit(this.profile, this.startLoad(), from);
     if (!taken) return null;
     const { profile, kit } = taken;
-    // The start the profile remembers is the truck's, kept for the next visit to the map table.
-    this.set({ ...profile, region: this.region, entry: this.entry ?? profile.entry });
+    // The start is remembered for the next departure, which opens on it.
+    this.set({ ...profile, region: this.region, entry });
     this.load = emptyLoadout();
-    return { kit, region, seed: this.profile.seed, from: from ?? undefined, entry };
+    return { kit, region: this.region, seed: this.profile.seed, from: from ?? undefined, entry };
   }
 
   /** The contract taken for the next raid, or null. */
@@ -678,10 +729,10 @@ export class Hub {
     return `<span class="carry"><span class="boxes">${segs.join("")}${empty.join("")}</span>${free.length ? `<span class="free">${free.join("")}</span>` : ""}</span>`;
   }
 
-  /** The departure's carry-in boxes when the truck drives to a depot, else "". */
-  departBoxes(walk: boolean): string {
+  /** The departure's carry-in boxes when the raid starts at a depot, else "". */
+  departBoxes(): string {
     this.fixStart();
-    const a = walk ? null : this.allowance();
+    const a = this.allowance();
     return a ? `<div class="depart-carry${a.cost > a.budget ? " over" : ""}"><small>${depotIcon()}持ち込み枠</small><b>${a.cost} / ${a.budget}</b>${this.carryBoxes(a.budget)}</div>` : "";
   }
 
@@ -711,7 +762,7 @@ export class Hub {
     );
   }
 
-  /** Draws the map table's island into its canvas, framed on the region the truck is set for. */
+  /** Draws the map table's island into its canvas, framed on the region the last start was in. */
   private drawIsland() {
     const canvas = document.getElementById("hub-island-map") as HTMLCanvasElement | null;
     if (!canvas) return;
@@ -723,32 +774,10 @@ export class Hub {
     map.draw(islandScene(this.profile));
   }
 
-  /** The map table: the truck's start (the regions, the chosen region's ways in, the depots on), its allowance, the radio's report. */
-  private startsPanel(): string {
-    const p = this.profile;
-    const allow = this.allowance();
-    const on = (yes: boolean) => (yes ? ' class="on"' : "");
-    const known = startsIn(p, this.region).entries;
-    const unseen = regionOf(this.region).entries.length - known.length;
+  /** The map table's radio report on the next raid, as a slot, or "" without a radio. */
+  private intelSlot(): string {
     const intel = this.intel();
-    const line = this.from && allow ? `${depotIcon()}${esc(POIS[poiIndex(this.from)].name)}` : `${entryIcon()}${esc(entryOf(this.entry ?? p.entry).name)}`;
-    return (
-      (intel ? `<div class="slot intel"><small>無線</small><span>${intel}</span></div>` : "") +
-      `<div class="hub-region" id="hub-region"><small>地域</small><div class="row">` +
-      REGIONS.map((r) =>
-        canStartIn(p, r.id)
-          ? `<button type="button" data-act="region" data-arg="${r.id}"${on(!this.from && r.id === this.region)}>${esc(r.name)}</button>`
-          : // Shut until one of its ways in is walked to and the raid comes home: a padlock, and its ways in as the map's dashed rings.
-            `<button type="button" class="locked" disabled>${lockIcon()}${esc(r.name)}${r.entries.map(() => entryIcon(false)).join("")}</button>`,
-      ).join("") +
-      `</div>` +
-      // The ways in known, then one dashed ring per way in of the region not found yet (as the map draws them).
-      (this.from ? "" : `<small>入口</small><div class="row entries">${known.map((e) => `<button type="button" class="entry${e === this.entry ? " on" : ""}" data-act="entry" data-arg="${e}">${entryIcon()}${esc(entryOf(e).name)}</button>`).join("")}${Array.from({ length: unseen }, () => `<span class="unseen">${entryIcon(false)}</span>`).join("")}</div>`) +
-      (departDepots(p).length ? `<small>中継ボックス</small><div class="row">${departDepots(p).map((d) => `<button type="button" class="depot${this.from === d ? " on" : ""}" data-act="from" data-arg="${d}">${depotIcon()}${esc(POIS[poiIndex(d)].name)}（${esc(poiRegion(d).name)}）</button>`).join("")}</div>` : "") +
-      `</div>` +
-      `<div class="slot ride"><small>車両</small><span>${line}</span></div>` +
-      this.depotSlot()
-    );
+    return intel ? `<div class="slot intel"><small>無線</small><span>${intel}</span></div>` : "";
   }
 
   /**
@@ -802,10 +831,10 @@ export class Hub {
   }
 
   /**
-   * What the departure's check lists for a raid out of the gate (`walk`) or by truck: where it
-   * starts, the kit taken out of the stash, the objective, and warnings worth a second look.
+   * What the departure lists beside its map: the kit taken out of the stash, the objective, and
+   * warnings worth a second look. The start is the map's (`startPoints()`).
    */
-  departure(walk: boolean): { rows: [string, string][]; warn: string[] } {
+  departure(): { rows: [string, string][]; warn: string[] } {
     this.fixStart();
     const p = this.profile;
     const k = this.kitLines();
@@ -814,7 +843,6 @@ export class Hub {
     const front = this.frontPick();
     const goal = c ? `${CONTRACT_NAME[c.t]}：${contractText(c)}${p.threat ? `（強度 ${p.threat}）` : ""}` : story ? `記録：${story.title}` : front ? `前線：${front.name}` : "探索";
     const rows: [string, string][] = [
-      ["出撃地点", walk ? `${entryOf(FIRST_ENTRY).name}（門）` : `${this.rideTo()}（車両）`],
       ["武器", k.weapons],
       ["アーマー", k.armor],
       ["回復", k.heals],
@@ -823,7 +851,7 @@ export class Hub {
     ];
     const warn: string[] = [];
     if (this.lent && p.stash.some((i) => i.t === "weapon")) warn.push("貸出装備");
-    if (!walk && this.rideRefused()) warn.push(this.rideRefused());
+
     return { rows, warn };
   }
 
@@ -892,7 +920,7 @@ export class Hub {
           })
           .join("") || `<p class="empty">0 / ${stashCap(p.hideout)}</p>`;
     }
-    $("hub-side-title").textContent = shop ? "売り物" : st === "quests" ? "依頼と記録" : st === "workshop" ? "隠れ家" : st === "factory" ? "自軍のロボット" : st === "map" ? "島と出撃地点" : "持っていく物";
+    $("hub-side-title").textContent = shop ? "売り物" : st === "quests" ? "依頼と記録" : st === "workshop" ? "隠れ家" : st === "factory" ? "自軍のロボット" : st === "map" ? "島" : "持っていく物";
     if (st === "factory") $("hub-side").innerHTML = this.factoryPanel();
     else if (st === "workshop") {
       $("hub-side").innerHTML =
@@ -918,10 +946,7 @@ export class Hub {
         (craft.length ? `<h3 class="hub-sub">商人の依頼</h3>${craft.map((q) => this.quest(q)).join("")}` : "") +
         this.storyPanel();
     } else if (st === "map") {
-      // The island goes under the region and start buttons, which stay in sight on a phone's short screen.
-      const starts = this.startsPanel();
-      const at = starts.indexOf('<div class="slot ride"');
-      $("hub-side").innerHTML = starts.slice(0, at) + this.islandPanel() + starts.slice(at);
+      $("hub-side").innerHTML = this.intelSlot() + this.islandPanel();
       this.drawIsland();
     }
     else $("hub-side").innerHTML = this.kitPanel();
