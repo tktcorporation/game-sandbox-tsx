@@ -1024,7 +1024,7 @@ for (let i = 0; i < 25 * 60 * 10; i++) {
     // A vault, from just in front of it: the locked crate reads apart from the supply bins.
     // The quarry's stands on an open terrace, so the camera has a clear view of it.
     const v = s.vaults.find((b) => b.poi === 1);
-    if (s.vaults.length !== 7 || !v) errors.push(`vaults: ${s.vaults.length} in the world`);
+    if (s.vaults.length !== 12 || !v) errors.push(`vaults: ${s.vaults.length} in the world`);
     else {
       await page.evaluate((b) => window.ringfallCamera(b.x + 0.4, b.y + 1.6, b.z + 2.6, 0.12, -0.42), v);
       await shot("26-vault");
