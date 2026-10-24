@@ -614,9 +614,9 @@ export class IslandMap {
     };
     const taken: Rect[] = [];
     const free = (r: Rect) => !taken.some((t) => r.x0 < t.x1 && r.x1 > t.x0 && r.y0 < t.y1 && r.y1 > t.y0);
-    // A POI cleared this raid says so; who holds it is its mark's colour.
+    // A POI cleared this raid gets a tick after its name; who holds it is its mark's colour.
     const hold = (i: number): PoiHold => s.hold?.[i] ?? "held";
-    const poiText = (i: number) => (s.cleared[i] && hold(i) !== "freed" ? `${POIS[i].name}（掃討）` : POIS[i].name);
+    const poiText = (i: number) => (s.cleared[i] && hold(i) !== "freed" ? `${POIS[i].name} ✓` : POIS[i].name);
     POIS.forEach((poi, i) => {
       const p = at(poi.x, poi.z);
       taken.push(box(poiText(i), p.x, p.y - 15 * dpr, 12));
@@ -666,7 +666,7 @@ export class IslandMap {
       g.arc(p.x, p.y, 3.5 * dpr, 0, Math.PI * 2);
       g.stroke();
       g.restore();
-      const text = known ? e.name : `${e.name}（未発見）`;
+      const text = e.name;
       const r = box(text, p.x, p.y + 11 * dpr, 9);
       if (!free(r)) continue;
       taken.push(r);
@@ -724,7 +724,7 @@ export class IslandMap {
       // Its name beside its middle, where nothing else is.
       const mid = r.path[Math.floor(r.path.length / 2)];
       const m = at((r.path[0].x + mid.x) / 2, (r.path[0].z + mid.z) / 2);
-      const text = open ? r.name : `${r.name}（閉）`;
+      const text = r.name;
       g.textAlign = "left";
       const spot = box(text, m.x + 7 * dpr, m.y, 9, true);
       if (free(spot)) {
@@ -760,7 +760,7 @@ export class IslandMap {
       g.fill();
       g.stroke();
       g.restore();
-      const text = s.debris.open ? "破片（空）" : "破片";
+      const text = "破片";
       const spot = box(text, p.x, p.y + 14 * dpr, 9);
       if (free(spot)) {
         taken.push(spot);

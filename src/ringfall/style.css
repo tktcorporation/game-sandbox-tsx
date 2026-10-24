@@ -1099,10 +1099,27 @@ body.touch .mate-bars {
   font-weight: 800;
   font-size: 20px;
 }
-.lede-sub {
-  margin: 0;
-  font-size: 14px;
-  color: var(--muted);
+/* The goal under the title: the island's six nodes, large, filled blue as this save takes them. */
+.title-row {
+  margin: 2px 0 4px;
+}
+.title-row .node-row {
+  gap: 8px;
+}
+.title-row .node-row i.node {
+  width: 20px;
+  height: 20px;
+  border-width: 3px;
+}
+.title-row .node-row i.node.gap {
+  margin-left: 12px;
+}
+.touch-help span {
+  margin-right: 18px;
+}
+.touch-help b {
+  margin-right: 6px;
+  color: var(--hot);
 }
 .keys {
   list-style: none;
@@ -3126,4 +3143,163 @@ body.touch #obj-raid .short {
     opacity: 0.35;
     scale: 0.85;
   }
+}
+
+/*
+ * Icons (view/icons.ts) that stand in for sentences: a shape and a colour per meaning, sat on the
+ * text's baseline, with the number they go with right after them.
+ */
+.ico {
+  display: inline-block;
+  flex: none;
+  vertical-align: -2px;
+  margin-right: 3px;
+}
+.toast .ico,
+#prompt .ico,
+#banner .ico {
+  vertical-align: -1px;
+}
+#prompt b {
+  font-family: var(--num);
+  margin-left: 2px;
+}
+/* Something the action gives up (a weapon swapped, valuables dropped): its name struck through. */
+#prompt s {
+  margin-left: 8px;
+  color: #ff9a8a;
+  font-weight: 700;
+}
+#obj-until b.paused {
+  color: #ff9a3c;
+}
+#obj-contract b {
+  font-family: var(--num);
+  margin-left: 8px;
+}
+#obj-contract .ico.check,
+#obj-story .ico.check {
+  margin-left: 4px;
+}
+#obj-story .lead {
+  margin-right: 6px;
+  color: var(--muted);
+}
+#obj-story .at {
+  margin-left: 6px;
+  color: var(--muted);
+}
+#obj-raid {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+}
+#obj-raid .reinforce {
+  color: #ff8a7a;
+}
+#obj-raid .reinforce.now .ico {
+  animation: reinforce-now 0.8s ease-in-out infinite alternate;
+}
+@keyframes reinforce-now {
+  to {
+    opacity: 0.3;
+  }
+}
+#obj-exits div {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+}
+#obj-exits span {
+  font-family: var(--num);
+  font-weight: 800;
+}
+#obj-exits em {
+  font-style: normal;
+  color: var(--hot);
+}
+#obj-exits .locked .ico.exit {
+  opacity: 0.45;
+}
+#mate-state {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--num);
+  font-weight: 800;
+}
+#mate-state .ico.fight {
+  color: #ff8a7a;
+}
+#downed-sub:empty {
+  display: none;
+}
+#home h3 b {
+  margin-left: 8px;
+  font-family: var(--num);
+  color: var(--r3);
+}
+#home p .lost {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+#home p span b {
+  margin-left: 6px;
+}
+#home .analyse button.mod b .ico {
+  margin-left: 6px;
+  color: var(--sky);
+}
+#home .analyse button.mod em.new {
+  margin-left: 6px;
+  padding: 0 4px;
+  font-family: var(--num);
+  font-size: 11px;
+  color: #1b1f2a;
+  background: var(--r3);
+}
+/* The base's panels: marks in place of the lines that explained them. */
+#hub .item.armed {
+  box-shadow: inset 0 0 0 2px #ff6b5a;
+}
+.factory-line {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  align-items: baseline;
+}
+.factory-line > span {
+  white-space: nowrap;
+}
+.hub-list .quest.route strong .ico.route {
+  vertical-align: -3px;
+  margin-right: 6px;
+}
+.hub-list .quest.route em {
+  font-style: normal;
+  font-weight: 800;
+}
+.hub-region .row .unseen {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 2px;
+}
+.hub-region button.locked .ico.entry {
+  margin: 0 0 0 4px;
+}
+.hub-island-side .taken-line {
+  display: inline-block;
+  width: 22px;
+  margin-left: 6px;
+  vertical-align: middle;
+  border-top: 2px dashed var(--r3);
+}
+.strength .gives .ico,
+.strength .asks .ico {
+  vertical-align: -2px;
+}
+.taken-tag .ico {
+  vertical-align: -2px;
+}
+#camp-prompt .warn .ico {
+  vertical-align: -2px;
 }

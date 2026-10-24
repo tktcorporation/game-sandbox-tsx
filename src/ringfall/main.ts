@@ -10,7 +10,8 @@ import { battleMarks, departNow, landNow, marchSquad, nodePoint, placeBattleSqua
 import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
 import { analyse, raidThreat, settle, takenStory, type Settlement } from "./meta/profile";
 import { MOD, MODS, type ModKind } from "./sim/config";
-import { departDepots, holds } from "./meta/island";
+import { departDepots, holds, islandHolds } from "./meta/island";
+import { nodeRow } from "./view/row";
 import { contractProgress, targetKey } from "./meta/contracts";
 import { currentStory } from "./meta/story";
 import { bodyCenter, eyePos, fireRay, kill } from "./sim/combat";
@@ -368,6 +369,8 @@ let knownBefore: ModKind[] = [];
 let analysed: ModKind | null = null;
 const hub = new Hub(loadProfile(), () => lock());
 const campView = new CampView();
+// The title's one line on the goal: the island's six nodes, filled blue as far as this save has taken them.
+$("title-row").innerHTML = nodeRow(islandHolds(hub.profile));
 
 /**
  * The departure's check, while it is up: out of the gate on foot (`walk`, where the player stands
@@ -443,7 +446,7 @@ function askDepart(walk: boolean) {
   $("depart-list").innerHTML = d.rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("");
   const w = $("depart-warn");
   w.hidden = !d.warn.length;
-  w.textContent = d.warn.join("。");
+  w.textContent = d.warn.join("・");
   $("depart").hidden = false;
   if (document.pointerLockElement) document.exitPointerLock();
 }
@@ -554,7 +557,7 @@ function start(go: Launch, from?: State) {
   hud.show(true);
   hud.setKnown(hub.profile.entries);
   const depot = go.from && departDepots(hub.profile).includes(go.from) ? go.from : null;
-  hud.banner(depot ? `${POIS[poiIndex(depot)].name}の中継ボックス` : entryOf(go.entry).name, `ここから探索する。拠点と脱出地点は${touchMode ? "地図ボタン" : " M "}の地図で見る`);
+  hud.banner(depot ? `${POIS[poiIndex(depot)].name}の中継ボックス` : entryOf(go.entry).name);
   lock();
 }
 

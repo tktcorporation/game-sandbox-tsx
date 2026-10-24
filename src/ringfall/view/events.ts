@@ -1,6 +1,8 @@
 import type { EventKind } from "../sim/config";
 import type { IslandEvent } from "../sim/island";
-import { eventName, eventText } from "../meta/island";
+import { eventName } from "../meta/island";
+import { crewsFor } from "../sim/island";
+import { STORM } from "../sim/config";
 import { DEBRIS_SPOTS, debrisIndex } from "../sim/map";
 import type { State } from "../sim/state";
 
@@ -23,23 +25,38 @@ export function eventIcon(t: EventKind): string {
   return `<svg class="ev-icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">${body}</svg>`;
 }
 
-/** An event in a line with its icon and name: 「[icon] 嵐：…」, or the quiet day's line. */
-export function eventRow(ev: IslandEvent | null, quiet = "出来事はない"): string {
-  if (!ev) return `<span class="ev quiet">${quiet}</span>`;
-  return `<span class="ev ev-${ev.t}">${eventIcon(ev.t)}<b>${eventName(ev)}</b>${eventText(ev)}</span>`;
+/**
+ * What an event changes, as a place or a number: where the debris falls, the sight a storm leaves,
+ * how many salvage crews come. The icon and the name say which event it is.
+ */
+function eventFact(ev: IslandEvent): string {
+  switch (ev.t) {
+    case "debris":
+      return DEBRIS_SPOTS[debrisIndex(ev.spot)].place;
+    case "storm":
+      return `視界 ${Math.round(STORM.sight * 100)}%`;
+    case "crews":
+      return `${crewsFor(ev)} 組`;
+  }
 }
 
-/** The day's event as the objective card words it in a raid, in one short line. */
+/** An event in a line with its icon, name and fact: 「[icon] 嵐 視界 60%」, or the quiet day's mark. */
+export function eventRow(ev: IslandEvent | null, quiet = "—"): string {
+  if (!ev) return `<span class="ev quiet">${quiet}</span>`;
+  return `<span class="ev ev-${ev.t}">${eventIcon(ev.t)}<b>${eventName(ev)}</b>${eventFact(ev)}</span>`;
+}
+
+/** The day's event as the objective card shows it in a raid: its icon, name and what it changes now. */
 export function raidEventLine(s: Pick<State, "event" | "stats" | "crewsDue">): string {
   const ev = s.event;
   if (!ev) return "";
-  const head = `${eventIcon(ev.t)}${eventName(ev)}：`;
+  const head = `${eventIcon(ev.t)}${eventName(ev)} `;
   switch (ev.t) {
     case "debris":
-      return `${head}${DEBRIS_SPOTS[debrisIndex(ev.spot)].place}に破片の箱（地図の印）`;
+      return `${head}${DEBRIS_SPOTS[debrisIndex(ev.spot)].place}`;
     case "storm":
-      return `${head}ロボットの視界は 6 割`;
+      return `${head}視界 ${Math.round(STORM.sight * 100)}%`;
     case "crews":
-      return `${head}回収部隊 ${s.stats.crewsIn} 組が来た${s.crewsDue.length ? `・あと ${s.crewsDue.length} 組` : ""}`;
+      return `${head}${s.stats.crewsIn} 組${s.crewsDue.length ? `・あと ${s.crewsDue.length}` : ""}`;
   }
 }

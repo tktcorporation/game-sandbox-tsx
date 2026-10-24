@@ -24,7 +24,7 @@
     <div id="hud" hidden>
       <div id="compass"><div id="compass-strip"></div><b id="compass-deg">0</b><i id="compass-mark" hidden><span></span></i><i id="compass-scout" hidden></i></div>
       <div id="island-row"></div>
-      <div id="map" hidden><canvas id="map-canvas"></canvas><p><span class="map-key hold freed">●</span> 自分 <span class="map-key hold held">●</span> 敵 <span class="map-key hold titan">⬢</span> タイタン　<span class="map-key front">━</span> 前線　<span class="map-key">◆</span> 脱出地点　<span class="map-key depot">■</span> 中継ボックス　<span class="map-key squad you">▶</span> 自軍 <span class="map-key squad net">▶</span> 敵 <span class="map-key squad rogue">▶</span> 野良機<span class="map-close">　<kbd>N</kbd><span id="map-view-key">で全体を見る</span>　<kbd>M</kbd>で閉じる</span></p><span class="map-buttons"><button id="map-zoom" type="button">全体</button><button id="map-close" type="button">閉じる</button><button id="map-pause" type="button">一時停止</button></span></div>
+      <div id="map" hidden><canvas id="map-canvas"></canvas><p><span class="map-key hold freed">●</span> 自分 <span class="map-key hold held">●</span> 敵 <span class="map-key hold titan">⬢</span> タイタン　<span class="map-key front">━</span> 前線　<span class="map-key">◆</span> 脱出　<span class="map-key depot">■</span> 中継ボックス　<span class="map-key squad you">▶</span> 自軍 <span class="map-key squad net">▶</span> 敵 <span class="map-key squad rogue">▶</span> 野良機<span class="map-close">　<kbd>N</kbd> <span id="map-view-key">全体</span>　<kbd>M</kbd> 閉じる</span></p><span class="map-buttons"><button id="map-zoom" type="button">全体</button><button id="map-close" type="button">閉じる</button><button id="map-pause" type="button">一時停止</button></span></div>
       <div id="objective"><span id="obj-head"><em id="obj-title"></em><i id="obj-n"></i></span><span id="obj-text"></span><small id="obj-until"></small><small id="obj-contract" hidden></small><small id="obj-story" hidden></small><small id="obj-event" hidden></small><small id="obj-bag"></small><small id="obj-raid"></small><small id="obj-stealth"></small><small id="obj-exits"></small></div>
       <div id="enemy-bars" aria-hidden="true"></div>
       <div id="aware-layer" aria-hidden="true"></div>
@@ -80,19 +80,19 @@
       <div class="title-inner">
         <h1>RINGFALL</h1>
         <p class="lede">前線を押し上げ、島を取り返せ。相手はロボットだけ。</p>
-        <p class="lede-sub">毎日 1 回、野営地から出撃する。前線の拠点の核を制圧し、陣取り戦で網より多く点を取り、生きて帰る。</p>
-        <p class="touch-help">左半分を押してスティック移動、右半分をなぞって視点。撃つボタンは押したまま動かすと狙いも動く。拠点と脱出地点は地図ボタンで確かめる。</p>
+        <p class="title-row" id="title-row" aria-hidden="true"></p>
+        <p class="touch-help"><span><b>左半分</b>移動</span><span><b>右半分</b>視点</span></p>
         <ul class="keys">
-          <li><kbd>WASD</kbd>移動（前進で自動ダッシュ）</li>
+          <li><kbd>WASD</kbd>移動</li>
           <li><kbd>左クリック</kbd>撃つ <kbd>右</kbd>または<kbd>F</kbd>覗く</li>
           <li><kbd>Space</kbd>ジャンプ <kbd>C</kbd>スライディング</li>
           <li><kbd>E</kbd>調べる・拾う <kbd>R</kbd>リロード <kbd>1</kbd><kbd>2</kbd>持ち替え <kbd>M</kbd>地図</li>
-          <li><kbd>Q</kbd>アーク（自動で狙う） <kbd>Z</kbd>離脱ジャンプ <kbd>H</kbd>回復</li>
+          <li><kbd>Q</kbd>アーク <kbd>Z</kbd>離脱ジャンプ <kbd>H</kbd>回復</li>
         </ul>
         <button id="start" type="button">野営地へ</button>
         <div class="settings"><label class="sens">マウス感度 <input id="sens" type="range" min="0.4" max="2.5" step="0.05" value="1" /></label><label class="sens vol">音量 <input id="vol" type="range" min="0" max="1" step="0.05" value="0.8" /></label><label class="sens adsmode">覗き方（F） <select id="adsmode"><option value="hold">押している間</option><option value="toggle">押すたびに切り替え</option></select></label><label class="sens quality">画質 <select id="quality"><option value="auto">自動</option><option value="high">高</option><option value="medium">中</option><option value="low">低</option></select></label></div>
-        <p class="install-help" id="install-help" hidden>iPhone では、共有ボタンから「ホーム画面に追加」して開くと、ブラウザのバーが消えて画面いっぱいで遊べる。</p>
-        <p class="note">マウスとキーボード、またはスマホを横向きにして遊ぶ。<a href="/">ゲーム一覧に戻る</a></p>
+        <p class="install-help" id="install-help" hidden>共有 → ホーム画面に追加</p>
+        <p class="note"><a href="/">ゲーム一覧</a></p>
       </div>
     </section>
 
