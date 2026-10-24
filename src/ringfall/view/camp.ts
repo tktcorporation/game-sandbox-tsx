@@ -1,5 +1,5 @@
 import { CAMP, type CampSpot, type StationId } from "../sim/map";
-import { crossIcon } from "./icons";
+import { startIcon } from "./icons";
 import type { State } from "../sim/state";
 import type { World } from "./world";
 
@@ -43,14 +43,14 @@ export class CampView {
   }
 
   /**
-   * `near`: the spot in reach; `marks`: each station's mark ("" for none); `ride`: where the truck
-   * drives and why it cannot ("" when it can); `touch`: the prompt names the use button, not the key.
+   * `near`: the spot in reach; `marks`: each station's mark ("" for none); `touch`: the prompt
+   * names the use button, not the key.
    */
   /**
    * `today`: the day's line and the 今日の作戦 card (`Hub.today()`); `panel`: a panel or the
    * departure's check is up, so the card steps aside.
    */
-  frame(s: State, world: World, w: number, h: number, o: { near: CampSpot | null; marks: Record<StationId, string>; ride: { to: string; refused: string }; cash: string; touch: boolean; today: { head: string; row: string; plan: [string, string][] }; panel: boolean }) {
+  frame(s: State, world: World, w: number, h: number, o: { near: CampSpot | null; marks: Record<StationId, string>; cash: string; touch: boolean; today: { head: string; row: string; plan: [string, string][] }; panel: boolean }) {
     const eye = { x: s.player.pos.x, z: s.player.pos.z };
     const shown: { el: HTMLElement; x: number; y: number; d: number }[] = [];
     for (const c of CAMP.spots) {
@@ -108,12 +108,12 @@ export class CampView {
     }
     const key = o.touch ? "" : "<kbd>E</kbd>";
     let prompt = "";
-    // The truck: where it drives, or, over the depot's allowance, a cross and the allowance in red.
-    if (o.near?.id === "vehicle") prompt = o.ride.refused ? `<span class="warn">${crossIcon()}${esc(o.ride.to)}　${esc(o.ride.refused)}</span>` : `${key}車両　${esc(o.ride.to)}`;
+    // The truck opens the departure, as the gate does.
+    if (o.near?.id === "vehicle") prompt = `${key}${startIcon()}出撃`;
     else if (o.near) prompt = `${key}${esc(o.near.name)}`;
     $("camp-prompt").innerHTML = prompt;
     const use = $("t-use");
     use.hidden = !o.near;
-    if (o.near) use.querySelector("b")!.textContent = o.near.id === "vehicle" ? "車両で出る" : o.near.name;
+    if (o.near) use.querySelector("b")!.textContent = o.near.id === "vehicle" ? "出撃" : o.near.name;
   }
 }

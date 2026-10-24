@@ -28,8 +28,8 @@ all three are built at that scale.
 `REGIONS` in `map.ts` gives each region its POIs, ways off and ways in on foot (`ENTRIES`: a named
 point out on its open ground, facing in, out of every robot's sight for the first seconds);
 `newRun(seed, kit, region, { entry })` starts on the ground there with the teammate beside the
-player (the reservoir and its first way in by default), and the camp's map table picks the region and the way
-in. There is no drop from the air. The map table offers only the ways in the player knows
+player (the reservoir and its first way in by default), and the departure's map picks the way in (or a
+depot) at the moment of leaving. There is no drop from the air. It offers only the ways in the player knows
 (`Profile.entries`): a new profile knows the reservoir's first (`FIRST_ENTRY`), and a raid marks
 each way in the player walks to, within `ENTRY.radius` on its ground, in `State.found` (the start's
 own included; `stepEntries()` in `world.ts`, an `entryFound` event for the HUD's toast), which
@@ -66,10 +66,16 @@ Between raids the player walks a camp in the world (`CAMP` in `map.ts`, a fenced
 beach behind the reservoir's first way in): `sim/camp.ts` holds its state (`newCamp()`, a raid's
 emptied of robots, its clock standing) and its step (`stepCamp()`: walking only, weapons lowered).
 Its stations (map table, quest board, shelves, stall, workshop, factory) open the panels of `view/hub.ts` by
-the use key; walking out of the gate starts a raid from `FIRST_ENTRY` where the player stands
-(`walkOut()`), and the truck by the gate starts one at the map table's choice after a fade. Either
-way a departure's check comes first (`Hub.departure()`, `#depart` in `main.ts`: the kit taken out,
-the start and the objective; Enter or the use key goes, Esc turns back into the yard), and the
+the use key. Walking out of the gate and the use key at the truck by it both open the departure
+(`view/depart.ts`, `#depart`): the island drawn whole with every start on it (`Hub.startPoints()`:
+known ways in as solid rings, ways in not known yet dashed and shut, depots switched on as teal
+squares with their allowance as small boxes, red past it, a padlock on a region no raid may start
+in yet), the last start chosen, and beside it the kit, the objective (`Hub.departure()`) and the
+confirm. A click or tap chooses a start (`Hub.choose()`); the confirm, Enter, the use key or a
+second click on the chosen start goes, the arrows step the choice, Esc turns back into the yard.
+A depot the loadout does not fit (`fitsStart()`) cannot be confirmed. From the gate, a start at
+`FIRST_ENTRY` walks out where the player stands (`walkOut()`); any other start comes after a fade.
+The chosen depot is kept by the hub between departures, not in the profile. The
 camp shows the day's line and a 今日の作戦 card (`Hub.today()`). No robot
 walks into the yard (`inCamp()` in `enemies.ts`); during a raid they see and shoot into it as
 anywhere. Walking back into it during a raid, after `HOME.away` seconds outside and with no robot
