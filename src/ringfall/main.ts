@@ -9,6 +9,7 @@ import { frontNodes, garrisonOf, useCore } from "./sim/front";
 import { battleMarks, departNow, landNow, marchSquad, nodePoint, placeBattleSquad } from "./sim/battle";
 import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
 import { analyse, raidThreat, settle, takenStory, type Settlement } from "./meta/profile";
+import { pouchSlots } from "./meta/hideout";
 import { MOD, MODS, type ModKind } from "./sim/config";
 import { departDepots, holds, islandHolds } from "./meta/island";
 import { nodeRow } from "./view/row";
@@ -444,6 +445,8 @@ function askDepart(walk: boolean) {
   const esc = (t: string) => t.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
   $("depart-title").textContent = walk ? "門から出撃する" : "車両で出撃する";
   $("depart-list").innerHTML = d.rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("");
+  // A depot start's allowance as its boxes: what fills them, and what goes free beside them.
+  $("depart-carry").innerHTML = hub.departBoxes(walk);
   const w = $("depart-warn");
   w.hidden = !d.warn.length;
   w.textContent = d.warn.join("・");
@@ -556,6 +559,7 @@ function start(go: Launch, from?: State) {
   $("pause").hidden = true;
   hud.show(true);
   hud.setKnown(hub.profile.entries);
+  hud.setPouch(pouchSlots(hub.profile.hideout));
   const depot = go.from && departDepots(hub.profile).includes(go.from) ? go.from : null;
   hud.banner(depot ? `${POIS[poiIndex(depot)].name}の中継ボックス` : entryOf(go.entry).name);
   lock();
@@ -701,6 +705,8 @@ declare global {
       take: (type: string) => string | null;
       destroyTarget: () => number;
     };
+    ringfallBag: (haul: string[]) => void;
+    ringfallEnd: (how: "dead" | "extracted", haul?: string[], found?: string[]) => boolean;
     ringfallMods: {
       wear: (kinds: string[]) => void;
       drop: (kind: string, ahead: number) => void;
@@ -736,6 +742,7 @@ window.render_game_to_text = () => {
     contract: running && hub.contract() ? { t: hub.contract()!.t, ...contractProgress(hub.contract()!, s) } : null,
     records: s.player.records,
     vaults: s.bins.filter((b) => b.vault).map((b) => ({ poi: b.poi, x: b.x, y: b.y, z: b.z, open: b.open })),
+    flares: s.bins.filter((b) => b.flare).map((b) => ({ x: b.x, y: b.y, z: b.z, open: b.open })),
     keys: p.keys,
     phase: s.phase,
     time: +s.time.toFixed(1),
@@ -1032,6 +1039,31 @@ window.ringfallMods = {
     const z = p.pos.z - Math.cos(p.yaw) * ahead;
     state.loot.push({ id: -9_000_000 - state.loot.length, kind: "mod", mod: kind as ModKind, rarity: 2, pos: { x, y: groundAt(x, z, 0.2, p.pos.y + 1), z }, vel: { x: 0, y: 0, z: 0 }, age: 1 });
   },
+};
+
+/**
+ * Automation only: ends the raid under way at once, for screenshots of the results. The bag is
+ * filled with `haul` first and `found` added to the ways in walked to; `how` is a wipe ("dead")
+ * or getting off alive at the village ("extracted").
+ */
+/** Automation only: fills the bag with `haul` in the raid under way, for screenshots of the bag's slots. */
+window.ringfallBag = (haul) => {
+  if (!running) return;
+  const p = state.player;
+  p.haul = haul.filter((k): k is keyof typeof VALUABLES => k in VALUABLES);
+  p.haulAt = p.haul.map(() => -1);
+};
+window.ringfallEnd = (how, haul = [], found = []) => {
+  if (!running || state.phase === "done") return false;
+  const p = state.player;
+  p.haul = haul.filter((k): k is keyof typeof VALUABLES => k in VALUABLES);
+  p.haulAt = p.haul.map(() => -1);
+  for (const id of found) if (!state.found.includes(id as never)) state.found.push(id as never);
+  state.phase = "done";
+  state.outcome = how === "dead" ? "dead" : "extracted";
+  if (how !== "dead") state.extractedAt = "village";
+  onEvent({ t: "done" }, state);
+  return true;
 };
 
 /**

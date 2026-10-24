@@ -93,3 +93,26 @@ export const healIcon = (shield: boolean) => (shield ? svg(`<path d="M8 1.5 L14 
 
 /** A loudspeaker: the action makes noise the robots hear. */
 export const noiseIcon = (c = "currentColor") => svg(`<path d="M2 6 H5 L9 2.5 V13.5 L5 10 H2 Z" fill="${c}"/><path d="M11 5.5 C12.3 6.8 12.3 9.2 11 10.5 M12.8 3.8 C15 6 15 10 12.8 12.2" stroke="${c}" stroke-width="1.4" fill="none" stroke-linecap="round"/>`, "noise");
+
+/** The pouch's own colour: what sits in it comes home even from a wipe. Used for its slots on every screen. */
+export const POUCH = "#e8b07a";
+
+/** The pouch: a small stitched bag in the pouch's colour. */
+export const pouchIcon = (c = POUCH) =>
+  svg(`<path d="M3 5.5 H13 V12 C13 13.4 12 14.5 10.5 14.5 H5.5 C4 14.5 3 13.4 3 12 Z" fill="${c}"/><path d="M3 5.5 L5 2 H11 L13 5.5" fill="${c}" stroke="rgba(20,24,40,0.85)" stroke-width="1"/><path d="M4.8 7.5 V12.2 M11.2 7.5 V12.2" stroke="rgba(20,24,40,0.7)" stroke-width="1" stroke-dasharray="1.4 1.2"/>`, "pouch");
+
+/** A mod part, the floor's purple hexagon plate. */
+export const modIcon = (c = "#b65cff") => svg(`<path d="M8 1.5 L13.6 4.75 V11.25 L8 14.5 L2.4 11.25 V4.75 Z" fill="${c}" stroke="rgba(20,24,40,0.85)" stroke-width="1.1"/><path d="M8 5 L10.6 6.5 V9.5 L8 11 L5.4 9.5 V6.5 Z" fill="rgba(255,255,255,0.35)"/>`, "mod");
+
+/**
+ * A supply bin, as the world draws one (a teal crate, its concrete lid raised), holding `inside`
+ * (icons' markup) in its mouth: what its search can turn up.
+ */
+export const binPicture = (inside: string, cls = "") =>
+  `<span class="bin-pic ${cls}"><span class="bin-in">${inside}</span><svg class="bin-box" viewBox="0 0 40 22" aria-hidden="true"><path d="M2 3 L38 3 L36 0.5 L4 0.5 Z" fill="#cfc8b8"/><rect x="3" y="4" width="34" height="16" rx="1" fill="#2f7f86"/><rect x="3" y="16.5" width="34" height="3.5" fill="#cfc8b8"/><path d="M3 4.6 H37" stroke="#ffffff" stroke-width="1"/></svg></span>`;
+
+/** A gun, side on, in its rarity's colour. */
+export const gunIcon = (c = "currentColor") => svg(`<path d="M0.5 5 H12 V4 H15.5 V6.6 H12 V8 H9.6 L9 11.8 H6.8 L7.2 8 H5.2 L4 13.5 H1.2 L2.4 8 H0.5 Z" fill="${c}"/>`, "gun");
+
+/** Body armour, in its level's colour. */
+export const armorIcon = (c = "currentColor") => svg(`<path d="M5 1.5 L8 3 L11 1.5 L14 4 L12.5 6.5 V14.5 H3.5 V6.5 L2 4 Z" fill="${c}"/><path d="M8 3 V14.5" stroke="rgba(20,24,40,0.6)" stroke-width="1"/>`, "armor");
