@@ -2746,8 +2746,8 @@ function checkIntercept(): string | null {
 
 /**
  * A squad of three or more splits at once (see SPLIT): three grunts 18 m off a player standing in
+ * the open have members on both sides of the line from their front member to the player, each
  * 30 degrees or more off it, within 8 s, in eight of thirty draws of the random numbers at least.
- * 30 degrees or more off it, within 5 s, before a pinch would start.
  */
 function checkSplit(): string | null {
   const at = openSpot(19, 8, 8);
