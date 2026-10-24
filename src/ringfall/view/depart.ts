@@ -138,10 +138,10 @@ export class DepartPicker {
       const pin = q.on ? `<span class="pin">${startIcon()}</span>` : "";
       return `<button type="button" class="${cls}" data-kind="${q.kind}" data-id="${q.id}" style="left:${x.toFixed(1)}px;top:${y.toFixed(1)}px"${q.open ? "" : " disabled"} aria-label="${esc(q.name)}">${icon}${lock}${pin}${q.kind === "depot" && q.open ? this.mini(q) : ""}</button>`;
     });
-    // A region no raid may start in yet: a padlock over its name.
+    // A region no raid may start in yet: a padlock just before its name (which the map writes from its label's point on).
     const locks = REGIONS.filter((r) => locked.includes(r.id)).map((r) => {
       const at = this.map.screenAt(regionOf(r.id).label.x, regionOf(r.id).label.z) ?? { x: 0, y: 0 };
-      return `<span class="region-lock" style="left:${at.x.toFixed(1)}px;top:${at.y.toFixed(1)}px">${lockIcon()}</span>`;
+      return `<span class="region-lock" style="left:${(at.x - size / 2 - 3).toFixed(1)}px;top:${at.y.toFixed(1)}px">${lockIcon()}</span>`;
     });
     root.innerHTML = `<svg class="tethers" width="${box.width}" height="${box.height}" aria-hidden="true">${tethers}</svg>${locks.join("")}${buttons.join("")}`;
   }
