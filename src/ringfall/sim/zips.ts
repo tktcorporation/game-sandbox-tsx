@@ -18,7 +18,7 @@ import type { Input, State } from "./state";
 const holdsEnd = (s: Pick<State, "nodes">, id: string) => id === "camp" || s.nodes[nodeIndex(id)] === "freed";
 
 /** Whether cable `i` is up: both its ends held. */
-export const zipUp = (s: Pick<State, "nodes">, i: number) => holdsEnd(s, ZIPS[i].a) && holdsEnd(s, ZIPS[i].b);
+export const zipUp = (s: Pick<State, "nodes">, i: number) => !!ZIPS[i].fixed || (holdsEnd(s, ZIPS[i].a) && holdsEnd(s, ZIPS[i].b));
 
 /** The cables up, as their places in `ZIPS`. */
 export const zipsUp = (s: Pick<State, "nodes">): number[] => ZIPS.map((_, i) => i).filter((i) => zipUp(s, i));

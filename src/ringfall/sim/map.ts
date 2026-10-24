@@ -2379,6 +2379,19 @@ function cliffStairs(a: AreaId, fx: number, fz: number, toward: Side, top: numbe
   throw new Error(`no lip at ${top} m from ${fx},${fz} in ${a} toward ${toward}`);
 }
 
+/**
+ * Stairs bolted to a cliff up to the open ground above it, whatever its height there: as
+ * `cliffStairs()`, its top the ground where the cliff's face ends.
+ */
+function rimStairs(a: AreaId, fx: number, fz: number, toward: Side, base: number, width: number, tint: number, kind: BoxKind = "step"): Box[] {
+  const [x, z] = inArea(a, fx, fz);
+  const [dx, dz] = DIR[toward];
+  let d = 0;
+  while (d < 40 && terrainHeight(x + dx * d, z + dz * d) < base + 2) d += 0.25;
+  while (d < 60 && terrainHeight(x + dx * (d + 0.5), z + dz * (d + 0.5)) - terrainHeight(x + dx * d, z + dz * d) > 0.15) d += 0.25;
+  return cliffStairs(a, fx, fz, toward, terrainHeight(x + dx * d, z + dz * d), base, width, tint, kind);
+}
+
 /** Paints the walls a building was built with (tint 0) as dry stone (wall tint 3): a farmhouse, a barn, a windmill. */
 const stone = (boxes: Box[]): Box[] => paint(boxes, "wall", "wall", () => 3, (b) => b.tint === 0);
 
@@ -4354,6 +4367,33 @@ buildTerrain([
  * runs under the middle terrace (a portal at its foot); the stone steps between the fields; and
  * the drowned town's roofs sticking out of the mud banks.
  */
+/**
+ * The quarry's wider iron stairs, in its frame: each from (x, z) on its floor toward the wall it
+ * climbs, to the terrace above or (no `top`) the open ground round the quarry. With the haul road,
+ * the ramps, the tunnel, the narrow stairs and the lifts (`QUARRY_LIFTS`) they are the quarry's
+ * ways up, which the sim gate walks (`checkQuarryExits()`).
+ */
+export const QUARRY_EXITS: readonly { name: string; x: number; z: number; toward: Side; base: number; top?: number }[] = [
+  { name: "上段から南西へ", x: -90, z: 50, toward: "s", base: LEVEL.quarryTop },
+  { name: "上段から南東へ", x: 70, z: 55, toward: "s", base: LEVEL.quarryTop },
+  { name: "上段から東へ", x: 105, z: -30, toward: "e", base: LEVEL.quarryTop },
+  { name: "上段から西へ", x: -108, z: -20, toward: "w", base: LEVEL.quarryTop },
+  { name: "上段から北西へ", x: -60, z: -52, toward: "n", base: LEVEL.quarryTop },
+  { name: "中段から東へ", x: 62, z: 12, toward: "e", base: LEVEL.quarryMid, top: LEVEL.quarryTop },
+  { name: "中段から北へ", x: 40, z: -15, toward: "n", base: LEVEL.quarryMid, top: LEVEL.quarryTop },
+  { name: "底から南へ", x: -20, z: 32, toward: "s", base: LEVEL.pit, top: LEVEL.quarryMid },
+  { name: "底から北へ", x: -5, z: 6, toward: "n", base: LEVEL.pit, top: LEVEL.quarryMid },
+];
+
+/**
+ * The quarry's lifts, in its frame: cables from its floor straight up over the terraces to the
+ * ground round it, ridden as the ziplines are but up whoever holds what (zips.ts).
+ */
+export const QUARRY_LIFTS: readonly { a: string; b: string; from: { x: number; z: number }; to: { x: number; z: number } }[] = [
+  { a: "lift:quarry", b: "lift:quarry-s", from: { x: -45, z: 36 }, to: { x: -53, z: 88 } },
+  { a: "lift:quarry", b: "lift:quarry-n", from: { x: -25, z: 6 }, to: { x: -25, z: -82 } },
+].map((l) => ({ ...l, from: { x: l.from.x + POI_AT.quarry[0], z: l.from.z + POI_AT.quarry[1] }, to: { x: l.to.x + POI_AT.quarry[0], z: l.to.z + POI_AT.quarry[1] } }));
+
 const LAID: Box[] = (() => {
   const [qx, qz] = AT[1];
   const out: Box[] = [];
@@ -4369,11 +4409,21 @@ const LAID: Box[] = (() => {
       if (y - 0.5 - g > 1) out.push(rect(bx - 0.4, za + 2.1, bx + 0.4, za + 2.9, g - 0.5, y - 0.5, "steel", 0));
     }
   }
-  // The iron stairs between the quarry's terraces.
+  // The iron stairs between the quarry's terraces, and from the top terrace up to the ground on
+  // every side the quarry is left by: south toward the station and the supply depot, east toward
+  // the reservoir, west to the coast, north-west to the pass.
   out.push(
     ...cliffStairs("quarry", -70, -20, "n", LEVEL.quarryTop, LEVEL.quarryMid, 1.8, 0, "steel"),
     ...cliffStairs("quarry", -86, 12, "w", LEVEL.quarryTop, LEVEL.quarryMid, 1.8, 0, "steel"),
     ...cliffStairs("quarry", 28, 18, "e", LEVEL.quarryMid, LEVEL.pit, 1.8, 0, "steel"),
+    ...QUARRY_EXITS.flatMap((q) => {
+      // From the floor as it lies at the foot (a terrace dips a little from its level), so the first riser is a step.
+      const [x, z] = inArea("quarry", q.x, q.z);
+      const [dx, dz] = DIR[q.toward];
+      let base = q.base;
+      for (let d = 0; d < 30 && terrainHeight(x + dx * d, z + dz * d) < q.base + 1; d += 0.5) base = Math.min(base, terrainHeight(x + dx * d, z + dz * d) - 0.02);
+      return q.top === undefined ? rimStairs("quarry", q.x, q.z, q.toward, base, 2.6, 0, "steel") : cliffStairs("quarry", q.x, q.z, q.toward, q.top, base, 2.6, 0, "steel");
+    }),
   );
   // The tunnel's roof, flush with the middle terrace over the cut, and its portal on the floor.
   out.push(...placeIn("quarry", [rect(-80, 13, -67, 30, LEVEL.quarryMid - 0.6, LEVEL.quarryMid, "slab", 1), rect(-67.6, 13, -66.8, 16.5, LEVEL.pit, LEVEL.quarryMid, "wall", 0), rect(-67.6, 26.5, -66.8, 30, LEVEL.pit, LEVEL.quarryMid, "wall", 0)]));
@@ -5134,11 +5184,13 @@ const ZIP_SPOTS: Record<string, { x: number; z: number; r: number }[]> = (() => 
   const gz = CAMP.gate.z - 6;
   return { camp: mastSpots(gx, gz, around(gx, gz), 30, 6), ...Object.fromEntries(NODES.map((c) => [c.id, mastSpots(c.core.x, c.core.z, around(c.core.x, c.core.z))])) };
 })();
-const ZIP_LAYOUT = layZips(ZIP_SPOTS, FRONT_LINKS, [...BUILT, ...CAMP_BOXES, ...CORE_BOXES]);
+const ZIP_LAYOUT = layZips(ZIP_SPOTS, FRONT_LINKS, [...BUILT, ...CAMP_BOXES, ...CORE_BOXES], QUARRY_LIFTS);
 /** The ziplines, one for each link of `FRONT_LINKS` that could carry one; up while both ends are the player's (zips.ts). */
 export const ZIPS: readonly ZipLine[] = ZIP_LAYOUT.lines;
 /** The links that carry no zipline, and why. */
 export const ZIP_MISSING = ZIP_LAYOUT.missing;
+/** The ziplines' masts, arms and pylons (in `BOXES`, last). */
+export const ZIP_BOXES: readonly Box[] = ZIP_LAYOUT.boxes;
 /** Under a cable the scattered cover keeps clear, so the hanging body passes over all of it. */
 const ZIP_KEEP: Keep["segments"] = ZIPS.flatMap((l) => l.pts.slice(1).map((q, i) => ({ ax: l.pts[i].x, az: l.pts[i].z, bx: q.x, bz: q.z })));
 

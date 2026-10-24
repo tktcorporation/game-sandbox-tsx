@@ -44,7 +44,7 @@ export const PLAYER = {
    * crouch held slides on at that speed, so slide, jump, land and slide again outruns a sprint.
    */
   slideJumpBoost: 1.4,
-  slideJumpMax: 11.5,
+  slideJumpMax: 11,
   /** On the ground above the top speed (out of a slide-jump or a zipline), the speed bleeds off at this rate rather than at once. */
   overspeedDecel: 9,
   /** A jump pressed this long before landing is taken on landing. */
@@ -123,8 +123,8 @@ export const ZIP = {
   regrip: 0.6,
   /** Clearance under the cable for the hanging body, and the tallest pylon and steepest slope laid. */
   clear: 2.6,
-  pylonMax: 48,
-  slope: 1,
+  pylonMax: 52,
+  slope: 1.2,
   /** The mast at each node: how far from the core it stands at least, and how far its heads reach. */
   fromCore: 7,
   arm: 1.6,

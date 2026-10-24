@@ -62,6 +62,8 @@ export interface Player {
   mantle: { t: number; dur: number; from: Vec3; to: Vec3; up: number; climb: boolean } | null;
   /** Seconds a jump pressed in the air waits for the ground (`PLAYER.jumpBuffer`). */
   jumpBuf: number;
+  /** The height last stood at: in the air, a cliff's face above it is a wall. */
+  airFrom: number;
   /** Riding a zipline (zips.ts): `at` metres along line `line`, going `dir` (+1 toward its end), at `speed`. */
   zip: { line: number; at: number; dir: 1 | -1; speed: number; carry: boolean } | null;
   /** Off a zipline with the teammate carried along: it comes down beside the player on landing. */
@@ -961,6 +963,7 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
       sliding: false,
       mantle: null,
       jumpBuf: 0,
+      airFrom: 0,
       zip: null,
       zipFall: false,
       zipRegrip: 0,

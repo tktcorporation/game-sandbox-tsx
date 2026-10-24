@@ -20,6 +20,8 @@ export interface ZipPoint {
 export interface ZipLine {
   a: string;
   b: string;
+  /** A lift: up whoever holds what, from its low end (`a`) to its high end (`b`). */
+  fixed?: true;
   pts: ZipPoint[];
   cum: number[];
   length: number;
@@ -60,7 +62,12 @@ type Laid = { pts: ZipPoint[]; cost: number } | { why: string };
  * (its pylons' heights, and its length), the masts as near their cores as that allows. Each cable's head hangs beside its mast, so a rider
  * coming in passes the mast rather than meeting it.
  */
-export function layZips(spots: Record<string, readonly { x: number; z: number; r: number }[]>, links: readonly (readonly [string, string])[], boxes: readonly Box[]): ZipLayout {
+export function layZips(
+  spots: Record<string, readonly { x: number; z: number; r: number }[]>,
+  links: readonly (readonly [string, string])[],
+  boxes: readonly Box[],
+  lifts: readonly { a: string; b: string; from: { x: number; z: number }; to: { x: number; z: number } }[] = [],
+): ZipLayout {
   const near = boxGrid(boxes);
   const out: ZipLayout = { lines: [], boxes: [], missing: [] };
   /** The height the cable must keep over (x, z): the hanging body clear of the ground and of anything built. */
@@ -119,6 +126,31 @@ export function layZips(spots: Record<string, readonly { x: number; z: number; r
       while (!above(trial()) && y < 200) y += 0.5;
       hull.splice(i, 2, [t, y]);
     }
+    // A pylon's legs stand on the ground, through nothing built: one that would is moved along the
+    // cable beside what it stood on, and raised until the cable clears everything again.
+    const legsClear = (t: number, y: number) =>
+      [1, -1].every((s) => {
+        const lx = A.x + ux * t + px * 1.4 * s;
+        const lz = A.z + uz * t + pz * 1.4 * s;
+        const g = terrainHeight(lx, lz);
+        return !near(lx, lz).some((b) => lx + 0.5 > b.x0 && lx - 0.5 < b.x1 && lz + 0.5 > b.z0 && lz - 0.5 < b.z1 && b.h > g + 0.1 && b.y0 < y + 2);
+      });
+    for (let i = 1; i < hull.length - 1; i++) {
+      if (legsClear(hull[i][0], hull[i][1])) continue;
+      let moved = false;
+      for (let k = 1; k <= 14 && !moved; k++)
+        for (const t of [hull[i][0] + 2 * k, hull[i][0] - 2 * k]) {
+          if (t < hull[i - 1][0] + 4 || t > hull[i + 1][0] - 4) continue;
+          let y = hull[i][1];
+          const trial = () => [...hull.slice(0, i), [t, y] as [number, number], ...hull.slice(i + 1)];
+          while (!above(trial()) && y < hull[i][1] + 30) y += 0.5;
+          if (!above(trial()) || !legsClear(t, y)) continue;
+          hull[i] = [t, y];
+          moved = true;
+          break;
+        }
+      if (!moved) return { why: "a pylon in something built" };
+    }
     let cost = L;
     for (const [t, y] of hull.slice(1, -1)) {
       const tall = y - terrainHeight(A.x + ux * t, A.z + uz * t);
@@ -132,11 +164,12 @@ export function layZips(spots: Record<string, readonly { x: number; z: number; r
     return { pts: hull.map(([t, y]) => ({ x: A.x + ux * t, y, z: A.z + uz * t })), cost };
   };
   const masts = new Set<string>();
-  for (const [a, b] of links) {
+  const jobs = [...links.map(([a, b]) => ({ a, b, as: spots[a] ?? [], bs: spots[b] ?? [], fixed: false })), ...lifts.map((l) => ({ a: l.a, b: l.b, as: [{ ...l.from, r: 0 }], bs: [{ ...l.to, r: 0 }], fixed: true }))];
+  for (const { a, b, as, bs, fixed } of jobs) {
     let best: { pts: ZipPoint[]; cost: number; ma: { x: number; z: number }; mb: { x: number; z: number } } | null = null;
     let why = "no mast";
-    for (const ma of spots[a] ?? [])
-      for (const mb of spots[b] ?? []) {
+    for (const ma of as)
+      for (const mb of bs) {
         const laid = lay(ma, mb);
         if ("why" in laid) why = laid.why;
         // A mast stands by its core when it can: each metre out from it costs as two of cable.
@@ -149,7 +182,7 @@ export function layZips(spots: Record<string, readonly { x: number; z: number; r
     const { pts, ma, mb } = best;
     const cum = [0];
     for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y, pts[i].z - pts[i - 1].z));
-    out.lines.push({ a, b, pts, cum, length: cum[cum.length - 1] });
+    out.lines.push(fixed ? { a, b, fixed: true, pts, cum, length: cum[cum.length - 1] } : { a, b, pts, cum, length: cum[cum.length - 1] });
     // The masts, and the arm from each out over its head.
     const A = pts[0];
     const B = pts[pts.length - 1];

@@ -69,6 +69,7 @@ import { shoot } from "../src/ringfall/sim/combat";
 import { analyse, factoryNeeded, raidThreat, recallLoadout, setThreat, wanted } from "../src/ringfall/meta/profile";
 import { raidClock, strengthFor } from "../src/ringfall/sim/state";
 import { pacing, type Pool } from "./ringfall-pacing";
+import { movementLines } from "./ringfall-movement";
 import { MOBILES, OUTPOST_SITES } from "../src/ringfall/sim/map";
 import { enemyNodes, frontNodes, garrisonOf, useCore, type NodeHold } from "../src/ringfall/sim/front";
 import { factoryMax, factoryRarity, finishBattle, heldUnlocks, nodePoint } from "../src/ringfall/sim/battle";
@@ -4330,6 +4331,14 @@ for (const err of [checkFront(), checkPushPull(), checkBattle(), checkFactions()
     process.exit(1);
   }
 }
+
+// How the player moves: the quarry's ways up, the course times, the climbs and the ziplines.
+const moved = movementLines();
+if (moved.errors.length) {
+  console.error(moved.errors.join("\n"));
+  process.exit(1);
+}
+for (const l of moved.lines) console.log(l);
 
 let failed = false;
 const head = ["skill    ", "alive", "time(med)", "cleared", "haul(med)", "downs", "acc", "crit", "leap", "crowd", "flank", "waves", "meet".padEnd(18), "c/min", "ally".padEnd(18), "exit"];

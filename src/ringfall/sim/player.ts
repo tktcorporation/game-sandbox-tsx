@@ -275,6 +275,7 @@ function move(s: State, input: Input, prevCrouch: boolean) {
     }
   }
 
+  if (p.onGround) p.airFrom = p.pos.y;
   if (p.jumpBuf > 0 && p.onGround && p.downed <= 0) {
     p.jumpBuf = 0;
     p.vel.y = PLAYER.jump;
@@ -294,6 +295,7 @@ function move(s: State, input: Input, prevCrouch: boolean) {
   }
 
   const wasOnGround = p.onGround;
+  const from = { x: p.pos.x, y: p.pos.y, z: p.pos.z };
   p.vel.y -= WORLD.gravity * TICK;
   p.pos.x += p.vel.x * TICK;
   p.pos.z += p.vel.z * TICK;
@@ -310,6 +312,19 @@ function move(s: State, input: Input, prevCrouch: boolean) {
     }
   }
   collide(p.pos, PLAYER.radius);
+  // A cliff's face above the feet is a wall: on foot the body never rises onto it (`collide()`
+  // lets it stand a hair over its feet, and running along a face that rises would gain that hair
+  // every step), so it stays where it stood.
+  // A step blocked so slides along the face on one axis when that one is clear.
+  const ontoFace = (x: number, z: number) => terrainHeight(x, z) > from.y + 0.005 && steepAt(x, z) && boxTopAt(x, z, from.y - 0.5, from.y + WORLD.stepUp).top < terrainHeight(x, z) - 0.05;
+  if (wasOnGround && ontoFace(p.pos.x, p.pos.z)) {
+    const [x, z] = !ontoFace(p.pos.x, from.z) ? [p.pos.x, from.z] : !ontoFace(from.x, p.pos.z) ? [from.x, p.pos.z] : [from.x, from.z];
+    p.pos.x = x;
+    p.pos.z = z;
+  }
+  // In the air a cliff's face above the ground jumped from is a wall, as it is on foot: hop after
+  // hop would otherwise land a little higher up the face each time, up the crags too.
+  if (!p.onGround) offFace(p.pos, p.airFrom + 0.05);
   p.pos.y += p.vel.y * TICK;
   // Bump the head on floors and roofs above.
   if (p.vel.y > 0) {
@@ -341,6 +356,21 @@ function move(s: State, input: Input, prevCrouch: boolean) {
     p.vel.y = 0;
   } else if (p.pos.y > g + 0.02) {
     p.onGround = false;
+  }
+}
+
+/**
+ * Moves a body in the air back down a cliff's face until the ground under it is no higher than
+ * `top`. Over something built (stairs bolted to the face) the face is not what it lands on.
+ */
+function offFace(q: Vec3, top: number) {
+  for (let k = 0; k < 16; k++) {
+    if (terrainHeight(q.x, q.z) <= top || !steepAt(q.x, q.z)) return;
+    if (boxTopAt(q.x, q.z, q.y - 3, q.y + 0.5).top > terrainHeight(q.x, q.z) - 0.5) return;
+    const g = terrainGrad(q.x, q.z);
+    const l = Math.hypot(g.x, g.z) || 1;
+    q.x -= (g.x / l) * 0.12;
+    q.z -= (g.z / l) * 0.12;
   }
 }
 
