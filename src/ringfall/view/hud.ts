@@ -5,7 +5,7 @@ import { ALLY, AWARE, BAG, META, DEPOT, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARI
 import { eyePos, magSize } from "../sim/combat";
 import { atRisk, countered, heldUnlocks } from "../sim/battle";
 import { dist2d, los } from "../sim/geom";
-import { DEPOTS, entryOf, EXTRACTS, nodeIndex, NODES, POIS, poiIndex, regionHere, regionOf, routeOf, type EntryId } from "../sim/map";
+import { DEPOTS, entryOf, EXTRACTS, nodeIndex, NODES, POIS, poiIndex, regionHere, regionOf, routeOf, ZIPS, type EntryId } from "../sim/map";
 import { routeBefore } from "../sim/routes";
 import { islandHolds } from "../meta/island";
 import { bagLoad, canOpen, crewsInSight, depotBlocked, depotInReach, extractHere, extractReady, homeReady, makeRoom, poiAt, roomForTool, searchFor, useTarget } from "../sim/world";
@@ -24,7 +24,8 @@ import { recordSpot, type RecordId } from "../sim/map";
 import type { World } from "./world";
 import { eventRow, raidEventLine } from "./events";
 import { CREW, FRONT, MOD, MODS } from "../sim/config";
-import { binPicture, modIcon, pouchIcon, routeIcon } from "./icons";
+import { binPicture, modIcon, pouchIcon, routeIcon, zipIcon } from "./icons";
+import { zipPoint } from "../sim/zips";
 import { bagIcon, callIcon, checkIcon, clockIcon, coreIcon, crossIcon, depotIcon, entryIcon, exitIcon, eyeIcon, fightIcon, flareIcon, keyIcon, lockIcon, noiseIcon, reinforceIcon, reviveIcon, SIDE, upIcon, nightIcon } from "./icons";
 import { capturable } from "../sim/front";
 
@@ -1045,6 +1046,15 @@ export class Hud {
       if (!capturable(s, t.node)) return `${coreIcon(SIDE.enemy, true)}${esc(n.name)}`;
       if (s.capture?.node === t.node) return `${coreIcon(SIDE.enemy)}${esc(n.name)} <b>${Math.floor((s.capture.t / FRONT.capture) * 100)}%</b>`;
       return `${key("E")}${coreIcon(SIDE.enemy)}${esc(n.name)} ${noiseIcon()}`;
+    }
+    if (t.kind === "zip") {
+      // The way the rider would go: the end the player faces, and how far along the cable it is.
+      const l = ZIPS[t.line];
+      const at = zipPoint(l, t.at);
+      const toB = Math.sin(p.yaw) * at.dx - Math.cos(p.yaw) * at.dz >= 0;
+      const end = toB ? l.b : l.a;
+      const name = end === "camp" ? "野営地" : (NODES.find((n) => n.id === end)?.name ?? "");
+      return `${key("E")}${zipIcon()}${esc(name)} <b>${Math.round(toB ? l.length - t.at : t.at)}</b> m`;
     }
     const wl = t.loot;
     const swap = p.weapons.includes(null) ? "" : struck([WEAPONS[p.weapons[p.slot]!.kind].name]);

@@ -123,3 +123,7 @@ export const armorIcon = (c = "currentColor") => svg(`<path d="M5 1.5 L8 3 L11 1
 /** Where the raid starts: a pin in the player's colour, set on the chosen way in or depot. */
 export const startIcon = (c: string = SIDE.own) =>
   svg(`<path d="M8 15 C4.5 10.6 2.8 8 2.8 5.9 a5.2 5.2 0 0 1 10.4 0 C13.2 8 11.5 10.6 8 15 Z" fill="${c}" stroke="#f4f7ff" stroke-width="1.3"/><circle cx="8" cy="5.9" r="2" fill="#f4f7ff"/>`, "start");
+
+/** A zipline: a cable sloping between two masts, a pulley on it, in the player's blue. */
+export const zipIcon = (c: string = SIDE.own) =>
+  svg(`<path d="M2 2 V15 M14 5 V15" stroke="${c}" stroke-width="1.8" stroke-linecap="round"/><path d="M2 3 L14 6" stroke="${c}" stroke-width="1.4"/><circle cx="8" cy="4.6" r="1.7" fill="${c}"/><path d="M8 6.3 V10" stroke="${c}" stroke-width="1.4" stroke-linecap="round"/>`, "zip");

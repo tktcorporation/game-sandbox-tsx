@@ -1,6 +1,7 @@
-import { FRONT, VAULT, WORLD, type EnemyKind, type HealKind, type Rarity, type ToolKind, type ValuableKind, type WeaponKind } from "./config";
+import { FRONT, VAULT, WORLD, ZIP, type EnemyKind, type HealKind, type Rarity, type ToolKind, type ValuableKind, type WeaponKind } from "./config";
 import { AREA, inArea, POI_AT, type AreaId } from "./areas";
 import { LENGTHS, offStreet, STREETS } from "./streets";
+import { layZips, type ZipLine } from "./ziplayout";
 import { buildTerrain, type Carve, type FlatShape, floorLevel, highGround, LEVEL, offshore, roadLine, steepAt, surfaceAt, terrainHeight } from "./terrain";
 
 /**
@@ -5089,13 +5090,66 @@ export const nodeIndex = (id: string) => NODES.findIndex((n) => n.id === id);
 /** The cores, as boxes: standing pillars the player walks round and shoots past. */
 const CORE_BOXES: Box[] = NODES.map((n) => box(n.core.x, n.core.z, 2 * FRONT.half, 2 * FRONT.half, n.core.y + FRONT.height, "steel", 2, n.core.y - 0.3));
 
+/**
+ * The spots a zipline mast may stand on near (x, z), at most `n`, each `apart` from the others:
+ * open, level ground at least `ZIP.fromCore` from a core and out to `reach`, clear of the authored
+ * points, the kept roads and patrol legs, the depots and anything built, looked for on rings out
+ * from there as `coreSpot()` looks for a core's.
+ */
+function mastSpots(x: number, z: number, near: Box[], reach = 70, n = 12, apart = 12): { x: number; z: number; r: number }[] {
+  const ROOM = 2;
+  const depots = POIS.map(depotSpot);
+  const toSeg = (sg: Keep["segments"][number], px: number, pz: number) => {
+    const dx = sg.bx - sg.ax;
+    const dz = sg.bz - sg.az;
+    const t = Math.max(0, Math.min(1, ((px - sg.ax) * dx + (pz - sg.az) * dz) / (dx * dx + dz * dz || 1)));
+    return Math.hypot(px - sg.ax - dx * t, pz - sg.az - dz * t);
+  };
+  const out: { x: number; z: number; r: number }[] = [];
+  for (let r = ZIP.fromCore; r <= reach && out.length < n; r += 3)
+    for (let k = 0, m = Math.max(8, Math.round((2 * Math.PI * r) / 3)); k < m && out.length < n; k++) {
+      const a = (k / m) * 2 * Math.PI;
+      const px = +(x + Math.sin(a) * r).toFixed(1);
+      const pz = +(z - Math.cos(a) * r).toFixed(1);
+      if (out.some((o) => Math.hypot(o.x - px, o.z - pz) < apart)) continue;
+      const g = terrainHeight(px, pz);
+      if (offshore(px, pz) > -6 || highGround(px, pz) || inCamp({ x: px, z: pz }, 2)) continue;
+      if ([[0, 0], [ROOM, 0], [-ROOM, 0], [0, ROOM], [0, -ROOM]].some(([dx, dz]) => steepAt(px + dx, pz + dz) || Math.abs(terrainHeight(px + dx, pz + dz) - g) > 0.6)) continue;
+      if (near.some((b) => b.x1 > px - ROOM - 1 && b.x0 < px + ROOM + 1 && b.z1 > pz - ROOM - 1 && b.z0 < pz + ROOM + 1 && b.h > g + 0.15 && b.y0 < g + 8)) continue;
+      if (KEEP.points.some((q) => Math.hypot(q.x - px, q.z - pz) < q.r + ROOM)) continue;
+      if (KEEP.segments.some((sg) => toSeg(sg, px, pz) < ROOM + 1)) continue;
+      if (depots.some((d) => Math.hypot(d.x - px, d.z - pz) < 8)) continue;
+      if (NODES.some((c) => Math.hypot(c.core.x - px, c.core.z - pz) < ZIP.fromCore)) continue;
+      if (deckAt(px, pz) !== null) continue;
+      out.push({ x: px, z: pz, r });
+    }
+  return out;
+}
+
+/** Where the ziplines' masts may stand: round each node's core, and outside the camp's gate. */
+const ZIP_SPOTS: Record<string, { x: number; z: number; r: number }[]> = (() => {
+  const built = [...BUILT, ...CAMP_BOXES, ...CORE_BOXES];
+  const around = (x: number, z: number) => built.filter((b) => b.x1 > x - 90 && b.x0 < x + 90 && b.z1 > z - 90 && b.z0 < z + 90);
+  const gx = (CAMP.gate.x0 + CAMP.gate.x1) / 2;
+  const gz = CAMP.gate.z - 6;
+  return { camp: mastSpots(gx, gz, around(gx, gz), 30, 6), ...Object.fromEntries(NODES.map((c) => [c.id, mastSpots(c.core.x, c.core.z, around(c.core.x, c.core.z))])) };
+})();
+const ZIP_LAYOUT = layZips(ZIP_SPOTS, FRONT_LINKS, [...BUILT, ...CAMP_BOXES, ...CORE_BOXES]);
+/** The ziplines, one for each link of `FRONT_LINKS` that could carry one; up while both ends are the player's (zips.ts). */
+export const ZIPS: readonly ZipLine[] = ZIP_LAYOUT.lines;
+/** The links that carry no zipline, and why. */
+export const ZIP_MISSING = ZIP_LAYOUT.missing;
+/** Under a cable the scattered cover keeps clear, so the hanging body passes over all of it. */
+const ZIP_KEEP: Keep["segments"] = ZIPS.flatMap((l) => l.pts.slice(1).map((q, i) => ({ ax: l.pts[i].x, az: l.pts[i].z, bx: q.x, bz: q.z })));
+
 // The camp comes last: what was laid before it keeps its place in the list (the cover spots, the walkers' grids).
-// The cores keep the scattered cover off the ground they are taken from, and come after the camp.
+// The cores keep the scattered cover off the ground they are taken from, and come after the camp; the ziplines' masts and pylons after them.
 export const BOXES: Box[] = [
   ...BUILT,
-  ...scatterCover([...BUILT, ...CAMP_BOXES, ...CORE_BOXES], { points: [...KEEP.points, ...NODES.map((n) => ({ x: n.core.x, z: n.core.z, r: 6 }))], segments: KEEP.segments }),
+  ...scatterCover([...BUILT, ...CAMP_BOXES, ...CORE_BOXES, ...ZIP_LAYOUT.boxes], { points: [...KEEP.points, ...NODES.map((n) => ({ x: n.core.x, z: n.core.z, r: 6 }))], segments: [...KEEP.segments, ...ZIP_KEEP] }),
   ...CAMP_BOXES,
   ...CORE_BOXES,
+  ...ZIP_LAYOUT.boxes,
 ];
 
 /** The bridge deck's height at (x, z) when it lies on a deck that path finding walks (DECKS), else null. */

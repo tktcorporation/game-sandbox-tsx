@@ -1,12 +1,13 @@
-import { ALLY, ASSIST, DEG, HEALS, type HealKind, MANTLE, NOISE, PLAYER, RARITY, REVEAL, SEMI_HOLD, TACTICAL, TICK, ULT, WEAPONS, WORLD } from "./config";
+import { ALLY, ASSIST, CLIMB, DEG, HEALS, type HealKind, MANTLE, NOISE, PLAYER, RARITY, REVEAL, SEMI_HOLD, TACTICAL, TICK, ULT, WEAPONS, WORLD } from "./config";
 import { makeNoise } from "./awareness";
 import { modScale } from "./mods";
 import { allyChest, allyUp, besidePlayer, placeAlly } from "./ally";
 import { POIS } from "./map";
 import { applyPull, assistTarget, bodyCenter, damageEnemy, eyePos, magSize, shoot } from "./combat";
-import { ceilingAt, collide, groundAt, los } from "./geom";
-import { floorLevel, offLowGround, terrainGrad, terrainHeight, towardLowGround } from "./terrain";
-import type { Input, Player, State } from "./state";
+import { boxTopAt, ceilingAt, collide, groundAt, los } from "./geom";
+import { floorLevel, highGround, offLowGround, offshore, steepAt, terrainGrad, terrainHeight, towardLowGround } from "./terrain";
+import { grabInAir, ride } from "./zips";
+import type { Input, Player, State, Vec3 } from "./state";
 
 /*
  * The player: movement (sprint, slide, jump, the ult's leap), weapons, abilities, and taking damage.
@@ -71,12 +72,82 @@ function tryMantle(s: State, input: Input): boolean {
   const to = { x: p.pos.x + fx * (PLAYER.radius + MANTLE.land), y: top, z: p.pos.z + fz * (PLAYER.radius + MANTLE.land) };
   const probe = { ...to };
   if (collide(probe, PLAYER.radius * 0.9) || Math.hypot(probe.x - to.x, probe.z - to.z) > 0.01) return false;
-  p.mantle = { t: 0, dur: MANTLE.time * (0.4 + (0.6 * rise) / MANTLE.reach), from: { ...p.pos }, to };
+  p.mantle = { t: 0, dur: MANTLE.time * (0.4 + (0.6 * rise) / MANTLE.reach), from: { ...p.pos }, to, up: 0.65, climb: false };
   p.vel.x = p.vel.y = p.vel.z = 0;
   p.sliding = false;
   p.crouch = false;
   p.sprinting = false;
   s.events.push({ t: "mantle" });
+  return true;
+}
+
+/**
+ * Where a climb straight ahead of `pos` along (fx, fz) would come out: the first point past the
+ * wall or cliff in front, within `CLIMB.look` metres, with room to stand on its top. Null when
+ * nothing is in front within `CLIMB.touch`, when the face rises past `reach` above the feet, when
+ * it is a fence (bars stop a body, and give no hold), or when its top is the crags' high ground or
+ * past the coast, which no climb leaves the island by.
+ */
+export function ledgeAhead(pos: Vec3, fx: number, fz: number, reach = CLIMB.reach): Vec3 | null {
+  const feet = pos.y;
+  const limit = feet + reach;
+  const r = PLAYER.radius;
+  let face = -1;
+  for (let d = r + 0.05; d <= r + CLIMB.look; d += 0.2) {
+    const x = pos.x + fx * d;
+    const z = pos.z + fz * d;
+    if (terrainHeight(x, z) > limit + 0.05) return null;
+    const g = groundAt(x, z, 0.05, limit - WORLD.stepUp);
+    const wall = boxTopAt(x, z, feet + WORLD.stepUp, g + 1.75);
+    if (wall.fence || wall.top > limit) return null;
+    if (face < 0) {
+      if (g <= feet + WORLD.stepUp + 0.05) {
+        if (d > r + CLIMB.touch) return null;
+        continue;
+      }
+      face = d;
+    }
+    if (g <= feet + WORLD.stepUp + 0.05) return null;
+    if (standable(x, g, z) && clearOver(pos, x, g, z)) return { x, y: g, z };
+  }
+  return null;
+}
+
+/** Room for a body to stand at (x, y, z) on top of a climb: no wall, no roof, no cliff it would slide off, and not high ground. */
+function standable(x: number, y: number, z: number): boolean {
+  const onTerrain = Math.abs(terrainHeight(x, z) - y) < 0.05;
+  if (onTerrain && (steepAt(x, z) || highGround(x, z) || offshore(x, z) > 0)) return false;
+  const probe = { x, y, z };
+  if (collide(probe, PLAYER.radius * 0.9) || Math.hypot(probe.x - x, probe.z - z) > 0.01) return false;
+  return ceilingAt(x, z, PLAYER.radius, y + 1.8, y) >= y + 1.8;
+}
+
+/** Open air for the body to rise at `from` to `y`, and to go over onto (x, z). */
+function clearOver(from: Vec3, x: number, y: number, z: number): boolean {
+  if (ceilingAt(from.x, from.z, PLAYER.radius, y + 1.8, from.y) < y + 1.8) return false;
+  return los({ x: from.x, y: y + 0.4, z: from.z }, { x, y: y + 0.4, z }) && los({ x: from.x, y: y + 1.5, z: from.z }, { x, y: y + 1.5, z });
+}
+
+/**
+ * A climb: in the air pushing into a wall, or sprinting into one, whose top is within reach.
+ * The body goes up the face hand over hand and over the top, faster the lower it is.
+ */
+function tryClimb(s: State, input: Input): boolean {
+  const p = s.player;
+  if (p.downed > 0 || input.noClimb || input.moveZ < 0.5) return false;
+  if (p.onGround && !p.sprinting) return false;
+  const fx = Math.sin(p.yaw);
+  const fz = -Math.cos(p.yaw);
+  const to = ledgeAhead(p.pos, fx, fz);
+  if (!to) return false;
+  const rise = to.y - p.pos.y;
+  const upT = CLIMB.grip + Math.max(0, rise) / CLIMB.speed;
+  p.mantle = { t: 0, dur: upT + CLIMB.over, from: { ...p.pos }, to, up: upT / (upT + CLIMB.over), climb: rise > MANTLE.reach };
+  p.vel.x = p.vel.y = p.vel.z = 0;
+  p.sliding = false;
+  p.crouch = false;
+  p.sprinting = false;
+  s.events.push(p.mantle.climb ? { t: "climb", rise } : { t: "mantle" });
   return true;
 }
 
@@ -87,9 +158,13 @@ function stepMantle(s: State) {
   if (!m) return;
   m.t += TICK;
   const k = Math.min(1, m.t / m.dur);
-  const up = Math.min(1, k / 0.65);
-  const over = Math.max(0, (k - 0.65) / 0.35);
-  p.pos.y = m.from.y + (m.to.y + 0.02 - m.from.y) * (1 - (1 - up) * (1 - up));
+  const wasUp = (m.t - TICK) / m.dur < m.up;
+  const up = Math.min(1, k / m.up);
+  const over = Math.max(0, (k - m.up) / (1 - m.up));
+  if (m.climb && wasUp && k >= m.up) s.events.push({ t: "climbTop" });
+  // A plain mantle is a heave that slows near the top; a climb goes hand over hand at one pace.
+  const rise = m.climb ? up : 1 - (1 - up) * (1 - up);
+  p.pos.y = m.from.y + (m.to.y + 0.02 - m.from.y) * rise;
   p.pos.x = m.from.x + (m.to.x - m.from.x) * over;
   p.pos.z = m.from.z + (m.to.z - m.from.z) * over;
   if (k >= 1) {
@@ -120,8 +195,11 @@ function move(s: State, input: Input, prevCrouch: boolean) {
     wz /= wl;
   }
   if (p.leap) return glide(s, wx, wz);
-  if (tryMantle(s, input)) return;
+  if (p.zip) return ride(s, input);
+  grabInAir(s, input);
+  if (p.zip || tryMantle(s, input) || tryClimb(s, input)) return;
   const speed = Math.hypot(p.vel.x, p.vel.z);
+  p.jumpBuf = input.jump ? PLAYER.jumpBuffer : Math.max(0, p.jumpBuf - TICK);
 
   if (input.moveZ > 0.5 && !input.fire && p.ads < 0.1 && !p.healing) p.forwardHeld += TICK;
   else p.forwardHeld = 0;
@@ -165,6 +243,12 @@ function move(s: State, input: Input, prevCrouch: boolean) {
     if (p.ads > 0.5) top *= 0.75;
     if (p.healing) top *= 0.5;
     if (p.onGround) {
+      // Faster than the top speed (out of a slide-jump or off a zipline) and still pushing that
+      // way: the speed bleeds off over a moment rather than at once, so a jump or a slide on
+      // landing keeps it. Pushing anywhere else turns it to the walk at once, as ever.
+      const wl2 = Math.hypot(wx, wz);
+      const along = speed > 0.01 && wl2 > 0.01 ? (p.vel.x * wx + p.vel.z * wz) / (speed * wl2) : 0;
+      if (speed > Math.max(top, PLAYER.sprint) * wl2 + 0.05 && along > 0.7) top = Math.max(top * wl2, speed - PLAYER.overspeedDecel * TICK) / wl2;
       const tx = wx * top - p.vel.x;
       const tz = wz * top - p.vel.z;
       const tl = Math.hypot(tx, tz);
@@ -191,9 +275,20 @@ function move(s: State, input: Input, prevCrouch: boolean) {
     }
   }
 
-  if (input.jump && p.onGround && p.downed <= 0) {
+  if (p.jumpBuf > 0 && p.onGround && p.downed <= 0) {
+    p.jumpBuf = 0;
     p.vel.y = PLAYER.jump;
     p.onGround = false;
+    // Out of a slide the jump carries the slide on, a little faster (`slideJumpBoost`).
+    if (p.sliding) {
+      const sp = Math.hypot(p.vel.x, p.vel.z);
+      const ns = Math.max(sp, Math.min(PLAYER.slideJumpMax, sp + PLAYER.slideJumpBoost));
+      if (sp > 0.01) {
+        p.vel.x *= ns / sp;
+        p.vel.z *= ns / sp;
+      }
+      s.events.push({ t: "slideJump", speed: ns });
+    }
     p.sliding = false;
     s.events.push({ t: "jump" });
   }
@@ -227,6 +322,16 @@ function move(s: State, input: Input, prevCrouch: boolean) {
   const g = groundAt(p.pos.x, p.pos.z, PLAYER.radius, Math.max(p.pos.y, p.pos.y - p.vel.y * TICK));
   if (p.pos.y <= g) {
     if (!p.onGround && p.vel.y < -5) s.events.push({ t: "land", speed: -p.vel.y });
+    // Landing with the crouch held at speed slides on, keeping the air's speed.
+    if (!p.onGround && input.crouch && p.downed <= 0 && Math.hypot(p.vel.x, p.vel.z) > PLAYER.walk + 0.3) {
+      p.sliding = true;
+      p.crouch = false;
+      s.events.push({ t: "slide" });
+    }
+    if (!p.onGround && p.zipFall) {
+      p.zipFall = false;
+      besidePlayer(s);
+    }
     p.pos.y = g;
     p.vel.y = 0;
     p.onGround = true;
@@ -412,6 +517,7 @@ function glide(s: State, wx: number, wz: number) {
 function clocks(s: State) {
   const p = s.player;
   p.cooldown = Math.max(0, p.cooldown - TICK);
+  p.zipRegrip = Math.max(0, p.zipRegrip - TICK);
   p.tactical = Math.max(0, p.tactical - TICK);
   if (p.ult < 1 && !p.leap) {
     p.ult = Math.min(1, p.ult + ULT.perSec * modScale(p, "surge") * TICK);
@@ -534,6 +640,8 @@ export function hurtPlayer(s: State, dmg: number, fromX: number, fromZ: number) 
   p.hp = 0;
   p.healing = null;
   p.mantle = null; // a downed player lets go of the ledge
+  p.zip = null; // and of a cable, and falls
+  p.zipFall = false;
   p.leap = null; // and of the glider: it falls, and a carried teammate falls free beside it
   p.reload = 0;
   s.stats.downs++;

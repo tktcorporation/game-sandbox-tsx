@@ -27,17 +27,28 @@ export const PLAYER = {
   eyeCrouch: 1.0,
   hp: 100,
   walk: 4.6,
-  sprint: 7.2,
+  sprint: 7.6,
   crouch: 2.6,
   accel: 70, // reaches top speed in ~0.1 s
   airAccel: 14,
   jump: 5.4,
-  slideStart: 9.6, // speed set at slide start when slower
+  slideStart: 10, // speed set at slide start when slower
   slideFriction: 4.2,
   slideMin: 4.0,
   /** Share of gravity along the ground that pulls a slide down a slope, and its top speed. */
   slideSlope: 0.7,
   slideMax: 15,
+  /**
+   * A jump out of a slide adds `slideJumpBoost` to the way it was going, up to `slideJumpMax`
+   * (a faster slide down a slope keeps its own speed), and the air keeps it: landing with the
+   * crouch held slides on at that speed, so slide, jump, land and slide again outruns a sprint.
+   */
+  slideJumpBoost: 1.4,
+  slideJumpMax: 11.5,
+  /** On the ground above the top speed (out of a slide-jump or a zipline), the speed bleeds off at this rate rather than at once. */
+  overspeedDecel: 9,
+  /** A jump pressed this long before landing is taken on landing. */
+  jumpBuffer: 0.15,
   autoSprintAfter: 0.2, // forward input without firing for this long turns into a sprint
   regenDelay: 5,
   regenPerSec: 6,
@@ -67,6 +78,56 @@ export const MANTLE = {
   land: 0.5,
   /** Speed kept after climbing, along the way the player faced. */
   exitSpeed: 4,
+};
+
+/**
+ * Climbing a wall or a cliff: running or jumping into one whose top is within `reach` of the
+ * feet climbs it, `speed` metres a second, and mantles over the top. A ledge within
+ * `MANTLE.reach` is a plain mantle. The top must be ground the player could walk on: never the
+ * high ground of the crags or past the coast.
+ */
+export const CLIMB = {
+  reach: 6.2,
+  speed: 6.5,
+  /** Seconds added to every climb: the hands taking hold, and going over the top. */
+  grip: 0.12,
+  over: 0.22,
+  /** How far ahead of the body the hands look for the top of a cliff's slope. */
+  look: 3,
+  /** A run turns into a climb only this close to the wall (the body's own radius past it). */
+  touch: 0.25,
+};
+
+/**
+ * Ziplines between nodes the player holds (zips.ts, laid by `layZips()`): a cable for each link
+ * of `FRONT_LINKS` whose two ends are the player's, from a mast by one node's core to a mast by
+ * the other's, over pylons where the ground or something built stands in the way.
+ */
+export const ZIP = {
+  /** Riding speed (m/s), the speed a rider starts at, how fast it gets there, and the speed it slows to near the end. */
+  speed: 24,
+  start: 9,
+  accel: 22,
+  arrive: 10,
+  /** Metres from the end over which it slows, braking at the rate that reaches `arrive` there. */
+  brake: 14,
+  /** The cable's height over the ground at each end, and where the rider's feet hang under it. */
+  head: 3.2,
+  hang: 2.0,
+  /** A jump into the cable takes hold within this distance of the hands; the use key within `use` of the eyes. */
+  grab: 1.0,
+  use: 2.6,
+  /** Speed up off the cable on a jump. */
+  hop: 4,
+  /** Seconds after letting go before a cable is taken hold of again. */
+  regrip: 0.6,
+  /** Clearance under the cable for the hanging body, and the tallest pylon and steepest slope laid. */
+  clear: 2.6,
+  pylonMax: 48,
+  slope: 1,
+  /** The mast at each node: how far from the core it stands at least, and how far its heads reach. */
+  fromCore: 7,
+  arm: 1.6,
 };
 
 export type HealKind = "cell" | "battery" | "syringe" | "medkit";

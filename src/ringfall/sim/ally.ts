@@ -107,6 +107,8 @@ export function hurtAlly(s: State, dmg: number) {
   a.climb = 0;
   // Downed on the player's leap, it lets go and falls free (stepAlly carries only while this is set).
   if (s.player.leap) s.player.leap.carry = false;
+  if (s.player.zip) s.player.zip.carry = false;
+  s.player.zipFall = false;
   s.stats.allyDowns++;
   s.events.push({ t: "allyDown" });
   // The player was waiting for this teammate: nobody is left to help.
@@ -137,8 +139,12 @@ export function stepAlly(s: State) {
   if (!a.active) return;
   const p = s.player;
   // Carried on the player's leap: it flies alongside and lands with them (see besidePlayer).
-  if (p.leap?.carry) {
-    a.pos = { x: p.pos.x - Math.cos(p.yaw) * 1.6, y: p.pos.y, z: p.pos.z - Math.sin(p.yaw) * 1.6 };
+  // Carried on a cable, or falling off one with the player: it hangs on behind them.
+  if (p.leap?.carry || p.zip?.carry || p.zipFall) {
+    const v = Math.hypot(p.vel.x, p.vel.z);
+    // On a cable it is the next rider back along the way the player goes.
+    if (p.zip || p.zipFall) a.pos = v > 0.5 ? { x: p.pos.x - (p.vel.x / v) * 2.4, y: p.pos.y, z: p.pos.z - (p.vel.z / v) * 2.4 } : { ...p.pos };
+    else a.pos = { x: p.pos.x - Math.cos(p.yaw) * 1.6, y: p.pos.y, z: p.pos.z - Math.sin(p.yaw) * 1.6 };
     a.vel = { x: 0, y: 0, z: 0 };
     return;
   }

@@ -157,6 +157,22 @@ export function ceilingAt(x: number, z: number, r: number, head: number, feet: n
 }
 
 /**
+ * What is built at the point (x, z) between the heights `lo` and `hi`: the highest top of a box
+ * there that reaches above `lo` and starts below `hi` (-Infinity for none), and whether one of
+ * them is a fence. A climb reads its wall here (player.ts, `ledgeAhead()`).
+ */
+export function boxTopAt(x: number, z: number, lo: number, hi: number): { top: number; fence: boolean } {
+  let top = -Infinity;
+  let fence = false;
+  for (const b of near(x, z, 0)) {
+    if (x < b.x0 || x > b.x1 || z < b.z0 || z > b.z1 || b.h <= lo || b.y0 >= hi) continue;
+    if (b.kind === "fence") fence = true;
+    if (b.h > top) top = b.h;
+  }
+  return { top, fence };
+}
+
+/**
  * Push a circle out of every box that overlaps its body (feet + step .. feet + height).
  * Returns true if it touched one.
  */
