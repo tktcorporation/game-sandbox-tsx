@@ -1,5 +1,5 @@
 import { PLAYER } from "../sim/config";
-import { checkIcon, clockIcon, crossIcon, depotIcon, entryIcon, healIcon, lockIcon, robotIcon, routeIcon, SIDE, turretIcon, upIcon } from "./icons";
+import { armorIcon, binPicture, checkIcon, clockIcon, crossIcon, depotIcon, entryIcon, gunIcon, healIcon, keyIcon, lockIcon, modIcon, pouchIcon, robotIcon, routeIcon, SIDE, turretIcon, upIcon } from "./icons";
 import { ALLY, FACTORY, HEALS as HEAL_SPECS, HIDEOUT, MOD_KINDS, RARITY, THREAT, TOOLS, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
 import { boostFor, freeKit, raidClock, strengthFor, type Kit } from "../sim/state";
 import { CAMP, entryOf, NODES, POIS, UNLOCKS, poiIndex, poiRegion, REGIONS, regionOf, ROUTES, type EntryId, type PoiId, type RegionId, type StationId } from "../sim/map";
@@ -126,6 +126,12 @@ export function rewardList(q: { reward: Reward }): [RewardItem, number][] {
 const moduleDoes = (m: ModuleId, lv: number, does: string) => (m === "radio" ? (lv === 1 ? "拠点 ★" : "拠点 ★・回収品・レイダーの時刻") : does);
 
 const $ = (id: string) => document.getElementById(id)!;
+
+/** Which day's papers the board holds. */
+const boardKey = (p: Profile) => `${p.board.day}:${p.board.contracts.map((c) => c.id).join(",")}`;
+
+/** An item as its mark in its colour: a gun, armour or a key. */
+const itemMark = (i: Item) => `<span style="color:${color(i)}">${i.t === "weapon" ? gunIcon() : i.t === "armor" ? armorIcon() : keyIcon()}</span>`;
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
 const yen = (n: number) => n.toLocaleString("ja-JP");
 
@@ -181,6 +187,8 @@ export class Hub {
   private module: ModuleId | null = null;
   /** A stash row a module still needs, pressed once to sell: the next press sells it. */
   private armed = "";
+  /** The contract board last put up on the board panel; a new day's board slides its papers in once. */
+  private boardSeen: string;
 
   constructor(
     public profile: Profile,
@@ -189,6 +197,7 @@ export class Hub {
     this.region = profile.region;
     this.entry = this.entryIn(profile.region);
     this.load = recallLoadout(profile);
+    this.boardSeen = boardKey(profile);
     this.fixStart();
     $("hub").addEventListener("click", (e) => {
       const el = (e.target as HTMLElement).closest<HTMLElement>("[data-act]");
@@ -570,12 +579,14 @@ export class Hub {
    */
   private contractCard(c: Contract, taken: Contract | null): string {
     const on = taken?.id === c.id;
+    // One paper a raid: once one is taken (or the story's record), the others pale behind it.
+    const dim = !on && (!!taken || !!takenStory(this.profile));
     const btn = on ? `<button type="button" class="untake" data-act="take" data-arg="">取り消す</button>` : `<button type="button" data-act="take" data-arg="${c.id}">${taken || takenStory(this.profile) ? "こちらに替える" : "受ける"}</button>`;
     const where = esc(regionOf(contractRegion(c)).name);
     const n = on ? this.profile.threat : 0;
     const pay = this.reward({ ...c.reward, cash: threatPay(c.reward.cash, n) });
     return (
-      `<div class="quest contract${on ? " taken" : ""}" data-type="${c.t}"><div><strong><em>${CONTRACT_NAME[c.t]}</em>${on ? `<i class="taken-tag">${checkIcon()}${n ? `強度 ${n}` : ""}</i>` : ""}</strong><span>${esc(contractText(c))}</span>` +
+      `<div class="quest contract${on ? " taken" : ""}${dim ? " dim" : ""}" data-type="${c.t}"><i class="pin"></i><div><strong><em>${CONTRACT_NAME[c.t]}</em>${on ? `<i class="taken-tag">${checkIcon()}${n ? `強度 ${n}` : ""}</i>` : ""}</strong><span>${esc(contractText(c))}</span>` +
       `<small>${where}・報酬 ${pay}</small>${on ? this.strengthRow(c) : ""}</div>${btn}</div>`
     );
   }
@@ -597,7 +608,7 @@ export class Hub {
     const best = POIS.filter((o) => (p.freedAt[o.id] ?? 0) > 0).map((o) => `${o.name} ${p.freedAt[o.id]}`);
     return (
       `<div class="strength"><small>強度</small><div class="row">${buttons}</div>${gives ? `<p class="gives">${gives}</p>` : ""}${asks ? `<p class="asks">${asks}</p>` : ""}` +
-      `<p class="sub">${best.length ? `最高 ${esc(best.join("・"))}・` : ""}改造パーツ ${p.known.length} / ${MOD_KINDS.length}</p></div>`
+      `<p class="sub">${best.length ? `最高 ${esc(best.join("・"))}・` : ""}</p><p class="bins">${binPicture(modIcon())}<b>${p.known.length} / ${MOD_KINDS.length}</b></p></div>`
     );
   }
 
@@ -638,9 +649,40 @@ export class Hub {
     const allow = this.allowance();
     if (!allow) return "";
     // Over the allowance it turns red with what it is over by; under it, the credits' worth still to send through this depot for its next level.
-    return `<div class="slot depot${allow.cost > allow.budget ? " over" : ""}"><small>持ち込み枠</small><span>${depotIcon()}Lv${allow.level}<b>${allow.cost} / ${allow.budget}</b></span><small>${
+    return `<div class="slot depot${allow.cost > allow.budget ? " over" : ""}"><small>持ち込み枠</small><span>${depotIcon()}Lv${allow.level}<b>${allow.cost} / ${allow.budget}</b></span>${this.carryBoxes(allow.budget)}<small>${
       allow.cost > allow.budget ? `${crossIcon()}+${allow.cost - allow.budget}` : allow.next === null ? "MAX" : `${upIcon()}Lv${allow.level + 1}　${yen(allow.next)}`
     }</small></div>`;
+  }
+
+  /**
+   * A depot start's allowance as boxes, one a point: each weapon, armour and key the loadout takes
+   * fills as many boxes as it costs, in its rarity's colour, and one past the allowance stands out
+   * in red. What costs nothing (the lent kit's weapons, every heal) sits beside the boxes, outside.
+   */
+  carryBoxes(budget: number): string {
+    const p = this.profile;
+    const l = this.load;
+    const taken = [...new Set(l.weapons)].slice(0, 2).concat(l.armor === null ? [] : [l.armor], l.keys).map((n) => p.stash[n]).filter((i): i is Item => !!i);
+    let used = 0;
+    const segs = taken.map((i) => {
+      const n = itemCost(i);
+      used += n;
+      return `<i class="seg${used > budget ? " over" : ""}" style="--n:${n}">${itemMark(i)}</i>`;
+    });
+    const empty = Array.from({ length: Math.max(0, budget - used) }, () => `<i class="seg empty" style="--n:1"></i>`);
+    const lent = lentHeals(p);
+    const free = [
+      ...(this.lent ? freeKit().weapons.map((w) => `<span style="color:${RARITY_CSS[w.rarity]}">${gunIcon()}</span>`) : []),
+      ...HEALS.filter((k) => l.heals[k] + lent[k] > 0).map((k) => `<span>${healIcon(HEAL_SPECS[k].shield)}${l.heals[k] + lent[k]}</span>`),
+    ];
+    return `<span class="carry"><span class="boxes">${segs.join("")}${empty.join("")}</span>${free.length ? `<span class="free">${free.join("")}</span>` : ""}</span>`;
+  }
+
+  /** The departure's carry-in boxes when the truck drives to a depot, else "". */
+  departBoxes(walk: boolean): string {
+    this.fixStart();
+    const a = walk ? null : this.allowance();
+    return a ? `<div class="depart-carry${a.cost > a.budget ? " over" : ""}"><small>${depotIcon()}持ち込み枠</small><b>${a.cost} / ${a.budget}</b>${this.carryBoxes(a.budget)}</div>` : "";
   }
 
   /**
@@ -741,7 +783,7 @@ export class Hub {
       `<div class="slot"><small>鍵</small><span${keys ? ` style="color:${RARITY_CSS[3]}"` : ' class="none"'}>${keys || "なし"}</span></div>` +
       HEALS.map(heal).join("") +
       // The pouch: the slots of valuables a wipe leaves the player.
-      `<div class="slot"><small>ポーチ</small><span>${pouchSlots(p.hideout)} 枠</span></div>`
+      `<div class="slot pouch"><small>${pouchIcon()}ポーチ</small><span class="boxes">${Array.from({ length: pouchSlots(p.hideout) }, () => `<i class="seg pouch" style="--n:1"></i>`).join("")}</span><b>${pouchSlots(p.hideout)}</b></div>`
     );
   }
 
@@ -866,10 +908,13 @@ export class Hub {
       const intro = open.filter((q) => q.intro);
       const craft = open.filter((q) => !q.intro);
       const taken = takenContract(p);
+      // A new day's papers slide onto the board the first time it is opened that day.
+      const fresh = boardKey(p) !== this.boardSeen;
+      this.boardSeen = boardKey(p);
       $("hub-side").innerHTML =
         (intro.length ? `<h3 class="hub-sub first">入門の依頼</h3>${intro.map((q) => this.quest(q)).join("")}` : "") +
         `<h3 class="hub-sub${intro.length ? "" : " first"}">今日の依頼<small>${p.day} 日目</small></h3>` +
-        p.board.contracts.map((c) => this.contractCard(c, taken)).join("") +
+        `<div class="board${fresh ? " fresh" : ""}">${p.board.contracts.map((c) => this.contractCard(c, taken)).join("")}</div>` +
         (craft.length ? `<h3 class="hub-sub">商人の依頼</h3>${craft.map((q) => this.quest(q)).join("")}` : "") +
         this.storyPanel();
     } else if (st === "map") {

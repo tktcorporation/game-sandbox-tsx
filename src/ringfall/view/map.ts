@@ -2,7 +2,7 @@ import { DEPOT, FACTION, FRONT, WORLD } from "../sim/config";
 import { frontNodes, nodeHolds, type NodeHold } from "../sim/front";
 import { battleMarks, meterOf, type Battle, type Side } from "../sim/battle";
 import { offshore } from "../sim/terrain";
-import { BOXES, CAMP, DEBRIS_SPOTS, NODES, nodeIndex, TIER, UNLOCKS, debrisIndex, DEPOTS, ENTRIES, EXTRACTS, LANDMARKS, OUTPOST_SITES, POIS, REGIONS, regionOf, ROUTES, regionHere, type EntryId, type NodeId, type PoiId, type RegionId, type RouteId } from "../sim/map";
+import { BOXES, CAMP, DEBRIS_SPOTS, NODES, nodeIndex, TIER, UNLOCKS, debrisIndex, DEPOTS, ENTRIES, EXTRA_BINS, EXTRACTS, LANDMARKS, OUTPOST_SITES, POIS, REGIONS, regionOf, ROUTES, regionHere, type EntryId, type NodeId, type PoiId, type RegionId, type RouteId } from "../sim/map";
 import type { IslandEvent, PoiHold } from "../sim/island";
 import { STREETS } from "../sim/streets";
 import { worldKey } from "../sim/routes";
@@ -40,6 +40,40 @@ const css = (c: number) => `#${c.toString(16).padStart(6, "0")}`;
  * the enemy's for good, has a mark of its own in the robots' armour.
  */
 export const HOLD_CSS: Record<PoiHold, string> = { held: "#c8402f", freed: "#3f86c8" };
+
+/**
+ * A flare as the HUD's icon draws it, centred on (x, y) and `r` tall from its middle: a red stick
+ * under a yellow flame, lit; a grey outline when the flare is gone (its bin searched).
+ */
+export function drawFlare(g: CanvasRenderingContext2D, x: number, y: number, r: number, lit: boolean) {
+  g.save();
+  g.lineWidth = Math.max(1, r * 0.18);
+  g.strokeStyle = lit ? "rgba(20,24,40,0.9)" : "#8a8f9c";
+  const stick = () => {
+    g.beginPath();
+    g.rect(x - r * 0.22, y - r * 0.05, r * 0.44, r * 1.05);
+  };
+  const flame = () => {
+    g.beginPath();
+    g.moveTo(x, y - r);
+    g.quadraticCurveTo(x + r * 0.62, y - r * 0.35, x, y - r * 0.05);
+    g.quadraticCurveTo(x - r * 0.62, y - r * 0.35, x, y - r);
+    g.closePath();
+  };
+  stick();
+  if (lit) {
+    g.fillStyle = "#e2563a";
+    g.fill();
+  }
+  g.stroke();
+  flame();
+  if (lit) {
+    g.fillStyle = "#ffd36a";
+    g.fill();
+  }
+  g.stroke();
+  g.restore();
+}
 
 /** A heater shield centred on (x, y), `r` from its middle to its point, filled in `fill`. */
 export function drawShield(g: CanvasRenderingContext2D, x: number, y: number, r: number, fill: string) {
@@ -184,6 +218,10 @@ export type MapScene = Pick<State, "seen" | "cleared" | "hold" | "depots" | "rou
   battle?: Battle | null;
   friends?: readonly Enemy[];
   enemies?: readonly Enemy[];
+  /** The raid's bins, for the flares still lying on the tall buildings' top floors; without them every flare bin is drawn as not yet searched. */
+  bins?: readonly { x: number; z: number; flare: boolean; open: boolean }[];
+  /** Ways in learned by the raid just ended (the results), ringed as they turn solid. */
+  learned?: readonly EntryId[];
   /** The nodes that changed hands overnight (the results): a ring in the colour they turned. */
   changed?: { gained: readonly NodeId[]; lost: readonly NodeId[] };
 };
@@ -665,6 +703,13 @@ export class IslandMap {
       g.beginPath();
       g.arc(p.x, p.y, 3.5 * dpr, 0, Math.PI * 2);
       g.stroke();
+      // A way in the raid just learned: a wide second ring round it, as it turns solid.
+      if (known && s.learned?.includes(e.id)) {
+        g.lineWidth = 2 * dpr;
+        g.beginPath();
+        g.arc(p.x, p.y, 9 * dpr, 0, Math.PI * 2);
+        g.stroke();
+      }
       g.restore();
       const text = e.name;
       const r = box(text, p.x, p.y + 11 * dpr, 9);
@@ -692,7 +737,15 @@ export class IslandMap {
       g.fill();
       g.stroke();
       label(x.short, exitAt[i].x, exitAt[i].y, css(PAL.hot), 10);
+      // The plateau's pickup wants a flare: the flare's mark rides on its diamond's shoulder.
+      if (x.needsFlare) drawFlare(g, p.x + r * 1.15, p.y - r * 0.9, 5.5 * dpr, true);
     });
+    // Where the flares lie: the same mark on the tall buildings' top floors, grey once searched.
+    const flares = s.bins ? s.bins.filter((b) => b.flare) : EXTRA_BINS.filter((b) => b.flare).map((b) => ({ ...b, open: false }));
+    for (const b of flares) {
+      const p = at(b.x, b.z);
+      drawFlare(g, p.x, p.y, 4.5 * dpr, !b.open);
+    }
     // The routes a tool opens: open ones a solid line, closed ones dashed with a cross at each obstacle.
     for (const r of ROUTES) {
       const open = s.routes.includes(r.id);

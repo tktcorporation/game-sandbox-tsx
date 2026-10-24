@@ -1384,3 +1384,17 @@ export function buildBeacon(): THREE.Mesh {
   m.frustumCulled = false;
   return m;
 }
+
+/**
+ * The thread of flare smoke over a bin that holds a flare (the top floors of the tall buildings):
+ * a thin column in the flare's red-orange, widening as it rises, seen from across the region so a
+ * roof with a flare on it can be picked out from the ground. The fog does not hide it.
+ */
+export function buildFlareSmoke(): THREE.Mesh {
+  const m = new THREE.Mesh(
+    new THREE.CylinderGeometry(1.1, 0.25, 70, 8, 1, true),
+    new THREE.MeshBasicMaterial({ toneMapped: false, color: PAL.ring, transparent: true, opacity: 0.3, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }),
+  );
+  m.frustumCulled = false;
+  return m;
+}

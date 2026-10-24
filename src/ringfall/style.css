@@ -14,6 +14,8 @@
   --hp-heal: #e0475a;
   --r2: #b65cff;
   --r3: #ffc93a;
+  /* The pouch's slots, on every screen: what sits in them comes home even from a wipe (view/icons.ts POUCH). */
+  --pouch: #e8b07a;
   --num: "Saira Condensed", "M PLUS 1p", system-ui, sans-serif;
   --jp: "M PLUS 1p", system-ui, sans-serif;
 }
@@ -3302,4 +3304,293 @@ body.touch #obj-raid .short {
 }
 #camp-prompt .warn .ico {
   vertical-align: -2px;
+}
+
+/* --- rules shown by shape and colour (docs/ringfall/island-v2.md, 見せ方) */
+
+/* The HUD's bag as its slots: the pouch's slots outlined in its colour, what it would keep filled in it. */
+#obj-bag .bag-cells {
+  display: inline-flex;
+  gap: 2px;
+  margin-right: 6px;
+  vertical-align: -1px;
+}
+#obj-bag .bag-cells i {
+  width: 7px;
+  height: 11px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+}
+#obj-bag .bag-cells i.p {
+  box-shadow: inset 0 0 0 1.5px var(--pouch);
+}
+#obj-bag .bag-cells i[style] {
+  background: var(--c);
+}
+#obj-bag .bag-cells i.k {
+  background: var(--pouch);
+}
+
+/* Slot boxes: a box a point (a carry-in allowance) or a slot (the pouch); an item fills as many as it takes. */
+.boxes {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+.boxes .seg {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(var(--n) * 22px - 3px);
+  height: 22px;
+  border: 2px solid rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.12) repeating-linear-gradient(90deg, transparent 0 17px, rgba(255, 255, 255, 0.45) 17px 19px, transparent 19px 22px);
+  background-origin: border-box;
+}
+.boxes .seg.empty {
+  border-color: rgba(255, 255, 255, 0.32);
+  background: transparent;
+}
+.boxes .seg.over {
+  border-color: var(--ring);
+  background-color: rgba(255, 90, 42, 0.3);
+}
+.boxes .seg.pouch {
+  border: 2px dashed var(--pouch);
+  background: rgba(232, 176, 122, 0.16);
+}
+.boxes .seg .ico {
+  width: 15px;
+  height: 15px;
+}
+/* What costs no box goes beside the boxes, loose. */
+.carry {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+}
+.carry .free {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding-left: 12px;
+  border-left: 2px solid rgba(255, 255, 255, 0.25);
+  font-family: var(--num);
+  font-size: 16px;
+}
+.carry .free span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.hub-list .slot.depot .carry {
+  flex-basis: 100%;
+  padding: 4px 0 2px calc(7em + 12px);
+}
+.hub-list .slot.pouch small .ico,
+.depart-carry small .ico {
+  margin-right: 4px;
+  vertical-align: -2px;
+}
+.hub-list .slot.pouch > b {
+  font-family: var(--num);
+  font-size: 18px;
+  color: var(--pouch);
+}
+.depart-carry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  font-size: 14px;
+  font-weight: 800;
+}
+.depart-carry > small {
+  color: var(--muted);
+}
+.depart-carry > b {
+  font-family: var(--num);
+  font-size: 20px;
+}
+.depart-carry.over > b {
+  color: var(--ring);
+}
+.depart-carry .carry {
+  flex-basis: 100%;
+}
+#depart-carry:empty {
+  display: none;
+}
+
+/* A wipe's results: what the pouch kept, in the pouch's colour and stitched, beside what was lost. */
+#haul-line .pouch-kept,
+#home .pouch-kept {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  color: var(--pouch);
+  border: 2px dashed var(--pouch);
+  background: rgba(232, 176, 122, 0.12);
+}
+
+/* The day's contracts are papers pinned to the board: one a raid, so once one is taken the rest pale. */
+.hub-list .board {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.hub-list .quest.contract {
+  position: relative;
+  transition: opacity 0.25s, filter 0.25s;
+}
+.hub-list .quest.contract.dim {
+  opacity: 0.42;
+  filter: saturate(0.3);
+}
+.hub-list .quest.contract.dim:hover {
+  opacity: 0.7;
+}
+.hub-list .quest.contract .pin {
+  position: absolute;
+  top: -4px;
+  left: 50%;
+  width: 9px;
+  height: 9px;
+  margin-left: -4.5px;
+  border-radius: 50%;
+  background: #9aa0ad;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.35);
+}
+.hub-list .quest.contract.taken .pin {
+  background: var(--r3);
+}
+/* A new day's papers: each slides down onto the board under a fresh red pin, one after another. */
+.hub-list .board.fresh .quest.contract {
+  animation: paper-in 0.55s cubic-bezier(0.2, 0.8, 0.3, 1.15) both;
+}
+.hub-list .board.fresh .quest.contract:nth-child(2) {
+  animation-delay: 0.12s;
+}
+.hub-list .board.fresh .quest.contract:nth-child(3) {
+  animation-delay: 0.24s;
+}
+.hub-list .board.fresh .quest.contract:nth-child(4) {
+  animation-delay: 0.36s;
+}
+.hub-list .board.fresh .quest.contract .pin {
+  background: #e2463a;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.7), 0 2px 0 rgba(0, 0, 0, 0.35);
+}
+@keyframes paper-in {
+  from {
+    opacity: 0;
+    transform: translateY(-26px) rotate(-1.5deg);
+  }
+}
+
+/* A supply bin with what its search can turn up in its mouth: a mod part's hexagon, inside once its kind is known. */
+.bin-pic {
+  position: relative;
+  display: inline-block;
+  width: 40px;
+  height: 34px;
+  flex: none;
+}
+.bin-pic .bin-box {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 40px;
+  height: 22px;
+}
+.bin-pic .bin-in {
+  position: absolute;
+  left: 50%;
+  top: 6px;
+  margin-left: -9px;
+  line-height: 0;
+}
+.bin-pic .bin-in .ico {
+  width: 18px;
+  height: 18px;
+}
+.bin-pic.out .bin-in {
+  top: -6px;
+  animation: hover-over 1.4s ease-in-out infinite alternate;
+}
+.bin-pic.drop .bin-in {
+  animation: drop-in 0.6s cubic-bezier(0.5, 0, 0.75, 0) both;
+}
+@keyframes hover-over {
+  to {
+    transform: translateY(-3px);
+  }
+}
+@keyframes drop-in {
+  from {
+    transform: translateY(-14px);
+  }
+}
+.hub-list .strength p.bins {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  margin-top: 2px;
+}
+.hub-list .strength p.bins b {
+  font-family: var(--num);
+  font-size: 16px;
+  color: var(--white);
+}
+#home .analyse button.mod {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 10px;
+  align-items: center;
+}
+#home .analyse button.mod .bin-pic {
+  grid-row: 1 / 3;
+}
+
+/* A way in learned on the raid just ended: its dashed ring turns solid. */
+#home .learned {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+#home .learned .turn {
+  position: relative;
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+}
+#home .learned .turn .ico {
+  position: absolute;
+  inset: 0;
+  width: 16px;
+  height: 16px;
+}
+#home .learned .turn .ico:first-child {
+  animation: ring-out 0.5s 0.9s both;
+}
+#home .learned .turn .ico:last-child {
+  animation: ring-in 0.7s 0.9s both;
+}
+@keyframes ring-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes ring-in {
+  0% {
+    opacity: 0;
+    transform: scale(1.8);
+  }
+  60% {
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+  }
 }

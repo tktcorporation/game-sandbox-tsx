@@ -9,6 +9,7 @@ import { frontNodes, garrisonOf, useCore } from "./sim/front";
 import { battleMarks, departNow, landNow, marchSquad, nodePoint, placeBattleSquad } from "./sim/battle";
 import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
 import { analyse, raidThreat, settle, takenStory, type Settlement } from "./meta/profile";
+import { pouchSlots } from "./meta/hideout";
 import { MOD, MODS, type ModKind } from "./sim/config";
 import { departDepots, holds, islandHolds } from "./meta/island";
 import { nodeRow } from "./view/row";
@@ -444,6 +445,8 @@ function askDepart(walk: boolean) {
   const esc = (t: string) => t.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
   $("depart-title").textContent = walk ? "門から出撃する" : "車両で出撃する";
   $("depart-list").innerHTML = d.rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("");
+  // A depot start's allowance as its boxes: what fills them, and what goes free beside them.
+  $("depart-carry").innerHTML = hub.departBoxes(walk);
   const w = $("depart-warn");
   w.hidden = !d.warn.length;
   w.textContent = d.warn.join("・");
@@ -556,6 +559,7 @@ function start(go: Launch, from?: State) {
   $("pause").hidden = true;
   hud.show(true);
   hud.setKnown(hub.profile.entries);
+  hud.setPouch(pouchSlots(hub.profile.hideout));
   const depot = go.from && departDepots(hub.profile).includes(go.from) ? go.from : null;
   hud.banner(depot ? `${POIS[poiIndex(depot)].name}の中継ボックス` : entryOf(go.entry).name);
   lock();
