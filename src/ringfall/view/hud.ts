@@ -28,6 +28,7 @@ import { binPicture, modIcon, pouchIcon, routeIcon, zipIcon } from "./icons";
 import { zipPoint } from "../sim/zips";
 import { bagIcon, callIcon, checkIcon, clockIcon, coreIcon, crossIcon, depotIcon, entryIcon, exitIcon, eyeIcon, fightIcon, flareIcon, keyIcon, lockIcon, noiseIcon, reinforceIcon, reviveIcon, SIDE, upIcon, nightIcon } from "./icons";
 import { capturable } from "../sim/front";
+import { BagView } from "./bag";
 
 /*
  * The DOM layer: everything the player reads. The screen always answers two
@@ -95,6 +96,8 @@ export class Hud {
   private spotted = new Map<number, number>(); // robot id -> seconds left to show "!"
 
   private map = new IslandMap($<HTMLCanvasElement>("map-canvas"));
+  /** The bag peek and the pickups' cards (view/bag.ts). */
+  readonly bag = new BagView();
   private mapOpen = false;
   /** The ways in the profile knew when the raid began: one walked to that is not among them is news. */
   private known: EntryId[] = [];
@@ -136,6 +139,7 @@ export class Hud {
 
   show(on: boolean) {
     this.root.hidden = !on;
+    if (!on) this.bag.reset();
   }
 
   /** The contract taken for this raid (null for none) and the story record lying on the island (null for none). */
@@ -298,7 +302,8 @@ export class Hud {
         this.toast(`${keyIcon()}${POIS[e.poi].name}`, 0);
         break;
       case "pickup":
-        if (e.kind !== "shard") this.toast(`${e.label}${e.kind === "weapon" ? `（${RARITY.names[e.rarity]}）` : e.kind === "armor" ? `（${RARITY.names[e.rarity]}）` : ""}`, e.rarity);
+        // What enters the bag (and keys and mod parts) gets a card of its own (view/bag.ts).
+        if (e.kind !== "shard" && !["valuable", "tool", "record", "key", "mod"].includes(e.kind)) this.toast(`${e.label}${e.kind === "weapon" ? `（${RARITY.names[e.rarity]}）` : e.kind === "armor" ? `（${RARITY.names[e.rarity]}）` : ""}`, e.rarity);
         break;
       case "poiStart":
         {
@@ -487,6 +492,7 @@ export class Hud {
     const oe = $("obj-event");
     oe.hidden = !s.event;
     if (s.event) setHtml(oe, raidEventLine(s));
+    this.bag.frame(s, dt, this.bagCells(p));
     setHtml($("obj-bag"), `バッグ ${this.bagCells(p)}${bagLoad(p)}/${BAG.slots}<span class="worth">・回収 ${haulValue(s)}</span>`);
     // The raid's deadline is the battle's end (past it the raid ends as a wipe), as a clock; the next
     // reinforcements as their mark and seconds; a raid above 強度 0 says so first.

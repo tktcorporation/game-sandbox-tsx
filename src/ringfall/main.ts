@@ -142,12 +142,21 @@ setupTouch({
   map: () => {
     if (running) hud.toggleMap();
   },
+  peek: (on) => peekBag(on),
 });
 // The pause button sits on the open map on a phone (see .map-buttons).
 $("map-pause").addEventListener("click", () => {
   hud.toggleMap(false);
   setPaused(true);
 });
+
+/** The bag shown while Tab (or the bag button) is held: the game runs on under it. */
+function peekBag(on: boolean) {
+  on &&= running;
+  if (on === hud.bag.peeking) return;
+  hud.bag.peek(on);
+  if (on) sfx.bagPeek();
+}
 
 addEventListener("keydown", (e) => {
   if (e.repeat) return;
@@ -171,11 +180,15 @@ addEventListener("keydown", (e) => {
   // The map opens over the game straight from the key, whoever is at the controls.
   if (e.code === "KeyM" && running) hud.toggleMap();
   if (e.code === "KeyN" && running) hud.toggleMapView();
+  if (e.code === "Tab") peekBag(true);
   keys.add(e.code);
   edges.add(e.code);
   if (["Space", "KeyC", "ControlLeft", "Tab"].includes(e.code)) e.preventDefault();
 });
-addEventListener("keyup", (e) => keys.delete(e.code));
+addEventListener("keyup", (e) => {
+  keys.delete(e.code);
+  if (e.code === "Tab") peekBag(false);
+});
 /**
  * Pointer lock was refused or is missing (a sandboxed frame, an old browser): the
  * view then follows plain mouse movement over the page instead of locking the cursor.
@@ -200,6 +213,7 @@ addEventListener("contextmenu", (e) => e.preventDefault());
 addEventListener("blur", () => {
   keys.clear();
   fire = ads = adsLatch = false;
+  peekBag(false);
 });
 
 function readInput(): Input {
@@ -563,6 +577,7 @@ function start(go: Launch, from?: State) {
   hud.show(true);
   hud.setKnown(hub.profile.entries);
   hud.setPouch(pouchSlots(hub.profile.hideout));
+  hud.bag.setProfile(hub.profile);
   const depot = go.from && departDepots(hub.profile).includes(go.from) ? go.from : null;
   hud.banner(depot ? `${POIS[poiIndex(depot)].name}の中継ボックス` : entryOf(go.entry).name);
   lock();

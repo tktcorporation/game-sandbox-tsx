@@ -320,6 +320,14 @@ export const sfx = {
       if (rarity === 3) notes.forEach((f, i) => tone(f * 2, 0.3, { type: "sine", vol: 0.03, at: 0.2 + i * 0.04 }));
     });
   },
+  /** The bag looked into: a soft rustle of canvas and a low buckle tick. */
+  bagPeek() {
+    ui(0.15, () => {
+      hiss(0.14, { freq: 1500, to: 700, q: 0.8, vol: 0.07 });
+      hiss(0.1, { freq: 2600, to: 1600, q: 1.2, vol: 0.04, at: 0.06 });
+      tone(420, 0.05, { type: "triangle", vol: 0.06, at: 0.02 });
+    });
+  },
   shard() {
     ui(0.1, () => tone(vary(2000, 0.08), 0.06, { type: "sine", vol: 0.25 }));
   },

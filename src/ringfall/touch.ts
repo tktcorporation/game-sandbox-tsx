@@ -17,6 +17,8 @@ export interface TouchSink {
   toggleAds(): void;
   /** Open or close the island map. */
   map(): void;
+  /** Show the bag while held. */
+  peek(on: boolean): void;
 }
 
 const STICK_RADIUS = 56;
@@ -115,6 +117,9 @@ export function setupTouch(sink: TouchSink) {
         case "map":
           sink.map();
           break;
+        case "bag":
+          sink.peek(true);
+          break;
         default:
           sink.press(act);
       }
@@ -122,6 +127,7 @@ export function setupTouch(sink: TouchSink) {
     const release = () => {
       btn.classList.remove("down");
       if (act === "crouch") sink.hold("KeyC", false);
+      if (act === "bag") sink.peek(false);
     };
     btn.addEventListener("pointerup", release);
     btn.addEventListener("pointercancel", release);

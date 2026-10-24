@@ -105,6 +105,7 @@ export const CUES: Cue[] = [
   { id: "down", label: "ダウン", group: "自分", run: () => sfx.down() },
   { id: "revive", label: "蘇生", group: "自分", run: () => sfx.revive() },
   ...([0, 1, 2, 3] as Rarity[]).map((r) => ({ id: `pickup-${r}`, label: `拾う（${["白", "青", "紫", "金"][r]}）`, group: "拾う", run: () => sfx.pickup(r) })),
+  { id: "bag-peek", label: "バッグを見る", group: "拾う", run: () => sfx.bagPeek() },
   { id: "shard", label: "シールドの欠片", group: "拾う", run: () => sfx.shard() },
   { id: "search", label: "補給箱を調べる", group: "拾う", run: () => sfx.search() },
   { id: "bin", label: "補給箱が開く", group: "拾う", run: () => sfx.bin() },

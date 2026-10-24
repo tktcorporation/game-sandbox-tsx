@@ -127,3 +127,15 @@ export const startIcon = (c: string = SIDE.own) =>
 /** A zipline: a cable sloping between two masts, a pulley on it, in the player's blue. */
 export const zipIcon = (c: string = SIDE.own) =>
   svg(`<path d="M2 2 V15 M14 5 V15" stroke="${c}" stroke-width="1.8" stroke-linecap="round"/><path d="M2 3 L14 6" stroke="${c}" stroke-width="1.4"/><circle cx="8" cy="4.6" r="1.7" fill="${c}"/><path d="M8 6.3 V10" stroke="${c}" stroke-width="1.4" stroke-linecap="round"/>`, "zip");
+
+/** The hideout: a small house with a pitched roof. Beside a module's name, a valuable that module's levels still take. */
+export const hideoutIcon = (c = "currentColor") =>
+  svg(`<path d="M1.5 8 L8 2 L14.5 8" stroke="${c}" stroke-width="1.8" fill="none" stroke-linejoin="round" stroke-linecap="round"/><path d="M3.5 7.5 V14.5 H12.5 V7.5" fill="${c}"/><rect x="6.6" y="10" width="2.8" height="4.5" fill="rgba(20,24,40,0.85)"/>`, "hideout");
+
+/** The camp's factory: a sawtooth roof in the player's blue. Beside a level, a valuable that level still takes. */
+export const factoryIcon = (c: string = SIDE.own) =>
+  svg(`<path d="M1.5 15 V7 L5.5 4 V7 L9.5 4 V7 L13.5 4 V15 Z" fill="${c}"/><rect x="11" y="1.5" width="2" height="4" fill="${c}"/><rect x="4" y="10" width="2.2" height="2.2" fill="rgba(20,24,40,0.8)"/><rect x="8.5" y="10" width="2.2" height="2.2" fill="rgba(20,24,40,0.8)"/>`, "factory");
+
+/** A paper from the quest board: a quest or the contract taken that asks for the thing beside it. */
+export const paperIcon = (c = "#efe6cf") =>
+  svg(`<path d="M3 1.5 H10.5 L13 4 V14.5 H3 Z" fill="${c}"/><path d="M10.5 1.5 V4 H13" fill="rgba(20,24,40,0.35)"/><path d="M5 7 H11 M5 9.5 H11 M5 12 H9" stroke="rgba(20,24,40,0.7)" stroke-width="1.1"/>`, "paper");
