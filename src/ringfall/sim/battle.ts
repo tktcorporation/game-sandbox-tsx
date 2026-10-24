@@ -192,7 +192,7 @@ const walks = new Map<string, Path>();
  * The walks traced: the links as places in `NODES` (the camp -1), each landing to the nodes next
  * to it, and each node's depot to the node and to its neighbours.
  */
-const LINKS: [number, number][] = [
+const links = (): [number, number][] => [
   ...FRONT_LINKS.map(([a, b]): [number, number] => [a === "camp" ? -1 : nodeIndex(a), nodeIndex(b)]),
   ...[PAD, SHORE].flatMap((l) => LAND_NEXT[l].map((i): [number, number] => [l, i])),
   ...NODES.flatMap((_, k) => [k, ...NEIGHBOURS[k]].map((i): [number, number] => [DEPOT + k, i])),
@@ -203,7 +203,7 @@ const LINKS: [number, number][] = [
  * does this as the raid starts and forgets them after, so a raid plays the same in any process.
  */
 function traceLinks() {
-  for (const [a, b] of LINKS) {
+  for (const [a, b] of links()) {
     const key = `${worldKey()}|${a}|${b}`;
     if (walks.has(key)) continue;
     const from = nodePoint(a);

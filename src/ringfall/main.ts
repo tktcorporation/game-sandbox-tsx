@@ -4,8 +4,8 @@ import { Bot, SKILLS } from "./sim/bot";
 import { collide, groundAt } from "./sim/geom";
 import { terrainHeight } from "./sim/terrain";
 import { callLeft, freeKit, idleInput, newRun, type GameEvent, type Input, type Kit, type State } from "./sim/state";
-import { CAMP, entryOf, FRAMES, NODES, POIS, poiIndex, type CampSpot, type RegionId, type StationId } from "./sim/map";
-import { frontNodes, garrisonOf, useCore } from "./sim/front";
+import { CAMP, DEPOTS, entryOf, FRAMES, NODES, POIS, poiIndex, type CampSpot, type RegionId, type StationId } from "./sim/map";
+import { frontNodes, garrisonOf, takeNode, useCore } from "./sim/front";
 import { atRisk, battleMarks, departNow, landNow, marchSquad, nodePoint, placeBattleSquad } from "./sim/battle";
 import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
 import { analyse, raidThreat, settle, takenStory, type Settlement } from "./meta/profile";
@@ -696,6 +696,7 @@ declare global {
       point: (i: number) => { x: number; z: number };
       core: (i: number) => void;
       clear: (i: number) => void;
+      take: (i: number, soon?: boolean) => void;
     };
     ringfallContract: {
       take: (type: string) => string | null;
@@ -748,6 +749,7 @@ window.render_game_to_text = () => {
     haul: { items: s.player.haul, tools: s.player.tools, value: haulValue(s), bag: bagLoad(s.player) },
     routes: s.routes,
     depots: s.depots,
+    depotSpots: DEPOTS.map((d) => ({ poi: d.poi, x: d.x, z: d.z, yaw: d.yaw })),
     sent: { items: s.sent, value: s.sent.reduce((n, k) => n + VALUABLES[k].value, 0) },
     leaving: s.leaving && +s.leaving.t.toFixed(1),
     leftAt: s.leftAt,
@@ -947,6 +949,11 @@ window.ringfallWar = {
   core: (i: number) => useCore(state, i),
   clear: (i: number) => {
     state.enemies = state.enemies.filter((e) => e.battle !== undefined || !garrisonOf(state, i, e.squad));
+  },
+  // The player takes node `i` now; with `soon`, the enemy's counter-attack on it sets off at once.
+  take: (i: number, soon = false) => {
+    takeNode(state, i);
+    if (soon && state.battle) for (const c of state.battle.counters) c.at = Math.min(c.at, state.battle.now);
   },
 };
 

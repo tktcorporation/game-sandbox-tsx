@@ -40,8 +40,8 @@ import { forward } from "../src/ringfall/sim/state";
 import { build, buildFactory, buildState, buy, canBuild, deliver, depotAllowance, depotBudget, emptyLoadout, fitsStart, healRoom, itemCost, FIRST_ENTRY, loadoutCost, newProfile, parseProfile, pouch, price, sell, sellPrice, settle, takeKit, wares, type Item, type Profile } from "../src/ringfall/meta/profile";
 import { emptyHideout, hideoutDone, maxLevel, MODULES, poisWith, sources, stashCap } from "../src/ringfall/meta/hideout";
 import { boostFor, boosted } from "../src/ringfall/sim/state";
-import { CONQUEST, FACTORY, HIDEOUT, TOOL_KINDS, TOOLS, VAULT } from "../src/ringfall/sim/config";
-import { frontIncome, islandHolds, advanceDay, holds, newIsland, playerNodes, type RaidDay } from "../src/ringfall/meta/island";
+import { CONQUEST, COUNTER, FACTORY, HIDEOUT, TOOL_KINDS, TOOLS, VAULT } from "../src/ringfall/sim/config";
+import { frontIncome, islandHolds, advanceDay, holds, newIsland, nightRaids, playerNodes, type RaidDay } from "../src/ringfall/meta/island";
 import { activePacks } from "../src/ringfall/sim/island";
 import { garrison, isVaultGuard } from "../src/ringfall/sim/island";
 import { QUESTS, offered, raidCredit } from "../src/ringfall/meta/quests";
@@ -1961,11 +1961,13 @@ function checkIsland(): string | null {
   if (q.poiState.supply.state !== "freed" || q.day !== p.day + 6) return `island scenario: six days unvisited left the supply depot ${q.poiState.supply.state} on day ${q.day}`;
   // With a battle, the nodes are as it ended: the enemy took the supply depot back, the player's squads took the quarry.
   const fought = raid(70, { alive: true }, p.poiState);
-  fought.battle = { end: 0, now: 0, t: 0, squads: [], nextId: 1, made: [0, 0, 0], meter: NODES.map(() => null), factory: 0, start: [...fought.nodes], taken: [], done: true };
+  fought.battle = { end: 0, now: 0, t: 0, squads: [], nextId: 1, made: [0, 0, 0], meter: NODES.map(() => null), factory: 0, rarity: 1, start: [...fought.nodes], taken: [], done: true, landings: [], departs: [], threat: NODES.map(() => false), rally: -1, counters: [], left: null };
   fought.nodes[nodeIndex("supply")] = "held";
   fought.nodes[nodeIndex("quarry")] = "freed";
   const night = settle(p, fought);
-  if (night.profile.poiState.supply.state !== "held" || night.profile.poiState.quarry.state !== "freed" || night.front.lost.join() !== "supply" || night.front.gained.join() !== "quarry") return `island scenario: a battle that ended with the supply depot the enemy's and the quarry the player's left ${JSON.stringify({ front: night.front, supply: night.profile.poiState.supply, quarry: night.profile.poiState.quarry })}`;
+  // The battle's end, before the night's attacks (which may take the quarry back, `nightRaids()`).
+  const fell = night.night.lost;
+  if (night.profile.poiState.supply.state !== "held" || night.profile.poiState.quarry.state !== (fell.includes("quarry") ? "held" : "freed") || night.raid.lost.join() !== "supply" || night.raid.gained.join() !== "quarry" || night.after.gained.length || night.after.lost.length) return `island scenario: a battle that ended with the supply depot the enemy's and the quarry the player's left ${JSON.stringify({ front: night.front, supply: night.profile.poiState.supply, quarry: night.profile.poiState.quarry })}`;
   // The enemy's strength follows the nodes it holds.
   if (newRun(77).strength !== STRENGTH.play || STRENGTH.byHeld[NODES.length] !== STRENGTH.play) return `island scenario: a raid with every node the enemy's plays at strength ${newRun(77).strength}, not ${STRENGTH.play}`;
   for (let k = 1; k < STRENGTH.byHeld.length; k++) if (STRENGTH.byHeld[k] < STRENGTH.byHeld[k - 1]) return "island scenario: the enemy's strength falls as it holds more nodes";
@@ -1982,7 +1984,7 @@ function checkIsland(): string | null {
   const full = (i: number) => posted(i, POIS[i].squads);
   if (count(m, QUARRY) !== 0 || !m.cleared[QUARRY] || !m.depots[depotIndex("quarry")]) return `island scenario: a freed quarry stands ${count(m, QUARRY)} robots, cleared ${m.cleared[QUARRY]}, depot ${m.depots[depotIndex("quarry")]}`;
   if (count(m, PADD) !== full(PADD) || m.hold[PADD] !== "held") return "island scenario: the titan's pad was freed";
-  for (const i of [SUPPLY, poiIndex("relay"), poiIndex("wreck"), poiIndex("yard"), poiIndex("smelter")]) if (count(m, i) !== full(i)) return `island scenario: a held ${POIS[i].id} stands ${count(m, i)} robots, not ${full(i)}`;
+  for (const i of POIS.map((_, k) => k).filter((k) => k !== QUARRY && k !== PADD)) if (count(m, i) !== full(i)) return `island scenario: a held ${POIS[i].id} stands ${count(m, i)} robots, not ${full(i)}`;
   // A freed POI is not cleared again in the raid, and its vault opens without the key.
   m.reinforceT = m.raiderT = 1e9;
   ticks(m, 1);
@@ -2022,7 +2024,7 @@ function checkStrength(): string | null {
     if (l.reinforce.first > was.reinforce.first || l.reinforce.every > was.reinforce.every || l.raiders > was.raiders || REGIONS.some((r) => l.parties[r.id] < was.parties[r.id] || l.packs[r.id] < was.packs[r.id])) return `strength scenario: level ${n} is easier than level ${n - 1}`;
   }
   // The island with the player holding the first `k` nodes of the row out from the camp.
-  const ROW_OUT: NodeId[] = ["supply", "quarry", "relay", "yard", "smelter", "wreck"];
+  const ROW_OUT: NodeId[] = ["supply", "quarry", "relay", "station", "waterworks", "lodge", "yard", "smelter", "cannery", "coldstore", "wreck"];
   const island = (k: number) => holds({ poiState: { ...newIsland(), ...Object.fromEntries(ROW_OUT.slice(0, k).map((id) => [id, { state: "freed" as const }])) } });
   for (let k = 0; k <= NODES.length; k++) {
     const n = strengthFor(NODES.length - k);
@@ -3944,7 +3946,7 @@ function checkFront(): string | null {
   }
   const lost = NODES.filter((n) => !seen.has(n.id));
   if (lost.length) return `front: ${lost.map((n) => n.id).join()} not linked to the camp`;
-  if (NODES.length !== POIS.length - 1 || NODES.some((n) => (n.id as string) === "pad") || FRONT_LINKS.length !== 7 || NODES.some((n) => TIER[n.id] === undefined)) return "front: the nodes are not the six freeable POIs on seven links";
+  if (NODES.length !== POIS.length - 1 || NODES.some((n) => (n.id as string) === "pad") || FRONT_LINKS.length !== 15 || NODES.length !== 11 || NODES.some((n) => TIER[n.id] === undefined)) return "front: the nodes are not the eleven freeable POIs on fifteen links";
   for (const n of NODES) {
     const c = n.core;
     // The core's own cell is closed to the walkers' grid; the ground round it is the main ground.
@@ -4029,7 +4031,7 @@ function checkFront(): string | null {
   if (dead.freed.join() !== "supply" || dead.profile.poiState.supply.state !== "freed" || dead.income !== FRONT.income) return `front: a wiped capture left ${dead.profile.poiState.supply.state}`;
   const three: Profile = { ...fresh, poiState: { ...fresh.poiState, ...Object.fromEntries((["supply", "quarry", "relay"] as const).map((id) => [id, { state: "freed" as const }])) } };
   if (frontIncome(three) !== 3 * FRONT.income) return `front: the income of three nodes is ${frontIncome(three)}`;
-  if (frontIds(holdsOf(three)) !== "yard,smelter".split(",").sort((a, b) => nodeIndex(a) - nodeIndex(b)).join()) return `front: with the reservoir's three nodes the front is ${frontIds(holdsOf(three))}`;
+  if (frontIds(holdsOf(three)) !== "smelter,station,waterworks,lodge".split(",").sort((a, b) => nodeIndex(a) - nodeIndex(b)).join()) return `front: with the reservoir's three nodes the front is ${frontIds(holdsOf(three))}`;
   // An outpost is no node: its guards stand and it takes no core.
   const r = newRun(9, freeKit(), "reservoir", { island: holds(three) });
   for (const o of OUTPOST_SITES) if (nodeIndex(o.id) >= 0 || (ROAMERS.some((sq) => sq.name === o.guard) && !r.squads.some((q) => q.name === o.guard))) return `front: the outpost ${o.id} is a node or stands no guards`;
@@ -4051,6 +4053,81 @@ function checkFront(): string | null {
   }
   const pushed = ps.squads.filter((q) => q.name.endsWith("からの増援"));
   if (!pushed.length || pushed.length > FRONT.pushMax[ps.strength] || !pushed.every((q) => q.routed)) return `front: the push sent ${pushed.map((q) => q.name).join()}`;
+  return null;
+}
+
+/**
+ * The push and pull (docs/ringfall/island-v2.md, 押し合い): the nodes built on the open ground are
+ * walked to from the camp; a node the player takes in the battle draws the enemy's counter-attack,
+ * landed and bound for it, which takes it back when nobody holds it; and the night's attacks are
+ * a function of the seed, the day and the island alone, falling more on bare nodes than guarded ones.
+ */
+function checkPushPull(): string | null {
+  const NEW: NodeId[] = ["station", "waterworks", "lodge", "cannery", "coldstore"];
+  // Every new node's ground, from the camp's gate on foot.
+  const camp = { x: CAMP.wake.x, z: CAMP.wake.z };
+  for (const id of NEW) {
+    const n = NODES[nodeIndex(id)];
+    if (!n || TIER[id] < 1 || TIER[id] > 2) return `push-pull: ${id} is no node of tier 1 or 2`;
+    const f = fieldTo(n.core.x + 3, n.core.z);
+    if (!f || !Number.isFinite(routeLength(f, camp.x, camp.z))) return `push-pull: no walk from the camp to ${id}`;
+    const p = POIS[poiIndex(id)];
+    if (p.squads.length !== 2 || !p.bins.some((b) => b.vault) || depotIndex(id) < 0) return `push-pull: ${id} has ${p.squads.length} squads, a vault ${p.bins.some((b) => b.vault)}, a depot ${depotIndex(id) >= 0}`;
+  }
+  // The graph has a loop in each region: two ways from the supply depot to the quarry, and from the yard to the wreck.
+  const ways = (a: NodeId, b: NodeId) => FRONT_LINKS.filter(([x, y]) => x === a || y === a).map(([x, y]) => (x === a ? y : x)).filter((k) => k !== b && FRONT_LINKS.some(([x, y]) => (x === k && y === b) || (y === k && x === b))).length;
+  if (ways("supply", "quarry") < 1 || ways("yard", "wreck") < 1 || ways("smelter", "wreck") < 1) return "push-pull: the front has no loops";
+  // A capture in the battle draws a counter-attack, landed and bound for the node.
+  const p = newProfile(8);
+  const SUP = nodeIndex("supply");
+  const r = newRun(21, freeKit(), "reservoir", { island: holds(p), battle: { factory: 0 } });
+  r.reinforceT = r.raiderT = 1e9;
+  r.parties = [];
+  r.crewsDue = [];
+  r.enemies = r.enemies.filter((e) => dist2d(e.pos, NODES[SUP].core) > 150);
+  r.player.pos = { x: NODES[SUP].core.x + 1.4, y: NODES[SUP].core.y, z: NODES[SUP].core.z };
+  useCore(r, SUP);
+  r.capture!.waves = FRONT.pushWaves[r.strength];
+  r.capture!.t = FRONT.capture;
+  ticks(r, 0.1);
+  if (r.nodes[SUP] !== "freed") return "push-pull: the supply depot was not taken";
+  if (!r.battle!.counters.some((c) => c.node === SUP)) return "push-pull: taking the supply depot set no counter-attack";
+  // The player walks off far away (to the camp's beach), so the counter-attack comes in numbers.
+  r.player.pos = { x: 20, y: terrainHeight(20, 600), z: 600 };
+  r.ally.pos = { ...r.player.pos };
+  let landed = false;
+  for (let k = 0; k < (COUNTER.delay + 4) / TICK && !landed; k++) {
+    step(r, idleInput(), false);
+    landed = r.events.some((e) => e.t === "counter" && e.node === SUP);
+  }
+  const q = r.battle!.squads.find((x) => x.counter);
+  if (!landed || !q || (q.via.length ? q.via[q.via.length - 1] : q.to) !== SUP) return `push-pull: no counter-attack landed for the supply depot (${JSON.stringify(q && { to: q.to, via: q.via })})`;
+  // Left bare, the node falls back; `finishBattle()` carries it on after the player leaves.
+  r.outcome = "extracted";
+  r.phase = "done";
+  finishBattle(r);
+  const back = r.battle!.taken.find((t) => t.node === "supply" && t.side === 1);
+  if (!back || r.nodes[SUP] === "freed") return "push-pull: the counter-attack on a bare supply depot did not take it back";
+  const day = raidDay(r);
+  if (!day.battle?.turns || day.battle.turns.after < 1 || day.battle.left?.join() !== "supply" || day.battle.held.includes("supply")) return `push-pull: the battle day reads ${JSON.stringify(day.battle)}`;
+  // The night: the same seed and day fall the same; bare nodes fall more often than guarded ones.
+  const mine: NodeId[] = ["supply", "quarry", "relay", "station"];
+  const a = nightRaids(mine, [], 0, 77, 5).join();
+  if (a !== nightRaids(mine, [], 0, 77, 5).join()) return "push-pull: the same night fell differently";
+  let bare = 0;
+  let guarded = 0;
+  let deep = 0;
+  for (let d = 1; d <= 400; d++) {
+    bare += nightRaids(["quarry"], [], 0, 9, d).length;
+    guarded += nightRaids(["quarry"], ["quarry"], 0, 9, d).length;
+    deep += nightRaids(["supply", "quarry", "relay", "station", "waterworks"], [], 0, 9, d).filter((id) => id === "supply").length;
+  }
+  if (!bare || guarded >= bare || deep) return `push-pull: over 400 nights a bare quarry fell ${bare} times, a guarded one ${guarded}, a supply depot with no enemy beside it ${deep}`;
+  const prof = { ...p, poiState: { ...p.poiState, quarry: { state: "freed" as const } } };
+  const quiet: RaidDay = { alive: true, cleared: [], captured: [], visited: [], titan: false, battle: { held: ["quarry"], start: ["quarry"], left: ["quarry"], guarded: [], factory: 0, seed: 5 } };
+  const x = advanceDay(prof, quiet);
+  const y = advanceDay(prof, quiet);
+  if (JSON.stringify(x) !== JSON.stringify(y)) return "push-pull: the same day advanced twice came out differently";
   return null;
 }
 
@@ -4222,7 +4299,7 @@ function checkBattle(): string | null {
   return null;
 }
 
-for (const err of [checkFront(), checkBattle(), checkFactions(), checkIntercept(), checkSplit(), checkPatrols(), checkMods(), checkThreat(), checkEvents(), checkTerrainIndex(20_000), checkParties(), checkPacks(), checkRoutes(), checkRouteObstacles(), checkTools(), checkTimeToKill(), checkStagger(), checkWindupMoves(), checkDepots(), checkDepotBudget(), checkPlates(), checkUnlocks(), checkHideout(), checkBoltNoTunnel(), checkPickupWavesRouted(), checkLaterWaveFights(), checkSidestepHit(), checkReturnFire(), checkWallStops(), checkPinch(), checkPursuit(), checkHealHeard(), checkPositionMatters(), checkPullWhenAiming(), checkVault(), checkIsland(), checkStrength(), checkContracts(), checkQuests(), checkLoadout(), checkSettle(), checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkBoatCall(), checkSecondPickup(), checkEntries(), checkCamp(), checkKnownEntries(), checkConnections(), checkAllySelfUp(), checkStompHeight(), checkFieldsReused(), checkFieldsFollowRunner(), checkCliffsStop(), checkNoPits(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill(), checkLeap(), checkLeapLeavesAllyBelow(), checkLeapDowned(), checkLeapAllyCatchesUp(), checkLeapAllyDowned(), checkLeapWithItem(), checkLeapClocks(), checkLeapOffHighGround(), checkLeapUnderRoof()]) {
+for (const err of [checkFront(), checkPushPull(), checkBattle(), checkFactions(), checkIntercept(), checkSplit(), checkPatrols(), checkMods(), checkThreat(), checkEvents(), checkTerrainIndex(20_000), checkParties(), checkPacks(), checkRoutes(), checkRouteObstacles(), checkTools(), checkTimeToKill(), checkStagger(), checkWindupMoves(), checkDepots(), checkDepotBudget(), checkPlates(), checkUnlocks(), checkHideout(), checkBoltNoTunnel(), checkPickupWavesRouted(), checkLaterWaveFights(), checkSidestepHit(), checkReturnFire(), checkWallStops(), checkPinch(), checkPursuit(), checkHealHeard(), checkPositionMatters(), checkPullWhenAiming(), checkVault(), checkIsland(), checkStrength(), checkContracts(), checkQuests(), checkLoadout(), checkSettle(), checkWipeClearsAir(), checkArcOnTitan(), checkGoldReload(), checkArcIgnoresFacing(), checkDeathEndsRaid(), checkBleedoutWipe(), checkReinforce(), checkReinforceHidden(), checkSearchBreaks(), checkBagSwap(), checkBagSwapCheapest(), checkRaiders(), checkValuableBin(), checkAllyRescue(), checkAllyDownWipes(), checkHelpAlly(), checkAllyHoldsFire(), checkFlareExtract(), checkShipCall(), checkBoatCall(), checkSecondPickup(), checkEntries(), checkCamp(), checkKnownEntries(), checkConnections(), checkAllySelfUp(), checkStompHeight(), checkFieldsReused(), checkFieldsFollowRunner(), checkCliffsStop(), checkNoPits(), checkWalkableIsland(), checkReinforceEverywhere(), checkRoamersHearOnlyGunfire(), checkReinforceWaitsForTitan(), checkWeakPointBehindBody(), checkHelpBeforeLoot(), checkAllyTitanKill(), checkLeap(), checkLeapLeavesAllyBelow(), checkLeapDowned(), checkLeapAllyCatchesUp(), checkLeapAllyDowned(), checkLeapWithItem(), checkLeapClocks(), checkLeapOffHighGround(), checkLeapUnderRoof()]) {
   if (err) {
     console.error(err);
     process.exit(1);
