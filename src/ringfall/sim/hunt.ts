@@ -518,11 +518,15 @@ export function cellAt(x: number, z: number): { open: boolean; height: number; m
  * fields as they were forgets them after (`forgetFields()`).
  */
 export function walkLine(a: { x: number; z: number }, b: { x: number; z: number }, every = 3): { x: number; z: number }[] {
-  const f = fieldTo(b.x, b.z, Math.max(80, Math.hypot(b.x - a.x, b.z - a.z) * 3 + 40));
+  const d = Math.hypot(b.x - a.x, b.z - a.z);
+  let f = fieldTo(b.x, b.z, Math.max(80, d * 3 + 40));
   if (!f) return [b];
   const { open, height } = grid();
   let k = openCell(a.x, a.z);
-  if (k < 0 || !Number.isFinite(f.dist[k])) return [b];
+  if (k < 0) return [b];
+  // A way round further than the field first reached (a cliff to go round): looked for further out once.
+  if (!Number.isFinite(f.dist[k])) f = fieldTo(b.x, b.z, Math.max(160, d * 6 + 80)) ?? f;
+  if (!Number.isFinite(f.dist[k])) return [b];
   const out: { x: number; z: number }[] = [];
   for (let n = 1; n < 20_000 && k !== f.target; n++) {
     let best = k;

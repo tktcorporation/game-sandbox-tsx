@@ -302,9 +302,9 @@ const BASINS: Open[] = [
   // The nodes on the open ground between the areas: a yard pressed flat round each, the ground
   // between running out from it.
   { name: "観測所", line: inPoi("station", [[-20, 0], [20, 0]]), half: 36, level: LEVEL.station, ground: "scrub" },
-  { name: "浄水場", line: inPoi("waterworks", [[-18, 0], [18, 0]]), half: 34, level: LEVEL.waterworks, ground: "concrete" },
+  { name: "浄水場", line: inPoi("waterworks", [[-18, 0], [18, 0]]), half: 32, level: LEVEL.waterworks, ground: "concrete" },
   { name: "峠の宿舎", line: inPoi("lodge", [[-22, 0], [22, 0]]), half: 32, level: LEVEL.lodge, ground: "paved" },
-  { name: "缶詰工場", line: inPoi("cannery", [[-22, 0], [22, 0]]), half: 34, level: LEVEL.cannery, ground: "paved" },
+  { name: "缶詰工場", line: inPoi("cannery", [[-22, 0], [22, 0]]), half: 46, level: LEVEL.cannery, ground: "paved" },
   { name: "冷凍倉庫", line: inPoi("coldstore", [[-20, 0], [20, 0]]), half: 34, level: LEVEL.coldstore, ground: "paved" },
   // The top of the pass: a saddle between the peaks, with the harbor in view.
   { name: "峠", line: inArea("pass", [[-66, -214], [-54, -230]]), half: 9, level: LEVEL.pass },

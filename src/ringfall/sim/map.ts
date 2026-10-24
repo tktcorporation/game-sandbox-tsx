@@ -1111,7 +1111,7 @@ const POI_FRAMES: Poi[] = [
     x: 0,
     z: 0,
     trigger: 55,
-    entry: { x: 0, z: 42, yaw: N },
+    entry: { x: 44, z: 0, yaw: W },
     squads: [
       { name: "ポンプ棟", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 8, z: -6, face: S }, { kind: "grunt", x: 22, z: -4, face: S }] },
       { name: "水槽", members: [{ kind: "grunt", x: -8, z: -2, face: S }, { kind: "charger", x: -10, z: 22, face: E }] },
@@ -1155,7 +1155,7 @@ const POI_FRAMES: Poi[] = [
     x: 0,
     z: 0,
     trigger: 58,
-    entry: { x: 0, z: 46, yaw: N },
+    entry: { x: 0, z: 40, yaw: N },
     squads: [
       { name: "包装棟", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: -4, z: -14, face: S }, { kind: "heavy", x: 10, z: -4, face: S }] },
       { name: "岸壁", members: [{ kind: "grunt", x: -20, z: 6, face: S }, { kind: "drone", x: 22, z: 8 }] },
@@ -1215,7 +1215,7 @@ export interface Depot {
  * the entry: the nearest flat spot where a raid started there is not seen by the POI's
  * squads at once (`checkDepots` in the sim gate holds them to it).
  */
-const DEPOT_OUT: Record<PoiId, number> = { supply: 18, quarry: 18, relay: 25, pad: 66, wreck: 22, yard: 18, smelter: 25, station: 20, waterworks: 20, lodge: 20, cannery: 20, coldstore: 20 };
+const DEPOT_OUT: Record<PoiId, number> = { supply: 18, quarry: 18, relay: 25, pad: 66, wreck: 22, yard: 18, smelter: 25, station: 20, waterworks: 20, lodge: 20, cannery: 12, coldstore: 20 };
 
 /** A depot's place in `DEPOTS` (and in the run's `depots`), from its POI. */
 export const depotIndex = (poi: PoiId) => DEPOTS.findIndex((d) => d.poi === poi);
@@ -1717,7 +1717,7 @@ export const PACKS: Squad[] = [
   {
     name: "東の野のドローン群",
     members: [{ kind: "drone", x: 60, z: 250 }, { kind: "drone", x: 60, z: 250 }],
-    patrol: [{ x: 60, z: 250 }, { x: 200, z: 230 }, { x: 170, z: 110 }, { x: 140, z: -40 }, { x: 110, z: 120 }],
+    patrol: [{ x: 40, z: 260 }, { x: 250, z: 240 }, { x: 40, z: 260 }, { x: 110, z: -40 }],
   },
   {
     name: "発着場の北のドローン群",
@@ -1733,7 +1733,7 @@ export const PACKS: Squad[] = [
   {
     name: "湾のドローン群",
     members: [{ kind: "drone", x: -200, z: -860 }, { kind: "drone", x: -200, z: -860 }],
-    patrol: [{ x: -200, z: -860 }, { x: -130, z: -1010 }, { x: 60, z: -1010 }, { x: 110, z: -880 }],
+    patrol: [{ x: -250, z: -960 }, { x: -130, z: -1030 }, { x: 60, z: -1030 }, { x: 40, z: -880 }, { x: 60, z: -1030 }, { x: -130, z: -1030 }],
   },
 ];
 
@@ -1797,11 +1797,11 @@ export const MOBILES: Mobile[] = [
   { name: "湖畔の巡回", kind: "beat", faction: "net", region: "reservoir", from: { poi: "supply", squad: "砂丘" }, nodes: [[0, 296], [0, 236], [-110, 238]] },
   { name: "西の環状路の巡回", kind: "beat", faction: "net", region: "reservoir", from: { poi: "quarry", squad: "坂上" }, nodes: [[-110, 238], [-170, 110], [-265, 10]] },
   { name: "北西の道の巡回", kind: "beat", faction: "net", region: "reservoir", from: { poi: "quarry", squad: "掘削機" }, nodes: [[-265, 10], [-209, -77], [-215, -95]] },
-  { name: "台地の麓の巡回", kind: "beat", faction: "net", region: "reservoir", from: { poi: "relay", squad: "大皿" }, nodes: [[125, 75], [200, 108], [187, 32], [210, -50]] },
+  { name: "台地の麓の巡回", kind: "beat", faction: "net", region: "reservoir", from: { poi: "relay", squad: "大皿" }, nodes: [[125, 75], [180, 68], [238, 80], [187, 32], [210, -50]] },
   { name: "台地の東の巡回", kind: "beat", faction: "net", region: "reservoir", from: { poi: "relay", squad: "南東の縁" }, nodes: [[210, -50], [271, -148], [360, -60]] },
-  { name: "環状路の警邏", kind: "patrol", faction: "net", region: "reservoir", members: ["grunt", "drone"], nodes: [[0, 236], [88, 204], [250, 205], [200, 108]] },
-  { name: "補給の車列", kind: "convoy", faction: "net", region: "reservoir", members: ["heavy", "grunt", "drone"], nodes: [[0, 296], [0, 236], [88, 204], [250, 205], [200, 108], [187, 32], [210, -50], [271, -148]] },
-  { name: "ポンプ場の野良機", kind: "patrol", faction: "rogue", region: "reservoir", members: ["grunt", "charger"], nodes: [[342, 190], [309, 191], [250, 205], [200, 108]] },
+  { name: "環状路の警邏", kind: "patrol", faction: "net", region: "reservoir", members: ["grunt", "drone"], nodes: [[0, 236], [88, 204], [250, 205], [240, 104]] },
+  { name: "補給の車列", kind: "convoy", faction: "net", region: "reservoir", members: ["heavy", "grunt", "drone"], nodes: [[0, 296], [0, 236], [88, 204], [250, 205], [240, 104], [187, 32], [210, -50], [271, -148]] },
+  { name: "ポンプ場の野良機", kind: "patrol", faction: "rogue", region: "reservoir", members: ["grunt", "charger"], nodes: [[342, 190], [309, 191], [250, 205], [240, 104]] },
   { name: "変電所の野良機", kind: "patrol", faction: "rogue", region: "reservoir", members: ["grunt", "grunt"], nodes: [[271, -148], [210, -50], [187, 32]] },
   { name: "西の野良機", kind: "patrol", faction: "rogue", region: "reservoir", rank: 0, members: ["grunt", "drone"], nodes: [[-170, -40], [-117, 274]] },
   { name: "湖畔の野良機", kind: "patrol", faction: "rogue", region: "reservoir", rank: 1, members: ["grunt", "charger"], nodes: [[-117, 274], [-190, 470]] },
@@ -1814,7 +1814,7 @@ export const MOBILES: Mobile[] = [
   { name: "採掘穴の警邏", kind: "round", faction: "net", region: "reservoir", members: ["grunt", "drone"], nodes: [[-268, 116], [-316, 116], [-348, 142], [-260, 162]] },
   { name: "発着場の北の警邏", kind: "round", faction: "net", region: "reservoir", members: ["grunt", "drone"], nodes: [[0, -64], [-105, -90], [-215, -95], [-265, 10]] },
   { name: "廃村の外れの警邏", kind: "round", faction: "net", region: "reservoir", members: ["grunt", "drone"], nodes: [[-265, 10], [-215, -95], [-345, -88]] },
-  { name: "東の環状路の警邏", kind: "round", faction: "net", region: "reservoir", members: ["grunt", "drone"], nodes: [[0, 236], [88, 204], [250, 205], [200, 108], [187, 32]] },
+  { name: "東の環状路の警邏", kind: "round", faction: "net", region: "reservoir", members: ["grunt", "drone"], nodes: [[0, 236], [88, 204], [250, 205], [240, 104], [187, 32]] },
   // --- the harbor: the yard's, the smelter's and the wreck's roads, the town, the wharf.
   { name: "難破船の西の巡回", kind: "beat", faction: "net", region: "harbor", from: { poi: "wreck", squad: "北の浜" }, nodes: [[-63, -943], [-117, -973], [-245, -965]] },
   { name: "難破船の北の巡回", kind: "beat", faction: "net", region: "harbor", from: { poi: "wreck", squad: "舳先" }, nodes: [[-63, -943], [-67, -800], [-67, -760]] },
@@ -3906,6 +3906,8 @@ function authoredKeep(): Keep {
     if (p.boss) points.push({ x: p.x, z: p.z, r: 34 }); // the titan's arena stays open
   }
   ROAMERS.forEach(squadArea);
+  // The walks of the patrols and convoys between the areas: a lane kept along each leg, so no cover scattered there closes it.
+  for (const m of MOBILES) for (let i = 0; i + 1 < m.nodes.length; i++) segments.push({ ax: m.nodes[i][0], az: m.nodes[i][1], bx: m.nodes[i + 1][0], bz: m.nodes[i + 1][1] });
   for (const b of EXTRA_BINS) points.push({ x: b.x, z: b.z, r: 2.5 });
   // The boat's point keeps less flat ground round it: the channel's water starts a few metres off.
   for (const x of EXTRACTS) points.push({ x: x.x, z: x.z, r: x.id === "boat" ? 6 : 10 });

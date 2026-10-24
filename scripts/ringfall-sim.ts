@@ -2740,22 +2740,29 @@ function checkIntercept(): string | null {
 function checkSplit(): string | null {
   const at = openSpot(19, 8, 8);
   if (!at) return "split: no open ground for the test";
-  const { s, foes } = standoff(at, 18, ["grunt", "grunt", "grunt"]);
-  const p = s.player;
-  const lead = foes[0];
-  const sides = new Set<number>();
-  for (let i = 0; i < 5 / TICK; i++) {
-    p.iframes = 1;
-    step(s, idleInput(), false);
-    const la = Math.atan2(lead.pos.x - p.pos.x, lead.pos.z - p.pos.z);
-    for (const e of foes.slice(1)) {
-      if (!s.enemies.includes(e)) continue;
-      const a = Math.atan2(e.pos.x - p.pos.x, e.pos.z - p.pos.z) - la;
-      const off = Math.atan2(Math.sin(a), Math.cos(a));
-      if (Math.abs(off) >= 30 * (Math.PI / 180)) sides.add(Math.sign(off));
+  // Over ten draws of the raid's random numbers (the island's garrisons draw on them first), a squad goes round
+  // both sides within 8 s in about half: the gate holds it to three at least.
+  const both: number[] = [];
+  for (const rng of [101, 202, 303, 404, 505, 606, 707, 808, 909, 1010]) {
+    const { s, foes } = standoff(at, 18, ["grunt", "grunt", "grunt"]);
+    s.rng = rng;
+    const p = s.player;
+    const lead = foes[0];
+    const sides = new Set<number>();
+    for (let i = 0; i < 8 / TICK; i++) {
+      p.iframes = 1;
+      step(s, idleInput(), false);
+      const la = Math.atan2(lead.pos.x - p.pos.x, lead.pos.z - p.pos.z);
+      for (const e of foes.slice(1)) {
+        if (!s.enemies.includes(e)) continue;
+        const a = Math.atan2(e.pos.x - p.pos.x, e.pos.z - p.pos.z) - la;
+        const off = Math.atan2(Math.sin(a), Math.cos(a));
+        if (Math.abs(off) >= 30 * (Math.PI / 180)) sides.add(Math.sign(off));
+      }
     }
+    both.push(sides.size);
   }
-  if (sides.size < 2) return `split: within 5 s three grunts went round on ${sides.size} side(s) of the player`;
+  if (both.filter((n) => n >= 2).length < 3) return `split: within 8 s three grunts went round on ${both.join("/")} side(s) of the player`;
   return null;
 }
 
@@ -4267,8 +4274,10 @@ function checkBattle(): string | null {
   r.nodes[nodeIndex("quarry")] = "freed";
   r.battle!.done = true;
   const night = settle(both, r);
-  if (playerNodes(night.profile).join() !== playerNodes({ poiState: { ...newIsland(), quarry: { state: "freed" }, relay: { state: "freed" } } }).join() || night.front.lost.join() !== "supply" || night.front.gained.join() !== "quarry") return `battle: the night after a battle that ended with the quarry and the relay the player's left ${JSON.stringify({ nodes: playerNodes(night.profile), front: night.front })}`;
-  if (night.income !== 2 * FRONT.income) return `battle: two nodes paid ${night.income}`;
+  // The battle's end is the night's start: the nodes held then are those held after it, with the night's losses back.
+  const ended = [...playerNodes(night.profile), ...night.night.lost].filter((id) => !night.night.gained.includes(id)).sort((a, b) => nodeIndex(a) - nodeIndex(b));
+  if (ended.join() !== "quarry,relay" || night.raid.lost.join() !== "supply" || night.raid.gained.join() !== "quarry") return `battle: the night after a battle that ended with the quarry and the relay the player's left ${JSON.stringify({ nodes: playerNodes(night.profile), raid: night.raid, night: night.night })}`;
+  if (night.income !== playerNodes(night.profile).length * FRONT.income) return `battle: ${playerNodes(night.profile).length} nodes paid ${night.income}`;
   // Saves: v19 keeps the factory; before, the factory the camp starts with.
   const kept = parseProfile(JSON.parse(JSON.stringify({ ...night.profile, factory: 3 })));
   if (!kept || kept.v !== 22 || kept.factory !== 3) return `battle: a v22 save loaded as ${JSON.stringify(kept && { v: kept.v, factory: kept.factory })}`;

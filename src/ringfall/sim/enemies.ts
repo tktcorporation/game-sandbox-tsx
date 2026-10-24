@@ -892,7 +892,10 @@ function huntStep(s: State, e: Enemy, goal: Point): Point {
  * squad does, not as a squad beamed in from afar.
  */
 function tripStep(e: Enemy, to: Point): Point {
-  if (!onWalkable(e)) return to;
+  // A walker that has drifted a step off the field's ground (to the wall of a ramp) is led by the
+  // field from beside it: walking straight from there turns it back the way it came.
+  const beside = ENEMIES[e.kind].fly === 0 && onTerrain(e.pos) && [[2, 0], [-2, 0], [0, 2], [0, -2]].some(([dx, dz]) => onMainGround(e.pos.x + dx, e.pos.z + dz));
+  if (!onWalkable(e) && !beside) return to;
   const f = fieldTo(to.x, to.z);
   return f ? nextStep(f, e.pos.x, e.pos.z, to) : to;
 }

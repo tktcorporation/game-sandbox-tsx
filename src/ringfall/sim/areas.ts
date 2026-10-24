@@ -63,7 +63,7 @@ export const AREA: Record<AreaId, Offset> = {
   // pass, and in the harbor's north the cannery between the yard and the wreck and the cold store
   // between the smelter and the wreck.
   station: [-240, 350],
-  waterworks: [160, 115],
+  waterworks: [185, 120],
   lodge: [-150, -485],
   cannery: [-135, -885],
   coldstore: [150, -850],
