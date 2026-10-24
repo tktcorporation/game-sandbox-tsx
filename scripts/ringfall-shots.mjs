@@ -1334,7 +1334,8 @@ const readOf = async (pg) => JSON.parse(await pg.evaluate(() => window.render_ga
 }
 {
   const ctx = await browser.newContext({ viewport: { width: 740, height: 360 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
-  const pg = await withProfile(ctx, depotGame);
+  // An epic armour in the stash, for the departure past a depot's allowance below.
+  const pg = await withProfile(ctx, { ...depotGame, stash: [...midGame.stash, { t: "armor", tier: 2 }] });
   await toCamp(pg, true);
   const cdp = await ctx.newCDPSession(pg);
   await useStation(pg, "workshop", cdp);
