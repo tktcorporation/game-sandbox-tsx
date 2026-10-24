@@ -168,13 +168,17 @@ export function layZips(
   for (const { a, b, as, bs, fixed } of jobs) {
     let best: { pts: ZipPoint[]; cost: number; ma: { x: number; z: number }; mb: { x: number; z: number } } | null = null;
     let why = "no mast";
-    for (const ma of as)
-      for (const mb of bs) {
-        const laid = lay(ma, mb);
-        if ("why" in laid) why = laid.why;
-        // A mast stands by its core when it can: each metre out from it costs as two of cable.
-        else if (!best || laid.cost + 2 * (ma.r + mb.r) < best.cost) best = { pts: laid.pts, cost: laid.cost + 2 * (ma.r + mb.r), ma, mb };
-      }
+    // Pairs in the order of the least they could cost (their length and how far out their masts
+    // stand): once that is no less than the best laid, no later pair can beat it.
+    const pairs = as.flatMap((ma) => bs.map((mb) => ({ ma, mb, least: Math.hypot(mb.x - ma.x, mb.z - ma.z) + 2 * (ma.r + mb.r) })));
+    pairs.sort((p, q) => p.least - q.least);
+    for (const { ma, mb, least } of pairs) {
+      if (best && least >= best.cost) break;
+      const laid = lay(ma, mb);
+      if ("why" in laid) why = laid.why;
+      // A mast stands by its core when it can: each metre out from it costs as two of cable.
+      else if (!best || laid.cost + 2 * (ma.r + mb.r) < best.cost) best = { pts: laid.pts, cost: laid.cost + 2 * (ma.r + mb.r), ma, mb };
+    }
     if (!best) {
       out.missing.push({ a, b, why });
       continue;

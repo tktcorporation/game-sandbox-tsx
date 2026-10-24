@@ -316,7 +316,16 @@ function move(s: State, input: Input, prevCrouch: boolean) {
   // lets it stand a hair over its feet, and a run along a face that rises would gain that hair
   // every step, up the crags too). A step that would slides along the face on one axis when that
   // one is clear, and otherwise stays where it stood. Stairs bolted to a face are walked as ever.
-  const ontoFace = (x: number, z: number) => terrainHeight(x, z) > from.y + 0.005 && steepAt(x, z) && boxTopAt(x, z, from.y - 0.5, from.y + WORLD.stepUp).top < terrainHeight(x, z) - 0.05;
+  // A lip no taller than a step (a pressed yard's edge) is walked over as ever: only a face that
+  // goes on rising past a step's height a little further on stops the body.
+  const mx = p.pos.x - from.x;
+  const mz = p.pos.z - from.z;
+  const ml = Math.hypot(mx, mz) || 1;
+  const ontoFace = (x: number, z: number) =>
+    terrainHeight(x, z) > from.y + 0.005 &&
+    steepAt(x, z) &&
+    terrainHeight(x + (mx / ml) * 0.8, z + (mz / ml) * 0.8) > from.y + WORLD.stepUp &&
+    boxTopAt(x, z, from.y - 0.5, from.y + WORLD.stepUp).top < terrainHeight(x, z) - 0.05;
   if (wasOnGround && ontoFace(p.pos.x, p.pos.z)) {
     const [x, z] = !ontoFace(p.pos.x, from.z) ? [p.pos.x, from.z] : !ontoFace(from.x, p.pos.z) ? [from.x, p.pos.z] : [from.x, from.z];
     p.pos.x = x;

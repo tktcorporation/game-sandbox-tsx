@@ -5182,7 +5182,9 @@ const ZIP_SPOTS: Record<string, { x: number; z: number; r: number }[]> = (() => 
   const around = (x: number, z: number) => built.filter((b) => b.x1 > x - 90 && b.x0 < x + 90 && b.z1 > z - 90 && b.z0 < z + 90);
   const gx = (CAMP.gate.x0 + CAMP.gate.x1) / 2;
   const gz = CAMP.gate.z - 6;
-  return { camp: mastSpots(gx, gz, around(gx, gz), 30, 6), ...Object.fromEntries(NODES.map((c) => [c.id, mastSpots(c.core.x, c.core.z, around(c.core.x, c.core.z))])) };
+  // The camp's mast stands off to the side of the way out of its gate, not in it.
+  const camp = mastSpots(gx, gz, around(gx, gz), 36, 24, 6).filter((q) => Math.abs(q.x - gx) > CAMP_GATE + 8).slice(0, 6);
+  return { camp, ...Object.fromEntries(NODES.map((c) => [c.id, mastSpots(c.core.x, c.core.z, around(c.core.x, c.core.z))])) };
 })();
 const ZIP_LAYOUT = layZips(ZIP_SPOTS, FRONT_LINKS, [...BUILT, ...CAMP_BOXES, ...CORE_BOXES], QUARRY_LIFTS);
 /** The ziplines, one for each link of `FRONT_LINKS` that could carry one; up while both ends are the player's (zips.ts). */
