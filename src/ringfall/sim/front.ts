@@ -1,10 +1,11 @@
-import { ALLY, ENEMIES, FRONT, PLAYER, TICK } from "./config";
+import { ALLY, COUNTER, ENEMIES, FRONT, PLAYER, TICK } from "./config";
 import { dist2d } from "./geom";
 import { depotIndex, FRONT_LINKS, NODES, nodeIndex, POIS, poiIndex, type NodeId, type PoiId } from "./map";
 import { cellsAround, fieldTo } from "./hunt";
 import { spawnEnemy } from "./enemies";
 import { hiddenPosts } from "./world";
 import { raiseAlly } from "./ally";
+import type { Battle } from "./battle";
 import type { PoiHold } from "./island";
 import type { State } from "./state";
 
@@ -215,6 +216,11 @@ export function takeNode(s: State, i: number) {
   s.player.selfRevive = 1;
   raiseAlly(s, "self", ALLY.reviveHp);
   garrisonLeaves(s, i);
+  if (s.battle) {
+    // The battle counts the player's own captures among the nodes that changed hands.
+    s.battle.taken.push({ node: n.id, side: 0, t: Math.round(s.battle.now) });
+    dueCounter(s.battle, i);
+  }
   s.events.push({ t: "coreTaken", node: i });
 }
 
@@ -252,3 +258,8 @@ export function garrisonLeaves(s: State, i: number) {
 
 /** The node ids the raid took, as the island counts them (a record from before the front took none). */
 export const capturedIds = (s: { stats: { captured?: NodeId[] } }): NodeId[] => (s.stats.captured ?? []).filter((id, k, all) => nodeIndex(id) >= 0 && all.indexOf(id) === k);
+
+/** A node has just turned the player's: the enemy's counter-attack on it is due `COUNTER.delay` seconds on (sim/battle.ts). */
+export function dueCounter(b: Battle, i: number) {
+  if (!b.counters.some((c) => c.node === i)) b.counters.push({ node: i, at: b.now + COUNTER.delay });
+}

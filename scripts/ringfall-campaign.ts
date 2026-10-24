@@ -35,7 +35,7 @@ const MARKS = [5, 10, 20, 30];
 /** One skill's month: the island at the end of each day, and how each raid ended. */
 export interface Campaign {
   skill: string;
-  days: { cash: number; haul: number; gun: number; cleared: string[]; captured: string[]; nodes: number; harbor: number; tier: number; strength: number; front: string[]; alive: boolean; region: RegionId; event: string | null; crewsIn: number; crewsOut: number; factory: number; gained: number; lost: number; minutes: number }[];
+  days: { cash: number; haul: number; gun: number; cleared: string[]; captured: string[]; nodes: number; harbor: number; tier: number; strength: number; front: string[]; alive: boolean; region: RegionId; event: string | null; crewsIn: number; crewsOut: number; factory: number; gained: number; lost: number; minutes: number; turns: { raid: number; after: number; night: number } }[];
   errors: string[];
 }
 
@@ -166,6 +166,11 @@ export function playCampaign(skill: string, days = DAYS): Campaign {
       gained: settled.front.gained.length,
       lost: settled.front.lost.length,
       minutes: s.time / 60,
+      turns: {
+        raid: s.battle ? s.battle.taken.filter((t) => t.t < (s.battle!.left?.at ?? Infinity)).length : 0,
+        after: s.battle ? s.battle.taken.filter((t) => t.t >= (s.battle!.left?.at ?? Infinity)).length : 0,
+        night: settled.night.lost.length + settled.night.gained.length,
+      },
     });
   }
   return out;
@@ -204,8 +209,27 @@ export function campaignLines(runs: Campaign[]): string[] {
     const sum = (f: (d: Campaign["days"][number]) => number) => c.days.reduce((n, d) => n + f(d), 0);
     lines.push([c.skill.padEnd(9), `${sum((d) => d.gained)} / ${sum((d) => d.lost)}`.padEnd(30), med(c.days.map((d) => d.minutes)).toFixed(1)].join(" "));
   }
+  // The push and pull: nodes that changed hands in the raids, in the battles after the player left,
+  // and overnight; the days the player gained a node and lost one; the longest run of days holding every node.
+  lines.push(["push-pull", "changed hands raid / after leaving / night".padEnd(42), "days gained / lost".padEnd(19), "all held (longest run)"].join(" "));
+  for (const c of runs) {
+    const sum = (f: (d: Campaign["days"][number]) => number) => c.days.reduce((n, d) => n + f(d), 0);
+    let run = 0;
+    let longest = 0;
+    let prev = 0;
+    let up = 0;
+    let down = 0;
+    for (const d of c.days) {
+      run = d.nodes === NODES.length ? run + 1 : 0;
+      longest = Math.max(longest, run);
+      if (d.nodes > prev) up++;
+      if (d.nodes < prev) down++;
+      prev = d.nodes;
+    }
+    lines.push([c.skill.padEnd(9), `${sum((d) => d.turns.raid)} / ${sum((d) => d.turns.after)} / ${sum((d) => d.turns.night)}`.padEnd(42), `${up} / ${down}`.padEnd(19), String(longest)].join(" "));
+  }
   // The nodes held each day, the harbor's among them, the deepest tier held (- for none), the strength and the factory.
-  lines.push(`nodes by day: ${runs.map((c) => `${c.skill} ${c.days.map((d) => d.nodes).join("")}`).join(" / ")}`);
+  lines.push(`nodes by day (a 10, b 11): ${runs.map((c) => `${c.skill} ${c.days.map((d) => d.nodes.toString(16)).join("")}`).join(" / ")}`);
   lines.push(`harbor nodes by day: ${runs.map((c) => `${c.skill} ${c.days.map((d) => d.harbor).join("")}`).join(" / ")}`);
   lines.push(`deepest tier by day: ${runs.map((c) => `${c.skill} ${c.days.map((d) => (d.tier < 0 ? "-" : d.tier)).join("")}`).join(" / ")}`);
   lines.push(`best gun carried by day (0 common to 3 legendary): ${runs.map((c) => `${c.skill} ${c.days.map((d) => d.gun).join("")}`).join(" / ")}`);

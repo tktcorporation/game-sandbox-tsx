@@ -1,6 +1,6 @@
 import { DEPOT, FACTION, FRONT, WORLD } from "../sim/config";
 import { frontNodes, nodeHolds, type NodeHold } from "../sim/front";
-import { battleMarks, meterOf, type Battle, type Side } from "../sim/battle";
+import { atRisk, battleMarks, meterOf, type Battle, type Side } from "../sim/battle";
 import { offshore } from "../sim/terrain";
 import { BOXES, CAMP, DEBRIS_SPOTS, NODES, nodeIndex, TIER, UNLOCKS, debrisIndex, DEPOTS, ENTRIES, EXTRA_BINS, EXTRACTS, LANDMARKS, OUTPOST_SITES, POIS, REGIONS, regionOf, ROUTES, regionHere, type EntryId, type NodeId, type PoiId, type RegionId, type RouteId } from "../sim/map";
 import type { IslandEvent, PoiHold } from "../sim/island";
@@ -229,6 +229,8 @@ export type MapScene = Pick<State, "seen" | "cleared" | "hold" | "depots" | "rou
   learned?: readonly EntryId[];
   /** The nodes that changed hands overnight (the results): a ring in the colour they turned. */
   changed?: { gained: readonly NodeId[]; lost: readonly NodeId[] };
+  /** The only POIs whose names are written (a small map's), or every POI's when absent. */
+  names?: readonly PoiId[];
 };
 
 /** A label's box on the canvas, so labels do not overlap. */
@@ -560,17 +562,21 @@ export class IslandMap {
       g.restore();
       label(String(m.n), p.x + 9 * dpr, p.y + 6 * dpr, SIDE_CSS[m.side], 8);
     }
-    // A node of the player's the enemy's robots have come to: red rings beating out from it.
+    // A node of the player's the enemy's robots have come to: red rings beating out from it; one the
+    // enemy is on its way to take: a single ring, slower.
     const beat = (performance.now() / 900) % 1;
+    const slow = (performance.now() / 1600) % 1;
+    const risk = s.nodes ? atRisk({ battle: b, nodes: s.nodes }) : [];
     NODES.forEach((n, i) => {
-      if (!b.threat?.[i]) return;
+      const hot = !!b.threat?.[i];
+      if (!hot && !risk[i]) return;
       const p = at(n.x, n.z);
       g.save();
-      for (const k of [beat, (beat + 0.5) % 1]) {
-        g.lineWidth = 3 * dpr;
+      for (const k of hot ? [beat, (beat + 0.5) % 1] : [slow]) {
+        g.lineWidth = (hot ? 3 : 2) * dpr;
         g.strokeStyle = `rgba(255,59,48,${(1 - k).toFixed(2)})`;
         g.beginPath();
-        g.arc(p.x, p.y, (12 + 22 * k) * dpr, 0, Math.PI * 2);
+        g.arc(p.x, p.y, (12 + (hot ? 22 : 14) * k) * dpr, 0, Math.PI * 2);
         g.stroke();
       }
       g.restore();
@@ -669,9 +675,26 @@ export class IslandMap {
     // A POI cleared this raid gets a tick after its name; who holds it is its mark's colour.
     const hold = (i: number): PoiHold => s.hold?.[i] ?? "held";
     const poiText = (i: number) => (s.cleared[i] && hold(i) !== "freed" ? `${POIS[i].name} ✓` : POIS[i].name);
+    // The POI names written: those the scene names (the nodes that changed hands come first), and of
+    // the rest none that would cover a name already placed, so a small map shows fewer, whole names.
+    const changedIds: readonly string[] = [...(s.changed?.gained ?? []), ...(s.changed?.lost ?? [])];
+    const order = POIS.map((_, i) => i).sort((a, b) => Number(changedIds.includes(POIS[b].id)) - Number(changedIds.includes(POIS[a].id)));
+    const named: number[] = [];
+    for (const i of order) {
+      if (s.names && !s.names.includes(POIS[i].id)) continue;
+      const p = at(POIS[i].x, POIS[i].z);
+      const r = box(poiText(i), p.x, p.y - 15 * dpr, 12);
+      if (named.some((j) => {
+        const q = at(POIS[j].x, POIS[j].z);
+        const t = box(poiText(j), q.x, q.y - 15 * dpr, 12);
+        return r.x0 < t.x1 && r.x1 > t.x0 && r.y0 < t.y1 && r.y1 > t.y0;
+      }))
+        continue;
+      named.push(i);
+      taken.push(r);
+    }
     POIS.forEach((poi, i) => {
       const p = at(poi.x, poi.z);
-      taken.push(box(poiText(i), p.x, p.y - 15 * dpr, 12));
       taken.push({ x0: p.x - 8 * dpr, y0: p.y - 8 * dpr, x1: p.x + 8 * dpr, y1: p.y + 8 * dpr });
     });
     for (const x of EXTRACTS) {
@@ -989,10 +1012,10 @@ export class IslandMap {
         g.restore();
       }
     // POI names go on top, a little above their mark, so an exit nearby does not hide them.
-    POIS.forEach((poi, i) => {
-      const p = at(poi.x, poi.z);
+    for (const i of named) {
+      const p = at(POIS[i].x, POIS[i].z);
       label(poiText(i), p.x, p.y - 15 * dpr, s.cleared[i] ? "#cfd6e0" : "#ffffff", 12);
-    });
+    }
     if (s.ally?.active) {
       const a = at(s.ally.pos.x, s.ally.pos.z);
       g.fillStyle = s.ally.down > 0 ? "#ff5a4f" : "#6fd0cf";

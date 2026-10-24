@@ -1064,7 +1064,7 @@ for (let i = 0; i < 25 * 60 * 10; i++) {
     // A vault, from just in front of it: the locked crate reads apart from the supply bins.
     // The quarry's stands on an open terrace, so the camera has a clear view of it.
     const v = s.vaults.find((b) => b.poi === 1);
-    if (s.vaults.length !== 7 || !v) errors.push(`vaults: ${s.vaults.length} in the world`);
+    if (s.vaults.length !== 12 || !v) errors.push(`vaults: ${s.vaults.length} in the world`);
     else {
       await page.evaluate((b) => window.ringfallCamera(b.x + 0.4, b.y + 1.6, b.z + 2.6, 0.12, -0.42), v);
       await shot("26-vault");
@@ -1186,15 +1186,16 @@ console.log(JSON.stringify((await read()).stats));
     }
     return out;
   });
-  // The day's outcome leads the results: the island's map and its row of six nodes, those the day changed marked; no grade, score or headline.
+  // The day's outcome leads the results: the island's map and its bar, played in beats to the day's end; no grade, score or headline.
+  await page.waitForFunction(() => document.getElementById("day-beat")?.dataset.beat === "done", null, { timeout: 15000 }).catch(() => undefined);
   const day = await page.evaluate(() => ({
     map: !!document.getElementById("day-map") && !document.getElementById("day-map").hidden && document.getElementById("day-map").getBoundingClientRect().height > 50,
-    nodes: document.querySelectorAll("#day-result .node-row .node").length,
-    gained: document.querySelectorAll("#day-result .node-row .node.gained").length,
+    bar: document.querySelector("#day-result .tug")?.getAttribute("aria-label") ?? "",
     text: document.getElementById("day-result").textContent,
   }));
   const settledDay = await read();
-  if (!day.map || day.nodes !== 6 || day.gained !== (settledDay.settled?.front.gained.length ?? -1) || /陣取り戦|勝ち|負け|網/.test(day.text) || (await page.locator("#rank, #total").count())) errors.push(`results: the day reads ${JSON.stringify(day)} for ${JSON.stringify(settledDay.settled?.front)}`);
+  const heldNow = settledDay.profile && Object.entries(settledDay.profile.poiState).filter(([id, o]) => id !== "pad" && o.state === "freed").length;
+  if (!day.map || day.bar !== `${heldNow} / 11` || /陣取り戦|勝ち|負け|網/.test(day.text) || (await page.locator("#rank, #total").count())) errors.push(`results: the day reads ${JSON.stringify(day)} for ${JSON.stringify(settledDay.settled?.front)}`);
   if (fit.length) errors.push(`results on a phone: ${fit.join(", ")} past the 740x360 screen`);
   await page.screenshot({ path: `${out}/m9-results.png` });
   await page.setViewportSize({ width: 1280, height: 720 });
@@ -1591,7 +1592,8 @@ const islandDay = {
   const pg = await withProfile(ctx, islandDay);
   await toCamp(pg);
   const c = await readOf(pg);
-  const own = (sel) => pg.locator(`${sel} .node-row .node.own`).count();
+  // The player's count at the tug of war's blue end.
+  const own = async (sel) => Number((await pg.locator(`${sel} .tug-n.own`).first().textContent().catch(() => "-1")) ?? -1);
   // The nodes a profile holds: the day's battle, reckoned to its end, may have taken some back.
   const mine = (p) => Object.entries(p.poiState).filter(([id, o]) => id !== "pad" && o.state === "freed").length;
   if (c.profile.day !== 6 || c.profile.poiState.quarry.state !== "freed" || (await own("#camp-row")) !== 3) errors.push(`island: the camp reads day ${c.profile.day}, the quarry ${c.profile.poiState.quarry.state}, ${await own("#camp-row")} of the row filled`);
@@ -1607,7 +1609,7 @@ const islandDay = {
   await closePanel(pg);
   const run = await walkOutOfGate(pg);
   const at = (id) => run.enemies.filter((e) => run.squads[e.squad].poi === id).length;
-  if (run.hold.join() !== "freed,freed,held,held,freed,held,held" || at(0) !== 0 || at(1) !== 0 || at(4) !== 0 || !(at(2) > 0)) errors.push(`island raid: holds ${run.hold.join()}, robots at the supply depot ${at(0)}, the quarry ${at(1)}, the wreck ${at(4)}, the relay ${at(2)}`);
+  if (run.hold.join() !== "freed,freed,held,held,freed,held,held,held,held,held,held,held" || at(0) !== 0 || at(1) !== 0 || at(4) !== 0 || !(at(2) > 0)) errors.push(`island raid: holds ${run.hold.join()}, robots at the supply depot ${at(0)}, the quarry ${at(1)}, the wreck ${at(4)}, the relay ${at(2)}`);
   // The way in's banner has gone by the time the map is opened; the HUD is drawn for the screenshot.
   await pg.evaluate(() => window.ringfallStep(4000));
   await pg.screenshot({ path: `${out}/72-island-hud-row.png`, clip: { x: 1280 / 2 - 260, y: 0, width: 520, height: 120 } });
@@ -1629,6 +1631,7 @@ const islandDay = {
   await pg.evaluate(() => window.advanceTime(200));
   await pg.waitForFunction(() => !document.getElementById("results").hidden, null, { timeout: 10000 }).catch(() => undefined);
   const r = await readOf(pg);
+  await pg.waitForFunction(() => document.getElementById("day-beat")?.dataset.beat === "done", null, { timeout: 15000 }).catch(() => undefined);
   if (r.screen !== "results" || r.settled?.day !== 6 || r.profile.day !== 7 || (await own("#day-result")) !== mine(r.profile) || !(await pg.locator("#day-map").count())) errors.push(`island results: ${r.screen}, day ${r.settled?.day} -> ${r.profile.day}, ${await own("#day-result")} of the row filled for ${mine(r.profile)} nodes held`);
   await pg.waitForTimeout(1200);
   await pg.screenshot({ path: `${out}/74-island-results.png` });
@@ -2057,12 +2060,13 @@ for (const phone of [false, true]) {
   await closePanel(pg, phone);
   await useStation(pg, "map", cdp);
   await pg.waitForTimeout(300);
-  if ((await pg.locator("#hub-side .hub-row .node-row .node.own").count()) !== 2) errors.push("battle: the map table's row does not fill the two nodes held");
+  const tugOwn = async (sel) => Number((await pg.locator(`${sel} .tug-n.own`).first().textContent().catch(() => "-1")) ?? -1);
+  if ((await tugOwn("#hub-side .hub-row")) !== 2) errors.push("battle: the map table's row does not fill the two nodes held");
   await pg.screenshot({ path: tag(2, "panel-map-row") });
   await closePanel(pg, phone);
   // The camp's line of the day, its row, and 今日の作戦.
   const today = await pg.textContent("#camp");
-  if (!/9 日目/.test(today) || !/攻める拠点/.test(today) || (await pg.locator("#camp-row .node-row .node.own").count()) !== 2) errors.push(`battle: the camp's day reads "${today.slice(0, 300)}"`);
+  if (!/9 日目/.test(today) || !/攻める拠点/.test(today) || (await tugOwn("#camp-row")) !== 2) errors.push(`battle: the camp's day reads "${today.slice(0, 300)}"`);
   await pg.screenshot({ path: tag(6, "camp-today") });
   const run = await walkOutOfGate(pg);
   if (!run.battle || run.battle.factory !== 3) errors.push(`battle: the raid out of the gate has ${JSON.stringify(run.battle && { factory: run.battle.factory })}`);
@@ -2073,9 +2077,9 @@ for (const phone of [false, true]) {
   if (/記録/.test(card.title) || !/(前線|陣取り戦|制圧)/.test(card.title) || !/記録/.test(card.story)) errors.push(`battle: with no contract the objective card reads ${JSON.stringify(card)}`);
   await draw(pg);
   await pg.screenshot({ path: tag(7, "objective-front") });
-  const hud = await pg.evaluate(() => ({ own: document.querySelectorAll("#island-row .node.own").length, all: document.querySelectorAll("#island-row .node").length, text: document.getElementById("island-row").textContent }));
+  const hud = await pg.evaluate(() => ({ own: Number(document.querySelector("#island-row .tug-n.own")?.textContent), all: document.querySelector("#island-row .tug")?.getAttribute("aria-label"), text: document.getElementById("island-row").textContent }));
   const deadline = await pg.evaluate(() => document.querySelector("#obj-raid .deadline .ico.clock") ? document.querySelector("#obj-raid .deadline").textContent : "");
-  if (hud.own !== 2 || hud.all !== 6 || hud.text.trim() || !/^\d+:\d\d$/.test(deadline)) errors.push(`battle: the HUD's row reads ${JSON.stringify(hud)}, the card "${deadline}"`);
+  if (hud.own !== 2 || hud.all !== "2 / 11" || hud.text.trim() !== "29" || !/^\d+:\d\d$/.test(deadline)) errors.push(`battle: the HUD's row reads ${JSON.stringify(hud)}, the card "${deadline}"`);
   const st = await readOf(pg);
   if (st.battle.squads.filter((q) => q.side === 0).length < 2) errors.push(`battle: ${st.battle.squads.filter((q) => q.side === 0).length} of the player's squads at the start (the turrets at two nodes)`);
   // A fight in front of the player: the player's squad on the left, the enemy's on the right.
@@ -2104,6 +2108,127 @@ for (const phone of [false, true]) {
   lap(`war, ${phone ? "phone" : "desktop"}`);
   await ctx.close();
 }
+
+/*
+ * The push and pull (docs/ringfall/island-v2.md, 押し合い), from a profile on day 12 holding the
+ * supply depot, the quarry and the weather station (its seed one whose night takes some of them back): a node built on the open ground
+ * (the waterworks) seen from its gate; the player takes it, and the enemy's counter-attack lands
+ * and walks to it (the arrow at the screen's edge, the HUD's bar pulsing at its blue end, the
+ * map's ring); the player leaves at the waterworks' depot with the counter-attack on its way;
+ * and the results play the raid's change, the battle after the player left (the depot's mark)
+ * and the night's attacks (the moon), the bar sliding at each.
+ */
+const pushDay = {
+  v: 22, cash: 3000, raids: 11, extracted: 9, time: 6000, region: "reservoir", entry: "beach", seed: 5006, escaped: null,
+  stash: [], entries: ["beach", "checkpoint", "jetty", "outskirts", "quay", "shore"], depots: ["supply", "quarry", "station"], seen: "f".repeat(4000),
+  quests: { progress: {}, done: [] }, day: 12, factory: 0,
+  poiState: { supply: { state: "freed" }, quarry: { state: "freed" }, station: { state: "freed" } },
+};
+for (const phone of [false, true]) {
+  const ctx = phone ? await browser.newContext({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true }) : await browser.newContext({ viewport: { width: 1280, height: 720 } });
+  const pg = await withProfile(ctx, pushDay);
+  if (phone) await pg.evaluate(() => Object.defineProperty(screen, "orientation", { value: undefined, configurable: true }));
+  const tag = (n, name) => `${out}/${phone ? `m${80 + n}` : `${120 + n}`}-${name}.png`;
+  await toCamp(pg, phone);
+  if (!phone) {
+    await pg.waitForTimeout(200);
+    await pg.screenshot({ path: tag(9, "camp-bar") });
+  }
+  const run = await walkOutOfGate(pg);
+  if (!run.battle) errors.push("push-pull: the raid has no battle");
+  const look = async (x, y, z, tx, ty, tz) => {
+    const d = Math.hypot(tx - x, tz - z);
+    await pg.evaluate(([cx, cy, cz, yaw, pitch]) => window.ringfallCamera(cx, cy, cz, yaw, pitch), [x, y, z, Math.atan2(tx - x, -(tz - z)), Math.atan2(ty - y, d)]);
+  };
+  const ground = (x, z) => pg.evaluate(([a, b]) => window.ringfallTerrain(a, b), [x, z]);
+  const stand = (x, z, yaw = 0) => pg.evaluate(([a, b, c]) => window.ringfallPlace(a, b, c), [x, z, yaw]);
+  const W = run.front.cores.findIndex((c) => c.id === "waterworks");
+  const core = run.front.cores[W];
+  // 0. The waterworks, a node built on the open ground: its walled yard, tanks and pump hall from outside its south gate.
+  await stand(core.x - 10, core.z + 75, 0);
+  await pg.evaluate(() => window.ringfallStep(1500));
+  const gy = await ground(core.x - 18, core.z + 62);
+  await look(core.x - 18, gy + 14, core.z + 62, core.x, core.y + 2, core.z - 6);
+  await draw(pg);
+  await pg.screenshot({ path: tag(0, "node-waterworks") });
+  await pg.evaluate(() => window.ringfallCamera());
+  // 1. The player takes it; the counter-attack sets off at once and lands at the pad.
+  await pg.evaluate(([i]) => window.ringfallWar.clear(i), [W]);
+  await pg.evaluate(([i]) => window.ringfallWar.take(i, true), [W]);
+  let st = await quietStep(pg, 1500);
+  if (st.front.nodes[W] !== "freed" || !st.battle.counterSquads.some((q) => q.to === "waterworks")) errors.push(`push-pull: taking the waterworks set off no counter-attack (${JSON.stringify(st.battle.counterSquads)})`);
+  // Off towards the camp, facing west with the waterworks off to the right: the counter-attack ashore and walking, the arrow at the screen's edge.
+  const away = { x: core.x - 120, z: core.z + 110 };
+  for (let k = 0; k < 12 && !st.battle.counterSquads.some((q) => q.to === "waterworks" && q.ashore <= 0); k++) {
+    await stand(away.x, away.z, -Math.PI / 2);
+    st = await quietStep(pg, 2000);
+  }
+  if (!st.battle.risk.includes("waterworks")) errors.push(`push-pull: the waterworks is not at risk with the counter-attack on its way (${JSON.stringify(st.battle.risk)})`);
+  await stand(away.x, away.z, -Math.PI / 2);
+  await pg.evaluate(() => window.advanceTime(300));
+  const arrow = await pg.evaluate(() => [...document.querySelectorAll(".threat-mark")].filter((e) => e.style.display !== "none").map((e) => e.className));
+  if (!arrow.length) errors.push("push-pull: no arrow points at the waterworks while the counter-attack walks to it");
+  await pg.screenshot({ path: tag(1, "counter-arrow") });
+  if (!phone) await pg.screenshot({ path: tag(3, "risk-bar"), clip: { x: 1280 / 2 - 260, y: 0, width: 520, height: 120 } });
+  const risk = await pg.evaluate(() => document.querySelector("#island-row .tug.at-risk") !== null);
+  if (!risk) errors.push("push-pull: the HUD's bar does not pulse with a node at risk");
+  if (phone) {
+    const cdp = await ctx.newCDPSession(pg);
+    const bb = await pg.locator("#t-map").boundingBox();
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: bb.x + bb.width / 2, y: bb.y + bb.height / 2, id: 1 }] });
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await pg.evaluate(() => window.advanceTime(300));
+    await pg.screenshot({ path: tag(2, "counter-map") });
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: bb.x + bb.width / 2, y: bb.y + bb.height / 2, id: 1 }] });
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  } else {
+    await pg.keyboard.press("KeyM");
+    await pg.evaluate(() => window.advanceTime(300));
+    await pg.screenshot({ path: tag(2, "counter-map") });
+    await pg.keyboard.press("KeyM");
+  }
+  // The results' beats slowed, so each is shot while it is up.
+  await pg.evaluate(() => (window.ringfallBeatGap = 5000));
+  // 2. At the waterworks' depot with the counter-attack on its way: the bar pulses as the player leaves.
+  const dep = st.depotSpots.find((d) => d.poi === "waterworks");
+  await stand(dep.x + Math.sin(dep.yaw) * 1.2, dep.z - Math.cos(dep.yaw) * 1.2, dep.yaw + Math.PI);
+  await pg.evaluate(() => window.advanceTime(300));
+  if (phone) {
+    const bb = await pg.locator("#t-use").boundingBox();
+    const cdp = await ctx.newCDPSession(pg);
+    if (bb) {
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: bb.x + bb.width / 2, y: bb.y + bb.height / 2, id: 41 }] });
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    }
+  } else await pg.keyboard.press("KeyE");
+  await pg.evaluate(() => window.advanceTime(800));
+  const leaving = await readOf(pg);
+  if (leaving.leaving === null || !leaving.battle.risk.includes("waterworks")) errors.push(`push-pull: leaving at the waterworks' depot reads leaving ${leaving.leaving}, at risk ${JSON.stringify(leaving.battle.risk)}`);
+  await pg.screenshot({ path: tag(4, "depot-risk") });
+  await pg.evaluate(() => window.advanceTime(5000));
+  await pg.waitForFunction(() => !document.getElementById("results").hidden, null, { timeout: 10000 }).catch(() => undefined);
+  const r = await readOf(pg);
+  const set = r.settled;
+  if (r.screen !== "results" || !set || !set.raid.gained.includes("waterworks") || !set.after.lost.includes("waterworks")) errors.push(`push-pull: the results read ${r.screen}, raid ${JSON.stringify(set?.raid)}, after ${JSON.stringify(set?.after)}`);
+  if (!set?.night.lost.length) errors.push(`push-pull: the night took nothing (${JSON.stringify(set?.night)})`);
+  // The beats, each shot as it comes up (`data-beat` on the beat's mark): the raid's change, the battle after leaving, the night.
+  const beatOf = (b) => pg.waitForFunction((x) => document.getElementById("day-beat")?.dataset.beat === x, b, { timeout: 25000 }).then(() => true, () => false);
+  if (!(await beatOf("raid"))) errors.push("push-pull: the results never showed the raid's beat");
+  await pg.waitForTimeout(1200);
+  await pg.screenshot({ path: tag(5, "results-raid") });
+  if (!(await beatOf("after")) || !/depot/.test(await pg.evaluate(() => document.querySelector("#day-beat .ico")?.getAttribute("class") ?? ""))) errors.push("push-pull: the results' beat after leaving did not show the depot's mark");
+  await pg.waitForTimeout(1200);
+  await pg.screenshot({ path: tag(6, "results-after-leaving") });
+  if (!(await beatOf("night")) || !/night/.test(await pg.evaluate(() => document.querySelector("#day-beat .ico")?.getAttribute("class") ?? ""))) errors.push("push-pull: the results' night beat did not show the moon");
+  await pg.waitForTimeout(1200);
+  await pg.screenshot({ path: tag(7, "results-night") });
+  const bar = await pg.evaluate(() => document.querySelector("#day-result .tug")?.getAttribute("aria-label"));
+  const held = Object.entries(r.profile.poiState).filter(([id, o]) => id !== "pad" && o.state === "freed").length;
+  if (bar !== `${held} / 11`) errors.push(`push-pull: the results' bar reads ${bar} for ${held} nodes held`);
+  await ctx.close();
+  lap(`push-pull, ${phone ? "phone" : "desktop"}`);
+}
+
 /*
  * Six rules the screens show by layout, colour and motion instead of a sentence
  * (docs/ringfall/island-v2.md, 見せ方), on the desktop and a phone on its side: the carry-in

@@ -148,62 +148,107 @@ kbd {
 #island-row:empty {
   display: none;
 }
-.node-row {
+/* The tug of war: the player's blue from the left, the enemy's red from the right, a segment a node. */
+.tug {
+  --own-c: #3f86c8;
+  --foe-c: #c8402f;
+  --h: 10px;
+  --w: 150px;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   vertical-align: middle;
+  max-width: 100%;
+  font-weight: 800;
+  font-size: 13px;
+  line-height: 1;
 }
-.node-row i.node {
+.tug-n.own {
+  color: #8cc4f4;
+}
+.tug-n.foe {
+  color: #f08a78;
+}
+.tug-bar {
+  position: relative;
   display: block;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  border: 2px solid #c8402f;
-  background: rgba(200, 64, 47, 0.18);
+  flex: none;
+  width: var(--w);
+  height: var(--h);
+  background: var(--foe-c);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
 }
-.node-row i.node.own {
-  border-color: #3f86c8;
-  background: #3f86c8;
+.tug-fill,
+.tug-risk,
+.tug-ticks,
+.tug-edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
 }
-.node-row i.node.gap {
-  margin-left: 6px;
+.tug-fill {
+  left: 0;
+  width: calc(var(--own) / var(--n) * 100%);
+  background: var(--own-c);
 }
-/* The results' row: a node taken that day turns blue, one lost turns red, each with a pulse. */
-.node-row i.node.gained {
-  animation: node-gained 1.4s ease-out 0.5s both;
+/* The boundary between the two sides, sliding with the fill. */
+.tug-edge {
+  left: calc(var(--own) / var(--n) * 100% - 1.5px);
+  width: 3px;
+  background: #fff;
 }
-.node-row i.node.lost {
-  border-color: #c8402f;
-  animation: node-lost 1.4s ease-out 0.5s both;
+.tug.moved .tug-fill {
+  animation: tug-fill 1.1s cubic-bezier(0.3, 0.8, 0.3, 1) var(--delay) both;
 }
-@keyframes node-gained {
+.tug.moved .tug-edge {
+  animation: tug-edge 1.1s cubic-bezier(0.3, 0.8, 0.3, 1) var(--delay) both;
+}
+@keyframes tug-fill {
   from {
-    background: rgba(200, 64, 47, 0.18);
-    border-color: #c8402f;
-    box-shadow: 0 0 0 0 rgba(63, 134, 200, 0.9);
-  }
-  60% {
-    box-shadow: 0 0 0 7px rgba(63, 134, 200, 0);
-  }
-  to {
-    background: #3f86c8;
-    border-color: #3f86c8;
+    width: calc(var(--from) / var(--n) * 100%);
   }
 }
-@keyframes node-lost {
+@keyframes tug-edge {
   from {
-    background: #3f86c8;
-    border-color: #3f86c8;
-    box-shadow: 0 0 0 0 rgba(200, 64, 47, 0.9);
+    left: calc(var(--from) / var(--n) * 100% - 1.5px);
   }
-  60% {
-    box-shadow: 0 0 0 7px rgba(200, 64, 47, 0);
+}
+/* A node fought over: the boundary flickers. */
+.tug.contested .tug-edge {
+  animation: tug-flicker 0.5s steps(2) infinite;
+}
+@keyframes tug-flicker {
+  50% {
+    background: #ffcf5a;
+    transform: scaleX(2.2);
   }
-  to {
-    background: #c8402f;
-    border-color: #c8402f;
+}
+/* The player's nodes the enemy is about to take: the last blue segments pulse red. */
+.tug-risk {
+  display: none;
+  left: calc((var(--own) - var(--risk)) / var(--n) * 100%);
+  width: calc(var(--risk) / var(--n) * 100%);
+  background: var(--foe-c);
+}
+.tug.at-risk .tug-risk {
+  display: block;
+  animation: tug-risk 0.9s ease-in-out infinite;
+}
+@keyframes tug-risk {
+  0%,
+  100% {
+    opacity: 0.15;
   }
+  50% {
+    opacity: 0.95;
+  }
+}
+/* One mark a node: the segments' joins. */
+.tug-ticks {
+  left: 0;
+  right: 0;
+  background: repeating-linear-gradient(90deg, transparent 0 calc(100% / var(--n) - 1px), rgba(10, 12, 18, 0.85) calc(100% / var(--n) - 1px) calc(100% / var(--n)));
 }
 #obj-raid.late {
   color: #ff8a6a;
@@ -1105,16 +1150,10 @@ body.touch .mate-bars {
 .title-row {
   margin: 2px 0 4px;
 }
-.title-row .node-row {
-  gap: 8px;
-}
-.title-row .node-row i.node {
-  width: 20px;
-  height: 20px;
-  border-width: 3px;
-}
-.title-row .node-row i.node.gap {
-  margin-left: 12px;
+.title-row .tug {
+  --w: 260px;
+  --h: 16px;
+  font-size: 18px;
 }
 .touch-help span {
   margin-right: 18px;
@@ -2520,9 +2559,26 @@ body.touch .map-buttons button {
   color: var(--muted);
   font-size: 14px;
 }
-#day-result .day-row .node-row i.node {
-  width: 18px;
-  height: 18px;
+/* The results' beat: the depot's mark for the battle after the player left, the moon for the night. */
+#day-beat {
+  display: inline-flex;
+  min-width: 22px;
+}
+#day-beat svg {
+  width: 22px;
+  height: 22px;
+  animation: day-beat 0.5s ease-out both;
+}
+@keyframes day-beat {
+  from {
+    opacity: 0;
+    transform: scale(1.8);
+  }
+}
+#day-result .day-row .tug {
+  --w: 200px;
+  --h: 14px;
+  font-size: 16px;
 }
 #day-result p {
   margin: 0;
@@ -2784,9 +2840,15 @@ body:not(.playing) #banner {
 .hub-row {
   margin: 4px 0 8px;
 }
-.hub-row .node-row i.node {
-  width: 16px;
-  height: 16px;
+.hub-row .tug {
+  --w: 220px;
+  --h: 12px;
+  font-size: 15px;
+}
+/* In the map table's side column the bar narrows to the column (a phone's panel). */
+.hub-row .tug-bar {
+  flex: 0 1 var(--w);
+  min-width: 60px;
 }
 #camp-prompt {
   position: absolute;
@@ -3382,6 +3444,12 @@ body.touch #obj-raid .short {
   filter: drop-shadow(0 0 6px rgba(255, 59, 48, 0.9));
   animation: threat-pulse 0.9s ease-in-out infinite;
   pointer-events: none;
+}
+/* A counter-attack still on its way to the node: smaller and slower, the same arrow. */
+.threat-mark.coming {
+  width: 26px;
+  height: 22px;
+  animation-duration: 1.6s;
 }
 @keyframes threat-pulse {
   0%,
