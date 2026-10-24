@@ -2746,16 +2746,16 @@ function checkIntercept(): string | null {
 
 /**
  * A squad of three or more splits at once (see SPLIT): three grunts 18 m off a player standing in
- * the open have members on both sides of the line from their front member to the player, each
+ * 30 degrees or more off it, within 8 s, in eight of thirty draws of the random numbers at least.
  * 30 degrees or more off it, within 5 s, before a pinch would start.
  */
 function checkSplit(): string | null {
   const at = openSpot(19, 8, 8);
   if (!at) return "split: no open ground for the test";
-  // Over ten draws of the raid's random numbers (the island's garrisons draw on them first), a squad goes round
-  // both sides within 8 s in about half: the gate holds it to three at least.
+  // Over thirty draws of the raid's random numbers (every robot on the island draws on them each tick), a squad
+  // goes round both sides within 8 s in about two in five: the gate holds it to eight at least.
   const both: number[] = [];
-  for (const rng of [101, 202, 303, 404, 505, 606, 707, 808, 909, 1010]) {
+  for (const rng of Array.from({ length: 30 }, (_, i) => 1234 + i * 977)) {
     const { s, foes } = standoff(at, 18, ["grunt", "grunt", "grunt"]);
     s.rng = rng;
     const p = s.player;
@@ -2774,7 +2774,7 @@ function checkSplit(): string | null {
     }
     both.push(sides.size);
   }
-  if (both.filter((n) => n >= 2).length < 3) return `split: within 8 s three grunts went round on ${both.join("/")} side(s) of the player`;
+  if (both.filter((n) => n >= 2).length < 8) return `split: within 8 s three grunts went round on ${both.join("/")} side(s) of the player`;
   return null;
 }
 
