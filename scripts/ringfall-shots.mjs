@@ -71,8 +71,9 @@ const lap = (name) => {
 
 /*
  * The camp between raids (src/ringfall/sim/camp.ts): the title's start wakes the player in it,
- * a station's panel opens by the use key (or the use button) standing at it, the gate leads out
- * into a raid from the south beach, and the truck drives to the start the map table chose.
+ * a station's panel opens by the use key (or the use button) standing at it, and the gate and the
+ * truck both open the departure, whose map chooses the start: the gate's own way in walks out onto
+ * the south beach, any other start comes after a fade.
  */
 const readPage = async (pg) => JSON.parse(await pg.evaluate(() => window.render_game_to_text()));
 /** Until the fade to and from the camp's dark (under a second) has cleared the screen. */
@@ -108,12 +109,39 @@ const closePanel = async (pg, touch = false) => {
   await (touch ? pg.tap("#hub-close") : pg.click("#hub-close"));
   if ((await readPage(pg)).camp?.panel) errors.push("camp: the close button left the panel open");
 };
+/** Until the departure is up with its map drawn and its starts set on it. */
+const departUp = (pg) =>
+  pg.waitForFunction(() => !document.getElementById("depart").hidden && document.querySelectorAll("#depart-points button.pick").length > 0, null, { timeout: 4000 }).catch(() => errors.push("depart: the map of starts never came up"));
+/** Chooses a start on the departure's map (`kind` "entry" or "depot"), by a click or a tap with `touch`; the departure's state after. */
+const pickStart = async (pg, kind, id, touch = false) => {
+  const sel = `#depart-points button.pick[data-kind=${kind}][data-id=${id}]`;
+  await (touch ? pg.tap(sel) : pg.click(sel));
+  await pg.waitForTimeout(80);
+  const d = (await readPage(pg)).camp?.depart;
+  if (d?.start?.kind !== kind || d?.start?.id !== id) errors.push(`depart: choosing ${kind} ${id} left the start at ${JSON.stringify(d?.start)}`);
+  return d;
+};
+/** Whether the departure fits the screen: its panel and every start on the map inside the window, none clipped. */
+const departFits = (pg) =>
+  pg.evaluate(() => {
+    const bad = [];
+    const r = document.querySelector("#depart .depart-inner").getBoundingClientRect();
+    if (r.bottom > innerHeight + 1 || r.right > innerWidth + 1 || r.left < -1 || r.top < -1) bad.push("the departure spills past the screen");
+    for (const b of document.querySelectorAll("#depart-points button.pick")) {
+      const q = b.getBoundingClientRect();
+      if (q.left < r.left - 1 || q.right > r.right + 1 || q.top < r.top - 1 || q.bottom > r.bottom + 1) bad.push(`start ${b.dataset.id} clipped`);
+    }
+    const go = document.getElementById("depart-go").getBoundingClientRect();
+    if (go.bottom > innerHeight + 1 || go.right > innerWidth + 1) bad.push("the confirm is off the screen");
+    return bad;
+  });
 /**
- * The departure's check, once it is up: it lists the kit and the objective; `shot` saves it; the
- * confirm (Enter, or a tap with `touch`) starts the raid.
+ * The departure, once it is up: it lists the kit and the objective; `pick` ([kind, id]) chooses
+ * the start on its map first; `shot` saves it; the confirm (Enter, or a tap with `touch`) starts the raid.
  */
-const confirmDepart = async (pg, { touch = false, shot = "" } = {}) => {
-  await pg.waitForFunction(() => !document.getElementById("depart").hidden, null, { timeout: 4000 }).catch(() => undefined);
+const confirmDepart = async (pg, { touch = false, shot = "", pick = null } = {}) => {
+  await departUp(pg);
+  if (pick) await pickStart(pg, pick[0], pick[1], touch);
   const st = await readPage(pg);
   const text = await pg.textContent("#depart");
   if (!st.camp?.depart || !/武器/.test(text) || !/回復/.test(text) || !/目的/.test(text)) errors.push(`depart: the check reads ${JSON.stringify(st.camp?.depart)} "${text}"`);
@@ -135,10 +163,10 @@ const walkOutOfGate = async (pg, shot = "") => {
   if (st.screen !== "game") errors.push(`camp: walking out of the gate left the screen at ${st.screen} (${st.player.x},${st.player.z})`);
   return st;
 };
-/** By the truck from its use key, or its use button with `cdp`: the departure's check, a fade, then the raid. The state once it is under way. */
-const rideOut = async (pg, cdp, shot = "") => {
+/** By the truck from its use key, or its use button with `cdp`: the departure (choosing `pick` on its map), a fade, then the raid. The state once it is under way. */
+const rideOut = async (pg, cdp, shot = "", pick = null) => {
   await useStation(pg, "vehicle", cdp);
-  await confirmDepart(pg, { touch: !!cdp, shot });
+  await confirmDepart(pg, { touch: !!cdp, shot, pick });
   await pg.waitForFunction(() => JSON.parse(window.render_game_to_text()).screen === "game", null, { timeout: 5000 }).catch(() => undefined);
   await faded(pg);
   const st = await readPage(pg);
@@ -422,13 +450,16 @@ const spills = (pg) =>
   await page.waitForTimeout(400);
   await page.evaluate(() => Object.defineProperty(screen, "orientation", { value: undefined, configurable: true }));
   await toCamp(page, true);
-  await useStation(page, "map", await ctx.newCDPSession(page));
-  const lock = await page.evaluate(() => {
-    const el = document.querySelector("#hub-region button.locked");
-    return el ? el.querySelectorAll(".ico.lock, .ico.entry").length : 0;
-  });
-  if (lock < 2) errors.push(`mobile: the locked region shows no padlock and ways in (${lock} marks)`);
-  await page.screenshot({ path: `${out}/m7-map-locked.png` });
+  // The departure from the truck: the harbor carries a padlock, its three ways in dashed and shut.
+  await useStation(page, "vehicle", await ctx.newCDPSession(page));
+  await departUp(page);
+  const locks = await page.locator("#depart-points .region-lock .ico.lock").count();
+  const shut = await page.locator("#depart-points button.pick.entry.shut:disabled").count();
+  const open = await page.locator("#depart-points button.pick:not(:disabled)").count();
+  if (locks !== 1 || shut !== 5 || open !== 1) errors.push(`mobile: a fresh departure shows ${locks} padlocks, ${shut} ways in shut and ${open} to choose`);
+  const fit = await departFits(page);
+  if (fit.length) errors.push(`mobile departure (844x390): ${fit.join(", ")}`);
+  await page.screenshot({ path: `${out}/m7-depart-locked.png` });
   await ctx.close();
 }
 {
@@ -442,20 +473,21 @@ const spills = (pg) =>
   await page.evaluate(() => Object.defineProperty(screen, "orientation", { value: undefined, configurable: true }));
   await toCamp(page, true);
   const cdp = await ctx.newCDPSession(page);
-  await useStation(page, "map", cdp);
-  await page.tap("#hub-region [data-arg=harbor]");
-  await page.waitForTimeout(100);
-  await page.tap("#hub-region [data-act=entry][data-arg=quay]");
-  await page.waitForTimeout(100);
-  await page.screenshot({ path: `${out}/m6-map-harbor.png` });
-  await closePanel(page, true);
-  // The truck's prompt names the quay; the use button rides there.
+  // The truck's prompt opens the departure; the quay is tapped on its map and the confirm rides there.
   await page.evaluate(() => window.ringfallCamp.walkTo("vehicle"));
   await page.evaluate(() => window.advanceTime(100));
   const truck = await page.textContent("#camp-prompt");
-  if (!/埠頭の東の道/.test(truck)) errors.push(`mobile harbor: the truck's prompt reads "${truck}"`);
+  if (!/出撃/.test(truck)) errors.push(`mobile harbor: the truck's prompt reads "${truck}"`);
   await page.screenshot({ path: `${out}/m6-camp-truck.png` });
-  await rideOut(page, cdp);
+  await useStation(page, "vehicle", cdp);
+  await departUp(page);
+  await pickStart(page, "entry", "quay", true);
+  const fitH = await departFits(page);
+  if (fitH.length) errors.push(`mobile departure (844x390): ${fitH.join(", ")}`);
+  await page.screenshot({ path: `${out}/m6-depart-harbor.png` });
+  await page.tap("#depart-go");
+  await page.waitForFunction(() => JSON.parse(window.render_game_to_text()).screen === "game", null, { timeout: 5000 }).catch(() => undefined);
+  await faded(page);
   const read = async () => JSON.parse(await page.evaluate(() => window.render_game_to_text()));
   const step = (ms) => page.evaluate((t) => window.advanceTime(t), ms);
   const st = await read();
@@ -581,15 +613,23 @@ const read = async () => JSON.parse(await page.evaluate(() => window.render_game
   await useStation(page, "workshop");
   await page.screenshot({ path: `${out}/00-panel-workshop.png` });
   await closePanel(page);
-  // The start choice: a fresh profile knows only the reservoir's first way in, so the harbor is shown locked, with its ways in still to find.
+  // The map table shows the island and chooses no start: that is the departure's.
   await seen("map");
   await useStation(page, "map");
-  const harborLocked = await page.locator("#hub-region button.locked").count();
-  const entriesOffered = await page.locator("#hub-region [data-act=entry]").count();
+  if ((await page.locator("#hub-side [data-act=entry], #hub-side [data-act=region], #hub-side [data-act=from]").count()) || !(await page.locator("#hub-island-map").count())) errors.push("camp: the map table still chooses a start, or shows no island");
   await page.screenshot({ path: `${out}/00-panel-map.png` });
-  const harborRings = await page.locator("#hub-region button.locked .ico.entry").count();
-  if (harborLocked !== 1 || entriesOffered !== 1 || harborRings !== 3) errors.push(`camp: a fresh profile offers ${entriesOffered} ways in and ${harborLocked} locked regions, the harbor showing ${harborRings} ways in to find`);
   await closePanel(page);
+  // The departure from the truck: a fresh profile knows only the reservoir's first way in, so the harbor carries a padlock and its ways in are dashed; cancelled with Esc.
+  await useStation(page, "vehicle");
+  await departUp(page);
+  const harborLocked = await page.locator("#depart-points .region-lock").count();
+  const entriesOffered = await page.locator("#depart-points button.pick.entry:not(:disabled)").count();
+  const harborRings = await page.locator("#depart-points button.pick.entry.shut").count();
+  const fresh = (await readPage(page)).camp.depart;
+  if (harborLocked !== 1 || entriesOffered !== 1 || harborRings !== 5 || fresh?.start?.id !== "beach") errors.push(`camp: a fresh departure offers ${entriesOffered} ways in, ${harborLocked} locked regions, ${harborRings} ways in to find, starting at ${fresh?.start?.id}`);
+  await page.screenshot({ path: `${out}/00-depart-locked.png` });
+  await page.keyboard.press("Escape");
+  if ((await readPage(page)).camp?.depart) errors.push("camp: Esc did not close the departure");
   await seen("stash");
   await useStation(page, "stash");
   const picks = page.locator("#hub-stash [data-act=pick]");
@@ -1182,11 +1222,7 @@ console.log(JSON.stringify((await read()).stats));
   await page.reload({ waitUntil: "load" });
   await toCamp(page);
   await page.evaluate((s) => window.ringfallBot(s), skill);
-  await useStation(page, "map");
-  await page.click("#hub-region [data-arg=harbor]");
-  await page.screenshot({ path: `${out}/27-map-harbor.png` });
-  await closePanel(page);
-  await rideOut(page, undefined, "27-depart-truck");
+  await rideOut(page, undefined, "27-depart-truck", ["entry", "outskirts"]);
   await page.evaluate(() => window.advanceTime(1500));
   await draw(page);
   await page.screenshot({ path: `${out}/28-harbor-start.png` });
@@ -1313,13 +1349,28 @@ const readOf = async (pg) => JSON.parse(await pg.evaluate(() => window.render_ga
   await useStation(pg, "map", cdp);
   fit = fit.concat(await spills(pg));
   await pg.screenshot({ path: `${out}/m12-map-intel.png` });
-  // The starts hold the depots too, and stay inside the screen.
-  await pg.tap("#hub-region [data-act=from][data-arg=yard]");
-  fit = fit.concat(await spills(pg));
-  const row = await pg.evaluate(() => document.getElementById("hub-region").getBoundingClientRect().right);
-  if (row > 741) fit.push(`hub-region ends at ${Math.round(row)}`);
-  await pg.screenshot({ path: `${out}/m14-map-depot.png` });
   await closePanel(pg, true);
+  // The departure holds the depots too, tapped on its map, and stays inside the screen.
+  await useStation(pg, "vehicle", cdp);
+  await departUp(pg);
+  await pickStart(pg, "depot", "yard", true);
+  fit = fit.concat(await departFits(pg));
+  await pg.screenshot({ path: `${out}/m14-depart-depot.png` });
+  await pg.tap("#depart-cancel");
+  // The rare PIKE and an epic armour are past a level 0 depot's allowance: the yard's boxes turn red and the confirm is shut.
+  await useStation(pg, "stash", cdp);
+  await pg.locator("#hub-stash [data-act=pick]", { hasText: "PIKE" }).tap();
+  await pg.locator("#hub-stash [data-act=pick]", { hasText: "アーマー" }).tap();
+  await closePanel(pg, true);
+  await useStation(pg, "vehicle", cdp);
+  await departUp(pg);
+  const overM = (await readOf(pg)).camp.depart;
+  if (overM?.start?.id !== "yard" || !overM.refused || !(await pg.locator("#depart-go:disabled").count()) || !(await pg.locator("#depart-points button.pick.on.over .mini i.over").count())) errors.push(`mobile depot: over the allowance the departure reads ${JSON.stringify(overM?.start)} refused "${overM?.refused}"`);
+  fit = fit.concat(await departFits(pg));
+  await pg.screenshot({ path: `${out}/m14-depart-over.png` });
+  await pg.tap("#depart-go", { force: true });
+  if ((await readOf(pg)).screen !== "camp") errors.push("mobile depot: the shut confirm still departed");
+  await pg.tap("#depart-cancel");
   await useStation(pg, "shop", cdp);
   fit = fit.concat(await spills(pg));
   await pg.screenshot({ path: `${out}/m15-panel-shop.png` });
@@ -1379,38 +1430,44 @@ const readOf = async (pg) => JSON.parse(await pg.evaluate(() => window.render_ga
   // An epic armour in the stash: with the rare PIKE (2) it is over a level 0 depot's allowance (2).
   const pg = await withProfile(ctx, { ...depotGame, stash: [...midGame.stash, { t: "armor", tier: 2 }] });
   await toCamp(pg);
-  await useStation(pg, "map");
-  const starts = await pg.locator("#hub-region [data-act=from]").count();
-  if (starts !== 2) errors.push(`depot: the map table offers ${starts} depots to start from, not 2`);
-  await pg.click("#hub-region [data-act=from][data-arg=supply]");
-  await pg.screenshot({ path: `${out}/46-map-depots.png` });
-  await closePanel(pg);
-  // The depot's allowance: the PIKE fits it, the armour on top does not (the truck refuses), and a start at a way in lifts the limit.
+  // The departure from the truck offers the two depots that open a start; the supply depot is chosen and the departure cancelled.
+  await useStation(pg, "vehicle");
+  await departUp(pg);
+  const starts = await pg.locator("#depart-points button.pick.depot:not(:disabled)").count();
+  if (starts !== 2) errors.push(`depot: the departure offers ${starts} depots to start from, not 2`);
+  await pickStart(pg, "depot", "supply");
+  await pg.screenshot({ path: `${out}/46-depart-depot.png` });
+  await pg.keyboard.press("Escape");
+  // The depot's allowance: the PIKE fits it, the armour on top does not (the departure refuses), and a start at a way in lifts the limit.
   const allowance = () => pg.evaluate(() => document.querySelector("#hub-side .slot.depot")?.textContent ?? "");
   const refused = async () => (await readOf(pg)).camp.ride.refused;
   await useStation(pg, "stash");
   await pg.locator("#hub-stash [data-act=pick]", { hasText: "PIKE" }).click();
   const fits = await allowance();
-  if (!/Lv0/.test(fits) || !/2 \/ 2/.test(fits) || !/1,500/.test(fits) || (await refused())) errors.push(`depot: with the PIKE the allowance reads "${fits}", the truck ${(await refused()) || "goes"}`);
+  if (!/Lv0/.test(fits) || !/2 \/ 2/.test(fits) || !/1,500/.test(fits) || (await refused())) errors.push(`depot: with the PIKE the allowance reads "${fits}", the departure ${(await refused()) || "goes"}`);
   await pg.screenshot({ path: `${out}/46-stash-depot-budget.png` });
   await pg.locator("#hub-stash [data-act=pick]", { hasText: "アーマー" }).click();
   const over = await allowance();
-  if (!/4 \/ 2/.test(over) || !/持ち込み枠/.test(await refused())) errors.push(`depot: over the allowance it reads "${over}" and the truck ${(await refused()) || "goes"}`);
+  if (!/4 \/ 2/.test(over) || !/持ち込み枠/.test(await refused())) errors.push(`depot: over the allowance it reads "${over}" and the departure ${(await refused()) || "goes"}`);
   await pg.screenshot({ path: `${out}/46-stash-depot-over.png` });
   await closePanel(pg);
-  await pg.evaluate(() => window.ringfallCamp.walkTo("vehicle"));
+  // Over the allowance the departure opens on the depot in red, its confirm shut: Enter stays in the camp.
+  await useStation(pg, "vehicle");
+  await departUp(pg);
+  const overD = (await readOf(pg)).camp.depart;
+  const red = await pg.locator("#depart-points button.pick.on.over .mini i.over").count();
+  if (overD?.start?.id !== "supply" || !overD.refused || red !== 2 || !(await pg.locator("#depart-go:disabled").count()) || !(await pg.locator("#depart-carry .depart-carry.over").count())) errors.push(`depot: over the allowance the departure reads ${JSON.stringify(overD?.start)} refused "${overD?.refused}", ${red} red boxes`);
+  await pg.screenshot({ path: `${out}/46-depart-over.png` });
+  await pg.keyboard.press("Enter");
   await pg.evaluate(() => window.advanceTime(100));
-  const truck = await pg.textContent("#camp-prompt");
-  await pg.keyboard.press("KeyE");
-  await pg.evaluate(() => window.advanceTime(100));
-  await pg.waitForTimeout(700);
-  if (!/持ち込み枠/.test(truck) || (await readOf(pg)).screen !== "camp") errors.push(`depot: over the allowance the truck's prompt reads "${truck}" and the use key left ${(await readOf(pg)).screen}`);
-  await pg.screenshot({ path: `${out}/46-camp-truck-refused.png` });
-  await useStation(pg, "map");
-  await pg.click("#hub-region [data-arg=reservoir]");
-  if ((await refused()) || (await allowance())) errors.push("depot: switching to a way in did not lift the allowance");
-  await pg.click("#hub-region [data-act=from][data-arg=supply]");
-  await closePanel(pg);
+  await pg.waitForTimeout(500);
+  if ((await readOf(pg)).screen !== "camp" || !(await readOf(pg)).camp.depart) errors.push(`depot: over the allowance Enter left ${(await readOf(pg)).screen}`);
+  // A way in lifts the limit: no boxes, the confirm open.
+  const toWay = await pickStart(pg, "entry", "beach");
+  if (toWay?.refused || (await pg.locator("#depart-carry .depart-carry").count()) || (await pg.locator("#depart-go:disabled").count())) errors.push("depot: choosing a way in did not lift the allowance");
+  await pg.screenshot({ path: `${out}/46-depart-entry.png` });
+  await pickStart(pg, "depot", "supply");
+  await pg.keyboard.press("Escape");
   await useStation(pg, "stash");
   await pg.click("#hub-side [data-act=lent]");
   await pg.locator("#hub-stash [data-act=pick]", { hasText: "アーマー" }).click();
@@ -2063,9 +2120,10 @@ for (const phone of [false, true]) {
   const why = phone ? "rules on a phone" : "rules";
   await toCamp(pg);
   // Carry-in boxes: the PIKE fills its two boxes, armour on top spills past them in red; the heals sit outside.
-  await useStation(pg, "map");
-  await pg.click("#hub-region [data-act=from][data-arg=supply]");
-  await closePanel(pg);
+  await useStation(pg, "vehicle");
+  await departUp(pg);
+  await pickStart(pg, "depot", "supply", phone);
+  await pg.keyboard.press("Escape");
   await useStation(pg, "stash");
   await pg.locator("#hub-stash [data-act=pick]", { hasText: "PIKE" }).click();
   const boxes = await pg.evaluate(() => ({ full: document.querySelectorAll("#hub-side .slot.depot .seg:not(.empty)").length, free: document.querySelectorAll("#hub-side .slot.depot .free span").length, pouch: document.querySelectorAll("#hub-side .slot.pouch .seg.pouch").length }));
@@ -2165,11 +2223,15 @@ for (const phone of [false, true]) {
   if (!/7 \/ 20/.test(known ?? "")) errors.push(`${why}: the board's bin shows "${known}" mod parts known`);
   await pg.locator("#hub-side .strength p.bins").scrollIntoViewIfNeeded();
   await snap("4-board-bin");
-  // The map table: the harbor's ways in, learned, as the map's solid rings.
+  // The departure: the harbor's ways in, learned, as solid rings that can be chosen, its padlock gone.
   await closePanel(pg);
-  await useStation(pg, "map");
-  await pg.click("#hub-region [data-arg=harbor]").catch(() => errors.push(`${why}: the harbor cannot be chosen once its ways in are learned`));
-  await snap("6-map-desk");
+  await useStation(pg, "vehicle");
+  await departUp(pg);
+  const learnt = ((await readOf(pg)).camp.depart?.starts ?? []).filter((q) => q.kind === "entry" && q.region === "harbor" && q.open);
+  if (!learnt.length || (await pg.locator("#depart-points .region-lock").count())) errors.push(`${why}: the departure offers ${learnt.length} harbor ways in once learned`);
+  if (learnt[0]) await pickStart(pg, "entry", learnt[0].id, phone);
+  await snap("6-depart-learned");
+  await pg.keyboard.press("Escape");
   await ctx.close();
   lap(`rules, ${phone ? "phone" : "desktop"}`);
 }
