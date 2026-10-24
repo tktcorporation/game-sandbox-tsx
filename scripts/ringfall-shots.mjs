@@ -2170,6 +2170,134 @@ for (const phone of [false, true]) {
   await ctx.close();
   lap(`push-pull, ${phone ? "phone" : "desktop"}`);
 }
+
+/*
+ * Six rules the screens show by layout, colour and motion instead of a sentence
+ * (docs/ringfall/island-v2.md, 見せ方), on the desktop and a phone on its side: the carry-in
+ * allowance as boxes (the lent kit and heals outside them), the pouch's slots in its colour (the
+ * shelves, the HUD's bag, a wipe's results), one contract a raid (the others pale) and a new day's
+ * papers sliding onto the board, the flare's smoke over a tall building's top floor and its mark
+ * by the plateau's pickup on the map, the ways in a raid learned turning from dashed to solid,
+ * and an analysed mod part dropping into a supply bin.
+ */
+for (const phone of [false, true]) {
+  const ctx = await browser.newContext(phone ? { viewport: { width: 844, height: 390 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true } : { viewport: { width: 1280, height: 720 } });
+  const pg = await withProfile(ctx, { ...depotGame, stash: [{ t: "weapon", kind: "pike", rarity: 1 }, { t: "armor", tier: 1 }, { t: "heal", kind: "cell" }, ...bag([["fuse", 2], ["board", 2]])] });
+  const name = (n) => `${out}/${phone ? "m-" : ""}rules-${n}.png`;
+  const snap = (n) => pg.screenshot({ path: name(n) });
+  const why = phone ? "rules on a phone" : "rules";
+  await toCamp(pg);
+  // Carry-in boxes: the PIKE fills its two boxes, armour on top spills past them in red; the heals sit outside.
+  await useStation(pg, "map");
+  await pg.click("#hub-region [data-act=from][data-arg=supply]");
+  await closePanel(pg);
+  await useStation(pg, "stash");
+  await pg.locator("#hub-stash [data-act=pick]", { hasText: "PIKE" }).click();
+  const boxes = await pg.evaluate(() => ({ full: document.querySelectorAll("#hub-side .slot.depot .seg:not(.empty)").length, free: document.querySelectorAll("#hub-side .slot.depot .free span").length, pouch: document.querySelectorAll("#hub-side .slot.pouch .seg.pouch").length }));
+  if (boxes.full !== 1 || boxes.free < 1 || boxes.pouch !== 3) errors.push(`${why}: the carry-in boxes read ${JSON.stringify(boxes)}`);
+  await snap("1-carry");
+  await pg.locator("#hub-stash [data-act=pick]", { hasText: "アーマー" }).click();
+  if (!(await pg.locator("#hub-side .slot.depot .seg.over").count())) errors.push(`${why}: armour past the allowance is not marked over`);
+  await snap("1-carry-over");
+  await pg.locator("#hub-side .slot.pouch").scrollIntoViewIfNeeded();
+  await snap("2-pouch-shelf");
+  await pg.locator("#hub-stash [data-act=pick]", { hasText: "アーマー" }).click();
+  await closePanel(pg);
+  await useStation(pg, "vehicle");
+  await pg.waitForFunction(() => !document.getElementById("depart").hidden, null, { timeout: 4000 }).catch(() => undefined);
+  if (!(await pg.locator("#depart-carry .seg").count())) errors.push(`${why}: the departure's check shows no carry-in boxes`);
+  await snap("1-carry-depart");
+  await pg.keyboard.press("Escape");
+  await pg.waitForTimeout(200);
+  // One contract a raid: taking one pales the rest.
+  await useStation(pg, "quests");
+  await pg.locator("#hub-side .quest.contract [data-act=take]").first().click();
+  const papers = await pg.evaluate(() => ({ all: document.querySelectorAll("#hub-side .quest.contract").length, dim: document.querySelectorAll("#hub-side .quest.contract.dim").length }));
+  if (papers.all < 2 || papers.dim !== papers.all - 1) errors.push(`${why}: with a contract taken the board reads ${JSON.stringify(papers)}`);
+  await snap("5-board-taken");
+  await closePanel(pg);
+  await rideOut(pg);
+  await pg.evaluate(() => window.advanceTime(2500));
+  // The bag's slots: the pouch's, outlined in its colour, hold what it would keep.
+  await pg.evaluate(() => window.ringfallBag(["drive", "board", "parts", "parts", "gyro"]));
+  await pg.evaluate(() => window.advanceTime(100));
+  const cells = await pg.evaluate(() => ({ pouch: document.querySelectorAll("#obj-bag .bag-cells i.p").length, kept: document.querySelectorAll("#obj-bag .bag-cells i.k").length }));
+  if (cells.pouch !== 3 || cells.kept < 1) errors.push(`${why}: the bag's slots read ${JSON.stringify(cells)}`);
+  await pg.locator("#objective").screenshot({ path: name("2-pouch-bag") });
+  // The flare: its mark by the plateau's pickup and on the tall buildings, then its smoke from 140 m off.
+  await pg.keyboard.press("KeyM");
+  await pg.evaluate(() => window.advanceTime(200));
+  await snap("3-flare-map");
+  await pg.keyboard.press("KeyM");
+  {
+    const st = await readOf(pg);
+    const f = [...st.flares].sort((a, b) => Math.hypot(a.x - st.player.x, a.z - st.player.z) - Math.hypot(b.x - st.player.x, b.z - st.player.z))[0];
+    if (!f || f.open) errors.push(`${why}: no unsearched flare bin in the raid (${JSON.stringify(st.flares)})`);
+    else {
+      const d = Math.hypot(st.player.x - f.x, st.player.z - f.z) || 1;
+      const x = f.x + ((st.player.x - f.x) / d) * 140;
+      const z = f.z + ((st.player.z - f.z) / d) * 140;
+      const y = (await pg.evaluate(([qx, qz]) => window.ringfallTerrain(qx, qz), [x, z])) + 3;
+      await pg.evaluate(([cx, cy, cz, yaw, pitch]) => window.ringfallCamera(cx, cy, cz, yaw, pitch), [x, y, z, Math.atan2(f.x - x, -(f.z - z)), 0.12]);
+      await snap("3-flare-smoke");
+      await pg.evaluate(() => window.ringfallCamera());
+    }
+  }
+  // A wipe: what the pouch kept in its colour, the rest struck through.
+  await pg.evaluate(() => window.ringfallEnd("dead", ["drive", "board", "parts", "parts", "gyro"]));
+  await pg.waitForFunction(() => !document.getElementById("results").hidden, null, { timeout: 10000 }).catch(() => undefined);
+  await pg.waitForTimeout(1500);
+  const wipe = await pg.evaluate(() => ({ kept: document.querySelectorAll("#haul-line .pouch-kept").length, lost: document.querySelectorAll("#haul-line .lost").length }));
+  if (wipe.kept < 1 || wipe.lost < 2) errors.push(`${why}: a wipe's results read ${JSON.stringify(wipe)}`);
+  await snap("2-pouch-wipe");
+  // The next day's board: its papers slide in.
+  await pg.click("#restart");
+  await faded(pg);
+  await useStation(pg, "quests");
+  if (!(await pg.locator("#hub-side .board.fresh").count())) errors.push(`${why}: the next day's board did not put up new papers`);
+  await pg.waitForTimeout(150);
+  await snap("5-board-new-sliding");
+  await pg.waitForTimeout(1100);
+  await snap("5-board-new");
+  await closePanel(pg);
+  // Home alive with two harbor ways in found and three mod parts worn: the rings turn solid, an analysed part drops into a bin.
+  await rideOut(pg);
+  await pg.evaluate(() => window.ringfallMods.wear(["jolt", "stock", "probe"]));
+  await pg.evaluate(() => window.advanceTime(500));
+  await pg.evaluate(() => window.ringfallEnd("extracted", ["board"], ["quay", "shore"]));
+  await pg.waitForFunction(() => !document.getElementById("results").hidden, null, { timeout: 10000 }).catch(() => undefined);
+  await pg.waitForTimeout(300);
+  await snap("6-learn-dashed");
+  await pg.waitForTimeout(1800);
+  const learned = await pg.locator("#home .learned").count();
+  if (learned !== 2) errors.push(`${why}: the results show ${learned} ways in learned, not 2`);
+  await snap("6-learn-solid");
+  const pick = pg.locator("#home [data-analyse]:not([disabled])").first();
+  if (!(await pg.locator("#home .bin-pic.out").count()) || !(await pick.count())) errors.push(`${why}: no new mod part over a bin to analyse`);
+  else {
+    await snap("4-analyse");
+    await pick.click();
+    await pg.waitForTimeout(900);
+    if (!(await pg.locator("#home .bin-pic.drop").count())) errors.push(`${why}: the analysed part did not drop into its bin`);
+    await snap("4-analysed");
+  }
+  // The board's strength row: the bin's mod parts, one more known.
+  await pg.click("#restart");
+  await faded(pg);
+  await useStation(pg, "quests");
+  await pg.locator("#hub-side .quest.contract [data-act=take]").first().click();
+  const known = await pg.textContent("#hub-side .strength p.bins");
+  if (!/7 \/ 20/.test(known ?? "")) errors.push(`${why}: the board's bin shows "${known}" mod parts known`);
+  await pg.locator("#hub-side .strength p.bins").scrollIntoViewIfNeeded();
+  await snap("4-board-bin");
+  // The map table: the harbor's ways in, learned, as the map's solid rings.
+  await closePanel(pg);
+  await useStation(pg, "map");
+  await pg.click("#hub-region [data-arg=harbor]").catch(() => errors.push(`${why}: the harbor cannot be chosen once its ways in are learned`));
+  await snap("6-map-desk");
+  await ctx.close();
+  lap(`rules, ${phone ? "phone" : "desktop"}`);
+}
 await browser.close();
 server.close();
 if (errors.length) {

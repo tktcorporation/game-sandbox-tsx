@@ -12,7 +12,7 @@ import { QUALITY, type Quality, type Tier } from "./quality";
 import { SHADE, contactAt, coverAt, floorUnder } from "./shade";
 import { GroundScatter } from "./scatter";
 import { trimBox, type TrimPiece, type TrimSite } from "./trim";
-import { PAL, RARITY_COLOR, SCOPE_IN, buildAlly, buildBeacon, buildBin, buildCore, buildBoat, buildStatic, buildDepot, buildEntryMark, buildRingDebris, mergeChunk, mergeTrim, type ChunkShade, buildCare, buildDropship, buildEnemy, buildGun, buildHands, buildLootItem, addPlates, flat, glow, haloSprite, type EnemyModel } from "./models";
+import { PAL, RARITY_COLOR, SCOPE_IN, buildAlly, buildBeacon, buildBin, buildCore, buildBoat, buildStatic, buildDepot, buildEntryMark, buildRingDebris, mergeChunk, mergeTrim, type ChunkShade, buildCare, buildDropship, buildEnemy, buildFlareSmoke, buildGun, buildHands, buildLootItem, addPlates, flat, glow, haloSprite, type EnemyModel } from "./models";
 import { streetMeshes } from "./streets";
 import { BattleView, CHANNEL } from "./battle";
 
@@ -218,6 +218,8 @@ export class World {
   private allyWalk = 0;
   private loot = new Map<number, THREE.Group>();
   private bins = new Map<number, ReturnType<typeof buildBin>>();
+  /** The flare smoke over each bin that holds a flare, by bin id, until the bin is searched. */
+  private flareSmoke = new Map<number, THREE.Mesh>();
   /** The ring's piece on a debris fall's day, beside its crate, and the seconds to its next puff of smoke. */
   private debris: (ReturnType<typeof buildRingDebris> & { smoke: number; puffs: { m: THREE.Mesh; t: number }[] }) | null = null;
   /** The weather drawn: a storm brings the fog in and greys the light (`STORM`). */
@@ -1391,6 +1393,20 @@ export class World {
         this.bins.set(b.id, v);
         this.scene.add(v.root);
       }
+      // A bin holding a flare sends a thread of red-orange smoke up off its roof until it is searched,
+      // seen from afar; it thins as the player climbs up to it.
+      if (b.flare) {
+        let smoke = this.flareSmoke.get(b.id);
+        if (!smoke) {
+          smoke = buildFlareSmoke();
+          smoke.position.set(b.x, b.y + 35.5, b.z);
+          this.flareSmoke.set(b.id, smoke);
+          this.scene.add(smoke);
+        }
+        smoke.visible = !b.open && s.phase === "play";
+        const d = Math.hypot(b.x - fx, b.z - fz);
+        (smoke.material as THREE.MeshBasicMaterial).opacity = Math.min(0.62, Math.max(0.08, (d - 8) / 60)) * (0.85 + 0.15 * Math.sin(this.time * 3 + b.id));
+      }
       if (!near(v.root)) continue;
       v.lid.rotation.x += ((b.open ? -1.9 : 0) - v.lid.rotation.x) * Math.min(1, dt * 10);
       (v.seam.material as THREE.MeshBasicMaterial).color.setHex(b.open ? 0x3a3f4a : 0xffffff);
@@ -1690,6 +1706,8 @@ export class World {
     this.loot.clear();
     for (const b of this.bins.values()) this.scene.remove(b.root);
     this.bins.clear();
+    for (const m of this.flareSmoke.values()) this.scene.remove(m);
+    this.flareSmoke.clear();
     if (this.debris) {
       this.scene.remove(this.debris.root);
       for (const q of this.debris.puffs) this.scene.remove(q.m);

@@ -1,7 +1,7 @@
-import type { Settlement } from "../meta/profile";
+import { pouchKeep, type Settlement } from "../meta/profile";
 import type { ModKind } from "../sim/config";
 import { itemName, rewardList } from "./hub";
-import { ALLY, AWARE, BAG, DEPOT, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, TACTICAL, TOOL_KINDS, TOOLS, VALUABLES, WEAPONS, type Flank } from "../sim/config";
+import { ALLY, AWARE, BAG, META, DEPOT, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, TACTICAL, TOOL_KINDS, TOOLS, VALUABLES, WEAPONS, type Flank } from "../sim/config";
 import { eyePos, magSize } from "../sim/combat";
 import { atRisk, countered, heldUnlocks } from "../sim/battle";
 import { dist2d, los } from "../sim/geom";
@@ -24,7 +24,7 @@ import { recordSpot, type RecordId } from "../sim/map";
 import type { World } from "./world";
 import { eventRow, raidEventLine } from "./events";
 import { CREW, FRONT, MOD, MODS } from "../sim/config";
-import { routeIcon } from "./icons";
+import { binPicture, modIcon, pouchIcon, routeIcon } from "./icons";
 import { bagIcon, callIcon, checkIcon, clockIcon, coreIcon, crossIcon, depotIcon, entryIcon, exitIcon, eyeIcon, fightIcon, flareIcon, keyIcon, lockIcon, noiseIcon, reinforceIcon, reviveIcon, SIDE, upIcon, nightIcon } from "./icons";
 import { capturable } from "../sim/front";
 
@@ -160,6 +160,41 @@ export class Hud {
   }
 
   /** The ways in the base offers, for the raid about to start: the HUD and the map tell the others apart. */
+  /** Bag slots the pouch keeps through a wipe (the hideout's pouch). */
+  private pouch: number = META.pouch;
+  setPouch(n: number) {
+    this.pouch = n;
+  }
+
+  /**
+   * The bag as its slots: what the pouch would keep through a wipe first, filled in the pouch's
+   * colour inside the pouch's outlined slots, then the rest in their rarities' colours.
+   */
+  private bagCells(p: State["player"]): string {
+    const kept = pouchKeep(p.haul, p.tools, this.pouch, p.records);
+    const keptAt = new Set(kept.at);
+    const keptTools = [...kept.tools];
+    const fill: string[] = [];
+    const rest: string[] = [];
+    for (let n = 0; n < kept.records.length; n++) fill.push("k");
+    for (const k of kept.tools) for (let n = 0; n < TOOLS[k].size; n++) fill.push("k");
+    p.haul.forEach((k, i) => {
+      for (let n = 0; n < VALUABLES[k].size; n++) (keptAt.has(i) ? fill : rest).push(keptAt.has(i) ? "k" : RARITY_CSS[VALUABLES[k].rarity]);
+    });
+    for (const k of p.tools) {
+      const at = keptTools.indexOf(k);
+      if (at >= 0) keptTools.splice(at, 1);
+      else for (let n = 0; n < TOOLS[k].size; n++) rest.push(RARITY_CSS[3]);
+    }
+    for (let n = kept.records.length; n < p.records.length; n++) rest.push(RARITY_CSS[3]);
+    // The rest starts past the pouch's slots while it fits there, so the pouch's slots show what it keeps.
+    const start = Math.max(fill.length, this.pouch + rest.length <= BAG.slots ? this.pouch : fill.length);
+    const cells: string[] = Array.from({ length: BAG.slots }, () => "");
+    fill.forEach((c, n) => (cells[n] = c));
+    rest.forEach((c, n) => (cells[Math.min(BAG.slots - 1, start + n)] = c));
+    return `<span class="bag-cells">${cells.map((c, n) => `<i class="${n < this.pouch ? "p" : ""}${c === "k" ? " k" : ""}"${c && c !== "k" ? ` style="--c:${c}"` : ""}></i>`).join("")}</span>`;
+  }
+
   setKnown(known: EntryId[]) {
     this.known = [...known];
     this.map.known = this.known;
@@ -449,7 +484,7 @@ export class Hud {
     const oe = $("obj-event");
     oe.hidden = !s.event;
     if (s.event) setHtml(oe, raidEventLine(s));
-    setHtml($("obj-bag"), `バッグ ${bagLoad(p)}/${BAG.slots}<span class="worth">・回収 ${haulValue(s)}</span>`);
+    setHtml($("obj-bag"), `バッグ ${this.bagCells(p)}${bagLoad(p)}/${BAG.slots}<span class="worth">・回収 ${haulValue(s)}</span>`);
     // The raid's deadline is the battle's end (past it the raid ends as a wipe), as a clock; the next
     // reinforcements as their mark and seconds; a raid above 強度 0 says so first.
     const left = s.battle ? Math.max(0, s.battle.end - s.time) : null;
@@ -1025,11 +1060,13 @@ export class Hud {
     if (!settled || !worn.length) return "";
     // Not home alive: the parts worn, struck through.
     if (!settled.analysable.length) return `<h3>改造パーツの解析</h3><p>${worn.map((k) => `<span class="lost">${esc(MODS[k].name)}</span>`).join("")}</p>`;
-    // One part a raid: a new kind is marked NEW, the one analysed and kinds known before are ticked.
+    // One part a raid: a new kind is marked NEW, its hexagon over a supply bin; the one analysed drops
+    // into the bin (it turns up in bins from now on), as do kinds known before.
     const row = (k: ModKind) => {
       const old = known.includes(k);
       const state = k === done || old ? checkIcon() : done ? "" : `<em class="new">NEW</em>`;
-      return `<button type="button" class="mod${k === done ? " done" : ""}" data-analyse="${k}"${done || old ? " disabled" : ""}><b>${esc(MODS[k].name)}${state}</b><small>${esc(MODS[k].note)}</small></button>`;
+      const bin = binPicture(modIcon(), k === done ? "in drop" : old ? "in" : "out");
+      return `<button type="button" class="mod${k === done ? " done" : ""}" data-analyse="${k}"${done || old ? " disabled" : ""}>${bin}<b>${esc(MODS[k].name)}${state}</b><small>${esc(MODS[k].note)}</small></button>`;
     };
     return `<h3>改造パーツの解析<b>${done ? 1 : 0}/1</b></h3><div class="analyse">${settled.analysable.map(row).join("")}</div>`;
   }
@@ -1062,7 +1099,9 @@ export class Hud {
     }
     const map = new IslandMap(canvas);
     map.whole = true;
-    map.known = settled.profile.entries;
+    // Ways in the raid learned are dashed as the day began, and turn solid with a ring at its end.
+    const learned = settled.learned;
+    map.known = settled.profile.entries.filter((e) => !learned.includes(e));
     const end = islandScene(settled.profile);
     // The player's nodes after each beat, from the day's end back.
     const after = (ids: Set<string>, c: { gained: readonly string[]; lost: readonly string[] }, back: boolean) => {
@@ -1105,15 +1144,27 @@ export class Hud {
       map.draw(scene(start));
       bar(start, start);
       mark("start", "");
+      // The ways in the raid learned turn solid with the first beat (or alone, when nothing changed hands).
+      const learn = () => {
+        map.known = settled.profile.entries;
+      };
       beats.forEach((b, k) =>
         this.dayTimers.push(
           window.setTimeout(() => {
-            map.draw(scene(b.ids, b.c));
+            if (k === 0) learn();
+            map.draw({ ...scene(b.ids, b.c), learned });
             bar(b.ids, b.prev);
             mark(b.beat, b.icon);
           }, 900 + k * gap),
         ),
       );
+      if (!beats.length && learned.length)
+        this.dayTimers.push(
+          window.setTimeout(() => {
+            learn();
+            map.draw({ ...scene(night), learned });
+          }, 900),
+        );
       this.dayTimers.push(
         window.setTimeout(() => {
           const el = document.getElementById("day-beat");
@@ -1150,15 +1201,23 @@ export class Hud {
       ...(Object.keys(VALUABLES) as (keyof typeof VALUABLES)[]).map((k) => [VALUABLES[k].label, s.player.haul.filter((h) => h === k).length] as const),
       ...TOOL_KINDS.map((k) => [TOOLS[k].label, s.player.tools.filter((t) => t === k).length] as const),
     ].filter(([, n]) => n > 0);
-    // The haul's worth under the day's result; what a wipe lost is struck through, what went home from a depot is kept.
-    $("haul-line").innerHTML =
-      `<span${lost ? ' class="lost"' : ""}>回収の価値<b>${lost ? value - sentValue : value}</b></span>` +
-      (lost && sentValue ? `<span>倉庫へ送った<b>${sentValue}</b></span>` : "") +
-      (lost ? carried.map(([label, n]) => `<span class="lost">${label} × ${n}</span>`).join("") : "");
     // settle() lists what was sent from a depot first in `home`; it is shown on a line of its own.
     const all = settled?.home ?? [];
     const sent = all.slice(0, s.sent.length + s.sentTools.length);
     const home = all.slice(s.sent.length + s.sentTools.length);
+    // On a wipe, what the bag held splits in two: what the pouch kept, in the pouch's colour, and the rest struck through.
+    const pouched = new Map<string, number>();
+    if (lost) for (const i of home) pouched.set(itemName(i), (pouched.get(itemName(i)) ?? 0) + 1);
+    const kept = (label: string, n: number) => Math.min(n, pouched.get(label) ?? 0);
+    const split = [
+      ...carried.filter(([label, n]) => kept(label, n)).map(([label, n]) => `<span class="pouch-kept">${pouchIcon()}${label}${kept(label, n) > 1 ? ` × ${kept(label, n)}` : ""}</span>`),
+      ...carried.filter(([label, n]) => n > kept(label, n)).map(([label, n]) => `<span class="lost">${label}${n - kept(label, n) > 1 ? ` × ${n - kept(label, n)}` : ""}</span>`),
+    ];
+    // The haul's worth under the day's result; what a wipe lost is struck through, what went home from a depot is kept.
+    $("haul-line").innerHTML =
+      `<span${lost ? ' class="lost"' : ""}>回収の価値<b>${lost ? value - sentValue : value}</b></span>` +
+      (lost && sentValue ? `<span>倉庫へ送った<b>${sentValue}</b></span>` : "") +
+      (lost ? split.join("") : "");
     const count = (items: typeof all) => {
       const counted = new Map<string, number>();
       for (const i of items) counted.set(itemName(i), (counted.get(itemName(i)) ?? 0) + 1);
@@ -1192,10 +1251,11 @@ export class Hud {
       (quests.length ? `<h3>済んだ依頼</h3><p>${quests.map((q) => `<span>${q.title}（${q.reward.cash} クレジット${rewardList(q).map(([i, n]) => `・${itemName(i)}${n > 1 ? ` × ${n}` : ""}`).join("")}）</span>`).join("")}</p>` : "") +
       (settled
         ? (sent.length ? `<h3>中継ボックスから倉庫へ送った物</h3><p>${count(sent)}</p>` : "") +
-          `<h3>${lost ? "ポーチに残った物" : "持ち帰った物"}</h3><p>${home.length ? count(home) : "<span>なし</span>"}</p>` +
+          // A wipe's pouch is on the haul's line above, beside what was lost.
+          (lost ? "" : `<h3>持ち帰った物</h3><p>${home.length ? count(home) : "<span>なし</span>"}</p>`) +
           // Ways in: learned ones as the map's ring, ones found on a raid that did not come home struck through.
           (settled.learned.length || (lost && forgot.length)
-            ? `<h3>入口</h3><p>${settled.learned.map((id) => `<span>${entryIcon()}${entryOf(id).name}（${regionOf(entryOf(id).region).name}）</span>`).join("")}${lost ? forgot.map((id) => `<span class="lost">${entryOf(id).name}</span>`).join("") : ""}</p>`
+            ? `<h3>入口</h3><p>${settled.learned.map((id) => `<span class="learned"><span class="turn">${entryIcon(false)}${entryIcon()}</span>${entryOf(id).name}（${regionOf(entryOf(id).region).name}）</span>`).join("")}${lost ? forgot.map((id) => `<span class="lost">${entryOf(id).name}</span>`).join("") : ""}</p>`
             : "") +
           (settled.opened.length ? `<h3>開いた道</h3><p>${settled.opened.map((id) => `<span>${routeIcon(true)}${routeOf(id).name}</span>`).join("")}</p>` : "") +
           (settled.sold.length ? `<h3>売却</h3><p><span>${settled.sold.length} 点<b>${settled.soldFor} クレジット</b></span></p>` : "")
