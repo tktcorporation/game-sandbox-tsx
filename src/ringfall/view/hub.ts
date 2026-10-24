@@ -1,5 +1,5 @@
 import { PLAYER } from "../sim/config";
-import { armorIcon, binPicture, checkIcon, clockIcon, crossIcon, depotIcon, gunIcon, healIcon, keyIcon, lockIcon, modIcon, pouchIcon, robotIcon, routeIcon, SIDE, turretIcon, upIcon } from "./icons";
+import { armorIcon, binPicture, checkIcon, factoryIcon, hideoutIcon, clockIcon, crossIcon, depotIcon, gunIcon, healIcon, keyIcon, lockIcon, modIcon, pouchIcon, robotIcon, routeIcon, SIDE, turretIcon, upIcon } from "./icons";
 import { ALLY, FACTORY, HEALS as HEAL_SPECS, HIDEOUT, MOD_KINDS, RARITY, THREAT, TOOLS, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
 import { boostFor, freeKit, raidClock, strengthFor, type Kit } from "../sim/state";
 import { CAMP, DEPOTS, ENTRIES, entryOf, NODES, POIS, UNLOCKS, poiIndex, poiRegion, REGIONS, regionOf, ROUTES, type EntryId, type PoiId, type RegionId, type StationId } from "../sim/map";
@@ -63,7 +63,7 @@ function itemNote(i: Item, need?: Needs): string {
     case "valuable": {
       const h = need?.hideout[i.kind] ?? 0;
       const f = need?.factory[i.kind] ?? 0;
-      return [h ? `隠れ家 ${h}` : "", f ? `工場 ${f}` : ""].filter(Boolean).join("・");
+      return [h ? `${hideoutIcon()}隠れ家 ${h}` : "", f ? `${factoryIcon()}工場 ${f}` : ""].filter(Boolean).join("・");
     }
     case "armor":
       return `シールド ${PLAYER.shieldByTier[i.tier]}`;

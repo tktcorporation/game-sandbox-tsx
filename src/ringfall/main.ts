@@ -4,7 +4,7 @@ import { Bot, SKILLS } from "./sim/bot";
 import { collide, groundAt } from "./sim/geom";
 import { terrainHeight } from "./sim/terrain";
 import { callLeft, freeKit, idleInput, newRun, type GameEvent, type Input, type Kit, type State } from "./sim/state";
-import { CAMP, DEPOTS, entryOf, FRAMES, NODES, POIS, poiIndex, QUARRY_EXITS, ZIPS, type CampSpot, type RegionId, type StationId } from "./sim/map";
+import { CAMP, DEPOTS, entryOf, FRAMES, NODES, POIS, poiIndex, QUARRY_EXITS, ZIPS, type CampSpot, type PoiId, type RecordId, type RegionId, type StationId } from "./sim/map";
 import { grabZip } from "./sim/zips";
 import { POI_AT } from "./sim/areas";
 import { frontNodes, garrisonOf, takeNode, useCore } from "./sim/front";
@@ -12,7 +12,7 @@ import { atRisk, battleMarks, departNow, landNow, marchSquad, nodePoint, placeBa
 import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
 import { analyse, raidThreat, settle, takenStory, type Settlement } from "./meta/profile";
 import { pouchSlots } from "./meta/hideout";
-import { MOD, MODS, type ModKind } from "./sim/config";
+import { MOD, MODS, TOOLS, type ModKind, type ToolKind } from "./sim/config";
 import { departDepots, holds, islandHolds } from "./meta/island";
 import { nodeRow } from "./view/row";
 import { contractProgress, targetKey } from "./meta/contracts";
@@ -733,7 +733,7 @@ declare global {
       take: (type: string) => string | null;
       destroyTarget: () => number;
     };
-    ringfallBag: (haul: string[]) => void;
+    ringfallBag: (haul: string[], more?: { at?: (string | null)[]; tools?: string[]; records?: string[]; keys?: string[] }) => void;
     ringfallEnd: (how: "dead" | "extracted", haul?: string[], found?: string[]) => boolean;
     ringfallMods: {
       wear: (kinds: string[]) => void;
@@ -1119,12 +1119,18 @@ window.ringfallMods = {
  * filled with `haul` first and `found` added to the ways in walked to; `how` is a wipe ("dead")
  * or getting off alive at the village ("extracted").
  */
-/** Automation only: fills the bag with `haul` in the raid under way, for screenshots of the bag's slots. */
-window.ringfallBag = (haul) => {
+/**
+ * Automation only: fills the bag with `haul` in the raid under way, for screenshots of the bag's
+ * slots; `more` sets the POI each valuable came out of (`at`, by id), the tools, records and keys.
+ */
+window.ringfallBag = (haul, more = {}) => {
   if (!running) return;
   const p = state.player;
   p.haul = haul.filter((k): k is keyof typeof VALUABLES => k in VALUABLES);
-  p.haulAt = p.haul.map(() => -1);
+  p.haulAt = p.haul.map((_, i) => (more.at?.[i] ? poiIndex(more.at[i] as PoiId) : -1));
+  if (more.tools) p.tools = more.tools.filter((k): k is ToolKind => k in TOOLS);
+  if (more.records) p.records = more.records as RecordId[];
+  if (more.keys) p.keys = more.keys.map((k) => poiIndex(k as PoiId));
 };
 window.ringfallEnd = (how, haul = [], found = []) => {
   if (!running || state.phase === "done") return false;

@@ -12,6 +12,7 @@ import { readFile, mkdir } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { chromium } from "playwright-core";
 import { movementShots } from "./ringfall-shots-movement.mjs";
+import { bagShots } from "./ringfall-shots-bag.mjs";
 
 const root = "dist/client";
 const types = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml" };
@@ -2364,6 +2365,8 @@ for (const phone of [false, true]) {
 }
 await movementShots({ browser, port, out, errors });
 lap("movement");
+await bagShots({ browser, port, out, errors });
+lap("bag");
 await browser.close();
 server.close();
 if (errors.length) {
