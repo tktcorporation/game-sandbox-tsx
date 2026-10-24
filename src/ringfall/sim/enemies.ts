@@ -93,6 +93,7 @@ export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi:
     strafe: pick(s) < 0.5 ? -1 : 1,
     poi,
     lastHit: 99,
+    fired: 99,
     aimYaw: 0,
     aimPitch: 0,
     summoned: 0,
@@ -186,11 +187,11 @@ function muzzle(e: Enemy): Vec3 {
   return e.kind === "drone" ? weakPoint(e) : { ...bodyCenter(e), y: e.pos.y + weakY(e) - 0.1 };
 }
 
-function fireOrb(s: State, e: Enemy, yawOff = 0, homing = false, foe?: Enemy) {
+function fireOrb(s: State, e: Enemy, yawOff = 0, homing = false, foe?: Enemy, wide = 1) {
   const k = ENEMIES[e.kind];
   const from = muzzle(e);
-  // A random stray (see SHOT.spread); the titan's homing rockets find their own way.
-  const stray = homing ? 0 : SHOT.spread * DEG * (!foe && e.target === "player" ? modScale(s.player, "deflector") : 1) * (!foe && s.squads[e.squad]?.mobile ? SHOT.walker : 1);
+  // A random stray (see SHOT.spread), wider at a target moving across the line (`wide`, SHOT.moving); the titan's homing rockets find their own way.
+  const stray = homing ? 0 : SHOT.spread * wide * DEG * (!foe && e.target === "player" ? modScale(s.player, "deflector") : 1) * (!foe && s.squads[e.squad]?.mobile ? SHOT.walker : 1);
   const r = Math.sqrt(-2 * Math.log(draw(s, e) + 1e-9));
   const a = draw(s, e) * Math.PI * 2;
   const yaw = e.aimYaw + yawOff + r * Math.cos(a) * stray;
@@ -209,6 +210,15 @@ function fireOrb(s: State, e: Enemy, yawOff = 0, homing = false, foe?: Enemy) {
     friend: e.friend || undefined,
   });
   s.events.push(foe ? { t: "enemyFire", id: e.id, pos: from, foe: bodyCenter(foe), rogue: !!e.rogue, friend: e.friend || undefined } : { t: "enemyFire", id: e.id, pos: from, rogue: e.rogue || undefined });
+}
+
+/** How fast the target moves across the line from this robot's muzzle, in m/s (see SHOT.moving). */
+function crossSpeed(e: Enemy, at: Vec3, vel: Vec3): number {
+  const from = muzzle(e);
+  const dx = at.x - from.x;
+  const dz = at.z - from.z;
+  const d = Math.hypot(dx, dz) || 1;
+  return Math.abs((vel.x * dz - vel.z * dx) / d);
 }
 
 function lockAim(e: Enemy, at: Vec3) {
@@ -371,6 +381,7 @@ export function stepEnemies(s: State) {
     if (s.phase === "done") return; // a robot ahead in the list ended the raid
     const k = ENEMIES[e.kind];
     e.lastHit += TICK;
+    e.fired += TICK;
     e.allyHit += TICK;
     e.blind += TICK;
     e.jink = Math.max(0, e.jink - TICK);
@@ -505,7 +516,7 @@ export function stepEnemies(s: State) {
         const far = atAlly ? SIGHT[e.kind].range * sightScale(s) * AWARE.engagedRange : fireRange(s, e);
         if (ready && (e.kind === "charger" ? d < CHARGER.lungeRange : reach < far)) {
           e.mode = "telegraph";
-          e.timer = k.telegraph;
+          e.timer = k.telegraph * (e.fired < SHOT.followWindow ? SHOT.follow : 1);
           leadAim(e, tChest, tVel);
           s.events.push({ t: "telegraph", id: e.id });
         }
@@ -543,11 +554,12 @@ export function stepEnemies(s: State) {
         if (e.timer <= 0 && e.shotsLeft > 0) {
           // Every shot of a burst is aimed afresh while the target is in sight.
           if (sightOn(e, tPos, tChest)) leadAim(e, tChest, tVel);
+          const wide = 1 + SHOT.moving * Math.min(1, crossSpeed(e, tChest, tVel) / PLAYER.walk);
           if (k.spread > 0) {
-            for (let i = 0; i < k.shots; i++) fireOrb(s, e, ((i - (k.shots - 1) / 2) * k.spread * Math.PI) / 180);
+            for (let i = 0; i < k.shots; i++) fireOrb(s, e, ((i - (k.shots - 1) / 2) * k.spread * Math.PI) / 180, false, undefined, wide);
             e.shotsLeft = 0;
           } else {
-            fireOrb(s, e);
+            fireOrb(s, e, 0, false, undefined, wide);
             e.shotsLeft--;
             e.timer = k.shotGap;
           }
@@ -555,7 +567,8 @@ export function stepEnemies(s: State) {
         if (e.shotsLeft <= 0) {
           e.mode = "move";
           e.opener = false;
-          e.cooldown = k.cooldown * (0.8 + draw(s, e) * 0.4) * (e.elite ? ELITE.cooldown : 1);
+          e.cooldown = k.cooldown * (0.8 + draw(s, e) * 0.4) * (e.elite ? ELITE.cooldown : 1) * (1 + SHOT.share * matesFiring(s, e));
+          e.fired = 0;
           // A grunt in cover shows itself next from the other side of it; hurt and alone, it stays hidden longer.
           e.peekSide = -e.peekSide;
           e.coverT = 0;
@@ -599,6 +612,18 @@ export function stepEnemies(s: State) {
     }
   }
   separate(s);
+}
+
+/**
+ * Its squad-mates shooting at the same target as it: winding up, firing, or done with a burst
+ * within `SHOT.shareWindow` seconds (see SHOT.share).
+ */
+function matesFiring(s: State, e: Enemy): number {
+  if (e.squad < 0) return 0;
+  let n = 0;
+  for (const o of squadMembers(s, e.squad))
+    if (o !== e && o.aware === "engaged" && o.target === e.target && o.kind !== "titan" && (o.mode === "telegraph" || o.mode === "fire" || o.fired < SHOT.shareWindow)) n++;
+  return n;
 }
 
 /**

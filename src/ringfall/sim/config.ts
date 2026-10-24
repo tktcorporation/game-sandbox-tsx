@@ -295,9 +295,9 @@ export interface EnemySpec {
 
 export const ENEMIES: Record<EnemyKind, EnemySpec> = {
   drone: { hp: 70, shield: 0, shieldTier: 0, radius: 0.55, bodyY: 0, weakY: 0, weakR: 0.24, weakFwd: 0.42, speed: 4.2, fly: 3.4, range: 14, telegraph: 0.55, cooldown: 1.6, shots: 1, shotGap: 0, spread: 0, orbSpeed: 120, orbDmg: 21, orbR: 0.2, ult: 1 },
-  grunt: { hp: 140, shield: 70, shieldTier: 1, radius: 0.65, bodyY: 1.2, weakY: 2.0, weakR: 0.27, weakFwd: 0.08, speed: 3.2, fly: 0, range: 15, telegraph: 0.6, cooldown: 1.5, shots: 3, shotGap: 0.16, spread: 0, orbSpeed: 140, orbDmg: 20, orbR: 0.18, ult: 1 },
+  grunt: { hp: 140, shield: 70, shieldTier: 1, radius: 0.65, bodyY: 1.2, weakY: 2.0, weakR: 0.27, weakFwd: 0.08, speed: 3.2, fly: 0, range: 15, telegraph: 0.6, cooldown: 0.5, shots: 4, shotGap: 0.12, spread: 0, orbSpeed: 140, orbDmg: 21, orbR: 0.18, ult: 1 },
   charger: { hp: 120, shield: 50, shieldTier: 0, radius: 0.72, bodyY: 0.75, weakY: 0.95, weakR: 0.3, weakFwd: 0.62, speed: 6.4, fly: 0, range: 0, telegraph: 0.6, cooldown: 1.2, shots: 0, shotGap: 0, spread: 0, orbSpeed: 0, orbDmg: 40, orbR: 0, ult: 1 },
-  heavy: { hp: 270, shield: 130, shieldTier: 2, radius: 1.1, bodyY: 1.8, weakY: 3.0, weakR: 0.4, weakFwd: 0.1, speed: 2.0, fly: 0, range: 18, telegraph: 0.85, cooldown: 3.2, shots: 5, shotGap: 0, spread: 5, orbSpeed: 110, orbDmg: 18, orbR: 0.26, ult: 1 },
+  heavy: { hp: 270, shield: 130, shieldTier: 2, radius: 1.1, bodyY: 1.8, weakY: 3.0, weakR: 0.4, weakFwd: 0.1, speed: 2.0, fly: 0, range: 18, telegraph: 0.85, cooldown: 1.4, shots: 5, shotGap: 0, spread: 1.35, orbSpeed: 110, orbDmg: 18, orbR: 0.26, ult: 1 },
   titan: { hp: 3200, shield: 1000, shieldTier: 3, radius: 2.3, bodyY: 3.2, weakY: 3.4, weakR: 0.75, weakFwd: 2.1, speed: 1.6, fly: 0, range: 20, telegraph: 1.0, cooldown: 3.0, shots: 6, shotGap: 0.16, spread: 0, orbSpeed: 13, orbDmg: 9, orbR: 0.48, ult: 0.5 },
 };
 
@@ -1080,7 +1080,7 @@ export const PURSUE = { lead: 1.5, leadMax: 9, reach: 90, spread: 7, approach: 5
  * its shots land `walkerDmg` of their damage: the ground between is crossed under many eyes, so
  * meeting a walker is a short fight that costs a little, not one of the POIs' hard fights.
  */
-export const SHOT = { lead: 0.85, spread: 1.5, walker: 2, walkerDmg: 0.6 };
+export const SHOT = { lead: 0.85, spread: 1.15, walker: 2, walkerDmg: 0.6, share: 3, shareWindow: 2.5, follow: 0.6, followWindow: 1.5, moving: 0.6 };
 
 /**
  * Being shot from beyond a robot's sight is answered. For `time` seconds after each of the
@@ -1161,7 +1161,7 @@ export const AWARE = {
    * first member, `react[1]` more for each after it, so a squad's opening bursts come one
    * after another rather than on the same tick, and the glow of each can be read.
    */
-  react: [0.35, 0.45] as const,
+  react: [0.15, 0.45] as const,
   /**
    * A squad whose members have ducked behind cover keeps hold of a player it was just seeing
    * for up to this many seconds, as long as the player stays within `FLANK.moved` of where it
