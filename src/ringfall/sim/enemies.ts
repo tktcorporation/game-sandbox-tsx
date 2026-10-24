@@ -523,7 +523,7 @@ export function stepEnemies(s: State) {
         break;
       }
       case "telegraph": {
-        windupStep(e, dx / d, dz / d);
+        windupStep(e, dx / d, dz / d, d > ENEMIES[e.kind].range + 4);
         e.timer -= TICK;
         // Aim follows the target through the wind-up while it is in sight and in the robot's
         // cone: the glow is the time to get behind something, not to step aside. A target that
@@ -549,7 +549,7 @@ export function stepEnemies(s: State) {
         break;
       }
       case "fire": {
-        windupStep(e, dx / d, dz / d);
+        windupStep(e, dx / d, dz / d, d > ENEMIES[e.kind].range + 4);
         e.timer -= TICK;
         if (e.timer <= 0 && e.shotsLeft > 0) {
           // Every shot of a burst is aimed afresh while the target is in sight.
@@ -754,16 +754,20 @@ function fightFoe(s: State, e: Enemy, foe: Enemy) {
 
 /**
  * A step through a wind-up or burst: sideways across the line to the target at
- * `DODGE.windup` of its speed (none for the kinds that plant their feet to fire).
+ * `DODGE.windup` of its speed (none for the kinds that plant their feet to fire), and toward
+ * it at `DODGE.closeIn` of that while it is further off than it likes.
  * `ux, uz` is the unit direction to the target.
  */
-function windupStep(e: Enemy, ux: number, uz: number) {
+function windupStep(e: Enemy, ux: number, uz: number, closer = false) {
   const w = DODGE.windup[e.kind] * ENEMIES[e.kind].speed;
   if (w <= 0) {
     moveBody(e, 0, 0);
     return;
   }
-  if (moveBody(e, -uz * e.strafe * w, ux * e.strafe * w)) e.strafe = -e.strafe;
+  // Past the distance it likes (`closer`), it steps in as it goes: a robot that fires again and
+  // again would otherwise never close on a target it shoots from afar.
+  const f = closer ? w * DODGE.closeIn : 0;
+  if (moveBody(e, -uz * e.strafe * w + ux * f, ux * e.strafe * w + uz * f)) e.strafe = -e.strafe;
 }
 
 /** A plain grunt that is badly hurt and the last of its squad still fighting. */

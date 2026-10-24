@@ -1258,6 +1258,8 @@ export const DODGE = {
   /** Fraction of its speed a robot strafes at between attacks while it sees its target. */
   strafe: 1,
   windup: { drone: 0.7, grunt: 0.6, charger: 0, heavy: 0, titan: 0 } satisfies Record<EnemyKind, number>,
+  /** Share of the wind-up's sidestep a robot also steps toward a target further off than it likes. */
+  closeIn: 1,
   /** Seconds between chances to change direction, and the chance it does. */
   every: [0.4, 1.1] as const,
   flip: 0.65,

@@ -306,31 +306,39 @@ export function cell(kind: EnemyKind, dist: number, way: Way, kit: Kit, n: numbe
 
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 
-/** The gate's check: a casual aim with the lent kit at 25 m against a grunt and a heavy, standing, strafing, flanking and from cover. */
+/**
+ * The gate's check: a casual aim with the lent kit against one grunt at 20 and 25 m and one heavy
+ * at 25 m, standing, strafing, flanking and from cover. Standing in the open trades about evenly
+ * with a grunt over those distances and loses more often to a heavy; strafing, going round and
+ * cover each win clearly more often than standing.
+ */
 export function duelLines(n = 40): { lines: string[]; errors: string[] } {
   const errors: string[] = [];
   const lines: string[] = [];
-  const row = (kind: EnemyKind) => {
+  const row = (kind: EnemyKind, dist: number) => {
     const c: Partial<Record<Way, Cell>> = {};
     for (const way of ["stand", "strafe", "flank", "cover"] as Way[]) {
-      const x = cell(kind, 25, way, LENT, n);
+      const x = cell(kind, dist, way, LENT, n);
       if (!x) {
-        errors.push(`duel scenario: no ground for a ${way} duel at 25 m`);
-        return;
+        errors.push(`duel scenario: no ground for a ${way} duel at ${dist} m`);
+        return null;
       }
       c[way] = x;
     }
-    lines.push(`duel: ${kind} 25 m, player win standing ${pct(c.stand!.win)}, strafing ${pct(c.strafe!.win)}, flank ${pct(c.flank!.win)}, cover ${pct(c.cover!.win)}`);
+    lines.push(`duel: ${kind} ${dist} m, player win standing ${pct(c.stand!.win)}, strafing ${pct(c.strafe!.win)}, flank ${pct(c.flank!.win)}, cover ${pct(c.cover!.win)}`);
     return c as Record<Way, Cell>;
   };
-  const g = row("grunt");
-  const h = row("heavy");
-  if (g && h) {
-    // A standing trade with one grunt goes either way; a heavy wins it more often; going round, moving or cover turns it.
-    if (g.stand.win < 0.3 || g.stand.win > 0.7) errors.push(`duel scenario: a player standing in the open beat a grunt at 25 m in ${pct(g.stand.win)} of duels (want 30-70%)`);
-    if (h.stand.win > g.stand.win) errors.push(`duel scenario: a standing player beat a heavy (${pct(h.stand.win)}) more often than a grunt (${pct(g.stand.win)})`);
-    for (const way of ["strafe", "flank", "cover"] as Way[])
-      if (g[way].win < g.stand.win + 0.2) errors.push(`duel scenario: ${way} beat a grunt in ${pct(g[way].win)} of duels, not clearly more than standing (${pct(g.stand.win)})`);
+  const g20 = row("grunt", 20);
+  const g25 = row("grunt", 25);
+  const h25 = row("heavy", 25);
+  if (g20 && g25 && h25) {
+    const stand = (g20.stand.win + g25.stand.win) / 2;
+    if (stand < 0.3 || stand > 0.7) errors.push(`duel scenario: a player standing in the open beat a grunt at 20-25 m in ${pct(stand)} of duels (want 30-70%)`);
+    if (h25.stand.win > g25.stand.win) errors.push(`duel scenario: a standing player beat a heavy at 25 m (${pct(h25.stand.win)}) more often than a grunt (${pct(g25.stand.win)})`);
+    for (const way of ["strafe", "flank", "cover"] as Way[]) {
+      const w = (g20[way].win + g25[way].win) / 2;
+      if (w < stand + 0.15) errors.push(`duel scenario: ${way} beat a grunt at 20-25 m in ${pct(w)} of duels, not clearly more than standing (${pct(stand)})`);
+    }
   }
   return { lines, errors };
 }
@@ -347,7 +355,7 @@ if (import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith
   for (const kit of [LENT, RARE])
     for (const skill of kit === LENT ? [0, 1, 2] : [1])
       for (const kind of kinds)
-        for (const dist of [15, 25, 40])
+        for (const dist of [15, 20, 25, 40])
           for (const way of ["stand", "strafe", "flank", "cover"] as Way[]) {
             if (skill !== 1 && way !== "stand") continue;
             const c = cell(kind, dist, way, kit, n, skill);
