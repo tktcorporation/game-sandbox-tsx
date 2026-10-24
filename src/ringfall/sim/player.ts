@@ -101,7 +101,10 @@ export function ledgeAhead(pos: Vec3, fx: number, fz: number, reach = CLIMB.reac
     const wall = boxTopAt(x, z, feet + WORLD.stepUp, g + 1.75);
     if (wall.fence || wall.top > limit) return null;
     if (face < 0) {
-      if (g <= feet + WORLD.stepUp + 0.05) {
+      // The face is what stops the body here, from the knees up: a lintel or a balcony over an
+      // opening is no wall to climb.
+      const blocks = terrainHeight(x, z) > feet + WORLD.stepUp + 0.05 || boxTopAt(x, z, feet + WORLD.stepUp, feet + 1.75).top > feet + WORLD.stepUp;
+      if (g <= feet + WORLD.stepUp + 0.05 || !blocks) {
         if (d > r + CLIMB.touch) return null;
         continue;
       }

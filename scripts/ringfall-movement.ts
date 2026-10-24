@@ -6,7 +6,7 @@
  * the time its length takes. `movementLines()` prints the course times kept in balance.md.
  */
 import { CLIMB, PLAYER, TICK, ZIP } from "../src/ringfall/sim/config";
-import { BOXES, FRONT_LINKS, NODES, POIS, QUARRY_EXITS, QUARRY_LIFTS, ZIP_BOXES, ZIPS, ZIP_MISSING, type Box } from "../src/ringfall/sim/map";
+import { BOXES, CAMP, FRONT_LINKS, NODES, POIS, QUARRY_EXITS, QUARRY_LIFTS, ZIP_BOXES, ZIPS, ZIP_MISSING, type Box } from "../src/ringfall/sim/map";
 import { POI_AT, inArea } from "../src/ringfall/sim/areas";
 import { groundAt, los } from "../src/ringfall/sim/geom";
 import { floorLevel, highGround, LEVEL, offLowGround, offshore, steepAt, terrainHeight } from "../src/ringfall/sim/terrain";
@@ -231,6 +231,13 @@ export function checkClimbs(): string | string[] {
     const y = climbAt(high, air);
     if (y > terrainHeight(high.x, high.z) + 2.5) return `climb scenario: a wall ${(high.top - terrainHeight(high.x, high.z)).toFixed(1)} m high was climbed to ${y.toFixed(1)} m`;
   }
+  // A doorway is run through, not climbed: out of the camp's gate under its beam.
+  const gx = (CAMP.gate.x0 + CAMP.gate.x1) / 2;
+  const gate = emptyRun(gx, CAMP.gate.z + 6, 0);
+  gate.ally.active = false;
+  let over = false;
+  play(gate, 2.5, () => ({ ...idleInput(), moveZ: 1 }), (o) => (over ||= !!o.player.mantle));
+  if (over || gate.player.pos.z > CAMP.gate.z - 4) return `climb scenario: running out of the camp's gate ${over ? "climbed its frame" : `stopped at ${gate.player.pos.z.toFixed(1)}`}`;
   // A terrace of the fields: 4 m of terrain, climbed onto the field above.
   const [vx, vz] = inArea("village", 10, 40);
   const field = climbAt({ x: vx, z: vz, yaw: 0 }, false, LEVEL.fieldMid);
