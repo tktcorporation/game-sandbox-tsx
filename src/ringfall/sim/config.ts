@@ -444,6 +444,32 @@ export const CONQUEST = {
   botDefend: 150,
 };
 
+/**
+ * The enemy takes back what the player takes (docs/ringfall/island-v2.md, 押し合い): `delay`
+ * seconds after a node turns the player's in the battle, by the player's core or by the factory's
+ * squads, a squad of `kinds[strength]` lands at the titan's pad or the north shore and walks across
+ * the enemy's nodes to it, on top of the enemy's usual squads (`CONQUEST.net`). Held by the player,
+ * the teammate or the factory's squads, the node stays; left bare, it falls back.
+ */
+export const COUNTER = {
+  delay: 60,
+  kinds: [["grunt", "grunt", "grunt"], ["grunt", "grunt", "grunt"], ["grunt", "grunt", "heavy"]] as EnemyKind[][],
+};
+
+/**
+ * The night between two days (meta/island.ts `nightRaids()`): the enemy attacks the player's nodes
+ * next to its own ground (a node of its, the pad or the north shore). Each such node falls with the
+ * chance `chance[n - 1]` for `n` such neighbours (2 or more as 2), times `guarded` when the player's
+ * squads stood at it as the battle ended, times `factory[level]`. At most `max` fall in a night. The
+ * draw is a hash of the raid's seed, the day and the node, never the raid's random numbers.
+ */
+export const NIGHT = {
+  chance: [0.3, 0.5],
+  guarded: 0.35,
+  factory: [1, 0.9, 0.75, 0.6, 0.5],
+  max: 2,
+};
+
 /** One level of the factory: what it takes from the stash, as a hideout module's level does (`ModuleLevel`). */
 export interface FactoryLevel {
   items: [ValuableKind, number][];
@@ -496,7 +522,7 @@ export interface StrengthLevel {
  * `REINFORCE`, `RAIDERS`, `PARTY` and `PACKS`. Lower levels give more time and fewer hunters.
  */
 export const STRENGTH = {
-  byHeld: [0, 0, 0, 1, 1, 1, 2],
+  byHeld: [0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2],
   levels: [
     { reinforce: { first: 480, every: 360 }, raiders: 1020, parties: { reservoir: 1, harbor: 1 }, packs: { reservoir: 1, harbor: 1 } },
     { reinforce: { first: 435, every: 300 }, raiders: 900, parties: { reservoir: 1, harbor: 1 }, packs: { reservoir: 2, harbor: 1 } },

@@ -93,3 +93,6 @@ export const healIcon = (shield: boolean) => (shield ? svg(`<path d="M8 1.5 L14 
 
 /** A loudspeaker: the action makes noise the robots hear. */
 export const noiseIcon = (c = "currentColor") => svg(`<path d="M2 6 H5 L9 2.5 V13.5 L5 10 H2 Z" fill="${c}"/><path d="M11 5.5 C12.3 6.8 12.3 9.2 11 10.5 M12.8 3.8 C15 6 15 10 12.8 12.2" stroke="${c}" stroke-width="1.4" fill="none" stroke-linecap="round"/>`, "noise");
+
+/** The night between two days: a crescent moon (the enemy's attacks overnight, meta/island.ts `nightRaids()`). */
+export const nightIcon = (c = "#c9d3ff") => svg(`<path d="M10.5 1.8 A6.6 6.6 0 1 0 14.2 11 A5.4 5.4 0 0 1 10.5 1.8 Z" fill="${c}"/>`, "night");

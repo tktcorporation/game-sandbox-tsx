@@ -1,23 +1,32 @@
-import { NODES, nodeIndex, type NodeId } from "../sim/map";
+import { NODES, type NodeId } from "../sim/map";
 import type { NodeHold } from "../sim/front";
 
 /*
- * The island's six nodes as a row of marks (docs/ringfall/island-v2.md, 見せ方): the HUD's top,
- * the camp's line of the day and the results show it. A node the player holds is filled blue;
- * the rest stay hollow in the enemy's red, so the row fills as the island is taken. The
- * reservoir's three come first, then the harbor's, in the order the front runs.
+ * The island's tug of war as one bar (docs/ringfall/island-v2.md, 見せ方): the player's blue grows
+ * from the left and the enemy's red from the right, one segment a node, the two counts at its
+ * ends. The title, the camp's line of the day, the HUD and the results show it. When the count
+ * changes the boundary slides from where it was; while a node is fought over it flickers; the
+ * player's nodes the enemy is about to take pulse red at the boundary's blue side.
  */
 
-/** The nodes in the row's order: the reservoir's from the camp out, then the harbor's to the wreck. */
-export const ROW: readonly NodeId[] = ["supply", "quarry", "relay", "yard", "smelter", "wreck"];
+export interface BarOpts {
+  /** The player's count the boundary slides from (left out: from the change's start, or none). */
+  from?: number;
+  /** The player's nodes the enemy is about to take (`atRisk()`): that many segments pulse red. */
+  risk?: number;
+  /** A node is being taken by either side: the boundary flickers. */
+  contested?: boolean;
+  /** Seconds before the slide starts. */
+  delay?: number;
+}
 
-/** The row's HTML for `holds` (`NODES` order); `gained` and `lost` mark the nodes that changed hands. */
-export function nodeRow(holds: readonly NodeHold[], change?: { gained?: readonly NodeId[]; lost?: readonly NodeId[] }): string {
-  const marks = ROW.map((id, k) => {
-    const i = nodeIndex(id);
-    const own = holds[i] === "freed";
-    const cls = ["node", own ? "own" : "", change?.gained?.includes(id) ? "gained" : "", change?.lost?.includes(id) ? "lost" : "", k === 3 ? "gap" : ""].filter(Boolean).join(" ");
-    return `<i class="${cls}" title="${NODES[i].name}"></i>`;
-  }).join("");
-  return `<span class="node-row" role="img" aria-label="${holds.filter((h) => h === "freed").length} / ${NODES.length}">${marks}</span>`;
+/** The bar's HTML for `holds` (`NODES` order); `change` makes the boundary slide from before it. */
+export function nodeRow(holds: readonly NodeHold[], change?: { gained?: readonly NodeId[]; lost?: readonly NodeId[] }, o: BarOpts = {}): string {
+  const n = NODES.length;
+  const own = holds.filter((h) => h === "freed").length;
+  const from = Math.max(0, Math.min(n, o.from ?? own - (change?.gained?.length ?? 0) + (change?.lost?.length ?? 0)));
+  const risk = Math.min(own, o.risk ?? 0);
+  const style = `--n:${n};--own:${own};--from:${from};--risk:${risk};--delay:${o.delay ?? (change ? 0.5 : 0)}s`;
+  const cls = ["tug", from !== own ? "moved" : "", o.contested ? "contested" : "", risk ? "at-risk" : ""].filter(Boolean).join(" ");
+  return `<span class="${cls}" role="img" aria-label="${own} / ${n}" style="${style}"><b class="tug-n own">${own}</b><span class="tug-bar"><span class="tug-fill"></span><span class="tug-risk"></span><span class="tug-ticks"></span><span class="tug-edge"></span></span><b class="tug-n foe">${n - own}</b></span>`;
 }

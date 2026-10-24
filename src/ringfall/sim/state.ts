@@ -495,6 +495,8 @@ export type GameEvent =
   | { t: "squadOut"; side: Side; node: number; x: number; z: number; gate: boolean }
   | { t: "landing"; boat: boolean; x: number; z: number }
   | { t: "nodeThreat"; node: number }
+  /** The enemy's counter-attack on a node the player took a while ago set off (`COUNTER`). */
+  | { t: "counter"; node: number }
   | { t: "timeUp" }
   | { t: "done" };
 

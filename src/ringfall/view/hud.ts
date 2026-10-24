@@ -3,7 +3,7 @@ import type { ModKind } from "../sim/config";
 import { itemName, rewardList } from "./hub";
 import { ALLY, AWARE, BAG, DEPOT, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, TACTICAL, TOOL_KINDS, TOOLS, VALUABLES, WEAPONS, type Flank } from "../sim/config";
 import { eyePos, magSize } from "../sim/combat";
-import { heldUnlocks } from "../sim/battle";
+import { atRisk, countered, heldUnlocks } from "../sim/battle";
 import { dist2d, los } from "../sim/geom";
 import { DEPOTS, entryOf, EXTRACTS, nodeIndex, NODES, POIS, poiIndex, regionHere, regionOf, routeOf, type EntryId } from "../sim/map";
 import { routeBefore } from "../sim/routes";
@@ -25,7 +25,7 @@ import type { World } from "./world";
 import { eventRow, raidEventLine } from "./events";
 import { CREW, FRONT, MOD, MODS } from "../sim/config";
 import { routeIcon } from "./icons";
-import { bagIcon, callIcon, checkIcon, clockIcon, coreIcon, crossIcon, depotIcon, entryIcon, exitIcon, eyeIcon, fightIcon, flareIcon, keyIcon, lockIcon, noiseIcon, reinforceIcon, reviveIcon, SIDE, upIcon } from "./icons";
+import { bagIcon, callIcon, checkIcon, clockIcon, coreIcon, crossIcon, depotIcon, entryIcon, exitIcon, eyeIcon, fightIcon, flareIcon, keyIcon, lockIcon, noiseIcon, reinforceIcon, reviveIcon, SIDE, upIcon, nightIcon } from "./icons";
 import { capturable } from "../sim/front";
 
 /*
@@ -341,6 +341,10 @@ export class Hud {
       case "coreTaken":
         this.toast(`${coreIcon(SIDE.own)}${NODES[e.node].name}`, 1, 5000);
         break;
+      case "counter":
+        // The enemy sets off to take back a node: its landing's mark and the node's blue core.
+        this.toast(`${reinforceIcon()}${coreIcon(SIDE.own)}${NODES[e.node].name}`, 0, 4000);
+        break;
       case "nodeTaken": {
         const name = NODES[e.node].name;
         this.toast(`${coreIcon(e.side === 0 ? SIDE.own : SIDE.enemy)}${name}`, e.side === 0 ? 1 : 0, 4000);
@@ -359,9 +363,25 @@ export class Hud {
     }
   }
 
-  /** The island's six nodes under the compass, filled blue as the player takes them. */
+  /** The player's count the HUD's bar shows, the count it slides from, and the raid time the slide began. */
+  private rowOwn = -1;
+  private rowFrom = 0;
+  private rowAt = -9;
+
+  /** The island's tug of war under the compass: blue as the player takes nodes, pulsing where the enemy is about to take one. */
   private islandRow(s: State) {
-    const row = nodeRow(s.nodes);
+    const own = s.nodes.filter((h) => h === "freed").length;
+    const b = s.battle;
+    const risk = s.phase === "play" ? atRisk(s).filter(Boolean).length : 0;
+    const contested = s.phase === "play" && (!!s.capture || !!b?.meter.some((m) => m));
+    if (own !== this.rowOwn) {
+      // A changed count slides from where it was for a moment, then rests (a new raid starts at rest).
+      this.rowFrom = this.rowOwn < 0 || s.time < 1 ? own : this.rowOwn;
+      this.rowOwn = own;
+      this.rowAt = s.time;
+    }
+    const from = s.time - this.rowAt < 2 && s.time >= this.rowAt ? this.rowFrom : own;
+    const row = nodeRow(s.nodes, undefined, { from, risk, contested });
     const el = $("island-row");
     if (el.dataset.html !== row) {
       el.dataset.html = row;
@@ -648,8 +668,11 @@ export class Hud {
     const M = 46;
     const TOP = 110;
     const BOTTOM = 140;
+    // A counter-attack's squad ashore and walking to a node of the player's: the arrow, fainter, before it gets there.
+    const coming = countered(s);
     NODES.forEach((n, i) => {
-      const on = !!b && b.threat[i] && s.phase === "play";
+      const at = !!b && b.threat[i];
+      const on = (at || coming[i]) && s.phase === "play";
       let el = this.threatEls.get(i);
       if (!on) {
         if (el) el.style.display = "none";
@@ -657,10 +680,10 @@ export class Hud {
       }
       if (!el) {
         el = document.createElement("div");
-        el.className = "threat-mark";
         this.awareLayer.appendChild(el);
         this.threatEls.set(i, el);
       }
+      el.className = at ? "threat-mark" : "threat-mark coming";
       const sp = view.project({ x: n.core.x, y: n.core.y + FRONT.height + 2.5, z: n.core.z }, w, h);
       let x = sp.x;
       let y = sp.y;
@@ -1012,23 +1035,26 @@ export class Hud {
   }
 
   /**
-   * The results' day: the island's map and its row of six nodes, the nodes that changed hands
-   * that day turning to the colour they went to (a ring on the map, a pulse in the row). The map
-   * is drawn as the day began, then as it ended (`drawDay()`).
+   * The results' day: the island's map and its tug of war, played in beats. The map is drawn as
+   * the day began; then the nodes that changed hands while the player was out turn to the colour
+   * they went to (a ring on the map, the bar's boundary sliding); then, under the depot's mark,
+   * those the battle went on to take after the player left; then, under the moon, those the enemy
+   * took overnight (`drawDay()`).
    */
   private dayResult(s: State, settled?: Settlement): string {
     const holds = settled ? islandHolds(settled.profile) : s.nodes;
-    return `<canvas id="day-map"></canvas><div class="day-row"><small>${settled ? `${settled.day} 日目` : "今日"}</small>${nodeRow(holds, settled?.front)}</div>`;
+    return `<canvas id="day-map"></canvas><div class="day-row"><small>${settled ? `${settled.day} 日目` : "今日"}</small><span id="day-bar">${nodeRow(holds)}</span><span id="day-beat"></span></div>`;
   }
 
   /** Seconds after the results open at which the map turns to the day's end. */
-  private dayTimer = 0;
+  private dayTimers: number[] = [];
   private dayFrame = 0;
 
-  /** Draws the results' map: the island as the day began, then, a moment later, as it ended with the changes ringed. */
+  /** Draws the results' map and bar beat by beat: as the day began, after the raid, after the battle the player left, after the night. */
   private drawDay(settled?: Settlement) {
     const canvas = document.getElementById("day-map") as HTMLCanvasElement | null;
-    clearTimeout(this.dayTimer);
+    for (const t of this.dayTimers) clearTimeout(t);
+    this.dayTimers = [];
     cancelAnimationFrame(this.dayFrame);
     if (!canvas || !settled) {
       if (canvas) canvas.hidden = true;
@@ -1038,12 +1064,50 @@ export class Hud {
     map.whole = true;
     map.known = settled.profile.entries;
     const end = islandScene(settled.profile);
-    const { gained, lost } = settled.front;
-    const was = (id: string, h: "held" | "freed") => (gained.includes(id as never) ? "held" : lost.includes(id as never) ? "freed" : h);
+    // The player's nodes after each beat, from the day's end back.
+    const after = (ids: Set<string>, c: { gained: readonly string[]; lost: readonly string[] }, back: boolean) => {
+      const out = new Set(ids);
+      for (const id of back ? c.gained : c.lost) out.delete(id);
+      for (const id of back ? c.lost : c.gained) out.add(id);
+      return out;
+    };
+    const night = new Set<string>(NODES.filter((n) => settled.profile.poiState[n.id].state === "freed").map((n) => n.id));
+    const battle = after(night, settled.night, true);
+    const left = after(battle, settled.after, true);
+    const start = after(left, settled.raid, true);
+    const holdsOf = (ids: Set<string>) => NODES.map((n) => (ids.has(n.id) ? "freed" : "held") as "freed" | "held");
+    const scene = (ids: Set<string>, changed?: Settlement["raid"]) => ({
+      ...end,
+      hold: end.hold.map((h, i) => (nodeIndex(POIS[i].id) < 0 ? h : ids.has(POIS[i].id) ? "freed" : "held")),
+      nodes: holdsOf(ids),
+      changed,
+    });
+    const bar = (ids: Set<string>, from: Set<string>) => {
+      const el = document.getElementById("day-bar");
+      if (el) el.innerHTML = nodeRow(holdsOf(ids), undefined, { from: from.size, delay: 0 });
+    };
+    const mark = (html: string) => {
+      const el = document.getElementById("day-beat");
+      if (el) el.innerHTML = html;
+    };
+    const beats: { ids: Set<string>; prev: Set<string>; c: Settlement["raid"]; icon: string }[] = [
+      { ids: left, prev: start, c: settled.raid, icon: "" },
+      { ids: battle, prev: left, c: settled.after, icon: depotIcon() },
+      { ids: night, prev: battle, c: settled.night, icon: nightIcon() },
+    ].filter((b) => b.c.gained.length || b.c.lost.length);
     // Drawn once the results are shown, so the map is drawn at the canvas's size on screen.
     this.dayFrame = requestAnimationFrame(() => {
-      map.draw({ ...end, hold: end.hold.map((h, i) => was(POIS[i].id, h)), nodes: end.nodes?.map((h, i) => was(NODES[i].id, h)) });
-      if (gained.length || lost.length) this.dayTimer = window.setTimeout(() => map.draw({ ...end, changed: settled.front }), 900);
+      map.draw(scene(start));
+      bar(start, start);
+      beats.forEach((b, k) =>
+        this.dayTimers.push(
+          window.setTimeout(() => {
+            map.draw(scene(b.ids, b.c));
+            bar(b.ids, b.prev);
+            mark(b.icon);
+          }, 900 + k * 1600),
+        ),
+      );
     });
   }
 

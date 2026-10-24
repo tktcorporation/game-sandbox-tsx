@@ -5,7 +5,7 @@ import { encodeSeen, type Kit, type State } from "../sim/state";
 import { haulOrigins } from "../sim/world";
 import { contractDone, makeBoard, parseBoard, sentOrigins, type Board, type Contract, type Fetched } from "./contracts";
 import { emptyHideout, infirmaryHeals, MODULES, nextLevel, onSale, pouchSlots, stashCap, stillNeeded, type Hideout } from "./hideout";
-import { advanceDay, departDepots, eventFor, firstEvents, frontIncome, newIsland, parseEvent, parseIsland, raidDay, shopRarity, type DayEvents, type Island } from "./island";
+import { advanceDay, departDepots, type FrontChange, eventFor, firstEvents, frontIncome, newIsland, parseEvent, parseIsland, raidDay, shopRarity, type DayEvents, type Island } from "./island";
 import type { IslandEvent } from "../sim/island";
 import { built, creditRaid, emptyLog, need, offered, QUEST_IDS, type Quest, type QuestLog } from "./quests";
 import { currentStory, STORIES, type Story } from "./story";
@@ -433,8 +433,11 @@ export interface Settlement {
   day: number;
   /** POIs that turned the player's overnight. */
   freed: PoiId[];
-  /** The nodes that turned the player's overnight, and those the enemy took. */
-  front: { gained: NodeId[]; lost: NodeId[] };
+  /** The nodes that turned the player's overnight, and those the enemy took, all told and in turn (`DayChange`). */
+  front: FrontChange;
+  raid: FrontChange;
+  after: FrontChange;
+  night: FrontChange;
   /** Credits the nodes the player holds paid at this settle (`frontIncome()`). */
   income: number;
   /** The day's island event the raid was played on, or null. */

@@ -1,6 +1,6 @@
 import { DEPOT, FACTION, FRONT, WORLD } from "../sim/config";
 import { frontNodes, nodeHolds, type NodeHold } from "../sim/front";
-import { battleMarks, meterOf, type Battle, type Side } from "../sim/battle";
+import { atRisk, battleMarks, meterOf, type Battle, type Side } from "../sim/battle";
 import { offshore } from "../sim/terrain";
 import { BOXES, CAMP, DEBRIS_SPOTS, NODES, nodeIndex, TIER, UNLOCKS, debrisIndex, DEPOTS, ENTRIES, EXTRACTS, LANDMARKS, OUTPOST_SITES, POIS, REGIONS, regionOf, ROUTES, regionHere, type EntryId, type NodeId, type PoiId, type RegionId, type RouteId } from "../sim/map";
 import type { IslandEvent, PoiHold } from "../sim/island";
@@ -509,17 +509,21 @@ export class IslandMap {
       g.restore();
       label(String(m.n), p.x + 9 * dpr, p.y + 6 * dpr, SIDE_CSS[m.side], 8);
     }
-    // A node of the player's the enemy's robots have come to: red rings beating out from it.
+    // A node of the player's the enemy's robots have come to: red rings beating out from it; one the
+    // enemy is on its way to take: a single ring, slower.
     const beat = (performance.now() / 900) % 1;
+    const slow = (performance.now() / 1600) % 1;
+    const risk = s.nodes ? atRisk({ battle: b, nodes: s.nodes }) : [];
     NODES.forEach((n, i) => {
-      if (!b.threat?.[i]) return;
+      const hot = !!b.threat?.[i];
+      if (!hot && !risk[i]) return;
       const p = at(n.x, n.z);
       g.save();
-      for (const k of [beat, (beat + 0.5) % 1]) {
-        g.lineWidth = 3 * dpr;
+      for (const k of hot ? [beat, (beat + 0.5) % 1] : [slow]) {
+        g.lineWidth = (hot ? 3 : 2) * dpr;
         g.strokeStyle = `rgba(255,59,48,${(1 - k).toFixed(2)})`;
         g.beginPath();
-        g.arc(p.x, p.y, (12 + 22 * k) * dpr, 0, Math.PI * 2);
+        g.arc(p.x, p.y, (12 + (hot ? 22 : 14) * k) * dpr, 0, Math.PI * 2);
         g.stroke();
       }
       g.restore();

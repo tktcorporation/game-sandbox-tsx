@@ -1,11 +1,11 @@
-import { CONQUEST, ENEMIES, FACTORY, PLATE, TICK, type EnemyKind, type Rarity } from "./config";
+import { CONQUEST, COUNTER, ENEMIES, FACTORY, PLATE, TICK, type EnemyKind, type Rarity } from "./config";
 import { dist2d } from "./geom";
 import { CAMP, DEPOTS, depotIndex, FRONT_LINKS, NET_EDGE, NODES, nodeIndex, POIS, UNLOCKS, type NodeId, type NodeUnlock } from "./map";
 import { forgetFields, onMainGround, walkLine } from "./hunt";
 import { inArea } from "./areas";
 import { worldKey } from "./routes";
 import { spawnEnemy } from "./enemies";
-import { frontNodes, garrisonLeaves, garrisonOf, NEIGHBOURS, CAMP_NEXT, useZones, type NodeHold } from "./front";
+import { dueCounter, frontNodes, garrisonLeaves, garrisonOf, NEIGHBOURS, CAMP_NEXT, useZones, type NodeHold } from "./front";
 import { allyUp } from "./ally";
 import type { Enemy, GameEvent, Point, State } from "./state";
 
@@ -57,6 +57,8 @@ export interface BattleSquad {
   via: number[];
   /** Seconds before it steps off the dropship or the boat that lands it; 0 once it is ashore. */
   ashore: number;
+  /** Landed to take back a node the player had just taken (`COUNTER`): it comes on whatever the enemy's limit. */
+  counter?: true;
 }
 
 /** A capture of a node by a side's squads under way: its side and the seconds held. */
@@ -97,6 +99,10 @@ export interface Battle {
   threat: boolean[];
   /** The node the player attacks, the player's squads near it coming to fight beside them; -1 for none. */
   rally: number;
+  /** The counter-attacks due on nodes the player has just taken (`COUNTER`): which node, and the battle's clock at which its squad sets off. */
+  counters: { node: number; at: number }[];
+  /** The battle's clock when the raid ended before the battle did, and each node's standing then; null while the raid is on. */
+  left: { at: number; nodes: NodeHold[] } | null;
 }
 
 /** What a raid of the island brings to its battle: the factory's level. */
@@ -253,6 +259,8 @@ export function initBattle(s: State, start: BattleStart): Battle {
     departs: [],
     threat: NODES.map(() => false),
     rally: -1,
+    counters: [],
+    left: null,
   };
   NODES.forEach((_, i) => {
     if (s.nodes[i] !== "freed") return;
@@ -318,6 +326,7 @@ function reckon(s: State, b: Battle) {
   rally(s, b);
   lod(s, b);
   produce(s, b, dt);
+  counterAttack(s, b);
   march(s, b, dt);
   fightApart(s, b, dt);
   capture(s, b, dt);
@@ -331,6 +340,7 @@ function reckon(s: State, b: Battle) {
 export function finishBattle(s: State) {
   const b = s.battle;
   if (!b || b.done) return;
+  b.left = { at: b.now, nodes: [...s.nodes] };
   for (const q of b.squads) if (q.squad >= 0) toNumbers(s, q);
   b.squads = b.squads.filter((q) => q.units.length);
   while (b.now + CONQUEST.tick <= b.end + 1e-6) reckon(s, b);
@@ -645,7 +655,7 @@ const shoreOpen = (s: Pick<State, "nodes">) => !heldUnlocks(s.nodes, "shore").le
  * held and the one its squads already go for first, the nearer of equals. Null when it can reach
  * none of the player's nodes.
  */
-function landingPlan(s: State, b: Battle): { from: number; to: number; via: number[] } | null {
+function landingPlan(s: State, b: Battle, target = -1): { from: number; to: number; via: number[] } | null {
   let best: { from: number; to: number; via: number[]; v: number } | null = null;
   for (const land of shoreOpen(s) ? [PAD, SHORE] : [PAD]) {
     // Across the enemy's own nodes, breadth first, each node by the fewest links from the landing.
@@ -662,7 +672,7 @@ function landingPlan(s: State, b: Battle): { from: number; to: number; via: numb
         }
     }
     for (const i of queue) {
-      if (sideOf(s.nodes[i]) !== 0) continue;
+      if (sideOf(s.nodes[i]) !== 0 || (target >= 0 && i !== target)) continue;
       const route = [i];
       while (prev.get(route[0]) !== land) route.unshift(prev.get(route[0])!);
       let len = dist2d(nodePoint(land), nodePoint(route[0]));
@@ -742,6 +752,51 @@ function produce(s: State, b: Battle, dt: number) {
     }
   }
 }
+
+/**
+ * The counter-attacks come due (`COUNTER`): a node the player took a while ago that is still theirs
+ * gets a squad landed at the pad or the north shore, bound across the enemy's nodes for it, on top
+ * of the enemy's usual squads. A node the enemy's ground no longer reaches is let be.
+ */
+function counterAttack(s: State, b: Battle) {
+  for (const c of b.counters.filter((k) => k.at <= b.now)) {
+    b.counters.splice(b.counters.indexOf(c), 1);
+    if (s.nodes[c.node] !== "freed") continue;
+    const plan = landingPlan(s, b, c.node);
+    if (!plan) continue;
+    const q = addSquad(b, 1, COUNTER.kinds[s.strength], plan.from, plan.to, "attack");
+    q.via = plan.via;
+    q.counter = true;
+    const boat = plan.from === SHORE;
+    q.ashore = boat ? CONQUEST.land.boat : CONQUEST.land.ship;
+    b.landings.push({ boat, x: q.x, z: q.z, down: b.now + q.ashore });
+    if (b.landings.length > 6) b.landings.shift();
+    tell(s, { t: "landing", boat, x: q.x, z: q.z });
+    tell(s, { t: "counter", node: c.node });
+  }
+}
+
+/** Where battle squad `q` is bound in the end: the last node of its way, or the node it walks to. */
+const boundFor = (q: BattleSquad) => (q.via.length ? q.via[q.via.length - 1] : q.to);
+
+/**
+ * The player's nodes the enemy is about to take (the view pulses them): one whose core the enemy's
+ * robots have come to, one whose capture by the enemy is under way, and one an enemy's squad is
+ * bound for, from the moment its dropship or boat sets off.
+ */
+export function atRisk(s: { battle: Battle | null | undefined; nodes: readonly NodeHold[] }): boolean[] {
+  const b = s.battle;
+  return NODES.map((_, i) => !!b && s.nodes[i] === "freed" && (b.threat[i] || b.meter[i]?.side === 1 || b.squads.some((q) => q.side === 1 && q.task === "attack" && boundFor(q) === i)));
+}
+
+/** The node an enemy's counter-attack squad is bound for, for each node of the player's (the view's defend arrow). */
+export function countered(s: { battle: Battle | null | undefined; nodes: readonly NodeHold[] }): boolean[] {
+  const b = s.battle;
+  return NODES.map((_, i) => !!b && s.nodes[i] === "freed" && b.squads.some((q) => q.counter && q.ashore <= 0 && boundFor(q) === i));
+}
+
+/** The nodes the player's squads stand at, holding them, as the battle stands: those the night finds guarded. */
+export const guardedNodes = (b: Battle): number[] => NODES.map((_, i) => i).filter((i) => b.squads.some((q) => q.side === 0 && q.to === i && q.units.length > 0 && (q.task === "post" || q.task === "hold" || q.task === "defend") && arrived(q)));
 
 /* ---------- walking, fighting and taking, in numbers ---------- */
 
@@ -974,6 +1029,7 @@ function seize(s: State, b: Battle, i: number, side: Side) {
     else if (q.side === was && q.task !== "post") q.task = "attack";
   }
   if (side === 0) {
+    dueCounter(b, i);
     garrisonLeaves(s, i);
     const d = depotIndex(n.id);
     if (d >= 0 && !s.depots[d]) {

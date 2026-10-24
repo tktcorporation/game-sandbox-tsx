@@ -1,3 +1,4 @@
+import { atRisk } from "../sim/battle";
 import * as THREE from "three";
 import { DUCK, ENEMIES, FRONT, PLAYER, STORM, TITAN, WEAPONS, WORLD, type EnemyKind } from "../sim/config";
 import { BOXES, CAMP, DEPOTS, ENTRIES, EXTRACTS, NODES, ROUTES, type Box } from "../sim/map";
@@ -1454,6 +1455,7 @@ export class World {
     // --- the front's cores: red while the enemy holds the node, blue the player's (with a flag
     // up); a node off the front wears the enemy's shield. Lit from far off, past the things' range.
     const front = frontNodes(s.nodes);
+    const risk = s.phase === "play" ? atRisk(s) : [];
     this.cores.forEach((v, i) => {
       const h = s.nodes[i];
       // A core of the player's the enemy's robots have come to pulses red, seen from across the island.
@@ -1476,6 +1478,16 @@ export class World {
         v.halo.material.color.setHex(0xff3b30);
         v.halo.material.opacity = 0.35 + 0.65 * beat;
         v.halo.scale.setScalar(7 + 9 * beat);
+        return;
+      }
+      if (risk[i]) {
+        // The enemy is on its way to take it: a slower red beat in the halo, the band still blue.
+        v.root.visible = true;
+        const beat = Math.max(0, Math.sin(this.time * 3.5));
+        v.halo.material.color.setHex(beat > 0.3 ? 0xff3b30 : 0x3d8cff);
+        v.halo.material.opacity = 0.3 + 0.5 * beat;
+        v.halo.scale.setScalar(7 + 5 * beat);
+        v.key = "";
         return;
       }
       v.halo.scale.setScalar(7);

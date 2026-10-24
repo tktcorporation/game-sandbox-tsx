@@ -20,7 +20,12 @@ export type AreaId =
   | "town"
   | "yard"
   | "smelter"
-  | "bay";
+  | "bay"
+  | "station"
+  | "waterworks"
+  | "lodge"
+  | "cannery"
+  | "coldstore";
 
 export type Offset = readonly [number, number];
 
@@ -52,6 +57,16 @@ export const AREA: Record<AreaId, Offset> = {
   yard: [-72, -315],
   smelter: [38, -322],
   bay: [-18, -396],
+  // The nodes built on the open ground between the areas, each a small walled works of its own:
+  // the weather station on the west coast between the supply depot and the quarry, the waterworks
+  // between the lakebed's east shore and the mesa, the workers' lodge at the harbor's foot of the
+  // pass, and in the harbor's north the cannery between the yard and the wreck and the cold store
+  // between the smelter and the wreck.
+  station: [-240, 350],
+  waterworks: [160, 115],
+  lodge: [-150, -485],
+  cannery: [-135, -885],
+  coldstore: [150, -850],
 };
 
 /** The area each POI stands in, and where the POI's own frame lies within that area's frame. */
@@ -63,6 +78,11 @@ const POI_IN: Record<PoiId, [AreaId, Offset]> = {
   wreck: ["bay", [10, -562]],
   yard: ["yard", [-100, -400]],
   smelter: ["smelter", [120, -415]],
+  station: ["station", [0, 0]],
+  waterworks: ["waterworks", [0, 0]],
+  lodge: ["lodge", [0, 0]],
+  cannery: ["cannery", [0, 0]],
+  coldstore: ["coldstore", [0, 0]],
 };
 
 /** A point written in an area's frame, in the world. */

@@ -652,7 +652,7 @@ export interface Squad {
 export type LootTable = { weapon: [WeaponKind, Rarity][]; armor: Rarity[]; heals: number; valuable: [ValuableKind, number][] };
 
 /** Stable names for the POIs: saves, quests and other data refer to a POI by these, never by its place in `POIS`. */
-export type PoiId = "supply" | "quarry" | "relay" | "pad" | "wreck" | "yard" | "smelter";
+export type PoiId = "supply" | "quarry" | "relay" | "pad" | "wreck" | "yard" | "smelter" | "station" | "waterworks" | "lodge" | "cannery" | "coldstore";
 
 export interface Poi {
   id: PoiId;
@@ -785,7 +785,7 @@ const BWE_CAB = (() => {
  * into place by this offset (`POI_AT` in areas.ts, which sets each in its area's frame).
  * The harbor's POIs are written round their own middle.
  */
-const AT = (["supply", "quarry", "relay", "pad", "wreck", "yard", "smelter"] as const).map((id) => POI_AT[id]);
+const AT = (["supply", "quarry", "relay", "pad", "wreck", "yard", "smelter", "station", "waterworks", "lodge", "cannery", "coldstore"] as const).map((id) => POI_AT[id]);
 
 /** The big dish on the mesa, in the relay's frame (`dish()`), its heights over the mesa's top. */
 const BIG_DISH = { x: 45, z: -5, y: 23, r: 28, f: 22.4, tilt: Math.PI / 4, cell: 2.5 } as const;
@@ -793,6 +793,86 @@ const BIG_DISH = { x: 45, z: -5, y: 23, r: 28, f: 22.4, tilt: Math.PI / 4, cell:
 const BIG_BOWL = dish(BIG_DISH.x, BIG_DISH.y, BIG_DISH.z, { r: BIG_DISH.r, f: BIG_DISH.f, tilt: BIG_DISH.tilt, face: "w", cell: BIG_DISH.cell, thick: 0.6, rim: 2.5, feed: 2 });
 const DISH_RIM_X = Math.min(...BIG_BOWL.filter((b) => b.z0 < BIG_DISH.z && b.z1 > BIG_DISH.z).map((b) => b.x0));
 const DISH_STAIRS = { x: DISH_RIM_X - 4, z: BIG_DISH.z, floors: 3 } as const;
+
+
+/*
+ * The nodes built on the open ground between the areas (docs/ringfall/island-v2.md, 拠点を増やす):
+ * each a small works inside a low wall, written in its own frame round its middle on ground at 0,
+ * its yard open in the middle, where its core stands. A garrison of two squads holds each.
+ */
+
+/** The weather station on the west coast: a lattice mast to climb, the office, the instrument shed and a store. */
+function station(): Box[] {
+  return [
+    ...compound(0, 0, 74, 66, 1.6, [{ side: "e", w: 8 }, { side: "w", w: 6 }, { side: "n", at: -10, w: 6 }, { side: "s", at: 12, w: 6 }]),
+    ...lattice(-20, -16, 6, 6, 4, 30),
+    ...tower(12, -20, 10, 8, 2, { doors: [["s", "w"]], windows: [["e"], ["n", "e", "s"]] }),
+    ...building(-20, 18, 12, 8, 3.4, { doors: ["e", "n"], windows: ["s"], roof: "w" }),
+    ...building(16, 18, 8, 6, 3.0, { doors: ["w", "n"] }),
+    // The instruments' stands and crates out in the yard.
+    box(-4, -24, 1.2, 1.2, 1.6, "steel", 2),
+    box(4, -26, 1.2, 1.2, 1.6, "steel", 2),
+    box(26, 4, 1.2, 1.2, 0.9, "crate"),
+    box(27.2, 4, 1.2, 1.2, 1.8, "crate"),
+    box(-28, 2, 6, 2.5, 2.6, "container", 2),
+  ];
+}
+
+/** The waterworks east of the lakebed: two tanks, open filter beds behind knee walls, the pump hall and the control house. */
+function waterworks(): Box[] {
+  return [
+    ...compound(0, 0, 70, 64, 1.6, [{ side: "s", w: 8 }, { side: "n", at: 8, w: 6 }, { side: "e", w: 6 }, { side: "w", at: -6, w: 6 }]),
+    ...tank(-20, -16, 7, 8, "e", 2),
+    ...tank(-20, 12, 7, 8, "e", 2),
+    ...hall(14, -16, 24, 14, 6.5, { doors: [{ side: "s", at: -6 }], hatches: [{ side: "w" }, { side: "e" }], windows: ["n"], mezz: [{ side: "n", depth: 3, y: 3.2, stair: 4 }], steel: 1 }),
+    // The filter beds: two pools sunk behind knee-high walls, broken where the walks cross.
+    rect(4, 6, 14, 6.4, 0, 1.1, "wall", 1),
+    rect(18, 6, 28, 6.4, 0, 1.1, "wall", 1),
+    rect(4, 16.6, 28, 17, 0, 1.1, "wall", 1),
+    rect(4, 6, 4.4, 17, 0, 1.1, "wall", 1),
+    rect(27.6, 6, 28, 17, 0, 1.1, "wall", 1),
+    ...tower(-2, 24, 8, 8, 2, { doors: [["e", "n"]], windows: [["w"], ["n", "e", "w"]] }),
+  ];
+}
+
+/** The workers' lodge at the harbor's foot of the pass: a terrace of bunkhouses, the canteen hall, the lodge's office and a garage. */
+function lodge(): Box[] {
+  return [
+    ...compound(0, 0, 76, 64, 1.6, [{ side: "n", w: 8 }, { side: "s", at: 10, w: 6 }, { side: "e", w: 6 }, { side: "w", w: 6 }]),
+    ...rowHouses(-34, -18, 4, 7, 8, 2),
+    ...hall(20, -14, 22, 14, 6, { doors: [{ side: "s" }], hatches: [{ side: "w" }, { side: "n" }], windows: ["n"], columns: 6 }),
+    ...tower(-20, 18, 9, 8, 3, { doors: [["e", "s"]], windows: [["w"], ["n", "e", "s", "w"], ["n", "s"]] }),
+    ...building(20, 18, 10, 7, 3.6, { doors: ["w", "n"], roof: "e" }),
+    box(4, 22, 2.5, 6, 2.2, "steel", 3),
+    box(-6, -2, 1.2, 1.2, 0.9, "crate"),
+  ];
+}
+
+/** The cannery between the yard and the wreck: the packing hall with its gallery, the office and the cold room, crates of tins on the quay apron. */
+function cannery(): Box[] {
+  return [
+    ...compound(0, 0, 80, 68, 1.6, [{ side: "s", w: 8 }, { side: "n", w: 8 }, { side: "e", at: 8, w: 6 }, { side: "w", at: 8, w: 6 }]),
+    ...hall(0, -16, 36, 18, 8, { doors: [{ side: "s", at: -9 }, { side: "s", at: 9 }], hatches: [{ side: "e" }, { side: "w" }], windows: ["n"], columns: 6, mezz: [{ side: "n", depth: 3.4, y: 3.8, stair: 10 }], steel: 4 }),
+    ...tower(-24, 18, 9, 8, 2, { doors: [["e", "s"]], windows: [["w"], ["n", "e", "w"]] }),
+    ...building(18, 18, 10, 7, 3.6, { doors: ["w", "n"], roof: "e" }),
+    box(-32, -2, 6, 2.5, 2.6, "container", 3),
+    box(30, -2, 6, 2.5, 2.6, "container", 1),
+    box(-8, 26, 1.2, 1.2, 0.9, "crate"),
+    box(-6.8, 26, 1.2, 1.2, 1.8, "crate"),
+  ];
+}
+
+/** The cold store between the smelter and the wreck: the insulated store with a gallery, the engine house and the loading office, a trailer at the dock. */
+function coldstore(): Box[] {
+  return [
+    ...compound(0, 0, 74, 68, 1.6, [{ side: "s", w: 8 }, { side: "n", at: -8, w: 6 }, { side: "e", w: 6 }]),
+    ...hall(0, -14, 30, 20, 9, { doors: [{ side: "s", at: -6 }], hatches: [{ side: "e" }, { side: "w" }], mezz: [{ side: "w", depth: 3.2, y: 4.5, stair: 2 }], steel: 0 }),
+    ...tower(22, 18, 8, 8, 3, { doors: [["w", "s"]], windows: [["e"], ["n", "e", "s", "w"], ["n", "s"]] }),
+    ...building(-20, 18, 10, 7, 3.4, { doors: ["e", "n"], roof: "w" }),
+    ...trailer(26, -4, 1),
+    box(-30, -2, 6, 2.5, 2.6, "container", 2),
+  ];
+}
 
 const POI_FRAMES: Poi[] = [
   {
@@ -1001,6 +1081,118 @@ const POI_FRAMES: Poi[] = [
     loot: { weapon: [["pike", 1], ["lance", 1], ["maul", 1], ["talon", 1], ["hornet", 1]], armor: [1], heals: 2, valuable: [["wire", 2], ["gyro", 3], ["drive", 2], ["board", 2], ["reactor", 1]] },
     floor: [{ x: 37, z: -9, y: WORKS.storey * 3, weapon: ["talon", 1] }],
   },
+
+  // --- the nodes built on the open ground between the areas: a garrison of two squads each
+  {
+    id: "station",
+    name: "観測所",
+    x: 0,
+    z: 0,
+    trigger: 55,
+    entry: { x: 44, z: 0, yaw: W },
+    squads: [
+      { name: "観測塔", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: -12, z: -12, face: E }, { kind: "grunt", x: 4, z: -12, face: E }] },
+      { name: "器材庫", members: [{ kind: "grunt", x: 8, z: 12, face: E }, { kind: "drone", x: -12, z: 24 }] },
+    ],
+    bins: [
+      { x: -20, z: 18 },
+      { x: 16, z: 18 },
+      { x: 26, z: -6 },
+      { x: -18, z: -15.5, y: 4 * STOREY },
+      { x: 8, z: -19, y: STOREY, vault: true },
+    ],
+    keyFrom: "waterworks",
+    loot: { weapon: [["pike", 1], ["talon", 1], ["hornet", 1]], armor: [1], heals: 2, valuable: [["wire", 3], ["gyro", 2], ["board", 2], ["fuse", 1]] },
+    floor: [{ x: 9, z: -17, heal: "battery" }],
+  },
+  {
+    id: "waterworks",
+    name: "浄水場",
+    x: 0,
+    z: 0,
+    trigger: 55,
+    entry: { x: 0, z: 42, yaw: N },
+    squads: [
+      { name: "ポンプ棟", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 8, z: -6, face: S }, { kind: "grunt", x: 22, z: -4, face: S }] },
+      { name: "水槽", members: [{ kind: "grunt", x: -8, z: -2, face: S }, { kind: "charger", x: -10, z: 22, face: E }] },
+    ],
+    bins: [
+      { x: 20, z: -18 },
+      { x: -2, z: 24 },
+      { x: 16, z: 11.5 },
+      { x: 18, z: -21, y: 3.2 },
+      { x: -4, z: 23, y: STOREY, vault: true },
+    ],
+    keyFrom: "station",
+    loot: { weapon: [["pike", 1], ["maul", 1], ["lance", 1]], armor: [1], heals: 2, valuable: [["parts", 3], ["fuse", 2], ["wire", 2], ["drive", 1]] },
+    floor: [{ x: 6, z: -12, heal: "syringe" }],
+  },
+  {
+    id: "lodge",
+    name: "峠の宿舎",
+    x: 0,
+    z: 0,
+    trigger: 55,
+    entry: { x: 0, z: -42, yaw: S },
+    squads: [
+      { name: "食堂", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 16, z: -2, face: N }, { kind: "heavy", x: 4, z: 10, face: N }] },
+      { name: "宿舎棟", members: [{ kind: "grunt", x: -24, z: -6, face: N }, { kind: "drone", x: -8, z: 22 }] },
+    ],
+    bins: [
+      { x: 24, z: -16 },
+      { x: -30, z: -16 },
+      { x: 20, z: 18 },
+      { x: -17, z: 16, y: 2 * STOREY },
+      { x: -16, z: 20, vault: true },
+    ],
+    keyFrom: "cannery",
+    loot: { weapon: [["pike", 1], ["hornet", 1], ["maul", 1], ["talon", 1]], armor: [1], heals: 2, valuable: [["parts", 2], ["wire", 2], ["gyro", 2], ["board", 2]] },
+    floor: [{ x: 22, z: -10, heal: "medkit" }],
+  },
+  {
+    id: "cannery",
+    name: "缶詰工場",
+    x: 0,
+    z: 0,
+    trigger: 58,
+    entry: { x: 0, z: 46, yaw: N },
+    squads: [
+      { name: "包装棟", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: -4, z: -14, face: S }, { kind: "heavy", x: 10, z: -4, face: S }] },
+      { name: "岸壁", members: [{ kind: "grunt", x: -20, z: 6, face: S }, { kind: "drone", x: 22, z: 8 }] },
+    ],
+    bins: [
+      { x: 12, z: -20 },
+      { x: -12, z: -20 },
+      { x: 18, z: 18 },
+      { x: 4, z: -22.5, y: 3.8 },
+      { x: -21, z: 16, y: STOREY, vault: true },
+    ],
+    keyFrom: "coldstore",
+    loot: { weapon: [["talon", 1], ["lance", 1], ["pike", 1]], armor: [1], heals: 2, valuable: [["board", 2], ["drive", 2], ["gyro", 2], ["wire", 1]] },
+    floor: [{ x: -14, z: -12, heal: "battery" }],
+  },
+  {
+    id: "coldstore",
+    name: "冷凍倉庫",
+    x: 0,
+    z: 0,
+    trigger: 55,
+    entry: { x: 0, z: 46, yaw: N },
+    squads: [
+      { name: "冷凍庫", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 6, z: -8, face: S }, { kind: "heavy", x: -6, z: 0, face: S }] },
+      { name: "荷捌き場", members: [{ kind: "grunt", x: 18, z: 6, face: S }, { kind: "drone", x: -16, z: 8 }] },
+    ],
+    bins: [
+      { x: -8, z: -18 },
+      { x: -20, z: 18 },
+      { x: 10, z: -20 },
+      { x: -12, z: -10, y: 4.5 },
+      { x: 25, z: 16, y: STOREY, vault: true },
+    ],
+    keyFrom: "lodge",
+    loot: { weapon: [["pike", 1], ["lance", 1], ["maul", 1], ["hornet", 1]], armor: [1], heals: 2, valuable: [["wire", 2], ["board", 2], ["drive", 2], ["reactor", 1]] },
+    floor: [{ x: -16, z: -4, heal: "medkit" }],
+  },
 ];
 
 export const POIS: Poi[] = POI_FRAMES.map((p, i) => placePoi(p, AT[i]));
@@ -1023,7 +1215,7 @@ export interface Depot {
  * the entry: the nearest flat spot where a raid started there is not seen by the POI's
  * squads at once (`checkDepots` in the sim gate holds them to it).
  */
-const DEPOT_OUT: Record<PoiId, number> = { supply: 18, quarry: 18, relay: 25, pad: 66, wreck: 22, yard: 18, smelter: 25 };
+const DEPOT_OUT: Record<PoiId, number> = { supply: 18, quarry: 18, relay: 25, pad: 66, wreck: 22, yard: 18, smelter: 25, station: 20, waterworks: 20, lodge: 20, cannery: 20, coldstore: 20 };
 
 /** A depot's place in `DEPOTS` (and in the run's `depots`), from its POI. */
 export const depotIndex = (poi: PoiId) => DEPOTS.findIndex((d) => d.poi === poi);
@@ -1737,8 +1929,8 @@ export interface Region {
 }
 
 export const REGIONS: Region[] = [
-  { id: "reservoir", name: "ダム湖", note: "干上がったダム湖の島。拠点 4 つ、発着場にタイタン", entries: ["beach", "checkpoint", "jetty"], pois: ["supply", "quarry", "relay", "pad"], exits: ["ship", "flare", "village"], label: { x: -330, z: 300 }, bounds: { x0: WORLD.x0, z0: -340, x1: WORLD.x1, z1: WORLD.z1 } },
-  { id: "harbor", name: "港湾地帯", note: "干上がった湾の港。拠点 3 つ、どこにもヘビーがいる", entries: ["outskirts", "quay", "shore"], locked: "峠か鉄橋を越えて港町の外れまで歩き、生きて帰ると選べる", pois: ["wreck", "yard", "smelter"], exits: ["boat"], label: { x: -250, z: -520 }, bounds: { x0: WORLD.x0, z0: WORLD.z0, x1: WORLD.x1, z1: -380 } },
+  { id: "reservoir", name: "ダム湖", note: "干上がったダム湖の島。拠点 6 つ、発着場にタイタン", entries: ["beach", "checkpoint", "jetty"], pois: ["supply", "quarry", "relay", "pad", "station", "waterworks"], exits: ["ship", "flare", "village"], label: { x: -330, z: 300 }, bounds: { x0: WORLD.x0, z0: -340, x1: WORLD.x1, z1: WORLD.z1 } },
+  { id: "harbor", name: "港湾地帯", note: "干上がった湾の港。拠点 6 つ、どこにもヘビーがいる", entries: ["outskirts", "quay", "shore"], locked: "峠か鉄橋を越えて港町の外れまで歩き、生きて帰ると選べる", pois: ["wreck", "yard", "smelter", "lodge", "cannery", "coldstore"], exits: ["boat"], label: { x: -250, z: -520 }, bounds: { x0: WORLD.x0, z0: WORLD.z0, x1: WORLD.x1, z1: -380 } },
 ];
 
 export const regionOf = (id: RegionId): Region => REGIONS.find((r) => r.id === id) ?? REGIONS[0];
@@ -3648,6 +3840,12 @@ const AUTHORED: Box[] = [
   // --- the terraced fields, and the works and housing
   ...onFloors(AREA.village[0], AREA.village[1], village()),
   ...onLevel(LEVEL.shore, placeIn("factory", factory())),
+  // --- the nodes on the open ground between the areas
+  ...onLevel(LEVEL.station, placeIn("station", station())),
+  ...onLevel(LEVEL.waterworks, placeIn("waterworks", waterworks())),
+  ...onLevel(LEVEL.lodge, placeIn("lodge", lodge())),
+  ...onLevel(LEVEL.cannery, placeIn("cannery", cannery())),
+  ...onLevel(LEVEL.coldstore, placeIn("coldstore", coldstore())),
 ];
 
 /**
@@ -4762,17 +4960,25 @@ export const FRONT_LINKS: readonly (readonly ["camp" | NodeId, NodeId])[] = [
   ["camp", "supply"],
   ["supply", "quarry"],
   ["supply", "relay"],
-  ["quarry", "yard"],
+  ["supply", "station"],
+  ["station", "quarry"],
+  ["supply", "waterworks"],
+  ["waterworks", "relay"],
+  ["quarry", "lodge"],
+  ["lodge", "yard"],
+  ["lodge", "smelter"],
   ["relay", "smelter"],
-  ["yard", "wreck"],
-  ["smelter", "wreck"],
+  ["yard", "cannery"],
+  ["cannery", "wreck"],
+  ["smelter", "coldstore"],
+  ["coldstore", "wreck"],
 ];
 
 /**
  * Each node's tier (docs/ringfall/island-v2.md, 拠点の段): how deep it lies from the camp, 0 by
  * the camp's gate to 3 at the far end of the harbor.
  */
-export const TIER: Record<NodeId, number> = { supply: 0, quarry: 1, relay: 1, yard: 2, smelter: 2, wreck: 3 };
+export const TIER: Record<NodeId, number> = { supply: 0, quarry: 1, relay: 1, station: 1, waterworks: 1, lodge: 2, yard: 2, smelter: 2, cannery: 2, coldstore: 2, wreck: 3 };
 
 /**
  * What holding each node opens (docs/ringfall/island-v2.md, 拠点の段), for as long as it is held:
@@ -4795,6 +5001,11 @@ export const UNLOCKS: Record<NodeId, NodeUnlock> = {
   yard: { shop: 3, depart: true },
   smelter: { shop: 3, squad: 1 },
   wreck: { shore: true },
+  station: {},
+  waterworks: {},
+  lodge: { depart: true },
+  cannery: {},
+  coldstore: {},
 };
 
 /**

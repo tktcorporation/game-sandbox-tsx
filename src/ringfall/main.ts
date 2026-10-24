@@ -6,7 +6,7 @@ import { terrainHeight } from "./sim/terrain";
 import { callLeft, freeKit, idleInput, newRun, type GameEvent, type Input, type Kit, type State } from "./sim/state";
 import { CAMP, entryOf, FRAMES, NODES, POIS, poiIndex, type CampSpot, type RegionId, type StationId } from "./sim/map";
 import { frontNodes, garrisonOf, useCore } from "./sim/front";
-import { battleMarks, departNow, landNow, marchSquad, nodePoint, placeBattleSquad } from "./sim/battle";
+import { atRisk, battleMarks, departNow, landNow, marchSquad, nodePoint, placeBattleSquad } from "./sim/battle";
 import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
 import { analyse, raidThreat, settle, takenStory, type Settlement } from "./meta/profile";
 import { MOD, MODS, type ModKind } from "./sim/config";
@@ -732,7 +732,7 @@ window.render_game_to_text = () => {
     storm: s.storm,
     debris: s.bins.filter((b) => b.debris).map((b) => ({ x: b.x, y: +b.y.toFixed(1), z: b.z, open: b.open }))[0] ?? null,
     crews: s.squads.flatMap((q, i) => (q.crew ? [{ squad: i, members: s.enemies.filter((e) => e.squad === i).map((e) => ({ x: Math.round(e.pos.x), y: +e.pos.y.toFixed(1), z: Math.round(e.pos.z) })), bin: q.crew.bin >= 0 ? { x: s.bins[q.crew.bin].x, y: s.bins[q.crew.bin].y, z: s.bins[q.crew.bin].z } : null, searching: q.crew.searchT > 0, bag: q.bag ?? [], leaving: q.crew.leaving }] : [])),
-    settled: settlement && { event: settlement.event, home: settlement.home.length, sold: settlement.sold.length, quests: settlement.quests.map((q) => q.id), opened: settlement.opened, learned: settlement.learned, day: settlement.day, freed: settlement.freed, front: settlement.front, income: settlement.income, contract: settlement.contract && { id: settlement.contract.c.id, t: settlement.contract.c.t, done: settlement.contract.done }, story: settlement.story?.id ?? null, threat: settlement.threat, analysable: settlement.analysable, analysed },
+    settled: settlement && { event: settlement.event, home: settlement.home.length, sold: settlement.sold.length, quests: settlement.quests.map((q) => q.id), opened: settlement.opened, learned: settlement.learned, day: settlement.day, freed: settlement.freed, front: settlement.front, raid: settlement.raid, after: settlement.after, night: settlement.night, income: settlement.income, contract: settlement.contract && { id: settlement.contract.c.id, t: settlement.contract.c.t, done: settlement.contract.done }, story: settlement.story?.id ?? null, threat: settlement.threat, analysable: settlement.analysable, analysed },
     contract: running && hub.contract() ? { t: hub.contract()!.t, ...contractProgress(hub.contract()!, s) } : null,
     records: s.player.records,
     vaults: s.bins.filter((b) => b.vault).map((b) => ({ poi: b.poi, x: b.x, y: b.y, z: b.z, open: b.open })),
@@ -776,6 +776,9 @@ window.render_game_to_text = () => {
       landings: s.battle.landings.map((l) => ({ boat: l.boat, x: l.x, z: l.z, down: l.down })),
       departs: s.battle.departs,
       threat: NODES.filter((_, i) => s.battle!.threat[i]).map((n) => n.id),
+      risk: NODES.filter((_, i) => atRisk(s)[i]).map((n) => n.id),
+      counters: s.battle.counters.map((c) => ({ node: NODES[c.node].id, at: c.at })),
+      counterSquads: s.battle.squads.filter((q) => q.counter).map((q) => ({ to: NODES[q.via.length ? q.via[q.via.length - 1] : q.to]?.id, ashore: q.ashore, x: Math.round(q.x), z: Math.round(q.z), live: q.squad >= 0 })),
       rally: NODES[s.battle.rally]?.id ?? null,
       now: s.battle.now,
     },
