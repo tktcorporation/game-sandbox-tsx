@@ -297,7 +297,7 @@ export const ENEMIES: Record<EnemyKind, EnemySpec> = {
   drone: { hp: 70, shield: 0, shieldTier: 0, radius: 0.55, bodyY: 0, weakY: 0, weakR: 0.24, weakFwd: 0.42, speed: 4.2, fly: 3.4, range: 14, telegraph: 0.55, cooldown: 1.6, shots: 1, shotGap: 0, spread: 0, orbSpeed: 120, orbDmg: 21, orbR: 0.2, ult: 1 },
   grunt: { hp: 140, shield: 70, shieldTier: 1, radius: 0.65, bodyY: 1.2, weakY: 2.0, weakR: 0.27, weakFwd: 0.08, speed: 3.2, fly: 0, range: 15, telegraph: 0.6, cooldown: 2.2, shots: 3, shotGap: 0.12, spread: 0, orbSpeed: 140, orbDmg: 21, orbR: 0.18, ult: 1 },
   charger: { hp: 120, shield: 50, shieldTier: 0, radius: 0.72, bodyY: 0.75, weakY: 0.95, weakR: 0.3, weakFwd: 0.62, speed: 6.4, fly: 0, range: 0, telegraph: 0.6, cooldown: 1.2, shots: 0, shotGap: 0, spread: 0, orbSpeed: 0, orbDmg: 40, orbR: 0, ult: 1 },
-  heavy: { hp: 270, shield: 130, shieldTier: 2, radius: 1.1, bodyY: 1.8, weakY: 3.0, weakR: 0.4, weakFwd: 0.1, speed: 2.0, fly: 0, range: 18, telegraph: 0.85, cooldown: 3.6, shots: 5, shotGap: 0, spread: 1.8, orbSpeed: 110, orbDmg: 18, orbR: 0.26, ult: 1 },
+  heavy: { hp: 270, shield: 130, shieldTier: 2, radius: 1.1, bodyY: 1.8, weakY: 3.0, weakR: 0.4, weakFwd: 0.1, speed: 2.0, fly: 0, range: 18, telegraph: 0.85, cooldown: 3.6, shots: 5, shotGap: 0, spread: 5, orbSpeed: 110, orbDmg: 18, orbR: 0.26, ult: 1 },
   titan: { hp: 3200, shield: 1000, shieldTier: 3, radius: 2.3, bodyY: 3.2, weakY: 3.4, weakR: 0.75, weakFwd: 2.1, speed: 1.6, fly: 0, range: 20, telegraph: 1.0, cooldown: 3.0, shots: 6, shotGap: 0.16, spread: 0, orbSpeed: 13, orbDmg: 9, orbR: 0.48, ult: 0.5 },
 };
 
@@ -1081,8 +1081,8 @@ export const PURSUE = { lead: 1.5, leadMax: 9, reach: 90, spread: 7, approach: 5
  * meeting a walker is a short fight that costs a little, not one of the POIs' hard fights.
  *
  * Standing still in a robot's sights is what it punishes. A target moving slower than `still`
- * m/s is shot with `steady` of the stray, and a burst at it starts with it standing still gets
- * `extra` more shots (the fan-firing kinds excepted); a burst that ends with it standing still
+ * m/s is shot with `steady` of the stray and `fan` of a volley's fan, and a burst at it starts
+ * with it standing still gets `extra` more shots (the fan-firing kinds excepted); a burst that ends with it standing still
  * leaves only `press` of the robot's pause before the next, and the next wind-up, begun within
  * `followWindow` s of the last burst, takes `follow` of its time: the glow still comes before
  * every burst, the gap between them shrinks. Facing one robot head-on, standing and trading shots
@@ -1091,7 +1091,7 @@ export const PURSUE = { lead: 1.5, leadMax: 9, reach: 90, spread: 7, approach: 5
  * burst within `shareWindow` s adds `share` times the pause to a robot's next one, so two at once
  * do not fire twice as fast as one, and a squad's last robot fights as hard as a lone one.
  */
-export const SHOT = { lead: 0.85, spread: 1.5, walker: 2, walkerDmg: 0.6, still: 1, steady: 0.77, extra: 1, press: 0.23, follow: 0.6, followWindow: 1.5, share: 5, shareWindow: 2.5 };
+export const SHOT = { lead: 0.85, spread: 1.5, walker: 2, walkerDmg: 0.6, still: 1, steady: 0.77, fan: 0.36, extra: 1, press: 0.23, follow: 0.6, followWindow: 1.5, share: 5, shareWindow: 2.5 };
 
 /**
  * Being shot from beyond a robot's sight is answered. For `time` seconds after each of the

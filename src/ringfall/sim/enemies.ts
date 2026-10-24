@@ -545,9 +545,12 @@ export function stepEnemies(s: State) {
         if (e.timer <= 0 && e.shotsLeft > 0) {
           // Every shot of a burst is aimed afresh while the target is in sight.
           if (sightOn(e, tPos, tChest)) leadAim(e, tChest, tVel);
-          const wide = Math.hypot(tVel.x, tVel.z) < SHOT.still ? SHOT.steady : 1;
+          // A target standing still is shot closer (see SHOT): a narrower stray, and a fan drawn in.
+          const still = Math.hypot(tVel.x, tVel.z) < SHOT.still;
+          const wide = still ? SHOT.steady : 1;
           if (k.spread > 0) {
-            for (let i = 0; i < k.shots; i++) fireOrb(s, e, ((i - (k.shots - 1) / 2) * k.spread * Math.PI) / 180, false, undefined, wide);
+            const fan = k.spread * (still ? SHOT.fan : 1);
+            for (let i = 0; i < k.shots; i++) fireOrb(s, e, ((i - (k.shots - 1) / 2) * fan * Math.PI) / 180, false, undefined, wide);
             e.shotsLeft = 0;
           } else {
             fireOrb(s, e, 0, false, undefined, wide);
