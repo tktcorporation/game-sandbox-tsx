@@ -105,6 +105,8 @@ export function letGo(s: State, up: number, cut = false) {
   p.vel.y = Math.max(-4, here.dy * z.dir * z.speed) + up;
   p.zipFall = z.carry && allyUp(s);
   p.zip = null;
+  // The fall starts at the cable, so a cliff's face counts as a wall only from this height down.
+  p.airFrom = p.pos.y;
   p.jumpBuf = 0;
   p.zipRegrip = ZIP.regrip;
   s.events.push({ t: "zipOff", line: z.line, cut });

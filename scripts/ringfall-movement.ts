@@ -343,7 +343,65 @@ export function checkZips(): string | { up: number; missing: string[] } {
       const err = rideOnce(i, dir);
       if (err) return `zip scenario: ${err}`;
     }
+  const e = checkZipExits();
+  if (e) return `zip scenario: ${e}`;
   return { up: ZIPS.filter((l) => !l.fixed).length, missing: ZIP_MISSING.map((m) => `${m.a}–${m.b} (${m.why})`) };
+}
+
+/**
+ * Leaving a cable mid-ride: the ult's leap takes the hands off it for good (no ride resumed after
+ * the glide), and a jump off high over a slope falls without the cliff below shoving it sideways.
+ */
+function checkZipExits(): string | null {
+  for (let i = 0; i < ZIPS.length; i++) {
+    const l = ZIPS[i];
+    if (l.fixed) continue;
+    // The leap from the middle of the cable.
+    const s = emptyRun(l.pts[0].x, l.pts[0].z, 0);
+    s.nodes = s.nodes.map(() => "freed");
+    grabZip(s, i, l.length / 2);
+    if (!s.player.zip) return `${l.a}–${l.b} was not taken hold of in its middle`;
+    s.player.ult = 1;
+    play(s, 1 / 60, () => ({ ...idleInput(), ult: true }));
+    // Under a pylon's arm or a roof the leap has no sky and does not start.
+    if (s.events.some((e) => e.t === "leapBlocked")) continue;
+    if (s.player.zip) return `the leap off ${l.a}–${l.b} kept hold of the cable`;
+    let last = { ...s.player.pos };
+    let jump = 0;
+    play(s, 40, () => idleInput(), (o) => {
+      jump = Math.max(jump, Math.hypot(o.player.pos.x - last.x, o.player.pos.z - last.z));
+      last = { ...o.player.pos };
+      return !o.player.leap && o.player.onGround;
+    });
+    if (s.player.zip) return `landing from the leap off ${l.a}–${l.b} took the cable again`;
+    if (jump > 3) return `the leap off ${l.a}–${l.b} jumped ${jump.toFixed(1)} m in a tick`;
+    // Rides at speed from the middle either way and jumps off after 1, 3, 5 and 7 s: over a
+    // cliff's face and high above it, no tick moves sideways more than the fall carries it (a
+    // cliff below is a wall only to a body that reaches it).
+    for (const yaw of [0, Math.PI / 2, Math.PI, -Math.PI / 2])
+      for (const secs of [1, 3, 5, 7]) {
+        const t = emptyRun(l.pts[0].x, l.pts[0].z, yaw);
+        t.nodes = t.nodes.map(() => "freed");
+        grabZip(t, i, l.length / 2);
+        play(t, secs, () => idleInput(), (o) => !o.player.zip);
+        if (!t.player.zip) continue;
+        const at = t.player.zip.at;
+        play(t, TICK, () => ({ ...idleInput(), jump: true }));
+        if (t.player.zip) return `jumping off ${l.a}–${l.b} kept hold of the cable`;
+        let prev = { ...t.player.pos, vx: t.player.vel.x, vz: t.player.vel.z };
+        let worst = 0;
+        play(t, 20, () => idleInput(), (o) => {
+          const p = o.player;
+          const moved = Math.hypot(p.pos.x - prev.x, p.pos.z - prev.z);
+          const carried = Math.hypot(prev.vx, prev.vz) * TICK;
+          if (p.pos.y - terrainHeight(p.pos.x, p.pos.z) > 3 && steepAt(p.pos.x, p.pos.z)) worst = Math.max(worst, moved - carried);
+          prev = { ...p.pos, vx: p.vel.x, vz: p.vel.z };
+          return p.onGround;
+        });
+        if (worst > 0.3) return `jumping off ${l.a}–${l.b} at ${at.toFixed(0)} m was shoved ${worst.toFixed(2)} m in a tick high over a cliff`;
+      }
+  }
+  return null;
 }
 
 /** The lines the movement checks print, kept in balance.md. */
