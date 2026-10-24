@@ -1098,6 +1098,8 @@ export class Hud {
       { beat: "after", ids: battle, prev: left, c: settled.after, icon: depotIcon() },
       { beat: "night", ids: night, prev: battle, c: settled.night, icon: nightIcon() },
     ].filter((b) => b.c.gained.length || b.c.lost.length);
+    // Milliseconds between the beats; automation may slow them (`window.ringfallBeatGap`) to shoot each.
+    const gap = (window as { ringfallBeatGap?: number }).ringfallBeatGap ?? 1600;
     // Drawn once the results are shown, so the map is drawn at the canvas's size on screen.
     this.dayFrame = requestAnimationFrame(() => {
       map.draw(scene(start));
@@ -1109,14 +1111,14 @@ export class Hud {
             map.draw(scene(b.ids, b.c));
             bar(b.ids, b.prev);
             mark(b.beat, b.icon);
-          }, 900 + k * 1600),
+          }, 900 + k * gap),
         ),
       );
       this.dayTimers.push(
         window.setTimeout(() => {
           const el = document.getElementById("day-beat");
           if (el) el.dataset.beat = "done";
-        }, 900 + beats.length * 1600),
+        }, 900 + beats.length * gap),
       );
     });
   }

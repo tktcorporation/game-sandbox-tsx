@@ -167,12 +167,11 @@ kbd {
 .tug-n.foe {
   color: #f08a78;
 }
-/* The bar keeps its width where there is room and narrows in a narrow column (a phone's panel). */
 .tug-bar {
   position: relative;
   display: block;
-  flex: 0 1 var(--w);
-  min-width: 60px;
+  flex: none;
+  width: var(--w);
   height: var(--h);
   background: var(--foe-c);
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
@@ -2843,6 +2842,11 @@ body:not(.playing) #banner {
   --w: 220px;
   --h: 12px;
   font-size: 15px;
+}
+/* In the map table's side column the bar narrows to the column (a phone's panel). */
+.hub-row .tug-bar {
+  flex: 0 1 var(--w);
+  min-width: 60px;
 }
 #camp-prompt {
   position: absolute;

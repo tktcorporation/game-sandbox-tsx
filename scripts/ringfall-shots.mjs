@@ -2099,14 +2099,14 @@ for (const phone of [false, true]) {
   await pg.evaluate(([i]) => window.ringfallWar.take(i, true), [W]);
   let st = await quietStep(pg, 1500);
   if (st.front.nodes[W] !== "freed" || !st.battle.counterSquads.some((q) => q.to === "waterworks")) errors.push(`push-pull: taking the waterworks set off no counter-attack (${JSON.stringify(st.battle.counterSquads)})`);
-  // Off towards the camp, the waterworks behind: the counter-attack ashore and walking, the arrow at the screen's edge.
-  const away = { x: core.x - 120, z: core.z + 150 };
+  // Off towards the camp, facing west with the waterworks off to the right: the counter-attack ashore and walking, the arrow at the screen's edge.
+  const away = { x: core.x - 120, z: core.z + 110 };
   for (let k = 0; k < 12 && !st.battle.counterSquads.some((q) => q.to === "waterworks" && q.ashore <= 0); k++) {
-    await stand(away.x, away.z, Math.atan2(-120, -150));
+    await stand(away.x, away.z, -Math.PI / 2);
     st = await quietStep(pg, 2000);
   }
   if (!st.battle.risk.includes("waterworks")) errors.push(`push-pull: the waterworks is not at risk with the counter-attack on its way (${JSON.stringify(st.battle.risk)})`);
-  await stand(away.x, away.z, Math.atan2(-120, -150));
+  await stand(away.x, away.z, -Math.PI / 2);
   await pg.evaluate(() => window.advanceTime(300));
   const arrow = await pg.evaluate(() => [...document.querySelectorAll(".threat-mark")].filter((e) => e.style.display !== "none").map((e) => e.className));
   if (!arrow.length) errors.push("push-pull: no arrow points at the waterworks while the counter-attack walks to it");
@@ -2129,6 +2129,8 @@ for (const phone of [false, true]) {
     await pg.screenshot({ path: tag(2, "counter-map") });
     await pg.keyboard.press("KeyM");
   }
+  // The results' beats slowed, so each is shot while it is up.
+  await pg.evaluate(() => (window.ringfallBeatGap = 5000));
   // 2. At the waterworks' depot with the counter-attack on its way: the bar pulses as the player leaves.
   const dep = st.depotSpots.find((d) => d.poi === "waterworks");
   await stand(dep.x + Math.sin(dep.yaw) * 1.2, dep.z - Math.cos(dep.yaw) * 1.2, dep.yaw + Math.PI);
@@ -2152,15 +2154,15 @@ for (const phone of [false, true]) {
   if (r.screen !== "results" || !set || !set.raid.gained.includes("waterworks") || !set.after.lost.includes("waterworks")) errors.push(`push-pull: the results read ${r.screen}, raid ${JSON.stringify(set?.raid)}, after ${JSON.stringify(set?.after)}`);
   if (!set?.night.lost.length) errors.push(`push-pull: the night took nothing (${JSON.stringify(set?.night)})`);
   // The beats, each shot as it comes up (`data-beat` on the beat's mark): the raid's change, the battle after leaving, the night.
-  const beatOf = (b) => pg.waitForFunction((x) => document.getElementById("day-beat")?.dataset.beat === x, b, { timeout: 15000 }).then(() => true, () => false);
+  const beatOf = (b) => pg.waitForFunction((x) => document.getElementById("day-beat")?.dataset.beat === x, b, { timeout: 25000 }).then(() => true, () => false);
   if (!(await beatOf("raid"))) errors.push("push-pull: the results never showed the raid's beat");
-  await pg.waitForTimeout(700);
+  await pg.waitForTimeout(1200);
   await pg.screenshot({ path: tag(5, "results-raid") });
   if (!(await beatOf("after")) || !/depot/.test(await pg.evaluate(() => document.querySelector("#day-beat .ico")?.getAttribute("class") ?? ""))) errors.push("push-pull: the results' beat after leaving did not show the depot's mark");
-  await pg.waitForTimeout(1100);
+  await pg.waitForTimeout(1200);
   await pg.screenshot({ path: tag(6, "results-after-leaving") });
   if (!(await beatOf("night")) || !/night/.test(await pg.evaluate(() => document.querySelector("#day-beat .ico")?.getAttribute("class") ?? ""))) errors.push("push-pull: the results' night beat did not show the moon");
-  await beatOf("done");
+  await pg.waitForTimeout(1200);
   await pg.screenshot({ path: tag(7, "results-night") });
   const bar = await pg.evaluate(() => document.querySelector("#day-result .tug")?.getAttribute("aria-label"));
   const held = Object.entries(r.profile.poiState).filter(([id, o]) => id !== "pad" && o.state === "freed").length;

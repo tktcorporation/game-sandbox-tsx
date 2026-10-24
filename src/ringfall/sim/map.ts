@@ -797,14 +797,14 @@ const DISH_STAIRS = { x: DISH_RIM_X - 4, z: BIG_DISH.z, floors: 3 } as const;
 
 /*
  * The nodes built on the open ground between the areas (docs/ringfall/island-v2.md, 拠点を増やす):
- * each a small works inside a low wall, written in its own frame round its middle on ground at 0,
+ * each a small works inside a waist-high wall (cover to crouch behind, seen over standing), written in its own frame round its middle on ground at 0,
  * its yard open in the middle, where its core stands. A garrison of two squads holds each.
  */
 
 /** The weather station on the west coast: a lattice mast to climb, the office, the instrument shed and a store. */
 function station(): Box[] {
   return [
-    ...compound(0, 0, 74, 66, 1.6, [{ side: "e", w: 8 }, { side: "w", w: 6 }, { side: "n", at: -10, w: 6 }, { side: "s", at: 12, w: 6 }]),
+    ...compound(0, 0, 74, 66, 1.1, [{ side: "e", w: 8 }, { side: "w", w: 6 }, { side: "n", at: -10, w: 6 }, { side: "s", at: 12, w: 6 }]),
     ...lattice(-20, -16, 6, 6, 4, 30),
     ...tower(12, -20, 10, 8, 2, { doors: [["s", "w"]], windows: [["e"], ["n", "e", "s"]] }),
     ...building(-20, 18, 12, 8, 3.4, { doors: ["e", "n"], windows: ["s"], roof: "w" }),
@@ -821,7 +821,7 @@ function station(): Box[] {
 /** The waterworks on the south coast east of the supply depot: two tanks, open filter beds behind knee walls, the pump hall and the control house. */
 function waterworks(): Box[] {
   return [
-    ...compound(0, 0, 70, 64, 1.6, [{ side: "w", w: 8 }, { side: "n", at: 8, w: 6 }, { side: "e", w: 6 }, { side: "s", at: -6, w: 6 }]),
+    ...compound(0, 0, 70, 64, 1.1, [{ side: "w", w: 8 }, { side: "n", at: 8, w: 6 }, { side: "e", w: 6 }, { side: "s", at: -6, w: 6 }]),
     ...tank(-20, -16, 7, 8, "e", 2),
     ...tank(-20, 12, 7, 8, "e", 2),
     ...hall(14, -16, 24, 14, 6.5, { doors: [{ side: "s", at: -6 }], hatches: [{ side: "w" }, { side: "e" }], windows: ["n"], mezz: [{ side: "n", depth: 3, y: 3.2, stair: 4 }], steel: 1 }),
@@ -838,7 +838,7 @@ function waterworks(): Box[] {
 /** The workers' lodge at the harbor's foot of the pass: a terrace of bunkhouses, the canteen hall, the lodge's office and a garage. */
 function lodge(): Box[] {
   return [
-    ...compound(0, 0, 76, 64, 1.6, [{ side: "n", w: 8 }, { side: "s", at: 10, w: 6 }, { side: "e", w: 6 }, { side: "w", w: 6 }]),
+    ...compound(0, 0, 76, 64, 1.1, [{ side: "n", w: 8 }, { side: "s", at: 10, w: 6 }, { side: "e", w: 6 }, { side: "w", w: 6 }]),
     ...rowHouses(-34, -18, 4, 7, 8, 2),
     ...hall(20, -14, 22, 14, 6, { doors: [{ side: "s" }], hatches: [{ side: "w" }, { side: "n" }], windows: ["n"], columns: 6 }),
     ...tower(-20, 18, 9, 8, 3, { doors: [["e", "s"]], windows: [["w"], ["n", "e", "s", "w"], ["n", "s"]] }),
@@ -851,7 +851,7 @@ function lodge(): Box[] {
 /** The cannery between the yard and the wreck: the packing hall with its gallery, the office and the cold room, crates of tins on the quay apron. */
 function cannery(): Box[] {
   return [
-    ...compound(0, 0, 80, 68, 1.6, [{ side: "s", w: 8 }, { side: "n", w: 8 }, { side: "e", at: 8, w: 6 }, { side: "w", at: 8, w: 6 }]),
+    ...compound(0, 0, 80, 68, 1.1, [{ side: "s", w: 8 }, { side: "n", w: 8 }, { side: "e", at: 8, w: 6 }, { side: "w", at: 8, w: 6 }]),
     ...hall(0, -16, 36, 18, 8, { doors: [{ side: "s", at: -9 }, { side: "s", at: 9 }], hatches: [{ side: "e" }, { side: "w" }], windows: ["n"], columns: 6, mezz: [{ side: "n", depth: 3.4, y: 3.8, stair: 10 }], steel: 4 }),
     ...tower(-24, 18, 9, 8, 2, { doors: [["e", "s"]], windows: [["w"], ["n", "e", "w"]] }),
     ...building(18, 18, 10, 7, 3.6, { doors: ["w", "n"], roof: "e" }),
@@ -865,7 +865,7 @@ function cannery(): Box[] {
 /** The cold store between the smelter and the wreck: the insulated store with a gallery, the engine house and the loading office, a trailer at the dock. */
 function coldstore(): Box[] {
   return [
-    ...compound(0, 0, 74, 68, 1.6, [{ side: "s", w: 8 }, { side: "n", at: -8, w: 6 }, { side: "e", w: 6 }]),
+    ...compound(0, 0, 74, 68, 1.1, [{ side: "s", w: 8 }, { side: "n", at: -8, w: 6 }, { side: "e", w: 6 }]),
     ...hall(0, -14, 30, 20, 9, { doors: [{ side: "s", at: -6 }], hatches: [{ side: "e" }, { side: "w" }], mezz: [{ side: "w", depth: 3.2, y: 4.5, stair: 2 }], steel: 0 }),
     ...tower(22, 18, 8, 8, 3, { doors: [["w", "s"]], windows: [["e"], ["n", "e", "s", "w"], ["n", "s"]] }),
     ...building(-20, 18, 10, 7, 3.4, { doors: ["e", "n"], roof: "w" }),
