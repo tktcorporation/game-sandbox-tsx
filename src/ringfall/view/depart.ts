@@ -50,6 +50,8 @@ export class DepartPicker {
   show(on: boolean) {
     this.shown = on;
     $("depart").hidden = !on;
+    // The last opening's points go at once, so none stands at a place the loadout or the profile has since changed.
+    $("depart-points").innerHTML = "";
     if (on) requestAnimationFrame(() => this.render());
   }
 
