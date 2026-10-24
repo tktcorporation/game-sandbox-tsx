@@ -1152,7 +1152,8 @@ export class Hud {
         this.dayTimers.push(
           window.setTimeout(() => {
             if (k === 0) learn();
-            map.draw({ ...scene(b.ids, b.c), learned });
+            // A beat names only the nodes that changed hands in it: the results' map is small.
+            map.draw({ ...scene(b.ids, b.c), learned, names: [...b.c.gained, ...b.c.lost] });
             bar(b.ids, b.prev);
             mark(b.beat, b.icon);
           }, 900 + k * gap),
