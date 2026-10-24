@@ -214,7 +214,7 @@ export const LEVEL = {
   station: 3,
   waterworks: 2,
   lodge: 9,
-  cannery: -4,
+  cannery: -3,
   coldstore: 1,
 } as const;
 

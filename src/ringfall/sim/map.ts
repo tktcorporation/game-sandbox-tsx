@@ -1728,7 +1728,7 @@ export const PACKS: Squad[] = [
   {
     name: "港の野のドローン群",
     members: [{ kind: "drone", x: -90, z: -640 }, { kind: "drone", x: -90, z: -640 }],
-    patrol: [{ x: -90, z: -640 }, { x: -60, z: -800 }, { x: 80, z: -800 }, { x: 90, z: -640 }],
+    patrol: [{ x: -90, z: -640 }, { x: -110, z: -780 }, { x: 100, z: -730 }, { x: 90, z: -640 }],
   },
   {
     name: "湾のドローン群",
