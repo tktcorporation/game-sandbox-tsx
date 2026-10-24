@@ -1086,27 +1086,37 @@ export class Hud {
       const el = document.getElementById("day-bar");
       if (el) el.innerHTML = nodeRow(holdsOf(ids), undefined, { from: from.size, delay: 0 });
     };
-    const mark = (html: string) => {
+    // The beat on show, for automation (`data-beat`), and its mark.
+    const mark = (beat: string, html: string) => {
       const el = document.getElementById("day-beat");
-      if (el) el.innerHTML = html;
+      if (!el) return;
+      el.innerHTML = html;
+      el.dataset.beat = beat;
     };
-    const beats: { ids: Set<string>; prev: Set<string>; c: Settlement["raid"]; icon: string }[] = [
-      { ids: left, prev: start, c: settled.raid, icon: "" },
-      { ids: battle, prev: left, c: settled.after, icon: depotIcon() },
-      { ids: night, prev: battle, c: settled.night, icon: nightIcon() },
+    const beats: { beat: string; ids: Set<string>; prev: Set<string>; c: Settlement["raid"]; icon: string }[] = [
+      { beat: "raid", ids: left, prev: start, c: settled.raid, icon: "" },
+      { beat: "after", ids: battle, prev: left, c: settled.after, icon: depotIcon() },
+      { beat: "night", ids: night, prev: battle, c: settled.night, icon: nightIcon() },
     ].filter((b) => b.c.gained.length || b.c.lost.length);
     // Drawn once the results are shown, so the map is drawn at the canvas's size on screen.
     this.dayFrame = requestAnimationFrame(() => {
       map.draw(scene(start));
       bar(start, start);
+      mark("start", "");
       beats.forEach((b, k) =>
         this.dayTimers.push(
           window.setTimeout(() => {
             map.draw(scene(b.ids, b.c));
             bar(b.ids, b.prev);
-            mark(b.icon);
+            mark(b.beat, b.icon);
           }, 900 + k * 1600),
         ),
+      );
+      this.dayTimers.push(
+        window.setTimeout(() => {
+          const el = document.getElementById("day-beat");
+          if (el) el.dataset.beat = "done";
+        }, 900 + beats.length * 1600),
       );
     });
   }

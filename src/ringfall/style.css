@@ -156,6 +156,7 @@ kbd {
   align-items: center;
   gap: 6px;
   vertical-align: middle;
+  max-width: 100%;
   font-weight: 800;
   font-size: 13px;
   line-height: 1;
@@ -166,10 +167,12 @@ kbd {
 .tug-n.foe {
   color: #f08a78;
 }
+/* The bar keeps its width where there is room and narrows in a narrow column (a phone's panel). */
 .tug-bar {
   position: relative;
   display: block;
-  width: var(--w);
+  flex: 0 1 var(--w);
+  min-width: 60px;
   height: var(--h);
   background: var(--foe-c);
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);

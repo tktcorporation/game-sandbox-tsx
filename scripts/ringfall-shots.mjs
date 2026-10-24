@@ -1146,7 +1146,8 @@ console.log(JSON.stringify((await read()).stats));
     }
     return out;
   });
-  // The day's outcome leads the results: the island's map and its row of six nodes, those the day changed marked; no grade, score or headline.
+  // The day's outcome leads the results: the island's map and its bar, played in beats to the day's end; no grade, score or headline.
+  await page.waitForFunction(() => document.getElementById("day-beat")?.dataset.beat === "done", null, { timeout: 15000 }).catch(() => undefined);
   const day = await page.evaluate(() => ({
     map: !!document.getElementById("day-map") && !document.getElementById("day-map").hidden && document.getElementById("day-map").getBoundingClientRect().height > 50,
     bar: document.querySelector("#day-result .tug")?.getAttribute("aria-label") ?? "",
@@ -1572,6 +1573,7 @@ const islandDay = {
   await pg.evaluate(() => window.advanceTime(200));
   await pg.waitForFunction(() => !document.getElementById("results").hidden, null, { timeout: 10000 }).catch(() => undefined);
   const r = await readOf(pg);
+  await pg.waitForFunction(() => document.getElementById("day-beat")?.dataset.beat === "done", null, { timeout: 15000 }).catch(() => undefined);
   if (r.screen !== "results" || r.settled?.day !== 6 || r.profile.day !== 7 || (await own("#day-result")) !== mine(r.profile) || !(await pg.locator("#day-map").count())) errors.push(`island results: ${r.screen}, day ${r.settled?.day} -> ${r.profile.day}, ${await own("#day-result")} of the row filled for ${mine(r.profile)} nodes held`);
   await pg.waitForTimeout(1200);
   await pg.screenshot({ path: `${out}/74-island-results.png` });
@@ -2051,7 +2053,7 @@ for (const phone of [false, true]) {
 
 /*
  * The push and pull (docs/ringfall/island-v2.md, 押し合い), from a profile on day 12 holding the
- * supply depot, the quarry, the relay and the weather station (its seed one whose night takes some of them back): a node built on the open ground
+ * supply depot, the quarry and the weather station (its seed one whose night takes some of them back): a node built on the open ground
  * (the waterworks) seen from its gate; the player takes it, and the enemy's counter-attack lands
  * and walks to it (the arrow at the screen's edge, the HUD's bar pulsing at its blue end, the
  * map's ring); the player leaves at the waterworks' depot with the counter-attack on its way;
@@ -2060,9 +2062,9 @@ for (const phone of [false, true]) {
  */
 const pushDay = {
   v: 22, cash: 3000, raids: 11, extracted: 9, time: 6000, region: "reservoir", entry: "beach", seed: 5006, escaped: null,
-  stash: [], entries: ["beach", "checkpoint", "jetty", "outskirts", "quay", "shore"], depots: ["supply", "quarry", "relay", "station"], seen: "f".repeat(4000),
+  stash: [], entries: ["beach", "checkpoint", "jetty", "outskirts", "quay", "shore"], depots: ["supply", "quarry", "station"], seen: "f".repeat(4000),
   quests: { progress: {}, done: [] }, day: 12, factory: 0,
-  poiState: { supply: { state: "freed" }, quarry: { state: "freed" }, relay: { state: "freed" }, station: { state: "freed" } },
+  poiState: { supply: { state: "freed" }, quarry: { state: "freed" }, station: { state: "freed" } },
 };
 for (const phone of [false, true]) {
   const ctx = phone ? await browser.newContext({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true }) : await browser.newContext({ viewport: { width: 1280, height: 720 } });
@@ -2149,17 +2151,16 @@ for (const phone of [false, true]) {
   const set = r.settled;
   if (r.screen !== "results" || !set || !set.raid.gained.includes("waterworks") || !set.after.lost.includes("waterworks")) errors.push(`push-pull: the results read ${r.screen}, raid ${JSON.stringify(set?.raid)}, after ${JSON.stringify(set?.after)}`);
   if (!set?.night.lost.length) errors.push(`push-pull: the night took nothing (${JSON.stringify(set?.night)})`);
-  // The beats: the raid's change at 0.9 s, the battle after leaving at 2.5 s, the night at 4.1 s.
-  await pg.waitForTimeout(1500);
+  // The beats, each shot as it comes up (`data-beat` on the beat's mark): the raid's change, the battle after leaving, the night.
+  const beatOf = (b) => pg.waitForFunction((x) => document.getElementById("day-beat")?.dataset.beat === x, b, { timeout: 15000 }).then(() => true, () => false);
+  if (!(await beatOf("raid"))) errors.push("push-pull: the results never showed the raid's beat");
+  await pg.waitForTimeout(700);
   await pg.screenshot({ path: tag(5, "results-raid") });
-  await pg.waitForTimeout(1600);
-  const beat = await pg.evaluate(() => document.querySelector("#day-beat .ico")?.getAttribute("class") ?? "");
-  if (!/depot/.test(beat)) errors.push(`push-pull: the results' second beat shows "${beat}", not the depot's mark`);
+  if (!(await beatOf("after")) || !/depot/.test(await pg.evaluate(() => document.querySelector("#day-beat .ico")?.getAttribute("class") ?? ""))) errors.push("push-pull: the results' beat after leaving did not show the depot's mark");
+  await pg.waitForTimeout(1100);
   await pg.screenshot({ path: tag(6, "results-after-leaving") });
-  await pg.waitForTimeout(1600);
-  const night = await pg.evaluate(() => document.querySelector("#day-beat .ico")?.getAttribute("class") ?? "");
-  if (!/night/.test(night)) errors.push(`push-pull: the results' third beat shows "${night}", not the moon`);
-  await pg.waitForTimeout(1300);
+  if (!(await beatOf("night")) || !/night/.test(await pg.evaluate(() => document.querySelector("#day-beat .ico")?.getAttribute("class") ?? ""))) errors.push("push-pull: the results' night beat did not show the moon");
+  await beatOf("done");
   await pg.screenshot({ path: tag(7, "results-night") });
   const bar = await pg.evaluate(() => document.querySelector("#day-result .tug")?.getAttribute("aria-label"));
   const held = Object.entries(r.profile.poiState).filter(([id, o]) => id !== "pad" && o.state === "freed").length;
