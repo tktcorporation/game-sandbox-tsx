@@ -2542,6 +2542,8 @@ function checkWallStops(): string | null {
       const g0 = terrainHeight(c.x, c.z);
       // The player stands where the spot is: not on the ground beneath an upper floor's spot, nor up on a crate beside it.
       if (Math.abs(c.y - g0) > 0.5 || Math.abs(groundAt(c.x, c.z, 0.4, g0 + 2) - g0) > 0.3 || offLowGround(c.x, c.z) || offLowGround(gx, gz) || Math.abs(terrainHeight(gx, gz) - g0) > 0.8 || solidAt(gx, terrainHeight(gx, gz) + 1, gz)) continue;
+      // The spot's own box stands between it and the grunt (not some other cover further out).
+      if (!solidAt(c.x - nx * 1.2, g0 + 1, c.z - nz * 1.2)) continue;
       const s = padRun();
       s.ally.active = false;
       const p = s.player;
