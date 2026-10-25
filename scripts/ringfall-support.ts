@@ -18,7 +18,7 @@ import { step } from "../src/ringfall/sim/step";
 import { spawnEnemy } from "../src/ringfall/sim/enemies";
 import { engageSquad } from "../src/ringfall/sim/awareness";
 import { POIS } from "../src/ringfall/sim/map";
-import { TICK } from "../src/ringfall/sim/config";
+import { AWARE, TICK } from "../src/ringfall/sim/config";
 
 const LIMIT = 16;
 const SEEDS = 8;
@@ -49,8 +49,8 @@ export interface Support {
   taken: number;
 }
 
-/** One seed of the scene. */
-export function supportRun(seed: number, at: { x: number; z: number }): Support {
+/** The scene of one seed: the grunts fighting the player, and the player's pair off to the side. */
+function scene(seed: number, at: { x: number; z: number }) {
   const s: State = newRun(seed);
   s.enemies = [];
   s.phase = "play";
@@ -83,7 +83,14 @@ export function supportRun(seed: number, at: { x: number; z: number }): Support 
     s.friends.push(e);
     return e;
   });
-  const health = (l: Enemy[]) => l.reduce((n, e) => n + e.hp + e.shield, 0);
+  return { s, foes, friends, foeSquad, own };
+}
+
+const health = (l: Enemy[]) => l.reduce((n, e) => n + e.hp + e.shield, 0);
+
+/** One seed of the scene. */
+export function supportRun(seed: number, at: { x: number; z: number }): Support {
+  const { s, foes, friends, own } = scene(seed, at);
   const foesFull = health(foes);
   const friendsFull = health(friends);
   let found = -1;
@@ -111,7 +118,29 @@ export function checkSupport(seeds = SEEDS): string | null {
   if (idle >= 0) return `support: seed ${idle + 1}: the player's robots 40 m off ${runs[idle].found < 0 ? "never set on the robots fighting the player" : "never hurt the robots fighting the player"} in ${LIMIT} s`;
   const turned = runs.filter((r) => r.turned && r.taken > 0).length;
   if (turned < 2) return `support: the robots fighting the player turned on the player's robots shooting them in ${turned} of ${seeds} seeds`;
+  const held = Array.from({ length: seeds }, (_, k) => holdRun(k + 1, at));
+  const lost = held.findIndex((h) => h.fighting && !h.engaged);
+  if (lost >= 0) return `support: seed ${lost + 1}: a squad still fighting the player's robots stood down ${HOLD} s after losing the player`;
+  if (!held.some((h) => h.fighting)) return `support: no squad was still fighting the player's robots ${HOLD} s after losing the player`;
   return null;
+}
+
+/** Seconds the scene runs once the player has gone, past `AWARE.chaseTime`. */
+const HOLD = AWARE.chaseTime + 6;
+
+/**
+ * The scene, then the player gone far out of sight while the grunts and the player's pair go on
+ * fighting (both sides too tough to fall): after `HOLD` seconds, whether a grunt still fights one
+ * of the pair, and whether its squad still counts as fighting the player (see SUPPORT).
+ */
+export function holdRun(seed: number, at: { x: number; z: number }): { fighting: boolean; engaged: boolean } {
+  const { s, foes, friends, foeSquad } = scene(seed, at);
+  for (let i = 0; i < 4 / TICK; i++) step(s, idleInput(), false);
+  for (const e of [...foes, ...friends]) e.hp = e.shield = 1e7;
+  const p = s.player;
+  p.pos = { x: at.x - 300, y: groundAt(at.x - 300, at.z, 0.4, terrainHeight(at.x - 300, at.z) + 2), z: at.z };
+  for (let i = 0; i < HOLD / TICK && s.phase === "play"; i++) step(s, idleInput(), false);
+  return { fighting: foes.some((e) => s.enemies.includes(e) && (e.target as string) === "friend"), engaged: !!s.squads[foeSquad].engaged };
 }
 
 if (process.argv[1]?.endsWith("ringfall-support.ts")) {
