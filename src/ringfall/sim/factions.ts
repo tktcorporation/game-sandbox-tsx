@@ -103,9 +103,24 @@ export function placeMobile(s: State, m: Mobile, kinds: readonly EnemyKind[], sp
  */
 export function stepMobiles(s: State) {
   const p = s.player.pos;
+  // Each squad's first robot in the list, and whether any of its robots is not idle, in one pass.
+  const n = s.squads.length;
+  if (mobileLead.length < n) {
+    mobileLead = new Int32Array(n * 2);
+    mobileBusy = new Uint8Array(n * 2);
+  }
+  mobileLead.fill(-1, 0, n);
+  mobileBusy.fill(0, 0, n);
+  for (let k = 0; k < s.enemies.length; k++) {
+    const e = s.enemies[k];
+    const q = e.squad;
+    if (!(q >= 0 && q < n && Number.isInteger(q))) continue;
+    if (mobileLead[q] < 0) mobileLead[q] = k;
+    if (e.aware !== "idle") mobileBusy[q] = 1;
+  }
   s.squads.forEach((sq, i) => {
     if (!sq.mobile) return;
-    const lead = s.enemies.find((e) => e.squad === i);
+    const lead = mobileLead[i] >= 0 ? s.enemies[mobileLead[i]] : undefined;
     if (!lead) {
       sq.ambush = undefined;
       return;
@@ -114,7 +129,7 @@ export function stepMobiles(s: State) {
       sq.ambush.t -= TICK;
       if (sq.ambush.t <= 0 || dist2d(p, sq.ambush.at) > AMBUSH.near * 2 || sq.engaged) sq.ambush = undefined;
     }
-    const calm = !sq.engaged && sq.foe === undefined && !sq.ambush && !s.enemies.some((e) => e.squad === i && e.aware !== "idle");
+    const calm = !sq.engaged && sq.foe === undefined && !sq.ambush && !mobileBusy[i];
     if (!calm || !sq.mark) {
       sq.mark = { x: lead.pos.x, z: lead.pos.z };
       sq.markT = 0;
@@ -127,6 +142,9 @@ export function stepMobiles(s: State) {
     sq.markT = 0;
   });
 }
+
+let mobileLead = new Int32Array(64);
+let mobileBusy = new Uint8Array(64);
 
 /** Where a robot `e` of a squad fighting the other faction is fighting: its foe, while there is one (see FACTION). */
 export function foeOf(s: State, e: Enemy, byId: { get(id: number): Enemy | undefined }): Enemy | null {
