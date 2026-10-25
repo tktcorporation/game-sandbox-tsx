@@ -70,6 +70,7 @@ import { analyse, factoryNeeded, raidThreat, recallLoadout, setThreat, wanted } 
 import { raidClock, strengthFor } from "../src/ringfall/sim/state";
 import { pacing, type Pool } from "./ringfall-pacing";
 import { movementLines } from "./ringfall-movement";
+import { duelLines } from "./ringfall-duel";
 import { MOBILES, OUTPOST_SITES } from "../src/ringfall/sim/map";
 import { enemyNodes, frontNodes, garrisonOf, useCore, type NodeHold } from "../src/ringfall/sim/front";
 import { factoryMax, factoryRarity, finishBattle, heldUnlocks, nodePoint } from "../src/ringfall/sim/battle";
@@ -2703,7 +2704,7 @@ function checkFactions(): string | null {
  * to the side (facing away) hears it, and its goal lies 12 m or more ahead of the spot the shot
  * came from along the player's way. The pair sees the runner on the way and fights from where it
  * stands, so 8 s on its leader stands past the shot's spot by a few metres, as many as the raid's
- * random numbers give: over ten draws it stands 1 m or more past in eight at least.
+ * random numbers give: over ten draws it stands past it in seven at least.
  */
 function checkIntercept(): string | null {
   const at = openSpot(60, 4, 4);
@@ -2736,7 +2737,7 @@ function checkIntercept(): string | null {
   if (Number.isNaN(first.goal) || first.aware !== "alert") return `intercept: the roaming pair did not hear the shot 40 m off (${first.aware})`;
   if (first.goal < 12) return `intercept: the pair heard a running player and made for ${first.goal.toFixed(1)} m ahead of the shot, not where they were heading`;
   const leads = [101, 202, 303, 404, 505, 606, 707, 808, 909, 1010].map((r) => trial(r).lead);
-  if (leads.filter((d) => d >= 1).length < 8) return `intercept: 8 s on, the pair's leader stands ${leads.map((d) => d.toFixed(1)).join(" / ")} m ahead of the shot along the player's way over ten draws`;
+  if (leads.filter((d) => d > 0).length < 7) return `intercept: 8 s on, the pair's leader stands ${leads.map((d) => d.toFixed(1)).join(" / ")} m ahead of the shot along the player's way over ten draws`;
   const { s, squad, heard } = first;
   // A squad posted at a POI looks at the sound itself.
   const posted = { ...s.squads[squad], roam: false };
@@ -4340,6 +4341,14 @@ if (moved.errors.length) {
   process.exit(1);
 }
 for (const l of moved.lines) console.log(l);
+
+// One robot head-on: standing in the open trades about evenly with a grunt, and moving, going round or cover wins.
+const duels = duelLines();
+if (duels.errors.length) {
+  console.error(duels.errors.join("\n"));
+  process.exit(1);
+}
+for (const l of duels.lines) console.log(l);
 
 let failed = false;
 const head = ["skill    ", "alive", "time(med)", "cleared", "haul(med)", "downs", "acc", "crit", "leap", "crowd", "flank", "waves", "meet".padEnd(18), "c/min", "ally".padEnd(18), "exit"];

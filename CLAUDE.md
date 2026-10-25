@@ -482,7 +482,15 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   answered (`RETURN`, `shotFromAfar()` and `fireRange()` in `awareness.ts`): for a few seconds after
   each such hit the squad's grunts and heavies see and fire out to `RETURN.range`, and members
   without a line walk toward the shot; that far off the bolts' stray makes the fire mostly
-  suppressing. A burst starts only with the target in sight, so
+  suppressing. A target standing still is pressed (`SHOT.still` to `SHOT.follow`): a tighter stray
+  and fan, a shot more a burst, a short pause and a quicker next wind-up, so trading shots in the
+  open with one robot head-on is about even, and moving, going round or ducking behind cover wins
+  it; robots shooting at the same target lengthen each other's pauses (`SHOT.share`), so two do not
+  fire twice as hard as one. Past the distance it likes, a robot steps in while it winds up and
+  fires (`DODGE.closeIn`). The sim gate's `duel` lines (`scripts/ringfall-duel.ts`, runnable alone
+  for the whole table) are one robot against a lone player in the open, standing, strafing,
+  shooting its back and from behind a low wall; keep them within the targets in balance.md.
+  A burst starts only with the target in sight, so
   the glow means "get behind something", not "step aside". A squad of two or more that has had the
   player pinned to one spot for a few seconds, or has seen them backing away, sends members round it to either side
   (`PINCH`, `pinchSpot()` in `enemies.ts`). A squad that loses sight goes after the player

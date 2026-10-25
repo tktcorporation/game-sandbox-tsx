@@ -182,6 +182,8 @@ export interface Enemy {
   strafe: number; // +1 / -1
   poi: number;
   lastHit: number; // seconds since the player last hit it (for the HUD bar)
+  /** Seconds since its last burst at the player or the teammate ended (see SHOT.share). */
+  fired: number;
   aimYaw: number;
   aimPitch: number;
   summoned: number; // titan: how many summons used

@@ -93,6 +93,7 @@ export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi:
     strafe: pick(s) < 0.5 ? -1 : 1,
     poi,
     lastHit: 99,
+    fired: 99,
     aimYaw: 0,
     aimPitch: 0,
     summoned: 0,
@@ -186,11 +187,11 @@ function muzzle(e: Enemy): Vec3 {
   return e.kind === "drone" ? weakPoint(e) : { ...bodyCenter(e), y: e.pos.y + weakY(e) - 0.1 };
 }
 
-function fireOrb(s: State, e: Enemy, yawOff = 0, homing = false, foe?: Enemy) {
+function fireOrb(s: State, e: Enemy, yawOff = 0, homing = false, foe?: Enemy, wide = 1) {
   const k = ENEMIES[e.kind];
   const from = muzzle(e);
-  // A random stray (see SHOT.spread); the titan's homing rockets find their own way.
-  const stray = homing ? 0 : SHOT.spread * DEG * (!foe && e.target === "player" ? modScale(s.player, "deflector") : 1) * (!foe && s.squads[e.squad]?.mobile ? SHOT.walker : 1);
+  // A random stray (see SHOT.spread), narrower at a target standing still (`wide`, SHOT.steady); the titan's homing rockets find their own way.
+  const stray = homing ? 0 : SHOT.spread * wide * DEG * (!foe && e.target === "player" ? modScale(s.player, "deflector") : 1) * (!foe && s.squads[e.squad]?.mobile ? SHOT.walker : 1);
   const r = Math.sqrt(-2 * Math.log(draw(s, e) + 1e-9));
   const a = draw(s, e) * Math.PI * 2;
   const yaw = e.aimYaw + yawOff + r * Math.cos(a) * stray;
@@ -371,6 +372,7 @@ export function stepEnemies(s: State) {
     if (s.phase === "done") return; // a robot ahead in the list ended the raid
     const k = ENEMIES[e.kind];
     e.lastHit += TICK;
+    e.fired += TICK;
     e.allyHit += TICK;
     e.blind += TICK;
     e.jink = Math.max(0, e.jink - TICK);
@@ -505,14 +507,14 @@ export function stepEnemies(s: State) {
         const far = atAlly ? SIGHT[e.kind].range * sightScale(s) * AWARE.engagedRange : fireRange(s, e);
         if (ready && (e.kind === "charger" ? d < CHARGER.lungeRange : reach < far)) {
           e.mode = "telegraph";
-          e.timer = k.telegraph;
+          e.timer = k.telegraph * (e.fired < SHOT.followWindow ? SHOT.follow : 1);
           leadAim(e, tChest, tVel);
           s.events.push({ t: "telegraph", id: e.id });
         }
         break;
       }
       case "telegraph": {
-        windupStep(e, dx / d, dz / d);
+        windupStep(e, dx / d, dz / d, d > ENEMIES[e.kind].range + 4);
         e.timer -= TICK;
         // Aim follows the target through the wind-up while it is in sight and in the robot's
         // cone: the glow is the time to get behind something, not to step aside. A target that
@@ -528,7 +530,7 @@ export function stepEnemies(s: State) {
           } else if (sightOn(e, tPos, tChest)) {
             e.mode = "fire";
             e.timer = 0;
-            e.shotsLeft = k.shots;
+            e.shotsLeft = k.shots + (k.spread === 0 && Math.hypot(tVel.x, tVel.z) < SHOT.still ? SHOT.extra : 0);
           } else {
             // The target got behind something or out of its cone during the glow: no burst.
             e.mode = "move";
@@ -538,16 +540,20 @@ export function stepEnemies(s: State) {
         break;
       }
       case "fire": {
-        windupStep(e, dx / d, dz / d);
+        windupStep(e, dx / d, dz / d, d > ENEMIES[e.kind].range + 4);
         e.timer -= TICK;
         if (e.timer <= 0 && e.shotsLeft > 0) {
           // Every shot of a burst is aimed afresh while the target is in sight.
           if (sightOn(e, tPos, tChest)) leadAim(e, tChest, tVel);
+          // A target standing still is shot closer (see SHOT): a narrower stray, and a fan drawn in.
+          const still = Math.hypot(tVel.x, tVel.z) < SHOT.still;
+          const wide = still ? SHOT.steady : 1;
           if (k.spread > 0) {
-            for (let i = 0; i < k.shots; i++) fireOrb(s, e, ((i - (k.shots - 1) / 2) * k.spread * Math.PI) / 180);
+            const fan = k.spread * (still ? SHOT.fan : 1);
+            for (let i = 0; i < k.shots; i++) fireOrb(s, e, ((i - (k.shots - 1) / 2) * fan * Math.PI) / 180, false, undefined, wide);
             e.shotsLeft = 0;
           } else {
-            fireOrb(s, e);
+            fireOrb(s, e, 0, false, undefined, wide);
             e.shotsLeft--;
             e.timer = k.shotGap;
           }
@@ -555,7 +561,8 @@ export function stepEnemies(s: State) {
         if (e.shotsLeft <= 0) {
           e.mode = "move";
           e.opener = false;
-          e.cooldown = k.cooldown * (0.8 + draw(s, e) * 0.4) * (e.elite ? ELITE.cooldown : 1);
+          e.cooldown = k.cooldown * (0.8 + draw(s, e) * 0.4) * (e.elite ? ELITE.cooldown : 1) * (Math.hypot(tVel.x, tVel.z) < SHOT.still ? SHOT.press : 1) * (1 + SHOT.share * othersFiring(s, e));
+          e.fired = 0;
           // A grunt in cover shows itself next from the other side of it; hurt and alone, it stays hidden longer.
           e.peekSide = -e.peekSide;
           e.coverT = 0;
@@ -599,6 +606,17 @@ export function stepEnemies(s: State) {
     }
   }
   separate(s);
+}
+
+/**
+ * The other robots shooting at the same target as it, of any squad: winding up, firing, or done
+ * with a burst within `SHOT.shareWindow` seconds (see SHOT.share).
+ */
+function othersFiring(s: State, e: Enemy): number {
+  let n = 0;
+  for (const o of s.enemies)
+    if (o !== e && o.aware === "engaged" && o.target === e.target && o.kind !== "titan" && !o.friend && (o.mode === "telegraph" || o.mode === "fire" || o.fired < SHOT.shareWindow)) n++;
+  return n;
 }
 
 /**
@@ -729,16 +747,20 @@ function fightFoe(s: State, e: Enemy, foe: Enemy) {
 
 /**
  * A step through a wind-up or burst: sideways across the line to the target at
- * `DODGE.windup` of its speed (none for the kinds that plant their feet to fire).
+ * `DODGE.windup` of its speed (none for the kinds that plant their feet to fire), and toward
+ * it at `DODGE.closeIn` of that while it is further off than it likes.
  * `ux, uz` is the unit direction to the target.
  */
-function windupStep(e: Enemy, ux: number, uz: number) {
+function windupStep(e: Enemy, ux: number, uz: number, closer = false) {
   const w = DODGE.windup[e.kind] * ENEMIES[e.kind].speed;
   if (w <= 0) {
     moveBody(e, 0, 0);
     return;
   }
-  if (moveBody(e, -uz * e.strafe * w, ux * e.strafe * w)) e.strafe = -e.strafe;
+  // Past the distance it likes (`closer`), it steps in as it goes: a robot that fires again and
+  // again would otherwise never close on a target it shoots from afar.
+  const f = closer ? w * DODGE.closeIn : 0;
+  if (moveBody(e, -uz * e.strafe * w + ux * f, ux * e.strafe * w + uz * f)) e.strafe = -e.strafe;
 }
 
 /** A plain grunt that is badly hurt and the last of its squad still fighting. */
