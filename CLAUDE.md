@@ -226,7 +226,8 @@ a node by standing at its core for `CONQUEST.capture` seconds with none of its h
 garrison counts wherever it stands and comes to the core). Near the player or the teammate
 (`CONQUEST.near`) a squad is robots in the world: the player's own in `State.friends` (`Enemy.friend`,
 blue; they fight the other sides with the faction rules and their shots never hit the player or the
-teammate, `stepFriends()` in `enemies.ts`), the others in `State.enemies` (`Enemy.battle`, which may
+teammate, `stepFriends()` in `enemies.ts`; a squad of them within `SUPPORT.reach` of the player or the
+teammate goes for the robots fighting them, seen or not, `support()` in `factions.ts`), the others in `State.enemies` (`Enemy.battle`, which may
 walk onto the player's nodes and which garrisons fight, `hostile()`); beyond `CONQUEST.far` it is
 numbers again, with each member's health as it was. Away from both, fights and captures are
 reckoned every `CONQUEST.tick` seconds in numbers, and when the raid ends early `finishBattle()`
@@ -543,8 +544,11 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   shows the rarities lit by the nodes held.
 - `ally.ts` is the teammate: it walks the player's footsteps (`State.trail`), shoots only engaged
   robots, revives the player once the self-revive is spent, and is revived with the use key.
-  Robots choose between the player and the teammate in `chooseTarget()` (`enemies.ts`); the sim
-  gate's `ally` column is its damage share, downs and revives.
+  Robots choose between the player and the teammate in `chooseTarget()` (`enemies.ts`), and in a
+  battle also the player's own robots (`friendTarget()`, `SUPPORT`: a robot of theirs in sight, or
+  one that has just hit it, is fought with the faction rules' `fightFoe()` while the squad stays
+  engaged with the player); the sim gate's `ally` column is its damage share, downs and revives,
+  and `checkSupport()` (`scripts/ringfall-support.ts`) checks that the player's robots help.
 - `EXTRACTS` in `map.ts` are the ways off; `stepExtract()` in `world.ts` runs them: a pickup with
   `call` (the dropship, the boat) is called by standing in it and comes after its time, while robots
   beam in round its `waves` point out of the player's sight and come to look at the pickup (`SHIP_WAVES`; `State.calls` keeps each call); the flare; the waits.

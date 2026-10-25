@@ -194,11 +194,19 @@ export interface Enemy {
   cover: Point | null; // engaged grunt: where it hides
   peek: Point | null; // and where it steps out to shoot
   coverT: number; // seconds until it re-checks its cover
-  /** Whom it fights: the player, or the teammate when that one is nearer or shooting it. */
-  target: "player" | "ally";
+  /**
+   * Whom it fights: the player, the teammate when that one is nearer or shooting it, or one of
+   * the player's own robots (`friendId`, see SUPPORT).
+   */
+  target: "player" | "ally" | "friend";
   targetT: number;
+  /** The player's own robot (id) it fights while `target` is "friend". */
+  friendId?: number;
   /** Seconds since the teammate last hit it. */
   allyHit: number;
+  /** The player's own robot (id) that last hit it, and the raid's time then (see SUPPORT.hit). */
+  friendBy?: number;
+  friendAt?: number;
   /** A raider: tougher, deadlier, quicker to turn, and it goes round the player's side. */
   elite: boolean;
   /**
