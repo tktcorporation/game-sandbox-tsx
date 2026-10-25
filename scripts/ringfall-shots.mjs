@@ -573,7 +573,7 @@ const spills = (pg) =>
   await pg.evaluate(() => window.advanceTime(300));
   const st = JSON.parse(await pg.evaluate(() => window.render_game_to_text()));
   const toast = await pg.evaluate(() => [...document.querySelectorAll("#toasts .toast")].map((t) => (t.querySelector(".ico.entry") ? "◯" : "") + t.textContent).join("|"));
-  if (st.found.join() !== "beach,checkpoint" || !/◯東の検問道/.test(toast)) errors.push(`way in: walking to the checkpoint found ${st.found.join()}, toast "${toast}"`);
+  if (st.found.join() !== "beach,checkpoint" || !/◯東の検問道.*生還で出撃地点に/.test(toast)) errors.push(`way in: walking to the checkpoint found ${st.found.join()}, toast "${toast}"`);
   await pg.screenshot({ path: `${out}/32-entry-found.png` });
   await pg.keyboard.press("KeyM");
   await pg.evaluate(() => window.advanceTime(100));

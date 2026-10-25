@@ -225,6 +225,11 @@ export class Hud {
   toast(html: string, rarity: number, ms = 2400) {
     const el = document.createElement("div");
     el.className = "toast";
+    // A toast held longer than the default comes in as fast and fades at its own end.
+    if (ms !== 2400) {
+      el.classList.add("long");
+      el.style.animationDuration = `${ms}ms`;
+    }
     el.innerHTML = html;
     el.style.setProperty("--rc", RARITY_CSS[rarity]);
     $("toasts").appendChild(el);
@@ -369,8 +374,10 @@ export class Hud {
         this.toast(`${crossIcon()}離脱ジャンプ`, 0);
         break;
       case "entryFound":
-        // A way in found: the ring the map draws for it, dashed until a raid home makes it a start.
-        if (!this.known.includes(e.id)) this.toast(`${entryIcon(false)}${entryOf(e.id).name}`, 1, 4000);
+        // A way in found: the ring the map draws for it, dashed until a raid home makes it a start,
+        // which the second line says: dashed ring, then solid ring, once the player gets off alive.
+        if (!this.known.includes(e.id))
+          this.toast(`${entryIcon(false)}${entryOf(e.id).name}<span class="toast-sub">${entryIcon(false)}▸${entryIcon(true)}生還で出撃地点に</span>`, 1, 6500);
         break;
       case "depotOn":
         this.toast(`${depotIcon()}${POIS[poiIndex(e.poi)].name}`, 1);
