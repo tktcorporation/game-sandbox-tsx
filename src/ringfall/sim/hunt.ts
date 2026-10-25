@@ -204,6 +204,7 @@ export function resetHunt() {
 
 /** Forgets every field but keeps the grid: a raid starts with none (`newRun()`). */
 export function forgetFields() {
+  fieldUses++;
   for (const f of cache.values()) spare.push(f);
   cache.clear();
 }
@@ -233,6 +234,12 @@ const KEPT_CELLS = 16_000_000;
 
 /** Fields built so far: the sim gate checks that alternating targets reuse them. */
 export let fieldsBuilt = 0;
+
+/**
+ * Counts every look-up in and forgetting of the field cache, so work spread over several calls
+ * (`warmLinks()` in battle.ts) can tell whether anything else used the cache in between.
+ */
+export let fieldUses = 0;
 
 /**
  * The nearest open cell to (x, z), searching out as far as from the middle of the factory
@@ -370,6 +377,7 @@ function build(target: number, reach: number, dist: Float32Array, order: Int32Ar
  * recent ones are kept (see `cache`); a kept field serves any reach up to its own.
  */
 export function fieldTo(x: number, z: number, reach = Infinity): Field | null {
+  fieldUses++;
   const target = openCell(x, z);
   if (target < 0) return null;
   let hit: Field | undefined;

@@ -124,6 +124,21 @@ export function glow(color: number, opacity = 1): THREE.MeshBasicMaterial {
   return new THREE.MeshBasicMaterial({ toneMapped: false, color, transparent: opacity < 1, opacity, depthWrite: opacity >= 1 });
 }
 
+/**
+ * Fixes `o` and everything under it where they stand: their matrices are worked out once, here,
+ * and not again each frame. `moving` are the parts the view still turns, moves or scales; those
+ * keep updating, and so does what hangs from them. Call it once `o` is placed, and never move a
+ * fixed part after.
+ */
+export function still<T extends THREE.Object3D>(o: T, moving: readonly THREE.Object3D[] = []): T {
+  o.traverse((c) => {
+    if (moving.includes(c)) return;
+    c.matrixAutoUpdate = false;
+    c.updateMatrix();
+  });
+  return o;
+}
+
 function mesh(geo: THREE.BufferGeometry, mat: THREE.Material, x = 0, y = 0, z = 0, shadow = true): THREE.Mesh {
   const m = new THREE.Mesh(geo, mat);
   m.position.set(x, y, z);
