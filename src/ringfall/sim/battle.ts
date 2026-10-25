@@ -8,6 +8,7 @@ import { spawnEnemy } from "./enemies";
 import { dueCounter, frontNodes, garrisonLeaves, garrisonOf, NEIGHBOURS, CAMP_NEXT, useZones, type NodeHold } from "./front";
 import { allyUp } from "./ally";
 import type { Enemy, GameEvent, Point, State } from "./state";
+import { hypot2 } from "./hypot";
 
 /*
  * 陣取り戦 (docs/ringfall/island-v2.md, `CONQUEST`): a raid of the island is one battle over every
@@ -158,7 +159,7 @@ export const nodePoint = (() => {
         // A step off the depot toward the node, so the squad comes out in front of it.
         const dx = n.core.x - d.x;
         const dz = n.core.z - d.z;
-        const l = Math.hypot(dx, dz) || 1;
+        const l = hypot2(dx, dz) || 1;
         return ground(d.x + (dx / l) * 4, d.z + (dz / l) * 4);
       });
       return depots[i - DEPOT];

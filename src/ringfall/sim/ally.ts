@@ -5,6 +5,7 @@ import { collide, dist2d, groundAt, los, lookAngles, wrapAngle } from "./geom";
 import { wipe } from "./player";
 import { rand, type Ally, type Enemy, type Player, type State, type Vec3 } from "./state";
 import { modScale } from "./mods";
+import { hypot2, hypot3 } from "./hypot";
 
 /** Seconds the teammate takes to pick the player up: shorter with the life link worn. */
 export const reviveTime = (p: Pick<Player, "mods">) => ALLY.reviveTime * modScale(p, "medlink");
@@ -75,7 +76,7 @@ function recordTrail(s: State) {
   const p = s.player;
   if (!p.onGround || p.downed > 0 || p.mantle) return;
   const last = s.trail[s.trail.length - 1];
-  const gap = last ? Math.hypot(last.x - p.pos.x, last.y - p.pos.y, last.z - p.pos.z) : 0;
+  const gap = last ? hypot3(last.x - p.pos.x, last.y - p.pos.y, last.z - p.pos.z) : 0;
   if (last && gap < 1) return;
   // Back on the ground far from the last footstep (a leap, or a fall out of one): no walk
   // joins them, so the footsteps start again here and catching up leads to this side.
@@ -141,7 +142,7 @@ export function stepAlly(s: State) {
   // Carried on the player's leap: it flies alongside and lands with them (see besidePlayer).
   // Carried on a cable, or falling off one with the player: it hangs on behind them.
   if (p.leap?.carry || p.zip?.carry || p.zipFall) {
-    const v = Math.hypot(p.vel.x, p.vel.z);
+    const v = hypot2(p.vel.x, p.vel.z);
     // On a cable it is the next rider back along the way the player goes.
     if (p.zip || p.zipFall) a.pos = v > 0.5 ? { x: p.pos.x - (p.vel.x / v) * 2.4, y: p.pos.y, z: p.pos.z - (p.vel.z / v) * 2.4 } : { ...p.pos };
     else a.pos = { x: p.pos.x - Math.cos(p.yaw) * 1.6, y: p.pos.y, z: p.pos.z - Math.sin(p.yaw) * 1.6 };
@@ -307,7 +308,7 @@ function follow(s: State, keep: number, rush: boolean) {
   const to = a.crumb >= trail.length - 1 && level ? p.pos : c;
   const dx = to.x - a.pos.x;
   const dz = to.z - a.pos.z;
-  const d = Math.hypot(dx, dz) || 1;
+  const d = hypot2(dx, dz) || 1;
   const speed = rush || toPlayer > 10 ? ALLY.run : ALLY.walk;
   if (!a.target) turn(a, Math.atan2(dx, -dz));
   // A footstep up a ledge the player climbed: climb it.
@@ -331,7 +332,7 @@ function catchUp(s: State) {
   let j = trail.length - 1;
   let len = 0;
   while (j > 0 && len < 4) {
-    len += Math.hypot(trail[j].x - trail[j - 1].x, trail[j].z - trail[j - 1].z);
+    len += hypot2(trail[j].x - trail[j - 1].x, trail[j].z - trail[j - 1].z);
     j--;
   }
   const c = trail[j] ?? s.player.pos;

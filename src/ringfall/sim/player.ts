@@ -8,6 +8,7 @@ import { boxTopAt, ceilingAt, collide, groundAt, los } from "./geom";
 import { floorLevel, highGround, offLowGround, offshore, steepAt, terrainGrad, terrainHeight, towardLowGround } from "./terrain";
 import { grabInAir, letGo, ride } from "./zips";
 import type { Input, Player, State, Vec3 } from "./state";
+import { hypot2 } from "./hypot";
 
 /*
  * The player: movement (sprint, slide, jump, the ult's leap), weapons, abilities, and taking damage.
@@ -71,7 +72,7 @@ function tryMantle(s: State, input: Input): boolean {
   if (ceilingAt(p.pos.x, p.pos.z, PLAYER.radius, top + 1.8, p.pos.y) < top + 1.8) return false;
   const to = { x: p.pos.x + fx * (PLAYER.radius + MANTLE.land), y: top, z: p.pos.z + fz * (PLAYER.radius + MANTLE.land) };
   const probe = { ...to };
-  if (collide(probe, PLAYER.radius * 0.9) || Math.hypot(probe.x - to.x, probe.z - to.z) > 0.01) return false;
+  if (collide(probe, PLAYER.radius * 0.9) || hypot2(probe.x - to.x, probe.z - to.z) > 0.01) return false;
   p.mantle = { t: 0, dur: MANTLE.time * (0.4 + (0.6 * rise) / MANTLE.reach), from: { ...p.pos }, to, up: 0.65, climb: false };
   p.vel.x = p.vel.y = p.vel.z = 0;
   p.sliding = false;
@@ -121,7 +122,7 @@ function standable(x: number, y: number, z: number): boolean {
   const onTerrain = Math.abs(terrainHeight(x, z) - y) < 0.05;
   if (onTerrain && (steepAt(x, z) || highGround(x, z) || offshore(x, z) > 0)) return false;
   const probe = { x, y, z };
-  if (collide(probe, PLAYER.radius * 0.9) || Math.hypot(probe.x - x, probe.z - z) > 0.01) return false;
+  if (collide(probe, PLAYER.radius * 0.9) || hypot2(probe.x - x, probe.z - z) > 0.01) return false;
   return ceilingAt(x, z, PLAYER.radius, y + 1.8, y) >= y + 1.8;
 }
 
@@ -176,7 +177,7 @@ function stepMantle(s: State) {
     p.onGround = groundAt(p.pos.x, p.pos.z, PLAYER.radius, p.pos.y) >= p.pos.y - 0.02;
     const dx = m.to.x - m.from.x;
     const dz = m.to.z - m.from.z;
-    const d = Math.hypot(dx, dz) || 1;
+    const d = hypot2(dx, dz) || 1;
     p.vel.x = (dx / d) * MANTLE.exitSpeed;
     p.vel.z = (dz / d) * MANTLE.exitSpeed;
     p.vel.y = 0;
@@ -192,7 +193,7 @@ function move(s: State, input: Input, prevCrouch: boolean) {
   const rz = Math.sin(p.yaw);
   let wx = fx * input.moveZ + rx * input.moveX;
   let wz = fz * input.moveZ + rz * input.moveX;
-  const wl = Math.hypot(wx, wz);
+  const wl = hypot2(wx, wz);
   if (wl > 1) {
     wx /= wl;
     wz /= wl;
@@ -201,7 +202,7 @@ function move(s: State, input: Input, prevCrouch: boolean) {
   if (p.zip) return ride(s, input);
   grabInAir(s, input);
   if (p.zip || tryMantle(s, input) || tryClimb(s, input)) return;
-  const speed = Math.hypot(p.vel.x, p.vel.z);
+  const speed = hypot2(p.vel.x, p.vel.z);
   p.jumpBuf = input.jump ? PLAYER.jumpBuffer : Math.max(0, p.jumpBuf - TICK);
 
   if (input.moveZ > 0.5 && !input.fire && p.ads < 0.1 && !p.healing) p.forwardHeld += TICK;
@@ -231,7 +232,7 @@ function move(s: State, input: Input, prevCrouch: boolean) {
       p.vel.x -= g.x * WORLD.gravity * PLAYER.slideSlope * TICK;
       p.vel.z -= g.z * WORLD.gravity * PLAYER.slideSlope * TICK;
     }
-    const sp = Math.hypot(p.vel.x, p.vel.z);
+    const sp = hypot2(p.vel.x, p.vel.z);
     const ns = Math.min(PLAYER.slideMax, Math.max(0, sp - PLAYER.slideFriction * TICK));
     if (sp > 0) {
       p.vel.x = (p.vel.x / sp) * ns + wx * 3 * TICK;
@@ -249,12 +250,12 @@ function move(s: State, input: Input, prevCrouch: boolean) {
       // Faster than the top speed (out of a slide-jump or off a zipline) and still pushing that
       // way: the speed bleeds off over a moment rather than at once, so a jump or a slide on
       // landing keeps it. Pushing anywhere else turns it to the walk at once, as ever.
-      const wl2 = Math.hypot(wx, wz);
+      const wl2 = hypot2(wx, wz);
       const along = speed > 0.01 && wl2 > 0.01 ? (p.vel.x * wx + p.vel.z * wz) / (speed * wl2) : 0;
       if (speed > Math.max(top, PLAYER.sprint) * wl2 + 0.05 && along > 0.7) top = Math.max(top * wl2, speed - PLAYER.overspeedDecel * TICK) / wl2;
       const tx = wx * top - p.vel.x;
       const tz = wz * top - p.vel.z;
-      const tl = Math.hypot(tx, tz);
+      const tl = hypot2(tx, tz);
       const step = PLAYER.accel * TICK;
       if (tl <= step) {
         p.vel.x += tx;
@@ -270,7 +271,7 @@ function move(s: State, input: Input, prevCrouch: boolean) {
       const cap = Math.max(speed, top);
       p.vel.x += wx * steer * TICK;
       p.vel.z += wz * steer * TICK;
-      const ns = Math.hypot(p.vel.x, p.vel.z);
+      const ns = hypot2(p.vel.x, p.vel.z);
       if (ns > cap) {
         p.vel.x *= cap / ns;
         p.vel.z *= cap / ns;
@@ -285,7 +286,7 @@ function move(s: State, input: Input, prevCrouch: boolean) {
     p.onGround = false;
     // Out of a slide the jump carries the slide on, a little faster (`slideJumpBoost`).
     if (p.sliding) {
-      const sp = Math.hypot(p.vel.x, p.vel.z);
+      const sp = hypot2(p.vel.x, p.vel.z);
       const ns = Math.max(sp, Math.min(PLAYER.slideJumpMax, sp + PLAYER.slideJumpBoost));
       if (sp > 0.01) {
         p.vel.x *= ns / sp;
@@ -308,7 +309,7 @@ function move(s: State, input: Input, prevCrouch: boolean) {
     const r = PLAYER.radius + Math.min(1.2, e.kind === "titan" ? 2 : 0.5);
     const dx = p.pos.x - e.pos.x;
     const dz = p.pos.z - e.pos.z;
-    const d = Math.hypot(dx, dz);
+    const d = hypot2(dx, dz);
     if (d < r && d > 1e-4) {
       p.pos.x = e.pos.x + (dx / d) * r;
       p.pos.z = e.pos.z + (dz / d) * r;
@@ -323,7 +324,7 @@ function move(s: State, input: Input, prevCrouch: boolean) {
   // goes on rising past a step's height a little further on stops the body.
   const mx = p.pos.x - from.x;
   const mz = p.pos.z - from.z;
-  const ml = Math.hypot(mx, mz) || 1;
+  const ml = hypot2(mx, mz) || 1;
   const ontoFace = (x: number, z: number) =>
     terrainHeight(x, z) > from.y + 0.005 &&
     steepAt(x, z) &&
@@ -350,7 +351,7 @@ function move(s: State, input: Input, prevCrouch: boolean) {
   if (p.pos.y <= g) {
     if (!p.onGround && p.vel.y < -5) s.events.push({ t: "land", speed: -p.vel.y });
     // Landing with the crouch held at speed slides on, keeping the air's speed.
-    if (!p.onGround && input.crouch && p.downed <= 0 && Math.hypot(p.vel.x, p.vel.z) > PLAYER.walk + 0.3) {
+    if (!p.onGround && input.crouch && p.downed <= 0 && hypot2(p.vel.x, p.vel.z) > PLAYER.walk + 0.3) {
       p.sliding = true;
       p.crouch = false;
       s.events.push({ t: "slide", chain: true });
@@ -380,7 +381,7 @@ function offFace(q: Vec3, top: number) {
     if (terrainHeight(q.x, q.z) <= top || !steepAt(q.x, q.z)) return;
     if (boxTopAt(q.x, q.z, q.y - 3, q.y + 0.5).top > terrainHeight(q.x, q.z) - 0.5) return;
     const g = terrainGrad(q.x, q.z);
-    const l = Math.hypot(g.x, g.z) || 1;
+    const l = hypot2(g.x, g.z) || 1;
     q.x -= (g.x / l) * 0.12;
     q.z -= (g.z / l) * 0.12;
   }
@@ -454,7 +455,7 @@ function leap(s: State) {
   }
   // Only a teammate on the same floor and in sight comes along: never one through a floor or a wall.
   const a = s.ally;
-  const carry = allyUp(s) && Math.hypot(a.pos.x - p.pos.x, a.pos.z - p.pos.z) < ULT.carry && Math.abs(a.pos.y - p.pos.y) < 1.5 && los(eyePos(s), allyChest(a));
+  const carry = allyUp(s) && hypot2(a.pos.x - p.pos.x, a.pos.z - p.pos.z) < ULT.carry && Math.abs(a.pos.y - p.pos.y) < 1.5 && los(eyePos(s), allyChest(a));
   p.leap = { carry };
   p.vel.y = ULT.rise;
   p.onGround = false;
@@ -512,10 +513,10 @@ function glide(s: State, wx: number, wz: number) {
       }
     }
   }
-  if (Math.hypot(wx, wz) > 0.1) {
+  if (hypot2(wx, wz) > 0.1) {
     const tx = wx * ULT.glide - p.vel.x;
     const tz = wz * ULT.glide - p.vel.z;
-    const tl = Math.hypot(tx, tz);
+    const tl = hypot2(tx, tz);
     const step = Math.min(tl, ULT.glideAccel * TICK);
     if (tl > 1e-6) {
       p.vel.x += (tx / tl) * step;
@@ -590,11 +591,11 @@ function abilities(s: State, input: Input) {
       .filter(({ c }) => {
         const dx = c.x - eye.x;
         const dz = c.z - eye.z;
-        const d = Math.hypot(dx, dz);
+        const d = hypot2(dx, dz);
         return d < TACTICAL.range && (dx * fx + dz * fz) / Math.max(d, 1e-3) > Math.cos((TACTICAL.cone / 2) * DEG);
       })
       .filter(({ c }) => los(eye, c))
-      .sort((a, b) => Math.hypot(a.c.x - eye.x, a.c.z - eye.z) - Math.hypot(b.c.x - eye.x, b.c.z - eye.z))
+      .sort((a, b) => hypot2(a.c.x - eye.x, a.c.z - eye.z) - hypot2(b.c.x - eye.x, b.c.z - eye.z))
       .slice(0, TACTICAL.maxTargets);
     // The arc also shows every robot nearby through walls for a few seconds.
     p.reveal = REVEAL.time;

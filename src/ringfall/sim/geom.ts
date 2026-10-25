@@ -2,6 +2,9 @@ import { WORLD } from "./config";
 import { BOXES, deckAt, ROUTES, type Box } from "./map";
 import { steepAt, terrainGrad, terrainHeight } from "./terrain";
 import type { Vec3 } from "./state";
+import { hypot2, hypot3 } from "./hypot";
+
+export { hypot2, hypot3 } from "./hypot";
 
 /*
  * Boxes span y0..h, so floors, roofs and bridges can float above open space.
@@ -220,7 +223,7 @@ function pushOffCliff(p: Vec3): boolean {
   for (let k = 0; k < 16; k++) {
     if (terrainHeight(p.x, p.z) <= p.y + CLIFF_GRIP || !steepAt(p.x, p.z)) break;
     const g = terrainGrad(p.x, p.z);
-    const l = Math.hypot(g.x, g.z) || 1;
+    const l = hypot2(g.x, g.z) || 1;
     p.x -= (g.x / l) * 0.12;
     p.z -= (g.z / l) * 0.12;
     moved = true;
@@ -366,7 +369,7 @@ export function los(a: Vec3, b: Vec3, paths = false): boolean {
   const dx = b.x - a.x;
   const dy = b.y - a.y;
   const dz = b.z - a.z;
-  const len = Math.hypot(dx, dy, dz);
+  const len = hypot3(dx, dy, dz);
   if (len < 1e-6) return true;
   return rayWorld(a, { x: dx / len, y: dy / len, z: dz / len }, len, paths) >= len - 0.05;
 }
@@ -375,7 +378,7 @@ export function los(a: Vec3, b: Vec3, paths = false): boolean {
 export function fenceBetween(a: Vec3, b: Vec3): boolean {
   const dx = b.x - a.x;
   const dz = b.z - a.z;
-  const len = Math.hypot(dx, dz);
+  const len = hypot2(dx, dz);
   if (len < 1e-6) return false;
   return rayWorld({ x: a.x, y: a.y + 0.5, z: a.z }, { x: dx / len, y: 0, z: dz / len }, len, false, true) < len - 0.05;
 }
@@ -412,10 +415,10 @@ export function clampToWorld(p: { x: number; z: number }, margin: number) {
   p.z = Math.max(WORLD.z0 + margin, Math.min(WORLD.z1 - margin, p.z));
 }
 
-export const dist2d = (a: { x: number; z: number }, b: { x: number; z: number }) => Math.hypot(a.x - b.x, a.z - b.z);
+export const dist2d = (a: { x: number; z: number }, b: { x: number; z: number }) => hypot2(a.x - b.x, a.z - b.z);
 
 export const norm = (v: Vec3): Vec3 => {
-  const l = Math.hypot(v.x, v.y, v.z) || 1;
+  const l = hypot3(v.x, v.y, v.z) || 1;
   return { x: v.x / l, y: v.y / l, z: v.z / l };
 };
 
@@ -425,5 +428,5 @@ export const wrapAngle = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 export function lookAngles(from: Vec3, to: Vec3): { yaw: number; pitch: number } {
   const dx = to.x - from.x;
   const dz = to.z - from.z;
-  return { yaw: Math.atan2(dx, -dz), pitch: Math.atan2(to.y - from.y, Math.hypot(dx, dz)) };
+  return { yaw: Math.atan2(dx, -dz), pitch: Math.atan2(to.y - from.y, hypot2(dx, dz)) };
 }

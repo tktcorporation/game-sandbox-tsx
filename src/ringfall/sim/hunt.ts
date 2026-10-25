@@ -2,6 +2,7 @@ import { WORLD } from "./config";
 import { BOXES, DECKS, inCamp } from "./map";
 import { routeBoxesOpen } from "./geom";
 import { highGround, offshore, steepAt, terrainHeight } from "./terrain";
+import { hypot2 } from "./hypot";
 
 /*
  * How hunting squads (reinforcements and raiders), and fighting squads that have lost the
@@ -18,6 +19,8 @@ import { highGround, offshore, steepAt, terrainHeight } from "./terrain";
 
 /** Cell size in metres. Ramps are 8 m wide or more, so 2 m cells keep them open. */
 const RES = 2;
+/** 1 / RES, exactly: a distance's bucket is `(d * INV_RES) | 0`, its floor, as distances are finite, not negative and far below 2^31. */
+const INV_RES = 1 / RES;
 const NX = Math.ceil((WORLD.x1 - WORLD.x0) / RES);
 const NZ = Math.ceil((WORLD.z1 - WORLD.z0) / RES);
 const CELLS = NX * NZ;
@@ -254,7 +257,7 @@ function openCell(x: number, z: number): number {
         const i = ci + di;
         const j = cj + dj;
         if (i < 0 || j < 0 || i >= NX || j >= NZ || !main[j * NX + i]) continue;
-        const d = Math.hypot(centreX(i) - x, centreZ(j) - z);
+        const d = hypot2(centreX(i) - x, centreZ(j) - z);
         if (d < bestD) {
           bestD = d;
           best = j * NX + i;
@@ -310,7 +313,7 @@ function build(target: number, reach: number, dist: Float32Array, order: Int32Ar
     let m = 0;
     for (let e = 0; e < n; e++) {
       const k = list[e];
-      if (done[k] >= taken || Math.floor(dist[k] / RES) !== b) continue;
+      if (done[k] >= taken || ((dist[k] * INV_RES) | 0) !== b) continue;
       done[k] = taken;
       if (dist[k] > reach) {
         dist[k] = Infinity;
@@ -332,7 +335,7 @@ function build(target: number, reach: number, dist: Float32Array, order: Int32Ar
         if (d < dist[q]) {
           dist[q] = d;
           // Into the ring by its distance as stored, a bucket RES wide.
-          const into = Math.floor(dist[q] / RES) & (RING - 1);
+          const into = ((dist[q] * INV_RES) | 0) & (RING - 1);
           let cells = ring[into];
           if (ringSize[into] === cells.length) {
             const grown = new Int32Array(cells.length * 2);
@@ -438,7 +441,7 @@ export function routeLength(f: Field, x: number, z: number): number {
   const i = k % NX;
   const j = (k - i) / NX;
   // Add the step from (x, z) to the centre of the open cell it was snapped to.
-  return f.dist[k] + Math.hypot(centreX(i) - x, centreZ(j) - z);
+  return f.dist[k] + hypot2(centreX(i) - x, centreZ(j) - z);
 }
 
 /**
@@ -518,7 +521,7 @@ export function cellAt(x: number, z: number): { open: boolean; height: number; m
  * fields as they were forgets them after (`forgetFields()`).
  */
 export function walkLine(a: { x: number; z: number }, b: { x: number; z: number }, every = 3): { x: number; z: number }[] {
-  const d = Math.hypot(b.x - a.x, b.z - a.z);
+  const d = hypot2(b.x - a.x, b.z - a.z);
   let f = fieldTo(b.x, b.z, Math.max(80, d * 3 + 40));
   if (!f) return [b];
   const { open, height } = grid();

@@ -1,6 +1,7 @@
 import { WORLD } from "./config";
 import { AREA, POI_AT, type AreaId } from "./areas";
 import type { PoiId } from "./map";
+import { hypot2 } from "./hypot";
 
 /*
  * The ground of two regions joined by a mountain belt. The south one is a dried-up
@@ -54,14 +55,14 @@ interface Polyline {
 }
 
 function polyline(pts: readonly P[]): Polyline {
-  const lens = pts.slice(1).map((b, i) => Math.hypot(b[0] - pts[i][0], b[1] - pts[i][1]));
+  const lens = pts.slice(1).map((b, i) => hypot2(b[0] - pts[i][0], b[1] - pts[i][1]));
   const xs = pts.map((q) => q[0]);
   const zs = pts.map((q) => q[1]);
   return { pts, lens, sum: lens.reduce((a, b) => a + b, 0) || 1, x0: Math.min(...xs), z0: Math.min(...zs), x1: Math.max(...xs), z1: Math.max(...zs) };
 }
 
 /** Distance from (x, z) to a line's bounding box: never more than the distance to the line. */
-const nearBox = (x: number, z: number, l: Polyline) => Math.hypot(Math.max(l.x0 - x, 0, x - l.x1), Math.max(l.z0 - z, 0, z - l.z1));
+const nearBox = (x: number, z: number, l: Polyline) => hypot2(Math.max(l.x0 - x, 0, x - l.x1), Math.max(l.z0 - z, 0, z - l.z1));
 
 /**
  * Metres outside a shape beyond which `lowest()` skips working out its cone: there it rises
@@ -80,7 +81,7 @@ function toPolyline(x: number, z: number, { pts, lens, sum }: Polyline): { d: nu
     const dx = bx - ax;
     const dz = bz - az;
     const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1)));
-    const d = Math.hypot(x - ax - dx * t, z - az - dz * t);
+    const d = hypot2(x - ax - dx * t, z - az - dz * t);
     if (d < best) {
       best = d;
       along = (total + lens[i] * t) / sum;
@@ -456,23 +457,23 @@ export interface Land {
 /** The land masses. The world's coast is the outline of all of them together. */
 export const LANDS: Land[] = [
   // The reservoir's island: wider east to west, 1100 by 820 m.
-  { name: "島", x: 0, z: 80, radius: (a) => (560 * 410) / Math.hypot(410 * Math.cos(a), 560 * Math.sin(a)) + 13.5 * Math.sin(3 * a + 1.1) + 8.4 * Math.sin(7 * a + 2.3) + 5 * Math.sin(13 * a + 0.4), max: 588 },
+  { name: "島", x: 0, z: 80, radius: (a) => (560 * 410) / hypot2(410 * Math.cos(a), 560 * Math.sin(a)) + 13.5 * Math.sin(3 * a + 1.1) + 8.4 * Math.sin(7 * a + 2.3) + 5 * Math.sin(13 * a + 0.4), max: 588 },
   // The dune coast, bulging south of the island round the supply depot: wider east to west.
-  { name: "砂丘", x: 0, z: 470, radius: (a) => 230 * 175 / Math.hypot(175 * Math.cos(a), 230 * Math.sin(a)) + 6 * Math.sin(5 * a + 0.9) + 3 * Math.sin(11 * a + 2.1), max: 240 },
+  { name: "砂丘", x: 0, z: 470, radius: (a) => 230 * 175 / hypot2(175 * Math.cos(a), 230 * Math.sin(a)) + 6 * Math.sin(5 * a + 0.9) + 3 * Math.sin(11 * a + 2.1), max: 240 },
   // The mountain belt between the two regions, wider east to west.
   { name: "山地", x: 30, z: -350, radius: (a) => 150 + 60 * Math.abs(Math.cos(a)) + 6 * Math.sin(5 * a + 0.7), max: 216 },
   { name: "港湾", x: 0, z: -775, radius: (a) => 425 + 10 * Math.sin(3 * a + 0.5) + 7 * Math.sin(7 * a + 1.9) + 3.4 * Math.sin(11 * a + 0.3), max: 441 },
 ];
 
 /** How far (x, z) lies outside one land mass's coast; negative inside it. */
-export const outsideLand = (l: Land, x: number, z: number) => Math.hypot(x - l.x, z - l.z) - l.radius(Math.atan2(z - l.z, x - l.x));
+export const outsideLand = (l: Land, x: number, z: number) => hypot2(x - l.x, z - l.z) - l.radius(Math.atan2(z - l.z, x - l.x));
 
 /** How far (x, z) lies outside the coast, metres; negative on land, by how far inland. */
 export function offshore(x: number, z: number): number {
   let out = Infinity;
   // A land whose coast cannot come nearer than the nearest yet changes nothing: the minimum is
   // the same as over every land, in any order.
-  for (const l of LANDS) if (Math.hypot(x - l.x, z - l.z) - l.max < out) out = Math.min(out, outsideLand(l, x, z));
+  for (const l of LANDS) if (hypot2(x - l.x, z - l.z) - l.max < out) out = Math.min(out, outsideLand(l, x, z));
   return out;
 }
 
@@ -950,7 +951,7 @@ export function buildTerrain(flat: FlatShape[]) {
       const gx = (field[j * NX + i + 1] - field[j * NX + i - 1]) / (2 * RES);
       const gz = (field[(j + 1) * NX + i] - field[(j - 1) * NX + i]) / (2 * RES);
       // A cell is a cliff when the ground rises steeply across it or onto a neighbour.
-      const up = Math.max(Math.abs(gx), Math.abs(gz), Math.hypot(gx, gz));
+      const up = Math.max(Math.abs(gx), Math.abs(gz), hypot2(gx, gz));
       if (up > STEEP) steep[j * NX + i] = 1;
     }
 }
@@ -1019,7 +1020,7 @@ export function carveTerrain(carves: readonly Carve[]) {
         const k = j * NX + i;
         const gx = (field[k + 1] - field[k - 1]) / (2 * RES);
         const gz = (field[k + NX] - field[k - NX]) / (2 * RES);
-        const s = Math.max(Math.abs(gx), Math.abs(gz), Math.hypot(gx, gz)) > STEEP ? 1 : 0;
+        const s = Math.max(Math.abs(gx), Math.abs(gz), hypot2(gx, gz)) > STEEP ? 1 : 0;
         if (s === steep[k]) continue;
         save(k);
         steep[k] = s;
@@ -1098,6 +1099,6 @@ export function towardLowGround(x: number, z: number): { x: number; z: number } 
   const e = 0.5;
   const gx = lowest(x + e, z).h - lowest(x - e, z).h;
   const gz = lowest(x, z + e).h - lowest(x, z - e).h;
-  const n = Math.hypot(gx, gz) || 1;
+  const n = hypot2(gx, gz) || 1;
   return { x: -gx / n, z: -gz / n };
 }

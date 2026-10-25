@@ -3,6 +3,7 @@ import { AREA, inArea, POI_AT, type AreaId } from "./areas";
 import { LENGTHS, offStreet, STREETS } from "./streets";
 import { layZips, type ZipLine } from "./ziplayout";
 import { buildTerrain, type Carve, type FlatShape, floorLevel, highGround, LEVEL, offshore, roadLine, steepAt, surfaceAt, terrainHeight } from "./terrain";
+import { hypot2 } from "./hypot";
 
 /**
  * The world: two regions, a dried-up reservoir in the south and a dry harbor in the
@@ -1957,7 +1958,7 @@ export const poiRegion = (id: PoiId): Region => REGIONS.find((r) => r.pois.inclu
 /** The region a point lies in: that of the nearest POI. */
 export function regionHere(at: { x: number; z: number }): Region {
   let best = POIS[0];
-  for (const p of POIS) if (Math.hypot(p.x - at.x, p.z - at.z) < Math.hypot(best.x - at.x, best.z - at.z)) best = p;
+  for (const p of POIS) if (hypot2(p.x - at.x, p.z - at.z) < hypot2(best.x - at.x, best.z - at.z)) best = p;
   return poiRegion(best.id);
 }
 
@@ -4008,7 +4009,7 @@ interface Clearance {
 function depotSpot(p: Poi): { x: number; z: number } {
   const ax = p.entry.x - p.x;
   const az = p.entry.z - p.z;
-  const len = Math.hypot(ax, az);
+  const len = hypot2(ax, az);
   return { x: +(p.entry.x + (ax / len) * DEPOT_OUT[p.id]).toFixed(1), z: +(p.entry.z + (az / len) * DEPOT_OUT[p.id]).toFixed(1) };
 }
 
@@ -4018,14 +4019,14 @@ function scatterCover(authored: Box[], { points, segments }: Keep): Box[] {
   // Each depot keeps room round it and round the start behind it.
   const depots = POIS.map((p) => ({ ...depotSpot(p), r: 6 }));
   // The camp's yard keeps clear: a circle round it, out past its corners.
-  const yard = { x: CAMP_AT[0], z: CAMP_AT[1], r: Math.hypot(CAMP_HALF.x, CAMP_HALF.z) + 1 };
+  const yard = { x: CAMP_AT[0], z: CAMP_AT[1], r: hypot2(CAMP_HALF.x, CAMP_HALF.z) + 1 };
   // Where a raid stops and where hunting parties stand stay open too, without pressing the ground.
   const stops = [...STOPS, ...Object.values(PARTY_STOPS).flat()].map((q) => ({ x: q.x, z: q.z, r: 8 }));
   for (const q of [...points, ...depots, ...stops, yard]) near.points.add(q.x - q.r, q.z - q.r, q.x + q.r, q.z + q.r, q);
   // A trench's line keeps cover off as far as its walls may lower the ground.
   for (const c of [TUNNEL, GALLERY]) {
     const [[ax, az], [bx, bz]] = c.line;
-    const n = Math.ceil(Math.hypot(bx - ax, bz - az));
+    const n = Math.ceil(hypot2(bx - ax, bz - az));
     const r = c.floor + TRENCH_ROOM;
     for (let k = 0; k <= n; k++) {
       const x = ax + ((bx - ax) * k) / n;
@@ -4034,7 +4035,7 @@ function scatterCover(authored: Box[], { points, segments }: Keep): Box[] {
     }
   }
   for (const sg of segments) {
-    const n = Math.max(1, Math.ceil(Math.hypot(sg.bx - sg.ax, sg.bz - sg.az)));
+    const n = Math.max(1, Math.ceil(hypot2(sg.bx - sg.ax, sg.bz - sg.az)));
     for (let k = 0; k <= n; k++) {
       const x = sg.ax + ((sg.bx - sg.ax) * k) / n;
       const z = sg.az + ((sg.bz - sg.az) * k) / n;
@@ -4160,7 +4161,7 @@ function scatterArea(near: Clearance, area: (typeof SCATTER)[number]): Box[] {
   };
 
   const clear = (b: Box, gap: number) => (o: Box) => b.x1 + gap <= o.x0 || o.x1 + gap <= b.x0 || b.z1 + gap <= o.z0 || o.z1 + gap <= b.z0;
-  const distToBox = (b: Box, x: number, z: number) => Math.hypot(Math.max(b.x0 - x, 0, x - b.x1), Math.max(b.z0 - z, 0, z - b.z1));
+  const distToBox = (b: Box, x: number, z: number) => hypot2(Math.max(b.x0 - x, 0, x - b.x1), Math.max(b.z0 - z, 0, z - b.z1));
   // A piece goes only on low ground that is not a cliff. It starts at the lowest ground
   // under it and keeps its full height above the highest, so it never floats or sinks; what is
   // stacked on it (a container two high) sits on its top.
@@ -4351,7 +4352,7 @@ buildTerrain([
   ...FLAT,
   ...KEEP.points.map((q) => ({ x0: q.x - q.r, z0: q.z - q.r, x1: q.x + q.r, z1: q.z + q.r })),
   ...KEEP.segments.flatMap((sg) => {
-    const n = Math.max(1, Math.ceil(Math.hypot(sg.bx - sg.ax, sg.bz - sg.az) / 2));
+    const n = Math.max(1, Math.ceil(hypot2(sg.bx - sg.ax, sg.bz - sg.az) / 2));
     return Array.from({ length: n + 1 }, (_, k) => {
       const x = sg.ax + ((sg.bx - sg.ax) * k) / n;
       const z = sg.az + ((sg.bz - sg.az) * k) / n;
@@ -4562,7 +4563,7 @@ function pylon(cx: number, cz: number, alongX: boolean, g: number): Box[] {
  */
 function wire(p: readonly [number, number, number], q: readonly [number, number, number], sag: number): Box[] {
   const rise = Math.abs(q[1] - p[1]) + 2 * sag;
-  const n = Math.max(2, Math.ceil(Math.hypot(q[0] - p[0], q[2] - p[2]) / 3), Math.ceil(rise / 0.12));
+  const n = Math.max(2, Math.ceil(hypot2(q[0] - p[0], q[2] - p[2]) / 3), Math.ceil(rise / 0.12));
   const at = (t: number): [number, number, number] => [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t - sag * 4 * t * (1 - t), p[2] + (q[2] - p[2]) * t];
   const out: Box[] = [];
   for (let i = 0; i < n; i++) {
@@ -4580,7 +4581,7 @@ function lengths(run: readonly [number, number][], step: number): { a: [number, 
   const out: { a: [number, number]; b: [number, number]; alongX: boolean }[] = [];
   for (let i = 0; i + 1 < run.length; i++) {
     const [p, q] = [run[i], run[i + 1]];
-    const n = Math.max(1, Math.round(Math.hypot(q[0] - p[0], q[1] - p[1]) / step));
+    const n = Math.max(1, Math.round(hypot2(q[0] - p[0], q[1] - p[1]) / step));
     for (let k = 0; k < n; k++)
       out.push({ a: [p[0] + ((q[0] - p[0]) * k) / n, p[1] + ((q[1] - p[1]) * k) / n], b: [p[0] + ((q[0] - p[0]) * (k + 1)) / n, p[1] + ((q[1] - p[1]) * (k + 1)) / n], alongX: Math.abs(q[0] - p[0]) >= Math.abs(q[1] - p[1]) });
   }
@@ -4661,7 +4662,7 @@ const FENCE_RUNS: Box[] = (() => {
         const dx = q[0] - p[0];
         const dz = q[1] - p[1];
         const t = Math.max(0, Math.min(1, ((x - p[0]) * dx + (z - p[1]) * dz) / (dx * dx + dz * dz || 1)));
-        return Math.hypot(x - p[0] - dx * t, z - p[1] - dz * t);
+        return hypot2(x - p[0] - dx * t, z - p[1] - dz * t);
       }),
     );
   const gatePost = (x: number, z: number) => {
@@ -4684,7 +4685,7 @@ const FENCE_RUNS: Box[] = (() => {
         steepAt(b[0], b[1]) ||
         offshore(mx, mz) > -2 ||
         standing.some((o) => o.x1 + 0.8 > panel.x0 && panel.x1 + 0.8 > o.x0 && o.z1 + 0.8 > panel.z0 && panel.z1 + 0.8 > o.z0) ||
-        KEEP.points.some((q) => Math.hypot(Math.max(panel.x0 - q.x, 0, q.x - panel.x1), Math.max(panel.z0 - q.z, 0, q.z - panel.z1)) < q.r);
+        KEEP.points.some((q) => hypot2(Math.max(panel.x0 - q.x, 0, q.x - panel.x1), Math.max(panel.z0 - q.z, 0, q.z - panel.z1)) < q.r);
       if (blocked) {
         // A gate where a street or road passes: a white post at either side of it.
         if (open && street) gatePost(a[0], a[1]);
@@ -4917,13 +4918,13 @@ const STREET_SIDE: Box[] = (() => {
   const free = (b: Box, gap: number) =>
     !steepAt((b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2) &&
     near.every((o) => o.x1 + gap <= b.x0 || b.x1 + gap <= o.x0 || o.z1 + gap <= b.z0 || b.z1 + gap <= o.z0 || o.y0 > terrainHeight((o.x0 + o.x1) / 2, (o.z0 + o.z1) / 2) + 3) &&
-    KEEP.points.every((q) => Math.hypot(Math.max(b.x0 - q.x, 0, q.x - b.x1), Math.max(b.z0 - q.z, 0, q.z - b.z1)) > q.r + 1) &&
-    KEEP.segments.every((sg) => toSegment(sg, (b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2) > Math.hypot(b.x1 - b.x0, b.z1 - b.z0) / 2 + 2.5);
+    KEEP.points.every((q) => hypot2(Math.max(b.x0 - q.x, 0, q.x - b.x1), Math.max(b.z0 - q.z, 0, q.z - b.z1)) > q.r + 1) &&
+    KEEP.segments.every((sg) => toSegment(sg, (b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2) > hypot2(b.x1 - b.x0, b.z1 - b.z0) / 2 + 2.5);
   const toSegment = (sg: Keep["segments"][number], x: number, z: number) => {
     const dx = sg.bx - sg.ax;
     const dz = sg.bz - sg.az;
     const t = Math.max(0, Math.min(1, ((x - sg.ax) * dx + (z - sg.az) * dz) / (dx * dx + dz * dz || 1)));
-    return Math.hypot(x - sg.ax - dx * t, z - sg.az - dz * t);
+    return hypot2(x - sg.ax - dx * t, z - sg.az - dz * t);
   };
   // A vehicle stands on the lowest ground under its corners and keeps its height over the highest;
   // ground that rises more than half a metre under one is too rough to have stopped on.
@@ -4939,11 +4940,11 @@ const STREET_SIDE: Box[] = (() => {
     return hi - lo > 0.5 ? null : { lo, hi };
   };
   const bends = STREETS.flatMap((st) => st.line);
-  const nearBend = (x: number, z: number, r: number) => bends.some(([bx, bz]) => Math.hypot(bx - x, bz - z) < r);
+  const nearBend = (x: number, z: number, r: number) => bends.some(([bx, bz]) => hypot2(bx - x, bz - z) < r);
   let seed = 9_041;
   const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
   for (const l of LENGTHS) {
-    const len = Math.hypot(l.bx - l.ax, l.bz - l.az);
+    const len = hypot2(l.bx - l.ax, l.bz - l.az);
     const ux = (l.bx - l.ax) / len;
     const uz = (l.bz - l.az) / len;
     const h = l.street.half;
@@ -4996,7 +4997,7 @@ const STREET_SIDE: Box[] = (() => {
   // A signpost at the start of each street, on its right.
   for (const st of STREETS) {
     const [[x0, z0], [x1, z1]] = st.line;
-    const len = Math.hypot(x1 - x0, z1 - z0);
+    const len = hypot2(x1 - x0, z1 - z0);
     const ux = (x1 - x0) / len;
     const uz = (z1 - z0) / len;
     const x = x0 + ux * (st.half + 8) - uz * (st.half + 1.6);
@@ -5104,7 +5105,7 @@ function coreSpot(x: number, z: number, near: Box[]): { x: number; y: number; z:
     const dx = sg.bx - sg.ax;
     const dz = sg.bz - sg.az;
     const t = Math.max(0, Math.min(1, ((px - sg.ax) * dx + (pz - sg.az) * dz) / (dx * dx + dz * dz || 1)));
-    return Math.hypot(px - sg.ax - dx * t, pz - sg.az - dz * t);
+    return hypot2(px - sg.ax - dx * t, pz - sg.az - dz * t);
   };
   for (let r = 0; r <= 60; r += 3)
     for (let k = 0, n = r ? Math.max(8, Math.round((2 * Math.PI * r) / 3)) : 1; k < n; k++) {
@@ -5115,9 +5116,9 @@ function coreSpot(x: number, z: number, near: Box[]): { x: number; y: number; z:
       if (offshore(px, pz) > -6 || highGround(px, pz)) continue;
       if ([[0, 0], [ROOM, 0], [-ROOM, 0], [0, ROOM], [0, -ROOM]].some(([dx, dz]) => steepAt(px + dx, pz + dz) || Math.abs(terrainHeight(px + dx, pz + dz) - g) > 0.6)) continue;
       if (near.some((b) => b.x1 > px - ROOM && b.x0 < px + ROOM && b.z1 > pz - ROOM && b.z0 < pz + ROOM && b.h > g + 0.15 && b.y0 < g + 8)) continue;
-      if (KEEP.points.some((q) => Math.hypot(q.x - px, q.z - pz) < q.r + ROOM)) continue;
+      if (KEEP.points.some((q) => hypot2(q.x - px, q.z - pz) < q.r + ROOM)) continue;
       if (KEEP.segments.some((sg) => toSeg(sg, px, pz) < ROOM + 1)) continue;
-      if (depots.some((d) => Math.hypot(d.x - px, d.z - pz) < 8)) continue;
+      if (depots.some((d) => hypot2(d.x - px, d.z - pz) < 8)) continue;
       if (deckAt(px, pz) !== null) continue;
       return { x: px, y: g, z: pz };
     }
@@ -5153,7 +5154,7 @@ function mastSpots(x: number, z: number, near: Box[], reach = 70, n = 12, apart 
     const dx = sg.bx - sg.ax;
     const dz = sg.bz - sg.az;
     const t = Math.max(0, Math.min(1, ((px - sg.ax) * dx + (pz - sg.az) * dz) / (dx * dx + dz * dz || 1)));
-    return Math.hypot(px - sg.ax - dx * t, pz - sg.az - dz * t);
+    return hypot2(px - sg.ax - dx * t, pz - sg.az - dz * t);
   };
   const out: { x: number; z: number; r: number }[] = [];
   for (let r = ZIP.fromCore; r <= reach && out.length < n; r += 3)
@@ -5161,15 +5162,15 @@ function mastSpots(x: number, z: number, near: Box[], reach = 70, n = 12, apart 
       const a = (k / m) * 2 * Math.PI;
       const px = +(x + Math.sin(a) * r).toFixed(1);
       const pz = +(z - Math.cos(a) * r).toFixed(1);
-      if (out.some((o) => Math.hypot(o.x - px, o.z - pz) < apart)) continue;
+      if (out.some((o) => hypot2(o.x - px, o.z - pz) < apart)) continue;
       const g = terrainHeight(px, pz);
       if (offshore(px, pz) > -6 || highGround(px, pz) || inCamp({ x: px, z: pz }, 2)) continue;
       if ([[0, 0], [ROOM, 0], [-ROOM, 0], [0, ROOM], [0, -ROOM]].some(([dx, dz]) => steepAt(px + dx, pz + dz) || Math.abs(terrainHeight(px + dx, pz + dz) - g) > 0.6)) continue;
       if (near.some((b) => b.x1 > px - ROOM - 1 && b.x0 < px + ROOM + 1 && b.z1 > pz - ROOM - 1 && b.z0 < pz + ROOM + 1 && b.h > g + 0.15 && b.y0 < g + 8)) continue;
-      if (KEEP.points.some((q) => Math.hypot(q.x - px, q.z - pz) < q.r + ROOM)) continue;
+      if (KEEP.points.some((q) => hypot2(q.x - px, q.z - pz) < q.r + ROOM)) continue;
       if (KEEP.segments.some((sg) => toSeg(sg, px, pz) < ROOM + 1)) continue;
-      if (depots.some((d) => Math.hypot(d.x - px, d.z - pz) < 8)) continue;
-      if (NODES.some((c) => Math.hypot(c.core.x - px, c.core.z - pz) < ZIP.fromCore)) continue;
+      if (depots.some((d) => hypot2(d.x - px, d.z - pz) < 8)) continue;
+      if (NODES.some((c) => hypot2(c.core.x - px, c.core.z - pz) < ZIP.fromCore)) continue;
       if (deckAt(px, pz) !== null) continue;
       out.push({ x: px, z: pz, r });
     }

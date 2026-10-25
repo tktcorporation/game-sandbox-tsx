@@ -1,6 +1,6 @@
 import { ALLY, AWARE, BAG, BIN_GEAR, CREW, DEBRIS, DEPOT, ENEMIES, ENTRY, HEALS, HOME, PARTY, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, TICK, TOOL_KINDS, TOOLS, TOP_BINS, VALUABLES, VAULT, WORLD, type HealKind, type ToolKind } from "./config";
 import { grabZip, zipInReach } from "./zips";
-import { dist2d, groundAt, los, solidAt } from "./geom";
+import { dist2d, groundAt, los, solidAt, worldVersion } from "./geom";
 import { highGround, steepAt, terrainHeight } from "./terrain";
 import { DEPOTS, ENTRIES, EXTRACTS, inCamp, PARTY_STOPS, POIS, recordSpot, REGIONS, regionOf, type ExtractPoint, type RecordId } from "./map";
 import { spawnEnemy, spawnSpot } from "./enemies";
@@ -13,6 +13,7 @@ import { interceptSpot, located, makeNoise } from "./awareness";
 import { hasMod, modScale, spillBinMod, wearMod } from "./mods";
 import { MOD } from "./config";
 import { coreInReach, inZone, useCore } from "./front";
+import { hypot2, hypot3 } from "./hypot";
 
 /*
  * The raid's structure: POIs that fall when their robots are beaten, loot and bins,
@@ -417,7 +418,7 @@ const LANE = 1;
  * walk straight between its steps, so cover across a step would leave them pressed against it.
  */
 function clearWalk(x: number, z: number, tx: number, tz: number): boolean {
-  const len = Math.hypot(tx - x, tz - z);
+  const len = hypot2(tx - x, tz - z);
   const n = Math.ceil(len / 0.5);
   const sx = (-(tz - z) / (len || 1)) * LANE;
   const sz = ((tx - x) / (len || 1)) * LANE;
@@ -518,6 +519,27 @@ function spillTool(s: State, b: Bin, k: ToolKind) {
 
 const weaponLabel = (w: Weapon) => w.kind.toUpperCase();
 
+/**
+ * Each loot's last `groundAt()` question and answer. Loot at rest asks the same every tick: it is
+ * put back on the ground it fell to, and its slide halves until it no longer moves. The same
+ * question in the same world has the same answer.
+ */
+type LootGround = { x: number; z: number; feet: number; world: number; g: number };
+const lootAsked = new WeakMap<Loot, LootGround>();
+function lootGround(l: Loot, x: number, z: number, feet: number): number {
+  const a = lootAsked.get(l);
+  if (a && a.world === worldVersion && Object.is(a.x, x) && Object.is(a.z, z) && Object.is(a.feet, feet)) return a.g;
+  const g = groundAt(x, z, 0.2, feet);
+  if (a) {
+    a.x = x;
+    a.z = z;
+    a.feet = feet;
+    a.world = worldVersion;
+    a.g = g;
+  } else lootAsked.set(l, { x, z, feet, world: worldVersion, g });
+  return g;
+}
+
 export function stepLoot(s: State, input: Input) {
   const p = s.player;
   const maxShield = PLAYER.shieldByTier[p.armor];
@@ -535,8 +557,9 @@ export function stepLoot(s: State, input: Input) {
   const worn: Loot[] = [];
   s.loot = s.loot.filter((l) => {
     l.age += TICK;
-    const d = Math.hypot(l.pos.x - p.pos.x, l.pos.z - p.pos.z, l.pos.y - (p.pos.y + 0.8));
-    if (l.kind === "shard" && l.age > 0.35 && d < PLAYER.shardMagnet && alive) {
+    // Only a shard old enough is drawn to the player, so only its distance is needed.
+    const d = l.kind === "shard" && l.age > 0.35 ? hypot3(l.pos.x - p.pos.x, l.pos.z - p.pos.z, l.pos.y - (p.pos.y + 0.8)) : Infinity;
+    if (d < PLAYER.shardMagnet && alive) {
       const sp = 16;
       l.vel = { x: ((p.pos.x - l.pos.x) / d) * sp, y: ((p.pos.y + 0.8 - l.pos.y) / d) * sp, z: ((p.pos.z - l.pos.z) / d) * sp };
       l.pos.x += l.vel.x * TICK;
@@ -555,7 +578,7 @@ export function stepLoot(s: State, input: Input) {
     l.pos.x += l.vel.x * TICK;
     l.pos.y += l.vel.y * TICK;
     l.pos.z += l.vel.z * TICK;
-    const g = groundAt(l.pos.x, l.pos.z, 0.2, l.pos.y + 0.3);
+    const g = lootGround(l, l.pos.x, l.pos.z, l.pos.y + 0.3);
     if (l.pos.y <= g) {
       l.pos.y = g;
       l.vel.x *= 0.5;
@@ -563,7 +586,11 @@ export function stepLoot(s: State, input: Input) {
       l.vel.y = 0;
     }
     if (!alive || l.age < 0.4) return true;
-    const near = Math.hypot(l.pos.x - p.pos.x, l.pos.z - p.pos.z) < PLAYER.pickupRange && Math.abs(l.pos.y - p.pos.y) < 2;
+    // Clearly out of reach by the square of the distance (with room for its rounding); the exact one decides near the edge.
+    const lx = l.pos.x - p.pos.x;
+    const lz = l.pos.z - p.pos.z;
+    const reach = PLAYER.pickupRange * 1.001;
+    const near = lx * lx + lz * lz <= reach * reach && hypot2(lx, lz) < PLAYER.pickupRange && Math.abs(l.pos.y - p.pos.y) < 2;
     if (!near) return true;
     if (l.kind === "heal" && l.heal && p.heals[l.heal] < HEALS[l.heal].max) {
       p.heals[l.heal]++;

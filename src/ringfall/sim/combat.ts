@@ -5,6 +5,7 @@ import { POIS } from "./map";
 import { terrainHeight } from "./terrain";
 import { los, lookAngles, norm, rayWorld, raySphere, wrapAngle } from "./geom";
 import { bodyY, forward, mix, rand, squadKey, weakY, type Enemy, type SquadState, type State, type Vec3, type Weapon } from "./state";
+import { hypot2, hypot3 } from "./hypot";
 
 /*
  * Everything about the player's shots landing on robots: hit boxes, aim assist,
@@ -47,7 +48,10 @@ export function assistTarget(s: State, coneDeg: number): { e: Enemy; angle: numb
     if (!targetable(e)) continue;
     const c = bodyCenter(e);
     const v = { x: c.x - eye.x, y: c.y - eye.y, z: c.z - eye.z };
-    const d = Math.hypot(v.x, v.y, v.z);
+    // Clearly out of range by the square of the distance (with room for its rounding); the exact one decides near the edge.
+    const far = ASSIST.range * 1.001;
+    if (v.x * v.x + v.y * v.y + v.z * v.z > far * far) continue;
+    const d = hypot3(v.x, v.y, v.z);
     if (d > ASSIST.range) continue;
     const ang = Math.acos(Math.max(-1, Math.min(1, (v.x * dir.x + v.y * dir.y + v.z * dir.z) / d)));
     const pad = Math.atan(ENEMIES[e.kind].radius / Math.max(d, 1));
@@ -107,7 +111,10 @@ export function fireRay(s: State, w: Weapon, dir: Vec3, touch = false) {
     else if (tb < wallT && (!raw || tb < raw.t)) raw = { e, t: tb, crit: false };
     if (raw) continue;
     const v = { x: c.x - eye.x, y: c.y - eye.y, z: c.z - eye.z };
-    const d = Math.hypot(v.x, v.y, v.z);
+    // Clearly out of range by the square of the distance (with room for its rounding); the exact one decides near the edge.
+    const far = ASSIST.range * 1.001;
+    if (v.x * v.x + v.y * v.y + v.z * v.z > far * far) continue;
+    const d = hypot3(v.x, v.y, v.z);
     if (d > ASSIST.range) continue;
     const ang = Math.acos(Math.max(-1, Math.min(1, (v.x * dir.x + v.y * dir.y + v.z * dir.z) / d)));
     if (ang > coneAt(s, d, pelletScale, touch) + Math.atan(k.radius / Math.max(d, 1))) continue;
@@ -269,7 +276,7 @@ function react(s: State, e: Enemy, weight: number, broke: boolean, quiet: boolea
     e.steady = e.timer + STAGGER.steady;
     const dx = e.pos.x - from.x;
     const dz = e.pos.z - from.z;
-    const d = Math.hypot(dx, dz) || 1;
+    const d = hypot2(dx, dz) || 1;
     e.vel.x = (dx / d) * STAGGER.knock;
     e.vel.z = (dz / d) * STAGGER.knock;
     s.events.push({ t: "stagger", id: e.id, pos: bodyCenter(e), fromX: from.x, fromZ: from.z, interrupted });

@@ -1,6 +1,7 @@
 import { ZIP } from "./config";
 import { terrainHeight } from "./terrain";
 import type { Box } from "./map";
+import { hypot2, hypot3 } from "./hypot";
 
 /*
  * Where the ziplines run (map.ts lays them; zips.ts rides them). Each link of the front gets a
@@ -79,7 +80,7 @@ export function layZips(
   const lay = (ma: { x: number; z: number }, mb: { x: number; z: number }): Laid => {
     const dx0 = mb.x - ma.x;
     const dz0 = mb.z - ma.z;
-    const d0 = Math.hypot(dx0, dz0);
+    const d0 = hypot2(dx0, dz0);
     const ux = dx0 / d0;
     const uz = dz0 / d0;
     // To the left of the way from a to b: the side both heads hang out to.
@@ -170,7 +171,7 @@ export function layZips(
     let why = "no mast";
     // Pairs in the order of the least they could cost (their length and how far out their masts
     // stand): once that is no less than the best laid, no later pair can beat it.
-    const pairs = as.flatMap((ma) => bs.map((mb) => ({ ma, mb, least: Math.hypot(mb.x - ma.x, mb.z - ma.z) + 2 * (ma.r + mb.r) })));
+    const pairs = as.flatMap((ma) => bs.map((mb) => ({ ma, mb, least: hypot2(mb.x - ma.x, mb.z - ma.z) + 2 * (ma.r + mb.r) })));
     pairs.sort((p, q) => p.least - q.least);
     for (const { ma, mb, least } of pairs) {
       if (best && least >= best.cost) break;
@@ -185,7 +186,7 @@ export function layZips(
     }
     const { pts, ma, mb } = best;
     const cum = [0];
-    for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y, pts[i].z - pts[i - 1].z));
+    for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + hypot3(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y, pts[i].z - pts[i - 1].z));
     out.lines.push(fixed ? { a, b, fixed: true, pts, cum, length: cum[cum.length - 1] } : { a, b, pts, cum, length: cum[cum.length - 1] });
     // The masts, and the arm from each out over its head.
     const A = pts[0];
@@ -200,8 +201,8 @@ export function layZips(
       out.boxes.push(steel(Math.min(m.x, h.x) - 0.12, Math.min(m.z, h.z) - 0.12, Math.max(m.x, h.x) + 0.12, Math.max(m.z, h.z) + 0.12, h.y + 0.3, h.y + 0.5, 1));
     }
     // Each pylon: two legs either side of the cable and a beam over it, high enough that the cable climbing past it stays under.
-    const ux = (B.x - A.x) / Math.hypot(B.x - A.x, B.z - A.z);
-    const uz = (B.z - A.z) / Math.hypot(B.x - A.x, B.z - A.z);
+    const ux = (B.x - A.x) / hypot2(B.x - A.x, B.z - A.z);
+    const uz = (B.z - A.z) / hypot2(B.x - A.x, B.z - A.z);
     for (const q of pts.slice(1, -1)) {
       const [lx0, lz0, lx1, lz1] = [q.x - uz * 1.4, q.z + ux * 1.4, q.x + uz * 1.4, q.z - ux * 1.4];
       for (const [lx, lz] of [[lx0, lz0], [lx1, lz1]]) out.boxes.push(steel(lx - 0.3, lz - 0.3, lx + 0.3, lz + 0.3, terrainHeight(lx, lz) - 0.5, q.y + 1.8, 0));
