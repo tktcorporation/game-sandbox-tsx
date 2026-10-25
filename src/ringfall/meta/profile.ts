@@ -267,8 +267,9 @@ export function kitPicks(p: Profile, l: Loadout): KitPicks {
 
 /**
  * The last raid's loadout picked again from the stash as it stands: each weapon, the armour and
- * each key while the stash still holds one like it, and the heals up to what it holds now. With no
- * weapon of it left (or no last raid), the starter weapons (`armed()`).
+ * each key while the stash still holds one like it, and the heals up to what it holds now. A
+ * weapon of it no longer in the stash leaves its slot to a starter weapon not picked yet, so the
+ * shelves always pick two weapons (with no last raid, the two starters).
  */
 export function recallLoadout(p: Profile): Loadout {
   const l = emptyLoadout();
@@ -293,6 +294,7 @@ export function recallLoadout(p: Profile): Loadout {
     if (n >= 0) l.keys.push(n);
   }
   for (const h of HEALS) l.heals[h] = Math.max(0, Math.min(last.heals[h] ?? 0, healRoom(p, l, h)));
+  for (const n of starterPicks(p)) if (l.weapons.length < 2 && !l.weapons.includes(n)) l.weapons.push(n);
   return armed(p, l);
 }
 
