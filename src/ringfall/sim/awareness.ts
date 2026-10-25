@@ -443,6 +443,8 @@ export function stepSquads(s: State) {
     sq.chaseT = (sq.chaseT ?? 0) + TICK;
     // Sight lost this tick: go after where the player was heading.
     if (sq.sinceSeen >= AWARE.trackTime && !sq.chase) chaseTo(s, i, aheadOfSighting(sq));
+    // A member fighting one of the player's own robots (see SUPPORT) keeps the squad in the fight.
+    if (members.some((e) => e.target === "friend" && s.friends.some((f) => f.id === e.friendId))) sq.chaseT = 0;
     if (sq.chaseT < AWARE.chaseTime) return;
     sq.pinT = 0;
     sq.backT = 0;

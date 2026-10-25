@@ -547,8 +547,10 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   Robots choose between the player and the teammate in `chooseTarget()` (`enemies.ts`), and in a
   battle also the player's own robots (`friendTarget()`, `SUPPORT`: a robot of theirs in sight, or
   one that has just hit it, is fought with the faction rules' `fightFoe()` while the squad stays
-  engaged with the player); the sim gate's `ally` column is its damage share, downs and revives,
-  and `checkSupport()` (`scripts/ringfall-support.ts`) checks that the player's robots help.
+  engaged with the player, and does not give up the chase while one fights them, `stepSquads()`);
+  the sim gate's `ally` column is its damage share, downs and revives, and `checkSupport()`
+  (`scripts/ringfall-support.ts`) checks that the player's robots help and that a squad fighting
+  them stays engaged after losing the player.
 - `EXTRACTS` in `map.ts` are the ways off; `stepExtract()` in `world.ts` runs them: a pickup with
   `call` (the dropship, the boat) is called by standing in it and comes after its time, while robots
   beam in round its `waves` point out of the player's sight and come to look at the pickup (`SHIP_WAVES`; `State.calls` keeps each call); the flare; the waits.
