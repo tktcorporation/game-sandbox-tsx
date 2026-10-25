@@ -634,9 +634,9 @@ const read = async () => JSON.parse(await page.evaluate(() => window.render_game
   if ((await readPage(page)).camp?.depart) errors.push("camp: Esc did not close the departure");
   await seen("stash");
   await useStation(page, "stash");
-  const picks = page.locator("#hub-stash [data-act=pick]");
-  await picks.nth(2).click();
-  await picks.nth(1).click();
+  // The starter weapons come picked; the LANCE and then the HORNET take their places.
+  await page.locator("#hub-stash [data-act=pick]", { hasText: "LANCE" }).click();
+  await page.locator("#hub-stash [data-act=pick]", { hasText: "HORNET" }).click();
   // Each weapon shows its numbers, in the stash's list and in the picked slots.
   const stats = await page.locator("#hub-side .slot .stat").allTextContents();
   if (stats.length !== 2 || !stats.every((t) => /威力 \d+.*毎分 \d+ 発.*弾倉 \d+/.test(t)) || !(await page.locator("#hub-stash .item small", { hasText: "毎分" }).count())) errors.push(`camp: the shelves' weapons show ${JSON.stringify(stats)}`);
