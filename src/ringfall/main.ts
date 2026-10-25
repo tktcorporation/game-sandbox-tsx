@@ -35,6 +35,7 @@ import { Hud } from "./view/hud";
 import { sightZoom, World } from "./view/world";
 import { Governor, loadChoice, pickTier, QUALITY, saveChoice, type Level, type QualityChoice, type Tier } from "./view/quality";
 import { blockPageZoom, setupTouch } from "./touch";
+import { BIND, bound, keysHtml, type Action } from "./view/keys";
 import "./style.css";
 
 /*
@@ -176,18 +177,18 @@ addEventListener("keydown", (e) => {
     return;
   }
   // F aims on its own key, for trackpads that cannot hold the right button while clicking to fire.
-  if (e.code === "KeyF" && adsMode === "toggle" && running && !paused) adsLatch = !adsLatch;
+  if (bound("aim", e.code) && adsMode === "toggle" && running && !paused) adsLatch = !adsLatch;
   // The map opens over the game straight from the key, whoever is at the controls.
-  if (e.code === "KeyM" && running) hud.toggleMap();
-  if (e.code === "KeyN" && running) hud.toggleMapView();
-  if (e.code === "Tab") peekBag(true);
+  if (bound("map", e.code) && running) hud.toggleMap();
+  if (bound("mapView", e.code) && running) hud.toggleMapView();
+  if (bound("bag", e.code)) peekBag(true);
   keys.add(e.code);
   edges.add(e.code);
-  if (["Space", "KeyC", "ControlLeft", "Tab"].includes(e.code)) e.preventDefault();
+  if (bound("jump", e.code) || bound("crouch", e.code) || bound("bag", e.code)) e.preventDefault();
 });
 addEventListener("keyup", (e) => {
   keys.delete(e.code);
-  if (e.code === "Tab") peekBag(false);
+  if (bound("bag", e.code)) peekBag(false);
 });
 /**
  * Pointer lock was refused or is missing (a sandboxed frame, an old browser): the
@@ -201,12 +202,12 @@ addEventListener("mousemove", (e) => {
 });
 addEventListener("mousedown", (e) => {
   if (!running || paused) return;
-  if (e.button === 0) fire = true;
-  if (e.button === 2) ads = true;
+  if (bound("fire", `Mouse${e.button}`)) fire = true;
+  if (bound("ads", `Mouse${e.button}`)) ads = true;
 });
 addEventListener("mouseup", (e) => {
-  if (e.button === 0) fire = false;
-  if (e.button === 2) ads = false;
+  if (bound("fire", `Mouse${e.button}`)) fire = false;
+  if (bound("ads", `Mouse${e.button}`)) ads = false;
 });
 addEventListener("wheel", () => edges.add("Wheel"), { passive: true });
 addEventListener("contextmenu", (e) => e.preventDefault());
@@ -218,28 +219,30 @@ addEventListener("blur", () => {
 
 function readInput(): Input {
   const inp = idleInput();
-  inp.moveZ = (keys.has("KeyW") ? 1 : 0) - (keys.has("KeyS") ? 1 : 0) + stick.z;
-  inp.moveX = (keys.has("KeyD") ? 1 : 0) - (keys.has("KeyA") ? 1 : 0) + stick.x;
+  const held = (a: Action) => BIND[a].some((c) => keys.has(c));
+  const pressed = (a: Action) => BIND[a].some((c) => edges.has(c));
+  inp.moveZ = (held("forward") ? 1 : 0) - (held("back") ? 1 : 0) + stick.z;
+  inp.moveX = (held("right") ? 1 : 0) - (held("left") ? 1 : 0) + stick.x;
   inp.touch = touchMode;
   // Aiming slows the view in step with the zoom, so a scope does not swing wildly.
   const pl = state.player;
-  const held = pl.weapons[pl.slot];
-  const zoom = held ? 1 - pl.ads * (1 - sightZoom(WEAPONS[held.kind].adsFov)) : 1;
+  const gun = pl.weapons[pl.slot];
+  const zoom = gun ? 1 - pl.ads * (1 - sightZoom(WEAPONS[gun.kind].adsFov)) : 1;
   const k = 0.0022 * sens * zoom;
   inp.lookX = look.x * k;
   inp.lookY = -look.y * k;
   look.x = look.y = 0;
   inp.fire = fire;
-  inp.ads = ads || adsLatch || (adsMode === "hold" && keys.has("KeyF"));
-  inp.crouch = keys.has("KeyC") || keys.has("ControlLeft");
-  inp.jump = edges.has("Space");
-  inp.reload = edges.has("KeyR");
-  inp.tactical = edges.has("KeyQ");
-  inp.ult = edges.has("KeyZ");
-  inp.interact = edges.has("KeyE");
-  inp.heal = edges.has("KeyH");
-  inp.swap = edges.has("Wheel");
-  inp.slot = edges.has("Digit1") ? 0 : edges.has("Digit2") ? 1 : -1;
+  inp.ads = ads || adsLatch || (adsMode === "hold" && held("aim"));
+  inp.crouch = held("crouch");
+  inp.jump = pressed("jump");
+  inp.reload = pressed("reload");
+  inp.tactical = pressed("tactical");
+  inp.ult = pressed("ult");
+  inp.interact = pressed("use");
+  inp.heal = pressed("heal");
+  inp.swap = pressed("swap");
+  inp.slot = pressed("slot1") ? 0 : pressed("slot2") ? 1 : -1;
   edges.clear();
   return inp;
 }
@@ -289,6 +292,7 @@ new ResizeObserver(() => (dims = size())).observe(stage);
 // without the browser's bars, so say how on the title screen there.
 const ios = /iP(hone|od)/.test(navigator.userAgent);
 const homeScreen = matchMedia("(display-mode: standalone), (display-mode: fullscreen)").matches || (navigator as Navigator & { standalone?: boolean }).standalone === true;
+for (const id of ["title-keys", "pause-keys"]) $(id).innerHTML = keysHtml();
 $("install-help").hidden = !(ios && !homeScreen);
 
 /** Keeps the phone's screen awake in a raid and in the camp; let go when the page is hidden, taken again on return. */
