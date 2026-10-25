@@ -557,8 +557,9 @@ export function stepLoot(s: State, input: Input) {
   const worn: Loot[] = [];
   s.loot = s.loot.filter((l) => {
     l.age += TICK;
-    const d = Math.hypot(l.pos.x - p.pos.x, l.pos.z - p.pos.z, l.pos.y - (p.pos.y + 0.8));
-    if (l.kind === "shard" && l.age > 0.35 && d < PLAYER.shardMagnet && alive) {
+    // Only a shard old enough is drawn to the player, so only its distance is needed.
+    const d = l.kind === "shard" && l.age > 0.35 ? hypot3(l.pos.x - p.pos.x, l.pos.z - p.pos.z, l.pos.y - (p.pos.y + 0.8)) : Infinity;
+    if (d < PLAYER.shardMagnet && alive) {
       const sp = 16;
       l.vel = { x: ((p.pos.x - l.pos.x) / d) * sp, y: ((p.pos.y + 0.8 - l.pos.y) / d) * sp, z: ((p.pos.z - l.pos.z) / d) * sp };
       l.pos.x += l.vel.x * TICK;
@@ -585,7 +586,11 @@ export function stepLoot(s: State, input: Input) {
       l.vel.y = 0;
     }
     if (!alive || l.age < 0.4) return true;
-    const near = Math.hypot(l.pos.x - p.pos.x, l.pos.z - p.pos.z) < PLAYER.pickupRange && Math.abs(l.pos.y - p.pos.y) < 2;
+    // Clearly out of reach by the square of the distance (with room for its rounding); the exact one decides near the edge.
+    const lx = l.pos.x - p.pos.x;
+    const lz = l.pos.z - p.pos.z;
+    const reach = PLAYER.pickupRange * 1.001;
+    const near = lx * lx + lz * lz <= reach * reach && hypot2(lx, lz) < PLAYER.pickupRange && Math.abs(l.pos.y - p.pos.y) < 2;
     if (!near) return true;
     if (l.kind === "heal" && l.heal && p.heals[l.heal] < HEALS[l.heal].max) {
       p.heals[l.heal]++;

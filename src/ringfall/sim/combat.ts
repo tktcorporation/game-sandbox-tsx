@@ -48,7 +48,10 @@ export function assistTarget(s: State, coneDeg: number): { e: Enemy; angle: numb
     if (!targetable(e)) continue;
     const c = bodyCenter(e);
     const v = { x: c.x - eye.x, y: c.y - eye.y, z: c.z - eye.z };
-    const d = Math.hypot(v.x, v.y, v.z);
+    // Clearly out of range by the square of the distance (with room for its rounding); the exact one decides near the edge.
+    const far = ASSIST.range * 1.001;
+    if (v.x * v.x + v.y * v.y + v.z * v.z > far * far) continue;
+    const d = hypot3(v.x, v.y, v.z);
     if (d > ASSIST.range) continue;
     const ang = Math.acos(Math.max(-1, Math.min(1, (v.x * dir.x + v.y * dir.y + v.z * dir.z) / d)));
     const pad = Math.atan(ENEMIES[e.kind].radius / Math.max(d, 1));
@@ -108,7 +111,10 @@ export function fireRay(s: State, w: Weapon, dir: Vec3, touch = false) {
     else if (tb < wallT && (!raw || tb < raw.t)) raw = { e, t: tb, crit: false };
     if (raw) continue;
     const v = { x: c.x - eye.x, y: c.y - eye.y, z: c.z - eye.z };
-    const d = Math.hypot(v.x, v.y, v.z);
+    // Clearly out of range by the square of the distance (with room for its rounding); the exact one decides near the edge.
+    const far = ASSIST.range * 1.001;
+    if (v.x * v.x + v.y * v.y + v.z * v.z > far * far) continue;
+    const d = hypot3(v.x, v.y, v.z);
     if (d > ASSIST.range) continue;
     const ang = Math.acos(Math.max(-1, Math.min(1, (v.x * dir.x + v.y * dir.y + v.z * dir.z) / d)));
     if (ang > coneAt(s, d, pelletScale, touch) + Math.atan(k.radius / Math.max(d, 1))) continue;
