@@ -630,7 +630,6 @@ function abilities(s: State, input: Input) {
       if (spec.shield) p.shield = spec.amount ? Math.min(maxShieldOf(s), p.shield + spec.amount) : maxShieldOf(s);
       else p.hp = spec.amount ? Math.min(PLAYER.hp, p.hp + spec.amount) : PLAYER.hp;
       p.heals[h.kind]--;
-      if (p.lentHeals[h.kind] > 0) p.lentHeals[h.kind]--;
       s.events.push({ t: "healDone", kind: h.kind });
     }
   } else if (input.heal) {

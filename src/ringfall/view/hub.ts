@@ -1,9 +1,9 @@
 import { PLAYER } from "../sim/config";
-import { armorIcon, binPicture, checkIcon, factoryIcon, hideoutIcon, clockIcon, crossIcon, depotIcon, gunIcon, healIcon, keyIcon, lockIcon, modIcon, pouchIcon, robotIcon, routeIcon, SIDE, turretIcon, upIcon } from "./icons";
+import { armorIcon, binPicture, checkIcon, factoryIcon, hideoutIcon, clockIcon, crossIcon, depotIcon, gunIcon, healIcon, keyIcon, lockIcon, modIcon, pinIcon, pouchIcon, robotIcon, routeIcon, SIDE, turretIcon, upIcon } from "./icons";
 import { ALLY, FACTORY, HEALS as HEAL_SPECS, HIDEOUT, MOD_KINDS, RARITY, THREAT, TOOLS, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
-import { boostFor, freeKit, raidClock, strengthFor, type Kit } from "../sim/state";
+import { boostFor, raidClock, strengthFor, type Kit } from "../sim/state";
 import { CAMP, DEPOTS, ENTRIES, entryOf, NODES, POIS, UNLOCKS, poiIndex, poiRegion, REGIONS, regionOf, ROUTES, type EntryId, type PoiId, type RegionId, type StationId } from "../sim/map";
-import { build, buildFactory, buildState, buy, buyPrice, canBuild, canBuildFactory, factoryNeeded, nextFactory, canStartIn, deliver, deliverable, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, itemCost, HEALS, healCount, healRoom, keyName, kitPicks, lentHeals, loadoutCost, price, raidThreat, recallLoadout, sell, sellPrice, setThreat, startsIn, STORY_TAKEN, takenStory, threatPay, take, takeKit, takenContract, wanted, wares, type Item, type Loadout, type Profile } from "../meta/profile";
+import { armed, build, buildFactory, buildState, buy, buyPrice, canBuild, canBuildFactory, factoryNeeded, nextFactory, canStartIn, deliver, deliverable, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, isStarter, issuedHeals, itemCost, HEALS, healCount, healRoom, keyName, kitPicks, loadoutCost, stashUsed, price, raidThreat, recallLoadout, sell, sellPrice, setThreat, startsIn, STORY_TAKEN, takenStory, threatPay, take, takeKit, takenContract, wanted, wares, type Item, type Loadout, type Profile } from "../meta/profile";
 import { CONTRACT_NAME, contractMark, contractRegion, contractText, type Contract, type Reward } from "../meta/contracts";
 import { currentStory, STORIES, storyOf, storyWhere } from "../meta/story";
 import { maxLevel, MODULES, nextLevel, pouchSlots, sources, stashCap, stillNeeded, type Source } from "../meta/hideout";
@@ -105,7 +105,8 @@ function rows(stash: Item[]): { item: Item; index: number[] }[] {
     out.push({ item, index: [n] });
   });
   const order = { weapon: 0, armor: 1, key: 2, tool: 3, heal: 4, valuable: 5 };
-  return out.sort((a, b) => order[a.item.t] - order[b.item.t]);
+  // The starter weapons head the weapons.
+  return out.sort((a, b) => order[a.item.t] - order[b.item.t] || Number(isStarter(b.item)) - Number(isStarter(a.item)));
 }
 
 /** A quest's or a contract's reward items, alike ones counted together. */
@@ -131,6 +132,8 @@ const $ = (id: string) => document.getElementById(id)!;
 const boardKey = (p: Profile) => `${p.board.day}:${p.board.contracts.map((c) => c.id).join(",")}`;
 
 /** An item as its mark in its colour: a gun, armour or a key. */
+/** A starter weapon's mark before its name: a pin, since it stays in the stash. "" for anything else. */
+const starterMark = (i: Item | undefined) => (isStarter(i) ? `<i class="starter">${pinIcon()}</i>` : "");
 const itemMark = (i: Item) => `<span style="color:${color(i)}">${i.t === "weapon" ? gunIcon() : i.t === "armor" ? armorIcon() : keyIcon()}</span>`;
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
 const yen = (n: number) => n.toLocaleString("ja-JP");
@@ -196,7 +199,7 @@ export function whereLine(kind: ValuableKind): string {
 export class Hub {
   /** The station whose panel is open, or null with none open. */
   station: StationId | null = null;
-  /** The loadout for the next raid: the last one picked again while the stash holds it (`recallLoadout()`). With no weapon, the lent kit's. */
+  /** The loadout for the next raid: the last one picked again while the stash holds it (`recallLoadout()`), always with a weapon (`armed()`). */
   private load: Loadout = emptyLoadout();
   private region: RegionId;
   /** The way in of `region` the truck drives to, when not to a depot; null when the region is open only through a depot. */
@@ -258,9 +261,10 @@ export class Hub {
     this.fixStart();
   }
 
-  /** Whether the next raid goes out with the lent kit's weapons: no stash weapon picked. */
-  get lent(): boolean {
-    return !this.load.weapons.length;
+  /** The next raid's weapons, by name, each marked when it is a starter weapon. */
+  pickedWeapons(): { name: string; starter: boolean }[] {
+    const p = this.profile;
+    return this.startLoad().weapons.map((n) => ({ name: itemName(p.stash[n]), starter: isStarter(p.stash[n]) }));
   }
 
   /** Sets a profile whose stash changed under the loadout, keeping the loadout's picks by what they are. */
@@ -270,11 +274,11 @@ export class Hub {
     this.load = recallLoadout({ ...next, lastKit: picks });
   }
 
-  /** Drops loadout picks the stash no longer has at those indices. */
+  /** Drops loadout picks the stash no longer has at those indices; with no weapon left, the starter weapons are picked. */
   private fit(l: Loadout): Loadout {
     const st = this.profile.stash;
     const heals = { ...l.heals };
-    const weapons = l.weapons.filter((n) => st[n]?.t === "weapon");
+    const weapons = armed(this.profile, { ...l, weapons: l.weapons.filter((n) => st[n]?.t === "weapon") }).weapons;
     for (const k of HEALS) heals[k] = Math.min(heals[k], healRoom(this.profile, { ...l, weapons }, k));
     return {
       weapons,
@@ -322,20 +326,6 @@ export class Hub {
       const taken = takenContract(this.profile)?.id === id ? this.profile : take(this.profile, id);
       this.set(setThreat(taken, Number(n)));
       sfx.click();
-    } else if (act === "lent") {
-      // The lent kit's weapons: no stash weapon. Armour, keys and heals picked still go.
-      this.load = { ...this.load, weapons: [] };
-      sfx.click();
-    } else if (act === "own") {
-      // The stash's best two weapons, the rarest first.
-      const best = this.profile.stash
-        .map((i, n) => ({ i, n }))
-        .filter((x) => x.i.t === "weapon")
-        .sort((a, b) => (b.i.t === "weapon" ? b.i.rarity : 0) - (a.i.t === "weapon" ? a.i.rarity : 0) || price(b.i) - price(a.i))
-        .slice(0, 2)
-        .map((x) => x.n);
-      this.load = this.fit({ ...this.load, weapons: best });
-      sfx.click();
     } else if (act === "pick") {
       sfx.click();
       const n = pick[0];
@@ -355,6 +345,7 @@ export class Hub {
       // Sell the last of a group, so the loadout's picks before it keep their indices.
       const n = pick[pick.length - 1];
       const it = this.profile.stash[n];
+      if (isStarter(it)) return this.render();
       // A valuable the hideout or the factory still needs is sold only on a second press.
       if (it?.t === "valuable" && wanted(this.profile)[it.kind] >= 0 && this.armed !== arg) {
         this.armed = arg;
@@ -408,9 +399,9 @@ export class Hub {
     if (!this.entry && !this.from) this.from = startsIn(p, this.region).depots[0] ?? null;
   }
 
-  /** The loadout the next raid takes: with no weapon picked, the lent kit's weapons with the armour, keys and heals picked. */
+  /** The loadout the next raid takes: with no weapon picked, the starter weapons (`armed()`). */
   private startLoad(): Loadout {
-    return this.load;
+    return armed(this.profile, this.load);
   }
 
   /** The truck's depot's allowance and what the loadout costs of it, or null when it drives to a way in. */
@@ -515,9 +506,7 @@ export class Hub {
     const map = [coming ? `明日 ${eventName(coming)}` : "", p.hideout.radio ? "無線" : ""].filter(Boolean).join("・");
     // The board wants looking at while it has contracts and none is taken.
     const open = !takenContract(p) && !takenStory(p) && p.board.contracts.length ? `依頼 ${p.board.contracts.length}` : "";
-    // The shelves say when the next raid would go out with the lent kit's weapons though the stash holds some.
-    const kit = this.lent && p.stash.some((i) => i.t === "weapon") ? "貸出装備" : "";
-    return { map, quests: [ready ? `納品 ${ready}` : "", open].filter(Boolean).join("・"), stash: kit, shop: "", workshop: buildable ? `▲ ${buildable}` : "", factory: canBuildFactory(p) ? `▲ Lv${p.factory + 1}` : "" };
+    return { map, quests: [ready ? `納品 ${ready}` : "", open].filter(Boolean).join("・"), stash: "", shop: "", workshop: buildable ? `▲ ${buildable}` : "", factory: canBuildFactory(p) ? `▲ Lv${p.factory + 1}` : "" };
   }
 
   private item(item: Item, body: { act?: string; arg?: string; on?: boolean; right?: string; count?: number; need?: Needs; warn?: boolean }) {
@@ -526,7 +515,7 @@ export class Hub {
     // A valuable still needed, pressed once to sell, turns red: the second press sells it.
     const text = itemNote(item, body.need);
     const note = text ? `<small class="${body.warn ? "warn" : needed ? "need" : ""}">${text}</small>` : "";
-    const inner = `<span style="color:${color(item)}">${esc(itemName(item))}${n}</span>${note}${body.right ?? ""}`;
+    const inner = `<span style="color:${color(item)}">${starterMark(item)}${esc(itemName(item))}${n}</span>${note}${body.right ?? ""}`;
     return body.act ? `<button type="button" class="item${body.on ? " on" : ""}${body.warn ? " armed" : ""}" data-act="${body.act}" data-arg="${body.arg}">${inner}</button>` : `<div class="item">${inner}</div>`;
   }
 
@@ -708,12 +697,13 @@ export class Hub {
   /**
    * A depot start's allowance as boxes, one a point: each weapon, armour and key the loadout takes
    * fills as many boxes as it costs, in its rarity's colour, and one past the allowance stands out
-   * in red. What costs nothing (the lent kit's weapons, every heal) sits beside the boxes, outside.
+   * in red. What costs nothing (the starter weapons, every heal) sits beside the boxes, outside.
    */
   carryBoxes(budget: number): string {
     const p = this.profile;
-    const l = this.load;
-    const taken = [...new Set(l.weapons)].slice(0, 2).concat(l.armor === null ? [] : [l.armor], l.keys).map((n) => p.stash[n]).filter((i): i is Item => !!i);
+    const l = this.startLoad();
+    const all = [...new Set(l.weapons)].slice(0, 2).concat(l.armor === null ? [] : [l.armor], l.keys).map((n) => p.stash[n]).filter((i): i is Item => !!i);
+    const taken = all.filter((i) => itemCost(i) > 0);
     let used = 0;
     const segs = taken.map((i) => {
       const n = itemCost(i);
@@ -721,10 +711,10 @@ export class Hub {
       return `<i class="seg${used > budget ? " over" : ""}" style="--n:${n}">${itemMark(i)}</i>`;
     });
     const empty = Array.from({ length: Math.max(0, budget - used) }, () => `<i class="seg empty" style="--n:1"></i>`);
-    const lent = lentHeals(p);
+    const issued = issuedHeals(p);
     const free = [
-      ...(this.lent ? freeKit().weapons.map((w) => `<span style="color:${RARITY_CSS[w.rarity]}">${gunIcon()}</span>`) : []),
-      ...HEALS.filter((k) => l.heals[k] + lent[k] > 0).map((k) => `<span>${healIcon(HEAL_SPECS[k].shield)}${l.heals[k] + lent[k]}</span>`),
+      ...all.filter((i) => itemCost(i) === 0).map((i) => itemMark(i)),
+      ...HEALS.filter((k) => l.heals[k] + issued[k] > 0).map((k) => `<span>${healIcon(HEAL_SPECS[k].shield)}${l.heals[k] + issued[k]}</span>`),
     ];
     return `<span class="carry"><span class="boxes">${segs.join("")}${empty.join("")}</span>${free.length ? `<span class="free">${free.join("")}</span>` : ""}</span>`;
   }
@@ -781,32 +771,24 @@ export class Hub {
   }
 
   /**
-   * The shelves: the weapons (the lent kit's or the stash's, chosen by two buttons, with their
-   * numbers), the armour, keys and heals to take (the lent heals always come too), and the truck's
-   * allowance when it drives to a depot.
+   * The shelves: the two weapons picked from the stash (the starter weapons with nothing else
+   * picked) with their numbers, the armour, keys and heals to take (the issued heals always come
+   * too), and the truck's allowance when it drives to a depot.
    */
   private kitPanel(): string {
     const p = this.profile;
-    const lent = lentHeals(p);
-    const slot = (label: string, n: number | null | undefined, extra = "") => `<div class="slot"><small>${label}</small><span${n == null ? ' class="none"' : ` style="color:${color(p.stash[n])}"`}>${n == null ? "なし" : esc(itemName(p.stash[n]))}</span>${extra}</div>`;
+    const issued = issuedHeals(p);
+    const slot = (label: string, n: number | null | undefined, extra = "") => `<div class="slot"><small>${label}</small><span${n == null ? ' class="none"' : ` style="color:${color(p.stash[n])}"`}>${n == null ? "なし" : starterMark(p.stash[n]) + esc(itemName(p.stash[n]))}</span>${extra}</div>`;
     const stat = (n: number | undefined) => {
       const i = n === undefined ? undefined : p.stash[n];
       return i?.t === "weapon" ? `<small class="stat">${esc(weaponStats(i.kind, i.rarity))}</small>` : "";
     };
     const heal = (k: (typeof HEALS)[number]) =>
-      `<div class="slot count"><small>${HEAL_SPECS[k].label}</small><button type="button" data-act="heal-" data-arg="${k}">−</button><b>${this.load.heals[k] + lent[k]}</b><button type="button" data-act="heal+" data-arg="${k}">+</button><small>倉庫 ${this.load.heals[k]}/${healCount(p, k)}${lent[k] ? `・貸出 ${lent[k]}` : ""}</small></div>`;
+      `<div class="slot count"><small>${HEAL_SPECS[k].label}</small><button type="button" data-act="heal-" data-arg="${k}">−</button><b>${this.load.heals[k] + issued[k]}</b><button type="button" data-act="heal+" data-arg="${k}">+</button><small>倉庫 ${this.load.heals[k]}/${healCount(p, k)}${issued[k] ? `・支給 ${issued[k]}` : ""}</small></div>`;
     const keys = this.load.keys.map((n) => esc(itemName(p.stash[n]))).join("・");
-    const owns = p.stash.some((i) => i.t === "weapon");
-    const choice =
-      `<div class="slot choice"><small>武器</small><div class="row"><button type="button" data-act="lent"${this.lent ? ' class="on"' : ""}>貸出装備</button><button type="button" data-act="own"${this.lent ? "" : ' class="on"'}${owns ? "" : " disabled"}>倉庫の武器</button></div></div>`;
-    const weapons = this.lent
-      ? `<div class="slot lent"><small>武器</small><span>${freeKit()
-          .weapons.map((w) => `${WEAPONS[w.kind].name} ${RARITY.names[w.rarity]}`)
-          .join("・")}（貸出）</span></div>`
-      : slot("武器 1", this.load.weapons[0], stat(this.load.weapons[0])) + slot("武器 2", this.load.weapons[1], stat(this.load.weapons[1]));
+    const weapons = slot("武器 1", this.load.weapons[0], stat(this.load.weapons[0])) + slot("武器 2", this.load.weapons[1], stat(this.load.weapons[1]));
     return (
       this.depotSlot() +
-      choice +
       weapons +
       slot("アーマー", this.load.armor) +
       `<div class="slot"><small>鍵</small><span${keys ? ` style="color:${RARITY_CSS[3]}"` : ' class="none"'}>${keys || "なし"}</span></div>` +
@@ -820,11 +802,11 @@ export class Hub {
   kitLines(): { weapons: string; armor: string; heals: string; keys: string } {
     const p = this.profile;
     const l = this.load;
-    const lent = lentHeals(p);
-    const weapons = this.lent ? `${freeKit().weapons.map((w) => WEAPONS[w.kind].name).join("・")}（貸出）` : l.weapons.map((n) => itemName(p.stash[n])).join("・");
+    const issued = issuedHeals(p);
+    const weapons = l.weapons.map((n) => itemName(p.stash[n])).join("・");
     const armor = l.armor === null ? "なし" : itemName(p.stash[l.armor]);
-    const heals = HEALS.filter((k) => l.heals[k] + lent[k] > 0)
-      .map((k) => `${HEAL_SPECS[k].label} ${l.heals[k] + lent[k]}`)
+    const heals = HEALS.filter((k) => l.heals[k] + issued[k] > 0)
+      .map((k) => `${HEAL_SPECS[k].label} ${l.heals[k] + issued[k]}`)
       .join("・");
     const keys = l.keys.map((n) => itemName(p.stash[n])).join("・") || "なし";
     return { weapons, armor, heals: heals || "なし", keys };
@@ -850,7 +832,6 @@ export class Hub {
       ["目的", goal],
     ];
     const warn: string[] = [];
-    if (this.lent && p.stash.some((i) => i.t === "weapon")) warn.push("貸出装備");
 
     return { rows, warn };
   }
@@ -896,7 +877,7 @@ export class Hub {
     $("hub-title").textContent = panel.title;
     $("hub-cash").textContent = yen(p.cash);
     $("hub-record").textContent = `出撃 ${p.raids} ・ 生還 ${p.extracted}`;
-    $("hub-stash-count").textContent = `${p.stash.length} / ${stashCap(p.hideout)}`;
+    $("hub-stash-count").textContent = `${stashUsed(p)} / ${stashCap(p.hideout)}`;
     $("hub").dataset.station = st;
     $("hub-stash-col").hidden = !panel.stash;
     $("hub-cols").classList.toggle("one", !panel.stash);
@@ -913,9 +894,11 @@ export class Hub {
           .map(({ item, index }) => {
             const on = kit && used.has(index[0]);
             // When the truck drives to a depot, each pick shows what it costs of the depot's allowance.
-            const cost = kit && this.from && (item.t === "weapon" || item.t === "armor" || item.t === "key") ? `枠 ${itemCost(item)}` : "";
-            const right = shop ? `<b>売る ${yen(sellPrice(item))}</b>` : on ? `<b>持っていく${cost ? `・${cost}` : ""}</b>` : cost ? `<b class="cost">${cost}</b>` : item.t === "valuable" ? `<b>${yen(price(item))}</b>` : "";
-            const act = shop ? "sell" : kit && (item.t === "weapon" || item.t === "armor" || item.t === "key") ? "pick" : undefined;
+            const cost = kit && this.from && itemCost(item) > 0 ? `枠 ${itemCost(item)}` : "";
+            // A starter weapon is not for sale: on the trader's side it is a plain line, with no price.
+            const fixed = isStarter(item);
+            const right = shop ? (fixed ? "" : `<b>売る ${yen(sellPrice(item))}</b>`) : on ? `<b>持っていく${cost ? `・${cost}` : ""}</b>` : cost ? `<b class="cost">${cost}</b>` : item.t === "valuable" ? `<b>${yen(price(item))}</b>` : "";
+            const act = shop ? (fixed ? undefined : "sell") : kit && (item.t === "weapon" || item.t === "armor" || item.t === "key") ? "pick" : undefined;
             return this.item(item, { act, arg: index.join(","), on, right, count: index.length, need, warn: shop && this.armed === index.join(",") });
           })
           .join("") || `<p class="empty">0 / ${stashCap(p.hideout)}</p>`;
@@ -927,7 +910,7 @@ export class Hub {
         MODULES.map((m) => this.moduleCard(m)).join("") + this.routes();
       $("hub-side").querySelector(".mod.open .mod-body")?.parentElement?.scrollIntoView({ block: "nearest" });
     } else if (shop) {
-      const full = p.stash.length >= stashCap(p.hideout);
+      const full = stashUsed(p) >= stashCap(p.hideout);
       $("hub-side").innerHTML = shelfTiers(p) + wares(p)
         .map((item, n) => `<button type="button" class="item" data-act="buy" data-arg="${n}" ${p.cash < buyPrice(item) || full ? "disabled" : ""}><span style="color:${color(item)}">${esc(itemName(item))}</span><small${item.t === "valuable" && want[item.kind] > 0 ? ' class="need"' : ""}>${item.t === "valuable" ? (want[item.kind] > 0 ? `${upIcon()}${want[item.kind]}` : need.hideout[item.kind] + need.factory[item.kind] > 0 ? checkIcon() : "") : itemNote(item)}</small><b>${yen(buyPrice(item))}</b></button>`)
         .join("");

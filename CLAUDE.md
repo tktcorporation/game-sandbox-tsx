@@ -91,11 +91,16 @@ keeps a stash, a trader and the loadout for the next raid:
 `src/ringfall/meta/profile.ts` is its pure logic (`takeKit()` out of the stash, `settle()` after a
 raid, the pouch that survives a wipe), `meta/storage.ts` saves it in localStorage, and `META` in
 `config.ts` holds its numbers. `newRun(seed, kit, region)` starts a raid from a kit; the default is
-the lent free kit, which is what the sim gate plays; `Profile.region` and `Profile.entry` remember
-the last start. The free kit's heals and the infirmary's are lent to every raid (`lentHeals()`),
-own weapons or not, and armour and keys go with the lent weapons too. `takeKit()` records what it
-took (`Profile.lastKit`) and the shelves pick it again while the stash holds things like it
-(`recallLoadout()`). The valuables still wanted (`wanted()`, for the stash's notes and the order in
+`starterKit()` (the starter weapons and the issued heals), which is what the sim gate plays;
+`Profile.region` and `Profile.entry` remember the last start. The stash always holds the starter
+weapons (`META.starter.weapons`, PIKE and TALON common, stash items marked `starter`): `withStarters()`
+keeps them there in `newProfile()`, `parseProfile()` and `settle()`, `takeKit()` sends them along
+without taking them out, so no raid loses them, `sell()` refuses them, and they take no stash room
+(`stashUsed()`) nor depot allowance (`itemCost()`). A loadout that picks no weapon picks them
+(`armed()`). `META.starter.heals` and the infirmary's are issued to every raid on top of what it
+takes (`issuedHeals()`), and what is left of them comes home like any other heal. `takeKit()`
+records what it took (`Profile.lastKit`) and the shelves pick it again while the stash holds things
+like it (`recallLoadout()`). The valuables still wanted (`wanted()`, for the stash's notes and the order in
 which `settle()` keeps what fits) count the factory's levels as well as the hideout's.
 The trader's quests are data in `meta/quests.ts` (`QUESTS`: four intro quests; credited from a raid's `stats` by `creditRaid()` inside `settle()`). The quest board
 also holds the day's contracts (`meta/contracts.ts`): `makeBoard()` builds 3 or 4 from
@@ -112,7 +117,7 @@ contracts (`meta/story.ts`) follow one at a time: the one under way lays its rec
 only with that POI's key; keys drop from the bins of the POI named by its `keyFrom` (`VAULT`).
 POIs have a stable `id` (`PoiId` in `map.ts`); saves, quests, `keyFrom` and `EXTRA_BINS` refer to a
 POI by it, never by its place in `POIS` (the run's state may index `POIS` internally). The profile
-is versioned (`Profile.v`, which is 22), and `parseProfile()` moves older saves forward (a save from
+is versioned (`Profile.v`, which is 23), and `parseProfile()` moves older saves forward (a save from
 before the ways in starts at its region's first way in; a save from before ways in were learned
 knows them all; a save from before v12 drops its explored map, since `cellOf()` follows `WORLD`,
 which then grew wider; a save from before v13 starts on the day after its raids with every POI
@@ -120,7 +125,8 @@ held; a save from before v14 keeps only the quests that still exist; a save from
 quiet day and tomorrow's event drawn; a save from before v17 knows the starting mod kinds and plays
 at threat 0; a save from before v19 has the factory at level 0; a save from before v20 remembers no
 loadout; a save from before v22 has its POIs freed or thin the player's and the rest the enemy's,
-and drops the network, its pressure, the outposts' standing and the battles' points) and moves its
+and drops the network, its pressure, the outposts' standing and the battles' points; a save from
+before v23 gains the starter weapons) and moves its
 start to one it may choose (`allowedStart()`).
 Each island day has at most one event (`EVENTS` in `config.ts`, `IslandEvent` in `sim/island.ts`):
 `advanceDay()` turns yesterday's forecast into today's and draws tomorrow's from `Profile.seed` and
@@ -140,7 +146,7 @@ leaves the raid there; neither works while a robot fighting the player is within
 `newRun(seed, kit, region, start)` may begin on the ground at a depot that a node held opens a start from
 (`departDepots()` in `meta/island.ts`: the supply depot's and the yard's, `UNLOCKS[].depart`).
 A start from a depot carries a limited loadout: `loadoutCost()` prices stash weapons, armour and keys
-(the lent kit and heals are free), `depotAllowance()` gives the depot's level and budget from the
+(the starter weapons and heals are free), `depotAllowance()` gives the depot's level and budget from the
 credits' worth sent through it (`Profile.depotSent`, added up in `settle()` from `State.sentVia`), and
 `takeKit(p, loadout, from)` refuses a loadout over it (`fitsStart()`); the numbers are in `DEPOT`.
 Some ways are blocked until a tool opens them for good: `ROUTES` in `map.ts` (a stable `RouteId`,

@@ -387,7 +387,7 @@ export const DEPOT = {
   /** Loadout points a raid started from a depot may carry, by that depot's level. A start at a way in has no limit. */
   budget: [2, 4, 6, 9],
   /**
-   * Points a stash weapon costs, by rarity. The lent free kit and every heal cost nothing: a
+   * Points a stash weapon costs, by rarity. The starter weapons and every heal cost nothing: a
    * start with them alone is always allowed, so a depot never locks the player out.
    */
   weaponCost: [1, 2, 3, 4],
@@ -699,8 +699,8 @@ export const ENTRY = {
 /**
  * Between raids: what the player keeps, what things cost, and what is lost. Whatever is
  * taken into a raid is lost with it on a wipe, except what fits in the pouch: the most
- * valuable things in the bag, up to its slots. A raid with the free kit risks nothing:
- * its gear is lent and goes back at the end, whatever happens.
+ * valuable things in the bag, up to its slots. The starter weapons are the exception: they
+ * stay in the stash whatever happens, so a raid with them alone risks no gun.
  */
 export const META = {
   /** Things the stash holds (each weapon, armour, item or valuable is one). */
@@ -712,8 +712,11 @@ export const META = {
     weapons: [{ kind: "pike", rarity: 0 }, { kind: "hornet", rarity: 0 }] as { kind: WeaponKind; rarity: Rarity }[],
     heals: { cell: 2, battery: 0, syringe: 2, medkit: 0 } as Record<HealKind, number>,
   },
-  /** The lent kit of a free raid. */
-  free: {
+  /**
+   * The starter weapons, which the stash always holds and no raid loses (they cannot be sold),
+   * and the heals issued to every raid on top of what it takes from the stash.
+   */
+  starter: {
     weapons: [{ kind: "pike", rarity: 0 }, { kind: "talon", rarity: 0 }] as { kind: WeaponKind; rarity: Rarity }[],
     heals: { cell: 2, battery: 0, syringe: 2, medkit: 0 } as Record<HealKind, number>,
   },
@@ -759,7 +762,7 @@ export interface ModuleLevel {
 export const HIDEOUT: Record<ModuleId, { name: string; note: string; levels: ModuleLevel[] }> = {
   infirmary: {
     name: "医務室",
-    note: "毎回のレイドに回復を持たせる（貸出装備でも）",
+    note: "毎回のレイドに回復を支給する",
     levels: [
       { items: [["parts", 3], ["fuse", 3]], cash: 250, does: "注射器 +1" },
       { items: [["parts", 3], ["board", 3], ["fuse", 2]], cash: 1000, does: "注射器 +1、シールドセル +2" },
@@ -803,7 +806,7 @@ export const HIDEOUT: Record<ModuleId, { name: string; note: string; levels: Mod
 
 /** The hideout's effects, by module level (index 0 is unbuilt), on top of `META`'s base numbers. */
 export const HIDEOUT_EFFECT = {
-  /** Heals the infirmary adds to every raid's kit, lent like the free kit's. */
+  /** Heals the infirmary adds to every raid's issue, on top of `META.starter.heals`. */
   infirmary: [{}, { syringe: 1 }, { syringe: 1, cell: 2 }, { syringe: 2, cell: 2, medkit: 1 }] as Partial<Record<HealKind, number>>[],
   /** Steps of rarity of the valuables the trader sells above `META.materials.rarity`. */
   workbench: [0, 1, 2],

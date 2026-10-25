@@ -2,13 +2,13 @@
  * The island over a month for RINGFALL's sim gate: for each skill, a bot plays `DAYS`
  * consecutive days on one profile, so the six nodes' holders carry from raid to raid. Each day
  * the bot starts in the region with the most nodes on the front (then the most POIs the enemy
- * still holds, the reservoir on a tie), at one of its ways in in turn, plays its normal raid on
- * the lent kit, and the raid is settled as a player's would be. The day's island event (a debris
+ * still holds, the reservoir on a tie), at one of its ways in in turn, plays its normal raid with
+ * the best guns and armour of its stash, and the raid is settled as a player's would be. The day's island event (a debris
  * fall, a storm, a crews' visit) comes as announced. Each raid is the day's battle (陣取り戦,
  * sim/battle.ts) with the factory the profile has built: whoever holds each node when the battle
- * ends holds it the next day. It takes no contract. It plays the lent kit, so before the first
- * day and after each it sells everything in the stash but the valuables the factory's next levels
- * ask for, and raises the factory whenever the stash and the credits allow, buying from the
+ * ends holds it the next day. It takes no contract. Before the first day and after each it buys
+ * gear (`gearUp()`), sells everything in the stash but that kit, the starter weapons (not for
+ * sale) and the valuables the factory's next levels ask for, and raises the factory whenever the stash and the credits allow, buying from the
  * trader the materials the stash lacks; it spends on nothing else.
  *
  *   npx tsx scripts/ringfall-campaign.ts [days]
@@ -131,7 +131,7 @@ export function playCampaign(skill: string, days = DAYS): Campaign {
   let p: Profile = spend({ ...newProfile(17), entries: ENTRIES.map((e) => e.id) });
   const out: Campaign = { skill, days: [], errors: [] };
   for (let d = 1; d <= days; d++) {
-    // The kit: the stash's best guns and armour, or the lent kit while it holds no gun.
+    // The kit: the stash's best guns and armour; the starter PIKE and TALON while it holds none better.
     const gear = bestGear(p);
     const gun = Math.max(0, ...gear.weapons.map((n) => { const i = p.stash[n]; return i?.t === "weapon" ? i.rarity : 0; }));
     const region = REGIONS.map((r) => r.id).reduce((a, b) => (work(p, b, gun) > work(p, a, gun) ? b : a));

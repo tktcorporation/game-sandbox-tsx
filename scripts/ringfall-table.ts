@@ -9,7 +9,7 @@ import { TICK } from "../src/ringfall/sim/config";
 import { BOXES, EXTRACTS, regionOf, type RegionId } from "../src/ringfall/sim/map";
 import { inWorld } from "../src/ringfall/sim/geom";
 import { Bot, SKILLS, type Skill } from "../src/ringfall/sim/bot";
-import { freeKit, newRun, type State } from "../src/ringfall/sim/state";
+import { starterKit, newRun, type State } from "../src/ringfall/sim/state";
 import { step } from "../src/ringfall/sim/step";
 import { haulValue } from "../src/ringfall/sim/results";
 import { recordOf, type RaidRecord } from "./ringfall-pacing";
@@ -101,7 +101,7 @@ const skillNamed = (name: string): Skill => {
 export function playRaid(region: RegionId, skillName: string, r: number): RaidResult {
   // Each raid starts at one of the region's ways in, in turn.
   const ways = regionOf(region).entries;
-  return playState(newRun(1000 + r * 7919, freeKit(), region, { entry: ways[r % ways.length] }), skillName, r);
+  return playState(newRun(1000 + r * 7919, starterKit(), region, { entry: ways[r % ways.length] }), skillName, r);
 }
 
 /** A bot of `skillName` plays the raid `s` to its end (its own numbers drawn from `r`); `s` is left as the raid ended. */
