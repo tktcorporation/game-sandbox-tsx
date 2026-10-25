@@ -1324,11 +1324,19 @@ const readOf = async (pg) => JSON.parse(await pg.evaluate(() => window.render_ga
   await pg.screenshot({ path: `${out}/43-hub-sell-warn.png` });
   await board.click();
   if ((await readOf(pg)).profile.stash !== h1.profile.stash - 1) errors.push("hideout: the second press did not sell the board");
+  // The starter weapons stand at the head of the stash with their pins, and the trader buys neither: no button, no price.
+  const pinned = await pg.evaluate(() => [...document.querySelectorAll("#hub-stash .item")].filter((e) => e.querySelector(".starter")).map((e) => ({ button: e.tagName === "BUTTON", price: /売る/.test(e.textContent ?? "") })));
+  if (pinned.length !== 2 || pinned.some((x) => x.button || x.price)) errors.push(`hideout: the trader's side shows the starter weapons as ${JSON.stringify(pinned)}`);
+  await pg.locator("#hub-stash .item", { has: pg.locator(".starter") }).first().click({ force: true });
+  if ((await readOf(pg)).profile.stash !== h1.profile.stash - 1) errors.push("hideout: clicking a starter weapon at the trader sold it");
+  await pg.screenshot({ path: `${out}/43-hub-shop-starters.png` });
   // The raid walked out to next is the one the radio told of.
   await closePanel(pg);
   await useStation(pg, "stash");
-  await pg.click("#hub-side [data-act=lent]");
-  if (!(await readOf(pg)).camp.lent) errors.push("camp: the shelves' lent kit button did not choose the lent kit");
+  // With no last raid's loadout the shelves pick the starter weapons, each marked with its pin.
+  const picked = (await readOf(pg)).camp.weapons;
+  if (picked.length !== 2 || !picked.every((w) => w.starter) || (await pg.locator("#hub-side .slot .starter").count()) !== 2) errors.push(`camp: the shelves picked ${JSON.stringify(picked)}, not the two starter weapons with their pins`);
+  await pg.screenshot({ path: `${out}/44-shelves-starters.png` });
   await closePanel(pg);
   const raid = await walkOutOfGate(pg);
   if (!intel.includes(raid.boost.name)) errors.push(`hideout: the radio said "${intel}", the raid boosts ${raid.boost.name}`);
@@ -1363,7 +1371,7 @@ const readOf = async (pg) => JSON.parse(await pg.evaluate(() => window.render_ga
   await pg.tap("#depart-cancel");
   // The rare PIKE and an epic armour are past a level 0 depot's allowance: the yard's boxes turn red and the confirm is shut.
   await useStation(pg, "stash", cdp);
-  await pg.locator("#hub-stash [data-act=pick]", { hasText: "PIKE" }).tap();
+  await pg.locator("#hub-stash [data-act=pick]", { hasText: "PIKE レア" }).tap();
   await pg.locator("#hub-stash [data-act=pick]", { hasText: "アーマー" }).tap();
   await closePanel(pg, true);
   await useStation(pg, "vehicle", cdp);
@@ -1446,7 +1454,7 @@ const readOf = async (pg) => JSON.parse(await pg.evaluate(() => window.render_ga
   const allowance = () => pg.evaluate(() => document.querySelector("#hub-side .slot.depot")?.textContent ?? "");
   const refused = async () => (await readOf(pg)).camp.ride.refused;
   await useStation(pg, "stash");
-  await pg.locator("#hub-stash [data-act=pick]", { hasText: "PIKE" }).click();
+  await pg.locator("#hub-stash [data-act=pick]", { hasText: "PIKE レア" }).click();
   const fits = await allowance();
   if (!/Lv0/.test(fits) || !/2 \/ 2/.test(fits) || !/1,500/.test(fits) || (await refused())) errors.push(`depot: with the PIKE the allowance reads "${fits}", the departure ${(await refused()) || "goes"}`);
   await pg.screenshot({ path: `${out}/46-stash-depot-budget.png` });
@@ -1473,7 +1481,8 @@ const readOf = async (pg) => JSON.parse(await pg.evaluate(() => window.render_ga
   await pickStart(pg, "depot", "supply");
   await pg.keyboard.press("Escape");
   await useStation(pg, "stash");
-  await pg.click("#hub-side [data-act=lent]");
+  // The rare PIKE and the armour put back: the starter TALON alone costs nothing.
+  await pg.locator("#hub-stash [data-act=pick]", { hasText: "PIKE レア" }).click();
   await pg.locator("#hub-stash [data-act=pick]", { hasText: "アーマー" }).click();
   await closePanel(pg);
   await rideOut(pg);
@@ -2234,7 +2243,7 @@ for (const phone of [false, true]) {
 /*
  * Six rules the screens show by layout, colour and motion instead of a sentence
  * (docs/ringfall/island-v2.md, 見せ方), on the desktop and a phone on its side: the carry-in
- * allowance as boxes (the lent kit and heals outside them), the pouch's slots in its colour (the
+ * allowance as boxes (the starter weapons and heals outside them), the pouch's slots in its colour (the
  * shelves, the HUD's bag, a wipe's results), one contract a raid (the others pale) and a new day's
  * papers sliding onto the board, the flare's smoke over a tall building's top floor and its mark
  * by the plateau's pickup on the map, the ways in a raid learned turning from dashed to solid,
@@ -2253,7 +2262,7 @@ for (const phone of [false, true]) {
   await pickStart(pg, "depot", "supply", phone);
   await pg.keyboard.press("Escape");
   await useStation(pg, "stash");
-  await pg.locator("#hub-stash [data-act=pick]", { hasText: "PIKE" }).click();
+  await pg.locator("#hub-stash [data-act=pick]", { hasText: "PIKE レア" }).click();
   const boxes = await pg.evaluate(() => ({ full: document.querySelectorAll("#hub-side .slot.depot .seg:not(.empty)").length, free: document.querySelectorAll("#hub-side .slot.depot .free span").length, pouch: document.querySelectorAll("#hub-side .slot.pouch .seg.pouch").length }));
   if (boxes.full !== 1 || boxes.free < 1 || boxes.pouch !== 3) errors.push(`${why}: the carry-in boxes read ${JSON.stringify(boxes)}`);
   await snap("1-carry");

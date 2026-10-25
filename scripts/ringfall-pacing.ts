@@ -3,7 +3,7 @@
  * really played. Each playthrough draws raids of one skill from the recorded pool, settles
  * them in order, and spends with a greedy policy: deliver what the trader asks, build the
  * cheapest level that can be built (buying what it lacks, if the trader sells it), and
- * sell all gear (the bots play the lent kit) and every valuable nothing still needs, and keep
+ * sell all gear (the bots play the starter weapons, which cannot be sold) and every valuable nothing still needs, and keep
  * room in the stash for a full bag. It starts in the region whose recorded raids bring
  * home the most worth, above all what the hideout wants and cannot buy.
  */
@@ -11,12 +11,12 @@ import { BAG, HIDEOUT, META, VALUABLES, type ModuleId, type ValuableKind } from 
 import { ENTRIES, POIS, REGIONS, type RegionId } from "../src/ringfall/sim/map";
 import type { State } from "../src/ringfall/sim/state";
 import { hideoutDone, MODULES, maxLevel, nextLevel, onSale, pouchSlots, stashCap } from "../src/ringfall/meta/hideout";
-import { build, buy, canBuild, deliver, deliverable, hideoutWanted as wanted, newProfile, pouch, sell, settle, shortfall, type Profile } from "../src/ringfall/meta/profile";
+import { build, buy, canBuild, deliver, deliverable, hideoutWanted as wanted, newProfile, pouch, sell, settle, shortfall, stashUsed, type Profile } from "../src/ringfall/meta/profile";
 import { offered } from "../src/ringfall/meta/quests";
 
 /** What settle() reads of a raid, kept from each bot run. */
 export type RaidRecord = Pick<State, "outcome" | "extractedAt" | "region" | "time" | "stats" | "sent" | "sentVia" | "depots" | "seen"> & {
-  player: Pick<State["player"], "weapons" | "armor" | "heals" | "lentHeals" | "haul" | "keys">;
+  player: Pick<State["player"], "weapons" | "armor" | "heals" | "haul" | "keys">;
 };
 
 export const recordOf = (s: State): RaidRecord => ({
@@ -29,7 +29,7 @@ export const recordOf = (s: State): RaidRecord => ({
   sentVia: [...s.sentVia],
   depots: [...s.depots],
   seen: [...s.seen],
-  player: structuredClone({ weapons: s.player.weapons, armor: s.player.armor, heals: s.player.heals, lentHeals: s.player.lentHeals, haul: s.player.haul, keys: s.player.keys }),
+  player: structuredClone({ weapons: s.player.weapons, armor: s.player.armor, heals: s.player.heals, haul: s.player.haul, keys: s.player.keys }),
 });
 
 /** Raids played per skill and region. */
@@ -92,7 +92,7 @@ function spend(p: Profile): Profile {
       }
     }
   }
-  // Sell gear and every valuable no level nor delivery still wants, last entries first so indices hold.
+  // Sell gear (the starter weapons are not for sale) and every valuable no level nor delivery still wants, last entries first so indices hold.
   const want = wanted(p);
   for (const q of offered(p.quests)) if (q.goal.t === "deliver") want[q.goal.valuable] += q.goal.n;
   for (let n = p.stash.length - 1; n >= 0; n--) {
@@ -108,7 +108,7 @@ function spend(p: Profile): Profile {
   // the most plentiful first, until a bag fits.
   const next: Partial<Record<ValuableKind, number>> = {};
   for (const m of MODULES) for (const [k, c] of nextLevel(p.hideout, m)?.items ?? []) next[k] = Math.max(next[k] ?? 0, c);
-  while (p.stash.length > stashCap(p.hideout) - BAG.slots) {
+  while (stashUsed(p) > stashCap(p.hideout) - BAG.slots) {
     const count: Partial<Record<ValuableKind, number>> = {};
     for (const i of p.stash) if (i.t === "valuable") count[i.kind] = (count[i.kind] ?? 0) + 1;
     const spare = (Object.keys(count) as ValuableKind[]).map((k) => [k, count[k]! - (next[k] ?? 0)] as const).filter(([, x]) => x > 0);

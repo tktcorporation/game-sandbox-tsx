@@ -20,27 +20,25 @@ export interface Weapon {
   kind: WeaponKind;
   rarity: Rarity;
   mag: number;
-  /** Lent for a free raid: it goes back to the trader and never reaches the stash. */
-  loan?: boolean;
+  /** A starter weapon (`META.starter`): it never left the stash, so it is not lost with the raid nor brought home. */
+  starter?: boolean;
 }
 
 /** What the player takes into a raid. */
 export interface Kit {
-  weapons: { kind: WeaponKind; rarity: Rarity; loan?: boolean }[];
+  weapons: { kind: WeaponKind; rarity: Rarity; starter?: boolean }[];
   armor: Rarity;
+  /** Heals carried: those issued to every raid and those taken from the stash, alike. */
   heals: Record<HealKind, number>;
-  /** Of `heals`, how many are lent (used first, never brought home). */
-  lentHeals: Record<HealKind, number>;
   /** Vault keys taken along, as POI indices. */
   keys: number[];
 }
 
-/** The lent kit of a free raid, which is also the default for the gates. */
-export const freeKit = (): Kit => ({
-  weapons: META.free.weapons.map((w) => ({ ...w, loan: true })),
+/** The starter weapons with the heals issued to every raid: a new player's kit, and the default for the gates. */
+export const starterKit = (): Kit => ({
+  weapons: META.starter.weapons.map((w) => ({ ...w, starter: true })),
   armor: 0,
-  heals: { ...META.free.heals },
-  lentHeals: { ...META.free.heals },
+  heals: { ...META.starter.heals },
   keys: [],
 });
 
@@ -92,8 +90,6 @@ export interface Player {
   reveal: number; // seconds left of seeing robots through walls
   stepNoise: number; // seconds until the next sprint footstep sound
   heals: Record<HealKind, number>;
-  /** Of `heals`, how many are still lent: used first, and never brought home. */
-  lentHeals: Record<HealKind, number>;
   /** Flares carried (0 or 1): they call the plateau pickup. */
   flares: number;
   /** Valuables carried; their worth is the raid's score if the player gets off the island. */
@@ -911,7 +907,7 @@ export function raidClock(strength: number, threat: number) {
  * ways in, or at a depot already on (in that depot's region). The default is the reservoir,
  * which the sim gate plays.
  */
-export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reservoir", start: Start = {}): State {
+export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = "reservoir", start: Start = {}): State {
   const routes = openRoutes(start.routes ?? []);
   useRoutes(routes);
   // The hunters' fields kept from an earlier raid would steer this one's hunters near the
@@ -988,7 +984,6 @@ export function newRun(seed = 1, kit: Kit = freeKit(), region: RegionId = "reser
       reveal: 0,
       stepNoise: 0,
       heals: { ...kit.heals },
-      lentHeals: { ...kit.lentHeals },
       flares: 0,
       haul: [],
       haulAt: [],

@@ -4,7 +4,7 @@ import { groundAt } from "./geom";
 import { CAMP, inCamp, type CampSpot, type RouteId } from "./map";
 import { stepPlayer } from "./player";
 import { useRoutes } from "./routes";
-import { freeKit, idleInput, newRun, type Input, type Kit, type State } from "./state";
+import { starterKit, idleInput, newRun, type Input, type Kit, type State } from "./state";
 
 /*
  * The camp between raids: the player and the teammate walk the yard (map.ts `CAMP`) with no
@@ -14,7 +14,7 @@ import { freeKit, idleInput, newRun, type Input, type Kit, type State } from "./
  */
 
 /** The camp's state: the player waking in front of the tent with `kit` in hand, the teammate beside them. */
-export function newCamp(seed: number, routes: readonly RouteId[] = [], kit: Kit = freeKit()): State {
+export function newCamp(seed: number, routes: readonly RouteId[] = [], kit: Kit = starterKit()): State {
   const s = newRun(seed, kit, "reservoir", { routes: [...routes] });
   s.enemies = [];
   s.squads = [];

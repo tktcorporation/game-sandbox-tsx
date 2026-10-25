@@ -29,7 +29,7 @@ export interface Kit {
   rarity: Rarity;
   armor: Rarity;
 }
-export const LENT: Kit = { name: "lent", gun: "pike", rarity: 0, armor: 0 };
+export const STARTER: Kit = { name: "start", gun: "pike", rarity: 0, armor: 0 };
 export const RARE: Kit = { name: "rare", gun: "pike", rarity: 1, armor: 1 };
 
 export interface Duel {
@@ -53,7 +53,7 @@ const LIMIT = 30;
 
 /** A run with nobody about: no robots, no teammate, no timers. */
 function emptyRun(seed: number, kit: Kit): State {
-  const s = newRun(seed, { weapons: [{ kind: kit.gun, rarity: kit.rarity }], armor: kit.armor, heals: { cell: 0, battery: 0, syringe: 0, medkit: 0 }, lentHeals: { cell: 0, battery: 0, syringe: 0, medkit: 0 }, keys: [] });
+  const s = newRun(seed, { weapons: [{ kind: kit.gun, rarity: kit.rarity }], armor: kit.armor, heals: { cell: 0, battery: 0, syringe: 0, medkit: 0 }, keys: [] });
   s.enemies = [];
   s.phase = "play";
   s.cleared = POIS.map(() => true);
@@ -307,7 +307,7 @@ export function cell(kind: EnemyKind, dist: number, way: Way, kit: Kit, n: numbe
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 
 /**
- * The gate's check: a casual aim with the lent kit against one grunt at 20 and 25 m and one heavy
+ * The gate's check: a casual aim with the starter PIKE against one grunt at 20 and 25 m and one heavy
  * at 25 m, standing, strafing, flanking and from cover. Standing in the open trades about evenly
  * with a grunt over those distances and loses more often to a heavy; strafing, going round and
  * cover each win clearly more often than standing.
@@ -318,7 +318,7 @@ export function duelLines(n = 40): { lines: string[]; errors: string[] } {
   const row = (kind: EnemyKind, dist: number) => {
     const c: Partial<Record<Way, Cell>> = {};
     for (const way of ["stand", "strafe", "flank", "cover"] as Way[]) {
-      const x = cell(kind, dist, way, LENT, n);
+      const x = cell(kind, dist, way, STARTER, n);
       if (!x) {
         errors.push(`duel scenario: no ground for a ${way} duel at ${dist} m`);
         return null;
@@ -350,10 +350,10 @@ if (import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith
   console.log(`duels: ${n} seeds each, the player alone with a ${SKILLS[1].name} aim unless noted`);
   console.log("win: player won; ttk / ttd: median seconds to the robot's / the player's fall; taken: median damage the player took");
   console.log("shots: robot shots per duel; acc: share of them that hit; idle: share of the duel the robot could fire but did not; first: median seconds to its first shot");
-  console.log(["kit ", "skill   ", "kind   ", "dist", "way   ", "win ", "ttk ", "ttd ", "taken", "shots", "acc ", "idle", "first"].join(" "));
+  console.log(["kit  ", "skill   ", "kind   ", "dist", "way   ", "win ", "ttk ", "ttd ", "taken", "shots", "acc ", "idle", "first"].join(" "));
   const kinds: EnemyKind[] = only ? [only as EnemyKind] : ["grunt", "heavy", "charger", "drone"];
-  for (const kit of [LENT, RARE])
-    for (const skill of kit === LENT ? [0, 1, 2] : [1])
+  for (const kit of [STARTER, RARE])
+    for (const skill of kit === STARTER ? [0, 1, 2] : [1])
       for (const kind of kinds)
         for (const dist of [15, 20, 25, 40])
           for (const way of ["stand", "strafe", "flank", "cover"] as Way[]) {
@@ -364,7 +364,7 @@ if (import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith
               continue;
             }
             const f = (x: number) => (Number.isFinite(x) ? x.toFixed(1) : "-");
-            console.log([kit.name.padEnd(4), SKILLS[skill].name.padEnd(8), kind.padEnd(7), String(dist).padEnd(4), way.padEnd(6), pct(c.win).padEnd(4), f(c.ttk).padEnd(4), f(c.ttd).padEnd(4), String(Math.round(c.taken)).padEnd(5), c.shots.toFixed(1).padEnd(5), pct(c.acc).padEnd(4), pct(c.idle).padEnd(4), f(c.first)].join(" "));
+            console.log([kit.name.padEnd(5), SKILLS[skill].name.padEnd(8), kind.padEnd(7), String(dist).padEnd(4), way.padEnd(6), pct(c.win).padEnd(4), f(c.ttk).padEnd(4), f(c.ttd).padEnd(4), String(Math.round(c.taken)).padEnd(5), c.shots.toFixed(1).padEnd(5), pct(c.acc).padEnd(4), pct(c.idle).padEnd(4), f(c.first)].join(" "));
           }
   const gate = duelLines();
   for (const l of gate.lines) console.log(l);
