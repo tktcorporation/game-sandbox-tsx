@@ -10,9 +10,13 @@ import type { IslandEvent } from "../sim/island";
 import { built, creditRaid, emptyLog, need, offered, QUEST_IDS, type Quest, type QuestLog } from "./quests";
 import { currentStory, STORIES, type Story } from "./story";
 
-/** One thing in the stash. Heals are one entry per unit, so the stash cap counts them. */
+/**
+ * One thing in the stash. Heals are one entry per unit, so the stash cap counts them. A weapon
+ * marked `starter` is one of the starter weapons (`META.starter`), which the stash always holds
+ * (`withStarters()`): it cannot be sold, no raid loses it, and it takes no room.
+ */
 export type Item =
-  | { t: "weapon"; kind: WeaponKind; rarity: Rarity }
+  | { t: "weapon"; kind: WeaponKind; rarity: Rarity; starter?: true }
   | { t: "armor"; tier: Rarity }
   | { t: "heal"; kind: HealKind }
   | { t: "valuable"; kind: ValuableKind }
@@ -21,7 +25,7 @@ export type Item =
 
 /** What persists between raids. */
 export interface Profile {
-  v: 22;
+  v: 23;
   cash: number;
   stash: Item[];
   raids: number;
@@ -75,7 +79,7 @@ export interface Profile {
 
 /** A loadout by what it holds rather than by stash index: what `Profile.lastKit` keeps. */
 export interface KitPicks {
-  weapons: { kind: WeaponKind; rarity: Rarity }[];
+  weapons: { kind: WeaponKind; rarity: Rarity; starter?: true }[];
   /** The armour's tier, 0 for none. */
   armor: Rarity;
   keys: PoiId[];
@@ -102,10 +106,36 @@ export const canStartIn = (p: Pick<Profile, "entries" | "depots" | "poiState">, 
   return s.entries.length > 0 || s.depots.length > 0;
 };
 
+/** Whether a stash entry is one of the starter weapons. */
+export const isStarter = (i: Item | undefined): boolean => i?.t === "weapon" && i.starter === true;
+
+/** The starter weapons as stash entries, in `META.starter` order. */
+const starterItems = (): Item[] => META.starter.weapons.map((w) => ({ t: "weapon", kind: w.kind, rarity: w.rarity, starter: true }));
+
+/**
+ * The stash with the starter weapons in it: each one kept where it stands, one missing put at the
+ * head, and a second copy of one dropped. Every profile goes through it (`newProfile()`,
+ * `parseProfile()`, `settle()`), so the stash never lacks them.
+ */
+export function withStarters(stash: Item[]): Item[] {
+  const want = starterItems();
+  const out = stash.filter((i) => {
+    if (!isStarter(i)) return true;
+    const n = want.findIndex((w) => sameItem(w, i));
+    if (n < 0) return false;
+    want.splice(n, 1);
+    return true;
+  });
+  return [...want, ...out];
+}
+
+/** The stash entries that take room (`stashCap()`): all but the starter weapons. */
+export const stashUsed = (p: Pick<Profile, "stash">) => p.stash.filter((i) => !isStarter(i)).length;
+
 export function newProfile(seed = 1): Profile {
-  const stash: Item[] = META.start.weapons.map((w) => ({ t: "weapon", ...w }));
+  const stash: Item[] = [...starterItems(), ...META.start.weapons.map((w): Item => ({ t: "weapon", ...w }))];
   for (const k of HEALS) for (let i = 0; i < META.start.heals[k]; i++) stash.push({ t: "heal", kind: k });
-  const p: Omit<Profile, "board"> = { v: 22, cash: META.start.cash, stash, raids: 0, extracted: 0, time: 0, quests: emptyLog(), region: "reservoir", entry: FIRST_ENTRY, entries: [FIRST_ENTRY], hideout: emptyHideout(), seed: seed & 0xffff, depots: [], depotSent: {}, seen: "", routes: [], day: 1, poiState: newIsland(), taken: null, records: [], events: firstEvents(seed & 0xffff), known: [...MOD_START], threat: 0, freedAt: {}, factory: 0, lastKit: null };
+  const p: Omit<Profile, "board"> = { v: 23, cash: META.start.cash, stash, raids: 0, extracted: 0, time: 0, quests: emptyLog(), region: "reservoir", entry: FIRST_ENTRY, entries: [FIRST_ENTRY], hideout: emptyHideout(), seed: seed & 0xffff, depots: [], depotSent: {}, seen: "", routes: [], day: 1, poiState: newIsland(), taken: null, records: [], events: firstEvents(seed & 0xffff), known: [...MOD_START], threat: 0, freedAt: {}, factory: 0, lastKit: null };
   return { ...p, board: makeBoard(p) };
 }
 
@@ -176,14 +206,14 @@ export const sameItem = (a: Item, b: Item) => JSON.stringify(a) === JSON.stringi
 
 /** Buys one item into the stash; null when it cannot be afforded or the stash is full. */
 export function buy(p: Profile, i: Item): Profile | null {
-  if (p.cash < buyPrice(i) || p.stash.length >= stashCap(p.hideout)) return null;
+  if (p.cash < buyPrice(i) || stashUsed(p) >= stashCap(p.hideout)) return null;
   return { ...p, cash: p.cash - buyPrice(i), stash: [...p.stash, { ...i }] };
 }
 
-/** Sells the stash entry at `index`. */
+/** Sells the stash entry at `index`. A starter weapon is not for sale: the profile stays as it is. */
 export function sell(p: Profile, index: number): Profile {
   const i = p.stash[index];
-  if (!i) return p;
+  if (!i || isStarter(i)) return p;
   return { ...p, cash: p.cash + sellPrice(i), stash: p.stash.filter((_, n) => n !== index) };
 }
 
@@ -200,16 +230,22 @@ export const emptyLoadout = (): Loadout => ({ weapons: [], armor: null, heals: {
 /** How many of a heal the stash holds. */
 export const healCount = (p: Profile, k: HealKind) => p.stash.filter((i) => i.t === "heal" && i.kind === k).length;
 
-/** Heals every raid is lent, whatever weapons it carries: the free kit's and the infirmary's. */
-export function lentHeals(p: Pick<Profile, "hideout">): Record<HealKind, number> {
+/** Heals issued to every raid, whatever it carries: `META.starter.heals` and the infirmary's. */
+export function issuedHeals(p: Pick<Profile, "hideout">): Record<HealKind, number> {
   const sick = infirmaryHeals(p.hideout);
-  return Object.fromEntries(HEALS.map((k) => [k, Math.min(HEAL_SPECS[k].max, META.free.heals[k] + sick[k])])) as Record<HealKind, number>;
+  return Object.fromEntries(HEALS.map((k) => [k, Math.min(HEAL_SPECS[k].max, META.starter.heals[k] + sick[k])])) as Record<HealKind, number>;
 }
 
-/** How many heals of a kind a loadout can take from the stash: what it holds, up to what the lent ones leave room for. */
+/** How many heals of a kind a loadout can take from the stash: what it holds, up to what the issued ones leave room for. */
 export function healRoom(p: Profile, _l: Loadout, k: HealKind): number {
-  return Math.max(0, Math.min(healCount(p, k), HEAL_SPECS[k].max - lentHeals(p)[k]));
+  return Math.max(0, Math.min(healCount(p, k), HEAL_SPECS[k].max - issuedHeals(p)[k]));
 }
+
+/** The stash indices of the starter weapons, in stash order. */
+export const starterPicks = (p: Pick<Profile, "stash">): number[] => p.stash.flatMap((i, n) => (isStarter(i) ? [n] : []));
+
+/** A loadout that picks no weapon picks the starter weapons: no raid goes out unarmed. */
+export const armed = (p: Pick<Profile, "stash">, l: Loadout): Loadout => (l.weapons.some((n) => p.stash[n]?.t === "weapon") ? l : { ...l, weapons: starterPicks(p).slice(0, 2) });
 
 /** What a loadout takes, by what it holds: `Profile.lastKit` after a raid starts with it. */
 export function kitPicks(p: Profile, l: Loadout): KitPicks {
@@ -218,7 +254,7 @@ export function kitPicks(p: Profile, l: Loadout): KitPicks {
   return {
     weapons: k.weapons.flatMap((n) => {
       const i = p.stash[n];
-      return i?.t === "weapon" ? [{ kind: i.kind, rarity: i.rarity }] : [];
+      return i?.t === "weapon" ? [{ kind: i.kind, rarity: i.rarity, ...(i.starter ? { starter: true as const } : {}) }] : [];
     }),
     armor: a?.t === "armor" ? a.tier : 0,
     keys: k.keys.flatMap((n) => {
@@ -231,12 +267,13 @@ export function kitPicks(p: Profile, l: Loadout): KitPicks {
 
 /**
  * The last raid's loadout picked again from the stash as it stands: each weapon, the armour and
- * each key while the stash still holds one like it, and the heals up to what it holds now.
+ * each key while the stash still holds one like it, and the heals up to what it holds now. With no
+ * weapon of it left (or no last raid), the starter weapons (`armed()`).
  */
 export function recallLoadout(p: Profile): Loadout {
   const l = emptyLoadout();
   const last = p.lastKit;
-  if (!last) return l;
+  if (!last) return armed(p, l);
   const used = new Set<number>();
   const find = (match: (i: Item) => boolean) => {
     const n = p.stash.findIndex((i, at) => !used.has(at) && match(i));
@@ -244,7 +281,7 @@ export function recallLoadout(p: Profile): Loadout {
     return n;
   };
   for (const w of last.weapons.slice(0, 2)) {
-    const n = find((i) => i.t === "weapon" && i.kind === w.kind && i.rarity === w.rarity);
+    const n = find((i) => i.t === "weapon" && i.kind === w.kind && i.rarity === w.rarity && isStarter(i) === !!w.starter);
     if (n >= 0) l.weapons.push(n);
   }
   if (last.armor > 0) {
@@ -256,7 +293,7 @@ export function recallLoadout(p: Profile): Loadout {
     if (n >= 0) l.keys.push(n);
   }
   for (const h of HEALS) l.heals[h] = Math.max(0, Math.min(last.heals[h] ?? 0, healRoom(p, l, h)));
-  return l;
+  return armed(p, l);
 }
 
 /**
@@ -278,17 +315,17 @@ function picks(p: Profile, l: Loadout): { weapons: number[]; armor: number | nul
   return { weapons, armor, keys };
 }
 
-/** What one stash entry costs of a depot start's allowance (`DEPOT`): heals and valuables nothing. */
+/** What one stash entry costs of a depot start's allowance (`DEPOT`): the starter weapons, heals and valuables nothing. */
 export function itemCost(i: Item): number {
-  if (i.t === "weapon") return DEPOT.weaponCost[i.rarity];
+  if (i.t === "weapon") return i.starter ? 0 : DEPOT.weaponCost[i.rarity];
   if (i.t === "armor") return DEPOT.armorCost[i.tier];
   if (i.t === "key") return DEPOT.keyCost;
   return 0;
 }
 
-/** What a loadout costs of a depot start's allowance. The lent free kit and all heals cost nothing. */
+/** What a loadout costs of a depot start's allowance. The starter weapons and all heals cost nothing. */
 export function loadoutCost(p: Profile, l: Loadout): number {
-  const k = picks(p, l);
+  const k = picks(p, armed(p, l));
   return [...k.weapons, ...(k.armor === null ? [] : [k.armor]), ...k.keys].reduce((n, at) => n + itemCost(p.stash[at]), 0);
 }
 
@@ -321,23 +358,30 @@ export function fitsStart(p: Profile, l: Loadout, from: PoiId | null): boolean {
 }
 
 /**
- * Takes a loadout out of the stash. Picking no weapon means the free kit's weapons, lent. The free
- * kit's heals and the hideout's infirmary's are lent to every raid, and any heals picked from the
- * stash come on top of them; armour and keys picked go with either. A start from a depot is held
- * to its allowance. The profile remembers the loadout (`Profile.lastKit`) for the next raid.
+ * Takes a loadout out of the stash. Picking no weapon picks the starter weapons (`armed()`), which
+ * go along but stay in the stash: they are never lost. The heals issued to every raid
+ * (`issuedHeals()`) come on top of any picked from the stash. A start from a depot is held to its
+ * allowance. The profile remembers the loadout (`Profile.lastKit`) for the next raid.
  */
 export function takeKit(p: Profile, l: Loadout): { profile: Profile; kit: Kit };
 /** For a start from a depot (`from`), null when the loadout does not fit its allowance (`fitsStart()`). */
 export function takeKit(p: Profile, l: Loadout, from: PoiId | null): { profile: Profile; kit: Kit } | null;
-export function takeKit(p: Profile, l: Loadout, from: PoiId | null = null): { profile: Profile; kit: Kit } | null {
+export function takeKit(p: Profile, given: Loadout, from: PoiId | null = null): { profile: Profile; kit: Kit } | null {
+  const l = armed(p, given);
   if (!fitsStart(p, l, from)) return null;
   const take = new Set<number>();
   const weapons: Kit["weapons"] = [];
+  const out = new Set<number>();
   for (const n of l.weapons.slice(0, 2)) {
     const i = p.stash[n];
-    if (i?.t === "weapon" && !take.has(n)) {
-      take.add(n);
-      weapons.push({ kind: i.kind, rarity: i.rarity });
+    if (i?.t === "weapon" && !out.has(n)) {
+      out.add(n);
+      // A starter weapon goes along but its stash entry stays.
+      if (i.starter) weapons.push({ kind: i.kind, rarity: i.rarity, starter: true });
+      else {
+        take.add(n);
+        weapons.push({ kind: i.kind, rarity: i.rarity });
+      }
     }
   }
   let armor: Rarity = 0;
@@ -346,12 +390,11 @@ export function takeKit(p: Profile, l: Loadout, from: PoiId | null = null): { pr
     take.add(l.armor);
     armor = a.tier;
   }
-  const free = weapons.length === 0;
-  const lent = lentHeals(p);
+  const issued = issuedHeals(p);
   const heals = { cell: 0, battery: 0, syringe: 0, medkit: 0 } as Record<HealKind, number>;
   for (const k of HEALS) {
-    // A kind holds at most HEAL_SPECS[k].max, lent ones included.
-    let want = Math.min(l.heals[k], HEAL_SPECS[k].max - lent[k]);
+    // A kind holds at most HEAL_SPECS[k].max, issued ones included.
+    let want = Math.min(l.heals[k], HEAL_SPECS[k].max - issued[k]);
     p.stash.forEach((i, n) => {
       if (want > 0 && i.t === "heal" && i.kind === k && !take.has(n)) {
         take.add(n);
@@ -370,10 +413,9 @@ export function takeKit(p: Profile, l: Loadout, from: PoiId | null = null): { pr
   }
   const kit: Kit = {
     keys,
-    weapons: free ? META.free.weapons.map((w) => ({ ...w, loan: true })) : weapons,
+    weapons,
     armor,
-    heals: Object.fromEntries(HEALS.map((k) => [k, heals[k] + lent[k]])) as Record<HealKind, number>,
-    lentHeals: lent,
+    heals: Object.fromEntries(HEALS.map((k) => [k, heals[k] + issued[k]])) as Record<HealKind, number>,
   };
   return { profile: { ...p, stash: p.stash.filter((_, n) => !take.has(n)), lastKit: kitPicks(p, l) }, kit };
 }
@@ -510,7 +552,7 @@ export function keepOrder(items: Item[], want: Record<ValuableKind, number>): It
 
 /** Puts items into the stash in `keepOrder()`; what does not fit is sold at once. */
 function store(p: Profile, items: Item[]): { profile: Profile; sold: Item[]; soldFor: number } {
-  const room = Math.max(0, stashCap(p.hideout) - p.stash.length);
+  const room = Math.max(0, stashCap(p.hideout) - stashUsed(p));
   const keep = keepOrder(items, wanted(p));
   const sold = keep.slice(room);
   const soldFor = sold.reduce((n, i) => n + sellPrice(i), 0);
@@ -539,9 +581,11 @@ export function settle(p: Profile, s: State): Settlement {
   const fetched: Fetched[] = sentOrigins(s);
   const records: RecordId[] = [...(s.sentRecords ?? [])];
   if (s.outcome === "extracted") {
-    for (const w of pl.weapons) if (w && !w.loan) home.push({ t: "weapon", kind: w.kind, rarity: w.rarity });
+    // The starter weapons never left the stash.
+    for (const w of pl.weapons) if (w && !w.starter) home.push({ t: "weapon", kind: w.kind, rarity: w.rarity });
     if (pl.armor > 0) home.push({ t: "armor", tier: pl.armor });
-    for (const k of HEALS) for (let i = Math.max(0, pl.heals[k] - pl.lentHeals[k]); i > 0; i--) home.push({ t: "heal", kind: k });
+    // Every heal left comes home, the issued ones too.
+    for (const k of HEALS) for (let i = pl.heals[k]; i > 0; i--) home.push({ t: "heal", kind: k });
     for (const v of pl.haul) home.push({ t: "valuable", kind: v });
     for (const poi of pl.keys) home.push({ t: "key", poi: POIS[poi].id });
     for (const k of tools) home.push({ t: "tool", kind: k });
@@ -595,7 +639,7 @@ export function settle(p: Profile, s: State): Settlement {
   // Quests the raid opened may ask for a hideout level already built.
   const claimed = claimBuilt(next);
   // The new day's board, for the next raid's seed; yesterday's contract goes with yesterday's board.
-  const fresh = { ...claimed.profile, taken: null, board: makeBoard(claimed.profile) };
+  const fresh = { ...claimed.profile, stash: withStarters(claimed.profile.stash), taken: null, board: makeBoard(claimed.profile) };
   return { profile: fresh, home, opened, learned, quests: [...finished, ...claimed.quests], sold: [...sold, ...claimed.sold], soldFor: soldFor + claimed.soldFor, day: p.day, ...change, income, event: s.event ?? null, contract, story: told, threat, analysable: s.outcome === "extracted" ? [...(pl.mods ?? [])] : [] };
 }
 
@@ -714,11 +758,14 @@ const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
  * Before v22 the island had a network level, thin POIs, outposts on the front and the battle's
  * points: such a profile's POIs freed or thin are the player's and the others the enemy's
  * (`parseIsland()`), and the network, its pressure, the outposts and the battles on record are dropped.
+ * Before v23 a raid with no stash weapon went out with weapons lent for it: such a profile's stash
+ * gains the starter weapons (as every profile's does, `withStarters()`), and a last loadout of no
+ * stash weapon picks them again (`recallLoadout()`).
  */
 export function parseProfile(raw: unknown, seed = 1): Profile | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
+  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
   const old = o.v === 1 || o.v === 2;
   const migrate = (i: unknown): unknown => {
     if (!old || !i || typeof i !== "object" || (i as Record<string, unknown>).t !== "key") return i;
@@ -759,10 +806,15 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   const fa = (v17 && o.freedAt && typeof o.freedAt === "object" ? o.freedAt : {}) as Record<string, unknown>;
   const freedAt: Partial<Record<PoiId, number>> = {};
   for (const { id } of POIS) if (Number.isInteger(fa[id])) freedAt[id] = Math.max(0, Math.min(THREAT.max, fa[id] as number));
+  // A weapon keeps its starter mark only as one of the starter weapons; the others' marks are dropped.
+  const items = o.stash.map(migrate).filter(ok).map((i): Item => (i.t === "weapon" ? { t: "weapon", kind: i.kind, rarity: i.rarity, ...(i.starter === true ? { starter: true as const } : {}) } : i));
+  const cap = stashCap(hideout);
+  let room = cap;
+  const stash = withStarters(items.filter((i) => isStarter(i) || room-- > 0));
   const out: Omit<Profile, "board" | "taken" | "events"> = {
-    v: 22,
+    v: 23,
     cash: Math.max(0, Math.floor(o.cash)),
-    stash: o.stash.map(migrate).filter(ok).slice(0, stashCap(hideout)),
+    stash,
     raids,
     extracted: num(o.extracted),
     time: num(o.time),
@@ -801,9 +853,9 @@ function parseKitPicks(raw: unknown): KitPicks | null {
   if (!raw || typeof raw !== "object") return null;
   const r = raw as Record<string, unknown>;
   const weapons = (Array.isArray(r.weapons) ? r.weapons : [])
-    .filter((w): w is { kind: WeaponKind; rarity: Rarity } => !!w && typeof w === "object" && typeof (w as Record<string, unknown>).kind === "string" && ((w as Record<string, unknown>).kind as string) in META.weapon && [0, 1, 2, 3].includes((w as Record<string, unknown>).rarity as number))
+    .filter((w): w is { kind: WeaponKind; rarity: Rarity; starter?: unknown } => !!w && typeof w === "object" && typeof (w as Record<string, unknown>).kind === "string" && ((w as Record<string, unknown>).kind as string) in META.weapon && [0, 1, 2, 3].includes((w as Record<string, unknown>).rarity as number))
     .slice(0, 2)
-    .map((w) => ({ kind: w.kind, rarity: w.rarity }));
+    .map((w) => ({ kind: w.kind, rarity: w.rarity, ...(w.starter === true ? { starter: true as const } : {}) }));
   const armor = ([0, 1, 2, 3].includes(r.armor as number) ? r.armor : 0) as Rarity;
   const keys = [...new Set((Array.isArray(r.keys) ? r.keys : []).filter((k): k is PoiId => typeof k === "string" && poiIndex(k as PoiId) >= 0))];
   const h = (r.heals && typeof r.heals === "object" ? r.heals : {}) as Record<string, unknown>;
