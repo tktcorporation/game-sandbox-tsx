@@ -262,7 +262,11 @@ HUD's top, the camp's line, the map table and the results; its boundary slides w
 hands and flickers while one is fought over); there is no ending. The hideout is the mid-term one: five modules built level by level from specific
 valuables and credits taken from the stash, each level needing only the module's level before it
 (`build()` in `profile.ts`; levels and costs in `HIDEOUT`, effects in `HIDEOUT_EFFECT`, both in `config.ts`; `meta/hideout.ts` holds the pure
-helpers). Their benefits act in the meta: `takeKit()` lends the infirmary's heals, the workbench
+helpers). The workshop's cards and the factory's show each level's effect as was → now with what
+grows lit, and a ladder of the levels when opened (`moduleGauges()`, `factoryGauges()` in
+`view/hub.ts`); each module's mark (`MODULE_ICON`, drawn in `view/icons.ts`) also stands where its
+effect shows (the shelves' issued heals, the stash's count, the trader's materials, the map table's
+report, the pouch). Their benefits act in the meta: `takeKit()` lends the infirmary's heals, the workbench
 raises the valuables the trader sells (`materialRarity()`), `stashCap()` and `pouchSlots()` grow, and the radio reports the next raid's
 boosted POI. Every raid leans one POI's bins of its region to a rare kind (`State.boost`, from
 `boostFor(seed, region)` in `state.ts`, without drawing on the raid's random numbers);
