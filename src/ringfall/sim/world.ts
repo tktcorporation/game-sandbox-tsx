@@ -1,6 +1,6 @@
 import { ALLY, AWARE, BAG, BIN_GEAR, CREW, DEBRIS, DEPOT, ENEMIES, ENTRY, HEALS, HOME, PARTY, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, TICK, TOOL_KINDS, TOOLS, TOP_BINS, VALUABLES, VAULT, WORLD, type HealKind, type ToolKind } from "./config";
 import { grabZip, zipInReach } from "./zips";
-import { dist2d, groundAt, los, solidAt } from "./geom";
+import { dist2d, groundAt, los, solidAt, worldVersion } from "./geom";
 import { highGround, steepAt, terrainHeight } from "./terrain";
 import { DEPOTS, ENTRIES, EXTRACTS, inCamp, PARTY_STOPS, POIS, recordSpot, REGIONS, regionOf, type ExtractPoint, type RecordId } from "./map";
 import { spawnEnemy, spawnSpot } from "./enemies";
@@ -519,6 +519,27 @@ function spillTool(s: State, b: Bin, k: ToolKind) {
 
 const weaponLabel = (w: Weapon) => w.kind.toUpperCase();
 
+/**
+ * Each loot's last `groundAt()` question and answer. Loot at rest asks the same every tick: it is
+ * put back on the ground it fell to, and its slide halves until it no longer moves. The same
+ * question in the same world has the same answer.
+ */
+type LootGround = { x: number; z: number; feet: number; world: number; g: number };
+const lootAsked = new WeakMap<Loot, LootGround>();
+function lootGround(l: Loot, x: number, z: number, feet: number): number {
+  const a = lootAsked.get(l);
+  if (a && a.world === worldVersion && Object.is(a.x, x) && Object.is(a.z, z) && Object.is(a.feet, feet)) return a.g;
+  const g = groundAt(x, z, 0.2, feet);
+  if (a) {
+    a.x = x;
+    a.z = z;
+    a.feet = feet;
+    a.world = worldVersion;
+    a.g = g;
+  } else lootAsked.set(l, { x, z, feet, world: worldVersion, g });
+  return g;
+}
+
 export function stepLoot(s: State, input: Input) {
   const p = s.player;
   const maxShield = PLAYER.shieldByTier[p.armor];
@@ -556,7 +577,7 @@ export function stepLoot(s: State, input: Input) {
     l.pos.x += l.vel.x * TICK;
     l.pos.y += l.vel.y * TICK;
     l.pos.z += l.vel.z * TICK;
-    const g = groundAt(l.pos.x, l.pos.z, 0.2, l.pos.y + 0.3);
+    const g = lootGround(l, l.pos.x, l.pos.z, l.pos.y + 0.3);
     if (l.pos.y <= g) {
       l.pos.y = g;
       l.vel.x *= 0.5;
