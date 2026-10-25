@@ -6,7 +6,7 @@ import { columnPoints, nodePoint, type Battle, type Side } from "../sim/battle";
 import { terrainHeight } from "../sim/terrain";
 import { AREA } from "../sim/areas";
 import type { State } from "../sim/state";
-import { PAL, buildBoat, buildDropship, haloSprite } from "./models";
+import { PAL, buildBoat, buildDropship, haloSprite, still } from "./models";
 
 /*
  * The day's battle seen from afar (sim/battle.ts): the enemy's dropships coming down on the pad
@@ -135,6 +135,8 @@ export class BattleView {
       this.depotBeams.push(beam);
       this.group.add(beam);
     }
+    // All of it stands where it is built but the gate's hinges, which swing open; the landings added later move.
+    still(this.group, this.leaves.map((l) => l.parent!));
   }
 
   /** Drops what a raid left (a new raid starts). */
