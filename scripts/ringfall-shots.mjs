@@ -112,6 +112,27 @@ const closePanel = async (pg, touch = false) => {
   if ((await readPage(pg)).camp?.panel) errors.push("camp: the close button left the panel open");
 };
 /** Until the departure is up with its map drawn and its starts set on it. */
+/**
+ * The pause screen as Esc shows it (automation never pauses, so it is shown by hand over the frame),
+ * checked to fit the window unscrolled with the controls listed `rows` (0: none, as on a phone).
+ */
+const pauseShot = async (pg, name, rows, tag) => {
+  await pg.evaluate(() => (document.getElementById("pause").hidden = false));
+  await pg.screenshot({ path: `${out}/${name}.png` });
+  const fit = await pg.evaluate(() => {
+    const box = document.querySelector("#pause .title-inner").getBoundingClientRect();
+    const shown = [...document.querySelectorAll("#pause-keys li")].filter((li) => li.getClientRects().length > 0);
+    const over = shown.some((a, i) => shown.slice(i + 1).some((b) => {
+      const p = a.getBoundingClientRect(), q = b.getBoundingClientRect();
+      return p.left < q.right && q.left < p.right && p.top < q.bottom && q.top < p.bottom;
+    }));
+    return { top: box.top, bottom: box.bottom, left: box.left, right: box.right, w: innerWidth, h: innerHeight, rows: shown.length, over };
+  });
+  await pg.evaluate(() => (document.getElementById("pause").hidden = true));
+  if (fit.top < 0 || fit.bottom > fit.h || fit.left < 0 || fit.right > fit.w) errors.push(`${tag}: the pause screen does not fit the window (${JSON.stringify(fit)})`);
+  if (fit.rows !== rows) errors.push(`${tag}: the pause screen lists ${fit.rows} controls, not ${rows}`);
+  if (fit.over) errors.push(`${tag}: the pause screen's controls overlap`);
+};
 const departUp = (pg) =>
   pg.waitForFunction(() => !document.getElementById("depart").hidden && document.querySelectorAll("#depart-points button.pick").length > 0, null, { timeout: 4000 }).catch(() => errors.push("depart: the map of starts never came up"));
 /** Chooses a start on the departure's map (`kind` "entry" or "depot"), by a click or a tap with `touch`; the departure's state after. */
@@ -307,6 +328,7 @@ const spills = (pg) =>
   await touch("touchMove", [{ x: 150, y: 200, id: 1 }]);
   await step(600);
   await page.screenshot({ path: `${out}/m1-stick.png` });
+  await pauseShot(page, "m1-pause", 0, "mobile");
   // The objective card shows the fetch taken as its steps: the title, the step and what finishes it.
   if (!(await page.evaluate(() => /回収/.test(document.getElementById("obj-title").textContent) && document.getElementById("obj-text").textContent.length > 0))) errors.push("mobile: the objective card does not show the fetch taken");
   await page.screenshot({ path: `${out}/m1-objective.png`, clip: { x: 0, y: 0, width: 844, height: 110 } });
@@ -578,6 +600,7 @@ const read = async () => JSON.parse(await page.evaluate(() => window.render_game
   const h0 = await read();
   if (h0.screen !== "camp" || h0.camp?.panel !== null) errors.push(`camp: the start button opened ${h0.screen}, not the camp`);
   await page.screenshot({ path: `${out}/00-camp.png` });
+  await pauseShot(page, "00-camp-pause", 6, "camp");
   const seen = async (id) => {
     await page.evaluate((i) => window.ringfallCamp.walkTo(i), id);
     await page.evaluate(() => window.advanceTime(100));
@@ -690,6 +713,7 @@ if (!(after.player.z < before.player.z - 3)) errors.push(`keyboard: W did not mo
   if (!(held > 0.9 && let_go < 0.1 && switchedOn > 0.9 && afterRight > 0.9 && switchedOff < 0.1)) errors.push(`F aim: held ${held}, let go ${let_go}, switched on ${switchedOn}, after the right button ${afterRight}, off ${switchedOff}`);
 }
 await page.screenshot({ path: `${out}/01-start.png` });
+await pauseShot(page, "01-pause", 16, "raid");
 // The start's banner names the way in, and only that.
 const startBanner = await page.evaluate(() => ({ head: document.getElementById("banner-head").textContent, sub: document.getElementById("banner-sub").textContent }));
 if (!/南の浜/.test(startBanner.head) || startBanner.sub) errors.push(`start banner does not name only the way in: ${JSON.stringify(startBanner)}`);
