@@ -6,7 +6,7 @@ import { POIS } from "./map";
 import { applyPull, assistTarget, bodyCenter, damageEnemy, eyePos, magSize, shoot } from "./combat";
 import { boxTopAt, ceilingAt, collide, groundAt, los } from "./geom";
 import { floorLevel, highGround, offLowGround, offshore, steepAt, terrainGrad, terrainHeight, towardLowGround } from "./terrain";
-import { grabInAir, ride } from "./zips";
+import { grabInAir, letGo, ride } from "./zips";
 import type { Input, Player, State, Vec3 } from "./state";
 
 /*
@@ -447,6 +447,11 @@ function leap(s: State) {
     return;
   }
   p.ult = 0;
+  // The glider takes the hands off a cable: the ride ends here, not after the landing.
+  if (p.zip) {
+    letGo(s, 0);
+    p.zipFall = false;
+  }
   // Only a teammate on the same floor and in sight comes along: never one through a floor or a wall.
   const a = s.ally;
   const carry = allyUp(s) && Math.hypot(a.pos.x - p.pos.x, a.pos.z - p.pos.z) < ULT.carry && Math.abs(a.pos.y - p.pos.y) < 1.5 && los(eyePos(s), allyChest(a));
