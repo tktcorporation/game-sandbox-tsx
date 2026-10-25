@@ -13,7 +13,7 @@ import { QUALITY, type Quality, type Tier } from "./quality";
 import { SHADE, contactAt, coverAt, floorUnder } from "./shade";
 import { GroundScatter } from "./scatter";
 import { trimBox, type TrimPiece, type TrimSite } from "./trim";
-import { PAL, RARITY_COLOR, SCOPE_IN, buildAlly, buildBeacon, buildBin, buildCore, buildBoat, buildStatic, buildDepot, buildEntryMark, buildRingDebris, mergeChunk, mergeTrim, type ChunkShade, buildCare, buildDropship, buildEnemy, buildFlareSmoke, buildGun, buildHands, buildLootItem, addPlates, flat, glow, haloSprite, type EnemyModel } from "./models";
+import { PAL, RARITY_COLOR, SCOPE_IN, buildAlly, buildBeacon, buildBin, buildCore, buildBoat, buildStatic, buildDepot, buildEntryMark, buildRingDebris, mergeChunk, mergeTrim, type ChunkShade, buildCare, buildDropship, buildEnemy, buildFlareSmoke, buildGun, buildHands, buildLootItem, addPlates, flat, glow, haloSprite, still, type EnemyModel } from "./models";
 import { streetMeshes } from "./streets";
 import { BattleView, CHANNEL } from "./battle";
 
@@ -314,6 +314,9 @@ export class World {
     this.renderer.info.autoReset = false;
     container.appendChild(this.renderer.domElement);
 
+    // The scene never moves: what moves updates its own matrices, and what stands still (most of
+    // the world, see `still()`) is not worked out again every frame.
+    this.scene.matrixAutoUpdate = false;
     this.scene.fog = new THREE.Fog(LIGHT.haze, QUALITY.high.fogNear, QUALITY.high.fogFar);
     this.scene.add(this.skyDome);
     this.scene.add(this.hemi);
@@ -334,7 +337,7 @@ export class World {
     this.partMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.partMesh.count = 0;
     this.partMesh.frustumCulled = false;
-    this.scene.add(this.partMesh);
+    this.scene.add(still(this.partMesh));
 
     this.careBeam = new THREE.Mesh(
       new THREE.CylinderGeometry(0.6, 0.6, 120, 10, 1, true),
@@ -346,7 +349,7 @@ export class World {
     for (const n of NODES) {
       const v = { ...buildCore(FRONT.height, FRONT.half), key: "" };
       v.root.position.set(n.core.x, n.core.y, n.core.z);
-      this.scene.add(v.root);
+      this.scene.add(still(v.root, [v.halo, v.cloth]));
       this.cores.push(v);
     }
     // The cables: a steel rope and, along it, a thin blue line that reads from afar; a lift's in steel alone.
@@ -364,7 +367,7 @@ export class World {
       }
       if (!l.fixed) g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(l.pts.map((q) => new THREE.Vector3(q.x, q.y + 0.06, q.z))), line));
       g.visible = false;
-      this.scene.add(g);
+      this.scene.add(still(g));
       this.cables.push(g);
     }
     this.captureRing = new THREE.Mesh(new THREE.RingGeometry(FRONT.radius - 0.6, FRONT.radius, 96), glow(0x3f86c8, 0.7));
@@ -381,7 +384,7 @@ export class World {
       ring.rotation.x = -Math.PI / 2;
       ring.position.set(x.x, groundAt(x.x, x.z, 0.4, 99) + 0.3, x.z);
       ring.visible = false;
-      this.scene.add(ring);
+      this.scene.add(still(ring));
       this.extractRings.push(ring);
     }
 
@@ -391,7 +394,7 @@ export class World {
       const v = { ...buildDepot(), on: null };
       v.root.position.set(d.x, groundAt(d.x, d.z, 0.4, d.y + 1), d.z);
       v.root.rotation.y = Math.PI - d.yaw;
-      this.scene.add(v.root);
+      this.scene.add(still(v.root));
       this.depots.push(v);
     }
 
@@ -407,7 +410,7 @@ export class World {
         const z = e.z - fz * back + fx * side;
         o.position.set(x, groundAt(x, z, 0.4, 99), z);
         o.rotation.y = Math.PI - e.yaw;
-        this.scene.add(o);
+        this.scene.add(still(o));
         this.entryMarks.push(o);
       };
       put(fire, 2.5, 1.6);
@@ -419,7 +422,7 @@ export class World {
       const x = (CAMP.x0 + CAMP.x1) / 2 - 3;
       const z = (CAMP.z0 + CAMP.z1) / 2 + 4;
       fire.position.set(x, groundAt(x, z, 0.4, 99), z);
-      this.scene.add(fire);
+      this.scene.add(still(fire));
       this.entryMarks.push(fire);
     }
 
@@ -499,7 +502,7 @@ export class World {
         const z0 = WORLD.z0 + j * CHUNK;
         const x1 = Math.min(WORLD.x1, x0 + CHUNK);
         const z1 = Math.min(WORLD.z1, z0 + CHUNK);
-        this.chunks.push({ group: new THREE.Group(), x0, z0, x1, z1, ground: null, merged: null, trim: null, trimless: false, built: false, boxes: [], boulders: [] });
+        this.chunks.push({ group: still(new THREE.Group()), x0, z0, x1, z1, ground: null, merged: null, trim: null, trimless: false, built: false, boxes: [], boulders: [] });
       }
     BOXES.forEach((b, n) => this.chunkOf(b).boxes.push(n));
     // Boulders along the foot of the coast's cliffs, where a land's coast is the world's.
@@ -525,7 +528,7 @@ export class World {
     for (const c of this.chunks) this.scene.add(c.group);
     // Out past the bounds: the coarse ring of cliffs.
     const inside = (x: number, z: number) => x > WORLD.x0 && x < WORLD.x1 && z > WORLD.z0 && z < WORLD.z1;
-    this.scene.add(this.groundMesh(xs, zs, (cx, cz) => !inside(cx, cz)));
+    this.scene.add(still(this.groundMesh(xs, zs, (cx, cz) => !inside(cx, cz))));
     // The last water in the harbor, over the floor of its channel.
     const water = new THREE.Mesh(
       new THREE.PlaneGeometry(CHANNEL.x1 - CHANNEL.x0, CHANNEL.z1 - CHANNEL.z0).rotateX(-Math.PI / 2),
@@ -533,6 +536,7 @@ export class World {
     );
     water.position.set((CHANNEL.x0 + CHANNEL.x1) / 2, CHANNEL.y, (CHANNEL.z0 + CHANNEL.z1) / 2);
     water.receiveShadow = true;
+    still(water);
     this.chunkOf({ x0: water.position.x, x1: water.position.x, z0: water.position.z, z1: water.position.z }).group.add(water);
   }
 
@@ -576,7 +580,7 @@ export class World {
       () => true,
       (x, y, z) => coverAt(x, y + 0.2, z) * contactAt(x, y, z, routes),
     );
-    c.group.add(c.ground);
+    c.group.add(still(c.ground));
     // The map's boxes and the boulders first, then the routes', merged in that order.
     const statics = new THREE.Group();
     for (const n of c.boxes) statics.add(buildStatic(BOXES[n], n));
@@ -596,7 +600,7 @@ export class World {
     c.merged = statics.children.length || root.children.length > 1 ? mergeChunk(root, CHUNK_SHADE) : null;
     // The meshes built for the merge are let go; only their geometry's copies in the merge stay.
     root.traverse((m) => m instanceof THREE.Mesh && m.geometry !== this.boulderGeo && m.geometry.dispose());
-    if (c.merged) c.group.add(c.merged);
+    if (c.merged) c.group.add(still(c.merged));
     this.filled.n++;
     this.filled.ms += performance.now() - t0;
   }
@@ -616,7 +620,7 @@ export class World {
     for (const n of c.boxes) trimBox(BOXES[n], pieces, TRIM_SITE);
     for (const b of this.routeBoxes()) if (this.chunkOf(b) === c) trimBox(b, pieces, TRIM_SITE);
     c.trim = mergeTrim(pieces, coverAt);
-    if (c.trim) c.group.add(c.trim);
+    if (c.trim) c.group.add(still(c.trim));
     this.trimmed.n++;
     this.trimmed.ms += performance.now() - t0;
     return c.trim;
@@ -760,7 +764,7 @@ export class World {
       s.material.blending = THREE.NormalBlending;
       s.position.set(cx + Math.sin(i * 2.4) * rx, 60 + (i % 7) * 9, cz + Math.cos(i * 1.7) * rz);
       this.clouds.push(s);
-      this.scene.add(s);
+      this.scene.add(still(s));
     }
   }
 
@@ -852,6 +856,8 @@ export class World {
       mat.emissive.setHex(0x000000);
       mat.color.lerp(new THREE.Color(0x1a1a1e), 0.55);
     }
+    // A robot out of range is out of the scene (see the robots in `render`); its wreck lies in it.
+    if (!m.root.parent) this.scene.add(m.root);
     const p = m.root.position;
     const yaw = -m.body.rotation.y;
     const fly = ENEMIES[v.kind].fly > 0;
@@ -1233,7 +1239,7 @@ export class World {
         (m.eye.material as THREE.MeshBasicMaterial).color.setHex(PAL.friendEye);
         m.root.position.set(spot.x + 2.7, spot.y, spot.z + 0.4);
         m.body.rotation.y = 0.3;
-        this.scene.add(m.root);
+        this.scene.add(still(m.root));
         this.factoryBot = m.root;
       }
     }
@@ -1266,7 +1272,8 @@ export class World {
           (m.eyeHalo.material as THREE.SpriteMaterial).color.setHex(PAL.friendEye);
         }
         const plates = e.plate > 0 ? addPlates(m, e.kind, e.plate) : [];
-        this.scene.add(m.root);
+        // The parts the view poses each frame keep updating; the merged armour hung from them does not.
+        this.scene.add(still(m.root, [m.root, m.body, m.eye, m.eyeHalo, m.shield, ...m.legs, ...m.knees]));
         const beam = new THREE.Mesh(
           new THREE.CylinderGeometry(0.06, ENEMIES[e.kind].radius * 0.45, 40, 8, 1, true),
           new THREE.MeshBasicMaterial({ toneMapped: false, color: e.friend ? PAL.friendEye : PAL.eye, transparent: true, opacity: 0.3, depthWrite: false, blending: THREE.AdditiveBlending }),
@@ -1282,6 +1289,11 @@ export class World {
       m.root.position.set(e.pos.x, e.pos.y + (k.fly > 0 ? Math.sin(this.time * 3 + e.id) * 0.12 : 0), e.pos.z);
       // The arrival beam goes once the robot is down, near or far; a far one's is not drawn.
       const close = near(m.root);
+      // Out of range a robot is not drawn, so it leaves the scene: its parts are not worked out each frame for nothing.
+      if (close !== (m.root.parent !== null)) {
+        if (close) this.scene.add(m.root);
+        else this.scene.remove(m.root);
+      }
       if (v.spawnBeam && e.mode !== "spawning") {
         this.scene.remove(v.spawnBeam);
         v.spawnBeam = null;
@@ -1423,11 +1435,13 @@ export class World {
       if (!g) {
         g = buildLootItem(l.kind, l.rarity, l.weapon?.kind, l.heal, l.valuable, l.tool);
         this.loot.set(l.id, g);
-        this.scene.add(g);
+        this.scene.add(still(g));
       }
       g.position.set(l.pos.x, l.pos.y + (l.kind === "shard" ? 0.5 : 0), l.pos.z);
       if (!near(g)) continue;
       g.rotation.y = this.time * (l.kind === "shard" ? 5 : 1.2) + l.id;
+      // Fixed by `still()`, it is placed only while in range: out of it, it is not drawn.
+      g.updateMatrix();
     }
     const present = new Set(s.loot.map((l) => l.id));
     for (const [id, g] of this.loot) {
@@ -1442,7 +1456,7 @@ export class World {
         v = buildBin(b.vault);
         v.root.position.set(b.x, b.y, b.z);
         this.bins.set(b.id, v);
-        this.scene.add(v.root);
+        this.scene.add(still(v.root));
       }
       // A bin holding a flare sends a thread of red-orange smoke up off its roof until it is searched,
       // seen from afar; it thins as the player climbs up to it.
@@ -1452,14 +1466,19 @@ export class World {
           smoke = buildFlareSmoke();
           smoke.position.set(b.x, b.y + 35.5, b.z);
           this.flareSmoke.set(b.id, smoke);
-          this.scene.add(smoke);
+          this.scene.add(still(smoke));
         }
         smoke.visible = !b.open && s.phase === "play";
         const d = Math.hypot(b.x - fx, b.z - fz);
         (smoke.material as THREE.MeshBasicMaterial).opacity = Math.min(0.62, Math.max(0.08, (d - 8) / 60)) * (0.85 + 0.15 * Math.sin(this.time * 3 + b.id));
       }
       if (!near(v.root)) continue;
-      v.lid.rotation.x += ((b.open ? -1.9 : 0) - v.lid.rotation.x) * Math.min(1, dt * 10);
+      const lid = v.lid.rotation.x + ((b.open ? -1.9 : 0) - v.lid.rotation.x) * Math.min(1, dt * 10);
+      // The lid is fixed by `still()` and placed again only while it swings.
+      if (lid !== v.lid.rotation.x) {
+        v.lid.rotation.x = lid;
+        v.lid.updateMatrix();
+      }
       (v.seam.material as THREE.MeshBasicMaterial).color.setHex(b.open ? 0x3a3f4a : 0xffffff);
     }
     for (const m of this.entryMarks) near(m);
@@ -1483,7 +1502,7 @@ export class World {
           const w = c.getWorldPosition(new THREE.Vector3());
           c.position.y = terrainHeight(w.x, w.z) - crate.y + 0.06;
         }
-      this.scene.add(this.debris.root);
+      this.scene.add(still(this.debris.root));
     }
     if (this.debris) {
       const d = this.debris;
@@ -1585,7 +1604,7 @@ export class World {
     if (s.care) {
       if (!this.care) {
         this.care = buildCare();
-        this.scene.add(this.care);
+        this.scene.add(still(this.care, [this.care]));
       }
       this.care.position.set(s.care.x, s.care.y, s.care.z);
       this.careBeam.visible = !s.care.open;
@@ -1601,7 +1620,7 @@ export class World {
       if (!this.dropship) {
         this.dropship = buildDropship();
         this.dropship.position.set(ship.x, terrainHeight(ship.x, ship.z) + 90, ship.z - 2);
-        this.scene.add(this.dropship);
+        this.scene.add(still(this.dropship, [this.dropship]));
       }
       const want = terrainHeight(ship.x, ship.z) + 4.5 + 70 * Math.min(1, shipLeft / (ship.call ?? 1));
       this.dropship.position.y += (want - this.dropship.position.y) * Math.min(1, dt * 0.8);
@@ -1613,7 +1632,7 @@ export class World {
     {
       if (!this.boat) {
         this.boat = buildBoat();
-        this.scene.add(this.boat);
+        this.scene.add(still(this.boat, [this.boat]));
       }
       const t = boatLeft < 0 ? 1 : Math.min(1, boatLeft / (quay.call ?? 1));
       const want = boatSpot(quay.x, t);
@@ -1719,6 +1738,54 @@ export class World {
   }
 
   /** What the last frame cost: draw calls and triangles, and how many chunks were drawn. */
+  /**
+   * Makes ready, in spare time, the shaders of what a raid draws: the scene as it stands (its
+   * hidden rings, beams and cores too), and one of each thing a raid adds as it goes (each robot
+   * kind with its plates, the shots, the loot, the bins, the craft, every gun in the hand). A
+   * shader is made per kind of material, not per object, so the raid's own objects find theirs
+   * ready and its first frames, and the first robot of each kind, do not stop for them. The GPU
+   * compiles them without holding the page; each is then put to its first use (its uniforms
+   * looked up, which waits on the compile if it is not done) one per `idle()`, once the GPU says
+   * it is compiled where it can say so, so whatever wait is left falls in the camp. Run in the camp.
+   */
+  async precompile(idle: () => Promise<void>): Promise<void> {
+    const extra = new THREE.Group();
+    for (const kind of Object.keys(ENEMIES) as EnemyKind[]) {
+      const m = buildEnemy(kind);
+      addPlates(m, kind, 1);
+      extra.add(m.root);
+    }
+    const beam = (side: THREE.Side) => new THREE.MeshBasicMaterial({ toneMapped: false, color: PAL.eye, transparent: true, opacity: 0.3, depthWrite: false, blending: THREE.AdditiveBlending, side });
+    extra.add(new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.4, 40, 8, 1, true), beam(THREE.FrontSide)));
+    extra.add(new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 12, 1, true), beam(THREE.DoubleSide)));
+    extra.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ toneMapped: false, color: PAL.orb, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })));
+    extra.add(new THREE.Mesh(new THREE.PlaneGeometry(1, 1), glow(PAL.orb, 0.35)));
+    extra.add(new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), glow(PAL.orb)));
+    extra.add(haloSprite(PAL.orb, 1, 0.5));
+    extra.add(new THREE.Mesh(PUFF_GEO, new THREE.MeshLambertMaterial({ color: DEBRIS_SMOKE, transparent: true, opacity: 0.5, depthWrite: false, flatShading: true })));
+    for (const kind of ["weapon", "armor", "heal", "shard", "flare", "valuable", "key", "tool", "record", "mod"] as const) extra.add(buildLootItem(kind, 1, "pike", "cell", "fuse", "cutter"));
+    for (const heal of ["cell", "battery", "syringe", "medkit"] as const) extra.add(buildLootItem("heal", 1, undefined, heal));
+    extra.add(buildBin(false).root, buildBin(true).root, buildFlareSmoke(), buildRingDebris().root, buildCare(), buildDropship(), buildBoat());
+    const guns = new THREE.Group();
+    for (const kind of Object.keys(WEAPONS) as (keyof typeof WEAPONS)[]) guns.add(buildGun(kind, 1), buildHands(kind));
+    const r = this.renderer;
+    const compiled = [r.compile(this.scene, this.camera), r.compile(extra, this.camera, this.scene), r.compile(guns, this.gunCam, this.gunScene)];
+    type Program = { getUniforms(): unknown; isReady(): boolean };
+    const programs = new Set<Program>();
+    for (const set of compiled)
+      for (const m of set) {
+        const p = (r.properties.get(m) as { currentProgram?: Program }).currentProgram;
+        if (p) programs.add(p);
+      }
+    // Where the GPU says when a compile is done, each waits for it (a while at most) before its first use.
+    const tells = r.extensions.has("KHR_parallel_shader_compile");
+    for (const p of programs) {
+      await idle();
+      for (let k = 0; tells && k < 60 && !p.isReady(); k++) await idle();
+      p.getUniforms();
+    }
+  }
+
   stats() {
     const r = this.renderer.info.render;
     return {

@@ -3,7 +3,7 @@ import { ceilingAt, solidAt } from "../sim/geom";
 import { offStreet } from "../sim/streets";
 import { groundOf, highGround, roadLine, steepAt, surfaceAt, terrainGrad, terrainHeight, type Ground } from "../sim/terrain";
 import { GROUND, groundColour } from "./ground";
-import { PAL } from "./models";
+import { PAL, still } from "./models";
 import { coverAt } from "./shade";
 
 /*
@@ -124,6 +124,7 @@ export class GroundScatter {
       im.setColorAt(0, this.c.set(0xffffff));
       this.group.add(im);
     }
+    still(this.group);
   }
 
   /** Lays the scatter round (x, z) out to `reach` metres, if the camera has moved into another square since. */

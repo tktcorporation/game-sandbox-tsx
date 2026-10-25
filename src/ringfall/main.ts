@@ -8,7 +8,7 @@ import { CAMP, DEPOTS, entryOf, FRAMES, NODES, POIS, poiIndex, QUARRY_EXITS, ZIP
 import { grabZip } from "./sim/zips";
 import { POI_AT } from "./sim/areas";
 import { frontNodes, garrisonOf, takeNode, useCore } from "./sim/front";
-import { atRisk, battleMarks, departNow, landNow, marchSquad, nodePoint, placeBattleSquad } from "./sim/battle";
+import { atRisk, battleMarks, departNow, landNow, marchSquad, nodePoint, placeBattleSquad, warmLinks } from "./sim/battle";
 import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
 import { analyse, raidThreat, settle, takenStory, type Settlement } from "./meta/profile";
 import { pouchSlots } from "./meta/hideout";
@@ -421,6 +421,31 @@ function fade(on: boolean, now = false) {
   } else el.classList.toggle("on", on);
 }
 
+/**
+ * Readies the next raid in the camp's spare time, so its start does not stop for it: the battle's
+ * walks (`warmLinks()`), a link or so at a time, then the shaders of what a raid draws
+ * (`World.precompile()`), one at a time, while the page is idle. Leaving the camp stops it; the
+ * raid does what is left itself.
+ */
+let readying = false;
+type Idle = { timeRemaining(): number };
+const whenIdle = (f: (d: Idle) => void) => ("requestIdleCallback" in window ? requestIdleCallback(f, { timeout: 200 }) : setTimeout(() => f({ timeRemaining: () => 8 }), 30));
+function readyRaid() {
+  if (readying) return;
+  readying = true;
+  const shaders = () =>
+    void world
+      .precompile(() => new Promise((go, stop) => whenIdle(() => (camping ? go() : stop()))))
+      .catch(() => undefined)
+      .finally(() => (readying = false));
+  const walks = (d: Idle) => {
+    if (!camping) readying = false;
+    else if (warmLinks(Math.max(4, Math.min(12, d.timeRemaining())))) shaders();
+    else whenIdle(walks);
+  };
+  whenIdle(walks);
+}
+
 /** Wakes the player in the camp, the teammate beside them: from the title, after the results. */
 function openCamp() {
   departing = inside = null;
@@ -440,6 +465,7 @@ function openCamp() {
   state = newCamp(hub.profile.seed, hub.profile.routes);
   world.campMode = true;
   world.prebuild([state.player.pos]);
+  readyRaid();
   acc = hitstop = slowmo = 0;
   hud.show(false);
   // The raid's red edge and the leap's glow stay where the raid left them: the camp starts clear of both.

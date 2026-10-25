@@ -626,7 +626,14 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   failed blocked for a time that doubles each failure, so it settles instead of swinging; a
   chosen tier keeps its tier and moves only its resolution. It never runs under a browser driver
   (`navigator.webdriver`) or `advanceTime`, so the shots gate draws the same thing on any machine.
-  Nothing is drawn while the page is hidden. None of it changes what robots see (`SIGHT` is far
+  Nothing is drawn while the page is hidden. What never moves once placed (the chunks, the scatter, the cores, bins and
+  depots, the robots' merged armour) is fixed by `still()` in `models.ts`, and the scene itself
+  does not move: their matrices are worked out once, not every frame; a part the view poses each
+  frame is named to `still()` as moving. In the camp's idle time `readyRaid()` (`main.ts`) traces
+  the battle's walks for the next raid (`warmLinks()` in `sim/battle.ts`: the walks the raid's
+  own `initBattle()` would trace, from the same empty field cache) and readies the shaders of
+  what a raid draws (`World.precompile()`), so neither the raid's start nor its first robot of a
+  kind stops for them. The HUD measures the compass only when its size changes. None of it changes what robots see (`SIGHT` is far
   inside every tier's fog). `audio.ts` is the sound engine (buses, reverb, voice cap,
   positional voices) and runs on any `BaseAudioContext`; `sfx.ts` holds every cue; `soundscape.ts`
   puts the listener at the camera, tests walls with a few `los()` rays a frame, plays nearby robots'

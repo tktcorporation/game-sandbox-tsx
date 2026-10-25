@@ -94,6 +94,11 @@ export class Hud {
   /** A red mark per node of the player's the enemy's robots have come to, by its place in `NODES`. */
   private threatEls = new Map<number, HTMLElement>();
   private spotted = new Map<number, number>(); // robot id -> seconds left to show "!"
+  /**
+   * Half the compass's width, measured once and again only when its size changes: read in the
+   * frame, after the frame's writes to the page, it would make the browser lay the page out anew.
+   */
+  private compassHalf = 0;
 
   private map = new IslandMap($<HTMLCanvasElement>("map-canvas"));
   /** The bag peek and the pickups' cards (view/bag.ts). */
@@ -124,6 +129,7 @@ export class Hud {
   constructor() {
     $("map-close").addEventListener("click", () => this.toggleMap(false));
     $("map-zoom").addEventListener("click", () => this.toggleMapView());
+    new ResizeObserver(() => (this.compassHalf = 0)).observe($("compass"));
     const strip = $("compass-strip");
     const labels: Record<number, string> = { 0: "N", 45: "NE", 90: "E", 135: "SE", 180: "S", 225: "SW", 270: "W", 315: "NW" };
     // Three turns of the strip so it can scroll seamlessly.
@@ -513,7 +519,9 @@ export class Hud {
 
     // Compass: 2 px per degree, centred on the current heading.
     const heading = ((((p.yaw * 180) / Math.PI) % 360) + 360) % 360;
-    const half = $("compass").clientWidth / 2;
+    // Hidden, the compass measures 0: measured again each frame until it is shown.
+    if (!this.compassHalf) this.compassHalf = $("compass").clientWidth / 2;
+    const half = this.compassHalf;
     $("compass-strip").style.transform = `translateX(${half - (heading + 360) * 2}px)`;
     this.placeMark(heading, half);
     this.placeScout(s, heading, half);
