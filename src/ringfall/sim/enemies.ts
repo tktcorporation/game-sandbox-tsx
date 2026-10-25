@@ -1314,15 +1314,57 @@ function separate(s: State) {
       }
     return;
   }
-  for (let i = 0; i < n; i++) {
+  if (n > SEP_SWEEP_MAX) {
+    for (let i = 0; i < n; i++) {
+      const xi = sepX[i];
+      const zi = sepZ[i];
+      for (let j = i + 1; j < n; j++) {
+        if (Math.abs(xi - sepX[j]) > 1 || Math.abs(zi - sepZ[j]) > 1) continue;
+        pair(list[i], list[j]);
+      }
+    }
+    return;
+  }
+  // The pairs in neighbouring cells, found by sweeping the walkers sorted by column, are then
+  // visited in the order of the plain double loop (i, then j > i): a pair nudges the walkers the
+  // next pair reads.
+  if (sepOrder.length < n) {
+    sepOrder = new Float64Array(n * 2);
+    sepPairs = new Float64Array(n * 8);
+  }
+  const order = sepOrder.subarray(0, n);
+  // Columns are whole and within 1e9 of 0 here, so the keys are exact and not negative.
+  for (let i = 0; i < n; i++) order[i] = (sepX[i] + 1e9) * SEP_SWEEP_MAX + i;
+  order.sort();
+  let pairs = 0;
+  for (let a = 0; a < n; a++) {
+    const i = order[a] % SEP_SWEEP_MAX;
     const xi = sepX[i];
     const zi = sepZ[i];
-    for (let j = i + 1; j < n; j++) {
-      if (Math.abs(xi - sepX[j]) > 1 || Math.abs(zi - sepZ[j]) > 1) continue;
-      pair(list[i], list[j]);
+    for (let b = a + 1; b < n; b++) {
+      const j = order[b] % SEP_SWEEP_MAX;
+      if (sepX[j] - xi > 1) break;
+      if (Math.abs(zi - sepZ[j]) > 1) continue;
+      if (pairs === sepPairs.length) {
+        const more = new Float64Array(pairs * 2);
+        more.set(sepPairs);
+        sepPairs = more;
+      }
+      sepPairs[pairs++] = i < j ? i * SEP_SWEEP_MAX + j : j * SEP_SWEEP_MAX + i;
     }
   }
+  const found = sepPairs.subarray(0, pairs);
+  found.sort();
+  for (let q = 0; q < pairs; q++) {
+    const v = found[q];
+    const j = v % SEP_SWEEP_MAX;
+    pair(list[(v - j) / SEP_SWEEP_MAX], list[j]);
+  }
 }
+/** The most walkers `separate()` sweeps; past it, keys of a pair would not fit in a double exactly. */
+const SEP_SWEEP_MAX = 4096;
+let sepOrder = new Float64Array(512);
+let sepPairs = new Float64Array(2048);
 
 /** Shift a walker sideways, but never into a wall or off the floor it stands on. */
 function nudge(e: Enemy, dx: number, dz: number) {
