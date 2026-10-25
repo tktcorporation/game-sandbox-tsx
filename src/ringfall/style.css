@@ -961,6 +961,14 @@ body.touch #obj-raid .why {
   padding: 4px 10px;
   animation: toast 2.4s forwards;
 }
+/* A toast's second line: what the first means for the player, in a few words. */
+.toast .toast-sub {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  opacity: 0.85;
+  margin-top: 2px;
+}
 @keyframes toast {
   0% {
     transform: translateX(30px);
