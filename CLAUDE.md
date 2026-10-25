@@ -563,11 +563,17 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   by its ways in and floors, and the bot walks the ground's paths up to robots on higher ground (a
   terrace, the mesa) rather than looking for an angle on them from below.
 - `src/ringfall/touch.ts` is the phone layout (landscape): a floating stick on the left half, view
-  drag on the right half, buttons under the right thumb. It feeds the same `Input` as the keyboard,
+  drag on the right half, buttons under the right thumb (the bag button, held, beside the arc). It feeds the same `Input` as the keyboard,
   with `input.touch` set so the sim applies `ASSIST.touchPull`. `npm run shots:ringfall` drives it with
   real touch events in a phone-sized viewport before the desktop run.
 - `src/ringfall/view/` renders and never changes rules: `world.ts` (three.js), `hud.ts` (DOM),
-  and synthesized sound. Past a sprint's speed the view widens with the speed (up to 12° on a
+  and synthesized sound. `bag.ts` (`Hud.bag`) is the bag peek, shown while Tab or the phone's bag
+  button is held, the game running on under it with nothing to manage, and the card a pickup slides
+  in: each thing carried as its slots in its rarity's colour, its name, credits and what it is for
+  (the hideout module and factory level whose next level takes it, the quests and the contract
+  taken that ask for it, the route a tool opens) as the base's marks, and the pouch's mark on what
+  a wipe keeps. It reads the state and the profile the raid started from (`BagView.setProfile()`),
+  and finds a pickup by comparing what is carried frame to frame. Past a sprint's speed the view widens with the speed (up to 12° on a
   zipline, half on a phone), `#fx-speed` streaks the screen's edges (hud.ts sets its opacity) and
   the wind's rush grows (soundscape.ts); a climb nods the view with each pull and dips it over the
   top; the cables are drawn while up (`World.cables`), and the world map draws them as thin blue

@@ -51,6 +51,8 @@
         <div class="slot" id="slot-0"><span class="name"></span><span class="ammo"><b></b><small></small></span></div>
         <div class="slot" id="slot-1"><span class="name"></span><span class="ammo"><b></b><small></small></span></div>
       </div>
+      <div id="bag-peek" hidden></div>
+      <div id="bag-cards" aria-live="polite"></div>
       <div id="downed"><b>ダウン</b><span id="downed-sub">自己蘇生中</span><i><span id="downed-bar"></span></i></div>
       <div id="battery"><span id="heal-label">回復中</span><i><span id="battery-bar"></span></i></div>
     </div>
@@ -71,6 +73,7 @@
       <button type="button" class="tb small" id="t-battery" data-act="KeyH" aria-label="回復"><b>回復 <span id="t-cells">0</span></b></button>
       <button type="button" class="tb pill" id="t-use" data-act="KeyE" hidden><b>拾う・調べる</b></button>
       <button type="button" class="tb small" id="t-map" data-act="map" aria-label="地図"><b>地図</b></button>
+      <button type="button" class="tb small" id="t-bag" data-act="bag" aria-label="バッグ"><svg viewBox="0 0 16 16" width="22" height="22" aria-hidden="true"><path d="M3 6 H13 L12 15 H4 Z" fill="currentColor"/><path d="M5.5 6 V4.5 a2.5 2.5 0 0 1 5 0 V6" stroke="currentColor" stroke-width="1.6" fill="none"/></svg></button>
     </div>
     <div id="rotate">横向きにすると遊べます</div>
 
@@ -87,7 +90,7 @@
           <li><kbd>WASD</kbd>移動</li>
           <li><kbd>左クリック</kbd>撃つ <kbd>右</kbd>または<kbd>F</kbd>覗く</li>
           <li><kbd>Space</kbd>ジャンプ <kbd>C</kbd>スライディング</li>
-          <li><kbd>E</kbd>調べる・拾う <kbd>R</kbd>リロード <kbd>1</kbd><kbd>2</kbd>持ち替え <kbd>M</kbd>地図</li>
+          <li><kbd>E</kbd>調べる・拾う <kbd>R</kbd>リロード <kbd>1</kbd><kbd>2</kbd>持ち替え <kbd>M</kbd>地図 <kbd>Tab</kbd>バッグ</li>
           <li><kbd>Q</kbd>アーク <kbd>Z</kbd>離脱ジャンプ <kbd>H</kbd>回復</li>
         </ul>
         <button id="start" type="button">野営地へ</button>

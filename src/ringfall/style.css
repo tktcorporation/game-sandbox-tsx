@@ -3945,3 +3945,261 @@ body.touch #obj-raid .short {
     transform: scale(1);
   }
 }
+
+/* --- the bag peek (Tab held, the bag button on a phone) and the pickups' cards (view/bag.ts) */
+/* Over the left side, its foot on the vitals' top (bottom 18px + their 130px): clear of the crosshair, and under the objective card. */
+#bag-peek {
+  position: absolute;
+  left: 18px;
+  bottom: 160px;
+  z-index: 6;
+  width: 480px;
+  max-height: calc(100% - 180px);
+  overflow: hidden;
+  padding: 8px 12px 10px;
+  background: rgba(20, 26, 51, 0.94);
+  border-left: 4px solid var(--pouch);
+  font-family: var(--jp);
+  font-weight: 800;
+  font-size: 14px;
+  pointer-events: none;
+}
+#bag-peek[hidden] {
+  display: none;
+}
+.bp-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 6px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.18);
+  font-family: var(--num);
+  font-size: 18px;
+}
+.bp-head > .ico {
+  width: 18px;
+  height: 18px;
+}
+.bp-head .bag-cells {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: 4px;
+}
+.bp-head .bag-cells i {
+  width: 10px;
+  height: 15px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+}
+.bp-head .bag-cells i.p {
+  box-shadow: inset 0 0 0 1.5px var(--pouch);
+}
+.bp-head .bag-cells i[style] {
+  background: var(--c);
+}
+.bp-head .bag-cells i.k {
+  background: var(--pouch);
+}
+.bp-head .bp-worth {
+  margin-left: auto;
+  color: var(--hot);
+}
+.bp-head .bp-slots {
+  display: inline-flex;
+  align-items: center;
+}
+.bp-row {
+  display: grid;
+  grid-template-columns: 46px minmax(8.5em, max-content) 1fr auto 52px;
+  grid-template-areas: "pic name uses pouch val";
+  align-items: center;
+  column-gap: 8px;
+  min-height: 26px;
+  padding: 2px 0;
+}
+.bp-row + .bp-row {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.bp-pic {
+  grid-area: pic;
+  display: inline-flex;
+  gap: 2px;
+}
+.bp-pic i {
+  width: 10px;
+  height: 15px;
+  background: var(--c);
+}
+.bp-pic i.p {
+  box-shadow: 0 0 0 1.5px var(--pouch);
+}
+.bp-pic.icon .ico {
+  width: 18px;
+  height: 18px;
+}
+.bp-name {
+  grid-area: name;
+  white-space: nowrap;
+}
+.bp-name i {
+  font-style: normal;
+  font-family: var(--num);
+  margin-left: 4px;
+  color: var(--white);
+}
+.bp-uses {
+  grid-area: uses;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  font-size: 12px;
+  color: var(--white);
+}
+.bp-use {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+.bp-use b {
+  font-family: var(--num);
+  font-size: 14px;
+  margin-left: 3px;
+}
+.bp-use.done,
+.bp-use.off {
+  opacity: 0.45;
+}
+.bp-use.done .ico.check {
+  margin: 0 0 0 3px;
+  width: 11px;
+  height: 11px;
+}
+.bp-pouch {
+  grid-area: pouch;
+  display: inline-flex;
+  align-items: center;
+  color: var(--pouch);
+  font-family: var(--num);
+}
+.bp-val {
+  grid-area: val;
+  text-align: right;
+  font-family: var(--num);
+  font-size: 16px;
+  color: var(--hot);
+}
+.bp-extra {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  margin-top: 4px;
+  padding-top: 5px;
+  border-top: 1px solid rgba(255, 255, 255, 0.18);
+  font-size: 13px;
+}
+.bp-x {
+  display: inline-flex;
+  align-items: center;
+}
+.bp-x.mod {
+  color: var(--r2);
+}
+#bag-cards {
+  position: absolute;
+  right: 18px;
+  top: 120px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  pointer-events: none;
+  font-family: var(--jp);
+  font-weight: 800;
+  font-size: 14px;
+}
+.bag-card {
+  min-width: 250px;
+  max-width: 420px;
+  padding: 5px 12px 5px 10px;
+  background: var(--plate-strong);
+  border-right: 4px solid var(--c, var(--r0));
+}
+.bag-card .bp-row,
+body.touch .bag-card .bp-row {
+  grid-template-columns: auto auto 1fr auto auto;
+}
+.bag-card .bp-uses {
+  flex-wrap: nowrap;
+}
+.bp-lost {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 8px;
+  font-size: 12px;
+  color: #ff9a8a;
+}
+.bp-lost s {
+  text-decoration: line-through 2px;
+}
+.bp-lost .ico {
+  width: 11px;
+  height: 11px;
+}
+/* Held, so under the right thumb beside the arc, in the bottom row. */
+#t-bag {
+  right: calc(var(--edge-r) + 266px);
+  bottom: var(--edge-b);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* A phone on its side: the peek over the left column (its buttons are not in use while the bag button is held), the cards under the compass. */
+body.touch #bag-peek {
+  left: max(8px, env(safe-area-inset-left));
+  top: 6px;
+  bottom: auto;
+  width: min(400px, 52vw);
+  max-height: calc(100% - 12px);
+  padding: 5px 9px 6px;
+  font-size: 12px;
+}
+body.touch .bp-head {
+  font-size: 15px;
+  padding-bottom: 4px;
+}
+body.touch .bp-row {
+  grid-template-columns: 40px minmax(7.5em, max-content) 1fr auto 40px;
+  min-height: 21px;
+  padding: 1px 0;
+  column-gap: 6px;
+}
+body.touch .bp-pic i,
+body.touch .bp-head .bag-cells i {
+  width: 8px;
+  height: 12px;
+}
+body.touch .bp-uses {
+  font-size: 11px;
+}
+body.touch .bp-use b,
+body.touch .bp-val {
+  font-size: 13px;
+}
+body.touch #bag-cards {
+  right: auto;
+  left: 50%;
+  top: 84px;
+  transform: translateX(-50%);
+  align-items: center;
+  font-size: 12px;
+}
+body.touch .bag-card {
+  min-width: 0;
+  max-width: 46vw;
+}
+/* Two at most on a phone, so the stack stays clear of the crosshair. */
+body.touch .bag-card:nth-last-child(n + 3) {
+  display: none;
+}
