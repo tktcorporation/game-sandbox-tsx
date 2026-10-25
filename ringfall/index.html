@@ -86,13 +86,7 @@
         <p class="lede">前線を押し上げ、島を取り返せ。相手はロボットだけ。</p>
         <p class="title-row" id="title-row" aria-hidden="true"></p>
         <p class="touch-help"><span><b>左半分</b>移動</span><span><b>右半分</b>視点</span></p>
-        <ul class="keys">
-          <li><kbd>WASD</kbd>移動</li>
-          <li><kbd>左クリック</kbd>撃つ <kbd>右</kbd>または<kbd>F</kbd>覗く</li>
-          <li><kbd>Space</kbd>ジャンプ <kbd>C</kbd>スライディング</li>
-          <li><kbd>E</kbd>調べる・拾う <kbd>R</kbd>リロード <kbd>1</kbd><kbd>2</kbd>持ち替え <kbd>M</kbd>地図 <kbd>Tab</kbd>バッグ</li>
-          <li><kbd>Q</kbd>アーク <kbd>Z</kbd>離脱ジャンプ <kbd>H</kbd>回復</li>
-        </ul>
+        <ul class="keys" id="title-keys"></ul>
         <button id="start" type="button">野営地へ</button>
         <div class="settings"><label class="sens">マウス感度 <input id="sens" type="range" min="0.4" max="2.5" step="0.05" value="1" /></label><label class="sens vol">音量 <input id="vol" type="range" min="0" max="1" step="0.05" value="0.8" /></label><label class="sens adsmode">覗き方（F） <select id="adsmode"><option value="hold">押している間</option><option value="toggle">押すたびに切り替え</option></select></label><label class="sens quality">画質 <select id="quality"><option value="auto">自動</option><option value="high">高</option><option value="medium">中</option><option value="low">低</option></select></label></div>
         <p class="install-help" id="install-help" hidden>共有 → ホーム画面に追加</p>
@@ -148,6 +142,7 @@
       <div class="title-inner">
         <h2>一時停止</h2>
         <button id="resume" type="button">クリックで再開</button>
+        <ul class="keys" id="pause-keys"></ul>
         <div class="settings"><label class="sens">マウス感度 <input id="sens2" type="range" min="0.4" max="2.5" step="0.05" value="1" /></label><label class="sens vol">音量 <input id="vol2" type="range" min="0" max="1" step="0.05" value="0.8" /></label><label class="sens adsmode">覗き方（F） <select id="adsmode2"><option value="hold">押している間</option><option value="toggle">押すたびに切り替え</option></select></label><label class="sens quality">画質 <select id="quality2"><option value="auto">自動</option><option value="high">高</option><option value="medium">中</option><option value="low">低</option></select></label></div>
       </div>
     </section>

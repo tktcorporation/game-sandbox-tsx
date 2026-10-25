@@ -1192,14 +1192,48 @@ body.touch .mate-bars {
   margin-right: 6px;
   color: var(--hot);
 }
+/* The controls (view/keys.ts): a grid of key caps and names, on the title and pause screens. */
 .keys {
   list-style: none;
   margin: 4px 0;
   padding: 0;
+  display: grid;
+  grid-template-columns: repeat(4, max-content);
+  gap: 7px 22px;
+  font-size: 14px;
+}
+.keys li {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 15px;
+  align-items: center;
+  white-space: nowrap;
+}
+.keys .caps {
+  display: inline-flex;
+  gap: 3px;
+  margin-right: 0.45em;
+}
+.keys kbd {
+  margin-right: 0;
+}
+/* The camp's pause lists only what works in the camp: walking, looking, jumping, crouching, the use key. */
+body.camp #pause .keys .raid {
+  display: none;
+}
+/* A narrow window takes fewer columns, so no row runs past its edge (the page does not scroll). */
+@media (max-width: 760px) {
+  .keys {
+    grid-template-columns: repeat(3, max-content);
+  }
+}
+@media (max-width: 580px) {
+  .keys {
+    grid-template-columns: repeat(2, max-content);
+  }
+}
+@media (max-width: 400px) {
+  .keys {
+    grid-template-columns: max-content;
+  }
 }
 .screen button {
   pointer-events: auto;
