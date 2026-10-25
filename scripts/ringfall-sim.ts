@@ -1413,10 +1413,16 @@ function checkLoadout(): string | null {
   const back = recallLoadout(home);
   const names = back.weapons.map((n) => { const i = home.stash[n]; return i.t === "weapon" ? `${i.kind}${i.rarity}` : "?"; }).join();
   if (names !== "pike2,lance1" || home.stash[back.keys[0]]?.t !== "key" || back.heals.cell !== 1) return `loadout scenario: with the kit home the shelves picked ${names}, keys ${back.keys}, ${back.heals.cell} cells`;
-  // A starter and a stash weapon: remembered as such, and picked again as such (not the common PIKE for the starter one).
+  // A starter and a stash weapon: remembered as such, and picked again as such (not the common PIKE for the starter one);
+  // the LANCE is gone after the raid, so the other starter takes its slot and two weapons go out again.
   const mixed = takeKit(p, { ...emptyLoadout(), weapons: [p.stash.findIndex((i) => isStarter(i) && i.t === "weapon" && i.kind === "pike"), 1] });
   const re = recallLoadout(mixed.profile);
-  if (!mixed.profile.lastKit?.weapons[0]?.starter || !isStarter(mixed.profile.stash[re.weapons[0]]) || re.weapons.length !== 1) return `loadout scenario: a starter PIKE and the LANCE were picked again as ${JSON.stringify(re.weapons.map((n) => mixed.profile.stash[n]))}`;
+  const reNames = re.weapons.map((n) => { const i = mixed.profile.stash[n]; return i.t === "weapon" ? `${i.kind}${i.rarity}${i.starter ? "*" : ""}` : "?"; }).join();
+  if (!mixed.profile.lastKit?.weapons[0]?.starter || reNames !== "pike0*,talon0*") return `loadout scenario: a starter PIKE and the LANCE (gone) were picked again as ${reNames}`;
+  // One of two stash weapons left: it is picked, and a starter fills the other slot.
+  const one: Profile = { ...taken.profile, stash: [...st, { t: "weapon", kind: "lance", rarity: 1 }] };
+  const oneNames = recallLoadout(one).weapons.map((n) => { const i = one.stash[n]; return i.t === "weapon" ? `${i.kind}${i.rarity}${i.starter ? "*" : ""}` : "?"; }).join();
+  if (oneNames !== "lance1,pike0*") return `loadout scenario: with only the LANCE of the kit home the shelves picked ${oneNames}`;
   // No weapon picked: the starter weapons go, armour too, and they stay in the stash.
   const plain = takeKit(p, { ...emptyLoadout(), armor: 2 });
   if (!plain.kit.weapons.every((w) => w.starter) || plain.kit.weapons.length !== 2 || plain.kit.armor !== 2 || plain.profile.stash.filter(isStarter).length !== 2) return `loadout scenario: the starter weapons with armour came out as ${JSON.stringify(plain.kit)}`;

@@ -13,6 +13,7 @@ import { extname, join } from "node:path";
 import { chromium } from "playwright-core";
 import { movementShots } from "./ringfall-shots-movement.mjs";
 import { bagShots } from "./ringfall-shots-bag.mjs";
+import { upgradeShots } from "./ringfall-shots-upgrades.mjs";
 
 const root = "dist/client";
 const types = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml" };
@@ -2400,6 +2401,8 @@ await movementShots({ browser, port, out, errors });
 lap("movement");
 await bagShots({ browser, port, out, errors });
 lap("bag");
+await upgradeShots({ browser, port, out, errors });
+lap("upgrades");
 await browser.close();
 server.close();
 if (errors.length) {

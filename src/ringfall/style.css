@@ -2993,49 +2993,6 @@ body.touch #camp-prompt {
   margin: 2px 8px 2px 0;
 }
 
-/* The factory's panel. */
-.factory-head {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 4px 10px;
-  padding: 8px 0 10px;
-}
-.factory-head > small {
-  color: var(--muted);
-  font-weight: 800;
-}
-.factory-head b {
-  font-family: var(--num);
-  font-size: 20px;
-  color: #6fb0ff;
-}
-.factory-head p {
-  grid-column: 1 / -1;
-  margin: 0;
-  font-weight: 800;
-}
-.factory-head .pips,
-.factory-next .pips {
-  display: flex;
-  gap: 3px;
-}
-.factory-head .pips i {
-  width: 14px;
-  height: 6px;
-  background: rgba(255, 255, 255, 0.16);
-}
-.factory-head .pips i.on {
-  background: #3d8cff;
-}
-.factory-next .mod-head {
-  cursor: default;
-}
-.factory-top {
-  font-weight: 800;
-  color: #6fb0ff;
-}
-
 /* The camp's 今日の作戦: the node to go for, the contract or record taken, and the kit, under the head. */
 #camp-plan {
   position: absolute;
@@ -3634,15 +3591,6 @@ body.touch #obj-raid .short {
 #hub .item.armed {
   box-shadow: inset 0 0 0 2px #ff6b5a;
 }
-.factory-line {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 2px 12px;
-  align-items: baseline;
-}
-.factory-line > span {
-  white-space: nowrap;
-}
 .hub-list .quest.route strong .ico.route {
   vertical-align: -3px;
   margin-right: 6px;
@@ -4222,4 +4170,331 @@ body.touch .bag-card {
 /* Two at most on a phone, so the stack stays clear of the crosshair. */
 body.touch .bag-card:nth-last-child(n + 3) {
   display: none;
+}
+
+/*
+ * An upgrade's card (a hideout module, the factory): its mark and name, the level as pips, and the
+ * next level's gain as was → now with what grows lit in the hot yellow. Opened, a ladder of its
+ * levels, then what the next one takes, set apart under a rule. Each mark is the one that stands
+ * where the effect shows elsewhere (icons.ts).
+ */
+.up-card .mod-head strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.up-card .mod-head strong .ico {
+  width: 20px;
+  height: 20px;
+}
+.factory-card .mod-head strong .ico {
+  color: #6fb0ff;
+}
+.factory-card .mod-head > b {
+  font-family: var(--num);
+  font-size: 18px;
+  color: #6fb0ff;
+}
+.factory-card .pips i.on {
+  background: #3d8cff;
+}
+.gain-row {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  margin-top: 6px;
+  min-height: 30px;
+  font-size: 14px;
+}
+.gain-row > .ico {
+  color: var(--hot);
+}
+.gain-row > b {
+  margin-left: -10px;
+  font-family: var(--num);
+  font-size: 16px;
+  color: var(--hot);
+}
+.gain-row.max > b {
+  margin-left: 0;
+  color: var(--muted);
+}
+.gauge,
+.delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.gauge small,
+.delta small {
+  font-size: 12px;
+  color: var(--muted);
+}
+.gauge .ico,
+.delta .ico {
+  flex: none;
+}
+.up-card b.n {
+  font-family: var(--num);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--white);
+}
+.up-card b.n.none {
+  color: var(--muted);
+}
+.delta .was {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  opacity: 0.5;
+}
+.delta .to {
+  width: 0;
+  height: 0;
+  border-left: 7px solid var(--hot);
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+}
+.delta .now {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+/* What grows: the hot yellow; in the gain row it breathes, so the eye finds it first. */
+.gain-row .now .gain {
+  animation: gain-pulse 1.6s ease-in-out infinite;
+}
+.up-card b.n.gain,
+.up-card .tell.gain,
+.up-card .mats em {
+  color: var(--hot);
+  text-shadow: 0 0 8px rgba(255, 226, 61, 0.55);
+}
+.up-card .boxes .seg.gain {
+  border-style: solid;
+  border-color: var(--hot);
+  box-shadow: 0 0 8px rgba(255, 226, 61, 0.6);
+}
+.up-card .bots i.gain .ico {
+  filter: drop-shadow(0 0 3px var(--hot)) drop-shadow(0 0 1px var(--hot));
+}
+@keyframes gain-pulse {
+  50% {
+    filter: brightness(1.35) drop-shadow(0 0 4px rgba(255, 226, 61, 0.8));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gain-row .now .gain {
+    animation: none;
+  }
+}
+.up-card .boxes .seg {
+  height: 20px;
+  width: 20px;
+}
+.rbar {
+  display: inline-flex;
+  gap: 3px;
+}
+.rbar i {
+  width: 16px;
+  height: 10px;
+  background: var(--c);
+  opacity: 0.18;
+}
+.rbar i.on {
+  opacity: 1;
+}
+.rbar i.gain {
+  outline: 2px solid var(--hot);
+  outline-offset: 1px;
+}
+.mats {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0 8px;
+  margin-left: 6px;
+  white-space: normal;
+}
+.mats em {
+  font-style: normal;
+  font-weight: 800;
+  font-size: 13px;
+}
+.bots {
+  display: inline-flex;
+  gap: 1px;
+}
+.bots i {
+  display: inline-flex;
+}
+.tell {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  font-weight: 800;
+  font-size: 13px;
+}
+.tell .star {
+  font-style: normal;
+  color: var(--r3);
+}
+.tell.gain {
+  border-color: var(--hot);
+}
+/* The ladder: a row a level, the built ones ticked and faint, the current one barred white, the next one lit. */
+.ladder {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ladder li {
+  display: grid;
+  grid-template-columns: 2.6em 1fr 18px;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 2px 8px;
+  background: rgba(0, 0, 0, 0.2);
+}
+.ladder li > b {
+  font-family: var(--num);
+  font-size: 15px;
+  color: var(--muted);
+}
+.ladder li > span {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 12px;
+}
+.ladder li > i {
+  display: inline-flex;
+}
+.ladder li.done {
+  opacity: 0.55;
+}
+.ladder li.cur {
+  box-shadow: inset 3px 0 0 var(--white);
+}
+.ladder li.cur > b {
+  color: var(--white);
+}
+.ladder li.next {
+  box-shadow: inset 3px 0 0 var(--hot), inset 0 0 0 1px rgba(255, 226, 61, 0.45);
+}
+.ladder li.next > b,
+.ladder li.next > i {
+  color: var(--hot);
+}
+.ladder li.later {
+  opacity: 0.45;
+}
+/* Only the next level's gain is lit in the ladder: the others are history or later. */
+.ladder li:not(.next) b.n.gain,
+.ladder li:not(.next) .tell.gain,
+.ladder li:not(.next) .mats em {
+  color: var(--white);
+  text-shadow: none;
+}
+.ladder li:not(.next) .tell.gain {
+  border-color: rgba(255, 255, 255, 0.25);
+}
+.ladder li:not(.next) .boxes .seg.gain {
+  border-style: dashed;
+  border-color: var(--pouch);
+  box-shadow: none;
+}
+.ladder li:not(.next) .rbar i.gain {
+  outline: 0;
+}
+.ladder li:not(.next) .bots i.gain .ico {
+  filter: none;
+}
+/* What the next level takes, set apart from what it does. */
+.mod-cost {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.28);
+}
+.mod-cost > small {
+  font-size: 12px;
+  color: var(--muted);
+}
+.from-nodes {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 2px 8px 8px;
+}
+.from-nodes > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.from-nodes b {
+  font-family: var(--num);
+  font-size: 16px;
+}
+.from-nodes small {
+  font-size: 12px;
+  font-weight: 800;
+}
+.factory-card {
+  background: var(--plate);
+}
+#hub .factory-card .mod-head {
+  cursor: default;
+}
+/* The trader's materials by rarity under the gun tiers, a wrench in each rarity the workbench lets the trader sell. */
+.shelf-mats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin: -4px 0 10px;
+}
+.shelf-mats > div {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 4px;
+  border-radius: 6px;
+  background: rgba(20, 26, 51, 0.6);
+  opacity: 0.45;
+}
+.shelf-mats > div.on {
+  opacity: 1;
+  box-shadow: 0 0 0 1px var(--c) inset;
+}
+.shelf-mats > div i {
+  width: 22px;
+  height: 8px;
+  background: var(--c);
+}
+/* The infirmary's case beside the heals it issues, on the shelves. */
+.hub-list .slot.count .issued {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 8px;
+  color: var(--white);
+  font-weight: 800;
+}
+#hub-stash-count .ico,
+.hub-list .slot.intel small .ico {
+  margin-right: 4px;
+  vertical-align: -2px;
 }

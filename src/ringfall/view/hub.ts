@@ -1,15 +1,15 @@
 import { PLAYER } from "../sim/config";
-import { armorIcon, binPicture, checkIcon, factoryIcon, hideoutIcon, clockIcon, crossIcon, depotIcon, gunIcon, healIcon, keyIcon, lockIcon, modIcon, pinIcon, pouchIcon, robotIcon, routeIcon, SIDE, turretIcon, upIcon } from "./icons";
-import { ALLY, FACTORY, HEALS as HEAL_SPECS, HIDEOUT, MOD_KINDS, RARITY, THREAT, TOOLS, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
+import { armorIcon, binPicture, checkIcon, coreIcon, factoryIcon, flagIcon, hideoutIcon, clockIcon, crossIcon, depotIcon, gunIcon, healIcon, issueIcon, keyIcon, lockIcon, modIcon, pinIcon, pouchIcon, radioIcon, robotIcon, routeIcon, SIDE, stashIcon, turretIcon, upIcon, workbenchIcon } from "./icons";
+import { ALLY, FACTORY, HEALS as HEAL_SPECS, HIDEOUT, MOD_KINDS, PLATE, RARITY, THREAT, TOOLS, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
 import { boostFor, raidClock, strengthFor, type Kit } from "../sim/state";
 import { CAMP, DEPOTS, ENTRIES, entryOf, NODES, POIS, UNLOCKS, poiIndex, poiRegion, REGIONS, regionOf, ROUTES, type EntryId, type PoiId, type RegionId, type StationId } from "../sim/map";
 import { armed, build, buildFactory, buildState, buy, buyPrice, canBuild, canBuildFactory, factoryNeeded, nextFactory, canStartIn, deliver, deliverable, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, isStarter, issuedHeals, itemCost, HEALS, healCount, healRoom, keyName, kitPicks, loadoutCost, stashUsed, price, raidThreat, recallLoadout, sell, sellPrice, setThreat, startsIn, STORY_TAKEN, takenStory, threatPay, take, takeKit, takenContract, wanted, wares, type Item, type Loadout, type Profile } from "../meta/profile";
 import { CONTRACT_NAME, contractMark, contractRegion, contractText, type Contract, type Reward } from "../meta/contracts";
 import { currentStory, STORIES, storyOf, storyWhere } from "../meta/story";
-import { maxLevel, MODULES, nextLevel, pouchSlots, sources, stashCap, stillNeeded, type Source } from "../meta/hideout";
+import { materialRarity, maxLevel, MODULES, nextLevel, pouchSlots, sources, stashCap, stillNeeded, type Hideout, type Source } from "../meta/hideout";
 import { need, offered, type Quest, type RewardItem } from "../meta/quests";
 import { saveProfile } from "../meta/storage";
-import { departDepots, eventName, frontIncome, islandHolds, playerNodes, shopRarity, unfreeable } from "../meta/island";
+import { departDepots, eventName, frontIncome, islandHolds, playerNodes, shopRarity, unfreeable, unlocked } from "../meta/island";
 import { eventRow } from "./events";
 import { HOLD_CSS, IslandMap, islandScene, TITAN_CSS } from "./map";
 import { enemyNodes, frontNodes } from "../sim/front";
@@ -88,7 +88,10 @@ function shelfTiers(p: Profile): string {
     const by = NODES.filter((n) => UNLOCKS[n.id].shop === r).map((n) => `<em style="color:${mine.includes(n.id) ? HOLD_CSS.freed : HOLD_CSS.held}">${esc(n.name)}</em>`);
     return `<div class="tier${r <= best ? " on" : ""}" style="--c:${RARITY_CSS[r]}"><i></i><span>${by.join("")}</span></div>`;
   });
-  return `<div class="shelf-tiers">${cells.join("")}</div>`;
+  // The materials beside them, under the workbench's wrench: the rarities it lets the trader sell.
+  const mats = materialRarity(p.hideout);
+  const row = ([0, 1, 2, 3] as Rarity[]).map((r) => `<div class="${r <= mats ? "on" : ""}" style="--c:${RARITY_CSS[r]}">${workbenchIcon(r <= mats ? RARITY_CSS[r] : undefined)}<i></i></div>`);
+  return `<div class="shelf-tiers">${cells.join("")}</div><div class="shelf-mats">${row.join("")}</div>`;
 }
 
 const color = (i: Item | RewardItem) =>
@@ -121,10 +124,62 @@ export function rewardList(q: { reward: Reward }): [RewardItem, number][] {
 }
 
 /**
- * A hideout level's effect as names and numbers. Most levels' `does` is already that; the radio's
- * says what it tells in a sentence, so it is shown as what it marks.
+ * Each hideout module's mark. The same mark stands where the module's effect shows elsewhere (the
+ * shelves' issued heals, the stash's count, the trader's materials, the map table's report, the
+ * pouch's slots), so the card says where an upgrade grows.
  */
-const moduleDoes = (m: ModuleId, lv: number, does: string) => (m === "radio" ? (lv === 1 ? "拠点 ★" : "拠点 ★・回収品・レイダーの時刻") : does);
+const MODULE_ICON: Record<ModuleId, () => string> = { infirmary: () => issueIcon(), workbench: () => workbenchIcon(), storage: () => stashIcon(), radio: () => radioIcon(), pouch: () => pouchIcon() };
+
+/**
+ * One number an upgrade's level sets, as its mark (and a short name where several share a mark) and
+ * its value drawn by `show`, which picks out what grew since `was` (the level before).
+ */
+interface Gauge {
+  key: string;
+  mark: string;
+  label?: string;
+  n: number;
+  show: (n: number, was?: number) => string;
+  /** Left out where it is 0 and was 0 (a robot kind or a heal not given yet). */
+  hideZero?: boolean;
+}
+
+const num = (n: number, was?: number) => `<b class="n${was !== undefined && n !== was ? " gain" : ""}">${n}</b>`;
+/** Slots as boxes in the pouch's colour, the ones added since `was` lit. */
+const slotBoxes = (n: number, was = n) => `<span class="boxes">${Array.from({ length: n }, (_, i) => `<i class="seg pouch${i >= was ? " gain" : ""}" style="--n:1"></i>`).join("")}</span>`;
+/** The four rarities as swatches, lit up to `r`, those lit since `was` glowing. */
+const rarityBar = (r: number, was = r) => `<span class="rbar">${[0, 1, 2, 3].map((k) => `<i class="${k <= r ? "on" : ""}${k <= r && k > was ? " gain" : ""}" style="--c:${RARITY_CSS[k]}"></i>`).join("")}</span>`;
+
+/** A gauge's value and what grew since `was`. */
+const gaugeHtml = (g: Gauge, was?: Gauge) =>
+  g.hideZero && !g.n && !was?.n
+    ? ""
+    : `<span class="gauge${was && was.n !== g.n ? " up" : ""}">${g.mark}${g.label ? `<small>${esc(g.label)}</small>` : ""}${g.show(g.n, was?.n)}</span>`;
+
+/** The gauges that change from `a` to `b`, each as was → now with the gain lit; null where nothing changes. */
+function deltaHtml(a: Gauge[], b: Gauge[]): string {
+  return b
+    .map((g) => {
+      const was = a.find((x) => x.key === g.key);
+      if (was && was.n === g.n) return "";
+      return `<span class="delta">${g.mark}${g.label ? `<small>${esc(g.label)}</small>` : ""}<span class="was">${was ? was.show(was.n) : num(0)}</span><i class="to"></i><span class="now">${g.show(g.n, was?.n ?? 0)}</span></span>`;
+    })
+    .join("");
+}
+
+/**
+ * The ladder of an upgrade's levels: each level's gauges with what that level added lit, the levels
+ * built ticked and dimmed, the current one marked, the next one lit.
+ */
+function ladder(levels: Gauge[][], lv: number): string {
+  return `<ol class="ladder">${levels
+    .map((g, n) => {
+      const cls = n < lv ? "done" : n === lv ? "cur" : n === lv + 1 ? "next" : "later";
+      const mark = n <= lv ? checkIcon() : n === lv + 1 ? upIcon() : "";
+      return `<li class="${cls}"><b>Lv${n}</b><span>${g.map((x, i) => gaugeHtml(x, n ? levels[n - 1][i] : undefined)).join("")}</span><i>${mark}</i></li>`;
+    })
+    .join("")}</ol>`;
+}
 
 const $ = (id: string) => document.getElementById(id)!;
 
@@ -531,39 +586,60 @@ export class Hub {
   }
 
   /**
-   * What the factory at level `lv` makes, as marks and numbers: a blue robot per kind it builds, the
-   * seconds between squads, how many squads at once, and its turrets.
+   * The factory's gauges at level `lv`: the squad it makes (a blue robot a member, by kind), the
+   * seconds between squads (fewer is better), the squads out at once (the map's flag; the nodes held
+   * add theirs, `unlocked().squad`), and the turrets at each node held.
    */
-  private factoryLine(lv: number): string {
-    const kinds = [...new Set(FACTORY.kinds[lv])].map((k) => {
-      const n = FACTORY.kinds[lv].filter((x) => x === k).length;
-      return `<span>${robotIcon(SIDE.own)}${ENEMY_NAME[k]}${n > 1 ? ` ×${n}` : ""}</span>`;
-    }).join("");
-    const turrets = FACTORY.turrets[lv] ? `<span>${turretIcon(SIDE.own)}${FACTORY.turrets[lv]}</span>` : "";
-    return `<span class="factory-line">${kinds}<span>${clockIcon()}${FACTORY.every[lv]} 秒</span><span>部隊 ×${FACTORY.max[lv]}</span>${turrets}</span>`;
+  private factoryGauges(lv: number): Gauge[] {
+    const kinds = [...new Set(FACTORY.kinds.flat())];
+    const squad = (k: EnemyKind) => (lv2: number) => FACTORY.kinds[lv2].filter((x) => x === k).length;
+    const extra = unlocked(this.profile).squad;
+    return [
+      ...kinds.map((k) => ({
+        key: k,
+        mark: "",
+        label: ENEMY_NAME[k],
+        hideZero: true,
+        n: squad(k)(lv),
+        show: (n: number, was = n) => `<span class="bots">${Array.from({ length: n }, (_, i) => `<i class="${i >= was ? "gain" : ""}">${robotIcon(SIDE.own)}</i>`).join("") || `<b class="n none">0</b>`}</span>`,
+      })),
+      { key: "every", mark: clockIcon(), n: FACTORY.every[lv], show: (n: number, was?: number) => `${num(n, was)}<small>秒</small>` },
+      { key: "max", mark: flagIcon(), n: FACTORY.max[lv] + extra, show: num },
+      { key: "turrets", mark: turretIcon(SIDE.own), n: FACTORY.turrets[lv], show: num, hideZero: true },
+    ];
+  }
+
+  /** What a level takes from the stash: each valuable (have / need, and where it is found) and the credits, set apart from its effect. */
+  private cost(items: [ValuableKind, number][], cash: number, button: string): string {
+    const p = this.profile;
+    const have = (k: ValuableKind) => p.stash.filter((i) => i.t === "valuable" && i.kind === k).length;
+    const rows = items
+      .map(([k, n]) => `<div class="req${have(k) >= n ? " ok" : ""}"><span style="color:${RARITY_CSS[VALUABLES[k].rarity]}">${esc(VALUABLES[k].label)}</span><b>${Math.min(have(k), n)} / ${n}</b><small>${esc(whereLine(k))}</small></div>`)
+      .join("");
+    const credits = `<div class="req${p.cash >= cash ? " ok" : ""}"><span>クレジット</span><b>${yen(Math.min(p.cash, cash))} / ${yen(cash)}</b></div>`;
+    return `<div class="mod-cost"><small>必要</small>${rows}${credits}${button}</div>`;
   }
 
   /**
-   * The factory's panel: its level and what it makes, its next level (what it takes and does,
-   * and the button that builds it), and how its squads fight the day's battle.
+   * The factory's panel: its level with what it makes now, the next level's gain (was → now, lit),
+   * the ladder of its levels, then what the next one takes and the button that builds it. The nodes
+   * held add squads (their flag) and arm its robots as the trader's shelf (the gun's colour).
    */
   private factoryPanel(): string {
     const p = this.profile;
     const lv = p.factory;
     const next = nextFactory(p);
+    const levels = FACTORY.every.map((_, n) => this.factoryGauges(n));
     const pips = Array.from({ length: FACTORY.levels.length }, (_, n) => `<i class="${n < lv ? "on" : ""}"></i>`).join("");
-    let card = "";
-    if (next) {
-      const have = (k: ValuableKind) => p.stash.filter((i) => i.t === "valuable" && i.kind === k).length;
-      const rows = next.items
-        .map(([k, n]) => `<div class="req${have(k) >= n ? " ok" : ""}"><span style="color:${RARITY_CSS[VALUABLES[k].rarity]}">${esc(VALUABLES[k].label)}</span><b>${Math.min(have(k), n)} / ${n}</b><small>${esc(whereLine(k))}</small></div>`)
-        .join("");
-      const cash = `<div class="req${p.cash >= next.cash ? " ok" : ""}"><span>クレジット</span><b>${yen(Math.min(p.cash, next.cash))} / ${yen(next.cash)}</b></div>`;
-      card = `<div class="mod open factory-next"><div class="mod-head"><strong>${upIcon()}Lv${lv + 1}</strong><small>${this.factoryLine(lv + 1)}</small></div><div class="mod-body">${rows}${cash}<button type="button" data-act="factory" ${canBuildFactory(p) ? "" : "disabled"}>Lv${lv + 1}</button></div></div>`;
-    }
+    const u = unlocked(p);
+    const arms = Math.max(PLATE.robots, u.shop);
+    // What the nodes held add: a node's core in the player's blue, then their squads' flags and the gun's colour (the trader's shelf).
+    const nodes = `<div class="from-nodes">${coreIcon(SIDE.own)}${u.squad ? `<span>${flagIcon()}<b>+${u.squad}</b></span>` : ""}<span style="color:${RARITY_CSS[arms]}">${gunIcon()}<small>${RARITY.names[arms]}</small></span></div>`;
+    const gain = next ? `<div class="gain-row">${upIcon()}<b>Lv${lv + 1}</b>${deltaHtml(levels[lv], levels[lv + 1])}</div>` : `<div class="gain-row max">MAX</div>`;
+    const cost = next ? this.cost(next.items, next.cash, `<button type="button" data-act="factory" ${canBuildFactory(p) ? "" : "disabled"}>Lv${lv + 1}</button>`) : "";
     return (
-      `<div class="factory-head"><small>工場</small><span class="pips">${pips}</span><b>Lv${lv}${next ? "" : " MAX"}</b><p>${this.factoryLine(lv)}</p></div>` +
-      card
+      `<div class="mod open up-card factory-card"><div class="mod-head"><strong>${factoryIcon()}工場</strong><span class="pips">${pips}</span><b>Lv${lv}${next ? "" : " MAX"}</b>${gain}</div>` +
+      `<div class="mod-body">${nodes}${ladder(levels, lv)}${cost}</div></div>`
     );
   }
 
@@ -580,7 +656,59 @@ export class Hub {
     return `<h3 class="hub-sub">道</h3>${rows.join("")}`;
   }
 
-  /** A hideout module: its level, its next level's effect, and when opened, what it takes and where that is found. */
+  /**
+   * What a module's level `lv` sets, as gauges: the heals issued to every raid, the trader's
+   * materials up to a rarity, the stash's room, the radio's report, the pouch's slots.
+   */
+  private moduleGauges(m: ModuleId, lv: number): Gauge[] {
+    const h: Hideout = { ...this.profile.hideout, [m]: lv };
+    switch (m) {
+      case "infirmary": {
+        const at = issuedHeals({ hideout: h });
+        const top = issuedHeals({ hideout: { ...h, infirmary: maxLevel("infirmary") } });
+        return HEALS.filter((k) => top[k] > 0).map((k) => ({ key: k, mark: healIcon(HEAL_SPECS[k].shield), label: HEAL_SPECS[k].short, n: at[k], show: num, hideZero: true }));
+      }
+      case "workbench": {
+        // The rarities lit, then the materials each step adds, in their rarity's colour.
+        return [
+          {
+            key: "rarity",
+            mark: "",
+            n: materialRarity(h),
+            show: (r: number, was = r) => {
+              const added = (Object.keys(VALUABLES) as ValuableKind[]).filter((k) => VALUABLES[k].rarity > was && VALUABLES[k].rarity <= r);
+              return `${rarityBar(r, was)}${added.length ? `<span class="mats">${added.map((k) => `<em style="color:${RARITY_CSS[VALUABLES[k].rarity]}">${esc(VALUABLES[k].label)}</em>`).join("")}</span>` : ""}`;
+            },
+          },
+        ];
+      }
+      case "storage":
+        return [{ key: "stash", mark: "", n: stashCap(h), show: num }];
+      case "pouch":
+        return [{ key: "pouch", mark: "", n: pouchSlots(h), show: (n: number, was?: number) => `${slotBoxes(n, was)}${num(n, was)}` }];
+      case "radio":
+        // What the report tells: the POI whose bins lean rare, then the valuable and the raiders' time. The only module told in words.
+        return [
+          {
+            key: "radio",
+            mark: "",
+            n: lv,
+            show: (n: number, was = n) =>
+              n
+                ? [`<em class="star">★</em>拠点`, `回収品`, `${clockIcon()}レイダー`]
+                    .slice(0, n === 1 ? 1 : 3)
+                    .map((t, i) => `<span class="tell${(i === 0 ? 1 : 2) > was ? " gain" : ""}">${t}</span>`)
+                    .join("")
+                : `<b class="n none">—</b>`,
+          },
+        ];
+    }
+  }
+
+  /**
+   * A hideout module: its mark, name, level and the next level's gain (was → now, lit). Opened, the
+   * ladder of its levels and, set apart, what the next level takes and the button that builds it.
+   */
   private moduleCard(m: ModuleId) {
     const p = this.profile;
     const spec = HIDEOUT[m];
@@ -589,22 +717,13 @@ export class Hub {
     const pips = Array.from({ length: maxLevel(m) }, (_, n) => `<i class="${n < lv ? "on" : ""}"></i>`).join("");
     const state = buildState(p, m);
     const open = this.module === m;
-    let body = "";
-    if (open && next) {
-      const have = (k: ValuableKind) => p.stash.filter((i) => i.t === "valuable" && i.kind === k).length;
-      const rows = next.items
-        .map(([k, n]) => {
-          const ok = have(k) >= n;
-          return `<div class="req${ok ? " ok" : ""}"><span style="color:${RARITY_CSS[VALUABLES[k].rarity]}">${esc(VALUABLES[k].label)}</span><b>${Math.min(have(k), n)} / ${n}</b><small>${esc(whereLine(k))}</small></div>`;
-        })
-        .join("");
-      const cash = `<div class="req${p.cash >= next.cash ? " ok" : ""}"><span>クレジット</span><b>${yen(Math.min(p.cash, next.cash))} / ${yen(next.cash)}</b></div>`;
-      body = `<div class="mod-body">${rows}${cash}<button type="button" data-act="build" data-arg="${m}" ${canBuild(p, m) ? "" : "disabled"}>Lv${lv + 1}</button></div>`;
-    }
+    const levels = Array.from({ length: maxLevel(m) + 1 }, (_, n) => this.moduleGauges(m, n));
+    const gain = next ? `<div class="gain-row">${upIcon()}<b>Lv${lv + 1}</b>${deltaHtml(levels[lv], levels[lv + 1])}</div>` : `<div class="gain-row max">${levels[lv].map((g) => gaugeHtml(g)).join("")}<b>MAX</b></div>`;
+    const body = open ? `<div class="mod-body">${ladder(levels, lv)}${next ? this.cost(next.items, next.cash, `<button type="button" data-act="build" data-arg="${m}" ${canBuild(p, m) ? "" : "disabled"}>Lv${lv + 1}</button>`) : ""}</div>` : "";
     return (
-      `<div class="mod${open ? " open" : ""}"><button type="button" class="mod-head" data-act="mod" data-arg="${m}">` +
-      `<strong>${esc(spec.name)}</strong><span class="pips">${pips}</span><b class="${state === "作れる" ? "go" : ""}">${state}</b>` +
-      `<small>${next ? `${upIcon()}Lv${lv + 1}　${esc(moduleDoes(m, lv + 1, next.does))}` : "MAX"}</small></button>${body}</div>`
+      `<div class="mod up-card${open ? " open" : ""}" data-mod="${m}"><button type="button" class="mod-head" data-act="mod" data-arg="${m}">` +
+      `<strong>${MODULE_ICON[m]()}${esc(spec.name)}</strong><span class="pips">${pips}</span><b class="${state === "作れる" ? "go" : ""}">${state}</b>` +
+      `${gain}</button>${body}</div>`
     );
   }
 
@@ -767,7 +886,7 @@ export class Hub {
   /** The map table's radio report on the next raid, as a slot, or "" without a radio. */
   private intelSlot(): string {
     const intel = this.intel();
-    return intel ? `<div class="slot intel"><small>無線</small><span>${intel}</span></div>` : "";
+    return intel ? `<div class="slot intel"><small>${radioIcon()}無線</small><span>${intel}</span></div>` : "";
   }
 
   /**
@@ -784,7 +903,7 @@ export class Hub {
       return i?.t === "weapon" ? `<small class="stat">${esc(weaponStats(i.kind, i.rarity))}</small>` : "";
     };
     const heal = (k: (typeof HEALS)[number]) =>
-      `<div class="slot count"><small>${HEAL_SPECS[k].label}</small><button type="button" data-act="heal-" data-arg="${k}">−</button><b>${this.load.heals[k] + issued[k]}</b><button type="button" data-act="heal+" data-arg="${k}">+</button><small>倉庫 ${this.load.heals[k]}/${healCount(p, k)}${issued[k] ? `・支給 ${issued[k]}` : ""}</small></div>`;
+      `<div class="slot count"><small>${HEAL_SPECS[k].label}</small><button type="button" data-act="heal-" data-arg="${k}">−</button><b>${this.load.heals[k] + issued[k]}</b><button type="button" data-act="heal+" data-arg="${k}">+</button><small>倉庫 ${this.load.heals[k]}/${healCount(p, k)}${issued[k] ? `<span class="issued">${issueIcon()}${issued[k]}</span>` : ""}</small></div>`;
     const keys = this.load.keys.map((n) => esc(itemName(p.stash[n]))).join("・");
     const weapons = slot("武器 1", this.load.weapons[0], stat(this.load.weapons[0])) + slot("武器 2", this.load.weapons[1], stat(this.load.weapons[1]));
     return (
@@ -877,7 +996,8 @@ export class Hub {
     $("hub-title").textContent = panel.title;
     $("hub-cash").textContent = yen(p.cash);
     $("hub-record").textContent = `出撃 ${p.raids} ・ 生還 ${p.extracted}`;
-    $("hub-stash-count").textContent = `${stashUsed(p)} / ${stashCap(p.hideout)}`;
+    // The storage's crate: the room it gives is the count's right side.
+    $("hub-stash-count").innerHTML = `${stashIcon()}${stashUsed(p)} / ${stashCap(p.hideout)}`;
     $("hub").dataset.station = st;
     $("hub-stash-col").hidden = !panel.stash;
     $("hub-cols").classList.toggle("one", !panel.stash);
