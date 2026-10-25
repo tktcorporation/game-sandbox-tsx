@@ -19,6 +19,8 @@ import { hypot2 } from "./hypot";
 
 /** Cell size in metres. Ramps are 8 m wide or more, so 2 m cells keep them open. */
 const RES = 2;
+/** 1 / RES, exactly: a distance's bucket is `(d * INV_RES) | 0`, its floor, as distances are finite, not negative and far below 2^31. */
+const INV_RES = 1 / RES;
 const NX = Math.ceil((WORLD.x1 - WORLD.x0) / RES);
 const NZ = Math.ceil((WORLD.z1 - WORLD.z0) / RES);
 const CELLS = NX * NZ;
@@ -311,7 +313,7 @@ function build(target: number, reach: number, dist: Float32Array, order: Int32Ar
     let m = 0;
     for (let e = 0; e < n; e++) {
       const k = list[e];
-      if (done[k] >= taken || Math.floor(dist[k] / RES) !== b) continue;
+      if (done[k] >= taken || ((dist[k] * INV_RES) | 0) !== b) continue;
       done[k] = taken;
       if (dist[k] > reach) {
         dist[k] = Infinity;
@@ -333,7 +335,7 @@ function build(target: number, reach: number, dist: Float32Array, order: Int32Ar
         if (d < dist[q]) {
           dist[q] = d;
           // Into the ring by its distance as stored, a bucket RES wide.
-          const into = Math.floor(dist[q] / RES) & (RING - 1);
+          const into = ((dist[q] * INV_RES) | 0) & (RING - 1);
           let cells = ring[into];
           if (ringSize[into] === cells.length) {
             const grown = new Int32Array(cells.length * 2);
