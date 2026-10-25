@@ -219,8 +219,11 @@ export class Hud {
   toast(html: string, rarity: number, ms = 2400) {
     const el = document.createElement("div");
     el.className = "toast";
-    // A toast held longer than the default fades over its own time, not the default's.
-    if (ms !== 2400) el.style.animationDuration = `${ms}ms`;
+    // A toast held longer than the default comes in as fast and fades at its own end.
+    if (ms !== 2400) {
+      el.classList.add("long");
+      el.style.animationDuration = `${ms}ms`;
+    }
     el.innerHTML = html;
     el.style.setProperty("--rc", RARITY_CSS[rarity]);
     $("toasts").appendChild(el);
