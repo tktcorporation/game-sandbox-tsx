@@ -2964,7 +2964,7 @@ function checkPositionMatters(): string | null {
 
 /**
  * Time to kill with a PIKE, every round on the body of a robot that faces the player (the usual
- * fight), at 12 m and at 30 m: with the free kit's common one a grunt falls in 1.5-2.5 s of fire
+ * fight), at 12 m and at 30 m: with the starter common one a grunt falls in 1.5-2.5 s of fire
  * and a heavy in 3-4 s; a plate one step past the gun stretches a grunt to 5.5-8 s, and a gun that
  * pierces it brings that back (a raider with an epic one in 2.3-3.5 s). The kill says where the shot came from.
  */
