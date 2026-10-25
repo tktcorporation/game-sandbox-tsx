@@ -1339,15 +1339,35 @@ export const NOISE = {
  * robots every `scan` seconds, out to `sight` of its members' sight range: a member that sees one
  * (in its view cone, or within `close` metres whatever way it faces) sets the squad on it, and the
  * squad fights it with the shots it fires at the player until it is down or has gone `forget`
- * seconds unseen. A robot hit by the other faction turns on whoever shot it. The garrisons of the
- * POIs hold their posts and take no part, so a POI is only ever cleared by the player. Firing at
+ * seconds unseen. Each member looks at the `look` nearest it, those fighting the player first, so
+ * one standing behind a wall does not hide the rest. A robot hit by the other faction turns on
+ * whoever shot it, but for one fighting the player, which weighs it as a target (see SUPPORT). The
+ * garrisons of the POIs hold their posts and take no part, so a POI is only ever cleared by the player. Firing at
  * the other faction lands `dmg` of its damage, so a fight between squads goes on for a while, long
  * enough to be heard and come to, and leaves its winner worn. Firing at
  * the other faction carries `noise` metres (`NOISE.roamMult` further to squads out on the roads,
  * which come to look) and is heard by the player out to `hear` metres, where it marks the map
  * (`State.contacts`) for `keep` seconds.
  */
-export const FACTION = { scan: 0.25, sight: 1, close: 12, forget: 8, noise: 40, hear: 380, keep: 60, every: 1.5, dmg: 0.8, apart: 90 };
+export const FACTION = { scan: 0.25, sight: 1, close: 12, forget: 8, noise: 40, hear: 380, keep: 60, every: 1.5, dmg: 0.8, apart: 90, look: 6 };
+
+/**
+ * The player's own robots (`State.friends`) and the robots that fight the player. A squad of the
+ * player's with a member within `reach` metres of the player or the teammate, while robots fight
+ * them, takes one of those robots as its foe (see FACTION) whether it sees it or not: the nearest
+ * to it within `foe` metres, one winding up or firing at the player or the teammate counting
+ * `firing` metres nearer. It goes in by the ground's way to where it can shoot, and back to its
+ * node's task once that robot is down or forgotten. The squad keeps its choice while that robot
+ * fights them, and knows where it is while it does.
+ *
+ * A robot fighting the player weighs the player's robots as it weighs the teammate (see
+ * `chooseTarget()` in enemies.ts): the nearest of the `look` nearest in its fighting sight, a
+ * robot out of its line of sight not counted unless it hit this one within `hit` seconds, counts
+ * as `bias` metres further than it stands, or `hitBias` metres nearer when it has just hit it. It
+ * then fights it with the shots it fires at the other faction (`fightFoe()`), and its squad fights
+ * the player for as long as any member does.
+ */
+export const SUPPORT = { reach: 60, foe: 90, firing: 25, look: 6, hit: 3, bias: 6, hitBias: 4 };
 
 /**
  * Rogue patrols (`MOBILES` with `rank`) walk while their rank is below `patrols[strength]` for the

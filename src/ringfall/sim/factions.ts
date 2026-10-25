@@ -1,13 +1,14 @@
-import { AMBUSH, AWARE, BAG, DEG, FACTION, NOISE, PATROL, PLATE, ROGUE, SIGHT, SWEEP, TICK, VALUABLES, type EnemyKind } from "./config";
+import { AMBUSH, AWARE, BAG, DEG, FACTION, NOISE, PATROL, PLATE, ROGUE, SHOT, SIGHT, SUPPORT, SWEEP, TICK, VALUABLES, type EnemyKind } from "./config";
 import { dist2d, los, lookAngles, wrapAngle } from "./geom";
 import { EXTRACTS, GATES, MOBILES, RING_GAPS, regionHere, type Mobile, type RegionId } from "./map";
 import { onMainGround, walkLine } from "./hunt";
 import { worldKey } from "./routes";
-import { mix, sightScale, type Enemy, type Point, type State } from "./state";
+import { mix, sightScale, type Enemy, type Point, type SquadState, type State } from "./state";
 import { alertSquad, headOf, standable } from "./awareness";
 import { bodyCenter, fall } from "./combat";
 import { robotSide } from "./battle";
 import { terrainHeight } from "./terrain";
+import { allyUp } from "./ally";
 
 /*
  * The robots between the POIs: the squads that walk out (`MOBILES`), the two factions that fight
@@ -165,8 +166,9 @@ function near(b: Map<number, Enemy[]>, x: number, z: number, r: number, keep: (o
  * The factions finding each other, every tick: a squad drops a foe that is down, that it has not
  * seen for `FACTION.forget` seconds, or once it fights the player; every `FACTION.scan` seconds
  * each squad out between the POIs that is not fighting the player looks for the other faction's
- * robots (see FACTION). Robots are looked up by square, so the cost follows the robots near each
- * other, not the square of all of them.
+ * robots (see FACTION), and a squad of the player's near the player or the teammate under fire
+ * goes for whoever fights them (`support()`, see SUPPORT). Robots are looked up by square, so the
+ * cost follows the robots near each other, not the square of all of them.
  */
 export function stepFactions(s: State) {
   for (const sq of s.squads) {
@@ -193,12 +195,15 @@ export function stepFactions(s: State) {
   for (const [i, members] of bySquad) {
     const sq = s.squads[i];
     if (!sq || sq.engaged) continue;
+    if (sq.friend && support(s, sq, members)) continue;
     const fighting = sq.foe !== undefined;
     let seen: Enemy | null = null;
     for (const m of members.slice(0, 4)) {
       const range = Math.min(CELL, SIGHT[m.kind].range * scale * (fighting ? AWARE.engagedRange : 1));
       const eye = headOf(m);
-      for (const { o, d } of near(b, m.pos.x, m.pos.z, range, (o) => hostile(m, o)).slice(0, 2)) {
+      // The nearest, those fighting the player first (the sort keeps nearest first within each).
+      const cand = near(b, m.pos.x, m.pos.z, range, (o) => hostile(m, o)).sort((x, y) => +(y.o.aware === "engaged") - +(x.o.aware === "engaged"));
+      for (const { o, d } of cand.slice(0, FACTION.look)) {
         const inView = fighting || d < FACTION.close || Math.abs(wrapAngle(lookAngles(m.pos, o.pos).yaw - m.yaw)) < (SIGHT[m.kind].fov / 2) * DEG;
         if (inView && los(eye, bodyCenter(o))) {
           seen = o;
@@ -217,9 +222,45 @@ export function stepFactions(s: State) {
 }
 
 /**
+ * A squad of the player's own (`sq`, its robots `members`) near the player or the teammate while
+ * robots fight them (see SUPPORT): it keeps a foe that still fights them, knowing where it is, or
+ * takes the nearest such robot within `SUPPORT.foe` metres of a member, one firing at the player
+ * or the teammate counting `SUPPORT.firing` metres nearer, whether it sees it or not. False when
+ * none is near, and the squad looks for the others' robots as any squad does.
+ */
+function support(s: State, sq: SquadState, members: Enemy[]): boolean {
+  const ally = allyUp(s) ? s.ally.pos : null;
+  const close = (e: Enemy) => dist2d(e.pos, s.player.pos) < SUPPORT.reach || (!!ally && dist2d(e.pos, ally) < SUPPORT.reach);
+  if (!members.some(close)) return false;
+  const fights = (o: Enemy) => o.aware === "engaged" && members.some((m) => hostile(m, o));
+  const kept = sq.foe !== undefined ? s.enemies.find((o) => o.id === sq.foe) : undefined;
+  let best = kept && fights(kept) ? kept : null;
+  if (!best) {
+    let bestD = Infinity;
+    for (const o of s.enemies) {
+      if (!fights(o)) continue;
+      const firing = (o.target === "player" || o.target === "ally") && (o.mode === "telegraph" || o.mode === "fire" || o.fired < SHOT.shareWindow);
+      const d = Math.min(...members.map((m) => dist2d(m.pos, o.pos)));
+      const score = d - (firing ? SUPPORT.firing : 0);
+      if (d < SUPPORT.foe && score < bestD) {
+        bestD = score;
+        best = o;
+      }
+    }
+  }
+  if (!best) return false;
+  sq.foe = best.id;
+  sq.foeT = 0;
+  sq.foeAt = { x: best.pos.x, z: best.pos.z };
+  return true;
+}
+
+/**
  * A robot hit by the other faction's fire (see FACTION): it takes `FACTION.dmg` of the damage, cut
  * by a plate their guns do not pierce but with no flank, and its squad, if it is not fighting the player or another foe
- * already, turns on whoever shot it. At no health left it falls (`fall()`).
+ * already, turns on whoever shot it. One fighting the player and hit by the player's own robots
+ * remembers which and when (`Enemy.friendBy`), and thinks again whom it fights (see SUPPORT).
+ * At no health left it falls (`fall()`).
  */
 export function damageRobot(s: State, v: Enemy, dmg: number, by: Enemy | null) {
   if (!present(s, v)) return;
@@ -232,6 +273,11 @@ export function damageRobot(s: State, v: Enemy, dmg: number, by: Enemy | null) {
   v.shield -= toShield;
   v.hp -= dmg - toShield;
   s.events.push({ t: "robotHit", id: v.id, pos: bodyCenter(v) });
+  if (by?.friend && !v.friend) {
+    v.friendBy = by.id;
+    v.friendAt = s.time;
+    if (v.aware === "engaged") v.targetT = Math.min(v.targetT, 0.3);
+  }
   const sq = s.squads[v.squad];
   if (sq && by && !sq.engaged && present(s, by) && hostile(v, by) && (sq.foe === undefined || !anyWithId(s, sq.foe))) {
     sq.foe = by.id;

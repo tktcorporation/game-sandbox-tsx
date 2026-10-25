@@ -1,4 +1,4 @@
-import { ALLY, AWARE, CHARGER, CONQUEST, COVER, CREW, DEG, DODGE, DUCK, ELITE, ENEMIES, FALLBACK, FAR_THINK, PACK, PARTY, PATROL, PINCH, SPLIT, SWEEP, PLAYER, PURSUE, SHOT, SIGHT, STAGGER, TICK, TITAN, TURN, WORLD, type EnemyKind, type Rarity } from "./config";
+import { ALLY, AWARE, CHARGER, CONQUEST, COVER, CREW, DEG, DODGE, DUCK, ELITE, ENEMIES, FALLBACK, FAR_THINK, PACK, PARTY, PATROL, PINCH, SPLIT, SWEEP, PLAYER, PURSUE, SHOT, SIGHT, STAGGER, SUPPORT, TICK, TITAN, TURN, WORLD, type EnemyKind, type Rarity } from "./config";
 import { clampToWorld, collide, dist2d, fenceBetween, groundAt, groundLevel, los, lookAngles, onTerrain, solidAt, worldVersion, wrapAngle } from "./geom";
 import { steepAt, terrainHeight } from "./terrain";
 import { engageSquad, fireRange, headOf, knownSpot, located, pursuitSpot, sense, stepSquads } from "./awareness";
@@ -12,7 +12,7 @@ const CLIMB = 1.2;
 const bodyHeight = (k: { bodyY: number; radius: number }) => k.bodyY + k.radius;
 import { inZone } from "./front";
 import { inCamp, MOBILES, PARTY_STOPS, POIS, ROAMERS, type Mobile, type Squad } from "./map";
-import { beatOf, damageRobot, fightHeard, foeOf, mobileWalks, placeMobile } from "./factions";
+import { beatOf, damageRobot, fightHeard, foeOf, hostile, mobileWalks, placeMobile } from "./factions";
 import { robotSide, type Side } from "./battle";
 import { bodyCenter, weakPoint } from "./combat";
 import { hurtPlayer } from "./player";
@@ -424,8 +424,17 @@ export function stepEnemies(s: State) {
     }
     // Whom it fights. At the teammate it knows where it is (the teammate shoots and
     // calls out); at the player it acts on what its squad knows: the player while
-    // seen, else the last sighting.
+    // seen, else the last sighting. At one of the player's own robots it fights as at the
+    // other faction (see SUPPORT), while its squad fights the player still.
     chooseTarget(s, e);
+    if (e.target === "friend") {
+      const f = byId.get(e.friendId ?? -1);
+      if (f && !gone(f)) {
+        fightFoe(s, e, f);
+        continue;
+      }
+      e.target = "player";
+    }
     const atAlly = e.target === "ally";
     const tPos = atAlly ? s.ally.pos : p.pos;
     const tChest = atAlly ? allyChest(s.ally) : chest(s);
@@ -623,9 +632,17 @@ function othersFiring(s: State, e: Enemy): number {
  * Whom an engaged robot fights, re-thought every 1.5 s: the nearer of the player and
  * the teammate, a target out of sight counting as far away. The teammate counts as
  * `aggroBias` metres further unless it has just shot this robot, so the player stays
- * the main target and the teammate draws the robots it hurts. The titan only fights the player.
+ * the main target and the teammate draws the robots it hurts. With the player's own robots
+ * about it weighs them too (`friendTarget()`), and thinks again at once when its target goes
+ * down. The titan only fights the player.
  */
 function chooseTarget(s: State, e: Enemy) {
+  if (s.friends.length) return friendTarget(s, e);
+  if (e.target === "friend") {
+    // The player's robots are gone: back to the player, thought over now.
+    e.target = "player";
+    e.targetT = 0;
+  }
   if (!allyUp(s)) {
     e.target = "player";
     return;
@@ -642,6 +659,55 @@ function chooseTarget(s: State, e: Enemy) {
   const toPlayer = dist2d(e.pos, s.player.pos) + (los(from, chest(s)) ? 0 : 30) - (e.target === "player" ? 3 : 0);
   const toAlly = dist2d(e.pos, a.pos) + (los(from, allyChest(a)) ? 0 : 30) - (e.target === "ally" ? 3 : 0) + (e.allyHit < 2 ? -4 : ALLY.aggroBias);
   e.target = toAlly < toPlayer ? "ally" : "player";
+}
+
+/**
+ * `chooseTarget()` with the player's own robots about (see SUPPORT): the nearest of the player
+ * (while up), the teammate (while up, `aggroBias` further unless it has just shot this robot) and
+ * the `SUPPORT.look` nearest of the player's robots in its fighting sight, each `SUPPORT.bias`
+ * metres further than it stands, or `SUPPORT.hitBias` nearer for the one that hit it within
+ * `SUPPORT.hit` seconds. A robot it cannot see is not chosen unless it just hit it.
+ */
+function friendTarget(s: State, e: Enemy) {
+  const playerUp = s.player.downed <= 0;
+  const ally = allyUp(s);
+  const lost = (e.target === "friend" && !s.friends.some((o) => o.id === e.friendId)) || (e.target === "ally" && !ally) || (e.target === "player" && !playerUp && ally);
+  e.targetT -= TICK;
+  if (e.targetT > 0 && !lost) return;
+  e.targetT = 1.5;
+  const from = muzzle(e);
+  let best: Enemy["target"] = "player";
+  let bestD = Infinity;
+  let bestId: number | undefined;
+  if (playerUp) bestD = dist2d(e.pos, s.player.pos) + (los(from, chest(s)) ? 0 : 30) - (e.target === "player" ? 3 : 0);
+  if (ally) {
+    const a = s.ally;
+    const toAlly = dist2d(e.pos, a.pos) + (los(from, allyChest(a)) ? 0 : 30) - (e.target === "ally" ? 3 : 0) + (e.allyHit < 2 ? -4 : ALLY.aggroBias);
+    if (toAlly < bestD) {
+      bestD = toAlly;
+      best = "ally";
+    }
+  }
+  const far = SIGHT[e.kind].range * sightScale(s) * AWARE.engagedRange;
+  const near = s.friends
+    .filter((o) => o.mode !== "spawning" && hostile(e, o) && dist2d(e.pos, o.pos) < far)
+    .sort((x, y) => dist2d(e.pos, x.pos) - dist2d(e.pos, y.pos))
+    .slice(0, SUPPORT.look);
+  for (const o of near) {
+    const hit = o.id === e.friendBy && s.time - (e.friendAt ?? -Infinity) < SUPPORT.hit;
+    const seen = los(from, bodyCenter(o));
+    if (!seen && !hit) continue;
+    const d = dist2d(e.pos, o.pos) + (seen ? 0 : 30) - (e.target === "friend" && e.friendId === o.id ? 3 : 0) + (hit ? -SUPPORT.hitBias : SUPPORT.bias);
+    if (d < bestD) {
+      bestD = d;
+      best = "friend";
+      bestId = o.id;
+    }
+  }
+  // Nobody up and nobody of the player's in sight: the player, as with nobody about.
+  if (bestD === Infinity) best = ally ? "ally" : "player";
+  e.target = best;
+  e.friendId = bestId;
 }
 
 /**
