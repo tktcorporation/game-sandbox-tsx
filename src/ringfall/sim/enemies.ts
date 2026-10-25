@@ -1482,8 +1482,8 @@ function sweptHit(a: Vec3, b: Vec3, r: number, at: Vec3, top: number): { at: Vec
 
 /**
  * The player's own robots in the world (`State.friends`, sim/battle.ts), every tick: a squad set
- * on a robot of the network or the rogues (see FACTION) fights it as any squad fights the other
- * faction; otherwise it walks its way to its node (its squad's `patrol`, the first living member
+ * on a robot of the network or the rogues (see FACTION, and SUPPORT for the robots fighting the
+ * player or the teammate nearby) fights it as any squad fights the other faction; otherwise it walks its way to its node (its squad's `patrol`, the first living member
  * leading) and stands at the core. They never fight the player or the teammate, nor look for them.
  */
 export function stepFriends(s: State) {
