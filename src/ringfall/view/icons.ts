@@ -142,3 +142,31 @@ export const factoryIcon = (c: string = SIDE.own) =>
 /** A paper from the quest board: a quest or the contract taken that asks for the thing beside it. */
 export const paperIcon = (c = "#efe6cf") =>
   svg(`<path d="M3 1.5 H10.5 L13 4 V14.5 H3 Z" fill="${c}"/><path d="M10.5 1.5 V4 H13" fill="rgba(20,24,40,0.35)"/><path d="M5 7 H11 M5 9.5 H11 M5 12 H9" stroke="rgba(20,24,40,0.7)" stroke-width="1.1"/>`, "paper");
+
+/*
+ * The hideout's modules each have one mark, drawn both on the module's card in the workshop and
+ * wherever its effect shows elsewhere, so the card's mark tells where an upgrade grows: the
+ * infirmary's case beside the shelves' issued heals, the storage's crate at the stash's count, the
+ * workbench's wrench over the trader's materials, the radio's mast at the map table's report. The
+ * pouch keeps `pouchIcon()` and the factory `factoryIcon()`.
+ */
+
+/** The infirmary: a white case with a green cross. Beside a heal count, the heals it issues to every raid. */
+export const issueIcon = (c = "#7fe08a") =>
+  svg(`<rect x="1.5" y="4.5" width="13" height="10" rx="1.4" fill="#f4f7ff"/><path d="M5.5 4.5 V2.5 H10.5 V4.5" stroke="#f4f7ff" stroke-width="1.6" fill="none"/><path d="M6.8 6.5 H9.2 V8.6 H11.3 V11 H9.2 V13.1 H6.8 V11 H4.7 V8.6 H6.8 Z" fill="${c}"/>`, "issue");
+
+/** The storage: a crate on a shelf. Beside the stash's count, the room it gives. */
+export const stashIcon = (c = "#d9a868") =>
+  svg(`<rect x="2" y="3" width="12" height="9.5" fill="${c}"/><path d="M2 6.2 H14 M2 9.4 H14" stroke="rgba(20,24,40,0.55)" stroke-width="1"/><rect x="6.4" y="4.2" width="3.2" height="1.6" fill="rgba(20,24,40,0.6)"/><path d="M1 14.5 H15" stroke="${c}" stroke-width="1.8" stroke-linecap="round"/>`, "stash");
+
+/** The workbench: a wrench. Over the trader's materials, how rare a thing it sells. */
+export const workbenchIcon = (c = "#c9d0dc") =>
+  svg(`<path d="M10.8 1.6 A4 4 0 0 0 7.2 6.9 L1.9 12.2 A1.5 1.5 0 0 0 4 14.3 L9.3 9 A4 4 0 0 0 14.6 5.4 L12.3 7.7 L9.9 7.3 L8.6 6.1 L8.4 3.9 Z" fill="${c}"/>`, "bench");
+
+/** The radio: a mast sending waves. At the map table's report, what it tells of the next raid. */
+export const radioIcon = (c = "#7ec8e3") =>
+  svg(`<path d="M8 6.5 L5 15 M8 6.5 L11 15 M6 12 H10" stroke="${c}" stroke-width="1.6" fill="none" stroke-linecap="round"/><circle cx="8" cy="5.5" r="1.6" fill="${c}"/><path d="M5 3 A4 4 0 0 0 5 8 M11 3 A4 4 0 0 1 11 8 M2.8 1.2 A6.5 6.5 0 0 0 2.8 9.8 M13.2 1.2 A6.5 6.5 0 0 1 13.2 9.8" stroke="${c}" stroke-width="1.3" fill="none" stroke-linecap="round"/>`, "radio");
+
+/** A squad of the factory's out at once: the map's blue flag on a white pole (a node that adds one carries the same flag). */
+export const flagIcon = (c: string = SIDE.own) =>
+  svg(`<path d="M3.5 15 V1.5" stroke="#f4f7ff" stroke-width="1.6" stroke-linecap="round"/><path d="M3.5 1.8 L14 5.4 L3.5 9 Z" fill="${c}"/>`, "flag");
