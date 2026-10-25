@@ -20,6 +20,7 @@ import { allyChest, allyUp, hurtAlly } from "./ally";
 import { activePacks, garrison, netPlated, poiTier, tierPlated } from "./island";
 import { modScale } from "./mods";
 import { crewRand, mix, rand, roamRand, sightScale, weakY, type Enemy, type Point, type State, type Vec3 } from "./state";
+import { hypot2, hypot3 } from "./hypot";
 
 /** The side an orb was fired for (sim/battle.ts `Side`). */
 const orbSide = (o: { friend?: boolean; rogue?: boolean }): Side => (o.friend ? 0 : o.rogue ? 2 : 1);
@@ -222,7 +223,7 @@ function lockAim(e: Enemy, at: Vec3) {
 function leadAim(e: Enemy, at: Vec3, vel: Vec3) {
   const k = ENEMIES[e.kind];
   const from = muzzle(e);
-  const t = (Math.hypot(at.x - from.x, at.y - from.y, at.z - from.z) / Math.max(k.orbSpeed, 1)) * SHOT.lead;
+  const t = (hypot3(at.x - from.x, at.y - from.y, at.z - from.z) / Math.max(k.orbSpeed, 1)) * SHOT.lead;
   lockAim(e, { x: at.x + vel.x * t, y: at.y, z: at.z + vel.z * t });
 }
 
@@ -352,7 +353,7 @@ function stepBody(e: Enemy, vx: number, vz: number): boolean {
     if (e.pos.y === there) e.vel.y = 0;
   }
   // Moved much less than asked: the way is blocked.
-  return blocked && Math.hypot(e.pos.x - bx, e.pos.z - bz) < Math.hypot(vx, vz) * dt * 0.4;
+  return blocked && hypot2(e.pos.x - bx, e.pos.z - bz) < hypot2(vx, vz) * dt * 0.4;
 }
 
 export function stepEnemies(s: State) {
@@ -445,7 +446,7 @@ export function stepEnemies(s: State) {
     const round = atAlly ? null : pinchSpot(s, e, known);
     const dx = known.x - e.pos.x;
     const dz = known.z - e.pos.z;
-    const d = Math.hypot(dx, dz) || 1e-3;
+    const d = hypot2(dx, dz) || 1e-3;
     // The squad has lost the player: this member goes after them, to its own side of the spot (see PURSUE).
     const after = known.live || round ? null : pursuitSpot(s, e, known);
     const afterVia = after && dist2d(e.pos, after) > 1.5 ? sideStep(s, e, after, known, PURSUE.spread) : null;
@@ -453,7 +454,7 @@ export function stepEnemies(s: State) {
     const look = afterVia && dist2d(e.pos, known) > 6 ? afterVia : known;
     const lx = look.x - e.pos.x;
     const lz = look.z - e.pos.z;
-    if (e.mode !== "lunge" && Math.hypot(lx, lz) > 0.5) turnAt(e, Math.atan2(lx, -lz), TURN[e.kind] * (e.elite ? ELITE.turn : 1));
+    if (e.mode !== "lunge" && hypot2(lx, lz) > 0.5) turnAt(e, Math.atan2(lx, -lz), TURN[e.kind] * (e.elite ? ELITE.turn : 1));
     // Raiders do not hide: they press in and go round. Nor does a grunt on its way round a pinned player.
     if (e.kind === "grunt" && !e.elite && !round && fromCover(s, e, known, tChest, tUp, tVel)) continue;
     switch (e.mode) {
@@ -461,7 +462,7 @@ export function stepEnemies(s: State) {
         const sees = known.live && facing(e, tPos) && los(muzzle(e), tChest);
         // Out of sight, or seen through a fence, it closes in by the ground's way, round the cliff, the house or the fence between.
         const via = sees && !fenceBetween(e.pos, tPos) ? known : (afterVia ?? (after ? after : huntStep(s, e, known)));
-        const vd = Math.hypot(via.x - e.pos.x, via.z - e.pos.z) || 1e-3;
+        const vd = hypot2(via.x - e.pos.x, via.z - e.pos.z) || 1e-3;
         const ux = (via.x - e.pos.x) / vd;
         const uz = (via.z - e.pos.z) / vd;
         let along = 0;
@@ -494,7 +495,7 @@ export function stepEnemies(s: State) {
             const w = (6 - kd) / 6;
             ux2 += ((e.pos.x - known.x) / kd) * w * 1.5;
             uz2 += ((e.pos.z - known.z) / kd) * w * 1.5;
-            const ul = Math.hypot(ux2, uz2) || 1;
+            const ul = hypot2(ux2, uz2) || 1;
             ux2 /= ul;
             uz2 /= ul;
           }
@@ -512,7 +513,7 @@ export function stepEnemies(s: State) {
         // from afar, see RETURN), measured eye to chest as sight is; its preferred distance only
         // steers where it walks. The teammate is fought within its fighting sight alone.
         const eye = headOf(e);
-        const reach = Math.hypot(tChest.x - eye.x, tChest.y - eye.y, tChest.z - eye.z);
+        const reach = hypot3(tChest.x - eye.x, tChest.y - eye.y, tChest.z - eye.z);
         const far = atAlly ? SIGHT[e.kind].range * sightScale(s) * AWARE.engagedRange : fireRange(s, e);
         if (ready && (e.kind === "charger" ? d < CHARGER.lungeRange : reach < far)) {
           e.mode = "telegraph";
@@ -539,7 +540,7 @@ export function stepEnemies(s: State) {
           } else if (sightOn(e, tPos, tChest)) {
             e.mode = "fire";
             e.timer = 0;
-            e.shotsLeft = k.shots + (k.spread === 0 && Math.hypot(tVel.x, tVel.z) < SHOT.still ? SHOT.extra : 0);
+            e.shotsLeft = k.shots + (k.spread === 0 && hypot2(tVel.x, tVel.z) < SHOT.still ? SHOT.extra : 0);
           } else {
             // The target got behind something or out of its cone during the glow: no burst.
             e.mode = "move";
@@ -555,7 +556,7 @@ export function stepEnemies(s: State) {
           // Every shot of a burst is aimed afresh while the target is in sight.
           if (sightOn(e, tPos, tChest)) leadAim(e, tChest, tVel);
           // A target standing still is shot closer (see SHOT): a narrower stray, and a fan drawn in.
-          const still = Math.hypot(tVel.x, tVel.z) < SHOT.still;
+          const still = hypot2(tVel.x, tVel.z) < SHOT.still;
           const wide = still ? SHOT.steady : 1;
           if (k.spread > 0) {
             const fan = k.spread * (still ? SHOT.fan : 1);
@@ -570,7 +571,7 @@ export function stepEnemies(s: State) {
         if (e.shotsLeft <= 0) {
           e.mode = "move";
           e.opener = false;
-          e.cooldown = k.cooldown * (0.8 + draw(s, e) * 0.4) * (e.elite ? ELITE.cooldown : 1) * (Math.hypot(tVel.x, tVel.z) < SHOT.still ? SHOT.press : 1) * (1 + SHOT.share * othersFiring(s, e));
+          e.cooldown = k.cooldown * (0.8 + draw(s, e) * 0.4) * (e.elite ? ELITE.cooldown : 1) * (hypot2(tVel.x, tVel.z) < SHOT.still ? SHOT.press : 1) * (1 + SHOT.share * othersFiring(s, e));
           e.fired = 0;
           // A grunt in cover shows itself next from the other side of it; hurt and alone, it stays hidden longer.
           e.peekSide = -e.peekSide;
@@ -585,12 +586,12 @@ export function stepEnemies(s: State) {
         e.vel.x = vx;
         e.vel.z = vz;
         const hitWall = moveBody(e, vx, vz);
-        if (e.shotsLeft > 0 && Math.hypot(p.pos.x - e.pos.x, p.pos.z - e.pos.z) < CHARGER.hitRadius + PLAYER.radius && Math.abs(p.pos.y - e.pos.y) < 1.4) {
+        if (e.shotsLeft > 0 && hypot2(p.pos.x - e.pos.x, p.pos.z - e.pos.z) < CHARGER.hitRadius + PLAYER.radius && Math.abs(p.pos.y - e.pos.y) < 1.4) {
           e.shotsLeft = 0;
           hurtPlayer(s, k.orbDmg, e.pos.x, e.pos.z);
         }
         const a = s.ally;
-        if (e.shotsLeft > 0 && allyUp(s) && Math.hypot(a.pos.x - e.pos.x, a.pos.z - e.pos.z) < CHARGER.hitRadius + ALLY.radius && Math.abs(a.pos.y - e.pos.y) < 1.4) {
+        if (e.shotsLeft > 0 && allyUp(s) && hypot2(a.pos.x - e.pos.x, a.pos.z - e.pos.z) < CHARGER.hitRadius + ALLY.radius && Math.abs(a.pos.y - e.pos.y) < 1.4) {
           e.shotsLeft = 0;
           hurtAlly(s, k.orbDmg);
         }
@@ -722,7 +723,7 @@ function fightFoe(s: State, e: Enemy, foe: Enemy) {
   const at = bodyCenter(foe);
   const dx = foe.pos.x - e.pos.x;
   const dz = foe.pos.z - e.pos.z;
-  const d = Math.hypot(dx, dz) || 1e-3;
+  const d = hypot2(dx, dz) || 1e-3;
   const ux = dx / d;
   const uz = dz / d;
   if (e.mode !== "telegraph" && e.mode !== "fire") e.mode = "move";
@@ -763,7 +764,7 @@ function fightFoe(s: State, e: Enemy, foe: Enemy) {
         break;
       }
       const eye = headOf(e);
-      const reach = Math.hypot(at.x - eye.x, at.y - eye.y, at.z - eye.z);
+      const reach = hypot3(at.x - eye.x, at.y - eye.y, at.z - eye.z);
       if (e.cooldown <= 0 && sees && reach < SIGHT[e.kind].range * sightScale(s) * AWARE.engagedRange) {
         e.mode = "telegraph";
         e.timer = k.telegraph;
@@ -856,7 +857,7 @@ function flankSpot(s: State, e: Enemy, known: { x: number; z: number }): Point |
   const lead = mates[0];
   const lx = known.x - lead.pos.x;
   const lz = known.z - lead.pos.z;
-  const ll = Math.hypot(lx, lz) || 1;
+  const ll = hypot2(lx, lz) || 1;
   const side = n % 2 ? 1 : -1;
   const x = known.x + (-lz / ll) * ELITE.flankDist * side;
   const z = known.z + (lx / ll) * ELITE.flankDist * side;
@@ -903,7 +904,7 @@ function pinchSpot(s: State, e: Enemy, known: { x: number; z: number; live: bool
   const at = backing ? { x: known.x + v.x * PINCH.lead, z: known.z + v.z * PINCH.lead } : known;
   const lx = at.x - lead.pos.x;
   const lz = at.z - lead.pos.z;
-  const ll = Math.hypot(lx, lz) || 1;
+  const ll = hypot2(lx, lz) || 1;
   // The first goes round on the side the player is heading for, cutting the retreat off.
   const toward = backing && -lz * v.x + lx * v.z < 0 ? -1 : 1;
   const side = (n % 2 ? -1 : 1) * toward;
@@ -929,7 +930,7 @@ function splitSpot(e: Enemy, lead: Enemy, others: Enemy[], known: Point): Point 
   if (n < 0) return null;
   const lx = known.x - lead.pos.x;
   const lz = known.z - lead.pos.z;
-  const ll = Math.hypot(lx, lz) || 1;
+  const ll = hypot2(lx, lz) || 1;
   const side = n % 2 ? -1 : 1;
   for (const d of [SPLIT.dist, SPLIT.dist * 0.6]) {
     const x = known.x + (-lz / ll) * d * side + (lx / ll) * d * SPLIT.back;
@@ -948,7 +949,7 @@ function turnTo(e: Enemy, yaw: number, rate = 3) {
 function walkTo(e: Enemy, to: Point, speed: number, face = true): boolean {
   const dx = to.x - e.pos.x;
   const dz = to.z - e.pos.z;
-  const d = Math.hypot(dx, dz);
+  const d = hypot2(dx, dz);
   if (d < 0.35) {
     moveBody(e, 0, 0);
     return true;
@@ -1010,7 +1011,7 @@ const STRAY = 12;
 function inColumn(s: State, e: Enemy, ahead: Enemy, speed: number) {
   const dx = e.pos.x - ahead.pos.x;
   const dz = e.pos.z - ahead.pos.z;
-  const l = Math.hypot(dx, dz) || 1;
+  const l = hypot2(dx, dz) || 1;
   if (l <= CONQUEST.column + 0.3) {
     moveBody(e, 0, 0);
     turnTo(e, ahead.yaw, 3);
@@ -1040,7 +1041,7 @@ function toSegment(p: Point, a: Point, b: Point): number {
   const dz = b.z - a.z;
   const l2 = dx * dx + dz * dz;
   const t = l2 > 0 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.z - a.z) * dz) / l2)) : 0;
-  return Math.hypot(p.x - a.x - dx * t, p.z - a.z - dz * t);
+  return hypot2(p.x - a.x - dx * t, p.z - a.z - dz * t);
 }
 
 /*
@@ -1172,7 +1173,7 @@ function calm(s: State, e: Enemy) {
 function sameFloor(from: Vec3, c: CoverPoint): boolean {
   // On the ground both ends, the walk follows the ground, slopes included.
   if (onTerrain(from) && Math.abs(c.y - groundLevel(c.x, c.z)) < 0.3) return true;
-  const d = Math.hypot(c.x - from.x, c.z - from.z);
+  const d = hypot2(c.x - from.x, c.z - from.z);
   const n = Math.ceil(d / 0.5);
   for (let i = 1; i < n; i++) {
     const x = from.x + ((c.x - from.x) * i) / n;
@@ -1281,7 +1282,7 @@ function separate(s: State) {
     const r = ENEMIES[a.kind].radius + ENEMIES[b.kind].radius;
     const dx = b.pos.x - a.pos.x;
     const dz = b.pos.z - a.pos.z;
-    const d = Math.hypot(dx, dz);
+    const d = hypot2(dx, dz);
     // Robots on different floors (a tower's tiers) do not touch.
     if (d >= r || d < 1e-4 || Math.abs(a.pos.y - b.pos.y) > 1) return;
     const push = (r - d) / 2;
@@ -1432,7 +1433,7 @@ function titan(s: State, e: Enemy, d: number) {
 /** Distance from `pt` to a body's axis: the vertical segment from `y0` to `y0 + h` at (x, z). */
 function axisDist(pt: Vec3, x: number, z: number, y0: number, h: number): number {
   const cy = Math.max(y0, Math.min(y0 + h, pt.y));
-  return Math.hypot(pt.x - x, pt.y - cy, pt.z - z);
+  return hypot3(pt.x - x, pt.y - cy, pt.z - z);
 }
 
 /**
@@ -1565,11 +1566,11 @@ export function stepOrbs(s: State) {
     if (s.stats.wipes !== wipes) return false;
     if (o.homing) {
       // Turn the velocity toward the player a little each tick.
-      const sp = Math.hypot(o.vel.x, o.vel.y, o.vel.z);
+      const sp = hypot3(o.vel.x, o.vel.y, o.vel.z);
       const tx = c.x - o.pos.x;
       const ty = c.y - o.pos.y;
       const tz = c.z - o.pos.z;
-      const tl = Math.hypot(tx, ty, tz) || 1;
+      const tl = hypot3(tx, ty, tz) || 1;
       const k = TITAN.homing * TICK;
       o.vel.x += ((tx / tl) * sp - o.vel.x) * k;
       o.vel.y += ((ty / tl) * sp - o.vel.y) * k;
@@ -1631,13 +1632,13 @@ export function stepWaves(s: State) {
   const kept = s.waves.filter((w) => {
     if (s.stats.wipes !== wipes) return false;
     w.r += TITAN.stompSpeed * TICK;
-    const d = Math.hypot(p.pos.x - w.x, p.pos.z - w.z);
+    const d = hypot2(p.pos.x - w.x, p.pos.z - w.z);
     if (!w.hit && Math.abs(d - w.r) < 0.9 && p.pos.y < w.y + TITAN.stompHeight) {
       w.hit = true;
       hurtPlayer(s, TITAN.stompDmg, w.x, w.z);
     }
     const a = s.ally;
-    const da = Math.hypot(a.pos.x - w.x, a.pos.z - w.z);
+    const da = hypot2(a.pos.x - w.x, a.pos.z - w.z);
     // The wave passes the teammate once. It never jumps, but standing up high clears the wave like the player.
     if (allyUp(s) && Math.abs(da - w.r) < 0.9 && a.pos.y < w.y + TITAN.stompHeight && !w.allyHit) {
       w.allyHit = true;

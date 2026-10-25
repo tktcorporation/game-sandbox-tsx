@@ -5,6 +5,7 @@ import { eyePos } from "./combat";
 import { los } from "./geom";
 import type { ZipLine, ZipPoint } from "./ziplayout";
 import type { Input, State } from "./state";
+import { hypot2, hypot3 } from "./hypot";
 
 /*
  * Riding the ziplines (`ZIPS`, laid in map.ts). A cable is up while the player holds both of its
@@ -46,7 +47,7 @@ function nearestOn(l: ZipLine, q: ZipPoint): { at: number; d: number } {
     const vz = b.z - a.z;
     const len2 = vx * vx + vy * vy + vz * vz || 1;
     const k = Math.max(0, Math.min(1, ((q.x - a.x) * vx + (q.y - a.y) * vy + (q.z - a.z) * vz) / len2));
-    const d = Math.hypot(a.x + vx * k - q.x, a.y + vy * k - q.y, a.z + vz * k - q.z);
+    const d = hypot3(a.x + vx * k - q.x, a.y + vy * k - q.y, a.z + vz * k - q.z);
     if (d < best.d) best = { at: l.cum[i] + k * (l.cum[i + 1] - l.cum[i]), d };
   }
   return best;
@@ -82,8 +83,8 @@ export function grabZip(s: State, line: number, at: number) {
   else if (at > l.length - 1) dir = -1;
   const a = s.ally;
   // A teammate beside the player and in sight comes along, as on the leap.
-  const carry = allyUp(s) && Math.hypot(a.pos.x - p.pos.x, a.pos.z - p.pos.z) < ULT.carry && Math.abs(a.pos.y - p.pos.y) < 2.5 && los(eyePos(s), allyChest(a));
-  p.zip = { line, at: Math.max(0.5, Math.min(l.length - 0.5, at)), dir, speed: Math.max(ZIP.start, Math.hypot(p.vel.x, p.vel.z)), carry };
+  const carry = allyUp(s) && hypot2(a.pos.x - p.pos.x, a.pos.z - p.pos.z) < ULT.carry && Math.abs(a.pos.y - p.pos.y) < 2.5 && los(eyePos(s), allyChest(a));
+  p.zip = { line, at: Math.max(0.5, Math.min(l.length - 0.5, at)), dir, speed: Math.max(ZIP.start, hypot2(p.vel.x, p.vel.z)), carry };
   p.onGround = false;
   p.sliding = false;
   p.crouch = false;

@@ -5,6 +5,7 @@ import { POIS } from "./map";
 import { terrainHeight } from "./terrain";
 import { los, lookAngles, norm, rayWorld, raySphere, wrapAngle } from "./geom";
 import { bodyY, forward, mix, rand, squadKey, weakY, type Enemy, type SquadState, type State, type Vec3, type Weapon } from "./state";
+import { hypot2, hypot3 } from "./hypot";
 
 /*
  * Everything about the player's shots landing on robots: hit boxes, aim assist,
@@ -269,7 +270,7 @@ function react(s: State, e: Enemy, weight: number, broke: boolean, quiet: boolea
     e.steady = e.timer + STAGGER.steady;
     const dx = e.pos.x - from.x;
     const dz = e.pos.z - from.z;
-    const d = Math.hypot(dx, dz) || 1;
+    const d = hypot2(dx, dz) || 1;
     e.vel.x = (dx / d) * STAGGER.knock;
     e.vel.z = (dz / d) * STAGGER.knock;
     s.events.push({ t: "stagger", id: e.id, pos: bodyCenter(e), fromX: from.x, fromZ: from.z, interrupted });

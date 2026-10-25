@@ -11,6 +11,7 @@ import { callLeft, enemyMax, idleInput, weakY, type Enemy, type Input, type Stat
 import { pickHeal } from "./player";
 import { canOpen, makeRoom, useTarget } from "./world";
 import { offLowGround, offshore, terrainHeight } from "./terrain";
+import { hypot2 } from "./hypot";
 
 /**
  * A scripted player for the headless balance run (`npm run sim:ringfall`) and the
@@ -68,7 +69,7 @@ function segmentNear(a: { x: number; z: number }, b: { x: number; z: number }, c
   const dx = b.x - a.x;
   const dz = b.z - a.z;
   const t = Math.max(0, Math.min(1, ((c.x - a.x) * dx + (c.z - a.z) * dz) / (dx * dx + dz * dz || 1)));
-  return Math.hypot(a.x + dx * t - c.x, a.z + dz * t - c.z) < c.r;
+  return hypot2(a.x + dx * t - c.x, a.z + dz * t - c.z) < c.r;
 }
 
 /** The best rarity among the guns the player carries: the deepest plates it pierces (-1 with none). */
@@ -469,7 +470,7 @@ export class Bot {
         }
       }
 
-      const aimDir = Math.hypot(wrapAngle(want.yaw - p.yaw), want.pitch - p.pitch);
+      const aimDir = hypot2(wrapAngle(want.yaw - p.yaw), want.pitch - p.pitch);
       const tol = (sk.name === "beginner" ? 12 : 8) * DEG + Math.atan(1 / Math.max(d, 1));
       const ambushing = hiding && flankOf(s, tgt) !== "front";
       const busy = (!!this.retreat && !ambushing) || (this.duckT > 0 && !!this.duck);
@@ -479,7 +480,7 @@ export class Bot {
 
       // Shockwave: jump when the ring is about to arrive.
       for (const wv of s.waves) {
-        const dd = Math.hypot(p.pos.x - wv.x, p.pos.z - wv.z) - wv.r;
+        const dd = hypot2(p.pos.x - wv.x, p.pos.z - wv.z) - wv.r;
         if (dd > 0.3 && dd < 1.6 && this.rnd() < sk.dodge * 0.25) inp.jump = true;
       }
       if (engaged.length >= 2 || tgt.mode === "telegraph") {
@@ -556,7 +557,7 @@ export class Bot {
     }
     if (this.crouch) {
       inp.crouch = true;
-      const v = Math.hypot(p.vel.x, p.vel.z);
+      const v = hypot2(p.vel.x, p.vel.z);
       if (!p.sliding && v < 5) this.crouch = false;
       // A slide that runs on toward a drop is ended: it hardly steers and slopes speed it up.
       else if (p.sliding && v > 0 && !levelRun(p.pos, p.vel.x / v, p.vel.z / v)) this.crouch = inp.crouch = false;
@@ -567,7 +568,7 @@ export class Bot {
     // reads as another stall, again and again.
     this.stuckT += TICK;
     if (this.stuckT > 1 && this.unstick <= 0) {
-      const moved = Math.hypot(p.pos.x - this.lastPos.x, p.pos.z - this.lastPos.z);
+      const moved = hypot2(p.pos.x - this.lastPos.x, p.pos.z - this.lastPos.z);
       if (moved < 0.8 && (inp.moveZ !== 0 || inp.moveX !== 0) && !p.healing) {
         // Each repeated stall tries the other side, for longer.
         this.stuckCount++;
@@ -629,7 +630,7 @@ export class Bot {
         const to = this.trail[this.trail.length - 1] ?? p.pos;
         const dx = to.x - p.pos.x;
         const dz = to.z - p.pos.z;
-        const l = Math.hypot(dx, dz) || 1;
+        const l = hypot2(dx, dz) || 1;
         inp.moveZ = (dx * Math.sin(p.yaw) - dz * Math.cos(p.yaw)) / l;
         inp.moveX = (dx * Math.cos(p.yaw) + dz * Math.sin(p.yaw)) / l;
         inp.fire = false;
@@ -812,7 +813,7 @@ export class Bot {
         clear = groundAt(cx, cz, 1.5, ct + 40) <= ct + 3;
       }
       if (!clear) continue;
-      const score = Math.min(...from.map((e) => Math.hypot(e.pos.x - x, e.pos.z - z)));
+      const score = Math.min(...from.map((e) => hypot2(e.pos.x - x, e.pos.z - z)));
       if (score > bestScore) {
         bestScore = score;
         best = { x, z };
@@ -992,7 +993,7 @@ export class Bot {
     let prev = this.from;
     const samples: { x: number; z: number }[] = [];
     for (const q of pts) {
-      const seg = Math.hypot(q.x - prev.x, q.z - prev.z);
+      const seg = hypot2(q.x - prev.x, q.z - prev.z);
       for (let d = 2; d < seg; d += 2) samples.push({ x: prev.x + ((q.x - prev.x) * d) / seg, z: prev.z + ((q.z - prev.z) * d) / seg });
       len += seg;
       prev = q;

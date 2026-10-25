@@ -8,6 +8,7 @@ import { raiseAlly } from "./ally";
 import type { Battle } from "./battle";
 import type { PoiHold } from "./island";
 import type { State } from "./state";
+import { hypot2 } from "./hypot";
 
 /*
  * The front (docs/ringfall/island-v2.md): the six freeable POIs are nodes joined along the roads
@@ -69,7 +70,7 @@ export function useZones(s: Pick<State, "nodes">) {
 
 /** Whether (x, z) lies within `FRONT.zone` (plus `r`) of a node the player holds. */
 export function inZone(x: number, z: number, r = 0): boolean {
-  for (const q of zones) if (Math.hypot(x - q.x, z - q.z) < FRONT.zone + r) return true;
+  for (const q of zones) if (hypot2(x - q.x, z - q.z) < FRONT.zone + r) return true;
   return false;
 }
 
@@ -240,7 +241,7 @@ export function garrisonLeaves(s: State, i: number) {
     const to = away !== undefined ? NODES[away] : lead;
     const dx = to.x - n.core.x;
     const dz = to.z - n.core.z;
-    const l = Math.hypot(dx, dz) || 1;
+    const l = hypot2(dx, dz) || 1;
     sq.walk = { x: n.core.x + (dx / l) * (FRONT.zone + 25), z: n.core.z + (dz / l) * (FRONT.zone + 25) };
     sq.retreat = FRONT.retreat;
     sq.poi = -1;

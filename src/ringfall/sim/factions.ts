@@ -9,6 +9,7 @@ import { bodyCenter, fall } from "./combat";
 import { robotSide } from "./battle";
 import { terrainHeight } from "./terrain";
 import { allyUp } from "./ally";
+import { hypot2 } from "./hypot";
 
 /*
  * The robots between the POIs: the squads that walk out (`MOBILES`), the two factions that fight
@@ -156,7 +157,7 @@ function near(b: Map<number, Enemy[]>, x: number, z: number, r: number, keep: (o
   for (let dx = -1; dx <= 1; dx++)
     for (let dz = -1; dz <= 1; dz++)
       for (const o of b.get(cellKey(x + dx * CELL, z + dz * CELL)) ?? []) {
-        const d = Math.hypot(o.pos.x - x, o.pos.z - z);
+        const d = hypot2(o.pos.x - x, o.pos.z - z);
         if (d < r && keep(o)) out.push({ o, d });
       }
   return out.sort((a, c) => a.d - c.d);

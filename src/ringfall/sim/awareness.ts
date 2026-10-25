@@ -4,6 +4,7 @@ import { dist2d, los, lookAngles, solidAt, wrapAngle } from "./geom";
 import { steepAt, terrainHeight } from "./terrain";
 import { sightScale, weakY, type Enemy, type Point, type State, type Vec3 } from "./state";
 import { modScale, threatOf } from "./mods";
+import { hypot2, hypot3 } from "./hypot";
 
 /** How far a robot answers shots from afar (see RETURN): further at a higher threat, less in a storm. */
 const returnRange = (s: State, e: Enemy) => RETURN.range[e.kind] * threatOf(s).range * sightScale(s);
@@ -40,7 +41,7 @@ const sightTarget = (s: State): Vec3 => {
 export function shotFromAfar(s: State, e: Enemy): boolean {
   const eye = headOf(e);
   const t = sightTarget(s);
-  return Math.hypot(t.x - eye.x, t.y - eye.y, t.z - eye.z) > SIGHT[e.kind].range * sightScale(s) * AWARE.engagedRange;
+  return hypot3(t.x - eye.x, t.y - eye.y, t.z - eye.z) > SIGHT[e.kind].range * sightScale(s) * AWARE.engagedRange;
 }
 
 /** The player is a valid target for robots: on the ground and not knocked down. */
@@ -155,7 +156,7 @@ export function interceptSpot(s: State, squad: number, x: number, z: number): Po
   const mates = s.enemies.filter((e) => e.squad === squad && e.mode !== "spawning");
   if (!mates.length) return here;
   const p = s.player;
-  const speed = Math.hypot(p.vel.x, p.vel.z);
+  const speed = hypot2(p.vel.x, p.vel.z);
   let dir: Point | null = null;
   let pace = INTERCEPT.pace;
   if (speed > INTERCEPT.minSpeed) {
@@ -163,7 +164,7 @@ export function interceptSpot(s: State, squad: number, x: number, z: number): Po
     pace = speed;
   } else {
     const to = headedFor(s);
-    const d = to ? Math.hypot(to.x - x, to.z - z) : 0;
+    const d = to ? hypot2(to.x - x, to.z - z) : 0;
     if (to && d > 10) dir = { x: (to.x - x) / d, z: (to.z - z) / d };
   }
   if (!dir) return here;
@@ -174,7 +175,7 @@ export function interceptSpot(s: State, squad: number, x: number, z: number): Po
     cz += e.pos.z / mates.length;
   }
   const walk = Math.min(...mates.map((e) => ENEMIES[e.kind].speed)) * AWARE.idleSpeed * 1.4;
-  const t = Math.max(INTERCEPT.lead[0], Math.min(INTERCEPT.lead[1], Math.hypot(cx - x, cz - z) / Math.max(walk, 0.5)));
+  const t = Math.max(INTERCEPT.lead[0], Math.min(INTERCEPT.lead[1], hypot2(cx - x, cz - z) / Math.max(walk, 0.5)));
   const ahead = Math.min(INTERCEPT.max, pace * t);
   const g = terrainHeight(x, z);
   for (const f of [1, 0.66, 0.33]) {
@@ -213,7 +214,7 @@ export function sense(s: State, e: Enemy): boolean {
     const low = p.crouch && !p.sliding;
     const target = sightTarget(s);
     const eye = headOf(e);
-    const d = Math.hypot(target.x - eye.x, target.y - eye.y, target.z - eye.z);
+    const d = hypot3(target.x - eye.x, target.y - eye.y, target.z - eye.z);
     const sight = SIGHT[e.kind];
     const engaged = e.aware === "engaged";
     // A storm shortens every robot's sight alike: its kind's, a pack's, and the range it answers from.
@@ -312,7 +313,7 @@ function chaseTo(s: State, squad: number, to: Point) {
   }
   const dx = to.x - cx;
   const dz = to.z - cz;
-  const d = Math.hypot(dx, dz);
+  const d = hypot2(dx, dz);
   sq.chase = { ...to };
   sq.chaseDir = d > 1e-3 ? { x: dx / d, z: dz / d } : { x: 0, z: 1 };
   for (const e of mates) e.goal = null;
@@ -339,7 +340,7 @@ function aheadOfSighting(sq: { last: Point; vel?: Point }): Point {
   const v = sq.vel ?? { x: 0, z: 0 };
   let ox = v.x * PURSUE.lead;
   let oz = v.z * PURSUE.lead;
-  const len = Math.hypot(ox, oz);
+  const len = hypot2(ox, oz);
   if (len > PURSUE.leadMax) {
     ox *= PURSUE.leadMax / len;
     oz *= PURSUE.leadMax / len;
@@ -424,7 +425,7 @@ export function stepSquads(s: State) {
     if (live && lead && sq.vel) {
       const lx = sq.last.x - lead.pos.x;
       const lz = sq.last.z - lead.pos.z;
-      const ll = Math.hypot(lx, lz) || 1;
+      const ll = hypot2(lx, lz) || 1;
       away = (sq.vel.x * lx + sq.vel.z * lz) / ll;
     }
     sq.backT = away > PINCH.backSpeed ? (sq.backT ?? 0) + TICK : Math.max(0, (sq.backT ?? 0) - 2 * TICK);

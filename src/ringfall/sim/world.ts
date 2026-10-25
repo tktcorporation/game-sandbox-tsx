@@ -13,6 +13,7 @@ import { interceptSpot, located, makeNoise } from "./awareness";
 import { hasMod, modScale, spillBinMod, wearMod } from "./mods";
 import { MOD } from "./config";
 import { coreInReach, inZone, useCore } from "./front";
+import { hypot2, hypot3 } from "./hypot";
 
 /*
  * The raid's structure: POIs that fall when their robots are beaten, loot and bins,
@@ -417,7 +418,7 @@ const LANE = 1;
  * walk straight between its steps, so cover across a step would leave them pressed against it.
  */
 function clearWalk(x: number, z: number, tx: number, tz: number): boolean {
-  const len = Math.hypot(tx - x, tz - z);
+  const len = hypot2(tx - x, tz - z);
   const n = Math.ceil(len / 0.5);
   const sx = (-(tz - z) / (len || 1)) * LANE;
   const sz = ((tx - x) / (len || 1)) * LANE;

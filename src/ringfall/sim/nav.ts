@@ -2,6 +2,7 @@ import { PLAYER, WORLD } from "./config";
 import { los, routeBoxesOpen } from "./geom";
 import { BOXES, DECKS, EXTRACTS, POIS } from "./map";
 import { steepAt, terrainHeight } from "./terrain";
+import { hypot2 } from "./hypot";
 
 /*
  * Ground-level path finding for the bot only (the game never uses it). A 0.5 m grid
@@ -159,7 +160,7 @@ function areas(): Uint16Array | Int32Array {
 /** True if the straight line between two points crosses no blocked cell. */
 export function clearLine(ax: number, az: number, bx: number, bz: number): boolean {
   blockedCells();
-  const len = Math.hypot(bx - ax, bz - az);
+  const len = hypot2(bx - ax, bz - az);
   const n = Math.ceil(len / (RES * 0.4));
   for (let k = 1; k < n; k++) {
     const t = k / n;
@@ -183,7 +184,7 @@ function nearestFree(x: number, z: number): [number, number] | null {
     const ring: [number, number, number][] = [];
     for (let di = -r; di <= r; di++)
       for (let dj = -r; dj <= r; dj++)
-        if (Math.max(Math.abs(di), Math.abs(dj)) === r && free(ci + di, cj + dj)) ring.push([ci + di, cj + dj, Math.hypot(centerX(ci + di) - x, centerZ(cj + dj) - z)]);
+        if (Math.max(Math.abs(di), Math.abs(dj)) === r && free(ci + di, cj + dj)) ring.push([ci + di, cj + dj, hypot2(centerX(ci + di) - x, centerZ(cj + dj) - z)]);
     ring.sort((a, b) => a[2] - b[2]);
     for (const [i, j] of ring) {
       fallback ??= [i, j];
@@ -440,12 +441,12 @@ function landmarksFor(start: number, goal: number, disk: { x: number; z: number;
  */
 function diskFor(avoid: Avoid | undefined, sx: number, sz: number, gx: number, gz: number): { x: number; z: number; r: number } | null {
   const home = avoid?.home;
-  if (!avoid || !home || Math.hypot(home.x - avoid.x, home.z - avoid.z) + home.r > avoid.r - 0.01) return null;
+  if (!avoid || !home || hypot2(home.x - avoid.x, home.z - avoid.z) + home.r > avoid.r - 0.01) return null;
   const ex = gx - sx;
   const ez = gz - sz;
   const len2 = ex * ex + ez * ez;
   const t = len2 > 0 ? Math.max(0, Math.min(1, ((home.x - sx) * ex + (home.z - sz) * ez) / len2)) : 0;
-  return Math.hypot(sx + ex * t - home.x, sz + ez * t - home.z) < home.r + DISK_NEAR ? home : null;
+  return hypot2(sx + ex * t - home.x, sz + ez * t - home.z) < home.r + DISK_NEAR ? home : null;
 }
 
 /*

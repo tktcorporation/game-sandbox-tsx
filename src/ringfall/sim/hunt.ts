@@ -2,6 +2,7 @@ import { WORLD } from "./config";
 import { BOXES, DECKS, inCamp } from "./map";
 import { routeBoxesOpen } from "./geom";
 import { highGround, offshore, steepAt, terrainHeight } from "./terrain";
+import { hypot2 } from "./hypot";
 
 /*
  * How hunting squads (reinforcements and raiders), and fighting squads that have lost the
@@ -254,7 +255,7 @@ function openCell(x: number, z: number): number {
         const i = ci + di;
         const j = cj + dj;
         if (i < 0 || j < 0 || i >= NX || j >= NZ || !main[j * NX + i]) continue;
-        const d = Math.hypot(centreX(i) - x, centreZ(j) - z);
+        const d = hypot2(centreX(i) - x, centreZ(j) - z);
         if (d < bestD) {
           bestD = d;
           best = j * NX + i;
@@ -438,7 +439,7 @@ export function routeLength(f: Field, x: number, z: number): number {
   const i = k % NX;
   const j = (k - i) / NX;
   // Add the step from (x, z) to the centre of the open cell it was snapped to.
-  return f.dist[k] + Math.hypot(centreX(i) - x, centreZ(j) - z);
+  return f.dist[k] + hypot2(centreX(i) - x, centreZ(j) - z);
 }
 
 /**
@@ -518,7 +519,7 @@ export function cellAt(x: number, z: number): { open: boolean; height: number; m
  * fields as they were forgets them after (`forgetFields()`).
  */
 export function walkLine(a: { x: number; z: number }, b: { x: number; z: number }, every = 3): { x: number; z: number }[] {
-  const d = Math.hypot(b.x - a.x, b.z - a.z);
+  const d = hypot2(b.x - a.x, b.z - a.z);
   let f = fieldTo(b.x, b.z, Math.max(80, d * 3 + 40));
   if (!f) return [b];
   const { open, height } = grid();

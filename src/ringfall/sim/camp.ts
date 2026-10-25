@@ -5,6 +5,7 @@ import { CAMP, inCamp, type CampSpot, type RouteId } from "./map";
 import { stepPlayer } from "./player";
 import { useRoutes } from "./routes";
 import { starterKit, idleInput, newRun, type Input, type Kit, type State } from "./state";
+import { hypot2 } from "./hypot";
 
 /*
  * The camp between raids: the player and the teammate walk the yard (map.ts `CAMP`) with no
@@ -56,7 +57,7 @@ export function campSpotAt(at: { x: number; z: number }): CampSpot | null {
   let best: CampSpot | null = null;
   let bestD = Infinity;
   for (const c of CAMP.spots) {
-    const d = Math.hypot(c.x - at.x, c.z - at.z);
+    const d = hypot2(c.x - at.x, c.z - at.z);
     if (d < c.reach && d < bestD) {
       best = c;
       bestD = d;

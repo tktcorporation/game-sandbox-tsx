@@ -1,3 +1,4 @@
+import { hypot2 } from "./hypot";
 /**
  * The streets: paved roads over the open ground that join the POIs, the outposts, the hamlets and
  * the ways in, in the world's coordinates. They change no ground (the terrain's own `ROADS` do):
@@ -94,7 +95,7 @@ export function toLength(l: Length, x: number, z: number): number {
   const dx = l.bx - l.ax;
   const dz = l.bz - l.az;
   const t = Math.max(0, Math.min(1, ((x - l.ax) * dx + (z - l.az) * dz) / (dx * dx + dz * dz || 1)));
-  return Math.hypot(x - (l.ax + dx * t), z - (l.az + dz * t));
+  return hypot2(x - (l.ax + dx * t), z - (l.az + dz * t));
 }
 
 /**
