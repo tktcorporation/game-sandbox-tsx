@@ -361,13 +361,29 @@ export function stepEnemies(s: State) {
   stepSquads(s);
   markNear(s);
   const tick = Math.round(s.time / TICK);
-  // The player's own robots are foes too (see FACTION), looked up with the rest.
-  const byId = new Map((s.friends.length ? [...s.enemies, ...s.friends] : s.enemies).map((e) => [e.id, e]));
   // A robot destroyed takes a new list (`kill()`, `fall()`): only then are the rest looked up in it.
+  // A robot spawned this tick is pushed onto the list (and a friend's popped off again), so the
+  // lists as the tick began are their first `startLen` and `friendsLen` entries throughout.
   const start = s.enemies;
   const friendsAt = s.friends;
+  const startLen = start.length;
+  const friendsLen = friendsAt.length;
+  // The player's own robots are foes too (see FACTION), looked up with the rest: every robot as
+  // the tick began, by id, built the first time one is looked up.
+  let byIdMap: Map<number, Enemy> | null = null;
+  const byId = {
+    get(id: number): Enemy | undefined {
+      if (!byIdMap) {
+        byIdMap = new Map();
+        for (let i = 0; i < startLen; i++) byIdMap.set(start[i].id, start[i]);
+        for (let i = 0; i < friendsLen; i++) byIdMap.set(friendsAt[i].id, friendsAt[i]);
+      }
+      return byIdMap.get(id);
+    },
+  };
   const gone = (e: Enemy) => (e.friend ? s.friends !== friendsAt && !s.friends.includes(e) : s.enemies !== start && !s.enemies.includes(e));
-  for (const e of [...s.enemies]) {
+  for (let at = 0; at < startLen; at++) {
+    const e = start[at];
     // Destroyed earlier this tick (by the other faction's fire, or the titan's fall).
     if (gone(e)) continue;
     if (s.phase === "done") return; // a robot ahead in the list ended the raid

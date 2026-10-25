@@ -129,7 +129,7 @@ export function stepMobiles(s: State) {
 }
 
 /** Where a robot `e` of a squad fighting the other faction is fighting: its foe, while there is one (see FACTION). */
-export function foeOf(s: State, e: Enemy, byId: Map<number, Enemy>): Enemy | null {
+export function foeOf(s: State, e: Enemy, byId: { get(id: number): Enemy | undefined }): Enemy | null {
   const sq = s.squads[e.squad];
   if (!sq || sq.foe === undefined || sq.engaged || e.kind === "titan") return null;
   const foe = byId.get(sq.foe) ?? null;
