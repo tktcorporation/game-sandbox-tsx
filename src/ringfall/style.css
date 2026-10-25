@@ -1219,6 +1219,22 @@ body.touch .mate-bars {
 body.camp #pause .keys .raid {
   display: none;
 }
+/* A narrow window takes fewer columns, so no row runs past its edge (the page does not scroll). */
+@media (max-width: 760px) {
+  .keys {
+    grid-template-columns: repeat(3, max-content);
+  }
+}
+@media (max-width: 580px) {
+  .keys {
+    grid-template-columns: repeat(2, max-content);
+  }
+}
+@media (max-width: 400px) {
+  .keys {
+    grid-template-columns: max-content;
+  }
+}
 .screen button {
   pointer-events: auto;
   font-family: var(--jp);
