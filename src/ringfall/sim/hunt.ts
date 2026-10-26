@@ -225,12 +225,22 @@ const spare: { dist: Float32Array; order: Int32Array; count: number }[] = [];
  * round a few spots ask for the same fields over and over, more of them than the cache keeps;
  * the cache decides which field a squad follows, as before, and only the building of a field it
  * has dropped comes from here. A copy holds the field's `order` cells and their distances; every
- * other cell of a field is at Infinity. Kept across raids, since the grid is the same; dropped
- * with the grid (`resetHunt()`). The oldest copies go once they hold more than `KEPT_CELLS` cells.
+ * other cell of a field is at Infinity. A field over much of the grid (a whole-world field covers
+ * about half of it) that is written back once keeps its distances whole from then on, every cell
+ * in its place (`whole`), and is written back again in one copy rather than cell by cell. Many
+ * such fields are dropped without being written back, so only those that are pay for the larger
+ * copy. Kept across raids, since the grid is the same; dropped with the grid (`resetHunt()`). The
+ * oldest copies go once they hold more than `KEPT_CELLS` cells, a whole copy counted by its
+ * field's cells too, so the same copies are kept either way.
  */
-const kept = new Map<string, { order: Int32Array; dist: Float32Array }>();
+type Kept = { order: Int32Array; dist: Float32Array; whole: boolean };
+const kept = new Map<string, Kept>();
 let keptCells = 0;
 const KEPT_CELLS = 16_000_000;
+/** Cells past which a field's copy keeps its distances whole once it is written back. */
+const WHOLE = CELLS / 4;
+/** Cells past which a field's arrays are cleared whole: a fill over the grid costs less than the cells one by one. */
+const CLEAR_WHOLE = CELLS / 8;
 
 /** Fields built so far: the sim gate checks that alternating targets reuse them. */
 export let fieldsBuilt = 0;
@@ -275,14 +285,22 @@ function openCell(x: number, z: number): number {
 }
 
 
-/** A kept copy written back into a field's arrays (cleared to Infinity), as `build()` would write it; returns its cell count. */
-function restore(copy: { order: Int32Array; dist: Float32Array }, dist: Float32Array, order: Int32Array, name: string): number {
+/** A kept copy written back into a field's arrays (cleared to Infinity, unless the copy is whole), as `build()` would write it; returns its cell count. */
+function restore(copy: Kept, dist: Float32Array, order: Int32Array, name: string): number {
   // Most recently used goes last, so the oldest is dropped first.
   kept.delete(name);
   kept.set(name, copy);
   const n = copy.order.length;
   order.set(copy.order);
-  for (let e = 0; e < n; e++) dist[copy.order[e]] = copy.dist[e];
+  if (copy.whole) dist.set(copy.dist);
+  else {
+    for (let e = 0; e < n; e++) dist[copy.order[e]] = copy.dist[e];
+    if (n > WHOLE) {
+      // Every cell but the field's is at Infinity, so the whole array is the same copy.
+      copy.dist = dist.slice();
+      copy.whole = true;
+    }
+  }
   return n;
 }
 
@@ -359,7 +377,7 @@ function build(target: number, reach: number, dist: Float32Array, order: Int32Ar
   if (past)
     for (let r = 0; r < RING; r++)
       for (let e = 0; e < ringSize[r]; e++) if (done[ring[r][e]] !== isSettled) dist[ring[r][e]] = Infinity;
-  const copy = { order: order.slice(0, count), dist: new Float32Array(count) };
+  const copy = { order: order.slice(0, count), dist: new Float32Array(count), whole: false };
   for (let e = 0; e < count; e++) copy.dist[e] = dist[order[e]];
   kept.set(name, copy);
   keptCells += count;
@@ -405,12 +423,16 @@ export function fieldTo(x: number, z: number, reach = Infinity): Field | null {
   // A short field is built a little past its reach, so a target that moves a few cells still
   // finds it in the cache (see above).
   if (reach < Infinity) reach += NEAR * RES * 1.5;
-  const reused = spare.pop();
-  const dist = reused?.dist ?? new Float32Array(CELLS).fill(Infinity);
-  if (reused) for (let e = 0; e < reused.count; e++) dist[reused.order[e]] = Infinity;
-  const order = reused?.order ?? new Int32Array(CELLS);
   const name = `${target}:${reach}`;
   const copy = kept.get(name);
+  const reused = spare.pop();
+  const dist = reused?.dist ?? new Float32Array(CELLS).fill(Infinity);
+  // A whole copy writes every cell; else the last field's cells go back to Infinity.
+  if (reused && !copy?.whole) {
+    if (reused.count > CLEAR_WHOLE) dist.fill(Infinity);
+    else for (let e = 0; e < reused.count; e++) dist[reused.order[e]] = Infinity;
+  }
+  const order = reused?.order ?? new Int32Array(CELLS);
   const count = copy ? restore(copy, dist, order, name) : build(target, reach, dist, order, name);
   const f = { target, dist, reach, order, count };
   fieldsBuilt++;
