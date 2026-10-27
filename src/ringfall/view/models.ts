@@ -95,14 +95,37 @@ export const PAL = {
   white: 0xffffff,
   gun: 0x2b2f38,
   gunLight: 0x4a505c,
+  /** The ejection port on a gun's right side: the darkest thing on it. */
+  gunPort: 0x16181d,
+  /** The cuffs of the player's sleeves, a darker shade of the teal sleeve. */
+  cuff: 0x1f5a5f,
+  /** Medical white: the medkit's case, the syringe and the pill bottle. */
+  medical: 0xf2f0ea,
+  /** The band on health items, apart from the enemy red and the ring orange. */
+  healRed: 0xe0475a,
+  /** A node's core in the colour of who holds it: the enemy's red, the player's blue. */
+  held: 0xff3b30,
+  freed: 0x3d8cff,
+  /** The flag the player raises by a core they hold. */
+  flag: 0x2f7fe0,
+  /** The hex shield the network keeps round a core off the front. */
+  coreShield: 0xff6a5a,
+  /** A circuit board's solder-mask green. */
+  board: 0x2f7a4a,
+  /** Safety orange: the breaching charge's case and the recorder's. */
+  hazard: 0xd8742c,
+  /** The glow in the vents of a fallen piece of the ring. */
+  ember: 0xff7a2a,
+  /** The objective's beacon: a pale warm light, apart from every faction's colour. */
+  beacon: 0xfff2b0,
+  /** The flame under a dropship's engines. */
+  thrust: 0xffb050,
 } as const;
 
 /** Aim amount past which a scoped weapon shows its sight instead of the gun. */
 export const SCOPE_IN = 0.85;
 
 export const RARITY_COLOR = [0xeeeeee, 0x45a6ff, 0xb65cff, 0xffc93a] as const;
-/** The band on health items, apart from the enemy red and the ring orange. */
-const HEAL_RED = 0xe0475a;
 export const RARITY_CSS = ["#eeeeee", "#45a6ff", "#b65cff", "#ffc93a"] as const;
 
 const matCache = new Map<number, THREE.MeshLambertMaterial>();
@@ -286,7 +309,7 @@ export function buildBox(b: Box, i: number): THREE.Object3D {
 }
 
 /** The scattered cover's own colours (`prop` boxes): muted, so the set pieces read as worn things, not toys. */
-const PROP_PAL = {
+export const PROP_PAL = {
   wood: 0x9c7d52,
   wraps: [0xa8a28e, 0x9a9476, 0xb39a70] as const,
   bag: 0xb3a07a,
@@ -1054,7 +1077,7 @@ export function buildGun(kind: WeaponKind, rarity: Rarity): THREE.Group {
   // The rail along the top, notched, and the port the cases leave by on the right.
   add(new THREE.BoxGeometry(0.024, 0.014, len * 0.42), mid, 0, 0.067, -0.02);
   for (let t = -len * 0.19; t <= len * 0.17; t += 0.035) add(new THREE.BoxGeometry(0.03, 0.006, 0.012), dark, 0, 0.077, t - 0.02);
-  add(new THREE.BoxGeometry(0.006, 0.04, 0.11), flat(0x16181d), 0.04, 0.02, -0.03);
+  add(new THREE.BoxGeometry(0.006, 0.04, 0.11), flat(PAL.gunPort), 0.04, 0.02, -0.03);
   add(new THREE.BoxGeometry(0.004, 0.012, 0.07), mid, 0.044, 0.045, -0.03);
   // The magazine: a long curved box for the rifles, a short one for the long guns, a tube for the shotgun.
   if (kind === "pike" || kind === "hornet") {
@@ -1085,7 +1108,7 @@ export function buildHands(kind: WeaponKind): THREE.Group {
   // Leather gloves, lighter than the gun so the hands read against it; the cuffs a darker teal.
   const glove = flat(PAL.ochre);
   const sleeve = flat(PAL.teal);
-  const cuff = flat(0x1f5a5f);
+  const cuff = flat(PAL.cuff);
   // Right: the hand round the grip, the wrist behind it, the forearm back to the elbow below the view.
   const grip = v3(0.0, -0.11, 0.1);
   g.add(mesh(new THREE.BoxGeometry(0.1, 0.1, 0.12), glove, 0.012, grip.y, grip.z, false));
@@ -1122,14 +1145,14 @@ export function buildLootItem(kind: LootKind, rarity: Rarity, weapon?: WeaponKin
   } else if (kind === "heal") {
     // Shield items glow blue, health items are white with a red band; big ones are bigger.
     const big = heal === "battery" || heal === "medkit";
-    const band = heal === "cell" || heal === "battery" ? RARITY_COLOR[1] : HEAL_RED;
+    const band = heal === "cell" || heal === "battery" ? RARITY_COLOR[1] : PAL.healRed;
     if (heal === "medkit") {
-      g.add(mesh(new THREE.BoxGeometry(0.5, 0.3, 0.36), flat(0xf2f0ea), 0, 0.3, 0, false));
+      g.add(mesh(new THREE.BoxGeometry(0.5, 0.3, 0.36), flat(PAL.medical), 0, 0.3, 0, false));
       g.add(mesh(new THREE.BoxGeometry(0.52, 0.08, 0.38), flat(band), 0, 0.3, 0, false));
     } else {
       const r = big ? 0.16 : 0.1;
       const h = big ? 0.42 : 0.3;
-      g.add(mesh(new THREE.CylinderGeometry(r, r, h, 8), flat(heal === "syringe" ? 0xf2f0ea : PAL.gunLight), 0, 0.35, 0, false));
+      g.add(mesh(new THREE.CylinderGeometry(r, r, h, 8), flat(heal === "syringe" ? PAL.medical : PAL.gunLight), 0, 0.35, 0, false));
       g.add(mesh(new THREE.CylinderGeometry(r + 0.01, r + 0.01, h * 0.45, 8), heal === "syringe" ? flat(band) : glow(band), 0, 0.35, 0, false));
     }
   } else if (kind === "valuable") {
@@ -1148,13 +1171,13 @@ export function buildLootItem(kind: LootKind, rarity: Rarity, weapon?: WeaponKin
     } else if (valuable === "wire") {
       g.add(mesh(new THREE.TorusGeometry(0.18, 0.07, 6, 12).rotateX(Math.PI / 2), flat(PAL.rust), 0, 0.25, 0, false));
     } else if (valuable === "fuse") {
-      g.add(mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.3, 8).rotateZ(Math.PI / 2), flat(0xf2f0ea), 0, 0.22, 0, false));
+      g.add(mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.3, 8).rotateZ(Math.PI / 2), flat(PAL.medical), 0, 0.22, 0, false));
       for (const x of [-0.16, 0.16]) g.add(mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.05, 8).rotateZ(Math.PI / 2), flat(PAL.gun), x, 0.22, 0, false));
     } else if (valuable === "core") {
       g.add(mesh(new THREE.BoxGeometry(0.34, 0.34, 0.34), flat(PAL.gun), 0, 0.4, 0, false));
       g.add(mesh(new THREE.BoxGeometry(0.24, 0.36, 0.24), glow(color), 0, 0.4, 0, false));
     } else if (valuable === "board") {
-      g.add(mesh(new THREE.BoxGeometry(0.5, 0.04, 0.34), flat(0x2f7a4a), 0, 0.3, 0, false));
+      g.add(mesh(new THREE.BoxGeometry(0.5, 0.04, 0.34), flat(PAL.board), 0, 0.3, 0, false));
       for (const [x, z] of [[-0.12, 0.05], [0.1, -0.06], [0.14, 0.09]]) g.add(mesh(new THREE.BoxGeometry(0.1, 0.05, 0.08), flat(PAL.gun), x, 0.34, z, false));
     } else {
       g.add(mesh(new THREE.BoxGeometry(0.3, 0.16, 0.26), flat(PAL.gunLight), 0, 0.24, 0, false));
@@ -1169,18 +1192,18 @@ export function buildLootItem(kind: LootKind, rarity: Rarity, weapon?: WeaponKin
     // Bolt cutters: two long red-gripped handles meeting at short steel jaws.
     for (const z of [-0.05, 0.05]) {
       g.add(mesh(new THREE.BoxGeometry(0.62, 0.035, 0.035), flat(PAL.steel), -0.05, 0.12, z, false));
-      g.add(mesh(new THREE.BoxGeometry(0.26, 0.05, 0.05), flat(HEAL_RED), -0.27, 0.12, z * 1.4, false));
+      g.add(mesh(new THREE.BoxGeometry(0.26, 0.05, 0.05), flat(PAL.healRed), -0.27, 0.12, z * 1.4, false));
     }
     g.add(mesh(new THREE.BoxGeometry(0.16, 0.06, 0.14), flat(PAL.gun), 0.3, 0.12, 0, false));
   } else if (kind === "tool") {
     // A breaching charge: a squat orange case with a black detonator on top.
-    g.add(mesh(new THREE.BoxGeometry(0.44, 0.26, 0.3), flat(0xd8742c), 0, 0.2, 0, false));
+    g.add(mesh(new THREE.BoxGeometry(0.44, 0.26, 0.3), flat(PAL.hazard), 0, 0.2, 0, false));
     g.add(mesh(new THREE.BoxGeometry(0.46, 0.05, 0.32), flat(PAL.gun), 0, 0.26, 0, false));
     g.add(mesh(new THREE.BoxGeometry(0.12, 0.1, 0.1), flat(PAL.gun), 0.1, 0.38, 0, false));
-    g.add(mesh(new THREE.SphereGeometry(0.03, 6, 4), glow(HEAL_RED), 0.1, 0.45, 0, false));
+    g.add(mesh(new THREE.SphereGeometry(0.03, 6, 4), glow(PAL.healRed), 0.1, 0.45, 0, false));
   } else if (kind === "record") {
     // A story record: a battered orange recorder case with a lit read-out on its face.
-    g.add(mesh(new THREE.BoxGeometry(0.36, 0.26, 0.24), flat(0xd8742c), 0, 0.22, 0, false));
+    g.add(mesh(new THREE.BoxGeometry(0.36, 0.26, 0.24), flat(PAL.hazard), 0, 0.22, 0, false));
     g.add(mesh(new THREE.BoxGeometry(0.38, 0.05, 0.26), flat(PAL.gun), 0, 0.12, 0, false));
     g.add(mesh(new THREE.BoxGeometry(0.16, 0.08, 0.02), glow(color), 0, 0.26, 0.125, false));
   } else if (kind === "mod") {
@@ -1190,7 +1213,7 @@ export function buildLootItem(kind: LootKind, rarity: Rarity, weapon?: WeaponKin
     for (const a of [0, (Math.PI * 2) / 3, (Math.PI * 4) / 3]) g.add(mesh(new THREE.BoxGeometry(0.06, 0.03, 0.12), flat(PAL.steel), Math.cos(a) * 0.25, 0.32, Math.sin(a) * 0.25, false));
   } else if (kind === "flare") {
     // A road flare: a red tube with a cap.
-    const tube = mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.42, 8), flat(HEAL_RED), 0, 0.3, 0, false);
+    const tube = mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.42, 8), flat(PAL.healRed), 0, 0.3, 0, false);
     tube.rotation.z = Math.PI / 2;
     g.add(tube);
     const cap = mesh(new THREE.CylinderGeometry(0.065, 0.065, 0.08, 8), flat(PAL.gun), 0.22, 0.3, 0, false);
@@ -1308,7 +1331,7 @@ export function buildDropship(): THREE.Group {
   for (const s of [-1, 1]) {
     g.add(mesh(new THREE.BoxGeometry(5, 0.3, 2.6), flat(PAL.rust), s * 3.8, 0.4, 0.5));
     g.add(mesh(new THREE.CylinderGeometry(0.9, 0.9, 1.6, 10), flat(PAL.gunLight), s * 6.2, 0.4, 0.5));
-    const flame = haloSprite(0xffb050, 2.2, 0.9);
+    const flame = haloSprite(PAL.thrust, 2.2, 0.9);
     flame.position.set(s * 6.2, -0.9, 0.5);
     g.add(flame);
   }
@@ -1335,7 +1358,7 @@ export function buildRingDebris(): { root: THREE.Group; vents: THREE.Vector3[] }
   const skin = flat(PAL.tether);
   const rib = flat(PAL.tetherDark);
   const burnt = flat(PAL.scorch);
-  const hot = glow(0xff7a2a);
+  const hot = glow(PAL.ember);
   // [x, z, width, height, length, yaw, tilt]: one long panel buried at an angle, two shorter thrown beside it.
   const panels: [number, number, number, number, number, number, number][] = [
     [-1.5, -1, 4.6, 2.4, 13, 0.5, 0.42],
@@ -1369,21 +1392,21 @@ export function buildRingDebris(): { root: THREE.Group; vents: THREE.Vector3[] }
  */
 export function buildCore(height: number, half: number): { root: THREE.Group; band: THREE.Mesh; halo: THREE.Sprite; flag: THREE.Group; cloth: THREE.Mesh; shield: THREE.Mesh } {
   const root = new THREE.Group();
-  const band = mesh(new THREE.BoxGeometry(half * 2 + 0.12, 0.5, half * 2 + 0.12), glow(0xff3b30), 0, height - 0.6, 0, false);
+  const band = mesh(new THREE.BoxGeometry(half * 2 + 0.12, 0.5, half * 2 + 0.12), glow(PAL.held), 0, height - 0.6, 0, false);
   root.add(band);
-  root.add(mesh(new THREE.BoxGeometry(half * 2 + 0.12, 0.18, half * 2 + 0.12), glow(0xff3b30), 0, 1.0, 0, false));
-  const halo = haloSprite(0xff3b30, 7, 0.75);
+  root.add(mesh(new THREE.BoxGeometry(half * 2 + 0.12, 0.18, half * 2 + 0.12), glow(PAL.held), 0, 1.0, 0, false));
+  const halo = haloSprite(PAL.held, 7, 0.75);
   halo.position.y = height + 0.6;
   root.add(halo);
   const flag = new THREE.Group();
   flag.add(mesh(new THREE.CylinderGeometry(0.06, 0.07, 7, 6), flat(PAL.steel), 0, 3.5, 0));
-  const cloth = mesh(new THREE.BoxGeometry(1.8, 1.1, 0.05), flat(0x2f7fe0), 0.95, 6.3, 0, false);
+  const cloth = mesh(new THREE.BoxGeometry(1.8, 1.1, 0.05), flat(PAL.flag), 0.95, 6.3, 0, false);
   flag.add(cloth);
   flag.position.set(-2, 0, 0.6);
   root.add(flag);
   const shield = new THREE.Mesh(
     new THREE.CylinderGeometry(half + 1.1, half + 1.1, height + 1.2, 6, 1, true),
-    new THREE.MeshBasicMaterial({ toneMapped: false, color: 0xff6a5a, transparent: true, opacity: 0.18, depthWrite: false, side: THREE.DoubleSide, wireframe: true }),
+    new THREE.MeshBasicMaterial({ toneMapped: false, color: PAL.coreShield, transparent: true, opacity: 0.18, depthWrite: false, side: THREE.DoubleSide, wireframe: true }),
   );
   shield.position.y = (height + 1.2) / 2 - 0.2;
   root.add(shield);
@@ -1394,7 +1417,7 @@ export function buildCore(height: number, half: number): { root: THREE.Group; ba
 export function buildBeacon(): THREE.Mesh {
   const m = new THREE.Mesh(
     new THREE.CylinderGeometry(0.9, 0.9, 260, 12, 1, true),
-    new THREE.MeshBasicMaterial({ toneMapped: false, color: 0xfff2b0, transparent: true, opacity: 0.32, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }),
+    new THREE.MeshBasicMaterial({ toneMapped: false, color: PAL.beacon, transparent: true, opacity: 0.32, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }),
   );
   m.frustumCulled = false;
   return m;
