@@ -171,7 +171,7 @@ console.log(`top-down drawn (${secs()})`);
 
 // --- the cameras: the tour's within the place, and four from above round it. Each carries the
 // placement it was asked for (`spec`), which the baseline is checked against: a tour camera's
-// numbers, or an above camera's direction and radius (its height follows the ground, so a change
+// numbers, or an above camera's direction, the place's centre and the radius (its height follows the ground, so a change
 // to the place moves it without making it another camera).
 interface Cam {
   name: string;
@@ -197,7 +197,7 @@ for (const [i, a] of [Math.PI / 4, (3 * Math.PI) / 4, (-3 * Math.PI) / 4, -Math.
   const x = centre.x + Math.sin(a) * D;
   const z = centre.z - Math.cos(a) * D;
   const y = Math.max(terrainHeight(x, z), g0) + D * 0.55;
-  cams.push({ name: `above-${dir}`, x, y, z, yaw: Math.atan2(centre.x - x, -(centre.z - z)), pitch: Math.atan2(g0 - y, D), abs: true, spec: `above ${dir} r ${R}` });
+  cams.push({ name: `above-${dir}`, x, y, z, yaw: Math.atan2(centre.x - x, -(centre.z - z)), pitch: Math.atan2(g0 - y, D), abs: true, spec: `above ${dir} of (${+centre.x.toFixed(3)}, ${+centre.z.toFixed(3)}) r ${R}` });
 }
 
 const root = "dist/client";
@@ -252,7 +252,7 @@ for (const { name, x, y: dy, z, yaw, pitch, abs, spec } of cams) {
     continue;
   }
   if (baseCams[name] !== spec) {
-    lines.push(`${name}: NOT COMPARED, the camera is not where the baseline was taken from (another --r, or the tour changed); take one with --base`);
+    lines.push(`${name}: NOT COMPARED, the camera is not where the baseline was taken from (another --r, the place or the tour moved); take one with --base`);
     continue;
   }
   const cmp = await page.evaluate(
