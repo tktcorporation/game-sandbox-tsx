@@ -115,11 +115,13 @@ interface RobotMeasure {
 const isEffect = (m: import("three").Mesh) => [m.material].flat().some((mat) => mat.transparent);
 
 /**
- * Each connected piece of a mesh (triangles sharing a vertex position), as its widths across its own
- * faces, smallest first: a part's width is measured along each of its faces' normals, so a part
- * turned on its parent's axes (a limb, a prism turned 45°) is measured as it is, not by its box.
+ * Each connected piece of a mesh (triangles sharing a vertex position), as its feature size: for a
+ * solid part, its second smallest width along its own faces' normals (a rod's thickness, a plate's
+ * narrower side), so a part turned on its parent's axes (a limb, a prism turned 45°) is measured as
+ * it is, not by its box; for a flat part (a disc, a decal: no depth along its normal), its smallest
+ * width within its plane, across each edge of its outline. Each also gives its widths for the table.
  */
-function partWidths(m: import("three").Mesh): number[][] {
+function partFeatures(m: import("three").Mesh): { feature: number; widths: number[] }[] {
   const g = m.geometry;
   const pos = g.attributes.position;
   const n = g.index ? g.index.count : pos.count;
@@ -144,37 +146,54 @@ function partWidths(m: import("three").Mesh): number[][] {
     parent[find(node(vi(t + 1)))] = find(a);
     parent[find(node(vi(t + 2)))] = find(a);
   }
-  const parts = new Map<number, { points: import("three").Vector3[]; normals: Map<string, import("three").Vector3> }>();
-  const e1 = new THREE.Vector3();
-  const e2 = new THREE.Vector3();
+  interface Part {
+    points: import("three").Vector3[];
+    normals: import("three").Vector3[];
+    /** Each edge by its two corners' ids, with how many triangles use it and one of their normals. */
+    edges: Map<string, { a: import("three").Vector3; b: import("three").Vector3; uses: number; nrm: import("three").Vector3 }>;
+  }
+  const parts = new Map<number, Part>();
+  // A direction and its opposite measure the same width; two within about 2.5° are one.
+  const addDir = (list: import("three").Vector3[], d: import("three").Vector3) => {
+    if (!list.some((e) => Math.abs(e.dot(d)) > 0.999)) list.push(d);
+  };
   for (let t = 0; t < n; t += 3) {
-    const [a, b, c] = [vi(t), vi(t + 1), vi(t + 2)].map((i) => world[i]);
-    const r = find(id.get(key(vi(t)))!);
+    const ids = [vi(t), vi(t + 1), vi(t + 2)];
+    const [a, b, c] = ids.map((i) => world[i]);
+    const r = find(id.get(key(ids[0]))!);
     let p = parts.get(r);
-    if (!p) parts.set(r, (p = { points: [], normals: new Map() }));
+    if (!p) parts.set(r, (p = { points: [], normals: [], edges: new Map() }));
     p.points.push(a, b, c);
-    const nrm = e1.subVectors(b, a).cross(e2.subVectors(c, a));
+    const nrm = new THREE.Vector3().subVectors(b, a).cross(new THREE.Vector3().subVectors(c, a));
     if (nrm.lengthSq() < 1e-12) continue;
     nrm.normalize();
-    // A normal and its opposite measure the same width.
-    if (nrm.x < -1e-6 || (Math.abs(nrm.x) <= 1e-6 && (nrm.y < -1e-6 || (Math.abs(nrm.y) <= 1e-6 && nrm.z < 0)))) nrm.negate();
-    const k = `${nrm.x.toFixed(3)},${nrm.y.toFixed(3)},${nrm.z.toFixed(3)}`;
-    if (!p.normals.has(k)) p.normals.set(k, nrm.clone());
+    addDir(p.normals, nrm);
+    for (const [u, v] of [[0, 1], [1, 2], [2, 0]]) {
+      const [ku, kv] = [id.get(key(ids[u]))!, id.get(key(ids[v]))!].sort((x, y) => x - y);
+      const e = p.edges.get(`${ku},${kv}`);
+      if (e) e.uses++;
+      else p.edges.set(`${ku},${kv}`, { a: world[ids[u]], b: world[ids[v]], uses: 1, nrm });
+    }
   }
-  return [...parts.values()].map(({ points, normals }) =>
-    [...normals.values()]
-      .map((nrm) => {
-        let lo = Infinity;
-        let hi = -Infinity;
-        for (const q of points) {
-          const d = q.dot(nrm);
-          lo = Math.min(lo, d);
-          hi = Math.max(hi, d);
-        }
-        return hi - lo;
-      })
-      .sort((a, b) => a - b),
-  );
+  const width = (points: import("three").Vector3[], d: import("three").Vector3) => {
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const q of points) {
+      const x = q.dot(d);
+      lo = Math.min(lo, x);
+      hi = Math.max(hi, x);
+    }
+    return hi - lo;
+  };
+  return [...parts.values()].map(({ points, normals, edges }) => {
+    const widths = normals.map((d) => width(points, d)).sort((x, y) => x - y);
+    if (widths[0] > 1e-4) return { feature: widths[Math.min(1, widths.length - 1)], widths };
+    // Flat: across each outline edge (used by one triangle only), within the plane.
+    const across: import("three").Vector3[] = [];
+    for (const e of edges.values()) if (e.uses === 1) addDir(across, new THREE.Vector3().subVectors(e.b, e.a).cross(e.nrm).normalize());
+    const inPlane = across.map((d) => width(points, d)).sort((x, y) => x - y);
+    return { feature: inPlane[0] ?? 0, widths: [0, ...inPlane.slice(0, 2)] };
+  });
 }
 
 const hex = (c: number) => `#${c.toString(16).padStart(6, "0")}`;
@@ -214,12 +233,10 @@ function measure(e: Entry): Measure {
   // Parts are merged per material (compact()), so a part is a connected piece of a mesh.
   const solid = meshes.filter((m) => !isEffect(m));
   for (const m of solid) {
-    for (const w of partWidths(m)) {
-      // A rod's thickness or a plate's narrower side: the second smallest width (a flat sheet has one).
-      const f = w[Math.min(1, w.length - 1)];
+    for (const { feature: f, widths } of partFeatures(m)) {
       if (f < feature) {
         feature = f;
-        featurePart = `${w.slice(0, 3).map((v) => v.toFixed(3)).join("×")} ${hex((m.material as { color?: import("three").Color }).color?.getHex() ?? 0)}`;
+        featurePart = `${widths.slice(0, 3).map((v) => v.toFixed(3)).join("×")} ${hex((m.material as { color?: import("three").Color }).color?.getHex() ?? 0)}`;
       }
     }
   }

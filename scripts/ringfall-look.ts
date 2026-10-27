@@ -77,18 +77,22 @@ const GH = Math.ceil((WORLD.z1 - WORLD.z0) / CELL);
 const heights = new Float32Array(GW * GH);
 const prints = new Uint32Array(GW * GH);
 for (let j = 0; j < GH; j++) for (let i = 0; i < GW; i++) heights[j * GW + i] = terrainHeight(WORLD.x0 + (i + 0.5) * CELL, WORLD.z0 + (j + 0.5) * CELL);
-const boxPrint = (b: Box) => {
+// The view draws a prop's wrapping and a rock's chips from the box's number in the order it builds
+// them (`buildStatic(b, n)`: BOXES, then the routes' boxes), so for those two kinds the number is
+// part of what is seen, and a box added before them changes them all.
+const DRAWN_BY_NUMBER = new Set(["prop", "rock"]);
+const boxPrint = (b: Box, n: number) => {
   let h = 2166136261;
-  for (const v of [b.x0, b.z0, b.x1, b.z1, b.y0, b.h, b.tint]) h = Math.imul(h ^ Math.round(v * 100), 16777619);
+  for (const v of [b.x0, b.z0, b.x1, b.z1, b.y0, b.h, b.tint, DRAWN_BY_NUMBER.has(b.kind) ? n : -1]) h = Math.imul(h ^ Math.round(v * 100), 16777619);
   for (const c of b.kind) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
   return h >>> 0;
 };
-const lay = (b: Box, tall: boolean) => {
+const lay = (b: Box, n: number, tall: boolean) => {
   const i0 = Math.max(0, Math.floor((b.x0 - WORLD.x0) / CELL));
   const i1 = Math.min(GW - 1, Math.floor((b.x1 - WORLD.x0 - 1e-6) / CELL));
   const j0 = Math.max(0, Math.floor((b.z0 - WORLD.z0) / CELL));
   const j1 = Math.min(GH - 1, Math.floor((b.z1 - WORLD.z0 - 1e-6) / CELL));
-  const f = boxPrint(b);
+  const f = boxPrint(b, n);
   for (let j = j0; j <= j1; j++)
     for (let i = i0; i <= i1; i++) {
       // XOR, so the print does not depend on the order the boxes are listed in.
@@ -96,22 +100,23 @@ const lay = (b: Box, tall: boolean) => {
       if (tall && b.h > heights[j * GW + i]) heights[j * GW + i] = b.h;
     }
 };
-for (const b of BOXES) lay(b, true);
-for (const r of ROUTES) {
-  for (const b of r.closed) lay(b, true);
-  for (const b of r.open) lay(b, false);
-}
+BOXES.forEach((b, n) => lay(b, n, true));
+// Numbered as the view numbers them: closed in the world the look shows (no route opened), open as when all are.
+ROUTES.flatMap((r) => r.closed).forEach((b, n) => lay(b, BOXES.length + n, true));
+ROUTES.flatMap((r) => r.open).forEach((b, n) => lay(b, BOXES.length + n, false));
 // The world's baseline is kept with the place's, so a baseline taken at another place never
 // stands in for this one's; it records its grid, so a grid of another size is never compared.
 const worldBin = `${baseDir}/world.bin`;
 const worldMeta = `${baseDir}/world.json`;
-const meta = { gw: GW, gh: GH, cell: CELL, x0: WORLD.x0, z0: WORLD.z0 };
+// `print` is the fingerprint's version: raise it when boxPrint() or lay() change what they hash, so
+// a baseline hashed the old way is never compared.
+const meta = { gw: GW, gh: GH, cell: CELL, x0: WORLD.x0, z0: WORLD.z0, print: 2 };
 const worldLines: string[] = [];
 const tooFar = (x: number, z: number) => Math.hypot(x - centre.x, z - centre.z) > R;
 const saved = existsSync(worldMeta) ? (JSON.parse(readFileSync(worldMeta, "utf8")) as typeof meta & { at: string }) : null;
 const sameGrid = !!saved && (Object.keys(meta) as (keyof typeof meta)[]).every((k) => saved[k] === meta[k]);
 if (!rebase && saved && existsSync(worldBin) && !sameGrid) {
-  worldLines.push("world: NOT COMPARED, the grid is not the baseline's (WORLD changed); take one with --base");
+  worldLines.push("world: NOT COMPARED, the grid is not the baseline's (WORLD or the tool changed); take one with --base");
 } else if (!rebase && saved && existsSync(worldBin)) {
   const raw = readFileSync(worldBin);
   const before = new Float32Array(raw.buffer.slice(raw.byteOffset, raw.byteOffset + GW * GH * 4));
