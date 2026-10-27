@@ -427,7 +427,10 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   substation and a pumping station) are larger ones, each with a squad of two (`Hamlet.guard`,
   joined to `ROAMERS`) and its whole yard pressed flat. From them the works run to the POIs
   (`WORKS_LINES`, laid once the ground is built): power lines on pylons, pipelines high enough to
-  walk under, and a freight line and its spur with wagons left on them as cover.
+  walk under, and a freight line and its spur with wagons left on them as cover. The harbor's
+  sixth outpost has no lines: the ring's habitat section on the dry bay north of the wreck
+  (`ringSection()`, sized by `SECTION`), three bays of three decks of cabins, each bay a storey
+  over the one west of it, broken open at both ends and torn open on the middle bay's south side.
   Perimeter fences (`FENCES` / `FENCE_RUNS` in `map.ts`, boxes of kind `fence`) close the open
   ground round some of the base's works: they stop bodies, not sight or shots (`rayWorld()` in
   `geom.ts` passes them, `cover.ts` offers no cover behind them), and leave a gate wherever a
