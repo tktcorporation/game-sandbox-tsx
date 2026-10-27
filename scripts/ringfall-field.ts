@@ -21,7 +21,7 @@ import { mkdirSync } from "node:fs";
 import { AWARE, COVER, PLAYER, SIGHT } from "../src/ringfall/sim/config";
 import { coversNear } from "../src/ringfall/sim/cover";
 import { collide, groundLevel, inWorld, rayWorld } from "../src/ringfall/sim/geom";
-import { BOXES, FRAMES, POIS } from "../src/ringfall/sim/map";
+import { BOXES, deckAt, FRAMES, POIS } from "../src/ringfall/sim/map";
 import { highGround, offshore, steepAt } from "../src/ringfall/sim/terrain";
 import { writePng } from "./png";
 
@@ -69,9 +69,13 @@ const median = (v: number[]) => {
   return s.length ? s[s.length >> 1] : 0;
 };
 
-/** Whether a player could stand at (x, z) on the ground: no sea, high ground, cliff or box. */
+/**
+ * Whether a player could stand at (x, z) on the ground: no sea, high ground, cliff or box. A deck
+ * (`DECKS`) is ground as path finding walks it, whatever the terrain under it is.
+ */
 function walkable(x: number, z: number): number | null {
-  if (!inWorld(x, z, 1) || offshore(x, z) > 0 || highGround(x, z) || steepAt(x, z)) return null;
+  if (!inWorld(x, z, 1)) return null;
+  if (deckAt(x, z) === null && (offshore(x, z) > 0 || highGround(x, z) || steepAt(x, z))) return null;
   const g = groundLevel(x, z);
   const p = { x, y: g, z };
   if (collide(p, PLAYER.radius)) return null;

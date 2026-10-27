@@ -175,7 +175,7 @@ const fieldNow = fieldNumbers(field);
 const fieldBase = `${baseDir}/field.json`;
 // `version` is the measure's: raise it when ringfall-field.ts measures differently, so numbers
 // measured the old way are never compared.
-const fieldMeta = { version: 1, r: R };
+const fieldMeta = { version: 2, r: R };
 const fieldSaved = existsSync(fieldBase) ? (JSON.parse(readFileSync(fieldBase, "utf8")) as typeof fieldMeta & { numbers: typeof fieldNow }) : null;
 worldLines.push(`field: ${fieldLine(field)}`);
 if (rebase || !fieldSaved) {
