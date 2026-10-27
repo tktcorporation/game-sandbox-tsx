@@ -73,7 +73,7 @@ export function nearestExit(s: State): Spot {
 /** The last step of every objective: off the island alive. */
 const extractStep = (s: State): Step => ({
   kind: "extract",
-  label: "生きて脱出する",
+  label: "物資を持って帰還する",
   until: "脱出地点・起動した中継ボックス・野営地のどれかで帰る",
   at: s.phase === "play" ? nearestExit(s) : null,
   done: s.outcome === "extracted",
@@ -157,7 +157,7 @@ export function objectiveSteps(s: State, task: Task | null = null): Objective {
     .filter(({ n, i }) => front[i] && n.region === region)
     .sort((a, b) => dist2d(a.n.core, s.player.pos) - dist2d(b.n.core, s.player.pos))[0];
   if (near) return captureSteps(s, near.i, `前線：${near.n.name}を取る`);
-  return settle("探索して脱出する", [
+  return settle("物資を回収して帰還する", [
     { kind: "explore", label: "島を探索する", until: "回収品を 1 つ持つ", at: null, done: s.player.haul.length > 0 || s.sent.length > 0 },
     extractStep(s),
   ]);

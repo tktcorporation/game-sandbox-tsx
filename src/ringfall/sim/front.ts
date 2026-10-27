@@ -11,7 +11,7 @@ import type { State } from "./state";
 import { hypot2 } from "./hypot";
 
 /*
- * The front (docs/ringfall/island-v2.md): the six freeable POIs are nodes joined along the roads
+ * The front (docs/ringfall/island-v2.md): the capturable POIs are nodes joined along the roads
  * (`FRONT_LINKS`). The player holds the camp and the nodes taken; a node next to that ground is
  * on the front, and only a node on the front can be taken, by capturing its core (`FRONT`). The
  * pure rules here serve the raid, the island's nights (meta/island.ts) and the maps alike.

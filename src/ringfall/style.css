@@ -165,7 +165,7 @@ kbd {
   display: none;
 }
 
-/* The island's six nodes under the compass (view/row.ts): the player's filled blue, the enemy's hollow red. */
+/* The island's thirteen nodes under the compass (view/row.ts): the player's filled blue, the enemy's hollow red. */
 #island-row {
   position: absolute;
   top: 58px;
@@ -1201,7 +1201,7 @@ body.touch .mate-bars {
   font-weight: 800;
   font-size: 20px;
 }
-/* The goal under the title: the island's six nodes, large, filled blue as this save takes them. */
+/* The goal under the title: the island's thirteen nodes, filled blue as this save takes them. */
 .title-row {
   margin: 2px 0 4px;
 }

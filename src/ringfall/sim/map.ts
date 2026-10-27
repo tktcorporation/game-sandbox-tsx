@@ -654,7 +654,7 @@ export interface Squad {
 export type LootTable = { weapon: [WeaponKind, Rarity][]; armor: Rarity[]; heals: number; valuable: [ValuableKind, number][] };
 
 /** Stable names for the POIs: saves, quests and other data refer to a POI by these, never by its place in `POIS`. */
-export type PoiId = "supply" | "quarry" | "relay" | "pad" | "wreck" | "yard" | "smelter" | "station" | "waterworks" | "lodge" | "cannery" | "coldstore";
+export type PoiId = "supply" | "quarry" | "relay" | "pad" | "wreck" | "yard" | "smelter" | "station" | "waterworks" | "lodge" | "cannery" | "coldstore" | "motorpool" | "machineworks";
 
 export interface Poi {
   id: PoiId;
@@ -787,7 +787,7 @@ const BWE_CAB = (() => {
  * into place by this offset (`POI_AT` in areas.ts, which sets each in its area's frame).
  * The harbor's POIs are written round their own middle.
  */
-const AT = (["supply", "quarry", "relay", "pad", "wreck", "yard", "smelter", "station", "waterworks", "lodge", "cannery", "coldstore"] as const).map((id) => POI_AT[id]);
+const AT = (["supply", "quarry", "relay", "pad", "wreck", "yard", "smelter", "station", "waterworks", "lodge", "cannery", "coldstore", "motorpool", "machineworks"] as const).map((id) => POI_AT[id]);
 
 /** The big dish on the mesa, in the relay's frame (`dish()`), its heights over the mesa's top. */
 const BIG_DISH = { x: 45, z: -5, y: 23, r: 28, f: 22.4, tilt: Math.PI / 4, cell: 2.5 } as const;
@@ -873,6 +873,33 @@ function coldstore(): Box[] {
     ...building(-20, 18, 10, 7, 3.4, { doors: ["e", "n"], roof: "w" }),
     ...trailer(26, -4, 1),
     box(-30, -2, 6, 2.5, 2.6, "container", 2),
+  ];
+}
+
+/** The eastern district's repair hangars, control tower and parked vehicles. */
+function motorpool(): Box[] {
+  return [
+    ...compound(0, 0, 100, 90, 1.1, [{ side: "w", w: 12 }, { side: "e", w: 10 }, { side: "s", w: 12 }, { side: "n", w: 10 }]),
+    ...hall(0, -22, 52, 24, 10, { doors: [{ side: "s", at: -15 }, { side: "s", at: 15 }], hatches: [{ side: "w" }, { side: "e" }], windows: ["n"], columns: 8, mezz: [{ side: "n", depth: 4, y: 4.5, stair: 18 }], steel: 1 }),
+    ...tower(34, 21, 12, 12, 3, { doors: [["w", "s"]], windows: [["e"], ["n", "e", "w"], ["n", "e", "s", "w"]] }),
+    ...[-28, -16].flatMap((x) => [box(x, 22, 2.5, 2.3, 3, "prop", PROP.cab), box(x, 26, 2.5, 5, 2.3, "prop", PROP.bed)]),
+    box(-35, -5, 6.1, 2.44, 2.6, "container", 1),
+    box(15, 29, 5, 0.6, 1.1, "prop", PROP.barrier),
+    box(8, 20, 2, 2, 1.2, "crate"),
+  ];
+}
+
+/** Machining hall, material silos and a stair-accessible office. */
+function machineworks(): Box[] {
+  return [
+    ...compound(0, 0, 100, 90, 1.1, [{ side: "w", w: 12 }, { side: "e", w: 10 }, { side: "s", w: 10 }, { side: "n", w: 12 }]),
+    ...hall(-12, -20, 54, 24, 12, { doors: [{ side: "s", at: -15 }, { side: "s", at: 15 }], hatches: [{ side: "w" }, { side: "e" }], windows: ["n"], columns: 8, mezz: [{ side: "n", depth: 4, y: 4.5, stair: 18 }], steel: 3 }),
+    ...tank(34, -24, 6, 20, "s", 4),
+    ...tank(34, -6, 6, 16, "s", 4),
+    ...building(27, 24, 20, 14, 4.5, { doors: ["w", "s"], windows: ["e"], roof: "s" }),
+    ...tower(-32, 24, 12, 12, 2, { doors: [["e", "s"]], windows: [["w"], ["n", "e", "s", "w"]] }),
+    box(8, 13, 6.1, 2.44, 2.6, "container", 3),
+    box(-13, 25, 4, 0.6, 1.1, "prop", PROP.barrier),
   ];
 }
 
@@ -1210,6 +1237,31 @@ const POI_FRAMES: Poi[] = [
     loot: { weapon: [["pike", 1], ["lance", 1], ["maul", 1], ["hornet", 1]], armor: [1], heals: 2, valuable: [["wire", 2], ["board", 2], ["drive", 2], ["reactor", 1]] },
     floor: [{ x: -16, z: -4, heal: "medkit" }],
   },
+  {
+    id: "motorpool", name: "車両基地", x: 0, z: 0, trigger: 65,
+    entry: { x: -58, z: 0, yaw: E },
+    squads: [
+      { name: "整備格納庫", members: [{ kind: "grunt", x: -14, z: -20, face: S }, { kind: "grunt", x: 14, z: -20, face: S }] },
+      { name: "車両管制", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 31.5, z: 21, y: STOREY, face: W }, { kind: "heavy", x: 30, z: 10, face: W }] },
+    ],
+    bins: [{ x: -14, z: -22 }, { x: 14, z: -22 }, { x: -8, z: -31, y: 4.5 }, { x: 34, z: 21 }, { x: -40, z: 10 }, { x: 15, z: 20 }, { x: -25, z: 35 }, { x: 31.5, z: 21, y: STOREY, vault: true }],
+    keyFrom: "machineworks",
+    loot: { weapon: [["pike", 1], ["lance", 1], ["maul", 1]], armor: [1], heals: 2, valuable: [["gyro", 3], ["wire", 2], ["parts", 2], ["board", 2], ["reactor", 1]] },
+    floor: [{ x: 15, z: 23, heal: "battery" }],
+  },
+  {
+    id: "machineworks", name: "機械工場", x: 0, z: 0, trigger: 65,
+    entry: { x: -58, z: 0, yaw: E },
+    squads: [
+      { name: "加工棟", members: [{ kind: "grunt", x: -12, z: -20, face: S }, { kind: "charger", x: -2, z: -8, face: S }] },
+      { name: "資材ヤード", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: -34.5, z: 24, y: STOREY, face: E }, { kind: "drone", x: -20, z: 20 }] },
+    ],
+    bins: [{ x: -26, z: -20 }, { x: 0, z: -20 }, { x: -20, z: -29, y: 4.5 }, { x: 27, z: 24 }, { x: -32, z: 24 }, { x: 15, z: 30 }, { x: -40, z: 6 }, { x: -34.5, z: 24, y: STOREY, vault: true }],
+    keyFrom: "motorpool",
+    loot: { weapon: [["pike", 1], ["hornet", 1], ["talon", 1]], armor: [1], heals: 2, valuable: [["parts", 3], ["board", 3], ["wire", 2], ["fuse", 2], ["drive", 1]] },
+    floor: [{ x: 30, z: 24, heal: "syringe" }],
+  },
+
 ];
 
 export const POIS: Poi[] = POI_FRAMES.map((p, i) => placePoi(p, AT[i]));
@@ -1232,7 +1284,7 @@ export interface Depot {
  * the entry: the nearest flat spot where a raid started there is not seen by the POI's
  * squads at once (`checkDepots` in the sim gate holds them to it).
  */
-const DEPOT_OUT: Record<PoiId, number> = { supply: 18, quarry: 18, relay: 25, pad: 66, wreck: 22, yard: 18, smelter: 25, station: 20, waterworks: 20, lodge: 20, cannery: 12, coldstore: 20 };
+const DEPOT_OUT: Record<PoiId, number> = { supply: 18, quarry: 18, relay: 25, pad: 66, wreck: 22, yard: 18, smelter: 25, station: 20, waterworks: 20, lodge: 20, cannery: 12, coldstore: 20, motorpool: 24, machineworks: 24 };
 
 /** A depot's place in `DEPOTS` (and in the run's `depots`), from its POI. */
 export const depotIndex = (poi: PoiId) => DEPOTS.findIndex((d) => d.poi === poi);
@@ -1577,6 +1629,45 @@ interface Town {
 }
 
 const TOWN_FRAMES: Town[] = [
+  {
+    name: "西の集落",
+    x: -730,
+    z: 70,
+    buildings: [
+      rowHouses(-32, -20, 4, 9, 10, 2),
+      building(24, -18, 16, 12, 4.5, { doors: ["s", "e"], windows: ["n", "w"], roof: "e" }),
+      building(-24, 22, 14, 10, 3.4, { doors: ["n", "e"], windows: ["s", "w"] }),
+      [box(20, 24, 6.2, 2.5, 2.6, "container", 2), box(30, 20, 3, 0.6, 1.1, "wall", 1)],
+    ],
+    bins: [
+      { building: 0, x: -32, z: -20, table: "quarry" },
+      { building: 1, x: 24, z: -18, table: "quarry" },
+      { building: 2, x: -24, z: 22, table: "supply" },
+    ],
+    guard: {
+      name: "西の集落の見回り",
+      members: [{ kind: "grunt", x: -25, z: 0, face: E }, { kind: "charger", x: -23, z: 2, face: E }],
+      patrol: [{ x: -25, z: 0 }, { x: 35, z: 0 }, { x: 0, z: 0 }, { x: 0, z: 40 }],
+    },
+  },
+  {
+    name: "西の見張り所",
+    x: -820,
+    z: 235,
+    buildings: [
+      tower(-10, 0, 10, 10, 3, { doors: [["e", "s"]], windows: [["w"], ["n", "e", "w"], ["n", "e", "s", "w"]] }),
+      building(12, -8, 10, 8, 3.4, { doors: ["s", "e"], windows: ["n"] }),
+      [box(10, 10, 4, 0.6, 1.1, "wall", 1), box(17, 12, 2, 2, 1.2, "crate")],
+    ],
+    bins: [
+      { building: 0, x: -12.5, z: 1.5, y: STOREY * 2, table: "relay" },
+      { building: 1, x: 12, z: -8, table: "supply" },
+    ],
+    guard: {
+      name: "西の見張り所の守備",
+      members: [{ kind: "grunt", x: 0, z: 8, face: N }],
+    },
+  },
   {
     // On the lakebed's south shore, the ring road its main street (z about -8 in its frame), the
     // side street south off it at x = 3 (`STREETS`' 町の横通り).
@@ -1946,8 +2037,8 @@ export interface Region {
 }
 
 export const REGIONS: Region[] = [
-  { id: "reservoir", name: "ダム湖", note: "干上がったダム湖の島。拠点 6 つ、発着場にタイタン", entries: ["beach", "checkpoint", "jetty"], pois: ["supply", "quarry", "relay", "pad", "station", "waterworks"], exits: ["ship", "flare", "village"], label: { x: -330, z: 300 }, bounds: { x0: WORLD.x0, z0: -340, x1: WORLD.x1, z1: WORLD.z1 } },
-  { id: "harbor", name: "港湾地帯", note: "干上がった湾の港。拠点 6 つ、どこにもヘビーがいる", entries: ["outskirts", "quay", "shore"], locked: "峠か鉄橋を越えて港町の外れまで歩き、生きて帰ると選べる", pois: ["wreck", "yard", "smelter", "lodge", "cannery", "coldstore"], exits: ["boat"], label: { x: -250, z: -520 }, bounds: { x0: WORLD.x0, z0: WORLD.z0, x1: WORLD.x1, z1: -380 } },
+  { id: "reservoir", name: "ダム湖", note: "東部工業地帯まで続く島。拠点 8 つ、発着場にタイタン", entries: ["beach", "checkpoint", "jetty"], pois: ["supply", "quarry", "relay", "pad", "station", "waterworks", "motorpool", "machineworks"], exits: ["ship", "flare", "village"], label: { x: -330, z: 300 }, bounds: { x0: WORLD.x0, z0: -340, x1: WORLD.x1, z1: WORLD.z1 } },
+  { id: "harbor", name: "港湾地帯", note: "干上がった湾の港。拠点 6 つ、どこにもヘビーがいる", entries: ["outskirts", "quay", "shore"], locked: "峠か鉄橋を越えて港町の外れまで歩き、生きて帰ると選べる", pois: ["wreck", "yard", "smelter", "lodge", "cannery", "coldstore"], exits: ["boat"], label: { x: -250, z: -520 }, bounds: { x0: -600, z0: WORLD.z0, x1: 600, z1: -380 } },
 ];
 
 export const regionOf = (id: RegionId): Region => REGIONS.find((r) => r.id === id) ?? REGIONS[0];
@@ -2175,6 +2266,7 @@ export const LANDMARKS: readonly { name: string; x: number; z: number }[] = [
   at("bay", { name: "水路", x: 140, z: -604 }),
   // The outposts and the works between the harbor's POIs.
   ...[...OUTPOSTS, ...TOWN_FRAMES].map((o) => ({ name: o.name, x: o.x, z: o.z })),
+  { name: "東部工業地帯", x: 750, z: 215 },
   { name: "貨物線", x: -130, z: -770 },
   { name: "送電線", x: 100, z: -860 },
   { name: "パイプライン", x: 260, z: -910 },
@@ -2186,6 +2278,9 @@ export const LANDMARKS: readonly { name: string; x: number; z: number }[] = [
  * hidden spot a walk away from each.
  */
 export const STOPS: readonly { name: string; x: number; z: number }[] = [
+  { name: "工業地帯の交差点", x: 750, z: 190 },
+  { name: "西の集落", x: -730, z: 70 },
+  { name: "西の見張り所", x: -820, z: 243 },
   at("factory", { name: "工場", x: 0, z: 0 }),
   at("factory", { name: "住宅地", x: -50, z: 25 }),
   at("heart", { name: "台地", x: -100, z: 8 }),
@@ -3876,6 +3971,8 @@ const AUTHORED: Box[] = [
   ...onLevel(LEVEL.lodge, placeIn("lodge", lodge())),
   ...onLevel(LEVEL.cannery, placeIn("cannery", cannery())),
   ...onLevel(LEVEL.coldstore, placeIn("coldstore", coldstore())),
+  ...onLevel(LEVEL.motorpool, place(...POI_AT.motorpool, motorpool())),
+  ...onLevel(LEVEL.machineworks, place(...POI_AT.machineworks, machineworks())),
 ];
 
 /**
@@ -3954,8 +4051,11 @@ function authoredKeep(): Keep {
  * channel, under water, gets none.
  */
 const SCATTER = [
-  { x0: WORLD.x0, x1: WORLD.x1, z0: -350, z1: WORLD.z1, seed: 7_332, step: 13 },
-  { x0: WORLD.x0, x1: WORLD.x1, z0: WORLD.z0, z1: -351, seed: 4_517, step: 14 },
+  // Keep the original candidate grids and random streams stable when the world bounds grow.
+  { x0: -600, x1: 600, z0: -350, z1: WORLD.z1, seed: 7_332, step: 13 },
+  { x0: -600, x1: 600, z0: WORLD.z0, z1: -351, seed: 4_517, step: 14 },
+  { x0: WORLD.x0, x1: -600, z0: -250, z1: 430, seed: 8_219, step: 13 },
+  { x0: 600, x1: WORLD.x1, z0: -200, z1: 640, seed: 6_827, step: 13 },
 ];
 /** Where cover is sparse: the salt flats, and the supply depot's dune coast, whose dunes are its cover. */
 const SPARSE = new Set(["塩田", "補給所"]);
@@ -3963,6 +4063,7 @@ const SPARSE = new Set(["塩田", "補給所"]);
 const WATER = "水路";
 /** The ground between the basins and roads (terrain.ts). */
 const BETWEEN = "野";
+const EXPANSION_STREETS = new Set(["西の半島の道", "西の海岸道", "東部工業道路", "工業地帯の連絡路", "機械工場の補給路"]);
 /** Where on the ground between the cover clumps: above 0.55 in blobs about a hundred metres across. */
 const clump = (x: number, z: number) => 0.5 + 0.25 * Math.sin(x / 37 + 1.3) * Math.sin(z / 41 + 0.7) + 0.25 * Math.sin((x + z) / 53);
 
@@ -4193,13 +4294,17 @@ function scatterArea(near: Clearance, area: (typeof SCATTER)[number]): Box[] {
     for (let gz = area.z0 + edge; gz <= area.z1 - edge; gz += area.step) {
       const x = gx + (rnd() - 0.5) * 7;
       const z = gz + (rnd() - 0.5) * 7;
-      const at = surfaceAt(x, z);
+      // New roads clear their surface below, without changing the original regions' random
+      // draws and relocating cover along patrol routes on the other side of the island.
+      const surface = surfaceAt(x, z);
+      const original = area.x0 === -600;
+      const at = original && EXPANSION_STREETS.has(surface) ? BETWEEN : surface;
       const sparse = SPARSE.has(at);
       if ((sparse && rnd() > 0.5) || at === WATER) continue;
       // The streets' asphalt stays clear. On the ground between the areas, cover gathers along
       // the streets (what was left by the roadside) and in a few clumps a hundred metres or so
       // across away from them: open country to cross, broken by places to break the sightline.
-      const road = offStreet(x, z);
+      const road = offStreet(x, z, original ? EXPANSION_STREETS : undefined);
       if (road < 2) continue;
       if (at === BETWEEN && (road < 22 ? rnd() > 0.55 || clump(x, z) < 0.45 : rnd() > 0.4 || clump(x, z) < 0.62)) continue;
       const piece = sparse ? wreckAt(x, z) : pieceAt(x, z);
@@ -5050,13 +5155,16 @@ export const FRONT_LINKS: readonly (readonly ["camp" | NodeId, NodeId])[] = [
   ["cannery", "wreck"],
   ["smelter", "coldstore"],
   ["coldstore", "wreck"],
+  ["relay", "motorpool"],
+  ["motorpool", "machineworks"],
+  ["machineworks", "waterworks"],
 ];
 
 /**
  * Each node's tier (docs/ringfall/island-v2.md, 拠点の段): how deep it lies from the camp, 0 by
  * the camp's gate to 3 at the far end of the harbor.
  */
-export const TIER: Record<NodeId, number> = { supply: 0, quarry: 1, relay: 1, station: 1, waterworks: 1, lodge: 2, yard: 2, smelter: 2, cannery: 2, coldstore: 2, wreck: 3 };
+export const TIER: Record<NodeId, number> = { supply: 0, quarry: 1, relay: 1, station: 1, waterworks: 1, lodge: 2, yard: 2, smelter: 2, cannery: 2, coldstore: 2, wreck: 3, motorpool: 2, machineworks: 1 };
 
 /**
  * What holding each node opens (docs/ringfall/island-v2.md, 拠点の段), for as long as it is held:
@@ -5084,6 +5192,8 @@ export const UNLOCKS: Record<NodeId, NodeUnlock> = {
   lodge: { depart: true },
   cannery: {},
   coldstore: {},
+  motorpool: { shop: 3, depart: true },
+  machineworks: { shop: 2, squad: 1 },
 };
 
 /**

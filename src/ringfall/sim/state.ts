@@ -851,13 +851,20 @@ export function encodeSeen(seen: number[]): string {
   return out;
 }
 
-/** A saved explored map; one of another size keeps the cells both have, and anything unreadable counts as unexplored. */
-export function decodeSeen(str: string): number[] {
+/** Decode cells in their saved world coordinates, keeping exploration aligned when bounds grow. */
+export function decodeSeen(str: string, bounds: Pick<typeof WORLD, "x0" | "x1" | "z0" | "z1"> = WORLD): number[] {
   const seen = emptySeen();
-  for (let i = 0; i < str.length && i * 4 < seen.length; i++) {
+  const cols = Math.ceil((bounds.x1 - bounds.x0) / DEPOT.cell);
+  const rows = Math.ceil((bounds.z1 - bounds.z0) / DEPOT.cell);
+  for (let i = 0; i < str.length && i * 4 < cols * rows; i++) {
     const n = parseInt(str[i], 16);
     if (Number.isNaN(n)) continue;
-    for (let b = 0; b < 4 && i * 4 + b < seen.length; b++) seen[i * 4 + b] = (n >> b) & 1;
+    for (let b = 0; b < 4 && i * 4 + b < cols * rows; b++) {
+      if (!((n >> b) & 1)) continue;
+      const k = i * 4 + b;
+      const dest = cellOf(bounds.x0 + (k % cols + 0.5) * DEPOT.cell, bounds.z0 + (Math.floor(k / cols) + 0.5) * DEPOT.cell);
+      if (dest >= 0) seen[dest] = 1;
+    }
   }
   return seen;
 }

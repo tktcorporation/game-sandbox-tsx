@@ -1,7 +1,7 @@
 import { DEPOT, FACTORY, HEALS as HEAL_SPECS, HIDEOUT, META, MOD_KINDS, MOD_START, THREAT, TOOLS, VALUABLES, type ModKind, type HealKind, type ModuleId, type Rarity, type ToolKind, type ValuableKind, type WeaponKind, type FactoryLevel } from "../sim/config";
 import { depotIndex, DEPOTS, ENTRIES, POIS, poiIndex, REGIONS, regionOf, ROUTES, type EntryId, type NodeId, type PoiId, type RecordId, type RegionId, type RouteId } from "../sim/map";
 import { openRoutes } from "../sim/routes";
-import { encodeSeen, type Kit, type State } from "../sim/state";
+import { decodeSeen, encodeSeen, type Kit, type State } from "../sim/state";
 import { haulOrigins } from "../sim/world";
 import { contractDone, makeBoard, parseBoard, sentOrigins, type Board, type Contract, type Fetched } from "./contracts";
 import { emptyHideout, infirmaryHeals, MODULES, nextLevel, onSale, pouchSlots, stashCap, stillNeeded, type Hideout } from "./hideout";
@@ -25,7 +25,7 @@ export type Item =
 
 /** What persists between raids. */
 export interface Profile {
-  v: 23;
+  v: 25;
   cash: number;
   stash: Item[];
   raids: number;
@@ -135,7 +135,7 @@ export const stashUsed = (p: Pick<Profile, "stash">) => p.stash.filter((i) => !i
 export function newProfile(seed = 1): Profile {
   const stash: Item[] = [...starterItems(), ...META.start.weapons.map((w): Item => ({ t: "weapon", ...w }))];
   for (const k of HEALS) for (let i = 0; i < META.start.heals[k]; i++) stash.push({ t: "heal", kind: k });
-  const p: Omit<Profile, "board"> = { v: 23, cash: META.start.cash, stash, raids: 0, extracted: 0, time: 0, quests: emptyLog(), region: "reservoir", entry: FIRST_ENTRY, entries: [FIRST_ENTRY], hideout: emptyHideout(), seed: seed & 0xffff, depots: [], depotSent: {}, seen: "", routes: [], day: 1, poiState: newIsland(), taken: null, records: [], events: firstEvents(seed & 0xffff), known: [...MOD_START], threat: 0, freedAt: {}, factory: 0, lastKit: null };
+  const p: Omit<Profile, "board"> = { v: 25, cash: META.start.cash, stash, raids: 0, extracted: 0, time: 0, quests: emptyLog(), region: "reservoir", entry: FIRST_ENTRY, entries: [FIRST_ENTRY], hideout: emptyHideout(), seed: seed & 0xffff, depots: [], depotSent: {}, seen: "", routes: [], day: 1, poiState: newIsland(), taken: null, records: [], events: firstEvents(seed & 0xffff), known: [...MOD_START], threat: 0, freedAt: {}, factory: 0, lastKit: null };
   return { ...p, board: makeBoard(p) };
 }
 
@@ -763,11 +763,15 @@ const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
  * Before v23 a raid with no stash weapon went out with weapons lent for it: such a profile's stash
  * gains the starter weapons (as every profile's does, `withStarters()`), and a last loadout of no
  * stash weapon picks them again (`recallLoadout()`).
+ * Before v24 the world had no western peninsula: explored cells move into the wider grid
+ * at their original world coordinates, leaving the new land unexplored.
+ * Before v25 there was no eastern district; its two new nodes start enemy-held and
+ * v24 exploration keeps its western origin and old eastern boundary when migrated.
  */
 export function parseProfile(raw: unknown, seed = 1): Profile | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
+  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
   const old = o.v === 1 || o.v === 2;
   const migrate = (i: unknown): unknown => {
     if (!old || !i || typeof i !== "object" || (i as Record<string, unknown>).t !== "key") return i;
@@ -814,7 +818,7 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   let room = cap;
   const stash = withStarters(items.filter((i) => isStarter(i) || room-- > 0));
   const out: Omit<Profile, "board" | "taken" | "events"> = {
-    v: 23,
+    v: 25,
     cash: Math.max(0, Math.floor(o.cash)),
     stash,
     raids,
@@ -829,7 +833,9 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     seed: Number.isInteger(o.seed) ? (o.seed as number) & 0xffff : seed & 0xffff,
     depots,
     depotSent,
-    seen: (typeof o.v === "number" && o.v >= 12) && typeof o.seen === "string" && /^[0-9a-f]*$/.test(o.seen) ? o.seen : "",
+    seen: (typeof o.v === "number" && o.v >= 12) && typeof o.seen === "string" && /^[0-9a-f]*$/.test(o.seen)
+      ? o.v >= 25 || !o.seen ? o.seen : encodeSeen(decodeSeen(o.seen, { x0: o.v >= 24 ? -1000 : -600, x1: 600, z0: -1220, z1: 660 }))
+      : "",
     routes: typeof o.v === "number" && o.v >= 9 && Array.isArray(o.routes) ? openRoutes(o.routes.filter((r): r is string => typeof r === "string")) : [],
     day,
     poiState,

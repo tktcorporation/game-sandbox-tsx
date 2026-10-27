@@ -19,6 +19,11 @@ export interface Street {
  * cliffs, high ground, water and buildings. Its output is `STREETS`.
  */
 export const ROUTE_PLAN: { name: string; half: number; via: readonly (readonly [number, number])[] }[] = [
+  { name: "東部工業道路", half: 4, via: [[470, -30], [550, 20], [640, 70], [705, 70]] },
+  { name: "工業地帯の連絡路", half: 4, via: [[760, 118], [750, 190], [720, 300], [720, 312]] },
+  { name: "機械工場の補給路", half: 4, via: [[665, 360], [600, 410], [400, 440], [200, 465]] },
+  { name: "西の半島の道", half: 4, via: [[-470, 200], [-570, 200], [-650, 170], [-730, 170], [-730, 70]] },
+  { name: "西の海岸道", half: 3, via: [[-730, 170], [-790, 190], [-820, 235]] },
   // --- the reservoir: a ring round the lakebed joining the POIs, and the ways out from it.
   { name: "湖の南の通り", half: 4, via: [[0, 236], [0, 296]] },
   { name: "町の横通り", half: 3, via: [[-52, 238], [-52, 290]] },
@@ -43,6 +48,11 @@ export const ROUTE_PLAN: { name: string; half: number; via: readonly (readonly [
 
 /** The streets as routed (`ROUTE_PLAN`). */
 export const STREETS: readonly Street[] = [
+  { name: "東部工業道路", half: 4, line: [[470, -30], [550, 20], [640, 70], [705, 70]] },
+  { name: "工業地帯の連絡路", half: 4, line: [[760, 118], [750, 190], [720, 300], [720, 312]] },
+  { name: "機械工場の補給路", half: 4, line: [[665, 360], [600, 410], [400, 440], [323, 403], [223, 437], [200, 465]] },
+  { name: "西の半島の道", half: 4, line: [[-470, 200], [-465, 189], [-515, 187], [-570, 200], [-650, 170], [-730, 170], [-730, 70]] },
+  { name: "西の海岸道", half: 3, line: [[-730, 170], [-790, 190], [-819, 223], [-820, 235]] },
   { name: "湖の南の通り", half: 4, line: [[0, 236], [0, 296]] },
   { name: "町の横通り", half: 3, line: [[-52, 238], [-52, 290]] },
   { name: "南の環状路（西）", half: 4, line: [[0, 236], [-110, 238], [-170, 110], [-211, 49], [-265, 10]] },
@@ -102,9 +112,9 @@ export function toLength(l: Length, x: number, z: number): number {
  * How far (x, z) lies outside the nearest street's surface: negative on it, up to `REACH` metres
  * off it; beyond that, `REACH`.
  */
-export function offStreet(x: number, z: number): number {
+export function offStreet(x: number, z: number, exclude?: ReadonlySet<string>): number {
   const list = near.get(Math.floor(z / SQUARE) * 4096 + Math.floor(x / SQUARE));
   let best: number = REACH;
-  if (list) for (const l of list) best = Math.min(best, toLength(l, x, z) - l.street.half);
+  if (list) for (const l of list) if (!exclude?.has(l.street.name)) best = Math.min(best, toLength(l, x, z) - l.street.half);
   return best;
 }

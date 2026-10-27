@@ -15,6 +15,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@600;800&family=M+PLUS+1p:wght@500;800&display=swap" rel="stylesheet" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 fill=%27%237ec8e3%27/%3E%3Ccircle cx=%2716%27 cy=%2716%27 r=%2710%27 fill=%27none%27 stroke=%27%23ff5a2a%27 stroke-width=%274%27/%3E%3Ccircle cx=%2716%27 cy=%2716%27 r=%273%27 fill=%27%23262d52%27/%3E%3C/svg%3E" />
     <title>RINGFALL</title>
+    <meta name="description" content="13の拠点を奪い、守り、前線を押し上げる1人用FPS。装備と工場を育て、自軍と島を取り返す。戦況は翌日へ続く。" />
   </head>
   <body>
     <div id="stage"></div>
@@ -25,7 +26,7 @@
     <div id="hud" hidden>
       <div id="compass"><div id="compass-strip"></div><b id="compass-deg">0</b><i id="compass-mark" hidden><span></span></i><i id="compass-scout" hidden></i></div>
       <div id="island-row"></div>
-      <div id="map" hidden><canvas id="map-canvas"></canvas><p><span class="map-key hold freed">●</span> 自分 <span class="map-key hold held">●</span> 敵 <span class="map-key hold titan">⬢</span> タイタン　<span class="map-key front">━</span> 前線　<span class="map-key zip">━</span> ジップライン　<span class="map-key">◆</span> 脱出　<span class="map-key flare"><svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><rect x="6.5" y="7" width="3" height="8" rx="1" fill="#e2563a"/><path d="M8 1 C10.5 3.5 10.5 6 8 7 C5.5 6 5.5 3.5 8 1 Z" fill="#ffd36a"/></svg></span> 発煙筒　<span class="map-key depot">■</span> 中継ボックス　<span class="map-key squad you">▶</span> 自軍 <span class="map-key squad net">▶</span> 敵 <span class="map-key squad rogue">▶</span> 野良機<span class="map-close">　<kbd>N</kbd> <span id="map-view-key">全体</span>　<kbd>M</kbd> 閉じる</span></p><span class="map-buttons"><button id="map-zoom" type="button">全体</button><button id="map-close" type="button">閉じる</button><button id="map-pause" type="button">一時停止</button></span></div>
+      <div id="map" hidden><canvas id="map-canvas"></canvas><p><span class="map-key hold freed">●</span> 自分 <span class="map-key hold held">●</span> 敵 <span class="map-key hold titan">⬢</span> タイタン　<span class="map-key front">━</span> 前線　<span class="map-key zip">━</span> ジップライン　<span class="map-key">◆</span> 帰還　<span class="map-key flare"><svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><rect x="6.5" y="7" width="3" height="8" rx="1" fill="#e2563a"/><path d="M8 1 C10.5 3.5 10.5 6 8 7 C5.5 6 5.5 3.5 8 1 Z" fill="#ffd36a"/></svg></span> 発煙筒　<span class="map-key depot">■</span> 中継ボックス　<span class="map-key squad you">▶</span> 自軍 <span class="map-key squad net">▶</span> 敵 <span class="map-key squad rogue">▶</span> 野良機<span class="map-close">　<kbd>N</kbd> <span id="map-view-key">全体</span>　<kbd>M</kbd> 閉じる</span></p><span class="map-buttons"><button id="map-zoom" type="button">全体</button><button id="map-close" type="button">閉じる</button><button id="map-pause" type="button">一時停止</button></span></div>
       <div id="objective"><span id="obj-head"><em id="obj-title"></em><i id="obj-n"></i></span><span id="obj-text"></span><small id="obj-until"></small><small id="obj-contract" hidden></small><small id="obj-story" hidden></small><small id="obj-event" hidden></small><small id="obj-bag"></small><small id="obj-raid"></small><small id="obj-stealth"></small><small id="obj-exits"></small></div>
       <div id="enemy-bars" aria-hidden="true"></div>
       <div id="aware-layer" aria-hidden="true"></div>
@@ -83,7 +84,7 @@
     <section id="title" class="screen">
       <div class="title-inner">
         <h1>RINGFALL</h1>
-        <p class="lede">前線を押し上げ、島を取り返せ。相手はロボットだけ。</p>
+        <p class="lede">拠点を奪い、守り、前線を押し上げろ。相手はロボットだけ。</p>
         <p class="title-row" id="title-row" aria-hidden="true"></p>
         <p class="touch-help"><span><b>左半分</b>移動</span><span><b>右半分</b>視点</span></p>
         <ul class="keys" id="title-keys"></ul>

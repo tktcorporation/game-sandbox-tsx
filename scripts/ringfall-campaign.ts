@@ -1,6 +1,6 @@
 /**
  * The island over a month for RINGFALL's sim gate: for each skill, a bot plays `DAYS`
- * consecutive days on one profile, so the six nodes' holders carry from raid to raid. Each day
+ * consecutive days on one profile, so the thirteen nodes' holders carry from raid to raid. Each day
  * the bot starts in the region with the most nodes on the front (then the most POIs the enemy
  * still holds, the reservoir on a tie), at one of its ways in in turn, plays its normal raid with
  * the best guns and armour of its stash, and the raid is settled as a player's would be. The day's island event (a debris
@@ -229,7 +229,7 @@ export function campaignLines(runs: Campaign[]): string[] {
     lines.push([c.skill.padEnd(9), `${sum((d) => d.turns.raid)} / ${sum((d) => d.turns.after)} / ${sum((d) => d.turns.night)}`.padEnd(42), `${up} / ${down}`.padEnd(19), String(longest)].join(" "));
   }
   // The nodes held each day, the harbor's among them, the deepest tier held (- for none), the strength and the factory.
-  lines.push(`nodes by day (a 10, b 11): ${runs.map((c) => `${c.skill} ${c.days.map((d) => d.nodes.toString(16)).join("")}`).join(" / ")}`);
+  lines.push(`nodes by day (a 10, b 11, c 12, d 13): ${runs.map((c) => `${c.skill} ${c.days.map((d) => d.nodes.toString(16)).join("")}`).join(" / ")}`);
   lines.push(`harbor nodes by day: ${runs.map((c) => `${c.skill} ${c.days.map((d) => d.harbor).join("")}`).join(" / ")}`);
   lines.push(`deepest tier by day: ${runs.map((c) => `${c.skill} ${c.days.map((d) => (d.tier < 0 ? "-" : d.tier)).join("")}`).join(" / ")}`);
   lines.push(`best gun carried by day (0 common to 3 legendary): ${runs.map((c) => `${c.skill} ${c.days.map((d) => d.gun).join("")}`).join(" / ")}`);

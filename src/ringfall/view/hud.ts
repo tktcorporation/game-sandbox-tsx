@@ -467,7 +467,7 @@ export class Hud {
     let text = "";
     if (p.leap) text = isTouch() ? "滑空中：スティックで着地点を選ぶ" : "滑空中：WASD で着地点を選ぶ";
     else if (s.phase === "done") text = s.home ? "帰った" : s.outcome === "extracted" ? "生還" : "行方不明";
-    else text = step?.label ?? "探索して脱出せよ";
+    else text = step?.label ?? "地図で前線を確認しよう";
     $("obj-text").textContent = text;
     $("obj-title").textContent = obj.title;
     $("obj-n").textContent = `${Math.min(obj.current + 1, obj.steps.length)}/${obj.steps.length}`;
@@ -1229,7 +1229,7 @@ export class Hud {
       ["弱点命中", `${crit}%`],
       ["ダウン", st.downs],
       ["レイド時間", clock(s.time)],
-      ["脱出", s.home ? "野営地" : s.leftAt ? `${POIS[poiIndex(s.leftAt)].name}の中継ボックス` : (EXTRACTS.find((x) => x.id === s.extractedAt)?.short ?? "-")],
+      ["帰還先", s.home ? "野営地" : s.leftAt ? `${POIS[poiIndex(s.leftAt)].name}の中継ボックス` : (EXTRACTS.find((x) => x.id === s.extractedAt)?.short ?? "-")],
       [`${ALLY.name}の撃破`, st.allyKills],
       [`${ALLY.name}に救助`, st.allyRescues],
     ]

@@ -25,7 +25,8 @@ export type AreaId =
   | "waterworks"
   | "lodge"
   | "cannery"
-  | "coldstore";
+  | "coldstore"
+  | "eastworks";
 
 export type Offset = readonly [number, number];
 
@@ -67,6 +68,8 @@ export const AREA: Record<AreaId, Offset> = {
   lodge: [-150, -485],
   cannery: [-45, -830],
   coldstore: [150, -850],
+  // One eastern industrial district, with a repair factory and a vehicle depot.
+  eastworks: [700, 240],
 };
 
 /** The area each POI stands in, and where the POI's own frame lies within that area's frame. */
@@ -83,6 +86,8 @@ const POI_IN: Record<PoiId, [AreaId, Offset]> = {
   lodge: ["lodge", [0, 0]],
   cannery: ["cannery", [0, 0]],
   coldstore: ["coldstore", [0, 0]],
+  motorpool: ["eastworks", [60, -170]],
+  machineworks: ["eastworks", [20, 120]],
 };
 
 /** A point written in an area's frame, in the world. */

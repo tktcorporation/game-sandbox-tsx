@@ -1,7 +1,7 @@
 {
   "name": "RINGFALL",
   "short_name": "RINGFALL",
-  "description": "降りて、漁って、生きて帰れ。相手はロボットだけ。",
+  "description": "拠点を奪い、守り、前線を押し上げろ。相手はロボットだけ。",
   "lang": "ja",
   "start_url": "/ringfall/",
   "scope": "/ringfall/",

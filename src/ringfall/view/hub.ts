@@ -847,7 +847,7 @@ export class Hub {
 
   /**
    * The map table's island: the map with each POI coloured by who holds it, the day, the row of
-   * the six nodes, the key to the colours, the front and the day's income.
+   * the thirteen nodes, the key to the colours, the front and the day's income.
    */
   private islandPanel(): string {
     const p = this.profile;
@@ -970,7 +970,7 @@ export class Hub {
   }
 
   /**
-   * The camp's 今日の作戦 card and its line of the day: the day and the row of the six nodes;
+   * The camp's 今日の作戦 card and its line of the day: the day and the row of the thirteen nodes;
    * then the node to go for, the contract or story taken, and the kit.
    */
   today(): { head: string; row: string; plan: [string, string][] } {
