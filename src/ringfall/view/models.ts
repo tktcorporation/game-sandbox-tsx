@@ -286,7 +286,7 @@ export function buildBox(b: Box, i: number): THREE.Object3D {
 }
 
 /** The scattered cover's own colours (`prop` boxes): muted, so the set pieces read as worn things, not toys. */
-const PROP_PAL = {
+export const PROP_PAL = {
   wood: 0x9c7d52,
   wraps: [0xa8a28e, 0x9a9476, 0xb39a70] as const,
   bag: 0xb3a07a,
