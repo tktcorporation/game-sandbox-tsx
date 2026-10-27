@@ -13,6 +13,8 @@
  * with more than 0.3% of its pixels changed; cables and smoke move up to about 0.1% between two
  * looks at the same world. The place's baseline also keeps the whole world's grid (heights and
  * what stands in each 4 m cell), compared at every later look of that place.
+ * It also measures the place as ground to fight over (cover and sight, `ringfall-field.ts`), draws
+ * that as field.png and compares its numbers with the baseline's.
  * Out: shots/ringfall/look/<place>/. Builds dist/client first; `--no-build` uses the last build
  * and stops if it is older than src/ringfall.
  */
@@ -24,6 +26,7 @@ import { chromium } from "playwright-core";
 import { WORLD } from "../src/ringfall/sim/config";
 import { BOXES, FRAMES, ROUTES, type Box } from "../src/ringfall/sim/map";
 import { terrainHeight } from "../src/ringfall/sim/terrain";
+import { drawField, fieldLine, fieldNumbers, measureField } from "./ringfall-field";
 import { HARBOR_TOUR, TOUR, place } from "./ringfall-tour.mjs";
 
 const args = process.argv.slice(2);
@@ -164,6 +167,27 @@ if (!rebase && saved && existsSync(worldBin) && !sameGrid) {
   worldLines.push("world: baseline saved");
 }
 
+// --- the place as ground to fight over (`ringfall-field.ts`): cover and sight, compared with the
+// numbers its baseline kept for the same radius.
+const field = measureField(centre, R);
+drawField(`${out}/field.png`, centre, R, field);
+const fieldNow = fieldNumbers(field);
+const fieldBase = `${baseDir}/field.json`;
+// `version` is the measure's: raise it when ringfall-field.ts measures differently, so numbers
+// measured the old way are never compared.
+const fieldMeta = { version: 1, r: R };
+const fieldSaved = existsSync(fieldBase) ? (JSON.parse(readFileSync(fieldBase, "utf8")) as typeof fieldMeta & { numbers: typeof fieldNow }) : null;
+worldLines.push(`field: ${fieldLine(field)}`);
+if (rebase || !fieldSaved) {
+  writeFileSync(fieldBase, JSON.stringify({ ...fieldMeta, numbers: fieldNow }));
+} else if (fieldSaved.version !== fieldMeta.version || fieldSaved.r !== fieldMeta.r) {
+  worldLines.push("  field: NOT COMPARED, measured another way or at another --r than the baseline; take one with --base");
+} else {
+  const moved = (Object.keys(fieldNow) as (keyof typeof fieldNow)[]).filter((k) => fieldNow[k] !== fieldSaved.numbers[k]);
+  worldLines.push(moved.length ? `  field since the baseline: ${moved.map((k) => `${k} ${fieldSaved.numbers[k]} -> ${fieldNow[k]}`).join(", ")}` : "  field since the baseline: unchanged");
+}
+console.log(`field measured (${secs()})`);
+
 // --- a top-down crop of the place.
 const top = spawnSync("npx", ["tsx", "scripts/ringfall-topdown.ts", `${out}/topdown.png`, String(centre.x), String(centre.z), String(R * 2)], { stdio: "inherit" });
 if (top.status !== 0) process.exit(top.status ?? 1);
@@ -297,7 +321,7 @@ server.close();
 console.log(`\n${target} (${Math.round(centre.x)}, ${Math.round(centre.z)}), r ${R} m: ${cams.length} cameras, ${secs()}`);
 for (const l of lines) console.log(`  ${l}`);
 for (const l of worldLines) console.log(l);
-console.log(`pictures: ${out}/ (topdown.png, <camera>.png, compare-<camera>.png)`);
+console.log(`pictures: ${out}/ (topdown.png, field.png, <camera>.png, compare-<camera>.png)`);
 if (errors.length) {
   console.error(`\nthe page reported errors:\n${errors.map((e) => `  ${e}`).join("\n")}`);
   process.exit(1);
