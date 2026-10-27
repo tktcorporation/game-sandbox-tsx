@@ -221,9 +221,9 @@ interface Raster {
   cells: Uint8Array;
 }
 
-function silhouette(meshes: import("three").Mesh[], axis: "front" | "side", pad: { x0: number; x1: number; y1: number }): Raster {
+function silhouette(meshes: import("three").Mesh[], axis: "front" | "side", pad: { x0: number; x1: number; y0: number; y1: number }): Raster {
   const x0 = pad.x0;
-  const y0 = 0;
+  const y0 = pad.y0;
   const w = Math.ceil((pad.x1 - pad.x0) / GRID);
   const h = Math.ceil((pad.y1 - y0) / GRID);
   const cells = new Uint8Array(w * h);
@@ -274,9 +274,11 @@ function robot(kind: EnemyKind, meshes: import("three").Mesh[]): RobotMeasure {
   for (const m of body) box.expandByObject(m);
   const reach = Math.max(box.max.x, -box.min.x, box.max.z, -box.min.z, k.radius, k.weakFwd + k.weakR) + 0.1;
   const top = Math.max(box.max.y, k.weakY + k.weakR, k.bodyY + k.radius) + 0.1;
+  // A drone floats with its local zero at its body's centre, so the raster starts at whatever is lowest.
+  const bottom = Math.min(box.min.y, k.weakY - k.weakR, k.bodyY - k.radius) - 0.1;
   const shares: Record<"front" | "side", { hit: number; air: number }> = { front: { hit: 0, air: 0 }, side: { hit: 0, air: 0 } };
   for (const axis of ["front", "side"] as const) {
-    const r = silhouette(body, axis, { x0: -reach, x1: reach, y1: top });
+    const r = silhouette(body, axis, { x0: -reach, x1: reach, y0: bottom, y1: top });
     const s = spheres(kind, axis);
     let sil = 0;
     let hit = 0;

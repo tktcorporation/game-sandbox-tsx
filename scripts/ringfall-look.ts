@@ -75,7 +75,9 @@ if (!rebase && existsSync(worldBase)) {
   const before = new Float32Array(readFileSync(worldBase).buffer.slice(0));
   // Changed cells gathered into 50 m tiles, each named by the frame nearest it.
   const TILE = 50;
-  const tiles = new Map<string, { n: number; max: number; x: number; z: number }>();
+  // Each cell is in or past the place by its own centre; a tile counts its cells past the place
+  // apart from the rest, so a tile across the edge reports only what lies beyond it.
+  const tiles = new Map<string, { n: number; out: number; outMax: number; x: number; z: number }>();
   for (let j = 0; j < GH; j++)
     for (let i = 0; i < GW; i++) {
       const d = Math.abs(heights[j * GW + i] - before[j * GW + i]);
@@ -83,9 +85,12 @@ if (!rebase && existsSync(worldBase)) {
       const x = WORLD.x0 + (i + 0.5) * CELL;
       const z = WORLD.z0 + (j + 0.5) * CELL;
       const k = `${Math.floor(x / TILE)},${Math.floor(z / TILE)}`;
-      const t = tiles.get(k) ?? { n: 0, max: 0, x: (Math.floor(x / TILE) + 0.5) * TILE, z: (Math.floor(z / TILE) + 0.5) * TILE };
+      const t = tiles.get(k) ?? { n: 0, out: 0, outMax: 0, x: (Math.floor(x / TILE) + 0.5) * TILE, z: (Math.floor(z / TILE) + 0.5) * TILE };
       t.n++;
-      t.max = Math.max(t.max, d);
+      if (tooFar(x, z)) {
+        t.out++;
+        t.outMax = Math.max(t.outMax, d);
+      }
       tiles.set(k, t);
     }
   const near = (x: number, z: number) => {
@@ -98,9 +103,9 @@ if (!rebase && existsSync(worldBase)) {
     return `${best} ${Math.round(bd)} m`;
   };
   const list = [...tiles.values()].sort((a, b) => b.n - a.n);
-  const outside = list.filter((t) => tooFar(t.x, t.z));
+  const outside = list.filter((t) => t.out > 0).sort((a, b) => b.out - a.out);
   worldLines.push(`world since the baseline: ${list.reduce((s, t) => s + t.n, 0)} cells of ${CELL} m changed height in ${list.length} tiles of 50 m, ${outside.length} of them beyond ${R} m of ${target}`);
-  for (const t of outside.slice(0, 12)) worldLines.push(`  OUTSIDE (${t.x}, ${t.z}) near ${near(t.x, t.z)}: ${t.n} cells, up to ${t.max.toFixed(1)} m`);
+  for (const t of outside.slice(0, 12)) worldLines.push(`  OUTSIDE (${t.x}, ${t.z}) near ${near(t.x, t.z)}: ${t.out} cells, up to ${t.outMax.toFixed(1)} m`);
   if (outside.length > 12) worldLines.push(`  ... and ${outside.length - 12} more tiles outside`);
 } else {
   writeFileSync(worldBase, Buffer.from(heights.buffer));
