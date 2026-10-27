@@ -163,8 +163,14 @@ await page.evaluate(() => {
 console.log(`page up (${secs()})`);
 const view = page.locator("#look-view");
 
+// Each camera's placement as asked for (not its height worked out from the ground, which a change
+// to the place may move), kept beside the baseline: a picture is compared only with one taken from
+// the same camera, so a look with another --r or an edited tour asks for a new baseline instead.
+const camsPath = `${baseDir}/cameras.json`;
+const baseCams: Record<string, string> = existsSync(camsPath) ? JSON.parse(readFileSync(camsPath, "utf8")) : {};
 const lines: string[] = [];
 for (const [name, x, dy, z, yaw, pitch, abs] of cams) {
+  const spec = JSON.stringify([x, dy, z, yaw, pitch, abs].map((v) => (typeof v === "number" ? +v.toFixed(3) : v)));
   const y = abs ? dy : terrainHeight(x, z) + dy;
   await page.evaluate(([x, y, z, yaw, pitch]) => window.ringfallCamera(x, y, z, yaw, pitch), [x, y, z, yaw, pitch]);
   // Chunks inside the fog are built at once; two more frames let the shadows and the trim settle.
@@ -174,7 +180,12 @@ for (const [name, x, dy, z, yaw, pitch, abs] of cams) {
   const basePath = `${baseDir}/${name}.png`;
   if (rebase || !existsSync(basePath)) {
     copyFileSync(`${out}/${name}.png`, basePath);
+    baseCams[name] = spec;
     lines.push(`${name}: baseline saved`);
+    continue;
+  }
+  if (baseCams[name] !== spec) {
+    lines.push(`${name}: NOT COMPARED, the camera is not where the baseline was taken from (another --r, or the tour changed); take one with --base`);
     continue;
   }
   const cmp = await page.evaluate(
@@ -212,6 +223,7 @@ for (const [name, x, dy, z, yaw, pitch, abs] of cams) {
   writeFileSync(`${out}/compare-${name}.png`, Buffer.from(cmp.url.split(",")[1], "base64"));
   lines.push(`${name}: ${(cmp.share * 100).toFixed(1)}% of pixels changed${cmp.share > 0.003 ? ` -> compare-${name}.png` : ""}`);
 }
+writeFileSync(camsPath, JSON.stringify(baseCams, null, 1));
 await browser.close();
 server.close();
 
