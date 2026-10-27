@@ -38,7 +38,9 @@ if (!centre) {
   console.error(`no place "${target}"; places: ${Object.keys(FRAMES).join(", ")}, or x,z`);
   process.exit(2);
 }
-const slug = target.replace(/[^\p{L}\p{N}]+/gu, "-");
+// One directory per place, no two places sharing one: frame names hold only letters, digits and
+// ":" (never "_"), and a point keeps its signs and decimals.
+const slug = xz ? `xz_${+xz[1]}_${+xz[2]}` : target.replaceAll(":", "_");
 const LOOK = "shots/ringfall/look";
 const out = `${LOOK}/${slug}`;
 const baseDir = `${out}/base`;

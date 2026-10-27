@@ -110,6 +110,14 @@ export const PAL = {
   flag: 0x2f7fe0,
   /** The hex shield the network keeps round a core off the front. */
   coreShield: 0xff6a5a,
+  /** A circuit board's solder-mask green. */
+  board: 0x2f7a4a,
+  /** Safety orange: the breaching charge's case and the recorder's. */
+  hazard: 0xd8742c,
+  /** The glow in the vents of a fallen piece of the ring. */
+  ember: 0xff7a2a,
+  /** The objective's beacon: a pale warm light, apart from every faction's colour. */
+  beacon: 0xfff2b0,
 } as const;
 
 /** Aim amount past which a scoped weapon shows its sight instead of the gun. */
@@ -1167,7 +1175,7 @@ export function buildLootItem(kind: LootKind, rarity: Rarity, weapon?: WeaponKin
       g.add(mesh(new THREE.BoxGeometry(0.34, 0.34, 0.34), flat(PAL.gun), 0, 0.4, 0, false));
       g.add(mesh(new THREE.BoxGeometry(0.24, 0.36, 0.24), glow(color), 0, 0.4, 0, false));
     } else if (valuable === "board") {
-      g.add(mesh(new THREE.BoxGeometry(0.5, 0.04, 0.34), flat(0x2f7a4a), 0, 0.3, 0, false));
+      g.add(mesh(new THREE.BoxGeometry(0.5, 0.04, 0.34), flat(PAL.board), 0, 0.3, 0, false));
       for (const [x, z] of [[-0.12, 0.05], [0.1, -0.06], [0.14, 0.09]]) g.add(mesh(new THREE.BoxGeometry(0.1, 0.05, 0.08), flat(PAL.gun), x, 0.34, z, false));
     } else {
       g.add(mesh(new THREE.BoxGeometry(0.3, 0.16, 0.26), flat(PAL.gunLight), 0, 0.24, 0, false));
@@ -1187,13 +1195,13 @@ export function buildLootItem(kind: LootKind, rarity: Rarity, weapon?: WeaponKin
     g.add(mesh(new THREE.BoxGeometry(0.16, 0.06, 0.14), flat(PAL.gun), 0.3, 0.12, 0, false));
   } else if (kind === "tool") {
     // A breaching charge: a squat orange case with a black detonator on top.
-    g.add(mesh(new THREE.BoxGeometry(0.44, 0.26, 0.3), flat(0xd8742c), 0, 0.2, 0, false));
+    g.add(mesh(new THREE.BoxGeometry(0.44, 0.26, 0.3), flat(PAL.hazard), 0, 0.2, 0, false));
     g.add(mesh(new THREE.BoxGeometry(0.46, 0.05, 0.32), flat(PAL.gun), 0, 0.26, 0, false));
     g.add(mesh(new THREE.BoxGeometry(0.12, 0.1, 0.1), flat(PAL.gun), 0.1, 0.38, 0, false));
     g.add(mesh(new THREE.SphereGeometry(0.03, 6, 4), glow(PAL.healRed), 0.1, 0.45, 0, false));
   } else if (kind === "record") {
     // A story record: a battered orange recorder case with a lit read-out on its face.
-    g.add(mesh(new THREE.BoxGeometry(0.36, 0.26, 0.24), flat(0xd8742c), 0, 0.22, 0, false));
+    g.add(mesh(new THREE.BoxGeometry(0.36, 0.26, 0.24), flat(PAL.hazard), 0, 0.22, 0, false));
     g.add(mesh(new THREE.BoxGeometry(0.38, 0.05, 0.26), flat(PAL.gun), 0, 0.12, 0, false));
     g.add(mesh(new THREE.BoxGeometry(0.16, 0.08, 0.02), glow(color), 0, 0.26, 0.125, false));
   } else if (kind === "mod") {
@@ -1348,7 +1356,7 @@ export function buildRingDebris(): { root: THREE.Group; vents: THREE.Vector3[] }
   const skin = flat(PAL.tether);
   const rib = flat(PAL.tetherDark);
   const burnt = flat(PAL.scorch);
-  const hot = glow(0xff7a2a);
+  const hot = glow(PAL.ember);
   // [x, z, width, height, length, yaw, tilt]: one long panel buried at an angle, two shorter thrown beside it.
   const panels: [number, number, number, number, number, number, number][] = [
     [-1.5, -1, 4.6, 2.4, 13, 0.5, 0.42],
@@ -1407,7 +1415,7 @@ export function buildCore(height: number, half: number): { root: THREE.Group; ba
 export function buildBeacon(): THREE.Mesh {
   const m = new THREE.Mesh(
     new THREE.CylinderGeometry(0.9, 0.9, 260, 12, 1, true),
-    new THREE.MeshBasicMaterial({ toneMapped: false, color: 0xfff2b0, transparent: true, opacity: 0.32, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }),
+    new THREE.MeshBasicMaterial({ toneMapped: false, color: PAL.beacon, transparent: true, opacity: 0.32, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }),
   );
   m.frustumCulled = false;
   return m;

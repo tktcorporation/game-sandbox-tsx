@@ -20,7 +20,7 @@ const stubCtx = { createRadialGradient: () => ({ addColorStop() {} }), fillRect(
 
 const THREE = await import("three");
 const M = await import("../src/ringfall/view/models");
-const { ENEMIES } = await import("../src/ringfall/sim/config");
+const { ENEMIES, HEALS, TOOLS, VALUABLES, WEAPONS: WEAPON_SPECS } = await import("../src/ringfall/sim/config");
 type EnemyKind = keyof typeof ENEMIES;
 type Object3D = import("three").Object3D;
 
@@ -38,8 +38,9 @@ const BUDGET: Record<Entry["group"], { tris: number; meshes: number; materials: 
   robot: { tris: 1000, meshes: 16, materials: 12 },
   ally: { tris: 400, meshes: 20, materials: 8 },
   gun: { tris: 520, meshes: 6, materials: 5 },
-  loot: { tris: 120, meshes: 4, materials: 4 },
-  world: { tris: 200, meshes: 9, materials: 7 },
+  loot: { tris: 400, meshes: 8, materials: 5 },
+  world: { tris: 200, meshes: 13, materials: 7 },
+  wreck: { tris: 600, meshes: 36, materials: 5 },
 };
 const ROBOT_FLOOR = { hitShareFront: 0.6, hitShareSide: 0.7, airShareFrontMax: 0.4 };
 
@@ -47,22 +48,27 @@ const PALETTE = new Set<number>([...Object.values(M.PAL).filter((v): v is number
 
 interface Entry {
   id: string;
-  group: "robot" | "ally" | "gun" | "loot" | "world";
+  group: "robot" | "ally" | "gun" | "loot" | "world" | "wreck";
   root: Object3D;
   robot?: EnemyKind;
 }
 
 const ENEMY_KINDS = Object.keys(ENEMIES) as EnemyKind[];
-const WEAPONS = ["pike", "hornet", "maul", "lance", "talon"] as const;
+// The kinds come from the game's own tables, so a kind added there is measured here too.
+const WEAPONS = Object.keys(WEAPON_SPECS) as (keyof typeof WEAPON_SPECS)[];
+const keys = <T extends object>(o: T) => Object.keys(o) as (keyof T)[];
 const entries: Entry[] = [
   ...ENEMY_KINDS.map((k): Entry => ({ id: k, group: "robot", root: M.buildEnemy(k).root, robot: k })),
   { id: "ally", group: "ally", root: M.buildAlly().root },
   ...WEAPONS.map((w): Entry => ({ id: w, group: "gun", root: M.buildGun(w, 0) })),
   ...WEAPONS.map((w): Entry => ({ id: `hands:${w}`, group: "gun", root: M.buildHands(w) })),
-  { id: "loot:armor", group: "loot", root: M.buildLootItem("armor", 0) },
-  { id: "loot:medkit", group: "loot", root: M.buildLootItem("heal", 0, undefined, "medkit") },
-  { id: "loot:cell", group: "loot", root: M.buildLootItem("heal", 0, undefined, "cell") },
-  { id: "loot:core", group: "loot", root: M.buildLootItem("valuable", 3, undefined, undefined, "core") },
+  // Every loot item buildLootItem draws: a dropped gun is the gun's model scaled, so it counts as a gun.
+  ...WEAPONS.map((w): Entry => ({ id: `loot:${w}`, group: "gun", root: M.buildLootItem("weapon", 0, w) })),
+  // The loot kinds with no table of their own (LootKind in sim/state.ts); a new one is added here.
+  ...(["armor", "key", "record", "mod", "flare", "shard"] as const).map((k): Entry => ({ id: `loot:${k}`, group: "loot", root: M.buildLootItem(k, 0) })),
+  ...keys(HEALS).map((h): Entry => ({ id: `loot:${h}`, group: "loot", root: M.buildLootItem("heal", 0, undefined, h) })),
+  ...keys(VALUABLES).map((v): Entry => ({ id: `loot:${v}`, group: "loot", root: M.buildLootItem("valuable", 3, undefined, undefined, v) })),
+  ...keys(TOOLS).map((t): Entry => ({ id: `loot:${t}`, group: "loot", root: M.buildLootItem("tool", 0, undefined, undefined, undefined, t) })),
   { id: "bin", group: "world", root: M.buildBin().root },
   { id: "vault", group: "world", root: M.buildBin(true).root },
   { id: "depot", group: "world", root: M.buildDepot().root },
@@ -70,6 +76,11 @@ const entries: Entry[] = [
   { id: "boat", group: "world", root: M.buildBoat() },
   { id: "dropship", group: "world", root: M.buildDropship() },
   { id: "core", group: "world", root: M.buildCore(6, 0.6).root },
+  { id: "entry-fire", group: "world", root: M.buildEntryMark().fire },
+  { id: "entry-sign", group: "world", root: M.buildEntryMark().sign },
+  { id: "ring-debris", group: "wreck", root: M.buildRingDebris().root },
+  { id: "beacon", group: "world", root: M.buildBeacon() },
+  { id: "flare-smoke", group: "world", root: M.buildFlareSmoke() },
 ];
 
 interface Measure {
@@ -374,7 +385,7 @@ if (process.argv.includes("--json")) {
   console.log("| model | tris | meshes | mats | size w×h×d (m) | smallest feature (m) | under 1 px past (m) | off-palette |");
   console.log("| --- | --: | --: | --: | --- | --: | --: | --- |");
   for (const r of results)
-    console.log(`| ${r.id} | ${r.tris} | ${r.meshes} | ${r.materials} | ${r.size.join(" × ")} | ${r.feature} (${r.featurePart}) | ${r.featureFarM} | ${r.offPalette.join(" ") || "—"} |`);
+    console.log(`| ${r.id} | ${r.tris} | ${r.meshes} | ${r.materials} | ${r.size.join(" × ")} | ${Number.isFinite(r.feature) ? `${r.feature} (${r.featurePart})` : "— (effect only)"} | ${Number.isFinite(r.featureFarM) ? r.featureFarM : "—"} | ${r.offPalette.join(" ") || "—"} |`);
   console.log("\n| robot | hit share front | hit share side | air share front | eye in weak point | nothing hittable below (m) |");
   console.log("| --- | --: | --: | --: | --- | --: |");
   for (const r of results.filter((x) => x.robot))
