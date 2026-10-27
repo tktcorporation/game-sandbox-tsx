@@ -1550,7 +1550,7 @@ export class World {
       v.root.visible = Math.hypot(v.root.position.x - fx, v.root.position.z - fz) < thingsFar * 4;
       if (key !== v.key) {
         v.key = key;
-        const col = h === "freed" ? 0x3d8cff : 0xff3b30;
+        const col = h === "freed" ? PAL.freed : PAL.held;
         (v.band.material as THREE.MeshBasicMaterial).color.setHex(col);
         v.halo.material.color.setHex(col);
         v.flag.visible = h === "freed";
@@ -1559,9 +1559,9 @@ export class World {
       if (threat) {
         v.root.visible = true;
         const beat = Math.max(0, Math.sin(this.time * 7));
-        const col = beat > 0.5 ? 0xff3b30 : 0x3d8cff;
+        const col = beat > 0.5 ? PAL.held : PAL.freed;
         (v.band.material as THREE.MeshBasicMaterial).color.setHex(col);
-        v.halo.material.color.setHex(0xff3b30);
+        v.halo.material.color.setHex(PAL.held);
         v.halo.material.opacity = 0.35 + 0.65 * beat;
         v.halo.scale.setScalar(7 + 9 * beat);
         return;
@@ -1570,7 +1570,7 @@ export class World {
         // The enemy is on its way to take it: a slower red beat in the halo, the band still blue.
         v.root.visible = true;
         const beat = Math.max(0, Math.sin(this.time * 3.5));
-        v.halo.material.color.setHex(beat > 0.3 ? 0xff3b30 : 0x3d8cff);
+        v.halo.material.color.setHex(beat > 0.3 ? PAL.held : PAL.freed);
         v.halo.material.opacity = 0.3 + 0.5 * beat;
         v.halo.scale.setScalar(7 + 5 * beat);
         v.key = "";

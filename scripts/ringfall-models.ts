@@ -4,7 +4,8 @@
  * the smallest feature and the distance past which it is under a pixel, and, for each robot, how
  * its silhouette and the sim's hit spheres (`ENEMIES[].radius` at `bodyY`, `weakR` at `weakY`)
  * cover each other. Writes the table to stdout (Markdown) and, per robot, a front and a side
- * silhouette with the hit spheres over it to `shots/ringfall/models/`, for checking by eye.
+ * silhouette with the hit spheres over it to `shots/ringfall/models/`, for checking by eye. Exits
+ * 1, naming what broke, when a model breaks a rule (`BUDGET`, the palette, `ROBOT_FLOOR`).
  *
  *   npx tsx scripts/ringfall-models.ts [--json]
  *
@@ -26,6 +27,21 @@ type Object3D = import("three").Object3D;
 /** One screen pixel at distance d, for a view 90° across drawn 1920 pixels wide (`hipFov()`): 2·d·tan 45° / 1920. */
 const PIXEL_PER_M = 1920 / 2;
 const GRID = 0.02; // silhouette cell, metres
+
+/**
+ * The model rules (docs/ringfall/models.md). Budgets per group sit a fifth to a third above the
+ * largest model of the group as measured when they were set, so they hold today's look and stop a
+ * model doubling its cost unnoticed. The robots' floors keep their look and their hit spheres no
+ * further apart than they are now; raise a floor only together with the model or the sim.
+ */
+const BUDGET: Record<Entry["group"], { tris: number; meshes: number; materials: number }> = {
+  robot: { tris: 1000, meshes: 16, materials: 12 },
+  ally: { tris: 400, meshes: 20, materials: 8 },
+  gun: { tris: 520, meshes: 6, materials: 5 },
+  loot: { tris: 120, meshes: 4, materials: 4 },
+  world: { tris: 200, meshes: 9, materials: 7 },
+};
+const ROBOT_FLOOR = { hitShareFront: 0.6, hitShareSide: 0.7, airShareFrontMax: 0.4 };
 
 const PALETTE = new Set<number>([...Object.values(M.PAL).filter((v): v is number => typeof v === "number"), ...M.RARITY_COLOR, ...Object.values(M.PROP_PAL).flat()]);
 
@@ -334,6 +350,24 @@ function writePng(path: string, W: number, H: number, img: Uint8Array) {
 
 const results = entries.map(measure);
 
+function violations(r: Measure): string[] {
+  const out: string[] = [];
+  const b = BUDGET[r.group];
+  if (r.tris > b.tris) out.push(`${r.tris} triangles, over the ${r.group} budget of ${b.tris}`);
+  if (r.meshes > b.meshes) out.push(`${r.meshes} meshes, over the ${r.group} budget of ${b.meshes}`);
+  if (r.materials > b.materials) out.push(`${r.materials} materials, over the ${r.group} budget of ${b.materials}`);
+  if (r.offPalette.length) out.push(`colours outside the palette: ${r.offPalette.join(" ")} (name them in PAL)`);
+  const k = r.robot;
+  if (k) {
+    if (!k.eyeInWeak) out.push("the eye lens is outside the weak point's hit sphere");
+    if (k.hitShareFront < ROBOT_FLOOR.hitShareFront) out.push(`hit share front ${k.hitShareFront} < ${ROBOT_FLOOR.hitShareFront}`);
+    if (k.hitShareSide < ROBOT_FLOOR.hitShareSide) out.push(`hit share side ${k.hitShareSide} < ${ROBOT_FLOOR.hitShareSide}`);
+    if (k.airShareFront > ROBOT_FLOOR.airShareFrontMax) out.push(`air share front ${k.airShareFront} > ${ROBOT_FLOOR.airShareFrontMax}`);
+  }
+  return out.map((v) => `${r.id}: ${v}`);
+}
+const failed = results.flatMap(violations);
+
 if (process.argv.includes("--json")) {
   console.log(JSON.stringify(results, null, 2));
 } else {
@@ -347,3 +381,9 @@ if (process.argv.includes("--json")) {
     console.log(`| ${r.id} | ${r.robot!.hitShareFront} | ${r.robot!.hitShareSide} | ${r.robot!.airShareFront} | ${r.robot!.eyeInWeak ? "yes" : "**no**"} | ${r.robot!.hitFloor} |`);
   console.log(`\nsilhouettes: ${OUT}/<robot>-front.png, -side.png (grey: model only, green: model and hit sphere, red: hit sphere only)`);
 }
+
+if (failed.length) {
+  console.error(`\nmodel rules broken (docs/ringfall/models.md):\n${failed.map((f) => `  ${f}`).join("\n")}`);
+  process.exit(1);
+}
+console.error(`\n${results.length} models within the rules`);
