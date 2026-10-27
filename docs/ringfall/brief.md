@@ -569,4 +569,4 @@
 
 ## 完了の条件
 
-`npm run build`、`npm run sim:ringfall`（3 段階の腕前のボットが全員完走する）、`npm run shots:ringfall`（実ブラウザで最後まで遊び、コンソールエラー 0）の 3 つが通り、スクリーンショットを見て上の「見た目の方向」と矛盾がないこと。音を変えたときは `npm run sfx:ringfall` も、モデルを変えたときは `npm run models:ringfall` も通す。
+`npm run build`、`npm run sim:ringfall`（3 段階の腕前のボットが全員完走する）、`npm run shots:ringfall`（実ブラウザで最後まで遊び、コンソールエラー 0）の 3 つが通り、スクリーンショットを見て上の「見た目の方向」と矛盾がないこと。音を変えたときは `npm run sfx:ringfall` も、モデルを変えたときは `npm run models:ringfall` も通す。場所を変えたときは、変える前に `npm run look:ringfall -- <場所> --base` で基準を取り、変えた後のフィールドの数字（docs/ringfall/field.md）の動きが狙いに合っているかを確かめる。

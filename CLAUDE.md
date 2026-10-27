@@ -291,7 +291,12 @@ npm run look:ringfall -- <place> [--r 120] [--base]
                          # (scripts/ringfall-tour.mjs, shared with gate 3) and four from above,
                          # a top-down crop, each compared with the place's baseline, and every
                          # 4 m cell of the world whose ground or boxes changed, those past the place first;
-                         # take a baseline with --base before changing a place, look after
+                         # and the place measured as ground to fight over (field below), compared with
+                         # its baseline's numbers; take a baseline with --base before changing a place, look after
+npm run field:ringfall -- <place>|--all [--r 120]
+                         # cover and sight of a place in seconds (docs/ringfall/field.md): cover within
+                         # 8 m, sight, lanes past a grunt's engaged sight, exposed ground; a map in
+                         # shots/ringfall/field/; no pass or fail, the numbers move with a change
 npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir raid to the end, a harbor raid
                          # to its first fight, a tour of both); screenshots in shots/ringfall/
 ```

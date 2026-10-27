@@ -15,7 +15,8 @@
     "shots:ringfall": "node scripts/ringfall-shots.mjs",
     "sfx:ringfall": "node scripts/ringfall-sfx.mjs",
     "models:ringfall": "tsx scripts/ringfall-models.ts",
-    "look:ringfall": "tsx scripts/ringfall-look.ts"
+    "look:ringfall": "tsx scripts/ringfall-look.ts",
+    "field:ringfall": "tsx scripts/ringfall-field.ts"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.62.5",
