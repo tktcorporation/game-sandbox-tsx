@@ -118,6 +118,8 @@ export const PAL = {
   ember: 0xff7a2a,
   /** The objective's beacon: a pale warm light, apart from every faction's colour. */
   beacon: 0xfff2b0,
+  /** The flame under a dropship's engines. */
+  thrust: 0xffb050,
 } as const;
 
 /** Aim amount past which a scoped weapon shows its sight instead of the gun. */
@@ -1329,7 +1331,7 @@ export function buildDropship(): THREE.Group {
   for (const s of [-1, 1]) {
     g.add(mesh(new THREE.BoxGeometry(5, 0.3, 2.6), flat(PAL.rust), s * 3.8, 0.4, 0.5));
     g.add(mesh(new THREE.CylinderGeometry(0.9, 0.9, 1.6, 10), flat(PAL.gunLight), s * 6.2, 0.4, 0.5));
-    const flame = haloSprite(0xffb050, 2.2, 0.9);
+    const flame = haloSprite(PAL.thrust, 2.2, 0.9);
     flame.position.set(s * 6.2, -0.9, 0.5);
     g.add(flame);
   }

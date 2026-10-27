@@ -35,10 +35,10 @@ const GRID = 0.02; // silhouette cell, metres
  * further apart than they are now; raise a floor only together with the model or the sim.
  */
 const BUDGET: Record<Entry["group"], { tris: number; meshes: number; materials: number }> = {
-  robot: { tris: 1000, meshes: 16, materials: 12 },
+  robot: { tris: 1000, meshes: 16, materials: 15 },
   ally: { tris: 400, meshes: 20, materials: 8 },
-  gun: { tris: 520, meshes: 6, materials: 5 },
-  loot: { tris: 400, meshes: 8, materials: 5 },
+  gun: { tris: 520, meshes: 6, materials: 8 },
+  loot: { tris: 400, meshes: 8, materials: 7 },
   world: { tris: 200, meshes: 13, materials: 7 },
   wreck: { tris: 600, meshes: 36, materials: 5 },
 };
@@ -108,18 +108,24 @@ interface RobotMeasure {
   /** The eye lens inside the weak point's sphere. */
   eyeInWeak: boolean;
   /** Below this height nothing is hittable while the model still stands there. */
-  hitFloor: number;
+  hitFloor: number | null;
 }
 
 /** Halos, shields and loot beams are effects drawn see-through or additive, not the model's body. */
 const isEffect = (m: import("three").Mesh) => [m.material].flat().some((mat) => mat.transparent);
 
-/** Each connected piece of a geometry (triangles sharing a vertex position), as its local extent along x, y, z. */
-function partSizes(g: import("three").BufferGeometry): [number, number, number][] {
+/**
+ * Each connected piece of a mesh (triangles sharing a vertex position), as its widths across its own
+ * faces, smallest first: a part's width is measured along each of its faces' normals, so a part
+ * turned on its parent's axes (a limb, a prism turned 45°) is measured as it is, not by its box.
+ */
+function partWidths(m: import("three").Mesh): number[][] {
+  const g = m.geometry;
   const pos = g.attributes.position;
   const n = g.index ? g.index.count : pos.count;
   const vi = (k: number) => (g.index ? g.index.getX(k) : k);
-  const key = (i: number) => `${pos.getX(i).toFixed(4)},${pos.getY(i).toFixed(4)},${pos.getZ(i).toFixed(4)}`;
+  const world = Array.from({ length: pos.count }, (_, i) => new THREE.Vector3().fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld));
+  const key = (i: number) => `${world[i].x.toFixed(4)},${world[i].y.toFixed(4)},${world[i].z.toFixed(4)}`;
   const id = new Map<string, number>();
   const parent: number[] = [];
   const find = (a: number): number => (parent[a] === a ? a : (parent[a] = find(parent[a])));
@@ -138,19 +144,37 @@ function partSizes(g: import("three").BufferGeometry): [number, number, number][
     parent[find(node(vi(t + 1)))] = find(a);
     parent[find(node(vi(t + 2)))] = find(a);
   }
-  const boxes = new Map<number, import("three").Box3>();
-  const v = new THREE.Vector3();
-  for (let k = 0; k < n; k++) {
-    const i = vi(k);
-    const r = find(id.get(key(i))!);
-    let b = boxes.get(r);
-    if (!b) boxes.set(r, (b = new THREE.Box3()));
-    b.expandByPoint(v.fromBufferAttribute(pos, i));
+  const parts = new Map<number, { points: import("three").Vector3[]; normals: Map<string, import("three").Vector3> }>();
+  const e1 = new THREE.Vector3();
+  const e2 = new THREE.Vector3();
+  for (let t = 0; t < n; t += 3) {
+    const [a, b, c] = [vi(t), vi(t + 1), vi(t + 2)].map((i) => world[i]);
+    const r = find(id.get(key(vi(t)))!);
+    let p = parts.get(r);
+    if (!p) parts.set(r, (p = { points: [], normals: new Map() }));
+    p.points.push(a, b, c);
+    const nrm = e1.subVectors(b, a).cross(e2.subVectors(c, a));
+    if (nrm.lengthSq() < 1e-12) continue;
+    nrm.normalize();
+    // A normal and its opposite measure the same width.
+    if (nrm.x < -1e-6 || (Math.abs(nrm.x) <= 1e-6 && (nrm.y < -1e-6 || (Math.abs(nrm.y) <= 1e-6 && nrm.z < 0)))) nrm.negate();
+    const k = `${nrm.x.toFixed(3)},${nrm.y.toFixed(3)},${nrm.z.toFixed(3)}`;
+    if (!p.normals.has(k)) p.normals.set(k, nrm.clone());
   }
-  return [...boxes.values()].map((b) => {
-    const s = b.getSize(new THREE.Vector3());
-    return [s.x, s.y, s.z];
-  });
+  return [...parts.values()].map(({ points, normals }) =>
+    [...normals.values()]
+      .map((nrm) => {
+        let lo = Infinity;
+        let hi = -Infinity;
+        for (const q of points) {
+          const d = q.dot(nrm);
+          lo = Math.min(lo, d);
+          hi = Math.max(hi, d);
+        }
+        return hi - lo;
+      })
+      .sort((a, b) => a - b),
+  );
 }
 
 const hex = (c: number) => `#${c.toString(16).padStart(6, "0")}`;
@@ -171,7 +195,6 @@ function measure(e: Entry): Measure {
   const off = new Set<number>();
   let feature = Infinity;
   let featurePart = "";
-  const scale = new THREE.Vector3();
   for (const m of meshes) {
     const g = m.geometry;
     tris += (g.index ? g.index.count : g.attributes.position.count) / 3;
@@ -181,15 +204,22 @@ function measure(e: Entry): Measure {
       if (c && !PALETTE.has(c.getHex())) off.add(c.getHex());
     }
   }
+  // Sprites (halos, flames) are no meshes, but their colours and materials count all the same.
+  e.root.traverse((o) => {
+    if (!(o as import("three").Sprite).isSprite || !o.visible) return;
+    const mat = (o as import("three").Sprite).material;
+    mats.add(mat);
+    if (!PALETTE.has(mat.color.getHex())) off.add(mat.color.getHex());
+  });
   // Parts are merged per material (compact()), so a part is a connected piece of a mesh.
   const solid = meshes.filter((m) => !isEffect(m));
   for (const m of solid) {
-    m.matrixWorld.decompose(new THREE.Vector3(), new THREE.Quaternion(), scale);
-    for (const dims of partSizes(m.geometry)) {
-      const d = [dims[0] * Math.abs(scale.x), dims[1] * Math.abs(scale.y), dims[2] * Math.abs(scale.z)].sort((a, b) => a - b);
-      if (d[1] < feature) {
-        feature = d[1];
-        featurePart = `${d.map((v) => v.toFixed(2)).join("×")} ${hex((m.material as { color?: import("three").Color }).color?.getHex() ?? 0)}`;
+    for (const w of partWidths(m)) {
+      // A rod's thickness or a plate's narrower side: the second smallest width (a flat sheet has one).
+      const f = w[Math.min(1, w.length - 1)];
+      if (f < feature) {
+        feature = f;
+        featurePart = `${w.slice(0, 3).map((v) => v.toFixed(3)).join("×")} ${hex((m.material as { color?: import("three").Color }).color?.getHex() ?? 0)}`;
       }
     }
   }
@@ -299,14 +329,17 @@ function robot(kind: EnemyKind, meshes: import("three").Mesh[]): RobotMeasure {
     writeSilhouette(`${kind}-${axis}`, r, s);
   }
   const eye = meshes.find((m) => [m.material].flat().some((mat) => (mat as { color?: import("three").Color }).color?.getHex() === M.PAL.eye && !mat.transparent));
-  const ep = eye ? new THREE.Vector3().setFromMatrixPosition(eye.matrixWorld) : null;
-  const eyeInWeak = !!ep && ep.distanceTo(new THREE.Vector3(0, k.weakY, -k.weakFwd)) <= k.weakR;
+  // Every point of the lens, not only its centre, inside the weak point's sphere.
+  const weak = new THREE.Vector3(0, k.weakY, -k.weakFwd);
+  const lens = eye?.geometry.attributes.position;
+  const eyeInWeak = !!eye && !!lens && Array.from({ length: lens.count }, (_, i) => new THREE.Vector3().fromBufferAttribute(lens, i).applyMatrix4(eye.matrixWorld)).every((q) => q.distanceTo(weak) <= k.weakR + 1e-6);
   return {
-    hitShareFront: +shares.front.hit.toFixed(2),
-    hitShareSide: +shares.side.hit.toFixed(2),
-    airShareFront: +shares.front.air.toFixed(2),
+    hitShareFront: shares.front.hit,
+    hitShareSide: shares.side.hit,
+    airShareFront: shares.front.air,
     eyeInWeak,
-    hitFloor: +Math.max(0, Math.min(k.bodyY - k.radius, k.weakY - k.weakR)).toFixed(2),
+    // A robot whose spheres reach below its local zero (a drone, floating about its centre) has no feet to measure from.
+    hitFloor: Math.min(k.bodyY - k.radius, k.weakY - k.weakR) < 0 ? null : Math.min(k.bodyY - k.radius, k.weakY - k.weakR),
   };
 }
 
@@ -373,9 +406,9 @@ function violations(r: Measure): string[] {
   const k = r.robot;
   if (k) {
     if (!k.eyeInWeak) out.push("the eye lens is outside the weak point's hit sphere");
-    if (k.hitShareFront < ROBOT_FLOOR.hitShareFront) out.push(`hit share front ${k.hitShareFront} < ${ROBOT_FLOOR.hitShareFront}`);
-    if (k.hitShareSide < ROBOT_FLOOR.hitShareSide) out.push(`hit share side ${k.hitShareSide} < ${ROBOT_FLOOR.hitShareSide}`);
-    if (k.airShareFront > ROBOT_FLOOR.airShareFrontMax) out.push(`air share front ${k.airShareFront} > ${ROBOT_FLOOR.airShareFrontMax}`);
+    if (k.hitShareFront < ROBOT_FLOOR.hitShareFront) out.push(`hit share front ${k.hitShareFront.toFixed(3)} < ${ROBOT_FLOOR.hitShareFront}`);
+    if (k.hitShareSide < ROBOT_FLOOR.hitShareSide) out.push(`hit share side ${k.hitShareSide.toFixed(3)} < ${ROBOT_FLOOR.hitShareSide}`);
+    if (k.airShareFront > ROBOT_FLOOR.airShareFrontMax) out.push(`air share front ${k.airShareFront.toFixed(3)} > ${ROBOT_FLOOR.airShareFrontMax}`);
   }
   return out.map((v) => `${r.id}: ${v}`);
 }
@@ -391,7 +424,7 @@ if (process.argv.includes("--json")) {
   console.log("\n| robot | hit share front | hit share side | air share front | eye in weak point | nothing hittable below (m) |");
   console.log("| --- | --: | --: | --: | --- | --: |");
   for (const r of results.filter((x) => x.robot))
-    console.log(`| ${r.id} | ${r.robot!.hitShareFront} | ${r.robot!.hitShareSide} | ${r.robot!.airShareFront} | ${r.robot!.eyeInWeak ? "yes" : "**no**"} | ${r.robot!.hitFloor} |`);
+    console.log(`| ${r.id} | ${r.robot!.hitShareFront.toFixed(2)} | ${r.robot!.hitShareSide.toFixed(2)} | ${r.robot!.airShareFront.toFixed(2)} | ${r.robot!.eyeInWeak ? "yes" : "**no**"} | ${r.robot!.hitFloor === null ? "— (floats)" : r.robot!.hitFloor.toFixed(2)} |`);
   console.log(`\nsilhouettes: ${OUT}/<robot>-front.png, -side.png (grey: model only, green: model and hit sphere, red: hit sphere only)`);
 }
 

@@ -290,7 +290,7 @@ npm run look:ringfall -- <place> [--r 120] [--base]
                          # one place in about a minute and a half: the tour's cameras near it
                          # (scripts/ringfall-tour.mjs, shared with gate 3) and four from above,
                          # a top-down crop, each compared with the place's baseline, and every
-                         # 4 m cell of the world whose height moved, those past the place first;
+                         # 4 m cell of the world whose ground or boxes changed, those past the place first;
                          # take a baseline with --base before changing a place, look after
 npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir raid to the end, a harbor raid
                          # to its first fight, a tour of both); screenshots in shots/ringfall/
