@@ -654,7 +654,7 @@ export interface Squad {
 export type LootTable = { weapon: [WeaponKind, Rarity][]; armor: Rarity[]; heals: number; valuable: [ValuableKind, number][] };
 
 /** Stable names for the POIs: saves, quests and other data refer to a POI by these, never by its place in `POIS`. */
-export type PoiId = "supply" | "quarry" | "relay" | "pad" | "wreck" | "yard" | "smelter" | "station" | "waterworks" | "lodge" | "cannery" | "coldstore" | "motorpool" | "machineworks";
+export type PoiId = "supply" | "quarry" | "relay" | "pad" | "wreck" | "yard" | "smelter" | "station" | "waterworks" | "lodge" | "cannery" | "coldstore" | "motorpool" | "machineworks" | "oreworks" | "coastport";
 
 export interface Poi {
   id: PoiId;
@@ -787,7 +787,7 @@ const BWE_CAB = (() => {
  * into place by this offset (`POI_AT` in areas.ts, which sets each in its area's frame).
  * The harbor's POIs are written round their own middle.
  */
-const AT = (["supply", "quarry", "relay", "pad", "wreck", "yard", "smelter", "station", "waterworks", "lodge", "cannery", "coldstore", "motorpool", "machineworks"] as const).map((id) => POI_AT[id]);
+const AT = (["supply", "quarry", "relay", "pad", "wreck", "yard", "smelter", "station", "waterworks", "lodge", "cannery", "coldstore", "motorpool", "machineworks", "oreworks", "coastport"] as const).map((id) => POI_AT[id]);
 
 /** The big dish on the mesa, in the relay's frame (`dish()`), its heights over the mesa's top. */
 const BIG_DISH = { x: 45, z: -5, y: 23, r: 28, f: 22.4, tilt: Math.PI / 4, cell: 2.5 } as const;
@@ -876,17 +876,178 @@ function coldstore(): Box[] {
   ];
 }
 
-/** The eastern district's repair hangars, control tower and parked vehicles. */
+/**
+ * A grounded orbital-segment transporter: eight crawler bogies carry a 90 m deck,
+ * with a full-size curved ring rib still strapped to its cradles. The player can
+ * cross beneath the chassis, climb the repair towers and walk the loading deck.
+ * The rear gantry has been left servicing the load, rather than another generic shed.
+ */
 function motorpool(): Box[] {
-  return [
-    ...compound(0, 0, 100, 90, 1.1, [{ side: "w", w: 12 }, { side: "e", w: 10 }, { side: "s", w: 12 }, { side: "n", w: 10 }]),
-    ...hall(0, -22, 52, 24, 10, { doors: [{ side: "s", at: -15 }, { side: "s", at: 15 }], hatches: [{ side: "w" }, { side: "e" }], windows: ["n"], columns: 8, mezz: [{ side: "n", depth: 4, y: 4.5, stair: 18 }], steel: 1 }),
-    ...tower(34, 21, 12, 12, 3, { doors: [["w", "s"]], windows: [["e"], ["n", "e", "w"], ["n", "e", "s", "w"]] }),
-    ...[-28, -16].flatMap((x) => [box(x, 22, 2.5, 2.3, 3, "prop", PROP.cab), box(x, 26, 2.5, 5, 2.3, "prop", PROP.bed)]),
-    box(-35, -5, 6.1, 2.44, 2.6, "container", 1),
-    box(15, 29, 5, 0.6, 1.1, "prop", PROP.barrier),
-    box(8, 20, 2, 2, 1.2, "crate"),
+  const out: Box[] = [
+    ...compound(0, 0, 204, 176, 1.1, [{ side: "w", w: 16 }, { side: "s", w: 14 }, { side: "e", w: 12 }, { side: "n", at: 26, w: 10 }]),
+    // The 90 m carrier is raised on eight tracked bogies, leaving a service passage below.
+    rect(-45, -56, 45, -24, 6.8, 8.2, "steel", 2),
+    rect(-44, -55, 44, -25, 8.2, 9, "slab", 1),
+    ...[-33, -11, 11, 33].flatMap((x) => [-59, -21].flatMap((z) => [
+      box(x, z, 16, 6, 4.5, "steel", 1), box(x, z, 13, 4.5, 6.8, "steel", 3, 4.5),
+      ...[-6, -3, 0, 3, 6].map((dx) => box(x + dx, z, 0.8, 6.3, 3.8, "steel", 2, 0.7)),
+    ])),
+    // Two cab floors at the nose; large windows look along the heavy-haul route.
+    rect(-61, -49, -47, -31, 2.7, 3, "slab", 1),
+    ...lift(3, tower(-54, -40, 14, 18, 2, { scale: WORKS, doors: [["s", "w"]], windows: [["w", "n"], ["n", "s", "w"]] })),
+    ...stairs(-54, -31, "s", 2.4, 3),
+    ...[-58, -49].flatMap((x) => [-46, -34].map((z) => box(x, z, 1.2, 1.2, 2.7, "steel", 2))),
+    rect(-54, -43, -42, -37, 3, 6.8, "steel", 2),
+    // Access is from two real stair towers; the bridges land on the carrier's deck.
+    ...tower(52, -40, 10, 12, 2, { scale: WORKS, doors: [["e", "s"]], windows: [[], ["e", "s"]], open: ["w"] }),
+    ...catwalk(43, -40, 47, -40, 9, 3, 3),
+    ...tower(-18, -12, 12, 10, 2, { scale: WORKS, doors: [["s", "w"]], windows: [[], ["s"]], open: ["n"] }),
+    ...catwalk(-18, -25, -18, -17, 9, 3, 3),
+    // Repair workshop and dispatch block frame a separate, open capture yard.
+    ...hall(-48, 49, 72, 32, 13.5, { scale: WORKS, steel: 0, doors: [{ side: "n", at: -20, w: 9 }, { side: "n", at: 20, w: 9 }], hatches: [{ side: "e" }, { side: "w" }], windows: ["s"], mezz: [{ side: "s", depth: 5, y: 4.5, stair: 22 }], columns: 12 }),
+    ...tower(65, 45, 20, 20, 4, { scale: WORKS, doors: [["n", "w", "s"]], windows: [["e"], ["n", "s", "w"], ["n", "s", "w"], ["n", "s", "w"]] }),
+    // The load's two cradles and the hydraulic service arms are not freestanding crates.
+    ...[-31, 31].flatMap((x) => [box(x, -40, 8, 24, 11.5, "steel", 3, 9), box(x, -50, 4, 3, 24, "steel", 3, 11.5), box(x, -30, 4, 3, 24, "steel", 3, 11.5), box(x, -40, 5, 24, 25, "steel", 3, 24)]),
+    box(18, 12, 9, 3, 1.1, "prop", PROP.barrier),
+    box(46, 12, 4, 4, 1.4, "prop", PROP.pallets),
+    ...[-72, -60, -48].map((x) => box(x, 74, 8, 1.1, 1.1, "prop", PROP.barrier)),
   ];
+  // Exposed road wheels on the outer faces distinguish the crawler bogies from cargo boxes.
+  for (const x of [-33, -11, 11, 33]) for (const z of [-62.4, -17.6]) for (const dx of [-5, 0, 5]) {
+    for (let y = 0.8; y < 3.7; y += 0.5) {
+      const half = Math.sqrt(Math.max(0, 1.5 ** 2 - (y + 0.25 - 2.3) ** 2));
+      out.push(box(x + dx, z, Math.max(0.2, 2 * half), 0.25, y + 0.5, "steel", 2, y));
+    }
+    out.push(box(x + dx, z, 0.65, 0.35, 2.65, "steel", 1, 2));
+  }
+  // A broad arch of orbital structure, in three ribs: a hollow 30 m-high section above the deck.
+  // Every slice is one metre wide, so the arc has a deliberate silhouette without diagonal collision.
+  for (let x = -34; x < 34; x += 1) {
+    const mid = x + 0.5;
+    const y = 13 + 22 * Math.sqrt(Math.max(0, 1 - (mid / 35) ** 2));
+    for (const z of [-49, -40, -31]) out.push(rect(x, z - 0.65, x + 1, z + 0.65, y, y + 1.8, "steel", 4));
+    if (x % 8 === 0) out.push(rect(x, -49, x + 0.65, -31, y + 0.4, y + 1.2, "steel", 2));
+    // Half the original outer shell remains attached to the northern rib.
+    if (x < -2) out.push(rect(x, -51, x + 1, -47, y + 1.8, y + 2.4, "slab", 0));
+  }
+  // Service gantry straddles the carrier without closing the tunnel beneath it.
+  for (const x of [-76, 76]) out.push(...lattice(x, -70, 10, 8, 8, 38, ["s"]));
+  out.push(...catwalk(-76, -70, 76, -70, 27.2, 3, 3));
+  out.push(box(0, -70, 155, 2, 31, "steel", 3, 29), box(10, -40, 2, 60, 33, "steel", 3, 31.5));
+  out.push(box(10, -40, 0.15, 0.15, 31.5, "steel", 2, 25), box(10, -40, 2, 2, 26, "steel", 3, 25));
+  return out;
+}
+
+/**
+ * The western ore export works: a 120 m processing hall, four-storey workers' lodge,
+ * ore bunkers and silos. The 9 m gallery overlooks the sorting machines; the end
+ * stair tower reaches the 18 m crane walk through an opening in the west wall.
+ * Its yard is the capture ground, with the freight road entering from the south.
+ */
+function oreworks(): Box[] {
+  const out: Box[] = [
+    ...compound(0, 0, 198, 176, 1.1, [{ side: "e", w: 14 }, { side: "s", w: 16 }, { side: "w", w: 8 }, { side: "n", at: 10, w: 10 }]),
+    ...hall(-10, -40, 120, 48, 27, {
+      scale: WORKS, steel: 0, columns: 15,
+      doors: [{ side: "s", at: -38, w: 10 }, { side: "s", at: 34, w: 10 }, { side: "e", w: 10 }],
+      hatches: [{ side: "w", at: 14 }], windows: ["n", "s"],
+      mezz: [{ side: "n", depth: 6, y: 9, stair: 42 }],
+    }),
+    // The works' skyline: paired storage silos and a transfer bridge into the hall.
+    ...tank(70, -48, 9, 34, "e", 4),
+    ...tank(70, -24, 9, 28, "e", 4),
+    // The stair tower is separate from the hall; the gallery enters through its west wall.
+    ...paint(tower(-77, -40, 10, 10, 4, { scale: WORKS, doors: [["s", "w"]], windows: [[], ["w"], ["w"], ["w"]], open: ["e"] }), "wall", "steel", () => 3, (b) => b.tint === 0),
+    // Workers' lodge, canteen and changing room frame the south side of the yard.
+    ...tower(-24, 55, 70, 18, 4, { scale: HOME, twin: true, doors: [["n", "s", "w", "e"]], windows: [["n", "s"], ["n", "s"], ["n", "s"], ["n", "s"]] }),
+    ...building(66, 48, 30, 22, 6, { scale: WORKS, doors: ["w", "n", "s"], windows: ["e"], roof: "s" }),
+    ...hall(-76, 26, 22, 36, 10, { scale: WORKS, steel: 3, doors: [{ side: "e", w: 8 }], hatches: [{ side: "s" }], windows: ["w"] }),
+    // Sampling benches and the old clock-in desk tell the same story as the buildings.
+    box(62, 48, 3, 1, 1.0, "prop", PROP.counter),
+    box(70, 43, 4, 1.5, 0.9, "prop", PROP.table),
+    box(70, 52, 4, 1.5, 0.9, "prop", PROP.table),
+    box(-45, 50, 1.8, 0.6, 1.8, "prop", PROP.shelf),
+    box(-24, 60, 2, 1, 0.9, "prop", PROP.table),
+    // A broken-off shipment: ore in three concrete bunkers in the west yard.
+    ...[-6, 6, 18].flatMap((z) => [
+      box(-57, z, 10, 0.5, 2.3, "wall", 1),
+      box(-61.75, z + 4, 0.5, 8, 2.3, "wall", 1),
+      box(-57, z + 4, 7, 5, 1.4, "prop", PROP.rubble),
+    ]),
+    box(38, 18, 12.2, 2.44, 2.6, "container", 0),
+    box(38, 29, 12.2, 2.44, 2.6, "container", 3),
+    box(-16, 24, 4, 0.6, 1.1, "prop", PROP.barrier),
+    box(14, 10, 3, 2, 1.1, "prop", PROP.pallets),
+  ];
+  // Processing lines inside the hall, with a wide aisle through their middles.
+  for (const x of [-46, -18, 18]) {
+    out.push(box(x, -42, 10, 10, 3, "steel", 2), box(x, -42, 7, 7, 7, "steel", 3, 3));
+    out.push(box(x + 7, -42, 0.8, 8, 5.5, "steel", 2), box(x + 7, -42, 0.8, 8, 6.4, "steel", 0, 5.5));
+  }
+  // Three roof monitors replace the featureless lid. Their open sides admit daylight
+  // above the crane gallery, and their stepped skyline reads from the quarry road.
+  const lid = out.findIndex((b) => b.kind === "slab" && b.x0 === -70 && b.x1 === 50 && b.z0 === -64 && b.z1 === -16 && b.h === 27);
+  if (lid >= 0) out.splice(lid, 1);
+  out.push(rect(-70, -64, 50, -47, 26.7, 27, "slab"), rect(-70, -33, 50, -16, 26.7, 27, "slab"));
+  for (const [a, b] of [[-70, -58], [-34, -22], [2, 14], [38, 50]]) out.push(rect(a, -47, b, -33, 26.7, 27, "slab"));
+  for (const x of [-46, -10, 26]) {
+    out.push(box(x, -40, 26, 16, 32, "steel", 4, 31.6));
+    for (const dx of [-12, 12]) for (const z of [-47, -33]) out.push(box(x + dx, z, 0.5, 0.5, 31.6, "steel", 2, 27));
+    out.push(box(x, -47, 25, 0.4, 28.2, "steel", 3, 27), box(x, -33, 25, 0.4, 28.2, "steel", 3, 27));
+  }
+  // Cut a genuine gallery door at 18 m. Ground-level maintenance door stays below it.
+  for (let i = out.length - 1; i >= 0; i--) {
+    const b = out[i];
+    if (b.kind !== "steel" || b.x0 !== -70 || b.x1 > -69.4 || b.z1 <= -41.5 || b.z0 >= -38.5 || b.h <= 18 || b.y0 >= 21) continue;
+    out.splice(i, 1);
+    if (b.z0 < -41.5) out.push({ ...b, z1: -41.5 });
+    if (b.z1 > -38.5) out.push({ ...b, z0: -38.5 });
+    out.push({ ...b, z0: Math.max(b.z0, -41.5), z1: Math.min(b.z1, -38.5), h: 18 });
+    out.push({ ...b, z0: Math.max(b.z0, -41.5), z1: Math.min(b.z1, -38.5), y0: 21 });
+  }
+  out.push(...catwalk(-72, -40, 45, -40, 18, 2.4, 3));
+  // Overhead crane: its bridge is above the walk, so the route stays walkable below it.
+  out.push(box(-18, -40, 3, 42, 22, "steel", 3, 20.5), box(-18, -40, 7, 5, 23.5, "steel", 1, 22));
+  out.push(box(-18, -35, 0.15, 0.15, 20.5, "steel", 2, 11), box(-18, -35, 1.2, 1.2, 11.8, "steel", 3, 11));
+  // A repeating facade rib and deep horizontal belt make the hall read at a distance.
+  for (let x = -68; x <= 48; x += 8) out.push(box(x, -64.3, 0.35, 0.6, 27.5, "steel", 2, 0));
+  out.push(box(-10, -64.4, 120, 0.6, 20.8, "steel", 4, 19.8));
+  return out;
+}
+
+/**
+ * Ore loading terminal: an 88 m transit shed, a 31.5 m coastal control tower and
+ * a shiploader 110 m long above the loading apron. Its open lattice leg contains
+ * the stairs to the 20.4 m loading walk. The middle stays open for capturing and trucks.
+ */
+function coastport(): Box[] {
+  const out: Box[] = [
+    ...compound(0, 0, 186, 136, 1.1, [{ side: "n", w: 16 }, { side: "e", w: 14 }, { side: "w", w: 8 }, { side: "s", at: -20, w: 10 }]),
+    ...hall(2, -38, 88, 30, 15, {
+      scale: WORKS, steel: 0, columns: 14,
+      doors: [{ side: "s", at: -25, w: 10 }, { side: "s", at: 25, w: 10 }], hatches: [{ side: "e" }, { side: "w" }],
+      windows: ["n"], mezz: [{ side: "n", depth: 5, y: 6, stair: 28 }],
+    }),
+    ...tower(65, 24, 18, 18, 7, { scale: WORKS, doors: [["w", "s", "e"]], windows: [["e"], ...Array.from({ length: 6 }, (): Side[] => ["n", "e", "s", "w"])] }),
+    // The upper control cab wraps the whole tower; broad roof and horizontal bands.
+    ...lift(31.5, building(65, 24, 25, 24, 4.5, { scale: WORKS, doors: ["n", "s"], windows: ["w", "e"] })),
+    ...slabWithHole(52.5, 12, 77.5, 36, 31.2, 31.5, 67.6, 15.5, 73.1, 17.3),
+    ...lattice(-67, 5, 10, 6, 6, 28, ["s"]),
+    ...catwalk(-67, 8, -67, 98, 20.4, 3, 3),
+    // The shiploader's supporting portal legs and high longitudinal box girder.
+    ...[30, 65, 94].flatMap((z) => [box(-73, z, 1.2, 1.2, 20.1, "steel", 3), box(-61, z, 1.2, 1.2, 20.1, "steel", 3), box(-67, z, 14, 1.2, 20.4, "steel", 3, 19.2)]),
+    box(-67, 49, 2.8, 110, 25, "steel", 3, 23),
+    ...lift(20.4, building(-67, 91, 8, 10, 3.4, { doors: ["n", "s"], windows: ["w", "e"] })),
+    // The loading mouth hangs over the end of the pier.
+    box(-67, 104, 4.5, 5, 24.5, "steel", 1, 9),
+    ...hall(20, 42, 35, 20, 9, { scale: WORKS, steel: 3, doors: [{ side: "n", w: 9 }], hatches: [{ side: "e" }] }),
+    ...[-25, -10, 5].flatMap((x, i) => [box(x, 18, 12.2, 2.44, 2.6, "container", i), box(x, 30, 12.2, 2.44, 2.6, "container", (i + 1) % 4)]),
+    box(-28, -6, 4, 0.6, 1.1, "prop", PROP.barrier),
+    box(30, 9, 3, 2, 1.2, "prop", PROP.pallets),
+    box(18, 43, 2.5, 2.3, 3, "prop", PROP.cab), box(18, 47, 2.5, 5, 2.3, "prop", PROP.bed),
+  ];
+  for (const y of [9, 18, 27]) out.push(...shell(65, 24, 18.7, 18.7, y, y + 0.35, [], "steel", 4, 0.35));
+  return out;
 }
 
 /** Machining hall, material silos and a stair-accessible office. */
@@ -1238,13 +1399,15 @@ const POI_FRAMES: Poi[] = [
     floor: [{ x: -16, z: -4, heal: "medkit" }],
   },
   {
-    id: "motorpool", name: "車両基地", x: 0, z: 0, trigger: 65,
-    entry: { x: -58, z: 0, yaw: E },
+    id: "motorpool", name: "車両基地", x: 0, z: 0, trigger: 110,
+    entry: { x: -114, z: 0, yaw: E },
     squads: [
-      { name: "整備格納庫", members: [{ kind: "grunt", x: -14, z: -20, face: S }, { kind: "grunt", x: 14, z: -20, face: S }] },
-      { name: "車両管制", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 31.5, z: 21, y: STOREY, face: W }, { kind: "heavy", x: 30, z: 10, face: W }] },
+      { name: "輸送車の整備場", members: [{ kind: "grunt", x: -12, z: -38, face: S }, { kind: "charger", x: 20, z: -38, face: S }] },
+      { name: "運搬デッキ", members: [{ kind: "grunt", x: 14, z: -28, y: 9, face: S }, { kind: "drone", x: 20, z: -16 }] },
+      { name: "整備工房", members: [{ kind: "grunt", x: -60, z: 44, face: N }, { kind: "grunt", x: -30, z: 44, face: N }] },
+      { name: "運行管制", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 62, z: 45, y: 13.5, face: W }, { kind: "heavy", x: 48, z: 27, face: W }] },
     ],
-    bins: [{ x: -14, z: -22 }, { x: 14, z: -22 }, { x: -8, z: -31, y: 4.5 }, { x: 34, z: 21 }, { x: -40, z: 10 }, { x: 15, z: 20 }, { x: -25, z: 35 }, { x: 31.5, z: 21, y: STOREY, vault: true }],
+    bins: [{ x: -28, z: -40 }, { x: 25, z: -40 }, { x: -54, z: -40, y: 7.5 }, { x: 8, z: -40, y: 9 }, { x: -66, z: 42 }, { x: -24, z: 54 }, { x: -40, z: 61, y: 4.5 }, { x: 65, z: 45 }, { x: 62, z: 45, y: 9 }, { x: 34, z: 18 }, { x: 0, z: -70, y: 27.2 }, { x: 62, z: 45, y: 13.5, vault: true }],
     keyFrom: "machineworks",
     loot: { weapon: [["pike", 1], ["lance", 1], ["maul", 1]], armor: [1], heals: 2, valuable: [["gyro", 3], ["wire", 2], ["parts", 2], ["board", 2], ["reactor", 1]] },
     floor: [{ x: 15, z: 23, heal: "battery" }],
@@ -1260,6 +1423,47 @@ const POI_FRAMES: Poi[] = [
     keyFrom: "motorpool",
     loot: { weapon: [["pike", 1], ["hornet", 1], ["talon", 1]], armor: [1], heals: 2, valuable: [["parts", 3], ["board", 3], ["wire", 2], ["fuse", 2], ["drive", 1]] },
     floor: [{ x: 30, z: 24, heal: "syringe" }],
+  },
+
+
+  {
+    id: "oreworks", name: "西部選鉱所", x: 0, z: 0, trigger: 105,
+    entry: { x: 108, z: 0, yaw: W },
+    squads: [
+      { name: "選鉱ライン", members: [{ kind: "grunt", x: -48, z: -24, face: S }, { kind: "grunt", x: 24, z: -24, face: S }] },
+      { name: "搬入ヤード", members: [{ kind: "grunt", x: 54, z: 8, face: E }, { kind: "charger", x: 40, z: -4, face: E }] },
+      { name: "宿舎街の警備", members: [{ kind: "grunt", x: -44, z: 36, face: N }, { kind: "grunt", x: 2, z: 36, face: N }] },
+      { name: "クレーン通路の守り", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: -50, z: -40, y: 18, face: E }, { kind: "drone", x: -32, z: -30 }] },
+    ],
+    bins: [
+      { x: -54, z: -30 }, { x: 30, z: -30 }, { x: -38, z: -60, y: 9 },
+      { x: -42, z: 55 }, { x: -38, z: 55, y: 6.4 }, { x: -38, z: 55, y: 9.6 },
+      { x: 62, z: 52 }, { x: -76, z: 30 }, { x: 48, z: 22 },
+      { x: 70, z: 12 }, { x: -32, z: 18 }, { x: -50, z: -40, y: 18, vault: true },
+    ],
+    keyFrom: "coastport",
+    loot: { weapon: [["pike", 1], ["lance", 1], ["talon", 1]], armor: [1], heals: 2, valuable: [["parts", 4], ["fuse", 3], ["wire", 2], ["board", 1], ["drive", 1]] },
+    floor: [{ x: 55, z: 51, heal: "medkit" }],
+  },
+  {
+    id: "coastport", name: "鉱石積出港", x: 0, z: 0, trigger: 100,
+    entry: { x: 92, z: 0, yaw: W },
+    squads: [
+      { name: "積出倉庫", members: [{ kind: "grunt", x: -23, z: -35, face: S }, { kind: "heavy", x: 27, z: -35, face: S }] },
+      { name: "コンテナの警備", members: [{ kind: "grunt", x: -34, z: 9, face: E }, { kind: "charger", x: -10, z: 8, face: E }] },
+      { name: "荷役機の警備", members: [{ kind: "grunt", x: -67, z: 40, y: 20.4, face: N }, { kind: "drone", x: -50, z: 40 }] },
+      { name: "沿岸管制", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 62, z: 24, y: 27, face: W }, { kind: "grunt", x: 61, z: 22, face: W }] },
+    ],
+    bins: [
+      { x: -23, z: -38 }, { x: 27, z: -38 }, { x: -10, z: -49, y: 6 },
+      { x: 45, z: -10 }, { x: -35, z: 38 }, { x: 8, z: 39 },
+      { x: 62, z: 24 }, { x: 62, z: 24, y: 13.5 },
+      { x: -67, z: 88, y: 20.4 }, { x: -67, z: 52, y: 20.4 },
+      { x: 65, z: 24, y: 31.5 }, { x: 62, z: 24, y: 27, vault: true },
+    ],
+    keyFrom: "oreworks",
+    loot: { weapon: [["pike", 1], ["lance", 1], ["maul", 1], ["hornet", 1]], armor: [1], heals: 2, valuable: [["wire", 3], ["gyro", 2], ["board", 2], ["drive", 2], ["reactor", 1]] },
+    floor: [{ x: 62, z: 20, heal: "battery" }],
   },
 
 ];
@@ -1284,7 +1488,7 @@ export interface Depot {
  * the entry: the nearest flat spot where a raid started there is not seen by the POI's
  * squads at once (`checkDepots` in the sim gate holds them to it).
  */
-const DEPOT_OUT: Record<PoiId, number> = { supply: 18, quarry: 18, relay: 25, pad: 66, wreck: 22, yard: 18, smelter: 25, station: 20, waterworks: 20, lodge: 20, cannery: 12, coldstore: 20, motorpool: 24, machineworks: 24 };
+const DEPOT_OUT: Record<PoiId, number> = { supply: 18, quarry: 18, relay: 25, pad: 66, wreck: 22, yard: 18, smelter: 25, station: 20, waterworks: 20, lodge: 20, cannery: 12, coldstore: 20, motorpool: 24, machineworks: 24, oreworks: 24, coastport: 24 };
 
 /** A depot's place in `DEPOTS` (and in the run's `depots`), from its POI. */
 export const depotIndex = (poi: PoiId) => DEPOTS.findIndex((d) => d.poi === poi);
@@ -1629,45 +1833,6 @@ interface Town {
 }
 
 const TOWN_FRAMES: Town[] = [
-  {
-    name: "西の集落",
-    x: -730,
-    z: 70,
-    buildings: [
-      rowHouses(-32, -20, 4, 9, 10, 2),
-      building(24, -18, 16, 12, 4.5, { doors: ["s", "e"], windows: ["n", "w"], roof: "e" }),
-      building(-24, 22, 14, 10, 3.4, { doors: ["n", "e"], windows: ["s", "w"] }),
-      [box(20, 24, 6.2, 2.5, 2.6, "container", 2), box(30, 20, 3, 0.6, 1.1, "wall", 1)],
-    ],
-    bins: [
-      { building: 0, x: -32, z: -20, table: "quarry" },
-      { building: 1, x: 24, z: -18, table: "quarry" },
-      { building: 2, x: -24, z: 22, table: "supply" },
-    ],
-    guard: {
-      name: "西の集落の見回り",
-      members: [{ kind: "grunt", x: -25, z: 0, face: E }, { kind: "charger", x: -23, z: 2, face: E }],
-      patrol: [{ x: -25, z: 0 }, { x: 35, z: 0 }, { x: 0, z: 0 }, { x: 0, z: 40 }],
-    },
-  },
-  {
-    name: "西の見張り所",
-    x: -820,
-    z: 235,
-    buildings: [
-      tower(-10, 0, 10, 10, 3, { doors: [["e", "s"]], windows: [["w"], ["n", "e", "w"], ["n", "e", "s", "w"]] }),
-      building(12, -8, 10, 8, 3.4, { doors: ["s", "e"], windows: ["n"] }),
-      [box(10, 10, 4, 0.6, 1.1, "wall", 1), box(17, 12, 2, 2, 1.2, "crate")],
-    ],
-    bins: [
-      { building: 0, x: -12.5, z: 1.5, y: STOREY * 2, table: "relay" },
-      { building: 1, x: 12, z: -8, table: "supply" },
-    ],
-    guard: {
-      name: "西の見張り所の守備",
-      members: [{ kind: "grunt", x: 0, z: 8, face: N }],
-    },
-  },
   {
     // On the lakebed's south shore, the ring road its main street (z about -8 in its frame), the
     // side street south off it at x = 3 (`STREETS`' 町の横通り).
@@ -2037,7 +2202,7 @@ export interface Region {
 }
 
 export const REGIONS: Region[] = [
-  { id: "reservoir", name: "ダム湖", note: "東部工業地帯まで続く島。拠点 8 つ、発着場にタイタン", entries: ["beach", "checkpoint", "jetty"], pois: ["supply", "quarry", "relay", "pad", "station", "waterworks", "motorpool", "machineworks"], exits: ["ship", "flare", "village"], label: { x: -330, z: 300 }, bounds: { x0: WORLD.x0, z0: -340, x1: WORLD.x1, z1: WORLD.z1 } },
+  { id: "reservoir", name: "ダム湖", note: "西の鉱石港と東部工業地帯を結ぶ島。拠点 10 か所、発着場にタイタン", entries: ["beach", "checkpoint", "jetty"], pois: ["supply", "quarry", "relay", "pad", "station", "waterworks", "motorpool", "machineworks", "oreworks", "coastport"], exits: ["ship", "flare", "village"], label: { x: -330, z: 300 }, bounds: { x0: WORLD.x0, z0: -340, x1: WORLD.x1, z1: WORLD.z1 } },
   { id: "harbor", name: "港湾地帯", note: "干上がった湾の港。拠点 6 つ、どこにもヘビーがいる", entries: ["outskirts", "quay", "shore"], locked: "峠か鉄橋を越えて港町の外れまで歩き、生きて帰ると選べる", pois: ["wreck", "yard", "smelter", "lodge", "cannery", "coldstore"], exits: ["boat"], label: { x: -250, z: -520 }, bounds: { x0: -600, z0: WORLD.z0, x1: 600, z1: -380 } },
 ];
 
@@ -2267,6 +2432,15 @@ export const LANDMARKS: readonly { name: string; x: number; z: number }[] = [
   // The outposts and the works between the harbor's POIs.
   ...[...OUTPOSTS, ...TOWN_FRAMES].map((o) => ({ name: o.name, x: o.x, z: o.z })),
   { name: "東部工業地帯", x: 750, z: 215 },
+  { name: "西部鉱石港", x: -860, z: 160 },
+  { name: "選鉱棟", x: -740, z: 30 },
+  { name: "労働者宿舎", x: -754, z: 125 },
+  { name: "船積み機", x: -827, z: 340 },
+  { name: "沿岸管制塔", x: -695, z: 294 },
+  { name: "鉱石計量所", x: -602, z: 219 },
+  { name: "運搬検査所", x: 581, z: 63 },
+  { name: "放置された運搬架台", x: 750, z: 207 },
+  { name: "超大型輸送車", x: 760, z: 30 },
   { name: "貨物線", x: -130, z: -770 },
   { name: "送電線", x: 100, z: -860 },
   { name: "パイプライン", x: 260, z: -910 },
@@ -2279,8 +2453,7 @@ export const LANDMARKS: readonly { name: string; x: number; z: number }[] = [
  */
 export const STOPS: readonly { name: string; x: number; z: number }[] = [
   { name: "工業地帯の交差点", x: 750, z: 190 },
-  { name: "西の集落", x: -730, z: 70 },
-  { name: "西の見張り所", x: -820, z: 243 },
+  { name: "鉱石港の連絡路", x: -730, z: 170 },
   at("factory", { name: "工場", x: 0, z: 0 }),
   at("factory", { name: "住宅地", x: -50, z: 25 }),
   at("heart", { name: "台地", x: -100, z: 8 }),
@@ -2355,6 +2528,10 @@ export const EXTRA_BINS: ExtraBin[] = (
     at("village", { x: 2, z: -66, y: 0.4, table: "quarry" }),
     at("village", { x: -21, z: 50, y: HOME.storey, table: "quarry" }),
     at("village", { x: -37, z: -70, y: HOME.storey * 2, table: "quarry" }),
+    { x: -602, z: 219, table: "oreworks" },
+    { x: -602, z: 219, y: 6.4, table: "oreworks" },
+    { x: 581, z: 63, y: 5 - floorLevel(581, 63), table: "motorpool" },
+    { x: 778, z: 205, y: 3 - floorLevel(778, 205), table: "machineworks" },
     // Top floor of each tall building, on the side away from its stairs. These hold the
     // flares that call the plateau pickup (EXTRACTS).
     ...HIGH_RISES.map((h) => ({ x: h.x - h.w / 2 + 1.5, z: h.z, y: (h.floors - 1) * h.sc.storey, table: "relay" as const, flare: true as const })),
@@ -3919,8 +4096,60 @@ const onFloors = (dx: number, dz: number, floors: Floors): Box[] => floors.flatM
 
 const PAD_AT = AT[poiIndex("pad")];
 
+/** The shiploader's concrete pier rests on piles, without flattening the sea beneath it. */
+const WEST_PORT_PIER: Box[] = [
+  rect(-843, 300, -811, 385, -0.6, 0, "slab", 1),
+  ...[310, 335, 360, 380].flatMap((z) => [-839, -815].map((x) => box(x, z, 2.4, 2.4, -0.6, "wall", 1, -15))),
+  rect(-843, 302, -842.6, 385, 0, 0.9, "wall", 1),
+  rect(-811.4, 302, -811, 385, 0, 0.9, "wall", 1),
+  rect(-843, 384.6, -811, 385, 0, 0.9, "wall", 1),
+];
+
+/** An elevated ore conveyor joins the silos to the loader, over the freight road. */
+const WEST_PORT_BELT: Box[] = [
+  ...catwalk(-660, 55, -660, 190, 20.4, 2.4, 3),
+  ...catwalk(-827, 190, -660, 190, 20.4, 2.4, 3),
+  ...catwalk(-827, 190, -827, 262, 20.4, 2.4, 3),
+  // The actual belt is enclosed alongside the maintenance walkway.
+  rect(-664, 55, -662, 190, 19.5, 21.8, "steel", 0),
+  rect(-827, 186, -660, 188, 19.5, 21.8, "steel", 0),
+  rect(-831, 190, -829, 262, 19.5, 21.8, "steel", 0),
+  ...[80, 110, 140, 170].map((z) => box(-663, z, 1, 1, 19.5, "steel", 3)),
+  ...[-800, -770, -740, -710, -680].map((x) => box(x, 187, 1, 1, 19.5, "steel", 3)),
+  ...[215, 240].map((z) => box(-830, z, 1, 1, 19.5, "steel", 3)),
+];
+
+/** Places on the freight routes, with things to inspect and loot before reaching the cores. */
+const FREIGHT_APPROACH: Box[] = [
+  // The western weighbridge: trucks came from the quarry, weighed, then queued for the port.
+  ...onLevel(floorLevel(-602, 219), place(-602, 219, [
+    ...building(0, 0, 18, 12, 6.4, { scale: HOME, doors: ["n", "e"], windows: ["w"], roof: "s" }),
+    box(0, -15, 24, 6, 0.2, "step", 1),
+    ...[-12, 12].map((x) => box(x, -15, 0.8, 7, 1.1, "steel", 3)),
+    box(-23, -15, 2.5, 6.2, 2.6, "container", 3),
+    box(24, 0, 3, 2, 1.2, "prop", PROP.pallets),
+    box(18, 10, 2.5, 2.3, 3, "prop", PROP.cab), box(18, 14, 2.5, 5, 2.3, "prop", PROP.bed),
+  ])),
+  // The eastern inspection bay is set back from the live traffic lane.
+  ...onLevel(5, place(581, 63, [
+    ...building(0, 0, 12, 10, 5, { scale: WORKS, doors: ["n", "e"], windows: ["w", "s"], roof: "s" }),
+    ...[-20, -3, 14].flatMap((x) => [box(x, -27, 0.6, 0.6, 12, "steel", 3), box(x, -11, 0.6, 0.6, 12, "steel", 3)]),
+    box(-3, -19, 38, 1, 12.8, "steel", 3, 11.8),
+    box(20, 2, 12.2, 2.44, 2.6, "container", 0),
+    box(20, 7, 12.2, 2.44, 2.6, "container", 4),
+    box(19, 4.5, 1, 8, 1.1, "prop", PROP.barrier),
+  ])),
+  // A dropped transport cradle, where the route turns toward the factory.
+  ...onLevel(3, place(750, 190, [
+    ...[-1, 1].flatMap((sg) => [box(sg * 18, 5, 3, 24, 8, "steel", 3), box(sg * 18, 5, 8, 3, 9, "steel", 2, 8)]),
+    box(0, 17, 40, 3, 9, "steel", 3, 8),
+    ...building(28, 15, 10, 8, 4.5, { scale: WORKS, doors: ["w", "s"], windows: ["e"] }),
+  ])),
+];
+
 /** Everything placed by hand: POIs, districts, landmarks. */
 const AUTHORED: Box[] = [
+  ...FREIGHT_APPROACH,
   ...HARBOR,
   ...HAMLETS.flatMap((h) => h.boxes),
   ...TOWNS.flatMap((t) => t.boxes),
@@ -3973,6 +4202,10 @@ const AUTHORED: Box[] = [
   ...onLevel(LEVEL.coldstore, placeIn("coldstore", coldstore())),
   ...onLevel(LEVEL.motorpool, place(...POI_AT.motorpool, motorpool())),
   ...onLevel(LEVEL.machineworks, place(...POI_AT.machineworks, machineworks())),
+  ...onLevel(LEVEL.oreworks, place(...POI_AT.oreworks, oreworks())),
+  ...onLevel(LEVEL.coastport, place(...POI_AT.coastport, coastport())),
+  ...WEST_PORT_PIER,
+  ...WEST_PORT_BELT,
 ];
 
 /**
@@ -4059,6 +4292,12 @@ const SCATTER = [
 ];
 /** Where cover is sparse: the salt flats, and the supply depot's dune coast, whose dunes are its cover. */
 const SPARSE = new Set(["塩田", "補給所"]);
+/** These yards have authored machinery and cover; random set pieces would bury their circulation and identity. */
+const AUTHORED_YARDS = [
+  { id: "oreworks", halfX: 105, halfZ: 94 },
+  { id: "coastport", halfX: 100, halfZ: 78 },
+  { id: "motorpool", halfX: 110, halfZ: 96 },
+] as const;
 /** The harbor's channel, which holds water: nothing is scattered in it. */
 const WATER = "水路";
 /** The ground between the basins and roads (terrain.ts). */
@@ -4316,6 +4555,7 @@ function scatterArea(near: Clearance, area: (typeof SCATTER)[number]): Box[] {
       }
       const ok = piece.every(
         (b) =>
+          AUTHORED_YARDS.every((y) => b.x1 < POI_AT[y.id][0] - y.halfX || b.x0 > POI_AT[y.id][0] + y.halfX || b.z1 < POI_AT[y.id][1] - y.halfZ || b.z0 > POI_AT[y.id][1] + y.halfZ) &&
           near.authored.every(b.x0 - 3, b.z0 - 3, b.x1 + 3, b.z1 + 3, clear(b, 3)) &&
           near.laid.every(b.x0 - 2.5, b.z0 - 2.5, b.x1 + 2.5, b.z1 + 2.5, clear(b, 2.5)) &&
           near.points.every(b.x0, b.z0, b.x1, b.z1, (q) => distToBox(b, q.x, q.z) > q.r) &&
@@ -5158,13 +5398,16 @@ export const FRONT_LINKS: readonly (readonly ["camp" | NodeId, NodeId])[] = [
   ["relay", "motorpool"],
   ["motorpool", "machineworks"],
   ["machineworks", "waterworks"],
+  ["quarry", "oreworks"],
+  ["oreworks", "coastport"],
+  ["coastport", "station"],
 ];
 
 /**
  * Each node's tier (docs/ringfall/island-v2.md, 拠点の段): how deep it lies from the camp, 0 by
  * the camp's gate to 3 at the far end of the harbor.
  */
-export const TIER: Record<NodeId, number> = { supply: 0, quarry: 1, relay: 1, station: 1, waterworks: 1, lodge: 2, yard: 2, smelter: 2, cannery: 2, coldstore: 2, wreck: 3, motorpool: 2, machineworks: 1 };
+export const TIER: Record<NodeId, number> = { supply: 0, quarry: 1, relay: 1, station: 1, waterworks: 1, lodge: 2, yard: 2, smelter: 2, cannery: 2, coldstore: 2, wreck: 3, motorpool: 2, machineworks: 1, oreworks: 1, coastport: 2 };
 
 /**
  * What holding each node opens (docs/ringfall/island-v2.md, 拠点の段), for as long as it is held:
@@ -5194,6 +5437,8 @@ export const UNLOCKS: Record<NodeId, NodeUnlock> = {
   coldstore: {},
   motorpool: { shop: 3, depart: true },
   machineworks: { shop: 2, squad: 1 },
+  oreworks: { shop: 2, squad: 1 },
+  coastport: { depart: true, scout: true },
 };
 
 /**

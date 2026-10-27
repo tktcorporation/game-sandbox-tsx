@@ -50,6 +50,49 @@ const yawOf = (dx: number, dz: number) => Math.atan2(dx, -dz);
 const SIDE_YAW = { n: 0, e: Math.PI / 2, s: Math.PI, w: -Math.PI / 2 } as const;
 const forward = (extra: Partial<Input> = {}) => () => ({ ...idleInput(), moveZ: 1, noClimb: true, ...extra });
 
+/** The new landmarks must be playable architecture: walk their stairs and passages without climbing or teleporting. */
+export function checkExpansionPaths(): string | null {
+  type Point = [number, number, number]; // x, z, expected floor
+  const stairsRoute = (x: number, z: number, floors: number, rise: number, lattice: boolean, dz = lattice ? 1.9 : 3.6): Point[] => {
+    const east = x + (lattice ? 4 : 3.6), west = x - (lattice ? 0.6 : 2.4), landing = x - 3.7;
+    const out: Point[] = [[east, z - dz, 0]];
+    for (let k = 0; k < floors; k++) {
+      const side = k % 2 ? 1 : -1, y = (k + 1) * rise;
+      out.push([west, z + side * dz, y], [landing, z + side * dz, y], [landing, z, y]);
+      if (k < floors - 1) out.push([east, z, y], [east, z - side * dz, y]);
+    }
+    return out;
+  };
+  const crane = stairsRoute(-807, 30, 4, 4.5, false);
+  crane.push([-807, 30, 18], [-780, 30, 18], [-750, 30, 18]);
+  const carrier = stairsRoute(812, 30, 2, 4.5, false, 4.6).map(([x, z, y]): Point => [x, z, y + LEVEL.motorpool]);
+  carrier.push([800, 30, 14], [800, 16.5, 14], [780, 16.5, 14], [780, 30, 14]);
+  const loader = stairsRoute(-827, 275, 6, 3.4, true);
+  loader.push([-827, 275, 20.4], [-827, 310, 20.4], [-827, 358, 20.4]);
+  const paths: { name: string; points: Point[] }[] = [
+    { name: "選鉱棟の中二階", points: [[-698, 25, 0], [-698, 10, 9], [-768, 10, 9]] },
+    { name: "選鉱棟のクレーン通路", points: crane },
+    { name: "輸送車の下の整備通路", points: [[740, 30, 5], [780, 30, 5]] },
+    { name: "輸送車の荷台", points: carrier },
+    { name: "船積み機の運転室", points: loader },
+  ];
+  for (const path of paths) {
+    const [x, z, y] = path.points[0];
+    const s = emptyRun(x, z, 0);
+    s.ally.active = false;
+    s.player.pos.y = groundAt(x, z, PLAYER.radius, y + 1.1);
+    for (const [k, [tx, tz, ty]] of path.points.slice(1).entries()) {
+      const duration = play(s, 25, (o) => {
+        o.player.yaw = yawOf(tx - o.player.pos.x, tz - o.player.pos.z);
+        return { ...idleInput(), moveZ: 1, noClimb: true };
+      }, (o) => Math.hypot(tx - o.player.pos.x, tz - o.player.pos.z) < 0.45);
+      const tolerance = k === path.points.length - 2 ? 0.5 : 1.1; // At a flight's foot the body already steps onto its first risers.
+      if (!Number.isFinite(duration) || Math.abs(s.player.pos.y - ty) > tolerance) return `expansion walk: ${path.name} stopped at ${s.player.pos.x.toFixed(1)},${s.player.pos.z.toFixed(1)} (${s.player.pos.y.toFixed(1)} m), aiming for ${tx},${tz} (${ty} m)`;
+    }
+  }
+  return null;
+}
+
 /**
  * Each of the quarry's wide stairs is walked up from its floor, and each lift ridden from the
  * floor to the ground round the quarry. Returns the number of ways up found, or an error.

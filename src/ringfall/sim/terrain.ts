@@ -219,6 +219,8 @@ export const LEVEL = {
   coldstore: 1,
   motorpool: 5,
   machineworks: 0,
+  oreworks: 0,
+  coastport: 0,
 } as const;
 
 /** The dam's face: the cliff from the crest down to the lakebed, drawn as concrete. */
@@ -231,11 +233,13 @@ const inPoi = (p: PoiId, line: readonly P[]): P[] => line.map(([x, z]) => [x + P
 
 /** Basins: the POIs and the districts. Each holds everything built there, and is written in its area's frame. */
 const BASINS: Open[] = [
-  { name: "車両基地", line: inPoi("motorpool", [[-20, 0], [20, 0]]), half: 58, level: LEVEL.motorpool, ground: "concrete" },
+  { name: "車両基地", line: inPoi("motorpool", [[-20, 0], [20, 0]]), half: 104, level: LEVEL.motorpool, ground: "concrete" },
   { name: "機械工場", line: inPoi("machineworks", [[-20, 0], [20, 0]]), half: 58, level: LEVEL.machineworks, ground: "paved" },
-  // The western peninsula: workers' homes and the lookout share a low, walkable coast.
-  { name: "西の集落", line: [[-765, 70], [-695, 70]], half: 40, level: LEVEL.shore, ground: "scrub" },
-  { name: "西の見張り所", line: [[-830, 235], [-810, 235]], half: 26, level: LEVEL.shore, ground: "scrub" },
+  // A working ore port, at one level: the processing hall and workers' quarter,
+  // the freight road, then the shiploader's apron. The land's coast still bounds it.
+  { name: "西部選鉱所", line: inPoi("oreworks", [[-35, -15], [35, -15]]), half: 85, level: LEVEL.oreworks, ground: "paved" },
+  { name: "鉱石積出港", line: inPoi("coastport", [[-30, 0], [40, 0]]), half: 70, level: LEVEL.coastport, ground: "concrete" },
+  { name: "積出桟橋", line: inPoi("coastport", [[-67, 30], [-67, 115]]), half: 20, level: LEVEL.coastport, ground: "concrete" },
   // The dune coast's works: a floor some 220 m across, its yards between the sheds flat, dunes
   // up to 13 m high piled against its east side, its south side and round the silos.
   {
@@ -329,7 +333,7 @@ const ROADS: Open[] = [
   { name: "工業地帯の連絡路", line: [[760, 70], [750, 190], [720, 300], [720, 360]], half: 6, level: [5, 3, 0, 0], atPoints: true, ground: "concrete" },
   { name: "機械工場の補給路", line: [[720, 360], [600, 410], [400, 440], [180, 465]], half: 6, level: [0, 0, 2, 2], atPoints: true, ground: "concrete" },
   { name: "西の半島の道", line: [[-470, 200], [-570, 200], [-650, 170], [-730, 170], [-730, 70]], half: 6, level: LEVEL.shore, ground: "scrub" },
-  { name: "西の海岸道", line: [[-730, 170], [-790, 190], [-820, 235]], half: 5, level: LEVEL.shore, ground: "scrub" },
+  { name: "西の海岸道", line: [[-730, 158], [-730, 170], [-760, 188]], half: 7, level: LEVEL.shore, ground: "concrete" },
   // Into the lakebed: from the south shore, from the plateau and from the east shore.
   { name: "湖への坂", line: inArea("heart", [[0, 152], [0, 108], [0, 98]]), half: 5, level: [LEVEL.shore, LEVEL.lakebed, LEVEL.lakebed], atPoints: true, walled: true, ground: "mud" },
   { name: "湖の西坂", line: inArea("heart", [[-105, -5], [-78, 25], [-68, 25]]), half: 5, level: [LEVEL.shore, LEVEL.lakebed, LEVEL.lakebed], atPoints: true, walled: true, ground: "mud" },
@@ -471,6 +475,9 @@ export const LANDS: Land[] = [
   { name: "東部工業地帯", x: 630, z: 230, radius: (a) => 350 * 390 / hypot2(390 * Math.cos(a), 350 * Math.sin(a)) + 7 * Math.sin(5 * a + 1.2) + 4 * Math.sin(9 * a), max: 401 },
   // A broad peninsula overlaps the quarry's west coast, so the new land is reached on foot.
   { name: "西の半島", x: -600, z: 90, radius: (a) => 350 * 320 / hypot2(320 * Math.cos(a), 350 * Math.sin(a)) + 8 * Math.sin(5 * a + 0.8) + 4 * Math.sin(9 * a), max: 362 },
+  // The export pier's reclaimed breakwater joins the coast; its walkable apron cannot
+  // stand past the coast collision boundary, even when its deck is above the water.
+  { name: "鉱石港の防波堤", x: -827, z: 337, radius: (a) => 32 * 88 / hypot2(88 * Math.cos(a), 32 * Math.sin(a)), max: 88 },
   // The reservoir's island: wider east to west, 1100 by 820 m.
   { name: "島", x: 0, z: 80, radius: (a) => (560 * 410) / hypot2(410 * Math.cos(a), 560 * Math.sin(a)) + 13.5 * Math.sin(3 * a + 1.1) + 8.4 * Math.sin(7 * a + 2.3) + 5 * Math.sin(13 * a + 0.4), max: 588 },
   // The dune coast, bulging south of the island round the supply depot: wider east to west.

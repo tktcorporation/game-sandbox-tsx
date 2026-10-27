@@ -8,7 +8,7 @@ import type { PoiId, RegionId } from "./map";
 export const TICK = 1 / 60;
 export const DEG = Math.PI / 180;
 /** Capturable nodes; the titan's pad is not one. Keep map.ts's NODES in step. */
-export const NODE_COUNT = 13;
+export const NODE_COUNT = 15;
 
 export const WORLD = {
   /**
@@ -497,7 +497,7 @@ export const CONQUEST = {
   net: {
     every: [1500, 1350, 1200],
     edge: 3,
-    /** What each node works, of a node's share: the island's thirteen nodes work as its first six did. */
+    /** What each node works, of a node's share: the island's nodes work as its first six did. */
     node: 6 / NODE_COUNT,
     /** Of `edge`, the north shore's work: none while the player holds the node that opens `shore` (`UNLOCKS`). */
     shore: 1,
@@ -591,7 +591,7 @@ export interface StrengthLevel {
  * `REINFORCE`, `RAIDERS`, `PARTY` and `PACKS`. Lower levels give more time and fewer hunters.
  */
 export const STRENGTH = {
-  // Preserve the pre-expansion occupation fractions; thirteen nodes give thresholds 6 and 11.
+  // Preserve the pre-expansion occupation fractions; fifteen nodes give thresholds 7 and 13.
   byHeld: Array.from({ length: NODE_COUNT + 1 }, (_, held) => held >= Math.ceil(NODE_COUNT * 9 / 11) ? 2 : held >= Math.ceil(NODE_COUNT * 5 / 11) ? 1 : 0),
   levels: [
     { reinforce: { first: 480, every: 360 }, raiders: 1020, parties: { reservoir: 1, harbor: 1 }, packs: { reservoir: 1, harbor: 1 } },

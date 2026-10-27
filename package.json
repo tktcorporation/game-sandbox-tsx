@@ -13,6 +13,7 @@
     "shots": "node scripts/shots.mjs",
     "sim:ringfall": "tsx scripts/ringfall-sim.ts",
     "shots:ringfall": "node scripts/ringfall-shots.mjs",
+    "shots:ringfall:expansion": "node scripts/ringfall-shots-expansion.mjs",
     "sfx:ringfall": "node scripts/ringfall-sfx.mjs"
   },
   "devDependencies": {

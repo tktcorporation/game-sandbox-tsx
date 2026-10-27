@@ -14,6 +14,7 @@ import { chromium } from "playwright-core";
 import { movementShots } from "./ringfall-shots-movement.mjs";
 import { bagShots } from "./ringfall-shots-bag.mjs";
 import { upgradeShots } from "./ringfall-shots-upgrades.mjs";
+import { expansionShots } from "./ringfall-shots-expansion.mjs";
 
 const root = "dist/client";
 const types = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml" };
@@ -857,11 +858,18 @@ const harborTour = [
   ["tour-93-ring-wreck-east-shore", 400, 1.7, 125, 1.57, 0.06],
   ["tour-94-ring-wreck-harbor", -240, 1.7, -490, 0, 0.08],
   ["tour-98-east-industry", 550, 70, 460, 0.6, -0.3],
-  ["tour-99-motorpool", ...at("motorpool", -48, 1.7, 0), 1.57, 0.05],
+  ["tour-99-motorpool", ...at("motorpool", -110, 1.7, 0), 1.57, 0.15],
   ["tour-100-machineworks", ...at("machineworks", 0, 1.7, 38), 0, 0.05],
+  ["tour-101-carrier-deck", ...at("motorpool", 33, 10.7, -27), -1.2, 0.68],
+  ["tour-102-carrier-underpass", ...at("motorpool", -10, 1.7, -40), 1.57, 0],
+  ["tour-103-west-crane-walk", ...at("oreworks", -50, 19.7, -40), 1.57, 0, true],
+  ["tour-104-west-shiploader", ...at("coastport", -25, 1.7, 45), -0.7, 0.35],
+  ["tour-105-west-loader-cab", ...at("coastport", -67, 22.1, 88), 0, -0.08, true],
+  ["tour-106-west-weighbridge", -560, 1.7, 200, -1.57, 0.10],
+  ["tour-107-east-inspection", 540, 1.7, 22, 1.15, 0.10],
   ["tour-95-west-peninsula", -590, 65, 270, -0.85, -0.35],
-  ["tour-96-west-settlement", ...at("西の集落", 0, 1.7, 38), 0, 0.03],
-  ["tour-97-west-lookout", ...at("西の見張り所", 38, 1.7, 30), -0.9, 0.1],
+  ["tour-96-west-oreworks", ...at("oreworks", 92, 1.7, 8), 0, 0.03],
+  ["tour-97-west-oreport", ...at("coastport", 87, 1.7, 0), -0.9, 0.1],
 ];
 for (const [name, x, dy, z, yaw, pitch, abs] of harborTour) {
   const y = abs ? dy : (await page.evaluate(([x, z]) => window.ringfallTerrain(x, z), [x, z])) + dy;
@@ -1097,7 +1105,7 @@ for (let i = 0; i < 25 * 60 * 10; i++) {
     // A vault, from just in front of it: the locked crate reads apart from the supply bins.
     // The quarry's stands on an open terrace, so the camera has a clear view of it.
     const v = s.vaults.find((b) => b.poi === 1);
-    if (s.vaults.length !== 14 || !v) errors.push(`vaults: ${s.vaults.length} in the world`);
+    if (s.vaults.length !== 16 || !v) errors.push(`vaults: ${s.vaults.length} in the world`);
     else {
       await page.evaluate((b) => window.ringfallCamera(b.x + 0.4, b.y + 1.6, b.z + 2.6, 0.12, -0.42), v);
       await shot("26-vault");
@@ -2409,6 +2417,8 @@ await bagShots({ browser, port, out, errors });
 lap("bag");
 await upgradeShots({ browser, port, out, errors });
 lap("upgrades");
+await expansionShots({ browser, port, out, errors });
+lap("expansion");
 await browser.close();
 server.close();
 if (errors.length) {

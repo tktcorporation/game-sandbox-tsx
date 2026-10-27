@@ -14,7 +14,7 @@ there. Read the game's brief before changing anything visual. A new page needs a
 
 ## RINGFALL
 
-A single-player territorial PvE FPS against robots: take and defend thirteen nodes, upgrade equipment
+A single-player territorial PvE FPS against robots: take and defend fifteen nodes, upgrade equipment
 and the factory, and push the front with friendly squads. Ownership and equipment carry across days;
 the battle continues after the player returns or is wiped out. There is no island-escape ending.
 Returning from a raid brings supplies home for the continuing campaign. Walk in from the edge of
@@ -24,12 +24,13 @@ documents and old balance tables are history. Judge tuning primarily by territor
 movement, gear-tier access and factory support across days. Use individual raid survival and haul
 as supporting diagnostics, not the campaign's win condition. See the evaluation order at the start
 of `docs/ringfall/balance.md`. Do not restore an escape craft, ending, or loot-only progression.
-The reservoir (south, +z) has eight POIs and three ways off; the harbor (north, beyond a mountain
+The reservoir (south, +z) has ten POIs and three ways off; the harbor (north, beyond a mountain
 belt) has six POIs and a boat. A pass road from the landing pad and a railway (an embankment from
 the east mesa, a bridge over a gorge, a viaduct into the harbor) join them, so a raid may walk from
 one to the other. The world bounds are 2000 by 1880 m (`WORLD` in `config.ts`), including a western
-peninsula connected to the quarry's coast with a settlement, a lookout and five bins, and one new
-eastern industrial district with two capturable nodes (machineworks and motorpool); the reservoir's island
+ore-export peninsula connected to the quarry: a 120 m processing hall with workers' housing
+and a shiploader with its coastal control tower (both capturable), and one new
+eastern industrial district with two capturable nodes (machineworks and motorpool; motorpool holds a roughly 100 m orbital-segment transporter (90 m chassis)); the reservoir's island
 (about 1120 by 820 m) with the dune coast bulging south of it, a mountain belt at z about -350, and
 the harbor's land (radius about 425 m). The reservoir is built at the scale of real places, its
 neighbouring POIs and districts 250 to 400 m apart; the harbor's POIs stand 270 to 330 m apart;
@@ -126,7 +127,7 @@ contracts (`meta/story.ts`) follow one at a time: the one under way lays its rec
 only with that POI's key; keys drop from the bins of the POI named by its `keyFrom` (`VAULT`).
 POIs have a stable `id` (`PoiId` in `map.ts`); saves, quests, `keyFrom` and `EXTRA_BINS` refer to a
 POI by it, never by its place in `POIS` (the run's state may index `POIS` internally). The profile
-is versioned (`Profile.v`, which is 23), and `parseProfile()` moves older saves forward (a save from
+is versioned (`Profile.v`, which is 26), and `parseProfile()` moves older saves forward (a save from
 before the ways in starts at its region's first way in; a save from before ways in were learned
 knows them all; a save from before v12 drops its explored map, since `cellOf()` follows `WORLD`,
 which then grew wider; a save from before v13 starts on the day after its raids with every POI
@@ -137,7 +138,8 @@ loadout; a save from before v22 has its POIs freed or thin the player's and the 
 and drops the network, its pressure, the outposts' standing and the battles' points; a save from
 before v23 gains the starter weapons; before v24 its explored map is moved by world position
 into the grid widened for the western peninsula; before v25 its old exploration keeps its position
-in the eastern expansion and the two new nodes start enemy-held) and moves its
+in the eastern expansion and the two new nodes start enemy-held; before v26 the two western port nodes start
+enemy-held, with v25 exploration unchanged) and moves its
 start to one it may choose (`allowedStart()`).
 Each island day has at most one event (`EVENTS` in `config.ts`, `IslandEvent` in `sim/island.ts`):
 `advanceDay()` turns yesterday's forecast into today's and draws tomorrow's from `Profile.seed` and
@@ -210,8 +212,8 @@ with no contract plays at 0 (`raidThreat()`). 0 is the island's raid at the enem
 higher scales its times and plates (`raidClock()`, `netPlated()`), the range robots answer shots
 from afar, the mod parts' odds, and the contract's pay (`threatPay()`). `Profile.freedAt` keeps
 each POI's best 強度 for the map.
-The front (`docs/ringfall/island-v2.md`): the thirteen freeable POIs are the nodes (`NODES` in
-`map.ts`, linked along the roads by the eighteen `FRONT_LINKS`, in loops, each with its depth `TIER`); the
+The front (`docs/ringfall/island-v2.md`): the fifteen freeable POIs are the nodes (`NODES` in
+`map.ts`, linked along the roads by the twenty-one `FRONT_LINKS`, in loops, each with its depth `TIER`); the
 outposts are places to loot with an enemy guard, no nodes, and the rogues hold no ground.
 `sim/front.ts` holds the rules. A node next to the player's ground (the camp and the player's
 nodes) is on the front; only its core, a pillar near its middle, can be captured (`FRONT` in
@@ -267,7 +269,7 @@ player left, so the results tell the battle after leaving from the raid.
 `view/battle.ts` draws the battle from afar: the landing craft and their beams, the battle's
 robots past `thingsFar` and the squads that are numbers out to the fog as instanced figures
 (`columnPoints()`), and the gate's and the depots' light as the factory's squads come out.
-The long-term goal is how many of the thirteen nodes the player holds (`view/row.ts` draws them as
+The long-term goal is how many of the fifteen nodes the player holds (`view/row.ts` draws them as
 one tug-of-war bar, blue from the left and red from the right, a segment a node, at the title, the
 HUD's top, the camp's line, the map table and the results; its boundary slides when a node changes
 hands and flickers while one is fought over); there is no ending. The hideout is the mid-term one: five modules built level by level from specific
@@ -297,7 +299,15 @@ npm run sim:ringfall     # gate 2: bots of three skills play whole raids headles
                          # (RINGFALL_SIM_JOBS=n to set, 1 = in turn)
 npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir raid to the end, a harbor raid
                          # to its first fight, a tour of both); screenshots in shots/ringfall/
+npm run shots:ringfall:expansion # the port/carrier subset: four core captures, save/reload, landmark
+                                # views and mobile map; also included at the end of the full shots gate
 ```
+
+New areas need a specific former job, a large distinctive structure with walkable interiors or
+working platforms, ownership tied to the front, and a reason to explore and hold them. Build
+their approach too: landmarks seen from the route, useful stops and cover. Enlarging a generic
+compound and scattering crates through it is not an area theme. Keep hand-designed yards free
+of random clutter (`AUTHORED_YARDS`); verify the actual walking routes (`checkExpansionPaths`).
 
 - `src/ringfall/sim/` is the game: pure TypeScript, metres and seconds, `step(state, input, prevCrouch)`
   per 1/60 s tick. Aim assist (slowdown, pull, the hit cone) lives here, so bots and people get the
