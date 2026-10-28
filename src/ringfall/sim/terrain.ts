@@ -558,7 +558,6 @@ const CRAGS: { name: string; line: readonly P[]; half: number }[] = [
   { name: "北の岩", line: [[204, -825], [212, -833]], half: 12 },
   { name: "西の道の岩", line: [[-233, -630], [-223, -638]], half: 12 },
   { name: "南の野の岩", line: [[-206, -476], [-194, -486]], half: 14 },
-  { name: "北の岩山", line: [[-128, -1076], [-112, -1086]], half: 16 },
   { name: "東の岩塔", line: [[296, -996], [304, -1006]], half: 12 },
   // Cliffs over the far side of the channel: the water stays a waterfront along the quay.
   { name: "水路の崖", line: inArea("bay", [[76, -598], [92, -614], [190, -614]]), half: 13 },
@@ -893,6 +892,8 @@ let field: Float32Array | null = null;
 let steep: Uint8Array | null = null;
 let floors: Float32Array | null = null;
 let shapes: Uint8Array | null = null;
+/** The level the ground at each grid point was built to: a hand-built thing's, or the floor's, with a crater's rim on it. */
+let bases: Float32Array | null = null;
 
 
 export interface FlatShape {
@@ -902,6 +903,8 @@ export interface FlatShape {
   z1: number;
   /** The level it stands on. Left out, the ground under it follows the walkable floor, ramps included. */
   y?: number;
+  /** Ground built to be walked at its level however far over the floor round it (an outpost's yard), not high ground. */
+  walked?: true;
 }
 
 /**
@@ -918,6 +921,8 @@ export function buildTerrain(flat: FlatShape[]) {
   const mid = new Float32Array(NX * NZ);
   // And the shape there, so that a floor rising over dunes is followed rather than terraced.
   const midShape = new Int32Array(NX * NZ);
+  // And whether that shape is ground to walk (`FlatShape.walked`).
+  const walked = new Uint8Array(NX * NZ);
   for (const b of flat) {
     const y = b.y ?? NaN;
     const ml = lowest((b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2);
@@ -934,6 +939,7 @@ export function buildTerrain(flat: FlatShape[]) {
         at[j * NX + i] = y;
         mid[j * NX + i] = m;
         midShape[j * NX + i] = ml.shape;
+        walked[j * NX + i] = b.walked ? 1 : 0;
       }
   }
   const D = RES;
@@ -944,6 +950,7 @@ export function buildTerrain(flat: FlatShape[]) {
       at[k] = at[from];
       mid[k] = mid[from];
       midShape[k] = midShape[from];
+      walked[k] = walked[from];
     }
   };
   for (let j = 0; j < NZ; j++)
@@ -965,6 +972,7 @@ export function buildTerrain(flat: FlatShape[]) {
   field = new Float32Array(NX * NZ);
   floors = new Float32Array(NX * NZ);
   shapes = new Uint8Array(NX * NZ);
+  bases = new Float32Array(NX * NZ);
   for (let j = 0; j < NZ; j++)
     for (let i = 0; i < NX; i++) {
       const x = WORLD.x0 + i * RES;
@@ -984,7 +992,9 @@ export function buildTerrain(flat: FlatShape[]) {
       let shelf = -Infinity;
       for (const n of bucketAt(x, z).shelves) shelf = Math.max(shelf, shelfAt(n, x, z));
       const base = level + (natural(x, z, low) - level) * smooth(3, 10, dd);
-      field[k] = (shelf > base ? base + (shelf - base) * smooth(1, 2, dd) : base) + rim(x, z) + crater(x, z);
+      const thrown = crater(x, z);
+      field[k] = (shelf > base ? base + (shelf - base) * smooth(1, 2, dd) : base) + rim(x, z) + thrown;
+      bases[k] = (walked[k] ? level + (floors[k] - level) * smooth(3, 10, dd) : floors[k]) + thrown;
     }
   steep = new Uint8Array(NX * NZ);
   for (let j = 1; j < NZ - 1; j++)
@@ -1124,7 +1134,19 @@ export function surfaceAt(x: number, z: number): string {
 }
 
 /** True on high ground or a cliff: anywhere well above the walkable floor nearby. */
-export const highGround = (x: number, z: number) => terrainHeight(x, z) > floorLevel(x, z) + 2;
+/**
+ * The level the ground at (x, z) was built to: the floor's (`floorLevel`), or a yard's built to be
+ * walked (`FlatShape.walked`) blending back to the floor round it, with a crater's rim thrown up on it.
+ */
+export function baseLevel(x: number, z: number): number {
+  const i = Math.round((x - WORLD.x0) / RES);
+  const j = Math.round((z - WORLD.z0) / RES);
+  if (!bases || i < 0 || j < 0 || i >= NX || j >= NZ) return floorLevel(x, z);
+  return bases[j * NX + i];
+}
+
+/** Ground well over the level it was built to: the crags, the coast's rim, the land's edges. A yard built to be walked over the floor round it, or a crater's rim, is not. */
+export const highGround = (x: number, z: number) => terrainHeight(x, z) > baseLevel(x, z) + 2;
 
 /** True anywhere outside the walkable shapes, their cliffs included. */
 export function offLowGround(x: number, z: number): boolean {

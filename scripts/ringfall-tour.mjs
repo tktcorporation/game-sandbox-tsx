@@ -138,6 +138,12 @@ export const HARBOR_TOUR = [
   ["tour-99-ring-node-hall", "環の結節点", -36, -2.43 + 11 + 1.7, -14, 1.2, 0, true],
   ["tour-100-ring-node-roof", "環の結節点", 20, -2.43 + 22 + 1.7, -40, -2.68, -0.22, true],
   ["tour-101-ring-node-breach", "環の結節点", 72, 1.7, -52, -2.16, 0.18],
+  ["tour-102-town-street", "港町", -27, 1.7, 66, 0, 0.1],
+  ["tour-103-town-viaduct", "港町", -20, -0.67 + 9 + 1.7, -19, Math.PI / 2, 0.02, true],
+  ["tour-104-town-tower", "港町", -60, -0.67 + 12 * 3.4 + 1.7, -46, Math.PI / 2 + 0.25, -0.12, true],
+  ["tour-105-town-far", "港町", -80, 1.7, 110, 0.63, 0.1],
+  ["tour-106-town-spur", "港町", 40, -0.67 + 9 + 1.7, 0, Math.PI / 2, -0.04, true],
+  ["tour-107-town-broken", "港町", 30, 1.7, 64, 1.02, 0.22],
 ];
 
 /** A tour camera placed in the world: [name, x, dy, z, yaw, pitch, abs], from `frames` (window.ringfallFrames()). */

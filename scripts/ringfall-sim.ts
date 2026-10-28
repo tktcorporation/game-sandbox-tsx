@@ -26,7 +26,7 @@ import { routeBefore, useRoutes, worldKey } from "../src/ringfall/sim/routes";
 import { findPath } from "../src/ringfall/sim/nav";
 import { fieldTo, fieldsBuilt, onMainGround, routeLength } from "../src/ringfall/sim/hunt";
 import { collide, dist2d, groundAt, inWorld, los, solidAt } from "../src/ringfall/sim/geom";
-import { checkTerrainIndex, floorLevel, highGround, landAt, LEVEL, offLowGround, offshore, steepAt, surfaceAt, terrainHeight } from "../src/ringfall/sim/terrain";
+import { baseLevel, checkTerrainIndex, floorLevel, highGround, landAt, LEVEL, offLowGround, offshore, steepAt, surfaceAt, terrainHeight } from "../src/ringfall/sim/terrain";
 import { SKILLS } from "../src/ringfall/sim/bot";
 import { callLeft, cellOf, decodeSeen, encodeSeen, starterKit, idleInput, newRun, type Enemy, type GameEvent, type State } from "../src/ringfall/sim/state";
 import { step } from "../src/ringfall/sim/step";
@@ -170,8 +170,8 @@ const PAD = poiIndex("pad");
 /** Static layout check: every authored point must be standable, not inside a wall. */
 function checkLayout(): string[] {
   const bad: string[] = [];
-  // Without a height a point stands on the walkable floor of its area.
-  const point = (what: string, x: number, z: number, y = floorLevel(x, z)) => {
+  // Without a height a point stands on the ground its area was built to (a yard's, a crater's rim).
+  const point = (what: string, x: number, z: number, y = baseLevel(x, z)) => {
     const g = groundAt(x, z, 0.3, y + 0.3);
     if (Math.abs(g - y) > 0.3) bad.push(`${what} at ${x},${z} expects floor ${y}, finds ${g.toFixed(2)}`);
     for (const h of [0.3, 1.0, 1.6]) if (solidAt(x, g + h, z)) bad.push(`${what} at ${x},${z} is inside a box (height ${h})`);
