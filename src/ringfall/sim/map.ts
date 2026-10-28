@@ -2,7 +2,7 @@ import { FRONT, VAULT, WORLD, ZIP, type EnemyKind, type HealKind, type Rarity, t
 import { AREA, inArea, POI_AT, type AreaId } from "./areas";
 import { LENGTHS, offStreet, STREETS } from "./streets";
 import { layZips, type ZipLine } from "./ziplayout";
-import { buildTerrain, type Carve, type FlatShape, floorLevel, highGround, LEVEL, offshore, roadLine, steepAt, surfaceAt, terrainHeight } from "./terrain";
+import { buildTerrain, type Carve, CRATERS, type FlatShape, floorLevel, highGround, LEVEL, offshore, roadLine, steepAt, surfaceAt, terrainHeight } from "./terrain";
 import { hypot2 } from "./hypot";
 
 /**
@@ -1311,219 +1311,212 @@ function substationYard(): Box[] {
 }
 
 /**
- * A length of the ring's habitat deck that came down whole on the dry bay north of the wreck, in
- * its own frame round (0, 0) on ground at 0: three bays `bay` metres long end to end along x,
- * `2 * half` metres across, broken where they join and settled crooked, each a storey (`sag`)
- * higher than the one west of it. Built to be run through rather than searched room by room:
- * each bay is a hall on deck 0, drawn in at the keel, with galleries `gallery` deep along both
- * sides a storey up and the middle open to the roof, a bridge across it at the bay's middle, and
- * a flight up from the hall to each gallery. As each bay stands a storey over the last, a door
- * through the bulkhead at each gallery leads from the higher bay's hall onto the lower bay's
- * gallery, and from the higher bay's gallery out onto the lower bay's roof, so a run climbs the
- * section from west to east; the roof is torn open over each hall twice, dropped through. Its ends are broken open, the west bay's hall walked into off the
- * ground and the east bay's stood on rubble; the halls open wide to the bay on the south, the
- * middle bay's south side torn open over both decks (`gash`); the galleries look out through wide
- * ports; a fallen fin is walked up into the west bay's north gallery and a spoke leans up to the
- * middle bay's roof.
+ * A node of the orbital ring, where its lengths joined and its spokes met: a drum `r` metres round
+ * that came down on the dry bay north of the wreck and stands sunk in its crater (`CRATERS`), in its
+ * own frame round (0, 0) on ground at 0. Built as one place to break into, not a building to search:
+ * the broken roots of three spokes stand out from it west, south and east, and each is a corridor
+ * `corridor` either side of its middle that runs in through the drum's machinery to the core, a hall
+ * `core` round open to the sky with the node's power column still standing in its middle, lit
+ * (`GLOWS`). The machinery between the corridors is a solid mass up to `deck`, its top the floor of
+ * the ring hall that runs round the drum under its roof, bridged over each corridor. A flight
+ * climbs from the core's floor to the hall on its north-west and on its south-east; a ring round
+ * the column at the hall's height is reached by a bridge from the north and from each side; two
+ * flights climb from the hall to the roof. The roof is torn open over the hall in two places,
+ * ports look out of the drum all round from the hall, and a heap of rubble against the drum's
+ * north side climbs from the crater's floor to the roof. Where it hit the ground first, on its
+ * north-east, the drum is broken open from above the hall's floor to its crown, and the rubble
+ * there is walked up into the hall. Its roof is ribbed out from the core, and machinery housings
+ * stand on it.
  */
-const SECTION = { bay: 36, half: 15, sag: WORKS.storey, decks: 2, gallery: 5.5, gash: 10 } as const;
-/** A spot in bay `k` (0 west), `u` metres from its west end, `z` across, on deck `d` (2 is the roof): its height over the ground under the section's middle. */
-const sectionSpot = (k: number, u: number, z: number, d: number) => ({ x: -1.5 * SECTION.bay + k * SECTION.bay + u, z, y: k * SECTION.sag + d * WORKS.storey });
-function ringSection(): Box[] {
-  const { bay, half, sag, decks, gallery, gash } = SECTION;
-  const { storey: S, doorHead } = WORKS;
-  const HULL = 0.6;
-  const SLAB = 0.3;
-  const KEEL = 2;
-  // Grey steel, unlike the pale composite of the ring's girders and the tether: the habitat's own
-  // plate, and the darkest big shape on the bay's sand, seen from across the harbor.
-  const HULL_TINT = 2;
-  const inner = half - HULL;
-  // The galleries' open edges, and where the doors through the bulkheads are (over the galleries).
-  const edge = inner - gallery;
-  const door: [number, number] = [edge + 0.4, inner - KEEL - 0.2];
+const NODE = { r: 50, wall: 1.5, h: 22, core: 18, deck: 11, corridor: 4, column: 2.5, columnTop: 48 } as const;
+/** Where the node lands: the middle of its drum and of its crater (`CRATERS`), in the world. */
+const NODE_AT = (() => {
+  const c = CRATERS.find((q) => q.name === "環の結節点");
+  if (!c) throw new Error("no crater for the ring's node");
+  return { x: c.x, z: c.z };
+})();
+function ringNode(): Box[] {
+  const { r, wall, h, core, deck, corridor: c, column, columnTop } = NODE;
+  const SKIN = 5;
+  const RIB = 6;
+  const SCORCH = 7;
   const out: Box[] = [];
-  /** A wall along x (or z) at `at` across, from `a` to `b` along, between heights y0 and y1, with holes [from, to along, from, to height]. */
-  const holed = (alongX: boolean, at: number, thick: number, a: number, b: number, y0: number, y1: number, holes: [number, number, number, number][], kind: BoxKind, tint: number) => {
-    const piece = (p: number, q: number, lo: number, hi: number) => {
-      if (q - p <= 0.01 || hi - lo <= 0.01) return;
-      out.push(alongX ? rect(p, at - thick / 2, q, at + thick / 2, lo, hi, kind, tint) : rect(at - thick / 2, p, at + thick / 2, q, lo, hi, kind, tint));
+  /** A space taken out of what `band()` lays: x0, z0, x1, z1, from y0 up to y1. */
+  type Cut = [number, number, number, number, number, number];
+  // The rows the round shapes are laid in, along z: the corridors' own width through the middle,
+  // so the west and east corridors take whole rows, then rows of 1.5 m out to the rim.
+  const rows: [number, number][] = [[-c, c]];
+  for (let z = c; z < r; z += 1.5) rows.push([z, Math.min(r, z + 1.5)], [-Math.min(r, z + 1.5), -z]);
+  const chord = (rad: number, z: number) => (z < rad ? Math.sqrt(rad * rad - z * z) : 0);
+  const near = ([za, zb]: [number, number]) => (za <= 0 && zb >= 0 ? 0 : Math.min(Math.abs(za), Math.abs(zb)));
+  /** Lays x a..b by z za..zb from y0 to y1, less the cuts reaching into it. */
+  const carve = (a: number, b: number, za: number, zb: number, y0: number, y1: number, kind: BoxKind, tint: number, cuts: Cut[]) => {
+    const hit = cuts.filter(([x0, z0, x1, z1]) => x0 < b && x1 > a && z0 < zb && z1 > za);
+    const xs = [...new Set([a, b, ...hit.flatMap(([x0, , x1]) => [x0, x1]).filter((x) => x > a && x < b)])].sort((p, q) => p - q);
+    for (let i = 0; i + 1 < xs.length; i++) {
+      const [p, q] = [xs[i], xs[i + 1]];
+      const m = (p + q) / 2;
+      const gaps = hit
+        .filter(([x0, , x1]) => x0 < m && x1 > m)
+        .map(([, , , , g0, g1]): [number, number] => [Math.max(y0, g0), Math.min(y1, g1)])
+        .filter(([g0, g1]) => g1 > g0)
+        .sort((u, v) => u[0] - v[0]);
+      let y = y0;
+      for (const [g0, g1] of gaps) {
+        if (g0 > y) out.push(rect(p, za, q, zb, y, g0, kind, tint));
+        y = Math.max(y, g1);
+      }
+      if (y1 > y) out.push(rect(p, za, q, zb, y, y1, kind, tint));
+    }
+  };
+  /**
+   * A round band from radius r0 to r1 between heights y0 and y1, less `cuts`. A thin band (`thin`)
+   * reaches in to where it is narrowest across each row, so it shows no crack between rows; a thick
+   * one keeps clear of the round within r0 everywhere.
+   */
+  const band = (r0: number, r1: number, y0: number, y1: number, kind: BoxKind, tint: number, cuts: Cut[], thin = false) => {
+    for (const row of rows) {
+      const xo = chord(r1, near(row));
+      if (xo <= 0) continue;
+      const far = Math.max(Math.abs(row[0]), Math.abs(row[1]));
+      const xi = chord(r0, thin ? far : near(row));
+      for (const [a, b] of xi > 0 ? [[-xo, -xi], [xi, xo]] : [[-xo, xo]]) carve(a, b, row[0], row[1], y0, y1, kind, tint, cuts);
+    }
+  };
+  /** How far from the middle along z the hall's floor starts over x0..x1 on the north (-1) or south (1): the core's edge as `band()` lays it. */
+  const deckEdge = (x0: number, x1: number, side: -1 | 1) => {
+    const inside = Math.min(Math.abs(x0), Math.abs(x1));
+    for (const row of rows.filter((q) => Math.sign(q[0] + q[1]) === side).sort((p, q) => near(p) - near(q))) if (chord(core, near(row)) <= inside) return side * near(row);
+    return side * core;
+  };
+  // The corridors, through the machinery and out through the wall, as high as the hall's floor.
+  const corridors: Cut[] = [
+    [-r - 1, -c, 0, c, -2, deck],
+    [-c, 0, c, r + 1, -2, deck],
+    [0, -c, r + 1, c, -2, deck],
+  ];
+  // Ports all round at the hall's height, between the corridors.
+  const ports: Cut[] = [];
+  for (let k = 0; k < 12; k++) {
+    const a = ((15 + 30 * k) * Math.PI) / 180;
+    const [x, z] = [(r - wall / 2) * Math.cos(a), (r - wall / 2) * Math.sin(a)];
+    ports.push([x - 2.2, z - 2.2, x + 2.2, z + 2.2, deck + 2, deck + 5]);
+  }
+  // The two flights from the hall to the roof, against the drum's wall: their stairwells.
+  const flight = stepsFor(h - deck) * STEP_DEPTH;
+  const up: { x: number; z: number; away: Side }[] = [
+    { x: 0, z: -44.5, away: "s" },
+    { x: -26, z: 40, away: "n" },
+  ];
+  const stairwells: Cut[] = up.map((f) => (f.away === "s" ? [f.x - 1.5, f.z, f.x + 1.5, f.z + flight + 0.5, h - 1, h + 3] : [f.x - 1.5, f.z - flight - 0.5, f.x + 1.5, f.z, h - 1, h + 3]));
+  // The roof torn open over the hall in two places.
+  const tears: Cut[] = [
+    [-34, -32, -22, -22, h - 1, h + 3],
+    [20, 18, 33, 27, h - 1, h + 3],
+  ];
+  // The breach on the north-east: wall, crown and the roof's edge gone from a little over the
+  // ground to the top, the hall's floor left, rubble up to it from outside.
+  const breach: Cut = [33, -40, r + 2, -24, 6, h + 3];
+  const breachRoof: Cut = [33, -38, r + 2, -24, h - 1, h + 3];
+  // Where the rubble heap comes up against the drum's north side: no crown in its way.
+  const heap = { x: -20, w: 6 };
+  let heapReach: number = c;
+  while (chord(r, heapReach) >= Math.abs(heap.x)) heapReach += 1.5;
+  const heapTop = -heapReach;
+
+  // The drum's wall, its rib round it at the hall's floor, its crown round the roof's edge.
+  band(r - wall, r, -1, h, "steel", SKIN, [...corridors, ...ports, breach], true);
+  band(r, r + 0.5, deck - 0.6, deck, "steel", RIB, [...corridors, breach], true);
+  band(r - 1.2, r + 0.3, h, h + 1.2, "steel", RIB, [[heap.x - heap.w / 2 - 0.5, -r - 2, heap.x + heap.w / 2 + 0.5, heapTop + 3, h - 1, h + 3], breach], true);
+  // The machinery, cut by the corridors: the hall's floor.
+  band(core, r - wall + 0.05, -1, deck, "steel", 2, corridors);
+  // The roof over the hall, open over the core.
+  band(core, r, h - 0.4, h, "steel", SKIN, [...stairwells, ...tears, breachRoof]);
+  for (const [x0, z0, x1, z1] of [...tears, breachRoof]) out.push(rect(x0, z0, x1, z0 + 0.4, h - 0.7, h, "steel", SCORCH), rect(x0, z1 - 0.4, x1, z1, h - 0.7, h, "steel", SCORCH));
+  // Ribs out from the core across the roof, west, east and south (the north's stairwell is where
+  // its would run), and housings standing on it.
+  out.push(rect(-r + 1.2, -0.75, -core, 0.75, h, h + 0.9, "steel", RIB), rect(core, -0.75, r - 1.2, 0.75, h, h + 0.9, "steel", RIB), rect(-0.75, core, 0.75, r - 1.2, h, h + 0.9, "steel", RIB));
+  for (const d of [60, 150, 240, 330]) {
+    const a = (d * Math.PI) / 180;
+    out.push(box(40 * Math.cos(a), 40 * Math.sin(a), 4, 3, h + 2.2, "steel", 2, h));
+  }
+  // Rubble up through the breach onto the hall's floor, and the scorch round the break.
+  out.push(...stairs(36, -32, "e", 4, deck).map((q) => ({ ...q, kind: "rock" as BoxKind, tint: q.h > deck / 2 ? 1 : 0 })));
+  for (const z of [-40, -24]) out.push(rect(33, z - 0.3, r - 0.2, z + 0.3, h - 1.6, h, "steel", SCORCH));
+  // Columns under the roof, and machinery left standing on the hall's floor to hide behind.
+  for (let k = 0; k < 12; k++) {
+    const a = ((15 + 30 * k) * Math.PI) / 180;
+    out.push(box(34 * Math.cos(a), 34 * Math.sin(a), 1.2, 1.2, h - 0.4, "steel", 2, deck));
+  }
+  for (const k of [1, 3, 5, 7]) {
+    const a = (k * Math.PI) / 4;
+    out.push(box(28 * Math.cos(a), 28 * Math.sin(a), 3.6, 2.4, deck + 1.8, "steel", 1, deck));
+  }
+  // Bridges over the corridors at the hall's floor, two over each.
+  for (const [p, q] of [[25, 28], [37, 40]]) {
+    out.push(rect(-q, -c, -p, c, deck - 0.3, deck, "steel", 2));
+    out.push(rect(p, -c, q, c, deck - 0.3, deck, "steel", 2));
+    out.push(rect(-c, p, c, q, deck - 0.3, deck, "steel", 2));
+  }
+  // Up from the hall to the roof.
+  for (const f of up) out.push(...stairs(f.x, f.z, f.away, 2.4, h, 0, deck).map((q) => ({ ...q, kind: "steel" as BoxKind, tint: 2 })));
+  // The core: the column, a ring round it at the hall's height, a bridge to the ring from the north
+  // and one from each side, and a flight up from the floor to the hall on the north-west and the south-east.
+  out.push(rect(-column, -column, column, column, -1, columnTop, "steel", RIB));
+  const ring = column + 3.5;
+  out.push(
+    rect(-ring, -ring, ring, -column, deck - 0.3, deck, "steel", 2),
+    rect(-ring, column, ring, ring, deck - 0.3, deck, "steel", 2),
+    rect(-ring, -column, -column, column, deck - 0.3, deck, "steel", 2),
+    rect(column, -column, ring, column, deck - 0.3, deck, "steel", 2),
+  );
+  const rail = (x0: number, z0: number, x1: number, z1: number) => out.push(rect(x0, z0, x1, z1, deck, deck + 0.55, "steel", RIB));
+  {
+    const n = deckEdge(-1.5, 1.5, -1);
+    out.push(rect(-1.5, n - 0.5, 1.5, -ring, deck - 0.3, deck, "steel", 2));
+    rail(-1.5, n, -1.35, -ring);
+    rail(1.35, n, 1.5, -ring);
+    const reach = core + 0.5;
+    out.push(rect(-reach, column + 0.5, -ring, ring, deck - 0.3, deck, "steel", 2), rect(ring, -ring, reach, -column - 0.5, deck - 0.3, deck, "steel", 2));
+    rail(-reach, ring - 0.15, -ring, ring);
+    rail(ring, -ring, reach, -ring + 0.15);
+  }
+  const fx = 10;
+  out.push(...stairs(-fx, deckEdge(-fx - 1.2, -fx + 1.2, -1), "s", 2.4, deck).map((q) => ({ ...q, kind: "steel" as BoxKind, tint: 2 })));
+  out.push(...stairs(fx, deckEdge(fx - 1.2, fx + 1.2, 1), "n", 2.4, deck).map((q) => ({ ...q, kind: "steel" as BoxKind, tint: 2 })));
+  // The spokes' broken roots: box girders a storey over the hall's floor, the corridors running out
+  // through them, ribbed every 6 m, torn off and scorched at their ends. Each is written along u,
+  // out from the drum, and v across it.
+  const spoke = (to: "w" | "s" | "e", len: number) => {
+    const R = (u0: number, v0: number, u1: number, v1: number, y0: number, y1: number, tint: number) => {
+      const [a, b] = [Math.min(u0, u1), Math.max(u0, u1)];
+      const [p, q] = [Math.min(v0, v1), Math.max(v0, v1)];
+      out.push(to === "w" ? rect(-b, p, -a, q, y0, y1, "steel", tint) : to === "e" ? rect(a, p, b, q, y0, y1, "steel", tint) : rect(p, a, q, b, y0, y1, "steel", tint));
     };
-    let cur = a;
-    for (const [p, q, lo, hi] of holes.filter((h) => h[1] > a && h[0] < b).sort((m, n) => m[0] - n[0])) {
-      const p0 = Math.max(a, p);
-      const q0 = Math.min(b, q);
-      piece(cur, p0, y0, y1);
-      piece(p0, q0, y0, Math.max(y0, lo));
-      piece(p0, q0, Math.min(y1, hi), y1);
-      cur = q0;
+    const u0 = r - 2;
+    const u1 = r + len;
+    const top = deck + 1;
+    // Out past the drum's yard the crater's floor falls away a little: the spoke's sides go down into it.
+    const foot = 4;
+    for (const s of [-1, 1]) {
+      R(u0, s * c, u1 - 1.6, s * (c + 2), -foot, top, SKIN);
+      R(u1 - 1.6, s * c, u1 - (s > 0 ? 0 : 0.7), s * (c + 2), -foot, top - (s > 0 ? 1.4 : 0), SCORCH);
+      for (let u = u0 + 6; u < u1 - 2; u += 6) R(u - 0.5, s * (c + 2), u + 0.5, s * (c + 2.25), -foot, top + 0.3, RIB);
     }
-    piece(cur, b, y0, y1);
+    R(u0, -c - 2, u1 - 3.2, c + 2, top - 0.6, top, SKIN);
+    R(u1 - 3.2, -c - 2, u1 - 1.6, c, top - 0.6, top, SCORCH);
   };
-  /** A knee-high rail along x at z from a to b, at height y, on the side of z0..z1. */
-  const rail = (a: number, b: number, z0: number, z1: number, y: number) => {
-    if (b - a > 0.05) out.push(rect(a, z0, b, z1, y, y + 0.55, "steel", 6));
-  };
-  for (let k = 0; k < 3; k++) {
-    const a = -1.5 * bay + k * bay;
-    const b = a + bay;
-    const mid = (a + b) / 2;
-    const base = k * sag;
-    const up = base + S;
-    const roof = base + decks * S;
-    // The hull's bottom under the hall, down to the ground.
-    if (base > 0) out.push(rect(a, -half, b, half, -0.5, base, "steel", HULL_TINT));
-    // The hall's sides, drawn in at the keel and darker: wide openings to the bay on the south
-    // (the middle bay's gash there instead), one on the north of the west bay.
-    for (const side of [-1, 1] as const) {
-      const holes: [number, number, number, number][] = [];
-      if (k === 1 && side === 1) holes.push([mid - gash, mid + gash, base, up]);
-      else if (side === 1) holes.push([mid - 4, mid + 4, base, base + 3.6]);
-      else if (k === 0) holes.push([a + 9 - 2, a + 9 + 2, base, base + 3.1]);
-      holed(true, side * (half - KEEL - HULL / 2), HULL, a, b, base, up, holes, "steel", 6);
-      out.push(rect(a, side > 0 ? half - KEEL : -half, b, side > 0 ? half : -half + KEEL, up - 0.9, up + SLAB, "steel", 6));
-    }
-    // The galleries' sides: wide ports to shoot out of, one every 6 m, and the gash.
-    for (const side of [-1, 1] as const) {
-      const holes: [number, number, number, number][] = [];
-      if (k === 1 && side === 1) holes.push([mid - gash, mid + gash, up, roof]);
-      for (let c = a + 3; c < b; c += 6) if (!(k === 1 && side === 1 && Math.abs(c - mid) < gash + 2.5)) holes.push([c - 2, c + 2, up + 1.0, up + 3.0]);
-      holed(true, side * (half - HULL / 2), HULL, a, b, up, roof, holes, "steel", HULL_TINT);
-    }
-    // The galleries, railed along their open edges but where a flight lands and the bridge
-    // crosses; a flight up to each from the hall, the north one near the bay's west end and the
-    // south one near its east end; the bridge over the middle.
-    const flightW = 2.4;
-    const flights: Record<-1 | 1, number> = { [-1]: a + 9, [1]: b - 9 };
-    for (const side of [-1, 1] as const) {
-      const [z0, z1] = side > 0 ? [edge, inner] : [-inner, -edge];
-      out.push(rect(a, z0, b, z1, up - SLAB, up, "steel", 6));
-      const [r0, r1] = side > 0 ? [edge, edge + 0.15] : [-edge - 0.15, -edge];
-      const gaps = [[flights[side] - flightW / 2, flights[side] + flightW / 2], [mid - 1.5, mid + 1.5]].sort((p, q) => p[0] - q[0]);
-      let cur = a;
-      for (const [p, q] of gaps) {
-        rail(cur, p, r0, r1, up);
-        cur = q;
-      }
-      rail(cur, b, r0, r1, up);
-      out.push(...stairs(flights[side], side * edge, side > 0 ? "n" : "s", flightW, up, 0, base).map((q) => ({ ...q, kind: "steel" as BoxKind, tint: 6 })));
-    }
-    out.push(rect(mid - 1.5, -edge, mid + 1.5, edge, up - SLAB, up, "steel", 6));
-    out.push(rect(mid - 1.5, -edge, mid - 1.35, edge, up, up + 0.55, "steel", 6), rect(mid + 1.35, -edge, mid + 1.5, edge, up, up + 0.55, "steel", 6));
-    // Columns under the galleries' edges, every 12 m.
-    for (let u = a + 6; u < b - 1; u += 12) for (const side of [-1, 1] as const) out.push(rect(u - 0.4, side * edge - 0.4 + side * 0.4, u + 0.4, side * edge + 0.4 + side * 0.4, base, up - SLAB, "steel", HULL_TINT));
-    // The roof, torn open over the hall in two places: light falls in, and a run along the roof
-    // drops through onto the bridge or the hall. Its long edges rounded off in two steps as the
-    // ring's lengths are.
-    const torn: [number, number][] = [[a + 5, a + 13], [b - 13, b - 5]];
-    out.push(rect(a, -half, b, -edge, roof - SLAB, roof, "steel", 6), rect(a, edge, b, half, roof - SLAB, roof, "steel", 6));
-    let cur = a;
-    for (const [p, q] of torn) {
-      out.push(rect(cur, -edge, p, edge, roof - SLAB, roof, "steel", 6));
-      cur = q;
-    }
-    out.push(rect(cur, -edge, b, edge, roof - SLAB, roof, "steel", 6));
-    for (const [p, q] of torn) out.push(rect(p, -edge, q, -edge + 0.4, roof - 0.6, roof, "steel", 7), rect(p, edge - 0.4, q, edge, roof - 0.6, roof, "steel", 7));
-    for (const side of [-1, 1] as const) {
-      const e = (inset: number) => side * (half - inset);
-      out.push(rect(a, Math.min(e(0), e(2.6)), b, Math.max(e(0), e(2.6)), roof, roof + 1.1, "steel", HULL_TINT));
-      out.push(rect(a, Math.min(e(0), e(1.2)), b, Math.max(e(0), e(1.2)), roof + 1.1, roof + 2.0, "steel", HULL_TINT));
-    }
-    // Dark bands where the hull's plates join, every 6 m round it: up its side from the keel's
-    // overhang to over the crown, and on the keel drawn in under it, so none stands off it as a column.
-    for (let u = a + 6; u < b - 1; u += 6)
-      for (const side of [-1, 1] as const) {
-        if (k === 1 && side === 1 && Math.abs(u - mid) < gash + 1) continue;
-        const outer = side > 0 ? [half, half + 0.25] : [-half - 0.25, -half];
-        const keel = side > 0 ? [half - KEEL, half - KEEL + 0.25] : [-half + KEEL - 0.25, -half + KEEL];
-        out.push(rect(u - 0.5, outer[0], u + 0.5, outer[1], up - 1.2, roof + 2.2, "steel", 6));
-        if (!(side > 0 && Math.abs(u - mid) < (k === 1 ? gash + 1 : 4.6))) out.push(rect(u - 0.5, keel[0], u + 0.5, keel[1], -0.5, up - 0.9, "steel", 6));
-      }
-  }
-  // The bulkheads where the bays broke apart: over each gallery a door from the higher bay's hall
-  // onto the lower bay's gallery, and one from the higher bay's gallery onto the lower bay's roof.
-  for (let k = 1; k < 3; k++) {
-    const x = -1.5 * bay + k * bay;
-    const hi = k * sag;
-    const holes: [number, number, number, number][] = [];
-    for (const side of [-1, 1] as const)
-      for (let d = 0; d < decks; d++) {
-        const [p, q] = side > 0 ? door : [-door[1], -door[0]];
-        holes.push([p, q, hi + d * S, hi + d * S + doorHead]);
-      }
-    // The doors are holes along z, so the wall is cut once per height band.
-    const bands = [...new Set(holes.map((h) => h[2]))].sort((p, q) => p - q);
-    let y = -0.5;
-    for (const lo of bands) {
-      holed(false, x, 0.6, -half, half, y, lo, [], "steel", 6);
-      holed(false, x, 0.6, -half, half, lo, lo + doorHead, holes.filter((h) => h[2] === lo).map((h) => [h[0], h[1], lo, lo + doorHead]), "steel", 6);
-      y = lo + doorHead;
-    }
-    holed(false, x, 0.6, -half, half, y, hi + decks * S, [], "steel", 6);
-  }
-  // The broken ends, torn rather than cut: each deck's plate and the hull's sides run on past the
-  // break by their own ragged lengths, scorched where they tore.
-  for (const [x, sgn, base] of [[-1.5 * bay, -1, 0], [1.5 * bay, 1, 2 * sag]] as const) {
-    const ragged = (n: number) => [3.4, 1.1, 2.6, 0.7, 4.2, 1.8][(n + (sgn > 0 ? 3 : 0)) % 6];
-    const span = (len: number): [number, number] => (sgn > 0 ? [x, x + len] : [x - len, x]);
-    for (let d = 0; d <= decks; d++) {
-      const y = base + d * S;
-      // The east end's bottom plate is where its rubble comes up to: nothing hangs over that.
-      if (y > 0 && !(sgn > 0 && d === 0)) {
-        const [p, q] = span(ragged(d));
-        out.push(rect(p, d === decks ? -half + 2 : edge, q, d === decks ? half - 3 : inner, y - SLAB, y, "steel", 7));
-      }
-      if (d === decks) break;
-      for (const side of [-1, 1] as const) {
-        const [p, q] = span(ragged(d * 2 + (side > 0 ? 1 : 0)));
-        const at = side * (half - (d === 0 ? KEEL : 0) - HULL / 2);
-        out.push(rect(p, at - HULL / 2, q, at + HULL / 2, y - (d === 0 ? 0.5 : 0), y + S * (0.45 + 0.1 * ((d + (side > 0 ? 1 : 0)) % 3)), "steel", 7));
-      }
-    }
-  }
-  // The east end stands on its bottom two storeys up: rubble heaped under its broken edge, walked up.
-  out.push(...stairs(1.5 * bay, 0, "e", 6, 2 * sag).map((b) => ({ ...b, kind: "rock" as BoxKind, tint: 1 })));
-  // The gash: rubble steps up to the middle bay's hall, and boulders climbed onto its gallery.
-  out.push(...stairs(-gash / 2, half, "s", 6, sag).map((b) => ({ ...b, kind: "rock" as BoxKind, tint: 0 })));
-  const heap = Math.ceil((sag + S) / 1.5);
-  for (let k = 0; k < heap; k++) out.push(rect(gash / 2 - 2.5, half + (heap - k) * 1.8 - 1.8, gash / 2 + 2.5, half + (heap - k) * 1.8, -0.5, Math.min(sag + S, (k + 1) * 1.5 + 0.3), "rock", k % 2));
-  // A spoke of the ring's frame broken off and leaning on the middle bay from the north: its foot
-  // on the ground, its deck climbing in strides to the crown over the roof, a girder under its deck
-  // down to the ground where that is nearer, so its high end is an arch; every sixth stride a dark joint.
-  {
-    const L = 44;
-    const u0 = 3;
-    const u1 = 9;
-    const end = sag + decks * S + 2.05;
-    const n = Math.ceil(end / 0.42);
-    const stride = L / n;
-    for (let k = 0; k < n; k++) {
-      const za = -half - L + k * stride;
-      const deck = ((k + 1) * end) / n;
-      const y0 = deck - 3.5 < 2.6 ? -0.5 : deck - 3.5;
-      out.push(rect(u0, za, u1, za + stride, y0, deck, "steel", k % 6 === 5 ? 6 : HULL_TINT));
-    }
-    out.push(rect(u0 - 0.3, -half - L - 1.6, u1 + 0.3, -half - L, -1, 0.9, "steel", 7));
-  }
-  // Radiator fins out from the west bay's north side, teal plate: two still standing out over the
-  // bay, one fallen to the ground under a port, walked up into the north gallery.
-  for (const x of [-49, -41]) out.push(rect(x - 3, -half - 12, x + 3, -half, 8.2, 8.5, "steel", 3), rect(x - 0.2, -half - 12, x + 0.2, -half, 8.5, 9.0, "steel", 6));
-  {
-    const top = S + 1.0;
-    const n = Math.ceil(top / 0.42);
-    const run = 11.4;
-    const c = -1.5 * bay + 21;
-    for (let k = 0; k < n; k++) {
-      const za = -half - run + (k * run) / n;
-      out.push(rect(c - 3, za, c + 3, za + run / n, -0.5, ((k + 1) * top) / n, "steel", 3));
-    }
-  }
+  spoke("w", 30);
+  spoke("s", 28);
+  spoke("e", 16);
+  // Rubble heaped against the drum's north side from the crater's floor to the roof.
+  out.push(...stairs(heap.x, heapTop, "n", heap.w, h).map((q) => ({ ...q, kind: "rock" as BoxKind, tint: q.h > h / 2 ? 1 : 0 })));
   return out;
 }
 
 /**
  * Outposts: settlements (as `HAMLET_FRAMES`) larger than a hamlet, each a piece of the base's
- * works that joins its region's POIs, held by a squad of two (the habitat section's by three).
+ * works that joins its region's POIs, held by a squad of two (the ring's node by three).
  * They stand in the open ground between the POIs, so a walk from one POI to the next passes one,
  * and the lines that leave each (`WORKS_LINES`) lead the eye from it to the POIs it serves.
  */
@@ -1767,27 +1760,27 @@ const OUTPOSTS: Hamlet[] = [
     },
   },
   {
-    // North of the wreck on the dry bay: a length of the ring's habitat deck that came down whole,
-    // the biggest thing on the harbor's open ground and its tallest cover. Its bins are in its
-    // cabins up the decks; its guards hold the open ground round its ends and its gash.
-    id: "ringSection",
-    name: "環の居住区画",
-    x: 0,
-    z: -1100,
-    boxes: ringSection(),
+    // On the dry bay north of the wreck: a node of the ring come down in its crater (`NODE`,
+    // `CRATERS`). Its best bins are on the core's floor under the column; its guards hold the hall's
+    // floor, the core and the roof.
+    id: "ringNode",
+    name: "環の結節点",
+    ...NODE_AT,
+    boxes: ringNode(),
+    yard: [-NODE.r - 4, -NODE.r - 4, NODE.r + 4, NODE.r + 4],
     bins: [
-      { ...sectionSpot(0, 22, 4, 0), table: "wreck" },
-      { ...sectionSpot(1, 20, -12, 1), table: "wreck" },
-      { ...sectionSpot(0, 30, 12, 1), table: "cannery" },
-      { ...sectionSpot(2, 14, 0, 0), table: "smelter" },
-      { ...sectionSpot(1, 18, -6, 2), table: "wreck" },
+      { x: 7, z: -7, table: "wreck" },
+      { x: -7, z: 7, table: "smelter" },
+      { x: 32, z: -18, y: NODE.deck, table: "wreck" },
+      { x: -34, z: 14, y: NODE.h, table: "cannery" },
+      { x: -66, z: 2, table: "wreck" },
     ],
     guard: {
-      name: "環の居住区画の守備",
+      name: "環の結節点の守備",
       members: [
-        { kind: "grunt", x: -59, z: 6, face: W },
-        { kind: "grunt", x: -4, z: 24, face: S },
-        { kind: "heavy", x: 62, z: -9, face: E },
+        { kind: "grunt", x: -30, z: -10, y: NODE.deck, face: S },
+        { kind: "heavy", x: 0, z: 9, face: S },
+        { kind: "grunt", x: 24, z: -36, y: NODE.h, face: N },
       ],
     },
   },
@@ -1990,7 +1983,7 @@ export const PACKS: Squad[] = [
 ];
 
 /** Stable names for the outposts (`OUTPOSTS`): places to loot with a guard squad of their own, not nodes of the front. */
-export type OutpostId = "substation" | "fuel" | "freight" | "wharf" | "engine" | "eastSubstation" | "pumps" | "ringSection";
+export type OutpostId = "substation" | "fuel" | "freight" | "wharf" | "engine" | "eastSubstation" | "pumps" | "ringNode";
 
 /** The robots' two factions (see FACTION): the network (網) and the rogues that broke off it (野良機). */
 export type Faction = "net" | "rogue";
@@ -2214,6 +2207,8 @@ interface Hamlet {
   bins: { x: number; z: number; y?: number; table: PoiId }[];
   /** An outpost's squad, written in the same frame (`OUTPOSTS`); a hamlet has none. */
   guard?: Squad;
+  /** The ground an outpost presses flat, x0, z0, x1, z1 in its frame, where that is less than all round its boxes (the ring's node: its drum, not its crater's rim). */
+  yard?: [number, number, number, number];
 }
 
 const HAMLET_FRAMES: Hamlet[] = [
@@ -2462,7 +2457,8 @@ function stopAt(name: string, dx = 0, dz = 0): { name: string; x: number; z: num
 /** The hamlets placed, each flat at the level of the ground under its middle (an outpost's whole yard, a few metres round its boxes). */
 const HAMLETS = HAMLET_FRAMES.map((h) => {
   const level = floorLevel(h.x, h.z);
-  if (h.guard) {
+  if (h.yard) FLAT.push({ x0: h.x + h.yard[0], z0: h.z + h.yard[1], x1: h.x + h.yard[2], z1: h.z + h.yard[3], y: level });
+  else if (h.guard) {
     const at = place(h.x, h.z, h.boxes);
     FLAT.push({ x0: Math.min(...at.map((b) => b.x0)) - 4, z0: Math.min(...at.map((b) => b.z0)) - 4, x1: Math.max(...at.map((b) => b.x1)) + 4, z1: Math.max(...at.map((b) => b.z1)) + 4, y: level });
   }
@@ -2472,6 +2468,14 @@ const HAMLETS = HAMLET_FRAMES.map((h) => {
     bins: h.bins.map((b) => ({ ...b, x: b.x + h.x, z: b.z + h.z, y: level + (b.y ?? 0) })),
   };
 });
+
+/**
+ * What still glows in the world, for the view to light (it changes no rule): the ring's node's power
+ * column (`NODE`), from the core's floor to its broken top, `half` metres either side of its middle.
+ */
+export const GLOWS: { x: number; z: number; y0: number; y1: number; half: number }[] = [
+  { ...NODE_AT, y0: floorLevel(NODE_AT.x, NODE_AT.z), y1: floorLevel(NODE_AT.x, NODE_AT.z) + NODE.columnTop, half: NODE.column },
+];
 
 type ExtraBin = { x: number; z: number; y?: number; table: PoiId; flare?: true };
 
@@ -5016,8 +5020,7 @@ const RING_WRECKS: RingWreck[] = [
   { name: "港町の西の残骸（東）", along: "x", at: -556, a: -276, b: -205, broken: { a: true }, lean: { side: 1, u: -240, length: 46 } },
   { name: "港町の東の残骸（北）", along: "z", at: 300, a: -628, b: -572, broken: { b: true }, tunnel: [{ side: -1, a: -606, b: -596 }] },
   { name: "港町の東の残骸（南）", along: "z", at: 308, a: -556, b: -486, broken: { a: true }, rubble: [{ side: 1, u: -520 }] },
-  { name: "製錬所の北の残骸（難破船の北）", along: "x", at: -1062, a: 56, b: 124, broken: { b: true }, tunnel: [{ side: 1, a: 84, b: 94 }] },
-  { name: "製錬所の北の残骸（西）", along: "x", at: -1060, a: 140, b: 205, broken: { b: true }, rubble: [{ side: 1, u: 172 }] },
+  { name: "製錬所の北の残骸（西）", along: "x", at: -1060, a: 178, b: 205, broken: { b: true }, rubble: [{ side: 1, u: 192 }] },
   { name: "製錬所の北の残骸（東）", along: "x", at: -1024, a: 216, b: 285, broken: { a: true }, lean: { side: 1, u: 250, length: 46 } },
   { name: "中継塔の北の残骸（東）", along: "x", at: -105, a: 340, b: 388, broken: { a: true }, rubble: [{ side: 1, u: 362 }] },
 ];
@@ -5137,8 +5140,29 @@ const RING_RUNS: Box[] = (() => {
   return out;
 })();
 
+/**
+ * Plates of the ring node's skin (`NODE`) flung onto its crater's floor (`CRATERS`), laid on the
+ * ground once it is built, each with its torn end scorched: between the ways in, low enough to
+ * vault and to hide behind.
+ */
+const CRATER_FLOOR: Box[] = (() => {
+  const out: Box[] = [];
+  const { x: cx, z: cz } = NODE_AT;
+  for (let k = 0; k < 9; k++) {
+    const a = ((20 + 40 * k) * Math.PI) / 180;
+    const [x, z] = [cx + 56 * Math.cos(a), cz + 56 * Math.sin(a)];
+    if (offshore(x, z) > -6 || highGround(x, z) || steepAt(x, z)) continue;
+    const [w, d] = k % 2 === 0 ? [7, 2.4] : [2.4, 7];
+    const g = terrainHeight(x, z);
+    const top = g + 0.9 + (k % 3) * 0.45;
+    out.push(rect(x - w / 2, z - d / 2, x + w / 2, z + d / 2, g - 0.4, top, "steel", 5));
+    out.push(k % 2 === 0 ? rect(x + w / 2, z - d / 2, x + w / 2 + 1.2, z + d / 2, g - 0.4, top - 0.3, "steel", 7) : rect(x - w / 2, z + d / 2, x + w / 2, z + d / 2 + 1.2, g - 0.4, top - 0.3, "steel", 7));
+  }
+  return out;
+})();
+
 /** Everything placed by hand or laid by rule before the streets are lined: what `scripts/ringfall-roads.ts` routes them round. */
-export const PLACED: Box[] = [...AUTHORED, ...BRIDGE, ...RAILWAY, ...QUAY, ...LAID, ...WORKS_LINES, ...FENCE_RUNS, ...RING_RUNS];
+export const PLACED: Box[] = [...AUTHORED, ...BRIDGE, ...RAILWAY, ...QUAY, ...LAID, ...WORKS_LINES, ...FENCE_RUNS, ...RING_RUNS, ...CRATER_FLOOR];
 /**
  * What lines the streets (streets.ts), laid on the ground once it is built: lamp posts along every
  * length on alternate sides, a signpost where each street leaves its first junction, and traffic

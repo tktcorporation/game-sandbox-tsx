@@ -131,12 +131,13 @@ export const HARBOR_TOUR = [
   ["tour-94-ring-wreck-harbor", null, -240, 1.7, -490, 0, 0.08],
   // The ring's habitat section on the dry bay (its floor at -5.5): from the bay, its gash, down
   // the west bay's hall, the middle bay's gallery over its hall, and over the bay from its roof.
-  ["tour-95-ring-section", "環の居住区画", -40, 1.7, 70, 0.52, 0.12],
-  ["tour-96-ring-section-gash", "環の居住区画", 6, 1.7, 40, -0.2, 0.22],
-  ["tour-97-ring-section-hall", "環の居住区画", -50, -5.5 + 1.7, 3, Math.PI / 2, 0.12, true],
-  ["tour-98-ring-section-gallery", "環の居住区画", -10, -5.5 + 9 + 1.7, -11.5, 1.95, -0.05, true],
-  ["tour-99-ring-section-roof", "環の居住区画", 8, -5.5 + 13.5 + 2 + 1.7, 14.4, Math.PI, -0.1, true],
-  ["tour-100-ring-section-north", "環の居住区画", 40, 1.7, -80, -2.68, 0.14],
+  ["tour-95-ring-node", "環の結節点", -110, 1.7, 80, 0.94, 0.12],
+  ["tour-96-ring-node-rim", "環の結節点", -66, 1.7, 38, 1.05, -0.05],
+  ["tour-97-ring-node-corridor", "環の結節点", -62, -2.43 + 1.7, 0, Math.PI / 2, 0.06, true],
+  ["tour-98-ring-node-core", "環の結節点", -13, -2.43 + 1.7, 13, 0.785, 0.35, true],
+  ["tour-99-ring-node-hall", "環の結節点", -36, -2.43 + 11 + 1.7, -14, 1.2, 0, true],
+  ["tour-100-ring-node-roof", "環の結節点", 20, -2.43 + 22 + 1.7, -40, -2.68, -0.22, true],
+  ["tour-101-ring-node-breach", "環の結節点", 72, 1.7, -52, -2.16, 0.18],
 ];
 
 /** A tour camera placed in the world: [name, x, dy, z, yaw, pitch, abs], from `frames` (window.ringfallFrames()). */

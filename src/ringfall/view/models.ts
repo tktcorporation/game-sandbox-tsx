@@ -59,6 +59,8 @@ export const PAL = {
   tether: 0xd6dcdd,
   tetherDark: 0x98a2a8,
   scorch: 0x4a3e36,
+  /** The light still in the ring's machinery (the node's power column): a cold cyan, unlike any robot's or the front's colours. */
+  nodeGlow: 0x8fe6ff,
   concrete: 0xcfc8b8,
   concreteDark: 0x9c9586,
   rust: 0xb5482b,

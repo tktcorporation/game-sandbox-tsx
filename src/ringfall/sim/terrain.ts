@@ -560,7 +560,6 @@ const CRAGS: { name: string; line: readonly P[]; half: number }[] = [
   { name: "南の野の岩", line: [[-206, -476], [-194, -486]], half: 14 },
   { name: "北の岩山", line: [[-128, -1076], [-112, -1086]], half: 16 },
   { name: "東の岩塔", line: [[296, -996], [304, -1006]], half: 12 },
-  { name: "北東の岩", line: [[144, -1096], [156, -1106]], half: 14 },
   // Cliffs over the far side of the channel: the water stays a waterfront along the quay.
   { name: "水路の崖", line: inArea("bay", [[76, -598], [92, -614], [190, -614]]), half: 13 },
 ];
@@ -845,6 +844,48 @@ function rim(x: number, z: number): number {
   return Math.min(48, out * 2.2) * (0.8 + vnoise(x * 0.05, z * 0.05) * 0.4) + vnoise(x * 0.2, z * 0.2) * Math.min(out, 6);
 }
 
+/**
+ * Craters where the ring's pieces came down: round the middle of each the ground is thrown up into a
+ * rim from `r0` out to `r1`, highest (`high`, give or take a fifth) at `crest`, and cut back down to
+ * the ground where `gaps` cross it (the direction each leaves the middle in, and half its width).
+ * Added over the built field as the coast's rim is: what stands inside a crater keeps its own
+ * level, and map.ts keeps its yard clear of the rim.
+ */
+export const CRATERS: { name: string; x: number; z: number; r0: number; crest: number; r1: number; high: number; gaps: [number, number][] }[] = [
+  {
+    name: "環の結節点",
+    x: 85,
+    z: -1090,
+    r0: 60,
+    crest: 76,
+    r1: 94,
+    high: 5,
+    gaps: [
+      [Math.PI, 10],
+      [Math.PI / 2, 10],
+      [0, 9],
+      [-Math.PI / 2 - 0.32, 8],
+      [(3 * Math.PI) / 4, 7],
+      [-Math.PI / 4, 7],
+    ],
+  },
+];
+
+function crater(x: number, z: number): number {
+  let out = 0;
+  for (const c of CRATERS) {
+    const [dx, dz] = [x - c.x, z - c.z];
+    const d = hypot2(dx, dz);
+    if (d <= c.r0 || d >= c.r1) continue;
+    const up = d < c.crest ? smooth(c.r0, c.crest, d) : 1 - smooth(c.crest, c.r1, d);
+    const a = Math.atan2(dz, dx);
+    let kept = 1;
+    for (const [g, w] of c.gaps) if (Math.cos(a - g) > 0) kept = Math.min(kept, smooth(w, w + 9, Math.abs(d * Math.sin(a - g))));
+    out += c.high * up * kept * (0.8 + vnoise(x * 0.08, z * 0.08) * 0.4);
+  }
+  return out;
+}
+
 /** Grid points of the cached field on each axis, from the world's corner (x0, z0). */
 const NX = Math.round((WORLD.x1 - WORLD.x0) / RES) + 1;
 const NZ = Math.round((WORLD.z1 - WORLD.z0) / RES) + 1;
@@ -943,7 +984,7 @@ export function buildTerrain(flat: FlatShape[]) {
       let shelf = -Infinity;
       for (const n of bucketAt(x, z).shelves) shelf = Math.max(shelf, shelfAt(n, x, z));
       const base = level + (natural(x, z, low) - level) * smooth(3, 10, dd);
-      field[k] = (shelf > base ? base + (shelf - base) * smooth(1, 2, dd) : base) + rim(x, z);
+      field[k] = (shelf > base ? base + (shelf - base) * smooth(1, 2, dd) : base) + rim(x, z) + crater(x, z);
     }
   steep = new Uint8Array(NX * NZ);
   for (let j = 1; j < NZ - 1; j++)
