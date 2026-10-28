@@ -129,8 +129,10 @@ export const HARBOR_TOUR = [
   ["tour-92-ring-wreck-leaning", null, -334, 22, 300, 0, -0.1],
   ["tour-93-ring-wreck-east-shore", null, 400, 1.7, 125, 1.57, 0.06],
   ["tour-94-ring-wreck-harbor", null, -240, 1.7, -490, 0, 0.08],
-  // The ring's habitat section on the dry bay (its floor at -5.5): from the bay, its gash, down
-  // the west bay's hall, the middle bay's gallery over its hall, and over the bay from its roof.
+  // Where the ring came down on the dry bay: the node in its crater (its floor at -2.43) from the
+  // bay, its rim, a corridor, the core, the hall, the roof and the breach; then the dock town (its
+  // streets at -0.67) from a street, the viaduct, the harbor master's tower, afar, the broken spur
+  // and the blasted east blocks.
   ["tour-95-ring-node", "環の結節点", -110, 1.7, 80, 0.94, 0.12],
   ["tour-96-ring-node-rim", "環の結節点", -66, 1.7, 38, 1.05, -0.05],
   ["tour-97-ring-node-corridor", "環の結節点", -62, -2.43 + 1.7, 0, Math.PI / 2, 0.06, true],

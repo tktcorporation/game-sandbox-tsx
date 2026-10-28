@@ -848,7 +848,8 @@ function rim(x: number, z: number): number {
  * rim from `r0` out to `r1`, highest (`high`, give or take a fifth) at `crest`, and cut back down to
  * the ground where `gaps` cross it (the direction each leaves the middle in, and half its width).
  * Added over the built field as the coast's rim is: what stands inside a crater keeps its own
- * level, and map.ts keeps its yard clear of the rim.
+ * level. The gaps keep the rim off the node's corridors and its rubble heap; the corners of its
+ * yard rise with the rim.
  */
 export const CRATERS: { name: string; x: number; z: number; r0: number; crest: number; r1: number; high: number; gaps: [number, number][] }[] = [
   {
@@ -1135,7 +1136,6 @@ export function surfaceAt(x: number, z: number): string {
   return SHAPE_NAMES[shapes[j * NX + i]];
 }
 
-/** True on high ground or a cliff: anywhere well above the walkable floor nearby. */
 /**
  * The level the ground at (x, z) was built to: the floor's (`floorLevel`), or a yard's built to be
  * walked (`FlatShape.walked`) blending back to the floor round it, with a crater's rim thrown up on it.

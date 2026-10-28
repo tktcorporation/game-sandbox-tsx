@@ -429,7 +429,7 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   (`WORKS_LINES`, laid once the ground is built): power lines on pylons, pipelines high enough to
   walk under, and a freight line and its spur with wagons left on them as cover. The harbor's
   sixth and seventh outposts have no lines: where the ring came down on the dry bay north of the
-  wreck. The ring's node (`ringNode()`, sized by `NODE`) is a steel drum half buried at the bottom
+  wreck. The ring's node (`ringNode()`, sized by `NODE`) is a steel drum standing at the bottom
   of a crater (`CRATERS` in `terrain.ts`, a bump in the ground's field with gaps to walk down
   through), corridors running straight in at ground level to its core and a glowing column
   (`GLOWS`, drawn by the view) seen across the bay, a ring of halls a storey up round them, a roof,

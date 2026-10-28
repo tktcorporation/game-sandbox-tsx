@@ -1496,7 +1496,7 @@ function ringNode(): Box[] {
     const u0 = r - 2;
     const u1 = r + len;
     const top = deck + 1;
-    // Out past the drum's yard the crater's floor falls away a little: the spoke's sides go down into it.
+    // The spoke's sides go down past the floor, so no seam shows where they meet the ground.
     const foot = 4;
     for (const s of [-1, 1]) {
       R(u0, s * c, u1 - 1.6, s * (c + 2), -foot, top, SKIN);
@@ -1945,11 +1945,12 @@ const OUTPOSTS: Hamlet[] = [
     guard: {
       name: "波止場町の見回り",
       members: [
-        { kind: "grunt", x: -27, z: 40, face: N },
-        { kind: "charger", x: -27, z: 42, face: N },
+        { kind: "grunt", x: -21, z: 40, face: N },
+        { kind: "charger", x: -21, z: 42, face: N },
         { kind: "grunt", x: 0, z: -19, face: W },
       ],
-      patrol: [{ x: -27, z: 40 }, { x: -27, z: -19 }, { x: 0, z: -19 }, { x: -27, z: -19 }, { x: -27, z: 19 }, { x: 0, z: 19 }, { x: -27, z: 19 }],
+      // The street inside the viaduct's west run, clear of its piers and of the flights at its corners.
+      patrol: [{ x: -21, z: 40 }, { x: -21, z: -19 }, { x: 0, z: -19 }, { x: -21, z: -19 }, { x: -21, z: 19 }, { x: 0, z: 19 }, { x: -21, z: 19 }],
     },
   },
 ];

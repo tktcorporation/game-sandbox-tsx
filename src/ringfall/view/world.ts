@@ -373,6 +373,7 @@ export class World {
       for (let y = gl.y0 + 1.5; y < gl.y1 - 0.5; y += 2.5) parts.push(new THREE.BoxGeometry(w, 0.45, w).translate(gl.x, y, gl.z));
       for (const [dx, dz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) parts.push(new THREE.BoxGeometry(0.2, gl.y1 - gl.y0, 0.2).translate(gl.x + dx * (gl.half + 0.02), (gl.y0 + gl.y1) / 2, gl.z + dz * (gl.half + 0.02)));
       const lit = mergeGeometries(parts, false);
+      for (const q of parts) q.dispose();
       const g = new THREE.Group();
       if (lit) g.add(new THREE.Mesh(lit, glow(PAL.nodeGlow)));
       const top = haloSprite(PAL.nodeGlow, 18, 0.8);
