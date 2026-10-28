@@ -130,12 +130,12 @@ export const HARBOR_TOUR = [
   ["tour-93-ring-wreck-east-shore", null, 400, 1.7, 125, 1.57, 0.06],
   ["tour-94-ring-wreck-harbor", null, -240, 1.7, -490, 0, 0.08],
   // The ring's habitat section on the dry bay (its floor at -5.5): from the bay, its gash, down
-  // the west bay's corridor, the cabins open over the gash, and over the bay from its roof.
+  // the west bay's hall, the middle bay's gallery over its hall, and over the bay from its roof.
   ["tour-95-ring-section", "環の居住区画", -40, 1.7, 70, 0.52, 0.12],
   ["tour-96-ring-section-gash", "環の居住区画", 6, 1.7, 40, -0.2, 0.22],
-  ["tour-97-ring-section-corridor", "環の居住区画", -52, -5.5 + 1.7, 0, Math.PI / 2, 0.02, true],
-  ["tour-98-ring-section-cabins", "環の居住区画", -2, -5.5 + 4.5 + 4.5 + 1.7, 10, 0.4, 0.05, true],
-  ["tour-99-ring-section-roof", "環の居住区画", 8, -5.5 + 4.5 + 13.5 + 2 + 1.7, 13.5, Math.PI, -0.1, true],
+  ["tour-97-ring-section-hall", "環の居住区画", -50, -5.5 + 1.7, 3, Math.PI / 2, 0.12, true],
+  ["tour-98-ring-section-gallery", "環の居住区画", -10, -5.5 + 9 + 1.7, -11.5, 1.95, -0.05, true],
+  ["tour-99-ring-section-roof", "環の居住区画", 8, -5.5 + 13.5 + 2 + 1.7, 13.5, Math.PI, -0.1, true],
   ["tour-100-ring-section-north", "環の居住区画", 40, 1.7, -80, -2.68, 0.14],
 ];
 
