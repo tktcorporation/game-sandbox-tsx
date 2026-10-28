@@ -1515,7 +1515,7 @@ function ringNode(): Box[] {
 }
 
 /**
- * The harbor's town, west of the ring's node (`NODE`), in its own frame round (0, 0) on ground at 0:
+ * The dock town, west of the ring's node (`NODE`), in its own frame round (0, 0) on ground at 0:
  * where the base's dock workers lived, a grid of blocks with streets `street` wide between them,
  * the freight station in the middle and the harbor master's tower on the north-west corner, seen
  * from all over the bay. The freight line runs round the station on a viaduct (`TOWN.deck` high)
@@ -1655,7 +1655,7 @@ function harborTown(): Box[] {
 
 /**
  * Outposts: settlements (as `HAMLET_FRAMES`) larger than a hamlet, each a piece of the base's
- * works that joins its region's POIs, held by a squad of two (the ring's node and the harbor's town by three).
+ * works that joins its region's POIs, held by a squad of two (the ring's node and the dock town by three).
  * They stand in the open ground between the POIs, so a walk from one POI to the next passes one,
  * and the lines that leave each (`WORKS_LINES`) lead the eye from it to the POIs it serves.
  */
@@ -1925,11 +1925,11 @@ const OUTPOSTS: Hamlet[] = [
     },
   },
   {
-    // West of the node: the harbor's town round its freight station (`TOWN`), its viaduct the way
+    // West of the node: the dock town round its freight station (`TOWN`), its viaduct the way
     // round it at roof height. Its bins are up the harbor master's tower, on the station's
     // mezzanine, in the market and up the houses; its guards walk the streets under the viaduct.
     id: "harborTown",
-    name: "港町",
+    name: "波止場町",
     ...TOWN_AT,
     boxes: harborTown(),
     yard: [-84, -74, 84, 74],
@@ -1943,7 +1943,7 @@ const OUTPOSTS: Hamlet[] = [
       { x: 48.5, z: 44, y: 3 * STOREY, table: "wreck" },
     ],
     guard: {
-      name: "港町の見回り",
+      name: "波止場町の見回り",
       members: [
         { kind: "grunt", x: -27, z: 40, face: N },
         { kind: "charger", x: -27, z: 42, face: N },
