@@ -1024,7 +1024,7 @@ function carveAt(c: Carve, poly: Polyline, x: number, z: number): { h: number; l
 }
 
 /** Cells the carves now in place changed, with what the built field held there, to put back. */
-const carved = new Map<number, { field: number; floor: number; shape: number; steep: number }>();
+const carved = new Map<number, { field: number; floor: number; base: number; shape: number; steep: number }>();
 
 /**
  * Puts exactly `carves` into the field, taking out any cut before. The field built by
@@ -1034,16 +1034,17 @@ const carved = new Map<number, { field: number; floor: number; shape: number; st
  * ground it covers.
  */
 export function carveTerrain(carves: readonly Carve[]) {
-  if (!field || !floors || !shapes || !steep) throw new Error("carveTerrain before buildTerrain");
+  if (!field || !floors || !bases || !shapes || !steep) throw new Error("carveTerrain before buildTerrain");
   for (const [k, v] of carved) {
     field[k] = v.field;
     floors[k] = v.floor;
+    bases[k] = v.base;
     shapes[k] = v.shape;
     steep[k] = v.steep;
   }
   carved.clear();
   const save = (k: number) => {
-    if (!carved.has(k)) carved.set(k, { field: field![k], floor: floors![k], shape: shapes![k], steep: steep![k] });
+    if (!carved.has(k)) carved.set(k, { field: field![k], floor: floors![k], base: bases![k], shape: shapes![k], steep: steep![k] });
   };
   for (const c of carves) {
     let shape = SHAPE_NAMES.indexOf(c.name);
@@ -1063,6 +1064,7 @@ export function carveTerrain(carves: readonly Carve[]) {
         save(k);
         field[k] = at.h;
         floors[k] = at.level;
+        bases[k] = at.level;
         shapes[k] = shape;
       }
     // Cliffs over again where the trench changed the slope, one cell round it included.
