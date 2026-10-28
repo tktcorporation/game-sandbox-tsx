@@ -1311,13 +1311,6 @@ function substationYard(): Box[] {
 }
 
 /**
-/**
- * Outposts: settlements (as `HAMLET_FRAMES`) larger than a hamlet, each a piece of the base's
- * works that joins its region's POIs, held by a squad of two. They stand in the open ground
- * between the POIs, so a walk from one POI to the next passes one, and the lines that leave each
- * (`WORKS_LINES`) lead the eye from it to the POIs it serves.
- */
-/**
  * A length of the ring's habitat deck that came down whole on the dry bay north of the wreck, in
  * its own frame round (0, 0) on ground at 0: three bays `bay` metres long end to end along x,
  * `2 * half` metres across, broken where they join and settled crooked, each a storey (`sag`)
@@ -1416,7 +1409,7 @@ function ringSection(): Box[] {
       out.push(...stairs(flights[side], side * edge, side > 0 ? "n" : "s", flightW, up, 0, base).map((q) => ({ ...q, kind: "steel" as BoxKind, tint: 6 })));
     }
     out.push(rect(mid - 1.5, -edge, mid + 1.5, edge, up - SLAB, up, "steel", 6));
-    rail(-edge, edge, mid - 1.5, mid - 1.35, up);
+    out.push(rect(mid - 1.5, -edge, mid - 1.35, edge, up, up + 0.55, "steel", 6), rect(mid + 1.35, -edge, mid + 1.5, edge, up, up + 0.55, "steel", 6));
     // Columns under the galleries' edges, every 12 m.
     for (let u = a + 6; u < b - 1; u += 12) for (const side of [-1, 1] as const) out.push(rect(u - 0.4, side * edge - 0.4 + side * 0.4, u + 0.4, side * edge + 0.4 + side * 0.4, base, up - SLAB, "steel", HULL_TINT));
     // The roof, torn open over the hall in two places: light falls in, and a run along the roof
@@ -1444,7 +1437,7 @@ function ringSection(): Box[] {
         const outer = side > 0 ? [half, half + 0.25] : [-half - 0.25, -half];
         const keel = side > 0 ? [half - KEEL, half - KEEL + 0.25] : [-half + KEEL - 0.25, -half + KEEL];
         out.push(rect(u - 0.5, outer[0], u + 0.5, outer[1], up - 1.2, roof + 2.2, "steel", 6));
-        if (!(side > 0 && Math.abs(u - mid) < 4.6)) out.push(rect(u - 0.5, keel[0], u + 0.5, keel[1], -0.5, up - 0.9, "steel", 6));
+        if (!(side > 0 && Math.abs(u - mid) < (k === 1 ? gash + 1 : 4.6))) out.push(rect(u - 0.5, keel[0], u + 0.5, keel[1], -0.5, up - 0.9, "steel", 6));
       }
   }
   // The bulkheads where the bays broke apart: over each gallery a door from the higher bay's hall
@@ -1528,6 +1521,12 @@ function ringSection(): Box[] {
   return out;
 }
 
+/**
+ * Outposts: settlements (as `HAMLET_FRAMES`) larger than a hamlet, each a piece of the base's
+ * works that joins its region's POIs, held by a squad of two (the habitat section's by three).
+ * They stand in the open ground between the POIs, so a walk from one POI to the next passes one,
+ * and the lines that leave each (`WORKS_LINES`) lead the eye from it to the POIs it serves.
+ */
 const OUTPOSTS: Hamlet[] = [
   {
     // Between the yard, the smelter and the quay: the power the cranes and the furnaces ran on.

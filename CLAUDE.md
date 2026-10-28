@@ -424,7 +424,7 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   Hamlets (`HAMLET_FRAMES` in `map.ts`: a few buildings and a bin or two, no robots) stand on the
   ground between, each flat at the level under its middle. Outposts (`OUTPOSTS`: in the harbor a
   substation, a fuel depot, a marshalling yard, a wharf and an engine depot; in the reservoir a
-  substation and a pumping station) are larger ones, each with a squad of two (`Hamlet.guard`,
+  substation and a pumping station) are larger ones, each with a squad of two (three at the habitat section below; `Hamlet.guard`,
   joined to `ROAMERS`) and its whole yard pressed flat. From them the works run to the POIs
   (`WORKS_LINES`, laid once the ground is built): power lines on pylons, pipelines high enough to
   walk under, and a freight line and its spur with wagons left on them as cover. The harbor's

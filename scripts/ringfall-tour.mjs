@@ -135,7 +135,7 @@ export const HARBOR_TOUR = [
   ["tour-96-ring-section-gash", "環の居住区画", 6, 1.7, 40, -0.2, 0.22],
   ["tour-97-ring-section-hall", "環の居住区画", -50, -5.5 + 1.7, 3, Math.PI / 2, 0.12, true],
   ["tour-98-ring-section-gallery", "環の居住区画", -10, -5.5 + 9 + 1.7, -11.5, 1.95, -0.05, true],
-  ["tour-99-ring-section-roof", "環の居住区画", 8, -5.5 + 13.5 + 2 + 1.7, 13.5, Math.PI, -0.1, true],
+  ["tour-99-ring-section-roof", "環の居住区画", 8, -5.5 + 13.5 + 2 + 1.7, 14.4, Math.PI, -0.1, true],
   ["tour-100-ring-section-north", "環の居住区画", 40, 1.7, -80, -2.68, 0.14],
 ];
 
