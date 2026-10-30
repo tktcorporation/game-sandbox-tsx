@@ -16,6 +16,7 @@
  * The skills are played in one worker process each, side by side; the gate starts them beside
  * its tables and prints the table after the hideout's pacing (scripts/ringfall-sim.ts).
  */
+import "./ringfall-terrain-store";
 import { ENTRIES, NODES, POIS, REGIONS, regionOf, TIER, type NodeId, type RegionId } from "../src/ringfall/sim/map";
 import { SKILLS } from "../src/ringfall/sim/bot";
 import { newRun, strengthFor } from "../src/ringfall/sim/state";

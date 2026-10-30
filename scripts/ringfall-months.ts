@@ -10,6 +10,7 @@
  * The gate plays one month per skill, so a skill's numbers there rest on one string of seeds;
  * here several strings show how far a month's outcome swings, and the factory's climb to its top.
  */
+import "./ringfall-terrain-store";
 import { fork } from "node:child_process";
 import { availableParallelism } from "node:os";
 import { fileURLToPath } from "node:url";

@@ -491,12 +491,19 @@ export const outsideLand = (l: Land, x: number, z: number) => hypot2(x - l.x, z 
 
 /** How far (x, z) lies outside the coast, metres; negative on land, by how far inland. */
 export function offshore(x: number, z: number): number {
+  // Building the field asks each cell's point twice (its lowest shape, then the rim): the last
+  // answer is kept for the next question.
+  if (x === lastOff.x && z === lastOff.z) return lastOff.out;
   let out = Infinity;
   // A land whose coast cannot come nearer than the nearest yet changes nothing: the minimum is
   // the same as over every land, in any order.
   for (const l of LANDS) if (hypot2(x - l.x, z - l.z) - l.max < out) out = Math.min(out, outsideLand(l, x, z));
+  lastOff.x = x;
+  lastOff.z = z;
+  lastOff.out = out;
   return out;
 }
+const lastOff = { x: NaN, z: NaN, out: 0 };
 
 /** The land mass whose coast (x, z) lies furthest inside, or nearest to when it is offshore. */
 export function landAt(x: number, z: number): Land {
@@ -934,7 +941,42 @@ export interface FlatShape {
  * of it the ground is exactly at its level, and the shapes blend back in over the
  * next 7 m. Shapes standing below their level (the canyon bridge's pillars) are not given.
  */
+/**
+ * Where a built field may be kept between processes: the sim gate's Node scripts give one
+ * (scripts/ringfall-terrain-store.ts), keyed by the flat shapes and the sim's own source, so
+ * each worker reads the field the first one built; the browser has none and builds it.
+ */
+export interface TerrainStore {
+  load(flat: FlatShape[]): TerrainArrays | null;
+  save(flat: FlatShape[], built: TerrainArrays): void;
+}
+/** What `buildTerrain()` leaves behind, as the store keeps it. */
+export interface TerrainArrays {
+  field: Float32Array;
+  floors: Float32Array;
+  shapes: Uint8Array;
+  bases: Float32Array;
+  steep: Uint8Array;
+  between: Float32Array;
+}
+let store: TerrainStore | null = null;
+/** Sets the store `buildTerrain()` reads and writes; called before the map is loaded. */
+export const useTerrainStore = (s: TerrainStore) => {
+  store = s;
+};
+
 export function buildTerrain(flat: FlatShape[]) {
+  const kept = store?.load(flat);
+  if (kept && kept.field.length === NX * NZ && kept.between.length === BNX * BNZ) {
+    ({ field, floors, shapes, bases, steep } = kept);
+    betweenField = kept.between;
+    return;
+  }
+  build(flat);
+  store?.save(flat, { field: field!, floors: floors!, shapes: shapes!, bases: bases!, steep: steep!, between: betweenGrid() });
+}
+
+function build(flat: FlatShape[]) {
   // Distance from each grid point to the nearest flat shape, and that shape's level,
   // by a two-pass chamfer.
   const dist = new Float32Array(NX * NZ).fill(1e9);
