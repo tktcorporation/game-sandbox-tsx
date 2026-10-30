@@ -1,7 +1,8 @@
 import { atRisk } from "../sim/battle";
 import * as THREE from "three";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { DUCK, ENEMIES, FRONT, PLAYER, STORM, TITAN, WEAPONS, WORLD, type EnemyKind } from "../sim/config";
-import { BOXES, CAMP, DEPOTS, ENTRIES, EXTRACTS, NODES, ROUTES, ZIPS, type Box } from "../sim/map";
+import { BOXES, CAMP, DEPOTS, ENTRIES, EXTRACTS, GLOWS, NODES, ROUTES, ZIPS, type Box } from "../sim/map";
 import { zipUp } from "../sim/zips";
 import { frontNodes } from "../sim/front";
 import { worldKey } from "../sim/routes";
@@ -351,6 +352,39 @@ export class World {
       v.root.position.set(n.core.x, n.core.y, n.core.z);
       this.scene.add(still(v.root, [v.halo, v.cloth]));
       this.cores.push(v);
+    }
+    // What still glows in the world (`GLOWS`): the ring node's power column, banded with light up
+    // its height, lit along its corners and haloed at its broken top, so it is seen across the
+    // harbor; the harbor master's lamp, a warm block in a wide halo.
+    for (const gl of GLOWS) {
+      if (gl.kind === "lamp") {
+        const g = new THREE.Group();
+        const lamp = new THREE.Mesh(new THREE.BoxGeometry(gl.half * 2, gl.y1 - gl.y0, gl.half * 2), glow(PAL.lamp));
+        lamp.position.set(gl.x, (gl.y0 + gl.y1) / 2, gl.z);
+        g.add(lamp);
+        const h = haloSprite(PAL.lamp, 22, 0.7);
+        h.position.set(gl.x, gl.y1, gl.z);
+        g.add(h);
+        this.scene.add(still(g));
+        continue;
+      }
+      const w = gl.half * 2 + 0.12;
+      const parts: THREE.BufferGeometry[] = [];
+      for (let y = gl.y0 + 1.5; y < gl.y1 - 0.5; y += 2.5) parts.push(new THREE.BoxGeometry(w, 0.45, w).translate(gl.x, y, gl.z));
+      for (const [dx, dz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) parts.push(new THREE.BoxGeometry(0.2, gl.y1 - gl.y0, 0.2).translate(gl.x + dx * (gl.half + 0.02), (gl.y0 + gl.y1) / 2, gl.z + dz * (gl.half + 0.02)));
+      const lit = mergeGeometries(parts, false);
+      for (const q of parts) q.dispose();
+      const g = new THREE.Group();
+      if (lit) g.add(new THREE.Mesh(lit, glow(PAL.nodeGlow)));
+      const top = haloSprite(PAL.nodeGlow, 18, 0.8);
+      top.position.set(gl.x, gl.y1 + 1, gl.z);
+      g.add(top);
+      for (let y = gl.y0 + 6; y < gl.y1; y += 10) {
+        const h = haloSprite(PAL.nodeGlow, 9, 0.35);
+        h.position.set(gl.x, y, gl.z);
+        g.add(h);
+      }
+      this.scene.add(still(g));
     }
     // The cables: a steel rope and, along it, a thin blue line that reads from afar; a lift's in steel alone.
     const rope = new THREE.MeshLambertMaterial({ color: 0x3a3f48 });

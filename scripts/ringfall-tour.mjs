@@ -129,6 +129,23 @@ export const HARBOR_TOUR = [
   ["tour-92-ring-wreck-leaning", null, -334, 22, 300, 0, -0.1],
   ["tour-93-ring-wreck-east-shore", null, 400, 1.7, 125, 1.57, 0.06],
   ["tour-94-ring-wreck-harbor", null, -240, 1.7, -490, 0, 0.08],
+  // Where the ring came down on the dry bay: the node in its crater (its floor at -2.43) from the
+  // bay, its rim, a corridor, the core, the hall, the roof and the breach; then the dock town (its
+  // streets at -0.67) from a street, the viaduct, the harbor master's tower, afar, the broken spur
+  // and the blasted east blocks.
+  ["tour-95-ring-node", "環の結節点", -110, 1.7, 80, 0.94, 0.12],
+  ["tour-96-ring-node-rim", "環の結節点", -66, 1.7, 38, 1.05, -0.05],
+  ["tour-97-ring-node-corridor", "環の結節点", -62, -2.43 + 1.7, 0, Math.PI / 2, 0.06, true],
+  ["tour-98-ring-node-core", "環の結節点", -13, -2.43 + 1.7, 13, 0.785, 0.35, true],
+  ["tour-99-ring-node-hall", "環の結節点", -36, -2.43 + 11 + 1.7, -14, 1.2, 0, true],
+  ["tour-100-ring-node-roof", "環の結節点", 20, -2.43 + 22 + 1.7, -40, -2.68, -0.22, true],
+  ["tour-101-ring-node-breach", "環の結節点", 72, 1.7, -52, -2.16, 0.18],
+  ["tour-102-town-street", "波止場町", -27, 1.7, 66, 0, 0.1],
+  ["tour-103-town-viaduct", "波止場町", -20, -0.67 + 9 + 1.7, -19, Math.PI / 2, 0.02, true],
+  ["tour-104-town-tower", "波止場町", -60, -0.67 + 12 * 3.4 + 1.7, -46, Math.PI / 2 + 0.25, -0.12, true],
+  ["tour-105-town-far", "波止場町", -80, 1.7, 110, 0.63, 0.1],
+  ["tour-106-town-spur", "波止場町", 40, -0.67 + 9 + 1.7, 0, Math.PI / 2, -0.04, true],
+  ["tour-107-town-broken", "波止場町", 30, 1.7, 64, 1.02, 0.22],
 ];
 
 /** A tour camera placed in the world: [name, x, dy, z, yaw, pitch, abs], from `frames` (window.ringfallFrames()). */

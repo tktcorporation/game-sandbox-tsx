@@ -558,9 +558,7 @@ const CRAGS: { name: string; line: readonly P[]; half: number }[] = [
   { name: "北の岩", line: [[204, -825], [212, -833]], half: 12 },
   { name: "西の道の岩", line: [[-233, -630], [-223, -638]], half: 12 },
   { name: "南の野の岩", line: [[-206, -476], [-194, -486]], half: 14 },
-  { name: "北の岩山", line: [[-128, -1076], [-112, -1086]], half: 16 },
   { name: "東の岩塔", line: [[296, -996], [304, -1006]], half: 12 },
-  { name: "北東の岩", line: [[144, -1096], [156, -1106]], half: 14 },
   // Cliffs over the far side of the channel: the water stays a waterfront along the quay.
   { name: "水路の崖", line: inArea("bay", [[76, -598], [92, -614], [190, -614]]), half: 13 },
 ];
@@ -845,6 +843,49 @@ function rim(x: number, z: number): number {
   return Math.min(48, out * 2.2) * (0.8 + vnoise(x * 0.05, z * 0.05) * 0.4) + vnoise(x * 0.2, z * 0.2) * Math.min(out, 6);
 }
 
+/**
+ * Craters where the ring's pieces came down: round the middle of each the ground is thrown up into a
+ * rim from `r0` out to `r1`, highest (`high`, give or take a fifth) at `crest`, and cut back down to
+ * the ground where `gaps` cross it (the direction each leaves the middle in, and half its width).
+ * Added over the built field as the coast's rim is: what stands inside a crater keeps its own
+ * level. The gaps keep the rim off the node's corridors and its rubble heap; the corners of its
+ * yard rise with the rim.
+ */
+export const CRATERS: { name: string; x: number; z: number; r0: number; crest: number; r1: number; high: number; gaps: [number, number][] }[] = [
+  {
+    name: "環の結節点",
+    x: 85,
+    z: -1090,
+    r0: 60,
+    crest: 76,
+    r1: 94,
+    high: 5,
+    gaps: [
+      [Math.PI, 10],
+      [Math.PI / 2, 10],
+      [0, 9],
+      [-Math.PI / 2 - 0.32, 8],
+      [(3 * Math.PI) / 4, 7],
+      [-Math.PI / 4, 7],
+    ],
+  },
+];
+
+function crater(x: number, z: number): number {
+  let out = 0;
+  for (const c of CRATERS) {
+    const [dx, dz] = [x - c.x, z - c.z];
+    const d = hypot2(dx, dz);
+    if (d <= c.r0 || d >= c.r1) continue;
+    const up = d < c.crest ? smooth(c.r0, c.crest, d) : 1 - smooth(c.crest, c.r1, d);
+    const a = Math.atan2(dz, dx);
+    let kept = 1;
+    for (const [g, w] of c.gaps) if (Math.cos(a - g) > 0) kept = Math.min(kept, smooth(w, w + 9, Math.abs(d * Math.sin(a - g))));
+    out += c.high * up * kept * (0.8 + vnoise(x * 0.08, z * 0.08) * 0.4);
+  }
+  return out;
+}
+
 /** Grid points of the cached field on each axis, from the world's corner (x0, z0). */
 const NX = Math.round((WORLD.x1 - WORLD.x0) / RES) + 1;
 const NZ = Math.round((WORLD.z1 - WORLD.z0) / RES) + 1;
@@ -852,6 +893,8 @@ let field: Float32Array | null = null;
 let steep: Uint8Array | null = null;
 let floors: Float32Array | null = null;
 let shapes: Uint8Array | null = null;
+/** The level the ground at each grid point was built to: a hand-built thing's, or the floor's, with a crater's rim on it. */
+let bases: Float32Array | null = null;
 
 
 export interface FlatShape {
@@ -861,6 +904,8 @@ export interface FlatShape {
   z1: number;
   /** The level it stands on. Left out, the ground under it follows the walkable floor, ramps included. */
   y?: number;
+  /** Ground built to be walked at its level however far over the floor round it (an outpost's yard), not high ground. */
+  walked?: true;
 }
 
 /**
@@ -877,6 +922,8 @@ export function buildTerrain(flat: FlatShape[]) {
   const mid = new Float32Array(NX * NZ);
   // And the shape there, so that a floor rising over dunes is followed rather than terraced.
   const midShape = new Int32Array(NX * NZ);
+  // And whether that shape is ground to walk (`FlatShape.walked`).
+  const walked = new Uint8Array(NX * NZ);
   for (const b of flat) {
     const y = b.y ?? NaN;
     const ml = lowest((b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2);
@@ -893,6 +940,7 @@ export function buildTerrain(flat: FlatShape[]) {
         at[j * NX + i] = y;
         mid[j * NX + i] = m;
         midShape[j * NX + i] = ml.shape;
+        walked[j * NX + i] = b.walked ? 1 : 0;
       }
   }
   const D = RES;
@@ -903,6 +951,7 @@ export function buildTerrain(flat: FlatShape[]) {
       at[k] = at[from];
       mid[k] = mid[from];
       midShape[k] = midShape[from];
+      walked[k] = walked[from];
     }
   };
   for (let j = 0; j < NZ; j++)
@@ -924,6 +973,7 @@ export function buildTerrain(flat: FlatShape[]) {
   field = new Float32Array(NX * NZ);
   floors = new Float32Array(NX * NZ);
   shapes = new Uint8Array(NX * NZ);
+  bases = new Float32Array(NX * NZ);
   for (let j = 0; j < NZ; j++)
     for (let i = 0; i < NX; i++) {
       const x = WORLD.x0 + i * RES;
@@ -943,7 +993,9 @@ export function buildTerrain(flat: FlatShape[]) {
       let shelf = -Infinity;
       for (const n of bucketAt(x, z).shelves) shelf = Math.max(shelf, shelfAt(n, x, z));
       const base = level + (natural(x, z, low) - level) * smooth(3, 10, dd);
-      field[k] = (shelf > base ? base + (shelf - base) * smooth(1, 2, dd) : base) + rim(x, z);
+      const thrown = crater(x, z);
+      field[k] = (shelf > base ? base + (shelf - base) * smooth(1, 2, dd) : base) + rim(x, z) + thrown;
+      bases[k] = (walked[k] ? level + (floors[k] - level) * smooth(3, 10, dd) : floors[k]) + thrown;
     }
   steep = new Uint8Array(NX * NZ);
   for (let j = 1; j < NZ - 1; j++)
@@ -973,7 +1025,7 @@ function carveAt(c: Carve, poly: Polyline, x: number, z: number): { h: number; l
 }
 
 /** Cells the carves now in place changed, with what the built field held there, to put back. */
-const carved = new Map<number, { field: number; floor: number; shape: number; steep: number }>();
+const carved = new Map<number, { field: number; floor: number; base: number; shape: number; steep: number }>();
 
 /**
  * Puts exactly `carves` into the field, taking out any cut before. The field built by
@@ -983,16 +1035,17 @@ const carved = new Map<number, { field: number; floor: number; shape: number; st
  * ground it covers.
  */
 export function carveTerrain(carves: readonly Carve[]) {
-  if (!field || !floors || !shapes || !steep) throw new Error("carveTerrain before buildTerrain");
+  if (!field || !floors || !bases || !shapes || !steep) throw new Error("carveTerrain before buildTerrain");
   for (const [k, v] of carved) {
     field[k] = v.field;
     floors[k] = v.floor;
+    bases[k] = v.base;
     shapes[k] = v.shape;
     steep[k] = v.steep;
   }
   carved.clear();
   const save = (k: number) => {
-    if (!carved.has(k)) carved.set(k, { field: field![k], floor: floors![k], shape: shapes![k], steep: steep![k] });
+    if (!carved.has(k)) carved.set(k, { field: field![k], floor: floors![k], base: bases![k], shape: shapes![k], steep: steep![k] });
   };
   for (const c of carves) {
     let shape = SHAPE_NAMES.indexOf(c.name);
@@ -1012,6 +1065,7 @@ export function carveTerrain(carves: readonly Carve[]) {
         save(k);
         field[k] = at.h;
         floors[k] = at.level;
+        bases[k] = at.level;
         shapes[k] = shape;
       }
     // Cliffs over again where the trench changed the slope, one cell round it included.
@@ -1082,8 +1136,19 @@ export function surfaceAt(x: number, z: number): string {
   return SHAPE_NAMES[shapes[j * NX + i]];
 }
 
-/** True on high ground or a cliff: anywhere well above the walkable floor nearby. */
-export const highGround = (x: number, z: number) => terrainHeight(x, z) > floorLevel(x, z) + 2;
+/**
+ * The level the ground at (x, z) was built to: the floor's (`floorLevel`), or a yard's built to be
+ * walked (`FlatShape.walked`) blending back to the floor round it, with a crater's rim thrown up on it.
+ */
+export function baseLevel(x: number, z: number): number {
+  const i = Math.round((x - WORLD.x0) / RES);
+  const j = Math.round((z - WORLD.z0) / RES);
+  if (!bases || i < 0 || j < 0 || i >= NX || j >= NZ) return floorLevel(x, z);
+  return bases[j * NX + i];
+}
+
+/** Ground well over the level it was built to: the crags, the coast's rim, the land's edges. A yard built to be walked over the floor round it, or a crater's rim, is not. */
+export const highGround = (x: number, z: number) => terrainHeight(x, z) > baseLevel(x, z) + 2;
 
 /** True anywhere outside the walkable shapes, their cliffs included. */
 export function offLowGround(x: number, z: number): boolean {

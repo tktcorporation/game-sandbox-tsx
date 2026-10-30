@@ -424,10 +424,22 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   Hamlets (`HAMLET_FRAMES` in `map.ts`: a few buildings and a bin or two, no robots) stand on the
   ground between, each flat at the level under its middle. Outposts (`OUTPOSTS`: in the harbor a
   substation, a fuel depot, a marshalling yard, a wharf and an engine depot; in the reservoir a
-  substation and a pumping station) are larger ones, each with a squad of two (`Hamlet.guard`,
+  substation and a pumping station) are larger ones, each with a squad of two (three at the node and the dock town below; `Hamlet.guard`,
   joined to `ROAMERS`) and its whole yard pressed flat. From them the works run to the POIs
   (`WORKS_LINES`, laid once the ground is built): power lines on pylons, pipelines high enough to
-  walk under, and a freight line and its spur with wagons left on them as cover.
+  walk under, and a freight line and its spur with wagons left on them as cover. The harbor's
+  sixth and seventh outposts have no lines: where the ring came down on the dry bay north of the
+  wreck. The ring's node (`ringNode()`, sized by `NODE`) is a steel drum standing at the bottom
+  of a crater (`CRATERS` in `terrain.ts`, a bump in the ground's field with gaps to walk down
+  through), corridors running straight in at ground level to its core and a glowing column
+  (`GLOWS`, drawn by the view) seen across the bay, a ring of halls a storey up round them, a roof,
+  a breach torn open where a piece of the ring struck it. West of it the dock town
+  (`harborTown()`, sized by `TOWN`) is blocks round a freight station with the line on a viaduct
+  round it at roof height; the line's spur east toward the node broke where the ring came down,
+  and falls in strides into the node's west corridor (`TOWN_SPUR_FALL`, laid once the ground is
+  built). An outpost may name a `yard`, the ground pressed flat round it, which is walked ground
+  (`FlatShape.walked`): `highGround()` measures it against the levels pressed under it
+  (`baseLevel()`), not the field, so a raised yard and the crater's rim are walkable.
   Perimeter fences (`FENCES` / `FENCE_RUNS` in `map.ts`, boxes of kind `fence`) close the open
   ground round some of the base's works: they stop bodies, not sight or shots (`rayWorld()` in
   `geom.ts` passes them, `cover.ts` offers no cover behind them), and leave a gate wherever a

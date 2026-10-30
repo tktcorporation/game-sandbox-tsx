@@ -2,7 +2,7 @@ import { FRONT, VAULT, WORLD, ZIP, type EnemyKind, type HealKind, type Rarity, t
 import { AREA, inArea, POI_AT, type AreaId } from "./areas";
 import { LENGTHS, offStreet, STREETS } from "./streets";
 import { layZips, type ZipLine } from "./ziplayout";
-import { buildTerrain, type Carve, type FlatShape, floorLevel, highGround, LEVEL, offshore, roadLine, steepAt, surfaceAt, terrainHeight } from "./terrain";
+import { buildTerrain, type Carve, CRATERS, type FlatShape, floorLevel, highGround, LEVEL, offshore, roadLine, steepAt, surfaceAt, terrainHeight } from "./terrain";
 import { hypot2 } from "./hypot";
 
 /**
@@ -1311,11 +1311,353 @@ function substationYard(): Box[] {
 }
 
 /**
+ * A node of the orbital ring, where its lengths joined and its spokes met: a drum `r` metres round
+ * that came down on the dry bay north of the wreck and stands sunk in its crater (`CRATERS`), in its
+ * own frame round (0, 0) on ground at 0. Built as one place to break into, not a building to search:
+ * the broken roots of three spokes stand out from it west, south and east, and each is a corridor
+ * `corridor` either side of its middle that runs in through the drum's machinery to the core, a hall
+ * `core` round open to the sky with the node's power column still standing in its middle, lit
+ * (`GLOWS`). The machinery between the corridors is a solid mass up to `deck`, its top the floor of
+ * the ring hall that runs round the drum under its roof, bridged over each corridor. A flight
+ * climbs from the core's floor to the hall on its north-west and on its south-east; a ring round
+ * the column at the hall's height is reached by a bridge from the north and from each side; two
+ * flights climb from the hall to the roof. The roof is torn open over the hall in two places,
+ * ports look out of the drum all round from the hall, and a heap of rubble against the drum's
+ * north side climbs from the crater's floor to the roof. Where it hit the ground first, on its
+ * north-east, the drum is broken open from above the hall's floor to its crown, and the rubble
+ * there is walked up into the hall. Its roof is ribbed out from the core, and machinery housings
+ * stand on it.
+ */
+const NODE = { r: 50, wall: 1.5, h: 22, core: 18, deck: 11, corridor: 4, column: 2.5, columnTop: 48 } as const;
+/** Where the node lands: the middle of its drum and of its crater (`CRATERS`), in the world. */
+const NODE_AT = (() => {
+  const c = CRATERS.find((q) => q.name === "環の結節点");
+  if (!c) throw new Error("no crater for the ring's node");
+  return { x: c.x, z: c.z };
+})();
+function ringNode(): Box[] {
+  const { r, wall, h, core, deck, corridor: c, column, columnTop } = NODE;
+  const SKIN = 5;
+  const RIB = 6;
+  const SCORCH = 7;
+  const out: Box[] = [];
+  /** A space taken out of what `band()` lays: x0, z0, x1, z1, from y0 up to y1. */
+  type Cut = [number, number, number, number, number, number];
+  // The rows the round shapes are laid in, along z: the corridors' own width through the middle,
+  // so the west and east corridors take whole rows, then rows of 1.5 m out to the rim.
+  const rows: [number, number][] = [[-c, c]];
+  for (let z = c; z < r; z += 1.5) rows.push([z, Math.min(r, z + 1.5)], [-Math.min(r, z + 1.5), -z]);
+  const chord = (rad: number, z: number) => (z < rad ? Math.sqrt(rad * rad - z * z) : 0);
+  const near = ([za, zb]: [number, number]) => (za <= 0 && zb >= 0 ? 0 : Math.min(Math.abs(za), Math.abs(zb)));
+  /** Lays x a..b by z za..zb from y0 to y1, less the cuts reaching into it. */
+  const carve = (a: number, b: number, za: number, zb: number, y0: number, y1: number, kind: BoxKind, tint: number, cuts: Cut[]) => {
+    const hit = cuts.filter(([x0, z0, x1, z1]) => x0 < b && x1 > a && z0 < zb && z1 > za);
+    const xs = [...new Set([a, b, ...hit.flatMap(([x0, , x1]) => [x0, x1]).filter((x) => x > a && x < b)])].sort((p, q) => p - q);
+    for (let i = 0; i + 1 < xs.length; i++) {
+      const [p, q] = [xs[i], xs[i + 1]];
+      const m = (p + q) / 2;
+      const gaps = hit
+        .filter(([x0, , x1]) => x0 < m && x1 > m)
+        .map(([, , , , g0, g1]): [number, number] => [Math.max(y0, g0), Math.min(y1, g1)])
+        .filter(([g0, g1]) => g1 > g0)
+        .sort((u, v) => u[0] - v[0]);
+      let y = y0;
+      for (const [g0, g1] of gaps) {
+        if (g0 > y) out.push(rect(p, za, q, zb, y, g0, kind, tint));
+        y = Math.max(y, g1);
+      }
+      if (y1 > y) out.push(rect(p, za, q, zb, y, y1, kind, tint));
+    }
+  };
+  /**
+   * A round band from radius r0 to r1 between heights y0 and y1, less `cuts`. A thin band (`thin`)
+   * reaches in to where it is narrowest across each row, so it shows no crack between rows; a thick
+   * one keeps clear of the round within r0 everywhere.
+   */
+  const band = (r0: number, r1: number, y0: number, y1: number, kind: BoxKind, tint: number, cuts: Cut[], thin = false) => {
+    for (const row of rows) {
+      const xo = chord(r1, near(row));
+      if (xo <= 0) continue;
+      const far = Math.max(Math.abs(row[0]), Math.abs(row[1]));
+      const xi = chord(r0, thin ? far : near(row));
+      for (const [a, b] of xi > 0 ? [[-xo, -xi], [xi, xo]] : [[-xo, xo]]) carve(a, b, row[0], row[1], y0, y1, kind, tint, cuts);
+    }
+  };
+  /** How far from the middle along z the hall's floor starts over x0..x1 on the north (-1) or south (1): the core's edge as `band()` lays it. */
+  const deckEdge = (x0: number, x1: number, side: -1 | 1) => {
+    const inside = Math.min(Math.abs(x0), Math.abs(x1));
+    for (const row of rows.filter((q) => Math.sign(q[0] + q[1]) === side).sort((p, q) => near(p) - near(q))) if (chord(core, near(row)) <= inside) return side * near(row);
+    return side * core;
+  };
+  // The corridors, through the machinery and out through the wall, as high as the hall's floor.
+  const corridors: Cut[] = [
+    [-r - 1, -c, 0, c, -2, deck],
+    [-c, 0, c, r + 1, -2, deck],
+    [0, -c, r + 1, c, -2, deck],
+  ];
+  // Ports all round at the hall's height, between the corridors.
+  const ports: Cut[] = [];
+  for (let k = 0; k < 12; k++) {
+    const a = ((15 + 30 * k) * Math.PI) / 180;
+    const [x, z] = [(r - wall / 2) * Math.cos(a), (r - wall / 2) * Math.sin(a)];
+    ports.push([x - 2.2, z - 2.2, x + 2.2, z + 2.2, deck + 2, deck + 5]);
+  }
+  // The two flights from the hall to the roof, against the drum's wall: their stairwells.
+  const flight = stepsFor(h - deck) * STEP_DEPTH;
+  const up: { x: number; z: number; away: Side }[] = [
+    { x: 0, z: -44.5, away: "s" },
+    { x: -26, z: 40, away: "n" },
+  ];
+  const stairwells: Cut[] = up.map((f) => (f.away === "s" ? [f.x - 1.5, f.z, f.x + 1.5, f.z + flight + 0.5, h - 1, h + 3] : [f.x - 1.5, f.z - flight - 0.5, f.x + 1.5, f.z, h - 1, h + 3]));
+  // The roof torn open over the hall in two places.
+  const tears: Cut[] = [
+    [-34, -32, -22, -22, h - 1, h + 3],
+    [20, 18, 33, 27, h - 1, h + 3],
+  ];
+  // The breach on the north-east: wall, crown and the roof's edge gone from a little over the
+  // ground to the top, the hall's floor left, rubble up to it from outside.
+  const breach: Cut = [33, -40, r + 2, -24, 6, h + 3];
+  const breachRoof: Cut = [33, -38, r + 2, -24, h - 1, h + 3];
+  // Where the rubble heap comes up against the drum's north side: no crown in its way.
+  const heap = { x: -20, w: 6 };
+  let heapReach: number = c;
+  while (chord(r, heapReach) >= Math.abs(heap.x)) heapReach += 1.5;
+  const heapTop = -heapReach;
+
+  // The drum's wall, its rib round it at the hall's floor, its crown round the roof's edge.
+  band(r - wall, r, -1, h, "steel", SKIN, [...corridors, ...ports, breach], true);
+  band(r, r + 0.5, deck - 0.6, deck, "steel", RIB, [...corridors, breach], true);
+  band(r - 1.2, r + 0.3, h, h + 1.2, "steel", RIB, [[heap.x - heap.w / 2 - 0.5, -r - 2, heap.x + heap.w / 2 + 0.5, heapTop + 3, h - 1, h + 3], breach], true);
+  // The machinery, cut by the corridors: the hall's floor.
+  band(core, r - wall + 0.05, -1, deck, "steel", 2, corridors);
+  // The roof over the hall, open over the core.
+  band(core, r, h - 0.4, h, "steel", SKIN, [...stairwells, ...tears, breachRoof]);
+  for (const [x0, z0, x1, z1] of [...tears, breachRoof]) out.push(rect(x0, z0, x1, z0 + 0.4, h - 0.7, h, "steel", SCORCH), rect(x0, z1 - 0.4, x1, z1, h - 0.7, h, "steel", SCORCH));
+  // Ribs out from the core across the roof, west, east and south (the north's stairwell is where
+  // its would run), and housings standing on it.
+  out.push(rect(-r + 1.2, -0.75, -core, 0.75, h, h + 0.9, "steel", RIB), rect(core, -0.75, r - 1.2, 0.75, h, h + 0.9, "steel", RIB), rect(-0.75, core, 0.75, r - 1.2, h, h + 0.9, "steel", RIB));
+  for (const d of [60, 150, 240, 330]) {
+    const a = (d * Math.PI) / 180;
+    out.push(box(40 * Math.cos(a), 40 * Math.sin(a), 4, 3, h + 2.2, "steel", 2, h));
+  }
+  // Rubble up through the breach onto the hall's floor, and the scorch round the break.
+  out.push(...stairs(36, -32, "e", 4, deck).map((q) => ({ ...q, kind: "rock" as BoxKind, tint: q.h > deck / 2 ? 1 : 0 })));
+  for (const z of [-40, -24]) out.push(rect(33, z - 0.3, r - 0.2, z + 0.3, h - 1.6, h, "steel", SCORCH));
+  // Columns under the roof, and machinery left standing on the hall's floor to hide behind.
+  for (let k = 0; k < 12; k++) {
+    const a = ((15 + 30 * k) * Math.PI) / 180;
+    out.push(box(34 * Math.cos(a), 34 * Math.sin(a), 1.2, 1.2, h - 0.4, "steel", 2, deck));
+  }
+  for (const k of [1, 3, 5, 7]) {
+    const a = (k * Math.PI) / 4;
+    out.push(box(28 * Math.cos(a), 28 * Math.sin(a), 3.6, 2.4, deck + 1.8, "steel", 1, deck));
+  }
+  // Bridges over the corridors at the hall's floor, two over each.
+  for (const [p, q] of [[25, 28], [37, 40]]) {
+    out.push(rect(-q, -c, -p, c, deck - 0.3, deck, "steel", 2));
+    out.push(rect(p, -c, q, c, deck - 0.3, deck, "steel", 2));
+    out.push(rect(-c, p, c, q, deck - 0.3, deck, "steel", 2));
+  }
+  // Up from the hall to the roof.
+  for (const f of up) out.push(...stairs(f.x, f.z, f.away, 2.4, h, 0, deck).map((q) => ({ ...q, kind: "steel" as BoxKind, tint: 2 })));
+  // The core: the column, a ring round it at the hall's height, a bridge to the ring from the north
+  // and one from each side, and a flight up from the floor to the hall on the north-west and the south-east.
+  out.push(rect(-column, -column, column, column, -1, columnTop, "steel", RIB));
+  const ring = column + 3.5;
+  out.push(
+    rect(-ring, -ring, ring, -column, deck - 0.3, deck, "steel", 2),
+    rect(-ring, column, ring, ring, deck - 0.3, deck, "steel", 2),
+    rect(-ring, -column, -column, column, deck - 0.3, deck, "steel", 2),
+    rect(column, -column, ring, column, deck - 0.3, deck, "steel", 2),
+  );
+  const rail = (x0: number, z0: number, x1: number, z1: number) => out.push(rect(x0, z0, x1, z1, deck, deck + 0.55, "steel", RIB));
+  {
+    const n = deckEdge(-1.5, 1.5, -1);
+    out.push(rect(-1.5, n - 0.5, 1.5, -ring, deck - 0.3, deck, "steel", 2));
+    rail(-1.5, n, -1.35, -ring);
+    rail(1.35, n, 1.5, -ring);
+    const reach = core + 0.5;
+    out.push(rect(-reach, column + 0.5, -ring, ring, deck - 0.3, deck, "steel", 2), rect(ring, -ring, reach, -column - 0.5, deck - 0.3, deck, "steel", 2));
+    rail(-reach, ring - 0.15, -ring, ring);
+    rail(ring, -ring, reach, -ring + 0.15);
+  }
+  const fx = 10;
+  out.push(...stairs(-fx, deckEdge(-fx - 1.2, -fx + 1.2, -1), "s", 2.4, deck).map((q) => ({ ...q, kind: "steel" as BoxKind, tint: 2 })));
+  out.push(...stairs(fx, deckEdge(fx - 1.2, fx + 1.2, 1), "n", 2.4, deck).map((q) => ({ ...q, kind: "steel" as BoxKind, tint: 2 })));
+  // The spokes' broken roots: box girders a storey over the hall's floor, the corridors running out
+  // through them, ribbed every 6 m, torn off and scorched at their ends. Each is written along u,
+  // out from the drum, and v across it.
+  const spoke = (to: "w" | "s" | "e", len: number) => {
+    const R = (u0: number, v0: number, u1: number, v1: number, y0: number, y1: number, tint: number) => {
+      const [a, b] = [Math.min(u0, u1), Math.max(u0, u1)];
+      const [p, q] = [Math.min(v0, v1), Math.max(v0, v1)];
+      out.push(to === "w" ? rect(-b, p, -a, q, y0, y1, "steel", tint) : to === "e" ? rect(a, p, b, q, y0, y1, "steel", tint) : rect(p, a, q, b, y0, y1, "steel", tint));
+    };
+    const u0 = r - 2;
+    const u1 = r + len;
+    const top = deck + 1;
+    // The spoke's sides go down past the floor, so no seam shows where they meet the ground.
+    const foot = 4;
+    for (const s of [-1, 1]) {
+      R(u0, s * c, u1 - 1.6, s * (c + 2), -foot, top, SKIN);
+      R(u1 - 1.6, s * c, u1 - (s > 0 ? 0 : 0.7), s * (c + 2), -foot, top - (s > 0 ? 1.4 : 0), SCORCH);
+      for (let u = u0 + 6; u < u1 - 2; u += 6) R(u - 0.5, s * (c + 2), u + 0.5, s * (c + 2.25), -foot, top + 0.3, RIB);
+    }
+    R(u0, -c - 2, u1 - 3.2, c + 2, top - 0.6, top, SKIN);
+    R(u1 - 3.2, -c - 2, u1 - 1.6, c, top - 0.6, top, SCORCH);
+  };
+  spoke("w", 30);
+  spoke("s", 28);
+  spoke("e", 16);
+  // Rubble heaped against the drum's north side from the crater's floor to the roof.
+  out.push(...stairs(heap.x, heapTop, "n", heap.w, h).map((q) => ({ ...q, kind: "rock" as BoxKind, tint: q.h > h / 2 ? 1 : 0 })));
+  return out;
+}
+
+/**
+ * The dock town, west of the ring's node (`NODE`), in its own frame round (0, 0) on ground at 0:
+ * where the base's dock workers lived, a grid of blocks with streets `street` wide between them,
+ * the freight station in the middle and the harbor master's tower on the north-west corner, seen
+ * from all over the bay. The freight line runs round the station on a viaduct (`TOWN.deck` high)
+ * over the four streets round it, so a run goes round the town at roof height: flights come up to
+ * it from the streets at its west corners, a plank crosses to it from a roof in the west block, and
+ * bridges cross from it onto the station's roof, the platform. From its east side a spur ran on to
+ * the node: it stands as far as `spur`, where the node's fall broke it, and from there its deck lies
+ * fallen down into the node's west corridor (`TOWN_SPUR_FALL`). The blocks east of the station,
+ * toward the node, are the ones its fall broke: a tower torn off at its sixth storey and a heap of
+ * what fell beside it, two houses either side of the spur, and a tower leaning back from the blast.
+ */
+const TOWN = { deck: 9, half: 3, loopX: 27, loopZ: 19, spur: 70 } as const;
+/** Where the town stands: the middle of its station, in the world. */
+const TOWN_AT = { x: -100, z: -1090 } as const;
+function harborTown(): Box[] {
+  const { deck, half, loopX, loopZ, spur } = TOWN;
+  const out: Box[] = [];
+  // The north-west block: the harbor master's tower (a lamp on its roof, `GLOWS`), the harbor
+  // office and the pilots' house behind it.
+  out.push(...highRise(-62, -50, 12, 12, 12), box(-62, -50, 4, 4, 12 * STOREY + 3, "steel", 2, 12 * STOREY));
+  out.push(...tower(-42, -36, 12, 14, 5, { doors: [["s", "w"]], windows: [["e"], ...Array.from({ length: 4 }, (): Side[] => ["n", "e", "s", "w"])] }));
+  out.push(...tower(-44, -60, 10, 10, 7, { doors: [["w", "s"]], windows: [["e"], ...Array.from({ length: 6 }, (): Side[] => ["n", "e", "s", "w"])] }));
+  // The north block: two rows of houses, the far one a storey taller.
+  out.push(...rowHouses(-18, -60, 4, 9, 10, 4), ...rowHouses(-18, -36, 4, 9, 10, 3));
+  // The west block: a tall house and a lower one whose roof planks across to the viaduct.
+  out.push(...tower(-68, 0, 14, 12, 6, { doors: [["e", "s"]], windows: [["w"], ...Array.from({ length: 5 }, (): Side[] => ["n", "e", "s", "w"])] }));
+  out.push(...tower(-45, 2, 12, 14, 3, { doors: [["w", "s"]], windows: [["n"], ["n", "s", "w"], ["n", "s"]], open: ["e"] }));
+  // The south-west block: a block of flats, a narrower one, and a shop by the street.
+  out.push(...tower(-57, 40, 26, 12, 7, { doors: [["n", "w"]], windows: [["s"], ...Array.from({ length: 6 }, (): Side[] => ["n", "s"])] }));
+  out.push(...tower(-42, 59, 10, 10, 6, { doors: [["n", "e"]], windows: [["w"], ...Array.from({ length: 5 }, (): Side[] => ["n", "e", "s", "w"])] }));
+  out.push(...building(-63, 60, 14, 10, 3.6, { doors: ["n", "e"], windows: ["s"], roof: "w" }));
+  // Cars and a lorry left in the streets on the day the ring fell.
+  out.push(box(-22.5, 40, 1.9, 4.5, 1.5, "prop", PROP.car), box(-30.5, 52, 1.9, 4.5, 1.5, "prop", PROP.car), box(-8, -22, 4.5, 1.9, 1.5, "prop", PROP.car));
+  out.push(box(-24, -48, 2.5, 2.3, 3.0, "prop", PROP.cab), box(-24, -44.35, 2.5, 5, 2.3, "prop", PROP.bed));
+  // The south block: the covered market, open on every side, and its stalls.
+  out.push(...hall(0, 48, 34, 28, 6.8, { doors: [{ side: "n" }, { side: "s" }, { side: "w" }, { side: "e" }], columns: 8.5 }));
+  for (const [x, z] of [[-8, 42], [8, 42], [-8, 54], [8, 54]]) out.push(box(x, z, 5, 2, 1.1, "prop", PROP.counter));
+  // The freight station: a shed the line stops over, its roof the platform, a canopy over it.
+  out.push(...hall(0, 0, 36, 22, deck, { doors: [{ side: "n", at: -8 }, { side: "s", at: 8 }, { side: "w" }], hatches: [{ side: "e" }], open: ["n", "s"], mezz: [{ side: "e", depth: 5, y: 4.5 }], columns: 9 }));
+  for (const x of [-12, 0, 12]) for (const z of [-4, 4]) out.push(box(x, z, 0.4, 0.4, deck + 4, "steel", 2, deck));
+  out.push(rect(-14, -5.5, 14, 5.5, deck + 4, deck + 4.3, "steel", 3));
+  // The viaduct round the station: its deck, rails along both edges (open where a flight, a plank or
+  // a bridge meets it), two lines of track on it, and its piers under both edges every 12 m.
+  const runs: [number, number, number, number][] = [
+    [-loopX - half, -loopZ - half, loopX + half, -loopZ + half],
+    [-loopX - half, loopZ - half, loopX + half, loopZ + half],
+    [-loopX - half, -loopZ - half, -loopX + half, loopZ + half],
+    [loopX - half, -loopZ - half, loopX + half, loopZ + half],
+  ];
+  for (const [x0, z0, x1, z1] of runs) out.push(rect(x0, z0, x1, z1, deck - 0.6, deck, "slab", 1));
+  // Gaps in the rails: [side of the loop, from, to along it].
+  const gaps: { run: number; edge: -1 | 1; a: number; b: number }[] = [
+    { run: 0, edge: 1, a: -3, b: 3 }, // the bridge onto the station's roof
+    { run: 1, edge: -1, a: -3, b: 3 },
+    { run: 0, edge: -1, a: -29.2, b: -24.8 }, // the north-west flight
+    { run: 1, edge: 1, a: -29.2, b: -24.8 }, // the south-west flight
+    { run: 2, edge: -1, a: -1, b: 1 }, // the plank from the west block
+    { run: 0, edge: -1, a: 24.8, b: 29.2 }, // the north-east flight
+    { run: 1, edge: 1, a: 24.8, b: 29.2 }, // the south-east flight
+    { run: 3, edge: 1, a: -half, b: half }, // the spur to the node
+  ];
+  // Where two runs cross at a corner of the loop, its inner rail stops: a run turns the corner.
+  const w = 2 * half;
+  gaps.push(
+    { run: 0, edge: 1, a: -loopX - half, b: -loopX - half + w },
+    { run: 0, edge: 1, a: loopX + half - w, b: loopX + half },
+    { run: 1, edge: -1, a: -loopX - half, b: -loopX - half + w },
+    { run: 1, edge: -1, a: loopX + half - w, b: loopX + half },
+    { run: 2, edge: 1, a: -loopZ - half, b: -loopZ - half + w },
+    { run: 2, edge: 1, a: loopZ + half - w, b: loopZ + half },
+    { run: 3, edge: -1, a: -loopZ - half, b: -loopZ - half + w },
+    { run: 3, edge: -1, a: loopZ + half - w, b: loopZ + half },
+  );
+  runs.forEach(([x0, z0, x1, z1], i) => {
+    const alongX = x1 - x0 > z1 - z0;
+    for (const edge of [-1, 1] as const) {
+      // The loop's inner corners are where two runs cross: no rail across them.
+      const [a, b] = alongX ? [x0, x1] : [z0, z1];
+      const cuts = gaps.filter((g) => g.run === i && g.edge === edge).sort((p, q) => p.a - q.a);
+      let cur = a;
+      const piece = (p: number, q: number) => {
+        if (q - p < 0.3) return;
+        if (alongX) out.push(rect(p, edge < 0 ? z0 : z1 - 0.15, q, edge < 0 ? z0 + 0.15 : z1, deck, deck + 0.6, "steel", 2));
+        else out.push(rect(edge < 0 ? x0 : x1 - 0.15, p, edge < 0 ? x0 + 0.15 : x1, q, deck, deck + 0.6, "steel", 2));
+      };
+      for (const g of cuts) {
+        piece(cur, g.a);
+        cur = g.b;
+      }
+      piece(cur, b);
+    }
+    for (const off of [-1, 1]) {
+      const c = (alongX ? (z0 + z1) / 2 : (x0 + x1) / 2) + off * 0.9;
+      out.push(alongX ? rect(x0, c - 0.08, x1, c + 0.08, deck, deck + 0.12, "steel", 2) : rect(c - 0.08, z0, c + 0.08, z1, deck, deck + 0.12, "steel", 2));
+    }
+    const len = alongX ? x1 - x0 : z1 - z0;
+    for (let t = 2; t <= len - 2; t += 12)
+      for (const e of [-1, 1]) {
+        const p = alongX ? x0 + t : (x0 + x1) / 2 + e * (half - 0.9);
+        const q = alongX ? (z0 + z1) / 2 + e * (half - 0.9) : z0 + t;
+        out.push(box(p, q, 1.2, 1.2, deck - 0.6, "wall", 1));
+      }
+  });
+  // Up to it from the streets at its corners, and onto the station's roof from it.
+  out.push(...stairs(-loopX, -loopZ - half, "n", 4, deck), ...stairs(-loopX, loopZ + half, "s", 4, deck));
+  out.push(...stairs(loopX, -loopZ - half, "n", 4, deck), ...stairs(loopX, loopZ + half, "s", 4, deck));
+  // The spur toward the node, railed and on piers as the loop is, as far as where it broke.
+  out.push(rect(loopX + half, -half, spur, half, deck - 0.6, deck, "slab", 1));
+  out.push(rect(loopX + half, -half, spur, -half + 0.15, deck, deck + 0.6, "steel", 2), rect(loopX + half, half - 0.15, spur - 2.5, half, deck, deck + 0.6, "steel", 2));
+  for (const off of [-0.9, 0.9]) out.push(rect(loopX + half, off - 0.08, spur, off + 0.08, deck, deck + 0.12, "steel", 2));
+  for (const x of [36, 48, 60]) for (const e of [-1, 1]) out.push(box(x, e * (half - 0.9), 1.2, 1.2, deck - 0.6, "wall", 1));
+  out.push(rect(spur - 0.8, -half, spur, half, deck - 1.2, deck, "steel", 7));
+  // The north-east block: a tower torn off at its sixth storey, its walls left standing ragged and
+  // scorched over the floor that is now its roof; the heap of what fell, against a low house.
+  {
+    const top = 6 * STOREY;
+    out.push(...tower(50, -52, 14, 14, 6, { doors: [["w", "s"]], windows: [["e"], ...Array.from({ length: 5 }, (): Side[] => ["n", "e", "s", "w"])], open: ["n", "e", "s", "w"] }));
+    out.push(rect(43, -59, 50, -58.75, top, top + 2.6, "wall"), rect(56.75, -59, 57, -52, top, top + 1.4, "wall"), rect(43, -45.25, 47, -45, top, top + 3.2, "wall"));
+    out.push(rect(43, -59, 46, -58.75, top + 2.6, top + 3, "steel", 7), rect(56.75, -55, 57, -52, top + 1.4, top + 1.8, "steel", 7));
+    out.push(...tower(68, -62, 10, 10, 2, { doors: [["w", "s"]], windows: [["e"], ["n", "e", "s", "w"]] }));
+    out.push(...stairs(68, -36, "w", 8, 5).map((q) => ({ ...q, kind: "rock" as BoxKind, tint: 1 })), box(72, -36, 8, 8, 5, "rock", 0));
+  }
+  // The east block: a house either side of the spur.
+  out.push(...tower(50, -8, 24, 8, 4, { doors: [["w", "e"]], windows: [["n"], ["n", "s"], ["n", "s"], ["n", "s"]] }));
+  out.push(...tower(48, 8, 20, 8, 2, { doors: [["w", "s"]], windows: [["e"], ["n", "s", "e"]] }));
+  // The south-east block: a tower leaning back west from the blast, each storey set a little west of
+  // the one under it, and plates of the ring's skin thrown into the street before it.
+  for (let k = 0; k < 7; k++)
+    out.push(...lift(k * STOREY, tower(56 - k * 0.9, 46, 14, 12, 1, { doors: [k === 0 ? ["w", "s"] : []], windows: [k === 0 ? ["n"] : ["n", "e", "s", "w"]], open: k < 6 ? ["n", "e", "s", "w"] : [] })));
+  out.push(rect(66, 28, 74, 30.4, 0, 1.4, "steel", 5), rect(74, 28, 75.2, 30.4, 0, 1.1, "steel", 7), rect(38, 64, 40.4, 70, 0, 1.0, "steel", 5));
+  out.push(box(27, 40, 1.9, 4.5, 1.5, "prop", PROP.car));
+  out.push(bridge(-3, -loopZ + half, 3, -11, deck), bridge(-3, 11, 3, loopZ - half, deck));
+  // A plank to it from the roof of the lower house in the west block.
+  out.push(bridge(-39, -1, -loopX - half, 1, 3 * STOREY));
+  return out;
+}
+
 /**
  * Outposts: settlements (as `HAMLET_FRAMES`) larger than a hamlet, each a piece of the base's
- * works that joins its region's POIs, held by a squad of two. They stand in the open ground
- * between the POIs, so a walk from one POI to the next passes one, and the lines that leave each
- * (`WORKS_LINES`) lead the eye from it to the POIs it serves.
+ * works that joins its region's POIs, held by a squad of two (the ring's node and the dock town by three).
+ * They stand in the open ground between the POIs, so a walk from one POI to the next passes one,
+ * and the lines that leave each (`WORKS_LINES`) lead the eye from it to the POIs it serves.
  */
 const OUTPOSTS: Hamlet[] = [
   {
@@ -1556,6 +1898,61 @@ const OUTPOSTS: Hamlet[] = [
       ],
     },
   },
+  {
+    // On the dry bay north of the wreck: a node of the ring come down in its crater (`NODE`,
+    // `CRATERS`). Its best bins are on the core's floor under the column; its guards hold the hall's
+    // floor, the core and the roof.
+    id: "ringNode",
+    name: "環の結節点",
+    ...NODE_AT,
+    boxes: ringNode(),
+    // The drum, its spokes and the heap against it: the crater's rim stays off them.
+    yard: [-NODE.r - 34, -NODE.r - 28, NODE.r + 20, NODE.r + 32],
+    bins: [
+      { x: 7, z: -7, table: "wreck" },
+      { x: -7, z: 7, table: "smelter" },
+      { x: 32, z: -18, y: NODE.deck, table: "wreck" },
+      { x: -34, z: 14, y: NODE.h, table: "cannery" },
+      { x: -66, z: 2, table: "wreck" },
+    ],
+    guard: {
+      name: "環の結節点の守備",
+      members: [
+        { kind: "grunt", x: -30, z: -10, y: NODE.deck, face: S },
+        { kind: "heavy", x: 0, z: 9, face: S },
+        { kind: "grunt", x: 24, z: -36, y: NODE.h, face: N },
+      ],
+    },
+  },
+  {
+    // West of the node: the dock town round its freight station (`TOWN`), its viaduct the way
+    // round it at roof height. Its bins are up the harbor master's tower, on the station's
+    // mezzanine, in the market and up the houses; its guards walk the streets under the viaduct.
+    id: "harborTown",
+    name: "波止場町",
+    ...TOWN_AT,
+    boxes: harborTown(),
+    yard: [-84, -74, 84, 74],
+    bins: [
+      { x: -65, z: -50, y: 11 * STOREY, table: "smelter" },
+      { x: 15.5, z: 4, y: 4.5, table: "yard" },
+      { x: 0, z: 48, table: "cannery" },
+      { x: -71, z: 2, y: STOREY, table: "yard" },
+      { x: -50, z: 40, y: 5 * STOREY, table: "wreck" },
+      { x: 45, z: -55, y: 4 * STOREY, table: "smelter" },
+      { x: 48.5, z: 44, y: 3 * STOREY, table: "wreck" },
+    ],
+    guard: {
+      name: "波止場町の見回り",
+      members: [
+        { kind: "grunt", x: -21, z: 40, face: N },
+        { kind: "charger", x: -21, z: 42, face: N },
+        { kind: "grunt", x: 0, z: -19, face: W },
+      ],
+      // The street inside the viaduct's west run, clear of its piers and of the flights at its corners.
+      patrol: [{ x: -21, z: 40 }, { x: -21, z: -19 }, { x: 0, z: -19 }, { x: -21, z: -19 }, { x: -21, z: 19 }, { x: 0, z: 19 }, { x: -21, z: 19 }],
+    },
+  },
 ];
 
 /**
@@ -1755,7 +2152,7 @@ export const PACKS: Squad[] = [
 ];
 
 /** Stable names for the outposts (`OUTPOSTS`): places to loot with a guard squad of their own, not nodes of the front. */
-export type OutpostId = "substation" | "fuel" | "freight" | "wharf" | "engine" | "eastSubstation" | "pumps";
+export type OutpostId = "substation" | "fuel" | "freight" | "wharf" | "engine" | "eastSubstation" | "pumps" | "ringNode" | "harborTown";
 
 /** The robots' two factions (see FACTION): the network (網) and the rogues that broke off it (野良機). */
 export type Faction = "net" | "rogue";
@@ -1979,6 +2376,8 @@ interface Hamlet {
   bins: { x: number; z: number; y?: number; table: PoiId }[];
   /** An outpost's squad, written in the same frame (`OUTPOSTS`); a hamlet has none. */
   guard?: Squad;
+  /** The ground an outpost presses flat and is walked at its level (`FlatShape.walked`), x0, z0, x1, z1 in its frame, given where it is not all round its boxes (the ring's node: its drum, not its crater's rim). */
+  yard?: [number, number, number, number];
 }
 
 const HAMLET_FRAMES: Hamlet[] = [
@@ -2227,16 +2626,29 @@ function stopAt(name: string, dx = 0, dz = 0): { name: string; x: number; z: num
 /** The hamlets placed, each flat at the level of the ground under its middle (an outpost's whole yard, a few metres round its boxes). */
 const HAMLETS = HAMLET_FRAMES.map((h) => {
   const level = floorLevel(h.x, h.z);
-  if (h.guard) {
+  if (h.guard && !h.yard) {
     const at = place(h.x, h.z, h.boxes);
     FLAT.push({ x0: Math.min(...at.map((b) => b.x0)) - 4, z0: Math.min(...at.map((b) => b.z0)) - 4, x1: Math.max(...at.map((b) => b.x1)) + 4, z1: Math.max(...at.map((b) => b.z1)) + 4, y: level });
   }
+  const boxes = onLevel(level, place(h.x, h.z, h.boxes));
+  // A yard built to be walked goes in after its boxes' own ground, so it is what the ground under them is built to.
+  if (h.yard) FLAT.push({ x0: h.x + h.yard[0], z0: h.z + h.yard[1], x1: h.x + h.yard[2], z1: h.z + h.yard[3], y: level, walked: true });
   return {
     ...h,
-    boxes: onLevel(level, place(h.x, h.z, h.boxes)),
+    boxes,
     bins: h.bins.map((b) => ({ ...b, x: b.x + h.x, z: b.z + h.z, y: level + (b.y ?? 0) })),
   };
 });
+
+/**
+ * What still glows in the world, for the view to light (it changes no rule), each `half` metres
+ * either side of its middle from y0 up to y1: the ring's node's power column (`NODE`), from the
+ * core's floor to its broken top, and the lamp on the harbor master's tower (`TOWN`).
+ */
+export const GLOWS: { kind: "column" | "lamp"; x: number; z: number; y0: number; y1: number; half: number }[] = [
+  { kind: "column", ...NODE_AT, y0: floorLevel(NODE_AT.x, NODE_AT.z), y1: floorLevel(NODE_AT.x, NODE_AT.z) + NODE.columnTop, half: NODE.column },
+  { kind: "lamp", x: TOWN_AT.x - 62, z: TOWN_AT.z - 50, y0: floorLevel(TOWN_AT.x, TOWN_AT.z) + 12 * STOREY + 0.6, y1: floorLevel(TOWN_AT.x, TOWN_AT.z) + 12 * STOREY + 3.05, half: 2.05 },
+];
 
 type ExtraBin = { x: number; z: number; y?: number; table: PoiId; flare?: true };
 
@@ -4781,8 +5193,7 @@ const RING_WRECKS: RingWreck[] = [
   { name: "港町の西の残骸（東）", along: "x", at: -556, a: -276, b: -205, broken: { a: true }, lean: { side: 1, u: -240, length: 46 } },
   { name: "港町の東の残骸（北）", along: "z", at: 300, a: -628, b: -572, broken: { b: true }, tunnel: [{ side: -1, a: -606, b: -596 }] },
   { name: "港町の東の残骸（南）", along: "z", at: 308, a: -556, b: -486, broken: { a: true }, rubble: [{ side: 1, u: -520 }] },
-  { name: "製錬所の北の残骸（難破船の北）", along: "x", at: -1062, a: 56, b: 124, broken: { b: true }, tunnel: [{ side: 1, a: 84, b: 94 }] },
-  { name: "製錬所の北の残骸（西）", along: "x", at: -1060, a: 140, b: 205, broken: { b: true }, rubble: [{ side: 1, u: 172 }] },
+  { name: "製錬所の北の残骸（西）", along: "x", at: -1060, a: 178, b: 205, broken: { b: true }, rubble: [{ side: 1, u: 192 }] },
   { name: "製錬所の北の残骸（東）", along: "x", at: -1024, a: 216, b: 285, broken: { a: true }, lean: { side: 1, u: 250, length: 46 } },
   { name: "中継塔の北の残骸（東）", along: "x", at: -105, a: 340, b: 388, broken: { a: true }, rubble: [{ side: 1, u: 362 }] },
 ];
@@ -4902,8 +5313,54 @@ const RING_RUNS: Box[] = (() => {
   return out;
 })();
 
+/**
+ * Plates of the ring node's skin (`NODE`) flung onto its crater's floor (`CRATERS`), laid on the
+ * ground once it is built, each with its torn end scorched: between the ways in, low enough to
+ * vault and to hide behind.
+ */
+const CRATER_FLOOR: Box[] = (() => {
+  const out: Box[] = [];
+  const { x: cx, z: cz } = NODE_AT;
+  for (let k = 0; k < 9; k++) {
+    const a = ((20 + 40 * k) * Math.PI) / 180;
+    const [x, z] = [cx + 56 * Math.cos(a), cz + 56 * Math.sin(a)];
+    if (offshore(x, z) > -6 || highGround(x, z) || steepAt(x, z)) continue;
+    const [w, d] = k % 2 === 0 ? [7, 2.4] : [2.4, 7];
+    const g = terrainHeight(x, z);
+    const top = g + 0.9 + (k % 3) * 0.45;
+    out.push(rect(x - w / 2, z - d / 2, x + w / 2, z + d / 2, g - 0.4, top, "steel", 5));
+    out.push(k % 2 === 0 ? rect(x + w / 2, z - d / 2, x + w / 2 + 1.2, z + d / 2, g - 0.4, top - 0.3, "steel", 7) : rect(x - w / 2, z + d / 2, x + w / 2, z + d / 2 + 1.2, g - 0.4, top - 0.3, "steel", 7));
+  }
+  return out;
+})();
+
+/**
+ * The town's spur where the node's fall broke it (`TOWN`), laid on the ground once it is built: its
+ * deck lies fallen from where it stands broken down into the node's west corridor, in strides
+ * walked up and down, each over a girder or down to the ground where that is nearer, its rails
+ * left on one side and scorched where it broke.
+ */
+const TOWN_SPUR_FALL: Box[] = (() => {
+  const out: Box[] = [];
+  const top = floorLevel(TOWN_AT.x, TOWN_AT.z) + TOWN.deck;
+  const x0 = TOWN_AT.x + TOWN.spur;
+  const x1 = NODE_AT.x - NODE.r - 30;
+  const foot = floorLevel(NODE_AT.x, NODE_AT.z);
+  const n = Math.ceil((top - foot) / 0.38);
+  const stride = (x1 - x0) / n;
+  const [z0, z1] = [TOWN_AT.z - TOWN.half, TOWN_AT.z + TOWN.half];
+  for (let k = 0; k < n; k++) {
+    const xa = x0 + k * stride;
+    const deck = top - ((k + 1) * (top - foot)) / n;
+    const under = Math.min(terrainHeight(xa, z0), terrainHeight(xa + stride, z1), terrainHeight(xa, z1), terrainHeight(xa + stride, z0)) - 0.4;
+    out.push(rect(xa, z0, xa + stride, z1, deck - 1.2 < under + 2.6 ? under : deck - 1.2, deck, "slab", 1));
+    if (k % 7 !== 3) out.push(rect(xa, z0, xa + stride, z0 + 0.15, deck, deck + 0.6, "steel", k < 3 ? 7 : 2));
+  }
+  return out;
+})();
+
 /** Everything placed by hand or laid by rule before the streets are lined: what `scripts/ringfall-roads.ts` routes them round. */
-export const PLACED: Box[] = [...AUTHORED, ...BRIDGE, ...RAILWAY, ...QUAY, ...LAID, ...WORKS_LINES, ...FENCE_RUNS, ...RING_RUNS];
+export const PLACED: Box[] = [...AUTHORED, ...BRIDGE, ...RAILWAY, ...QUAY, ...LAID, ...WORKS_LINES, ...FENCE_RUNS, ...RING_RUNS, ...CRATER_FLOOR, ...TOWN_SPUR_FALL];
 /**
  * What lines the streets (streets.ts), laid on the ground once it is built: lamp posts along every
  * length on alternate sides, a signpost where each street leaves its first junction, and traffic
