@@ -609,7 +609,10 @@ export class Bot {
       if (!this.trail.length && this.lastGround && dist2d(this.lastGround, p.pos) < 3) this.trail.push(this.lastGround);
       const last = this.trail[this.trail.length - 1];
       if (this.upT <= 2 && (!last || dist2d(last, p.pos) > 0.4)) this.trail.push({ x: p.pos.x, z: p.pos.z });
-      if (p.onGround && p.pos.y - groundLevel(p.pos.x, p.pos.z) > 0.8) this.upT += TICK;
+      // Up there by the same measure the trail is kept by: a floor a little over a step above
+      // the ground (a slab over a dune that rises through a building) is closed in the ground
+      // grid, whose nearest open cell may lie through a wall, so it is walked down as any other.
+      if (p.onGround) this.upT += TICK;
       if (this.upT > 2) {
         while (this.trail.length > 1 && dist2d(this.trail[this.trail.length - 1], p.pos) < 0.35) this.trail.pop();
         // A point taken while brushing a wall or a floor's edge can lie a hand's width
