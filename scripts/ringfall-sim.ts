@@ -989,19 +989,24 @@ function navLength(ax: number, az: number, bx: number, bz: number): number {
   return len;
 }
 /**
- * The two ways between the regions are walked end to end: the bot's paths and the routed
- * robots' field cross the gorge on the railway bridge (a short way; round by the pass would be
- * hundreds of metres) and climb over the pass; and a player walking the bridge stays on its deck.
+ * The ways between the regions are walked end to end: the bot's paths and the routed robots'
+ * field cross the gorge on the railway bridge and the dried strait on its two spans (each a short
+ * way; round would be hundreds of metres, or none) and climb over the pass; and a player walking
+ * the railway bridge stays on its deck.
  */
 function checkConnections(): string | null {
-  const deck = DECKS[0];
-  const mid = (deck.x0 + deck.x1) / 2;
-  const [south, north] = [deck.z1 + 14, deck.z0 - 14];
-  const span = south - north;
-  const bridgeNav = navLength(mid, south, mid, north);
-  if (!(bridgeNav < span * 1.3)) return `connection scenario: the bot's way over the railway bridge is ${bridgeNav.toFixed(0)} m for ${span.toFixed(0)} m`;
-  const bridgeField = routeLength(fieldTo(mid, north)!, mid, south);
-  if (!(bridgeField < span * 1.3)) return `connection scenario: robots' way over the railway bridge is ${bridgeField.toFixed(0)} m for ${span.toFixed(0)} m`;
+  // Each deck end to end along its length, from 14 m off one end to 14 m off the other.
+  for (const deck of DECKS) {
+    const alongZ = deck.z1 - deck.z0 > deck.x1 - deck.x0;
+    const [mx, mz] = [(deck.x0 + deck.x1) / 2, (deck.z0 + deck.z1) / 2];
+    const [ax, az, bx, bz] = alongZ ? [mx, deck.z1 + 14, mx, deck.z0 - 14] : [deck.x0 - 14, mz, deck.x1 + 14, mz];
+    const span = Math.hypot(bx - ax, bz - az);
+    const at = `the deck at ${mx.toFixed(0)},${mz.toFixed(0)}`;
+    const bridgeNav = navLength(ax, az, bx, bz);
+    if (!(bridgeNav < span * 1.3)) return `connection scenario: the bot's way over ${at} is ${bridgeNav.toFixed(0)} m for ${span.toFixed(0)} m`;
+    const bridgeField = routeLength(fieldTo(bx, bz)!, ax, az);
+    if (!(bridgeField < span * 1.3)) return `connection scenario: robots' way over ${at} is ${bridgeField.toFixed(0)} m for ${span.toFixed(0)} m`;
+  }
   // The pass: from the landing pad over the saddle to the harbor town, on foot both ways.
   const pad = POIS[PAD];
   const [tx, tz] = inArea("town", 20, -306);
@@ -1009,7 +1014,10 @@ function checkConnections(): string | null {
   const passNav = navLength(pad.x, pad.z, town.x, town.z);
   const passField = routeLength(fieldTo(town.x, town.z)!, pad.x, pad.z);
   if (!Number.isFinite(passNav) || !Number.isFinite(passField)) return `connection scenario: no way on foot from the landing pad to the harbor (bot ${passNav}, robots ${passField})`;
-  // Walking the bridge: north along its middle, the deck under the feet the whole way.
+  // Walking the railway bridge: north along its middle, the deck under the feet the whole way.
+  const deck = DECKS[0];
+  const mid = (deck.x0 + deck.x1) / 2;
+  const [south, north] = [deck.z1 + 14, deck.z0 - 14];
   const s = padRun();
   const p = s.player;
   p.pos = { x: mid, y: groundAt(mid, south, 0.4, deck.y + 1), z: south };

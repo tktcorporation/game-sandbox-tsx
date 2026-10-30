@@ -4238,9 +4238,33 @@ const HARBOR: Box[] = [
 ];
 
 /**
+ * The spans over the dried strait to the machine city: a road bridge and a rail bridge, each a
+ * deck from bank to bank (`x0..x1` along x, `half` either side of `z`, at height `y`) on piers
+ * standing in the strait's floor, railed along both sides where it is over the strait. The banks
+ * at its ends are pressed flat at its level, so it is walked onto as a road; its deck is in DECKS.
+ */
+const STRAIT_SPANS = [
+  { name: "道路橋", x0: 540, x1: 640, z: 0, half: 5, y: 4, piers: [575, 605], rails: false },
+  { name: "鉄道橋", x0: 562, x1: 664, z: -640, half: 3.5, y: 3, piers: [592, 622], rails: true },
+] as const;
+/** How far each end of a span rests on its bank, pressed flat at its level. */
+const SPAN_REST = 10;
+const STRAIT_BRIDGES: Box[] = STRAIT_SPANS.flatMap(({ x0, x1, z, half, y, piers, rails }) => {
+  FLAT.push({ x0: x0 - 12, z0: z - half - 3, x1: x0 + SPAN_REST, z1: z + half + 3, y }, { x0: x1 - SPAN_REST, z0: z - half - 3, x1: x1 + 12, z1: z + half + 3, y });
+  const [r0, r1] = [x0 + SPAN_REST, x1 - SPAN_REST];
+  return [
+    bridge(x0, z - half, x1, z + half, y),
+    rect(r0, z - half, r1, z - half + 0.3, y, y + 1.1, "steel", 2),
+    rect(r0, z + half - 0.3, r1, z + half, y, y + 1.1, "steel", 2),
+    ...piers.map((px) => rect(px - 2, z - half + 0.6, px + 2, z + half - 0.6, -12, y - 0.3, "tower", 0)),
+    ...(rails ? [-0.75, 0.75].map((dz) => rect(x0, z + dz - 0.08, x1, z + dz + 0.08, y, y + 0.12, "steel", 2)) : []),
+  ];
+});
+
+/**
  * Walkways that the ground's path finding (nav.ts for the bot, hunt.ts for routed robots)
- * treats as ground at height `y`: the railway bridge's deck over the gorge, between its
- * railings. Everything else built up off the ground is out of their reach.
+ * treats as ground at height `y`: the railway bridge's deck over the gorge and the spans over
+ * the dried strait, between their railings. Everything else built up off the ground is out of their reach.
  */
 export interface Deck {
   x0: number;
@@ -4249,7 +4273,10 @@ export interface Deck {
   z1: number;
   y: number;
 }
-export const DECKS: Deck[] = placeIn("railway", [rect(120.2, -201.5, 123.8, -178.5, 0, 0, "slab")]).map((b) => ({ x0: b.x0, z0: b.z0, x1: b.x1, z1: b.z1, y: LEVEL.rail }));
+export const DECKS: Deck[] = [
+  ...placeIn("railway", [rect(120.2, -201.5, 123.8, -178.5, 0, 0, "slab")]).map((b) => ({ x0: b.x0, z0: b.z0, x1: b.x1, z1: b.z1, y: LEVEL.rail })),
+  ...STRAIT_SPANS.map(({ x0, x1, z, half, y }) => ({ x0, z0: z - half + 0.3, x1, z1: z + half - 0.3, y })),
+];
 
 /**
  * A kerb along the quay's edge, knee high: walkers fighting round the boat's pickup point
@@ -4288,6 +4315,7 @@ const RAILWAY: Box[] = [
   ...[VZ - 0.8, VZ + 0.8].map((z) => rect(VX0 + 2, z - 0.08, VX - 1, z + 0.08, LEVEL.rail, LEVEL.rail + 0.12, "steel", 2)),
   box(43, VZ, 12, 2.6, LEVEL.rail + 3, "steel", 3, LEVEL.rail),
 ];
+
 
 /** Everything placed by hand: POIs, districts, landmarks. */
 /** Groups of boxes written in a frame at (dx, dz), each lifted onto the floor it stands on. */
@@ -5120,7 +5148,7 @@ const FENCES: { name: string; line: [number, number][] }[] = [
 export const GATES: { name: string; x: number; z: number }[] = [];
 const FENCE_RUNS: Box[] = (() => {
   const out: Box[] = [];
-  const standing = [...AUTHORED, ...BRIDGE, ...RAILWAY, ...QUAY, ...LAID, ...WORKS_LINES].filter((b) => b.y0 < terrainHeight((b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2) + 3);
+  const standing = [...AUTHORED, ...BRIDGE, ...RAILWAY, ...STRAIT_BRIDGES, ...QUAY, ...LAID, ...WORKS_LINES].filter((b) => b.y0 < terrainHeight((b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2) + 3);
   const roads = KEPT_ROADS.flatMap((name) => {
     const line = roadLine(name);
     return line.slice(1).map((q, k) => [line[k], q] as const);
@@ -5417,7 +5445,7 @@ const TOWN_SPUR_FALL: Box[] = (() => {
 })();
 
 /** Everything placed by hand or laid by rule before the streets are lined: what `scripts/ringfall-roads.ts` routes them round. */
-export const PLACED: Box[] = [...AUTHORED, ...BRIDGE, ...RAILWAY, ...QUAY, ...LAID, ...WORKS_LINES, ...FENCE_RUNS, ...RING_RUNS, ...CRATER_FLOOR, ...TOWN_SPUR_FALL];
+export const PLACED: Box[] = [...AUTHORED, ...BRIDGE, ...RAILWAY, ...STRAIT_BRIDGES, ...QUAY, ...LAID, ...WORKS_LINES, ...FENCE_RUNS, ...RING_RUNS, ...CRATER_FLOOR, ...TOWN_SPUR_FALL];
 /**
  * What lines the streets (streets.ts), laid on the ground once it is built: lamp posts along every
  * length on alternate sides, a signpost where each street leaves its first junction, and traffic
