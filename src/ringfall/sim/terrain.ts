@@ -217,6 +217,10 @@ export const LEVEL = {
   lodge: 9,
   cannery: -3,
   coldstore: 1,
+  /** The dried strait's bed, between the island and the machine city. */
+  strait: -10,
+  /** The machine city's streets: one paved floor east of the strait. */
+  city: 4,
 } as const;
 
 /** The dam's face: the cliff from the crest down to the lakebed, drawn as concrete. */
@@ -307,6 +311,8 @@ const BASINS: Open[] = [
   { name: "峠の宿舎", line: inPoi("lodge", [[-22, 0], [22, 0]]), half: 32, level: LEVEL.lodge, ground: "paved" },
   { name: "缶詰工場", line: inPoi("cannery", [[-22, 0], [22, 0]]), half: 46, level: LEVEL.cannery, ground: "paved" },
   { name: "冷凍倉庫", line: inPoi("coldstore", [[-20, 0], [20, 0]]), half: 34, level: LEVEL.coldstore, ground: "paved" },
+  // The machine city: one paved floor from the strait's east cliff to the east coast.
+  { name: "機械都市", line: inArea("city", [[0, -320], [0, 240]]), half: 120, level: LEVEL.city, ground: "paved" },
   // The top of the pass: a saddle between the peaks, with the harbor in view.
   { name: "峠", line: inArea("pass", [[-66, -214], [-54, -230]]), half: 9, level: LEVEL.pass },
 ];
@@ -407,6 +413,18 @@ const CUTS: Cut[] = [
     slope: CLIFF,
     atPoints: true,
   },
+  /**
+   * The dried strait between the island and the machine city: an old sea bed walled by cliffs,
+   * crossed by the rail and road bridges, rising at both ends to the ground, so whoever falls in
+   * walks out there.
+   */
+  {
+    line: [[598, -930], [606, -820], [612, -640], [600, -330], [590, 0], [582, 140], [578, 250]],
+    floor: 30,
+    levels: [LEVEL.shore, LEVEL.strait, LEVEL.strait, LEVEL.strait, LEVEL.strait, LEVEL.strait, LEVEL.shore],
+    slope: CLIFF,
+    atPoints: true,
+  },
 ];
 
 /** Open shapes and cuts with their lines worked out once: `lowest()` runs for every grid cell. */
@@ -463,6 +481,9 @@ export const LANDS: Land[] = [
   // The mountain belt between the two regions, wider east to west.
   { name: "山地", x: 30, z: -350, radius: (a) => 150 + 60 * Math.abs(Math.cos(a)) + 6 * Math.sin(5 * a + 0.7), max: 216 },
   { name: "港湾", x: 0, z: -775, radius: (a) => 425 + 10 * Math.sin(3 * a + 0.5) + 7 * Math.sin(7 * a + 1.9) + 3.4 * Math.sin(11 * a + 0.3), max: 441 },
+  // The east land: joined to the island's, the mountains' and the harbor's east coasts, cut through
+  // north to south by the dried strait, the machine city on its far side. Taller than wide.
+  { name: "東の陸", x: 740, z: -335, radius: (a) => (350 * 640) / hypot2(640 * Math.cos(a), 350 * Math.sin(a)) + 9 * Math.sin(5 * a + 0.4) + 5 * Math.sin(9 * a + 1.7), max: 655 },
 ];
 
 /** How far (x, z) lies outside one land mass's coast; negative inside it. */

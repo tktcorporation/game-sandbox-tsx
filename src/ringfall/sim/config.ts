@@ -14,7 +14,7 @@ export const WORLD = {
    * north. The coast's cliffs (terrain.ts) stop bodies well inside them.
    */
   x0: -600,
-  x1: 600,
+  x1: 1120,
   z0: -1220,
   z1: 660,
   gravity: 15,

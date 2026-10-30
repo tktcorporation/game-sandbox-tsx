@@ -25,7 +25,8 @@ export type AreaId =
   | "waterworks"
   | "lodge"
   | "cannery"
-  | "coldstore";
+  | "coldstore"
+  | "city";
 
 export type Offset = readonly [number, number];
 
@@ -67,6 +68,9 @@ export const AREA: Record<AreaId, Offset> = {
   lodge: [-150, -485],
   cannery: [-45, -830],
   coldstore: [150, -850],
+  // The machine city east of the dried strait: its paved basin, its streets and its POIs, written
+  // round the basin's middle.
+  city: [870, -330],
 };
 
 /** The area each POI stands in, and where the POI's own frame lies within that area's frame. */
