@@ -1163,7 +1163,7 @@ function pipeRack(x0: number, x1: number, z: number, y: number): Box[] {
  * street's middle, kept off every crossing street so the walks down the middles pass, its deck, low
  * white parapets and two rails.
  */
-function viaductRun(alongX: boolean, at: number, a: number, b: number, crossings: number[]): Box[] {
+function viaductRun(alongX: boolean, at: number, a: number, b: number, crossings: readonly number[]): Box[] {
   const { under, top, half, every } = CITY.viaduct;
   const r = (u0: number, u1: number, v0: number, v1: number, y0: number, h: number, kind: BoxKind, tint: number) =>
     alongX ? rect(u0, v0, u1, v1, y0, h, kind, tint) : rect(v0, u0, v1, u1, y0, h, kind, tint);
