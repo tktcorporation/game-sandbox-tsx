@@ -1389,11 +1389,17 @@ function highrise(): Box[] {
     // Shop awnings over the row's plaza front, and a planter at the plaza's north-east corner.
     rect(-41, -66, -39.5, -14, 3.0, 3.25, "steel", 3),
     box(-12, -64, 2, 5, 0.9, "wall", 4),
-    // The ramp's mouth: rails along its walls, and at its foot a lid flush with the plaza over the
-    // last metres and the car park's closed shutter, both hanging below the ground.
-    rect(ramp.x - ramp.half - 0.4, ramp.top, ramp.x - ramp.half, ramp.foot - 4, -1, 1.0, "steel", 2),
-    rect(ramp.x + ramp.half, ramp.top, ramp.x + ramp.half + 0.4, ramp.foot - 4, -1, 1.0, "steel", 2),
-    rect(ramp.x - ramp.half - 0.4, ramp.foot - 4, ramp.x + ramp.half + 0.4, ramp.foot + ramp.half + 0.4, -0.35, -0.02, "slab", 2),
+    // The ramp: concrete walls down both its sides from a rail's height over the plaza to below its
+    // floor, and paving flush with the plaza behind them and past its foot, over the ground the cut
+    // falls away to between the terrain's samples, so no slot is left beside it; at its foot a lid
+    // flush with the plaza over the last metres and the car park's closed shutter. All of it hangs
+    // below the ground.
+    rect(ramp.x - ramp.half - 0.5, ramp.top, ramp.x - ramp.half, ramp.foot + ramp.half, -5.5, 1.0, "wall", 4),
+    rect(ramp.x + ramp.half, ramp.top, ramp.x + ramp.half + 0.5, ramp.foot + ramp.half, -5.5, 1.0, "wall", 4),
+    rect(ramp.x - ramp.half - 3, ramp.top, ramp.x - ramp.half - 0.5, -11.5, -5.5, 0, "slab", 2),
+    rect(ramp.x + ramp.half + 0.5, ramp.top, ramp.x + ramp.half + 3, -11.5, -5.5, 0, "slab", 2),
+    rect(ramp.x - ramp.half - 0.5, ramp.foot + ramp.half - 0.2, ramp.x + ramp.half + 0.5, -11.5, -5.5, 0, "slab", 2),
+    rect(ramp.x - ramp.half, ramp.foot - 4, ramp.x + ramp.half, ramp.foot + ramp.half + 0.4, -0.35, -0.02, "slab", 2),
     rect(ramp.x - ramp.half, ramp.foot + ramp.half - 0.6, ramp.x + ramp.half, ramp.foot + ramp.half - 0.2, -5, -0.35, "steel", 2),
   ];
   return out;
