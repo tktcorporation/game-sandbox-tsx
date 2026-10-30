@@ -897,11 +897,11 @@ export interface Start {
 export const strengthLevel = (s: Pick<State, "strength">) => STRENGTH.levels[s.strength];
 
 /**
- * The enemy's strength with `held` of the nodes its own (`STRENGTH.byShare`). A share is reached
- * when `held` is at least the share of the node count rounded up, the small allowance keeping a
- * share that lands on a whole count from rounding up past it.
+ * The enemy's strength with `enemyHeld` of the nodes its own (`STRENGTH.byShare`). A share is
+ * reached when `enemyHeld` is at least the share of the node count rounded up; the small allowance
+ * keeps a share that lands on a whole count (0.5 of 12) from rounding up past it in floating point.
  */
-export const strengthFor = (held: number) => STRENGTH.byShare.find(([share]) => held >= Math.ceil(share * NODES.length - 1e-9))?.[1] ?? 0;
+export const strengthFor = (enemyHeld: number) => STRENGTH.byShare.find(([share]) => enemyHeld >= Math.ceil(share * NODES.length - 1e-9))?.[1] ?? 0;
 
 /**
  * The reinforcements' first time and interval and the raiders' time of a raid at the enemy's

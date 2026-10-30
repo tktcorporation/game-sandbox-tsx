@@ -655,6 +655,8 @@ export type LootTable = { weapon: [WeaponKind, Rarity][]; armor: Rarity[]; heals
 
 /** Stable names for the POIs: saves, quests and other data refer to a POI by these, never by its place in `POIS`. */
 export type PoiId = "supply" | "quarry" | "relay" | "pad" | "wreck" | "yard" | "smelter" | "station" | "waterworks" | "lodge" | "cannery" | "coldstore";
+/** The boss's POI (the titan's pad): written as the boss in `POI_DEFS`, and no node of the front. */
+export type BossId = "pad";
 
 export interface Poi {
   id: PoiId;
@@ -686,7 +688,6 @@ const SE = (3 * Math.PI) / 4;
 const SW = (-3 * Math.PI) / 4;
 
 
-/** The beached ship's main deck (the roof of its three-storey hull) and the gantry crane's catwalk, above their ground. */
 /**
  * The wreck's hull in its frame: its middle along x, length, beam, the middle line it lies on,
  * and the accommodation block's middle along it (that and `DECK_BAYS` from the hull's middle).
@@ -696,6 +697,7 @@ const SHIP = { x: 6, length: 140, beam: 26, z: -8, block: 52 } as const;
 const SHIP_DECK = WORKS.storey * 3;
 /** The middles of the deck cargo's bays, forward of the accommodation block. */
 const DECK_BAYS = [-52, -36, -20, -4, 12, 28] as const;
+/** The gantry crane's catwalk, over its ground. */
 const CRANE = STOREY * 4;
 
 /** Moves a squad authored in a district's own frame into place. */
@@ -882,10 +884,16 @@ export type Landing = "pad" | "shore";
  * lies from the camp, 0 by the camp's gate to 3 at the far end of the harbor, docs/ringfall/island-v2.md
  * 拠点の段), what holding it opens (`NodeUnlock`) and the landing ground it borders, if any.
  */
-type PoiDef = Omit<Poi, "id"> & { region: RegionId; depotOut: number } & ({ boss: true; front?: never } | { boss?: never; front: { tier: number; unlocks: NodeUnlock; landing?: Landing } });
+type PoiDef = Omit<Poi, "id" | "boss"> & { region: RegionId; depotOut: number };
+/** The boss's POI: the enemy's for good, no node of the front. */
+type BossDef = PoiDef & { boss: true; front?: never };
+type NodeDef = PoiDef & { boss?: never; front: { tier: number; unlocks: NodeUnlock; landing?: Landing } };
 
-/** The POIs by id, in the order of `POIS`. */
-const POI_DEFS: Record<PoiId, PoiDef> = {
+/**
+ * The POIs by id, the boss's (`BossId`) written as one and every other as a node. Their order is
+ * the order of `POIS` and `NODES`, which the run's per-POI state follows: a new POI goes at the end.
+ */
+const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
   supply: {
     region: "reservoir",
     depotOut: 18,
@@ -2381,15 +2389,26 @@ export interface Region {
   home?: true;
 }
 
-const REGION_DEFS: Omit<Region, "pois">[] = [
-  { id: "reservoir", name: "ダム湖", note: "干上がったダム湖の島。拠点 6 つ、発着場にタイタン", home: true, entries: ["beach", "checkpoint", "jetty"], exits: ["ship", "flare", "village"], label: { x: -330, z: 300 }, bounds: { x0: WORLD.x0, z0: -340, x1: WORLD.x1, z1: WORLD.z1 } },
-  { id: "harbor", name: "港湾地帯", note: "干上がった湾の港。拠点 6 つ、どこにもヘビーがいる", entries: ["outskirts", "quay", "shore"], locked: "峠か鉄橋を越えて港町の外れまで歩き、生きて帰ると選べる", exits: ["boat"], label: { x: -250, z: -520 }, bounds: { x0: WORLD.x0, z0: WORLD.z0, x1: WORLD.x1, z1: -380 } },
-];
+/**
+ * The regions by id, in the order the base offers them. A note's `{pois}` is the number of its POIs
+ * (`POI_DEFS`).
+ */
+const REGION_DEFS: { [K in RegionId]: Omit<Region, "id" | "pois"> } = {
+  reservoir: { name: "ダム湖", note: "干上がったダム湖の島。拠点 {pois} つ、発着場にタイタン", home: true, entries: ["beach", "checkpoint", "jetty"], exits: ["ship", "flare", "village"], label: { x: -330, z: 300 }, bounds: { x0: WORLD.x0, z0: -340, x1: WORLD.x1, z1: WORLD.z1 } },
+  harbor: { name: "港湾地帯", note: "干上がった湾の港。拠点 {pois} つ、どこにもヘビーがいる", entries: ["outskirts", "quay", "shore"], locked: "峠か鉄橋を越えて港町の外れまで歩き、生きて帰ると選べる", exits: ["boat"], label: { x: -250, z: -520 }, bounds: { x0: WORLD.x0, z0: WORLD.z0, x1: WORLD.x1, z1: -380 } },
+};
 
-export const REGIONS: Region[] = REGION_DEFS.map((r) => ({ ...r, pois: POI_IDS.filter((id) => POI_DEFS[id].region === r.id) }));
+export const REGIONS: Region[] = (Object.keys(REGION_DEFS) as RegionId[]).map((id) => {
+  const pois = POI_IDS.filter((p) => POI_DEFS[p].region === id);
+  return { id, ...REGION_DEFS[id], note: REGION_DEFS[id].note.replace("{pois}", String(pois.length)), pois };
+});
 
-/** The region the camp stands in. */
-export const HOME_REGION: Region = REGIONS.find((r) => r.home) ?? REGIONS[0];
+/** The region the camp stands in: the one region written `home`. */
+export const HOME_REGION: Region = (() => {
+  const homes = REGIONS.filter((r) => r.home);
+  if (homes.length !== 1) throw new Error(`one region must be home, not ${homes.length}`);
+  return homes[0];
+})();
 
 export const regionOf = (id: RegionId): Region => REGIONS.find((r) => r.id === id) ?? REGIONS[0];
 
@@ -5508,7 +5527,7 @@ const STREET_SIDE: Box[] = (() => {
 export const BUILT: Box[] = [...PLACED, ...STREET_SIDE];
 
 /** The nodes of the front (docs/ringfall/island-v2.md): the POIs the player can take; the boss's (the titan's pad) is the enemy's for good. */
-export type NodeId = Exclude<PoiId, "pad">;
+export type NodeId = Exclude<PoiId, BossId>;
 
 /**
  * A node of the front: a freeable POI, where it stands (its middle), and its core (`FRONT`): the
@@ -5524,10 +5543,9 @@ export interface FrontNode {
 }
 
 /**
- * Which nodes are next to which, along the roads between them: the camp to the supply depot,
- * the supply depot to the quarry and the relay, the pass road from the quarry to the yard and the
- * railway from the relay to the smelter, and the harbor's two roads to the wreck. Kept as data,
- * so routing the streets afresh does not move the front; the sim gate walks each link.
+ * Which nodes are next to which, along the roads between them, in loops from the camp's gate out
+ * to the far end of each region; every node has one at least (checked as the map loads). Kept as
+ * data, so routing the streets afresh does not move the front; the sim gate walks each link.
  */
 export const FRONT_LINKS: readonly (readonly ["camp" | NodeId, NodeId])[] = [
   ["camp", "supply"],
@@ -5546,6 +5564,7 @@ export const FRONT_LINKS: readonly (readonly ["camp" | NodeId, NodeId])[] = [
   ["smelter", "coldstore"],
   ["coldstore", "wreck"],
 ];
+for (const id of POI_IDS) if (!POI_DEFS[id].boss && !FRONT_LINKS.some((l) => l.includes(id as NodeId))) throw new Error(`node ${id} has no link in FRONT_LINKS`);
 
 /** The front's nodes with what `POI_DEFS` says of each as a node, in `POIS` order. */
 const NODE_DEFS = POI_IDS.flatMap((id) => {
