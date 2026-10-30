@@ -14,15 +14,19 @@ there. Read the game's brief before changing anything visual. A new page needs a
 
 ## RINGFALL
 
-An extraction raid against robots only: walk in from the edge of one of two regions of one world,
+An extraction raid against robots only: walk in from the edge of one of three regions of one world,
 explore it for valuables, and get off alive by one of its extraction points, all open from the start. No ring
 and no set order: the player chooses which POIs to take and when to leave. First person on three.js.
 The reservoir (south, +z) has six POIs and three ways off; the harbor (north, beyond a mountain
 belt) has six POIs and a boat. A pass road from the landing pad and a railway (an embankment from
 the east mesa, a bridge over a gorge, a viaduct into the harbor) join them, so a raid may walk from
-one to the other. The world is about 1200 by 1880 m (`WORLD` in `config.ts`): the reservoir's island
-(about 1120 by 820 m) with the dune coast bulging south of it, a mountain belt at z about -350, and
-the harbor's land (radius about 425 m). The reservoir is built at the scale of real places, its
+one to the other. The machine city (east, beyond a dried strait) has one POI, the central station
+(`terminal`), and a waited pickup at its north end; a road bridge from the relay's side and a rail
+bridge from the harbor's cross the strait (`STRAIT_SPANS`). The world is about 1720 by 1880 m
+(`WORLD` in `config.ts`): the reservoir's island (about 1120 by 820 m) with the dune coast bulging
+south of it, a mountain belt at z about -350, the harbor's land (radius about 425 m), and the city's
+paved ground east of the strait. A point's region is its nearest POI's, but for a region written
+`ground` (the city), whose bounds are its own (`regionIdHere()`). The reservoir is built at the scale of real places, its
 neighbouring POIs and districts 250 to 400 m apart; the harbor's POIs stand 270 to 330 m apart;
 all three are built at that scale. Five smaller walled works stand on the open ground between them
 (the weather station, the waterworks, the lodge at the pass's foot, the cannery, the cold store), each
@@ -61,7 +65,7 @@ shows no markers or distances but one: the current objective step's destination,
 beacon in the world and a marker with its distance on the compass (the steps come from
 `objectiveSteps()` in `sim/objective.ts`, which the HUD, the bot and the sim gate all read). It
 lists only the ways off of the region the player is in
-(`regionHere()`); the world map (`view/map.ts`, M) is where the POIs and exits of both regions are; it opens framed
+(`regionHere()`); the world map (`view/map.ts`, M) is where the POIs and exits of every region are; it opens framed
 on the region the player is in (`Region.bounds`) and N switches it to the whole world.
 A wipe ends the raid and loses the haul (`haulValue()` in `results.ts` is its worth). The results
 screen gives no grade or score: it leads with the day (the island's map and its tug-of-war bar, in
@@ -203,8 +207,8 @@ with no contract plays at 0 (`raidThreat()`). 0 is the island's raid at the enem
 higher scales its times and plates (`raidClock()`, `netPlated()`), the range robots answer shots
 from afar, the mod parts' odds, and the contract's pay (`threatPay()`). `Profile.freedAt` keeps
 each POI's best 強度 for the map.
-The front (`docs/ringfall/island-v2.md`): the eleven freeable POIs are the nodes (`NODES` in
-`map.ts`, linked along the roads by the fifteen `FRONT_LINKS`, in loops, each with its depth, `TIER` from `POI_DEFS`); the
+The front (`docs/ringfall/island-v2.md`): the twelve freeable POIs are the nodes (`NODES` in
+`map.ts`, linked along the roads by the seventeen `FRONT_LINKS`, in loops, each with its depth, `TIER` from `POI_DEFS`); the
 outposts are places to loot with an enemy guard, no nodes, and the rogues hold no ground.
 `sim/front.ts` holds the rules. A node next to the player's ground (the camp and the player's
 nodes) is on the front; only its core, a pillar near its middle, can be captured (`FRONT` in
@@ -260,7 +264,7 @@ player left, so the results tell the battle after leaving from the raid.
 `view/battle.ts` draws the battle from afar: the landing craft and their beams, the battle's
 robots past `thingsFar` and the squads that are numbers out to the fog as instanced figures
 (`columnPoints()`), and the gate's and the depots' light as the factory's squads come out.
-The long-term goal is how many of the eleven nodes the player holds (`view/row.ts` draws them as
+The long-term goal is how many of the twelve nodes the player holds (`view/row.ts` draws them as
 one tug-of-war bar, blue from the left and red from the right, a segment a node, at the title, the
 HUD's top, the camp's line, the map table and the results; its boundary slides when a node changes
 hands and flickers while one is fought over); there is no ending. The hideout is the mid-term one: five modules built level by level from specific

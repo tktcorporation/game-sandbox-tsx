@@ -2067,7 +2067,7 @@ function checkStrength(): string | null {
     if (l.reinforce.first > was.reinforce.first || l.reinforce.every > was.reinforce.every || l.raiders > was.raiders || REGIONS.some((r) => l.parties[r.id] < was.parties[r.id] || l.packs[r.id] < was.packs[r.id])) return `strength scenario: level ${n} is easier than level ${n - 1}`;
   }
   // The island with the player holding the first `k` nodes of the row out from the camp.
-  const ROW_OUT: NodeId[] = ["supply", "quarry", "relay", "station", "waterworks", "lodge", "yard", "smelter", "cannery", "coldstore", "wreck"];
+  const ROW_OUT: NodeId[] = ["supply", "quarry", "relay", "station", "waterworks", "lodge", "yard", "smelter", "cannery", "coldstore", "wreck", "terminal"];
   const island = (k: number) => holds({ poiState: { ...newIsland(), ...Object.fromEntries(ROW_OUT.slice(0, k).map((id) => [id, { state: "freed" as const }])) } });
   for (let k = 0; k <= NODES.length; k++) {
     const n = strengthFor(NODES.length - k);
@@ -4008,7 +4008,7 @@ function checkFront(): string | null {
   }
   const lost = NODES.filter((n) => !seen.has(n.id));
   if (lost.length) return `front: ${lost.map((n) => n.id).join()} not linked to the camp`;
-  if (NODES.length !== POIS.length - 1 || NODES.some((n) => (n.id as string) === "pad") || FRONT_LINKS.length !== 15 || NODES.length !== 11 || NODES.some((n) => TIER[n.id] === undefined)) return "front: the nodes are not the eleven freeable POIs on fifteen links";
+  if (NODES.length !== POIS.length - 1 || NODES.some((n) => (n.id as string) === "pad") || FRONT_LINKS.length !== 17 || NODES.length !== 12 || NODES.some((n) => TIER[n.id] === undefined)) return "front: the nodes are not the twelve freeable POIs on seventeen links";
   for (const n of NODES) {
     const c = n.core;
     // The core's own cell is closed to the walkers' grid; the ground round it is the main ground.
@@ -4093,7 +4093,7 @@ function checkFront(): string | null {
   if (dead.freed.join() !== "supply" || dead.profile.poiState.supply.state !== "freed" || dead.income !== FRONT.income) return `front: a wiped capture left ${dead.profile.poiState.supply.state}`;
   const three: Profile = { ...fresh, poiState: { ...fresh.poiState, ...Object.fromEntries((["supply", "quarry", "relay"] as const).map((id) => [id, { state: "freed" as const }])) } };
   if (frontIncome(three) !== 3 * FRONT.income) return `front: the income of three nodes is ${frontIncome(three)}`;
-  if (frontIds(holdsOf(three)) !== "smelter,station,waterworks,lodge".split(",").sort((a, b) => nodeIndex(a) - nodeIndex(b)).join()) return `front: with the reservoir's three nodes the front is ${frontIds(holdsOf(three))}`;
+  if (frontIds(holdsOf(three)) !== "smelter,station,waterworks,lodge,terminal".split(",").sort((a, b) => nodeIndex(a) - nodeIndex(b)).join()) return `front: with the reservoir's three nodes the front is ${frontIds(holdsOf(three))}`;
   // An outpost is no node: its guards stand and it takes no core.
   const r = newRun(9, starterKit(), "reservoir", { island: holds(three) });
   for (const o of OUTPOST_SITES) if (nodeIndex(o.id) >= 0 || (ROAMERS.some((sq) => sq.name === o.guard) && !r.squads.some((q) => q.name === o.guard))) return `front: the outpost ${o.id} is a node or stands no guards`;

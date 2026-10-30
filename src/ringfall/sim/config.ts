@@ -602,9 +602,9 @@ export interface StrengthLevel {
 export const STRENGTH = {
   byShare: [[0.8, 2], [0.45, 1]] as [number, number][],
   levels: [
-    { reinforce: { first: 480, every: 360 }, raiders: 1020, parties: { reservoir: 1, harbor: 1 }, packs: { reservoir: 1, harbor: 1 } },
-    { reinforce: { first: 435, every: 300 }, raiders: 900, parties: { reservoir: 1, harbor: 1 }, packs: { reservoir: 2, harbor: 1 } },
-    { reinforce: { first: 390, every: 270 }, raiders: 780, parties: { reservoir: 2, harbor: 2 }, packs: { reservoir: 3, harbor: 2 } },
+    { reinforce: { first: 480, every: 360 }, raiders: 1020, parties: { reservoir: 1, harbor: 1, city: 1 }, packs: { reservoir: 1, harbor: 1, city: 1 } },
+    { reinforce: { first: 435, every: 300 }, raiders: 900, parties: { reservoir: 1, harbor: 1, city: 1 }, packs: { reservoir: 2, harbor: 1, city: 1 } },
+    { reinforce: { first: 390, every: 270 }, raiders: 780, parties: { reservoir: 2, harbor: 2, city: 1 }, packs: { reservoir: 3, harbor: 2, city: 1 } },
   ] satisfies StrengthLevel[],
   /** The level the sim gate's raids are played at, and a raid's when the start names no island: every node the enemy's. */
   play: 2,
@@ -618,7 +618,7 @@ export const STRENGTH = {
  *   asking for as many as its bins hold on average, up to `fetchMax`, and one more of them on top;
  * - destroy a drone pack or a hunting party: `intercept` by target, and on some days a heal or a
  *   weapon, one step rarer every `rarityEvery` days.
- * Each is multiplied by the region's `region` factor: the harbor is the harder ground.
+ * Each is multiplied by the region's `region` factor: the harbor is the harder ground, the city across the strait the hardest.
  */
 export const CONTRACT = {
   count: [3, 4] as const,
@@ -628,7 +628,7 @@ export const CONTRACT = {
   fetchMax: 3,
   intercept: { pack: 500, party: 800, crew: 900 },
   rarityEvery: 6,
-  region: { reservoir: 1, harbor: 1.4 } satisfies Record<RegionId, number>,
+  region: { reservoir: 1, harbor: 1.4, city: 1.6 } satisfies Record<RegionId, number>,
 };
 
 /** The island's events (島の出来事): at most one a day, announced the day before (meta/island.ts). */
@@ -1006,7 +1006,7 @@ export const PACK = { sight: 75, pace: 0.9, away: 140 };
  * stops, spawns and waits are drawn from their own random numbers (`roamRand()`).
  */
 export const PARTY = {
-  count: { reservoir: 2, harbor: 2 } satisfies Record<RegionId, number>,
+  count: { reservoir: 2, harbor: 2, city: 1 } satisfies Record<RegionId, number>,
   name: "遊撃隊",
   pace: 0.7,
   linger: [20, 40] as const,

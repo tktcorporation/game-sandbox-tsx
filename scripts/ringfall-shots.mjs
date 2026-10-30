@@ -476,13 +476,13 @@ const spills = (pg) =>
   await page.waitForTimeout(400);
   await page.evaluate(() => Object.defineProperty(screen, "orientation", { value: undefined, configurable: true }));
   await toCamp(page, true);
-  // The departure from the truck: the harbor carries a padlock, its three ways in dashed and shut.
+  // The departure from the truck: the harbor and the city carry padlocks, their ways in dashed and shut.
   await useStation(page, "vehicle", await ctx.newCDPSession(page));
   await departUp(page);
   const locks = await page.locator("#depart-points .region-lock .ico.lock").count();
   const shut = await page.locator("#depart-points button.pick.entry.shut:disabled").count();
   const open = await page.locator("#depart-points button.pick:not(:disabled)").count();
-  if (locks !== 1 || shut !== 5 || open !== 1) errors.push(`mobile: a fresh departure shows ${locks} padlocks, ${shut} ways in shut and ${open} to choose`);
+  if (locks !== 2 || shut !== 7 || open !== 1) errors.push(`mobile: a fresh departure shows ${locks} padlocks, ${shut} ways in shut and ${open} to choose`);
   const fit = await departFits(page);
   if (fit.length) errors.push(`mobile departure (844x390): ${fit.join(", ")}`);
   await page.screenshot({ path: `${out}/m7-depart-locked.png` });
@@ -646,14 +646,14 @@ const read = async () => JSON.parse(await page.evaluate(() => window.render_game
   if ((await page.locator("#hub-side [data-act=entry], #hub-side [data-act=region], #hub-side [data-act=from]").count()) || !(await page.locator("#hub-island-map").count())) errors.push("camp: the map table still chooses a start, or shows no island");
   await page.screenshot({ path: `${out}/00-panel-map.png` });
   await closePanel(page);
-  // The departure from the truck: a fresh profile knows only the reservoir's first way in, so the harbor carries a padlock and its ways in are dashed; cancelled with Esc.
+  // The departure from the truck: a fresh profile knows only the reservoir's first way in, so the harbor and the city carry padlocks and their ways in are dashed; cancelled with Esc.
   await useStation(page, "vehicle");
   await departUp(page);
   const harborLocked = await page.locator("#depart-points .region-lock").count();
   const entriesOffered = await page.locator("#depart-points button.pick.entry:not(:disabled)").count();
   const harborRings = await page.locator("#depart-points button.pick.entry.shut").count();
   const fresh = (await readPage(page)).camp.depart;
-  if (harborLocked !== 1 || entriesOffered !== 1 || harborRings !== 5 || fresh?.start?.id !== "beach") errors.push(`camp: a fresh departure offers ${entriesOffered} ways in, ${harborLocked} locked regions, ${harborRings} ways in to find, starting at ${fresh?.start?.id}`);
+  if (harborLocked !== 2 || entriesOffered !== 1 || harborRings !== 7 || fresh?.start?.id !== "beach") errors.push(`camp: a fresh departure offers ${entriesOffered} ways in, ${harborLocked} locked regions, ${harborRings} ways in to find, starting at ${fresh?.start?.id}`);
   await page.screenshot({ path: `${out}/00-depart-locked.png` });
   await page.keyboard.press("Escape");
   if ((await readPage(page)).camp?.depart) errors.push("camp: Esc did not close the departure");
@@ -1994,7 +1994,7 @@ for (const phone of [false, true]) {
   await pg.screenshot({ path: tag(7, "objective-front") });
   const hud = await pg.evaluate(() => ({ own: Number(document.querySelector("#island-row .tug-n.own")?.textContent), all: document.querySelector("#island-row .tug")?.getAttribute("aria-label"), text: document.getElementById("island-row").textContent }));
   const deadline = await pg.evaluate(() => document.querySelector("#obj-raid .deadline .ico.clock") ? document.querySelector("#obj-raid .deadline").textContent : "");
-  if (hud.own !== 2 || hud.all !== "2 / 11" || hud.text.trim() !== "29" || !/^\d+:\d\d$/.test(deadline)) errors.push(`battle: the HUD's row reads ${JSON.stringify(hud)}, the card "${deadline}"`);
+  if (hud.own !== 2 || hud.all !== "2 / 12" || hud.text.trim() !== "210" || !/^\d+:\d\d$/.test(deadline)) errors.push(`battle: the HUD's row reads ${JSON.stringify(hud)}, the card "${deadline}"`);
   const st = await readOf(pg);
   if (st.battle.squads.filter((q) => q.side === 0).length < 2) errors.push(`battle: ${st.battle.squads.filter((q) => q.side === 0).length} of the player's squads at the start (the turrets at two nodes)`);
   // A fight in front of the player: the player's squad on the left, the enemy's on the right.
@@ -2139,7 +2139,7 @@ for (const phone of [false, true]) {
   await pg.screenshot({ path: tag(7, "results-night") });
   const bar = await pg.evaluate(() => document.querySelector("#day-result .tug")?.getAttribute("aria-label"));
   const held = Object.entries(r.profile.poiState).filter(([id, o]) => id !== "pad" && o.state === "freed").length;
-  if (bar !== `${held} / 11`) errors.push(`push-pull: the results' bar reads ${bar} for ${held} nodes held`);
+  if (bar !== `${held} / 12`) errors.push(`push-pull: the results' bar reads ${bar} for ${held} nodes held`);
   await ctx.close();
   lap(`push-pull, ${phone ? "phone" : "desktop"}`);
 }

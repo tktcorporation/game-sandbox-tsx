@@ -87,6 +87,7 @@ const POI_IN: Record<PoiId, [AreaId, Offset]> = {
   lodge: ["lodge", [0, 0]],
   cannery: ["cannery", [0, 0]],
   coldstore: ["coldstore", [0, 0]],
+  terminal: ["city", [0, -120]],
 };
 
 /** A point written in an area's frame, in the world. */

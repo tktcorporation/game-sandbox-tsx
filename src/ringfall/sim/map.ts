@@ -654,7 +654,7 @@ export interface Squad {
 export type LootTable = { weapon: [WeaponKind, Rarity][]; armor: Rarity[]; heals: number; valuable: [ValuableKind, number][] };
 
 /** Stable names for the POIs: saves, quests and other data refer to a POI by these, never by its place in `POIS`. */
-export type PoiId = "supply" | "quarry" | "relay" | "pad" | "wreck" | "yard" | "smelter" | "station" | "waterworks" | "lodge" | "cannery" | "coldstore";
+export type PoiId = "supply" | "quarry" | "relay" | "pad" | "wreck" | "yard" | "smelter" | "station" | "waterworks" | "lodge" | "cannery" | "coldstore" | "terminal";
 /** The boss's POI (the titan's pad): written as the boss in `POI_DEFS`, and no node of the front. */
 export type BossId = "pad";
 
@@ -868,6 +868,58 @@ function coldstore(): Box[] {
     ...building(-20, 18, 10, 7, 3.4, { doors: ["e", "n"], roof: "w" }),
     ...trailer(26, -4, 1),
     box(-30, -2, 6, 2.5, 2.6, "container", 2),
+  ];
+}
+
+/**
+ * The central station of the machine city, round (0, 0) on ground at 0, its tracks along x. The train
+ * shed (`TERMINAL.shed`): glass-roofed and open at both ends where the two tracks run through, an
+ * island platform between them and a side platform along the south, both low enough to step onto,
+ * a mezzanine over the concourse strip inside the south wall, carriages left on the tracks as cover.
+ * South of it the three-storey concourse, and the station square with its planters, kiosk and bus
+ * stops, which the way in from the west reaches first.
+ */
+const TERMINAL = {
+  shed: { z: -14, w: 110, d: 34, h: 14 },
+  /** The tracks' middle lines, through the shed's end doors. */
+  tracks: [-26, -13],
+  /** The platforms' tops: under the step-up height, walked onto from the track beds. */
+  platform: 0.4,
+  /** The mezzanine over the concourse strip, along the shed's south wall. */
+  mezz: 5,
+} as const;
+function terminal(): Box[] {
+  const { shed, tracks, platform } = TERMINAL;
+  const ends = tracks.map((z) => z - shed.z);
+  return [
+    ...hall(0, shed.z, shed.w, shed.d, shed.h, {
+      doors: [...ends.map((at) => ({ side: "w" as const, at })), ...ends.map((at) => ({ side: "e" as const, at })), { side: "s", at: -30 }, { side: "s", at: 0, w: 10 }, { side: "s", at: 30 }],
+      windows: ["n", "s"],
+      columns: 10,
+      mezz: [{ side: "s", depth: 4, y: TERMINAL.mezz, stair: 30 }],
+      steel: 6,
+      scale: WORKS,
+    }),
+    // The island platform between the tracks and the side platform along the south.
+    rect(-50, -22, 50, -16, 0, platform, "slab", 1),
+    rect(-50, -10, 50, -5, 0, platform, "slab", 1),
+    // Each track's two rails, out through the end doors onto the ground beyond.
+    ...tracks.flatMap((z) => [-0.75, 0.75].map((dz) => rect(-66, z + dz - 0.08, 66, z + dz + 0.08, 0, 0.15, "steel", 2))),
+    // Carriages left standing: two on the north track, one on the south.
+    box(-28, tracks[0], 22, 3, 3.8, "steel", 3),
+    box(8, tracks[0], 22, 3, 3.8, "steel", 3),
+    box(30, tracks[1], 22, 3, 3.8, "steel", 1),
+    // The concourse, its stairs climbed from its east end.
+    ...tower(0, 20, 30, 12, 3, { doors: [["s", "e", "w"]], windows: [["e"], ["s", "e", "w"], ["s", "e", "w", "n"]], scale: WORKS }),
+    // The station square: planters, a kiosk, two bus stops and a bus, the clock pillar.
+    box(-10, 32, 5, 1.6, 0.9, "wall", 1),
+    box(10, 32, 5, 1.6, 0.9, "wall", 1),
+    box(-34, 28, 5, 1.6, 0.9, "wall", 1),
+    box(40, 28, 1.6, 5, 0.9, "wall", 1),
+    ...building(-40, 36, 6, 5, 3.2, { doors: ["e"], windows: ["s"], scale: HOME }),
+    ...[-14, 4].flatMap((x) => [box(x, 44, 8, 0.3, 2.4, "wall", 1), box(x, 43, 8, 2.2, 2.8, "slab", 0, 2.6)]),
+    box(28, 46, 11, 2.6, 3.2, "steel", 1),
+    box(42, 18, 3, 3, 22, "tower", 0),
   ];
 }
 
@@ -1138,7 +1190,7 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
       { x: 0, z: -21 },
       { x: 8, z: -19, y: STOREY, vault: true },
     ],
-    keyFrom: "waterworks",
+    keyFrom: "terminal",
     loot: { weapon: [["pike", 1], ["talon", 1], ["hornet", 1]], armor: [1], heals: 2, valuable: [["wire", 3], ["gyro", 2], ["board", 2], ["fuse", 1]] },
     floor: [{ x: 9, z: -17, heal: "battery" }],
   },
@@ -1250,6 +1302,37 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
     loot: { weapon: [["pike", 1], ["lance", 1], ["maul", 1], ["hornet", 1]], armor: [1], heals: 2, valuable: [["wire", 2], ["board", 2], ["drive", 2], ["reactor", 1]] },
     floor: [{ x: -16, z: -4, heal: "medkit" }],
   },
+
+  // --- the machine city across the dried strait
+  terminal: {
+    region: "city",
+    depotOut: 20,
+    front: { tier: 2, unlocks: {} },
+    name: "中央駅",
+    x: 0,
+    z: 0,
+    trigger: 60,
+    entry: { x: -72, z: 8, yaw: E },
+    squads: [
+      { name: "ホーム", members: [{ kind: "grunt", x: 10, z: -19, y: TERMINAL.platform, face: W }, { kind: "drone", x: -20, z: -13 }] },
+      { name: "コンコース", members: [{ kind: "grunt", x: -30, z: 0, face: S }, { kind: "grunt", plate: VAULT.guardPlate, x: 6, z: 9, face: S }] },
+      { name: "駅前広場", members: [{ kind: "grunt", x: 18, z: 34, face: S }, { kind: "charger", x: -30, z: 40, face: E }] },
+    ],
+    bins: [
+      { x: -40, z: 0 },
+      { x: 40, z: -1 },
+      { x: 0, z: 8 },
+      { x: -24, z: 32 },
+      { x: 30, z: 38 },
+      { x: 22, z: 20 },
+      { x: -20, z: -19, y: TERMINAL.platform },
+      { x: -10, z: 0.5, y: TERMINAL.mezz },
+      { x: -8, z: 22, y: WORKS.storey, vault: true },
+    ],
+    keyFrom: "waterworks",
+    loot: { weapon: [["pike", 1], ["lance", 1], ["talon", 1], ["hornet", 1]], armor: [1], heals: 2, valuable: [["board", 3], ["drive", 2], ["gyro", 2], ["wire", 2], ["core", 1]] },
+    floor: [{ x: 4, z: 0, heal: "medkit" }],
+  },
 };
 
 const POI_IDS = Object.keys(POI_DEFS) as PoiId[];
@@ -1275,7 +1358,7 @@ export interface Depot {
 /** A depot's place in `DEPOTS` (and in the run's `depots`), from its POI. */
 export const depotIndex = (poi: PoiId) => DEPOTS.findIndex((d) => d.poi === poi);
 
-export type ExtractId = "ship" | "flare" | "village" | "boat";
+export type ExtractId = "ship" | "flare" | "village" | "boat" | "plaza";
 
 /**
  * Ways off the island, open from the landing on; the player picks one by walking to it.
@@ -1306,6 +1389,8 @@ export const EXTRACTS: ExtractPoint[] = [
   { id: "village", name: "廃村の回収地点", short: "廃村", ...at("village", { x: -45, z: 62 }), radius: 5, hold: 15, note: "遠いが静か。15 秒待つ" },
   // The harbor's way off: a boat comes up the channel to the quay.
   { id: "boat", name: "埠頭のボート", short: "ボート", ...at("bay", { x: 105, z: -580 }), radius: 5, hold: 1.5, call: 25, waves: at("bay", { x: 100, z: -563 }), note: "呼んで 25 秒守る。増援が降りてくる" },
+  // The city's way off: a pickup at its north end, the far side of the station from both bridges.
+  { id: "plaza", name: "北端の回収地点", short: "北端", ...at("city", { x: 80, z: -380 }), radius: 5, hold: 12, note: "街の北の外れ。12 秒待つ" },
 ];
 export const EXTRACT = EXTRACTS[0];
 
@@ -2187,6 +2272,12 @@ export const PACKS: Squad[] = [
     members: [{ kind: "drone", x: -200, z: -860 }, { kind: "drone", x: -200, z: -860 }],
     patrol: [{ x: -250, z: -960 }, { x: -130, z: -1030 }, { x: 60, z: -1030 }, { x: 40, z: -880 }, { x: 60, z: -1030 }, { x: -130, z: -1030 }],
   },
+  // The machine city: round the streets either side of the station, clear of its square.
+  {
+    name: "街のドローン群",
+    members: [{ kind: "drone", x: 760, z: -120 }, { kind: "drone", x: 760, z: -120 }],
+    patrol: [{ x: 760, z: -120 }, { x: 960, z: -160 }, { x: 975, z: -700 }, { x: 760, z: -720 }],
+  },
 ];
 
 /** Stable names for the outposts (`OUTPOSTS`): places to loot with a guard squad of their own, not nodes of the front. */
@@ -2205,11 +2296,33 @@ export interface OutpostSite {
   guard: string;
 }
 
-/** The id of the region a point lies in: that of the nearest POI (`regionHere()`). */
+/**
+ * The regions by id, in the order the base offers them. A note's `{pois}` is the number of its POIs
+ * (`POI_DEFS`).
+ */
+const REGION_DEFS: { [K in RegionId]: Omit<Region, "id" | "pois"> } = {
+  reservoir: { name: "ダム湖", note: "干上がったダム湖の島。拠点 {pois} つ、発着場にタイタン", home: true, entries: ["beach", "checkpoint", "jetty"], exits: ["ship", "flare", "village"], label: { x: -330, z: 300 }, bounds: { x0: WORLD.x0, z0: -340, x1: 600, z1: WORLD.z1 } },
+  harbor: { name: "港湾地帯", note: "干上がった湾の港。拠点 {pois} つ、どこにもヘビーがいる", entries: ["outskirts", "quay", "shore"], locked: "峠か鉄橋を越えて港町の外れまで歩き、生きて帰ると選べる", exits: ["boat"], label: { x: -250, z: -520 }, bounds: { x0: WORLD.x0, z0: WORLD.z0, x1: 600, z1: -380 } },
+  city: { name: "機械都市", note: "海峡の向こうの機械仕掛けの街。拠点 {pois} つ", entries: ["bridgehead", "railyard"], locked: "海峡の橋を渡って橋のたもとまで歩き、生きて帰ると選べる", exits: ["plaza"], label: { x: 870, z: -330 }, bounds: { x0: 620, z0: WORLD.z0, x1: WORLD.x1, z1: WORLD.z1 }, ground: true },
+};
+
+/**
+ * The id of the region a point lies in (`regionHere()`): that of a region whose bounds are its
+ * ground (`Region.ground`) and hold it, else that of the nearest POI of the other regions.
+ */
 function regionIdHere(at: { x: number; z: number }): RegionId {
-  let best = POIS[0];
-  for (const p of POIS) if (hypot2(p.x - at.x, p.z - at.z) < hypot2(best.x - at.x, best.z - at.z)) best = p;
-  return POI_DEFS[best.id].region;
+  const inside = (b: Region["bounds"]) => at.x >= b.x0 && at.x <= b.x1 && at.z >= b.z0 && at.z <= b.z1;
+  for (const id of Object.keys(REGION_DEFS) as RegionId[]) {
+    const r: Omit<Region, "id" | "pois"> = REGION_DEFS[id];
+    if (r.ground && inside(r.bounds)) return id;
+  }
+  let best: Poi | undefined;
+  for (const p of POIS) {
+    const r: Omit<Region, "id" | "pois"> = REGION_DEFS[POI_DEFS[p.id].region];
+    if (r.ground) continue;
+    if (!best || hypot2(p.x - at.x, p.z - at.z) < hypot2(best.x - at.x, best.z - at.z)) best = p;
+  }
+  return POI_DEFS[(best ?? POIS[0]).id].region;
 }
 
 export const OUTPOST_SITES: OutpostSite[] = OUTPOSTS.map((o) => ({
@@ -2292,6 +2405,9 @@ export const MOBILES: Mobile[] = [
   { name: "製錬所を抜ける警邏", kind: "round", faction: "net", region: "harbor", members: ["grunt", "drone"], nodes: [[105, -675], [166, -697], [152, -717], [158, -779], [198, -765], [205, -735]] },
   { name: "難破船の浜の警邏", kind: "round", faction: "net", region: "harbor", members: ["grunt", "drone"], nodes: [[-245, -965], [-28, -984], [-20, -943], [-4, -932], [110, -955]] },
   { name: "塩田の警邏", kind: "round", faction: "net", region: "harbor", members: ["grunt", "charger"], nodes: [[45, -675], [-61, -745], [-67, -800], [-63, -943]] },
+  // --- the machine city: its streets west and east of the station, from the bridges to its north end.
+  { name: "大通りの警邏", kind: "patrol", faction: "net", region: "city", members: ["grunt", "drone"], nodes: [[760, -150], [960, -300], [960, -600]] },
+  { name: "橋の野良機", kind: "patrol", faction: "rogue", region: "city", rank: 2, members: ["grunt", "charger"], nodes: [[740, -560], [780, -300], [770, -90]] },
 ];
 
 export type DebrisId = "southwest" | "easthill" | "quarryeast" | "townwest" | "eastshore" | "saltwest";
@@ -2334,9 +2450,9 @@ export const DEBRIS_SPOTS: DebrisSpot[] = (
 
 export const debrisIndex = (id: DebrisId) => DEBRIS_SPOTS.findIndex((d) => d.id === id);
 
-export type RegionId = "reservoir" | "harbor";
+export type RegionId = "reservoir" | "harbor" | "city";
 
-export type EntryId = "beach" | "checkpoint" | "jetty" | "outskirts" | "quay" | "shore";
+export type EntryId = "beach" | "checkpoint" | "jetty" | "outskirts" | "quay" | "shore" | "bridgehead" | "railyard";
 
 /**
  * A way into a region on foot, out on its open ground: a raid that does not start at a depot
@@ -2361,6 +2477,8 @@ export const ENTRIES: Entry[] = [
   { id: "outskirts", region: "harbor", name: "港町の外れ", x: 40, z: -500, yaw: 0 },
   { id: "quay", region: "harbor", name: "埠頭の東の道", x: 215, z: -940, yaw: -Math.PI / 2 },
   { id: "shore", region: "harbor", name: "西の漁村の浜", x: -340, z: -820, yaw: Math.PI / 2 },
+  { id: "bridgehead", region: "city", name: "橋のたもと", x: 680, z: 4, yaw: Math.PI / 2 },
+  { id: "railyard", region: "city", name: "貨物ヤード", x: 700, z: -640, yaw: Math.PI / 2 },
 ];
 
 export const entryOf = (id: EntryId): Entry => ENTRIES.find((e) => e.id === id) ?? ENTRIES[0];
@@ -2387,16 +2505,13 @@ export interface Region {
   bounds: { x0: number; z0: number; x1: number; z1: number };
   /** The region the camp stands in (`HOME_REGION`): the one a new profile starts in. */
   home?: true;
+  /**
+   * Its bounds are its ground: every point in them is its, whichever POI is nearest, and its POIs
+   * claim no point outside them. A region across a natural border (the dried strait) is written so,
+   * where the nearest POI would reach over the border.
+   */
+  ground?: true;
 }
-
-/**
- * The regions by id, in the order the base offers them. A note's `{pois}` is the number of its POIs
- * (`POI_DEFS`).
- */
-const REGION_DEFS: { [K in RegionId]: Omit<Region, "id" | "pois"> } = {
-  reservoir: { name: "ダム湖", note: "干上がったダム湖の島。拠点 {pois} つ、発着場にタイタン", home: true, entries: ["beach", "checkpoint", "jetty"], exits: ["ship", "flare", "village"], label: { x: -330, z: 300 }, bounds: { x0: WORLD.x0, z0: -340, x1: 600, z1: WORLD.z1 } },
-  harbor: { name: "港湾地帯", note: "干上がった湾の港。拠点 {pois} つ、どこにもヘビーがいる", entries: ["outskirts", "quay", "shore"], locked: "峠か鉄橋を越えて港町の外れまで歩き、生きて帰ると選べる", exits: ["boat"], label: { x: -250, z: -520 }, bounds: { x0: WORLD.x0, z0: WORLD.z0, x1: 600, z1: -380 } },
-};
 
 export const REGIONS: Region[] = (Object.keys(REGION_DEFS) as RegionId[]).map((id) => {
   const pois = POI_IDS.filter((p) => POI_DEFS[p].region === id);
@@ -2636,6 +2751,8 @@ export const LANDMARKS: readonly { name: string; x: number; z: number }[] = [
   { name: "貨物線", x: -130, z: -770 },
   { name: "送電線", x: 100, z: -860 },
   { name: "パイプライン", x: 260, z: -910 },
+  at("city", { name: "機械都市", x: 0, z: 200 }),
+  at("city", { name: "中央駅", x: 0, z: -120 }),
 ];
 
 /**
@@ -2659,6 +2776,8 @@ export const STOPS: readonly { name: string; x: number; z: number }[] = [
   { name: "高架下", x: 55, z: -609 },
   at("bay", { name: "塩田", x: 10, z: -500 }),
   at("bay", { name: "岬", x: -122, z: -545 }),
+  at("city", { name: "駅前通り", x: -50, z: 80 }),
+  at("city", { name: "北の街区", x: 30, z: -320 }),
 ];
 
 /**
@@ -2673,6 +2792,7 @@ export const PARTY_STOPS: Record<RegionId, readonly { name: string; x: number; z
   reservoir: [stopAt("工場"), stopAt("住宅地"), stopAt("放水路"), stopAt("昇降路の通路"), stopAt("西の飯場"), stopAt("南の漁師小屋")],
   // The signal box's own middle is its house: the party stands on the open ground south of it.
   harbor: [stopAt("港町"), stopAt("高架下"), stopAt("信号所", 0, 14), stopAt("西の漁村"), stopAt("東の丘の家")],
+  city: [stopAt("駅前通り"), stopAt("北の街区")],
 };
 
 /** A party's stop at the stop or hamlet `name`, `dx`, `dz` metres off it. */
@@ -4373,6 +4493,8 @@ const AUTHORED: Box[] = [
   ...onLevel(LEVEL.lodge, placeIn("lodge", lodge())),
   ...onLevel(LEVEL.cannery, placeIn("cannery", cannery())),
   ...onLevel(LEVEL.coldstore, placeIn("coldstore", coldstore())),
+  // --- the machine city
+  ...onLevel(LEVEL.city, place(POI_AT.terminal[0], POI_AT.terminal[1], terminal())),
 ];
 
 /**
@@ -4453,6 +4575,7 @@ function authoredKeep(): Keep {
 const SCATTER = [
   { x0: WORLD.x0, x1: 600, z0: -350, z1: WORLD.z1, seed: 7_332, step: 13 },
   { x0: WORLD.x0, x1: 600, z0: WORLD.z0, z1: -351, seed: 4_517, step: 14 },
+  { x0: 620, x1: WORLD.x1, z0: WORLD.z0, z1: WORLD.z1, seed: 9_173, step: 14 },
 ];
 /** Where cover is sparse: the salt flats, and the supply depot's dune coast, whose dunes are its cover. */
 const SPARSE = new Set(["塩田", "補給所"]);
@@ -5591,6 +5714,8 @@ export const FRONT_LINKS: readonly (readonly ["camp" | NodeId, NodeId])[] = [
   ["cannery", "wreck"],
   ["smelter", "coldstore"],
   ["coldstore", "wreck"],
+  ["relay", "terminal"],
+  ["smelter", "terminal"],
 ];
 for (const id of POI_IDS) if (!POI_DEFS[id].boss && !FRONT_LINKS.some((l) => l.includes(id as NodeId))) throw new Error(`node ${id} has no link in FRONT_LINKS`);
 
