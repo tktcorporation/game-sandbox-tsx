@@ -5037,7 +5037,9 @@ function smelter(): Box[] {
       open: ["w", "n"],
     }),
   );
-  for (const x of [15, 22, 29, 36]) out.push(box(x, 9, 3, 4, 3.4, "steel", 2));
+  // Roll stands in the bays between the columns (x 16, 24, 32, 40) and clear of the mezzanine's
+  // stair at x 30, each gap wider than a body so nobody is wedged between a stand and a column.
+  for (const x of [12, 20, 27, 36]) out.push(box(x, 9, 3, 4, 3.4, "steel", 2));
   out.push(bridge(4, 7, 8, 9.5, H), rect(4, 7, 8, 7.2, H, H + 0.8, "steel", 2), rect(4, 9.3, 8, 9.5, H, H + 0.8, "steel", 2));
   out.push(...tower(38, -8, 10, 10, 5, { scale: WORKS, doors: [["w", "s"], [], [], ["s"]], windows: [["e"], ["n", "e"], ["n", "e"], ["n", "e"], ["n", "e", "w"]] }));
   out.push(bridge(37, -3, 39.5, 2, H), rect(37, -3, 37.2, 2, H, H + 0.8, "steel", 2), rect(39.3, -3, 39.5, 2, H, H + 0.8, "steel", 2));
