@@ -40,7 +40,7 @@ import { forward } from "../src/ringfall/sim/state";
 import { build, buildFactory, buildState, buy, canBuild, deliver, depotAllowance, depotBudget, emptyLoadout, fitsStart, healRoom, isStarter, issuedHeals, itemCost, FIRST_ENTRY, loadoutCost, newProfile, parseProfile, pouch, price, sell, sellPrice, settle, stashUsed, takeKit, wares, withStarters, type Item, type Profile } from "../src/ringfall/meta/profile";
 import { emptyHideout, hideoutDone, maxLevel, MODULES, poisWith, sources, stashCap } from "../src/ringfall/meta/hideout";
 import { boostFor, boosted } from "../src/ringfall/sim/state";
-import { CONQUEST, COUNTER, FACTORY, HIDEOUT, TOOL_KINDS, TOOLS, VAULT } from "../src/ringfall/sim/config";
+import { CONQUEST, COUNTER, FACTORY, FACTORY_TOP, HIDEOUT, TOOL_KINDS, TOOLS, VAULT } from "../src/ringfall/sim/config";
 import { frontIncome, islandHolds, advanceDay, holds, newIsland, nightRaids, playerNodes, type RaidDay } from "../src/ringfall/meta/island";
 import { activePacks } from "../src/ringfall/sim/island";
 import { garrison, isVaultGuard } from "../src/ringfall/sim/island";
@@ -1440,7 +1440,7 @@ function checkLoadout(): string | null {
   if (!v22 || v22.v !== 23 || v22.stash.filter(isStarter).length !== 2 || !starters(v22, recallLoadout(v22))) return `loadout scenario: a v22 save loaded with ${JSON.stringify(v22?.stash)}`;
   // The factory's materials count among the valuables still wanted, and claim stash room before what nothing needs.
   const fac = factoryNeeded(newProfile());
-  if (fac.fuse !== FACTORY.levels.reduce((n, l) => n + (l.items.find(([k]) => k === "fuse")?.[1] ?? 0), 0) || !(wanted(newProfile()).board >= fac.board)) return `loadout scenario: the factory wants ${JSON.stringify(fac)}`;
+  if (fac.fuse !== FACTORY.levels.reduce((n, l) => n + (l.cost?.items.find(([k]) => k === "fuse")?.[1] ?? 0), 0) || !(wanted(newProfile()).board >= fac.board)) return `loadout scenario: the factory wants ${JSON.stringify(fac)}`;
   return null;
 }
 
@@ -3313,7 +3313,7 @@ function checkUnlocks(): string | null {
   if (shopRarity(holding(["supply", "quarry", "yard"])) !== 3) return "unlocks: holding the yard does not put legendary gear on the shelf";
   const nodes = (ids: NodeId[]) => NODES.map((n) => (ids.includes(n.id) ? "freed" : "held")) as State["nodes"];
   for (const [ids, extra] of [[[], 0], [["quarry"], 1], [["quarry", "smelter"], 2], [["supply", "relay", "yard", "wreck"], 0]] as [NodeId[], number][])
-    if (factoryMax({ nodes: nodes(ids) }, 2) !== FACTORY.max[2] + extra) return `unlocks: holding ${ids.join(",")} the factory keeps ${factoryMax({ nodes: nodes(ids) }, 2)} squads out`;
+    if (factoryMax({ nodes: nodes(ids) }, 2) !== FACTORY.levels[2].max + extra) return `unlocks: holding ${ids.join(",")} the factory keeps ${factoryMax({ nodes: nodes(ids) }, 2)} squads out`;
   if (heldUnlocks(nodes(["wreck"]), "shore").join() !== "wreck" || heldUnlocks(nodes(["relay"]), "scout").join() !== "relay") return "unlocks: the wreck does not watch the shore or the relay the sky";
   if (factoryRarity(nodes([])) !== PLATE.robots || factoryRarity(nodes(["supply", "quarry"])) !== 2 || factoryRarity(nodes(["supply", "yard"])) !== 3) return "unlocks: the factory's robots are not armed as the trader's shelf";
   // Plain bins: gear only now and then, never past rare, the same for the same raid.
@@ -4334,12 +4334,12 @@ function checkBattle(): string | null {
   const old = parseProfile(JSON.parse(JSON.stringify({ ...night.profile, v: 18, factory: 3 })));
   if (!old || old.factory !== 0) return "battle: a v18 save took a factory";
   // The factory: built from the stash and the credits, its turrets at the nodes the player holds.
-  const rich = { ...p, cash: 1e6, stash: FACTORY.levels.flatMap((l) => l.items.flatMap(([k, n]) => Array.from({ length: n }, (): Item => ({ t: "valuable", kind: k })))) };
+  const rich = { ...p, cash: 1e6, stash: FACTORY.levels.flatMap((l) => (l.cost?.items ?? []).flatMap(([k, n]) => Array.from({ length: n }, (): Item => ({ t: "valuable", kind: k })))) };
   let built: Profile | null = rich;
-  for (let k = 0; k < FACTORY.levels.length; k++) built = built && buildFactory(built);
-  if (!built || built.factory !== FACTORY.levels.length || stashUsed(built) || buildFactory(built)) return `battle: building the factory to its top left ${built?.factory}`;
-  const top = mk(21, FACTORY.levels.length);
-  if (top.battle!.squads.filter((x) => x.task === "post" && x.to === SUP).length !== FACTORY.turrets[FACTORY.levels.length]) return "battle: the factory's top level stood no turret at the supply depot";
+  for (let k = 0; k < FACTORY_TOP; k++) built = built && buildFactory(built);
+  if (!built || built.factory !== FACTORY_TOP || stashUsed(built) || buildFactory(built)) return `battle: building the factory to its top left ${built?.factory}`;
+  const top = mk(21, FACTORY_TOP);
+  if (top.battle!.squads.filter((x) => x.task === "post" && x.to === SUP).length !== FACTORY.levels[FACTORY_TOP].turrets) return "battle: the factory's top level stood no turret at the supply depot";
   // The same battle twice: the same nodes taken.
   const play = () => {
     const r = mk(33, 2);

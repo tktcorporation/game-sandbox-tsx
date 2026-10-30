@@ -1,4 +1,4 @@
-import { EVENTS, FACTORY, FRONT, META, NIGHT, type EventKind, type Rarity } from "../sim/config";
+import { EVENTS, FACTORY, FACTORY_TOP, FRONT, META, NIGHT, type EventKind, type Rarity } from "../sim/config";
 import type { IslandEvent, PoiHold } from "../sim/island";
 import { DEBRIS_SPOTS, debrisIndex, DEPOTS, NET_EDGE, NODES, POIS, poiIndex, UNLOCKS, type DebrisId, type NodeId, type NodeUnlock, type PoiId } from "../sim/map";
 import { capturedIds, NEIGHBOURS, nodeHolds, type NodeHold } from "../sim/front";
@@ -168,7 +168,7 @@ export function nightRaids(held: readonly NodeId[], guarded: readonly NodeId[], 
     if (!foes) return;
     // The more of the island the player holds, the more of the enemy's strength falls on what is left of the front.
     const spread = NIGHT.spread + held.length / NODES.length;
-    const chance = NIGHT.chance[Math.min(foes, NIGHT.chance.length) - 1] * spread * (guarded.includes(n.id) ? NIGHT.guarded : 1) * NIGHT.factory[Math.max(0, Math.min(FACTORY.levels.length, factory))];
+    const chance = NIGHT.chance[Math.min(foes, NIGHT.chance.length) - 1] * spread * (guarded.includes(n.id) ? NIGHT.guarded : 1) * FACTORY.levels[Math.max(0, Math.min(FACTORY_TOP, factory))].night;
     if ((dayHash(seed, day, 100 + i) % 10_000) / 10_000 < chance) out.push(n.id);
   });
   return out;

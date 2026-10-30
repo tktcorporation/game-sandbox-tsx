@@ -1,4 +1,4 @@
-import { DEPOT, FACTORY, HEALS as HEAL_SPECS, HIDEOUT, META, MOD_KINDS, MOD_START, THREAT, TOOLS, VALUABLES, type ModKind, type HealKind, type ModuleId, type Rarity, type ToolKind, type ValuableKind, type WeaponKind, type FactoryLevel } from "../sim/config";
+import { DEPOT, FACTORY, FACTORY_TOP, HEALS as HEAL_SPECS, HIDEOUT, META, MOD_KINDS, MOD_START, THREAT, TOOLS, VALUABLES, type ModKind, type HealKind, type ModuleId, type Rarity, type ToolKind, type ValuableKind, type WeaponKind, type FactoryCost } from "../sim/config";
 import { depotIndex, DEPOTS, ENTRIES, HOME_REGION, POIS, poiIndex, REGIONS, regionOf, ROUTES, type EntryId, type NodeId, type PoiId, type RecordId, type RegionId, type RouteId } from "../sim/map";
 import { openRoutes } from "../sim/routes";
 import { encodeSeen, type Kit, type State } from "../sim/state";
@@ -518,7 +518,7 @@ export const setThreat = (p: Profile, threat: number): Profile => ({ ...p, threa
 /** Valuables the factory's levels not yet built still ask for, by kind. */
 export function factoryNeeded(p: Pick<Profile, "factory">): Record<ValuableKind, number> {
   const out = Object.fromEntries(Object.keys(VALUABLES).map((k) => [k, 0])) as Record<ValuableKind, number>;
-  for (const l of FACTORY.levels.slice(p.factory)) for (const [k, n] of l.items) out[k] += n;
+  for (const l of FACTORY.levels.slice(p.factory + 1)) for (const [k, n] of l.cost?.items ?? []) out[k] += n;
   return out;
 }
 
@@ -833,7 +833,7 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     routes: typeof o.v === "number" && o.v >= 9 && Array.isArray(o.routes) ? openRoutes(o.routes.filter((r): r is string => typeof r === "string")) : [],
     day,
     poiState,
-    factory: v19 && Number.isInteger(o.factory) ? Math.max(0, Math.min(FACTORY.levels.length, o.factory as number)) : 0,
+    factory: v19 && Number.isInteger(o.factory) ? Math.max(0, Math.min(FACTORY_TOP, o.factory as number)) : 0,
     lastKit: v20 ? parseKitPicks(o.lastKit) : null,
     records,
     known: knownMods(v17 && Array.isArray(o.known) ? o.known : []),
@@ -865,8 +865,8 @@ function parseKitPicks(raw: unknown): KitPicks | null {
   return { weapons, armor, keys, heals };
 }
 
-/** The factory's next level, or null once it is at its top. */
-export const nextFactory = (p: Pick<Profile, "factory">): FactoryLevel | null => FACTORY.levels[p.factory] ?? null;
+/** What building the factory's next level takes, or null once it is at its top. */
+export const nextFactory = (p: Pick<Profile, "factory">): FactoryCost | null => FACTORY.levels[p.factory + 1]?.cost ?? null;
 
 /** What stands between the factory and its next level: items short (kind, have, need) and credits short; null at the top. */
 export function factoryShortfall(p: Profile): { items: [ValuableKind, number, number][]; cash: number } | null {

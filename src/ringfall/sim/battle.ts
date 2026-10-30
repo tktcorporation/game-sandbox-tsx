@@ -1,4 +1,4 @@
-import { CONQUEST, COUNTER, ENEMIES, FACTORY, PLATE, TICK, type EnemyKind, type Rarity } from "./config";
+import { CONQUEST, COUNTER, ENEMIES, FACTORY, FACTORY_TOP, PLATE, TICK, type EnemyKind, type Rarity } from "./config";
 import { dist2d } from "./geom";
 import { CAMP, DEPOTS, depotIndex, FRONT_LINKS, LANDING_NODES, NET_EDGE, NODES, nodeIndex, POIS, UNLOCKS, type NodeId, type NodeUnlock } from "./map";
 import { fieldUses, forgetFields, onMainGround, walkLine } from "./hunt";
@@ -297,7 +297,7 @@ const paceOf = (b: BattleSquad) => CONQUEST.pace * Math.min(...b.units.map((u) =
 export function initBattle(s: State, start: BattleStart): Battle {
   traceLinks();
   forgetFields();
-  const factory = Math.max(0, Math.min(FACTORY.levels.length, Math.round(start.factory)));
+  const factory = Math.max(0, Math.min(FACTORY_TOP, Math.round(start.factory)));
   const b: Battle = {
     end: CONQUEST.time,
     now: 0,
@@ -320,7 +320,7 @@ export function initBattle(s: State, start: BattleStart): Battle {
   };
   NODES.forEach((_, i) => {
     if (s.nodes[i] !== "freed") return;
-    for (let k = 0; k < FACTORY.turrets[factory]; k++) addSquad(b, 0, ["heavy"], i, i, "post");
+    for (let k = 0; k < FACTORY.levels[factory].turrets; k++) addSquad(b, 0, ["heavy"], i, i, "post");
   });
   return b;
 }
@@ -751,7 +751,7 @@ export const heldUnlocks = (nodes: State["nodes"], key: keyof NodeUnlock): NodeI
 export const factoryRarity = (nodes: State["nodes"]): Rarity => Math.max(PLATE.robots, ...heldUnlocks(nodes, "shop").map((id) => UNLOCKS[id].shop ?? 0)) as Rarity;
 
 /** The squads the factory keeps out at once: its level's, and one more for each node held that opens one. */
-export const factoryMax = (s: Pick<State, "nodes">, f: number) => FACTORY.max[f] + heldUnlocks(s.nodes, "squad").reduce((n, id) => n + (UNLOCKS[id].squad ?? 0), 0);
+export const factoryMax = (s: Pick<State, "nodes">, f: number) => FACTORY.levels[f].max + heldUnlocks(s.nodes, "squad").reduce((n, id) => n + (UNLOCKS[id].squad ?? 0), 0);
 
 /**
  * The factory's next squad sets off on `plan`: out of the camp's gate when it sets off from the
@@ -763,7 +763,7 @@ function sendOut(s: State, b: Battle, plan: { from: number; to: number; task: Ba
   const gate = plan.from < 0 || CAMP_NEXT.includes(plan.from);
   const from = gate ? -1 : DEPOT + plan.from;
   const first = gate && plan.from >= 0 ? plan.from : plan.to;
-  const q = addSquad(b, 0, FACTORY.kinds[f], from, first, plan.task);
+  const q = addSquad(b, 0, FACTORY.levels[f].kinds, from, first, plan.task);
   if (first !== plan.to) q.via = [plan.to];
   b.made[0] = 0;
   b.departs.push({ from: gate ? -1 : plan.from, at: b.now });
@@ -776,8 +776,8 @@ function sendOut(s: State, b: Battle, plan: { from: number; to: number; task: Ba
 function produce(s: State, b: Battle, dt: number) {
   // The player's factory.
   const f = b.factory;
-  b.made[0] = Math.min(FACTORY.every[f], b.made[0] + dt);
-  if (b.made[0] >= FACTORY.every[f] && walking(b, 0) < factoryMax(s, f)) {
+  b.made[0] = Math.min(FACTORY.levels[f].every, b.made[0] + dt);
+  if (b.made[0] >= FACTORY.levels[f].every && walking(b, 0) < factoryMax(s, f)) {
     const plan = playerPlan(s, b);
     if (plan) sendOut(s, b, plan);
   }

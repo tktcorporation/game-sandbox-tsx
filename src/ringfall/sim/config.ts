@@ -525,45 +525,56 @@ export const COUNTER = {
  * chance `chance[n - 1]` for `n` such neighbours (2 or more as 2), times `spread` plus the share of
  * the island's nodes the player holds (the further the player has spread, the harder the rest of
  * the front is hit), times `guarded` when the player's squads stood at it as the battle ended,
- * times `factory[level]`. At most `max` fall in a night. The
+ * times the factory's level's `night` (`FACTORY.levels`). At most `max` fall in a night. The
  * draw is a hash of the raid's seed, the day and the node, never the raid's random numbers.
  */
 export const NIGHT = {
   chance: [0.3, 0.5],
   spread: 0.5,
   guarded: 0.5,
-  factory: [1, 0.9, 0.8, 0.7, 0.65],
   max: 2,
 };
 
-/** One level of the factory: what it takes from the stash, as a hideout module's level does (`ModuleLevel`). */
-export interface FactoryLevel {
+/** What building a level of the factory takes from the stash, as a hideout module's level does (`ModuleLevel`). */
+export interface FactoryCost {
   items: [ValuableKind, number][];
   cash: number;
-  does: string;
 }
 
-/**
- * The camp's factory (工場): the player's own robots. At each level (index 0 is the factory the
- * camp starts with) it makes a squad of `kinds` every `every` seconds of the battle, keeps at most
- * `max` out walking at once (squads that hold a node they took or defended do not count), and
- * stands `turrets` turrets (a robot that never leaves the core) at each node the player holds at
- * the raid's start. `levels[n]` is what
- * building level n + 1 takes.
- */
+/** One level of the camp's factory (`FACTORY.levels`). */
+export interface FactoryLevel {
+  /** Seconds of the battle between squads. */
+  every: number;
+  /** Squads out walking at once (squads that hold a node they took or defended do not count). */
+  max: number;
+  /** The robots of a squad it makes. */
+  kinds: EnemyKind[];
+  /** Turrets (a robot that never leaves the core) at each node the player holds at the raid's start. */
+  turrets: number;
+  /** What the chance of a node of the player's falling in the night is multiplied by (`NIGHT`). */
+  night: number;
+  /** What building this level takes; level 0 is the factory the camp starts with, never built. */
+  cost?: FactoryCost;
+}
+
+/** The camp's factory (工場): the player's own robots, a record a level, index = level. */
 export const FACTORY = {
   name: "工場",
-  every: [230, 200, 170, 140, 110],
-  max: [1, 1, 2, 2, 3],
-  kinds: [["grunt", "grunt"], ["grunt", "grunt", "grunt"], ["grunt", "heavy", "grunt"], ["grunt", "heavy", "drone", "grunt"], ["grunt", "grunt", "heavy", "drone", "grunt"]] as EnemyKind[][],
-  turrets: [0, 0, 0, 1, 1],
   levels: [
-    { items: [["parts", 3], ["fuse", 2]], cash: 1250, does: "3 体の部隊・作る間隔が 200 秒" },
-    { items: [["parts", 4], ["wire", 2]], cash: 3500, does: "ヘビーを作る・作る間隔が 170 秒・同時に 2 部隊" },
-    { items: [["wire", 3], ["board", 2]], cash: 7000, does: "4 体の部隊・ドローンを作る・作る間隔が 140 秒・解放した拠点に砲台" },
-    { items: [["board", 3], ["drive", 2]], cash: 12000, does: "5 体の部隊・作る間隔が 110 秒・同時に 3 部隊" },
+    { every: 230, max: 1, kinds: ["grunt", "grunt"], turrets: 0, night: 1 },
+    { every: 200, max: 1, kinds: ["grunt", "grunt", "grunt"], turrets: 0, night: 0.9, cost: { items: [["parts", 3], ["fuse", 2]], cash: 1250 } },
+    { every: 170, max: 2, kinds: ["grunt", "heavy", "grunt"], turrets: 0, night: 0.8, cost: { items: [["parts", 4], ["wire", 2]], cash: 3500 } },
+    { every: 140, max: 2, kinds: ["grunt", "heavy", "drone", "grunt"], turrets: 1, night: 0.7, cost: { items: [["wire", 3], ["board", 2]], cash: 7000 } },
+    { every: 110, max: 3, kinds: ["grunt", "grunt", "heavy", "drone", "grunt"], turrets: 1, night: 0.65, cost: { items: [["board", 3], ["drive", 2]], cash: 12000 } },
+    { every: 100, max: 3, kinds: ["grunt", "grunt", "heavy", "drone", "grunt", "charger"], turrets: 1, night: 0.6, cost: { items: [["drive", 3], ["gyro", 2]], cash: 18000 } },
+    { every: 90, max: 4, kinds: ["grunt", "grunt", "heavy", "drone", "grunt", "charger"], turrets: 2, night: 0.55, cost: { items: [["gyro", 3], ["core", 1]], cash: 26000 } },
+    { every: 80, max: 4, kinds: ["grunt", "heavy", "heavy", "drone", "grunt", "charger"], turrets: 2, night: 0.5, cost: { items: [["board", 4], ["core", 2]], cash: 36000 } },
+    { every: 70, max: 5, kinds: ["grunt", "grunt", "heavy", "heavy", "drone", "charger", "grunt"], turrets: 3, night: 0.45, cost: { items: [["gyro", 2], ["core", 2], ["reactor", 1]], cash: 50000 } },
   ] as FactoryLevel[],
 };
+
+/** The factory's top level. */
+export const FACTORY_TOP = FACTORY.levels.length - 1;
 
 /** What one level of the enemy's strength sets in a raid (`STRENGTH.levels`). */
 export interface StrengthLevel {

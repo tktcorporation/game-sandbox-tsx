@@ -23,7 +23,7 @@ import { holds, islandHolds, unfreeable } from "../src/ringfall/meta/island";
 import { enemyNodes, frontNodes } from "../src/ringfall/sim/front";
 import { buildFactory, buy, buyPrice, emptyLoadout, factoryShortfall, newProfile, nextFactory, sell, settle, takeKit, wares, type Item, type Profile } from "../src/ringfall/meta/profile";
 import { shopRarity } from "../src/ringfall/meta/island";
-import { FACTORY, VALUABLES, type Rarity, type ValuableKind, type WeaponKind } from "../src/ringfall/sim/config";
+import { FACTORY, FACTORY_TOP, VALUABLES, type Rarity, type ValuableKind, type WeaponKind } from "../src/ringfall/sim/config";
 import { playState } from "./ringfall-table";
 import { fork } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -99,7 +99,7 @@ function gearUp(p: Profile): Profile {
  */
 function spend(p: Profile): Profile {
   const want = new Map<ValuableKind, number>();
-  for (const l of FACTORY.levels.slice(p.factory)) for (const [k, n] of l.items) want.set(k, (want.get(k) ?? 0) + n);
+  for (const l of FACTORY.levels.slice(p.factory + 1)) for (const [k, n] of l.cost?.items ?? []) want.set(k, (want.get(k) ?? 0) + n);
   const kit = bestGear(p);
   const keep = new Set([...kit.weapons, kit.armor].filter((n) => n >= 0).map((n) => p.stash[n]));
   for (let i = p.stash.length - 1; i >= 0; i--) {
@@ -180,7 +180,7 @@ export function playCampaign(skill: string, days = DAYS): Campaign {
 export function campaignLines(runs: Campaign[]): string[] {
   const deepest = Math.max(...Object.values(TIER));
   const lines = [
-    `${runs[0]?.days.length ?? 0} consecutive days per skill on one profile (scripts/ringfall-campaign.ts). n: nodes of the ${NODES.length} the player holds at the end of the day; s: the enemy's strength the next raid plays at (0 to 2, from the nodes it holds); f: the factory's level (of ${FACTORY.levels.length})`,
+    `${runs[0]?.days.length ?? 0} consecutive days per skill on one profile (scripts/ringfall-campaign.ts). n: nodes of the ${NODES.length} the player holds at the end of the day; s: the enemy's strength the next raid plays at (0 to 2, from the nodes it holds); f: the factory's level (of ${FACTORY_TOP})`,
     ["skill    ", ...MARKS.map((m) => `day ${m}`.padEnd(10)), "alive".padEnd(6), "n(mean)".padEnd(8), "n(max)".padEnd(7), `tier 0-${deepest}: first day held`.padEnd(24), "days in".padEnd(22), "events d/s/c".padEnd(13), "crews in/out"].join(" "),
   ];
   for (const c of runs) {
