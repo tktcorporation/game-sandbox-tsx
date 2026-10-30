@@ -20,8 +20,9 @@ and no set order: the player chooses which POIs to take and when to leave. First
 The reservoir (south, +z) has six POIs and three ways off; the harbor (north, beyond a mountain
 belt) has six POIs and a boat. A pass road from the landing pad and a railway (an embankment from
 the east mesa, a bridge over a gorge, a viaduct into the harbor) join them, so a raid may walk from
-one to the other. The machine city (east, beyond a dried strait) has one POI, the central station
-(`terminal`), and a waited pickup at its north end; a road bridge from the relay's side and a rail
+one to the other. The machine city (east, beyond a dried strait) has three POIs, the car park on its west street
+(`carpark`), the central station (`terminal`) and the robot works at its north end (`robotworks`),
+and a waited pickup beside the works; a road bridge from the relay's side and a rail
 bridge from the harbor's cross the strait (`STRAIT_SPANS`). The world is about 1720 by 1880 m
 (`WORLD` in `config.ts`): the reservoir's island (about 1120 by 820 m) with the dune coast bulging
 south of it, a mountain belt at z about -350, the harbor's land (radius about 425 m), and the city's
@@ -207,8 +208,8 @@ with no contract plays at 0 (`raidThreat()`). 0 is the island's raid at the enem
 higher scales its times and plates (`raidClock()`, `netPlated()`), the range robots answer shots
 from afar, the mod parts' odds, and the contract's pay (`threatPay()`). `Profile.freedAt` keeps
 each POI's best 強度 for the map.
-The front (`docs/ringfall/island-v2.md`): the twelve freeable POIs are the nodes (`NODES` in
-`map.ts`, linked along the roads by the seventeen `FRONT_LINKS`, in loops, each with its depth, `TIER` from `POI_DEFS`); the
+The front (`docs/ringfall/island-v2.md`): the fourteen freeable POIs are the nodes (`NODES` in
+`map.ts`, linked along the roads by the nineteen `FRONT_LINKS`, in loops, each with its depth, `TIER` from `POI_DEFS`); the
 outposts are places to loot with an enemy guard, no nodes, and the rogues hold no ground.
 `sim/front.ts` holds the rules. A node next to the player's ground (the camp and the player's
 nodes) is on the front; only its core, a pillar near its middle, can be captured (`FRONT` in
@@ -217,7 +218,8 @@ no robot on it, the garrison comes and squads push in from the neighbouring node
 the player's at once (no robot enters `FRONT.zone`) and stays so overnight; clearing a POI of its
 robots does not take it. The bot captures the front's cores in its region whose garrison's plates
 its best gun pierces, `Skill.capture` a raid (`Skill.battle` in a battle), and then leaves; it takes on
-no POI two tiers past its best gun. With no contract taken (and
+no POI two tiers past its best gun, and its paths go round the nearest such garrison of its
+region (or the titan's sight, where the titan is). With no contract taken (and
 the story record not taken), the objective card points at the front (`objectiveSteps()`), and the
 record has a line of its own.
 A raid of the island is one battle (陣取り戦, `sim/battle.ts`, `CONQUEST` in `config.ts`), given by
@@ -264,7 +266,7 @@ player left, so the results tell the battle after leaving from the raid.
 `view/battle.ts` draws the battle from afar: the landing craft and their beams, the battle's
 robots past `thingsFar` and the squads that are numbers out to the fog as instanced figures
 (`columnPoints()`), and the gate's and the depots' light as the factory's squads come out.
-The long-term goal is how many of the twelve nodes the player holds (`view/row.ts` draws them as
+The long-term goal is how many of the fourteen nodes the player holds (`view/row.ts` draws them as
 one tug-of-war bar, blue from the left and red from the right, a segment a node, at the title, the
 HUD's top, the camp's line, the map table and the results; its boundary slides when a node changes
 hands and flickers while one is fought over); there is no ending. The hideout is the mid-term one: five modules built level by level from specific
@@ -322,7 +324,7 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   `mezzanine()` is `hall()`'s mezzanine on its own, `disc()` a round of columns, `dish()` a tilted
   parabolic dish of columns, and `strand()` / `stay()` a cable as blocks stepping along it.
   Each POI's buildings are a function of its own (`supply()`, `quarry()`, `relay()`, `pad()`,
-  `wreck()`, `yard()`, `smelter()`, `station()`, `waterworks()`, `lodge()`, `cannery()`, `coldstore()`), as is each district's (`heartTown()`, `damFace()`,
+  `wreck()`, `yard()`, `smelter()`, `station()`, `waterworks()`, `lodge()`, `cannery()`, `coldstore()`, `terminal()`, `carpark()`, `robotworks()`), as is each district's (`heartTown()`, `damFace()`,
   `plateau()`, `village()`, `factory()`, and the machine city's grid of streets, glass towers,
   offices and elevated line round its station, `city()`, painted from steel tints 8 and 9). The helpers take their sizes from a `Scale` (storey,
   walls, doors, windows, roller doors, stair width): `WORKS` for industry (4.5 m storeys,

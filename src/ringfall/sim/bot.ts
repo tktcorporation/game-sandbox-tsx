@@ -4,7 +4,7 @@ import { frontNodes } from "./front";
 import { currentStep, objectiveSteps } from "./objective";
 import { bodyCenter, eyePos, flankOf, magSize, weakPoint } from "./combat";
 import { ceilingAt, dist2d, inWorld, groundAt, groundLevel, los, onTerrain, lookAngles, solidAt, wrapAngle } from "./geom";
-import { EXTRACTS, NODES, POIS, poiIndex, regionOf, TIER, type ExtractPoint, type NodeId, type PoiId } from "./map";
+import { EXTRACTS, NODES, POIS, poiIndex, regionHere, regionOf, TIER, type ExtractPoint, type NodeId, type PoiId } from "./map";
 import { clearLine, findPath, type Avoid } from "./nav";
 import { onMainGround } from "./hunt";
 import { callLeft, enemyMax, idleInput, weakY, type Enemy, type Input, type State } from "./state";
@@ -84,6 +84,29 @@ const AVOID_TITAN = 70;
  * titan stays within a metre of it.
  */
 const titanSight = (t: Enemy): Avoid => ({ x: t.pos.x, z: t.pos.z, r: AVOID_TITAN, home: { x: t.home.x, z: t.home.z, r: AVOID_TITAN - 1 } });
+
+/** Metres past a POI's trigger that the bot's paths keep off a garrison it leaves standing. */
+const AVOID_GARRISON = 20;
+
+/**
+ * The ground round the nearest POI of the region whose garrison stands and whose plates are past
+ * what the bot means to take on (`reach`, as `nextPoi()`): its walks to other POIs and out go round
+ * it, as a player keeps clear of a fight they cannot win, where the way round is not much longer.
+ */
+function garrisonGround(s: State, reach: number, aim: number): Avoid | undefined {
+  const mine = regionOf(s.region).pois;
+  let best: Avoid | undefined;
+  let near = Infinity;
+  POIS.forEach((poi, i) => {
+    if (i === aim || poi.boss || s.cleared[i] || !mine.includes(poi.id) || (TIER[poi.id as NodeId] ?? 0) <= reach) return;
+    const d = dist2d(poi, s.player.pos);
+    if (d < near) {
+      near = d;
+      best = { x: poi.x, z: poi.z, r: poi.trigger + AVOID_GARRISON };
+    }
+  });
+  return best;
+}
 
 /** Seconds a fighting robot may stay out of sight before the bot stops waiting for it. */
 const GIVE_UP = 25;
@@ -194,9 +217,10 @@ export class Bot {
     const coreAt = core >= 0 ? standBy(core, this.coreSide) : null;
     // Only fight robots that are after us or stand at the POI we are taking; leave the rest alone.
     let aim = capturing ? -1 : this.nextPoi(s);
-    // Until it means to take the titan on, its paths go round the titan's sight.
-    const titan = s.enemies.find((e) => e.kind === "titan" && e.hp > 0 && e.aware !== "engaged");
-    this.avoid = titan && !(aim >= 0 && POIS[aim].boss) ? titanSight(titan) : undefined;
+    // Until it means to take the titan of its region on, its paths go round the titan's sight; with
+    // no titan there, round the nearest garrison it leaves standing.
+    const titan = s.enemies.find((e) => e.kind === "titan" && e.hp > 0 && e.aware !== "engaged" && regionHere(e.pos).id === s.region);
+    this.avoid = titan && !(aim >= 0 && POIS[aim].boss) ? titanSight(titan) : titan ? undefined : garrisonGround(s, pierce(s) + 1, aim);
     const sees = (e: Enemy) => dist2d(e.pos, p.pos) < 60 && los(eye, bodyCenter(e));
     // Robots coming to look ("?") in plain sight are worth the first shot before they find it.
     const coming = (e: Enemy) => e.aware === "alert" && dist2d(e.pos, p.pos) < 45 && sees(e);
@@ -214,7 +238,7 @@ export class Bot {
       if (rest.length && rest.every(given)) {
         this.left.add(aim);
         aim = capturing ? -1 : this.nextPoi(s);
-        this.avoid = titan && !(aim >= 0 && POIS[aim].boss) ? titanSight(titan) : undefined;
+        this.avoid = titan && !(aim >= 0 && POIS[aim].boss) ? titanSight(titan) : titan ? undefined : garrisonGround(s, pierce(s) + 1, aim);
       }
     }
     const relevant = live.filter((e) => !given(e) && (e.aware === "engaged" || (aim >= 0 && e.poi === aim) || coming(e)));

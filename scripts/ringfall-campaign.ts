@@ -234,7 +234,7 @@ export function campaignLines(runs: Campaign[]): string[] {
     lines.push([c.skill.padEnd(9), `${sum((d) => d.turns.raid)} / ${sum((d) => d.turns.after)} / ${sum((d) => d.turns.night)}`.padEnd(42), `${up} / ${down}`.padEnd(19), String(longest)].join(" "));
   }
   // The nodes held each day, the harbor's and the city's among them, the deepest tier held (- for none), the strength and the factory.
-  lines.push(`nodes by day (a 10, b 11, c 12): ${runs.map((c) => `${c.skill} ${c.days.map((d) => d.nodes.toString(16)).join("")}`).join(" / ")}`);
+  lines.push(`nodes by day (a 10, b 11, c 12, d 13, e 14): ${runs.map((c) => `${c.skill} ${c.days.map((d) => d.nodes.toString(16)).join("")}`).join(" / ")}`);
   lines.push(`harbor nodes by day: ${runs.map((c) => `${c.skill} ${c.days.map((d) => d.harbor).join("")}`).join(" / ")}`);
   lines.push(`city nodes by day: ${runs.map((c) => `${c.skill} ${c.days.map((d) => d.city).join("")}`).join(" / ")}`);
   lines.push(`deepest tier by day: ${runs.map((c) => `${c.skill} ${c.days.map((d) => (d.tier < 0 ? "-" : d.tier)).join("")}`).join(" / ")}`);
