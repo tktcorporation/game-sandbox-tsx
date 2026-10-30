@@ -146,6 +146,16 @@ export const HARBOR_TOUR = [
   ["tour-105-town-far", "波止場町", -80, 1.7, 110, 0.63, 0.1],
   ["tour-106-town-spur", "波止場町", 40, -0.67 + 9 + 1.7, 0, Math.PI / 2, -0.04, true],
   ["tour-107-town-broken", "波止場町", 30, 1.7, 64, 1.02, 0.22],
+  // The machine city's high-rise district (its streets at 4): the towers over the ramp from the plaza,
+  // along a sky bridge, the crane on the unfinished tower's top; then the power plant east of the
+  // city: its yard from the gate, the gap into a cooling tower, inside it, and from the boiler house's roof.
+  ["tour-108-highrise-plaza", "highrise", -24, 1.7, -50, Math.PI, 0.12],
+  ["tour-109-highrise-skybridge", "highrise", -14, 4 + 36 + 1.6, 39, Math.PI / 2, 0.04, true],
+  ["tour-110-highrise-frame", "highrise", 40, 4 + 23 * 4 + 1.6, -48, -2.13, 0.35, true],
+  ["tour-111-plant-yard", "powerplant", -46, 1.7, 2, 0.6, 0.12],
+  ["tour-112-plant-tower-gap", "powerplant", -24, 1.7, -34, Math.PI / 2, 0.08],
+  ["tour-113-plant-inside-tower", "powerplant", 2, 1.7, -36, Math.PI / 2, 0.75],
+  ["tour-114-plant-boiler-roof", "powerplant", 4, 4 + 8 * 3.4 + 1.6, 2, 0, -0.08, true],
 ];
 
 /** A tour camera placed in the world: [name, x, dy, z, yaw, pitch, abs], from `frames` (window.ringfallFrames()). */

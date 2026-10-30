@@ -654,7 +654,7 @@ export interface Squad {
 export type LootTable = { weapon: [WeaponKind, Rarity][]; armor: Rarity[]; heals: number; valuable: [ValuableKind, number][] };
 
 /** Stable names for the POIs: saves, quests and other data refer to a POI by these, never by its place in `POIS`. */
-export type PoiId = "supply" | "quarry" | "relay" | "pad" | "wreck" | "yard" | "smelter" | "station" | "waterworks" | "lodge" | "cannery" | "coldstore" | "terminal" | "carpark" | "robotworks";
+export type PoiId = "supply" | "quarry" | "relay" | "pad" | "wreck" | "yard" | "smelter" | "station" | "waterworks" | "lodge" | "cannery" | "coldstore" | "terminal" | "carpark" | "robotworks" | "highrise" | "powerplant";
 /** The boss's POI (the titan's pad): written as the boss in `POI_DEFS`, and no node of the front. */
 export type BossId = "pad";
 
@@ -1197,10 +1197,13 @@ const CITY_OFFICES = [
   { x: 33, z: 58, w: 22, d: 20, floors: 12 },
 ] as const;
 
+/** The cable terminal in the city's south-east corner where the power plant's line ends, in the city's frame, and its sealing-end frame's top. */
+const CABLE_END = { x: 80, z: 290, top: 9 } as const;
+
 function city(): Box[] {
   const { ns, ew, viaduct } = CITY;
   const out: Box[] = [
-    // The east column: glass towers to the north, south of the station and south again; offices between,
+    // The east column: glass towers to the north and south of the station; offices between,
     // the tallest two (`CITY_OFFICES`) climbed to a bin on their top floor.
     pavement(77, -330, 112, -251),
     ...glassTower(94, -292, 26, 30, 14),
@@ -1213,18 +1216,15 @@ function city(): Box[] {
     ...glassTower(94, -22, 28, 28, 12),
     pavement(77, 29, 112, 87),
     ...office(94, 58, 30, 22, 4, true),
+    // The column's two south blocks hold the high-rise district's towers (`highrise()`).
     pavement(77, 109, 112, 167),
-    ...glassTower(94, 138, 26, 26, 9),
     pavement(77, 189, 112, 245),
-    ...hall(94, 215, 30, 26, 9, { doors: [{ side: "w", w: 6 }], windows: ["s"], scale: WORKS, steel: 2 }),
-    // East of the avenue: an office north of the station, a glass tower facing the station square, a
-    // tall office and the power hall with its cooling units.
+    // East of the avenue: an office north of the station and a glass tower facing the station square;
+    // the blocks south of the tall office are the high-rise district's plaza and one of its towers.
     pavement(11, -229, 55, -181),
     ...office(33, -205, 34, 24, 4, true),
     pavement(11, -51, 55, 7),
     ...glassTower(33, -22, 30, 26, 11),
-    pavement(11, 109, 55, 167),
-    ...hall(33, 138, 40, 34, 9, { doors: [{ side: "w", w: 6 }, { side: "e", w: 6 }], windows: ["n", "s"], scale: WORKS, steel: 2 }),
     // West of the avenue: offices, low on the side the ziplines leave by.
     pavement(-55, -229, -11, -181),
     ...office(-33, -205, 34, 24, 5, false),
@@ -1246,15 +1246,290 @@ function city(): Box[] {
     ...viaductRun(false, ns[1], -300, 240, ew),
     ...viaductRun(true, ew[0], CITY.x[0], ns[1] - viaduct.half, [...ns, 0]),
     ...train(ns[1], -60, 3),
-    // Pipes over the streets: from the glass tower facing the station square across the east
-    // street, and from the power hall's roof over the avenue to the office west of it.
+    // Pipes over the east street from the glass tower facing the station square.
     ...pipeRack(46, 82, -22, 18),
-    ...pipeRack(-42, 40, 132, 19),
-    box(-24, 132, 2, 2, 19, "steel", 2, 16),
-    box(15, 132, 2, 2, 19, "steel", 2, 9),
+    // The cable terminal where the power plant's line (`POWER_LINES`) comes down off its last pylon
+    // and goes under the streets: a walled yard, the sealing-end frame and the cable house.
+    ...compound(CABLE_END.x, CABLE_END.z, 16, 12, 2.4, [{ side: "w", w: 4 }]).map((b): Box => ({ ...b, tint: 4 })),
+    ...[-5, 0, 5].map((dx) => box(CABLE_END.x + dx, CABLE_END.z - 2, 0.5, 0.5, CABLE_END.top, "steel", 2)),
+    rect(CABLE_END.x - 5.4, CABLE_END.z - 2.3, CABLE_END.x + 5.4, CABLE_END.z - 1.7, CABLE_END.top - 0.6, CABLE_END.top, "steel", 2),
+    ...[-5, 0, 5].map((dx) => box(CABLE_END.x + dx, CABLE_END.z - 2, 0.8, 0.8, 4.2, "steel", 4, 2.6)),
+    ...building(CABLE_END.x + 3, CABLE_END.z + 3, 6, 4, 3, { doors: ["w"], scale: HOME }).map((b): Box => (b.kind === "wall" && b.tint === 0 ? { ...b, tint: 4 } : b)),
   ];
-  // Cooling units in rows on the power hall's roof.
-  for (const dx of [-12, -4, 4, 12]) for (const dz of [-8, 8]) out.push(box(33 + dx, 138 + dz, 5, 5, 11.6, "steel", 2, 9));
+  return out;
+}
+
+/**
+ * The high-rise district east of the avenue, in its own frame round the crossing of the east
+ * street and the south street, on ground at 0 (`HIGHRISE`): the city's tallest buildings. Three
+ * glass towers stand on three of the four blocks round the crossing, climbed by the stairs inside
+ * (`skyTower()`): tower A (25 storeys, 100 m) on the south-east block, tower B (21 storeys) on the
+ * south-west one and tower C on the north-east one, left unfinished, glass up to its fourteenth
+ * storey and bare steel frame above, a tower crane on its top. At the bridge storey covered sky
+ * bridges join A to B over the east street and its elevated line, and A to C over the south street.
+ * The fourth block is the plaza: low shops along the avenue (two storeys, climbed inside to the roof)
+ * and its north edge (one storey, stairs up its east end), and in its middle the ramp down to the
+ * underground car park's shutter
+ * (`地下駐車場の斜路` in terrain.ts). Nothing stands on the plaza within reach of the ramp but
+ * what hangs below the ground, so the ramp keeps its walls.
+ */
+const HIGHRISE = {
+  a: { x: 30, z: 39, w: 24, d: 24, floors: 25 },
+  b: { x: -31, z: 39, w: 22, d: 22, floors: 21 },
+  /** The unfinished tower: glass up to `clad` storeys, frame above. */
+  c: { x: 30, z: -40, w: 24, d: 24, floors: 23, clad: 14 },
+  /** The storey the sky bridges join, and their floor's height. */
+  bridge: 9,
+  /** The ramp's middle line along z, its top and bottom ends and half its width (as terrain.ts lays it). */
+  ramp: { x: -24, top: -44, foot: -18, half: 3.5 },
+} as const;
+/** The sky bridges' floor, the floor of the bridge storey. */
+const SKY = HIGHRISE.bridge * OFFICE.storey;
+type SkyTower = { x: number; z: number; w: number; d: number; floors: number; clad?: number };
+
+/**
+ * A glass tower climbed inside (`tower()` at office storeys), its doors at the bridge storey on
+ * `bridges`: a white lobby with doors on three sides, glass above, closed glass on the storeys
+ * between the lobby and the top but for the bridge storey and the top two, which have windows all
+ * round; white bands outside every third storey. Over `clad` storeys the walls give way to steel
+ * columns round a bare frame, the stairs inside it going on to the top.
+ */
+function skyTower(t: SkyTower, bridges: Side[]): Box[] {
+  const S = OFFICE.storey;
+  const clad = Math.min(t.clad ?? t.floors, t.floors);
+  const doors: Side[][] = [];
+  const windows: Side[][] = [];
+  for (let k = 0; k < t.floors; k++) {
+    doors.push(k === 0 ? ["s", "e", "w"] : k === HIGHRISE.bridge ? bridges : []);
+    windows.push(k === 0 || k === HIGHRISE.bridge || (k >= clad - 2 && k < clad) ? ["n", "s", "e", "w"] : []);
+  }
+  const top = t.floors * S;
+  const out = tower(t.x, t.z, t.w, t.d, t.floors, { doors, windows, scale: OFFICE })
+    .filter((b) => !(b.kind === "wall" && b.tint === 0 && b.y0 >= clad * S - 0.1))
+    .map((b): Box => {
+      if (b.kind === "slab") return { ...b, tint: 2 };
+      if (b.kind !== "wall" || b.tint !== 0) return b;
+      return b.y0 >= S - 0.5 ? { ...b, kind: "steel", tint: 8 } : { ...b, tint: 4 };
+    });
+  const [x0, x1, z0, z1] = [t.x - t.w / 2, t.x + t.w / 2, t.z - t.d / 2, t.z + t.d / 2];
+  for (let k = 1; k < clad; k++) {
+    if (k % 3 !== 1) continue;
+    const y = k * S;
+    out.push(rect(x0 - 0.3, z0 - 0.3, x1 + 0.3, z0, y - 0.4, y + 0.3, "steel", 9), rect(x0 - 0.3, z1, x1 + 0.3, z1 + 0.3, y - 0.4, y + 0.3, "steel", 9));
+    out.push(rect(x0 - 0.3, z0, x0, z1, y - 0.4, y + 0.3, "steel", 9), rect(x1, z0, x1 + 0.3, z1, y - 0.4, y + 0.3, "steel", 9));
+  }
+  if (clad < t.floors) {
+    // The bare frame: columns round its edge from the last glass storey to the top.
+    // The columns along the north and south edges stand clear of the stair flights at the east end.
+    const xs = [x0 + 0.3, x0 + t.w * 0.22, t.x, x1 - t.w * 0.3, x1 - 0.3];
+    const zs = [t.z - t.d * 0.25, t.z, t.z + t.d * 0.25];
+    for (const x of xs) for (const z of [z0 + 0.3, z1 - 0.3]) out.push(box(x, z, 0.6, 0.6, top, "steel", 0, clad * S));
+    for (const z of zs) for (const x of [x0 + 0.3, x1 - 0.3]) out.push(box(x, z, 0.6, 0.6, top, "steel", 0, clad * S));
+  } else {
+    // On the roof, west of the stairs up to it: the plant room and its mast.
+    out.push(box(t.x - t.w * 0.22, t.z, t.w * 0.3, t.d * 0.4, top + 4, "steel", 9, top), box(t.x - t.w * 0.22, t.z, 0.5, 0.5, top + 16, "steel", 4, top + 4));
+  }
+  return out;
+}
+
+/** A covered sky bridge at floor `y` along x (`alongX`) or z, at `at` across, from a to b: a glass parapet each side, posts and a roof. */
+function skyBridge(alongX: boolean, at: number, a: number, b: number, y: number): Box[] {
+  const r = (u0: number, u1: number, v0: number, v1: number, y0: number, h: number, kind: BoxKind, tint: number) =>
+    alongX ? rect(u0, v0, u1, v1, y0, h, kind, tint) : rect(v0, u0, v1, u1, y0, h, kind, tint);
+  const half = 2;
+  const out: Box[] = [
+    r(a, b, at - half, at + half, y - 0.9, y, "slab", 2),
+    r(a, b, at - half, at - half + 0.2, y, y + 1.1, "steel", 8),
+    r(a, b, at + half - 0.2, at + half, y, y + 1.1, "steel", 8),
+    r(a, b, at - half - 0.2, at + half + 0.2, y + 3.3, y + 3.7, "steel", 9),
+  ];
+  for (let u = a + 3; u < b - 1; u += 6) for (const s of [-1, 1]) out.push(r(u - 0.15, u + 0.15, at + s * (half - 0.1) - 0.15, at + s * (half - 0.1) + 0.15, y + 1.1, y + 3.3, "steel", 9));
+  return out;
+}
+
+/** The tower crane on a roof at height `y`, its mast at (mx, mz): the lattice mast, the cab, the jib east and the counter-jib west with its weights, the hook down over the street. */
+function towerCrane(mx: number, mz: number, y: number): Box[] {
+  const out: Box[] = [];
+  const top = y + 22;
+  for (const [dx, dz] of [[-1.1, -1.1], [1.1, -1.1], [-1.1, 1.1], [1.1, 1.1]]) out.push(box(mx + dx, mz + dz, 0.35, 0.35, top, "steel", 0, y));
+  for (let h = y + 3; h < top; h += 3) out.push(rect(mx - 1.3, mz - 1.3, mx + 1.3, mz - 1.05, h - 0.2, h, "steel", 0), rect(mx - 1.3, mz + 1.05, mx + 1.3, mz + 1.3, h - 0.2, h, "steel", 0));
+  out.push(
+    box(mx + 2.4, mz, 2.4, 2.4, top - 0.5, "steel", 4, top - 3),
+    rect(mx - 1.3, mz - 0.8, mx + 40, mz + 0.8, top, top + 1.4, "steel", 0),
+    rect(mx - 16, mz - 0.8, mx - 1.3, mz + 0.8, top, top + 1.0, "steel", 0),
+    box(mx - 14, mz, 2.6, 2.4, top, "wall", 1, top - 2.6),
+    box(mx, mz, 1.0, 1.0, top + 8, "steel", 0, top + 1.4),
+    ...strand([mx, top + 8, mz], [mx + 26, top + 1.4, mz], 0.15, 2),
+    ...strand([mx, top + 8, mz], [mx - 15, top + 1.0, mz], 0.15, 2),
+    box(mx + 30, mz, 1.4, 1.6, top, "steel", 2, top - 0.5),
+    box(mx + 30, mz, 0.1, 0.1, top - 0.5, "steel", 2, y - 30),
+    box(mx + 30, mz, 0.8, 0.8, y - 30, "steel", 0, y - 31),
+  );
+  return out;
+}
+
+function highrise(): Box[] {
+  const { a: A, b: B, c: C, ramp } = HIGHRISE;
+  const S = OFFICE.storey;
+  const out: Box[] = [
+    // The south-west block's pavement and the plaza's paving under its shops, clear of the ramp.
+    pavement(-53, 11, -9, 67),
+    pavement(-53, -69, -38, -11),
+    pavement(-38, -69, -9, -55),
+    ...skyTower(A, ["w", "n"]),
+    ...skyTower(B, ["e"]),
+    ...skyTower(C, ["s"]),
+    ...towerCrane(C.x - 6, C.z + 2, C.floors * S),
+    ...skyBridge(true, A.z, B.x + B.w / 2, A.x - A.w / 2, SKY),
+    ...skyBridge(false, A.x, C.z + C.d / 2, A.z - A.d / 2, SKY),
+    // The shops: a two-storey row along the avenue, its roof reached by its stairs, and a one-storey
+    // row along the plaza's north edge with stairs up its east end.
+    ...tower(-47, -40, 12, 56, 2, { doors: [["e", "s"]], windows: [["e", "w"], ["n", "s", "e", "w"]], scale: OFFICE }).map((b): Box => (b.kind === "slab" ? { ...b, tint: 2 } : b.kind === "wall" && b.tint === 0 ? (b.y0 >= S - 0.5 ? { ...b, kind: "steel", tint: 8 } : { ...b, tint: 4 }) : b)),
+    ...building(-25, -62, 24, 12, 4.5, { doors: ["s", "w"], windows: ["s", "n"], roof: "e", scale: OFFICE }).map((b): Box => (b.kind === "wall" && b.tint === 0 ? { ...b, tint: 4 } : b.kind === "slab" ? { ...b, tint: 2 } : b)),
+    // Shop awnings over the row's plaza front, and a planter at the plaza's north-east corner.
+    rect(-41, -66, -39.5, -14, 3.0, 3.25, "steel", 3),
+    box(-12, -64, 2, 5, 0.9, "wall", 4),
+    // The ramp's mouth: rails along its walls, and at its foot a lid flush with the plaza over the
+    // last metres and the car park's closed shutter, both hanging below the ground.
+    rect(ramp.x - ramp.half - 0.4, ramp.top, ramp.x - ramp.half, ramp.foot - 4, -1, 1.0, "steel", 2),
+    rect(ramp.x + ramp.half, ramp.top, ramp.x + ramp.half + 0.4, ramp.foot - 4, -1, 1.0, "steel", 2),
+    rect(ramp.x - ramp.half - 0.4, ramp.foot - 4, ramp.x + ramp.half + 0.4, ramp.foot + ramp.half + 0.4, -0.35, -0.02, "slab", 2),
+    rect(ramp.x - ramp.half, ramp.foot + ramp.half - 0.6, ramp.x + ramp.half, ramp.foot + ramp.half - 0.2, -5, -0.35, "steel", 2),
+  ];
+  return out;
+}
+
+/**
+ * The coal-fired power plant that fed the city, in its own frame round (0, 0) on ground at 0
+ * (`POWERPLANT`): a walled yard 74 by 212 m along the coast, east of the city's paved basin, open to the
+ * cliffs on its east side. At its north end two hyperbolic cooling towers 60 m high in a row
+ * (`coolingTower()`), hollow, each entered through a gap torn in its west foot: a yard inside walls
+ * no one outside sees into. South of them the boiler house, clad dark steel, its roof reached by an
+ * open steel stair tower against its west side; the 80 m chimney beside it, the flue running to it;
+ * the turbine hall (`hall()`), three turbine-generator sets down its middle under the travelling
+ * crane, a mezzanine along each long wall. East of the hall the two fuel tanks inside their bund,
+ * and at the south end the switchyard: transformers in a row under the busbar frame, from whose
+ * west end the line to the city leaves (`POWER_LINES`). The yard's gate faces the city across the ground between.
+ */
+const POWERPLANT = {
+  /** The cooling towers' middles. */
+  towers: [{ x: 10, z: -80 }, { x: 10, z: -36 }],
+  boiler: { x: 8, z: 8, w: 20, d: 24 },
+  /** The boiler house's roof, level with its stair tower's top platform (eight lattice storeys). */
+  boilerTop: 8 * STOREY,
+  chimney: { x: 28, z: 8, r: 3.5, h: 80 },
+  turbine: { x: -14, z: 52, w: 24, d: 52, h: 20 },
+  mezz: 7,
+  tanks: [{ x: 24, z: 50 }, { x: 24, z: 70 }],
+  /** The busbar frame's beam over the switchyard, along x at `z`, its top and ends. */
+  busbar: { z: 86, top: 12, x0: -30, x1: 6 },
+} as const;
+/** The cooling towers' shape: radius `base` at the foot, narrowest (`throat`) at `waist`, `h` high, walls `wall` thick, laid in bands `band` high and rows `row` deep. */
+const COOLING = { base: 19, throat: 12.5, waist: 44, h: 60, wall: 0.8, band: 6, row: 2.5 } as const;
+/** A cooling tower's outer radius at height y: a hyperboloid through the foot and the waist. */
+const coolingRadius = (y: number) => {
+  const { base, throat, waist } = COOLING;
+  const c = waist / Math.sqrt((base / throat) ** 2 - 1);
+  return throat * Math.sqrt(1 + ((y - waist) / c) ** 2);
+};
+
+/**
+ * A hyperbolic cooling tower round (cx, cz): its shell in round bands laid as rows along x, each
+ * band's radius the hyperboloid's at its middle, so the shell steps in to its waist and out to its
+ * rim. A gap torn in its west foot, ragged at the top, is the way in; the broken shell lies heaped
+ * outside it and a few blocks of the old cooling fill stand on the floor inside.
+ */
+function coolingTower(cx: number, cz: number): Box[] {
+  const { h, wall, band, row } = COOLING;
+  const out: Box[] = [];
+  const chord = (r: number, z: number) => (z < r ? Math.sqrt(r * r - z * z) : 0);
+  // The gap: rows within `half` of the middle open up to `top` (the rows at its edges less high).
+  const gapTop = (za: number, zb: number) => {
+    const mid = Math.abs((za + zb) / 2);
+    return mid < 2.5 ? 9 : mid < 5 ? 5.5 : 0;
+  };
+  for (let y = 0; y < h - 0.01; y += band) {
+    const y1 = Math.min(h, y + band);
+    const r1 = coolingRadius((y + y1) / 2);
+    const r0 = r1 - wall;
+    const n = Math.ceil((2 * r1) / row);
+    for (let i = 0; i < n; i++) {
+      const za = -r1 + (i * 2 * r1) / n;
+      const zb = -r1 + ((i + 1) * 2 * r1) / n;
+      const near = za <= 0 && zb >= 0 ? 0 : Math.min(Math.abs(za), Math.abs(zb));
+      const far = Math.max(Math.abs(za), Math.abs(zb));
+      const xo = chord(r1, near);
+      if (xo <= 0) continue;
+      const xi = chord(r0, far);
+      const top = y1 >= h - 0.01;
+      const tint = top ? 1 : 0;
+      const pieces = xi > 0 ? [[-xo, -xi], [xi, xo]] : [[-xo, xo]];
+      for (const [p, q] of pieces) {
+        const west = p < 0 && xi > 0;
+        const g = west ? gapTop(za, zb) : 0;
+        if (g >= y1) continue;
+        out.push(rect(cx + p, cz + za, cx + q, cz + zb, Math.max(y, g), y1, "wall", tint));
+      }
+    }
+  }
+  // Broken shell heaped outside the gap, and blocks of fill on the floor inside.
+  const r = coolingRadius(0);
+  out.push(box(cx - r - 2, cz - 4, 3, 2.4, 1.2, "prop", PROP.rubble), box(cx - r - 3.5, cz + 3, 2.4, 3, 0.9, "prop", PROP.rubble));
+  for (const [dx, dz] of [[-6, -7], [4, 6], [6, -8], [-3, 9]]) out.push(box(cx + dx, cz + dz, 3, 3, 1.6, "wall", 1));
+  return out;
+}
+
+function powerplant(): Box[] {
+  const { boiler: Bo, boilerTop: BT, chimney: Ch, turbine: T, tanks, busbar: Bb } = POWERPLANT;
+  const out: Box[] = [
+    // The yard's wall, left off along the coast's cliffs; its gate west toward the city, and the
+    // ways out north past the towers and south past the switchyard.
+    ...compound(0, 0, 74, 212, 2.4, [{ side: "w", w: 10 }, { side: "n", at: -24, w: 8 }, { side: "s", at: 16, w: 8 }]).filter((b) => b.x0 < 30),
+    ...POWERPLANT.towers.flatMap((t) => coolingTower(t.x, t.z)),
+    // The boiler house: dark plate, the boiler inside, the drum and its pipes on the roof.
+    ...hall(Bo.x, Bo.z, Bo.w, Bo.d, BT, { doors: [{ side: "s", at: 4 }], hatches: [{ side: "w", at: -6 }], windows: ["e"], open: ["w"], steel: 1, scale: WORKS }),
+    box(Bo.x + 2, Bo.z - 1, 10, 12, BT - 4, "steel", 0),
+    rect(Bo.x - 4, Bo.z - 6, Bo.x + 6, Bo.z - 4.4, BT, BT + 1.6, "steel", 2),
+    rect(Bo.x + 4, Bo.z + 2, Bo.x + 8, Bo.z + 9, BT, BT + 2.2, "steel", 3),
+    // Its open stair tower: platforms every storey, its top one bridged onto the roof.
+    ...lattice(Bo.x - Bo.w / 2 - 4, Bo.z, 6, 6, 8, BT + 4, ["e"]),
+    rect(Bo.x - Bo.w / 2 - 1.2, Bo.z - 2, Bo.x - Bo.w / 2 + 0.3, Bo.z + 2, BT - 0.3, BT, "slab", 1),
+    // The flue from the boiler house to the chimney, and the chimney, banded red and white at its top.
+    rect(Bo.x + Bo.w / 2, Ch.z - 1.6, Ch.x - Ch.r + 0.4, Ch.z + 1.6, 17, 20.2, "steel", 2),
+    box(Ch.x, Ch.z, 2 * Ch.r, 1.66 * Ch.r, Ch.h, "wall", 0),
+    box(Ch.x, Ch.z, 1.66 * Ch.r, 2 * Ch.r, Ch.h, "wall", 0),
+    box(Ch.x, Ch.z, 1.42 * Ch.r, 1.42 * Ch.r, Ch.h, "wall", 0),
+    ...[Ch.h - 14, Ch.h - 6].flatMap((y) => [box(Ch.x, Ch.z, 2 * Ch.r + 0.3, 2 * Ch.r + 0.3, y + 4, "steel", 0, y)]),
+    box(Ch.x, Ch.z, 2 * Ch.r + 0.3, 2 * Ch.r + 0.3, Ch.h - 6, "steel", 4, Ch.h - 10),
+    // The turbine hall.
+    ...hall(T.x, T.z, T.w, T.d, T.h, {
+      doors: [{ side: "n", at: 4 }, { side: "s", at: -4 }],
+      hatches: [{ side: "w", at: -12 }, { side: "w", at: 14 }, { side: "e", at: 0 }],
+      windows: ["e", "w"],
+      mezz: [
+        { side: "w", depth: 3, y: POWERPLANT.mezz, stair: -16 },
+        { side: "e", depth: 3, y: POWERPLANT.mezz, stair: 16 },
+      ],
+      columns: 10,
+      steel: 2,
+      scale: WORKS,
+    }),
+    // Pipes from the boiler house over to the hall's north end.
+    rect(T.x + T.w / 2 - 4, Bo.z + Bo.d / 2 - 2, Bo.x - Bo.w / 2 + 2, T.z - T.d / 2 + 2, 12, 13.2, "steel", 2),
+    // The travelling crane across the hall.
+    rect(T.x - T.w / 2 + 0.5, T.z - 9, T.x + T.w / 2 - 0.5, T.z - 7, T.h - 4, T.h - 3, "steel", 0),
+  ];
+  // The turbine-generator sets down the hall's middle: the turbine casing, the generator and its exciter.
+  for (const z of [T.z - 16, T.z, T.z + 16]) out.push(box(T.x, z - 2, 4.4, 9, 3.2, "steel", 3, 0), box(T.x, z + 5, 3.6, 4, 3.6, "steel", 1), box(T.x, z + 7.8, 2, 1.6, 2.4, "steel", 2));
+  // The fuel tanks inside their bund.
+  for (const t of tanks) out.push(...tank(t.x, t.z, 7, 12, "w", 2));
+  out.push(rect(15, 40, 33, 40.6, 0, 1.2, "wall", 1), rect(15, 79.4, 33, 80, 0, 1.2, "wall", 1), rect(15, 40.6, 15.6, 79.4, 0, 1.2, "wall", 1));
+  // The switchyard: transformers in a row under the busbar frame.
+  for (const x of [-24, -12, 0]) out.push(box(x, Bb.z + 6, 4.4, 3.2, 3.4, "steel", 2), box(x, Bb.z + 6, 5.2, 1.0, 2.8, "steel", 1, 0.4), ...[-1.2, 0, 1.2].map((dx) => box(x + dx, Bb.z + 5.4, 0.3, 0.3, 4.8, "steel", 4, 3.4)));
+  for (const x of [Bb.x0, -18, -6, Bb.x1]) out.push(box(x, Bb.z, 0.5, 0.5, Bb.top, "steel", 2), box(x, Bb.z + 12, 0.5, 0.5, Bb.top - 2, "steel", 2));
+  out.push(rect(Bb.x0 - 0.3, Bb.z - 0.3, Bb.x1 + 0.3, Bb.z + 0.3, Bb.top - 0.6, Bb.top, "steel", 2), rect(Bb.x0 - 0.3, Bb.z + 11.7, Bb.x1 + 0.3, Bb.z + 12.3, Bb.top - 2.6, Bb.top - 2, "steel", 2));
+  // The control house by the switchyard, its upper floor over the yard.
+  out.push(...tower(24, 96, 12, 8, 2, { doors: [["w", "n"]], windows: [["s"], ["n", "e", "s", "w"]], scale: WORKS }));
   return out;
 }
 
@@ -1525,7 +1800,7 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
       { x: 0, z: -21 },
       { x: 8, z: -19, y: STOREY, vault: true },
     ],
-    keyFrom: "robotworks",
+    keyFrom: "powerplant",
     loot: { weapon: [["pike", 1], ["talon", 1], ["hornet", 1]], armor: [1], heals: 2, valuable: [["wire", 3], ["gyro", 2], ["board", 2], ["fuse", 1]] },
     floor: [{ x: 9, z: -17, heal: "battery" }],
   },
@@ -1730,6 +2005,74 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
       { x: -46, z: 18, y: WORKS.storey * 5, weapon: ["lance", 2] },
       { x: 52, z: -10, heal: "medkit" },
     ],
+  },
+  // The high-rise district south-east of the station: the plaza, the shops' roof and the towers' feet,
+  // the vault up on the bridge storey.
+  highrise: {
+    region: "city",
+    depotOut: 18,
+    front: { tier: 2, unlocks: {} },
+    name: "高層街区",
+    x: 0,
+    z: 0,
+    trigger: 70,
+    entry: { x: -64, z: 0, yaw: E },
+    squads: [
+      { name: "広場", members: [{ kind: "grunt", x: -40, z: -16, face: E }, { kind: "grunt", x: -10, z: -60, face: S }] },
+      { name: "商業棟の屋上", members: [{ kind: "grunt", x: -47, z: -50, y: 2 * OFFICE.storey, face: E }, { kind: "drone", x: -30, z: -60 }] },
+      { name: "高層棟", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 30, z: 58, face: S }, { kind: "grunt", x: 8, z: 40, face: W }] },
+      { name: "工事中の塔", members: [{ kind: "grunt", x: 30, z: -60, face: N }, { kind: "charger", x: 46, z: -20, face: E }] },
+    ],
+    bins: [
+      { x: -47, z: -30 },
+      { x: -40, z: -62 },
+      { x: -34, z: 44 },
+      { x: 24, z: 46 },
+      { x: 24, z: -34 },
+      { x: 16, z: -64 },
+      { x: -47, z: -20, y: OFFICE.storey },
+      { x: -34, z: 36, y: HIGHRISE.bridge * OFFICE.storey },
+      { x: 22, z: 36, y: (HIGHRISE.a.floors - 1) * OFFICE.storey },
+      { x: 20, z: -34, y: HIGHRISE.c.floors * OFFICE.storey },
+      { x: 24, z: 44, y: HIGHRISE.bridge * OFFICE.storey, vault: true },
+    ],
+    keyFrom: "robotworks",
+    loot: { weapon: [["pike", 1], ["lance", 1], ["talon", 1], ["hornet", 1]], armor: [1], heals: 2, valuable: [["board", 3], ["drive", 2], ["gyro", 2], ["wire", 2], ["core", 1]] },
+    floor: [
+      { x: 26, z: 34, heal: "battery" },
+      { x: 24, z: 40, y: (HIGHRISE.a.floors - 1) * OFFICE.storey, weapon: ["lance", 2] },
+    ],
+  },
+  // The power plant on the open ground east of the city: the cooling towers, the boiler house's
+  // stairs and roof, the turbine hall and the switchyard.
+  powerplant: {
+    region: "city",
+    depotOut: 16,
+    front: { tier: 2, unlocks: {} },
+    name: "発電所",
+    x: 0,
+    z: 0,
+    trigger: 65,
+    entry: { x: -52, z: 0, yaw: E },
+    squads: [
+      { name: "冷却塔", members: [{ kind: "grunt", x: 12, z: -30, face: W }, { kind: "grunt", x: -22, z: -58, face: N }] },
+      { name: "ボイラー棟", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: -18, z: 10, face: W }, { kind: "drone", x: 8, z: 26 }] },
+      { name: "タービン建屋", members: [{ kind: "grunt", x: -20, z: 32, face: N }, { kind: "charger", x: -8, z: 70, face: W }] },
+      { name: "変電設備", members: [{ kind: "grunt", x: -6, z: 100, face: N }, { kind: "drone", x: 20, z: 90 }] },
+    ],
+    bins: [
+      { x: 12, z: -80 },
+      { x: -30, z: -20 },
+      { x: -20, z: 60 },
+      { x: 8, z: 60 },
+      { x: -28, z: 100 },
+      { x: 28, z: 96 },
+      { x: -24, z: 40, y: POWERPLANT.mezz },
+      { x: 2, z: 2, y: POWERPLANT.boilerTop, vault: true },
+    ],
+    keyFrom: "highrise",
+    loot: { weapon: [["pike", 1], ["lance", 1], ["maul", 1], ["hornet", 1]], armor: [1], heals: 2, valuable: [["fuse", 3], ["wire", 3], ["parts", 2], ["drive", 2], ["reactor", 1]] },
+    floor: [{ x: -8, z: 40, heal: "medkit" }],
   },
 };
 
@@ -2670,12 +3013,12 @@ export const PACKS: Squad[] = [
     members: [{ kind: "drone", x: -200, z: -860 }, { kind: "drone", x: -200, z: -860 }],
     patrol: [{ x: -250, z: -960 }, { x: -130, z: -1030 }, { x: 60, z: -1030 }, { x: 40, z: -880 }, { x: 60, z: -1030 }, { x: -130, z: -1030 }],
   },
-  // The machine city: along its south street and up the east one to its north end and back, clear
-  // of the car park, the station and the robot works.
+  // The machine city: across the blocks north of the high-rise district and up the east street to
+  // its north end and back, clear of the city's POIs and the power plant.
   {
     name: "街のドローン群",
-    members: [{ kind: "drone", x: 804, z: -120 }, { kind: "drone", x: 804, z: -120 }],
-    patrol: [{ x: 804, z: -120 }, { x: 936, z: -120 }, { x: 936, z: -720 }, { x: 936, z: -120 }],
+    members: [{ kind: "drone", x: 810, z: -200 }, { kind: "drone", x: 810, z: -200 }],
+    patrol: [{ x: 810, z: -200 }, { x: 936, z: -240 }, { x: 936, z: -720 }, { x: 936, z: -240 }],
   },
 ];
 
@@ -3154,6 +3497,9 @@ export const LANDMARKS: readonly { name: string; x: number; z: number }[] = [
   at("city", { name: "中央駅", x: 0, z: -120 }),
   at("city", { name: "立体駐車場", x: -94, z: 58 }),
   at("city", { name: "ロボット工場", x: -25, z: -315 }),
+  at("city", { name: "高層街区", x: 64, z: 178 }),
+  at("powerplant", { name: "発電所", x: 0, z: 0 }),
+  at("powerplant", { name: "冷却塔", x: 10, z: -58 }),
 ];
 
 /**
@@ -3179,7 +3525,7 @@ export const STOPS: readonly { name: string; x: number; z: number }[] = [
   at("bay", { name: "岬", x: -122, z: -545 }),
   at("city", { name: "駅前通り", x: -66, z: -20 }),
   at("city", { name: "北の街区", x: 0, z: -205 }),
-  at("city", { name: "南の街区", x: 0, z: 200 }),
+  at("city", { name: "南の街区", x: -66, z: 200 }),
 ];
 
 /**
@@ -4899,6 +5245,8 @@ const AUTHORED: Box[] = [
   ...onLevel(LEVEL.city, place(POI_AT.terminal[0], POI_AT.terminal[1], terminal())),
   ...onLevel(LEVEL.city, place(POI_AT.carpark[0], POI_AT.carpark[1], carpark())),
   ...onLevel(LEVEL.city, place(POI_AT.robotworks[0], POI_AT.robotworks[1], robotworks())),
+  ...onLevel(LEVEL.city, place(POI_AT.highrise[0], POI_AT.highrise[1], highrise())),
+  ...onLevel(LEVEL.powerplant, placeIn("powerplant", powerplant())),
   ...onLevel(LEVEL.city, placeIn("city", city())),
 ];
 
@@ -5567,7 +5915,7 @@ const PUMPS = outpost("揚水ポンプ場");
  *   wagons left on them as cover along the way.
  * Each run is a list of legs along x or along z.
  */
-const POWER_LINES: { from: [number, number, number]; pylons: [number, number][] }[] = [
+const POWER_LINES: { from: [number, number, number]; pylons: [number, number][]; to?: [number, number, number] }[] = [
   // The harbor.
   ...[
     { from: -18, pylons: [[46, -685], [0, -685], [-50, -685], [-100, -685]] },
@@ -5577,6 +5925,19 @@ const POWER_LINES: { from: [number, number, number]; pylons: [number, number][] 
   // The reservoir: west over the railway toward the dam, south to the foot of the relay's mesa.
   busbarLine(EAST_SUBSTATION, -18, [[262, -186], [215, -186], [140, -186]]),
   busbarLine(EAST_SUBSTATION, 18, [[328, -150], [328, -95], [328, -42]]),
+  // The machine city: from the power plant's switchyard south along the city's east edge to the
+  // cable terminal in its south-east corner, where the line goes under the streets.
+  {
+    from: (() => {
+      const [x, z] = inArea("powerplant", POWERPLANT.busbar.x0, POWERPLANT.busbar.z);
+      return [x, LEVEL.powerplant + POWERPLANT.busbar.top, z] as [number, number, number];
+    })(),
+    pylons: [[996, -200], [992, -130], [976, -40]],
+    to: (() => {
+      const [x, z] = inArea("city", CABLE_END.x, CABLE_END.z - 2);
+      return [x + 5, LEVEL.city + CABLE_END.top, z] as [number, number, number];
+    })(),
+  },
 ];
 /** A power line leaving a substation's busbar `dx` metres from its middle (as `substationYard()` builds it). */
 function busbarLine(s: Hamlet, dx: number, pylons: [number, number][]): { from: [number, number, number]; pylons: [number, number][] } {
@@ -5668,6 +6029,7 @@ const WORKS_LINES: Box[] = (() => {
     });
     for (const t of tips[0]) out.push(...wire(line.from, t, 0.6));
     for (let i = 0; i + 1 < tips.length; i++) for (let k = 0; k < 2; k++) out.push(...wire(tips[i][k], tips[i + 1][k], 2.2));
+    if (line.to) for (const t of tips[tips.length - 1]) out.push(...wire(t, line.to, 0.6));
   }
   // Fuel: two pipes side by side on a support every length, high enough for a heavy to walk under.
   for (const run of PIPELINES)
@@ -6162,6 +6524,10 @@ export const FRONT_LINKS: readonly (readonly ["camp" | NodeId, NodeId])[] = [
   ["carpark", "terminal"],
   ["terminal", "robotworks"],
   ["smelter", "robotworks"],
+  ["carpark", "highrise"],
+  ["highrise", "terminal"],
+  ["terminal", "powerplant"],
+  ["powerplant", "robotworks"],
 ];
 for (const id of POI_IDS) if (!POI_DEFS[id].boss && !FRONT_LINKS.some((l) => l.includes(id as NodeId))) throw new Error(`node ${id} has no link in FRONT_LINKS`);
 

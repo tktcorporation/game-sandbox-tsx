@@ -2076,7 +2076,7 @@ function checkStrength(): string | null {
     if (l.reinforce.first > was.reinforce.first || l.reinforce.every > was.reinforce.every || l.raiders > was.raiders || REGIONS.some((r) => l.parties[r.id] < was.parties[r.id] || l.packs[r.id] < was.packs[r.id])) return `strength scenario: level ${n} is easier than level ${n - 1}`;
   }
   // The island with the player holding the first `k` nodes of the row out from the camp.
-  const ROW_OUT: NodeId[] = ["supply", "quarry", "relay", "station", "waterworks", "lodge", "yard", "smelter", "cannery", "coldstore", "wreck", "carpark", "terminal", "robotworks"];
+  const ROW_OUT: NodeId[] = ["supply", "quarry", "relay", "station", "waterworks", "lodge", "yard", "smelter", "cannery", "coldstore", "wreck", "carpark", "highrise", "terminal", "powerplant", "robotworks"];
   const island = (k: number) => holds({ poiState: { ...newIsland(), ...Object.fromEntries(ROW_OUT.slice(0, k).map((id) => [id, { state: "freed" as const }])) } });
   for (let k = 0; k <= NODES.length; k++) {
     const n = strengthFor(NODES.length - k);
@@ -4017,7 +4017,7 @@ function checkFront(): string | null {
   }
   const lost = NODES.filter((n) => !seen.has(n.id));
   if (lost.length) return `front: ${lost.map((n) => n.id).join()} not linked to the camp`;
-  if (NODES.length !== POIS.length - 1 || NODES.some((n) => (n.id as string) === "pad") || FRONT_LINKS.length !== 19 || NODES.length !== 14 || NODES.some((n) => TIER[n.id] === undefined)) return "front: the nodes are not the fourteen freeable POIs on nineteen links";
+  if (NODES.length !== POIS.length - 1 || NODES.some((n) => (n.id as string) === "pad") || FRONT_LINKS.length !== 23 || NODES.length !== 16 || NODES.some((n) => TIER[n.id] === undefined)) return "front: the nodes are not the sixteen freeable POIs on twenty-three links";
   for (const n of NODES) {
     const c = n.core;
     // The core's own cell is closed to the walkers' grid; the ground round it is the main ground.

@@ -221,6 +221,8 @@ export const LEVEL = {
   strait: -10,
   /** The machine city's streets: one paved floor east of the strait. */
   city: 4,
+  /** The power plant's yard, east of the city on the ground between it and the coast, level with the streets. */
+  powerplant: 4,
 } as const;
 
 /** The dam's face: the cliff from the crest down to the lakebed, drawn as concrete. */
@@ -313,6 +315,8 @@ const BASINS: Open[] = [
   { name: "冷凍倉庫", line: inPoi("coldstore", [[-20, 0], [20, 0]]), half: 34, level: LEVEL.coldstore, ground: "paved" },
   // The machine city: one asphalt floor from the strait's east cliff to the east coast.
   { name: "機械都市", line: inArea("city", [[0, -320], [0, 240]]), half: 120, level: LEVEL.city, ground: "asphalt" },
+  // The power plant's yard, its long side along the coast.
+  { name: "発電所", line: inPoi("powerplant", [[0, -78], [0, 84]]), half: 38, level: LEVEL.powerplant, ground: "concrete" },
   // The top of the pass: a saddle between the peaks, with the harbor in view.
   { name: "峠", line: inArea("pass", [[-66, -214], [-54, -230]]), half: 9, level: LEVEL.pass },
 ];
@@ -365,6 +369,8 @@ const ROADS: Open[] = [
   { name: "岬の坂", line: inArea("bay", [[-92, -526], [-104, -538], [-112, -548]]), half: 5, level: [LEVEL.seabed, 3, LEVEL.headland], atPoints: true, walled: true },
   // A slipway from the quay down into the channel.
   { name: "斜路", line: inArea("bay", [[150, -570], [156, -583], [160, -590]]), half: 4, level: [LEVEL.seabed, LEVEL.channel, LEVEL.channel], atPoints: true, walled: true },
+  // The high-rise district's ramp down from its plaza to the underground car park's shutter.
+  { name: "地下駐車場の斜路", line: inPoi("highrise", [[-24, -44], [-24, -18]]), half: 3.5, level: [LEVEL.city, LEVEL.city - 4.5], atPoints: true, walled: true, ground: "asphalt" },
 ];
 
 /** The line of the road named `name` (empty when there is none). */
