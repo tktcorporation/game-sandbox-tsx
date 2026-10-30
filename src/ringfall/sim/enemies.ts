@@ -356,6 +356,9 @@ function stepBody(e: Enemy, vx: number, vz: number): boolean {
   return blocked && hypot2(e.pos.x - bx, e.pos.z - bz) < hypot2(vx, vz) * dt * 0.4;
 }
 
+/** A tick's decay of the damage counted toward a stagger (see STAGGER.window). */
+const STAGGER_DECAY = Math.exp(-TICK / STAGGER.window);
+
 export function stepEnemies(s: State) {
   const p = s.player;
   stepSquads(s);
@@ -394,7 +397,7 @@ export function stepEnemies(s: State) {
     e.blind += TICK;
     e.jink = Math.max(0, e.jink - TICK);
     e.steady = Math.max(0, e.steady - TICK);
-    e.stagger *= Math.exp(-TICK / STAGGER.window);
+    e.stagger *= STAGGER_DECAY;
     // A robot stands up unless it is hiding at its cover this tick (fromCover() keeps it down).
     e.duck = Math.max(0, e.duck - DUCK.rate * TICK);
     if (e.mode === "spawning") {
@@ -1085,6 +1088,13 @@ function squadMembers(s: State, squad: number): readonly Enemy[] {
   return bySquad.get(squad) ?? NO_MEMBERS;
 }
 
+/** The speed of a squad's slowest member, as `Math.min(...members.map(speed))` gives it. */
+function slowest(members: readonly Enemy[]): number {
+  let v = Infinity;
+  for (const o of members) v = Math.min(v, ENEMIES[o.kind].speed);
+  return v;
+}
+
 /** Out of combat: hold the post or walk the patrol; when alerted, go and look. */
 function calm(s: State, e: Enemy) {
   const k = ENEMIES[e.kind];
@@ -1122,7 +1132,7 @@ function calm(s: State, e: Enemy) {
     const members = squadMembers(s, e.squad);
     const slot = members.indexOf(e);
     const to = { x: sq.walk.x + (slot % 2 ? 1.6 : -1.6) * Math.min(slot, 1), z: sq.walk.z + slot * 1.4 };
-    const pace = Math.min(...members.map((o) => ENEMIES[o.kind].speed)) * (sq.crew ? CREW.pace : PARTY.pace);
+    const pace = slowest(members) * (sq.crew ? CREW.pace : PARTY.pace);
     if (dist2d(e.pos, to) > 0.8) walkTo(e, tripStep(e, to), pace);
     else {
       moveBody(e, 0, 0);
@@ -1138,7 +1148,7 @@ function calm(s: State, e: Enemy) {
     const slot = members.indexOf(e);
     const stop = PARTY_STOPS[sq.party.region][sq.party.stop];
     const to = { x: stop.x + (slot % 2 ? 1.6 : -1.6) * Math.min(slot, 1), z: stop.z + slot * 1.4 };
-    const pace = Math.min(...members.map((o) => ENEMIES[o.kind].speed)) * PARTY.pace;
+    const pace = slowest(members) * PARTY.pace;
     if (dist2d(e.pos, to) > 0.8) walkTo(e, tripStep(e, to), pace);
     else {
       moveBody(e, 0, 0);
@@ -1344,21 +1354,29 @@ function separate(s: State) {
   // The pairs in neighbouring cells, found by sweeping the walkers sorted by column, are then
   // visited in the order of the plain double loop (i, then j > i): a pair nudges the walkers the
   // next pair reads.
-  if (sepOrder.length < n) {
-    sepOrder = new Float64Array(n * 2);
-    sepPairs = new Float64Array(n * 8);
+  if (sepPairs.length < n * 4) sepPairs = new Float64Array(n * 8);
+  // The walkers by column, and within a column by their place in the list: a counting sort.
+  let x0 = sepX[0];
+  let x1 = sepX[0];
+  for (let i = 1; i < n; i++) {
+    if (sepX[i] < x0) x0 = sepX[i];
+    if (sepX[i] > x1) x1 = sepX[i];
   }
-  const order = sepOrder.subarray(0, n);
-  // Columns are whole and within 1e9 of 0 here, so the keys are exact and not negative.
-  for (let i = 0; i < n; i++) order[i] = (sepX[i] + 1e9) * SEP_SWEEP_MAX + i;
-  order.sort();
+  const cols = x1 - x0 + 2;
+  if (sepStart.length < cols) sepStart = new Int32Array(cols * 2);
+  if (sepSorted.length < n) sepSorted = new Int32Array(n * 2);
+  sepStart.fill(0, 0, cols);
+  for (let i = 0; i < n; i++) sepStart[sepX[i] - x0 + 1]++;
+  for (let c = 1; c < cols; c++) sepStart[c] += sepStart[c - 1];
+  for (let i = 0; i < n; i++) sepSorted[sepStart[sepX[i] - x0]++] = i;
+  const order = sepSorted;
   let pairs = 0;
   for (let a = 0; a < n; a++) {
-    const i = order[a] % SEP_SWEEP_MAX;
+    const i = order[a];
     const xi = sepX[i];
     const zi = sepZ[i];
     for (let b = a + 1; b < n; b++) {
-      const j = order[b] % SEP_SWEEP_MAX;
+      const j = order[b];
       if (sepX[j] - xi > 1) break;
       if (Math.abs(zi - sepZ[j]) > 1) continue;
       if (pairs === sepPairs.length) {
@@ -1379,7 +1397,8 @@ function separate(s: State) {
 }
 /** The most walkers `separate()` sweeps; past it, keys of a pair would not fit in a double exactly. */
 const SEP_SWEEP_MAX = 4096;
-let sepOrder = new Float64Array(512);
+let sepStart = new Int32Array(512);
+let sepSorted = new Int32Array(512);
 let sepPairs = new Float64Array(2048);
 
 /** Shift a walker sideways, but never into a wall or off the floor it stands on. */

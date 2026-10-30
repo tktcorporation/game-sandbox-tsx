@@ -177,6 +177,114 @@ export interface Field {
   reach: number;
   order: Int32Array;
   count: number;
+  /** A whole-world field still being found, bucket by bucket as its readers need it (see `Lazy`); null once found. */
+  lazy: Lazy | null;
+}
+
+/*
+ * A whole-world field is found only as far as it is read. Its readers want the walk from one
+ * cell (a hunter's, a bin's) or the cells within a band, nearly always far nearer the target
+ * than the field's whole reach, which covers half the grid. So `fieldTo()` starts the search
+ * and stops, and `settleCell()` / `settleBand()` go on with it bucket by bucket, exactly as
+ * `build()` would have gone (the same buckets in the same order, each whole), until the cell
+ * asked for is settled or the band is done. After bucket b every cell nearer than (b + 1) RES
+ * is settled and every other cell holds a distance at least that (a tentative one, or
+ * Infinity), so a reader that compares the cells near the one it asked for sees the same
+ * answers as in the found field. A field found to the end is kept like a built one; one dropped
+ * before is let go, and found again if asked for again.
+ */
+type Lazy = { b: number; pending: number; ring: Int32Array[]; size: Int32Array; mark: Uint8Array };
+/** Spare marks and rings for lazy fields: fresh memory costs a page fault for each page it first touches. */
+const spareMarks: Uint8Array[] = [];
+const spareRings: Int32Array[][] = [];
+
+/** Settles the lazy field's next bucket, as `build()` settles a bucket of a field without a reach. */
+function settleBucket(f: Field, L: Lazy) {
+  const mask = stepMask();
+  const dist = f.dist;
+  const order = f.order;
+  const mark = L.mark;
+  const b = L.b++;
+  const r = b & (RING - 1);
+  const list = L.ring[r];
+  const n = L.size[r];
+  L.size[r] = 0;
+  L.pending -= n;
+  if (bucket.length < n) bucket = new Int32Array(n * 2);
+  let m = 0;
+  for (let e = 0; e < n; e++) {
+    const k = list[e];
+    if (mark[k] || ((dist[k] * INV_RES) | 0) !== b) continue;
+    mark[k] = 1;
+    bucket[m++] = k;
+  }
+  let count = f.count;
+  for (let e = 0; e < m; e++) {
+    const k = bucket[e];
+    order[count++] = k;
+    const bits = mask[k];
+    if (!bits) continue;
+    const dk = dist[k];
+    for (let q0 = 0; q0 < 8; q0++) {
+      if (!(bits & (1 << q0))) continue;
+      const q = k + MOVE_OFFSET[q0];
+      if (mark[q]) continue;
+      const d = dk + MOVE_COST[q0];
+      if (d < dist[q]) {
+        dist[q] = d;
+        const into = ((dist[q] * INV_RES) | 0) & (RING - 1);
+        let cells = L.ring[into];
+        if (L.size[into] === cells.length) {
+          const grown = new Int32Array(cells.length * 2);
+          grown.set(cells);
+          cells = L.ring[into] = grown;
+        }
+        cells[L.size[into]++] = q;
+        L.pending++;
+      }
+    }
+  }
+  f.count = count;
+  if (!L.pending) finish(f, L);
+}
+
+/** A lazy field found to the end: kept like a built one, its marks and rings given back. */
+function finish(f: Field, L: Lazy) {
+  keep(`${f.target}:${f.reach}`, f.dist, f.order, f.count);
+  release(f, L);
+}
+
+/** Gives back a lazy field's marks and rings, cleared, and leaves the field found as far as it is. */
+function release(f: Field, L: Lazy) {
+  if (f.count > CLEAR_WHOLE) L.mark.fill(0);
+  else for (let e = 0; e < f.count; e++) L.mark[f.order[e]] = 0;
+  spareMarks.push(L.mark);
+  spareRings.push(L.ring);
+  f.lazy = null;
+}
+
+/** Goes on with a lazy field until cell k is settled or the field is found. */
+function settleCell(f: Field, k: number) {
+  const L = f.lazy;
+  if (!L) return;
+  while (f.lazy && !L.mark[k]) settleBucket(f, L);
+}
+
+/** Goes on with a lazy field until bucket `b` (every cell nearer than (b + 1) RES) is settled, or the field is found. */
+function settleBand(f: Field, b: number) {
+  const L = f.lazy;
+  if (!L) return;
+  while (f.lazy && L.b <= b) settleBucket(f, L);
+}
+
+/** A field leaving the cache for `spare`: a lazy one's tentative cells go back to Infinity and its marks and rings are given back. */
+function retire(f: Field): { dist: Float32Array; order: Int32Array; count: number } {
+  const L = f.lazy;
+  if (L) {
+    for (let r = 0; r < RING; r++) for (let e = 0; e < L.size[r]; e++) f.dist[L.ring[r][e]] = Infinity;
+    release(f, L);
+  }
+  return f;
 }
 
 /**
@@ -200,12 +308,14 @@ export function resetHunt() {
   forgetFields();
   kept.clear();
   keptCells = 0;
+  spareMarks.length = 0;
+  spareRings.length = 0;
 }
 
 /** Forgets every field but keeps the grid: a raid starts with none (`newRun()`). */
 export function forgetFields() {
   fieldUses++;
-  for (const f of cache.values()) spare.push(f);
+  for (const f of cache.values()) spare.push(retire(f));
   cache.clear();
 }
 
@@ -377,6 +487,12 @@ function build(target: number, reach: number, dist: Float32Array, order: Int32Ar
   if (past)
     for (let r = 0; r < RING; r++)
       for (let e = 0; e < ringSize[r]; e++) if (done[ring[r][e]] !== isSettled) dist[ring[r][e]] = Infinity;
+  keep(name, dist, order, count);
+  return count;
+}
+
+/** Keeps a copy of a field found (see `kept`). */
+function keep(name: string, dist: Float32Array, order: Int32Array, count: number) {
   const copy = { order: order.slice(0, count), dist: new Float32Array(count), whole: false };
   for (let e = 0; e < count; e++) copy.dist[e] = dist[order[e]];
   kept.set(name, copy);
@@ -386,7 +502,6 @@ function build(target: number, reach: number, dist: Float32Array, order: Int32Ar
     kept.delete(oldest);
     keptCells -= c.order.length;
   }
-  return count;
 }
 
 /**
@@ -408,6 +523,8 @@ export function fieldTo(x: number, z: number, reach = Infinity): Field | null {
     // A field serves a target that moved only a short walk from its own (not a few cells off
     // across a cliff), and a short one only while it reaches every cell the new target's field
     // would: one within `reach` of the new target is within `reach` plus that walk of the old.
+    // A lazy field's walks up to the one compared below are settled first.
+    if (f.lazy && d <= NEAR && d < hitD) settleBand(f, Math.floor((NEAR * RES * 1.5) / RES));
     const walk = f.dist[target];
     if (d <= NEAR && d < hitD && walk <= NEAR * RES * 1.5 && f.reach >= reach + (f.reach < Infinity ? walk : 0)) {
       hit = f;
@@ -433,14 +550,22 @@ export function fieldTo(x: number, z: number, reach = Infinity): Field | null {
     else for (let e = 0; e < reused.count; e++) dist[reused.order[e]] = Infinity;
   }
   const order = reused?.order ?? new Int32Array(CELLS);
-  const count = copy ? restore(copy, dist, order, name) : build(target, reach, dist, order, name);
-  const f = { target, dist, reach, order, count };
+  let f: Field;
+  if (copy) f = { target, dist, reach, order, count: restore(copy, dist, order, name), lazy: null };
+  else if (reach === Infinity) {
+    // A whole-world field is found only as far as it is read (see `Lazy`).
+    const ring = spareRings.pop() ?? Array.from({ length: RING }, () => new Int32Array(1 << 12));
+    const L: Lazy = { b: 0, pending: 1, ring, size: new Int32Array(RING), mark: spareMarks.pop() ?? new Uint8Array(CELLS) };
+    dist[target] = 0;
+    ring[0][L.size[0]++] = target;
+    f = { target, dist, reach, order, count: 0, lazy: L };
+  } else f = { target, dist, reach, order, count: build(target, reach, dist, order, name), lazy: null };
   fieldsBuilt++;
   // A longer field for a cell that already has a short one replaces it: its arrays go back to `spare`.
   const replaced = cache.get(target);
   if (replaced) {
     cache.delete(target);
-    spare.push(replaced);
+    spare.push(retire(replaced));
   }
   cache.set(target, f);
   if (cache.size > CACHE) {
@@ -452,7 +577,7 @@ export function fieldTo(x: number, z: number, reach = Infinity): Field | null {
         drop = k;
         break;
       }
-    spare.push(cache.get(drop)!);
+    spare.push(retire(cache.get(drop)!));
     cache.delete(drop);
   }
   return f;
@@ -470,6 +595,7 @@ export function routeLength(f: Field, x: number, z: number): number {
   if (k < 0) return Infinity;
   const i = k % NX;
   const j = (k - i) / NX;
+  settleCell(f, k);
   // Add the step from (x, z) to the centre of the open cell it was snapped to.
   return f.dist[k] + hypot2(centreX(i) - x, centreZ(j) - z);
 }
@@ -481,6 +607,7 @@ export function routeLength(f: Field, x: number, z: number): number {
 export function nextStep(f: Field, x: number, z: number, to: { x: number; z: number }): { x: number; z: number } {
   const { open, height } = grid();
   let k = openCell(x, z);
+  if (k >= 0) settleCell(f, k);
   if (k < 0 || !Number.isFinite(f.dist[k])) return to;
   for (let s = 0; s < AHEAD; s++) {
     if (k === f.target) return to;
@@ -503,6 +630,7 @@ export function nextStep(f: Field, x: number, z: number, to: { x: number; z: num
  */
 export function cellsAround(f: Field, lo: number, hi: number): { x: number; z: number }[] {
   let cells: Int32Array;
+  settleBand(f, hi === Infinity ? Infinity : Math.floor(hi / RES));
   if (hi === Infinity) {
     // Cells no way leads to are at Infinity and in the band too; only a full scan has them.
     const all: number[] = [];
@@ -557,8 +685,12 @@ export function walkLine(a: { x: number; z: number }, b: { x: number; z: number 
   const { open, height } = grid();
   let k = openCell(a.x, a.z);
   if (k < 0) return [b];
+  settleCell(f, k);
   // A way round further than the field first reached (a cliff to go round): looked for further out once.
-  if (!Number.isFinite(f.dist[k])) f = fieldTo(b.x, b.z, Math.max(160, d * 6 + 80)) ?? f;
+  if (!Number.isFinite(f.dist[k])) {
+    f = fieldTo(b.x, b.z, Math.max(160, d * 6 + 80)) ?? f;
+    settleCell(f, k);
+  }
   if (!Number.isFinite(f.dist[k])) return [b];
   const out: { x: number; z: number }[] = [];
   for (let n = 1; n < 20_000 && k !== f.target; n++) {

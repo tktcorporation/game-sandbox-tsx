@@ -111,6 +111,7 @@ export function resetNav() {
   weighted = { disk: null, fields: [] };
   landmarkCells = null;
   searched.clear();
+  clearance = new Uint8Array(0);
 }
 function areas(): Uint16Array | Int32Array {
   if (area.length) return area;
@@ -157,14 +158,71 @@ function areas(): Uint16Array | Int32Array {
   return area;
 }
 
-/** True if the straight line between two points crosses no blocked cell. */
+/*
+ * Each cell's distance in cells (on the 8-way grid, capped) to the nearest blocked cell or the
+ * grid's edge: every cell nearer than that is free. Built with the grid on first use.
+ */
+let clearance = new Uint8Array(0);
+function clearances(): Uint8Array {
+  if (clearance.length) return clearance;
+  const g = blockedCells();
+  const c = new Uint8Array(NX * NZ);
+  const CAP = 255;
+  for (let j = 0; j < NZ; j++)
+    for (let i = 0; i < NX; i++) {
+      const k = j * NX + i;
+      if (g[k]) continue;
+      // Past the edge counts as blocked.
+      let v = i === 0 || j === 0 || i === NX - 1 || j === NZ - 1 ? 1 : CAP;
+      if (i > 0) v = Math.min(v, c[k - 1] + 1);
+      if (j > 0) {
+        v = Math.min(v, c[k - NX] + 1);
+        if (i > 0) v = Math.min(v, c[k - NX - 1] + 1);
+        if (i < NX - 1) v = Math.min(v, c[k - NX + 1] + 1);
+      }
+      c[k] = v;
+    }
+  for (let j = NZ - 1; j >= 0; j--)
+    for (let i = NX - 1; i >= 0; i--) {
+      const k = j * NX + i;
+      if (g[k]) continue;
+      let v = c[k];
+      if (i < NX - 1) v = Math.min(v, c[k + 1] + 1);
+      if (j < NZ - 1) {
+        v = Math.min(v, c[k + NX] + 1);
+        if (i < NX - 1) v = Math.min(v, c[k + NX + 1] + 1);
+        if (i > 0) v = Math.min(v, c[k + NX - 1] + 1);
+      }
+      c[k] = v;
+    }
+  clearance = c;
+  return c;
+}
+
+/**
+ * True if the straight line between two points crosses no blocked cell: no point of it every
+ * fifth of a cell lies in one. A point in a cell `r` cells clear of any blocked cell vouches for
+ * the points less than `r - 1` cells further on, which are skipped; the answer is the same as
+ * testing each.
+ */
 export function clearLine(ax: number, az: number, bx: number, bz: number): boolean {
   blockedCells();
+  const clear = clearances();
   const len = hypot2(bx - ax, bz - az);
   const n = Math.ceil(len / (RES * 0.4));
-  for (let k = 1; k < n; k++) {
+  // Points per metre of the line, for the skip.
+  const perMetre = n / len;
+  let k = 1;
+  while (k < n) {
     const t = k / n;
-    if (!free(cellX(ax + (bx - ax) * t), cellZ(az + (bz - az) * t))) return false;
+    const i = cellX(ax + (bx - ax) * t);
+    const j = cellZ(az + (bz - az) * t);
+    if (!free(i, j)) return false;
+    const r = clear[j * NX + i];
+    if (r >= 3) {
+      const m = Math.floor(((r - 1) * RES - 0.01) * perMetre);
+      k += m > 1 ? m : 1;
+    } else k++;
   }
   return true;
 }
@@ -455,20 +513,22 @@ function diskFor(avoid: Avoid | undefined, sx: number, sz: number, gx: number, g
  * instead of the whole grid; the stamps are two bytes, and all are cleared when the count of
  * searches runs out. `came` is the move that reached a cell (NONE for none), a byte rather than
  * the cell it came from. Small entries touch less memory, and fresh memory is slow to touch (a
- * page fault for each page).
+ * page fault for each page). A cell's entries lie side by side in one record of 8 bytes (its
+ * score at byte 0, its stamp at 4, `came` at 6 and `closed` at 7): a search visits cells all
+ * over the grid, and a neighbour's entries then come in one cache line rather than four.
  */
 const NONE = 255;
+/** The records as scores (index 2k), stamps (4k + 2) and bytes (`came` 8k + 6, `closed` 8k + 7). */
 let gScore = new Float32Array(0);
-let came = new Uint8Array(0);
-let closed = new Uint8Array(0);
 let stamp = new Uint16Array(0);
+let rec = new Uint8Array(0);
 let search = 0;
 const touch = (k: number) => {
-  if (stamp[k] === search) return;
-  stamp[k] = search;
-  gScore[k] = Infinity;
-  came[k] = NONE;
-  closed[k] = 0;
+  if (stamp[k * 4 + 2] === search) return;
+  stamp[k * 4 + 2] = search;
+  gScore[k * 2] = Infinity;
+  rec[k * 8 + 6] = NONE;
+  rec[k * 8 + 7] = 0;
 };
 
 /*
@@ -548,12 +608,6 @@ export function findPath(
   const s = nearestFree(ax, az);
   const g = nearestFree(bx, bz);
   if (!s || !g) return null;
-  if (stamp.length !== NX * NZ) {
-    gScore = new Float32Array(NX * NZ);
-    came = new Uint8Array(NX * NZ);
-    closed = new Uint8Array(NX * NZ);
-    stamp = new Uint16Array(NX * NZ);
-  }
   const start = s[1] * NX + s[0];
   const goal = g[1] * NX + g[0];
   if (areas()[start] !== area[goal]) return null;
@@ -581,17 +635,23 @@ const searchKey = (start: number, goal: number, avoid: Avoid | undefined) =>
 
 /** A* from cell `start` to cell `goal`: the cells of a shortest way, or null if the search found none. */
 function searchCells(s: [number, number], g: [number, number], start: number, goal: number, avoid: Avoid | undefined): number[] | null {
+  const gi = g[0];
+  const gj = g[1];
+  const lms = Math.max(Math.abs(s[0] - gi), Math.abs(s[1] - gj)) >= LANDMARK_MIN ? landmarksFor(start, goal, diskFor(avoid, centerX(s[0]), centerZ(s[1]), centerX(gi), centerZ(gj))) : [];
+  if (rec.length !== NX * NZ * 8) {
+    const buf = new ArrayBuffer(NX * NZ * 8);
+    gScore = new Float32Array(buf);
+    stamp = new Uint16Array(buf);
+    rec = new Uint8Array(buf);
+  }
   if (++search === 0xffff) {
-    stamp.fill(0);
+    for (let k = 0; k < NX * NZ; k++) stamp[k * 4 + 2] = 0;
     search = 1;
   }
   touch(start);
   touch(goal);
   const mv = moveMask();
   heapSize = 0;
-  const gi = g[0];
-  const gj = g[1];
-  const lms = Math.max(Math.abs(s[0] - gi), Math.abs(s[1] - gj)) >= LANDMARK_MIN ? landmarksFor(start, goal, diskFor(avoid, centerX(s[0]), centerZ(s[1]), centerX(gi), centerZ(gj))) : [];
   const lmF = lms.map((l) => l.f);
   const lmGoal = lms.map((l) => fieldAt(l.f, gi, gj));
   const lmRound = lms.map((l) => l.round);
@@ -608,15 +668,15 @@ function searchCells(s: [number, number], g: [number, number], start: number, go
     }
     return est;
   };
-  gScore[start] = 0;
+  gScore[start * 2] = 0;
   heapPush(h(s[0], s[1], start), start);
   let expanded = 0;
   const ar2 = avoid ? avoid.r * avoid.r : 0;
   while (heapSize && expanded < 1_500_000) {
     // The heap keeps cells as doubles; as a small integer again the index arithmetic below stays integer.
     const cur = heapPop() | 0;
-    if (closed[cur]) continue;
-    closed[cur] = 1;
+    if (rec[cur * 8 + 7]) continue;
+    rec[cur * 8 + 7] = 1;
     expanded++;
     if (cur === goal) break;
     const cj = (cur / NX) | 0;
@@ -634,17 +694,17 @@ function searchCells(s: [number, number], g: [number, number], start: number, go
         const dz = centerZ(nj) - avoid.z;
         if (dx * dx + dz * dz < ar2) cost *= AVOID;
       }
-      const ng = gScore[cur] + cost;
-      if (ng < gScore[nIdx]) {
-        gScore[nIdx] = ng;
-        came[nIdx] = n;
+      const ng = gScore[cur * 2] + cost;
+      if (ng < gScore[nIdx * 2]) {
+        gScore[nIdx * 2] = ng;
+        rec[nIdx * 8 + 6] = n;
         heapPush(ng + h(ni, nj, nIdx), nIdx);
       }
     }
   }
-  if (came[goal] === NONE && goal !== start) return null;
+  if (rec[goal * 8 + 6] === NONE && goal !== start) return null;
   const cells: number[] = [goal];
-  for (let c = goal; c !== start; c -= MOVE_OFF[came[c]]) cells.push(c - MOVE_OFF[came[c]]);
+  for (let c = goal; c !== start; c -= MOVE_OFF[rec[c * 8 + 6]]) cells.push(c - MOVE_OFF[rec[c * 8 + 6]]);
   return cells.reverse();
 }
 
@@ -685,3 +745,4 @@ function smooth(cells: number[], ax: number, az: number, bx: number, bz: number,
   out.push({ x: bx, z: bz });
   return out;
 }
+

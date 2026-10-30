@@ -92,6 +92,12 @@ import { fileURLToPath } from "node:url";
 const runs = Number(process.argv[2] ?? 12);
 const only = process.argv[3];
 /**
+ * The regions whose raids take longest to play, longest first: the reservoir's (about 20 s of a
+ * core each), the machine city's (about 13 s) and the harbor's (about 7 s). Others go last.
+ */
+const LONGEST_FIRST: RegionId[] = ["reservoir", "city", "harbor"];
+
+/**
  * The tables (region × skill) are independent and each raid is fixed by its seed, so with
  * more than one job their raids are played in worker processes, started here so they run
  * while the checks below do. Raids rather than whole tables go to the workers: a table of
@@ -116,10 +122,13 @@ const tables: (() => Promise<TableResult>)[] = jobs === 1 ? TABLES.map((t) => as
 function playInWorkers(n: number): (() => Promise<TableResult>)[] {
   const raids = TABLES.map(() => Array.from({ length: runs }, () => Promise.withResolvers<RaidResult>()));
   // The longest raids first, so the last to finish are short ones and no worker is left
-  // playing alone at the end: the reservoir's raids (the first region's) before the harbor's,
+  // playing alone at the end: the regions by the length of their raids (`LONGEST_FIRST`),
   // raid by raid across each region's tables.
   const queue: RaidJob[] = [];
-  for (const region of new Set(TABLES.map((t) => t.region)))
+  const regions = [...new Set(TABLES.map((t) => t.region))];
+  const rank = (r: RegionId) => (LONGEST_FIRST.includes(r) ? LONGEST_FIRST.indexOf(r) : LONGEST_FIRST.length);
+  regions.sort((a, b) => rank(a) - rank(b));
+  for (const region of regions)
     for (let r = 0; r < runs; r++) TABLES.forEach((t, i) => t.region === region && queue.push({ i, r, region: t.region, skill: t.skill }));
   let next = 0;
   const workers: ChildProcess[] = [];

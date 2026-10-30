@@ -614,7 +614,8 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   only near it (`sideStep()`). Hunting parties walk to their stops by the whole world's field
   (`tripStep()`) but fight as any squad does. Patrols walk their legs straight; a robot a chase took more than
   `STRAY` metres off its post or its leg walks back by a field (`homeStep()`). A short field
-  costs its reach, not the grid. Only the player's own sounds and shots re-locate a squad, not
+  costs its reach, not the grid, and a whole-world one is found only as far as it is read
+  (`Lazy` in `hunt.ts`). Only the player's own sounds and shots re-locate a squad, not
   the teammate's. Robots off the open ground (on a
   roof, inside a building) walk straight at their goal, and nobody paths inside a building.
   The fields are kept for reuse within a raid only: `newRun()` drops them, so a raid plays the

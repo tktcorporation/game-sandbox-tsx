@@ -212,9 +212,10 @@ export function sense(s: State, e: Enemy): boolean {
   let seen = false;
   if (visibleNow(s)) {
     const low = p.crouch && !p.sliding;
-    const target = sightTarget(s);
-    const eye = headOf(e);
-    const d = hypot3(target.x - eye.x, target.y - eye.y, target.z - eye.z);
+    // The eye and the target as numbers: most robots are too far off to look, and need neither as a point.
+    const ty = p.pos.y + (p.crouch && !p.sliding ? 1.0 : 1.5);
+    const ey = e.pos.y + Math.max(weakY(e), 0.2);
+    const d = hypot3(p.pos.x - e.pos.x, ty - ey, p.pos.z - e.pos.z);
     const sight = SIGHT[e.kind];
     const engaged = e.aware === "engaged";
     // A storm shortens every robot's sight alike: its kind's, a pack's, and the range it answers from.
@@ -224,9 +225,9 @@ export function sense(s: State, e: Enemy): boolean {
     let inView = d < AWARE.closeSense;
     if (!inView && d < range) {
       const fov = sight.fov * (engaged ? AWARE.engagedFov : 1);
-      inView = Math.abs(wrapAngle(lookAngles(e.pos, target).yaw - e.yaw)) < (fov / 2) * DEG;
+      inView = Math.abs(wrapAngle(lookAngles(e.pos, { x: p.pos.x, y: ty, z: p.pos.z }).yaw - e.yaw)) < (fov / 2) * DEG;
     }
-    seen = inView && los(eye, target);
+    seen = inView && los({ x: e.pos.x, y: ey, z: e.pos.z }, { x: p.pos.x, y: ty, z: p.pos.z });
     // A fighting robot that has lost the player, or never had them itself, takes a moment
     // to find them again; one that is not fighting yet is filling its detection instead.
     // A glimpse broken for a moment (a post, its own strafe) keeps most of what it had found.
