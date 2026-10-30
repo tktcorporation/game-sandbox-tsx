@@ -1,6 +1,6 @@
 import { CONQUEST, COUNTER, ENEMIES, FACTORY, PLATE, TICK, type EnemyKind, type Rarity } from "./config";
 import { dist2d } from "./geom";
-import { CAMP, DEPOTS, depotIndex, FRONT_LINKS, NET_EDGE, NODES, nodeIndex, POIS, UNLOCKS, type NodeId, type NodeUnlock } from "./map";
+import { CAMP, DEPOTS, depotIndex, FRONT_LINKS, LANDING_NODES, NET_EDGE, NODES, nodeIndex, POIS, UNLOCKS, type NodeId, type NodeUnlock } from "./map";
 import { fieldUses, forgetFields, onMainGround, walkLine } from "./hunt";
 import { inArea } from "./areas";
 import { worldKey } from "./routes";
@@ -117,10 +117,10 @@ export const SHORE = -3;
 /** A squad of the factory's that comes out of node `k`'s depot starts from `DEPOT + k`. */
 export const DEPOT = 100;
 
-/** The nodes each landing is next to: the pad by the quarry's road and the mesa's, the north shore by the wreck (`NET_EDGE`). */
+/** The nodes each landing is next to (`LANDING_NODES`). */
 const LAND_NEXT: Record<number, number[]> = {
-  [PAD]: NET_EDGE.map(nodeIndex).filter((i) => NODES[i].region === "reservoir"),
-  [SHORE]: NET_EDGE.map(nodeIndex).filter((i) => NODES[i].region === "harbor"),
+  [PAD]: LANDING_NODES.pad.map(nodeIndex),
+  [SHORE]: LANDING_NODES.shore.map(nodeIndex),
 };
 
 /**
@@ -788,9 +788,10 @@ function produce(s: State, b: Battle, dt: number) {
     // The enemy answers the player's ground: each node of theirs works for it as one of its own would.
     const mine = NODES.length - theirs;
     const shore = heldUnlocks(s.nodes, "shore").length ? CONQUEST.net.shore : 0;
-    const work = side === 1 ? (theirs + CONQUEST.net.answer * mine) * CONQUEST.net.node + CONQUEST.net.edge - shore : 1;
+    const node = CONQUEST.net.work / NODES.length;
+    const work = side === 1 ? (theirs + CONQUEST.net.answer * mine) * node + CONQUEST.net.edge - shore : 1;
     const every = side === 1 ? CONQUEST.net.every[s.strength] : CONQUEST.rogue.every;
-    const max = side === 1 ? CONQUEST.net.max[s.strength] + Math.floor((mine * CONQUEST.net.node) / 3) : CONQUEST.rogue.max;
+    const max = side === 1 ? CONQUEST.net.max[s.strength] + Math.floor((mine * node) / 3) : CONQUEST.rogue.max;
     b.made[side] = Math.min(every, b.made[side] + work * dt);
     if (b.made[side] < every || walking(b, side) >= max) continue;
     const plan = enemyPlan(s, b, side);

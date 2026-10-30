@@ -406,7 +406,7 @@ export const DEPOT = {
 export const HOME = { away: 10 };
 
 /**
- * The front (docs/ringfall/island-v2.md): the six freeable POIs are the island's nodes (`NODES`,
+ * The front (docs/ringfall/island-v2.md): the freeable POIs are the island's nodes (`NODES`,
  * `FRONT_LINKS` in map.ts), and only a node next to the player's ground (the camp and the nodes
  * the player holds) can be taken, by its core (`core`): a pillar `height` metres tall near the
  * node's middle. The use key starts the capture; the meter fills over `capture` seconds while
@@ -494,8 +494,8 @@ export const CONQUEST = {
   net: {
     every: [1500, 1350, 1200],
     edge: 3,
-    /** What each node works, of a node's share: the island's eleven nodes work as its first six did. */
-    node: 6 / 11,
+    /** What all the nodes work together, shared out among them: each node works `work` over the node count. */
+    work: 6,
     /** Of `edge`, the north shore's work: none while the player holds the node that opens `shore` (`UNLOCKS`). */
     shore: 1,
     answer: 1,
@@ -578,17 +578,18 @@ export interface StrengthLevel {
 }
 
 /**
- * The enemy's strength in a raid (docs/ringfall/island-v2.md): the more of the six nodes the
+ * The enemy's strength in a raid (docs/ringfall/island-v2.md): the more of the nodes the
  * enemy holds, the sooner and the more its reinforcements, raiders and hunters come.
- * `byHeld[n]` is the level of a raid with `n` nodes the enemy's, so the island before the first
- * capture plays at the top level and every node taken eases it.
+ * `byShare` gives a level for each share of the nodes the enemy holds, the first whose share it
+ * reaches (0 under all of them), so the island before the first capture plays at the top level
+ * and nodes taken ease it.
  *
  * `levels[play]` is the island the bots' balance tables are played on, with every node the
  * enemy's: its numbers are the reinforcement times, raider time, parties and packs of
  * `REINFORCE`, `RAIDERS`, `PARTY` and `PACKS`. Lower levels give more time and fewer hunters.
  */
 export const STRENGTH = {
-  byHeld: [0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2],
+  byShare: [[0.8, 2], [0.45, 1]] as [number, number][],
   levels: [
     { reinforce: { first: 480, every: 360 }, raiders: 1020, parties: { reservoir: 1, harbor: 1 }, packs: { reservoir: 1, harbor: 1 } },
     { reinforce: { first: 435, every: 300 }, raiders: 900, parties: { reservoir: 1, harbor: 1 }, packs: { reservoir: 2, harbor: 1 } },

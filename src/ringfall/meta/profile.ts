@@ -1,5 +1,5 @@
 import { DEPOT, FACTORY, HEALS as HEAL_SPECS, HIDEOUT, META, MOD_KINDS, MOD_START, THREAT, TOOLS, VALUABLES, type ModKind, type HealKind, type ModuleId, type Rarity, type ToolKind, type ValuableKind, type WeaponKind, type FactoryLevel } from "../sim/config";
-import { depotIndex, DEPOTS, ENTRIES, POIS, poiIndex, REGIONS, regionOf, ROUTES, type EntryId, type NodeId, type PoiId, type RecordId, type RegionId, type RouteId } from "../sim/map";
+import { depotIndex, DEPOTS, ENTRIES, HOME_REGION, POIS, poiIndex, REGIONS, regionOf, ROUTES, type EntryId, type NodeId, type PoiId, type RecordId, type RegionId, type RouteId } from "../sim/map";
 import { openRoutes } from "../sim/routes";
 import { encodeSeen, type Kit, type State } from "../sim/state";
 import { haulOrigins } from "../sim/world";
@@ -89,7 +89,7 @@ export interface KitPicks {
 export const HEALS: HealKind[] = ["cell", "battery", "syringe", "medkit"];
 
 /** The way in a new player knows: the reservoir's first. */
-export const FIRST_ENTRY: EntryId = regionOf("reservoir").entries[0];
+export const FIRST_ENTRY: EntryId = HOME_REGION.entries[0];
 
 /** Ways in as a known list: real ones only, once each, in `ENTRIES` order, always with `FIRST_ENTRY`. */
 export const knownEntries = (ids: readonly string[]): EntryId[] => ENTRIES.filter((e) => e.id === FIRST_ENTRY || ids.includes(e.id)).map((e) => e.id);
@@ -135,7 +135,7 @@ export const stashUsed = (p: Pick<Profile, "stash">) => p.stash.filter((i) => !i
 export function newProfile(seed = 1): Profile {
   const stash: Item[] = [...starterItems(), ...META.start.weapons.map((w): Item => ({ t: "weapon", ...w }))];
   for (const k of HEALS) for (let i = 0; i < META.start.heals[k]; i++) stash.push({ t: "heal", kind: k });
-  const p: Omit<Profile, "board"> = { v: 23, cash: META.start.cash, stash, raids: 0, extracted: 0, time: 0, quests: emptyLog(), region: "reservoir", entry: FIRST_ENTRY, entries: [FIRST_ENTRY], hideout: emptyHideout(), seed: seed & 0xffff, depots: [], depotSent: {}, seen: "", routes: [], day: 1, poiState: newIsland(), taken: null, records: [], events: firstEvents(seed & 0xffff), known: [...MOD_START], threat: 0, freedAt: {}, factory: 0, lastKit: null };
+  const p: Omit<Profile, "board"> = { v: 23, cash: META.start.cash, stash, raids: 0, extracted: 0, time: 0, quests: emptyLog(), region: HOME_REGION.id, entry: FIRST_ENTRY, entries: [FIRST_ENTRY], hideout: emptyHideout(), seed: seed & 0xffff, depots: [], depotSent: {}, seen: "", routes: [], day: 1, poiState: newIsland(), taken: null, records: [], events: firstEvents(seed & 0xffff), known: [...MOD_START], threat: 0, freedAt: {}, factory: 0, lastKit: null };
   return { ...p, board: makeBoard(p) };
 }
 
@@ -797,7 +797,7 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   const depotSent = Object.fromEntries(depots.map((d) => [d, num(ds[d])]));
   const entries = typeof o.v === "number" && o.v < 11 ? ENTRIES.map((e) => e.id) : knownEntries(Array.isArray(o.entries) ? o.entries.filter((e): e is string => typeof e === "string") : []);
   const poiState = typeof o.v === "number" && o.v >= 13 ? parseIsland(o.poiState) : newIsland();
-  const { region, entry } = allowedStart({ entries, depots, poiState }, REGIONS.find((r) => r.id === o.region)?.id ?? "reservoir", o.entry);
+  const { region, entry } = allowedStart({ entries, depots, poiState }, REGIONS.find((r) => r.id === o.region)?.id ?? HOME_REGION.id, o.entry);
   const raids = num(o.raids);
   const day = (typeof o.v === "number" && o.v >= 13) && Number.isInteger(o.day) && (o.day as number) >= 1 ? (o.day as number) : raids + 1;
   const recordIds = STORIES.map((t) => t.id);
@@ -905,7 +905,7 @@ export function buildFactory(p: Profile): Profile | null {
  */
 export function allowedStart(p: Pick<Profile, "entries" | "depots" | "poiState">, region: RegionId, entry: unknown): { region: RegionId; entry: EntryId } {
   const known = (r: RegionId) => regionOf(r).entries.filter((e) => p.entries.includes(e));
-  const reg = canStartIn(p, region) ? region : "reservoir";
+  const reg = canStartIn(p, region) ? region : HOME_REGION.id;
   const ways = known(reg);
   const want = ENTRIES.find((e) => e.id === entry && e.region === reg && ways.includes(e.id));
   // A region open only through a depot keeps a known way in elsewhere as the record of the last walk in.

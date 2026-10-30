@@ -2003,8 +2003,8 @@ function checkIsland(): string | null {
   const fell = night.night.lost;
   if (night.profile.poiState.supply.state !== "held" || night.profile.poiState.quarry.state !== (fell.includes("quarry") ? "held" : "freed") || night.raid.lost.join() !== "supply" || night.raid.gained.join() !== "quarry" || night.after.gained.length || night.after.lost.length) return `island scenario: a battle that ended with the supply depot the enemy's and the quarry the player's left ${JSON.stringify({ front: night.front, supply: night.profile.poiState.supply, quarry: night.profile.poiState.quarry })}`;
   // The enemy's strength follows the nodes it holds.
-  if (newRun(77).strength !== STRENGTH.play || STRENGTH.byHeld[NODES.length] !== STRENGTH.play) return `island scenario: a raid with every node the enemy's plays at strength ${newRun(77).strength}, not ${STRENGTH.play}`;
-  for (let k = 1; k < STRENGTH.byHeld.length; k++) if (STRENGTH.byHeld[k] < STRENGTH.byHeld[k - 1]) return "island scenario: the enemy's strength falls as it holds more nodes";
+  if (newRun(77).strength !== STRENGTH.play || strengthFor(NODES.length) !== STRENGTH.play) return `island scenario: a raid with every node the enemy's plays at strength ${newRun(77).strength}, not ${STRENGTH.play}`;
+  for (let k = 1; k <= NODES.length; k++) if (strengthFor(k) < strengthFor(k - 1)) return "island scenario: the enemy's strength falls as it holds more nodes";
   // The garrisons: held in full and as with no island given, freed empty.
   const count = (s: State, i: number) => s.enemies.filter((e) => e.poi === i).length;
   const plain = newRun(77);
@@ -2044,7 +2044,7 @@ function checkIsland(): string | null {
 /**
  * The enemy's strength (docs/ringfall/island-v2.md): the gate's level is today's island exactly,
  * with every node the enemy's; a raid's level follows the nodes the enemy holds
- * (`STRENGTH.byHeld`), and each level's times and numbers apply in `newRun()`; the board names
+ * (`STRENGTH.byShare`), and each level's times and numbers apply in `newRun()`; the board names
  * only packs that fly at the island's level.
  */
 function checkStrength(): string | null {

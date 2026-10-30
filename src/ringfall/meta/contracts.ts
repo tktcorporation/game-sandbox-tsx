@@ -1,5 +1,5 @@
 import { CONTRACT, CREW, FRONT, PARTY, STRENGTH, VALUABLES, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
-import { nodeIndex, PACKS, POIS, poiIndex, regionHere, REGIONS, regionOf, type PoiId, type RegionId } from "../sim/map";
+import { nodeIndex, PACKS, POIS, poiIndex, poiRegion, regionHere, REGIONS, regionOf, type PoiId, type RegionId } from "../sim/map";
 import { activePacks, garrison, type IslandEvent, type PoiHold } from "../sim/island";
 import { shopRarity } from "./island";
 import { enemyNodes, frontNodes, nodeHolds } from "../sim/front";
@@ -63,7 +63,7 @@ const packRegion = (name: string) => regionHere(PACKS.find((p) => p.name === nam
 
 /** The region a contract sends the player to. */
 export function contractRegion(c: Contract): RegionId {
-  if (c.t !== "intercept") return regionOf(REGIONS.find((r) => r.pois.includes(c.poi))?.id ?? "reservoir").id;
+  if (c.t !== "intercept") return poiRegion(c.poi).id;
   return targetRegion(c.target);
 }
 

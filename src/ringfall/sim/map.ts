@@ -782,13 +782,6 @@ const BWE_CAB = (() => {
   return { x0: a - 0.5, x1: b + 1.1, z0: 13.5, z1: 17.6, y: BOOM_STEPS[BWE.cab[0]].y, door: (a + b) / 2 };
 })();
 
-/**
- * Each POI is written in its own frame (its data and its boxes below) and moved
- * into place by this offset (`POI_AT` in areas.ts, which sets each in its area's frame).
- * The harbor's POIs are written round their own middle.
- */
-const AT = (["supply", "quarry", "relay", "pad", "wreck", "yard", "smelter", "station", "waterworks", "lodge", "cannery", "coldstore"] as const).map((id) => POI_AT[id]);
-
 /** The big dish on the mesa, in the relay's frame (`dish()`), its heights over the mesa's top. */
 const BIG_DISH = { x: 45, z: -5, y: 23, r: 28, f: 22.4, tilt: Math.PI / 4, cell: 2.5 } as const;
 /** The big dish's bowl, and the stair tower west of its lowest rim, its top the gallery's floor. */
@@ -876,9 +869,27 @@ function coldstore(): Box[] {
   ];
 }
 
-const POI_FRAMES: Poi[] = [
-  {
-    id: "supply",
+/** The ground a battle's enemy squads land on (`landingPlan()` in battle.ts): the titan's pad, or the harbor's north shore. */
+export type Landing = "pad" | "shore";
+
+/**
+ * A POI as written in its own frame (its data here and its boxes in its building function), moved
+ * into place by its offset in `POI_AT` (areas.ts, which sets each in its area's frame); the harbor's
+ * POIs are written round their own middle. With it, the facts about it kept nowhere else: its region; how far
+ * out from its entry its depot stands, along the line from the POI through the entry (the nearest
+ * flat spot where a raid started there is not seen by the POI's squads at once, `checkDepots` in
+ * the sim gate); and, for a node of the front (every POI but the boss's), its tier (how deep it
+ * lies from the camp, 0 by the camp's gate to 3 at the far end of the harbor, docs/ringfall/island-v2.md
+ * 拠点の段), what holding it opens (`NodeUnlock`) and the landing ground it borders, if any.
+ */
+type PoiDef = Omit<Poi, "id"> & { region: RegionId; depotOut: number } & ({ boss: true; front?: never } | { boss?: never; front: { tier: number; unlocks: NodeUnlock; landing?: Landing } });
+
+/** The POIs by id, in the order of `POIS`. */
+const POI_DEFS: Record<PoiId, PoiDef> = {
+  supply: {
+    region: "reservoir",
+    depotOut: 18,
+    front: { tier: 0, unlocks: { shop: 1, depart: true } },
     name: "補給所",
     x: 0,
     z: -5,
@@ -914,8 +925,10 @@ const POI_FRAMES: Poi[] = [
       { x: -36, z: -23, y: WORKS.storey * 2, heal: "battery" },
     ],
   },
-  {
-    id: "quarry",
+  quarry: {
+    region: "reservoir",
+    depotOut: 18,
+    front: { tier: 1, unlocks: { shop: 2, squad: 1 }, landing: "pad" },
     name: "採掘場",
     x: -15,
     z: 18,
@@ -945,8 +958,10 @@ const POI_FRAMES: Poi[] = [
     floor: [{ x: -20, z: 12, heal: "medkit" }],
     carePackage: { x: -15, z: 22, weapon: ["lance", 1] },
   },
-  {
-    id: "relay",
+  relay: {
+    region: "reservoir",
+    depotOut: 25,
+    front: { tier: 1, unlocks: { shop: 2, scout: true }, landing: "pad" },
     name: "中継塔",
     x: 0,
     z: 0,
@@ -974,8 +989,9 @@ const POI_FRAMES: Poi[] = [
       { x: -22, z: -18, y: WORKS.storey * 3, armor: 2 },
     ],
   },
-  {
-    id: "pad",
+  pad: {
+    region: "reservoir",
+    depotOut: 66,
     name: "発着場",
     x: 0,
     z: 20,
@@ -995,8 +1011,10 @@ const POI_FRAMES: Poi[] = [
     boss: true,
   },
   // --- the harbor: three POIs whose squads come in pairs and with heavies more often
-  {
-    id: "wreck",
+  wreck: {
+    region: "harbor",
+    depotOut: 22,
+    front: { tier: 3, unlocks: { shore: true }, landing: "shore" },
     name: "難破船",
     x: 0,
     z: 0,
@@ -1027,8 +1045,10 @@ const POI_FRAMES: Poi[] = [
       { x: 10, z: -8, y: SHIP_DECK, weapon: ["lance", 1] },
     ],
   },
-  {
-    id: "yard",
+  yard: {
+    region: "harbor",
+    depotOut: 18,
+    front: { tier: 2, unlocks: { shop: 3, depart: true } },
     name: "コンテナヤード",
     x: 0,
     z: 0,
@@ -1058,8 +1078,10 @@ const POI_FRAMES: Poi[] = [
       { x: -67, z: -1, y: WORKS.storey * 2, armor: 2 },
     ],
   },
-  {
-    id: "smelter",
+  smelter: {
+    region: "harbor",
+    depotOut: 25,
+    front: { tier: 2, unlocks: { shop: 3, squad: 1 } },
     name: "製錬所",
     x: 8,
     z: 0,
@@ -1085,8 +1107,10 @@ const POI_FRAMES: Poi[] = [
   },
 
   // --- the nodes built on the open ground between the areas: a garrison of two squads each
-  {
-    id: "station",
+  station: {
+    region: "reservoir",
+    depotOut: 20,
+    front: { tier: 1, unlocks: {} },
     name: "観測所",
     x: 0,
     z: 0,
@@ -1110,8 +1134,10 @@ const POI_FRAMES: Poi[] = [
     loot: { weapon: [["pike", 1], ["talon", 1], ["hornet", 1]], armor: [1], heals: 2, valuable: [["wire", 3], ["gyro", 2], ["board", 2], ["fuse", 1]] },
     floor: [{ x: 9, z: -17, heal: "battery" }],
   },
-  {
-    id: "waterworks",
+  waterworks: {
+    region: "reservoir",
+    depotOut: 20,
+    front: { tier: 1, unlocks: {} },
     name: "浄水場",
     x: 0,
     z: 0,
@@ -1135,8 +1161,10 @@ const POI_FRAMES: Poi[] = [
     loot: { weapon: [["pike", 1], ["maul", 1], ["lance", 1]], armor: [1], heals: 2, valuable: [["parts", 3], ["fuse", 2], ["wire", 2], ["drive", 1]] },
     floor: [{ x: 6, z: -12, heal: "syringe" }],
   },
-  {
-    id: "lodge",
+  lodge: {
+    region: "harbor",
+    depotOut: 20,
+    front: { tier: 2, unlocks: { depart: true } },
     name: "峠の宿舎",
     x: 0,
     z: 0,
@@ -1160,8 +1188,10 @@ const POI_FRAMES: Poi[] = [
     loot: { weapon: [["pike", 1], ["hornet", 1], ["maul", 1], ["talon", 1]], armor: [1], heals: 2, valuable: [["parts", 2], ["wire", 2], ["gyro", 2], ["board", 2]] },
     floor: [{ x: 22, z: -10, heal: "medkit" }],
   },
-  {
-    id: "cannery",
+  cannery: {
+    region: "harbor",
+    depotOut: 12,
+    front: { tier: 2, unlocks: {} },
     name: "缶詰工場",
     x: 0,
     z: 0,
@@ -1185,8 +1215,10 @@ const POI_FRAMES: Poi[] = [
     loot: { weapon: [["talon", 1], ["lance", 1], ["pike", 1]], armor: [1], heals: 2, valuable: [["board", 2], ["drive", 2], ["gyro", 2], ["wire", 1]] },
     floor: [{ x: -14, z: -12, heal: "battery" }],
   },
-  {
-    id: "coldstore",
+  coldstore: {
+    region: "harbor",
+    depotOut: 20,
+    front: { tier: 2, unlocks: {} },
     name: "冷凍倉庫",
     x: 0,
     z: 0,
@@ -1210,9 +1242,14 @@ const POI_FRAMES: Poi[] = [
     loot: { weapon: [["pike", 1], ["lance", 1], ["maul", 1], ["hornet", 1]], armor: [1], heals: 2, valuable: [["wire", 2], ["board", 2], ["drive", 2], ["reactor", 1]] },
     floor: [{ x: -16, z: -4, heal: "medkit" }],
   },
-];
+};
 
-export const POIS: Poi[] = POI_FRAMES.map((p, i) => placePoi(p, AT[i]));
+const POI_IDS = Object.keys(POI_DEFS) as PoiId[];
+
+export const POIS: Poi[] = POI_IDS.map((id) => {
+  const { region, depotOut, front, ...p } = POI_DEFS[id];
+  return placePoi({ id, ...p }, POI_AT[id]);
+});
 
 /** A POI's place in `POIS` (and in the run's per-POI state), from its id. */
 export const poiIndex = (id: PoiId) => POIS.findIndex((p) => p.id === id);
@@ -1226,13 +1263,6 @@ export interface Depot {
   /** Facing its POI (0 = north / -z). */
   yaw: number;
 }
-
-/**
- * How far out from its POI's entry each depot stands, along the line from the POI through
- * the entry: the nearest flat spot where a raid started there is not seen by the POI's
- * squads at once (`checkDepots` in the sim gate holds them to it).
- */
-const DEPOT_OUT: Record<PoiId, number> = { supply: 18, quarry: 18, relay: 25, pad: 66, wreck: 22, yard: 18, smelter: 25, station: 20, waterworks: 20, lodge: 20, cannery: 12, coldstore: 20 };
 
 /** A depot's place in `DEPOTS` (and in the run's `depots`), from its POI. */
 export const depotIndex = (poi: PoiId) => DEPOTS.findIndex((d) => d.poi === poi);
@@ -1263,7 +1293,7 @@ export interface ExtractPoint {
 }
 
 export const EXTRACTS: ExtractPoint[] = [
-  { id: "ship", name: "発着場のドロップシップ", short: "ドロップシップ", x: AT[3][0], z: 46 + AT[3][1], radius: 5, hold: 1.5, call: 20, waves: { x: POIS[poiIndex("pad")].x, z: POIS[poiIndex("pad")].z }, note: "呼んで 20 秒守る。増援が降りてくる" },
+  { id: "ship", name: "発着場のドロップシップ", short: "ドロップシップ", x: POI_AT.pad[0], z: 46 + POI_AT.pad[1], radius: 5, hold: 1.5, call: 20, waves: { x: POIS[poiIndex("pad")].x, z: POIS[poiIndex("pad")].z }, note: "呼んで 20 秒守る。増援が降りてくる" },
   { id: "flare", name: "台地の回収地点", short: "台地", ...at("heart", { x: -92, z: -8 }), radius: 5, hold: 4, needsFlare: true, note: "発煙筒を焚けば 4 秒" },
   { id: "village", name: "廃村の回収地点", short: "廃村", ...at("village", { x: -45, z: 62 }), radius: 5, hold: 15, note: "遠いが静か。15 秒待つ" },
   // The harbor's way off: a boat comes up the channel to the quay.
@@ -2167,11 +2197,17 @@ export interface OutpostSite {
   guard: string;
 }
 
+/** The id of the region a point lies in: that of the nearest POI (`regionHere()`). */
+function regionIdHere(at: { x: number; z: number }): RegionId {
+  let best = POIS[0];
+  for (const p of POIS) if (hypot2(p.x - at.x, p.z - at.z) < hypot2(best.x - at.x, best.z - at.z)) best = p;
+  return POI_DEFS[best.id].region;
+}
+
 export const OUTPOST_SITES: OutpostSite[] = OUTPOSTS.map((o) => ({
   id: o.id!,
   name: o.name,
-  // The reservoir lies south of the mountain belt (+z), the harbor north of it.
-  region: o.z > -350 ? "reservoir" : "harbor",
+  region: regionIdHere(o),
   x: o.x,
   z: o.z,
   guard: o.guard?.name ?? "",
@@ -2334,30 +2370,34 @@ export interface Region {
   entries: EntryId[];
   /** A line for the base while the player knows none of its ways in and has no depot of it on: how to open it. */
   locked?: string;
+  /** Its POIs (those whose `POI_DEFS` name it), in `POIS` order. */
   pois: PoiId[];
   exits: ExtractId[];
   /** Where the world map writes the region's name, large and faint under everything. */
   label: { x: number; z: number };
   /** The part of the world the map frames when it shows this region: its land, its ways in and the ends of the ways out of it. */
   bounds: { x0: number; z0: number; x1: number; z1: number };
+  /** The region the camp stands in (`HOME_REGION`): the one a new profile starts in. */
+  home?: true;
 }
 
-export const REGIONS: Region[] = [
-  { id: "reservoir", name: "ダム湖", note: "干上がったダム湖の島。拠点 6 つ、発着場にタイタン", entries: ["beach", "checkpoint", "jetty"], pois: ["supply", "quarry", "relay", "pad", "station", "waterworks"], exits: ["ship", "flare", "village"], label: { x: -330, z: 300 }, bounds: { x0: WORLD.x0, z0: -340, x1: WORLD.x1, z1: WORLD.z1 } },
-  { id: "harbor", name: "港湾地帯", note: "干上がった湾の港。拠点 6 つ、どこにもヘビーがいる", entries: ["outskirts", "quay", "shore"], locked: "峠か鉄橋を越えて港町の外れまで歩き、生きて帰ると選べる", pois: ["wreck", "yard", "smelter", "lodge", "cannery", "coldstore"], exits: ["boat"], label: { x: -250, z: -520 }, bounds: { x0: WORLD.x0, z0: WORLD.z0, x1: WORLD.x1, z1: -380 } },
+const REGION_DEFS: Omit<Region, "pois">[] = [
+  { id: "reservoir", name: "ダム湖", note: "干上がったダム湖の島。拠点 6 つ、発着場にタイタン", home: true, entries: ["beach", "checkpoint", "jetty"], exits: ["ship", "flare", "village"], label: { x: -330, z: 300 }, bounds: { x0: WORLD.x0, z0: -340, x1: WORLD.x1, z1: WORLD.z1 } },
+  { id: "harbor", name: "港湾地帯", note: "干上がった湾の港。拠点 6 つ、どこにもヘビーがいる", entries: ["outskirts", "quay", "shore"], locked: "峠か鉄橋を越えて港町の外れまで歩き、生きて帰ると選べる", exits: ["boat"], label: { x: -250, z: -520 }, bounds: { x0: WORLD.x0, z0: WORLD.z0, x1: WORLD.x1, z1: -380 } },
 ];
+
+export const REGIONS: Region[] = REGION_DEFS.map((r) => ({ ...r, pois: POI_IDS.filter((id) => POI_DEFS[id].region === r.id) }));
+
+/** The region the camp stands in. */
+export const HOME_REGION: Region = REGIONS.find((r) => r.home) ?? REGIONS[0];
 
 export const regionOf = (id: RegionId): Region => REGIONS.find((r) => r.id === id) ?? REGIONS[0];
 
 /** The region a POI belongs to. */
-export const poiRegion = (id: PoiId): Region => REGIONS.find((r) => r.pois.includes(id)) ?? REGIONS[0];
+export const poiRegion = (id: PoiId): Region => regionOf(POI_DEFS[id].region);
 
 /** The region a point lies in: that of the nearest POI. */
-export function regionHere(at: { x: number; z: number }): Region {
-  let best = POIS[0];
-  for (const p of POIS) if (hypot2(p.x - at.x, p.z - at.z) < hypot2(best.x - at.x, best.z - at.z)) best = p;
-  return poiRegion(best.id);
-}
+export const regionHere = (at: { x: number; z: number }): Region => regionOf(regionIdHere(at));
 
 /**
  * A small settlement out on the open ground between the areas: a few buildings to look into
@@ -2530,12 +2570,12 @@ const HAMLET_FRAMES: Hamlet[] = [
 ];
 
 /**
- * The frames areas are written in, by name: each POI's (`AT`, by its id) and each hamlet's. Data
+ * The frames areas are written in, by name: each POI's (`POI_AT`, by its id) and each hamlet's. Data
  * outside the map that points into one of them (the shots gate's cameras) is written in its frame,
  * so moving an area moves it too.
  */
 export const FRAMES: Record<string, { x: number; z: number }> = Object.fromEntries([
-  ...POI_FRAMES.map((p, i): [string, { x: number; z: number }] => [p.id, { x: AT[i][0], z: AT[i][1] }]),
+  ...POI_IDS.map((id): [string, { x: number; z: number }] => [id, { x: POI_AT[id][0], z: POI_AT[id][1] }]),
   ...HAMLET_FRAMES.map((h): [string, { x: number; z: number }] => [h.name, { x: h.x, z: h.z }]),
   ...TOWN_FRAMES.map((t): [string, { x: number; z: number }] => [t.name, { x: t.x, z: t.z }]),
   // The areas' frames (areas.ts), as "area:" and the area's id.
@@ -4129,9 +4169,9 @@ const VIADUCT = { x: 168, z0: -406, z: -615, x0: -67, stair: -564.6 } as const;
 
 /** Everything built in the harbor and on the way there, outside the POIs. */
 const HARBOR: Box[] = [
-  ...onLevel(LEVEL.seabed, place(AT[4][0], AT[4][1], wreck())),
-  ...onLevel(LEVEL.shore, place(AT[5][0], AT[5][1], yard())),
-  ...onLevel(LEVEL.terrace, place(AT[6][0], AT[6][1], smelter())),
+  ...onLevel(LEVEL.seabed, place(POI_AT.wreck[0], POI_AT.wreck[1], wreck())),
+  ...onLevel(LEVEL.shore, place(POI_AT.yard[0], POI_AT.yard[1], yard())),
+  ...onLevel(LEVEL.terrace, place(POI_AT.smelter[0], POI_AT.smelter[1], smelter())),
   // --- 港町: a hut, a warehouse with a roof to watch from, cottages, crates
   ...onLevel(LEVEL.shore, placeIn("town", [
     ...building(14, -288, 6, 5, 3.4, { doors: ["s"], windows: ["e"], roof: "e" }),
@@ -4234,18 +4274,16 @@ const RAILWAY: Box[] = [
 /** Groups of boxes written in a frame at (dx, dz), each lifted onto the floor it stands on. */
 const onFloors = (dx: number, dz: number, floors: Floors): Box[] => floors.flatMap(([level, boxes, loose]) => (loose ? lift(level, place(dx, dz, boxes)) : onLevel(level, place(dx, dz, boxes))));
 
-const PAD_AT = AT[poiIndex("pad")];
-
 /** Everything placed by hand: POIs, districts, landmarks. */
 const AUTHORED: Box[] = [
   ...HARBOR,
   ...HAMLETS.flatMap((h) => h.boxes),
   ...TOWNS.flatMap((t) => t.boxes),
-  ...onFloors(AT[0][0], AT[0][1], supply()),
-  ...place(AT[0][0], AT[0][1], watchtower()),
-  ...onFloors(AT[1][0], AT[1][1], quarry()),
-  ...onFloors(AT[2][0], AT[2][1], relay()),
-  ...onFloors(PAD_AT[0], PAD_AT[1], [
+  ...onFloors(POI_AT.supply[0], POI_AT.supply[1], supply()),
+  ...place(POI_AT.supply[0], POI_AT.supply[1], watchtower()),
+  ...onFloors(POI_AT.quarry[0], POI_AT.quarry[1], quarry()),
+  ...onFloors(POI_AT.relay[0], POI_AT.relay[1], relay()),
+  ...onFloors(POI_AT.pad[0], POI_AT.pad[1], [
     [LEVEL.dam, pad()],
     [LEVEL.dam, CREST_PARAPET, "loose"],
   ]),
@@ -4422,7 +4460,7 @@ function depotSpot(p: Poi): { x: number; z: number } {
   const ax = p.entry.x - p.x;
   const az = p.entry.z - p.z;
   const len = hypot2(ax, az);
-  return { x: +(p.entry.x + (ax / len) * DEPOT_OUT[p.id]).toFixed(1), z: +(p.entry.z + (az / len) * DEPOT_OUT[p.id]).toFixed(1) };
+  return { x: +(p.entry.x + (ax / len) * POI_DEFS[p.id].depotOut).toFixed(1), z: +(p.entry.z + (az / len) * POI_DEFS[p.id].depotOut).toFixed(1) };
 }
 
 function scatterCover(authored: Box[], { points, segments }: Keep): Box[] {
@@ -4808,7 +4846,7 @@ export const QUARRY_LIFTS: readonly { a: string; b: string; from: { x: number; z
 ].map((l) => ({ ...l, from: { x: l.from.x + POI_AT.quarry[0], z: l.from.z + POI_AT.quarry[1] }, to: { x: l.to.x + POI_AT.quarry[0], z: l.to.z + POI_AT.quarry[1] } }));
 
 const LAID: Box[] = (() => {
-  const [qx, qz] = AT[1];
+  const [qx, qz] = POI_AT.quarry;
   const out: Box[] = [];
   // The conveyor: lengths of belt stepping down along its line, a pylon under every third.
   const n = Math.round((BELT.z1 - BELT.z0) / 5);
@@ -5469,7 +5507,7 @@ const STREET_SIDE: Box[] = (() => {
 /** Everything placed by hand or laid by rule, before the scattered cover fills the ground round it. */
 export const BUILT: Box[] = [...PLACED, ...STREET_SIDE];
 
-/** The nodes of the front (docs/ringfall/island-v2.md): the six POIs the player can take; the titan's pad is the enemy's for good. */
+/** The nodes of the front (docs/ringfall/island-v2.md): the POIs the player can take; the boss's (the titan's pad) is the enemy's for good. */
 export type NodeId = Exclude<PoiId, "pad">;
 
 /**
@@ -5509,11 +5547,14 @@ export const FRONT_LINKS: readonly (readonly ["camp" | NodeId, NodeId])[] = [
   ["coldstore", "wreck"],
 ];
 
-/**
- * Each node's tier (docs/ringfall/island-v2.md, 拠点の段): how deep it lies from the camp, 0 by
- * the camp's gate to 3 at the far end of the harbor.
- */
-export const TIER: Record<NodeId, number> = { supply: 0, quarry: 1, relay: 1, station: 1, waterworks: 1, lodge: 2, yard: 2, smelter: 2, cannery: 2, coldstore: 2, wreck: 3 };
+/** The front's nodes with what `POI_DEFS` says of each as a node, in `POIS` order. */
+const NODE_DEFS = POI_IDS.flatMap((id) => {
+  const front = POI_DEFS[id].front;
+  return front ? [{ id: id as NodeId, ...front }] : [];
+});
+
+/** Each node's tier (`POI_DEFS`). */
+export const TIER = Object.fromEntries(NODE_DEFS.map((n) => [n.id, n.tier])) as Record<NodeId, number>;
 
 /**
  * What holding each node opens (docs/ringfall/island-v2.md, 拠点の段), for as long as it is held:
@@ -5529,26 +5570,20 @@ export interface NodeUnlock {
   scout?: true;
   shore?: true;
 }
-export const UNLOCKS: Record<NodeId, NodeUnlock> = {
-  supply: { shop: 1, depart: true },
-  quarry: { shop: 2, squad: 1 },
-  relay: { shop: 2, scout: true },
-  yard: { shop: 3, depart: true },
-  smelter: { shop: 3, squad: 1 },
-  wreck: { shore: true },
-  station: {},
-  waterworks: {},
-  lodge: { depart: true },
-  cannery: {},
-  coldstore: {},
-};
+/** What holding each node opens (`POI_DEFS`). */
+export const UNLOCKS = Object.fromEntries(NODE_DEFS.map((n) => [n.id, n.unlocks])) as Record<NodeId, NodeUnlock>;
 
 /**
  * The nodes next to ground the enemy never gives up, where its squads land in the battle however
- * much round them the player holds: the titan's pad (no node) by the quarry's road and the mesa's,
- * and the harbor's north shore, where the enemy's boats come in.
+ * much round them the player holds: those that border a landing ground (`POI_DEFS`).
  */
-export const NET_EDGE: readonly NodeId[] = ["quarry", "relay", "wreck"];
+export const NET_EDGE: readonly NodeId[] = NODE_DEFS.filter((n) => n.landing).map((n) => n.id);
+
+/** The nodes each landing ground borders (`POI_DEFS`), in `NODES` order. */
+export const LANDING_NODES: Record<Landing, readonly NodeId[]> = {
+  pad: NODE_DEFS.filter((n) => n.landing === "pad").map((n) => n.id),
+  shore: NODE_DEFS.filter((n) => n.landing === "shore").map((n) => n.id),
+};
 
 /**
  * The core's spot of the node standing at (x, z): the open, level ground nearest its middle with
@@ -5801,7 +5836,7 @@ export const ROUTES: Route[] = (() => {
   // The wreck's gangway: up the hull's north side to its main deck, forward of the middle,
   // written in the wreck's frame (from its hull's north face, `n`) so it moves with the wreck.
   const deck = LEVEL.seabed + SHIP_DECK;
-  const [wx, wz] = AT[poiIndex("wreck")];
+  const [wx, wz] = POI_AT.wreck;
   const n = wz + SHIP.z - SHIP.beam / 2;
   const gx = wx + SHIP.x - 32.4;
   const gz = n - 1.3;

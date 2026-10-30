@@ -57,7 +57,7 @@ const ground = (x: number, z: number, y = 0): Spot => ({ x, y, z });
 
 /**
  * The nearest way home from where the player stands: a way off of the region they are in (the
- * plateau's only with a flare), a depot on, or the camp's yard in the reservoir.
+ * plateau's only with a flare), a depot on, or the camp's yard in the home region.
  */
 export function nearestExit(s: State): Spot {
   const p = s.player.pos;
@@ -65,7 +65,7 @@ export function nearestExit(s: State): Spot {
   const ways: Spot[] = [
     ...EXTRACTS.filter((x) => region.exits.includes(x.id) && (!x.needsFlare || s.player.flares > 0)).map((x) => ground(x.x, x.z)),
     ...DEPOTS.filter((d, i) => s.depots[i] && regionHere(d).id === region.id).map((d) => ground(d.x, d.z, d.y)),
-    ...(region.id === "reservoir" ? [ground((CAMP.x0 + CAMP.x1) / 2, (CAMP.z0 + CAMP.z1) / 2, CAMP.y)] : []),
+    ...(region.home ? [ground((CAMP.x0 + CAMP.x1) / 2, (CAMP.z0 + CAMP.z1) / 2, CAMP.y)] : []),
   ];
   return ways.reduce((a, b) => (dist2d(b, p) < dist2d(a, p) ? b : a));
 }

@@ -27,10 +27,13 @@ neighbouring POIs and districts 250 to 400 m apart; the harbor's POIs stand 270 
 all three are built at that scale. Five smaller walled works stand on the open ground between them
 (the weather station, the waterworks, the lodge at the pass's foot, the cannery, the cold store), each
 a POI of two squads 110 to 200 m from its neighbours.
-`REGIONS` in `map.ts` gives each region its POIs, ways off and ways in on foot (`ENTRIES`: a named
+`POI_DEFS` in `map.ts` is each POI in one place, keyed by its id: its own frame's data, its region,
+its depot's distance out and, for a node, its tier, what holding it opens and the landing ground it
+borders (`TIER`, `UNLOCKS`, `NET_EDGE` and each region's POIs are read off it). `REGIONS` gives each
+region its ways off and ways in on foot (`ENTRIES`: a named
 point out on its open ground, facing in, out of every robot's sight for the first seconds);
 `newRun(seed, kit, region, { entry })` starts on the ground there with the teammate beside the
-player (the reservoir and its first way in by default), and the departure's map picks the way in (or a
+player (the home region, `HOME_REGION`, the reservoir, and its first way in by default), and the departure's map picks the way in (or a
 depot) at the moment of leaving. There is no drop from the air. It offers only the ways in the player knows
 (`Profile.entries`): a new profile knows the reservoir's first (`FIRST_ENTRY`), and a raid marks
 each way in the player walks to, within `ENTRY.radius` on its ground, in `State.found` (the start's
@@ -178,10 +181,10 @@ raid reads the standings through `newRun(seed, kit, region, { island })` (`State
 starts cleared, its vault open without the key (`canOpen()` in `world.ts`) and its depot on. With
 no `island` every POI is held, which the sim gate plays.
 The enemy's strength (`STRENGTH` in `config.ts`, `State.strength`, `strengthLevel()`) follows the
-nodes the enemy holds (`STRENGTH.byHeld`, `strengthFor()` in `state.ts`, `enemyNodes()` in
+share of the nodes the enemy holds (`STRENGTH.byShare`, `strengthFor()` in `state.ts`, `enemyNodes()` in
 `front.ts`): it sets the reinforcement and raider times, the hunting parties per region, the drone
 packs flying (`activePacks()`, from the seed), the rogue patrols (`ROGUE.patrols`), the capture's
-push (`FRONT.push`) and the battle's enemy squads (`CONQUEST.net`). With every node the enemy's a
+push (`FRONT.push`) and the battle's enemy squads (`CONQUEST.net`, whose `work` the nodes share). With every node the enemy's a
 raid plays at `STRENGTH.play` (2), whose numbers are the island's own, so the sim gate's tables
 keep the island's numbers. A node's garrison (its POI's squads, and those of them out on a beat)
 wears plates of the node's `TIER` (`tierPlated()` in `sim/island.ts`, `PLATE.garrison`, a hash of the
@@ -200,7 +203,7 @@ higher scales its times and plates (`raidClock()`, `netPlated()`), the range rob
 from afar, the mod parts' odds, and the contract's pay (`threatPay()`). `Profile.freedAt` keeps
 each POI's best 強度 for the map.
 The front (`docs/ringfall/island-v2.md`): the eleven freeable POIs are the nodes (`NODES` in
-`map.ts`, linked along the roads by the fifteen `FRONT_LINKS`, in loops, each with its depth `TIER`); the
+`map.ts`, linked along the roads by the fifteen `FRONT_LINKS`, in loops, each with its depth, `TIER` from `POI_DEFS`); the
 outposts are places to loot with an enemy guard, no nodes, and the rogues hold no ground.
 `sim/front.ts` holds the rules. A node next to the player's ground (the camp and the player's
 nodes) is on the front; only its core, a pillar near its middle, can be captured (`FRONT` in
@@ -218,7 +221,7 @@ play, has none. It lasts `CONQUEST.time` seconds, the raid's time limit (`timeUp
 wipe); there are no points and no winner: whoever holds each node as it ends holds it the next day.
 Squads (`BattleSquad`) come out of the nodes: the player's from the camp's factory (`FACTORY`,
 `Profile.factory`, built at its station like a hideout module, `buildFactory()`), the enemy's the
-more the more it holds (also from `NET_EDGE` and in answer to the player's ground), and the
+more the more it holds (also from `NET_EDGE`, the nodes whose `POI_DEFS` name a landing ground, and in answer to the player's ground), and the
 rogues' from the wild now and then (`CONQUEST.rogue`), which fight at a node and move on but take
 none. They walk the links (`walkLine()` paths traced as
 the raid starts, then forgotten), attack a neighbouring node or defend one of their side's, and take
@@ -563,7 +566,7 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   Plain bins hold gear seldom and never past rare (`BIN_GEAR`, a hash of the seed and the bin);
   epic and legendary guns come from vaults, plated robots and raiders (`robotGear()` in
   `combat.ts`, a hash of the seed and the robot), the titan and the trader.
-- What holding a node opens is data in `map.ts` (`UNLOCKS`, read through `unlocked()` in
+- What holding a node opens is data in `map.ts` (`POI_DEFS`, gathered as `UNLOCKS`, read through `unlocked()` in
   `meta/island.ts` and `heldUnlocks()` in `battle.ts`), and lasts while it is held: the trader's
   gear up to `shop` (`shopRarity()`, which `wares()` sells; common with no node), a start from its
   depot (`depart`), the factory's extra squads (`squad`, `factoryMax()`), the reinforcements'

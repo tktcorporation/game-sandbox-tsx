@@ -4,7 +4,7 @@ import { zipUp } from "../sim/zips";
 import { frontNodes, nodeHolds, type NodeHold } from "../sim/front";
 import { atRisk, battleMarks, meterOf, type Battle, type Side } from "../sim/battle";
 import { offshore } from "../sim/terrain";
-import { BOXES, CAMP, DEBRIS_SPOTS, NODES, nodeIndex, TIER, UNLOCKS, debrisIndex, DEPOTS, ENTRIES, EXTRA_BINS, EXTRACTS, LANDMARKS, OUTPOST_SITES, POIS, REGIONS, regionOf, ROUTES, regionHere, type EntryId, type NodeId, type PoiId, type RegionId, type RouteId } from "../sim/map";
+import { BOXES, CAMP, DEBRIS_SPOTS, NODES, nodeIndex, TIER, UNLOCKS, debrisIndex, DEPOTS, ENTRIES, EXTRA_BINS, EXTRACTS, HOME_REGION, LANDMARKS, OUTPOST_SITES, POIS, REGIONS, regionOf, ROUTES, regionHere, type EntryId, type NodeId, type PoiId, type RegionId, type RouteId } from "../sim/map";
 import type { IslandEvent, PoiHold } from "../sim/island";
 import { STREETS } from "../sim/streets";
 import { worldKey } from "../sim/routes";
@@ -289,7 +289,7 @@ function owners(): Int16Array {
         if (d < best) [best, who] = [d, k];
       });
       // The camp's own ground, on the beach round it.
-      if (region === "reservoir" && Math.hypot(camp.x - x, camp.z - z) < Math.min(best, 110)) who = -2;
+      if (region === HOME_REGION.id && Math.hypot(camp.x - x, camp.z - z) < Math.min(best, 110)) who = -2;
       out[j * cols + i] = who;
     }
   return (landOwner = out);
@@ -353,7 +353,7 @@ export class IslandMap {
   /** The ways in the base offers; null when the map is drawn without a profile, as all of them. */
   known: EntryId[] | null = null;
   /** The region framed when the scene has no player on it (the camp's map table). */
-  region: RegionId = "reservoir";
+  region: RegionId = HOME_REGION.id;
   /** Where the contract taken for the raid points, marked in the loot's gold; null with none taken. */
   contract: ContractMark | null = null;
   /** The shape last given to the page, which sizes the map by it. */
