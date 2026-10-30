@@ -876,8 +876,7 @@ export type Landing = "pad" | "shore";
 
 /**
  * A POI as written in its own frame (its data here and its boxes in its building function), moved
- * into place by its offset in `POI_AT` (areas.ts, which sets each in its area's frame); the harbor's
- * POIs are written round their own middle. With it, the facts about it kept nowhere else: its region; how far
+ * into place by its offset in `POI_AT` (areas.ts, which sets each in its area's frame). With it, the facts about it kept nowhere else: its region; how far
  * out from its entry its depot stands, along the line from the POI through the entry (the nearest
  * flat spot where a raid started there is not seen by the POI's squads at once, `checkDepots` in
  * the sim gate); and, for a node of the front (every POI but the boss's), its tier (how deep it
@@ -891,7 +890,8 @@ type NodeDef = PoiDef & { boss?: never; front: { tier: number; unlocks: NodeUnlo
 
 /**
  * The POIs by id, the boss's (`BossId`) written as one and every other as a node. Their order is
- * the order of `POIS` and `NODES`, which the run's per-POI state follows: a new POI goes at the end.
+ * the order of `POIS` and `NODES`, which a raid's per-POI state is indexed by (saves name POIs by
+ * id): a new POI goes at the end, so the others keep their places and a raid plays as before.
  */
 const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
   supply: {

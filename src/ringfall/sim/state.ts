@@ -899,7 +899,7 @@ export const strengthLevel = (s: Pick<State, "strength">) => STRENGTH.levels[s.s
 /**
  * The enemy's strength with `enemyHeld` of the nodes its own (`STRENGTH.byShare`). A share is
  * reached when `enemyHeld` is at least the share of the node count rounded up; the small allowance
- * keeps a share that lands on a whole count (0.5 of 12) from rounding up past it in floating point.
+ * keeps a share that lands on a whole count (0.5 of 10 nodes) from rounding up past it in floating point.
  */
 export const strengthFor = (enemyHeld: number) => STRENGTH.byShare.find(([share]) => enemyHeld >= Math.ceil(share * NODES.length - 1e-9))?.[1] ?? 0;
 
