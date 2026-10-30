@@ -120,21 +120,21 @@ crowd: median over runs of the most squads / robots fighting the player at once 
 
 region: reservoir (ダム湖)
 skill     alive time(med) cleared haul(med) downs acc crit leap crowd flank waves meet               c/min ally               exit
-beginner  67%   5.9m      1       440       1.3   48% 3%   1.3 2/4   6%    0     48s 49s 11.0/8.5   1.98  48% 0.9d 0.1r 0.1h ship 0 flare 0 village 20
-casual    67%   8.3m      1       960       1.1   70% 4%   1.2 2/4   10%   1     48s 52s 13.3/9.3   1.83  48% 0.9d 0.0r 0.1h ship 0 flare 0 village 20
-good      77%   8.1m      2       940       0.9   77% 24%  0.9 2/4   17%   1     47s 50s 14.4/10.0  1.98  38% 0.8d 0.1r 0.2h ship 0 flare 0 village 23
+beginner  43%   6.0m      1       400       1.5   47% 4%   1.4 2/4   7%    0     48s 50s 10.1/7.8   1.90  49% 1.1d 0.1r 0.0h ship 0 flare 0 village 13
+casual    63%   9.5m      2       1310      1.1   69% 5%   1.6 2/4   12%   1     48s 59s 14.4/10.2  1.85  44% 1.0d 0.1r 0.1h ship 0 flare 0 village 19
+good      77%   8.7m      2       960       0.8   74% 25%  1.0 2/4   17%   1     47s 58s 14.2/10.1  1.92  39% 1.0d 0.0r 0.1h ship 0 flare 0 village 23
 
 region: harbor (港湾地帯)
 skill     alive time(med) cleared haul(med) downs acc crit leap crowd flank waves meet               c/min ally               exit
-beginner  83%   1.9m      0       0         0.6   52% 4%   0.2 2/4   1%    0     30s 31s 3.3/3.1    1.73  55% 0.4d 0.0r 0.0h boat 25
-casual    83%   1.8m      0       0         0.5   74% 4%   0.1 2/4   1%    0     30s 37s 3.0/2.9    1.67  50% 0.3d 0.0r 0.0h boat 25
-good      93%   1.8m      0       0         0.4   84% 31%  0.2 2/4   3%    0     30s 33s 3.2/3.1    1.78  50% 0.3d 0.0r 0.0h boat 28
+beginner  93%   2.1m      0       0         0.7   53% 4%   0.3 2/4   1%    0     30s 35s 3.4/3.3    1.70  54% 0.3d 0.1r 0.0h boat 28
+casual    77%   1.8m      0       0         0.6   73% 4%   0.2 2/4   3%    0     29s 31s 3.0/2.9    1.68  52% 0.5d 0.0r 0.0h boat 23
+good      93%   1.9m      0       0         0.4   84% 29%  0.1 2/4   2%    0     29s 34s 3.1/3.1    1.73  49% 0.2d 0.0r 0.0h boat 28
 
 region: city (機械都市)
 skill     alive time(med) cleared haul(med) downs acc crit leap crowd flank waves meet               c/min ally               exit
-beginner  53%   0.8m      0       0         1.0   45% 5%   0.4 1/2   1%    0     50s 50s 1.4/0.5    0.89  47% 0.8d 0.0r 0.0h plaza 16
-casual    67%   1.0m      0       0         0.7   65% 10%  0.4 1/2   4%    0     49s 50s 1.4/0.8    0.85  41% 0.5d 0.0r 0.0h plaza 20
-good      93%   2.1m      0       0         0.2   78% 26%  0.3 1/2   4%    0     49s 60s 1.1/0.6    0.58  40% 0.4d 0.0r 0.0h plaza 28
+beginner  57%   5.6m      1       0         1.4   45% 3%   1.0 2/3   5%    0     41s 89s 4.8/2.7    0.81  52% 0.7d 0.1r 0.0h plaza 17
+casual    60%   8.1m      1       0         1.6   64% 5%   1.5 2/3   10%   1     40s 112s 5.4/3.2   0.74  50% 1.1d 0.1r 0.0h plaza 18
+good      50%   7.8m      1       0         1.3   74% 24%  1.2 2/3   13%   1     40s 110s 5.0/2.9   0.77  49% 1.0d 0.0r 0.0h plaza 15
 ```
 
 目標から外れている値:
@@ -430,23 +430,23 @@ hideout pacing: the meta played with these raids, greedy spending (scripts/ringf
 25 playthroughs per skill. Median raid (and 10th-90th percentile) at which each level was built; 201 means never within 200
 level          beginner       casual         good          
 医務室 Lv1     1 (1-1)        1 (1-1)        1 (1-1)       
-医務室 Lv2     10 (8-12)      6 (4-9)        7 (6-9)       
-医務室 Lv3     68 (62-74)     30 (26-37)     50 (31-87)    
-作業台 Lv1     2 (1-3)        2 (1-3)        1 (1-3)       
-作業台 Lv2     27 (23-57)     12 (10-20)     50 (22-87)    
-倉庫 Lv1       1 (1-3)        1 (1-2)        1 (1-2)       
-倉庫 Lv2       15 (12-17)     8 (6-10)       9 (7-12)      
-倉庫 Lv3       45 (38-57)     19 (17-26)     50 (26-87)    
-無線機 Lv1     7 (5-9)        4 (3-6)        5 (4-7)       
-無線機 Lv2     56 (51-62)     24 (21-32)     50 (31-87)    
-ポーチ Lv1     4 (2-6)        3 (2-5)        2 (2-5)       
-ポーチ Lv2     37 (31-57)     15 (12-23)     50 (22-87)    
-全設備 最上段  68 (62-74)     30 (26-37)     50 (31-87)    
+医務室 Lv2     12 (10-13)     6 (5-8)        6 (4-10)      
+医務室 Lv3     70 (62-78)     28 (22-35)     36 (32-56)    
+作業台 Lv1     2 (2-3)        2 (1-2)        2 (1-3)       
+作業台 Lv2     35 (23-60)     15 (9-24)      33 (19-56)    
+倉庫 Lv1       1 (1-2)        1 (1-2)        1 (1-2)       
+倉庫 Lv2       16 (14-18)     8 (6-11)       8 (7-11)      
+倉庫 Lv3       48 (41-60)     19 (16-29)     33 (23-56)    
+無線機 Lv1     8 (6-9)        4 (3-6)        4 (3-8)       
+無線機 Lv2     58 (51-70)     23 (18-31)     33 (27-56)    
+ポーチ Lv1     4 (3-5)        3 (2-5)        2 (2-4)       
+ポーチ Lv2     37 (31-60)     17 (12-24)     33 (20-56)    
+全設備 最上段  70 (62-78)     28 (22-35)     36 (32-56)    
 ```
 
-- 普通（casual）は中央値 30 レイドで全設備を最上段にする。普通は補給所を制圧した後も拠点を回る。ダム湖の生還は普通 67% で、倒れたレイドの回収品を失う分だけ遅れ、10〜90 パーセンタイルは 26〜37 レイド。
-- 上手い（good）は中央値 50 レイド（10〜90 パーセンタイル 31〜87）で、作業台 Lv2・無線機 Lv2・ポーチ Lv2 が遅い。上手いは 3 地域を回るので、機械都市の周（1 分ほどで北の回収地点へ歩いて出るだけで、回収品が無い）を精算する分だけ回収品が減る。ダム湖の生還は 77%。
-- 初心者（beginner）は中央値 68 レイドで全設備を最上段にする。医務室 Lv2・倉庫 Lv2・無線機 Lv1・ポーチ Lv1 までは 15 レイド以内に建てる。予定の 2 拠点は補給所と、入口のそばの観測所か浄水場で、その補給箱から作業台 Lv2 の材料を集める。
+- 普通（casual）は中央値 28 レイドで全設備を最上段にする。普通は補給所を制圧した後も拠点を回る。ダム湖の生還は普通 63% で、倒れたレイドの回収品を失う分だけ遅れ、10〜90 パーセンタイルは 22〜35 レイド。
+- 上手い（good）は中央値 36 レイド（10〜90 パーセンタイル 32〜56）。上手いは 3 地域を回り、機械都市の周は立体駐車場を掃討しても持ち帰りの中央値が 0 なので、その周を精算する分だけ遅れる。ダム湖の生還は 77%。
+- 初心者（beginner）は中央値 70 レイドで全設備を最上段にする。医務室 Lv2・倉庫 Lv2・無線機 Lv1・ポーチ Lv1 までは 15 レイド以内に建てる。予定の 2 拠点は補給所と、入口のそばの観測所か浄水場で、その補給箱から作業台 Lv2 の材料を集める。
 - 依頼で入るクレジットと回収品は入門の 4 本の報酬だけになる。ボットは依頼板の依頼を受けないので、依頼板の報酬はこの表に入らない。人が毎日 1 件ずつ済ませれば、この表より早く進む。
 - 最上段は、作業台を除いてデータコアか小型炉心を要し、2500〜3000 クレジットかかる（医務室 Lv3 は小型炉心、倉庫 Lv3・無線機 Lv2・ポーチ Lv2 はデータコア）。
 - 作業台は商人が売る回収品の珍しさだけを上げる（Lv1 で回路基板と記憶装置、Lv2 でジャイロ・データコア・小型炉心）。武器とアーマーの格は持っている拠点で開くので、この表（拠点を持たない）では商人の装備は使わない。
@@ -454,43 +454,43 @@ level          beginner       casual         good
 
 ## 島の 30 日（目標）
 
-`npm run sim:ringfall` の最後に、腕前ごとに 1 つの保存データで 30 日を続けて遊ぶ（`scripts/ringfall-campaign.ts`）。12 拠点の持ち主と工場の段と倉庫は日をまたいで持ち越す。ボットは毎日、持っている銃で貫ける前線の拠点（奥の段ほど重く数える）と、貫ける段の敵の拠点の多い地域（同じならダム湖）を選び、その地域の入口を順に使って、倉庫の最も良い PIKE と TALON とアーマーを持って遊ぶ（倉庫にはいつも初期武器のコモンの PIKE と TALON がある）。どのレイドも陣取り戦の 1 戦で（`island-v2.md` の「陣取り戦」）、ボットは核を腕前の数（`Skill.battle`：初心者 1、普通 1、上手い 3）だけ制圧すると帰る。帰った後も戦いは 25 分の終わりまで数の上で続き、終わったときの持ち主から、その夜の攻め（`NIGHT`、`meta/island.ts` の `nightRaids()`）で取られた拠点を除いたものが次の日の島になる。依頼は受けない。敵の強さは、次の日に敵が持つ拠点の数で決まる（`STRENGTH.byShare`：拠点の 8 割以上で 2、45% 以上で 1。12 拠点では 10〜12 拠点で 2、6〜9 拠点で 1、5 拠点以下で 0）。
+`npm run sim:ringfall` の最後に、腕前ごとに 1 つの保存データで 30 日を続けて遊ぶ（`scripts/ringfall-campaign.ts`）。14 拠点の持ち主と工場の段と倉庫は日をまたいで持ち越す。ボットは毎日、持っている銃で貫ける前線の拠点（奥の段ほど重く数える）と、貫ける段の敵の拠点の多い地域（同じならダム湖）を選び、その地域の入口を順に使って、倉庫の最も良い PIKE と TALON とアーマーを持って遊ぶ（倉庫にはいつも初期武器のコモンの PIKE と TALON がある）。どのレイドも陣取り戦の 1 戦で（`island-v2.md` の「陣取り戦」）、ボットは核を腕前の数（`Skill.battle`：初心者 1、普通 1、上手い 3）だけ制圧すると帰る。帰った後も戦いは 25 分の終わりまで数の上で続き、終わったときの持ち主から、その夜の攻め（`NIGHT`、`meta/island.ts` の `nightRaids()`）で取られた拠点を除いたものが次の日の島になる。依頼は受けない。敵の強さは、次の日に敵が持つ拠点の数で決まる（`STRENGTH.byShare`：拠点の 8 割以上で 2、45% 以上で 1。14 拠点では 12〜14 拠点で 2、7〜11 拠点で 1、6 拠点以下で 0）。
 
 最初の日の前と毎日の後に、持っていく装備と工場の次の段に要る回収品だけを残して倉庫の物を売り、足りない材料を商人から買い足して、作れる限り工場を上げる。そのうえで商人から装備を買う。PIKE は、商人の棚で買える格のうち前線の最も奥の拠点の段の格を、持っている物より良ければクレジットの許す限り買う。アーマー（棚の最も良い段）は、工場の次の段のクレジットを残せるときだけ買う。コモンの PIKE と TALON は初期武器があるので買わない。倒れると持って出た買った装備を失い、次に買い直す。
 
-| 腕前 | 30 日のうちに届く段（`TIER`：補給所 0、採掘場・中継塔・観測所・浄水場 1、ヤード・精錬所・峠の宿舎・缶詰工場・冷凍倉庫・中央駅 2、難破船 3） |
+| 腕前 | 30 日のうちに届く段（`TIER`：補給所 0、採掘場・中継塔・観測所・浄水場・立体駐車場 1、ヤード・精錬所・峠の宿舎・缶詰工場・冷凍倉庫・中央駅 2、難破船・ロボット工場 3） |
 | ---- | ---------------------------------------------------------------------------------------- |
 | 上手い | 段 3 に届く日がある |
 | 普通 | 段 2 に届く日がある |
 | 初心者 | 段 1 に届く日がある |
 
-どの腕前も、30 日のうちに拠点を取る日と失う日がある。12 拠点すべてを持つ日が続くのは長くて 2 日。
+どの腕前も、30 日のうちに拠点を取る日と失う日がある。14 拠点すべてを持つ日が続くのは長くて数日。
 
 ```
 island campaign: a month on one profile per skill, the network carried (scripts/ringfall-campaign.ts)
-30 consecutive days per skill on one profile (scripts/ringfall-campaign.ts). n: nodes of the 12 the player holds at the end of the day; s: the enemy's strength the next raid plays at (0 to 2, from the nodes it holds); f: the factory's level (of 8)
+30 consecutive days per skill on one profile (scripts/ringfall-campaign.ts). n: nodes of the 14 the player holds at the end of the day; s: the enemy's strength the next raid plays at (0 to 2, from the nodes it holds); f: the factory's level (of 8)
 skill     day 5      day 10     day 20     day 30     alive  n(mean)  n(max)  tier 0-3: first day held days in                        events d/s/c  crews in/out
-beginner  n3 s1 f2   n5 s1 f2   n8 s0 f3   n11 s0 f5  73%    6.1      12      1/1/15/20                reservoir 17 harbor 11 city 2  6/3/3         3/0
-casual    n4 s1 f1   n4 s1 f2   n5 s1 f2   n3 s1 f2   60%    3.4      5       1/1/5/-                  reservoir 12 harbor 18 city 0  6/3/3         3/0
-good      n3 s1 f2   n4 s1 f2   n6 s1 f3   n11 s0 f4  57%    5.9      12      1/1/15/22                reservoir 13 harbor 15 city 2  6/3/3         3/0
+beginner  n3 s1 f1   n4 s1 f2   n7 s1 f3   n13 s0 f4  50%    5.7      13      1/3/19/23                reservoir 13 harbor 13 city 4  6/3/3         3/0
+casual    n3 s1 f2   n4 s1 f2   n13 s0 f4  n14 s0 f5  83%    8.0      14      1/1/11/16                reservoir 19 harbor 10 city 1  6/3/3         3/0
+good      n2 s2 f1   n4 s1 f1   n4 s1 f2   n4 s1 f3   40%    3.4      5       1/3/21/-                 reservoir 13 harbor 17 city 0  6/3/3         3/0
 front     nodes gained / lost overnight  raid min (med)
-beginner  28 / 17                        4.7
-casual    19 / 16                        5.2
-good      32 / 21                        5.9
+beginner  24 / 11                        4.7
+casual    28 / 14                        5.1
+good      17 / 13                        6.9
 push-pull changed hands raid / after leaving / night days gained / lost  all held (longest run)
-beginner  16 / 34 / 17                               14 / 7              4
-casual    19 / 41 / 13                               8 / 8               0
-good      32 / 32 / 17                               13 / 8              3
-nodes by day (a 10, b 11, c 12): beginner 2212344455455455346878a8bccccb / casual 222443444444443324454443232343 / good 3324354444435564245677a78acccb
-harbor nodes by day: beginner 000000000000002321354465666666 / casual 000010000000000000011221011000 / good 000000000000003200024565466666
-city nodes by day: beginner 000000000000000000000000011111 / casual 000000000000000000000000000000 / good 000000000000000000000000001111
-deepest tier by day: beginner 111111111111112222232332333333 / casual 111121111111111111122222122111 / good 111111111111112211122332233333
-best gun carried by day (0 common to 3 legendary): beginner 011111121221222233332333022222 / casual 011122222202022222222233222222 / good 011022222222222333022322332222
-strength by day: beginner 222211111111111111100000000000 / casual 222111111111111121111111212111 / good 112111111111111121110000000000
-factory by day: beginner 111122222222233333333334444445 / casual 111111112222222222222222222222 / good 122222222222222223333333344444
+beginner  15 / 39 / 13                               10 / 3              0
+casual    15 / 23 / 14                               13 / 4              6
+good      35 / 30 / 17                               8 / 7               0
+nodes by day (a 10, b 11, c 12, d 13, e 14): beginner 11133444444444332457769abbbbdd / casual 22233313445457677acddeddeeeeee / good 111223444443443325544343554444
+harbor nodes by day: beginner 000000000000000000134465555466 / casual 000000000010023546665665666666 / good 000000000000000000001000000001
+city nodes by day: beginner 000000000000000000000000111223 / casual 000000000000000000133333333333 / good 000000000000000000000000000000
+deepest tier by day: beginner 001111111111111111222232222233 / casual 111111111121122333333333333333 / good 001111111111111111112111111112
+best gun carried by day (0 common to 3 legendary): beginner 001022200222222122223333333330 / casual 011112222220022333031333333333 / good 011011122222222121222222222222
+strength by day: beginner 222111111111111121111100000000 / casual 222111211111111110000000000000 / good 222221111111111121111111111111
+factory by day: beginner 111111222222233333333333333344 / casual 112222222233333334444445555555 / good 111111111111122222222222222223
 front on day 30 (beginner): relay
-front on day 30 (casual): relay waterworks lodge
-front on day 30 (good): relay
+front on day 30 (casual): -
+front on day 30 (good): quarry relay wreck smelter
 events: days with a debris fall / storm / crews' visit; crews in/out: salvage crews that came and got off
 ```
 
@@ -914,3 +914,11 @@ CPU 時間は 9.5% 増えた。拠点が 5 つ増えて、開始時の守備隊�
 | 何を | 値 | 前の版 |
 | ---- | -- | ------ |
 | `npm run sim:ringfall -- 30` | 664 秒、CPU 時間 2584 秒（ユーザー 2533 秒・システム 51 秒） | 655 秒 |
+
+機械都市に立体駐車場（段 1）とロボット工場（段 3）を足し、ボットの道がその地域で倒せない守備隊のそばを回るようにした後（箱の数は 33264）:
+
+| 何を | 値 | 前の版 |
+| ---- | -- | ------ |
+| `npm run sim:ringfall -- 30` | 961 秒 | 664 秒 |
+
+増えた分の大半は機械都市の周で、北の回収地点へ歩いて出るだけだった 1 分ほどの周が、立体駐車場を掃討する 6〜8 分の周になった。最後の高速化の記録から 5 分の 1 を超えて重くなったので、次の変更でプロファイルを取って軽くする。
