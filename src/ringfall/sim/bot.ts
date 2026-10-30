@@ -268,7 +268,12 @@ export class Bot {
     if (guard >= 0 && (!tgt || dist2d(tgt.pos, p.pos) > 70)) {
       goal = standBy(guard);
     } else if (aim < 0 && core < 0 && (callLeft(s, this.exit(s).id) === 0 || !tgt || dist2d(tgt.pos, p.pos) > 70 || this.slipAway(s, live))) {
-      goal = this.waitSpot(s) ?? this.exit(s);
+      // On its way out with nothing fighting it and no pickup called yet, it still searches the
+      // bins in reach: the last POI it cleared is otherwise left unsearched, since leaving starts
+      // as its last robot falls. In a region with one POI in its reach that is the whole haul.
+      const lg = !engaged.length && !s.calls[this.exit(s).id] ? this.lootGoal(s) : null;
+      goal = lg ?? this.waitSpot(s) ?? this.exit(s);
+      if (lg?.weapon) inp.slot = this.spareSlot(s);
     } else if (tgt && (dist2d(tgt.pos, p.pos) < 70 || (aim >= 0 && tgt.poi === aim && (tgt.id === this.chasing || dist2d(p.pos, POIS[aim]) < 30)))) {
       // Once on its way to a robot of the POI it is taking it keeps after it, however far the
       // way round (a ramp, a tunnel) leads, rather than turning back at the range it took it up
