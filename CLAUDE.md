@@ -323,7 +323,8 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   parabolic dish of columns, and `strand()` / `stay()` a cable as blocks stepping along it.
   Each POI's buildings are a function of its own (`supply()`, `quarry()`, `relay()`, `pad()`,
   `wreck()`, `yard()`, `smelter()`, `station()`, `waterworks()`, `lodge()`, `cannery()`, `coldstore()`), as is each district's (`heartTown()`, `damFace()`,
-  `plateau()`, `village()`, `factory()`). The helpers take their sizes from a `Scale` (storey,
+  `plateau()`, `village()`, `factory()`, and the machine city's grid of streets, glass towers,
+  offices and elevated line round its station, `city()`, painted from steel tints 8 and 9). The helpers take their sizes from a `Scale` (storey,
   walls, doors, windows, roller doors, stair width): `WORKS` for industry (4.5 m storeys,
   half-metre walls, doors 2.4 by 2.8 m, roller doors 6 m high), `HOME` for homes and farms
   (3.2 m storeys, larger rooms and windows), `INTAKE` for the dam's intake tower (5 m storeys), and
@@ -413,7 +414,7 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   round. Unclimbable high ground (capped near `HIGH`, 28 m) is left only in `CRAGS` (the mountain
   belt between the regions and rock outcrops) and beyond the coast; ground steeper than `STEEP` is
   a wall, dropped down but never climbed. Each shape may name its `ground` (`Ground`: dune, mud,
-  quarry, sandstone, scrub, oiled, concrete, salt, paved), the colour the renderer and the world
+  quarry, sandstone, scrub, oiled, concrete, salt, paved, and the city's asphalt, its lane paint laid by the view from `CITY_LANES`), the colour the renderer and the world
   map paint it in (`groundOf()`); the quarry's and the mesa's also colour the cliffs round them
   (`cliffGround()`). It changes no rule. A road's levels are spaced evenly
   along it, or belong to its points with `atPoints`; a ramp reaches the level of the basin it runs
@@ -471,7 +472,7 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   `scatterCover()` then fills the open ground with set pieces in real sizes (sandbag lines,
   road-barrier rows, pallet stacks, container clusters, wrecked trucks, rock outcrops and roofless
   ruins, the vehicles and small things as `prop` boxes drawn by `buildProp()`), each
-  region from its own grid and seed (`SCATTER`), sparse on the salt flats, off the streets'
+  region from its own grid and seed (`SCATTER`), sparse on the salt flats, only a street's leavings in the city (`urban`), off the streets'
   asphalt, and on the ground between gathered along the streets with only a few clumps
   (`clump()`) away from them, keeping clear of the stops and parties' stops (`STOPS`, `PARTY_STOPS`),
   authored points, patrol routes and the roads that are the only ways between areas (`KEPT_ROADS`,

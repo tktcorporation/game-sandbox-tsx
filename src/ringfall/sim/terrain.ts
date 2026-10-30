@@ -127,7 +127,7 @@ interface Open {
  * from another at a glance. Only the renderer and the world map read it: it changes no rule.
  * `quarry` and `sandstone` colour the cliffs round their shapes too (`cliffGround()`).
  */
-export type Ground = "dune" | "salt" | "paved" | "mud" | "quarry" | "sandstone" | "scrub" | "oiled" | "concrete";
+export type Ground = "dune" | "salt" | "paved" | "mud" | "quarry" | "sandstone" | "scrub" | "oiled" | "concrete" | "asphalt";
 
 /**
  * A dune: its crest runs along `line`, `height` metres over the floor it stands on, and its sides
@@ -311,8 +311,8 @@ const BASINS: Open[] = [
   { name: "峠の宿舎", line: inPoi("lodge", [[-22, 0], [22, 0]]), half: 32, level: LEVEL.lodge, ground: "paved" },
   { name: "缶詰工場", line: inPoi("cannery", [[-22, 0], [22, 0]]), half: 46, level: LEVEL.cannery, ground: "paved" },
   { name: "冷凍倉庫", line: inPoi("coldstore", [[-20, 0], [20, 0]]), half: 34, level: LEVEL.coldstore, ground: "paved" },
-  // The machine city: one paved floor from the strait's east cliff to the east coast.
-  { name: "機械都市", line: inArea("city", [[0, -320], [0, 240]]), half: 120, level: LEVEL.city, ground: "paved" },
+  // The machine city: one asphalt floor from the strait's east cliff to the east coast.
+  { name: "機械都市", line: inArea("city", [[0, -320], [0, 240]]), half: 120, level: LEVEL.city, ground: "asphalt" },
   // The top of the pass: a saddle between the peaks, with the harbor in view.
   { name: "峠", line: inArea("pass", [[-66, -214], [-54, -230]]), half: 9, level: LEVEL.pass },
 ];

@@ -923,6 +923,196 @@ function terminal(): Box[] {
   ];
 }
 
+/**
+ * The machine city round the station, in the city's frame (areas.ts) on ground at 0: a grid of
+ * streets `street` metres wide, their middles along z at `ns` and along x at `ew`, and an avenue
+ * down x = 0 broken by the station's row. Blocks of glass towers, offices, a car park and a power
+ * hall stand between them; an elevated line runs over the east street and turns west over the
+ * north one toward the rail bridge. The west side of the station stays low: the ziplines to the
+ * relay and the smelter leave over it, and the ways in come from there.
+ */
+const CITY = {
+  street: 22,
+  ns: [-66, 66],
+  ew: [-240, -170, -62, 18, 98, 178],
+  /** The avenue's runs either side of the station's row. */
+  avenue: [
+    [-330, -170],
+    [-62, 250],
+  ],
+  /** The grid's reach: the basin's straight sides and its rounded ends (terrain.ts). */
+  x: [-118, 118],
+  z: [-330, 250],
+  /** The elevated line: its deck's underside and top, half its width, and the gap between its pillars. */
+  viaduct: { under: 7.3, top: 8.5, half: 4, every: 24 },
+} as const;
+/** Office storeys: 4 m floor to floor, otherwise built to `WORKS`. */
+const OFFICE: Scale = { ...WORKS, storey: 4 };
+
+/** The middles of the city's streets as lengths in the world, for the view's lane paint. */
+export const CITY_LANES: { ax: number; az: number; bx: number; bz: number }[] = [
+  ...CITY.ns.map((x) => [x, CITY.z[0], x, CITY.z[1]]),
+  ...CITY.ew.map((z) => [CITY.x[0], z, CITY.x[1], z]),
+  ...CITY.avenue.map(([z0, z1]) => [0, z0, 0, z1]),
+].map(([ax, az, bx, bz]) => {
+  const [x0, z0] = inArea("city", ax, az);
+  const [x1, z1] = inArea("city", bx, bz);
+  return { ax: x0, az: z0, bx: x1, bz: z1 };
+});
+
+/**
+ * A glass tower too tall to climb inside: a glass lobby under a white podium canopy, the shaft in
+ * glass three storeys at a time between white bands (the top one a teal rim round the white roof), and on the roof a white
+ * plant room, cooling units and a mast. A dozen boxes however tall.
+ */
+function glassTower(cx: number, cz: number, w: number, d: number, floors: number): Box[] {
+  const S = OFFICE.storey;
+  const top = floors * S;
+  const out: Box[] = [box(cx, cz, w, d, 5, "steel", 8), box(cx, cz, w + 4, d + 4, 9, "steel", 9, 5)];
+  for (let y = 9; y < top - 0.1; y += 3 * S) {
+    const y1 = Math.min(top, y + 3 * S);
+    out.push(box(cx, cz, w, d, y1 - 0.7, "steel", 8, y), box(cx, cz, w + 0.6, d + 0.6, y1, "steel", y1 >= top - 0.1 ? 3 : 9, y1 - 0.7));
+  }
+  out.push(
+    box(cx, cz, w - 0.6, d - 0.6, top + 0.3, "steel", 9, top),
+    box(cx - w * 0.12, cz, w * 0.5, d * 0.55, top + 5, "steel", 9, top),
+    box(cx + w * 0.3, cz - d * 0.25, 3, 3, top + 2.2, "steel", 2, top),
+    box(cx + w * 0.3, cz + d * 0.25, 3, 3, top + 2.2, "steel", 2, top),
+    box(cx - w * 0.12, cz, 0.5, 0.5, top + 19, "steel", 4, top + 5),
+  );
+  return out;
+}
+
+/**
+ * An office block climbed inside (`tower()` at office storeys): a white ground storey with doors
+ * on three sides, and above it, in `glass`, curtain walls of glass, else white concrete; pale floor
+ * plates; cooling units on the roof's west half, clear of the stairs up at its east end.
+ */
+function office(cx: number, cz: number, w: number, d: number, floors: number, glass: boolean): Box[] {
+  const S = OFFICE.storey;
+  const windows: Side[][] = [["s", "e", "w"]];
+  for (let k = 1; k < floors; k++) windows.push(["n", "s", "e", "w"]);
+  const out = tower(cx, cz, w, d, floors, { doors: [["s", "e", "w"]], windows, scale: OFFICE }).map((b): Box => {
+    if (b.kind === "slab") return { ...b, tint: 2 };
+    if (b.kind !== "wall" || b.tint !== 0) return b;
+    return glass && b.y0 >= S - 0.5 ? { ...b, kind: "steel", tint: 8 } : { ...b, tint: 4 };
+  });
+  const top = floors * S;
+  for (const dz of [-0.22, 0.22]) out.push(box(cx - w * 0.25, cz + d * dz, 3, 3, top + 2.2, "steel", 2, top));
+  return out;
+}
+
+/** A rack of pipes over a street at height y, from (x0, z) to (x1, z): a grey truss and three pipes along its top. */
+function pipeRack(x0: number, x1: number, z: number, y: number): Box[] {
+  return [
+    rect(x0, z - 1.5, x1, z + 1.5, y, y + 1.2, "steel", 2),
+    rect(x0, z - 1.2, x1, z - 0.5, y + 1.2, y + 1.9, "steel", 3),
+    rect(x0, z - 0.35, x1, z + 0.35, y + 1.2, y + 1.9, "steel", 9),
+    rect(x0, z + 0.5, x1, z + 1.2, y + 1.2, y + 1.9, "steel", 0),
+  ];
+}
+
+/**
+ * The elevated line along x (`alongX`) at `at`, from a to b: its pillars in pairs either side of the
+ * street's middle, kept off every crossing street so the walks down the middles pass, its deck, low
+ * white parapets and two rails.
+ */
+function viaductRun(alongX: boolean, at: number, a: number, b: number, crossings: number[]): Box[] {
+  const { under, top, half, every } = CITY.viaduct;
+  const r = (u0: number, u1: number, v0: number, v1: number, y0: number, h: number, kind: BoxKind, tint: number) =>
+    alongX ? rect(u0, v0, u1, v1, y0, h, kind, tint) : rect(v0, u0, v1, u1, y0, h, kind, tint);
+  const out: Box[] = [r(a, b, at - half, at + half, under, top, "slab", 2)];
+  for (const s of [-1, 1]) out.push(r(a, b, at + s * half - (s > 0 ? 0.3 : 0), at + s * half + (s < 0 ? 0.3 : 0), top, top + 1.1, "steel", 9));
+  for (const s of [-1, 1]) out.push(r(a, b, at + s * 0.75 - 0.08, at + s * 0.75 + 0.08, top, top + 0.15, "steel", 2));
+  for (let u = a + 6; u <= b - 6; u += every) {
+    if (crossings.some((c) => Math.abs(u - c) < 9)) continue;
+    for (const s of [-1, 1]) out.push(r(u - 0.6, u + 0.6, at + s * 3.4 - 0.6, at + s * 3.4 + 0.6, 0, under, "wall", 4));
+  }
+  return out;
+}
+
+/** A train of `cars` standing on the elevated line along z at x, from z0 south: white, a teal band and its windows' glass. */
+function train(x: number, z0: number, cars: number): Box[] {
+  const y = CITY.viaduct.top;
+  const out: Box[] = [];
+  for (let k = 0; k < cars; k++) {
+    const a = z0 + k * 20.8;
+    out.push(rect(x - 1.5, a, x + 1.5, a + 20, y + 0.4, y + 4, "steel", 4), rect(x - 1.55, a + 0.4, x + 1.55, a + 19.6, y + 2, y + 3, "steel", 8), rect(x - 1.55, a + 0.4, x + 1.55, a + 19.6, y + 1.2, y + 1.5, "steel", 3));
+  }
+  return out;
+}
+
+/** The pale pavement over a block, a kerb's height over the street. */
+const pavement = (x0: number, z0: number, x1: number, z1: number) => rect(x0, z0, x1, z1, 0, 0.15, "slab", 2);
+
+/** The city's buildings tall enough to climb to their top, whose top floors hold a bin (`EXTRA_BINS`). */
+const CITY_OFFICES = [
+  { x: 94, z: -205, w: 24, d: 20, floors: 10 },
+  { x: 33, z: 58, w: 22, d: 20, floors: 12 },
+] as const;
+
+function city(): Box[] {
+  const { ns, ew, viaduct } = CITY;
+  const out: Box[] = [
+    // The east column: glass towers to the north, south of the station and south again; offices between,
+    // the tallest two (`CITY_OFFICES`) climbed to a bin on their top floor.
+    pavement(77, -330, 112, -251),
+    ...glassTower(94, -292, 26, 30, 14),
+    pavement(77, -229, 112, -181),
+    pavement(11, 29, 55, 87),
+    ...CITY_OFFICES.flatMap((o) => office(o.x, o.z, o.w, o.d, o.floors, true)),
+    pavement(77, -159, 112, -73),
+    ...office(94, -116, 30, 24, 4, false),
+    pavement(77, -51, 112, 7),
+    ...glassTower(94, -22, 28, 28, 12),
+    pavement(77, 29, 112, 87),
+    ...office(94, 58, 30, 22, 4, true),
+    pavement(77, 109, 112, 167),
+    ...glassTower(94, 138, 26, 26, 9),
+    pavement(77, 189, 112, 245),
+    ...hall(94, 215, 30, 26, 9, { doors: [{ side: "w", w: 6 }], windows: ["s"], scale: WORKS, steel: 2 }),
+    // East of the avenue: an office north of the station, a glass tower facing the station square, a
+    // tall office and the power hall with its cooling units.
+    pavement(11, -229, 55, -181),
+    ...office(33, -205, 34, 24, 4, true),
+    pavement(11, -51, 55, 7),
+    ...glassTower(33, -22, 30, 26, 11),
+    pavement(11, 109, 55, 167),
+    ...hall(33, 138, 40, 34, 9, { doors: [{ side: "w", w: 6 }, { side: "e", w: 6 }], windows: ["n", "s"], scale: WORKS, steel: 2 }),
+    // West of the avenue: offices, low on the side the ziplines leave by.
+    pavement(-55, -229, -11, -181),
+    ...office(-33, -205, 34, 24, 5, false),
+    pavement(-55, -51, -11, 7),
+    ...office(-33, -22, 34, 24, 2, false),
+    pavement(-55, 29, -11, 87),
+    ...office(-33, 58, 34, 24, 5, true),
+    pavement(-55, 109, -11, 167),
+    ...office(-33, 138, 34, 24, 4, false),
+    // The west column: an office north, the multi-storey car park and an office south; the lots by
+    // the station's depot and under the ziplines stay open.
+    pavement(-112, -229, -77, -181),
+    ...office(-94, -205, 30, 24, 3, false),
+    ...carPark(-110, 34, -78, 82, 4).map((b): Box => (b.kind === "slab" ? { ...b, tint: 2 } : b.kind === "wall" && b.tint === 0 ? { ...b, tint: 4 } : b)),
+    pavement(-112, 109, -77, 167),
+    ...office(-94, 138, 30, 24, 4, true),
+    // The freight tracks running on from the station's west end to the edge of the city.
+    ...TERMINAL.tracks.flatMap((z) => [-0.75, 0.75].map((dz) => rect(CITY.x[0], z - 120 + dz - 0.08, -66, z - 120 + dz + 0.08, 0, 0.15, "steel", 2))),
+    // The elevated line over the east street, turning west over the north one, a train on it.
+    ...viaductRun(false, ns[1], -300, 240, ew),
+    ...viaductRun(true, ew[0], CITY.x[0], ns[1] - viaduct.half, [...ns, 0]),
+    ...train(ns[1], -60, 3),
+    // Pipes over the streets: from the glass tower facing the station square across the east
+    // street, and from the power hall's roof over the avenue to the office west of it.
+    ...pipeRack(46, 82, -22, 18),
+    ...pipeRack(-42, 40, 132, 19),
+    box(-24, 132, 2, 2, 19, "steel", 2, 16),
+    box(15, 132, 2, 2, 19, "steel", 2, 9),
+  ];
+  // Cooling units in rows on the power hall's roof.
+  for (const dx of [-12, -4, 4, 12]) for (const dz of [-8, 8]) out.push(box(33 + dx, 138 + dz, 5, 5, 11.6, "steel", 2, 9));
+  return out;
+}
+
 /** The ground a battle's enemy squads land on (`landingPlan()` in battle.ts): the titan's pad, or the harbor's north shore. */
 export type Landing = "pad" | "shore";
 
@@ -2275,8 +2465,8 @@ export const PACKS: Squad[] = [
   // The machine city: round the streets either side of the station, clear of its square.
   {
     name: "街のドローン群",
-    members: [{ kind: "drone", x: 760, z: -120 }, { kind: "drone", x: 760, z: -120 }],
-    patrol: [{ x: 760, z: -120 }, { x: 960, z: -160 }, { x: 975, z: -700 }, { x: 760, z: -720 }],
+    members: [{ kind: "drone", x: 804, z: -120 }, { kind: "drone", x: 804, z: -120 }],
+    patrol: [{ x: 804, z: -120 }, { x: 936, z: -120 }, { x: 936, z: -700 }, { x: 804, z: -700 }],
   },
 ];
 
@@ -2405,9 +2595,9 @@ export const MOBILES: Mobile[] = [
   { name: "製錬所を抜ける警邏", kind: "round", faction: "net", region: "harbor", members: ["grunt", "drone"], nodes: [[105, -675], [166, -697], [152, -717], [158, -779], [198, -765], [205, -735]] },
   { name: "難破船の浜の警邏", kind: "round", faction: "net", region: "harbor", members: ["grunt", "drone"], nodes: [[-245, -965], [-28, -984], [-20, -943], [-4, -932], [110, -955]] },
   { name: "塩田の警邏", kind: "round", faction: "net", region: "harbor", members: ["grunt", "charger"], nodes: [[45, -675], [-61, -745], [-67, -800], [-63, -943]] },
-  // --- the machine city: its streets west and east of the station, from the bridges to its north end.
-  { name: "大通りの警邏", kind: "patrol", faction: "net", region: "city", members: ["grunt", "drone"], nodes: [[760, -150], [960, -300], [960, -600]] },
-  { name: "橋の野良機", kind: "patrol", faction: "rogue", region: "city", rank: 2, members: ["grunt", "charger"], nodes: [[740, -560], [780, -300], [770, -90]] },
+  // --- the machine city: down the middles of its streets, so they pass between the elevated line's pillars.
+  { name: "大通りの警邏", kind: "patrol", faction: "net", region: "city", members: ["grunt", "drone"], nodes: [[804, -152], [936, -152], [936, -570]] },
+  { name: "橋の野良機", kind: "patrol", faction: "rogue", region: "city", rank: 2, members: ["grunt", "charger"], nodes: [[740, -570], [804, -570], [804, -152]] },
 ];
 
 export type DebrisId = "southwest" | "easthill" | "quarryeast" | "townwest" | "eastshore" | "saltwest";
@@ -2776,7 +2966,7 @@ export const STOPS: readonly { name: string; x: number; z: number }[] = [
   { name: "高架下", x: 55, z: -609 },
   at("bay", { name: "塩田", x: 10, z: -500 }),
   at("bay", { name: "岬", x: -122, z: -545 }),
-  at("city", { name: "駅前通り", x: -50, z: 80 }),
+  at("city", { name: "駅前通り", x: -66, z: 58 }),
   at("city", { name: "北の街区", x: 30, z: -320 }),
 ];
 
@@ -4495,6 +4685,7 @@ const AUTHORED: Box[] = [
   ...onLevel(LEVEL.coldstore, placeIn("coldstore", coldstore())),
   // --- the machine city
   ...onLevel(LEVEL.city, place(POI_AT.terminal[0], POI_AT.terminal[1], terminal())),
+  ...onLevel(LEVEL.city, placeIn("city", city())),
 ];
 
 /**
@@ -4572,10 +4763,11 @@ function authoredKeep(): Keep {
  * a few steps away, since in the open a robot's burst lands. The
  * channel, under water, gets none.
  */
-const SCATTER = [
+const SCATTER: { x0: number; x1: number; z0: number; z1: number; seed: number; step: number; urban?: true }[] = [
   { x0: WORLD.x0, x1: 600, z0: -350, z1: WORLD.z1, seed: 7_332, step: 13 },
   { x0: WORLD.x0, x1: 600, z0: WORLD.z0, z1: -351, seed: 4_517, step: 14 },
-  { x0: 620, x1: WORLD.x1, z0: WORLD.z0, z1: WORLD.z1, seed: 9_173, step: 14 },
+  // The machine city's ground: only what a city's streets are left with (`urbanAt()`).
+  { x0: 620, x1: WORLD.x1, z0: WORLD.z0, z1: WORLD.z1, seed: 9_173, step: 14, urban: true },
 ];
 /** Where cover is sparse: the salt flats, and the supply depot's dune coast, whose dunes are its cover. */
 const SPARSE = new Set(["塩田", "補給所"]);
@@ -4739,6 +4931,42 @@ function scatterArea(near: Clearance, area: (typeof SCATTER)[number]): Box[] {
     return ruin(at, len(7.5, 9.5), len(6.5, 8.5));
   };
   /**
+   * A city street's leavings: a row of concrete barriers, cars parked nose to tail, a truck, a bus,
+   * a bus shelter of glass under a pale roof, or two delivery containers. No sand, rock or ruin.
+   */
+  const urbanAt = (x: number, z: number): Box[] => {
+    const alongX = rnd() < 0.5;
+    const flip = rnd() < 0.5 ? 1 : -1;
+    const at = (u: number, v: number, l: number, w: number, h: number, kind: BoxKind, tint = 0, y0 = 0): Box =>
+      alongX ? box(x + u, z + v * flip, l, w, h, kind, tint, y0) : box(x + v * flip, z + u, w, l, h, kind, tint, y0);
+    const kind = rnd();
+    if (kind < 0.24) {
+      const n = 2 + Math.floor(rnd() * 3);
+      const askew = Math.floor(rnd() * n);
+      return Array.from({ length: n }, (_, i) => at(i * 3.35, i === askew ? len(-0.9, 0.9) : 0, 3, 0.65, 1.1, "prop", PROP.barrier));
+    }
+    if (kind < 0.5) {
+      const n = 2 + Math.floor(rnd() * 2);
+      return Array.from({ length: n }, (_, i) => at(i * 5.6, len(-0.4, 0.4), 4.5, 1.9, 1.5, "prop", PROP.car));
+    }
+    if (kind < 0.64) {
+      const out = [at(1.15, 0, 2.3, 2.5, 3.0, "prop", PROP.cab), at(2.3 + 2.5, 0, 5, 2.5, 2.3, "prop", PROP.bed)];
+      if (rnd() < 0.5) out.push(at(len(1, 4), 3.9, 4.5, 1.9, 1.5, "prop", PROP.car));
+      return out;
+    }
+    if (kind < 0.78) return [at(0, 0, 11, 2.6, 3.2, "steel", 4), at(0, 0, 10.2, 2.7, 2.6, "steel", 8, 1.6), at(0, 0, 10.2, 2.7, 1.2, "steel", 3, 0.9)];
+    if (kind < 0.9)
+      return [
+        at(0, -0.7, 4.2, 0.15, 2.4, "steel", 8),
+        at(-1.95, 0, 0.15, 1.6, 2.4, "steel", 2),
+        at(1.95, 0, 0.15, 1.6, 2.4, "steel", 2),
+        at(0, 0, 4.4, 1.8, 2.6, "slab", 2, 2.4),
+        at(0, -0.2, 3.2, 0.5, 0.5, "prop", PROP.bench),
+      ];
+    const tint = Math.floor(rnd() * 3);
+    return [at(0, 0, 6.1, 2.44, 2.6, "container", tint), at(len(-1.2, 1.2), 2.7, 6.1, 2.44, 2.6, "container", (tint + 1) % 3)];
+  };
+  /**
    * A roofless ruin: walls 0.45 m thick and up to 3.2 m high, broken into lengths of about 2 m
    * whose tops step down and up again, a doorway at each end and a breach in one side, and a
    * heap of rubble inside.
@@ -4822,7 +5050,7 @@ function scatterArea(near: Clearance, area: (typeof SCATTER)[number]): Box[] {
       const road = offStreet(x, z);
       if (road < 2) continue;
       if (at === BETWEEN && (road < 22 ? rnd() > 0.55 || clump(x, z) < 0.45 : rnd() > 0.4 || clump(x, z) < 0.62)) continue;
-      const piece = sparse ? wreckAt(x, z) : pieceAt(x, z);
+      const piece = area.urban ? urbanAt(x, z) : sparse ? wreckAt(x, z) : pieceAt(x, z);
       const base = groundUnder(piece);
       if (base === null) continue;
       for (const b of piece) {
@@ -5088,6 +5316,8 @@ const LAID: Box[] = (() => {
 // The canyon floors pay for the detour: a bin under each bridge.
 for (const { x, z, table } of [at("heart", { x: 108, z: -100, table: "relay" as const }), at("railway", { x: 127, z: -192, table: "smelter" as const })])
   EXTRA_BINS.push({ x, z, y: terrainHeight(x, z), table });
+// The machine city's tallest offices, on their top floors.
+for (const o of CITY_OFFICES) EXTRA_BINS.push(onFloor(at("city", { x: o.x - o.w / 2 + 1.5, z: o.z, y: (o.floors - 1) * OFFICE.storey, table: "terminal" as const })));
 
 /**
  * One depot per POI, on the road out from its entry: in reach on the way in or out, yet

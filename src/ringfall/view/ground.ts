@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { cliffGround, DAM_FACE, floorLevel, groundOf, highGround, LEVEL, steepAt, surfaceAt, type Ground } from "../sim/terrain";
+import { CITY_LANES } from "../sim/map";
 import { PAL } from "./models";
 
 /*
@@ -58,7 +59,31 @@ export const GROUND: Record<Ground, { base: THREE.Color; dark: THREE.Color; mix:
   // Concrete with black oil stains.
   oiled: { base: new THREE.Color(PAL.oiled), dark: new THREE.Color(PAL.oiledDark), mix: (x, z, k) => (noise(x * 0.2, z * 0.2) > 0.68 ? 0.85 : k * 0.2) },
   concrete: { base: new THREE.Color(PAL.concrete), dark: new THREE.Color(PAL.concreteDark), mix: (x, z, k) => (noise(x * 0.3, z * 0.3) > 0.7 ? 0.4 : k * 0.2) },
+  // The machine city's charcoal asphalt, patched darker; its lane paint is laid by `laneMark()`.
+  asphalt: { base: new THREE.Color(PAL.cityAsphalt), dark: new THREE.Color(PAL.cityAsphaltDark), mix: (x, z, k) => (noise(x * 0.18, z * 0.18) > 0.66 ? 0.7 : k * 0.3) },
 };
+
+const LANE = new THREE.Color(PAL.laneMark);
+/**
+ * The city's lane paint over its asphalt (`CITY_LANES`): a dashed line along each street's middle
+ * and a solid one 9 m out either side, faded, so the grid reads from a tower without glaring. Each
+ * line fills one row of the ground mesh's 2 m cells, so its edges run straight.
+ */
+function laneMark(c: THREE.Color, x: number, z: number) {
+  for (const l of CITY_LANES) {
+    const alongX = l.az === l.bz;
+    const [u, v, u0, u1, v0] = alongX ? [x, z, Math.min(l.ax, l.bx), Math.max(l.ax, l.bx), l.az] : [z, x, Math.min(l.az, l.bz), Math.max(l.az, l.bz), l.ax];
+    if (u < u0 || u > u1) continue;
+    const off = v - v0;
+    if (Math.abs(off - 1) < 0.5 && Math.floor(u / 4) % 2 === 0) c.lerp(LANE, 0.55);
+    else if (Math.abs(Math.abs(off) - 9) < 0.5) c.lerp(LANE, 0.35);
+  }
+}
+
+/** East of the dried strait (the city's region), the open ground is the city's broken grey paving, not soil. */
+const CITY_WEST = 620;
+const LOT = new THREE.Color(PAL.cityLot);
+const LOT_DARK = new THREE.Color(PAL.cityLotDark);
 
 /** The colour of a ground triangle centred on (x, z), spanning heights lo..hi. */
 export function groundColour(c: THREE.Color, x: number, z: number, lo: number, hi: number) {
@@ -77,7 +102,10 @@ export function groundColour(c: THREE.Color, x: number, z: number, lo: number, h
   else {
     const at = surfaceAt(x, z);
     const ground = groundOf(at) ?? (at === "水路" || floorLevel(x, z) <= LEVEL.lakebed + 0.5 ? "mud" : undefined);
-    if (ground) c.copy(GROUND[ground].base).lerp(GROUND[ground].dark, GROUND[ground].mix(x, z, k));
+    if (ground) {
+      c.copy(GROUND[ground].base).lerp(GROUND[ground].dark, GROUND[ground].mix(x, z, k));
+      if (ground === "asphalt") laneMark(c, x, z);
+    } else if (x > CITY_WEST) c.copy(LOT).lerp(LOT_DARK, noise(x * 0.25, z * 0.25) > 0.6 ? 0.75 : k * 0.4);
     else {
       c.copy(COL.sand).lerp(COL.dark, k > 0.62 ? 0.7 : k * 0.3);
       // The ground between the areas in broad patches of redder soil, so the basins read as clearings.

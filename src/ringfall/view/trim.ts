@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import type { Box } from "../sim/map";
-import { PAL } from "./models";
+import { PAL, STEEL_TINTS, wallColour } from "./models";
 
 /*
  * Architectural trim: the detail between 0.1 and 1 m that tells a 10 m wall from a 10 cm block.
@@ -97,7 +97,7 @@ export function trimBox(b: Box, out: TrimPiece[], site: TrimSite): void {
 
   if (b.kind === "wall") {
     if (len < 0.8 || hgt < 0.3) return;
-    const color = b.tint === 1 ? PAL.concreteDark : b.tint === 2 ? PAL.rust : b.tint === 3 ? PAL.stone : PAL.concrete;
+    const color = wallColour(b.tint);
     const mid = (a0 + a1) / 2;
     // The parapet round a roof: a pale coping along its top.
     if (b.tint === 1) {
@@ -147,8 +147,9 @@ export function trimBox(b: Box, out: TrimPiece[], site: TrimSite): void {
 
   if (b.kind === "steel") {
     // Steel cladding (thin plate standing a storey or more): vertical ribs, as on the containers.
-    if (![0, 3, 4].includes(b.tint % 8) || thick > 1 || len < 3 || hgt < 2) return;
-    const color = [PAL.rust, PAL.hull, PAL.steel, PAL.teal, PAL.paint][b.tint % 8];
+    const tint = b.tint % STEEL_TINTS.length;
+    if (![0, 3, 4].includes(tint) || thick > 1 || len < 3 || hgt < 2) return;
+    const color = STEEL_TINTS[tint];
     for (let a = Math.ceil((a0 + 0.2) / TRIM.rib) * TRIM.rib; a < a1 - 0.2; a += TRIM.rib) {
       if (alongX) put(a, b.y0 + hgt / 2, cz, 0.1, hgt - 0.15, thick + 0.08, toned(color, 0.8));
       else put(cx, b.y0 + hgt / 2, a, thick + 0.08, hgt - 0.15, 0.1, toned(color, 0.8));

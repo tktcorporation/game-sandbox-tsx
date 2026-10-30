@@ -462,13 +462,16 @@ export class IslandMap {
       scrub: [0xb8, 0xb6, 0x8c],
       oiled: [0xbf, 0xbb, 0xb2],
       concrete: [0xd8, 0xd2, 0xc4],
+      asphalt: [0x6a, 0x70, 0x77],
     };
     const water = [0x5f, 0xa8, 0xa6];
+    const lot = [0x9c, 0xa1, 0xa5];
     const paint = (x: number, z: number, lv: number) => {
       const at = surfaceAt(x, z);
       if (at === "水路") return water;
       const g = groundOf(at);
-      return g ? GROUND[g] : floor(lv);
+      // East of the dried strait the open ground is the city's grey paving, as the view paints it (ground.ts).
+      return g ? GROUND[g] : x > 620 ? lot : floor(lv);
     };
     for (let j = 0; j < this.height; j++)
       for (let i = 0; i < this.width; i++) {

@@ -50,6 +50,17 @@ export const PAL = {
   /** The streets' worn asphalt, and the paint of their edge and centre lines. */
   asphalt: 0x6b6862,
   roadPaint: 0xe8e2d2,
+  /** The machine city's streets: fresh charcoal asphalt, cooler and darker than the island's worn roads, and its faded lane paint. */
+  cityAsphalt: 0x3b3f44,
+  cityAsphaltDark: 0x2c3034,
+  laneMark: 0x8f969c,
+  /** The city's curtain walls: blue-grey glass, and the white concrete of its podiums, bands and pavements. */
+  glass: 0x6a879b,
+  cityWhite: 0xe2e5e4,
+  pavement: 0xaeb3b5,
+  /** The open ground round the city: broken grey paving and patches of cinder. */
+  cityLot: 0x8a8f93,
+  cityLotDark: 0x6c7176,
   /** The last water, left in the harbor's tidal channel. */
   water: 0x5fa8a6,
   /** Painted steel: a ship's hull below the old waterline, girders and posts. */
@@ -218,6 +229,11 @@ function chip(geo: THREE.BufferGeometry, seed: number, amount: number, w: number
   geo.computeVertexNormals();
 }
 
+/** A `steel` box's paint, by its tint. */
+export const STEEL_TINTS = [PAL.rust, PAL.hull, PAL.steel, PAL.teal, PAL.paint, PAL.tether, PAL.tetherDark, PAL.scorch, PAL.glass, PAL.cityWhite] as const;
+/** A `wall` box's colour, by its tint. */
+export const wallColour = (tint: number) => [PAL.concrete, PAL.concreteDark, PAL.rust, PAL.stone, PAL.cityWhite][tint] ?? PAL.concrete;
+
 export function buildBox(b: Box, i: number): THREE.Object3D {
   const w = b.x1 - b.x0;
   const d = b.z1 - b.z0;
@@ -246,12 +262,17 @@ export function buildBox(b: Box, i: number): THREE.Object3D {
       break;
     }
     case "wall": {
-      // tint 1: the low parapet around a roof; tint 2: red bands and roof tiles; tint 3: dry stone.
-      g.add(mesh(new THREE.BoxGeometry(w, h, d), flat(b.tint === 1 ? PAL.concreteDark : b.tint === 2 ? PAL.rust : b.tint === 3 ? PAL.stone : PAL.concrete), 0, mid, 0));
+      // tint 1: the low parapet around a roof; tint 2: red bands and roof tiles; tint 3: dry stone; tint 4: the city's white concrete.
+      g.add(mesh(new THREE.BoxGeometry(w, h, d), flat(wallColour(b.tint)), 0, mid, 0));
       if (b.y0 === 0) g.add(mesh(new THREE.BoxGeometry(w + 0.04, Math.min(0.5, h), d + 0.04), flat(PAL.concreteDark), 0, Math.min(0.5, h) / 2, 0, false));
       break;
     }
     case "slab": {
+      // tint 2: the city's pale pavements and floor plates, with no rust under their edge.
+      if (b.tint === 2) {
+        g.add(mesh(new THREE.BoxGeometry(w, h, d), flat(PAL.pavement), 0, mid, 0));
+        break;
+      }
       g.add(mesh(new THREE.BoxGeometry(w, h, d), flat(PAL.concreteDark), 0, mid, 0));
       g.add(mesh(new THREE.BoxGeometry(w + 0.06, 0.08, d + 0.06), flat(PAL.rust), 0, b.y0 + 0.04, 0, false));
       break;
@@ -262,8 +283,8 @@ export function buildBox(b: Box, i: number): THREE.Object3D {
     }
     case "steel": {
       // tint 0: rust-red plate, 1: the dark hull, 2: grey girders and posts, 3: teal paint, 4: white paint,
-      // 5: the tether's composite skin, 6: its ribs, 7: scorch where it broke.
-      const color = [PAL.rust, PAL.hull, PAL.steel, PAL.teal, PAL.paint, PAL.tether, PAL.tetherDark, PAL.scorch][b.tint % 8];
+      // 5: the tether's composite skin, 6: its ribs, 7: scorch where it broke, 8: the city's glass, 9: its white panels.
+      const color = STEEL_TINTS[b.tint % STEEL_TINTS.length];
       g.add(mesh(new THREE.BoxGeometry(w, h, d), flat(color), 0, mid, 0));
       // Big plates carry a darker seam along their top, so a hull reads as riveted plate.
       if (h > 2 && Math.max(w, d) > 4) g.add(mesh(new THREE.BoxGeometry(w + 0.04, 0.14, d + 0.04), flat(new THREE.Color(color).multiplyScalar(0.72).getHex()), 0, b.h - 0.25, 0, false));
