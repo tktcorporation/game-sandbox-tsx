@@ -28,31 +28,38 @@ const jobs: Job[] = SKILLS.flatMap((k) => Array.from({ length: months }, (_, m) 
 const results = new Map<string, Campaign>();
 const key = (j: Job) => `${j.skill}/${j.month}`;
 
+/**
+ * The jobs on one worker per core, each worker playing month after month, so a process builds
+ * the map, the terrain and the walkers' grids once rather than once a month.
+ */
 async function runAll(): Promise<void> {
   const worker = fileURLToPath(new URL("./ringfall-campaign-worker.ts", import.meta.url));
   let next = 0;
-  const lanes = Array.from({ length: Math.min(jobs.length, availableParallelism()) }, async () => {
-    for (;;) {
-      const job = jobs[next++];
-      if (!job) return;
-      const c = await new Promise<Campaign>((done, fail) => {
-        const w = fork(worker, { serialization: "advanced" });
-        const stop = () => w.kill();
-        process.on("exit", stop);
-        w.once("exit", (code) => {
-          process.off("exit", stop);
-          if (code) fail(new Error(`month ${key(job)} exited with ${code}`));
-        });
-        w.once("message", (m: Campaign) => {
-          done(m);
-          w.disconnect();
-        });
-        w.send({ skill: job.skill, days, seed: job.seed });
+  const lanes = Array.from({ length: Math.min(jobs.length, availableParallelism()) }, () =>
+    new Promise<void>((done, fail) => {
+      const w = fork(worker, { serialization: "advanced" });
+      const stop = () => w.kill();
+      process.on("exit", stop);
+      let job: Job | undefined;
+      const give = () => {
+        job = jobs[next++];
+        if (job) w.send({ skill: job.skill, days, seed: job.seed });
+        else w.disconnect();
+      };
+      w.on("message", (m: Campaign) => {
+        results.set(key(job!), m);
+        console.error(`done ${key(job!)}`);
+        give();
       });
-      results.set(key(job), c);
-      console.error(`done ${key(job)}`);
-    }
-  });
+      w.once("error", fail);
+      w.once("exit", (code) => {
+        process.off("exit", stop);
+        if (code) fail(new Error(`worker exited with ${code}${job ? ` during ${key(job)}` : ""}`));
+        else done();
+      });
+      give();
+    }),
+  );
   await Promise.all(lanes);
 }
 

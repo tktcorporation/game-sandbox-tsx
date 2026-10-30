@@ -126,9 +126,12 @@ function spend(p: Profile): Profile {
   return gearUp(p);
 }
 
-/** A month of one skill on a fresh profile that knows every way in, as a player some raids in does. */
-export function playCampaign(skill: string, days = DAYS): Campaign {
-  let p: Profile = spend({ ...newProfile(17), entries: ENTRIES.map((e) => e.id) });
+/**
+ * A month of one skill on a fresh profile that knows every way in, as a player some raids in does.
+ * `seed` is the profile's, from which every raid's seed follows; the gate's month is 17.
+ */
+export function playCampaign(skill: string, days = DAYS, seed = 17): Campaign {
+  let p: Profile = spend({ ...newProfile(seed), entries: ENTRIES.map((e) => e.id) });
   const out: Campaign = { skill, days: [], errors: [] };
   for (let d = 1; d <= days; d++) {
     // The kit: the stash's best guns and armour; the starter PIKE and TALON while it holds none better.
