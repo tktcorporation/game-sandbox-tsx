@@ -1,7 +1,7 @@
 import { sfx } from "./sfx";
 import { WORLD } from "../sim/config";
 import { REGIONS, regionOf } from "../sim/map";
-import type { Hub, StartPoint } from "./hub";
+import type { Hub, LockedPick, StartPoint } from "./hub";
 import { depotIcon, entryIcon, lockIcon, startIcon } from "./icons";
 import { IslandMap, islandScene } from "./map";
 
@@ -10,8 +10,10 @@ import { IslandMap, islandScene } from "./map";
  * and beside it the kit, the objective and the confirm. A way in known is a solid ring, one not
  * known yet a dashed ring; a depot switched on is a teal square with its allowance as small boxes,
  * red when the loadout is past it; a region no raid may start in yet carries a padlock. Clicking a
- * point chooses it (`Hub.choose()`); clicking the chosen one, the confirm or Enter departs. It
- * changes only the hub's chosen start.
+ * point chooses it (`Hub.choose()`); clicking the chosen one, the confirm or Enter departs. Clicking
+ * a shut one or a padlock shows it beside the map with why it is shut and how to open it
+ * (`Hub.peek()`), and the confirm then says the reason and does not go. It changes only the hub's
+ * chosen start and the shut one it shows.
  */
 
 const $ = (id: string) => document.getElementById(id)!;
@@ -36,7 +38,14 @@ export class DepartPicker {
     $("depart-board").style.setProperty("--world-aspect", `${(WORLD.x1 - WORLD.x0) / (WORLD.z1 - WORLD.z0)}`);
     $("depart-points").addEventListener("click", (e) => {
       const el = (e.target as HTMLElement).closest<HTMLButtonElement>("button[data-kind]");
-      if (!el || el.disabled) return;
+      if (!el) return;
+      // A shut start or a locked region is shown, not chosen: the player sees why, and how to open it.
+      if (el.classList.contains("shut")) {
+        if (!this.hub.peek({ kind: el.dataset.kind as LockedPick["kind"], id: el.dataset.id! })) return;
+        sfx.locked();
+        this.render();
+        return;
+      }
       if (el.classList.contains("on")) {
         if (this.hub.rideRefused()) return;
         this.go();
@@ -52,6 +61,7 @@ export class DepartPicker {
     $("depart").hidden = !on;
     // The last opening's points go at once, so none stands at a place the loadout or the profile has since changed.
     $("depart-points").innerHTML = "";
+    this.hub.unpeek();
     if (on) requestAnimationFrame(() => this.render());
   }
 
@@ -79,24 +89,38 @@ export class DepartPicker {
     this.map.contract = null;
     this.map.draw(islandScene(p));
     const pts = hub.startPoints();
-    this.placePoints(pts, hub.lockedRegions());
+    const hint = hub.departHint();
+    const peek = hint && pts.every((q) => !(q.on && q.kind === hint.at.kind && q.id === hint.at.id)) ? hint.at : null;
+    this.placePoints(pts, hub.lockedRegions(), peek);
     const on = pts.find((q) => q.on);
     const d = hub.departure();
-    $("depart-start").innerHTML = on ? `${on.kind === "depot" ? depotIcon() : entryIcon()}<b>${esc(on.name)}</b>${on.kind === "depot" ? `<small>Lv${on.level}</small>` : ""}` : "";
+    // A shut start shown in place of the chosen one: its name under a padlock.
+    $("depart-start").innerHTML = peek
+      ? `${lockIcon()}<b>${esc(hint!.name)}</b>`
+      : on
+        ? `${on.kind === "depot" ? depotIcon() : entryIcon()}<b>${esc(on.name)}</b>${on.kind === "depot" ? `<small>Lv${on.level}</small>` : ""}`
+        : "";
+    const how = $("depart-hint");
+    how.hidden = !hint;
+    how.innerHTML = hint ? hint.how.map((l) => `<span>${esc(l)}</span>`).join("") : "";
     $("depart-list").innerHTML = d.rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("");
     // A depot start's allowance as its boxes: what fills them, and what goes free beside them.
     $("depart-carry").innerHTML = hub.departBoxes();
     const w = $("depart-warn");
     w.hidden = !d.warn.length;
     w.textContent = d.warn.join("・");
-    ($("depart-go") as HTMLButtonElement).disabled = !!hub.rideRefused();
+    // A refused confirm says why in its own words, a padlock before them.
+    const refused = hub.rideRefused();
+    const go = $("depart-go") as HTMLButtonElement;
+    go.disabled = !!refused;
+    go.innerHTML = refused ? `${lockIcon()}${esc(refused)}` : `出撃する<kbd>Enter</kbd>`;
   }
 
   /**
    * Sets each start's button over the map where it lies. Marks closer than a finger's width are
    * pushed apart, each tied by a thin line to its true place.
    */
-  private placePoints(pts: StartPoint[], locked: string[]) {
+  private placePoints(pts: StartPoint[], locked: string[], peek: LockedPick | null) {
     const root = $("depart-points");
     const box = root.getBoundingClientRect();
     const size = matchMedia("(max-height: 500px)").matches || document.body.classList.contains("touch") ? 38 : 30;
@@ -134,16 +158,19 @@ export class DepartPicker {
       .map((m) => `<line x1="${m.x0.toFixed(1)}" y1="${m.y0.toFixed(1)}" x2="${m.x.toFixed(1)}" y2="${m.y.toFixed(1)}"/><circle cx="${m.x0.toFixed(1)}" cy="${m.y0.toFixed(1)}" r="2"/>`)
       .join("");
     const buttons = marks.map(({ q, x, y }) => {
-      const cls = ["pick", q.kind, q.on ? "on" : "", q.open ? "" : "shut", q.over ? "over" : ""].filter(Boolean).join(" ");
+      // While a shut start is shown, it is ringed and the chosen one stands unlit.
+      const shown = peek?.kind === q.kind && peek.id === q.id;
+      const cls = ["pick", q.kind, q.on && !peek ? "on" : "", q.open ? "" : "shut", shown ? "peek" : "", q.over ? "over" : ""].filter(Boolean).join(" ");
       const icon = q.kind === "depot" ? depotIcon() : entryIcon(q.open);
       const lock = q.kind === "depot" && !q.open ? `<span class="pick-lock">${lockIcon()}</span>` : "";
-      const pin = q.on ? `<span class="pin">${startIcon()}</span>` : "";
-      return `<button type="button" class="${cls}" data-kind="${q.kind}" data-id="${q.id}" style="left:${x.toFixed(1)}px;top:${y.toFixed(1)}px"${q.open ? "" : " disabled"} aria-label="${esc(q.name)}">${icon}${lock}${pin}${q.kind === "depot" && q.open ? this.mini(q) : ""}</button>`;
+      const pin = q.on && !peek ? `<span class="pin">${startIcon()}</span>` : "";
+      return `<button type="button" class="${cls}" data-kind="${q.kind}" data-id="${q.id}" style="left:${x.toFixed(1)}px;top:${y.toFixed(1)}px" aria-label="${esc(q.name)}">${icon}${lock}${pin}${q.kind === "depot" && q.open ? this.mini(q) : ""}</button>`;
     });
     // A region no raid may start in yet: a padlock just before its name (which the map writes from its label's point on).
     const locks = REGIONS.filter((r) => locked.includes(r.id)).map((r) => {
       const at = this.map.screenAt(regionOf(r.id).label.x, regionOf(r.id).label.z) ?? { x: 0, y: 0 };
-      return `<span class="region-lock" data-region="${r.id}" style="left:${(at.x - size / 2 - 3).toFixed(1)}px;top:${at.y.toFixed(1)}px">${lockIcon()}</span>`;
+      const cls = `region-lock shut${peek?.kind === "region" && peek.id === r.id ? " peek" : ""}`;
+      return `<button type="button" class="${cls}" data-kind="region" data-id="${r.id}" style="left:${(at.x - size / 2 - 3).toFixed(1)}px;top:${at.y.toFixed(1)}px" aria-label="${esc(r.name)}">${lockIcon()}</button>`;
     });
     root.innerHTML = `<svg class="tethers" width="${box.width}" height="${box.height}" aria-hidden="true">${tethers}</svg>${locks.join("")}${buttons.join("")}`;
   }

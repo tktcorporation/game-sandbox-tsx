@@ -3431,9 +3431,9 @@ export interface OutpostSite {
  */
 const REGION_DEFS: { [K in RegionId]: Omit<Region, "id" | "pois"> } = {
   reservoir: { name: "ダム湖", note: "干上がったダム湖の島。拠点 {pois} つ、発着場にタイタン", home: true, entries: ["beach", "checkpoint", "jetty"], exits: ["ship", "flare", "village"], label: { x: -330, z: 300 }, bounds: { x0: -600, z0: -340, x1: 600, z1: WORLD.z1 } },
-  harbor: { name: "港湾地帯", note: "干上がった湾の港。拠点 {pois} つ、どこにもヘビーがいる", entries: ["outskirts", "quay", "shore"], locked: "峠か鉄橋を越えて港町の外れまで歩き、生きて帰ると選べる", exits: ["boat"], label: { x: -250, z: -520 }, bounds: { x0: -600, z0: WORLD.z0, x1: 600, z1: -380 } },
-  city: { name: "機械都市", note: "海峡の向こうの機械仕掛けの街。拠点 {pois} つ", entries: ["bridgehead", "railyard"], locked: "海峡の橋を渡って橋のたもとまで歩き、生きて帰ると選べる", exits: ["plaza"], label: { x: 870, z: -330 }, bounds: { x0: 620, z0: WORLD.z0, x1: WORLD.x1, z1: WORLD.z1 }, ground: true },
-  launch: { name: "発射場", note: "渓谷の向こうの台地にある発射場。拠点 {pois} つ", entries: ["railhead", "cutting"], locked: "渓谷の鉄道橋か切り通しを渡って台地まで歩き、生きて帰ると選べる", exits: ["runway", "canyon"], label: { x: -930, z: 20 }, bounds: { x0: WORLD.x0, z0: -600, x1: -575, z1: 620 }, ground: true },
+  harbor: { name: "港湾地帯", note: "干上がった湾の港。拠点 {pois} つ、どこにもヘビーがいる", entries: ["outskirts", "quay", "shore"], reach: [{ from: "reservoir", by: "峠道", to: "outskirts" }, { from: "reservoir", by: "鉄橋", to: "outskirts" }], exits: ["boat"], label: { x: -250, z: -520 }, bounds: { x0: -600, z0: WORLD.z0, x1: 600, z1: -380 } },
+  city: { name: "機械都市", note: "海峡の向こうの機械仕掛けの街。拠点 {pois} つ", entries: ["bridgehead", "railyard"], reach: [{ from: "reservoir", by: "海峡の道路橋", to: "bridgehead" }, { from: "harbor", by: "海峡の鉄道橋", to: "railyard" }], exits: ["plaza"], label: { x: 870, z: -330 }, bounds: { x0: 620, z0: WORLD.z0, x1: WORLD.x1, z1: WORLD.z1 }, ground: true },
+  launch: { name: "発射場", note: "渓谷の向こうの台地にある発射場。拠点 {pois} つ", entries: ["railhead", "cutting"], reach: [{ from: "reservoir", by: "渓谷の鉄道橋", to: "railhead" }, { from: "reservoir", by: "渓谷の切り通し", to: "cutting" }], exits: ["runway", "canyon"], label: { x: -930, z: 20 }, bounds: { x0: WORLD.x0, z0: -600, x1: -575, z1: 620 }, ground: true },
 };
 
 /**
@@ -3630,8 +3630,12 @@ export interface Region {
   note: string;
   /** Its ways in on foot (`ENTRIES`), the first of them the one offered first. */
   entries: EntryId[];
-  /** A line for the base while the player knows none of its ways in and has no depot of it on: how to open it. */
-  locked?: string;
+  /**
+   * The crossings a raid walks from a neighbouring region (`from`) over `by` to one of this
+   * region's ways in (`to`): learning a way in so opens the region to start in. The departure names
+   * them while the region is locked; the home region, known from the start, has none.
+   */
+  reach?: { from: RegionId; by: string; to: EntryId }[];
   /** Its POIs (those whose `POI_DEFS` name it), in `POIS` order. */
   pois: PoiId[];
   exits: ExtractId[];

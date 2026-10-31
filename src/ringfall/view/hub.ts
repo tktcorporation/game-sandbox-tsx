@@ -223,6 +223,40 @@ export interface StartPoint {
   level?: number;
 }
 
+/**
+ * A place on the departure's map a raid may not start from, shown in the column beside the map
+ * when tapped, without becoming the start: a way in not known, a depot whose node is not held, or
+ * a region with neither.
+ */
+export interface LockedPick {
+  kind: StartPoint["kind"] | "region";
+  id: string;
+}
+
+/** Why a start is shut and how to open it: its name, the reason in a few words (the confirm says it), and a line for each way to open it. */
+export interface LockHint {
+  name: string;
+  why: string;
+  how: string[];
+}
+
+/** The nodes of a region whose depot, once the node is held and the depot switched on, opens a start there (`UNLOCKS[].depart`). */
+const departNodesIn = (region: RegionId): PoiId[] => regionOf(region).pois.filter((p) => p in UNLOCKS && UNLOCKS[p as keyof typeof UNLOCKS].depart);
+
+/**
+ * How a region with no start opens, a line each: walking in a raid over each of its crossings
+ * (`Region.reach`) to one of its ways in and getting off alive, or a depot opened by a node held.
+ */
+function regionHow(region: RegionId): string[] {
+  const r = regionOf(region);
+  const walks = (r.reach ?? []).map((c) => `${regionOf(c.from).name}から${c.by}を越えて${entryOf(c.to).name}へ`);
+  const depots = departNodesIn(region).map((d) => POIS[poiIndex(d)].name);
+  return [
+    ...walks,
+    ...(walks.length ? ["出撃中に歩いて着き、生きて帰ると選べる"] : []),
+    ...(depots.length ? [`または${depots.join("・")}を制圧し、中継ボックスに触れる`] : []),
+  ];
+}
 /** A raid the camp hands over to start: the kit taken, where, and from which start. */
 export interface Launch {
   kit: Kit;
@@ -261,6 +295,8 @@ export class Hub {
   private entry: EntryId | null;
   /** A depot the truck drives to instead of a way in; null for a way in. */
   private from: PoiId | null = null;
+  /** The shut start the departure shows beside its map (`peek()`), or null; never the start itself. */
+  private peeked: LockedPick | null = null;
   /** The hideout module opened to show what its next level takes. */
   private module: ModuleId | null = null;
   /** A stash row a module still needs, pressed once to sell: the next press sells it. */
@@ -475,6 +511,7 @@ export class Hub {
   /** Why the chosen start cannot be departed from now (the loadout over the depot's allowance), or "" when it can. */
   rideRefused(): string {
     this.fixStart();
+    if (this.peeked) return this.lockHint(this.peeked)?.why ?? "";
     const a = this.allowance();
     return a && !fitsStart(this.profile, this.startLoad(), this.from) ? `持ち込み枠 ${a.cost} / ${a.budget}` : "";
   }
@@ -497,7 +534,8 @@ export class Hub {
     const may = departDepots(p);
     const cost = loadoutCost(p, this.startLoad());
     const ways: StartPoint[] = ENTRIES.map((e) => ({ kind: "entry", id: e.id, name: e.name, x: e.x, z: e.z, region: e.region, open: p.entries.includes(e.id) && canStartIn(p, e.region), on: !this.from && this.region === e.region && this.entry === e.id, over: false }));
-    const depots: StartPoint[] = DEPOTS.filter((d) => p.depots.includes(d.poi)).map((d) => {
+    // Only depots a held node could open a start from: one that never opens one is no start to show.
+    const depots: StartPoint[] = DEPOTS.filter((d) => p.depots.includes(d.poi) && departNodesIn(poiRegion(d.poi).id).includes(d.poi)).map((d) => {
       const open = may.includes(d.poi);
       const a = depotAllowance(p, d.poi);
       return { kind: "depot", id: d.poi, name: POIS[poiIndex(d.poi)].name, x: d.x, z: d.z, region: poiRegion(d.poi).id, open, on: this.from === d.poi, over: open && !fitsStart(p, this.startLoad(), d.poi), budget: a.budget, cost, level: a.level };
@@ -510,9 +548,61 @@ export class Hub {
     return REGIONS.filter((r) => !canStartIn(this.profile, r.id)).map((r) => r.id);
   }
 
+  /**
+   * Why a start on the departure's map is shut and how to open it, from the data: a region with no
+   * start (its crossings and its depots), a way in not found yet, a depot whose node is not held.
+   * Null for one that is open.
+   */
+  lockHint(at: LockedPick): LockHint | null {
+    const p = this.profile;
+    if (at.kind === "region") {
+      const id = at.id as RegionId;
+      return canStartIn(p, id) ? null : { name: regionOf(id).name, why: "道を知らない", how: regionHow(id) };
+    }
+    if (at.kind === "entry") {
+      const e = ENTRIES.find((w) => w.id === at.id);
+      if (!e || (p.entries.includes(e.id) && canStartIn(p, e.region))) return null;
+      if (!canStartIn(p, e.region)) return { name: e.name, why: "道を知らない", how: [`${regionOf(e.region).name}の入口。まだ見つけていない`, ...regionHow(e.region)] };
+      return { name: e.name, why: "まだ見つけていない", how: ["出撃中にここまで歩いて着き、生きて帰ると選べる"] };
+    }
+    const d = at.id as PoiId;
+    if (departDepots(p).includes(d)) return null;
+    const node = POIS[poiIndex(d)].name;
+    return { name: `${node}の中継ボックス`, why: "未制圧", how: [`${node}を制圧すると、ここから出撃できる`] };
+  }
+
+  /** Shows a shut start beside the departure's map without choosing it; false (and nothing shown) for one that is open. */
+  peek(at: LockedPick): boolean {
+    if (!this.lockHint(at)) return false;
+    this.peeked = at;
+    return true;
+  }
+
+  /** Drops the shut start shown beside the map, so the chosen start shows again. */
+  unpeek() {
+    this.peeked = null;
+  }
+
+  /**
+   * What the column beside the departure's map tells of why it will not go: the shut start shown
+   * (`peek()`), or a depot chosen whose allowance the loadout is past, with how the allowance grows.
+   */
+  departHint(): (LockHint & { at: LockedPick }) | null {
+    this.fixStart();
+    if (this.peeked) {
+      const h = this.lockHint(this.peeked);
+      return h && { ...h, at: this.peeked };
+    }
+    const a = this.allowance();
+    if (!a || !this.from || fitsStart(this.profile, this.startLoad(), this.from)) return null;
+    const grow = a.next === null ? "枠は最大" : `ここから荷を送るほど枠が増える（次の Lv まであと ${yen(a.next)}）`;
+    return { name: `${POIS[poiIndex(this.from)].name}の中継ボックス`, why: `持ち込み枠 ${a.cost} / ${a.budget}`, how: ["倉庫で持っていく物を減らす", grow], at: { kind: "depot", id: this.from } };
+  }
+
   /** Chooses where the next raid starts: a way in known, or a depot that opens a start. False when it may not start there. */
   choose(kind: StartPoint["kind"], id: string): boolean {
     const p = this.profile;
+    this.peeked = null;
     if (kind === "depot") {
       if (!departDepots(p).includes(id as PoiId)) return false;
       this.from = id as PoiId;
@@ -1031,7 +1121,9 @@ export class Hub {
       $("hub-side").querySelector(".mod.open .mod-body")?.parentElement?.scrollIntoView({ block: "nearest" });
     } else if (shop) {
       const full = stashUsed(p) >= stashCap(p.hideout);
-      $("hub-side").innerHTML = shelfTiers(p) + wares(p)
+      // Every buy is shut while the stash is full: the shelf says so, and what makes room.
+      const room = full ? `<p class="lock-note">${lockIcon()}倉庫が満杯：売るか、作業場で${esc(HIDEOUT.storage.name)}を上げる</p>` : "";
+      $("hub-side").innerHTML = room + shelfTiers(p) + wares(p)
         .map((item, n) => `<button type="button" class="item" data-act="buy" data-arg="${n}" ${p.cash < buyPrice(item) || full ? "disabled" : ""}><span style="color:${color(item)}">${esc(itemName(item))}</span><small${item.t === "valuable" && want[item.kind] > 0 ? ' class="need"' : ""}>${item.t === "valuable" ? (want[item.kind] > 0 ? `${upIcon()}${want[item.kind]}` : need.hideout[item.kind] + need.factory[item.kind] > 0 ? checkIcon() : "") : itemNote(item)}</small><b>${yen(buyPrice(item))}</b></button>`)
         .join("");
     } else if (st === "quests") {

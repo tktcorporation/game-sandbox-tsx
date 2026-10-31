@@ -27,7 +27,21 @@ import { CREW, FRONT, MOD, MODS } from "../sim/config";
 import { binPicture, modIcon, pouchIcon, routeIcon, zipIcon } from "./icons";
 import { zipPoint } from "../sim/zips";
 import { bagIcon, callIcon, checkIcon, clockIcon, coreIcon, crossIcon, depotIcon, entryIcon, exitIcon, eyeIcon, fightIcon, flareIcon, keyIcon, lockIcon, noiseIcon, reinforceIcon, reviveIcon, SIDE, upIcon, nightIcon } from "./icons";
-import { capturable } from "../sim/front";
+import { capturable, frontNodes, NEIGHBOURS } from "../sim/front";
+
+/** The POI whose bins drop the key to POI `poi`'s vault (its `keyFrom`), by name. */
+const keySource = (poi: number) => POIS[poiIndex(POIS[poi].keyFrom)].name;
+
+/**
+ * What to take before core `node` can be captured, by name: a core is shielded until a node next
+ * to it is the player's, so its neighbours on the front (else all its neighbours).
+ */
+function shieldedBy(s: Pick<State, "nodes">, node: number): string {
+  const front = frontNodes(s.nodes);
+  const near = NEIGHBOURS[node];
+  const take = near.filter((k) => front[k]);
+  return (take.length ? take : near).map((k) => NODES[k].name).join("・");
+}
 import { BagView } from "./bag";
 
 /*
@@ -310,7 +324,7 @@ export class Hud {
         break;
       }
       case "locked":
-        this.toast(`${keyIcon()}${POIS[e.poi].name}`, 0);
+        this.toast(`${keyIcon()}${POIS[e.poi].name}<span class="toast-sub">${keyIcon()}▸${esc(keySource(e.poi))}の補給箱</span>`, 0, 3600);
         break;
       case "pickup":
         // What enters the bag (and keys and mod parts) gets a card of its own (view/bag.ts).
@@ -392,7 +406,7 @@ export class Hud {
         this.toast(`${coreIcon(SIDE.enemy)}${NODES[e.node].name}`, 0, 3000);
         break;
       case "coreShielded":
-        this.toast(`${coreIcon(SIDE.enemy, true)}${NODES[e.node].name}`, 0, 3000);
+        this.toast(`${coreIcon(SIDE.enemy, true)}${NODES[e.node].name}<span class="toast-sub">先に${esc(shieldedBy(s, e.node))}を制圧</span>`, 0, 4000);
         break;
       case "coreTaken":
         this.toast(`${coreIcon(SIDE.own)}${NODES[e.node].name}`, 1, 5000);
@@ -1040,7 +1054,9 @@ export class Hud {
       const r = routeBefore(p.pos, s.routes);
       if (!r) return "";
       const tool = esc(TOOLS[r.tool].label);
-      return `${esc(r.name)} ${lockIcon()}<span class="r" style="color:${RARITY_CSS[3]}">${tool}</span>${p.tools.includes(r.tool) ? checkIcon() : ""}`;
+      // The tool not carried: the POI whose bins hold it; carried, it opens the route once home.
+      const where = p.tools.includes(r.tool) ? checkIcon() : ` <small>▸ ${esc(POIS[poiIndex(TOOLS[r.tool].from)].name)}の補給箱</small>`;
+      return `${esc(r.name)} ${lockIcon()}<span class="r" style="color:${RARITY_CSS[3]}">${tool}</span>${where}`;
     }
     if (t.kind === "tool") {
       const k = t.loot.tool!;
@@ -1058,7 +1074,8 @@ export class Hud {
       const b = s.bins[t.index];
       const what = b.vault ? "保管庫" : "補給箱";
       if (q?.bin === t.index) return `${what} <b>${Math.floor((q.t / searchFor(p, b)) * 100)}%</b>`;
-      if (!canOpen(s, b)) return `${what} ${lockIcon()}${keyIcon(RARITY_CSS[3])}${esc(POIS[b.poi].name)}`;
+      // Shut: whose key opens it, and the POI whose bins hold that key.
+      if (!canOpen(s, b)) return `${what} ${lockIcon()}${keyIcon(RARITY_CSS[3])}${esc(POIS[b.poi].name)} <small>▸ ${esc(keySource(b.poi))}の補給箱</small>`;
       return `${key("E")}${what} ${noiseIcon()}`;
     }
     if (t.kind === "swap") {
@@ -1075,7 +1092,7 @@ export class Hud {
     if (t.kind === "armor") return `${key("E")}<span class="r" style="color:${RARITY_CSS[t.loot.rarity]}">アーマー Lv${t.loot.rarity}</span>${struck([`Lv${p.armor}`])}`;
     if (t.kind === "core") {
       const n = NODES[t.node];
-      if (!capturable(s, t.node)) return `${coreIcon(SIDE.enemy, true)}${esc(n.name)}`;
+      if (!capturable(s, t.node)) return `${coreIcon(SIDE.enemy, true)}${esc(n.name)} <small>▸ 先に${esc(shieldedBy(s, t.node))}</small>`;
       if (s.capture?.node === t.node) return `${coreIcon(SIDE.enemy)}${esc(n.name)} <b>${Math.floor((s.capture.t / FRONT.capture) * 100)}%</b>`;
       return `${key("E")}${coreIcon(SIDE.enemy)}${esc(n.name)} ${noiseIcon()}`;
     }

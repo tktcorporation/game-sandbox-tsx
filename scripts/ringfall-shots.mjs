@@ -146,6 +146,30 @@ const pickStart = async (pg, kind, id, touch = false) => {
   if (d?.start?.kind !== kind || d?.start?.id !== id) errors.push(`depart: choosing ${kind} ${id} left the start at ${JSON.stringify(d?.start)}`);
   return d;
 };
+/**
+ * Taps (`touch`) or clicks a shut start or a locked region's padlock on the departure's map: it is
+ * shown beside the map, not chosen. The column names it under a padlock and gives its hint, the
+ * confirm is shut and says the reason, and Enter (or a tap on the confirm) stays in the camp.
+ * `how` must match the hint. The departure's state after.
+ */
+const peekLocked = async (pg, sel, { tag, name, why, how, touch = false }) => {
+  const before = (await readPage(pg)).camp?.depart?.start;
+  await (touch ? pg.tap(sel) : pg.click(sel));
+  await pg.waitForTimeout(80);
+  const d = (await readPage(pg)).camp?.depart;
+  const head = await pg.textContent("#depart-start");
+  const hint = await pg.evaluate(() => (document.getElementById("depart-hint").hidden ? "" : document.getElementById("depart-hint").textContent));
+  const go = await pg.evaluate(() => ({ off: document.getElementById("depart-go").disabled, text: document.getElementById("depart-go").textContent, lock: !!document.querySelector("#depart-go .ico.lock") }));
+  if (!head.includes(name) || !(await pg.locator("#depart-start .ico.lock").count())) errors.push(`${tag}: the shown start reads "${head}", not ${name} under a padlock`);
+  if (!how.test(hint) || d?.hint?.name !== name) errors.push(`${tag}: the hint reads "${hint}" (${JSON.stringify(d?.hint)})`);
+  if (!go.off || !go.lock || !go.text.includes(why) || d?.refused !== why) errors.push(`${tag}: the confirm reads "${go.text}" disabled ${go.off}, refused "${d?.refused}"`);
+  if (d?.start?.id !== before?.id) errors.push(`${tag}: showing a shut start chose it (${before?.id} -> ${d?.start?.id})`);
+  if (!(await pg.locator(`${sel}.peek`).count())) errors.push(`${tag}: the shown start is not ringed on the map`);
+  await (touch ? pg.tap("#depart-go", { force: true }) : pg.keyboard.press("Enter"));
+  await pg.waitForTimeout(80);
+  if ((await readPage(pg)).screen !== "camp" || !(await readPage(pg)).camp?.depart) errors.push(`${tag}: the shut confirm still departed`);
+  return d;
+};
 /** Whether the departure fits the screen: its panel and every start on the map inside the window, none clipped. */
 const departFits = (pg) =>
   pg.evaluate(() => {
@@ -480,12 +504,23 @@ const spills = (pg) =>
   await useStation(page, "vehicle", await ctx.newCDPSession(page));
   await departUp(page);
   const locks = await page.locator("#depart-points .region-lock .ico.lock").count();
-  const shut = await page.locator("#depart-points button.pick.entry.shut:disabled").count();
-  const open = await page.locator("#depart-points button.pick:not(:disabled)").count();
+  const shut = await page.locator("#depart-points button.pick.entry.shut").count();
+  const open = await page.locator("#depart-points button.pick:not(.shut)").count();
   if (locks !== 3 || shut !== 9 || open !== 1) errors.push(`mobile: a fresh departure shows ${locks} padlocks, ${shut} ways in shut and ${open} to choose`);
   const fit = await departFits(page);
   if (fit.length) errors.push(`mobile departure (844x390): ${fit.join(", ")}`);
   await page.screenshot({ path: `${out}/m7-depart-locked.png` });
+  // The city's padlock tapped: the city shown with its two strait bridges, the confirm shut with its reason.
+  await peekLocked(page, "#depart-points .region-lock[data-id=city]", { tag: "mobile locked city", name: "機械都市", why: "道を知らない", how: /道路橋.*橋のたもと.*鉄道橋.*貨物ヤード.*生きて帰る/, touch: true });
+  const fitL = await departFits(page);
+  if (fitL.length) errors.push(`mobile departure with a locked region shown (844x390): ${fitL.join(", ")}`);
+  await page.screenshot({ path: `${out}/m7-depart-locked-city.png` });
+  // A shut way in of the harbor tapped: not found yet, and the harbor's crossings.
+  await peekLocked(page, "#depart-points button.pick.entry[data-id=quay]", { tag: "mobile shut way in", name: "埠頭の東の道", why: "道を知らない", how: /まだ見つけていない.*峠道.*港町の外れ/, touch: true });
+  await page.screenshot({ path: `${out}/m7-depart-locked-entry.png` });
+  // The chosen start tapped again: the hint goes and the confirm opens.
+  await pickStart(page, "entry", "beach", true);
+  if (!(await page.evaluate(() => document.getElementById("depart-hint").hidden)) || (await page.locator("#depart-go:disabled").count())) errors.push("mobile: choosing the beach again left the hint up or the confirm shut");
   await ctx.close();
 }
 {
@@ -650,11 +685,18 @@ const read = async () => JSON.parse(await page.evaluate(() => window.render_game
   await useStation(page, "vehicle");
   await departUp(page);
   const harborLocked = await page.locator("#depart-points .region-lock").count();
-  const entriesOffered = await page.locator("#depart-points button.pick.entry:not(:disabled)").count();
+  const entriesOffered = await page.locator("#depart-points button.pick.entry:not(.shut)").count();
   const harborRings = await page.locator("#depart-points button.pick.entry.shut").count();
   const fresh = (await readPage(page)).camp.depart;
   if (harborLocked !== 3 || entriesOffered !== 1 || harborRings !== 9 || fresh?.start?.id !== "beach") errors.push(`camp: a fresh departure offers ${entriesOffered} ways in, ${harborLocked} locked regions, ${harborRings} ways in to find, starting at ${fresh?.start?.id}`);
   await page.screenshot({ path: `${out}/00-depart-locked.png` });
+  // The harbor's padlock clicked: the harbor shown with the pass and the railway bridge, the confirm shut and saying why.
+  await peekLocked(page, "#depart-points .region-lock[data-id=harbor]", { tag: "camp locked harbor", name: "港湾地帯", why: "道を知らない", how: /峠道.*港町の外れ.*鉄橋.*生きて帰る.*コンテナヤード.*峠の宿舎.*中継ボックス/ });
+  await page.screenshot({ path: `${out}/00-depart-locked-harbor.png` });
+  // The arrows step back to a start that may be chosen.
+  await page.keyboard.press("ArrowRight");
+  await page.waitForTimeout(80);
+  if ((await readPage(page)).camp?.depart?.hint || (await page.locator("#depart-go:disabled").count())) errors.push("camp: the arrows left a shut start shown");
   await page.keyboard.press("Escape");
   if ((await readPage(page)).camp?.depart) errors.push("camp: Esc did not close the departure");
   await seen("stash");
@@ -1349,7 +1391,7 @@ const readOf = async (pg) => JSON.parse(await pg.evaluate(() => window.render_ga
   // The departure from the truck offers the two depots that open a start; the supply depot is chosen and the departure cancelled.
   await useStation(pg, "vehicle");
   await departUp(pg);
-  const starts = await pg.locator("#depart-points button.pick.depot:not(:disabled)").count();
+  const starts = await pg.locator("#depart-points button.pick.depot:not(.shut)").count();
   if (starts !== 2) errors.push(`depot: the departure offers ${starts} depots to start from, not 2`);
   await pickStart(pg, "depot", "supply");
   await pg.screenshot({ path: `${out}/46-depart-depot.png` });
@@ -1372,6 +1414,7 @@ const readOf = async (pg) => JSON.parse(await pg.evaluate(() => window.render_ga
   await departUp(pg);
   const overD = (await readOf(pg)).camp.depart;
   const red = await pg.locator("#depart-points button.pick.on.over .mini i.over").count();
+  if (!/減らす/.test(overD?.hint?.how?.join("") ?? "") || !/荷を送る/.test(await pg.textContent("#depart-hint"))) errors.push(`depot: over the allowance the hint reads ${JSON.stringify(overD?.hint)}`);
   if (overD?.start?.id !== "supply" || !overD.refused || red !== 2 || !(await pg.locator("#depart-go:disabled").count()) || !(await pg.locator("#depart-carry .depart-carry.over").count())) errors.push(`depot: over the allowance the departure reads ${JSON.stringify(overD?.start)} refused "${overD?.refused}", ${red} red boxes`);
   await pg.screenshot({ path: `${out}/46-depart-over.png` });
   await pg.keyboard.press("Enter");
@@ -1443,12 +1486,48 @@ const readOf = async (pg) => JSON.parse(await pg.evaluate(() => window.render_ga
   await pg.evaluate(() => window.advanceTime(300));
   const prompt = await pg.textContent("#prompt");
   const padlock = await pg.locator("#prompt .ico.lock").count();
-  if (!/ダムの点検通路/.test(prompt) || !/ボルトカッター/.test(prompt) || !padlock) errors.push(`routes: before the dam's door the prompt reads "${prompt}" (${padlock} padlocks)`);
+  if (!/ダムの点検通路/.test(prompt) || !/ボルトカッター/.test(prompt) || !/コンテナヤードの補給箱/.test(prompt) || !padlock) errors.push(`routes: before the dam's door the prompt reads "${prompt}" (${padlock} padlocks)`);
   await pg.screenshot({ path: `${out}/52-route-closed.png` });
   await pg.keyboard.press("KeyM");
   await pg.evaluate(() => window.advanceTime(200));
   await pg.screenshot({ path: `${out}/53-map-routes.png` });
   await pg.keyboard.press("KeyM");
+  await pg.evaluate(() => window.advanceTime(200));
+  // Beside a shut vault: its padlock, whose key opens it, and the POI whose bins hold that key.
+  const here = JSON.parse(await pg.evaluate(() => window.render_game_to_text()));
+  let vaultPrompt = "";
+  for (const v of here.vaults.filter((b) => !b.open)) {
+    await pg.evaluate(([x, z]) => window.ringfallPlace(x + 1, z, -Math.PI / 2), [v.x, v.z]);
+    await pg.evaluate(() => window.advanceTime(100));
+    vaultPrompt = await pg.textContent("#prompt");
+    if (/保管庫/.test(vaultPrompt)) break;
+  }
+  if (!/保管庫.*▸ .+の補給箱/.test(vaultPrompt) || !(await pg.locator("#prompt .ico.lock").count())) errors.push(`vault: beside a shut vault the prompt reads "${vaultPrompt}"`);
+  await pg.screenshot({ path: `${out}/52-vault-locked.png` });
+  // Beside a core off the front: shielded, and the neighbours to take first.
+  const fr = here.front;
+  let corePrompt = "";
+  for (const [i, c] of fr.cores.entries()) {
+    if (fr.onFront[i] || fr.nodes[i] === "freed") continue;
+    await pg.evaluate(([x, z]) => window.ringfallPlace(x + 1.5, z, -Math.PI / 2), [c.x, c.z]);
+    await pg.evaluate(() => window.advanceTime(100));
+    corePrompt = await pg.textContent("#prompt");
+    if (/先に/.test(corePrompt)) break;
+  }
+  if (!/▸ 先に.+/.test(corePrompt)) errors.push(`core: beside a core off the front the prompt reads "${corePrompt}"`);
+  await pg.screenshot({ path: `${out}/52-core-shielded.png` });
+  await ctx.close();
+}
+// A depot on whose node is not held: shut on the departure's map, and clicked it names the node to take.
+{
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+  const pg = await withProfile(ctx, { ...depotGame, depots: ["supply", "yard", "lodge"] });
+  await toCamp(pg);
+  await useStation(pg, "vehicle");
+  await departUp(pg);
+  await peekLocked(pg, "#depart-points button.pick.depot[data-id=lodge]", { tag: "shut depot", name: "峠の宿舎の中継ボックス", why: "未制圧", how: /峠の宿舎を制圧/ });
+  await pg.screenshot({ path: `${out}/46-depart-depot-shut.png` });
+  await pg.keyboard.press("Escape");
   await ctx.close();
 }
 {
@@ -2269,7 +2348,7 @@ for (const phone of [false, true]) {
   await useStation(pg, "vehicle");
   await departUp(pg);
   const learnt = ((await readOf(pg)).camp.depart?.starts ?? []).filter((q) => q.kind === "entry" && q.region === "harbor" && q.open);
-  if (!learnt.length || (await pg.locator('#depart-points .region-lock[data-region="harbor"]').count())) errors.push(`${why}: the departure offers ${learnt.length} harbor ways in once learned`);
+  if (!learnt.length || (await pg.locator('#depart-points .region-lock[data-id="harbor"]').count())) errors.push(`${why}: the departure offers ${learnt.length} harbor ways in once learned`);
   if (learnt[0]) await pickStart(pg, "entry", learnt[0].id, phone);
   await snap("6-depart-learned");
   await pg.keyboard.press("Escape");
