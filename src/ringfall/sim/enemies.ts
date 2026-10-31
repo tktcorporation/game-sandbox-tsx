@@ -21,6 +21,7 @@ import { activePacks, garrison, netPlated, poiTier, tierPlated } from "./island"
 import { modScale } from "./mods";
 import { crewRand, mix, rand, roamRand, sightScale, weakY, type Enemy, type Point, type State, type Vec3 } from "./state";
 import { hypot2, hypot3 } from "./hypot";
+import { squadMembers } from "./members";
 
 /** The side an orb was fired for (sim/battle.ts `Side`). */
 const orbSide = (o: { friend?: boolean; rogue?: boolean }): Side => (o.friend ? 0 : o.rogue ? 2 : 1);
@@ -854,7 +855,7 @@ function hurtAlone(s: State, e: Enemy): boolean {
   if (e.kind !== "grunt" || e.elite) return false;
   const k = ENEMIES.grunt;
   if (e.hp + e.shield > (k.hp + k.shield) * FALLBACK.below) return false;
-  return !s.enemies.some((o) => o !== e && o.squad === e.squad && o.aware === "engaged");
+  return !squadMembers(s, e.squad).some((o) => o !== e && o.aware === "engaged");
 }
 
 /** Turn toward a yaw at no more than `rate` radians per second. */
@@ -870,7 +871,7 @@ function turnAt(e: Enemy, yaw: number, rate: number) {
  * Null for the front member, or when the spot is on high ground or a cliff.
  */
 function flankSpot(s: State, e: Enemy, known: { x: number; z: number }): Point | null {
-  const mates = s.enemies.filter((o) => o.squad === e.squad).sort((a, b) => a.id - b.id);
+  const mates = squadMembers(s, e.squad).slice().sort((a, b) => a.id - b.id);
   const n = mates.indexOf(e);
   if (n <= 0) return null;
   const lead = mates[0];
@@ -903,7 +904,7 @@ function sightOn(e: Enemy, at: { x: number; z: number }, chestAt: Vec3): boolean
 function pinchSpot(s: State, e: Enemy, known: { x: number; z: number; live: boolean }): Point | null {
   const sq = s.squads[e.squad];
   if (!sq || !sq.engaged || e.elite) return null;
-  const mates = s.enemies.filter((o) => o.squad === e.squad && o.mode !== "spawning");
+  const mates = squadMembers(s, e.squad).filter((o) => o.mode !== "spawning");
   // A pinch holds only while the squad sees the player: once they are lost, every member chases and sweeps.
   const pinned = known.live && (sq.pinT ?? 0) >= PINCH.after;
   // Backing away in sight: the squad goes round where the player is heading, not where they stand.
@@ -1061,31 +1062,6 @@ function toSegment(p: Point, a: Point, b: Point): number {
   const l2 = dx * dx + dz * dz;
   const t = l2 > 0 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.z - a.z) * dz) / l2)) : 0;
   return hypot2(p.x - a.x - dx * t, p.z - a.z - dz * t);
-}
-
-/*
- * Each squad's robots, in the order of `s.enemies`, for `calm()`, which asks for them once per
- * member every tick. `s.enemies` changes only by a push (a robot spawned) or by a new list (one
- * destroyed), and a robot never changes squad, so the lists hold until its length or identity
- * changes.
- */
-let membersFrom: Enemy[] | null = null;
-let membersLength = -1;
-const bySquad = new Map<number, Enemy[]>();
-const NO_MEMBERS: Enemy[] = [];
-/** The robots of squad `squad`, as `s.enemies.filter((o) => o.squad === squad)` gives them. Read only. */
-function squadMembers(s: State, squad: number): readonly Enemy[] {
-  if (membersFrom !== s.enemies || membersLength !== s.enemies.length) {
-    membersFrom = s.enemies;
-    membersLength = s.enemies.length;
-    bySquad.clear();
-    for (const o of s.enemies) {
-      const list = bySquad.get(o.squad);
-      if (list) list.push(o);
-      else bySquad.set(o.squad, [o]);
-    }
-  }
-  return bySquad.get(squad) ?? NO_MEMBERS;
 }
 
 /** The speed of a squad's slowest member, as `Math.min(...members.map(speed))` gives it. */

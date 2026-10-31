@@ -170,7 +170,7 @@ export class DepartPicker {
     const locks = REGIONS.filter((r) => locked.includes(r.id)).map((r) => {
       const at = this.map.screenAt(regionOf(r.id).label.x, regionOf(r.id).label.z) ?? { x: 0, y: 0 };
       const cls = `region-lock shut${peek?.kind === "region" && peek.id === r.id ? " peek" : ""}`;
-      return `<button type="button" class="${cls}" data-kind="region" data-id="${r.id}" data-region="${r.id}" style="left:${(at.x - size / 2 - 3).toFixed(1)}px;top:${at.y.toFixed(1)}px" aria-label="${esc(r.name)}">${lockIcon()}</button>`;
+      return `<button type="button" class="${cls}" data-kind="region" data-id="${r.id}" style="left:${(at.x - size / 2 - 3).toFixed(1)}px;top:${at.y.toFixed(1)}px" aria-label="${esc(r.name)}">${lockIcon()}</button>`;
     });
     root.innerHTML = `<svg class="tethers" width="${box.width}" height="${box.height}" aria-hidden="true">${tethers}</svg>${locks.join("")}${buttons.join("")}`;
   }
