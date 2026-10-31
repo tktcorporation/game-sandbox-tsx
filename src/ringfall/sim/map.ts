@@ -6,11 +6,12 @@ import { buildTerrain, type Carve, CRATERS, type FlatShape, floorLevel, highGrou
 import { hypot2 } from "./hypot";
 
 /**
- * The world: two regions, a dried-up reservoir in the south and a dry harbor in the
- * north, joined by a pass road and a railway (see terrain.ts for their levels).
+ * The world: three regions, a dried-up reservoir in the south and a dry harbor in the
+ * north, joined by a pass road and a railway, and the machine city east of a dried strait,
+ * reached by a road and a rail bridge (see terrain.ts for their levels).
  * Everything solid is an axis-aligned box, so collision, line of sight and standing on
  * top are all the same cheap test (a fence stops only bodies). North is -z. The player chooses the region to start
- * in; every POI, district and way off in both regions is open from the start.
+ * in; every POI, district and way off in every region is open from the start.
  *
  * Boxes and points are written relative to the ground of their area and lifted to
  * its level here, so a building reads the same on the lakebed as on the mesa.
@@ -654,7 +655,9 @@ export interface Squad {
 export type LootTable = { weapon: [WeaponKind, Rarity][]; armor: Rarity[]; heals: number; valuable: [ValuableKind, number][] };
 
 /** Stable names for the POIs: saves, quests and other data refer to a POI by these, never by its place in `POIS`. */
-export type PoiId = "supply" | "quarry" | "relay" | "pad" | "wreck" | "yard" | "smelter" | "station" | "waterworks" | "lodge" | "cannery" | "coldstore";
+export type PoiId = "supply" | "quarry" | "relay" | "pad" | "wreck" | "yard" | "smelter" | "station" | "waterworks" | "lodge" | "cannery" | "coldstore" | "terminal" | "carpark" | "robotworks" | "highrise" | "powerplant";
+/** The boss's POI (the titan's pad): written as the boss in `POI_DEFS`, and no node of the front. */
+export type BossId = "pad";
 
 export interface Poi {
   id: PoiId;
@@ -686,7 +689,6 @@ const SE = (3 * Math.PI) / 4;
 const SW = (-3 * Math.PI) / 4;
 
 
-/** The beached ship's main deck (the roof of its three-storey hull) and the gantry crane's catwalk, above their ground. */
 /**
  * The wreck's hull in its frame: its middle along x, length, beam, the middle line it lies on,
  * and the accommodation block's middle along it (that and `DECK_BAYS` from the hull's middle).
@@ -696,6 +698,7 @@ const SHIP = { x: 6, length: 140, beam: 26, z: -8, block: 52 } as const;
 const SHIP_DECK = WORKS.storey * 3;
 /** The middles of the deck cargo's bays, forward of the accommodation block. */
 const DECK_BAYS = [-52, -36, -20, -4, 12, 28] as const;
+/** The gantry crane's catwalk, over its ground. */
 const CRANE = STOREY * 4;
 
 /** Moves a squad authored in a district's own frame into place. */
@@ -781,13 +784,6 @@ const BWE_CAB = (() => {
   const b = BOOM_STEPS[BWE.cab[0]].x1;
   return { x0: a - 0.5, x1: b + 1.1, z0: 13.5, z1: 17.6, y: BOOM_STEPS[BWE.cab[0]].y, door: (a + b) / 2 };
 })();
-
-/**
- * Each POI is written in its own frame (its data and its boxes below) and moved
- * into place by this offset (`POI_AT` in areas.ts, which sets each in its area's frame).
- * The harbor's POIs are written round their own middle.
- */
-const AT = (["supply", "quarry", "relay", "pad", "wreck", "yard", "smelter", "station", "waterworks", "lodge", "cannery", "coldstore"] as const).map((id) => POI_AT[id]);
 
 /** The big dish on the mesa, in the relay's frame (`dish()`), its heights over the mesa's top. */
 const BIG_DISH = { x: 45, z: -5, y: 23, r: 28, f: 22.4, tilt: Math.PI / 4, cell: 2.5 } as const;
@@ -876,9 +872,701 @@ function coldstore(): Box[] {
   ];
 }
 
-const POI_FRAMES: Poi[] = [
-  {
-    id: "supply",
+/**
+ * The central station of the machine city, round (0, 0) on ground at 0, its tracks along x. The train
+ * shed (`TERMINAL.shed`): glass-roofed and open at both ends where the two tracks run through, an
+ * island platform between them and a side platform along the south, both low enough to step onto,
+ * a mezzanine over the concourse strip inside the south wall, carriages left on the tracks as cover.
+ * South of it the three-storey concourse, and the station square with its planters, kiosk and bus
+ * stops, which the way in from the west reaches first.
+ */
+const TERMINAL = {
+  shed: { z: -14, w: 110, d: 34, h: 14 },
+  /** The tracks' middle lines, through the shed's end doors. */
+  tracks: [-26, -13],
+  /** The platforms' tops: under the step-up height, walked onto from the track beds. */
+  platform: 0.4,
+  /** The mezzanine over the concourse strip, along the shed's south wall. */
+  mezz: 5,
+} as const;
+function terminal(): Box[] {
+  const { shed, tracks, platform } = TERMINAL;
+  const ends = tracks.map((z) => z - shed.z);
+  return [
+    ...hall(0, shed.z, shed.w, shed.d, shed.h, {
+      doors: [...ends.map((at) => ({ side: "w" as const, at })), ...ends.map((at) => ({ side: "e" as const, at })), { side: "s", at: -30 }, { side: "s", at: 0, w: 10 }, { side: "s", at: 30 }],
+      windows: ["n", "s"],
+      columns: 10,
+      mezz: [{ side: "s", depth: 4, y: TERMINAL.mezz, stair: 30 }],
+      steel: 6,
+      scale: WORKS,
+    }),
+    // The island platform between the tracks and the side platform along the south.
+    rect(-50, -22, 50, -16, 0, platform, "slab", 1),
+    rect(-50, -10, 50, -5, 0, platform, "slab", 1),
+    // Each track's two rails, out through the end doors onto the ground beyond.
+    ...tracks.flatMap((z) => [-0.75, 0.75].map((dz) => rect(-66, z + dz - 0.08, 66, z + dz + 0.08, 0, 0.15, "steel", 2))),
+    // Carriages left standing: two on the north track, one on the south.
+    box(-28, tracks[0], 22, 3, 3.8, "steel", 3),
+    box(8, tracks[0], 22, 3, 3.8, "steel", 3),
+    box(30, tracks[1], 22, 3, 3.8, "steel", 1),
+    // The concourse, its stairs climbed from its east end.
+    ...tower(0, 20, 30, 12, 3, { doors: [["s", "e", "w"]], windows: [["e"], ["s", "e", "w"], ["s", "e", "w", "n"]], scale: WORKS }),
+    // The station square: planters, a kiosk, two bus stops and a bus, the clock pillar.
+    box(-10, 32, 5, 1.6, 0.9, "wall", 1),
+    box(10, 32, 5, 1.6, 0.9, "wall", 1),
+    box(-34, 28, 5, 1.6, 0.9, "wall", 1),
+    box(40, 28, 1.6, 5, 0.9, "wall", 1),
+    ...building(-40, 36, 6, 5, 3.2, { doors: ["e"], windows: ["s"], scale: HOME }),
+    ...[-14, 4].flatMap((x) => [box(x, 44, 8, 0.3, 2.4, "wall", 1), box(x, 43, 8, 2.2, 2.8, "slab", 0, 2.6)]),
+    box(28, 46, 11, 2.6, 3.2, "steel", 1),
+    box(42, 18, 3, 3, 22, "tower", 0),
+  ];
+}
+
+/**
+ * The multi-storey car park on the city's west street, round (0, 0) on ground at 0: four decks
+ * over an open ground floor, climbed by the ramps along its east and west lanes (`carPark()`),
+ * cars left on every floor as cover, the lift house on the top deck and the attendant's booth by
+ * the street. The way in is from the north, off the street the station's depot stands by.
+ */
+const CARPARK = { x0: -16, z0: -24, x1: 16, z1: 24, decks: 4 } as const;
+/** A car park deck's top, the `k`-th over the ground floor. */
+const carDeck = (k: number) => k * HOME.storey;
+function carpark(): Box[] {
+  const { x0, z0, x1, z1, decks } = CARPARK;
+  const car = (x: number, z: number, alongX: boolean, y = 0) => (alongX ? box(x, z, 4.5, 1.9, y + 1.5, "prop", PROP.car, y) : box(x, z, 1.9, 4.5, y + 1.5, "prop", PROP.car, y));
+  return [
+    ...carPark(x0, z0, x1, z1, decks).map((b): Box => (b.kind === "slab" ? { ...b, tint: 2 } : b.kind === "wall" && b.tint === 0 ? { ...b, tint: 4 } : b)),
+    // Cars left in their bays: the ground floor's along its west side and by its north end, then a
+    // few on each deck, clear of the ramps' landings.
+    car(-12, -17, false),
+    car(-4, -17, false),
+    car(4, 17, false),
+    car(-12, 2, true),
+    car(-12, -6, false, carDeck(1)),
+    car(2, 12, true, carDeck(1)),
+    car(6, -6, false, carDeck(2)),
+    car(-4, 16, true, carDeck(3)),
+    car(10, -4, false, carDeck(4)),
+    car(4, 16, true, carDeck(4)),
+    // The lift house on the top deck, its door to the south.
+    ...lift(carDeck(decks), building(-4, -18, 6, 5, 3, { doors: ["s"], windows: ["e"], scale: HOME })),
+    // The attendant's booth by the street and the pay machine beside it.
+    ...building(-11, 27, 4, 3, 2.6, { doors: ["e"], windows: ["s", "w"], scale: HOME }).map((b): Box => (b.kind === "wall" && b.tint === 0 ? { ...b, tint: 4 } : b)),
+    box(-6, 27, 0.8, 0.6, 1.6, "steel", 3),
+  ];
+}
+
+/**
+ * The automated robot works at the city's north end, round (0, 0) on ground at 0 (`ROBOTWORKS`):
+ * a walled yard 130 by 80 m. Inside it, the assembly hall (white plate, a teal band) with two
+ * lines down its length: conveyors at waist height broken for crossings, robot-arm portals over
+ * them, half-built robots on the belts and standing between the lines as cover, a mezzanine along
+ * its north wall. North of the hall the charging bays under a canopy, robots docked at their posts;
+ * east of it the parts warehouse, its racks in aisles and a loading dock with two trailers backed
+ * up. In the yard the control tower (six storeys, glass above its ground floor), a giant robot
+ * half assembled under a gantry crane, and the white stack with teal bands seen across the city.
+ * The main gate faces the avenue from the station.
+ */
+const ROBOTWORKS = {
+  /** The yard inside its walls. */
+  w: 130,
+  d: 80,
+  wall: 2.6,
+  hall: { cx: -13, cz: -12, w: 90, d: 30, h: 14 },
+  /** The assembly lines' middles, and the conveyors' runs along x and their top. */
+  lines: [-18, -6],
+  belts: [[-50, -28], [-25, -3], [0, 22]],
+  belt: 1.0,
+  mezz: 6,
+  store: { cx: 50, cz: -20, w: 24, d: 32, h: 9 },
+  control: { cx: -48, cz: 20, w: 12, d: 10, floors: 6 },
+  stack: { x: 56, z: 30, r: 2.4, h: 48 },
+  /** The giant robot under the gantry crane, its middle. */
+  giant: { x: -20, z: 22 },
+} as const;
+function robotworks(): Box[] {
+  const { hall: H, lines, belts, belt, store: S, control: C, stack, giant: G } = ROBOTWORKS;
+  const out: Box[] = [
+    ...compound(0, 0, ROBOTWORKS.w, ROBOTWORKS.d, ROBOTWORKS.wall, [{ side: "s", at: 25, w: 10 }, { side: "w", at: -15, w: 8 }, { side: "e", at: 20, w: 8 }, { side: "n", at: -21, w: 6 }]).map((b): Box => ({ ...b, tint: 4 })),
+    // The assembly hall: the lines run in and out through roller doors at both ends.
+    ...hall(H.cx, H.cz, H.w, H.d, H.h, {
+      doors: [...lines.map((z) => ({ side: "w" as const, at: z - H.cz })), ...lines.map((z) => ({ side: "e" as const, at: z - H.cz })), { side: "s", at: -25 }, { side: "s", at: 15 }],
+      hatches: [{ side: "n", at: -30 }, { side: "n", at: 10 }, { side: "s", at: 35 }],
+      windows: ["n", "s"],
+      columns: 15,
+      mezz: [{ side: "n", depth: 4, y: ROBOTWORKS.mezz, stair: -40 }],
+      steel: 9,
+      scale: WORKS,
+    }),
+    // The teal band round the hall under its windows.
+    rect(H.cx - H.w / 2, H.cz + H.d / 2, H.cx + H.w / 2, H.cz + H.d / 2 + 0.12, 9.6, 10.6, "steel", 3),
+    rect(H.cx - H.w / 2, H.cz - H.d / 2 - 0.12, H.cx + H.w / 2, H.cz - H.d / 2, 9.6, 10.6, "steel", 3),
+    // On its roof a glass ridge over the lines and a row of extract units along its south edge.
+    rect(H.cx - 38, H.cz - 4, H.cx + 38, H.cz + 4, H.h, H.h + 1.4, "steel", 8),
+    rect(H.cx - 38, H.cz - 0.3, H.cx + 38, H.cz + 0.3, H.h + 1.4, H.h + 1.8, "steel", 9),
+    ...[-36, -24, -12, 0, 12, 24, 36].map((dx) => box(H.cx + dx, H.cz + 10, 4, 4, H.h + 2.4, "steel", 2, H.h)),
+  ];
+  // The lines: conveyors broken for crossings, a robot-arm portal over each belt every 11 m, and
+  // half-built robots riding the belts.
+  for (const z of lines)
+    for (const [a, b] of belts) {
+      out.push(rect(a, z - 1.1, b, z + 1.1, 0, belt, "steel", 2), rect(a, z - 1.2, b, z - 1.05, belt, belt + 0.15, "steel", 3), rect(a, z + 1.05, b, z + 1.2, belt, belt + 0.15, "steel", 3));
+      for (let x = a + 5.5; x < b; x += 11) {
+        out.push(box(x, z - 2.6, 0.4, 0.4, 5.6, "steel", 2), box(x, z + 2.6, 0.4, 0.4, 5.6, "steel", 2), rect(x - 0.3, z - 2.8, x + 0.3, z + 2.8, 5.2, 5.6, "steel", 3));
+        // The arm hanging from the portal over the belt, its head down at a robot.
+        out.push(box(x, z - 1.2, 0.5, 0.5, 5.2, "steel", 9, 3.1), box(x + 0.6, z - 0.6, 1.4, 0.4, 3.1, "steel", 9, 2.7), box(x + 1.1, z - 0.3, 0.6, 0.6, 2.7, "steel", 3, 2.3));
+        out.push(box(x + 3.5, z, 1.3, 0.9, belt + 1.5, "steel", 1, belt), box(x + 3.5, z, 0.8, 0.7, belt + 2.0, "steel", 9, belt + 1.5));
+      }
+    }
+  // Robots standing between the lines and by the walls, finished but not yet woken: cover.
+  for (const [x, z] of [[-44, -12], [-20, -10], [6, -14], [-36, 0], [18, 0]] as const) out.push(box(x, z, 1.2, 1.0, 2.2, "steel", 1), box(x, z, 0.9, 0.8, 2.8, "steel", 9, 2.2));
+  // The charging bays along the hall's north side: a canopy on posts, and at each bay a post and a docked robot.
+  out.push(rect(-60, -38.7, 30, -31, 4.2, 4.5, "slab", 2));
+  for (let x = -60; x <= 30; x += 10) out.push(box(x === 30 ? 29.8 : x === -60 ? -59.8 : x, -31.3, 0.4, 0.4, 4.2, "steel", 2));
+  for (let x = -55; x <= 25; x += 10) {
+    out.push(box(x - 1.6, -37.6, 1.0, 1.0, 2.0, "steel", 3), box(x - 1.6, -37.6, 1.1, 1.1, 2.3, "steel", 9, 2.0));
+    if ((x + 55) % 20 === 0) out.push(box(x + 1, -37, 1.2, 1.0, 2.2, "steel", 1), box(x + 1, -37, 0.9, 0.8, 2.8, "steel", 9, 2.2));
+  }
+  // The parts warehouse: racks in aisles, a loading dock off its south face with its steps, two trailers backed up to it.
+  out.push(
+    ...hall(S.cx, S.cz, S.w, S.d, S.h, { doors: [{ side: "s", at: -5 }, { side: "w", at: 5 }], windows: ["e"], steel: 2, scale: WORKS }),
+    ...[43, 49, 55].flatMap((x) => [rect(x - 0.6, -33, x + 0.6, -14, 0, 4.2, "steel", 0), rect(x - 0.7, -33, x + 0.7, -14, 4.2, 4.4, "steel", 2)]),
+    rect(50, S.cz + S.d / 2, 62, S.cz + S.d / 2 + 4, 0, 1.2, "slab", 1),
+    ...stairs(50, S.cz + S.d / 2 + 2, "w", 3, 1.2),
+    ...[53, 59].flatMap((x) => [box(x, 8.2, 2.5, 12.4, 1.4, "steel", 1), box(x, 8.2, 2.5, 12.2, 5.4, "container", x === 53 ? 1 : 0, 1.4)]),
+  );
+  // The control tower: white below, glass above, plant and masts on its roof.
+  out.push(
+    ...tower(C.cx, C.cz, C.w, C.d, C.floors, { doors: [["e", "s"]], windows: [["w"], ...Array.from({ length: C.floors - 1 }, (): Side[] => ["n", "s", "e", "w"])], scale: WORKS }).map((b): Box => {
+      if (b.kind === "slab") return { ...b, tint: 2 };
+      if (b.kind !== "wall" || b.tint !== 0) return b;
+      return b.y0 >= WORKS.storey - 0.5 ? { ...b, kind: "steel", tint: 8 } : { ...b, tint: 4 };
+    }),
+    box(C.cx - 3, C.cz, 3, 3, C.floors * WORKS.storey + 2.4, "steel", 9, C.floors * WORKS.storey),
+    box(C.cx - 3, C.cz, 0.4, 0.4, C.floors * WORKS.storey + 14, "steel", 2, C.floors * WORKS.storey + 2.4),
+  );
+  // The giant robot half assembled: its legs, hips, chest and head, arms hanging, under the gantry crane.
+  out.push(
+    box(G.x - 4, G.z, 1.8, 2.2, 7, "steel", 1),
+    box(G.x + 4, G.z, 1.8, 2.2, 7, "steel", 1),
+    box(G.x, G.z, 11, 3, 9, "steel", 2, 7),
+    box(G.x, G.z, 8, 5, 14.5, "steel", 0, 9),
+    box(G.x, G.z, 12, 2.4, 15.2, "steel", 3, 13.6),
+    box(G.x, G.z, 2.4, 2.2, 17, "steel", 9, 15.2),
+    box(G.x - 6.6, G.z, 1.4, 1.4, 14, "steel", 2, 6),
+    box(G.x + 6.6, G.z, 1.4, 1.4, 14, "steel", 2, 6),
+  );
+  for (const x of [G.x - 12, G.x + 12]) for (const z of [G.z - 8, G.z + 8]) out.push(box(x, z, 0.8, 0.8, 21, "steel", 3));
+  for (const z of [G.z - 8, G.z + 8]) out.push(rect(G.x - 12.4, z - 0.6, G.x + 12.4, z + 0.6, 21, 22.4, "steel", 3));
+  out.push(rect(G.x - 1.5, G.z - 8.6, G.x + 1.5, G.z + 8.6, 22.4, 23.4, "steel", 9), box(G.x, G.z, 0.2, 0.2, 22.4, "steel", 2, 17));
+  // The stack: white, banded teal near its top.
+  out.push(...tank(stack.x, stack.z, stack.r, stack.h, "w", 9));
+  for (const y of [stack.h - 8, stack.h - 3]) out.push(box(stack.x, stack.z, 2 * stack.r + 0.3, 2 * stack.r + 0.3, y + 1.2, "steel", 3, y));
+  // Pallets of parts in the yard, and the gate house by the main gate.
+  out.push(box(34, 22, 2.4, 2.4, 1.3, "crate", 0), box(37, 22, 2.4, 2.4, 1.3, "crate", 0), box(-2, 10, 2.4, 2.4, 1.3, "crate", 0), box(-34, 34, 2.4, 2.4, 1.3, "crate", 0));
+  out.push(...building(36, 35, 5, 4, 3, { doors: ["w"], windows: ["s", "e"], scale: HOME }).map((b): Box => (b.kind === "wall" && b.tint === 0 ? { ...b, tint: 4 } : b)));
+  return out;
+}
+
+/**
+ * The machine city round the station, in the city's frame (areas.ts) on ground at 0: a grid of
+ * streets `street` metres wide, their middles along z at `ns` and along x at `ew`, and an avenue
+ * down x = 0 broken by the station's row and ending at the robot works' gate. Blocks of glass
+ * towers, offices and a power hall stand between them; an elevated line runs over the east street
+ * and turns west over the north one toward the rail bridge. The west side of the station stays low: the ziplines to the
+ * relay and the smelter leave over it, and the ways in come from there.
+ */
+const CITY = {
+  street: 22,
+  ns: [-66, 66],
+  ew: [-240, -170, -62, 18, 98, 178],
+  /** The avenue's runs either side of the station's row. */
+  avenue: [
+    [-268, -170],
+    [-62, 250],
+  ],
+  /** The grid's reach: the basin's straight sides and its rounded ends (terrain.ts). */
+  x: [-118, 118],
+  z: [-330, 250],
+  /** The elevated line: its deck's underside and top, half its width, and the gap between its pillars. */
+  viaduct: { under: 7.3, top: 8.5, half: 4, every: 24 },
+} as const;
+/** Office storeys: 4 m floor to floor, otherwise built to `WORKS`. */
+const OFFICE: Scale = { ...WORKS, storey: 4 };
+
+/** The middles of the city's streets as lengths in the world, for the view's lane paint. */
+export const CITY_LANES: { ax: number; az: number; bx: number; bz: number }[] = [
+  ...CITY.ns.map((x) => [x, CITY.z[0], x, CITY.z[1]]),
+  ...CITY.ew.map((z) => [CITY.x[0], z, CITY.x[1], z]),
+  ...CITY.avenue.map(([z0, z1]) => [0, z0, 0, z1]),
+].map(([ax, az, bx, bz]) => {
+  const [x0, z0] = inArea("city", ax, az);
+  const [x1, z1] = inArea("city", bx, bz);
+  return { ax: x0, az: z0, bx: x1, bz: z1 };
+});
+
+/**
+ * A glass tower too tall to climb inside: a glass lobby under a white podium canopy, the shaft in
+ * glass three storeys at a time between white bands (the top one a teal rim round the white roof), and on the roof a white
+ * plant room, cooling units and a mast. A dozen boxes however tall.
+ */
+function glassTower(cx: number, cz: number, w: number, d: number, floors: number): Box[] {
+  const S = OFFICE.storey;
+  const top = floors * S;
+  const out: Box[] = [box(cx, cz, w, d, 5, "steel", 8), box(cx, cz, w + 4, d + 4, 9, "steel", 9, 5)];
+  for (let y = 9; y < top - 0.1; y += 3 * S) {
+    const y1 = Math.min(top, y + 3 * S);
+    out.push(box(cx, cz, w, d, y1 - 0.7, "steel", 8, y), box(cx, cz, w + 0.6, d + 0.6, y1, "steel", y1 >= top - 0.1 ? 3 : 9, y1 - 0.7));
+  }
+  out.push(
+    box(cx, cz, w - 0.6, d - 0.6, top + 0.3, "steel", 9, top),
+    box(cx - w * 0.12, cz, w * 0.5, d * 0.55, top + 5, "steel", 9, top),
+    box(cx + w * 0.3, cz - d * 0.25, 3, 3, top + 2.2, "steel", 2, top),
+    box(cx + w * 0.3, cz + d * 0.25, 3, 3, top + 2.2, "steel", 2, top),
+    box(cx - w * 0.12, cz, 0.5, 0.5, top + 19, "steel", 4, top + 5),
+  );
+  return out;
+}
+
+/**
+ * An office block climbed inside (`tower()` at office storeys): a white ground storey with doors
+ * on three sides, and above it, in `glass`, curtain walls of glass, else white concrete; pale floor
+ * plates; cooling units on the roof's west half, clear of the stairs up at its east end.
+ */
+function office(cx: number, cz: number, w: number, d: number, floors: number, glass: boolean): Box[] {
+  const S = OFFICE.storey;
+  const windows: Side[][] = [["s", "e", "w"]];
+  for (let k = 1; k < floors; k++) windows.push(["n", "s", "e", "w"]);
+  const out = tower(cx, cz, w, d, floors, { doors: [["s", "e", "w"]], windows, scale: OFFICE }).map((b): Box => {
+    if (b.kind === "slab") return { ...b, tint: 2 };
+    if (b.kind !== "wall" || b.tint !== 0) return b;
+    return glass && b.y0 >= S - 0.5 ? { ...b, kind: "steel", tint: 8 } : { ...b, tint: 4 };
+  });
+  const top = floors * S;
+  for (const dz of [-0.22, 0.22]) out.push(box(cx - w * 0.25, cz + d * dz, 3, 3, top + 2.2, "steel", 2, top));
+  return out;
+}
+
+/** A rack of pipes over a street at height y, from (x0, z) to (x1, z): a grey truss and three pipes along its top. */
+function pipeRack(x0: number, x1: number, z: number, y: number): Box[] {
+  return [
+    rect(x0, z - 1.5, x1, z + 1.5, y, y + 1.2, "steel", 2),
+    rect(x0, z - 1.2, x1, z - 0.5, y + 1.2, y + 1.9, "steel", 3),
+    rect(x0, z - 0.35, x1, z + 0.35, y + 1.2, y + 1.9, "steel", 9),
+    rect(x0, z + 0.5, x1, z + 1.2, y + 1.2, y + 1.9, "steel", 0),
+  ];
+}
+
+/**
+ * The elevated line along x (`alongX`) at `at`, from a to b: its pillars in pairs either side of the
+ * street's middle, kept off every crossing street so the walks down the middles pass, its deck, low
+ * white parapets and two rails.
+ */
+function viaductRun(alongX: boolean, at: number, a: number, b: number, crossings: readonly number[]): Box[] {
+  const { under, top, half, every } = CITY.viaduct;
+  const r = (u0: number, u1: number, v0: number, v1: number, y0: number, h: number, kind: BoxKind, tint: number) =>
+    alongX ? rect(u0, v0, u1, v1, y0, h, kind, tint) : rect(v0, u0, v1, u1, y0, h, kind, tint);
+  const out: Box[] = [r(a, b, at - half, at + half, under, top, "slab", 2)];
+  for (const s of [-1, 1]) out.push(r(a, b, at + s * half - (s > 0 ? 0.3 : 0), at + s * half + (s < 0 ? 0.3 : 0), top, top + 1.1, "steel", 9));
+  for (const s of [-1, 1]) out.push(r(a, b, at + s * 0.75 - 0.08, at + s * 0.75 + 0.08, top, top + 0.15, "steel", 2));
+  for (let u = a + 6; u <= b - 6; u += every) {
+    if (crossings.some((c) => Math.abs(u - c) < 9)) continue;
+    for (const s of [-1, 1]) out.push(r(u - 0.6, u + 0.6, at + s * 3.4 - 0.6, at + s * 3.4 + 0.6, 0, under, "wall", 4));
+  }
+  return out;
+}
+
+/** A train of `cars` standing on the elevated line along z at x, from z0 south: white, a teal band and its windows' glass. */
+function train(x: number, z0: number, cars: number): Box[] {
+  const y = CITY.viaduct.top;
+  const out: Box[] = [];
+  for (let k = 0; k < cars; k++) {
+    const a = z0 + k * 20.8;
+    out.push(rect(x - 1.5, a, x + 1.5, a + 20, y + 0.4, y + 4, "steel", 4), rect(x - 1.55, a + 0.4, x + 1.55, a + 19.6, y + 2, y + 3, "steel", 8), rect(x - 1.55, a + 0.4, x + 1.55, a + 19.6, y + 1.2, y + 1.5, "steel", 3));
+  }
+  return out;
+}
+
+/** The pale pavement over a block, a kerb's height over the street. */
+const pavement = (x0: number, z0: number, x1: number, z1: number) => rect(x0, z0, x1, z1, 0, 0.15, "slab", 2);
+
+/** The city's buildings tall enough to climb to their top, whose top floors hold a bin (`EXTRA_BINS`). */
+const CITY_OFFICES = [
+  { x: 94, z: -205, w: 24, d: 20, floors: 10 },
+  { x: 33, z: 58, w: 22, d: 20, floors: 12 },
+] as const;
+
+/** The cable terminal in the city's south-east corner where the power plant's line ends, in the city's frame, and its sealing-end frame's top. */
+const CABLE_END = { x: 80, z: 290, top: 9 } as const;
+
+function city(): Box[] {
+  const { ns, ew, viaduct } = CITY;
+  const out: Box[] = [
+    // The east column: glass towers to the north and south of the station; offices between,
+    // the tallest two (`CITY_OFFICES`) climbed to a bin on their top floor.
+    pavement(77, -330, 112, -251),
+    ...glassTower(94, -292, 26, 30, 14),
+    pavement(77, -229, 112, -181),
+    pavement(11, 29, 55, 87),
+    ...CITY_OFFICES.flatMap((o) => office(o.x, o.z, o.w, o.d, o.floors, true)),
+    pavement(77, -159, 112, -73),
+    ...office(94, -116, 30, 24, 4, false),
+    pavement(77, -51, 112, 7),
+    ...glassTower(94, -22, 28, 28, 12),
+    pavement(77, 29, 112, 87),
+    ...office(94, 58, 30, 22, 4, true),
+    // The column's two south blocks hold the high-rise district's towers (`highrise()`).
+    pavement(77, 109, 112, 167),
+    pavement(77, 189, 112, 245),
+    // East of the avenue: an office north of the station and a glass tower facing the station square;
+    // the blocks south of the tall office are the high-rise district's plaza and one of its towers.
+    pavement(11, -229, 55, -181),
+    ...office(33, -205, 34, 24, 4, true),
+    pavement(11, -51, 55, 7),
+    ...glassTower(33, -22, 30, 26, 11),
+    // West of the avenue: offices, low on the side the ziplines leave by.
+    pavement(-55, -229, -11, -181),
+    ...office(-33, -205, 34, 24, 5, false),
+    pavement(-55, -51, -11, 7),
+    ...office(-33, -22, 34, 24, 2, false),
+    pavement(-55, 29, -11, 87),
+    ...office(-33, 58, 34, 24, 5, true),
+    pavement(-55, 109, -11, 167),
+    ...office(-33, 138, 34, 24, 4, false),
+    // The west column: an office north and an office south, the car park between them its own POI
+    // (`carpark()`); the lots by the station's depot and under the ziplines stay open.
+    pavement(-112, -229, -77, -181),
+    ...office(-94, -205, 30, 24, 3, false),
+    pavement(-112, 109, -77, 167),
+    ...office(-94, 138, 30, 24, 4, true),
+    // The freight tracks running on from the station's west end to the edge of the city.
+    ...TERMINAL.tracks.flatMap((z) => [-0.75, 0.75].map((dz) => rect(CITY.x[0], z - 120 + dz - 0.08, -66, z - 120 + dz + 0.08, 0, 0.15, "steel", 2))),
+    // The elevated line over the east street, turning west over the north one, a train on it.
+    ...viaductRun(false, ns[1], -300, 240, ew),
+    ...viaductRun(true, ew[0], CITY.x[0], ns[1] - viaduct.half, [...ns, 0]),
+    ...train(ns[1], -60, 3),
+    // Pipes over the east street from the glass tower facing the station square.
+    ...pipeRack(46, 82, -22, 18),
+    // The cable terminal where the power plant's line (`POWER_LINES`) comes down off its last pylon
+    // and goes under the streets: a walled yard, the sealing-end frame and the cable house.
+    ...compound(CABLE_END.x, CABLE_END.z, 16, 12, 2.4, [{ side: "w", w: 4 }]).map((b): Box => ({ ...b, tint: 4 })),
+    ...[-5, 0, 5].map((dx) => box(CABLE_END.x + dx, CABLE_END.z - 2, 0.5, 0.5, CABLE_END.top, "steel", 2)),
+    rect(CABLE_END.x - 5.4, CABLE_END.z - 2.3, CABLE_END.x + 5.4, CABLE_END.z - 1.7, CABLE_END.top - 0.6, CABLE_END.top, "steel", 2),
+    ...[-5, 0, 5].map((dx) => box(CABLE_END.x + dx, CABLE_END.z - 2, 0.8, 0.8, 4.2, "steel", 4, 2.6)),
+    ...building(CABLE_END.x + 3, CABLE_END.z + 3, 6, 4, 3, { doors: ["w"], scale: HOME }).map((b): Box => (b.kind === "wall" && b.tint === 0 ? { ...b, tint: 4 } : b)),
+  ];
+  return out;
+}
+
+/**
+ * The high-rise district east of the avenue, in its own frame round the crossing of the east
+ * street and the south street, on ground at 0 (`HIGHRISE`): the city's tallest buildings. Three
+ * glass towers stand on three of the four blocks round the crossing, climbed by the stairs inside
+ * (`skyTower()`): tower A (25 storeys, 100 m) on the south-east block, tower B (21 storeys) on the
+ * south-west one and tower C on the north-east one, left unfinished, glass up to its fourteenth
+ * storey and bare steel frame above, a tower crane on its top. At the bridge storey covered sky
+ * bridges join A to B over the east street and its elevated line, and A to C over the south street.
+ * The fourth block is the plaza: low shops along the avenue (two storeys, climbed inside to the roof)
+ * and its north edge (one storey, stairs up its east end), and in its middle the ramp down to the
+ * underground car park's shutter
+ * (`地下駐車場の斜路` in terrain.ts). Nothing stands on the plaza within reach of the ramp but
+ * what hangs below the ground, so the ramp keeps its walls.
+ */
+const HIGHRISE = {
+  a: { x: 30, z: 39, w: 24, d: 24, floors: 25 },
+  b: { x: -31, z: 39, w: 22, d: 22, floors: 21 },
+  /** The unfinished tower: glass up to `clad` storeys, frame above. */
+  c: { x: 30, z: -40, w: 24, d: 24, floors: 23, clad: 14 },
+  /** The storey the sky bridges join, and their floor's height. */
+  bridge: 9,
+  /** The ramp's middle line along z, its top and bottom ends and half its width (as terrain.ts lays it). */
+  ramp: { x: -24, top: -44, foot: -18, half: 3.5 },
+} as const;
+/** The sky bridges' floor, the floor of the bridge storey. */
+const SKY = HIGHRISE.bridge * OFFICE.storey;
+type SkyTower = { x: number; z: number; w: number; d: number; floors: number; clad?: number };
+
+/**
+ * A glass tower climbed inside (`tower()` at office storeys), its doors at the bridge storey on
+ * `bridges`: a white lobby with doors on three sides, glass above, closed glass on the storeys
+ * between the lobby and the top but for the bridge storey and the top two, which have windows all
+ * round; white bands outside every third storey. Over `clad` storeys the walls give way to steel
+ * columns round a bare frame, the stairs inside it going on to the top.
+ */
+function skyTower(t: SkyTower, bridges: Side[]): Box[] {
+  const S = OFFICE.storey;
+  const clad = Math.min(t.clad ?? t.floors, t.floors);
+  const doors: Side[][] = [];
+  const windows: Side[][] = [];
+  for (let k = 0; k < t.floors; k++) {
+    doors.push(k === 0 ? ["s", "e", "w"] : k === HIGHRISE.bridge ? bridges : []);
+    windows.push(k === 0 || k === HIGHRISE.bridge || (k >= clad - 2 && k < clad) ? ["n", "s", "e", "w"] : []);
+  }
+  const top = t.floors * S;
+  const out = tower(t.x, t.z, t.w, t.d, t.floors, { doors, windows, scale: OFFICE })
+    .filter((b) => !(b.kind === "wall" && b.tint === 0 && b.y0 >= clad * S - 0.1))
+    .map((b): Box => {
+      if (b.kind === "slab") return { ...b, tint: 2 };
+      if (b.kind !== "wall" || b.tint !== 0) return b;
+      return b.y0 >= S - 0.5 ? { ...b, kind: "steel", tint: 8 } : { ...b, tint: 4 };
+    });
+  const [x0, x1, z0, z1] = [t.x - t.w / 2, t.x + t.w / 2, t.z - t.d / 2, t.z + t.d / 2];
+  for (let k = 1; k < clad; k++) {
+    if (k % 3 !== 1) continue;
+    const y = k * S;
+    out.push(rect(x0 - 0.3, z0 - 0.3, x1 + 0.3, z0, y - 0.4, y + 0.3, "steel", 9), rect(x0 - 0.3, z1, x1 + 0.3, z1 + 0.3, y - 0.4, y + 0.3, "steel", 9));
+    out.push(rect(x0 - 0.3, z0, x0, z1, y - 0.4, y + 0.3, "steel", 9), rect(x1, z0, x1 + 0.3, z1, y - 0.4, y + 0.3, "steel", 9));
+  }
+  if (clad < t.floors) {
+    // The bare frame: columns round its edge from the last glass storey to the top.
+    // The columns along the north and south edges stand clear of the stair flights at the east end.
+    const xs = [x0 + 0.3, x0 + t.w * 0.22, t.x, x1 - t.w * 0.3, x1 - 0.3];
+    const zs = [t.z - t.d * 0.25, t.z, t.z + t.d * 0.25];
+    for (const x of xs) for (const z of [z0 + 0.3, z1 - 0.3]) out.push(box(x, z, 0.6, 0.6, top, "steel", 0, clad * S));
+    for (const z of zs) for (const x of [x0 + 0.3, x1 - 0.3]) out.push(box(x, z, 0.6, 0.6, top, "steel", 0, clad * S));
+  } else {
+    // On the roof, west of the stairs up to it: the plant room and its mast.
+    out.push(box(t.x - t.w * 0.22, t.z, t.w * 0.3, t.d * 0.4, top + 4, "steel", 9, top), box(t.x - t.w * 0.22, t.z, 0.5, 0.5, top + 16, "steel", 4, top + 4));
+  }
+  return out;
+}
+
+/** A covered sky bridge at floor `y` along x (`alongX`) or z, at `at` across, from a to b: a glass parapet each side, posts and a roof. */
+function skyBridge(alongX: boolean, at: number, a: number, b: number, y: number): Box[] {
+  const r = (u0: number, u1: number, v0: number, v1: number, y0: number, h: number, kind: BoxKind, tint: number) =>
+    alongX ? rect(u0, v0, u1, v1, y0, h, kind, tint) : rect(v0, u0, v1, u1, y0, h, kind, tint);
+  const half = 2;
+  const out: Box[] = [
+    r(a, b, at - half, at + half, y - 0.9, y, "slab", 2),
+    r(a, b, at - half, at - half + 0.2, y, y + 1.1, "steel", 8),
+    r(a, b, at + half - 0.2, at + half, y, y + 1.1, "steel", 8),
+    r(a, b, at - half - 0.2, at + half + 0.2, y + 3.3, y + 3.7, "steel", 9),
+  ];
+  for (let u = a + 3; u < b - 1; u += 6) for (const s of [-1, 1]) out.push(r(u - 0.15, u + 0.15, at + s * (half - 0.1) - 0.15, at + s * (half - 0.1) + 0.15, y + 1.1, y + 3.3, "steel", 9));
+  return out;
+}
+
+/** The tower crane on a roof at height `y`, its mast at (mx, mz): the lattice mast, the cab, the jib east and the counter-jib west with its weights, the hook down over the street. */
+function towerCrane(mx: number, mz: number, y: number): Box[] {
+  const out: Box[] = [];
+  const top = y + 22;
+  for (const [dx, dz] of [[-1.1, -1.1], [1.1, -1.1], [-1.1, 1.1], [1.1, 1.1]]) out.push(box(mx + dx, mz + dz, 0.35, 0.35, top, "steel", 0, y));
+  for (let h = y + 3; h < top; h += 3) out.push(rect(mx - 1.3, mz - 1.3, mx + 1.3, mz - 1.05, h - 0.2, h, "steel", 0), rect(mx - 1.3, mz + 1.05, mx + 1.3, mz + 1.3, h - 0.2, h, "steel", 0));
+  out.push(
+    box(mx + 2.4, mz, 2.4, 2.4, top - 0.5, "steel", 4, top - 3),
+    rect(mx - 1.3, mz - 0.8, mx + 40, mz + 0.8, top, top + 1.4, "steel", 0),
+    rect(mx - 16, mz - 0.8, mx - 1.3, mz + 0.8, top, top + 1.0, "steel", 0),
+    box(mx - 14, mz, 2.6, 2.4, top, "wall", 1, top - 2.6),
+    box(mx, mz, 1.0, 1.0, top + 8, "steel", 0, top + 1.4),
+    ...strand([mx, top + 8, mz], [mx + 26, top + 1.4, mz], 0.15, 2),
+    ...strand([mx, top + 8, mz], [mx - 15, top + 1.0, mz], 0.15, 2),
+    box(mx + 30, mz, 1.4, 1.6, top, "steel", 2, top - 0.5),
+    box(mx + 30, mz, 0.1, 0.1, top - 0.5, "steel", 2, y - 30),
+    box(mx + 30, mz, 0.8, 0.8, y - 30, "steel", 0, y - 31),
+  );
+  return out;
+}
+
+function highrise(): Box[] {
+  const { a: A, b: B, c: C, ramp } = HIGHRISE;
+  const S = OFFICE.storey;
+  const out: Box[] = [
+    // The south-west block's pavement and the plaza's paving under its shops, clear of the ramp.
+    pavement(-53, 11, -9, 67),
+    pavement(-53, -69, -38, -11),
+    pavement(-38, -69, -9, -55),
+    ...skyTower(A, ["w", "n"]),
+    ...skyTower(B, ["e"]),
+    ...skyTower(C, ["s"]),
+    ...towerCrane(C.x - 6, C.z + 2, C.floors * S),
+    ...skyBridge(true, A.z, B.x + B.w / 2, A.x - A.w / 2, SKY),
+    ...skyBridge(false, A.x, C.z + C.d / 2, A.z - A.d / 2, SKY),
+    // The shops: a two-storey row along the avenue, its roof reached by its stairs, and a one-storey
+    // row along the plaza's north edge with stairs up its east end.
+    ...tower(-47, -40, 12, 56, 2, { doors: [["e", "s"]], windows: [["e", "w"], ["n", "s", "e", "w"]], scale: OFFICE }).map((b): Box => (b.kind === "slab" ? { ...b, tint: 2 } : b.kind === "wall" && b.tint === 0 ? (b.y0 >= S - 0.5 ? { ...b, kind: "steel", tint: 8 } : { ...b, tint: 4 }) : b)),
+    ...building(-25, -62, 24, 12, 4.5, { doors: ["s", "w"], windows: ["s", "n"], roof: "e", scale: OFFICE }).map((b): Box => (b.kind === "wall" && b.tint === 0 ? { ...b, tint: 4 } : b.kind === "slab" ? { ...b, tint: 2 } : b)),
+    // Shop awnings over the row's plaza front, and a planter at the plaza's north-east corner.
+    rect(-41, -66, -39.5, -14, 3.0, 3.25, "steel", 3),
+    box(-12, -64, 2, 5, 0.9, "wall", 4),
+    // The ramp: concrete walls down both its sides from a rail's height over the plaza to below its
+    // floor, and paving flush with the plaza behind them and past its foot, over the ground the cut
+    // falls away to between the terrain's samples, so no slot is left beside it; at its foot a lid
+    // flush with the plaza over the last metres and the car park's closed shutter. All of it hangs
+    // below the ground.
+    rect(ramp.x - ramp.half - 0.5, ramp.top, ramp.x - ramp.half, ramp.foot + ramp.half, -5.5, 1.0, "wall", 4),
+    rect(ramp.x + ramp.half, ramp.top, ramp.x + ramp.half + 0.5, ramp.foot + ramp.half, -5.5, 1.0, "wall", 4),
+    rect(ramp.x - ramp.half - 3, ramp.top, ramp.x - ramp.half - 0.5, -11.5, -5.5, 0, "slab", 2),
+    rect(ramp.x + ramp.half + 0.5, ramp.top, ramp.x + ramp.half + 3, -11.5, -5.5, 0, "slab", 2),
+    rect(ramp.x - ramp.half - 0.5, ramp.foot + ramp.half - 0.2, ramp.x + ramp.half + 0.5, -11.5, -5.5, 0, "slab", 2),
+    rect(ramp.x - ramp.half, ramp.foot - 4, ramp.x + ramp.half, ramp.foot + ramp.half + 0.4, -0.35, -0.02, "slab", 2),
+    rect(ramp.x - ramp.half, ramp.foot + ramp.half - 0.6, ramp.x + ramp.half, ramp.foot + ramp.half - 0.2, -5, -0.35, "steel", 2),
+  ];
+  return out;
+}
+
+/**
+ * The coal-fired power plant that fed the city, in its own frame round (0, 0) on ground at 0
+ * (`POWERPLANT`): a walled yard 74 by 212 m along the coast, east of the city's paved basin, open to the
+ * cliffs on its east side. At its north end two hyperbolic cooling towers 60 m high in a row
+ * (`coolingTower()`), hollow, each entered through a gap torn in its west foot: a yard inside walls
+ * no one outside sees into. South of them the boiler house, clad dark steel, its roof reached by an
+ * open steel stair tower against its west side; the 80 m chimney beside it, the flue running to it;
+ * the turbine hall (`hall()`), three turbine-generator sets down its middle under the travelling
+ * crane, a mezzanine along each long wall. East of the hall the two fuel tanks inside their bund,
+ * and at the south end the switchyard: transformers in a row under the busbar frame, from whose
+ * west end the line to the city leaves (`POWER_LINES`). The yard's gate faces the city across the ground between.
+ */
+const POWERPLANT = {
+  /** The cooling towers' middles. */
+  towers: [{ x: 10, z: -80 }, { x: 10, z: -36 }],
+  boiler: { x: 8, z: 8, w: 20, d: 24 },
+  /** The boiler house's roof, level with its stair tower's top platform (eight lattice storeys). */
+  boilerTop: 8 * STOREY,
+  chimney: { x: 28, z: 8, r: 3.5, h: 80 },
+  turbine: { x: -14, z: 52, w: 24, d: 52, h: 20 },
+  mezz: 7,
+  tanks: [{ x: 24, z: 50 }, { x: 24, z: 70 }],
+  /** The busbar frame's beam over the switchyard, along x at `z`, its top and ends. */
+  busbar: { z: 86, top: 12, x0: -30, x1: 6 },
+} as const;
+/** The cooling towers' shape: radius `base` at the foot, narrowest (`throat`) at `waist`, `h` high, walls `wall` thick, laid in bands `band` high and rows `row` deep. */
+const COOLING = { base: 19, throat: 12.5, waist: 44, h: 60, wall: 0.8, band: 6, row: 2.5 } as const;
+/** A cooling tower's outer radius at height y: a hyperboloid through the foot and the waist. */
+const coolingRadius = (y: number) => {
+  const { base, throat, waist } = COOLING;
+  const c = waist / Math.sqrt((base / throat) ** 2 - 1);
+  return throat * Math.sqrt(1 + ((y - waist) / c) ** 2);
+};
+
+/**
+ * A hyperbolic cooling tower round (cx, cz): its shell in round bands laid as rows along x, each
+ * band's radius the hyperboloid's at its middle, so the shell steps in to its waist and out to its
+ * rim. A gap torn in its west foot, ragged at the top, is the way in; the broken shell lies heaped
+ * outside it and a few blocks of the old cooling fill stand on the floor inside.
+ */
+function coolingTower(cx: number, cz: number): Box[] {
+  const { h, wall, band, row } = COOLING;
+  const out: Box[] = [];
+  const chord = (r: number, z: number) => (z < r ? Math.sqrt(r * r - z * z) : 0);
+  // The gap: rows within `half` of the middle open up to `top` (the rows at its edges less high).
+  const gapTop = (za: number, zb: number) => {
+    const mid = Math.abs((za + zb) / 2);
+    return mid < 2.5 ? 9 : mid < 5 ? 5.5 : 0;
+  };
+  for (let y = 0; y < h - 0.01; y += band) {
+    const y1 = Math.min(h, y + band);
+    const r1 = coolingRadius((y + y1) / 2);
+    const r0 = r1 - wall;
+    const n = Math.ceil((2 * r1) / row);
+    for (let i = 0; i < n; i++) {
+      const za = -r1 + (i * 2 * r1) / n;
+      const zb = -r1 + ((i + 1) * 2 * r1) / n;
+      const near = za <= 0 && zb >= 0 ? 0 : Math.min(Math.abs(za), Math.abs(zb));
+      const far = Math.max(Math.abs(za), Math.abs(zb));
+      const xo = chord(r1, near);
+      if (xo <= 0) continue;
+      const xi = chord(r0, far);
+      const top = y1 >= h - 0.01;
+      const tint = top ? 1 : 0;
+      const pieces = xi > 0 ? [[-xo, -xi], [xi, xo]] : [[-xo, xo]];
+      for (const [p, q] of pieces) {
+        const west = p < 0 && xi > 0;
+        const g = west ? gapTop(za, zb) : 0;
+        if (g >= y1) continue;
+        out.push(rect(cx + p, cz + za, cx + q, cz + zb, Math.max(y, g), y1, "wall", tint));
+      }
+    }
+  }
+  // Broken shell heaped outside the gap, and blocks of fill on the floor inside.
+  const r = coolingRadius(0);
+  out.push(box(cx - r - 2, cz - 4, 3, 2.4, 1.2, "prop", PROP.rubble), box(cx - r - 3.5, cz + 3, 2.4, 3, 0.9, "prop", PROP.rubble));
+  for (const [dx, dz] of [[-6, -7], [4, 6], [6, -8], [-3, 9]]) out.push(box(cx + dx, cz + dz, 3, 3, 1.6, "wall", 1));
+  return out;
+}
+
+function powerplant(): Box[] {
+  const { boiler: Bo, boilerTop: BT, chimney: Ch, turbine: T, tanks, busbar: Bb } = POWERPLANT;
+  const out: Box[] = [
+    // The yard's wall, left off along the coast's cliffs; its gate west toward the city, and the
+    // ways out north past the towers and south past the switchyard.
+    ...compound(0, 0, 74, 212, 2.4, [{ side: "w", w: 10 }, { side: "n", at: -24, w: 8 }, { side: "s", at: 16, w: 8 }]).filter((b) => b.x0 < 30),
+    ...POWERPLANT.towers.flatMap((t) => coolingTower(t.x, t.z)),
+    // The boiler house: dark plate, the boiler inside, the drum and its pipes on the roof.
+    ...hall(Bo.x, Bo.z, Bo.w, Bo.d, BT, { doors: [{ side: "s", at: 4 }], hatches: [{ side: "w", at: -6 }], windows: ["e"], open: ["w"], steel: 1, scale: WORKS }),
+    box(Bo.x + 2, Bo.z - 1, 10, 12, BT - 4, "steel", 0),
+    rect(Bo.x - 4, Bo.z - 6, Bo.x + 6, Bo.z - 4.4, BT, BT + 1.6, "steel", 2),
+    rect(Bo.x + 4, Bo.z + 2, Bo.x + 8, Bo.z + 9, BT, BT + 2.2, "steel", 3),
+    // Its open stair tower: platforms every storey, its top one bridged onto the roof.
+    ...lattice(Bo.x - Bo.w / 2 - 4, Bo.z, 6, 6, 8, BT + 4, ["e"]),
+    rect(Bo.x - Bo.w / 2 - 1.2, Bo.z - 2, Bo.x - Bo.w / 2 + 0.3, Bo.z + 2, BT - 0.3, BT, "slab", 1),
+    // The flue from the boiler house to the chimney, and the chimney, banded red and white at its top.
+    rect(Bo.x + Bo.w / 2, Ch.z - 1.6, Ch.x - Ch.r + 0.4, Ch.z + 1.6, 17, 20.2, "steel", 2),
+    box(Ch.x, Ch.z, 2 * Ch.r, 1.66 * Ch.r, Ch.h, "wall", 0),
+    box(Ch.x, Ch.z, 1.66 * Ch.r, 2 * Ch.r, Ch.h, "wall", 0),
+    box(Ch.x, Ch.z, 1.42 * Ch.r, 1.42 * Ch.r, Ch.h, "wall", 0),
+    ...[Ch.h - 14, Ch.h - 6].flatMap((y) => [box(Ch.x, Ch.z, 2 * Ch.r + 0.3, 2 * Ch.r + 0.3, y + 4, "steel", 0, y)]),
+    box(Ch.x, Ch.z, 2 * Ch.r + 0.3, 2 * Ch.r + 0.3, Ch.h - 6, "steel", 4, Ch.h - 10),
+    // The turbine hall.
+    ...hall(T.x, T.z, T.w, T.d, T.h, {
+      doors: [{ side: "n", at: 4 }, { side: "s", at: -4 }],
+      hatches: [{ side: "w", at: -12 }, { side: "w", at: 14 }, { side: "e", at: 0 }],
+      windows: ["e", "w"],
+      mezz: [
+        { side: "w", depth: 3, y: POWERPLANT.mezz, stair: -16 },
+        { side: "e", depth: 3, y: POWERPLANT.mezz, stair: 16 },
+      ],
+      columns: 10,
+      steel: 2,
+      scale: WORKS,
+    }),
+    // Pipes from the boiler house over to the hall's north end.
+    rect(T.x + T.w / 2 - 4, Bo.z + Bo.d / 2 - 2, Bo.x - Bo.w / 2 + 2, T.z - T.d / 2 + 2, 12, 13.2, "steel", 2),
+    // The travelling crane across the hall.
+    rect(T.x - T.w / 2 + 0.5, T.z - 9, T.x + T.w / 2 - 0.5, T.z - 7, T.h - 4, T.h - 3, "steel", 0),
+  ];
+  // The turbine-generator sets down the hall's middle: the turbine casing, the generator and its exciter.
+  for (const z of [T.z - 16, T.z, T.z + 16]) out.push(box(T.x, z - 2, 4.4, 9, 3.2, "steel", 3, 0), box(T.x, z + 5, 3.6, 4, 3.6, "steel", 1), box(T.x, z + 7.8, 2, 1.6, 2.4, "steel", 2));
+  // The fuel tanks inside their bund.
+  for (const t of tanks) out.push(...tank(t.x, t.z, 7, 12, "w", 2));
+  out.push(rect(15, 40, 33, 40.6, 0, 1.2, "wall", 1), rect(15, 79.4, 33, 80, 0, 1.2, "wall", 1), rect(15, 40.6, 15.6, 79.4, 0, 1.2, "wall", 1));
+  // The switchyard: transformers in a row under the busbar frame.
+  for (const x of [-24, -12, 0]) out.push(box(x, Bb.z + 6, 4.4, 3.2, 3.4, "steel", 2), box(x, Bb.z + 6, 5.2, 1.0, 2.8, "steel", 1, 0.4), ...[-1.2, 0, 1.2].map((dx) => box(x + dx, Bb.z + 5.4, 0.3, 0.3, 4.8, "steel", 4, 3.4)));
+  for (const x of [Bb.x0, -18, -6, Bb.x1]) out.push(box(x, Bb.z, 0.5, 0.5, Bb.top, "steel", 2), box(x, Bb.z + 12, 0.5, 0.5, Bb.top - 2, "steel", 2));
+  out.push(rect(Bb.x0 - 0.3, Bb.z - 0.3, Bb.x1 + 0.3, Bb.z + 0.3, Bb.top - 0.6, Bb.top, "steel", 2), rect(Bb.x0 - 0.3, Bb.z + 11.7, Bb.x1 + 0.3, Bb.z + 12.3, Bb.top - 2.6, Bb.top - 2, "steel", 2));
+  // The control house by the switchyard, its upper floor over the yard.
+  out.push(...tower(24, 96, 12, 8, 2, { doors: [["w", "n"]], windows: [["s"], ["n", "e", "s", "w"]], scale: WORKS }));
+  return out;
+}
+
+/** The ground a battle's enemy squads land on (`landingPlan()` in battle.ts): the titan's pad, or the harbor's north shore. */
+export type Landing = "pad" | "shore";
+
+/**
+ * A POI as written in its own frame (its data here and its boxes in its building function), moved
+ * into place by its offset in `POI_AT` (areas.ts, which sets each in its area's frame). With it, the facts about it kept nowhere else: its region; how far
+ * out from its entry its depot stands, along the line from the POI through the entry (the nearest
+ * flat spot where a raid started there is not seen by the POI's squads at once, `checkDepots` in
+ * the sim gate); and, for a node of the front (every POI but the boss's), its tier (how deep it
+ * lies from the camp, 0 by the camp's gate to 3 at the far end of the harbor, docs/ringfall/island-v2.md
+ * 拠点の段), what holding it opens (`NodeUnlock`) and the landing ground it borders, if any.
+ */
+type PoiDef = Omit<Poi, "id" | "boss"> & { region: RegionId; depotOut: number };
+/** The boss's POI: the enemy's for good, no node of the front. */
+type BossDef = PoiDef & { boss: true; front?: never };
+type NodeDef = PoiDef & { boss?: never; front: { tier: number; unlocks: NodeUnlock; landing?: Landing } };
+
+/**
+ * The POIs by id, the boss's (`BossId`) written as one and every other as a node. Their order is
+ * the order of `POIS` and `NODES`, which a raid's per-POI state is indexed by (saves name POIs by
+ * id): a new POI goes at the end, so the others keep their places and a raid's draws for them hold.
+ */
+const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
+  supply: {
+    region: "reservoir",
+    depotOut: 18,
+    front: { tier: 0, unlocks: { shop: 1, depart: true } },
     name: "補給所",
     x: 0,
     z: -5,
@@ -914,8 +1602,10 @@ const POI_FRAMES: Poi[] = [
       { x: -36, z: -23, y: WORKS.storey * 2, heal: "battery" },
     ],
   },
-  {
-    id: "quarry",
+  quarry: {
+    region: "reservoir",
+    depotOut: 18,
+    front: { tier: 1, unlocks: { shop: 2, squad: 1 }, landing: "pad" },
     name: "採掘場",
     x: -15,
     z: 18,
@@ -945,8 +1635,10 @@ const POI_FRAMES: Poi[] = [
     floor: [{ x: -20, z: 12, heal: "medkit" }],
     carePackage: { x: -15, z: 22, weapon: ["lance", 1] },
   },
-  {
-    id: "relay",
+  relay: {
+    region: "reservoir",
+    depotOut: 25,
+    front: { tier: 1, unlocks: { shop: 2, scout: true }, landing: "pad" },
     name: "中継塔",
     x: 0,
     z: 0,
@@ -974,8 +1666,9 @@ const POI_FRAMES: Poi[] = [
       { x: -22, z: -18, y: WORKS.storey * 3, armor: 2 },
     ],
   },
-  {
-    id: "pad",
+  pad: {
+    region: "reservoir",
+    depotOut: 66,
     name: "発着場",
     x: 0,
     z: 20,
@@ -995,8 +1688,10 @@ const POI_FRAMES: Poi[] = [
     boss: true,
   },
   // --- the harbor: three POIs whose squads come in pairs and with heavies more often
-  {
-    id: "wreck",
+  wreck: {
+    region: "harbor",
+    depotOut: 22,
+    front: { tier: 3, unlocks: { shore: true }, landing: "shore" },
     name: "難破船",
     x: 0,
     z: 0,
@@ -1027,8 +1722,10 @@ const POI_FRAMES: Poi[] = [
       { x: 10, z: -8, y: SHIP_DECK, weapon: ["lance", 1] },
     ],
   },
-  {
-    id: "yard",
+  yard: {
+    region: "harbor",
+    depotOut: 18,
+    front: { tier: 2, unlocks: { shop: 3, depart: true } },
     name: "コンテナヤード",
     x: 0,
     z: 0,
@@ -1058,8 +1755,10 @@ const POI_FRAMES: Poi[] = [
       { x: -67, z: -1, y: WORKS.storey * 2, armor: 2 },
     ],
   },
-  {
-    id: "smelter",
+  smelter: {
+    region: "harbor",
+    depotOut: 25,
+    front: { tier: 2, unlocks: { shop: 3, squad: 1 } },
     name: "製錬所",
     x: 8,
     z: 0,
@@ -1085,8 +1784,10 @@ const POI_FRAMES: Poi[] = [
   },
 
   // --- the nodes built on the open ground between the areas: a garrison of two squads each
-  {
-    id: "station",
+  station: {
+    region: "reservoir",
+    depotOut: 20,
+    front: { tier: 1, unlocks: {} },
     name: "観測所",
     x: 0,
     z: 0,
@@ -1106,12 +1807,14 @@ const POI_FRAMES: Poi[] = [
       { x: 0, z: -21 },
       { x: 8, z: -19, y: STOREY, vault: true },
     ],
-    keyFrom: "waterworks",
+    keyFrom: "powerplant",
     loot: { weapon: [["pike", 1], ["talon", 1], ["hornet", 1]], armor: [1], heals: 2, valuable: [["wire", 3], ["gyro", 2], ["board", 2], ["fuse", 1]] },
     floor: [{ x: 9, z: -17, heal: "battery" }],
   },
-  {
-    id: "waterworks",
+  waterworks: {
+    region: "reservoir",
+    depotOut: 20,
+    front: { tier: 1, unlocks: {} },
     name: "浄水場",
     x: 0,
     z: 0,
@@ -1135,8 +1838,10 @@ const POI_FRAMES: Poi[] = [
     loot: { weapon: [["pike", 1], ["maul", 1], ["lance", 1]], armor: [1], heals: 2, valuable: [["parts", 3], ["fuse", 2], ["wire", 2], ["drive", 1]] },
     floor: [{ x: 6, z: -12, heal: "syringe" }],
   },
-  {
-    id: "lodge",
+  lodge: {
+    region: "harbor",
+    depotOut: 20,
+    front: { tier: 2, unlocks: { depart: true } },
     name: "峠の宿舎",
     x: 0,
     z: 0,
@@ -1160,8 +1865,10 @@ const POI_FRAMES: Poi[] = [
     loot: { weapon: [["pike", 1], ["hornet", 1], ["maul", 1], ["talon", 1]], armor: [1], heals: 2, valuable: [["parts", 2], ["wire", 2], ["gyro", 2], ["board", 2]] },
     floor: [{ x: 22, z: -10, heal: "medkit" }],
   },
-  {
-    id: "cannery",
+  cannery: {
+    region: "harbor",
+    depotOut: 12,
+    front: { tier: 2, unlocks: {} },
     name: "缶詰工場",
     x: 0,
     z: 0,
@@ -1185,8 +1892,10 @@ const POI_FRAMES: Poi[] = [
     loot: { weapon: [["talon", 1], ["lance", 1], ["pike", 1]], armor: [1], heals: 2, valuable: [["board", 2], ["drive", 2], ["gyro", 2], ["wire", 1]] },
     floor: [{ x: -14, z: -12, heal: "battery" }],
   },
-  {
-    id: "coldstore",
+  coldstore: {
+    region: "harbor",
+    depotOut: 20,
+    front: { tier: 2, unlocks: {} },
     name: "冷凍倉庫",
     x: 0,
     z: 0,
@@ -1210,9 +1919,176 @@ const POI_FRAMES: Poi[] = [
     loot: { weapon: [["pike", 1], ["lance", 1], ["maul", 1], ["hornet", 1]], armor: [1], heals: 2, valuable: [["wire", 2], ["board", 2], ["drive", 2], ["reactor", 1]] },
     floor: [{ x: -16, z: -4, heal: "medkit" }],
   },
-];
 
-export const POIS: Poi[] = POI_FRAMES.map((p, i) => placePoi(p, AT[i]));
+  // --- the machine city across the dried strait
+  terminal: {
+    region: "city",
+    depotOut: 20,
+    front: { tier: 2, unlocks: {} },
+    name: "中央駅",
+    x: 0,
+    z: 0,
+    trigger: 60,
+    entry: { x: -72, z: 8, yaw: E },
+    squads: [
+      { name: "ホーム", members: [{ kind: "grunt", x: 10, z: -19, y: TERMINAL.platform, face: W }, { kind: "drone", x: -20, z: -13 }] },
+      { name: "コンコース", members: [{ kind: "grunt", x: -30, z: 0, face: S }, { kind: "grunt", plate: VAULT.guardPlate, x: 6, z: 9, face: S }] },
+      { name: "駅前広場", members: [{ kind: "grunt", x: 18, z: 34, face: S }, { kind: "charger", x: -30, z: 40, face: E }] },
+    ],
+    bins: [
+      { x: -40, z: 0 },
+      { x: 40, z: -1 },
+      { x: 0, z: 8 },
+      { x: -24, z: 32 },
+      { x: 30, z: 38 },
+      { x: 22, z: 20 },
+      { x: -20, z: -19, y: TERMINAL.platform },
+      { x: -10, z: 0.5, y: TERMINAL.mezz },
+      { x: -8, z: 22, y: WORKS.storey, vault: true },
+    ],
+    keyFrom: "waterworks",
+    loot: { weapon: [["pike", 1], ["lance", 1], ["talon", 1], ["hornet", 1]], armor: [1], heals: 2, valuable: [["board", 3], ["drive", 2], ["gyro", 2], ["wire", 2], ["core", 1]] },
+    floor: [{ x: 4, z: 0, heal: "medkit" }],
+  },
+  // The car park on the west street, the city's nearest node to the bridges: two squads of two.
+  carpark: {
+    region: "city",
+    depotOut: 18,
+    front: { tier: 1, unlocks: {} },
+    name: "立体駐車場",
+    x: 0,
+    z: 0,
+    trigger: 50,
+    entry: { x: 0, z: -38, yaw: S },
+    squads: [
+      { name: "一階", members: [{ kind: "grunt", x: -6, z: -4, face: N }, { kind: "grunt", x: 2, z: 20, face: S }] },
+      { name: "二階", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: -8, z: -21, y: carDeck(1), face: N }, { kind: "drone", x: 8, z: 4 }] },
+    ],
+    bins: [
+      { x: -4, z: -10 },
+      { x: 4, z: 8 },
+      { x: -12, z: 14 },
+      { x: -11, z: 27 },
+      { x: 4, z: -16, y: carDeck(2) },
+      { x: -2, z: 4, y: carDeck(3) },
+      { x: 8, z: 10, y: carDeck(4) },
+      { x: -4, z: -18, y: carDeck(4), vault: true },
+    ],
+    keyFrom: "terminal",
+    loot: { weapon: [["pike", 1], ["hornet", 1], ["talon", 1]], armor: [1], heals: 2, valuable: [["wire", 3], ["parts", 3], ["fuse", 2], ["board", 2]] },
+    floor: [{ x: 6, z: -8, heal: "battery" }],
+  },
+  // The robot works at the city's north end: the city's deepest node, heavies in every squad.
+  robotworks: {
+    region: "city",
+    depotOut: 12,
+    front: { tier: 3, unlocks: {} },
+    name: "ロボット工場",
+    x: 5,
+    z: 18,
+    trigger: 75,
+    entry: { x: 25, z: 50, yaw: N },
+    squads: [
+      { name: "組立ライン", members: [{ kind: "heavy", x: -28, z: -12, face: S }, { kind: "grunt", x: 4, z: -11, face: W }] },
+      { name: "充電区画", members: [{ kind: "grunt", x: -40, z: -33, face: E }, { kind: "charger", x: -10, z: -33, face: W }, { kind: "drone", x: 20, z: -34 }] },
+      { name: "管制塔", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: -40, z: 30, face: S }, { kind: "heavy", x: -2, z: 30, face: S }] },
+      { name: "搬出口", members: [{ kind: "grunt", x: 44, z: 6, face: S }, { kind: "heavy", x: 30, z: 30, face: W }, { kind: "drone", x: 50, z: 18 }] },
+    ],
+    bins: [
+      { x: -50, z: -12 },
+      { x: 12, z: -24 },
+      { x: -10, z: 0 },
+      { x: 46, z: -26 },
+      { x: 58, z: -8 },
+      { x: -50, z: -34 },
+      { x: 42, z: 30 },
+      { x: -30, z: -24.5, y: ROBOTWORKS.mezz },
+      { x: -51, z: 20, y: WORKS.storey * 5 },
+      { x: -51, z: 20, y: WORKS.storey * 3, vault: true },
+    ],
+    keyFrom: "carpark",
+    loot: { weapon: [["lance", 2], ["maul", 2], ["talon", 1], ["pike", 1], ["hornet", 1]], armor: [1, 2], heals: 2, valuable: [["board", 3], ["drive", 3], ["gyro", 3], ["core", 2], ["reactor", 1]] },
+    floor: [
+      { x: -46, z: 18, y: WORKS.storey * 5, weapon: ["lance", 2] },
+      { x: 52, z: -10, heal: "medkit" },
+    ],
+  },
+  // The high-rise district south-east of the station: the plaza, the shops' roof and the towers' feet,
+  // the vault up on the bridge storey.
+  highrise: {
+    region: "city",
+    depotOut: 18,
+    front: { tier: 2, unlocks: {} },
+    name: "高層街区",
+    x: 0,
+    z: 0,
+    trigger: 70,
+    entry: { x: -64, z: 0, yaw: E },
+    squads: [
+      { name: "広場", members: [{ kind: "grunt", x: -40, z: -16, face: E }, { kind: "grunt", x: -10, z: -60, face: S }] },
+      { name: "商業棟の屋上", members: [{ kind: "grunt", x: -47, z: -50, y: 2 * OFFICE.storey, face: E }, { kind: "drone", x: -30, z: -60 }] },
+      { name: "高層棟", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 30, z: 58, face: S }, { kind: "grunt", x: 8, z: 40, face: W }] },
+      { name: "工事中の塔", members: [{ kind: "grunt", x: 30, z: -60, face: N }, { kind: "charger", x: 46, z: -20, face: E }] },
+    ],
+    bins: [
+      { x: -47, z: -30 },
+      { x: -40, z: -62 },
+      { x: -34, z: 44 },
+      { x: 24, z: 46 },
+      { x: 24, z: -34 },
+      { x: 16, z: -64 },
+      { x: -47, z: -20, y: OFFICE.storey },
+      { x: -34, z: 36, y: HIGHRISE.bridge * OFFICE.storey },
+      { x: 22, z: 36, y: (HIGHRISE.a.floors - 1) * OFFICE.storey },
+      { x: 20, z: -34, y: HIGHRISE.c.floors * OFFICE.storey },
+      { x: 24, z: 44, y: HIGHRISE.bridge * OFFICE.storey, vault: true },
+    ],
+    keyFrom: "robotworks",
+    loot: { weapon: [["pike", 1], ["lance", 1], ["talon", 1], ["hornet", 1]], armor: [1], heals: 2, valuable: [["board", 3], ["drive", 2], ["gyro", 2], ["wire", 2], ["core", 1]] },
+    floor: [
+      { x: 26, z: 34, heal: "battery" },
+      { x: 24, z: 40, y: (HIGHRISE.a.floors - 1) * OFFICE.storey, weapon: ["lance", 2] },
+    ],
+  },
+  // The power plant on the open ground east of the city: the cooling towers, the boiler house's
+  // stairs and roof, the turbine hall and the switchyard.
+  powerplant: {
+    region: "city",
+    depotOut: 16,
+    front: { tier: 2, unlocks: {} },
+    name: "発電所",
+    x: 0,
+    z: 0,
+    trigger: 65,
+    entry: { x: -52, z: 0, yaw: E },
+    squads: [
+      { name: "冷却塔", members: [{ kind: "grunt", x: 12, z: -30, face: W }, { kind: "grunt", x: -22, z: -58, face: N }] },
+      { name: "ボイラー棟", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: -18, z: 10, face: W }, { kind: "drone", x: 8, z: 26 }] },
+      { name: "タービン建屋", members: [{ kind: "grunt", x: -20, z: 32, face: N }, { kind: "charger", x: -8, z: 70, face: W }] },
+      { name: "変電設備", members: [{ kind: "grunt", x: -6, z: 100, face: N }, { kind: "drone", x: 20, z: 90 }] },
+    ],
+    bins: [
+      { x: 12, z: -80 },
+      { x: -30, z: -20 },
+      { x: -20, z: 60 },
+      { x: 8, z: 60 },
+      { x: -28, z: 100 },
+      { x: 28, z: 96 },
+      { x: -24, z: 40, y: POWERPLANT.mezz },
+      { x: 2, z: 2, y: POWERPLANT.boilerTop, vault: true },
+    ],
+    keyFrom: "highrise",
+    loot: { weapon: [["pike", 1], ["lance", 1], ["maul", 1], ["hornet", 1]], armor: [1], heals: 2, valuable: [["fuse", 3], ["wire", 3], ["parts", 2], ["drive", 2], ["reactor", 1]] },
+    floor: [{ x: -8, z: 40, heal: "medkit" }],
+  },
+};
+
+const POI_IDS = Object.keys(POI_DEFS) as PoiId[];
+
+export const POIS: Poi[] = POI_IDS.map((id) => {
+  const { region, depotOut, front, ...p } = POI_DEFS[id];
+  return placePoi({ id, ...p }, POI_AT[id]);
+});
 
 /** A POI's place in `POIS` (and in the run's per-POI state), from its id. */
 export const poiIndex = (id: PoiId) => POIS.findIndex((p) => p.id === id);
@@ -1227,17 +2103,10 @@ export interface Depot {
   yaw: number;
 }
 
-/**
- * How far out from its POI's entry each depot stands, along the line from the POI through
- * the entry: the nearest flat spot where a raid started there is not seen by the POI's
- * squads at once (`checkDepots` in the sim gate holds them to it).
- */
-const DEPOT_OUT: Record<PoiId, number> = { supply: 18, quarry: 18, relay: 25, pad: 66, wreck: 22, yard: 18, smelter: 25, station: 20, waterworks: 20, lodge: 20, cannery: 12, coldstore: 20 };
-
 /** A depot's place in `DEPOTS` (and in the run's `depots`), from its POI. */
 export const depotIndex = (poi: PoiId) => DEPOTS.findIndex((d) => d.poi === poi);
 
-export type ExtractId = "ship" | "flare" | "village" | "boat";
+export type ExtractId = "ship" | "flare" | "village" | "boat" | "plaza";
 
 /**
  * Ways off the island, open from the landing on; the player picks one by walking to it.
@@ -1263,11 +2132,13 @@ export interface ExtractPoint {
 }
 
 export const EXTRACTS: ExtractPoint[] = [
-  { id: "ship", name: "発着場のドロップシップ", short: "ドロップシップ", x: AT[3][0], z: 46 + AT[3][1], radius: 5, hold: 1.5, call: 20, waves: { x: POIS[poiIndex("pad")].x, z: POIS[poiIndex("pad")].z }, note: "呼んで 20 秒守る。増援が降りてくる" },
+  { id: "ship", name: "発着場のドロップシップ", short: "ドロップシップ", x: POI_AT.pad[0], z: 46 + POI_AT.pad[1], radius: 5, hold: 1.5, call: 20, waves: { x: POIS[poiIndex("pad")].x, z: POIS[poiIndex("pad")].z }, note: "呼んで 20 秒守る。増援が降りてくる" },
   { id: "flare", name: "台地の回収地点", short: "台地", ...at("heart", { x: -92, z: -8 }), radius: 5, hold: 4, needsFlare: true, note: "発煙筒を焚けば 4 秒" },
   { id: "village", name: "廃村の回収地点", short: "廃村", ...at("village", { x: -45, z: 62 }), radius: 5, hold: 15, note: "遠いが静か。15 秒待つ" },
   // The harbor's way off: a boat comes up the channel to the quay.
   { id: "boat", name: "埠頭のボート", short: "ボート", ...at("bay", { x: 105, z: -580 }), radius: 5, hold: 1.5, call: 25, waves: at("bay", { x: 100, z: -563 }), note: "呼んで 25 秒守る。増援が降りてくる" },
+  // The city's way off: a pickup at its north end, the far side of the station from both bridges.
+  { id: "plaza", name: "北端の回収地点", short: "北端", ...at("city", { x: 80, z: -380 }), radius: 5, hold: 12, note: "街の北の外れ。12 秒待つ" },
 ];
 export const EXTRACT = EXTRACTS[0];
 
@@ -2149,6 +3020,13 @@ export const PACKS: Squad[] = [
     members: [{ kind: "drone", x: -200, z: -860 }, { kind: "drone", x: -200, z: -860 }],
     patrol: [{ x: -250, z: -960 }, { x: -130, z: -1030 }, { x: 60, z: -1030 }, { x: 40, z: -880 }, { x: 60, z: -1030 }, { x: -130, z: -1030 }],
   },
+  // The machine city: across the blocks north of the high-rise district and up the east street to
+  // its north end and back, clear of the city's POIs and the power plant.
+  {
+    name: "街のドローン群",
+    members: [{ kind: "drone", x: 810, z: -200 }, { kind: "drone", x: 810, z: -200 }],
+    patrol: [{ x: 810, z: -200 }, { x: 936, z: -240 }, { x: 936, z: -720 }, { x: 936, z: -240 }],
+  },
 ];
 
 /** Stable names for the outposts (`OUTPOSTS`): places to loot with a guard squad of their own, not nodes of the front. */
@@ -2167,11 +3045,39 @@ export interface OutpostSite {
   guard: string;
 }
 
+/**
+ * The regions by id, in the order the base offers them. A note's `{pois}` is the number of its POIs
+ * (`POI_DEFS`).
+ */
+const REGION_DEFS: { [K in RegionId]: Omit<Region, "id" | "pois"> } = {
+  reservoir: { name: "ダム湖", note: "干上がったダム湖の島。拠点 {pois} つ、発着場にタイタン", home: true, entries: ["beach", "checkpoint", "jetty"], exits: ["ship", "flare", "village"], label: { x: -330, z: 300 }, bounds: { x0: WORLD.x0, z0: -340, x1: 600, z1: WORLD.z1 } },
+  harbor: { name: "港湾地帯", note: "干上がった湾の港。拠点 {pois} つ、どこにもヘビーがいる", entries: ["outskirts", "quay", "shore"], locked: "峠か鉄橋を越えて港町の外れまで歩き、生きて帰ると選べる", exits: ["boat"], label: { x: -250, z: -520 }, bounds: { x0: WORLD.x0, z0: WORLD.z0, x1: 600, z1: -380 } },
+  city: { name: "機械都市", note: "海峡の向こうの機械仕掛けの街。拠点 {pois} つ", entries: ["bridgehead", "railyard"], locked: "海峡の橋を渡って橋のたもとまで歩き、生きて帰ると選べる", exits: ["plaza"], label: { x: 870, z: -330 }, bounds: { x0: 620, z0: WORLD.z0, x1: WORLD.x1, z1: WORLD.z1 }, ground: true },
+};
+
+/**
+ * The id of the region a point lies in (`regionHere()`): that of a region whose bounds are its
+ * ground (`Region.ground`) and hold it, else that of the nearest POI of the other regions.
+ */
+function regionIdHere(at: { x: number; z: number }): RegionId {
+  const inside = (b: Region["bounds"]) => at.x >= b.x0 && at.x <= b.x1 && at.z >= b.z0 && at.z <= b.z1;
+  for (const id of Object.keys(REGION_DEFS) as RegionId[]) {
+    const r: Omit<Region, "id" | "pois"> = REGION_DEFS[id];
+    if (r.ground && inside(r.bounds)) return id;
+  }
+  let best: Poi | undefined;
+  for (const p of POIS) {
+    const r: Omit<Region, "id" | "pois"> = REGION_DEFS[POI_DEFS[p.id].region];
+    if (r.ground) continue;
+    if (!best || hypot2(p.x - at.x, p.z - at.z) < hypot2(best.x - at.x, best.z - at.z)) best = p;
+  }
+  return POI_DEFS[(best ?? POIS[0]).id].region;
+}
+
 export const OUTPOST_SITES: OutpostSite[] = OUTPOSTS.map((o) => ({
   id: o.id!,
   name: o.name,
-  // The reservoir lies south of the mountain belt (+z), the harbor north of it.
-  region: o.z > -350 ? "reservoir" : "harbor",
+  region: regionIdHere(o),
   x: o.x,
   z: o.z,
   guard: o.guard?.name ?? "",
@@ -2248,6 +3154,9 @@ export const MOBILES: Mobile[] = [
   { name: "製錬所を抜ける警邏", kind: "round", faction: "net", region: "harbor", members: ["grunt", "drone"], nodes: [[105, -675], [166, -697], [152, -717], [158, -779], [198, -765], [205, -735]] },
   { name: "難破船の浜の警邏", kind: "round", faction: "net", region: "harbor", members: ["grunt", "drone"], nodes: [[-245, -965], [-28, -984], [-20, -943], [-4, -932], [110, -955]] },
   { name: "塩田の警邏", kind: "round", faction: "net", region: "harbor", members: ["grunt", "charger"], nodes: [[45, -675], [-61, -745], [-67, -800], [-63, -943]] },
+  // --- the machine city: down the middles of its streets, so they pass between the elevated line's pillars.
+  { name: "大通りの警邏", kind: "patrol", faction: "net", region: "city", members: ["grunt", "drone"], nodes: [[804, -152], [936, -152], [936, -570]] },
+  { name: "橋の野良機", kind: "patrol", faction: "rogue", region: "city", rank: 2, members: ["grunt", "charger"], nodes: [[740, -570], [804, -570], [804, -152]] },
 ];
 
 export type DebrisId = "southwest" | "easthill" | "quarryeast" | "townwest" | "eastshore" | "saltwest";
@@ -2290,9 +3199,9 @@ export const DEBRIS_SPOTS: DebrisSpot[] = (
 
 export const debrisIndex = (id: DebrisId) => DEBRIS_SPOTS.findIndex((d) => d.id === id);
 
-export type RegionId = "reservoir" | "harbor";
+export type RegionId = "reservoir" | "harbor" | "city";
 
-export type EntryId = "beach" | "checkpoint" | "jetty" | "outskirts" | "quay" | "shore";
+export type EntryId = "beach" | "checkpoint" | "jetty" | "outskirts" | "quay" | "shore" | "bridgehead" | "railyard";
 
 /**
  * A way into a region on foot, out on its open ground: a raid that does not start at a depot
@@ -2317,6 +3226,8 @@ export const ENTRIES: Entry[] = [
   { id: "outskirts", region: "harbor", name: "港町の外れ", x: 40, z: -500, yaw: 0 },
   { id: "quay", region: "harbor", name: "埠頭の東の道", x: 215, z: -940, yaw: -Math.PI / 2 },
   { id: "shore", region: "harbor", name: "西の漁村の浜", x: -340, z: -820, yaw: Math.PI / 2 },
+  { id: "bridgehead", region: "city", name: "橋のたもと", x: 680, z: 4, yaw: Math.PI / 2 },
+  { id: "railyard", region: "city", name: "貨物ヤード", x: 700, z: -640, yaw: Math.PI / 2 },
 ];
 
 export const entryOf = (id: EntryId): Entry => ENTRIES.find((e) => e.id === id) ?? ENTRIES[0];
@@ -2334,30 +3245,42 @@ export interface Region {
   entries: EntryId[];
   /** A line for the base while the player knows none of its ways in and has no depot of it on: how to open it. */
   locked?: string;
+  /** Its POIs (those whose `POI_DEFS` name it), in `POIS` order. */
   pois: PoiId[];
   exits: ExtractId[];
   /** Where the world map writes the region's name, large and faint under everything. */
   label: { x: number; z: number };
   /** The part of the world the map frames when it shows this region: its land, its ways in and the ends of the ways out of it. */
   bounds: { x0: number; z0: number; x1: number; z1: number };
+  /** The region the camp stands in (`HOME_REGION`): the one a new profile starts in. */
+  home?: true;
+  /**
+   * Its bounds are its ground: every point in them is its, whichever POI is nearest, and its POIs
+   * claim no point outside them. A region across a natural border (the dried strait) is written so,
+   * where the nearest POI would reach over the border.
+   */
+  ground?: true;
 }
 
-export const REGIONS: Region[] = [
-  { id: "reservoir", name: "ダム湖", note: "干上がったダム湖の島。拠点 6 つ、発着場にタイタン", entries: ["beach", "checkpoint", "jetty"], pois: ["supply", "quarry", "relay", "pad", "station", "waterworks"], exits: ["ship", "flare", "village"], label: { x: -330, z: 300 }, bounds: { x0: WORLD.x0, z0: -340, x1: WORLD.x1, z1: WORLD.z1 } },
-  { id: "harbor", name: "港湾地帯", note: "干上がった湾の港。拠点 6 つ、どこにもヘビーがいる", entries: ["outskirts", "quay", "shore"], locked: "峠か鉄橋を越えて港町の外れまで歩き、生きて帰ると選べる", pois: ["wreck", "yard", "smelter", "lodge", "cannery", "coldstore"], exits: ["boat"], label: { x: -250, z: -520 }, bounds: { x0: WORLD.x0, z0: WORLD.z0, x1: WORLD.x1, z1: -380 } },
-];
+export const REGIONS: Region[] = (Object.keys(REGION_DEFS) as RegionId[]).map((id) => {
+  const pois = POI_IDS.filter((p) => POI_DEFS[p].region === id);
+  return { id, ...REGION_DEFS[id], note: REGION_DEFS[id].note.replace("{pois}", String(pois.length)), pois };
+});
+
+/** The region the camp stands in: the one region written `home`. */
+export const HOME_REGION: Region = (() => {
+  const homes = REGIONS.filter((r) => r.home);
+  if (homes.length !== 1) throw new Error(`one region must be home, not ${homes.length}`);
+  return homes[0];
+})();
 
 export const regionOf = (id: RegionId): Region => REGIONS.find((r) => r.id === id) ?? REGIONS[0];
 
 /** The region a POI belongs to. */
-export const poiRegion = (id: PoiId): Region => REGIONS.find((r) => r.pois.includes(id)) ?? REGIONS[0];
+export const poiRegion = (id: PoiId): Region => regionOf(POI_DEFS[id].region);
 
 /** The region a point lies in: that of the nearest POI. */
-export function regionHere(at: { x: number; z: number }): Region {
-  let best = POIS[0];
-  for (const p of POIS) if (hypot2(p.x - at.x, p.z - at.z) < hypot2(best.x - at.x, best.z - at.z)) best = p;
-  return poiRegion(best.id);
-}
+export const regionHere = (at: { x: number; z: number }): Region => regionOf(regionIdHere(at));
 
 /**
  * A small settlement out on the open ground between the areas: a few buildings to look into
@@ -2530,12 +3453,12 @@ const HAMLET_FRAMES: Hamlet[] = [
 ];
 
 /**
- * The frames areas are written in, by name: each POI's (`AT`, by its id) and each hamlet's. Data
+ * The frames areas are written in, by name: each POI's (`POI_AT`, by its id) and each hamlet's. Data
  * outside the map that points into one of them (the shots gate's cameras) is written in its frame,
  * so moving an area moves it too.
  */
 export const FRAMES: Record<string, { x: number; z: number }> = Object.fromEntries([
-  ...POI_FRAMES.map((p, i): [string, { x: number; z: number }] => [p.id, { x: AT[i][0], z: AT[i][1] }]),
+  ...POI_IDS.map((id): [string, { x: number; z: number }] => [id, { x: POI_AT[id][0], z: POI_AT[id][1] }]),
   ...HAMLET_FRAMES.map((h): [string, { x: number; z: number }] => [h.name, { x: h.x, z: h.z }]),
   ...TOWN_FRAMES.map((t): [string, { x: number; z: number }] => [t.name, { x: t.x, z: t.z }]),
   // The areas' frames (areas.ts), as "area:" and the area's id.
@@ -2577,6 +3500,13 @@ export const LANDMARKS: readonly { name: string; x: number; z: number }[] = [
   { name: "貨物線", x: -130, z: -770 },
   { name: "送電線", x: 100, z: -860 },
   { name: "パイプライン", x: 260, z: -910 },
+  at("city", { name: "機械都市", x: 0, z: 200 }),
+  at("city", { name: "中央駅", x: 0, z: -120 }),
+  at("city", { name: "立体駐車場", x: -94, z: 58 }),
+  at("city", { name: "ロボット工場", x: -25, z: -315 }),
+  at("city", { name: "高層街区", x: 64, z: 178 }),
+  at("powerplant", { name: "発電所", x: 0, z: 0 }),
+  at("powerplant", { name: "冷却塔", x: 10, z: -58 }),
 ];
 
 /**
@@ -2600,6 +3530,9 @@ export const STOPS: readonly { name: string; x: number; z: number }[] = [
   { name: "高架下", x: 55, z: -609 },
   at("bay", { name: "塩田", x: 10, z: -500 }),
   at("bay", { name: "岬", x: -122, z: -545 }),
+  at("city", { name: "駅前通り", x: -66, z: -20 }),
+  at("city", { name: "北の街区", x: 0, z: -205 }),
+  at("city", { name: "南の街区", x: -66, z: 200 }),
 ];
 
 /**
@@ -2614,6 +3547,7 @@ export const PARTY_STOPS: Record<RegionId, readonly { name: string; x: number; z
   reservoir: [stopAt("工場"), stopAt("住宅地"), stopAt("放水路"), stopAt("昇降路の通路"), stopAt("西の飯場"), stopAt("南の漁師小屋")],
   // The signal box's own middle is its house: the party stands on the open ground south of it.
   harbor: [stopAt("港町"), stopAt("高架下"), stopAt("信号所", 0, 14), stopAt("西の漁村"), stopAt("東の丘の家")],
+  city: [stopAt("駅前通り"), stopAt("北の街区"), stopAt("南の街区")],
 };
 
 /** A party's stop at the stop or hamlet `name`, `dx`, `dz` metres off it. */
@@ -4104,7 +5038,9 @@ function smelter(): Box[] {
       open: ["w", "n"],
     }),
   );
-  for (const x of [15, 22, 29, 36]) out.push(box(x, 9, 3, 4, 3.4, "steel", 2));
+  // Roll stands in the bays between the columns (x 16, 24, 32) and clear of the mezzanine's
+  // stair at x 30, each gap wider than a body so nobody is wedged between a stand and a column.
+  for (const x of [12, 20, 27, 36]) out.push(box(x, 9, 3, 4, 3.4, "steel", 2));
   out.push(bridge(4, 7, 8, 9.5, H), rect(4, 7, 8, 7.2, H, H + 0.8, "steel", 2), rect(4, 9.3, 8, 9.5, H, H + 0.8, "steel", 2));
   out.push(...tower(38, -8, 10, 10, 5, { scale: WORKS, doors: [["w", "s"], [], [], ["s"]], windows: [["e"], ["n", "e"], ["n", "e"], ["n", "e"], ["n", "e", "w"]] }));
   out.push(bridge(37, -3, 39.5, 2, H), rect(37, -3, 37.2, 2, H, H + 0.8, "steel", 2), rect(39.3, -3, 39.5, 2, H, H + 0.8, "steel", 2));
@@ -4129,9 +5065,9 @@ const VIADUCT = { x: 168, z0: -406, z: -615, x0: -67, stair: -564.6 } as const;
 
 /** Everything built in the harbor and on the way there, outside the POIs. */
 const HARBOR: Box[] = [
-  ...onLevel(LEVEL.seabed, place(AT[4][0], AT[4][1], wreck())),
-  ...onLevel(LEVEL.shore, place(AT[5][0], AT[5][1], yard())),
-  ...onLevel(LEVEL.terrace, place(AT[6][0], AT[6][1], smelter())),
+  ...onLevel(LEVEL.seabed, place(POI_AT.wreck[0], POI_AT.wreck[1], wreck())),
+  ...onLevel(LEVEL.shore, place(POI_AT.yard[0], POI_AT.yard[1], yard())),
+  ...onLevel(LEVEL.terrace, place(POI_AT.smelter[0], POI_AT.smelter[1], smelter())),
   // --- 港町: a hut, a warehouse with a roof to watch from, cottages, crates
   ...onLevel(LEVEL.shore, placeIn("town", [
     ...building(14, -288, 6, 5, 3.4, { doors: ["s"], windows: ["e"], roof: "e" }),
@@ -4179,9 +5115,33 @@ const HARBOR: Box[] = [
 ];
 
 /**
+ * The spans over the dried strait to the machine city: a road bridge and a rail bridge, each a
+ * deck from bank to bank (`x0..x1` along x, `half` either side of `z`, at height `y`) on piers
+ * standing in the strait's floor, railed along both sides where it is over the strait. The banks
+ * at its ends are pressed flat at its level, so it is walked onto as a road; its deck is in DECKS.
+ */
+const STRAIT_SPANS = [
+  { name: "道路橋", x0: 540, x1: 640, z: 0, half: 5, y: 4, piers: [575, 605], rails: false },
+  { name: "鉄道橋", x0: 562, x1: 664, z: -640, half: 3.5, y: 3, piers: [592, 622], rails: true },
+] as const;
+/** How far each end of a span rests on its bank, pressed flat at its level. */
+const SPAN_REST = 10;
+const STRAIT_BRIDGES: Box[] = STRAIT_SPANS.flatMap(({ x0, x1, z, half, y, piers, rails }) => {
+  FLAT.push({ x0: x0 - 12, z0: z - half - 3, x1: x0 + SPAN_REST, z1: z + half + 3, y }, { x0: x1 - SPAN_REST, z0: z - half - 3, x1: x1 + 12, z1: z + half + 3, y });
+  const [r0, r1] = [x0 + SPAN_REST, x1 - SPAN_REST];
+  return [
+    bridge(x0, z - half, x1, z + half, y),
+    rect(r0, z - half, r1, z - half + 0.3, y, y + 1.1, "steel", 2),
+    rect(r0, z + half - 0.3, r1, z + half, y, y + 1.1, "steel", 2),
+    ...piers.map((px) => rect(px - 2, z - half + 0.6, px + 2, z + half - 0.6, -12, y - 0.3, "tower", 0)),
+    ...(rails ? [-0.75, 0.75].map((dz) => rect(x0, z + dz - 0.08, x1, z + dz + 0.08, y, y + 0.12, "steel", 2)) : []),
+  ];
+});
+
+/**
  * Walkways that the ground's path finding (nav.ts for the bot, hunt.ts for routed robots)
- * treats as ground at height `y`: the railway bridge's deck over the gorge, between its
- * railings. Everything else built up off the ground is out of their reach.
+ * treats as ground at height `y`: the railway bridge's deck over the gorge and the spans over
+ * the dried strait, between their railings. Everything else built up off the ground is out of their reach.
  */
 export interface Deck {
   x0: number;
@@ -4190,7 +5150,10 @@ export interface Deck {
   z1: number;
   y: number;
 }
-export const DECKS: Deck[] = placeIn("railway", [rect(120.2, -201.5, 123.8, -178.5, 0, 0, "slab")]).map((b) => ({ x0: b.x0, z0: b.z0, x1: b.x1, z1: b.z1, y: LEVEL.rail }));
+export const DECKS: Deck[] = [
+  ...placeIn("railway", [rect(120.2, -201.5, 123.8, -178.5, 0, 0, "slab")]).map((b) => ({ x0: b.x0, z0: b.z0, x1: b.x1, z1: b.z1, y: LEVEL.rail })),
+  ...STRAIT_SPANS.map(({ x0, x1, z, half, y }) => ({ x0, z0: z - half + 0.3, x1, z1: z + half - 0.3, y })),
+];
 
 /**
  * A kerb along the quay's edge, knee high: walkers fighting round the boat's pickup point
@@ -4230,22 +5193,21 @@ const RAILWAY: Box[] = [
   box(43, VZ, 12, 2.6, LEVEL.rail + 3, "steel", 3, LEVEL.rail),
 ];
 
+
 /** Everything placed by hand: POIs, districts, landmarks. */
 /** Groups of boxes written in a frame at (dx, dz), each lifted onto the floor it stands on. */
 const onFloors = (dx: number, dz: number, floors: Floors): Box[] => floors.flatMap(([level, boxes, loose]) => (loose ? lift(level, place(dx, dz, boxes)) : onLevel(level, place(dx, dz, boxes))));
-
-const PAD_AT = AT[poiIndex("pad")];
 
 /** Everything placed by hand: POIs, districts, landmarks. */
 const AUTHORED: Box[] = [
   ...HARBOR,
   ...HAMLETS.flatMap((h) => h.boxes),
   ...TOWNS.flatMap((t) => t.boxes),
-  ...onFloors(AT[0][0], AT[0][1], supply()),
-  ...place(AT[0][0], AT[0][1], watchtower()),
-  ...onFloors(AT[1][0], AT[1][1], quarry()),
-  ...onFloors(AT[2][0], AT[2][1], relay()),
-  ...onFloors(PAD_AT[0], PAD_AT[1], [
+  ...onFloors(POI_AT.supply[0], POI_AT.supply[1], supply()),
+  ...place(POI_AT.supply[0], POI_AT.supply[1], watchtower()),
+  ...onFloors(POI_AT.quarry[0], POI_AT.quarry[1], quarry()),
+  ...onFloors(POI_AT.relay[0], POI_AT.relay[1], relay()),
+  ...onFloors(POI_AT.pad[0], POI_AT.pad[1], [
     [LEVEL.dam, pad()],
     [LEVEL.dam, CREST_PARAPET, "loose"],
   ]),
@@ -4288,6 +5250,13 @@ const AUTHORED: Box[] = [
   ...onLevel(LEVEL.lodge, placeIn("lodge", lodge())),
   ...onLevel(LEVEL.cannery, placeIn("cannery", cannery())),
   ...onLevel(LEVEL.coldstore, placeIn("coldstore", coldstore())),
+  // --- the machine city
+  ...onLevel(LEVEL.city, place(POI_AT.terminal[0], POI_AT.terminal[1], terminal())),
+  ...onLevel(LEVEL.city, place(POI_AT.carpark[0], POI_AT.carpark[1], carpark())),
+  ...onLevel(LEVEL.city, place(POI_AT.robotworks[0], POI_AT.robotworks[1], robotworks())),
+  ...onLevel(LEVEL.city, place(POI_AT.highrise[0], POI_AT.highrise[1], highrise())),
+  ...onLevel(LEVEL.powerplant, placeIn("powerplant", powerplant())),
+  ...onLevel(LEVEL.city, placeIn("city", city())),
 ];
 
 /**
@@ -4365,9 +5334,11 @@ function authoredKeep(): Keep {
  * a few steps away, since in the open a robot's burst lands. The
  * channel, under water, gets none.
  */
-const SCATTER = [
-  { x0: WORLD.x0, x1: WORLD.x1, z0: -350, z1: WORLD.z1, seed: 7_332, step: 13 },
-  { x0: WORLD.x0, x1: WORLD.x1, z0: WORLD.z0, z1: -351, seed: 4_517, step: 14 },
+const SCATTER: { x0: number; x1: number; z0: number; z1: number; seed: number; step: number; urban?: true }[] = [
+  { x0: WORLD.x0, x1: 600, z0: -350, z1: WORLD.z1, seed: 7_332, step: 13 },
+  { x0: WORLD.x0, x1: 600, z0: WORLD.z0, z1: -351, seed: 4_517, step: 14 },
+  // The machine city's ground: only what a city's streets are left with (`urbanAt()`).
+  { x0: 620, x1: WORLD.x1, z0: WORLD.z0, z1: WORLD.z1, seed: 9_173, step: 14, urban: true },
 ];
 /** Where cover is sparse: the salt flats, and the supply depot's dune coast, whose dunes are its cover. */
 const SPARSE = new Set(["塩田", "補給所"]);
@@ -4422,7 +5393,7 @@ function depotSpot(p: Poi): { x: number; z: number } {
   const ax = p.entry.x - p.x;
   const az = p.entry.z - p.z;
   const len = hypot2(ax, az);
-  return { x: +(p.entry.x + (ax / len) * DEPOT_OUT[p.id]).toFixed(1), z: +(p.entry.z + (az / len) * DEPOT_OUT[p.id]).toFixed(1) };
+  return { x: +(p.entry.x + (ax / len) * POI_DEFS[p.id].depotOut).toFixed(1), z: +(p.entry.z + (az / len) * POI_DEFS[p.id].depotOut).toFixed(1) };
 }
 
 function scatterCover(authored: Box[], { points, segments }: Keep): Box[] {
@@ -4531,6 +5502,42 @@ function scatterArea(near: Clearance, area: (typeof SCATTER)[number]): Box[] {
     return ruin(at, len(7.5, 9.5), len(6.5, 8.5));
   };
   /**
+   * A city street's leavings: a row of concrete barriers, cars parked nose to tail, a truck, a bus,
+   * a bus shelter of glass under a pale roof, or two delivery containers. No sand, rock or ruin.
+   */
+  const urbanAt = (x: number, z: number): Box[] => {
+    const alongX = rnd() < 0.5;
+    const flip = rnd() < 0.5 ? 1 : -1;
+    const at = (u: number, v: number, l: number, w: number, h: number, kind: BoxKind, tint = 0, y0 = 0): Box =>
+      alongX ? box(x + u, z + v * flip, l, w, h, kind, tint, y0) : box(x + v * flip, z + u, w, l, h, kind, tint, y0);
+    const kind = rnd();
+    if (kind < 0.24) {
+      const n = 2 + Math.floor(rnd() * 3);
+      const askew = Math.floor(rnd() * n);
+      return Array.from({ length: n }, (_, i) => at(i * 3.35, i === askew ? len(-0.9, 0.9) : 0, 3, 0.65, 1.1, "prop", PROP.barrier));
+    }
+    if (kind < 0.5) {
+      const n = 2 + Math.floor(rnd() * 2);
+      return Array.from({ length: n }, (_, i) => at(i * 5.6, len(-0.4, 0.4), 4.5, 1.9, 1.5, "prop", PROP.car));
+    }
+    if (kind < 0.64) {
+      const out = [at(1.15, 0, 2.3, 2.5, 3.0, "prop", PROP.cab), at(2.3 + 2.5, 0, 5, 2.5, 2.3, "prop", PROP.bed)];
+      if (rnd() < 0.5) out.push(at(len(1, 4), 3.9, 4.5, 1.9, 1.5, "prop", PROP.car));
+      return out;
+    }
+    if (kind < 0.78) return [at(0, 0, 11, 2.6, 3.2, "steel", 4), at(0, 0, 10.2, 2.7, 2.6, "steel", 8, 1.6), at(0, 0, 10.2, 2.7, 1.2, "steel", 3, 0.9)];
+    if (kind < 0.9)
+      return [
+        at(0, -0.7, 4.2, 0.15, 2.4, "steel", 8),
+        at(-1.95, 0, 0.15, 1.6, 2.4, "steel", 2),
+        at(1.95, 0, 0.15, 1.6, 2.4, "steel", 2),
+        at(0, 0, 4.4, 1.8, 2.6, "slab", 2, 2.4),
+        at(0, -0.2, 3.2, 0.5, 0.5, "prop", PROP.bench),
+      ];
+    const tint = Math.floor(rnd() * 3);
+    return [at(0, 0, 6.1, 2.44, 2.6, "container", tint), at(len(-1.2, 1.2), 2.7, 6.1, 2.44, 2.6, "container", (tint + 1) % 3)];
+  };
+  /**
    * A roofless ruin: walls 0.45 m thick and up to 3.2 m high, broken into lengths of about 2 m
    * whose tops step down and up again, a doorway at each end and a breach in one side, and a
    * heap of rubble inside.
@@ -4614,7 +5621,7 @@ function scatterArea(near: Clearance, area: (typeof SCATTER)[number]): Box[] {
       const road = offStreet(x, z);
       if (road < 2) continue;
       if (at === BETWEEN && (road < 22 ? rnd() > 0.55 || clump(x, z) < 0.45 : rnd() > 0.4 || clump(x, z) < 0.62)) continue;
-      const piece = sparse ? wreckAt(x, z) : pieceAt(x, z);
+      const piece = area.urban ? urbanAt(x, z) : sparse ? wreckAt(x, z) : pieceAt(x, z);
       const base = groundUnder(piece);
       if (base === null) continue;
       for (const b of piece) {
@@ -4808,7 +5815,7 @@ export const QUARRY_LIFTS: readonly { a: string; b: string; from: { x: number; z
 ].map((l) => ({ ...l, from: { x: l.from.x + POI_AT.quarry[0], z: l.from.z + POI_AT.quarry[1] }, to: { x: l.to.x + POI_AT.quarry[0], z: l.to.z + POI_AT.quarry[1] } }));
 
 const LAID: Box[] = (() => {
-  const [qx, qz] = AT[1];
+  const [qx, qz] = POI_AT.quarry;
   const out: Box[] = [];
   // The conveyor: lengths of belt stepping down along its line, a pylon under every third.
   const n = Math.round((BELT.z1 - BELT.z0) / 5);
@@ -4880,6 +5887,8 @@ const LAID: Box[] = (() => {
 // The canyon floors pay for the detour: a bin under each bridge.
 for (const { x, z, table } of [at("heart", { x: 108, z: -100, table: "relay" as const }), at("railway", { x: 127, z: -192, table: "smelter" as const })])
   EXTRA_BINS.push({ x, z, y: terrainHeight(x, z), table });
+// The machine city's tallest offices, on their top floors.
+for (const o of CITY_OFFICES) EXTRA_BINS.push(onFloor(at("city", { x: o.x - o.w / 2 + 1.5, z: o.z, y: (o.floors - 1) * OFFICE.storey, table: "terminal" as const })));
 
 /**
  * One depot per POI, on the road out from its entry: in reach on the way in or out, yet
@@ -4915,7 +5924,7 @@ const PUMPS = outpost("揚水ポンプ場");
  *   wagons left on them as cover along the way.
  * Each run is a list of legs along x or along z.
  */
-const POWER_LINES: { from: [number, number, number]; pylons: [number, number][] }[] = [
+const POWER_LINES: { from: [number, number, number]; pylons: [number, number][]; to?: [number, number, number] }[] = [
   // The harbor.
   ...[
     { from: -18, pylons: [[46, -685], [0, -685], [-50, -685], [-100, -685]] },
@@ -4925,6 +5934,19 @@ const POWER_LINES: { from: [number, number, number]; pylons: [number, number][] 
   // The reservoir: west over the railway toward the dam, south to the foot of the relay's mesa.
   busbarLine(EAST_SUBSTATION, -18, [[262, -186], [215, -186], [140, -186]]),
   busbarLine(EAST_SUBSTATION, 18, [[328, -150], [328, -95], [328, -42]]),
+  // The machine city: from the power plant's switchyard south along the city's east edge to the
+  // cable terminal in its south-east corner, where the line goes under the streets.
+  {
+    from: (() => {
+      const [x, z] = inArea("powerplant", POWERPLANT.busbar.x0, POWERPLANT.busbar.z);
+      return [x, LEVEL.powerplant + POWERPLANT.busbar.top, z] as [number, number, number];
+    })(),
+    pylons: [[996, -200], [992, -130], [976, -40]],
+    to: (() => {
+      const [x, z] = inArea("city", CABLE_END.x, CABLE_END.z - 2);
+      return [x + 5, LEVEL.city + CABLE_END.top, z] as [number, number, number];
+    })(),
+  },
 ];
 /** A power line leaving a substation's busbar `dx` metres from its middle (as `substationYard()` builds it). */
 function busbarLine(s: Hamlet, dx: number, pylons: [number, number][]): { from: [number, number, number]; pylons: [number, number][] } {
@@ -5016,6 +6038,7 @@ const WORKS_LINES: Box[] = (() => {
     });
     for (const t of tips[0]) out.push(...wire(line.from, t, 0.6));
     for (let i = 0; i + 1 < tips.length; i++) for (let k = 0; k < 2; k++) out.push(...wire(tips[i][k], tips[i + 1][k], 2.2));
+    if (line.to) for (const t of tips[tips.length - 1]) out.push(...wire(t, line.to, 0.6));
   }
   // Fuel: two pipes side by side on a support every length, high enough for a heavy to walk under.
   for (const run of PIPELINES)
@@ -5063,7 +6086,7 @@ const FENCES: { name: string; line: [number, number][] }[] = [
 export const GATES: { name: string; x: number; z: number }[] = [];
 const FENCE_RUNS: Box[] = (() => {
   const out: Box[] = [];
-  const standing = [...AUTHORED, ...BRIDGE, ...RAILWAY, ...QUAY, ...LAID, ...WORKS_LINES].filter((b) => b.y0 < terrainHeight((b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2) + 3);
+  const standing = [...AUTHORED, ...BRIDGE, ...RAILWAY, ...STRAIT_BRIDGES, ...QUAY, ...LAID, ...WORKS_LINES].filter((b) => b.y0 < terrainHeight((b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2) + 3);
   const roads = KEPT_ROADS.flatMap((name) => {
     const line = roadLine(name);
     return line.slice(1).map((q, k) => [line[k], q] as const);
@@ -5360,7 +6383,7 @@ const TOWN_SPUR_FALL: Box[] = (() => {
 })();
 
 /** Everything placed by hand or laid by rule before the streets are lined: what `scripts/ringfall-roads.ts` routes them round. */
-export const PLACED: Box[] = [...AUTHORED, ...BRIDGE, ...RAILWAY, ...QUAY, ...LAID, ...WORKS_LINES, ...FENCE_RUNS, ...RING_RUNS, ...CRATER_FLOOR, ...TOWN_SPUR_FALL];
+export const PLACED: Box[] = [...AUTHORED, ...BRIDGE, ...RAILWAY, ...STRAIT_BRIDGES, ...QUAY, ...LAID, ...WORKS_LINES, ...FENCE_RUNS, ...RING_RUNS, ...CRATER_FLOOR, ...TOWN_SPUR_FALL];
 /**
  * What lines the streets (streets.ts), laid on the ground once it is built: lamp posts along every
  * length on alternate sides, a signpost where each street leaves its first junction, and traffic
@@ -5469,8 +6492,8 @@ const STREET_SIDE: Box[] = (() => {
 /** Everything placed by hand or laid by rule, before the scattered cover fills the ground round it. */
 export const BUILT: Box[] = [...PLACED, ...STREET_SIDE];
 
-/** The nodes of the front (docs/ringfall/island-v2.md): the six POIs the player can take; the titan's pad is the enemy's for good. */
-export type NodeId = Exclude<PoiId, "pad">;
+/** The nodes of the front (docs/ringfall/island-v2.md): the POIs the player can take; the boss's (the titan's pad) is the enemy's for good. */
+export type NodeId = Exclude<PoiId, BossId>;
 
 /**
  * A node of the front: a freeable POI, where it stands (its middle), and its core (`FRONT`): the
@@ -5486,10 +6509,9 @@ export interface FrontNode {
 }
 
 /**
- * Which nodes are next to which, along the roads between them: the camp to the supply depot,
- * the supply depot to the quarry and the relay, the pass road from the quarry to the yard and the
- * railway from the relay to the smelter, and the harbor's two roads to the wreck. Kept as data,
- * so routing the streets afresh does not move the front; the sim gate walks each link.
+ * Which nodes are next to which, along the roads between them, in loops from the camp's gate out
+ * to the far end of each region; every node has one at least (checked as the map loads). Kept as
+ * data, so routing the streets afresh does not move the front; the sim gate walks each link.
  */
 export const FRONT_LINKS: readonly (readonly ["camp" | NodeId, NodeId])[] = [
   ["camp", "supply"],
@@ -5507,13 +6529,25 @@ export const FRONT_LINKS: readonly (readonly ["camp" | NodeId, NodeId])[] = [
   ["cannery", "wreck"],
   ["smelter", "coldstore"],
   ["coldstore", "wreck"],
+  ["relay", "carpark"],
+  ["carpark", "terminal"],
+  ["terminal", "robotworks"],
+  ["smelter", "robotworks"],
+  ["carpark", "highrise"],
+  ["highrise", "terminal"],
+  ["terminal", "powerplant"],
+  ["powerplant", "robotworks"],
 ];
+for (const id of POI_IDS) if (!POI_DEFS[id].boss && !FRONT_LINKS.some((l) => l.includes(id as NodeId))) throw new Error(`node ${id} has no link in FRONT_LINKS`);
 
-/**
- * Each node's tier (docs/ringfall/island-v2.md, 拠点の段): how deep it lies from the camp, 0 by
- * the camp's gate to 3 at the far end of the harbor.
- */
-export const TIER: Record<NodeId, number> = { supply: 0, quarry: 1, relay: 1, station: 1, waterworks: 1, lodge: 2, yard: 2, smelter: 2, cannery: 2, coldstore: 2, wreck: 3 };
+/** The front's nodes with what `POI_DEFS` says of each as a node, in `POIS` order. */
+const NODE_DEFS = POI_IDS.flatMap((id) => {
+  const front = POI_DEFS[id].front;
+  return front ? [{ id: id as NodeId, ...front }] : [];
+});
+
+/** Each node's tier (`POI_DEFS`). */
+export const TIER = Object.fromEntries(NODE_DEFS.map((n) => [n.id, n.tier])) as Record<NodeId, number>;
 
 /**
  * What holding each node opens (docs/ringfall/island-v2.md, 拠点の段), for as long as it is held:
@@ -5529,26 +6563,20 @@ export interface NodeUnlock {
   scout?: true;
   shore?: true;
 }
-export const UNLOCKS: Record<NodeId, NodeUnlock> = {
-  supply: { shop: 1, depart: true },
-  quarry: { shop: 2, squad: 1 },
-  relay: { shop: 2, scout: true },
-  yard: { shop: 3, depart: true },
-  smelter: { shop: 3, squad: 1 },
-  wreck: { shore: true },
-  station: {},
-  waterworks: {},
-  lodge: { depart: true },
-  cannery: {},
-  coldstore: {},
-};
+/** What holding each node opens (`POI_DEFS`). */
+export const UNLOCKS = Object.fromEntries(NODE_DEFS.map((n) => [n.id, n.unlocks])) as Record<NodeId, NodeUnlock>;
 
 /**
  * The nodes next to ground the enemy never gives up, where its squads land in the battle however
- * much round them the player holds: the titan's pad (no node) by the quarry's road and the mesa's,
- * and the harbor's north shore, where the enemy's boats come in.
+ * much round them the player holds: those that border a landing ground (`POI_DEFS`).
  */
-export const NET_EDGE: readonly NodeId[] = ["quarry", "relay", "wreck"];
+export const NET_EDGE: readonly NodeId[] = NODE_DEFS.filter((n) => n.landing).map((n) => n.id);
+
+/** The nodes each landing ground borders (`POI_DEFS`), in `NODES` order. */
+export const LANDING_NODES: Record<Landing, readonly NodeId[]> = {
+  pad: NODE_DEFS.filter((n) => n.landing === "pad").map((n) => n.id),
+  shore: NODE_DEFS.filter((n) => n.landing === "shore").map((n) => n.id),
+};
 
 /**
  * The core's spot of the node standing at (x, z): the open, level ground nearest its middle with
@@ -5801,7 +6829,7 @@ export const ROUTES: Route[] = (() => {
   // The wreck's gangway: up the hull's north side to its main deck, forward of the middle,
   // written in the wreck's frame (from its hull's north face, `n`) so it moves with the wreck.
   const deck = LEVEL.seabed + SHIP_DECK;
-  const [wx, wz] = AT[poiIndex("wreck")];
+  const [wx, wz] = POI_AT.wreck;
   const n = wz + SHIP.z - SHIP.beam / 2;
   const gx = wx + SHIP.x - 32.4;
   const gz = n - 1.3;

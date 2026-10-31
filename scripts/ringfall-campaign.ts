@@ -16,6 +16,7 @@
  * The skills are played in one worker process each, side by side; the gate starts them beside
  * its tables and prints the table after the hideout's pacing (scripts/ringfall-sim.ts).
  */
+import "./ringfall-terrain-store";
 import { ENTRIES, NODES, POIS, REGIONS, regionOf, TIER, type NodeId, type RegionId } from "../src/ringfall/sim/map";
 import { SKILLS } from "../src/ringfall/sim/bot";
 import { newRun, strengthFor } from "../src/ringfall/sim/state";
@@ -23,7 +24,7 @@ import { holds, islandHolds, unfreeable } from "../src/ringfall/meta/island";
 import { enemyNodes, frontNodes } from "../src/ringfall/sim/front";
 import { buildFactory, buy, buyPrice, emptyLoadout, factoryShortfall, newProfile, nextFactory, sell, settle, takeKit, wares, type Item, type Profile } from "../src/ringfall/meta/profile";
 import { shopRarity } from "../src/ringfall/meta/island";
-import { FACTORY, VALUABLES, type Rarity, type ValuableKind, type WeaponKind } from "../src/ringfall/sim/config";
+import { FACTORY, FACTORY_TOP, VALUABLES, type Rarity, type ValuableKind, type WeaponKind } from "../src/ringfall/sim/config";
 import { playState } from "./ringfall-table";
 import { fork } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -35,7 +36,7 @@ const MARKS = [5, 10, 20, 30];
 /** One skill's month: the island at the end of each day, and how each raid ended. */
 export interface Campaign {
   skill: string;
-  days: { cash: number; haul: number; gun: number; cleared: string[]; captured: string[]; nodes: number; harbor: number; tier: number; strength: number; front: string[]; alive: boolean; region: RegionId; event: string | null; crewsIn: number; crewsOut: number; factory: number; gained: number; lost: number; minutes: number; turns: { raid: number; after: number; night: number } }[];
+  days: { cash: number; haul: number; gun: number; cleared: string[]; captured: string[]; nodes: number; harbor: number; city: number; tier: number; strength: number; front: string[]; alive: boolean; region: RegionId; event: string | null; crewsIn: number; crewsOut: number; factory: number; gained: number; lost: number; minutes: number; turns: { raid: number; after: number; night: number } }[];
   errors: string[];
 }
 
@@ -99,7 +100,7 @@ function gearUp(p: Profile): Profile {
  */
 function spend(p: Profile): Profile {
   const want = new Map<ValuableKind, number>();
-  for (const l of FACTORY.levels.slice(p.factory)) for (const [k, n] of l.items) want.set(k, (want.get(k) ?? 0) + n);
+  for (const l of FACTORY.levels.slice(p.factory + 1)) for (const [k, n] of l.cost?.items ?? []) want.set(k, (want.get(k) ?? 0) + n);
   const kit = bestGear(p);
   const keep = new Set([...kit.weapons, kit.armor].filter((n) => n >= 0).map((n) => p.stash[n]));
   for (let i = p.stash.length - 1; i >= 0; i--) {
@@ -126,9 +127,12 @@ function spend(p: Profile): Profile {
   return gearUp(p);
 }
 
-/** A month of one skill on a fresh profile that knows every way in, as a player some raids in does. */
-export function playCampaign(skill: string, days = DAYS): Campaign {
-  let p: Profile = spend({ ...newProfile(17), entries: ENTRIES.map((e) => e.id) });
+/**
+ * A month of one skill on a fresh profile that knows every way in, as a player some raids in does.
+ * `seed` is the profile's, from which every raid's seed follows; the gate's month is 17.
+ */
+export function playCampaign(skill: string, days = DAYS, seed = 17): Campaign {
+  let p: Profile = spend({ ...newProfile(seed), entries: ENTRIES.map((e) => e.id) });
   const out: Campaign = { skill, days: [], errors: [] };
   for (let d = 1; d <= days; d++) {
     // The kit: the stash's best guns and armour; the starter PIKE and TALON while it holds none better.
@@ -154,6 +158,7 @@ export function playCampaign(skill: string, days = DAYS): Campaign {
       captured: [...s.stats.captured],
       nodes: mine.length,
       harbor: mine.filter((n) => n.region === "harbor").length,
+      city: mine.filter((n) => n.region === "city").length,
       tier: Math.max(-1, ...mine.map((n) => TIER[n.id])),
       strength: strengthFor(enemyNodes(h)),
       front: NODES.filter((_, i) => frontNodes(h)[i]).map((n) => n.id),
@@ -180,8 +185,8 @@ export function playCampaign(skill: string, days = DAYS): Campaign {
 export function campaignLines(runs: Campaign[]): string[] {
   const deepest = Math.max(...Object.values(TIER));
   const lines = [
-    `${runs[0]?.days.length ?? 0} consecutive days per skill on one profile (scripts/ringfall-campaign.ts). n: nodes of the ${NODES.length} the player holds at the end of the day; s: the enemy's strength the next raid plays at (0 to 2, from the nodes it holds); f: the factory's level (of ${FACTORY.levels.length})`,
-    ["skill    ", ...MARKS.map((m) => `day ${m}`.padEnd(10)), "alive".padEnd(6), "n(mean)".padEnd(8), "n(max)".padEnd(7), `tier 0-${deepest}: first day held`.padEnd(24), "days in".padEnd(22), "events d/s/c".padEnd(13), "crews in/out"].join(" "),
+    `${runs[0]?.days.length ?? 0} consecutive days per skill on one profile (scripts/ringfall-campaign.ts). n: nodes of the ${NODES.length} the player holds at the end of the day; s: the enemy's strength the next raid plays at (0 to 2, from the nodes it holds); f: the factory's level (of ${FACTORY_TOP})`,
+    ["skill    ", ...MARKS.map((m) => `day ${m}`.padEnd(10)), "alive".padEnd(6), "n(mean)".padEnd(8), "n(max)".padEnd(7), `tier 0-${deepest}: first day held`.padEnd(24), "days in".padEnd(30), "events d/s/c".padEnd(13), "crews in/out"].join(" "),
   ];
   for (const c of runs) {
     const at = (m: number) => c.days[m - 1];
@@ -197,7 +202,7 @@ export function campaignLines(runs: Campaign[]): string[] {
     const regions = REGIONS.map((r) => `${r.id} ${c.days.filter((d) => d.region === r.id).length}`).join(" ");
     const ev = (k: string) => c.days.filter((d) => d.event === k).length;
     const sum = (f: (d: Campaign["days"][number]) => number) => c.days.reduce((n, d) => n + f(d), 0);
-    lines.push([c.skill.padEnd(9), ...cells, `${Math.round(alive * 100)}%`.padEnd(6), mean.toFixed(1).padEnd(8), String(most).padEnd(7), tiers.padEnd(24), regions.padEnd(22), `${ev("debris")}/${ev("storm")}/${ev("crews")}`.padEnd(13), `${sum((d) => d.crewsIn)}/${sum((d) => d.crewsOut)}`].join(" "));
+    lines.push([c.skill.padEnd(9), ...cells, `${Math.round(alive * 100)}%`.padEnd(6), mean.toFixed(1).padEnd(8), String(most).padEnd(7), tiers.padEnd(24), regions.padEnd(30), `${ev("debris")}/${ev("storm")}/${ev("crews")}`.padEnd(13), `${sum((d) => d.crewsIn)}/${sum((d) => d.crewsOut)}`].join(" "));
   }
   // The nodes that changed hands overnight, all told, and how long the raids were.
   lines.push(["front    ", "nodes gained / lost overnight".padEnd(30), "raid min (med)"].join(" "));
@@ -228,9 +233,10 @@ export function campaignLines(runs: Campaign[]): string[] {
     }
     lines.push([c.skill.padEnd(9), `${sum((d) => d.turns.raid)} / ${sum((d) => d.turns.after)} / ${sum((d) => d.turns.night)}`.padEnd(42), `${up} / ${down}`.padEnd(19), String(longest)].join(" "));
   }
-  // The nodes held each day, the harbor's among them, the deepest tier held (- for none), the strength and the factory.
-  lines.push(`nodes by day (a 10, b 11): ${runs.map((c) => `${c.skill} ${c.days.map((d) => d.nodes.toString(16)).join("")}`).join(" / ")}`);
+  // The nodes held each day, the harbor's and the city's among them, the deepest tier held (- for none), the strength and the factory.
+  lines.push(`nodes by day (base 36: a 10, b 11...): ${runs.map((c) => `${c.skill} ${c.days.map((d) => d.nodes.toString(36)).join("")}`).join(" / ")}`);
   lines.push(`harbor nodes by day: ${runs.map((c) => `${c.skill} ${c.days.map((d) => d.harbor).join("")}`).join(" / ")}`);
+  lines.push(`city nodes by day: ${runs.map((c) => `${c.skill} ${c.days.map((d) => d.city).join("")}`).join(" / ")}`);
   lines.push(`deepest tier by day: ${runs.map((c) => `${c.skill} ${c.days.map((d) => (d.tier < 0 ? "-" : d.tier)).join("")}`).join(" / ")}`);
   lines.push(`best gun carried by day (0 common to 3 legendary): ${runs.map((c) => `${c.skill} ${c.days.map((d) => d.gun).join("")}`).join(" / ")}`);
   lines.push(`strength by day: ${runs.map((c) => `${c.skill} ${c.days.map((d) => d.strength).join("")}`).join(" / ")}`);

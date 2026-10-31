@@ -107,6 +107,13 @@ export function layZips(
       }
       hull.push(q);
     }
+    // A pylon on a sharp crest can stand where the profile's samples miss the crest's top: each keeps
+    // the rider's feet clear of the ground within a sample's step either side of it.
+    for (let i = 1; i < hull.length - 1; i++) {
+      const [t] = hull[i];
+      for (let u = t - 1.5; u <= t + 1.5; u += 0.25)
+        for (const s of [0, 0.5, -0.5]) hull[i][1] = Math.max(hull[i][1], terrainHeight(A.x + ux * u + px * s, A.z + uz * u + pz * s) + ZIP.hang + 0.3);
+    }
     // Pylons closer together than a span are one, raised until the cable clears everything again.
     const above = (h: [number, number][]) =>
       prof.every(([t, y]) => {

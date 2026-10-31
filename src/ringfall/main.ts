@@ -4,7 +4,7 @@ import { Bot, SKILLS } from "./sim/bot";
 import { collide, groundAt } from "./sim/geom";
 import { terrainHeight } from "./sim/terrain";
 import { callLeft, starterKit, idleInput, newRun, type GameEvent, type Input, type Kit, type State } from "./sim/state";
-import { CAMP, DEPOTS, entryOf, FRAMES, NODES, POIS, poiIndex, QUARRY_EXITS, ZIPS, type CampSpot, type PoiId, type RecordId, type RegionId, type StationId } from "./sim/map";
+import { CAMP, DEPOTS, entryOf, FRAMES, HOME_REGION, NODES, POIS, poiIndex, QUARRY_EXITS, ZIPS, type CampSpot, type PoiId, type RecordId, type RegionId, type StationId } from "./sim/map";
 import { grabZip } from "./sim/zips";
 import { POI_AT } from "./sim/areas";
 import { frontNodes, garrisonOf, takeNode, useCore } from "./sim/front";
@@ -387,7 +387,7 @@ function lock() {
 
 /** The kit the raid under way started from, and the region it dropped into. */
 let kit: Kit = starterKit();
-let region: RegionId = "reservoir";
+let region: RegionId = HOME_REGION.id;
 let settlement: Settlement | null = null;
 /** The mod kinds known when the raid ended, and the one analysed on its results (one at most). */
 let knownBefore: ModKind[] = [];

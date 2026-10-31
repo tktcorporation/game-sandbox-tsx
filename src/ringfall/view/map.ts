@@ -4,7 +4,7 @@ import { zipUp } from "../sim/zips";
 import { frontNodes, nodeHolds, type NodeHold } from "../sim/front";
 import { atRisk, battleMarks, meterOf, type Battle, type Side } from "../sim/battle";
 import { offshore } from "../sim/terrain";
-import { BOXES, CAMP, DEBRIS_SPOTS, NODES, nodeIndex, TIER, UNLOCKS, debrisIndex, DEPOTS, ENTRIES, EXTRA_BINS, EXTRACTS, LANDMARKS, OUTPOST_SITES, POIS, REGIONS, regionOf, ROUTES, regionHere, type EntryId, type NodeId, type PoiId, type RegionId, type RouteId } from "../sim/map";
+import { BOXES, CAMP, DEBRIS_SPOTS, NODES, nodeIndex, TIER, UNLOCKS, debrisIndex, DEPOTS, ENTRIES, EXTRA_BINS, EXTRACTS, HOME_REGION, LANDMARKS, OUTPOST_SITES, POIS, REGIONS, regionOf, ROUTES, regionHere, type EntryId, type NodeId, type PoiId, type RegionId, type RouteId } from "../sim/map";
 import type { IslandEvent, PoiHold } from "../sim/island";
 import { STREETS } from "../sim/streets";
 import { worldKey } from "../sim/routes";
@@ -14,7 +14,7 @@ import { PAL, RARITY_CSS } from "./models";
 import type { ContractMark } from "../meta/contracts";
 
 /*
- * The world map (M, or the map button on a phone): both regions and the ways between
+ * The world map (M, or the map button on a phone): every region and the ways between
  * them. The HUD shows no markers or distances, so this is where the player finds the
  * POIs and the ways off. The ground and buildings are drawn once; each open frame scales
  * them to the map's size on screen and adds the names, the player, the teammate and
@@ -289,7 +289,7 @@ function owners(): Int16Array {
         if (d < best) [best, who] = [d, k];
       });
       // The camp's own ground, on the beach round it.
-      if (region === "reservoir" && Math.hypot(camp.x - x, camp.z - z) < Math.min(best, 110)) who = -2;
+      if (region === HOME_REGION.id && Math.hypot(camp.x - x, camp.z - z) < Math.min(best, 110)) who = -2;
       out[j * cols + i] = who;
     }
   return (landOwner = out);
@@ -353,7 +353,7 @@ export class IslandMap {
   /** The ways in the base offers; null when the map is drawn without a profile, as all of them. */
   known: EntryId[] | null = null;
   /** The region framed when the scene has no player on it (the camp's map table). */
-  region: RegionId = "reservoir";
+  region: RegionId = HOME_REGION.id;
   /** Where the contract taken for the raid points, marked in the loot's gold; null with none taken. */
   contract: ContractMark | null = null;
   /** The shape last given to the page, which sizes the map by it. */
@@ -462,13 +462,16 @@ export class IslandMap {
       scrub: [0xb8, 0xb6, 0x8c],
       oiled: [0xbf, 0xbb, 0xb2],
       concrete: [0xd8, 0xd2, 0xc4],
+      asphalt: [0x6a, 0x70, 0x77],
     };
     const water = [0x5f, 0xa8, 0xa6];
+    const lot = [0x9c, 0xa1, 0xa5];
     const paint = (x: number, z: number, lv: number) => {
       const at = surfaceAt(x, z);
       if (at === "水路") return water;
       const g = groundOf(at);
-      return g ? GROUND[g] : floor(lv);
+      // East of the dried strait the open ground is the city's grey paving, as the view paints it (ground.ts).
+      return g ? GROUND[g] : x > 620 ? lot : floor(lv);
     };
     for (let j = 0; j < this.height; j++)
       for (let i = 0; i < this.width; i++) {

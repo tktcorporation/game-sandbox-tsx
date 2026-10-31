@@ -14,7 +14,7 @@ export const WORLD = {
    * north. The coast's cliffs (terrain.ts) stop bodies well inside them.
    */
   x0: -600,
-  x1: 600,
+  x1: 1120,
   z0: -1220,
   z1: 660,
   gravity: 15,
@@ -406,7 +406,7 @@ export const DEPOT = {
 export const HOME = { away: 10 };
 
 /**
- * The front (docs/ringfall/island-v2.md): the six freeable POIs are the island's nodes (`NODES`,
+ * The front (docs/ringfall/island-v2.md): the freeable POIs are the island's nodes (`NODES`,
  * `FRONT_LINKS` in map.ts), and only a node next to the player's ground (the camp and the nodes
  * the player holds) can be taken, by its core (`core`): a pillar `height` metres tall near the
  * node's middle. The use key starts the capture; the meter fills over `capture` seconds while
@@ -494,8 +494,8 @@ export const CONQUEST = {
   net: {
     every: [1500, 1350, 1200],
     edge: 3,
-    /** What each node works, of a node's share: the island's eleven nodes work as its first six did. */
-    node: 6 / 11,
+    /** What all the nodes work together, shared out among them: each node works `work` over the node count. */
+    work: 6,
     /** Of `edge`, the north shore's work: none while the player holds the node that opens `shore` (`UNLOCKS`). */
     shore: 1,
     answer: 1,
@@ -525,45 +525,56 @@ export const COUNTER = {
  * chance `chance[n - 1]` for `n` such neighbours (2 or more as 2), times `spread` plus the share of
  * the island's nodes the player holds (the further the player has spread, the harder the rest of
  * the front is hit), times `guarded` when the player's squads stood at it as the battle ended,
- * times `factory[level]`. At most `max` fall in a night. The
+ * times the factory's level's `night` (`FACTORY.levels`). At most `max` fall in a night. The
  * draw is a hash of the raid's seed, the day and the node, never the raid's random numbers.
  */
 export const NIGHT = {
   chance: [0.3, 0.5],
   spread: 0.5,
   guarded: 0.5,
-  factory: [1, 0.9, 0.8, 0.7, 0.65],
   max: 2,
 };
 
-/** One level of the factory: what it takes from the stash, as a hideout module's level does (`ModuleLevel`). */
-export interface FactoryLevel {
+/** What building a level of the factory takes from the stash, as a hideout module's level does (`ModuleLevel`). */
+export interface FactoryCost {
   items: [ValuableKind, number][];
   cash: number;
-  does: string;
 }
 
-/**
- * The camp's factory (工場): the player's own robots. At each level (index 0 is the factory the
- * camp starts with) it makes a squad of `kinds` every `every` seconds of the battle, keeps at most
- * `max` out walking at once (squads that hold a node they took or defended do not count), and
- * stands `turrets` turrets (a robot that never leaves the core) at each node the player holds at
- * the raid's start. `levels[n]` is what
- * building level n + 1 takes.
- */
+/** One level of the camp's factory (`FACTORY.levels`). */
+export interface FactoryLevel {
+  /** Seconds of the battle between squads. */
+  every: number;
+  /** Squads out walking at once (squads that hold a node they took or defended do not count). */
+  max: number;
+  /** The robots of a squad it makes. */
+  kinds: EnemyKind[];
+  /** Turrets (a robot that never leaves the core) at each node the player holds at the raid's start. */
+  turrets: number;
+  /** What the chance of a node of the player's falling in the night is multiplied by (`NIGHT`). */
+  night: number;
+  /** What building this level takes; level 0 is the factory the camp starts with, never built. */
+  cost?: FactoryCost;
+}
+
+/** The camp's factory (工場): the player's own robots, a record a level, index = level. */
 export const FACTORY = {
   name: "工場",
-  every: [230, 200, 170, 140, 110],
-  max: [1, 1, 2, 2, 3],
-  kinds: [["grunt", "grunt"], ["grunt", "grunt", "grunt"], ["grunt", "heavy", "grunt"], ["grunt", "heavy", "drone", "grunt"], ["grunt", "grunt", "heavy", "drone", "grunt"]] as EnemyKind[][],
-  turrets: [0, 0, 0, 1, 1],
   levels: [
-    { items: [["parts", 3], ["fuse", 2]], cash: 1250, does: "3 体の部隊・作る間隔が 200 秒" },
-    { items: [["parts", 4], ["wire", 2]], cash: 3500, does: "ヘビーを作る・作る間隔が 170 秒・同時に 2 部隊" },
-    { items: [["wire", 3], ["board", 2]], cash: 7000, does: "4 体の部隊・ドローンを作る・作る間隔が 140 秒・解放した拠点に砲台" },
-    { items: [["board", 3], ["drive", 2]], cash: 12000, does: "5 体の部隊・作る間隔が 110 秒・同時に 3 部隊" },
+    { every: 230, max: 1, kinds: ["grunt", "grunt"], turrets: 0, night: 1 },
+    { every: 200, max: 1, kinds: ["grunt", "grunt", "grunt"], turrets: 0, night: 0.9, cost: { items: [["parts", 3], ["fuse", 2]], cash: 1250 } },
+    { every: 170, max: 2, kinds: ["grunt", "heavy", "grunt"], turrets: 0, night: 0.8, cost: { items: [["parts", 4], ["wire", 2]], cash: 3500 } },
+    { every: 140, max: 2, kinds: ["grunt", "heavy", "drone", "grunt"], turrets: 1, night: 0.7, cost: { items: [["wire", 3], ["board", 2]], cash: 7000 } },
+    { every: 110, max: 3, kinds: ["grunt", "grunt", "heavy", "drone", "grunt"], turrets: 1, night: 0.65, cost: { items: [["board", 3], ["drive", 2]], cash: 12000 } },
+    { every: 100, max: 3, kinds: ["grunt", "grunt", "heavy", "drone", "grunt", "charger"], turrets: 1, night: 0.6, cost: { items: [["drive", 3], ["gyro", 2]], cash: 18000 } },
+    { every: 90, max: 4, kinds: ["grunt", "grunt", "heavy", "drone", "grunt", "charger"], turrets: 2, night: 0.55, cost: { items: [["gyro", 3], ["core", 1]], cash: 26000 } },
+    { every: 80, max: 4, kinds: ["grunt", "heavy", "heavy", "drone", "grunt", "charger"], turrets: 2, night: 0.5, cost: { items: [["board", 4], ["core", 2]], cash: 36000 } },
+    { every: 70, max: 5, kinds: ["grunt", "grunt", "heavy", "heavy", "drone", "charger", "grunt"], turrets: 3, night: 0.45, cost: { items: [["gyro", 2], ["core", 2], ["reactor", 1]], cash: 50000 } },
   ] as FactoryLevel[],
 };
+
+/** The factory's top level. */
+export const FACTORY_TOP = FACTORY.levels.length - 1;
 
 /** What one level of the enemy's strength sets in a raid (`STRENGTH.levels`). */
 export interface StrengthLevel {
@@ -578,21 +589,22 @@ export interface StrengthLevel {
 }
 
 /**
- * The enemy's strength in a raid (docs/ringfall/island-v2.md): the more of the six nodes the
+ * The enemy's strength in a raid (docs/ringfall/island-v2.md): the more of the nodes the
  * enemy holds, the sooner and the more its reinforcements, raiders and hunters come.
- * `byHeld[n]` is the level of a raid with `n` nodes the enemy's, so the island before the first
- * capture plays at the top level and every node taken eases it.
+ * `byShare` gives a level for each share of the nodes the enemy holds, the first whose share it
+ * reaches (0 under all of them), so the island before the first capture plays at the top level
+ * and nodes taken ease it.
  *
  * `levels[play]` is the island the bots' balance tables are played on, with every node the
  * enemy's: its numbers are the reinforcement times, raider time, parties and packs of
  * `REINFORCE`, `RAIDERS`, `PARTY` and `PACKS`. Lower levels give more time and fewer hunters.
  */
 export const STRENGTH = {
-  byHeld: [0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2],
+  byShare: [[0.8, 2], [0.45, 1]] as [number, number][],
   levels: [
-    { reinforce: { first: 480, every: 360 }, raiders: 1020, parties: { reservoir: 1, harbor: 1 }, packs: { reservoir: 1, harbor: 1 } },
-    { reinforce: { first: 435, every: 300 }, raiders: 900, parties: { reservoir: 1, harbor: 1 }, packs: { reservoir: 2, harbor: 1 } },
-    { reinforce: { first: 390, every: 270 }, raiders: 780, parties: { reservoir: 2, harbor: 2 }, packs: { reservoir: 3, harbor: 2 } },
+    { reinforce: { first: 480, every: 360 }, raiders: 1020, parties: { reservoir: 1, harbor: 1, city: 1 }, packs: { reservoir: 1, harbor: 1, city: 1 } },
+    { reinforce: { first: 435, every: 300 }, raiders: 900, parties: { reservoir: 1, harbor: 1, city: 1 }, packs: { reservoir: 2, harbor: 1, city: 1 } },
+    { reinforce: { first: 390, every: 270 }, raiders: 780, parties: { reservoir: 2, harbor: 2, city: 1 }, packs: { reservoir: 3, harbor: 2, city: 1 } },
   ] satisfies StrengthLevel[],
   /** The level the sim gate's raids are played at, and a raid's when the start names no island: every node the enemy's. */
   play: 2,
@@ -606,7 +618,7 @@ export const STRENGTH = {
  *   asking for as many as its bins hold on average, up to `fetchMax`, and one more of them on top;
  * - destroy a drone pack or a hunting party: `intercept` by target, and on some days a heal or a
  *   weapon, one step rarer every `rarityEvery` days.
- * Each is multiplied by the region's `region` factor: the harbor is the harder ground.
+ * Each is multiplied by the region's `region` factor: the harbor is the harder ground, the city across the strait the hardest.
  */
 export const CONTRACT = {
   count: [3, 4] as const,
@@ -616,7 +628,7 @@ export const CONTRACT = {
   fetchMax: 3,
   intercept: { pack: 500, party: 800, crew: 900 },
   rarityEvery: 6,
-  region: { reservoir: 1, harbor: 1.4 } satisfies Record<RegionId, number>,
+  region: { reservoir: 1, harbor: 1.4, city: 1.6 } satisfies Record<RegionId, number>,
 };
 
 /** The island's events (島の出来事): at most one a day, announced the day before (meta/island.ts). */
@@ -994,7 +1006,7 @@ export const PACK = { sight: 75, pace: 0.9, away: 140 };
  * stops, spawns and waits are drawn from their own random numbers (`roamRand()`).
  */
 export const PARTY = {
-  count: { reservoir: 2, harbor: 2 } satisfies Record<RegionId, number>,
+  count: { reservoir: 2, harbor: 2, city: 1 } satisfies Record<RegionId, number>,
   name: "遊撃隊",
   pace: 0.7,
   linger: [20, 40] as const,

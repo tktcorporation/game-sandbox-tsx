@@ -476,13 +476,13 @@ const spills = (pg) =>
   await page.waitForTimeout(400);
   await page.evaluate(() => Object.defineProperty(screen, "orientation", { value: undefined, configurable: true }));
   await toCamp(page, true);
-  // The departure from the truck: the harbor carries a padlock, its three ways in dashed and shut.
+  // The departure from the truck: the harbor and the city carry padlocks, their ways in dashed and shut.
   await useStation(page, "vehicle", await ctx.newCDPSession(page));
   await departUp(page);
   const locks = await page.locator("#depart-points .region-lock .ico.lock").count();
   const shut = await page.locator("#depart-points button.pick.entry.shut:disabled").count();
   const open = await page.locator("#depart-points button.pick:not(:disabled)").count();
-  if (locks !== 1 || shut !== 5 || open !== 1) errors.push(`mobile: a fresh departure shows ${locks} padlocks, ${shut} ways in shut and ${open} to choose`);
+  if (locks !== 2 || shut !== 7 || open !== 1) errors.push(`mobile: a fresh departure shows ${locks} padlocks, ${shut} ways in shut and ${open} to choose`);
   const fit = await departFits(page);
   if (fit.length) errors.push(`mobile departure (844x390): ${fit.join(", ")}`);
   await page.screenshot({ path: `${out}/m7-depart-locked.png` });
@@ -646,14 +646,14 @@ const read = async () => JSON.parse(await page.evaluate(() => window.render_game
   if ((await page.locator("#hub-side [data-act=entry], #hub-side [data-act=region], #hub-side [data-act=from]").count()) || !(await page.locator("#hub-island-map").count())) errors.push("camp: the map table still chooses a start, or shows no island");
   await page.screenshot({ path: `${out}/00-panel-map.png` });
   await closePanel(page);
-  // The departure from the truck: a fresh profile knows only the reservoir's first way in, so the harbor carries a padlock and its ways in are dashed; cancelled with Esc.
+  // The departure from the truck: a fresh profile knows only the reservoir's first way in, so the harbor and the city carry padlocks and their ways in are dashed; cancelled with Esc.
   await useStation(page, "vehicle");
   await departUp(page);
   const harborLocked = await page.locator("#depart-points .region-lock").count();
   const entriesOffered = await page.locator("#depart-points button.pick.entry:not(:disabled)").count();
   const harborRings = await page.locator("#depart-points button.pick.entry.shut").count();
   const fresh = (await readPage(page)).camp.depart;
-  if (harborLocked !== 1 || entriesOffered !== 1 || harborRings !== 5 || fresh?.start?.id !== "beach") errors.push(`camp: a fresh departure offers ${entriesOffered} ways in, ${harborLocked} locked regions, ${harborRings} ways in to find, starting at ${fresh?.start?.id}`);
+  if (harborLocked !== 2 || entriesOffered !== 1 || harborRings !== 7 || fresh?.start?.id !== "beach") errors.push(`camp: a fresh departure offers ${entriesOffered} ways in, ${harborLocked} locked regions, ${harborRings} ways in to find, starting at ${fresh?.start?.id}`);
   await page.screenshot({ path: `${out}/00-depart-locked.png` });
   await page.keyboard.press("Escape");
   if ((await readPage(page)).camp?.depart) errors.push("camp: Esc did not close the departure");
@@ -970,7 +970,7 @@ for (let i = 0; i < 25 * 60 * 10; i++) {
     // A vault, from just in front of it: the locked crate reads apart from the supply bins.
     // The quarry's stands on an open terrace, so the camera has a clear view of it.
     const v = s.vaults.find((b) => b.poi === 1);
-    if (s.vaults.length !== 12 || !v) errors.push(`vaults: ${s.vaults.length} in the world`);
+    if (s.vaults.length !== s.cleared.length || !v) errors.push(`vaults: ${s.vaults.length} in the world`);
     else {
       await page.evaluate((b) => window.ringfallCamera(b.x + 0.4, b.y + 1.6, b.z + 2.6, 0.12, -0.42), v);
       await shot("26-vault");
@@ -1101,7 +1101,7 @@ console.log(JSON.stringify((await read()).stats));
   }));
   const settledDay = await read();
   const heldNow = settledDay.profile && Object.entries(settledDay.profile.poiState).filter(([id, o]) => id !== "pad" && o.state === "freed").length;
-  if (!day.map || day.bar !== `${heldNow} / 11` || /陣取り戦|勝ち|負け|網/.test(day.text) || (await page.locator("#rank, #total").count())) errors.push(`results: the day reads ${JSON.stringify(day)} for ${JSON.stringify(settledDay.settled?.front)}`);
+  if (!day.map || day.bar !== `${heldNow} / ${settledDay.front.nodes.length}` || /陣取り戦|勝ち|負け|網/.test(day.text) || (await page.locator("#rank, #total").count())) errors.push(`results: the day reads ${JSON.stringify(day)} for ${JSON.stringify(settledDay.settled?.front)}`);
   if (fit.length) errors.push(`results on a phone: ${fit.join(", ")} past the 740x360 screen`);
   await page.screenshot({ path: `${out}/m9-results.png` });
   await page.setViewportSize({ width: 1280, height: 720 });
@@ -1524,7 +1524,7 @@ const islandDay = {
   await closePanel(pg);
   const run = await walkOutOfGate(pg);
   const at = (id) => run.enemies.filter((e) => run.squads[e.squad].poi === id).length;
-  if (run.hold.join() !== "freed,freed,held,held,freed,held,held,held,held,held,held,held" || at(0) !== 0 || at(1) !== 0 || at(4) !== 0 || !(at(2) > 0)) errors.push(`island raid: holds ${run.hold.join()}, robots at the supply depot ${at(0)}, the quarry ${at(1)}, the wreck ${at(4)}, the relay ${at(2)}`);
+  if (run.hold.slice(0, 5).join() !== "freed,freed,held,held,freed" || run.hold.slice(5).some((h) => h !== "held") || at(0) !== 0 || at(1) !== 0 || at(4) !== 0 || !(at(2) > 0)) errors.push(`island raid: holds ${run.hold.join()}, robots at the supply depot ${at(0)}, the quarry ${at(1)}, the wreck ${at(4)}, the relay ${at(2)}`);
   // The way in's banner has gone by the time the map is opened; the HUD is drawn for the screenshot.
   await pg.evaluate(() => window.ringfallStep(4000));
   await pg.screenshot({ path: `${out}/72-island-hud-row.png`, clip: { x: 1280 / 2 - 260, y: 0, width: 520, height: 120 } });
@@ -1994,7 +1994,7 @@ for (const phone of [false, true]) {
   await pg.screenshot({ path: tag(7, "objective-front") });
   const hud = await pg.evaluate(() => ({ own: Number(document.querySelector("#island-row .tug-n.own")?.textContent), all: document.querySelector("#island-row .tug")?.getAttribute("aria-label"), text: document.getElementById("island-row").textContent }));
   const deadline = await pg.evaluate(() => document.querySelector("#obj-raid .deadline .ico.clock") ? document.querySelector("#obj-raid .deadline").textContent : "");
-  if (hud.own !== 2 || hud.all !== "2 / 11" || hud.text.trim() !== "29" || !/^\d+:\d\d$/.test(deadline)) errors.push(`battle: the HUD's row reads ${JSON.stringify(hud)}, the card "${deadline}"`);
+  if (hud.own !== 2 || hud.all !== "2 / 16" || hud.text.trim() !== "214" || !/^\d+:\d\d$/.test(deadline)) errors.push(`battle: the HUD's row reads ${JSON.stringify(hud)}, the card "${deadline}"`);
   const st = await readOf(pg);
   if (st.battle.squads.filter((q) => q.side === 0).length < 2) errors.push(`battle: ${st.battle.squads.filter((q) => q.side === 0).length} of the player's squads at the start (the turrets at two nodes)`);
   // A fight in front of the player: the player's squad on the left, the enemy's on the right.
@@ -2139,7 +2139,7 @@ for (const phone of [false, true]) {
   await pg.screenshot({ path: tag(7, "results-night") });
   const bar = await pg.evaluate(() => document.querySelector("#day-result .tug")?.getAttribute("aria-label"));
   const held = Object.entries(r.profile.poiState).filter(([id, o]) => id !== "pad" && o.state === "freed").length;
-  if (bar !== `${held} / 11`) errors.push(`push-pull: the results' bar reads ${bar} for ${held} nodes held`);
+  if (bar !== `${held} / 16`) errors.push(`push-pull: the results' bar reads ${bar} for ${held} nodes held`);
   await ctx.close();
   lap(`push-pull, ${phone ? "phone" : "desktop"}`);
 }
@@ -2269,7 +2269,7 @@ for (const phone of [false, true]) {
   await useStation(pg, "vehicle");
   await departUp(pg);
   const learnt = ((await readOf(pg)).camp.depart?.starts ?? []).filter((q) => q.kind === "entry" && q.region === "harbor" && q.open);
-  if (!learnt.length || (await pg.locator("#depart-points .region-lock").count())) errors.push(`${why}: the departure offers ${learnt.length} harbor ways in once learned`);
+  if (!learnt.length || (await pg.locator('#depart-points .region-lock[data-region="harbor"]').count())) errors.push(`${why}: the departure offers ${learnt.length} harbor ways in once learned`);
   if (learnt[0]) await pickStart(pg, "entry", learnt[0].id, phone);
   await snap("6-depart-learned");
   await pg.keyboard.press("Escape");

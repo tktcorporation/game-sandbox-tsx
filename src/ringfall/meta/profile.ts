@@ -1,5 +1,5 @@
-import { DEPOT, FACTORY, HEALS as HEAL_SPECS, HIDEOUT, META, MOD_KINDS, MOD_START, THREAT, TOOLS, VALUABLES, type ModKind, type HealKind, type ModuleId, type Rarity, type ToolKind, type ValuableKind, type WeaponKind, type FactoryLevel } from "../sim/config";
-import { depotIndex, DEPOTS, ENTRIES, POIS, poiIndex, REGIONS, regionOf, ROUTES, type EntryId, type NodeId, type PoiId, type RecordId, type RegionId, type RouteId } from "../sim/map";
+import { DEPOT, FACTORY, FACTORY_TOP, HEALS as HEAL_SPECS, HIDEOUT, META, MOD_KINDS, MOD_START, THREAT, TOOLS, VALUABLES, type ModKind, type HealKind, type ModuleId, type Rarity, type ToolKind, type ValuableKind, type WeaponKind, type FactoryCost } from "../sim/config";
+import { depotIndex, DEPOTS, ENTRIES, HOME_REGION, POIS, poiIndex, REGIONS, regionOf, ROUTES, type EntryId, type NodeId, type PoiId, type RecordId, type RegionId, type RouteId } from "../sim/map";
 import { openRoutes } from "../sim/routes";
 import { encodeSeen, type Kit, type State } from "../sim/state";
 import { haulOrigins } from "../sim/world";
@@ -25,7 +25,7 @@ export type Item =
 
 /** What persists between raids. */
 export interface Profile {
-  v: 23;
+  v: 24;
   cash: number;
   stash: Item[];
   raids: number;
@@ -89,7 +89,7 @@ export interface KitPicks {
 export const HEALS: HealKind[] = ["cell", "battery", "syringe", "medkit"];
 
 /** The way in a new player knows: the reservoir's first. */
-export const FIRST_ENTRY: EntryId = regionOf("reservoir").entries[0];
+export const FIRST_ENTRY: EntryId = HOME_REGION.entries[0];
 
 /** Ways in as a known list: real ones only, once each, in `ENTRIES` order, always with `FIRST_ENTRY`. */
 export const knownEntries = (ids: readonly string[]): EntryId[] => ENTRIES.filter((e) => e.id === FIRST_ENTRY || ids.includes(e.id)).map((e) => e.id);
@@ -135,7 +135,7 @@ export const stashUsed = (p: Pick<Profile, "stash">) => p.stash.filter((i) => !i
 export function newProfile(seed = 1): Profile {
   const stash: Item[] = [...starterItems(), ...META.start.weapons.map((w): Item => ({ t: "weapon", ...w }))];
   for (const k of HEALS) for (let i = 0; i < META.start.heals[k]; i++) stash.push({ t: "heal", kind: k });
-  const p: Omit<Profile, "board"> = { v: 23, cash: META.start.cash, stash, raids: 0, extracted: 0, time: 0, quests: emptyLog(), region: "reservoir", entry: FIRST_ENTRY, entries: [FIRST_ENTRY], hideout: emptyHideout(), seed: seed & 0xffff, depots: [], depotSent: {}, seen: "", routes: [], day: 1, poiState: newIsland(), taken: null, records: [], events: firstEvents(seed & 0xffff), known: [...MOD_START], threat: 0, freedAt: {}, factory: 0, lastKit: null };
+  const p: Omit<Profile, "board"> = { v: 24, cash: META.start.cash, stash, raids: 0, extracted: 0, time: 0, quests: emptyLog(), region: HOME_REGION.id, entry: FIRST_ENTRY, entries: [FIRST_ENTRY], hideout: emptyHideout(), seed: seed & 0xffff, depots: [], depotSent: {}, seen: "", routes: [], day: 1, poiState: newIsland(), taken: null, records: [], events: firstEvents(seed & 0xffff), known: [...MOD_START], threat: 0, freedAt: {}, factory: 0, lastKit: null };
   return { ...p, board: makeBoard(p) };
 }
 
@@ -518,7 +518,7 @@ export const setThreat = (p: Profile, threat: number): Profile => ({ ...p, threa
 /** Valuables the factory's levels not yet built still ask for, by kind. */
 export function factoryNeeded(p: Pick<Profile, "factory">): Record<ValuableKind, number> {
   const out = Object.fromEntries(Object.keys(VALUABLES).map((k) => [k, 0])) as Record<ValuableKind, number>;
-  for (const l of FACTORY.levels.slice(p.factory)) for (const [k, n] of l.items) out[k] += n;
+  for (const l of FACTORY.levels.slice(p.factory + 1)) for (const [k, n] of l.cost?.items ?? []) out[k] += n;
   return out;
 }
 
@@ -763,11 +763,13 @@ const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
  * Before v23 a raid with no stash weapon went out with weapons lent for it: such a profile's stash
  * gains the starter weapons (as every profile's does, `withStarters()`), and a last loadout of no
  * stash weapon picks them again (`recallLoadout()`).
+ * Before v24 the world ended at x 600 and `cellOf()` cut it into fewer columns: such a profile's
+ * explored map is dropped.
  */
 export function parseProfile(raw: unknown, seed = 1): Profile | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
+  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
   const old = o.v === 1 || o.v === 2;
   const migrate = (i: unknown): unknown => {
     if (!old || !i || typeof i !== "object" || (i as Record<string, unknown>).t !== "key") return i;
@@ -797,7 +799,7 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   const depotSent = Object.fromEntries(depots.map((d) => [d, num(ds[d])]));
   const entries = typeof o.v === "number" && o.v < 11 ? ENTRIES.map((e) => e.id) : knownEntries(Array.isArray(o.entries) ? o.entries.filter((e): e is string => typeof e === "string") : []);
   const poiState = typeof o.v === "number" && o.v >= 13 ? parseIsland(o.poiState) : newIsland();
-  const { region, entry } = allowedStart({ entries, depots, poiState }, REGIONS.find((r) => r.id === o.region)?.id ?? "reservoir", o.entry);
+  const { region, entry } = allowedStart({ entries, depots, poiState }, REGIONS.find((r) => r.id === o.region)?.id ?? HOME_REGION.id, o.entry);
   const raids = num(o.raids);
   const day = (typeof o.v === "number" && o.v >= 13) && Number.isInteger(o.day) && (o.day as number) >= 1 ? (o.day as number) : raids + 1;
   const recordIds = STORIES.map((t) => t.id);
@@ -814,7 +816,7 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   let room = cap;
   const stash = withStarters(items.filter((i) => isStarter(i) || room-- > 0));
   const out: Omit<Profile, "board" | "taken" | "events"> = {
-    v: 23,
+    v: 24,
     cash: Math.max(0, Math.floor(o.cash)),
     stash,
     raids,
@@ -829,11 +831,11 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     seed: Number.isInteger(o.seed) ? (o.seed as number) & 0xffff : seed & 0xffff,
     depots,
     depotSent,
-    seen: (typeof o.v === "number" && o.v >= 12) && typeof o.seen === "string" && /^[0-9a-f]*$/.test(o.seen) ? o.seen : "",
+    seen: (typeof o.v === "number" && o.v >= 24) && typeof o.seen === "string" && /^[0-9a-f]*$/.test(o.seen) ? o.seen : "",
     routes: typeof o.v === "number" && o.v >= 9 && Array.isArray(o.routes) ? openRoutes(o.routes.filter((r): r is string => typeof r === "string")) : [],
     day,
     poiState,
-    factory: v19 && Number.isInteger(o.factory) ? Math.max(0, Math.min(FACTORY.levels.length, o.factory as number)) : 0,
+    factory: v19 && Number.isInteger(o.factory) ? Math.max(0, Math.min(FACTORY_TOP, o.factory as number)) : 0,
     lastKit: v20 ? parseKitPicks(o.lastKit) : null,
     records,
     known: knownMods(v17 && Array.isArray(o.known) ? o.known : []),
@@ -865,8 +867,8 @@ function parseKitPicks(raw: unknown): KitPicks | null {
   return { weapons, armor, keys, heals };
 }
 
-/** The factory's next level, or null once it is at its top. */
-export const nextFactory = (p: Pick<Profile, "factory">): FactoryLevel | null => FACTORY.levels[p.factory] ?? null;
+/** What building the factory's next level takes, or null once it is at its top. */
+export const nextFactory = (p: Pick<Profile, "factory">): FactoryCost | null => FACTORY.levels[p.factory + 1]?.cost ?? null;
 
 /** What stands between the factory and its next level: items short (kind, have, need) and credits short; null at the top. */
 export function factoryShortfall(p: Profile): { items: [ValuableKind, number, number][]; cash: number } | null {
@@ -905,7 +907,7 @@ export function buildFactory(p: Profile): Profile | null {
  */
 export function allowedStart(p: Pick<Profile, "entries" | "depots" | "poiState">, region: RegionId, entry: unknown): { region: RegionId; entry: EntryId } {
   const known = (r: RegionId) => regionOf(r).entries.filter((e) => p.entries.includes(e));
-  const reg = canStartIn(p, region) ? region : "reservoir";
+  const reg = canStartIn(p, region) ? region : HOME_REGION.id;
   const ways = known(reg);
   const want = ENTRIES.find((e) => e.id === entry && e.region === reg && ways.includes(e.id));
   // A region open only through a depot keeps a known way in elsewhere as the record of the last walk in.

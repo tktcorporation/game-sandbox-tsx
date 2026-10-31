@@ -555,7 +555,7 @@ export function stepLoot(s: State, input: Input) {
   const alive = p.downed <= 0 && s.phase === "play";
   const shed: Loot[] = [];
   const worn: Loot[] = [];
-  s.loot = s.loot.filter((l) => {
+  const keep = (l: Loot): boolean => {
     l.age += TICK;
     // Only a shard old enough is drawn to the player, so only its distance is needed.
     const d = l.kind === "shard" && l.age > 0.35 ? hypot3(l.pos.x - p.pos.x, l.pos.z - p.pos.z, l.pos.y - (p.pos.y + 0.8)) : Infinity;
@@ -629,7 +629,12 @@ export function stepLoot(s: State, input: Input) {
       return true;
     }
     return true;
-  });
+  };
+  // As `filter()` would, without its per-item call through the builtin.
+  const was = s.loot;
+  const kept: Loot[] = [];
+  for (let i = 0, n = was.length; i < n; i++) if (keep(was[i])) kept.push(was[i]);
+  s.loot = kept;
   s.loot.push(...shed);
   for (const l of worn) if (p.mods.length < MOD.slots) wearMod(s, l);
 

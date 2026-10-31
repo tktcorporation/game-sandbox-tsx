@@ -1,5 +1,5 @@
 import { ALLY, BOOST, CREW, DEPOT, STORM, SWEEP, DUCK, ELITE, ENEMIES, META, MOD_START, STRENGTH, THREAT, VALUABLES, WORLD, type ModKind, type ValuableKind, PLAYER, ULT, type EnemyKind, type Flank, type HealKind, type Rarity, type ToolKind, type WeaponKind } from "./config";
-import { DEPOTS, depotIndex, entryOf, EXTRA_BINS, POIS, poiIndex, poiRegion, recordSpot, regionOf, type EntryId, type ExtractId, type PoiId, type RecordId, type RegionId, type RouteId, DEBRIS_SPOTS, debrisIndex, type NodeId } from "./map";
+import { DEPOTS, depotIndex, entryOf, EXTRA_BINS, HOME_REGION, NODES, POIS, poiIndex, poiRegion, recordSpot, regionOf, type EntryId, type ExtractId, type PoiId, type RecordId, type RegionId, type RouteId, DEBRIS_SPOTS, debrisIndex, type NodeId } from "./map";
 import { openRoutes, useRoutes } from "./routes";
 import { populate, spawnEnemy } from "./enemies";
 import { placeParties } from "./world";
@@ -896,8 +896,12 @@ export interface Start {
 /** What the enemy's strength sets in a raid. */
 export const strengthLevel = (s: Pick<State, "strength">) => STRENGTH.levels[s.strength];
 
-/** The enemy's strength with `held` of the nodes its own (`STRENGTH.byHeld`). */
-export const strengthFor = (held: number) => STRENGTH.byHeld[Math.max(0, Math.min(STRENGTH.byHeld.length - 1, held))];
+/**
+ * The enemy's strength with `enemyHeld` of the nodes its own (`STRENGTH.byShare`). A share is
+ * reached when `enemyHeld` is at least the share of the node count rounded up; the small allowance
+ * keeps a share that lands on a whole count (0.5 of 10 nodes) from rounding up past it in floating point.
+ */
+export const strengthFor = (enemyHeld: number) => STRENGTH.byShare.find(([share]) => enemyHeld >= Math.ceil(share * NODES.length - 1e-9))?.[1] ?? 0;
 
 /**
  * The reinforcements' first time and interval and the raiders' time of a raid at the enemy's
@@ -915,7 +919,7 @@ export function raidClock(strength: number, threat: number) {
  * ways in, or at a depot already on (in that depot's region). The default is the reservoir,
  * which the sim gate plays.
  */
-export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = "reservoir", start: Start = {}): State {
+export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOME_REGION.id, start: Start = {}): State {
   const routes = openRoutes(start.routes ?? []);
   useRoutes(routes);
   // The hunters' fields kept from an earlier raid would steer this one's hunters near the

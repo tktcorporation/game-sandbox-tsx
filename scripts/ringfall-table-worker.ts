@@ -3,6 +3,7 @@
  * raid it is sent and sends back its result. One process plays many raids, so the grids
  * the sim builds on first use are built once per process.
  */
+import "./ringfall-terrain-store";
 import { playRaid, type RaidResult } from "./ringfall-table";
 import type { RegionId } from "../src/ringfall/sim/map";
 

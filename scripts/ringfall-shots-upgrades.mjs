@@ -121,7 +121,7 @@ export async function upgradeShots({ browser, port, out, errors }) {
       ladder: [...document.querySelectorAll("#hub-side .ladder li")].map((l) => l.className),
       build: document.querySelector("#hub-side [data-act=factory]")?.textContent,
     }));
-    if (!factory.flag || !factory.gains || factory.ladder.length !== 5 || factory.ladder[1] !== "cur" || factory.build !== "Lv2") errors.push(`upgrades: the factory reads ${JSON.stringify(factory)}`);
+    if (!factory.flag || !factory.gains || factory.ladder.length !== 9 || factory.ladder[1] !== "cur" || factory.build !== "Lv2") errors.push(`upgrades: the factory reads ${JSON.stringify(factory)}`);
     await check(pg, `${where} factory`);
     await shot("4-factory");
     await close(pg, phone);

@@ -1,8 +1,8 @@
 import { PLAYER } from "../sim/config";
 import { armorIcon, binPicture, checkIcon, coreIcon, factoryIcon, flagIcon, hideoutIcon, clockIcon, crossIcon, depotIcon, gunIcon, healIcon, issueIcon, keyIcon, lockIcon, modIcon, pinIcon, pouchIcon, radioIcon, robotIcon, routeIcon, SIDE, stashIcon, turretIcon, upIcon, workbenchIcon } from "./icons";
-import { ALLY, FACTORY, HEALS as HEAL_SPECS, HIDEOUT, MOD_KINDS, PLATE, RARITY, THREAT, TOOLS, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
+import { ALLY, FACTORY, FACTORY_TOP, HEALS as HEAL_SPECS, HIDEOUT, MOD_KINDS, PLATE, RARITY, THREAT, TOOLS, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
 import { boostFor, raidClock, strengthFor, type Kit } from "../sim/state";
-import { CAMP, DEPOTS, ENTRIES, entryOf, NODES, POIS, UNLOCKS, poiIndex, poiRegion, REGIONS, regionOf, ROUTES, type EntryId, type PoiId, type RegionId, type StationId } from "../sim/map";
+import { CAMP, DEPOTS, ENTRIES, entryOf, HOME_REGION, NODES, POIS, UNLOCKS, poiIndex, poiRegion, REGIONS, regionOf, ROUTES, type EntryId, type PoiId, type RegionId, type StationId } from "../sim/map";
 import { armed, build, buildFactory, buildState, buy, buyPrice, canBuild, canBuildFactory, factoryNeeded, nextFactory, canStartIn, deliver, deliverable, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, isStarter, issuedHeals, itemCost, HEALS, healCount, healRoom, keyName, kitPicks, loadoutCost, stashUsed, price, raidThreat, recallLoadout, sell, sellPrice, setThreat, startsIn, STORY_TAKEN, takenStory, threatPay, take, takeKit, takenContract, wanted, wares, type Item, type Loadout, type Profile } from "../meta/profile";
 import { CONTRACT_NAME, contractMark, contractRegion, contractText, type Contract, type Reward } from "../meta/contracts";
 import { currentStory, STORIES, storyOf, storyWhere } from "../meta/story";
@@ -447,7 +447,7 @@ export class Hub {
     const p = this.profile;
     if (this.from && !departDepots(p).includes(this.from)) this.from = null;
     if (!canStartIn(p, this.region)) {
-      this.region = "reservoir";
+      this.region = HOME_REGION.id;
       this.from = null;
     }
     if (!this.entry || !startsIn(p, this.region).entries.includes(this.entry)) this.entry = this.entryIn(this.region);
@@ -482,7 +482,7 @@ export class Hub {
   /** Whether the chosen start is the gate's own way in: walking out of the gate then starts the raid where the player stands. */
   walksOut(): boolean {
     this.fixStart();
-    return !this.from && this.region === "reservoir" && (this.entry ?? FIRST_ENTRY) === FIRST_ENTRY;
+    return !this.from && this.region === HOME_REGION.id && (this.entry ?? FIRST_ENTRY) === FIRST_ENTRY;
   }
 
   /**
@@ -591,8 +591,8 @@ export class Hub {
    * add theirs, `unlocked().squad`), and the turrets at each node held.
    */
   private factoryGauges(lv: number): Gauge[] {
-    const kinds = [...new Set(FACTORY.kinds.flat())];
-    const squad = (k: EnemyKind) => (lv2: number) => FACTORY.kinds[lv2].filter((x) => x === k).length;
+    const kinds = [...new Set(FACTORY.levels.flatMap((l) => l.kinds))];
+    const squad = (k: EnemyKind) => (lv2: number) => FACTORY.levels[lv2].kinds.filter((x) => x === k).length;
     const extra = unlocked(this.profile).squad;
     return [
       ...kinds.map((k) => ({
@@ -603,9 +603,9 @@ export class Hub {
         n: squad(k)(lv),
         show: (n: number, was = n) => `<span class="bots">${Array.from({ length: n }, (_, i) => `<i class="${i >= was ? "gain" : ""}">${robotIcon(SIDE.own)}</i>`).join("") || `<b class="n none">0</b>`}</span>`,
       })),
-      { key: "every", mark: clockIcon(), n: FACTORY.every[lv], show: (n: number, was?: number) => `${num(n, was)}<small>秒</small>` },
-      { key: "max", mark: flagIcon(), n: FACTORY.max[lv] + extra, show: num },
-      { key: "turrets", mark: turretIcon(SIDE.own), n: FACTORY.turrets[lv], show: num, hideZero: true },
+      { key: "every", mark: clockIcon(), n: FACTORY.levels[lv].every, show: (n: number, was?: number) => `${num(n, was)}<small>秒</small>` },
+      { key: "max", mark: flagIcon(), n: FACTORY.levels[lv].max + extra, show: num },
+      { key: "turrets", mark: turretIcon(SIDE.own), n: FACTORY.levels[lv].turrets, show: num, hideZero: true },
     ];
   }
 
@@ -629,8 +629,8 @@ export class Hub {
     const p = this.profile;
     const lv = p.factory;
     const next = nextFactory(p);
-    const levels = FACTORY.every.map((_, n) => this.factoryGauges(n));
-    const pips = Array.from({ length: FACTORY.levels.length }, (_, n) => `<i class="${n < lv ? "on" : ""}"></i>`).join("");
+    const levels = FACTORY.levels.map((_, n) => this.factoryGauges(n));
+    const pips = Array.from({ length: FACTORY_TOP }, (_, n) => `<i class="${n < lv ? "on" : ""}"></i>`).join("");
     const u = unlocked(p);
     const arms = Math.max(PLATE.robots, u.shop);
     // What the nodes held add: a node's core in the player's blue, then their squads' flags and the gun's colour (the trader's shelf).

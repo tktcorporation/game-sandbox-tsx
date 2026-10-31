@@ -4,7 +4,8 @@ import type { PoiId } from "./map";
 import { hypot2 } from "./hypot";
 
 /*
- * The ground of two regions joined by a mountain belt. The south one is a dried-up
+ * The ground of three regions: two joined by a mountain belt, and the machine city's paved
+ * basin east of them across a dried strait (its ground is at the end). The south one is a dried-up
  * reservoir: a dam once held a lake in the middle of it; the water is gone and the
  * drowned town stands on the cracked lakebed, 14 m under the shore. Around it the ground
  * steps up and down: the dam's 30 m wall in the north with the landing pad on top of it,
@@ -127,7 +128,7 @@ interface Open {
  * from another at a glance. Only the renderer and the world map read it: it changes no rule.
  * `quarry` and `sandstone` colour the cliffs round their shapes too (`cliffGround()`).
  */
-export type Ground = "dune" | "salt" | "paved" | "mud" | "quarry" | "sandstone" | "scrub" | "oiled" | "concrete";
+export type Ground = "dune" | "salt" | "paved" | "mud" | "quarry" | "sandstone" | "scrub" | "oiled" | "concrete" | "asphalt";
 
 /**
  * A dune: its crest runs along `line`, `height` metres over the floor it stands on, and its sides
@@ -217,6 +218,12 @@ export const LEVEL = {
   lodge: 9,
   cannery: -3,
   coldstore: 1,
+  /** The dried strait's bed, between the island and the machine city. */
+  strait: -10,
+  /** The machine city's streets: one paved floor east of the strait. */
+  city: 4,
+  /** The power plant's yard, east of the city on the ground between it and the coast, level with the streets. */
+  powerplant: 4,
 } as const;
 
 /** The dam's face: the cliff from the crest down to the lakebed, drawn as concrete. */
@@ -307,6 +314,10 @@ const BASINS: Open[] = [
   { name: "峠の宿舎", line: inPoi("lodge", [[-22, 0], [22, 0]]), half: 32, level: LEVEL.lodge, ground: "paved" },
   { name: "缶詰工場", line: inPoi("cannery", [[-22, 0], [22, 0]]), half: 46, level: LEVEL.cannery, ground: "paved" },
   { name: "冷凍倉庫", line: inPoi("coldstore", [[-20, 0], [20, 0]]), half: 34, level: LEVEL.coldstore, ground: "paved" },
+  // The machine city: one asphalt floor from the strait's east cliff to the east coast.
+  { name: "機械都市", line: inArea("city", [[0, -320], [0, 240]]), half: 120, level: LEVEL.city, ground: "asphalt" },
+  // The power plant's yard, its long side along the coast.
+  { name: "発電所", line: inPoi("powerplant", [[0, -78], [0, 84]]), half: 38, level: LEVEL.powerplant, ground: "concrete" },
   // The top of the pass: a saddle between the peaks, with the harbor in view.
   { name: "峠", line: inArea("pass", [[-66, -214], [-54, -230]]), half: 9, level: LEVEL.pass },
 ];
@@ -359,6 +370,8 @@ const ROADS: Open[] = [
   { name: "岬の坂", line: inArea("bay", [[-92, -526], [-104, -538], [-112, -548]]), half: 5, level: [LEVEL.seabed, 3, LEVEL.headland], atPoints: true, walled: true },
   // A slipway from the quay down into the channel.
   { name: "斜路", line: inArea("bay", [[150, -570], [156, -583], [160, -590]]), half: 4, level: [LEVEL.seabed, LEVEL.channel, LEVEL.channel], atPoints: true, walled: true },
+  // The high-rise district's ramp down from its plaza to the underground car park's shutter.
+  { name: "地下駐車場の斜路", line: inPoi("highrise", [[-24, -44], [-24, -18]]), half: 3.5, level: [LEVEL.city, LEVEL.city - 4.5], atPoints: true, walled: true, ground: "asphalt" },
 ];
 
 /** The line of the road named `name` (empty when there is none). */
@@ -404,6 +417,18 @@ const CUTS: Cut[] = [
     line: [[116, -352], [166, -350], [196, -358], [204, -392], [178, -438], [142, -450]],
     floor: 4,
     levels: [-5, -6, -5, -3, LEVEL.shore, LEVEL.shore],
+    slope: CLIFF,
+    atPoints: true,
+  },
+  /**
+   * The dried strait between the island and the machine city: an old sea bed walled by cliffs,
+   * crossed by the rail and road bridges, rising at both ends to the ground, so whoever falls in
+   * walks out there.
+   */
+  {
+    line: [[598, -930], [606, -820], [612, -640], [600, -330], [590, 0], [582, 140], [578, 250]],
+    floor: 30,
+    levels: [LEVEL.shore, LEVEL.strait, LEVEL.strait, LEVEL.strait, LEVEL.strait, LEVEL.strait, LEVEL.shore],
     slope: CLIFF,
     atPoints: true,
   },
@@ -463,6 +488,9 @@ export const LANDS: Land[] = [
   // The mountain belt between the two regions, wider east to west.
   { name: "山地", x: 30, z: -350, radius: (a) => 150 + 60 * Math.abs(Math.cos(a)) + 6 * Math.sin(5 * a + 0.7), max: 216 },
   { name: "港湾", x: 0, z: -775, radius: (a) => 425 + 10 * Math.sin(3 * a + 0.5) + 7 * Math.sin(7 * a + 1.9) + 3.4 * Math.sin(11 * a + 0.3), max: 441 },
+  // The east land: joined to the island's, the mountains' and the harbor's east coasts, cut through
+  // north to south by the dried strait, the machine city on its far side. Taller than wide.
+  { name: "東の陸", x: 740, z: -335, radius: (a) => (350 * 640) / hypot2(640 * Math.cos(a), 350 * Math.sin(a)) + 9 * Math.sin(5 * a + 0.4) + 5 * Math.sin(9 * a + 1.7), max: 655 },
 ];
 
 /** How far (x, z) lies outside one land mass's coast; negative inside it. */
@@ -470,12 +498,19 @@ export const outsideLand = (l: Land, x: number, z: number) => hypot2(x - l.x, z 
 
 /** How far (x, z) lies outside the coast, metres; negative on land, by how far inland. */
 export function offshore(x: number, z: number): number {
+  // Building the field asks each cell's point twice (its lowest shape, then the rim): the last
+  // answer is kept for the next question.
+  if (x === lastOff.x && z === lastOff.z) return lastOff.out;
   let out = Infinity;
   // A land whose coast cannot come nearer than the nearest yet changes nothing: the minimum is
   // the same as over every land, in any order.
   for (const l of LANDS) if (hypot2(x - l.x, z - l.z) - l.max < out) out = Math.min(out, outsideLand(l, x, z));
+  lastOff.x = x;
+  lastOff.z = z;
+  lastOff.out = out;
   return out;
 }
+const lastOff = { x: NaN, z: NaN, out: 0 };
 
 /** The land mass whose coast (x, z) lies furthest inside, or nearest to when it is offshore. */
 export function landAt(x: number, z: number): Land {
@@ -913,7 +948,42 @@ export interface FlatShape {
  * of it the ground is exactly at its level, and the shapes blend back in over the
  * next 7 m. Shapes standing below their level (the canyon bridge's pillars) are not given.
  */
+/**
+ * Where a built field may be kept between processes: the sim gate's Node scripts give one
+ * (scripts/ringfall-terrain-store.ts), keyed by the flat shapes and the sim's own source, so
+ * each worker reads the field the first one built; the browser has none and builds it.
+ */
+export interface TerrainStore {
+  load(flat: FlatShape[]): TerrainArrays | null;
+  save(flat: FlatShape[], built: TerrainArrays): void;
+}
+/** What `buildTerrain()` leaves behind, as the store keeps it. */
+export interface TerrainArrays {
+  field: Float32Array;
+  floors: Float32Array;
+  shapes: Uint8Array;
+  bases: Float32Array;
+  steep: Uint8Array;
+  between: Float32Array;
+}
+let store: TerrainStore | null = null;
+/** Sets the store `buildTerrain()` reads and writes; called before the map is loaded. */
+export const useTerrainStore = (s: TerrainStore) => {
+  store = s;
+};
+
 export function buildTerrain(flat: FlatShape[]) {
+  const kept = store?.load(flat);
+  if (kept && kept.field.length === NX * NZ && kept.between.length === BNX * BNZ) {
+    ({ field, floors, shapes, bases, steep } = kept);
+    betweenField = kept.between;
+    return;
+  }
+  build(flat);
+  store?.save(flat, { field: field!, floors: floors!, shapes: shapes!, bases: bases!, steep: steep!, between: betweenGrid() });
+}
+
+function build(flat: FlatShape[]) {
   // Distance from each grid point to the nearest flat shape, and that shape's level,
   // by a two-pass chamfer.
   const dist = new Float32Array(NX * NZ).fill(1e9);
