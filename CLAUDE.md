@@ -642,8 +642,11 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   (`Lazy` in `hunt.ts`). Only the player's own sounds and shots re-locate a squad, not
   the teammate's. Robots off the open ground (on a
   roof, inside a building) walk straight at their goal, and nobody paths inside a building.
-  The fields are kept for reuse within a raid only: `newRun()` drops them, so a raid plays the
+  The cache of fields serves a raid only: `newRun()` empties it, so a raid plays the
   same whatever ran before it, which is what lets the sim gate share raids among processes.
+  What outlasts a raid (copies of fields found, whole-world fields parked part found, `kept` and
+  `parked` in `hunt.ts`, and the bot's searches in `nav.ts`) only spares finding the same thing
+  again and gives the same answers.
   The bot (`bot.ts`) opens only bins on the ground and does not climb or ride a zipline: each POI keeps ground bins
   by its ways in and floors, and the bot walks the ground's paths up to robots on higher ground (a
   terrace, the mesa) rather than looking for an angle on them from below.
