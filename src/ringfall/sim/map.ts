@@ -3118,7 +3118,7 @@ const OUTPOSTS: Hamlet[] = [
     // East of the smelter: the fuel the furnaces and the ships burned. White tanks inside a low
     // bund wall, a pump house, a loading bay under a canopy with a tanker left in it.
     id: "harborFuel",
-    name: "燃料基地",
+    name: "油槽所",
     x: 350,
     z: -750,
     boxes: [
@@ -6571,7 +6571,7 @@ function outpost(name: string): Hamlet {
 }
 const SUBSTATION = outpost("変電所");
 const EAST_SUBSTATION = outpost("東の変電所");
-const FUEL_DEPOT = outpost("燃料基地");
+const FUEL_DEPOT = outpost("油槽所");
 const ENGINE_DEPOT = outpost("保線基地");
 const PUMPS = outpost("揚水ポンプ場");
 /**
