@@ -66,7 +66,7 @@ const free = (i: number, j: number) => i >= 0 && j >= 0 && i < NX && j < NZ && !
  * Which connected stretch of open ground each free cell belongs to (0 for blocked cells),
  * the same 8-way moves A* makes. A search between two stretches has no answer, and
  * finding that out by A* means visiting every cell of the start's stretch, which spans
- * both regions; the labels answer it at once.
+ * every region; the labels answer it at once.
  */
 let area: Uint16Array | Int32Array = new Uint16Array(0);
 

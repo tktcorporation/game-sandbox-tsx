@@ -2077,6 +2077,7 @@ function checkStrength(): string | null {
   }
   // The island with the player holding the first `k` nodes of the row out from the camp.
   const ROW_OUT: NodeId[] = ["supply", "quarry", "relay", "station", "waterworks", "lodge", "yard", "smelter", "cannery", "coldstore", "wreck", "carpark", "highrise", "terminal", "powerplant", "robotworks"];
+  if (ROW_OUT.length !== NODES.length) return `strength scenario: the row out from the camp names ${ROW_OUT.length} nodes of ${NODES.length}`;
   const island = (k: number) => holds({ poiState: { ...newIsland(), ...Object.fromEntries(ROW_OUT.slice(0, k).map((id) => [id, { state: "freed" as const }])) } });
   for (let k = 0; k <= NODES.length; k++) {
     const n = strengthFor(NODES.length - k);
@@ -4424,7 +4425,7 @@ for (const region of REGIONS.filter((r) => !only || r.id === only)) {
 }
 
 if (process.env.RINGFALL_POOL) writeFileSync(process.env.RINGFALL_POOL, JSON.stringify(pool));
-// The hideout's pacing, from the raids above (both regions are needed to plan the drops).
+// The hideout's pacing, from the raids above (every region is needed to plan the drops).
 if (runs > 0 && !only) {
   console.log("");
   console.log("hideout pacing: the meta played with these raids, greedy spending (scripts/ringfall-pacing.ts)");

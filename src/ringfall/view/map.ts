@@ -14,7 +14,7 @@ import { PAL, RARITY_CSS } from "./models";
 import type { ContractMark } from "../meta/contracts";
 
 /*
- * The world map (M, or the map button on a phone): both regions and the ways between
+ * The world map (M, or the map button on a phone): every region and the ways between
  * them. The HUD shows no markers or distances, so this is where the player finds the
  * POIs and the ways off. The ground and buildings are drawn once; each open frame scales
  * them to the map's size on screen and adds the names, the player, the teammate and

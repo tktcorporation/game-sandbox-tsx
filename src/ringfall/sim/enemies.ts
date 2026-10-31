@@ -1296,12 +1296,12 @@ function fromCover(s: State, e: Enemy, known: { x: number; z: number; live: bool
   return true;
 }
 
-/** Keep walkers from stacking into one blob. */
 /** Coarse cells for `separate()`: robots more than a cell apart cannot touch. */
 const SEP_CELL = 8;
 /** Each walker's cell for `separate()`, kept between ticks so a tick allocates none. */
 let sepX = new Int32Array(256);
 let sepZ = new Int32Array(256);
+/** Keep walkers from stacking into one blob. */
 function separate(s: State) {
   const list = s.enemies.filter((e) => ENEMIES[e.kind].fly === 0 && e.mode !== "spawning");
   const pair = (a: Enemy, b: Enemy) => {

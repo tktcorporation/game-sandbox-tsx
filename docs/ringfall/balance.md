@@ -493,7 +493,7 @@ push-pull changed hands raid / after leaving / night days gained / lost  all hel
 beginner  18 / 33 / 12                               11 / 3              1
 casual    18 / 31 / 13                               10 / 1              6
 good      35 / 29 / 24                               12 / 6              6
-nodes by day (a 10, b 11, c 12, d 13, e 14, f 15, g 16): beginner 22243444444444333344569acceegf / casual 11112344444444333669acddgggggg / good 11225544557798987a9ccdedgggggg
+nodes by day (base 36: a 10, b 11...): beginner 22243444444444333344569acceegf / casual 11112344444444333669acddgggggg / good 11225544557798987a9ccdedgggggg
 harbor nodes by day: beginner 000000000000000000012365556566 / casual 000000000000000002255565666666 / good 000000001132535544455465666666
 city nodes by day: beginner 000000000000000000000000223455 / casual 000000000000000000000235555555 / good 000000000002122333334445555555
 deepest tier by day: beginner 111111111111111111122232323333 / casual 001111111111111112232233333333 / good 001111112233323333333333333333

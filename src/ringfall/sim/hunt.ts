@@ -333,7 +333,7 @@ const spare: { dist: Float32Array; order: Int32Array; count: number }[] = [];
  * dropped them. A field is fixed by its target cell, its reach and the grid, so one built again
  * for the same target and reach is the copy, written back instead of found again. Squads posted
  * round a few spots ask for the same fields over and over, more of them than the cache keeps;
- * the cache decides which field a squad follows, as before, and only the building of a field it
+ * the cache alone decides which field a squad follows, and only the building of a field it
  * has dropped comes from here. A copy holds the field's `order` cells and their distances; every
  * other cell of a field is at Infinity. A field over much of the grid (a whole-world field covers
  * about half of it) that is written back once keeps its distances whole from then on, every cell

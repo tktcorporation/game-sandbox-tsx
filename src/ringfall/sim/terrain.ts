@@ -4,7 +4,8 @@ import type { PoiId } from "./map";
 import { hypot2 } from "./hypot";
 
 /*
- * The ground of two regions joined by a mountain belt. The south one is a dried-up
+ * The ground of three regions: two joined by a mountain belt, and the machine city's paved
+ * basin east of them across a dried strait (its ground is at the end). The south one is a dried-up
  * reservoir: a dam once held a lake in the middle of it; the water is gone and the
  * drowned town stands on the cracked lakebed, 14 m under the shore. Around it the ground
  * steps up and down: the dam's 30 m wall in the north with the landing pad on top of it,

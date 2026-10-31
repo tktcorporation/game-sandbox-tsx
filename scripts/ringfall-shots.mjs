@@ -1524,7 +1524,7 @@ const islandDay = {
   await closePanel(pg);
   const run = await walkOutOfGate(pg);
   const at = (id) => run.enemies.filter((e) => run.squads[e.squad].poi === id).length;
-  if (run.hold.join() !== "freed,freed,held,held,freed,held,held,held,held,held,held,held" || at(0) !== 0 || at(1) !== 0 || at(4) !== 0 || !(at(2) > 0)) errors.push(`island raid: holds ${run.hold.join()}, robots at the supply depot ${at(0)}, the quarry ${at(1)}, the wreck ${at(4)}, the relay ${at(2)}`);
+  if (run.hold.slice(0, 5).join() !== "freed,freed,held,held,freed" || run.hold.slice(5).some((h) => h !== "held") || at(0) !== 0 || at(1) !== 0 || at(4) !== 0 || !(at(2) > 0)) errors.push(`island raid: holds ${run.hold.join()}, robots at the supply depot ${at(0)}, the quarry ${at(1)}, the wreck ${at(4)}, the relay ${at(2)}`);
   // The way in's banner has gone by the time the map is opened; the HUD is drawn for the screenshot.
   await pg.evaluate(() => window.ringfallStep(4000));
   await pg.screenshot({ path: `${out}/72-island-hud-row.png`, clip: { x: 1280 / 2 - 260, y: 0, width: 520, height: 120 } });
@@ -2269,7 +2269,7 @@ for (const phone of [false, true]) {
   await useStation(pg, "vehicle");
   await departUp(pg);
   const learnt = ((await readOf(pg)).camp.depart?.starts ?? []).filter((q) => q.kind === "entry" && q.region === "harbor" && q.open);
-  if (!learnt.length || (await pg.locator("#depart-points .region-lock").count())) errors.push(`${why}: the departure offers ${learnt.length} harbor ways in once learned`);
+  if (!learnt.length || (await pg.locator('#depart-points .region-lock[data-region="harbor"]').count())) errors.push(`${why}: the departure offers ${learnt.length} harbor ways in once learned`);
   if (learnt[0]) await pickStart(pg, "entry", learnt[0].id, phone);
   await snap("6-depart-learned");
   await pg.keyboard.press("Escape");

@@ -6,11 +6,12 @@ import { buildTerrain, type Carve, CRATERS, type FlatShape, floorLevel, highGrou
 import { hypot2 } from "./hypot";
 
 /**
- * The world: two regions, a dried-up reservoir in the south and a dry harbor in the
- * north, joined by a pass road and a railway (see terrain.ts for their levels).
+ * The world: three regions, a dried-up reservoir in the south and a dry harbor in the
+ * north, joined by a pass road and a railway, and the machine city east of a dried strait,
+ * reached by a road and a rail bridge (see terrain.ts for their levels).
  * Everything solid is an axis-aligned box, so collision, line of sight and standing on
  * top are all the same cheap test (a fence stops only bodies). North is -z. The player chooses the region to start
- * in; every POI, district and way off in both regions is open from the start.
+ * in; every POI, district and way off in every region is open from the start.
  *
  * Boxes and points are written relative to the ground of their area and lifted to
  * its level here, so a building reads the same on the lakebed as on the mesa.
@@ -1559,7 +1560,7 @@ type NodeDef = PoiDef & { boss?: never; front: { tier: number; unlocks: NodeUnlo
 /**
  * The POIs by id, the boss's (`BossId`) written as one and every other as a node. Their order is
  * the order of `POIS` and `NODES`, which a raid's per-POI state is indexed by (saves name POIs by
- * id): a new POI goes at the end, so the others keep their places and a raid plays as before.
+ * id): a new POI goes at the end, so the others keep their places and a raid's draws for them hold.
  */
 const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
   supply: {
@@ -5037,7 +5038,7 @@ function smelter(): Box[] {
       open: ["w", "n"],
     }),
   );
-  // Roll stands in the bays between the columns (x 16, 24, 32, 40) and clear of the mezzanine's
+  // Roll stands in the bays between the columns (x 16, 24, 32) and clear of the mezzanine's
   // stair at x 30, each gap wider than a body so nobody is wedged between a stand and a column.
   for (const x of [12, 20, 27, 36]) out.push(box(x, 9, 3, 4, 3.4, "steel", 2));
   out.push(bridge(4, 7, 8, 9.5, H), rect(4, 7, 8, 7.2, H, H + 0.8, "steel", 2), rect(4, 9.3, 8, 9.5, H, H + 0.8, "steel", 2));
