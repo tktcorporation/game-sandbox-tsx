@@ -14,6 +14,7 @@ import { hasMod, modScale, spillBinMod, wearMod } from "./mods";
 import { MOD } from "./config";
 import { coreInReach, inZone, useCore } from "./front";
 import { hypot2, hypot3 } from "./hypot";
+import { squadMembers } from "./members";
 
 /*
  * The raid's structure: POIs that fall when their robots are beaten, loot and bins,
@@ -66,7 +67,7 @@ export function stepReinforce(s: State) {
       // It stops hunting once one of its walkers has found the player itself: a fight that only
       // its drone joined, over a cliff or a wall the walkers have not got round yet, leaves
       // them hunting on once it is lost.
-      if (s.enemies.some((e) => e.squad === i && e.kind !== "drone" && e.aware === "engaged" && located(s, e))) q.hunt = false;
+      if (squadMembers(s, i).some((e) => e.kind !== "drone" && e.aware === "engaged" && located(s, e))) q.hunt = false;
       return;
     }
     const every = q.elite ? RAIDERS.huntEvery : REINFORCE.huntEvery;
@@ -185,7 +186,7 @@ export function stepParties(s: State) {
       continue;
     }
     const sq = s.squads[slot.squad];
-    const lead = s.enemies.find((e) => e.squad === slot.squad);
+    const lead = squadMembers(s, slot.squad)[0];
     const trip = sq.party;
     if (!lead || !trip) {
       slot.squad = -1;
@@ -193,7 +194,7 @@ export function stepParties(s: State) {
       continue;
     }
     // Only a calm party goes on its way: one that is looking or fighting comes back to it after.
-    if (sq.engaged || s.enemies.some((e) => e.squad === slot.squad && e.aware !== "idle")) {
+    if (sq.engaged || squadMembers(s, slot.squad).some((e) => e.aware !== "idle")) {
       trip.mark = { x: lead.pos.x, z: lead.pos.z };
       trip.markT = 0;
       continue;
@@ -273,7 +274,7 @@ const crewBin = (b: Bin, c: CrewTrip) =>
 /** A salvage crew's errand (see CREW): to the bin nearest by the walk, search it, and with a full bag (or out of time or bins) to its way off. */
 function stepCrew(s: State, sq: SquadState, i: number) {
   const c = sq.crew!;
-  const members = s.enemies.filter((e) => e.squad === i);
+  const members = squadMembers(s, i);
   const lead = members[0];
   if (!lead) return;
   c.t += TICK;
@@ -354,7 +355,7 @@ function leave(s: State, sq: SquadState, lead: { pos: Point }) {
 }
 
 /** The crew beams out with its bag, which is lost to the island. */
-function beamOut(s: State, sq: SquadState, i: number, members: { pos: Point }[]) {
+function beamOut(s: State, sq: SquadState, i: number, members: readonly { pos: Point }[]) {
   const at = members[0].pos;
   s.enemies = s.enemies.filter((e) => e.squad !== i);
   s.stats.crewsOut++;

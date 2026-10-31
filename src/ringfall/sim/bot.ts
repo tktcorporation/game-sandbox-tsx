@@ -1122,7 +1122,11 @@ export class Bot {
     // first (down a ramp to the tier below) drops out of reach a few steps along it, and the bot
     // turns back for the POI until it is in reach again, round and round. The 10 s it is given
     // below still bounds the detour.
-    const reach = (c: { x: number; z: number }, r: number) => dist2d(c, p.pos) < (`${Math.round(c.x)},${Math.round(c.z)}` === this.lootKey ? r * 2.5 : r);
+    // Its key is made only for a thing between the two reaches, the one distance it decides.
+    const reach = (c: { x: number; z: number }, r: number) => {
+      const d = dist2d(c, p.pos);
+      return d < r || (d < r * 2.5 && `${Math.round(c.x)},${Math.round(c.z)}` === this.lootKey);
+    };
     const cands: { x: number; z: number; d: number; weapon?: true; care?: true }[] = [];
     for (const b of s.bins) if (!b.open && canOpen(s, b) && reach(b, 26) && reachable(b)) cands.push({ x: b.x, z: b.z, d: dist2d(b, p.pos) });
     if (s.care && s.care.landed && !s.care.open) cands.push({ x: s.care.x, z: s.care.z, d: dist2d(s.care, p.pos), care: true });
