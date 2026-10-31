@@ -93,7 +93,8 @@ const runs = Number(process.argv[2] ?? 12);
 const only = process.argv[3];
 /**
  * The regions whose raids take longest to play, longest first: the reservoir's (about 20 s of a
- * core each), the machine city's (about 13 s) and the harbor's (about 7 s). Others go last.
+ * core each), the machine city's (about 13 s), the harbor's (about 7 s), then the launch
+ * site's. Others go last.
  */
 const LONGEST_FIRST: RegionId[] = ["reservoir", "city", "harbor", "launch"];
 

@@ -619,7 +619,7 @@ export const STRENGTH = {
  *   asking for as many as its bins hold on average, up to `fetchMax`, and one more of them on top;
  * - destroy a drone pack or a hunting party: `intercept` by target, and on some days a heal or a
  *   weapon, one step rarer every `rarityEvery` days.
- * Each is multiplied by the region's `region` factor: the harbor is the harder ground, the launch site across the canyon harder still, the city across the strait the hardest.
+ * Each is multiplied by the region's `region` factor: the launch site across the canyon is harder ground than the reservoir, the harbor harder still, the city across the strait the hardest.
  */
 export const CONTRACT = {
   count: [3, 4] as const,
