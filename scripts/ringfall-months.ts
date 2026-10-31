@@ -82,9 +82,11 @@ for (const k of SKILLS) {
   const n = end.map((d) => d.nodes);
   const f = end.map((d) => d.factory);
   const alive = runs.flatMap((c) => c.days).filter((d) => d.alive).length / Math.max(1, runs.reduce((s, c) => s + c.days.length, 0));
+  // A month that never reaches a level counts as reaching it last, so every level's median is over
+  // all the months and a level is never shown earlier than the one below it.
   const firsts = Array.from({ length: FACTORY_TOP }, (_, l) => {
-    const at = runs.map((c) => c.days.findIndex((d) => d.factory >= l + 1)).filter((i) => i >= 0).map((i) => i + 1);
-    return at.length * 2 > runs.length ? String(med(at)) : "-";
+    const at = med(runs.map((c) => c.days.findIndex((d) => d.factory >= l + 1)).map((i) => (i >= 0 ? i + 1 : Infinity)));
+    return Number.isFinite(at) ? String(at) : "-";
   });
   console.log([k.name.padEnd(9), `${Math.min(...n)}/${med(n)}/${Math.max(...n)}`.padEnd(14), `${Math.min(...f)}/${med(f)}/${Math.max(...f)}`.padEnd(14), `${(alive * 100).toFixed(0)}%`.padEnd(6), firsts.join(" ")].join(" "));
 }
