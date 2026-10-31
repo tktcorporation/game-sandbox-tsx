@@ -27,7 +27,8 @@ export type AreaId =
   | "cannery"
   | "coldstore"
   | "city"
-  | "powerplant";
+  | "powerplant"
+  | "launch";
 
 export type Offset = readonly [number, number];
 
@@ -74,6 +75,8 @@ export const AREA: Record<AreaId, Offset> = {
   city: [870, -330],
   // The power plant on the open ground between the city's paved basin and the east coast.
   powerplant: [1032, -330],
+  // The launch site's plateau west of the island across the dry canyon, written round its middle.
+  launch: [-930, 20],
 };
 
 /** The area each POI stands in, and where the POI's own frame lies within that area's frame. */
@@ -95,6 +98,7 @@ const POI_IN: Record<PoiId, [AreaId, Offset]> = {
   robotworks: ["city", [-25, -315]],
   highrise: ["city", [64, 178]],
   powerplant: ["powerplant", [0, 0]],
+  control: ["launch", [140, -50]],
 };
 
 /** A point written in an area's frame, in the world. */

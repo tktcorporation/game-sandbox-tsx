@@ -463,6 +463,7 @@ export class IslandMap {
       oiled: [0xbf, 0xbb, 0xb2],
       concrete: [0xd8, 0xd2, 0xc4],
       asphalt: [0x6a, 0x70, 0x77],
+      caliche: [0xee, 0xea, 0xde],
     };
     const water = [0x5f, 0xa8, 0xa6];
     const lot = [0x9c, 0xa1, 0xa5];
@@ -470,8 +471,9 @@ export class IslandMap {
       const at = surfaceAt(x, z);
       if (at === "水路") return water;
       const g = groundOf(at);
-      // East of the dried strait the open ground is the city's grey paving, as the view paints it (ground.ts).
-      return g ? GROUND[g] : x > 620 ? lot : floor(lv);
+      // East of the dried strait the open ground is the city's grey paving, and west of the dry
+      // canyon the launch site's caliche, as the view paints them (ground.ts).
+      return g ? GROUND[g] : x > 620 ? lot : x < -605 ? GROUND.caliche : floor(lv);
     };
     for (let j = 0; j < this.height; j++)
       for (let i = 0; i < this.width; i++) {

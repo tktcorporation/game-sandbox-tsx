@@ -59,6 +59,8 @@ export const GROUND: Record<Ground, { base: THREE.Color; dark: THREE.Color; mix:
   // Concrete with black oil stains.
   oiled: { base: new THREE.Color(PAL.oiled), dark: new THREE.Color(PAL.oiledDark), mix: (x, z, k) => (noise(x * 0.2, z * 0.2) > 0.68 ? 0.85 : k * 0.2) },
   concrete: { base: new THREE.Color(PAL.concrete), dark: new THREE.Color(PAL.concreteDark), mix: (x, z, k) => (noise(x * 0.3, z * 0.3) > 0.7 ? 0.4 : k * 0.2) },
+  // The launch site's pale caliche crust, in wide blotches of the darker under it.
+  caliche: { base: new THREE.Color(PAL.caliche), dark: new THREE.Color(PAL.calicheDark), mix: (x, z, k) => (noise(x * 0.08, z * 0.08) > 0.64 ? 0.55 : k * 0.25) },
   // The machine city's charcoal asphalt, patched darker; its lane paint is laid by `laneMark()`.
   asphalt: { base: new THREE.Color(PAL.cityAsphalt), dark: new THREE.Color(PAL.cityAsphaltDark), mix: (x, z, k) => (noise(x * 0.18, z * 0.18) > 0.66 ? 0.7 : k * 0.3) },
 };
@@ -84,6 +86,8 @@ function laneMark(c: THREE.Color, x: number, z: number) {
 const CITY_WEST = 620;
 const LOT = new THREE.Color(PAL.cityLot);
 const LOT_DARK = new THREE.Color(PAL.cityLotDark);
+/** West of the dry canyon's line (the launch site's plateau), the open ground is its pale caliche, not soil. */
+const PLATEAU_EAST = -605;
 
 /** The colour of a ground triangle centred on (x, z), spanning heights lo..hi. */
 export function groundColour(c: THREE.Color, x: number, z: number, lo: number, hi: number) {
@@ -106,6 +110,7 @@ export function groundColour(c: THREE.Color, x: number, z: number, lo: number, h
       c.copy(GROUND[ground].base).lerp(GROUND[ground].dark, GROUND[ground].mix(x, z, k));
       if (ground === "asphalt") laneMark(c, x, z);
     } else if (x > CITY_WEST) c.copy(LOT).lerp(LOT_DARK, noise(x * 0.25, z * 0.25) > 0.6 ? 0.75 : k * 0.4);
+    else if (x < PLATEAU_EAST) c.copy(GROUND.caliche.base).lerp(GROUND.caliche.dark, GROUND.caliche.mix(x, z, k));
     else {
       c.copy(COL.sand).lerp(COL.dark, k > 0.62 ? 0.7 : k * 0.3);
       // The ground between the areas in broad patches of redder soil, so the basins read as clearings.

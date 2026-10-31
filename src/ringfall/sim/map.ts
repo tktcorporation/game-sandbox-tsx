@@ -6,9 +6,10 @@ import { buildTerrain, type Carve, CRATERS, type FlatShape, floorLevel, highGrou
 import { hypot2 } from "./hypot";
 
 /**
- * The world: three regions, a dried-up reservoir in the south and a dry harbor in the
- * north, joined by a pass road and a railway, and the machine city east of a dried strait,
- * reached by a road and a rail bridge (see terrain.ts for their levels).
+ * The world: four regions, a dried-up reservoir in the south and a dry harbor in the
+ * north, joined by a pass road and a railway, the machine city east of a dried strait,
+ * reached by a road and a rail bridge, and the launch site's plateau west of a dry canyon,
+ * reached by a rail bridge and a road cut (see terrain.ts for their levels).
  * Everything solid is an axis-aligned box, so collision, line of sight and standing on
  * top are all the same cheap test (a fence stops only bodies). North is -z. The player chooses the region to start
  * in; every POI, district and way off in every region is open from the start.
@@ -655,7 +656,7 @@ export interface Squad {
 export type LootTable = { weapon: [WeaponKind, Rarity][]; armor: Rarity[]; heals: number; valuable: [ValuableKind, number][] };
 
 /** Stable names for the POIs: saves, quests and other data refer to a POI by these, never by its place in `POIS`. */
-export type PoiId = "supply" | "quarry" | "relay" | "pad" | "wreck" | "yard" | "smelter" | "station" | "waterworks" | "lodge" | "cannery" | "coldstore" | "terminal" | "carpark" | "robotworks" | "highrise" | "powerplant";
+export type PoiId = "supply" | "quarry" | "relay" | "pad" | "wreck" | "yard" | "smelter" | "station" | "waterworks" | "lodge" | "cannery" | "coldstore" | "terminal" | "carpark" | "robotworks" | "highrise" | "powerplant" | "control";
 /** The boss's POI (the titan's pad): written as the boss in `POI_DEFS`, and no node of the front. */
 export type BossId = "pad";
 
@@ -1558,6 +1559,64 @@ type BossDef = PoiDef & { boss: true; front?: never };
 type NodeDef = PoiDef & { boss?: never; front: { tier: number; unlocks: NodeUnlock; landing?: Landing } };
 
 /**
+ * The launch site's control centre, round (0, 0) in its frame: a works block of three storeys
+ * whose ground floor stands in a yard sunk a storey under the plateau (`LEVEL.controlPit`, the
+ * walled basin 管制室の掘り込み), so that its second floor opens west onto the plateau over a
+ * footbridge. A walled ramp climbs out of the sunk yard on its south. The control room's windows
+ * look west, toward where the launch pads stand; on the roof (reached by the block's own stairs)
+ * stands the antenna array: a lattice mast, thin aerials and an equipment cabinet. `block` is the
+ * block's footprint, `roof` its roof over the sunk yard's floor.
+ */
+const CONTROL = { block: { w: 30, d: 14, floors: 3 }, roof: 3 * WORKS.storey, bridge: { x0: -28, x1: -15, half: 1.4 } } as const;
+function control(): Floors {
+  const { block, roof, bridge: br } = CONTROL;
+  const up = (b: Box): Box => ({ ...b, y0: b.y0 + roof, h: b.h + roof });
+  const sunk: Box[] = [
+    ...tower(0, 0, block.w, block.d, block.floors, { doors: [["s"], ["w"], []], windows: [["w", "n"], ["w", "n", "s"], ["w", "e"]], scale: WORKS }),
+    // The antenna array on the roof, clear of the stairwell at its north-east corner.
+    ...lattice(-8, 1, 4, 4, 3, 18).map(up),
+    ...[[2, 4], [7, 4], [-1, -4]].map(([x, z]) => up(box(x, z, 0.3, 0.3, 9, "steel", 2))),
+    up(rect(1.6, 3.9, 7.4, 4.1, 7, 7.2, "steel", 2)),
+    up(box(-1, 4.5, 3, 1.4, 1.8, "steel", 1)),
+    // Down in the sunk yard: a generator by the east end, drums by the west.
+    box(21, 4, 2.6, 4, 2.2, "steel", 1),
+    box(-20, -7, 1.2, 1.2, 0.9, "crate"),
+    box(-20, -5.8, 1.2, 1.2, 1.8, "crate"),
+  ];
+  const plateau: Box[] = [
+    // The footbridge from the plateau over the sunk yard to the second floor's west door, railed to the wall.
+    bridge(br.x0, -br.half, br.x1, br.half, 0),
+    rect(br.x0 + 1, -br.half, br.x1, -br.half + 0.15, 0, 1.1, "steel", 2),
+    rect(br.x0 + 1, br.half - 0.15, br.x1, br.half, 0, 1.1, "steel", 2),
+    // The gatehouse by the ramp's top and cover out on the plateau: containers, sandbags, a truck.
+    ...building(20, 50, 6, 5, 3.2, { doors: ["w"], windows: ["n", "s"], scale: HOME }),
+    box(-34, 22, 6.1, 2.5, 2.6, "container", 2),
+    box(-34, 25.5, 6.1, 2.5, 2.6, "container", 3),
+    box(36, -18, 4.5, 0.8, 1.1, "wall", 1),
+    box(40, -14, 0.8, 4.5, 1.1, "wall", 1),
+    box(-30, -26, 7.3, 2.5, 3, "steel", 3),
+    box(44, 20, 1.2, 1.2, 1.8, "crate"),
+  ];
+  return [
+    [LEVEL.controlPit, sunk],
+    [LEVEL.plateau, plateau],
+  ];
+}
+
+/**
+ * The launch site's landing runway, in the launch area's frame on ground at 0: a concrete strip
+ * 40 m wide and 400 m long north to south down the plateau's middle, its centre line dashed, a
+ * windsock mast and a low hut by its east edge. The pickup craft lands on it (`EXTRACTS`).
+ */
+function runway(): Box[] {
+  const out: Box[] = [rect(-95, -200, -55, 200, 0, 0.12, "slab", 1)];
+  for (let z = -185; z < 190; z += 30) out.push(rect(-75.6, z, -74.4, z + 14, 0.12, 0.14, "steel", 4));
+  out.push(box(-48, -40, 0.3, 0.3, 7, "steel", 4), box(-47, -40, 1.6, 0.3, 0.6, "steel", 2, 6.2));
+  out.push(...building(-44, 40, 6, 4, 3, { doors: ["w"], windows: ["e"], scale: HOME }));
+  return out;
+}
+
+/**
  * The POIs by id, the boss's (`BossId`) written as one and every other as a node. Their order is
  * the order of `POIS` and `NODES`, which a raid's per-POI state is indexed by (saves name POIs by
  * id): a new POI goes at the end, so the others keep their places and a raid's draws for them hold.
@@ -1659,7 +1718,7 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
       { x: DISH_STAIRS.x - 1.5, z: DISH_STAIRS.z + 2, y: DISH_STAIRS.floors * STOREY },
       { x: -29, z: -20, y: WORKS.storey, vault: true },
     ],
-    keyFrom: "quarry",
+    keyFrom: "control",
     loot: { weapon: [["pike", 1], ["hornet", 1], ["maul", 1], ["lance", 1], ["talon", 1]], armor: [1], heals: 2, valuable: [["board", 4], ["drive", 2], ["wire", 1], ["gyro", 1]] },
     floor: [
       { x: -20, z: -18, y: WORKS.storey, weapon: ["lance", 1] },
@@ -2081,6 +2140,39 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
     loot: { weapon: [["pike", 1], ["lance", 1], ["maul", 1], ["hornet", 1]], armor: [1], heals: 2, valuable: [["fuse", 3], ["wire", 3], ["parts", 2], ["drive", 2], ["reactor", 1]] },
     floor: [{ x: -8, z: 40, heal: "medkit" }],
   },
+
+  // --- the launch site across the dry canyon
+  // The control centre at the plateau's east edge by the two crossings: the sunk yard and the
+  // block's floors, its roof, and the plateau round it.
+  control: {
+    region: "launch",
+    depotOut: 18,
+    front: { tier: 1, unlocks: {} },
+    name: "管制センター",
+    x: 0,
+    z: 0,
+    trigger: 60,
+    entry: { x: 60, z: 0, yaw: W },
+    squads: [
+      { name: "管制室", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: -4, z: -2, face: W }, { kind: "grunt", x: 6, z: 2, y: WORKS.storey, face: W }] },
+      { name: "屋上", members: [{ kind: "grunt", x: 6, z: 2, y: CONTROL.roof, face: E }, { kind: "drone", x: 0, z: -22 }] },
+      { name: "掘り込み", members: [{ kind: "grunt", x: 20, z: -8, face: E }, { kind: "charger", x: -40, z: 18, face: E }] },
+      { name: "前庭", members: [{ kind: "grunt", x: -46, z: -12, face: W }, { kind: "drone", x: -36, z: -34 }] },
+    ],
+    bins: [
+      { x: -8, z: 0 },
+      { x: 4, z: 3 },
+      { x: 21, z: -2 },
+      { x: -30, z: 14 },
+      { x: 30, z: -24 },
+      { x: -6, z: 2, y: WORKS.storey },
+      { x: 0, z: 3, y: CONTROL.roof },
+      { x: -10, z: 3, y: 2 * WORKS.storey, vault: true },
+    ],
+    keyFrom: "quarry",
+    loot: { weapon: [["pike", 1], ["hornet", 1], ["talon", 1], ["lance", 1]], armor: [1], heals: 2, valuable: [["board", 3], ["wire", 3], ["gyro", 2], ["drive", 1]] },
+    floor: [{ x: 2, z: -2, heal: "battery" }],
+  },
 };
 
 const POI_IDS = Object.keys(POI_DEFS) as PoiId[];
@@ -2106,7 +2198,7 @@ export interface Depot {
 /** A depot's place in `DEPOTS` (and in the run's `depots`), from its POI. */
 export const depotIndex = (poi: PoiId) => DEPOTS.findIndex((d) => d.poi === poi);
 
-export type ExtractId = "ship" | "flare" | "village" | "boat" | "plaza";
+export type ExtractId = "ship" | "flare" | "village" | "boat" | "plaza" | "runway" | "canyon";
 
 /**
  * Ways off the island, open from the landing on; the player picks one by walking to it.
@@ -2139,6 +2231,9 @@ export const EXTRACTS: ExtractPoint[] = [
   { id: "boat", name: "埠頭のボート", short: "ボート", ...at("bay", { x: 105, z: -580 }), radius: 5, hold: 1.5, call: 25, waves: at("bay", { x: 100, z: -563 }), note: "呼んで 25 秒守る。増援が降りてくる" },
   // The city's way off: a pickup at its north end, the far side of the station from both bridges.
   { id: "plaza", name: "北端の回収地点", short: "北端", ...at("city", { x: 80, z: -380 }), radius: 5, hold: 12, note: "街の北の外れ。12 秒待つ" },
+  // The launch site's ways off: a craft called down onto the landing runway, and a wait on the canyon's floor.
+  { id: "runway", name: "滑走路の回収機", short: "滑走路", ...at("launch", { x: -75, z: 0 }), radius: 5, hold: 1.5, call: 25, waves: at("launch", { x: -75, z: 30 }), note: "呼んで 25 秒守る。増援が降りてくる" },
+  { id: "canyon", name: "渓谷の底の回収地点", short: "渓谷", x: -606, z: -185, radius: 5, hold: 15, note: "切り通しから谷底を北へ。15 秒待つ" },
 ];
 export const EXTRACT = EXTRACTS[0];
 
@@ -3027,6 +3122,12 @@ export const PACKS: Squad[] = [
     members: [{ kind: "drone", x: 810, z: -200 }, { kind: "drone", x: 810, z: -200 }],
     patrol: [{ x: 810, z: -200 }, { x: 936, z: -240 }, { x: 936, z: -720 }, { x: 936, z: -240 }],
   },
+  // The launch site: down the plateau's west side past the runway and back up its middle, clear of the control centre.
+  {
+    name: "台地のドローン群",
+    members: [{ kind: "drone", x: -900, z: 220 }, { kind: "drone", x: -900, z: 220 }],
+    patrol: [{ x: -900, z: 220 }, { x: -1120, z: 160 }, { x: -1120, z: -260 }, { x: -900, z: -300 }],
+  },
 ];
 
 /** Stable names for the outposts (`OUTPOSTS`): places to loot with a guard squad of their own, not nodes of the front. */
@@ -3050,9 +3151,10 @@ export interface OutpostSite {
  * (`POI_DEFS`).
  */
 const REGION_DEFS: { [K in RegionId]: Omit<Region, "id" | "pois"> } = {
-  reservoir: { name: "ダム湖", note: "干上がったダム湖の島。拠点 {pois} つ、発着場にタイタン", home: true, entries: ["beach", "checkpoint", "jetty"], exits: ["ship", "flare", "village"], label: { x: -330, z: 300 }, bounds: { x0: WORLD.x0, z0: -340, x1: 600, z1: WORLD.z1 } },
-  harbor: { name: "港湾地帯", note: "干上がった湾の港。拠点 {pois} つ、どこにもヘビーがいる", entries: ["outskirts", "quay", "shore"], locked: "峠か鉄橋を越えて港町の外れまで歩き、生きて帰ると選べる", exits: ["boat"], label: { x: -250, z: -520 }, bounds: { x0: WORLD.x0, z0: WORLD.z0, x1: 600, z1: -380 } },
+  reservoir: { name: "ダム湖", note: "干上がったダム湖の島。拠点 {pois} つ、発着場にタイタン", home: true, entries: ["beach", "checkpoint", "jetty"], exits: ["ship", "flare", "village"], label: { x: -330, z: 300 }, bounds: { x0: -600, z0: -340, x1: 600, z1: WORLD.z1 } },
+  harbor: { name: "港湾地帯", note: "干上がった湾の港。拠点 {pois} つ、どこにもヘビーがいる", entries: ["outskirts", "quay", "shore"], locked: "峠か鉄橋を越えて港町の外れまで歩き、生きて帰ると選べる", exits: ["boat"], label: { x: -250, z: -520 }, bounds: { x0: -600, z0: WORLD.z0, x1: 600, z1: -380 } },
   city: { name: "機械都市", note: "海峡の向こうの機械仕掛けの街。拠点 {pois} つ", entries: ["bridgehead", "railyard"], locked: "海峡の橋を渡って橋のたもとまで歩き、生きて帰ると選べる", exits: ["plaza"], label: { x: 870, z: -330 }, bounds: { x0: 620, z0: WORLD.z0, x1: WORLD.x1, z1: WORLD.z1 }, ground: true },
+  launch: { name: "発射場", note: "渓谷の向こうの台地にある発射場。拠点 {pois} つ", entries: ["railhead", "cutting"], locked: "渓谷の鉄道橋か切り通しを渡って台地まで歩き、生きて帰ると選べる", exits: ["runway", "canyon"], label: { x: -930, z: 20 }, bounds: { x0: WORLD.x0, z0: -600, x1: -575, z1: 620 }, ground: true },
 };
 
 /**
@@ -3157,6 +3259,9 @@ export const MOBILES: Mobile[] = [
   // --- the machine city: down the middles of its streets, so they pass between the elevated line's pillars.
   { name: "大通りの警邏", kind: "patrol", faction: "net", region: "city", members: ["grunt", "drone"], nodes: [[804, -152], [936, -152], [936, -570]] },
   { name: "橋の野良機", kind: "patrol", faction: "rogue", region: "city", rank: 2, members: ["grunt", "charger"], nodes: [[740, -570], [804, -570], [804, -152]] },
+  // --- the launch site: across the plateau from the crossings toward the runway, north and south of the control centre.
+  { name: "台地の警邏", kind: "patrol", faction: "net", region: "launch", members: ["grunt", "drone"], nodes: [[-730, -120], [-860, -150], [-1010, -230]] },
+  { name: "渓谷の野良機", kind: "patrol", faction: "rogue", region: "launch", rank: 2, members: ["grunt", "charger"], nodes: [[-720, 80], [-860, 140], [-1010, 230]] },
 ];
 
 export type DebrisId = "southwest" | "easthill" | "quarryeast" | "townwest" | "eastshore" | "saltwest";
@@ -3199,9 +3304,9 @@ export const DEBRIS_SPOTS: DebrisSpot[] = (
 
 export const debrisIndex = (id: DebrisId) => DEBRIS_SPOTS.findIndex((d) => d.id === id);
 
-export type RegionId = "reservoir" | "harbor" | "city";
+export type RegionId = "reservoir" | "harbor" | "city" | "launch";
 
-export type EntryId = "beach" | "checkpoint" | "jetty" | "outskirts" | "quay" | "shore" | "bridgehead" | "railyard";
+export type EntryId = "beach" | "checkpoint" | "jetty" | "outskirts" | "quay" | "shore" | "bridgehead" | "railyard" | "railhead" | "cutting";
 
 /**
  * A way into a region on foot, out on its open ground: a raid that does not start at a depot
@@ -3228,6 +3333,8 @@ export const ENTRIES: Entry[] = [
   { id: "shore", region: "harbor", name: "西の漁村の浜", x: -340, z: -820, yaw: Math.PI / 2 },
   { id: "bridgehead", region: "city", name: "橋のたもと", x: 680, z: 4, yaw: Math.PI / 2 },
   { id: "railyard", region: "city", name: "貨物ヤード", x: 700, z: -640, yaw: Math.PI / 2 },
+  { id: "railhead", region: "launch", name: "鉄道橋の西詰", x: -688, z: 42, yaw: -Math.PI / 2 },
+  { id: "cutting", region: "launch", name: "切り通しの上", x: -728, z: -102, yaw: -Math.PI / 2 },
 ];
 
 export const entryOf = (id: EntryId): Entry => ENTRIES.find((e) => e.id === id) ?? ENTRIES[0];
@@ -3507,6 +3614,12 @@ export const LANDMARKS: readonly { name: string; x: number; z: number }[] = [
   at("city", { name: "高層街区", x: 64, z: 178 }),
   at("powerplant", { name: "発電所", x: 0, z: 0 }),
   at("powerplant", { name: "冷却塔", x: 10, z: -58 }),
+  at("launch", { name: "発射場", x: -100, z: 120 }),
+  at("launch", { name: "管制センター", x: 140, z: -50 }),
+  at("launch", { name: "滑走路", x: -75, z: -120 }),
+  { name: "渓谷", x: -606, z: 200 },
+  { name: "渓谷の鉄道橋", x: -614, z: 30 },
+  { name: "切り通し", x: -606, z: -90 },
 ];
 
 /**
@@ -3533,6 +3646,8 @@ export const STOPS: readonly { name: string; x: number; z: number }[] = [
   at("city", { name: "駅前通り", x: -66, z: -20 }),
   at("city", { name: "北の街区", x: 0, z: -205 }),
   at("city", { name: "南の街区", x: -66, z: 200 }),
+  at("launch", { name: "滑走路の南端", x: -75, z: 240 }),
+  at("launch", { name: "台地の北", x: 40, z: -260 }),
 ];
 
 /**
@@ -3548,6 +3663,7 @@ export const PARTY_STOPS: Record<RegionId, readonly { name: string; x: number; z
   // The signal box's own middle is its house: the party stands on the open ground south of it.
   harbor: [stopAt("港町"), stopAt("高架下"), stopAt("信号所", 0, 14), stopAt("西の漁村"), stopAt("東の丘の家")],
   city: [stopAt("駅前通り"), stopAt("北の街区"), stopAt("南の街区")],
+  launch: [stopAt("滑走路の南端"), stopAt("台地の北")],
 };
 
 /** A party's stop at the stop or hamlet `name`, `dx`, `dz` metres off it. */
@@ -5124,16 +5240,24 @@ const STRAIT_SPANS = [
   { name: "道路橋", x0: 540, x1: 640, z: 0, half: 5, y: 4, piers: [575, 605], rails: false },
   { name: "鉄道橋", x0: 562, x1: 664, z: -640, half: 3.5, y: 3, piers: [592, 622], rails: true },
 ] as const;
+/**
+ * The rail bridge over the dry canyon to the launch site, built as the strait's spans are: the
+ * rail spur's embankment (terrain.ts) carries the line up to its east end, the plateau's edge
+ * holds its west end, and its piers stand on the canyon's floor.
+ */
+const CANYON_SPANS = [{ name: "渓谷の鉄道橋", x0: -662, x1: -566, z: 30, half: 3.5, y: LEVEL.plateau, piers: [-618, -594], rails: true }] as const;
+/** Every span over a natural border, with the floor its piers stand on. */
+const SPANS = [...STRAIT_SPANS.map((sp) => ({ ...sp, base: -12 })), ...CANYON_SPANS.map((sp) => ({ ...sp, base: LEVEL.canyon }))];
 /** How far each end of a span rests on its bank, pressed flat at its level. */
 const SPAN_REST = 10;
-const STRAIT_BRIDGES: Box[] = STRAIT_SPANS.flatMap(({ x0, x1, z, half, y, piers, rails }) => {
+const SPAN_BRIDGES: Box[] = SPANS.flatMap(({ x0, x1, z, half, y, piers, rails, base }) => {
   FLAT.push({ x0: x0 - 12, z0: z - half - 3, x1: x0 + SPAN_REST, z1: z + half + 3, y }, { x0: x1 - SPAN_REST, z0: z - half - 3, x1: x1 + 12, z1: z + half + 3, y });
   const [r0, r1] = [x0 + SPAN_REST, x1 - SPAN_REST];
   return [
     bridge(x0, z - half, x1, z + half, y),
     rect(r0, z - half, r1, z - half + 0.3, y, y + 1.1, "steel", 2),
     rect(r0, z + half - 0.3, r1, z + half, y, y + 1.1, "steel", 2),
-    ...piers.map((px) => rect(px - 2, z - half + 0.6, px + 2, z + half - 0.6, -12, y - 0.3, "tower", 0)),
+    ...piers.map((px) => rect(px - 2, z - half + 0.6, px + 2, z + half - 0.6, base, y - 0.3, "tower", 0)),
     ...(rails ? [-0.75, 0.75].map((dz) => rect(x0, z + dz - 0.08, x1, z + dz + 0.08, y, y + 0.12, "steel", 2)) : []),
   ];
 });
@@ -5141,7 +5265,7 @@ const STRAIT_BRIDGES: Box[] = STRAIT_SPANS.flatMap(({ x0, x1, z, half, y, piers,
 /**
  * Walkways that the ground's path finding (nav.ts for the bot, hunt.ts for routed robots)
  * treats as ground at height `y`: the railway bridge's deck over the gorge and the spans over
- * the dried strait, between their railings. Everything else built up off the ground is out of their reach.
+ * the dried strait and the dry canyon, between their railings. Everything else built up off the ground is out of their reach.
  */
 export interface Deck {
   x0: number;
@@ -5152,7 +5276,7 @@ export interface Deck {
 }
 export const DECKS: Deck[] = [
   ...placeIn("railway", [rect(120.2, -201.5, 123.8, -178.5, 0, 0, "slab")]).map((b) => ({ x0: b.x0, z0: b.z0, x1: b.x1, z1: b.z1, y: LEVEL.rail })),
-  ...STRAIT_SPANS.map(({ x0, x1, z, half, y }) => ({ x0, z0: z - half + 0.3, x1, z1: z + half - 0.3, y })),
+  ...SPANS.map(({ x0, x1, z, half, y }) => ({ x0, z0: z - half + 0.3, x1, z1: z + half - 0.3, y })),
 ];
 
 /**
@@ -5257,6 +5381,9 @@ const AUTHORED: Box[] = [
   ...onLevel(LEVEL.city, place(POI_AT.highrise[0], POI_AT.highrise[1], highrise())),
   ...onLevel(LEVEL.powerplant, placeIn("powerplant", powerplant())),
   ...onLevel(LEVEL.city, placeIn("city", city())),
+  // --- the launch site
+  ...onFloors(POI_AT.control[0], POI_AT.control[1], control()),
+  ...onLevel(LEVEL.plateau, placeIn("launch", runway())),
 ];
 
 /**
@@ -5286,11 +5413,30 @@ interface Keep {
 
 /**
  * Roads that are the only ways between areas: the way between the regions, the ramps into the
- * lakebed, the quarry and the harbor's bay, and the ways up the pad, the mesa and the fields.
+ * lakebed, the quarry and the harbor's bay, the ways up the pad, the mesa and the fields, and the
+ * ways over the dry canyon and down into the control centre's sunk yard.
  * Cover is kept off them, and they are pressed to their own floor along their middle, so no
  * rock or building nearby can close them.
  */
-const KEPT_ROADS = ["湖への坂", "湖の西坂", "東の坂", "発着場の西坂", "採掘場の運搬路", "中段への坂", "底への坂", "採掘場の坑道", "台地への道", "台地の坂", "村の坂", "峠道", "鉄道の土手（南）", "鉄道の土手（北）", "駅の坂", "高架下", "西の道", "製錬所の坂", "塩田への坂", "ヤードの北道", "製錬所の北道", "岬の坂", "斜路"];
+const KEPT_ROADS = ["湖への坂", "湖の西坂", "東の坂", "発着場の西坂", "採掘場の運搬路", "中段への坂", "底への坂", "採掘場の坑道", "台地への道", "台地の坂", "村の坂", "峠道", "鉄道の土手（南）", "鉄道の土手（北）", "駅の坂", "高架下", "西の道", "製錬所の坂", "塩田への坂", "ヤードの北道", "製錬所の北道", "岬の坂", "斜路", "引き込み線の土手", "切り通し", "管制室の坂"];
+
+/**
+ * The quarry's wider iron stairs, in its frame: each from (x, z) on its floor toward the wall it
+ * climbs, to the terrace above or (no `top`) the open ground round the quarry. With the haul road,
+ * the ramps, the tunnel, the narrow stairs and the lifts (`QUARRY_LIFTS`) they are the quarry's
+ * ways up, which the sim gate walks (`checkQuarryExits()`).
+ */
+export const QUARRY_EXITS: readonly { name: string; x: number; z: number; toward: Side; base: number; top?: number }[] = [
+  { name: "上段から南西へ", x: -90, z: 50, toward: "s", base: LEVEL.quarryTop },
+  { name: "上段から南東へ", x: 70, z: 55, toward: "s", base: LEVEL.quarryTop },
+  { name: "上段から東へ", x: 105, z: -30, toward: "e", base: LEVEL.quarryTop },
+  { name: "上段から西へ", x: -108, z: -20, toward: "w", base: LEVEL.quarryTop },
+  { name: "上段から北西へ", x: -60, z: -52, toward: "n", base: LEVEL.quarryTop },
+  { name: "中段から東へ", x: 62, z: 12, toward: "e", base: LEVEL.quarryMid, top: LEVEL.quarryTop },
+  { name: "中段から北へ", x: 40, z: -15, toward: "n", base: LEVEL.quarryMid, top: LEVEL.quarryTop },
+  { name: "底から南へ", x: -20, z: 32, toward: "s", base: LEVEL.pit, top: LEVEL.quarryMid },
+  { name: "底から北へ", x: -5, z: 6, toward: "n", base: LEVEL.pit, top: LEVEL.quarryMid },
+];
 
 /** Every authored point (with the room it needs), patrol leg and kept road. */
 function authoredKeep(): Keep {
@@ -5323,6 +5469,8 @@ function authoredKeep(): Keep {
   // The boat's point keeps less flat ground round it: the channel's water starts a few metres off.
   for (const x of EXTRACTS) points.push({ x: x.x, z: x.z, r: x.id === "boat" ? 6 : 10 });
   for (const e of ENTRIES) points.push({ x: e.x, z: e.z, r: 6 });
+  // The feet of the quarry's iron stairs stay open: cover there would shut a way up out of a terrace.
+  for (const q of QUARRY_EXITS) points.push({ x: q.x + POI_AT.quarry[0], z: q.z + POI_AT.quarry[1], r: 6 });
   return { points, segments };
 }
 
@@ -5335,8 +5483,10 @@ function authoredKeep(): Keep {
  * channel, under water, gets none.
  */
 const SCATTER: { x0: number; x1: number; z0: number; z1: number; seed: number; step: number; urban?: true }[] = [
-  { x0: WORLD.x0, x1: 600, z0: -350, z1: WORLD.z1, seed: 7_332, step: 13 },
-  { x0: WORLD.x0, x1: 600, z0: WORLD.z0, z1: -351, seed: 4_517, step: 14 },
+  { x0: -600, x1: 600, z0: -350, z1: WORLD.z1, seed: 7_332, step: 13 },
+  { x0: -600, x1: 600, z0: WORLD.z0, z1: -351, seed: 4_517, step: 14 },
+  // The launch site's plateau, west of the canyon.
+  { x0: WORLD.x0, x1: -601, z0: WORLD.z0, z1: WORLD.z1, seed: 6_211, step: 15 },
   // The machine city's ground: only what a city's streets are left with (`urbanAt()`).
   { x0: 620, x1: WORLD.x1, z0: WORLD.z0, z1: WORLD.z1, seed: 9_173, step: 14, urban: true },
 ];
@@ -5346,6 +5496,8 @@ const SPARSE = new Set(["塩田", "補給所"]);
 const WATER = "水路";
 /** The ground between the basins and roads (terrain.ts). */
 const BETWEEN = "野";
+/** Ground left bare: the launch site's runway, where the pickup craft lands. */
+const RUNWAY = "滑走路";
 /** Where on the ground between the cover clumps: above 0.55 in blobs about a hundred metres across. */
 const clump = (x: number, z: number) => 0.5 + 0.25 * Math.sin(x / 37 + 1.3) * Math.sin(z / 41 + 0.7) + 0.25 * Math.sin((x + z) / 53);
 
@@ -5614,7 +5766,7 @@ function scatterArea(near: Clearance, area: (typeof SCATTER)[number]): Box[] {
       const z = gz + (rnd() - 0.5) * 7;
       const at = surfaceAt(x, z);
       const sparse = SPARSE.has(at);
-      if ((sparse && rnd() > 0.5) || at === WATER) continue;
+      if ((sparse && rnd() > 0.5) || at === WATER || at === RUNWAY) continue;
       // The streets' asphalt stays clear. On the ground between the areas, cover gathers along
       // the streets (what was left by the roadside) and in a few clumps a hundred metres or so
       // across away from them: open country to cross, broken by places to break the sightline.
@@ -5787,23 +5939,6 @@ buildTerrain([
  * runs under the middle terrace (a portal at its foot); the stone steps between the fields; and
  * the drowned town's roofs sticking out of the mud banks.
  */
-/**
- * The quarry's wider iron stairs, in its frame: each from (x, z) on its floor toward the wall it
- * climbs, to the terrace above or (no `top`) the open ground round the quarry. With the haul road,
- * the ramps, the tunnel, the narrow stairs and the lifts (`QUARRY_LIFTS`) they are the quarry's
- * ways up, which the sim gate walks (`checkQuarryExits()`).
- */
-export const QUARRY_EXITS: readonly { name: string; x: number; z: number; toward: Side; base: number; top?: number }[] = [
-  { name: "上段から南西へ", x: -90, z: 50, toward: "s", base: LEVEL.quarryTop },
-  { name: "上段から南東へ", x: 70, z: 55, toward: "s", base: LEVEL.quarryTop },
-  { name: "上段から東へ", x: 105, z: -30, toward: "e", base: LEVEL.quarryTop },
-  { name: "上段から西へ", x: -108, z: -20, toward: "w", base: LEVEL.quarryTop },
-  { name: "上段から北西へ", x: -60, z: -52, toward: "n", base: LEVEL.quarryTop },
-  { name: "中段から東へ", x: 62, z: 12, toward: "e", base: LEVEL.quarryMid, top: LEVEL.quarryTop },
-  { name: "中段から北へ", x: 40, z: -15, toward: "n", base: LEVEL.quarryMid, top: LEVEL.quarryTop },
-  { name: "底から南へ", x: -20, z: 32, toward: "s", base: LEVEL.pit, top: LEVEL.quarryMid },
-  { name: "底から北へ", x: -5, z: 6, toward: "n", base: LEVEL.pit, top: LEVEL.quarryMid },
-];
 
 /**
  * The quarry's lifts, in its frame: cables from its floor straight up over the terraces to the
@@ -6086,7 +6221,7 @@ const FENCES: { name: string; line: [number, number][] }[] = [
 export const GATES: { name: string; x: number; z: number }[] = [];
 const FENCE_RUNS: Box[] = (() => {
   const out: Box[] = [];
-  const standing = [...AUTHORED, ...BRIDGE, ...RAILWAY, ...STRAIT_BRIDGES, ...QUAY, ...LAID, ...WORKS_LINES].filter((b) => b.y0 < terrainHeight((b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2) + 3);
+  const standing = [...AUTHORED, ...BRIDGE, ...RAILWAY, ...SPAN_BRIDGES, ...QUAY, ...LAID, ...WORKS_LINES].filter((b) => b.y0 < terrainHeight((b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2) + 3);
   const roads = KEPT_ROADS.flatMap((name) => {
     const line = roadLine(name);
     return line.slice(1).map((q, k) => [line[k], q] as const);
@@ -6383,7 +6518,7 @@ const TOWN_SPUR_FALL: Box[] = (() => {
 })();
 
 /** Everything placed by hand or laid by rule before the streets are lined: what `scripts/ringfall-roads.ts` routes them round. */
-export const PLACED: Box[] = [...AUTHORED, ...BRIDGE, ...RAILWAY, ...STRAIT_BRIDGES, ...QUAY, ...LAID, ...WORKS_LINES, ...FENCE_RUNS, ...RING_RUNS, ...CRATER_FLOOR, ...TOWN_SPUR_FALL];
+export const PLACED: Box[] = [...AUTHORED, ...BRIDGE, ...RAILWAY, ...SPAN_BRIDGES, ...QUAY, ...LAID, ...WORKS_LINES, ...FENCE_RUNS, ...RING_RUNS, ...CRATER_FLOOR, ...TOWN_SPUR_FALL];
 /**
  * What lines the streets (streets.ts), laid on the ground once it is built: lamp posts along every
  * length on alternate sides, a signpost where each street leaves its first junction, and traffic
@@ -6537,6 +6672,7 @@ export const FRONT_LINKS: readonly (readonly ["camp" | NodeId, NodeId])[] = [
   ["highrise", "terminal"],
   ["terminal", "powerplant"],
   ["powerplant", "robotworks"],
+  ["quarry", "control"],
 ];
 for (const id of POI_IDS) if (!POI_DEFS[id].boss && !FRONT_LINKS.some((l) => l.includes(id as NodeId))) throw new Error(`node ${id} has no link in FRONT_LINKS`);
 

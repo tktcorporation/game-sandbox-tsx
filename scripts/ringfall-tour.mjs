@@ -156,6 +156,13 @@ export const HARBOR_TOUR = [
   ["tour-112-plant-tower-gap", "powerplant", -24, 1.7, -34, Math.PI / 2, 0.08],
   ["tour-113-plant-inside-tower", "powerplant", 2, 1.7, -36, Math.PI / 2, 0.75],
   ["tour-114-plant-boiler-roof", "powerplant", 4, 4 + 8 * 3.4 + 1.6, 2, 0, -0.08, true],
+  // The launch site west of the dry canyon (its plateau at 8, the canyon's floor at -17): the rail
+  // bridge from the island's rim, the road cut from the canyon's floor, the control centre from its
+  // east yard, and the plateau from the control centre's roof.
+  ["tour-115-canyon-rail-bridge", null, -572, 1.7, 62, -0.95, -0.08],
+  ["tour-116-canyon-road-cut", null, -600, 1.7, -86, 1.4, 0.14],
+  ["tour-117-control-centre", "control", 60, 1.7, 30, -1.11, 0.1],
+  ["tour-118-control-roof", "control", 6, 3.5 + 13.5 + 1.6, 0, -1.57, -0.06, true],
 ];
 
 /** A tour camera placed in the world: [name, x, dy, z, yaw, pitch, abs], from `frames` (window.ringfallFrames()). */

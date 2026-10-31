@@ -4,8 +4,9 @@ import type { PoiId } from "./map";
 import { hypot2 } from "./hypot";
 
 /*
- * The ground of three regions: two joined by a mountain belt, and the machine city's paved
- * basin east of them across a dried strait (its ground is at the end). The south one is a dried-up
+ * The ground of four regions: two joined by a mountain belt, the machine city's paved basin
+ * east of them across a dried strait, and the launch site's plateau west of them across a dry
+ * canyon (their ground is at the end). The south one is a dried-up
  * reservoir: a dam once held a lake in the middle of it; the water is gone and the
  * drowned town stands on the cracked lakebed, 14 m under the shore. Around it the ground
  * steps up and down: the dam's 30 m wall in the north with the landing pad on top of it,
@@ -128,7 +129,7 @@ interface Open {
  * from another at a glance. Only the renderer and the world map read it: it changes no rule.
  * `quarry` and `sandstone` colour the cliffs round their shapes too (`cliffGround()`).
  */
-export type Ground = "dune" | "salt" | "paved" | "mud" | "quarry" | "sandstone" | "scrub" | "oiled" | "concrete" | "asphalt";
+export type Ground = "dune" | "salt" | "paved" | "mud" | "quarry" | "sandstone" | "scrub" | "oiled" | "concrete" | "asphalt" | "caliche";
 
 /**
  * A dune: its crest runs along `line`, `height` metres over the floor it stands on, and its sides
@@ -224,6 +225,13 @@ export const LEVEL = {
   city: 4,
   /** The power plant's yard, east of the city on the ground between it and the coast, level with the streets. */
   powerplant: 4,
+  /** The launch site's plateau west of the island, and the dry canyon's floor 25 m under it. */
+  plateau: 8,
+  canyon: -17,
+  /** The control centre's sunk yard: one works storey under the plateau. */
+  controlPit: 3.5,
+  /** The island's ground at the east ends of the two crossings over the canyon. */
+  canyonEast: 4,
 } as const;
 
 /** The dam's face: the cliff from the crest down to the lakebed, drawn as concrete. */
@@ -318,6 +326,17 @@ const BASINS: Open[] = [
   { name: "機械都市", line: inArea("city", [[0, -320], [0, 240]]), half: 120, level: LEVEL.city, ground: "asphalt" },
   // The power plant's yard, its long side along the coast.
   { name: "発電所", line: inPoi("powerplant", [[0, -78], [0, 84]]), half: 38, level: LEVEL.powerplant, ground: "concrete" },
+  // The launch site's plateau: open rolling ground at its level, held there by the runway's apron
+  // down its middle (its ground pale caliche, painted so by the view west of the canyon).
+  { name: "滑走路", line: inArea("launch", [[-75, -215], [-75, 215]]), half: 30, level: LEVEL.plateau, ground: "concrete" },
+  // The control centre's sunk yard round its block, a storey under the plateau.
+  { name: "管制室の掘り込み", line: inPoi("control", [[-14, 0], [14, 0]]), half: 13, level: LEVEL.controlPit, walled: true, ground: "concrete" },
+  // The ground at both ends of the two crossings over the canyon: the rail bridge's (from the quarry's
+  // side) and the road cut's (from the terraced fields' side).
+  { name: "引き込み線の東口", line: [[-470, 30], [-470, 30]], half: 9, level: LEVEL.canyonEast },
+  { name: "鉄道橋の西詰", line: [[-674, 30], [-662, 30]], half: 8, level: LEVEL.plateau, ground: "caliche" },
+  { name: "切り通しの東口", line: [[-498, -90], [-498, -90]], half: 9, level: LEVEL.canyonEast },
+  { name: "切り通しの西口", line: [[-716, -90], [-716, -90]], half: 9, level: LEVEL.plateau, ground: "caliche" },
   // The top of the pass: a saddle between the peaks, with the harbor in view.
   { name: "峠", line: inArea("pass", [[-66, -214], [-54, -230]]), half: 9, level: LEVEL.pass },
 ];
@@ -333,6 +352,8 @@ const ROADS: Open[] = [
   { name: "湖への坂", line: inArea("heart", [[0, 152], [0, 108], [0, 98]]), half: 5, level: [LEVEL.shore, LEVEL.lakebed, LEVEL.lakebed], atPoints: true, walled: true, ground: "mud" },
   { name: "湖の西坂", line: inArea("heart", [[-105, -5], [-78, 25], [-68, 25]]), half: 5, level: [LEVEL.shore, LEVEL.lakebed, LEVEL.lakebed], atPoints: true, walled: true, ground: "mud" },
   { name: "東の坂", line: inArea("heart", [[68, -5], [78, -5], [116, -5]]), half: 5, level: [LEVEL.lakebed, LEVEL.lakebed, LEVEL.shore], atPoints: true, walled: true, ground: "mud" },
+  // Out of the spillway's mouth east onto the ground, round the corner of its east wall.
+  { name: "放水路の東口", line: [[124, -77], [136, -77]], half: 4, level: [3.2, 5], atPoints: true },
   // Down off the pad's west side, and on along the ground to the terraced fields.
   { name: "発着場の西坂", line: inArea("heart", [[-112, -170], [-120, -170], [-166, -170]]), half: 5, level: [LEVEL.dam, LEVEL.dam, LEVEL.field], atPoints: true, walled: true, ground: "concrete" },
   { name: "村への道", line: [[-166, -90], [-215, -95]], half: 5, level: LEVEL.field },
@@ -372,6 +393,14 @@ const ROADS: Open[] = [
   { name: "斜路", line: inArea("bay", [[150, -570], [156, -583], [160, -590]]), half: 4, level: [LEVEL.seabed, LEVEL.channel, LEVEL.channel], atPoints: true, walled: true },
   // The high-rise district's ramp down from its plaza to the underground car park's shutter.
   { name: "地下駐車場の斜路", line: inPoi("highrise", [[-24, -44], [-24, -18]]), half: 3.5, level: [LEVEL.city, LEVEL.city - 4.5], atPoints: true, walled: true, ground: "asphalt" },
+  // The launch site's ways over the canyon. The rail spur's embankment from the quarry's side up to
+  // the rail bridge's east end (the deck carries it on, `CANYON_SPANS` in map.ts); and the road cut
+  // from the terraced fields' side, sunk into the east bank down to the canyon's floor, across it
+  // and up the west bank onto the plateau.
+  { name: "引き込み線の土手", line: [[-478, 30], [-548, 30], [-568, 30]], half: 5, level: [LEVEL.canyonEast, LEVEL.plateau, LEVEL.plateau], atPoints: true, walled: true },
+  { name: "切り通し", line: [[-505, -90], [-586, -90], [-628, -90], [-708, -90]], half: 5, level: [LEVEL.canyonEast, LEVEL.canyon, LEVEL.canyon, LEVEL.plateau], atPoints: true, walled: true, ground: "caliche" },
+  // Down into the control centre's sunk yard from the plateau, on its south side.
+  { name: "管制室の坂", line: inPoi("control", [[6, 42], [6, 13]]), half: 4, level: [LEVEL.plateau, LEVEL.controlPit], atPoints: true, walled: true, ground: "concrete" },
 ];
 
 /** The line of the road named `name` (empty when there is none). */
@@ -432,6 +461,20 @@ const CUTS: Cut[] = [
     slope: CLIFF,
     atPoints: true,
   },
+  /**
+   * The dry canyon between the island and the launch site's plateau, 25 m under the plateau and
+   * 40 m across its floor, running north to south from coast to coast. The rail bridge spans it and
+   * the road cut climbs down into it and out. At each end it runs into the inlet where the two
+   * lands' coasts meet, its floor rising there in a cliff as steep as its walls, so nothing walked
+   * in it lies past the coast and no way round it is left on land.
+   */
+  {
+    line: [[-588, -252], [-596, -238], [-606, -190], [-608, -90], [-606, 30], [-603, 150], [-598, 300], [-608, 345], [-614, 362]],
+    floor: 20,
+    levels: [55, LEVEL.canyon, LEVEL.canyon, LEVEL.canyon, LEVEL.canyon, LEVEL.canyon, LEVEL.canyon, LEVEL.canyon, 55],
+    slope: CLIFF,
+    atPoints: true,
+  },
 ];
 
 /** Open shapes and cuts with their lines worked out once: `lowest()` runs for every grid cell. */
@@ -485,12 +528,18 @@ export const LANDS: Land[] = [
   { name: "島", x: 0, z: 80, radius: (a) => (560 * 410) / hypot2(410 * Math.cos(a), 560 * Math.sin(a)) + 13.5 * Math.sin(3 * a + 1.1) + 8.4 * Math.sin(7 * a + 2.3) + 5 * Math.sin(13 * a + 0.4), max: 588 },
   // The dune coast, bulging south of the island round the supply depot: wider east to west.
   { name: "砂丘", x: 0, z: 470, radius: (a) => 230 * 175 / hypot2(175 * Math.cos(a), 230 * Math.sin(a)) + 6 * Math.sin(5 * a + 0.9) + 3 * Math.sin(11 * a + 2.1), max: 240 },
-  // The mountain belt between the two regions, wider east to west.
+  // The mountain belt between the reservoir and the harbor, wider east to west.
   { name: "山地", x: 30, z: -350, radius: (a) => 150 + 60 * Math.abs(Math.cos(a)) + 6 * Math.sin(5 * a + 0.7), max: 216 },
   { name: "港湾", x: 0, z: -775, radius: (a) => 425 + 10 * Math.sin(3 * a + 0.5) + 7 * Math.sin(7 * a + 1.9) + 3.4 * Math.sin(11 * a + 0.3), max: 441 },
   // The east land: joined to the island's, the mountains' and the harbor's east coasts, cut through
   // north to south by the dried strait, the machine city on its far side. Taller than wide.
   { name: "東の陸", x: 740, z: -335, radius: (a) => (350 * 640) / hypot2(640 * Math.cos(a), 350 * Math.sin(a)) + 9 * Math.sin(5 * a + 0.4) + 5 * Math.sin(9 * a + 1.7), max: 655 },
+  // The ground along the island's west coast that joins it to the launch site's plateau, the dry
+  // canyon cut through it north to south.
+  { name: "渓谷", x: -540, z: 80, radius: (a) => (140 * 330) / hypot2(330 * Math.cos(a), 140 * Math.sin(a)) + 3 * Math.sin(7 * a + 1.3), max: 334 },
+  // The launch site's plateau west of the island: joined to the island's west coast, cut off from it
+  // north to south by the dry canyon. Taller than wide.
+  { name: "西の台地", x: -930, z: 20, radius: (a) => (400 * 560) / hypot2(560 * Math.cos(a), 400 * Math.sin(a)) + 8 * Math.sin(5 * a + 2.2) + 4 * Math.sin(11 * a + 0.6), max: 572 },
 ];
 
 /** How far (x, z) lies outside one land mass's coast; negative inside it. */
