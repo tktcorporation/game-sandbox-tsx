@@ -1553,7 +1553,12 @@ export type Landing = "pad" | "shore";
  * lies from the camp, 0 by the camp's gate to 3 at the far end of the harbor, docs/ringfall/island-v2.md
  * 拠点の段), what holding it opens (`NodeUnlock`) and the landing ground it borders, if any.
  */
-type PoiDef = Omit<Poi, "id" | "boss"> & { region: RegionId; depotOut: number };
+/**
+ * A POI as written: its `Poi` fields in its own frame, its region, its depot's distance out, and
+ * where its core is looked for when not round its middle (`coreFrom`, in its frame): a node whose
+ * middle is under a roof keeps its core, and so its ziplines' masts, out in the open.
+ */
+type PoiDef = Omit<Poi, "id" | "boss"> & { region: RegionId; depotOut: number; coreFrom?: { x: number; z: number } };
 /** The boss's POI: the enemy's for good, no node of the front. */
 type BossDef = PoiDef & { boss: true; front?: never };
 type NodeDef = PoiDef & { boss?: never; front: { tier: number; unlocks: NodeUnlock; landing?: Landing } };
@@ -2385,6 +2390,9 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
     name: "組立棟",
     x: 0,
     z: 0,
+    // On the apron off the building's north-west corner, out from under its roof: the control
+    // centre's cable comes in clear of its west face, the pad's goes out over the crawlerway.
+    coreFrom: { x: -72, z: -60 },
     trigger: 90,
     entry: { x: -80, z: 30, yaw: E },
     squads: [
@@ -2448,7 +2456,7 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
 const POI_IDS = Object.keys(POI_DEFS) as PoiId[];
 
 export const POIS: Poi[] = POI_IDS.map((id) => {
-  const { region, depotOut, front, ...p } = POI_DEFS[id];
+  const { region, depotOut, front, coreFrom, ...p } = POI_DEFS[id];
   return placePoi({ id, ...p }, POI_AT[id]);
 });
 
@@ -7061,14 +7069,18 @@ function coreSpot(x: number, z: number, near: Box[]): { x: number; y: number; z:
 }
 
 /** The front's nodes: the freeable POIs in `POIS` order. */
-export const NODES: FrontNode[] = POIS.filter((p) => !p.boss).map((p): FrontNode => ({
-  id: p.id as NodeId,
-  name: p.name,
-  region: poiRegion(p.id).id,
-  x: p.x,
-  z: p.z,
-  core: coreSpot(p.x, p.z, [...BUILT, ...CAMP_BOXES].filter((b) => b.x1 > p.x - 70 && b.x0 < p.x + 70 && b.z1 > p.z - 70 && b.z0 < p.z + 70)),
-}));
+export const NODES: FrontNode[] = POIS.filter((p) => !p.boss).map((p): FrontNode => {
+  const from = POI_DEFS[p.id].coreFrom;
+  const [cx, cz] = from ? [POI_AT[p.id][0] + from.x, POI_AT[p.id][1] + from.z] : [p.x, p.z];
+  return {
+    id: p.id as NodeId,
+    name: p.name,
+    region: poiRegion(p.id).id,
+    x: p.x,
+    z: p.z,
+    core: coreSpot(cx, cz, [...BUILT, ...CAMP_BOXES].filter((b) => b.x1 > cx - 70 && b.x0 < cx + 70 && b.z1 > cz - 70 && b.z0 < cz + 70)),
+  };
+});
 
 /** A node's place in `NODES` (and in the run's per-node state), from its id; -1 for none. */
 export const nodeIndex = (id: string) => NODES.findIndex((n) => n.id === id);

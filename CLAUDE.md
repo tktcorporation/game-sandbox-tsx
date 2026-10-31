@@ -236,7 +236,7 @@ The front (`docs/ringfall/island-v2.md`): the nineteen freeable POIs are the nod
 `map.ts`, linked along the roads by the twenty-six `FRONT_LINKS`, in loops, each with its depth, `TIER` from `POI_DEFS`); the
 outposts are places to loot with an enemy guard, no nodes, and the rogues hold no ground.
 `sim/front.ts` holds the rules. A node next to the player's ground (the camp and the player's
-nodes) is on the front; only its core, a pillar near its middle, can be captured (`FRONT` in
+nodes) is on the front; only its core, a pillar near its middle (or out in the open where `coreFrom` in `POI_DEFS` looks for it: the assembly building's, on its apron), can be captured (`FRONT` in
 `config.ts`): the use key starts it, the meter fills while the player holds the core's ground with
 no robot on it, the garrison comes and squads push in from the neighbouring nodes. A node taken is
 the player's at once (no robot enters `FRONT.zone`) and stays so overnight; clearing a POI of its
