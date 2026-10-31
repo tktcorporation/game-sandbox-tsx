@@ -107,7 +107,7 @@ export const HARBOR_TOUR = [
   // The outposts between the POIs, and the works that lead from one to the next: the power line
   // north from the substation toward the quay, the freight line east past the yard.
   ["tour-74-substation", "変電所", -40, 1.7, 25, 1.01, 0.12],
-  ["tour-75-fuel-depot", "燃料基地", -45, 1.7, 30, 0.98, 0.1],
+  ["tour-75-fuel-depot", "油槽所", -45, 1.7, 30, 0.98, 0.1],
   ["tour-76-marshalling-yard", "貨物操車場", 45, 1.7, 40, -0.84, 0.08],
   ["tour-77-power-line", null, 112, 1.7, -660, -0.08, 0.15],
   ["tour-78-freight-line", null, -175, 1.7, -775, 1.4, 0.04],
@@ -156,6 +156,30 @@ export const HARBOR_TOUR = [
   ["tour-112-plant-tower-gap", "powerplant", -24, 1.7, -34, Math.PI / 2, 0.08],
   ["tour-113-plant-inside-tower", "powerplant", 2, 1.7, -36, Math.PI / 2, 0.75],
   ["tour-114-plant-boiler-roof", "powerplant", 4, 4 + 8 * 3.4 + 1.6, 2, 0, -0.08, true],
+  // The launch site west of the dry canyon (its plateau at 8, the canyon's floor at -17): the rail
+  // bridge from the island's rim, the road cut from the canyon's floor, the control centre from its
+  // east yard, and the plateau from the control centre's roof.
+  ["tour-115-canyon-rail-bridge", null, -572, 1.7, 62, -0.95, -0.08],
+  ["tour-116-canyon-road-cut", null, -600, 1.7, -86, 1.4, 0.14],
+  ["tour-117-control-centre", "control", 60, 1.7, 30, -1.11, 0.1],
+  ["tour-118-control-roof", "control", 6, 3.5 + 13.5 + 1.6, 0, -1.57, -0.06, true],
+  // The assembly building's rocket bay from its floor and from the top tier of its north platform,
+  // the crawlerway west from its open door, the plateau from the launch pad's service tower and
+  // the low road through the flame trench under the pad (the plateau at 8, the pad's deck at 12,
+  // the trench's floor at 5).
+  ["tour-119-assembly-bay", "assembly", -48, 1.7, 60, 0.66, 0.55],
+  ["tour-120-assembly-platform", "assembly", -22, 8 + 36 + 1.6, 8, -2.87, -0.12, true],
+  ["tour-121-crawlerway", "assembly", -80, 1.7, 40, -1.57, 0.04],
+  ["tour-122-service-tower-top", "launchpad", -12.6, 12 + 28 * 3.4 + 1.6, -3, 1.4, -0.5, true],
+  ["tour-123-flame-trench", "launchpad", -2, 1.7, 24, 0, 0.06],
+  // The fuel depot from the walkway on its east-west pipe rack toward the crossing and from its
+  // yard up at the spherical tanks (the plateau at 8, the racks' walkways at 6 over it); the
+  // radar's domes along its ridge from the top of its road, and its rock steps from the plateau
+  // at the ridge's west end (the ridge top at 22).
+  ["tour-124-fuel-racks", "fuel", -40, 8 + 6 + 1.6, -7.4, 1.57, -0.12, true],
+  ["tour-125-fuel-spheres", "fuel", -26, 1.7, 6, 3.14, 0.3],
+  ["tour-126-radar-domes", "radar", 66, 22 + 1.6, 12, -1.45, 0.08, true],
+  ["tour-127-radar-rock-steps", "radar", -128, 1.7, 2, 1.57, 0.3],
 ];
 
 /** A tour camera placed in the world: [name, x, dy, z, yaw, pitch, abs], from `frames` (window.ringfallFrames()). */

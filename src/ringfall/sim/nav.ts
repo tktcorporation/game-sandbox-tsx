@@ -622,13 +622,15 @@ export function findPath(
 }
 
 /*
- * The cells of the last few searches, by their start and goal cells and the disk they went
+ * The cells of the searches made lately, by their start and goal cells and the disk they went
  * round. A bot held up re-plans from the cell it stood in to the same goal many times, and
  * each search of a long way round costs as much as a whole raid's other thinking; the search
  * depends on nothing else, so its cells are taken again and only smoothed from where the bot
- * now stands. resetNav() forgets them with the grid.
+ * now stands. A raid's bot comes back to a way it searched minutes before (out to a POI and
+ * back past it), so several hundred are kept, across raids too. resetNav() forgets them with
+ * the grid.
  */
-const SEARCHED_KEPT = 16;
+const SEARCHED_KEPT = 512;
 const searched = new Map<string, number[] | null>();
 const searchKey = (start: number, goal: number, avoid: Avoid | undefined) =>
   avoid ? `${start} ${goal} ${avoid.x} ${avoid.z} ${avoid.r} ${avoid.home ? `${avoid.home.x} ${avoid.home.z} ${avoid.home.r}` : "-"}` : `${start} ${goal}`;

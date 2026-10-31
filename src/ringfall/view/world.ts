@@ -248,7 +248,8 @@ export class World {
   /** The objective's beacon (`setBeacon()`), and where it stands; null for none. */
   private beacon: THREE.Mesh;
   private beaconAt: { x: number; y: number; z: number } | null = null;
-  private dropship: THREE.Group | null = null;
+  /** The craft of each pickup that is called down from the air (all but the boat), by exit id. */
+  private craft = new Map<string, THREE.Group>();
   private extractRings: THREE.Mesh[] = [];
   /** The campfire and signboard at each way in (`ENTRIES`), built once: scenery only. */
   private entryMarks: THREE.Group[] = [];
@@ -1647,18 +1648,21 @@ export class World {
 
     // --- extraction
     this.extractRings.forEach((r) => (r.visible = s.phase === "play"));
-    // The dropship comes once called, and is low over the pad when it lands.
-    const ship = EXTRACTS.find((x) => x.id === "ship")!;
-    const shipLeft = callLeft(s, "ship");
-    if (shipLeft >= 0) {
-      if (!this.dropship) {
-        this.dropship = buildDropship();
-        this.dropship.position.set(ship.x, terrainHeight(ship.x, ship.z) + 90, ship.z - 2);
-        this.scene.add(still(this.dropship, [this.dropship]));
+    // A craft called from the air (the pad's dropship, the runway's) comes once called, and is low over its pickup when it lands.
+    for (const x of EXTRACTS) {
+      if (x.call === undefined || x.id === "boat") continue;
+      const left = callLeft(s, x.id);
+      if (left < 0) continue;
+      let craft = this.craft.get(x.id);
+      if (!craft) {
+        craft = buildDropship();
+        craft.position.set(x.x, terrainHeight(x.x, x.z) + 90, x.z - 2);
+        this.scene.add(still(craft, [craft]));
+        this.craft.set(x.id, craft);
       }
-      const want = terrainHeight(ship.x, ship.z) + 4.5 + 70 * Math.min(1, shipLeft / (ship.call ?? 1));
-      this.dropship.position.y += (want - this.dropship.position.y) * Math.min(1, dt * 0.8);
-      this.dropship.rotation.z = Math.sin(this.time * 1.3) * 0.03;
+      const want = terrainHeight(x.x, x.z) + 4.5 + 70 * Math.min(1, left / x.call);
+      craft.position.y += (want - craft.position.y) * Math.min(1, dt * 0.8);
+      craft.rotation.z = Math.sin(this.time * 1.3) * 0.03;
     }
     // The boat waits at the channel's far end; once called it comes up to the quay, and lies there when it is there.
     const quay = EXTRACTS.find((x) => x.id === "boat")!;
@@ -1870,8 +1874,8 @@ export class World {
     if (this.care) this.scene.remove(this.care);
     this.care = null;
     this.careBeam.visible = false;
-    if (this.dropship) this.scene.remove(this.dropship);
-    this.dropship = null;
+    for (const craft of this.craft.values()) this.scene.remove(craft);
+    this.craft.clear();
     if (this.boat) this.scene.remove(this.boat);
     this.boat = null;
     this.particles = [];

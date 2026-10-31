@@ -5,6 +5,7 @@ import { steepAt, terrainHeight } from "./terrain";
 import { sightScale, weakY, type Enemy, type Point, type State, type Vec3 } from "./state";
 import { modScale, threatOf } from "./mods";
 import { hypot2, hypot3 } from "./hypot";
+import { squadMembers } from "./members";
 
 /** How far a robot answers shots from afar (see RETURN): further at a higher threat, less in a storm. */
 const returnRange = (s: State, e: Enemy) => RETURN.range[e.kind] * threatOf(s).range * sightScale(s);
@@ -55,7 +56,7 @@ export function mayEngage(s: State, e: Enemy): boolean {
   if (s.squads[e.squad]?.engaged || e.kind === "titan") return true;
   if (dist2d(e.pos, s.player.pos) < AWARE.joinClose) return true;
   let fighting = 0;
-  for (let i = 0; i < s.squads.length; i++) if (s.squads[i].engaged && s.enemies.some((o) => o.squad === i)) fighting++;
+  for (let i = 0; i < s.squads.length; i++) if (s.squads[i].engaged && squadMembers(s, i).length) fighting++;
   return fighting < AWARE.maxSquads;
 }
 
@@ -128,7 +129,7 @@ export function makeNoise(s: State, x: number, z: number, radius: number, gunfir
   // A squad fighting the player that has lost them hears where they are now (see PURSUE).
   if (player)
     s.squads.forEach((sq, i) => {
-      if (sq.engaged && sq.sinceSeen >= AWARE.trackTime && s.enemies.some((e) => e.squad === i && dist2d(e.pos, spot) < radius * PURSUE.hear)) learnSpot(s, i, x, z);
+      if (sq.engaged && sq.sinceSeen >= AWARE.trackTime && squadMembers(s, i).some((e) => dist2d(e.pos, spot) < radius * PURSUE.hear)) learnSpot(s, i, x, z);
     });
   const alerted = new Set<number>();
   for (const e of s.enemies) {
@@ -153,7 +154,7 @@ export function interceptSpot(s: State, squad: number, x: number, z: number): Po
   const sq = s.squads[squad];
   const here = { x, z };
   if (!sq || !(sq.roam || sq.hunt || sq.party || sq.mobile)) return here;
-  const mates = s.enemies.filter((e) => e.squad === squad && e.mode !== "spawning");
+  const mates = squadMembers(s, squad).filter((e) => e.mode !== "spawning");
   if (!mates.length) return here;
   const p = s.player;
   const speed = hypot2(p.vel.x, p.vel.z);
@@ -215,13 +216,19 @@ export function sense(s: State, e: Enemy): boolean {
     // The eye and the target as numbers: most robots are too far off to look, and need neither as a point.
     const ty = p.pos.y + (p.crouch && !p.sliding ? 1.0 : 1.5);
     const ey = e.pos.y + Math.max(weakY(e), 0.2);
-    const d = hypot3(p.pos.x - e.pos.x, ty - ey, p.pos.z - e.pos.z);
+    const dx = p.pos.x - e.pos.x;
+    const dy = ty - ey;
+    const dz = p.pos.z - e.pos.z;
     const sight = SIGHT[e.kind];
     const engaged = e.aware === "engaged";
     // A storm shortens every robot's sight alike: its kind's, a pack's, and the range it answers from.
     const scale = sightScale(s);
     let range = (sq?.sight ?? sight.range) * scale * (engaged ? AWARE.engagedRange : low ? AWARE.crouchRange * modScale(p, "hush") : 1) * (sq?.mobile && !engaged && sq.sweep === undefined ? PATROL.sight : 1);
     if (engaged && answering(s, e)) range = Math.max(range, returnRange(s, e));
+    // Clearly past both the close sense and the range by the square of the distance (with room for
+    // its rounding), the distance decides nothing below; the exact one is found only nearer.
+    const reach = Math.max(AWARE.closeSense, range) * 1.001;
+    const d = dx * dx + dy * dy + dz * dz > reach * reach ? Infinity : hypot3(dx, dy, dz);
     let inView = d < AWARE.closeSense;
     if (!inView && d < range) {
       const fov = sight.fov * (engaged ? AWARE.engagedFov : 1);
@@ -297,7 +304,7 @@ export function standable(x: number, z: number): boolean {
 }
 
 /** The squad's members walking after the player, in a fixed order: the first goes straight at the spot. */
-const chasers = (s: State, squad: number) => s.enemies.filter((e) => e.squad === squad && e.mode !== "spawning").sort((a, b) => a.id - b.id);
+const chasers = (s: State, squad: number) => squadMembers(s, squad).filter((e) => e.mode !== "spawning").sort((a, b) => a.id - b.id);
 
 /**
  * The squad has lost the player and now goes after them at `to` (see PURSUE): each member
@@ -401,7 +408,7 @@ export function stepSquads(s: State) {
   s.squads.forEach((sq, i) => {
     if (sq.shotT) sq.shotT = Math.max(0, sq.shotT - TICK);
     if (!sq.engaged) return;
-    const members = s.enemies.filter((e) => e.squad === i);
+    const members = squadMembers(s, i);
     // A squad with no one left is simply over, not searching.
     if (!members.length) {
       sq.engaged = false;

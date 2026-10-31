@@ -417,13 +417,13 @@ const spills = (pg) =>
   await step(200);
   if (!(await mapOpen())) errors.push("mobile: the map button did not open the map");
   await page.screenshot({ path: `${out}/m4-map.png` });
-  // It opens on the region the player is in; its own button shows the whole world, and back.
+  // It opens on the region the player is in; its own button shows the whole world, whose shape differs from the region's, and back.
   const mapAspect = () => page.evaluate(() => +getComputedStyle(document.getElementById("map-canvas")).getPropertyValue("--map-aspect"));
   const regionAspect = await mapAspect();
   await tap("#map-zoom", 12);
   await step(200);
   const worldAspect = await mapAspect();
-  if (!(worldAspect < regionAspect * 0.8)) errors.push(`mobile: the map's zoom button did not show the whole world (shape ${regionAspect.toFixed(2)} -> ${worldAspect.toFixed(2)})`);
+  if (!(Math.abs(worldAspect / regionAspect - 1) > 0.05)) errors.push(`mobile: the map's zoom button did not show the whole world (shape ${regionAspect.toFixed(2)} -> ${worldAspect.toFixed(2)})`);
   await page.screenshot({ path: `${out}/m4-map-world.png` });
   await tap("#map-zoom", 13);
   await step(200);
@@ -500,13 +500,13 @@ const spills = (pg) =>
   await page.waitForTimeout(400);
   await page.evaluate(() => Object.defineProperty(screen, "orientation", { value: undefined, configurable: true }));
   await toCamp(page, true);
-  // The departure from the truck: the harbor and the city carry padlocks, their ways in dashed and shut.
+  // The departure from the truck: the harbor, the city and the launch site carry padlocks, their ways in dashed and shut.
   await useStation(page, "vehicle", await ctx.newCDPSession(page));
   await departUp(page);
   const locks = await page.locator("#depart-points .region-lock .ico.lock").count();
   const shut = await page.locator("#depart-points button.pick.entry.shut").count();
   const open = await page.locator("#depart-points button.pick:not(.shut)").count();
-  if (locks !== 2 || shut !== 7 || open !== 1) errors.push(`mobile: a fresh departure shows ${locks} padlocks, ${shut} ways in shut and ${open} to choose`);
+  if (locks !== 3 || shut !== 9 || open !== 1) errors.push(`mobile: a fresh departure shows ${locks} padlocks, ${shut} ways in shut and ${open} to choose`);
   const fit = await departFits(page);
   if (fit.length) errors.push(`mobile departure (844x390): ${fit.join(", ")}`);
   await page.screenshot({ path: `${out}/m7-depart-locked.png` });
@@ -681,14 +681,14 @@ const read = async () => JSON.parse(await page.evaluate(() => window.render_game
   if ((await page.locator("#hub-side [data-act=entry], #hub-side [data-act=region], #hub-side [data-act=from]").count()) || !(await page.locator("#hub-island-map").count())) errors.push("camp: the map table still chooses a start, or shows no island");
   await page.screenshot({ path: `${out}/00-panel-map.png` });
   await closePanel(page);
-  // The departure from the truck: a fresh profile knows only the reservoir's first way in, so the harbor and the city carry padlocks and their ways in are dashed; cancelled with Esc.
+  // The departure from the truck: a fresh profile knows only the reservoir's first way in, so the harbor, the city and the launch site carry padlocks and their ways in are dashed; cancelled with Esc.
   await useStation(page, "vehicle");
   await departUp(page);
   const harborLocked = await page.locator("#depart-points .region-lock").count();
   const entriesOffered = await page.locator("#depart-points button.pick.entry:not(.shut)").count();
   const harborRings = await page.locator("#depart-points button.pick.entry.shut").count();
   const fresh = (await readPage(page)).camp.depart;
-  if (harborLocked !== 2 || entriesOffered !== 1 || harborRings !== 7 || fresh?.start?.id !== "beach") errors.push(`camp: a fresh departure offers ${entriesOffered} ways in, ${harborLocked} locked regions, ${harborRings} ways in to find, starting at ${fresh?.start?.id}`);
+  if (harborLocked !== 3 || entriesOffered !== 1 || harborRings !== 9 || fresh?.start?.id !== "beach") errors.push(`camp: a fresh departure offers ${entriesOffered} ways in, ${harborLocked} locked regions, ${harborRings} ways in to find, starting at ${fresh?.start?.id}`);
   await page.screenshot({ path: `${out}/00-depart-locked.png` });
   // The harbor's padlock clicked: the harbor shown with the pass and the railway bridge, the confirm shut and saying why.
   await peekLocked(page, "#depart-points .region-lock[data-id=harbor]", { tag: "camp locked harbor", name: "港湾地帯", why: "道を知らない", how: /峠道.*港町の外れ.*鉄橋.*生きて帰る.*コンテナヤード.*峠の宿舎.*中継ボックス/ });
@@ -999,7 +999,7 @@ for (let i = 0; i < 25 * 60 * 10; i++) {
     await shot("23-map-world");
     await page.keyboard.press("KeyN");
     await page.evaluate(() => window.advanceTime(100));
-    if (!(worldShape < regionShape * 0.8) || (await shape()) !== regionShape) errors.push(`map: N did not switch to the whole world and back (shape ${regionShape} -> ${worldShape})`);
+    if (!(Math.abs(worldShape / regionShape - 1) > 0.05) || (await shape()) !== regionShape) errors.push(`map: N did not switch to the whole world and back (shape ${regionShape} -> ${worldShape})`);
     await page.keyboard.press("KeyM");
     await page.evaluate(() => window.advanceTime(100));
     const closed = await page.evaluate(() => document.getElementById("map").hidden);
@@ -2073,7 +2073,7 @@ for (const phone of [false, true]) {
   await pg.screenshot({ path: tag(7, "objective-front") });
   const hud = await pg.evaluate(() => ({ own: Number(document.querySelector("#island-row .tug-n.own")?.textContent), all: document.querySelector("#island-row .tug")?.getAttribute("aria-label"), text: document.getElementById("island-row").textContent }));
   const deadline = await pg.evaluate(() => document.querySelector("#obj-raid .deadline .ico.clock") ? document.querySelector("#obj-raid .deadline").textContent : "");
-  if (hud.own !== 2 || hud.all !== "2 / 16" || hud.text.trim() !== "214" || !/^\d+:\d\d$/.test(deadline)) errors.push(`battle: the HUD's row reads ${JSON.stringify(hud)}, the card "${deadline}"`);
+  if (hud.own !== 2 || hud.all !== "2 / 21" || hud.text.trim() !== "219" || !/^\d+:\d\d$/.test(deadline)) errors.push(`battle: the HUD's row reads ${JSON.stringify(hud)}, the card "${deadline}"`);
   const st = await readOf(pg);
   if (st.battle.squads.filter((q) => q.side === 0).length < 2) errors.push(`battle: ${st.battle.squads.filter((q) => q.side === 0).length} of the player's squads at the start (the turrets at two nodes)`);
   // A fight in front of the player: the player's squad on the left, the enemy's on the right.
@@ -2218,7 +2218,7 @@ for (const phone of [false, true]) {
   await pg.screenshot({ path: tag(7, "results-night") });
   const bar = await pg.evaluate(() => document.querySelector("#day-result .tug")?.getAttribute("aria-label"));
   const held = Object.entries(r.profile.poiState).filter(([id, o]) => id !== "pad" && o.state === "freed").length;
-  if (bar !== `${held} / 16`) errors.push(`push-pull: the results' bar reads ${bar} for ${held} nodes held`);
+  if (bar !== `${held} / 21`) errors.push(`push-pull: the results' bar reads ${bar} for ${held} nodes held`);
   await ctx.close();
   lap(`push-pull, ${phone ? "phone" : "desktop"}`);
 }
@@ -2348,7 +2348,7 @@ for (const phone of [false, true]) {
   await useStation(pg, "vehicle");
   await departUp(pg);
   const learnt = ((await readOf(pg)).camp.depart?.starts ?? []).filter((q) => q.kind === "entry" && q.region === "harbor" && q.open);
-  if (!learnt.length || (await pg.locator('#depart-points .region-lock[data-region="harbor"]').count())) errors.push(`${why}: the departure offers ${learnt.length} harbor ways in once learned`);
+  if (!learnt.length || (await pg.locator('#depart-points .region-lock[data-id="harbor"]').count())) errors.push(`${why}: the departure offers ${learnt.length} harbor ways in once learned`);
   if (learnt[0]) await pickStart(pg, "entry", learnt[0].id, phone);
   await snap("6-depart-learned");
   await pg.keyboard.press("Escape");

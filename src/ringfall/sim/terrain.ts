@@ -4,8 +4,9 @@ import type { PoiId } from "./map";
 import { hypot2 } from "./hypot";
 
 /*
- * The ground of three regions: two joined by a mountain belt, and the machine city's paved
- * basin east of them across a dried strait (its ground is at the end). The south one is a dried-up
+ * The ground of four regions: two joined by a mountain belt, the machine city's paved basin
+ * east of them across a dried strait, and the launch site's plateau west of them across a dry
+ * canyon (their ground is at the end). The south one is a dried-up
  * reservoir: a dam once held a lake in the middle of it; the water is gone and the
  * drowned town stands on the cracked lakebed, 14 m under the shore. Around it the ground
  * steps up and down: the dam's 30 m wall in the north with the landing pad on top of it,
@@ -128,7 +129,7 @@ interface Open {
  * from another at a glance. Only the renderer and the world map read it: it changes no rule.
  * `quarry` and `sandstone` colour the cliffs round their shapes too (`cliffGround()`).
  */
-export type Ground = "dune" | "salt" | "paved" | "mud" | "quarry" | "sandstone" | "scrub" | "oiled" | "concrete" | "asphalt";
+export type Ground = "dune" | "salt" | "paved" | "mud" | "quarry" | "sandstone" | "scrub" | "oiled" | "concrete" | "asphalt" | "caliche" | "gravel";
 
 /**
  * A dune: its crest runs along `line`, `height` metres over the floor it stands on, and its sides
@@ -176,6 +177,11 @@ export interface Cut {
   slope: number;
   /** The levels belong to the line's points (else they are spaced evenly along its length). */
   atPoints?: true;
+  /**
+   * A cut that runs between two regions from coast to coast: the ground between is settled on
+   * each side of its floor apart (`relaxed()`), so a shape added on one side never moves the ground on the other.
+   */
+  border?: true;
 }
 
 /** Height of the high ground, and how steeply its cliffs fall to the low ground. */
@@ -224,6 +230,18 @@ export const LEVEL = {
   city: 4,
   /** The power plant's yard, east of the city on the ground between it and the coast, level with the streets. */
   powerplant: 4,
+  /** The launch site's plateau west of the island, and the dry canyon's floor 25 m under it. */
+  plateau: 8,
+  canyon: -17,
+  /** The control centre's sunk yard: one works storey under the plateau. */
+  controlPit: 3.5,
+  /** The launch pad's concrete deck, raised over the plateau, and the floor of the flame trench cut under it. */
+  launchPad: 12,
+  flameTrench: 5,
+  /** The ridge top in the plateau's north where the tracking radar stands, 14 m over the plateau. */
+  radarRidge: 22,
+  /** The island's ground at the east ends of the two crossings over the canyon. */
+  canyonEast: 4,
 } as const;
 
 /** The dam's face: the cliff from the crest down to the lakebed, drawn as concrete. */
@@ -318,9 +336,36 @@ const BASINS: Open[] = [
   { name: "機械都市", line: inArea("city", [[0, -320], [0, 240]]), half: 120, level: LEVEL.city, ground: "asphalt" },
   // The power plant's yard, its long side along the coast.
   { name: "発電所", line: inPoi("powerplant", [[0, -78], [0, 84]]), half: 38, level: LEVEL.powerplant, ground: "concrete" },
+  // The launch site's plateau: open rolling ground at its level, held there by the runway's apron
+  // down its middle (its ground pale caliche, painted so by the view west of the canyon).
+  { name: "滑走路", line: inArea("launch", [[-75, -215], [-75, 215]]), half: 30, level: LEVEL.plateau, ground: "concrete" },
+  // The control centre's sunk yard round its block, a storey under the plateau.
+  { name: "管制室の掘り込み", line: inPoi("control", [[-14, 0], [14, 0]]), half: 13, level: LEVEL.controlPit, walled: true, ground: "concrete" },
+  // The assembly building's floor and the apron round it, level with the plateau.
+  { name: "組立棟の床", line: inPoi("assembly", [[0, -50], [0, 50]]), half: 62, level: LEVEL.plateau, ground: "concrete" },
+  // The launch pad's deck, raised over the plateau at its west end, its sides a drop.
+  { name: "発射台", line: inPoi("launchpad", [[-25, 0], [25, 0]]), half: 30, level: LEVEL.launchPad, walled: true, ground: "concrete" },
+  // The fuel depot's yard south of the crawlerway and the ground east of it, level with the plateau.
+  { name: "燃料基地の床", line: inPoi("fuel", [[-50, 0], [80, 0]]), half: 52, level: LEVEL.plateau, ground: "concrete" },
+  // The ridge in the plateau's north that the tracking radar's domes stand along, its sides a cliff.
+  { name: "追跡レーダーの尾根", line: inPoi("radar", [[-65, 0], [65, 0]]), half: 21, level: LEVEL.radarRidge, walled: true },
+  // The plateau round the ridge's foot, held at its level on the ridge's north, west and east so the
+  // ground there does not fall away toward the coast close by: the rock steps' foot and a way round.
+  { name: "尾根の北の麓", line: inPoi("radar", [[-70, -38], [70, -38]]), half: 13, level: LEVEL.plateau },
+  { name: "尾根の西の麓", line: inPoi("radar", [[-106, -14], [-106, 14]]), half: 13, level: LEVEL.plateau },
+  { name: "尾根の東の麓", line: inPoi("radar", [[104, -14], [104, 14]]), half: 13, level: LEVEL.plateau },
+  // The ground at both ends of the two crossings over the canyon: the rail bridge's (from the quarry's
+  // side) and the road cut's (from the terraced fields' side).
+  { name: "引き込み線の東口", line: [[-470, 30], [-470, 30]], half: 9, level: LEVEL.canyonEast },
+  { name: "鉄道橋の西詰", line: [[-674, 30], [-662, 30]], half: 8, level: LEVEL.plateau, ground: "caliche" },
+  { name: "切り通しの東口", line: [[-498, -90], [-498, -90]], half: 9, level: LEVEL.canyonEast },
+  { name: "切り通しの西口", line: [[-716, -90], [-716, -90]], half: 9, level: LEVEL.plateau, ground: "caliche" },
   // The top of the pass: a saddle between the peaks, with the harbor in view.
   { name: "峠", line: inArea("pass", [[-66, -214], [-54, -230]]), half: 9, level: LEVEL.pass },
 ];
+
+/** Where the mountain belt's crags end at their east end and the seam's track begins (`SEAM`). */
+const SEAM_X0 = 514;
 
 /**
  * Roads between basins, 8 to 10 m wide, in the world's coordinates. Each area has two or three
@@ -333,6 +378,8 @@ const ROADS: Open[] = [
   { name: "湖への坂", line: inArea("heart", [[0, 152], [0, 108], [0, 98]]), half: 5, level: [LEVEL.shore, LEVEL.lakebed, LEVEL.lakebed], atPoints: true, walled: true, ground: "mud" },
   { name: "湖の西坂", line: inArea("heart", [[-105, -5], [-78, 25], [-68, 25]]), half: 5, level: [LEVEL.shore, LEVEL.lakebed, LEVEL.lakebed], atPoints: true, walled: true, ground: "mud" },
   { name: "東の坂", line: inArea("heart", [[68, -5], [78, -5], [116, -5]]), half: 5, level: [LEVEL.lakebed, LEVEL.lakebed, LEVEL.shore], atPoints: true, walled: true, ground: "mud" },
+  // Out of the spillway's mouth east onto the ground, round the corner of its east wall.
+  { name: "放水路の東口", line: [[124, -77], [136, -77]], half: 4, level: [3.2, 5], atPoints: true },
   // Down off the pad's west side, and on along the ground to the terraced fields.
   { name: "発着場の西坂", line: inArea("heart", [[-112, -170], [-120, -170], [-166, -170]]), half: 5, level: [LEVEL.dam, LEVEL.dam, LEVEL.field], atPoints: true, walled: true, ground: "concrete" },
   { name: "村への道", line: [[-166, -90], [-215, -95]], half: 5, level: LEVEL.field },
@@ -359,6 +406,10 @@ const ROADS: Open[] = [
   // gorge to the harbor, where it ends in a cliff and the viaduct carries the line on.
   { name: "鉄道の土手（南）", line: [[210, -50], [185, -110], [170, -150], [168, -336]], half: 5, level: [LEVEL.foot, 7.5, 9.6, LEVEL.rail], atPoints: true, walled: true },
   { name: "鉄道の土手（北）", line: [[168, -365], [168, -410]], half: 5, level: LEVEL.rail, walled: true },
+  // A track across the low strip along the dried strait's west bank, east of the mountain belt, on
+  // the seam between the reservoir's and the harbor's ground (`SEAM`): holding the ground there at
+  // its own level, it parts the two regions' ground between where no crag stands.
+  { name: "海峡の西岸の道", line: [[SEAM_X0, -350], [586, -350]], half: 6, level: 3, ground: "scrub" },
   { name: "駅の坂", line: [[168, -396], [146, -418], [140, -436], [140, -456], [120, -505], [100, -555]], half: 5, level: [LEVEL.rail, 4, LEVEL.shore, LEVEL.shore, LEVEL.shore, LEVEL.shore], atPoints: true , ground: "paved" },
   // Under the viaduct: a road along the line from the station's foot past the town to the container yard.
   { name: "高架下", line: [[168, -428], [168, -615], [-80, -615], [-110, -650], [-150, -695]], half: 6, level: LEVEL.shore , ground: "paved" },
@@ -372,6 +423,25 @@ const ROADS: Open[] = [
   { name: "斜路", line: inArea("bay", [[150, -570], [156, -583], [160, -590]]), half: 4, level: [LEVEL.seabed, LEVEL.channel, LEVEL.channel], atPoints: true, walled: true },
   // The high-rise district's ramp down from its plaza to the underground car park's shutter.
   { name: "地下駐車場の斜路", line: inPoi("highrise", [[-24, -44], [-24, -18]]), half: 3.5, level: [LEVEL.city, LEVEL.city - 4.5], atPoints: true, walled: true, ground: "asphalt" },
+  // The launch site's ways over the canyon. The rail spur's embankment from the quarry's side up to
+  // the rail bridge's east end (the deck carries it on, `CANYON_SPANS` in map.ts); and the road cut
+  // from the terraced fields' side, sunk into the east bank down to the canyon's floor, across it
+  // and up the west bank onto the plateau.
+  { name: "引き込み線の土手", line: [[-478, 30], [-548, 30], [-568, 30]], half: 5, level: [LEVEL.canyonEast, LEVEL.plateau, LEVEL.plateau], atPoints: true, walled: true },
+  { name: "切り通し", line: [[-505, -90], [-586, -90], [-628, -90], [-708, -90]], half: 5, level: [LEVEL.canyonEast, LEVEL.canyon, LEVEL.canyon, LEVEL.plateau], atPoints: true, walled: true, ground: "caliche" },
+  // Down into the control centre's sunk yard from the plateau, on its south side.
+  { name: "管制室の坂", line: inPoi("control", [[6, 42], [6, 13]]), half: 4, level: [LEVEL.plateau, LEVEL.controlPit], atPoints: true, walled: true, ground: "concrete" },
+  // The crawlerway (運搬路) from the assembly building's open door west to the launch pad: a road
+  // 30 m wide of river gravel, on which the crawler carried a rocket out; then the ramp up onto
+  // the pad's deck from its east end.
+  { name: "運搬路", line: [inPoi("assembly", [[-55, 32]])[0], inPoi("launchpad", [[95, 0]])[0]], half: 15, level: LEVEL.plateau, ground: "gravel" },
+  { name: "発射台の坂", line: inPoi("launchpad", [[95, 0], [52, 0]]), half: 15, level: [LEVEL.plateau, LEVEL.launchPad], atPoints: true, walled: true, ground: "concrete" },
+  // The one road up the radar's ridge: a lead-in on the plateau, then raised north into the ridge's south edge.
+  { name: "レーダーへの道", line: inPoi("radar", [[60, 130], [60, 95]]), half: 6, level: LEVEL.plateau },
+  { name: "レーダーの坂", line: inPoi("radar", [[60, 95], [60, 16]]), half: 4.5, level: [LEVEL.plateau, LEVEL.radarRidge], atPoints: true, walled: true },
+  // The flame trench, cut north to south under the pad's deck where the rocket stands and out
+  // past both sides, its ends climbing back to the plateau: under the deck a low road through.
+  { name: "炎の溝", line: inPoi("launchpad", [[0, -75], [0, -45], [0, 45], [0, 75]]), half: 5, level: [LEVEL.plateau, LEVEL.flameTrench, LEVEL.flameTrench, LEVEL.plateau], atPoints: true, walled: true, ground: "concrete" },
 ];
 
 /** The line of the road named `name` (empty when there is none). */
@@ -431,6 +501,22 @@ const CUTS: Cut[] = [
     levels: [LEVEL.shore, LEVEL.strait, LEVEL.strait, LEVEL.strait, LEVEL.strait, LEVEL.strait, LEVEL.shore],
     slope: CLIFF,
     atPoints: true,
+    border: true,
+  },
+  /**
+   * The dry canyon between the island and the launch site's plateau, 25 m under the plateau and
+   * 40 m across its floor, running north to south from coast to coast. The rail bridge spans it and
+   * the road cut climbs down into it and out. At each end it runs into the inlet where the two
+   * lands' coasts meet, its floor rising there in a cliff as steep as its walls, so nothing walked
+   * in it lies past the coast and no way round it is left on land.
+   */
+  {
+    line: [[-588, -252], [-596, -238], [-606, -190], [-608, -90], [-606, 30], [-603, 150], [-598, 300], [-608, 345], [-614, 362]],
+    floor: 20,
+    levels: [55, LEVEL.canyon, LEVEL.canyon, LEVEL.canyon, LEVEL.canyon, LEVEL.canyon, LEVEL.canyon, LEVEL.canyon, 55],
+    slope: CLIFF,
+    atPoints: true,
+    border: true,
   },
 ];
 
@@ -485,12 +571,18 @@ export const LANDS: Land[] = [
   { name: "島", x: 0, z: 80, radius: (a) => (560 * 410) / hypot2(410 * Math.cos(a), 560 * Math.sin(a)) + 13.5 * Math.sin(3 * a + 1.1) + 8.4 * Math.sin(7 * a + 2.3) + 5 * Math.sin(13 * a + 0.4), max: 588 },
   // The dune coast, bulging south of the island round the supply depot: wider east to west.
   { name: "砂丘", x: 0, z: 470, radius: (a) => 230 * 175 / hypot2(175 * Math.cos(a), 230 * Math.sin(a)) + 6 * Math.sin(5 * a + 0.9) + 3 * Math.sin(11 * a + 2.1), max: 240 },
-  // The mountain belt between the two regions, wider east to west.
+  // The mountain belt between the reservoir and the harbor, wider east to west.
   { name: "山地", x: 30, z: -350, radius: (a) => 150 + 60 * Math.abs(Math.cos(a)) + 6 * Math.sin(5 * a + 0.7), max: 216 },
   { name: "港湾", x: 0, z: -775, radius: (a) => 425 + 10 * Math.sin(3 * a + 0.5) + 7 * Math.sin(7 * a + 1.9) + 3.4 * Math.sin(11 * a + 0.3), max: 441 },
   // The east land: joined to the island's, the mountains' and the harbor's east coasts, cut through
   // north to south by the dried strait, the machine city on its far side. Taller than wide.
   { name: "東の陸", x: 740, z: -335, radius: (a) => (350 * 640) / hypot2(640 * Math.cos(a), 350 * Math.sin(a)) + 9 * Math.sin(5 * a + 0.4) + 5 * Math.sin(9 * a + 1.7), max: 655 },
+  // The ground along the island's west coast that joins it to the launch site's plateau, the dry
+  // canyon cut through it north to south.
+  { name: "渓谷", x: -540, z: 80, radius: (a) => (140 * 330) / hypot2(330 * Math.cos(a), 140 * Math.sin(a)) + 3 * Math.sin(7 * a + 1.3), max: 334 },
+  // The launch site's plateau west of the island: joined to the island's west coast, cut off from it
+  // north to south by the dry canyon. Taller than wide.
+  { name: "西の台地", x: -930, z: 20, radius: (a) => (400 * 560) / hypot2(560 * Math.cos(a), 400 * Math.sin(a)) + 8 * Math.sin(5 * a + 2.2) + 4 * Math.sin(11 * a + 0.6), max: 572 },
 ];
 
 /** How far (x, z) lies outside one land mass's coast; negative inside it. */
@@ -609,15 +701,69 @@ const BNZ = Math.ceil((WORLD.z1 - WORLD.z0) / BRES) + 1;
 let betweenField: Float32Array | null = null;
 
 /**
+ * The seam between the reservoir's and the harbor's ground: a band `half` metres either side of
+ * z, from the world's west edge to the east end of the mountain belt, where the track along the
+ * strait's west bank (`海峡の西岸の道`) carries it on to the strait's floor. It lies deep in the
+ * crags, where the ground between is never read.
+ */
+const SEAM = { z: -350, x1: SEAM_X0 - 2, half: 16 };
+/** How far past its floor a border cut's walls reach round each end of its line. */
+const BORDER_END = 12;
+
+/**
+ * Where the ground between is settled apart (`relaxed()`): beyond the coast, on the floor of a
+ * cut between two regions (`Cut.border`) and round its ends, where it runs out into the inlets,
+ * and on the seam between the reservoir and the harbor. None of it is ground between anyone
+ * walks: the coast's cliffs, a cut's floor, the cliffs at its ends and the crags stand there. The walls part the world into a piece for each region, so a shape added in one
+ * region never moves the ground between in another (`checkBetweenApart()`).
+ */
+function betweenWall(x: number, z: number): boolean {
+  if (offshore(x, z) > 0) return true;
+  if (x <= SEAM.x1 && Math.abs(z - SEAM.z) <= SEAM.half) return true;
+  for (const n of bucketAt(x, z).cuts) {
+    const { c, poly } = CUT_LINES[n];
+    if (!c.border || nearBox(x, z, poly) > c.floor + BORDER_END) continue;
+    if (toPolyline(x, z, poly).d < c.floor) return true;
+    const [a, b] = [c.line[0], c.line[c.line.length - 1]];
+    if (hypot2(x - a[0], z - a[1]) < c.floor + BORDER_END || hypot2(x - b[0], z - b[1]) < c.floor + BORDER_END) return true;
+  }
+  return false;
+}
+
+/** A disc of ground held at a level, planted to test that the ground between elsewhere stays put. */
+interface Plant {
+  x: number;
+  z: number;
+  r: number;
+  level: number;
+}
+
+/** A grid of the ground between, settled: its levels, and which cells were held and which walls. */
+interface Settled {
+  res: number;
+  nx: number;
+  u: Float32Array;
+  fixed: Uint8Array;
+  wall: Uint8Array;
+}
+
+/**
  * Laplace's equation relaxed over a grid of `res` metres: every cell inside an open shape that
  * is not walled holds that shape's level, and the rest settle to the smoothest surface between
- * them. Free cells start at `start` where given, else at their nearest fixed cell's level.
+ * them. The walls (`betweenWall()`) are neither settled nor read across: a free cell beside one
+ * reads its own level there. Free cells start at their nearest held cell's level, flooding out
+ * from the held cells without crossing a wall; with `coarse` (a grid settled first, whose points
+ * are every few of this one's) they start where it lies instead, blended only from its corners
+ * that were held or lie in the same stretch of free cells as the cell itself, so no start comes
+ * from across a wall. Once settled each wall cell takes the level of the nearest cell beside it,
+ * so the ground read just inside a wall (`betweenAt()` blends four cells) is its own side's.
  */
-function relaxed(res: number, sweeps: number, start?: (x: number, z: number) => number): Float32Array {
+function relaxed(res: number, sweeps: number, plant?: Plant, coarse?: Settled): Settled {
   const nx = Math.ceil((WORLD.x1 - WORLD.x0) / res) + 1;
   const nz = Math.ceil((WORLD.z1 - WORLD.z0) / res) + 1;
   const u = new Float32Array(nx * nz);
   const fixed = new Uint8Array(nx * nz);
+  const wall = new Uint8Array(nx * nz);
   const queue: number[] = [];
   for (let j = 0; j < nz; j++)
     for (let i = 0; i < nx; i++) {
@@ -630,40 +776,110 @@ function relaxed(res: number, sweeps: number, start?: (x: number, z: number) => 
         const { d, along: t } = toPolyline(x, z, poly);
         if (d <= o.half) lv = Math.min(lv, levelOf(o, t, poly));
       }
+      if (plant && hypot2(x - plant.x, z - plant.z) <= plant.r) lv = plant.level;
       const k = j * nx + i;
       if (lv < Infinity) {
         u[k] = lv;
         fixed[k] = 1;
         queue.push(k);
-      } else if (start) u[k] = start(x, z);
+      } else if (betweenWall(x, z)) wall[k] = 1;
     }
-  if (!start) {
-    const seen = Uint8Array.from(fixed);
-    for (let q = 0; q < queue.length; q++) {
-      const k = queue[q];
-      const i = k % nx;
-      for (const n of [i > 0 ? k - 1 : -1, i < nx - 1 ? k + 1 : -1, k - nx, k + nx]) {
-        if (n < 0 || n >= u.length || seen[n]) continue;
-        seen[n] = 1;
-        u[n] = u[k];
-        queue.push(n);
-      }
+  /** The four cells beside k, or -1 past the grid's edge. */
+  const beside = (k: number) => {
+    const i = k % nx;
+    return [i > 0 ? k - 1 : -1, i < nx - 1 ? k + 1 : -1, k >= nx ? k - nx : -1, k + nx < u.length ? k + nx : -1];
+  };
+  const seen = Uint8Array.from(fixed);
+  for (let q = 0; q < queue.length; q++) {
+    const k = queue[q];
+    for (const n of beside(k)) {
+      if (n < 0 || seen[n] || wall[n]) continue;
+      seen[n] = 1;
+      u[n] = u[k];
+      queue.push(n);
     }
   }
-  // Over-relaxed Gauss-Seidel sweeps; the world's edges mirror.
+  if (coarse) {
+    // Each stretch of free cells, numbered.
+    const part = new Int32Array(u.length).fill(-1);
+    let parts = 0;
+    for (let s0 = 0; s0 < u.length; s0++) {
+      if (fixed[s0] || wall[s0] || part[s0] >= 0) continue;
+      part[s0] = parts;
+      const run = [s0];
+      for (let q = 0; q < run.length; q++)
+        for (const n of beside(run[q]))
+          if (n >= 0 && !fixed[n] && !wall[n] && part[n] < 0) {
+            part[n] = parts;
+            run.push(n);
+          }
+      parts++;
+    }
+    const step = coarse.res / res;
+    const cnz = coarse.u.length / coarse.nx;
+    for (let j = 0; j < nz; j++)
+      for (let i = 0; i < nx; i++) {
+        const k = j * nx + i;
+        if (part[k] < 0) continue;
+        const fi = Math.min(coarse.nx - 1.001, i / step);
+        const fj = Math.min(cnz - 1.001, j / step);
+        const ci = Math.floor(fi);
+        const cj = Math.floor(fj);
+        let sum = 0;
+        let weight = 0;
+        for (const [di, dj, wgt] of [
+          [0, 0, (1 - (fi - ci)) * (1 - (fj - cj))],
+          [1, 0, (fi - ci) * (1 - (fj - cj))],
+          [0, 1, (1 - (fi - ci)) * (fj - cj)],
+          [1, 1, (fi - ci) * (fj - cj)],
+        ]) {
+          const [oi, oj] = [(ci + di) * step, (cj + dj) * step];
+          if (wgt <= 0 || oi >= nx || oj >= nz) continue;
+          const ck = (cj + dj) * coarse.nx + ci + di;
+          if (coarse.fixed[ck] || (!coarse.wall[ck] && part[oj * nx + oi] === part[k])) {
+            sum += coarse.u[ck] * wgt;
+            weight += wgt;
+          }
+        }
+        if (weight > 0) u[k] = sum / weight;
+      }
+  }
+  // Over-relaxed Gauss-Seidel sweeps; the world's edges and the walls mirror.
   const w = 1.9;
   for (let it = 0; it < sweeps; it++)
     for (let j = 0; j < nz; j++)
       for (let i = 0; i < nx; i++) {
         const k = j * nx + i;
-        if (fixed[k]) continue;
-        const l = u[i > 0 ? k - 1 : k + 1];
-        const r = u[i < nx - 1 ? k + 1 : k - 1];
-        const t = u[j > 0 ? k - nx : k + nx];
-        const b = u[j < nz - 1 ? k + nx : k - nx];
-        u[k] += w * ((l + r + t + b) / 4 - u[k]);
+        if (fixed[k] || wall[k]) continue;
+        const own = u[k];
+        const kl = i > 0 ? k - 1 : k + 1;
+        const kr = i < nx - 1 ? k + 1 : k - 1;
+        const kt = j > 0 ? k - nx : k + nx;
+        const kb = j < nz - 1 ? k + nx : k - nx;
+        const l = wall[kl] ? own : u[kl];
+        const r = wall[kr] ? own : u[kr];
+        const t = wall[kt] ? own : u[kt];
+        const b = wall[kb] ? own : u[kb];
+        u[k] += w * ((l + r + t + b) / 4 - own);
       }
-  return u;
+  // The walls take the level of the nearest cell beside them, flooding in from every side at once.
+  const fill: number[] = [];
+  const got = Uint8Array.from(wall, (v) => 1 - v);
+  for (let k = 0; k < u.length; k++) if (wall[k] && beside(k).some((n) => n >= 0 && !wall[n])) fill.push(k);
+  for (const k of fill) {
+    u[k] = u[beside(k).find((n) => n >= 0 && !wall[n])!];
+    got[k] = 1;
+  }
+  for (let q = 0; q < fill.length; q++) {
+    const k = fill[q];
+    for (const n of beside(k)) {
+      if (n < 0 || got[n]) continue;
+      got[n] = 1;
+      u[n] = u[k];
+      fill.push(n);
+    }
+  }
+  return { res, nx, u, fixed, wall };
 }
 
 /**
@@ -674,25 +890,55 @@ function relaxed(res: number, sweeps: number, start?: (x: number, z: number) => 
  * coarse grid, whose long-range shape a fine grid takes in only slowly, then on the fine one.
  */
 function betweenGrid(): Float32Array {
-  if (betweenField) return betweenField;
-  const C = 16;
-  const cnx = Math.ceil((WORLD.x1 - WORLD.x0) / C) + 1;
-  const coarse = relaxed(C, 400);
-  const at = (x: number, z: number) => {
-    const fx = Math.min(cnx - 1.001, (x - WORLD.x0) / C);
-    const fz = (z - WORLD.z0) / C;
-    const i = Math.floor(fx);
-    const j = Math.floor(fz);
-    const k = j * cnx + i;
-    const u = fx - i;
-    const v = fz - j;
-    const below = coarse[k] + (coarse[k + 1] - coarse[k]) * u;
-    const next = k + cnx < coarse.length ? k + cnx : k;
-    const above = coarse[next] + (coarse[next + 1] - coarse[next]) * u;
-    return below + (above - below) * v;
-  };
-  betweenField = relaxed(BRES, 150, at);
-  return betweenField;
+  return betweenField ?? (betweenField = settle().u);
+}
+
+/** The ground between settled afresh, with `plant` held too when given. */
+const settle = (plant?: Plant): Settled => relaxed(BRES, 150, plant, relaxed(16, 400, plant));
+
+/**
+ * For the sim gate: the ground between in each region is settled from that region's own shapes.
+ * A disc held 6 m over the ground at each `plants` point (one in each region) is settled in
+ * afresh, and every cell of the ground between in every other region's `bounds` must come out
+ * the same, bit for bit. Null when they do, else where one moved.
+ */
+export function checkBetweenApart(regions: readonly { id: string; bounds: { x0: number; z0: number; x1: number; z1: number }; plant: { x: number; z: number } }[]): string | null {
+  const base = betweenGrid();
+  for (const r of regions) {
+    const { u: moved, wall } = settle({ x: r.plant.x, z: r.plant.z, r: 24, level: betweenAt(r.plant.x, r.plant.z) + 6 });
+    // The ground between is read off a cell when it is no wall, or a wall beside one (`betweenAt()` blends four cells).
+    const read = (i: number, j: number) => {
+      for (let dj = -1; dj <= 1; dj++)
+        for (let di = -1; di <= 1; di++) {
+          const a = i + di;
+          const b = j + dj;
+          if (a >= 0 && b >= 0 && a < BNX && b < BNZ && !wall[b * BNX + a]) return true;
+        }
+      return false;
+    };
+    let changed = 0;
+    for (const o of regions) {
+      if (o === r) continue;
+      let worst = 0;
+      let where = "";
+      for (let j = 0; j < BNZ; j++)
+        for (let i = 0; i < BNX; i++) {
+          const x = WORLD.x0 + i * BRES;
+          const z = WORLD.z0 + j * BRES;
+          if (x < o.bounds.x0 || x > o.bounds.x1 || z < o.bounds.z0 || z > o.bounds.z1) continue;
+          const k = j * BNX + i;
+          if (moved[k] !== base[k] && read(i, j)) {
+            changed++;
+            if (Math.abs(moved[k] - base[k]) > worst) {
+              worst = Math.abs(moved[k] - base[k]);
+              where = `${x},${z}`;
+            }
+          }
+        }
+      if (changed) return `ground between: a disc in ${r.id} moves ${changed} cells in ${o.id} (most ${worst.toExponential(2)} m at ${where})`;
+    }
+  }
+  return null;
 }
 
 /** The ground between at (x, z), before its rolling. */

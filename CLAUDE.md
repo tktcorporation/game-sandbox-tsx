@@ -14,7 +14,7 @@ there. Read the game's brief before changing anything visual. A new page needs a
 
 ## RINGFALL
 
-An extraction raid against robots only: walk in from the edge of one of three regions of one world,
+An extraction raid against robots only: walk in from the edge of one of four regions of one world,
 explore it for valuables, and get off alive by one of its extraction points, all open from the start. No ring
 and no set order: the player chooses which POIs to take and when to leave. First person on three.js.
 The reservoir (south, +z) has six POIs and three ways off; the harbor (north, beyond a mountain
@@ -28,13 +28,39 @@ underground car park) and the power plant on the open ground between its paved b
 coast (`powerplant`: two hollow cooling towers entered through a torn gap, the chimney, the boiler
 house, the turbine hall and the switchyard, whose line runs on pylons into the city), and a waited
 pickup beside the works; a road bridge from the relay's side and a rail
-bridge from the harbor's cross the strait (`STRAIT_SPANS`). The world is about 1720 by 1880 m
+bridge from the harbor's cross the strait (`STRAIT_SPANS`). The launch site (`launch`, 発射場; west,
+beyond a dry canyon 25 m deep, `docs/ringfall/brief.md`) stands on a pale caliche plateau at +8
+(`西の台地` in `LANDS`, about 800 by 1120 m round x -930, z 20) with five POIs: the control
+centre in its north-east, 160 m and more from both crossings (`control`, 管制センター: a works block
+whose ground floor stands in a yard sunk a storey under the plateau, its second floor reached over
+a footbridge, an antenna array on its roof), linked to the quarry; the assembly building east of
+the runway (`assembly`, 組立棟, `assembly()`, sized by `VAB`: a box 110 by 150 m and 110 m high
+parted into four high bays, work platforms along their walls in four tiers 9 m apart climbed by a
+stair tower in each bay and crossed by catwalks, a rocket half built on its launcher platform in
+the south-west bay, whose door stands open); and the launch pad at the plateau's west end over the
+sea (`launchpad`, 発射台, `launchpad()`, sized by `LAUNCHPAD`: a deck raised 4 m over the plateau,
+a rocket about 90 m high on a slab over the flame trench `炎の溝`, which runs under it as a low road,
+and the service tower, an open steel tower climbed inside to its top platform 95 m over the deck,
+its swing arms reaching the rocket), joined by the crawlerway (`運搬路` in `ROADS`, 30 m of gravel
+between low banks, the crawler stopped on it, `crawler()`); the fuel depot south of the crawlerway
+(`fuel`, 燃料基地, `fuelDepot()`, sized by `FUEL`: three spherical tanks behind a low bund, two
+upright tanks, and pipe racks crossing it east to west and north to south whose walkways, 6 m up
+and climbed by stairs at their ends, are walked over the yard); and the tracking radar on a ridge
+in the plateau's north (`radar`, 追跡レーダー, `radar()`, sized by `RADAR`: three white radomes on
+the roofs of their equipment rooms along a walled ridge 14 m over the plateau, `追跡レーダーの尾根`,
+climbed by one road, `レーダーの坂`, and by rock steps up its west end). Control, assembly and pad
+are linked in that order, and the assembly building to the fuel depot and the radar; the fuel
+depot links to the weather station across the canyon. A rail bridge from the quarry's side (`CANYON_SPANS`, on the rail
+spur's embankment) and a road cut from the terraced fields' side that climbs down into the canyon
+and out (`切り通し` in `ROADS`) cross it, a craft called down onto the plateau's runway and a wait
+on the canyon's floor are its ways off. The world is about 2460 by 1880 m
 (`WORLD` in `config.ts`): the reservoir's island (about 1120 by 820 m) with the dune coast bulging
-south of it, a mountain belt at z about -350, the harbor's land (radius about 425 m), and the city's
-paved ground east of the strait. A point's region is its nearest POI's, but for a region written
-`ground` (the city), whose bounds are its own (`regionIdHere()`). The reservoir is built at the scale of real places, its
+south of it, a mountain belt at z about -350, the harbor's land (radius about 425 m), the city's
+paved ground east of the strait and the launch site's plateau west of the canyon. A point's region
+is its nearest POI's, but for a region written `ground` (the city, the launch site), whose bounds
+are its own (`regionIdHere()`). The reservoir is built at the scale of real places, its
 neighbouring POIs and districts 250 to 400 m apart; the harbor's POIs stand 270 to 330 m apart;
-all three are built at that scale. Five smaller walled works stand on the open ground between them
+all are built at that scale. Five smaller walled works stand on the open ground between them
 (the weather station, the waterworks, the lodge at the pass's foot, the cannery, the cold store), each
 a POI of two squads 110 to 200 m from its neighbours.
 `POI_DEFS` in `map.ts` is each POI in one place, keyed by its id: its own frame's data, its region,
@@ -130,7 +156,7 @@ contracts (`meta/story.ts`) follow one at a time: the one under way lays its rec
 only with that POI's key; keys drop from the bins of the POI named by its `keyFrom` (`VAULT`).
 POIs have a stable `id` (`PoiId` in `map.ts`); saves, quests, `keyFrom` and `EXTRA_BINS` refer to a
 POI by it, never by its place in `POIS` (the run's state may index `POIS` internally). The profile
-is versioned (`Profile.v`, which is 24), and `parseProfile()` moves older saves forward (a save from
+is versioned (`Profile.v`, which is 25), and `parseProfile()` moves older saves forward (a save from
 before the ways in starts at its region's first way in; a save from before ways in were learned
 knows them all; a save from before v12 drops its explored map, since `cellOf()` follows `WORLD`,
 which then grew wider; a save from before v13 starts on the day after its raids with every POI
@@ -139,8 +165,8 @@ quiet day and tomorrow's event drawn; a save from before v17 knows the starting 
 at threat 0; a save from before v19 has the factory at level 0; a save from before v20 remembers no
 loadout; a save from before v22 has its POIs freed or thin the player's and the rest the enemy's,
 and drops the network, its pressure, the outposts' standing and the battles' points; a save from
-before v23 gains the starter weapons; a save from before v24 drops its explored map, since the world
-grew wider again) and moves its
+before v23 gains the starter weapons; a save from before v24 or v25 drops its explored map, since the
+world grew wider again) and moves its
 start to one it may choose (`allowedStart()`).
 Each island day has at most one event (`EVENTS` in `config.ts`, `IslandEvent` in `sim/island.ts`):
 `advanceDay()` turns yesterday's forecast into today's and draws tomorrow's from `Profile.seed` and
@@ -213,11 +239,11 @@ with no contract plays at 0 (`raidThreat()`). 0 is the island's raid at the enem
 higher scales its times and plates (`raidClock()`, `netPlated()`), the range robots answer shots
 from afar, the mod parts' odds, and the contract's pay (`threatPay()`). `Profile.freedAt` keeps
 each POI's best 強度 for the map.
-The front (`docs/ringfall/island-v2.md`): the sixteen freeable POIs are the nodes (`NODES` in
-`map.ts`, linked along the roads by the twenty-three `FRONT_LINKS`, in loops, each with its depth, `TIER` from `POI_DEFS`); the
+The front (`docs/ringfall/island-v2.md`): the twenty-one freeable POIs are the nodes (`NODES` in
+`map.ts`, linked along the roads by the twenty-nine `FRONT_LINKS`, in loops, each with its depth, `TIER` from `POI_DEFS`); the
 outposts are places to loot with an enemy guard, no nodes, and the rogues hold no ground.
 `sim/front.ts` holds the rules. A node next to the player's ground (the camp and the player's
-nodes) is on the front; only its core, a pillar near its middle, can be captured (`FRONT` in
+nodes) is on the front; only its core, a pillar near its middle (or out in the open where `coreFrom` in `POI_DEFS` looks for it: the assembly building's, on its apron), can be captured (`FRONT` in
 `config.ts`): the use key starts it, the meter fills while the player holds the core's ground with
 no robot on it, the garrison comes and squads push in from the neighbouring nodes. A node taken is
 the player's at once (no robot enters `FRONT.zone`) and stays so overnight; clearing a POI of its
@@ -271,7 +297,7 @@ player left, so the results tell the battle after leaving from the raid.
 `view/battle.ts` draws the battle from afar: the landing craft and their beams, the battle's
 robots past `thingsFar` and the squads that are numbers out to the fog as instanced figures
 (`columnPoints()`), and the gate's and the depots' light as the factory's squads come out.
-The long-term goal is how many of the sixteen nodes the player holds (`view/row.ts` draws them as
+The long-term goal is how many of the twenty-one nodes the player holds (`view/row.ts` draws them as
 one tug-of-war bar, blue from the left and red from the right, a segment a node, at the title, the
 HUD's top, the camp's line, the map table and the results; its boundary slides when a node changes
 hands and flickers while one is fought over); there is no ending. The hideout is the mid-term one: five modules built level by level from specific
@@ -329,7 +355,7 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   `mezzanine()` is `hall()`'s mezzanine on its own, `disc()` a round of columns, `dish()` a tilted
   parabolic dish of columns, and `strand()` / `stay()` a cable as blocks stepping along it.
   Each POI's buildings are a function of its own (`supply()`, `quarry()`, `relay()`, `pad()`,
-  `wreck()`, `yard()`, `smelter()`, `station()`, `waterworks()`, `lodge()`, `cannery()`, `coldstore()`, `terminal()`, `carpark()`, `robotworks()`, `highrise()`, `powerplant()`), as is each district's (`heartTown()`, `damFace()`,
+  `wreck()`, `yard()`, `smelter()`, `station()`, `waterworks()`, `lodge()`, `cannery()`, `coldstore()`, `terminal()`, `carpark()`, `robotworks()`, `highrise()`, `powerplant()`, `control()`, `assembly()`, `launchpad()`, `fuelDepot()`, `radar()`), as is each district's (`heartTown()`, `damFace()`,
   `plateau()`, `village()`, `factory()`, and the machine city's grid of streets, glass towers,
   offices and elevated line round its station, `city()`, painted from steel tints 8 and 9). The helpers take their sizes from a `Scale` (storey,
   walls, doors, windows, roller doors, stair width): `WORKS` for industry (4.5 m storeys,
@@ -623,8 +649,11 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   (`Lazy` in `hunt.ts`). Only the player's own sounds and shots re-locate a squad, not
   the teammate's. Robots off the open ground (on a
   roof, inside a building) walk straight at their goal, and nobody paths inside a building.
-  The fields are kept for reuse within a raid only: `newRun()` drops them, so a raid plays the
+  The cache of fields serves a raid only: `newRun()` empties it, so a raid plays the
   same whatever ran before it, which is what lets the sim gate share raids among processes.
+  What outlasts a raid (copies of fields found, whole-world fields parked part found, `kept` and
+  `parked` in `hunt.ts`, and the bot's searches in `nav.ts`) only spares finding the same thing
+  again and gives the same answers.
   The bot (`bot.ts`) opens only bins on the ground and does not climb or ride a zipline: each POI keeps ground bins
   by its ways in and floors, and the bot walks the ground's paths up to robots on higher ground (a
   terrace, the mesa) rather than looking for an angle on them from below.

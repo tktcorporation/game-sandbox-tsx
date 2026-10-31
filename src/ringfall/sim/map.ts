@@ -6,9 +6,10 @@ import { buildTerrain, type Carve, CRATERS, type FlatShape, floorLevel, highGrou
 import { hypot2 } from "./hypot";
 
 /**
- * The world: three regions, a dried-up reservoir in the south and a dry harbor in the
- * north, joined by a pass road and a railway, and the machine city east of a dried strait,
- * reached by a road and a rail bridge (see terrain.ts for their levels).
+ * The world: four regions, a dried-up reservoir in the south and a dry harbor in the
+ * north, joined by a pass road and a railway, the machine city east of a dried strait,
+ * reached by a road and a rail bridge, and the launch site's plateau west of a dry canyon,
+ * reached by a rail bridge and a road cut (see terrain.ts for their levels).
  * Everything solid is an axis-aligned box, so collision, line of sight and standing on
  * top are all the same cheap test (a fence stops only bodies). North is -z. The player chooses the region to start
  * in; every POI, district and way off in every region is open from the start.
@@ -655,7 +656,7 @@ export interface Squad {
 export type LootTable = { weapon: [WeaponKind, Rarity][]; armor: Rarity[]; heals: number; valuable: [ValuableKind, number][] };
 
 /** Stable names for the POIs: saves, quests and other data refer to a POI by these, never by its place in `POIS`. */
-export type PoiId = "supply" | "quarry" | "relay" | "pad" | "wreck" | "yard" | "smelter" | "station" | "waterworks" | "lodge" | "cannery" | "coldstore" | "terminal" | "carpark" | "robotworks" | "highrise" | "powerplant";
+export type PoiId = "supply" | "quarry" | "relay" | "pad" | "wreck" | "yard" | "smelter" | "station" | "waterworks" | "lodge" | "cannery" | "coldstore" | "terminal" | "carpark" | "robotworks" | "highrise" | "powerplant" | "control" | "assembly" | "launchpad" | "fuel" | "radar";
 /** The boss's POI (the titan's pad): written as the boss in `POI_DEFS`, and no node of the front. */
 export type BossId = "pad";
 
@@ -1552,10 +1553,396 @@ export type Landing = "pad" | "shore";
  * lies from the camp, 0 by the camp's gate to 3 at the far end of the harbor, docs/ringfall/island-v2.md
  * 拠点の段), what holding it opens (`NodeUnlock`) and the landing ground it borders, if any.
  */
-type PoiDef = Omit<Poi, "id" | "boss"> & { region: RegionId; depotOut: number };
+/**
+ * A POI as written: its `Poi` fields in its own frame, its region, its depot's distance out, and
+ * where its core is looked for when not round its middle (`coreFrom`, in its frame): a node whose
+ * middle is under a roof keeps its core, and so its ziplines' masts, out in the open.
+ */
+type PoiDef = Omit<Poi, "id" | "boss"> & { region: RegionId; depotOut: number; coreFrom?: { x: number; z: number } };
 /** The boss's POI: the enemy's for good, no node of the front. */
 type BossDef = PoiDef & { boss: true; front?: never };
 type NodeDef = PoiDef & { boss?: never; front: { tier: number; unlocks: NodeUnlock; landing?: Landing } };
+
+/**
+ * The launch site's control centre, round (0, 0) in its frame: a works block of three storeys
+ * whose ground floor stands in a yard sunk a storey under the plateau (`LEVEL.controlPit`, the
+ * walled basin 管制室の掘り込み), so that its second floor opens west onto the plateau over a
+ * footbridge. A walled ramp climbs out of the sunk yard on its south. The control room's windows
+ * look west, toward where the launch pads stand; on the roof (reached by the block's own stairs)
+ * stands the antenna array: a lattice mast, thin aerials and an equipment cabinet. `block` is the
+ * block's footprint, `roof` its roof over the sunk yard's floor.
+ */
+const CONTROL = { block: { w: 30, d: 14, floors: 3 }, roof: 3 * WORKS.storey, bridge: { x0: -28, x1: -15, half: 1.4 } } as const;
+function control(): Floors {
+  const { block, roof, bridge: br } = CONTROL;
+  const up = (b: Box): Box => ({ ...b, y0: b.y0 + roof, h: b.h + roof });
+  const sunk: Box[] = [
+    ...tower(0, 0, block.w, block.d, block.floors, { doors: [["s"], ["w"], []], windows: [["w", "n"], ["w", "n", "s"], ["w", "e"]], scale: WORKS }),
+    // The antenna array on the roof, clear of the stairwell at its north-east corner.
+    ...lattice(-8, 1, 4, 4, 3, 18).map(up),
+    ...[[2, 4], [7, 4], [-1, -4]].map(([x, z]) => up(box(x, z, 0.3, 0.3, 9, "steel", 2))),
+    up(rect(1.6, 3.9, 7.4, 4.1, 7, 7.2, "steel", 2)),
+    up(box(-1, 4.5, 3, 1.4, 1.8, "steel", 1)),
+    // Down in the sunk yard: a generator by the east end, drums by the west.
+    box(21, 4, 2.6, 4, 2.2, "steel", 1),
+    box(-20, -7, 1.2, 1.2, 0.9, "crate"),
+    box(-20, -5.8, 1.2, 1.2, 1.8, "crate"),
+  ];
+  const plateau: Box[] = [
+    // The footbridge from the plateau over the sunk yard to the second floor's west door, railed to the wall.
+    bridge(br.x0, -br.half, br.x1, br.half, 0),
+    rect(br.x0 + 1, -br.half, br.x1, -br.half + 0.15, 0, 1.1, "steel", 2),
+    rect(br.x0 + 1, br.half - 0.15, br.x1, br.half, 0, 1.1, "steel", 2),
+    // The gatehouse by the ramp's top and cover out on the plateau: containers, sandbags, a truck.
+    ...building(20, 50, 6, 5, 3.2, { doors: ["w"], windows: ["n", "s"], scale: HOME }),
+    box(-34, 22, 6.1, 2.5, 2.6, "container", 2),
+    box(-34, 25.5, 6.1, 2.5, 2.6, "container", 3),
+    box(36, -18, 4.5, 0.8, 1.1, "wall", 1),
+    box(40, -14, 0.8, 4.5, 1.1, "wall", 1),
+    box(-30, -26, 7.3, 2.5, 3, "steel", 3),
+    box(44, 20, 1.2, 1.2, 1.8, "crate"),
+  ];
+  return [
+    [LEVEL.controlPit, sunk],
+    [LEVEL.plateau, plateau],
+  ];
+}
+
+/**
+ * The launch site's landing runway, in the launch area's frame on ground at 0: a concrete strip
+ * 40 m wide and 400 m long north to south down the plateau's middle, its centre line dashed, a
+ * windsock mast and a low hut by its east edge. The pickup craft lands on it (`EXTRACTS`).
+ */
+function runway(): Box[] {
+  const out: Box[] = [rect(-95, -200, -55, 200, 0, 0.12, "slab", 1)];
+  for (let z = -185; z < 190; z += 30) out.push(rect(-75.6, z, -74.4, z + 14, 0.12, 0.14, "steel", 4));
+  out.push(box(-48, -40, 0.3, 0.3, 7, "steel", 4), box(-47, -40, 1.6, 0.3, 0.6, "steel", 2, 6.2));
+  out.push(...building(-44, 40, 6, 4, 3, { doors: ["w"], windows: ["e"], scale: HOME }));
+  return out;
+}
+
+/**
+ * A rocket standing at (cx, cz) from height y0: each part a round body `r` in radius and `h`
+ * high, stacked on the one below and painted plate of its tint, built as three crossing boxes
+ * (an octagon in steps) as `tank()`'s are.
+ */
+function rocketStack(cx: number, cz: number, y0: number, parts: readonly (readonly [r: number, h: number, tint: number])[]): Box[] {
+  const out: Box[] = [];
+  let y = y0;
+  for (const [r, h, tint] of parts) {
+    const [s, q] = [r * 0.83, r * 1.42];
+    out.push(box(cx, cz, 2 * r, s, y + h, "steel", tint, y), box(cx, cz, s, 2 * r, y + h, "steel", tint, y), box(cx, cz, q, q, y + h, "steel", tint, y));
+    y += h;
+  }
+  return out;
+}
+
+/** A rail 1 m high along x from a to b, between z0 and z1, its foot at y, left open over each of `gaps` (x ranges). */
+function railAlongX(a: number, b: number, z0: number, z1: number, y: number, gaps: readonly (readonly [number, number])[]): Box[] {
+  const out: Box[] = [];
+  let cur = a;
+  for (const [g0, g1] of [...gaps].sort((p, q) => p[0] - q[0])) {
+    if (g0 > cur + 0.01) out.push(rect(cur, z0, g0, z1, y, y + 1, "steel", 2));
+    cur = Math.max(cur, g1);
+  }
+  if (b > cur + 0.01) out.push(rect(cur, z0, b, z1, y, y + 1, "steel", 2));
+  return out;
+}
+
+/**
+ * The launch site's assembly building (組立棟), round (0, 0) in its frame on ground at 0: the
+ * region's largest building, `w` east to west, `d` north to south and `h` high, its walls bands of
+ * white plate, `wall` thick. A wall down its middle and one across each half part four high bays,
+ * joined on the floor by openings under the first tier. In each bay work platforms `deep` deep run
+ * along its north and south walls in `tiers` tiers `tier` apart, a stair tower at the bay's inner
+ * end climbs to every tier and its roof is the top one, and beside the tower a catwalk crosses the
+ * bay at each tier. The south-west bay holds a rocket half built on its launcher platform (`mlp`
+ * high), with catwalks out to it from the north platforms every other tier, and its door in the
+ * west wall (`door`, at z along the wall) stands open onto the crawlerway; the other bays' doors
+ * are shut. People doors at the foot of the outer walls lead in under the platforms.
+ */
+const VAB = { w: 110, d: 150, h: 110, wall: 1, tier: 2 * WORKS.storey, tiers: 4, deep: 9, door: { z: 32, w: 24, h: 80 }, rocket: { x: -30, z: 37, r: 5 }, mlp: 6 } as const;
+
+/**
+ * One of the assembly building's bays, its inside from x0 to x1 and z0 to z1, its stair tower at
+ * its east (`end` "e") or west end against its north wall; with `rocket`, catwalks reach out to its
+ * north face from the north platforms on every other tier.
+ */
+function vabBay(x0: number, x1: number, z0: number, z1: number, end: "e" | "w", rocket?: { x: number; z: number; r: number }): Box[] {
+  const { tier, tiers, deep } = VAB;
+  const out: Box[] = [];
+  const far: Side = end === "e" ? "w" : "e";
+  const [tw, td] = [10, 9];
+  const tx = end === "e" ? x1 - 1.5 - tw / 2 : x0 + 1.5 + tw / 2;
+  // The tower's door on every second storey opens onto the north platform, which meets its wall.
+  out.push(...tower(tx, z0 + 1.5 + td / 2, tw, td, tiers * 2, { doors: Array.from({ length: tiers * 2 }, (_, k) => (k % 2 === 0 ? [far] : [])), scale: WORKS, open: [far] }));
+  const face = end === "e" ? tx - tw / 2 : tx + tw / 2;
+  const [na, nb] = end === "e" ? [x0, face] : [face, x1];
+  // The catwalk across the bay, 1.5 m clear of the tower.
+  const cx = end === "e" ? face - 2.5 : face + 2.5;
+  for (let t = 1; t <= tiers; t++) {
+    const y = t * tier;
+    const across: [number, number] = [cx - 1, cx + 1];
+    const reach: [number, number][] = rocket && t % 2 === 0 ? [[rocket.x - 1, rocket.x + 1]] : [];
+    out.push(rect(na, z0, nb, z0 + deep, y - 0.3, y, "slab", 1), rect(x0, z1 - deep, x1, z1, y - 0.3, y, "slab", 1));
+    out.push(...railAlongX(na, nb, z0 + deep - 0.15, z0 + deep, y, [across, ...reach]), ...railAlongX(x0, x1, z1 - deep, z1 - deep + 0.15, y, [across]));
+    out.push(...catwalk(cx, z0 + deep, cx, z1 - deep, y, 2, 2));
+    if (rocket && reach.length) out.push(...catwalk(rocket.x, z0 + deep, rocket.x, rocket.z - rocket.r, y, 2, 2));
+  }
+  return out;
+}
+
+function assembly(): Box[] {
+  const { w, d, h, wall: T, door, rocket: R, mlp } = VAB;
+  const [X, Z] = [w / 2, d / 2];
+  const out: Box[] = [];
+  // The outer walls in bands of plate, the top band darker; the open door's hole up through the
+  // bands under its head, and people doors at the foot of the north, south and east walls.
+  const bands = [0, 20, 40, 60, 80, h - 0.5];
+  for (let i = 0; i + 1 < bands.length; i++) {
+    const [y0, y1] = [bands[i], bands[i + 1]];
+    const holes: Hole[] = [];
+    if (y0 < door.h) holes.push({ side: "w", at: door.z, w: door.w, head: Math.min(door.h, y1) - y0 });
+    if (i === 0) for (const at of [-27, 27]) holes.push({ side: "n", at, w: WORKS.door, head: WORKS.doorHead }, { side: "s", at, w: WORKS.door, head: WORKS.doorHead });
+    if (i === 0) for (const at of [-60, 60]) holes.push({ side: "e", at, w: WORKS.door, head: WORKS.doorHead });
+    out.push(...shell(0, 0, w, d, y0, y1, holes, "steel", i === bands.length - 2 ? 2 : 9, T));
+  }
+  out.push(rect(-X, -Z, X, Z, h - 0.5, h, "slab", 0));
+  // The shut doors: tall panels on the outside of the other bays' ends.
+  out.push(rect(-X - 0.4, -door.z - door.w / 2, -X, -door.z + door.w / 2, 0, door.h, "steel", 2));
+  for (const z of [-door.z, door.z]) out.push(rect(X, z - door.w / 2, X + 0.4, z + door.w / 2, 0, door.h, "steel", 2));
+  // The walls between the bays: down the middle, and across each half. Openings 12 m wide and
+  // 8 m high under the first tier join the bays on the floor.
+  const [ia, ib, ja, jb, P] = [-X + T, X - T, -Z + T, Z - T, 0.5];
+  const top = h - 0.5;
+  for (const [a, b] of [[ja, -43], [-31, 31], [43, jb]]) out.push(rect(-P, a, P, b, 0, top, "wall", 0));
+  for (const [a, b] of [[-43, -31], [31, 43]]) out.push(rect(-P, a, P, b, 8, top, "wall", 0));
+  for (const [a, b] of [[ia, -33], [-21, -P], [P, 21], [33, ib]]) out.push(rect(a, -P, b, P, 0, top, "wall", 0));
+  for (const [a, b] of [[-33, -21], [21, 33]]) out.push(rect(a, -P, b, P, 8, top, "wall", 0));
+  out.push(...vabBay(ia, -P, ja, -P, "e"), ...vabBay(ia, -P, P, jb, "e", R), ...vabBay(P, ib, ja, -P, "w"), ...vabBay(P, ib, P, jb, "w"));
+  // The south-west bay: the launcher platform with stairs up its east side, and on it the rocket:
+  // its first stage, the ring over it and the second stage, then only the frame the rest goes on.
+  out.push(box(R.x, R.z, 22, 22, mlp, "steel", 1), ...stairs(R.x + 11, R.z, "e", 3, mlp, 1));
+  out.push(...rocketStack(R.x, R.z, mlp, [[R.r, 40, 9], [R.r + 0.2, 2, 1], [4.3, 18, 9]]));
+  for (const [dx, dz] of [[-3, -3], [3, -3], [-3, 3], [3, 3]]) out.push(box(R.x + dx, R.z + dz, 0.4, 0.4, mlp + 76, "steel", 2, mlp + 60));
+  // Its floor: crates and racks of parts by the door, a parts cart.
+  out.push(box(-46, 54, 2, 2, 2, "crate"), box(-44, 54, 2, 2, 1.2, "crate"), box(-46, 12, 2.4, 6, 2.4, "steel", 2), box(-12, 54, 6, 2.4, 1.6, "steel", 3));
+  // The north-west bay: a stage's ring section standing on the floor, crates beside it.
+  out.push(...rocketStack(-30, -37, 0, [[4.8, 6, 9]]), box(-44, -30, 2, 2, 2, "crate"), box(-44, -28, 2, 2, 1.2, "crate"));
+  // The north-east bay: sections of tank standing in a row and a rack of parts.
+  out.push(...rocketStack(24, -37, 0, [[4, 8, 9]]), ...rocketStack(40, -37, 0, [[4, 5, 9]]), box(32, -22, 8, 2.4, 2.2, "steel", 2));
+  // The south-east bay: a first stage lying on two cradles, its round body in three crossing boxes.
+  out.push(rect(22, 33, 52, 41, 1.3, 7.7, "steel", 9), rect(22, 35.3, 52, 38.7, 0, 9, "steel", 9), rect(22, 34.2, 52, 39.8, 0.4, 8.6, "steel", 9));
+  out.push(rect(24, 31.5, 26.5, 42.5, 0, 3, "steel", 1), rect(47.5, 31.5, 50, 42.5, 0, 3, "steel", 1));
+  // Outside the open door: a row of barriers on the apron's north edge, and a parts trailer.
+  out.push(box(-70, 12, 9, 0.65, 1.1, "prop", PROP.barrier), box(-64, 52, 6, 2.4, 1.4, "steel", 2));
+  return out;
+}
+
+/**
+ * The crawler-transporter, stopped on the crawlerway round (cx, cz) on ground at 0: a deck 36 by
+ * 26 m on four tracked trucks, one at each corner, high enough to walk under, its cabs at the
+ * front and back corners and a stair up its east end.
+ */
+function crawler(cx: number, cz: number): Box[] {
+  const [L, W, deck] = [36, 26, 6];
+  const out: Box[] = [];
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) out.push(box(cx + sx * (L / 2 - 6), cz + sz * (W / 2 - 3.5), 12, 7, 3.2, "steel", 1));
+  out.push(box(cx, cz, L, W, deck, "steel", 2, 3.2));
+  out.push(box(cx - L / 2 + 2, cz - W / 2 + 2, 4, 4, deck + 3, "steel", 3, deck), box(cx + L / 2 - 2, cz + W / 2 - 2, 4, 4, deck + 3, "steel", 3, deck));
+  out.push(box(cx, cz, 18, 14, deck + 1.2, "steel", 1, deck));
+  out.push(...stairs(cx + L / 2, cz + 6, "e", 2, deck, 2));
+  return out;
+}
+
+/** The crawlerway's low banks: lengths of concrete kerb 1.1 m high along both edges, broken every few lengths to cross. */
+function crawlerBanks(ax: number, bx: number, z: number, half: number): Box[] {
+  const out: Box[] = [];
+  const [a, b] = [Math.min(ax, bx), Math.max(ax, bx)];
+  for (let x = a + 4; x + 18 <= b - 4; x += 24) for (const s of [-1, 1]) out.push(rect(x, z + s * (half + 0.5) - 1, x + 18, z + s * (half + 0.5) + 1, 0, 1.1, "wall", 1));
+  return out;
+}
+
+/**
+ * The launch pad (発射台), round (0, 0) in its frame: its deck (`LEVEL.launchPad`) raised over
+ * the plateau at its west end facing the sea, the flame trench (`炎の溝`) cut north to south
+ * under it. Over the trench a slab carries the rocket, about 90 m high with two boosters, so the
+ * trench under it is a low road through. West of the rocket the service tower (`tower`), an open
+ * steel tower climbed by stairs inside to its top platform, its swing arms reaching the rocket
+ * from the platforms in `arms` (by their place up the tower). All of it stands on the deck and
+ * the trench without pressing them: the trench's walls and the deck's edges stay as cut.
+ */
+const LAUNCHPAD = { tower: { x: -17, z: 0, w: 12, d: 12, floors: 28, top: 104 }, arms: [5, 11, 16, 21, 24], rocket: 5, slab: 14 } as const;
+/** The height of a service tower platform over the deck, by its place up the tower (as `lattice()` builds them). */
+const towerLevel = (k: number) => (k + 1) * STOREY;
+
+/** `lattice()`, with the knee rail on its `side` left open at the middle on each platform of `arms`, where a swing arm leaves it. */
+function serviceTower(cx: number, cz: number, w: number, d: number, floors: number, top: number, arms: readonly number[], side: Side): Box[] {
+  const rails = lattice(cx, cz, w, d, floors, top);
+  const along = side === "n" || side === "s" ? "x" : "z";
+  const mid = along === "x" ? cx : cz;
+  const out: Box[] = [];
+  for (const b of rails) {
+    const y = b.y0;
+    const k = arms.find((a) => Math.abs(towerLevel(a) - y) < 0.01);
+    const onSide = b.kind === "steel" && b.h - b.y0 === 0.5 && (side === "e" ? b.x0 > cx + w / 2 - 0.2 : side === "w" ? b.x1 < cx - w / 2 + 0.2 : side === "n" ? b.z1 < cz - d / 2 + 0.2 : b.z0 > cz + d / 2 - 0.2);
+    if (k === undefined || !onSide) {
+      out.push(b);
+      continue;
+    }
+    const [lo, hi] = along === "x" ? [b.x0, b.x1] : [b.z0, b.z1];
+    const piece = (p: number, q: number) => (along === "x" ? { ...b, x0: p, x1: q } : { ...b, z0: p, z1: q });
+    out.push(piece(lo, mid - 1.2), piece(mid + 1.2, hi));
+  }
+  return out;
+}
+
+function launchpad(): Floors {
+  const { tower: t, arms, rocket: r, slab } = LAUNCHPAD;
+  const deck: Box[] = [];
+  // The slab over the trench, flush with the deck and out over the tops of its sloping walls, and
+  // on it the rocket over the trench's middle:
+  // its core to 88 m in white plate, a scorched ring between its stages, a booster either side.
+  deck.push(rect(-9, -slab, 9, slab, -0.3, 0, "slab", 1));
+  deck.push(...rocketStack(0, 0, 0, [[r, 50, 9], [r + 0.2, 3, 7], [4.2, 23, 9], [4.2, 6, 9], [3, 3, 9], [1.6, 3, 9]]));
+  for (const s of [-1, 1]) deck.push(...rocketStack(0, s * (r + 2.2), 0, [[2.2, 34, 9], [1.4, 3, 9]]));
+  // The service tower west of it, and its swing arms out to the rocket's west face.
+  deck.push(...serviceTower(t.x, t.z, t.w, t.d, t.floors, t.top, arms, "e"));
+  for (const k of arms) deck.push(...catwalk(t.x + t.w / 2, 0, -r, 0, towerLevel(k), 2, 2));
+  // On the deck: the pad's equipment room, propellant lines along its north edge, cable boxes and crates as cover.
+  deck.push(...building(28, -16, 9, 6, 3.2, { doors: ["w"], windows: ["s"], scale: HOME }));
+  deck.push(rect(-30, -24, 30, -22.8, 0, 1.2, "steel", 2), rect(-30, -21.8, 30, -21.2, 1.2, 1.5, "steel", 3));
+  deck.push(box(22, 14, 4, 1.4, 1.2, "steel", 1), box(-32, 16, 2, 2, 2, "crate"), box(-30, 16, 2, 2, 1.2, "crate"), box(36, 8, 2.4, 2.4, 1.6, "steel", 3));
+  // Down in the trench beside the low road: blocks of the flame deflector along its east wall.
+  const trench: Box[] = [rect(2, -9, 5, 9, 0, 1.3, "steel", 7)];
+  // Steps from the plateau up onto the deck's north and south edges, laid on the cliff without pressing it.
+  const plateau: Box[] = [...stairs(20, -30, "n", 3, LEVEL.launchPad - LEVEL.plateau, 1), ...stairs(-20, 30, "s", 3, LEVEL.launchPad - LEVEL.plateau, 1)];
+  return [
+    [LEVEL.launchPad, deck, "loose"],
+    [LEVEL.flameTrench, trench, "loose"],
+    [LEVEL.plateau, plateau, "loose"],
+  ];
+}
+
+/**
+ * A spherical tank `R` in radius whose underside is `y0` over the ground at (cx, cz): slices of
+ * crossing boxes (each an octagon in steps, as `tank()`'s) rounding out to the equator and in
+ * again, on four legs that reach up into it. Under it is head room to walk through.
+ */
+function sphereTank(cx: number, cz: number, R: number, y0: number, tint: number): Box[] {
+  const out: Box[] = [];
+  const n = 12;
+  for (let i = 0; i < n; i++) {
+    const [ya, yb] = [y0 + (2 * R * i) / n, y0 + (2 * R * (i + 1)) / n];
+    const r = Math.sqrt(R * R - ((ya + yb) / 2 - y0 - R) ** 2);
+    const [s, q] = [r * 0.83, r * 1.42];
+    out.push(box(cx, cz, 2 * r, s, yb, "steel", tint, ya), box(cx, cz, s, 2 * r, yb, "steel", tint, ya), box(cx, cz, q, q, yb, "steel", tint, ya));
+  }
+  for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) out.push(box(cx + sx * 0.6 * R, cz + sz * 0.6 * R, 0.6, 0.6, y0 + R * 0.9, "steel", 1));
+  return out;
+}
+
+/**
+ * A pipe rack `y` high along x (`alongX`) or z from `a` to `b` on the line `c`: a deck 4 m wide on
+ * pairs of posts every 10 m, two pipes along one edge of it (the low side, `pipeSide` -1 or 1 across
+ * the line) and a walkway beside them railed knee-high on its other edge. Over each of `gaps` (ranges
+ * along the line, where another rack crosses) the pipes dip under the deck and the rail is left
+ * open, so the crossing is walked through; posts stand clear of the gaps.
+ */
+function walkedRack(alongX: boolean, a: number, b: number, c: number, y: number, pipeSide: 1 | -1, gaps: readonly (readonly [number, number])[]): Box[] {
+  const out: Box[] = [];
+  const span = (lo: number, hi: number, u0: number, u1: number, y0: number, h: number, kind: BoxKind, tint: number) =>
+    alongX ? rect(lo, c + Math.min(u0, u1), hi, c + Math.max(u0, u1), y0, h, kind, tint) : rect(c + Math.min(u0, u1), lo, c + Math.max(u0, u1), hi, y0, h, kind, tint);
+  const pieces = (lo: number, hi: number): [number, number][] => {
+    const ps: [number, number][] = [];
+    let cur = lo;
+    for (const [g0, g1] of [...gaps].sort((p, q) => p[0] - q[0])) {
+      if (g0 > cur + 0.01) ps.push([cur, g0]);
+      cur = Math.max(cur, g1);
+    }
+    if (hi > cur + 0.01) ps.push([cur, hi]);
+    return ps;
+  };
+  out.push(span(a, b, -2, 2, y - 0.3, y, "slab", 1));
+  for (const [lo, hi] of pieces(a, b)) {
+    out.push(span(lo, hi, pipeSide * 2, pipeSide * 1.3, y, y + 0.7, "steel", 3), span(lo, hi, pipeSide * 1.3, pipeSide * 0.6, y, y + 0.55, "steel", 2));
+    out.push(span(lo, hi, -pipeSide * 2, -pipeSide * 1.85, y, y + 0.5, "steel", 2));
+  }
+  for (let u = a + 2; u <= b - 1; u += 10) {
+    if (gaps.some(([g0, g1]) => u > g0 - 2 && u < g1 + 2)) continue;
+    for (const s of [-1.6, 1.6]) out.push(alongX ? box(u, c + s, 0.5, 0.5, y - 0.3, "steel", 1) : box(c + s, u, 0.5, 0.5, y - 0.3, "steel", 1));
+  }
+  return out;
+}
+
+/**
+ * The launch site's fuel depot (燃料基地), round (0, 0) in its frame on ground at 0, south of the
+ * crawlerway: three spherical tanks in a row along its south side behind a low bund, two upright
+ * tanks in its north-west, and pipe racks `rack` high running across it east to west and north to
+ * south, crossing between the tanks; stairs climb onto both at their ends, so the racks' walkways
+ * are a second floor over the yard. A pump house (the vault) and an office stand in its north,
+ * the loading bay with a tanker left under its canopy in its east.
+ */
+const FUEL = { rack: 6, alongZ: -8, acrossX: 32, spheres: [-40, -12, 16], sphereZ: 28, R: 9, under: 2.6 } as const;
+function fuelDepot(): Box[] {
+  const { rack: Y, alongZ: rz, acrossX: rx, spheres, sphereZ: sz, R, under } = FUEL;
+  const out: Box[] = [];
+  for (const x of spheres) out.push(...sphereTank(x, sz, R, under, 9));
+  // The bund in front of the spheres, broken twice to walk in among them.
+  for (const [a, b] of [[-54, -30], [-22, 6], [14, 30]]) out.push(rect(a, sz - R - 5, b, sz - R - 4.2, 0, 1.1, "wall", 1));
+  out.push(...tank(-48, -30, 7, 14, "s", 2), ...tank(-26, -30, 7, 14, "s", 2));
+  // The racks, crossing at (rx, rz), each with stairs up at its free end.
+  out.push(...walkedRack(true, -60, 50, rz, Y, -1, [[rx - 2, rx + 2]]), ...stairs(-60, rz + 0.7, "w", 2.6, Y, 1));
+  out.push(...walkedRack(false, -40, 20, rx, Y, -1, [[rz - 2, rz + 2]]), ...stairs(rx + 0.7, -40, "n", 2.6, Y, 1));
+  // The pump house and the office in the north.
+  out.push(...building(8, -32, 16, 10, WORKS.storey, { doors: ["e", "s"], windows: ["n"], scale: WORKS }));
+  out.push(...building(50, -30, 12, 9, WORKS.storey, { doors: ["w"], windows: ["s", "e"], scale: WORKS }));
+  // The loading bay: a canopy on four columns over a tanker and its cab.
+  out.push(rect(44, 14, 60, 34, 5.2, 5.5, "slab", 1));
+  for (const [x, z] of [[44.3, 14.3], [59.7, 14.3], [44.3, 33.7], [59.7, 33.7]]) out.push(box(x, z, 0.6, 0.6, 5.2, "steel", 2));
+  out.push(box(52, 24, 2.6, 9, 3.4, "steel", 9), box(52, 29.75, 2.6, 2.5, 3, "steel", 3));
+  // Cover about the yard: drums, crates and a row of barriers by the east gate.
+  out.push(box(-6, -18, 1.2, 1.2, 0.9, "crate"), box(-4.8, -18, 1.2, 1.2, 1.8, "crate"), box(20, -2, 2, 2, 2, "crate"), box(22, -2, 2, 2, 1.2, "crate"));
+  out.push(box(66, -2, 0.65, 9, 1.1, "prop", PROP.barrier), box(-58, 22, 2.4, 6, 2.4, "steel", 2));
+  return out;
+}
+
+/**
+ * A radome: a white ball `R` in radius on a short drum, from `y0` at (cx, cz), in slices of
+ * crossing boxes over the drum.
+ */
+function radome(cx: number, cz: number, R: number, y0: number): Box[] {
+  const out: Box[] = [];
+  const drum = 1.6;
+  const ring = (r: number, ya: number, yb: number) => [box(cx, cz, 2 * r, r * 0.83, yb, "steel", 9, ya), box(cx, cz, r * 0.83, 2 * r, yb, "steel", 9, ya), box(cx, cz, r * 1.42, r * 1.42, yb, "steel", 9, ya)];
+  out.push(...ring(R, y0, y0 + drum));
+  const n = 10;
+  for (let i = 0; i < n; i++) out.push(...ring(Math.sqrt(R * R - (((i + 0.5) * R) / n) ** 2), y0 + drum + (i * R) / n, y0 + drum + ((i + 1) * R) / n));
+  return out;
+}
+
+/**
+ * The tracking radar (追跡レーダー) on its ridge in the plateau's north, round (0, 0) in its frame on
+ * the ridge top: three white radomes in a row east to west, each on the flat roof of an equipment
+ * room (`domes`, `room` square), the middle room's roof climbed by outside stairs. Behind them an
+ * operations room, a generator and a mast; the one road comes up the ridge's south side at its east end
+ * (`レーダーの坂`), and rock steps climb its west end from the plateau (`LAID`).
+ */
+const RADAR = { domes: [-45, 0, 45], z: -2, room: 18, dome: 6.5 } as const;
+function radar(): Box[] {
+  const { domes, z, room, dome } = RADAR;
+  const out: Box[] = [];
+  for (const x of domes) {
+    out.push(...building(x, z, room, room, WORKS.storey, { doors: ["s"], windows: ["e", "w"], scale: WORKS, ...(x === 0 ? { roof: "e" as const } : {}) }));
+    out.push(...radome(x, z, dome, WORKS.storey));
+  }
+  out.push(...building(-22, 14, 14, 8, WORKS.storey, { doors: ["e"], windows: ["s"], scale: WORKS }));
+  // The generator, and a mast with its cabinet at the ridge's west end.
+  out.push(box(22, 14, 4, 2.6, 2.4, "steel", 1), box(-70, -10, 0.5, 0.5, 16, "steel", 2), box(-70, -7.5, 1.6, 1.2, 1.8, "steel", 1));
+  // Cover on the ridge top: sandbags by the road's top, crates by the rooms.
+  out.push(box(52, 12, 5, 0.9, 1.1, "prop", PROP.sandbags), box(-62, 8, 2, 2, 2, "crate"), box(-60, 8, 2, 2, 1.2, "crate"), box(26, -16, 2, 2, 1.8, "crate"));
+  return out;
+}
 
 /**
  * The POIs by id, the boss's (`BossId`) written as one and every other as a node. Their order is
@@ -1659,7 +2046,7 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
       { x: DISH_STAIRS.x - 1.5, z: DISH_STAIRS.z + 2, y: DISH_STAIRS.floors * STOREY },
       { x: -29, z: -20, y: WORKS.storey, vault: true },
     ],
-    keyFrom: "quarry",
+    keyFrom: "radar",
     loot: { weapon: [["pike", 1], ["hornet", 1], ["maul", 1], ["lance", 1], ["talon", 1]], armor: [1], heals: 2, valuable: [["board", 4], ["drive", 2], ["wire", 1], ["gyro", 1]] },
     floor: [
       { x: -20, z: -18, y: WORKS.storey, weapon: ["lance", 1] },
@@ -2081,12 +2468,183 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
     loot: { weapon: [["pike", 1], ["lance", 1], ["maul", 1], ["hornet", 1]], armor: [1], heals: 2, valuable: [["fuse", 3], ["wire", 3], ["parts", 2], ["drive", 2], ["reactor", 1]] },
     floor: [{ x: -8, z: 40, heal: "medkit" }],
   },
+
+  // --- the launch site across the dry canyon
+  // The control centre at the plateau's east edge by the two crossings: the sunk yard and the
+  // block's floors, its roof, and the plateau round it.
+  control: {
+    region: "launch",
+    depotOut: 18,
+    front: { tier: 1, unlocks: {} },
+    name: "管制センター",
+    x: 0,
+    z: 0,
+    trigger: 60,
+    entry: { x: 60, z: 0, yaw: W },
+    squads: [
+      { name: "管制室", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: -4, z: -2, face: W }, { kind: "grunt", x: 6, z: 2, y: WORKS.storey, face: W }] },
+      { name: "屋上", members: [{ kind: "grunt", x: 6, z: 2, y: CONTROL.roof, face: E }, { kind: "drone", x: 0, z: -22 }] },
+      { name: "掘り込み", members: [{ kind: "grunt", x: 20, z: -8, face: E }, { kind: "charger", x: -40, z: 18, face: E }] },
+      { name: "前庭", members: [{ kind: "grunt", x: -46, z: -12, face: W }, { kind: "drone", x: -36, z: -34 }] },
+    ],
+    bins: [
+      { x: -8, z: 0 },
+      { x: 4, z: 3 },
+      { x: 21, z: -2 },
+      { x: -30, z: 14 },
+      { x: 30, z: -24 },
+      { x: -6, z: 2, y: WORKS.storey },
+      { x: 0, z: 3, y: CONTROL.roof },
+      { x: -10, z: 3, y: 2 * WORKS.storey, vault: true },
+    ],
+    keyFrom: "quarry",
+    loot: { weapon: [["pike", 1], ["hornet", 1], ["talon", 1], ["lance", 1]], armor: [1], heals: 2, valuable: [["board", 3], ["wire", 3], ["gyro", 2], ["drive", 1]] },
+    floor: [{ x: 2, z: -2, heal: "battery" }],
+  },
+  // The assembly building in the plateau's middle: its four bays' floors and work platforms, the
+  // rocket's launcher platform, and the apron before its open door; the vault up on a platform.
+  assembly: {
+    region: "launch",
+    depotOut: 40,
+    front: { tier: 2, unlocks: {} },
+    name: "組立棟",
+    x: 0,
+    z: 0,
+    // On the apron off the building's north-west corner, out from under its roof: the control
+    // centre's cable comes in clear of its west face, the pad's goes out over the crawlerway.
+    coreFrom: { x: -72, z: -60 },
+    trigger: 90,
+    entry: { x: -80, z: 30, yaw: E },
+    squads: [
+      { name: "大扉", members: [{ kind: "grunt", x: -48, z: 26, face: W }, { kind: "grunt", x: -47, z: 44, face: W }] },
+      { name: "組みかけのロケット", members: [{ kind: "grunt", x: -30, z: 28, y: VAB.mlp, face: W }, { kind: "charger", x: -20, z: 56, face: W }] },
+      { name: "作業足場", members: [{ kind: "grunt", x: -24, z: 69.5, y: VAB.tier, face: N }, { kind: "drone", x: -12, z: 46 }] },
+      { name: "東の区画", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 30, z: -69.5, y: 3 * VAB.tier, face: S }, { kind: "drone", x: 30, z: -46 }] },
+    ],
+    bins: [
+      { x: -46, z: 24 },
+      { x: -30, z: -48 },
+      { x: 30, z: -50 },
+      { x: 30, z: 50 },
+      { x: -62, z: 56 },
+      { x: -40, z: 5, y: 2 * VAB.tier },
+      { x: 30, z: 69.5, y: VAB.tier },
+      { x: 40, z: -69.5, y: 3 * VAB.tier, vault: true },
+    ],
+    keyFrom: "control",
+    loot: { weapon: [["pike", 1], ["lance", 1], ["talon", 1], ["hornet", 1]], armor: [1], heals: 2, valuable: [["board", 3], ["drive", 2], ["gyro", 3], ["wire", 2], ["core", 1]] },
+    floor: [
+      { x: -22, z: 22, heal: "medkit" },
+      { x: -44, z: 69.5, y: 4 * VAB.tier, weapon: ["lance", 2] },
+    ],
+  },
+  // The launch pad at the plateau's west end: the deck round the rocket, the service tower's
+  // platforms, the vault on its top one.
+  launchpad: {
+    region: "launch",
+    depotOut: 18,
+    front: { tier: 3, unlocks: {} },
+    name: "発射台",
+    x: 0,
+    z: 0,
+    trigger: 80,
+    entry: { x: 75, z: 0, yaw: W },
+    squads: [
+      { name: "発射台の東", members: [{ kind: "heavy", x: 30, z: 12, face: E }, { kind: "grunt", x: 34, z: -10, face: E }] },
+      { name: "整備塔", members: [{ kind: "grunt", x: -20, z: 3, y: towerLevel(LAUNCHPAD.arms[0]), face: E }, { kind: "drone", x: -30, z: -12 }] },
+      { name: "発射台の西", members: [{ kind: "grunt", x: -34, z: 8, face: W }, { kind: "charger", x: -34, z: -8, face: N }] },
+      { name: "塔の上", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: -20, z: -3, y: towerLevel(LAUNCHPAD.tower.floors - 1), face: E }, { kind: "grunt", x: -20, z: 3, y: towerLevel(LAUNCHPAD.arms[3]), face: E }] },
+    ],
+    bins: [
+      { x: 26, z: -6 },
+      { x: 22, z: 10 },
+      { x: -30, z: 10 },
+      { x: 40, z: 0 },
+      { x: -20, z: -3, y: towerLevel(LAUNCHPAD.arms[0]) },
+      { x: -20, z: 3, y: towerLevel(LAUNCHPAD.arms[2]) },
+      { x: -20, z: -3, y: towerLevel(LAUNCHPAD.tower.floors - 1), vault: true },
+    ],
+    keyFrom: "assembly",
+    loot: { weapon: [["lance", 1], ["maul", 1], ["talon", 1], ["pike", 1], ["hornet", 1]], armor: [1], heals: 2, valuable: [["board", 3], ["drive", 3], ["gyro", 3], ["core", 2], ["reactor", 1]] },
+    floor: [
+      { x: -20, z: 3, y: towerLevel(LAUNCHPAD.arms[4]), weapon: ["lance", 2] },
+      { x: 30, z: 4, heal: "medkit" },
+    ],
+  },
+  // The fuel depot south of the crawlerway: the yard among its tanks, the walkways on its pipe
+  // racks, the pump house (the vault) and the loading bay.
+  fuel: {
+    region: "launch",
+    depotOut: 40,
+    front: { tier: 1, unlocks: {} },
+    name: "燃料基地",
+    x: 0,
+    z: 0,
+    trigger: 75,
+    entry: { x: 78, z: -10, yaw: W },
+    squads: [
+      { name: "球形タンク", members: [{ kind: "grunt", x: -26, z: 28, face: N }, { kind: "grunt", x: 2, z: 28, face: N }] },
+      { name: "配管の架台", members: [{ kind: "grunt", x: -20, z: FUEL.alongZ + 0.6, y: FUEL.rack, face: N }, { kind: "drone", x: -10, z: 2 }] },
+      { name: "ポンプ棟", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 5, z: -32, face: E }, { kind: "charger", x: 20, z: -20, face: E }] },
+      { name: "積み込み場", members: [{ kind: "heavy", x: 52, z: 8, face: E }, { kind: "grunt", x: 62, z: -14, face: E }] },
+    ],
+    bins: [
+      { x: 3, z: -34 },
+      { x: -36, z: -18 },
+      { x: -26, z: 12 },
+      { x: 47, z: 24 },
+      { x: 50, z: -30 },
+      { x: -55, z: 5 },
+      { x: FUEL.acrossX + 0.6, z: -20, y: FUEL.rack },
+      { x: 12, z: -32, vault: true },
+    ],
+    keyFrom: "launchpad",
+    loot: { weapon: [["pike", 1], ["hornet", 1], ["talon", 1], ["lance", 1]], armor: [1], heals: 2, valuable: [["fuse", 3], ["wire", 3], ["parts", 2], ["drive", 1]] },
+    floor: [
+      { x: -5, z: 0, heal: "battery" },
+      { x: 10, z: FUEL.alongZ + 0.6, y: FUEL.rack, weapon: ["hornet", 1] },
+    ],
+  },
+  // The tracking radar on its ridge in the plateau's north: the rooms under its three domes, the
+  // middle one's roof, the operations room and the top of its one road.
+  radar: {
+    region: "launch",
+    depotOut: 18,
+    front: { tier: 2, unlocks: {} },
+    name: "追跡レーダー",
+    x: 0,
+    z: 0,
+    trigger: 75,
+    entry: { x: 60, z: 104, yaw: N },
+    squads: [
+      { name: "坂の上", members: [{ kind: "grunt", x: 58, z: 10, face: S }, { kind: "charger", x: 30, z: 14, face: S }] },
+      { name: "西のドーム", members: [{ kind: "grunt", x: -62, z: -4, face: W }, { kind: "drone", x: -45, z: -16 }] },
+      { name: "中のドーム", members: [{ kind: "grunt", x: 7.3, z: RADAR.z - 7.3, y: WORKS.storey, face: S }, { kind: "grunt", x: 20, z: 2, face: S }] },
+      { name: "東のドーム", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 41, z: 0, face: S }, { kind: "drone", x: 30, z: -16 }] },
+    ],
+    bins: [
+      { x: -45, z: -4 },
+      { x: 0, z: -4 },
+      { x: -22, z: 14 },
+      { x: 26, z: 12 },
+      { x: 60, z: 6 },
+      { x: -76, z: 2 },
+      { x: 4, z: RADAR.z - 7.3, y: WORKS.storey },
+      { x: 45, z: -6, vault: true },
+    ],
+    keyFrom: "fuel",
+    loot: { weapon: [["pike", 1], ["lance", 1], ["talon", 1], ["hornet", 1]], armor: [1], heals: 2, valuable: [["board", 3], ["drive", 2], ["gyro", 3], ["wire", 2], ["core", 1]] },
+    floor: [
+      { x: -45, z: 2, heal: "medkit" },
+      { x: -7.3, z: RADAR.z + 7.3, y: WORKS.storey, weapon: ["lance", 2] },
+    ],
+  },
 };
 
 const POI_IDS = Object.keys(POI_DEFS) as PoiId[];
 
 export const POIS: Poi[] = POI_IDS.map((id) => {
-  const { region, depotOut, front, ...p } = POI_DEFS[id];
+  const { region, depotOut, front, coreFrom, ...p } = POI_DEFS[id];
   return placePoi({ id, ...p }, POI_AT[id]);
 });
 
@@ -2106,7 +2664,7 @@ export interface Depot {
 /** A depot's place in `DEPOTS` (and in the run's `depots`), from its POI. */
 export const depotIndex = (poi: PoiId) => DEPOTS.findIndex((d) => d.poi === poi);
 
-export type ExtractId = "ship" | "flare" | "village" | "boat" | "plaza";
+export type ExtractId = "ship" | "flare" | "village" | "boat" | "plaza" | "runway" | "canyon";
 
 /**
  * Ways off the island, open from the landing on; the player picks one by walking to it.
@@ -2139,6 +2697,9 @@ export const EXTRACTS: ExtractPoint[] = [
   { id: "boat", name: "埠頭のボート", short: "ボート", ...at("bay", { x: 105, z: -580 }), radius: 5, hold: 1.5, call: 25, waves: at("bay", { x: 100, z: -563 }), note: "呼んで 25 秒守る。増援が降りてくる" },
   // The city's way off: a pickup at its north end, the far side of the station from both bridges.
   { id: "plaza", name: "北端の回収地点", short: "北端", ...at("city", { x: 80, z: -380 }), radius: 5, hold: 12, note: "街の北の外れ。12 秒待つ" },
+  // The launch site's ways off: a craft called down onto the landing runway, and a wait on the canyon's floor.
+  { id: "runway", name: "滑走路の回収機", short: "滑走路", ...at("launch", { x: -75, z: 0 }), radius: 5, hold: 1.5, call: 25, waves: at("launch", { x: -75, z: 30 }), note: "呼んで 25 秒守る。増援が降りてくる" },
+  { id: "canyon", name: "渓谷の底の回収地点", short: "渓谷", x: -606, z: -185, radius: 5, hold: 15, note: "切り通しから谷底を北へ。15 秒待つ" },
 ];
 export const EXTRACT = EXTRACTS[0];
 
@@ -2556,8 +3117,8 @@ const OUTPOSTS: Hamlet[] = [
   {
     // East of the smelter: the fuel the furnaces and the ships burned. White tanks inside a low
     // bund wall, a pump house, a loading bay under a canopy with a tanker left in it.
-    id: "fuel",
-    name: "燃料基地",
+    id: "harborFuel",
+    name: "油槽所",
     x: 350,
     z: -750,
     boxes: [
@@ -3027,10 +3588,17 @@ export const PACKS: Squad[] = [
     members: [{ kind: "drone", x: 810, z: -200 }, { kind: "drone", x: 810, z: -200 }],
     patrol: [{ x: 810, z: -200 }, { x: 936, z: -240 }, { x: 936, z: -720 }, { x: 936, z: -240 }],
   },
+  // The launch site: up the plateau's west side north of the crawlerway, across the runway's middle
+  // and back round the north, clear of the control centre, the assembly building and the pad.
+  {
+    name: "台地のドローン群",
+    members: [{ kind: "drone", x: -1150, z: 100 }, { kind: "drone", x: -1150, z: 100 }],
+    patrol: [{ x: -1150, z: 100 }, { x: -990, z: -40 }, { x: -960, z: -300 }, { x: -1150, z: -250 }],
+  },
 ];
 
 /** Stable names for the outposts (`OUTPOSTS`): places to loot with a guard squad of their own, not nodes of the front. */
-export type OutpostId = "substation" | "fuel" | "freight" | "wharf" | "engine" | "eastSubstation" | "pumps" | "ringNode" | "harborTown";
+export type OutpostId = "substation" | "harborFuel" | "freight" | "wharf" | "engine" | "eastSubstation" | "pumps" | "ringNode" | "harborTown";
 
 /** The robots' two factions (see FACTION): the network (網) and the rogues that broke off it (野良機). */
 export type Faction = "net" | "rogue";
@@ -3050,9 +3618,10 @@ export interface OutpostSite {
  * (`POI_DEFS`).
  */
 const REGION_DEFS: { [K in RegionId]: Omit<Region, "id" | "pois"> } = {
-  reservoir: { name: "ダム湖", note: "干上がったダム湖の島。拠点 {pois} つ、発着場にタイタン", home: true, entries: ["beach", "checkpoint", "jetty"], exits: ["ship", "flare", "village"], label: { x: -330, z: 300 }, bounds: { x0: WORLD.x0, z0: -340, x1: 600, z1: WORLD.z1 } },
-  harbor: { name: "港湾地帯", note: "干上がった湾の港。拠点 {pois} つ、どこにもヘビーがいる", entries: ["outskirts", "quay", "shore"], reach: [{ from: "reservoir", by: "峠道", to: "outskirts" }, { from: "reservoir", by: "鉄橋", to: "outskirts" }], exits: ["boat"], label: { x: -250, z: -520 }, bounds: { x0: WORLD.x0, z0: WORLD.z0, x1: 600, z1: -380 } },
+  reservoir: { name: "ダム湖", note: "干上がったダム湖の島。拠点 {pois} つ、発着場にタイタン", home: true, entries: ["beach", "checkpoint", "jetty"], exits: ["ship", "flare", "village"], label: { x: -330, z: 300 }, bounds: { x0: -600, z0: -340, x1: 600, z1: WORLD.z1 } },
+  harbor: { name: "港湾地帯", note: "干上がった湾の港。拠点 {pois} つ、どこにもヘビーがいる", entries: ["outskirts", "quay", "shore"], reach: [{ from: "reservoir", by: "峠道", to: "outskirts" }, { from: "reservoir", by: "鉄橋", to: "outskirts" }], exits: ["boat"], label: { x: -250, z: -520 }, bounds: { x0: -600, z0: WORLD.z0, x1: 600, z1: -380 } },
   city: { name: "機械都市", note: "海峡の向こうの機械仕掛けの街。拠点 {pois} つ", entries: ["bridgehead", "railyard"], reach: [{ from: "reservoir", by: "海峡の道路橋", to: "bridgehead" }, { from: "harbor", by: "海峡の鉄道橋", to: "railyard" }], exits: ["plaza"], label: { x: 870, z: -330 }, bounds: { x0: 620, z0: WORLD.z0, x1: WORLD.x1, z1: WORLD.z1 }, ground: true },
+  launch: { name: "発射場", note: "渓谷の向こうの台地にある発射場。拠点 {pois} つ", entries: ["railhead", "cutting"], reach: [{ from: "reservoir", by: "渓谷の鉄道橋", to: "railhead" }, { from: "reservoir", by: "渓谷の切り通し", to: "cutting" }], exits: ["runway", "canyon"], label: { x: -930, z: 20 }, bounds: { x0: WORLD.x0, z0: -600, x1: -575, z1: 620 }, ground: true },
 };
 
 /**
@@ -3157,6 +3726,10 @@ export const MOBILES: Mobile[] = [
   // --- the machine city: down the middles of its streets, so they pass between the elevated line's pillars.
   { name: "大通りの警邏", kind: "patrol", faction: "net", region: "city", members: ["grunt", "drone"], nodes: [[804, -152], [936, -152], [936, -570]] },
   { name: "橋の野良機", kind: "patrol", faction: "rogue", region: "city", rank: 2, members: ["grunt", "charger"], nodes: [[740, -570], [804, -570], [804, -152]] },
+  // --- the launch site: down the plateau's east side between the control centre and the assembly
+  // building, and across its south-east past the fuel depot, both well out from the two crossings.
+  { name: "台地の警邏", kind: "patrol", faction: "net", region: "launch", members: ["grunt", "drone"], nodes: [[-880, -110], [-900, 30], [-940, 90]] },
+  { name: "渓谷の野良機", kind: "patrol", faction: "rogue", region: "launch", rank: 2, members: ["grunt", "charger"], nodes: [[-760, 330], [-820, 450], [-900, 515]] },
 ];
 
 export type DebrisId = "southwest" | "easthill" | "quarryeast" | "townwest" | "eastshore" | "saltwest";
@@ -3199,9 +3772,9 @@ export const DEBRIS_SPOTS: DebrisSpot[] = (
 
 export const debrisIndex = (id: DebrisId) => DEBRIS_SPOTS.findIndex((d) => d.id === id);
 
-export type RegionId = "reservoir" | "harbor" | "city";
+export type RegionId = "reservoir" | "harbor" | "city" | "launch";
 
-export type EntryId = "beach" | "checkpoint" | "jetty" | "outskirts" | "quay" | "shore" | "bridgehead" | "railyard";
+export type EntryId = "beach" | "checkpoint" | "jetty" | "outskirts" | "quay" | "shore" | "bridgehead" | "railyard" | "railhead" | "cutting";
 
 /**
  * A way into a region on foot, out on its open ground: a raid that does not start at a depot
@@ -3228,6 +3801,8 @@ export const ENTRIES: Entry[] = [
   { id: "shore", region: "harbor", name: "西の漁村の浜", x: -340, z: -820, yaw: Math.PI / 2 },
   { id: "bridgehead", region: "city", name: "橋のたもと", x: 680, z: 4, yaw: Math.PI / 2 },
   { id: "railyard", region: "city", name: "貨物ヤード", x: 700, z: -640, yaw: Math.PI / 2 },
+  { id: "railhead", region: "launch", name: "鉄道橋の西詰", x: -688, z: 42, yaw: -Math.PI / 2 },
+  { id: "cutting", region: "launch", name: "切り通しの上", x: -728, z: -102, yaw: -Math.PI / 2 },
 ];
 
 export const entryOf = (id: EntryId): Entry => ENTRIES.find((e) => e.id === id) ?? ENTRIES[0];
@@ -3511,6 +4086,17 @@ export const LANDMARKS: readonly { name: string; x: number; z: number }[] = [
   at("city", { name: "高層街区", x: 64, z: 178 }),
   at("powerplant", { name: "発電所", x: 0, z: 0 }),
   at("powerplant", { name: "冷却塔", x: 10, z: -58 }),
+  at("launch", { name: "発射場", x: -100, z: 120 }),
+  at("launch", { name: "管制センター", x: 100, z: -250 }),
+  at("launch", { name: "組立棟", x: 40, z: 210 }),
+  at("launch", { name: "運搬路", x: -120, z: 242 }),
+  at("launch", { name: "発射台", x: -270, z: 242 }),
+  at("launch", { name: "燃料基地", x: -110, z: 350 }),
+  at("launch", { name: "追跡レーダー", x: -120, z: -390 }),
+  at("launch", { name: "滑走路", x: -75, z: -120 }),
+  { name: "渓谷", x: -606, z: 200 },
+  { name: "渓谷の鉄道橋", x: -614, z: 30 },
+  { name: "切り通し", x: -606, z: -90 },
 ];
 
 /**
@@ -3537,6 +4123,8 @@ export const STOPS: readonly { name: string; x: number; z: number }[] = [
   at("city", { name: "駅前通り", x: -66, z: -20 }),
   at("city", { name: "北の街区", x: 0, z: -205 }),
   at("city", { name: "南の街区", x: -66, z: 200 }),
+  at("launch", { name: "滑走路の西", x: -170, z: 150 }),
+  at("launch", { name: "台地の北", x: -60, z: -280 }),
 ];
 
 /**
@@ -3552,6 +4140,7 @@ export const PARTY_STOPS: Record<RegionId, readonly { name: string; x: number; z
   // The signal box's own middle is its house: the party stands on the open ground south of it.
   harbor: [stopAt("港町"), stopAt("高架下"), stopAt("信号所", 0, 14), stopAt("西の漁村"), stopAt("東の丘の家")],
   city: [stopAt("駅前通り"), stopAt("北の街区"), stopAt("南の街区")],
+  launch: [stopAt("滑走路の西"), stopAt("台地の北")],
 };
 
 /** A party's stop at the stop or hamlet `name`, `dx`, `dz` metres off it. */
@@ -5128,16 +5717,24 @@ const STRAIT_SPANS = [
   { name: "道路橋", x0: 540, x1: 640, z: 0, half: 5, y: 4, piers: [575, 605], rails: false },
   { name: "鉄道橋", x0: 562, x1: 664, z: -640, half: 3.5, y: 3, piers: [592, 622], rails: true },
 ] as const;
+/**
+ * The rail bridge over the dry canyon to the launch site, built as the strait's spans are: the
+ * rail spur's embankment (terrain.ts) carries the line up to its east end, the plateau's edge
+ * holds its west end, and its piers stand on the canyon's floor.
+ */
+const CANYON_SPANS = [{ name: "渓谷の鉄道橋", x0: -662, x1: -566, z: 30, half: 3.5, y: LEVEL.plateau, piers: [-618, -594], rails: true }] as const;
+/** Every span over a natural border, with the floor its piers stand on. */
+const SPANS = [...STRAIT_SPANS.map((sp) => ({ ...sp, base: -12 })), ...CANYON_SPANS.map((sp) => ({ ...sp, base: LEVEL.canyon }))];
 /** How far each end of a span rests on its bank, pressed flat at its level. */
 const SPAN_REST = 10;
-const STRAIT_BRIDGES: Box[] = STRAIT_SPANS.flatMap(({ x0, x1, z, half, y, piers, rails }) => {
+const SPAN_BRIDGES: Box[] = SPANS.flatMap(({ x0, x1, z, half, y, piers, rails, base }) => {
   FLAT.push({ x0: x0 - 12, z0: z - half - 3, x1: x0 + SPAN_REST, z1: z + half + 3, y }, { x0: x1 - SPAN_REST, z0: z - half - 3, x1: x1 + 12, z1: z + half + 3, y });
   const [r0, r1] = [x0 + SPAN_REST, x1 - SPAN_REST];
   return [
     bridge(x0, z - half, x1, z + half, y),
     rect(r0, z - half, r1, z - half + 0.3, y, y + 1.1, "steel", 2),
     rect(r0, z + half - 0.3, r1, z + half, y, y + 1.1, "steel", 2),
-    ...piers.map((px) => rect(px - 2, z - half + 0.6, px + 2, z + half - 0.6, -12, y - 0.3, "tower", 0)),
+    ...piers.map((px) => rect(px - 2, z - half + 0.6, px + 2, z + half - 0.6, base, y - 0.3, "tower", 0)),
     ...(rails ? [-0.75, 0.75].map((dz) => rect(x0, z + dz - 0.08, x1, z + dz + 0.08, y, y + 0.12, "steel", 2)) : []),
   ];
 });
@@ -5145,7 +5742,7 @@ const STRAIT_BRIDGES: Box[] = STRAIT_SPANS.flatMap(({ x0, x1, z, half, y, piers,
 /**
  * Walkways that the ground's path finding (nav.ts for the bot, hunt.ts for routed robots)
  * treats as ground at height `y`: the railway bridge's deck over the gorge and the spans over
- * the dried strait, between their railings. Everything else built up off the ground is out of their reach.
+ * the dried strait and the dry canyon, between their railings. Everything else built up off the ground is out of their reach.
  */
 export interface Deck {
   x0: number;
@@ -5156,7 +5753,7 @@ export interface Deck {
 }
 export const DECKS: Deck[] = [
   ...placeIn("railway", [rect(120.2, -201.5, 123.8, -178.5, 0, 0, "slab")]).map((b) => ({ x0: b.x0, z0: b.z0, x1: b.x1, z1: b.z1, y: LEVEL.rail })),
-  ...STRAIT_SPANS.map(({ x0, x1, z, half, y }) => ({ x0, z0: z - half + 0.3, x1, z1: z + half - 0.3, y })),
+  ...SPANS.map(({ x0, x1, z, half, y }) => ({ x0, z0: z - half + 0.3, x1, z1: z + half - 0.3, y })),
 ];
 
 /**
@@ -5261,6 +5858,16 @@ const AUTHORED: Box[] = [
   ...onLevel(LEVEL.city, place(POI_AT.highrise[0], POI_AT.highrise[1], highrise())),
   ...onLevel(LEVEL.powerplant, placeIn("powerplant", powerplant())),
   ...onLevel(LEVEL.city, placeIn("city", city())),
+  // --- the launch site
+  ...onFloors(POI_AT.control[0], POI_AT.control[1], control()),
+  ...onLevel(LEVEL.plateau, placeIn("launch", runway())),
+  ...onLevel(LEVEL.plateau, place(POI_AT.assembly[0], POI_AT.assembly[1], assembly())),
+  ...onFloors(POI_AT.launchpad[0], POI_AT.launchpad[1], launchpad()),
+  // The crawlerway's banks and the crawler stopped on it halfway to the pad.
+  ...onLevel(LEVEL.plateau, crawlerBanks(POI_AT.assembly[0] - VAB.w / 2, POI_AT.launchpad[0] + 95, POI_AT.assembly[1] + VAB.door.z, 15)),
+  ...onLevel(LEVEL.plateau, crawler(POI_AT.assembly[0] - VAB.w / 2 - 120, POI_AT.assembly[1] + VAB.door.z)),
+  ...onLevel(LEVEL.plateau, place(POI_AT.fuel[0], POI_AT.fuel[1], fuelDepot())),
+  ...onLevel(LEVEL.radarRidge, place(POI_AT.radar[0], POI_AT.radar[1], radar())),
 ];
 
 /**
@@ -5290,11 +5897,30 @@ interface Keep {
 
 /**
  * Roads that are the only ways between areas: the way between the regions, the ramps into the
- * lakebed, the quarry and the harbor's bay, and the ways up the pad, the mesa and the fields.
+ * lakebed, the quarry and the harbor's bay, the ways up the pad, the mesa and the fields, and the
+ * ways over the dry canyon and down into the control centre's sunk yard.
  * Cover is kept off them, and they are pressed to their own floor along their middle, so no
  * rock or building nearby can close them.
  */
-const KEPT_ROADS = ["湖への坂", "湖の西坂", "東の坂", "発着場の西坂", "採掘場の運搬路", "中段への坂", "底への坂", "採掘場の坑道", "台地への道", "台地の坂", "村の坂", "峠道", "鉄道の土手（南）", "鉄道の土手（北）", "駅の坂", "高架下", "西の道", "製錬所の坂", "塩田への坂", "ヤードの北道", "製錬所の北道", "岬の坂", "斜路"];
+const KEPT_ROADS = ["湖への坂", "湖の西坂", "東の坂", "発着場の西坂", "採掘場の運搬路", "中段への坂", "底への坂", "採掘場の坑道", "台地への道", "台地の坂", "村の坂", "峠道", "鉄道の土手（南）", "鉄道の土手（北）", "駅の坂", "高架下", "西の道", "製錬所の坂", "塩田への坂", "ヤードの北道", "製錬所の北道", "岬の坂", "斜路", "引き込み線の土手", "切り通し", "管制室の坂", "発射台の坂", "レーダーの坂"];
+
+/**
+ * The quarry's wider iron stairs, in its frame: each from (x, z) on its floor toward the wall it
+ * climbs, to the terrace above or (no `top`) the open ground round the quarry. With the haul road,
+ * the ramps, the tunnel, the narrow stairs and the lifts (`QUARRY_LIFTS`) they are the quarry's
+ * ways up, which the sim gate walks (`checkQuarryExits()`).
+ */
+export const QUARRY_EXITS: readonly { name: string; x: number; z: number; toward: Side; base: number; top?: number }[] = [
+  { name: "上段から南西へ", x: -90, z: 50, toward: "s", base: LEVEL.quarryTop },
+  { name: "上段から南東へ", x: 70, z: 55, toward: "s", base: LEVEL.quarryTop },
+  { name: "上段から東へ", x: 105, z: -30, toward: "e", base: LEVEL.quarryTop },
+  { name: "上段から西へ", x: -108, z: -20, toward: "w", base: LEVEL.quarryTop },
+  { name: "上段から北西へ", x: -60, z: -52, toward: "n", base: LEVEL.quarryTop },
+  { name: "中段から東へ", x: 62, z: 12, toward: "e", base: LEVEL.quarryMid, top: LEVEL.quarryTop },
+  { name: "中段から北へ", x: 40, z: -15, toward: "n", base: LEVEL.quarryMid, top: LEVEL.quarryTop },
+  { name: "底から南へ", x: -20, z: 32, toward: "s", base: LEVEL.pit, top: LEVEL.quarryMid },
+  { name: "底から北へ", x: -5, z: 6, toward: "n", base: LEVEL.pit, top: LEVEL.quarryMid },
+];
 
 /** Every authored point (with the room it needs), patrol leg and kept road. */
 function authoredKeep(): Keep {
@@ -5327,29 +5953,52 @@ function authoredKeep(): Keep {
   // The boat's point keeps less flat ground round it: the channel's water starts a few metres off.
   for (const x of EXTRACTS) points.push({ x: x.x, z: x.z, r: x.id === "boat" ? 6 : 10 });
   for (const e of ENTRIES) points.push({ x: e.x, z: e.z, r: 6 });
+  // The feet of the quarry's iron stairs stay open: cover there would shut a way up out of a terrace.
+  for (const q of QUARRY_EXITS) points.push({ x: q.x + POI_AT.quarry[0], z: q.z + POI_AT.quarry[1], r: 6 });
   return { points, segments };
 }
 
 /**
  * The ground scattered with cover, each region with its own seed and grid (`step`, metres
- * between candidate spots), so that adding to one region leaves the other's cover as it was.
+ * between candidate spots), so that adding to one region leaves the other's cover as it was:
+ * the spots lie on whole multiples of `step` (not on the bounds), each spot draws its own
+ * random numbers from the seed and its place on the grid, each region's pieces keep clear only
+ * of each other, and every piece stays inside its region's bounds (`checkScatterApart()`).
  * On the salt flats only one candidate in two
  * stands, and only a container, a truck or a rock: the most open ground, yet with a wreck to get behind
  * a few steps away, since in the open a robot's burst lands. The
  * channel, under water, gets none.
  */
-const SCATTER: { x0: number; x1: number; z0: number; z1: number; seed: number; step: number; urban?: true }[] = [
-  { x0: WORLD.x0, x1: 600, z0: -350, z1: WORLD.z1, seed: 7_332, step: 13 },
-  { x0: WORLD.x0, x1: 600, z0: WORLD.z0, z1: -351, seed: 4_517, step: 14 },
+const SCATTER: { region: RegionId; x0: number; x1: number; z0: number; z1: number; seed: number; step: number; urban?: true }[] = [
+  { region: "reservoir", x0: -600, x1: 600, z0: -350, z1: WORLD.z1, seed: 7_332, step: 13 },
+  { region: "harbor", x0: -600, x1: 600, z0: WORLD.z0, z1: -351, seed: 4_517, step: 14 },
+  // The launch site's plateau, west of the canyon.
+  { region: "launch", x0: WORLD.x0, x1: -601, z0: WORLD.z0, z1: WORLD.z1, seed: 6_211, step: 15 },
   // The machine city's ground: only what a city's streets are left with (`urbanAt()`).
-  { x0: 620, x1: WORLD.x1, z0: WORLD.z0, z1: WORLD.z1, seed: 9_173, step: 14, urban: true },
+  { region: "city", x0: 620, x1: WORLD.x1, z0: WORLD.z0, z1: WORLD.z1, seed: 9_173, step: 14, urban: true },
 ];
+/** Each region's scattered ground: what `checkBetweenApart()` holds still while another region changes. */
+export const SCATTER_AREAS: readonly { region: RegionId; x0: number; x1: number; z0: number; z1: number }[] = SCATTER;
 /** Where cover is sparse: the salt flats, and the supply depot's dune coast, whose dunes are its cover. */
 const SPARSE = new Set(["塩田", "補給所"]);
 /** The harbor's channel, which holds water: nothing is scattered in it. */
 const WATER = "水路";
 /** The ground between the basins and roads (terrain.ts). */
 const BETWEEN = "野";
+/**
+ * Ground left bare: the launch site's runway, where the pickup craft lands, the crawlerway the
+ * rocket rode out on, the assembly building's floor (inside it too), the launch pad's deck and trench,
+ * the fuel depot's yard and the radar's ridge and its road.
+ */
+const BARE = new Set(["滑走路", "運搬路", "組立棟の床", "発射台", "発射台の坂", "炎の溝", "燃料基地の床", "追跡レーダーの尾根", "レーダーの坂"]);
+/** The first state of a scatter spot's own random stream, from its region's seed and its place on the grid. */
+function spotSeed(seed: number, kx: number, kz: number): number {
+  let h = Math.imul(seed ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(kx | 0, 0xc2b2ae35) ^ Math.imul(kz | 0, 0x27d4eb2f);
+  h = Math.imul(h ^ (h >>> 16), 0x7feb352d);
+  h = Math.imul(h ^ (h >>> 15), 0x846ca68b);
+  h ^= h >>> 16;
+  return 1 + ((h >>> 0) % 2147483646);
+}
 /** Where on the ground between the cover clumps: above 0.55 in blobs about a hundred metres across. */
 const clump = (x: number, z: number) => 0.5 + 0.25 * Math.sin(x / 37 + 1.3) * Math.sin(z / 41 + 0.7) + 0.25 * Math.sin((x + z) / 53);
 
@@ -5380,14 +6029,13 @@ class Near<T> {
 }
 
 /**
- * What a scattered piece must keep clear of, by square: the authored boxes, the pieces already
- * placed, the authored points with their room, and the kept roads and patrol legs as the points
+ * What a scattered piece must keep clear of, by square: the authored boxes, the authored points
+ * with their room, and the kept roads and patrol legs as the points
  * along them a piece must stay 2.5 m from. Each is filed under the squares its own box (with the
  * room it keeps) touches, so a piece is tested against exactly the things it could crowd.
  */
 interface Clearance {
   authored: Near<Box>;
-  laid: Near<Box>;
   points: Near<Keep["points"][number]>;
   along: Near<{ x: number; z: number }>;
 }
@@ -5400,43 +6048,54 @@ function depotSpot(p: Poi): { x: number; z: number } {
   return { x: +(p.entry.x + (ax / len) * POI_DEFS[p.id].depotOut).toFixed(1), z: +(p.entry.z + (az / len) * POI_DEFS[p.id].depotOut).toFixed(1) };
 }
 
-function scatterCover(authored: Box[], { points, segments }: Keep): Box[] {
-  const near: Clearance = { authored: new Near(), laid: new Near(), points: new Near(), along: new Near() };
-  for (const b of authored) near.authored.add(b.x0, b.z0, b.x1, b.z1, b);
+/**
+ * What the scattered pieces keep clear of. With `within`, only what lies near those bounds is
+ * filed: a region's cover worked out from that alone must be the same as from all of it.
+ */
+function clearance(authored: Box[], { points, segments }: Keep, within?: { x0: number; z0: number; x1: number; z1: number }): Clearance {
+  const m = 12;
+  const nearBy = (x0: number, z0: number, x1: number, z1: number) => !within || (x1 > within.x0 - m && x0 < within.x1 + m && z1 > within.z0 - m && z0 < within.z1 + m);
+  const near: Clearance = { authored: new Near(), points: new Near(), along: new Near() };
+  for (const b of authored) if (nearBy(b.x0, b.z0, b.x1, b.z1)) near.authored.add(b.x0, b.z0, b.x1, b.z1, b);
   // Each depot keeps room round it and round the start behind it.
   const depots = POIS.map((p) => ({ ...depotSpot(p), r: 6 }));
   // The camp's yard keeps clear: a circle round it, out past its corners.
   const yard = { x: CAMP_AT[0], z: CAMP_AT[1], r: hypot2(CAMP_HALF.x, CAMP_HALF.z) + 1 };
   // Where a raid stops and where hunting parties stand stay open too, without pressing the ground.
   const stops = [...STOPS, ...Object.values(PARTY_STOPS).flat()].map((q) => ({ x: q.x, z: q.z, r: 8 }));
-  for (const q of [...points, ...depots, ...stops, yard]) near.points.add(q.x - q.r, q.z - q.r, q.x + q.r, q.z + q.r, q);
+  const room = (q: { x: number; z: number; r: number }) => {
+    if (nearBy(q.x - q.r, q.z - q.r, q.x + q.r, q.z + q.r)) near.points.add(q.x - q.r, q.z - q.r, q.x + q.r, q.z + q.r, q);
+  };
+  for (const q of [...points, ...depots, ...stops, yard]) room(q);
   // A trench's line keeps cover off as far as its walls may lower the ground.
   for (const c of [TUNNEL, GALLERY]) {
     const [[ax, az], [bx, bz]] = c.line;
     const n = Math.ceil(hypot2(bx - ax, bz - az));
     const r = c.floor + TRENCH_ROOM;
-    for (let k = 0; k <= n; k++) {
-      const x = ax + ((bx - ax) * k) / n;
-      const z = az + ((bz - az) * k) / n;
-      near.points.add(x - r, z - r, x + r, z + r, { x, z, r });
-    }
+    for (let k = 0; k <= n; k++) room({ x: ax + ((bx - ax) * k) / n, z: az + ((bz - az) * k) / n, r });
   }
   for (const sg of segments) {
     const n = Math.max(1, Math.ceil(hypot2(sg.bx - sg.ax, sg.bz - sg.az)));
     for (let k = 0; k <= n; k++) {
       const x = sg.ax + ((sg.bx - sg.ax) * k) / n;
       const z = sg.az + ((sg.bz - sg.az) * k) / n;
-      near.along.add(x - 2.5, z - 2.5, x + 2.5, z + 2.5, { x, z });
+      if (nearBy(x - 2.5, z - 2.5, x + 2.5, z + 2.5)) near.along.add(x - 2.5, z - 2.5, x + 2.5, z + 2.5, { x, z });
     }
   }
-  const placed: Box[] = [];
-  for (const area of SCATTER) placed.push(...scatterArea(near, area));
-  return placed;
+  return near;
+}
+
+/** Each region's scattered cover, in `SCATTER`'s order. */
+function scatterCover(authored: Box[], keep: Keep): Box[][] {
+  const near = clearance(authored, keep);
+  return SCATTER.map((area) => scatterArea(near, area));
 }
 
 function scatterArea(near: Clearance, area: (typeof SCATTER)[number]): Box[] {
   let seed = area.seed;
   const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  // The pieces already placed in this region, which a later one keeps clear of.
+  const laid = new Near<Box>();
 
   const len = (a: number, b: number) => a + rnd() * (b - a);
   // Set pieces in real sizes, each a group of boxes written along u (its length) and v (across),
@@ -5609,16 +6268,21 @@ function scatterArea(near: Clearance, area: (typeof SCATTER)[number]): Box[] {
     return [box(x, z, 2.6 + rnd() * 2.5, 2.6 + rnd() * 2.5, 1.5 + rnd() * 1.5, "rock", Math.floor(rnd() * 2))];
   };
   const placed: Box[] = [];
-  // Candidates on a grid from 11 m inside the area's bounds, each nudged at random: set pieces
-  // up to 10 m across, few enough that the open ground reads as open.
+  // Candidates on a grid of whole multiples of the step from 11 m inside the area's bounds, each
+  // nudged at random: set pieces up to 10 m across, few enough that the open ground reads as open.
+  // Each draws from its own stream, so what one spot draws never shifts another's.
   const edge = 11;
-  for (let gx = area.x0 + edge; gx <= area.x1 - edge; gx += area.step)
-    for (let gz = area.z0 + edge; gz <= area.z1 - edge; gz += area.step) {
+  const keep = 1.25;
+  for (let kx = Math.ceil((area.x0 + edge) / area.step); kx * area.step <= area.x1 - edge; kx++)
+    for (let kz = Math.ceil((area.z0 + edge) / area.step); kz * area.step <= area.z1 - edge; kz++) {
+      const gx = kx * area.step;
+      const gz = kz * area.step;
+      seed = spotSeed(area.seed, kx, kz);
       const x = gx + (rnd() - 0.5) * 7;
       const z = gz + (rnd() - 0.5) * 7;
       const at = surfaceAt(x, z);
       const sparse = SPARSE.has(at);
-      if ((sparse && rnd() > 0.5) || at === WATER) continue;
+      if ((sparse && rnd() > 0.5) || at === WATER || BARE.has(at)) continue;
       // The streets' asphalt stays clear. On the ground between the areas, cover gathers along
       // the streets (what was left by the roadside) and in a few clumps a hundred metres or so
       // across away from them: open country to cross, broken by places to break the sightline.
@@ -5635,14 +6299,15 @@ function scatterArea(near: Clearance, area: (typeof SCATTER)[number]): Box[] {
       const ok = piece.every(
         (b) =>
           near.authored.every(b.x0 - 3, b.z0 - 3, b.x1 + 3, b.z1 + 3, clear(b, 3)) &&
-          near.laid.every(b.x0 - 2.5, b.z0 - 2.5, b.x1 + 2.5, b.z1 + 2.5, clear(b, 2.5)) &&
+          b.x0 >= area.x0 + keep && b.x1 <= area.x1 - keep && b.z0 >= area.z0 + keep && b.z1 <= area.z1 - keep &&
+          laid.every(b.x0 - 2.5, b.z0 - 2.5, b.x1 + 2.5, b.z1 + 2.5, clear(b, 2.5)) &&
           near.points.every(b.x0, b.z0, b.x1, b.z1, (q) => distToBox(b, q.x, q.z) > q.r) &&
           near.along.every(b.x0, b.z0, b.x1, b.z1, (q) => distToBox(b, q.x, q.z) >= 2.5) &&
           [[b.x0, b.z0], [b.x1, b.z0], [b.x0, b.z1], [b.x1, b.z1], [(b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2]].every(([px, pz]) => offStreet(px, pz) > 0.8),
       );
       if (ok) {
         placed.push(...piece);
-        for (const b of piece) near.laid.add(b.x0, b.z0, b.x1, b.z1, b);
+        for (const b of piece) laid.add(b.x0, b.z0, b.x1, b.z1, b);
       }
     }
   return placed;
@@ -5791,23 +6456,6 @@ buildTerrain([
  * runs under the middle terrace (a portal at its foot); the stone steps between the fields; and
  * the drowned town's roofs sticking out of the mud banks.
  */
-/**
- * The quarry's wider iron stairs, in its frame: each from (x, z) on its floor toward the wall it
- * climbs, to the terrace above or (no `top`) the open ground round the quarry. With the haul road,
- * the ramps, the tunnel, the narrow stairs and the lifts (`QUARRY_LIFTS`) they are the quarry's
- * ways up, which the sim gate walks (`checkQuarryExits()`).
- */
-export const QUARRY_EXITS: readonly { name: string; x: number; z: number; toward: Side; base: number; top?: number }[] = [
-  { name: "上段から南西へ", x: -90, z: 50, toward: "s", base: LEVEL.quarryTop },
-  { name: "上段から南東へ", x: 70, z: 55, toward: "s", base: LEVEL.quarryTop },
-  { name: "上段から東へ", x: 105, z: -30, toward: "e", base: LEVEL.quarryTop },
-  { name: "上段から西へ", x: -108, z: -20, toward: "w", base: LEVEL.quarryTop },
-  { name: "上段から北西へ", x: -60, z: -52, toward: "n", base: LEVEL.quarryTop },
-  { name: "中段から東へ", x: 62, z: 12, toward: "e", base: LEVEL.quarryMid, top: LEVEL.quarryTop },
-  { name: "中段から北へ", x: 40, z: -15, toward: "n", base: LEVEL.quarryMid, top: LEVEL.quarryTop },
-  { name: "底から南へ", x: -20, z: 32, toward: "s", base: LEVEL.pit, top: LEVEL.quarryMid },
-  { name: "底から北へ", x: -5, z: 6, toward: "n", base: LEVEL.pit, top: LEVEL.quarryMid },
-];
 
 /**
  * The quarry's lifts, in its frame: cables from its floor straight up over the terraces to the
@@ -5885,6 +6533,17 @@ const LAID: Box[] = (() => {
   out.push(...placeIn("anchor", [...tetherPiece(far), ...tetherPiece(west)]));
   const [sx, sz] = inArea("anchor", -196, 3.5);
   out.push(...stairs(sx, sz, "s", 3, west.back, 1, terrainHeight(sx, sz + 9)));
+  // The radar ridge's back way: rock steps up its west end from the plateau, between boulders.
+  {
+    const [rx, rz] = POI_AT.radar;
+    let lx = rx - 110;
+    while (terrainHeight(lx, rz) < LEVEL.radarRidge - 0.15) lx += 0.25;
+    let g = terrainHeight(lx - 3, rz);
+    g = terrainHeight(lx - (stepsFor(LEVEL.radarRidge - g) + 1) * STEP_DEPTH, rz);
+    const run = (stepsFor(LEVEL.radarRidge - g) + 1) * STEP_DEPTH;
+    out.push(...paint(stairs(lx, rz, "w", 3, LEVEL.radarRidge, 1, g), "step", "rock", () => 1));
+    out.push(rect(lx - run * 0.7, rz - 4.2, lx - run * 0.3, rz - 2.5, g - 0.5, g + 2.2, "rock", 0), rect(lx - run * 0.5, rz + 2.5, lx - run * 0.1, rz + 4.6, g - 0.5, g + 4.5, "rock", 1));
+  }
   return out;
 })();
 
@@ -5912,7 +6571,7 @@ function outpost(name: string): Hamlet {
 }
 const SUBSTATION = outpost("変電所");
 const EAST_SUBSTATION = outpost("東の変電所");
-const FUEL_DEPOT = outpost("燃料基地");
+const FUEL_DEPOT = outpost("油槽所");
 const ENGINE_DEPOT = outpost("保線基地");
 const PUMPS = outpost("揚水ポンプ場");
 /**
@@ -6090,7 +6749,7 @@ const FENCES: { name: string; line: [number, number][] }[] = [
 export const GATES: { name: string; x: number; z: number }[] = [];
 const FENCE_RUNS: Box[] = (() => {
   const out: Box[] = [];
-  const standing = [...AUTHORED, ...BRIDGE, ...RAILWAY, ...STRAIT_BRIDGES, ...QUAY, ...LAID, ...WORKS_LINES].filter((b) => b.y0 < terrainHeight((b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2) + 3);
+  const standing = [...AUTHORED, ...BRIDGE, ...RAILWAY, ...SPAN_BRIDGES, ...QUAY, ...LAID, ...WORKS_LINES].filter((b) => b.y0 < terrainHeight((b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2) + 3);
   const roads = KEPT_ROADS.flatMap((name) => {
     const line = roadLine(name);
     return line.slice(1).map((q, k) => [line[k], q] as const);
@@ -6387,7 +7046,7 @@ const TOWN_SPUR_FALL: Box[] = (() => {
 })();
 
 /** Everything placed by hand or laid by rule before the streets are lined: what `scripts/ringfall-roads.ts` routes them round. */
-export const PLACED: Box[] = [...AUTHORED, ...BRIDGE, ...RAILWAY, ...STRAIT_BRIDGES, ...QUAY, ...LAID, ...WORKS_LINES, ...FENCE_RUNS, ...RING_RUNS, ...CRATER_FLOOR, ...TOWN_SPUR_FALL];
+export const PLACED: Box[] = [...AUTHORED, ...BRIDGE, ...RAILWAY, ...SPAN_BRIDGES, ...QUAY, ...LAID, ...WORKS_LINES, ...FENCE_RUNS, ...RING_RUNS, ...CRATER_FLOOR, ...TOWN_SPUR_FALL];
 /**
  * What lines the streets (streets.ts), laid on the ground once it is built: lamp posts along every
  * length on alternate sides, a signpost where each street leaves its first junction, and traffic
@@ -6541,6 +7200,12 @@ export const FRONT_LINKS: readonly (readonly ["camp" | NodeId, NodeId])[] = [
   ["highrise", "terminal"],
   ["terminal", "powerplant"],
   ["powerplant", "robotworks"],
+  ["quarry", "control"],
+  ["control", "assembly"],
+  ["assembly", "launchpad"],
+  ["assembly", "fuel"],
+  ["assembly", "radar"],
+  ["station", "fuel"],
 ];
 for (const id of POI_IDS) if (!POI_DEFS[id].boss && !FRONT_LINKS.some((l) => l.includes(id as NodeId))) throw new Error(`node ${id} has no link in FRONT_LINKS`);
 
@@ -6615,14 +7280,18 @@ function coreSpot(x: number, z: number, near: Box[]): { x: number; y: number; z:
 }
 
 /** The front's nodes: the freeable POIs in `POIS` order. */
-export const NODES: FrontNode[] = POIS.filter((p) => !p.boss).map((p): FrontNode => ({
-  id: p.id as NodeId,
-  name: p.name,
-  region: poiRegion(p.id).id,
-  x: p.x,
-  z: p.z,
-  core: coreSpot(p.x, p.z, [...BUILT, ...CAMP_BOXES].filter((b) => b.x1 > p.x - 70 && b.x0 < p.x + 70 && b.z1 > p.z - 70 && b.z0 < p.z + 70)),
-}));
+export const NODES: FrontNode[] = POIS.filter((p) => !p.boss).map((p): FrontNode => {
+  const from = POI_DEFS[p.id].coreFrom;
+  const [cx, cz] = from ? [POI_AT[p.id][0] + from.x, POI_AT[p.id][1] + from.z] : [p.x, p.z];
+  return {
+    id: p.id as NodeId,
+    name: p.name,
+    region: poiRegion(p.id).id,
+    x: p.x,
+    z: p.z,
+    core: coreSpot(cx, cz, [...BUILT, ...CAMP_BOXES].filter((b) => b.x1 > cx - 70 && b.x0 < cx + 70 && b.z1 > cz - 70 && b.z0 < cz + 70)),
+  };
+});
 
 /** A node's place in `NODES` (and in the run's per-node state), from its id; -1 for none. */
 export const nodeIndex = (id: string) => NODES.findIndex((n) => n.id === id);
@@ -6688,9 +7357,42 @@ const ZIP_KEEP: Keep["segments"] = ZIPS.flatMap((l) => l.pts.slice(1).map((q, i)
 
 // The camp comes last: what was laid before it keeps its place in the list (the cover spots, the walkers' grids).
 // The cores keep the scattered cover off the ground they are taken from, and come after the camp; the ziplines' masts and pylons after them.
+/** What the scattered cover keeps clear of. */
+const COVER_AROUND: Box[] = [...BUILT, ...CAMP_BOXES, ...CORE_BOXES, ...ZIP_LAYOUT.boxes];
+const COVER_KEEP: Keep = { points: [...KEEP.points, ...NODES.map((n) => ({ x: n.core.x, z: n.core.z, r: 6 }))], segments: [...KEEP.segments, ...ZIP_KEEP] };
+/** The scattered cover, by `SCATTER` area. */
+const COVER: Box[][] = scatterCover(COVER_AROUND, COVER_KEEP);
+
+/**
+ * For the sim gate: each region's scattered cover worked out from only what lies in or near its
+ * own bounds is the same as worked out with the whole world, so nothing elsewhere moves it.
+ * With the ground between settled apart by region (`checkBetweenApart()` in terrain.ts), adding to
+ * one region leaves every other region's cover as it was. Null when they agree, else where not.
+ */
+export function checkScatterApart(): string | null {
+  for (let a = 0; a < SCATTER.length; a++) {
+    const area = SCATTER[a];
+    const alone = scatterArea(clearance(COVER_AROUND, COVER_KEEP, area), area);
+    const all = COVER[a];
+    const key = (b: Box) => `${b.kind}${b.tint}:${b.x0},${b.z0},${b.x1},${b.z1},${b.y0},${b.h}`;
+    if (alone.length !== all.length || alone.some((b, i) => key(b) !== key(all[i]))) return `scatter area ${a} (seed ${area.seed}): ${all.length} pieces with the world, ${alone.length} worked out alone`;
+    const out = all.find((b) => b.x0 < area.x0 || b.x1 > area.x1 || b.z0 < area.z0 || b.z1 > area.z1);
+    if (out) return `scatter area ${a} (seed ${area.seed}): a piece at ${out.x0},${out.z0} lies outside its bounds`;
+  }
+  return null;
+}
+
+/** A fingerprint of each scatter area's cover, for seeing which regions' cover a change moved. */
+export const scatterPrints = (): string[] =>
+  COVER.map((c) => {
+    let h = 0;
+    for (const b of c) for (const v of [b.x0, b.z0, b.x1, b.z1, b.y0, b.h]) h = (Math.imul(h, 31) + Math.round(v * 1000)) | 0;
+    return `${SCATTER[COVER.indexOf(c)].region} ${c.length}:${(h >>> 0).toString(16)}`;
+  });
+
 export const BOXES: Box[] = [
   ...BUILT,
-  ...scatterCover([...BUILT, ...CAMP_BOXES, ...CORE_BOXES, ...ZIP_LAYOUT.boxes], { points: [...KEEP.points, ...NODES.map((n) => ({ x: n.core.x, z: n.core.z, r: 6 }))], segments: [...KEEP.segments, ...ZIP_KEEP] }),
+  ...COVER.flat(),
   ...CAMP_BOXES,
   ...CORE_BOXES,
   ...ZIP_LAYOUT.boxes,
