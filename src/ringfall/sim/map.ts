@@ -5476,20 +5476,25 @@ function authoredKeep(): Keep {
 
 /**
  * The ground scattered with cover, each region with its own seed and grid (`step`, metres
- * between candidate spots), so that adding to one region leaves the other's cover as it was.
+ * between candidate spots), so that adding to one region leaves the other's cover as it was:
+ * the spots lie on whole multiples of `step` (not on the bounds), each spot draws its own
+ * random numbers from the seed and its place on the grid, each region's pieces keep clear only
+ * of each other, and every piece stays inside its region's bounds (`checkScatterApart()`).
  * On the salt flats only one candidate in two
  * stands, and only a container, a truck or a rock: the most open ground, yet with a wreck to get behind
  * a few steps away, since in the open a robot's burst lands. The
  * channel, under water, gets none.
  */
-const SCATTER: { x0: number; x1: number; z0: number; z1: number; seed: number; step: number; urban?: true }[] = [
-  { x0: -600, x1: 600, z0: -350, z1: WORLD.z1, seed: 7_332, step: 13 },
-  { x0: -600, x1: 600, z0: WORLD.z0, z1: -351, seed: 4_517, step: 14 },
+const SCATTER: { region: RegionId; x0: number; x1: number; z0: number; z1: number; seed: number; step: number; urban?: true }[] = [
+  { region: "reservoir", x0: -600, x1: 600, z0: -350, z1: WORLD.z1, seed: 7_332, step: 13 },
+  { region: "harbor", x0: -600, x1: 600, z0: WORLD.z0, z1: -351, seed: 4_517, step: 14 },
   // The launch site's plateau, west of the canyon.
-  { x0: WORLD.x0, x1: -601, z0: WORLD.z0, z1: WORLD.z1, seed: 6_211, step: 15 },
+  { region: "launch", x0: WORLD.x0, x1: -601, z0: WORLD.z0, z1: WORLD.z1, seed: 6_211, step: 15 },
   // The machine city's ground: only what a city's streets are left with (`urbanAt()`).
-  { x0: 620, x1: WORLD.x1, z0: WORLD.z0, z1: WORLD.z1, seed: 9_173, step: 14, urban: true },
+  { region: "city", x0: 620, x1: WORLD.x1, z0: WORLD.z0, z1: WORLD.z1, seed: 9_173, step: 14, urban: true },
 ];
+/** Each region's scattered ground: what `checkBetweenApart()` holds still while another region changes. */
+export const SCATTER_AREAS: readonly { region: RegionId; x0: number; x1: number; z0: number; z1: number }[] = SCATTER;
 /** Where cover is sparse: the salt flats, and the supply depot's dune coast, whose dunes are its cover. */
 const SPARSE = new Set(["塩田", "補給所"]);
 /** The harbor's channel, which holds water: nothing is scattered in it. */
@@ -5498,6 +5503,14 @@ const WATER = "水路";
 const BETWEEN = "野";
 /** Ground left bare: the launch site's runway, where the pickup craft lands. */
 const RUNWAY = "滑走路";
+/** The first state of a scatter spot's own random stream, from its region's seed and its place on the grid. */
+function spotSeed(seed: number, kx: number, kz: number): number {
+  let h = Math.imul(seed ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(kx | 0, 0xc2b2ae35) ^ Math.imul(kz | 0, 0x27d4eb2f);
+  h = Math.imul(h ^ (h >>> 16), 0x7feb352d);
+  h = Math.imul(h ^ (h >>> 15), 0x846ca68b);
+  h ^= h >>> 16;
+  return 1 + ((h >>> 0) % 2147483646);
+}
 /** Where on the ground between the cover clumps: above 0.55 in blobs about a hundred metres across. */
 const clump = (x: number, z: number) => 0.5 + 0.25 * Math.sin(x / 37 + 1.3) * Math.sin(z / 41 + 0.7) + 0.25 * Math.sin((x + z) / 53);
 
@@ -5528,14 +5541,13 @@ class Near<T> {
 }
 
 /**
- * What a scattered piece must keep clear of, by square: the authored boxes, the pieces already
- * placed, the authored points with their room, and the kept roads and patrol legs as the points
+ * What a scattered piece must keep clear of, by square: the authored boxes, the authored points
+ * with their room, and the kept roads and patrol legs as the points
  * along them a piece must stay 2.5 m from. Each is filed under the squares its own box (with the
  * room it keeps) touches, so a piece is tested against exactly the things it could crowd.
  */
 interface Clearance {
   authored: Near<Box>;
-  laid: Near<Box>;
   points: Near<Keep["points"][number]>;
   along: Near<{ x: number; z: number }>;
 }
@@ -5548,43 +5560,54 @@ function depotSpot(p: Poi): { x: number; z: number } {
   return { x: +(p.entry.x + (ax / len) * POI_DEFS[p.id].depotOut).toFixed(1), z: +(p.entry.z + (az / len) * POI_DEFS[p.id].depotOut).toFixed(1) };
 }
 
-function scatterCover(authored: Box[], { points, segments }: Keep): Box[] {
-  const near: Clearance = { authored: new Near(), laid: new Near(), points: new Near(), along: new Near() };
-  for (const b of authored) near.authored.add(b.x0, b.z0, b.x1, b.z1, b);
+/**
+ * What the scattered pieces keep clear of. With `within`, only what lies near those bounds is
+ * filed: a region's cover worked out from that alone must be the same as from all of it.
+ */
+function clearance(authored: Box[], { points, segments }: Keep, within?: { x0: number; z0: number; x1: number; z1: number }): Clearance {
+  const m = 12;
+  const nearBy = (x0: number, z0: number, x1: number, z1: number) => !within || (x1 > within.x0 - m && x0 < within.x1 + m && z1 > within.z0 - m && z0 < within.z1 + m);
+  const near: Clearance = { authored: new Near(), points: new Near(), along: new Near() };
+  for (const b of authored) if (nearBy(b.x0, b.z0, b.x1, b.z1)) near.authored.add(b.x0, b.z0, b.x1, b.z1, b);
   // Each depot keeps room round it and round the start behind it.
   const depots = POIS.map((p) => ({ ...depotSpot(p), r: 6 }));
   // The camp's yard keeps clear: a circle round it, out past its corners.
   const yard = { x: CAMP_AT[0], z: CAMP_AT[1], r: hypot2(CAMP_HALF.x, CAMP_HALF.z) + 1 };
   // Where a raid stops and where hunting parties stand stay open too, without pressing the ground.
   const stops = [...STOPS, ...Object.values(PARTY_STOPS).flat()].map((q) => ({ x: q.x, z: q.z, r: 8 }));
-  for (const q of [...points, ...depots, ...stops, yard]) near.points.add(q.x - q.r, q.z - q.r, q.x + q.r, q.z + q.r, q);
+  const room = (q: { x: number; z: number; r: number }) => {
+    if (nearBy(q.x - q.r, q.z - q.r, q.x + q.r, q.z + q.r)) near.points.add(q.x - q.r, q.z - q.r, q.x + q.r, q.z + q.r, q);
+  };
+  for (const q of [...points, ...depots, ...stops, yard]) room(q);
   // A trench's line keeps cover off as far as its walls may lower the ground.
   for (const c of [TUNNEL, GALLERY]) {
     const [[ax, az], [bx, bz]] = c.line;
     const n = Math.ceil(hypot2(bx - ax, bz - az));
     const r = c.floor + TRENCH_ROOM;
-    for (let k = 0; k <= n; k++) {
-      const x = ax + ((bx - ax) * k) / n;
-      const z = az + ((bz - az) * k) / n;
-      near.points.add(x - r, z - r, x + r, z + r, { x, z, r });
-    }
+    for (let k = 0; k <= n; k++) room({ x: ax + ((bx - ax) * k) / n, z: az + ((bz - az) * k) / n, r });
   }
   for (const sg of segments) {
     const n = Math.max(1, Math.ceil(hypot2(sg.bx - sg.ax, sg.bz - sg.az)));
     for (let k = 0; k <= n; k++) {
       const x = sg.ax + ((sg.bx - sg.ax) * k) / n;
       const z = sg.az + ((sg.bz - sg.az) * k) / n;
-      near.along.add(x - 2.5, z - 2.5, x + 2.5, z + 2.5, { x, z });
+      if (nearBy(x - 2.5, z - 2.5, x + 2.5, z + 2.5)) near.along.add(x - 2.5, z - 2.5, x + 2.5, z + 2.5, { x, z });
     }
   }
-  const placed: Box[] = [];
-  for (const area of SCATTER) placed.push(...scatterArea(near, area));
-  return placed;
+  return near;
+}
+
+/** Each region's scattered cover, in `SCATTER`'s order. */
+function scatterCover(authored: Box[], keep: Keep): Box[][] {
+  const near = clearance(authored, keep);
+  return SCATTER.map((area) => scatterArea(near, area));
 }
 
 function scatterArea(near: Clearance, area: (typeof SCATTER)[number]): Box[] {
   let seed = area.seed;
   const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  // The pieces already placed in this region, which a later one keeps clear of.
+  const laid = new Near<Box>();
 
   const len = (a: number, b: number) => a + rnd() * (b - a);
   // Set pieces in real sizes, each a group of boxes written along u (its length) and v (across),
@@ -5757,11 +5780,16 @@ function scatterArea(near: Clearance, area: (typeof SCATTER)[number]): Box[] {
     return [box(x, z, 2.6 + rnd() * 2.5, 2.6 + rnd() * 2.5, 1.5 + rnd() * 1.5, "rock", Math.floor(rnd() * 2))];
   };
   const placed: Box[] = [];
-  // Candidates on a grid from 11 m inside the area's bounds, each nudged at random: set pieces
-  // up to 10 m across, few enough that the open ground reads as open.
+  // Candidates on a grid of whole multiples of the step from 11 m inside the area's bounds, each
+  // nudged at random: set pieces up to 10 m across, few enough that the open ground reads as open.
+  // Each draws from its own stream, so what one spot draws never shifts another's.
   const edge = 11;
-  for (let gx = area.x0 + edge; gx <= area.x1 - edge; gx += area.step)
-    for (let gz = area.z0 + edge; gz <= area.z1 - edge; gz += area.step) {
+  const keep = 1.25;
+  for (let kx = Math.ceil((area.x0 + edge) / area.step); kx * area.step <= area.x1 - edge; kx++)
+    for (let kz = Math.ceil((area.z0 + edge) / area.step); kz * area.step <= area.z1 - edge; kz++) {
+      const gx = kx * area.step;
+      const gz = kz * area.step;
+      seed = spotSeed(area.seed, kx, kz);
       const x = gx + (rnd() - 0.5) * 7;
       const z = gz + (rnd() - 0.5) * 7;
       const at = surfaceAt(x, z);
@@ -5783,14 +5811,15 @@ function scatterArea(near: Clearance, area: (typeof SCATTER)[number]): Box[] {
       const ok = piece.every(
         (b) =>
           near.authored.every(b.x0 - 3, b.z0 - 3, b.x1 + 3, b.z1 + 3, clear(b, 3)) &&
-          near.laid.every(b.x0 - 2.5, b.z0 - 2.5, b.x1 + 2.5, b.z1 + 2.5, clear(b, 2.5)) &&
+          b.x0 >= area.x0 + keep && b.x1 <= area.x1 - keep && b.z0 >= area.z0 + keep && b.z1 <= area.z1 - keep &&
+          laid.every(b.x0 - 2.5, b.z0 - 2.5, b.x1 + 2.5, b.z1 + 2.5, clear(b, 2.5)) &&
           near.points.every(b.x0, b.z0, b.x1, b.z1, (q) => distToBox(b, q.x, q.z) > q.r) &&
           near.along.every(b.x0, b.z0, b.x1, b.z1, (q) => distToBox(b, q.x, q.z) >= 2.5) &&
           [[b.x0, b.z0], [b.x1, b.z0], [b.x0, b.z1], [b.x1, b.z1], [(b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2]].every(([px, pz]) => offStreet(px, pz) > 0.8),
       );
       if (ok) {
         placed.push(...piece);
-        for (const b of piece) near.laid.add(b.x0, b.z0, b.x1, b.z1, b);
+        for (const b of piece) laid.add(b.x0, b.z0, b.x1, b.z1, b);
       }
     }
   return placed;
@@ -6820,9 +6849,42 @@ const ZIP_KEEP: Keep["segments"] = ZIPS.flatMap((l) => l.pts.slice(1).map((q, i)
 
 // The camp comes last: what was laid before it keeps its place in the list (the cover spots, the walkers' grids).
 // The cores keep the scattered cover off the ground they are taken from, and come after the camp; the ziplines' masts and pylons after them.
+/** What the scattered cover keeps clear of. */
+const COVER_AROUND: Box[] = [...BUILT, ...CAMP_BOXES, ...CORE_BOXES, ...ZIP_LAYOUT.boxes];
+const COVER_KEEP: Keep = { points: [...KEEP.points, ...NODES.map((n) => ({ x: n.core.x, z: n.core.z, r: 6 }))], segments: [...KEEP.segments, ...ZIP_KEEP] };
+/** The scattered cover, by `SCATTER` area. */
+const COVER: Box[][] = scatterCover(COVER_AROUND, COVER_KEEP);
+
+/**
+ * For the sim gate: each region's scattered cover worked out from only what lies in or near its
+ * own bounds is the same as worked out with the whole world, so nothing elsewhere moves it.
+ * With the ground between settled apart by region (`checkBetweenApart()` in terrain.ts), adding to
+ * one region leaves every other region's cover as it was. Null when they agree, else where not.
+ */
+export function checkScatterApart(): string | null {
+  for (let a = 0; a < SCATTER.length; a++) {
+    const area = SCATTER[a];
+    const alone = scatterArea(clearance(COVER_AROUND, COVER_KEEP, area), area);
+    const all = COVER[a];
+    const key = (b: Box) => `${b.kind}${b.tint}:${b.x0},${b.z0},${b.x1},${b.z1},${b.y0},${b.h}`;
+    if (alone.length !== all.length || alone.some((b, i) => key(b) !== key(all[i]))) return `scatter area ${a} (seed ${area.seed}): ${all.length} pieces with the world, ${alone.length} worked out alone`;
+    const out = all.find((b) => b.x0 < area.x0 || b.x1 > area.x1 || b.z0 < area.z0 || b.z1 > area.z1);
+    if (out) return `scatter area ${a} (seed ${area.seed}): a piece at ${out.x0},${out.z0} lies outside its bounds`;
+  }
+  return null;
+}
+
+/** A fingerprint of each scatter area's cover, for seeing which regions' cover a change moved. */
+export const scatterPrints = (): string[] =>
+  COVER.map((c) => {
+    let h = 0;
+    for (const b of c) for (const v of [b.x0, b.z0, b.x1, b.z1, b.y0, b.h]) h = (Math.imul(h, 31) + Math.round(v * 1000)) | 0;
+    return `${SCATTER[COVER.indexOf(c)].region} ${c.length}:${(h >>> 0).toString(16)}`;
+  });
+
 export const BOXES: Box[] = [
   ...BUILT,
-  ...scatterCover([...BUILT, ...CAMP_BOXES, ...CORE_BOXES, ...ZIP_LAYOUT.boxes], { points: [...KEEP.points, ...NODES.map((n) => ({ x: n.core.x, z: n.core.z, r: 6 }))], segments: [...KEEP.segments, ...ZIP_KEEP] }),
+  ...COVER.flat(),
   ...CAMP_BOXES,
   ...CORE_BOXES,
   ...ZIP_LAYOUT.boxes,

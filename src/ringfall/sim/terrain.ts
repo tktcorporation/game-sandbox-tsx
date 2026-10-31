@@ -177,6 +177,11 @@ export interface Cut {
   slope: number;
   /** The levels belong to the line's points (else they are spaced evenly along its length). */
   atPoints?: true;
+  /**
+   * A cut that runs between two regions from coast to coast: the ground between is settled on
+   * each side of its floor apart (`relaxed()`), so a shape added on one side never moves the ground on the other.
+   */
+  border?: true;
 }
 
 /** Height of the high ground, and how steeply its cliffs fall to the low ground. */
@@ -341,6 +346,9 @@ const BASINS: Open[] = [
   { name: "峠", line: inArea("pass", [[-66, -214], [-54, -230]]), half: 9, level: LEVEL.pass },
 ];
 
+/** Where the mountain belt's crags end at their east end and the seam's track begins (`SEAM`). */
+const SEAM_X0 = 514;
+
 /**
  * Roads between basins, 8 to 10 m wide, in the world's coordinates. Each area has two or three
  * of them; the lakebed has four ramps out and the spillway, and its cliffs make the choice of
@@ -380,6 +388,10 @@ const ROADS: Open[] = [
   // gorge to the harbor, where it ends in a cliff and the viaduct carries the line on.
   { name: "鉄道の土手（南）", line: [[210, -50], [185, -110], [170, -150], [168, -336]], half: 5, level: [LEVEL.foot, 7.5, 9.6, LEVEL.rail], atPoints: true, walled: true },
   { name: "鉄道の土手（北）", line: [[168, -365], [168, -410]], half: 5, level: LEVEL.rail, walled: true },
+  // A track across the low strip along the dried strait's west bank, east of the mountain belt, on
+  // the seam between the reservoir's and the harbor's ground (`SEAM`): holding the ground there at
+  // its own level, it parts the two regions' ground between where no crag stands.
+  { name: "海峡の西岸の道", line: [[SEAM_X0, -350], [586, -350]], half: 6, level: 3, ground: "scrub" },
   { name: "駅の坂", line: [[168, -396], [146, -418], [140, -436], [140, -456], [120, -505], [100, -555]], half: 5, level: [LEVEL.rail, 4, LEVEL.shore, LEVEL.shore, LEVEL.shore, LEVEL.shore], atPoints: true , ground: "paved" },
   // Under the viaduct: a road along the line from the station's foot past the town to the container yard.
   { name: "高架下", line: [[168, -428], [168, -615], [-80, -615], [-110, -650], [-150, -695]], half: 6, level: LEVEL.shore , ground: "paved" },
@@ -460,6 +472,7 @@ const CUTS: Cut[] = [
     levels: [LEVEL.shore, LEVEL.strait, LEVEL.strait, LEVEL.strait, LEVEL.strait, LEVEL.strait, LEVEL.shore],
     slope: CLIFF,
     atPoints: true,
+    border: true,
   },
   /**
    * The dry canyon between the island and the launch site's plateau, 25 m under the plateau and
@@ -474,6 +487,7 @@ const CUTS: Cut[] = [
     levels: [55, LEVEL.canyon, LEVEL.canyon, LEVEL.canyon, LEVEL.canyon, LEVEL.canyon, LEVEL.canyon, LEVEL.canyon, 55],
     slope: CLIFF,
     atPoints: true,
+    border: true,
   },
 ];
 
@@ -658,15 +672,69 @@ const BNZ = Math.ceil((WORLD.z1 - WORLD.z0) / BRES) + 1;
 let betweenField: Float32Array | null = null;
 
 /**
+ * The seam between the reservoir's and the harbor's ground: a band `half` metres either side of
+ * z, from the world's west edge to the east end of the mountain belt, where the track along the
+ * strait's west bank (`海峡の西岸の道`) carries it on to the strait's floor. It lies deep in the
+ * crags, where the ground between is never read.
+ */
+const SEAM = { z: -350, x1: SEAM_X0 - 2, half: 16 };
+/** How far past its floor a border cut's walls reach round each end of its line. */
+const BORDER_END = 12;
+
+/**
+ * Where the ground between is settled apart (`relaxed()`): beyond the coast, on the floor of a
+ * cut between two regions (`Cut.border`) and round its ends, where it runs out into the inlets,
+ * and on the seam between the reservoir and the harbor. None of it is ground between anyone
+ * walks: the coast's cliffs, a cut's floor, the cliffs at its ends and the crags stand there. The walls part the world into a piece for each region, so a shape added in one
+ * region never moves the ground between in another (`checkBetweenApart()`).
+ */
+function betweenWall(x: number, z: number): boolean {
+  if (offshore(x, z) > 0) return true;
+  if (x <= SEAM.x1 && Math.abs(z - SEAM.z) <= SEAM.half) return true;
+  for (const n of bucketAt(x, z).cuts) {
+    const { c, poly } = CUT_LINES[n];
+    if (!c.border || nearBox(x, z, poly) > c.floor + BORDER_END) continue;
+    if (toPolyline(x, z, poly).d < c.floor) return true;
+    const [a, b] = [c.line[0], c.line[c.line.length - 1]];
+    if (hypot2(x - a[0], z - a[1]) < c.floor + BORDER_END || hypot2(x - b[0], z - b[1]) < c.floor + BORDER_END) return true;
+  }
+  return false;
+}
+
+/** A disc of ground held at a level, planted to test that the ground between elsewhere stays put. */
+interface Plant {
+  x: number;
+  z: number;
+  r: number;
+  level: number;
+}
+
+/** A grid of the ground between, settled: its levels, and which cells were held and which walls. */
+interface Settled {
+  res: number;
+  nx: number;
+  u: Float32Array;
+  fixed: Uint8Array;
+  wall: Uint8Array;
+}
+
+/**
  * Laplace's equation relaxed over a grid of `res` metres: every cell inside an open shape that
  * is not walled holds that shape's level, and the rest settle to the smoothest surface between
- * them. Free cells start at `start` where given, else at their nearest fixed cell's level.
+ * them. The walls (`betweenWall()`) are neither settled nor read across: a free cell beside one
+ * reads its own level there. Free cells start at their nearest held cell's level, flooding out
+ * from the held cells without crossing a wall; with `coarse` (a grid settled first, whose points
+ * are every few of this one's) they start where it lies instead, blended only from its corners
+ * that were held or lie in the same stretch of free cells as the cell itself, so no start comes
+ * from across a wall. Once settled each wall cell takes the level of the nearest cell beside it,
+ * so the ground read just inside a wall (`betweenAt()` blends four cells) is its own side's.
  */
-function relaxed(res: number, sweeps: number, start?: (x: number, z: number) => number): Float32Array {
+function relaxed(res: number, sweeps: number, plant?: Plant, coarse?: Settled): Settled {
   const nx = Math.ceil((WORLD.x1 - WORLD.x0) / res) + 1;
   const nz = Math.ceil((WORLD.z1 - WORLD.z0) / res) + 1;
   const u = new Float32Array(nx * nz);
   const fixed = new Uint8Array(nx * nz);
+  const wall = new Uint8Array(nx * nz);
   const queue: number[] = [];
   for (let j = 0; j < nz; j++)
     for (let i = 0; i < nx; i++) {
@@ -679,40 +747,110 @@ function relaxed(res: number, sweeps: number, start?: (x: number, z: number) => 
         const { d, along: t } = toPolyline(x, z, poly);
         if (d <= o.half) lv = Math.min(lv, levelOf(o, t, poly));
       }
+      if (plant && hypot2(x - plant.x, z - plant.z) <= plant.r) lv = plant.level;
       const k = j * nx + i;
       if (lv < Infinity) {
         u[k] = lv;
         fixed[k] = 1;
         queue.push(k);
-      } else if (start) u[k] = start(x, z);
+      } else if (betweenWall(x, z)) wall[k] = 1;
     }
-  if (!start) {
-    const seen = Uint8Array.from(fixed);
-    for (let q = 0; q < queue.length; q++) {
-      const k = queue[q];
-      const i = k % nx;
-      for (const n of [i > 0 ? k - 1 : -1, i < nx - 1 ? k + 1 : -1, k - nx, k + nx]) {
-        if (n < 0 || n >= u.length || seen[n]) continue;
-        seen[n] = 1;
-        u[n] = u[k];
-        queue.push(n);
-      }
+  /** The four cells beside k, or -1 past the grid's edge. */
+  const beside = (k: number) => {
+    const i = k % nx;
+    return [i > 0 ? k - 1 : -1, i < nx - 1 ? k + 1 : -1, k >= nx ? k - nx : -1, k + nx < u.length ? k + nx : -1];
+  };
+  const seen = Uint8Array.from(fixed);
+  for (let q = 0; q < queue.length; q++) {
+    const k = queue[q];
+    for (const n of beside(k)) {
+      if (n < 0 || seen[n] || wall[n]) continue;
+      seen[n] = 1;
+      u[n] = u[k];
+      queue.push(n);
     }
   }
-  // Over-relaxed Gauss-Seidel sweeps; the world's edges mirror.
+  if (coarse) {
+    // Each stretch of free cells, numbered.
+    const part = new Int32Array(u.length).fill(-1);
+    let parts = 0;
+    for (let s0 = 0; s0 < u.length; s0++) {
+      if (fixed[s0] || wall[s0] || part[s0] >= 0) continue;
+      part[s0] = parts;
+      const run = [s0];
+      for (let q = 0; q < run.length; q++)
+        for (const n of beside(run[q]))
+          if (n >= 0 && !fixed[n] && !wall[n] && part[n] < 0) {
+            part[n] = parts;
+            run.push(n);
+          }
+      parts++;
+    }
+    const step = coarse.res / res;
+    const cnz = coarse.u.length / coarse.nx;
+    for (let j = 0; j < nz; j++)
+      for (let i = 0; i < nx; i++) {
+        const k = j * nx + i;
+        if (part[k] < 0) continue;
+        const fi = Math.min(coarse.nx - 1.001, i / step);
+        const fj = Math.min(cnz - 1.001, j / step);
+        const ci = Math.floor(fi);
+        const cj = Math.floor(fj);
+        let sum = 0;
+        let weight = 0;
+        for (const [di, dj, wgt] of [
+          [0, 0, (1 - (fi - ci)) * (1 - (fj - cj))],
+          [1, 0, (fi - ci) * (1 - (fj - cj))],
+          [0, 1, (1 - (fi - ci)) * (fj - cj)],
+          [1, 1, (fi - ci) * (fj - cj)],
+        ]) {
+          const [oi, oj] = [(ci + di) * step, (cj + dj) * step];
+          if (wgt <= 0 || oi >= nx || oj >= nz) continue;
+          const ck = (cj + dj) * coarse.nx + ci + di;
+          if (coarse.fixed[ck] || (!coarse.wall[ck] && part[oj * nx + oi] === part[k])) {
+            sum += coarse.u[ck] * wgt;
+            weight += wgt;
+          }
+        }
+        if (weight > 0) u[k] = sum / weight;
+      }
+  }
+  // Over-relaxed Gauss-Seidel sweeps; the world's edges and the walls mirror.
   const w = 1.9;
   for (let it = 0; it < sweeps; it++)
     for (let j = 0; j < nz; j++)
       for (let i = 0; i < nx; i++) {
         const k = j * nx + i;
-        if (fixed[k]) continue;
-        const l = u[i > 0 ? k - 1 : k + 1];
-        const r = u[i < nx - 1 ? k + 1 : k - 1];
-        const t = u[j > 0 ? k - nx : k + nx];
-        const b = u[j < nz - 1 ? k + nx : k - nx];
-        u[k] += w * ((l + r + t + b) / 4 - u[k]);
+        if (fixed[k] || wall[k]) continue;
+        const own = u[k];
+        const kl = i > 0 ? k - 1 : k + 1;
+        const kr = i < nx - 1 ? k + 1 : k - 1;
+        const kt = j > 0 ? k - nx : k + nx;
+        const kb = j < nz - 1 ? k + nx : k - nx;
+        const l = wall[kl] ? own : u[kl];
+        const r = wall[kr] ? own : u[kr];
+        const t = wall[kt] ? own : u[kt];
+        const b = wall[kb] ? own : u[kb];
+        u[k] += w * ((l + r + t + b) / 4 - own);
       }
-  return u;
+  // The walls take the level of the nearest cell beside them, flooding in from every side at once.
+  const fill: number[] = [];
+  const got = Uint8Array.from(wall, (v) => 1 - v);
+  for (let k = 0; k < u.length; k++) if (wall[k] && beside(k).some((n) => n >= 0 && !wall[n])) fill.push(k);
+  for (const k of fill) {
+    u[k] = u[beside(k).find((n) => n >= 0 && !wall[n])!];
+    got[k] = 1;
+  }
+  for (let q = 0; q < fill.length; q++) {
+    const k = fill[q];
+    for (const n of beside(k)) {
+      if (n < 0 || got[n]) continue;
+      got[n] = 1;
+      u[n] = u[k];
+      fill.push(n);
+    }
+  }
+  return { res, nx, u, fixed, wall };
 }
 
 /**
@@ -723,25 +861,55 @@ function relaxed(res: number, sweeps: number, start?: (x: number, z: number) => 
  * coarse grid, whose long-range shape a fine grid takes in only slowly, then on the fine one.
  */
 function betweenGrid(): Float32Array {
-  if (betweenField) return betweenField;
-  const C = 16;
-  const cnx = Math.ceil((WORLD.x1 - WORLD.x0) / C) + 1;
-  const coarse = relaxed(C, 400);
-  const at = (x: number, z: number) => {
-    const fx = Math.min(cnx - 1.001, (x - WORLD.x0) / C);
-    const fz = (z - WORLD.z0) / C;
-    const i = Math.floor(fx);
-    const j = Math.floor(fz);
-    const k = j * cnx + i;
-    const u = fx - i;
-    const v = fz - j;
-    const below = coarse[k] + (coarse[k + 1] - coarse[k]) * u;
-    const next = k + cnx < coarse.length ? k + cnx : k;
-    const above = coarse[next] + (coarse[next + 1] - coarse[next]) * u;
-    return below + (above - below) * v;
-  };
-  betweenField = relaxed(BRES, 150, at);
-  return betweenField;
+  return betweenField ?? (betweenField = settle().u);
+}
+
+/** The ground between settled afresh, with `plant` held too when given. */
+const settle = (plant?: Plant): Settled => relaxed(BRES, 150, plant, relaxed(16, 400, plant));
+
+/**
+ * For the sim gate: the ground between in each region is settled from that region's own shapes.
+ * A disc held 6 m over the ground at each `plants` point (one in each region) is settled in
+ * afresh, and every cell of the ground between in every other region's `bounds` must come out
+ * the same, bit for bit. Null when they do, else where one moved.
+ */
+export function checkBetweenApart(regions: readonly { id: string; bounds: { x0: number; z0: number; x1: number; z1: number }; plant: { x: number; z: number } }[]): string | null {
+  const base = betweenGrid();
+  for (const r of regions) {
+    const { u: moved, wall } = settle({ x: r.plant.x, z: r.plant.z, r: 24, level: betweenAt(r.plant.x, r.plant.z) + 6 });
+    // The ground between is read off a cell when it is no wall, or a wall beside one (`betweenAt()` blends four cells).
+    const read = (i: number, j: number) => {
+      for (let dj = -1; dj <= 1; dj++)
+        for (let di = -1; di <= 1; di++) {
+          const a = i + di;
+          const b = j + dj;
+          if (a >= 0 && b >= 0 && a < BNX && b < BNZ && !wall[b * BNX + a]) return true;
+        }
+      return false;
+    };
+    let changed = 0;
+    for (const o of regions) {
+      if (o === r) continue;
+      let worst = 0;
+      let where = "";
+      for (let j = 0; j < BNZ; j++)
+        for (let i = 0; i < BNX; i++) {
+          const x = WORLD.x0 + i * BRES;
+          const z = WORLD.z0 + j * BRES;
+          if (x < o.bounds.x0 || x > o.bounds.x1 || z < o.bounds.z0 || z > o.bounds.z1) continue;
+          const k = j * BNX + i;
+          if (moved[k] !== base[k] && read(i, j)) {
+            changed++;
+            if (Math.abs(moved[k] - base[k]) > worst) {
+              worst = Math.abs(moved[k] - base[k]);
+              where = `${x},${z}`;
+            }
+          }
+        }
+      if (changed) return `ground between: a disc in ${r.id} moves ${changed} cells in ${o.id} (most ${worst.toExponential(2)} m at ${where})`;
+    }
+  }
+  return null;
 }
 
 /** The ground between at (x, z), before its rolling. */

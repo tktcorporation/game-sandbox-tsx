@@ -27,7 +27,7 @@ import { routeBefore, useRoutes, worldKey } from "../src/ringfall/sim/routes";
 import { findPath } from "../src/ringfall/sim/nav";
 import { fieldTo, fieldsBuilt, onMainGround, routeLength } from "../src/ringfall/sim/hunt";
 import { collide, dist2d, groundAt, inWorld, los, solidAt } from "../src/ringfall/sim/geom";
-import { baseLevel, checkTerrainIndex, floorLevel, highGround, landAt, LEVEL, offLowGround, offshore, steepAt, surfaceAt, terrainHeight } from "../src/ringfall/sim/terrain";
+import { baseLevel, checkBetweenApart, checkTerrainIndex, floorLevel, highGround, landAt, LEVEL, offLowGround, offshore, steepAt, surfaceAt, terrainHeight } from "../src/ringfall/sim/terrain";
 import { SKILLS } from "../src/ringfall/sim/bot";
 import { callLeft, cellOf, decodeSeen, encodeSeen, starterKit, idleInput, newRun, type Enemy, type GameEvent, type State } from "../src/ringfall/sim/state";
 import { step } from "../src/ringfall/sim/step";
@@ -73,7 +73,7 @@ import { pacing, type Pool } from "./ringfall-pacing";
 import { movementLines } from "./ringfall-movement";
 import { duelLines } from "./ringfall-duel";
 import { checkSupport } from "./ringfall-support";
-import { MOBILES, OUTPOST_SITES } from "../src/ringfall/sim/map";
+import { checkScatterApart, MOBILES, OUTPOST_SITES, SCATTER_AREAS, scatterPrints } from "../src/ringfall/sim/map";
 import { enemyNodes, frontNodes, garrisonOf, useCore, type NodeHold } from "../src/ringfall/sim/front";
 import { factoryMax, factoryRarity, finishBattle, heldUnlocks, nodePoint } from "../src/ringfall/sim/battle";
 import { departDepots, shopRarity } from "../src/ringfall/meta/island";
@@ -278,6 +278,16 @@ if (layout.length) {
   process.exit(1);
 }
 console.log(`layout ok: ${BOXES.length} boxes`);
+
+// Each region's ground between and scattered cover come from that region alone: what is added to
+// one region leaves every other region's cover as it was. The prints show which regions' cover moved.
+for (const err of [checkBetweenApart(REGIONS.map((r) => ({ id: r.id, bounds: SCATTER_AREAS.find((a) => a.region === r.id)!, plant: r.label }))), checkScatterApart()]) {
+  if (err) {
+    console.error(err);
+    process.exit(1);
+  }
+}
+console.log(`cover apart by region: ${scatterPrints().join(", ")}`);
 
 /** A wipe clears everything in the air; a projectile still in flight must not follow the player to the entry. */
 function checkWipeClearsAir(): string | null {
@@ -2352,9 +2362,10 @@ function checkQuests(): string | null {
 
 /**
  * Open level ground in the reservoir: from `left` metres to the -x side of (x, z) to `right`
- * metres to the +x side, and `dist` metres toward -z, clear of boxes, for a fight in the open.
+ * metres to the +x side, and `dist` metres toward -z, clear of boxes (out to `clearRight` on the
+ * +x side), for a fight in the open.
  */
-function openSpot(dist: number, left: number, right: number): { x: number; z: number } | null {
+function openSpot(dist: number, left: number, right: number, clearRight = right): { x: number; z: number } | null {
   const [lx, lz] = inArea("supply", 0, -174);
   const land = { x: lx, z: lz };
   for (let ring = 0; ring < 400; ring += 4)
@@ -2363,7 +2374,7 @@ function openSpot(dist: number, left: number, right: number): { x: number; z: nu
       const z = land.z + Math.sin(a) * ring;
       if (!inWorld(x, z, 5) || offLowGround(x, z)) continue;
       const g = terrainHeight(x, z);
-      let ok = !BOXES.some((b) => b.x1 > x - left && b.x0 < x + right && b.z1 > z - dist - 2 && b.z0 < z + 2 && b.y0 < g + 3);
+      let ok = !BOXES.some((b) => b.x1 > x - left && b.x0 < x + clearRight && b.z1 > z - dist - 2 && b.z0 < z + 2 && b.y0 < g + 3);
       for (let dx = -left; dx <= right && ok; dx += 1)
         for (let dz = -2; dz <= dist + 2 && ok; dz += 1) if (Math.abs(terrainHeight(x + dx, z - dz) - g) > 0.5) ok = false;
       if (ok) return { x, z };
@@ -2760,9 +2771,10 @@ function checkFactions(): string | null {
  * random numbers give: over ten draws it stands past it in seven at least.
  */
 function checkIntercept(): string | null {
-  const at = openSpot(60, 4, 4);
+  // Clear of boxes from the strip out to where the pair stands, so nothing but the robots' own sight decides where they stop.
+  const at = openSpot(60, 4, 4, 44);
   if (!at) return "intercept: no open ground for the test";
-  const side = [40, -40].find((dx) => onMainGround(at.x + dx, at.z - 4) && !steepAt(at.x + dx, at.z - 4));
+  const side = [40].find((dx) => onMainGround(at.x + dx, at.z - 4) && !steepAt(at.x + dx, at.z - 4));
   if (side === undefined) return "intercept: no ground beside the open strip for the pair";
   const trial = (rng?: number) => {
     const s = padRun();

@@ -67,19 +67,24 @@ function emptyRun(seed: number, kit: Kit): State {
 }
 
 let openAt: { x: number; z: number } | null | undefined;
-/** Open level ground on the harbor's salt flats: 46 m toward -z and 12 m to either side clear of boxes. */
+/**
+ * Open level ground on the harbor's salt flats, 46 m toward -z and 12 m to either side, with no
+ * box within 30 m of it: no cover a robot could run to, so the duel is fought in the open.
+ */
 function openSpot(): { x: number; z: number } | null {
   if (openAt !== undefined) return openAt;
   const [lx, lz] = inArea("bay", -55, -500);
   const W = 12;
   const D = 46;
+  /** How far round the ground no box stands. */
+  const C = 30;
   for (let ring = 0; ring < 700; ring += 4)
     for (let a = 0; a < 2 * Math.PI; a += 4 / Math.max(ring, 8)) {
       const x = lx + Math.cos(a) * ring;
       const z = lz + Math.sin(a) * ring;
       if (!inWorld(x, z, 5) || offLowGround(x, z)) continue;
       const g = terrainHeight(x, z);
-      let ok = !BOXES.some((b) => b.x1 > x - W && b.x0 < x + W && b.z1 > z - D - 4 && b.z0 < z + 4 && b.y0 < g + 4);
+      let ok = !BOXES.some((b) => b.x1 > x - C && b.x0 < x + C && b.z1 > z - D - C && b.z0 < z + C && b.y0 < g + 4);
       for (let dx = -W; dx <= W && ok; dx += 2)
         for (let dz = -4; dz <= D + 4 && ok; dz += 2) if (Math.abs(terrainHeight(x + dx, z - dz) - g) > 0.6) ok = false;
       if (ok) return (openAt = { x, z });
