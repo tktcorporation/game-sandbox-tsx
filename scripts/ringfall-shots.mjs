@@ -393,13 +393,13 @@ const spills = (pg) =>
   await step(200);
   if (!(await mapOpen())) errors.push("mobile: the map button did not open the map");
   await page.screenshot({ path: `${out}/m4-map.png` });
-  // It opens on the region the player is in; its own button shows the whole world, and back.
+  // It opens on the region the player is in; its own button shows the whole world, whose shape differs from the region's, and back.
   const mapAspect = () => page.evaluate(() => +getComputedStyle(document.getElementById("map-canvas")).getPropertyValue("--map-aspect"));
   const regionAspect = await mapAspect();
   await tap("#map-zoom", 12);
   await step(200);
   const worldAspect = await mapAspect();
-  if (!(worldAspect < regionAspect * 0.8)) errors.push(`mobile: the map's zoom button did not show the whole world (shape ${regionAspect.toFixed(2)} -> ${worldAspect.toFixed(2)})`);
+  if (!(Math.abs(worldAspect / regionAspect - 1) > 0.05)) errors.push(`mobile: the map's zoom button did not show the whole world (shape ${regionAspect.toFixed(2)} -> ${worldAspect.toFixed(2)})`);
   await page.screenshot({ path: `${out}/m4-map-world.png` });
   await tap("#map-zoom", 13);
   await step(200);
@@ -957,7 +957,7 @@ for (let i = 0; i < 25 * 60 * 10; i++) {
     await shot("23-map-world");
     await page.keyboard.press("KeyN");
     await page.evaluate(() => window.advanceTime(100));
-    if (!(worldShape < regionShape * 0.8) || (await shape()) !== regionShape) errors.push(`map: N did not switch to the whole world and back (shape ${regionShape} -> ${worldShape})`);
+    if (!(Math.abs(worldShape / regionShape - 1) > 0.05) || (await shape()) !== regionShape) errors.push(`map: N did not switch to the whole world and back (shape ${regionShape} -> ${worldShape})`);
     await page.keyboard.press("KeyM");
     await page.evaluate(() => window.advanceTime(100));
     const closed = await page.evaluate(() => document.getElementById("map").hidden);
