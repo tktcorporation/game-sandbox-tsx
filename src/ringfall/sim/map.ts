@@ -656,7 +656,7 @@ export interface Squad {
 export type LootTable = { weapon: [WeaponKind, Rarity][]; armor: Rarity[]; heals: number; valuable: [ValuableKind, number][] };
 
 /** Stable names for the POIs: saves, quests and other data refer to a POI by these, never by its place in `POIS`. */
-export type PoiId = "supply" | "quarry" | "relay" | "pad" | "wreck" | "yard" | "smelter" | "station" | "waterworks" | "lodge" | "cannery" | "coldstore" | "terminal" | "carpark" | "robotworks" | "highrise" | "powerplant" | "control" | "assembly" | "launchpad";
+export type PoiId = "supply" | "quarry" | "relay" | "pad" | "wreck" | "yard" | "smelter" | "station" | "waterworks" | "lodge" | "cannery" | "coldstore" | "terminal" | "carpark" | "robotworks" | "highrise" | "powerplant" | "control" | "assembly" | "launchpad" | "fuel" | "radar";
 /** The boss's POI (the titan's pad): written as the boss in `POI_DEFS`, and no node of the front. */
 export type BossId = "pad";
 
@@ -1825,6 +1825,126 @@ function launchpad(): Floors {
 }
 
 /**
+ * A spherical tank `R` in radius whose underside is `y0` over the ground at (cx, cz): slices of
+ * crossing boxes (each an octagon in steps, as `tank()`'s) rounding out to the equator and in
+ * again, on four legs that reach up into it. Under it is head room to walk through.
+ */
+function sphereTank(cx: number, cz: number, R: number, y0: number, tint: number): Box[] {
+  const out: Box[] = [];
+  const n = 12;
+  for (let i = 0; i < n; i++) {
+    const [ya, yb] = [y0 + (2 * R * i) / n, y0 + (2 * R * (i + 1)) / n];
+    const r = Math.sqrt(R * R - ((ya + yb) / 2 - y0 - R) ** 2);
+    const [s, q] = [r * 0.83, r * 1.42];
+    out.push(box(cx, cz, 2 * r, s, yb, "steel", tint, ya), box(cx, cz, s, 2 * r, yb, "steel", tint, ya), box(cx, cz, q, q, yb, "steel", tint, ya));
+  }
+  for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) out.push(box(cx + sx * 0.6 * R, cz + sz * 0.6 * R, 0.6, 0.6, y0 + R * 0.9, "steel", 1));
+  return out;
+}
+
+/**
+ * A pipe rack `y` high along x (`alongX`) or z from `a` to `b` on the line `c`: a deck 4 m wide on
+ * pairs of posts every 10 m, two pipes along one edge of it (the low side, `pipeSide` -1 or 1 across
+ * the line) and a walkway beside them railed knee-high on its other edge. Over each of `gaps` (ranges
+ * along the line, where another rack crosses) the pipes dip under the deck and the rail is left
+ * open, so the crossing is walked through; posts stand clear of the gaps.
+ */
+function walkedRack(alongX: boolean, a: number, b: number, c: number, y: number, pipeSide: 1 | -1, gaps: readonly (readonly [number, number])[]): Box[] {
+  const out: Box[] = [];
+  const span = (lo: number, hi: number, u0: number, u1: number, y0: number, h: number, kind: BoxKind, tint: number) =>
+    alongX ? rect(lo, c + Math.min(u0, u1), hi, c + Math.max(u0, u1), y0, h, kind, tint) : rect(c + Math.min(u0, u1), lo, c + Math.max(u0, u1), hi, y0, h, kind, tint);
+  const pieces = (lo: number, hi: number): [number, number][] => {
+    const ps: [number, number][] = [];
+    let cur = lo;
+    for (const [g0, g1] of [...gaps].sort((p, q) => p[0] - q[0])) {
+      if (g0 > cur + 0.01) ps.push([cur, g0]);
+      cur = Math.max(cur, g1);
+    }
+    if (hi > cur + 0.01) ps.push([cur, hi]);
+    return ps;
+  };
+  out.push(span(a, b, -2, 2, y - 0.3, y, "slab", 1));
+  for (const [lo, hi] of pieces(a, b)) {
+    out.push(span(lo, hi, pipeSide * 2, pipeSide * 1.3, y, y + 0.7, "steel", 3), span(lo, hi, pipeSide * 1.3, pipeSide * 0.6, y, y + 0.55, "steel", 2));
+    out.push(span(lo, hi, -pipeSide * 2, -pipeSide * 1.85, y, y + 0.5, "steel", 2));
+  }
+  for (let u = a + 2; u <= b - 1; u += 10) {
+    if (gaps.some(([g0, g1]) => u > g0 - 2 && u < g1 + 2)) continue;
+    for (const s of [-1.6, 1.6]) out.push(alongX ? box(u, c + s, 0.5, 0.5, y - 0.3, "steel", 1) : box(c + s, u, 0.5, 0.5, y - 0.3, "steel", 1));
+  }
+  return out;
+}
+
+/**
+ * The launch site's fuel depot (燃料基地), round (0, 0) in its frame on ground at 0, south of the
+ * crawlerway: three spherical tanks in a row along its south side behind a low bund, two upright
+ * tanks in its north-west, and pipe racks `rack` high running across it east to west and north to
+ * south, crossing between the tanks; stairs climb onto both at their ends, so the racks' walkways
+ * are a second floor over the yard. A pump house (the vault) and an office stand in its north,
+ * the loading bay with a tanker left under its canopy in its east.
+ */
+const FUEL = { rack: 6, alongZ: -8, acrossX: 32, spheres: [-40, -12, 16], sphereZ: 28, R: 9, under: 2.6 } as const;
+function fuelDepot(): Box[] {
+  const { rack: Y, alongZ: rz, acrossX: rx, spheres, sphereZ: sz, R, under } = FUEL;
+  const out: Box[] = [];
+  for (const x of spheres) out.push(...sphereTank(x, sz, R, under, 9));
+  // The bund in front of the spheres, broken twice to walk in among them.
+  for (const [a, b] of [[-54, -30], [-22, 6], [14, 30]]) out.push(rect(a, sz - R - 5, b, sz - R - 4.2, 0, 1.1, "wall", 1));
+  out.push(...tank(-48, -30, 7, 14, "s", 2), ...tank(-26, -30, 7, 14, "s", 2));
+  // The racks, crossing at (rx, rz), each with stairs up at its free end.
+  out.push(...walkedRack(true, -60, 50, rz, Y, -1, [[rx - 2, rx + 2]]), ...stairs(-60, rz + 0.7, "w", 2.6, Y, 1));
+  out.push(...walkedRack(false, -40, 20, rx, Y, -1, [[rz - 2, rz + 2]]), ...stairs(rx + 0.7, -40, "n", 2.6, Y, 1));
+  // The pump house and the office in the north.
+  out.push(...building(8, -32, 16, 10, WORKS.storey, { doors: ["e", "s"], windows: ["n"], scale: WORKS }));
+  out.push(...building(50, -30, 12, 9, WORKS.storey, { doors: ["w"], windows: ["s", "e"], scale: WORKS }));
+  // The loading bay: a canopy on four columns over a tanker and its cab.
+  out.push(rect(44, 14, 60, 34, 5.2, 5.5, "slab", 1));
+  for (const [x, z] of [[44.3, 14.3], [59.7, 14.3], [44.3, 33.7], [59.7, 33.7]]) out.push(box(x, z, 0.6, 0.6, 5.2, "steel", 2));
+  out.push(box(52, 24, 2.6, 9, 3.4, "steel", 9), box(52, 29.75, 2.6, 2.5, 3, "steel", 3));
+  // Cover about the yard: drums, crates and a row of barriers by the east gate.
+  out.push(box(-6, -18, 1.2, 1.2, 0.9, "crate"), box(-4.8, -18, 1.2, 1.2, 1.8, "crate"), box(20, -2, 2, 2, 2, "crate"), box(22, -2, 2, 2, 1.2, "crate"));
+  out.push(box(66, -2, 0.65, 9, 1.1, "prop", PROP.barrier), box(-58, 22, 2.4, 6, 2.4, "steel", 2));
+  return out;
+}
+
+/**
+ * A radome: a white ball `R` in radius on a short drum, from `y0` at (cx, cz), in slices of
+ * crossing boxes over the drum.
+ */
+function radome(cx: number, cz: number, R: number, y0: number): Box[] {
+  const out: Box[] = [];
+  const drum = 1.6;
+  const ring = (r: number, ya: number, yb: number) => [box(cx, cz, 2 * r, r * 0.83, yb, "steel", 9, ya), box(cx, cz, r * 0.83, 2 * r, yb, "steel", 9, ya), box(cx, cz, r * 1.42, r * 1.42, yb, "steel", 9, ya)];
+  out.push(...ring(R, y0, y0 + drum));
+  const n = 10;
+  for (let i = 0; i < n; i++) out.push(...ring(Math.sqrt(R * R - (((i + 0.5) * R) / n) ** 2), y0 + drum + (i * R) / n, y0 + drum + ((i + 1) * R) / n));
+  return out;
+}
+
+/**
+ * The tracking radar (追跡レーダー) on its ridge in the plateau's north, round (0, 0) in its frame on
+ * the ridge top: three white radomes in a row east to west, each on the flat roof of an equipment
+ * room (`domes`, `room` square), the middle room's roof climbed by outside stairs. Behind them an
+ * operations room, a generator and a mast; the one road comes up the ridge's south side at its east end
+ * (`レーダーの坂`), and rock steps climb its west end from the plateau (`LAID`).
+ */
+const RADAR = { domes: [-45, 0, 45], z: -2, room: 18, dome: 6.5 } as const;
+function radar(): Box[] {
+  const { domes, z, room, dome } = RADAR;
+  const out: Box[] = [];
+  for (const x of domes) {
+    out.push(...building(x, z, room, room, WORKS.storey, { doors: ["s"], windows: ["e", "w"], scale: WORKS, ...(x === 0 ? { roof: "e" as const } : {}) }));
+    out.push(...radome(x, z, dome, WORKS.storey));
+  }
+  out.push(...building(-22, 14, 14, 8, WORKS.storey, { doors: ["e"], windows: ["s"], scale: WORKS }));
+  // The generator, and a mast with its cabinet at the ridge's west end.
+  out.push(box(22, 14, 4, 2.6, 2.4, "steel", 1), box(-70, -10, 0.5, 0.5, 16, "steel", 2), box(-70, -7.5, 1.6, 1.2, 1.8, "steel", 1));
+  // Cover on the ridge top: sandbags by the road's top, crates by the rooms.
+  out.push(box(52, 12, 5, 0.9, 1.1, "prop", PROP.sandbags), box(-62, 8, 2, 2, 2, "crate"), box(-60, 8, 2, 2, 1.2, "crate"), box(26, -16, 2, 2, 1.8, "crate"));
+  return out;
+}
+
+/**
  * The POIs by id, the boss's (`BossId`) written as one and every other as a node. Their order is
  * the order of `POIS` and `NODES`, which a raid's per-POI state is indexed by (saves name POIs by
  * id): a new POI goes at the end, so the others keep their places and a raid's draws for them hold.
@@ -1926,7 +2046,7 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
       { x: DISH_STAIRS.x - 1.5, z: DISH_STAIRS.z + 2, y: DISH_STAIRS.floors * STOREY },
       { x: -29, z: -20, y: WORKS.storey, vault: true },
     ],
-    keyFrom: "launchpad",
+    keyFrom: "radar",
     loot: { weapon: [["pike", 1], ["hornet", 1], ["maul", 1], ["lance", 1], ["talon", 1]], armor: [1], heals: 2, valuable: [["board", 4], ["drive", 2], ["wire", 1], ["gyro", 1]] },
     floor: [
       { x: -20, z: -18, y: WORKS.storey, weapon: ["lance", 1] },
@@ -2451,6 +2571,74 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
       { x: 30, z: 4, heal: "medkit" },
     ],
   },
+  // The fuel depot south of the crawlerway: the yard among its tanks, the walkways on its pipe
+  // racks, the pump house (the vault) and the loading bay.
+  fuel: {
+    region: "launch",
+    depotOut: 40,
+    front: { tier: 1, unlocks: {} },
+    name: "燃料基地",
+    x: 0,
+    z: 0,
+    trigger: 75,
+    entry: { x: 78, z: -10, yaw: W },
+    squads: [
+      { name: "球形タンク", members: [{ kind: "grunt", x: -26, z: 28, face: N }, { kind: "grunt", x: 2, z: 28, face: N }] },
+      { name: "配管の架台", members: [{ kind: "grunt", x: -20, z: FUEL.alongZ + 0.6, y: FUEL.rack, face: N }, { kind: "drone", x: -10, z: 2 }] },
+      { name: "ポンプ棟", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 5, z: -32, face: E }, { kind: "charger", x: 20, z: -20, face: E }] },
+      { name: "積み込み場", members: [{ kind: "heavy", x: 52, z: 8, face: E }, { kind: "grunt", x: 62, z: -14, face: E }] },
+    ],
+    bins: [
+      { x: 3, z: -34 },
+      { x: -36, z: -18 },
+      { x: -26, z: 12 },
+      { x: 47, z: 24 },
+      { x: 50, z: -30 },
+      { x: -55, z: 5 },
+      { x: FUEL.acrossX + 0.6, z: -20, y: FUEL.rack },
+      { x: 12, z: -32, vault: true },
+    ],
+    keyFrom: "launchpad",
+    loot: { weapon: [["pike", 1], ["hornet", 1], ["talon", 1], ["lance", 1]], armor: [1], heals: 2, valuable: [["fuse", 3], ["wire", 3], ["parts", 2], ["drive", 1]] },
+    floor: [
+      { x: -5, z: 0, heal: "battery" },
+      { x: 10, z: FUEL.alongZ + 0.6, y: FUEL.rack, weapon: ["hornet", 1] },
+    ],
+  },
+  // The tracking radar on its ridge in the plateau's north: the rooms under its three domes, the
+  // middle one's roof, the operations room and the top of its one road.
+  radar: {
+    region: "launch",
+    depotOut: 18,
+    front: { tier: 2, unlocks: {} },
+    name: "追跡レーダー",
+    x: 0,
+    z: 0,
+    trigger: 75,
+    entry: { x: 60, z: 104, yaw: N },
+    squads: [
+      { name: "坂の上", members: [{ kind: "grunt", x: 58, z: 10, face: S }, { kind: "charger", x: 30, z: 14, face: S }] },
+      { name: "西のドーム", members: [{ kind: "grunt", x: -62, z: -4, face: W }, { kind: "drone", x: -45, z: -16 }] },
+      { name: "中のドーム", members: [{ kind: "grunt", x: 7.3, z: RADAR.z - 7.3, y: WORKS.storey, face: S }, { kind: "grunt", x: 20, z: 2, face: S }] },
+      { name: "東のドーム", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 41, z: 0, face: S }, { kind: "drone", x: 30, z: -16 }] },
+    ],
+    bins: [
+      { x: -45, z: -4 },
+      { x: 0, z: -4 },
+      { x: -22, z: 14 },
+      { x: 26, z: 12 },
+      { x: 60, z: 6 },
+      { x: -76, z: 2 },
+      { x: 4, z: RADAR.z - 7.3, y: WORKS.storey },
+      { x: 45, z: -6, vault: true },
+    ],
+    keyFrom: "fuel",
+    loot: { weapon: [["pike", 1], ["lance", 1], ["talon", 1], ["hornet", 1]], armor: [1], heals: 2, valuable: [["board", 3], ["drive", 2], ["gyro", 3], ["wire", 2], ["core", 1]] },
+    floor: [
+      { x: -45, z: 2, heal: "medkit" },
+      { x: -7.3, z: RADAR.z + 7.3, y: WORKS.storey, weapon: ["lance", 2] },
+    ],
+  },
 };
 
 const POI_IDS = Object.keys(POI_DEFS) as PoiId[];
@@ -2929,7 +3117,7 @@ const OUTPOSTS: Hamlet[] = [
   {
     // East of the smelter: the fuel the furnaces and the ships burned. White tanks inside a low
     // bund wall, a pump house, a loading bay under a canopy with a tanker left in it.
-    id: "fuel",
+    id: "harborFuel",
     name: "燃料基地",
     x: 350,
     z: -750,
@@ -3405,12 +3593,12 @@ export const PACKS: Squad[] = [
   {
     name: "台地のドローン群",
     members: [{ kind: "drone", x: -1150, z: 100 }, { kind: "drone", x: -1150, z: 100 }],
-    patrol: [{ x: -1150, z: 100 }, { x: -990, z: -40 }, { x: -960, z: -300 }, { x: -1100, z: -350 }],
+    patrol: [{ x: -1150, z: 100 }, { x: -990, z: -40 }, { x: -960, z: -300 }, { x: -1150, z: -250 }],
   },
 ];
 
 /** Stable names for the outposts (`OUTPOSTS`): places to loot with a guard squad of their own, not nodes of the front. */
-export type OutpostId = "substation" | "fuel" | "freight" | "wharf" | "engine" | "eastSubstation" | "pumps" | "ringNode" | "harborTown";
+export type OutpostId = "substation" | "harborFuel" | "freight" | "wharf" | "engine" | "eastSubstation" | "pumps" | "ringNode" | "harborTown";
 
 /** The robots' two factions (see FACTION): the network (網) and the rogues that broke off it (野良機). */
 export type Faction = "net" | "rogue";
@@ -3539,9 +3727,9 @@ export const MOBILES: Mobile[] = [
   { name: "大通りの警邏", kind: "patrol", faction: "net", region: "city", members: ["grunt", "drone"], nodes: [[804, -152], [936, -152], [936, -570]] },
   { name: "橋の野良機", kind: "patrol", faction: "rogue", region: "city", rank: 2, members: ["grunt", "charger"], nodes: [[740, -570], [804, -570], [804, -152]] },
   // --- the launch site: down the plateau's east side between the control centre and the assembly
-  // building, and across its south past the crawlerway, both well out from the two crossings.
+  // building, and across its south-east past the fuel depot, both well out from the two crossings.
   { name: "台地の警邏", kind: "patrol", faction: "net", region: "launch", members: ["grunt", "drone"], nodes: [[-880, -110], [-900, 30], [-940, 90]] },
-  { name: "渓谷の野良機", kind: "patrol", faction: "rogue", region: "launch", rank: 2, members: ["grunt", "charger"], nodes: [[-780, 330], [-900, 370], [-1060, 380]] },
+  { name: "渓谷の野良機", kind: "patrol", faction: "rogue", region: "launch", rank: 2, members: ["grunt", "charger"], nodes: [[-760, 330], [-820, 450], [-900, 515]] },
 ];
 
 export type DebrisId = "southwest" | "easthill" | "quarryeast" | "townwest" | "eastshore" | "saltwest";
@@ -3899,6 +4087,8 @@ export const LANDMARKS: readonly { name: string; x: number; z: number }[] = [
   at("launch", { name: "組立棟", x: 40, z: 210 }),
   at("launch", { name: "運搬路", x: -120, z: 242 }),
   at("launch", { name: "発射台", x: -270, z: 242 }),
+  at("launch", { name: "燃料基地", x: -110, z: 350 }),
+  at("launch", { name: "追跡レーダー", x: -120, z: -390 }),
   at("launch", { name: "滑走路", x: -75, z: -120 }),
   { name: "渓谷", x: -606, z: 200 },
   { name: "渓谷の鉄道橋", x: -614, z: 30 },
@@ -5672,6 +5862,8 @@ const AUTHORED: Box[] = [
   // The crawlerway's banks and the crawler stopped on it halfway to the pad.
   ...onLevel(LEVEL.plateau, crawlerBanks(POI_AT.assembly[0] - VAB.w / 2, POI_AT.launchpad[0] + 95, POI_AT.assembly[1] + VAB.door.z, 15)),
   ...onLevel(LEVEL.plateau, crawler(POI_AT.assembly[0] - VAB.w / 2 - 120, POI_AT.assembly[1] + VAB.door.z)),
+  ...onLevel(LEVEL.plateau, place(POI_AT.fuel[0], POI_AT.fuel[1], fuelDepot())),
+  ...onLevel(LEVEL.radarRidge, place(POI_AT.radar[0], POI_AT.radar[1], radar())),
 ];
 
 /**
@@ -5706,7 +5898,7 @@ interface Keep {
  * Cover is kept off them, and they are pressed to their own floor along their middle, so no
  * rock or building nearby can close them.
  */
-const KEPT_ROADS = ["湖への坂", "湖の西坂", "東の坂", "発着場の西坂", "採掘場の運搬路", "中段への坂", "底への坂", "採掘場の坑道", "台地への道", "台地の坂", "村の坂", "峠道", "鉄道の土手（南）", "鉄道の土手（北）", "駅の坂", "高架下", "西の道", "製錬所の坂", "塩田への坂", "ヤードの北道", "製錬所の北道", "岬の坂", "斜路", "引き込み線の土手", "切り通し", "管制室の坂", "発射台の坂"];
+const KEPT_ROADS = ["湖への坂", "湖の西坂", "東の坂", "発着場の西坂", "採掘場の運搬路", "中段への坂", "底への坂", "採掘場の坑道", "台地への道", "台地の坂", "村の坂", "峠道", "鉄道の土手（南）", "鉄道の土手（北）", "駅の坂", "高架下", "西の道", "製錬所の坂", "塩田への坂", "ヤードの北道", "製錬所の北道", "岬の坂", "斜路", "引き込み線の土手", "切り通し", "管制室の坂", "発射台の坂", "レーダーの坂"];
 
 /**
  * The quarry's wider iron stairs, in its frame: each from (x, z) on its floor toward the wall it
@@ -5791,9 +5983,10 @@ const WATER = "水路";
 const BETWEEN = "野";
 /**
  * Ground left bare: the launch site's runway, where the pickup craft lands, the crawlerway the
- * rocket rode out on, the assembly building's floor (inside it too) and the launch pad's deck and trench.
+ * rocket rode out on, the assembly building's floor (inside it too), the launch pad's deck and trench,
+ * the fuel depot's yard and the radar's ridge and its road.
  */
-const BARE = new Set(["滑走路", "運搬路", "組立棟の床", "発射台", "発射台の坂", "炎の溝"]);
+const BARE = new Set(["滑走路", "運搬路", "組立棟の床", "発射台", "発射台の坂", "炎の溝", "燃料基地の床", "追跡レーダーの尾根", "レーダーの坂"]);
 /** The first state of a scatter spot's own random stream, from its region's seed and its place on the grid. */
 function spotSeed(seed: number, kx: number, kz: number): number {
   let h = Math.imul(seed ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(kx | 0, 0xc2b2ae35) ^ Math.imul(kz | 0, 0x27d4eb2f);
@@ -6336,6 +6529,17 @@ const LAID: Box[] = (() => {
   out.push(...placeIn("anchor", [...tetherPiece(far), ...tetherPiece(west)]));
   const [sx, sz] = inArea("anchor", -196, 3.5);
   out.push(...stairs(sx, sz, "s", 3, west.back, 1, terrainHeight(sx, sz + 9)));
+  // The radar ridge's back way: rock steps up its west end from the plateau, between boulders.
+  {
+    const [rx, rz] = POI_AT.radar;
+    let lx = rx - 110;
+    while (terrainHeight(lx, rz) < LEVEL.radarRidge - 0.15) lx += 0.25;
+    let g = terrainHeight(lx - 3, rz);
+    g = terrainHeight(lx - (stepsFor(LEVEL.radarRidge - g) + 1) * STEP_DEPTH, rz);
+    const run = (stepsFor(LEVEL.radarRidge - g) + 1) * STEP_DEPTH;
+    out.push(...paint(stairs(lx, rz, "w", 3, LEVEL.radarRidge, 1, g), "step", "rock", () => 1));
+    out.push(rect(lx - run * 0.7, rz - 4.2, lx - run * 0.3, rz - 2.5, g - 0.5, g + 2.2, "rock", 0), rect(lx - run * 0.5, rz + 2.5, lx - run * 0.1, rz + 4.6, g - 0.5, g + 4.5, "rock", 1));
+  }
   return out;
 })();
 
@@ -6995,6 +7199,9 @@ export const FRONT_LINKS: readonly (readonly ["camp" | NodeId, NodeId])[] = [
   ["quarry", "control"],
   ["control", "assembly"],
   ["assembly", "launchpad"],
+  ["assembly", "fuel"],
+  ["assembly", "radar"],
+  ["station", "fuel"],
 ];
 for (const id of POI_IDS) if (!POI_DEFS[id].boss && !FRONT_LINKS.some((l) => l.includes(id as NodeId))) throw new Error(`node ${id} has no link in FRONT_LINKS`);
 

@@ -172,6 +172,14 @@ export const HARBOR_TOUR = [
   ["tour-121-crawlerway", "assembly", -80, 1.7, 40, -1.57, 0.04],
   ["tour-122-service-tower-top", "launchpad", -12.6, 12 + 28 * 3.4 + 1.6, -3, 1.4, -0.5, true],
   ["tour-123-flame-trench", "launchpad", -2, 1.7, 24, 0, 0.06],
+  // The fuel depot from the walkway on its east-west pipe rack toward the crossing and from its
+  // yard up at the spherical tanks (the plateau at 8, the racks' walkways at 6 over it); the
+  // radar's domes along its ridge from the top of its road, and its rock steps from the plateau
+  // at the ridge's west end (the ridge top at 22).
+  ["tour-124-fuel-racks", "fuel", -40, 8 + 6 + 1.6, -7.4, 1.57, -0.12, true],
+  ["tour-125-fuel-spheres", "fuel", -26, 1.7, 6, 3.14, 0.3],
+  ["tour-126-radar-domes", "radar", 66, 22 + 1.6, 12, -1.45, 0.08, true],
+  ["tour-127-radar-rock-steps", "radar", -128, 1.7, 2, 1.57, 0.3],
 ];
 
 /** A tour camera placed in the world: [name, x, dy, z, yaw, pitch, abs], from `frames` (window.ringfallFrames()). */
