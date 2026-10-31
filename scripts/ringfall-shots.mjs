@@ -1994,7 +1994,7 @@ for (const phone of [false, true]) {
   await pg.screenshot({ path: tag(7, "objective-front") });
   const hud = await pg.evaluate(() => ({ own: Number(document.querySelector("#island-row .tug-n.own")?.textContent), all: document.querySelector("#island-row .tug")?.getAttribute("aria-label"), text: document.getElementById("island-row").textContent }));
   const deadline = await pg.evaluate(() => document.querySelector("#obj-raid .deadline .ico.clock") ? document.querySelector("#obj-raid .deadline").textContent : "");
-  if (hud.own !== 2 || hud.all !== "2 / 17" || hud.text.trim() !== "215" || !/^\d+:\d\d$/.test(deadline)) errors.push(`battle: the HUD's row reads ${JSON.stringify(hud)}, the card "${deadline}"`);
+  if (hud.own !== 2 || hud.all !== "2 / 19" || hud.text.trim() !== "217" || !/^\d+:\d\d$/.test(deadline)) errors.push(`battle: the HUD's row reads ${JSON.stringify(hud)}, the card "${deadline}"`);
   const st = await readOf(pg);
   if (st.battle.squads.filter((q) => q.side === 0).length < 2) errors.push(`battle: ${st.battle.squads.filter((q) => q.side === 0).length} of the player's squads at the start (the turrets at two nodes)`);
   // A fight in front of the player: the player's squad on the left, the enemy's on the right.
@@ -2139,7 +2139,7 @@ for (const phone of [false, true]) {
   await pg.screenshot({ path: tag(7, "results-night") });
   const bar = await pg.evaluate(() => document.querySelector("#day-result .tug")?.getAttribute("aria-label"));
   const held = Object.entries(r.profile.poiState).filter(([id, o]) => id !== "pad" && o.state === "freed").length;
-  if (bar !== `${held} / 17`) errors.push(`push-pull: the results' bar reads ${bar} for ${held} nodes held`);
+  if (bar !== `${held} / 19`) errors.push(`push-pull: the results' bar reads ${bar} for ${held} nodes held`);
   await ctx.close();
   lap(`push-pull, ${phone ? "phone" : "desktop"}`);
 }

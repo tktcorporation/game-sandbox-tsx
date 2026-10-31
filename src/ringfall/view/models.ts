@@ -61,6 +61,9 @@ export const PAL = {
   /** The launch site's plateau: pale caliche, a dry crust whiter than the island's sand. */
   caliche: 0xddd7c6,
   calicheDark: 0xc2baa4,
+  /** The crawlerway's river gravel: a warm grey, darker than the caliche round it so the road reads from afar. */
+  gravel: 0x958a80,
+  gravelDark: 0x6e645c,
   /** The open ground round the city: broken grey paving and patches of cinder. */
   cityLot: 0x8a8f93,
   cityLotDark: 0x6c7176,

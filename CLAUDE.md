@@ -30,10 +30,20 @@ house, the turbine hall and the switchyard, whose line runs on pylons into the c
 pickup beside the works; a road bridge from the relay's side and a rail
 bridge from the harbor's cross the strait (`STRAIT_SPANS`). The launch site (`launch`, 発射場; west,
 beyond a dry canyon 25 m deep, `docs/ringfall/brief.md`) stands on a pale caliche plateau at +8
-(`西の台地` in `LANDS`, about 800 by 1120 m round x -930, z 20) with one POI so far, the control
-centre at its east edge (`control`, 管制センター: a works block whose ground floor stands in a yard
-sunk a storey under the plateau, its second floor reached over a footbridge, an antenna array on
-its roof), linked to the quarry; a rail bridge from the quarry's side (`CANYON_SPANS`, on the rail
+(`西の台地` in `LANDS`, about 800 by 1120 m round x -930, z 20) with three POIs so far: the control
+centre in its north-east, 160 m and more from both crossings (`control`, 管制センター: a works block
+whose ground floor stands in a yard sunk a storey under the plateau, its second floor reached over
+a footbridge, an antenna array on its roof), linked to the quarry; the assembly building east of
+the runway (`assembly`, 組立棟, `assembly()`, sized by `VAB`: a box 110 by 150 m and 110 m high
+parted into four high bays, work platforms along their walls in four tiers 9 m apart climbed by a
+stair tower in each bay and crossed by catwalks, a rocket half built on its launcher platform in
+the south-west bay, whose door stands open); and the launch pad at the plateau's west end over the
+sea (`launchpad`, 発射台, `launchpad()`, sized by `LAUNCHPAD`: a deck raised 4 m over the plateau,
+a rocket about 90 m high on a slab over the flame trench `炎の溝`, which runs under it as a low road,
+and the service tower, an open steel tower climbed inside to its top platform 95 m over the deck,
+its swing arms reaching the rocket), joined by the crawlerway (`運搬路` in `ROADS`, 30 m of gravel
+between low banks, the crawler stopped on it, `crawler()`); control, assembly and pad are linked
+in that order. A rail bridge from the quarry's side (`CANYON_SPANS`, on the rail
 spur's embankment) and a road cut from the terraced fields' side that climbs down into the canyon
 and out (`切り通し` in `ROADS`) cross it, a craft called down onto the plateau's runway and a wait
 on the canyon's floor are its ways off. The world is about 2460 by 1880 m
@@ -222,8 +232,8 @@ with no contract plays at 0 (`raidThreat()`). 0 is the island's raid at the enem
 higher scales its times and plates (`raidClock()`, `netPlated()`), the range robots answer shots
 from afar, the mod parts' odds, and the contract's pay (`threatPay()`). `Profile.freedAt` keeps
 each POI's best 強度 for the map.
-The front (`docs/ringfall/island-v2.md`): the seventeen freeable POIs are the nodes (`NODES` in
-`map.ts`, linked along the roads by the twenty-four `FRONT_LINKS`, in loops, each with its depth, `TIER` from `POI_DEFS`); the
+The front (`docs/ringfall/island-v2.md`): the nineteen freeable POIs are the nodes (`NODES` in
+`map.ts`, linked along the roads by the twenty-six `FRONT_LINKS`, in loops, each with its depth, `TIER` from `POI_DEFS`); the
 outposts are places to loot with an enemy guard, no nodes, and the rogues hold no ground.
 `sim/front.ts` holds the rules. A node next to the player's ground (the camp and the player's
 nodes) is on the front; only its core, a pillar near its middle, can be captured (`FRONT` in
@@ -280,7 +290,7 @@ player left, so the results tell the battle after leaving from the raid.
 `view/battle.ts` draws the battle from afar: the landing craft and their beams, the battle's
 robots past `thingsFar` and the squads that are numbers out to the fog as instanced figures
 (`columnPoints()`), and the gate's and the depots' light as the factory's squads come out.
-The long-term goal is how many of the seventeen nodes the player holds (`view/row.ts` draws them as
+The long-term goal is how many of the nineteen nodes the player holds (`view/row.ts` draws them as
 one tug-of-war bar, blue from the left and red from the right, a segment a node, at the title, the
 HUD's top, the camp's line, the map table and the results; its boundary slides when a node changes
 hands and flickers while one is fought over); there is no ending. The hideout is the mid-term one: five modules built level by level from specific
@@ -338,7 +348,7 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   `mezzanine()` is `hall()`'s mezzanine on its own, `disc()` a round of columns, `dish()` a tilted
   parabolic dish of columns, and `strand()` / `stay()` a cable as blocks stepping along it.
   Each POI's buildings are a function of its own (`supply()`, `quarry()`, `relay()`, `pad()`,
-  `wreck()`, `yard()`, `smelter()`, `station()`, `waterworks()`, `lodge()`, `cannery()`, `coldstore()`, `terminal()`, `carpark()`, `robotworks()`, `highrise()`, `powerplant()`), as is each district's (`heartTown()`, `damFace()`,
+  `wreck()`, `yard()`, `smelter()`, `station()`, `waterworks()`, `lodge()`, `cannery()`, `coldstore()`, `terminal()`, `carpark()`, `robotworks()`, `highrise()`, `powerplant()`, `control()`, `assembly()`, `launchpad()`), as is each district's (`heartTown()`, `damFace()`,
   `plateau()`, `village()`, `factory()`, and the machine city's grid of streets, glass towers,
   offices and elevated line round its station, `city()`, painted from steel tints 8 and 9). The helpers take their sizes from a `Scale` (storey,
   walls, doors, windows, roller doors, stair width): `WORKS` for industry (4.5 m storeys,

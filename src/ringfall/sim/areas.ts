@@ -98,7 +98,9 @@ const POI_IN: Record<PoiId, [AreaId, Offset]> = {
   robotworks: ["city", [-25, -315]],
   highrise: ["city", [64, 178]],
   powerplant: ["powerplant", [0, 0]],
-  control: ["launch", [140, -50]],
+  control: ["launch", [100, -250]],
+  assembly: ["launch", [40, 210]],
+  launchpad: ["launch", [-270, 242]],
 };
 
 /** A point written in an area's frame, in the world. */

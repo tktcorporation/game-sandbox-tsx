@@ -63,6 +63,7 @@ const MIX: Record<Ground | "soil", Partial<Record<Thing, number>>> = {
   concrete: { crack: 0.07, stain: 0.05, stone: 0.03 },
   asphalt: { crack: 0.05, stain: 0.07 },
   caliche: { crack: 0.06, stone: 0.08, tuft: 0.03 },
+  gravel: { stone: 0.3 },
 };
 const THINGS: readonly Thing[] = ["stone", "stain", "crack", "tuft"];
 const ROCK_DARK = new THREE.Color(PAL.rockDark);

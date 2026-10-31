@@ -129,7 +129,7 @@ interface Open {
  * from another at a glance. Only the renderer and the world map read it: it changes no rule.
  * `quarry` and `sandstone` colour the cliffs round their shapes too (`cliffGround()`).
  */
-export type Ground = "dune" | "salt" | "paved" | "mud" | "quarry" | "sandstone" | "scrub" | "oiled" | "concrete" | "asphalt" | "caliche";
+export type Ground = "dune" | "salt" | "paved" | "mud" | "quarry" | "sandstone" | "scrub" | "oiled" | "concrete" | "asphalt" | "caliche" | "gravel";
 
 /**
  * A dune: its crest runs along `line`, `height` metres over the floor it stands on, and its sides
@@ -235,6 +235,9 @@ export const LEVEL = {
   canyon: -17,
   /** The control centre's sunk yard: one works storey under the plateau. */
   controlPit: 3.5,
+  /** The launch pad's concrete deck, raised over the plateau, and the floor of the flame trench cut under it. */
+  launchPad: 12,
+  flameTrench: 5,
   /** The island's ground at the east ends of the two crossings over the canyon. */
   canyonEast: 4,
 } as const;
@@ -336,6 +339,10 @@ const BASINS: Open[] = [
   { name: "滑走路", line: inArea("launch", [[-75, -215], [-75, 215]]), half: 30, level: LEVEL.plateau, ground: "concrete" },
   // The control centre's sunk yard round its block, a storey under the plateau.
   { name: "管制室の掘り込み", line: inPoi("control", [[-14, 0], [14, 0]]), half: 13, level: LEVEL.controlPit, walled: true, ground: "concrete" },
+  // The assembly building's floor and the apron round it, level with the plateau.
+  { name: "組立棟の床", line: inPoi("assembly", [[0, -50], [0, 50]]), half: 62, level: LEVEL.plateau, ground: "concrete" },
+  // The launch pad's deck, raised over the plateau at its west end, its sides a drop.
+  { name: "発射台", line: inPoi("launchpad", [[-25, 0], [25, 0]]), half: 30, level: LEVEL.launchPad, walled: true, ground: "concrete" },
   // The ground at both ends of the two crossings over the canyon: the rail bridge's (from the quarry's
   // side) and the road cut's (from the terraced fields' side).
   { name: "引き込み線の東口", line: [[-470, 30], [-470, 30]], half: 9, level: LEVEL.canyonEast },
@@ -413,6 +420,14 @@ const ROADS: Open[] = [
   { name: "切り通し", line: [[-505, -90], [-586, -90], [-628, -90], [-708, -90]], half: 5, level: [LEVEL.canyonEast, LEVEL.canyon, LEVEL.canyon, LEVEL.plateau], atPoints: true, walled: true, ground: "caliche" },
   // Down into the control centre's sunk yard from the plateau, on its south side.
   { name: "管制室の坂", line: inPoi("control", [[6, 42], [6, 13]]), half: 4, level: [LEVEL.plateau, LEVEL.controlPit], atPoints: true, walled: true, ground: "concrete" },
+  // The crawlerway (運搬路) from the assembly building's open door west to the launch pad: a road
+  // 30 m wide of river gravel, on which the crawler carried a rocket out; then the ramp up onto
+  // the pad's deck from its east end.
+  { name: "運搬路", line: [inPoi("assembly", [[-55, 32]])[0], inPoi("launchpad", [[95, 0]])[0]], half: 15, level: LEVEL.plateau, ground: "gravel" },
+  { name: "発射台の坂", line: inPoi("launchpad", [[95, 0], [52, 0]]), half: 15, level: [LEVEL.plateau, LEVEL.launchPad], atPoints: true, walled: true, ground: "concrete" },
+  // The flame trench, cut north to south under the pad's deck where the rocket stands and out
+  // past both sides, its ends climbing back to the plateau: under the deck a low road through.
+  { name: "炎の溝", line: inPoi("launchpad", [[0, -75], [0, -45], [0, 45], [0, 75]]), half: 5, level: [LEVEL.plateau, LEVEL.flameTrench, LEVEL.flameTrench, LEVEL.plateau], atPoints: true, walled: true, ground: "concrete" },
 ];
 
 /** The line of the road named `name` (empty when there is none). */

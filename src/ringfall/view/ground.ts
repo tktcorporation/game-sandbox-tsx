@@ -61,6 +61,8 @@ export const GROUND: Record<Ground, { base: THREE.Color; dark: THREE.Color; mix:
   concrete: { base: new THREE.Color(PAL.concrete), dark: new THREE.Color(PAL.concreteDark), mix: (x, z, k) => (noise(x * 0.3, z * 0.3) > 0.7 ? 0.4 : k * 0.2) },
   // The launch site's pale caliche crust, in wide blotches of the darker under it.
   caliche: { base: new THREE.Color(PAL.caliche), dark: new THREE.Color(PAL.calicheDark), mix: (x, z, k) => (noise(x * 0.08, z * 0.08) > 0.64 ? 0.55 : k * 0.25) },
+  // The crawlerway's river gravel, a fine speckle of darker stones.
+  gravel: { base: new THREE.Color(PAL.gravel), dark: new THREE.Color(PAL.gravelDark), mix: (x, z, k) => (noise(x * 0.9, z * 0.9) > 0.6 ? 0.6 : k * 0.25) },
   // The machine city's charcoal asphalt, patched darker; its lane paint is laid by `laneMark()`.
   asphalt: { base: new THREE.Color(PAL.cityAsphalt), dark: new THREE.Color(PAL.cityAsphaltDark), mix: (x, z, k) => (noise(x * 0.18, z * 0.18) > 0.66 ? 0.7 : k * 0.3) },
 };

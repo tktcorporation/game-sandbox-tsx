@@ -656,7 +656,7 @@ export interface Squad {
 export type LootTable = { weapon: [WeaponKind, Rarity][]; armor: Rarity[]; heals: number; valuable: [ValuableKind, number][] };
 
 /** Stable names for the POIs: saves, quests and other data refer to a POI by these, never by its place in `POIS`. */
-export type PoiId = "supply" | "quarry" | "relay" | "pad" | "wreck" | "yard" | "smelter" | "station" | "waterworks" | "lodge" | "cannery" | "coldstore" | "terminal" | "carpark" | "robotworks" | "highrise" | "powerplant" | "control";
+export type PoiId = "supply" | "quarry" | "relay" | "pad" | "wreck" | "yard" | "smelter" | "station" | "waterworks" | "lodge" | "cannery" | "coldstore" | "terminal" | "carpark" | "robotworks" | "highrise" | "powerplant" | "control" | "assembly" | "launchpad";
 /** The boss's POI (the titan's pad): written as the boss in `POI_DEFS`, and no node of the front. */
 export type BossId = "pad";
 
@@ -1617,6 +1617,209 @@ function runway(): Box[] {
 }
 
 /**
+ * A rocket standing at (cx, cz) from height y0: each part a round body `r` in radius and `h`
+ * high, stacked on the one below and painted plate of its tint, built as three crossing boxes
+ * (an octagon in steps) as `tank()`'s are.
+ */
+function rocketStack(cx: number, cz: number, y0: number, parts: readonly (readonly [r: number, h: number, tint: number])[]): Box[] {
+  const out: Box[] = [];
+  let y = y0;
+  for (const [r, h, tint] of parts) {
+    const [s, q] = [r * 0.83, r * 1.42];
+    out.push(box(cx, cz, 2 * r, s, y + h, "steel", tint, y), box(cx, cz, s, 2 * r, y + h, "steel", tint, y), box(cx, cz, q, q, y + h, "steel", tint, y));
+    y += h;
+  }
+  return out;
+}
+
+/** A rail 1 m high along x from a to b, between z0 and z1, its foot at y, left open over each of `gaps` (x ranges). */
+function railAlongX(a: number, b: number, z0: number, z1: number, y: number, gaps: readonly (readonly [number, number])[]): Box[] {
+  const out: Box[] = [];
+  let cur = a;
+  for (const [g0, g1] of [...gaps].sort((p, q) => p[0] - q[0])) {
+    if (g0 > cur + 0.01) out.push(rect(cur, z0, g0, z1, y, y + 1, "steel", 2));
+    cur = Math.max(cur, g1);
+  }
+  if (b > cur + 0.01) out.push(rect(cur, z0, b, z1, y, y + 1, "steel", 2));
+  return out;
+}
+
+/**
+ * The launch site's assembly building (組立棟), round (0, 0) in its frame on ground at 0: the
+ * region's largest building, `w` east to west, `d` north to south and `h` high, its walls bands of
+ * white plate, `wall` thick. A wall down its middle and one across each half part four high bays,
+ * joined on the floor by openings under the first tier. In each bay work platforms `deep` deep run
+ * along its north and south walls in `tiers` tiers `tier` apart, a stair tower at the bay's inner
+ * end climbs to every tier and its roof is the top one, and beside the tower a catwalk crosses the
+ * bay at each tier. The south-west bay holds a rocket half built on its launcher platform (`mlp`
+ * high), with catwalks out to it from the north platforms every other tier, and its door in the
+ * west wall (`door`, at z along the wall) stands open onto the crawlerway; the other bays' doors
+ * are shut. People doors at the foot of the outer walls lead in under the platforms.
+ */
+const VAB = { w: 110, d: 150, h: 110, wall: 1, tier: 2 * WORKS.storey, tiers: 4, deep: 9, door: { z: 32, w: 24, h: 80 }, rocket: { x: -30, z: 37, r: 5 }, mlp: 6 } as const;
+
+/**
+ * One of the assembly building's bays, its inside from x0 to x1 and z0 to z1, its stair tower at
+ * its east (`end` "e") or west end against its north wall; with `rocket`, catwalks reach out to its
+ * north face from the north platforms on every other tier.
+ */
+function vabBay(x0: number, x1: number, z0: number, z1: number, end: "e" | "w", rocket?: { x: number; z: number; r: number }): Box[] {
+  const { tier, tiers, deep } = VAB;
+  const out: Box[] = [];
+  const far: Side = end === "e" ? "w" : "e";
+  const [tw, td] = [10, 9];
+  const tx = end === "e" ? x1 - 1.5 - tw / 2 : x0 + 1.5 + tw / 2;
+  // The tower's door on every second storey opens onto the north platform, which meets its wall.
+  out.push(...tower(tx, z0 + 1.5 + td / 2, tw, td, tiers * 2, { doors: Array.from({ length: tiers * 2 }, (_, k) => (k % 2 === 0 ? [far] : [])), scale: WORKS, open: [far] }));
+  const face = end === "e" ? tx - tw / 2 : tx + tw / 2;
+  const [na, nb] = end === "e" ? [x0, face] : [face, x1];
+  // The catwalk across the bay, 1.5 m clear of the tower.
+  const cx = end === "e" ? face - 2.5 : face + 2.5;
+  for (let t = 1; t <= tiers; t++) {
+    const y = t * tier;
+    const across: [number, number] = [cx - 1, cx + 1];
+    const reach: [number, number][] = rocket && t % 2 === 0 ? [[rocket.x - 1, rocket.x + 1]] : [];
+    out.push(rect(na, z0, nb, z0 + deep, y - 0.3, y, "slab", 1), rect(x0, z1 - deep, x1, z1, y - 0.3, y, "slab", 1));
+    out.push(...railAlongX(na, nb, z0 + deep - 0.15, z0 + deep, y, [across, ...reach]), ...railAlongX(x0, x1, z1 - deep, z1 - deep + 0.15, y, [across]));
+    out.push(...catwalk(cx, z0 + deep, cx, z1 - deep, y, 2, 2));
+    if (rocket && reach.length) out.push(...catwalk(rocket.x, z0 + deep, rocket.x, rocket.z - rocket.r, y, 2, 2));
+  }
+  return out;
+}
+
+function assembly(): Box[] {
+  const { w, d, h, wall: T, door, rocket: R, mlp } = VAB;
+  const [X, Z] = [w / 2, d / 2];
+  const out: Box[] = [];
+  // The outer walls in bands of plate, the top band darker; the open door's hole up through the
+  // bands under its head, and people doors at the foot of the north, south and east walls.
+  const bands = [0, 20, 40, 60, 80, h - 0.5];
+  for (let i = 0; i + 1 < bands.length; i++) {
+    const [y0, y1] = [bands[i], bands[i + 1]];
+    const holes: Hole[] = [];
+    if (y0 < door.h) holes.push({ side: "w", at: door.z, w: door.w, head: Math.min(door.h, y1) - y0 });
+    if (i === 0) for (const at of [-27, 27]) holes.push({ side: "n", at, w: WORKS.door, head: WORKS.doorHead }, { side: "s", at, w: WORKS.door, head: WORKS.doorHead });
+    if (i === 0) for (const at of [-60, 60]) holes.push({ side: "e", at, w: WORKS.door, head: WORKS.doorHead });
+    out.push(...shell(0, 0, w, d, y0, y1, holes, "steel", i === bands.length - 2 ? 2 : 9, T));
+  }
+  out.push(rect(-X, -Z, X, Z, h - 0.5, h, "slab", 0));
+  // The shut doors: tall panels on the outside of the other bays' ends.
+  out.push(rect(-X - 0.4, -door.z - door.w / 2, -X, -door.z + door.w / 2, 0, door.h, "steel", 2));
+  for (const z of [-door.z, door.z]) out.push(rect(X, z - door.w / 2, X + 0.4, z + door.w / 2, 0, door.h, "steel", 2));
+  // The walls between the bays: down the middle, and across each half. Openings 12 m wide and
+  // 8 m high under the first tier join the bays on the floor.
+  const [ia, ib, ja, jb, P] = [-X + T, X - T, -Z + T, Z - T, 0.5];
+  const top = h - 0.5;
+  for (const [a, b] of [[ja, -43], [-31, 31], [43, jb]]) out.push(rect(-P, a, P, b, 0, top, "wall", 0));
+  for (const [a, b] of [[-43, -31], [31, 43]]) out.push(rect(-P, a, P, b, 8, top, "wall", 0));
+  for (const [a, b] of [[ia, -33], [-21, -P], [P, 21], [33, ib]]) out.push(rect(a, -P, b, P, 0, top, "wall", 0));
+  for (const [a, b] of [[-33, -21], [21, 33]]) out.push(rect(a, -P, b, P, 8, top, "wall", 0));
+  out.push(...vabBay(ia, -P, ja, -P, "e"), ...vabBay(ia, -P, P, jb, "e", R), ...vabBay(P, ib, ja, -P, "w"), ...vabBay(P, ib, P, jb, "w"));
+  // The south-west bay: the launcher platform with stairs up its east side, and on it the rocket:
+  // its first stage, the ring over it and the second stage, then only the frame the rest goes on.
+  out.push(box(R.x, R.z, 22, 22, mlp, "steel", 1), ...stairs(R.x + 11, R.z, "e", 3, mlp, 1));
+  out.push(...rocketStack(R.x, R.z, mlp, [[R.r, 40, 9], [R.r + 0.2, 2, 1], [4.3, 18, 9]]));
+  for (const [dx, dz] of [[-3, -3], [3, -3], [-3, 3], [3, 3]]) out.push(box(R.x + dx, R.z + dz, 0.4, 0.4, mlp + 76, "steel", 2, mlp + 60));
+  // Its floor: crates and racks of parts by the door, a parts cart.
+  out.push(box(-46, 54, 2, 2, 2, "crate"), box(-44, 54, 2, 2, 1.2, "crate"), box(-46, 12, 2.4, 6, 2.4, "steel", 2), box(-12, 54, 6, 2.4, 1.6, "steel", 3));
+  // The north-west bay: a stage's ring section standing on the floor, crates beside it.
+  out.push(...rocketStack(-30, -37, 0, [[4.8, 6, 9]]), box(-44, -30, 2, 2, 2, "crate"), box(-44, -28, 2, 2, 1.2, "crate"));
+  // The north-east bay: sections of tank standing in a row and a rack of parts.
+  out.push(...rocketStack(24, -37, 0, [[4, 8, 9]]), ...rocketStack(40, -37, 0, [[4, 5, 9]]), box(32, -22, 8, 2.4, 2.2, "steel", 2));
+  // The south-east bay: a first stage lying on two cradles, its round body in three crossing boxes.
+  out.push(rect(22, 33, 52, 41, 1.3, 7.7, "steel", 9), rect(22, 35.3, 52, 38.7, 0, 9, "steel", 9), rect(22, 34.2, 52, 39.8, 0.4, 8.6, "steel", 9));
+  out.push(rect(24, 31.5, 26.5, 42.5, 0, 3, "steel", 1), rect(47.5, 31.5, 50, 42.5, 0, 3, "steel", 1));
+  // Outside the open door: a row of barriers on the apron's north edge, and a parts trailer.
+  out.push(box(-70, 12, 9, 0.65, 1.1, "prop", PROP.barrier), box(-64, 52, 6, 2.4, 1.4, "steel", 2));
+  return out;
+}
+
+/**
+ * The crawler-transporter, stopped on the crawlerway round (cx, cz) on ground at 0: a deck 36 by
+ * 26 m on four tracked trucks, one at each corner, high enough to walk under, its cabs at the
+ * front and back corners and a stair up its east end.
+ */
+function crawler(cx: number, cz: number): Box[] {
+  const [L, W, deck] = [36, 26, 6];
+  const out: Box[] = [];
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) out.push(box(cx + sx * (L / 2 - 6), cz + sz * (W / 2 - 3.5), 12, 7, 3.2, "steel", 1));
+  out.push(box(cx, cz, L, W, deck, "steel", 2, 3.2));
+  out.push(box(cx - L / 2 + 2, cz - W / 2 + 2, 4, 4, deck + 3, "steel", 3, deck), box(cx + L / 2 - 2, cz + W / 2 - 2, 4, 4, deck + 3, "steel", 3, deck));
+  out.push(box(cx, cz, 18, 14, deck + 1.2, "steel", 1, deck));
+  out.push(...stairs(cx + L / 2, cz + 6, "e", 2, deck, 2));
+  return out;
+}
+
+/** The crawlerway's low banks: lengths of concrete kerb 1.1 m high along both edges, broken every few lengths to cross. */
+function crawlerBanks(ax: number, bx: number, z: number, half: number): Box[] {
+  const out: Box[] = [];
+  const [a, b] = [Math.min(ax, bx), Math.max(ax, bx)];
+  for (let x = a + 4; x + 18 <= b - 4; x += 24) for (const s of [-1, 1]) out.push(rect(x, z + s * (half + 0.5) - 1, x + 18, z + s * (half + 0.5) + 1, 0, 1.1, "wall", 1));
+  return out;
+}
+
+/**
+ * The launch pad (発射台), round (0, 0) in its frame: its deck (`LEVEL.launchPad`) raised over
+ * the plateau at its west end facing the sea, the flame trench (`炎の溝`) cut north to south
+ * under it. Over the trench a slab carries the rocket, about 90 m high with two boosters, so the
+ * trench under it is a low road through. West of the rocket the service tower (`tower`), an open
+ * steel tower climbed by stairs inside to its top platform, its swing arms reaching the rocket
+ * from the platforms in `arms` (by their place up the tower). All of it stands on the deck and
+ * the trench without pressing them: the trench's walls and the deck's edges stay as cut.
+ */
+const LAUNCHPAD = { tower: { x: -17, z: 0, w: 12, d: 12, floors: 28, top: 104 }, arms: [5, 11, 16, 21, 24], rocket: 5, slab: 14 } as const;
+/** The height of a service tower platform over the deck, by its place up the tower (as `lattice()` builds them). */
+const towerLevel = (k: number) => (k + 1) * STOREY;
+
+/** `lattice()`, with the knee rail on its `side` left open at the middle on each platform of `arms`, where a swing arm leaves it. */
+function serviceTower(cx: number, cz: number, w: number, d: number, floors: number, top: number, arms: readonly number[], side: Side): Box[] {
+  const rails = lattice(cx, cz, w, d, floors, top);
+  const along = side === "n" || side === "s" ? "x" : "z";
+  const mid = along === "x" ? cx : cz;
+  const out: Box[] = [];
+  for (const b of rails) {
+    const y = b.y0;
+    const k = arms.find((a) => Math.abs(towerLevel(a) - y) < 0.01);
+    const onSide = b.kind === "steel" && b.h - b.y0 === 0.5 && (side === "e" ? b.x0 > cx + w / 2 - 0.2 : side === "w" ? b.x1 < cx - w / 2 + 0.2 : side === "n" ? b.z1 < cz - d / 2 + 0.2 : b.z0 > cz + d / 2 - 0.2);
+    if (k === undefined || !onSide) {
+      out.push(b);
+      continue;
+    }
+    const [lo, hi] = along === "x" ? [b.x0, b.x1] : [b.z0, b.z1];
+    const piece = (p: number, q: number) => (along === "x" ? { ...b, x0: p, x1: q } : { ...b, z0: p, z1: q });
+    out.push(piece(lo, mid - 1.2), piece(mid + 1.2, hi));
+  }
+  return out;
+}
+
+function launchpad(): Floors {
+  const { tower: t, arms, rocket: r, slab } = LAUNCHPAD;
+  const deck: Box[] = [];
+  // The slab over the trench, flush with the deck and out over the tops of its sloping walls, and
+  // on it the rocket over the trench's middle:
+  // its core to 88 m in white plate, a scorched ring between its stages, a booster either side.
+  deck.push(rect(-9, -slab, 9, slab, -0.3, 0, "slab", 1));
+  deck.push(...rocketStack(0, 0, 0, [[r, 50, 9], [r + 0.2, 3, 7], [4.2, 23, 9], [4.2, 6, 9], [3, 3, 9], [1.6, 3, 9]]));
+  for (const s of [-1, 1]) deck.push(...rocketStack(0, s * (r + 2.2), 0, [[2.2, 34, 9], [1.4, 3, 9]]));
+  // The service tower west of it, and its swing arms out to the rocket's west face.
+  deck.push(...serviceTower(t.x, t.z, t.w, t.d, t.floors, t.top, arms, "e"));
+  for (const k of arms) deck.push(...catwalk(t.x + t.w / 2, 0, -r, 0, towerLevel(k), 2, 2));
+  // On the deck: the pad's equipment room, propellant lines along its north edge, cable boxes and crates as cover.
+  deck.push(...building(28, -16, 9, 6, 3.2, { doors: ["w"], windows: ["s"], scale: HOME }));
+  deck.push(rect(-30, -24, 30, -22.8, 0, 1.2, "steel", 2), rect(-30, -21.8, 30, -21.2, 1.2, 1.5, "steel", 3));
+  deck.push(box(22, 14, 4, 1.4, 1.2, "steel", 1), box(-32, 16, 2, 2, 2, "crate"), box(-30, 16, 2, 2, 1.2, "crate"), box(36, 8, 2.4, 2.4, 1.6, "steel", 3));
+  // Down in the trench beside the low road: blocks of the flame deflector along its east wall.
+  const trench: Box[] = [rect(2, -9, 5, 9, 0, 1.3, "steel", 7)];
+  // Steps from the plateau up onto the deck's north and south edges, laid on the cliff without pressing it.
+  const plateau: Box[] = [...stairs(20, -30, "n", 3, LEVEL.launchPad - LEVEL.plateau, 1), ...stairs(-20, 30, "s", 3, LEVEL.launchPad - LEVEL.plateau, 1)];
+  return [
+    [LEVEL.launchPad, deck, "loose"],
+    [LEVEL.flameTrench, trench, "loose"],
+    [LEVEL.plateau, plateau, "loose"],
+  ];
+}
+
+/**
  * The POIs by id, the boss's (`BossId`) written as one and every other as a node. Their order is
  * the order of `POIS` and `NODES`, which a raid's per-POI state is indexed by (saves name POIs by
  * id): a new POI goes at the end, so the others keep their places and a raid's draws for them hold.
@@ -1718,7 +1921,7 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
       { x: DISH_STAIRS.x - 1.5, z: DISH_STAIRS.z + 2, y: DISH_STAIRS.floors * STOREY },
       { x: -29, z: -20, y: WORKS.storey, vault: true },
     ],
-    keyFrom: "control",
+    keyFrom: "launchpad",
     loot: { weapon: [["pike", 1], ["hornet", 1], ["maul", 1], ["lance", 1], ["talon", 1]], armor: [1], heals: 2, valuable: [["board", 4], ["drive", 2], ["wire", 1], ["gyro", 1]] },
     floor: [
       { x: -20, z: -18, y: WORKS.storey, weapon: ["lance", 1] },
@@ -2172,6 +2375,73 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
     keyFrom: "quarry",
     loot: { weapon: [["pike", 1], ["hornet", 1], ["talon", 1], ["lance", 1]], armor: [1], heals: 2, valuable: [["board", 3], ["wire", 3], ["gyro", 2], ["drive", 1]] },
     floor: [{ x: 2, z: -2, heal: "battery" }],
+  },
+  // The assembly building in the plateau's middle: its four bays' floors and work platforms, the
+  // rocket's launcher platform, and the apron before its open door; the vault up on a platform.
+  assembly: {
+    region: "launch",
+    depotOut: 40,
+    front: { tier: 2, unlocks: {} },
+    name: "組立棟",
+    x: 0,
+    z: 0,
+    trigger: 90,
+    entry: { x: -80, z: 30, yaw: E },
+    squads: [
+      { name: "大扉", members: [{ kind: "grunt", x: -48, z: 26, face: W }, { kind: "grunt", x: -47, z: 44, face: W }] },
+      { name: "組みかけのロケット", members: [{ kind: "grunt", x: -30, z: 28, y: VAB.mlp, face: W }, { kind: "charger", x: -20, z: 56, face: W }] },
+      { name: "作業足場", members: [{ kind: "grunt", x: -24, z: 69.5, y: VAB.tier, face: N }, { kind: "drone", x: -12, z: 46 }] },
+      { name: "東の区画", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: 30, z: -69.5, y: 3 * VAB.tier, face: S }, { kind: "drone", x: 30, z: -46 }] },
+    ],
+    bins: [
+      { x: -46, z: 24 },
+      { x: -30, z: -48 },
+      { x: 30, z: -50 },
+      { x: 30, z: 50 },
+      { x: -62, z: 56 },
+      { x: -40, z: 5, y: 2 * VAB.tier },
+      { x: 30, z: 69.5, y: VAB.tier },
+      { x: 40, z: -69.5, y: 3 * VAB.tier, vault: true },
+    ],
+    keyFrom: "control",
+    loot: { weapon: [["pike", 1], ["lance", 1], ["talon", 1], ["hornet", 1]], armor: [1], heals: 2, valuable: [["board", 3], ["drive", 2], ["gyro", 3], ["wire", 2], ["core", 1]] },
+    floor: [
+      { x: -22, z: 22, heal: "medkit" },
+      { x: -44, z: 69.5, y: 4 * VAB.tier, weapon: ["lance", 2] },
+    ],
+  },
+  // The launch pad at the plateau's west end: the deck round the rocket, the service tower's
+  // platforms, the vault on its top one.
+  launchpad: {
+    region: "launch",
+    depotOut: 18,
+    front: { tier: 3, unlocks: {} },
+    name: "発射台",
+    x: 0,
+    z: 0,
+    trigger: 80,
+    entry: { x: 75, z: 0, yaw: W },
+    squads: [
+      { name: "発射台の東", members: [{ kind: "heavy", x: 30, z: 12, face: E }, { kind: "grunt", x: 34, z: -10, face: E }] },
+      { name: "整備塔", members: [{ kind: "grunt", x: -20, z: 3, y: towerLevel(LAUNCHPAD.arms[0]), face: E }, { kind: "drone", x: -30, z: -12 }] },
+      { name: "発射台の西", members: [{ kind: "grunt", x: -34, z: 8, face: W }, { kind: "charger", x: -34, z: -8, face: N }] },
+      { name: "塔の上", members: [{ kind: "grunt", plate: VAULT.guardPlate, x: -20, z: -3, y: towerLevel(LAUNCHPAD.tower.floors - 1), face: E }, { kind: "grunt", x: -20, z: 3, y: towerLevel(LAUNCHPAD.arms[3]), face: E }] },
+    ],
+    bins: [
+      { x: 26, z: -6 },
+      { x: 22, z: 10 },
+      { x: -30, z: 10 },
+      { x: 40, z: 0 },
+      { x: -20, z: -3, y: towerLevel(LAUNCHPAD.arms[0]) },
+      { x: -20, z: 3, y: towerLevel(LAUNCHPAD.arms[2]) },
+      { x: -20, z: -3, y: towerLevel(LAUNCHPAD.tower.floors - 1), vault: true },
+    ],
+    keyFrom: "assembly",
+    loot: { weapon: [["lance", 1], ["maul", 1], ["talon", 1], ["pike", 1], ["hornet", 1]], armor: [1], heals: 2, valuable: [["board", 3], ["drive", 3], ["gyro", 3], ["core", 2], ["reactor", 1]] },
+    floor: [
+      { x: -20, z: 3, y: towerLevel(LAUNCHPAD.arms[4]), weapon: ["lance", 2] },
+      { x: 30, z: 4, heal: "medkit" },
+    ],
   },
 };
 
@@ -3122,11 +3392,12 @@ export const PACKS: Squad[] = [
     members: [{ kind: "drone", x: 810, z: -200 }, { kind: "drone", x: 810, z: -200 }],
     patrol: [{ x: 810, z: -200 }, { x: 936, z: -240 }, { x: 936, z: -720 }, { x: 936, z: -240 }],
   },
-  // The launch site: down the plateau's west side past the runway and back up its middle, clear of the control centre.
+  // The launch site: up the plateau's west side north of the crawlerway, across the runway's middle
+  // and back round the north, clear of the control centre, the assembly building and the pad.
   {
     name: "台地のドローン群",
-    members: [{ kind: "drone", x: -900, z: 220 }, { kind: "drone", x: -900, z: 220 }],
-    patrol: [{ x: -900, z: 220 }, { x: -1120, z: 160 }, { x: -1120, z: -260 }, { x: -900, z: -300 }],
+    members: [{ kind: "drone", x: -1150, z: 100 }, { kind: "drone", x: -1150, z: 100 }],
+    patrol: [{ x: -1150, z: 100 }, { x: -990, z: -40 }, { x: -960, z: -300 }, { x: -1100, z: -350 }],
   },
 ];
 
@@ -3259,9 +3530,10 @@ export const MOBILES: Mobile[] = [
   // --- the machine city: down the middles of its streets, so they pass between the elevated line's pillars.
   { name: "大通りの警邏", kind: "patrol", faction: "net", region: "city", members: ["grunt", "drone"], nodes: [[804, -152], [936, -152], [936, -570]] },
   { name: "橋の野良機", kind: "patrol", faction: "rogue", region: "city", rank: 2, members: ["grunt", "charger"], nodes: [[740, -570], [804, -570], [804, -152]] },
-  // --- the launch site: across the plateau from the crossings toward the runway, north and south of the control centre.
-  { name: "台地の警邏", kind: "patrol", faction: "net", region: "launch", members: ["grunt", "drone"], nodes: [[-730, -120], [-860, -150], [-1010, -230]] },
-  { name: "渓谷の野良機", kind: "patrol", faction: "rogue", region: "launch", rank: 2, members: ["grunt", "charger"], nodes: [[-720, 80], [-860, 140], [-1010, 230]] },
+  // --- the launch site: down the plateau's east side between the control centre and the assembly
+  // building, and across its south past the crawlerway, both well out from the two crossings.
+  { name: "台地の警邏", kind: "patrol", faction: "net", region: "launch", members: ["grunt", "drone"], nodes: [[-880, -110], [-900, 30], [-940, 90]] },
+  { name: "渓谷の野良機", kind: "patrol", faction: "rogue", region: "launch", rank: 2, members: ["grunt", "charger"], nodes: [[-780, 330], [-900, 370], [-1060, 380]] },
 ];
 
 export type DebrisId = "southwest" | "easthill" | "quarryeast" | "townwest" | "eastshore" | "saltwest";
@@ -3615,7 +3887,10 @@ export const LANDMARKS: readonly { name: string; x: number; z: number }[] = [
   at("powerplant", { name: "発電所", x: 0, z: 0 }),
   at("powerplant", { name: "冷却塔", x: 10, z: -58 }),
   at("launch", { name: "発射場", x: -100, z: 120 }),
-  at("launch", { name: "管制センター", x: 140, z: -50 }),
+  at("launch", { name: "管制センター", x: 100, z: -250 }),
+  at("launch", { name: "組立棟", x: 40, z: 210 }),
+  at("launch", { name: "運搬路", x: -120, z: 242 }),
+  at("launch", { name: "発射台", x: -270, z: 242 }),
   at("launch", { name: "滑走路", x: -75, z: -120 }),
   { name: "渓谷", x: -606, z: 200 },
   { name: "渓谷の鉄道橋", x: -614, z: 30 },
@@ -3646,8 +3921,8 @@ export const STOPS: readonly { name: string; x: number; z: number }[] = [
   at("city", { name: "駅前通り", x: -66, z: -20 }),
   at("city", { name: "北の街区", x: 0, z: -205 }),
   at("city", { name: "南の街区", x: -66, z: 200 }),
-  at("launch", { name: "滑走路の南端", x: -75, z: 240 }),
-  at("launch", { name: "台地の北", x: 40, z: -260 }),
+  at("launch", { name: "滑走路の西", x: -170, z: 150 }),
+  at("launch", { name: "台地の北", x: -60, z: -280 }),
 ];
 
 /**
@@ -3663,7 +3938,7 @@ export const PARTY_STOPS: Record<RegionId, readonly { name: string; x: number; z
   // The signal box's own middle is its house: the party stands on the open ground south of it.
   harbor: [stopAt("港町"), stopAt("高架下"), stopAt("信号所", 0, 14), stopAt("西の漁村"), stopAt("東の丘の家")],
   city: [stopAt("駅前通り"), stopAt("北の街区"), stopAt("南の街区")],
-  launch: [stopAt("滑走路の南端"), stopAt("台地の北")],
+  launch: [stopAt("滑走路の西"), stopAt("台地の北")],
 };
 
 /** A party's stop at the stop or hamlet `name`, `dx`, `dz` metres off it. */
@@ -5384,6 +5659,11 @@ const AUTHORED: Box[] = [
   // --- the launch site
   ...onFloors(POI_AT.control[0], POI_AT.control[1], control()),
   ...onLevel(LEVEL.plateau, placeIn("launch", runway())),
+  ...onLevel(LEVEL.plateau, place(POI_AT.assembly[0], POI_AT.assembly[1], assembly())),
+  ...onFloors(POI_AT.launchpad[0], POI_AT.launchpad[1], launchpad()),
+  // The crawlerway's banks and the crawler stopped on it halfway to the pad.
+  ...onLevel(LEVEL.plateau, crawlerBanks(POI_AT.assembly[0] - VAB.w / 2, POI_AT.launchpad[0] + 95, POI_AT.assembly[1] + VAB.door.z, 15)),
+  ...onLevel(LEVEL.plateau, crawler(POI_AT.assembly[0] - VAB.w / 2 - 120, POI_AT.assembly[1] + VAB.door.z)),
 ];
 
 /**
@@ -5418,7 +5698,7 @@ interface Keep {
  * Cover is kept off them, and they are pressed to their own floor along their middle, so no
  * rock or building nearby can close them.
  */
-const KEPT_ROADS = ["湖への坂", "湖の西坂", "東の坂", "発着場の西坂", "採掘場の運搬路", "中段への坂", "底への坂", "採掘場の坑道", "台地への道", "台地の坂", "村の坂", "峠道", "鉄道の土手（南）", "鉄道の土手（北）", "駅の坂", "高架下", "西の道", "製錬所の坂", "塩田への坂", "ヤードの北道", "製錬所の北道", "岬の坂", "斜路", "引き込み線の土手", "切り通し", "管制室の坂"];
+const KEPT_ROADS = ["湖への坂", "湖の西坂", "東の坂", "発着場の西坂", "採掘場の運搬路", "中段への坂", "底への坂", "採掘場の坑道", "台地への道", "台地の坂", "村の坂", "峠道", "鉄道の土手（南）", "鉄道の土手（北）", "駅の坂", "高架下", "西の道", "製錬所の坂", "塩田への坂", "ヤードの北道", "製錬所の北道", "岬の坂", "斜路", "引き込み線の土手", "切り通し", "管制室の坂", "発射台の坂"];
 
 /**
  * The quarry's wider iron stairs, in its frame: each from (x, z) on its floor toward the wall it
@@ -5501,8 +5781,11 @@ const SPARSE = new Set(["塩田", "補給所"]);
 const WATER = "水路";
 /** The ground between the basins and roads (terrain.ts). */
 const BETWEEN = "野";
-/** Ground left bare: the launch site's runway, where the pickup craft lands. */
-const RUNWAY = "滑走路";
+/**
+ * Ground left bare: the launch site's runway, where the pickup craft lands, the crawlerway the
+ * rocket rode out on, the assembly building's floor (inside it too) and the launch pad's deck and trench.
+ */
+const BARE = new Set(["滑走路", "運搬路", "組立棟の床", "発射台", "発射台の坂", "炎の溝"]);
 /** The first state of a scatter spot's own random stream, from its region's seed and its place on the grid. */
 function spotSeed(seed: number, kx: number, kz: number): number {
   let h = Math.imul(seed ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(kx | 0, 0xc2b2ae35) ^ Math.imul(kz | 0, 0x27d4eb2f);
@@ -5794,7 +6077,7 @@ function scatterArea(near: Clearance, area: (typeof SCATTER)[number]): Box[] {
       const z = gz + (rnd() - 0.5) * 7;
       const at = surfaceAt(x, z);
       const sparse = SPARSE.has(at);
-      if ((sparse && rnd() > 0.5) || at === WATER || at === RUNWAY) continue;
+      if ((sparse && rnd() > 0.5) || at === WATER || BARE.has(at)) continue;
       // The streets' asphalt stays clear. On the ground between the areas, cover gathers along
       // the streets (what was left by the roadside) and in a few clumps a hundred metres or so
       // across away from them: open country to cross, broken by places to break the sightline.
@@ -6702,6 +6985,8 @@ export const FRONT_LINKS: readonly (readonly ["camp" | NodeId, NodeId])[] = [
   ["terminal", "powerplant"],
   ["powerplant", "robotworks"],
   ["quarry", "control"],
+  ["control", "assembly"],
+  ["assembly", "launchpad"],
 ];
 for (const id of POI_IDS) if (!POI_DEFS[id].boss && !FRONT_LINKS.some((l) => l.includes(id as NodeId))) throw new Error(`node ${id} has no link in FRONT_LINKS`);
 
