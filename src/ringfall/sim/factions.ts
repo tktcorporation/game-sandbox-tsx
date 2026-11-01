@@ -10,6 +10,7 @@ import { robotSide } from "./battle";
 import { terrainHeight } from "./terrain";
 import { allyUp } from "./ally";
 import { hypot2 } from "./hypot";
+import { squadMembers } from "./members";
 
 /*
  * The robots between the POIs: the squads that walk out (`MOBILES`), the two factions that fight
@@ -409,7 +410,7 @@ export function stepSweep(s: State) {
   s.squads.forEach((sq, i) => {
     if (sq.sweep === undefined) return;
     sq.sweep -= TICK;
-    const members = s.enemies.filter((e) => e.squad === i);
+    const members = squadMembers(s, i);
     if (!members.length || sq.engaged || sq.sweep <= 0) {
       // Back to its walk (or into its fight) on its own feet.
       sq.sweep = undefined;
@@ -424,7 +425,7 @@ export function stepSweep(s: State) {
   let bestD = SWEEP.reach;
   s.squads.forEach((sq, i) => {
     if (sq.rogue || sq.engaged || sq.foe !== undefined || !(sq.mobile || sq.party)) return;
-    const members = s.enemies.filter((e) => e.squad === i && e.mode !== "spawning");
+    const members = squadMembers(s, i).filter((e) => e.mode !== "spawning");
     if (!members.length || members.some((e) => e.aware !== "idle")) return;
     const d = dist2d(members[0].pos, p);
     if (d < bestD) {
@@ -439,7 +440,7 @@ export function stepSweep(s: State) {
   sq.routed = true;
   sq.ambush = undefined;
   s.quietT = 0;
-  alertSquad(s, best, p.x, p.z, s.enemies.find((e) => e.squad === best)!, true);
+  alertSquad(s, best, p.x, p.z, squadMembers(s, best)[0], true);
 }
 
 /**
@@ -469,7 +470,7 @@ export function stepAmbush(s: State) {
     let bestD = Infinity;
     s.squads.forEach((sq, i) => {
       if (!sq.mobile || sq.engaged || sq.foe !== undefined || sq.ambush) return;
-      const members = s.enemies.filter((e) => e.squad === i);
+      const members = squadMembers(s, i);
       if (!members.length || regionHere(members[0].pos).id !== region.id || members.some((e) => e.aware !== "idle" || dist2d(e.pos, p) < 60)) return;
       const d = dist2d(members[0].pos, at);
       if (d < bestD) {

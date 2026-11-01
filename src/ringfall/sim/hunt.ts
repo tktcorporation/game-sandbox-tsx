@@ -306,6 +306,7 @@ const NEAR = 3;
 export function resetHunt() {
   open = height = main = mask = null;
   forgetFields();
+  parked.clear();
   kept.clear();
   keptCells = 0;
   spareMarks.length = 0;
@@ -315,8 +316,34 @@ export function resetHunt() {
 /** Forgets every field but keeps the grid: a raid starts with none (`newRun()`). */
 export function forgetFields() {
   fieldUses++;
-  for (const f of cache.values()) spare.push(retire(f));
+  for (const f of cache.values()) leave(f);
   cache.clear();
+}
+
+/*
+ * Whole-world fields dropped from the cache before they were found to the end, by target cell,
+ * oldest first, each as far as it was found. Many more such fields are in use at once than the
+ * cache keeps (the hunting parties' stops, the posts strayed walkers go back to), and one found
+ * again starts over from its target; one left here goes on from where it stopped. A lazy field
+ * is fixed by its target, the grid and the buckets settled, so going on with it gives the
+ * readers the same answers as starting over. Like `kept`, they outlast the raid and go with the
+ * grid; past `PARKED` the oldest is let go to `spare`.
+ */
+const parked = new Map<number, Field>();
+const PARKED = 24;
+
+/** A field leaving the cache: a lazy one is parked (see `parked`), any other's arrays go to `spare`. */
+function leave(f: Field) {
+  if (!f.lazy) {
+    spare.push(f);
+    return;
+  }
+  parked.set(f.target, f);
+  if (parked.size > PARKED) {
+    const [oldest, g] = parked.entries().next().value!;
+    parked.delete(oldest);
+    spare.push(retire(g));
+  }
 }
 
 /*
@@ -542,30 +569,35 @@ export function fieldTo(x: number, z: number, reach = Infinity): Field | null {
   if (reach < Infinity) reach += NEAR * RES * 1.5;
   const name = `${target}:${reach}`;
   const copy = kept.get(name);
-  const reused = spare.pop();
-  const dist = reused?.dist ?? new Float32Array(CELLS).fill(Infinity);
-  // A whole copy writes every cell; else the last field's cells go back to Infinity.
-  if (reused && !copy?.whole) {
-    if (reused.count > CLEAR_WHOLE) dist.fill(Infinity);
-    else for (let e = 0; e < reused.count; e++) dist[reused.order[e]] = Infinity;
-  }
-  const order = reused?.order ?? new Int32Array(CELLS);
+  const resumed = reach === Infinity && !copy ? parked.get(target) : undefined;
+  if (resumed) parked.delete(target);
   let f: Field;
-  if (copy) f = { target, dist, reach, order, count: restore(copy, dist, order, name), lazy: null };
-  else if (reach === Infinity) {
-    // A whole-world field is found only as far as it is read (see `Lazy`).
-    const ring = spareRings.pop() ?? Array.from({ length: RING }, () => new Int32Array(1 << 12));
-    const L: Lazy = { b: 0, pending: 1, ring, size: new Int32Array(RING), mark: spareMarks.pop() ?? new Uint8Array(CELLS) };
-    dist[target] = 0;
-    ring[0][L.size[0]++] = target;
-    f = { target, dist, reach, order, count: 0, lazy: L };
-  } else f = { target, dist, reach, order, count: build(target, reach, dist, order, name), lazy: null };
+  if (resumed) f = resumed;
+  else {
+    const reused = spare.pop();
+    const dist = reused?.dist ?? new Float32Array(CELLS).fill(Infinity);
+    // A whole copy writes every cell; else the last field's cells go back to Infinity.
+    if (reused && !copy?.whole) {
+      if (reused.count > CLEAR_WHOLE) dist.fill(Infinity);
+      else for (let e = 0; e < reused.count; e++) dist[reused.order[e]] = Infinity;
+    }
+    const order = reused?.order ?? new Int32Array(CELLS);
+    if (copy) f = { target, dist, reach, order, count: restore(copy, dist, order, name), lazy: null };
+    else if (reach === Infinity) {
+      // A whole-world field is found only as far as it is read (see `Lazy`).
+      const ring = spareRings.pop() ?? Array.from({ length: RING }, () => new Int32Array(1 << 12));
+      const L: Lazy = { b: 0, pending: 1, ring, size: new Int32Array(RING), mark: spareMarks.pop() ?? new Uint8Array(CELLS) };
+      dist[target] = 0;
+      ring[0][L.size[0]++] = target;
+      f = { target, dist, reach, order, count: 0, lazy: L };
+    } else f = { target, dist, reach, order, count: build(target, reach, dist, order, name), lazy: null };
+  }
   fieldsBuilt++;
   // A longer field for a cell that already has a short one replaces it: its arrays go back to `spare`.
   const replaced = cache.get(target);
   if (replaced) {
     cache.delete(target);
-    spare.push(retire(replaced));
+    leave(replaced);
   }
   cache.set(target, f);
   if (cache.size > CACHE) {
@@ -577,7 +609,7 @@ export function fieldTo(x: number, z: number, reach = Infinity): Field | null {
         drop = k;
         break;
       }
-    spare.push(retire(cache.get(drop)!));
+    leave(cache.get(drop)!);
     cache.delete(drop);
   }
   return f;
