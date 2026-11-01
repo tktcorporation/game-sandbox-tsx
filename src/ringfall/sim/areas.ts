@@ -101,6 +101,8 @@ const POI_IN: Record<PoiId, [AreaId, Offset]> = {
   control: ["launch", [100, -250]],
   assembly: ["launch", [40, 210]],
   launchpad: ["launch", [-270, 242]],
+  fuel: ["launch", [-110, 350]],
+  radar: ["launch", [-120, -390]],
 };
 
 /** A point written in an area's frame, in the world. */

@@ -238,6 +238,8 @@ export const LEVEL = {
   /** The launch pad's concrete deck, raised over the plateau, and the floor of the flame trench cut under it. */
   launchPad: 12,
   flameTrench: 5,
+  /** The ridge top in the plateau's north where the tracking radar stands, 14 m over the plateau. */
+  radarRidge: 22,
   /** The island's ground at the east ends of the two crossings over the canyon. */
   canyonEast: 4,
 } as const;
@@ -343,6 +345,15 @@ const BASINS: Open[] = [
   { name: "組立棟の床", line: inPoi("assembly", [[0, -50], [0, 50]]), half: 62, level: LEVEL.plateau, ground: "concrete" },
   // The launch pad's deck, raised over the plateau at its west end, its sides a drop.
   { name: "発射台", line: inPoi("launchpad", [[-25, 0], [25, 0]]), half: 30, level: LEVEL.launchPad, walled: true, ground: "concrete" },
+  // The fuel depot's yard south of the crawlerway and the ground east of it, level with the plateau.
+  { name: "燃料基地の床", line: inPoi("fuel", [[-50, 0], [80, 0]]), half: 52, level: LEVEL.plateau, ground: "concrete" },
+  // The ridge in the plateau's north that the tracking radar's domes stand along, its sides a cliff.
+  { name: "追跡レーダーの尾根", line: inPoi("radar", [[-65, 0], [65, 0]]), half: 21, level: LEVEL.radarRidge, walled: true },
+  // The plateau round the ridge's foot, held at its level on the ridge's north, west and east so the
+  // ground there does not fall away toward the coast close by: the rock steps' foot and a way round.
+  { name: "尾根の北の麓", line: inPoi("radar", [[-70, -38], [70, -38]]), half: 13, level: LEVEL.plateau },
+  { name: "尾根の西の麓", line: inPoi("radar", [[-106, -14], [-106, 14]]), half: 13, level: LEVEL.plateau },
+  { name: "尾根の東の麓", line: inPoi("radar", [[104, -14], [104, 14]]), half: 13, level: LEVEL.plateau },
   // The ground at both ends of the two crossings over the canyon: the rail bridge's (from the quarry's
   // side) and the road cut's (from the terraced fields' side).
   { name: "引き込み線の東口", line: [[-470, 30], [-470, 30]], half: 9, level: LEVEL.canyonEast },
@@ -425,6 +436,9 @@ const ROADS: Open[] = [
   // the pad's deck from its east end.
   { name: "運搬路", line: [inPoi("assembly", [[-55, 32]])[0], inPoi("launchpad", [[95, 0]])[0]], half: 15, level: LEVEL.plateau, ground: "gravel" },
   { name: "発射台の坂", line: inPoi("launchpad", [[95, 0], [52, 0]]), half: 15, level: [LEVEL.plateau, LEVEL.launchPad], atPoints: true, walled: true, ground: "concrete" },
+  // The one road up the radar's ridge: a lead-in on the plateau, then raised north into the ridge's south edge.
+  { name: "レーダーへの道", line: inPoi("radar", [[60, 130], [60, 95]]), half: 6, level: LEVEL.plateau },
+  { name: "レーダーの坂", line: inPoi("radar", [[60, 95], [60, 16]]), half: 4.5, level: [LEVEL.plateau, LEVEL.radarRidge], atPoints: true, walled: true },
   // The flame trench, cut north to south under the pad's deck where the rocket stands and out
   // past both sides, its ends climbing back to the plateau: under the deck a low road through.
   { name: "炎の溝", line: inPoi("launchpad", [[0, -75], [0, -45], [0, 45], [0, 75]]), half: 5, level: [LEVEL.plateau, LEVEL.flameTrench, LEVEL.flameTrench, LEVEL.plateau], atPoints: true, walled: true, ground: "concrete" },

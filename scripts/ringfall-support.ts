@@ -52,6 +52,9 @@ export interface Support {
 /** The scene of one seed: the grunts fighting the player, and the player's pair off to the side. */
 function scene(seed: number, at: { x: number; z: number }) {
   const s: State = newRun(seed);
+  // The scene's own random numbers from the seed alone, not from what newRun() drew for the
+  // world's squads: the scene plays the same however many POIs the world holds.
+  s.rng = (seed * 2654435761) >>> 0 || 1;
   s.enemies = [];
   s.phase = "play";
   s.cleared = POIS.map(() => true);
