@@ -1169,8 +1169,11 @@ export class IslandMap {
     g.font = `800 ${12 * dpr}px system-ui, sans-serif`;
     const pad = 7 * dpr;
     const icon = 13 * dpr;
-    const w = icon + 5 * dpr + g.measureText(text).width + pad * 2;
-    const h = 24 * dpr;
+    const room = g.canvas.width - 8 * dpr - icon - 5 * dpr - pad * 2;
+    const lines = wrapNote(g, text, room);
+    const lineH = 16 * dpr;
+    const w = icon + 5 * dpr + Math.max(...lines.map((l) => g.measureText(l).width)) + pad * 2;
+    const h = 8 * dpr + lineH * lines.length;
     // Under the mark, moved in to stay whole on the canvas, or over it near the bottom edge.
     const x = Math.max(4 * dpr, Math.min(g.canvas.width - w - 4 * dpr, p.x - w / 2));
     const below = p.y + 20 * dpr + h < g.canvas.height - 4 * dpr;
@@ -1186,7 +1189,23 @@ export class IslandMap {
     g.fillStyle = "#ffffff";
     g.textAlign = "left";
     g.textBaseline = "middle";
-    g.fillText(text, x + pad + icon + 5 * dpr, y + h / 2 + 0.5 * dpr);
+    lines.forEach((l, k) => g.fillText(l, x + pad + icon + 5 * dpr, y + 4 * dpr + lineH * (k + 0.5) + 0.5 * dpr));
     g.restore();
   }
+}
+
+/** Lines of a note no wider than `room`, broken after a ・ where one fits, else between any two characters, since the names are Japanese. */
+function wrapNote(g: CanvasRenderingContext2D, text: string, room: number): string[] {
+  const lines: string[] = [];
+  let rest = text;
+  while (rest && g.measureText(rest).width > room) {
+    let cut = 1;
+    while (cut < rest.length && g.measureText(rest.slice(0, cut + 1)).width <= room) cut++;
+    const dot = rest.lastIndexOf("・", cut - 1);
+    if (dot > 0) cut = dot + 1;
+    lines.push(rest.slice(0, cut));
+    rest = rest.slice(cut);
+  }
+  if (rest) lines.push(rest);
+  return lines;
 }
