@@ -9,7 +9,7 @@
  *   the summary is replaced and a second raid row is added.
  * - **summary**: a raid settled on a profile with a node of its own and one of another player's builds
  *   a post (`islandPost()`) the API takes, whose numbers add up to the island's node count.
- * - **identity**: a saved identity is read back; an unreadable one is refused, and an unusable name
+ * - **identity**: a saved identity is read back; one made without storage stays the same for the page; an unreadable one is refused, and an unusable name
  *   falls back to the default.
  * - **refused**: a bad id, a number out of range, a body over the limit, a wrong method and an unknown
  *   path answer 400, 400, 413, 405 and 404, and write nothing.
@@ -25,7 +25,7 @@ import { newRun, starterKit } from "../src/ringfall/sim/state";
 import { holds } from "../src/ringfall/meta/island";
 import { newProfile, settle, type Profile } from "../src/ringfall/meta/profile";
 import { islandPost } from "../src/ringfall/meta/summary";
-import { defaultName, parseIdentity } from "../src/ringfall/meta/identity";
+import { defaultName, loadIdentity, parseIdentity } from "../src/ringfall/meta/identity";
 
 /** D1's statement over node:sqlite: bind, then run / first / all. */
 class Statement implements DbStatement {
@@ -187,6 +187,11 @@ const count = (table: string) => Number((sqlite.prepare(`SELECT COUNT(*) AS n FR
   check(read?.id === id && read.name === "ねこ", "identity: a saved identity was not read back");
   check(noName?.name === defaultName(id) && defaultName(id) === "プレイヤー-7c9e", "identity: an unusable name did not fall back to the default");
   check(parseIdentity({ id: "x", name: "a" }) === null && parseIdentity(null) === null, "identity: an unreadable identity was taken");
+  // Node has no localStorage: every read and write throws, as in a browser with storage blocked.
+  const first = loadIdentity();
+  const again = loadIdentity();
+  console.log(`identity without storage: ${first.id === again.id ? "kept for the page" : "changed"}`);
+  check(first.id === again.id && first.name === defaultName(first.id), "identity: without storage the id changed between raids");
 }
 
 // --- refused

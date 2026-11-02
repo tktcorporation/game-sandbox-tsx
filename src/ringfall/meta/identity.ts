@@ -28,15 +28,19 @@ export function parseIdentity(raw: unknown): Identity | null {
   return { id, name: chars >= 1 && chars <= 24 ? n : defaultName(id) };
 }
 
+/** The identity this page settled on, so that it stays the same when storage cannot keep it. */
+let current: Identity | null = null;
+
 /**
  * The saved identity, or a new one saved for next time. When storage is unavailable the new one
- * lasts for this page only, and play goes on as ever.
+ * lasts for this page only (every raid of the page sends it), and play goes on as ever.
  */
 export function loadIdentity(): Identity {
+  if (current) return current;
   try {
     const raw = localStorage.getItem(KEY);
     const saved = raw ? parseIdentity(JSON.parse(raw)) : null;
-    if (saved) return saved;
+    if (saved) return (current = saved);
   } catch {
     // Private windows and blocked storage: a fresh identity below.
   }
@@ -47,5 +51,5 @@ export function loadIdentity(): Identity {
   } catch {
     // Same as above: the identity lasts for this page only.
   }
-  return made;
+  return (current = made);
 }
