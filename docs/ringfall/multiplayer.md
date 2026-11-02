@@ -56,13 +56,13 @@
 
 ### データベースのつなぎ方
 
-API（`worker/api.ts`）は D1 を `DB` という名前の束縛で読む。束縛が無い間、`/api/island` は 503（`no-database`）を返し、ブラウザはその答えを捨てるので、遊びは変わらない。つなぐ手順は次の 3 つ。
+API（`worker/api.ts`）は D1 を `DB` という名前の束縛で読む。束縛が無い間、`/api/island` は 202（`no-database`）を返し、ブラウザはその答えを捨てるので、遊びは変わらない。つなぐ手順は次の 3 つ。
 
 1. データベースを作る：`npx wrangler d1 create ringfall`。出力の `database_id` を控える。
-2. `wrangler.jsonc` に束縛を足す：`"d1_databases": [{ "binding": "DB", "database_name": "ringfall", "database_id": "<控えた id>" }]`。
-3. 表を作る：`npx wrangler d1 migrations apply ringfall --remote`。表の定義は `migrations/` にある。
+2. 表を作る：`npx wrangler d1 migrations apply ringfall --remote`。表の定義は `migrations/` にある。
+3. `wrangler.jsonc` に束縛を足して push する：`"d1_databases": [{ "binding": "DB", "database_name": "ringfall", "database_id": "<控えた id>" }]`。
 
-2 より先に 1 を済ませる。存在しないデータベースへの束縛を push すると、Workers Builds のデプロイが失敗する。
+この順に進める。存在しないデータベースへの束縛を push すると Workers Builds のデプロイが失敗し、表の無いデータベースへの束縛では書き込みがすべて 503（`db-error`）になる。
 
 ## 不正への構え
 

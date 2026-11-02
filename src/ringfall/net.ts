@@ -2,7 +2,7 @@
  * Sends the island's summary to the server after each settled raid (docs/ringfall/multiplayer.md,
  * サーバー). Browser only: the sim and the scripts never import it. Nothing waits on the answer and
  * every failure is dropped without a word, so play is the same with the server down or without a
- * database (503). Under a browser driver (the shots gate) nothing is sent: the browser logs a
+ * database (202, `no-database`). Under a browser driver (the shots gate) nothing is sent: the browser logs a
  * refused request's status as a console error, which the gate counts as a failure.
  */
 import { loadIdentity } from "./meta/identity";

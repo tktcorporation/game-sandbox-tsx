@@ -2,7 +2,8 @@
  * The server's API (worker/api.ts) on a stand-in database: Node's built-in SQLite behind the part of
  * D1's interface the API uses, with migrations/ applied as wrangler applies them.
  *
- * - **no database**: /api/island answers 503 `no-database`; /api/health still answers.
+ * - **no database**: /api/island answers 202 `no-database`; /api/health still answers.
+ * - **no tables**: a database bound before its migrations refuses the write: 503 `db-error`, as JSON.
  * - **record**: a valid post answers 200 and writes the player, the island's summary and the raid.
  * - **again**: a second post with a new name renames the player and keeps when they were first seen;
  *   the summary is replaced and a second raid row is added.
@@ -100,11 +101,19 @@ async function answer(env: ApiEnv, req: Request, now?: number) {
   const env: ApiEnv = {};
   const a = await answer(env, post(valid("ねこ", 3)));
   console.log(`no database: /api/island ${a.status} ${JSON.stringify(a.body)}`);
-  check(a.status === 503 && (a.body as { error?: string }).error === "no-database", "no database: /api/island did not answer 503 no-database");
+  check(a.status === 202 && (a.body as { error?: string }).error === "no-database", "no database: /api/island did not answer 202 no-database");
   const h = await answer(env, post(null, "GET", "/api/health"));
   console.log(`no database: /api/health ${h.status} ${JSON.stringify(h.body)}`);
   check(h.status === 200 && (h.body as { ok?: boolean }).ok === true, "no database: /api/health did not answer ok");
   check((await handleApi(post(null, "GET", "/ringfall/"), env)) === null, "no database: a page path was taken by the API");
+}
+
+// --- a database without the tables (bound before the migrations ran): the write is refused as JSON
+{
+  const bare = new SqliteD1(new DatabaseSync(":memory:"));
+  const a = await answer({ DB: bare }, post(valid("ねこ", 3)));
+  console.log(`no tables: /api/island ${a.status} ${JSON.stringify(a.body)}`);
+  check(a.status === 503 && (a.body as { error?: string }).error === "db-error", "no tables: /api/island did not answer 503 db-error");
 }
 
 // --- a database with the migrations applied in order

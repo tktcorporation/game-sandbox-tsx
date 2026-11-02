@@ -3,7 +3,8 @@
  * and the Worker's bindings, so that scripts/ringfall-server.ts can run it on a stand-in database.
  *
  * The database binding is optional: until one is connected (the steps are in the doc), every route
- * but /api/health answers 503 and the game plays as ever.
+ * but /api/health answers 202 `no-database` (a success, so the browser logs nothing) and the game
+ * plays as ever. A write the database refuses answers 503 `db-error`.
  */
 
 /** The part of D1's statement the API uses. */
@@ -125,7 +126,7 @@ export async function handleApi(request: Request, env: ApiEnv, now = Date.now())
   if (pathname !== "/api" && !pathname.startsWith("/api/")) return null;
   if (pathname !== "/api/island") return fail(404, "not-found");
   if (request.method !== "POST") return new Response(JSON.stringify({ ok: false, error: "method-not-allowed" }), { status: 405, headers: { "content-type": "application/json", allow: "POST" } });
-  if (!env.DB) return fail(503, "no-database");
+  if (!env.DB) return fail(202, "no-database");
   const text = await readBody(request);
   if (text === null) return fail(413, "too-large");
   let raw: unknown;
@@ -136,6 +137,10 @@ export async function handleApi(request: Request, env: ApiEnv, now = Date.now())
   }
   const post = parseIslandPost(raw);
   if (!post) return fail(400, "bad-request");
-  await record(env.DB, post, now);
+  try {
+    await record(env.DB, post, now);
+  } catch {
+    return fail(503, "db-error");
+  }
   return json(200, { ok: true });
 }
