@@ -41,7 +41,13 @@ const css = (c: number) => `#${c.toString(16).padStart(6, "0")}`;
  * player's blue, which read on the sand and stay apart from the loot's colours. The titan's pad,
  * the enemy's for good, has a mark of its own in the robots' armour.
  */
-export const HOLD_CSS: Record<PoiHold, string> = { held: "#c8402f", freed: "#3f86c8" };
+export const HOLD_CSS: Record<"held" | "freed", string> = { held: "#c8402f", freed: "#3f86c8" };
+
+/** Another player's colour on the maps: a green, apart from the two sides', the rogues' violet and the ways off' yellow. */
+export const RIVAL_CSS = "#3fae6e";
+
+/** The colour of a node held `h`: the enemy's, the player's, or another player's. */
+export const holdCss = (h: PoiHold) => (h === "held" || h === "freed" ? HOLD_CSS[h] : RIVAL_CSS);
 
 /**
  * A flare as the HUD's icon draws it, centred on (x, y) and `r` tall from its middle: a red stick
@@ -238,8 +244,8 @@ export type MapScene = Pick<State, "seen" | "cleared" | "hold" | "depots" | "rou
 /** A label's box on the canvas, so labels do not overlap. */
 type Rect = { x0: number; y0: number; x1: number; y1: number };
 
-/** The sides' colours on the battle map: the player's blue, the enemy's red, the rogues' violet. */
-export const SIDE_CSS: Record<Side, string> = { 0: "#4f9bff", 1: "#ff4a3d", 2: ROGUE_CSS };
+/** The sides' colours on the battle map: the player's blue, the enemy's red, the rogues' violet, another player's green. */
+export const SIDE_CSS: Record<Side, string> = { 0: "#4f9bff", 1: "#ff4a3d", 2: ROGUE_CSS, 3: RIVAL_CSS };
 
 /** The camp's picture of the island between raids, from the profile's explored map, depots, routes and POI standings. */
 export function islandScene(p: { seen: string; depots: readonly PoiId[]; routes: readonly RouteId[]; poiState: Record<PoiId, { state: PoiHold }>; events?: readonly (IslandEvent | null)[]; freedAt?: Partial<Record<PoiId, number>> }): MapScene {
@@ -308,12 +314,13 @@ function paintLand(nodes: readonly NodeHold[]) {
   const g = c.getContext("2d")!;
   const img = g.createImageData(cols, rows);
   const rgb = (css: string) => [parseInt(css.slice(1, 3), 16), parseInt(css.slice(3, 5), 16), parseInt(css.slice(5, 7), 16)];
-  const cols4 = { freed: rgb(HOLD_CSS.freed), held: rgb(HOLD_CSS.held) };
+  const cols4 = { freed: rgb(HOLD_CSS.freed), held: rgb(HOLD_CSS.held), rival: rgb(RIVAL_CSS) };
   const mine = (k: number) => k === -2 || (k >= 0 && nodes[k] === "freed");
   for (let n = 0; n < cols * rows; n++) {
     const k = own[n];
     if (k === -1) continue;
-    const col = k === -2 ? cols4.freed : cols4[nodes[k]];
+    const h = k === -2 ? "freed" : nodes[k];
+    const col = h === "freed" || h === "held" ? cols4[h] : cols4.rival;
     img.data[n * 4] = col[0];
     img.data[n * 4 + 1] = col[1];
     img.data[n * 4 + 2] = col[2];
@@ -957,7 +964,7 @@ export class IslandMap {
         g.fillStyle = TITAN_CSS;
       } else {
         g.arc(p.x, p.y, r, 0, Math.PI * 2);
-        g.fillStyle = HOLD_CSS[hold(i)];
+        g.fillStyle = holdCss(hold(i));
       }
       g.fill();
       g.stroke();

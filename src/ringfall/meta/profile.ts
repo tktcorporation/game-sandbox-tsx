@@ -25,7 +25,7 @@ export type Item =
 
 /** What persists between raids. */
 export interface Profile {
-  v: 25;
+  v: 26;
   cash: number;
   stash: Item[];
   raids: number;
@@ -135,7 +135,7 @@ export const stashUsed = (p: Pick<Profile, "stash">) => p.stash.filter((i) => !i
 export function newProfile(seed = 1): Profile {
   const stash: Item[] = [...starterItems(), ...META.start.weapons.map((w): Item => ({ t: "weapon", ...w }))];
   for (const k of HEALS) for (let i = 0; i < META.start.heals[k]; i++) stash.push({ t: "heal", kind: k });
-  const p: Omit<Profile, "board"> = { v: 25, cash: META.start.cash, stash, raids: 0, extracted: 0, time: 0, quests: emptyLog(), region: HOME_REGION.id, entry: FIRST_ENTRY, entries: [FIRST_ENTRY], hideout: emptyHideout(), seed: seed & 0xffff, depots: [], depotSent: {}, seen: "", routes: [], day: 1, poiState: newIsland(), taken: null, records: [], events: firstEvents(seed & 0xffff), known: [...MOD_START], threat: 0, freedAt: {}, factory: 0, lastKit: null };
+  const p: Omit<Profile, "board"> = { v: 26, cash: META.start.cash, stash, raids: 0, extracted: 0, time: 0, quests: emptyLog(), region: HOME_REGION.id, entry: FIRST_ENTRY, entries: [FIRST_ENTRY], hideout: emptyHideout(), seed: seed & 0xffff, depots: [], depotSent: {}, seen: "", routes: [], day: 1, poiState: newIsland(), taken: null, records: [], events: firstEvents(seed & 0xffff), known: [...MOD_START], threat: 0, freedAt: {}, factory: 0, lastKit: null };
   return { ...p, board: makeBoard(p) };
 }
 
@@ -767,11 +767,13 @@ const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
  * explored map is dropped.
  * Before v25 the world began at x -600, and `cellOf()` counts its columns from there: such a
  * profile's explored map is dropped.
+ * Before v26 no other player could hold a node: such a profile's POIs are the enemy's or the
+ * player's, as saved (`parseIsland()` reads another player's standing only from v26).
  */
 export function parseProfile(raw: unknown, seed = 1): Profile | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
+  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
   const old = o.v === 1 || o.v === 2;
   const migrate = (i: unknown): unknown => {
     if (!old || !i || typeof i !== "object" || (i as Record<string, unknown>).t !== "key") return i;
@@ -800,7 +802,7 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   const ds = (typeof o.v === "number" && o.v >= 8 && o.depotSent && typeof o.depotSent === "object" ? o.depotSent : {}) as Record<string, unknown>;
   const depotSent = Object.fromEntries(depots.map((d) => [d, num(ds[d])]));
   const entries = typeof o.v === "number" && o.v < 11 ? ENTRIES.map((e) => e.id) : knownEntries(Array.isArray(o.entries) ? o.entries.filter((e): e is string => typeof e === "string") : []);
-  const poiState = typeof o.v === "number" && o.v >= 13 ? parseIsland(o.poiState) : newIsland();
+  const poiState = typeof o.v === "number" && o.v >= 13 ? parseIsland(o.poiState, o.v >= 26) : newIsland();
   const { region, entry } = allowedStart({ entries, depots, poiState }, REGIONS.find((r) => r.id === o.region)?.id ?? HOME_REGION.id, o.entry);
   const raids = num(o.raids);
   const day = (typeof o.v === "number" && o.v >= 13) && Number.isInteger(o.day) && (o.day as number) >= 1 ? (o.day as number) : raids + 1;
@@ -818,7 +820,7 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   let room = cap;
   const stash = withStarters(items.filter((i) => isStarter(i) || room-- > 0));
   const out: Omit<Profile, "board" | "taken" | "events"> = {
-    v: 25,
+    v: 26,
     cash: Math.max(0, Math.floor(o.cash)),
     stash,
     raids,

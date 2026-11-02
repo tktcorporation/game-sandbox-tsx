@@ -7,13 +7,13 @@ import { mix } from "./state";
  * stand there. The rules that move a POI from one standing to another live in the meta.
  */
 
-/** Who holds a POI: the enemy (red on the maps) or the player (blue). */
-export type PoiHold = "held" | "freed";
+export type { PoiHold, RivalHold } from "./holds";
+import type { PoiHold } from "./holds";
 
 /** The squad guarding a POI's vault: the one with a member in armour plate. */
 export const isVaultGuard = (sq: Squad) => sq.members.some((m) => m.plate !== undefined);
 
-/** The squads of POI `poi` that stand in a raid: all of them while the enemy holds it, none once it is the player's. */
+/** The squads of POI `poi` that stand in a raid: all of them while the enemy holds it, none once it is the player's or another player's. */
 export const garrison = (poi: number, hold: PoiHold): Squad[] => (hold === "held" ? POIS[poi].squads : []);
 
 /** A hash of the raid's seed and a salt, for choices that must not draw on the raid's random numbers. */

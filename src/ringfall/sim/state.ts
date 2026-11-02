@@ -254,6 +254,8 @@ export interface Enemy {
   rogue?: boolean;
   /** One of the player's own robots (`State.friends`, the factory's): it fights the network and the rogues, never the player or the teammate. */
   friend?: boolean;
+  /** One of another player's robots (an expedition's, sim/battle.ts side 3): that player's id. It fights the player and every faction. */
+  rival?: string;
   /** A robot of a battle squad (`BattleSquad.id`, sim/battle.ts): it walks onto the player's nodes, and the garrisons fight it. */
   battle?: number;
   /** A turret: it never leaves the core it stands at. */
@@ -338,6 +340,8 @@ export interface SquadState {
   retreat?: number;
   /** The player's own squad (its robots are in `State.friends`). */
   friend?: boolean;
+  /** Another player's squad: that player's id. */
+  rival?: string;
   /** The battle squad it is in the world (`BattleSquad.id`, sim/battle.ts). */
   battle?: number;
   /** A squad of the player's coming to the core of the node the player attacks: it goes at its fighting pace (sim/battle.ts `rally`). */
@@ -358,6 +362,8 @@ export interface Orb {
   rogue?: boolean;
   /** Fired by one of the player's own robots: it never hits the player or the teammate. */
   friend?: boolean;
+  /** Fired by one of another player's robots. */
+  rival?: boolean;
 }
 
 export interface Shockwave {
@@ -472,7 +478,7 @@ export type GameEvent =
   | { t: "healStart"; kind: HealKind }
   | { t: "healDone"; kind: HealKind }
   | { t: "telegraph"; id: number }
-  | { t: "enemyFire"; id: number; pos: Vec3; /** At the other faction (see FACTION), toward this point. */ foe?: Vec3; rogue?: boolean; /** One of the player's own robots. */ friend?: boolean }
+  | { t: "enemyFire"; id: number; pos: Vec3; /** At the other faction (see FACTION), toward this point. */ foe?: Vec3; rogue?: boolean; /** One of the player's own robots. */ friend?: boolean; /** One of another player's robots. */ rival?: boolean }
   /** A robot hit by the other faction's fire, and one destroyed by it (see FACTION). */
   | { t: "robotHit"; id: number; pos: Vec3 }
   | { t: "fall"; id: number; kind: EnemyKind; pos: Vec3; rogue: boolean; friend?: boolean; fromX: number; fromZ: number }
@@ -1023,7 +1029,8 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
     care: null,
     visited: POIS.map(() => false),
     // A freed POI has nothing left to clear: it is not cleared again, and does not count as cleared this raid.
-    cleared: hold.map((h) => h === "freed"),
+    // A POI with no garrison standing (the player's, or another player's) starts cleared.
+    cleared: hold.map((h) => h !== "held"),
     hold,
     reinforceT: clock.first,
     reinforceN: 0,

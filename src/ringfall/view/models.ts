@@ -112,6 +112,11 @@ export const PAL = {
   friendArmorLight: 0xd8ecff,
   friendEye: 0x52d6ff,
   friendOrb: 0x6be0ff,
+  /** Another player's robots (an expedition's, sim/battle.ts side 3): the same robots in purple, their eyes and bolts a light violet. */
+  rivalArmor: 0x5b3d8f,
+  rivalArmorLight: 0x8e6fc4,
+  rivalEye: 0xd08bff,
+  rivalOrb: 0xc58cff,
   hot: 0xffe23d,
   white: 0xffffff,
   gun: 0x2b2f38,

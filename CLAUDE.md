@@ -156,7 +156,7 @@ contracts (`meta/story.ts`) follow one at a time: the one under way lays its rec
 only with that POI's key; keys drop from the bins of the POI named by its `keyFrom` (`VAULT`).
 POIs have a stable `id` (`PoiId` in `map.ts`); saves, quests, `keyFrom` and `EXTRA_BINS` refer to a
 POI by it, never by its place in `POIS` (the run's state may index `POIS` internally). The profile
-is versioned (`Profile.v`, which is 25), and `parseProfile()` moves older saves forward (a save from
+is versioned (`Profile.v`, which is 26), and `parseProfile()` moves older saves forward (a save from
 before the ways in starts at its region's first way in; a save from before ways in were learned
 knows them all; a save from before v12 drops its explored map, since `cellOf()` follows `WORLD`,
 which then grew wider; a save from before v13 starts on the day after its raids with every POI
@@ -166,7 +166,7 @@ at threat 0; a save from before v19 has the factory at level 0; a save from befo
 loadout; a save from before v22 has its POIs freed or thin the player's and the rest the enemy's,
 and drops the network, its pressure, the outposts' standing and the battles' points; a save from
 before v23 gains the starter weapons; a save from before v24 or v25 drops its explored map, since the
-world grew wider again) and moves its
+world grew wider again; a save from before v26 holds no other player's node) and moves its
 start to one it may choose (`allowedStart()`).
 Each island day has at most one event (`EVENTS` in `config.ts`, `IslandEvent` in `sim/island.ts`):
 `advanceDay()` turns yesterday's forecast into today's and draws tomorrow's from `Profile.seed` and
@@ -205,8 +205,11 @@ changes. With every route closed the terrain, the map's boxes and the walkers' g
 before routes existed, and the obstacles stand in cliffs and on a deck where path finding does not
 go (its grids and its sight checks, `los(a, b, true)`, leave them out).
 The island has a state between raids (`docs/ringfall/island-v2.md`): one settled raid is one
-day (`Profile.day`), and each POI is the enemy's (`held`) or the player's (`freed`)
-(`Profile.poiState`). `meta/island.ts` holds the pure rules: `advanceDay()` (called by `settle()`)
+day (`Profile.day`), and each POI is the enemy's (`held`), the player's (`freed`) or another
+player's (`rival:` and that player's id, `RivalHold` in `sim/holds.ts`; docs/ringfall/multiplayer.md)
+(`Profile.poiState`). Another player's node is not the player's: it is on the front and taken by its
+core as the enemy's is, stands no garrison of the enemy's, counts as neither side's for the enemy's
+strength, and the night never comes at it (nor counts it among a node's foes). `meta/island.ts` holds the pure rules: `advanceDay()` (called by `settle()`)
 makes the player's each node whose core the raid captured, however the raid ended, or with a
 battle takes every node as the battle ended (`RaidDay.battle`), then the night's attacks
 (`nightRaids()`, `NIGHT` in `config.ts`: nodes next to the enemy's ground fall by chance, less when
@@ -219,7 +222,7 @@ starts cleared, its vault open without the key (`canOpen()` in `world.ts`) and i
 no `island` every POI is held, which the sim gate plays.
 The enemy's strength (`STRENGTH` in `config.ts`, `State.strength`, `strengthLevel()`) follows the
 share of the nodes the enemy holds (`STRENGTH.byShare`, `strengthFor()` in `state.ts`, `enemyNodes()` in
-`front.ts`): it sets the reinforcement and raider times, the hunting parties per region, the drone
+`front.ts`, which counts only `held` nodes): it sets the reinforcement and raider times, the hunting parties per region, the drone
 packs flying (`activePacks()`, from the seed), the rogue patrols (`ROGUE.patrols`), the capture's
 push (`FRONT.push`) and the battle's enemy squads (`CONQUEST.net`, whose `work` the nodes share). With every node the enemy's a
 raid plays at `STRENGTH.play` (2), whose numbers are the island's own, so the sim gate's tables
@@ -261,7 +264,12 @@ Squads (`BattleSquad`) come out of the nodes: the player's from the camp's facto
 `Profile.factory`, built at its station like a hideout module, `buildFactory()`), the enemy's the
 more the more it holds (also from `NET_EDGE`, the nodes whose `POI_DEFS` name a landing ground, and in answer to the player's ground), and the
 rogues' from the wild now and then (`CONQUEST.rogue`), which fight at a node and move on but take
-none. They walk the links (`walkLine()` paths traced as
+none. Other players' expeditions (side 3, `BattleSquad.owner`; `newRun(..., { battle: { factory,
+rivals } })`, `RivalExpedition`: whose, the node, the squad, when) land as the enemy's do, by the
+pad or the north shore (`rivalRoute()`), walk across whoever's nodes to the one they were sent to,
+take it for their owner and hold it; one sent at 0 to a node its owner holds stands there from the
+start. They fight every other side; near the player they are robots among the enemy's
+(`Enemy.rival`, purple, green on the maps). They walk the links (`walkLine()` paths traced as
 the raid starts, then forgotten), attack a neighbouring node or defend one of their side's, and take
 a node by standing at its core for `CONQUEST.capture` seconds with none of its holders there (its
 garrison counts wherever it stands and comes to the core). Near the player or the teammate
@@ -271,7 +279,9 @@ teammate, `stepFriends()` in `enemies.ts`; a squad of them within `SUPPORT.reach
 teammate goes for the robots fighting them, seen or not, `support()` in `factions.ts`), the others in `State.enemies` (`Enemy.battle`, which may
 walk onto the player's nodes and which garrisons fight, `hostile()`); beyond `CONQUEST.far` it is
 numbers again, with each member's health as it was. Away from both, fights and captures are
-reckoned every `CONQUEST.tick` seconds in numbers, and when the raid ends early `finishBattle()`
+reckoned every `CONQUEST.tick` seconds in numbers by `sim/reckon.ts` (`reckonFights()`, then
+`reckonCaptures()` with the world's robots by each core between them; plain data in and out, no
+`State`, so a server can run `reckonApart()`, both in numbers alone, with the same code), and when the raid ends early `finishBattle()`
 reckons the rest so; it pushes no event. The night counts the nodes as the battle ended
 (`RaidDay.battle`). `battleFocus()` gives the objective (`objectiveSteps()`) and the bot a node of the
 player's under attack, or one their robots are taking.
@@ -621,7 +631,10 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   engaged with the player, and does not give up the chase while one fights them, `stepSquads()`);
   the sim gate's `ally` column is its damage share, downs and revives, and `checkSupport()`
   (`scripts/ringfall-support.ts`) checks that the player's robots help and that a squad fighting
-  them stays engaged after losing the player.
+  them stays engaged after losing the player. `checkRivals()` (`scripts/ringfall-rivals.ts`) drives
+  made-up expeditions of another player: one takes an undefended node of the player's, the factory's
+  squads take one back, another player's node is on the front and its core captures, the night never
+  takes it, and a battle given no expedition plays as one given none.
 - `EXTRACTS` in `map.ts` are the ways off; `stepExtract()` in `world.ts` runs them: a pickup with
   `call` (the dropship, the boat) is called by standing in it and comes after its time, while robots
   beam in round its `waves` point out of the player's sight and come to look at the pickup (`SHIP_WAVES`; `State.calls` keeps each call); the flare; the waits.
