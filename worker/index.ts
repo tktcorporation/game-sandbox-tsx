@@ -1,15 +1,15 @@
 /// <reference types="@cloudflare/workers-types" />
 
+import { handleApi } from "./api";
+
 interface Env {
   ASSETS: Fetcher;
+  /** RINGFALL's database; absent until one is connected (docs/ringfall/multiplayer.md). */
+  DB?: D1Database;
 }
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    const url = new URL(request.url);
-    if (url.pathname === "/api/health") {
-      return Response.json({ ok: true });
-    }
-    return env.ASSETS.fetch(request);
+    return (await handleApi(request, env)) ?? env.ASSETS.fetch(request);
   },
 } satisfies ExportedHandler<Env>;
