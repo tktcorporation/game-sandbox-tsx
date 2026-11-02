@@ -1771,6 +1771,17 @@ body.touch #hub-close kbd {
 .hold-key li.income {
   padding-left: 17px;
 }
+/* The padlock on the map's nodes off the front: a word, so it takes a row like the front. */
+.hold-key li.locked {
+  flex-basis: 100%;
+}
+.hold-key li.locked b {
+  font-family: var(--jp);
+}
+.hold-key li.locked .ico {
+  width: 12px;
+  height: 12px;
+}
 .hold-key li.front b,
 .hold-key li.income b {
   font-family: var(--jp);

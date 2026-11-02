@@ -16,7 +16,8 @@ import { callLeft, debrisBin, enemyHp, enemyShield, weakY, type GameEvent, type 
 import { haulValue } from "../sim/results";
 import { pickHeal } from "../sim/player";
 import { RARITY_CSS, SCOPE_IN } from "./models";
-import { IslandMap, islandScene } from "./map";
+import { IslandMap, islandScene, shieldedBy } from "./map";
+import { sfx } from "./sfx";
 import { nodeRow } from "./row";
 import { CONTRACT_NAME, contractMark, contractTask, contractText, type Contract } from "../meta/contracts";
 import { currentStep, objectiveSteps, type Objective, type Step, type Task } from "../sim/objective";
@@ -28,21 +29,11 @@ import { CREW, FRONT, MOD, MODS } from "../sim/config";
 import { binPicture, modIcon, pouchIcon, routeIcon, zipIcon } from "./icons";
 import { zipPoint } from "../sim/zips";
 import { bagIcon, callIcon, checkIcon, clockIcon, coreIcon, crossIcon, depotIcon, entryIcon, exitIcon, eyeIcon, fightIcon, flareIcon, keyIcon, lockIcon, noiseIcon, reinforceIcon, reviveIcon, SIDE, upIcon, nightIcon } from "./icons";
-import { capturable, frontNodes, NEIGHBOURS } from "../sim/front";
+import { capturable } from "../sim/front";
 
 /** The POI whose bins drop the key to POI `poi`'s vault (its `keyFrom`), by name. */
 const keySource = (poi: number) => POIS[poiIndex(POIS[poi].keyFrom)].name;
 
-/**
- * What to take before core `node` can be captured, by name: a core is shielded until a node next
- * to it is the player's, so its neighbours on the front (else all its neighbours).
- */
-function shieldedBy(s: Pick<State, "nodes">, node: number): string {
-  const front = frontNodes(s.nodes);
-  const near = NEIGHBOURS[node];
-  const take = near.filter((k) => front[k]);
-  return (take.length ? take : near).map((k) => NODES[k].name).join("・");
-}
 import { BagView } from "./bag";
 
 /*
@@ -131,6 +122,7 @@ export class Hud {
     this.mapOpen = force ?? !this.mapOpen;
     $("map").hidden = !this.mapOpen;
     if (this.mapOpen) this.showWhole(false);
+    this.map.picked = -1;
   }
 
   /** Switch the open map between the region the player is in and the whole world. */
@@ -148,6 +140,16 @@ export class Hud {
   constructor() {
     $("map-close").addEventListener("click", () => this.toggleMap(false));
     $("map-zoom").addEventListener("click", () => this.toggleMapView());
+    // The open map takes no input of its own, so the game's controls under it keep working; a tap
+    // (or a click with the pointer free) on a padlock still shows why that node cannot be taken.
+    // Heard on the way down, since the touch zones stop the press from rising past them.
+    addEventListener(
+      "pointerdown",
+      (e) => {
+        if (this.mapOpen && !document.pointerLockElement && this.map.pick(e.clientX, e.clientY)) sfx.locked();
+      },
+      true,
+    );
     new ResizeObserver(() => (this.compassHalf = 0)).observe($("compass"));
     const strip = $("compass-strip");
     const labels: Record<number, string> = { 0: "N", 45: "NE", 90: "E", 135: "SE", 180: "S", 225: "SW", 270: "W", 315: "NW" };
@@ -411,7 +413,7 @@ export class Hud {
         this.toast(`${coreIcon(foeSide(s.nodes[e.node]))}${NODES[e.node].name}`, 0, 3000);
         break;
       case "coreShielded":
-        this.toast(`${coreIcon(SIDE.enemy, true)}${NODES[e.node].name}<span class="toast-sub">先に${esc(shieldedBy(s, e.node))}を制圧</span>`, 0, 4000);
+        this.toast(`${coreIcon(foeSide(s.nodes[e.node]), true)}${NODES[e.node].name}<span class="toast-sub">先に${esc(shieldedBy(s.nodes, e.node))}を制圧</span>`, 0, 4000);
         break;
       case "coreTaken":
         this.toast(`${coreIcon(SIDE.own)}${NODES[e.node].name}`, 1, 5000);
@@ -1100,7 +1102,7 @@ export class Hud {
     if (t.kind === "core") {
       const n = NODES[t.node];
       const c = foeSide(s.nodes[t.node]);
-      if (!capturable(s, t.node)) return `${coreIcon(c, true)}${esc(n.name)} <small>▸ 先に${esc(shieldedBy(s, t.node))}</small>`;
+      if (!capturable(s, t.node)) return `${coreIcon(c, true)}${esc(n.name)} <small>▸ 先に${esc(shieldedBy(s.nodes, t.node))}</small>`;
       if (s.capture?.node === t.node) return `${coreIcon(c)}${esc(n.name)} <b>${Math.floor((s.capture.t / FRONT.capture) * 100)}%</b>`;
       return `${key("E")}${coreIcon(c)}${esc(n.name)} ${noiseIcon()}`;
     }
@@ -1164,6 +1166,7 @@ export class Hud {
     }
     const map = new IslandMap(canvas);
     map.whole = true;
+    map.locks = false;
     // Ways in the raid learned are dashed as the day began, and turn solid with a ring at its end.
     const learned = settled.learned;
     map.known = settled.profile.entries.filter((e) => !learned.includes(e));
