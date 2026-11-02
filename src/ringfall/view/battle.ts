@@ -65,8 +65,8 @@ function figureGeometry(): { body: THREE.BufferGeometry; visor: THREE.BufferGeom
   };
 }
 
-const SIDE_BODY: Record<Side, number> = { 0: PAL.friendArmor, 1: PAL.armor, 2: PAL.rogueArmor };
-const SIDE_EYE: Record<Side, number> = { 0: PAL.friendEye, 1: PAL.eye, 2: PAL.rogueEye };
+const SIDE_BODY: Record<Side, number> = { 0: PAL.friendArmor, 1: PAL.armor, 2: PAL.rogueArmor, 3: PAL.rivalArmor };
+const SIDE_EYE: Record<Side, number> = { 0: PAL.friendEye, 1: PAL.eye, 2: PAL.rogueEye, 3: PAL.rivalEye };
 
 interface Lander {
   root: THREE.Group;
@@ -249,7 +249,7 @@ export class BattleView {
     };
     // The battle's robots in the world.
     for (const e of s.friends) put(e.pos.x, e.pos.z, e.yaw, e.kind, 0, this.time * 6 + e.id);
-    for (const e of s.enemies) if (e.battle && e.mode !== "spawning") put(e.pos.x, e.pos.z, e.yaw, e.kind, e.rogue ? 2 : 1, this.time * 6 + e.id);
+    for (const e of s.enemies) if (e.battle && e.mode !== "spawning") put(e.pos.x, e.pos.z, e.yaw, e.kind, e.rival !== undefined ? 3 : e.rogue ? 2 : 1, this.time * 6 + e.id);
     // The squads that are numbers.
     const seen = new Set<number>();
     for (const q of b.squads) {

@@ -24,7 +24,7 @@ import { hypot2, hypot3 } from "./hypot";
 import { squadMembers } from "./members";
 
 /** The side an orb was fired for (sim/battle.ts `Side`). */
-const orbSide = (o: { friend?: boolean; rogue?: boolean }): Side => (o.friend ? 0 : o.rogue ? 2 : 1);
+const orbSide = (o: { friend?: boolean; rogue?: boolean; rival?: boolean }): Side => (o.friend ? 0 : o.rival ? 3 : o.rogue ? 2 : 1);
 
 /*
  * Robot behaviour. Out of combat a robot holds its post or walks its squad's
@@ -51,6 +51,8 @@ interface SpawnOpts {
   crew?: boolean;
   /** One of the rogues (see FACTION). */
   rogue?: boolean;
+  /** One of another player's robots: that player's id. */
+  rival?: string;
   /** A squad on a walk (`MOBILES`): its own draws are a hash of the seed and its id, so it shifts none of the raid's streams. */
   hashed?: boolean;
 }
@@ -132,6 +134,7 @@ export function spawnEnemy(s: State, kind: EnemyKind, x: number, z: number, poi:
     own: !!o.crew,
     rogue: o.rogue || undefined,
   };
+  if (o.rival !== undefined) e.rival = o.rival;
   s.enemies.push(e);
   if (o.appear) s.events.push({ t: "spawn", id: e.id, pos: { ...pos } });
   return e;
@@ -210,8 +213,9 @@ function fireOrb(s: State, e: Enemy, yawOff = 0, homing = false, foe?: Enemy, wi
     by: foe ? e.id : undefined,
     rogue: e.rogue || undefined,
     friend: e.friend || undefined,
+    ...(e.rival !== undefined && { rival: true }),
   });
-  s.events.push(foe ? { t: "enemyFire", id: e.id, pos: from, foe: bodyCenter(foe), rogue: !!e.rogue, friend: e.friend || undefined } : { t: "enemyFire", id: e.id, pos: from, rogue: e.rogue || undefined });
+  s.events.push(foe ? { t: "enemyFire", id: e.id, pos: from, foe: bodyCenter(foe), rogue: !!e.rogue, friend: e.friend || undefined, ...(e.rival !== undefined && { rival: true }) } : { t: "enemyFire", id: e.id, pos: from, rogue: e.rogue || undefined, ...(e.rival !== undefined && { rival: true }) });
 }
 
 function lockAim(e: Enemy, at: Vec3) {

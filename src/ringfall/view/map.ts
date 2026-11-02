@@ -6,6 +6,7 @@ import { atRisk, battleMarks, meterOf, type Battle, type Side } from "../sim/bat
 import { offshore } from "../sim/terrain";
 import { BOXES, CAMP, DEBRIS_SPOTS, NODES, nodeIndex, TIER, UNLOCKS, debrisIndex, DEPOTS, ENTRIES, EXTRA_BINS, EXTRACTS, HOME_REGION, LANDMARKS, OUTPOST_SITES, POIS, REGIONS, regionOf, ROUTES, regionHere, type EntryId, type NodeId, type PoiId, type RegionId, type RouteId } from "../sim/map";
 import type { IslandEvent, PoiHold } from "../sim/island";
+import { rivalOf } from "../sim/holds";
 import { STREETS } from "../sim/streets";
 import { worldKey } from "../sim/routes";
 import { DAM_FACE, floorLevel, groundOf, highGround, LEVEL, steepAt, surfaceAt, terrainHeight, type Ground } from "../sim/terrain";
@@ -41,7 +42,13 @@ const css = (c: number) => `#${c.toString(16).padStart(6, "0")}`;
  * player's blue, which read on the sand and stay apart from the loot's colours. The titan's pad,
  * the enemy's for good, has a mark of its own in the robots' armour.
  */
-export const HOLD_CSS: Record<PoiHold, string> = { held: "#c8402f", freed: "#3f86c8" };
+export const HOLD_CSS: Record<"held" | "freed", string> = { held: "#c8402f", freed: "#3f86c8" };
+
+/** Another player's colour on the maps: a green, apart from the two sides', the rogues' violet and the ways off' yellow. */
+export const RIVAL_CSS = "#3fae6e";
+
+/** The colour of a node held `h`: the enemy's, the player's, or another player's. */
+export const holdCss = (h: PoiHold) => (h === "held" || h === "freed" ? HOLD_CSS[h] : RIVAL_CSS);
 
 /**
  * A flare as the HUD's icon draws it, centred on (x, y) and `r` tall from its middle: a red stick
@@ -273,7 +280,7 @@ export type MapScene = Pick<State, "seen" | "cleared" | "hold" | "depots" | "rou
   /** Ways in learned by the raid just ended (the results), ringed as they turn solid. */
   learned?: readonly EntryId[];
   /** The nodes that changed hands overnight (the results): a ring in the colour they turned. */
-  changed?: { gained: readonly NodeId[]; lost: readonly NodeId[] };
+  changed?: { gained: readonly NodeId[]; lost: readonly NodeId[]; /** Nodes whose other player changed (the results), the player's unchanged. */ moved?: readonly NodeId[] };
   /** The only POIs whose names are written (a small map's), or every POI's when absent. */
   names?: readonly PoiId[];
 };
@@ -281,8 +288,8 @@ export type MapScene = Pick<State, "seen" | "cleared" | "hold" | "depots" | "rou
 /** A label's box on the canvas, so labels do not overlap. */
 type Rect = { x0: number; y0: number; x1: number; y1: number };
 
-/** The sides' colours on the battle map: the player's blue, the enemy's red, the rogues' violet. */
-export const SIDE_CSS: Record<Side, string> = { 0: "#4f9bff", 1: "#ff4a3d", 2: ROGUE_CSS };
+/** The sides' colours on the battle map: the player's blue, the enemy's red, the rogues' violet, another player's green. */
+export const SIDE_CSS: Record<Side, string> = { 0: "#4f9bff", 1: "#ff4a3d", 2: ROGUE_CSS, 3: RIVAL_CSS };
 
 /** The camp's picture of the island between raids, from the profile's explored map, depots, routes and POI standings. */
 export function islandScene(p: { seen: string; depots: readonly PoiId[]; routes: readonly RouteId[]; poiState: Record<PoiId, { state: PoiHold }>; events?: readonly (IslandEvent | null)[]; freedAt?: Partial<Record<PoiId, number>> }): MapScene {
@@ -351,12 +358,13 @@ function paintLand(nodes: readonly NodeHold[]) {
   const g = c.getContext("2d")!;
   const img = g.createImageData(cols, rows);
   const rgb = (css: string) => [parseInt(css.slice(1, 3), 16), parseInt(css.slice(3, 5), 16), parseInt(css.slice(5, 7), 16)];
-  const cols4 = { freed: rgb(HOLD_CSS.freed), held: rgb(HOLD_CSS.held) };
+  const cols4 = { freed: rgb(HOLD_CSS.freed), held: rgb(HOLD_CSS.held), rival: rgb(RIVAL_CSS) };
   const mine = (k: number) => k === -2 || (k >= 0 && nodes[k] === "freed");
   for (let n = 0; n < cols * rows; n++) {
     const k = own[n];
     if (k === -1) continue;
-    const col = k === -2 ? cols4.freed : cols4[nodes[k]];
+    const h = k === -2 ? "freed" : nodes[k];
+    const col = h === "freed" || h === "held" ? cols4[h] : cols4.rival;
     img.data[n * 4] = col[0];
     img.data[n * 4 + 1] = col[1];
     img.data[n * 4 + 2] = col[2];
@@ -769,9 +777,11 @@ export class IslandMap {
     };
     const taken: Rect[] = [];
     const free = (r: Rect) => !taken.some((t) => r.x0 < t.x1 && r.x1 > t.x0 && r.y0 < t.y1 && r.y1 > t.y0);
-    // A POI cleared this raid gets a tick after its name; who holds it is its mark's colour.
+    // A POI the enemy held as the raid began and the player cleared gets a tick after its name; who holds it is its mark's colour.
     const hold = (i: number): PoiHold => s.hold?.[i] ?? "held";
-    const poiText = (i: number) => (s.cleared[i] && hold(i) !== "freed" ? `${POIS[i].name} ✓` : POIS[i].name);
+    const poiText = (i: number) => (s.cleared[i] && hold(i) === "held" ? `${POIS[i].name} ✓` : POIS[i].name);
+    // Another player's POI starts cleared (it stands no garrison): its name is not dimmed for it.
+    const dim = (i: number) => s.cleared[i] && rivalOf(hold(i)) === null;
     // The POI names written: those the scene names (the nodes that changed hands come first), and of
     // the rest none that would cover a name already placed, so a small map shows fewer, whole names.
     const changedIds: readonly string[] = [...(s.changed?.gained ?? []), ...(s.changed?.lost ?? [])];
@@ -983,7 +993,7 @@ export class IslandMap {
       const p = at(c.x, c.z);
       g.save();
       g.globalAlpha = Math.max(0.25, 1 - age / FACTION.keep);
-      g.fillStyle = c.rogue ? ROGUE_CSS : "#ff5a4f";
+      g.fillStyle = c.rival ? RIVAL_CSS : c.rogue ? ROGUE_CSS : "#ff5a4f";
       g.strokeStyle = "rgba(20,24,40,0.9)";
       g.lineWidth = 1.5 * dpr;
       g.beginPath();
@@ -1029,7 +1039,7 @@ export class IslandMap {
         g.fillStyle = TITAN_CSS;
       } else {
         g.arc(p.x, p.y, r, 0, Math.PI * 2);
-        g.fillStyle = HOLD_CSS[hold(i)];
+        g.fillStyle = holdCss(hold(i));
       }
       g.fill();
       g.stroke();
@@ -1107,14 +1117,15 @@ export class IslandMap {
     });
     if (!locked[this.picked]) this.picked = -1;
     if (s.battle && s.nodes) this.drawBattle(g, s, at, dpr, label);
-    // The nodes that changed hands: a thick ring in the colour each turned.
-    for (const [ids, col] of [[s.changed?.gained ?? [], HOLD_CSS.freed], [s.changed?.lost ?? [], HOLD_CSS.held]] as const)
+    // The nodes that changed hands: a thick ring in the colour each turned (a node lost to another player, or passing between others, in theirs).
+    const turned = (id: NodeId) => (s.nodes ? holdCss(s.nodes[nodeIndex(id)]) : HOLD_CSS.held);
+    for (const [ids, col] of [[s.changed?.gained ?? [], () => HOLD_CSS.freed], [s.changed?.lost ?? [], turned], [s.changed?.moved ?? [], turned]] as const)
       for (const id of ids) {
         const n = NODES[nodeIndex(id)];
         const p = at(n.x, n.z);
         g.save();
         g.lineWidth = 4 * dpr;
-        g.strokeStyle = col;
+        g.strokeStyle = col(id);
         g.beginPath();
         g.arc(p.x, p.y, 14 * dpr, 0, Math.PI * 2);
         g.stroke();
@@ -1123,7 +1134,7 @@ export class IslandMap {
     // POI names go on top, a little above their mark, so an exit nearby does not hide them.
     for (const i of named) {
       const p = at(POIS[i].x, POIS[i].z);
-      label(poiText(i), p.x, p.y - 15 * dpr, s.cleared[i] ? "#cfd6e0" : "#ffffff", 12);
+      label(poiText(i), p.x, p.y - 15 * dpr, dim(i) ? "#cfd6e0" : "#ffffff", 12);
     }
     if (s.ally?.active) {
       const a = at(s.ally.pos.x, s.ally.pos.z);

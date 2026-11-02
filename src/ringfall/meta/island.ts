@@ -1,13 +1,14 @@
 import { EVENTS, FACTORY, FACTORY_TOP, FRONT, META, NIGHT, type EventKind, type Rarity } from "../sim/config";
 import type { IslandEvent, PoiHold } from "../sim/island";
+import { parseHold, rivalOf } from "../sim/holds";
 import { DEBRIS_SPOTS, debrisIndex, DEPOTS, NET_EDGE, NODES, POIS, poiIndex, UNLOCKS, type DebrisId, type NodeId, type NodeUnlock, type PoiId } from "../sim/map";
 import { capturedIds, NEIGHBOURS, nodeHolds, type NodeHold } from "../sim/front";
 import { guardedNodes, type Battle } from "../sim/battle";
 import { mix, type State } from "../sim/state";
 
 /*
- * The island between raids (docs/ringfall/island-v2.md): one raid is one day, and each of the six
- * nodes is the enemy's or the player's. These are the pure rules that move the island from one
+ * The island between raids (docs/ringfall/island-v2.md): one raid is one day, and each node is the
+ * enemy's, the player's, or another player's (docs/ringfall/multiplayer.md). These are the pure rules that move the island from one
  * day to the next; the raid reads the result as each POI's garrison (sim/island.ts) and each
  * node's standing on the front (sim/front.ts).
  */
@@ -50,6 +51,10 @@ export interface RaidDay {
  */
 export interface BattleDay {
   held: NodeId[];
+  /** The nodes other players held as the battle ended, as it began and when the player left, and whose; each left out, none. */
+  rival?: Partial<Record<NodeId, string>>;
+  rivalStart?: Partial<Record<NodeId, string>>;
+  rivalLeft?: Partial<Record<NodeId, string>>;
   start?: NodeId[];
   left?: NodeId[];
   guarded?: NodeId[];
@@ -77,8 +82,14 @@ export const raidDay = (s: Pick<State, "outcome" | "stats"> & { visited?: boolea
 function battleDay(b: Battle, nodes: readonly NodeHold[], seed: number): BattleDay {
   const ids = (h: readonly NodeHold[]) => NODES.filter((_, i) => h[i] === "freed").map((n) => n.id);
   const leftAt = b.left?.at ?? Infinity;
+  const rival = rivalNodes(nodes);
+  const rivalStart = rivalNodes(b.start);
+  const rivalLeft = rivalNodes(b.left?.nodes ?? nodes);
   return {
     held: ids(nodes),
+    ...(Object.keys(rival).length && { rival }),
+    ...(Object.keys(rivalStart).length && { rivalStart }),
+    ...(Object.keys(rivalLeft).length && { rivalLeft }),
     start: ids(b.start),
     left: ids(b.left?.nodes ?? nodes),
     guarded: guardedNodes(b).map((i) => NODES[i].id),
@@ -104,6 +115,16 @@ export type IslandView = Pick<IslandDay, "day" | "poiState">;
 
 /** Each node's standing on an island day (sim/front.ts). */
 export const islandHolds = (p: Pick<IslandDay, "poiState">): NodeHold[] => nodeHolds((id) => p.poiState[id].state);
+
+/** The nodes other players hold among `holds` (`NODES` order), and whose. */
+export const rivalNodes = (holds: readonly NodeHold[]): Partial<Record<NodeId, string>> => {
+  const out: Partial<Record<NodeId, string>> = {};
+  NODES.forEach((n, i) => {
+    const who = rivalOf(holds[i]);
+    if (who !== null) out[n.id] = who;
+  });
+  return out;
+};
 
 /** The nodes the player holds on an island day. */
 export const playerNodes = (p: Pick<IslandDay, "poiState">): NodeId[] => NODES.filter((n) => p.poiState[n.id].state === "freed").map((n) => n.id);
@@ -144,6 +165,8 @@ export interface FrontChange {
  * while the player was out (`raid`), in the battle after they left (`after`), and in the night (`night`).
  */
 export interface DayChange {
+  /** The nodes other players held as the day began, when the player left the battle, and as it ended (the night takes none of them); left out when there were none. */
+  rivals?: { start: Partial<Record<NodeId, string>>; left: Partial<Record<NodeId, string>>; end: Partial<Record<NodeId, string>> };
   freed: PoiId[];
   front: FrontChange;
   raid: FrontChange;
@@ -155,16 +178,16 @@ export interface DayChange {
 const changeOf = (from: readonly NodeId[], to: readonly NodeId[]): FrontChange => ({ gained: to.filter((id) => !from.includes(id)), lost: from.filter((id) => !to.includes(id)) });
 
 /**
- * The night's attacks (`NIGHT`): each node of `held` next to the enemy's ground (a node not in
- * `held`, or the landing ground of `NET_EDGE`) falls with a chance that grows with those
+ * The night's attacks (`NIGHT`): each node of `held` next to the enemy's ground (a node neither in
+ * `held` nor in `rival`, another player's, or the landing ground of `NET_EDGE`) falls with a chance that grows with those
  * neighbours and shrinks while the player's squads guard it and with the factory's level, drawn
  * from `seed` and `day`. The nodes that fall, at most `NIGHT.max`, in `NODES` order.
  */
-export function nightRaids(held: readonly NodeId[], guarded: readonly NodeId[], factory: number, seed: number, day: number): NodeId[] {
+export function nightRaids(held: readonly NodeId[], guarded: readonly NodeId[], factory: number, seed: number, day: number, rival: readonly NodeId[] = []): NodeId[] {
   const out: NodeId[] = [];
   NODES.forEach((n, i) => {
     if (!held.includes(n.id) || out.length >= NIGHT.max) return;
-    const foes = NEIGHBOURS[i].filter((k) => !held.includes(NODES[k].id)).length + (NET_EDGE.includes(n.id) ? 1 : 0);
+    const foes = NEIGHBOURS[i].filter((k) => !held.includes(NODES[k].id) && !rival.includes(NODES[k].id)).length + (NET_EDGE.includes(n.id) ? 1 : 0);
     if (!foes) return;
     // The more of the island the player holds, the more of the enemy's strength falls on what is left of the front.
     const spread = NIGHT.spread + held.length / NODES.length;
@@ -177,9 +200,10 @@ export function nightRaids(held: readonly NodeId[], guarded: readonly NodeId[], 
 /**
  * Ends the day `p.day` with the raid `r` and starts the next. With a battle, each node stays
  * with whoever held it as the battle ended: the nodes the player took (by their cores or with
- * their robots) and the nodes the enemy's squads took back alike. Without one, a node whose core
- * the raid captured is the player's. Clearing a POI of its robots takes nothing. The titan's pad
- * is the enemy's for good. A node the player holds has its depot on.
+ * their robots) and the nodes the enemy's squads took back alike, other players' as well. Without
+ * one, a node whose core the raid captured is the player's, and other players keep the rest of
+ * theirs. The night never comes at another player's node. Clearing a POI of its robots takes
+ * nothing. The titan's pad is the enemy's for good. A node the player holds has its depot on.
  */
 export function advanceDay<P extends IslandDay>(p: P, r: RaidDay): { profile: P; change: DayChange } {
   const today = p.day;
@@ -187,9 +211,16 @@ export function advanceDay<P extends IslandDay>(p: P, r: RaidDay): { profile: P;
   const was = NODES.filter((_, i) => before[i] === "freed").map((n) => n.id);
   const ended = r.battle ? r.battle.held : [...was, ...(r.captured ?? [])];
   // The night: the enemy comes at the nodes next to its ground (a raid with no battle has no night).
-  const fell = r.battle ? nightRaids(ended, r.battle.guarded ?? [], r.battle.factory ?? 0, r.battle.seed ?? 0, today) : [];
+  const rival: Partial<Record<NodeId, string>> = r.battle ? (r.battle.rival ?? {}) : rivalNodes(before);
+  const fell = r.battle ? nightRaids(ended, r.battle.guarded ?? [], r.battle.factory ?? 0, r.battle.seed ?? 0, today, Object.keys(rival) as NodeId[]) : [];
   const mine = new Set<NodeId>(ended.filter((id) => !fell.includes(id)));
-  const poiState = Object.fromEntries(POIS.map((o) => [o.id, { state: !unfreeable(o.id) && mine.has(o.id as NodeId) ? "freed" : "held" }])) as Island;
+  const standing = (id: PoiId): PoiHold => {
+    if (unfreeable(id)) return "held";
+    if (mine.has(id as NodeId)) return "freed";
+    const who = rival[id as NodeId];
+    return who !== undefined ? `rival:${who}` : "held";
+  };
+  const poiState = Object.fromEntries(POIS.map((o) => [o.id, { state: standing(o.id) }])) as Island;
   const after = islandHolds({ poiState });
   const gained = NODES.filter((_, i) => before[i] !== "freed" && after[i] === "freed").map((n) => n.id);
   const lost = NODES.filter((_, i) => before[i] === "freed" && after[i] !== "freed").map((n) => n.id);
@@ -204,9 +235,14 @@ export function advanceDay<P extends IslandDay>(p: P, r: RaidDay): { profile: P;
       raid: changeOf(r.battle?.start ?? was, r.battle?.left ?? ended),
       after: changeOf(r.battle?.left ?? ended, ended),
       night: changeOf(ended, [...mine]),
+      ...rivalBeats(r.battle ? (r.battle.rivalStart ?? {}) : rivalNodes(before), r.battle ? (r.battle.rivalLeft ?? {}) : rivalNodes(after), rivalNodes(after)),
     },
   };
 }
+
+/** The day's other players' nodes beat by beat (`DayChange.rivals`), or nothing when there were none. */
+const rivalBeats = (start: Partial<Record<NodeId, string>>, left: Partial<Record<NodeId, string>>, end: Partial<Record<NodeId, string>>): Pick<DayChange, "rivals"> =>
+  Object.keys(start).length || Object.keys(left).length || Object.keys(end).length ? { rivals: { start, left, end } } : {};
 
 /** The credits the island pays at the settle for the nodes the player holds: `FRONT.income` each. */
 export const frontIncome = (p: Pick<IslandDay, "poiState">): number => playerNodes(p).length * FRONT.income;
@@ -262,15 +298,16 @@ export function eventText(ev: IslandEvent): string {
 /** Each POI's standing for a raid's start (`Start.island`). */
 export const holds = (p: Pick<IslandDay, "poiState">): Partial<Record<PoiId, PoiHold>> => Object.fromEntries(POIS.map((o) => [o.id, p.poiState[o.id].state]));
 
-/** A saved island; anything unreadable is the enemy's. A POI saved thin is the player's (the enemy held it only thinly); the titan's pad is always the enemy's. */
-export function parseIsland(raw: unknown): Island {
+/** A saved island; anything unreadable is the enemy's. A POI saved thin is the player's (the enemy held it only thinly); the titan's pad is always the enemy's. Another player's standing is kept as saved where `rivals` (a save that can hold one), else it is the enemy's. */
+export function parseIsland(raw: unknown, rivals = true): Island {
   const out = newIsland();
   if (!raw || typeof raw !== "object") return out;
   const o = raw as Record<string, unknown>;
   for (const { id } of POIS) {
     const x = o[id] as Record<string, unknown> | undefined;
     if (!x || typeof x !== "object" || unfreeable(id)) continue;
-    out[id] = { state: x.state === "freed" || x.state === "thin" ? "freed" : "held" };
+    const h = x.state === "thin" ? "freed" : (parseHold(x.state) ?? "held");
+    out[id] = { state: !rivals && rivalOf(h) !== null ? "held" : h };
   }
   return out;
 }

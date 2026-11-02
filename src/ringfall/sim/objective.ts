@@ -1,5 +1,5 @@
 import { CONQUEST, FRONT, VALUABLES, type ValuableKind } from "./config";
-import { battleFocus, meterOf } from "./battle";
+import { attacking, battleFocus, meterOf } from "./battle";
 import { dist2d } from "./geom";
 import { CAMP, DEPOTS, EXTRACTS, NODES, POIS, poiIndex, recordSpot, regionHere, type PoiId, type RecordId, type RegionId } from "./map";
 import { frontNodes } from "./front";
@@ -119,7 +119,7 @@ function defendSteps(s: State, i: number): Objective {
   const core = ground(n.core.x, n.core.z, n.core.y);
   const m = s.battle ? meterOf(s.battle, i) : null;
   const near = s.enemies.filter((e) => e.battle && dist2d(e.pos, n.core) < CONQUEST.zone * 2).length;
-  const coming = !!s.battle && s.battle.squads.some((q) => q.side !== 0 && q.to === i && q.task === "attack");
+  const coming = !!s.battle && s.battle.squads.some((q) => q.side !== 0 && attacking(q, i));
   const held = s.nodes[i] === "freed";
   return settle(`陣取り戦：${n.name}を守る`, [
     { kind: "go", label: `${n.name}へ向かう`, until: `核の ${ARRIVE} m 以内に着く`, at: core, done: !held || !coming || dist2d(s.player.pos, core) < ARRIVE },
@@ -127,7 +127,7 @@ function defendSteps(s: State, i: number): Objective {
       kind: "act",
       label: "攻めてくる部隊を追い払う",
       until: `核の ${CONQUEST.zone} m 以内に立ち、近づくロボットを倒す`,
-      progress: !held ? "取られた" : m ? `敵が制圧中 ${Math.round(m.share * 100)}%` : near ? `敵 ${near} 体` : undefined,
+      progress: !held ? "取られた" : m ? `${m.side === 3 ? "他のプレイヤーが" : "敵が"}制圧中 ${Math.round(m.share * 100)}%` : near ? `敵 ${near} 体` : undefined,
       at: core,
       done: !held || !coming,
       near: `核の ${CONQUEST.zone} m 以内で守る`,

@@ -17,7 +17,7 @@ import { hypot2 } from "./hypot";
  * pure rules here serve the raid, the island's nights (meta/island.ts) and the maps alike.
  */
 
-/** Who holds a node: the enemy or the player. */
+/** Who holds a node: the enemy, the player, or another player (sim/holds.ts). Another player's node is not the player's: on the front it is taken by its core as the enemy's is. */
 export type NodeHold = PoiHold;
 
 /** Each node's neighbours, as places in `NODES`. */
@@ -41,8 +41,8 @@ export const frontNodes = (holds: readonly NodeHold[]): boolean[] => NODES.map((
 /** Each node's standing, from the POIs'. */
 export const nodeHolds = (poi: (id: PoiId) => PoiHold): NodeHold[] => NODES.map((n) => poi(n.id));
 
-/** How many nodes the enemy holds. */
-export const enemyNodes = (holds: readonly NodeHold[]) => holds.filter((h) => h !== "freed").length;
+/** How many nodes the enemy holds: another player's are neither the enemy's nor the player's, and count for neither (the enemy's strength, `strengthFor()`). */
+export const enemyNodes = (holds: readonly NodeHold[]) => holds.filter((h) => h === "held").length;
 
 /** The node of POI `poi` (a place in `POIS`), or -1 for the titan's pad. */
 export const poiNode = (poi: number) => nodeIndex(POIS[poi].id);
@@ -156,7 +156,7 @@ export function stepFront(s: State) {
 }
 
 /**
- * The push on a capture: a squad from each neighbouring node the player does not hold (the
+ * The push on a capture: a squad from each neighbouring node the enemy holds (the
  * nearest `FRONT.pushMax`), beamed in out of sight a walk of `FRONT.pushDist` from the core on its
  * node's side, and walking in by the ground's way. True when one came, or when none has anywhere
  * to come from.
@@ -164,7 +164,7 @@ export function stepFront(s: State) {
 function sendPush(s: State, i: number): boolean {
   const n = NODES[i];
   const from = NEIGHBOURS[i]
-    .filter((k) => s.nodes[k] !== "freed")
+    .filter((k) => s.nodes[k] === "held")
     .sort((a, b) => dist2d(NODES[a], n.core) - dist2d(NODES[b], n.core))
     .slice(0, FRONT.pushMax[s.strength]);
   if (!from.length) return true;

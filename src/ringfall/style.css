@@ -222,6 +222,18 @@ kbd {
   width: calc(var(--own) / var(--n) * 100%);
   background: var(--own-c);
 }
+/* Other players' nodes: green segments from the player's boundary toward the enemy's red. */
+.tug-rival {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--own) / var(--n) * 100%);
+  width: calc(var(--rival) / var(--n) * 100%);
+  background: #3fae6e;
+}
+.tug-n.rival {
+  color: #8fd8ac;
+}
 /* The boundary between the two sides, sliding with the fill. */
 .tug-edge {
   left: calc(var(--own) / var(--n) * 100% - 1.5px);
@@ -2537,6 +2549,9 @@ body.touch #title h1 {
 #map .map-key.freed {
   color: #3f86c8;
 }
+#map .map-key.rival {
+  color: #3fae6e;
+}
 /* The titan's navy, lightened to read on the dark under the map. */
 /* The battle's squads on the map: chevrons in the side's colour. */
 #map .map-key.squad.you {
@@ -2547,6 +2562,9 @@ body.touch #title h1 {
 }
 #map .map-key.squad.rogue {
   color: #a47be0;
+}
+#map .map-key.squad.rival {
+  color: #3fae6e;
 }
 /* The front line (view/map.ts). */
 #map .map-key.front {

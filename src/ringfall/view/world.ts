@@ -1108,7 +1108,7 @@ export class World {
           this.shake = Math.max(this.shake, 0.5);
           break;
         case "enemyFire": {
-          const hue = e.friend ? PAL.friendOrb : e.rogue ? PAL.rogueOrb : PAL.orb;
+          const hue = e.friend ? PAL.friendOrb : e.rival ? PAL.rivalOrb : e.rogue ? PAL.rogueOrb : PAL.orb;
           this.burst(e.pos, hue, 3, 2, 0.06, 0, 0.25);
           if (e.foe) {
             // Fire between the factions: a tracer and a flash that read from far off, thicker with distance (see FACTION).
@@ -1125,7 +1125,7 @@ export class World {
           // Destroyed by the other faction: it goes down as a wreck, with no feel of the player's own kill.
           const v = this.enemies.get(e.id);
           const big = e.kind === "heavy" ? 2 : 1;
-          this.burst(e.pos, e.friend ? PAL.friendArmorLight : e.rogue ? PAL.rogueArmorLight : PAL.armorLight, 14 * big, 7, 0.16, 14, 1.1);
+          this.burst(e.pos, e.friend ? PAL.friendArmorLight : e.rival ? PAL.rivalArmorLight : e.rogue ? PAL.rogueArmorLight : PAL.armorLight, 14 * big, 7, 0.16, 14, 1.1);
           this.burst(e.pos, 0xffc070, 8 * big, 9, 0.06, 2, 0.35);
           this.flashAt(e.pos, 0xffc070, 3 + Math.hypot(e.pos.x - s.player.pos.x, e.pos.z - s.player.pos.z) * 0.02);
           if (v) {
@@ -1300,6 +1300,12 @@ export class World {
           m.mats[1]?.color.setHex(PAL.rogueArmorLight);
           (m.eyeHalo.material as THREE.SpriteMaterial).color.setHex(PAL.rogueEye);
         }
+        // Another player's: the same robot in purple, its eye violet (sim/battle.ts side 3).
+        if (e.rival !== undefined) {
+          m.mats[0].color.setHex(PAL.rivalArmor);
+          m.mats[1]?.color.setHex(PAL.rivalArmorLight);
+          (m.eyeHalo.material as THREE.SpriteMaterial).color.setHex(PAL.rivalEye);
+        }
         // One of the player's own: the same robot in blue, its eye cyan (sim/battle.ts).
         if (e.friend) {
           m.mats[0].color.setHex(PAL.friendArmor);
@@ -1380,7 +1386,7 @@ export class World {
       m.eye.scale.setScalar(tele);
       m.eyeHalo.scale.setScalar(k.weakR * (winding ? 9 : 4));
       (m.eyeHalo.material as THREE.SpriteMaterial).opacity = winding ? 0.95 : 0.55;
-      (m.eye.material as THREE.MeshBasicMaterial).color.setHex(e.mode === "stunned" ? 0x9fe8ff : e.friend ? PAL.friendEye : e.rogue ? PAL.rogueEye : PAL.eye);
+      (m.eye.material as THREE.MeshBasicMaterial).color.setHex(e.mode === "stunned" ? 0x9fe8ff : e.friend ? PAL.friendEye : e.rival !== undefined ? PAL.rivalEye : e.rogue ? PAL.rogueEye : PAL.eye);
       v.flash = Math.max(0, v.flash - dt);
       for (const mat of m.mats) mat.emissive.setHex(v.flash > 0 ? 0xffffff : e.mode === "stunned" ? 0x1f4b5c : 0x000000);
       v.shieldFlash = Math.max(0, v.shieldFlash - dt);
@@ -1437,7 +1443,7 @@ export class World {
       }
       g.visible = true;
       // The rogues' bolts burn yellow, the network's magenta.
-      const hue = o.friend ? PAL.friendOrb : o.rogue ? PAL.rogueOrb : PAL.orb;
+      const hue = o.friend ? PAL.friendOrb : o.rival ? PAL.rivalOrb : o.rogue ? PAL.rogueOrb : PAL.orb;
       ((g.children[0] as THREE.Mesh).material as THREE.MeshBasicMaterial).color.setHex(hue);
       ((g.children[2] as THREE.Sprite).material as THREE.SpriteMaterial).color.setHex(hue);
       g.position.set(o.pos.x, o.pos.y, o.pos.z);
@@ -1573,7 +1579,7 @@ export class World {
       // A lit lamp blinks slowly, so an on depot reads as working from down the road.
       if (on) v.lamp.visible = Math.sin(this.time * 3 + i) > -0.6;
     });
-    // --- the front's cores: red while the enemy holds the node, blue the player's (with a flag
+    // --- the front's cores: red while the enemy holds the node, green another player's, blue the player's (with a flag
     // up); a node off the front wears the enemy's shield. Lit from far off, past the things' range.
     const front = frontNodes(s.nodes);
     const risk = s.phase === "play" ? atRisk(s) : [];
@@ -1585,7 +1591,7 @@ export class World {
       v.root.visible = Math.hypot(v.root.position.x - fx, v.root.position.z - fz) < thingsFar * 4;
       if (key !== v.key) {
         v.key = key;
-        const col = h === "freed" ? PAL.freed : PAL.held;
+        const col = h === "freed" ? PAL.freed : h === "held" ? PAL.held : PAL.rivalHeld;
         (v.band.material as THREE.MeshBasicMaterial).color.setHex(col);
         v.halo.material.color.setHex(col);
         v.flag.visible = h === "freed";

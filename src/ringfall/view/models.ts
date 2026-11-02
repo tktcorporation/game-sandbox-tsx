@@ -112,6 +112,11 @@ export const PAL = {
   friendArmorLight: 0xd8ecff,
   friendEye: 0x52d6ff,
   friendOrb: 0x6be0ff,
+  /** Another player's robots (an expedition's, sim/battle.ts side 3): the same robots in purple, their eyes and bolts a light violet. */
+  rivalArmor: 0x5b3d8f,
+  rivalArmorLight: 0x8e6fc4,
+  rivalEye: 0xd08bff,
+  rivalOrb: 0xc58cff,
   hot: 0xffe23d,
   white: 0xffffff,
   gun: 0x2b2f38,
@@ -124,9 +129,10 @@ export const PAL = {
   medical: 0xf2f0ea,
   /** The band on health items, apart from the enemy red and the ring orange. */
   healRed: 0xe0475a,
-  /** A node's core in the colour of who holds it: the enemy's red, the player's blue. */
+  /** A node's core in the colour of who holds it: the enemy's red, the player's blue, another player's green (view/map.ts `RIVAL_CSS`). */
   held: 0xff3b30,
   freed: 0x3d8cff,
+  rivalHeld: 0x3fae6e,
   /** The flag the player raises by a core they hold. */
   flag: 0x2f7fe0,
   /** The hex shield the network keeps round a core off the front. */
