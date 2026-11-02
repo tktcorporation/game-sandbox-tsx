@@ -648,7 +648,7 @@ function heldBy(s: State, b: Battle, i: number): number {
 }
 
 /** Squads of `side` already on their way to node `i`, or at it to take it. */
-const goingTo = (b: Battle, side: Side, i: number) => b.squads.filter((q) => q.side === side && q.to === i && q.task === "attack").length;
+const goingTo = (b: Battle, side: Side, i: number) => b.squads.filter((q) => q.side === side && attacking(q, i)).length;
 
 /** Where the player's next squad goes: to a node of theirs under attack, else to take a node on the front. */
 function playerPlan(s: State, b: Battle): { from: number; to: number; task: BattleSquad["task"] } | null {
@@ -659,7 +659,7 @@ function playerPlan(s: State, b: Battle): { from: number; to: number; task: Batt
   NODES.forEach((_, i) => {
     if (s.nodes[i] !== "freed") return;
     // The units coming at it, against those holding it: defended only while outmatched.
-    const n = b.squads.filter((q) => q.side !== 0 && q.to === i && q.task === "attack").reduce((k, q) => k + q.units.length, 0) - unitsAt(s, b, i, 0);
+    const n = b.squads.filter((q) => q.side !== 0 && attacking(q, i)).reduce((k, q) => k + q.units.length, 0) - unitsAt(s, b, i, 0);
     if (n > worstN) {
       worst = i;
       worstN = n;
@@ -961,7 +961,7 @@ function march(s: State, b: Battle, dt: number) {
   NODES.forEach((_, i) => {
     const side = sideOf(s.nodes[i]);
     // Another player's squads came for this node only: they all stay.
-    if (side === 3 || b.squads.some((q) => q.side !== side && q.to === i && q.task === "attack")) return;
+    if (side === 3 || b.squads.some((q) => q.side !== side && attacking(q, i))) return;
     const spare = b.squads.filter((q) => q.squad < 0 && q.side === side && q.to === i && q.task === "hold").slice(1);
     for (const q of spare) {
       const plan = attackFrom(s, b, side, [i]);
@@ -976,6 +976,9 @@ const reckonSquad = (q: BattleSquad): ReckonSquad => ({ id: q.id, side: q.side, 
 
 /** Another player's squad come to a node on its way to the one it was sent to (only side 3: the enemy's squads stop to fight where they come). */
 const passing = (q: BattleSquad) => q.side === 3 && q.via.length > 0;
+
+/** Squad `q` comes to take node `i`: sent to attack it, and not only passing it on its way to another. */
+export const attacking = (q: BattleSquad, i: number) => q.to === i && q.task === "attack" && !passing(q);
 
 /** A garrison's robot as the reckoning sees it. */
 const guardOf = (e: Enemy): Guard => ({ side: robotSide(e), kind: e.kind, hp: e.hp, shield: e.shield, plate: e.plate });
@@ -1175,7 +1178,7 @@ export function battleFocus(s: State): { node: number; kind: "defend" | "attack"
     if (s.nodes[i] !== "freed") return;
     const m = b.meter[i];
     // Another player's squad passing through on its way to another node comes at nothing here.
-    const coming = b.squads.some((q) => q.side !== 0 && q.to === i && q.task === "attack" && !passing(q) && (arrived(q) || dist2d(q, n.core) < 120));
+    const coming = b.squads.some((q) => q.side !== 0 && attacking(q, i) && (arrived(q) || dist2d(q, n.core) < 120));
     if ((m && m.side !== 0) || coming) {
       const d = dist2d(n.core, p);
       if (d < defendD) {
@@ -1188,7 +1191,7 @@ export function battleFocus(s: State): { node: number; kind: "defend" | "attack"
   let attack = -1;
   let attackD = Infinity;
   NODES.forEach((n, i) => {
-    if (s.nodes[i] === "freed" || !b.squads.some((q) => q.side === 0 && q.to === i && q.task === "attack")) return;
+    if (s.nodes[i] === "freed" || !b.squads.some((q) => q.side === 0 && attacking(q, i))) return;
     const d = dist2d(n.core, p);
     if (d < attackD) {
       attack = i;
