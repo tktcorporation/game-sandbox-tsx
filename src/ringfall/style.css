@@ -2526,6 +2526,9 @@ body.touch #title h1 {
 #map .map-key.freed {
   color: #3f86c8;
 }
+#map .map-key.rival {
+  color: #3fae6e;
+}
 /* The titan's navy, lightened to read on the dark under the map. */
 /* The battle's squads on the map: chevrons in the side's colour. */
 #map .map-key.squad.you {

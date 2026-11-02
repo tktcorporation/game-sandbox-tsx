@@ -266,8 +266,9 @@ more the more it holds (also from `NET_EDGE`, the nodes whose `POI_DEFS` name a 
 rogues' from the wild now and then (`CONQUEST.rogue`), which fight at a node and move on but take
 none. Other players' expeditions (side 3, `BattleSquad.owner`; `newRun(..., { battle: { factory,
 rivals } })`, `RivalExpedition`: whose, the node, the squad, when) land as the enemy's do, by the
-pad or the north shore (`rivalRoute()`), walk across whoever's nodes to the one they were sent to,
-take it for their owner and hold it; one sent at 0 to a node its owner holds stands there from the
+pad or the north shore (`rivalRoute()`), walk across whoever's nodes to the one they were sent to
+(taking no part in the fight or capture of a node they pass through), take it for their owner and
+hold it (an expedition whose owner id `parseHold()` cannot read back is dropped); one sent at 0 to a node its owner holds stands there from the
 start. They fight every other side; near the player they are robots among the enemy's
 (`Enemy.rival`, purple, green on the maps). They walk the links (`walkLine()` paths traced as
 the raid starts, then forgotten), attack a neighbouring node or defend one of their side's, and take

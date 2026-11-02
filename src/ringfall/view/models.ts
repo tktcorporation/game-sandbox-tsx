@@ -129,9 +129,10 @@ export const PAL = {
   medical: 0xf2f0ea,
   /** The band on health items, apart from the enemy red and the ring orange. */
   healRed: 0xe0475a,
-  /** A node's core in the colour of who holds it: the enemy's red, the player's blue. */
+  /** A node's core in the colour of who holds it: the enemy's red, the player's blue, another player's green (view/map.ts `RIVAL_CSS`). */
   held: 0xff3b30,
   freed: 0x3d8cff,
+  rivalHeld: 0x3fae6e,
   /** The flag the player raises by a core they hold. */
   flag: 0x2f7fe0,
   /** The hex shield the network keeps round a core off the front. */

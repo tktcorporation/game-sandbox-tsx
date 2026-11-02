@@ -51,6 +51,8 @@ export interface ReckonSquad {
   arrived: boolean;
   live: boolean;
   ashore: number;
+  /** Another player's squad come to a node on its way to the one it was sent to: it takes no part in that node's fight or capture. */
+  passing?: boolean;
 }
 
 /** A garrison's robot (a POI's squads: they hold the node for the enemy wherever they are): its side, kind, health, shield and plate. */
@@ -62,7 +64,7 @@ export interface Guard {
   plate: Rarity;
 }
 
-/** A robot in the world standing by a node's core as a capture counts it: its side, whose for another player's, and whether a battle's (only those attack a node). */
+/** A robot in the world standing by a node's core as a capture counts it: its side, whose for another player's, and whether a battle's attacking that node (only those attack it; another player's squad passing through does not). */
 export interface CoreRobot {
   side: Side;
   owner?: string;
@@ -222,7 +224,7 @@ export function reckonFights(f: FightField, dt: number): FightResult {
   // At the nodes nobody watches: the squads there and the garrison.
   f.holds.forEach((h, i) => {
     if (f.watched[i]) return;
-    const here = apart.filter((q) => q.to === i && q.arrived && !done.has(q));
+    const here = apart.filter((q) => q.to === i && q.arrived && !q.passing && !done.has(q));
     const owner = sideOf(h);
     if (!here.some((q) => q.side !== owner)) return;
     // The whole garrison comes to its core to hold it.
@@ -261,10 +263,11 @@ export function reckonCaptures(f: CaptureField, dt: number): CaptureResult {
     // Rogues there take nothing, but keep the others from taking it.
     let rogue = false;
     for (const q of squads) {
-      if (q.to !== i || q.live || !q.arrived) continue;
+      if (q.to !== i || q.live || !q.arrived || q.passing) continue;
       if (q.side === owner) def++;
       else if (q.side === 2) rogue = true;
-      else if (q.task === "attack" || q.task === "rally") {
+      // Another player's squad takes a node only for its owner: one with none takes nothing.
+      else if ((q.task === "attack" || q.task === "rally") && (q.side !== 3 || q.owner !== undefined)) {
         att.add(q.side);
         if (q.side === 3) rival ??= q.owner;
       }
@@ -274,7 +277,7 @@ export function reckonCaptures(f: CaptureField, dt: number): CaptureResult {
       for (const e of at.robots) {
         if (e.side === owner) def++;
         else if (e.side === 2) rogue = true;
-        else if (e.battle) {
+        else if (e.battle && (e.side !== 3 || e.owner !== undefined)) {
           att.add(e.side);
           if (e.side === 3) rival ??= e.owner;
         }
@@ -299,7 +302,7 @@ export function reckonCaptures(f: CaptureField, dt: number): CaptureResult {
       else meter[i] = who === undefined ? { side, t: dt } : { side, t: dt, owner: who };
       if (meter[i]!.t >= CONQUEST.capture) {
         meter[i] = null;
-        holds[i] = side === 0 ? "freed" : side === 3 && who !== undefined ? `rival:${who}` : "held";
+        holds[i] = side === 0 ? "freed" : side === 3 ? `rival:${who!}` : "held";
         for (const q of squads) {
           if (q.to !== i || q.task === "post") continue;
           if (q.side === side) q.task = "hold";

@@ -1579,7 +1579,7 @@ export class World {
       // A lit lamp blinks slowly, so an on depot reads as working from down the road.
       if (on) v.lamp.visible = Math.sin(this.time * 3 + i) > -0.6;
     });
-    // --- the front's cores: red while the enemy holds the node, blue the player's (with a flag
+    // --- the front's cores: red while the enemy holds the node, green another player's, blue the player's (with a flag
     // up); a node off the front wears the enemy's shield. Lit from far off, past the things' range.
     const front = frontNodes(s.nodes);
     const risk = s.phase === "play" ? atRisk(s) : [];
@@ -1591,7 +1591,7 @@ export class World {
       v.root.visible = Math.hypot(v.root.position.x - fx, v.root.position.z - fz) < thingsFar * 4;
       if (key !== v.key) {
         v.key = key;
-        const col = h === "freed" ? PAL.freed : PAL.held;
+        const col = h === "freed" ? PAL.freed : h === "held" ? PAL.held : PAL.rivalHeld;
         (v.band.material as THREE.MeshBasicMaterial).color.setHex(col);
         v.halo.material.color.setHex(col);
         v.flag.visible = h === "freed";

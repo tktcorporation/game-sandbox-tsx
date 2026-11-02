@@ -11,7 +11,7 @@ import { need, offered, type Quest, type RewardItem } from "../meta/quests";
 import { saveProfile } from "../meta/storage";
 import { departDepots, eventName, frontIncome, islandHolds, playerNodes, shopRarity, unfreeable, unlocked } from "../meta/island";
 import { eventRow } from "./events";
-import { HOLD_CSS, IslandMap, islandScene, TITAN_CSS } from "./map";
+import { HOLD_CSS, IslandMap, islandScene, RIVAL_CSS, TITAN_CSS } from "./map";
 import { enemyNodes, frontNodes } from "../sim/front";
 import { nodeRow } from "./row";
 import { sfx } from "./sfx";
@@ -947,6 +947,7 @@ export class Hub {
     // How much of the island is the player's is the row of six marks above; the key only names the colours.
     const key =
       (["freed", "held"] as const).map((h) => `<li><i style="background:${HOLD_CSS[h]}"></i>${h === "freed" ? "自分" : "敵"}</li>`).join("") +
+      `<li><i style="background:${RIVAL_CSS}"></i>他のプレイヤー</li>` +
       `<li><i class="titan" style="background:${TITAN_CSS}"></i>タイタン</li>` +
       `<li class="front"><i></i>前線<b>${NODES.filter((_, i) => front[i]).map((n) => esc(n.name)).join("・") || "—"}</b></li>` +
       `<li class="income">収入<b>${frontIncome(p).toLocaleString()} クレジット</b></li>`;

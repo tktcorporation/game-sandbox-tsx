@@ -4,6 +4,8 @@
  *
  * - **take**: an expedition lands at the pad and takes a node of the player's nobody defends; the
  *   next day the node is that player's, and the night does not come at it.
+ * - **transit**: an expedition sent two links on walks through a node of the player's without
+ *   coming at it (no threat, no capture there) and takes the node it was sent to.
  * - **retake**: a node another player holds, next to the player's ground, held by one robot of
  *   theirs: the factory's squads take it back.
  * - **front**: another player's node next to the player's ground is on the front, its core starts a
@@ -13,12 +15,12 @@
  *   hostile to the network's robots.
  * - **pure**: the reckoning in numbers alone (`reckonApart()`) takes a node on plain data and leaves its input as it was.
  * - **saves**: a v26 save keeps another player's node; a v25 save cannot hold one.
- * - **none**: a battle given no expedition plays as one given none at all.
+ * - **none**: a battle whose only expedition sets off after the battle has ended plays as one given none.
  *
  * `checkRivals()` gives the sim gate's error, or null; run this file alone
  * (`npx tsx scripts/ringfall-rivals.ts`) for each part's numbers.
  */
-import { CONQUEST, FACTORY_TOP, TICK, type EnemyKind } from "../src/ringfall/sim/config";
+import { CONQUEST, FACTORY_TOP, STRENGTH, TICK, type EnemyKind } from "../src/ringfall/sim/config";
 import { NODES, nodeIndex, POIS, type NodeId } from "../src/ringfall/sim/map";
 import { CAMP_NEXT, enemyNodes, frontNodes, NEIGHBOURS, useCore } from "../src/ringfall/sim/front";
 import { finishBattle, robotSide, type Battle, type BattleStart, type BattleSquad } from "../src/ringfall/sim/battle";
@@ -57,12 +59,13 @@ function raid(p: Profile, battle: BattleStart, seed = 21): State {
   return s;
 }
 
-/** Steps `s` with the player standing still until `done` holds or `limit` seconds pass; the seconds it took, or -1. */
-function until(s: State, limit: number, done: () => boolean): number {
+/** Steps `s` with the player standing still until `done` holds or `limit` seconds pass, handing each step's events to `seen`; the seconds it took, or -1. */
+function until(s: State, limit: number, done: () => boolean, seen?: (events: State["events"]) => void): number {
   const t0 = s.time;
   const spot = { ...s.player.pos };
   for (let i = 0; i < limit / TICK && s.phase === "play"; i++) {
     step(s, idleInput(), false);
+    seen?.(s.events);
     s.player.pos = { ...spot };
     s.player.hp = 1e7;
     if (done()) return Math.round(s.time - t0);
@@ -76,12 +79,14 @@ const quiet = (b: Battle, factory = false) => {
 };
 
 export interface Rivals {
-  /** Seconds from the expedition's setting off to its taking the relay, or -1. */
+  /** The battle's seconds at which the relay fell to the expedition (which set off at 5 s), or -1. */
   take: number;
+  /** The battle's seconds at which the supply depot fell to the expedition that walked through the player's node next to the pad, and the threats at the nodes on its way. */
+  transit: { t: number; threats: number };
   /** Seconds to the factory's squads taking the relay back, or -1. */
   retake: number;
-  /** The enemy's strength with every node but one of the enemy's, and with that one another player's instead. */
-  strength: [number, number];
+  /** The enemy's strength with `at` nodes its own (the fewest for its next level), and with one of them another player's instead. */
+  strength: { at: number; level: [number, number] };
   /** Of 400 nights, those in which a node of the player's fell whose only foe was another player's node, and with the same foes the enemy's. */
   nights: [number, number];
   /** Calls of the reckoning in numbers that took a node of the player's for another player. */
@@ -89,7 +94,7 @@ export interface Rivals {
 }
 
 export function rivalsRun(): { err: string | null; r: Rivals } {
-  const r: Rivals = { take: -1, retake: -1, strength: [0, 0], nights: [0, 0], pure: -1 };
+  const r: Rivals = { take: -1, transit: { t: -1, threats: 0 }, retake: -1, strength: { at: 0, level: [0, 0] }, nights: [0, 0], pure: -1 };
   const fail = (err: string) => ({ err: `rivals: ${err}`, r });
 
   // take: the relay (next to the pad) is the player's, defended by nobody, and an expedition lands for it.
@@ -106,6 +111,23 @@ export function rivalsRun(): { err: string | null; r: Rivals } {
   if (after.profile.poiState.relay.state !== rivalHold(OWNER)) return fail(`the next day the relay is ${after.profile.poiState.relay.state}`);
   if (after.night.lost.includes("relay") || after.raid.lost.join() !== "relay") return fail(`the day's changes read ${JSON.stringify({ raid: after.raid, night: after.night })}`);
   if (!frontNodes(NODES.map((n) => after.profile.poiState[n.id].state))[RELAY]) return fail("the relay another player took is not on the front the next day");
+
+  // transit: the supply depot, two links from the pad, through the player's quarry or relay (both undefended); the expedition walks through and takes the depot only.
+  const xp = island(["supply", "quarry", "relay"]);
+  const xs = raid(xp, { factory: 0, rivals: [{ owner: OWNER, target: "supply", kinds: ["grunt", "grunt", "grunt"], at: 5 }] });
+  quiet(xs.battle!);
+  const QUARRY = nodeIndex("quarry");
+  const threats = new Map<number, number>();
+  r.transit.t = until(
+    xs,
+    1200,
+    () => xs.nodes[SUP] !== "freed",
+    (evs) => evs.forEach((e) => e.t === "nodeThreat" && threats.set(e.node, (threats.get(e.node) ?? 0) + 1)),
+  );
+  r.transit.threats = (threats.get(QUARRY) ?? 0) + (threats.get(RELAY) ?? 0);
+  if (xs.nodes[SUP] !== rivalHold(OWNER)) return fail(`an expedition sent through the player's ground to the supply depot left it ${xs.nodes[SUP]} after 1200 s`);
+  if (xs.nodes[QUARRY] !== "freed" || xs.nodes[RELAY] !== "freed" || r.transit.threats) return fail(`the expedition came at the nodes on its way: quarry ${xs.nodes[QUARRY]}, relay ${xs.nodes[RELAY]}, ${r.transit.threats} threats there`);
+  if (xs.battle!.taken.some((t) => t.node !== "supply") || xs.battle!.meter.some((m, i) => m && i !== SUP)) return fail(`the expedition began taking a node it was not sent to: ${JSON.stringify(xs.battle!.taken)}`);
 
   // retake: another player's relay next to the player's supply depot, one robot of theirs holding it; the factory at its top.
   const rp = island(["supply"], ["relay"]);
@@ -124,9 +146,12 @@ export function rivalsRun(): { err: string | null; r: Rivals } {
   useCore(fs, STATION);
   if (fs.capture?.node !== STATION || fs.events.some((e) => e.t === "coreShielded")) return fail("the core of another player's node on the front refused the player");
   if (enemyNodes(fs.nodes) !== NODES.length - 2) return fail(`with one node the player's and one another player's the enemy holds ${enemyNodes(fs.nodes)}`);
-  const allEnemy = NODES.map(() => "held" as const);
-  const oneRival = NODES.map((_, i) => (i === STATION ? rivalHold(OWNER) : "held"));
-  r.strength = [strengthFor(enemyNodes(allEnemy)), strengthFor(enemyNodes(oneRival))];
+  // At the fewest nodes that make the enemy a level stronger, one of them another player's instead brings it back down.
+  const lift = STRENGTH.byShare.map(([share]) => Math.ceil(share * NODES.length - 1e-9)).filter((k) => k > 0 && strengthFor(k) > strengthFor(k - 1))[0];
+  const enemyAt = NODES.map((_, i) => (i < lift ? "held" : "freed"));
+  const rivalAt = enemyAt.map((h, i) => (i === 0 ? rivalHold(OWNER) : h));
+  r.strength = { at: lift, level: [strengthFor(enemyNodes(enemyAt)), strengthFor(enemyNodes(rivalAt))] };
+  if (lift === undefined || r.strength.level[1] !== strengthFor(lift - 1) || r.strength.level[0] <= r.strength.level[1]) return fail(`with ${lift} nodes the enemy's the strength is ${r.strength.level[0]}, with one of them another player's ${r.strength.level[1]}`);
   if (fs.strength !== strengthFor(NODES.length - 2)) return fail(`the raid plays at strength ${fs.strength}`);
   if (fs.cleared[POIS.findIndex((p) => p.id === "station")] !== true || fs.enemies.some((e) => e.poi === POIS.findIndex((p) => p.id === "station"))) return fail("another player's node stands a garrison of the enemy's");
 
@@ -176,7 +201,7 @@ export function rivalsRun(): { err: string | null; r: Rivals } {
   const bad = parseProfile(JSON.parse(JSON.stringify({ ...after.profile, poiState: { ...after.profile.poiState, relay: { state: "rival:" } } })));
   if (!bad || bad.poiState.relay.state !== "held") return fail(`a save with an empty owner loaded the relay as ${bad?.poiState.relay.state}`);
 
-  // none: a battle given no expedition plays as one given none at all.
+  // none: a battle whose only expedition sets off after the battle has ended plays as one given none.
   const np = island(["supply", "relay"]);
   // One raid at a time: a raid's caches (the hunters' fields) serve the raid last started.
   const look = (s: State) => JSON.stringify({ nodes: s.nodes, squads: s.battle!.squads, meter: s.battle!.meter, enemies: s.enemies.map((e) => [e.id, e.pos, e.hp]), friends: s.friends.map((e) => [e.id, e.pos, e.hp]) });
@@ -185,7 +210,7 @@ export function rivalsRun(): { err: string | null; r: Rivals } {
     until(x, 240, () => false);
     return look(x);
   };
-  if (played({ factory: 2 }) !== played({ factory: 2, rivals: [] })) return fail("a battle given an empty list of expeditions played otherwise than one given none");
+  if (played({ factory: 2 }) !== played({ factory: 2, rivals: [{ owner: OWNER, target: "relay", kinds: ["grunt"], at: CONQUEST.time + 100 }] })) return fail("a battle whose expedition never sets off played otherwise than one given none");
   return { err: null, r };
 }
 
@@ -196,9 +221,10 @@ export function checkRivals(): string | null {
 
 if (process.argv[1]?.endsWith("ringfall-rivals.ts")) {
   const { err, r } = rivalsRun();
-  console.log(`take: the expedition took the undefended relay ${r.take} s after the battle began`);
+  console.log(`take: the undefended relay fell to the expedition (set off at 5 s) ${r.take} s into the battle`);
+  console.log(`transit: the supply depot fell to the expedition ${r.transit.t} s into the battle; ${r.transit.threats} threats and no capture at the player's quarry and relay on its way`);
   console.log(`retake: the factory's squads took the relay back in ${r.retake} s`);
-  console.log(`front: strength ${r.strength[0]} with every node the enemy's, ${r.strength[1]} with one another player's`);
+  console.log(`front: strength ${r.strength.level[0]} with ${r.strength.at} nodes the enemy's, ${r.strength.level[1]} with one of them another player's`);
   console.log(`night: the waterworks fell in ${r.nights[0]} of 400 nights with another player's nodes its foes, ${r.nights[1]} with the enemy's`);
   console.log(`pure: the reckoning in numbers took the node on call ${r.pure}`);
   console.log(err ?? "rivals ok");

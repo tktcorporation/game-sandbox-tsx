@@ -1,6 +1,6 @@
 import { CONQUEST, COUNTER, ENEMIES, FACTORY, FACTORY_TOP, PLATE, TICK, type EnemyKind, type Rarity } from "./config";
-import { reckonCaptures, reckonFights, sideOf, type CorePresence, type Guard, type NodeMeter, type ReckonSquad, type Side, type Task, type Unit } from "./reckon";
-import { rivalHold, rivalOf } from "./holds";
+import { reckonCaptures, reckonFights, sideOf, standing, type CorePresence, type Guard, type NodeMeter, type ReckonSquad, type Side, type Task, type Unit } from "./reckon";
+import { parseHold, rivalHold, rivalOf } from "./holds";
 import { dist2d } from "./geom";
 import { CAMP, DEPOTS, depotIndex, FRONT_LINKS, LANDING_NODES, NET_EDGE, NODES, nodeIndex, POIS, UNLOCKS, type NodeId, type NodeUnlock } from "./map";
 import { fieldUses, forgetFields, onMainGround, walkLine } from "./hunt";
@@ -328,7 +328,8 @@ export function initBattle(s: State, start: BattleStart): Battle {
   });
   for (const x of [...(start.rivals ?? [])].sort((p, q) => p.at - q.at)) {
     const i = nodeIndex(x.target);
-    if (i < 0 || !x.kinds.length) continue;
+    // An owner whose standing a save could not read back (`parseHold()`) never lands: the node it took would be lost on reload.
+    if (i < 0 || !x.kinds.length || !parseHold(rivalHold(x.owner))) continue;
     if (x.at <= 0 && rivalOf(s.nodes[i]) === x.owner) Object.assign(addSquad(b, 3, x.kinds, i, i, "hold"), { owner: x.owner });
     else b.rivals.push({ ...x, kinds: [...x.kinds] });
   }
@@ -971,7 +972,10 @@ function march(s: State, b: Battle, dt: number) {
 }
 
 /** Battle squad `q` as the reckoning sees it (sim/reckon.ts). */
-const reckonSquad = (q: BattleSquad): ReckonSquad => ({ id: q.id, side: q.side, owner: q.owner, units: q.units, to: q.to, task: q.task, x: q.x, z: q.z, arrived: arrived(q), live: q.squad >= 0, ashore: q.ashore });
+const reckonSquad = (q: BattleSquad): ReckonSquad => ({ id: q.id, side: q.side, owner: q.owner, units: q.units, to: q.to, task: q.task, x: q.x, z: q.z, arrived: arrived(q), live: q.squad >= 0, ashore: q.ashore, passing: passing(q) || undefined });
+
+/** Another player's squad come to a node on its way to the one it was sent to (only side 3: the enemy's squads stop to fight where they come). */
+const passing = (q: BattleSquad) => q.side === 3 && q.via.length > 0;
 
 /** A garrison's robot as the reckoning sees it. */
 const guardOf = (e: Enemy): Guard => ({ side: robotSide(e), kind: e.kind, hp: e.hp, shield: e.shield, plate: e.plate });
@@ -997,7 +1001,7 @@ function fightAndTake(s: State, b: Battle, dt: number) {
   if (gone.size) s.enemies = s.enemies.filter((e) => !gone.has(e));
   settleSquads(b, fought.squads);
   const left = garrisons.map((g, i) => g.filter((_, k) => !fought.fell[i].includes(k)));
-  const taken = reckonCaptures({ holds: s.nodes, squads: b.squads.map(reckonSquad), guards: left.map((g) => g.map(guardOf)), present: NODES.map((n, i) => presence(s, b, i)), meter: b.meter, threat: b.threat }, dt);
+  const taken = reckonCaptures({ holds: s.nodes, squads: b.squads.map(reckonSquad), guards: standing(fought), present: NODES.map((n, i) => presence(s, b, i)), meter: b.meter, threat: b.threat }, dt);
   settleSquads(b, taken.squads);
   b.meter = taken.meter;
   b.threat = taken.threat;
@@ -1031,8 +1035,10 @@ function presence(s: State, b: Battle, i: number): CorePresence | null {
   const zone = CONQUEST.zone;
   const within = (e: Enemy) => Math.abs(e.pos.x - c.x) < zone && Math.abs(e.pos.z - c.z) < zone && dist2d(e.pos, c) < zone && e.mode !== "spawning";
   const robots: CorePresence["robots"] = [];
+  // Another player's robots passing through on their way to another node attack nothing here.
+  const through = new Set(b.squads.filter(passing).map((q) => q.id));
   for (const e of s.friends) if (within(e)) robots.push({ side: 0, battle: true });
-  for (const e of s.enemies) if (within(e) && e.kind !== "titan") robots.push({ side: robotSide(e), owner: e.rival, battle: !!e.battle });
+  for (const e of s.enemies) if (within(e) && e.kind !== "titan") robots.push({ side: robotSide(e), owner: e.rival, battle: !!e.battle && !through.has(e.battle) });
   let people = 0;
   if (s.player.downed <= 0 && dist2d(s.player.pos, c) < zone && s.phase === "play") people++;
   if (allyUp(s) && dist2d(s.ally.pos, c) < zone && s.phase === "play") people++;

@@ -5,9 +5,10 @@ import { ALLY, AWARE, BAG, META, DEPOT, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARI
 import { eyePos, magSize } from "../sim/combat";
 import { atRisk, countered, heldUnlocks } from "../sim/battle";
 import { dist2d, los } from "../sim/geom";
-import { DEPOTS, entryOf, EXTRACTS, nodeIndex, NODES, POIS, poiIndex, regionHere, regionOf, routeOf, ZIPS, type EntryId } from "../sim/map";
+import { DEPOTS, entryOf, EXTRACTS, nodeIndex, NODES, POIS, poiIndex, regionHere, regionOf, routeOf, ZIPS, type EntryId, type PoiId } from "../sim/map";
 import { routeBefore } from "../sim/routes";
 import { islandHolds } from "../meta/island";
+import { rivalOf, type PoiHold } from "../sim/holds";
 import { bagLoad, canOpen, crewsInSight, depotBlocked, depotInReach, extractHere, extractReady, homeReady, makeRoom, poiAt, roomForTool, searchFor, useTarget } from "../sim/world";
 import { healTime, tacticalCooldown } from "../sim/player";
 import { helpTime, reviveTime } from "../sim/ally";
@@ -1171,10 +1172,15 @@ export class Hud {
     const battle = after(night, settled.night, true);
     const left = after(battle, settled.after, true);
     const start = after(left, settled.raid, true);
-    const holdsOf = (ids: Set<string>) => NODES.map((n) => (ids.has(n.id) ? "freed" : "held") as "freed" | "held");
+    // A node not the player's in a beat is another player's where the day ended with it theirs, else the enemy's.
+    const other = (id: PoiId): PoiHold => {
+      const h = settled.profile.poiState[id].state;
+      return rivalOf(h) !== null ? h : "held";
+    };
+    const holdsOf = (ids: Set<string>) => NODES.map((n): PoiHold => (ids.has(n.id) ? "freed" : other(n.id)));
     const scene = (ids: Set<string>, changed?: Settlement["raid"]) => ({
       ...end,
-      hold: end.hold.map((h, i) => (nodeIndex(POIS[i].id) < 0 ? h : ids.has(POIS[i].id) ? "freed" : "held")),
+      hold: end.hold.map((h, i) => (nodeIndex(POIS[i].id) < 0 ? h : ids.has(POIS[i].id) ? "freed" : other(POIS[i].id))),
       nodes: holdsOf(ids),
       changed,
     });
