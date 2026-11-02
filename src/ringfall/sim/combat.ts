@@ -343,7 +343,7 @@ export function fall(s: State, e: Enemy, by: Enemy | null) {
   if (sq?.crew && !s.enemies.some((o) => o.squad === e.squad)) dropBag(s, sq, c, false);
   spoils(s, e, c);
   const from = by?.pos ?? e.pos;
-  s.events.push({ t: "fall", id: e.id, kind: e.kind, pos: c, rogue: !!e.rogue, fromX: from.x, fromZ: from.z });
+  s.events.push({ t: "fall", id: e.id, kind: e.kind, pos: c, rogue: !!e.rogue, ...(e.rival !== undefined && { rival: true as const }), fromX: from.x, fromZ: from.z });
 }
 
 /** What a destroyed robot leaves at `c`: shield shards, now and then a heal, a valuable by its kind, perhaps a mod part. */

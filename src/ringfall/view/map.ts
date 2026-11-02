@@ -280,7 +280,7 @@ export type MapScene = Pick<State, "seen" | "cleared" | "hold" | "depots" | "rou
   /** Ways in learned by the raid just ended (the results), ringed as they turn solid. */
   learned?: readonly EntryId[];
   /** The nodes that changed hands overnight (the results): a ring in the colour they turned. */
-  changed?: { gained: readonly NodeId[]; lost: readonly NodeId[] };
+  changed?: { gained: readonly NodeId[]; lost: readonly NodeId[]; /** Nodes whose other player changed (the results), the player's unchanged. */ moved?: readonly NodeId[] };
   /** The only POIs whose names are written (a small map's), or every POI's when absent. */
   names?: readonly PoiId[];
 };
@@ -993,7 +993,7 @@ export class IslandMap {
       const p = at(c.x, c.z);
       g.save();
       g.globalAlpha = Math.max(0.25, 1 - age / FACTION.keep);
-      g.fillStyle = c.rogue ? ROGUE_CSS : "#ff5a4f";
+      g.fillStyle = c.rival ? RIVAL_CSS : c.rogue ? ROGUE_CSS : "#ff5a4f";
       g.strokeStyle = "rgba(20,24,40,0.9)";
       g.lineWidth = 1.5 * dpr;
       g.beginPath();
@@ -1117,14 +1117,15 @@ export class IslandMap {
     });
     if (!locked[this.picked]) this.picked = -1;
     if (s.battle && s.nodes) this.drawBattle(g, s, at, dpr, label);
-    // The nodes that changed hands: a thick ring in the colour each turned.
-    for (const [ids, col] of [[s.changed?.gained ?? [], HOLD_CSS.freed], [s.changed?.lost ?? [], HOLD_CSS.held]] as const)
+    // The nodes that changed hands: a thick ring in the colour each turned (a node lost to another player, or passing between others, in theirs).
+    const turned = (id: NodeId) => (s.nodes ? holdCss(s.nodes[nodeIndex(id)]) : HOLD_CSS.held);
+    for (const [ids, col] of [[s.changed?.gained ?? [], () => HOLD_CSS.freed], [s.changed?.lost ?? [], turned], [s.changed?.moved ?? [], turned]] as const)
       for (const id of ids) {
         const n = NODES[nodeIndex(id)];
         const p = at(n.x, n.z);
         g.save();
         g.lineWidth = 4 * dpr;
-        g.strokeStyle = col;
+        g.strokeStyle = col(id);
         g.beginPath();
         g.arc(p.x, p.y, 14 * dpr, 0, Math.PI * 2);
         g.stroke();

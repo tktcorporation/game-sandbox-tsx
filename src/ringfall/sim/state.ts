@@ -481,7 +481,7 @@ export type GameEvent =
   | { t: "enemyFire"; id: number; pos: Vec3; /** At the other faction (see FACTION), toward this point. */ foe?: Vec3; rogue?: boolean; /** One of the player's own robots. */ friend?: boolean; /** One of another player's robots. */ rival?: boolean }
   /** A robot hit by the other faction's fire, and one destroyed by it (see FACTION). */
   | { t: "robotHit"; id: number; pos: Vec3 }
-  | { t: "fall"; id: number; kind: EnemyKind; pos: Vec3; rogue: boolean; friend?: boolean; fromX: number; fromZ: number }
+  | { t: "fall"; id: number; kind: EnemyKind; pos: Vec3; rogue: boolean; friend?: boolean; /** One of another player's robots. */ rival?: true; fromX: number; fromZ: number }
   | { t: "lunge"; id: number }
   | { t: "spawn"; id: number; pos: Vec3 }
   | { t: "suspect"; id: number }
@@ -615,6 +615,8 @@ export interface Contact {
   z: number;
   t: number;
   rogue: boolean;
+  /** Another player's squad. */
+  rival?: true;
   /** Whether the squad was heard fighting lately, and when it last was (seeing it does not refresh this). */
   fight: boolean;
   fightT: number;

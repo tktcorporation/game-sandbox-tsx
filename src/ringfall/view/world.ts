@@ -1125,7 +1125,7 @@ export class World {
           // Destroyed by the other faction: it goes down as a wreck, with no feel of the player's own kill.
           const v = this.enemies.get(e.id);
           const big = e.kind === "heavy" ? 2 : 1;
-          this.burst(e.pos, e.friend ? PAL.friendArmorLight : e.rogue ? PAL.rogueArmorLight : PAL.armorLight, 14 * big, 7, 0.16, 14, 1.1);
+          this.burst(e.pos, e.friend ? PAL.friendArmorLight : e.rival ? PAL.rivalArmorLight : e.rogue ? PAL.rogueArmorLight : PAL.armorLight, 14 * big, 7, 0.16, 14, 1.1);
           this.burst(e.pos, 0xffc070, 8 * big, 9, 0.06, 2, 0.35);
           this.flashAt(e.pos, 0xffc070, 3 + Math.hypot(e.pos.x - s.player.pos.x, e.pos.z - s.player.pos.z) * 0.02);
           if (v) {

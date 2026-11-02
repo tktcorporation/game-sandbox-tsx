@@ -26,7 +26,7 @@
 import { CONQUEST, FACTORY_TOP, STRENGTH, TICK, type EnemyKind } from "../src/ringfall/sim/config";
 import { NODES, nodeIndex, POIS, type NodeId } from "../src/ringfall/sim/map";
 import { CAMP_NEXT, enemyNodes, frontNodes, NEIGHBOURS, useCore } from "../src/ringfall/sim/front";
-import { battleFocus, finishBattle, robotSide, type Battle, type BattleStart, type BattleSquad } from "../src/ringfall/sim/battle";
+import { battleFocus, finishBattle, nodePoint, rivalRoute, robotSide, type Battle, type BattleStart, type BattleSquad } from "../src/ringfall/sim/battle";
 import { reckonApart, reckonCaptures, type ReckonSquad } from "../src/ringfall/sim/reckon";
 import { rivalHold } from "../src/ringfall/sim/holds";
 import { hostile } from "../src/ringfall/sim/factions";
@@ -86,6 +86,8 @@ export interface Rivals {
   take: number;
   /** The battle's seconds at which the supply depot fell to the expedition that walked through the player's node next to the pad, and the threats at the nodes on its way. */
   transit: { t: number; threats: number; focus: number; turret: number };
+  /** The expedition's last stop before its target, watched in the world: the node, the seconds its robots were there in the world, and the threats raised there. */
+  watched: { node: string; seen: number; threats: number };
   /** Seconds to the factory's squads taking the relay back, or -1. */
   retake: number;
   /** The enemy's strength with `at` nodes its own (the fewest for its next level), and with one of them another player's instead. */
@@ -99,7 +101,7 @@ export interface Rivals {
 }
 
 export function rivalsRun(): { err: string | null; r: Rivals } {
-  const r: Rivals = { take: -1, transit: { t: -1, threats: 0, focus: 0, turret: 0 }, retake: -1, strength: { at: 0, level: [0, 0] }, nights: [0, 0], pure: -1, two: [-1, -1] };
+  const r: Rivals = { take: -1, transit: { t: -1, threats: 0, focus: 0, turret: 0 }, watched: { node: "", seen: 0, threats: 0 }, retake: -1, strength: { at: 0, level: [0, 0] }, nights: [0, 0], pure: -1, two: [-1, -1] };
   const fail = (err: string) => ({ err: `rivals: ${err}`, r });
 
   // take: the relay (next to the pad) is the player's, defended by nobody, and an expedition lands for it.
@@ -138,6 +140,33 @@ export function rivalsRun(): { err: string | null; r: Rivals } {
   if (xs.nodes[SUP] !== rivalHold(OWNER)) return fail(`an expedition sent through the player's ground to the supply depot left it ${xs.nodes[SUP]} after 1200 s`);
   if (xs.nodes[QUARRY] !== "freed" || xs.nodes[RELAY] !== "freed" || r.transit.threats) return fail(`the expedition came at the nodes on its way: quarry ${xs.nodes[QUARRY]}, relay ${xs.nodes[RELAY]}, ${r.transit.threats} threats there`);
   if (xs.battle!.taken.some((t) => t.node !== "supply") || xs.battle!.meter.some((m, i) => m && i !== SUP)) return fail(`the expedition began taking a node it was not sent to: ${JSON.stringify(xs.battle!.taken)}`);
+
+  // watched: the player stands 60 m from the last node on the expedition's way to the supply depot, so its squad is
+  // robots in the world there (the island's own robots taken out); once its way runs on to the depot its robots
+  // by that core come at nothing.
+  const wp = island(["supply", "quarry", "relay"]);
+  const wsx = raid(wp, { factory: 0, rivals: [{ owner: OWNER, target: "supply", kinds: ["grunt", "grunt", "grunt"], at: 5 }] });
+  quiet(wsx.battle!);
+  const plan = rivalRoute(wsx, SUP);
+  if (!plan || plan.via.join() !== String(SUP)) return fail(`the expedition's way to the supply depot is ${JSON.stringify(plan)}`);
+  const last = plan.to;
+  r.watched.node = NODES[last].id;
+  const lp = nodePoint(last);
+  wsx.player.pos = { x: lp.x + 60, y: groundAt(lp.x + 60, lp.z, 0.4, 99), z: lp.z };
+  until(
+    wsx,
+    600,
+    () => wsx.nodes[last] !== "freed",
+    (evs) => {
+      // Nothing else in the world: the island's own robots would bring the expedition down on its way.
+      wsx.enemies = wsx.enemies.filter((e) => e.battle);
+      evs.forEach((e) => e.t === "nodeThreat" && e.node === last && r.watched.threats++);
+      if (wsx.battle!.squads.some((q) => q.side === 3 && q.squad >= 0 && q.to === SUP && wsx.enemies.some((e) => e.battle === q.id && Math.hypot(e.pos.x - NODES[last].core.x, e.pos.z - NODES[last].core.z) < CONQUEST.zone))) r.watched.seen += TICK;
+    },
+  );
+  r.watched.seen = Math.round(r.watched.seen);
+  if (!r.watched.seen) return fail(`the expedition's robots never stood by the ${NODES[last].id}'s core in the world, its way run on to the supply depot`);
+  if (r.watched.threats || wsx.nodes[last] !== "freed" || wsx.battle!.meter[last]) return fail(`in the world the expedition came at the ${NODES[last].id} it only passed: ${r.watched.threats} threats, now ${wsx.nodes[last]}`);
 
   // turrets on the way: the factory's turrets stand at the player's quarry and relay; the expedition fights the one it meets as it passes, and takes neither node.
   const tp3 = island(["supply", "quarry", "relay"]);
@@ -276,6 +305,7 @@ if (process.argv[1]?.endsWith("ringfall-rivals.ts")) {
   const { err, r } = rivalsRun();
   console.log(`take: the undefended relay fell to the expedition (set off at 5 s) ${r.take} s into the battle`);
   console.log(`transit: the supply depot fell to the expedition ${r.transit.t} s into the battle; ${r.transit.threats} threats, ${r.transit.focus} steps of the battle's focus and no capture at the player's quarry and relay on its way`);
+  console.log(`watched: the expedition's robots stood ${r.watched.seen} s by the ${r.watched.node}'s core in the world on their way on, raising ${r.watched.threats} threats there`);
   console.log(`turrets on the way: the expedition took ${r.transit.turret} health off the factory's turrets at the nodes it passed`);
   console.log(`retake: the factory's squads took the relay back in ${r.retake} s`);
   console.log(`front: strength ${r.strength.level[0]} with ${r.strength.at} nodes the enemy's, ${r.strength.level[1]} with one of them another player's`);

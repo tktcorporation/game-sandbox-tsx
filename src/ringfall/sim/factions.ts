@@ -331,11 +331,11 @@ export function fightHeard(s: State, e: Enemy) {
     alertSquad(s, o.squad, e.pos.x, e.pos.z, e);
   }
   // The map marks the others' fights; the player's own robots are on it as the battle's squads.
-  if (!e.friend && dist2d(e.pos, s.player.pos) < FACTION.hear) note(s, e.squad, e.pos, !!e.rogue, true);
+  if (!e.friend && dist2d(e.pos, s.player.pos) < FACTION.hear) note(s, e.squad, e.pos, !!e.rogue, true, e.rival !== undefined);
 }
 
 /** Marks squad `squad` on the player's map at `at` (see `State.contacts`). */
-function note(s: State, squad: number, at: Point, rogue: boolean, fight: boolean) {
+function note(s: State, squad: number, at: Point, rogue: boolean, fight: boolean, rival = false) {
   const c = s.contacts.find((q) => q.squad === squad);
   const x = Math.round(at.x);
   const z = Math.round(at.z);
@@ -343,6 +343,8 @@ function note(s: State, squad: number, at: Point, rogue: boolean, fight: boolean
   const fighting = s.time - fightT < FACTION.every * 2;
   if (c) Object.assign(c, { x, z, t: s.time, rogue, fight: fighting, fightT });
   else s.contacts.push({ squad, x, z, t: s.time, rogue, fight: fighting, fightT });
+  // Another player's squad is marked in their colour (only theirs carry the mark).
+  if (rival) (c ?? s.contacts[s.contacts.length - 1]).rival = true;
 }
 
 /** How far the player sees the robots out between the POIs for the map: as far as the view draws them. */
@@ -370,7 +372,7 @@ export function stepContacts(s: State) {
   for (const e of cand) {
     if (done.has(e.squad) || !los(eye, bodyCenter(e))) continue;
     done.add(e.squad);
-    note(s, e.squad, e.pos, !!e.rogue, s.squads[e.squad]?.foe !== undefined);
+    note(s, e.squad, e.pos, !!e.rogue, s.squads[e.squad]?.foe !== undefined, e.rival !== undefined);
   }
 }
 

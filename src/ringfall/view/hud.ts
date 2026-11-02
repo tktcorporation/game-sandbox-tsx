@@ -475,6 +475,11 @@ export class Hud {
       else {
         const crate = debrisBin(s);
         this.map.draw({ ...s, debris: crate && { x: crate.x, z: crate.z, open: crate.open }, crews: crewsInSight(s) });
+        // The key names another player only while one holds a node or has a squad on the island.
+        const rivals = s.nodes.some((h) => rivalOf(h) !== null) || !!s.battle?.squads.some((q) => q.side === 3);
+        document.querySelectorAll<HTMLElement>("#map .map-rival").forEach((el) => {
+          if (el.hidden === rivals) el.hidden = !rivals;
+        });
       }
     }
 
@@ -1194,7 +1199,7 @@ export class Hud {
       return who !== undefined ? rivalHold(who) : "held";
     };
     const holdsOf = (ids: Set<string>, rivals: Rivals) => NODES.map((n): PoiHold => (ids.has(n.id) ? "freed" : other(n.id, rivals)));
-    const scene = (ids: Set<string>, rivals: Rivals, changed?: Settlement["raid"]) => ({
+    const scene = (ids: Set<string>, rivals: Rivals, changed?: Settlement["raid"] & { moved?: (typeof NODES)[number]["id"][] }) => ({
       ...end,
       hold: end.hold.map((h, i) => (nodeIndex(POIS[i].id) < 0 ? h : ids.has(POIS[i].id) ? "freed" : other(POIS[i].id, rivals))),
       nodes: holdsOf(ids, rivals),
@@ -1235,7 +1240,7 @@ export class Hud {
           window.setTimeout(() => {
             if (k === 0) learn();
             // A beat names only the nodes that changed hands in it: the results' map is small.
-            map.draw({ ...scene(b.ids, b.rivals, b.c), learned, names: [...b.c.gained, ...b.c.lost, ...b.moved] });
+            map.draw({ ...scene(b.ids, b.rivals, b.moved.length ? { ...b.c, moved: b.moved } : b.c), learned, names: [...b.c.gained, ...b.c.lost, ...b.moved] });
             bar(b.ids, b.rivals, b.prev);
             mark(b.beat, b.icon);
           }, 900 + k * gap),

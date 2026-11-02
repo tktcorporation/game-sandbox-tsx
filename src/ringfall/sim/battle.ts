@@ -1035,8 +1035,9 @@ function presence(s: State, b: Battle, i: number): CorePresence | null {
   const zone = CONQUEST.zone;
   const within = (e: Enemy) => Math.abs(e.pos.x - c.x) < zone && Math.abs(e.pos.z - c.z) < zone && dist2d(e.pos, c) < zone && e.mode !== "spawning";
   const robots: CorePresence["robots"] = [];
-  // Another player's robots passing through on their way to another node attack nothing here.
-  const through = new Set(b.squads.filter(passing).map((q) => q.id));
+  // Another player's robots attack only the node their squad is bound for: not one they pass through,
+  // nor the last stop on their way, which they have left behind once their way runs on to the target.
+  const through = new Set(b.squads.filter((q) => q.side === 3 && (q.to !== i || passing(q))).map((q) => q.id));
   for (const e of s.friends) if (within(e)) robots.push({ side: 0, battle: true });
   for (const e of s.enemies) if (within(e) && e.kind !== "titan") robots.push({ side: robotSide(e), owner: e.rival, battle: !!e.battle && !through.has(e.battle) });
   let people = 0;
