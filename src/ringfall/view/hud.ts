@@ -8,7 +8,7 @@ import { dist2d, los } from "../sim/geom";
 import { DEPOTS, entryOf, EXTRACTS, nodeIndex, NODES, POIS, poiIndex, regionHere, regionOf, routeOf, ZIPS, type EntryId } from "../sim/map";
 import { routeBefore } from "../sim/routes";
 import { islandHolds } from "../meta/island";
-import { rivalHold, type PoiHold } from "../sim/holds";
+import { rivalHold, rivalOf, type PoiHold } from "../sim/holds";
 import { bagLoad, canOpen, crewsInSight, depotBlocked, depotInReach, extractHere, extractReady, homeReady, makeRoom, poiAt, roomForTool, searchFor, useTarget } from "../sim/world";
 import { healTime, tacticalCooldown } from "../sim/player";
 import { helpTime, reviveTime } from "../sim/ally";
@@ -91,6 +91,10 @@ const FLANK_RANK: Record<Flank, number> = { front: 0, none: 1, side: 1, back: 2,
 const MARK_RANGE = 40;
 /** Seconds the compass shows where reinforcements beamed in (`UNLOCKS.scout`). */
 const SCOUT_SHOW = 25;
+
+
+/** The colour of the core of a node not the player's: another player's green, else the enemy's red. */
+const foeSide = (h: PoiHold) => (rivalOf(h) !== null ? SIDE.rival : SIDE.enemy);
 
 export class Hud {
   private root = $("hud");
@@ -404,7 +408,7 @@ export class Hud {
         this.toast(`${depotIcon()}${crossIcon()}`, 0);
         break;
       case "coreStart":
-        this.toast(`${coreIcon(SIDE.enemy)}${NODES[e.node].name}`, 0, 3000);
+        this.toast(`${coreIcon(foeSide(s.nodes[e.node]))}${NODES[e.node].name}`, 0, 3000);
         break;
       case "coreShielded":
         this.toast(`${coreIcon(SIDE.enemy, true)}${NODES[e.node].name}<span class="toast-sub">先に${esc(shieldedBy(s, e.node))}を制圧</span>`, 0, 4000);
@@ -503,9 +507,9 @@ export class Hud {
       const node = nodeIndex(poi.id);
       const own = node >= 0 && s.nodes[node] === "freed";
       const taking = node >= 0 && s.capture?.node === node;
-      const mark = node < 0 ? "" : own ? coreIcon(SIDE.own) : coreIcon(SIDE.enemy, !taking && !capturable(s, node));
-      // Ticked only where the enemy held it as the raid began: another player's POI starts cleared, standing no garrison.
-      const cleared = s.cleared[here] && !own && s.hold[here] === "held" ? checkIcon() : "";
+      const mark = node < 0 ? "" : own ? coreIcon(SIDE.own) : coreIcon(foeSide(s.nodes[node]), !taking && !capturable(s, node));
+      // Not ticked for another player's POI: it starts cleared, standing no garrison.
+      const cleared = s.cleared[here] && !own && rivalOf(s.hold[here]) === null ? checkIcon() : "";
       setHtml(oc, `${mark}${esc(poi.name)}${cleared}${taking && s.capture ? `<b>${Math.floor(s.capture.t)}/${FRONT.capture}</b>` : ""}`);
       oc.classList.toggle("met", own);
     }
@@ -1095,9 +1099,10 @@ export class Hud {
     if (t.kind === "armor") return `${key("E")}<span class="r" style="color:${RARITY_CSS[t.loot.rarity]}">アーマー Lv${t.loot.rarity}</span>${struck([`Lv${p.armor}`])}`;
     if (t.kind === "core") {
       const n = NODES[t.node];
-      if (!capturable(s, t.node)) return `${coreIcon(SIDE.enemy, true)}${esc(n.name)} <small>▸ 先に${esc(shieldedBy(s, t.node))}</small>`;
-      if (s.capture?.node === t.node) return `${coreIcon(SIDE.enemy)}${esc(n.name)} <b>${Math.floor((s.capture.t / FRONT.capture) * 100)}%</b>`;
-      return `${key("E")}${coreIcon(SIDE.enemy)}${esc(n.name)} ${noiseIcon()}`;
+      const c = foeSide(s.nodes[t.node]);
+      if (!capturable(s, t.node)) return `${coreIcon(c, true)}${esc(n.name)} <small>▸ 先に${esc(shieldedBy(s, t.node))}</small>`;
+      if (s.capture?.node === t.node) return `${coreIcon(c)}${esc(n.name)} <b>${Math.floor((s.capture.t / FRONT.capture) * 100)}%</b>`;
+      return `${key("E")}${coreIcon(c)}${esc(n.name)} ${noiseIcon()}`;
     }
     if (t.kind === "zip") {
       // The way the rider would go: the end the player faces, and how far along the cable it is.
@@ -1203,11 +1208,14 @@ export class Hud {
       el.innerHTML = html;
       el.dataset.beat = beat;
     };
-    const beats: { beat: string; ids: Set<string>; rivals: Rivals; prev: Set<string>; c: Settlement["raid"]; icon: string }[] = [
-      { beat: "raid", ids: left, rivals: atLeft, prev: start, c: settled.raid, icon: "" },
-      { beat: "after", ids: battle, rivals: atEnd, prev: left, c: settled.after, icon: depotIcon() },
-      { beat: "night", ids: night, rivals: atEnd, prev: battle, c: settled.night, icon: nightIcon() },
-    ].filter((b) => b.c.gained.length || b.c.lost.length);
+    // The nodes whose other player changed between two beats (none with no other player's node all day).
+    const rivalMoved = (from: Rivals, to: Rivals) => NODES.filter((n) => from[n.id] !== to[n.id]).map((n) => n.id);
+    // A beat shows when the player's nodes changed in it, or other players' did (they change in the raid and the battle, never in the night).
+    const beats: { beat: string; ids: Set<string>; rivals: Rivals; moved: ReturnType<typeof rivalMoved>; prev: Set<string>; c: Settlement["raid"]; icon: string }[] = [
+      { beat: "raid", ids: left, rivals: atLeft, moved: rivalMoved(atStart, atLeft), prev: start, c: settled.raid, icon: "" },
+      { beat: "after", ids: battle, rivals: atEnd, moved: rivalMoved(atLeft, atEnd), prev: left, c: settled.after, icon: depotIcon() },
+      { beat: "night", ids: night, rivals: atEnd, moved: [], prev: battle, c: settled.night, icon: nightIcon() },
+    ].filter((b) => b.c.gained.length || b.c.lost.length || b.moved.length);
     // Milliseconds between the beats; automation may slow them (`window.ringfallBeatGap`) to shoot each.
     const gap = (window as { ringfallBeatGap?: number }).ringfallBeatGap ?? 1600;
     // Drawn once the results are shown, so the map is drawn at the canvas's size on screen.
@@ -1224,7 +1232,7 @@ export class Hud {
           window.setTimeout(() => {
             if (k === 0) learn();
             // A beat names only the nodes that changed hands in it: the results' map is small.
-            map.draw({ ...scene(b.ids, b.rivals, b.c), learned, names: [...b.c.gained, ...b.c.lost] });
+            map.draw({ ...scene(b.ids, b.rivals, b.c), learned, names: [...b.c.gained, ...b.c.lost, ...b.moved] });
             bar(b.ids, b.rivals, b.prev);
             mark(b.beat, b.icon);
           }, 900 + k * gap),

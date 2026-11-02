@@ -14,6 +14,8 @@
  * - **night**: a node of the player's whose only foes are other players' nodes never falls in the night.
  * - **world**: near the player an expedition's squad is robots among the enemy's, another player's,
  *   hostile to the network's robots.
+ * - **two expeditions**: one takes the node another only passes through; the one passing keeps
+ *   coming for its own node, and takes it.
  * - **pure**: the reckoning in numbers alone (`reckonApart()`) takes a node on plain data and leaves its input as it was.
  * - **saves**: a v26 save keeps another player's node; a v25 save cannot hold one.
  * - **none**: a battle whose only expedition sets off after the battle has ended plays as one given none.
@@ -25,7 +27,7 @@ import { CONQUEST, FACTORY_TOP, STRENGTH, TICK, type EnemyKind } from "../src/ri
 import { NODES, nodeIndex, POIS, type NodeId } from "../src/ringfall/sim/map";
 import { CAMP_NEXT, enemyNodes, frontNodes, NEIGHBOURS, useCore } from "../src/ringfall/sim/front";
 import { battleFocus, finishBattle, robotSide, type Battle, type BattleStart, type BattleSquad } from "../src/ringfall/sim/battle";
-import { reckonApart, type ReckonSquad } from "../src/ringfall/sim/reckon";
+import { reckonApart, reckonCaptures, type ReckonSquad } from "../src/ringfall/sim/reckon";
 import { rivalHold } from "../src/ringfall/sim/holds";
 import { hostile } from "../src/ringfall/sim/factions";
 import { spawnEnemy } from "../src/ringfall/sim/enemies";
@@ -92,10 +94,12 @@ export interface Rivals {
   nights: [number, number];
   /** Calls of the reckoning in numbers that took a node of the player's for another player. */
   pure: number;
+  /** The calls at which the first expedition took the node the second passed through, and the second took its own; -1 for none. */
+  two: [number, number];
 }
 
 export function rivalsRun(): { err: string | null; r: Rivals } {
-  const r: Rivals = { take: -1, transit: { t: -1, threats: 0, focus: 0, turret: 0 }, retake: -1, strength: { at: 0, level: [0, 0] }, nights: [0, 0], pure: -1 };
+  const r: Rivals = { take: -1, transit: { t: -1, threats: 0, focus: 0, turret: 0 }, retake: -1, strength: { at: 0, level: [0, 0] }, nights: [0, 0], pure: -1, two: [-1, -1] };
   const fail = (err: string) => ({ err: `rivals: ${err}`, r });
 
   // take: the relay (next to the pad) is the player's, defended by nobody, and an expedition lands for it.
@@ -214,6 +218,34 @@ export function rivalsRun(): { err: string | null; r: Rivals } {
   }
   if (f.holds[0] !== rivalHold(OWNER) || r.pure !== Math.ceil(CONQUEST.capture / CONQUEST.tick) || f.squads[0].task !== "hold") return fail(`the reckoning in numbers left the node ${f.holds[0]} after ${r.pure} calls, its squad ${f.squads[0]?.task}`);
 
+  // two expeditions: A (owner a) takes node 0, which B (owner b) only passes through on its way to node 1; B keeps
+  // coming for node 1 and, once it stands there, takes it. In numbers, as a server would reckon them.
+  const grunt = () => ({ kind: "grunt" as EnemyKind, hp: 100, shield: 0 });
+  let two = {
+    holds: ["freed", "freed"] as State["nodes"],
+    squads: [
+      { id: 1, side: 3 as const, owner: "a", units: [grunt()], to: 0, task: "attack" as const, x: 0, z: 0, arrived: true, live: false, ashore: 0 },
+      { id: 2, side: 3 as const, owner: "b", units: [grunt()], to: 0, task: "attack" as const, x: 0, z: 0, arrived: true, live: false, ashore: 0, passing: true },
+    ] as ReckonSquad[],
+    guards: [[], []],
+    present: [null, null],
+    meter: [null, null] as Battle["meter"],
+    threat: [false, false],
+  };
+  for (let k = 1; k <= 120 && r.two[1] < 0; k++) {
+    const out = reckonCaptures(two, CONQUEST.tick);
+    two = { ...two, holds: out.holds, squads: out.squads, meter: out.meter, threat: out.threat };
+    if (r.two[0] < 0 && out.holds[0] !== "freed") {
+      r.two[0] = k;
+      const b = two.squads.find((q) => q.id === 2)!;
+      if (b.task !== "attack") return fail(`the expedition passing through the node another took was set to ${b.task}`);
+      // B walks on: it comes to node 1, its way done.
+      two = { ...two, squads: two.squads.map((q) => (q.id === 2 ? { ...q, to: 1, passing: undefined } : q)) };
+    }
+    if (out.holds[1] !== "freed") r.two[1] = k;
+  }
+  if (two.holds[0] !== rivalHold("a") || two.holds[1] !== rivalHold("b")) return fail(`two expeditions left the nodes ${two.holds.join()} (calls ${r.two.join()})`);
+
   // saves: a v26 save keeps another player's node; a v25 one reads it as the enemy's.
   const kept = parseProfile(JSON.parse(JSON.stringify(after.profile)));
   if (!kept || kept.v !== 26 || kept.poiState.relay.state !== rivalHold(OWNER)) return fail(`a v26 save loaded the relay as ${kept?.poiState.relay.state}`);
@@ -249,5 +281,6 @@ if (process.argv[1]?.endsWith("ringfall-rivals.ts")) {
   console.log(`front: strength ${r.strength.level[0]} with ${r.strength.at} nodes the enemy's, ${r.strength.level[1]} with one of them another player's`);
   console.log(`night: the waterworks fell in ${r.nights[0]} of 400 nights with another player's nodes its foes, ${r.nights[1]} with the enemy's`);
   console.log(`pure: the reckoning in numbers took the node on call ${r.pure}`);
+  console.log(`two expeditions: a took the node b passed through on call ${r.two[0]}, b went on and took its own on call ${r.two[1]}`);
   console.log(err ?? "rivals ok");
 }

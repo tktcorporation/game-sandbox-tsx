@@ -304,7 +304,8 @@ export function reckonCaptures(f: CaptureField, dt: number): CaptureResult {
         meter[i] = null;
         holds[i] = side === 0 ? "freed" : side === 3 ? `rival:${who!}` : "held";
         for (const q of squads) {
-          if (q.to !== i || q.task === "post") continue;
+          // A squad only passing through goes on to the node it was sent to, whoever took this one.
+          if (q.to !== i || q.task === "post" || q.passing) continue;
           if (q.side === side) q.task = "hold";
           else if (q.side === owner) q.task = "attack";
         }
