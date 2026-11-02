@@ -51,8 +51,10 @@ export interface RaidDay {
  */
 export interface BattleDay {
   held: NodeId[];
-  /** The nodes other players held as the battle ended, and whose; left out, none. */
+  /** The nodes other players held as the battle ended, as it began and when the player left, and whose; each left out, none. */
   rival?: Partial<Record<NodeId, string>>;
+  rivalStart?: Partial<Record<NodeId, string>>;
+  rivalLeft?: Partial<Record<NodeId, string>>;
   start?: NodeId[];
   left?: NodeId[];
   guarded?: NodeId[];
@@ -81,9 +83,13 @@ function battleDay(b: Battle, nodes: readonly NodeHold[], seed: number): BattleD
   const ids = (h: readonly NodeHold[]) => NODES.filter((_, i) => h[i] === "freed").map((n) => n.id);
   const leftAt = b.left?.at ?? Infinity;
   const rival = rivalNodes(nodes);
+  const rivalStart = rivalNodes(b.start);
+  const rivalLeft = rivalNodes(b.left?.nodes ?? nodes);
   return {
     held: ids(nodes),
     ...(Object.keys(rival).length && { rival }),
+    ...(Object.keys(rivalStart).length && { rivalStart }),
+    ...(Object.keys(rivalLeft).length && { rivalLeft }),
     start: ids(b.start),
     left: ids(b.left?.nodes ?? nodes),
     guarded: guardedNodes(b).map((i) => NODES[i].id),
@@ -159,6 +165,8 @@ export interface FrontChange {
  * while the player was out (`raid`), in the battle after they left (`after`), and in the night (`night`).
  */
 export interface DayChange {
+  /** The nodes other players held as the day began, when the player left the battle, and as it ended (the night takes none of them); left out when there were none. */
+  rivals?: { start: Partial<Record<NodeId, string>>; left: Partial<Record<NodeId, string>>; end: Partial<Record<NodeId, string>> };
   freed: PoiId[];
   front: FrontChange;
   raid: FrontChange;
@@ -227,9 +235,14 @@ export function advanceDay<P extends IslandDay>(p: P, r: RaidDay): { profile: P;
       raid: changeOf(r.battle?.start ?? was, r.battle?.left ?? ended),
       after: changeOf(r.battle?.left ?? ended, ended),
       night: changeOf(ended, [...mine]),
+      ...rivalBeats(r.battle ? (r.battle.rivalStart ?? {}) : rivalNodes(before), r.battle ? (r.battle.rivalLeft ?? {}) : rivalNodes(after), rivalNodes(after)),
     },
   };
 }
+
+/** The day's other players' nodes beat by beat (`DayChange.rivals`), or nothing when there were none. */
+const rivalBeats = (start: Partial<Record<NodeId, string>>, left: Partial<Record<NodeId, string>>, end: Partial<Record<NodeId, string>>): Pick<DayChange, "rivals"> =>
+  Object.keys(start).length || Object.keys(left).length || Object.keys(end).length ? { rivals: { start, left, end } } : {};
 
 /** The credits the island pays at the settle for the nodes the player holds: `FRONT.income` each. */
 export const frontIncome = (p: Pick<IslandDay, "poiState">): number => playerNodes(p).length * FRONT.income;

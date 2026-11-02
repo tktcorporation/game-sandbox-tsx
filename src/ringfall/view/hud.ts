@@ -5,10 +5,10 @@ import { ALLY, AWARE, BAG, META, DEPOT, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARI
 import { eyePos, magSize } from "../sim/combat";
 import { atRisk, countered, heldUnlocks } from "../sim/battle";
 import { dist2d, los } from "../sim/geom";
-import { DEPOTS, entryOf, EXTRACTS, nodeIndex, NODES, POIS, poiIndex, regionHere, regionOf, routeOf, ZIPS, type EntryId, type PoiId } from "../sim/map";
+import { DEPOTS, entryOf, EXTRACTS, nodeIndex, NODES, POIS, poiIndex, regionHere, regionOf, routeOf, ZIPS, type EntryId } from "../sim/map";
 import { routeBefore } from "../sim/routes";
 import { islandHolds } from "../meta/island";
-import { rivalOf, type PoiHold } from "../sim/holds";
+import { rivalHold, type PoiHold } from "../sim/holds";
 import { bagLoad, canOpen, crewsInSight, depotBlocked, depotInReach, extractHere, extractReady, homeReady, makeRoom, poiAt, roomForTool, searchFor, useTarget } from "../sim/world";
 import { healTime, tacticalCooldown } from "../sim/player";
 import { helpTime, reviveTime } from "../sim/ally";
@@ -418,7 +418,8 @@ export class Hud {
         break;
       case "nodeTaken": {
         const name = NODES[e.node].name;
-        this.toast(`${coreIcon(e.side === 0 ? SIDE.own : SIDE.enemy)}${name}`, e.side === 0 ? 1 : 0, 4000);
+        if (e.side === 3) this.toast(`${coreIcon(SIDE.rival)}${name}<span class="toast-sub">他のプレイヤーが制圧</span>`, 0, 4000);
+        else this.toast(`${coreIcon(e.side === 0 ? SIDE.own : SIDE.enemy)}${name}`, e.side === 0 ? 1 : 0, 4000);
         break;
       }
       case "timeUp":
@@ -503,7 +504,8 @@ export class Hud {
       const own = node >= 0 && s.nodes[node] === "freed";
       const taking = node >= 0 && s.capture?.node === node;
       const mark = node < 0 ? "" : own ? coreIcon(SIDE.own) : coreIcon(SIDE.enemy, !taking && !capturable(s, node));
-      const cleared = s.cleared[here] && !own ? checkIcon() : "";
+      // Ticked only where the enemy held it as the raid began: another player's POI starts cleared, standing no garrison.
+      const cleared = s.cleared[here] && !own && s.hold[here] === "held" ? checkIcon() : "";
       setHtml(oc, `${mark}${esc(poi.name)}${cleared}${taking && s.capture ? `<b>${Math.floor(s.capture.t)}/${FRONT.capture}</b>` : ""}`);
       oc.classList.toggle("met", own);
     }
@@ -1172,21 +1174,27 @@ export class Hud {
     const battle = after(night, settled.night, true);
     const left = after(battle, settled.after, true);
     const start = after(left, settled.raid, true);
-    // A node not the player's in a beat is another player's where the day ended with it theirs, else the enemy's.
-    const other = (id: PoiId): PoiHold => {
-      const h = settled.profile.poiState[id].state;
-      return rivalOf(h) !== null ? h : "held";
+    // Other players' nodes at each beat (`Settlement.rivals`): as the day began, when the player left, and from the battle's end on.
+    type Rivals = Partial<Record<string, string>>;
+    const rv = settled.rivals;
+    const atStart: Rivals = rv?.start ?? {};
+    const atLeft: Rivals = rv?.left ?? {};
+    const atEnd: Rivals = rv?.end ?? {};
+    // A node not the player's in a beat is another player's where it was theirs then, else the enemy's.
+    const other = (id: string, rivals: Rivals): PoiHold => {
+      const who = rivals[id];
+      return who !== undefined ? rivalHold(who) : "held";
     };
-    const holdsOf = (ids: Set<string>) => NODES.map((n): PoiHold => (ids.has(n.id) ? "freed" : other(n.id)));
-    const scene = (ids: Set<string>, changed?: Settlement["raid"]) => ({
+    const holdsOf = (ids: Set<string>, rivals: Rivals) => NODES.map((n): PoiHold => (ids.has(n.id) ? "freed" : other(n.id, rivals)));
+    const scene = (ids: Set<string>, rivals: Rivals, changed?: Settlement["raid"]) => ({
       ...end,
-      hold: end.hold.map((h, i) => (nodeIndex(POIS[i].id) < 0 ? h : ids.has(POIS[i].id) ? "freed" : other(POIS[i].id))),
-      nodes: holdsOf(ids),
+      hold: end.hold.map((h, i) => (nodeIndex(POIS[i].id) < 0 ? h : ids.has(POIS[i].id) ? "freed" : other(POIS[i].id, rivals))),
+      nodes: holdsOf(ids, rivals),
       changed,
     });
-    const bar = (ids: Set<string>, from: Set<string>) => {
+    const bar = (ids: Set<string>, rivals: Rivals, from: Set<string>) => {
       const el = document.getElementById("day-bar");
-      if (el) el.innerHTML = nodeRow(holdsOf(ids), undefined, { from: from.size, delay: 0 });
+      if (el) el.innerHTML = nodeRow(holdsOf(ids, rivals), undefined, { from: from.size, delay: 0 });
     };
     // The beat on show, for automation (`data-beat`), and its mark.
     const mark = (beat: string, html: string) => {
@@ -1195,17 +1203,17 @@ export class Hud {
       el.innerHTML = html;
       el.dataset.beat = beat;
     };
-    const beats: { beat: string; ids: Set<string>; prev: Set<string>; c: Settlement["raid"]; icon: string }[] = [
-      { beat: "raid", ids: left, prev: start, c: settled.raid, icon: "" },
-      { beat: "after", ids: battle, prev: left, c: settled.after, icon: depotIcon() },
-      { beat: "night", ids: night, prev: battle, c: settled.night, icon: nightIcon() },
+    const beats: { beat: string; ids: Set<string>; rivals: Rivals; prev: Set<string>; c: Settlement["raid"]; icon: string }[] = [
+      { beat: "raid", ids: left, rivals: atLeft, prev: start, c: settled.raid, icon: "" },
+      { beat: "after", ids: battle, rivals: atEnd, prev: left, c: settled.after, icon: depotIcon() },
+      { beat: "night", ids: night, rivals: atEnd, prev: battle, c: settled.night, icon: nightIcon() },
     ].filter((b) => b.c.gained.length || b.c.lost.length);
     // Milliseconds between the beats; automation may slow them (`window.ringfallBeatGap`) to shoot each.
     const gap = (window as { ringfallBeatGap?: number }).ringfallBeatGap ?? 1600;
     // Drawn once the results are shown, so the map is drawn at the canvas's size on screen.
     this.dayFrame = requestAnimationFrame(() => {
-      map.draw(scene(start));
-      bar(start, start);
+      map.draw(scene(start, atStart));
+      bar(start, atStart, start);
       mark("start", "");
       // The ways in the raid learned turn solid with the first beat (or alone, when nothing changed hands).
       const learn = () => {
@@ -1216,8 +1224,8 @@ export class Hud {
           window.setTimeout(() => {
             if (k === 0) learn();
             // A beat names only the nodes that changed hands in it: the results' map is small.
-            map.draw({ ...scene(b.ids, b.c), learned, names: [...b.c.gained, ...b.c.lost] });
-            bar(b.ids, b.prev);
+            map.draw({ ...scene(b.ids, b.rivals, b.c), learned, names: [...b.c.gained, ...b.c.lost] });
+            bar(b.ids, b.rivals, b.prev);
             mark(b.beat, b.icon);
           }, 900 + k * gap),
         ),
@@ -1226,7 +1234,7 @@ export class Hud {
         this.dayTimers.push(
           window.setTimeout(() => {
             learn();
-            map.draw({ ...scene(night), learned });
+            map.draw({ ...scene(night, atEnd), learned });
           }, 900),
         );
       this.dayTimers.push(

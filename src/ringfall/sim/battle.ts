@@ -1173,7 +1173,8 @@ export function battleFocus(s: State): { node: number; kind: "defend" | "attack"
   NODES.forEach((n, i) => {
     if (s.nodes[i] !== "freed") return;
     const m = b.meter[i];
-    const coming = b.squads.some((q) => q.side !== 0 && q.to === i && q.task === "attack" && (arrived(q) || dist2d(q, n.core) < 120));
+    // Another player's squad passing through on its way to another node comes at nothing here.
+    const coming = b.squads.some((q) => q.side !== 0 && q.to === i && q.task === "attack" && !passing(q) && (arrived(q) || dist2d(q, n.core) < 120));
     if ((m && m.side !== 0) || coming) {
       const d = dist2d(n.core, p);
       if (d < defendD) {

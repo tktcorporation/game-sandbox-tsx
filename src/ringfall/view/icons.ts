@@ -9,7 +9,7 @@
 const svg = (body: string, cls: string, size = 14) => `<svg class="ico ${cls}" viewBox="0 0 16 16" width="${size}" height="${size}" aria-hidden="true">${body}</svg>`;
 
 /** The player's side and the enemy's, as on the map. */
-export const SIDE = { own: "#3f86c8", enemy: "#c8402f" } as const;
+export const SIDE = { own: "#3f86c8", enemy: "#c8402f", rival: "#3fae6e" } as const;
 
 /** A clock: a time left (the battle's end, a craft on its way, a wait). */
 export const clockIcon = (c = "currentColor") => svg(`<circle cx="8" cy="8" r="6.2" fill="none" stroke="${c}" stroke-width="1.8"/><path d="M8 4.2 V8 L10.6 9.6" stroke="${c}" stroke-width="1.8" fill="none" stroke-linecap="round"/>`, "clock");

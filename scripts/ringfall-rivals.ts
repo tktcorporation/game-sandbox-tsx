@@ -5,7 +5,8 @@
  * - **take**: an expedition lands at the pad and takes a node of the player's nobody defends; the
  *   next day the node is that player's, and the night does not come at it.
  * - **transit**: an expedition sent two links on walks through a node of the player's without
- *   coming at it (no threat, no capture there) and takes the node it was sent to.
+ *   coming at it (no threat, no capture, never the battle's focus there) and takes the node it was
+ *   sent to; with the factory's turrets standing at the nodes on its way, it fights them as it passes.
  * - **retake**: a node another player holds, next to the player's ground, held by one robot of
  *   theirs: the factory's squads take it back.
  * - **front**: another player's node next to the player's ground is on the front, its core starts a
@@ -23,7 +24,7 @@
 import { CONQUEST, FACTORY_TOP, STRENGTH, TICK, type EnemyKind } from "../src/ringfall/sim/config";
 import { NODES, nodeIndex, POIS, type NodeId } from "../src/ringfall/sim/map";
 import { CAMP_NEXT, enemyNodes, frontNodes, NEIGHBOURS, useCore } from "../src/ringfall/sim/front";
-import { finishBattle, robotSide, type Battle, type BattleStart, type BattleSquad } from "../src/ringfall/sim/battle";
+import { battleFocus, finishBattle, robotSide, type Battle, type BattleStart, type BattleSquad } from "../src/ringfall/sim/battle";
 import { reckonApart, type ReckonSquad } from "../src/ringfall/sim/reckon";
 import { rivalHold } from "../src/ringfall/sim/holds";
 import { hostile } from "../src/ringfall/sim/factions";
@@ -82,7 +83,7 @@ export interface Rivals {
   /** The battle's seconds at which the relay fell to the expedition (which set off at 5 s), or -1. */
   take: number;
   /** The battle's seconds at which the supply depot fell to the expedition that walked through the player's node next to the pad, and the threats at the nodes on its way. */
-  transit: { t: number; threats: number };
+  transit: { t: number; threats: number; focus: number; turret: number };
   /** Seconds to the factory's squads taking the relay back, or -1. */
   retake: number;
   /** The enemy's strength with `at` nodes its own (the fewest for its next level), and with one of them another player's instead. */
@@ -94,7 +95,7 @@ export interface Rivals {
 }
 
 export function rivalsRun(): { err: string | null; r: Rivals } {
-  const r: Rivals = { take: -1, transit: { t: -1, threats: 0 }, retake: -1, strength: { at: 0, level: [0, 0] }, nights: [0, 0], pure: -1 };
+  const r: Rivals = { take: -1, transit: { t: -1, threats: 0, focus: 0, turret: 0 }, retake: -1, strength: { at: 0, level: [0, 0] }, nights: [0, 0], pure: -1 };
   const fail = (err: string) => ({ err: `rivals: ${err}`, r });
 
   // take: the relay (next to the pad) is the player's, defended by nobody, and an expedition lands for it.
@@ -122,12 +123,32 @@ export function rivalsRun(): { err: string | null; r: Rivals } {
     xs,
     1200,
     () => xs.nodes[SUP] !== "freed",
-    (evs) => evs.forEach((e) => e.t === "nodeThreat" && threats.set(e.node, (threats.get(e.node) ?? 0) + 1)),
+    (evs) => {
+      evs.forEach((e) => e.t === "nodeThreat" && threats.set(e.node, (threats.get(e.node) ?? 0) + 1));
+      const f = battleFocus(xs);
+      if (f && (f.node === QUARRY || f.node === RELAY)) r.transit.focus++;
+    },
   );
   r.transit.threats = (threats.get(QUARRY) ?? 0) + (threats.get(RELAY) ?? 0);
+  if (r.transit.focus) return fail(`the battle's focus named a node the expedition only passed through on ${r.transit.focus} steps`);
   if (xs.nodes[SUP] !== rivalHold(OWNER)) return fail(`an expedition sent through the player's ground to the supply depot left it ${xs.nodes[SUP]} after 1200 s`);
   if (xs.nodes[QUARRY] !== "freed" || xs.nodes[RELAY] !== "freed" || r.transit.threats) return fail(`the expedition came at the nodes on its way: quarry ${xs.nodes[QUARRY]}, relay ${xs.nodes[RELAY]}, ${r.transit.threats} threats there`);
   if (xs.battle!.taken.some((t) => t.node !== "supply") || xs.battle!.meter.some((m, i) => m && i !== SUP)) return fail(`the expedition began taking a node it was not sent to: ${JSON.stringify(xs.battle!.taken)}`);
+
+  // turrets on the way: the factory's turrets stand at the player's quarry and relay; the expedition fights the one it meets as it passes, and takes neither node.
+  const tp3 = island(["supply", "quarry", "relay"]);
+  const t3 = raid(tp3, { factory: 3, rivals: [{ owner: OWNER, target: "supply", kinds: Array.from({ length: 8 }, () => "grunt" as EnemyKind), at: 5 }] });
+  quiet(t3.battle!);
+  const posts = () => t3.battle!.squads.filter((q) => q.task === "post" && (q.to === QUARRY || q.to === RELAY));
+  if (!posts().length) return fail("the factory at level 3 stands no turret at the quarry or the relay");
+  const health = () => posts().reduce((n, q) => n + q.units.reduce((k, u) => k + Math.max(0, u.hp) + Math.max(0, u.shield), 0), 0);
+  const full = health();
+  const turretThreats = new Set<number>();
+  const exp = () => t3.battle!.squads.find((q) => q.side === 3);
+  until(t3, 900, () => t3.battle!.squads.some((q) => q.side === 3 && q.to === SUP) || (t3.time > 30 && !exp()), (evs) => evs.forEach((e) => e.t === "nodeThreat" && (e.node === QUARRY || e.node === RELAY) && turretThreats.add(e.node)));
+  r.transit.turret = Math.round(full - health());
+  if (r.transit.turret <= 0) return fail("the expedition walked past the factory's turret on its way without fighting it");
+  if (t3.nodes[QUARRY] !== "freed" || t3.nodes[RELAY] !== "freed" || turretThreats.size) return fail(`with turrets on its way the expedition came at the nodes it passed: quarry ${t3.nodes[QUARRY]}, relay ${t3.nodes[RELAY]}, threats at ${[...turretThreats].join()}`);
 
   // retake: another player's relay next to the player's supply depot, one robot of theirs holding it; the factory at its top.
   const rp = island(["supply"], ["relay"]);
@@ -222,7 +243,8 @@ export function checkRivals(): string | null {
 if (process.argv[1]?.endsWith("ringfall-rivals.ts")) {
   const { err, r } = rivalsRun();
   console.log(`take: the undefended relay fell to the expedition (set off at 5 s) ${r.take} s into the battle`);
-  console.log(`transit: the supply depot fell to the expedition ${r.transit.t} s into the battle; ${r.transit.threats} threats and no capture at the player's quarry and relay on its way`);
+  console.log(`transit: the supply depot fell to the expedition ${r.transit.t} s into the battle; ${r.transit.threats} threats, ${r.transit.focus} steps of the battle's focus and no capture at the player's quarry and relay on its way`);
+  console.log(`turrets on the way: the expedition took ${r.transit.turret} health off the factory's turrets at the nodes it passed`);
   console.log(`retake: the factory's squads took the relay back in ${r.retake} s`);
   console.log(`front: strength ${r.strength.level[0]} with ${r.strength.at} nodes the enemy's, ${r.strength.level[1]} with one of them another player's`);
   console.log(`night: the waterworks fell in ${r.nights[0]} of 400 nights with another player's nodes its foes, ${r.nights[1]} with the enemy's`);

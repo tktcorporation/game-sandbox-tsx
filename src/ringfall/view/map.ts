@@ -6,6 +6,7 @@ import { atRisk, battleMarks, meterOf, type Battle, type Side } from "../sim/bat
 import { offshore } from "../sim/terrain";
 import { BOXES, CAMP, DEBRIS_SPOTS, NODES, nodeIndex, TIER, UNLOCKS, debrisIndex, DEPOTS, ENTRIES, EXTRA_BINS, EXTRACTS, HOME_REGION, LANDMARKS, OUTPOST_SITES, POIS, REGIONS, regionOf, ROUTES, regionHere, type EntryId, type NodeId, type PoiId, type RegionId, type RouteId } from "../sim/map";
 import type { IslandEvent, PoiHold } from "../sim/island";
+import { rivalOf } from "../sim/holds";
 import { STREETS } from "../sim/streets";
 import { worldKey } from "../sim/routes";
 import { DAM_FACE, floorLevel, groundOf, highGround, LEVEL, steepAt, surfaceAt, terrainHeight, type Ground } from "../sim/terrain";
@@ -704,9 +705,11 @@ export class IslandMap {
     };
     const taken: Rect[] = [];
     const free = (r: Rect) => !taken.some((t) => r.x0 < t.x1 && r.x1 > t.x0 && r.y0 < t.y1 && r.y1 > t.y0);
-    // A POI cleared this raid gets a tick after its name; who holds it is its mark's colour.
+    // A POI the enemy held as the raid began and the player cleared gets a tick after its name; who holds it is its mark's colour.
     const hold = (i: number): PoiHold => s.hold?.[i] ?? "held";
-    const poiText = (i: number) => (s.cleared[i] && hold(i) !== "freed" ? `${POIS[i].name} ✓` : POIS[i].name);
+    const poiText = (i: number) => (s.cleared[i] && hold(i) === "held" ? `${POIS[i].name} ✓` : POIS[i].name);
+    // Another player's POI starts cleared (it stands no garrison): its name is not dimmed for it.
+    const dim = (i: number) => s.cleared[i] && rivalOf(hold(i)) === null;
     // The POI names written: those the scene names (the nodes that changed hands come first), and of
     // the rest none that would cover a name already placed, so a small map shows fewer, whole names.
     const changedIds: readonly string[] = [...(s.changed?.gained ?? []), ...(s.changed?.lost ?? [])];
@@ -1046,7 +1049,7 @@ export class IslandMap {
     // POI names go on top, a little above their mark, so an exit nearby does not hide them.
     for (const i of named) {
       const p = at(POIS[i].x, POIS[i].z);
-      label(poiText(i), p.x, p.y - 15 * dpr, s.cleared[i] ? "#cfd6e0" : "#ffffff", 12);
+      label(poiText(i), p.x, p.y - 15 * dpr, dim(i) ? "#cfd6e0" : "#ffffff", 12);
     }
     if (s.ally?.active) {
       const a = at(s.ally.pos.x, s.ally.pos.z);

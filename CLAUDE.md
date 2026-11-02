@@ -267,7 +267,9 @@ rogues' from the wild now and then (`CONQUEST.rogue`), which fight at a node and
 none. Other players' expeditions (side 3, `BattleSquad.owner`; `newRun(..., { battle: { factory,
 rivals } })`, `RivalExpedition`: whose, the node, the squad, when) land as the enemy's do, by the
 pad or the north shore (`rivalRoute()`), walk across whoever's nodes to the one they were sent to
-(taking no part in the fight or capture of a node they pass through), take it for their owner and
+(at a node they pass through they take no part in its garrison's fight or its capture, raise no
+threat and are no `battleFocus()`, but they fight any squad they meet on the way within
+`CONQUEST.meet`, the factory's turrets there included), take it for their owner and
 hold it (an expedition whose owner id `parseHold()` cannot read back is dropped); one sent at 0 to a node its owner holds stands there from the
 start. They fight every other side; near the player they are robots among the enemy's
 (`Enemy.rival`, purple, green on the maps). They walk the links (`walkLine()` paths traced as
