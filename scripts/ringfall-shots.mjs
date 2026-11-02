@@ -80,6 +80,34 @@ const lap = (name) => {
  * the south beach, any other start comes after a fade.
  */
 const readPage = async (pg) => JSON.parse(await pg.evaluate(() => window.render_game_to_text()));
+/**
+ * A map canvas's padlocks as view/map.ts leaves them for automation: each [node id, x, y] in CSS
+ * pixels from the canvas's top left (only those on the canvas), the front's nodes, and the note on show.
+ */
+const mapLocks = (pg, sel) =>
+  pg.evaluate((q) => {
+    const c = document.querySelector(q);
+    if (!c) return null;
+    const locks = JSON.parse(c.dataset.locks || "[]").filter(([, x, y]) => x > 6 && y > 6 && x < c.clientWidth - 6 && y < c.clientHeight - 6);
+    return { locks, front: (c.dataset.front || "").split(",").filter(Boolean), reason: c.dataset.reason || "" };
+  }, sel);
+/** A map's padlocks: at least one enemy node off the front carries one, and no node on the front does. */
+const checkLocks = (m, tag) => {
+  if (!m || !m.locks.length || !m.front.length || m.locks.some(([id]) => m.front.includes(id))) errors.push(`${tag}: the map's padlocks are ${JSON.stringify(m)}`);
+};
+/** Clicks (or taps) the map's padlock farthest from `avoid` (the points a click there would hit instead), and checks its note names what to take. */
+const clickLock = async (pg, sel, tag, press, avoid = []) => {
+  const m = await mapLocks(pg, sel);
+  checkLocks(m, tag);
+  if (!m?.locks.length) return;
+  const room = ([, x, y]) => Math.min(Infinity, ...avoid.map((a) => Math.hypot(a.x - x, a.y - y)));
+  const [id, x, y] = [...m.locks].sort((a, b) => room(b) - room(a))[0];
+  const bb = await pg.locator(sel).boundingBox();
+  await press(bb.x + x, bb.y + y);
+  await pg.waitForTimeout(150);
+  const after = await mapLocks(pg, sel);
+  if (!/^先に.+を制圧する$/.test(after?.reason ?? "")) errors.push(`${tag}: clicking the padlock of ${id} showed the note "${after?.reason}"`);
+};
 /** Until the fade to and from the camp's dark (under a second) has cleared the screen. */
 const faded = async (pg) => {
   await pg.waitForFunction(() => getComputedStyle(document.getElementById("fade")).opacity === "0", null, { timeout: 8000 }).catch(() => errors.push("camp: the fade never cleared the screen"));
@@ -417,6 +445,13 @@ const spills = (pg) =>
   await step(200);
   if (!(await mapOpen())) errors.push("mobile: the map button did not open the map");
   await page.screenshot({ path: `${out}/m4-map.png` });
+  // A tap on a padlock shows how to open that node, the game's controls under the map left as they are.
+  await clickLock(page, "#map-canvas", "mobile map", async (x, y) => {
+    await touch("touchStart", [{ x, y, id: 14 }]);
+    await touch("touchEnd", []);
+    await step(100);
+  });
+  await page.screenshot({ path: `${out}/m4-map-lock.png` });
   // It opens on the region the player is in; its own button shows the whole world, whose shape differs from the region's, and back.
   const mapAspect = () => page.evaluate(() => +getComputedStyle(document.getElementById("map-canvas")).getPropertyValue("--map-aspect"));
   const regionAspect = await mapAspect();
@@ -680,6 +715,10 @@ const read = async () => JSON.parse(await page.evaluate(() => window.render_game
   await useStation(page, "map");
   if ((await page.locator("#hub-side [data-act=entry], #hub-side [data-act=region], #hub-side [data-act=from]").count()) || !(await page.locator("#hub-island-map").count())) errors.push("camp: the map table still chooses a start, or shows no island");
   await page.screenshot({ path: `${out}/00-panel-map.png` });
+  // The enemy's nodes off the front carry a padlock, the front's none; a click on one says how to open it.
+  await page.locator("#hub-island-map").scrollIntoViewIfNeeded();
+  await clickLock(page, "#hub-island-map", "camp map table", (x, y) => page.mouse.click(x, y));
+  await page.screenshot({ path: `${out}/00-panel-map-lock.png` });
   await closePanel(page);
   // The departure from the truck: a fresh profile knows only the reservoir's first way in, so the harbor, the city and the launch site carry padlocks and their ways in are dashed; cancelled with Esc.
   await useStation(page, "vehicle");
@@ -690,6 +729,16 @@ const read = async () => JSON.parse(await page.evaluate(() => window.render_game
   const fresh = (await readPage(page)).camp.depart;
   if (harborLocked !== 3 || entriesOffered !== 1 || harborRings !== 9 || fresh?.start?.id !== "beach") errors.push(`camp: a fresh departure offers ${entriesOffered} ways in, ${harborLocked} locked regions, ${harborRings} ways in to find, starting at ${fresh?.start?.id}`);
   await page.screenshot({ path: `${out}/00-depart-locked.png` });
+  // A click between the starts reaches the map's padlocks under them.
+  const starts = await page.evaluate(() => {
+    const b = document.getElementById("depart-map").getBoundingClientRect();
+    return [...document.querySelectorAll("#depart-points button")].map((e) => {
+      const r = e.getBoundingClientRect();
+      return { x: r.x + r.width / 2 - b.x, y: r.y + r.height / 2 - b.y };
+    });
+  });
+  await clickLock(page, "#depart-map", "camp departure", (x, y) => page.mouse.click(x, y), starts);
+  await page.screenshot({ path: `${out}/00-depart-lock-note.png` });
   // The harbor's padlock clicked: the harbor shown with the pass and the railway bridge, the confirm shut and saying why.
   await peekLocked(page, "#depart-points .region-lock[data-id=harbor]", { tag: "camp locked harbor", name: "港湾地帯", why: "道を知らない", how: /峠道.*港町の外れ.*鉄橋.*生きて帰る.*コンテナヤード.*峠の宿舎.*中継ボックス/ });
   await page.screenshot({ path: `${out}/00-depart-locked-harbor.png` });
@@ -990,6 +1039,7 @@ for (let i = 0; i < 25 * 60 * 10; i++) {
     await page.evaluate(() => window.advanceTime(100));
     const open = await page.evaluate(() => !document.getElementById("map").hidden);
     await shot("23-map");
+    checkLocks(await mapLocks(page, "#map-canvas"), "map");
     // N shows the whole world, and back to the region the player is in.
     const shape = () => page.evaluate(() => +getComputedStyle(document.getElementById("map-canvas")).getPropertyValue("--map-aspect"));
     const regionShape = await shape();

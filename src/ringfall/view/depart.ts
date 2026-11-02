@@ -38,7 +38,11 @@ export class DepartPicker {
     $("depart-board").style.setProperty("--world-aspect", `${(WORLD.x1 - WORLD.x0) / (WORLD.z1 - WORLD.z0)}`);
     $("depart-points").addEventListener("click", (e) => {
       const el = (e.target as HTMLElement).closest<HTMLButtonElement>("button[data-kind]");
-      if (!el) return;
+      // The starts' layer covers the map, so a click between the starts goes to the map's padlocks.
+      if (!el) {
+        if (this.map.pick(e.clientX, e.clientY)) sfx.locked();
+        return;
+      }
       // A shut start or a locked region is shown, not chosen: the player sees why, and how to open it.
       if (el.classList.contains("shut")) {
         if (!this.hub.peek({ kind: el.dataset.kind as LockedPick["kind"], id: el.dataset.id! })) return;
@@ -62,6 +66,7 @@ export class DepartPicker {
     // The last opening's points go at once, so none stands at a place the loadout or the profile has since changed.
     $("depart-points").innerHTML = "";
     this.hub.unpeek();
+    this.map.picked = -1;
     if (on) requestAnimationFrame(() => this.render());
   }
 
