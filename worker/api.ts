@@ -2,9 +2,9 @@
  * RINGFALL's API under /api/ (docs/ringfall/multiplayer.md, サーバー). A plain handler of a request
  * and the Worker's bindings, so that scripts/ringfall-server.ts can run it on a stand-in database.
  *
- * The database binding is optional: until one is connected (the steps are in the doc), every route
- * but /api/health answers 202 `no-database` (a success, so the browser logs nothing) and the game
- * plays as ever. A write the database refuses answers 503 `db-error`.
+ * The database binding is optional: until one is connected (the steps are in the doc), a valid
+ * request to /api/island answers 202 `no-database` (a success, so the browser logs nothing) and the
+ * game plays as ever. A write the database refuses answers 503 `db-error`.
  */
 
 /** The part of D1's statement the API uses. */
