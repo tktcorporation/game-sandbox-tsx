@@ -949,6 +949,7 @@ export class Hub {
       (["freed", "held"] as const).map((h) => `<li><i style="background:${HOLD_CSS[h]}"></i>${h === "freed" ? "自分" : "敵"}</li>`).join("") +
       `<li><i class="titan" style="background:${TITAN_CSS}"></i>タイタン</li>` +
       `<li class="front"><i></i>前線<b>${NODES.filter((_, i) => front[i]).map((n) => esc(n.name)).join("・") || "—"}</b></li>` +
+      `<li class="locked">${lockIcon("#f4f7ff")}制圧不可<b>錠を押すと理由</b></li>` +
       `<li class="income">収入<b>${frontIncome(p).toLocaleString()} クレジット</b></li>`;
     return (
       `<div class="hub-island"><canvas id="hub-island-map"></canvas><div class="hub-island-side">` +
@@ -966,6 +967,7 @@ export class Hub {
     const canvas = document.getElementById("hub-island-map") as HTMLCanvasElement | null;
     if (!canvas) return;
     const map = new IslandMap(canvas);
+    canvas.addEventListener("click", (e) => map.pick(e.clientX, e.clientY) && sfx.locked());
     map.known = this.profile.entries;
     map.region = this.from ? poiRegion(this.from).id : this.region;
     const c = takenContract(this.profile);

@@ -1,7 +1,7 @@
 import { DEPOT, FACTION, FRONT, WORLD } from "../sim/config";
 import { ZIPS } from "../sim/map";
 import { zipUp } from "../sim/zips";
-import { frontNodes, nodeHolds, type NodeHold } from "../sim/front";
+import { frontNodes, NEIGHBOURS, nodeHolds, type NodeHold } from "../sim/front";
 import { atRisk, battleMarks, meterOf, type Battle, type Side } from "../sim/battle";
 import { offshore } from "../sim/terrain";
 import { BOXES, CAMP, DEBRIS_SPOTS, NODES, nodeIndex, TIER, UNLOCKS, debrisIndex, DEPOTS, ENTRIES, EXTRA_BINS, EXTRACTS, HOME_REGION, LANDMARKS, OUTPOST_SITES, POIS, REGIONS, regionOf, ROUTES, regionHere, type EntryId, type NodeId, type PoiId, type RegionId, type RouteId } from "../sim/map";
@@ -79,6 +79,49 @@ export function drawFlare(g: CanvasRenderingContext2D, x: number, y: number, r: 
     g.fill();
   }
   g.stroke();
+  g.restore();
+}
+
+/**
+ * What to take before node `node` can be captured, by name: a core is shielded until a node next
+ * to it is the player's, so its neighbours on the front (else all its neighbours).
+ */
+export function shieldedBy(holds: readonly NodeHold[], node: number): string {
+  const front = frontNodes(holds);
+  const near = NEIGHBOURS[node];
+  const take = near.filter((k) => front[k]);
+  return (take.length ? take : near).map((k) => NODES[k].name).join("・");
+}
+
+/** What a padlocked node's note on the map says: how to open its core to capture. */
+export const lockReason = (holds: readonly NodeHold[], node: number) => `先に${shieldedBy(holds, node)}を制圧する`;
+
+/** The enemy's nodes off the front, whose cores refuse capture: the map puts a padlock on each. */
+export function lockedNodes(holds: readonly NodeHold[]): boolean[] {
+  const front = frontNodes(holds);
+  return NODES.map((_, i) => holds[i] !== "freed" && !front[i]);
+}
+
+/** The padlock of `lockIcon()` (icons.ts) in its 16-unit box, so the map's lock matches the page's. */
+const LOCK_SHACKLE = "M5.3 7 V5 a2.7 2.7 0 0 1 5.4 0 V7";
+const LOCK_BODY = "M4.7 7 H11.3 A1.2 1.2 0 0 1 12.5 8.2 V13.3 A1.2 1.2 0 0 1 11.3 14.5 H4.7 A1.2 1.2 0 0 1 3.5 13.3 V8.2 A1.2 1.2 0 0 1 4.7 7 Z";
+
+/** A padlock centred on (x, y), `s` across, in `color` on a dark disc that keeps it readable on any ground. */
+export function drawLock(g: CanvasRenderingContext2D, x: number, y: number, s: number, color: string) {
+  g.save();
+  g.fillStyle = "rgba(20,24,40,0.92)";
+  g.beginPath();
+  g.arc(x, y, s * 0.62, 0, Math.PI * 2);
+  g.fill();
+  // The icon's padlock is centred on (8, 8.4) of its box.
+  const k = (s * 0.85) / 16;
+  g.translate(x - 8 * k, y - 8.4 * k);
+  g.scale(k, k);
+  g.fillStyle = color;
+  g.fill(new Path2D(LOCK_BODY));
+  g.strokeStyle = color;
+  g.lineWidth = 1.8;
+  g.stroke(new Path2D(LOCK_SHACKLE));
   g.restore();
 }
 
@@ -360,8 +403,36 @@ export class IslandMap {
   private aspect = 0;
   /** The last draw's scale and offset in CSS pixels, for `screenAt()`. */
   private proj: { m: number; ox: number; oy: number } | null = null;
+  /** Whether the enemy's nodes off the front carry a padlock; the results' small map, which tells the day's changes, leaves them out. */
+  locks = true;
+  /** The node whose padlock was picked, its note drawn beside it; -1 with none. */
+  picked = -1;
+  /** The padlocks at the last draw, each with its node's mark, in CSS pixels from the canvas's top left. */
+  private lockAt: { node: number; x: number; y: number; cx: number; cy: number }[] = [];
+  /** The scene last drawn, drawn again when a pick changes the note. */
+  private last: MapScene | null = null;
 
   constructor(private readonly canvas: HTMLCanvasElement) {}
+
+  /**
+   * A click or tap at (clientX, clientY): on a padlock or its node's mark it shows that node's note
+   * (a second one on the same lock hides it), anywhere else on the map it hides the note. Returns
+   * whether it landed on a padlock, for the page to answer with a sound.
+   */
+  pick(clientX: number, clientY: number): boolean {
+    const r = this.canvas.getBoundingClientRect();
+    const x = clientX - r.left;
+    const y = clientY - r.top;
+    if (x < 0 || y < 0 || x > r.width || y > r.height) return false;
+    // A finger's width round the padlock, and the node's mark itself.
+    const hit = this.lockAt.find((q) => Math.hypot(q.x - x, q.y - y) < 14 || Math.hypot(q.cx - x, q.cy - y) < 10);
+    const next = hit && hit.node !== this.picked ? hit.node : -1;
+    if (next !== this.picked) {
+      this.picked = next;
+      if (this.last) this.draw(this.last);
+    }
+    return !!hit;
+  }
 
   /** Where a world point sat on the canvas at the last draw, in CSS pixels from its top left; null before one. */
   screenAt(x: number, z: number): { x: number; y: number } | null {
@@ -605,6 +676,7 @@ export class IslandMap {
   }
 
   draw(s: MapScene) {
+    this.last = s;
     if (shared?.key !== worldKey()) shared = { key: worldKey(), image: this.build() };
     const base = shared.image;
     const g = this.canvas.getContext("2d")!;
@@ -1022,6 +1094,18 @@ export class IslandMap {
         }
       });
     }
+    // The enemy's nodes off the front: a padlock at the mark's lower left, since their cores refuse
+    // capture until a node next to them is the player's.
+    const locked = this.locks && s.nodes ? lockedNodes(s.nodes) : [];
+    this.lockAt = [];
+    NODES.forEach((n, i) => {
+      if (!locked[i]) return;
+      const p = at(n.x, n.z);
+      const q = { x: p.x - 10.5 * dpr, y: p.y + 7.5 * dpr };
+      drawLock(g, q.x, q.y, 14 * dpr, i === this.picked ? "#ffc93a" : "#f4f7ff");
+      this.lockAt.push({ node: i, x: q.x / dpr, y: q.y / dpr, cx: p.x / dpr, cy: p.y / dpr });
+    });
+    if (!locked[this.picked]) this.picked = -1;
     if (s.battle && s.nodes) this.drawBattle(g, s, at, dpr, label);
     // The nodes that changed hands: a thick ring in the colour each turned.
     for (const [ids, col] of [[s.changed?.gained ?? [], HOLD_CSS.freed], [s.changed?.lost ?? [], HOLD_CSS.held]] as const)
@@ -1050,22 +1134,78 @@ export class IslandMap {
     }
     // The player: an arrow pointing the way they face.
     const p = s.player;
-    if (!p) return;
-    const me = at(p.pos.x, p.pos.z);
+    if (p) {
+      const me = at(p.pos.x, p.pos.z);
+      g.save();
+      g.translate(me.x, me.y);
+      g.rotate(p.yaw);
+      g.scale(dpr, dpr);
+      g.lineWidth = 3;
+      g.fillStyle = "#ffffff";
+      g.beginPath();
+      g.moveTo(0, -9);
+      g.lineTo(6, 6);
+      g.lineTo(0, 3);
+      g.lineTo(-6, 6);
+      g.closePath();
+      g.fill();
+      g.stroke();
+      g.restore();
+    }
+    const reason = this.picked >= 0 && s.nodes ? lockReason(s.nodes, this.picked) : "";
+    if (reason) this.drawNote(g, at(NODES[this.picked].x, NODES[this.picked].z), reason, dpr);
+    // For automation: where the padlocks stand and the note on show.
+    const marks = JSON.stringify(this.lockAt.map((q) => [NODES[q.node].id, Math.round(q.x), Math.round(q.y)]));
+    if (this.canvas.dataset.locks !== marks) this.canvas.dataset.locks = marks;
+    if (this.canvas.dataset.reason !== reason) this.canvas.dataset.reason = reason;
+    const ringed = s.nodes ? frontNodes(s.nodes) : [];
+    const front = NODES.filter((_, i) => ringed[i]).map((n) => n.id).join(",");
+    if (this.canvas.dataset.front !== front) this.canvas.dataset.front = front;
+  }
+
+  /** A picked padlock's note under its node's mark, on top of everything: a padlock and how to open the core. */
+  private drawNote(g: CanvasRenderingContext2D, p: { x: number; y: number }, text: string, dpr: number) {
     g.save();
-    g.translate(me.x, me.y);
-    g.rotate(p.yaw);
-    g.scale(dpr, dpr);
-    g.lineWidth = 3;
-    g.fillStyle = "#ffffff";
+    g.font = `800 ${12 * dpr}px system-ui, sans-serif`;
+    const pad = 7 * dpr;
+    const icon = 13 * dpr;
+    const room = g.canvas.width - 8 * dpr - icon - 5 * dpr - pad * 2;
+    const lines = wrapNote(g, text, room);
+    const lineH = 16 * dpr;
+    const w = icon + 5 * dpr + Math.max(...lines.map((l) => g.measureText(l).width)) + pad * 2;
+    const h = 8 * dpr + lineH * lines.length;
+    // Under the mark, moved in to stay whole on the canvas, or over it near the bottom edge.
+    const x = Math.max(4 * dpr, Math.min(g.canvas.width - w - 4 * dpr, p.x - w / 2));
+    const below = p.y + 20 * dpr + h < g.canvas.height - 4 * dpr;
+    const y = below ? p.y + 20 * dpr : p.y - 28 * dpr - h;
+    g.fillStyle = "rgba(14,18,36,0.95)";
+    g.strokeStyle = "#ffc93a";
+    g.lineWidth = 1.5 * dpr;
     g.beginPath();
-    g.moveTo(0, -9);
-    g.lineTo(6, 6);
-    g.lineTo(0, 3);
-    g.lineTo(-6, 6);
-    g.closePath();
+    g.rect(x, y, w, h);
     g.fill();
     g.stroke();
+    drawLock(g, x + pad + icon / 2, y + h / 2, icon * 1.25, "#ffc93a");
+    g.fillStyle = "#ffffff";
+    g.textAlign = "left";
+    g.textBaseline = "middle";
+    lines.forEach((l, k) => g.fillText(l, x + pad + icon + 5 * dpr, y + 4 * dpr + lineH * (k + 0.5) + 0.5 * dpr));
     g.restore();
   }
+}
+
+/** Lines of a note no wider than `room`, broken after a ・ where one fits, else between any two characters, since the names are Japanese. */
+function wrapNote(g: CanvasRenderingContext2D, text: string, room: number): string[] {
+  const lines: string[] = [];
+  let rest = text;
+  while (rest && g.measureText(rest).width > room) {
+    let cut = 1;
+    while (cut < rest.length && g.measureText(rest.slice(0, cut + 1)).width <= room) cut++;
+    const dot = rest.lastIndexOf("・", cut - 1);
+    if (dot > 0) cut = dot + 1;
+    lines.push(rest.slice(0, cut));
+    rest = rest.slice(cut);
+  }
+  if (rest) lines.push(rest);
+  return lines;
 }
