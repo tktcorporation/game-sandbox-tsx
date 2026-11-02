@@ -69,12 +69,35 @@ export function parseIslandPost(raw: unknown): IslandPost | null {
   return post;
 }
 
-/** The body as text, or null when it is longer than `MAX_BODY` bytes. */
+/**
+ * The body as text, or null when it is longer than `MAX_BODY` bytes. A declared length over the cap
+ * is refused before reading; otherwise the body is read chunk by chunk and dropped as soon as it
+ * passes the cap, so a body with no or a false length is never held whole.
+ */
 async function readBody(request: Request): Promise<string | null> {
   const declared = Number(request.headers.get("content-length"));
   if (Number.isFinite(declared) && declared > MAX_BODY) return null;
-  const bytes = new Uint8Array(await request.arrayBuffer());
-  return bytes.byteLength > MAX_BODY ? null : new TextDecoder().decode(bytes);
+  if (!request.body) return "";
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > MAX_BODY) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(total);
+  let at = 0;
+  for (const c of chunks) {
+    bytes.set(c, at);
+    at += c.byteLength;
+  }
+  return new TextDecoder().decode(bytes);
 }
 
 /** Records a post in one batch: the player (keeping when they were first seen), the island, and the raid. */

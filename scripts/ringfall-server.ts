@@ -202,6 +202,18 @@ const count = (table: string) => Number((sqlite.prepare(`SELECT COUNT(*) AS n FR
   const big = valid("ねこ", 5) as Record<string, unknown>;
   big.pad = "x".repeat(MAX_BODY);
   cases.push(["oversized", post(big), 413]);
+  // Streamed in chunks with no Content-Length, past the cap: refused once the cap is passed.
+  const chunk = new TextEncoder().encode("x".repeat(1500));
+  let pulled = 0;
+  const stream = new ReadableStream<Uint8Array>({
+    pull(c) {
+      if (pulled++ < 8) c.enqueue(chunk);
+      else c.close();
+    },
+  });
+  const streamed = new Request(BASE + "/api/island", { method: "POST", headers: { "content-type": "application/json" }, body: stream, duplex: "half" } as RequestInit);
+  check(streamed.headers.get("content-length") === null, "refused: the streamed request carries a Content-Length");
+  cases.push(["streamed oversized, no Content-Length", streamed, 413]);
   cases.push(["GET", post(null, "GET"), 405]);
   cases.push(["unknown path", post(valid("ねこ", 5), "POST", "/api/islands"), 404]);
   cases.push(["unknown path GET", post(null, "GET", "/api/nothing"), 404]);
@@ -211,7 +223,8 @@ const count = (table: string) => Number((sqlite.prepare(`SELECT COUNT(*) AS n FR
     check(a.status === want && (a.body as { ok?: boolean }).ok === false, `refused: ${what} answered ${a.status}, not ${want}`);
   }
   const after = [count("players"), count("island_summaries"), count("raids")].join("/");
-  console.log(`refused: rows ${before} -> ${after}`);
+  console.log(`refused: rows ${before} -> ${after}; streamed chunks pulled ${pulled} of 8`);
+  check(pulled < 8, "refused: the streamed body was read past the cap");
   check(before === after, "refused: a refused post wrote rows");
 }
 
