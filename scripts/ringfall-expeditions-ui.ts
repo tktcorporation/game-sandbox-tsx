@@ -272,6 +272,18 @@ function island(freed: string[], rival: string[] = []): Profile {
   check(!view.ok && view.error === "network" && !sent.ok && sent.error === "network" && took < 2000, "timeout: a request of a send to a server that never answers did not give up as network");
   check(rolled.length === 0 && !!ERROR_TEXT.network, "timeout: a timed-out send did not roll back");
   check(2 * SEND_TIMEOUT_MS < SENDING_MS, "timeout: a send's requests may outlast SENDING_MS, so a send still out could be dropped");
+  // Browsers without AbortSignal.timeout (Safari before 16): the deadline still holds.
+  const timeoutFn = AbortSignal.timeout;
+  Object.defineProperty(AbortSignal, "timeout", { value: undefined, configurable: true, writable: true });
+  globalThis.fetch = ((_: unknown, init?: RequestInit) =>
+    new Promise((_ok, fail) => init?.signal?.addEventListener("abort", () => fail(init.signal!.reason)))) as typeof fetch;
+  const alive2 = setInterval(() => {}, 1000);
+  const old = await readView(B, 50);
+  clearInterval(alive2);
+  globalThis.fetch = real;
+  Object.defineProperty(AbortSignal, "timeout", { value: timeoutFn, configurable: true, writable: true });
+  console.log(`timeout without AbortSignal.timeout: view ${JSON.stringify(old)}`);
+  check(!old.ok && old.error === "network", "timeout: without AbortSignal.timeout a request did not give up as network");
 }
 
 // --- income

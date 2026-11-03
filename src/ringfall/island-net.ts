@@ -29,9 +29,17 @@ export const SEND_TIMEOUT_MS = 20_000;
  * is its error code. With `timeout`, the request is aborted after that many milliseconds and fails as
  * `network` (an aborted fetch logs nothing).
  */
+/** A signal that aborts after `ms`, also where AbortSignal.timeout is missing (Safari before 16). */
+function deadline(ms: number): AbortSignal {
+  if (typeof AbortSignal.timeout === "function") return AbortSignal.timeout(ms);
+  const c = new AbortController();
+  setTimeout(() => c.abort(), ms);
+  return c.signal;
+}
+
 async function call(path: string, init: RequestInit = {}, timeout?: number): Promise<Answer<unknown>> {
   if (navigator.webdriver) return failed("no-island-server");
-  const signal = timeout === undefined ? undefined : AbortSignal.timeout(timeout);
+  const signal = timeout === undefined ? undefined : deadline(timeout);
   let r: Response;
   try {
     r = await fetch(path, { ...init, signal, headers: { "content-type": "application/json", ...(init.headers ?? {}) } });

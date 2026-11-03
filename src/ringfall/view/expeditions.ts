@@ -178,11 +178,18 @@ export class ExpeditionPanel {
     this.busy = true;
     this.note = null;
     this.paint();
-    const own = await readView(c.code, SEND_TIMEOUT_MS);
-    if (own.ok && this.conn.t === "ok" && this.conn.code === c.code) this.conn = { ...this.conn, view: own.body };
-    const level = own.ok ? own.body.factory : (c.view?.factory ?? null);
-    const units = level === null ? 0 : sendKinds(level).length;
-    const r = level === null ? { ok: false as const, error: own.ok ? ("bad-response" as const) : own.error } : await sendExpedition(t.code, node, units);
+    let units = 0;
+    let r: Awaited<ReturnType<typeof sendExpedition>>;
+    // Whatever goes wrong on the way, the send ends: its squad comes back and the panel answers again.
+    try {
+      const own = await readView(c.code, SEND_TIMEOUT_MS);
+      if (own.ok && this.conn.t === "ok" && this.conn.code === c.code) this.conn = { ...this.conn, view: own.body };
+      const level = own.ok ? own.body.factory : (c.view?.factory ?? null);
+      units = level === null ? 0 : sendKinds(level).length;
+      r = level === null ? { ok: false as const, error: own.ok ? ("bad-response" as const) : own.error } : await sendExpedition(t.code, node, units);
+    } catch {
+      r = { ok: false, error: "network" };
+    }
     const p = this.get();
     this.put({ ...p, expeditions: answerSend(p.expeditions, pending, r.ok ? r.body.id : null, units) });
     this.busy = false;
