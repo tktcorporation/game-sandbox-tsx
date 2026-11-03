@@ -63,6 +63,8 @@ export interface Expedition {
   arriveAt: number;
   arrived: boolean;
   holding: boolean;
+  /** Held back by the day's limit at the last tick (`heldBack()`): its node's fight starts again, as at its arrival, when it may attack. */
+  waiting?: true;
 }
 
 /** One of the owner's factory squads defending a node an expedition came to: a turret (`post`) or a squad the factory sent. */
@@ -103,6 +105,8 @@ export interface IslandState {
   nextId: number;
   log: LogEntry[];
   seq: number;
+  /** Nodes taken from the island by expeditions on UTC day `day`: the day's limit counts these, not the log, which drops old entries. */
+  taken: { day: number; n: number };
 }
 
 /** What one request asks of an island. */
@@ -158,9 +162,10 @@ export function garrisonGuards(code: string, i: number): Guard[] {
 const utcDay = (t: number) => Math.floor(t / DAY_MS);
 
 /** Nodes taken from the island by expeditions on the UTC day of `t`. */
-const takenOn = (s: IslandState, t: number) => s.log.filter((e) => e.t === "taken" && utcDay(e.at) === utcDay(t)).length;
+const takenOn = (s: IslandState, t: number) => (s.taken.day === utcDay(t) ? s.taken.n : 0);
 
 function note(s: IslandState, at: number, t: LogEntry["t"], node: number, by: Attacker) {
+  if (t === "taken") s.taken = { day: utcDay(at), n: takenOn(s, at) + 1 };
   s.log.push({ seq: ++s.seq, at, t, node: NODE_IDS[node], by: { ...by } });
   if (s.log.length > EXPEDITION.logMax) s.log.splice(0, s.log.length - EXPEDITION.logMax);
 }
@@ -235,6 +240,12 @@ function tick(s: IslandState, t: number) {
       note(s, t, "landed", e.target, e.by);
     }
   const back = new Set(s.expeditions.filter((e) => heldBack(s, e, t)));
+  // One held back until now may attack: its node's fight starts as at its arrival (the turrets go back to their posts).
+  for (const e of s.expeditions) {
+    if (e.waiting && !back.has(e)) startFight(s, e.target);
+    if (back.has(e)) e.waiting = true;
+    else delete e.waiting;
+  }
   const here = s.expeditions.filter((e) => e.arrived && !back.has(e));
   // The factory sends a squad to the first of the owner's nodes under attack, as in a raid, while it has room.
   const lv = FACTORY.levels[s.factory];
@@ -355,7 +366,9 @@ export function nextAlarm(s: IslandState | null, now: number): number | null {
   if (!s) return null;
   if (!quiet(s, now)) return now + EXPEDITION.alarmMs;
   const until = quietUntil(s, now);
-  return until === Infinity ? null : Math.max(now + 1, until);
+  if (until === Infinity) return null;
+  // The tick that reckons the event: the first on the island's grid (clock + k ticks) at or after it.
+  return Math.max(now + 1, s.clock + Math.ceil((until - s.clock) / TICK_MS) * TICK_MS);
 }
 
 /** A new island claimed at `now` for the player of `op`: every node the enemy's until the owner's first report. */
@@ -375,6 +388,7 @@ function claim(op: Extract<IslandOp, { t: "claim" }>, now: number): IslandState 
     nextId: 1,
     log: [],
     seq: 0,
+    taken: { day: utcDay(now), n: 0 },
   };
 }
 

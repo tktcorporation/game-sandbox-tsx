@@ -270,7 +270,7 @@ const T2 = T1 + 400_000;
   // Held back: the island has lost its day's nodes before the expedition stands at the owner's quarry.
   const st = island({ quarry: "freed", supply: "freed" }, 2);
   op(st, { t: "expedition", from: B, target: "quarry", kinds: [...FACTORY.levels[FACTORY_TOP].kinds] }, T1);
-  for (let k = 0; k < EXPEDITION.perDay; k++) st.log.push({ seq: ++st.seq, at: T1, t: "taken", node: "relay", by: C });
+  st.taken = { day: Math.floor(T1 / DAY), n: EXPEDITION.perDay };
   const units = st.expeditions[0].units.map((u) => u.hp + u.shield).join(",");
   const late = T1 + (EXPEDITION.arrive + 900) * 1000;
   let sent = 0;
@@ -288,6 +288,51 @@ const T2 = T1 + 400_000;
   const fought = st.expeditions.length === 0 || st.expeditions[0].units.map((u) => u.hp + u.shield).join(",") !== units || st.holds[quarry] !== "freed";
   console.log(`held back: the next day quarry ${st.holds[quarry]}, expedition ${st.expeditions[0] ? `${st.expeditions[0].units.length} left` : "gone"}`);
   check(fought, "held back: the expedition did not fight once the next UTC day came");
+
+  // Held back at a node with turrets: when the next day comes, they stand at their posts again.
+  {
+    const lv = 3;
+    const tt = island({ quarry: "freed", supply: "freed" }, lv);
+    op(tt, { t: "expedition", from: B, target: "quarry", kinds: ["grunt", "heavy", "drone", "grunt"] }, T1);
+    tt.taken = { day: Math.floor(T1 / DAY), n: EXPEDITION.perDay };
+    const day2 = (Math.floor(T1 / DAY) + 1) * DAY;
+    run(tt, day2 - 1000);
+    const before = tt.defenders.filter((d) => d.task === "post").length;
+    run(tt, day2 + 2000);
+    const posted = tt.defenders.filter((d) => d.task === "post" || d.to === quarry).length;
+    console.log(`held back at factory ${lv}: turrets out while held back ${before}, standing when it fights the next day ${tt.defenders.filter((d) => d.task === "post").length} of ${FACTORY.levels[lv].turrets}`);
+    check(before === 0 && FACTORY.levels[lv].turrets > 0 && tt.defenders.filter((d) => d.task === "post").length === FACTORY.levels[lv].turrets && posted >= FACTORY.levels[lv].turrets, "held back: the turrets did not stand when the expedition fought the next day");
+  }
+
+  // The alarm off the tick grid: an expedition sent 400 ms past a tick rings the alarm at the tick that sees it arrive.
+  {
+    const g = island({ quarry: "freed", supply: "freed" }, 0);
+    const sentAt = T1 + 400;
+    op(g, { t: "expedition", from: B, target: "quarry", kinds: ["grunt"] }, sentAt);
+    let now = sentAt + 3;
+    let rings = 0;
+    while (!g.expeditions[0].arrived && rings < 10) {
+      now = nextAlarm(g, now)!;
+      advance(g, now);
+      rings++;
+    }
+    console.log(`alarm off the grid: arrived ${g.expeditions[0].arrived} after ${rings} rings, ${now - g.expeditions[0].arriveAt} ms after the arrival`);
+    check(g.expeditions[0].arrived && rings <= 2 && now - g.expeditions[0].arriveAt < 1000, "alarm: an arrival off the tick grid rang the alarm again and again");
+  }
+
+  // The day's limit outlasts the log: wiped expeditions push the day's take out of the log, and it still counts.
+  {
+    const lim = island({ quarry: "freed", supply: "freed" }, 0);
+    op(lim, { t: "expedition", from: B, target: "quarry", kinds: [...FACTORY.levels[FACTORY_TOP].kinds] }, T1);
+    run(lim, T1 + 3_600_000);
+    for (let k = 0; k < EXPEDITION.logMax; k++) lim.log.push({ seq: ++lim.seq, at: T1 + 3_600_000, t: "wiped", node: "relay", by: C });
+    lim.log.splice(0, lim.log.length - EXPEDITION.logMax);
+    const takes = lim.log.filter((e) => e.t === "taken").length;
+    const r1 = op(lim, { t: "expedition", from: C, target: "station", kinds: ["grunt"] }, T1 + 3_600_000);
+    const r2 = op(lim, { t: "expedition", from: C, target: "relay", kinds: ["grunt"] }, T1 + 3_600_000);
+    console.log(`day's limit: took the quarry ${lim.holds[quarry] === `rival:${B.code}`}, "taken" left in the log ${takes}, another ${r1.status}, a third ${r2.status} ${(r2.body as { error?: string }).error}`);
+    check(lim.holds[quarry] === `rival:${B.code}` && takes === 0 && r1.status === 201 && r2.status === 409, "day's limit: the day's take was forgotten with the log");
+  }
 
   // The alarm: armed while an expedition comes or fights, none once every expedition just holds its node.
   const h = island({ quarry: "freed", supply: "freed" }, 0);
