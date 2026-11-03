@@ -43,6 +43,9 @@ import { BagView } from "./bag";
  */
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
+
+/** The island's news from the server (its log), as the results show it: nothing when there is none. */
+const newsBlock = (news: readonly string[]) => (news.length ? `<h3>島の知らせ</h3><p>${news.map((n) => `<span>${esc(n)}</span>`).join("")}</p>` : "");
 /** Replaces an element's markup only when it changes: the objective card is redrawn every frame. */
 const setHtml = (el: HTMLElement, html: string) => {
   if (el.dataset.html === html) return;
@@ -1262,7 +1265,13 @@ export class Hud {
     });
   }
 
-  results(s: State, settled?: Settlement, known: readonly ModKind[] = [], analysed: ModKind | null = null) {
+  /** The island's news from the server, come in while the results are up: put in their place there, the rest of the results as they are. */
+  setNews(news: readonly string[]) {
+    const el = document.getElementById("island-news");
+    if (el) el.innerHTML = newsBlock(news);
+  }
+
+  results(s: State, settled?: Settlement, known: readonly ModKind[] = [], analysed: ModKind | null = null, news: readonly string[] = []) {
     $("result-title").textContent = s.home ? "帰った" : s.outcome === "extracted" ? "生還" : "行方不明";
     $("day-result").innerHTML = this.dayResult(s, settled);
     this.drawDay(settled);
@@ -1315,7 +1324,11 @@ export class Hud {
     // A record of a raid kept from before ways in were learned has walked to none.
     const forgot = (s.found ?? []).filter((id) => !this.known.includes(id));
     // The day's income from the nodes the player holds.
-    const island = settled?.income ? `<h3 class="day-end">${settled.day} 日目</h3><p><span>拠点の収入<b>${settled.income.toLocaleString()} クレジット</b></span></p>` : "";
+    // With the nodes this island's expeditions hold on other islands, theirs on a line of its own.
+    const island =
+      settled?.income || settled?.awayIncome
+        ? `<h3 class="day-end">${settled.day} 日目</h3><p>${settled.income ? `<span>拠点の収入<b>${settled.income.toLocaleString()} クレジット</b></span>` : ""}${settled.awayIncome ? `<span>遠征の拠点の収入<b>${settled.awayIncome.toLocaleString()} クレジット</b></span>` : ""}</p>`
+        : "";
     // The contract taken for the raid: done and paid, or not done (it goes with the day).
     const c = settled?.contract;
     const contract = c
@@ -1333,6 +1346,7 @@ export class Hud {
     // The day's outcome is in the headline; the right column holds what comes of it, then the parts to analyse.
     $("home").innerHTML =
       island +
+      `<div id="island-news">${newsBlock(news)}</div>` +
       events +
       contract +
       story +

@@ -2090,6 +2090,15 @@ for (const phone of [false, true]) {
   const fit = await spills(pg);
   if (fit.length) errors.push(`battle factory panel (${phone ? "phone" : "1280x720"}): ${fit.join(", ")}`);
   await pg.screenshot({ path: tag(1, "panel-factory") });
+  // The factory's expeditions under the card: with no island server (the gate sends no request) it says so in one line, and nothing else.
+  const exped = await pg.evaluate(() => {
+    const el = document.querySelector("#hub-exped");
+    el?.scrollIntoView({ block: "end" });
+    return { text: el?.textContent ?? "", form: !!document.querySelector("#exp-code") };
+  });
+  if (!exped.text.includes("島のサーバーにつながっていません") || exped.form) errors.push(`battle: the factory's expeditions read "${exped.text.slice(0, 120)}"${exped.form ? " with the send form" : ""}`);
+  await pg.waitForTimeout(100);
+  await pg.screenshot({ path: tag(1, "panel-factory-expeditions") });
   await closePanel(pg, phone);
   // The trader's shelf by the nodes held: the supply depot and the quarry light common, rare and epic.
   await useStation(pg, "shop", cdp);

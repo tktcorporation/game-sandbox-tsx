@@ -9,6 +9,7 @@ import { advanceDay, departDepots, type DayChange, type FrontChange, eventFor, f
 import type { IslandEvent } from "../sim/island";
 import { built, creditRaid, emptyLog, need, offered, QUEST_IDS, type Quest, type QuestLog } from "./quests";
 import { currentStory, STORIES, type Story } from "./story";
+import { awayIncome, parseOutgoing, type Outgoing } from "./expeditions";
 
 /**
  * One thing in the stash. Heals are one entry per unit, so the stash cap counts them. A weapon
@@ -25,7 +26,7 @@ export type Item =
 
 /** What persists between raids. */
 export interface Profile {
-  v: 26;
+  v: 27;
   cash: number;
   stash: Item[];
   raids: number;
@@ -75,6 +76,10 @@ export interface Profile {
   factory: number;
   /** What the last raid took out of the stash, so the shelves pick it again while the stash still holds it (`recallLoadout()`). */
   lastKit: KitPicks | null;
+  /** The expeditions this island's factory sent to other players' islands, as they last stood (meta/expeditions.ts). */
+  expeditions: Outgoing[];
+  /** The last entry of this island's log on the server taken in: the next sync reads the ones after it. */
+  logSeq: number;
 }
 
 /** A loadout by what it holds rather than by stash index: what `Profile.lastKit` keeps. */
@@ -135,7 +140,7 @@ export const stashUsed = (p: Pick<Profile, "stash">) => p.stash.filter((i) => !i
 export function newProfile(seed = 1): Profile {
   const stash: Item[] = [...starterItems(), ...META.start.weapons.map((w): Item => ({ t: "weapon", ...w }))];
   for (const k of HEALS) for (let i = 0; i < META.start.heals[k]; i++) stash.push({ t: "heal", kind: k });
-  const p: Omit<Profile, "board"> = { v: 26, cash: META.start.cash, stash, raids: 0, extracted: 0, time: 0, quests: emptyLog(), region: HOME_REGION.id, entry: FIRST_ENTRY, entries: [FIRST_ENTRY], hideout: emptyHideout(), seed: seed & 0xffff, depots: [], depotSent: {}, seen: "", routes: [], day: 1, poiState: newIsland(), taken: null, records: [], events: firstEvents(seed & 0xffff), known: [...MOD_START], threat: 0, freedAt: {}, factory: 0, lastKit: null };
+  const p: Omit<Profile, "board"> = { v: 27, cash: META.start.cash, stash, raids: 0, extracted: 0, time: 0, quests: emptyLog(), region: HOME_REGION.id, entry: FIRST_ENTRY, entries: [FIRST_ENTRY], hideout: emptyHideout(), seed: seed & 0xffff, depots: [], depotSent: {}, seen: "", routes: [], day: 1, poiState: newIsland(), taken: null, records: [], events: firstEvents(seed & 0xffff), known: [...MOD_START], threat: 0, freedAt: {}, factory: 0, lastKit: null, expeditions: [], logSeq: 0 };
   return { ...p, board: makeBoard(p) };
 }
 
@@ -486,6 +491,8 @@ export interface Settlement {
   night: FrontChange;
   /** Credits the nodes the player holds paid at this settle (`frontIncome()`). */
   income: number;
+  /** Credits the nodes this island's expeditions hold on other islands paid at this settle (`awayIncome()`); left out, none. */
+  awayIncome?: number;
   /** The day's island event the raid was played on, or null. */
   event: IslandEvent | null;
   /** The contract taken for the raid, the credits it pays at the raid's threat, and whether the raid did it (its reward paid when it did). */
@@ -639,12 +646,14 @@ export function settle(p: Profile, s: State): Settlement {
   const { profile: night } = advanceDay(settled, day);
   // The nodes the player holds once the night is over pay their day's credits.
   const income = frontIncome(night);
-  const next = { ...night, cash: night.cash + income };
+  // The nodes held on other islands pay theirs too, and the expeditions known gone are dropped.
+  const away = awayIncome(night);
+  const next = away > 0 || night.expeditions.some((e) => e.state === "gone") ? { ...night, cash: night.cash + income + away, expeditions: night.expeditions.filter((e) => e.state !== "gone") } : { ...night, cash: night.cash + income };
   // Quests the raid opened may ask for a hideout level already built.
   const claimed = claimBuilt(next);
   // The new day's board, for the next raid's seed; yesterday's contract goes with yesterday's board.
   const fresh = { ...claimed.profile, stash: withStarters(claimed.profile.stash), taken: null, board: makeBoard(claimed.profile) };
-  return { profile: fresh, home, opened, learned, quests: [...finished, ...claimed.quests], sold: [...sold, ...claimed.sold], soldFor: soldFor + claimed.soldFor, day: p.day, ...change, income, event: s.event ?? null, contract, story: told, threat, analysable: s.outcome === "extracted" ? [...(pl.mods ?? [])] : [] };
+  return { profile: fresh, home, opened, learned, quests: [...finished, ...claimed.quests], sold: [...sold, ...claimed.sold], soldFor: soldFor + claimed.soldFor, day: p.day, ...change, income, ...(away > 0 && { awayIncome: away }), event: s.event ?? null, contract, story: told, threat, analysable: s.outcome === "extracted" ? [...(pl.mods ?? [])] : [] };
 }
 
 /** Finishes and pays every offered build quest the hideout already meets, and those they open. */
@@ -771,11 +780,13 @@ const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
  * profile's explored map is dropped.
  * Before v26 no other player could hold a node: such a profile's POIs are the enemy's or the
  * player's, as saved (`parseIsland()` reads another player's standing only from v26).
+ * Before v27 no expedition went out from the factory: such a profile has none out and has read none
+ * of its island's log.
  */
 export function parseProfile(raw: unknown, seed = 1): Profile | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
+  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
   const old = o.v === 1 || o.v === 2;
   const migrate = (i: unknown): unknown => {
     if (!old || !i || typeof i !== "object" || (i as Record<string, unknown>).t !== "key") return i;
@@ -821,8 +832,9 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   const cap = stashCap(hideout);
   let room = cap;
   const stash = withStarters(items.filter((i) => isStarter(i) || room-- > 0));
+  const v27 = typeof o.v === "number" && o.v >= 27;
   const out: Omit<Profile, "board" | "taken" | "events"> = {
-    v: 26,
+    v: 27,
     cash: Math.max(0, Math.floor(o.cash)),
     stash,
     raids,
@@ -843,6 +855,8 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     poiState,
     factory: v19 && Number.isInteger(o.factory) ? Math.max(0, Math.min(FACTORY_TOP, o.factory as number)) : 0,
     lastKit: v20 ? parseKitPicks(o.lastKit) : null,
+    expeditions: v27 ? parseOutgoing(o.expeditions) : [],
+    logSeq: v27 && Number.isInteger(o.logSeq) && (o.logSeq as number) >= 0 ? (o.logSeq as number) : 0,
     records,
     known: knownMods(v17 && Array.isArray(o.known) ? o.known : []),
     threat: v17 && Number.isInteger(o.threat) ? Math.max(0, Math.min(THREAT.max, o.threat as number)) : 0,

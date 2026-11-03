@@ -2,6 +2,7 @@ import { CONQUEST, ENEMIES, FACTORY, FACTORY_TOP, PLATE, type EnemyKind } from "
 import { reckonApart, standing, type Guard, type NodeMeter, type ReckonSquad, type Task, type Unit } from "../src/ringfall/sim/reckon";
 import { parseHold, rivalOf, type PoiHold } from "../src/ringfall/sim/holds";
 import { ISLAND_TABLE } from "../src/ringfall/meta/island-table";
+import type { ApiError } from "../src/ringfall/meta/island-errors";
 
 /*
  * One island on the server (docs/ringfall/multiplayer.md, 戦いの解き方): its owner, the nodes' holds
@@ -127,7 +128,7 @@ export interface OpResult {
   changed: boolean;
 }
 
-const fail = (error: string) => ({ ok: false, error });
+const fail = (error: ApiError) => ({ ok: false, error });
 
 /** A full member of `kind`. */
 const unit = (kind: EnemyKind): Unit => ({ kind, hp: ENEMIES[kind].hp, shield: ENEMIES[kind].shield });
@@ -171,7 +172,7 @@ function note(s: IslandState, at: number, t: LogEntry["t"], node: number, by: At
 }
 
 /** Why node `i` takes no expedition now, or null when it does. */
-function closedWhy(s: IslandState, i: number, now: number): { status: number; error: string } | null {
+function closedWhy(s: IslandState, i: number, now: number): { status: number; error: ApiError } | null {
   if (ISLAND_TABLE.campNext.includes(NODE_IDS[i])) return { status: 403, error: "closed-node" };
   if (s.holds[i] !== "held" && s.holds[i] !== "freed") return { status: 409, error: "node-not-open" };
   if (now - s.since < EXPEDITION.protectDays * DAY_MS) return { status: 403, error: "protected" };
