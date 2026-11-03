@@ -14,7 +14,10 @@
  * - **capture**: an expedition takes a node of the owner's the factory barely defends, and one of
  *   the enemy's lightly garrisoned; the reports after keep them the other player's.
  * - **wiped**: a small expedition against a strong garrison is wiped out.
- * - **retaken**: the owner's report of a node of theirs taken back makes it theirs and logs it.
+ * - **retaken**: the owner's report of a node of theirs taken back (named among `retaken`) makes it
+ *   theirs and logs it; a report of another player's node as the owner's without naming it there
+ *   (a copy of the island from before the capture) keeps it the other player's; a malformed
+ *   `retaken` is refused.
  * - **log**: the owner's log from a cursor holds only what came after it; nobody else reads it.
  * - **public**: what anyone reads of an island holds no player's id.
  * - **steady**: the island reckoned in one alarm or in many small ones ends the same.
@@ -90,7 +93,7 @@ async function call(method: string, path: string, body?: unknown, now = T0, e: A
 const err = (r: { body: Record<string, unknown> }) => r.body.error;
 const holdsWith = (over: Record<string, string>) => NODE_IDS.map((id) => over[id] ?? "held");
 const claimFor = (who: typeof A, now = T0, draw?: () => string) => call("POST", "/api/islands", { player: { id: who.id, name: who.name } }, now, env, draw);
-const report = (who: typeof A, holds: string[], factory: number, day: number, now: number) => call("PUT", `/api/islands/${who.code}`, { player: { id: who.id, name: who.name }, holds, factory, day }, now);
+const report = (who: typeof A, holds: string[], factory: number, day: number, now: number, retaken: unknown = []) => call("PUT", `/api/islands/${who.code}`, { player: { id: who.id, name: who.name }, holds, retaken, factory, day }, now);
 /** The owner's log after `after`, read with `id` as the bearer (none for no header). */
 const readLog = (code: string, id: string | null, after: number, now: number) => call("GET", `/api/islands/${code}/log?after=${after}`, undefined, now, env, undefined, id === null ? {} : { authorization: `Bearer ${id}` });
 const send = (from: typeof A, to: string, target: string, units: number, now: number) => call("POST", `/api/islands/${to}/expeditions`, { from, target, units }, now);
@@ -210,7 +213,15 @@ const T2 = T1 + 400_000;
 // --- retaken, and the log from the cursor
 {
   const T4 = T1 + 3 * DAY;
-  const r = await report(A, holdsWith({ supply: "freed", quarry: "freed" }), 0, 7, T4);
+  // A copy of the island from before the captures: the quarry and the station reported the owner's, neither named as taken back.
+  const stale = await report(A, holdsWith({ supply: "freed", quarry: "freed", station: "freed" }), 0, 6, T4 - 1000);
+  const staleQuarry = holdOf(A.code, "quarry");
+  const staleStation = holdOf(A.code, "station");
+  const badRetaken = await Promise.all([["nowhere"], ["quarry", "quarry"], "quarry", [...NODE_IDS, "quarry"]].map((x) => report(A, holdsWith({ supply: "freed" }), 0, 6, T4 - 500, x)));
+  console.log(`retaken: a stale report (nothing named) left quarry ${staleQuarry}, station ${staleStation}; malformed retaken -> ${badRetaken.map((b) => b.status).join()}`);
+  check(staleQuarry === `rival:${B.code}` && staleStation === `rival:${C.code}`, "retaken: a report of another player's node as the owner's, not named as taken back, took it back");
+  check(badRetaken.every((b) => b.status === 400), "retaken: a malformed list of nodes taken back was accepted");
+  const r = await report(A, holdsWith({ supply: "freed", quarry: "freed", station: "freed" }), 0, 7, T4, ["quarry"]);
   const log = await readLog(A.code, A.id, cursor, T4);
   const entries = log.body.entries as { seq: number; t: string; node: string; by: { code: string } }[];
   const other = await readLog(A.code, B.id, 0, T4);
@@ -239,7 +250,7 @@ const T2 = T1 + 400_000;
   const op = (s: IslandState | null, o: IslandOp, t: number) => islandOp(s, o, t).state!;
   const make = () => {
     let s = op(null, { t: "claim", player: A, code: A.code }, T0);
-    s = op(s, { t: "report", player: A, holds: holdsWith({ quarry: "freed", supply: "freed" }) as IslandState["holds"], factory: 2, day: 1 }, T0);
+    s = op(s, { t: "report", player: A, retaken: [], holds: holdsWith({ quarry: "freed", supply: "freed" }) as IslandState["holds"], factory: 2, day: 1 }, T0);
     s = op(s, { t: "expedition", from: B, target: "quarry", kinds: [...FACTORY.levels[FACTORY_TOP].kinds] }, T1);
     return op(s, { t: "expedition", from: C, target: "relay", kinds: [...FACTORY.levels[4].kinds] }, T1);
   };
@@ -259,7 +270,7 @@ const T2 = T1 + 400_000;
   const op = (st: IslandState | null, o: IslandOp, t: number) => islandOp(st, o, t);
   const island = (holds: Record<string, string>, factory: number) => {
     const st = op(null, { t: "claim", player: A, code: A.code }, T0).state!;
-    op(st, { t: "report", player: A, holds: holdsWith(holds) as IslandState["holds"], factory, day: 1 }, T0);
+    op(st, { t: "report", player: A, retaken: [], holds: holdsWith(holds) as IslandState["holds"], factory, day: 1 }, T0);
     return st;
   };
   const run = (st: IslandState, to: number) => {
@@ -370,7 +381,7 @@ const T2 = T1 + 400_000;
   const q = island({ supply: "freed" }, 0);
   const read = op(q, { t: "view" }, T1 + DAY);
   const log = op(q, { t: "log", player: A.id, after: 0 }, T1 + 2 * DAY);
-  const rep = op(q, { t: "report", player: A, holds: holdsWith({ supply: "freed" }) as IslandState["holds"], factory: 0, day: 2 }, T1 + 2 * DAY);
+  const rep = op(q, { t: "report", player: A, retaken: [], holds: holdsWith({ supply: "freed" }) as IslandState["holds"], factory: 0, day: 2 }, T1 + 2 * DAY);
   const moved = op(h, { t: "view" }, T1 + 3_600_000 + 5000);
   op(q, { t: "expedition", from: B, target: "quarry", kinds: ["grunt"] }, T1 + 2 * DAY);
   const ticking = op(q, { t: "view" }, T1 + 2 * DAY + (EXPEDITION.arrive + 5) * 1000);

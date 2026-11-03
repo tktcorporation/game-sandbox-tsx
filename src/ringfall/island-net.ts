@@ -8,6 +8,7 @@
  */
 import { loadIdentity, rememberCode, type Identity } from "./meta/identity";
 import { isApiError, type ApiError, type NetError } from "./meta/island-errors";
+import { isIslandCode } from "./meta/island-code";
 import { applySync, parseLog, parseView, reportedHolds, reportHolds, sendUnits, type IslandLogEntry, type IslandView, type Synced } from "./meta/expeditions";
 import type { Profile } from "./meta/profile";
 
@@ -43,7 +44,8 @@ export async function claimIsland(): Promise<Answer<Identity>> {
   const r = await call("/api/islands", { method: "POST", body: JSON.stringify({ player: player(loadIdentity()) }) });
   if (!r.ok) return r;
   const code = (r.body as { code?: unknown }).code;
-  return typeof code === "string" ? { ok: true, body: rememberCode(code) } : failed("bad-response");
+  // A code is kept only as the server should hand it out: it goes into URLs and onto the screen.
+  return isIslandCode(code) ? { ok: true, body: rememberCode(code) } : failed("bad-response");
 }
 
 /** Any island as anyone sees it (`GET /api/islands/:code`). */
@@ -73,31 +75,32 @@ export interface OwnSync {
 
 /**
  * Syncs this player's own island: claims one when the identity has no code yet, sends the owner's
- * report of `p` when `report` (after a settled raid; a first claim always reports, so the server's
- * island starts as the profile's), then reads the log after `p.logSeq` and the island's view. The
- * report resets the server's garrisons, so it is sent only after a raid.
+ * report of `p` when `report` is given (after a settled raid, with the nodes it took back from other
+ * players, `retakenNodes()`; a first claim always reports, so the server's island starts as the
+ * profile's), then reads the log after `p.logSeq` and the island's view. The report resets the
+ * server's garrisons, so it is sent only after a raid.
  */
-export async function syncOwn(p: Profile, report: boolean): Promise<Answer<OwnSync>> {
+export async function syncOwn(p: Profile, report: { retaken: readonly string[] } | null): Promise<Answer<OwnSync>> {
   let who = loadIdentity();
   if (!who.code) {
     const c = await claimIsland();
     if (!c.ok) return c;
     who = c.body;
-    report = true;
+    report ??= { retaken: [] };
   }
-  const code = who.code!;
+  const code = encodeURIComponent(who.code!);
   const synced: Synced = {};
   if (report) {
-    const r = await call(`/api/islands/${code}`, { method: "PUT", body: JSON.stringify({ player: player(who), holds: reportHolds(p), factory: p.factory, day: p.day }) });
+    const r = await call(`/api/islands/${code}`, { method: "PUT", body: JSON.stringify({ player: player(who), holds: reportHolds(p), retaken: report.retaken, factory: p.factory, day: p.day }) });
     if (!r.ok) return r;
     synced.holds = reportedHolds(r.body) ?? undefined;
   }
   const log = await call(`/api/islands/${code}/log?after=${p.logSeq}`, { headers: { authorization: `Bearer ${who.id}` } });
   if (log.ok) synced.log = parseLog(log.body) ?? undefined;
-  const view = await readView(code);
+  const view = await readView(who.code!);
   if (view.ok) synced.holds = view.body.nodes;
   if (!log.ok && !view.ok && !report) return view;
-  return { ok: true, body: { code, view: view.ok ? view.body : null, synced } };
+  return { ok: true, body: { code: who.code!, view: view.ok ? view.body : null, synced } };
 }
 
 /** The sync's result taken into profile `p`: the profile (itself when nothing changed) and the log's new entries. */

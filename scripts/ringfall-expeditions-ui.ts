@@ -5,6 +5,9 @@
  * - **merge**: the server's holds come into the profile: another player's node it reports is theirs,
  *   a node the profile gave another player that the server does not is as the server has it, and the
  *   player's own nodes stay as the profile has them; nothing changed is the same object.
+ * - **retaken**: the report names as taken back the nodes whose core the raid captured and the nodes
+ *   another player held as it began that are the player's after it; a node the profile still calls
+ *   its own after another player took it on the server is not named, so the report leaves it theirs.
  * - **log**: the log's entries after the last one taken in are news once, and the number moves on.
  * - **answers**: an island's view, its log and a report's holds as worker/island.ts answers them are
  *   read back; an expedition out takes the state its island shows, and one missing there is gone.
@@ -25,7 +28,7 @@ import { step } from "../src/ringfall/sim/step";
 import { holds } from "../src/ringfall/meta/island";
 import { newProfile, parseProfile, settle, type Profile } from "../src/ringfall/meta/profile";
 import { API_ERRORS, ERROR_TEXT, errorText } from "../src/ringfall/meta/island-errors";
-import { applySync, awayIncome, canSend, factorySquads, homeSquads, logLine, mergeHolds, parseLog, parseOutgoing, parseView, refreshOutgoing, reportedHolds, reportHolds, squadsAway, type IslandLogEntry, type Outgoing } from "../src/ringfall/meta/expeditions";
+import { applySync, retakenNodes, awayIncome, canSend, factorySquads, homeSquads, logLine, mergeHolds, parseLog, parseOutgoing, parseView, refreshOutgoing, reportedHolds, reportHolds, squadsAway, type IslandLogEntry, type Outgoing } from "../src/ringfall/meta/expeditions";
 import { EXPEDITION, islandOp, publicView, type IslandState } from "../worker/island";
 import { handleApi } from "../worker/api";
 
@@ -62,6 +65,25 @@ function island(freed: string[], rival: string[] = []): Profile {
   check(p.poiState.relay.state === rivalHold(B), "merge: the profile's island was changed in place");
 }
 
+// --- retaken: what the report names, and what the server does with it
+{
+  const before = island(["supply", "quarry"], ["relay", "wreck"]);
+  const after = island(["supply", "quarry", "relay", "station"], ["wreck"]);
+  const named = retakenNodes(before, after, ["station"]);
+  console.log(`retaken: named ${named.join()}`);
+  check(named.join() === "relay,station", `retaken: the report names ${named.join()} as taken back, not the relay (another player's at the start) and the station (its core captured)`);
+  // The server: island A's quarry another player's; a report from a profile that still calls it the owner's.
+  const t0 = 1_700_000_000_000;
+  const own = islandOp(null, { t: "claim", player: { id: ID_A, name: "わたし" }, code: A }, t0).state as IslandState;
+  own.holds[NODES.findIndex((n) => n.id === "quarry")] = rivalHold(B);
+  const stale = island(["supply", "quarry"]);
+  const say = (retaken: string[]) => islandOp(own, { t: "report", player: { id: ID_A, name: "わたし" }, holds: reportHolds(stale), retaken, factory: 0, day: 2 }, t0 + 1000);
+  const kept = reportedHolds(say(retakenNodes(stale, stale, [])).body)?.find((n) => n.id === "quarry")?.hold;
+  const back = reportedHolds(say(["quarry"]).body)?.find((n) => n.id === "quarry")?.hold;
+  console.log(`retaken: a stale profile's report leaves the quarry ${kept}; one naming it ${back}`);
+  check(kept === rivalHold(B) && back === "freed", "retaken: the server's answer to a report does not follow what it names as taken back");
+}
+
 // --- log
 {
   const by = { code: B, name: "となり" };
@@ -87,7 +109,7 @@ function island(freed: string[], rival: string[] = []): Profile {
   const a = claim(ID_A, A);
   const b = claim(ID_B, B);
   const p = island(["supply", "quarry"]);
-  const rep = islandOp(a, { t: "report", player: { id: ID_A, name: "わたし" }, holds: reportHolds(p), factory: 2, day: 4 }, t0 + 1000);
+  const rep = islandOp(a, { t: "report", player: { id: ID_A, name: "わたし" }, holds: reportHolds(p), retaken: [], factory: 2, day: 4 }, t0 + 1000);
   const back = reportedHolds(rep.body);
   check(!!back && back.find((n) => n.id === "supply")?.hold === "freed" && back.length === NODES.length, `answers: a report's holds read back as ${JSON.stringify(back)}`);
   const now = t0 + EXPEDITION.protectDays * DAY + 1000;

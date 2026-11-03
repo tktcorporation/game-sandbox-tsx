@@ -1,6 +1,6 @@
 import { FACTORY_TOP } from "../src/ringfall/sim/config";
 import { newIslandCode, parseIslandCode } from "../src/ringfall/meta/island-code";
-import { parseHolds, squadKinds, type IslandOp } from "./island";
+import { parseHolds, parseRetaken, squadKinds, type IslandOp } from "./island";
 import type { ApiError } from "../src/ringfall/meta/island-errors";
 
 /*
@@ -227,8 +227,9 @@ async function handleIslands(request: Request, env: ApiEnv, now: number, url: UR
   if (sub === "") {
     const player = parsePlayer(raw.player);
     const holds = parseHolds(raw.holds);
-    if (!player || !holds || !int(raw.factory, 0, FACTORY_TOP) || !int(raw.day, 0, DAY_MAX)) return fail(400, "bad-request");
-    return ask(ns, code, { t: "report", player, holds, factory: raw.factory, day: raw.day }, now);
+    const retaken = parseRetaken(raw.retaken);
+    if (!player || !holds || !retaken || !int(raw.factory, 0, FACTORY_TOP) || !int(raw.day, 0, DAY_MAX)) return fail(400, "bad-request");
+    return ask(ns, code, { t: "report", player, holds, retaken, factory: raw.factory, day: raw.day }, now);
   }
   // An expedition: the sender proves their own island with their id, whose factory sets the squad they may send.
   const from = parsePlayer(raw.from);

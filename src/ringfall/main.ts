@@ -7,7 +7,7 @@ import { callLeft, starterKit, idleInput, newRun, type GameEvent, type Input, ty
 import { CAMP, DEPOTS, entryOf, FRAMES, HOME_REGION, NODES, POIS, poiIndex, QUARRY_EXITS, ZIPS, type CampSpot, type PoiId, type RecordId, type RegionId, type StationId } from "./sim/map";
 import { grabZip } from "./sim/zips";
 import { POI_AT } from "./sim/areas";
-import { frontNodes, garrisonOf, takeNode, useCore } from "./sim/front";
+import { capturedIds, frontNodes, garrisonOf, takeNode, useCore } from "./sim/front";
 import { atRisk, battleMarks, departNow, landNow, marchSquad, nodePoint, placeBattleSquad, warmLinks } from "./sim/battle";
 import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
 import { analyse, raidThreat, settle, takenStory, type Settlement } from "./meta/profile";
@@ -22,7 +22,7 @@ import { squadKey } from "./sim/state";
 import { loadProfile, saveProfile } from "./meta/storage";
 import { sendIsland } from "./net";
 import { syncOwn, takeSync } from "./island-net";
-import { logLine, squadsAway } from "./meta/expeditions";
+import { logLine, retakenNodes, squadsAway } from "./meta/expeditions";
 import { Hub, type Launch } from "./view/hub";
 import { CampView } from "./view/camp";
 import { DepartPicker } from "./view/depart";
@@ -165,7 +165,7 @@ function peekBag(on: boolean) {
 addEventListener("keydown", (e) => {
   if (e.repeat) return;
   // Typing in a field (the factory's island code) is text, not the game's keys; Esc still closes the panel.
-  if ((e.target as HTMLElement | null)?.tagName === "INPUT" && (e.target as HTMLInputElement).type === "text" && e.code !== "Escape") return;
+  if (hub.station && (e.target as HTMLElement | null)?.tagName === "INPUT" && (e.target as HTMLInputElement).type === "text" && e.code !== "Escape") return;
   // The departure's check: Enter (or the use key) goes, Esc turns back.
   if (departing) {
     if (e.code === "Enter" || e.code === "NumpadEnter" || e.code === "KeyE") answerDepart(true);
@@ -261,11 +261,12 @@ function onEvent(e: GameEvent, s: State) {
     // Settle and save at once; only the results screen waits for the moment to play out.
     knownBefore = [...hub.profile.known];
     analysed = null;
+    const before = hub.profile;
     settlement = settle(hub.profile, s);
     hub.reload(settlement.profile);
     saveProfile(hub.profile);
     sendIsland(settlement, s);
-    syncIsland(settlement.profile);
+    syncIsland(settlement.profile, retakenNodes(before, settlement.profile, capturedIds(s)));
     setTimeout(finish, s.outcome === "extracted" ? 1400 : 2400);
   }
 }
@@ -278,9 +279,9 @@ let islandNews: string[] = [];
  * the log and the holds, taken into the profile as it stands when they come. Nothing waits on it;
  * news that comes in time is on the results, and all of it on the map table.
  */
-function syncIsland(p: Settlement["profile"]) {
+function syncIsland(p: Settlement["profile"], retaken: readonly string[]) {
   islandNews = [];
-  void syncOwn(p, true).then((r) => {
+  void syncOwn(p, { retaken }).then((r) => {
     if (!r.ok) return;
     const { profile, news } = takeSync(hub.profile, r.body);
     if (profile !== hub.profile) hub.update(profile);

@@ -62,7 +62,7 @@ export class ExpeditionPanel {
     const ask = ++this.ask;
     if (this.conn.t !== "ok") this.conn = { t: "wait" };
     this.paint();
-    const r = await syncOwn(this.get(), false);
+    const r = await syncOwn(this.get(), null);
     if (ask !== this.ask) return;
     if (!r.ok) {
       this.conn = r.error === "no-island-server" || r.error === "no-database" ? { t: "none" } : { t: "error", error: r.error };
@@ -180,10 +180,10 @@ export class ExpeditionPanel {
           ? `<p class="lock-note">${lockIcon()}${errorText("no-island-server")}</p>`
           : c.t === "error"
             ? `<p class="lock-note">${lockIcon()}${esc(errorText(c.error))}<button type="button" data-act="exp-retry">もう一度</button></p>`
-            : `<div class="exp-own"><small>自分の島</small><b class="exp-code">${c.code}</b><button type="button" data-act="exp-copy">${this.copied ? "コピーした" : "コピー"}</button>${c.view?.expeditions.length ? `<small class="exp-in">${coreIcon(SIDE.rival)}来ている遠征 <b>${c.view.expeditions.length}</b></small>` : ""}</div>`;
+            : `<div class="exp-own"><small>自分の島</small><b class="exp-code">${esc(c.code)}</b><button type="button" data-act="exp-copy">${this.copied ? "コピーした" : "コピー"}</button>${c.view?.expeditions.length ? `<small class="exp-in">${coreIcon(SIDE.rival)}来ている遠征 <b>${c.view.expeditions.length}</b></small>` : ""}</div>`;
     const out = p.expeditions.length
       ? `<div class="exp-list">${p.expeditions
-          .map((e) => `<div class="req exp-out ${e.state}"><span><b class="exp-code">${e.code}</b>${esc(nodeName(e.node))}</span><b>${STATE_NAME[e.state]}</b><small>${robotIcon(SIDE.own)}${e.units}</small></div>`)
+          .map((e) => `<div class="req exp-out ${e.state}"><span><b class="exp-code">${esc(e.code)}</b>${esc(nodeName(e.node))}</span><b>${STATE_NAME[e.state]}</b><small>${robotIcon(SIDE.own)}${e.units}</small></div>`)
           .join("")}</div>`
       : "";
     // What sending costs: each expedition out keeps one squad fewer out on this island.
@@ -209,7 +209,7 @@ export class ExpeditionPanel {
           ? `<button type="button" class="exp-go" data-act="exp-send"${this.pick && !this.busy ? "" : " disabled"}>送る<span class="bots">${Array.from({ length: sendUnits(p) }, () => robotIcon(SIDE.own)).join("")}</span></button>`
           : `<p class="lock-note">${lockIcon()}部隊が出払っている</p>`
         : "";
-      pick = `<div class="exp-target"><small><b>${esc(t.owner)}</b>の島 <b class="exp-code">${t.code}</b></small>${nodes}${go}</div>`;
+      pick = `<div class="exp-target"><small><b>${esc(t.owner)}</b>の島 <b class="exp-code">${esc(t.code)}</b></small>${nodes}${go}</div>`;
     }
     const note = this.note ? `<p class="exp-note${this.note.good ? " good" : ""}">${esc(this.note.text)}</p>` : "";
     return form + pick + note;

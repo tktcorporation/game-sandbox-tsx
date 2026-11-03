@@ -80,6 +80,17 @@ export function parseLog(raw: unknown): { entries: IslandLogEntry[]; next: numbe
 /** The holds of an owner's report (`PUT /api/islands/:code`): each node's in the server's order (`ISLAND_TABLE`). */
 export const reportHolds = (p: { poiState: Island }): PoiHold[] => ISLAND_TABLE.nodes.map((n) => p.poiState[n.id as NodeId]?.state ?? "held");
 
+/**
+ * The nodes an owner's report names as taken back in the raid (`retaken` of `PUT /api/islands/:code`):
+ * those whose core the raid captured, and those another player held as the raid began that are the
+ * player's after it (taken back in the battle). The server gives a node another player holds back to
+ * the owner only when the report names it here, so a profile that has not yet learned of a capture
+ * cannot undo it by reporting the node as its own.
+ */
+export function retakenNodes(before: { poiState: Island }, after: { poiState: Island }, captured: readonly string[]): NodeId[] {
+  return NODES.filter((n) => after.poiState[n.id]?.state === "freed" && (captured.includes(n.id) || rivalOf(before.poiState[n.id]?.state ?? "held") !== null)).map((n) => n.id);
+}
+
 /** The holds the server answered a report with (in the server's order), as the view's nodes; null when unreadable. */
 export function reportedHolds(raw: unknown): { id: string; hold: PoiHold }[] | null {
   if (!isObj(raw) || !Array.isArray(raw.holds) || raw.holds.length !== ISLAND_TABLE.nodes.length) return null;

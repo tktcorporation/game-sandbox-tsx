@@ -362,6 +362,8 @@ export class Hub {
     this.station = null;
     this.module = null;
     this.armed = "";
+    // A field typed in (the factory's island code) gives up the keys with the panel.
+    if (document.activeElement instanceof HTMLElement && $("hub").contains(document.activeElement)) document.activeElement.blur();
     $("hub").hidden = true;
     if (tell) this.closed();
   }

@@ -113,7 +113,7 @@ export interface IslandState {
 /** What one request asks of an island. */
 export type IslandOp =
   | { t: "claim"; player: { id: string; name: string }; code: string }
-  | { t: "report"; player: { id: string; name: string }; holds: PoiHold[]; factory: number; day: number }
+  | { t: "report"; player: { id: string; name: string }; holds: PoiHold[]; retaken: string[]; factory: number; day: number }
   | { t: "view" }
   | { t: "log"; player: string; after: number }
   | { t: "whois"; player: string }
@@ -404,8 +404,10 @@ function claim(op: Extract<IslandOp, { t: "claim" }>, now: number): IslandState 
 
 /**
  * The owner's report after a raid. Nodes the server gave to other players stay theirs, except one
- * the owner reports as their own (taken back by its core in the raid): that one is the owner's, its
- * holders go, and the log says so. The owner cannot give a node to another player. The fights start
+ * the report names among `retaken` (taken back in the raid) and reports as the owner's: that one is
+ * the owner's, its holders go, and the log says so. A node the report calls the owner's without
+ * naming it among `retaken` stays the other player's: the owner's copy of the island may predate
+ * the capture. The owner cannot give a node to another player. The fights start
  * again from the island as reported: a raid stands every garrison whole.
  */
 function report(s: IslandState, op: Extract<IslandOp, { t: "report" }>, now: number) {
@@ -415,7 +417,7 @@ function report(s: IslandState, op: Extract<IslandOp, { t: "report" }>, now: num
   op.holds.forEach((h, i) => {
     const cur = s.holds[i];
     if (rivalOf(cur) !== null) {
-      if (h !== "freed") return;
+      if (h !== "freed" || !op.retaken.includes(NODE_IDS[i])) return;
       s.holds[i] = "freed";
       const gone = s.expeditions.filter((e) => e.target === i);
       s.expeditions = s.expeditions.filter((e) => e.target !== i);
@@ -459,6 +461,14 @@ export function islandOp(state: IslandState | null, op: IslandOp, now: number): 
   const e: Expedition = { id: s.nextId++, by: { ...op.from }, target: i, units: op.kinds.map(unit), sentAt: now, arriveAt: now + EXPEDITION.arrive * 1000, arrived: false, holding: false };
   s.expeditions.push(e);
   return done(201, { ok: true, id: e.id, arriveAt: e.arriveAt }, true);
+}
+
+/** The nodes a report names as taken back in the raid, or null: node ids, each once, at most one per node. Left out, none. */
+export function parseRetaken(raw: unknown): string[] | null {
+  if (raw === undefined) return [];
+  if (!Array.isArray(raw) || raw.length > NODE_IDS.length) return null;
+  if (!raw.every((id, k) => typeof id === "string" && NODE_IDS.includes(id) && raw.indexOf(id) === k)) return null;
+  return raw as string[];
 }
 
 /** The holds of a report, or null: one readable hold for each node. */
