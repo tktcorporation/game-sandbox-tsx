@@ -257,10 +257,19 @@ function island(freed: string[], rival: string[] = []): Profile {
   const real = globalThis.fetch;
   globalThis.fetch = (async () => new Response(JSON.stringify({ ok: false, error: "no-island-server" }), { status: 202 })) as typeof fetch;
   const base = { ...island(["supply"]), retaken: ["quarry"] } as Profile;
-  await syncOwn(base, false); // a later sync started: the one below is older
   globalThis.fetch = real;
   const server = NODES.map((n) => ({ id: n.id, hold: n.id === "supply" ? rivalHold(A) : ("held" as const) }));
-  const old = takeSync(base, { code: A, view: null, ticket: -1, synced: { holds: server, reported: ["quarry"], log: { entries: [{ seq: 99, at: 0, t: "taken", node: "supply", by: { code: A, name: "x" } }], next: 99 } as never } });
+  const log = { entries: [{ seq: 99, at: 0, t: "taken", node: "supply", by: { code: A, name: "x" } }], next: 99 } as never;
+  // Tickets as syncOwn hands them out: an older one (100) and a later one (101).
+  const older = { code: A, view: null, ticket: 100, synced: { holds: server, reported: ["quarry"] as never, log } };
+  const later = { code: A, view: null, ticket: 101, synced: {} };
+  // A later sync that never applies (panel closed, request failed) leaves the older one to apply.
+  const alone = takeSync(base, older);
+  console.log(`older sync with the later one dropped: supply ${alone.profile.poiState.supply.state}, news ${alone.news.length}`);
+  check(alone.profile.poiState.supply.state === rivalHold(A) && alone.news.length === 1, "stale sync: an older answer was dropped although no later one applied");
+  // Once the later one applied, the older answer takes only its acknowledgement.
+  takeSync(base, later);
+  const old = takeSync(base, older);
   console.log(`stale sync: supply ${old.profile.poiState.supply.state}, pending ${old.profile.retaken.join(",") || "none"}, news ${old.news.length}`);
   check(old.profile.poiState.supply.state === "freed" && old.profile.retaken.length === 0 && old.news.length === 0, "stale sync: an answer a later sync superseded took its older holds or log");
 }

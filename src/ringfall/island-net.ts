@@ -107,6 +107,8 @@ export interface OwnSync {
 
 /** The last sync of the own island started, after a raid or at the factory's panel. */
 let lastSync = 0;
+/** The newest sync whose holds and log were taken into the profile. */
+let applied = 0;
 
 /**
  * Syncs this player's own island: claims one when the identity has no code yet, sends the owner's
@@ -143,8 +145,12 @@ export async function syncOwn(p: Profile, report: boolean): Promise<Answer<OwnSy
 
 /**
  * The sync's result taken into profile `p`: the profile (itself when nothing changed) and the log's new
- * entries. A sync that a later one started after takes only its report's acknowledgement: its holds
- * are older than the later one's, which reads the log and the holds again.
+ * entries. A sync older than one already taken takes only its report's acknowledgement, so a late
+ * answer never puts older holds back over newer ones; a later sync that was dropped or failed leaves
+ * an older one free to apply.
  */
-export const takeSync = (p: Profile, s: OwnSync): { profile: Profile; news: IslandLogEntry[] } =>
-  applySync(p, s.ticket === lastSync ? s.synced : { reported: s.synced.reported });
+export function takeSync(p: Profile, s: OwnSync): { profile: Profile; news: IslandLogEntry[] } {
+  if (s.ticket < applied) return applySync(p, { reported: s.synced.reported });
+  applied = s.ticket;
+  return applySync(p, s.synced);
+}
