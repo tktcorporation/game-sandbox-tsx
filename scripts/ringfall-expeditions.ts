@@ -24,7 +24,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { CLAIM_TRIES, handleApi, type ApiEnv, type IslandNamespace } from "../worker/api";
 import { advance, EXPEDITION, islandOp, nextAlarm, NODE_IDS, type IslandOp, type IslandState } from "../worker/island";
-import { FACTORY, FACTORY_TOP } from "../src/ringfall/sim/config";
+import { CONQUEST, FACTORY, FACTORY_TOP } from "../src/ringfall/sim/config";
 import { isIslandCode, newIslandCode } from "../src/ringfall/meta/island-code";
 import { loadIdentity, parseIdentity, rememberCode } from "../src/ringfall/meta/identity";
 import { islandTableSource } from "./ringfall-island-table";
@@ -332,6 +332,29 @@ const T2 = T1 + 400_000;
     const r2 = op(lim, { t: "expedition", from: C, target: "relay", kinds: ["grunt"] }, T1 + 3_600_000);
     console.log(`day's limit: took the quarry ${lim.holds[quarry] === `rival:${B.code}`}, "taken" left in the log ${takes}, another ${r1.status}, a third ${r2.status} ${(r2.body as { error?: string }).error}`);
     check(lim.holds[quarry] === `rival:${B.code}` && takes === 0 && r1.status === 201 && r2.status === 409, "day's limit: the day's take was forgotten with the log");
+  }
+
+  // Two captures on one tick, with one node left of the day's limit: only one is taken.
+  {
+    const two = island({ quarry: "held", station: "held" }, 0);
+    op(two, { t: "expedition", from: B, target: "quarry", kinds: ["grunt"] }, T1);
+    op(two, { t: "expedition", from: C, target: "station", kinds: ["grunt"] }, T1);
+    run(two, two.expeditions[0].arriveAt + 1000);
+    // Both garrisons gone at once, so both meters fill on the same ticks.
+    const qi = NODE_IDS.indexOf("quarry");
+    const si = NODE_IDS.indexOf("station");
+    two.guards[qi] = [];
+    two.guards[si] = [];
+    // Both accepted while the day had room; another node lost since leaves one of the day's limit.
+    two.taken = { day: Math.floor(T1 / DAY), n: EXPEDITION.perDay - 1 };
+    // Both meters one tick short of a capture, so both seize on the next tick.
+    const almost = CONQUEST.capture - CONQUEST.tick / 2;
+    two.meter[qi] = { side: 3, t: almost, owner: B.code };
+    two.meter[si] = { side: 3, t: almost, owner: C.code };
+    run(two, two.clock + 1000);
+    const rivals = [qi, si].filter((i) => two.holds[i].startsWith("rival:")).length;
+    console.log(`same tick: ${rivals} of 2 taken with ${EXPEDITION.perDay - 1} left of the day's limit; counted ${two.taken.n}`);
+    check(rivals === 1 && two.taken.n === EXPEDITION.perDay, "same tick: captures on one tick went past the day's limit");
   }
 
   // The alarm: armed while an expedition comes or fights, none once every expedition just holds its node.

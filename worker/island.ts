@@ -270,11 +270,19 @@ function tick(s: IslandState, t: number) {
   );
   const left = standing(r);
   s.guards = s.guards.map((g, i) => (g ? left[i] : null));
-  s.meter = r.meter;
   const by = new Map(r.squads.map((q) => [q.id, q]));
+  const holds = [...r.holds];
+  const meter = [...r.meter];
   for (const ef of r.effects) {
     if (ef.t !== "seize") continue;
     if (ef.side === 3) {
+      // Captures landing on one tick are counted one by one: past the day's limit the node stays as it
+      // was and the meter starts over, so the island never loses more than `perDay` nodes in a day.
+      if (takenOn(s, t) >= EXPEDITION.perDay) {
+        holds[ef.node] = s.holds[ef.node];
+        meter[ef.node] = null;
+        continue;
+      }
       const e = here.find((x) => x.target === ef.node && x.by.code === ef.owner);
       if (e) {
         e.holding = true;
@@ -285,7 +293,8 @@ function tick(s: IslandState, t: number) {
       note(s, t, "retaken", ef.node, { code: s.owner.code, name: s.owner.name });
     }
   }
-  s.holds = r.holds;
+  s.holds = holds;
+  s.meter = meter;
   s.expeditions = s.expeditions.filter((e) => {
     if (!e.arrived || back.has(e)) return true;
     const q = by.get(e.id);
