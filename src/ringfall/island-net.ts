@@ -39,8 +39,18 @@ async function call(path: string, init: RequestInit = {}): Promise<Answer<unknow
 
 const player = (who: Identity) => ({ id: who.id, name: who.name });
 
+/** The claim on its way, shared by every sync that starts before it answers, so one player claims one island. */
+let claiming: Promise<Answer<Identity>> | null = null;
+
 /** Claims an island for this player (`POST /api/islands`) and keeps its code with the identity. */
-export async function claimIsland(): Promise<Answer<Identity>> {
+export function claimIsland(): Promise<Answer<Identity>> {
+  claiming ??= claimOnce().finally(() => {
+    claiming = null;
+  });
+  return claiming;
+}
+
+async function claimOnce(): Promise<Answer<Identity>> {
   const r = await call("/api/islands", { method: "POST", body: JSON.stringify({ player: player(loadIdentity()) }) });
   if (!r.ok) return r;
   const code = (r.body as { code?: unknown }).code;

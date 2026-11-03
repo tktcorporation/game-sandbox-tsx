@@ -265,7 +265,7 @@ function onEvent(e: GameEvent, s: State) {
     hub.reload(settlement.profile);
     saveProfile(hub.profile);
     sendIsland(settlement, s);
-    syncIsland(settlement.profile);
+    syncIsland(settlement.profile, s);
     setTimeout(finish, s.outcome === "extracted" ? 1400 : 2400);
   }
 }
@@ -280,11 +280,13 @@ let islandNews: string[] = [];
  * while the next raid is under way only clears the nodes taken back it reported: the raid plays the
  * island it started with, and the next sync reads the holds and the log again.
  */
-function syncIsland(p: Settlement["profile"]) {
+function syncIsland(p: Settlement["profile"], settled: State) {
   islandNews = [];
   void syncOwn(p, true).then((r) => {
     if (!r.ok) return;
-    if (running) {
+    // The next raid is under way only once a new run replaced the settled one: the results of the
+    // settled raid (still `running` until finish()) take the sync whole.
+    if (running && state !== settled) {
       const { profile } = takeSync(hub.profile, { ...r.body, synced: { reported: r.body.synced.reported } });
       if (profile !== hub.profile) hub.update(profile);
       return;

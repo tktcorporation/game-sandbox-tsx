@@ -258,6 +258,23 @@ function island(freed: string[], rival: string[] = []): Profile {
   check(errorText("something-else") === ERROR_TEXT["bad-response"], "errors: an unknown code is not read as an unreadable answer");
 }
 
+// Two syncs that start before the first claim answers share it: one player claims one island.
+{
+  const { claimIsland } = await import("../src/ringfall/island-net");
+  let claims = 0;
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input) === "/api/islands" && init?.method === "POST") claims++;
+    await new Promise((r) => setTimeout(r, 20));
+    return new Response(JSON.stringify({ ok: true, code: "K7M2QX" }), { status: 201, headers: { "content-type": "application/json" } });
+  }) as typeof fetch;
+  const [a, b] = await Promise.all([claimIsland(), claimIsland()]);
+  globalThis.fetch = realFetch;
+  const codes = [a, b].map((r) => (r.ok ? r.body.code : null));
+  console.log(`claim: two at once -> ${claims} request(s), codes ${codes.join(",")}`);
+  if (claims !== 1 || codes[0] !== "K7M2QX" || codes[1] !== "K7M2QX") errors.push("claim: two syncs at once claimed two islands");
+}
+
 if (errors.length) {
   for (const e of errors) console.error(e);
   process.exit(1);
