@@ -49,7 +49,7 @@
 | 部品 | 置くもの |
 | --- | --- |
 | Worker（`worker/index.ts`） | API の入口。プレイヤーの識別、相手探し、遠征の受付 |
-| Durable Object `IslandDO` | 1 つの島の拠点の持ち主、来ている遠征隊、貸し出し |
+| Durable Object `IslandDO`（島の Worker `ringfall-islands`、`islands/`） | 1 つの島の拠点の持ち主、来ている遠征隊、貸し出し |
 | D1 | プレイヤー（ID・表示名）、島の要約（持つ拠点・工場の段・強さ）、遠征と戦いの記録 |
 
 プレイヤーは、端末で作る匿名の ID と表示名で識別する。アカウントへのひも付けは後の段階で足す。
@@ -95,6 +95,15 @@ API（`worker/api.ts`）は D1 を `DB` という名前の束縛で読む。束�
 | `maxTicks` | 3600 | 1 回に解く刻みの上限。遅れている島はすぐに続きを解く |
 
 遠征を受けない拠点は、発着場（タイタン）、キャンプに隣り合う拠点、他のプレイヤーが持つ拠点、すでに遠征が向かっている拠点。自分の島へは送れない。
+
+### 島の Worker のつなぎ方
+
+`IslandDO` は、ゲームの Worker とは別の Worker `ringfall-islands`（`islands/wrangler.jsonc`、入口は `islands/index.ts`）に置く。Durable Object を実装する Worker には Cloudflare のプレビュー URL が作られず、適用していないマイグレーションがあるとバージョンの upload も通らないため、ゲームの Worker には実装を置かない。ゲームの Worker は `script_name` で島の Worker の `IslandDO` に束縛する。束縛 `ISLAND` は `DB` と同じく任意で、無い間 `/api/islands` は 202（`no-island-server`）を返す。つなぐ手順は次の 2 つ。
+
+1. 島の Worker を一度デプロイする：`npx wrangler deploy -c islands/wrangler.jsonc`。Workers Builds で回すなら、ルートの設定を `islands/wrangler.jsonc`、デプロイのコマンドを `npx wrangler deploy -c islands/wrangler.jsonc` にした 2 つ目のプロジェクトを作る。
+2. ルートの `wrangler.jsonc` に `"durable_objects": { "bindings": [{ "name": "ISLAND", "class_name": "IslandDO", "script_name": "ringfall-islands" }] }` を足して push する。
+
+この順に進める。まだ無い Worker への束縛を push すると、ゲームの Worker のデプロイが失敗する。
 
 ## 不正への構え
 
