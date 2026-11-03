@@ -16,7 +16,7 @@ import { ISLAND_TABLE } from "../src/ringfall/meta/island-table";
 
 /** The rules of expeditions and the server's pace. */
 export const EXPEDITION = {
-  /** Days an island is shielded from expeditions after its owner's first report (新しいプレイヤーの保護). */
+  /** Days an island is shielded from expeditions after it was claimed (新しいプレイヤーの保護). */
   protectDays: 2,
   /** Expeditions on one island at once, those holding a node they took among them. */
   perIsland: 3,
@@ -89,7 +89,7 @@ export interface IslandState {
   factory: number;
   /** The owner's day, as last reported. */
   day: number;
-  /** The owner's first report: when the island's protection began. */
+  /** When the island was claimed: when its protection began. */
   since: number;
   /** The island's clock: the time of the last tick reckoned. */
   clock: number;
@@ -107,7 +107,8 @@ export interface IslandState {
 
 /** What one request asks of an island. */
 export type IslandOp =
-  | { t: "report"; player: { id: string; name: string }; code: string; holds: PoiHold[]; factory: number; day: number }
+  | { t: "claim"; player: { id: string; name: string }; code: string }
+  | { t: "report"; player: { id: string; name: string }; holds: PoiHold[]; factory: number; day: number }
   | { t: "view" }
   | { t: "log"; player: string; after: number }
   | { t: "whois"; player: string }
@@ -312,8 +313,8 @@ export function advance(s: IslandState, now: number, maxTicks = EXPEDITION.maxTi
 /** Whether the island needs its alarm: an expedition is on it. */
 export const busy = (s: IslandState | null) => !!s && s.expeditions.length > 0;
 
-/** A new island claimed by its owner's first report at `now`. */
-function claim(op: Extract<IslandOp, { t: "report" }>, now: number): IslandState {
+/** A new island claimed at `now` for the player of `op`: every node the enemy's until the owner's first report. */
+function claim(op: Extract<IslandOp, { t: "claim" }>, now: number): IslandState {
   return {
     owner: { id: op.player.id, name: op.player.name, code: op.code },
     holds: NODE_IDS.map(() => "held"),
@@ -364,17 +365,14 @@ export function islandOp(state: IslandState | null, op: IslandOp, now: number): 
   const s = state;
   if (s) advance(s, now);
   const done = (status: number, body: unknown): OpResult => ({ status, body, state: s });
+  // The server draws the code (worker/api.ts): one already claimed answers 409 and it draws again.
+  if (op.t === "claim") return s ? done(409, fail("code-taken")) : { status: 201, body: { ok: true, code: op.code }, state: claim(op, now) };
+  if (!s) return done(404, fail("no-island"));
   if (op.t === "report") {
-    if (!s) {
-      const fresh = claim(op, now);
-      report(fresh, op, now);
-      return { status: 201, body: { ok: true, holds: fresh.holds }, state: fresh };
-    }
     if (s.owner.id !== op.player.id) return done(403, fail("not-owner"));
     report(s, op, now);
     return done(200, { ok: true, holds: s.holds });
   }
-  if (!s) return done(404, fail("no-island"));
   if (op.t === "view") return done(200, publicView(s, now));
   if (op.t === "whois") return s.owner.id === op.player ? done(200, { ok: true, factory: s.factory }) : done(403, fail("not-owner"));
   if (op.t === "log") {

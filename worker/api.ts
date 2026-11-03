@@ -1,5 +1,5 @@
 import { FACTORY_TOP } from "../src/ringfall/sim/config";
-import { codeOf, parseIslandCode } from "../src/ringfall/meta/island-code";
+import { newIslandCode, parseIslandCode } from "../src/ringfall/meta/island-code";
 import { parseHolds, squadKinds, type IslandOp } from "./island";
 
 /*
@@ -170,12 +170,37 @@ async function ask(ns: IslandNamespace, code: string, op: IslandOp, now: number)
   }
 }
 
+/** Codes drawn for one claim before it gives up: with 32^6 codes, a collision is rare and several in a row mean something is wrong. */
+export const CLAIM_TRIES = 8;
+
 /**
- * /api/islands/:code and below (docs/ringfall/multiplayer.md, 遠征): the owner's report (PUT), the
+ * A claim (`POST /api/islands`): the server draws a code and asks that island's object to take
+ * the player as its owner, drawing again while the code is someone's. A client never names the code
+ * of the island it claims, so nobody can claim another's.
+ */
+async function claimIsland(request: Request, ns: IslandNamespace, now: number, draw: () => string): Promise<Response> {
+  const body = await readJson(request);
+  if (body instanceof Response) return body;
+  const player = isObj(body.raw) ? parsePlayer(body.raw.player) : null;
+  if (!player) return fail(400, "bad-request");
+  for (let k = 0; k < CLAIM_TRIES; k++) {
+    const code = draw();
+    const r = await ask(ns, code, { t: "claim", player, code }, now);
+    if (r.status !== 409) return r;
+  }
+  return fail(503, "no-free-code");
+}
+
+/**
+ * /api/islands (a claim) and /api/islands/:code and below (docs/ringfall/multiplayer.md, 遠征): the owner's report (PUT), the
  * island as anyone sees it (GET), the owner's log (GET …/log) and an expedition to it (POST
  * …/expeditions).
  */
-async function handleIslands(request: Request, env: ApiEnv, now: number, url: URL): Promise<Response> {
+async function handleIslands(request: Request, env: ApiEnv, now: number, url: URL, draw: () => string): Promise<Response> {
+  if (url.pathname === "/api/islands") {
+    if (request.method !== "POST") return notAllowed("POST");
+    return env.ISLAND ? claimIsland(request, env.ISLAND, now, draw) : fail(202, "no-island-server");
+  }
   const parts = url.pathname.split("/").slice(3);
   const code = parseIslandCode(parts[0]);
   const sub = parts.slice(1).join("/");
@@ -200,9 +225,7 @@ async function handleIslands(request: Request, env: ApiEnv, now: number, url: UR
     const player = parsePlayer(raw.player);
     const holds = parseHolds(raw.holds);
     if (!player || !holds || !int(raw.factory, 0, FACTORY_TOP) || !int(raw.day, 0, DAY_MAX)) return fail(400, "bad-request");
-    // Only the holder of the id the code follows from reports for its island, the first report claiming it.
-    if ((await codeOf(player.id)) !== code) return fail(403, "not-owner");
-    return ask(ns, code, { t: "report", player, code, holds, factory: raw.factory, day: raw.day }, now);
+    return ask(ns, code, { t: "report", player, holds, factory: raw.factory, day: raw.day }, now);
   }
   // An expedition: the sender proves their own island with their id, whose factory sets the squad they may send.
   const from = parsePlayer(raw.from);
@@ -219,12 +242,12 @@ async function handleIslands(request: Request, env: ApiEnv, now: number, url: UR
 }
 
 /** The answer to a request under /api/, or null for any other path. */
-export async function handleApi(request: Request, env: ApiEnv, now = Date.now()): Promise<Response | null> {
+export async function handleApi(request: Request, env: ApiEnv, now = Date.now(), draw: () => string = () => newIslandCode()): Promise<Response | null> {
   const url = new URL(request.url);
   const { pathname } = url;
   if (pathname === "/api/health") return json(200, { ok: true });
   if (pathname !== "/api" && !pathname.startsWith("/api/")) return null;
-  if (pathname.startsWith("/api/islands/")) return handleIslands(request, env, now, url);
+  if (pathname === "/api/islands" || pathname.startsWith("/api/islands/")) return handleIslands(request, env, now, url, draw);
   if (pathname !== "/api/island") return fail(404, "not-found");
   if (request.method !== "POST") return notAllowed("POST");
   if (!env.DB) return fail(202, "no-database");

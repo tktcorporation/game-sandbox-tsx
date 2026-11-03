@@ -229,7 +229,7 @@ const count = (table: string) => Number((sqlite.prepare(`SELECT COUNT(*) AS n FR
   check(streamed.headers.get("content-length") === null, "refused: the streamed request carries a Content-Length");
   cases.push(["streamed oversized, no Content-Length", streamed, 413]);
   cases.push(["GET", post(null, "GET"), 405]);
-  cases.push(["unknown path", post(valid("ねこ", 5), "POST", "/api/islands"), 404]);
+  cases.push(["unknown path", post(valid("ねこ", 5), "POST", "/api/islandz"), 404]);
   cases.push(["unknown path GET", post(null, "GET", "/api/nothing"), 404]);
   for (const [what, req, want] of cases) {
     const a = await answer(env, req);
