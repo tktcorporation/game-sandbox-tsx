@@ -198,9 +198,10 @@ export class ExpeditionPanel {
     const t = this.target;
     let pick = "";
     if (t) {
+      // On another island its owner's nodes are another player's (green) and the rest the enemy's (red).
       const open = t.nodes.filter((n) => n.open && nodeIndex(n.id) >= 0);
       const nodes = open.length
-        ? `<div class="exp-nodes">${open.map((n) => `<button type="button" class="${this.pick === n.id ? "on" : ""}" data-act="exp-node" data-arg="${esc(n.id)}">${coreIcon(n.hold === "freed" ? SIDE.own : SIDE.enemy)}${esc(nodeName(n.id))}</button>`).join("")}</div>`
+        ? `<div class="exp-nodes">${open.map((n) => `<button type="button" class="${this.pick === n.id ? "on" : ""}" data-act="exp-node" data-arg="${esc(n.id)}">${coreIcon(n.hold === "freed" ? SIDE.rival : SIDE.enemy)}${esc(nodeName(n.id))}</button>`).join("")}</div>`
         : `<p class="lock-note">${lockIcon()}遠征を受ける拠点なし</p>`;
       const room = canSend(p);
       const go = open.length
