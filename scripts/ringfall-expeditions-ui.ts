@@ -42,7 +42,7 @@ import { API_ERRORS, ERROR_TEXT, errorText } from "../src/ringfall/meta/island-e
 import { numbered, answerSend, dropStale, factoryAhead, sendingEntry, sendKinds, SENDING_MS, applySync, retakenNodes, awayIncome, canSend, factorySquads, homeSquads, logLine, mergeHolds, parseLog, parseOutgoing, parseView, refreshOutgoing, reportedHolds, reportHolds, squadsAway, type IslandLogEntry, type Outgoing } from "../src/ringfall/meta/expeditions";
 import { EXPEDITION, islandOp, publicView, squadKinds, type IslandState } from "../worker/island";
 import { handleApi } from "../worker/api";
-import { readView, SEND_TIMEOUT_MS, sendExpedition } from "../src/ringfall/island-net";
+import { readView, SEND_TIMEOUT_MS, sendExpedition, syncOwn, takeSync } from "../src/ringfall/island-net";
 import { rememberCode } from "../src/ringfall/meta/identity";
 
 const errors: string[] = [];
@@ -250,6 +250,19 @@ function island(freed: string[], rival: string[] = []): Profile {
   const raced = refreshOutgoing(answered, A, { [B]: older }, asked);
   console.log(`sending: answered while the view was out -> ${raced.map((o) => `${o.node}:${o.state}`).join(" ")}`);
   check(raced.find((o) => o.node === "relay")?.state === "coming" && raced.find((o) => o.node === "yard")?.state === "holding", "sending: a send answered while a view of its island was out was judged by that older view");
+}
+
+// --- a sync that a later one started after takes only its report's acknowledgement
+{
+  const real = globalThis.fetch;
+  globalThis.fetch = (async () => new Response(JSON.stringify({ ok: false, error: "no-island-server" }), { status: 202 })) as typeof fetch;
+  const base = { ...island(["supply"]), retaken: ["quarry"] } as Profile;
+  await syncOwn(base, false); // a later sync started: the one below is older
+  globalThis.fetch = real;
+  const server = NODES.map((n) => ({ id: n.id, hold: n.id === "supply" ? rivalHold(A) : ("held" as const) }));
+  const old = takeSync(base, { code: A, view: null, ticket: -1, synced: { holds: server, reported: ["quarry"], log: { entries: [{ seq: 99, at: 0, t: "taken", node: "supply", by: { code: A, name: "x" } }], next: 99 } as never } });
+  console.log(`stale sync: supply ${old.profile.poiState.supply.state}, pending ${old.profile.retaken.join(",") || "none"}, news ${old.news.length}`);
+  check(old.profile.poiState.supply.state === "freed" && old.profile.retaken.length === 0 && old.news.length === 0, "stale sync: an answer a later sync superseded took its older holds or log");
 }
 
 // --- a send against a server that never answers: each request gives up, and the send rolls back

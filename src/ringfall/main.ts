@@ -277,15 +277,17 @@ let islandNews: string[] = [];
  * Syncs the island with the server after a settled raid (island-net.ts): the owner's report, then
  * the log and the holds, taken into the profile as it stands when they come. Nothing waits on it;
  * news that comes in time is on the results, and all of it on the map table. An answer that comes
- * while the next raid is under way only clears the nodes taken back it reported: the raid plays the
- * island it started with, and the next sync reads the holds and the log again.
+ * while the next raid is under way, or after a later sync started, only clears the nodes taken
+ * back it reported: the raid plays the island it started with, and the next sync reads the holds and
+ * the log again.
  */
 function syncIsland(p: Settlement["profile"], settled: State) {
   islandNews = [];
   void syncOwn(p, true).then((r) => {
     if (!r.ok) return;
     // The next raid is under way only once a new run replaced the settled one: the results of the
-    // settled raid (still `running` until finish()) take the sync whole.
+    // settled raid (still `running` until finish()) take the sync whole; an answer a later sync
+    // superseded takes only its report's acknowledgement (takeSync).
     if (running && state !== settled) {
       const { profile } = takeSync(hub.profile, { ...r.body, synced: { reported: r.body.synced.reported } });
       if (profile !== hub.profile) hub.update(profile);

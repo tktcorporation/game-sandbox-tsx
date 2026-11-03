@@ -101,7 +101,12 @@ export interface OwnSync {
   code: string;
   view: IslandView | null;
   synced: Synced;
+  /** Which sync this was, in the order they started (see `takeSync`). */
+  ticket: number;
 }
+
+/** The last sync of the own island started, after a raid or at the factory's panel. */
+let lastSync = 0;
 
 /**
  * Syncs this player's own island: claims one when the identity has no code yet, sends the owner's
@@ -111,6 +116,7 @@ export interface OwnSync {
  * garrisons, so it is sent only after a raid.
  */
 export async function syncOwn(p: Profile, report: boolean): Promise<Answer<OwnSync>> {
+  const ticket = ++lastSync;
   let who = loadIdentity();
   if (!who.code) {
     const c = await claimIsland();
@@ -132,8 +138,13 @@ export async function syncOwn(p: Profile, report: boolean): Promise<Answer<OwnSy
   const view = await readView(who.code!);
   if (view.ok) synced.holds = view.body.nodes;
   if (!log.ok && !view.ok && !report) return view;
-  return { ok: true, body: { code: who.code!, view: view.ok ? view.body : null, synced } };
+  return { ok: true, body: { code: who.code!, view: view.ok ? view.body : null, synced, ticket } };
 }
 
-/** The sync's result taken into profile `p`: the profile (itself when nothing changed) and the log's new entries. */
-export const takeSync = (p: Profile, s: OwnSync): { profile: Profile; news: IslandLogEntry[] } => applySync(p, s.synced);
+/**
+ * The sync's result taken into profile `p`: the profile (itself when nothing changed) and the log's new
+ * entries. A sync that a later one started after takes only its report's acknowledgement: its holds
+ * are older than the later one's, which reads the log and the holds again.
+ */
+export const takeSync = (p: Profile, s: OwnSync): { profile: Profile; news: IslandLogEntry[] } =>
+  applySync(p, s.ticket === lastSync ? s.synced : { reported: s.synced.reported });
