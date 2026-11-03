@@ -91,6 +91,12 @@ export function retakenNodes(before: { poiState: Island }, after: { poiState: Is
   return NODES.filter((n) => after.poiState[n.id]?.state === "freed" && (captured.includes(n.id) || rivalOf(before.poiState[n.id]?.state ?? "held") !== null)).map((n) => n.id);
 }
 
+/** Nodes taken back still to report (`Profile.retaken`) with `more` added: each once, in `NODES` order. */
+export const addRetaken = (pending: readonly string[], more: readonly string[]): NodeId[] => NODES.filter((n) => pending.includes(n.id) || more.includes(n.id)).map((n) => n.id);
+
+/** A saved list of nodes taken back still to report: node ids only, each once. */
+export const parseRetaken = (raw: unknown): NodeId[] => (Array.isArray(raw) ? addRetaken([], raw.filter((id): id is string => typeof id === "string")) : []);
+
 /** The holds the server answered a report with (in the server's order), as the view's nodes; null when unreadable. */
 export function reportedHolds(raw: unknown): { id: string; hold: PoiHold }[] | null {
   if (!isObj(raw) || !Array.isArray(raw.holds) || raw.holds.length !== ISLAND_TABLE.nodes.length) return null;
@@ -103,12 +109,14 @@ export function reportedHolds(raw: unknown): { id: string; hold: PoiHold }[] | n
  * (docs/ringfall/multiplayer.md, 決めたこと): a node it gives to another player is theirs, and a node
  * the profile gives to another player that the server does not is as the server has it. Every other
  * node stays as the profile has it, since the owner's own captures reach the server only with the
- * next report. The island itself when nothing changes.
+ * next report. A node in `pending` (taken back, its report not yet answered) stays as the profile
+ * has it: the server still gives it to the other player until the report lands. The island itself
+ * when nothing changes.
  */
-export function mergeHolds(poiState: Island, server: readonly { id: string; hold: PoiHold }[]): Island {
+export function mergeHolds(poiState: Island, server: readonly { id: string; hold: PoiHold }[], pending: readonly string[] = []): Island {
   let out = poiState;
   for (const { id, hold } of server) {
-    if (nodeIndex(id) < 0 || unfreeable(id as NodeId)) continue;
+    if (nodeIndex(id) < 0 || unfreeable(id as NodeId) || pending.includes(id)) continue;
     const cur = poiState[id as NodeId]?.state;
     const next = rivalOf(hold) !== null ? hold : cur !== undefined && rivalOf(cur) !== null ? hold : cur;
     if (next === undefined || next === cur) continue;
@@ -118,19 +126,29 @@ export function mergeHolds(poiState: Island, server: readonly { id: string; hold
   return out;
 }
 
-/** What one sync with the server brought: the island's holds as the server has them, the log's new entries and the number after them; each left out when not read. */
+/**
+ * What one sync with the server brought: the island's holds as the server has them, the log's new
+ * entries and the number after them, and the nodes taken back that a report answered 200 for
+ * (`reported`); each left out when not read or not reported.
+ */
 export interface Synced {
   holds?: readonly { id: string; hold: PoiHold }[];
   log?: { entries: IslandLogEntry[]; next: number };
+  reported?: readonly string[];
 }
 
-/** The profile with a sync taken in, and the log's entries it had not seen (shown once). The profile itself when nothing changes. */
-export function applySync<P extends { poiState: Island; logSeq: number }>(p: P, s: Synced): { profile: P; news: IslandLogEntry[] } {
-  const poiState = s.holds ? mergeHolds(p.poiState, s.holds) : p.poiState;
+/**
+ * The profile with a sync taken in, and the log's entries it had not seen (shown once). The nodes a
+ * report landed for leave the pending list; the holds are merged around those still pending. The
+ * profile itself when nothing changes.
+ */
+export function applySync<P extends { poiState: Island; logSeq: number; retaken: NodeId[] }>(p: P, s: Synced): { profile: P; news: IslandLogEntry[] } {
+  const retaken = s.reported ? p.retaken.filter((id) => !s.reported!.includes(id)) : p.retaken;
+  const poiState = s.holds ? mergeHolds(p.poiState, s.holds, retaken) : p.poiState;
   const news = s.log ? s.log.entries.filter((e) => e.seq > p.logSeq).sort((a, b) => a.seq - b.seq) : [];
   const logSeq = s.log ? Math.max(p.logSeq, s.log.next) : p.logSeq;
-  if (poiState === p.poiState && logSeq === p.logSeq) return { profile: p, news };
-  return { profile: { ...p, poiState, logSeq }, news };
+  if (poiState === p.poiState && logSeq === p.logSeq && retaken.length === p.retaken.length) return { profile: p, news };
+  return { profile: { ...p, poiState, logSeq, retaken }, news };
 }
 
 /** A node's name for the lines below, or its id for one the game does not know. */

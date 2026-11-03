@@ -8,6 +8,10 @@
  * - **retaken**: the report names as taken back the nodes whose core the raid captured and the nodes
  *   another player held as it began that are the player's after it; a node the profile still calls
  *   its own after another player took it on the server is not named, so the report leaves it theirs.
+ *   The settle keeps them pending (`Profile.retaken`) by the island the raid started with, so a sync
+ *   that merged another player's hold mid-raid cannot make the report name that node.
+ * - **pending**: after a failed report a sync keeps a node taken back the player's and pending; the
+ *   next report names it, takes it back on the server, and its answer clears it.
  * - **log**: the log's entries after the last one taken in are news once, and the number moves on.
  * - **answers**: an island's view, its log and a report's holds as worker/island.ts answers them are
  *   read back; an expedition out takes the state its island shows, and one missing there is gone.
@@ -20,7 +24,8 @@
  * Run alone: `npx tsx scripts/ringfall-expeditions-ui.ts`; it ends with "expeditions ui ok".
  */
 import { readdirSync, readFileSync } from "node:fs";
-import { FACTORY, FRONT } from "../src/ringfall/sim/config";
+import { FACTORY, FACTORY_TOP, FRONT } from "../src/ringfall/sim/config";
+import { finishBattle } from "../src/ringfall/sim/battle";
 import { NODES } from "../src/ringfall/sim/map";
 import { rivalHold } from "../src/ringfall/sim/holds";
 import { idleInput, newRun, starterKit, type State } from "../src/ringfall/sim/state";
@@ -82,6 +87,47 @@ function island(freed: string[], rival: string[] = []): Profile {
   const back = reportedHolds(say(["quarry"]).body)?.find((n) => n.id === "quarry")?.hold;
   console.log(`retaken: a stale profile's report leaves the quarry ${kept}; one naming it ${back}`);
   check(kept === rivalHold(B) && back === "freed", "retaken: the server's answer to a report does not follow what it names as taken back");
+}
+
+// --- retaken at the settle: by the island the raid started with
+{
+  // A raid whose core capture of the relay, another player's at its start, takes it back.
+  const start = island(["supply"], ["relay"]);
+  const s = newRun(5, starterKit(), "reservoir", { island: holds(start) });
+  s.stats.captured = ["relay"];
+  s.outcome = "extracted";
+  const won = settle(start, s);
+  // A battle raid that started with the quarry the player's; mid-raid a sync gave the profile the quarry as another player's.
+  const stale = island(["supply", "quarry"]);
+  // The factory at its top holds both nodes through the battle on this seed, so the quarry ends the day the player's.
+  const b = newRun(7, starterKit(), "reservoir", { island: holds(stale), battle: { factory: FACTORY_TOP } });
+  b.outcome = "extracted";
+  finishBattle(b);
+  const merged = { ...stale, poiState: { ...stale.poiState, quarry: { state: rivalHold(B) } } };
+  const mid = settle(merged, b);
+  const naive = retakenNodes(merged, mid.profile, []);
+  console.log(`retaken at the settle: a captured relay -> pending ${won.profile.retaken.join() || "none"}; mid-raid merge: quarry after ${mid.profile.poiState.quarry.state}, pending ${mid.profile.retaken.join() || "none"} (by the profile at the settle it would be ${naive.join() || "none"})`);
+  check(won.profile.retaken.join() === "relay" && won.profile.poiState.relay.state === "freed", "retaken at the settle: the relay taken back is not pending");
+  check(mid.profile.poiState.quarry.state === "freed" && naive.includes("quarry"), "retaken at the settle: the mid-raid case does not end with the quarry the player's (the check below would prove nothing)");
+  check(!mid.profile.retaken.includes("quarry"), "retaken at the settle: a sync during the raid made the report name a node that was the player's at its start");
+  check(settle(won.profile, newRun(7, starterKit(), "reservoir", { island: holds(won.profile) })).profile.retaken.join() === "relay", "retaken at the settle: a pending node was dropped by the next settle");
+}
+
+// --- pending: a failed report, a panel sync, then a report that lands
+{
+  const t0 = 1_700_000_000_000;
+  const own = islandOp(null, { t: "claim", player: { id: ID_A, name: "わたし" }, code: A }, t0).state as IslandState;
+  const Q = NODES.findIndex((n) => n.id === "quarry");
+  own.holds[Q] = rivalHold(B);
+  // The raid took the quarry back; its report failed, so the server still gives it to B.
+  const p = { ...island(["supply", "quarry"]), retaken: ["quarry" as const] };
+  const panel = applySync(p, { holds: parseView(JSON.parse(JSON.stringify(publicView(own, t0 + 1000))))!.nodes });
+  const rep = islandOp(own, { t: "report", player: { id: ID_A, name: "わたし" }, holds: reportHolds(panel.profile), retaken: [...panel.profile.retaken], factory: 0, day: 2 }, t0 + 2000);
+  const landed = applySync(panel.profile, { reported: [...panel.profile.retaken], holds: reportedHolds(rep.body)! });
+  console.log(`pending: after a failed report a panel sync leaves the quarry ${panel.profile.poiState.quarry.state}, pending ${panel.profile.retaken.join()}; the next report ${rep.status} -> server ${own.holds[Q]}, pending ${landed.profile.retaken.join() || "none"}`);
+  check(panel.profile.poiState.quarry.state === "freed" && panel.profile.retaken.join() === "quarry", "pending: a sync turned a node taken back, its report not landed, back to another player's");
+  check(rep.status === 200 && own.holds[Q] === "freed", "pending: the next report did not take the pending node back on the server");
+  check(landed.profile.retaken.length === 0 && landed.profile.poiState.quarry.state === "freed", "pending: the report's answer did not clear the pending node");
 }
 
 // --- log
@@ -179,13 +225,14 @@ function island(freed: string[], rival: string[] = []): Profile {
 
 // --- saves
 {
-  const p = { ...newProfile(4), expeditions: [{ code: A, node: "relay" as const, sentAt: 5, id: 2, units: 3, state: "holding" as const }], logSeq: 7 };
+  const p = { ...newProfile(4), expeditions: [{ code: A, node: "relay" as const, sentAt: 5, id: 2, units: 3, state: "holding" as const }], logSeq: 7, retaken: ["quarry" as const, "relay" as const] };
   const v27 = parseProfile(JSON.parse(JSON.stringify(p)));
   const v26 = parseProfile(JSON.parse(JSON.stringify({ ...p, v: 26 })));
   const bad = parseOutgoing([{ code: "lower1", node: "relay", sentAt: 0, id: 1, units: 1, state: "coming" }, { code: A, node: "nowhere", sentAt: 0, id: 1, units: 1, state: "coming" }, { code: A, node: "relay", sentAt: 0, id: 1, units: 1, state: "lost" }, "x"]);
   console.log(`saves: v27 keeps ${v27?.expeditions.length} expedition(s), seq ${v27?.logSeq}; v26 loads as v${v26?.v} with ${v26?.expeditions.length}, seq ${v26?.logSeq}; bad entries kept ${bad.length}`);
-  check(v27?.v === 27 && JSON.stringify(v27.expeditions) === JSON.stringify(p.expeditions) && v27.logSeq === 7, "saves: a v27 save did not keep its expeditions and log number");
-  check(v26?.v === 27 && v26.expeditions.length === 0 && v26.logSeq === 0, "saves: a v26 save did not load with no expedition and no log read");
+  check(v27?.v === 27 && JSON.stringify(v27.expeditions) === JSON.stringify(p.expeditions) && v27.logSeq === 7 && v27.retaken.join() === "quarry,relay", "saves: a v27 save did not keep its expeditions, log number and nodes taken back");
+  check(v26?.v === 27 && v26.expeditions.length === 0 && v26.logSeq === 0 && v26.retaken.length === 0, "saves: a v26 save did not load with no expedition, no log read and nothing taken back");
+  check(parseProfile(JSON.parse(JSON.stringify({ ...p, retaken: ["quarry", "quarry", "nowhere", 3] })))?.retaken.join() === "quarry", "saves: malformed nodes taken back were kept");
   check(bad.length === 0, "saves: a malformed expedition was kept");
   check(newProfile(1).expeditions.length === 0 && newProfile(1).logSeq === 0, "saves: a new profile has expeditions or a log read");
 }

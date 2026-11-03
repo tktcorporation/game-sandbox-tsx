@@ -75,24 +75,26 @@ export interface OwnSync {
 
 /**
  * Syncs this player's own island: claims one when the identity has no code yet, sends the owner's
- * report of `p` when `report` is given (after a settled raid, with the nodes it took back from other
- * players, `retakenNodes()`; a first claim always reports, so the server's island starts as the
- * profile's), then reads the log after `p.logSeq` and the island's view. The report resets the
- * server's garrisons, so it is sent only after a raid.
+ * report of `p` when `report` (after a settled raid, naming every node taken back still pending,
+ * `Profile.retaken`; a first claim always reports, so the server's island starts as the profile's),
+ * then reads the log after `p.logSeq` and the island's view. The report resets the server's
+ * garrisons, so it is sent only after a raid.
  */
-export async function syncOwn(p: Profile, report: { retaken: readonly string[] } | null): Promise<Answer<OwnSync>> {
+export async function syncOwn(p: Profile, report: boolean): Promise<Answer<OwnSync>> {
   let who = loadIdentity();
   if (!who.code) {
     const c = await claimIsland();
     if (!c.ok) return c;
     who = c.body;
-    report ??= { retaken: [] };
+    report = true;
   }
   const code = encodeURIComponent(who.code!);
   const synced: Synced = {};
   if (report) {
-    const r = await call(`/api/islands/${code}`, { method: "PUT", body: JSON.stringify({ player: player(who), holds: reportHolds(p), retaken: report.retaken, factory: p.factory, day: p.day }) });
+    const retaken = [...p.retaken];
+    const r = await call(`/api/islands/${code}`, { method: "PUT", body: JSON.stringify({ player: player(who), holds: reportHolds(p), retaken, factory: p.factory, day: p.day }) });
     if (!r.ok) return r;
+    synced.reported = retaken;
     synced.holds = reportedHolds(r.body) ?? undefined;
   }
   const log = await call(`/api/islands/${code}/log?after=${p.logSeq}`, { headers: { authorization: `Bearer ${who.id}` } });

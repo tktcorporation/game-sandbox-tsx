@@ -7,7 +7,7 @@ import { callLeft, starterKit, idleInput, newRun, type GameEvent, type Input, ty
 import { CAMP, DEPOTS, entryOf, FRAMES, HOME_REGION, NODES, POIS, poiIndex, QUARRY_EXITS, ZIPS, type CampSpot, type PoiId, type RecordId, type RegionId, type StationId } from "./sim/map";
 import { grabZip } from "./sim/zips";
 import { POI_AT } from "./sim/areas";
-import { capturedIds, frontNodes, garrisonOf, takeNode, useCore } from "./sim/front";
+import { frontNodes, garrisonOf, takeNode, useCore } from "./sim/front";
 import { atRisk, battleMarks, departNow, landNow, marchSquad, nodePoint, placeBattleSquad, warmLinks } from "./sim/battle";
 import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
 import { analyse, raidThreat, settle, takenStory, type Settlement } from "./meta/profile";
@@ -22,7 +22,7 @@ import { squadKey } from "./sim/state";
 import { loadProfile, saveProfile } from "./meta/storage";
 import { sendIsland } from "./net";
 import { syncOwn, takeSync } from "./island-net";
-import { logLine, retakenNodes, squadsAway } from "./meta/expeditions";
+import { logLine, squadsAway } from "./meta/expeditions";
 import { Hub, type Launch } from "./view/hub";
 import { CampView } from "./view/camp";
 import { DepartPicker } from "./view/depart";
@@ -261,12 +261,11 @@ function onEvent(e: GameEvent, s: State) {
     // Settle and save at once; only the results screen waits for the moment to play out.
     knownBefore = [...hub.profile.known];
     analysed = null;
-    const before = hub.profile;
     settlement = settle(hub.profile, s);
     hub.reload(settlement.profile);
     saveProfile(hub.profile);
     sendIsland(settlement, s);
-    syncIsland(settlement.profile, retakenNodes(before, settlement.profile, capturedIds(s)));
+    syncIsland(settlement.profile);
     setTimeout(finish, s.outcome === "extracted" ? 1400 : 2400);
   }
 }
@@ -277,12 +276,19 @@ let islandNews: string[] = [];
 /**
  * Syncs the island with the server after a settled raid (island-net.ts): the owner's report, then
  * the log and the holds, taken into the profile as it stands when they come. Nothing waits on it;
- * news that comes in time is on the results, and all of it on the map table.
+ * news that comes in time is on the results, and all of it on the map table. An answer that comes
+ * while the next raid is under way only clears the nodes taken back it reported: the raid plays the
+ * island it started with, and the next sync reads the holds and the log again.
  */
-function syncIsland(p: Settlement["profile"], retaken: readonly string[]) {
+function syncIsland(p: Settlement["profile"]) {
   islandNews = [];
-  void syncOwn(p, { retaken }).then((r) => {
+  void syncOwn(p, true).then((r) => {
     if (!r.ok) return;
+    if (running) {
+      const { profile } = takeSync(hub.profile, { ...r.body, synced: { reported: r.body.synced.reported } });
+      if (profile !== hub.profile) hub.update(profile);
+      return;
+    }
     const { profile, news } = takeSync(hub.profile, r.body);
     if (profile !== hub.profile) hub.update(profile);
     if (!news.length) return;

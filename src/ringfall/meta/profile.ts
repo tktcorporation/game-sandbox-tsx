@@ -9,7 +9,8 @@ import { advanceDay, departDepots, type DayChange, type FrontChange, eventFor, f
 import type { IslandEvent } from "../sim/island";
 import { built, creditRaid, emptyLog, need, offered, QUEST_IDS, type Quest, type QuestLog } from "./quests";
 import { currentStory, STORIES, type Story } from "./story";
-import { awayIncome, parseOutgoing, type Outgoing } from "./expeditions";
+import { addRetaken, awayIncome, parseOutgoing, parseRetaken, retakenNodes, type Outgoing } from "./expeditions";
+import { capturedIds } from "../sim/front";
 
 /**
  * One thing in the stash. Heals are one entry per unit, so the stash cap counts them. A weapon
@@ -80,6 +81,11 @@ export interface Profile {
   expeditions: Outgoing[];
   /** The last entry of this island's log on the server taken in: the next sync reads the ones after it. */
   logSeq: number;
+  /**
+   * Nodes the raids took back from other players whose report the server has not yet answered:
+   * every report names them (`retaken`), and they leave this list only when one is answered 200.
+   */
+  retaken: NodeId[];
 }
 
 /** A loadout by what it holds rather than by stash index: what `Profile.lastKit` keeps. */
@@ -140,7 +146,7 @@ export const stashUsed = (p: Pick<Profile, "stash">) => p.stash.filter((i) => !i
 export function newProfile(seed = 1): Profile {
   const stash: Item[] = [...starterItems(), ...META.start.weapons.map((w): Item => ({ t: "weapon", ...w }))];
   for (const k of HEALS) for (let i = 0; i < META.start.heals[k]; i++) stash.push({ t: "heal", kind: k });
-  const p: Omit<Profile, "board"> = { v: 27, cash: META.start.cash, stash, raids: 0, extracted: 0, time: 0, quests: emptyLog(), region: HOME_REGION.id, entry: FIRST_ENTRY, entries: [FIRST_ENTRY], hideout: emptyHideout(), seed: seed & 0xffff, depots: [], depotSent: {}, seen: "", routes: [], day: 1, poiState: newIsland(), taken: null, records: [], events: firstEvents(seed & 0xffff), known: [...MOD_START], threat: 0, freedAt: {}, factory: 0, lastKit: null, expeditions: [], logSeq: 0 };
+  const p: Omit<Profile, "board"> = { v: 27, cash: META.start.cash, stash, raids: 0, extracted: 0, time: 0, quests: emptyLog(), region: HOME_REGION.id, entry: FIRST_ENTRY, entries: [FIRST_ENTRY], hideout: emptyHideout(), seed: seed & 0xffff, depots: [], depotSent: {}, seen: "", routes: [], day: 1, poiState: newIsland(), taken: null, records: [], events: firstEvents(seed & 0xffff), known: [...MOD_START], threat: 0, freedAt: {}, factory: 0, lastKit: null, expeditions: [], logSeq: 0, retaken: [] };
   return { ...p, board: makeBoard(p) };
 }
 
@@ -652,7 +658,10 @@ export function settle(p: Profile, s: State): Settlement {
   // Quests the raid opened may ask for a hideout level already built.
   const claimed = claimBuilt(next);
   // The new day's board, for the next raid's seed; yesterday's contract goes with yesterday's board.
+  // The nodes this raid took back from other players, by the island it started with (`State.hold`), wait to be reported.
+  const started = { poiState: Object.fromEntries(POIS.map((o, i) => [o.id, { state: s.hold?.[i] ?? "held" }])) as Island };
   const fresh = { ...claimed.profile, stash: withStarters(claimed.profile.stash), taken: null, board: makeBoard(claimed.profile) };
+  fresh.retaken = addRetaken(p.retaken, retakenNodes(started, fresh, capturedIds(s)));
   return { profile: fresh, home, opened, learned, quests: [...finished, ...claimed.quests], sold: [...sold, ...claimed.sold], soldFor: soldFor + claimed.soldFor, day: p.day, ...change, income, ...(away > 0 && { awayIncome: away }), event: s.event ?? null, contract, story: told, threat, analysable: s.outcome === "extracted" ? [...(pl.mods ?? [])] : [] };
 }
 
@@ -780,8 +789,8 @@ const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
  * profile's explored map is dropped.
  * Before v26 no other player could hold a node: such a profile's POIs are the enemy's or the
  * player's, as saved (`parseIsland()` reads another player's standing only from v26).
- * Before v27 no expedition went out from the factory: such a profile has none out and has read none
- * of its island's log.
+ * Before v27 no expedition went out from the factory: such a profile has none out, has read none
+ * of its island's log, and has no node taken back to report.
  */
 export function parseProfile(raw: unknown, seed = 1): Profile | null {
   if (!raw || typeof raw !== "object") return null;
@@ -857,6 +866,7 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     lastKit: v20 ? parseKitPicks(o.lastKit) : null,
     expeditions: v27 ? parseOutgoing(o.expeditions) : [],
     logSeq: v27 && Number.isInteger(o.logSeq) && (o.logSeq as number) >= 0 ? (o.logSeq as number) : 0,
+    retaken: v27 ? parseRetaken(o.retaken) : [],
     records,
     known: knownMods(v17 && Array.isArray(o.known) ? o.known : []),
     threat: v17 && Number.isInteger(o.threat) ? Math.max(0, Math.min(THREAT.max, o.threat as number)) : 0,

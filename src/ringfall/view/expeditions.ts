@@ -62,8 +62,15 @@ export class ExpeditionPanel {
     const ask = ++this.ask;
     if (this.conn.t !== "ok") this.conn = { t: "wait" };
     this.paint();
-    const r = await syncOwn(this.get(), null);
-    if (ask !== this.ask) return;
+    const r = await syncOwn(this.get(), false);
+    if (ask !== this.ask) {
+      // Closed meanwhile: a first claim's report still clears the nodes taken back it named.
+      if (r.ok && r.body.synced.reported?.length) {
+        const { profile } = takeSync(this.get(), { ...r.body, synced: { reported: r.body.synced.reported } });
+        if (profile !== this.get()) this.put(profile);
+      }
+      return;
+    }
     if (!r.ok) {
       this.conn = r.error === "no-island-server" || r.error === "no-database" ? { t: "none" } : { t: "error", error: r.error };
       return this.paint();
@@ -73,12 +80,17 @@ export class ExpeditionPanel {
     if (profile !== this.get()) this.put(profile);
     if (news.length) this.news(news);
     this.paint();
-    await this.refresh(r.body.code);
+    await this.refresh(r.body.code, ask);
     if (ask === this.ask) this.paint();
   }
 
+  /** The panel closed: answers to its open still in flight are dropped (a raid may start meanwhile; the next open reads the island again). */
+  cancel() {
+    this.ask++;
+  }
+
   /** The expeditions out, each as its island shows it now. */
-  private async refresh(mine: string) {
+  private async refresh(mine: string, ask: number) {
     const codes = [...new Set(alive(this.get()).map((e) => e.code))];
     if (!codes.length) return;
     const views: Record<string, IslandView | null> = {};
@@ -86,6 +98,7 @@ export class ExpeditionPanel {
       const v = await readView(c);
       views[c] = v.ok ? v.body : null;
     }
+    if (ask !== this.ask) return;
     const p = this.get();
     const expeditions = refreshOutgoing(p.expeditions, mine, views);
     if (expeditions.some((e, i) => e !== p.expeditions[i])) this.put({ ...p, expeditions });
