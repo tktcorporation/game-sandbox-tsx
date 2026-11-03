@@ -1,5 +1,5 @@
 import { FACTORY_TOP } from "../src/ringfall/sim/config";
-import { parseIslandCode } from "../src/ringfall/meta/island-code";
+import { codeOf, parseIslandCode } from "../src/ringfall/meta/island-code";
 import { parseHolds, squadKinds, type IslandOp } from "./island";
 
 /*
@@ -200,6 +200,8 @@ async function handleIslands(request: Request, env: ApiEnv, now: number, url: UR
     const player = parsePlayer(raw.player);
     const holds = parseHolds(raw.holds);
     if (!player || !holds || !int(raw.factory, 0, FACTORY_TOP) || !int(raw.day, 0, DAY_MAX)) return fail(400, "bad-request");
+    // Only the holder of the id the code follows from reports for its island, the first report claiming it.
+    if ((await codeOf(player.id)) !== code) return fail(403, "not-owner");
     return ask(ns, code, { t: "report", player, code, holds, factory: raw.factory, day: raw.day }, now);
   }
   // An expedition: the sender proves their own island with their id, whose factory sets the squad they may send.

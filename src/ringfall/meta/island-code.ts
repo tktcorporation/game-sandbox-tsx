@@ -1,8 +1,9 @@
 /*
  * The island code (docs/ringfall/multiplayer.md): a short public name for a player's island, which
  * others type to send an expedition there. Six characters of Crockford's base32 (no I, L, O or U,
- * so it reads aloud without confusion). It names the island only: the player's id stays the secret
- * that proves who owns it. A leaf module, so that the browser and the Worker share it.
+ * so it reads aloud without confusion), the first of the SHA-256 of the player's secret id
+ * (`codeOf()`): the code follows from the id, so only the holder of the id can claim its island,
+ * and the code tells nothing of the id. A leaf module, so that the browser and the Worker share it.
  */
 
 /** Crockford's base32 alphabet: the digits and the letters but I, L, O and U. */
@@ -23,8 +24,14 @@ export function parseIslandCode(s: unknown): string | null {
   return isIslandCode(up) ? up : null;
 }
 
-/** A new random code. 32 divides 256, so each byte's low five bits pick a character evenly. */
-export function newIslandCode(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(CODE_LENGTH));
-  return [...bytes].map((b) => CODE_ALPHABET[b & 31]).join("");
+/** The island code of the player with secret id `id`: the first 30 bits of its SHA-256, five bits a character. */
+export async function codeOf(id: string): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(id)));
+  let code = "";
+  for (let k = 0; k < CODE_LENGTH; k++) {
+    const bit = k * 5;
+    const pair = (digest[bit >> 3] << 8) | digest[(bit >> 3) + 1];
+    code += CODE_ALPHABET[(pair >> (11 - (bit & 7))) & 31];
+  }
+  return code;
 }

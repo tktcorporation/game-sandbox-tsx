@@ -5,7 +5,8 @@
  *
  * - **table**: src/ringfall/meta/island-table.ts is what map.ts gives (`--write` rewrites it).
  * - **no island server**: without the binding, /api/islands/ answers 202 `no-island-server`.
- * - **claim**: an owner's first report claims a code; another player's report to it is refused.
+ * - **codes**: an island's code is the first 30 bits of the SHA-256 of its owner's id.
+ * - **claim**: only the id a code follows from reports for its island, the first report claiming it.
  * - **refused**: an expedition to the sender's own island, to the titan's pad, to the node next to
  *   the camp, to an island still protected, past the island's or the day's limit, with more units
  *   than the sender's factory makes, or from a sender who does not own the island they name.
@@ -23,8 +24,9 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { handleApi, type ApiEnv, type IslandNamespace } from "../worker/api";
 import { advance, EXPEDITION, islandOp, NODE_IDS, type IslandOp, type IslandState } from "../worker/island";
 import { FACTORY, FACTORY_TOP } from "../src/ringfall/sim/config";
-import { isIslandCode, newIslandCode } from "../src/ringfall/meta/island-code";
-import { loadIdentity, parseIdentity } from "../src/ringfall/meta/identity";
+import { createHash } from "node:crypto";
+import { CODE_ALPHABET, codeOf, isIslandCode } from "../src/ringfall/meta/island-code";
+import { islandCode, loadIdentity } from "../src/ringfall/meta/identity";
 import { islandTableSource } from "./ringfall-island-table";
 
 const errors: string[] = [];
@@ -42,16 +44,17 @@ const check = (ok: boolean, what: string) => {
   check(same, "table: src/ringfall/meta/island-table.ts differs from map.ts");
 }
 
-// --- island codes and the identity's code
+// --- island codes: the first 30 bits of the SHA-256 of the id, worked out here apart from codeOf()
 {
-  const codes = Array.from({ length: 200 }, newIslandCode);
-  const id = "7c9e6679-7425-40de-944b-e07fc1f0d3c4";
-  const old = parseIdentity({ id, name: "ねこ" });
-  const kept = parseIdentity({ id, name: "ねこ", code: "K7M2QX" });
+  const known = "0f8fad5b-d9cb-469f-a165-70867728950e";
+  const bits = BigInt("0x" + createHash("sha256").update(known).digest("hex").slice(0, 8)) >> 2n;
+  const want = Array.from({ length: 6 }, (_, k) => CODE_ALPHABET[Number((bits >> BigInt(25 - 5 * k)) & 31n)]).join("");
+  const got = await codeOf(known);
+  const many = await Promise.all(Array.from({ length: 200 }, () => codeOf(crypto.randomUUID())));
+  console.log(`codes: ${known} -> ${got} (worked out apart: ${want}); ${many.slice(0, 4).join(" ")}`);
   const me = loadIdentity();
-  console.log(`codes: ${codes.slice(0, 4).join(" ")}; identity without a code gets ${old?.code}, one with keeps ${kept?.code}; this page ${me.code}`);
-  check(codes.every(isIslandCode) && !codes.some((c) => /[ILOU]/.test(c)), "codes: a new code is not 6 characters of Crockford base32");
-  check(!!old && isIslandCode(old.code) && kept?.code === "K7M2QX" && loadIdentity().code === me.code && isIslandCode(me.code), "codes: the identity's code is missing or changes");
+  check(got === want && (await islandCode({ id: known })) === got && (await islandCode(me)) === (await codeOf(me.id)), "codes: codeOf() or the identity's code is not the first 30 bits of the id's SHA-256");
+  check(many.every(isIslandCode) && !many.some((c) => /[ILOU]/.test(c)), "codes: a code is not 6 characters of Crockford base32");
 }
 
 /** The stand-in namespace: one island state for each code, run by the island's ops as IslandDO runs them. */
@@ -70,9 +73,10 @@ const ns: IslandNamespace = {
 const env: ApiEnv = { ISLAND: ns };
 
 const BASE = "https://ringfall.test";
-const A = { id: "0f8fad5b-d9cb-469f-a165-70867728950e", name: "ねこ", code: "N3K0AA" };
-const B = { id: "7c9e6679-7425-40de-944b-e07fc1f0d3c4", name: "いぬ", code: "D0GB2Z" };
-const C = { id: "16fd2706-8baf-433b-82eb-8c7fada847da", name: "とり", code: "T0R1QQ" };
+const player = async (id: string, name: string) => ({ id, name, code: await codeOf(id) });
+const A = await player("0f8fad5b-d9cb-469f-a165-70867728950e", "ねこ");
+const B = await player("7c9e6679-7425-40de-944b-e07fc1f0d3c4", "いぬ");
+const C = await player("16fd2706-8baf-433b-82eb-8c7fada847da", "とり");
 const DAY = 86_400_000;
 const T0 = Date.UTC(2026, 10, 1, 3);
 
@@ -103,11 +107,14 @@ const alarms = (code: string, from: number, to: number) => {
 
 // --- claim
 {
+  const squat = await report({ ...B, code: A.code }, holdsWith({}), 0, 1, T0);
+  const unclaimed = !islands.get(A.code);
   const a = await report(A, holdsWith({ quarry: "freed", supply: "freed" }), 0, 3, T0);
   const b = await report({ ...B, code: A.code }, holdsWith({}), 0, 1, T0);
   const again = await report({ ...A, name: "ねこ2" }, holdsWith({ quarry: "freed", supply: "freed" }), 0, 4, T0 + 1000);
   const bad = await call("PUT", `/api/islands/${A.code}`, { player: A, holds: ["held"], factory: 0, day: 1 }, T0);
-  console.log(`claim: first ${a.status}, another player ${b.status} ${err(b)}, the owner again ${again.status}, short holds ${bad.status}`);
+  console.log(`claim: another player's id for the code first ${squat.status} ${err(squat)} (unclaimed after: ${unclaimed}); the owner's ${a.status}, another player after ${b.status} ${err(b)}, the owner again ${again.status}, short holds ${bad.status}`);
+  check(squat.status === 403 && err(squat) === "not-owner" && unclaimed, "claim: a code was claimed with an id it does not follow from");
   check(a.status === 201 && b.status === 403 && err(b) === "not-owner" && again.status === 200 && bad.status === 400, "claim: the code was not claimed by the first report alone");
   await report(B, holdsWith({}), FACTORY_TOP, 9, T0);
   await report(C, holdsWith({}), 4, 2, T0);

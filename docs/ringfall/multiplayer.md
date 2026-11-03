@@ -67,13 +67,13 @@ API（`worker/api.ts`）は D1 を `DB` という名前の束縛で読む。束�
 
 ### 島の番号と遠征の API
 
-相手探しの仕組みができるまで、攻め込む相手は島の番号で選ぶ。島の番号は、Crockford の base32（I・L・O・U を除く英数字）6 文字で、匿名の ID と一緒に端末で作る（`src/ringfall/meta/island-code.ts`、`meta/identity.ts`）。番号は人に教えてよい公開の名前で、島の持ち主であることは秘密の ID で示す。番号を持たずに保存された ID は、読み込んだときに番号を作って保存し直す。
+相手探しの仕組みができるまで、攻め込む相手は島の番号で選ぶ。島の番号は、プレイヤーの秘密の ID の SHA-256 の先頭 30 ビットを、Crockford の base32（I・L・O・U を除く英数字）で 6 文字にしたもの（`codeOf()`、`src/ringfall/meta/island-code.ts`。ブラウザは `meta/identity.ts` の `islandCode()` で求め、保存しない）。番号は人に教えてよい公開の名前で、番号から ID は分からない。番号は ID から決まるので、島の報告はその ID を持つ人だけが送れ、番号を先に知った人が島を取ることはできない。
 
 島ごとの Durable Object `IslandDO`（`worker/island-do.ts`）は `ISLAND.idFromName(番号)` で引く。状態の書き換えは純粋な関数（`worker/island.ts`）にまとめ、`IslandDO` は読み込み・適用・保存とアラームだけを持つ。Worker は世界を組み立てない（`map.ts` の読み込みは数秒かかる）。拠点の並び・段・守備隊は、`map.ts` から書き出した表（`src/ringfall/meta/island-table.ts`）から読む。表と `map.ts` の食い違いは `scripts/ringfall-expeditions.ts` が検出し、`--write` で書き直す。
 
 | 要求 | 誰が | 中身 | 答え |
 | --- | --- | --- | --- |
-| `PUT /api/islands/:code` | 持ち主 | レイドの後の報告：`{ player: { id, name }, holds, factory, day }`。`holds` は `NODES` の順の拠点の持ち主 | 初めての報告がその番号を取って 201、以後は同じ ID だけが 200、違う ID は 403。答えに島の拠点の持ち主を返す |
+| `PUT /api/islands/:code` | 持ち主 | レイドの後の報告：`{ player: { id, name }, holds, factory, day }`。`holds` は `NODES` の順の拠点の持ち主 | 番号が `player.id` から決まるものでなければ 403。初めての報告がその番号を取って 201、以後は 200。答えに島の拠点の持ち主を返す |
 | `GET /api/islands/:code` | 誰でも | 持ち主の表示名、拠点の持ち主と遠征を受けるかどうか、来ている遠征（送った島の番号と名前、狙う拠点、残る部隊の数、来る途中・攻撃中・保持中） | 200。プレイヤーの ID は含めない |
 | `GET /api/islands/:code/log?player=<id>&after=<n>` | 持ち主 | 番号 `n` より後の変化（遠征の到着、拠点を取られた、遠征を全滅させた、取り返した、保持していた部隊が尽きて敵に戻った）と次の番号 | 200。持ち主でなければ 403 |
 | `POST /api/islands/:code/expeditions` | 攻める人 | `{ from: { id, name, code }, target, units }` | 201 と遠征の番号。送る人は自分の島を ID で示し、部隊の数は自分の工場の段の部隊（`FACTORY.levels[].kinds`）の人数まで |
