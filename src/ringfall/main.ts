@@ -20,6 +20,7 @@ import { currentStory } from "./meta/story";
 import { bodyCenter, eyePos, fireRay, kill } from "./sim/combat";
 import { squadKey } from "./sim/state";
 import { loadProfile, saveProfile } from "./meta/storage";
+import { sendIsland } from "./net";
 import { Hub, type Launch } from "./view/hub";
 import { CampView } from "./view/camp";
 import { DepartPicker } from "./view/depart";
@@ -259,6 +260,7 @@ function onEvent(e: GameEvent, s: State) {
     settlement = settle(hub.profile, s);
     hub.reload(settlement.profile);
     saveProfile(hub.profile);
+    sendIsland(settlement, s);
     setTimeout(finish, s.outcome === "extracted" ? 1400 : 2400);
   }
 }

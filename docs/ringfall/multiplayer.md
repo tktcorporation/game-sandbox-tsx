@@ -54,6 +54,17 @@
 
 プレイヤーは、端末で作る匿名の ID と表示名で識別する。アカウントへのひも付けは後の段階で足す。
 
+### データベースのつなぎ方
+
+API（`worker/api.ts`）は D1 を `DB` という名前の束縛で読む。束縛が無い間、`/api/island` は 202（`no-database`）を返し、ブラウザはその答えを捨てるので、遊びは変わらない。つなぐ手順は次の 4 つ。
+
+1. データベースを作る：`npx wrangler d1 create ringfall`。出力の `database_id` を控える。
+2. 手元の `wrangler.jsonc` に束縛を足す（まだ push しない）：`"d1_databases": [{ "binding": "DB", "database_name": "ringfall", "database_id": "<控えた id>" }]`。`wrangler d1 migrations apply` は、設定に載っているデータベースにしか表を作れない。
+3. 表を作る：`npx wrangler d1 migrations apply ringfall --remote`。表の定義は `migrations/` にある。
+4. 束縛を足した `wrangler.jsonc` を push する。
+
+この順に進める。存在しないデータベースへの束縛を push すると Workers Builds のデプロイが失敗し、表の無いデータベースへの束縛では書き込みがすべて 503（`db-error`）になる。
+
 ## 不正への構え
 
 最初の段階では、レイドの結果はブラウザの申告を信じる。シミュレーションは種と入力から同じ結果を出すので、後の段階で、申告された結果を Worker でレイドを再生して確かめられる。島どうしの影響は遠征の数で上限を決めておき、1 人の不正が他の島へ及ぶ範囲を限る。
