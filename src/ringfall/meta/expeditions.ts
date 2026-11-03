@@ -12,8 +12,12 @@ import { isIslandCode } from "./island-code";
 import { unfreeable, unlocked, type Island } from "./island";
 import { ISLAND_TABLE } from "./island-table";
 
-/** How an expedition stands on the island it was sent to: on its way, fighting at its node, holding it, or gone (wiped out or lost its node). */
-export type ExpeditionState = "coming" | "attacking" | "holding" | "gone";
+/**
+ * How an expedition stands: still being sent (its request unanswered; its squad already taken from
+ * the factory), and on the island it was sent to on its way, fighting at its node, holding it, or
+ * gone (wiped out or lost its node).
+ */
+export type ExpeditionState = "sending" | "coming" | "attacking" | "holding" | "gone";
 
 /** An expedition this island's factory sent: the island and node it went to, when, the server's number for it, its squad's size, and how it last stood. */
 export interface Outgoing {
@@ -30,11 +34,15 @@ export interface IslandView {
   code: string;
   owner: string;
   day: number;
+  /** The factory level the owner last reported: what an expedition from this island may take (`squadKinds()` in worker/island.ts). */
   factory: number;
   protectedUntil: number;
   nodes: { id: string; hold: PoiHold; open: boolean }[];
-  expeditions: { by: { code: string; name: string }; target: string; units: number; state: Exclude<ExpeditionState, "gone"> }[];
+  expeditions: { by: { code: string; name: string }; target: string; units: number; state: ServerState }[];
 }
+
+/** The states the island an expedition went to reports. */
+type ServerState = Exclude<ExpeditionState, "gone" | "sending">;
 
 /** A change on this island the owner reads (`GET …/log`, `LogEntry` in worker/island.ts). */
 export interface IslandLogEntry {
@@ -45,7 +53,7 @@ export interface IslandLogEntry {
   by: { code: string; name: string };
 }
 
-const STATES: readonly Exclude<ExpeditionState, "gone">[] = ["coming", "attacking", "holding"];
+const STATES: readonly ServerState[] = ["coming", "attacking", "holding"];
 const LOG_KINDS: readonly IslandLogEntry["t"][] = ["landed", "taken", "wiped", "retaken", "released"];
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
@@ -61,7 +69,7 @@ export function parseView(raw: unknown): IslandView | null {
   });
   const expeditions = raw.expeditions.flatMap((e) => {
     const by = isObj(e) ? attacker(e.by) : null;
-    return isObj(e) && by && typeof e.target === "string" && count(e.units) && STATES.includes(e.state as never) ? [{ by, target: e.target, units: e.units, state: e.state as Exclude<ExpeditionState, "gone"> }] : [];
+    return isObj(e) && by && typeof e.target === "string" && count(e.units) && STATES.includes(e.state as never) ? [{ by, target: e.target, units: e.units, state: e.state as ServerState }] : [];
   });
   const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
   return { code: raw.code, owner: raw.owner, day: num(raw.day), factory: num(raw.factory), protectedUntil: num(raw.protectedUntil), nodes, expeditions };
@@ -187,8 +195,37 @@ export const homeSquads = (p: { factory: number; poiState: Island; expeditions: 
 /** Whether the factory has a squad to send: an expedition takes one of the squads it keeps out. */
 export const canSend = (p: { factory: number; poiState: Island; expeditions: readonly Outgoing[] }) => squadsAway(p) < factorySquads(p);
 
-/** The members an expedition takes: the factory's squad (`FACTORY.levels[].kinds`), as the server allows. */
-export const sendUnits = (p: { factory: number }) => FACTORY.levels[Math.max(0, Math.min(FACTORY_TOP, p.factory))].kinds.length;
+/**
+ * The squad an expedition takes: that of the factory level the server has for this island (its
+ * public view's `factory`, the level the owner last reported), which is what the server lets it
+ * send. A factory built up since the last report goes out at its new level after the next raid.
+ */
+export const sendKinds = (serverFactory: number) => FACTORY.levels[Math.max(0, Math.min(FACTORY_TOP, Math.round(serverFactory) || 0))].kinds;
+
+/** Whether the camp's factory is ahead of the level the server has for the island (it reaches the server with the next raid's report). */
+export const factoryAhead = (p: { factory: number }, serverFactory: number) => p.factory > serverFactory;
+
+/** How long an expedition may wait as `sending` before a sync drops it: its request was lost (a closed tab). */
+export const SENDING_MS = 60_000;
+
+/** An expedition being sent: in the list at once, so the squad it takes is taken while the request is out. */
+export const sendingEntry = (code: string, node: NodeId, units: number, now: number): Outgoing => ({ code, node, sentAt: now, id: 0, units, state: "sending" });
+
+/**
+ * The expeditions with a send answered: the entry `sending` (found by its island, node and time)
+ * becomes the expedition the server numbered `id`, on its way with `units`; with no id (refused, or no answer)
+ * it is removed and its squad comes back.
+ */
+export function answerSend(list: readonly Outgoing[], sending: Outgoing, id: number | null, units = sending.units): Outgoing[] {
+  const same = (o: Outgoing) => o.state === "sending" && o.code === sending.code && o.node === sending.node && o.sentAt === sending.sentAt;
+  return id === null ? list.filter((o) => !same(o)) : list.map((o) => (same(o) ? { ...o, id, units, state: "coming" as const } : o));
+}
+
+/** The expeditions without those left `sending` longer than `SENDING_MS` at `now` (their answer never came). The list itself when none. */
+export function dropStale(list: Outgoing[], now: number): Outgoing[] {
+  const out = list.filter((o) => o.state !== "sending" || now - o.sentAt <= SENDING_MS);
+  return out.length === list.length ? list : out;
+}
 
 /** The credits the nodes the expeditions hold on other islands pay at the settle: `FRONT.income` each (陣地の数え方). */
 export const awayIncome = (p: { expeditions: readonly Outgoing[] }) => p.expeditions.filter((e) => e.state === "holding").length * FRONT.income;
@@ -201,7 +238,7 @@ export const awayIncome = (p: { expeditions: readonly Outgoing[] }) => p.expedit
 export function refreshOutgoing(list: readonly Outgoing[], mine: string, views: Readonly<Record<string, IslandView | null | undefined>>): Outgoing[] {
   return list.map((o) => {
     const v = views[o.code];
-    if (!v || o.state === "gone") return o;
+    if (!v || o.state === "gone" || o.state === "sending") return o;
     const e = v.expeditions.find((x) => x.by.code === mine && x.target === o.node);
     const state = e ? e.state : "gone";
     return state === o.state && (!e || e.units === o.units) ? o : { ...o, state, units: e?.units ?? o.units };
@@ -215,10 +252,10 @@ const KEPT = 12;
 export function parseOutgoing(raw: unknown): Outgoing[] {
   if (!Array.isArray(raw)) return [];
   return raw
-    .filter((o): o is Outgoing => isObj(o) && isIslandCode(o.code) && typeof o.node === "string" && nodeIndex(o.node) >= 0 && typeof o.sentAt === "number" && count(o.id) && count(o.units) && (o.state === "gone" || STATES.includes(o.state as never)))
+    .filter((o): o is Outgoing => isObj(o) && isIslandCode(o.code) && typeof o.node === "string" && nodeIndex(o.node) >= 0 && typeof o.sentAt === "number" && count(o.id) && count(o.units) && (o.state === "gone" || o.state === "sending" || STATES.includes(o.state as never)))
     .map((o) => ({ code: o.code, node: o.node, sentAt: o.sentAt, id: o.id, units: o.units, state: o.state }))
     .slice(-KEPT);
 }
 
 /** The state's name on the factory's list. */
-export const STATE_NAME: Record<ExpeditionState, string> = { coming: "向かっている", attacking: "攻撃中", holding: "保持中", gone: "戻らない" };
+export const STATE_NAME: Record<ExpeditionState, string> = { sending: "送っている", coming: "向かっている", attacking: "攻撃中", holding: "保持中", gone: "戻らない" };

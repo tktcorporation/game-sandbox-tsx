@@ -22,7 +22,7 @@ import { squadKey } from "./sim/state";
 import { loadProfile, saveProfile } from "./meta/storage";
 import { sendIsland } from "./net";
 import { syncOwn, takeSync } from "./island-net";
-import { logLine, squadsAway } from "./meta/expeditions";
+import { dropStale, logLine, squadsAway } from "./meta/expeditions";
 import { Hub, type Launch } from "./view/hub";
 import { CampView } from "./view/camp";
 import { DepartPicker } from "./view/depart";
@@ -429,7 +429,9 @@ let settlement: Settlement | null = null;
 /** The mod kinds known when the raid ended, and the one analysed on its results (one at most). */
 let knownBefore: ModKind[] = [];
 let analysed: ModKind | null = null;
-const hub = new Hub(loadProfile(), () => lock());
+const loaded = loadProfile();
+// A send whose answer never came (the tab closed while it was out) gives its squad back on load.
+const hub = new Hub({ ...loaded, expeditions: dropStale(loaded.expeditions, Date.now()) }, () => lock());
 const campView = new CampView();
 const picker = new DepartPicker(hub, () => answerDepart(true));
 // The title's one line on the goal: the island's six nodes, filled blue as far as this save has taken them.

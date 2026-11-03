@@ -9,7 +9,7 @@
 import { loadIdentity, rememberCode, type Identity } from "./meta/identity";
 import { isApiError, type ApiError, type NetError } from "./meta/island-errors";
 import { isIslandCode } from "./meta/island-code";
-import { applySync, parseLog, parseView, reportedHolds, reportHolds, sendUnits, type IslandLogEntry, type IslandView, type Synced } from "./meta/expeditions";
+import { applySync, parseLog, parseView, reportedHolds, reportHolds, type IslandLogEntry, type IslandView, type Synced } from "./meta/expeditions";
 import type { Profile } from "./meta/profile";
 
 /** An answer: the body of a success, or why it failed. */
@@ -66,11 +66,11 @@ export async function readView(code: string): Promise<Answer<IslandView>> {
   return v ? { ok: true, body: v } : failed("bad-response");
 }
 
-/** Sends an expedition from this island's factory to node `node` of island `code` (`POST …/expeditions`): its number on that island. */
-export async function sendExpedition(p: Pick<Profile, "factory">, code: string, node: string): Promise<Answer<{ id: number }>> {
+/** Sends an expedition of `units` from this island's factory to node `node` of island `code` (`POST …/expeditions`): its number on that island. */
+export async function sendExpedition(code: string, node: string, units: number): Promise<Answer<{ id: number }>> {
   const who = loadIdentity();
   if (!who.code) return failed("no-own-island");
-  const r = await call(`/api/islands/${encodeURIComponent(code)}/expeditions`, { method: "POST", body: JSON.stringify({ from: { ...player(who), code: who.code }, target: node, units: sendUnits(p) }) });
+  const r = await call(`/api/islands/${encodeURIComponent(code)}/expeditions`, { method: "POST", body: JSON.stringify({ from: { ...player(who), code: who.code }, target: node, units }) });
   if (!r.ok) return r;
   const id = (r.body as { id?: unknown }).id;
   return Number.isInteger(id) ? { ok: true, body: { id: id as number } } : failed("bad-response");

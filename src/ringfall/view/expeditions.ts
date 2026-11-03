@@ -6,11 +6,11 @@
  * With no server it says so in one line and nothing else changes.
  */
 import { readView, sendExpedition, syncOwn, takeSync } from "../island-net";
-import { alive, canSend, factorySquads, homeSquads, refreshOutgoing, sendUnits, squadsAway, STATE_NAME, type IslandLogEntry, type IslandView } from "../meta/expeditions";
+import { alive, answerSend, canSend, dropStale, factoryAhead, factorySquads, homeSquads, refreshOutgoing, sendingEntry, sendKinds, squadsAway, STATE_NAME, type IslandLogEntry, type IslandView } from "../meta/expeditions";
 import { parseIslandCode } from "../meta/island-code";
 import { errorText } from "../meta/island-errors";
 import type { Profile } from "../meta/profile";
-import { NODES, nodeIndex } from "../sim/map";
+import { NODES, nodeIndex, type NodeId } from "../sim/map";
 import { coreIcon, flagIcon, lockIcon, robotIcon, SIDE } from "./icons";
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -60,6 +60,10 @@ export class ExpeditionPanel {
 
   private async connect() {
     const ask = ++this.ask;
+    // A send whose answer never came (a tab closed while it was out) gives its squad back.
+    const p0 = this.get();
+    const kept = dropStale(p0.expeditions, Date.now());
+    if (kept !== p0.expeditions) this.put({ ...p0, expeditions: kept });
     if (this.conn.t !== "ok") this.conn = { t: "wait" };
     this.paint();
     const r = await syncOwn(this.get(), false);
@@ -151,17 +155,37 @@ export class ExpeditionPanel {
     this.paint();
   }
 
+  /** The factory level the server has for this island, as its view last read it; null before it is read. */
+  private serverFactory(): number | null {
+    return this.conn.t === "ok" && this.conn.view ? this.conn.view.factory : null;
+  }
+
+  /**
+   * Sends one. The expedition is in the profile at once (`sending`), so its squad is taken while the
+   * request is out, a raid started meanwhile included; the answer makes it the server's expedition
+   * or takes it out again, and is applied to the profile even when the panel closed meanwhile. The
+   * squad is the one the server allows: that of the factory level it has for this island, read anew.
+   */
   private async send() {
     const t = this.target;
     const node = this.pick;
-    if (!t || !node || this.conn.t !== "ok" || !canSend(this.get())) return;
+    const c = this.conn;
+    if (!t || !node || c.t !== "ok" || !canSend(this.get())) return;
+    const p0 = this.get();
+    const pending = sendingEntry(t.code, node as NodeId, sendKinds(this.serverFactory() ?? p0.factory).length, Date.now());
+    this.put({ ...p0, expeditions: [...p0.expeditions, pending] });
     this.busy = true;
+    this.note = null;
     this.paint();
-    const r = await sendExpedition(this.get(), t.code, node);
+    const own = await readView(c.code);
+    if (own.ok && this.conn.t === "ok" && this.conn.code === c.code) this.conn = { ...this.conn, view: own.body };
+    const level = own.ok ? own.body.factory : (c.view?.factory ?? null);
+    const units = level === null ? 0 : sendKinds(level).length;
+    const r = level === null ? { ok: false as const, error: own.ok ? ("bad-response" as const) : own.error } : await sendExpedition(t.code, node, units);
+    const p = this.get();
+    this.put({ ...p, expeditions: answerSend(p.expeditions, pending, r.ok ? r.body.id : null, units) });
     this.busy = false;
     if (r.ok) {
-      const p = this.get();
-      this.put({ ...p, expeditions: [...p.expeditions, { code: t.code, node: node as Profile["expeditions"][number]["node"], sentAt: Date.now(), id: r.body.id, units: sendUnits(p), state: "coming" }] });
       this.note = { text: `${nodeName(node)}へ送った`, good: true };
       this.pick = null;
       const again = await readView(t.code);
@@ -199,7 +223,7 @@ export class ExpeditionPanel {
           .map((e) => `<div class="req exp-out ${e.state}"><span><b class="exp-code">${esc(e.code)}</b>${esc(nodeName(e.node))}</span><b>${STATE_NAME[e.state]}</b><small>${robotIcon(SIDE.own)}${e.units}</small></div>`)
           .join("")}</div>`
       : "";
-    // What sending costs: each expedition out keeps one squad fewer out on this island.
+    // What sending costs: each expedition out (one being sent too) keeps one squad fewer out on this island.
     const cost = away ? `<div class="exp-cost"><span>${flagIcon()}島の守り<b>${homeSquads(p)}</b></span><span>${flagIcon()}遠征<b>${away}</b></span></div>` : "";
     return `<div class="mod open up-card exp-card">${head}<div class="mod-body">${status}${out}${cost}${c.t === "ok" ? this.sendForm(p) : ""}</div></div>`;
   }
@@ -219,7 +243,9 @@ export class ExpeditionPanel {
       const room = canSend(p);
       const go = open.length
         ? room
-          ? `<button type="button" class="exp-go" data-act="exp-send"${this.pick && !this.busy ? "" : " disabled"}>送る<span class="bots">${Array.from({ length: sendUnits(p) }, () => robotIcon(SIDE.own)).join("")}</span></button>`
+          ? `<button type="button" class="exp-go" data-act="exp-send"${this.pick && !this.busy ? "" : " disabled"}>送る<span class="bots">${sendKinds(this.serverFactory() ?? p.factory)
+              .map(() => robotIcon(SIDE.own))
+              .join("")}</span></button>` + (factoryAhead(p, this.serverFactory() ?? p.factory) ? `<p class="exp-wait">工場の段は次のレイドの後に島へ届く</p>` : "")
           : `<p class="lock-note">${lockIcon()}部隊が出払っている</p>`
         : "";
       pick = `<div class="exp-target"><small><b>${esc(t.owner)}</b>の島 <b class="exp-code">${esc(t.code)}</b></small>${nodes}${go}</div>`;

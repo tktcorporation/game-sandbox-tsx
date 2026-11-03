@@ -17,6 +17,10 @@
  *   read back; an expedition out takes the state its island shows, and one missing there is gone.
  * - **cost**: each expedition out takes one of the squads the factory keeps out: in the battle, a
  *   factory whose one squad is away sends none, and one with none away sends its squad.
+ * - **sending**: the squad an expedition takes is that of the factory level the server has for the
+ *   island (the server's own rule), the camp's factory built further shows as ahead; a send being
+ *   made counts as a squad away at once, its answer numbers it or takes it out again, and one left
+ *   unanswered past `SENDING_MS` is dropped.
  * - **income**: each node the expeditions hold pays `FRONT.income` at the settle, and those gone are dropped.
  * - **saves**: a v26 save loads as v27 with no expedition and no log read; a v27 save keeps both.
  * - **errors**: every error code the API can answer with has a line, and the Worker's sources use no other.
@@ -33,8 +37,8 @@ import { step } from "../src/ringfall/sim/step";
 import { holds } from "../src/ringfall/meta/island";
 import { newProfile, parseProfile, settle, type Profile } from "../src/ringfall/meta/profile";
 import { API_ERRORS, ERROR_TEXT, errorText } from "../src/ringfall/meta/island-errors";
-import { applySync, retakenNodes, awayIncome, canSend, factorySquads, homeSquads, logLine, mergeHolds, parseLog, parseOutgoing, parseView, refreshOutgoing, reportedHolds, reportHolds, squadsAway, type IslandLogEntry, type Outgoing } from "../src/ringfall/meta/expeditions";
-import { EXPEDITION, islandOp, publicView, type IslandState } from "../worker/island";
+import { answerSend, dropStale, factoryAhead, sendingEntry, sendKinds, SENDING_MS, applySync, retakenNodes, awayIncome, canSend, factorySquads, homeSquads, logLine, mergeHolds, parseLog, parseOutgoing, parseView, refreshOutgoing, reportedHolds, reportHolds, squadsAway, type IslandLogEntry, type Outgoing } from "../src/ringfall/meta/expeditions";
+import { EXPEDITION, islandOp, publicView, squadKinds, type IslandState } from "../worker/island";
 import { handleApi } from "../worker/api";
 
 const errors: string[] = [];
@@ -201,6 +205,40 @@ function island(freed: string[], rival: string[] = []): Profile {
   const one = squadsOut(1);
   console.log(`cost: the battle's factory sends ${none} squad(s) with none away, ${one} with its one squad away`);
   check(none === 1 && one === 0, "cost: the battle's factory does not keep the squad away at home");
+}
+
+// --- sending
+{
+  const levels = FACTORY.levels.map((_, f) => f);
+  const same = levels.every((f) => sendKinds(f).join() === squadKinds(f).join());
+  // The camp's factory at level 3, the server's copy of the island still at 1 (the last report's).
+  const p = { ...island([]), factory: 3 };
+  const t0 = 1_700_000_000_000;
+  const own = islandOp(null, { t: "claim", player: { id: ID_A, name: "わたし" }, code: A }, t0).state as IslandState;
+  islandOp(own, { t: "report", player: { id: ID_A, name: "わたし" }, holds: reportHolds(p), retaken: [], factory: 1, day: 2 }, t0 + 1000);
+  const level = parseView(JSON.parse(JSON.stringify(publicView(own, t0 + 2000))))!.factory;
+  console.log(`sending: the server has the factory at ${level}, the camp at ${p.factory}; the squad goes ${sendKinds(level).length} strong (the camp's would be ${sendKinds(p.factory).length}); ahead ${factoryAhead(p, level)}`);
+  check(same, "sending: the squad the game sends is not the one the server allows at some level");
+  check(level === 1 && sendKinds(level).length === FACTORY.levels[1].kinds.length && factoryAhead(p, level) && !factoryAhead({ factory: 1 }, level), "sending: the squad is not sized by the factory level the server has");
+  // A send being made takes its squad at once; the answer numbers it, or a refusal gives the squad back.
+  const now = t0 + 5000;
+  const pending = sendingEntry(B, "relay", 3, now);
+  const out = { ...island([]), factory: 2, expeditions: [pending] };
+  const done = answerSend(out.expeditions, pending, 9, 4);
+  const refused = answerSend(out.expeditions, pending, null);
+  console.log(`sending: while out away ${squadsAway(out)} (home ${homeSquads(out)} of ${factorySquads(out)}); answered ${JSON.stringify(done)}; refused ${refused.length} left`);
+  check(squadsAway(out) === 1 && homeSquads(out) === factorySquads(out) - 1, "sending: a send being made does not take its squad");
+  check(done.length === 1 && done[0].state === "coming" && done[0].id === 9 && done[0].units === 4, "sending: the answer did not make it the server's expedition");
+  check(refused.length === 0, "sending: a refused send kept its squad");
+  check(refreshOutgoing(out.expeditions, A, { [B]: { code: B, owner: "x", day: 1, factory: 0, protectedUntil: 0, nodes: [], expeditions: [] } })[0] === pending, "sending: a refresh made a send being made gone");
+  check(parseOutgoing(JSON.parse(JSON.stringify(out.expeditions))).length === 1, "sending: a save dropped a send being made");
+  // Unanswered: kept for SENDING_MS, then dropped; other expeditions stay however old.
+  const held: Outgoing = { code: B, node: "yard", sentAt: 0, id: 3, units: 2, state: "holding" };
+  const list = [pending, held];
+  const young = dropStale(list, now + SENDING_MS - 1);
+  const old = dropStale(list, now + SENDING_MS + 1);
+  console.log(`sending: unanswered after ${SENDING_MS - 1} ms kept ${young.length}, after ${SENDING_MS + 1} ms ${old.map((o) => o.state).join()}`);
+  check(young === list && old.length === 1 && old[0] === held, "sending: an unanswered send was not dropped after SENDING_MS, or another expedition was");
 }
 
 // --- income
