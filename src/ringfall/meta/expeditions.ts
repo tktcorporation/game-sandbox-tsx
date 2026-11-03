@@ -256,13 +256,18 @@ export function refreshOutgoing(list: readonly Outgoing[], mine: string, views: 
 /** The most expeditions a save keeps: more than any factory can have out. */
 const KEPT = 12;
 
-/** Saved expeditions: well-formed ones only, the latest `KEPT`. */
+/**
+ * Saved expeditions: well-formed ones only, at most `KEPT`. Expeditions that are gone make room first
+ * (the oldest of them), so a live one is never trimmed for a newer that has already ended.
+ */
 export function parseOutgoing(raw: unknown): Outgoing[] {
   if (!Array.isArray(raw)) return [];
-  return raw
+  const all = raw
     .filter((o): o is Outgoing => isObj(o) && isIslandCode(o.code) && typeof o.node === "string" && nodeIndex(o.node) >= 0 && typeof o.sentAt === "number" && count(o.id) && count(o.units) && (o.state === "gone" || o.state === "sending" || STATES.includes(o.state as never)))
-    .map((o) => ({ code: o.code, node: o.node, sentAt: o.sentAt, id: o.id, units: o.units, state: o.state }))
-    .slice(-KEPT);
+    .map((o) => ({ code: o.code, node: o.node, sentAt: o.sentAt, id: o.id, units: o.units, state: o.state }));
+  let over = all.length - KEPT;
+  const kept = over > 0 ? all.filter((o) => !(o.state === "gone" && over-- > 0)) : all;
+  return kept.slice(-KEPT);
 }
 
 /** The state's name on the factory's list. */

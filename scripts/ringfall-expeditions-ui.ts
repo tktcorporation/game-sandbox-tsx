@@ -275,6 +275,15 @@ function island(freed: string[], rival: string[] = []): Profile {
   check(old.profile.poiState.supply.state === "freed" && old.profile.retaken.length === 0 && old.news.length === 0, "stale sync: an answer a later sync superseded took its older holds or log");
 }
 
+// --- trimming a long list drops expeditions that are gone before live ones
+{
+  const live: Outgoing = { code: A, node: "relay", sentAt: 0, id: 1, units: 2, state: "holding" };
+  const gone = Array.from({ length: 14 }, (_, k): Outgoing => ({ code: B, node: "yard", sentAt: k + 1, id: k + 2, units: 2, state: "gone" }));
+  const kept = parseOutgoing([live, ...gone]);
+  console.log(`trim: ${kept.length} kept of 15, the holding one ${kept.some((o) => o.state === "holding") ? "kept" : "dropped"}`);
+  check(kept.length === 12 && kept.some((o) => o.state === "holding"), "trim: a live expedition was dropped for newer ones that are gone");
+}
+
 // --- a send against a server that never answers: each request gives up, and the send rolls back
 {
   rememberCode(A);
