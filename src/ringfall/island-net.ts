@@ -149,6 +149,13 @@ export async function syncOwn(p: Profile, report: boolean): Promise<Answer<OwnSy
  * answer never puts older holds back over newer ones; a later sync that was dropped or failed leaves
  * an older one free to apply.
  */
+/**
+ * Only the sync's report acknowledgement taken into `p` (the nodes taken back it reported leave the
+ * pending list): for an answer whose holds must not be taken now. It leaves which sync was last taken
+ * as it was, so an older sync's answer can still be taken whole.
+ */
+export const takeReport = (p: Profile, s: OwnSync): Profile => applySync(p, { reported: s.synced.reported }).profile;
+
 export function takeSync(p: Profile, s: OwnSync): { profile: Profile; news: IslandLogEntry[] } {
   if (s.ticket < applied) return applySync(p, { reported: s.synced.reported });
   applied = s.ticket;

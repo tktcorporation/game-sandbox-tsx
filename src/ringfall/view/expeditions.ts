@@ -5,7 +5,7 @@
  * so a request's answer redraws it without touching the panel around it or the code being typed.
  * With no server it says so in one line and nothing else changes.
  */
-import { readView, SEND_TIMEOUT_MS, sendExpedition, syncOwn, takeSync } from "../island-net";
+import { readView, SEND_TIMEOUT_MS, sendExpedition, syncOwn, takeReport, takeSync } from "../island-net";
 import { alive, numbered, answerSend, canSend, dropStale, factoryAhead, factorySquads, homeSquads, refreshOutgoing, sendingEntry, sendKinds, squadsAway, STATE_NAME, type IslandLogEntry, type IslandView } from "../meta/expeditions";
 import { parseIslandCode } from "../meta/island-code";
 import { errorText } from "../meta/island-errors";
@@ -70,7 +70,7 @@ export class ExpeditionPanel {
     if (ask !== this.ask) {
       // Closed meanwhile: a first claim's report still clears the nodes taken back it named.
       if (r.ok && r.body.synced.reported?.length) {
-        const { profile } = takeSync(this.get(), { ...r.body, synced: { reported: r.body.synced.reported } });
+        const profile = takeReport(this.get(), r.body);
         if (profile !== this.get()) this.put(profile);
       }
       return;

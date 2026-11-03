@@ -42,7 +42,7 @@ import { API_ERRORS, ERROR_TEXT, errorText } from "../src/ringfall/meta/island-e
 import { numbered, answerSend, dropStale, factoryAhead, sendingEntry, sendKinds, SENDING_MS, applySync, retakenNodes, awayIncome, canSend, factorySquads, homeSquads, logLine, mergeHolds, parseLog, parseOutgoing, parseView, refreshOutgoing, reportedHolds, reportHolds, squadsAway, type IslandLogEntry, type Outgoing } from "../src/ringfall/meta/expeditions";
 import { EXPEDITION, islandOp, publicView, squadKinds, type IslandState } from "../worker/island";
 import { handleApi } from "../worker/api";
-import { readView, SEND_TIMEOUT_MS, sendExpedition, syncOwn, takeSync } from "../src/ringfall/island-net";
+import { readView, SEND_TIMEOUT_MS, sendExpedition, takeReport, takeSync } from "../src/ringfall/island-net";
 import { rememberCode } from "../src/ringfall/meta/identity";
 
 const errors: string[] = [];
@@ -263,7 +263,8 @@ function island(freed: string[], rival: string[] = []): Profile {
   // Tickets as syncOwn hands them out: an older one (100) and a later one (101).
   const older = { code: A, view: null, ticket: 100, synced: { holds: server, reported: ["quarry"] as never, log } };
   const later = { code: A, view: null, ticket: 101, synced: {} };
-  // A later sync that never applies (panel closed, request failed) leaves the older one to apply.
+  // A later sync that never applies, or only acknowledges its report (panel closed, next raid under way), leaves the older one to apply.
+  takeReport(base, later);
   const alone = takeSync(base, older);
   console.log(`older sync with the later one dropped: supply ${alone.profile.poiState.supply.state}, news ${alone.news.length}`);
   check(alone.profile.poiState.supply.state === rivalHold(A) && alone.news.length === 1, "stale sync: an older answer was dropped although no later one applied");

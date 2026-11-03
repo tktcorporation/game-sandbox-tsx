@@ -21,7 +21,7 @@ import { bodyCenter, eyePos, fireRay, kill } from "./sim/combat";
 import { squadKey } from "./sim/state";
 import { loadProfile, saveProfile } from "./meta/storage";
 import { sendIsland } from "./net";
-import { syncOwn, takeSync } from "./island-net";
+import { syncOwn, takeReport, takeSync } from "./island-net";
 import { dropStale, logLine, squadsAway } from "./meta/expeditions";
 import { Hub, type Launch } from "./view/hub";
 import { CampView } from "./view/camp";
@@ -289,7 +289,7 @@ function syncIsland(p: Settlement["profile"], settled: State) {
     // settled raid (still `running` until finish()) take the sync whole; an answer a later sync
     // superseded takes only its report's acknowledgement (takeSync).
     if (running && state !== settled) {
-      const { profile } = takeSync(hub.profile, { ...r.body, synced: { reported: r.body.synced.reported } });
+      const profile = takeReport(hub.profile, r.body);
       if (profile !== hub.profile) hub.update(profile);
       return;
     }
