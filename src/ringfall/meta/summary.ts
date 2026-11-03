@@ -14,7 +14,7 @@ import { strengthFor, type State } from "../sim/state";
  * The summary of raid `s` settled as `settlement`, posted as `player`. The island's numbers are the
  * profile's after the settle (the next day's); the raid's day is the one it was played on.
  */
-export function islandPost(player: Identity, settlement: Settlement, s: Pick<State, "outcome" | "stats">) {
+export function islandPost(player: Pick<Identity, "id" | "name">, settlement: Settlement, s: Pick<State, "outcome" | "stats">) {
   const p = settlement.profile;
   const holds = islandHolds(p);
   const enemy = enemyNodes(holds);

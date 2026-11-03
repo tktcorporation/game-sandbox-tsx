@@ -7,6 +7,10 @@
     "binding": "ASSETS",
     "not_found_handling": "single-page-application"
   },
+  "durable_objects": {
+    "bindings": [{ "name": "ISLAND", "class_name": "IslandDO" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["IslandDO"] }],
   "observability": {
     "enabled": true
   }
