@@ -5,8 +5,8 @@
  * so a request's answer redraws it without touching the panel around it or the code being typed.
  * With no server it says so in one line and nothing else changes.
  */
-import { readView, sendExpedition, syncOwn, takeSync } from "../island-net";
-import { alive, answerSend, canSend, dropStale, factoryAhead, factorySquads, homeSquads, refreshOutgoing, sendingEntry, sendKinds, squadsAway, STATE_NAME, type IslandLogEntry, type IslandView } from "../meta/expeditions";
+import { readView, SEND_TIMEOUT_MS, sendExpedition, syncOwn, takeSync } from "../island-net";
+import { alive, numbered, answerSend, canSend, dropStale, factoryAhead, factorySquads, homeSquads, refreshOutgoing, sendingEntry, sendKinds, squadsAway, STATE_NAME, type IslandLogEntry, type IslandView } from "../meta/expeditions";
 import { parseIslandCode } from "../meta/island-code";
 import { errorText } from "../meta/island-errors";
 import type { Profile } from "../meta/profile";
@@ -95,6 +95,7 @@ export class ExpeditionPanel {
 
   /** The expeditions out, each as its island shows it now. */
   private async refresh(mine: string, ask: number) {
+    const asked = numbered(this.get().expeditions);
     const codes = [...new Set(alive(this.get()).map((e) => e.code))];
     if (!codes.length) return;
     const views: Record<string, IslandView | null> = {};
@@ -104,7 +105,7 @@ export class ExpeditionPanel {
     }
     if (ask !== this.ask) return;
     const p = this.get();
-    const expeditions = refreshOutgoing(p.expeditions, mine, views);
+    const expeditions = refreshOutgoing(p.expeditions, mine, views, asked);
     if (expeditions.some((e, i) => e !== p.expeditions[i])) this.put({ ...p, expeditions });
   }
 
@@ -177,7 +178,7 @@ export class ExpeditionPanel {
     this.busy = true;
     this.note = null;
     this.paint();
-    const own = await readView(c.code);
+    const own = await readView(c.code, SEND_TIMEOUT_MS);
     if (own.ok && this.conn.t === "ok" && this.conn.code === c.code) this.conn = { ...this.conn, view: own.body };
     const level = own.ok ? own.body.factory : (c.view?.factory ?? null);
     const units = level === null ? 0 : sendKinds(level).length;

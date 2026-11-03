@@ -17,12 +17,24 @@ export type Answer<T> = { ok: true; body: T } | { ok: false; error: ApiError | N
 
 const failed = (error: ApiError | NetError): { ok: false; error: ApiError | NetError } => ({ ok: false, error });
 
-/** One request to the API, its body as JSON; a refusal (a status other than 200 or 201, or `ok: false`) is its error code. */
-async function call(path: string, init: RequestInit = {}): Promise<Answer<unknown>> {
+/**
+ * Milliseconds each request of a send (the own island's view, then the expedition) waits before it
+ * gives up as `network`: the two together end well inside `SENDING_MS`, so a send still out is never
+ * dropped as unanswered and then answered.
+ */
+export const SEND_TIMEOUT_MS = 20_000;
+
+/**
+ * One request to the API, its body as JSON; a refusal (a status other than 200 or 201, or `ok: false`)
+ * is its error code. With `timeout`, the request is aborted after that many milliseconds and fails as
+ * `network` (an aborted fetch logs nothing).
+ */
+async function call(path: string, init: RequestInit = {}, timeout?: number): Promise<Answer<unknown>> {
   if (navigator.webdriver) return failed("no-island-server");
+  const signal = timeout === undefined ? undefined : AbortSignal.timeout(timeout);
   let r: Response;
   try {
-    r = await fetch(path, { ...init, headers: { "content-type": "application/json", ...(init.headers ?? {}) } });
+    r = await fetch(path, { ...init, signal, headers: { "content-type": "application/json", ...(init.headers ?? {}) } });
   } catch {
     return failed("network");
   }
@@ -30,7 +42,7 @@ async function call(path: string, init: RequestInit = {}): Promise<Answer<unknow
   try {
     body = await r.json();
   } catch {
-    return failed("bad-response");
+    return failed(signal?.aborted ? "network" : "bad-response");
   }
   const o = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
   if ((r.status === 200 || r.status === 201) && o.ok === true) return { ok: true, body };
@@ -59,18 +71,18 @@ async function claimOnce(): Promise<Answer<Identity>> {
 }
 
 /** Any island as anyone sees it (`GET /api/islands/:code`). */
-export async function readView(code: string): Promise<Answer<IslandView>> {
-  const r = await call(`/api/islands/${encodeURIComponent(code)}`);
+export async function readView(code: string, timeout?: number): Promise<Answer<IslandView>> {
+  const r = await call(`/api/islands/${encodeURIComponent(code)}`, {}, timeout);
   if (!r.ok) return r;
   const v = parseView(r.body);
   return v ? { ok: true, body: v } : failed("bad-response");
 }
 
-/** Sends an expedition of `units` from this island's factory to node `node` of island `code` (`POST …/expeditions`): its number on that island. */
-export async function sendExpedition(code: string, node: string, units: number): Promise<Answer<{ id: number }>> {
+/** Sends an expedition of `units` from this island's factory to node `node` of island `code` (`POST …/expeditions`): its number on that island. Gives up as `network` after `timeout` ms. */
+export async function sendExpedition(code: string, node: string, units: number, timeout = SEND_TIMEOUT_MS): Promise<Answer<{ id: number }>> {
   const who = loadIdentity();
   if (!who.code) return failed("no-own-island");
-  const r = await call(`/api/islands/${encodeURIComponent(code)}/expeditions`, { method: "POST", body: JSON.stringify({ from: { ...player(who), code: who.code }, target: node, units }) });
+  const r = await call(`/api/islands/${encodeURIComponent(code)}/expeditions`, { method: "POST", body: JSON.stringify({ from: { ...player(who), code: who.code }, target: node, units }) }, timeout);
   if (!r.ok) return r;
   const id = (r.body as { id?: unknown }).id;
   return Number.isInteger(id) ? { ok: true, body: { id: id as number } } : failed("bad-response");

@@ -230,15 +230,23 @@ export function dropStale(list: Outgoing[], now: number): Outgoing[] {
 /** The credits the nodes the expeditions hold on other islands pay at the settle: `FRONT.income` each (陣地の数え方). */
 export const awayIncome = (p: { expeditions: readonly Outgoing[] }) => p.expeditions.filter((e) => e.state === "holding").length * FRONT.income;
 
+/** An expedition's key among those sent: its island and the number that island gave it. */
+export const sentKey = (o: Pick<Outgoing, "code" | "id">) => `${o.code}:${o.id}`;
+
+/** The keys (`sentKey()`) of the expeditions the server had numbered when views of their islands were asked for: only those may be judged by the views. */
+export const numbered = (list: readonly Outgoing[]): Set<string> => new Set(list.filter((o) => o.state !== "sending" && o.state !== "gone").map(sentKey));
+
 /**
  * The expeditions as the islands they went to show them now: each one found there (by this
  * island's code and its node) takes the view's state, one missing from a view read is gone, and one
- * whose island was not read stays as it was.
+ * whose island was not read stays as it was. Only those in `asked` (`numbered()` as the views were
+ * asked for) are judged: one numbered after the view was read may be missing from it only because
+ * it is newer.
  */
-export function refreshOutgoing(list: readonly Outgoing[], mine: string, views: Readonly<Record<string, IslandView | null | undefined>>): Outgoing[] {
+export function refreshOutgoing(list: readonly Outgoing[], mine: string, views: Readonly<Record<string, IslandView | null | undefined>>, asked: ReadonlySet<string> = numbered(list)): Outgoing[] {
   return list.map((o) => {
     const v = views[o.code];
-    if (!v || o.state === "gone" || o.state === "sending") return o;
+    if (!v || o.state === "gone" || o.state === "sending" || !asked.has(sentKey(o))) return o;
     const e = v.expeditions.find((x) => x.by.code === mine && x.target === o.node);
     const state = e ? e.state : "gone";
     return state === o.state && (!e || e.units === o.units) ? o : { ...o, state, units: e?.units ?? o.units };

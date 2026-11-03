@@ -20,7 +20,9 @@
  * - **sending**: the squad an expedition takes is that of the factory level the server has for the
  *   island (the server's own rule), the camp's factory built further shows as ahead; a send being
  *   made counts as a squad away at once, its answer numbers it or takes it out again, and one left
- *   unanswered past `SENDING_MS` is dropped.
+ *   unanswered past `SENDING_MS` is dropped. Each request of a send gives up as `network` after
+ *   `SEND_TIMEOUT_MS` (here, against a server that never answers), well inside `SENDING_MS`, and
+ *   the send rolls back; a send answered while views of its island were out stays `coming`.
  * - **income**: each node the expeditions hold pays `FRONT.income` at the settle, and those gone are dropped.
  * - **saves**: a v26 save loads as v27 with no expedition and no log read; a v27 save keeps both.
  * - **errors**: every error code the API can answer with has a line, and the Worker's sources use no other.
@@ -37,9 +39,11 @@ import { step } from "../src/ringfall/sim/step";
 import { holds } from "../src/ringfall/meta/island";
 import { newProfile, parseProfile, settle, type Profile } from "../src/ringfall/meta/profile";
 import { API_ERRORS, ERROR_TEXT, errorText } from "../src/ringfall/meta/island-errors";
-import { answerSend, dropStale, factoryAhead, sendingEntry, sendKinds, SENDING_MS, applySync, retakenNodes, awayIncome, canSend, factorySquads, homeSquads, logLine, mergeHolds, parseLog, parseOutgoing, parseView, refreshOutgoing, reportedHolds, reportHolds, squadsAway, type IslandLogEntry, type Outgoing } from "../src/ringfall/meta/expeditions";
+import { numbered, answerSend, dropStale, factoryAhead, sendingEntry, sendKinds, SENDING_MS, applySync, retakenNodes, awayIncome, canSend, factorySquads, homeSquads, logLine, mergeHolds, parseLog, parseOutgoing, parseView, refreshOutgoing, reportedHolds, reportHolds, squadsAway, type IslandLogEntry, type Outgoing } from "../src/ringfall/meta/expeditions";
 import { EXPEDITION, islandOp, publicView, squadKinds, type IslandState } from "../worker/island";
 import { handleApi } from "../worker/api";
+import { readView, SEND_TIMEOUT_MS, sendExpedition } from "../src/ringfall/island-net";
+import { rememberCode } from "../src/ringfall/meta/identity";
 
 const errors: string[] = [];
 const check = (ok: boolean, what: string) => {
@@ -239,6 +243,35 @@ function island(freed: string[], rival: string[] = []): Profile {
   const old = dropStale(list, now + SENDING_MS + 1);
   console.log(`sending: unanswered after ${SENDING_MS - 1} ms kept ${young.length}, after ${SENDING_MS + 1} ms ${old.map((o) => o.state).join()}`);
   check(young === list && old.length === 1 && old[0] === held, "sending: an unanswered send was not dropped after SENDING_MS, or another expedition was");
+  // A refresh asked for the island's view while the send was out; the send was answered before the view was applied.
+  const asked = numbered(list);
+  const answered = answerSend(list, pending, 9, 3);
+  const older = { code: B, owner: "x", day: 1, factory: 0, protectedUntil: 0, nodes: [], expeditions: [{ by: { code: A, name: "わたし" }, target: "yard", units: 2, state: "holding" as const }] };
+  const raced = refreshOutgoing(answered, A, { [B]: older }, asked);
+  console.log(`sending: answered while the view was out -> ${raced.map((o) => `${o.node}:${o.state}`).join(" ")}`);
+  check(raced.find((o) => o.node === "relay")?.state === "coming" && raced.find((o) => o.node === "yard")?.state === "holding", "sending: a send answered while a view of its island was out was judged by that older view");
+}
+
+// --- a send against a server that never answers: each request gives up, and the send rolls back
+{
+  rememberCode(A);
+  const real = globalThis.fetch;
+  globalThis.fetch = ((_: unknown, init?: RequestInit) =>
+    new Promise((_ok, fail) => init?.signal?.addEventListener("abort", () => fail(init.signal!.reason)))) as typeof fetch;
+  // Node's abort timers do not hold the process open (a browser tab is): this interval does, meanwhile.
+  const alive = setInterval(() => {}, 1000);
+  const t = performance.now();
+  const view = await readView(B, 50);
+  const sent = await sendExpedition(B, "relay", 3, 50);
+  const took = Math.round(performance.now() - t);
+  clearInterval(alive);
+  globalThis.fetch = real;
+  const pending = sendingEntry(B, "relay", 3, 0);
+  const rolled = answerSend([pending], pending, sent.ok ? sent.body.id : null);
+  console.log(`timeout: view ${JSON.stringify(view)}, send ${JSON.stringify(sent)} in ${took} ms; rolled back ${rolled.length === 0}; a send gives up within ${2 * SEND_TIMEOUT_MS} ms of ${SENDING_MS}`);
+  check(!view.ok && view.error === "network" && !sent.ok && sent.error === "network" && took < 2000, "timeout: a request of a send to a server that never answers did not give up as network");
+  check(rolled.length === 0 && !!ERROR_TEXT.network, "timeout: a timed-out send did not roll back");
+  check(2 * SEND_TIMEOUT_MS < SENDING_MS, "timeout: a send's requests may outlast SENDING_MS, so a send still out could be dropped");
 }
 
 // --- income
