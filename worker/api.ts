@@ -212,9 +212,11 @@ async function handleIslands(request: Request, env: ApiEnv, now: number, url: UR
   if (!ns) return fail(202, "no-island-server");
   if (sub === "" && method === "GET") return ask(ns, code, { t: "view" }, now);
   if (sub === "log") {
-    const player = url.searchParams.get("player") ?? "";
+    // The owner's secret id goes in a header, never in the URL, where logs and histories keep it.
+    const player = /^Bearer (\S+)$/.exec(request.headers.get("authorization") ?? "")?.[1] ?? "";
+    if (!UUID.test(player)) return fail(401, "unauthorized");
     const after = Number(url.searchParams.get("after") ?? 0);
-    if (!UUID.test(player) || !int(after, 0, Number.MAX_SAFE_INTEGER)) return fail(400, "bad-request");
+    if (!int(after, 0, Number.MAX_SAFE_INTEGER)) return fail(400, "bad-request");
     return ask(ns, code, { t: "log", player, after }, now);
   }
   const body = await readJson(request);
@@ -235,10 +237,11 @@ async function handleIslands(request: Request, env: ApiEnv, now: number, url: UR
   const who = await ask(ns, fromCode, { t: "whois", player: from.id }, now);
   if (who.status === 404) return fail(403, "no-own-island");
   if (who.status !== 200) return who.status === 403 ? fail(403, "not-owner") : who;
-  const { factory } = (await who.json()) as { factory: number };
+  // The name others see is the one the sender's island keeps, not one the request names.
+  const { factory, name } = (await who.json()) as { factory: number; name: string };
   const kinds = squadKinds(factory);
   if (raw.units > kinds.length) return fail(400, "too-many-units");
-  return ask(ns, code, { t: "expedition", from: { code: fromCode, name: from.name }, target: raw.target, kinds: kinds.slice(0, raw.units) }, now);
+  return ask(ns, code, { t: "expedition", from: { code: fromCode, name }, target: raw.target, kinds: kinds.slice(0, raw.units) }, now);
 }
 
 /** The answer to a request under /api/, or null for any other path. */

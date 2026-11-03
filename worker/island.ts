@@ -119,6 +119,8 @@ export interface OpResult {
   status: number;
   body: unknown;
   state: IslandState | null;
+  /** Whether the island must be stored: a tick was reckoned or the op changed it. Reads of an island where nothing happened store nothing (the clock's jump over quiet time comes out the same when worked out again). */
+  changed: boolean;
 }
 
 const fail = (error: string) => ({ ok: false, error });
@@ -200,8 +202,15 @@ function startFight(s: IslandState, i: number) {
     for (let k = 0; k < FACTORY.levels[s.factory].turrets; k++) s.defenders.push({ id: s.nextId++, to: i, units: [unit("heavy")], task: "post" });
 }
 
-/** An expedition at its node, as the reckoning sees it; standing off (passing) while the day's limit of nodes lost is reached. */
-const expeditionSquad = (e: Expedition, off: boolean): ReckonSquad => ({
+/**
+ * Whether expedition `e` is held back at `t`: at its node, not holding it, while the island has lost
+ * its day's nodes (`EXPEDITION.perDay`). It stays out of its node's fight altogether until the next
+ * UTC day: nobody fights it and the factory sends nothing at it.
+ */
+const heldBack = (s: IslandState, e: Expedition, t: number) => e.arrived && !e.holding && takenOn(s, t) >= EXPEDITION.perDay;
+
+/** An expedition at its node, as the reckoning sees it. */
+const expeditionSquad = (e: Expedition): ReckonSquad => ({
   id: e.id,
   side: 3,
   owner: e.by.code,
@@ -213,7 +222,6 @@ const expeditionSquad = (e: Expedition, off: boolean): ReckonSquad => ({
   arrived: true,
   live: false,
   ashore: 0,
-  ...(off && !e.holding && { passing: true }),
 });
 
 const defenderSquad = (d: Defender): ReckonSquad => ({ id: d.id, side: 0, units: d.units, to: d.to, task: d.task, x: d.to * SPREAD, z: 0, arrived: true, live: false, ashore: 0 });
@@ -226,8 +234,8 @@ function tick(s: IslandState, t: number) {
       startFight(s, e.target);
       note(s, t, "landed", e.target, e.by);
     }
-  const here = s.expeditions.filter((e) => e.arrived);
-  if (!here.length) return;
+  const back = new Set(s.expeditions.filter((e) => heldBack(s, e, t)));
+  const here = s.expeditions.filter((e) => e.arrived && !back.has(e));
   // The factory sends a squad to the first of the owner's nodes under attack, as in a raid, while it has room.
   const lv = FACTORY.levels[s.factory];
   const attacked = here.find((e) => !e.holding && s.holds[e.target] === "freed");
@@ -236,8 +244,7 @@ function tick(s: IslandState, t: number) {
     s.defenders.push({ id: s.nextId++, to: attacked.target, units: lv.kinds.map(unit), task: "defend" });
     s.made = 0;
   }
-  const off = takenOn(s, t) >= EXPEDITION.perDay;
-  const squads = [...here.map((e) => expeditionSquad(e, off)), ...s.defenders.map(defenderSquad)];
+  const squads = [...here.map(expeditionSquad), ...s.defenders.map(defenderSquad)];
   const r = reckonApart(
     {
       holds: s.holds,
@@ -269,7 +276,7 @@ function tick(s: IslandState, t: number) {
   }
   s.holds = r.holds;
   s.expeditions = s.expeditions.filter((e) => {
-    if (!e.arrived) return true;
+    if (!e.arrived || back.has(e)) return true;
     const q = by.get(e.id);
     if (q) {
       e.units = q.units;
@@ -283,35 +290,73 @@ function tick(s: IslandState, t: number) {
     }
     return false;
   });
-  // The owner's squads stay while an expedition is at their node; the rest go home.
+  // The owner's squads stay while an expedition not held back is at their node; the rest go home.
   s.defenders = s.defenders.flatMap((d) => {
     const q = by.get(d.id);
-    return q && s.expeditions.some((e) => e.arrived && e.target === d.to) ? [{ ...d, units: q.units, task: q.task }] : [];
+    return q && s.expeditions.some((e) => e.arrived && !back.has(e) && e.target === d.to) ? [{ ...d, units: q.units, task: q.task }] : [];
   });
 }
 
 /**
- * The island reckoned to `now` in whole ticks, `EXPEDITION.maxTicks` at most; whether it is still
- * behind. With no expedition on it the clock jumps: nothing moves on an island nobody came to.
+ * Whether a tick at `t` would change nothing but the factory's work: no squad of the owner's out, no
+ * meter filling, and every expedition at its node holding it or held back. Expeditions still coming
+ * and held back ones wait for a time of their own (`quietUntil()`).
  */
-export function advance(s: IslandState, now: number, maxTicks = EXPEDITION.maxTicks): boolean {
-  const due = Math.floor((now - s.clock) / TICK_MS);
-  if (due <= 0) return false;
-  if (!s.expeditions.length) {
-    s.clock += due * TICK_MS;
-    s.made = FACTORY.levels[s.factory].every;
-    return false;
-  }
-  const n = Math.min(due, maxTicks);
-  for (let k = 0; k < n; k++) {
-    s.clock += TICK_MS;
-    tick(s, s.clock);
-  }
-  return due > n;
+function quiet(s: IslandState, t: number): boolean {
+  return !s.defenders.length && !s.meter.some((m) => m) && s.expeditions.every((e) => !e.arrived || e.holding || heldBack(s, e, t));
 }
 
-/** Whether the island needs its alarm: an expedition is on it. */
-export const busy = (s: IslandState | null) => !!s && s.expeditions.length > 0;
+/** The first time something happens on a quiet island after `t`: an expedition arriving, or the next UTC day for one held back; Infinity for none. */
+function quietUntil(s: IslandState, t: number): number {
+  let at = Infinity;
+  for (const e of s.expeditions) {
+    if (!e.arrived) at = Math.min(at, e.arriveAt);
+    else if (heldBack(s, e, t)) at = Math.min(at, (utcDay(t) + 1) * DAY_MS);
+  }
+  return at;
+}
+
+/**
+ * The island reckoned to `now` in whole ticks, `EXPEDITION.maxTicks` at most: whether it is still
+ * behind, and whether a tick was reckoned (`moved`). Over quiet time (`quiet()`) the clock jumps to
+ * the tick before the next thing that happens, which comes out as ticking through it would.
+ */
+export function advance(s: IslandState, now: number, maxTicks = EXPEDITION.maxTicks): { behind: boolean; moved: boolean } {
+  const every = FACTORY.levels[s.factory].every;
+  let n = 0;
+  for (;;) {
+    const due = Math.floor((now - s.clock) / TICK_MS);
+    if (due <= 0) return { behind: false, moved: n > 0 };
+    if (quiet(s, s.clock + TICK_MS)) {
+      // The tick that sees the next event is the first at or after it; jump to the one before.
+      const until = quietUntil(s, s.clock + TICK_MS);
+      const skip = Math.min(due, until === Infinity ? due : Math.ceil((until - s.clock) / TICK_MS) - 1);
+      if (skip > 0) {
+        s.clock += skip * TICK_MS;
+        s.made = Math.min(every, s.made + skip * CONQUEST.tick);
+        continue;
+      }
+    }
+    if (n >= maxTicks) return { behind: true, moved: true };
+    s.clock += TICK_MS;
+    tick(s, s.clock);
+    n++;
+  }
+}
+
+/**
+ * When the island's alarm should next ring after `now`, or null for none: in `EXPEDITION.alarmMs`
+ * while something can change (an expedition attacking, a meter filling, the owner's squads out),
+ * when the next expedition arrives or the next UTC day begins for those held back while that is all
+ * that waits, and never for an island
+ * whose expeditions all just hold their nodes. The next request arms it again when it is needed.
+ */
+export function nextAlarm(s: IslandState | null, now: number): number | null {
+  if (!s) return null;
+  if (!quiet(s, now)) return now + EXPEDITION.alarmMs;
+  const until = quietUntil(s, now);
+  return until === Infinity ? null : Math.max(now + 1, until);
+}
 
 /** A new island claimed at `now` for the player of `op`: every node the enemy's until the owner's first report. */
 function claim(op: Extract<IslandOp, { t: "claim" }>, now: number): IslandState {
@@ -363,18 +408,18 @@ function report(s: IslandState, op: Extract<IslandOp, { t: "report" }>, now: num
 /** Applies `op` to the island at `now` (reckoned to `now` first). The state passed in is changed in place. */
 export function islandOp(state: IslandState | null, op: IslandOp, now: number): OpResult {
   const s = state;
-  if (s) advance(s, now);
-  const done = (status: number, body: unknown): OpResult => ({ status, body, state: s });
+  const moved = s ? advance(s, now).moved : false;
+  const done = (status: number, body: unknown, wrote = false): OpResult => ({ status, body, state: s, changed: moved || wrote });
   // The server draws the code (worker/api.ts): one already claimed answers 409 and it draws again.
-  if (op.t === "claim") return s ? done(409, fail("code-taken")) : { status: 201, body: { ok: true, code: op.code }, state: claim(op, now) };
+  if (op.t === "claim") return s ? done(409, fail("code-taken")) : { status: 201, body: { ok: true, code: op.code }, state: claim(op, now), changed: true };
   if (!s) return done(404, fail("no-island"));
   if (op.t === "report") {
     if (s.owner.id !== op.player.id) return done(403, fail("not-owner"));
     report(s, op, now);
-    return done(200, { ok: true, holds: s.holds });
+    return done(200, { ok: true, holds: s.holds }, true);
   }
   if (op.t === "view") return done(200, publicView(s, now));
-  if (op.t === "whois") return s.owner.id === op.player ? done(200, { ok: true, factory: s.factory }) : done(403, fail("not-owner"));
+  if (op.t === "whois") return s.owner.id === op.player ? done(200, { ok: true, factory: s.factory, name: s.owner.name }) : done(403, fail("not-owner"));
   if (op.t === "log") {
     if (s.owner.id !== op.player) return done(403, fail("not-owner"));
     const entries = s.log.filter((e) => e.seq > op.after);
@@ -389,7 +434,7 @@ export function islandOp(state: IslandState | null, op: IslandOp, now: number): 
   if (why) return done(why.status, fail(why.error));
   const e: Expedition = { id: s.nextId++, by: { ...op.from }, target: i, units: op.kinds.map(unit), sentAt: now, arriveAt: now + EXPEDITION.arrive * 1000, arrived: false, holding: false };
   s.expeditions.push(e);
-  return done(201, { ok: true, id: e.id, arriveAt: e.arriveAt });
+  return done(201, { ok: true, id: e.id, arriveAt: e.arriveAt }, true);
 }
 
 /** The holds of a report, or null: one readable hold for each node. */

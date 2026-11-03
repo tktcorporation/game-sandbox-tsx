@@ -1,6 +1,6 @@
 /// <reference types="@cloudflare/workers-types" />
 
-import { advance, busy, EXPEDITION, islandOp, type IslandOp, type IslandState } from "./island";
+import { advance, islandOp, nextAlarm, type IslandOp, type IslandState } from "./island";
 
 /*
  * One island's Durable Object (docs/ringfall/multiplayer.md, 戦いの解き方): the only writer of that
@@ -21,23 +21,28 @@ export class IslandDO implements DurableObject {
     const { op, now } = (await request.json()) as { op: IslandOp; now: number };
     const state = (await this.ctx.storage.get<IslandState>(KEY)) ?? null;
     const r = islandOp(state, op, now);
-    if (r.state) await this.ctx.storage.put(KEY, r.state);
-    await this.wake(r.state, EXPEDITION.alarmMs);
+    if (r.state && r.changed) await this.ctx.storage.put(KEY, r.state);
+    await this.arm(r.state, now);
     return Response.json(r.body, { status: r.status });
   }
 
   async alarm(): Promise<void> {
     const state = (await this.ctx.storage.get<IslandState>(KEY)) ?? null;
     if (!state) return;
-    const behind = advance(state, Date.now());
-    await this.ctx.storage.put(KEY, state);
-    // The alarm that fired is spent: the next is set here, at once for an island further behind than one reckoning.
-    if (busy(state)) await this.ctx.storage.setAlarm(Date.now() + (behind ? 1 : EXPEDITION.alarmMs));
+    const now = Date.now();
+    const { behind, moved } = advance(state, now);
+    if (moved) await this.ctx.storage.put(KEY, state);
+    // The alarm that fired is spent: the next goes on at once for an island further behind than one reckoning.
+    if (behind) await this.ctx.storage.setAlarm(now + 1);
+    else await this.arm(state, now);
   }
 
-  /** Sets the alarm `ms` from now while expeditions are on the island, unless one is already set. */
-  private async wake(state: IslandState | null, ms: number) {
-    if (!busy(state) || (await this.ctx.storage.getAlarm()) !== null) return;
-    await this.ctx.storage.setAlarm(Date.now() + ms);
+  /** Sets the alarm to `nextAlarm()`, or clears it when nothing on the island can change. */
+  private async arm(state: IslandState | null, now: number) {
+    const at = nextAlarm(state, now);
+    const set = await this.ctx.storage.getAlarm();
+    if (at === null) {
+      if (set !== null) await this.ctx.storage.deleteAlarm();
+    } else if (set === null || set > at) await this.ctx.storage.setAlarm(at);
   }
 }
