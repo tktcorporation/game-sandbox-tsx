@@ -38,7 +38,8 @@ export interface IslandView {
   factory: number;
   protectedUntil: number;
   nodes: { id: string; hold: PoiHold; open: boolean }[];
-  expeditions: { by: { code: string; name: string }; target: string; units: number; state: ServerState }[];
+  /** The expeditions on the island; `id` is the number the island gave each when it took it. */
+  expeditions: { id: number; by: { code: string; name: string }; target: string; units: number; state: ServerState }[];
 }
 
 /** The states the island an expedition went to reports. */
@@ -69,7 +70,7 @@ export function parseView(raw: unknown): IslandView | null {
   });
   const expeditions = raw.expeditions.flatMap((e) => {
     const by = isObj(e) ? attacker(e.by) : null;
-    return isObj(e) && by && typeof e.target === "string" && count(e.units) && STATES.includes(e.state as never) ? [{ by, target: e.target, units: e.units, state: e.state as ServerState }] : [];
+    return isObj(e) && by && count(e.id) && typeof e.target === "string" && count(e.units) && STATES.includes(e.state as never) ? [{ id: e.id, by, target: e.target, units: e.units, state: e.state as ServerState }] : [];
   });
   const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
   return { code: raw.code, owner: raw.owner, day: num(raw.day), factory: num(raw.factory), protectedUntil: num(raw.protectedUntil), nodes, expeditions };
@@ -237,8 +238,8 @@ export const sentKey = (o: Pick<Outgoing, "code" | "id">) => `${o.code}:${o.id}`
 export const numbered = (list: readonly Outgoing[]): Set<string> => new Set(list.filter((o) => o.state !== "sending" && o.state !== "gone").map(sentKey));
 
 /**
- * The expeditions as the islands they went to show them now: each one found there (by this
- * island's code and its node) takes the view's state, one missing from a view read is gone, and one
+ * The expeditions as the islands they went to show them now: each one found there (by the number
+ * that island gave it, sent from this island) takes the view's state, one missing from a view read is gone, and one
  * whose island was not read stays as it was. Only those in `asked` (`numbered()` as the views were
  * asked for) are judged: one numbered after the view was read may be missing from it only because
  * it is newer.
@@ -247,7 +248,7 @@ export function refreshOutgoing(list: readonly Outgoing[], mine: string, views: 
   return list.map((o) => {
     const v = views[o.code];
     if (!v || o.state === "gone" || o.state === "sending" || !asked.has(sentKey(o))) return o;
-    const e = v.expeditions.find((x) => x.by.code === mine && x.target === o.node);
+    const e = v.expeditions.find((x) => x.id === o.id && x.by.code === mine);
     const state = e ? e.state : "gone";
     return state === o.state && (!e || e.units === o.units) ? o : { ...o, state, units: e?.units ?? o.units };
   });

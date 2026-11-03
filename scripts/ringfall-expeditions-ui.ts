@@ -246,10 +246,17 @@ function island(freed: string[], rival: string[] = []): Profile {
   // A refresh asked for the island's view while the send was out; the send was answered before the view was applied.
   const asked = numbered(list);
   const answered = answerSend(list, pending, 9, 3);
-  const older = { code: B, owner: "x", day: 1, factory: 0, protectedUntil: 0, nodes: [], expeditions: [{ by: { code: A, name: "わたし" }, target: "yard", units: 2, state: "holding" as const }] };
+  const older = { code: B, owner: "x", day: 1, factory: 0, protectedUntil: 0, nodes: [], expeditions: [{ id: 3, by: { code: A, name: "わたし" }, target: "yard", units: 2, state: "holding" as const }] };
   const raced = refreshOutgoing(answered, A, { [B]: older }, asked);
   console.log(`sending: answered while the view was out -> ${raced.map((o) => `${o.node}:${o.state}`).join(" ")}`);
   check(raced.find((o) => o.node === "relay")?.state === "coming" && raced.find((o) => o.node === "yard")?.state === "holding", "sending: a send answered while a view of its island was out was judged by that older view");
+  // A defeated expedition and its replacement at the same node: each is matched by its own number.
+  const dead: Outgoing = { code: B, node: "yard", sentAt: 0, id: 3, units: 2, state: "attacking" };
+  const fresh: Outgoing = { code: B, node: "yard", sentAt: 1, id: 7, units: 2, state: "coming" };
+  const view = { code: B, owner: "x", day: 1, factory: 0, protectedUntil: 0, nodes: [], expeditions: [{ id: 7, by: { code: A, name: "わたし" }, target: "yard", units: 2, state: "holding" as const }] };
+  const both = refreshOutgoing([dead, fresh], A, { [B]: view });
+  console.log(`replaced: the defeated one ${both[0].state}, its replacement ${both[1].state}`);
+  check(both[0].state === "gone" && both[1].state === "holding", "replaced: a defeated expedition took its replacement's state (paid twice for one node)");
 }
 
 // --- a sync that a later one started after takes only its report's acknowledgement

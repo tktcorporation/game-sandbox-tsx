@@ -193,6 +193,7 @@ export function publicView(s: IslandState, now: number) {
     protectedUntil: s.since + EXPEDITION.protectDays * DAY_MS,
     nodes: NODE_IDS.map((id, i) => ({ id, hold: s.holds[i], open: closedWhy(s, i, now) === null })),
     expeditions: s.expeditions.map((e) => ({
+      id: e.id,
       by: { ...e.by },
       target: NODE_IDS[e.target],
       units: e.units.length,
