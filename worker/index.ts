@@ -6,6 +6,8 @@ interface Env {
   ASSETS: Fetcher;
   /** RINGFALL's database; absent until one is connected (docs/ringfall/multiplayer.md). */
   DB?: D1Database;
+  /** RINGFALL's islands, one Durable Object for each island code, held by the islands Worker (islands/); absent until bound (docs/ringfall/multiplayer.md). */
+  ISLAND?: DurableObjectNamespace;
 }
 
 export default {

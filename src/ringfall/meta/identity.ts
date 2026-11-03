@@ -4,6 +4,8 @@
  * apart from the profile, so that a new profile keeps the same player.
  */
 
+import { isIslandCode } from "./island-code";
+
 const KEY = "ringfall.player.v1";
 
 export interface Identity {
@@ -11,6 +13,8 @@ export interface Identity {
   id: string;
   /** The name others see, 1 to 24 characters. */
   name: string;
+  /** The island's public code (meta/island-code.ts), as the server handed it out when the player claimed their island; absent until then. */
+  code?: string;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -21,11 +25,13 @@ export const defaultName = (id: string) => `プレイヤー-${id.slice(0, 4)}`;
 /** A saved identity, or null for anything unreadable. */
 export function parseIdentity(raw: unknown): Identity | null {
   if (!raw || typeof raw !== "object") return null;
-  const { id, name } = raw as Record<string, unknown>;
+  const { id, name, code } = raw as Record<string, unknown>;
   if (typeof id !== "string" || !UUID.test(id)) return null;
   const n = typeof name === "string" ? name.trim() : "";
   const chars = [...n].length;
-  return { id, name: chars >= 1 && chars <= 24 ? n : defaultName(id) };
+  const who: Identity = { id, name: chars >= 1 && chars <= 24 ? n : defaultName(id) };
+  if (isIslandCode(code)) who.code = code;
+  return who;
 }
 
 /** The identity this page settled on, so that it stays the same when storage cannot keep it. */
@@ -52,4 +58,16 @@ export function loadIdentity(): Identity {
     // Same as above: the identity lasts for this page only.
   }
   return (current = made);
+}
+
+/** Keeps the island code the server handed out (`POST /api/islands`) with the identity, for this page and, where storage works, the next. */
+export function rememberCode(code: string): Identity {
+  const who = { ...loadIdentity(), code };
+  current = who;
+  try {
+    localStorage.setItem(KEY, JSON.stringify(who));
+  } catch {
+    // Without storage the code lasts for this page; the next page claims an island again.
+  }
+  return who;
 }

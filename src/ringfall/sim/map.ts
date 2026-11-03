@@ -686,7 +686,6 @@ const N = 0;
 const E = Math.PI / 2;
 const S = Math.PI;
 const W = -Math.PI / 2;
-const SE = (3 * Math.PI) / 4;
 const SW = (-3 * Math.PI) / 4;
 
 
@@ -7529,7 +7528,7 @@ export const ROUTES: Route[] = (() => {
   const tSouth = cliffFoot(tx, tunnel.line[0][1], -1);
   const tNorth = cliffFoot(tx, tunnel.line[1][1], 1);
   const dam = GALLERY;
-  const [hx, hz] = AREA.heart;
+  const [, hz] = AREA.heart;
   const dx = dam.line[0][0];
   const dFoot = cliffFoot(dx, -100 + hz, -1);
   // The wreck's gangway: up the hull's north side to its main deck, forward of the middle,
