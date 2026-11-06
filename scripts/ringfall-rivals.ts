@@ -277,7 +277,7 @@ export function rivalsRun(): { err: string | null; r: Rivals } {
 
   // saves: a v26 save keeps another player's node; a v25 one reads it as the enemy's.
   const kept = parseProfile(JSON.parse(JSON.stringify(after.profile)));
-  if (!kept || kept.v !== 26 || kept.poiState.relay.state !== rivalHold(OWNER)) return fail(`a v26 save loaded the relay as ${kept?.poiState.relay.state}`);
+  if (!kept || kept.v !== 27 || kept.poiState.relay.state !== rivalHold(OWNER)) return fail(`a v26 save loaded the relay as ${kept?.poiState.relay.state}`);
   const old = parseProfile(JSON.parse(JSON.stringify({ ...after.profile, v: 25 })));
   if (!old || old.poiState.relay.state !== "held") return fail(`a v25 save loaded the relay as ${old?.poiState.relay.state}`);
   const bad = parseProfile(JSON.parse(JSON.stringify({ ...after.profile, poiState: { ...after.profile.poiState, relay: { state: "rival:" } } })));

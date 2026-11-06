@@ -1,6 +1,7 @@
 import { FACTORY_TOP } from "../src/ringfall/sim/config";
 import { newIslandCode, parseIslandCode } from "../src/ringfall/meta/island-code";
-import { parseHolds, squadKinds, type IslandOp } from "./island";
+import { parseHolds, parseRetaken, squadKinds, type IslandOp } from "./island";
+import type { ApiError } from "../src/ringfall/meta/island-errors";
 
 /*
  * RINGFALL's API under /api/ (docs/ringfall/multiplayer.md, サーバー). A plain handler of a request
@@ -55,7 +56,7 @@ export interface IslandPost {
 }
 
 const json = (status: number, body: unknown) => Response.json(body, { status });
-const fail = (status: number, error: string) => json(status, { ok: false, error });
+const fail = (status: number, error: ApiError) => json(status, { ok: false, error });
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
@@ -138,7 +139,7 @@ async function record(db: Db, post: IslandPost, now: number) {
   await db.batch(statements);
 }
 
-const notAllowed = (allow: string) => new Response(JSON.stringify({ ok: false, error: "method-not-allowed" }), { status: 405, headers: { "content-type": "application/json", allow } });
+const notAllowed = (allow: string) => new Response(JSON.stringify({ ok: false, error: "method-not-allowed" satisfies ApiError }), { status: 405, headers: { "content-type": "application/json", allow } });
 
 /** The body as JSON; a Response for a body over the cap (413) or not JSON (400). */
 async function readJson(request: Request): Promise<{ raw: unknown } | Response> {
@@ -226,8 +227,9 @@ async function handleIslands(request: Request, env: ApiEnv, now: number, url: UR
   if (sub === "") {
     const player = parsePlayer(raw.player);
     const holds = parseHolds(raw.holds);
-    if (!player || !holds || !int(raw.factory, 0, FACTORY_TOP) || !int(raw.day, 0, DAY_MAX)) return fail(400, "bad-request");
-    return ask(ns, code, { t: "report", player, holds, factory: raw.factory, day: raw.day }, now);
+    const retaken = parseRetaken(raw.retaken);
+    if (!player || !holds || !retaken || !int(raw.factory, 0, FACTORY_TOP) || !int(raw.day, 0, DAY_MAX)) return fail(400, "bad-request");
+    return ask(ns, code, { t: "report", player, holds, retaken, factory: raw.factory, day: raw.day }, now);
   }
   // An expedition: the sender proves their own island with their id, whose factory sets the squad they may send.
   const from = parsePlayer(raw.from);

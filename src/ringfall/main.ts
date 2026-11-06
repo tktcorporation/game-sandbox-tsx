@@ -21,6 +21,8 @@ import { bodyCenter, eyePos, fireRay, kill } from "./sim/combat";
 import { squadKey } from "./sim/state";
 import { loadProfile, saveProfile } from "./meta/storage";
 import { sendIsland } from "./net";
+import { syncOwn, takeReport, takeSync } from "./island-net";
+import { dropStale, logLine, squadsAway } from "./meta/expeditions";
 import { Hub, type Launch } from "./view/hub";
 import { CampView } from "./view/camp";
 import { DepartPicker } from "./view/depart";
@@ -162,6 +164,8 @@ function peekBag(on: boolean) {
 
 addEventListener("keydown", (e) => {
   if (e.repeat) return;
+  // Typing in a field (the factory's island code) is text, not the game's keys; Esc still closes the panel.
+  if (hub.station && (e.target as HTMLElement | null)?.tagName === "INPUT" && (e.target as HTMLInputElement).type === "text" && e.code !== "Escape") return;
   // The departure's check: Enter (or the use key) goes, Esc turns back.
   if (departing) {
     if (e.code === "Enter" || e.code === "NumpadEnter" || e.code === "KeyE") answerDepart(true);
@@ -261,8 +265,41 @@ function onEvent(e: GameEvent, s: State) {
     hub.reload(settlement.profile);
     saveProfile(hub.profile);
     sendIsland(settlement, s);
+    syncIsland(settlement.profile, s);
     setTimeout(finish, s.outcome === "extracted" ? 1400 : 2400);
   }
+}
+
+/** The island's news from the server that came in after the raid ended, for its results. */
+let islandNews: string[] = [];
+
+/**
+ * Syncs the island with the server after a settled raid (island-net.ts): the owner's report, then
+ * the log and the holds, taken into the profile as it stands when they come. Nothing waits on it;
+ * news that comes in time is on the results, and all of it on the map table. An answer that comes
+ * while the next raid is under way, or after a later sync started, only clears the nodes taken
+ * back it reported: the raid plays the island it started with, and the next sync reads the holds and
+ * the log again.
+ */
+function syncIsland(p: Settlement["profile"], settled: State) {
+  islandNews = [];
+  void syncOwn(p, true).then((r) => {
+    if (!r.ok) return;
+    // The next raid is under way only once a new run replaced the settled one: the results of the
+    // settled raid (still `running` until finish()) take the sync whole; an answer a later sync
+    // superseded takes only its report's acknowledgement (takeSync).
+    if (running && state !== settled) {
+      const profile = takeReport(hub.profile, r.body);
+      if (profile !== hub.profile) hub.update(profile);
+      return;
+    }
+    const { profile, news } = takeSync(hub.profile, r.body);
+    if (profile !== hub.profile) hub.update(profile);
+    if (!news.length) return;
+    hub.takeNews(news);
+    islandNews = news.map(logLine);
+    if (!$("results").hidden) hud.setNews(islandNews);
+  });
 }
 
 function tick() {
@@ -394,7 +431,9 @@ let settlement: Settlement | null = null;
 /** The mod kinds known when the raid ended, and the one analysed on its results (one at most). */
 let knownBefore: ModKind[] = [];
 let analysed: ModKind | null = null;
-const hub = new Hub(loadProfile(), () => lock());
+const loaded = loadProfile();
+// A send whose answer never came (the tab closed while it was out) gives its squad back on load.
+const hub = new Hub({ ...loaded, expeditions: dropStale(loaded.expeditions, Date.now()) }, () => lock());
 const campView = new CampView();
 const picker = new DepartPicker(hub, () => answerDepart(true));
 // The title's one line on the goal: the island's six nodes, filled blue as far as this save has taken them.
@@ -593,7 +632,7 @@ function start(go: Launch, from?: State) {
   const record = currentStory(hub.profile.records)?.id;
   const taken = hub.contract();
   const fetch = taken?.t === "fetch" ? { poi: taken.poi, kind: taken.kind, n: taken.n } : undefined;
-  state = newRun(go.seed, kit, region, { depots: hub.profile.depots, seen: hub.profile.seen, from: go.from, entry: go.entry, routes: hub.profile.routes, island: holds(hub.profile), record, fetch, event: hub.profile.events[0], threat: raidThreat(hub.profile), known: hub.profile.known, battle: { factory: hub.profile.factory } });
+  state = newRun(go.seed, kit, region, { depots: hub.profile.depots, seen: hub.profile.seen, from: go.from, entry: go.entry, routes: hub.profile.routes, island: holds(hub.profile), record, fetch, event: hub.profile.events[0], threat: raidThreat(hub.profile), known: hub.profile.known, battle: { factory: hub.profile.factory, away: squadsAway(hub.profile) } });
   hud.setContract(hub.contract(), record ?? null, takenStory(hub.profile));
   world.campMode = false;
   if (from) walkOut(state, from);
@@ -622,7 +661,7 @@ function finish() {
   fire = ads = adsLatch = false;
   $("banner").className = "";
   hud.show(false);
-  hud.results(state, settlement ?? undefined, knownBefore, analysed);
+  hud.results(state, settlement ?? undefined, knownBefore, analysed, islandNews);
   if (state.outcome === "extracted") sfx.extracted();
   else sfx.lost();
   sound.reset();
@@ -640,7 +679,7 @@ $("home").addEventListener("click", (e) => {
   hub.reload(next);
   saveProfile(hub.profile);
   sfx.click();
-  hud.results(state, settlement, knownBefore, analysed);
+  hud.results(state, settlement, knownBefore, analysed, islandNews);
 });
 
 function setPaused(on: boolean) {

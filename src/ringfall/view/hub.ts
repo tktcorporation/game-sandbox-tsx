@@ -13,6 +13,8 @@ import { departDepots, eventName, frontIncome, islandHolds, playerNodes, shopRar
 import { eventRow } from "./events";
 import { rivalOf } from "../sim/holds";
 import { HOLD_CSS, IslandMap, islandScene, RIVAL_CSS, TITAN_CSS } from "./map";
+import { ExpeditionPanel } from "./expeditions";
+import { logLine, type IslandLogEntry } from "../meta/expeditions";
 import { enemyNodes, frontNodes } from "../sim/front";
 import { nodeRow } from "./row";
 import { sfx } from "./sfx";
@@ -304,6 +306,11 @@ export class Hub {
   private armed = "";
   /** The contract board last put up on the board panel; a new day's board slides its papers in once. */
   private boardSeen: string;
+  /** The factory's expeditions section, which draws itself (`#hub-exped`). */
+  private exped: ExpeditionPanel;
+  /** The island's news from the server (its log), as lines for the map table, and whether the map table has shown them. */
+  private news: string[] = [];
+  private newsSeen = true;
 
   constructor(
     public profile: Profile,
@@ -314,6 +321,11 @@ export class Hub {
     this.load = recallLoadout(profile);
     this.boardSeen = boardKey(profile);
     this.fixStart();
+    this.exped = new ExpeditionPanel(
+      () => this.profile,
+      (p) => this.set(p),
+      (n) => this.takeNews(n),
+    );
     $("hub").addEventListener("click", (e) => {
       const el = (e.target as HTMLElement).closest<HTMLElement>("[data-act]");
       if (el && !(el as HTMLButtonElement).disabled) this.act(el.dataset.act!, el.dataset.arg ?? "");
@@ -327,7 +339,21 @@ export class Hub {
     $("hub-side").scrollTop = 0;
     $("hub-stash").scrollTop = 0;
     sfx.tab();
+    if (station === "map") this.newsSeen = true;
     this.render();
+    if (station === "factory") this.exped.open();
+  }
+
+  /** Takes the island's news from the server (its log's new entries): the map table lists them and its mark tells of them until it is opened. */
+  takeNews(entries: readonly IslandLogEntry[]) {
+    if (!entries.length) return;
+    this.news = [...entries.map(logLine), ...this.news].slice(0, 8);
+    this.newsSeen = this.station === "map";
+  }
+
+  /** Takes a profile the server's answer changed (the holds, the log read, the expeditions), keeping the loadout. */
+  update(p: Profile) {
+    this.set(p);
   }
 
   /** `tell`: let the camp know, so it takes the controls back. */
@@ -336,6 +362,9 @@ export class Hub {
     this.station = null;
     this.module = null;
     this.armed = "";
+    this.exped.cancel();
+    // A field typed in (the factory's island code) gives up the keys with the panel.
+    if (document.activeElement instanceof HTMLElement && $("hub").contains(document.activeElement)) document.activeElement.blur();
     $("hub").hidden = true;
     if (tell) this.closed();
   }
@@ -389,6 +418,10 @@ export class Hub {
   }
 
   private act(act: string, arg: string) {
+    if (act.startsWith("exp-")) {
+      sfx.click();
+      return this.exped.act(act, arg);
+    }
     const pick = arg.split(",").map(Number);
     if (act !== "sell") this.armed = "";
     if (act === "close") {
@@ -649,7 +682,7 @@ export class Hub {
     const buildable = MODULES.filter((m) => canBuild(p, m)).length;
     // Tomorrow's event is announced here a day ahead.
     const coming = p.events[1];
-    const map = [coming ? `明日 ${eventName(coming)}` : "", p.hideout.radio ? "無線" : ""].filter(Boolean).join("・");
+    const map = [!this.newsSeen && this.news.length ? `知らせ ${this.news.length}` : "", coming ? `明日 ${eventName(coming)}` : "", p.hideout.radio ? "無線" : ""].filter(Boolean).join("・");
     // The board wants looking at while it has contracts and none is taken.
     const open = !takenContract(p) && !takenStory(p) && p.board.contracts.length ? `依頼 ${p.board.contracts.length}` : "";
     return { map, quests: [ready ? `納品 ${ready}` : "", open].filter(Boolean).join("・"), stash: "", shop: "", workshop: buildable ? `▲ ${buildable}` : "", factory: canBuildFactory(p) ? `▲ Lv${p.factory + 1}` : "" };
@@ -730,7 +763,8 @@ export class Hub {
     const cost = next ? this.cost(next.items, next.cash, `<button type="button" data-act="factory" ${canBuildFactory(p) ? "" : "disabled"}>Lv${lv + 1}</button>`) : "";
     return (
       `<div class="mod open up-card factory-card"><div class="mod-head"><strong>${factoryIcon()}工場</strong><span class="pips">${pips}</span><b>Lv${lv}${next ? "" : " MAX"}</b>${gain}</div>` +
-      `<div class="mod-body">${nodes}${ladder(levels, lv)}${cost}</div></div>`
+      `<div class="mod-body">${nodes}${ladder(levels, lv)}${cost}</div></div>` +
+      `<div id="hub-exped">${this.exped.html()}</div>`
     );
   }
 
@@ -960,6 +994,7 @@ export class Hub {
       `<div class="hub-row">${nodeRow(holds)}</div>` +
       `<small>島の出来事</small><ul class="events"><li><small>今日</small>${eventRow(p.events[0])}</li><li><small>明日</small>${eventRow(p.events[1])}</li></ul>` +
       `<ul class="hold-key">${key}</ul>` +
+      (this.news.length ? `<small>島の知らせ</small><ul class="island-news">${this.news.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>` : "") +
       (taken ? `<small>依頼　${esc(regionOf(contractRegion(taken)).name)}<i class="taken-line"></i></small><p class="hub-taken">${CONTRACT_NAME[taken.t]}：${esc(contractText(taken))}</p>` : "") +
       `</div></div>`
     );

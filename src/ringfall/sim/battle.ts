@@ -94,6 +94,8 @@ export interface Battle {
   left: { at: number; nodes: NodeHold[] } | null;
   /** Other players' expeditions still to come, soonest first. */
   rivals: RivalExpedition[];
+  /** The factory's squads out on expeditions to other players' islands: each keeps one fewer squad out here (`homeMax()`). */
+  away: number;
 }
 
 /**
@@ -112,6 +114,8 @@ export interface RivalExpedition {
 export interface BattleStart {
   factory: number;
   rivals?: readonly RivalExpedition[];
+  /** The factory's squads out on expeditions (meta/expeditions.ts `squadsAway()`); left out, none. */
+  away?: number;
 }
 
 /** Where the enemy's squads come ashore: the titan's pad, where its dropships land, and the harbor's north shore, where its boats do. */
@@ -321,6 +325,7 @@ export function initBattle(s: State, start: BattleStart): Battle {
     counters: [],
     left: null,
     rivals: [],
+    away: Math.max(0, Math.round(start.away ?? 0)),
   };
   NODES.forEach((_, i) => {
     if (s.nodes[i] !== "freed") return;
@@ -767,6 +772,9 @@ export const factoryRarity = (nodes: State["nodes"]): Rarity => Math.max(PLATE.r
 /** The squads the factory keeps out at once: its level's, and one more for each node held that opens one. */
 export const factoryMax = (s: Pick<State, "nodes">, f: number) => FACTORY.levels[f].max + heldUnlocks(s.nodes, "squad").reduce((n, id) => n + (UNLOCKS[id].squad ?? 0), 0);
 
+/** The squads the factory keeps out on this island: `factoryMax()` less one for each out on an expedition (遠征の費用), never below 0. */
+const homeMax = (s: Pick<State, "nodes">, b: Battle) => (b.away > 0 ? Math.max(0, factoryMax(s, b.factory) - b.away) : factoryMax(s, b.factory));
+
 /**
  * The factory's next squad sets off on `plan`: out of the camp's gate when it sets off from the
  * camp or the node by it (walking through that node to one beyond), else out of the depot of the
@@ -791,7 +799,7 @@ function produce(s: State, b: Battle, dt: number) {
   // The player's factory.
   const f = b.factory;
   b.made[0] = Math.min(FACTORY.levels[f].every, b.made[0] + dt);
-  if (b.made[0] >= FACTORY.levels[f].every && walking(b, 0) < factoryMax(s, f)) {
+  if (b.made[0] >= FACTORY.levels[f].every && walking(b, 0) < homeMax(s, b)) {
     const plan = playerPlan(s, b);
     if (plan) sendOut(s, b, plan);
   }
