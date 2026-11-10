@@ -84,6 +84,8 @@ export interface Player {
   /** `State.time` of the last shot, to tell when a spray ends. */
   lastShot: number;
   tactical: number; // cooldown left
+  /** Seconds left of the slipstream part's speed (`MOD.haste`). */
+  haste: number;
   ult: number; // charge 0..1
   /** In the air on the ult's leap, going up and then gliding down; `carry` takes the teammate along. */
   leap: { carry: boolean } | null;
@@ -388,6 +390,8 @@ export interface Loot {
   tool?: ToolKind;
   record?: RecordId;
   mod?: ModKind;
+  /** For a part a taken core laid out (`coreReward()`): the node, as a place in `NODES`. One of a node's is taken, by the use key; the rest go with it. */
+  choice?: number;
   /** For a valuable: the POI (index) whose bin it came out of, kept through the bag (`Player.haulAt`). */
   from?: number;
   /** Armour the player took off: it can be put back on with the use key, and its shield is not refilled. */
@@ -1012,6 +1016,7 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
       spray: 0,
       lastShot: -99,
       tactical: 0,
+      haste: 0,
       ult: ULT.startCharge,
       leap: null,
       reveal: 0,

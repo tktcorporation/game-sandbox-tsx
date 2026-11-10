@@ -60,7 +60,7 @@ import { DEBRIS_SPOTS } from "../src/ringfall/sim/map";
 import { crewKey, debrisBin } from "../src/ringfall/sim/state";
 import { nextSeed } from "../src/ringfall/meta/profile";
 import { raidDay, unfreeable } from "../src/ringfall/meta/island";
-import { MOD_KINDS, MOD_START, MODS, RETURN, THREAT, type ModKind } from "../src/ringfall/sim/config";
+import { MOD, MOD_KINDS, MOD_START, MODS, RETURN, THREAT, type ModKind } from "../src/ringfall/sim/config";
 import { binMod, robotMod } from "../src/ringfall/sim/mods";
 import { Bot } from "../src/ringfall/sim/bot";
 import { searchFor } from "../src/ringfall/sim/world";
@@ -4104,6 +4104,16 @@ function checkFront(): string | null {
   }
   if (s.nodes[SUP] !== "freed" || s.stats.captured.join() !== "supply" || !s.depots[depotIndex("supply")] || !s.cleared[SUPPLY] || ob().kind !== "extract") return `front: holding the core left ${JSON.stringify({ node: s.nodes[SUP], captured: s.stats.captured, step: ob().kind })}`;
   if (!frontNodes(s.nodes)[nodeIndex("quarry")] || frontNodes(s.nodes)[SUP]) return "front: taking the supply depot did not move the front";
+  // The core lays out its parts: walked over they stay, the use key takes one and the rest are gone.
+  ticks(s, 1);
+  const laid = s.loot.filter((l) => l.choice === SUP);
+  if (laid.length !== MOD.core || new Set(laid.map((l) => l.mod)).size !== MOD.core) return `front: the supply depot's core laid out ${laid.map((l) => l.mod).join()}`;
+  s.player.pos = { x: laid[0].pos.x, y: core.y, z: laid[0].pos.z };
+  ticks(s, 0.5);
+  if (s.player.mods.length) return "front: a core's part went on by walking over it";
+  step(s, press, false);
+  if (s.player.mods.join() !== laid[0].mod || s.loot.some((l) => l.choice === SUP)) return `front: the use key at a core's part left ${s.player.mods.join()} worn and ${s.loot.filter((l) => l.choice === SUP).length} lying`;
+  stand(SUP);
   // No robot walks onto it: one sent at the core stops at the zone's edge.
   const w = spawnEnemy(s, "grunt", core.x, core.z + FRONT.zone + 6, -1, 0);
   w.aware = "alert";

@@ -1087,7 +1087,7 @@ for (let i = 0; i < 25 * 60 * 10; i++) {
   }
   // A wave of the siege announced: the beam its squad will step out of, seen from where the player stands.
   const wave = s.front?.capture?.coming;
-  if (wave && wave.in < 4 && !taken.has("front-3a-wave")) {
+  if (wave && !taken.has("front-3a-wave")) {
     if (wave.wave < 1 || wave.wave > wave.of) errors.push(`siege: the wave announced is ${JSON.stringify(wave)}`);
     await page.evaluate(([x, y, z, yaw]) => window.ringfallCamera(x, y, z, yaw, 0.1), [s.player.x, s.player.y + 1.6, s.player.z, Math.atan2(wave.x - s.player.x, -(wave.z - s.player.z))]);
     await shot("front-3a-wave");

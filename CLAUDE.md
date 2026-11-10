@@ -234,7 +234,7 @@ Mod parts (`MODS` in `config.ts`, `sim/mods.ts`) are the raid's own build: three
 (`Player.mods`), lost when the raid ends, each setting one number the sim already reads
 (`modScale()`). Bins hold kinds the profile knows (`State.known`, `Profile.known`), robots any;
 which bin or robot holds one is a hash of the seed and the bin or robot (`binMod()`, `robotMod()`),
-never `rand(s)`, and the bot passes `Input.leaveMods`, so the gate's raids play as without them. A
+never `rand(s)`, and the bot passes `Input.leaveMods`, so the gate's raids play as without them. A core the player takes lays out `MOD.core` parts round it (`coreReward()`, `Loot.choice`): the use key takes one and the rest go, and walking over them puts none on. Three kinds pay for a kill from behind or unseen, or one made sliding or in the air (`killMods()`, `Player.haste`). A
 raid got off alive may analyse one worn part on its results (`analyse()` in `profile.ts`). The
 強度 (`THREAT`, `Profile.threat`, `newRun(..., { threat })`) belongs to the contract taken: it is
 chosen on that contract's card on the board, taking another contract starts it at 0, and a raid

@@ -1,5 +1,5 @@
 import { MODS, ALLY, ASSIST, DEG, DODGE, ELITE, ENEMIES, FLANK, KICK_PATTERN, KICK_RESET, NOISE, PLATE, PLAYER, RARITY, RETURN, ROBOT_DROPS, STAGGER, TICK, ULT, VALUABLES, WEAPONS, type Flank, type Rarity, type ValuableKind, type WeaponKind, type WeaponSpec } from "./config";
-import { dropRobotMod, hasMod, modScale } from "./mods";
+import { dropRobotMod, hasMod, killMods, modScale } from "./mods";
 import { engageSquad, learnSpot, located, makeNoise, shotFromAfar } from "./awareness";
 import { POIS } from "./map";
 import { terrainHeight } from "./terrain";
@@ -246,7 +246,10 @@ export function damageEnemy(s: State, e: Enemy, raw: number, crit: boolean, at: 
     p.ult = Math.min(1, p.ult + (dealt / ULT.dmgPerCharge) * k.ult * (by === "ally" ? ALLY.ultShare : 1) * modScale(p, "surge"));
     if (p.ult >= 1) s.events.push({ t: "ultReady" });
   }
-  if (e.hp <= 0) kill(s, e, crit, by);
+  if (e.hp <= 0) {
+    if (by === "player") killMods(s, behind || flank === "ambush");
+    kill(s, e, crit, by);
+  }
 }
 
 /**

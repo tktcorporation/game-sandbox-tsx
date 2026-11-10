@@ -892,7 +892,10 @@ export type ModKind =
   | "sponge"
   | "mender"
   | "stride"
-  | "stock";
+  | "stock"
+  | "slipstream"
+  | "recharge"
+  | "reloader";
 
 /**
  * Mod parts (改造パーツ): the raid's own build. Each one sets a single number of a system the
@@ -900,6 +903,9 @@ export type ModKind =
  * player meet the same rules. `value` is that number: a factor on what the system does (or,
  * for `leech`, the shield it gives back). `start` marks the kinds a new profile knows; the others
  * are learned by analysing one the player brought out alive (`analyse()` in meta/profile.ts).
+ * The last three change how a fight is played instead of scaling a number: each pays for a kill
+ * made the way the game asks for (from behind or unseen, or on the move), read where the kill
+ * lands (`killMods()` in sim/mods.ts).
  */
 export const MODS: Record<ModKind, { name: string; short: string; note: string; value: number; start?: true }> = {
   leech: { name: "吸電コイル", short: "コイル", note: "弱点に当てるとシールドが 4 戻る", value: 4, start: true },
@@ -922,6 +928,9 @@ export const MODS: Record<ModKind, { name: string; short: string; note: string; 
   mender: { name: "自己修復材", short: "修復材", note: "体力の自然回復が 2 倍速い", value: 2 },
   stride: { name: "軽量フレーム", short: "フレーム", note: "動きが 8% 速い", value: 1.08 },
   stock: { name: "安定ストック", short: "ストック", note: "反動が 3 割小さい", value: 0.7 },
+  slipstream: { name: "追い風", short: "追い風", note: "背後か奇襲で倒すと、4 秒のあいだ 25% 速く動く", value: 1.25 },
+  recharge: { name: "滑撃回路", short: "滑撃", note: "滑りながらか空中で倒すと、アークがすぐ使える", value: 0 },
+  reloader: { name: "奇襲装填", short: "装填", note: "背後か奇襲で倒すと、弾倉が満ちる", value: 0 },
 };
 export const MOD_KINDS = Object.keys(MODS) as ModKind[];
 /** The kinds a new profile knows. */
@@ -934,9 +943,21 @@ export const MOD_START = MOD_KINDS.filter((k) => MODS[k].start);
  * titan always, of any kind, so new kinds are found on robots. Each chance is multiplied by the
  * raid's threat (`THREAT.levels[].mods`). Which bin or robot holds one, and of which kind, is
  * decided from the raid's seed and the bin or robot, never from the raid's random numbers, so a
- * raid in which nothing is picked up plays out as one without mods.
+ * raid in which nothing is picked up plays out as one without mods. A core the player takes lays
+ * out `core` parts of any kind not worn, of which the use key takes one and the rest are gone:
+ * the one sure source, so a raid that takes a node builds something.
  */
-export const MOD = { slots: 3, bin: 0.08, robot: 0.03, elite: 0.3 };
+export const MOD = {
+  slots: 3,
+  bin: 0.08,
+  robot: 0.03,
+  elite: 0.3,
+  /** A core taken lays out this many parts round it, of which one is taken (`coreReward()`): a walk of `ring` metres out. */
+  core: 3,
+  ring: 2.6,
+  /** Seconds the slipstream part's speed lasts after a kill from behind or unseen. */
+  haste: 4,
+};
 
 /**
  * The threat (脅威度) the player chooses for a raid at the map table, 0 to `max`: on top of the

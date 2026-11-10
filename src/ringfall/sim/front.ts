@@ -5,6 +5,7 @@ import { cellsAround, fieldTo } from "./hunt";
 import { spawnEnemy } from "./enemies";
 import { hiddenPosts } from "./world";
 import { raiseAlly } from "./ally";
+import { coreReward } from "./mods";
 import type { Battle } from "./battle";
 import type { PoiHold } from "./island";
 import type { State } from "./state";
@@ -239,6 +240,7 @@ export function takeNode(s: State, i: number) {
     s.battle.taken.push({ node: n.id, side: 0, t: Math.round(s.battle.now) });
     dueCounter(s.battle, i);
   }
+  coreReward(s, i, n.core);
   s.events.push({ t: "coreTaken", node: i });
 }
 
