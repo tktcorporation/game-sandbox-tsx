@@ -2037,15 +2037,16 @@ function checkIsland(): string | null {
   if (night.profile.poiState.supply.state !== "held" || night.profile.poiState.quarry.state !== (fell.includes("quarry") ? "held" : "freed") || night.raid.lost.join() !== "supply" || night.raid.gained.join() !== "quarry" || night.after.gained.length || night.after.lost.length) return `island scenario: a battle that ended with the supply depot the enemy's and the quarry the player's left ${JSON.stringify({ front: night.front, supply: night.profile.poiState.supply, quarry: night.profile.poiState.quarry })}`;
   // The enemy's strength follows the nodes it holds.
   if (newRun(77).strength !== STRENGTH.play || strengthFor(NODES.length) !== STRENGTH.play) return `island scenario: a raid with every node the enemy's plays at strength ${newRun(77).strength}, not ${STRENGTH.play}`;
-  for (let k = 1; k <= NODES.length; k++) if (strengthFor(k) < strengthFor(k - 1)) return "island scenario: the enemy's strength falls as it holds more nodes";
+  for (let k = 1; k <= NODES.length; k++) if (strengthFor(k) < strengthFor(k - 1)) return "island scenario: the enemy's strength falls as the player holds more nodes";
   // The garrisons: held in full and as with no island given, freed empty.
   const count = (s: State, i: number) => s.enemies.filter((e) => e.poi === i).length;
   const plain = newRun(77);
   const allHeld = newRun(77, starterKit(), "reservoir", { island: holds({ poiState: newIsland() }) });
-  if (JSON.stringify(plain.enemies) !== JSON.stringify(allHeld.enemies) || plain.rng !== allHeld.rng) return "island scenario: a raid with every POI held is not the raid with no island given";
+  // (An island all the enemy's plays at the lowest strength, the tables' raid at `STRENGTH.play`: the garrisons are the same.)
+  if (allHeld.strength !== strengthFor(0) || POIS.some((_, i) => count(plain, i) !== count(allHeld, i))) return "island scenario: a raid with every POI held stands other garrisons than the raid with no island given";
   const mixed = { ...newIsland(), quarry: { state: "freed" as const }, pad: { state: "freed" as const } };
   const m = newRun(77, starterKit(), "reservoir", { island: holds({ poiState: mixed }) });
-  if (m.strength !== strengthFor(NODES.length - 1)) return `island scenario: a raid with one node the player's plays at strength ${m.strength}`;
+  if (m.strength !== strengthFor(1)) return `island scenario: a raid with one node the player's plays at strength ${m.strength}`;
   // A POI's squads that walk a beat (`MOBILES`) are out on it, not counted among the POI's own.
   const posted = (i: number, list: Squad[]) => list.filter((sq) => !beatOf(POIS[i].id, sq.name)).reduce((n, sq) => n + sq.members.length, 0);
   const full = (i: number) => posted(i, POIS[i].squads);
@@ -2095,7 +2096,7 @@ function checkStrength(): string | null {
   if (ROW_OUT.length !== NODES.length) return `strength scenario: the row out from the camp names ${ROW_OUT.length} nodes of ${NODES.length}`;
   const island = (k: number) => holds({ poiState: { ...newIsland(), ...Object.fromEntries(ROW_OUT.slice(0, k).map((id) => [id, { state: "freed" as const }])) } });
   for (let k = 0; k <= NODES.length; k++) {
-    const n = strengthFor(NODES.length - k);
+    const n = strengthFor(k);
     const l = STRENGTH.levels[n];
     for (const seed of [5, 91]) {
       const s = newRun(seed, starterKit(), "reservoir", { island: island(k) });
@@ -2113,17 +2114,17 @@ function checkStrength(): string | null {
       if (s.enemies.some((e) => e.poi >= 0 && e.plate > 0 && e.plate !== Math.max(TIER[POIS[e.poi].id as NodeId] ?? 0, 1))) return `strength scenario: a garrison's robot wears a plate not of its node's tier at level ${n} (seed ${seed})`;
     }
   }
+  // A raid whose start names no island is the tables' raid (`STRENGTH.play`); an island all the enemy's is the quiet one.
   const plainRun = newRun(321);
-  const atPlay = newRun(321, starterKit(), "reservoir", { island: island(0) });
-  const sameAs = (a: State, b: State) => JSON.stringify([a.enemies, a.squads, a.rng, a.roamRng, a.nextId, a.parties]) === JSON.stringify([b.enemies, b.squads, b.rng, b.roamRng, b.nextId, b.parties]);
-  if (!sameAs(plainRun, atPlay) || plainRun.strength !== STRENGTH.play) return "strength scenario: a raid with no island given is not the raid with every node the enemy's";
+  const quietRun = newRun(321, starterKit(), "reservoir", { island: island(0) });
+  if (plainRun.strength !== STRENGTH.play || quietRun.strength !== strengthFor(0) || strengthFor(0) >= strengthFor(NODES.length)) return `strength scenario: a raid with no island plays at ${plainRun.strength}, one with every node the enemy's at ${quietRun.strength}, one with every node the player's at ${strengthFor(NODES.length)}`;
   // The board names only packs that fly at the island's level.
   for (const seed of [1, 77, 4242])
     for (let k = 0; k <= NODES.length; k++) {
       const poiState = { ...newIsland(), ...Object.fromEntries(ROW_OUT.slice(0, k).map((id) => [id, { state: "freed" as const }])) };
       const b = makeBoard({ ...newProfile(seed), seed, poiState, entries: ENTRIES.map((e) => e.id) });
       if (b.contracts.length < 2 || b.contracts.length > 4) return `strength scenario: the board with ${k} nodes the player's (seed ${seed}) has ${b.contracts.map((c) => c.t).join()}`;
-      for (const c of b.contracts) if (c.t === "intercept" && c.target.t === "pack" && !activePacks(seed, strengthFor(NODES.length - k)).some((q) => q.name === (c.target as { name: string }).name)) return `strength scenario: the board with ${k} nodes the player's names a pack that does not fly: ${c.target.name}`;
+      for (const c of b.contracts) if (c.t === "intercept" && c.target.t === "pack" && !activePacks(seed, strengthFor(k)).some((q) => q.name === (c.target as { name: string }).name)) return `strength scenario: the board with ${k} nodes the player's names a pack that does not fly: ${c.target.name}`;
     }
   return null;
 }
@@ -2752,10 +2753,10 @@ function checkFactions(): string | null {
   spawnEnemy(g, "grunt", posted[0].pos.x + 8, posted[0].pos.z, -1, ri, { rogue: true, face: -Math.PI / 2 });
   ticks(g, 8);
   if (g.squads[gi].foe !== undefined || g.squads[ri].foe !== undefined || g.events.some((e) => e.t === "fall")) return "factions: a POI's garrison fought a rogue squad beside it";
-  // Fewer rogues walk as the enemy grows stronger (the player holding none, three, or all of the nodes).
+  // Fewer rogues walk as the enemy grows stronger (the player holding none, six, or all of the nodes).
   const weakened = (k: number) => holds({ poiState: { ...newIsland(), ...Object.fromEntries(NODES.slice(0, k).map((n) => [n.id, { state: "freed" as const }])) } });
   for (const region of REGIONS) {
-    const rogues = [NODES.length, 3, 0].map((k) => newRun(9, starterKit(), region.id, { island: weakened(k) }).enemies.filter((e) => e.rogue && regionHere(e.pos).id === region.id).length);
+    const rogues = [0, 6, NODES.length].map((k) => newRun(9, starterKit(), region.id, { island: weakened(k) }).enemies.filter((e) => e.rogue && regionHere(e.pos).id === region.id).length);
     if (!(rogues[0] >= rogues[1] && rogues[1] >= rogues[2] && rogues[0] > rogues[2])) return `factions: rogues in ${region.id} with the enemy at its weakest / middling / strongest are ${rogues.join(" / ")}, not fewer as it strengthens`;
   }
   // The rogues hold no ground: every outpost's guards are the enemy's.
@@ -3942,7 +3943,7 @@ function checkThreat(): string | null {
   // The island at each of the enemy's strengths: the player holding none, three or all of the nodes.
   for (const k of [0, 3, NODES.length]) {
     const island = holds({ poiState: { ...newIsland(), ...Object.fromEntries(NODES.slice(0, k).map((o) => [o.id, { state: "freed" as const }])) } });
-    const n = strengthFor(NODES.length - k);
+    const n = strengthFor(k);
     const l = STRENGTH.levels[n];
     for (const seed of [5, 91]) {
       const plain = newRun(seed, starterKit(), "reservoir", { island });

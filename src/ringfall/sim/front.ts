@@ -45,6 +45,9 @@ export const nodeHolds = (poi: (id: PoiId) => PoiHold): NodeHold[] => NODES.map(
 /** How many nodes the enemy holds: another player's are neither the enemy's nor the player's, and count for neither (the enemy's strength, `strengthFor()`). */
 export const enemyNodes = (holds: readonly NodeHold[]) => holds.filter((h) => h === "held").length;
 
+/** How many nodes the player holds: what the enemy's strength follows (`strengthFor()`). */
+export const ownNodes = (holds: readonly NodeHold[]) => holds.filter((h) => h === "freed").length;
+
 /** The node of POI `poi` (a place in `POIS`), or -1 for the titan's pad. */
 export const poiNode = (poi: number) => nodeIndex(POIS[poi].id);
 

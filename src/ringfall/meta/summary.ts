@@ -20,7 +20,7 @@ export function islandPost(player: Identity, settlement: Settlement, s: Pick<Sta
   const enemy = enemyNodes(holds);
   return {
     player: { id: player.id, name: player.name },
-    island: { day: p.day, held: playerNodes(p).length, enemy, rival: holds.filter((h) => rivalOf(h) !== null).length, factory: p.factory, strength: strengthFor(enemy) },
+    island: { day: p.day, held: playerNodes(p).length, enemy, rival: holds.filter((h) => rivalOf(h) !== null).length, factory: p.factory, strength: strengthFor(playerNodes(p).length) },
     raid: { day: settlement.day, outcome: s.outcome === "extracted" ? "extracted" : "dead", captured: capturedIds(s).length },
   };
 }

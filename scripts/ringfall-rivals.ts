@@ -25,7 +25,7 @@
  */
 import { CONQUEST, FACTORY_TOP, STRENGTH, TICK, type EnemyKind } from "../src/ringfall/sim/config";
 import { NODES, nodeIndex, POIS, type NodeId } from "../src/ringfall/sim/map";
-import { CAMP_NEXT, enemyNodes, frontNodes, NEIGHBOURS, useCore } from "../src/ringfall/sim/front";
+import { CAMP_NEXT, enemyNodes, frontNodes, ownNodes, NEIGHBOURS, useCore } from "../src/ringfall/sim/front";
 import { battleFocus, finishBattle, nodePoint, rivalRoute, robotSide, type Battle, type BattleStart, type BattleSquad } from "../src/ringfall/sim/battle";
 import { reckonApart, reckonCaptures, type ReckonSquad } from "../src/ringfall/sim/reckon";
 import { rivalHold } from "../src/ringfall/sim/holds";
@@ -202,11 +202,11 @@ export function rivalsRun(): { err: string | null; r: Rivals } {
   if (enemyNodes(fs.nodes) !== NODES.length - 2) return fail(`with one node the player's and one another player's the enemy holds ${enemyNodes(fs.nodes)}`);
   // At the fewest nodes that make the enemy a level stronger, one of them another player's instead brings it back down.
   const lift = STRENGTH.byShare.map(([share]) => Math.ceil(share * NODES.length - 1e-9)).filter((k) => k > 0 && strengthFor(k) > strengthFor(k - 1))[0];
-  const enemyAt = NODES.map((_, i) => (i < lift ? "held" : "freed"));
+  const enemyAt = NODES.map((_, i) => (i < lift ? "freed" : "held"));
   const rivalAt = enemyAt.map((h, i) => (i === 0 ? rivalHold(OWNER) : h));
-  r.strength = { at: lift, level: [strengthFor(enemyNodes(enemyAt)), strengthFor(enemyNodes(rivalAt))] };
+  r.strength = { at: lift, level: [strengthFor(ownNodes(enemyAt)), strengthFor(ownNodes(rivalAt))] };
   if (lift === undefined || r.strength.level[1] !== strengthFor(lift - 1) || r.strength.level[0] <= r.strength.level[1]) return fail(`with ${lift} nodes the enemy's the strength is ${r.strength.level[0]}, with one of them another player's ${r.strength.level[1]}`);
-  if (fs.strength !== strengthFor(NODES.length - 2)) return fail(`the raid plays at strength ${fs.strength}`);
+  if (fs.strength !== strengthFor(1)) return fail(`the raid plays at strength ${fs.strength}`);
   if (fs.cleared[POIS.findIndex((p) => p.id === "station")] !== true || fs.enemies.some((e) => e.poi === POIS.findIndex((p) => p.id === "station"))) return fail("another player's node stands a garrison of the enemy's");
 
   // night: the waterworks (next to the supply depot and the relay only) with both another player's never falls; with both the enemy's it does.

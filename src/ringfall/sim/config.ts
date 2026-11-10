@@ -631,18 +631,18 @@ export interface StrengthLevel {
 }
 
 /**
- * The enemy's strength in a raid (docs/ringfall/island-v2.md): the more of the nodes the
- * enemy holds, the sooner and the more its reinforcements, raiders and hunters come.
- * `byShare` gives a level for each share of the nodes the enemy holds, the first whose share it
- * reaches (0 under all of them), so the island before the first capture plays at the top level
- * and nodes taken ease it.
+ * The enemy's strength in a raid: the more of the nodes the player holds, the sooner and the
+ * more its reinforcements, raiders and hunters come. The island wakes as it is taken: the first
+ * days are the quiet ones to learn on, a player who holds most of it meets the enemy at its
+ * hardest, and one pushed back gets room to recover. `byShare` gives a level for each share of
+ * the nodes the player holds, the first whose share it reaches (0 under all of them).
  *
- * `levels[play]` is the island the bots' balance tables are played on, with every node the
- * enemy's: its numbers are the reinforcement times, raider time, parties and packs of
+ * `levels[play]` is the island the bots' balance tables are played on (a raid whose start names
+ * no island): its numbers are the reinforcement times, raider time, parties and packs of
  * `REINFORCE`, `RAIDERS`, `PARTY` and `PACKS`. Lower levels give more time and fewer hunters.
  */
 export const STRENGTH = {
-  byShare: [[0.8, 2], [0.45, 1]] as [number, number][],
+  byShare: [[0.5, 2], [0.2, 1]] as [number, number][],
   levels: [
     { reinforce: { first: 480, every: 360 }, raiders: 1020, parties: { reservoir: 1, harbor: 1, city: 1, launch: 1 }, packs: { reservoir: 1, harbor: 1, city: 1, launch: 1 } },
     { reinforce: { first: 435, every: 300 }, raiders: 900, parties: { reservoir: 1, harbor: 1, city: 1, launch: 1 }, packs: { reservoir: 2, harbor: 1, city: 1, launch: 1 } },

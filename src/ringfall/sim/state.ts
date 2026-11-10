@@ -7,7 +7,7 @@ import { placeAlly } from "./ally";
 import { groundAt } from "./geom";
 import { forgetFields } from "./hunt";
 import { crewsFor, type IslandEvent, type PoiHold } from "./island";
-import { enemyNodes, nodeHolds, useZones, type NodeHold } from "./front";
+import { enemyNodes, nodeHolds, ownNodes, useZones, type NodeHold } from "./front";
 import { initBattle, type Battle, type BattleStart, type Side } from "./battle";
 
 export interface Vec3 {
@@ -931,11 +931,11 @@ export interface Start {
 export const strengthLevel = (s: Pick<State, "strength">) => STRENGTH.levels[s.strength];
 
 /**
- * The enemy's strength with `enemyHeld` of the nodes its own (`STRENGTH.byShare`). A share is
- * reached when `enemyHeld` is at least the share of the node count rounded up; the small allowance
+ * The enemy's strength with `held` of the nodes the player's (`STRENGTH.byShare`). A share is
+ * reached when `held` is at least the share of the node count rounded up; the small allowance
  * keeps a share that lands on a whole count (0.5 of 10 nodes) from rounding up past it in floating point.
  */
-export const strengthFor = (enemyHeld: number) => STRENGTH.byShare.find(([share]) => enemyHeld >= Math.ceil(share * NODES.length - 1e-9))?.[1] ?? 0;
+export const strengthFor = (held: number) => STRENGTH.byShare.find(([share]) => held >= Math.ceil(share * NODES.length - 1e-9))?.[1] ?? 0;
 
 /**
  * The reinforcements' first time and interval and the raiders' time of a raid at the enemy's
@@ -961,7 +961,8 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
   forgetFields();
   const hold = POIS.map((p): PoiHold => (p.boss ? "held" : (start.island?.[p.id] ?? "held")));
   const nodes = nodeHolds((id) => hold[poiIndex(id)]);
-  const strength = strengthFor(enemyNodes(nodes));
+  // A raid whose start names no island is the one the balance tables are played on.
+  const strength = start.island ? strengthFor(ownNodes(nodes)) : STRENGTH.play;
   const threat = Math.max(0, Math.min(THREAT.max, Math.round(start.threat ?? 0)));
   const clock = raidClock(strength, threat);
   const freed = (poi: PoiId) => hold[poiIndex(poi)] === "freed";

@@ -220,12 +220,11 @@ raid reads the standings through `newRun(seed, kit, region, { island })` (`State
 starts cleared, its vault open without the key (`canOpen()` in `world.ts`) and its depot on. With
 no `island` every POI is held, which the sim gate plays.
 The enemy's strength (`STRENGTH` in `config.ts`, `State.strength`, `strengthLevel()`) follows the
-share of the nodes the enemy holds (`STRENGTH.byShare`, `strengthFor()` in `state.ts`, `enemyNodes()` in
-`front.ts`, which counts only `held` nodes): it sets the reinforcement and raider times, the hunting parties per region, the drone
+share of the nodes the player holds (`STRENGTH.byShare`, `strengthFor()` in `state.ts`, `ownNodes()` in
+`front.ts`): the island wakes as it is taken, quiet on the first days and at its hardest once the player holds half; it sets the reinforcement and raider times, the hunting parties per region, the drone
 packs flying (`activePacks()`, from the seed), the rogue patrols (`ROGUE.patrols`), the capture's
-siege (`FRONT.siege.extra`) and the battle's enemy squads (`CONQUEST.net`, whose `work` the nodes share). With every node the enemy's a
-raid plays at `STRENGTH.play` (2), whose numbers are the island's own, so the sim gate's tables
-keep the island's numbers. A node's garrison (its POI's squads, and those of them out on a beat)
+siege (`FRONT.siege.extra`) and the battle's enemy squads (`CONQUEST.net`, whose `work` the nodes share). A raid whose start names no
+island plays at `STRENGTH.play` (2): the raid the sim gate's tables are played on. A node's garrison (its POI's squads, and those of them out on a beat)
 wears plates of the node's `TIER` (`tierPlated()` in `sim/island.ts`, `PLATE.garrison`, a hash of the
 seed and the robot's id), and plain grunts and heavies elsewhere wear a tier-1 plate only at a
 raised threat (`netPlated()`).
