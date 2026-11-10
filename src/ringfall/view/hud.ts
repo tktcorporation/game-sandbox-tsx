@@ -29,7 +29,8 @@ import { CREW, FRONT, MOD, MODS } from "../sim/config";
 import { binPicture, modIcon, pouchIcon, routeIcon, zipIcon } from "./icons";
 import { zipPoint } from "../sim/zips";
 import { bagIcon, callIcon, checkIcon, clockIcon, coreIcon, crossIcon, depotIcon, entryIcon, exitIcon, eyeIcon, fightIcon, flareIcon, keyIcon, lockIcon, noiseIcon, reinforceIcon, reviveIcon, SIDE, upIcon, nightIcon } from "./icons";
-import { capturable } from "../sim/front";
+import { capturable, siegeWaves } from "../sim/front";
+import { terrainHeight } from "../sim/terrain";
 
 /** The POI whose bins drop the key to POI `poi`'s vault (its `keyFrom`), by name. */
 const keySource = (poi: number) => POIS[poiIndex(POIS[poi].keyFrom)].name;
@@ -355,6 +356,13 @@ export class Hud {
       case "reinforce":
         this.banner("増援");
         // A node held that watches the sky shows where they came down (`UNLOCKS.scout`).
+        if (heldUnlocks(s.nodes, "scout").length) this.scout = { x: e.x, z: e.z, until: s.time + SCOUT_SHOW };
+        break;
+      case "siegeWarn":
+        // A wave of the siege is announced: its mark and which wave of how many; the beam and the arrow show where.
+        this.toast(`${reinforceIcon()}<b>${e.wave}/${e.of}</b>`, 0, 3000);
+        break;
+      case "siegeLand":
         if (heldUnlocks(s.nodes, "scout").length) this.scout = { x: e.x, z: e.z, until: s.time + SCOUT_SHOW };
         break;
       case "raiders":
@@ -762,12 +770,8 @@ export class Hud {
     const M = 46;
     const TOP = 110;
     const BOTTOM = 140;
-    // A counter-attack's squad ashore and walking to a node of the player's: the arrow, fainter, before it gets there.
-    const coming = countered(s);
-    NODES.forEach((n, i) => {
-      const at = !!b && b.threat[i];
-      const on = (at || coming[i]) && s.phase === "play";
-      let el = this.threatEls.get(i);
+    const mark = (key: number, on: boolean, strong: boolean, at: { x: number; y: number; z: number }) => {
+      let el = this.threatEls.get(key);
       if (!on) {
         if (el) el.style.display = "none";
         return;
@@ -775,16 +779,16 @@ export class Hud {
       if (!el) {
         el = document.createElement("div");
         this.awareLayer.appendChild(el);
-        this.threatEls.set(i, el);
+        this.threatEls.set(key, el);
       }
-      el.className = at ? "threat-mark" : "threat-mark coming";
-      const sp = view.project({ x: n.core.x, y: n.core.y + FRONT.height + 2.5, z: n.core.z }, w, h);
+      el.className = strong ? "threat-mark" : "threat-mark coming";
+      const sp = view.project(at, w, h);
       let x = sp.x;
       let y = sp.y;
       let angle = 180;
       const cy = (TOP + h - BOTTOM) / 2;
       if (sp.behind || x < M || x > w - M || y < TOP || y > h - BOTTOM) {
-        // Off screen: on the edge, the way to the core from the middle of the screen.
+        // Off screen: on the edge, the way to it from the middle of the screen.
         let dx = x - w / 2;
         let dy = y - cy;
         if (sp.behind) {
@@ -800,7 +804,16 @@ export class Hud {
       el.style.left = `${x}px`;
       el.style.top = `${y}px`;
       el.style.setProperty("--a", `${angle.toFixed(0)}deg`);
+    };
+    // A counter-attack's squad ashore and walking to a node of the player's: the arrow, fainter, before it gets there.
+    const coming = countered(s);
+    NODES.forEach((n, i) => {
+      const at = !!b && b.threat[i];
+      mark(i, (at || coming[i]) && s.phase === "play", at, { x: n.core.x, y: n.core.y + FRONT.height + 2.5, z: n.core.z });
     });
+    // A wave of the siege announced: the same arrow, fainter, over the beam its squad will step out of.
+    const wave = s.phase === "play" ? s.capture?.coming : null;
+    mark(-1, !!wave, false, wave ? { x: wave.x, y: terrainHeight(wave.x, wave.z) + 6, z: wave.z } : { x: 0, y: 0, z: 0 });
   }
 
   /**
@@ -1027,7 +1040,9 @@ export class Hud {
   private stepProgress(s: State, step: Step): string {
     if (step.kind === "hold") {
       const c = s.capture;
-      return `<b class="${c && !c.held ? "paused" : ""}">${Math.floor(c?.t ?? 0)}/${FRONT.capture}</b>`;
+      // The meter, and the waves of the siege called so far of the node's.
+      const waves = c ? `${reinforceIcon()}${c.waves}/${siegeWaves(s, c.node).length}` : "";
+      return `<b class="${c && !c.held ? "paused" : ""}">${Math.floor(c?.t ?? 0)}/${FRONT.capture}</b>${waves}`;
     }
     return step.progress ? `<b>${esc(step.progress)}</b>` : "";
   }

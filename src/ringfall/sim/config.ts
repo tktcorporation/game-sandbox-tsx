@@ -412,15 +412,18 @@ export const HOME = { away: 10 };
  * the player holds) can be taken, by its core (`core`): a pillar `height` metres tall near the
  * node's middle. The use key starts the capture; the meter fills over `capture` seconds while
  * the player stands within `radius` of the core (and within `rise` of its foot's height) with no
- * robot within the same radius. The node's garrison makes for the core, and `push` squads come
- * from each neighbouring node the enemy holds (at most `pushMax`), beamed in a walk of
- * `pushDist` from the core on the side of their node, `pushAt` seconds after the start and again
- * every `pushEvery` seconds while the capture lasts and the player stays near (at most
- * `pushWaves` times); each of these is by the enemy's strength (`STRENGTH`). Once taken, what is
- * left of the garrison walks off for `retreat` seconds and is gone, and no robot comes within
- * `zone` metres of the core again in the raid. Each node the player holds pays `income` credits
- * a day at the settle.
+ * robot within the same radius. The node's garrison makes for the core, and the enemy answers in
+ * waves (`siege`). Once taken, what is left of the garrison walks off for `retreat` seconds and is
+ * gone, and no robot comes within `zone` metres of the core again in the raid. Each node the
+ * player holds pays `income` credits a day at the settle.
  */
+/** One wave of a siege (`FRONT.siege`): the share of the meter that calls it, its squad, and whether it wears the node's plate. */
+export interface SiegeWave {
+  at: number;
+  kinds: EnemyKind[];
+  guard?: true;
+}
+
 export const FRONT = {
   capture: 45,
   radius: 12,
@@ -430,15 +433,30 @@ export const FRONT = {
   half: 0.45,
   zone: 30,
   retreat: 8,
-  /** The waves of the push, by the enemy's strength: the members of each squad. */
-  push: [["grunt"], ["grunt"], ["grunt", "drone"]] as EnemyKind[][],
-  /** Neighbouring nodes that send a squad, at most, by the enemy's strength. */
-  pushMax: [1, 1, 1],
-  /** Waves of the push at most, per capture, by the enemy's strength. */
-  pushWaves: [1, 1, 1],
-  pushAt: 6,
-  pushEvery: 30,
-  pushDist: [70, 130] as const,
+  /**
+   * The siege: the capture is the raid's hardest fight, and every wave of it is announced. A
+   * node's waves are its tier's (`waves[tier]`); wave `k` is called once the meter has filled
+   * `at` of the way and the wave before it has come down, while the player is within `near`
+   * metres of the core. A beam then stands for `warn` seconds where the squad will step out, a
+   * walk of `dist` metres from the core on the side of a neighbouring node the enemy holds (the
+   * waves take those neighbours in turn; a node with none left draws no waves). The first wave
+   * gains `extra` by the enemy's strength. A wave marked `guard` wears the node's tier of plate.
+   * A capture that fills before a wave comes down calls it off.
+   */
+  siege: {
+    warn: 8,
+    near: 60,
+    dist: [50, 90] as const,
+    /** Seconds before another try when no ground for a beam turned up. */
+    retry: 5,
+    extra: [[], [], ["drone"]] as EnemyKind[][],
+    waves: [
+      [{ at: 0, kinds: ["grunt"] }],
+      [{ at: 0, kinds: ["grunt"] }, { at: 0.45, kinds: ["grunt", "grunt"] }],
+      [{ at: 0, kinds: ["grunt"] }, { at: 0.3, kinds: ["grunt", "charger"] }, { at: 0.6, kinds: ["heavy", "grunt"], guard: true }],
+      [{ at: 0, kinds: ["grunt", "drone"] }, { at: 0.3, kinds: ["grunt", "grunt", "charger"] }, { at: 0.6, kinds: ["heavy", "heavy", "grunt"], guard: true }],
+    ] as SiegeWave[][],
+  },
   income: 250,
 };
 

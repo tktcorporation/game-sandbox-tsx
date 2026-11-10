@@ -889,7 +889,7 @@ window.render_game_to_text = () => {
       rally: NODES[s.battle.rally]?.id ?? null,
       now: s.battle.now,
     },
-    front: { nodes: s.nodes, onFront: frontNodes(s.nodes), capture: s.capture && { node: NODES[s.capture.node].id, t: +s.capture.t.toFixed(1), held: s.capture.held, waves: s.capture.waves }, cores: NODES.map((n) => ({ id: n.id, x: n.core.x, y: +n.core.y.toFixed(1), z: n.core.z })) },
+    front: { nodes: s.nodes, onFront: frontNodes(s.nodes), capture: s.capture && { node: NODES[s.capture.node].id, t: +s.capture.t.toFixed(1), held: s.capture.held, waves: s.capture.waves, coming: s.capture.coming && { x: +s.capture.coming.x.toFixed(1), z: +s.capture.coming.z.toFixed(1), wave: s.capture.coming.wave, of: s.capture.coming.of, in: +(s.capture.coming.at - s.time).toFixed(1) } }, cores: NODES.map((n) => ({ id: n.id, x: n.core.x, y: +n.core.y.toFixed(1), z: n.core.z })) },
     objective: running ? hud.objective() : null,
     contacts: s.contacts.map((c) => ({ squad: c.squad, x: c.x, z: c.z, age: +(s.time - c.t).toFixed(1), rogue: c.rogue, fight: c.fight })),
     orbs: s.orbs.length,

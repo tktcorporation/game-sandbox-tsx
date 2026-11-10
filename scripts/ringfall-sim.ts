@@ -75,7 +75,7 @@ import { duelLines } from "./ringfall-duel";
 import { checkSupport } from "./ringfall-support";
 import { checkRivals } from "./ringfall-rivals";
 import { checkScatterApart, MOBILES, OUTPOST_SITES, SCATTER_AREAS, scatterPrints } from "../src/ringfall/sim/map";
-import { enemyNodes, frontNodes, garrisonOf, useCore, type NodeHold } from "../src/ringfall/sim/front";
+import { enemyNodes, frontNodes, garrisonOf, NEIGHBOURS, siegeWaves, useCore, type NodeHold } from "../src/ringfall/sim/front";
 import { factoryMax, factoryRarity, finishBattle, heldUnlocks, nodePoint } from "../src/ringfall/sim/battle";
 import { departDepots, shopRarity } from "../src/ringfall/meta/island";
 import { BIN_GEAR } from "../src/ringfall/sim/config";
@@ -4095,7 +4095,8 @@ function checkFront(): string | null {
   if (!s.capture || s.capture.t > 0.05 || s.capture.held) return `front: the meter ran with a robot on the core's ground (${s.capture?.t})`;
   s.enemies = s.enemies.filter((e) => e !== g);
   // Held: nothing else may come near meanwhile (the push is kept off for this scenario).
-  s.capture.waves = FRONT.pushWaves[s.strength];
+  s.capture.waves = 99;
+  s.capture.coming = null;
   s.enemies = [];
   for (let i = 0; i < (FRONT.capture + 1) / TICK && s.nodes[SUP] !== "freed"; i++) {
     step(s, idleInput(), false);
@@ -4130,18 +4131,86 @@ function checkFront(): string | null {
     const front = frontNodes(islandHolds(three));
     for (const c of b.contracts) if (c.t === "free" && !front[nodeIndex(c.poi)]) return `front: the board offers to take ${c.poi}, off the front`;
   }
-  // The push: a capture with neighbours the robots hold brings their squads in.
+  // The siege (FRONT.siege): every wave is announced by a beam before its squad steps out of it.
+  const sieged = (q: State) => q.squads.filter((x) => x.name.endsWith("からの増援"));
+  const hold = (q: State, at: { x: number; y: number; z: number }, seconds: number) => {
+    for (let i = 0; i < seconds / TICK && q.capture; i++) {
+      step(q, idleInput(), false);
+      q.player.pos = { x: at.x + 1.4, y: at.y, z: at.z };
+      q.player.hp = 100;
+    }
+  };
   const ps = newRun(44);
   ps.reinforceT = ps.raiderT = 1e9;
   ps.player.pos = { x: core.x + 1.4, y: core.y, z: core.z };
   ps.enemies = ps.enemies.filter((e) => dist2d(e.pos, core) > 150);
   useCore(ps, SUP);
-  for (let i = 0; i < (FRONT.pushAt + 2) / TICK; i++) {
-    step(ps, idleInput(), false);
-    ps.player.pos = { x: core.x + 1.4, y: core.y, z: core.z };
+  hold(ps, core, 1);
+  const warned = ps.capture?.coming;
+  if (!warned || warned.wave !== 1 || warned.of !== FRONT.siege.waves[0].length || sieged(ps).length) return `front: the supply depot's siege opened with ${JSON.stringify(warned)} and ${sieged(ps).length} squads out`;
+  const out = dist2d(warned, core);
+  if (out < FRONT.radius * 2 || out > FRONT.siege.dist[1] + 5) return `front: a wave's beam stood ${out.toFixed(0)} m from the core`;
+  hold(ps, core, FRONT.siege.warn + 1);
+  const first = sieged(ps);
+  if (first.length !== 1 || !first[0].routed || ps.capture?.coming) return `front: the first wave sent ${first.map((q) => q.name).join()}`;
+  const firstKinds = ps.enemies.filter((e) => ps.squads[e.squad] === first[0]).map((e) => e.kind).sort().join();
+  if (firstKinds !== [...FRONT.siege.waves[0][0].kinds, ...FRONT.siege.extra[ps.strength]].sort().join()) return `front: the supply depot's wave is ${firstKinds}`;
+  // A deeper node draws its tier's waves, each called as the meter passes its mark, the last in the node's plate.
+  const deep = NODES.findIndex((n, i) => TIER[n.id] === 2 && NEIGHBOURS[i].some((k) => TIER[NODES[k].id] === 1));
+  const gate = NEIGHBOURS[deep].filter((k) => TIER[NODES[k].id] === 1)[0];
+  const island = { ...fresh, poiState: { ...fresh.poiState, supply: { state: "freed" as const }, [NODES[gate].id]: { state: "freed" as const } } };
+  const dp = newRun(45, starterKit(), "reservoir", { island: holds(island) });
+  if (!frontNodes(dp.nodes)[deep]) return `front: ${NODES[deep].id} is not on the front past ${NODES[gate].id}`;
+  dp.reinforceT = dp.raiderT = 1e9;
+  dp.parties = [];
+  const dc = NODES[deep].core;
+  dp.enemies = [];
+  dp.player.pos = { x: dc.x + 1.4, y: dc.y, z: dc.z };
+  dp.ally.pos = { ...dp.player.pos };
+  useCore(dp, deep);
+  const plan = siegeWaves(dp, deep);
+  if (plan.length !== 3 || !plan[2].guard) return `front: a tier 2 node's siege is ${JSON.stringify(plan)}`;
+  for (let k = 0; k < plan.length; k++) {
+    // Up to the wave's mark, with nothing on the core's ground; the wave before has come down.
+    for (let i = 0; i < 60 / TICK && dp.capture && !dp.capture.coming; i++) {
+      dp.enemies = [];
+      hold(dp, dc, TICK);
+    }
+    const w = dp.capture?.coming;
+    if (!w || w.wave !== k + 1 || dp.capture!.t + 1e-6 < plan[k].at * FRONT.capture) return `front: wave ${k + 1} of ${NODES[deep].id} was called as ${JSON.stringify(w)} at ${dp.capture?.t.toFixed(1)} s`;
+    if (k < plan.length - 1) {
+      const before = sieged(dp).length;
+      dp.capture!.t = Math.min(dp.capture!.t, plan[k + 1].at * FRONT.capture - 1);
+      for (let i = 0; i < (FRONT.siege.warn + 1) / TICK && dp.capture?.coming; i++) {
+        dp.capture.t = Math.min(dp.capture.t, plan[k + 1].at * FRONT.capture - 1);
+        hold(dp, dc, TICK);
+      }
+      if (sieged(dp).length !== before + 1) return `front: wave ${k + 1} of ${NODES[deep].id} did not come down`;
+    }
   }
-  const pushed = ps.squads.filter((q) => q.name.endsWith("からの増援"));
-  if (!pushed.length || pushed.length > FRONT.pushMax[ps.strength] || !pushed.every((q) => q.routed)) return `front: the push sent ${pushed.map((q) => q.name).join()}`;
+  // The capture fills while the last wave is still announced: the wave is called off.
+  const squadsBefore = dp.squads.length;
+  dp.enemies = [];
+  dp.capture!.t = FRONT.capture;
+  hold(dp, dc, 0.1);
+  ticks(dp, FRONT.siege.warn + 1);
+  if (dp.nodes[deep] !== "freed" || dp.squads.length !== squadsBefore) return `front: a capture that filled under an announced wave left ${dp.nodes[deep]} and ${dp.squads.length - squadsBefore} more squads`;
+  // The guard wave wears the node's plate: called again in a fresh raid and let down.
+  const gp = newRun(46, starterKit(), "reservoir", { island: holds(island) });
+  gp.reinforceT = gp.raiderT = 1e9;
+  gp.parties = [];
+  gp.enemies = [];
+  gp.player.pos = { x: dc.x + 1.4, y: dc.y, z: dc.z };
+  gp.ally.pos = { ...gp.player.pos };
+  useCore(gp, deep);
+  gp.capture!.waves = plan.length - 1;
+  gp.capture!.t = plan[plan.length - 1].at * FRONT.capture;
+  for (let i = 0; i < (FRONT.siege.warn + 2) / TICK && !sieged(gp).length; i++) {
+    gp.capture!.t = plan[plan.length - 1].at * FRONT.capture;
+    hold(gp, dc, TICK);
+  }
+  const guard = gp.enemies.filter((e) => gp.squads[e.squad]?.name.endsWith("からの増援"));
+  if (!guard.length || !guard.filter((e) => e.kind === "grunt" || e.kind === "heavy").every((e) => e.plate === 2)) return `front: the guard wave of ${NODES[deep].id} wears ${guard.map((e) => `${e.kind}:${e.plate}`).join()}`;
   return null;
 }
 
@@ -4176,7 +4245,8 @@ function checkPushPull(): string | null {
   r.enemies = r.enemies.filter((e) => dist2d(e.pos, NODES[SUP].core) > 150);
   r.player.pos = { x: NODES[SUP].core.x + 1.4, y: NODES[SUP].core.y, z: NODES[SUP].core.z };
   useCore(r, SUP);
-  r.capture!.waves = FRONT.pushWaves[r.strength];
+  r.capture!.waves = 99;
+  r.capture!.coming = null;
   r.capture!.t = FRONT.capture;
   ticks(r, 0.1);
   if (r.nodes[SUP] !== "freed") return "push-pull: the supply depot was not taken";

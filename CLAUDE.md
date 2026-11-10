@@ -224,7 +224,7 @@ The enemy's strength (`STRENGTH` in `config.ts`, `State.strength`, `strengthLeve
 share of the nodes the enemy holds (`STRENGTH.byShare`, `strengthFor()` in `state.ts`, `enemyNodes()` in
 `front.ts`, which counts only `held` nodes): it sets the reinforcement and raider times, the hunting parties per region, the drone
 packs flying (`activePacks()`, from the seed), the rogue patrols (`ROGUE.patrols`), the capture's
-push (`FRONT.push`) and the battle's enemy squads (`CONQUEST.net`, whose `work` the nodes share). With every node the enemy's a
+siege (`FRONT.siege.extra`) and the battle's enemy squads (`CONQUEST.net`, whose `work` the nodes share). With every node the enemy's a
 raid plays at `STRENGTH.play` (2), whose numbers are the island's own, so the sim gate's tables
 keep the island's numbers. A node's garrison (its POI's squads, and those of them out on a beat)
 wears plates of the node's `TIER` (`tierPlated()` in `sim/island.ts`, `PLATE.garrison`, a hash of the
@@ -248,7 +248,7 @@ outposts are places to loot with an enemy guard, no nodes, and the rogues hold n
 `sim/front.ts` holds the rules. A node next to the player's ground (the camp and the player's
 nodes) is on the front; only its core, a pillar near its middle (or out in the open where `coreFrom` in `POI_DEFS` looks for it: the assembly building's, on its apron), can be captured (`FRONT` in
 `config.ts`): the use key starts it, the meter fills while the player holds the core's ground with
-no robot on it, the garrison comes and squads push in from the neighbouring nodes. A node taken is
+no robot on it, the garrison comes, and the enemy answers in waves by the node's tier, each announced by a beam `FRONT.siege.warn` seconds before its squad steps out (`siegeWaves()`, `State.capture.coming`). A node taken is
 the player's at once (no robot enters `FRONT.zone`) and stays so overnight; clearing a POI of its
 robots does not take it. The bot captures the front's cores in its region whose garrison's plates
 its best gun pierces, `Skill.capture` a raid (`Skill.battle` in a battle), and then leaves; it takes on

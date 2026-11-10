@@ -1085,6 +1085,14 @@ for (let i = 0; i < 25 * 60 * 10; i++) {
     await page.locator("#objective").screenshot({ path: `${out}/front-3-step-card.png` });
     if (s.objective?.steps[s.objective.current]?.label !== "核を守り抜く") errors.push(`objective: during a capture the step is ${JSON.stringify(s.objective)}`);
   }
+  // A wave of the siege announced: the beam its squad will step out of, seen from where the player stands.
+  const wave = s.front?.capture?.coming;
+  if (wave && wave.in < 4 && !taken.has("front-3a-wave")) {
+    if (wave.wave < 1 || wave.wave > wave.of) errors.push(`siege: the wave announced is ${JSON.stringify(wave)}`);
+    await page.evaluate(([x, y, z, yaw]) => window.ringfallCamera(x, y, z, yaw, 0.1), [s.player.x, s.player.y + 1.6, s.player.z, Math.atan2(wave.x - s.player.x, -(wave.z - s.player.z))]);
+    await shot("front-3a-wave");
+    await page.evaluate(() => window.ringfallCamera());
+  }
   // The node taken: its core from a few metres off, lit blue with the flag up.
   if (s.stats.captured?.length && !taken.has("front-4-taken")) {
     const c = s.front.cores.find((k) => k.id === s.stats.captured[0]);

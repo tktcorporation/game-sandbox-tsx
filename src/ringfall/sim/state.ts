@@ -518,6 +518,9 @@ export type GameEvent =
   | { t: "crewOut"; x: number; z: number; n: number }
   /** A core's capture started (the alarm), was refused off the front, and the node was taken (places in `NODES`). */
   | { t: "coreStart"; node: number }
+  /** A wave of a core's siege is announced (its beam stands at x, z; wave `wave` of `of`), and its squad steps out. */
+  | { t: "siegeWarn"; node: number; x: number; z: number; wave: number; of: number }
+  | { t: "siegeLand"; x: number; z: number }
   | { t: "coreShielded"; node: number }
   | { t: "coreTaken"; node: number }
   /**
@@ -733,9 +736,19 @@ export interface State {
   nodes: NodeHold[];
   /**
    * The core capture under way (`FRONT`): its node, the seconds of the meter filled, whether it
-   * filled this tick, the seconds to the push's next wave, and the waves sent; null for none.
+   * filled this tick, the waves of its siege called so far (`FRONT.siege`), the seconds before
+   * the next may be tried, and the wave announced and on its way (`coming`: where its beam stands,
+   * the raid's time it steps out at, where each member will stand, which wave of how many, and
+   * whether it wears the node's plate); null for none.
    */
-  capture: { node: number; t: number; held: boolean; pushT: number; waves: number } | null;
+  capture: {
+    node: number;
+    t: number;
+    held: boolean;
+    waves: number;
+    wait: number;
+    coming: { x: number; z: number; at: number; kinds: EnemyKind[]; spots: { mx: number; mz: number }[]; from: string; wave: number; of: number; guard: boolean } | null;
+  } | null;
   /**
    * What the player has seen or heard of the robots out between the POIs, for the map: each squad
    * (by index) where it was last seen or heard, when, whether it is the rogues', and whether that
