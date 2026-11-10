@@ -2180,7 +2180,7 @@ for (const phone of [false, true]) {
  * and the night's attacks (the moon), the bar sliding at each.
  */
 const pushDay = {
-  v: 22, cash: 3000, raids: 11, extracted: 9, time: 6000, region: "reservoir", entry: "beach", seed: 5006, escaped: null,
+  v: 22, cash: 3000, raids: 11, extracted: 9, time: 6000, region: "reservoir", entry: "beach", seed: 5012, escaped: null,
   stash: [], entries: ["beach", "checkpoint", "jetty", "outskirts", "quay", "shore"], depots: ["supply", "quarry", "station"], seen: "f".repeat(4000),
   quests: { progress: {}, done: [] }, day: 12, factory: 0,
   poiState: { supply: { state: "freed" }, quarry: { state: "freed" }, station: { state: "freed" } },
