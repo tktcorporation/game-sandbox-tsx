@@ -2407,7 +2407,7 @@ for (const phone of [false, true]) {
   await useStation(pg, "quests");
   await pg.locator("#hub-side .quest.contract [data-act=take]").first().click();
   const known = await pg.textContent("#hub-side .strength p.bins");
-  if (!/7 \/ 20/.test(known ?? "")) errors.push(`${why}: the board's bin shows "${known}" mod parts known`);
+  if (!/7 \/ 23/.test(known ?? "")) errors.push(`${why}: the board's bin shows "${known}" mod parts known`);
   await pg.locator("#hub-side .strength p.bins").scrollIntoViewIfNeeded();
   await snap("4-board-bin");
   // The departure: the harbor's ways in, learned, as solid rings that can be chosen, its padlock gone.

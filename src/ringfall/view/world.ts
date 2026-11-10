@@ -412,7 +412,7 @@ export class World {
     this.captureRing.visible = false;
     this.scene.add(this.captureRing);
     this.siegeBeam = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.6, 2.4, 120, 12, 1, true),
+      new THREE.CylinderGeometry(1.2, 3.6, 120, 12, 1, true),
       new THREE.MeshBasicMaterial({ toneMapped: false, color: PAL.eye, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }),
     );
     this.siegeBeam.visible = false;
@@ -1651,7 +1651,7 @@ export class World {
     if (wave) {
       this.siegeBeam.position.set(wave.x, terrainHeight(wave.x, wave.z) + 60, wave.z);
       const near = 1 - Math.max(0, Math.min(1, (wave.at - s.time) / FRONT.siege.warn));
-      (this.siegeBeam.material as THREE.MeshBasicMaterial).opacity = (0.22 + 0.3 * near) * (0.75 + 0.25 * Math.sin(this.time * (5 + 9 * near)));
+      (this.siegeBeam.material as THREE.MeshBasicMaterial).opacity = (0.34 + 0.3 * near) * (0.75 + 0.25 * Math.sin(this.time * (5 + 9 * near)));
     }
     // --- the objective's beacon
     this.beacon.visible = !!this.beaconAt && s.phase === "play";
