@@ -1,4 +1,4 @@
-import { ALLY, COUNTER, ENEMIES, FORTIFY, FRONT, PLAYER, TICK, type EnemyKind, type Rarity, type SiegeWave } from "./config";
+import { ALLY, COUNTER, ENEMIES, FORTIFY, FRONT, MOMENTUM, PLAYER, TICK, type EnemyKind, type Rarity, type SiegeWave } from "./config";
 import { dist2d } from "./geom";
 import { depotIndex, FRONT_LINKS, NODES, nodeIndex, POIS, poiIndex, TIER, type NodeId, type PoiId } from "./map";
 import { cellsAround, fieldTo } from "./hunt";
@@ -47,6 +47,9 @@ export const enemyNodes = (holds: readonly NodeHold[]) => holds.filter((h) => h 
 
 /** The node of POI `poi` (a place in `POIS`), or -1 for the titan's pad. */
 export const poiNode = (poi: number) => nodeIndex(POIS[poi].id);
+
+/** The raid's momentum (`MOMENTUM`): the nodes the player took by their cores after the first, to its top. */
+export const momentum = (s: { stats: { captured?: NodeId[] } }) => Math.max(0, Math.min(MOMENTUM.max, capturedIds(s).length - 1));
 
 /** Whether squad `squad` stands for node `i`: one of its POI's garrison. */
 export function garrisonOf(s: State, i: number, squad: number): boolean {
@@ -252,6 +255,12 @@ export function takeNode(s: State, i: number) {
   s.nodes[i] = "freed";
   s.capture = null;
   s.stats.captured.push(n.id);
+  // A second node and on in one raid: the enemy's clocks run down faster (`MOMENTUM`).
+  if (momentum(s) > 0) {
+    if (Number.isFinite(s.reinforceT)) s.reinforceT *= MOMENTUM.clock;
+    if (Number.isFinite(s.raiderT)) s.raiderT *= MOMENTUM.clock;
+    s.events.push({ t: "momentum", level: momentum(s) });
+  }
   useZones(s);
   s.cleared[poiIndex(n.id)] = true;
   const d = depotIndex(n.id);

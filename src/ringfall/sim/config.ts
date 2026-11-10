@@ -558,6 +558,16 @@ export const NIGHT = {
 };
 
 /**
+ * Momentum (勢い): each node the player takes by its core in one raid after the first raises it by
+ * one, to `max`. A raid that keeps pushing is paid for it and answered for it. For each level:
+ * the factory's squads come `factory` times as far apart, the reinforcements' and the raiders'
+ * clocks are cut to `clock` of what is left as the node is taken, and the counter-attack on the
+ * node gains a grunt. A raid that gets off alive is paid `spoils[k]` credits for its `k`-th such
+ * node (戦果); a raid wiped out is paid none. The first node of a raid is level 0: as without it.
+ */
+export const MOMENTUM = { max: 3, factory: 0.8, clock: 0.85, spoils: [600, 1200, 2000] };
+
+/**
  * Fortifying (固める): the use key at the core of a node of the player's that the enemy has marked
  * for the night (`NIGHT`) starts a meter that fills over `time` seconds while the player stands
  * on the core's ground (`FRONT.radius`) with no robot on it. Full, the node is safe from the

@@ -213,7 +213,7 @@ strength, and the night never comes at it (nor counts it among a node's foes). A
 makes the player's each node whose core the raid captured, however the raid ended, or with a
 battle takes every node as the battle ended (`RaidDay.battle`), then the night's attacks
 (`nightTargets()`, `nightRaids()`, `NIGHT` in `config.ts`: as a day starts the enemy marks one or two of the player's nodes next to its ground, a hash of the raid's seed, the day and the node, which the camp's maps and the raid's show as a crescent (`tonight()`, `Battle.targets`); only a marked node can fall, by chance, less when guarded and with the factory's level, and never one the player fortified in the raid by holding its core for `FORTIFY.time` seconds, `fortifiable()`, `State.fortify`, `Battle.fortified`), switches
-the player's depots on, and pays `FRONT.income` a node (`frontIncome()`). A node is lost only to the
+the player's depots on, and pays `FRONT.income` a node (`frontIncome()`). Each node a raid takes by its core after the first raises its momentum (`MOMENTUM`, `momentum()` in `front.ts`): the factory's squads come sooner, the reinforcements' and raiders' clocks are cut as the node is taken, its counter-attack gains a grunt, and a raid that gets off alive is paid `Settlement.spoils`. A node is lost only to the
 enemy's squads in a battle or to the night; nothing goes thin and nothing lapses. The titan's pad is never the player's. A
 raid reads the standings through `newRun(seed, kit, region, { island })` (`State.hold`):
 `garrison()` in `sim/island.ts` stands every squad of a held POI and none of a freed one, which

@@ -25,11 +25,11 @@ import { storyOf } from "../meta/story";
 import { recordSpot, type RecordId } from "../sim/map";
 import type { World } from "./world";
 import { eventRow, raidEventLine } from "./events";
-import { CREW, FORTIFY, FRONT, MOD, MODS } from "../sim/config";
+import { CREW, FORTIFY, FRONT, MOD, MODS, MOMENTUM } from "../sim/config";
 import { binPicture, modIcon, pouchIcon, routeIcon, zipIcon } from "./icons";
 import { zipPoint } from "../sim/zips";
 import { bagIcon, callIcon, checkIcon, clockIcon, coreIcon, crossIcon, depotIcon, entryIcon, exitIcon, eyeIcon, fightIcon, flareIcon, keyIcon, lockIcon, noiseIcon, reinforceIcon, reviveIcon, SIDE, upIcon, nightIcon } from "./icons";
-import { capturable, siegeWaves } from "../sim/front";
+import { capturable, momentum, siegeWaves } from "../sim/front";
 import { terrainHeight } from "../sim/terrain";
 
 /** The POI whose bins drop the key to POI `poi`'s vault (its `keyFrom`), by name. */
@@ -426,6 +426,10 @@ export class Hud {
       case "coreShielded":
         this.toast(`${coreIcon(foeSide(s.nodes[e.node]), true)}${NODES[e.node].name}<span class="toast-sub">先に${esc(shieldedBy(s.nodes, e.node))}を制圧</span>`, 0, 4000);
         break;
+      case "momentum":
+        // The raid's momentum rose: that many marks, and what the next node pays.
+        this.toast(`${upIcon().repeat(e.level)}<b>${MOMENTUM.spoils[Math.min(e.level, MOMENTUM.spoils.length) - 1].toLocaleString()}</b>`, 3, 4000);
+        break;
       case "fortified":
         this.toast(`${coreIcon(SIDE.own)}${nightIcon("#4f9bff")}${checkIcon()}${NODES[e.node].name}`, 1, 4000);
         break;
@@ -473,7 +477,8 @@ export class Hud {
       this.rowAt = s.time;
     }
     const from = s.time - this.rowAt < 2 && s.time >= this.rowAt ? this.rowFrom : own;
-    const row = nodeRow(s.nodes, undefined, { from, risk, contested });
+    // The raid's momentum beside the bar: a mark for each node taken after the first.
+    const row = nodeRow(s.nodes, undefined, { from, risk, contested }) + (momentum(s) ? `<span class="momentum">${upIcon().repeat(momentum(s))}</span>` : "");
     const el = $("island-row");
     if (el.dataset.html !== row) {
       el.dataset.html = row;
@@ -1351,8 +1356,8 @@ export class Hud {
     // The day's income from the nodes the player holds.
     // With the nodes this island's expeditions hold on other islands, theirs on a line of its own.
     const island =
-      settled?.income || settled?.awayIncome
-        ? `<h3 class="day-end">${settled.day} 日目</h3><p>${settled.income ? `<span>拠点の収入<b>${settled.income.toLocaleString()} クレジット</b></span>` : ""}${settled.awayIncome ? `<span>遠征の拠点の収入<b>${settled.awayIncome.toLocaleString()} クレジット</b></span>` : ""}</p>`
+      settled?.income || settled?.awayIncome || settled?.spoils
+        ? `<h3 class="day-end">${settled.day} 日目</h3><p>${settled.income ? `<span>拠点の収入<b>${settled.income.toLocaleString()} クレジット</b></span>` : ""}${settled.spoils ? `<span>戦果<b>${settled.spoils.toLocaleString()} クレジット</b></span>` : ""}${settled.awayIncome ? `<span>遠征の拠点の収入<b>${settled.awayIncome.toLocaleString()} クレジット</b></span>` : ""}</p>`
         : "";
     // The contract taken for the raid: done and paid, or not done (it goes with the day).
     const c = settled?.contract;

@@ -1,4 +1,4 @@
-import { DEPOT, FACTORY, FACTORY_TOP, HEALS as HEAL_SPECS, HIDEOUT, META, MOD_KINDS, MOD_START, THREAT, TOOLS, VALUABLES, type ModKind, type HealKind, type ModuleId, type Rarity, type ToolKind, type ValuableKind, type WeaponKind, type FactoryCost } from "../sim/config";
+import { DEPOT, FACTORY, FACTORY_TOP, HEALS as HEAL_SPECS, HIDEOUT, META, MOD_KINDS, MOMENTUM, MOD_START, THREAT, TOOLS, VALUABLES, type ModKind, type HealKind, type ModuleId, type Rarity, type ToolKind, type ValuableKind, type WeaponKind, type FactoryCost } from "../sim/config";
 import { depotIndex, DEPOTS, ENTRIES, HOME_REGION, POIS, poiIndex, REGIONS, regionOf, ROUTES, type EntryId, type NodeId, type PoiId, type RecordId, type RegionId, type RouteId } from "../sim/map";
 import { openRoutes } from "../sim/routes";
 import { encodeSeen, type Kit, type State } from "../sim/state";
@@ -10,7 +10,7 @@ import type { IslandEvent } from "../sim/island";
 import { built, creditRaid, emptyLog, need, offered, QUEST_IDS, type Quest, type QuestLog } from "./quests";
 import { currentStory, STORIES, type Story } from "./story";
 import { addRetaken, awayIncome, parseOutgoing, parseRetaken, retakenNodes, type Outgoing } from "./expeditions";
-import { capturedIds } from "../sim/front";
+import { capturedIds, momentum } from "../sim/front";
 
 /**
  * One thing in the stash. Heals are one entry per unit, so the stash cap counts them. A weapon
@@ -497,6 +497,8 @@ export interface Settlement {
   night: FrontChange;
   /** Credits the nodes the player holds paid at this settle (`frontIncome()`). */
   income: number;
+  /** Credits for the nodes the raid took after its first, got off alive (`MOMENTUM.spoils`); left out, none. */
+  spoils?: number;
   /** Credits the nodes this island's expeditions hold on other islands paid at this settle (`awayIncome()`); left out, none. */
   awayIncome?: number;
   /** The day's island event the raid was played on, or null. */
@@ -652,9 +654,11 @@ export function settle(p: Profile, s: State): Settlement {
   const { profile: night } = advanceDay(settled, day);
   // The nodes the player holds once the night is over pay their day's credits.
   const income = frontIncome(night);
+  // A raid that took more than one node and got off alive is paid for each after the first (`MOMENTUM.spoils`).
+  const spoils = s.outcome === "extracted" ? MOMENTUM.spoils.slice(0, momentum(s)).reduce((a, c) => a + c, 0) : 0;
   // The nodes held on other islands pay theirs too, and the expeditions known gone are dropped.
   const away = awayIncome(night);
-  const next = away > 0 || night.expeditions.some((e) => e.state === "gone") ? { ...night, cash: night.cash + income + away, expeditions: night.expeditions.filter((e) => e.state !== "gone") } : { ...night, cash: night.cash + income };
+  const next = away > 0 || night.expeditions.some((e) => e.state === "gone") ? { ...night, cash: night.cash + income + spoils + away, expeditions: night.expeditions.filter((e) => e.state !== "gone") } : { ...night, cash: night.cash + income + spoils };
   // Quests the raid opened may ask for a hideout level already built.
   const claimed = claimBuilt(next);
   // The new day's board, for the next raid's seed; yesterday's contract goes with yesterday's board.
@@ -662,7 +666,7 @@ export function settle(p: Profile, s: State): Settlement {
   const started = { poiState: Object.fromEntries(POIS.map((o, i) => [o.id, { state: s.hold?.[i] ?? "held" }])) as Island };
   const fresh = { ...claimed.profile, stash: withStarters(claimed.profile.stash), taken: null, board: makeBoard(claimed.profile) };
   fresh.retaken = addRetaken(p.retaken, retakenNodes(started, fresh, capturedIds(s)));
-  return { profile: fresh, home, opened, learned, quests: [...finished, ...claimed.quests], sold: [...sold, ...claimed.sold], soldFor: soldFor + claimed.soldFor, day: p.day, ...change, income, ...(away > 0 && { awayIncome: away }), event: s.event ?? null, contract, story: told, threat, analysable: s.outcome === "extracted" ? [...(pl.mods ?? [])] : [] };
+  return { profile: fresh, home, opened, learned, quests: [...finished, ...claimed.quests], sold: [...sold, ...claimed.sold], soldFor: soldFor + claimed.soldFor, day: p.day, ...change, income, ...(spoils > 0 && { spoils }), ...(away > 0 && { awayIncome: away }), event: s.event ?? null, contract, story: told, threat, analysable: s.outcome === "extracted" ? [...(pl.mods ?? [])] : [] };
 }
 
 /** Finishes and pays every offered build quest the hideout already meets, and those they open. */

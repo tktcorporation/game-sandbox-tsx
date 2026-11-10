@@ -4826,3 +4826,10 @@ body.touch .bag-card:nth-last-child(n + 3) {
   width: 15px;
   height: 15px;
 }
+
+/* The raid's momentum beside the island's bar: a gold mark for each node taken after the first. */
+#island-row .momentum {
+  margin-left: 6px;
+  color: #ffd24a;
+  white-space: nowrap;
+}
