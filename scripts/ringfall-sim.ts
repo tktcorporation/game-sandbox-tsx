@@ -41,8 +41,8 @@ import { forward } from "../src/ringfall/sim/state";
 import { build, buildFactory, buildState, buy, canBuild, deliver, depotAllowance, depotBudget, emptyLoadout, fitsStart, healRoom, isStarter, issuedHeals, itemCost, FIRST_ENTRY, loadoutCost, newProfile, parseProfile, pouch, price, sell, sellPrice, settle, stashUsed, takeKit, wares, withStarters, type Item, type Profile } from "../src/ringfall/meta/profile";
 import { emptyHideout, hideoutDone, maxLevel, MODULES, poisWith, sources, stashCap } from "../src/ringfall/meta/hideout";
 import { boostFor, boosted } from "../src/ringfall/sim/state";
-import { CONQUEST, COUNTER, FACTORY, FACTORY_TOP, HIDEOUT, TOOL_KINDS, TOOLS, VAULT } from "../src/ringfall/sim/config";
-import { frontIncome, islandHolds, advanceDay, holds, newIsland, nightRaids, playerNodes, type RaidDay } from "../src/ringfall/meta/island";
+import { CONQUEST, COUNTER, FACTORY, FORTIFY, NIGHT, FACTORY_TOP, HIDEOUT, TOOL_KINDS, TOOLS, VAULT } from "../src/ringfall/sim/config";
+import { frontIncome, islandHolds, advanceDay, holds, newIsland, nightRaids, nightTargets, playerNodes, type RaidDay } from "../src/ringfall/meta/island";
 import { activePacks } from "../src/ringfall/sim/island";
 import { garrison, isVaultGuard } from "../src/ringfall/sim/island";
 import { QUESTS, offered, raidCredit } from "../src/ringfall/meta/quests";
@@ -4283,19 +4283,51 @@ function checkPushPull(): string | null {
   if (!back || r.nodes[SUP] === "freed") return "push-pull: the counter-attack on a bare supply depot did not take it back";
   const day = raidDay(r);
   if (!day.battle?.turns || day.battle.turns.after < 1 || day.battle.left?.join() !== "supply" || day.battle.held.includes("supply")) return `push-pull: the battle day reads ${JSON.stringify(day.battle)}`;
-  // The night: the same seed and day fall the same; bare nodes fall more often than guarded ones.
+  // The night: the enemy's targets are fixed by the seed, the day and the island as the day began;
+  // only a target can fall, a guarded one less often than a bare one, a fortified one never.
   const mine: NodeId[] = ["supply", "quarry", "relay", "station"];
   const a = nightRaids(mine, [], 0, 77, 5).join();
-  if (a !== nightRaids(mine, [], 0, 77, 5).join()) return "push-pull: the same night fell differently";
+  if (a !== nightRaids(mine, [], 0, 77, 5).join() || nightTargets(mine, 77, 5).join() !== nightTargets(mine, 77, 5).join()) return "push-pull: the same night fell differently";
   let bare = 0;
   let guarded = 0;
   let deep = 0;
+  let fortified = 0;
+  let stray = 0;
+  const wide: NodeId[] = ["supply", "quarry", "relay", "station", "waterworks", "lodge"];
   for (let d = 1; d <= 400; d++) {
     bare += nightRaids(["quarry"], [], 0, 9, d).length;
     guarded += nightRaids(["quarry"], ["quarry"], 0, 9, d).length;
+    fortified += nightRaids(["quarry"], [], 0, 9, d, [], ["quarry"], ["quarry"]).length;
     deep += nightRaids(["supply", "quarry", "relay", "station", "waterworks"], [], 0, 9, d).filter((id) => id === "supply").length;
+    const targets = nightTargets(wide, 9, d);
+    if (targets.length !== NIGHT.many || nightTargets(mine, 9, d).length !== NIGHT.few) return `push-pull: on day ${d} the enemy marked ${targets.join()} of six nodes and ${nightTargets(mine, 9, d).join()} of four`;
+    stray += nightRaids(wide, [], 0, 9, d).filter((id) => !targets.includes(id)).length;
+    // A node taken during the day was no target as the day began.
+    if (nightRaids([...mine, "lodge"], [], 0, 9, d, [], mine).includes("lodge")) return `push-pull: a node taken on day ${d} fell that night`;
   }
-  if (!bare || guarded >= bare || deep) return `push-pull: over 400 nights a bare quarry fell ${bare} times, a guarded one ${guarded}, a supply depot with no enemy beside it ${deep}`;
+  if (!bare || guarded >= bare || deep || fortified || stray) return `push-pull: over 400 nights a bare quarry fell ${bare} times, a guarded one ${guarded}, a fortified one ${fortified}, a supply depot with no enemy beside it ${deep}, a node that was no target ${stray}`;
+  // Fortifying in the raid: the use key at the core of a node marked for the night, held for FORTIFY.time.
+  const fprof = { ...p, poiState: { ...p.poiState, supply: { state: "freed" as const } } };
+  const fr = newRun(31, starterKit(), "reservoir", { island: holds(fprof), battle: { factory: 0, targets: ["supply"] } });
+  fr.reinforceT = fr.raiderT = 1e9;
+  fr.parties = [];
+  fr.enemies = [];
+  const fc = NODES[SUP].core;
+  fr.player.pos = { x: fc.x + 1.4, y: fc.y, z: fc.z };
+  fr.ally.pos = { ...fr.player.pos };
+  const use = idleInput();
+  use.interact = true;
+  step(fr, use, false);
+  if (fr.fortify?.node !== SUP) return `push-pull: the use key at a marked node's core started ${JSON.stringify(fr.fortify)}`;
+  for (let i = 0; i < (FORTIFY.time + 1) / TICK && fr.fortify; i++) {
+    fr.enemies = [];
+    step(fr, idleInput(), false);
+    fr.player.pos = { x: fc.x + 1.4, y: fc.y, z: fc.z };
+  }
+  if (!fr.battle!.fortified.includes(SUP) || !fr.events.some((e) => e.t === "fortified")) return "push-pull: holding a marked node's core did not fortify it";
+  fr.outcome = "extracted";
+  fr.phase = "done";
+  if (raidDay(fr).battle?.fortified?.join() !== "supply") return `push-pull: the battle day of a fortified node reads ${JSON.stringify(raidDay(fr).battle?.fortified)}`;
   const prof = { ...p, poiState: { ...p.poiState, quarry: { state: "freed" as const } } };
   const quiet: RaidDay = { alive: true, cleared: [], captured: [], visited: [], titan: false, battle: { held: ["quarry"], start: ["quarry"], left: ["quarry"], guarded: [], factory: 0, seed: 5 } };
   const x = advanceDay(prof, quiet);

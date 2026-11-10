@@ -90,6 +90,9 @@ export interface Battle {
   rally: number;
   /** The counter-attacks due on nodes the player has just taken (`COUNTER`): which node, and the battle's clock at which its squad sets off. */
   counters: { node: number; at: number }[];
+  /** The enemy's targets for the coming night (places in `NODES`, `NIGHT`), and those of them the player has fortified (`FORTIFY`). */
+  targets: number[];
+  fortified: number[];
   /** The battle's clock when the raid ended before the battle did, and each node's standing then; null while the raid is on. */
   left: { at: number; nodes: NodeHold[] } | null;
   /** Other players' expeditions still to come, soonest first. */
@@ -113,6 +116,8 @@ export interface RivalExpedition {
 /** What a raid of the island brings to its battle: the factory's level, and the other players' expeditions coming. */
 export interface BattleStart {
   factory: number;
+  /** The enemy's targets for the coming night (meta/island.ts `nightTargets()`), announced all day; left out, none. */
+  targets?: readonly NodeId[];
   rivals?: readonly RivalExpedition[];
   /** The factory's squads out on expeditions (meta/expeditions.ts `squadsAway()`); left out, none. */
   away?: number;
@@ -323,6 +328,8 @@ export function initBattle(s: State, start: BattleStart): Battle {
     threat: NODES.map(() => false),
     rally: -1,
     counters: [],
+    targets: (start.targets ?? []).map((id) => nodeIndex(id)).filter((i) => i >= 0),
+    fortified: [],
     left: null,
     rivals: [],
     away: Math.max(0, Math.round(start.away ?? 0)),
@@ -674,7 +681,9 @@ function playerPlan(s: State, b: Battle): { from: number; to: number; task: Batt
   // A node of the player's where the enemy comes ashore or next to the enemy's, with none of the player's squads there or going: one goes to hold it.
   const bare = NODES.map((_, i) => i).filter((i) => s.nodes[i] === "freed" && !b.squads.some((q) => q.side === 0 && q.to === i && q.task !== "rally") && (NET_EDGE.includes(NODES[i].id) || NEIGHBOURS[i].some((k) => s.nodes[k] !== "freed")));
   if (bare.length) {
-    const i = bare.sort((a, c) => +NET_EDGE.includes(NODES[c].id) - +NET_EDGE.includes(NODES[a].id))[0];
+    // The night's targets first: a squad standing there as the battle ends halves the night's chance (`NIGHT.guarded`).
+    const want = (k: number) => +(b.targets.includes(k) && !b.fortified.includes(k)) * 2 + +NET_EDGE.includes(NODES[k].id);
+    const i = bare.sort((a, c) => want(c) - want(a))[0];
     return { from: i, to: i, task: "defend" };
   }
   return attackFrom(s, b, 0, ground);

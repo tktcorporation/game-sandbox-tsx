@@ -25,7 +25,7 @@ import { storyOf } from "../meta/story";
 import { recordSpot, type RecordId } from "../sim/map";
 import type { World } from "./world";
 import { eventRow, raidEventLine } from "./events";
-import { CREW, FRONT, MOD, MODS } from "../sim/config";
+import { CREW, FORTIFY, FRONT, MOD, MODS } from "../sim/config";
 import { binPicture, modIcon, pouchIcon, routeIcon, zipIcon } from "./icons";
 import { zipPoint } from "../sim/zips";
 import { bagIcon, callIcon, checkIcon, clockIcon, coreIcon, crossIcon, depotIcon, entryIcon, exitIcon, eyeIcon, fightIcon, flareIcon, keyIcon, lockIcon, noiseIcon, reinforceIcon, reviveIcon, SIDE, upIcon, nightIcon } from "./icons";
@@ -425,6 +425,9 @@ export class Hud {
         break;
       case "coreShielded":
         this.toast(`${coreIcon(foeSide(s.nodes[e.node]), true)}${NODES[e.node].name}<span class="toast-sub">先に${esc(shieldedBy(s.nodes, e.node))}を制圧</span>`, 0, 4000);
+        break;
+      case "fortified":
+        this.toast(`${coreIcon(SIDE.own)}${nightIcon("#4f9bff")}${checkIcon()}${NODES[e.node].name}`, 1, 4000);
         break;
       case "coreTaken":
         this.toast(`${coreIcon(SIDE.own)}${NODES[e.node].name}`, 1, 5000);
@@ -1126,6 +1129,11 @@ export class Hud {
     if (t.kind === "armor") return `${key("E")}<span class="r" style="color:${RARITY_CSS[t.loot.rarity]}">アーマー Lv${t.loot.rarity}</span>${struck([`Lv${p.armor}`])}`;
     if (t.kind === "core") {
       const n = NODES[t.node];
+      // A node of the player's marked for the night: the use key fortifies it (the moon turns from red to blue).
+      if (s.nodes[t.node] === "freed") {
+        if (s.fortify?.node === t.node) return `${coreIcon(SIDE.own)}${nightIcon("#4f9bff")}${esc(n.name)} <b class="${s.fortify.held ? "" : "paused"}">${Math.floor((s.fortify.t / FORTIFY.time) * 100)}%</b>`;
+        return `${key("E")}${coreIcon(SIDE.own)}${nightIcon("#ff4a3d")}${esc(n.name)}`;
+      }
       const c = foeSide(s.nodes[t.node]);
       if (!capturable(s, t.node)) return `${coreIcon(c, true)}${esc(n.name)} <small>▸ 先に${esc(shieldedBy(s.nodes, t.node))}</small>`;
       if (s.capture?.node === t.node) return `${coreIcon(c)}${esc(n.name)} <b>${Math.floor((s.capture.t / FRONT.capture) * 100)}%</b>`;

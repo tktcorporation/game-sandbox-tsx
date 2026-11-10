@@ -1634,8 +1634,11 @@ export class World {
     });
     // --- the ring a capture is held inside
     const cap = s.phase === "play" ? s.capture : null;
-    this.captureRing.visible = !!cap;
-    if (cap) {
+    // The same ring for fortifying a node of the player's.
+    const ringed = cap ?? (s.phase === "play" ? s.fortify : null);
+    this.captureRing.visible = !!ringed;
+    if (ringed) {
+      const cap = ringed;
       const core = NODES[cap.node].core;
       this.captureRing.position.set(core.x, core.y + 0.3, core.z);
       const m = this.captureRing.material as THREE.MeshBasicMaterial;

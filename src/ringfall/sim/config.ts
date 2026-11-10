@@ -539,20 +539,31 @@ export const COUNTER = {
 };
 
 /**
- * The night between two days (meta/island.ts `nightRaids()`): the enemy attacks the player's nodes
- * next to its own ground (a node of its, the pad or the north shore). Each such node falls with the
- * chance `chance[n - 1]` for `n` such neighbours (2 or more as 2), times `spread` plus the share of
- * the island's nodes the player holds (the further the player has spread, the harder the rest of
- * the front is hit), times `guarded` when the player's squads stood at it as the battle ended,
- * times the factory's level's `night` (`FACTORY.levels`). At most `max` fall in a night. The
- * draw is a hash of the raid's seed, the day and the node, never the raid's random numbers.
+ * The night between two days (meta/island.ts): the enemy's move is announced, as its shots are.
+ * As a day starts, the enemy picks its targets for the coming night among the player's nodes next
+ * to its own ground (a node of its, the pad or the north shore): `few` of them, `many` once the
+ * player holds `spread` nodes or more (`nightTargets()`), drawn from the raid's seed and the day,
+ * never the raid's random numbers. The camp's maps and the raid's show them all day. Only a
+ * target can fall overnight, and only one the player still holds as the battle ends: with the
+ * chance `fall`, times `guarded` when the player's squads stood at it then, times the factory's
+ * level's `night` (`FACTORY.levels`). A target the player fortified in the raid (`FORTIFY`)
+ * never falls.
  */
 export const NIGHT = {
-  chance: [0.3, 0.5],
-  spread: 0.5,
+  few: 1,
+  many: 2,
+  spread: 6,
+  fall: 0.4,
   guarded: 0.5,
-  max: 2,
 };
+
+/**
+ * Fortifying (固める): the use key at the core of a node of the player's that the enemy has marked
+ * for the night (`NIGHT`) starts a meter that fills over `time` seconds while the player stands
+ * on the core's ground (`FRONT.radius`) with no robot on it. Full, the node is safe from the
+ * night, whatever the battle does after.
+ */
+export const FORTIFY = { time: 20 };
 
 /** What building a level of the factory takes from the stash, as a hideout module's level does (`ModuleLevel`). */
 export interface FactoryCost {
