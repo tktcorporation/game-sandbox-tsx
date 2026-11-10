@@ -336,7 +336,7 @@ export function initBattle(s: State, start: BattleStart): Battle {
   };
   NODES.forEach((_, i) => {
     if (s.nodes[i] !== "freed") return;
-    for (let k = 0; k < FACTORY.levels[factory].turrets; k++) addSquad(b, 0, ["heavy"], i, i, "post");
+    for (let k = 0; k < FACTORY.levels[factory].turrets + heldUnlocks(s.nodes, "turret").reduce((n, id) => n + (UNLOCKS[id].turret ?? 0), 0); k++) addSquad(b, 0, ["heavy"], i, i, "post");
   });
   for (const x of [...(start.rivals ?? [])].sort((p, q) => p.at - q.at)) {
     const i = nodeIndex(x.target);

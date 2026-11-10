@@ -555,6 +555,8 @@ export const NIGHT = {
   spread: 6,
   fall: 0.4,
   guarded: 0.5,
+  /** What the chance is multiplied by while the player holds a node that watches the night (`UNLOCKS[].watch`). */
+  watch: 0.5,
 };
 
 /**

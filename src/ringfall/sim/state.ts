@@ -1,5 +1,5 @@
 import { ALLY, BOOST, CREW, DEPOT, STORM, SWEEP, DUCK, ELITE, ENEMIES, META, MOD_START, STRENGTH, THREAT, VALUABLES, WORLD, type ModKind, type ValuableKind, PLAYER, ULT, type EnemyKind, type Flank, type HealKind, type Rarity, type ToolKind, type WeaponKind } from "./config";
-import { DEPOTS, depotIndex, entryOf, EXTRA_BINS, HOME_REGION, NODES, POIS, poiIndex, poiRegion, recordSpot, regionOf, type EntryId, type ExtractId, type PoiId, type RecordId, type RegionId, type RouteId, DEBRIS_SPOTS, debrisIndex, type NodeId } from "./map";
+import { DEPOTS, depotIndex, entryOf, EXTRA_BINS, HOME_REGION, NODES, POIS, poiIndex, poiRegion, recordSpot, regionOf, UNLOCKS, type EntryId, type ExtractId, type PoiId, type RecordId, type RegionId, type RouteId, DEBRIS_SPOTS, debrisIndex, type NodeId } from "./map";
 import { openRoutes, useRoutes } from "./routes";
 import { populate, spawnEnemy } from "./enemies";
 import { placeParties } from "./world";
@@ -1111,6 +1111,13 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
     p.yaw = from.yaw;
   }
   useZones(s);
+  // What the nodes held give a raid at its start (`UNLOCKS`): the leap's charge, and one mod part the profile knows, picked from the seed.
+  NODES.forEach((n, i) => {
+    if (s.nodes[i] !== "freed") return;
+    const u = UNLOCKS[n.id];
+    if (u.ult) s.player.ult = Math.min(1, s.player.ult + u.ult);
+    if (u.mod && s.modOdds > 0 && s.known.length && !s.player.mods.length) s.player.mods.push(s.known[(mix(Math.imul(seed + 7, 0x9e3779b1)) >>> 0) % s.known.length]);
+  });
   placeAlly(s);
   populate(s);
   // The battle's walks are traced now, and the fields that traced them forgotten, before anything else builds one.

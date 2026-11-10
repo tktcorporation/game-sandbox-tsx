@@ -622,7 +622,7 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   gear up to `shop` (`shopRarity()`, which `wares()` sells; common with no node), a start from its
   depot (`depart`), the factory's extra squads (`squad`, `factoryMax()`), the reinforcements'
   landing on the compass (`scout`, the HUD's red chevron), no boats on the north shore (`shore`,
-  `CONQUEST.net.shore`). The world map draws each node's plate as a shield and what it opens as
+  `CONQUEST.net.shore`), one more heal issued (`heal`, `issuedHeals()`), the leap's charge at the start (`ult`), a known mod part worn at the start (`mod`), more turrets (`turret`), and the night's targets falling half as often (`watch`, `NIGHT.watch`); every node opens something. The world map draws each node's plate as a shield and what it opens as
   small marks beside it (`drawShield()`, `drawUnlocks()` in `view/map.ts`); the trader's shelf
   shows the rarities lit by the nodes held.
 - `ally.ts` is the teammate: it walks the player's footsteps (`State.trail`), shoots only engaged

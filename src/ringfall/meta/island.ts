@@ -1,4 +1,4 @@
-import { EVENTS, FACTORY, FACTORY_TOP, FRONT, META, NIGHT, type EventKind, type Rarity } from "../sim/config";
+import { EVENTS, FACTORY, FACTORY_TOP, FRONT, META, NIGHT, type EventKind, type HealKind, type Rarity } from "../sim/config";
 import type { IslandEvent, PoiHold } from "../sim/island";
 import { parseHold, rivalOf } from "../sim/holds";
 import { DEBRIS_SPOTS, debrisIndex, DEPOTS, NET_EDGE, NODES, nodeIndex, POIS, poiIndex, UNLOCKS, type DebrisId, type NodeId, type NodeUnlock, type PoiId } from "../sim/map";
@@ -137,7 +137,7 @@ export const playerNodes = (p: Pick<IslandDay, "poiState">): NodeId[] => NODES.f
 export const tonight = (p: Pick<IslandDay, "poiState" | "day" | "seed">): NodeId[] => nightTargets(playerNodes(p), p.seed ?? 0, p.day, Object.keys(rivalNodes(islandHolds(p))) as NodeId[]);
 
 /** What the nodes the player holds open together (`UNLOCKS`): the best of each, the squads summed. */
-export function unlocked(p: Pick<IslandDay, "poiState">): Required<Omit<NodeUnlock, "depart">> & { depart: NodeId[] } {
+export function unlocked(p: Pick<IslandDay, "poiState">): Required<Pick<NodeUnlock, "shop" | "squad" | "scout" | "shore">> & { depart: NodeId[]; heals: HealKind[]; turret: number } {
   const mine = playerNodes(p).map((id) => ({ id, u: UNLOCKS[id] }));
   return {
     shop: Math.max(META.shopRarity, ...mine.map(({ u }) => u.shop ?? 0)) as Rarity,
@@ -145,7 +145,9 @@ export function unlocked(p: Pick<IslandDay, "poiState">): Required<Omit<NodeUnlo
     scout: mine.some(({ u }) => u.scout),
     shore: mine.some(({ u }) => u.shore),
     depart: mine.filter(({ u }) => u.depart).map(({ id }) => id),
-  } as Required<Omit<NodeUnlock, "depart">> & { depart: NodeId[] };
+    heals: mine.flatMap(({ u }) => (u.heal ? [u.heal] : [])),
+    turret: mine.reduce((n, { u }) => n + (u.turret ?? 0), 0),
+  } as ReturnType<typeof unlocked>;
 }
 
 /** The best rarity of weapon and tier of armour the trader sells: what the nodes held open (`UNLOCKS`). */
@@ -213,7 +215,7 @@ export function nightTargets(held: readonly NodeId[], seed: number, day: number,
 export function nightRaids(held: readonly NodeId[], guarded: readonly NodeId[], factory: number, seed: number, day: number, rival: readonly NodeId[] = [], start: readonly NodeId[] = held, fortified: readonly NodeId[] = []): NodeId[] {
   return nightTargets(start, seed, day, rival).filter((id) => {
     if (!held.includes(id) || fortified.includes(id)) return false;
-    const chance = NIGHT.fall * (guarded.includes(id) ? NIGHT.guarded : 1) * FACTORY.levels[Math.max(0, Math.min(FACTORY_TOP, factory))].night;
+    const chance = NIGHT.fall * (held.some((h) => UNLOCKS[h].watch) ? NIGHT.watch : 1) * (guarded.includes(id) ? NIGHT.guarded : 1) * FACTORY.levels[Math.max(0, Math.min(FACTORY_TOP, factory))].night;
     return (dayHash(seed, day, 200 + nodeIndex(id)) % 10_000) / 10_000 < chance;
   });
 }

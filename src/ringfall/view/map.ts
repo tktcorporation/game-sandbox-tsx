@@ -222,6 +222,61 @@ export function drawUnlocks(g: CanvasRenderingContext2D, x: number, y: number, i
     g.fill();
     cx += s * 2.3;
   }
+  // The smaller gifts, each a mark of its own: a heal's cross in its colour, the leap's wing, a mod part's hexagon, a turret, the night's moon.
+  if (u.heal) {
+    plate(s * 1.4);
+    g.fillStyle = u.heal === "cell" || u.heal === "battery" ? "#5fb4ff" : "#ff6b6b";
+    const k = u.heal === "battery" || u.heal === "medkit" ? 1.15 : 0.85;
+    g.fillRect(cx + s * 0.7 - s * 0.22 * k, y - s * 0.7 * k, s * 0.44 * k, s * 1.4 * k);
+    g.fillRect(cx + s * 0.7 - s * 0.7 * k, y - s * 0.22 * k, s * 1.4 * k, s * 0.44 * k);
+    cx += s * 2.1;
+  }
+  if (u.ult) {
+    plate(s * 1.6);
+    g.fillStyle = "#ffd24a";
+    for (const dy of u.ult >= 1 ? [-0.55, 0.25] : [-0.15]) {
+      g.beginPath();
+      g.moveTo(cx, y + s * (dy + 0.5));
+      g.lineTo(cx + s * 0.8, y + s * (dy - 0.3));
+      g.lineTo(cx + s * 1.6, y + s * (dy + 0.5));
+      g.lineTo(cx + s * 0.8, y + s * (dy + 0.15));
+      g.closePath();
+      g.fill();
+    }
+    cx += s * 2.3;
+  }
+  if (u.mod) {
+    plate(s * 1.5);
+    g.fillStyle = RARITY_CSS[2];
+    g.beginPath();
+    for (let k = 0; k < 6; k++) {
+      const a = (Math.PI / 3) * k;
+      const px = cx + s * 0.75 + Math.cos(a) * s * 0.75;
+      const py = y + Math.sin(a) * s * 0.75;
+      if (k) g.lineTo(px, py);
+      else g.moveTo(px, py);
+    }
+    g.closePath();
+    g.fill();
+    cx += s * 2.2;
+  }
+  if (u.turret) {
+    plate(s * 1.6);
+    g.fillStyle = HOLD_CSS.freed;
+    g.fillRect(cx + s * 0.2, y - s * 0.1, s * 1.1, s * 0.9);
+    g.fillRect(cx + s * 0.6, y - s * 0.7, s * 1.1, s * 0.35);
+    cx += s * 2.3;
+  }
+  if (u.watch) {
+    plate(s * 1.5);
+    g.fillStyle = HOLD_CSS.freed;
+    g.beginPath();
+    g.arc(cx + s * 0.75, y, s * 0.75, Math.PI * 0.35, Math.PI * 1.65);
+    g.arc(cx + s * 1.15, y, s * 0.6, Math.PI * 1.42, Math.PI * 0.58, true);
+    g.closePath();
+    g.fill();
+    cx += s * 2.2;
+  }
   if (u.shore) {
     plate(s * 2.0);
     // A red boat, struck through.

@@ -5,7 +5,7 @@ import { encodeSeen, type Kit, type State } from "../sim/state";
 import { haulOrigins } from "../sim/world";
 import { contractDone, makeBoard, parseBoard, sentOrigins, type Board, type Contract, type Fetched } from "./contracts";
 import { emptyHideout, infirmaryHeals, MODULES, nextLevel, onSale, pouchSlots, stashCap, stillNeeded, type Hideout } from "./hideout";
-import { advanceDay, departDepots, type DayChange, type FrontChange, eventFor, firstEvents, frontIncome, newIsland, parseEvent, parseIsland, raidDay, shopRarity, type DayEvents, type Island } from "./island";
+import { advanceDay, departDepots, unlocked, type DayChange, type FrontChange, eventFor, firstEvents, frontIncome, newIsland, parseEvent, parseIsland, raidDay, shopRarity, type DayEvents, type Island } from "./island";
 import type { IslandEvent } from "../sim/island";
 import { built, creditRaid, emptyLog, need, offered, QUEST_IDS, type Quest, type QuestLog } from "./quests";
 import { currentStory, STORIES, type Story } from "./story";
@@ -242,9 +242,11 @@ export const emptyLoadout = (): Loadout => ({ weapons: [], armor: null, heals: {
 export const healCount = (p: Profile, k: HealKind) => p.stash.filter((i) => i.t === "heal" && i.kind === k).length;
 
 /** Heals issued to every raid, whatever it carries: `META.starter.heals` and the infirmary's. */
-export function issuedHeals(p: Pick<Profile, "hideout">): Record<HealKind, number> {
+export function issuedHeals(p: Pick<Profile, "hideout"> & Partial<Pick<Profile, "poiState">>): Record<HealKind, number> {
   const sick = infirmaryHeals(p.hideout);
-  return Object.fromEntries(HEALS.map((k) => [k, Math.min(HEAL_SPECS[k].max, META.starter.heals[k] + sick[k])])) as Record<HealKind, number>;
+  // The nodes held that issue a heal (`UNLOCKS[].heal`) add theirs.
+  const nodes = p.poiState ? unlocked({ poiState: p.poiState }).heals : [];
+  return Object.fromEntries(HEALS.map((k) => [k, Math.min(HEAL_SPECS[k].max, META.starter.heals[k] + sick[k] + nodes.filter((h) => h === k).length)])) as Record<HealKind, number>;
 }
 
 /** How many heals of a kind a loadout can take from the stash: what it holds, up to what the issued ones leave room for. */
