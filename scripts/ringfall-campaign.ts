@@ -21,7 +21,7 @@ import { ENTRIES, NODES, POIS, REGIONS, regionOf, TIER, type NodeId, type Region
 import { SKILLS } from "../src/ringfall/sim/bot";
 import { newRun, strengthFor } from "../src/ringfall/sim/state";
 import { holds, islandHolds, tonight, unfreeable } from "../src/ringfall/meta/island";
-import { enemyNodes, frontNodes } from "../src/ringfall/sim/front";
+import { frontNodes, ownNodes } from "../src/ringfall/sim/front";
 import { buildFactory, buy, buyPrice, emptyLoadout, factoryShortfall, newProfile, nextFactory, sell, settle, takeKit, wares, type Item, type Profile } from "../src/ringfall/meta/profile";
 import { shopRarity } from "../src/ringfall/meta/island";
 import { FACTORY, FACTORY_TOP, VALUABLES, type Rarity, type ValuableKind, type WeaponKind } from "../src/ringfall/sim/config";
@@ -161,7 +161,7 @@ export function playCampaign(skill: string, days = DAYS, seed = 17): Campaign {
       city: mine.filter((n) => n.region === "city").length,
       launch: mine.filter((n) => n.region === "launch").length,
       tier: Math.max(-1, ...mine.map((n) => TIER[n.id])),
-      strength: strengthFor(enemyNodes(h)),
+      strength: strengthFor(ownNodes(h)),
       front: NODES.filter((_, i) => frontNodes(h)[i]).map((n) => n.id),
       alive: s.outcome === "extracted",
       region,
