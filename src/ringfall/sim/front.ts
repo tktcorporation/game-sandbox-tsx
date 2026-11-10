@@ -232,7 +232,7 @@ function landWave(s: State, i: number) {
   const w = s.capture!.coming!;
   s.capture!.coming = null;
   const squad = s.squads.length;
-  s.squads.push({ name: `${w.from}からの増援`, poi: -1, patrol: [], leg: 0, engaged: false, roam: true, hunt: true, routed: true, sinceSeen: 0, last: { x: n.core.x, z: n.core.z } });
+  s.squads.push({ name: `${w.from}からの増援`, poi: -1, patrol: [], leg: 0, engaged: false, roam: true, hunt: true, routed: true, sinceSeen: 0, last: { x: n.core.x, z: n.core.z }, siege: i });
   const plate = w.guard ? (Math.min(3, TIER[n.id]) as Rarity) : undefined;
   w.kinds.forEach((kind: EnemyKind, m) => {
     const e = spawnEnemy(s, kind, w.spots[m].mx, w.spots[m].mz, -1, squad, { appear: true, ...(plate && (kind === "grunt" || kind === "heavy") ? { plate } : {}) });
@@ -281,14 +281,15 @@ export function takeNode(s: State, i: number) {
 }
 
 /**
- * What is left of node `i`'s garrison walks off toward the nearest node the robots still hold, to
- * be gone after `FRONT.retreat` seconds: the node is the player's.
+ * What is left of node `i`'s garrison, and of the waves of its siege, walks off toward the nearest
+ * node the robots still hold, to be gone after `FRONT.retreat` seconds: the node is the player's.
  */
 export function garrisonLeaves(s: State, i: number) {
   const n = NODES[i];
   const away = NEIGHBOURS[i].filter((k) => s.nodes[k] !== "freed").sort((a, b) => dist2d(NODES[a], n.core) - dist2d(NODES[b], n.core))[0];
   s.squads.forEach((sq, k) => {
-    if (!garrisonOf(s, i, k)) return;
+    // The siege's waves give the node up with its garrison: a squad left hunting would stand at the edge of ground it may not enter.
+    if (!garrisonOf(s, i, k) && sq.siege !== i) return;
     const members = s.enemies.filter((e) => e.squad === k);
     if (!members.length) return;
     const lead = members[0].pos;
@@ -301,6 +302,8 @@ export function garrisonLeaves(s: State, i: number) {
     sq.retreat = FRONT.retreat;
     sq.poi = -1;
     sq.engaged = false;
+    sq.hunt = false;
+    sq.routed = false;
     sq.patrol = [];
     for (const e of members) {
       e.poi = -1;

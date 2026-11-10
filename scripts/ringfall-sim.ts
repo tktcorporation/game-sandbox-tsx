@@ -4165,6 +4165,11 @@ function checkFront(): string | null {
   if (first.length !== 1 || !first[0].routed || ps.capture?.coming) return `front: the first wave sent ${first.map((q) => q.name).join()}`;
   const firstKinds = ps.enemies.filter((e) => ps.squads[e.squad] === first[0]).map((e) => e.kind).sort().join();
   if (firstKinds !== [...FRONT.siege.waves[0][0].kinds, ...FRONT.siege.extra[ps.strength]].sort().join()) return `front: the supply depot's wave is ${firstKinds}`;
+  // The node taken, the wave that came for it leaves with the garrison and is gone.
+  ps.capture!.t = FRONT.capture;
+  hold(ps, core, 0.1);
+  ticks(ps, FRONT.retreat + 1);
+  if (ps.nodes[SUP] !== "freed" || ps.enemies.some((e) => ps.squads[e.squad] === first[0])) return `front: after the supply depot was taken its wave left ${ps.enemies.filter((e) => ps.squads[e.squad] === first[0]).length} robots`;
   // A deeper node draws its tier's waves, each called as the meter passes its mark, the last in the node's plate.
   const deep = NODES.findIndex((n, i) => TIER[n.id] === 2 && NEIGHBOURS[i].some((k) => TIER[NODES[k].id] === 1));
   const gate = NEIGHBOURS[deep].filter((k) => TIER[NODES[k].id] === 1)[0];

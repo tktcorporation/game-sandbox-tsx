@@ -270,6 +270,8 @@ export const weakY = (e: Enemy) => ENEMIES[e.kind].weakY - e.duck * DUCK.head;
 
 export interface SquadState {
   name: string;
+  /** A wave of the siege of this node (a place in `NODES`): it leaves with the garrison once the node is taken. */
+  siege?: number;
   poi: number; // -1 for optional squads between POIs
   patrol: Point[];
   leg: number; // next patrol waypoint
