@@ -13,7 +13,7 @@ import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
 import { analyse, raidThreat, settle, takenStory, type Settlement } from "./meta/profile";
 import { pouchSlots } from "./meta/hideout";
 import { MOD, MODS, TOOLS, type ModKind, type ToolKind } from "./sim/config";
-import { departDepots, holds, islandHolds, tonight } from "./meta/island";
+import { departDepots, finaleOpen, holds, islandHolds, tonight } from "./meta/island";
 import { nodeRow } from "./view/row";
 import { contractProgress, targetKey } from "./meta/contracts";
 import { currentStory } from "./meta/story";
@@ -632,7 +632,7 @@ function start(go: Launch, from?: State) {
   const record = currentStory(hub.profile.records)?.id;
   const taken = hub.contract();
   const fetch = taken?.t === "fetch" ? { poi: taken.poi, kind: taken.kind, n: taken.n } : undefined;
-  state = newRun(go.seed, kit, region, { depots: hub.profile.depots, seen: hub.profile.seen, from: go.from, entry: go.entry, routes: hub.profile.routes, island: holds(hub.profile), record, fetch, event: hub.profile.events[0], threat: raidThreat(hub.profile), known: hub.profile.known, battle: { factory: hub.profile.factory, away: squadsAway(hub.profile), targets: tonight(hub.profile) } });
+  state = newRun(go.seed, kit, region, { depots: hub.profile.depots, seen: hub.profile.seen, from: go.from, entry: go.entry, routes: hub.profile.routes, island: holds(hub.profile), record, fetch, event: hub.profile.events[0], threat: raidThreat(hub.profile), known: hub.profile.known, battle: { factory: hub.profile.factory, away: squadsAway(hub.profile), targets: tonight(hub.profile) }, finale: finaleOpen(hub.profile) });
   hud.setContract(hub.contract(), record ?? null, takenStory(hub.profile));
   world.campMode = false;
   if (from) walkOut(state, from);

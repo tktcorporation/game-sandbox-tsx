@@ -146,6 +146,19 @@ function defendSteps(s: State, i: number): Objective {
 export function objectiveSteps(s: State, task: Task | null = null): Objective {
   if (s.capture && s.nodes[s.capture.node] !== "freed") return captureSteps(s, s.capture.node, `${NODES[s.capture.node].name}の制圧`);
   if (task) return taskSteps(s, task);
+  // The decisive battle: the titan, before anything else the island asks.
+  if (s.finale) {
+    const i = POIS.findIndex((p) => p.boss);
+    const pad = POIS[i];
+    const at = ground(pad.x, pad.z);
+    const titan = s.enemies.find((e) => e.kind === "titan");
+    const fell = s.cleared[i];
+    return settle("決戦", [
+      { kind: "go", label: `${pad.name}へ向かう`, until: `${pad.name}に入る`, at, done: fell || dist2d(s.player.pos, pad) < pad.trigger },
+      { kind: "act", label: "タイタンを倒す", until: "タイタンを倒す", at: titan ? ground(titan.pos.x, titan.pos.z) : at, done: fell },
+      extractStep(s),
+    ]);
+  }
   const focus = s.phase === "play" ? battleFocus(s) : null;
   if (focus?.kind === "defend") return defendSteps(s, focus.node);
   if (focus?.kind === "attack") return captureSteps(s, focus.node, `陣取り戦：自軍と${NODES[focus.node].name}を取る`);

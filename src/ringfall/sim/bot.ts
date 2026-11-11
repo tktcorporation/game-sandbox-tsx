@@ -693,6 +693,9 @@ export class Bot {
     if (p0.selfRevive <= 0 && s.stats.cleared.length > 0) return -1;
     const p = s.player;
     const mine = regionOf(s.region).pois;
+    // The decisive battle: the pad first, as the objective asks.
+    const pad = POIS.findIndex((poi) => poi.boss);
+    if (s.finale && mine.includes(POIS[pad].id) && !s.cleared[pad] && !this.left.has(pad)) return pad;
     const others = POIS.filter((poi) => !poi.boss && mine.includes(poi.id)).length;
     // Not into a garrison whose plates are two steps past its best gun: one step past is a fight for the weak points.
     const reach = pierce(s) + 1;

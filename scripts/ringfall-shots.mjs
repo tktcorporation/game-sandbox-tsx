@@ -14,6 +14,7 @@ import { chromium } from "playwright-core";
 import { movementShots } from "./ringfall-shots-movement.mjs";
 import { bagShots } from "./ringfall-shots-bag.mjs";
 import { upgradeShots } from "./ringfall-shots-upgrades.mjs";
+import { finaleShots } from "./ringfall-shots-finale.mjs";
 import { HARBOR_TOUR, TOUR, place } from "./ringfall-tour.mjs";
 
 const root = "dist/client";
@@ -2427,6 +2428,8 @@ lap("movement");
 await bagShots({ browser, port, out, errors });
 lap("bag");
 await upgradeShots({ browser, port, out, errors });
+// The decisive battle: the camp's card, the pad ringed on the map table, the raid's objective.
+await finaleShots({ browser, port, out, errors });
 lap("upgrades");
 await browser.close();
 server.close();

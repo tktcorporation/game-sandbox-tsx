@@ -156,7 +156,7 @@ contracts (`meta/story.ts`) follow one at a time: the one under way lays its rec
 only with that POI's key; keys drop from the bins of the POI named by its `keyFrom` (`VAULT`).
 POIs have a stable `id` (`PoiId` in `map.ts`); saves, quests, `keyFrom` and `EXTRA_BINS` refer to a
 POI by it, never by its place in `POIS` (the run's state may index `POIS` internally). The profile
-is versioned (`Profile.v`, which is 27), and `parseProfile()` moves older saves forward (a save from
+is versioned (`Profile.v`, which is 28), and `parseProfile()` moves older saves forward (a save from
 before the ways in starts at its region's first way in; a save from before ways in were learned
 knows them all; a save from before v12 drops its explored map, since `cellOf()` follows `WORLD`,
 which then grew wider; a save from before v13 starts on the day after its raids with every POI
@@ -166,7 +166,7 @@ at threat 0; a save from before v19 has the factory at level 0; a save from befo
 loadout; a save from before v22 has its POIs freed or thin the player's and the rest the enemy's,
 and drops the network, its pressure, the outposts' standing and the battles' points; a save from
 before v23 gains the starter weapons; a save from before v24 or v25 drops its explored map, since the
-world grew wider again; a save from before v26 holds no other player's node) and moves its
+world grew wider again; a save from before v26 holds no other player's node; a save from before v28 is on its first round) and moves its
 start to one it may choose (`allowedStart()`).
 Each island day has at most one event (`EVENTS` in `config.ts`, `IslandEvent` in `sim/island.ts`):
 `advanceDay()` turns yesterday's forecast into today's and draws tomorrow's from `Profile.seed` and
@@ -311,7 +311,7 @@ robots past `thingsFar` and the squads that are numbers out to the fog as instan
 The long-term goal is how many of the twenty-one nodes the player holds (`view/row.ts` draws them as
 one tug-of-war bar, blue from the left and red from the right, a segment a node, at the title, the
 HUD's top, the camp's line, the map table and the results; its boundary slides when a node changes
-hands and flickers while one is fought over); there is no ending. The hideout is the mid-term one: five modules built level by level from specific
+hands and flickers while one is fought over), and the island has an ending (`FINALE` in `config.ts`): with `FINALE.nodes` nodes held, one of them bordering the pad, the pad is open (`finaleOpen()` in `meta/island.ts`, `Start.finale`, `State.finale`), the raid's objective is the titan, and a raid in which it falls frees the island (`Settlement.liberated`): `settle()` keeps the round's days (`Profile.liberations`), starts the island and the factory over (`Profile.cycle`, `Profile.cycleDay`), and every raid of the next round plays `FINALE.threat` levels of 強度 harder (`raidThreat()`). The hideout is the mid-term one: five modules built level by level from specific
 valuables and credits taken from the stash, each level needing only the module's level before it
 (`build()` in `profile.ts`; levels and costs in `HIDEOUT`, effects in `HIDEOUT_EFFECT`, both in `config.ts`; `meta/hideout.ts` holds the pure
 helpers). The workshop's cards and the factory's show each level's effect as was → now with what

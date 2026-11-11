@@ -3,13 +3,13 @@ import { armorIcon, binPicture, checkIcon, coreIcon, factoryIcon, flagIcon, hide
 import { ALLY, FACTORY, FACTORY_TOP, HEALS as HEAL_SPECS, HIDEOUT, MOD_KINDS, PLATE, RARITY, THREAT, TOOLS, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
 import { boostFor, raidClock, strengthFor, type Kit } from "../sim/state";
 import { CAMP, DEPOTS, ENTRIES, entryOf, HOME_REGION, NODES, POIS, UNLOCKS, poiIndex, poiRegion, REGIONS, regionOf, ROUTES, type EntryId, type PoiId, type RegionId, type StationId } from "../sim/map";
-import { armed, build, buildFactory, buildState, buy, buyPrice, canBuild, canBuildFactory, factoryNeeded, nextFactory, canStartIn, deliver, deliverable, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, isStarter, issuedHeals, itemCost, HEALS, healCount, healRoom, keyName, kitPicks, loadoutCost, stashUsed, price, raidThreat, recallLoadout, sell, sellPrice, setThreat, startsIn, STORY_TAKEN, takenStory, threatPay, take, takeKit, takenContract, wanted, wares, type Item, type Loadout, type Profile } from "../meta/profile";
+import { armed, build, buildFactory, buildState, buy, buyPrice, canBuild, canBuildFactory, factoryNeeded, nextFactory, canStartIn, deliver, deliverable, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, isStarter, issuedHeals, itemCost, HEALS, healCount, healRoom, keyName, kitPicks, loadoutCost, stashUsed, price, raidThreat, recallLoadout, roundThreat, sell, sellPrice, setThreat, startsIn, STORY_TAKEN, takenStory, threatPay, take, takeKit, takenContract, wanted, wares, type Item, type Loadout, type Profile } from "../meta/profile";
 import { CONTRACT_NAME, contractMark, contractRegion, contractText, type Contract, type Reward } from "../meta/contracts";
 import { currentStory, STORIES, storyOf, storyWhere } from "../meta/story";
 import { materialRarity, maxLevel, MODULES, nextLevel, pouchSlots, sources, stashCap, stillNeeded, type Hideout, type Source } from "../meta/hideout";
 import { need, offered, type Quest, type RewardItem } from "../meta/quests";
 import { saveProfile } from "../meta/storage";
-import { departDepots, eventName, frontIncome, islandHolds, playerNodes, shopRarity, unfreeable, unlocked } from "../meta/island";
+import { departDepots, eventName, finaleOpen, frontIncome, islandHolds, playerNodes, shopRarity, unfreeable, unlocked } from "../meta/island";
 import { eventRow } from "./events";
 import { rivalOf } from "../sim/holds";
 import { HOLD_CSS, IslandMap, islandScene, RIVAL_CSS, TITAN_CSS } from "./map";
@@ -867,7 +867,8 @@ export class Hub {
     const dim = !on && (!!taken || !!takenStory(this.profile));
     const btn = on ? `<button type="button" class="untake" data-act="take" data-arg="">取り消す</button>` : `<button type="button" data-act="take" data-arg="${c.id}">${taken || takenStory(this.profile) ? "こちらに替える" : "受ける"}</button>`;
     const where = esc(regionOf(contractRegion(c)).name);
-    const n = on ? this.profile.threat : 0;
+    // What the raid would play at and pay: the round's 強度, and the taken contract's on top of it.
+    const n = on ? raidThreat(this.profile) : roundThreat(this.profile);
     const pay = this.reward({ ...c.reward, cash: threatPay(c.reward.cash, n) });
     return (
       `<div class="quest contract${on ? " taken" : ""}${dim ? " dim" : ""}" data-type="${c.t}"><i class="pin"></i><div><strong><em>${CONTRACT_NAME[c.t]}</em>${on ? `<i class="taken-tag">${checkIcon()}${n ? `強度 ${n}` : ""}</i>` : ""}</strong><span>${esc(contractText(c))}</span>` +
@@ -876,16 +877,18 @@ export class Hub {
   }
 
   /**
-   * The 強度 of the taken contract: a button for each, 0 to `THREAT.max`, then what the chosen one
-   * gives (the reward, mod parts) and what it asks (the
-   * robots' numbers). The raid plays at it; with no contract taken, a raid plays at 0.
+   * The 強度 of the taken contract: a button for each the raid can play at, from the round's own
+   * (`roundThreat()`) to `THREAT.max`, then what the chosen one gives (the reward, mod parts) and
+   * what it asks (the robots' numbers). With no contract taken, a raid plays at the round's.
    */
   private strengthRow(c: Contract): string {
     const p = this.profile;
-    const n = p.threat;
+    // The buttons name the 強度 the raid plays at, from the round's own up; the profile keeps what is chosen over it.
+    const base = roundThreat(p);
+    const n = raidThreat(p);
     const t = THREAT.levels[n];
     const pct = (k: number) => `${Math.round((1 - k) * 100)}%`;
-    const buttons = Array.from({ length: THREAT.max + 1 }, (_, i) => `<button type="button" data-act="strength" data-arg="${c.id}:${i}"${i === n ? ' class="on"' : ""}>${i ? i : "通常"}</button>`).join("");
+    const buttons = Array.from({ length: THREAT.max + 1 - base }, (_, k) => k + base).map((i) => `<button type="button" data-act="strength" data-arg="${c.id}:${i - base}"${i === n ? ' class="on"' : ""}>${i ? i : "通常"}</button>`).join("");
     // What the chosen 強度 gives (gold) and asks (red), each a name and a number; nothing at 通常.
     const gives = n ? `${upIcon()}報酬 ×${t.reward}・改造パーツ ×${t.mods}` : "";
     const asks = n ? `増援 −${pct(t.reinforce)}・レイダー −${pct(t.raiders)}・装甲板 +${Math.round(t.plate * 100)}%・射程 ×${t.range}` : "";
@@ -1072,7 +1075,7 @@ export class Hub {
     const c = takenContract(p);
     const story = takenStory(p) ? currentStory(p.records) : null;
     const front = this.frontPick();
-    const goal = c ? `${CONTRACT_NAME[c.t]}：${contractText(c)}${p.threat ? `（強度 ${p.threat}）` : ""}` : story ? `記録：${story.title}` : front ? `前線：${front.name}` : "探索";
+    const goal = c ? `${CONTRACT_NAME[c.t]}：${contractText(c)}${raidThreat(p) ? `（強度 ${raidThreat(p)}）` : ""}` : story ? `記録：${story.title}` : front ? `前線：${front.name}` : "探索";
     const rows: [string, string][] = [
       ["武器", k.weapons],
       ["アーマー", k.armor],
@@ -1105,14 +1108,17 @@ export class Hub {
    */
   today(): { head: string; row: string; plan: [string, string][] } {
     const p = this.profile;
-    const head = `${p.day} 日目`;
+    // From the second round on, the round is named beside the day.
+    const head = `${p.day} 日目${p.cycle ? `・${p.cycle + 1} 周目` : ""}`;
+    const final = finaleOpen(p);
     const pick = this.frontPick();
     const c = takenContract(p);
     const story = takenStory(p) ? currentStory(p.records) : null;
     const k = this.kitLines();
     const plan: [string, string][] = [
-      ["攻める拠点", pick ? pick.name : "なし"],
-      ["依頼", c ? `${CONTRACT_NAME[c.t]}：${contractText(c)}${p.threat ? `（強度 ${p.threat}）` : ""}` : story ? `記録：${story.title}` : "なし"],
+      // The pad open to the decisive battle comes before any node.
+      final ? ["決戦", POIS.find((o) => o.boss)!.name] : ["攻める拠点", pick ? pick.name : "なし"],
+      ["依頼", c ? `${CONTRACT_NAME[c.t]}：${contractText(c)}${raidThreat(p) ? `（強度 ${raidThreat(p)}）` : ""}` : story ? `記録：${story.title}` : "なし"],
       ["装備", `${k.weapons}・アーマー ${k.armor}`],
     ];
     return { head, row: nodeRow(islandHolds(p)), plan };

@@ -1,4 +1,4 @@
-import { DEPOT, FACTORY, FACTORY_TOP, HEALS as HEAL_SPECS, HIDEOUT, META, MOD_KINDS, MOMENTUM, MOD_START, THREAT, TOOLS, VALUABLES, type ModKind, type HealKind, type ModuleId, type Rarity, type ToolKind, type ValuableKind, type WeaponKind, type FactoryCost } from "../sim/config";
+import { DEPOT, FACTORY, FACTORY_TOP, HEALS as HEAL_SPECS, HIDEOUT, META, MOD_KINDS, MOMENTUM, FINALE, MOD_START, THREAT, TOOLS, VALUABLES, type ModKind, type HealKind, type ModuleId, type Rarity, type ToolKind, type ValuableKind, type WeaponKind, type FactoryCost } from "../sim/config";
 import { depotIndex, DEPOTS, ENTRIES, HOME_REGION, POIS, poiIndex, REGIONS, regionOf, ROUTES, type EntryId, type NodeId, type PoiId, type RecordId, type RegionId, type RouteId } from "../sim/map";
 import { openRoutes } from "../sim/routes";
 import { encodeSeen, type Kit, type State } from "../sim/state";
@@ -27,7 +27,7 @@ export type Item =
 
 /** What persists between raids. */
 export interface Profile {
-  v: 27;
+  v: 28;
   cash: number;
   stash: Item[];
   raids: number;
@@ -75,6 +75,12 @@ export interface Profile {
   freedAt: Partial<Record<PoiId, number>>;
   /** The camp's factory's level (`FACTORY`): 0 is the factory the camp starts with. */
   factory: number;
+  /** The rounds of the island behind the player (`FINALE`): 0 on the first; each raises every raid's 強度. */
+  cycle: number;
+  /** The day the round under way began. */
+  cycleDay: number;
+  /** The days each round behind the player took, oldest first. */
+  liberations: number[];
   /** What the last raid took out of the stash, so the shelves pick it again while the stash still holds it (`recallLoadout()`). */
   lastKit: KitPicks | null;
   /** The expeditions this island's factory sent to other players' islands, as they last stood (meta/expeditions.ts). */
@@ -146,7 +152,7 @@ export const stashUsed = (p: Pick<Profile, "stash">) => p.stash.filter((i) => !i
 export function newProfile(seed = 1): Profile {
   const stash: Item[] = [...starterItems(), ...META.start.weapons.map((w): Item => ({ t: "weapon", ...w }))];
   for (const k of HEALS) for (let i = 0; i < META.start.heals[k]; i++) stash.push({ t: "heal", kind: k });
-  const p: Omit<Profile, "board"> = { v: 27, cash: META.start.cash, stash, raids: 0, extracted: 0, time: 0, quests: emptyLog(), region: HOME_REGION.id, entry: FIRST_ENTRY, entries: [FIRST_ENTRY], hideout: emptyHideout(), seed: seed & 0xffff, depots: [], depotSent: {}, seen: "", routes: [], day: 1, poiState: newIsland(), taken: null, records: [], events: firstEvents(seed & 0xffff), known: [...MOD_START], threat: 0, freedAt: {}, factory: 0, lastKit: null, expeditions: [], logSeq: 0, retaken: [] };
+  const p: Omit<Profile, "board"> = { v: 28, cash: META.start.cash, stash, raids: 0, extracted: 0, time: 0, quests: emptyLog(), region: HOME_REGION.id, entry: FIRST_ENTRY, entries: [FIRST_ENTRY], hideout: emptyHideout(), seed: seed & 0xffff, depots: [], depotSent: {}, seen: "", routes: [], day: 1, poiState: newIsland(), taken: null, records: [], events: firstEvents(seed & 0xffff), known: [...MOD_START], threat: 0, freedAt: {}, factory: 0, cycle: 0, cycleDay: 1, liberations: [], lastKit: null, expeditions: [], logSeq: 0, retaken: [] };
   return { ...p, board: makeBoard(p) };
 }
 
@@ -168,8 +174,11 @@ export const take = (p: Profile, id: string | null): Profile => {
   return { ...p, taken, threat: taken === p.taken ? p.threat : 0 };
 };
 
-/** The 強度 the next raid plays at: the taken contract's, or 0 with no contract taken. */
-export const raidThreat = (p: Pick<Profile, "board" | "taken" | "day" | "threat">) => (takenContract(p) ? p.threat : 0);
+/** The 強度 every raid of the profile's round plays at before any contract's: `FINALE.threat` a round freed. */
+export const roundThreat = (p: Partial<Pick<Profile, "cycle">>) => Math.min(THREAT.max, (p.cycle ?? 0) * FINALE.threat);
+
+/** The 強度 the next raid plays at: the round's, and on top of it the taken contract's (none with no contract taken). */
+export const raidThreat = (p: Pick<Profile, "board" | "taken" | "day" | "threat"> & Partial<Pick<Profile, "cycle">>) => Math.min(THREAT.max, (takenContract(p) ? p.threat : 0) + roundThreat(p));
 
 /** The seed of the raid after one started from `seed`. */
 export const nextSeed = (seed: number) => ((Math.imul(seed + 1, 1103515245) + 12345) >>> 8) & 0xffff;
@@ -499,6 +508,8 @@ export interface Settlement {
   night: FrontChange;
   /** Credits the nodes the player holds paid at this settle (`frontIncome()`). */
   income: number;
+  /** The raid won the decisive battle (`FINALE`): the days the round took, and the rounds now behind the player; left out, it did not. */
+  liberated?: { days: number; cycle: number };
   /** Credits for the nodes the raid took after its first, got off alive (`MOMENTUM.spoils`); left out, none. */
   spoils?: number;
   /** Credits the nodes this island's expeditions hold on other islands paid at this settle (`awayIncome()`); left out, none. */
@@ -656,6 +667,10 @@ export function settle(p: Profile, s: State): Settlement {
   const { profile: night } = advanceDay(settled, day);
   // The nodes the player holds once the night is over pay their day's credits.
   const income = frontIncome(night);
+  // The decisive battle won (`FINALE`): the titan fell with its pad open. The round's days are kept, and the
+  // island and the factory start over for the next round; the income above is the freed island's last.
+  const liberated = !!s.finale && day.titan ? { days: p.day - p.cycleDay + 1, cycle: p.cycle + 1 } : null;
+  if (liberated) Object.assign(night, { poiState: newIsland(), factory: 0, cycle: liberated.cycle, cycleDay: night.day, liberations: [...p.liberations, liberated.days].slice(-50) });
   // A raid that took more than one node and got off alive is paid for each after the first (`MOMENTUM.spoils`).
   const spoils = s.outcome === "extracted" ? MOMENTUM.spoils.slice(0, momentum(s)).reduce((a, c) => a + c, 0) : 0;
   // The nodes held on other islands pay theirs too, and the expeditions known gone are dropped.
@@ -668,7 +683,7 @@ export function settle(p: Profile, s: State): Settlement {
   const started = { poiState: Object.fromEntries(POIS.map((o, i) => [o.id, { state: s.hold?.[i] ?? "held" }])) as Island };
   const fresh = { ...claimed.profile, stash: withStarters(claimed.profile.stash), taken: null, board: makeBoard(claimed.profile) };
   fresh.retaken = addRetaken(p.retaken, retakenNodes(started, fresh, capturedIds(s)));
-  return { profile: fresh, home, opened, learned, quests: [...finished, ...claimed.quests], sold: [...sold, ...claimed.sold], soldFor: soldFor + claimed.soldFor, day: p.day, ...change, income, ...(spoils > 0 && { spoils }), ...(away > 0 && { awayIncome: away }), event: s.event ?? null, contract, story: told, threat, analysable: s.outcome === "extracted" ? [...(pl.mods ?? [])] : [] };
+  return { profile: fresh, home, opened, learned, quests: [...finished, ...claimed.quests], sold: [...sold, ...claimed.sold], soldFor: soldFor + claimed.soldFor, day: p.day, ...change, income, ...(liberated && { liberated }), ...(spoils > 0 && { spoils }), ...(away > 0 && { awayIncome: away }), event: s.event ?? null, contract, story: told, threat, analysable: s.outcome === "extracted" ? [...(pl.mods ?? [])] : [] };
 }
 
 /** Finishes and pays every offered build quest the hideout already meets, and those they open. */
@@ -801,7 +816,7 @@ const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
 export function parseProfile(raw: unknown, seed = 1): Profile | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
+  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
   const old = o.v === 1 || o.v === 2;
   const migrate = (i: unknown): unknown => {
     if (!old || !i || typeof i !== "object" || (i as Record<string, unknown>).t !== "key") return i;
@@ -849,7 +864,7 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   const stash = withStarters(items.filter((i) => isStarter(i) || room-- > 0));
   const v27 = typeof o.v === "number" && o.v >= 27;
   const out: Omit<Profile, "board" | "taken" | "events"> = {
-    v: 27,
+    v: 28,
     cash: Math.max(0, Math.floor(o.cash)),
     stash,
     raids,
@@ -873,6 +888,10 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     expeditions: v27 ? parseOutgoing(o.expeditions) : [],
     logSeq: v27 && Number.isInteger(o.logSeq) && (o.logSeq as number) >= 0 ? (o.logSeq as number) : 0,
     retaken: v27 ? parseRetaken(o.retaken) : [],
+    // A save from before the island had an ending is on its first round, begun on day 1.
+    cycle: o.v === 28 && Number.isInteger(o.cycle) && (o.cycle as number) >= 0 ? (o.cycle as number) : 0,
+    cycleDay: o.v === 28 && Number.isInteger(o.cycleDay) && (o.cycleDay as number) >= 1 ? Math.min(day, o.cycleDay as number) : 1,
+    liberations: o.v === 28 && Array.isArray(o.liberations) ? o.liberations.filter((n): n is number => Number.isInteger(n) && n > 0).slice(-50) : [],
     records,
     known: knownMods(v17 && Array.isArray(o.known) ? o.known : []),
     threat: v17 && Number.isInteger(o.threat) ? Math.max(0, Math.min(THREAT.max, o.threat as number)) : 0,
