@@ -174,8 +174,11 @@ export const take = (p: Profile, id: string | null): Profile => {
   return { ...p, taken, threat: taken === p.taken ? p.threat : 0 };
 };
 
-/** The 強度 the next raid plays at: the taken contract's, or 0 with no contract taken. */
-export const raidThreat = (p: Pick<Profile, "board" | "taken" | "day" | "threat"> & Partial<Pick<Profile, "cycle">>) => Math.min(THREAT.max, (takenContract(p) ? p.threat : 0) + (p.cycle ?? 0) * FINALE.threat);
+/** The 強度 every raid of the profile's round plays at before any contract's: `FINALE.threat` a round freed. */
+export const roundThreat = (p: Partial<Pick<Profile, "cycle">>) => Math.min(THREAT.max, (p.cycle ?? 0) * FINALE.threat);
+
+/** The 強度 the next raid plays at: the round's, and on top of it the taken contract's (none with no contract taken). */
+export const raidThreat = (p: Pick<Profile, "board" | "taken" | "day" | "threat"> & Partial<Pick<Profile, "cycle">>) => Math.min(THREAT.max, (takenContract(p) ? p.threat : 0) + roundThreat(p));
 
 /** The seed of the raid after one started from `seed`. */
 export const nextSeed = (seed: number) => ((Math.imul(seed + 1, 1103515245) + 12345) >>> 8) & 0xffff;

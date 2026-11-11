@@ -48,6 +48,20 @@ export async function finaleShots({ browser, port, out, errors }) {
   await pg.screenshot({ path: `${out}/141-finale-map.png` });
   await pg.keyboard.press("Escape");
   await pg.evaluate(() => window.advanceTime(200));
+  // The quest board on the second round: a contract taken starts at the round's 強度, and its row offers no 通常.
+  if (!(await pg.evaluate(() => window.ringfallCamp.walkTo("quests")))) errors.push("finale: could not stand at the quest board");
+  await pg.evaluate(() => window.advanceTime(100));
+  await pg.keyboard.press("KeyE");
+  await pg.evaluate(() => window.advanceTime(400));
+  await pg.click('.contract button[data-act="take"]');
+  await pg.evaluate(() => window.advanceTime(200));
+  const row = await pg.evaluate(() => ({ tag: document.querySelector(".contract.taken .taken-tag")?.textContent ?? "", buttons: [...document.querySelectorAll(".contract.taken .strength .row button")].map((b) => b.textContent), on: document.querySelector(".contract.taken .strength .row button.on")?.textContent ?? "" }));
+  if (!/強度 1/.test(row.tag) || row.on !== "1" || row.buttons.join() !== "1,2,3,4,5") errors.push(`finale: the taken contract's 強度 reads ${JSON.stringify(row)}`);
+  await pg.screenshot({ path: `${out}/144-finale-board.png` });
+  await pg.click('.contract.taken button[data-act="take"]');
+  await pg.evaluate(() => window.advanceTime(200));
+  await pg.keyboard.press("Escape");
+  await pg.evaluate(() => window.advanceTime(200));
   // Out of the gate: the raid's objective is the titan.
   await pg.evaluate(() => window.ringfallCamp.toGate());
   await pg.keyboard.down("KeyW");
