@@ -560,6 +560,16 @@ export const NIGHT = {
 };
 
 /**
+ * The decisive battle (決戦) and the next round (次の周): the island has an ending. Once the
+ * player holds `nodes` of the nodes, one of them bordering the titan's pad, the pad is open
+ * (`finaleOpen()` in meta/island.ts): the raid's objective is the titan, and a raid in which it
+ * falls frees the island. The days the round took are kept, the island is the enemy's again, the
+ * factory starts over, and every raid of the next round plays `threat` levels of 強度 harder
+ * (`THREAT`, on top of a contract's, to its top). What the player has learned and stored stays.
+ */
+export const FINALE = { nodes: 16, threat: 1 };
+
+/**
  * Momentum (勢い): each node the player takes by its core in one raid after the first raises it by
  * one, to `max`. A raid that keeps pushing is paid for it and answered for it. For each level:
  * the factory's squads come `factory` times as far apart, the reinforcements' and the raiders'

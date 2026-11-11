@@ -48,6 +48,7 @@ export function stepPoi(s: State) {
     p.selfRevive = 1;
     raiseAlly(s, "self", ALLY.reviveHp);
     s.events.push({ t: "poiClear", poi: i });
+    if (s.finale && POIS[i].boss) s.events.push({ t: "liberated" });
     if (poi.boss) s.events.push({ t: "titanDown" });
   });
 }

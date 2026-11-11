@@ -495,6 +495,8 @@ export type GameEvent =
   | { t: "calm"; squad: number }
   | { t: "poiStart"; poi: number }
   | { t: "poiClear"; poi: number }
+  /** The titan fell in the decisive battle: the island is free (`FINALE`). */
+  | { t: "liberated" }
   | { t: "reinforce"; x: number; z: number }
   | { t: "careDrop"; x: number; z: number }
   | { t: "careLand"; x: number; z: number }
@@ -743,6 +745,8 @@ export interface State {
   away: number;
   /** The raid ended by walking back into the camp. */
   home: boolean;
+  /** The decisive battle is on (`Start.finale`). */
+  finale: boolean;
   /** The fortifying under way (`FORTIFY`): the node, the seconds of its meter filled, and whether it filled this tick; null for none. */
   fortify: { node: number; t: number; held: boolean } | null;
   /** Who holds each node of the front (`NODES` order) this raid: as the island stood at the start, then as it changes hands. */
@@ -911,6 +915,8 @@ export interface Start {
   routes?: RouteId[];
   /** Who holds each POI (meta/island.ts); left out, every POI is held. The titan's pad is always held. */
   island?: Partial<Record<PoiId, PoiHold>>;
+  /** The titan's pad is open to the decisive battle (`FINALE`): the raid's objective is the titan, and its fall frees the island. */
+  finale?: boolean;
   /** The record of the story contract under way: it lies at its spot (`RECORD_SPOTS`) this raid. */
   record?: RecordId;
   /** The fetch contract taken: `n` of its POI's bins hold its valuable this raid (`State.fetch`). */
@@ -1092,6 +1098,7 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
     found: from ? [] : [entry.id],
     nodes,
     capture: null,
+    finale: !!start.finale,
     fortify: null,
     contacts: [],
     factionT: 0,

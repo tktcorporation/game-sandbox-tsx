@@ -25,7 +25,7 @@ import { storyOf } from "../meta/story";
 import { recordSpot, type RecordId } from "../sim/map";
 import type { World } from "./world";
 import { eventRow, raidEventLine } from "./events";
-import { CREW, FORTIFY, FRONT, MOD, MODS, MOMENTUM } from "../sim/config";
+import { CREW, FINALE, FORTIFY, FRONT, MOD, MODS, MOMENTUM } from "../sim/config";
 import { binPicture, modIcon, pouchIcon, routeIcon, zipIcon } from "./icons";
 import { zipPoint } from "../sim/zips";
 import { bagIcon, callIcon, checkIcon, clockIcon, coreIcon, crossIcon, depotIcon, entryIcon, exitIcon, eyeIcon, fightIcon, flareIcon, keyIcon, lockIcon, noiseIcon, reinforceIcon, reviveIcon, SIDE, upIcon, nightIcon } from "./icons";
@@ -425,6 +425,9 @@ export class Hud {
         break;
       case "coreShielded":
         this.toast(`${coreIcon(foeSide(s.nodes[e.node]), true)}${NODES[e.node].name}<span class="toast-sub">先に${esc(shieldedBy(s.nodes, e.node))}を制圧</span>`, 0, 4000);
+        break;
+      case "liberated":
+        this.banner("島を解放した", "", true, 4);
         break;
       case "momentum":
         // The raid's momentum rose: that many marks, and what the next node pays.
@@ -1356,8 +1359,8 @@ export class Hud {
     // The day's income from the nodes the player holds.
     // With the nodes this island's expeditions hold on other islands, theirs on a line of its own.
     const island =
-      settled?.income || settled?.awayIncome || settled?.spoils
-        ? `<h3 class="day-end">${settled.day} 日目</h3><p>${settled.income ? `<span>拠点の収入<b>${settled.income.toLocaleString()} クレジット</b></span>` : ""}${settled.spoils ? `<span>戦果<b>${settled.spoils.toLocaleString()} クレジット</b></span>` : ""}${settled.awayIncome ? `<span>遠征の拠点の収入<b>${settled.awayIncome.toLocaleString()} クレジット</b></span>` : ""}</p>`
+      settled?.income || settled?.awayIncome || settled?.spoils || settled?.liberated
+        ? `<h3 class="day-end">${settled.day} 日目</h3><p>${settled.income ? `<span>拠点の収入<b>${settled.income.toLocaleString()} クレジット</b></span>` : ""}${settled.liberated ? `<span>島を解放した<b>${settled.liberated.days} 日</b></span><span>${settled.liberated.cycle + 1} 周目<b>強度 +${FINALE.threat}</b></span>` : ""}${settled.spoils ? `<span>戦果<b>${settled.spoils.toLocaleString()} クレジット</b></span>` : ""}${settled.awayIncome ? `<span>遠征の拠点の収入<b>${settled.awayIncome.toLocaleString()} クレジット</b></span>` : ""}</p>`
         : "";
     // The contract taken for the raid: done and paid, or not done (it goes with the day).
     const c = settled?.contract;

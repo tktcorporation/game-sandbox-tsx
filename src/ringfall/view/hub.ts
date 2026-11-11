@@ -9,7 +9,7 @@ import { currentStory, STORIES, storyOf, storyWhere } from "../meta/story";
 import { materialRarity, maxLevel, MODULES, nextLevel, pouchSlots, sources, stashCap, stillNeeded, type Hideout, type Source } from "../meta/hideout";
 import { need, offered, type Quest, type RewardItem } from "../meta/quests";
 import { saveProfile } from "../meta/storage";
-import { departDepots, eventName, frontIncome, islandHolds, playerNodes, shopRarity, unfreeable, unlocked } from "../meta/island";
+import { departDepots, eventName, finaleOpen, frontIncome, islandHolds, playerNodes, shopRarity, unfreeable, unlocked } from "../meta/island";
 import { eventRow } from "./events";
 import { rivalOf } from "../sim/holds";
 import { HOLD_CSS, IslandMap, islandScene, RIVAL_CSS, TITAN_CSS } from "./map";
@@ -1105,13 +1105,16 @@ export class Hub {
    */
   today(): { head: string; row: string; plan: [string, string][] } {
     const p = this.profile;
-    const head = `${p.day} 日目`;
+    // From the second round on, the round is named beside the day.
+    const head = `${p.day} 日目${p.cycle ? `・${p.cycle + 1} 周目` : ""}`;
+    const final = finaleOpen(p);
     const pick = this.frontPick();
     const c = takenContract(p);
     const story = takenStory(p) ? currentStory(p.records) : null;
     const k = this.kitLines();
     const plan: [string, string][] = [
-      ["攻める拠点", pick ? pick.name : "なし"],
+      // The pad open to the decisive battle comes before any node.
+      final ? ["決戦", POIS.find((o) => o.boss)!.name] : ["攻める拠点", pick ? pick.name : "なし"],
       ["依頼", c ? `${CONTRACT_NAME[c.t]}：${contractText(c)}${p.threat ? `（強度 ${p.threat}）` : ""}` : story ? `記録：${story.title}` : "なし"],
       ["装備", `${k.weapons}・アーマー ${k.armor}`],
     ];

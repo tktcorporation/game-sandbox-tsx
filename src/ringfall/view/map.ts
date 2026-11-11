@@ -1,6 +1,6 @@
 import { DEPOT, FACTION, FRONT, WORLD } from "../sim/config";
 import { ZIPS } from "../sim/map";
-import { tonight } from "../meta/island";
+import { finaleOpen, tonight } from "../meta/island";
 import { zipUp } from "../sim/zips";
 import { frontNodes, NEIGHBOURS, nodeHolds, type NodeHold } from "../sim/front";
 import { atRisk, battleMarks, meterOf, type Battle, type Side } from "../sim/battle";
@@ -329,6 +329,8 @@ export type MapScene = Pick<State, "seen" | "cleared" | "hold" | "depots" | "rou
   capture?: { node: number; t: number } | null;
   /** The day's battle (sim/battle.ts): its squads, and the nodes the sides are taking. */
   battle?: Battle | null;
+  /** The titan's pad is open to the decisive battle (`FINALE`): a gold ring round it. */
+  finale?: boolean;
   /** The enemy's targets for the coming night and those of them fortified (places in `NODES`), for the camp's maps; a raid's are its battle's. */
   night?: { targets: readonly number[]; fortified: readonly number[] };
   friends?: readonly Enemy[];
@@ -380,6 +382,7 @@ export function islandScene(p: { seen: string; depots: readonly PoiId[]; routes:
     debris: spot && { x: spot.x, z: spot.z, open: false },
     best: POIS.map((o) => p.freedAt?.[o.id] ?? 0),
     nodes: nodeHolds((id) => p.poiState[id].state),
+    finale: finaleOpen(p),
     ...(p.day !== undefined && { night: { targets: tonight({ poiState: p.poiState, day: p.day, seed: p.seed }).map((id) => nodeIndex(id)), fortified: [] } }),
   };
 }
@@ -1127,6 +1130,16 @@ export class IslandMap {
         const night = s.night ?? (s.battle ? { targets: s.battle.targets, fortified: s.battle.fortified } : null);
         const k = nodeIndex(poi.id as NodeId);
         if (night?.targets.includes(k) && hold(i) === "freed") drawMoon(g, p.x - r * 1.25, p.y + r * 0.95, r * 0.62, night.fortified.includes(k) ? SIDE_CSS[0] : SIDE_CSS[1]);
+      }
+      if (poi.boss && s.finale) {
+        // Open to the decisive battle: a gold ring, pulsing.
+        g.save();
+        g.lineWidth = 3 * dpr;
+        g.strokeStyle = `rgba(255,210,74,${(0.55 + 0.4 * Math.sin(performance.now() / 300)).toFixed(2)})`;
+        g.beginPath();
+        g.arc(p.x, p.y, r * 1.75, 0, Math.PI * 2);
+        g.stroke();
+        g.restore();
       }
       if (poi.boss) {
         // The titan's eye, in the robots' red.

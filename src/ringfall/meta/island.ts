@@ -1,7 +1,7 @@
-import { EVENTS, FACTORY, FACTORY_TOP, FRONT, META, NIGHT, type EventKind, type HealKind, type Rarity } from "../sim/config";
+import { EVENTS, FACTORY, FACTORY_TOP, FINALE, FRONT, META, NIGHT, type EventKind, type HealKind, type Rarity } from "../sim/config";
 import type { IslandEvent, PoiHold } from "../sim/island";
 import { parseHold, rivalOf } from "../sim/holds";
-import { DEBRIS_SPOTS, debrisIndex, DEPOTS, NET_EDGE, NODES, nodeIndex, POIS, poiIndex, UNLOCKS, type DebrisId, type NodeId, type NodeUnlock, type PoiId } from "../sim/map";
+import { DEBRIS_SPOTS, debrisIndex, DEPOTS, LANDING_NODES, NET_EDGE, NODES, nodeIndex, POIS, poiIndex, UNLOCKS, type DebrisId, type NodeId, type NodeUnlock, type PoiId } from "../sim/map";
 import { capturedIds, NEIGHBOURS, nodeHolds, type NodeHold } from "../sim/front";
 import { guardedNodes, type Battle } from "../sim/battle";
 import { mix, type State } from "../sim/state";
@@ -132,6 +132,12 @@ export const rivalNodes = (holds: readonly NodeHold[]): Partial<Record<NodeId, s
 
 /** The nodes the player holds on an island day. */
 export const playerNodes = (p: Pick<IslandDay, "poiState">): NodeId[] => NODES.filter((n) => p.poiState[n.id].state === "freed").map((n) => n.id);
+
+/** Whether the titan's pad is open to the decisive battle (`FINALE`): the player holds enough nodes, one of them bordering the pad. */
+export const finaleOpen = (p: Pick<IslandDay, "poiState">): boolean => {
+  const mine = playerNodes(p);
+  return mine.length >= FINALE.nodes && LANDING_NODES.pad.some((id) => mine.includes(id));
+};
 
 /** The enemy's targets for the night after the profile's next raid (`nightTargets()`), as the camp announces them and the raid is told. */
 export const tonight = (p: Pick<IslandDay, "poiState" | "day" | "seed">): NodeId[] => nightTargets(playerNodes(p), p.seed ?? 0, p.day, Object.keys(rivalNodes(islandHolds(p))) as NodeId[]);
