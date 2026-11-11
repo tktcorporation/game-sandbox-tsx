@@ -447,6 +447,12 @@ export class Soundscape {
         sfx.reinforce();
         sfx.arrive(ground(e.x, e.z, 2), false);
         break;
+      case "siegeWarn":
+        sfx.reinforce();
+        break;
+      case "siegeLand":
+        sfx.arrive(ground(e.x, e.z, 2), false);
+        break;
       case "raiders":
         sfx.raiders();
         sfx.arrive(ground(e.x, e.z, 2), true);
@@ -464,6 +470,7 @@ export class Soundscape {
       case "nodeThreat":
         sfx.threat();
         break;
+      case "fortified":
       case "coreTaken":
         sfx.coreTaken();
         break;

@@ -1,4 +1,5 @@
 import { MOD, MOD_KINDS, MODS, THREAT, type ModKind } from "./config";
+import { magSize } from "./combat";
 import { terrainHeight } from "./terrain";
 import { mix, type Bin, type Enemy, type Loot, type Player, type State } from "./state";
 
@@ -74,6 +75,38 @@ export function wearMod(s: State, l: Loot) {
   s.loot = s.loot.filter((o) => o !== l);
   const off = p.mods.length >= MOD.slots ? p.mods.shift() : undefined;
   p.mods.push(k);
+  // One of a core's parts is taken: the others it laid out are gone.
+  if (l.choice !== undefined) s.loot = s.loot.filter((o) => o.choice !== l.choice);
   if (off) s.loot.push({ id: s.nextId++, kind: "mod", mod: off, rarity: 2, pos: { ...l.pos }, vel: { x: 0, y: 2, z: 0 }, age: 0 });
   s.events.push({ t: "pickup", kind: "mod", rarity: 2, label: `改造パーツ：${MODS[k].name}${off ? `（${MODS[off].name}を外した）` : ""}` });
+}
+
+/**
+ * The parts core `node` lays out as it is taken: `MOD.core` kinds the player does not wear, picked
+ * from the raid's seed and the node, standing in a ring round `at`. They are not put on by
+ * walking over them: the use key takes one, and the others go (`wearMod()`). None in a raid
+ * without parts.
+ */
+export function coreReward(s: State, node: number, at: { x: number; y: number; z: number }) {
+  if ((s.modOdds ?? 1) <= 0) return;
+  const pool = MOD_KINDS.filter((k) => !hasMod(s.player, k));
+  for (let k = 0; k < MOD.core && pool.length; k++) {
+    const mod = pool.splice(Math.min(pool.length - 1, Math.floor(hashed(s.seed, 6 + k, node) * pool.length)), 1)[0];
+    const a = (k / MOD.core) * Math.PI * 2 + hashed(s.seed, 9, node) * Math.PI * 2;
+    s.loot.push({ id: -(5_000_000 + node * 8 + k), kind: "mod", mod, choice: node, rarity: 2, pos: { x: at.x + Math.cos(a) * MOD.ring, y: at.y + 1.2, z: at.z + Math.sin(a) * MOD.ring }, vel: { x: 0, y: 3, z: 0 }, age: 0 });
+  }
+}
+
+/**
+ * What the player's parts pay for a kill of their own: `unseen` for one from behind or before the
+ * robot had found them, the kills the game asks for; the slide and the air for one made on the move.
+ */
+export function killMods(s: State, unseen: boolean) {
+  const p = s.player;
+  if (unseen && hasMod(p, "slipstream")) p.haste = MOD.haste;
+  if (unseen && hasMod(p, "reloader")) {
+    const w = p.weapons[p.slot];
+    if (w) w.mag = magSize(w);
+  }
+  if ((p.sliding || !p.onGround) && hasMod(p, "recharge")) p.tactical = 0;
 }

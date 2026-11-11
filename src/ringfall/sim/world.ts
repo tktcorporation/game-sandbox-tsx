@@ -625,7 +625,7 @@ export function stepLoot(s: State, input: Input) {
       return false;
     }
     // A part goes on by walking over it while a slot is free; with all worn, the use key swaps it in.
-    if (l.kind === "mod" && l.mod && !input.leaveMods && p.mods.length < MOD.slots && !hasMod(p, l.mod)) {
+    if (l.kind === "mod" && l.mod && !input.leaveMods && l.choice === undefined && p.mods.length < MOD.slots && !hasMod(p, l.mod)) {
       worn.push(l);
       return true;
     }

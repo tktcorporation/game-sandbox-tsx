@@ -1085,6 +1085,14 @@ for (let i = 0; i < 25 * 60 * 10; i++) {
     await page.locator("#objective").screenshot({ path: `${out}/front-3-step-card.png` });
     if (s.objective?.steps[s.objective.current]?.label !== "核を守り抜く") errors.push(`objective: during a capture the step is ${JSON.stringify(s.objective)}`);
   }
+  // A wave of the siege announced: the beam its squad will step out of, seen from where the player stands.
+  const wave = s.front?.capture?.coming;
+  if (wave && !taken.has("front-3a-wave")) {
+    if (wave.wave < 1 || wave.wave > wave.of) errors.push(`siege: the wave announced is ${JSON.stringify(wave)}`);
+    await page.evaluate(([x, y, z, yaw]) => window.ringfallCamera(x, y, z, yaw, 0.1), [s.player.x, s.player.y + 1.6, s.player.z, Math.atan2(wave.x - s.player.x, -(wave.z - s.player.z))]);
+    await shot("front-3a-wave");
+    await page.evaluate(() => window.ringfallCamera());
+  }
   // The node taken: its core from a few metres off, lit blue with the flag up.
   if (s.stats.captured?.length && !taken.has("front-4-taken")) {
     const c = s.front.cores.find((k) => k.id === s.stats.captured[0]);
@@ -2172,7 +2180,7 @@ for (const phone of [false, true]) {
  * and the night's attacks (the moon), the bar sliding at each.
  */
 const pushDay = {
-  v: 22, cash: 3000, raids: 11, extracted: 9, time: 6000, region: "reservoir", entry: "beach", seed: 5006, escaped: null,
+  v: 22, cash: 3000, raids: 11, extracted: 9, time: 6000, region: "reservoir", entry: "beach", seed: 5012, escaped: null,
   stash: [], entries: ["beach", "checkpoint", "jetty", "outskirts", "quay", "shore"], depots: ["supply", "quarry", "station"], seen: "f".repeat(4000),
   quests: { progress: {}, done: [] }, day: 12, factory: 0,
   poiState: { supply: { state: "freed" }, quarry: { state: "freed" }, station: { state: "freed" } },
@@ -2399,7 +2407,7 @@ for (const phone of [false, true]) {
   await useStation(pg, "quests");
   await pg.locator("#hub-side .quest.contract [data-act=take]").first().click();
   const known = await pg.textContent("#hub-side .strength p.bins");
-  if (!/7 \/ 20/.test(known ?? "")) errors.push(`${why}: the board's bin shows "${known}" mod parts known`);
+  if (!/7 \/ 23/.test(known ?? "")) errors.push(`${why}: the board's bin shows "${known}" mod parts known`);
   await pg.locator("#hub-side .strength p.bins").scrollIntoViewIfNeeded();
   await snap("4-board-bin");
   // The departure: the harbor's ways in, learned, as solid rings that can be chosen, its padlock gone.

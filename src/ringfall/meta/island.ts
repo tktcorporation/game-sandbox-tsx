@@ -1,7 +1,7 @@
-import { EVENTS, FACTORY, FACTORY_TOP, FRONT, META, NIGHT, type EventKind, type Rarity } from "../sim/config";
+import { EVENTS, FACTORY, FACTORY_TOP, FRONT, META, NIGHT, type EventKind, type HealKind, type Rarity } from "../sim/config";
 import type { IslandEvent, PoiHold } from "../sim/island";
 import { parseHold, rivalOf } from "../sim/holds";
-import { DEBRIS_SPOTS, debrisIndex, DEPOTS, NET_EDGE, NODES, POIS, poiIndex, UNLOCKS, type DebrisId, type NodeId, type NodeUnlock, type PoiId } from "../sim/map";
+import { DEBRIS_SPOTS, debrisIndex, DEPOTS, NET_EDGE, NODES, nodeIndex, POIS, poiIndex, UNLOCKS, type DebrisId, type NodeId, type NodeUnlock, type PoiId } from "../sim/map";
 import { capturedIds, NEIGHBOURS, nodeHolds, type NodeHold } from "../sim/front";
 import { guardedNodes, type Battle } from "../sim/battle";
 import { mix, type State } from "../sim/state";
@@ -58,6 +58,8 @@ export interface BattleDay {
   start?: NodeId[];
   left?: NodeId[];
   guarded?: NodeId[];
+  /** The night's targets the player fortified in the raid (`FORTIFY`); left out, none. */
+  fortified?: NodeId[];
   factory?: number;
   seed?: number;
   turns?: { raid: number; after: number };
@@ -93,6 +95,8 @@ function battleDay(b: Battle, nodes: readonly NodeHold[], seed: number): BattleD
     start: ids(b.start),
     left: ids(b.left?.nodes ?? nodes),
     guarded: guardedNodes(b).map((i) => NODES[i].id),
+    // A battle record from before nights were announced carries none.
+    ...(b.fortified?.length ? { fortified: b.fortified.map((i) => NODES[i].id) } : {}),
     factory: b.factory,
     seed,
     turns: { raid: b.taken.filter((t) => t.t < leftAt).length, after: b.taken.filter((t) => t.t >= leftAt).length },
@@ -129,8 +133,11 @@ export const rivalNodes = (holds: readonly NodeHold[]): Partial<Record<NodeId, s
 /** The nodes the player holds on an island day. */
 export const playerNodes = (p: Pick<IslandDay, "poiState">): NodeId[] => NODES.filter((n) => p.poiState[n.id].state === "freed").map((n) => n.id);
 
+/** The enemy's targets for the night after the profile's next raid (`nightTargets()`), as the camp announces them and the raid is told. */
+export const tonight = (p: Pick<IslandDay, "poiState" | "day" | "seed">): NodeId[] => nightTargets(playerNodes(p), p.seed ?? 0, p.day, Object.keys(rivalNodes(islandHolds(p))) as NodeId[]);
+
 /** What the nodes the player holds open together (`UNLOCKS`): the best of each, the squads summed. */
-export function unlocked(p: Pick<IslandDay, "poiState">): Required<Omit<NodeUnlock, "depart">> & { depart: NodeId[] } {
+export function unlocked(p: Pick<IslandDay, "poiState">): Required<Pick<NodeUnlock, "shop" | "squad" | "scout" | "shore">> & { depart: NodeId[]; heals: HealKind[]; turret: number } {
   const mine = playerNodes(p).map((id) => ({ id, u: UNLOCKS[id] }));
   return {
     shop: Math.max(META.shopRarity, ...mine.map(({ u }) => u.shop ?? 0)) as Rarity,
@@ -138,7 +145,9 @@ export function unlocked(p: Pick<IslandDay, "poiState">): Required<Omit<NodeUnlo
     scout: mine.some(({ u }) => u.scout),
     shore: mine.some(({ u }) => u.shore),
     depart: mine.filter(({ u }) => u.depart).map(({ id }) => id),
-  } as Required<Omit<NodeUnlock, "depart">> & { depart: NodeId[] };
+    heals: mine.flatMap(({ u }) => (u.heal ? [u.heal] : [])),
+    turret: mine.reduce((n, { u }) => n + (u.turret ?? 0), 0),
+  } as ReturnType<typeof unlocked>;
 }
 
 /** The best rarity of weapon and tier of armour the trader sells: what the nodes held open (`UNLOCKS`). */
@@ -177,24 +186,38 @@ export interface DayChange {
 /** The nodes that changed hands between two sets of the player's nodes. */
 const changeOf = (from: readonly NodeId[], to: readonly NodeId[]): FrontChange => ({ gained: to.filter((id) => !from.includes(id)), lost: from.filter((id) => !to.includes(id)) });
 
+/** Whether node `i` of `held` borders the enemy's ground: an enemy node beside it (another player's is none), or a landing ground. */
+const bordering = (held: readonly NodeId[], rival: readonly NodeId[], i: number) =>
+  NEIGHBOURS[i].some((k) => !held.includes(NODES[k].id) && !rival.includes(NODES[k].id)) || NET_EDGE.includes(NODES[i].id);
+
 /**
- * The night's attacks (`NIGHT`): each node of `held` next to the enemy's ground (a node neither in
- * `held` nor in `rival`, another player's, or the landing ground of `NET_EDGE`) falls with a chance that grows with those
- * neighbours and shrinks while the player's squads guard it and with the factory's level, drawn
- * from `seed` and `day`. The nodes that fall, at most `NIGHT.max`, in `NODES` order.
+ * The enemy's targets for the night after day `day` (`NIGHT`), fixed as the day starts: of the
+ * nodes the player holds then (`held`) that border the enemy's ground, the first few by a hash of
+ * the raid's seed, the day and the node. What the camp's maps and the raid's announce.
  */
-export function nightRaids(held: readonly NodeId[], guarded: readonly NodeId[], factory: number, seed: number, day: number, rival: readonly NodeId[] = []): NodeId[] {
-  const out: NodeId[] = [];
-  NODES.forEach((n, i) => {
-    if (!held.includes(n.id) || out.length >= NIGHT.max) return;
-    const foes = NEIGHBOURS[i].filter((k) => !held.includes(NODES[k].id) && !rival.includes(NODES[k].id)).length + (NET_EDGE.includes(n.id) ? 1 : 0);
-    if (!foes) return;
-    // The more of the island the player holds, the more of the enemy's strength falls on what is left of the front.
-    const spread = NIGHT.spread + held.length / NODES.length;
-    const chance = NIGHT.chance[Math.min(foes, NIGHT.chance.length) - 1] * spread * (guarded.includes(n.id) ? NIGHT.guarded : 1) * FACTORY.levels[Math.max(0, Math.min(FACTORY_TOP, factory))].night;
-    if ((dayHash(seed, day, 100 + i) % 10_000) / 10_000 < chance) out.push(n.id);
+export function nightTargets(held: readonly NodeId[], seed: number, day: number, rival: readonly NodeId[] = []): NodeId[] {
+  const border = NODES.map((n, i) => ({ id: n.id, i })).filter((n) => held.includes(n.id) && bordering(held, rival, n.i));
+  const n = held.length >= NIGHT.spread ? NIGHT.many : NIGHT.few;
+  return border
+    .map((x) => ({ ...x, h: dayHash(seed, day, 100 + x.i) }))
+    .sort((a, c) => a.h - c.h || a.i - c.i)
+    .slice(0, n)
+    .sort((a, c) => a.i - c.i)
+    .map((x) => x.id);
+}
+
+/**
+ * The night's attacks (`NIGHT`): of the day's targets (`nightTargets()` of `start`, the nodes the
+ * player held as the day began; `held` when left out), those the player still holds as the battle
+ * ends (`held`) and did not fortify fall with a chance that shrinks while the player's squads
+ * guard them and with the factory's level, drawn from `seed` and `day`. In `NODES` order.
+ */
+export function nightRaids(held: readonly NodeId[], guarded: readonly NodeId[], factory: number, seed: number, day: number, rival: readonly NodeId[] = [], start: readonly NodeId[] = held, fortified: readonly NodeId[] = []): NodeId[] {
+  return nightTargets(start, seed, day, rival).filter((id) => {
+    if (!held.includes(id) || fortified.includes(id)) return false;
+    const chance = NIGHT.fall * (held.some((h) => UNLOCKS[h].watch) ? NIGHT.watch : 1) * (guarded.includes(id) ? NIGHT.guarded : 1) * FACTORY.levels[Math.max(0, Math.min(FACTORY_TOP, factory))].night;
+    return (dayHash(seed, day, 200 + nodeIndex(id)) % 10_000) / 10_000 < chance;
   });
-  return out;
 }
 
 /**
@@ -212,7 +235,8 @@ export function advanceDay<P extends IslandDay>(p: P, r: RaidDay): { profile: P;
   const ended = r.battle ? r.battle.held : [...was, ...(r.captured ?? [])];
   // The night: the enemy comes at the nodes next to its ground (a raid with no battle has no night).
   const rival: Partial<Record<NodeId, string>> = r.battle ? (r.battle.rival ?? {}) : rivalNodes(before);
-  const fell = r.battle ? nightRaids(ended, r.battle.guarded ?? [], r.battle.factory ?? 0, r.battle.seed ?? 0, today, Object.keys(rival) as NodeId[]) : [];
+  // The targets were fixed as the day began, from the island as it stood then.
+  const fell = r.battle ? nightRaids(ended, r.battle.guarded ?? [], r.battle.factory ?? 0, r.battle.seed ?? 0, today, Object.keys(rivalNodes(before)) as NodeId[], was, r.battle.fortified ?? []) : [];
   const mine = new Set<NodeId>(ended.filter((id) => !fell.includes(id)));
   const standing = (id: PoiId): PoiHold => {
     if (unfreeable(id)) return "held";

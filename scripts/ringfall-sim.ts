@@ -41,8 +41,8 @@ import { forward } from "../src/ringfall/sim/state";
 import { build, buildFactory, buildState, buy, canBuild, deliver, depotAllowance, depotBudget, emptyLoadout, fitsStart, healRoom, isStarter, issuedHeals, itemCost, FIRST_ENTRY, loadoutCost, newProfile, parseProfile, pouch, price, sell, sellPrice, settle, stashUsed, takeKit, wares, withStarters, type Item, type Profile } from "../src/ringfall/meta/profile";
 import { emptyHideout, hideoutDone, maxLevel, MODULES, poisWith, sources, stashCap } from "../src/ringfall/meta/hideout";
 import { boostFor, boosted } from "../src/ringfall/sim/state";
-import { CONQUEST, COUNTER, FACTORY, FACTORY_TOP, HIDEOUT, TOOL_KINDS, TOOLS, VAULT } from "../src/ringfall/sim/config";
-import { frontIncome, islandHolds, advanceDay, holds, newIsland, nightRaids, playerNodes, type RaidDay } from "../src/ringfall/meta/island";
+import { CONQUEST, COUNTER, FACTORY, FORTIFY, MOMENTUM, NIGHT, FACTORY_TOP, HIDEOUT, TOOL_KINDS, TOOLS, VAULT } from "../src/ringfall/sim/config";
+import { frontIncome, islandHolds, advanceDay, holds, newIsland, nightRaids, nightTargets, playerNodes, type RaidDay } from "../src/ringfall/meta/island";
 import { activePacks } from "../src/ringfall/sim/island";
 import { garrison, isVaultGuard } from "../src/ringfall/sim/island";
 import { QUESTS, offered, raidCredit } from "../src/ringfall/meta/quests";
@@ -60,7 +60,7 @@ import { DEBRIS_SPOTS } from "../src/ringfall/sim/map";
 import { crewKey, debrisBin } from "../src/ringfall/sim/state";
 import { nextSeed } from "../src/ringfall/meta/profile";
 import { raidDay, unfreeable } from "../src/ringfall/meta/island";
-import { MOD_KINDS, MOD_START, MODS, RETURN, THREAT, type ModKind } from "../src/ringfall/sim/config";
+import { MOD, MOD_KINDS, MOD_START, MODS, RETURN, THREAT, type ModKind } from "../src/ringfall/sim/config";
 import { binMod, robotMod } from "../src/ringfall/sim/mods";
 import { Bot } from "../src/ringfall/sim/bot";
 import { searchFor } from "../src/ringfall/sim/world";
@@ -75,7 +75,7 @@ import { duelLines } from "./ringfall-duel";
 import { checkSupport } from "./ringfall-support";
 import { checkRivals } from "./ringfall-rivals";
 import { checkScatterApart, MOBILES, OUTPOST_SITES, SCATTER_AREAS, scatterPrints } from "../src/ringfall/sim/map";
-import { enemyNodes, frontNodes, garrisonOf, useCore, type NodeHold } from "../src/ringfall/sim/front";
+import { enemyNodes, frontNodes, garrisonOf, momentum, NEIGHBOURS, siegeWaves, takeNode, useCore, type NodeHold } from "../src/ringfall/sim/front";
 import { factoryMax, factoryRarity, finishBattle, heldUnlocks, nodePoint } from "../src/ringfall/sim/battle";
 import { departDepots, shopRarity } from "../src/ringfall/meta/island";
 import { BIN_GEAR } from "../src/ringfall/sim/config";
@@ -2037,15 +2037,16 @@ function checkIsland(): string | null {
   if (night.profile.poiState.supply.state !== "held" || night.profile.poiState.quarry.state !== (fell.includes("quarry") ? "held" : "freed") || night.raid.lost.join() !== "supply" || night.raid.gained.join() !== "quarry" || night.after.gained.length || night.after.lost.length) return `island scenario: a battle that ended with the supply depot the enemy's and the quarry the player's left ${JSON.stringify({ front: night.front, supply: night.profile.poiState.supply, quarry: night.profile.poiState.quarry })}`;
   // The enemy's strength follows the nodes it holds.
   if (newRun(77).strength !== STRENGTH.play || strengthFor(NODES.length) !== STRENGTH.play) return `island scenario: a raid with every node the enemy's plays at strength ${newRun(77).strength}, not ${STRENGTH.play}`;
-  for (let k = 1; k <= NODES.length; k++) if (strengthFor(k) < strengthFor(k - 1)) return "island scenario: the enemy's strength falls as it holds more nodes";
+  for (let k = 1; k <= NODES.length; k++) if (strengthFor(k) < strengthFor(k - 1)) return "island scenario: the enemy's strength falls as the player holds more nodes";
   // The garrisons: held in full and as with no island given, freed empty.
   const count = (s: State, i: number) => s.enemies.filter((e) => e.poi === i).length;
   const plain = newRun(77);
   const allHeld = newRun(77, starterKit(), "reservoir", { island: holds({ poiState: newIsland() }) });
-  if (JSON.stringify(plain.enemies) !== JSON.stringify(allHeld.enemies) || plain.rng !== allHeld.rng) return "island scenario: a raid with every POI held is not the raid with no island given";
+  // (An island all the enemy's plays at the lowest strength, the tables' raid at `STRENGTH.play`: the garrisons are the same.)
+  if (allHeld.strength !== strengthFor(0) || POIS.some((_, i) => count(plain, i) !== count(allHeld, i))) return "island scenario: a raid with every POI held stands other garrisons than the raid with no island given";
   const mixed = { ...newIsland(), quarry: { state: "freed" as const }, pad: { state: "freed" as const } };
   const m = newRun(77, starterKit(), "reservoir", { island: holds({ poiState: mixed }) });
-  if (m.strength !== strengthFor(NODES.length - 1)) return `island scenario: a raid with one node the player's plays at strength ${m.strength}`;
+  if (m.strength !== strengthFor(1)) return `island scenario: a raid with one node the player's plays at strength ${m.strength}`;
   // A POI's squads that walk a beat (`MOBILES`) are out on it, not counted among the POI's own.
   const posted = (i: number, list: Squad[]) => list.filter((sq) => !beatOf(POIS[i].id, sq.name)).reduce((n, sq) => n + sq.members.length, 0);
   const full = (i: number) => posted(i, POIS[i].squads);
@@ -2095,7 +2096,7 @@ function checkStrength(): string | null {
   if (ROW_OUT.length !== NODES.length) return `strength scenario: the row out from the camp names ${ROW_OUT.length} nodes of ${NODES.length}`;
   const island = (k: number) => holds({ poiState: { ...newIsland(), ...Object.fromEntries(ROW_OUT.slice(0, k).map((id) => [id, { state: "freed" as const }])) } });
   for (let k = 0; k <= NODES.length; k++) {
-    const n = strengthFor(NODES.length - k);
+    const n = strengthFor(k);
     const l = STRENGTH.levels[n];
     for (const seed of [5, 91]) {
       const s = newRun(seed, starterKit(), "reservoir", { island: island(k) });
@@ -2113,17 +2114,17 @@ function checkStrength(): string | null {
       if (s.enemies.some((e) => e.poi >= 0 && e.plate > 0 && e.plate !== Math.max(TIER[POIS[e.poi].id as NodeId] ?? 0, 1))) return `strength scenario: a garrison's robot wears a plate not of its node's tier at level ${n} (seed ${seed})`;
     }
   }
+  // A raid whose start names no island is the tables' raid (`STRENGTH.play`); an island all the enemy's is the quiet one.
   const plainRun = newRun(321);
-  const atPlay = newRun(321, starterKit(), "reservoir", { island: island(0) });
-  const sameAs = (a: State, b: State) => JSON.stringify([a.enemies, a.squads, a.rng, a.roamRng, a.nextId, a.parties]) === JSON.stringify([b.enemies, b.squads, b.rng, b.roamRng, b.nextId, b.parties]);
-  if (!sameAs(plainRun, atPlay) || plainRun.strength !== STRENGTH.play) return "strength scenario: a raid with no island given is not the raid with every node the enemy's";
+  const quietRun = newRun(321, starterKit(), "reservoir", { island: island(0) });
+  if (plainRun.strength !== STRENGTH.play || quietRun.strength !== strengthFor(0) || strengthFor(0) >= strengthFor(NODES.length)) return `strength scenario: a raid with no island plays at ${plainRun.strength}, one with every node the enemy's at ${quietRun.strength}, one with every node the player's at ${strengthFor(NODES.length)}`;
   // The board names only packs that fly at the island's level.
   for (const seed of [1, 77, 4242])
     for (let k = 0; k <= NODES.length; k++) {
       const poiState = { ...newIsland(), ...Object.fromEntries(ROW_OUT.slice(0, k).map((id) => [id, { state: "freed" as const }])) };
       const b = makeBoard({ ...newProfile(seed), seed, poiState, entries: ENTRIES.map((e) => e.id) });
       if (b.contracts.length < 2 || b.contracts.length > 4) return `strength scenario: the board with ${k} nodes the player's (seed ${seed}) has ${b.contracts.map((c) => c.t).join()}`;
-      for (const c of b.contracts) if (c.t === "intercept" && c.target.t === "pack" && !activePacks(seed, strengthFor(NODES.length - k)).some((q) => q.name === (c.target as { name: string }).name)) return `strength scenario: the board with ${k} nodes the player's names a pack that does not fly: ${c.target.name}`;
+      for (const c of b.contracts) if (c.t === "intercept" && c.target.t === "pack" && !activePacks(seed, strengthFor(k)).some((q) => q.name === (c.target as { name: string }).name)) return `strength scenario: the board with ${k} nodes the player's names a pack that does not fly: ${c.target.name}`;
     }
   return null;
 }
@@ -2752,10 +2753,10 @@ function checkFactions(): string | null {
   spawnEnemy(g, "grunt", posted[0].pos.x + 8, posted[0].pos.z, -1, ri, { rogue: true, face: -Math.PI / 2 });
   ticks(g, 8);
   if (g.squads[gi].foe !== undefined || g.squads[ri].foe !== undefined || g.events.some((e) => e.t === "fall")) return "factions: a POI's garrison fought a rogue squad beside it";
-  // Fewer rogues walk as the enemy grows stronger (the player holding none, three, or all of the nodes).
+  // Fewer rogues walk as the enemy grows stronger (the player holding none, six, or all of the nodes).
   const weakened = (k: number) => holds({ poiState: { ...newIsland(), ...Object.fromEntries(NODES.slice(0, k).map((n) => [n.id, { state: "freed" as const }])) } });
   for (const region of REGIONS) {
-    const rogues = [NODES.length, 3, 0].map((k) => newRun(9, starterKit(), region.id, { island: weakened(k) }).enemies.filter((e) => e.rogue && regionHere(e.pos).id === region.id).length);
+    const rogues = [0, 6, NODES.length].map((k) => newRun(9, starterKit(), region.id, { island: weakened(k) }).enemies.filter((e) => e.rogue && regionHere(e.pos).id === region.id).length);
     if (!(rogues[0] >= rogues[1] && rogues[1] >= rogues[2] && rogues[0] > rogues[2])) return `factions: rogues in ${region.id} with the enemy at its weakest / middling / strongest are ${rogues.join(" / ")}, not fewer as it strengthens`;
   }
   // The rogues hold no ground: every outpost's guards are the enemy's.
@@ -3942,7 +3943,7 @@ function checkThreat(): string | null {
   // The island at each of the enemy's strengths: the player holding none, three or all of the nodes.
   for (const k of [0, 3, NODES.length]) {
     const island = holds({ poiState: { ...newIsland(), ...Object.fromEntries(NODES.slice(0, k).map((o) => [o.id, { state: "freed" as const }])) } });
-    const n = strengthFor(NODES.length - k);
+    const n = strengthFor(k);
     const l = STRENGTH.levels[n];
     for (const seed of [5, 91]) {
       const plain = newRun(seed, starterKit(), "reservoir", { island });
@@ -4095,7 +4096,8 @@ function checkFront(): string | null {
   if (!s.capture || s.capture.t > 0.05 || s.capture.held) return `front: the meter ran with a robot on the core's ground (${s.capture?.t})`;
   s.enemies = s.enemies.filter((e) => e !== g);
   // Held: nothing else may come near meanwhile (the push is kept off for this scenario).
-  s.capture.waves = FRONT.pushWaves[s.strength];
+  s.capture.waves = 99;
+  s.capture.coming = null;
   s.enemies = [];
   for (let i = 0; i < (FRONT.capture + 1) / TICK && s.nodes[SUP] !== "freed"; i++) {
     step(s, idleInput(), false);
@@ -4103,6 +4105,16 @@ function checkFront(): string | null {
   }
   if (s.nodes[SUP] !== "freed" || s.stats.captured.join() !== "supply" || !s.depots[depotIndex("supply")] || !s.cleared[SUPPLY] || ob().kind !== "extract") return `front: holding the core left ${JSON.stringify({ node: s.nodes[SUP], captured: s.stats.captured, step: ob().kind })}`;
   if (!frontNodes(s.nodes)[nodeIndex("quarry")] || frontNodes(s.nodes)[SUP]) return "front: taking the supply depot did not move the front";
+  // The core lays out its parts: walked over they stay, the use key takes one and the rest are gone.
+  ticks(s, 1);
+  const laid = s.loot.filter((l) => l.choice === SUP);
+  if (laid.length !== MOD.core || new Set(laid.map((l) => l.mod)).size !== MOD.core) return `front: the supply depot's core laid out ${laid.map((l) => l.mod).join()}`;
+  s.player.pos = { x: laid[0].pos.x, y: core.y, z: laid[0].pos.z };
+  ticks(s, 0.5);
+  if (s.player.mods.length) return "front: a core's part went on by walking over it";
+  step(s, press, false);
+  if (s.player.mods.join() !== laid[0].mod || s.loot.some((l) => l.choice === SUP)) return `front: the use key at a core's part left ${s.player.mods.join()} worn and ${s.loot.filter((l) => l.choice === SUP).length} lying`;
+  stand(SUP);
   // No robot walks onto it: one sent at the core stops at the zone's edge.
   const w = spawnEnemy(s, "grunt", core.x, core.z + FRONT.zone + 6, -1, 0);
   w.aware = "alert";
@@ -4130,18 +4142,91 @@ function checkFront(): string | null {
     const front = frontNodes(islandHolds(three));
     for (const c of b.contracts) if (c.t === "free" && !front[nodeIndex(c.poi)]) return `front: the board offers to take ${c.poi}, off the front`;
   }
-  // The push: a capture with neighbours the robots hold brings their squads in.
+  // The siege (FRONT.siege): every wave is announced by a beam before its squad steps out of it.
+  const sieged = (q: State) => q.squads.filter((x) => x.name.endsWith("からの増援"));
+  const hold = (q: State, at: { x: number; y: number; z: number }, seconds: number) => {
+    for (let i = 0; i < seconds / TICK && q.capture; i++) {
+      step(q, idleInput(), false);
+      q.player.pos = { x: at.x + 1.4, y: at.y, z: at.z };
+      q.player.hp = 100;
+    }
+  };
   const ps = newRun(44);
   ps.reinforceT = ps.raiderT = 1e9;
   ps.player.pos = { x: core.x + 1.4, y: core.y, z: core.z };
   ps.enemies = ps.enemies.filter((e) => dist2d(e.pos, core) > 150);
   useCore(ps, SUP);
-  for (let i = 0; i < (FRONT.pushAt + 2) / TICK; i++) {
-    step(ps, idleInput(), false);
-    ps.player.pos = { x: core.x + 1.4, y: core.y, z: core.z };
+  hold(ps, core, 1);
+  const warned = ps.capture?.coming;
+  if (!warned || warned.wave !== 1 || warned.of !== FRONT.siege.waves[0].length || sieged(ps).length) return `front: the supply depot's siege opened with ${JSON.stringify(warned)} and ${sieged(ps).length} squads out`;
+  const out = dist2d(warned, core);
+  if (out < FRONT.radius * 2 || out > FRONT.siege.dist[1] + 5) return `front: a wave's beam stood ${out.toFixed(0)} m from the core`;
+  hold(ps, core, FRONT.siege.warn + 1);
+  const first = sieged(ps);
+  if (first.length !== 1 || !first[0].routed || ps.capture?.coming) return `front: the first wave sent ${first.map((q) => q.name).join()}`;
+  const firstKinds = ps.enemies.filter((e) => ps.squads[e.squad] === first[0]).map((e) => e.kind).sort().join();
+  if (firstKinds !== [...FRONT.siege.waves[0][0].kinds, ...FRONT.siege.extra[ps.strength]].sort().join()) return `front: the supply depot's wave is ${firstKinds}`;
+  // The node taken, the wave that came for it leaves with the garrison and is gone.
+  ps.capture!.t = FRONT.capture;
+  hold(ps, core, 0.1);
+  ticks(ps, FRONT.retreat + 1);
+  if (ps.nodes[SUP] !== "freed" || ps.enemies.some((e) => ps.squads[e.squad] === first[0])) return `front: after the supply depot was taken its wave left ${ps.enemies.filter((e) => ps.squads[e.squad] === first[0]).length} robots`;
+  // A deeper node draws its tier's waves, each called as the meter passes its mark, the last in the node's plate.
+  const deep = NODES.findIndex((n, i) => TIER[n.id] === 2 && NEIGHBOURS[i].some((k) => TIER[NODES[k].id] === 1));
+  const gate = NEIGHBOURS[deep].filter((k) => TIER[NODES[k].id] === 1)[0];
+  const island = { ...fresh, poiState: { ...fresh.poiState, supply: { state: "freed" as const }, [NODES[gate].id]: { state: "freed" as const } } };
+  const dp = newRun(45, starterKit(), "reservoir", { island: holds(island) });
+  if (!frontNodes(dp.nodes)[deep]) return `front: ${NODES[deep].id} is not on the front past ${NODES[gate].id}`;
+  dp.reinforceT = dp.raiderT = 1e9;
+  dp.parties = [];
+  const dc = NODES[deep].core;
+  dp.enemies = [];
+  dp.player.pos = { x: dc.x + 1.4, y: dc.y, z: dc.z };
+  dp.ally.pos = { ...dp.player.pos };
+  useCore(dp, deep);
+  const plan = siegeWaves(dp, deep);
+  if (plan.length !== 3 || !plan[2].guard) return `front: a tier 2 node's siege is ${JSON.stringify(plan)}`;
+  for (let k = 0; k < plan.length; k++) {
+    // Up to the wave's mark, with nothing on the core's ground; the wave before has come down.
+    for (let i = 0; i < 60 / TICK && dp.capture && !dp.capture.coming; i++) {
+      dp.enemies = [];
+      hold(dp, dc, TICK);
+    }
+    const w = dp.capture?.coming;
+    if (!w || w.wave !== k + 1 || dp.capture!.t + 1e-6 < plan[k].at * FRONT.capture) return `front: wave ${k + 1} of ${NODES[deep].id} was called as ${JSON.stringify(w)} at ${dp.capture?.t.toFixed(1)} s`;
+    if (k < plan.length - 1) {
+      const before = sieged(dp).length;
+      dp.capture!.t = Math.min(dp.capture!.t, plan[k + 1].at * FRONT.capture - 1);
+      for (let i = 0; i < (FRONT.siege.warn + 1) / TICK && dp.capture?.coming; i++) {
+        dp.capture.t = Math.min(dp.capture.t, plan[k + 1].at * FRONT.capture - 1);
+        hold(dp, dc, TICK);
+      }
+      if (sieged(dp).length !== before + 1) return `front: wave ${k + 1} of ${NODES[deep].id} did not come down`;
+    }
   }
-  const pushed = ps.squads.filter((q) => q.name.endsWith("からの増援"));
-  if (!pushed.length || pushed.length > FRONT.pushMax[ps.strength] || !pushed.every((q) => q.routed)) return `front: the push sent ${pushed.map((q) => q.name).join()}`;
+  // The capture fills while the last wave is still announced: the wave is called off.
+  const squadsBefore = dp.squads.length;
+  dp.enemies = [];
+  dp.capture!.t = FRONT.capture;
+  hold(dp, dc, 0.1);
+  ticks(dp, FRONT.siege.warn + 1);
+  if (dp.nodes[deep] !== "freed" || dp.squads.length !== squadsBefore) return `front: a capture that filled under an announced wave left ${dp.nodes[deep]} and ${dp.squads.length - squadsBefore} more squads`;
+  // The guard wave wears the node's plate: called again in a fresh raid and let down.
+  const gp = newRun(46, starterKit(), "reservoir", { island: holds(island) });
+  gp.reinforceT = gp.raiderT = 1e9;
+  gp.parties = [];
+  gp.enemies = [];
+  gp.player.pos = { x: dc.x + 1.4, y: dc.y, z: dc.z };
+  gp.ally.pos = { ...gp.player.pos };
+  useCore(gp, deep);
+  gp.capture!.waves = plan.length - 1;
+  gp.capture!.t = plan[plan.length - 1].at * FRONT.capture;
+  for (let i = 0; i < (FRONT.siege.warn + 2) / TICK && !sieged(gp).length; i++) {
+    gp.capture!.t = plan[plan.length - 1].at * FRONT.capture;
+    hold(gp, dc, TICK);
+  }
+  const guard = gp.enemies.filter((e) => gp.squads[e.squad]?.name.endsWith("からの増援"));
+  if (!guard.length || !guard.filter((e) => e.kind === "grunt" || e.kind === "heavy").every((e) => e.plate === 2)) return `front: the guard wave of ${NODES[deep].id} wears ${guard.map((e) => `${e.kind}:${e.plate}`).join()}`;
   return null;
 }
 
@@ -4176,7 +4261,8 @@ function checkPushPull(): string | null {
   r.enemies = r.enemies.filter((e) => dist2d(e.pos, NODES[SUP].core) > 150);
   r.player.pos = { x: NODES[SUP].core.x + 1.4, y: NODES[SUP].core.y, z: NODES[SUP].core.z };
   useCore(r, SUP);
-  r.capture!.waves = FRONT.pushWaves[r.strength];
+  r.capture!.waves = 99;
+  r.capture!.coming = null;
   r.capture!.t = FRONT.capture;
   ticks(r, 0.1);
   if (r.nodes[SUP] !== "freed") return "push-pull: the supply depot was not taken";
@@ -4203,19 +4289,65 @@ function checkPushPull(): string | null {
   if (!back || r.nodes[SUP] === "freed") return "push-pull: the counter-attack on a bare supply depot did not take it back";
   const day = raidDay(r);
   if (!day.battle?.turns || day.battle.turns.after < 1 || day.battle.left?.join() !== "supply" || day.battle.held.includes("supply")) return `push-pull: the battle day reads ${JSON.stringify(day.battle)}`;
-  // The night: the same seed and day fall the same; bare nodes fall more often than guarded ones.
+  // The night: the enemy's targets are fixed by the seed, the day and the island as the day began;
+  // only a target can fall, a guarded one less often than a bare one, a fortified one never.
   const mine: NodeId[] = ["supply", "quarry", "relay", "station"];
   const a = nightRaids(mine, [], 0, 77, 5).join();
-  if (a !== nightRaids(mine, [], 0, 77, 5).join()) return "push-pull: the same night fell differently";
+  if (a !== nightRaids(mine, [], 0, 77, 5).join() || nightTargets(mine, 77, 5).join() !== nightTargets(mine, 77, 5).join()) return "push-pull: the same night fell differently";
   let bare = 0;
   let guarded = 0;
   let deep = 0;
+  let fortified = 0;
+  let stray = 0;
+  const wide: NodeId[] = ["supply", "quarry", "relay", "station", "waterworks", "lodge"];
   for (let d = 1; d <= 400; d++) {
     bare += nightRaids(["quarry"], [], 0, 9, d).length;
     guarded += nightRaids(["quarry"], ["quarry"], 0, 9, d).length;
+    fortified += nightRaids(["quarry"], [], 0, 9, d, [], ["quarry"], ["quarry"]).length;
     deep += nightRaids(["supply", "quarry", "relay", "station", "waterworks"], [], 0, 9, d).filter((id) => id === "supply").length;
+    const targets = nightTargets(wide, 9, d);
+    if (targets.length !== NIGHT.many || nightTargets(mine, 9, d).length !== NIGHT.few) return `push-pull: on day ${d} the enemy marked ${targets.join()} of six nodes and ${nightTargets(mine, 9, d).join()} of four`;
+    stray += nightRaids(wide, [], 0, 9, d).filter((id) => !targets.includes(id)).length;
+    // A node taken during the day was no target as the day began.
+    if (nightRaids([...mine, "lodge"], [], 0, 9, d, [], mine).includes("lodge")) return `push-pull: a node taken on day ${d} fell that night`;
   }
-  if (!bare || guarded >= bare || deep) return `push-pull: over 400 nights a bare quarry fell ${bare} times, a guarded one ${guarded}, a supply depot with no enemy beside it ${deep}`;
+  if (!bare || guarded >= bare || deep || fortified || stray) return `push-pull: over 400 nights a bare quarry fell ${bare} times, a guarded one ${guarded}, a fortified one ${fortified}, a supply depot with no enemy beside it ${deep}, a node that was no target ${stray}`;
+  // Fortifying in the raid: the use key at the core of a node marked for the night, held for FORTIFY.time.
+  const fprof = { ...p, poiState: { ...p.poiState, supply: { state: "freed" as const } } };
+  const fr = newRun(31, starterKit(), "reservoir", { island: holds(fprof), battle: { factory: 0, targets: ["supply"] } });
+  fr.reinforceT = fr.raiderT = 1e9;
+  fr.parties = [];
+  fr.enemies = [];
+  const fc = NODES[SUP].core;
+  fr.player.pos = { x: fc.x + 1.4, y: fc.y, z: fc.z };
+  fr.ally.pos = { ...fr.player.pos };
+  const use = idleInput();
+  use.interact = true;
+  step(fr, use, false);
+  if (fr.fortify?.node !== SUP) return `push-pull: the use key at a marked node's core started ${JSON.stringify(fr.fortify)}`;
+  for (let i = 0; i < (FORTIFY.time + 1) / TICK && fr.fortify; i++) {
+    fr.enemies = [];
+    step(fr, idleInput(), false);
+    fr.player.pos = { x: fc.x + 1.4, y: fc.y, z: fc.z };
+  }
+  if (!fr.battle!.fortified.includes(SUP) || !fr.events.some((e) => e.t === "fortified")) return "push-pull: holding a marked node's core did not fortify it";
+  fr.outcome = "extracted";
+  fr.phase = "done";
+  if (raidDay(fr).battle?.fortified?.join() !== "supply") return `push-pull: the battle day of a fortified node reads ${JSON.stringify(raidDay(fr).battle?.fortified)}`;
+  // Momentum: the first node of a raid is as ever; each after it cuts the enemy's clocks and pays when the raid gets off.
+  const mr = newRun(33, starterKit(), "reservoir", { island: holds(p), battle: { factory: 0 } });
+  mr.reinforceT = 100;
+  mr.raiderT = 200;
+  takeNode(mr, SUP);
+  if (momentum(mr) !== 0 || mr.reinforceT !== 100 || mr.events.some((e) => e.t === "momentum")) return `push-pull: a raid's first node left momentum ${momentum(mr)} and the reinforcements ${mr.reinforceT} s off`;
+  takeNode(mr, nodeIndex("quarry"));
+  if (momentum(mr) !== 1 || Math.abs(mr.reinforceT - 100 * MOMENTUM.clock) > 1e-6 || Math.abs(mr.raiderT - 200 * MOMENTUM.clock) > 1e-6 || !mr.events.some((e) => e.t === "momentum" && e.level === 1)) return `push-pull: a second node left momentum ${momentum(mr)}, the reinforcements ${mr.reinforceT} s off`;
+  mr.phase = "done";
+  mr.outcome = "extracted";
+  const paid = settle(p, mr);
+  mr.outcome = "dead";
+  const unpaid = settle(p, mr);
+  if (paid.spoils !== MOMENTUM.spoils[0] || unpaid.spoils !== undefined || paid.profile.cash - unpaid.profile.cash < MOMENTUM.spoils[0]) return `push-pull: two nodes paid ${paid.spoils} alive and ${unpaid.spoils} wiped out`;
   const prof = { ...p, poiState: { ...p.poiState, quarry: { state: "freed" as const } } };
   const quiet: RaidDay = { alive: true, cleared: [], captured: [], visited: [], titan: false, battle: { held: ["quarry"], start: ["quarry"], left: ["quarry"], guarded: [], factory: 0, seed: 5 } };
   const x = advanceDay(prof, quiet);

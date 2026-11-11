@@ -2173,7 +2173,7 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
   station: {
     region: "reservoir",
     depotOut: 20,
-    front: { tier: 1, unlocks: {} },
+    front: { tier: 1, unlocks: { heal: "cell" } },
     name: "観測所",
     x: 0,
     z: 0,
@@ -2200,7 +2200,7 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
   waterworks: {
     region: "reservoir",
     depotOut: 20,
-    front: { tier: 1, unlocks: {} },
+    front: { tier: 1, unlocks: { heal: "syringe" } },
     name: "浄水場",
     x: 0,
     z: 0,
@@ -2254,7 +2254,7 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
   cannery: {
     region: "harbor",
     depotOut: 12,
-    front: { tier: 2, unlocks: {} },
+    front: { tier: 2, unlocks: { heal: "battery" } },
     name: "缶詰工場",
     x: 0,
     z: 0,
@@ -2281,7 +2281,7 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
   coldstore: {
     region: "harbor",
     depotOut: 20,
-    front: { tier: 2, unlocks: {} },
+    front: { tier: 2, unlocks: { heal: "medkit" } },
     name: "冷凍倉庫",
     x: 0,
     z: 0,
@@ -2310,7 +2310,7 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
   terminal: {
     region: "city",
     depotOut: 20,
-    front: { tier: 2, unlocks: {} },
+    front: { tier: 2, unlocks: { depart: true } },
     name: "中央駅",
     x: 0,
     z: 0,
@@ -2340,7 +2340,7 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
   carpark: {
     region: "city",
     depotOut: 18,
-    front: { tier: 1, unlocks: {} },
+    front: { tier: 1, unlocks: { depart: true } },
     name: "立体駐車場",
     x: 0,
     z: 0,
@@ -2368,7 +2368,7 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
   robotworks: {
     region: "city",
     depotOut: 12,
-    front: { tier: 3, unlocks: {} },
+    front: { tier: 3, unlocks: { squad: 1, turret: 1 } },
     name: "ロボット工場",
     x: 5,
     z: 18,
@@ -2404,7 +2404,7 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
   highrise: {
     region: "city",
     depotOut: 18,
-    front: { tier: 2, unlocks: {} },
+    front: { tier: 2, unlocks: { mod: true } },
     name: "高層街区",
     x: 0,
     z: 0,
@@ -2441,7 +2441,7 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
   powerplant: {
     region: "city",
     depotOut: 16,
-    front: { tier: 2, unlocks: {} },
+    front: { tier: 2, unlocks: { turret: 1 } },
     name: "発電所",
     x: 0,
     z: 0,
@@ -2474,7 +2474,7 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
   control: {
     region: "launch",
     depotOut: 18,
-    front: { tier: 1, unlocks: {} },
+    front: { tier: 1, unlocks: { depart: true } },
     name: "管制センター",
     x: 0,
     z: 0,
@@ -2505,7 +2505,7 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
   assembly: {
     region: "launch",
     depotOut: 40,
-    front: { tier: 2, unlocks: {} },
+    front: { tier: 2, unlocks: { squad: 1 } },
     name: "組立棟",
     x: 0,
     z: 0,
@@ -2542,7 +2542,7 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
   launchpad: {
     region: "launch",
     depotOut: 18,
-    front: { tier: 3, unlocks: {} },
+    front: { tier: 3, unlocks: { ult: 1 } },
     name: "発射台",
     x: 0,
     z: 0,
@@ -2575,7 +2575,7 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
   fuel: {
     region: "launch",
     depotOut: 40,
-    front: { tier: 1, unlocks: {} },
+    front: { tier: 1, unlocks: { ult: 0.5 } },
     name: "燃料基地",
     x: 0,
     z: 0,
@@ -2609,7 +2609,7 @@ const POI_DEFS: { [K in PoiId]: K extends BossId ? BossDef : NodeDef } = {
   radar: {
     region: "launch",
     depotOut: 18,
-    front: { tier: 2, unlocks: {} },
+    front: { tier: 2, unlocks: { watch: true } },
     name: "追跡レーダー",
     x: 0,
     z: 0,
@@ -7222,7 +7222,11 @@ export const TIER = Object.fromEntries(NODE_DEFS.map((n) => [n.id, n.tier])) as 
  * `shop`, the best rarity of weapon (and tier of armour) the trader sells; `depart`, starts from
  * its depot; `squad`, more squads the factory keeps out at once in the battle; `scout`, the
  * direction reinforcements beam in from shown in the raid; `shore`, no enemy boats land on the
- * harbor's north shore.
+ * harbor's north shore; `heal`, one more heal of that kind issued to every raid; `ult`, the
+ * leap's charge a raid starts with (summed, to 1); `mod`, a raid starts wearing one mod part the
+ * profile knows; `turret`, more turrets at each node held as a battle starts; `watch`, the
+ * night's targets fall half as often (`NIGHT.watch`). Every node opens something, so which to
+ * take first is a choice and losing one is felt.
  */
 export interface NodeUnlock {
   shop?: Rarity;
@@ -7230,6 +7234,11 @@ export interface NodeUnlock {
   squad?: number;
   scout?: true;
   shore?: true;
+  heal?: HealKind;
+  ult?: number;
+  mod?: true;
+  turret?: number;
+  watch?: true;
 }
 /** What holding each node opens (`POI_DEFS`). */
 export const UNLOCKS = Object.fromEntries(NODE_DEFS.map((n) => [n.id, n.unlocks])) as Record<NodeId, NodeUnlock>;

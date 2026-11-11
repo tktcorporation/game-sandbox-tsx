@@ -1,5 +1,6 @@
 import { DEPOT, FACTION, FRONT, WORLD } from "../sim/config";
 import { ZIPS } from "../sim/map";
+import { tonight } from "../meta/island";
 import { zipUp } from "../sim/zips";
 import { frontNodes, NEIGHBOURS, nodeHolds, type NodeHold } from "../sim/front";
 import { atRisk, battleMarks, meterOf, type Battle, type Side } from "../sim/battle";
@@ -221,6 +222,61 @@ export function drawUnlocks(g: CanvasRenderingContext2D, x: number, y: number, i
     g.fill();
     cx += s * 2.3;
   }
+  // The smaller gifts, each a mark of its own: a heal's cross in its colour, the leap's wing, a mod part's hexagon, a turret, the night's moon.
+  if (u.heal) {
+    plate(s * 1.4);
+    g.fillStyle = u.heal === "cell" || u.heal === "battery" ? "#5fb4ff" : "#ff6b6b";
+    const k = u.heal === "battery" || u.heal === "medkit" ? 1.15 : 0.85;
+    g.fillRect(cx + s * 0.7 - s * 0.22 * k, y - s * 0.7 * k, s * 0.44 * k, s * 1.4 * k);
+    g.fillRect(cx + s * 0.7 - s * 0.7 * k, y - s * 0.22 * k, s * 1.4 * k, s * 0.44 * k);
+    cx += s * 2.1;
+  }
+  if (u.ult) {
+    plate(s * 1.6);
+    g.fillStyle = "#ffd24a";
+    for (const dy of u.ult >= 1 ? [-0.55, 0.25] : [-0.15]) {
+      g.beginPath();
+      g.moveTo(cx, y + s * (dy + 0.5));
+      g.lineTo(cx + s * 0.8, y + s * (dy - 0.3));
+      g.lineTo(cx + s * 1.6, y + s * (dy + 0.5));
+      g.lineTo(cx + s * 0.8, y + s * (dy + 0.15));
+      g.closePath();
+      g.fill();
+    }
+    cx += s * 2.3;
+  }
+  if (u.mod) {
+    plate(s * 1.5);
+    g.fillStyle = RARITY_CSS[2];
+    g.beginPath();
+    for (let k = 0; k < 6; k++) {
+      const a = (Math.PI / 3) * k;
+      const px = cx + s * 0.75 + Math.cos(a) * s * 0.75;
+      const py = y + Math.sin(a) * s * 0.75;
+      if (k) g.lineTo(px, py);
+      else g.moveTo(px, py);
+    }
+    g.closePath();
+    g.fill();
+    cx += s * 2.2;
+  }
+  if (u.turret) {
+    plate(s * 1.6);
+    g.fillStyle = HOLD_CSS.freed;
+    g.fillRect(cx + s * 0.2, y - s * 0.1, s * 1.1, s * 0.9);
+    g.fillRect(cx + s * 0.6, y - s * 0.7, s * 1.1, s * 0.35);
+    cx += s * 2.3;
+  }
+  if (u.watch) {
+    plate(s * 1.5);
+    g.fillStyle = HOLD_CSS.freed;
+    g.beginPath();
+    g.arc(cx + s * 0.75, y, s * 0.75, Math.PI * 0.35, Math.PI * 1.65);
+    g.arc(cx + s * 1.15, y, s * 0.6, Math.PI * 1.42, Math.PI * 0.58, true);
+    g.closePath();
+    g.fill();
+    cx += s * 2.2;
+  }
   if (u.shore) {
     plate(s * 2.0);
     // A red boat, struck through.
@@ -273,6 +329,8 @@ export type MapScene = Pick<State, "seen" | "cleared" | "hold" | "depots" | "rou
   capture?: { node: number; t: number } | null;
   /** The day's battle (sim/battle.ts): its squads, and the nodes the sides are taking. */
   battle?: Battle | null;
+  /** The enemy's targets for the coming night and those of them fortified (places in `NODES`), for the camp's maps; a raid's are its battle's. */
+  night?: { targets: readonly number[]; fortified: readonly number[] };
   friends?: readonly Enemy[];
   enemies?: readonly Enemy[];
   /** The raid's bins, for the flares still lying on the tall buildings' top floors; without them every flare bin is drawn as not yet searched. */
@@ -285,6 +343,22 @@ export type MapScene = Pick<State, "seen" | "cleared" | "hold" | "depots" | "rou
   names?: readonly PoiId[];
 };
 
+/** A crescent moon: the mark of a node the enemy means to take in the night. */
+export function drawMoon(g: CanvasRenderingContext2D, x: number, y: number, r: number, fill: string) {
+  g.save();
+  g.beginPath();
+  g.arc(x, y, r, 0, Math.PI * 2);
+  g.fillStyle = "rgba(16,20,34,0.85)";
+  g.fill();
+  g.beginPath();
+  g.arc(x, y, r * 0.78, Math.PI * 0.35, Math.PI * 1.65);
+  g.arc(x + r * 0.42, y, r * 0.62, Math.PI * 1.42, Math.PI * 0.58, true);
+  g.closePath();
+  g.fillStyle = fill;
+  g.fill();
+  g.restore();
+}
+
 /** A label's box on the canvas, so labels do not overlap. */
 type Rect = { x0: number; y0: number; x1: number; y1: number };
 
@@ -292,7 +366,7 @@ type Rect = { x0: number; y0: number; x1: number; y1: number };
 export const SIDE_CSS: Record<Side, string> = { 0: "#4f9bff", 1: "#ff4a3d", 2: ROGUE_CSS, 3: RIVAL_CSS };
 
 /** The camp's picture of the island between raids, from the profile's explored map, depots, routes and POI standings. */
-export function islandScene(p: { seen: string; depots: readonly PoiId[]; routes: readonly RouteId[]; poiState: Record<PoiId, { state: PoiHold }>; events?: readonly (IslandEvent | null)[]; freedAt?: Partial<Record<PoiId, number>> }): MapScene {
+export function islandScene(p: { seen: string; depots: readonly PoiId[]; routes: readonly RouteId[]; poiState: Record<PoiId, { state: PoiHold }>; events?: readonly (IslandEvent | null)[]; freedAt?: Partial<Record<PoiId, number>>; day?: number; seed?: number }): MapScene {
   // Today's debris fall is marked on the map table where the piece will lie.
   const ev = p.events?.[0];
   const spot = ev?.t === "debris" ? DEBRIS_SPOTS[debrisIndex(ev.spot)] : null;
@@ -306,6 +380,7 @@ export function islandScene(p: { seen: string; depots: readonly PoiId[]; routes:
     debris: spot && { x: spot.x, z: spot.z, open: false },
     best: POIS.map((o) => p.freedAt?.[o.id] ?? 0),
     nodes: nodeHolds((id) => p.poiState[id].state),
+    ...(p.day !== undefined && { night: { targets: tonight({ poiState: p.poiState, day: p.day, seed: p.seed }).map((id) => nodeIndex(id)), fortified: [] } }),
   };
 }
 
@@ -1048,6 +1123,10 @@ export class IslandMap {
         drawShield(g, p.x, p.y + r * 0.06, r * 0.62, RARITY_CSS[TIER[poi.id as NodeId] ?? 0]);
         // What holding it opens, as small marks beside it: dim while the enemy holds it.
         drawUnlocks(g, p.x + r * 1.45, p.y - r * 0.95, poi.id as NodeId, dpr, hold(i) === "freed");
+        // Marked by the enemy for the coming night: a red crescent at its foot; blue once fortified.
+        const night = s.night ?? (s.battle ? { targets: s.battle.targets, fortified: s.battle.fortified } : null);
+        const k = nodeIndex(poi.id as NodeId);
+        if (night?.targets.includes(k) && hold(i) === "freed") drawMoon(g, p.x - r * 1.25, p.y + r * 0.95, r * 0.62, night.fortified.includes(k) ? SIDE_CSS[0] : SIDE_CSS[1]);
       }
       if (poi.boss) {
         // The titan's eye, in the robots' red.

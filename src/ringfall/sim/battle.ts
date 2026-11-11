@@ -1,4 +1,4 @@
-import { CONQUEST, COUNTER, ENEMIES, FACTORY, FACTORY_TOP, PLATE, TICK, type EnemyKind, type Rarity } from "./config";
+import { CONQUEST, COUNTER, ENEMIES, FACTORY, FACTORY_TOP, MOMENTUM, PLATE, TICK, type EnemyKind, type Rarity } from "./config";
 import { reckonCaptures, reckonFights, sideOf, standing, type CorePresence, type Guard, type NodeMeter, type ReckonSquad, type Side, type Task, type Unit } from "./reckon";
 import { parseHold, rivalHold, rivalOf } from "./holds";
 import { dist2d } from "./geom";
@@ -7,7 +7,7 @@ import { fieldUses, forgetFields, onMainGround, walkLine } from "./hunt";
 import { inArea } from "./areas";
 import { worldKey } from "./routes";
 import { spawnEnemy } from "./enemies";
-import { dueCounter, frontNodes, garrisonLeaves, garrisonOf, NEIGHBOURS, CAMP_NEXT, useZones, type NodeHold } from "./front";
+import { dueCounter, frontNodes, garrisonLeaves, garrisonOf, momentum, NEIGHBOURS, CAMP_NEXT, useZones, type NodeHold } from "./front";
 import { allyUp } from "./ally";
 import type { Enemy, GameEvent, Point, State } from "./state";
 import { hypot2 } from "./hypot";
@@ -90,6 +90,9 @@ export interface Battle {
   rally: number;
   /** The counter-attacks due on nodes the player has just taken (`COUNTER`): which node, and the battle's clock at which its squad sets off. */
   counters: { node: number; at: number }[];
+  /** The enemy's targets for the coming night (places in `NODES`, `NIGHT`), and those of them the player has fortified (`FORTIFY`). */
+  targets: number[];
+  fortified: number[];
   /** The battle's clock when the raid ended before the battle did, and each node's standing then; null while the raid is on. */
   left: { at: number; nodes: NodeHold[] } | null;
   /** Other players' expeditions still to come, soonest first. */
@@ -113,6 +116,8 @@ export interface RivalExpedition {
 /** What a raid of the island brings to its battle: the factory's level, and the other players' expeditions coming. */
 export interface BattleStart {
   factory: number;
+  /** The enemy's targets for the coming night (meta/island.ts `nightTargets()`), announced all day; left out, none. */
+  targets?: readonly NodeId[];
   rivals?: readonly RivalExpedition[];
   /** The factory's squads out on expeditions (meta/expeditions.ts `squadsAway()`); left out, none. */
   away?: number;
@@ -323,13 +328,15 @@ export function initBattle(s: State, start: BattleStart): Battle {
     threat: NODES.map(() => false),
     rally: -1,
     counters: [],
+    targets: (start.targets ?? []).map((id) => nodeIndex(id)).filter((i) => i >= 0),
+    fortified: [],
     left: null,
     rivals: [],
     away: Math.max(0, Math.round(start.away ?? 0)),
   };
   NODES.forEach((_, i) => {
     if (s.nodes[i] !== "freed") return;
-    for (let k = 0; k < FACTORY.levels[factory].turrets; k++) addSquad(b, 0, ["heavy"], i, i, "post");
+    for (let k = 0; k < FACTORY.levels[factory].turrets + heldUnlocks(s.nodes, "turret").reduce((n, id) => n + (UNLOCKS[id].turret ?? 0), 0); k++) addSquad(b, 0, ["heavy"], i, i, "post");
   });
   for (const x of [...(start.rivals ?? [])].sort((p, q) => p.at - q.at)) {
     const i = nodeIndex(x.target);
@@ -674,7 +681,9 @@ function playerPlan(s: State, b: Battle): { from: number; to: number; task: Batt
   // A node of the player's where the enemy comes ashore or next to the enemy's, with none of the player's squads there or going: one goes to hold it.
   const bare = NODES.map((_, i) => i).filter((i) => s.nodes[i] === "freed" && !b.squads.some((q) => q.side === 0 && q.to === i && q.task !== "rally") && (NET_EDGE.includes(NODES[i].id) || NEIGHBOURS[i].some((k) => s.nodes[k] !== "freed")));
   if (bare.length) {
-    const i = bare.sort((a, c) => +NET_EDGE.includes(NODES[c].id) - +NET_EDGE.includes(NODES[a].id))[0];
+    // The night's targets first: a squad standing there as the battle ends halves the night's chance (`NIGHT.guarded`).
+    const want = (k: number) => +(b.targets.includes(k) && !b.fortified.includes(k)) * 2 + +NET_EDGE.includes(NODES[k].id);
+    const i = bare.sort((a, c) => want(c) - want(a))[0];
     return { from: i, to: i, task: "defend" };
   }
   return attackFrom(s, b, 0, ground);
@@ -798,8 +807,10 @@ function sendOut(s: State, b: Battle, plan: { from: number; to: number; task: Ba
 function produce(s: State, b: Battle, dt: number) {
   // The player's factory.
   const f = b.factory;
-  b.made[0] = Math.min(FACTORY.levels[f].every, b.made[0] + dt);
-  if (b.made[0] >= FACTORY.levels[f].every && walking(b, 0) < homeMax(s, b)) {
+  // A raid with momentum brings the factory's squads out sooner (`MOMENTUM`).
+  const every = FACTORY.levels[f].every * MOMENTUM.factory ** momentum(s);
+  b.made[0] = Math.min(every, b.made[0] + dt);
+  if (b.made[0] >= every && walking(b, 0) < homeMax(s, b)) {
     const plan = playerPlan(s, b);
     if (plan) sendOut(s, b, plan);
   }
@@ -843,7 +854,7 @@ function counterAttack(s: State, b: Battle) {
     if (s.nodes[c.node] !== "freed") continue;
     const plan = landingPlan(s, b, c.node);
     if (!plan) continue;
-    const q = addSquad(b, 1, COUNTER.kinds[s.strength], plan.from, plan.to, "attack");
+    const q = addSquad(b, 1, [...COUNTER.kinds[s.strength], ...Array<EnemyKind>(momentum(s)).fill("grunt")], plan.from, plan.to, "attack");
     q.via = plan.via;
     q.counter = true;
     const boat = plan.from === SHORE;

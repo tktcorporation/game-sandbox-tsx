@@ -212,21 +212,19 @@ core as the enemy's is, stands no garrison of the enemy's, counts as neither sid
 strength, and the night never comes at it (nor counts it among a node's foes). After each settled raid the browser posts the island's summary (`meta/summary.ts`, as the anonymous player of `meta/identity.ts`) to `/api/island` (`src/ringfall/net.ts`, never under a browser driver), which `worker/api.ts` writes to D1 (`migrations/`; with no `DB` binding it answers 202 `no-database`, and a refused write 503 `db-error`; play is unchanged either way); `npx tsx scripts/ringfall-server.ts` checks the API on Node's SQLite. Each island also has a Durable Object (`IslandDO`, `worker/island-do.ts`, deployed as its own Worker `ringfall-islands` from `islands/wrangler.jsonc` and bound to the game's Worker by script name once connected, docs/ringfall/multiplayer.md; by the island's public code of `meta/island-code.ts`, which the server draws when a player claims an island with `POST /api/islands`) under `/api/islands/:code`, which takes the owner's report, other players' expeditions and reckons them with `sim/reckon.ts` while the owner is away; its rules are the pure `worker/island.ts` (the nodes from `meta/island-table.ts`, checked against `map.ts`), and `npx tsx scripts/ringfall-expeditions.ts` checks them. The camp's factory panel has an expeditions section (`view/expeditions.ts`, the requests in the browser-only `island-net.ts`, the pure rules in `meta/expeditions.ts`, checked by `npx tsx scripts/ringfall-expeditions-ui.ts`): the island's code, the expeditions out (`Profile.expeditions`, v27), and sending one to a node of another island by its code; with no island server it shows one line and nothing else changes. After each settled raid the browser claims the island if it has no code, reports, and takes the server's other-player holds and log (`Profile.logSeq`, news on the map table) into the profile; each expedition out keeps one squad fewer out in the raid's battle (`BattleStart.away`), and each node held away pays `FRONT.income` at the settle. `meta/island.ts` holds the pure rules: `advanceDay()` (called by `settle()`)
 makes the player's each node whose core the raid captured, however the raid ended, or with a
 battle takes every node as the battle ended (`RaidDay.battle`), then the night's attacks
-(`nightRaids()`, `NIGHT` in `config.ts`: nodes next to the enemy's ground fall by chance, less when
-guarded and with the factory's level, a hash of the raid's seed, the day and the node), switches
-the player's depots on, and pays `FRONT.income` a node (`frontIncome()`). A node is lost only to the
+(`nightTargets()`, `nightRaids()`, `NIGHT` in `config.ts`: as a day starts the enemy marks one or two of the player's nodes next to its ground, a hash of the raid's seed, the day and the node, which the camp's maps and the raid's show as a crescent (`tonight()`, `Battle.targets`); only a marked node can fall, by chance, less when guarded and with the factory's level, and never one the player fortified in the raid by holding its core for `FORTIFY.time` seconds, `fortifiable()`, `State.fortify`, `Battle.fortified`), switches
+the player's depots on, and pays `FRONT.income` a node (`frontIncome()`). Each node a raid takes by its core after the first raises its momentum (`MOMENTUM`, `momentum()` in `front.ts`): the factory's squads come sooner, the reinforcements' and raiders' clocks are cut as the node is taken, its counter-attack gains a grunt, and a raid that gets off alive is paid `Settlement.spoils`. A node is lost only to the
 enemy's squads in a battle or to the night; nothing goes thin and nothing lapses. The titan's pad is never the player's. A
 raid reads the standings through `newRun(seed, kit, region, { island })` (`State.hold`):
 `garrison()` in `sim/island.ts` stands every squad of a held POI and none of a freed one, which
 starts cleared, its vault open without the key (`canOpen()` in `world.ts`) and its depot on. With
 no `island` every POI is held, which the sim gate plays.
 The enemy's strength (`STRENGTH` in `config.ts`, `State.strength`, `strengthLevel()`) follows the
-share of the nodes the enemy holds (`STRENGTH.byShare`, `strengthFor()` in `state.ts`, `enemyNodes()` in
-`front.ts`, which counts only `held` nodes): it sets the reinforcement and raider times, the hunting parties per region, the drone
+share of the nodes the player holds (`STRENGTH.byShare`, `strengthFor()` in `state.ts`, `ownNodes()` in
+`front.ts`): the island wakes as it is taken, quiet on the first days and at its hardest once the player holds half; it sets the reinforcement and raider times, the hunting parties per region, the drone
 packs flying (`activePacks()`, from the seed), the rogue patrols (`ROGUE.patrols`), the capture's
-push (`FRONT.push`) and the battle's enemy squads (`CONQUEST.net`, whose `work` the nodes share). With every node the enemy's a
-raid plays at `STRENGTH.play` (2), whose numbers are the island's own, so the sim gate's tables
-keep the island's numbers. A node's garrison (its POI's squads, and those of them out on a beat)
+siege (`FRONT.siege.extra`) and the battle's enemy squads (`CONQUEST.net`, whose `work` the nodes share). A raid whose start names no
+island plays at `STRENGTH.play` (2): the raid the sim gate's tables are played on. A node's garrison (its POI's squads, and those of them out on a beat)
 wears plates of the node's `TIER` (`tierPlated()` in `sim/island.ts`, `PLATE.garrison`, a hash of the
 seed and the robot's id), and plain grunts and heavies elsewhere wear a tier-1 plate only at a
 raised threat (`netPlated()`).
@@ -234,7 +232,7 @@ Mod parts (`MODS` in `config.ts`, `sim/mods.ts`) are the raid's own build: three
 (`Player.mods`), lost when the raid ends, each setting one number the sim already reads
 (`modScale()`). Bins hold kinds the profile knows (`State.known`, `Profile.known`), robots any;
 which bin or robot holds one is a hash of the seed and the bin or robot (`binMod()`, `robotMod()`),
-never `rand(s)`, and the bot passes `Input.leaveMods`, so the gate's raids play as without them. A
+never `rand(s)`, and the bot passes `Input.leaveMods`, so the gate's raids play as without them. A core the player takes lays out `MOD.core` parts round it (`coreReward()`, `Loot.choice`): the use key takes one and the rest go, and walking over them puts none on. Three kinds pay for a kill from behind or unseen, or one made sliding or in the air (`killMods()`, `Player.haste`). A
 raid got off alive may analyse one worn part on its results (`analyse()` in `profile.ts`). The
 強度 (`THREAT`, `Profile.threat`, `newRun(..., { threat })`) belongs to the contract taken: it is
 chosen on that contract's card on the board, taking another contract starts it at 0, and a raid
@@ -248,7 +246,7 @@ outposts are places to loot with an enemy guard, no nodes, and the rogues hold n
 `sim/front.ts` holds the rules. A node next to the player's ground (the camp and the player's
 nodes) is on the front; only its core, a pillar near its middle (or out in the open where `coreFrom` in `POI_DEFS` looks for it: the assembly building's, on its apron), can be captured (`FRONT` in
 `config.ts`): the use key starts it, the meter fills while the player holds the core's ground with
-no robot on it, the garrison comes and squads push in from the neighbouring nodes. A node taken is
+no robot on it, the garrison comes, and the enemy answers in waves by the node's tier, each announced by a beam `FRONT.siege.warn` seconds before its squad steps out (`siegeWaves()`, `State.capture.coming`). A node taken is
 the player's at once (no robot enters `FRONT.zone`) and stays so overnight; clearing a POI of its
 robots does not take it. The bot captures the front's cores in its region whose garrison's plates
 its best gun pierces, `Skill.capture` a raid (`Skill.battle` in a battle), and then leaves; it takes on
@@ -623,7 +621,7 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   gear up to `shop` (`shopRarity()`, which `wares()` sells; common with no node), a start from its
   depot (`depart`), the factory's extra squads (`squad`, `factoryMax()`), the reinforcements'
   landing on the compass (`scout`, the HUD's red chevron), no boats on the north shore (`shore`,
-  `CONQUEST.net.shore`). The world map draws each node's plate as a shield and what it opens as
+  `CONQUEST.net.shore`), one more heal issued (`heal`, `issuedHeals()`), the leap's charge at the start (`ult`), a known mod part worn at the start (`mod`), more turrets (`turret`), and the night's targets falling half as often (`watch`, `NIGHT.watch`); every node opens something. The world map draws each node's plate as a shield and what it opens as
   small marks beside it (`drawShield()`, `drawUnlocks()` in `view/map.ts`); the trader's shelf
   shows the rarities lit by the nodes held.
 - `ally.ts` is the teammate: it walks the player's footsteps (`State.trail`), shoots only engaged

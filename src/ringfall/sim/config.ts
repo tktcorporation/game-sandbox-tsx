@@ -412,15 +412,18 @@ export const HOME = { away: 10 };
  * the player holds) can be taken, by its core (`core`): a pillar `height` metres tall near the
  * node's middle. The use key starts the capture; the meter fills over `capture` seconds while
  * the player stands within `radius` of the core (and within `rise` of its foot's height) with no
- * robot within the same radius. The node's garrison makes for the core, and `push` squads come
- * from each neighbouring node the enemy holds (at most `pushMax`), beamed in a walk of
- * `pushDist` from the core on the side of their node, `pushAt` seconds after the start and again
- * every `pushEvery` seconds while the capture lasts and the player stays near (at most
- * `pushWaves` times); each of these is by the enemy's strength (`STRENGTH`). Once taken, what is
- * left of the garrison walks off for `retreat` seconds and is gone, and no robot comes within
- * `zone` metres of the core again in the raid. Each node the player holds pays `income` credits
- * a day at the settle.
+ * robot within the same radius. The node's garrison makes for the core, and the enemy answers in
+ * waves (`siege`). Once taken, what is left of the garrison walks off for `retreat` seconds and is
+ * gone, and no robot comes within `zone` metres of the core again in the raid. Each node the
+ * player holds pays `income` credits a day at the settle.
  */
+/** One wave of a siege (`FRONT.siege`): the share of the meter that calls it, its squad, and whether it wears the node's plate. */
+export interface SiegeWave {
+  at: number;
+  kinds: EnemyKind[];
+  guard?: true;
+}
+
 export const FRONT = {
   capture: 45,
   radius: 12,
@@ -430,15 +433,30 @@ export const FRONT = {
   half: 0.45,
   zone: 30,
   retreat: 8,
-  /** The waves of the push, by the enemy's strength: the members of each squad. */
-  push: [["grunt"], ["grunt"], ["grunt", "drone"]] as EnemyKind[][],
-  /** Neighbouring nodes that send a squad, at most, by the enemy's strength. */
-  pushMax: [1, 1, 1],
-  /** Waves of the push at most, per capture, by the enemy's strength. */
-  pushWaves: [1, 1, 1],
-  pushAt: 6,
-  pushEvery: 30,
-  pushDist: [70, 130] as const,
+  /**
+   * The siege: the capture is the raid's hardest fight, and every wave of it is announced. A
+   * node's waves are its tier's (`waves[tier]`); wave `k` is called once the meter has filled
+   * `at` of the way and the wave before it has come down, while the player is within `near`
+   * metres of the core. A beam then stands for `warn` seconds where the squad will step out, a
+   * walk of `dist` metres from the core on the side of a neighbouring node the enemy holds (the
+   * waves take those neighbours in turn; a node with none left draws no waves). The first wave
+   * gains `extra` by the enemy's strength. A wave marked `guard` wears the node's tier of plate.
+   * A capture that fills before a wave comes down calls it off.
+   */
+  siege: {
+    warn: 8,
+    near: 60,
+    dist: [50, 90] as const,
+    /** Seconds before another try when no ground for a beam turned up. */
+    retry: 5,
+    extra: [[], [], ["drone"]] as EnemyKind[][],
+    waves: [
+      [{ at: 0, kinds: ["grunt"] }],
+      [{ at: 0, kinds: ["grunt"] }, { at: 0.45, kinds: ["grunt", "grunt"] }],
+      [{ at: 0, kinds: ["grunt"] }, { at: 0.3, kinds: ["grunt", "charger"] }, { at: 0.6, kinds: ["heavy", "grunt"], guard: true }],
+      [{ at: 0, kinds: ["grunt", "drone"] }, { at: 0.3, kinds: ["grunt", "grunt", "charger"] }, { at: 0.6, kinds: ["heavy", "heavy", "grunt"], guard: true }],
+    ] as SiegeWave[][],
+  },
   income: 250,
 };
 
@@ -521,20 +539,43 @@ export const COUNTER = {
 };
 
 /**
- * The night between two days (meta/island.ts `nightRaids()`): the enemy attacks the player's nodes
- * next to its own ground (a node of its, the pad or the north shore). Each such node falls with the
- * chance `chance[n - 1]` for `n` such neighbours (2 or more as 2), times `spread` plus the share of
- * the island's nodes the player holds (the further the player has spread, the harder the rest of
- * the front is hit), times `guarded` when the player's squads stood at it as the battle ended,
- * times the factory's level's `night` (`FACTORY.levels`). At most `max` fall in a night. The
- * draw is a hash of the raid's seed, the day and the node, never the raid's random numbers.
+ * The night between two days (meta/island.ts): the enemy's move is announced, as its shots are.
+ * As a day starts, the enemy picks its targets for the coming night among the player's nodes next
+ * to its own ground (a node of its, the pad or the north shore): `few` of them, `many` once the
+ * player holds `spread` nodes or more (`nightTargets()`), drawn from the raid's seed and the day,
+ * never the raid's random numbers. The camp's maps and the raid's show them all day. Only a
+ * target can fall overnight, and only one the player still holds as the battle ends: with the
+ * chance `fall`, times `guarded` when the player's squads stood at it then, times the factory's
+ * level's `night` (`FACTORY.levels`). A target the player fortified in the raid (`FORTIFY`)
+ * never falls.
  */
 export const NIGHT = {
-  chance: [0.3, 0.5],
-  spread: 0.5,
+  few: 1,
+  many: 2,
+  spread: 6,
+  fall: 0.4,
   guarded: 0.5,
-  max: 2,
+  /** What the chance is multiplied by while the player holds a node that watches the night (`UNLOCKS[].watch`). */
+  watch: 0.5,
 };
+
+/**
+ * Momentum (勢い): each node the player takes by its core in one raid after the first raises it by
+ * one, to `max`. A raid that keeps pushing is paid for it and answered for it. For each level:
+ * the factory's squads come `factory` times as far apart, the reinforcements' and the raiders'
+ * clocks are cut to `clock` of what is left as the node is taken, and the counter-attack on the
+ * node gains a grunt. A raid that gets off alive is paid `spoils[k]` credits for its `k`-th such
+ * node (戦果); a raid wiped out is paid none. The first node of a raid is level 0: as without it.
+ */
+export const MOMENTUM = { max: 3, factory: 0.8, clock: 0.85, spoils: [600, 1200, 2000] };
+
+/**
+ * Fortifying (固める): the use key at the core of a node of the player's that the enemy has marked
+ * for the night (`NIGHT`) starts a meter that fills over `time` seconds while the player stands
+ * on the core's ground (`FRONT.radius`) with no robot on it. Full, the node is safe from the
+ * night, whatever the battle does after.
+ */
+export const FORTIFY = { time: 20 };
 
 /** What building a level of the factory takes from the stash, as a hideout module's level does (`ModuleLevel`). */
 export interface FactoryCost {
@@ -590,18 +631,18 @@ export interface StrengthLevel {
 }
 
 /**
- * The enemy's strength in a raid (docs/ringfall/island-v2.md): the more of the nodes the
- * enemy holds, the sooner and the more its reinforcements, raiders and hunters come.
- * `byShare` gives a level for each share of the nodes the enemy holds, the first whose share it
- * reaches (0 under all of them), so the island before the first capture plays at the top level
- * and nodes taken ease it.
+ * The enemy's strength in a raid: the more of the nodes the player holds, the sooner and the
+ * more its reinforcements, raiders and hunters come. The island wakes as it is taken: the first
+ * days are the quiet ones to learn on, a player who holds most of it meets the enemy at its
+ * hardest, and one pushed back gets room to recover. `byShare` gives a level for each share of
+ * the nodes the player holds, the first whose share it reaches (0 under all of them).
  *
- * `levels[play]` is the island the bots' balance tables are played on, with every node the
- * enemy's: its numbers are the reinforcement times, raider time, parties and packs of
+ * `levels[play]` is the island the bots' balance tables are played on (a raid whose start names
+ * no island): its numbers are the reinforcement times, raider time, parties and packs of
  * `REINFORCE`, `RAIDERS`, `PARTY` and `PACKS`. Lower levels give more time and fewer hunters.
  */
 export const STRENGTH = {
-  byShare: [[0.8, 2], [0.45, 1]] as [number, number][],
+  byShare: [[0.5, 2], [0.2, 1]] as [number, number][],
   levels: [
     { reinforce: { first: 480, every: 360 }, raiders: 1020, parties: { reservoir: 1, harbor: 1, city: 1, launch: 1 }, packs: { reservoir: 1, harbor: 1, city: 1, launch: 1 } },
     { reinforce: { first: 435, every: 300 }, raiders: 900, parties: { reservoir: 1, harbor: 1, city: 1, launch: 1 }, packs: { reservoir: 2, harbor: 1, city: 1, launch: 1 } },
@@ -874,7 +915,10 @@ export type ModKind =
   | "sponge"
   | "mender"
   | "stride"
-  | "stock";
+  | "stock"
+  | "slipstream"
+  | "recharge"
+  | "reloader";
 
 /**
  * Mod parts (改造パーツ): the raid's own build. Each one sets a single number of a system the
@@ -882,6 +926,9 @@ export type ModKind =
  * player meet the same rules. `value` is that number: a factor on what the system does (or,
  * for `leech`, the shield it gives back). `start` marks the kinds a new profile knows; the others
  * are learned by analysing one the player brought out alive (`analyse()` in meta/profile.ts).
+ * The last three change how a fight is played instead of scaling a number: each pays for a kill
+ * made the way the game asks for (from behind or unseen, or on the move), read where the kill
+ * lands (`killMods()` in sim/mods.ts).
  */
 export const MODS: Record<ModKind, { name: string; short: string; note: string; value: number; start?: true }> = {
   leech: { name: "吸電コイル", short: "コイル", note: "弱点に当てるとシールドが 4 戻る", value: 4, start: true },
@@ -904,6 +951,9 @@ export const MODS: Record<ModKind, { name: string; short: string; note: string; 
   mender: { name: "自己修復材", short: "修復材", note: "体力の自然回復が 2 倍速い", value: 2 },
   stride: { name: "軽量フレーム", short: "フレーム", note: "動きが 8% 速い", value: 1.08 },
   stock: { name: "安定ストック", short: "ストック", note: "反動が 3 割小さい", value: 0.7 },
+  slipstream: { name: "追い風", short: "追い風", note: "背後か奇襲で倒すと、4 秒のあいだ 25% 速く動く", value: 1.25 },
+  recharge: { name: "滑撃回路", short: "滑撃", note: "滑りながらか空中で倒すと、アークがすぐ使える", value: 0 },
+  reloader: { name: "奇襲装填", short: "装填", note: "背後か奇襲で倒すと、弾倉が満ちる", value: 0 },
 };
 export const MOD_KINDS = Object.keys(MODS) as ModKind[];
 /** The kinds a new profile knows. */
@@ -916,9 +966,21 @@ export const MOD_START = MOD_KINDS.filter((k) => MODS[k].start);
  * titan always, of any kind, so new kinds are found on robots. Each chance is multiplied by the
  * raid's threat (`THREAT.levels[].mods`). Which bin or robot holds one, and of which kind, is
  * decided from the raid's seed and the bin or robot, never from the raid's random numbers, so a
- * raid in which nothing is picked up plays out as one without mods.
+ * raid in which nothing is picked up plays out as one without mods. A core the player takes lays
+ * out `core` parts of any kind not worn, of which the use key takes one and the rest are gone:
+ * the one sure source, so a raid that takes a node builds something.
  */
-export const MOD = { slots: 3, bin: 0.08, robot: 0.03, elite: 0.3 };
+export const MOD = {
+  slots: 3,
+  bin: 0.08,
+  robot: 0.03,
+  elite: 0.3,
+  /** A core taken lays out this many parts round it, of which one is taken (`coreReward()`): a walk of `ring` metres out. */
+  core: 3,
+  ring: 2.6,
+  /** Seconds the slipstream part's speed lasts after a kill from behind or unseen. */
+  haste: 4,
+};
 
 /**
  * The threat (脅威度) the player chooses for a raid at the map table, 0 to `max`: on top of the

@@ -238,6 +238,8 @@ export class World {
   private careBeam: THREE.Mesh;
   /** The ground a capture is held from (`FRONT.radius` round the core): blue while it counts, orange while it stands still. */
   private captureRing: THREE.Mesh;
+  /** Where the announced wave of a siege will step out (`State.capture.coming`): a red beam, brighter as the time nears. */
+  private siegeBeam: THREE.Mesh;
   /** The cores of the front's nodes (`NODES`), built once, lit as who holds each; and the colour each was last lit in. */
   private cores: (ReturnType<typeof buildCore> & { key: string })[] = [];
   /** The ziplines' cables, `ZIPS` order: shown while up. */
@@ -409,6 +411,12 @@ export class World {
     this.captureRing.rotation.x = -Math.PI / 2;
     this.captureRing.visible = false;
     this.scene.add(this.captureRing);
+    this.siegeBeam = new THREE.Mesh(
+      new THREE.CylinderGeometry(1.2, 3.6, 120, 12, 1, true),
+      new THREE.MeshBasicMaterial({ toneMapped: false, color: PAL.eye, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }),
+    );
+    this.siegeBeam.visible = false;
+    this.scene.add(this.siegeBeam);
     this.beacon = buildBeacon();
     this.beacon.visible = false;
     this.scene.add(this.beacon);
@@ -1626,13 +1634,24 @@ export class World {
     });
     // --- the ring a capture is held inside
     const cap = s.phase === "play" ? s.capture : null;
-    this.captureRing.visible = !!cap;
-    if (cap) {
+    // The same ring for fortifying a node of the player's.
+    const ringed = cap ?? (s.phase === "play" ? s.fortify : null);
+    this.captureRing.visible = !!ringed;
+    if (ringed) {
+      const cap = ringed;
       const core = NODES[cap.node].core;
       this.captureRing.position.set(core.x, core.y + 0.3, core.z);
       const m = this.captureRing.material as THREE.MeshBasicMaterial;
       m.color.setHex(cap.held ? 0x3f86c8 : 0xff8a3c);
       m.opacity = 0.55 + 0.25 * Math.sin(this.time * (cap.held ? 3 : 9));
+    }
+    // --- the beam of a siege's announced wave
+    const wave = cap?.coming;
+    this.siegeBeam.visible = !!wave;
+    if (wave) {
+      this.siegeBeam.position.set(wave.x, terrainHeight(wave.x, wave.z) + 60, wave.z);
+      const near = 1 - Math.max(0, Math.min(1, (wave.at - s.time) / FRONT.siege.warn));
+      (this.siegeBeam.material as THREE.MeshBasicMaterial).opacity = (0.34 + 0.3 * near) * (0.75 + 0.25 * Math.sin(this.time * (5 + 9 * near)));
     }
     // --- the objective's beacon
     this.beacon.visible = !!this.beaconAt && s.phase === "play";

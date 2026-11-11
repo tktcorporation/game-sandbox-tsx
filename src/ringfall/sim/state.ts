@@ -1,5 +1,5 @@
 import { ALLY, BOOST, CREW, DEPOT, STORM, SWEEP, DUCK, ELITE, ENEMIES, META, MOD_START, STRENGTH, THREAT, VALUABLES, WORLD, type ModKind, type ValuableKind, PLAYER, ULT, type EnemyKind, type Flank, type HealKind, type Rarity, type ToolKind, type WeaponKind } from "./config";
-import { DEPOTS, depotIndex, entryOf, EXTRA_BINS, HOME_REGION, NODES, POIS, poiIndex, poiRegion, recordSpot, regionOf, type EntryId, type ExtractId, type PoiId, type RecordId, type RegionId, type RouteId, DEBRIS_SPOTS, debrisIndex, type NodeId } from "./map";
+import { DEPOTS, depotIndex, entryOf, EXTRA_BINS, HOME_REGION, NODES, POIS, poiIndex, poiRegion, recordSpot, regionOf, UNLOCKS, type EntryId, type ExtractId, type PoiId, type RecordId, type RegionId, type RouteId, DEBRIS_SPOTS, debrisIndex, type NodeId } from "./map";
 import { openRoutes, useRoutes } from "./routes";
 import { populate, spawnEnemy } from "./enemies";
 import { placeParties } from "./world";
@@ -7,7 +7,7 @@ import { placeAlly } from "./ally";
 import { groundAt } from "./geom";
 import { forgetFields } from "./hunt";
 import { crewsFor, type IslandEvent, type PoiHold } from "./island";
-import { enemyNodes, nodeHolds, useZones, type NodeHold } from "./front";
+import { enemyNodes, nodeHolds, ownNodes, useZones, type NodeHold } from "./front";
 import { initBattle, type Battle, type BattleStart, type Side } from "./battle";
 
 export interface Vec3 {
@@ -84,6 +84,8 @@ export interface Player {
   /** `State.time` of the last shot, to tell when a spray ends. */
   lastShot: number;
   tactical: number; // cooldown left
+  /** Seconds left of the slipstream part's speed (`MOD.haste`). */
+  haste: number;
   ult: number; // charge 0..1
   /** In the air on the ult's leap, going up and then gliding down; `carry` takes the teammate along. */
   leap: { carry: boolean } | null;
@@ -268,6 +270,8 @@ export const weakY = (e: Enemy) => ENEMIES[e.kind].weakY - e.duck * DUCK.head;
 
 export interface SquadState {
   name: string;
+  /** A wave of the siege of this node (a place in `NODES`): it leaves with the garrison once the node is taken. */
+  siege?: number;
   poi: number; // -1 for optional squads between POIs
   patrol: Point[];
   leg: number; // next patrol waypoint
@@ -388,6 +392,8 @@ export interface Loot {
   tool?: ToolKind;
   record?: RecordId;
   mod?: ModKind;
+  /** For a part a taken core laid out (`coreReward()`): the node, as a place in `NODES`. One of a node's is taken, by the use key; the rest go with it. */
+  choice?: number;
   /** For a valuable: the POI (index) whose bin it came out of, kept through the bag (`Player.haulAt`). */
   from?: number;
   /** Armour the player took off: it can be put back on with the use key, and its shield is not refilled. */
@@ -518,6 +524,14 @@ export type GameEvent =
   | { t: "crewOut"; x: number; z: number; n: number }
   /** A core's capture started (the alarm), was refused off the front, and the node was taken (places in `NODES`). */
   | { t: "coreStart"; node: number }
+  /** The player starts fortifying a node of theirs marked for the night, and has fortified it (`FORTIFY`). */
+  /** The raid's momentum rose to `level` (`MOMENTUM`). */
+  | { t: "momentum"; level: number }
+  | { t: "fortifyStart"; node: number }
+  | { t: "fortified"; node: number }
+  /** A wave of a core's siege is announced (its beam stands at x, z; wave `wave` of `of`), and its squad steps out. */
+  | { t: "siegeWarn"; node: number; x: number; z: number; wave: number; of: number }
+  | { t: "siegeLand"; x: number; z: number }
   | { t: "coreShielded"; node: number }
   | { t: "coreTaken"; node: number }
   /**
@@ -729,13 +743,25 @@ export interface State {
   away: number;
   /** The raid ended by walking back into the camp. */
   home: boolean;
+  /** The fortifying under way (`FORTIFY`): the node, the seconds of its meter filled, and whether it filled this tick; null for none. */
+  fortify: { node: number; t: number; held: boolean } | null;
   /** Who holds each node of the front (`NODES` order) this raid: as the island stood at the start, then as it changes hands. */
   nodes: NodeHold[];
   /**
    * The core capture under way (`FRONT`): its node, the seconds of the meter filled, whether it
-   * filled this tick, the seconds to the push's next wave, and the waves sent; null for none.
+   * filled this tick, the waves of its siege called so far (`FRONT.siege`), the seconds before
+   * the next may be tried, and the wave announced and on its way (`coming`: where its beam stands,
+   * the raid's time it steps out at, where each member will stand, which wave of how many, and
+   * whether it wears the node's plate); null for none.
    */
-  capture: { node: number; t: number; held: boolean; pushT: number; waves: number } | null;
+  capture: {
+    node: number;
+    t: number;
+    held: boolean;
+    waves: number;
+    wait: number;
+    coming: { x: number; z: number; at: number; kinds: EnemyKind[]; spots: { mx: number; mz: number }[]; from: string; wave: number; of: number; guard: boolean } | null;
+  } | null;
   /**
    * What the player has seen or heard of the robots out between the POIs, for the map: each squad
    * (by index) where it was last seen or heard, when, whether it is the rogues', and whether that
@@ -905,11 +931,11 @@ export interface Start {
 export const strengthLevel = (s: Pick<State, "strength">) => STRENGTH.levels[s.strength];
 
 /**
- * The enemy's strength with `enemyHeld` of the nodes its own (`STRENGTH.byShare`). A share is
- * reached when `enemyHeld` is at least the share of the node count rounded up; the small allowance
+ * The enemy's strength with `held` of the nodes the player's (`STRENGTH.byShare`). A share is
+ * reached when `held` is at least the share of the node count rounded up; the small allowance
  * keeps a share that lands on a whole count (0.5 of 10 nodes) from rounding up past it in floating point.
  */
-export const strengthFor = (enemyHeld: number) => STRENGTH.byShare.find(([share]) => enemyHeld >= Math.ceil(share * NODES.length - 1e-9))?.[1] ?? 0;
+export const strengthFor = (held: number) => STRENGTH.byShare.find(([share]) => held >= Math.ceil(share * NODES.length - 1e-9))?.[1] ?? 0;
 
 /**
  * The reinforcements' first time and interval and the raiders' time of a raid at the enemy's
@@ -935,7 +961,8 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
   forgetFields();
   const hold = POIS.map((p): PoiHold => (p.boss ? "held" : (start.island?.[p.id] ?? "held")));
   const nodes = nodeHolds((id) => hold[poiIndex(id)]);
-  const strength = strengthFor(enemyNodes(nodes));
+  // A raid whose start names no island is the one the balance tables are played on.
+  const strength = start.island ? strengthFor(ownNodes(nodes)) : STRENGTH.play;
   const threat = Math.max(0, Math.min(THREAT.max, Math.round(start.threat ?? 0)));
   const clock = raidClock(strength, threat);
   const freed = (poi: PoiId) => hold[poiIndex(poi)] === "freed";
@@ -999,6 +1026,7 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
       spray: 0,
       lastShot: -99,
       tactical: 0,
+      haste: 0,
       ult: ULT.startCharge,
       leap: null,
       reveal: 0,
@@ -1064,6 +1092,7 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
     found: from ? [] : [entry.id],
     nodes,
     capture: null,
+    fortify: null,
     contacts: [],
     factionT: 0,
     contactT: 0,
@@ -1085,6 +1114,13 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
     p.yaw = from.yaw;
   }
   useZones(s);
+  // What the nodes held give a raid at its start (`UNLOCKS`): the leap's charge, and one mod part the profile knows, picked from the seed.
+  NODES.forEach((n, i) => {
+    if (s.nodes[i] !== "freed") return;
+    const u = UNLOCKS[n.id];
+    if (u.ult) s.player.ult = Math.min(1, s.player.ult + u.ult);
+    if (u.mod && s.modOdds > 0 && s.known.length && !s.player.mods.length) s.player.mods.push(s.known[(mix(Math.imul(seed + 7, 0x9e3779b1)) >>> 0) % s.known.length]);
+  });
   placeAlly(s);
   populate(s);
   // The battle's walks are traced now, and the fields that traced them forgotten, before anything else builds one.

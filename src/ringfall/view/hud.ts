@@ -25,11 +25,12 @@ import { storyOf } from "../meta/story";
 import { recordSpot, type RecordId } from "../sim/map";
 import type { World } from "./world";
 import { eventRow, raidEventLine } from "./events";
-import { CREW, FRONT, MOD, MODS } from "../sim/config";
+import { CREW, FORTIFY, FRONT, MOD, MODS, MOMENTUM } from "../sim/config";
 import { binPicture, modIcon, pouchIcon, routeIcon, zipIcon } from "./icons";
 import { zipPoint } from "../sim/zips";
 import { bagIcon, callIcon, checkIcon, clockIcon, coreIcon, crossIcon, depotIcon, entryIcon, exitIcon, eyeIcon, fightIcon, flareIcon, keyIcon, lockIcon, noiseIcon, reinforceIcon, reviveIcon, SIDE, upIcon, nightIcon } from "./icons";
-import { capturable } from "../sim/front";
+import { capturable, momentum, siegeWaves } from "../sim/front";
+import { terrainHeight } from "../sim/terrain";
 
 /** The POI whose bins drop the key to POI `poi`'s vault (its `keyFrom`), by name. */
 const keySource = (poi: number) => POIS[poiIndex(POIS[poi].keyFrom)].name;
@@ -357,6 +358,13 @@ export class Hud {
         // A node held that watches the sky shows where they came down (`UNLOCKS.scout`).
         if (heldUnlocks(s.nodes, "scout").length) this.scout = { x: e.x, z: e.z, until: s.time + SCOUT_SHOW };
         break;
+      case "siegeWarn":
+        // A wave of the siege is announced: its mark and which wave of how many; the beam and the arrow show where.
+        this.toast(`${reinforceIcon()}<b>${e.wave}/${e.of}</b>`, 0, 3000);
+        break;
+      case "siegeLand":
+        if (heldUnlocks(s.nodes, "scout").length) this.scout = { x: e.x, z: e.z, until: s.time + SCOUT_SHOW };
+        break;
       case "raiders":
         this.banner("レイダー");
         break;
@@ -418,6 +426,13 @@ export class Hud {
       case "coreShielded":
         this.toast(`${coreIcon(foeSide(s.nodes[e.node]), true)}${NODES[e.node].name}<span class="toast-sub">先に${esc(shieldedBy(s.nodes, e.node))}を制圧</span>`, 0, 4000);
         break;
+      case "momentum":
+        // The raid's momentum rose: that many marks, and what the next node pays.
+        this.toast(`${upIcon().repeat(e.level)}<b>${MOMENTUM.spoils[Math.min(e.level, MOMENTUM.spoils.length) - 1].toLocaleString()}</b>`, 3, 4000);
+        break;
+      case "fortified":
+        this.toast(`${coreIcon(SIDE.own)}${nightIcon("#4f9bff")}${checkIcon()}${NODES[e.node].name}`, 1, 4000);
+        break;
       case "coreTaken":
         this.toast(`${coreIcon(SIDE.own)}${NODES[e.node].name}`, 1, 5000);
         break;
@@ -462,7 +477,8 @@ export class Hud {
       this.rowAt = s.time;
     }
     const from = s.time - this.rowAt < 2 && s.time >= this.rowAt ? this.rowFrom : own;
-    const row = nodeRow(s.nodes, undefined, { from, risk, contested });
+    // The raid's momentum beside the bar: a mark for each node taken after the first.
+    const row = nodeRow(s.nodes, undefined, { from, risk, contested }) + (momentum(s) ? `<span class="momentum">${upIcon().repeat(momentum(s))}</span>` : "");
     const el = $("island-row");
     if (el.dataset.html !== row) {
       el.dataset.html = row;
@@ -762,12 +778,8 @@ export class Hud {
     const M = 46;
     const TOP = 110;
     const BOTTOM = 140;
-    // A counter-attack's squad ashore and walking to a node of the player's: the arrow, fainter, before it gets there.
-    const coming = countered(s);
-    NODES.forEach((n, i) => {
-      const at = !!b && b.threat[i];
-      const on = (at || coming[i]) && s.phase === "play";
-      let el = this.threatEls.get(i);
+    const mark = (key: number, on: boolean, strong: boolean, at: { x: number; y: number; z: number }) => {
+      let el = this.threatEls.get(key);
       if (!on) {
         if (el) el.style.display = "none";
         return;
@@ -775,16 +787,16 @@ export class Hud {
       if (!el) {
         el = document.createElement("div");
         this.awareLayer.appendChild(el);
-        this.threatEls.set(i, el);
+        this.threatEls.set(key, el);
       }
-      el.className = at ? "threat-mark" : "threat-mark coming";
-      const sp = view.project({ x: n.core.x, y: n.core.y + FRONT.height + 2.5, z: n.core.z }, w, h);
+      el.className = strong ? "threat-mark" : "threat-mark coming";
+      const sp = view.project(at, w, h);
       let x = sp.x;
       let y = sp.y;
       let angle = 180;
       const cy = (TOP + h - BOTTOM) / 2;
       if (sp.behind || x < M || x > w - M || y < TOP || y > h - BOTTOM) {
-        // Off screen: on the edge, the way to the core from the middle of the screen.
+        // Off screen: on the edge, the way to it from the middle of the screen.
         let dx = x - w / 2;
         let dy = y - cy;
         if (sp.behind) {
@@ -800,7 +812,16 @@ export class Hud {
       el.style.left = `${x}px`;
       el.style.top = `${y}px`;
       el.style.setProperty("--a", `${angle.toFixed(0)}deg`);
+    };
+    // A counter-attack's squad ashore and walking to a node of the player's: the arrow, fainter, before it gets there.
+    const coming = countered(s);
+    NODES.forEach((n, i) => {
+      const at = !!b && b.threat[i];
+      mark(i, (at || coming[i]) && s.phase === "play", at, { x: n.core.x, y: n.core.y + FRONT.height + 2.5, z: n.core.z });
     });
+    // A wave of the siege announced: the same arrow, fainter, over the beam its squad will step out of.
+    const wave = s.phase === "play" ? s.capture?.coming : null;
+    mark(-1, !!wave, false, wave ? { x: wave.x, y: terrainHeight(wave.x, wave.z) + 6, z: wave.z } : { x: 0, y: 0, z: 0 });
   }
 
   /**
@@ -1027,7 +1048,9 @@ export class Hud {
   private stepProgress(s: State, step: Step): string {
     if (step.kind === "hold") {
       const c = s.capture;
-      return `<b class="${c && !c.held ? "paused" : ""}">${Math.floor(c?.t ?? 0)}/${FRONT.capture}</b>`;
+      // The meter, and the waves of the siege called so far of the node's.
+      const waves = c ? `${reinforceIcon()}${c.waves}/${siegeWaves(s, c.node).length}` : "";
+      return `<b class="${c && !c.held ? "paused" : ""}">${Math.floor(c?.t ?? 0)}/${FRONT.capture}</b>${waves}`;
     }
     return step.progress ? `<b>${esc(step.progress)}</b>` : "";
   }
@@ -1083,7 +1106,9 @@ export class Hud {
     if (t.kind === "mod") {
       const k = t.loot.mod!;
       const off = p.mods.length >= MOD.slots ? p.mods[0] : null;
-      return `${key("E")}<span class="r" style="color:${RARITY_CSS[2]}">${MODS[k].name}</span>${off ? struck([MODS[off].name]) : ""}`;
+      // One of a core's parts: what it does is on the prompt, since taking it gives up the others.
+      const note = t.loot.choice !== undefined ? ` <small>${esc(MODS[k].note)}</small>` : "";
+      return `${key("E")}<span class="r" style="color:${RARITY_CSS[2]}">${MODS[k].name}</span>${note}${off ? struck([MODS[off].name]) : ""}`;
     }
     if (t.kind === "ally") return s.ally.helped > 0 ? `${reviveIcon()}${ALLY.name} <b>${Math.floor((s.ally.helped / helpTime(p)) * 100)}%</b>` : `${key("E")}${reviveIcon()}${ALLY.name}`;
     if (t.kind === "bin") {
@@ -1109,6 +1134,11 @@ export class Hud {
     if (t.kind === "armor") return `${key("E")}<span class="r" style="color:${RARITY_CSS[t.loot.rarity]}">アーマー Lv${t.loot.rarity}</span>${struck([`Lv${p.armor}`])}`;
     if (t.kind === "core") {
       const n = NODES[t.node];
+      // A node of the player's marked for the night: the use key fortifies it (the moon turns from red to blue).
+      if (s.nodes[t.node] === "freed") {
+        if (s.fortify?.node === t.node) return `${coreIcon(SIDE.own)}${nightIcon("#4f9bff")}${esc(n.name)} <b class="${s.fortify.held ? "" : "paused"}">${Math.floor((s.fortify.t / FORTIFY.time) * 100)}%</b>`;
+        return `${key("E")}${coreIcon(SIDE.own)}${nightIcon("#ff4a3d")}${esc(n.name)}`;
+      }
       const c = foeSide(s.nodes[t.node]);
       if (!capturable(s, t.node)) return `${coreIcon(c, true)}${esc(n.name)} <small>▸ 先に${esc(shieldedBy(s.nodes, t.node))}</small>`;
       if (s.capture?.node === t.node) return `${coreIcon(c)}${esc(n.name)} <b>${Math.floor((s.capture.t / FRONT.capture) * 100)}%</b>`;
@@ -1326,8 +1356,8 @@ export class Hud {
     // The day's income from the nodes the player holds.
     // With the nodes this island's expeditions hold on other islands, theirs on a line of its own.
     const island =
-      settled?.income || settled?.awayIncome
-        ? `<h3 class="day-end">${settled.day} 日目</h3><p>${settled.income ? `<span>拠点の収入<b>${settled.income.toLocaleString()} クレジット</b></span>` : ""}${settled.awayIncome ? `<span>遠征の拠点の収入<b>${settled.awayIncome.toLocaleString()} クレジット</b></span>` : ""}</p>`
+      settled?.income || settled?.awayIncome || settled?.spoils
+        ? `<h3 class="day-end">${settled.day} 日目</h3><p>${settled.income ? `<span>拠点の収入<b>${settled.income.toLocaleString()} クレジット</b></span>` : ""}${settled.spoils ? `<span>戦果<b>${settled.spoils.toLocaleString()} クレジット</b></span>` : ""}${settled.awayIncome ? `<span>遠征の拠点の収入<b>${settled.awayIncome.toLocaleString()} クレジット</b></span>` : ""}</p>`
         : "";
     // The contract taken for the raid: done and paid, or not done (it goes with the day).
     const c = settled?.contract;

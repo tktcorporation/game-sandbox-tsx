@@ -15,7 +15,7 @@ import { rivalOf } from "../sim/holds";
 import { HOLD_CSS, IslandMap, islandScene, RIVAL_CSS, TITAN_CSS } from "./map";
 import { ExpeditionPanel } from "./expeditions";
 import { logLine, type IslandLogEntry } from "../meta/expeditions";
-import { enemyNodes, frontNodes } from "../sim/front";
+import { enemyNodes, frontNodes, ownNodes } from "../sim/front";
 import { nodeRow } from "./row";
 import { sfx } from "./sfx";
 
@@ -706,7 +706,7 @@ export class Hub {
     const where = esc(POIS[b.poi].name);
     if (lv === 1) return `${where} <b style="color:${RARITY_CSS[3]}">★</b>`;
     const kind = VALUABLES[b.kind];
-    return `${where} <b style="color:${RARITY_CSS[kind.rarity]}">${esc(kind.label)}</b>　レイダー ${clockIcon()}${Math.round(raidClock(strengthFor(enemyNodes(islandHolds(this.profile))), raidThreat(this.profile)).raiders / 60)} 分`;
+    return `${where} <b style="color:${RARITY_CSS[kind.rarity]}">${esc(kind.label)}</b>　レイダー ${clockIcon()}${Math.round(raidClock(strengthFor(ownNodes(islandHolds(this.profile))), raidThreat(this.profile)).raiders / 60)} 分`;
   }
 
   /**

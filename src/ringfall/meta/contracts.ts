@@ -2,7 +2,7 @@ import { CONTRACT, CREW, FRONT, PARTY, STRENGTH, VALUABLES, type Rarity, type Va
 import { nodeIndex, PACKS, POIS, poiIndex, poiRegion, regionHere, REGIONS, regionOf, type PoiId, type RegionId } from "../sim/map";
 import { activePacks, garrison, type IslandEvent, type PoiHold } from "../sim/island";
 import { shopRarity } from "./island";
-import { enemyNodes, frontNodes, nodeHolds } from "../sim/front";
+import { enemyNodes, frontNodes, nodeHolds, ownNodes } from "../sim/front";
 import type { Task } from "../sim/objective";
 import { crewKey, mix, partyKey, squadKey, strengthFor, type State } from "../sim/state";
 import { haulOrigins } from "../sim/world";
@@ -113,7 +113,7 @@ export function makeBoard(p: BoardBasis): Board {
   const id = () => `d${p.day}-${out.length}`;
   const today = p.events?.[0] ?? null;
   const nodes = nodeHolds((id) => p.poiState[id].state);
-  const strength = strengthFor(enemyNodes(nodes));
+  const strength = strengthFor(ownNodes(nodes));
 
   // Free: a POI on the front (only those can be taken), paid by the garrison that stands there in the next raid.
   const front = frontNodes(nodes);

@@ -1,4 +1,4 @@
-import { ALLY, ASSIST, CLIMB, DEG, HEALS, type HealKind, MANTLE, NOISE, PLAYER, RARITY, REVEAL, SEMI_HOLD, TACTICAL, TICK, ULT, WEAPONS, WORLD } from "./config";
+import { ALLY, ASSIST, CLIMB, DEG, HEALS, type HealKind, MANTLE, MODS, NOISE, PLAYER, RARITY, REVEAL, SEMI_HOLD, TACTICAL, TICK, ULT, WEAPONS, WORLD } from "./config";
 import { makeNoise } from "./awareness";
 import { modScale } from "./mods";
 import { allyChest, allyUp, besidePlayer, placeAlly } from "./ally";
@@ -44,6 +44,7 @@ export function stepPlayer(s: State, input: Input, prevCrouch: boolean) {
     p.hp = Math.min(PLAYER.regenCap, p.hp + PLAYER.regenPerSec * modScale(p, "mender") * TICK);
   }
 
+  p.haste = Math.max(0, p.haste - TICK);
   move(s, input, prevCrouch);
   clocks(s);
   // In the air on the leap the hands are on the glider: no shooting, items or abilities.
@@ -243,7 +244,7 @@ function move(s: State, input: Input, prevCrouch: boolean) {
       p.crouch = input.crouch && p.onGround;
     }
   } else {
-    let top = p.downed > 0 ? 1.4 : (p.crouch ? PLAYER.crouch : p.sprinting ? PLAYER.sprint : PLAYER.walk) * modScale(p, "stride");
+    let top = p.downed > 0 ? 1.4 : (p.crouch ? PLAYER.crouch : p.sprinting ? PLAYER.sprint : PLAYER.walk) * modScale(p, "stride") * (p.haste > 0 ? MODS.slipstream.value : 1);
     if (p.ads > 0.5) top *= 0.75;
     if (p.healing) top *= 0.5;
     if (p.onGround) {
