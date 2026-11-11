@@ -1135,7 +1135,7 @@ export class IslandMap {
         // Open to the decisive battle: a gold ring, pulsing.
         g.save();
         g.lineWidth = 3 * dpr;
-        g.strokeStyle = `rgba(255,210,74,${(0.55 + 0.4 * Math.sin(performance.now() / 300)).toFixed(2)})`;
+        g.strokeStyle = `rgba(255,210,74,${(0.7 + 0.3 * Math.sin(performance.now() / 300)).toFixed(2)})`;
         g.beginPath();
         g.arc(p.x, p.y, r * 1.75, 0, Math.PI * 2);
         g.stroke();
