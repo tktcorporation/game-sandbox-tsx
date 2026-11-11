@@ -515,34 +515,37 @@ level          beginner       casual         good
 island campaign: a month on one profile per skill, the network carried (scripts/ringfall-campaign.ts)
 30 consecutive days per skill on one profile (scripts/ringfall-campaign.ts). n: nodes of the 21 the player holds at the end of the day; s: the enemy's strength the next raid plays at (0 to 2, from the nodes it holds); f: the factory's level (of 8)
 skill     day 5      day 10     day 20     day 30     alive  n(mean)  n(max)  tier 0-3: first day held days in                                 events d/s/c  crews in/out
-beginner  n4 s0 f2   n5 s1 f3   n16 s2 f5  n21 s2 f6  77%    11.8     21      1/1/9/16                 reservoir 16 harbor 2 city 2 launch 10  6/3/3         3/0
-casual    n2 s0 f2   n4 s0 f3   n14 s2 f4  n21 s2 f6  77%    10.0     21      1/3/13/19                reservoir 18 harbor 4 city 2 launch 6   6/3/3         3/0
-good      n5 s1 f1   n5 s1 f2   n21 s2 f5  n21 s2 f6  63%    12.8     21      1/1/4/14                 reservoir 15 harbor 9 city 2 launch 4   6/3/3         3/0
+beginner  n4 s0 f2   n5 s1 f3   n0 s0 f1   n11 s2 f3  80%    6.0      17      1/1/9/16                 reservoir 16 harbor 5 city 2 launch 7   6/3/3         3/1
+casual    n2 s0 f2   n4 s0 f3   n14 s2 f4  n19 s2 f5  73%    6.6      19      1/3/13/19                reservoir 13 harbor 7 city 5 launch 5   6/3/3         3/0
+good      n5 s1 f1   n5 s1 f2   n4 s0 f2   n4 s0 f2   50%    6.7      19      1/1/4/14                 reservoir 11 harbor 11 city 3 launch 5  6/3/3         3/1
 front     nodes gained / lost overnight  raid min (med)
-beginner  32 / 11                        5.4
-casual    32 / 11                        5.5
-good      32 / 11                        5.2
+beginner  44 / 14                        5.7
+casual    49 / 11                        5.9
+good      55 / 12                        9.4
 push-pull changed hands raid / after leaving / night days gained / lost  all held (longest run)
-beginner  17 / 23 / 7                                14 / 3              8
-casual    18 / 34 / 7                                15 / 2              7
-good      33 / 17 / 5                                11 / 2              12
-nodes by day (base 36: a 10, b 11...): beginner 345445545566778bdfhggkllllllll / casual 1121223334335568abcehhklllllll / good 24465545555778behjllllllllllll
-harbor nodes by day: beginner 000000000000013666666666666666 / casual 000000000000001354556666666666 / good 000212100002315556666666666666
-city nodes by day: beginner 000000000000000002444555555555 / casual 000000000000000000035555555555 / good 000000000000033555555555555555
-launch nodes by day: beginner 001111212333322222211455555555 / casual 000000000111322222211145555555 / good 000011100000000033555555555555
-deepest tier by day: beginner 111111112222222333333333333333 / casual 001111111111212222333333333333 / good 111222211112233333333333333333
-best gun carried by day (0 common to 3 legendary): beginner 012220222222220333332222222222 / casual 001111122222222233333302222222 / good 012213011222233222333333333333
-strength by day: beginner 001001101111111222222222222222 / casual 000000000000111112222222222222 / good 000111011111112222222222222222
-factory by day: beginner 111222223333344444555555666666 / casual 111122222333333344444555556666 / good 111111122222233344455556666666
-front on day 30 (beginner): -
-front on day 30 (casual): -
-front on day 30 (good): -
+beginner  25 / 32 / 7                                19 / 4              0
+casual    29 / 42 / 7                                21 / 3              0
+good      52 / 31 / 6                                20 / 4              0
+nodes by day (base 36: a 10, b 11...): beginner 345445545566778bdfh0113433469b / casual 1121223334335568abceh04579adfj / good 24465545555778beh034568abfj034
+harbor nodes by day: beginner 000000000000013666600000000035 / casual 000000000000001354556001333566 / good 000212100002315550000024556000
+city nodes by day: beginner 000000000000000002400000000000 / casual 000000000000000000035000023344 / good 000000000000033550000000045000
+launch nodes by day: beginner 001111212333322222200000000222 / casual 000000000111322222211000000004 / good 000011100000000030001111113000
+deepest tier by day: beginner 1111111122222223333-0111111122 / casual 001111111111212222333-12333333 / good 11122221111223333-111122333-11
+best gun carried by day (0 common to 3 legendary): beginner 012220222222220333333333322223 / casual 001111122222222233333333333333 / good 012213011222233222222022332201
+strength by day: beginner 001001101111111222200000000112 / casual 000000000000111112222001111222 / good 000111011111112220001111222000
+factory by day: beginner 111222223333344444511222223333 / casual 111122222333333344444333444445 / good 111111122222233342223333444222
+front on day 30 (beginner): relay wreck robotworks assembly
+front on day 30 (casual): highrise radar
+front on day 30 (good): relay lodge control fuel
+rounds: beginner fought the titan on 1 days, freed the island on day 20 (20 days) / casual fought the titan on 1 days, freed the island on day 22 (22 days) / good fought the titan on 2 days, freed the island on day 18 (18 days), on day 28 (10 days)
 events: days with a debris fall / storm / crews' visit; crews in/out: salvage crews that came and got off
 ```
 
 表の読み方：各日の欄は「n持っている拠点 s次の日の敵の強さ f工場の段」。tier 0-3 は各段の拠点を初めて持った日（- は 30 日のうちに無い）、held days in は地域ごとに遊んだ日数、events は出来事（破片の落下・嵐・回収部隊の来訪）の日数、crews in/out は来た回収部隊と引き上げた回収部隊。front の行は、30 日で日の始めと次の日の始めを比べて持ち主が自軍に変わった拠点と敵に変わった拠点の数、レイドの時間の中央値（分）。push-pull の行は、持ち主が変わった回数をレイド中・帰った後・夜に分けた数、拠点を差し引きで増やした日と減らした日の数、すべての拠点を持つ日が続いた最も長い日数。by day の行は日ごとの、持っている拠点（36 進で、a は 10、g は 16）、そのうち港湾地帯の拠点と機械都市の拠点と発射場の拠点、持っている最も奥の段（0 は補給所だけ、- は何も持たない日）、その日に持って出た最も良い銃の格（0 コモン〜3 レジェンド）、敵の強さ、工場の段。
 
-勢い、どの拠点も何かを開くこと、敵の強さが自分の拠点の数で上がることまで入れた今の 30 日（`MOMENTUM`、`UNLOCKS`、`STRENGTH.byShare`）では、どの腕前も 30 日目に 21 拠点を持つ。21 拠点に届くのは初心者 23 日目、普通 24 日目、上手い 19 日目で、その後は初心者 8 日、普通 7 日、上手い 12 日のあいだ持ち続ける。上の目標（21 拠点すべてを持つ日が続くのは長くて数日）から外れている。敵の強さは自分の拠点が 5 つで 1、11 で 2 に上がり、初心者は 16 日目、普通は 18 日目、上手いは 15 日目から強さ 2 で遊ぶが、開いたもの（砲台、工場の部隊、支給の回復）と工場の段の伸びが上回る。取り切った後の目標（`#131` の決戦と次の周）が無い間は、ここが終わりになる。段 3 を初めて持つのは初心者 16 日目、普通 19 日目、上手い 14 日目。30 日の生還は 77%・77%・63%、レイドの長さの中央値は 5.4 分・5.5 分・5.2 分。夜に取られた拠点は 7・7・5。ダム湖の地域ごとの表は、波の部隊が拠点を取った時点で引き上げる分だけ動き、生還は 60%・50%・77%（初心者と普通は目標を下回る）。港湾地帯・機械都市・発射場の表は変わらない。
+決戦と次の周を入れた今の 30 日（`FINALE`。16 拠点と発着場の隣の拠点で発着場が開き、タイタンを倒すと島が解放されて次の周が強度 +1 で始まる）では、どの腕前も島を解放する。初心者は 20 日目（20 日）、普通は 22 日目（22 日）、上手いは 18 日目（18 日）と 28 日目（2 周目を 10 日）。決戦のレイドは初心者と普通が 1 日、上手いが 2 日で、どれも最初の決戦でタイタンを倒す。21 拠点すべてを持つ日は無くなり（発着場が開いた次のレイドで周が替わる）、上の目標に入る。2 周目は倉庫と装備を持ち越すので、上手いは 1 周目の半分ほどの日数で解放する。30 日の生還は 80%・73%・50%、レイドの長さの中央値は 5.7 分・5.9 分・9.4 分。夜に取られた拠点は 7・7・6。地域ごとの表と隠れ家の進み方の表は 1 行も変わらない。
+
+その前の、勢い、どの拠点も何かを開くこと、敵の強さが自分の拠点の数で上がることまで入れた今の 30 日（`MOMENTUM`、`UNLOCKS`、`STRENGTH.byShare`）では、どの腕前も 30 日目に 21 拠点を持つ。21 拠点に届くのは初心者 23 日目、普通 24 日目、上手い 19 日目で、その後は初心者 8 日、普通 7 日、上手い 12 日のあいだ持ち続ける。上の目標（21 拠点すべてを持つ日が続くのは長くて数日）から外れている。敵の強さは自分の拠点が 5 つで 1、11 で 2 に上がり、初心者は 16 日目、普通は 18 日目、上手いは 15 日目から強さ 2 で遊ぶが、開いたもの（砲台、工場の部隊、支給の回復）と工場の段の伸びが上回る。取り切った後の目標（`#131` の決戦と次の周）が無い間は、ここが終わりになる。段 3 を初めて持つのは初心者 16 日目、普通 19 日目、上手い 14 日目。30 日の生還は 77%・77%・63%、レイドの長さの中央値は 5.4 分・5.5 分・5.2 分。夜に取られた拠点は 7・7・5。ダム湖の地域ごとの表は、波の部隊が拠点を取った時点で引き上げる分だけ動き、生還は 60%・50%・77%（初心者と普通は目標を下回る）。港湾地帯・機械都市・発射場の表は変わらない。
 
 その前の、今夜の狙いを予告し、狙われた拠点だけが夜に取られうるようにした今の 30 日（`NIGHT`。ボットは固めない）では、初心者は 30 日目に 14 拠点、普通は 17 拠点、上手いは 21 拠点を持つ（上手いは 28 日目から 3 日続く）。工場は初心者と普通が 4 段、上手いが 5 段。段 2 の拠点を初めて持つのは 16〜17 日目、段 3 は初心者と上手いが 23 日目、普通が 26 日目で、どの腕前も段 3 に届く。夜に取られた拠点は 30 日で初心者 9、普通 8、上手い 7（抽選だった版は 14・15・19）。持ち主が変わった回数はレイド中・帰った後・夜の順に、初心者 20・27・9、普通 21・18・8、上手い 28・20・7。30 日の生還は 53%・50%・53%、レイドの長さの中央値は 5.7 分・6.6 分・10.6 分。地域ごとの表と隠れ家の進み方の表は 1 行も変わらない。
 
@@ -1099,3 +1102,5 @@ CPU 時間は 2% 増えた。増えた分は、刻みごとに部隊と守備隊
 今夜の狙いと固めるを足した後は 798 秒、CPU 時間 3146 秒（ユーザー 3125 秒・システム 21 秒）。地域ごとの表の出力は変わらず、30 日の表だけが動く。
 
 勢い・拠点の開くもの・敵の強さの向きまで足した後は 751 秒、CPU 時間 2943 秒（ユーザー 2924 秒・システム 19 秒）。
+
+決戦と次の周を足した後は 1043 秒、CPU 時間 4107 秒（ユーザー 4084 秒・システム 23 秒）で、前の 751 秒から 4 割延びた。地域ごとの表の出力は 1 行も変わらず、延びたのは 30 日の表の側になる。30 日の表だけを走らせると 524 秒、CPU 時間 1301 秒（ユーザー 1292 秒）で、足す前は 270 秒、790 秒（783 秒）。2 周目に入ったボットが強度 1 の島を取り直し、上手いのレイドの長さの中央値が 5.2 分から 9.4 分に延びた分が載っている。刻みあたりの重さは測っていない。次に sim に触れる変更で、30 日の表のレイドを `node --cpu-prof` で測る。
