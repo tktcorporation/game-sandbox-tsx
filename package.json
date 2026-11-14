@@ -14,6 +14,8 @@
     "builds:build": "npm run build",
     "builds:deploy": "cf deploy --prebuilt --mode production",
     "builds:version": "cf workers versions create --prebuilt --mode production",
+    "builds:preview": "tsc -b && cf previews deploy --mode production",
+    "test:cf-config": "tsx scripts/ringfall-cf-config.ts",
     "cf-typegen": "cf workers types",
     "sim": "tsx scripts/sim.ts",
     "shots": "node scripts/shots.mjs",

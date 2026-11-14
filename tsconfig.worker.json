@@ -14,5 +14,5 @@
     "types": ["@cloudflare/workers-types", "node"],
     "resolveJsonModule": true
   },
-  "include": ["worker", "cloudflare.config.ts"]
+  "include": ["worker", "cloudflare.config.ts", "scripts/ringfall-cf-config.ts"]
 }
