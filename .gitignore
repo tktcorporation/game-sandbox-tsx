@@ -2,6 +2,11 @@ node_modules
 dist
 .wrangler
 .dev.vars
+wrangler.connected.jsonc
+wrangler.migration.jsonc
+infra/ringfall/*.tfstate*
+infra/ringfall/*.tfvars
+infra/ringfall/.terraform/
 worker-configuration.d.ts
 *.tsbuildinfo
 shots

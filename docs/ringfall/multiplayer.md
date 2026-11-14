@@ -79,14 +79,7 @@
 
 ### データベースのつなぎ方
 
-API（`worker/api.ts`）は D1 を `DB` という名前の束縛で読む。束縛が無い間、`/api/island` は 202（`no-database`）を返し、ブラウザはその答えを捨てるので、遊びは変わらない。つなぐ手順は次の 4 つ。
-
-1. データベースを作る：`npx wrangler d1 create ringfall`。出力の `database_id` を控える。
-2. 手元の `wrangler.jsonc` に束縛を足す（まだ push しない）：`"d1_databases": [{ "binding": "DB", "database_name": "ringfall", "database_id": "<控えた id>" }]`。`wrangler d1 migrations apply` は、設定に載っているデータベースにしか表を作れない。
-3. 表を作る：`npx wrangler d1 migrations apply ringfall --remote`。表の定義は `migrations/` にある。
-4. 束縛を足した `wrangler.jsonc` を push する。
-
-この順に進める。存在しないデータベースへの束縛を push すると Workers Builds のデプロイが失敗し、表の無いデータベースへの束縛では書き込みがすべて 503（`db-error`）になる。
+API（`worker/api.ts`）は D1 を `DB` という名前の束縛で読む。束縛が無い間、`/api/island` は 202（`no-database`）を返す。表を作らず束縛だけを足すと 503（`db-error`）になる。D1 の作成または既存資源の import、`migrations/0001_init.sql` の明示適用、binding と配備の順序は [infrastructure.md](infrastructure.md) を正本とする。未作成の資源を参照する binding は main に push しない。
 
 ### 島の番号と遠征の API
 
@@ -123,12 +116,7 @@ API（`worker/api.ts`）は D1 を `DB` という名前の束縛で読む。束�
 
 ### 島の Worker のつなぎ方
 
-`IslandDO` は、ゲームの Worker とは別の Worker `ringfall-islands`（`islands/wrangler.jsonc`、入口は `islands/index.ts`）に置く。Durable Object を実装する Worker には Cloudflare のプレビュー URL が作られず、適用していないマイグレーションがあるとバージョンの upload も通らないため、ゲームの Worker には実装を置かない。ゲームの Worker は `script_name` で島の Worker の `IslandDO` に束縛する。束縛 `ISLAND` は `DB` と同じく任意で、無い間 `/api/islands` は 202（`no-island-server`）を返す。つなぐ手順は次の 2 つ。
-
-1. 島の Worker を一度デプロイする：`npx wrangler deploy -c islands/wrangler.jsonc`。Workers Builds で回すなら、ルートの設定を `islands/wrangler.jsonc`、デプロイのコマンドを `npx wrangler deploy -c islands/wrangler.jsonc` にした 2 つ目のプロジェクトを作る。
-2. ルートの `wrangler.jsonc` に `"durable_objects": { "bindings": [{ "name": "ISLAND", "class_name": "IslandDO", "script_name": "ringfall-islands" }] }` を足して push する。
-
-この順に進める。まだ無い Worker への束縛を push すると、ゲームの Worker のデプロイが失敗する。
+`IslandDO` は別 Worker `ringfall-islands`（`islands/`）に置く。島 Worker の SQLite Durable Object migration v1 と配備を確認してから、ゲーム Worker に cross-script `ISLAND` binding を付ける。束縛が無い間 `/api/islands` は 202（`no-island-server`）を返す。事前検査、生成設定、段階的な配備と復旧は [infrastructure.md](infrastructure.md) を参照する。
 
 ## 不正への構え
 
