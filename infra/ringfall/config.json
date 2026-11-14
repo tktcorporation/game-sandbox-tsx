@@ -1,7 +1,3 @@
 {
-  "database_name": "ringfall",
-  "database_binding": "DB",
-  "island_worker_name": "ringfall-islands",
-  "island_binding": "ISLAND",
-  "island_class": "IslandDO"
+  "database_name": "ringfall"
 }

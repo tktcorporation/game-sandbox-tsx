@@ -72,7 +72,7 @@
 | 部品 | 置くもの |
 | --- | --- |
 | Worker（`worker/index.ts`） | API の入口。プレイヤーの識別、相手探し、遠征の受付 |
-| Durable Object `IslandDO`（島の Worker `ringfall-islands`、`islands/`） | 1 つの島の拠点の持ち主、来ている遠征隊、貸し出し |
+| Durable Object `IslandDO`（ゲーム Worker と同じ `worker/index.ts` から export） | 1 つの島の拠点の持ち主、来ている遠征隊、貸し出し |
 | D1 | プレイヤー（ID・表示名）、島の要約（持つ拠点・工場の段・強さ）、遠征と戦いの記録 |
 
 プレイヤーは、端末で作る匿名の ID と表示名で識別する。アカウントへのひも付けは後の段階で足す。
@@ -116,7 +116,7 @@ API（`worker/api.ts`）は D1 を `DB` という名前の束縛で読む。束�
 
 ### 島の Worker のつなぎ方
 
-`IslandDO` は別 Worker `ringfall-islands`（`islands/`）に置く。島 Worker の SQLite Durable Object migration v1 と配備を確認してから、ゲーム Worker に cross-script `ISLAND` binding を付ける。束縛が無い間 `/api/islands` は 202（`no-island-server`）を返す。事前検査、生成設定、段階的な配備と復旧は [infrastructure.md](infrastructure.md) を参照する。
+`IslandDO` はゲームと同じ Worker から export し、`cloudflare.config.ts` の `ISLAND` が同じ Worker の class を参照する。SQLite の宣言は `exports.durableObject({ storage: "sqlite" })` で行う。D1 の資源と SQL を先に確認し、単一 Worker を配備する。旧 `ringfall-islands` が実アカウントに存在する場合は、資源を削除せず移行計画を別途確認する。段階的な事前検査、復旧、実接続 QA は [infrastructure.md](infrastructure.md) を参照する。
 
 ## 不正への構え
 

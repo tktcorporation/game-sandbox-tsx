@@ -2,8 +2,7 @@ node_modules
 dist
 .wrangler
 .dev.vars
-wrangler.connected.jsonc
-wrangler.migration.jsonc
+.cloudflare/
 infra/ringfall/*.tfstate*
 infra/ringfall/*.tfvars
 infra/ringfall/.terraform/

@@ -363,7 +363,7 @@ function island(freed: string[], rival: string[] = []): Profile {
 {
   const missing = API_ERRORS.filter((e) => !ERROR_TEXT[e]?.trim());
   // Every literal error the Worker's sources write, beside the ones its types allow.
-  const files = [...readdirSync(new URL("../worker/", import.meta.url)).map((f) => `../worker/${f}`), ...readdirSync(new URL("../islands/", import.meta.url)).map((f) => `../islands/${f}`)].filter((f) => f.endsWith(".ts"));
+  const files = readdirSync(new URL("../worker/", import.meta.url)).map((f) => `../worker/${f}`).filter((f) => f.endsWith(".ts"));
   const used = new Set<string>();
   for (const f of files) {
     const text = readFileSync(new URL(f, import.meta.url), "utf8");
