@@ -1,12 +1,13 @@
 /// <reference types="@cloudflare/workers-types" />
 
 import { handleApi } from "./api";
+export { IslandDO } from "./island-do";
 
 interface Env {
   ASSETS: Fetcher;
   /** RINGFALL's database; absent until one is connected (docs/ringfall/multiplayer.md). */
   DB?: D1Database;
-  /** RINGFALL's islands, one Durable Object for each island code, held by the islands Worker (islands/); absent until bound (docs/ringfall/multiplayer.md). */
+  /** RINGFALL's islands, one Durable Object for each island code in this Worker. */
   ISLAND?: DurableObjectNamespace;
 }
 

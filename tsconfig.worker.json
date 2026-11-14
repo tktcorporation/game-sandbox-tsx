@@ -11,7 +11,8 @@
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "types": ["@cloudflare/workers-types"]
+    "types": ["@cloudflare/workers-types", "node"],
+    "resolveJsonModule": true
   },
-  "include": ["worker", "islands"]
+  "include": ["worker", "cloudflare.config.ts", "scripts/ringfall-cf-config.ts"]
 }

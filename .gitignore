@@ -2,6 +2,10 @@ node_modules
 dist
 .wrangler
 .dev.vars
+.cloudflare/
+infra/ringfall/*.tfstate*
+infra/ringfall/*.tfvars
+infra/ringfall/.terraform/
 worker-configuration.d.ts
 *.tsbuildinfo
 shots
