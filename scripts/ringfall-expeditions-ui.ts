@@ -24,7 +24,8 @@
  *   `SEND_TIMEOUT_MS` (here, against a server that never answers), well inside `SENDING_MS`, and
  *   the send rolls back; a send answered while views of its island were out stays `coming`.
  * - **income**: each node the expeditions hold pays `FRONT.income` at the settle, and those gone are dropped.
- * - **saves**: a v26 save loads as v27 with no expedition and no log read; a v27 save keeps both.
+ * - **saves**: current and v27 saves keep expeditions, log position and pending retakes;
+ *   a v26 save migrates to v28 with none of them.
  * - **errors**: every error code the API can answer with has a line, and the Worker's sources use no other.
  *
  * Run alone: `npx tsx scripts/ringfall-expeditions-ui.ts`; it ends with "expeditions ui ok".
@@ -105,11 +106,14 @@ function island(freed: string[], rival: string[] = []): Profile {
   s.stats.captured = ["relay"];
   s.outcome = "extracted";
   const won = settle(start, s);
-  // A battle raid that started with the quarry the player's; mid-raid a sync gave the profile the quarry as another player's.
+  // A raid that started with the quarry the player's; mid-raid a sync gave the profile the quarry as another player's.
   const stale = island(["supply", "quarry"]);
-  // The factory at its top holds both nodes through the battle on this seed, so the quarry ends the day the player's.
+  // End the unattended battle where it stands. This tests the settle's comparison to the
+  // raid-start snapshot, independent of later combat or balance changes at the quarry.
   const b = newRun(7, starterKit(), "reservoir", { island: holds(stale), battle: { factory: FACTORY_TOP } });
   b.outcome = "extracted";
+  if (!b.battle) throw new Error("retaken fixture: expected a battle");
+  b.battle.end = b.battle.now;
   finishBattle(b);
   const merged = { ...stale, poiState: { ...stale.poiState, quarry: { state: rivalHold(B) } } };
   const mid = settle(merged, b);
@@ -348,12 +352,16 @@ function island(freed: string[], rival: string[] = []): Profile {
 // --- saves
 {
   const p = { ...newProfile(4), expeditions: [{ code: A, node: "relay" as const, sentAt: 5, id: 2, units: 3, state: "holding" as const }], logSeq: 7, retaken: ["quarry" as const, "relay" as const] };
-  const v27 = parseProfile(JSON.parse(JSON.stringify(p)));
-  const v26 = parseProfile(JSON.parse(JSON.stringify({ ...p, v: 26 })));
+  const current = parseProfile(JSON.parse(JSON.stringify(p)));
+  const { cycle: _cycle, cycleDay: _cycleDay, liberations: _liberations, ...beforeV28 } = p;
+  const v27 = parseProfile(JSON.parse(JSON.stringify({ ...beforeV28, v: 27 })));
+  const { expeditions: _expeditions, logSeq: _logSeq, retaken: _retaken, ...beforeV27 } = beforeV28;
+  const v26 = parseProfile(JSON.parse(JSON.stringify({ ...beforeV27, v: 26 })));
   const bad = parseOutgoing([{ code: "lower1", node: "relay", sentAt: 0, id: 1, units: 1, state: "coming" }, { code: A, node: "nowhere", sentAt: 0, id: 1, units: 1, state: "coming" }, { code: A, node: "relay", sentAt: 0, id: 1, units: 1, state: "lost" }, "x"]);
-  console.log(`saves: v27 keeps ${v27?.expeditions.length} expedition(s), seq ${v27?.logSeq}; v26 loads as v${v26?.v} with ${v26?.expeditions.length}, seq ${v26?.logSeq}; bad entries kept ${bad.length}`);
-  check(v27?.v === 27 && JSON.stringify(v27.expeditions) === JSON.stringify(p.expeditions) && v27.logSeq === 7 && v27.retaken.join() === "quarry,relay", "saves: a v27 save did not keep its expeditions, log number and nodes taken back");
-  check(v26?.v === 27 && v26.expeditions.length === 0 && v26.logSeq === 0 && v26.retaken.length === 0, "saves: a v26 save did not load with no expedition, no log read and nothing taken back");
+  console.log(`saves: current v${current?.v}, v27 -> v${v27?.v} keeps ${v27?.expeditions.length} expedition(s), seq ${v27?.logSeq}; v26 -> v${v26?.v} with ${v26?.expeditions.length}, seq ${v26?.logSeq}; bad entries kept ${bad.length}`);
+  check(current?.v === 28 && JSON.stringify(current.expeditions) === JSON.stringify(p.expeditions) && current.logSeq === 7 && current.retaken.join() === "quarry,relay", "saves: a current save did not keep its expeditions, log number and nodes taken back");
+  check(v27?.v === 28 && JSON.stringify(v27.expeditions) === JSON.stringify(p.expeditions) && v27.logSeq === 7 && v27.retaken.join() === "quarry,relay", "saves: a v27 save did not keep its expeditions, log number and nodes taken back");
+  check(v26?.v === 28 && v26.expeditions.length === 0 && v26.logSeq === 0 && v26.retaken.length === 0, "saves: a v26 save did not load with no expedition, no log read and nothing taken back");
   check(parseProfile(JSON.parse(JSON.stringify({ ...p, retaken: ["quarry", "quarry", "nowhere", 3] })))?.retaken.join() === "quarry", "saves: malformed nodes taken back were kept");
   check(bad.length === 0, "saves: a malformed expedition was kept");
   check(newProfile(1).expeditions.length === 0 && newProfile(1).logSeq === 0, "saves: a new profile has expeditions or a log read");
