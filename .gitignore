@@ -9,6 +9,7 @@ infra/ringfall*/**/terraform.tfstate.d/
 infra/ringfall*/**/.terraform.tfstate.lock.info
 infra/ringfall*/**/*.tfstate*
 infra/ringfall*/**/*.tfvars*
+infra/ringfall*/**/*.tfbackend*
 infra/ringfall*/**/plans/
 infra/ringfall*/**/*.tfplan*
 infra/ringfall*/**/*.plan

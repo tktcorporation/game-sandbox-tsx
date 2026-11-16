@@ -6,12 +6,12 @@ import { resolve } from "node:path";
 const repo = resolve(fileURLToPath(new URL("../", import.meta.url)));
 const ignored = [
   "terraform.tfstate", "terraform.tfstate.backup", "state/preview.tfstate.backup",
-  "terraform.tfvars", "preview.auto.tfvars.json", "secrets.tfvars.json",
+  "terraform.tfvars", "preview.auto.tfvars.json", "secrets.tfvars.json", "private.tfbackend",
   ".terraform/providers/provider", "terraform.tfstate.d/preview/terraform.tfstate",
   ".terraform.tfstate.lock.info", "plans/preview", "preview.tfplan", "preview.tfplan.json",
   "preview.plan", "preview.plan.json", "plan.out", "plan.out.json",
 ];
-const tracked = ["main.tf", "config.json", ".terraform.lock.hcl", "README.md"];
+const tracked = ["main.tf", "encryption.tf", "config.json", ".terraform.lock.hcl", "README.md"];
 
 for (const root of ["infra/ringfall", "infra/ringfall-preview"]) {
   for (const [paths, expected] of [[ignored, 0], [tracked, 1]]) {
