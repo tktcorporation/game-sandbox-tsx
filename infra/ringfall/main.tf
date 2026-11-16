@@ -20,7 +20,8 @@ locals {
   ringfall = jsondecode(file("${path.module}/config.json"))
 }
 
-# D1 lifecycle only. Wrangler owns Worker versions, deployments, and all bindings.
+# D1 lifecycle only. cf/cloudflare.config.ts owns Worker versions,
+# deployments, assets, and bindings. SQL is applied separately.
 resource "cloudflare_d1_database" "ringfall" {
   account_id = var.cloudflare_account_id
   name       = local.ringfall.database_name
@@ -30,6 +31,25 @@ resource "cloudflare_d1_database" "ringfall" {
   }
 }
 
+# Shared by PR Previews that receive this database's ID. A different D1 per PR
+# requires separately managed resources and branch-specific ID delivery.
+resource "cloudflare_d1_database" "ringfall_preview" {
+  account_id = var.cloudflare_account_id
+  name       = local.ringfall.preview_database_name
+
+  lifecycle {
+    prevent_destroy = true
+    precondition {
+      condition     = local.ringfall.preview_database_name != local.ringfall.database_name
+      error_message = "Preview D1 must have a different name from production D1."
+    }
+  }
+}
+
 output "ringfall_database_id" {
   value = cloudflare_d1_database.ringfall.id
+}
+
+output "ringfall_preview_database_id" {
+  value = cloudflare_d1_database.ringfall_preview.id
 }

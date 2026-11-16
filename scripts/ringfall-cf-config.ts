@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import config from "../cloudflare.config";
+import names from "../infra/ringfall/config.json" with { type: "json" };
 
 const production = "11111111-1111-4111-8111-111111111111";
 const preview = "22222222-2222-4222-8222-222222222222";
+assert.notEqual(names.preview_database_name, names.database_name);
+assert.ok(names.preview_database_name.length > 0);
 assert.equal(typeof config, "function");
 const evaluate = (isPreview: boolean) => config({ isPreview, mode: "production" });
 const worker = (isPreview: boolean) => {
@@ -28,7 +31,7 @@ checkSelfBinding(unbound);
 process.env.RINGFALL_D1_DATABASE_ID = production;
 const bound = worker(false);
 assert.equal(bound.env?.DB?.id, production);
-assert.equal(bound.env.DB.name, "ringfall");
+assert.equal(bound.env.DB.name, names.database_name);
 checkSelfBinding(bound);
 
 assert.throws(() => evaluate(true), /Preview requires RINGFALL_PREVIEW_D1_DATABASE_ID/);
