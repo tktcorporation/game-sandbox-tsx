@@ -1,0 +1,11 @@
+{
+  "name": "RINGFALL Preview (code-only setup)",
+  "image": "node:24.22.3-bookworm",
+  "remoteUser": "node",
+  "containerUser": "node",
+  "updateRemoteUserUID": true,
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace/game-sandbox-tsx,type=bind",
+  "workspaceFolder": "/workspace/game-sandbox-tsx",
+  "mounts": [],
+  "runArgs": ["--cap-drop=ALL", "--security-opt=no-new-privileges"]
+}
