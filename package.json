@@ -19,6 +19,7 @@
     "tofu:preview": "node scripts/ringfall-preview-tofu.mjs",
     "test:tofu-preview": "node scripts/ringfall-preview-tofu.test.mjs",
     "test:tofu-ignore": "node scripts/ringfall-tofu-ignore.test.mjs",
+    "test:preview-auth-contract": "node scripts/ringfall-preview-auth-contract.test.mjs",
     "cf-typegen": "cf workers types",
     "sim": "tsx scripts/sim.ts",
     "shots": "node scripts/shots.mjs",
