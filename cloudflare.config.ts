@@ -24,7 +24,9 @@ export default defineConfig(({ isPreview }) => {
         DB: databaseId
           ? bindings.d1(isPreview ? { id: databaseId } : { name: names.database_name, id: databaseId })
           : undefined,
-        ISLAND: bindings.durableObject({ worker: workerName, exportName: "IslandDO" }),
+        // cf beta.24's typed builder requires a worker and emits script_name even
+        // for this Worker. A self DO binding must omit it for Worker Previews.
+        ISLAND: { type: "unsafe:durable_object_namespace", class_name: "IslandDO" },
       },
       exports: { IslandDO: exports.durableObject({ storage: "sqlite" }) },
     },

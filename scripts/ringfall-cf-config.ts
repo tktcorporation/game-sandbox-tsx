@@ -14,9 +14,7 @@ const worker = (isPreview: boolean) => {
   return result.worker;
 };
 const checkSelfBinding = (w: ReturnType<typeof worker>) => {
-  assert.equal(w.env?.ISLAND?.type, "durable-object");
-  assert.equal(w.env.ISLAND.worker, w.name);
-  assert.equal(w.env.ISLAND.exportName, "IslandDO");
+  assert.deepEqual(w.env?.ISLAND, { type: "unsafe:durable_object_namespace", class_name: "IslandDO" });
   assert.equal(w.exports?.IslandDO?.type, "durable-object");
   assert.equal(w.exports.IslandDO.storage, "sqlite");
   assert.equal(w.env.ASSETS?.type, "assets");
