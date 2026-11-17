@@ -16,6 +16,7 @@
     "builds:version": "cf workers versions create --prebuilt --mode production",
     "builds:preview": "tsc -b && cf previews deploy --mode production",
     "test:cf-config": "tsx scripts/ringfall-cf-config.ts",
+    "test:ringfall-encoding": "tsx scripts/ringfall-encoding.ts",
     "test:cf-preview-output": "node scripts/ringfall-cf-preview-output.test.mjs",
     "tofu:preview": "node scripts/ringfall-preview-tofu.mjs",
     "test:tofu-preview": "node scripts/ringfall-preview-tofu.test.mjs",
