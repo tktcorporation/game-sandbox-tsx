@@ -2,6 +2,19 @@ node_modules
 dist
 .wrangler
 .dev.vars
+.cloudflare/
+# Both independent RINGFALL OpenTofu roots (production and Preview).
+infra/ringfall*/**/.terraform/
+infra/ringfall*/**/terraform.tfstate.d/
+infra/ringfall*/**/.terraform.tfstate.lock.info
+infra/ringfall*/**/*.tfstate*
+infra/ringfall*/**/*.tfvars*
+infra/ringfall*/**/*.tfbackend*
+infra/ringfall*/**/plans/
+infra/ringfall*/**/*.tfplan*
+infra/ringfall*/**/*.plan
+infra/ringfall*/**/*.plan.*
+infra/ringfall*/**/plan.out*
 worker-configuration.d.ts
 *.tsbuildinfo
 shots
