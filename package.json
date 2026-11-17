@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "cf dev",
-    "build": "tsc -b && cf build --mode production",
+    "build": "tsc -b && npm run test:ringfall-encoding && cf build --mode production",
     "preview:local": "cf dev",
     "deploy": "npm run builds:build && npm run builds:deploy",
     "builds:build": "npm run build",
