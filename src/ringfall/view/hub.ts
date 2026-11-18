@@ -2,7 +2,7 @@ import { PLAYER } from "../sim/config";
 import { armorIcon, binPicture, checkIcon, coreIcon, factoryIcon, flagIcon, hideoutIcon, clockIcon, crossIcon, depotIcon, gunIcon, healIcon, issueIcon, keyIcon, lockIcon, modIcon, pinIcon, pouchIcon, radioIcon, robotIcon, routeIcon, SIDE, stashIcon, turretIcon, upIcon, workbenchIcon } from "./icons";
 import { ALLY, FACTORY, FACTORY_TOP, HEALS as HEAL_SPECS, HIDEOUT, MOD_KINDS, PLATE, RARITY, THREAT, TOOLS, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
 import { boostFor, raidClock, strengthFor, type Kit } from "../sim/state";
-import { CAMP, DEPOTS, ENTRIES, entryOf, HOME_REGION, NODES, POIS, UNLOCKS, poiIndex, poiRegion, REGIONS, regionOf, ROUTES, type EntryId, type PoiId, type RegionId, type StationId } from "../sim/map";
+import { CAMP, DEPOTS, ENTRIES, entryOf, HOME_REGION, NODES, nodeIndex, POIS, UNLOCKS, poiIndex, poiRegion, REGIONS, regionOf, ROUTES, type EntryId, type PoiId, type RegionId, type StationId } from "../sim/map";
 import { armed, build, buildFactory, buildState, buy, buyPrice, canBuild, canBuildFactory, factoryNeeded, nextFactory, canStartIn, deliver, deliverable, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, isStarter, issuedHeals, itemCost, HEALS, healCount, healRoom, keyName, kitPicks, loadoutCost, stashUsed, price, raidThreat, recallLoadout, roundThreat, sell, sellPrice, setThreat, startsIn, STORY_TAKEN, takenStory, threatPay, take, takeKit, takenContract, wanted, wares, type Item, type Loadout, type Profile } from "../meta/profile";
 import { CONTRACT_NAME, contractMark, contractRegion, contractText, type Contract, type Reward } from "../meta/contracts";
 import { currentStory, STORIES, storyOf, storyWhere } from "../meta/story";
@@ -1084,6 +1084,8 @@ export class Hub {
       ["鍵", k.keys],
       ["目的", goal],
     ];
+    // Other players' expeditions sent at this island land in this raid: where, whose, and what to do about it.
+    if (p.incoming.length) rows.push(["来る遠征", `${p.incoming.map((e) => `${NODES[nodeIndex(e.node)]?.name ?? e.node}（${e.by.name || e.by.code}）`).join("・")}　核を守ると固められる`]);
     const warn: string[] = [];
 
     return { rows, warn };

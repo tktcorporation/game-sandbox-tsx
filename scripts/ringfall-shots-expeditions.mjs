@@ -4,7 +4,7 @@
  * another player's expedition is sent at (`Profile.incoming`) with expeditions of its own out. The
  * map table marks the node sent at with a green arrow and lists who is coming; the factory's panel
  * lists the expeditions out, each that can be called home with its button, and calling one home
- * gives its squad back at once; the departure's map carries the arrow too. No island server
+ * gives its squad back at once; the departure's map carries the arrow too, and its side names the node and what to do. No island server
  * answers under a browser driver, so the profile is the save's.
  */
 import { createServer } from "node:http";
@@ -83,6 +83,8 @@ export async function expeditionShots({ browser, port, out, errors }) {
   for (let i = 0; i < 30 && !st.camp?.depart; i++) st = JSON.parse(await pg.evaluate(() => (window.advanceTime(200), window.render_game_to_text())));
   await pg.keyboard.up("KeyW");
   if (!st.camp?.depart) errors.push("expeditions: the departure did not open");
+  const row = st.camp?.depart?.rows?.find((r) => r[0] === "来る遠征")?.[1] ?? "";
+  if (!/となり/.test(row) || !/固め/.test(row)) errors.push(`expeditions: the departure's warning reads "${row}"`);
   await pg.screenshot({ path: `${out}/153-expeditions-depart.png` });
   await ctx.close();
 }
