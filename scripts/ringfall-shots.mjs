@@ -5,11 +5,16 @@
  * (window.advanceTime). Fails on any console or page error, or if the run stops
  * progressing. Screenshots of each key moment go to shots/ringfall/ for review.
  *
- *   npm run shots:ringfall -- [skill]
+ *   npm run shots:ringfall -- [skill] [--part raid,phone,rules,meta,battle,push,extra] [--serial]
+ *
+ * Every part runs at once in processes of their own unless `--part` names some (see `PARTS`).
  */
 import { createServer } from "node:http";
 import { readFile, mkdir } from "node:fs/promises";
 import { extname, join } from "node:path";
+import { spawn } from "node:child_process";
+import { cpus } from "node:os";
+import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { movementShots } from "./ringfall-shots-movement.mjs";
 import { bagShots } from "./ringfall-shots-bag.mjs";
@@ -39,7 +44,59 @@ const KEY = "ringfall.profile.v1";
 const KNOWS_ALL = JSON.stringify({ v: 10, cash: 1500, stash: [], raids: 0, extracted: 0, region: "reservoir" });
 await mkdir(out, { recursive: true });
 
-const skill = process.argv[2] ?? "casual";
+const args = process.argv.slice(2);
+const skill = args.find((a, i) => !a.startsWith("--") && args[i - 1] !== "--part") ?? "casual";
+/*
+ * The gate's parts, each a set of pages of its own that shares nothing with the others, longest
+ * first. With no `--part` the gate runs them all, each in a process of its own with its own
+ * browser, `SHOTS_JOBS` at once (the cores, at most 4): drawing in software, the parts in turn take
+ * several times as long. `--part raid,extra` runs only those, in this process, which is the way
+ * to look at one change's screens; `--serial` runs every part in turn in this process, as before.
+ * The sections inside a part are not indented under its `if`.
+ */
+const PARTS = ["raid", "phone", "rules", "meta", "battle", "push", "extra"];
+const named = args.includes("--part") ? args[args.indexOf("--part") + 1] : args.find((a) => a.startsWith("--part="))?.slice(7);
+const only = named?.split(",") ?? null;
+if (only?.some((n) => !PARTS.includes(n))) {
+  console.error(`parts: ${PARTS.join(", ")}`);
+  process.exit(2);
+}
+const part = (name) => !only || only.includes(name);
+if (!only && !args.includes("--serial")) {
+  server.close();
+  const jobs = Math.max(1, Number(process.env.SHOTS_JOBS) || Math.min(4, cpus().length));
+  const queue = [...PARTS];
+  const failed = [];
+  const t0 = Date.now();
+  const run = (name) =>
+    new Promise((done) => {
+      const child = spawn(process.execPath, [fileURLToPath(import.meta.url), skill, "--part", name], { stdio: ["ignore", "pipe", "pipe"] });
+      let rest = "";
+      const say = (chunk) => {
+        const lines = (rest + chunk).split("\n");
+        rest = lines.pop();
+        for (const l of lines) console.log(`[${name}] ${l}`);
+      };
+      child.stdout.on("data", (d) => say(String(d)));
+      child.stderr.on("data", (d) => say(String(d)));
+      child.on("close", (code) => {
+        if (rest) console.log(`[${name}] ${rest}`);
+        done(code);
+      });
+    });
+  await Promise.all(
+    Array.from({ length: jobs }, async () => {
+      for (let name = queue.shift(); name; name = queue.shift()) if ((await run(name)) !== 0) failed.push(name);
+    }),
+  );
+  console.log(`time: every part ${((Date.now() - t0) / 1000).toFixed(1)} s, ${jobs} at once`);
+  if (failed.length) {
+    console.error(`parts failed: ${failed.join(", ")}`);
+    process.exit(1);
+  }
+  console.log("no console errors");
+  process.exit(0);
+}
 const browser = await chromium.launch({
   executablePath: process.env.CHROMIUM_PATH ?? "/opt/pw-browsers/chromium",
   args: ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"],
@@ -289,6 +346,7 @@ const spills = (pg) =>
  * stick, turn the view, and fire. Then the bot plays to the first fight so the touch layout is
  * captured with enemies on screen.
  */
+if (part("phone")) {
 {
   const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
   const page = await ctx.newPage();
@@ -657,7 +715,10 @@ const spills = (pg) =>
   await pg.close();
   lap("way in found");
 }
+}
 
+// The desktop raid: the camp, a tour of the island, and a reservoir raid played to its end.
+if (part("raid")) {
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
 page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
 page.on("console", (m) => m.type() === "error" && !/fonts\.g|ERR_TUNNEL|net::/.test(m.text()) && errors.push(`console: ${m.text()}`));
@@ -1260,6 +1321,8 @@ console.log(JSON.stringify((await read()).stats));
 // The desktop page is done with; left open it draws the harbor every frame, and the pages
 // below, each a fresh load, would share the machine with it.
 await page.close();
+console.log(`screens: ${[...taken].join(", ")}`);
+}
 
 /*
  * The hideout, from saved profiles: a mid-game base (the tab, a module's needs with where
@@ -1288,6 +1351,7 @@ const withProfile = async (ctx, profile) => {
   return pg;
 };
 const readOf = async (pg) => JSON.parse(await pg.evaluate(() => window.render_game_to_text()));
+if (part("meta")) {
 {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
   const pg = await withProfile(ctx, midGame);
@@ -1937,7 +2001,7 @@ lap("island");
   }
   lap("mods");
 }
-console.log(`screens: ${[...taken].join(", ")}`);
+}
 /*
  * The day's battle (陣取り戦): a profile on day 9 with the supply depot and the quarry the
  * player's, the factory at level 3, saved with the last days' battles' points (dropped on load).
@@ -2074,7 +2138,7 @@ const battleDay = {
     { day: 8, score: [29400, 15900, 6200], won: true },
   ],
 };
-for (const phone of [false, true]) {
+if (part("battle")) for (const phone of [false, true]) {
   const ctx = phone ? await browser.newContext({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true }) : await browser.newContext({ viewport: { width: 1280, height: 720 } });
   const pg = await withProfile(ctx, battleDay);
   if (phone) await pg.evaluate(() => Object.defineProperty(screen, "orientation", { value: undefined, configurable: true }));
@@ -2187,7 +2251,7 @@ const pushDay = {
   quests: { progress: {}, done: [] }, day: 12, factory: 0,
   poiState: { supply: { state: "freed" }, quarry: { state: "freed" }, station: { state: "freed" } },
 };
-for (const phone of [false, true]) {
+if (part("push")) for (const phone of [false, true]) {
   const ctx = phone ? await browser.newContext({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true }) : await browser.newContext({ viewport: { width: 1280, height: 720 } });
   const pg = await withProfile(ctx, pushDay);
   if (phone) await pg.evaluate(() => Object.defineProperty(screen, "orientation", { value: undefined, configurable: true }));
@@ -2301,7 +2365,7 @@ for (const phone of [false, true]) {
  * by the plateau's pickup on the map, the ways in a raid learned turning from dashed to solid,
  * and an analysed mod part dropping into a supply bin.
  */
-for (const phone of [false, true]) {
+if (part("rules")) for (const phone of [false, true]) {
   const ctx = await browser.newContext(phone ? { viewport: { width: 844, height: 390 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true } : { viewport: { width: 1280, height: 720 } });
   const pg = await withProfile(ctx, { ...depotGame, stash: [{ t: "weapon", kind: "pike", rarity: 1 }, { t: "armor", tier: 1 }, { t: "heal", kind: "cell" }, ...bag([["fuse", 2], ["board", 2]])] });
   const name = (n) => `${out}/${phone ? "m-" : ""}rules-${n}.png`;
@@ -2424,6 +2488,7 @@ for (const phone of [false, true]) {
   await ctx.close();
   lap(`rules, ${phone ? "phone" : "desktop"}`);
 }
+if (part("extra")) {
 await movementShots({ browser, port, out, errors });
 lap("movement");
 await bagShots({ browser, port, out, errors });
@@ -2433,6 +2498,7 @@ await upgradeShots({ browser, port, out, errors });
 await finaleShots({ browser, port, out, errors });
 await expeditionShots({ browser, port, out, errors });
 lap("upgrades");
+}
 await browser.close();
 server.close();
 if (errors.length) {
