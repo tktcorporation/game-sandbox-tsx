@@ -336,6 +336,8 @@ npm run sim:ringfall     # gate 2: bots of three skills play whole raids headles
                          # in parallel, one process per core, the reservoir's (the longest) first,
                          # beside the campaign's months (a process per skill, started first)
                          # (RINGFALL_SIM_JOBS=n to set, 1 = in turn)
+npm run bench:ringfall   # the sim's weight on ten fixed raids: CPU seconds and a hash of the outcome,
+                         # run before and after a change to the sim (see the sim gate's speed below)
 npm run models:ringfall  # the model rules (docs/ringfall/models.md): budgets, palette, hit spheres;
                          # fails when one is broken, silhouettes in shots/ringfall/models/
 npm run look:ringfall -- <place> [--r 120] [--base]
@@ -748,13 +750,16 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   While tuning, `npm run sim:ringfall -- 10` (10 raids per skill and region, about a third of the
   time) is enough to see which way a change moves the tables; the record in that file is 30.
 - The sim gate's speed is kept up as a matter of course, without being asked. Every change that
-  touches `src/ringfall/sim/` or the sim scripts records the `npm run sim:ringfall -- 30` time
-  beside the one before it, both taken back to back on the same machine, in the 測った重さ section of
-  `docs/ringfall/balance.md`. When the gate has grown by a fifth or more since the last speed-up
-  recorded there, profile it (`node --cpu-prof` on a few raids) and make the hot paths cheaper in
-  the same change or the next one. A speed-up must leave the gate's output identical line for line;
-  one that changes the output (thinking less often for far squads, say) is a tuning change,
-  recorded with a re-run like any other.
+  touches `src/ringfall/sim/` or the sim scripts is weighed with `npm run bench:ringfall`
+  (`scripts/ringfall-bench.ts`: ten fixed raids in one process, about a minute and a half; it
+  prints the CPU time and a hash of what the raids came to), run before the change and after it,
+  back to back on the same machine, and both numbers go in the 測った重さ section of
+  `docs/ringfall/balance.md`. The whole gate (`npm run sim:ringfall -- 30`) is run once, after the
+  change, and its time is recorded there too. When the bench has grown by a fifth or more since
+  the last speed-up recorded there, profile it (`node --cpu-prof` on a few raids) and make the hot
+  paths cheaper in the same change or the next one. A speed-up must leave the bench's hash and the
+  gate's output identical line for line; one that changes the output (thinking less often for far
+  squads, say) is a tuning change, recorded with a re-run like any other.
 
 ## HITMARK
 
