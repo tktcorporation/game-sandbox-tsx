@@ -49,8 +49,9 @@ const skill = args.find((a, i) => !a.startsWith("--") && args[i - 1] !== "--part
 /*
  * The gate's parts, each a set of pages of its own that shares nothing with the others, longest
  * first. With no `--part` the gate runs them all, each in a process of its own with its own
- * browser, `SHOTS_JOBS` at once (the cores, at most 4): drawing in software, the parts in turn take
- * several times as long. `--part raid,extra` runs only those, in this process, which is the way
+ * browser, `SHOTS_JOBS` at once (2 unless set: drawing in software, four at once on four cores take
+ * two to three times as long each and the checks that wait in real time run out). A part that
+ * fails is run once more on its own when the others are done, and fails the gate only if it fails again. `--part raid,extra` runs only those, in this process, which is the way
  * to look at one change's screens; `--serial` runs every part in turn in this process, as before.
  * The sections inside a part are not indented under its `if`.
  */
@@ -64,7 +65,7 @@ if (only?.some((n) => !PARTS.includes(n))) {
 const part = (name) => !only || only.includes(name);
 if (!only && !args.includes("--serial")) {
   server.close();
-  const jobs = Math.max(1, Number(process.env.SHOTS_JOBS) || Math.min(4, cpus().length));
+  const jobs = Math.max(1, Number(process.env.SHOTS_JOBS) || Math.min(2, cpus().length));
   const queue = [...PARTS];
   const failed = [];
   const t0 = Date.now();
@@ -89,6 +90,11 @@ if (!only && !args.includes("--serial")) {
       for (let name = queue.shift(); name; name = queue.shift()) if ((await run(name)) !== 0) failed.push(name);
     }),
   );
+  // A part that failed beside the others is run again alone: a check that waited in real time may only have run out of it.
+  for (const name of failed.splice(0)) {
+    console.log(`[${name}] failed beside the others; once more on its own`);
+    if ((await run(name)) !== 0) failed.push(name);
+  }
   console.log(`time: every part ${((Date.now() - t0) / 1000).toFixed(1)} s, ${jobs} at once`);
   if (failed.length) {
     console.error(`parts failed: ${failed.join(", ")}`);

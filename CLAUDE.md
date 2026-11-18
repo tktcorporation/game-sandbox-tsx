@@ -350,7 +350,10 @@ npm run field:ringfall -- <place>|--all [--r 120]
                          # 8 m, sight, lanes past a grunt's engaged sight, exposed ground; a map in
                          # shots/ringfall/field/; no pass or fail, the numbers move with a change
 npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir raid to the end, a harbor raid
-                         # to its first fight, a tour of both); screenshots in shots/ringfall/
+                         # to its first fight, a tour of both); screenshots in shots/ringfall/;
+                         # its seven parts run two at once in processes of their own (SHOTS_JOBS=n),
+                         # `-- --part extra` (raid, phone, rules, meta, battle, push, extra) runs only
+                         # those named, which is how one change's screens are looked at
 ```
 
 - `src/ringfall/sim/` is the game: pure TypeScript, metres and seconds, `step(state, input, prevCrouch)`
