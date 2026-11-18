@@ -93,6 +93,8 @@ export interface Battle {
   /** The enemy's targets for the coming night (places in `NODES`, `NIGHT`), and those of them the player has fortified (`FORTIFY`). */
   targets: number[];
   fortified: number[];
+  /** The nodes other players' expeditions are sent to take in this raid (places in `NODES`): announced as the night's targets are, and fortified the same way, which shuts them to those expeditions. */
+  noticed: number[];
   /** The battle's clock when the raid ended before the battle did, and each node's standing then; null while the raid is on. */
   left: { at: number; nodes: NodeHold[] } | null;
   /** Other players' expeditions still to come, soonest first. */
@@ -330,6 +332,7 @@ export function initBattle(s: State, start: BattleStart): Battle {
     counters: [],
     targets: (start.targets ?? []).map((id) => nodeIndex(id)).filter((i) => i >= 0),
     fortified: [],
+    noticed: [],
     left: null,
     rivals: [],
     away: Math.max(0, Math.round(start.away ?? 0)),
@@ -343,7 +346,10 @@ export function initBattle(s: State, start: BattleStart): Battle {
     // An owner whose standing a save could not read back (`parseHold()`) never lands: the node it took would be lost on reload.
     if (i < 0 || !x.kinds.length || !parseHold(rivalHold(x.owner))) continue;
     if (x.at <= 0 && rivalOf(s.nodes[i]) === x.owner) Object.assign(addSquad(b, 3, x.kinds, i, i, "hold"), { owner: x.owner });
-    else b.rivals.push({ ...x, kinds: [...x.kinds] });
+    else {
+      b.rivals.push({ ...x, kinds: [...x.kinds] });
+      if (!b.noticed.includes(i)) b.noticed.push(i);
+    }
   }
   return b;
 }
@@ -1023,7 +1029,7 @@ function fightAndTake(s: State, b: Battle, dt: number) {
   if (gone.size) s.enemies = s.enemies.filter((e) => !gone.has(e));
   settleSquads(b, fought.squads);
   const left = garrisons.map((g, i) => g.filter((_, k) => !fought.fell[i].includes(k)));
-  const taken = reckonCaptures({ holds: s.nodes, squads: b.squads.map(reckonSquad), guards: standing(fought), present: NODES.map((n, i) => presence(s, b, i)), meter: b.meter, threat: b.threat }, dt);
+  const taken = reckonCaptures({ holds: s.nodes, squads: b.squads.map(reckonSquad), guards: standing(fought), present: NODES.map((n, i) => presence(s, b, i)), meter: b.meter, threat: b.threat, shut: b.fortified.length ? NODES.map((_, i) => b.fortified.includes(i)) : undefined }, dt);
   settleSquads(b, taken.squads);
   b.meter = taken.meter;
   b.threat = taken.threat;

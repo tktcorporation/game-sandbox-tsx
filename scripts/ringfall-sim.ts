@@ -39,6 +39,8 @@ import { bodyCenter, damageEnemy, eyePos, fireRay, magSize, robotGear, weakPoint
 import { lookAngles } from "../src/ringfall/sim/geom";
 import { forward } from "../src/ringfall/sim/state";
 import { build, buildFactory, buildState, buy, canBuild, deliver, depotAllowance, depotBudget, emptyLoadout, fitsStart, healRoom, isStarter, issuedHeals, itemCost, FIRST_ENTRY, loadoutCost, newProfile, parseProfile, pouch, price, sell, sellPrice, settle, stashUsed, takeKit, wares, withStarters, type Item, type Profile } from "../src/ringfall/meta/profile";
+import { rivalHold } from "../src/ringfall/sim/holds";
+import { squadsAway } from "../src/ringfall/meta/expeditions";
 import { emptyHideout, hideoutDone, maxLevel, MODULES, poisWith, sources, stashCap } from "../src/ringfall/meta/hideout";
 import { boostFor, boosted } from "../src/ringfall/sim/state";
 import { CONQUEST, COUNTER, FACTORY, FINALE, FORTIFY, MOMENTUM, NIGHT, FACTORY_TOP, HIDEOUT, TOOL_KINDS, TOOLS, VAULT } from "../src/ringfall/sim/config";
@@ -4370,6 +4372,22 @@ function checkPushPull(): string | null {
   const won = settle(endP, er);
   if (!won.liberated || won.liberated.days !== 20 || won.liberated.cycle !== 1 || won.profile.cycle !== 1 || won.profile.cycleDay !== 24 || won.profile.liberations.join() !== "20" || won.profile.factory !== 0 || playerNodes(won.profile).length !== 0) return `finale: the island freed left ${JSON.stringify({ l: won.liberated, cycle: won.profile.cycle, from: won.profile.cycleDay, days: won.profile.liberations, factory: won.profile.factory, nodes: playerNodes(won.profile).length })}`;
   if (raidThreat(won.profile) !== FINALE.threat || won.profile.hideout !== endP.hideout && JSON.stringify(won.profile.hideout) !== JSON.stringify(endP.hideout)) return `finale: the next round plays at 強度 ${raidThreat(won.profile)}`;
+  // With other players about (docs/ringfall/multiplayer.md, 周と解放): a node another player holds stays theirs into the
+  // next round, and the expeditions out are called home, their squads no longer away.
+  const theirs = [...byPad, ...rest][FINALE.nodes];
+  const out = { code: "K7M2QX", node: "relay" as NodeId, sentAt: 0, units: 3 };
+  const endR: Profile = { ...endP, poiState: { ...endP.poiState, [theirs]: { state: rivalHold("Z3P9TR") } }, expeditions: [{ ...out, id: 4, state: "holding" }, { ...out, id: 0, state: "sending" }] };
+  const rr = newRun(35, starterKit(), "reservoir", { island: holds(endR), battle: { factory: endR.factory }, finale: finaleOpen(endR) });
+  const titanR = rr.enemies.find((e) => e.kind === "titan");
+  if (!titanR) return "finale: no titan stands on the pad of an island with another player's node";
+  rr.player.pos = { x: POIS[PAD].x, y: terrainHeight(POIS[PAD].x, POIS[PAD].z), z: POIS[PAD].z };
+  damageEnemy(rr, titanR, 1e6, false, titanR.pos);
+  ticks(rr, 0.5);
+  rr.phase = "done";
+  rr.outcome = "extracted";
+  const wonR = settle(endR, rr);
+  if (!wonR.liberated || wonR.profile.poiState[theirs].state !== rivalHold("Z3P9TR") || playerNodes(wonR.profile).length !== 0) return `finale: the island freed left another player's ${theirs} ${wonR.profile.poiState[theirs].state}`;
+  if (wonR.profile.expeditions.map((e) => e.state).join() !== "recalling,sending" || squadsAway(wonR.profile) !== 1) return `finale: the island freed left its expeditions ${wonR.profile.expeditions.map((e) => e.state).join()}`;
   // Without the pad open the titan's fall frees nothing.
   const nr = newRun(35, starterKit(), "reservoir", { island: holds(endP), battle: { factory: endP.factory } });
   const nt = nr.enemies.find((e) => e.kind === "titan")!;

@@ -23,8 +23,16 @@ export const EXPEDITION = {
   perIsland: 3,
   /** Nodes an island loses to expeditions in one UTC day; past it, the expeditions there stand off until the next. */
   perDay: 2,
-  /** Seconds from an expedition's acceptance to its standing at its node: the landing and the walk, which the server does not trace. */
-  arrive: CONQUEST.land.ship + 120,
+  /**
+   * Seconds from an expedition's acceptance to its standing at its node (予告): the owner reads of it
+   * at once and has this long to answer, by fortifying the node in a raid or by leaving the factory's
+   * squads at home. A raid the owner starts before then takes the expedition in (`lease`).
+   */
+  notice: 12 * 3600,
+  /** Seconds a lease lasts: a raid's battle and time to settle it. Unreported by then, the island goes on in numbers from where the lease found it. */
+  lease: CONQUEST.time + 1800,
+  /** Seconds a node the owner fortified in a raid is shut to expeditions: one at it stands off (固め). */
+  fortify: 24 * 3600,
   /** Milliseconds between the reckonings of an island with expeditions on it. */
   alarmMs: 60_000,
   /** Ticks one reckoning runs at most; an island further behind is reckoned again at once. */
@@ -76,13 +84,22 @@ export interface Defender {
   task: Task;
 }
 
-/** A change the owner reads: an expedition come to a node, a node taken, an expedition wiped out, a node taken back, or one whose holders were lost going back to the enemy. */
+/** A change the owner reads: an expedition sent at a node (its notice), come to it, a node taken, an expedition wiped out, a node taken back, one whose holders were lost going back to the enemy, or an expedition called home before it took anything. */
 export interface LogEntry {
   seq: number;
   at: number;
-  t: "landed" | "taken" | "wiped" | "retaken" | "released";
+  t: "noticed" | "landed" | "taken" | "wiped" | "retaken" | "released" | "recalled";
   node: string;
   by: Attacker;
+}
+
+/** An expedition as the owner's raid takes it in (`lease`): the island's number for it, whose, its node, its members' kinds, and how it stood. */
+export interface Lent {
+  id: number;
+  by: Attacker;
+  target: string;
+  kinds: EnemyKind[];
+  state: "coming" | "attacking" | "holding";
 }
 
 export interface IslandState {
@@ -108,12 +125,28 @@ export interface IslandState {
   seq: number;
   /** Nodes taken from the island by expeditions on UTC day `day`: the day's limit counts these, not the log, which drops old entries. */
   taken: { day: number; n: number };
+  /**
+   * The owner's raid has the expeditions `ids` until `until`: the island leaves them as they are
+   * meanwhile, and the raid's report says what became of them. Left out or null, none. (Optional:
+   * islands stored before leases have none.)
+   */
+  lease?: { until: number; ids: number[] } | null;
+  /** Until when each node is shut to expeditions, fortified by the owner in a raid; 0 or left out, open. */
+  fort?: number[];
+}
+
+/** What a report says of an expedition its raid took in: the island's number for it and the members it has left (0: wiped out). */
+export interface LentResult {
+  id: number;
+  left: number;
 }
 
 /** What one request asks of an island. */
 export type IslandOp =
   | { t: "claim"; player: { id: string; name: string }; code: string }
-  | { t: "report"; player: { id: string; name: string }; holds: PoiHold[]; retaken: string[]; factory: number; day: number }
+  | { t: "report"; player: { id: string; name: string }; holds: PoiHold[]; retaken: string[]; factory: number; day: number; lent?: LentResult[]; fortified?: string[] }
+  | { t: "lease"; player: string }
+  | { t: "recall"; from: string; id: number }
   | { t: "view" }
   | { t: "log"; player: string; after: number }
   | { t: "whois"; player: string }
@@ -197,7 +230,8 @@ export function publicView(s: IslandState, now: number) {
       by: { ...e.by },
       target: NODE_IDS[e.target],
       units: e.units.length,
-      state: e.holding ? "holding" : e.arrived ? "attacking" : "coming",
+      state: e.holding ? "holding" : !e.arrived ? "coming" : heldBack(s, e, now) ? "waiting" : "attacking",
+      arriveAt: e.arriveAt,
     })),
   };
 }
@@ -211,10 +245,19 @@ function startFight(s: IslandState, i: number) {
 
 /**
  * Whether expedition `e` is held back at `t`: at its node, not holding it, while the island has lost
- * its day's nodes (`EXPEDITION.perDay`). It stays out of its node's fight altogether until the next
- * UTC day: nobody fights it and the factory sends nothing at it.
+ * its day's nodes (`EXPEDITION.perDay`) or the owner has fortified the node (`EXPEDITION.fortify`).
+ * It stays out of its node's fight altogether until the next UTC day or until the node opens:
+ * nobody fights it and the factory sends nothing at it.
  */
-const heldBack = (s: IslandState, e: Expedition, t: number) => e.arrived && !e.holding && takenOn(s, t) >= EXPEDITION.perDay;
+function heldBack(s: IslandState, e: Expedition, t: number): boolean {
+  return e.arrived && !e.holding && (takenOn(s, t) >= EXPEDITION.perDay || fortUntil(s, e.target) > t);
+}
+
+/** Until when node `i` is shut to expeditions (`EXPEDITION.fortify`), or 0. */
+const fortUntil = (s: IslandState, i: number) => s.fort?.[i] ?? 0;
+
+/** Whether the owner's raid has expedition `e` at `t` (`IslandState.lease`): the island leaves it as it is. */
+const leased = (s: IslandState, e: Expedition, t: number) => !!s.lease && t < s.lease.until && s.lease.ids.includes(e.id);
 
 /** An expedition at its node, as the reckoning sees it. */
 const expeditionSquad = (e: Expedition): ReckonSquad => ({
@@ -236,12 +279,13 @@ const defenderSquad = (d: Defender): ReckonSquad => ({ id: d.id, side: 0, units:
 /** One tick of the island at its clock `t`: arrivals, the factory's defence, then the battle's fights and captures. */
 function tick(s: IslandState, t: number) {
   for (const e of s.expeditions)
-    if (!e.arrived && e.arriveAt <= t) {
+    if (!e.arrived && e.arriveAt <= t && !leased(s, e, t)) {
       e.arrived = true;
       startFight(s, e.target);
       note(s, t, "landed", e.target, e.by);
     }
-  const back = new Set(s.expeditions.filter((e) => heldBack(s, e, t)));
+  // Those the owner's raid has stand out of the island's reckoning as those held back do.
+  const back = new Set(s.expeditions.filter((e) => heldBack(s, e, t) || (e.arrived && !e.holding && leased(s, e, t))));
   // One held back until now may attack: its node's fight starts as at its arrival (the turrets go back to their posts).
   for (const e of s.expeditions) {
     if (e.waiting && !back.has(e)) startFight(s, e.target);
@@ -325,15 +369,20 @@ function tick(s: IslandState, t: number) {
  * and held back ones wait for a time of their own (`quietUntil()`).
  */
 function quiet(s: IslandState, t: number): boolean {
-  return !s.defenders.length && !s.meter.some((m) => m) && s.expeditions.every((e) => !e.arrived || e.holding || heldBack(s, e, t));
+  return !s.defenders.length && !s.meter.some((m) => m) && s.expeditions.every((e) => !e.arrived || e.holding || heldBack(s, e, t) || leased(s, e, t));
 }
 
-/** The first time something happens on a quiet island after `t`: an expedition arriving, or the next UTC day for one held back; Infinity for none. */
+/** The first time something happens on a quiet island after `t`: an expedition arriving, a lease running out, or the next UTC day or the node's opening for one held back; Infinity for none. */
 function quietUntil(s: IslandState, t: number): number {
   let at = Infinity;
   for (const e of s.expeditions) {
-    if (!e.arrived) at = Math.min(at, e.arriveAt);
-    else if (heldBack(s, e, t)) at = Math.min(at, (utcDay(t) + 1) * DAY_MS);
+    if (e.holding) continue;
+    if (leased(s, e, t)) at = Math.min(at, s.lease!.until);
+    else if (!e.arrived) at = Math.min(at, e.arriveAt);
+    else if (heldBack(s, e, t)) {
+      if (takenOn(s, t) >= EXPEDITION.perDay) at = Math.min(at, (utcDay(t) + 1) * DAY_MS);
+      if (fortUntil(s, e.target) > t) at = Math.min(at, fortUntil(s, e.target));
+    }
   }
   return at;
 }
@@ -425,11 +474,89 @@ function report(s: IslandState, op: Extract<IslandOp, { t: "report" }>, now: num
       note(s, now, "retaken", i, gone[0]?.by ?? { code: rivalOf(cur)!, name: "" });
     } else if (h === "held" || h === "freed") s.holds[i] = h;
   });
+  // What the raid made of the expeditions it took in, while its lease stands; a report after it ran out says nothing of them.
+  const live = s.lease && now < s.lease.until ? s.lease.ids : [];
+  for (const r of op.lent ?? []) {
+    const e = s.expeditions.find((x) => x.id === r.id);
+    if (!e || !live.includes(r.id)) continue;
+    const i = e.target;
+    const theirs = rivalOf(s.holds[i]) === e.by.code;
+    if (!e.arrived) {
+      // It landed in the raid.
+      e.arrived = true;
+      note(s, now, "landed", i, e.by);
+    }
+    if (r.left <= 0) {
+      s.expeditions = s.expeditions.filter((x) => x !== e);
+      note(s, now, "wiped", i, e.by);
+      if (theirs) {
+        s.holds[i] = op.holds[i] === "freed" ? "freed" : "held";
+        note(s, now, "released", i, e.by);
+      }
+      continue;
+    }
+    e.units = e.units.slice(0, r.left);
+    const told = op.holds[i];
+    if (e.holding && theirs && told === "held") {
+      // The enemy took the node from its holders, who are at it again.
+      s.holds[i] = "held";
+      e.holding = false;
+      note(s, now, "released", i, e.by);
+    } else if (!e.holding && rivalOf(told) === e.by.code && takenOn(s, now) < EXPEDITION.perDay) {
+      s.holds[i] = told;
+      e.holding = true;
+      note(s, now, "taken", i, e.by);
+    }
+  }
+  s.lease = null;
+  // The nodes fortified in the raid are shut to expeditions for a day: only the owner's, and only one an expedition is at or coming to.
+  for (const id of op.fortified ?? []) {
+    const i = NODE_IDS.indexOf(id);
+    if (i < 0 || s.holds[i] !== "freed" || !s.expeditions.some((e) => e.target === i && !e.holding)) continue;
+    s.fort ??= NODE_IDS.map(() => 0);
+    s.fort[i] = now + EXPEDITION.fortify * 1000;
+  }
   s.guards = NODE_IDS.map(() => null);
   s.meter = NODE_IDS.map(() => null);
   s.defenders = [];
   s.made = FACTORY.levels[s.factory].every;
-  for (const e of s.expeditions) if (e.arrived && !e.holding) startFight(s, e.target);
+  for (const e of s.expeditions) {
+    if (e.arrived && !e.holding && !heldBack(s, e, now)) startFight(s, e.target);
+    // One held back as the report lands starts its node's fight when it may attack (`tick()`).
+    else if (e.arrived && !e.holding) e.waiting = true;
+  }
+}
+
+/**
+ * The owner's raid takes the expeditions on the island in (レイド中の遠征隊): every one of them, as it
+ * stands. Until the raid's report, or `EXPEDITION.lease` seconds, the island leaves them as they are.
+ * A lease still standing is answered again as it is and not made longer, so asking again and again
+ * holds nobody off.
+ */
+function lease(s: IslandState, now: number): { until: number; expeditions: Lent[]; wrote: boolean } {
+  const standing = s.lease && now < s.lease.until ? s.lease : null;
+  const ids = standing ? standing.ids : s.expeditions.map((e) => e.id);
+  const until = standing ? standing.until : now + EXPEDITION.lease * 1000;
+  if (!standing) s.lease = ids.length ? { until, ids } : null;
+  const expeditions = s.expeditions
+    .filter((e) => ids.includes(e.id))
+    .map((e): Lent => ({ id: e.id, by: { ...e.by }, target: NODE_IDS[e.target], kinds: e.units.map((u) => u.kind), state: e.holding ? "holding" : e.arrived ? "attacking" : "coming" }));
+  return { until, expeditions, wrote: !standing && ids.length > 0 };
+}
+
+/**
+ * The sender calls expedition `id` home (引き上げ): it leaves the island, and a node it held goes back
+ * to the enemy. False when the island has no such expedition of that sender's.
+ */
+function recall(s: IslandState, from: string, id: number, now: number): boolean {
+  const e = s.expeditions.find((x) => x.id === id && x.by.code === from);
+  if (!e) return false;
+  s.expeditions = s.expeditions.filter((x) => x !== e);
+  if (rivalOf(s.holds[e.target]) === from) {
+    s.holds[e.target] = "held";
+    note(s, now, "released", e.target, e.by);
+  } else note(s, now, "recalled", e.target, e.by);
+  return true;
 }
 
 /** Applies `op` to the island at `now` (reckoned to `now` first). The state passed in is changed in place. */
@@ -445,6 +572,12 @@ export function islandOp(state: IslandState | null, op: IslandOp, now: number): 
     report(s, op, now);
     return done(200, { ok: true, holds: s.holds }, true);
   }
+  if (op.t === "lease") {
+    if (s.owner.id !== op.player) return done(403, fail("not-owner"));
+    const l = lease(s, now);
+    return done(200, { ok: true, until: l.until, expeditions: l.expeditions }, l.wrote);
+  }
+  if (op.t === "recall") return recall(s, op.from, op.id, now) ? done(200, { ok: true }, true) : done(404, fail("no-expedition"));
   if (op.t === "view") return done(200, publicView(s, now));
   if (op.t === "whois") return s.owner.id === op.player ? done(200, { ok: true, factory: s.factory, name: s.owner.name }) : done(403, fail("not-owner"));
   if (op.t === "log") {
@@ -459,8 +592,9 @@ export function islandOp(state: IslandState | null, op: IslandOp, now: number): 
   if (i < 0 || !op.kinds.length) return done(400, fail("bad-request"));
   const why = closedWhy(s, i, now);
   if (why) return done(why.status, fail(why.error));
-  const e: Expedition = { id: s.nextId++, by: { ...op.from }, target: i, units: op.kinds.map(unit), sentAt: now, arriveAt: now + EXPEDITION.arrive * 1000, arrived: false, holding: false };
+  const e: Expedition = { id: s.nextId++, by: { ...op.from }, target: i, units: op.kinds.map(unit), sentAt: now, arriveAt: now + EXPEDITION.notice * 1000, arrived: false, holding: false };
   s.expeditions.push(e);
+  note(s, now, "noticed", i, e.by);
   return done(201, { ok: true, id: e.id, arriveAt: e.arriveAt }, true);
 }
 
@@ -481,3 +615,12 @@ export function parseHolds(raw: unknown): PoiHold[] | null {
 
 /** The units an attacker at factory level `factory` may send: its factory's squad (`FACTORY.levels[].kinds`). */
 export const squadKinds = (factory: number): readonly EnemyKind[] => FACTORY.levels[Math.max(0, Math.min(FACTORY_TOP, factory))].kinds;
+
+/** What a report says became of the expeditions its raid took in, or null: each the island's number and the members left, each number once. Left out, none. */
+export function parseLent(raw: unknown): LentResult[] | null {
+  if (raw === undefined) return [];
+  if (!Array.isArray(raw) || raw.length > EXPEDITION.perIsland) return null;
+  const ok = (r: unknown): r is LentResult => !!r && typeof r === "object" && Number.isInteger((r as LentResult).id) && (r as LentResult).id > 0 && Number.isInteger((r as LentResult).left) && (r as LentResult).left >= 0 && (r as LentResult).left <= 64;
+  if (!raw.every(ok) || new Set(raw.map((r) => r.id)).size !== raw.length) return null;
+  return raw.map((r) => ({ id: r.id, left: r.left }));
+}

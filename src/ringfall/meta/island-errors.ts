@@ -33,6 +33,7 @@ export const API_ERRORS = [
   "island-full",
   "day-limit",
   "too-many-units",
+  "no-expedition",
 ] as const;
 
 export type ApiError = (typeof API_ERRORS)[number];
@@ -64,6 +65,7 @@ export const ERROR_TEXT: Record<ApiError | NetError, string> = {
   "island-full": "その島には遠征隊がいっぱいです",
   "day-limit": "その島は今日の分を取られました。明日もう一度",
   "too-many-units": "工場の部隊より多くは送れません",
+  "no-expedition": "その遠征隊はもういません",
   network: "つながりませんでした",
   "bad-response": "サーバーの答えが読めませんでした",
 };

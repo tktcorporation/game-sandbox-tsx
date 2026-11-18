@@ -20,6 +20,11 @@
  *   `retaken` is refused.
  * - **log**: the owner's log from a cursor holds only what came after it; nobody else reads it.
  * - **public**: what anyone reads of an island holds no player's id.
+ * - **notice**: an expedition is in the owner's log at once and stands at its node `EXPEDITION.notice` on.
+ * - **lease**: the owner's raid takes the expeditions in; the island leaves them alone until the
+ *   raid's report (wiped out, or holding the node it took) or the lease's end, then goes on in numbers.
+ * - **fortified**: a node the report names as fortified is shut for a day; the expedition stands off.
+ * - **recall**: only its sender calls an expedition home; a node it held goes back to the enemy.
  * - **steady**: the island reckoned in one alarm or in many small ones ends the same.
  *
  * Run alone: `npx tsx scripts/ringfall-expeditions.ts`; it ends with "expeditions ok".
@@ -143,6 +148,8 @@ const alarms = (code: string, from: number, to: number) => {
 
 // --- refused
 const T1 = T0 + EXPEDITION.protectDays * DAY + 1000;
+/** An hour past the arrival of an expedition sent at T1: its notice (`EXPEDITION.notice`) and time to fight. */
+const HOUR_ON = (EXPEDITION.notice + 3600) * 1000;
 {
   const cases: [string, Promise<{ status: number; body: Record<string, unknown> }>, number, string][] = [
     ["protected", send(B, A.code, "quarry", 7, T0 + DAY), 403, "protected"],
@@ -172,9 +179,9 @@ let cursor = 0;
   const seen = (view.body.expeditions as { by: { name: string } }[])[0]?.by.name;
   console.log(`capture: the expedition sent as "なりすまし" shows as ${JSON.stringify(seen)}`);
   check(seen === B.name, "capture: the expedition took the name its request carried, not its island's");
-  alarms(A.code, T1, T1 + (EXPEDITION.arrive + 300) * 1000);
+  alarms(A.code, T1, T1 + (EXPEDITION.notice + 300) * 1000);
   const s = islands.get(A.code)!;
-  const log = await readLog(A.code, A.id, 0, T1 + (EXPEDITION.arrive + 300) * 1000);
+  const log = await readLog(A.code, A.id, 0, T1 + (EXPEDITION.notice + 300) * 1000);
   cursor = log.body.next as number;
   const e = s.expeditions[0];
   console.log(`capture: sent ${r.status} ${r.text}; quarry ${holdOf(A.code, "quarry")}, expedition ${e ? `${e.units.length} left, holding ${e.holding}` : "gone"}; log ${JSON.stringify((log.body.entries as { t: string; node: string }[]).map((x) => `${x.t} ${x.node}`))}`);
@@ -194,7 +201,7 @@ const T2 = T1 + 400_000;
   const day = await send(B, A.code, "relay", 7, T2);
   console.log(`limits: station ${st.status}; a third the same day -> ${day.status} ${err(day)}`);
   check(st.status === 201 && day.status === 409 && err(day) === "day-limit", "limits: the day's limit was not kept");
-  alarms(A.code, T2, T2 + (EXPEDITION.arrive + 600) * 1000);
+  alarms(A.code, T2, T2 + (EXPEDITION.notice + 600) * 1000);
   const T3 = T2 + DAY;
   const r = await send(B, A.code, "robotworks", 2, T3);
   const full = await send(B, A.code, "relay", 7, T3);
@@ -202,7 +209,7 @@ const T2 = T1 + 400_000;
   check(holdOf(A.code, "station") === `rival:${C.code}`, "capture: C's expedition did not take the lightly garrisoned station");
   check(r.status === 201 && full.status === 409 && err(full) === "island-full", "limits: the island's limit was not kept");
   // --- wiped: two grunts against the robot works' garrison
-  alarms(A.code, T3, T3 + (EXPEDITION.arrive + 600) * 1000);
+  alarms(A.code, T3, T3 + (EXPEDITION.notice + 600) * 1000);
   const s = islands.get(A.code)!;
   const left = s.expeditions.find((e) => e.target === NODE_IDS.indexOf("robotworks"));
   const guards = s.guards[NODE_IDS.indexOf("robotworks")];
@@ -256,7 +263,7 @@ const T2 = T1 + 400_000;
   };
   const one = make();
   const many = make();
-  const end = T1 + 3_600_000;
+  const end = T1 + HOUR_ON;
   while (advance(one, end).behind);
   for (let t = T1; t <= end; t += 7_919) advance(many, t);
   advance(many, end);
@@ -283,7 +290,7 @@ const T2 = T1 + 400_000;
   op(st, { t: "expedition", from: B, target: "quarry", kinds: [...FACTORY.levels[FACTORY_TOP].kinds] }, T1);
   st.taken = { day: Math.floor(T1 / DAY), n: EXPEDITION.perDay };
   const units = st.expeditions[0].units.map((u) => u.hp + u.shield).join(",");
-  const late = T1 + (EXPEDITION.arrive + 900) * 1000;
+  const late = T1 + (EXPEDITION.notice + 900) * 1000;
   let sent = 0;
   for (let t = T1; t <= late; t += 1000) {
     advance(st, t);
@@ -335,12 +342,12 @@ const T2 = T1 + 400_000;
   {
     const lim = island({ quarry: "freed", supply: "freed" }, 0);
     op(lim, { t: "expedition", from: B, target: "quarry", kinds: [...FACTORY.levels[FACTORY_TOP].kinds] }, T1);
-    run(lim, T1 + 3_600_000);
-    for (let k = 0; k < EXPEDITION.logMax; k++) lim.log.push({ seq: ++lim.seq, at: T1 + 3_600_000, t: "wiped", node: "relay", by: C });
+    run(lim, T1 + HOUR_ON);
+    for (let k = 0; k < EXPEDITION.logMax; k++) lim.log.push({ seq: ++lim.seq, at: T1 + HOUR_ON, t: "wiped", node: "relay", by: C });
     lim.log.splice(0, lim.log.length - EXPEDITION.logMax);
     const takes = lim.log.filter((e) => e.t === "taken").length;
-    const r1 = op(lim, { t: "expedition", from: C, target: "station", kinds: ["grunt"] }, T1 + 3_600_000);
-    const r2 = op(lim, { t: "expedition", from: C, target: "relay", kinds: ["grunt"] }, T1 + 3_600_000);
+    const r1 = op(lim, { t: "expedition", from: C, target: "station", kinds: ["grunt"] }, T1 + HOUR_ON);
+    const r2 = op(lim, { t: "expedition", from: C, target: "relay", kinds: ["grunt"] }, T1 + HOUR_ON);
     console.log(`day's limit: took the quarry ${lim.holds[quarry] === `rival:${B.code}`}, "taken" left in the log ${takes}, another ${r1.status}, a third ${r2.status} ${(r2.body as { error?: string }).error}`);
     check(lim.holds[quarry] === `rival:${B.code}` && takes === 0 && r1.status === 201 && r2.status === 409, "day's limit: the day's take was forgotten with the log");
   }
@@ -372,8 +379,8 @@ const T2 = T1 + 400_000;
   const h = island({ quarry: "freed", supply: "freed" }, 0);
   op(h, { t: "expedition", from: B, target: "quarry", kinds: [...FACTORY.levels[FACTORY_TOP].kinds] }, T1);
   const coming = nextAlarm(h, T1 + 1000);
-  run(h, T1 + 3_600_000);
-  const after = nextAlarm(h, T1 + 3_600_000);
+  run(h, T1 + HOUR_ON);
+  const after = nextAlarm(h, T1 + HOUR_ON);
   console.log(`alarm: while coming ${coming === null ? "none" : `${(coming - T1 - 1000) / 1000} s on`}; holding (${h.expeditions.map((e) => e.holding).join(",")}) ${after === null ? "none" : "armed"}`);
   check(coming === h.expeditions[0].arriveAt && h.expeditions.every((e) => e.holding) && after === null, "alarm: an island whose expeditions all hold their nodes keeps an alarm");
 
@@ -382,11 +389,115 @@ const T2 = T1 + 400_000;
   const read = op(q, { t: "view" }, T1 + DAY);
   const log = op(q, { t: "log", player: A.id, after: 0 }, T1 + 2 * DAY);
   const rep = op(q, { t: "report", player: A, retaken: [], holds: holdsWith({ supply: "freed" }) as IslandState["holds"], factory: 0, day: 2 }, T1 + 2 * DAY);
-  const moved = op(h, { t: "view" }, T1 + 3_600_000 + 5000);
+  const moved = op(h, { t: "view" }, T1 + HOUR_ON + 5000);
   op(q, { t: "expedition", from: B, target: "quarry", kinds: ["grunt"] }, T1 + 2 * DAY);
-  const ticking = op(q, { t: "view" }, T1 + 2 * DAY + (EXPEDITION.arrive + 5) * 1000);
+  const ticking = op(q, { t: "view" }, T1 + 2 * DAY + (EXPEDITION.notice + 5) * 1000);
   console.log(`stored: a quiet view ${read.changed}, the log ${log.changed}, a report ${rep.changed}, a view of an island of holders ${moved.changed}, a view over a fight ${ticking.changed}`);
   check(!read.changed && !log.changed && rep.changed && !moved.changed && ticking.changed, "stored: what an op stores is not what it changed");
+}
+
+// --- notice, the owner's raid taking expeditions in, fortifying, and calling one home
+{
+  const op = (st: IslandState | null, o: IslandOp, t: number) => islandOp(st, o, t);
+  const island = (holds: Record<string, string>, factory: number) => {
+    const st = op(null, { t: "claim", player: A, code: A.code }, T0).state!;
+    op(st, { t: "report", player: A, retaken: [], holds: holdsWith(holds) as IslandState["holds"], factory, day: 1 }, T0);
+    return st;
+  };
+  const run = (st: IslandState, to: number) => {
+    while (advance(st, to).behind);
+  };
+  const top = [...FACTORY.levels[FACTORY_TOP].kinds];
+  const quarry = NODE_IDS.indexOf("quarry");
+  const NOTICE = EXPEDITION.notice * 1000;
+  const LEASE = EXPEDITION.lease * 1000;
+  type View = { expeditions: { state: string; arriveAt: number }[] };
+  const stateOf = (st: IslandState, t: number) => (op(st, { t: "view" }, t).body as View).expeditions[0]?.state;
+
+  // Notice: the owner reads of it at once, and it stands at its node only `EXPEDITION.notice` on.
+  const n = island({ quarry: "freed", supply: "freed" }, 0);
+  op(n, { t: "expedition", from: B, target: "quarry", kinds: top }, T1);
+  const told = (op(n, { t: "log", player: A.id, after: 0 }, T1 + 1000).body as { entries: { t: string }[] }).entries.map((e) => e.t);
+  const seen = (op(n, { t: "view" }, T1 + 1000).body as View).expeditions[0];
+  run(n, T1 + NOTICE - 60_000);
+  const before = n.expeditions[0].arrived;
+  run(n, T1 + NOTICE + 5000);
+  console.log(`notice: ${EXPEDITION.notice / 3600} h; the log at once ${JSON.stringify(told)}, seen ${seen.state} due ${(seen.arriveAt - T1) / 3600_000} h on; arrived a minute before ${before}, after ${n.expeditions[0].arrived}`);
+  check(told.join() === "noticed" && seen.state === "coming" && seen.arriveAt === T1 + NOTICE && !before && n.expeditions[0].arrived, "notice: an expedition was not announced, or stood at its node before its notice ran out");
+
+  // A lease: the owner's raid takes the expedition in, and the island leaves it alone until the report or the lease's end.
+  const l = island({ quarry: "freed", supply: "freed" }, 0);
+  op(l, { t: "expedition", from: B, target: "quarry", kinds: top }, T1);
+  const at = T1 + NOTICE - 600_000;
+  const stranger = op(l, { t: "lease", player: B.id }, at);
+  const took = op(l, { t: "lease", player: A.id }, at).body as { until: number; expeditions: { id: number; target: string; kinds: string[]; state: string; by: { code: string } }[] };
+  const again = op(l, { t: "lease", player: A.id }, at + 300_000).body as { until: number };
+  run(l, at + LEASE - 5000);
+  const frozen = !l.expeditions[0].arrived && l.holds[quarry] === "freed";
+  const sleeps = nextAlarm(l, at + LEASE - 5000);
+  run(l, at + LEASE + 3_600_000);
+  console.log(`lease: a stranger ${stranger.status}; took ${took.expeditions.length} (${took.expeditions[0].state}, ${took.expeditions[0].kinds.length} units) for ${(took.until - at) / 1000} s, asked again ${(again.until - at) / 1000} s; left alone ${frozen}, the alarm at its end ${sleeps !== null && sleeps >= took.until && sleeps < took.until + 2000}; unreported, an hour past it quarry ${l.holds[quarry]}`);
+  check(stranger.status === 403 && took.expeditions.length === 1 && took.expeditions[0].target === "quarry" && took.expeditions[0].by.code === B.code && took.until === at + LEASE && again.until === took.until, "lease: the owner's raid did not take the expedition in for one lease");
+  check(frozen && sleeps !== null && sleeps >= took.until && sleeps < took.until + 2000, "lease: the island reckoned an expedition a raid had");
+  check(l.holds[quarry] === `rival:${B.code}`, "lease: an unreported lease did not go on in numbers");
+
+  // The raid's report: the expedition wiped out in it is gone; one that took its node holds it; a report after the lease says nothing.
+  const lent = (how: "wiped" | "taken" | "late" | "limit") => {
+    const st = island({ quarry: "freed", supply: "freed" }, 0);
+    op(st, { t: "expedition", from: B, target: "quarry", kinds: top }, T1);
+    op(st, { t: "lease", player: A.id }, T1 + 1000);
+    if (how === "limit") st.taken = { day: Math.floor(T1 / DAY), n: EXPEDITION.perDay };
+    const holds = holdsWith({ quarry: how === "wiped" ? "freed" : `rival:${B.code}`, supply: "freed" }) as IslandState["holds"];
+    const when = how === "late" ? T1 + 1000 + LEASE + 1000 : T1 + 1_500_000;
+    op(st, { t: "report", player: A, retaken: [], holds, factory: 0, day: 2, lent: [{ id: st.expeditions[0].id, left: how === "wiped" ? 0 : 3 }] }, when);
+    return st;
+  };
+  const wiped = lent("wiped");
+  const taken = lent("taken");
+  const late = lent("late");
+  const limit = lent("limit");
+  console.log(`lease report: wiped -> ${wiped.expeditions.length} left, log ${wiped.log.map((e) => e.t).join(",")}; taken -> quarry ${taken.holds[quarry]}, ${taken.expeditions[0].units.length} units holding ${taken.expeditions[0].holding}, log ${taken.log.map((e) => e.t).join(",")}; after the lease -> quarry ${late.holds[quarry]}, ${late.expeditions[0].units.length} units; past the day's limit -> quarry ${limit.holds[quarry]}`);
+  check(wiped.expeditions.length === 0 && wiped.holds[quarry] === "freed" && wiped.log.map((e) => e.t).join() === "noticed,landed,wiped" && !wiped.lease, "lease report: an expedition wiped out in the raid is still on the island");
+  check(taken.holds[quarry] === `rival:${B.code}` && taken.expeditions[0].holding && taken.expeditions[0].units.length === 3 && taken.log.map((e) => e.t).join() === "noticed,landed,taken" && taken.taken.n === 1, "lease report: a node taken in the raid is not the expedition's");
+  check(late.holds[quarry] === "freed" && late.expeditions[0].units.length === top.length && !late.expeditions[0].holding, "lease report: a report after the lease ran out changed the expedition");
+  check(limit.holds[quarry] === "freed" && !limit.expeditions[0].holding, "lease report: a raid's capture went past the day's limit");
+
+  // Fortified: the node the owner held in a raid is shut for a day; the expedition stands off, then attacks.
+  const f = island({ quarry: "freed", supply: "freed" }, 0);
+  op(f, { t: "expedition", from: B, target: "quarry", kinds: top }, T1);
+  const ft = T1 + NOTICE - 3_600_000;
+  op(f, { t: "report", player: A, retaken: [], holds: holdsWith({ quarry: "freed", supply: "freed" }) as IslandState["holds"], factory: 0, day: 2, fortified: ["quarry", "supply", "relay"] }, ft);
+  const shut = (f.fort ?? []).filter((t) => t > 0).length;
+  run(f, T1 + NOTICE + 3_600_000);
+  const off = stateOf(f, T1 + NOTICE + 3_600_000);
+  const held = f.holds[quarry];
+  const opens = nextAlarm(f, T1 + NOTICE + 3_600_000);
+  run(f, ft + EXPEDITION.fortify * 1000 + 3_600_000);
+  console.log(`fortified: ${shut} node(s) shut of 3 named; an hour past its arrival the expedition is ${off}, quarry ${held}, the alarm when it opens ${opens !== null && Math.abs(opens - (ft + EXPEDITION.fortify * 1000)) < 2000}; an hour past that quarry ${f.holds[quarry]}`);
+  check(shut === 1 && off === "waiting" && held === "freed" && opens !== null && Math.abs(opens - (ft + EXPEDITION.fortify * 1000)) < 2000, "fortified: an expedition attacked a node fortified that day");
+  check(f.holds[quarry] === `rival:${B.code}`, "fortified: the node stayed shut past its day");
+
+  // Called home, through the API: only by its sender; a node it held goes back to the enemy.
+  const T9 = T1 + 40 * DAY;
+  await report(A, holdsWith({ quarry: "freed", supply: "freed", relay: "freed" }), 0, 30, T9, ["quarry", "station"]);
+  islands.get(A.code)!.expeditions = [];
+  const s1 = await send(B, A.code, "relay", 1, T9 + 1000);
+  const id = s1.body.id as number;
+  const del = (who: typeof A, n: number, t: number) => call("DELETE", `/api/islands/${A.code}/expeditions/${n}`, { from: who }, t);
+  const notTheirs = await del(C, id, T9 + 2000);
+  const ok = await del(B, id, T9 + 3000);
+  const twice = await del(B, id, T9 + 4000);
+  const lease401 = await call("POST", `/api/islands/${A.code}/lease`, undefined, T9 + 4000);
+  const lease200 = await call("POST", `/api/islands/${A.code}/lease`, undefined, T9 + 4000, env, undefined, { authorization: `Bearer ${A.id}` });
+  const s2 = await send(B, A.code, "relay", top.length, T9 + 5000);
+  alarms(A.code, T9 + 5000, T9 + 5000 + NOTICE + 3_600_000);
+  const heldBy = holdOf(A.code, "relay");
+  const home = await del(B, s2.body.id as number, T9 + 5000 + NOTICE + 3_700_000);
+  const tail = islands.get(A.code)!.log.slice(-1)[0].t;
+  console.log(`recall: another's ${notTheirs.status} ${err(notTheirs)}, the sender's ${ok.status}, again ${twice.status} ${err(twice)}; a lease with no bearer ${lease401.status}, the owner's ${lease200.status} with ${(lease200.body.expeditions as unknown[]).length}; relay ${heldBy} -> ${holdOf(A.code, "relay")} (${home.status}, log ${tail})`);
+  check(notTheirs.status === 404 && err(notTheirs) === "no-expedition" && ok.status === 200 && twice.status === 404, "recall: an expedition was called home by someone not its sender, or twice");
+  check(lease401.status === 401 && lease200.status === 200 && (lease200.body.expeditions as unknown[]).length === 0, "lease: the API took a lease without the owner's id");
+  check(heldBy === `rival:${B.code}` && home.status === 200 && holdOf(A.code, "relay") === "held" && tail === "released" && islands.get(A.code)!.expeditions.length === 0, "recall: a node whose holders were called home did not go back to the enemy");
 }
 
 if (errors.length) {

@@ -14,7 +14,7 @@ import { eventRow } from "./events";
 import { rivalOf } from "../sim/holds";
 import { HOLD_CSS, IslandMap, islandScene, RIVAL_CSS, TITAN_CSS } from "./map";
 import { ExpeditionPanel } from "./expeditions";
-import { logLine, type IslandLogEntry } from "../meta/expeditions";
+import { incomingLine, logLine, type IslandLogEntry } from "../meta/expeditions";
 import { enemyNodes, frontNodes, ownNodes } from "../sim/front";
 import { nodeRow } from "./row";
 import { sfx } from "./sfx";
@@ -997,6 +997,7 @@ export class Hub {
       `<div class="hub-row">${nodeRow(holds)}</div>` +
       `<small>島の出来事</small><ul class="events"><li><small>今日</small>${eventRow(p.events[0])}</li><li><small>明日</small>${eventRow(p.events[1])}</li></ul>` +
       `<ul class="hold-key">${key}</ul>` +
+      (p.incoming.length ? `<small>来る遠征（地図の緑の矢印）</small><ul class="island-news incoming">${p.incoming.map((e) => `<li>${coreIcon(SIDE.rival)}${esc(incomingLine(e, Date.now()))}</li>`).join("")}</ul>` : "") +
       (this.news.length ? `<small>島の知らせ</small><ul class="island-news">${this.news.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>` : "") +
       (taken ? `<small>依頼　${esc(regionOf(contractRegion(taken)).name)}<i class="taken-line"></i></small><p class="hub-taken">${CONTRACT_NAME[taken.t]}：${esc(contractText(taken))}</p>` : "") +
       `</div></div>`

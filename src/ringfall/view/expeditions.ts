@@ -5,8 +5,8 @@
  * so a request's answer redraws it without touching the panel around it or the code being typed.
  * With no server it says so in one line and nothing else changes.
  */
-import { readView, SEND_TIMEOUT_MS, sendExpedition, syncOwn, takeReport, takeSync } from "../island-net";
-import { alive, numbered, answerSend, canSend, dropStale, factoryAhead, factorySquads, homeSquads, refreshOutgoing, sendingEntry, sendKinds, squadsAway, STATE_NAME, type IslandLogEntry, type IslandView } from "../meta/expeditions";
+import { flushRecalls, readView, SEND_TIMEOUT_MS, sendExpedition, syncOwn, takeReport, takeSync } from "../island-net";
+import { alive, numbered, answerSend, recallAll, sentKey, canSend, dropStale, factoryAhead, factorySquads, homeSquads, refreshOutgoing, sendingEntry, sendKinds, squadsAway, STATE_NAME, type IslandLogEntry, type IslandView } from "../meta/expeditions";
 import { parseIslandCode } from "../meta/island-code";
 import { errorText } from "../meta/island-errors";
 import type { Profile } from "../meta/profile";
@@ -84,6 +84,7 @@ export class ExpeditionPanel {
     if (profile !== this.get()) this.put(profile);
     if (news.length) this.news(news);
     this.paint();
+    await flushRecalls(this.get, this.put);
     await this.refresh(r.body.code, ask);
     if (ask === this.ask) this.paint();
   }
@@ -119,6 +120,7 @@ export class ExpeditionPanel {
       this.pick = this.pick === arg ? null : arg;
       this.paint();
     } else if (act === "exp-send") void this.send();
+    else if (act === "exp-recall") void this.recall(arg);
   }
 
   private async copy() {
@@ -153,6 +155,20 @@ export class ExpeditionPanel {
     this.busy = false;
     if (v.ok) this.target = v.body;
     else this.note = { text: errorText(v.error), good: false };
+    this.paint();
+  }
+
+  /**
+   * Calls the expedition of key `key` (`sentKey()`) home: its squad is back with the factory at once,
+   * and the island it was on is told (again at the next sync if it could not be).
+   */
+  private async recall(key: string) {
+    const p = this.get();
+    const expeditions = recallAll(p.expeditions, (o) => sentKey(o) === key);
+    if (expeditions === p.expeditions) return;
+    this.put({ ...p, expeditions });
+    this.paint();
+    await flushRecalls(this.get, this.put);
     this.paint();
   }
 
@@ -228,7 +244,7 @@ export class ExpeditionPanel {
             : `<div class="exp-own"><small>自分の島</small><b class="exp-code">${esc(c.code)}</b><button type="button" data-act="exp-copy">${this.copied ? "コピーした" : "コピー"}</button>${c.view?.expeditions.length ? `<small class="exp-in">${coreIcon(SIDE.rival)}来ている遠征 <b>${c.view.expeditions.length}</b></small>` : ""}</div>`;
     const out = p.expeditions.length
       ? `<div class="exp-list">${p.expeditions
-          .map((e) => `<div class="req exp-out ${e.state}"><span><b class="exp-code">${esc(e.code)}</b>${esc(nodeName(e.node))}</span><b>${STATE_NAME[e.state]}</b><small>${robotIcon(SIDE.own)}${e.units}</small></div>`)
+          .map((e) => `<div class="req exp-out ${e.state}"><span><b class="exp-code">${esc(e.code)}</b>${esc(nodeName(e.node))}</span><b>${STATE_NAME[e.state]}</b><small>${robotIcon(SIDE.own)}${e.units}</small>${e.id > 0 && (e.state === "coming" || e.state === "attacking" || e.state === "waiting" || e.state === "holding") ? `<button type="button" class="exp-recall" data-act="exp-recall" data-arg="${esc(sentKey(e))}">引き上げる</button>` : ""}</div>`)
           .join("")}</div>`
       : "";
     // What sending costs: each expedition out (one being sent too) keeps one squad fewer out on this island.

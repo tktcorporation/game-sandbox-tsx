@@ -4652,6 +4652,23 @@ body.touch .bag-card:nth-last-child(n + 3) {
 .mod-body .exp-out.gone {
   opacity: 0.5;
 }
+.mod-body .exp-out.recalling {
+  opacity: 0.6;
+}
+.mod-body .exp-out.waiting > b {
+  color: var(--muted);
+}
+.mod-body .exp-out .exp-recall {
+  margin-left: 8px;
+  padding: 2px 10px;
+  font-family: var(--jp);
+  font-size: 12px;
+}
+.hub-island ul.island-news.incoming li {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+}
 .mod-body .exp-out small {
   display: inline-flex;
   align-items: center;

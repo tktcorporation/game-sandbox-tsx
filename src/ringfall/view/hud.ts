@@ -28,7 +28,7 @@ import { eventRow, raidEventLine } from "./events";
 import { CREW, FINALE, FORTIFY, FRONT, MOD, MODS, MOMENTUM } from "../sim/config";
 import { binPicture, modIcon, pouchIcon, routeIcon, zipIcon } from "./icons";
 import { zipPoint } from "../sim/zips";
-import { bagIcon, callIcon, checkIcon, clockIcon, coreIcon, crossIcon, depotIcon, entryIcon, exitIcon, eyeIcon, fightIcon, flareIcon, keyIcon, lockIcon, noiseIcon, reinforceIcon, reviveIcon, SIDE, upIcon, nightIcon } from "./icons";
+import { bagIcon, callIcon, checkIcon, clockIcon, coreIcon, crossIcon, depotIcon, entryIcon, exitIcon, eyeIcon, fightIcon, flagIcon, flareIcon, keyIcon, lockIcon, noiseIcon, reinforceIcon, reviveIcon, SIDE, upIcon, nightIcon } from "./icons";
 import { capturable, momentum, siegeWaves } from "../sim/front";
 import { terrainHeight } from "../sim/terrain";
 
@@ -1140,7 +1140,9 @@ export class Hud {
       // A node of the player's marked for the night: the use key fortifies it (the moon turns from red to blue).
       if (s.nodes[t.node] === "freed") {
         if (s.fortify?.node === t.node) return `${coreIcon(SIDE.own)}${nightIcon("#4f9bff")}${esc(n.name)} <b class="${s.fortify.held ? "" : "paused"}">${Math.floor((s.fortify.t / FORTIFY.time) * 100)}%</b>`;
-        return `${key("E")}${coreIcon(SIDE.own)}${nightIcon("#ff4a3d")}${esc(n.name)}`;
+        // Marked by another player's expedition and not by the night: their colour's flag in the moon's place.
+        const sent = !s.battle?.targets.includes(t.node);
+        return `${key("E")}${coreIcon(SIDE.own)}${sent ? flagIcon(SIDE.rival) : nightIcon("#ff4a3d")}${esc(n.name)}`;
       }
       const c = foeSide(s.nodes[t.node]);
       if (!capturable(s, t.node)) return `${coreIcon(c, true)}${esc(n.name)} <small>▸ 先に${esc(shieldedBy(s.nodes, t.node))}</small>`;
