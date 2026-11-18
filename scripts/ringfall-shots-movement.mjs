@@ -1,6 +1,6 @@
 /**
  * The movement's screenshots for the shots gate (scripts/ringfall-shots.mjs runs them at its end;
- * `node scripts/ringfall-shots-movement.mjs` runs them alone against dist/client): the quarry's
+ * `node scripts/ringfall-shots-movement.mjs` runs them alone against the build (`npm run build`)): the quarry's
  * new ways up, a slide-jump at speed with the view widened and the speed's streaks, a climb and
  * its mantle, a zipline ride and the map with the held ziplines, on a desktop and on a phone
  * driven by real touch events.
@@ -237,7 +237,7 @@ export async function movementShots({ browser, port, out, errors }) {
 
 // Alone: serve the build and run the movement's shots.
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const root = "dist/client";
+  const root = process.env.SHOTS_ROOT ?? ".cloudflare/output/v0/workers/default/assets";
   const types = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml" };
   const server = createServer(async (req, res) => {
     let path = join(root, decodeURIComponent(new URL(req.url, "http://x").pathname));

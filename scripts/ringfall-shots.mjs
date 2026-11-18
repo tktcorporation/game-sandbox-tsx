@@ -1,6 +1,6 @@
 /**
  * Gate 3 for RINGFALL: the build, played to the end in a real browser.
- * Serves dist/client, checks that real keyboard input moves the player, then lets
+ * Serves the build (`npm run build`), checks that real keyboard input moves the player, then lets
  * the built-in bot (window.ringfallBot) play with deterministic time
  * (window.advanceTime). Fails on any console or page error, or if the run stops
  * progressing. Screenshots of each key moment go to shots/ringfall/ for review.
@@ -15,9 +15,10 @@ import { movementShots } from "./ringfall-shots-movement.mjs";
 import { bagShots } from "./ringfall-shots-bag.mjs";
 import { upgradeShots } from "./ringfall-shots-upgrades.mjs";
 import { finaleShots } from "./ringfall-shots-finale.mjs";
+import { expeditionShots } from "./ringfall-shots-expeditions.mjs";
 import { HARBOR_TOUR, TOUR, place } from "./ringfall-tour.mjs";
 
-const root = "dist/client";
+const root = process.env.SHOTS_ROOT ?? ".cloudflare/output/v0/workers/default/assets";
 const types = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml" };
 const server = createServer(async (req, res) => {
   let path = join(root, decodeURIComponent(new URL(req.url, "http://x").pathname));
@@ -2430,6 +2431,7 @@ lap("bag");
 await upgradeShots({ browser, port, out, errors });
 // The decisive battle: the camp's card, the pad ringed on the map table, the raid's objective.
 await finaleShots({ browser, port, out, errors });
+await expeditionShots({ browser, port, out, errors });
 lap("upgrades");
 await browser.close();
 server.close();

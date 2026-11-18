@@ -1156,7 +1156,7 @@ export class IslandMap {
         if (night?.targets.includes(k) && hold(i) === "freed") drawMoon(g, p.x - r * 1.25, p.y + r * 0.95, r * 0.62, night.fortified.includes(k) ? SIDE_CSS[0] : SIDE_CSS[1]);
         // Another player's expedition is sent at it: a green landing arrow at its other foot; blue once fortified.
         const noticed = s.noticed ?? s.battle?.noticed;
-        if (noticed?.includes(k) && hold(i) === "freed") drawLanding(g, p.x + r * 1.25, p.y + r * 0.95, r * 0.62, s.battle?.fortified.includes(k) ? SIDE_CSS[0] : SIDE_CSS[3]);
+        if (noticed?.includes(k) && hold(i) === "freed") drawLanding(g, p.x + r * 1.35, p.y + r * 1.05, r * 0.8, s.battle?.fortified.includes(k) ? SIDE_CSS[0] : SIDE_CSS[3]);
       }
       if (poi.boss && s.finale) {
         // Open to the decisive battle: a gold ring, pulsing.
