@@ -1,5 +1,6 @@
 import { pouchKeep, type Settlement } from "../meta/profile";
 import type { ModKind } from "../sim/config";
+import { modGist } from "./modgist";
 import { contractMarks, itemColor, itemName, rewardList } from "./hub";
 import { ALLY, AWARE, BAG, META, DEPOT, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, TACTICAL, TOOL_KINDS, TOOLS, VALUABLES, WEAPONS, type Flank } from "../sim/config";
 import { eyePos, magSize } from "../sim/combat";
@@ -1112,7 +1113,7 @@ export class Hud {
       const k = t.loot.mod!;
       const off = p.mods.length >= MOD.slots ? p.mods[0] : null;
       // One of a core's parts: what it does is on the prompt, since taking it gives up the others.
-      const note = t.loot.choice !== undefined ? ` <small>${esc(MODS[k].note)}</small>` : "";
+      const note = t.loot.choice !== undefined ? ` <small>${modGist(k)}</small>` : "";
       return `${key("E")}<span class="r" style="color:${RARITY_CSS[2]}">${MODS[k].name}</span>${note}${off ? struck([MODS[off].name]) : ""}`;
     }
     if (t.kind === "ally") return s.ally.helped > 0 ? `${reviveIcon()}${ALLY.name} <b>${Math.floor((s.ally.helped / helpTime(p)) * 100)}%</b>` : `${key("E")}${reviveIcon()}${ALLY.name}`;
@@ -1178,7 +1179,7 @@ export class Hud {
       const old = known.includes(k);
       const state = k === done || old ? checkIcon() : done ? "" : `<em class="new">NEW</em>`;
       const bin = binPicture(modIcon(), k === done ? "in drop" : old ? "in" : "out");
-      return `<button type="button" class="mod${k === done ? " done" : ""}" data-analyse="${k}"${done || old ? " disabled" : ""}>${bin}<b>${esc(MODS[k].name)}${state}</b><small>${esc(MODS[k].note)}</small></button>`;
+      return `<button type="button" class="mod${k === done ? " done" : ""}" data-analyse="${k}"${done || old ? " disabled" : ""}>${bin}<b>${esc(MODS[k].name)}${state}</b><small title="${esc(MODS[k].note)}">${modGist(k)}</small></button>`;
     };
     return `<h3>改造パーツの解析<b>${done ? 1 : 0}/1</b></h3><div class="analyse">${settled.analysable.map(row).join("")}</div>`;
   }
