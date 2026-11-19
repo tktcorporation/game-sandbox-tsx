@@ -340,6 +340,12 @@ npm run bench:ringfall   # the sim's weight on ten fixed raids: CPU seconds and 
                          # run before and after a change to the sim (see the sim gate's speed below)
 npm run models:ringfall  # the model rules (docs/ringfall/models.md): budgets, palette, hit spheres;
                          # fails when one is broken, silhouettes in shots/ringfall/models/
+                         # `-- --sheet` (after a build) also draws every model as the game draws it
+                         # (view/modelsheet.ts, the page's `?models`) to sheet-*.png there
+npm run lint:ringfall     # the screens' rules read from the code (docs/ringfall/ui.md), in seconds and
+                         # inside `npm run build`: colours only from view/palette.ts (`UI`), the type
+                         # scale, the loaded weights, radii, no inline styles; `-- --write` rewrites
+                         # the stylesheet's palette block from palette.ts
 npm run look:ringfall -- <place> [--r 120] [--base]
                          # one place in about a minute and a half: the tour's cameras near it
                          # (scripts/ringfall-tour.mjs, shared with gate 3) and four from above,
@@ -355,7 +361,12 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
                          # to its first fight, a tour of both); screenshots in shots/ringfall/;
                          # its seven parts run two at once in processes of their own (SHOTS_JOBS=n),
                          # `-- --part extra` (raid, phone, rules, meta, battle, push, extra) runs only
-                         # those named, which is how one change's screens are looked at
+                         # those named, which is how one change's screens are looked at; every
+                         # screenshot's page is measured first (scripts/ringfall-ui-audit.mjs: text cut,
+                         # off the screen, showing through a plate, overlapping, too small, too close to
+                         # its ground, bare on the world, a phone's button too small) and a finding not
+                         # in scripts/ringfall-ui-baseline.json fails the gate (`UI_AUDIT=write`
+                         # rewrites that list once findings are fixed; it only shrinks)
 ```
 
 - `src/ringfall/sim/` is the game: pure TypeScript, metres and seconds, `step(state, input, prevCrouch)`
@@ -681,7 +692,11 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   with `input.touch` set so the sim applies `ASSIST.touchPull`. `npm run shots:ringfall` drives it with
   real touch events in a phone-sized viewport before the desktop run.
 - `src/ringfall/view/` renders and never changes rules: `world.ts` (three.js), `hud.ts` (DOM),
-  and synthesized sound. `bag.ts` (`Hud.bag`) is the bag peek, shown while Tab or the phone's bag
+  and synthesized sound. The screens' colours are `UI` in `palette.ts`, each named for what it
+  means; the stylesheet's `:root` is written from it (`var(--foe)`, `rgb(var(--foe-rgb) / 0.5)`)
+  and no colour is written anywhere else in the screens' code or the stylesheet
+  (docs/ringfall/ui.md holds the screens' rules, `npm run lint:ringfall` and the shots gate's
+  page audit check them). `bag.ts` (`Hud.bag`) is the bag peek, shown while Tab or the phone's bag
   button is held, the game running on under it with nothing to manage, and the card a pickup slides
   in: each thing carried as its slots in its rarity's colour, its name, credits and what it is for
   (the hideout module and factory level whose next level takes it, the quests and the contract

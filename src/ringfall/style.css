@@ -1,21 +1,107 @@
+/* palette:start — written from view/palette.ts by `npm run lint:ringfall -- --write`; change a colour there. */
 :root {
   --sky: #7ec8e3;
+  --sky-rgb: 126 200 227;
   --sand: #d9a868;
-  --ink: #141a33;
-  --plate: rgba(20, 26, 51, 0.62);
-  --plate-strong: rgba(20, 26, 51, 0.85);
+  --sand-rgb: 217 168 104;
   --white: #ffffff;
-  --muted: rgba(255, 255, 255, 0.7);
-  --ring: #ff5a2a;
-  --orb: #ff3fb0;
+  --white-rgb: 255 255 255;
+  --shade: #000000;
+  --shade-rgb: 0 0 0;
+  --ink: #141a33;
+  --ink-rgb: 20 26 51;
+  --night: #141828;
+  --night-rgb: 20 24 40;
+  --board: #1c1f2a;
+  --board-rgb: 28 31 42;
+  --deep: #0e101c;
+  --deep-rgb: 14 16 28;
+  --scope: #050608;
+  --scope-rgb: 5 6 8;
+  --paper: #f4f7ff;
+  --paper-rgb: 244 247 255;
+  --mist: #c8cbd6;
+  --mist-rgb: 200 203 214;
+  --slate: #9aa3b5;
+  --slate-rgb: 154 163 181;
+  --slate-dim: #5a5f6e;
+  --slate-dim-rgb: 90 95 110;
+  --parch: #e9dcc2;
+  --parch-rgb: 233 220 194;
+  --parch-dim: #9c9586;
+  --parch-dim-rgb: 156 149 134;
   --hot: #ffe23d;
-  --r0: #eeeeee;
-  --r1: #45a6ff;
+  --hot-rgb: 255 226 61;
+  --hot-light: #ffe27a;
+  --hot-light-rgb: 255 226 122;
+  --hot-dim: #c9b25a;
+  --hot-dim-rgb: 201 178 90;
+  --ring: #ff5a2a;
+  --ring-rgb: 255 90 42;
+  --amber: #ff9a3c;
+  --amber-rgb: 255 154 60;
+  --orb: #ff3fb0;
+  --orb-rgb: 255 63 176;
+  --own: #3f86c8;
+  --own-rgb: 63 134 200;
+  --own-bright: #4f9bff;
+  --own-bright-rgb: 79 155 255;
+  --own-light: #8cc4f4;
+  --own-light-rgb: 140 196 244;
+  --foe: #c8402f;
+  --foe-rgb: 200 64 47;
+  --alert: #ff4a3d;
+  --alert-rgb: 255 74 61;
+  --foe-bright: #ff6b5a;
+  --foe-bright-rgb: 255 107 90;
+  --foe-soft: #ff8a7a;
+  --foe-soft-rgb: 255 138 122;
+  --peach: #ffb08f;
+  --peach-rgb: 255 176 143;
+  --rival: #3fae6e;
+  --rival-rgb: 63 174 110;
+  --rival-light: #8fd8ac;
+  --rival-light-rgb: 143 216 172;
+  --rogue: #a47be0;
+  --rogue-rgb: 164 123 224;
+  --titan: #262d52;
+  --titan-rgb: 38 45 82;
+  --titan-light: #7f89c4;
+  --titan-light-rgb: 127 137 196;
+  --mate: #2f7f86;
+  --mate-rgb: 47 127 134;
+  --mate-light: #6fd0cf;
+  --mate-light-rgb: 111 208 207;
+  --danger: #ff4458;
+  --danger-rgb: 255 68 88;
+  --blood: #c81428;
+  --blood-rgb: 200 20 40;
   --hp-heal: #e0475a;
+  --hp-heal-rgb: 224 71 90;
+  --good: #7fe08a;
+  --good-rgb: 127 224 138;
+  --r0: #eeeeee;
+  --r0-rgb: 238 238 238;
+  --r1: #45a6ff;
+  --r1-rgb: 69 166 255;
   --r2: #b65cff;
+  --r2-rgb: 182 92 255;
   --r3: #ffc93a;
-  /* The pouch's slots, on every screen: what sits in them comes home even from a wipe (view/icons.ts POUCH). */
+  --r3-rgb: 255 201 58;
   --pouch: #e8b07a;
+  --pouch-rgb: 232 176 122;
+  --debris: #e0a33a;
+  --debris-rgb: 224 163 58;
+  --crews: #c86f3a;
+  --crews-rgb: 200 111 58;
+  --shut: #ff8a5c;
+  --shut-rgb: 255 138 92;
+}
+/* palette:end */
+:root {
+  --plate: rgb(var(--ink-rgb) / 0.76);
+  --plate-strong: rgb(var(--ink-rgb) / 0.85);
+  --muted: rgb(var(--white-rgb) / 0.7);
   --num: "Saira Condensed", "M PLUS 1p", system-ui, sans-serif;
   --jp: "M PLUS 1p", system-ui, sans-serif;
 }
@@ -74,11 +160,11 @@ kbd {
   transition: opacity 0.25s;
 }
 #fx-hurt {
-  background: radial-gradient(ellipse at center, transparent 55%, rgba(200, 20, 40, 0.6) 100%);
+  background: radial-gradient(ellipse at center, transparent 55%, rgb(var(--blood-rgb) / 0.6) 100%);
   transition: opacity 0.4s;
 }
 #fx-ult {
-  background: radial-gradient(ellipse at center, transparent 60%, rgba(214, 236, 255, 0.4) 100%);
+  background: radial-gradient(ellipse at center, transparent 60%, rgb(var(--paper-rgb) / 0.4) 100%);
 }
 /* Speed: faint streaks out at the screen's edges, flowing outward, as strong as the run is fast
    past a sprint (hud.ts sets the opacity). The middle stays clear for aiming. */
@@ -94,7 +180,7 @@ kbd {
 #fx-speed i {
   position: absolute;
   inset: -20%;
-  background: repeating-conic-gradient(from 3deg, rgba(240, 248, 255, 0.55) 0deg 0.7deg, transparent 0.7deg 5.3deg, rgba(240, 248, 255, 0.3) 5.3deg 5.8deg, transparent 5.8deg 11deg);
+  background: repeating-conic-gradient(from 3deg, rgb(var(--paper-rgb) / 0.55) 0deg 0.7deg, transparent 0.7deg 5.3deg, rgb(var(--paper-rgb) / 0.3) 5.3deg 5.8deg, transparent 5.8deg 11deg);
   animation: speed-flow 0.32s linear infinite;
 }
 @keyframes speed-flow {
@@ -143,8 +229,8 @@ kbd {
   height: 22px;
   white-space: nowrap;
   font-weight: 800;
-  font-size: 15px;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  font-size: 14px;
+  text-shadow: 0 1px 2px rgb(var(--shade-rgb) / 0.5);
 }
 #compass-strip span {
   position: absolute;
@@ -180,8 +266,8 @@ kbd {
 }
 /* The tug of war: the player's blue from the left, the enemy's red from the right, a segment a node. */
 .tug {
-  --own-c: #3f86c8;
-  --foe-c: #c8402f;
+  --own-c: var(--own);
+  --foe-c: var(--foe);
   --h: 10px;
   --w: 150px;
   display: inline-flex;
@@ -190,14 +276,14 @@ kbd {
   vertical-align: middle;
   max-width: 100%;
   font-weight: 800;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1;
 }
 .tug-n.own {
-  color: #8cc4f4;
+  color: var(--own-light);
 }
 .tug-n.foe {
-  color: #f08a78;
+  color: var(--foe-soft);
 }
 .tug-bar {
   position: relative;
@@ -206,7 +292,7 @@ kbd {
   width: var(--w);
   height: var(--h);
   background: var(--foe-c);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 0 0 1px rgb(var(--shade-rgb) / 0.5);
   overflow: hidden;
 }
 .tug-fill,
@@ -219,7 +305,7 @@ kbd {
 }
 .tug-fill {
   left: 0;
-  width: calc(var(--own) / var(--n) * 100%);
+  width: calc(var(--own-n) / var(--n) * 100%);
   background: var(--own-c);
 }
 /* Other players' nodes: green segments from the player's boundary toward the enemy's red. */
@@ -227,18 +313,18 @@ kbd {
   position: absolute;
   top: 0;
   bottom: 0;
-  left: calc(var(--own) / var(--n) * 100%);
-  width: calc(var(--rival) / var(--n) * 100%);
-  background: #3fae6e;
+  left: calc(var(--own-n) / var(--n) * 100%);
+  width: calc(var(--rival-n) / var(--n) * 100%);
+  background: var(--rival);
 }
 .tug-n.rival {
-  color: #8fd8ac;
+  color: var(--rival-light);
 }
 /* The boundary between the two sides, sliding with the fill. */
 .tug-edge {
-  left: calc(var(--own) / var(--n) * 100% - 1.5px);
+  left: calc(var(--own-n) / var(--n) * 100% - 1.5px);
   width: 3px;
-  background: #fff;
+  background: var(--white);
 }
 .tug.moved .tug-fill {
   animation: tug-fill 1.1s cubic-bezier(0.3, 0.8, 0.3, 1) var(--delay) both;
@@ -262,14 +348,14 @@ kbd {
 }
 @keyframes tug-flicker {
   50% {
-    background: #ffcf5a;
+    background: var(--r3);
     transform: scaleX(2.2);
   }
 }
 /* The player's nodes the enemy is about to take: the last blue segments pulse red. */
 .tug-risk {
   display: none;
-  left: calc((var(--own) - var(--risk)) / var(--n) * 100%);
+  left: calc((var(--own-n) - var(--risk)) / var(--n) * 100%);
   width: calc(var(--risk) / var(--n) * 100%);
   background: var(--foe-c);
 }
@@ -290,10 +376,10 @@ kbd {
 .tug-ticks {
   left: 0;
   right: 0;
-  background: repeating-linear-gradient(90deg, transparent 0 calc(100% / var(--n) - 1px), rgba(10, 12, 18, 0.85) calc(100% / var(--n) - 1px) calc(100% / var(--n)));
+  background: repeating-linear-gradient(90deg, transparent 0 calc(100% / var(--n) - 1px), rgb(var(--scope-rgb) / 0.85) calc(100% / var(--n) - 1px) calc(100% / var(--n)));
 }
 #obj-raid.late {
-  color: #ff8a6a;
+  color: var(--foe-soft);
 }
 #obj-raid b {
   font-family: var(--num);
@@ -346,7 +432,7 @@ body.touch #obj-raid .why {
   grid-column: 1 / -1;
   font-size: 13px;
   font-weight: 800;
-  color: #f4e9c8;
+  color: var(--parch);
 }
 #obj-until b {
   font-family: var(--num);
@@ -375,18 +461,18 @@ body.touch #obj-raid .why {
   height: 0;
   border-left: 6px solid transparent;
   border-right: 6px solid transparent;
-  border-bottom: 9px solid #ffe27a;
+  border-bottom: 9px solid var(--hot-light);
 }
 #compass-mark span {
   display: block;
   font-family: var(--num);
   font-size: 11px;
   font-weight: 800;
-  color: #ffe27a;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+  color: var(--hot-light);
+  text-shadow: 0 1px 2px rgb(var(--shade-rgb) / 0.7);
 }
 #compass-mark.edge::before {
-  border-bottom-color: #c9b25a;
+  border-bottom-color: var(--hot-dim);
 }
 /* Where the last reinforcements beamed in, while a node held shows it (UNLOCKS.scout): a red chevron on the strip. */
 #compass-scout {
@@ -397,15 +483,15 @@ body.touch #obj-raid .why {
   transform: translateX(-50%);
   border-left: 7px solid transparent;
   border-right: 7px solid transparent;
-  border-top: 10px solid #ff4d4d;
-  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.7));
+  border-top: 10px solid var(--alert);
+  filter: drop-shadow(0 1px 1px rgb(var(--shade-rgb) / 0.7));
   pointer-events: none;
 }
 #compass-scout[hidden] {
   display: none;
 }
 #compass-scout.edge {
-  border-top-color: #b8433f;
+  border-top-color: var(--foe);
 }
 #obj-bag {
   grid-column: 1 / -1;
@@ -418,7 +504,7 @@ body.touch #obj-raid .why {
 }
 #obj-raid {
   grid-column: 1 / -1;
-  color: #ffb08f;
+  color: var(--peach);
   font-size: 13px;
   font-weight: 800;
 }
@@ -430,6 +516,9 @@ body.touch #obj-raid .why {
 #obj-contract,
 #obj-story {
   grid-column: 1 / -1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   font-size: 13px;
   font-weight: 800;
   color: var(--r3);
@@ -447,8 +536,8 @@ body.touch #obj-raid .why {
 #obj-event {
   grid-column: 1 / -1;
   font-size: 12px;
-  font-weight: 700;
-  color: #d9d2c4;
+  font-weight: 800;
+  color: var(--parch);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -474,10 +563,10 @@ body.touch #obj-raid .why {
   color: var(--hot);
 }
 #obj-stealth.engaged {
-  color: #ff6b5a;
+  color: var(--foe-bright);
 }
 #obj-stealth.lost {
-  color: #ff9a3c;
+  color: var(--amber);
 }
 
 /* What each robot knows: a filling ring while it is noticing you, "?" while it
@@ -491,14 +580,14 @@ body.touch #obj-raid .why {
   place-items: center;
   font-family: var(--num);
   font-weight: 800;
-  font-size: 15px;
+  font-size: 16px;
   line-height: 1;
   border-radius: 50%;
   opacity: 0.7;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  text-shadow: 0 1px 2px rgb(var(--shade-rgb) / 0.8);
 }
 .aw.sense {
-  background: conic-gradient(rgba(255, 255, 255, 0.75) calc(var(--p) * 360deg), transparent 0);
+  background: conic-gradient(rgb(var(--white-rgb) / 0.75) calc(var(--p) * 360deg), transparent 0);
   -webkit-mask: radial-gradient(circle, transparent 6px, #000 7px);
   mask: radial-gradient(circle, transparent 6px, #000 7px);
   opacity: 0.55;
@@ -507,19 +596,19 @@ body.touch #obj-raid .why {
   color: var(--hot);
 }
 .aw.engaged {
-  color: #ff5a4f;
+  color: var(--alert);
   opacity: 0.85;
 }
 .aw.lost {
-  color: rgba(255, 255, 255, 0.8);
+  color: rgb(var(--white-rgb) / 0.8);
 }
 .aw.reveal {
   width: 14px;
   height: 14px;
   border-radius: 0;
   transform: translate(-50%, -50%) rotate(45deg);
-  border: 2px solid #ff3b2f;
-  box-shadow: 0 0 6px rgba(255, 59, 47, 0.8);
+  border: 2px solid var(--alert);
+  box-shadow: 0 0 6px rgb(var(--alert-rgb) / 0.8);
   opacity: 1;
 }
 
@@ -556,7 +645,7 @@ body.touch #obj-raid .why {
 .ebar i {
   display: block;
   height: 5px;
-  background: rgba(0, 0, 0, 0.45);
+  background: rgb(var(--shade-rgb) / 0.45);
 }
 .ebar i span {
   display: block;
@@ -572,9 +661,9 @@ body.touch #obj-raid .why {
 .dmg {
   position: absolute;
   font-weight: 800;
-  font-size: 22px;
+  font-size: 24px;
   transform: translate(-50%, -50%);
-  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.55);
+  text-shadow: 0 2px 0 rgb(var(--shade-rgb) / 0.55);
   white-space: nowrap;
 }
 .dmg.crit {
@@ -584,7 +673,7 @@ body.touch #obj-raid .why {
 /* Shots into a robot's back or before it noticed: the reward for going round. */
 .dmg.flank {
   font-size: 30px;
-  color: #ff9a3c !important;
+  color: var(--amber) !important;
 }
 .dmg small {
   display: block;
@@ -597,7 +686,7 @@ body.touch #obj-raid .why {
 }
 /* A plate took part of the hit: grey, so the player sees the gun is too weak for the body. */
 .dmg.plate {
-  color: #9aa3b5 !important;
+  color: var(--slate) !important;
 }
 
 #dmgdir {
@@ -610,7 +699,7 @@ body.touch #obj-raid .why {
   width: 120px;
   height: 18px;
   margin: -9px 0 0 -60px;
-  border-top: 6px solid rgba(255, 60, 70, 0.9);
+  border-top: 6px solid rgb(var(--danger-rgb) / 0.9);
   border-radius: 50% 50% 0 0;
   transition: opacity 0.6s;
 }
@@ -622,7 +711,7 @@ body.touch #obj-raid .why {
   inset: 0;
   pointer-events: none;
   display: none;
-  background: radial-gradient(circle at center, transparent 0, transparent 38vmin, rgba(0, 0, 0, 0.55) 38.3vmin, #050608 39.5vmin);
+  background: radial-gradient(circle at center, transparent 0, transparent 38vmin, rgb(var(--shade-rgb) / 0.55) 38.3vmin, var(--scope) 39.5vmin);
 }
 #scope.on {
   display: block;
@@ -633,7 +722,7 @@ body.touch #obj-raid .why {
   position: absolute;
   left: 50%;
   top: 50%;
-  background: rgba(10, 12, 16, 0.85);
+  background: rgb(var(--scope-rgb) / 0.85);
 }
 #scope::before {
   width: 76vmin;
@@ -655,7 +744,7 @@ body.touch #obj-raid .why {
   margin: -2.5px 0 0 -2.5px;
   border-radius: 50%;
   background: var(--white);
-  box-shadow: 0 0 0 1.5px rgba(5, 6, 8, 0.85);
+  box-shadow: 0 0 0 1.5px rgb(var(--scope-rgb) / 0.85);
 }
 #xhair {
   position: absolute;
@@ -665,7 +754,7 @@ body.touch #obj-raid .why {
 #xhair i {
   position: absolute;
   background: var(--white);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 0 0 1px rgb(var(--shade-rgb) / 0.45);
 }
 #xhair i:nth-child(1),
 #xhair i:nth-child(2) {
@@ -714,7 +803,7 @@ body.touch #obj-raid .why {
 }
 /* A round a plate turned aside: a short grey mark, no number. */
 #hitmark.plate i {
-  background: #8d96a8;
+  background: var(--slate);
   height: 6px;
 }
 #hitmark.kill i {
@@ -732,7 +821,7 @@ body.touch #obj-raid .why {
   font-family: var(--jp);
   font-weight: 800;
   font-size: 16px;
-  background: var(--plate);
+  background: var(--plate-strong);
   padding: 6px 12px;
   white-space: nowrap;
 }
@@ -772,13 +861,13 @@ body.touch #obj-raid .why {
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--white);
-  background: rgba(168, 92, 255, 0.28);
+  background: rgb(var(--r2-rgb) / 0.28);
   border: 1px solid var(--r2);
   padding: 0 3px;
 }
 #mods i.free {
   background: none;
-  border: 1px dashed rgba(255, 255, 255, 0.18);
+  border: 1px dashed rgb(var(--white-rgb) / 0.18);
 }
 #shield-cells {
   display: flex;
@@ -787,7 +876,7 @@ body.touch #obj-raid .why {
 }
 #shield-cells i {
   flex: 1;
-  background: rgba(255, 255, 255, 0.12);
+  background: rgb(var(--white-rgb) / 0.12);
   position: relative;
   overflow: hidden;
 }
@@ -798,7 +887,7 @@ body.touch #obj-raid .why {
 }
 #hp {
   height: 12px;
-  background: rgba(255, 255, 255, 0.12);
+  background: rgb(var(--white-rgb) / 0.12);
 }
 #hp-fill {
   display: block;
@@ -807,7 +896,10 @@ body.touch #obj-raid .why {
   transition: width 0.12s;
 }
 #hp.low #hp-fill {
-  background: #ff4458;
+  background: var(--danger);
+}
+#cells kbd {
+  font-size: 1em;
 }
 #cells {
   display: flex;
@@ -826,7 +918,7 @@ body.touch #obj-raid .why {
 #heal-list i {
   font-style: normal;
   font-family: var(--num);
-  font-size: 15px;
+  font-size: 14px;
   color: var(--white);
   padding-left: 9px;
   position: relative;
@@ -870,7 +962,7 @@ body.touch #obj-raid .why {
   border-radius: 50%;
   display: grid;
   place-items: center;
-  background: conic-gradient(var(--white) calc(var(--p, 1) * 360deg), rgba(255, 255, 255, 0.15) 0);
+  background: conic-gradient(var(--white) calc(var(--p, 1) * 360deg), rgb(var(--white-rgb) / 0.15) 0);
   box-shadow: 0 0 0 3px var(--plate-strong) inset;
 }
 .ab .ring span {
@@ -887,7 +979,7 @@ body.touch #obj-raid .why {
 .ab.ult .ring {
   width: 66px;
   height: 66px;
-  background: conic-gradient(var(--r3) calc(var(--p, 0) * 360deg), rgba(255, 255, 255, 0.15) 0);
+  background: conic-gradient(var(--r3) calc(var(--p, 0) * 360deg), rgb(var(--white-rgb) / 0.15) 0);
 }
 .ab.ult .ring span {
   width: 54px;
@@ -896,7 +988,7 @@ body.touch #obj-raid .why {
   font-size: 18px;
 }
 .ab.ready .ring span {
-  background: #2c3462;
+  background: var(--titan);
 }
 .ab.ult.ready .ring span {
   background: var(--r3);
@@ -924,7 +1016,6 @@ body.touch #obj-raid .why {
   padding: 6px 12px;
   min-width: 190px;
   justify-content: space-between;
-  opacity: 0.65;
 }
 .slot.active {
   opacity: 1;
@@ -937,7 +1028,7 @@ body.touch #obj-raid .why {
   letter-spacing: 0.02em;
 }
 .slot.active .name {
-  font-size: 22px;
+  font-size: 20px;
 }
 .slot .ammo b {
   font-size: 20px;
@@ -947,7 +1038,7 @@ body.touch #obj-raid .why {
   line-height: 1;
 }
 .slot .ammo small {
-  font-size: 15px;
+  font-size: 14px;
   color: var(--muted);
   margin-left: 4px;
 }
@@ -955,7 +1046,7 @@ body.touch #obj-raid .why {
   display: none;
 }
 .slot.low .ammo b {
-  color: #ff6f6f;
+  color: var(--danger);
 }
 #toasts {
   display: flex;
@@ -967,7 +1058,7 @@ body.touch #obj-raid .why {
 .toast {
   font-family: var(--jp);
   font-weight: 800;
-  font-size: 15px;
+  font-size: 16px;
   background: var(--plate-strong);
   border-right: 4px solid var(--rc, var(--r0));
   padding: 4px 10px;
@@ -994,7 +1085,7 @@ body.touch #obj-raid .why {
 .toast .toast-sub {
   display: block;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 800;
   opacity: 0.85;
   margin-top: 2px;
 }
@@ -1014,10 +1105,6 @@ body.touch #obj-raid .why {
 }
 
 /* The teammate: a row on the vitals plate, and a tag over its head in the world. */
-:root {
-  --mate: #2f7f86;
-  --mate-light: #6fd0cf;
-}
 #mate {
   display: flex;
   align-items: center;
@@ -1026,7 +1113,7 @@ body.touch #obj-raid .why {
   font-size: 12px;
   padding-bottom: 6px;
   margin-bottom: 2px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  border-bottom: 1px solid rgb(var(--white-rgb) / 0.12);
 }
 #mate b {
   color: var(--mate-light);
@@ -1037,7 +1124,7 @@ body.touch #obj-raid .why {
   white-space: nowrap;
 }
 #mate.down #mate-state {
-  color: #ff4458;
+  color: var(--danger);
   font-weight: 800;
 }
 .mate-bars {
@@ -1050,7 +1137,7 @@ body.touch #obj-raid .why {
 .mate-bars i {
   display: block;
   height: 4px;
-  background: rgba(255, 255, 255, 0.12);
+  background: rgb(var(--white-rgb) / 0.12);
 }
 .mate-bars i span {
   display: block;
@@ -1069,7 +1156,7 @@ body.touch #obj-raid .why {
   font-family: var(--jp);
   font-size: 12px;
   font-weight: 800;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  text-shadow: 0 1px 2px rgb(var(--shade-rgb) / 0.6);
   white-space: nowrap;
   pointer-events: none;
 }
@@ -1088,10 +1175,10 @@ body.touch #obj-raid .why {
   font-size: 11px;
 }
 #mate-tag.down i {
-  background: #ff4458;
+  background: var(--danger);
 }
 #mate-tag.down #mate-tag-sub {
-  color: #ff4458;
+  color: var(--danger);
 }
 body.touch .mate-bars {
   width: 60px;
@@ -1111,15 +1198,15 @@ body.touch .mate-bars {
   font-weight: 800;
 }
 #downed b {
-  font-size: 34px;
-  color: #ff4458;
+  font-size: 30px;
+  color: var(--danger);
 }
 #downed i,
 #battery i {
   display: block;
   width: 220px;
   height: 6px;
-  background: rgba(0, 0, 0, 0.4);
+  background: rgb(var(--shade-rgb) / 0.4);
 }
 #downed i span,
 #battery i span {
@@ -1157,7 +1244,7 @@ body.touch .mate-bars {
 #banner b {
   display: inline-block;
   font-weight: 800;
-  font-size: 44px;
+  font-size: 40px;
   padding: 4px 22px;
   background: var(--ink);
   border-bottom: 5px solid var(--ring);
@@ -1167,7 +1254,7 @@ body.touch .mate-bars {
   margin-top: 8px;
   font-weight: 800;
   font-size: 18px;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+  text-shadow: 0 1px 4px rgb(var(--shade-rgb) / 0.6);
 }
 #banner.good b {
   border-bottom-color: var(--hot);
@@ -1181,7 +1268,7 @@ body.touch .mate-bars {
   display: grid;
   place-items: center start;
   padding-left: 6vw;
-  background: linear-gradient(90deg, rgba(20, 26, 51, 0.78) 0%, rgba(20, 26, 51, 0.45) 55%, rgba(20, 26, 51, 0) 100%);
+  background: linear-gradient(90deg, rgb(var(--ink-rgb) / 0.78) 0%, rgb(var(--ink-rgb) / 0.45) 55%, rgb(var(--ink-rgb) / 0) 100%);
 }
 .screen[hidden] {
   display: none;
@@ -1276,7 +1363,7 @@ body.camp #pause .keys .raid {
   pointer-events: auto;
   font-family: var(--jp);
   font-weight: 800;
-  font-size: 22px;
+  font-size: 20px;
   color: var(--ink);
   background: var(--hot);
   border: 0;
@@ -1401,7 +1488,7 @@ body.camp #pause .keys .raid {
 #hub {
   place-items: center;
   padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
-  background: rgba(20, 26, 51, 0.5);
+  background: rgb(var(--ink-rgb) / 0.5);
 }
 .hub-inner {
   display: grid;
@@ -1411,8 +1498,8 @@ body.camp #pause .keys .raid {
   height: min(720px, 100%);
   min-height: 0;
   padding: 16px 18px;
-  background: rgba(20, 26, 51, 0.9);
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.12), 6px 6px 0 rgba(0, 0, 0, 0.25);
+  background: rgb(var(--ink-rgb) / 0.9);
+  box-shadow: 0 0 0 2px rgb(var(--white-rgb) / 0.12), 6px 6px 0 rgb(var(--shade-rgb) / 0.25);
 }
 /* A station with one list of its own (the board, the workshop): a narrower panel. The map table is wider, for the island's map beside its notes. */
 #hub[data-station="map"] .hub-inner {
@@ -1434,7 +1521,7 @@ body.camp #pause .keys .raid {
   grid-template-columns: 1fr;
 }
 #hub .hub-head #hub-close {
-  font-size: 15px;
+  font-size: 16px;
   padding: 7px 14px;
   box-shadow: inset 0 0 0 2px var(--white);
 }
@@ -1458,7 +1545,7 @@ body.touch #hub-close kbd {
 }
 .hub-head h2 {
   margin: 0;
-  font-size: 28px;
+  font-size: 30px;
 }
 @media (max-height: 500px) {
   #hub {
@@ -1497,7 +1584,7 @@ body.touch #hub-close kbd {
 }
 .hub-cash b {
   font-family: var(--num);
-  font-size: 34px;
+  font-size: 30px;
   color: var(--hot);
 }
 .hub-cols {
@@ -1518,7 +1605,7 @@ body.touch #hub-close kbd {
 .hub-col h3 small {
   color: var(--muted);
   font-family: var(--num);
-  font-size: 15px;
+  font-size: 14px;
   margin-left: 6px;
 }
 .hub-list {
@@ -1542,7 +1629,7 @@ body.touch #hub-close kbd {
   padding: 7px 12px;
   background: var(--plate);
   color: var(--white);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 0 0 1px rgb(var(--white-rgb) / 0.12);
 }
 #hub .item:hover:not(:disabled) {
   transform: none;
@@ -1563,7 +1650,7 @@ body.touch #hub-close kbd {
 #hub .item small {
   grid-column: 1;
   font-size: 12px;
-  font-weight: 400;
+  font-weight: 500;
   color: var(--muted);
 }
 #hub .item b {
@@ -1588,14 +1675,14 @@ body.touch #hub-close kbd {
 .hub-list .slot > small:first-child {
   width: 7em;
   color: var(--muted);
-  font-weight: 400;
+  font-weight: 500;
 }
 .hub-list .slot .none {
   color: var(--muted);
 }
 .hub-list .slot.count b {
   font-family: var(--num);
-  font-size: 22px;
+  font-size: 24px;
   min-width: 1.4em;
   text-align: center;
 }
@@ -1608,7 +1695,7 @@ body.touch #hub-close kbd {
 .hub-list .slot.count small:last-child {
   margin-left: auto;
   color: var(--muted);
-  font-weight: 400;
+  font-weight: 500;
 }
 .hub-list .hint,
 .hub-list .empty {
@@ -1646,7 +1733,7 @@ body.touch #hub-close kbd {
   white-space: nowrap;
 }
 #hub .quest button {
-  font-size: 15px;
+  font-size: 16px;
   padding: 8px 14px;
   white-space: nowrap;
 }
@@ -1661,7 +1748,7 @@ body.touch #hub-close kbd {
 /* The radio's report on the next raid, at the top of the loadout. */
 .hub-list .slot.intel {
   box-shadow: inset 3px 0 0 var(--sky);
-  font-weight: 400;
+  font-weight: 500;
   font-size: 14px;
 }
 /* A depot start's allowance, teal like the depot's start button; red once the loadout is over it. */
@@ -1673,13 +1760,13 @@ body.touch #hub-close kbd {
 .hub-list .slot.depot span b {
   margin-left: 12px;
   font-family: var(--num);
-  font-size: 22px;
+  font-size: 24px;
 }
 .hub-list .slot.depot > small:last-child {
   flex-basis: 100%;
   padding-left: calc(7em + 12px);
   color: var(--muted);
-  font-weight: 400;
+  font-weight: 500;
 }
 .hub-list .slot.depot.over {
   box-shadow: inset 3px 0 0 var(--ring);
@@ -1699,8 +1786,8 @@ body.touch #hub-close kbd {
 #hub-island-map {
   width: 100%;
   height: min(46vh, 400px);
-  background: #1c1f2a;
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.12);
+  background: var(--board);
+  box-shadow: 0 0 0 2px rgb(var(--white-rgb) / 0.12);
 }
 .hub-island-side {
   display: flex;
@@ -1723,7 +1810,7 @@ body.touch #hub-close kbd {
 }
 .hub-day b {
   font-family: var(--num);
-  font-size: 34px;
+  font-size: 30px;
   line-height: 1;
 }
 /* The network's meter on the map table: a cell per level, lit up to the current one; red from 3. */
@@ -1749,7 +1836,7 @@ body.touch #hub-close kbd {
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  box-shadow: 0 0 0 1.5px rgba(20, 24, 40, 0.9);
+  box-shadow: 0 0 0 1.5px rgb(var(--night-rgb) / 0.9);
 }
 .hold-key i.titan {
   border-radius: 2px;
@@ -1765,7 +1852,7 @@ body.touch #hub-close kbd {
 }
 .hold-key li.front i {
   background: transparent;
-  border: 2px dashed #f4f7ff;
+  border: 2px dashed var(--paper);
   box-shadow: none;
 }
 .hold-key li.income {
@@ -1785,7 +1872,7 @@ body.touch #hub-close kbd {
 .hold-key li.front b,
 .hold-key li.income b {
   font-family: var(--jp);
-  color: #f4f7ff;
+  color: var(--paper);
 }
 
 @media (max-height: 500px) {
@@ -1797,7 +1884,7 @@ body.touch #hub-close kbd {
     height: 54vh;
   }
   .hub-day b {
-    font-size: 26px;
+    font-size: 24px;
   }
 }
 @media (orientation: portrait) and (max-width: 600px) {
@@ -1808,7 +1895,7 @@ body.touch #hub-close kbd {
 /* What a pick costs of a depot start's allowance. */
 #hub .item b.cost {
   color: var(--mate-light);
-  font-size: 15px;
+  font-size: 16px;
 }
 /* The hideout: a card per module, opened to show what its next level takes. */
 .hub-list .mod {
@@ -1843,7 +1930,7 @@ body.touch #hub-close kbd {
 .mod-head .pips i {
   width: 14px;
   height: 6px;
-  background: rgba(255, 255, 255, 0.18);
+  background: rgb(var(--white-rgb) / 0.18);
 }
 .mod-head .pips i.on {
   background: var(--hot);
@@ -1859,7 +1946,7 @@ body.touch #hub-close kbd {
 .mod-head small {
   grid-column: 1 / -1;
   font-size: 12px;
-  font-weight: 400;
+  font-weight: 500;
   color: var(--muted);
 }
 .mod-body {
@@ -1873,7 +1960,7 @@ body.touch #hub-close kbd {
   grid-template-columns: 1fr auto;
   column-gap: 10px;
   padding: 4px 8px;
-  background: rgba(0, 0, 0, 0.22);
+  background: rgb(var(--shade-rgb) / 0.22);
   font-weight: 800;
   font-size: 14px;
 }
@@ -1888,13 +1975,13 @@ body.touch #hub-close kbd {
 .mod-body .req small {
   grid-column: 1 / -1;
   font-size: 12px;
-  font-weight: 400;
+  font-weight: 500;
   color: var(--muted);
 }
 #hub .mod-body button {
   align-self: flex-start;
   margin-top: 4px;
-  font-size: 15px;
+  font-size: 16px;
   padding: 8px 18px;
 }
 #hub .mod-body button:disabled {
@@ -1933,7 +2020,7 @@ body.touch #hub-close kbd {
   gap: 6px;
 }
 #hub .hub-region button {
-  font-size: 15px;
+  font-size: 16px;
   padding: 7px 14px;
   background: transparent;
   color: var(--white);
@@ -1947,7 +2034,7 @@ body.touch #hub-close kbd {
   gap: 3px;
   margin-top: 6px;
   padding-top: 6px;
-  border-top: 1px solid rgba(255, 255, 255, 0.14);
+  border-top: 1px solid rgb(var(--white-rgb) / 0.14);
 }
 .strength > small {
   color: var(--muted);
@@ -1962,7 +2049,7 @@ body.touch #hub-close kbd {
   flex: 0 0 auto;
   min-width: 38px;
   font-family: var(--num);
-  font-size: 15px;
+  font-size: 16px;
   padding: 4px 8px;
   background: transparent;
   color: var(--white);
@@ -1999,7 +2086,7 @@ body.touch #hub-close kbd {
   flex-basis: 100%;
   padding-left: calc(7em + 12px);
   font-size: 12px;
-  font-weight: 400;
+  font-weight: 500;
   color: var(--muted);
 }
 .hub-list .quest.story.taken {
@@ -2039,7 +2126,7 @@ body.touch #hub-close kbd {
 }
 /* Where the truck drives. */
 .hub-list .slot.ride {
-  font-weight: 400;
+  font-weight: 500;
   font-size: 14px;
   box-shadow: inset 3px 0 0 var(--hot);
 }
@@ -2056,6 +2143,33 @@ body.touch #hub-close kbd {
   margin: 4px 0 2px;
   font-size: 16px;
 }
+/* What the raid came to stands on a plate, as everything read over the world does. */
+#home {
+  padding: 12px 16px;
+  background: var(--plate-strong);
+  align-self: start;
+  margin-top: 64px;
+}
+#home:not(:has(h3, .analyse, .island-news)),
+#island-news:empty {
+  display: none;
+}
+#home h3.mark .ico {
+  width: 20px;
+  height: 20px;
+}
+/* A thing brought home: its name on its rarity's colour, counted. */
+#home .chip {
+  padding: 2px 8px;
+  border-left: 4px solid var(--c, var(--r0));
+  background: rgb(var(--white-rgb) / 0.08);
+  font-size: 14px;
+}
+#home .chip b {
+  margin-left: 6px;
+  font-family: var(--num);
+  color: var(--c, var(--white));
+}
 #home p {
   margin: 0;
   display: flex;
@@ -2069,16 +2183,16 @@ body.touch #hub-close kbd {
   font-size: 20px;
 }
 #home .freed {
-  color: #8db9de;
+  color: var(--own-light);
 }
 #home .net {
   font-family: var(--num);
 }
 #home .net.up {
-  color: #ff9c86;
+  color: var(--foe-soft);
 }
 #home .net.down {
-  color: #8db9de;
+  color: var(--own-light);
 }
 /* The contract's outcome after a raid: done and its reward, or not done. */
 #home .contract {
@@ -2112,12 +2226,12 @@ body.touch #hub-close kbd {
   font-size: 14px;
   text-align: left;
   color: var(--white);
-  background: rgba(168, 92, 255, 0.22);
+  background: rgb(var(--r2-rgb) / 0.22);
   box-shadow: inset 0 0 0 2px var(--r2);
 }
 #home .analyse button.mod small {
   font-size: 12px;
-  font-weight: 400;
+  font-weight: 500;
 }
 #home .analyse button.mod em {
   font-style: normal;
@@ -2130,23 +2244,23 @@ body.touch #hub-close kbd {
 }
 #home .analyse button.mod.done {
   opacity: 1;
-  background: rgba(168, 92, 255, 0.45);
+  background: rgb(var(--r2-rgb) / 0.45);
 }
 
 #home .sold {
   font-size: 13px;
-  font-weight: 400;
+  font-weight: 500;
   color: var(--muted);
 }
 body.touch .hub-head h2 {
-  font-size: 22px;
+  font-size: 20px;
 }
 body.touch #hub .item {
   font-size: 14px;
   padding: 5px 10px;
 }
 body.touch .hub-foot button {
-  font-size: 17px;
+  font-size: 16px;
   padding: 10px 20px;
 }
 
@@ -2169,7 +2283,7 @@ body.touch .touch-help {
   margin: 0;
   max-width: 34em;
   font-weight: 800;
-  font-size: 15px;
+  font-size: 16px;
 }
 body.touch.playing #touch {
   display: block;
@@ -2202,8 +2316,8 @@ body.touch.playing #touch {
   height: 124px;
   margin: -62px 0 0 -62px;
   border-radius: 50%;
-  border: 3px solid rgba(255, 255, 255, 0.55);
-  background: rgba(20, 26, 51, 0.25);
+  border: 3px solid rgb(var(--white-rgb) / 0.55);
+  background: rgb(var(--ink-rgb) / 0.25);
   pointer-events: none;
 }
 #t-stick-knob {
@@ -2213,7 +2327,7 @@ body.touch.playing #touch {
   width: 54px;
   height: 54px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.85);
+  background: rgb(var(--white-rgb) / 0.85);
   transform: translate(-50%, -50%);
 }
 .tb {
@@ -2221,8 +2335,8 @@ body.touch.playing #touch {
   width: 64px;
   height: 64px;
   border-radius: 50%;
-  border: 3px solid rgba(255, 255, 255, 0.75);
-  background: rgba(20, 26, 51, 0.45);
+  border: 3px solid rgb(var(--white-rgb) / 0.75);
+  background: rgb(var(--ink-rgb) / 0.45);
   color: var(--white);
   font-family: var(--jp);
   font-weight: 800;
@@ -2237,7 +2351,7 @@ body.touch.playing #touch {
   font-size: 11px;
 }
 .tb.down {
-  background: rgba(255, 255, 255, 0.85);
+  background: rgb(var(--white-rgb) / 0.85);
   color: var(--ink);
 }
 /*
@@ -2254,18 +2368,19 @@ body.touch.playing #touch {
   width: 92px;
   height: 92px;
   border-color: var(--ring);
-  background: rgba(255, 90, 42, 0.35);
-  font-size: 15px;
+  background: rgb(var(--ring-rgb) / 0.35);
+  font-size: 16px;
 }
 #t-fire.down {
   background: var(--ring);
   color: var(--white);
 }
+/* Below the vitals, which end about 172 px down on a phone: a button under a plate cannot be seen or pressed. */
 #t-fire2 {
   left: max(24px, env(safe-area-inset-left));
-  top: 40%;
+  top: max(46%, 180px);
   border-color: var(--ring);
-  background: rgba(255, 90, 42, 0.3);
+  background: rgb(var(--ring-rgb) / 0.3);
 }
 #t-jump {
   right: var(--edge-r);
@@ -2292,10 +2407,10 @@ body.touch.playing #touch {
   bottom: calc(var(--edge-b) + 74px);
 }
 .ab-btn {
-  background: conic-gradient(rgba(255, 255, 255, 0.35) calc(var(--p, 1) * 360deg), rgba(20, 26, 51, 0.5) 0);
+  background: conic-gradient(rgb(var(--white-rgb) / 0.35) calc(var(--p, 1) * 360deg), rgb(var(--ink-rgb) / 0.5) 0);
 }
 .ab-btn.ult {
-  background: conic-gradient(rgba(255, 201, 58, 0.6) calc(var(--p, 0) * 360deg), rgba(20, 26, 51, 0.5) 0);
+  background: conic-gradient(rgb(var(--r3-rgb) / 0.6) calc(var(--p, 0) * 360deg), rgb(var(--ink-rgb) / 0.5) 0);
 }
 .ab-btn.ready {
   border-color: var(--hot);
@@ -2306,7 +2421,7 @@ body.touch.playing #touch {
 }
 #t-battery {
   left: max(24px, env(safe-area-inset-left));
-  top: calc(40% + 72px);
+  top: calc(max(46%, 180px) + 60px);
   border-color: var(--r1);
 }
 #t-use {
@@ -2314,10 +2429,10 @@ body.touch.playing #touch {
   bottom: calc(var(--edge-b) + 152px);
   width: auto;
   height: 44px;
-  border-radius: 22px;
+  border-radius: 999px;
   padding: 0 16px;
   font-size: 14px;
-  background: rgba(255, 226, 61, 0.9);
+  background: rgb(var(--hot-rgb) / 0.9);
   color: var(--ink);
   border-color: var(--hot);
 }
@@ -2338,7 +2453,7 @@ body.touch #cells {
   display: none;
 }
 body.touch #mods i {
-  font-size: 10px;
+  font-size: 11px;
   line-height: 14px;
 }
 body.touch #vitals {
@@ -2452,7 +2567,7 @@ body.touch .slot.active {
   padding: 4px 10px;
 }
 body.touch .slot.active .ammo b {
-  font-size: 26px;
+  font-size: 24px;
 }
 body.touch .slot .name,
 body.touch .slot.active .name {
@@ -2473,7 +2588,7 @@ body.touch #banner b {
   font-size: 30px;
 }
 body.touch #banner span {
-  font-size: 15px;
+  font-size: 16px;
 }
 body.touch .title-inner {
   gap: 10px;
@@ -2509,7 +2624,7 @@ body.touch #title h1 {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  background: rgba(14, 16, 28, 0.55);
+  background: rgb(var(--deep-rgb) / 0.8);
   pointer-events: none;
   z-index: 5;
 }
@@ -2521,15 +2636,21 @@ body.touch #title h1 {
   height: min(82vh, calc(82vw / var(--map-aspect, 1)));
   aspect-ratio: var(--map-aspect, 1);
   border: 2px solid var(--ink);
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 6px 24px rgb(var(--shade-rgb) / 0.45);
   image-rendering: auto;
 }
 #map p {
   margin: 0;
+  padding: 4px 12px;
+  background: var(--plate-strong);
   font-family: var(--jp);
   font-weight: 800;
   font-size: 13px;
   color: var(--white);
+}
+/* The map covers the raid's plates: they would show through it and under its legend. */
+#hud.map-open > :not(#map):not(#compass) {
+  visibility: hidden;
 }
 #map .map-key {
   color: var(--hot);
@@ -2539,39 +2660,39 @@ body.touch #title h1 {
 }
 /* The ziplines up: the thin blue of their lines on the map (view/map.ts). */
 #map .map-key.zip {
-  color: #7cc0ff;
-  font-weight: 400;
+  color: var(--own-light);
+  font-weight: 500;
 }
 /* The POI marks' colours (view/map.ts HOLD_CSS). */
 #map .map-key.held {
-  color: #c8402f;
+  color: var(--foe);
 }
 #map .map-key.freed {
-  color: #3f86c8;
+  color: var(--own);
 }
 #map .map-key.rival {
-  color: #3fae6e;
+  color: var(--rival);
 }
 /* The titan's navy, lightened to read on the dark under the map. */
 /* The battle's squads on the map: chevrons in the side's colour. */
 #map .map-key.squad.you {
-  color: #4f9bff;
+  color: var(--own-bright);
 }
 #map .map-key.squad.net {
-  color: #ff4a3d;
+  color: var(--alert);
 }
 #map .map-key.squad.rogue {
-  color: #a47be0;
+  color: var(--rogue);
 }
 #map .map-key.squad.rival {
-  color: #3fae6e;
+  color: var(--rival);
 }
 /* The front line (view/map.ts). */
 #map .map-key.front {
-  color: #f4f7ff;
+  color: var(--paper);
 }
 #map .map-key.titan {
-  color: #7f89c4;
+  color: var(--titan-light);
 }
 body.touch #map .map-close {
   display: none;
@@ -2591,10 +2712,10 @@ body.touch .map-buttons button {
   pointer-events: auto;
   font-family: var(--jp);
   font-weight: 800;
-  font-size: 15px;
+  font-size: 16px;
   padding: 8px 22px;
   color: var(--white);
-  background: rgba(14, 16, 28, 0.85);
+  background: rgb(var(--deep-rgb) / 0.85);
   border: 2px solid var(--ink);
   border-radius: 6px;
 }
@@ -2653,10 +2774,10 @@ body.touch .map-buttons button {
 /* As tall as the island is long: the map frames the whole island with no empty sides. */
 #day-map {
   align-self: flex-start;
-  height: min(40vh, 330px);
-  aspect-ratio: 2 / 3;
-  background: #1c1f2a;
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.12);
+  width: min(100%, 420px);
+  aspect-ratio: var(--map-aspect, 1.3);
+  background: var(--board);
+  box-shadow: 0 0 0 2px rgb(var(--white-rgb) / 0.12);
 }
 #day-result .day-row {
   display: flex;
@@ -2751,7 +2872,8 @@ body:not(.playing) #banner {
     gap: 3px;
   }
   #day-map {
-    height: 34vh;
+    width: auto;
+    height: 40vh;
   }
   #day-result p {
     font-size: 12px;
@@ -2761,7 +2883,7 @@ body:not(.playing) #banner {
     font-size: 12px;
   }
   #haul-line b {
-    font-size: 17px;
+    font-size: 16px;
   }
   #stats {
     grid-template-columns: repeat(5, auto);
@@ -2769,7 +2891,7 @@ body:not(.playing) #banner {
     font-size: 11px;
   }
   #stats b {
-    font-size: 15px;
+    font-size: 16px;
   }
   #results #restart {
     font-size: 16px;
@@ -2783,7 +2905,7 @@ body:not(.playing) #banner {
     gap: 2px 10px;
   }
   #home h3.day-end {
-    font-size: 15px;
+    font-size: 16px;
   }
 }
 /* The routes under the hideout's modules: a closed one in the warning colour, an open one quiet. */
@@ -2815,7 +2937,7 @@ body:not(.playing) #banner {
   padding: 1px 7px;
   margin-right: 8px;
   vertical-align: 2px;
-  background: rgba(255, 255, 255, 0.14);
+  background: rgb(var(--white-rgb) / 0.14);
 }
 .hub-list .quest.contract.taken {
   box-shadow: inset 0 0 0 2px var(--r3);
@@ -2829,7 +2951,7 @@ body:not(.playing) #banner {
 #hub .quest.contract button.untake {
   background: transparent;
   color: var(--white);
-  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.5);
+  box-shadow: inset 0 0 0 2px rgb(var(--white-rgb) / 0.5);
 }
 /* The story: the record under way, then what the records home told. */
 .hub-list .quest.story {
@@ -2858,7 +2980,7 @@ body:not(.playing) #banner {
 }
 .hub-list details.told summary small {
   margin-left: 8px;
-  font-weight: 400;
+  font-weight: 500;
   color: var(--muted);
 }
 .hub-list details.told p {
@@ -2885,14 +3007,14 @@ body:not(.playing) #banner {
   align-items: center;
   transform: translate(-50%, -100%);
   white-space: nowrap;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+  text-shadow: 0 1px 3px rgb(var(--shade-rgb) / 0.7);
 }
 .camp-label b {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 800;
   color: var(--white);
   padding: 2px 10px;
-  background: rgba(20, 26, 51, 0.55);
+  background: rgb(var(--ink-rgb) / 0.55);
 }
 .camp-label.near b {
   background: var(--white);
@@ -2923,10 +3045,14 @@ body:not(.playing) #banner {
   display: flex;
   align-items: baseline;
   gap: 16px;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+  text-shadow: 0 1px 3px rgb(var(--shade-rgb) / 0.6);
+}
+#camp.covered #camp-head,
+#camp.covered #camp-labels {
+  visibility: hidden;
 }
 #camp-head > b {
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 800;
 }
 #camp-head span small {
@@ -2952,7 +3078,7 @@ body:not(.playing) #banner {
 .hub-row .tug {
   --w: 220px;
   --h: 12px;
-  font-size: 15px;
+  font-size: 16px;
 }
 /* In the map table's side column the bar narrows to the column (a phone's panel). */
 .hub-row .tug-bar {
@@ -2967,7 +3093,7 @@ body:not(.playing) #banner {
   transform: translateX(-50%);
   font-size: 18px;
   font-weight: 800;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+  text-shadow: 0 1px 3px rgb(var(--shade-rgb) / 0.7);
 }
 #camp-prompt kbd {
   margin-right: 8px;
@@ -3008,7 +3134,7 @@ body.touch.camp #t-use {
   right: calc(var(--edge-r) + 20px);
   bottom: calc(var(--edge-b) + 96px);
   height: 52px;
-  border-radius: 26px;
+  border-radius: 999px;
   font-size: 16px;
 }
 body.touch #camp-prompt {
@@ -3054,7 +3180,7 @@ body.touch #camp-prompt {
   left: max(18px, env(safe-area-inset-left));
   width: min(360px, 42vw);
   padding: 8px 12px;
-  background: rgba(20, 26, 51, 0.62);
+  background: var(--plate);
   border-left: 4px solid var(--hot);
 }
 #camp-plan h3 {
@@ -3085,7 +3211,7 @@ body.touch #camp-prompt {
     font-size: 16px;
   }
   #camp-head span b {
-    font-size: 17px;
+    font-size: 16px;
   }
   #camp-hint {
     font-size: 11px;
@@ -3100,7 +3226,7 @@ body.touch #camp-prompt {
     margin-bottom: 2px;
   }
   #camp-plan dl {
-    font-size: 10px;
+    font-size: 11px;
     line-height: 1.3;
   }
 }
@@ -3113,7 +3239,7 @@ body.touch #camp-prompt {
   z-index: 4;
   place-items: center;
   padding: 16px max(16px, env(safe-area-inset-right)) 16px max(16px, env(safe-area-inset-left));
-  background: rgba(20, 26, 51, 0.6);
+  background: rgb(var(--ink-rgb) / 0.6);
 }
 .depart-inner {
   display: flex;
@@ -3121,7 +3247,7 @@ body.touch #camp-prompt {
   height: min(720px, calc(100dvh - 32px));
   max-width: 100%;
   padding: 12px;
-  background: rgba(14, 18, 36, 0.94);
+  background: rgb(var(--deep-rgb) / 0.94);
   border-left: 5px solid var(--hot);
   font-family: var(--jp);
 }
@@ -3137,8 +3263,8 @@ body.touch #camp-prompt {
   inset: 0;
   width: 100%;
   height: 100%;
-  background: #1c1f2a;
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.12);
+  background: var(--board);
+  box-shadow: 0 0 0 2px rgb(var(--white-rgb) / 0.12);
 }
 #depart-points {
   position: absolute;
@@ -3148,9 +3274,9 @@ body.touch #camp-prompt {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  stroke: rgba(244, 247, 255, 0.7);
+  stroke: rgb(var(--paper-rgb) / 0.7);
   stroke-width: 1.2;
-  fill: rgba(244, 247, 255, 0.85);
+  fill: rgb(var(--paper-rgb) / 0.85);
 }
 /* A start on the map: a round button over its place, its mark in the middle. */
 .screen #depart-points button.pick {
@@ -3162,8 +3288,8 @@ body.touch #camp-prompt {
   margin: -15px 0 0 -15px;
   padding: 0;
   border-radius: 50%;
-  background: rgba(20, 24, 40, 0.72);
-  border: 2px solid rgba(244, 247, 255, 0.35);
+  background: rgb(var(--night-rgb) / 0.72);
+  border: 2px solid rgb(var(--paper-rgb) / 0.35);
   box-shadow: none;
   transform: none;
   color: var(--white);
@@ -3179,9 +3305,9 @@ body.touch #camp-prompt {
 }
 #depart-points button.pick.shut {
   cursor: default;
-  background: rgba(20, 24, 40, 0.45);
+  background: rgb(var(--night-rgb) / 0.45);
   border-style: dashed;
-  border-color: rgba(244, 247, 255, 0.25);
+  border-color: rgb(var(--paper-rgb) / 0.25);
 }
 #depart-points button.pick.depot.shut .ico.depot {
   opacity: 0.45;
@@ -3194,7 +3320,7 @@ body.touch #camp-prompt {
 #depart-points .pick-lock .ico {
   width: 13px;
   height: 13px;
-  color: #c8cbd6;
+  color: var(--mist);
 }
 /* The chosen start: lit, a ring going out from it, and the start pin over it. */
 .screen #depart-points button.pick.on {
@@ -3242,7 +3368,7 @@ body.touch #camp-prompt {
 #depart-points .pin .ico {
   width: 24px;
   height: 24px;
-  filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.6));
+  filter: drop-shadow(0 2px 2px rgb(var(--shade-rgb) / 0.6));
 }
 @keyframes depart-pin {
   from {
@@ -3261,13 +3387,13 @@ body.touch #camp-prompt {
   display: flex;
   gap: 2px;
   padding: 2px;
-  background: rgba(20, 24, 40, 0.82);
+  background: rgb(var(--night-rgb) / 0.82);
   pointer-events: none;
 }
 #depart-points .mini i {
   width: 6px;
   height: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.7);
+  border: 1px solid rgb(var(--white-rgb) / 0.7);
 }
 #depart-points .mini i.full {
   background: var(--mate-light);
@@ -3279,7 +3405,7 @@ body.touch #camp-prompt {
 }
 #depart-points .mini i.none {
   width: 10px;
-  border-color: rgba(255, 255, 255, 0.35);
+  border-color: rgb(var(--white-rgb) / 0.35);
   border-style: dashed;
 }
 #depart-points .mini b {
@@ -3300,14 +3426,14 @@ body.touch #camp-prompt {
   padding: 0;
   border: 2px solid transparent;
   border-radius: 6px;
-  background: rgba(20, 24, 40, 0.8);
+  background: rgb(var(--night-rgb) / 0.8);
   box-shadow: none;
   transform: none;
-  color: #c8cbd6;
+  color: var(--mist);
   cursor: pointer;
 }
 .screen #depart-points .region-lock:hover {
-  border-color: rgba(244, 247, 255, 0.6);
+  border-color: rgb(var(--paper-rgb) / 0.6);
   box-shadow: none;
   transform: none;
 }
@@ -3319,7 +3445,7 @@ body.touch #camp-prompt {
 .screen #depart-points .region-lock.peek {
   z-index: 2;
   border: 2px solid var(--white);
-  outline: 3px solid rgba(244, 247, 255, 0.35);
+  outline: 3px solid rgb(var(--paper-rgb) / 0.35);
   outline-offset: 2px;
 }
 #depart-hint {
@@ -3328,12 +3454,12 @@ body.touch #camp-prompt {
   gap: 2px;
   margin: 0;
   padding: 6px 10px;
-  border-left: 3px solid #c8cbd6;
-  background: rgba(244, 247, 255, 0.06);
+  border-left: 3px solid var(--mist);
+  background: rgb(var(--paper-rgb) / 0.06);
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 800;
   line-height: 1.4;
-  color: #dfe2ea;
+  color: var(--paper);
 }
 #depart-hint[hidden] {
   display: none;
@@ -3358,7 +3484,7 @@ body.touch #camp-prompt {
 }
 .depart-side h2 {
   margin: 0;
-  font-size: 22px;
+  font-size: 20px;
 }
 #depart-start {
   display: flex;
@@ -3399,7 +3525,7 @@ body.touch #camp-prompt {
   margin: 0;
   font-size: 13px;
   font-weight: 800;
-  color: #ffb08f;
+  color: var(--peach);
 }
 #depart-warn[hidden] {
   display: none;
@@ -3415,9 +3541,9 @@ body.touch #camp-prompt {
 }
 .screen .depart-buttons button:disabled {
   cursor: default;
-  background: #5a5f6e;
-  color: rgba(255, 255, 255, 0.55);
-  box-shadow: 5px 5px 0 rgba(255, 90, 42, 0.45);
+  background: var(--slate-dim);
+  color: rgb(var(--white-rgb) / 0.55);
+  box-shadow: 5px 5px 0 rgb(var(--ring-rgb) / 0.45);
   transform: none;
 }
 body.touch .depart-buttons kbd {
@@ -3461,19 +3587,29 @@ body.touch .depart-buttons kbd {
 @media (max-height: 500px) {
   .screen #depart-points button.pick,
   .screen #depart-points .region-lock {
-    width: 38px;
-    height: 38px;
-    margin: -19px 0 0 -19px;
+    width: 40px;
+    height: 40px;
+    margin: -20px 0 0 -20px;
   }
   #depart-points button.pick .ico {
     width: 20px;
     height: 20px;
   }
 }
-body.touch .screen #depart-points button.pick {
-  width: 38px;
-  height: 38px;
-  margin: -19px 0 0 -19px;
+body.touch .screen #depart-points button.pick,
+body.touch .screen #depart-points .region-lock {
+  width: 40px;
+  height: 40px;
+  margin: -20px 0 0 -20px;
+}
+/* Anything pressed with a thumb is at least 40 px on its short side (docs/ringfall/ui.md). */
+body.touch #hub button,
+body.touch #hub-close,
+body.touch #results #restart {
+  min-height: 40px;
+}
+body.touch #hub .strength button {
+  min-width: 40px;
 }
 #camp-plan[hidden] {
   display: none;
@@ -3518,7 +3654,9 @@ body.touch #obj-raid .short {
   gap: 4px;
   padding: 6px 4px;
   border-radius: 6px;
-  background: rgba(20, 26, 51, 0.6);
+  background: rgb(var(--ink-rgb) / 0.6);
+}
+.shelf-tiers .tier:not(.on) i {
   opacity: 0.45;
 }
 .shelf-tiers .tier.on {
@@ -3543,6 +3681,10 @@ body.touch #obj-raid .short {
 }
 .shelf-tiers .tier em {
   font-style: normal;
+  color: var(--foe-soft);
+}
+.shelf-tiers .tier em.mine {
+  color: var(--own-light);
 }
 
 /* A node of the player's the enemy's robots have come to: a red arrow over its core, or at the
@@ -3552,9 +3694,9 @@ body.touch #obj-raid .short {
   width: 36px;
   height: 30px;
   transform: translate(-50%, -50%) rotate(var(--a, 180deg));
-  background: #ff3b30;
+  background: var(--alert);
   clip-path: polygon(50% 0, 100% 100%, 50% 72%, 0 100%);
-  filter: drop-shadow(0 0 6px rgba(255, 59, 48, 0.9));
+  filter: drop-shadow(0 0 6px rgb(var(--alert-rgb) / 0.9));
   animation: threat-pulse 0.9s ease-in-out infinite;
   pointer-events: none;
 }
@@ -3598,11 +3740,11 @@ body.touch #obj-raid .short {
 /* Something the action gives up (a weapon swapped, valuables dropped): its name struck through. */
 #prompt s {
   margin-left: 8px;
-  color: #ff9a8a;
-  font-weight: 700;
+  color: var(--foe-soft);
+  font-weight: 800;
 }
 #obj-until b.paused {
-  color: #ff9a3c;
+  color: var(--amber);
 }
 #obj-contract b {
   font-family: var(--num);
@@ -3626,7 +3768,7 @@ body.touch #obj-raid .short {
   align-items: baseline;
 }
 #obj-raid .reinforce {
-  color: #ff8a7a;
+  color: var(--foe-soft);
 }
 #obj-raid .reinforce.now .ico {
   animation: reinforce-now 0.8s ease-in-out infinite alternate;
@@ -3659,7 +3801,7 @@ body.touch #obj-raid .short {
   font-weight: 800;
 }
 #mate-state .ico.fight {
-  color: #ff8a7a;
+  color: var(--foe-soft);
 }
 #downed-sub:empty {
   display: none;
@@ -3685,12 +3827,12 @@ body.touch #obj-raid .short {
   padding: 0 4px;
   font-family: var(--num);
   font-size: 11px;
-  color: #1b1f2a;
+  color: var(--board);
   background: var(--r3);
 }
 /* The base's panels: marks in place of the lines that explained them. */
 #hub .item.armed {
-  box-shadow: inset 0 0 0 2px #ff6b5a;
+  box-shadow: inset 0 0 0 2px var(--foe-bright);
 }
 .hub-list .quest.route strong .ico.route {
   vertical-align: -3px;
@@ -3738,7 +3880,7 @@ body.touch #obj-raid .short {
 #obj-bag .bag-cells i {
   width: 8px;
   height: 12px;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+  box-shadow: inset 0 0 0 1px rgb(var(--white-rgb) / 0.4);
 }
 #obj-bag .bag-cells i.p {
   box-shadow: inset 0 0 0 1.5px var(--pouch);
@@ -3762,21 +3904,21 @@ body.touch #obj-raid .short {
   justify-content: center;
   width: calc(var(--n) * 30px - 3px);
   height: 30px;
-  border: 2px solid rgba(255, 255, 255, 0.6);
-  background: rgba(255, 255, 255, 0.12) repeating-linear-gradient(90deg, transparent 0 25px, rgba(255, 255, 255, 0.45) 25px 27px, transparent 27px 30px);
+  border: 2px solid rgb(var(--white-rgb) / 0.6);
+  background: rgb(var(--white-rgb) / 0.12) repeating-linear-gradient(90deg, transparent 0 25px, rgb(var(--white-rgb) / 0.45) 25px 27px, transparent 27px 30px);
   background-origin: border-box;
 }
 .boxes .seg.empty {
-  border-color: rgba(255, 255, 255, 0.32);
+  border-color: rgb(var(--white-rgb) / 0.32);
   background: transparent;
 }
 .boxes .seg.over {
   border-color: var(--ring);
-  background-color: rgba(255, 90, 42, 0.3);
+  background-color: rgb(var(--ring-rgb) / 0.3);
 }
 .boxes .seg.pouch {
   border: 2px dashed var(--pouch);
-  background: rgba(232, 176, 122, 0.16);
+  background: rgb(var(--pouch-rgb) / 0.16);
 }
 .boxes .seg .ico {
   width: 22px;
@@ -3794,7 +3936,7 @@ body.touch #obj-raid .short {
   align-items: center;
   gap: 10px;
   padding-left: 12px;
-  border-left: 2px solid rgba(255, 255, 255, 0.25);
+  border-left: 2px solid rgb(var(--white-rgb) / 0.25);
   font-family: var(--num);
   font-size: 16px;
 }
@@ -3851,7 +3993,7 @@ body.touch #obj-raid .short {
   padding: 1px 8px;
   color: var(--pouch);
   border: 2px dashed var(--pouch);
-  background: rgba(232, 176, 122, 0.12);
+  background: rgb(var(--pouch-rgb) / 0.12);
 }
 
 /* The day's contracts are papers pinned to the board: one a raid, so once one is taken the rest pale. */
@@ -3865,7 +4007,7 @@ body.touch #obj-raid .short {
   transition: opacity 0.25s, filter 0.25s;
 }
 .hub-list .quest.contract.dim {
-  opacity: 0.42;
+  opacity: 0.72;
   filter: saturate(0.3);
 }
 .hub-list .quest.contract.dim:hover {
@@ -3879,8 +4021,8 @@ body.touch #obj-raid .short {
   height: 9px;
   margin-left: -4.5px;
   border-radius: 50%;
-  background: #9aa0ad;
-  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.35);
+  background: var(--slate);
+  box-shadow: 0 2px 0 rgb(var(--shade-rgb) / 0.35);
 }
 .hub-list .quest.contract.taken .pin {
   background: var(--r3);
@@ -3899,8 +4041,8 @@ body.touch #obj-raid .short {
   animation-delay: 0.36s;
 }
 .hub-list .board.fresh .quest.contract .pin {
-  background: #e2463a;
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.7), 0 2px 0 rgba(0, 0, 0, 0.35);
+  background: var(--alert);
+  box-shadow: 0 0 0 2px rgb(var(--white-rgb) / 0.7), 0 2px 0 rgb(var(--shade-rgb) / 0.35);
 }
 @keyframes paper-in {
   from {
@@ -4026,7 +4168,7 @@ body.touch #obj-raid .short {
   max-height: calc(100% - 180px);
   overflow: hidden;
   padding: 8px 12px 10px;
-  background: rgba(20, 26, 51, 0.94);
+  background: rgb(var(--ink-rgb) / 0.94);
   border-left: 4px solid var(--pouch);
   font-family: var(--jp);
   font-weight: 800;
@@ -4042,7 +4184,7 @@ body.touch #obj-raid .short {
   gap: 6px;
   padding-bottom: 6px;
   margin-bottom: 4px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.18);
+  border-bottom: 1px solid rgb(var(--white-rgb) / 0.18);
   font-family: var(--num);
   font-size: 18px;
 }
@@ -4058,7 +4200,7 @@ body.touch #obj-raid .short {
 .bp-head .bag-cells i {
   width: 10px;
   height: 15px;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+  box-shadow: inset 0 0 0 1px rgb(var(--white-rgb) / 0.4);
 }
 .bp-head .bag-cells i.p {
   box-shadow: inset 0 0 0 1.5px var(--pouch);
@@ -4087,7 +4229,7 @@ body.touch #obj-raid .short {
   padding: 2px 0;
 }
 .bp-row + .bp-row {
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid rgb(var(--white-rgb) / 0.08);
 }
 .bp-pic {
   grid-area: pic;
@@ -4163,7 +4305,7 @@ body.touch #obj-raid .short {
   gap: 2px 12px;
   margin-top: 4px;
   padding-top: 5px;
-  border-top: 1px solid rgba(255, 255, 255, 0.18);
+  border-top: 1px solid rgb(var(--white-rgb) / 0.18);
   font-size: 13px;
 }
 .bp-x {
@@ -4206,7 +4348,7 @@ body.touch .bag-card .bp-row {
   align-items: center;
   gap: 0 8px;
   font-size: 12px;
-  color: #ff9a8a;
+  color: var(--foe-soft);
 }
 .bp-lost s {
   text-decoration: line-through 2px;
@@ -4235,7 +4377,7 @@ body.touch #bag-peek {
   font-size: 12px;
 }
 body.touch .bp-head {
-  font-size: 15px;
+  font-size: 16px;
   padding-bottom: 4px;
 }
 body.touch .bp-row {
@@ -4289,15 +4431,15 @@ body.touch .bag-card:nth-last-child(n + 3) {
   height: 20px;
 }
 .factory-card .mod-head strong .ico {
-  color: #6fb0ff;
+  color: var(--own-light);
 }
 .factory-card .mod-head > b {
   font-family: var(--num);
   font-size: 18px;
-  color: #6fb0ff;
+  color: var(--own-light);
 }
 .factory-card .pips i.on {
-  background: #3d8cff;
+  background: var(--own-bright);
 }
 .gain-row {
   grid-column: 1 / -1;
@@ -4341,7 +4483,7 @@ body.touch .bag-card:nth-last-child(n + 3) {
 .up-card b.n {
   font-family: var(--num);
   font-size: 18px;
-  font-weight: 700;
+  font-weight: 800;
   color: var(--white);
 }
 .up-card b.n.none {
@@ -4373,19 +4515,19 @@ body.touch .bag-card:nth-last-child(n + 3) {
 .up-card .tell.gain,
 .up-card .mats em {
   color: var(--hot);
-  text-shadow: 0 0 8px rgba(255, 226, 61, 0.55);
+  text-shadow: 0 0 8px rgb(var(--hot-rgb) / 0.55);
 }
 .up-card .boxes .seg.gain {
   border-style: solid;
   border-color: var(--hot);
-  box-shadow: 0 0 8px rgba(255, 226, 61, 0.6);
+  box-shadow: 0 0 8px rgb(var(--hot-rgb) / 0.6);
 }
 .up-card .bots i.gain .ico {
   filter: drop-shadow(0 0 3px var(--hot)) drop-shadow(0 0 1px var(--hot));
 }
 @keyframes gain-pulse {
   50% {
-    filter: brightness(1.35) drop-shadow(0 0 4px rgba(255, 226, 61, 0.8));
+    filter: brightness(1.35) drop-shadow(0 0 4px rgb(var(--hot-rgb) / 0.8));
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -4438,7 +4580,7 @@ body.touch .bag-card:nth-last-child(n + 3) {
   align-items: center;
   gap: 3px;
   padding: 1px 6px;
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  border: 1px solid rgb(var(--white-rgb) / 0.25);
   font-weight: 800;
   font-size: 13px;
 }
@@ -4465,11 +4607,11 @@ body.touch .bag-card:nth-last-child(n + 3) {
   gap: 8px;
   min-height: 30px;
   padding: 2px 8px;
-  background: rgba(0, 0, 0, 0.2);
+  background: rgb(var(--shade-rgb) / 0.2);
 }
 .ladder li > b {
   font-family: var(--num);
-  font-size: 15px;
+  font-size: 16px;
   color: var(--muted);
 }
 .ladder li > span {
@@ -4491,7 +4633,7 @@ body.touch .bag-card:nth-last-child(n + 3) {
   color: var(--white);
 }
 .ladder li.next {
-  box-shadow: inset 3px 0 0 var(--hot), inset 0 0 0 1px rgba(255, 226, 61, 0.45);
+  box-shadow: inset 3px 0 0 var(--hot), inset 0 0 0 1px rgb(var(--hot-rgb) / 0.45);
 }
 .ladder li.next > b,
 .ladder li.next > i {
@@ -4508,7 +4650,7 @@ body.touch .bag-card:nth-last-child(n + 3) {
   text-shadow: none;
 }
 .ladder li:not(.next) .tell.gain {
-  border-color: rgba(255, 255, 255, 0.25);
+  border-color: rgb(var(--white-rgb) / 0.25);
 }
 .ladder li:not(.next) .boxes .seg.gain {
   border-style: dashed;
@@ -4528,7 +4670,7 @@ body.touch .bag-card:nth-last-child(n + 3) {
   gap: 3px;
   margin-top: 8px;
   padding-top: 6px;
-  border-top: 1px dashed rgba(255, 255, 255, 0.28);
+  border-top: 1px dashed rgb(var(--white-rgb) / 0.28);
 }
 .mod-cost > small {
   font-size: 12px;
@@ -4607,7 +4749,7 @@ body.touch .bag-card:nth-last-child(n + 3) {
   color: var(--muted);
 }
 .exp-own > b.exp-code {
-  font-size: 22px;
+  font-size: 24px;
   color: var(--hot);
 }
 #hub .exp-own button {
@@ -4638,7 +4780,7 @@ body.touch .bag-card:nth-last-child(n + 3) {
   gap: 8px;
 }
 .mod-body .exp-out span b.exp-code {
-  font-size: 15px;
+  font-size: 16px;
   color: var(--muted);
 }
 .mod-body .exp-out > b {
@@ -4667,9 +4809,9 @@ body.touch .bag-card:nth-last-child(n + 3) {
   padding: 3px 12px;
   font-family: var(--jp);
   font-size: 12px;
-  background: rgba(0, 0, 0, 0.3);
+  background: rgb(var(--shade-rgb) / 0.3);
   color: var(--white);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25);
+  box-shadow: inset 0 0 0 1px rgb(var(--white-rgb) / 0.25);
 }
 .hub-island ul.island-news.incoming li {
   display: flex;
@@ -4710,8 +4852,8 @@ body.touch .bag-card:nth-last-child(n + 3) {
   padding: 6px 10px;
   border: 0;
   border-radius: 0;
-  background: rgba(0, 0, 0, 0.35);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25);
+  background: rgb(var(--shade-rgb) / 0.35);
+  box-shadow: inset 0 0 0 1px rgb(var(--white-rgb) / 0.25);
   color: var(--white);
   font-family: var(--num);
   font-size: 20px;
@@ -4757,9 +4899,9 @@ body.touch .bag-card:nth-last-child(n + 3) {
   margin: 0;
   padding: 6px 10px;
   font-size: 14px;
-  background: rgba(0, 0, 0, 0.3);
+  background: rgb(var(--shade-rgb) / 0.3);
   color: var(--white);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+  box-shadow: inset 0 0 0 1px rgb(var(--white-rgb) / 0.2);
 }
 #hub .exp-nodes button.on {
   box-shadow: inset 0 0 0 2px var(--hot);
@@ -4781,7 +4923,7 @@ body.touch .bag-card:nth-last-child(n + 3) {
 .hub-island ul.island-news li {
   padding: 2px 0;
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 800;
 }
 #island-news:empty {
   display: none;
@@ -4800,7 +4942,7 @@ body.touch .bag-card:nth-last-child(n + 3) {
   gap: 6px;
   padding: 4px;
   border-radius: 6px;
-  background: rgba(20, 26, 51, 0.6);
+  background: rgb(var(--ink-rgb) / 0.6);
   opacity: 0.45;
 }
 .shelf-mats > div.on {
@@ -4830,7 +4972,7 @@ body.touch .bag-card:nth-last-child(n + 3) {
 #prompt small {
   margin-left: 4px;
   font-size: 0.78em;
-  font-weight: 700;
+  font-weight: 800;
   opacity: 0.85;
 }
 /* A shut action's reason in a panel, a line above what it shuts. */
@@ -4840,11 +4982,11 @@ body.touch .bag-card:nth-last-child(n + 3) {
   gap: 6px;
   margin: 0 0 8px;
   padding: 5px 9px;
-  border-left: 3px solid #c8cbd6;
-  background: rgba(244, 247, 255, 0.06);
+  border-left: 3px solid var(--mist);
+  background: rgb(var(--paper-rgb) / 0.06);
   font-size: 13px;
-  font-weight: 700;
-  color: #dfe2ea;
+  font-weight: 800;
+  color: var(--paper);
 }
 #hub .lock-note .ico {
   width: 15px;
@@ -4854,6 +4996,6 @@ body.touch .bag-card:nth-last-child(n + 3) {
 /* The raid's momentum beside the island's bar: a gold mark for each node taken after the first. */
 #island-row .momentum {
   margin-left: 6px;
-  color: #ffd24a;
+  color: var(--r3);
   white-space: nowrap;
 }

@@ -18,6 +18,7 @@ import { incomingLine, logLine, type IslandLogEntry } from "../meta/expeditions"
 import { enemyNodes, frontNodes, ownNodes } from "../sim/front";
 import { nodeRow } from "./row";
 import { sfx } from "./sfx";
+import { UI } from "./palette";
 
 const RARITY_CSS = ["var(--r0)", "var(--r1)", "var(--r2)", "var(--r3)"];
 
@@ -88,7 +89,7 @@ function shelfTiers(p: Profile): string {
   const best = shopRarity(p);
   const mine = playerNodes(p);
   const cells = ([0, 1, 2, 3] as Rarity[]).map((r) => {
-    const by = NODES.filter((n) => UNLOCKS[n.id].shop === r).map((n) => `<em style="color:${mine.includes(n.id) ? HOLD_CSS.freed : HOLD_CSS.held}">${esc(n.name)}</em>`);
+    const by = NODES.filter((n) => UNLOCKS[n.id].shop === r).map((n) => `<em${mine.includes(n.id) ? ' class="mine"' : ""}>${esc(n.name)}</em>`);
     return `<div class="tier${r <= best ? " on" : ""}" style="--c:${RARITY_CSS[r]}"><i></i><span>${by.join("")}</span></div>`;
   });
   // The materials beside them, under the workbench's wrench: the rarities it lets the trader sell.
@@ -97,7 +98,8 @@ function shelfTiers(p: Profile): string {
   return `<div class="shelf-tiers">${cells.join("")}</div><div class="shelf-mats">${row.join("")}</div>`;
 }
 
-const color = (i: Item | RewardItem) =>
+/** An item's colour: its rarity's, gold for a key or a tool, white for a heal. */
+export const itemColor = (i: Item | RewardItem) =>
   i.t === "weapon" ? RARITY_CSS[i.rarity] : i.t === "armor" ? RARITY_CSS[i.tier] : i.t === "valuable" ? RARITY_CSS[VALUABLES[i.kind].rarity] : i.t === "key" || i.t === "tool" ? RARITY_CSS[3] : "var(--white)";
 
 /** Weapons, armour and keys are listed one by one; heals and valuables are counted. */
@@ -192,7 +194,7 @@ const boardKey = (p: Profile) => `${p.board.day}:${p.board.contracts.map((c) => 
 /** An item as its mark in its colour: a gun, armour or a key. */
 /** A starter weapon's mark before its name: a pin, since it stays in the stash. "" for anything else. */
 const starterMark = (i: Item | undefined) => (isStarter(i) ? `<i class="starter">${pinIcon()}</i>` : "");
-const itemMark = (i: Item) => `<span style="color:${color(i)}">${i.t === "weapon" ? gunIcon() : i.t === "armor" ? armorIcon() : keyIcon()}</span>`;
+const itemMark = (i: Item) => `<span style="color:${itemColor(i)}">${i.t === "weapon" ? gunIcon() : i.t === "armor" ? armorIcon() : keyIcon()}</span>`;
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
 const yen = (n: number) => n.toLocaleString("ja-JP");
 
@@ -694,7 +696,7 @@ export class Hub {
     // A valuable still needed, pressed once to sell, turns red: the second press sells it.
     const text = itemNote(item, body.need);
     const note = text ? `<small class="${body.warn ? "warn" : needed ? "need" : ""}">${text}</small>` : "";
-    const inner = `<span style="color:${color(item)}">${starterMark(item)}${esc(itemName(item))}${n}</span>${note}${body.right ?? ""}`;
+    const inner = `<span style="color:${itemColor(item)}">${starterMark(item)}${esc(itemName(item))}${n}</span>${note}${body.right ?? ""}`;
     return body.act ? `<button type="button" class="item${body.on ? " on" : ""}${body.warn ? " armed" : ""}" data-act="${body.act}" data-arg="${body.arg}">${inner}</button>` : `<div class="item">${inner}</div>`;
   }
 
@@ -854,7 +856,7 @@ export class Hub {
 
   /** A reward, in a line: the credits, then the items counted. */
   private reward(r: Reward): string {
-    return [...(r.cash ? [`${yen(r.cash)} クレジット`] : []), ...rewardList({ reward: r }).map(([i, n]) => `<span style="color:${color(i)}">${esc(itemName(i))}${n > 1 ? ` × ${n}` : ""}</span>`)].join("・");
+    return [...(r.cash ? [`${yen(r.cash)} クレジット`] : []), ...rewardList({ reward: r }).map(([i, n]) => `<span style="color:${itemColor(i)}">${esc(itemName(i))}${n > 1 ? ` × ${n}` : ""}</span>`)].join("・");
   }
 
   /**
@@ -989,7 +991,7 @@ export class Hub {
       (holds.some((h) => rivalOf(h) !== null) ? `<li><i style="background:${RIVAL_CSS}"></i>他のプレイヤー</li>` : "") +
       `<li><i class="titan" style="background:${TITAN_CSS}"></i>タイタン</li>` +
       `<li class="front"><i></i>前線<b>${NODES.filter((_, i) => front[i]).map((n) => esc(n.name)).join("・") || "—"}</b></li>` +
-      `<li class="locked">${lockIcon("#f4f7ff")}制圧不可<b>錠を押すと理由</b></li>` +
+      `<li class="locked">${lockIcon(UI.paper)}制圧不可<b>錠を押すと理由</b></li>` +
       `<li class="income">収入<b>${frontIncome(p).toLocaleString()} クレジット</b></li>`;
     return (
       `<div class="hub-island"><canvas id="hub-island-map"></canvas><div class="hub-island-side">` +
@@ -1031,7 +1033,7 @@ export class Hub {
   private kitPanel(): string {
     const p = this.profile;
     const issued = issuedHeals(p);
-    const slot = (label: string, n: number | null | undefined, extra = "") => `<div class="slot"><small>${label}</small><span${n == null ? ' class="none"' : ` style="color:${color(p.stash[n])}"`}>${n == null ? "なし" : starterMark(p.stash[n]) + esc(itemName(p.stash[n]))}</span>${extra}</div>`;
+    const slot = (label: string, n: number | null | undefined, extra = "") => `<div class="slot"><small>${label}</small><span${n == null ? ' class="none"' : ` style="color:${itemColor(p.stash[n])}"`}>${n == null ? "なし" : starterMark(p.stash[n]) + esc(itemName(p.stash[n]))}</span>${extra}</div>`;
     const stat = (n: number | undefined) => {
       const i = n === undefined ? undefined : p.stash[n];
       return i?.t === "weapon" ? `<small class="stat">${esc(weaponStats(i.kind, i.rarity))}</small>` : "";
@@ -1173,7 +1175,7 @@ export class Hub {
       // Every buy is shut while the stash is full: the shelf says so, and what makes room.
       const room = full ? `<p class="lock-note">${lockIcon()}倉庫が満杯：売るか、作業場で${esc(HIDEOUT.storage.name)}を上げる</p>` : "";
       $("hub-side").innerHTML = room + shelfTiers(p) + wares(p)
-        .map((item, n) => `<button type="button" class="item" data-act="buy" data-arg="${n}" ${p.cash < buyPrice(item) || full ? "disabled" : ""}><span style="color:${color(item)}">${esc(itemName(item))}</span><small${item.t === "valuable" && want[item.kind] > 0 ? ' class="need"' : ""}>${item.t === "valuable" ? (want[item.kind] > 0 ? `${upIcon()}${want[item.kind]}` : need.hideout[item.kind] + need.factory[item.kind] > 0 ? checkIcon() : "") : itemNote(item)}</small><b>${yen(buyPrice(item))}</b></button>`)
+        .map((item, n) => `<button type="button" class="item" data-act="buy" data-arg="${n}" ${p.cash < buyPrice(item) || full ? "disabled" : ""}><span style="color:${itemColor(item)}">${esc(itemName(item))}</span><small${item.t === "valuable" && want[item.kind] > 0 ? ' class="need"' : ""}>${item.t === "valuable" ? (want[item.kind] > 0 ? `${upIcon()}${want[item.kind]}` : need.hideout[item.kind] + need.factory[item.kind] > 0 ? checkIcon() : "") : itemNote(item)}</small><b>${yen(buyPrice(item))}</b></button>`)
         .join("");
     } else if (st === "quests") {
       const open = offered(p.quests);

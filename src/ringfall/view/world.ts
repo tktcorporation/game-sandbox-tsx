@@ -33,7 +33,7 @@ const EYE_LERP = 12;
  * at full scale; with the fill near the sun's strength everything reads lit alike, like a model
  * on a table. `haze` is the fog: the horizon's peach greyed, as air far off looks.
  */
-const LIGHT = { exposure: 1.05, sun: 3.2, sky: 0.72, haze: 0xdcd2c0, gunSun: 2.8, gunSky: 1.3 } as const;
+export const LIGHT = { exposure: 1.05, sun: 3.2, sky: 0.72, haze: 0xdcd2c0, gunSun: 2.8, gunSky: 1.3 } as const;
 
 /**
  * The view is set by its horizontal angle, as shooters' settings are: about 90° across, so the

@@ -1,6 +1,6 @@
 import { pouchKeep, type Settlement } from "../meta/profile";
 import type { ModKind } from "../sim/config";
-import { itemName, rewardList } from "./hub";
+import { itemColor, itemName, rewardList } from "./hub";
 import { ALLY, AWARE, BAG, META, DEPOT, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, TACTICAL, TOOL_KINDS, TOOLS, VALUABLES, WEAPONS, type Flank } from "../sim/config";
 import { eyePos, magSize } from "../sim/combat";
 import { atRisk, countered, heldUnlocks } from "../sim/battle";
@@ -36,6 +36,7 @@ import { terrainHeight } from "../sim/terrain";
 const keySource = (poi: number) => POIS[poiIndex(POIS[poi].keyFrom)].name;
 
 import { BagView } from "./bag";
+import { UI } from "./palette";
 
 /*
  * The DOM layer: everything the player reads. The screen always answers two
@@ -125,6 +126,7 @@ export class Hud {
   toggleMap(force?: boolean) {
     this.mapOpen = force ?? !this.mapOpen;
     $("map").hidden = !this.mapOpen;
+    $("hud").classList.toggle("map-open", this.mapOpen);
     if (this.mapOpen) this.showWhole(false);
     this.map.picked = -1;
   }
@@ -295,7 +297,7 @@ export class Hud {
         const tags = [cur.cut ? "阻止" : undefined, tag, plate ? "装甲" : undefined].filter(Boolean).join(" ");
         cur.el.innerHTML = `${tags ? `<small>${tags}</small>` : ""}${Math.round(cur.value)}`;
         cur.el.className = `dmg${cur.crit ? " crit" : ""}${tag ? " flank" : ""}${cur.flank === "front" ? " front" : ""}${plate ? " plate" : ""}`;
-        cur.el.style.color = cur.crit ? "" : e.shield ? RARITY_CSS[e.tier] : "#ffffff";
+        cur.el.style.color = cur.crit ? "" : e.shield ? RARITY_CSS[e.tier] : UI.white;
         break;
       }
       case "stagger": {
@@ -394,7 +396,7 @@ export class Hud {
       case "engage":
         if (!s.squads[e.squad]?.engaged) break;
         for (const r of s.enemies) if (r.squad === e.squad) this.spotted.set(r.id, 2.5);
-        if (s.squads[e.squad].name !== "タイタン") this.toast(`${eyeIcon("#ff6b5a")}${s.squads[e.squad].name}`, 0);
+        if (s.squads[e.squad].name !== "タイタン") this.toast(`${eyeIcon(UI.foeBright)}${s.squads[e.squad].name}`, 0);
         break;
       case "calm":
         this.toast(`${eyeIcon("currentColor", true)}見失わせた`, 1);
@@ -434,7 +436,7 @@ export class Hud {
         this.toast(`${upIcon().repeat(e.level)}<b>${MOMENTUM.spoils[Math.min(e.level, MOMENTUM.spoils.length) - 1].toLocaleString()}</b>`, 3, 4000);
         break;
       case "fortified":
-        this.toast(`${coreIcon(SIDE.own)}${nightIcon("#4f9bff")}${checkIcon()}${NODES[e.node].name}`, 1, 4000);
+        this.toast(`${coreIcon(SIDE.own)}${nightIcon(UI.ownBright)}${checkIcon()}${NODES[e.node].name}`, 1, 4000);
         break;
       case "coreTaken":
         this.toast(`${coreIcon(SIDE.own)}${NODES[e.node].name}`, 1, 5000);
@@ -1069,7 +1071,7 @@ export class Hud {
     // On a cable: where it goes and the metres left.
     if (p.zip) {
       const l = ZIPS[p.zip.line];
-      return `${zipIcon(l.fixed ? "#c8ced8" : undefined)}${esc(zipEndName(p.zip.dir > 0 ? l.b : l.a))} <b>${Math.round(p.zip.dir > 0 ? l.length - p.zip.at : p.zip.at)}</b> m`;
+      return `${zipIcon(l.fixed ? UI.mist : undefined)}${esc(zipEndName(p.zip.dir > 0 ? l.b : l.a))} <b>${Math.round(p.zip.dir > 0 ? l.length - p.zip.at : p.zip.at)}</b> m`;
     }
     // The use key comes first: picking the teammate up or opening a bin works inside an extraction point too.
     const t = useTarget(s);
@@ -1083,9 +1085,9 @@ export class Hud {
     // The same choice the use key acts on (sim/world.ts useTarget), so the prompt never promises something else.
     if (!t) {
       // At a depot that is on, which useTarget passes over while a squad is fighting: the depot, crossed, and the fight.
-      if (depotBlocked(s) && depotInReach(s) >= 0) return `${depotIcon()}${crossIcon()}${fightIcon("#ff6b5a")}`;
+      if (depotBlocked(s) && depotInReach(s) >= 0) return `${depotIcon()}${crossIcon()}${fightIcon(UI.foeBright)}`;
       // Back in the camp's yard with a fight close by: it takes the player home once that is over.
-      if (homeReady(s) && depotBlocked(s)) return `野営地${crossIcon()}${fightIcon("#ff6b5a")}`;
+      if (homeReady(s) && depotBlocked(s)) return `野営地${crossIcon()}${fightIcon(UI.foeBright)}`;
       // Standing on something that will not go in: a mod part already worn, or a full bag.
       const left = s.loot.find((l) => (l.kind === "valuable" || l.kind === "tool" || l.kind === "record" || l.kind === "mod") && l.age >= 0.4 && dist2d(l.pos, p.pos) < PLAYER.pickupRange && Math.abs(l.pos.y - p.pos.y) < 2);
       if (left?.mod) return `${esc(MODS[left.mod].name)} ${checkIcon()}`;
@@ -1139,10 +1141,10 @@ export class Hud {
       const n = NODES[t.node];
       // A node of the player's marked for the night: the use key fortifies it (the moon turns from red to blue).
       if (s.nodes[t.node] === "freed") {
-        if (s.fortify?.node === t.node) return `${coreIcon(SIDE.own)}${nightIcon("#4f9bff")}${esc(n.name)} <b class="${s.fortify.held ? "" : "paused"}">${Math.floor((s.fortify.t / FORTIFY.time) * 100)}%</b>`;
+        if (s.fortify?.node === t.node) return `${coreIcon(SIDE.own)}${nightIcon(UI.ownBright)}${esc(n.name)} <b class="${s.fortify.held ? "" : "paused"}">${Math.floor((s.fortify.t / FORTIFY.time) * 100)}%</b>`;
         // Marked by another player's expedition and not by the night: their colour's flag in the moon's place.
         const sent = !s.battle?.targets.includes(t.node);
-        return `${key("E")}${coreIcon(SIDE.own)}${sent ? flagIcon(SIDE.rival) : nightIcon("#ff4a3d")}${esc(n.name)}`;
+        return `${key("E")}${coreIcon(SIDE.own)}${sent ? flagIcon(SIDE.rival) : nightIcon(UI.alert)}${esc(n.name)}`;
       }
       const c = foeSide(s.nodes[t.node]);
       if (!capturable(s, t.node)) return `${coreIcon(c, true)}${esc(n.name)} <small>▸ 先に${esc(shieldedBy(s.nodes, t.node))}</small>`;
@@ -1154,7 +1156,7 @@ export class Hud {
       const l = ZIPS[t.line];
       const at = zipPoint(l, t.at);
       const toB = Math.sin(p.yaw) * at.dx - Math.cos(p.yaw) * at.dz >= 0;
-      return `${key("E")}${zipIcon(l.fixed ? "#c8ced8" : undefined)}${esc(zipEndName(toB ? l.b : l.a))} <b>${Math.round(toB ? l.length - t.at : t.at)}</b> m`;
+      return `${key("E")}${zipIcon(l.fixed ? UI.mist : undefined)}${esc(zipEndName(toB ? l.b : l.a))} <b>${Math.round(toB ? l.length - t.at : t.at)}</b> m`;
     }
     const wl = t.loot;
     const swap = p.weapons.includes(null) ? "" : struck([WEAPONS[p.weapons[p.slot]!.kind].name]);
@@ -1210,6 +1212,7 @@ export class Hud {
     const map = new IslandMap(canvas);
     map.whole = true;
     map.locks = false;
+    map.plain = true;
     // Ways in the raid learned are dashed as the day began, and turn solid with a ring at its end.
     const learned = settled.learned;
     map.known = settled.profile.entries.filter((e) => !learned.includes(e));
@@ -1266,7 +1269,7 @@ export class Hud {
     const gap = (window as { ringfallBeatGap?: number }).ringfallBeatGap ?? 1600;
     // Drawn once the results are shown, so the map is drawn at the canvas's size on screen.
     this.dayFrame = requestAnimationFrame(() => {
-      map.draw(scene(start, atStart));
+      map.draw({ ...scene(start, atStart), names: [] });
       bar(start, atStart, start);
       mark("start", "");
       // The ways in the raid learned turn solid with the first beat (or alone, when nothing changed hands).
@@ -1288,7 +1291,7 @@ export class Hud {
         this.dayTimers.push(
           window.setTimeout(() => {
             learn();
-            map.draw({ ...scene(night, atEnd), learned });
+            map.draw({ ...scene(night, atEnd), learned, names: [] });
           }, 900),
         );
       this.dayTimers.push(
@@ -1351,9 +1354,10 @@ export class Hud {
       (lost && sentValue ? `<span>倉庫へ送った<b>${sentValue}</b></span>` : "") +
       (lost ? split.join("") : "");
     const count = (items: typeof all) => {
-      const counted = new Map<string, number>();
-      for (const i of items) counted.set(itemName(i), (counted.get(itemName(i)) ?? 0) + 1);
-      return [...counted].map(([n, c]) => `<span>${n}${c > 1 ? ` × ${c}` : ""}</span>`).join("");
+      // A chip a kind, in its rarity's colour, counted.
+      const counted = new Map<string, { n: number; c: string }>();
+      for (const i of items) counted.set(itemName(i), { n: (counted.get(itemName(i))?.n ?? 0) + 1, c: itemColor(i) });
+      return [...counted].map(([n, { n: c, c: col }]) => `<span class="chip" style="--c:${col}">${n}${c > 1 ? `<b>${c}</b>` : ""}</span>`).join("");
     };
     const quests = settled?.quests ?? [];
     // A record of a raid kept from before ways in were learned has walked to none.
@@ -1387,9 +1391,9 @@ export class Hud {
       story +
       (quests.length ? `<h3>済んだ依頼</h3><p>${quests.map((q) => `<span>${q.title}（${q.reward.cash} クレジット${rewardList(q).map(([i, n]) => `・${itemName(i)}${n > 1 ? ` × ${n}` : ""}`).join("")}）</span>`).join("")}</p>` : "") +
       (settled
-        ? (sent.length ? `<h3>中継ボックスから倉庫へ送った物</h3><p>${count(sent)}</p>` : "") +
+        ? (sent.length ? `<h3 class="mark">${depotIcon()}</h3><p>${count(sent)}</p>` : "") +
           // A wipe's pouch is on the haul's line above, beside what was lost.
-          (lost ? "" : `<h3>持ち帰った物</h3><p>${home.length ? count(home) : "<span>なし</span>"}</p>`) +
+          (lost || !home.length ? "" : `<h3 class="mark">${bagIcon()}</h3><p>${count(home)}</p>`) +
           // Ways in: learned ones as the map's ring, ones found on a raid that did not come home struck through.
           (settled.learned.length || (lost && forgot.length)
             ? `<h3>入口</h3><p>${settled.learned.map((id) => `<span class="learned"><span class="turn">${entryIcon(false)}${entryIcon()}</span>${entryOf(id).name}（${regionOf(entryOf(id).region).name}）</span>`).join("")}${lost ? forgot.map((id) => `<span class="lost">${entryOf(id).name}</span>`).join("") : ""}</p>`

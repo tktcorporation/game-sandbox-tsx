@@ -22,6 +22,7 @@ import { upgradeShots } from "./ringfall-shots-upgrades.mjs";
 import { finaleShots } from "./ringfall-shots-finale.mjs";
 import { expeditionShots } from "./ringfall-shots-expeditions.mjs";
 import { HARBOR_TOUR, TOUR, place } from "./ringfall-tour.mjs";
+import { audited, clearAudit, judge } from "./ringfall-ui-audit.mjs";
 
 const root = process.env.SHOTS_ROOT ?? ".cloudflare/output/v0/workers/default/assets";
 const types = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml" };
@@ -69,9 +70,10 @@ if (!only && !args.includes("--serial")) {
   const queue = [...PARTS];
   const failed = [];
   const t0 = Date.now();
+  clearAudit();
   const run = (name) =>
     new Promise((done) => {
-      const child = spawn(process.execPath, [fileURLToPath(import.meta.url), skill, "--part", name], { stdio: ["ignore", "pipe", "pipe"] });
+      const child = spawn(process.execPath, [fileURLToPath(import.meta.url), skill, "--part", name], { stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, UI_AUDIT_CHILD: "1" } });
       let rest = "";
       const say = (chunk) => {
         const lines = (rest + chunk).split("\n");
@@ -101,12 +103,18 @@ if (!only && !args.includes("--serial")) {
     process.exit(1);
   }
   console.log("no console errors");
-  process.exit(0);
+  // Every screen that was shot, measured as a page (scripts/ringfall-ui-audit.mjs).
+  const audit = judge({ whole: true });
+  console.log(audit.lines.join("\n"));
+  process.exit(audit.failed ? 1 : 0);
 }
-const browser = await chromium.launch({
-  executablePath: process.env.CHROMIUM_PATH ?? "/opt/pw-browsers/chromium",
-  args: ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"],
-});
+const browser = audited(
+  await chromium.launch({
+    executablePath: process.env.CHROMIUM_PATH ?? "/opt/pw-browsers/chromium",
+    args: ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"],
+  }),
+  only ? only.join("+") : "all",
+);
 const errors = [];
 
 /*
@@ -2512,3 +2520,8 @@ if (errors.length) {
   process.exit(1);
 }
 console.log("no console errors");
+if (!process.env.UI_AUDIT_CHILD) {
+  const audit = judge({ whole: !only, parts: only ? [only.join("+")] : ["all"] });
+  console.log(audit.lines.join("\n"));
+  if (audit.failed) process.exit(1);
+}
