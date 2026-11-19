@@ -18,3 +18,5 @@ infra/ringfall*/**/plan.out*
 worker-configuration.d.ts
 *.tsbuildinfo
 shots
+# Working copies that agents make for themselves.
+.claude/worktrees/
