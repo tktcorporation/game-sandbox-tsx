@@ -132,6 +132,17 @@ function lintOverrides() {
     });
 }
 
+/** An inline icon's class (`svg(body, "exit")`) must not be a class the stylesheet styles on its own: the icon would take that rule (a damage number's place, a card's box). */
+function lintIconClasses() {
+  const css = readFileSync(CSS, "utf8");
+  for (const f of ["src/ringfall/view/icons.ts", "src/ringfall/view/events.ts"])
+    readFileSync(f, "utf8")
+      .split("\n")
+      .forEach((l, i) => {
+        for (const m of l.matchAll(/`,\s*"([a-z0-9-]+)"(?:,\s*\d+)?\)/g)) if (new RegExp(`^\\.${m[1]}[ ,{:]`, "m").test(css)) say(f, i + 1, "icon-class", `.${m[1]} is styled on its own in style.css — give the icon another class (i-${m[1]})`);
+      });
+}
+
 function lintHtml() {
   const html = readFileSync(HTML, "utf8");
   const link = html.match(/fonts\.googleapis\.com\/css2\?[^"]*/)?.[0] ?? "";
@@ -146,6 +157,7 @@ lintCss();
 lintTs();
 lintRarity();
 lintOverrides();
+lintIconClasses();
 lintHtml();
 if (problems.length) {
   const by = new Map<string, number>();
