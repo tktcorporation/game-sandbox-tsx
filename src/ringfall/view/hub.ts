@@ -89,7 +89,7 @@ function shelfTiers(p: Profile): string {
   const best = shopRarity(p);
   const mine = playerNodes(p);
   const cells = ([0, 1, 2, 3] as Rarity[]).map((r) => {
-    const by = NODES.filter((n) => UNLOCKS[n.id].shop === r).map((n) => `<em style="color:${mine.includes(n.id) ? HOLD_CSS.freed : HOLD_CSS.held}">${esc(n.name)}</em>`);
+    const by = NODES.filter((n) => UNLOCKS[n.id].shop === r).map((n) => `<em${mine.includes(n.id) ? ' class="mine"' : ""}>${esc(n.name)}</em>`);
     return `<div class="tier${r <= best ? " on" : ""}" style="--c:${RARITY_CSS[r]}"><i></i><span>${by.join("")}</span></div>`;
   });
   // The materials beside them, under the workbench's wrench: the rarities it lets the trader sell.

@@ -126,6 +126,7 @@ export class Hud {
   toggleMap(force?: boolean) {
     this.mapOpen = force ?? !this.mapOpen;
     $("map").hidden = !this.mapOpen;
+    $("hud").classList.toggle("map-open", this.mapOpen);
     if (this.mapOpen) this.showWhole(false);
     this.map.picked = -1;
   }

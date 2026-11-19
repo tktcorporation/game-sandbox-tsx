@@ -99,7 +99,7 @@
 }
 /* palette:end */
 :root {
-  --plate: rgb(var(--ink-rgb) / 0.62);
+  --plate: rgb(var(--ink-rgb) / 0.76);
   --plate-strong: rgb(var(--ink-rgb) / 0.85);
   --muted: rgb(var(--white-rgb) / 0.7);
   --num: "Saira Condensed", "M PLUS 1p", system-ui, sans-serif;
@@ -276,7 +276,7 @@ kbd {
   vertical-align: middle;
   max-width: 100%;
   font-weight: 800;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1;
 }
 .tug-n.own {
@@ -818,7 +818,7 @@ body.touch #obj-raid .why {
   font-family: var(--jp);
   font-weight: 800;
   font-size: 16px;
-  background: var(--plate);
+  background: var(--plate-strong);
   padding: 6px 12px;
   white-space: nowrap;
 }
@@ -894,6 +894,9 @@ body.touch #obj-raid .why {
 }
 #hp.low #hp-fill {
   background: var(--danger);
+}
+#cells kbd {
+  font-size: 1em;
 }
 #cells {
   display: flex;
@@ -1010,7 +1013,7 @@ body.touch #obj-raid .why {
   padding: 6px 12px;
   min-width: 190px;
   justify-content: space-between;
-  opacity: 0.65;
+  opacity: 0.85;
 }
 .slot.active {
   opacity: 1;
@@ -2591,7 +2594,7 @@ body.touch #title h1 {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  background: rgb(var(--deep-rgb) / 0.55);
+  background: rgb(var(--deep-rgb) / 0.8);
   pointer-events: none;
   z-index: 5;
 }
@@ -2608,10 +2611,16 @@ body.touch #title h1 {
 }
 #map p {
   margin: 0;
+  padding: 4px 12px;
+  background: var(--plate-strong);
   font-family: var(--jp);
   font-weight: 800;
   font-size: 13px;
   color: var(--white);
+}
+/* The map covers the raid's plates: they would show through it and under its legend. */
+#hud.map-open > :not(#map):not(#compass) {
+  visibility: hidden;
 }
 #map .map-key {
   color: var(--hot);
@@ -3547,19 +3556,29 @@ body.touch .depart-buttons kbd {
 @media (max-height: 500px) {
   .screen #depart-points button.pick,
   .screen #depart-points .region-lock {
-    width: 38px;
-    height: 38px;
-    margin: -19px 0 0 -19px;
+    width: 40px;
+    height: 40px;
+    margin: -20px 0 0 -20px;
   }
   #depart-points button.pick .ico {
     width: 20px;
     height: 20px;
   }
 }
-body.touch .screen #depart-points button.pick {
-  width: 38px;
-  height: 38px;
-  margin: -19px 0 0 -19px;
+body.touch .screen #depart-points button.pick,
+body.touch .screen #depart-points .region-lock {
+  width: 40px;
+  height: 40px;
+  margin: -20px 0 0 -20px;
+}
+/* Anything pressed with a thumb is at least 40 px on its short side (docs/ringfall/ui.md). */
+body.touch #hub button,
+body.touch #hub-close,
+body.touch #results #restart {
+  min-height: 40px;
+}
+body.touch #hub .strength button {
+  min-width: 40px;
 }
 #camp-plan[hidden] {
   display: none;
@@ -3605,6 +3624,8 @@ body.touch #obj-raid .short {
   padding: 6px 4px;
   border-radius: 6px;
   background: rgb(var(--ink-rgb) / 0.6);
+}
+.shelf-tiers .tier:not(.on) i {
   opacity: 0.45;
 }
 .shelf-tiers .tier.on {
@@ -3629,6 +3650,10 @@ body.touch #obj-raid .short {
 }
 .shelf-tiers .tier em {
   font-style: normal;
+  color: var(--foe-soft);
+}
+.shelf-tiers .tier em.mine {
+  color: var(--own-light);
 }
 
 /* A node of the player's the enemy's robots have come to: a red arrow over its core, or at the
@@ -3951,7 +3976,7 @@ body.touch #obj-raid .short {
   transition: opacity 0.25s, filter 0.25s;
 }
 .hub-list .quest.contract.dim {
-  opacity: 0.42;
+  opacity: 0.72;
   filter: saturate(0.3);
 }
 .hub-list .quest.contract.dim:hover {
