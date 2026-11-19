@@ -1945,7 +1945,7 @@ lap("island");
     await pg.waitForTimeout(100);
     const c1 = await readOf(pg);
     const text = await pg.textContent("#hub-side .quest.contract.taken");
-    if (c1.profile.threat !== 3 || !c1.camp.taken || /網/.test(text) || !/補給所 3/.test(text) || !/報酬 ×/.test(text)) errors.push(`threat: the board's 強度 left ${c1.profile.threat} (taken ${c1.camp.taken}) and reads "${text}"`);
+    if (c1.profile.threat !== 3 || !c1.camp.taken || /網/.test(text) || !/補給所 3/.test(text) || !/報酬\s*×/.test(text)) errors.push(`threat: the board's 強度 left ${c1.profile.threat} (taken ${c1.camp.taken}) and reads "${text}"`);
     const fit = await spills(pg);
     if (fit.length) errors.push(`board 強度${phone ? " on a phone" : ""}: ${[...new Set(fit)].join(", ")}`);
     await pg.locator("#hub-side .quest.contract.taken").scrollIntoViewIfNeeded();

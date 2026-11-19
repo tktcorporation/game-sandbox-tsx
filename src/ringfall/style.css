@@ -2168,7 +2168,7 @@ body.touch #hub-close kbd {
 .chip b {
   margin-left: 6px;
   font-family: var(--num);
-  color: var(--c, var(--white));
+  color: var(--white);
 }
 #home p {
   margin: 0;
@@ -5002,7 +5002,6 @@ body.touch .bag-card:nth-last-child(n + 3) {
 /* A weapon's numbers: three gauges, each a mark, a bar as long as its share of the longest, and the number. */
 .wstats {
   display: inline-flex;
-  flex-wrap: wrap;
   gap: 2px 12px;
   vertical-align: middle;
 }
@@ -5016,7 +5015,8 @@ body.touch .bag-card:nth-last-child(n + 3) {
 .wstats .g .ico {
   opacity: 0.8;
 }
-.wstats .g i {
+.wstats .g .bar {
+  flex: none;
   width: 34px;
   height: 5px;
   background: linear-gradient(to right, var(--white) calc(var(--v) * 100%), rgb(var(--white-rgb) / 0.2) 0);
@@ -5032,10 +5032,10 @@ body.touch .bag-card:nth-last-child(n + 3) {
 }
 /* The class and the gauges share the line under a weapon's name, and wrap together on a narrow column. */
 #hub .item small:has(.wstats) {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 2px 0;
+  display: block;
+}
+.wclass {
+  display: inline-block;
 }
 /* The kit as marks: weapons by name in their rarity's colour, then armour, heals and keys as a mark and a count. */
 .kit {
@@ -5087,7 +5087,7 @@ body.touch .bag-card:nth-last-child(n + 3) {
   align-items: center;
   gap: 2px 12px;
 }
-.srcs b,
+.mod-body .req .srcs b,
 .strength .gives b,
 .strength .asks b {
   margin-left: 4px;
