@@ -167,7 +167,7 @@ function gunCell(kind: WeaponKind, rarity: Rarity, ads: number): Cell {
 
 /** A gun from the side under the gun pass's lights, flat on (no perspective): its outline as a drawing would show it. */
 function gunProfile(kind: WeaponKind, rarity: Rarity, side: 1 | -1, hands: boolean): Cell {
-  const span = 1.9; // metres across the cell
+  const span = 2.3; // metres across the cell
   const w = 760;
   const h = 300;
   return {
@@ -185,8 +185,8 @@ function gunProfile(kind: WeaponKind, rarity: Rarity, side: 1 | -1, hands: boole
       if (hands) g.add(buildHands(kind));
       scene.add(g);
       const cam = new THREE.OrthographicCamera(-span / 2, span / 2, (span * h) / w / 2, (-span * h) / w / 2, 0.01, 10);
-      cam.position.set(side * 3, hands ? -0.1 : 0, -0.1);
-      cam.lookAt(0, hands ? -0.1 : 0, -0.1);
+      cam.position.set(side * 3, hands ? -0.1 : 0, -0.25);
+      cam.lookAt(0, hands ? -0.1 : 0, -0.25);
       r.render(scene, cam);
     },
   };

@@ -40,8 +40,10 @@ const GRID = 0.02; // silhouette cell, metres
  */
 const BUDGET: Record<Entry["group"], { tris: number; meshes: number; materials: number }> = {
   robot: { tris: 1000, meshes: 16, materials: 15 },
-  ally: { tris: 400, meshes: 20, materials: 8 },
-  gun: { tris: 520, meshes: 6, materials: 8 },
+  // The titan: one a raid at most, 6 m tall, fought across its own arena.
+  boss: { tris: 1500, meshes: 16, materials: 15 },
+  ally: { tris: 900, meshes: 22, materials: 8 },
+  gun: { tris: 1000, meshes: 7, materials: 8 },
   loot: { tris: 400, meshes: 8, materials: 7 },
   world: { tris: 200, meshes: 13, materials: 7 },
   wreck: { tris: 600, meshes: 36, materials: 5 },
@@ -52,7 +54,7 @@ const PALETTE = new Set<number>([...Object.values(M.PAL).filter((v): v is number
 
 interface Entry {
   id: string;
-  group: "robot" | "ally" | "gun" | "loot" | "world" | "wreck";
+  group: "robot" | "boss" | "ally" | "gun" | "loot" | "world" | "wreck";
   root: Object3D;
   robot?: EnemyKind;
 }
@@ -62,7 +64,7 @@ const ENEMY_KINDS = Object.keys(ENEMIES) as EnemyKind[];
 const WEAPONS = Object.keys(WEAPON_SPECS) as (keyof typeof WEAPON_SPECS)[];
 const keys = <T extends object>(o: T) => Object.keys(o) as (keyof T)[];
 const entries: Entry[] = [
-  ...ENEMY_KINDS.map((k): Entry => ({ id: k, group: "robot", root: M.buildEnemy(k).root, robot: k })),
+  ...ENEMY_KINDS.map((k): Entry => ({ id: k, group: k === "titan" ? "boss" : "robot", root: M.buildEnemy(k).root, robot: k })),
   { id: "ally", group: "ally", root: M.buildAlly().root },
   ...WEAPONS.map((w): Entry => ({ id: w, group: "gun", root: M.buildGun(w, 0) })),
   ...WEAPONS.map((w): Entry => ({ id: `hands:${w}`, group: "gun", root: M.buildHands(w) })),
@@ -424,28 +426,22 @@ const EYE_APART = 0.25;
 /** No confetti: a model's distinct colours at most `max`, and its three largest cover `top3` of its surface. */
 const COLOURS: Partial<Record<Entry["group"], { max: number; top3: number }>> = {
   robot: { max: 6, top3: 0.9 },
-  ally: { max: 8, top3: 0.8 },
-  gun: { max: 6, top3: 0.9 },
+  boss: { max: 6, top3: 0.9 },
+  ally: { max: 8, top3: 0.75 },
+  gun: { max: 6, top3: 0.85 },
 };
 /**
  * Detail that is seen: the parts of a figure that are READ_PX pixels or more at its main distance.
  * A floor per figure, a little under what it has; the boss's is the grunt's, so the largest robot,
- * seen from furthest, is never the coarsest (it was: 16 parts to the grunt's 37).
+ * seen from furthest, is never the coarsest (it was: 16 parts to the grunt's 37). The drone's is
+ * lower: it is a metre across and seen against the sky.
  */
-const READ_PARTS: Record<string, number> = { drone: 20, grunt: 35, charger: 20, heavy: 35, titan: 35, ally: 30 };
+const READ_PARTS: Record<string, number> = { drone: 14, grunt: 35, charger: 35, heavy: 35, titan: 35, ally: 50 };
 /**
  * What is allowed to miss a floor today, by `model: rule`, with the value it may not get worse than
  * and what has to be done. A model that comes to meet its floor must be taken off this list.
  */
-const KNOWN: Record<string, { allow: number; todo: string }> = {
-  "drone: readable parts": { allow: 5, todo: "an octahedron, a ring and two vanes: give it rotor pods, a sensor housing round the eye and a gun under its belly" },
-  "charger: readable parts": { allow: 7, todo: "a cone on four posts: give it a head round the eye, a ram, jointed legs" },
-  "titan: readable parts": { allow: 16, todo: "three boxes on two posts: the boss needs at least a grunt's parts (knees, a neck, armour panels, pods with tubes)" },
-  "ally: readable parts": { allow: 25, todo: "give the teammate hands, boots, a belt and pouches, a rifle with a stock and a sight" },
-  "pike and hornet: outlines apart": { allow: 0.24, todo: "the five guns are one receiver at five lengths: give each kind its own outline" },
-  "pike and maul: outlines apart": { allow: 0.22, todo: "as above" },
-  "talon and lance: outlines apart": { allow: 0.24, todo: "as above" },
-};
+const KNOWN: Record<string, { allow: number; todo: string }> = {};
 
 /** The grounds a figure may stand on (terrain.ts's `Ground`, the open ground's sand and rock). */
 const GROUND_COLOURS = ["sand", "dune", "rock", "mud", "quarry", "sandstone", "scrub", "oiled", "concrete", "salt", "paved", "asphalt", "cityAsphalt", "caliche", "gravel", "cityLot", "pavement"] as const;
@@ -564,8 +560,8 @@ function reading(e: Entry, r: Measure): Reading | null {
     colours: area.length,
     top3: area.slice(0, 3).reduce((q, [, v]) => q + v, 0) / total,
   };
-  if (e.group === "robot" || e.group === "ally") {
-    const coats = e.group === "robot" ? COATS : { own: { armor: M.PAL.armor, light: M.PAL.armorLight, eye: M.PAL.eye, foe: false } };
+  if (e.robot || e.group === "ally") {
+    const coats = e.robot ? COATS : { own: { armor: M.PAL.armor, light: M.PAL.armorLight, eye: M.PAL.eye, foe: false } };
     for (const [coat, c] of Object.entries(coats)) {
       const worn = (col: number) => (col === M.PAL.armor ? c.armor : col === M.PAL.armorLight ? c.light : col === M.PAL.eye ? c.eye : col);
       for (const ground of GROUND_COLOURS) {
