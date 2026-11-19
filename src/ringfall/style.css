@@ -2375,9 +2375,10 @@ body.touch.playing #touch {
   background: var(--ring);
   color: var(--white);
 }
+/* Below the vitals, which end about 172 px down on a phone: a button under a plate cannot be seen or pressed. */
 #t-fire2 {
   left: max(24px, env(safe-area-inset-left));
-  top: 40%;
+  top: max(46%, 180px);
   border-color: var(--ring);
   background: rgb(var(--ring-rgb) / 0.3);
 }
@@ -2420,7 +2421,7 @@ body.touch.playing #touch {
 }
 #t-battery {
   left: max(24px, env(safe-area-inset-left));
-  top: calc(40% + 72px);
+  top: calc(max(46%, 180px) + 60px);
   border-color: var(--r1);
 }
 #t-use {

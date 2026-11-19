@@ -10,6 +10,7 @@
  *   contrast  text too close to its ground's colour (WCAG's ratio: `CONTRAST`)
  *   bare      text straight on the world with no plate and no shadow
  *   tap       on a phone, something to press smaller than `TAP` px
+ *   wordy     a run of text longer than `WORDY` characters: a sentence where a name, a number or a mark would do
  *
  * `audited(browser)` wraps a browser so each page's `screenshot({ path })` is measured under the
  * shot's name; `judge()` compares what was found with `scripts/ringfall-ui-baseline.json`, the
@@ -22,7 +23,7 @@ import { basename } from "node:path";
 export const BASELINE = "scripts/ringfall-ui-baseline.json";
 const DIR = "shots/ringfall/ui-audit";
 /** The numbers the page is measured against. */
-export const RULES = { MIN_TEXT: 11, TAP: 40, CONTRAST: 4.5, CONTRAST_LARGE: 3, LARGE: 18, PLATE: 0.4 };
+export const RULES = { MIN_TEXT: 11, TAP: 40, CONTRAST: 4.5, CONTRAST_LARGE: 3, LARGE: 18, PLATE: 0.4, WORDY: 18 };
 
 /** Runs in the page. Returns `[rule, selector, detail]` for each finding. */
 function measure(R) {
@@ -127,6 +128,11 @@ function measure(R) {
     if (o < 0.08) continue;
     const size = parseFloat(s.fontSize);
     if (size < R.MIN_TEXT - 0.01) add("small", el, `${size}px`);
+    // A sentence: the screens say things with names, numbers, marks and where they stand (brief, 使わないもの).
+    for (const n of el.childNodes) {
+      const text = n.nodeType === 3 ? n.textContent.trim() : "";
+      if (text.length > R.WORDY) add("wordy", el, `${text.length}: ${text.slice(0, 28)}`);
+    }
     // Cut by its own box.
     const clipsX = /hidden|clip/.test(s.overflowX);
     if (clipsX && el.scrollWidth > el.clientWidth + 1 && s.textOverflow !== "ellipsis") add("clip", el, `${el.scrollWidth}>${el.clientWidth} wide`);
