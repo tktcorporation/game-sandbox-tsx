@@ -197,6 +197,23 @@ function mesh(geo: THREE.BufferGeometry, mat: THREE.Material, x = 0, y = 0, z = 
   return m;
 }
 
+/**
+ * The parts a figure is read by from the distance it is mostly seen at (docs/ringfall/models.md):
+ * the eye, the head, the shoulders, the weapon's outline. `npm run models:ringfall` checks that
+ * each is two pixels or more there.
+ */
+export type ReadPart = "eye" | "head" | "shoulder" | "weapon";
+/** One part a model is read by, as `compact()` leaves it on the merged mesh's `userData.reads`: its name and its own three sizes. */
+export interface ReadSize {
+  part: ReadPart;
+  size: [number, number, number];
+}
+/** Names `m` as a part its model is read by; the name outlives `compact()`. */
+function reads<T extends THREE.Mesh>(m: T, part: ReadPart): T {
+  m.userData.reads = part;
+  return m;
+}
+
 /** A soft round sprite texture for halos and particles. */
 let haloTex: THREE.Texture | null = null;
 export function halo(): THREE.Texture {
@@ -746,24 +763,29 @@ export function mergeTrim(pieces: readonly TrimPiece[], cover: (x: number, y: nu
  * twice with shadows.
  */
 function compact(g: THREE.Object3D, keep: readonly THREE.Object3D[] = []): void {
-  const groups = new Map<THREE.Material, { shadow: boolean; geos: THREE.BufferGeometry[] }>();
+  const groups = new Map<THREE.Material, { shadow: boolean; geos: THREE.BufferGeometry[]; reads: ReadSize[] }>();
   for (const o of [...g.children]) {
     if (!(o instanceof THREE.Mesh) || keep.includes(o)) continue;
     o.updateMatrix();
+    const part = o.userData.reads as ReadPart | undefined;
+    o.geometry.computeBoundingBox();
+    const box = o.geometry.boundingBox!.getSize(new THREE.Vector3()).multiply(o.scale);
     const geo = (o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone()).applyMatrix4(o.matrix);
     for (const name of Object.keys(geo.attributes)) if (!["position", "normal"].includes(name)) geo.deleteAttribute(name);
     const mat = o.material as THREE.Material;
-    const entry = groups.get(mat) ?? { shadow: false, geos: [] };
+    const entry = groups.get(mat) ?? { shadow: false, geos: [], reads: [] };
+    if (part) entry.reads.push({ part, size: [box.x, box.y, box.z] });
     entry.shadow ||= o.castShadow;
     entry.geos.push(geo);
     groups.set(mat, entry);
     g.remove(o);
     o.geometry.dispose();
   }
-  for (const [mat, { shadow, geos }] of groups) {
+  for (const [mat, { shadow, geos, reads }] of groups) {
     const merged = mergeGeometries(geos, false);
     if (!merged) continue;
     const m = new THREE.Mesh(merged, mat);
+    if (reads.length) m.userData.reads = reads;
     m.castShadow = m.receiveShadow = shadow;
     g.add(m);
   }
@@ -848,7 +870,7 @@ export function buildEnemy(kind: EnemyKind): EnemyModel {
   const joint = flat(PAL.joint);
   const legs: THREE.Object3D[] = [];
   const knees: THREE.Object3D[] = [];
-  const eye = new THREE.Mesh(new THREE.SphereGeometry(k.weakR * 0.75, 10, 8), glow(PAL.eye));
+  const eye = reads(new THREE.Mesh(new THREE.SphereGeometry(k.weakR * 0.75, 10, 8), glow(PAL.eye)), "eye");
   const eyeHalo = haloSprite(PAL.eye, k.weakR * 4, 0.6);
   // Forward is -z in the body's frame (yaw 0 looks toward -z).
   const front = (y: number) => new THREE.Vector3(0, y, -k.weakFwd);
@@ -876,7 +898,7 @@ export function buildEnemy(kind: EnemyKind): EnemyModel {
       body.add(mesh(new THREE.BoxGeometry(0.48, 0.44, 0.22), joint, 0, 1.66, 0.34));
       body.add(mesh(new THREE.CylinderGeometry(0.012, 0.018, 0.6, 4), joint, 0.16, 2.12, 0.38, false));
       for (const s of [-1, 1]) {
-        const pad = mesh(new THREE.BoxGeometry(0.26, 0.15, 0.36), light, s * 0.48, 1.92, 0);
+        const pad = reads(mesh(new THREE.BoxGeometry(0.26, 0.15, 0.36), light, s * 0.48, 1.92, 0), "shoulder");
         pad.rotation.z = -s * 0.25;
         body.add(pad);
         const shoulder = v3(s * 0.48, 1.8, 0);
@@ -889,12 +911,12 @@ export function buildEnemy(kind: EnemyKind): EnemyModel {
         body.add(limb(elbow, hand, 0.14, 0.15, light));
         body.add(mesh(new THREE.BoxGeometry(0.12, 0.12, 0.13), joint, hand.x, hand.y, hand.z));
       }
-      body.add(mesh(new THREE.BoxGeometry(0.1, 0.15, 0.74), joint, 0.13, 1.47, -0.5));
+      body.add(reads(mesh(new THREE.BoxGeometry(0.1, 0.15, 0.74), joint, 0.13, 1.47, -0.5), "weapon"));
       body.add(mesh(new THREE.BoxGeometry(0.05, 0.05, 0.3), joint, 0.13, 1.5, -1.01));
       body.add(mesh(new THREE.BoxGeometry(0.08, 0.16, 0.1), joint, 0.13, 1.34, -0.44));
       body.add(mesh(new THREE.BoxGeometry(0.15, 0.14, 0.15), joint, 0, 1.92, 0));
       // The head: a squat sensor block, a brow over the lens, and a short sensor mast on top.
-      body.add(mesh(new THREE.BoxGeometry(0.42, 0.3, 0.38), armor, 0, k.weakY + 0.02, 0));
+      body.add(reads(mesh(new THREE.BoxGeometry(0.42, 0.3, 0.38), armor, 0, k.weakY + 0.02, 0), "head"));
       body.add(mesh(new THREE.BoxGeometry(0.44, 0.06, 0.14), light, 0, k.weakY + 0.15, -0.14));
       for (const s of [-1, 1]) body.add(mesh(new THREE.BoxGeometry(0.06, 0.14, 0.16), joint, s * 0.24, k.weakY, -0.02));
       body.add(mesh(new THREE.BoxGeometry(0.05, 0.12, 0.05), joint, -0.1, k.weakY + 0.23, 0.08, false));
@@ -933,8 +955,8 @@ export function buildEnemy(kind: EnemyKind): EnemyModel {
       body.add(mesh(new THREE.BoxGeometry(0.93, 0.64, 0.35), joint, 0, 2.43, 0.64));
       for (const s of [-1, 1]) {
         // Shoulder pads, and the rocket pods slung behind them, their tubes' mouths facing forward.
-        body.add(mesh(new THREE.BoxGeometry(0.53, 0.28, 0.7), light, s * 0.95, 2.9, 0));
-        body.add(mesh(new THREE.BoxGeometry(0.42, 0.44, 0.77), light, s * 1.14, 3.02, 0.26));
+        body.add(reads(mesh(new THREE.BoxGeometry(0.53, 0.28, 0.7), light, s * 0.95, 2.9, 0), "shoulder"));
+        body.add(reads(mesh(new THREE.BoxGeometry(0.42, 0.44, 0.77), light, s * 1.14, 3.02, 0.26), "weapon"));
         for (let j = 0; j < 2; j++) body.add(mesh(new THREE.BoxGeometry(0.13, 0.13, 0.05), joint, s * 1.14 + (j - 0.5) * 0.17, 3.04, -0.14, false));
         const shoulder = v3(s * 0.93, 2.69, 0);
         const elbow = v3(s * 1.0, 2.07, 0.02);
@@ -945,7 +967,7 @@ export function buildEnemy(kind: EnemyKind): EnemyModel {
         body.add(mesh(new THREE.BoxGeometry(0.28, 0.24, 0.28), joint, hand.x, hand.y - 0.06, hand.z));
       }
       body.add(mesh(new THREE.BoxGeometry(0.3, 0.18, 0.3), joint, 0, 2.92, 0));
-      body.add(mesh(new THREE.BoxGeometry(0.63, 0.42, 0.58), armor, 0, k.weakY + 0.05, 0));
+      body.add(reads(mesh(new THREE.BoxGeometry(0.63, 0.42, 0.58), armor, 0, k.weakY + 0.05, 0), "head"));
       body.add(mesh(new THREE.BoxGeometry(0.65, 0.08, 0.19), light, 0, k.weakY + 0.25, -0.24));
       eye.geometry.dispose();
       eye.geometry = new THREE.SphereGeometry(k.weakR * 0.55, 10, 8).scale(1.15, 0.7, 0.55);
@@ -956,7 +978,7 @@ export function buildEnemy(kind: EnemyKind): EnemyModel {
     case "titan": {
       body.add(mesh(new THREE.BoxGeometry(4.2, 2.6, 3.4), armor, 0, 3.6, 0));
       body.add(mesh(new THREE.BoxGeometry(3.0, 0.9, 2.6), light, 0, 2.0, 0));
-      body.add(mesh(new THREE.BoxGeometry(1.6, 1.0, 1.4), armor, 0, 5.3, -0.6));
+      body.add(reads(mesh(new THREE.BoxGeometry(1.6, 1.0, 1.4), armor, 0, 5.3, -0.6), "head"));
       for (const s of [-1, 1]) {
         const leg = new THREE.Group();
         leg.position.set(s * 1.4, 2.2, 0);
@@ -964,9 +986,9 @@ export function buildEnemy(kind: EnemyKind): EnemyModel {
         leg.add(mesh(new THREE.BoxGeometry(1.3, 0.35, 1.8), light, 0, -2.05, -0.2));
         body.add(leg);
         legs.push(leg);
-        const pod = mesh(new THREE.BoxGeometry(1.2, 1.1, 2.0), light, s * 2.7, 4.6, 0.2);
+        const pod = reads(mesh(new THREE.BoxGeometry(1.2, 1.1, 2.0), light, s * 2.7, 4.6, 0.2), "shoulder");
         body.add(pod);
-        for (let j = 0; j < 3; j++) body.add(mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.1, 8), glow(PAL.orb), s * 2.7 + (j - 1) * 0.35, 4.75, -0.85));
+        for (let j = 0; j < 3; j++) body.add(reads(mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.1, 8), glow(PAL.orb), s * 2.7 + (j - 1) * 0.35, 4.75, -0.85), "weapon"));
       }
       eye.position.copy(front(k.weakY));
       break;
@@ -1066,7 +1088,7 @@ export function buildAlly(): AllyModel {
   body.add(mesh(new THREE.BoxGeometry(0.11, 0.1, 0.11), skin, 0, 1.53, 0));
   // The head: the face under a teal helmet with a brim, a dark visor band across the eyes.
   body.add(mesh(new THREE.BoxGeometry(0.2, 0.22, 0.22), skin, 0, 1.66, 0));
-  body.add(mesh(new THREE.BoxGeometry(0.25, 0.13, 0.27), suit, 0, 1.77, 0.01));
+  body.add(reads(mesh(new THREE.BoxGeometry(0.25, 0.13, 0.27), suit, 0, 1.77, 0.01), "head"));
   body.add(mesh(new THREE.BoxGeometry(0.27, 0.03, 0.31), suit, 0, 1.715, -0.01));
   body.add(mesh(new THREE.BoxGeometry(0.21, 0.06, 0.03), dark, 0, 1.67, -0.115));
   const arms = new THREE.Group();
@@ -1079,7 +1101,7 @@ export function buildAlly(): AllyModel {
     arms.add(limb(elbow, hand, 0.1, 0.11, suit));
     arms.add(mesh(new THREE.BoxGeometry(0.08, 0.09, 0.09), dark, hand.x, hand.y, hand.z));
   }
-  arms.add(mesh(new THREE.BoxGeometry(0.07, 0.11, 0.75), flat(PAL.gun), 0.06, -0.04, -0.48));
+  arms.add(reads(mesh(new THREE.BoxGeometry(0.07, 0.11, 0.75), flat(PAL.gun), 0.06, -0.04, -0.48), "weapon"));
   arms.add(mesh(new THREE.BoxGeometry(0.06, 0.15, 0.08), flat(PAL.gunLight), 0.06, -0.15, -0.42));
   body.add(arms);
   for (const part of [body, arms, ...legs, ...knees]) compact(part);
