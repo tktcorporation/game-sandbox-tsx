@@ -32,7 +32,7 @@
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { FACTORY, FACTORY_TOP, FRONT } from "../src/ringfall/sim/config";
-import { finishBattle } from "../src/ringfall/sim/battle";
+import { finishBattle, takeRivals } from "../src/ringfall/sim/battle";
 import { NODES } from "../src/ringfall/sim/map";
 import { rivalHold } from "../src/ringfall/sim/holds";
 import { idleInput, newRun, starterKit, type State } from "../src/ringfall/sim/state";
@@ -248,6 +248,32 @@ function island(freed: string[], rival: string[] = []): Profile {
   check(taken.status === 200 && taken.mine === rivalHold(B) && taken.server === rivalHold(B) && taken.left === 3 && taken.holding, "lease: a node the expedition took in the raid is not its on the server");
   check(held.mine === "freed" && held.server === "freed" && held.left === 3 && held.there === 1 && !held.holding && held.fortified.join() === "relay" && held.shut, "lease: a node fortified in the raid fell, or is not shut on the server");
   check(fortifiedNodes({ fortified: [2], noticed: [] }).length === 0, "lease: a night's target fortified was reported as shut to expeditions");
+  // Two expeditions of one sender, one sent through the other's node: a squad only passing through a node is not the expedition sent at it.
+  const QUARRY = NODES.findIndex((n) => n.id === "quarry");
+  const STATION = NODES.findIndex((n) => n.id === "station");
+  const two: Parameters<typeof lentResults>[0] = [
+    { id: 1, by: { code: B, name: "" }, target: "quarry", kinds: ["grunt", "grunt"], state: "coming" },
+    { id: 2, by: { code: B, name: "" }, target: "station", kinds: ["grunt", "grunt", "grunt"], state: "coming" },
+  ];
+  const passing = { side: 3, owner: B, units: [{}, {}, {}], to: QUARRY, via: [STATION] } as unknown as State["battle"] extends infer T ? (T extends { squads: (infer Q)[] } ? Q : never) : never;
+  const left = lentResults(two, { squads: [passing], rivals: [] });
+  check(left.map((r) => r.left).join() === "0,3", `lease: a squad passing through a node counted for the expedition sent at it (${JSON.stringify(left)})`);
+  // A lease answered after the raid began joins it as one given at the start would have; a node shut from an earlier raid stays shut.
+  const lateRaid = (late: boolean, shut: boolean) => {
+    const s: State = newRun(9, starterKit(), "reservoir", { island: holds(p), battle: late ? { factory: 0 } : { factory: 0, rivals, shut: shut ? ["relay"] : [] } });
+    s.battle!.made = [-1e12, -1e12, -1e12];
+    if (late) takeRivals(s, rivals, shut ? ["relay"] : []);
+    s.outcome = "extracted";
+    finishBattle(s);
+    return { relay: s.nodes[NODES.findIndex((n) => n.id === "relay")], noticed: s.battle!.noticed.length, left: lentResults(lease.expeditions, s.battle)[0].left };
+  };
+  const atStart = lateRaid(false, false);
+  const joined = lateRaid(true, false);
+  const kept = lateRaid(true, true);
+  console.log(`lease late: given at the start ${JSON.stringify(atStart)}, taken in after it ${JSON.stringify(joined)}, with the relay shut from before ${JSON.stringify(kept)}`);
+  check(JSON.stringify(atStart) === JSON.stringify(joined) && atStart.relay === rivalHold(B), "lease: expeditions taken in after the raid began did not play as those given at its start");
+  check(kept.relay === "freed" && kept.left === 3 && lateRaid(false, true).relay === "freed", "lease: a node shut from an earlier raid fell in the next");
+  check(parseLease({ until: 1, expeditions: [], shut: ["relay", "nowhere", 3] })?.shut.join() === "relay" && parseLease({ until: 1, expeditions: [] })?.shut.length === 0, "lease: the nodes shut were not read back");
 
   // Called home: the squad is back at once, the entry leaves when the island answers; one still being sent stays.
   const list: Outgoing[] = [

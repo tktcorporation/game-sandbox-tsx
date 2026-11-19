@@ -477,6 +477,26 @@ const T2 = T1 + 400_000;
   check(shut === 1 && off === "waiting" && held === "freed" && opens !== null && Math.abs(opens - (ft + EXPEDITION.fortify * 1000)) < 2000, "fortified: an expedition attacked a node fortified that day");
   check(f.holds[quarry] === `rival:${B.code}`, "fortified: the node stayed shut past its day");
 
+  // A raid inside the fortified day: the lease names the node as shut, and the raid's report cannot say it fell.
+  const g = island({ quarry: "freed", supply: "freed" }, 0);
+  op(g, { t: "expedition", from: B, target: "quarry", kinds: top }, T1);
+  op(g, { t: "report", player: A, retaken: [], holds: holdsWith({ quarry: "freed", supply: "freed" }) as IslandState["holds"], factory: 0, day: 2, fortified: ["quarry"] }, T1 + 1000);
+  const again2 = op(g, { t: "lease", player: A.id }, T1 + NOTICE + 3_600_000).body as { shut: string[]; expeditions: { id: number; state: string }[] };
+  op(g, { t: "report", player: A, retaken: [], holds: holdsWith({ quarry: `rival:${B.code}`, supply: "freed" }) as IslandState["holds"], factory: 0, day: 3, lent: [{ id: again2.expeditions[0].id, left: 5 }] }, T1 + NOTICE + 3_700_000);
+  console.log(`fortified, next raid: the lease names ${JSON.stringify(again2.shut)} shut; a report that says it fell leaves quarry ${g.holds[quarry]}, the expedition holding ${g.expeditions[0].holding}`);
+  check(again2.shut.join() === "quarry" && g.holds[quarry] === "freed" && !g.expeditions[0].holding && g.expeditions[0].units.length === 5, "fortified: a raid inside the fortified day lost the node");
+
+  // A lease no raid uses is given back: the island reckons the expedition again at once; only the owner gives it back.
+  const u = island({ quarry: "freed", supply: "freed" }, 0);
+  op(u, { t: "expedition", from: B, target: "quarry", kinds: top }, T1);
+  op(u, { t: "lease", player: A.id }, T1 + NOTICE - 60_000);
+  const notOwner = op(u, { t: "unlease", player: B.id }, T1 + NOTICE - 50_000);
+  const back = op(u, { t: "unlease", player: A.id }, T1 + NOTICE - 40_000);
+  const none2 = op(u, { t: "unlease", player: A.id }, T1 + NOTICE - 30_000);
+  run(u, T1 + NOTICE + 5000);
+  console.log(`lease given back: a stranger ${notOwner.status}, the owner ${back.status} (stored ${back.changed}), again ${none2.status} (stored ${none2.changed}); the expedition arrived on time ${u.expeditions[0].arrived}`);
+  check(notOwner.status === 403 && back.status === 200 && back.changed && none2.status === 200 && !none2.changed && !u.lease && u.expeditions[0].arrived, "lease: a lease given back still held the expedition off");
+
   // Called home, through the API: only by its sender; a node it held goes back to the enemy.
   const T9 = T1 + 40 * DAY;
   await report(A, holdsWith({ quarry: "freed", supply: "freed", relay: "freed" }), 0, 30, T9, ["quarry", "station"]);
@@ -489,6 +509,8 @@ const T2 = T1 + 400_000;
   const twice = await del(B, id, T9 + 4000);
   const lease401 = await call("POST", `/api/islands/${A.code}/lease`, undefined, T9 + 4000);
   const lease200 = await call("POST", `/api/islands/${A.code}/lease`, undefined, T9 + 4000, env, undefined, { authorization: `Bearer ${A.id}` });
+  const unlease = await call("DELETE", `/api/islands/${A.code}/lease`, undefined, T9 + 4000, env, undefined, { authorization: `Bearer ${A.id}` });
+  check(unlease.status === 200, "lease: the API did not take a lease back");
   const s2 = await send(B, A.code, "relay", top.length, T9 + 5000);
   alarms(A.code, T9 + 5000, T9 + 5000 + NOTICE + 3_600_000);
   const heldBy = holdOf(A.code, "relay");

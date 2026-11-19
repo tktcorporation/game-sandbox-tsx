@@ -11,6 +11,7 @@ import { isApiError, type ApiError, type NetError } from "./meta/island-errors";
 import { isIslandCode } from "./meta/island-code";
 import { answerRecall, applySync, incomingOf, parseLease, parseLog, parseView, reportedHolds, reportHolds, type IslandLogEntry, type IslandView, type LentIn, type Synced } from "./meta/expeditions";
 import type { Profile } from "./meta/profile";
+import type { NodeId } from "./sim/map";
 
 /** An answer: the body of a success, or why it failed. */
 export type Answer<T> = { ok: true; body: T } | { ok: false; error: ApiError | NetError };
@@ -106,13 +107,20 @@ export interface RaidReport {
  * The owner's raid takes in the expeditions on the island (`POST …/lease`): the island leaves them
  * alone until the raid's report, or until `until`. With no island yet, or no server, nothing.
  */
-export async function leaseOwn(timeout = SEND_TIMEOUT_MS): Promise<Answer<{ until: number; expeditions: LentIn[] }>> {
+export async function leaseOwn(timeout = SEND_TIMEOUT_MS): Promise<Answer<{ until: number; expeditions: LentIn[]; shut: NodeId[] }>> {
   const who = loadIdentity();
   if (!who.code) return failed("no-own-island");
   const r = await call(`/api/islands/${encodeURIComponent(who.code)}/lease`, { method: "POST", headers: { authorization: `Bearer ${who.id}` } }, timeout);
   if (!r.ok) return r;
   const l = parseLease(r.body);
   return l ? { ok: true, body: l } : failed("bad-response");
+}
+
+/** Gives back a lease no raid will use (`DELETE …/lease`): the island goes on reckoning its expeditions at once. Nothing waits on it. */
+export async function releaseLease(): Promise<void> {
+  const who = loadIdentity();
+  if (!who.code) return;
+  await call(`/api/islands/${encodeURIComponent(who.code)}/lease`, { method: "DELETE", headers: { authorization: `Bearer ${who.id}` } }, SEND_TIMEOUT_MS);
 }
 
 /** Calls expedition `id` on island `code` home (`DELETE …/expeditions/<id>`), as its sender. */

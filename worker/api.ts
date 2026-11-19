@@ -210,7 +210,7 @@ async function handleIslands(request: Request, env: ApiEnv, now: number, url: UR
   const sub = one !== null ? "expedition" : parts.slice(1).join("/");
   if (!code || (sub !== "" && sub !== "log" && sub !== "lease" && sub !== "expeditions" && sub !== "expedition")) return fail(404, "not-found");
   const method = request.method;
-  const allow = sub === "" ? "GET, PUT" : sub === "log" ? "GET" : sub === "expedition" ? "DELETE" : "POST";
+  const allow = sub === "" ? "GET, PUT" : sub === "log" ? "GET" : sub === "expedition" ? "DELETE" : sub === "lease" ? "POST, DELETE" : "POST";
   if (!allow.split(", ").includes(method)) return notAllowed(allow);
   const ns = env.ISLAND;
   if (!ns) return fail(202, "no-island-server");
@@ -220,7 +220,7 @@ async function handleIslands(request: Request, env: ApiEnv, now: number, url: UR
     const player = /^Bearer (\S+)$/.exec(request.headers.get("authorization") ?? "")?.[1] ?? "";
     if (!UUID.test(player)) return fail(401, "unauthorized");
     // A raid of the owner's takes the island's expeditions in.
-    if (sub === "lease") return ask(ns, code, { t: "lease", player }, now);
+    if (sub === "lease") return ask(ns, code, { t: method === "DELETE" ? "unlease" : "lease", player }, now);
     const after = Number(url.searchParams.get("after") ?? 0);
     if (!int(after, 0, Number.MAX_SAFE_INTEGER)) return fail(400, "bad-request");
     return ask(ns, code, { t: "log", player, after }, now);

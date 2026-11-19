@@ -211,8 +211,8 @@ export interface LentIn {
   state: "coming" | "attacking" | "holding";
 }
 
-/** A lease as the server answered it: until when the island leaves the expeditions alone, and those at nodes and of kinds the game knows; null when unreadable. */
-export function parseLease(raw: unknown): { until: number; expeditions: LentIn[] } | null {
+/** A lease as the server answered it: until when the island leaves the expeditions alone, those at nodes and of kinds the game knows, and the nodes still shut to them (fortified in an earlier raid); null when unreadable. */
+export function parseLease(raw: unknown): { until: number; expeditions: LentIn[]; shut: NodeId[] } | null {
   if (!isObj(raw) || typeof raw.until !== "number" || !Array.isArray(raw.expeditions)) return null;
   const expeditions = raw.expeditions.flatMap((e) => {
     const by = isObj(e) ? attacker(e.by) : null;
@@ -220,8 +220,12 @@ export function parseLease(raw: unknown): { until: number; expeditions: LentIn[]
     if (!e.kinds.every((k) => typeof k === "string" && Object.hasOwn(ENEMIES, k)) || (e.state !== "coming" && e.state !== "attacking" && e.state !== "holding")) return [];
     return [{ id: e.id, by, target: e.target as NodeId, kinds: e.kinds as EnemyKind[], state: e.state as LentIn["state"] }];
   });
-  return { until: raw.until, expeditions };
+  const shut = Array.isArray(raw.shut) ? NODES.filter((n) => (raw.shut as unknown[]).includes(n.id)).map((n) => n.id) : [];
+  return { until: raw.until, expeditions, shut };
 }
+
+/** Seconds into a raid's battle up to which a lease answered late is still taken in (`takeRivals()` in sim/battle.ts): well before the first expedition sets off (`LANDING.first`). */
+export const LEASE_LATE = 60;
 
 /**
  * When the expeditions a raid takes in set off for the island, on the battle's clock: the first
@@ -251,7 +255,8 @@ export function lentResults(lent: readonly LentIn[], battle: Pick<Battle, "squad
   if (!battle) return [];
   return lent.map((e) => {
     const i = nodeIndex(e.target);
-    const squads = battle.squads.filter((q) => q.side === 3 && q.owner === e.by.code && (q.to === i || q.via.includes(i)));
+    // By the node a squad is bound for in the end: one of the same owner's only passing through this node on its way to another is not this expedition.
+    const squads = battle.squads.filter((q) => q.side === 3 && q.owner === e.by.code && (q.via.length ? q.via[q.via.length - 1] : q.to) === i);
     // One the battle never set off (it ended first) is whole.
     const waiting = battle.rivals.some((x) => x.owner === e.by.code && x.target === e.target);
     return { id: e.id, left: waiting ? e.kinds.length : squads.reduce((n, q) => n + q.units.length, 0) };

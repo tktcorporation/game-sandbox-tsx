@@ -146,6 +146,7 @@ export type IslandOp =
   | { t: "claim"; player: { id: string; name: string }; code: string }
   | { t: "report"; player: { id: string; name: string }; holds: PoiHold[]; retaken: string[]; factory: number; day: number; lent?: LentResult[]; fortified?: string[] }
   | { t: "lease"; player: string }
+  | { t: "unlease"; player: string }
   | { t: "recall"; from: string; id: number }
   | { t: "view" }
   | { t: "log"; player: string; after: number }
@@ -502,7 +503,7 @@ function report(s: IslandState, op: Extract<IslandOp, { t: "report" }>, now: num
       s.holds[i] = "held";
       e.holding = false;
       note(s, now, "released", i, e.by);
-    } else if (!e.holding && rivalOf(told) === e.by.code && takenOn(s, now) < EXPEDITION.perDay) {
+    } else if (!e.holding && rivalOf(told) === e.by.code && takenOn(s, now) < EXPEDITION.perDay && fortUntil(s, i) <= now) {
       s.holds[i] = told;
       e.holding = true;
       note(s, now, "taken", i, e.by);
@@ -531,9 +532,10 @@ function report(s: IslandState, op: Extract<IslandOp, { t: "report" }>, now: num
  * The owner's raid takes the expeditions on the island in (レイド中の遠征隊): every one of them, as it
  * stands. Until the raid's report, or `EXPEDITION.lease` seconds, the island leaves them as they are.
  * A lease still standing is answered again as it is and not made longer, so asking again and again
- * holds nobody off.
+ * holds nobody off. A node fortified in an earlier raid and still shut is named, so the raid keeps
+ * it shut, and its report cannot say it fell.
  */
-function lease(s: IslandState, now: number): { until: number; expeditions: Lent[]; wrote: boolean } {
+function lease(s: IslandState, now: number): { until: number; expeditions: Lent[]; shut: string[]; wrote: boolean } {
   const standing = s.lease && now < s.lease.until ? s.lease : null;
   const ids = standing ? standing.ids : s.expeditions.map((e) => e.id);
   const until = standing ? standing.until : now + EXPEDITION.lease * 1000;
@@ -541,7 +543,9 @@ function lease(s: IslandState, now: number): { until: number; expeditions: Lent[
   const expeditions = s.expeditions
     .filter((e) => ids.includes(e.id))
     .map((e): Lent => ({ id: e.id, by: { ...e.by }, target: NODE_IDS[e.target], kinds: e.units.map((u) => u.kind), state: e.holding ? "holding" : e.arrived ? "attacking" : "coming" }));
-  return { until, expeditions, wrote: !standing && ids.length > 0 };
+  // The nodes still shut from an earlier raid stay shut in this one.
+  const shut = NODE_IDS.filter((_, i) => fortUntil(s, i) > now);
+  return { until, expeditions, shut, wrote: !standing && ids.length > 0 };
 }
 
 /**
@@ -575,7 +579,14 @@ export function islandOp(state: IslandState | null, op: IslandOp, now: number): 
   if (op.t === "lease") {
     if (s.owner.id !== op.player) return done(403, fail("not-owner"));
     const l = lease(s, now);
-    return done(200, { ok: true, until: l.until, expeditions: l.expeditions }, l.wrote);
+    return done(200, { ok: true, until: l.until, expeditions: l.expeditions, shut: l.shut }, l.wrote);
+  }
+  if (op.t === "unlease") {
+    // The raid the lease was for is not taking the expeditions in: the island reckons them again from now.
+    if (s.owner.id !== op.player) return done(403, fail("not-owner"));
+    const had = !!s.lease;
+    s.lease = null;
+    return done(200, { ok: true }, had);
   }
   if (op.t === "recall") return recall(s, op.from, op.id, now) ? done(200, { ok: true }, true) : done(404, fail("no-expedition"));
   if (op.t === "view") return done(200, publicView(s, now));
