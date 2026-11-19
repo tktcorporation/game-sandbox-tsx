@@ -5127,3 +5127,13 @@ body.touch .bag-card:nth-last-child(n + 3) {
 #obj-exits:not(:has(.live)) {
   display: none;
 }
+/* On a phone the three gauges share one line beside the row's button. */
+body.touch .wstats {
+  gap: 2px 8px;
+}
+body.touch .wstats .g .bar {
+  width: 26px;
+}
+body.touch .wstats .g .n {
+  min-width: 2em;
+}
