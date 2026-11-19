@@ -1,18 +1,22 @@
 {
- "00-panel-quests-story": [
-  "contrast div.quest.contract div small span"
+ "00-depart-locked-harbor": [
+  "wordy #depart-hint span"
  ],
- "00-panel-quests-taken": [
-  "contrast div.quest.contract div small span"
+ "00-title": [
+  "wordy #title div.title-inner p.lede"
  ],
- "03-fight-supply": [
+ "06-care-package": [
   "contrast #obj-stealth"
  ],
  "107-war-rally": [
   "offscreen #compass-strip span"
  ],
- "144-finale-board": [
-  "contrast div.quest.contract div small span"
+ "11-downed": [
+  "contrast #downed b",
+  "contrast #obj-stealth"
+ ],
+ "150-expeditions-map": [
+  "wordy div.hub-island div.hub-island-side ul.island-news.incoming li"
  ],
  "151-expeditions-factory": [
   "contrast div.mod-body ol.ladder li.later b",
@@ -25,26 +29,32 @@
   "contrast li.later span span.gauge small",
   "contrast li.later span span.gauge.up small"
  ],
+ "153-expeditions-depart": [
+  "wordy #depart-list dd"
+ ],
  "16-flank-hit": [
   "contrast #obj-stealth"
  ],
  "18-teammate-down": [
   "contrast #mate-state"
  ],
- "24-search": [
+ "19-teammate-fight": [
+  "contrast #obj-stealth",
   "offscreen #compass-strip span"
  ],
- "27-bolt": [
-  "contrast #obj-stealth"
+ "24-search": [
+  "offscreen #compass-strip span"
  ],
  "30-map-harbor": [
   "offscreen #compass-strip span"
  ],
  "31-harbor-fight": [
-  "contrast #obj-stealth",
-  "offscreen #bag-cards div.bag-card div.bp-row.kept b.bp-val"
+  "contrast #obj-stealth"
  ],
  "32-stagger": [
+  "contrast #obj-stealth"
+ ],
+ "33-wreck": [
   "contrast #obj-stealth"
  ],
  "46-depart-depot-shut": [
@@ -84,15 +94,8 @@
  ],
  "91-panel-factory-expeditions": [
   "contrast div.mod-body ol.ladder li.later b",
-  "contrast li span span.gauge.up small",
   "contrast li.later span span.gauge small",
   "contrast li.later span span.gauge.up small"
- ],
- "97-objective-front": [
-  "ghost #obj-exits div b",
-  "ghost #obj-exits div span",
-  "ghost #obj-exits div.locked.near b",
-  "ghost #obj-exits div.locked.near span"
  ],
  "bag-1-peek": [
   "contrast #bag-peek div.bp-extra span.bp-x.mod"
@@ -105,6 +108,25 @@
   "contrast #bag-peek div.bp-extra span.bp-x.mod",
   "contrast #bag-peek div.bp-rows div.bp-row span.bp-name"
  ],
+ "m-rules-2-pouch-wipe": [
+  "offscreen #stats span",
+  "offscreen #stats span b"
+ ],
+ "m-rules-4-analyse": [
+  "wordy #home div.analyse button.mod small"
+ ],
+ "m-rules-4-analysed": [
+  "wordy #home div.analyse button.mod small"
+ ],
+ "m-rules-5-board-new-sliding": [
+  "ghost #t-crouch b"
+ ],
+ "m-rules-6-learn-dashed": [
+  "wordy #home div.analyse button.mod small"
+ ],
+ "m-rules-6-learn-solid": [
+  "wordy #home div.analyse button.mod small"
+ ],
  "m-up-2-workshop-infirmary": [
   "contrast div.mod-body ol.ladder li.later b",
   "contrast li span span.gauge small",
@@ -116,10 +138,9 @@
   "contrast div.mod-body ol.ladder li.later b",
   "contrast li span span.gauge small",
   "contrast li.later span span.gauge small",
-  "contrast li.later span span.gauge.up small"
- ],
- "m0-panel-stash": [
-  "ghost #hub-stash div.item span i"
+  "contrast li.later span span.gauge.up small",
+  "ghost #t-crouch b",
+  "ghost #t-jump b"
  ],
  "m0-title": [
   "tap #title div.title-inner p.note a",
@@ -145,8 +166,8 @@
   "offscreen #stats span",
   "offscreen #stats span b"
  ],
- "m31-hud-mods": [
-  "contrast #bag-cards div.bag-card div.bp-row span.bp-name"
+ "m24-storm": [
+  "ghost #mate b"
  ],
  "m33-results-analysis": [
   "wordy #home div.analyse button.mod small"
@@ -185,18 +206,27 @@
   "offscreen #stats span",
   "offscreen #stats span b"
  ],
+ "m9-results": [
+  "offscreen #stats span",
+  "offscreen #stats span b"
+ ],
  "plates-2-deflect": [
   "contrast #obj-stealth"
  ],
  "plates-3-broken": [
-  "contrast #obj-stealth",
-  "ghost #obj-exits div span"
+  "contrast #obj-stealth"
  ],
- "rules-4-board-bin": [
-  "contrast div.quest.contract div small span"
+ "rules-4-analyse": [
+  "wordy #home div.analyse button.mod small"
  ],
- "rules-5-board-taken": [
-  "contrast div.quest.contract div small span"
+ "rules-4-analysed": [
+  "wordy #home div.analyse button.mod small"
+ ],
+ "rules-6-learn-dashed": [
+  "wordy #home div.analyse button.mod small"
+ ],
+ "rules-6-learn-solid": [
+  "wordy #home div.analyse button.mod small"
  ],
  "up-2-workshop-infirmary": [
   "contrast div.mod-body ol.ladder li.later b",
