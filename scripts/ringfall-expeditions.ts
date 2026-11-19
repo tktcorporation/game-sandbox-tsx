@@ -442,20 +442,23 @@ const T2 = T1 + 400_000;
   check(l.holds[quarry] === `rival:${B.code}`, "lease: an unreported lease did not go on in numbers");
 
   // The raid's report: the expedition wiped out in it is gone; one that took its node holds it; a report after the lease says nothing.
-  const lent = (how: "wiped" | "taken" | "late" | "limit") => {
+  const lent = (how: "wiped" | "taken" | "late" | "limit" | "waiting") => {
     const st = island({ quarry: "freed", supply: "freed" }, 0);
     op(st, { t: "expedition", from: B, target: "quarry", kinds: top }, T1);
     op(st, { t: "lease", player: A.id }, T1 + 1000);
     if (how === "limit") st.taken = { day: Math.floor(T1 / DAY), n: EXPEDITION.perDay };
     const holds = holdsWith({ quarry: how === "wiped" ? "freed" : `rival:${B.code}`, supply: "freed" }) as IslandState["holds"];
     const when = how === "late" ? T1 + 1000 + LEASE + 1000 : T1 + 1_500_000;
-    op(st, { t: "report", player: A, retaken: [], holds, factory: 0, day: 2, lent: [{ id: st.expeditions[0].id, left: how === "wiped" ? 0 : 3 }] }, when);
+    op(st, { t: "report", player: A, retaken: [], holds, factory: 0, day: 2, lent: [{ id: st.expeditions[0].id, left: how === "wiped" ? 0 : 3, ...(how === "waiting" ? { waiting: true as const } : {}) }] }, when);
     return st;
   };
   const wiped = lent("wiped");
   const taken = lent("taken");
   const late = lent("late");
   const limit = lent("limit");
+  // One the raid's battle never set off: it is as it was, whole and still on its way, whatever the report says of the node.
+  const never = lent("waiting");
+  check(never.holds[quarry] === "freed" && !never.expeditions[0].arrived && never.expeditions[0].units.length === top.length && never.expeditions[0].arriveAt === T1 + NOTICE && !never.log.some((e) => e.t === "landed"), "lease report: an expedition that never set off in the raid was moved up");
   console.log(`lease report: wiped -> ${wiped.expeditions.length} left, log ${wiped.log.map((e) => e.t).join(",")}; taken -> quarry ${taken.holds[quarry]}, ${taken.expeditions[0].units.length} units holding ${taken.expeditions[0].holding}, log ${taken.log.map((e) => e.t).join(",")}; after the lease -> quarry ${late.holds[quarry]}, ${late.expeditions[0].units.length} units; past the day's limit -> quarry ${limit.holds[quarry]}`);
   check(wiped.expeditions.length === 0 && wiped.holds[quarry] === "freed" && wiped.log.map((e) => e.t).join() === "noticed,landed,wiped" && !wiped.lease, "lease report: an expedition wiped out in the raid is still on the island");
   check(taken.holds[quarry] === `rival:${B.code}` && taken.expeditions[0].holding && taken.expeditions[0].units.length === 3 && taken.log.map((e) => e.t).join() === "noticed,landed,taken" && taken.taken.n === 1, "lease report: a node taken in the raid is not the expedition's");

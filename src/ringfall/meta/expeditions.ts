@@ -251,15 +251,16 @@ export function lentRivals(lent: readonly LentIn[]): RivalExpedition[] {
  * What became of the expeditions a raid took in, for its report (`lent`): the members each has left
  * as the battle ended, by its owner's squads bound for its node (0: wiped out).
  */
-export function lentResults(lent: readonly LentIn[], battle: Pick<Battle, "squads" | "rivals"> | null): { id: number; left: number }[] {
+export function lentResults(lent: readonly LentIn[], battle: Pick<Battle, "squads" | "rivals"> | null): { id: number; left: number; waiting?: true }[] {
   if (!battle) return [];
   return lent.map((e) => {
     const i = nodeIndex(e.target);
     // By the node a squad is bound for in the end: one of the same owner's only passing through this node on its way to another is not this expedition.
     const squads = battle.squads.filter((q) => q.side === 3 && q.owner === e.by.code && (q.via.length ? q.via[q.via.length - 1] : q.to) === i);
-    // One the battle never set off (it ended first) is whole.
+    // One the battle never set off is whole and is reported as never having come (`waiting`): the island leaves it on its own schedule.
+    // The battle is reckoned to its end whenever the raid ends (`finishBattle()`), so this is only an expedition due past the battle's end.
     const waiting = battle.rivals.some((x) => x.owner === e.by.code && x.target === e.target);
-    return { id: e.id, left: waiting ? e.kinds.length : squads.reduce((n, q) => n + q.units.length, 0) };
+    return waiting ? { id: e.id, left: e.kinds.length, waiting: true as const } : { id: e.id, left: squads.reduce((n, q) => n + q.units.length, 0) };
   });
 }
 

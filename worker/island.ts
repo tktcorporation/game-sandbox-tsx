@@ -139,6 +139,8 @@ export interface IslandState {
 export interface LentResult {
   id: number;
   left: number;
+  /** The raid's battle ended before this one set off: it never came, and the island keeps it as it was, on its own schedule. */
+  waiting?: true;
 }
 
 /** What one request asks of an island. */
@@ -479,7 +481,7 @@ function report(s: IslandState, op: Extract<IslandOp, { t: "report" }>, now: num
   const live = s.lease && now < s.lease.until ? s.lease.ids : [];
   for (const r of op.lent ?? []) {
     const e = s.expeditions.find((x) => x.id === r.id);
-    if (!e || !live.includes(r.id)) continue;
+    if (!e || !live.includes(r.id) || r.waiting) continue;
     const i = e.target;
     const theirs = rivalOf(s.holds[i]) === e.by.code;
     if (!e.arrived) {
@@ -633,5 +635,5 @@ export function parseLent(raw: unknown): LentResult[] | null {
   if (!Array.isArray(raw) || raw.length > EXPEDITION.perIsland) return null;
   const ok = (r: unknown): r is LentResult => !!r && typeof r === "object" && Number.isInteger((r as LentResult).id) && (r as LentResult).id > 0 && Number.isInteger((r as LentResult).left) && (r as LentResult).left >= 0 && (r as LentResult).left <= 64;
   if (!raw.every(ok) || new Set(raw.map((r) => r.id)).size !== raw.length) return null;
-  return raw.map((r) => ({ id: r.id, left: r.left }));
+  return raw.map((r) => ({ id: r.id, left: r.left, ...((r as { waiting?: unknown }).waiting === true ? { waiting: true as const } : {}) }));
 }

@@ -99,7 +99,7 @@ export async function sendExpedition(code: string, node: string, units: number, 
 
 /** What a raid's report says beside the island's holds: what became of the expeditions it took in, and the nodes sent at that it fortified. */
 export interface RaidReport {
-  lent: { id: number; left: number }[];
+  lent: { id: number; left: number; waiting?: true }[];
   fortified: string[];
 }
 
