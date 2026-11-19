@@ -28,7 +28,7 @@ export function nodeRow(holds: readonly NodeHold[], change?: { gained?: readonly
   const rival = holds.filter((h) => h !== "freed" && h !== "held").length;
   const from = Math.max(0, Math.min(n, o.from ?? own - (change?.gained?.length ?? 0) + (change?.lost?.length ?? 0)));
   const risk = Math.min(own, o.risk ?? 0);
-  const style = `--n:${n};--own:${own};--from:${from};--risk:${risk};--delay:${o.delay ?? (change ? 0.5 : 0)}s${rival ? `;--rival:${rival}` : ""}`;
+  const style = `--n:${n};--own-n:${own};--from:${from};--risk:${risk};--delay:${o.delay ?? (change ? 0.5 : 0)}s${rival ? `;--rival-n:${rival}` : ""}`;
   const cls = ["tug", from !== own ? "moved" : "", o.contested ? "contested" : "", risk ? "at-risk" : ""].filter(Boolean).join(" ");
   // With no other player's node the bar is the two sides' alone, as it always was.
   const seg = rival ? `<span class="tug-rival"></span>` : "";

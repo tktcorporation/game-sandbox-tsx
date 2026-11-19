@@ -305,7 +305,7 @@ kbd {
 }
 .tug-fill {
   left: 0;
-  width: calc(var(--own) / var(--n) * 100%);
+  width: calc(var(--own-n) / var(--n) * 100%);
   background: var(--own-c);
 }
 /* Other players' nodes: green segments from the player's boundary toward the enemy's red. */
@@ -313,8 +313,8 @@ kbd {
   position: absolute;
   top: 0;
   bottom: 0;
-  left: calc(var(--own) / var(--n) * 100%);
-  width: calc(var(--rival) / var(--n) * 100%);
+  left: calc(var(--own-n) / var(--n) * 100%);
+  width: calc(var(--rival-n) / var(--n) * 100%);
   background: var(--rival);
 }
 .tug-n.rival {
@@ -322,7 +322,7 @@ kbd {
 }
 /* The boundary between the two sides, sliding with the fill. */
 .tug-edge {
-  left: calc(var(--own) / var(--n) * 100% - 1.5px);
+  left: calc(var(--own-n) / var(--n) * 100% - 1.5px);
   width: 3px;
   background: var(--white);
 }
@@ -355,7 +355,7 @@ kbd {
 /* The player's nodes the enemy is about to take: the last blue segments pulse red. */
 .tug-risk {
   display: none;
-  left: calc((var(--own) - var(--risk)) / var(--n) * 100%);
+  left: calc((var(--own-n) - var(--risk)) / var(--n) * 100%);
   width: calc(var(--risk) / var(--n) * 100%);
   background: var(--foe-c);
 }

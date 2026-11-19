@@ -113,6 +113,25 @@ function lintRarity() {
   if (world.join() !== ui.join()) say("src/ringfall/view/models.ts", 1, "palette", `RARITY_CSS is ${world.join(" ")} but UI.r0..r3 are ${ui.join(" ")}`);
 }
 
+/** A custom property the code sets (a count, a width, a thing's colour) must not take a palette colour's name: it would replace that colour for everything under it. */
+function lintOverrides() {
+  const palette = new Set(Object.keys(UI).flatMap((k) => [`--${kebab(k)}`, `--${kebab(k)}-rgb`]));
+  for (const f of viewFiles().filter((v) => !v.endsWith("/palette.ts")))
+    readFileSync(f, "utf8")
+      .split("\n")
+      .forEach((l, i) => {
+        if (/^\s*(\/\/|\*|\/\*)/.test(l)) return;
+        for (const m of l.matchAll(/["'`;\s(](--[a-z0-9-]+)\s*[:"'`,]/g)) if (palette.has(m[1])) say(f, i + 1, "token", `${m[1]} is a palette colour's name — name what the code sets something else (--own-n for a count)`);
+      });
+  readFileSync(CSS, "utf8")
+    .replace(BLOCK, (b) => b.replace(/[^\n]/g, " "))
+    .split("\n")
+    .forEach((l, i) => {
+      const m = l.match(/^\s*(--[a-z0-9-]+)\s*:/);
+      if (m && palette.has(m[1])) say(CSS, i + 1, "token", `${m[1]} is set outside the palette block`);
+    });
+}
+
 function lintHtml() {
   const html = readFileSync(HTML, "utf8");
   const link = html.match(/fonts\.googleapis\.com\/css2\?[^"]*/)?.[0] ?? "";
@@ -126,6 +145,7 @@ function lintHtml() {
 lintCss();
 lintTs();
 lintRarity();
+lintOverrides();
 lintHtml();
 if (problems.length) {
   const by = new Map<string, number>();
