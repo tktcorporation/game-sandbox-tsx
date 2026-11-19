@@ -72,6 +72,8 @@ export class CampView {
     // Names that would cover one another: the nearer station keeps its place, a farther one is lifted clear above it.
     shown.sort((a, b) => a.d - b.d);
     $("camp-plan").hidden = o.panel;
+    // A panel or the departure covers the yard: its head would show through the panel's plate.
+    $("camp").classList.toggle("covered", o.panel);
     const covers = [$("camp-head"), $("camp-plan")].filter((e) => !e.hidden).map((e) => e.getBoundingClientRect());
     const placed: { x0: number; x1: number; y0: number; y1: number }[] = [];
     for (const q of shown) {

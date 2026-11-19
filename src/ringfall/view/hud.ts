@@ -36,6 +36,7 @@ import { terrainHeight } from "../sim/terrain";
 const keySource = (poi: number) => POIS[poiIndex(POIS[poi].keyFrom)].name;
 
 import { BagView } from "./bag";
+import { UI } from "./palette";
 
 /*
  * The DOM layer: everything the player reads. The screen always answers two
@@ -295,7 +296,7 @@ export class Hud {
         const tags = [cur.cut ? "阻止" : undefined, tag, plate ? "装甲" : undefined].filter(Boolean).join(" ");
         cur.el.innerHTML = `${tags ? `<small>${tags}</small>` : ""}${Math.round(cur.value)}`;
         cur.el.className = `dmg${cur.crit ? " crit" : ""}${tag ? " flank" : ""}${cur.flank === "front" ? " front" : ""}${plate ? " plate" : ""}`;
-        cur.el.style.color = cur.crit ? "" : e.shield ? RARITY_CSS[e.tier] : "#ffffff";
+        cur.el.style.color = cur.crit ? "" : e.shield ? RARITY_CSS[e.tier] : UI.white;
         break;
       }
       case "stagger": {
@@ -394,7 +395,7 @@ export class Hud {
       case "engage":
         if (!s.squads[e.squad]?.engaged) break;
         for (const r of s.enemies) if (r.squad === e.squad) this.spotted.set(r.id, 2.5);
-        if (s.squads[e.squad].name !== "タイタン") this.toast(`${eyeIcon("#ff6b5a")}${s.squads[e.squad].name}`, 0);
+        if (s.squads[e.squad].name !== "タイタン") this.toast(`${eyeIcon(UI.foeBright)}${s.squads[e.squad].name}`, 0);
         break;
       case "calm":
         this.toast(`${eyeIcon("currentColor", true)}見失わせた`, 1);
@@ -434,7 +435,7 @@ export class Hud {
         this.toast(`${upIcon().repeat(e.level)}<b>${MOMENTUM.spoils[Math.min(e.level, MOMENTUM.spoils.length) - 1].toLocaleString()}</b>`, 3, 4000);
         break;
       case "fortified":
-        this.toast(`${coreIcon(SIDE.own)}${nightIcon("#4f9bff")}${checkIcon()}${NODES[e.node].name}`, 1, 4000);
+        this.toast(`${coreIcon(SIDE.own)}${nightIcon(UI.ownBright)}${checkIcon()}${NODES[e.node].name}`, 1, 4000);
         break;
       case "coreTaken":
         this.toast(`${coreIcon(SIDE.own)}${NODES[e.node].name}`, 1, 5000);
@@ -1069,7 +1070,7 @@ export class Hud {
     // On a cable: where it goes and the metres left.
     if (p.zip) {
       const l = ZIPS[p.zip.line];
-      return `${zipIcon(l.fixed ? "#c8ced8" : undefined)}${esc(zipEndName(p.zip.dir > 0 ? l.b : l.a))} <b>${Math.round(p.zip.dir > 0 ? l.length - p.zip.at : p.zip.at)}</b> m`;
+      return `${zipIcon(l.fixed ? UI.mist : undefined)}${esc(zipEndName(p.zip.dir > 0 ? l.b : l.a))} <b>${Math.round(p.zip.dir > 0 ? l.length - p.zip.at : p.zip.at)}</b> m`;
     }
     // The use key comes first: picking the teammate up or opening a bin works inside an extraction point too.
     const t = useTarget(s);
@@ -1083,9 +1084,9 @@ export class Hud {
     // The same choice the use key acts on (sim/world.ts useTarget), so the prompt never promises something else.
     if (!t) {
       // At a depot that is on, which useTarget passes over while a squad is fighting: the depot, crossed, and the fight.
-      if (depotBlocked(s) && depotInReach(s) >= 0) return `${depotIcon()}${crossIcon()}${fightIcon("#ff6b5a")}`;
+      if (depotBlocked(s) && depotInReach(s) >= 0) return `${depotIcon()}${crossIcon()}${fightIcon(UI.foeBright)}`;
       // Back in the camp's yard with a fight close by: it takes the player home once that is over.
-      if (homeReady(s) && depotBlocked(s)) return `野営地${crossIcon()}${fightIcon("#ff6b5a")}`;
+      if (homeReady(s) && depotBlocked(s)) return `野営地${crossIcon()}${fightIcon(UI.foeBright)}`;
       // Standing on something that will not go in: a mod part already worn, or a full bag.
       const left = s.loot.find((l) => (l.kind === "valuable" || l.kind === "tool" || l.kind === "record" || l.kind === "mod") && l.age >= 0.4 && dist2d(l.pos, p.pos) < PLAYER.pickupRange && Math.abs(l.pos.y - p.pos.y) < 2);
       if (left?.mod) return `${esc(MODS[left.mod].name)} ${checkIcon()}`;
@@ -1139,10 +1140,10 @@ export class Hud {
       const n = NODES[t.node];
       // A node of the player's marked for the night: the use key fortifies it (the moon turns from red to blue).
       if (s.nodes[t.node] === "freed") {
-        if (s.fortify?.node === t.node) return `${coreIcon(SIDE.own)}${nightIcon("#4f9bff")}${esc(n.name)} <b class="${s.fortify.held ? "" : "paused"}">${Math.floor((s.fortify.t / FORTIFY.time) * 100)}%</b>`;
+        if (s.fortify?.node === t.node) return `${coreIcon(SIDE.own)}${nightIcon(UI.ownBright)}${esc(n.name)} <b class="${s.fortify.held ? "" : "paused"}">${Math.floor((s.fortify.t / FORTIFY.time) * 100)}%</b>`;
         // Marked by another player's expedition and not by the night: their colour's flag in the moon's place.
         const sent = !s.battle?.targets.includes(t.node);
-        return `${key("E")}${coreIcon(SIDE.own)}${sent ? flagIcon(SIDE.rival) : nightIcon("#ff4a3d")}${esc(n.name)}`;
+        return `${key("E")}${coreIcon(SIDE.own)}${sent ? flagIcon(SIDE.rival) : nightIcon(UI.alert)}${esc(n.name)}`;
       }
       const c = foeSide(s.nodes[t.node]);
       if (!capturable(s, t.node)) return `${coreIcon(c, true)}${esc(n.name)} <small>▸ 先に${esc(shieldedBy(s.nodes, t.node))}</small>`;
@@ -1154,7 +1155,7 @@ export class Hud {
       const l = ZIPS[t.line];
       const at = zipPoint(l, t.at);
       const toB = Math.sin(p.yaw) * at.dx - Math.cos(p.yaw) * at.dz >= 0;
-      return `${key("E")}${zipIcon(l.fixed ? "#c8ced8" : undefined)}${esc(zipEndName(toB ? l.b : l.a))} <b>${Math.round(toB ? l.length - t.at : t.at)}</b> m`;
+      return `${key("E")}${zipIcon(l.fixed ? UI.mist : undefined)}${esc(zipEndName(toB ? l.b : l.a))} <b>${Math.round(toB ? l.length - t.at : t.at)}</b> m`;
     }
     const wl = t.loot;
     const swap = p.weapons.includes(null) ? "" : struck([WEAPONS[p.weapons[p.slot]!.kind].name]);

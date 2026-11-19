@@ -18,6 +18,7 @@ import { incomingLine, logLine, type IslandLogEntry } from "../meta/expeditions"
 import { enemyNodes, frontNodes, ownNodes } from "../sim/front";
 import { nodeRow } from "./row";
 import { sfx } from "./sfx";
+import { UI } from "./palette";
 
 const RARITY_CSS = ["var(--r0)", "var(--r1)", "var(--r2)", "var(--r3)"];
 
@@ -989,7 +990,7 @@ export class Hub {
       (holds.some((h) => rivalOf(h) !== null) ? `<li><i style="background:${RIVAL_CSS}"></i>他のプレイヤー</li>` : "") +
       `<li><i class="titan" style="background:${TITAN_CSS}"></i>タイタン</li>` +
       `<li class="front"><i></i>前線<b>${NODES.filter((_, i) => front[i]).map((n) => esc(n.name)).join("・") || "—"}</b></li>` +
-      `<li class="locked">${lockIcon("#f4f7ff")}制圧不可<b>錠を押すと理由</b></li>` +
+      `<li class="locked">${lockIcon(UI.paper)}制圧不可<b>錠を押すと理由</b></li>` +
       `<li class="income">収入<b>${frontIncome(p).toLocaleString()} クレジット</b></li>`;
     return (
       `<div class="hub-island"><canvas id="hub-island-map"></canvas><div class="hub-island-side">` +

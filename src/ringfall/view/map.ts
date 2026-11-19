@@ -14,6 +14,7 @@ import { DAM_FACE, floorLevel, groundOf, highGround, LEVEL, steepAt, surfaceAt, 
 import { cellOf, decodeSeen, exploreSize, type Ally, type Contact, type Enemy, type Player, type State } from "../sim/state";
 import { PAL, RARITY_CSS } from "./models";
 import type { ContractMark } from "../meta/contracts";
+import { UI, alpha } from "./palette";
 
 /*
  * The world map (M, or the map button on a phone): every region and the ways between
@@ -43,10 +44,10 @@ const css = (c: number) => `#${c.toString(16).padStart(6, "0")}`;
  * player's blue, which read on the sand and stay apart from the loot's colours. The titan's pad,
  * the enemy's for good, has a mark of its own in the robots' armour.
  */
-export const HOLD_CSS: Record<"held" | "freed", string> = { held: "#c8402f", freed: "#3f86c8" };
+export const HOLD_CSS: Record<"held" | "freed", string> = { held: UI.foe, freed: UI.own };
 
 /** Another player's colour on the maps: a green, apart from the two sides', the rogues' violet and the ways off' yellow. */
-export const RIVAL_CSS = "#3fae6e";
+export const RIVAL_CSS = UI.rival;
 
 /** The colour of a node held `h`: the enemy's, the player's, or another player's. */
 export const holdCss = (h: PoiHold) => (h === "held" || h === "freed" ? HOLD_CSS[h] : RIVAL_CSS);
@@ -58,12 +59,12 @@ export const holdCss = (h: PoiHold) => (h === "held" || h === "freed" ? HOLD_CSS
 export function drawFlare(g: CanvasRenderingContext2D, x: number, y: number, r: number, lit: boolean) {
   g.save();
   // A dark disc behind it, so it reads on the red and blue ground alike.
-  g.fillStyle = "rgba(20,24,40,0.75)";
+  g.fillStyle = alpha(UI.night, 0.75);
   g.beginPath();
   g.arc(x, y, r * 1.15, 0, Math.PI * 2);
   g.fill();
   g.lineWidth = Math.max(1, r * 0.18);
-  g.strokeStyle = lit ? "rgba(20,24,40,0.9)" : "#8a8f9c";
+  g.strokeStyle = lit ? alpha(UI.night, 0.9) : UI.slate;
   const stick = () => {
     g.beginPath();
     g.rect(x - r * 0.22, y - r * 0.05, r * 0.44, r * 1.05);
@@ -77,13 +78,13 @@ export function drawFlare(g: CanvasRenderingContext2D, x: number, y: number, r: 
   };
   stick();
   if (lit) {
-    g.fillStyle = "#e2563a";
+    g.fillStyle = UI.ring;
     g.fill();
   }
   g.stroke();
   flame();
   if (lit) {
-    g.fillStyle = "#ffd36a";
+    g.fillStyle = UI.hotLight;
     g.fill();
   }
   g.stroke();
@@ -117,7 +118,7 @@ const LOCK_BODY = "M4.7 7 H11.3 A1.2 1.2 0 0 1 12.5 8.2 V13.3 A1.2 1.2 0 0 1 11.
 /** A padlock centred on (x, y), `s` across, in `color` on a dark disc that keeps it readable on any ground. */
 export function drawLock(g: CanvasRenderingContext2D, x: number, y: number, s: number, color: string) {
   g.save();
-  g.fillStyle = "rgba(20,24,40,0.92)";
+  g.fillStyle = alpha(UI.night, 0.92);
   g.beginPath();
   g.arc(x, y, s * 0.62, 0, Math.PI * 2);
   g.fill();
@@ -146,7 +147,7 @@ export function drawShield(g: CanvasRenderingContext2D, x: number, y: number, r:
   g.fillStyle = fill;
   g.fill();
   g.lineWidth = Math.max(1, r * 0.22);
-  g.strokeStyle = "rgba(20,24,40,0.9)";
+  g.strokeStyle = alpha(UI.night, 0.9);
   g.stroke();
   g.restore();
 }
@@ -164,7 +165,7 @@ export function drawUnlocks(g: CanvasRenderingContext2D, x: number, y: number, i
   g.globalAlpha = on ? 1 : 0.5;
   g.lineJoin = "round";
   const plate = (w: number) => {
-    g.fillStyle = "rgba(20,24,40,0.82)";
+    g.fillStyle = alpha(UI.night, 0.82);
     g.fillRect(cx - s * 0.3, y - s * 1.05, w + s * 0.6, s * 2.1);
   };
   if (u.shop !== undefined) {
@@ -180,7 +181,7 @@ export function drawUnlocks(g: CanvasRenderingContext2D, x: number, y: number, i
   if (u.depart) {
     plate(s * 1.8);
     // An arrow leaving a box: the start from its depot.
-    g.strokeStyle = "#f4f7ff";
+    g.strokeStyle = UI.paper;
     g.lineWidth = 1.6 * dpr;
     g.strokeRect(cx, y - s * 0.1, s * 0.9, s * 0.9);
     g.beginPath();
@@ -195,7 +196,7 @@ export function drawUnlocks(g: CanvasRenderingContext2D, x: number, y: number, i
   if (u.squad) {
     plate(s * 1.4);
     // A flag in the player's blue.
-    g.strokeStyle = "#f4f7ff";
+    g.strokeStyle = UI.paper;
     g.lineWidth = 1.4 * dpr;
     g.beginPath();
     g.moveTo(cx + s * 0.2, y + s * 0.9);
@@ -213,7 +214,7 @@ export function drawUnlocks(g: CanvasRenderingContext2D, x: number, y: number, i
   if (u.scout) {
     plate(s * 1.6);
     // The compass's chevron for where reinforcements land.
-    g.fillStyle = "#ff4d4d";
+    g.fillStyle = UI.alert;
     g.beginPath();
     g.moveTo(cx, y - s * 0.6);
     g.lineTo(cx + s * 1.6, y - s * 0.6);
@@ -225,7 +226,7 @@ export function drawUnlocks(g: CanvasRenderingContext2D, x: number, y: number, i
   // The smaller gifts, each a mark of its own: a heal's cross in its colour, the leap's wing, a mod part's hexagon, a turret, the night's moon.
   if (u.heal) {
     plate(s * 1.4);
-    g.fillStyle = u.heal === "cell" || u.heal === "battery" ? "#5fb4ff" : "#ff6b6b";
+    g.fillStyle = u.heal === "cell" || u.heal === "battery" ? UI.r1 : UI.foeBright;
     const k = u.heal === "battery" || u.heal === "medkit" ? 1.15 : 0.85;
     g.fillRect(cx + s * 0.7 - s * 0.22 * k, y - s * 0.7 * k, s * 0.44 * k, s * 1.4 * k);
     g.fillRect(cx + s * 0.7 - s * 0.7 * k, y - s * 0.22 * k, s * 1.4 * k, s * 0.44 * k);
@@ -233,7 +234,7 @@ export function drawUnlocks(g: CanvasRenderingContext2D, x: number, y: number, i
   }
   if (u.ult) {
     plate(s * 1.6);
-    g.fillStyle = "#ffd24a";
+    g.fillStyle = UI.r3;
     for (const dy of u.ult >= 1 ? [-0.55, 0.25] : [-0.15]) {
       g.beginPath();
       g.moveTo(cx, y + s * (dy + 0.5));
@@ -289,7 +290,7 @@ export function drawUnlocks(g: CanvasRenderingContext2D, x: number, y: number, i
     g.closePath();
     g.fill();
     g.fillRect(cx + s * 0.9, y - s * 0.7, s * 0.25, s * 0.7);
-    g.strokeStyle = "#f4f7ff";
+    g.strokeStyle = UI.paper;
     g.lineWidth = 1.6 * dpr;
     g.beginPath();
     g.moveTo(cx - s * 0.1, y + s * 0.8);
@@ -298,14 +299,14 @@ export function drawUnlocks(g: CanvasRenderingContext2D, x: number, y: number, i
   }
   g.restore();
 }
-export const TITAN_CSS = "#262d52";
+export const TITAN_CSS = UI.titan;
 /** The outposts' mark: places to loot that nobody's colour claims. */
-const OUTPOST_CSS = "#8f8a7c";
+const OUTPOST_CSS = UI.parchDim;
 /**
  * The rogues' (野良機) colour on maps: a violet, kept apart from the enemy's red, the ways off'
  * yellow diamonds and the contract's gold (on the island their armour stays amber).
  */
-export const ROGUE_CSS = "#a47be0";
+export const ROGUE_CSS = UI.rogue;
 
 /**
  * What the map draws: a raid's state, or the camp's picture of the island between raids (the
@@ -352,7 +353,7 @@ export function drawMoon(g: CanvasRenderingContext2D, x: number, y: number, r: n
   g.save();
   g.beginPath();
   g.arc(x, y, r, 0, Math.PI * 2);
-  g.fillStyle = "rgba(16,20,34,0.85)";
+  g.fillStyle = alpha(UI.night, 0.85);
   g.fill();
   g.beginPath();
   g.arc(x, y, r * 0.78, Math.PI * 0.35, Math.PI * 1.65);
@@ -368,7 +369,7 @@ export function drawLanding(g: CanvasRenderingContext2D, x: number, y: number, r
   g.save();
   g.beginPath();
   g.arc(x, y, r, 0, Math.PI * 2);
-  g.fillStyle = "rgba(16,20,34,0.85)";
+  g.fillStyle = alpha(UI.night, 0.85);
   g.fill();
   g.beginPath();
   g.moveTo(x - r * 0.62, y - r * 0.2);
@@ -388,7 +389,7 @@ export function drawLanding(g: CanvasRenderingContext2D, x: number, y: number, r
 type Rect = { x0: number; y0: number; x1: number; y1: number };
 
 /** The sides' colours on the battle map: the player's blue, the enemy's red, the rogues' violet, another player's green. */
-export const SIDE_CSS: Record<Side, string> = { 0: "#4f9bff", 1: "#ff4a3d", 2: ROGUE_CSS, 3: RIVAL_CSS };
+export const SIDE_CSS: Record<Side, string> = { 0: UI.ownBright, 1: UI.alert, 2: ROGUE_CSS, 3: RIVAL_CSS };
 
 /** The camp's picture of the island between raids, from the profile's explored map, depots, routes and POI standings. */
 export function islandScene(p: { seen: string; depots: readonly PoiId[]; routes: readonly RouteId[]; poiState: Record<PoiId, { state: PoiHold }>; events?: readonly (IslandEvent | null)[]; freedAt?: Partial<Record<PoiId, number>>; day?: number; seed?: number; incoming?: readonly { node: NodeId }[] }): MapScene {
@@ -580,7 +581,7 @@ export class IslandMap {
   private drawContract(g: CanvasRenderingContext2D, at: (x: number, z: number) => { x: number; y: number }, dpr: number, label: (text: string, x: number, y: number, color: string, size: number) => void) {
     const c = this.contract;
     if (!c) return;
-    const gold = "#ffc93a";
+    const gold = UI.r3;
     g.save();
     g.strokeStyle = gold;
     g.lineWidth = 2.5 * dpr;
@@ -611,7 +612,7 @@ export class IslandMap {
     }
     g.stroke();
     g.restore();
-    g.strokeStyle = "rgba(20,24,40,0.85)";
+    g.strokeStyle = alpha(UI.night, 0.85);
     g.lineWidth = 3 * dpr;
     label("依頼", tag.x, tag.y, gold, 11);
   }
@@ -737,13 +738,13 @@ export class IslandMap {
       g.lineTo(-r * 0.8, -r * 0.75);
       g.closePath();
       g.lineWidth = 1.6 * dpr;
-      g.strokeStyle = "rgba(20,24,40,0.95)";
+      g.strokeStyle = alpha(UI.night, 0.95);
       g.fillStyle = SIDE_CSS[m.side];
       if (m.live) {
         g.fill();
         g.stroke();
       } else {
-        g.fillStyle = "rgba(20,24,40,0.6)";
+        g.fillStyle = alpha(UI.night, 0.6);
         g.fill();
         g.strokeStyle = SIDE_CSS[m.side];
         g.stroke();
@@ -763,7 +764,7 @@ export class IslandMap {
       g.save();
       for (const k of hot ? [beat, (beat + 0.5) % 1] : [slow]) {
         g.lineWidth = (hot ? 3 : 2) * dpr;
-        g.strokeStyle = `rgba(255,59,48,${(1 - k).toFixed(2)})`;
+        g.strokeStyle = alpha(UI.alert, Number((1 - k).toFixed(2)));
         g.beginPath();
         g.arc(p.x, p.y, (12 + (hot ? 22 : 14) * k) * dpr, 0, Math.PI * 2);
         g.stroke();
@@ -805,7 +806,7 @@ export class IslandMap {
     const ox = (w - (v.x1 - v.x0) * m) / 2 - (v.x0 - WORLD.x0) * m;
     const oy = (h - (v.z1 - v.z0) * m) / 2 - (v.z0 - WORLD.z0) * m;
     this.proj = { m: m / dpr, ox: ox / dpr, oy: oy / dpr };
-    g.fillStyle = "#1c1f2a";
+    g.fillStyle = UI.board;
     g.fillRect(0, 0, w, h);
     g.imageSmoothingEnabled = true;
     g.drawImage(base, ox, oy, this.width * CELL * m, this.height * CELL * m);
@@ -822,7 +823,7 @@ export class IslandMap {
       g.drawImage(land.image, ox, oy, lc * LAND * m, lr * LAND * m);
       g.imageSmoothingEnabled = true;
       g.save();
-      g.strokeStyle = "#f4f7ff";
+      g.strokeStyle = UI.paper;
       g.lineWidth = 3 * dpr;
       g.lineCap = "round";
       g.beginPath();
@@ -839,7 +840,7 @@ export class IslandMap {
     g.lineCap = "round";
     ZIPS.forEach((l, i) => {
       if (!zipUp({ nodes: s.nodes ?? [] }, i)) return;
-      g.strokeStyle = l.fixed ? "rgba(200,206,216,0.9)" : "#7cc0ff";
+      g.strokeStyle = l.fixed ? alpha(UI.mist, 0.9) : UI.ownLight;
       g.lineWidth = (l.fixed ? 1.2 : 1.6) * dpr;
       g.beginPath();
       l.pts.forEach((q, k) => {
@@ -854,7 +855,7 @@ export class IslandMap {
     g.textBaseline = "middle";
     g.lineWidth = 3 * dpr;
     g.lineJoin = "round";
-    g.strokeStyle = "rgba(20,24,40,0.85)";
+    g.strokeStyle = alpha(UI.night, 0.85);
     const font = (size: number) => `800 ${size * dpr}px system-ui, sans-serif`;
     // A centred name near the world's edge is moved in so it stays whole on the canvas.
     const inside = (text: string, x: number) => {
@@ -934,14 +935,14 @@ export class IslandMap {
       const r = box(d.name, p.x, p.y, 10);
       if (!free(r)) continue;
       taken.push(r);
-      label(d.name, p.x, p.y, "#e9dcc2", 10);
+      label(d.name, p.x, p.y, UI.parch, 10);
     }
     // The ways in: a ring each, where a raid that does not start at a depot begins. One the base
     // does not offer yet, and this raid has not walked to, is faint and dashed: somewhere to aim for.
     for (const e of ENTRIES) {
       const p = at(e.x, e.z);
       const known = !this.known || this.known.includes(e.id) || s.found.includes(e.id);
-      const ink = known ? "#e9dcc2" : "rgba(233,220,194,0.5)";
+      const ink = known ? UI.parch : alpha(UI.parch, 0.5);
       g.save();
       g.lineWidth = (known ? 2 : 1.5) * dpr;
       g.strokeStyle = ink;
@@ -961,13 +962,13 @@ export class IslandMap {
       const r = box(text, p.x, p.y + 11 * dpr, 9);
       if (!free(r)) continue;
       taken.push(r);
-      label(text, p.x, p.y + 11 * dpr, known ? ink : "#9c9586", 9);
+      label(text, p.x, p.y + 11 * dpr, known ? ink : UI.parchDim, 9);
     }
     for (const r of REGIONS) {
       const p = at(r.label.x, r.label.z);
       if (!free(box(r.name, p.x, p.y, 15, true))) continue;
       g.textAlign = "left";
-      label(r.name, p.x, p.y, "rgba(255,248,232,0.55)", 15, false);
+      label(r.name, p.x, p.y, alpha(UI.parch, 0.55), 15, false);
       g.textAlign = "center";
     }
     EXTRACTS.forEach((x, i) => {
@@ -997,7 +998,7 @@ export class IslandMap {
       const open = s.routes.includes(r.id);
       g.save();
       g.lineWidth = 3 * dpr;
-      g.strokeStyle = open ? "#6fd0cf" : "#ff8a5c";
+      g.strokeStyle = open ? UI.mateLight : UI.shut;
       if (!open) g.setLineDash([4 * dpr, 4 * dpr]);
       g.beginPath();
       r.path.forEach((q, n) => {
@@ -1028,7 +1029,7 @@ export class IslandMap {
       const spot = box(text, m.x + 7 * dpr, m.y, 9, true);
       if (free(spot)) {
         taken.push(spot);
-        label(text, m.x + 7 * dpr, m.y, open ? "#bfeeee" : "#ffc2a8", 9);
+        label(text, m.x + 7 * dpr, m.y, open ? UI.mateLight : UI.peach, 9);
       }
       g.textAlign = "center";
     }
@@ -1038,7 +1039,7 @@ export class IslandMap {
       if (!s.depots[i]) return;
       const p = at(d.x, d.z);
       const r = 3.5 * dpr;
-      g.fillStyle = "#6fd0cf";
+      g.fillStyle = UI.mateLight;
       g.strokeRect(p.x - r, p.y - r, r * 2, r * 2);
       g.fillRect(p.x - r, p.y - r, r * 2, r * 2);
     });
@@ -1048,8 +1049,8 @@ export class IslandMap {
       const d = 7 * dpr;
       g.save();
       g.lineWidth = 2.5 * dpr;
-      g.strokeStyle = "rgba(20,24,40,0.9)";
-      g.fillStyle = s.debris.open ? "#6b6f78" : "#e0a33a";
+      g.strokeStyle = alpha(UI.night, 0.9);
+      g.fillStyle = s.debris.open ? UI.slateDim : UI.debris;
       g.beginPath();
       g.moveTo(p.x + d * 0.2, p.y - d);
       g.lineTo(p.x + d * 0.8, p.y - d * 0.1);
@@ -1063,15 +1064,15 @@ export class IslandMap {
       const spot = box(text, p.x, p.y + 14 * dpr, 9);
       if (free(spot)) {
         taken.push(spot);
-        label(text, p.x, p.y + 14 * dpr, s.debris.open ? "#9c9586" : "#ffd58a", 9);
+        label(text, p.x, p.y + 14 * dpr, s.debris.open ? UI.parchDim : UI.hotLight, 9);
       }
     }
     // Salvage crew members in sight: small rust squares.
     for (const c of s.crews ?? []) {
       const p = at(c.x, c.z);
       const r = 3 * dpr;
-      g.fillStyle = "#c86f3a";
-      g.strokeStyle = "rgba(20,24,40,0.9)";
+      g.fillStyle = UI.crews;
+      g.strokeStyle = alpha(UI.night, 0.9);
       g.lineWidth = 1.5 * dpr;
       g.strokeRect(p.x - r, p.y - r, r * 2, r * 2);
       g.fillRect(p.x - r, p.y - r, r * 2, r * 2);
@@ -1082,7 +1083,7 @@ export class IslandMap {
       const r = 3.5 * dpr;
       g.save();
       g.lineWidth = 1.5 * dpr;
-      g.strokeStyle = "rgba(20,24,40,0.9)";
+      g.strokeStyle = alpha(UI.night, 0.9);
       g.fillStyle = OUTPOST_CSS;
       g.strokeRect(p.x - r, p.y - r, r * 2, r * 2);
       g.fillRect(p.x - r, p.y - r, r * 2, r * 2);
@@ -1095,8 +1096,8 @@ export class IslandMap {
       const p = at(c.x, c.z);
       g.save();
       g.globalAlpha = Math.max(0.25, 1 - age / FACTION.keep);
-      g.fillStyle = c.rival ? RIVAL_CSS : c.rogue ? ROGUE_CSS : "#ff5a4f";
-      g.strokeStyle = "rgba(20,24,40,0.9)";
+      g.fillStyle = c.rival ? RIVAL_CSS : c.rogue ? ROGUE_CSS : UI.alert;
+      g.strokeStyle = alpha(UI.night, 0.9);
       g.lineWidth = 1.5 * dpr;
       g.beginPath();
       if (c.fight) {
@@ -1117,7 +1118,7 @@ export class IslandMap {
         const spot = box("交戦", p.x, p.y - 11 * dpr, 9);
         if (free(spot)) {
           taken.push(spot);
-          label("交戦", p.x, p.y - 11 * dpr, "#ffe2a8", 9);
+          label("交戦", p.x, p.y - 11 * dpr, UI.hotLight, 9);
         }
       }
     }
@@ -1127,7 +1128,7 @@ export class IslandMap {
       const r = 7 * dpr;
       g.save();
       g.lineWidth = 2.5 * dpr;
-      g.strokeStyle = "rgba(20,24,40,0.9)";
+      g.strokeStyle = alpha(UI.night, 0.9);
       g.beginPath();
       if (poi.boss) {
         for (let k = 0; k < 6; k++) {
@@ -1162,7 +1163,7 @@ export class IslandMap {
         // Open to the decisive battle: a gold ring, pulsing.
         g.save();
         g.lineWidth = 3 * dpr;
-        g.strokeStyle = `rgba(255,210,74,${(0.7 + 0.3 * Math.sin(performance.now() / 300)).toFixed(2)})`;
+        g.strokeStyle = alpha(UI.r3, Number((0.7 + 0.3 * Math.sin(performance.now() / 300)).toFixed(2)));
         g.beginPath();
         g.arc(p.x, p.y, r * 1.75, 0, Math.PI * 2);
         g.stroke();
@@ -1183,9 +1184,9 @@ export class IslandMap {
         g.textBaseline = "middle";
         const bx = p.x + r * 1.15;
         const by = p.y + r * 0.9;
-        g.fillStyle = "rgba(20,24,40,0.92)";
+        g.fillStyle = alpha(UI.night, 0.92);
         g.fillRect(bx - 6 * dpr, by - 6 * dpr, 12 * dpr, 12 * dpr);
-        g.fillStyle = "#ffcf5a";
+        g.fillStyle = UI.r3;
         g.fillText(String(best), bx, by + 0.5 * dpr);
       }
       g.restore();
@@ -1200,7 +1201,7 @@ export class IslandMap {
         const r = 12 * dpr;
         g.save();
         g.lineWidth = 2 * dpr;
-        g.strokeStyle = "#f4f7ff";
+        g.strokeStyle = UI.paper;
         g.setLineDash([3 * dpr, 2.5 * dpr]);
         g.beginPath();
         g.arc(p.x, p.y, r, 0, Math.PI * 2);
@@ -1208,7 +1209,7 @@ export class IslandMap {
         g.setLineDash([]);
         if (s.capture?.node === i) {
           g.lineWidth = 4 * dpr;
-          g.strokeStyle = "#ffc93a";
+          g.strokeStyle = UI.r3;
           g.beginPath();
           g.arc(p.x, p.y, r + 3 * dpr, -Math.PI / 2, -Math.PI / 2 + (Math.min(s.capture.t, FRONT.capture) / FRONT.capture) * Math.PI * 2);
           g.stroke();
@@ -1219,7 +1220,7 @@ export class IslandMap {
         const spot = box(text, p.x + r + 16 * dpr, p.y, 9);
         if (free(spot)) {
           taken.push(spot);
-          label(text, p.x + r + 16 * dpr, p.y, "#f4f7ff", 9);
+          label(text, p.x + r + 16 * dpr, p.y, UI.paper, 9);
         }
       });
     }
@@ -1231,7 +1232,7 @@ export class IslandMap {
       if (!locked[i]) return;
       const p = at(n.x, n.z);
       const q = { x: p.x - 10.5 * dpr, y: p.y + 7.5 * dpr };
-      drawLock(g, q.x, q.y, 14 * dpr, i === this.picked ? "#ffc93a" : "#f4f7ff");
+      drawLock(g, q.x, q.y, 14 * dpr, i === this.picked ? UI.r3 : UI.paper);
       this.lockAt.push({ node: i, x: q.x / dpr, y: q.y / dpr, cx: p.x / dpr, cy: p.y / dpr });
     });
     if (!locked[this.picked]) this.picked = -1;
@@ -1253,11 +1254,11 @@ export class IslandMap {
     // POI names go on top, a little above their mark, so an exit nearby does not hide them.
     for (const i of named) {
       const p = at(POIS[i].x, POIS[i].z);
-      label(poiText(i), p.x, p.y - 15 * dpr, dim(i) ? "#cfd6e0" : "#ffffff", 12);
+      label(poiText(i), p.x, p.y - 15 * dpr, dim(i) ? UI.mist : UI.white, 12);
     }
     if (s.ally?.active) {
       const a = at(s.ally.pos.x, s.ally.pos.z);
-      g.fillStyle = s.ally.down > 0 ? "#ff5a4f" : "#6fd0cf";
+      g.fillStyle = s.ally.down > 0 ? UI.alert : UI.mateLight;
       g.beginPath();
       g.arc(a.x, a.y, 4 * dpr, 0, Math.PI * 2);
       g.fill();
@@ -1271,7 +1272,7 @@ export class IslandMap {
       g.rotate(p.yaw);
       g.scale(dpr, dpr);
       g.lineWidth = 3;
-      g.fillStyle = "#ffffff";
+      g.fillStyle = UI.white;
       g.beginPath();
       g.moveTo(0, -9);
       g.lineTo(6, 6);
@@ -1308,15 +1309,15 @@ export class IslandMap {
     const x = Math.max(4 * dpr, Math.min(g.canvas.width - w - 4 * dpr, p.x - w / 2));
     const below = p.y + 20 * dpr + h < g.canvas.height - 4 * dpr;
     const y = below ? p.y + 20 * dpr : p.y - 28 * dpr - h;
-    g.fillStyle = "rgba(14,18,36,0.95)";
-    g.strokeStyle = "#ffc93a";
+    g.fillStyle = alpha(UI.deep, 0.95);
+    g.strokeStyle = UI.r3;
     g.lineWidth = 1.5 * dpr;
     g.beginPath();
     g.rect(x, y, w, h);
     g.fill();
     g.stroke();
-    drawLock(g, x + pad + icon / 2, y + h / 2, icon * 1.25, "#ffc93a");
-    g.fillStyle = "#ffffff";
+    drawLock(g, x + pad + icon / 2, y + h / 2, icon * 1.25, UI.r3);
+    g.fillStyle = UI.white;
     g.textAlign = "left";
     g.textBaseline = "middle";
     lines.forEach((l, k) => g.fillText(l, x + pad + icon + 5 * dpr, y + 4 * dpr + lineH * (k + 0.5) + 0.5 * dpr));

@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "cf dev",
-    "build": "tsc -b && npm run test:ringfall-encoding && cf build --mode production",
+    "build": "tsc -b && npm run lint:ringfall && npm run test:ringfall-encoding && cf build --mode production",
     "preview:local": "cf dev",
     "deploy": "npm run builds:build && npm run builds:deploy",
     "builds:build": "npm run build",
@@ -31,6 +31,7 @@
     "shots:ringfall": "node scripts/ringfall-shots.mjs",
     "sfx:ringfall": "node scripts/ringfall-sfx.mjs",
     "models:ringfall": "tsx scripts/ringfall-models.ts",
+    "lint:ringfall": "tsx scripts/ringfall-ui-lint.ts",
     "look:ringfall": "tsx scripts/ringfall-look.ts",
     "field:ringfall": "tsx scripts/ringfall-field.ts"
   },
