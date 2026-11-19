@@ -1,0 +1,182 @@
+{
+ "00-panel-quests-story": [
+  "contrast div.quest.contract div small span"
+ ],
+ "00-panel-quests-taken": [
+  "contrast div.quest.contract div small span"
+ ],
+ "03-fight-supply": [
+  "contrast #obj-stealth"
+ ],
+ "107-war-rally": [
+  "offscreen #compass-strip span"
+ ],
+ "144-finale-board": [
+  "contrast div.quest.contract div small span"
+ ],
+ "151-expeditions-factory": [
+  "contrast div.mod-body ol.ladder li.later b",
+  "contrast li.later span span.gauge small",
+  "contrast li.later span span.gauge.up small"
+ ],
+ "152-expeditions-recalled": [
+  "contrast div.mod-body div.exp-list div.req.exp-out small",
+  "contrast div.mod-body ol.ladder li.later b",
+  "contrast li.later span span.gauge small",
+  "contrast li.later span span.gauge.up small"
+ ],
+ "16-flank-hit": [
+  "contrast #obj-stealth"
+ ],
+ "18-teammate-down": [
+  "contrast #mate-state"
+ ],
+ "24-search": [
+  "offscreen #compass-strip span"
+ ],
+ "27-bolt": [
+  "contrast #obj-stealth"
+ ],
+ "30-map-harbor": [
+  "offscreen #compass-strip span"
+ ],
+ "31-harbor-fight": [
+  "contrast #obj-stealth",
+  "offscreen #bag-cards div.bag-card div.bp-row.kept b.bp-val"
+ ],
+ "32-stagger": [
+  "contrast #obj-stealth"
+ ],
+ "50-board": [
+  "contrast div.quest.contract div small span"
+ ],
+ "50-board-story": [
+  "contrast div.quest.contract div small span"
+ ],
+ "58-debris": [
+  "contrast #obj-stealth"
+ ],
+ "60-storm": [
+  "ghost #obj-exits div b",
+  "ghost #obj-exits div span",
+  "ghost #obj-exits div.locked.near b",
+  "ghost #obj-exits div.locked.near span"
+ ],
+ "61-crew-loot": [
+  "contrast #obj-stealth"
+ ],
+ "80-board-strength": [
+  "contrast div.quest.contract div small span"
+ ],
+ "82-mod-floor": [
+  "contrast #bag-cards div.bag-card div.bp-row span.bp-name"
+ ],
+ "91-panel-factory": [
+  "contrast div.gain-row span.delta span.was small",
+  "contrast div.mod-body ol.ladder li.later b",
+  "contrast li span span.gauge small",
+  "contrast li span span.gauge.up small",
+  "contrast li.later span span.gauge small",
+  "contrast li.later span span.gauge.up small"
+ ],
+ "91-panel-factory-expeditions": [
+  "contrast div.mod-body ol.ladder li.later b",
+  "contrast li span span.gauge.up small",
+  "contrast li.later span span.gauge small",
+  "contrast li.later span span.gauge.up small"
+ ],
+ "97-objective-front": [
+  "ghost #obj-exits div b",
+  "ghost #obj-exits div span",
+  "ghost #obj-exits div.locked.near b",
+  "ghost #obj-exits div.locked.near span"
+ ],
+ "bag-1-peek": [
+  "contrast #bag-peek div.bp-extra span.bp-x.mod"
+ ],
+ "m-bag-1-peek-740": [
+  "contrast #bag-peek div.bp-extra span.bp-x.mod",
+  "contrast #bag-peek div.bp-rows div.bp-row span.bp-name"
+ ],
+ "m-bag-1-peek-844": [
+  "contrast #bag-peek div.bp-extra span.bp-x.mod",
+  "contrast #bag-peek div.bp-rows div.bp-row span.bp-name"
+ ],
+ "m-up-2-workshop-infirmary": [
+  "contrast div.mod-body ol.ladder li.later b",
+  "contrast li span span.gauge small",
+  "contrast li.later span span.gauge small",
+  "contrast li.later span span.gauge.up small"
+ ],
+ "m-up-4-factory": [
+  "contrast div.gain-row span.delta span.was small",
+  "contrast div.mod-body ol.ladder li.later b",
+  "contrast li span span.gauge small",
+  "contrast li.later span span.gauge small",
+  "contrast li.later span span.gauge.up small"
+ ],
+ "m0-title": [
+  "tap #title div.title-inner p.note a",
+  "tap #vol"
+ ],
+ "m1-pause": [
+  "tap #vol2"
+ ],
+ "m2-fight": [
+  "contrast #obj-stealth"
+ ],
+ "m24-storm": [
+  "ghost #mate b"
+ ],
+ "m41-panel-factory": [
+  "contrast div.gain-row span.delta span.was small",
+  "contrast li span span.gauge small",
+  "contrast li span span.gauge.up small"
+ ],
+ "m41-panel-factory-expeditions": [
+  "contrast div.mod-body ol.ladder li.later b",
+  "contrast li.later span span.gauge small",
+  "contrast li.later span span.gauge.up small"
+ ],
+ "m84-depot-risk": [
+  "offscreen #compass-strip span"
+ ],
+ "m85-results-raid": [
+  "offscreen #stats span",
+  "offscreen #stats span b"
+ ],
+ "m86-results-after-leaving": [
+  "offscreen #stats span",
+  "offscreen #stats span b"
+ ],
+ "m87-results-night": [
+  "offscreen #stats span",
+  "offscreen #stats span b"
+ ],
+ "plates-2-deflect": [
+  "contrast #obj-stealth"
+ ],
+ "plates-3-broken": [
+  "contrast #obj-stealth",
+  "ghost #obj-exits div span"
+ ],
+ "rules-4-board-bin": [
+  "contrast div.quest.contract div small span"
+ ],
+ "rules-5-board-taken": [
+  "contrast div.quest.contract div small span"
+ ],
+ "up-2-workshop-infirmary": [
+  "contrast div.mod-body ol.ladder li.later b",
+  "contrast li span span.gauge small",
+  "contrast li.later span span.gauge small",
+  "contrast li.later span span.gauge.up small"
+ ],
+ "up-4-factory": [
+  "contrast div.gain-row span.delta span.was small",
+  "contrast div.mod-body ol.ladder li.later b",
+  "contrast li span span.gauge small",
+  "contrast li.later span span.gauge small",
+  "contrast li.later span span.gauge.up small"
+ ]
+}
