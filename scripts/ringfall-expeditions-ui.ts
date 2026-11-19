@@ -25,14 +25,14 @@
  *   the send rolls back; a send answered while views of its island were out stays `coming`.
  * - **income**: each node the expeditions hold pays `FRONT.income` at the settle, and those gone are dropped.
  * - **saves**: current and v27 saves keep expeditions, log position and pending retakes;
- *   a v26 save migrates to v28 with none of them.
+ *   a v26 save migrates to v29 with none of them.
  * - **errors**: every error code the API can answer with has a line, and the Worker's sources use no other.
  *
  * Run alone: `npx tsx scripts/ringfall-expeditions-ui.ts`; it ends with "expeditions ui ok".
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { FACTORY, FACTORY_TOP, FRONT } from "../src/ringfall/sim/config";
-import { finishBattle } from "../src/ringfall/sim/battle";
+import { finishBattle, takeRivals } from "../src/ringfall/sim/battle";
 import { NODES } from "../src/ringfall/sim/map";
 import { rivalHold } from "../src/ringfall/sim/holds";
 import { idleInput, newRun, starterKit, type State } from "../src/ringfall/sim/state";
@@ -40,7 +40,7 @@ import { step } from "../src/ringfall/sim/step";
 import { holds } from "../src/ringfall/meta/island";
 import { newProfile, parseProfile, settle, type Profile } from "../src/ringfall/meta/profile";
 import { API_ERRORS, ERROR_TEXT, errorText } from "../src/ringfall/meta/island-errors";
-import { numbered, answerSend, dropStale, factoryAhead, sendingEntry, sendKinds, SENDING_MS, applySync, retakenNodes, awayIncome, canSend, factorySquads, homeSquads, logLine, mergeHolds, parseLog, parseOutgoing, parseView, refreshOutgoing, reportedHolds, reportHolds, squadsAway, type IslandLogEntry, type Outgoing } from "../src/ringfall/meta/expeditions";
+import { alive, answerRecall, fortifiedNodes, incomingLine, incomingOf, LANDING, lentResults, lentRivals, parseLease, recallAll, numbered, answerSend, dropStale, factoryAhead, sendingEntry, sendKinds, SENDING_MS, applySync, retakenNodes, awayIncome, canSend, factorySquads, homeSquads, logLine, mergeHolds, parseLog, parseOutgoing, parseView, refreshOutgoing, reportedHolds, reportHolds, squadsAway, type IslandLogEntry, type Outgoing } from "../src/ringfall/meta/expeditions";
 import { EXPEDITION, islandOp, publicView, squadKinds, type IslandState } from "../worker/island";
 import { handleApi } from "../worker/api";
 import { readView, SEND_TIMEOUT_MS, sendExpedition, takeReport, takeSync } from "../src/ringfall/island-net";
@@ -156,7 +156,7 @@ function island(freed: string[], rival: string[] = []): Profile {
   console.log(`log: news ${first.news.map((e) => e.seq).join()} -> "${first.news.map(logLine).join(" / ")}"; seq ${first.profile.logSeq}; again ${again.news.length}`);
   check(first.news.map((e) => e.seq).join() === "2,3" && first.profile.logSeq === 3, "log: the new entries were not taken once");
   check(again.news.length === 0 && again.profile === first.profile, "log: entries already taken in came again");
-  for (const t of ["landed", "taken", "wiped", "retaken", "released"] as const) check(logLine({ seq: 1, at: 0, t, node: "relay", by }).includes(NODES.find((n) => n.id === "relay")!.name), `log: the line for ${t} does not name the node`);
+  for (const t of ["noticed", "landed", "taken", "wiped", "retaken", "released", "recalled"] as const) check(logLine({ seq: 1, at: 0, t, node: "relay", by }).includes(NODES.find((n) => n.id === "relay")!.name), `log: the line for ${t} does not name the node`);
 }
 
 // --- answers: the server's own state, read back
@@ -186,11 +186,107 @@ function island(freed: string[], rival: string[] = []): Profile {
   check(sent.status === 201 && !!seen && seen.expeditions.length === 1, "answers: the expedition sent is not in the view");
   check(fresh[0].state === "coming" && fresh[1].state === "gone" && fresh[2] === out[2], `answers: the expeditions out refreshed to ${JSON.stringify(fresh)}`);
   // The log: island A's owner reads the expedition's landing once it stands at its node.
-  const logged = islandOp(a, { t: "log", player: ID_A, after: 0 }, now + EXPEDITION.arrive * 1000 + 60_000);
+  const logged = islandOp(a, { t: "log", player: ID_A, after: 0 }, now + EXPEDITION.notice * 1000 + 60_000);
   const log = parseLog(JSON.parse(JSON.stringify(logged.body)));
   check(!!log && log.entries.some((e) => e.t === "landed" && e.by.code === B) && log.next >= 1, `answers: the log read back as ${JSON.stringify(log)}`);
   check(parseView({ ok: true, code: "nope" }) === null && parseLog({ entries: "x" }) === null && reportedHolds({ holds: [] }) === null, "answers: an unreadable answer was read");
   void b;
+}
+
+// --- notice, the raid taking expeditions in, and calling one home
+{
+  const DAY = 86_400_000;
+  const t0 = 1_700_000_000_000;
+  const now = t0 + EXPEDITION.protectDays * DAY + 1000;
+  const p = island(["supply", "quarry", "relay", "waterworks"]);
+  const a = islandOp(null, { t: "claim", player: { id: ID_A, name: "わたし" }, code: A }, t0).state as IslandState;
+  islandOp(a, { t: "report", player: { id: ID_A, name: "わたし" }, holds: reportHolds(p), retaken: [], factory: 0, day: 4 }, t0 + 1000);
+  const sent = islandOp(a, { t: "expedition", from: { code: B, name: "となり" }, target: "relay", kinds: ["grunt", "grunt", "grunt"] }, now);
+  const view = parseView(JSON.parse(JSON.stringify(publicView(a, now + 1000))))!;
+  // Incoming: what the owner is warned of, kept in the profile and in its save.
+  const inc = incomingOf(view);
+  const warned = applySync(p, { incoming: inc });
+  const same = applySync(warned.profile, { incoming: incomingOf(view) });
+  const line = inc[0] ? incomingLine(inc[0], now + 1000) : "";
+  const saved = parseProfile(JSON.parse(JSON.stringify(warned.profile)));
+  const v28 = parseProfile(JSON.parse(JSON.stringify({ ...warned.profile, v: 28 })));
+  console.log(`incoming: ${inc.map((e) => `${e.node} ${e.state} in ${(e.arriveAt - now) / 3_600_000} h`).join()} -> "${line}"; saved ${saved?.incoming.length}, from a v28 save ${v28?.incoming.length}`);
+  check(sent.status === 201 && inc.length === 1 && inc[0].node === "relay" && inc[0].state === "coming" && inc[0].arriveAt === now + EXPEDITION.notice * 1000, `incoming: the island's view warned of ${JSON.stringify(inc)}`);
+  check(warned.profile.incoming.length === 1 && same.profile === warned.profile && line.includes("となり") && line.includes(NODES.find((n) => n.id === "relay")!.name) && line.includes(String(EXPEDITION.notice / 3600)), "incoming: the warning was not taken into the profile once, or its line does not say who, where and how long");
+  check(saved?.incoming.length === 1 && saved.incoming[0].by.code === B && v28?.incoming.length === 0 && newProfile(1).incoming.length === 0, "incoming: a save did not keep the warnings, or an older one has some");
+
+  // The lease: the server's answer read back, the raid's battle started with it, and its report taken by the server.
+  const leased = islandOp(a, { t: "lease", player: ID_A }, now + 2000);
+  const lease = parseLease(JSON.parse(JSON.stringify(leased.body)))!;
+  const rivals = lentRivals(lease.expeditions);
+  check(leased.status === 200 && lease.expeditions.length === 1 && rivals.length === 1 && rivals[0].owner === B && rivals[0].target === "relay" && rivals[0].kinds.length === 3 && rivals[0].at === LANDING.first, `lease: the lease read back as ${JSON.stringify(lease)} -> ${JSON.stringify(rivals)}`);
+  check(parseLease({ until: 1, expeditions: [{ id: 1, by: { code: B, name: "x" }, target: "relay", kinds: ["dragon"], state: "coming" }, { id: 2, by: { code: B, name: "x" }, target: "nowhere", kinds: ["grunt"], state: "coming" }] })?.expeditions.length === 0 && parseLease({ expeditions: [] }) === null, "lease: an expedition of unknown kinds or at an unknown node was taken in");
+  const order = lentRivals([
+    { id: 3, by: { code: B, name: "" }, target: "relay", kinds: ["grunt"], state: "coming" },
+    { id: 2, by: { code: B, name: "" }, target: "quarry", kinds: ["grunt"], state: "holding" },
+    { id: 1, by: { code: B, name: "" }, target: "supply", kinds: ["grunt"], state: "attacking" },
+  ]);
+  check(order.map((x) => `${x.target}@${x.at}`).join() === `supply@${LANDING.first},relay@${LANDING.first + LANDING.gap},quarry@0`, `lease: the expeditions set off as ${order.map((x) => `${x.target}@${x.at}`).join()}`);
+  // The raid: the battle reckoned to its end in numbers; whatever it made of the expedition, the report leaves the server and the profile agreeing.
+  const played = (fortify: boolean) => {
+    const srv = JSON.parse(JSON.stringify(a)) as IslandState;
+    const s: State = newRun(9, starterKit(), "reservoir", { island: holds(p), battle: { factory: 0, rivals } });
+    s.battle!.made = [-1e12, -1e12, -1e12];
+    if (fortify) s.battle!.fortified.push(NODES.findIndex((n) => n.id === "relay"));
+    s.outcome = "extracted";
+    finishBattle(s);
+    const results = lentResults(lease.expeditions, s.battle);
+    const fortified = fortifiedNodes(s.battle);
+    const after = settle(p, s).profile;
+    const rep = islandOp(srv, { t: "report", player: { id: ID_A, name: "わたし" }, holds: reportHolds(after), retaken: [...after.retaken], factory: 0, day: after.day, lent: results, fortified }, now + 1_600_000);
+    const relay = NODES.findIndex((n) => n.id === "relay");
+    return { mine: after.poiState.relay.state, server: srv.holds[relay], left: results[0].left, there: srv.expeditions.length, holding: srv.expeditions[0]?.holding ?? false, fortified, shut: (srv.fort?.[relay] ?? 0) > now, status: rep.status };
+  };
+  const taken = played(false);
+  const held = played(true);
+  console.log(`lease: unfortified, the raid left the relay ${taken.mine} (server ${taken.server}, ${taken.left} left, holding ${taken.holding}); fortified, ${held.mine} (server ${held.server}, ${held.left} left, shut ${held.shut})`);
+  check(taken.status === 200 && taken.mine === rivalHold(B) && taken.server === rivalHold(B) && taken.left === 3 && taken.holding, "lease: a node the expedition took in the raid is not its on the server");
+  check(held.mine === "freed" && held.server === "freed" && held.left === 3 && held.there === 1 && !held.holding && held.fortified.join() === "relay" && held.shut, "lease: a node fortified in the raid fell, or is not shut on the server");
+  check(fortifiedNodes({ fortified: [2], noticed: [] }).length === 0, "lease: a night's target fortified was reported as shut to expeditions");
+  // Two expeditions of one sender, one sent through the other's node: a squad only passing through a node is not the expedition sent at it.
+  const QUARRY = NODES.findIndex((n) => n.id === "quarry");
+  const STATION = NODES.findIndex((n) => n.id === "station");
+  const two: Parameters<typeof lentResults>[0] = [
+    { id: 1, by: { code: B, name: "" }, target: "quarry", kinds: ["grunt", "grunt"], state: "coming" },
+    { id: 2, by: { code: B, name: "" }, target: "station", kinds: ["grunt", "grunt", "grunt"], state: "coming" },
+  ];
+  const passing = { side: 3, owner: B, units: [{}, {}, {}], to: QUARRY, via: [STATION] } as unknown as State["battle"] extends infer T ? (T extends { squads: (infer Q)[] } ? Q : never) : never;
+  const left = lentResults(two, { squads: [passing], rivals: [] });
+  check(left.map((r) => r.left).join() === "0,3", `lease: a squad passing through a node counted for the expedition sent at it (${JSON.stringify(left)})`);
+  // A lease answered after the raid began joins it as one given at the start would have; a node shut from an earlier raid stays shut.
+  const lateRaid = (late: boolean, shut: boolean) => {
+    const s: State = newRun(9, starterKit(), "reservoir", { island: holds(p), battle: late ? { factory: 0 } : { factory: 0, rivals, shut: shut ? ["relay"] : [] } });
+    s.battle!.made = [-1e12, -1e12, -1e12];
+    if (late) takeRivals(s, rivals, shut ? ["relay"] : []);
+    s.outcome = "extracted";
+    finishBattle(s);
+    return { relay: s.nodes[NODES.findIndex((n) => n.id === "relay")], noticed: s.battle!.noticed.length, left: lentResults(lease.expeditions, s.battle)[0].left };
+  };
+  const atStart = lateRaid(false, false);
+  const joined = lateRaid(true, false);
+  const kept = lateRaid(true, true);
+  console.log(`lease late: given at the start ${JSON.stringify(atStart)}, taken in after it ${JSON.stringify(joined)}, with the relay shut from before ${JSON.stringify(kept)}`);
+  check(JSON.stringify(atStart) === JSON.stringify(joined) && atStart.relay === rivalHold(B), "lease: expeditions taken in after the raid began did not play as those given at its start");
+  check(kept.relay === "freed" && kept.left === 3 && lateRaid(false, true).relay === "freed", "lease: a node shut from an earlier raid fell in the next");
+  check(parseLease({ until: 1, expeditions: [], shut: ["relay", "nowhere", 3] })?.shut.join() === "relay" && parseLease({ until: 1, expeditions: [] })?.shut.length === 0, "lease: the nodes shut were not read back");
+
+  // Called home: the squad is back at once, the entry leaves when the island answers; one still being sent stays.
+  const list: Outgoing[] = [
+    { code: A, node: "relay", sentAt: 1, id: 4, units: 3, state: "holding" },
+    { code: A, node: "quarry", sentAt: 2, id: 5, units: 3, state: "coming" },
+    { code: A, node: "supply", sentAt: 3, id: 0, units: 3, state: "sending" },
+  ];
+  const one = recallAll(list, (o) => o.id === 4);
+  const all = recallAll(list);
+  const done = answerRecall(all, { code: A, id: 4 });
+  console.log(`recall: one -> ${one.map((o) => o.state).join()}, all -> ${all.map((o) => o.state).join()} (away ${squadsAway({ expeditions: all })}, paying ${awayIncome({ expeditions: all })}), answered -> ${done.map((o) => o.state).join()}`);
+  check(one.map((o) => o.state).join() === "recalling,coming,sending" && all.map((o) => o.state).join() === "recalling,recalling,sending" && alive({ expeditions: all }).length === 1 && awayIncome({ expeditions: all }) === 0, "recall: an expedition called home still takes a squad or pays");
+  check(done.map((o) => o.id).join() === "5,0" && recallAll(all) === all && refreshOutgoing(all, B, { [A]: view })[0].state === "recalling", "recall: an answered recall stayed, or a view put a recalled expedition back");
 }
 
 // --- cost
@@ -359,9 +455,9 @@ function island(freed: string[], rival: string[] = []): Profile {
   const v26 = parseProfile(JSON.parse(JSON.stringify({ ...beforeV27, v: 26 })));
   const bad = parseOutgoing([{ code: "lower1", node: "relay", sentAt: 0, id: 1, units: 1, state: "coming" }, { code: A, node: "nowhere", sentAt: 0, id: 1, units: 1, state: "coming" }, { code: A, node: "relay", sentAt: 0, id: 1, units: 1, state: "lost" }, "x"]);
   console.log(`saves: current v${current?.v}, v27 -> v${v27?.v} keeps ${v27?.expeditions.length} expedition(s), seq ${v27?.logSeq}; v26 -> v${v26?.v} with ${v26?.expeditions.length}, seq ${v26?.logSeq}; bad entries kept ${bad.length}`);
-  check(current?.v === 28 && JSON.stringify(current.expeditions) === JSON.stringify(p.expeditions) && current.logSeq === 7 && current.retaken.join() === "quarry,relay", "saves: a current save did not keep its expeditions, log number and nodes taken back");
-  check(v27?.v === 28 && JSON.stringify(v27.expeditions) === JSON.stringify(p.expeditions) && v27.logSeq === 7 && v27.retaken.join() === "quarry,relay", "saves: a v27 save did not keep its expeditions, log number and nodes taken back");
-  check(v26?.v === 28 && v26.expeditions.length === 0 && v26.logSeq === 0 && v26.retaken.length === 0, "saves: a v26 save did not load with no expedition, no log read and nothing taken back");
+  check(current?.v === 29 && JSON.stringify(current.expeditions) === JSON.stringify(p.expeditions) && current.logSeq === 7 && current.retaken.join() === "quarry,relay", "saves: a current save did not keep its expeditions, log number and nodes taken back");
+  check(v27?.v === 29 && JSON.stringify(v27.expeditions) === JSON.stringify(p.expeditions) && v27.logSeq === 7 && v27.retaken.join() === "quarry,relay", "saves: a v27 save did not keep its expeditions, log number and nodes taken back");
+  check(v26?.v === 29 && v26.expeditions.length === 0 && v26.logSeq === 0 && v26.retaken.length === 0, "saves: a v26 save did not load with no expedition, no log read and nothing taken back");
   check(parseProfile(JSON.parse(JSON.stringify({ ...p, retaken: ["quarry", "quarry", "nowhere", 3] })))?.retaken.join() === "quarry", "saves: malformed nodes taken back were kept");
   check(bad.length === 0, "saves: a malformed expedition was kept");
   check(newProfile(1).expeditions.length === 0 && newProfile(1).logSeq === 0, "saves: a new profile has expeditions or a log read");
@@ -403,6 +499,26 @@ function island(freed: string[], rival: string[] = []): Profile {
   const codes = [a, b].map((r) => (r.ok ? r.body.code : null));
   console.log(`claim: two at once -> ${claims} request(s), codes ${codes.join(",")}`);
   if (claims !== 1 || codes[0] !== "K7M2QX" || codes[1] !== "K7M2QX") errors.push("claim: two syncs at once claimed two islands");
+}
+
+// A lease given back while the next departure opens: the release is answered before the next lease is asked for.
+{
+  const { leaseOwn, releaseLease } = await import("../src/ringfall/island-net");
+  const order: string[] = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (_: RequestInfo | URL, init?: RequestInit) => {
+    const m = init?.method ?? "GET";
+    order.push(`${m} sent`);
+    // The release is slow, the lease quick: unordered, the lease would be answered first.
+    await new Promise((r) => setTimeout(r, m === "DELETE" ? 60 : 5));
+    order.push(`${m} answered`);
+    return new Response(JSON.stringify({ ok: true, until: 1, expeditions: [] }), { status: 200, headers: { "content-type": "application/json" } });
+  }) as typeof fetch;
+  void releaseLease();
+  await leaseOwn();
+  globalThis.fetch = realFetch;
+  console.log(`release then lease: ${order.join(", ")}`);
+  if (order.join() !== "DELETE sent,DELETE answered,POST sent,POST answered") errors.push(`lease: a lease was asked for before the release before it was answered (${order.join(", ")})`);
 }
 
 if (errors.length) {

@@ -81,8 +81,8 @@ export function inZone(x: number, z: number, r = 0): boolean {
   return false;
 }
 
-/** Whether node `i` is the player's, marked by the enemy for the night and not fortified yet: its core takes the use key (`FORTIFY`). */
-export const fortifiable = (s: Pick<State, "nodes" | "battle">, i: number) => s.nodes[i] === "freed" && !!s.battle && s.battle.targets.includes(i) && !s.battle.fortified.includes(i);
+/** Whether node `i` is the player's, marked by the enemy for the night or by another player's expedition sent at it, and not fortified yet: its core takes the use key (`FORTIFY`). */
+export const fortifiable = (s: Pick<State, "nodes" | "battle">, i: number) => s.nodes[i] === "freed" && !!s.battle && (s.battle.targets.includes(i) || s.battle.noticed.includes(i)) && !s.battle.fortified.includes(i);
 
 /** The core within reach of the use key, as a place in `NODES`, or -1. A freed node's core does nothing, but for one to fortify. */
 export function coreInReach(s: State): number {

@@ -5,7 +5,8 @@
  * themselves are made by the browser (island-net.ts), and scripts/ringfall-expeditions-ui.ts drives
  * these rules on made-up answers.
  */
-import { FACTORY, FACTORY_TOP, FRONT } from "../sim/config";
+import { ENEMIES, FACTORY, FACTORY_TOP, FRONT, type EnemyKind } from "../sim/config";
+import type { Battle, RivalExpedition } from "../sim/battle";
 import { parseHold, rivalOf, type PoiHold } from "../sim/holds";
 import { NODES, nodeIndex, type NodeId } from "../sim/map";
 import { isIslandCode } from "./island-code";
@@ -14,10 +15,12 @@ import { ISLAND_TABLE } from "./island-table";
 
 /**
  * How an expedition stands: still being sent (its request unanswered; its squad already taken from
- * the factory), and on the island it was sent to on its way, fighting at its node, holding it, or
- * gone (wiped out or lost its node).
+ * the factory), and on the island it was sent to on its way, fighting at its node, standing off
+ * from it (the node fortified, or the island's day's limit reached), holding it, called home (its
+ * squad back with the factory; the island it was on still to be told), or gone (wiped out or lost
+ * its node).
  */
-export type ExpeditionState = "sending" | "coming" | "attacking" | "holding" | "gone";
+export type ExpeditionState = "sending" | "coming" | "attacking" | "waiting" | "holding" | "recalling" | "gone";
 
 /** An expedition this island's factory sent: the island and node it went to, when, the server's number for it, its squad's size, and how it last stood. */
 export interface Outgoing {
@@ -39,23 +42,35 @@ export interface IslandView {
   protectedUntil: number;
   nodes: { id: string; hold: PoiHold; open: boolean }[];
   /** The expeditions on the island; `id` is the number the island gave each when it took it. */
-  expeditions: { id: number; by: { code: string; name: string }; target: string; units: number; state: ServerState }[];
+  expeditions: { id: number; by: { code: string; name: string }; target: string; units: number; state: ServerState; arriveAt: number }[];
+}
+
+/**
+ * Another player's expedition on this island that has not taken its node (予告): whose, the node it
+ * is sent to, when it stands there if no raid meets it first, and how it stands.
+ */
+export interface Incoming {
+  id: number;
+  by: { code: string; name: string };
+  node: NodeId;
+  arriveAt: number;
+  state: Exclude<ServerState, "holding">;
 }
 
 /** The states the island an expedition went to reports. */
-type ServerState = Exclude<ExpeditionState, "gone" | "sending">;
+type ServerState = Exclude<ExpeditionState, "gone" | "sending" | "recalling">;
 
 /** A change on this island the owner reads (`GET …/log`, `LogEntry` in worker/island.ts). */
 export interface IslandLogEntry {
   seq: number;
   at: number;
-  t: "landed" | "taken" | "wiped" | "retaken" | "released";
+  t: "noticed" | "landed" | "taken" | "wiped" | "retaken" | "released" | "recalled";
   node: string;
   by: { code: string; name: string };
 }
 
-const STATES: readonly ServerState[] = ["coming", "attacking", "holding"];
-const LOG_KINDS: readonly IslandLogEntry["t"][] = ["landed", "taken", "wiped", "retaken", "released"];
+const STATES: readonly ServerState[] = ["coming", "attacking", "waiting", "holding"];
+const LOG_KINDS: readonly IslandLogEntry["t"][] = ["noticed", "landed", "taken", "wiped", "retaken", "released", "recalled"];
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 const count = (v: unknown): v is number => Number.isInteger(v) && (v as number) >= 0;
@@ -70,7 +85,7 @@ export function parseView(raw: unknown): IslandView | null {
   });
   const expeditions = raw.expeditions.flatMap((e) => {
     const by = isObj(e) ? attacker(e.by) : null;
-    return isObj(e) && by && count(e.id) && typeof e.target === "string" && count(e.units) && STATES.includes(e.state as never) ? [{ id: e.id, by, target: e.target, units: e.units, state: e.state as ServerState }] : [];
+    return isObj(e) && by && count(e.id) && typeof e.target === "string" && count(e.units) && STATES.includes(e.state as never) ? [{ id: e.id, by, target: e.target, units: e.units, state: e.state as ServerState, arriveAt: typeof e.arriveAt === "number" && Number.isFinite(e.arriveAt) ? e.arriveAt : 0 }] : [];
   });
   const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
   return { code: raw.code, owner: raw.owner, day: num(raw.day), factory: num(raw.factory), protectedUntil: num(raw.protectedUntil), nodes, expeditions };
@@ -136,12 +151,14 @@ export function mergeHolds(poiState: Island, server: readonly { id: string; hold
 }
 
 /**
- * What one sync with the server brought: the island's holds as the server has them, the log's new
- * entries and the number after them, and the nodes taken back that a report answered 200 for
- * (`reported`); each left out when not read or not reported.
+ * What one sync with the server brought: the island's holds as the server has them, the other
+ * players' expeditions on it that hold nothing yet, the log's new entries and the number after
+ * them, and the nodes taken back that a report answered 200 for (`reported`); each left out when
+ * not read or not reported.
  */
 export interface Synced {
   holds?: readonly { id: string; hold: PoiHold }[];
+  incoming?: readonly Incoming[];
   log?: { entries: IslandLogEntry[]; next: number };
   reported?: readonly string[];
 }
@@ -151,14 +168,104 @@ export interface Synced {
  * report landed for leave the pending list; the holds are merged around those still pending. The
  * profile itself when nothing changes.
  */
-export function applySync<P extends { poiState: Island; logSeq: number; retaken: NodeId[] }>(p: P, s: Synced): { profile: P; news: IslandLogEntry[] } {
+export function applySync<P extends { poiState: Island; logSeq: number; retaken: NodeId[]; incoming: Incoming[] }>(p: P, s: Synced): { profile: P; news: IslandLogEntry[] } {
   const retaken = s.reported ? p.retaken.filter((id) => !s.reported!.includes(id)) : p.retaken;
   const poiState = s.holds ? mergeHolds(p.poiState, s.holds, retaken) : p.poiState;
   const news = s.log ? s.log.entries.filter((e) => e.seq > p.logSeq).sort((a, b) => a.seq - b.seq) : [];
   const logSeq = s.log ? Math.max(p.logSeq, s.log.next) : p.logSeq;
-  if (poiState === p.poiState && logSeq === p.logSeq && retaken.length === p.retaken.length) return { profile: p, news };
-  return { profile: { ...p, poiState, logSeq, retaken }, news };
+  const incoming = s.incoming && JSON.stringify(s.incoming) !== JSON.stringify(p.incoming) ? [...s.incoming] : p.incoming;
+  if (poiState === p.poiState && logSeq === p.logSeq && retaken.length === p.retaken.length && incoming === p.incoming) return { profile: p, news };
+  return { profile: { ...p, poiState, logSeq, retaken, incoming }, news };
 }
+
+/** The other players' expeditions on an island's view that hold nothing yet, at nodes the game knows: what its owner is warned of. */
+export const incomingOf = (v: IslandView): Incoming[] => v.expeditions.flatMap((e) => (e.state !== "holding" && nodeIndex(e.target) >= 0 ? [{ id: e.id, by: { ...e.by }, node: e.target as NodeId, arriveAt: e.arriveAt, state: e.state }] : []));
+
+/** Saved warnings of expeditions: well-formed ones only, a handful at most. */
+export function parseIncoming(raw: unknown): Incoming[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .flatMap((e) => {
+      const by = isObj(e) ? attacker(e.by) : null;
+      return isObj(e) && by && count(e.id) && typeof e.node === "string" && nodeIndex(e.node) >= 0 && typeof e.arriveAt === "number" && (e.state === "coming" || e.state === "attacking" || e.state === "waiting") ? [{ id: e.id, by, node: e.node as NodeId, arriveAt: e.arriveAt, state: e.state as Incoming["state"] }] : [];
+    })
+    .slice(0, 8);
+}
+
+/** A warning as a line for the map table: who is coming at which node, and how long the owner has at `now`. */
+export function incomingLine(e: Incoming, now: number): string {
+  const who = e.by.name || e.by.code;
+  const at = nodeName(e.node);
+  if (e.state === "waiting") return `${who}の遠征隊が${at}の前で足止めされている`;
+  if (e.state === "attacking") return `${who}の遠征隊が${at}を攻めている`;
+  const hours = Math.max(1, Math.ceil((e.arriveAt - now) / 3_600_000));
+  return `${who}の遠征隊が${at}を狙っている（次のレイドに上陸。留守ならあと約 ${hours} 時間）`;
+}
+
+/** An expedition the owner's raid takes in (`POST …/lease`, `Lent` in worker/island.ts). */
+export interface LentIn {
+  id: number;
+  by: { code: string; name: string };
+  target: NodeId;
+  kinds: EnemyKind[];
+  state: "coming" | "attacking" | "holding";
+}
+
+/** A lease as the server answered it: until when the island leaves the expeditions alone, those at nodes and of kinds the game knows, and the nodes still shut to them (fortified in an earlier raid); null when unreadable. */
+export function parseLease(raw: unknown): { until: number; expeditions: LentIn[]; shut: NodeId[] } | null {
+  if (!isObj(raw) || typeof raw.until !== "number" || !Array.isArray(raw.expeditions)) return null;
+  const expeditions = raw.expeditions.flatMap((e) => {
+    const by = isObj(e) ? attacker(e.by) : null;
+    if (!isObj(e) || !by || !count(e.id) || typeof e.target !== "string" || nodeIndex(e.target) < 0 || !Array.isArray(e.kinds) || !e.kinds.length || e.kinds.length > 64) return [];
+    if (!e.kinds.every((k) => typeof k === "string" && Object.hasOwn(ENEMIES, k)) || (e.state !== "coming" && e.state !== "attacking" && e.state !== "holding")) return [];
+    return [{ id: e.id, by, target: e.target as NodeId, kinds: e.kinds as EnemyKind[], state: e.state as LentIn["state"] }];
+  });
+  const shut = Array.isArray(raw.shut) ? NODES.filter((n) => (raw.shut as unknown[]).includes(n.id)).map((n) => n.id) : [];
+  return { until: raw.until, expeditions, shut };
+}
+
+/** Seconds into a raid's battle up to which a lease answered late is still taken in (`takeRivals()` in sim/battle.ts): well before the first expedition sets off (`LANDING.first`). */
+export const LEASE_LATE = 60;
+
+/**
+ * When the expeditions a raid takes in set off for the island, on the battle's clock: the first
+ * `first` seconds in, each after it `gap` later, so the player is in and has seen the warning before
+ * the first lands.
+ */
+export const LANDING = { first: 90, gap: 120 };
+
+/**
+ * The expeditions a raid takes in, as its battle starts them (`BattleStart.rivals`): one holding its
+ * node stands there from the start, the others set off one after another (`LANDING`), those already
+ * at their nodes first.
+ */
+export function lentRivals(lent: readonly LentIn[]): RivalExpedition[] {
+  const order = { attacking: 0, coming: 1, holding: 2 };
+  let k = 0;
+  return [...lent]
+    .sort((a, b) => order[a.state] - order[b.state] || a.id - b.id)
+    .map((e) => ({ owner: e.by.code, target: e.target, kinds: e.kinds, at: e.state === "holding" ? 0 : LANDING.first + LANDING.gap * k++ }));
+}
+
+/**
+ * What became of the expeditions a raid took in, for its report (`lent`): the members each has left
+ * as the battle ended, by its owner's squads bound for its node (0: wiped out).
+ */
+export function lentResults(lent: readonly LentIn[], battle: Pick<Battle, "squads" | "rivals"> | null): { id: number; left: number; waiting?: true }[] {
+  if (!battle) return [];
+  return lent.map((e) => {
+    const i = nodeIndex(e.target);
+    // By the node a squad is bound for in the end: one of the same owner's only passing through this node on its way to another is not this expedition.
+    const squads = battle.squads.filter((q) => q.side === 3 && q.owner === e.by.code && (q.via.length ? q.via[q.via.length - 1] : q.to) === i);
+    // One the battle never set off is whole and is reported as never having come (`waiting`): the island leaves it on its own schedule.
+    // The battle is reckoned to its end whenever the raid ends (`finishBattle()`), so this is only an expedition due past the battle's end.
+    const waiting = battle.rivals.some((x) => x.owner === e.by.code && x.target === e.target);
+    return waiting ? { id: e.id, left: e.kinds.length, waiting: true as const } : { id: e.id, left: squads.reduce((n, q) => n + q.units.length, 0) };
+  });
+}
+
+/** The nodes fortified in a raid that an expedition was sent at (the report's `fortified`): what shuts them on the server for a day. */
+export const fortifiedNodes = (battle: Pick<Battle, "fortified" | "noticed"> | null): NodeId[] => (battle ? battle.fortified.filter((i) => battle.noticed.includes(i)).map((i) => NODES[i].id) : []);
 
 /** A node's name for the lines below, or its id for one the game does not know. */
 const nodeName = (id: string) => NODES[nodeIndex(id)]?.name ?? id;
@@ -168,6 +275,8 @@ export function logLine(e: IslandLogEntry): string {
   const at = nodeName(e.node);
   const who = e.by.name || e.by.code;
   switch (e.t) {
+    case "noticed":
+      return `${who}が${at}へ遠征隊を送った`;
     case "landed":
       return `${who}の遠征隊が${at}に来た`;
     case "taken":
@@ -178,11 +287,27 @@ export function logLine(e: IslandLogEntry): string {
       return `${at}を取り返した`;
     case "released":
       return `${who}が${at}を手放し、敵の拠点に戻った`;
+    case "recalled":
+      return `${who}が${at}への遠征隊を引き上げた`;
   }
 }
 
-/** Expeditions sent and still out (not gone). */
-export const alive = (p: { expeditions: readonly Outgoing[] }) => p.expeditions.filter((e) => e.state !== "gone");
+/** Expeditions sent and still out (not gone, not called home). */
+export const alive = (p: { expeditions: readonly Outgoing[] }) => p.expeditions.filter((e) => e.state !== "gone" && e.state !== "recalling");
+
+/**
+ * The expeditions with those out called home (引き上げ): each the server has numbered is `recalling`
+ * (its squad is back with the factory at once; the island it was on is told by `DELETE`, again at
+ * each sync until it answers), `only` of them or all. One still being sent stays as it is. The list
+ * itself when nothing changes.
+ */
+export function recallAll(list: Outgoing[], only?: (o: Outgoing) => boolean): Outgoing[] {
+  const out = list.map((o) => (o.id > 0 && (o.state === "coming" || o.state === "attacking" || o.state === "waiting" || o.state === "holding") && (!only || only(o)) ? { ...o, state: "recalling" as const } : o));
+  return out.some((o, i) => o !== list[i]) ? out : list;
+}
+
+/** The expeditions with the recall of `done` answered (the island took it, or no longer had it): they leave the list. */
+export const answerRecall = (list: Outgoing[], done: Pick<Outgoing, "code" | "id">): Outgoing[] => list.filter((o) => !(o.state === "recalling" && o.code === done.code && o.id === done.id));
 
 /** The squads the expeditions out take from the factory: one each. */
 export const squadsAway = (p: { expeditions: readonly Outgoing[] }) => alive(p).length;
@@ -235,7 +360,7 @@ export const awayIncome = (p: { expeditions: readonly Outgoing[] }) => p.expedit
 export const sentKey = (o: Pick<Outgoing, "code" | "id">) => `${o.code}:${o.id}`;
 
 /** The keys (`sentKey()`) of the expeditions the server had numbered when views of their islands were asked for: only those may be judged by the views. */
-export const numbered = (list: readonly Outgoing[]): Set<string> => new Set(list.filter((o) => o.state !== "sending" && o.state !== "gone").map(sentKey));
+export const numbered = (list: readonly Outgoing[]): Set<string> => new Set(list.filter((o) => o.state !== "sending" && o.state !== "gone" && o.state !== "recalling").map(sentKey));
 
 /**
  * The expeditions as the islands they went to show them now: each one found there (by the number
@@ -247,7 +372,7 @@ export const numbered = (list: readonly Outgoing[]): Set<string> => new Set(list
 export function refreshOutgoing(list: readonly Outgoing[], mine: string, views: Readonly<Record<string, IslandView | null | undefined>>, asked: ReadonlySet<string> = numbered(list)): Outgoing[] {
   return list.map((o) => {
     const v = views[o.code];
-    if (!v || o.state === "gone" || o.state === "sending" || !asked.has(sentKey(o))) return o;
+    if (!v || o.state === "gone" || o.state === "sending" || o.state === "recalling" || !asked.has(sentKey(o))) return o;
     const e = v.expeditions.find((x) => x.id === o.id && x.by.code === mine);
     const state = e ? e.state : "gone";
     return state === o.state && (!e || e.units === o.units) ? o : { ...o, state, units: e?.units ?? o.units };
@@ -264,7 +389,7 @@ const KEPT = 12;
 export function parseOutgoing(raw: unknown): Outgoing[] {
   if (!Array.isArray(raw)) return [];
   const all = raw
-    .filter((o): o is Outgoing => isObj(o) && isIslandCode(o.code) && typeof o.node === "string" && nodeIndex(o.node) >= 0 && typeof o.sentAt === "number" && count(o.id) && count(o.units) && (o.state === "gone" || o.state === "sending" || STATES.includes(o.state as never)))
+    .filter((o): o is Outgoing => isObj(o) && isIslandCode(o.code) && typeof o.node === "string" && nodeIndex(o.node) >= 0 && typeof o.sentAt === "number" && count(o.id) && count(o.units) && (o.state === "gone" || o.state === "sending" || o.state === "recalling" || STATES.includes(o.state as never)))
     .map((o) => ({ code: o.code, node: o.node, sentAt: o.sentAt, id: o.id, units: o.units, state: o.state }));
   let over = all.length - KEPT;
   const kept = over > 0 ? all.filter((o) => !(o.state === "gone" && over-- > 0)) : all;
@@ -272,4 +397,4 @@ export function parseOutgoing(raw: unknown): Outgoing[] {
 }
 
 /** The state's name on the factory's list. */
-export const STATE_NAME: Record<ExpeditionState, string> = { sending: "送っている", coming: "向かっている", attacking: "攻撃中", holding: "保持中", gone: "戻らない" };
+export const STATE_NAME: Record<ExpeditionState, string> = { sending: "送っている", coming: "向かっている", attacking: "攻撃中", waiting: "足止め", holding: "保持中", recalling: "引き上げ中", gone: "戻らない" };

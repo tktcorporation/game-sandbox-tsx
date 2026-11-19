@@ -156,7 +156,7 @@ contracts (`meta/story.ts`) follow one at a time: the one under way lays its rec
 only with that POI's key; keys drop from the bins of the POI named by its `keyFrom` (`VAULT`).
 POIs have a stable `id` (`PoiId` in `map.ts`); saves, quests, `keyFrom` and `EXTRA_BINS` refer to a
 POI by it, never by its place in `POIS` (the run's state may index `POIS` internally). The profile
-is versioned (`Profile.v`, which is 28), and `parseProfile()` moves older saves forward (a save from
+is versioned (`Profile.v`, which is 29), and `parseProfile()` moves older saves forward (a save from
 before the ways in starts at its region's first way in; a save from before ways in were learned
 knows them all; a save from before v12 drops its explored map, since `cellOf()` follows `WORLD`,
 which then grew wider; a save from before v13 starts on the day after its raids with every POI
@@ -166,7 +166,7 @@ at threat 0; a save from before v19 has the factory at level 0; a save from befo
 loadout; a save from before v22 has its POIs freed or thin the player's and the rest the enemy's,
 and drops the network, its pressure, the outposts' standing and the battles' points; a save from
 before v23 gains the starter weapons; a save from before v24 or v25 drops its explored map, since the
-world grew wider again; a save from before v26 holds no other player's node; a save from before v28 is on its first round) and moves its
+world grew wider again; a save from before v26 holds no other player's node; a save from before v28 is on its first round; a save from before v29 knows of no expedition coming) and moves its
 start to one it may choose (`allowedStart()`).
 Each island day has at most one event (`EVENTS` in `config.ts`, `IslandEvent` in `sim/island.ts`):
 `advanceDay()` turns yesterday's forecast into today's and draws tomorrow's from `Profile.seed` and
@@ -209,7 +209,7 @@ day (`Profile.day`), and each POI is the enemy's (`held`), the player's (`freed`
 player's (`rival:` and that player's id, `RivalHold` in `sim/holds.ts`; docs/ringfall/multiplayer.md)
 (`Profile.poiState`). Another player's node is not the player's: it is on the front and taken by its
 core as the enemy's is, stands no garrison of the enemy's, counts as neither side's for the enemy's
-strength, and the night never comes at it (nor counts it among a node's foes). After each settled raid the browser posts the island's summary (`meta/summary.ts`, as the anonymous player of `meta/identity.ts`) to `/api/island` (`src/ringfall/net.ts`, never under a browser driver), which `worker/api.ts` writes to D1 (`migrations/`; with no `DB` binding it answers 202 `no-database`, and a refused write 503 `db-error`; play is unchanged either way); `npx tsx scripts/ringfall-server.ts` checks the API on Node's SQLite. Each island also has a Durable Object (`IslandDO`, `worker/island-do.ts`, exported by the game Worker and self-bound as `ISLAND` in `cloudflare.config.ts`, docs/ringfall/multiplayer.md; by the island's public code of `meta/island-code.ts`, which the server draws when a player claims an island with `POST /api/islands`) under `/api/islands/:code`, which takes the owner's report, other players' expeditions and reckons them with `sim/reckon.ts` while the owner is away; its rules are the pure `worker/island.ts` (the nodes from `meta/island-table.ts`, checked against `map.ts`), and `npx tsx scripts/ringfall-expeditions.ts` checks them. The camp's factory panel has an expeditions section (`view/expeditions.ts`, the requests in the browser-only `island-net.ts`, the pure rules in `meta/expeditions.ts`, checked by `npx tsx scripts/ringfall-expeditions-ui.ts`): the island's code, the expeditions out (`Profile.expeditions`, v27), and sending one to a node of another island by its code; with no island server it shows one line and nothing else changes. After each settled raid the browser claims the island if it has no code, reports, and takes the server's other-player holds and log (`Profile.logSeq`, news on the map table) into the profile; each expedition out keeps one squad fewer out in the raid's battle (`BattleStart.away`), and each node held away pays `FRONT.income` at the settle. `meta/island.ts` holds the pure rules: `advanceDay()` (called by `settle()`)
+strength, and the night never comes at it (nor counts it among a node's foes). After each settled raid the browser posts the island's summary (`meta/summary.ts`, as the anonymous player of `meta/identity.ts`) to `/api/island` (`src/ringfall/net.ts`, never under a browser driver), which `worker/api.ts` writes to D1 (`migrations/`; with no `DB` binding it answers 202 `no-database`, and a refused write 503 `db-error`; play is unchanged either way); `npx tsx scripts/ringfall-server.ts` checks the API on Node's SQLite. Each island also has a Durable Object (`IslandDO`, `worker/island-do.ts`, exported by the game Worker and self-bound as `ISLAND` in `cloudflare.config.ts`, docs/ringfall/multiplayer.md; by the island's public code of `meta/island-code.ts`, which the server draws when a player claims an island with `POST /api/islands`) under `/api/islands/:code`, which takes the owner's report, other players' expeditions and reckons them with `sim/reckon.ts` while the owner is away; its rules are the pure `worker/island.ts` (the nodes from `meta/island-table.ts`, checked against `map.ts`), and `npx tsx scripts/ringfall-expeditions.ts` checks them. The camp's factory panel has an expeditions section (`view/expeditions.ts`, the requests in the browser-only `island-net.ts`, the pure rules in `meta/expeditions.ts`, checked by `npx tsx scripts/ringfall-expeditions-ui.ts`): the island's code, the expeditions out (`Profile.expeditions`, v27), and sending one to a node of another island by its code; with no island server it shows one line and nothing else changes. An expedition stands at its node `EXPEDITION.notice` (12 h) after it is sent: the owner's sync keeps those that hold nothing yet in `Profile.incoming` (v29; a green arrow on the camp's maps, 来る遠征 on the map table), and the node sent at can be fortified in a raid as a night's target is (`Battle.noticed`, `fortifiable()`), which shuts it to expeditions in that raid (`CaptureField.shut`) and for a day on the server (the report's `fortified`). As the departure opens the browser leases the island's expeditions (`leaseOwn()`, `POST …/lease`): the raid starts them as `BattleStart.rivals` (`lentRivals()`), its report says what became of them (`lentResults()`, the report's `lent`), and unreported the island reckons them itself once the lease runs out. Nothing waits on the lease: an answer that comes in the raid's first `LEASE_LATE` seconds still joins it (`takeRivals()`), and one no raid can use is given back (`releaseLease()`, `DELETE …/lease`); the lease also names the nodes still shut from an earlier raid (`BattleStart.shut`). An expedition out is called home from the panel (`recallAll()`, `flushRecalls()`, `DELETE …/expeditions/:id`); a liberation calls them all home and leaves other players' nodes theirs. After each settled raid the browser claims the island if it has no code, reports, and takes the server's other-player holds and log (`Profile.logSeq`, news on the map table) into the profile; each expedition out keeps one squad fewer out in the raid's battle (`BattleStart.away`), and each node held away pays `FRONT.income` at the settle. `meta/island.ts` holds the pure rules: `advanceDay()` (called by `settle()`)
 makes the player's each node whose core the raid captured, however the raid ended, or with a
 battle takes every node as the battle ended (`RaidDay.battle`), then the night's attacks
 (`nightTargets()`, `nightRaids()`, `NIGHT` in `config.ts`: as a day starts the enemy marks one or two of the player's nodes next to its ground, a hash of the raid's seed, the day and the node, which the camp's maps and the raid's show as a crescent (`tonight()`, `Battle.targets`); only a marked node can fall, by chance, less when guarded and with the factory's level, and never one the player fortified in the raid by holding its core for `FORTIFY.time` seconds, `fortifiable()`, `State.fortify`, `Battle.fortified`), switches
@@ -336,6 +336,8 @@ npm run sim:ringfall     # gate 2: bots of three skills play whole raids headles
                          # in parallel, one process per core, the reservoir's (the longest) first,
                          # beside the campaign's months (a process per skill, started first)
                          # (RINGFALL_SIM_JOBS=n to set, 1 = in turn)
+npm run bench:ringfall   # the sim's weight on ten fixed raids: CPU seconds and a hash of the outcome,
+                         # run before and after a change to the sim (see the sim gate's speed below)
 npm run models:ringfall  # the model rules (docs/ringfall/models.md): budgets, palette, hit spheres;
                          # fails when one is broken, silhouettes in shots/ringfall/models/
 npm run look:ringfall -- <place> [--r 120] [--base]
@@ -350,7 +352,10 @@ npm run field:ringfall -- <place>|--all [--r 120]
                          # 8 m, sight, lanes past a grunt's engaged sight, exposed ground; a map in
                          # shots/ringfall/field/; no pass or fail, the numbers move with a change
 npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir raid to the end, a harbor raid
-                         # to its first fight, a tour of both); screenshots in shots/ringfall/
+                         # to its first fight, a tour of both); screenshots in shots/ringfall/;
+                         # its seven parts run two at once in processes of their own (SHOTS_JOBS=n),
+                         # `-- --part extra` (raid, phone, rules, meta, battle, push, extra) runs only
+                         # those named, which is how one change's screens are looked at
 ```
 
 - `src/ringfall/sim/` is the game: pure TypeScript, metres and seconds, `step(state, input, prevCrouch)`
@@ -745,13 +750,16 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   While tuning, `npm run sim:ringfall -- 10` (10 raids per skill and region, about a third of the
   time) is enough to see which way a change moves the tables; the record in that file is 30.
 - The sim gate's speed is kept up as a matter of course, without being asked. Every change that
-  touches `src/ringfall/sim/` or the sim scripts records the `npm run sim:ringfall -- 30` time
-  beside the one before it, both taken back to back on the same machine, in the 測った重さ section of
-  `docs/ringfall/balance.md`. When the gate has grown by a fifth or more since the last speed-up
-  recorded there, profile it (`node --cpu-prof` on a few raids) and make the hot paths cheaper in
-  the same change or the next one. A speed-up must leave the gate's output identical line for line;
-  one that changes the output (thinking less often for far squads, say) is a tuning change,
-  recorded with a re-run like any other.
+  touches `src/ringfall/sim/` or the sim scripts is weighed with `npm run bench:ringfall`
+  (`scripts/ringfall-bench.ts`: ten fixed raids in one process, about a minute and a half; it
+  prints the CPU time and a hash of what the raids came to), run before the change and after it,
+  back to back on the same machine, and both numbers go in the 測った重さ section of
+  `docs/ringfall/balance.md`. The whole gate (`npm run sim:ringfall -- 30`) is run once, after the
+  change, and its time is recorded there too. When the bench has grown by a fifth or more since
+  the last speed-up recorded there, profile it (`node --cpu-prof` on a few raids) and make the hot
+  paths cheaper in the same change or the next one. A speed-up must leave the bench's hash and the
+  gate's output identical line for line; one that changes the output (thinking less often for far
+  squads, say) is a tuning change, recorded with a re-run like any other.
 
 ## HITMARK
 

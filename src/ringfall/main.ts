@@ -1,5 +1,5 @@
 import { spawnEnemy } from "./sim/enemies";
-import { AWARE, PLAYER, TICK, VALUABLES, WEAPONS, type EnemyKind } from "./sim/config";
+import { AWARE, CONQUEST, PLAYER, TICK, VALUABLES, WEAPONS, type EnemyKind } from "./sim/config";
 import { Bot, SKILLS } from "./sim/bot";
 import { collide, groundAt } from "./sim/geom";
 import { terrainHeight } from "./sim/terrain";
@@ -8,7 +8,7 @@ import { CAMP, DEPOTS, entryOf, FRAMES, HOME_REGION, NODES, POIS, poiIndex, QUAR
 import { grabZip } from "./sim/zips";
 import { POI_AT } from "./sim/areas";
 import { frontNodes, garrisonOf, takeNode, useCore } from "./sim/front";
-import { atRisk, battleMarks, departNow, landNow, marchSquad, nodePoint, placeBattleSquad, warmLinks } from "./sim/battle";
+import { atRisk, battleMarks, departNow, landNow, marchSquad, nodePoint, placeBattleSquad, takeRivals, warmLinks } from "./sim/battle";
 import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
 import { analyse, raidThreat, settle, takenStory, type Settlement } from "./meta/profile";
 import { pouchSlots } from "./meta/hideout";
@@ -21,8 +21,8 @@ import { bodyCenter, eyePos, fireRay, kill } from "./sim/combat";
 import { squadKey } from "./sim/state";
 import { loadProfile, saveProfile } from "./meta/storage";
 import { sendIsland } from "./net";
-import { syncOwn, takeReport, takeSync } from "./island-net";
-import { dropStale, logLine, squadsAway } from "./meta/expeditions";
+import { flushRecalls, leaseOwn, releaseLease, syncOwn, takeReport, takeSync } from "./island-net";
+import { dropStale, fortifiedNodes, LEASE_LATE, lentResults, lentRivals, logLine, squadsAway, type LentIn } from "./meta/expeditions";
 import { Hub, type Launch } from "./view/hub";
 import { CampView } from "./view/camp";
 import { DepartPicker } from "./view/depart";
@@ -274,6 +274,25 @@ function onEvent(e: GameEvent, s: State) {
 let islandNews: string[] = [];
 
 /**
+ * Other players' expeditions on this island, as the server lent them when the departure opened
+ * (island-net.ts `leaseOwn()`): the raid that starts takes them in, and the island's server leaves
+ * them alone until its report or `until`. Null with none asked for or answered.
+ */
+let lease: Lease | null = null;
+type Lease = Awaited<ReturnType<typeof leaseOwn>> extends infer A ? (A extends { ok: true; body: infer B } ? B : never) : never;
+/**
+ * The departure whose lease was asked for, and what became of it: still up (`open`), turned back
+ * from (`gone`), or the raid that started from it (`raid`). An answer that comes once the raid has
+ * started still joins it in its first `LEASE_LATE` seconds, before any expedition sets off; one
+ * that no raid can use is given back, so the island does not hold the expeditions off for nothing.
+ */
+let leaseReq: { on: "open" | "gone" | "raid"; raid: State | null } | null = null;
+/** Whether lease `l` outlasts the battle left to play in raid `s`, with a minute to report it. */
+const leaseLasts = (l: Lease, s: State | null) => l.until - Date.now() > (CONQUEST.time - (s?.battle?.now ?? 0) + 60) * 1000;
+/** The expeditions the raid under way took in: its report says what became of them. */
+let raidLent: LentIn[] = [];
+
+/**
  * Syncs the island with the server after a settled raid (island-net.ts): the owner's report, then
  * the log and the holds, taken into the profile as it stands when they come. Nothing waits on it;
  * news that comes in time is on the results, and all of it on the map table. An answer that comes
@@ -283,7 +302,15 @@ let islandNews: string[] = [];
  */
 function syncIsland(p: Settlement["profile"], settled: State) {
   islandNews = [];
-  void syncOwn(p, true).then((r) => {
+  // What the raid made of the other players' expeditions it took in goes with the report.
+  const raid = { lent: lentResults(raidLent, settled.battle), fortified: fortifiedNodes(settled.battle) };
+  raidLent = [];
+  void syncOwn(p, true, raid).then((r) => {
+    // The islands of expeditions called home (a liberation, or the factory's panel) are told, now or at the next sync.
+    void flushRecalls(
+      () => hub.profile,
+      (q) => hub.update(q),
+    );
     if (!r.ok) return;
     // The next raid is under way only once a new run replaced the settled one: the results of the
     // settled raid (still `running` until finish()) take the sync whole; an answer a later sync
@@ -531,6 +558,17 @@ function openPanel(id: StationId) {
 /** Puts up the departure: the island with every start on it (the last one chosen), the kit and the objective. */
 function askDepart(walk: boolean) {
   departing = { walk, back: walk ? inside : null };
+  // The raid about to start takes in the expeditions on the island; nothing waits on the answer.
+  lease = null;
+  const req: NonNullable<typeof leaseReq> = { on: "open", raid: null };
+  leaseReq = req;
+  void leaseOwn().then((r) => {
+    // A newer departure asks for itself, and the island answers it with the same lease.
+    if (!r.ok || leaseReq !== req) return;
+    if (req.on === "open") lease = r.body;
+    else if (req.on === "raid" && running && state === req.raid && !!state.battle && state.battle.now < LEASE_LATE && leaseLasts(r.body, state) && takeRivals(state, lentRivals(r.body.expeditions), r.body.shut)) raidLent = r.body.expeditions;
+    else if (r.body.expeditions.length) void releaseLease();
+  });
   keys.clear();
   stick.x = stick.z = 0;
   fire = ads = adsLatch = false;
@@ -550,6 +588,12 @@ function answerDepart(go: boolean) {
   departing = null;
   picker.show(false);
   sfx.click();
+  if (!go && leaseReq?.on === "open") {
+    // Turned back: a lease already answered is given back; one still on its way is when it comes.
+    leaseReq.on = "gone";
+    if (lease?.expeditions.length) void releaseLease();
+    lease = null;
+  }
   if (go) {
     if (d.walk && hub.walksOut()) {
       const launch = hub.launch();
@@ -632,7 +676,19 @@ function start(go: Launch, from?: State) {
   const record = currentStory(hub.profile.records)?.id;
   const taken = hub.contract();
   const fetch = taken?.t === "fetch" ? { poi: taken.poi, kind: taken.kind, n: taken.n } : undefined;
-  state = newRun(go.seed, kit, region, { depots: hub.profile.depots, seen: hub.profile.seen, from: go.from, entry: go.entry, routes: hub.profile.routes, island: holds(hub.profile), record, fetch, event: hub.profile.events[0], threat: raidThreat(hub.profile), known: hub.profile.known, battle: { factory: hub.profile.factory, away: squadsAway(hub.profile), targets: tonight(hub.profile) }, finale: finaleOpen(hub.profile) });
+  // A lease with less than the battle's length left would run out under the raid: the island reckons those expeditions itself.
+  const lent = lease && leaseLasts(lease, null) ? lease : null;
+  raidLent = lent?.expeditions ?? [];
+  lease = null;
+  state = newRun(go.seed, kit, region, { depots: hub.profile.depots, seen: hub.profile.seen, from: go.from, entry: go.entry, routes: hub.profile.routes, island: holds(hub.profile), record, fetch, event: hub.profile.events[0], threat: raidThreat(hub.profile), known: hub.profile.known, battle: { factory: hub.profile.factory, away: squadsAway(hub.profile), targets: tonight(hub.profile), rivals: lentRivals(raidLent), shut: lent?.shut }, finale: finaleOpen(hub.profile) });
+  // A lease still on its way joins this raid if it comes in its first seconds.
+  if (leaseReq?.on === "open") {
+    if (lent) leaseReq = null;
+    else {
+      leaseReq.on = "raid";
+      leaseReq.raid = state;
+    }
+  }
   hud.setContract(hub.contract(), record ?? null, takenStory(hub.profile));
   world.campMode = false;
   if (from) walkOut(state, from);

@@ -9,8 +9,9 @@
 import { loadIdentity, rememberCode, type Identity } from "./meta/identity";
 import { isApiError, type ApiError, type NetError } from "./meta/island-errors";
 import { isIslandCode } from "./meta/island-code";
-import { applySync, parseLog, parseView, reportedHolds, reportHolds, type IslandLogEntry, type IslandView, type Synced } from "./meta/expeditions";
+import { answerRecall, applySync, incomingOf, parseLease, parseLog, parseView, reportedHolds, reportHolds, type IslandLogEntry, type IslandView, type LentIn, type Synced } from "./meta/expeditions";
 import type { Profile } from "./meta/profile";
+import type { NodeId } from "./sim/map";
 
 /** An answer: the body of a success, or why it failed. */
 export type Answer<T> = { ok: true; body: T } | { ok: false; error: ApiError | NetError };
@@ -96,6 +97,64 @@ export async function sendExpedition(code: string, node: string, units: number, 
   return Number.isInteger(id) ? { ok: true, body: { id: id as number } } : failed("bad-response");
 }
 
+/** What a raid's report says beside the island's holds: what became of the expeditions it took in, and the nodes sent at that it fortified. */
+export interface RaidReport {
+  lent: { id: number; left: number; waiting?: true }[];
+  fortified: string[];
+}
+
+/**
+ * The owner's raid takes in the expeditions on the island (`POST …/lease`): the island leaves them
+ * alone until the raid's report, or until `until`. With no island yet, or no server, nothing.
+ */
+export async function leaseOwn(timeout = SEND_TIMEOUT_MS): Promise<Answer<{ until: number; expeditions: LentIn[]; shut: NodeId[] }>> {
+  await releasing;
+  const who = loadIdentity();
+  if (!who.code) return failed("no-own-island");
+  const r = await call(`/api/islands/${encodeURIComponent(who.code)}/lease`, { method: "POST", headers: { authorization: `Bearer ${who.id}` } }, timeout);
+  if (!r.ok) return r;
+  const l = parseLease(r.body);
+  return l ? { ok: true, body: l } : failed("bad-response");
+}
+
+/** Gives back a lease no raid will use (`DELETE …/lease`): the island goes on reckoning its expeditions at once. Nothing waits on it. */
+export function releaseLease(): Promise<void> {
+  releasing = releasing.then(async () => {
+    const who = loadIdentity();
+    if (!who.code) return;
+    await call(`/api/islands/${encodeURIComponent(who.code)}/lease`, { method: "DELETE", headers: { authorization: `Bearer ${who.id}` } }, SEND_TIMEOUT_MS);
+  });
+  return releasing;
+}
+
+/**
+ * The releases on their way, one after another. A lease is asked for only once they have been
+ * answered: a release still out when the next departure opens would otherwise reach the island after
+ * that departure's lease and take it away from the raid that uses it.
+ */
+let releasing: Promise<void> = Promise.resolve();
+
+/** Calls expedition `id` on island `code` home (`DELETE …/expeditions/<id>`), as its sender. */
+export async function recallExpedition(code: string, id: number): Promise<Answer<unknown>> {
+  const who = loadIdentity();
+  if (!who.code) return failed("no-own-island");
+  return call(`/api/islands/${encodeURIComponent(code)}/expeditions/${id}`, { method: "DELETE", body: JSON.stringify({ from: { ...player(who), code: who.code } }) }, SEND_TIMEOUT_MS);
+}
+
+/**
+ * Tells the islands of the expeditions called home (`recalling`), one after another: each the island
+ * let go, or no longer had, leaves the list. One that could not be told stays, to be told at the next sync.
+ */
+export async function flushRecalls(get: () => Profile, put: (p: Profile) => void): Promise<void> {
+  for (const o of get().expeditions.filter((e) => e.state === "recalling")) {
+    const r = await recallExpedition(o.code, o.id);
+    if (!r.ok && r.error !== "no-expedition" && r.error !== "no-island") continue;
+    const p = get();
+    const expeditions = answerRecall(p.expeditions, o);
+    if (expeditions.length !== p.expeditions.length) put({ ...p, expeditions });
+  }
+}
+
 /** What a sync of this player's own island read: the view, and what to take into the profile. */
 export interface OwnSync {
   code: string;
@@ -115,9 +174,10 @@ let applied = 0;
  * report of `p` when `report` (after a settled raid, naming every node taken back still pending,
  * `Profile.retaken`; a first claim always reports, so the server's island starts as the profile's),
  * then reads the log after `p.logSeq` and the island's view. The report resets the server's
- * garrisons, so it is sent only after a raid.
+ * garrisons, so it is sent only after a raid. `raid` is what the raid made of the expeditions it took
+ * in (`lent`) and the nodes sent at that it fortified, which go with the report.
  */
-export async function syncOwn(p: Profile, report: boolean): Promise<Answer<OwnSync>> {
+export async function syncOwn(p: Profile, report: boolean, raid?: RaidReport): Promise<Answer<OwnSync>> {
   const ticket = ++lastSync;
   let who = loadIdentity();
   if (!who.code) {
@@ -130,7 +190,7 @@ export async function syncOwn(p: Profile, report: boolean): Promise<Answer<OwnSy
   const synced: Synced = {};
   if (report) {
     const retaken = [...p.retaken];
-    const r = await call(`/api/islands/${code}`, { method: "PUT", body: JSON.stringify({ player: player(who), holds: reportHolds(p), retaken, factory: p.factory, day: p.day }) });
+    const r = await call(`/api/islands/${code}`, { method: "PUT", body: JSON.stringify({ player: player(who), holds: reportHolds(p), retaken, factory: p.factory, day: p.day, ...(raid?.lent.length ? { lent: raid.lent } : {}), ...(raid?.fortified.length ? { fortified: raid.fortified } : {}) }) });
     if (!r.ok) return r;
     synced.reported = retaken;
     synced.holds = reportedHolds(r.body) ?? undefined;
@@ -138,7 +198,10 @@ export async function syncOwn(p: Profile, report: boolean): Promise<Answer<OwnSy
   const log = await call(`/api/islands/${code}/log?after=${p.logSeq}`, { headers: { authorization: `Bearer ${who.id}` } });
   if (log.ok) synced.log = parseLog(log.body) ?? undefined;
   const view = await readView(who.code!);
-  if (view.ok) synced.holds = view.body.nodes;
+  if (view.ok) {
+    synced.holds = view.body.nodes;
+    synced.incoming = incomingOf(view.body);
+  }
   if (!log.ok && !view.ok && !report) return view;
   return { ok: true, body: { code: who.code!, view: view.ok ? view.body : null, synced, ticket } };
 }

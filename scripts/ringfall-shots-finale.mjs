@@ -1,6 +1,6 @@
 /**
  * The decisive battle's screenshots for the shots gate (scripts/ringfall-shots.mjs runs them;
- * `node scripts/ringfall-shots-finale.mjs` runs them alone against dist/client): a profile on its
+ * `node scripts/ringfall-shots-finale.mjs` runs them alone against the build (`npm run build`)): a profile on its
  * second round holding sixteen nodes, two of them by the titan's pad. The camp names the round
  * beside the day and its card the decisive battle; the map table rings the pad in gold; and the
  * raid walked out of the gate has the titan as its objective.
@@ -85,7 +85,7 @@ export async function finaleShots({ browser, port, out, errors }) {
 
 // Alone: serve the build and run the finale's shots.
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const root = "dist/client";
+  const root = process.env.SHOTS_ROOT ?? ".cloudflare/output/v0/workers/default/assets";
   const types = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml" };
   const server = createServer(async (req, res) => {
     let path = join(root, decodeURIComponent(new URL(req.url, "http://x").pathname));

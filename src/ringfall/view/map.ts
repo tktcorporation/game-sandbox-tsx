@@ -333,6 +333,8 @@ export type MapScene = Pick<State, "seen" | "cleared" | "hold" | "depots" | "rou
   finale?: boolean;
   /** The enemy's targets for the coming night and those of them fortified (places in `NODES`), for the camp's maps; a raid's are its battle's. */
   night?: { targets: readonly number[]; fortified: readonly number[] };
+  /** The nodes other players' expeditions are sent at (places in `NODES`), for the camp's maps; a raid's are its battle's. */
+  noticed?: readonly number[];
   friends?: readonly Enemy[];
   enemies?: readonly Enemy[];
   /** The raid's bins, for the flares still lying on the tall buildings' top floors; without them every flare bin is drawn as not yet searched. */
@@ -361,6 +363,27 @@ export function drawMoon(g: CanvasRenderingContext2D, x: number, y: number, r: n
   g.restore();
 }
 
+/** A landing arrow: the mark of a node another player's expedition is sent at. */
+export function drawLanding(g: CanvasRenderingContext2D, x: number, y: number, r: number, fill: string) {
+  g.save();
+  g.beginPath();
+  g.arc(x, y, r, 0, Math.PI * 2);
+  g.fillStyle = "rgba(16,20,34,0.85)";
+  g.fill();
+  g.beginPath();
+  g.moveTo(x - r * 0.62, y - r * 0.2);
+  g.lineTo(x - r * 0.22, y - r * 0.2);
+  g.lineTo(x - r * 0.22, y - r * 0.7);
+  g.lineTo(x + r * 0.22, y - r * 0.7);
+  g.lineTo(x + r * 0.22, y - r * 0.2);
+  g.lineTo(x + r * 0.62, y - r * 0.2);
+  g.lineTo(x, y + r * 0.62);
+  g.closePath();
+  g.fillStyle = fill;
+  g.fill();
+  g.restore();
+}
+
 /** A label's box on the canvas, so labels do not overlap. */
 type Rect = { x0: number; y0: number; x1: number; y1: number };
 
@@ -368,7 +391,7 @@ type Rect = { x0: number; y0: number; x1: number; y1: number };
 export const SIDE_CSS: Record<Side, string> = { 0: "#4f9bff", 1: "#ff4a3d", 2: ROGUE_CSS, 3: RIVAL_CSS };
 
 /** The camp's picture of the island between raids, from the profile's explored map, depots, routes and POI standings. */
-export function islandScene(p: { seen: string; depots: readonly PoiId[]; routes: readonly RouteId[]; poiState: Record<PoiId, { state: PoiHold }>; events?: readonly (IslandEvent | null)[]; freedAt?: Partial<Record<PoiId, number>>; day?: number; seed?: number }): MapScene {
+export function islandScene(p: { seen: string; depots: readonly PoiId[]; routes: readonly RouteId[]; poiState: Record<PoiId, { state: PoiHold }>; events?: readonly (IslandEvent | null)[]; freedAt?: Partial<Record<PoiId, number>>; day?: number; seed?: number; incoming?: readonly { node: NodeId }[] }): MapScene {
   // Today's debris fall is marked on the map table where the piece will lie.
   const ev = p.events?.[0];
   const spot = ev?.t === "debris" ? DEBRIS_SPOTS[debrisIndex(ev.spot)] : null;
@@ -384,6 +407,7 @@ export function islandScene(p: { seen: string; depots: readonly PoiId[]; routes:
     nodes: nodeHolds((id) => p.poiState[id].state),
     finale: finaleOpen(p),
     ...(p.day !== undefined && { night: { targets: tonight({ poiState: p.poiState, day: p.day, seed: p.seed }).map((id) => nodeIndex(id)), fortified: [] } }),
+    ...(p.incoming?.length && { noticed: p.incoming.map((e) => nodeIndex(e.node)) }),
   };
 }
 
@@ -1130,6 +1154,9 @@ export class IslandMap {
         const night = s.night ?? (s.battle ? { targets: s.battle.targets, fortified: s.battle.fortified } : null);
         const k = nodeIndex(poi.id as NodeId);
         if (night?.targets.includes(k) && hold(i) === "freed") drawMoon(g, p.x - r * 1.25, p.y + r * 0.95, r * 0.62, night.fortified.includes(k) ? SIDE_CSS[0] : SIDE_CSS[1]);
+        // Another player's expedition is sent at it: a green landing arrow at its other foot; blue once fortified.
+        const noticed = s.noticed ?? s.battle?.noticed;
+        if (noticed?.includes(k) && hold(i) === "freed") drawLanding(g, p.x + r * 1.35, p.y + r * 1.05, r * 0.8, s.battle?.fortified.includes(k) ? SIDE_CSS[0] : SIDE_CSS[3]);
       }
       if (poi.boss && s.finale) {
         // Open to the decisive battle: a gold ring, pulsing.

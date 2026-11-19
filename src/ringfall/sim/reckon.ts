@@ -111,6 +111,8 @@ export interface CaptureField {
   meter: readonly (NodeMeter | null)[];
   /** Each node of the player's whose core hostile robots had come to. */
   threat: readonly boolean[];
+  /** The nodes other players' squads cannot take now (fortified, `FORTIFY`): they stand at the core and its meter does not fill for them. Left out, none. */
+  shut?: readonly boolean[];
 }
 
 /**
@@ -295,7 +297,7 @@ export function reckonCaptures(f: CaptureField, dt: number): CaptureResult {
     if (now && !threat[i]) effects.push({ t: "threat", node: i });
     threat[i] = now;
     const m = meter[i];
-    if (att.size === 1 && def === 0 && !rogue) {
+    if (att.size === 1 && def === 0 && !rogue && !(f.shut?.[i] && att.has(3))) {
       const side = [...att][0];
       const who = side === 3 ? rival : undefined;
       if (m && m.side === side && m.owner === who) m.t += dt;
@@ -320,8 +322,8 @@ export function reckonCaptures(f: CaptureField, dt: number): CaptureResult {
  * One reckoning of an island nobody plays, in numbers alone: the fights, then the captures, with
  * no world by any core. What a server runs between raids; a raid runs the two halves with the world's share between them.
  */
-export function reckonApart(f: FightField & Pick<CaptureField, "meter" | "threat">, dt: number): FightResult & CaptureResult {
+export function reckonApart(f: FightField & Pick<CaptureField, "meter" | "threat" | "shut">, dt: number): FightResult & CaptureResult {
   const fought = reckonFights(f, dt);
-  const taken = reckonCaptures({ holds: f.holds, squads: fought.squads, guards: standing(fought), present: f.holds.map(() => null), meter: f.meter, threat: f.threat }, dt);
+  const taken = reckonCaptures({ holds: f.holds, squads: fought.squads, guards: standing(fought), present: f.holds.map(() => null), meter: f.meter, threat: f.threat, shut: f.shut }, dt);
   return { ...fought, ...taken };
 }

@@ -44,21 +44,24 @@ export function assistTarget(s: State, coneDeg: number): { e: Enemy; angle: numb
   const eye = eyePos(s);
   const dir = forward(p.yaw, p.pitch);
   let best: { e: Enemy; angle: number } | null = null;
+  const far = ASSIST.range * 1.001;
   for (const e of s.enemies) {
     if (!targetable(e)) continue;
-    const c = bodyCenter(e);
-    const v = { x: c.x - eye.x, y: c.y - eye.y, z: c.z - eye.z };
+    // The body's centre (`bodyCenter()`) in plain numbers: this runs for every robot of the world each tick, and
+    // nearly all of them are out of range, so nothing is allocated before the range test.
+    const vx = e.pos.x - eye.x;
+    const vy = e.pos.y + bodyY(e) - eye.y;
+    const vz = e.pos.z - eye.z;
     // Clearly out of range by the square of the distance (with room for its rounding); the exact one decides near the edge.
-    const far = ASSIST.range * 1.001;
-    if (v.x * v.x + v.y * v.y + v.z * v.z > far * far) continue;
-    const d = hypot3(v.x, v.y, v.z);
+    if (vx * vx + vy * vy + vz * vz > far * far) continue;
+    const d = hypot3(vx, vy, vz);
     if (d > ASSIST.range) continue;
-    const ang = Math.acos(Math.max(-1, Math.min(1, (v.x * dir.x + v.y * dir.y + v.z * dir.z) / d)));
+    const ang = Math.acos(Math.max(-1, Math.min(1, (vx * dir.x + vy * dir.y + vz * dir.z) / d)));
     const pad = Math.atan(ENEMIES[e.kind].radius / Math.max(d, 1));
     if (ang - pad > coneDeg * DEG) continue;
     const rank = assistRank(e, ang);
     if (best && rank >= best.angle) continue;
-    if (!los(eye, c)) continue;
+    if (!los(eye, bodyCenter(e))) continue;
     best = { e, angle: rank };
   }
   return best;

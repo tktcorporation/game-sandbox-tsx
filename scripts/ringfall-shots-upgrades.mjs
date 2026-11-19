@@ -1,6 +1,6 @@
 /**
  * The upgrades' screenshots for the shots gate (scripts/ringfall-shots.mjs runs them;
- * `node scripts/ringfall-shots-upgrades.mjs` runs them alone against dist/client): the workshop's
+ * `node scripts/ringfall-shots-upgrades.mjs` runs them alone against the build (`npm run build`)): the workshop's
  * hideout cards (each with its mark and the next level's gain, was → now), a module opened to its
  * ladder of levels and what the next takes, the factory's card, and the places the same marks
  * stand where the effects show (the shelves' issued heals and pouch, the stash's count, the
@@ -154,7 +154,7 @@ export async function upgradeShots({ browser, port, out, errors }) {
 
 // Alone: serve the build and run the upgrades' shots.
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const root = "dist/client";
+  const root = process.env.SHOTS_ROOT ?? ".cloudflare/output/v0/workers/default/assets";
   const types = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml" };
   const server = createServer(async (req, res) => {
     let path = join(root, decodeURIComponent(new URL(req.url, "http://x").pathname));

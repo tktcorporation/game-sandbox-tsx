@@ -1,6 +1,6 @@
 /**
  * The bag's screenshots for the shots gate (scripts/ringfall-shots.mjs runs them;
- * `node scripts/ringfall-shots-bag.mjs` runs them alone against dist/client): the bag peek held
+ * `node scripts/ringfall-shots-bag.mjs` runs them alone against the build (`npm run build`)): the bag peek held
  * open over a mixed bag (valuables of several rarities, one of them asked for by the contract
  * taken, a key, a tool, a story record, a mod part worn, what the pouch keeps), the game running
  * on under it, and the card a pickup slides in; on a desktop by Tab and on phones (844×390 and
@@ -165,7 +165,7 @@ export async function bagShots({ browser, port, out, errors }) {
 
 // Alone: serve the build and run the bag's shots.
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const root = "dist/client";
+  const root = process.env.SHOTS_ROOT ?? ".cloudflare/output/v0/workers/default/assets";
   const types = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml" };
   const server = createServer(async (req, res) => {
     let path = join(root, decodeURIComponent(new URL(req.url, "http://x").pathname));

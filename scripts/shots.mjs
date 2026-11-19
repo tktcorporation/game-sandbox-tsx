@@ -1,6 +1,6 @@
 /**
  * Gate 3: build output played in a real browser.
- * Serves dist/client, clicks start, then plays by reading window.render_game_to_text(),
+ * Serves the build (`npm run build`), clicks start, then plays by reading window.render_game_to_text(),
  * aiming the real mouse at the nearest enemy and stepping with window.advanceTime().
  * Fails on any console error or page error, or if the run stops progressing.
  * Screenshots go to shots/ (git-ignored) for the agent and humans to inspect.
@@ -10,7 +10,7 @@ import { readFile, mkdir } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { chromium } from "playwright-core";
 
-const root = "dist/client";
+const root = process.env.SHOTS_ROOT ?? ".cloudflare/output/v0/workers/default/assets";
 const types = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml" };
 const server = createServer(async (req, res) => {
   const path = join(root, decodeURIComponent(new URL(req.url, "http://x").pathname).replace(/\/$/, "/index.html"));

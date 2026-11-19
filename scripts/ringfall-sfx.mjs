@@ -1,5 +1,5 @@
 /**
- * The RINGFALL sound check, headless: serves dist/client, opens the page with
+ * The RINGFALL sound check, headless: serves the build (`npm run build`), opens the page with
  * `?sfx` in Chromium, renders every cue offline through the game's own mixer
  * (window.ringfallSfxCheck) and fails if a cue is silent, has NaN samples or
  * clips, if the voice cap does not hold under a burst, or on any console error.
@@ -12,7 +12,7 @@ import { readFile, mkdir } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { chromium } from "playwright-core";
 
-const root = "dist/client";
+const root = process.env.SHOTS_ROOT ?? ".cloudflare/output/v0/workers/default/assets";
 const types = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml" };
 const server = createServer(async (req, res) => {
   let path = join(root, decodeURIComponent(new URL(req.url, "http://x").pathname));
