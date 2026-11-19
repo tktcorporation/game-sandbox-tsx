@@ -767,7 +767,7 @@ export class Hub {
     const p = this.profile;
     const have = (k: ValuableKind) => p.stash.filter((i) => i.t === "valuable" && i.kind === k).length;
     const rows = items
-      .map(([k, n]) => `<div class="req${have(k) >= n ? " ok" : ""}"><span style="color:${RARITY_CSS[VALUABLES[k].rarity]}">${esc(VALUABLES[k].label)}</span><b>${Math.min(have(k), n)} / ${n}</b><small class="srcs">${whereLine(k)}</small></div>`)
+      .map(([k, n]) => `<div class="req${have(k) >= n ? " ok" : ""}"><span style="color:${RARITY_CSS[VALUABLES[k].rarity]}">${esc(VALUABLES[k].label)}</span><b>${Math.min(have(k), n)} / ${n}</b>${have(k) >= n ? "" : `<small class="srcs">${whereLine(k)}</small>`}</div>`)
       .join("");
     const credits = `<div class="req${p.cash >= cash ? " ok" : ""}"><span>クレジット</span><b>${yen(Math.min(p.cash, cash))} / ${yen(cash)}</b></div>`;
     return `<div class="mod-cost"><small>必要</small>${rows}${credits}${button}</div>`;
@@ -1012,20 +1012,19 @@ export class Hub {
     const taken = takenContract(p);
     const holds = islandHolds(p);
     const front = frontNodes(holds);
-    // How much of the island is the player's is the row of six marks above; the key only names the colours.
+    // The map says who holds what (blue and red, as the row above) and where the front is (its rings):
+    // beside it stand only what the map cannot say, the nodes to strike next by name and the day's income.
     const key =
-      (["freed", "held"] as const).map((h) => `<li><i style="background:${HOLD_CSS[h]}"></i>${h === "freed" ? "自分" : "敵"}</li>`).join("") +
-      // Another player only once one holds a node of the island.
+      // Another player only once one holds a node of the island: a colour the row above does not explain.
       (holds.some((h) => rivalOf(h) !== null) ? `<li><i style="background:${RIVAL_CSS}"></i>他のプレイヤー</li>` : "") +
-      `<li><i class="titan" style="background:${TITAN_CSS}"></i>タイタン</li>` +
-      `<li class="front"><i></i>前線<b class="names">${NODES.filter((_, i) => front[i]).map((n) => `<span>${esc(n.name)}</span>`).join("") || "—"}</b></li>` +
-      `<li class="locked">${lockIcon(UI.paper)}制圧不可<b>錠を押すと理由</b></li>` +
-      `<li class="income">収入<b>${frontIncome(p).toLocaleString()} クレジット</b></li>`;
+      `<li class="front"><i></i><b class="names">${NODES.filter((_, i) => front[i]).map((n) => `<span>${esc(n.name)}</span>`).join("") || "—"}</b></li>` +
+      (frontIncome(p) ? `<li class="income"><b class="cash">${coinIcon()}${frontIncome(p).toLocaleString()}</b></li>` : "");
     return (
       `<div class="hub-island"><canvas id="hub-island-map"></canvas><div class="hub-island-side">` +
       `<div class="hub-day"><small>島の日</small><b>${p.day}</b><small>日目</small></div>` +
       `<div class="hub-row">${nodeRow(holds)}</div>` +
-      `<small>島の出来事</small><ul class="events"><li><small>今日</small>${eventRow(p.events[0])}</li><li><small>明日</small>${eventRow(p.events[1])}</li></ul>` +
+      // A quiet day and a quiet tomorrow say nothing.
+      (p.events[0] || p.events[1] ? `<ul class="events"><li><small>今日</small>${eventRow(p.events[0])}</li><li><small>明日</small>${eventRow(p.events[1])}</li></ul>` : "") +
       `<ul class="hold-key">${key}</ul>` +
       (p.incoming.length ? `<small>来る遠征（地図の緑の矢印）</small><ul class="island-news incoming">${p.incoming.map((e) => `<li>${coreIcon(SIDE.rival)}${esc(incomingLine(e, Date.now()))}</li>`).join("")}</ul>` : "") +
       (this.news.length ? `<small>島の知らせ</small><ul class="island-news">${this.news.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>` : "") +
@@ -1070,12 +1069,16 @@ export class Hub {
       `<div class="slot count"><small>${HEAL_SPECS[k].label}</small><button type="button" data-act="heal-" data-arg="${k}">−</button><b>${this.load.heals[k] + issued[k]}</b><button type="button" data-act="heal+" data-arg="${k}">+</button><small>倉庫 ${this.load.heals[k]}/${healCount(p, k)}${issued[k] ? `<span class="issued">${issueIcon()}${issued[k]}</span>` : ""}</small></div>`;
     const keys = this.load.keys.map((n) => esc(itemName(p.stash[n]))).join("・");
     const weapons = slot("武器 1", this.load.weapons[0], stat(this.load.weapons[0])) + slot("武器 2", this.load.weapons[1], stat(this.load.weapons[1]));
+    // A row stands only for what the stash can fill: no armour, no key and no heal of a kind means no row for it.
+    const has = (t: Item["t"]) => p.stash.some((i) => i.t === t);
     return (
       this.depotSlot() +
       weapons +
-      slot("アーマー", this.load.armor) +
-      `<div class="slot"><small>鍵</small><span${keys ? ` style="color:${RARITY_CSS[3]}"` : ' class="none"'}>${keys || "なし"}</span></div>` +
-      HEALS.map(heal).join("") +
+      (has("armor") ? slot("アーマー", this.load.armor) : "") +
+      (has("key") ? `<div class="slot"><small>鍵</small><span${keys ? ` style="color:${RARITY_CSS[3]}"` : ' class="none"'}>${keys || "なし"}</span></div>` : "") +
+      HEALS.filter((k) => healCount(p, k) + issued[k] > 0)
+        .map(heal)
+        .join("") +
       // The pouch: the slots of valuables a wipe leaves the player.
       `<div class="slot pouch"><small>${pouchIcon()}ポーチ</small><span class="boxes">${Array.from({ length: pouchSlots(p.hideout) }, () => `<i class="seg pouch" style="--n:1"></i>`).join("")}</span><b>${pouchSlots(p.hideout)}</b></div>`
     );

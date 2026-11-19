@@ -5137,3 +5137,8 @@ body.touch .wstats .g .bar {
 body.touch .wstats .g .n {
   min-width: 2em;
 }
+/* A panel or the departure covers the phone's buttons: they would show through its plate. */
+body:has(#hub:not([hidden])) #touch,
+body:has(#depart:not([hidden])) #touch {
+  visibility: hidden;
+}
