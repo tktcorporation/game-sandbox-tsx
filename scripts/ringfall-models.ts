@@ -7,10 +7,14 @@
  * silhouette with the hit spheres over it to `shots/ringfall/models/`, for checking by eye. Exits
  * 1, naming what broke, when a model breaks a rule (`BUDGET`, the palette, `ROBOT_FLOOR`).
  *
- *   npx tsx scripts/ringfall-models.ts [--json]
+ *   npx tsx scripts/ringfall-models.ts [--json] [--sheet [--only robots,guns]]
+ *
+ * `--sheet` then draws the shaded contact sheets of the build (scripts/ringfall-models-sheet.mjs,
+ * after `npm run build`): every model under the game's own light, to the same directory.
  *
  * Runs headless: only the halo texture touches the DOM, and a stub canvas stands in for it.
  */
+import { spawnSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { writePng } from "./png";
 
@@ -416,8 +420,13 @@ if (process.argv.includes("--json")) {
   console.log(`\nsilhouettes: ${OUT}/<robot>-front.png, -side.png (grey: model only, green: model and hit sphere, red: hit sphere only)`);
 }
 
+// The shaded sheets are for the eye, so they are drawn whether or not a rule broke.
+const sheet = process.argv.indexOf("--sheet");
+const sheetFailed = sheet >= 0 && spawnSync(process.execPath, ["scripts/ringfall-models-sheet.mjs", ...process.argv.slice(sheet + 1)], { stdio: ["ignore", 2, 2] }).status !== 0;
+
 if (failed.length) {
   console.error(`\nmodel rules broken (docs/ringfall/models.md):\n${failed.map((f) => `  ${f}`).join("\n")}`);
   process.exit(1);
 }
 console.error(`\n${results.length} models within the rules`);
+if (sheetFailed) process.exit(1);

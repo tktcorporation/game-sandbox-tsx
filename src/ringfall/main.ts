@@ -724,6 +724,9 @@ for (const id of ["vol", "vol2"]) {
   });
 }
 setupSoundCheck();
+// The model sheet (`?models`): every model as the game draws it, for looking one over
+// (view/modelsheet.ts). Loaded only when asked for.
+if (new URLSearchParams(location.search).has("models")) void import("./view/modelsheet").then((m) => m.setupModelSheet());
 // 画質: automatic follows the device and the governor; a tier pins it, only its resolution moving.
 // Antialiasing stays as the page loaded with it: it is fixed when the renderer is made.
 for (const id of ["quality", "quality2"]) {

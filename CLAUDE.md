@@ -338,6 +338,8 @@ npm run sim:ringfall     # gate 2: bots of three skills play whole raids headles
                          # (RINGFALL_SIM_JOBS=n to set, 1 = in turn)
 npm run models:ringfall  # the model rules (docs/ringfall/models.md): budgets, palette, hit spheres;
                          # fails when one is broken, silhouettes in shots/ringfall/models/
+                         # `-- --sheet` (after a build) also draws every model as the game draws it
+                         # (view/modelsheet.ts, the page's `?models`) to sheet-*.png there
 npm run look:ringfall -- <place> [--r 120] [--base]
                          # one place in about a minute and a half: the tour's cameras near it
                          # (scripts/ringfall-tour.mjs, shared with gate 3) and four from above,
