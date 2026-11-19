@@ -501,6 +501,26 @@ function island(freed: string[], rival: string[] = []): Profile {
   if (claims !== 1 || codes[0] !== "K7M2QX" || codes[1] !== "K7M2QX") errors.push("claim: two syncs at once claimed two islands");
 }
 
+// A lease given back while the next departure opens: the release is answered before the next lease is asked for.
+{
+  const { leaseOwn, releaseLease } = await import("../src/ringfall/island-net");
+  const order: string[] = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (_: RequestInfo | URL, init?: RequestInit) => {
+    const m = init?.method ?? "GET";
+    order.push(`${m} sent`);
+    // The release is slow, the lease quick: unordered, the lease would be answered first.
+    await new Promise((r) => setTimeout(r, m === "DELETE" ? 60 : 5));
+    order.push(`${m} answered`);
+    return new Response(JSON.stringify({ ok: true, until: 1, expeditions: [] }), { status: 200, headers: { "content-type": "application/json" } });
+  }) as typeof fetch;
+  void releaseLease();
+  await leaseOwn();
+  globalThis.fetch = realFetch;
+  console.log(`release then lease: ${order.join(", ")}`);
+  if (order.join() !== "DELETE sent,DELETE answered,POST sent,POST answered") errors.push(`lease: a lease was asked for before the release before it was answered (${order.join(", ")})`);
+}
+
 if (errors.length) {
   for (const e of errors) console.error(e);
   process.exit(1);

@@ -108,6 +108,7 @@ export interface RaidReport {
  * alone until the raid's report, or until `until`. With no island yet, or no server, nothing.
  */
 export async function leaseOwn(timeout = SEND_TIMEOUT_MS): Promise<Answer<{ until: number; expeditions: LentIn[]; shut: NodeId[] }>> {
+  await releasing;
   const who = loadIdentity();
   if (!who.code) return failed("no-own-island");
   const r = await call(`/api/islands/${encodeURIComponent(who.code)}/lease`, { method: "POST", headers: { authorization: `Bearer ${who.id}` } }, timeout);
@@ -117,11 +118,21 @@ export async function leaseOwn(timeout = SEND_TIMEOUT_MS): Promise<Answer<{ unti
 }
 
 /** Gives back a lease no raid will use (`DELETE …/lease`): the island goes on reckoning its expeditions at once. Nothing waits on it. */
-export async function releaseLease(): Promise<void> {
-  const who = loadIdentity();
-  if (!who.code) return;
-  await call(`/api/islands/${encodeURIComponent(who.code)}/lease`, { method: "DELETE", headers: { authorization: `Bearer ${who.id}` } }, SEND_TIMEOUT_MS);
+export function releaseLease(): Promise<void> {
+  releasing = releasing.then(async () => {
+    const who = loadIdentity();
+    if (!who.code) return;
+    await call(`/api/islands/${encodeURIComponent(who.code)}/lease`, { method: "DELETE", headers: { authorization: `Bearer ${who.id}` } }, SEND_TIMEOUT_MS);
+  });
+  return releasing;
 }
+
+/**
+ * The releases on their way, one after another. A lease is asked for only once they have been
+ * answered: a release still out when the next departure opens would otherwise reach the island after
+ * that departure's lease and take it away from the raid that uses it.
+ */
+let releasing: Promise<void> = Promise.resolve();
 
 /** Calls expedition `id` on island `code` home (`DELETE …/expeditions/<id>`), as its sender. */
 export async function recallExpedition(code: string, id: number): Promise<Answer<unknown>> {
