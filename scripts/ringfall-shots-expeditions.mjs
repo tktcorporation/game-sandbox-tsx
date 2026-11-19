@@ -22,7 +22,7 @@ const SAVE = {
   stash: [], entries: ["beach", "checkpoint", "jetty"], depots: HELD, seen: "f".repeat(4000),
   quests: { progress: {}, done: [] },
   poiState: { ...Object.fromEntries(HELD.map((id) => [id, { state: "freed" }])), yard: { state: "rival:Z3P9TR" } },
-  incoming: [{ id: 3, by: { code: "Z3P9TR", name: "となり" }, node: "relay", arriveAt: Date.now() + 5.4 * 3_600_000, state: "coming" }],
+  incoming: [{ id: 3, by: { code: "Z3P9TR", name: "となり" }, node: "relay", arriveAt: 0, state: "coming" }],
   expeditions: [
     { code: "K7M2QX", node: "quarry", sentAt: 1, id: 4, units: 4, state: "holding" },
     { code: "K7M2QX", node: "smelter", sentAt: 2, id: 6, units: 4, state: "waiting" },
@@ -35,7 +35,8 @@ export async function expeditionShots({ browser, port, out, errors }) {
   const pg = await ctx.newPage();
   pg.on("pageerror", (e) => errors.push(`expeditions pageerror: ${e.message}`));
   pg.on("console", (m) => m.type() === "error" && !/fonts\.g|ERR_TUNNEL|net::/.test(m.text()) && errors.push(`expeditions console: ${m.text()}`));
-  await pg.addInitScript(([k, v]) => localStorage.getItem(k) || localStorage.setItem(k, v), [KEY, JSON.stringify(SAVE)]);
+  await pg.addInitScript(([k, v]) => localStorage.getItem(k) || localStorage.setItem(k, v), [KEY, JSON.stringify({ ...SAVE, incoming: SAVE.incoming.map((e) => ({ ...e, arriveAt: Date.now() + 5.4 * 3_600_000 })) })]);
+  // The landing is 5.4 hours from when these screens are shot, not from when the gate started: the map table rounds it up to 6.
   await pg.goto(`http://localhost:${port}/ringfall/`, { waitUntil: "load" });
   await pg.waitForTimeout(300);
   await pg.click("#start");
