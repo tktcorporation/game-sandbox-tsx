@@ -34,6 +34,8 @@ export class DepartPicker {
   ) {
     const canvas = $("depart-map") as HTMLCanvasElement;
     this.map = new IslandMap(canvas);
+    // The departure chooses a start: the map shows who holds what and the nodes' names; the starts are the buttons laid over it.
+    this.map.plain = true;
     this.map.whole = true;
     $("depart-board").style.setProperty("--world-aspect", `${(WORLD.x1 - WORLD.x0) / (WORLD.z1 - WORLD.z0)}`);
     $("depart-points").addEventListener("click", (e) => {

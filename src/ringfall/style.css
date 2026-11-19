@@ -5104,3 +5104,22 @@ body.touch .bag-card:nth-last-child(n + 3) {
   margin-right: 3px;
   vertical-align: -2px;
 }
+
+/*
+ * The objective card says one thing: what to do now. Under it only what changes as the raid goes:
+ * the bag, the clock, whether the robots know. The goal's own name is on the camp's card and the
+ * departure, the record's line gives way to a contract's, and a way off shows when it is news (a
+ * craft called, a flare in hand); every way off is on the map (docs/ringfall/ui.md, 1 画面 1 つ).
+ */
+#obj-title {
+  display: none;
+}
+#obj-contract:not([hidden]) ~ #obj-story {
+  display: none;
+}
+#obj-exits div:not(.live) {
+  display: none;
+}
+#obj-exits:not(:has(.live)) {
+  display: none;
+}
