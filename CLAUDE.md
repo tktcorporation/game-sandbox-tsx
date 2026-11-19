@@ -340,6 +340,8 @@ npm run bench:ringfall   # the sim's weight on ten fixed raids: CPU seconds and 
                          # run before and after a change to the sim (see the sim gate's speed below)
 npm run models:ringfall  # the model rules (docs/ringfall/models.md): budgets, palette, hit spheres;
                          # fails when one is broken, silhouettes in shots/ringfall/models/
+                         # `-- --sheet` (after a build) also draws every model as the game draws it
+                         # (view/modelsheet.ts, the page's `?models`) to sheet-*.png there
 npm run lint:ringfall     # the screens' rules read from the code (docs/ringfall/ui.md), in seconds and
                          # inside `npm run build`: colours only from view/palette.ts (`UI`), the type
                          # scale, the loaded weights, radii, no inline styles; `-- --write` rewrites

@@ -121,7 +121,9 @@ export const PAL = {
   white: 0xffffff,
   gun: 0x2b2f38,
   gunLight: 0x4a505c,
-  /** The ejection port on a gun's right side: the darkest thing on it. */
+  /** Bare, worn steel on a gun: its barrel, its bolt, its sight posts, the rods of a wire stock. */
+  gunSteel: 0x8a9099,
+  /** The ejection port on a gun's right side, vent slots and the glass of a scope: the darkest thing on it. */
   gunPort: 0x16181d,
   /** The cuffs of the player's sleeves, a darker shade of the teal sleeve. */
   cuff: 0x1f5a5f,
@@ -194,6 +196,23 @@ function mesh(geo: THREE.BufferGeometry, mat: THREE.Material, x = 0, y = 0, z = 
   m.position.set(x, y, z);
   m.castShadow = shadow;
   m.receiveShadow = shadow;
+  return m;
+}
+
+/**
+ * The parts a figure is read by from the distance it is mostly seen at (docs/ringfall/models.md):
+ * the eye, the head, the shoulders, the weapon's outline. `npm run models:ringfall` checks that
+ * each is two pixels or more there.
+ */
+export type ReadPart = "eye" | "head" | "shoulder" | "weapon";
+/** One part a model is read by, as `compact()` leaves it on the merged mesh's `userData.reads`: its name and its own three sizes. */
+export interface ReadSize {
+  part: ReadPart;
+  size: [number, number, number];
+}
+/** Names `m` as a part its model is read by; the name outlives `compact()`. */
+function reads<T extends THREE.Mesh>(m: T, part: ReadPart): T {
+  m.userData.reads = part;
   return m;
 }
 
@@ -746,24 +765,29 @@ export function mergeTrim(pieces: readonly TrimPiece[], cover: (x: number, y: nu
  * twice with shadows.
  */
 function compact(g: THREE.Object3D, keep: readonly THREE.Object3D[] = []): void {
-  const groups = new Map<THREE.Material, { shadow: boolean; geos: THREE.BufferGeometry[] }>();
+  const groups = new Map<THREE.Material, { shadow: boolean; geos: THREE.BufferGeometry[]; reads: ReadSize[] }>();
   for (const o of [...g.children]) {
     if (!(o instanceof THREE.Mesh) || keep.includes(o)) continue;
     o.updateMatrix();
+    const part = o.userData.reads as ReadPart | undefined;
+    o.geometry.computeBoundingBox();
+    const box = o.geometry.boundingBox!.getSize(new THREE.Vector3()).multiply(o.scale);
     const geo = (o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone()).applyMatrix4(o.matrix);
     for (const name of Object.keys(geo.attributes)) if (!["position", "normal"].includes(name)) geo.deleteAttribute(name);
     const mat = o.material as THREE.Material;
-    const entry = groups.get(mat) ?? { shadow: false, geos: [] };
+    const entry = groups.get(mat) ?? { shadow: false, geos: [], reads: [] };
+    if (part) entry.reads.push({ part, size: [box.x, box.y, box.z] });
     entry.shadow ||= o.castShadow;
     entry.geos.push(geo);
     groups.set(mat, entry);
     g.remove(o);
     o.geometry.dispose();
   }
-  for (const [mat, { shadow, geos }] of groups) {
+  for (const [mat, { shadow, geos, reads }] of groups) {
     const merged = mergeGeometries(geos, false);
     if (!merged) continue;
     const m = new THREE.Mesh(merged, mat);
+    if (reads.length) m.userData.reads = reads;
     m.castShadow = m.receiveShadow = shadow;
     g.add(m);
   }
@@ -848,7 +872,7 @@ export function buildEnemy(kind: EnemyKind): EnemyModel {
   const joint = flat(PAL.joint);
   const legs: THREE.Object3D[] = [];
   const knees: THREE.Object3D[] = [];
-  const eye = new THREE.Mesh(new THREE.SphereGeometry(k.weakR * 0.75, 10, 8), glow(PAL.eye));
+  const eye = reads(new THREE.Mesh(new THREE.SphereGeometry(k.weakR * 0.75, 10, 8), glow(PAL.eye)), "eye");
   const eyeHalo = haloSprite(PAL.eye, k.weakR * 4, 0.6);
   // Forward is -z in the body's frame (yaw 0 looks toward -z).
   const front = (y: number) => new THREE.Vector3(0, y, -k.weakFwd);
@@ -858,7 +882,20 @@ export function buildEnemy(kind: EnemyKind): EnemyModel {
       const ring = mesh(new THREE.TorusGeometry(k.radius * 1.2, 0.07, 4, 12), light);
       ring.rotation.x = Math.PI / 2;
       body.add(ring);
-      for (const s of [-1, 1]) body.add(mesh(new THREE.BoxGeometry(0.9, 0.06, 0.25), joint, s * 0.85, 0.05, 0));
+      for (const s of [-1, 1]) {
+        // An arm out to each side, a rotor in its guard at the end, a skid under the body.
+        body.add(mesh(new THREE.BoxGeometry(0.9, 0.06, 0.25), joint, s * 0.85, 0.05, 0));
+        body.add(mesh(new THREE.BoxGeometry(0.2, 0.2, 0.2), armor, s * 1.18, 0.08, 0));
+        body.add(mesh(new THREE.CylinderGeometry(0.29, 0.29, 0.05, 8), light, s * 1.18, 0.2, 0));
+        body.add(mesh(new THREE.CylinderGeometry(0.23, 0.23, 0.06, 8), joint, s * 1.18, 0.2, 0, false));
+        body.add(mesh(new THREE.BoxGeometry(0.06, 0.06, 0.6), joint, s * 0.22, -0.5, 0.02));
+        body.add(mesh(new THREE.BoxGeometry(0.05, 0.2, 0.05), joint, s * 0.22, -0.4, 0.02, false));
+      }
+      // A hood over the lens, the gun slung under the nose, a fin at the tail.
+      body.add(mesh(new THREE.BoxGeometry(0.5, 0.07, 0.24), light, 0, 0.27, -0.36));
+      body.add(reads(mesh(new THREE.BoxGeometry(0.11, 0.11, 0.5), joint, 0, -0.3, -0.34), "weapon"));
+      body.add(mesh(new THREE.BoxGeometry(0.16, 0.14, 0.16), armor, 0, -0.3, -0.12));
+      body.add(mesh(new THREE.BoxGeometry(0.06, 0.34, 0.3), light, 0, 0.34, 0.42));
       eye.position.copy(front(0));
       break;
     }
@@ -876,7 +913,7 @@ export function buildEnemy(kind: EnemyKind): EnemyModel {
       body.add(mesh(new THREE.BoxGeometry(0.48, 0.44, 0.22), joint, 0, 1.66, 0.34));
       body.add(mesh(new THREE.CylinderGeometry(0.012, 0.018, 0.6, 4), joint, 0.16, 2.12, 0.38, false));
       for (const s of [-1, 1]) {
-        const pad = mesh(new THREE.BoxGeometry(0.26, 0.15, 0.36), light, s * 0.48, 1.92, 0);
+        const pad = reads(mesh(new THREE.BoxGeometry(0.26, 0.15, 0.36), light, s * 0.48, 1.92, 0), "shoulder");
         pad.rotation.z = -s * 0.25;
         body.add(pad);
         const shoulder = v3(s * 0.48, 1.8, 0);
@@ -889,12 +926,12 @@ export function buildEnemy(kind: EnemyKind): EnemyModel {
         body.add(limb(elbow, hand, 0.14, 0.15, light));
         body.add(mesh(new THREE.BoxGeometry(0.12, 0.12, 0.13), joint, hand.x, hand.y, hand.z));
       }
-      body.add(mesh(new THREE.BoxGeometry(0.1, 0.15, 0.74), joint, 0.13, 1.47, -0.5));
+      body.add(reads(mesh(new THREE.BoxGeometry(0.1, 0.15, 0.74), joint, 0.13, 1.47, -0.5), "weapon"));
       body.add(mesh(new THREE.BoxGeometry(0.05, 0.05, 0.3), joint, 0.13, 1.5, -1.01));
       body.add(mesh(new THREE.BoxGeometry(0.08, 0.16, 0.1), joint, 0.13, 1.34, -0.44));
       body.add(mesh(new THREE.BoxGeometry(0.15, 0.14, 0.15), joint, 0, 1.92, 0));
       // The head: a squat sensor block, a brow over the lens, and a short sensor mast on top.
-      body.add(mesh(new THREE.BoxGeometry(0.42, 0.3, 0.38), armor, 0, k.weakY + 0.02, 0));
+      body.add(reads(mesh(new THREE.BoxGeometry(0.42, 0.3, 0.38), armor, 0, k.weakY + 0.02, 0), "head"));
       body.add(mesh(new THREE.BoxGeometry(0.44, 0.06, 0.14), light, 0, k.weakY + 0.15, -0.14));
       for (const s of [-1, 1]) body.add(mesh(new THREE.BoxGeometry(0.06, 0.14, 0.16), joint, s * 0.24, k.weakY, -0.02));
       body.add(mesh(new THREE.BoxGeometry(0.05, 0.12, 0.05), joint, -0.1, k.weakY + 0.23, 0.08, false));
@@ -905,17 +942,49 @@ export function buildEnemy(kind: EnemyKind): EnemyModel {
       break;
     }
     case "charger": {
+      // A low four-legged ram: a wedge of armour narrowing to the lens at its nose (the weak
+      // point, weakY), plates down its spine, a hood and jaw round the lens, two tusks and a
+      // bumper to hit with, an engine block at the back, and legs that bend at the knee.
       const torso = mesh(new THREE.ConeGeometry(0.75, 1.5, 4), armor, 0, 0.8, 0);
       torso.rotation.x = -Math.PI / 2;
       torso.rotation.y = Math.PI / 4;
       body.add(torso);
       body.add(mesh(new THREE.BoxGeometry(1.1, 0.25, 0.9), light, 0, 0.55, 0.25));
+      for (const [z, y, w] of [[0.5, 1.26, 0.52], [0.1, 1.12, 0.38], [-0.28, 0.99, 0.24]]) {
+        const plate = mesh(new THREE.BoxGeometry(w, 0.09, 0.32), light, 0, y, z);
+        plate.rotation.x = -0.34;
+        body.add(plate);
+      }
+      body.add(mesh(new THREE.BoxGeometry(0.84, 0.72, 0.2), joint, 0, 0.84, 0.8));
+      for (const s of [-1, 1]) {
+        body.add(mesh(new THREE.BoxGeometry(0.24, 0.24, 0.16), light, s * 0.22, 0.98, 0.94));
+        body.add(mesh(new THREE.BoxGeometry(0.14, 0.14, 0.04), joint, s * 0.22, 0.98, 1.03, false));
+        // The hood's cheeks beside the lens, and the tusks under them.
+        body.add(mesh(new THREE.BoxGeometry(0.1, 0.4, 0.34), light, s * 0.31, 0.95, -0.56));
+        const tusk = mesh(new THREE.BoxGeometry(0.1, 0.12, 0.56), joint, s * 0.42, 0.6, -0.68);
+        tusk.rotation.y = s * 0.12;
+        body.add(tusk);
+      }
+      body.add(reads(mesh(new THREE.BoxGeometry(0.72, 0.1, 0.4), armor, 0, 1.2, -0.56), "head"));
+      body.add(mesh(new THREE.BoxGeometry(0.56, 0.1, 0.3), joint, 0, 0.7, -0.6));
+      body.add(reads(mesh(new THREE.BoxGeometry(1.0, 0.13, 0.13), light, 0, 0.5, -0.92), "weapon"));
       for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+        body.add(mesh(new THREE.BoxGeometry(0.26, 0.3, 0.46), light, sx * 0.57, 0.74, sz * 0.4));
+        body.add(mesh(new THREE.BoxGeometry(0.2, 0.2, 0.22), joint, sx * 0.55, 0.6, sz * 0.4));
         const leg = new THREE.Group();
-        leg.position.set(sx * 0.55, 0.55, sz * 0.4);
-        leg.add(mesh(new THREE.BoxGeometry(0.16, 0.55, 0.16), joint, 0, -0.27, 0));
+        leg.position.set(sx * 0.55, 0.62, sz * 0.4);
+        // One material a segment (the thigh and its knee cap in armour, the shin and foot dark),
+        // so four jointed legs cost eight draw calls, not twenty.
+        leg.add(mesh(new THREE.BoxGeometry(0.17, 0.3, 0.2), armor, 0, -0.17, 0));
+        leg.add(mesh(new THREE.BoxGeometry(0.19, 0.12, 0.08), armor, 0, -0.32, -0.1));
+        const knee = new THREE.Group();
+        knee.position.y = -0.32;
+        knee.add(mesh(new THREE.BoxGeometry(0.13, 0.26, 0.15), joint, 0, -0.13, 0));
+        knee.add(mesh(new THREE.BoxGeometry(0.2, 0.07, 0.3), joint, 0, -0.265, -0.05));
+        leg.add(knee);
         body.add(leg);
         legs.push(leg);
+        knees.push(knee);
       }
       eye.position.copy(front(k.weakY));
       break;
@@ -933,8 +1002,8 @@ export function buildEnemy(kind: EnemyKind): EnemyModel {
       body.add(mesh(new THREE.BoxGeometry(0.93, 0.64, 0.35), joint, 0, 2.43, 0.64));
       for (const s of [-1, 1]) {
         // Shoulder pads, and the rocket pods slung behind them, their tubes' mouths facing forward.
-        body.add(mesh(new THREE.BoxGeometry(0.53, 0.28, 0.7), light, s * 0.95, 2.9, 0));
-        body.add(mesh(new THREE.BoxGeometry(0.42, 0.44, 0.77), light, s * 1.14, 3.02, 0.26));
+        body.add(reads(mesh(new THREE.BoxGeometry(0.53, 0.28, 0.7), light, s * 0.95, 2.9, 0), "shoulder"));
+        body.add(reads(mesh(new THREE.BoxGeometry(0.42, 0.44, 0.77), light, s * 1.14, 3.02, 0.26), "weapon"));
         for (let j = 0; j < 2; j++) body.add(mesh(new THREE.BoxGeometry(0.13, 0.13, 0.05), joint, s * 1.14 + (j - 0.5) * 0.17, 3.04, -0.14, false));
         const shoulder = v3(s * 0.93, 2.69, 0);
         const elbow = v3(s * 1.0, 2.07, 0.02);
@@ -945,7 +1014,7 @@ export function buildEnemy(kind: EnemyKind): EnemyModel {
         body.add(mesh(new THREE.BoxGeometry(0.28, 0.24, 0.28), joint, hand.x, hand.y - 0.06, hand.z));
       }
       body.add(mesh(new THREE.BoxGeometry(0.3, 0.18, 0.3), joint, 0, 2.92, 0));
-      body.add(mesh(new THREE.BoxGeometry(0.63, 0.42, 0.58), armor, 0, k.weakY + 0.05, 0));
+      body.add(reads(mesh(new THREE.BoxGeometry(0.63, 0.42, 0.58), armor, 0, k.weakY + 0.05, 0), "head"));
       body.add(mesh(new THREE.BoxGeometry(0.65, 0.08, 0.19), light, 0, k.weakY + 0.25, -0.24));
       eye.geometry.dispose();
       eye.geometry = new THREE.SphereGeometry(k.weakR * 0.55, 10, 8).scale(1.15, 0.7, 0.55);
@@ -954,19 +1023,49 @@ export function buildEnemy(kind: EnemyKind): EnemyModel {
       break;
     }
     case "titan": {
-      body.add(mesh(new THREE.BoxGeometry(4.2, 2.6, 3.4), armor, 0, 3.6, 0));
-      body.add(mesh(new THREE.BoxGeometry(3.0, 0.9, 2.6), light, 0, 2.0, 0));
-      body.add(mesh(new THREE.BoxGeometry(1.6, 1.0, 1.4), armor, 0, 5.3, -0.6));
+      // The boss, about 6 m: legs with knees under a pelvis and a narrow waist, a chest 4.2 m
+      // across that fills the body sphere (bodyY, radius), the lens (the weak point, weakY) in a
+      // hooded housing on its front, a head on a neck, a reactor pack with two stacks on its
+      // back, and on each shoulder a rocket pod of six tubes under an armour plate.
+      robotLegs(body, { hipX: 1.3, hipY: 2.3, thigh: 1.05, shin: 1.25, w: 0.85, d: 1.0, foot: [1.75, 0.32, 1.25] }, armor, light, legs, knees);
+      body.add(mesh(new THREE.BoxGeometry(3.0, 0.7, 2.2), joint, 0, 2.35, 0));
+      body.add(mesh(new THREE.BoxGeometry(1.0, 0.8, 0.3), armor, 0, 2.3, -1.15));
+      body.add(mesh(new THREE.BoxGeometry(2.4, 0.4, 2.0), joint, 0, 2.85, 0));
+      body.add(mesh(new THREE.BoxGeometry(3.2, 0.5, 2.8), light, 0, 3.2, 0));
+      body.add(mesh(new THREE.BoxGeometry(4.2, 1.7, 3.4), armor, 0, 4.2, 0));
+      body.add(mesh(new THREE.BoxGeometry(3.0, 0.3, 2.4), armor, 0, 5.1, 0.1));
+      // The lens's housing: a dark well in the chest, hooded above and below, a cheek each side.
+      body.add(mesh(new THREE.BoxGeometry(1.5, 1.3, 0.3), joint, 0, k.weakY, -1.72));
       for (const s of [-1, 1]) {
-        const leg = new THREE.Group();
-        leg.position.set(s * 1.4, 2.2, 0);
-        leg.add(mesh(new THREE.BoxGeometry(0.9, 2.2, 1.1), joint, 0, -1.1, 0));
-        leg.add(mesh(new THREE.BoxGeometry(1.3, 0.35, 1.8), light, 0, -2.05, -0.2));
-        body.add(leg);
-        legs.push(leg);
-        const pod = mesh(new THREE.BoxGeometry(1.2, 1.1, 2.0), light, s * 2.7, 4.6, 0.2);
-        body.add(pod);
-        for (let j = 0; j < 3; j++) body.add(mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.1, 8), glow(PAL.orb), s * 2.7 + (j - 1) * 0.35, 4.75, -0.85));
+        body.add(mesh(new THREE.BoxGeometry(1.9, 0.24, 0.75), light, 0, k.weakY + s * 0.76, -1.95));
+        body.add(mesh(new THREE.BoxGeometry(0.24, 1.28, 0.6), light, s * 0.84, k.weakY, -1.9));
+        // A plate on each side of the chest, and vents down its flanks.
+        body.add(mesh(new THREE.BoxGeometry(1.2, 0.8, 0.14), light, s * 1.4, 4.55, -1.76));
+        for (let j = 0; j < 3; j++) body.add(mesh(new THREE.BoxGeometry(0.1, 0.18, 1.7), joint, s * 2.11, 3.75 + j * 0.34, 0.1, false));
+        // The stacks on the pack.
+        body.add(mesh(new THREE.BoxGeometry(0.5, 1.1, 0.5), armor, s * 0.9, 5.3, 1.9));
+        body.add(mesh(new THREE.BoxGeometry(0.6, 0.14, 0.6), light, s * 0.9, 5.8, 1.9));
+        // The head's ear housings.
+        body.add(mesh(new THREE.BoxGeometry(0.16, 0.45, 0.6), joint, s * 0.83, 5.55, -0.5));
+      }
+      body.add(mesh(new THREE.BoxGeometry(2.8, 1.6, 0.7), joint, 0, 4.2, 2.0));
+      body.add(mesh(new THREE.BoxGeometry(1.0, 0.3, 1.0), joint, 0, 5.15, -0.5));
+      body.add(reads(mesh(new THREE.BoxGeometry(1.5, 0.7, 1.3), armor, 0, 5.55, -0.6), "head"));
+      body.add(mesh(new THREE.BoxGeometry(1.56, 0.14, 0.5), light, 0, 5.8, -1.05));
+      body.add(mesh(new THREE.BoxGeometry(1.2, 0.18, 0.08), joint, 0, 5.5, -1.27, false));
+      body.add(mesh(new THREE.BoxGeometry(1.0, 0.2, 0.3), light, 0, 5.28, -1.12));
+      // One material for all twelve tubes, so they are drawn together.
+      const tubes = glow(PAL.orb);
+      for (const s of [-1, 1]) {
+        body.add(mesh(new THREE.BoxGeometry(0.7, 0.7, 1.0), joint, s * 2.2, 4.5, 0.1));
+        body.add(reads(mesh(new THREE.BoxGeometry(1.2, 1.1, 2.0), light, s * 2.75, 4.6, 0.2), "weapon"));
+        body.add(mesh(new THREE.BoxGeometry(1.04, 0.94, 0.1), joint, s * 2.75, 4.6, -0.81, false));
+        for (let j = 0; j < 6; j++) body.add(mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.1, 8).rotateX(Math.PI / 2), tubes, s * 2.75 + ((j % 3) - 1) * 0.33, 4.82 - Math.floor(j / 3) * 0.44, -0.87, false));
+        body.add(mesh(new THREE.BoxGeometry(0.9, 0.8, 0.2), joint, s * 2.75, 4.6, 1.28));
+        body.add(mesh(new THREE.BoxGeometry(0.4, 0.5, 1.2), armor, s * 2.75, 3.85, 0.2));
+        const plate = reads(mesh(new THREE.BoxGeometry(1.36, 0.3, 1.8), armor, s * 2.6, 5.32, 0.15), "shoulder");
+        plate.rotation.z = -s * 0.2;
+        body.add(plate);
       }
       eye.position.copy(front(k.weakY));
       break;
@@ -992,7 +1091,7 @@ const CHEST: Record<EnemyKind, { w: number; h: number; y: number; z: number }> =
   grunt: { w: 0.7, h: 0.54, y: 1.64, z: -0.26 },
   charger: { w: 0.7, h: 0.32, y: 1.0, z: -0.42 },
   heavy: { w: 1.33, h: 0.9, y: 2.38, z: -0.51 },
-  titan: { w: 3.4, h: 2.2, y: 3.6, z: -1.7 },
+  titan: { w: 3.8, h: 1.1, y: 4.6, z: -1.84 },
 };
 
 /**
@@ -1032,8 +1131,10 @@ export interface AllyModel {
 
 /**
  * The teammate: a person about 1.8 m tall in a teal suit and sand vest, so it reads as one of
- * ours at a glance against the navy robots. A neck and a helmet, knees, and arms in two parts
- * that hold the rifle at the shoulder. Nothing on it glows.
+ * ours at a glance against the navy robots. A neck and a helmet with ear flaps and a visor, knees
+ * with pads over laced boots, a belt with pouches, a pack with a bedroll, and arms in two parts
+ * with elbow pads and gloves that hold a rifle (stock, magazine, sight, barrel) at the shoulder.
+ * Nothing on it glows.
  */
 export function buildAlly(): AllyModel {
   const root = new THREE.Group();
@@ -1043,32 +1144,56 @@ export function buildAlly(): AllyModel {
   const vest = flat(PAL.sand);
   const dark = flat(PAL.joint);
   const skin = flat(PAL.concrete);
+  const pack = flat(PAL.ochre);
+  const gun = flat(PAL.gun);
+  const gunLight = flat(PAL.gunLight);
   const legs: THREE.Object3D[] = [];
   const knees: THREE.Object3D[] = [];
   for (const s of [-1, 1]) {
     const leg = new THREE.Group();
     leg.position.set(s * 0.12, 0.92, 0);
     leg.add(mesh(new THREE.BoxGeometry(0.17, 0.44, 0.2), suit, 0, -0.22, 0));
+    // A cargo pocket on the outside of each thigh.
+    leg.add(mesh(new THREE.BoxGeometry(0.04, 0.15, 0.13), vest, s * 0.1, -0.22, 0));
     const knee = new THREE.Group();
     knee.position.y = -0.45;
     knee.add(mesh(new THREE.BoxGeometry(0.15, 0.12, 0.06), dark, 0, 0, -0.1));
-    knee.add(mesh(new THREE.BoxGeometry(0.15, 0.4, 0.17), suit, 0, -0.21, 0));
-    knee.add(mesh(new THREE.BoxGeometry(0.17, 0.11, 0.29), dark, 0, -0.415, -0.04));
+    knee.add(mesh(new THREE.BoxGeometry(0.15, 0.3, 0.17), suit, 0, -0.16, 0));
+    // The boot: its shaft, the foot, and a paler sole under it.
+    knee.add(mesh(new THREE.BoxGeometry(0.165, 0.13, 0.19), dark, 0, -0.33, 0));
+    knee.add(mesh(new THREE.BoxGeometry(0.17, 0.07, 0.29), dark, 0, -0.405, -0.045));
+    knee.add(mesh(new THREE.BoxGeometry(0.18, 0.03, 0.31), gunLight, 0, -0.455, -0.045));
     leg.add(knee);
     body.add(leg);
     legs.push(leg);
     knees.push(knee);
   }
-  body.add(mesh(new THREE.BoxGeometry(0.38, 0.14, 0.24), dark, 0, 0.95, 0));
+  // Hips and belt, a pouch on each hip and one behind.
+  body.add(mesh(new THREE.BoxGeometry(0.38, 0.14, 0.24), suit, 0, 0.93, 0));
+  body.add(mesh(new THREE.BoxGeometry(0.4, 0.07, 0.26), dark, 0, 1.0, 0));
+  for (const s of [-1, 1]) body.add(mesh(new THREE.BoxGeometry(0.07, 0.13, 0.12), dark, s * 0.215, 0.96, 0.0));
+  // The torso, the vest over it, three magazine pouches across its front, straps over the shoulders.
   body.add(mesh(new THREE.BoxGeometry(0.42, 0.52, 0.26), suit, 0, 1.22, 0));
   body.add(mesh(new THREE.BoxGeometry(0.46, 0.36, 0.3), vest, 0, 1.27, 0));
-  body.add(mesh(new THREE.BoxGeometry(0.32, 0.42, 0.18), flat(PAL.ochre), 0, 1.24, 0.23));
+  for (const x of [-0.14, 0, 0.14]) body.add(mesh(new THREE.BoxGeometry(0.1, 0.14, 0.05), pack, x, 1.19, -0.17));
+  for (const s of [-1, 1]) {
+    body.add(mesh(new THREE.BoxGeometry(0.09, 0.05, 0.31), vest, s * 0.14, 1.475, 0));
+    body.add(mesh(new THREE.BoxGeometry(0.15, 0.1, 0.18), suit, s * 0.27, 1.44, 0));
+  }
+  // The pack, a pocket each side, the bedroll across its top.
+  body.add(mesh(new THREE.BoxGeometry(0.32, 0.42, 0.18), pack, 0, 1.24, 0.23));
+  for (const s of [-1, 1]) body.add(mesh(new THREE.BoxGeometry(0.06, 0.2, 0.13), pack, s * 0.19, 1.15, 0.23));
+  body.add(mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.36, 6).rotateZ(Math.PI / 2), suit, 0, 1.5, 0.24));
   body.add(mesh(new THREE.BoxGeometry(0.11, 0.1, 0.11), skin, 0, 1.53, 0));
-  // The head: the face under a teal helmet with a brim, a dark visor band across the eyes.
+  // The head: the face under a teal helmet with a brim and ear flaps, a dark visor band across
+  // the eyes, goggles pushed up on the helmet's front.
   body.add(mesh(new THREE.BoxGeometry(0.2, 0.22, 0.22), skin, 0, 1.66, 0));
-  body.add(mesh(new THREE.BoxGeometry(0.25, 0.13, 0.27), suit, 0, 1.77, 0.01));
+  body.add(reads(mesh(new THREE.BoxGeometry(0.25, 0.13, 0.27), suit, 0, 1.77, 0.01), "head"));
   body.add(mesh(new THREE.BoxGeometry(0.27, 0.03, 0.31), suit, 0, 1.715, -0.01));
+  body.add(mesh(new THREE.BoxGeometry(0.15, 0.03, 0.2), suit, 0, 1.85, 0.01));
   body.add(mesh(new THREE.BoxGeometry(0.21, 0.06, 0.03), dark, 0, 1.67, -0.115));
+  for (const s of [-1, 1]) body.add(mesh(new THREE.BoxGeometry(0.03, 0.07, 0.09), suit, s * 0.115, 1.69, 0.03));
+  body.add(mesh(new THREE.BoxGeometry(0.2, 0.05, 0.03), gunLight, 0, 1.785, -0.135));
   const arms = new THREE.Group();
   arms.position.set(0, 1.42, 0);
   for (const s of [-1, 1]) {
@@ -1076,11 +1201,22 @@ export function buildAlly(): AllyModel {
     const elbow = v3(s * 0.24, -0.25, -0.12);
     const hand = s > 0 ? v3(0.09, -0.12, -0.36) : v3(0.03, -0.08, -0.58);
     arms.add(limb(shoulder, elbow, 0.11, 0.12, suit));
+    arms.add(mesh(new THREE.BoxGeometry(0.125, 0.09, 0.13), dark, elbow.x, elbow.y, elbow.z));
     arms.add(limb(elbow, hand, 0.1, 0.11, suit));
     arms.add(mesh(new THREE.BoxGeometry(0.08, 0.09, 0.09), dark, hand.x, hand.y, hand.z));
   }
-  arms.add(mesh(new THREE.BoxGeometry(0.07, 0.11, 0.75), flat(PAL.gun), 0.06, -0.04, -0.48));
-  arms.add(mesh(new THREE.BoxGeometry(0.06, 0.15, 0.08), flat(PAL.gunLight), 0.06, -0.15, -0.42));
+  // The rifle: receiver, fore end, barrel and muzzle, a stock to the shoulder, magazine, grip, sight.
+  arms.add(reads(mesh(new THREE.BoxGeometry(0.07, 0.11, 0.36), gun, 0.06, -0.04, -0.36), "weapon"));
+  arms.add(mesh(new THREE.BoxGeometry(0.062, 0.085, 0.24), gunLight, 0.06, -0.045, -0.64));
+  arms.add(mesh(new THREE.BoxGeometry(0.03, 0.03, 0.18), gun, 0.06, -0.03, -0.84));
+  arms.add(mesh(new THREE.BoxGeometry(0.045, 0.045, 0.06), gunLight, 0.06, -0.03, -0.95));
+  arms.add(mesh(new THREE.BoxGeometry(0.05, 0.09, 0.2), gunLight, 0.06, -0.05, -0.09));
+  arms.add(mesh(new THREE.BoxGeometry(0.056, 0.13, 0.03), gun, 0.06, -0.06, 0.02));
+  const mag = mesh(new THREE.BoxGeometry(0.045, 0.17, 0.07), gun, 0.06, -0.17, -0.44);
+  mag.rotation.x = 0.2;
+  arms.add(mag);
+  arms.add(mesh(new THREE.BoxGeometry(0.05, 0.1, 0.05), gunLight, 0.06, -0.13, -0.3));
+  arms.add(mesh(new THREE.BoxGeometry(0.03, 0.045, 0.12), gun, 0.06, 0.035, -0.38));
   body.add(arms);
   for (const part of [body, arms, ...legs, ...knees]) compact(part);
   return { root, body, legs, knees, arms };
@@ -1090,46 +1226,233 @@ export function buildAlly(): AllyModel {
 const GUN_LEN: Record<WeaponKind, number> = { pike: 0.75, hornet: 0.5, maul: 0.8, lance: 1.0, talon: 1.25 };
 
 /**
- * A gun, its muzzle toward -z: a slim receiver with an ejection port on its right, a rail along
- * its top, a barrel, a grip, a magazine and a stock, with a stripe in its rarity colour.
+ * A gun, its muzzle toward -z, the grip under the origin: built of separate volumes so each reads
+ * in the hand (an upper and a lower receiver, a fore end, a barrel and what is on its muzzle, the
+ * sights or a scope, a magazine, a grip in its guard, a stock), with a stripe in its rarity colour
+ * along both sides. Three greys carry it: the dark of the frame, a lighter one for covers and
+ * furniture, bare steel for barrels, bolts and sight posts. Each kind has an outline of its own
+ * (`GUNS_APART` in scripts/ringfall-models.ts): the rifle's curved magazine and post sights, the
+ * submachine gun's magazine through its grip and fat suppressor, the shotgun's two tubes and pump,
+ * the marksman rifle's bipod and scope, the sniper's heavy barrel, brake and tall scope. The grip
+ * and the fore end stay where `buildHands()` holds them.
  */
 export function buildGun(kind: WeaponKind, rarity: Rarity): THREE.Group {
   const g = new THREE.Group();
   const dark = flat(PAL.gun);
   const mid = flat(PAL.gunLight);
+  const steel = flat(PAL.gunSteel);
+  const port = flat(PAL.gunPort);
   const stripe = glow(RARITY_COLOR[rarity]);
-  const add = (geo: THREE.BufferGeometry, m: THREE.Material, x: number, y: number, z: number) => {
-    const o = new THREE.Mesh(geo, m);
+  /** A box `w` across, `h` high and `l` long at (x, y, z), pitched `rx` about its middle. */
+  const box = (m: THREE.Material, w: number, h: number, l: number, x: number, y: number, z: number, rx = 0) => {
+    const o = new THREE.Mesh(new THREE.BoxGeometry(w, h, l), m);
     o.position.set(x, y, z);
+    o.rotation.x = rx;
+    g.add(o);
+    return o;
+  };
+  /** A tube along the barrel's line: radius `r`, from `z0` forward to `z1`, at height `y`. */
+  const tube = (m: THREE.Material, r: number, z0: number, z1: number, y: number, seg = 8) => {
+    const o = new THREE.Mesh(new THREE.CylinderGeometry(r, r, Math.abs(z1 - z0), seg).rotateX(Math.PI / 2), m);
+    o.position.set(0, y, (z0 + z1) / 2);
     g.add(o);
     return o;
   };
   const len = GUN_LEN[kind];
-  add(new THREE.BoxGeometry(0.075, 0.12, len * 0.6), dark, 0, 0, 0);
-  add(new THREE.BoxGeometry(0.06, 0.08, len * 0.26), mid, 0, -0.01, -len * 0.42);
-  add(new THREE.BoxGeometry(0.04, 0.04, len * 0.5), mid, 0, 0.03, -len * 0.5);
-  add(new THREE.BoxGeometry(0.06, 0.15, 0.075), dark, 0, -0.12, 0.1);
-  add(new THREE.BoxGeometry(0.05, 0.09, 0.24), mid, 0, -0.02, len * 0.38);
-  add(new THREE.BoxGeometry(0.078, 0.016, len * 0.3), stripe, 0, 0.035, -0.02);
-  // The rail along the top, notched, and the port the cases leave by on the right.
-  add(new THREE.BoxGeometry(0.024, 0.014, len * 0.42), mid, 0, 0.067, -0.02);
-  for (let t = -len * 0.19; t <= len * 0.17; t += 0.035) add(new THREE.BoxGeometry(0.03, 0.006, 0.012), dark, 0, 0.077, t - 0.02);
-  add(new THREE.BoxGeometry(0.006, 0.04, 0.11), flat(PAL.gunPort), 0.04, 0.02, -0.03);
-  add(new THREE.BoxGeometry(0.004, 0.012, 0.07), mid, 0.044, 0.045, -0.03);
-  // The magazine: a long curved box for the rifles, a short one for the long guns, a tube for the shotgun.
-  if (kind === "pike" || kind === "hornet") {
-    const mag = add(new THREE.BoxGeometry(0.05, 0.2, 0.08), dark, 0, -0.15, -0.12);
-    mag.rotation.x = -0.18;
-  } else if (kind === "maul") add(new THREE.BoxGeometry(0.09, 0.07, len * 0.4), mid, 0, -0.08, -len * 0.3);
-  else add(new THREE.BoxGeometry(0.05, 0.11, 0.09), dark, 0, -0.11, -0.1);
-  if (kind === "talon") {
-    // A long scope with its two lenses, and a bolt handle.
-    add(new THREE.CylinderGeometry(0.05, 0.05, 0.42, 10).rotateX(Math.PI / 2), dark, 0, 0.13, -0.05);
-    add(new THREE.CylinderGeometry(0.062, 0.062, 0.06, 10).rotateX(Math.PI / 2), mid, 0, 0.13, -0.27);
-    add(new THREE.CylinderGeometry(0.058, 0.058, 0.05, 10).rotateX(Math.PI / 2), mid, 0, 0.13, 0.17);
-    add(new THREE.BoxGeometry(0.1, 0.025, 0.025), mid, 0.07, 0.04, 0.12);
+  // What every kind has, where the right hand holds it: the grip raked back, the trigger in its
+  // guard, the port the cases leave by on the right with the bolt showing in it.
+  box(dark, 0.05, 0.15, 0.062, 0, -0.125, 0.11, -0.24);
+  box(mid, 0.052, 0.02, 0.066, 0, -0.2, 0.128, -0.24);
+  box(dark, 0.014, 0.01, 0.085, 0, -0.098, 0.04);
+  box(dark, 0.014, 0.04, 0.01, 0, -0.08, -0.002);
+  box(steel, 0.008, 0.03, 0.01, 0, -0.078, 0.05, 0.3);
+  const ejection = (y: number, z: number) => {
+    box(port, 0.006, 0.036, 0.1, 0.036, y, z);
+    box(steel, 0.006, 0.02, 0.045, 0.038, y, z - 0.02);
+  };
+  /** A rail along the top from `z0` to `z1`, notched. */
+  const rail = (y: number, z0: number, z1: number) => {
+    box(mid, 0.026, 0.012, z1 - z0, 0, y, (z0 + z1) / 2);
+    for (let z = z0 + 0.012; z < z1 - 0.008; z += 0.036) box(dark, 0.032, 0.007, 0.014, 0, y + 0.008, z);
+  };
+  /** Vent slots through a fore end: dark bars showing on both sides. */
+  const vents = (y: number, z0: number, n: number, w: number) => {
+    for (let i = 0; i < n; i++) box(port, w, 0.014, 0.04, 0, y, z0 - i * 0.062);
+  };
+  /** A scope on two mounts: a tube with a wider bell at each end, dark glass in both, turrets on top and on the right. */
+  const scope = (y: number, z0: number, z1: number, r: number, bell: number) => {
+    tube(dark, r, z0, z1, y, 10);
+    tube(dark, bell, z1 + 0.02, z1 - bell * 2.2, y, 10);
+    tube(mid, r * 1.3, z0 + 0.07, z0 - 0.02, y, 10);
+    tube(steel, r * 1.36, z0 + 0.078, z0 + 0.066, y, 10);
+    tube(port, r * 1.1, z0 + 0.082, z0 + 0.076, y, 10);
+    tube(port, bell * 0.86, z1 - bell * 2.2 + 0.004, z1 - bell * 2.2 - 0.004, y, 10);
+    const mid0 = (z0 + z1) / 2;
+    box(mid, r * 1.5, r * 1.3, r * 1.5, 0, y + r * 1.2, mid0);
+    box(mid, r * 1.3, r * 1.5, r * 1.5, r * 1.2, y, mid0);
+    for (const z of [z0 - 0.05, z1 + 0.06]) {
+      box(mid, r * 2.5, r * 0.9, 0.03, 0, y, z);
+      box(mid, 0.03, y - r - 0.066, 0.03, 0, (y - r + 0.066) / 2, z);
+    }
+  };
+  switch (kind) {
+    case "pike": {
+      // The rifle: a carbine with a vented fore end, a post front sight on its gas block, a notch
+      // rear sight, a curved magazine and a stock on a buffer tube.
+      box(dark, 0.07, 0.075, 0.36, 0, 0.022, -0.01);
+      box(mid, 0.062, 0.05, 0.24, 0, -0.038, 0.03);
+      box(dark, 0.058, 0.05, 0.09, 0, -0.07, -0.105);
+      rail(0.066, -0.18, 0.08);
+      box(stripe, 0.074, 0.014, 0.2, 0, 0.03, 0.02);
+      ejection(0.03, -0.04);
+      box(steel, 0.006, 0.016, 0.022, -0.036, -0.03, -0.02);
+      box(steel, 0.05, 0.014, 0.03, 0, 0.05, 0.185);
+      // The rear sight: a block with two ears, the notch between them.
+      box(dark, 0.05, 0.022, 0.05, 0, 0.083, 0.125);
+      for (const s of [-1, 1]) box(dark, 0.012, 0.03, 0.03, s * 0.019, 0.108, 0.125);
+      // The fore end, the gas block with the front sight between its guards, the barrel and its brake.
+      box(mid, 0.074, 0.084, 0.27, 0, -0.012, -0.325);
+      box(dark, 0.03, 0.012, 0.27, 0, 0.036, -0.325);
+      vents(-0.002, -0.24, 3, 0.078);
+      box(dark, 0.04, 0.056, 0.03, 0, 0.012, -0.482);
+      box(steel, 0.008, 0.05, 0.012, 0, 0.066, -0.482);
+      for (const s of [-1, 1]) box(dark, 0.008, 0.036, 0.024, s * 0.018, 0.058, -0.482);
+      tube(steel, 0.015, -0.46, -0.6, 0.0);
+      tube(dark, 0.024, -0.6, -0.67, 0.0);
+      // The magazine, curving forward in two lengths.
+      box(dark, 0.046, 0.13, 0.07, 0, -0.14, -0.112, 0.12);
+      box(dark, 0.046, 0.1, 0.068, 0, -0.238, -0.136, 0.32);
+      box(mid, 0.05, 0.014, 0.076, 0, -0.288, -0.155, 0.32);
+      // The stock: a buffer tube, a body on it, a strut under it and the butt plate.
+      tube(mid, 0.02, 0.36, 0.17, 0.014);
+      box(dark, 0.05, 0.075, 0.13, 0, 0.0, 0.305);
+      box(dark, 0.036, 0.03, 0.15, 0, -0.058, 0.29, -0.2);
+      box(mid, 0.054, 0.14, 0.03, 0, -0.022, 0.385);
+      break;
+    }
+    case "hornet": {
+      // The submachine gun: a tall boxy receiver, its magazine up through the grip, a fat
+      // suppressor, a cocking knob on the left and a wire stock pushed in along its sides.
+      box(dark, 0.072, 0.105, 0.3, 0, 0.008, -0.02);
+      box(mid, 0.052, 0.012, 0.28, 0, 0.066, -0.02);
+      rail(0.078, -0.14, 0.06);
+      box(stripe, 0.076, 0.014, 0.18, 0, 0.034, 0.0);
+      ejection(0.012, -0.04);
+      box(steel, 0.02, 0.02, 0.024, -0.044, 0.03, -0.1);
+      box(port, 0.076, 0.012, 0.12, 0, 0.03, -0.1);
+      // The magazine below the grip, and its floor plate.
+      box(mid, 0.04, 0.17, 0.05, 0, -0.275, 0.148, -0.24);
+      box(steel, 0.044, 0.012, 0.056, 0, -0.358, 0.168, -0.24);
+      // The fore end under a short shroud, and the suppressor.
+      box(dark, 0.066, 0.034, 0.15, 0, -0.038, -0.2);
+      box(mid, 0.058, 0.058, 0.1, 0, 0.004, -0.215);
+      vents(0.006, -0.19, 2, 0.062);
+      tube(dark, 0.034, -0.26, -0.44, 0.004, 10);
+      tube(mid, 0.036, -0.27, -0.285, 0.004, 10);
+      tube(port, 0.014, -0.438, -0.444, 0.004);
+      // A hooded front sight and a low notch at the back.
+      box(dark, 0.034, 0.008, 0.02, 0, 0.118, -0.15);
+      for (const s of [-1, 1]) box(dark, 0.008, 0.036, 0.02, s * 0.013, 0.1, -0.15);
+      box(steel, 0.006, 0.026, 0.008, 0, 0.097, -0.15);
+      box(dark, 0.04, 0.02, 0.03, 0, 0.094, 0.1);
+      // The stock: two rods along the receiver's sides to a plate just behind it.
+      for (const s of [-1, 1]) box(steel, 0.008, 0.012, 0.2, s * 0.04, -0.012, 0.19);
+      box(dark, 0.092, 0.1, 0.02, 0, -0.012, 0.29);
+      box(mid, 0.06, 0.03, 0.03, 0, -0.012, 0.145);
+      break;
+    }
+    case "maul": {
+      // The shotgun: a thick barrel over a magazine tube, a ribbed pump round the tube, a heat
+      // shield, shells in a carrier on the left, and a solid stock that drops to the shoulder.
+      box(dark, 0.07, 0.1, 0.3, 0, 0.0, 0.0);
+      box(mid, 0.052, 0.012, 0.28, 0, 0.056, 0.0);
+      box(stripe, 0.074, 0.014, 0.16, 0, 0.03, 0.04);
+      ejection(0.006, -0.05);
+      tube(steel, 0.025, -0.15, -0.68, 0.022, 10);
+      tube(port, 0.019, -0.678, -0.684, 0.022, 10);
+      tube(mid, 0.021, -0.15, -0.6, -0.03);
+      tube(steel, 0.024, -0.6, -0.622, -0.03);
+      box(dark, 0.046, 0.094, 0.022, 0, -0.004, -0.575);
+      // The heat shield over the barrel, slotted, and the bead on the muzzle.
+      box(mid, 0.058, 0.02, 0.3, 0, 0.052, -0.34);
+      for (let i = 0; i < 5; i++) box(port, 0.03, 0.022, 0.026, 0, 0.052, -0.22 - i * 0.06);
+      box(steel, 0.01, 0.016, 0.012, 0, 0.054, -0.665);
+      // The pump, ribbed.
+      box(dark, 0.076, 0.062, 0.2, 0, -0.034, -0.3);
+      for (let i = 0; i < 5; i++) box(mid, 0.082, 0.05, 0.012, 0, -0.034, -0.22 - i * 0.04);
+      // Four shells in the carrier on the left side: rust-red cases, steel heads.
+      box(mid, 0.008, 0.03, 0.13, -0.039, 0.0, 0.0);
+      for (let i = 0; i < 4; i++) {
+        box(flat(PAL.rust), 0.018, 0.05, 0.022, -0.046, 0.006, -0.048 + i * 0.032);
+        box(steel, 0.019, 0.012, 0.023, -0.046, -0.024, -0.048 + i * 0.032);
+      }
+      // The stock and its pad.
+      box(mid, 0.054, 0.08, 0.22, 0, -0.022, 0.26, 0.2);
+      box(mid, 0.054, 0.05, 0.1, 0, -0.065, 0.31, 0.2);
+      box(dark, 0.058, 0.13, 0.026, 0, -0.058, 0.375, 0.1);
+      break;
+    }
+    case "lance": {
+      // The marksman rifle: a long slotted fore end with a bipod folded under it, a slim barrel
+      // and brake, a straight box magazine, a scope, and a skeleton stock with a cheek rest.
+      box(dark, 0.068, 0.07, 0.4, 0, 0.022, -0.02);
+      box(mid, 0.06, 0.05, 0.24, 0, -0.036, 0.03);
+      box(dark, 0.056, 0.04, 0.1, 0, -0.07, -0.1);
+      rail(0.063, -0.2, 0.14);
+      box(stripe, 0.072, 0.014, 0.22, 0, 0.028, 0.02);
+      ejection(0.03, -0.05);
+      box(steel, 0.05, 0.014, 0.03, 0, 0.048, 0.2);
+      box(mid, 0.068, 0.078, 0.4, 0, -0.014, -0.42);
+      box(dark, 0.028, 0.012, 0.4, 0, 0.03, -0.42);
+      vents(-0.004, -0.3, 5, 0.072);
+      tube(steel, 0.014, -0.62, -0.9, 0.0);
+      box(dark, 0.038, 0.034, 0.08, 0, 0.0, -0.94);
+      for (const z of [-0.925, -0.955]) box(port, 0.042, 0.012, 0.014, 0, 0.0, z);
+      // The bipod, folded forward under the fore end.
+      box(dark, 0.074, 0.024, 0.03, 0, -0.062, -0.6);
+      for (const s of [-1, 1]) {
+        box(steel, 0.012, 0.012, 0.2, s * 0.03, -0.07, -0.5);
+        box(dark, 0.016, 0.016, 0.03, s * 0.03, -0.07, -0.395);
+      }
+      box(dark, 0.05, 0.17, 0.085, 0, -0.165, -0.1, 0.06);
+      box(mid, 0.054, 0.014, 0.09, 0, -0.255, -0.106, 0.06);
+      scope(0.128, 0.11, -0.16, 0.024, 0.034);
+      // The stock: a tube back to the butt plate, a rail under it, the cheek rest on top.
+      box(dark, 0.04, 0.04, 0.24, 0, 0.012, 0.3);
+      box(mid, 0.05, 0.15, 0.03, 0, -0.022, 0.425);
+      box(dark, 0.03, 0.024, 0.2, 0, -0.085, 0.32);
+      box(mid, 0.046, 0.022, 0.13, 0, 0.044, 0.31);
+      break;
+    }
+    case "talon": {
+      // The sniper rifle: a chassis with a deep fore end, a heavy barrel to a wide ported brake,
+      // a tall scope with a big objective, a bolt handle on the right, a short magazine, and a
+      // stock with a raised cheek piece and a spike under the butt.
+      box(dark, 0.075, 0.085, 0.36, 0, 0.012, 0.0);
+      box(mid, 0.055, 0.012, 0.34, 0, 0.06, 0.0);
+      box(stripe, 0.079, 0.014, 0.22, 0, 0.026, 0.02);
+      ejection(0.03, -0.04);
+      box(steel, 0.07, 0.018, 0.018, 0.068, 0.03, 0.1);
+      box(steel, 0.032, 0.032, 0.032, 0.11, 0.022, 0.1);
+      box(mid, 0.08, 0.07, 0.42, 0, -0.02, -0.38);
+      box(mid, 0.062, 0.05, 0.08, 0, -0.026, -0.62);
+      vents(-0.02, -0.3, 4, 0.084);
+      tube(steel, 0.023, -0.18, -0.99, 0.03, 10);
+      tube(mid, 0.03, -0.18, -0.3, 0.03, 10);
+      box(dark, 0.09, 0.05, 0.1, 0, 0.03, -1.03);
+      for (const z of [-1.01, -1.05]) box(port, 0.094, 0.022, 0.018, 0, 0.03, z);
+      box(dark, 0.05, 0.06, 0.1, 0, -0.085, -0.085);
+      box(mid, 0.054, 0.012, 0.106, 0, -0.118, -0.085);
+      scope(0.15, 0.2, -0.22, 0.03, 0.05);
+      // The stock.
+      box(dark, 0.06, 0.1, 0.3, 0, -0.012, 0.31);
+      box(mid, 0.05, 0.034, 0.17, 0, 0.056, 0.29);
+      box(mid, 0.064, 0.16, 0.03, 0, -0.022, 0.475);
+      box(dark, 0.04, 0.04, 0.1, 0, -0.08, 0.4);
+      box(steel, 0.016, 0.07, 0.016, 0, -0.13, 0.41);
+      break;
+    }
   }
-  if (kind === "lance") add(new THREE.CylinderGeometry(0.045, 0.045, 0.32, 8).rotateX(Math.PI / 2), mid, 0, 0.12, -0.05);
   compact(g);
   return g;
 }
@@ -1137,32 +1460,49 @@ export function buildGun(kind: WeaponKind, rarity: Rarity): THREE.Group {
 /**
  * The player's own hands on a gun from buildGun, in its frame: gloved hands on the grip and under
  * the fore end, and the teal sleeves of the forearms reaching back and down out of the view. They
- * show the player's own size against the world, which a floating gun alone does not.
+ * show the player's own size against the world, which a floating gun alone does not. Each hand is
+ * a palm, fingers that wrap what it holds and a thumb, a dark pad over the knuckles, a strap at
+ * the wrist; the sleeve ends in a cuff.
  */
 export function buildHands(kind: WeaponKind): THREE.Group {
   const g = new THREE.Group();
   const len = GUN_LEN[kind];
   // Leather gloves, lighter than the gun so the hands read against it; the cuffs a darker teal.
   const glove = flat(PAL.ochre);
+  const pad = flat(PAL.joint);
   const sleeve = flat(PAL.teal);
   const cuff = flat(PAL.cuff);
-  // Right: the hand round the grip, the wrist behind it, the forearm back to the elbow below the view.
-  const grip = v3(0.0, -0.11, 0.1);
-  g.add(mesh(new THREE.BoxGeometry(0.1, 0.1, 0.12), glove, 0.012, grip.y, grip.z, false));
-  g.add(mesh(new THREE.BoxGeometry(0.03, 0.04, 0.1), glove, -0.045, -0.06, 0.06, false));
-  const rw = v3(0.03, -0.15, 0.19);
-  g.add(limb(rw, v3(0.05, -0.18, 0.24), 0.09, 0.09, cuff, false));
-  g.add(limb(v3(0.05, -0.18, 0.24), v3(0.2, -0.5, 0.75), 0.11, 0.12, sleeve, false));
-  // Left: the hand cupping the fore end from below and its left side (the side the eye sees), the
-  // forearm reaching back and down across the view.
-  const fore = v3(0, -0.06, -len * 0.38);
-  g.add(mesh(new THREE.BoxGeometry(0.1, 0.05, 0.13), glove, fore.x, fore.y - 0.035, fore.z, false));
-  g.add(mesh(new THREE.BoxGeometry(0.025, 0.09, 0.12), glove, -0.042, fore.y + 0.0, fore.z, false));
-  g.add(mesh(new THREE.BoxGeometry(0.02, 0.05, 0.1), glove, 0.04, fore.y - 0.01, fore.z, false));
-  const lw = v3(-0.05, -0.12, -len * 0.38 + 0.08);
-  g.add(limb(fore, lw, 0.08, 0.08, glove, false));
-  g.add(limb(lw, v3(-0.1, -0.16, -len * 0.38 + 0.15), 0.09, 0.09, cuff, false));
-  g.add(limb(v3(-0.1, -0.16, -len * 0.38 + 0.15), v3(-0.6, -0.55, 0.2), 0.11, 0.12, sleeve, false));
+  const add = (m: THREE.Material, w: number, h: number, l: number, x: number, y: number, z: number, rx = 0, rz = 0) => {
+    const o = mesh(new THREE.BoxGeometry(w, h, l), m, x, y, z, false);
+    o.rotation.set(rx, 0, rz);
+    g.add(o);
+  };
+  /** A forearm from the wrist back to the elbow: the glove's strap, the cuff, then the sleeve, a fold across it. */
+  const forearm = (wrist: THREE.Vector3, elbow: THREE.Vector3) => {
+    const at = (t: number) => wrist.clone().lerp(elbow, t);
+    g.add(limb(at(0), at(0.07), 0.086, 0.08, glove, false));
+    g.add(limb(at(0.045), at(0.075), 0.094, 0.088, pad, false));
+    g.add(limb(at(0.07), at(0.17), 0.1, 0.1, cuff, false));
+    g.add(limb(at(0.17), at(1), 0.11, 0.12, sleeve, false));
+    g.add(limb(at(0.4), at(0.43), 0.118, 0.128, cuff, false));
+  };
+  // Right: the palm behind the grip, three fingers wrapped round its front, the trigger finger
+  // along the frame, the thumb over the left side (the side the eye sees), the wrist behind.
+  add(glove, 0.07, 0.11, 0.06, 0.004, -0.13, 0.152, -0.24);
+  for (let i = 0; i < 3; i++) add(glove, 0.076, 0.03, 0.05, 0.0, -0.118 - i * 0.034, 0.072 + i * 0.009, -0.24);
+  add(glove, 0.02, 0.024, 0.085, 0.034, -0.07, 0.04);
+  add(glove, 0.026, 0.03, 0.09, -0.04, -0.07, 0.085, 0.25);
+  add(pad, 0.06, 0.07, 0.012, 0.004, -0.115, 0.188, -0.24);
+  forearm(v3(0.02, -0.15, 0.2), v3(0.2, -0.5, 0.75));
+  // Left: the palm cupping the fore end from below, the thumb up its left side, four fingers
+  // curled up its right, the forearm reaching back and down across the view.
+  const fz = -len * 0.38;
+  add(glove, 0.092, 0.036, 0.12, 0, -0.078, fz);
+  add(glove, 0.024, 0.07, 0.036, -0.05, -0.04, fz - 0.03, 0, 0.12);
+  add(glove, 0.024, 0.03, 0.07, -0.052, -0.02, fz - 0.04);
+  for (let i = 0; i < 4; i++) add(glove, 0.022, 0.07, 0.026, 0.05, -0.036, fz - 0.045 + i * 0.03, 0, -0.12);
+  add(pad, 0.07, 0.012, 0.08, 0, -0.1, fz);
+  forearm(v3(-0.03, -0.1, fz + 0.07), v3(-0.6, -0.55, 0.2));
   compact(g);
   return g;
 }

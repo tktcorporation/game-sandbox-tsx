@@ -7,10 +7,14 @@
  * silhouette with the hit spheres over it to `shots/ringfall/models/`, for checking by eye. Exits
  * 1, naming what broke, when a model breaks a rule (`BUDGET`, the palette, `ROBOT_FLOOR`).
  *
- *   npx tsx scripts/ringfall-models.ts [--json]
+ *   npx tsx scripts/ringfall-models.ts [--json] [--sheet [--only robots,guns]]
+ *
+ * `--sheet` then draws the shaded contact sheets of the build (scripts/ringfall-models-sheet.mjs,
+ * after `npm run build`): every model under the game's own light, to the same directory.
  *
  * Runs headless: only the halo texture touches the DOM, and a stub canvas stands in for it.
  */
+import { spawnSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { writePng } from "./png";
 
@@ -20,7 +24,7 @@ const stubCtx = { createRadialGradient: () => ({ addColorStop() {} }), fillRect(
 
 const THREE = await import("three");
 const M = await import("../src/ringfall/view/models");
-const { ENEMIES, HEALS, TOOLS, VALUABLES, WEAPONS: WEAPON_SPECS } = await import("../src/ringfall/sim/config");
+const { AWARE, ENEMIES, HEALS, SIGHT, TOOLS, VALUABLES, WEAPONS: WEAPON_SPECS } = await import("../src/ringfall/sim/config");
 type EnemyKind = keyof typeof ENEMIES;
 type Object3D = import("three").Object3D;
 
@@ -36,8 +40,10 @@ const GRID = 0.02; // silhouette cell, metres
  */
 const BUDGET: Record<Entry["group"], { tris: number; meshes: number; materials: number }> = {
   robot: { tris: 1000, meshes: 16, materials: 15 },
-  ally: { tris: 400, meshes: 20, materials: 8 },
-  gun: { tris: 520, meshes: 6, materials: 8 },
+  // The titan: one a raid at most, 6 m tall, fought across its own arena.
+  boss: { tris: 1500, meshes: 16, materials: 15 },
+  ally: { tris: 900, meshes: 22, materials: 8 },
+  gun: { tris: 1000, meshes: 7, materials: 8 },
   loot: { tris: 400, meshes: 8, materials: 7 },
   world: { tris: 200, meshes: 13, materials: 7 },
   wreck: { tris: 600, meshes: 36, materials: 5 },
@@ -48,7 +54,7 @@ const PALETTE = new Set<number>([...Object.values(M.PAL).filter((v): v is number
 
 interface Entry {
   id: string;
-  group: "robot" | "ally" | "gun" | "loot" | "world" | "wreck";
+  group: "robot" | "boss" | "ally" | "gun" | "loot" | "world" | "wreck";
   root: Object3D;
   robot?: EnemyKind;
 }
@@ -58,7 +64,7 @@ const ENEMY_KINDS = Object.keys(ENEMIES) as EnemyKind[];
 const WEAPONS = Object.keys(WEAPON_SPECS) as (keyof typeof WEAPON_SPECS)[];
 const keys = <T extends object>(o: T) => Object.keys(o) as (keyof T)[];
 const entries: Entry[] = [
-  ...ENEMY_KINDS.map((k): Entry => ({ id: k, group: "robot", root: M.buildEnemy(k).root, robot: k })),
+  ...ENEMY_KINDS.map((k): Entry => ({ id: k, group: k === "titan" ? "boss" : "robot", root: M.buildEnemy(k).root, robot: k })),
   { id: "ally", group: "ally", root: M.buildAlly().root },
   ...WEAPONS.map((w): Entry => ({ id: w, group: "gun", root: M.buildGun(w, 0) })),
   ...WEAPONS.map((w): Entry => ({ id: `hands:${w}`, group: "gun", root: M.buildHands(w) })),
@@ -268,7 +274,8 @@ interface Raster {
   cells: Uint8Array;
 }
 
-function silhouette(meshes: import("three").Mesh[], axis: "front" | "side", pad: { x0: number; x1: number; y0: number; y1: number }): Raster {
+function silhouette(meshes: import("three").Mesh[], axis: "front" | "side", pad: { x0: number; x1: number; y0: number; y1: number }, cell = GRID): Raster {
+  const GRID = cell;
   const x0 = pad.x0;
   const y0 = pad.y0;
   const w = Math.ceil((pad.x1 - pad.x0) / GRID);
@@ -384,6 +391,246 @@ function writeSilhouette(name: string, r: Raster, s: [number, number, number][])
 
 const results = entries.map(measure);
 
+// --- how a model reads (docs/ringfall/models.md, 読みやすさ). The rules above keep a model's cost
+// and its hit spheres; these keep what the player has to tell at a glance: which kind it is, where
+// its eye is, that it stands out from the ground it stands on.
+
+/** Where each group is mostly seen from, metres: a robot from the distance it fights at, the teammate across a fight, a gun in the hand. */
+const mainDist = (e: Entry): number | null => (e.robot ? SIGHT[e.robot].range * AWARE.engagedRange : e.group === "ally" ? 20 : e.group === "gun" ? 1 : null);
+/** A part a model is read by is at least this many pixels there (its middle size: a rod's thickness, a plate's narrower side). */
+const READ_PX = 2;
+/** The read parts each figure must name (`reads()` in models.ts): every robot its eye; a walker with a head also its head, shoulders and weapon. */
+const MUST_READ: Record<string, readonly string[]> = {
+  drone: ["eye"],
+  charger: ["eye"],
+  grunt: ["eye", "head", "shoulder", "weapon"],
+  heavy: ["eye", "head", "shoulder", "weapon"],
+  titan: ["eye", "head", "shoulder", "weapon"],
+  ally: ["head", "weapon"],
+};
+/**
+ * Two robot kinds' silhouettes differ by at least this (1 - overlap / union, feet and middle
+ * aligned, drawn at the pixel size of the further of their two fighting distances), seen from the
+ * front and from the side: no two kinds are the same blob at range.
+ */
+const KINDS_APART = 0.5;
+/** Two guns' side outlines, held at the same grip, differ by at least this: each kind is told by its outline in the hand. */
+const GUNS_APART = 0.35;
+/**
+ * A figure's colours, weighted by surface, are this far (OKLab distance; 0.02 is a just-seen
+ * step, black to white is 1) from every ground colour it may stand on, in every coat it wears.
+ */
+const GROUND_APART = 0.12;
+/** The eye's colour is this far (OKLab) from the armour round it, for every coat the player shoots at. */
+const EYE_APART = 0.25;
+/** No confetti: a model's distinct colours at most `max`, and its three largest cover `top3` of its surface. */
+const COLOURS: Partial<Record<Entry["group"], { max: number; top3: number }>> = {
+  robot: { max: 6, top3: 0.9 },
+  boss: { max: 6, top3: 0.9 },
+  ally: { max: 8, top3: 0.75 },
+  gun: { max: 6, top3: 0.85 },
+};
+/**
+ * Detail that is seen: the parts of a figure that are READ_PX pixels or more at its main distance.
+ * A floor per figure, a little under what it has; the boss's is the grunt's, so the largest robot,
+ * seen from furthest, is never the coarsest (it was: 16 parts to the grunt's 37). The drone's is
+ * lower: it is a metre across and seen against the sky.
+ */
+const READ_PARTS: Record<string, number> = { drone: 14, grunt: 35, charger: 35, heavy: 35, titan: 35, ally: 50 };
+/**
+ * What is allowed to miss a floor today, by `model: rule`, with the value it may not get worse than
+ * and what has to be done. A model that comes to meet its floor must be taken off this list.
+ */
+const KNOWN: Record<string, { allow: number; todo: string }> = {};
+
+/** The grounds a figure may stand on (terrain.ts's `Ground`, the open ground's sand and rock). */
+const GROUND_COLOURS = ["sand", "dune", "rock", "mud", "quarry", "sandstone", "scrub", "oiled", "concrete", "salt", "paved", "asphalt", "cityAsphalt", "caliche", "gravel", "cityLot", "pavement"] as const;
+/** The coats view/world.ts paints a robot in: what replaces the armour and its lighter panels, and the eye's colour. */
+const COATS: Record<string, { armor: number; light: number; eye: number; foe: boolean }> = {
+  enemy: { armor: M.PAL.armor, light: M.PAL.armorLight, eye: M.PAL.eye, foe: true },
+  elite: { armor: M.PAL.eliteArmor, light: M.PAL.armorLight, eye: M.PAL.eye, foe: true },
+  rogue: { armor: M.PAL.rogueArmor, light: M.PAL.rogueArmorLight, eye: M.PAL.rogueEye, foe: true },
+  rival: { armor: M.PAL.rivalArmor, light: M.PAL.rivalArmorLight, eye: M.PAL.rivalEye, foe: true },
+  friend: { armor: M.PAL.friendArmor, light: M.PAL.friendArmorLight, eye: M.PAL.friendEye, foe: false },
+};
+
+/** A colour in OKLab, where equal distances look about equally different. */
+function oklab(c: number): [number, number, number] {
+  const { r, g, b } = new THREE.Color(c); // linear
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  return [0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s, 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s, 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s];
+}
+const apart = (x: number, y: number) => Math.hypot(...oklab(x).map((v, i) => v - oklab(y)[i]));
+
+const solidOf = (e: Entry) => meshesOf(e.root).filter((m) => !isEffect(m));
+
+/** The surface of a model's solid parts by colour, square metres. */
+function surface(e: Entry): Map<number, number> {
+  const out = new Map<number, number>();
+  const [a, b, c] = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+  for (const m of solidOf(e)) {
+    const g = m.geometry;
+    const pos = g.attributes.position;
+    const n = g.index ? g.index.count : pos.count;
+    const at = (v: import("three").Vector3, k: number) => v.fromBufferAttribute(pos, g.index ? g.index.getX(k) : k).applyMatrix4(m.matrixWorld);
+    let sum = 0;
+    for (let t = 0; t < n; t += 3) {
+      at(a, t);
+      sum += at(b, t + 1).sub(a).cross(at(c, t + 2).sub(a)).length() / 2;
+    }
+    const col = (m.material as { color?: import("three").Color }).color?.getHex() ?? 0;
+    out.set(col, (out.get(col) ?? 0) + sum);
+  }
+  return out;
+}
+
+/** A model's outline from the front or the side on `cell`-metre pixels, in a frame from its own lowest point and middle. */
+function outline(e: Entry, axis: "front" | "side", cell: number): Raster {
+  const ms = solidOf(e);
+  const box = new THREE.Box3();
+  for (const m of ms) box.expandByObject(m);
+  const mid = axis === "front" ? (box.min.x + box.max.x) / 2 : (box.min.z + box.max.z) / 2;
+  const half = Math.max(box.max.x - box.min.x, box.max.z - box.min.z) / 2 + cell * 2;
+  return silhouette(ms, axis, { x0: mid - half, x1: mid + half, y0: box.min.y, y1: box.max.y + cell }, cell);
+}
+
+/** 1 - overlap / union of two outlines, their feet on one line and their middles on another. */
+function outlinesApart(a: Raster, b: Raster): number {
+  const W = Math.max(a.w, b.w);
+  const H = Math.max(a.h, b.h);
+  const at = (r: Raster, i: number, j: number) => {
+    const k = i - Math.floor((W - r.w) / 2);
+    return k >= 0 && k < r.w && j < r.h && r.cells[j * r.w + k] === 1;
+  };
+  let both = 0;
+  let either = 0;
+  for (let j = 0; j < H; j++)
+    for (let i = 0; i < W; i++) {
+      const x = at(a, i, j);
+      const y = at(b, i, j);
+      if (x && y) both++;
+      if (x || y) either++;
+    }
+  return either ? 1 - both / either : 0;
+}
+
+interface Reading {
+  id: string;
+  dist: number;
+  /** Each part the model names as read, with its middle size in pixels at `dist`. */
+  reads: { part: string; px: number }[];
+  /** Connected parts of READ_PX pixels or more at `dist`, of all its parts. */
+  readable: number;
+  parts: number;
+  trisPerM2: number;
+  colours: number;
+  top3: number;
+  /** The nearest a coat comes to a ground: which, and how far apart (robots and the teammate). */
+  ground?: { coat: string; ground: string; apart: number };
+}
+
+function reading(e: Entry, r: Measure): Reading | null {
+  const dist = mainDist(e);
+  if (dist === null) return null;
+  const reads: Reading["reads"] = [];
+  e.root.traverse((o) => {
+    const tag = o.userData.reads as string | { part: string; size: number[] }[] | undefined;
+    if (!tag || !o.visible) return;
+    let list = tag as { part: string; size: number[] }[];
+    if (typeof tag === "string") {
+      // A read part left out of the merge (the eye): its own geometry's sizes.
+      const g = (o as import("three").Mesh).geometry;
+      g.computeBoundingBox();
+      list = [{ part: tag, size: g.boundingBox!.getSize(new THREE.Vector3()).toArray() }];
+    }
+    for (const { part, size } of list) reads.push({ part, px: ([...size].sort((x, y) => x - y)[1] * PIXEL_PER_M) / dist });
+  });
+  const parts = solidOf(e).flatMap((m) => partFeatures(m));
+  const area = [...surface(e)].sort((x, y) => y[1] - x[1]);
+  const total = area.reduce((q, [, v]) => q + v, 0);
+  const out: Reading = {
+    id: e.id,
+    dist,
+    reads,
+    readable: parts.filter((p) => (p.feature * PIXEL_PER_M) / dist >= READ_PX).length,
+    parts: parts.length,
+    trisPerM2: r.tris / total,
+    colours: area.length,
+    top3: area.slice(0, 3).reduce((q, [, v]) => q + v, 0) / total,
+  };
+  if (e.robot || e.group === "ally") {
+    const coats = e.robot ? COATS : { own: { armor: M.PAL.armor, light: M.PAL.armorLight, eye: M.PAL.eye, foe: false } };
+    for (const [coat, c] of Object.entries(coats)) {
+      const worn = (col: number) => (col === M.PAL.armor ? c.armor : col === M.PAL.armorLight ? c.light : col === M.PAL.eye ? c.eye : col);
+      for (const ground of GROUND_COLOURS) {
+        const d = area.reduce((q, [col, v]) => q + apart(worn(col), M.PAL[ground]) * v, 0) / total;
+        if (!out.ground || d < out.ground.apart) out.ground = { coat, ground, apart: d };
+      }
+    }
+  }
+  return out;
+}
+
+const readings = entries.map((e, i) => reading(e, results[i])).filter((x): x is Reading => !!x);
+
+/** Every pair of `list`, with how far apart their outlines are from the views given (the least of them). */
+function pairs(list: Entry[], views: ("front" | "side")[], cell: (a: Entry, b: Entry) => number, shape: (e: Entry, axis: "front" | "side", cell: number) => Raster, differ: (a: Raster, b: Raster) => number) {
+  const out: { a: string; b: string; apart: number }[] = [];
+  for (let i = 0; i < list.length; i++)
+    for (let j = i + 1; j < list.length; j++) {
+      const c = cell(list[i], list[j]);
+      out.push({ a: list[i].id, b: list[j].id, apart: Math.min(...views.map((v) => differ(shape(list[i], v, c), shape(list[j], v, c)))) });
+    }
+  return out;
+}
+const kindPairs = pairs(entries.filter((e) => e.robot), ["front", "side"], (a, b) => Math.max(mainDist(a)!, mainDist(b)!) / PIXEL_PER_M, outline, outlinesApart);
+/** Guns are compared where the hand holds them (their own frame: the grip at the same place), on 4 mm pixels. */
+const GUN_FRAME = { x0: -1.4, x1: 0.9, y0: -0.45, y1: 0.45 };
+const sameFrame = (a: Raster, b: Raster) => {
+  let both = 0;
+  let either = 0;
+  for (let k = 0; k < a.cells.length; k++) {
+    if (a.cells[k] && b.cells[k]) both++;
+    if (a.cells[k] || b.cells[k]) either++;
+  }
+  return either ? 1 - both / either : 0;
+};
+const gunPairs = pairs(entries.filter((e) => e.group === "gun" && !e.id.includes(":")), ["side"], () => 0.004, (e, axis, cell) => silhouette(solidOf(e), axis, GUN_FRAME, cell), sameFrame);
+
+/** A rule's breach unless `KNOWN` allows the value; an allowance no longer needed is a breach too, so the list stays true. */
+function floor(out: string[], key: string, value: number, least: number, what: string) {
+  const k = KNOWN[key];
+  const fmt = (v: number) => +v.toFixed(3);
+  if (k && value >= least) out.push(`${key}: ${what} ${fmt(value)} now meets ${least}; take it off KNOWN`);
+  else if (fmt(value) < (k ? k.allow : least)) out.push(`${key}: ${what} ${fmt(value)} < ${k ? `${k.allow} (allowed under KNOWN; the floor is ${least})` : least}`);
+}
+
+function readingViolations(): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const check = (key: string, value: number, least: number, what: string) => {
+    seen.add(key);
+    floor(out, key, value, least, what);
+  };
+  for (const r of readings) {
+    for (const part of MUST_READ[r.id] ?? []) if (!r.reads.some((x) => x.part === part)) out.push(`${r.id}: names no "${part}" as a part it is read by (reads() in models.ts)`);
+    for (const x of r.reads) if (x.px < READ_PX) out.push(`${r.id}: its ${x.part} is ${x.px.toFixed(1)} px at ${r.dist.toFixed(0)} m, under ${READ_PX}`);
+    if (READ_PARTS[r.id] !== undefined) check(`${r.id}: readable parts`, r.readable, READ_PARTS[r.id], `parts of ${READ_PX} px or more at ${r.dist.toFixed(0)} m`);
+    const c = COLOURS[entries.find((e) => e.id === r.id)!.group];
+    if (c && r.colours > c.max) out.push(`${r.id}: ${r.colours} colours, over ${c.max}`);
+    if (c && r.top3 < c.top3) out.push(`${r.id}: its three largest colours cover ${r.top3.toFixed(2)} of it, under ${c.top3}`);
+    if (r.ground) check(`${r.id}: apart from the ground`, r.ground.apart, GROUND_APART, `in the ${r.ground.coat} coat on ${r.ground.ground}`);
+  }
+  // The eye against the armour is the coat's own matter, the same on every kind.
+  for (const [coat, c] of Object.entries(COATS)) if (c.foe) check(`${coat} coat: eye apart from its armour`, apart(c.eye, c.armor), EYE_APART, "OKLab");
+  for (const p of kindPairs) check(`${p.a} and ${p.b}: outlines apart`, p.apart, KINDS_APART, "at range");
+  for (const p of gunPairs) check(`${p.a} and ${p.b}: outlines apart`, p.apart, GUNS_APART, "in the hand");
+  for (const key of Object.keys(KNOWN)) if (!seen.has(key)) out.push(`KNOWN names "${key}", which no check measures`);
+  return out;
+}
+
 function violations(r: Measure): string[] {
   const out: string[] = [];
   const b = BUDGET[r.group];
@@ -400,7 +647,7 @@ function violations(r: Measure): string[] {
   }
   return out.map((v) => `${r.id}: ${v}`);
 }
-const failed = results.flatMap(violations);
+const failed = [...results.flatMap(violations), ...readingViolations()];
 
 if (process.argv.includes("--json")) {
   console.log(JSON.stringify(results, null, 2));
@@ -413,11 +660,35 @@ if (process.argv.includes("--json")) {
   console.log("| --- | --: | --: | --: | --- | --: |");
   for (const r of results.filter((x) => x.robot))
     console.log(`| ${r.id} | ${r.robot!.hitShareFront.toFixed(2)} | ${r.robot!.hitShareSide.toFixed(2)} | ${r.robot!.airShareFront.toFixed(2)} | ${r.robot!.eyeInWeak ? "yes" : "**no**"} | ${r.robot!.hitFloor === null ? "— (floats)" : r.robot!.hitFloor.toFixed(2)} |`);
+  console.log("\n| figure | seen from (m) | read parts, px there | parts of 2 px or more / all | tris per m² | colours | top 3 share | nearest a ground |");
+  console.log("| --- | --: | --- | --: | --: | --: | --: | --- |");
+  const figure = (r: Reading) => !!r.ground;
+  for (const r of readings.filter(figure))
+    console.log(`| ${r.id} | ${r.dist.toFixed(0)} | ${[...new Set(r.reads.map((x) => x.part))].map((part) => `${part} ${Math.min(...r.reads.filter((x) => x.part === part).map((x) => x.px)).toFixed(1)}`).join(", ") || "—"} | ${r.readable} / ${r.parts} | ${r.trisPerM2.toFixed(0)} | ${r.colours} | ${r.top3.toFixed(2)} | ${r.ground ? `${r.ground.apart.toFixed(3)} (${r.ground.coat} on ${r.ground.ground})` : "—"} |`);
+  console.log(`\neye apart from its armour, by coat: ${Object.entries(COATS).map(([coat, c]) => `${coat} ${apart(c.eye, c.armor).toFixed(3)}${c.foe ? "" : " (not shot at)"}`).join(", ")}`);
+  const matrix = (title: string, list: { a: string; b: string; apart: number }[]) => {
+    const ids = [...new Set(list.flatMap((p) => [p.a, p.b]))];
+    console.log(`\n| ${title} | ${ids.slice(1).join(" | ")} |`);
+    console.log(`| --- | ${ids.slice(1).map(() => "--:").join(" | ")} |`);
+    for (const a of ids.slice(0, -1)) console.log(`| ${a} | ${ids.slice(1).map((b) => list.find((p) => p.a === a && p.b === b)?.apart.toFixed(2) ?? "").join(" | ")} |`);
+  };
+  matrix("outlines apart at range (the lesser of front and side)", kindPairs);
+  matrix("guns' side outlines apart in the hand", gunPairs);
+  console.log("\n| gun | parts | tris per m² | colours | top 3 share |");
+  console.log("| --- | --: | --: | --: | --: |");
+  for (const r of readings.filter((x) => !figure(x) && !x.id.includes(":"))) console.log(`| ${r.id} | ${r.parts} | ${r.trisPerM2.toFixed(0)} | ${r.colours} | ${r.top3.toFixed(2)} |`);
+  const known = Object.entries(KNOWN);
+  if (known.length) console.log(`\nallowed under KNOWN:\n${known.map(([k, v]) => `- ${k} (no worse than ${v.allow}): ${v.todo}`).join("\n")}`);
   console.log(`\nsilhouettes: ${OUT}/<robot>-front.png, -side.png (grey: model only, green: model and hit sphere, red: hit sphere only)`);
 }
+
+// The shaded sheets are for the eye, so they are drawn whether or not a rule broke.
+const sheet = process.argv.indexOf("--sheet");
+const sheetFailed = sheet >= 0 && spawnSync(process.execPath, ["scripts/ringfall-models-sheet.mjs", ...process.argv.slice(sheet + 1)], { stdio: ["ignore", 2, 2] }).status !== 0;
 
 if (failed.length) {
   console.error(`\nmodel rules broken (docs/ringfall/models.md):\n${failed.map((f) => `  ${f}`).join("\n")}`);
   process.exit(1);
 }
 console.error(`\n${results.length} models within the rules`);
+if (sheetFailed) process.exit(1);
