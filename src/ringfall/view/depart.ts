@@ -108,7 +108,7 @@ export class DepartPicker {
     const how = $("depart-hint");
     how.hidden = !hint;
     how.innerHTML = hint ? hint.how.map((l) => `<span>${esc(l)}</span>`).join("") : "";
-    $("depart-list").innerHTML = d.rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("");
+    $("depart-list").innerHTML = d.rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join("");
     // A depot start's allowance as its boxes: what fills them, and what goes free beside them.
     $("depart-carry").innerHTML = hub.departBoxes();
     const w = $("depart-warn");

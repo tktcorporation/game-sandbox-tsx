@@ -294,7 +294,7 @@ const confirmDepart = async (pg, { touch = false, shot = "", pick = null } = {})
   if (pick) await pickStart(pg, pick[0], pick[1], touch);
   const st = await readPage(pg);
   const text = await pg.textContent("#depart");
-  if (!st.camp?.depart || !/武器/.test(text) || !/回復/.test(text) || !/目的/.test(text)) errors.push(`depart: the check reads ${JSON.stringify(st.camp?.depart)} "${text}"`);
+  if (!st.camp?.depart || !/装備/.test(text) || !/目的/.test(text) || !(await pg.locator("#depart-list .kit").count())) errors.push(`depart: the check reads ${JSON.stringify(st.camp?.depart)} "${text}"`);
   if (shot) await pg.screenshot({ path: `${out}/${shot}.png` });
   await (touch ? pg.tap("#depart-go") : pg.keyboard.press("Enter"));
   return st.camp?.depart;

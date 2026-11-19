@@ -2159,13 +2159,13 @@ body.touch #hub-close kbd {
   height: 20px;
 }
 /* A thing brought home: its name on its rarity's colour, counted. */
-#home .chip {
+.chip {
   padding: 2px 8px;
   border-left: 4px solid var(--c, var(--r0));
   background: rgb(var(--white-rgb) / 0.08);
   font-size: 14px;
 }
-#home .chip b {
+.chip b {
   margin-left: 6px;
   font-family: var(--num);
   color: var(--c, var(--white));
@@ -4998,4 +4998,74 @@ body.touch .bag-card:nth-last-child(n + 3) {
   margin-left: 6px;
   color: var(--r3);
   white-space: nowrap;
+}
+
+/* A weapon's numbers: three gauges, each a mark, a bar as long as its share of the longest, and the number. */
+.wstats {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  vertical-align: middle;
+}
+.wstats .g {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--num);
+  font-weight: 600;
+}
+.wstats .g .ico {
+  opacity: 0.8;
+}
+.wstats .g i {
+  width: 34px;
+  height: 5px;
+  background: linear-gradient(to right, var(--white) calc(var(--v) * 100%), rgb(var(--white-rgb) / 0.2) 0);
+}
+.wstats .g b {
+  min-width: 2.6em;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--white);
+}
+.wclass {
+  margin-right: 10px;
+}
+/* The kit as marks: weapons by name in their rarity's colour, then armour, heals and keys as a mark and a count. */
+.kit {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 12px;
+  font-family: var(--num);
+  font-weight: 800;
+}
+.kit span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.kit .none {
+  opacity: 0.35;
+}
+
+/* A contract's ask in marks: its kind as a tag, then the place, the thing and the count. */
+.ask {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+}
+.ask-kind,
+.ask-threat,
+.hub-taken em {
+  font-style: normal;
+  font-size: 12px;
+  padding: 1px 7px;
+  margin-right: 8px;
+  background: rgb(var(--white-rgb) / 0.14);
+}
+.ask-threat {
+  margin: 0 0 0 8px;
+  color: var(--peach);
 }
