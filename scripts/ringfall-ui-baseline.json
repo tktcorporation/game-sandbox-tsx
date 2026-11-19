@@ -47,11 +47,30 @@
  "32-stagger": [
   "contrast #obj-stealth"
  ],
+ "41-hideout-needs": [
+  "wordy div.mod-body div.mod-cost div.req small"
+ ],
+ "42-hideout-built": [
+  "wordy div.mod-body div.mod-cost div.req small"
+ ],
+ "46-depart-depot-shut": [
+  "wordy #depart-hint span"
+ ],
+ "46-depart-over": [
+  "wordy #depart-hint span"
+ ],
+ "46-stash-depot-over": [
+  "contrast #hub-foot-note span.kit span b"
+ ],
  "50-board": [
-  "contrast div.quest.contract div small span"
+  "contrast div.quest.contract div small span",
+  "contrast span span.ask span.chip b",
+  "wordy #hub-side details.told p"
  ],
  "50-board-story": [
-  "contrast div.quest.contract div small span"
+  "contrast div.quest.contract div small span",
+  "contrast span span.ask span.chip b",
+  "wordy #hub-side details.told p"
  ],
  "58-debris": [
   "contrast #obj-stealth"
@@ -65,11 +84,20 @@
  "61-crew-loot": [
   "contrast #obj-stealth"
  ],
- "80-board-strength": [
-  "contrast div.quest.contract div small span"
+ "71-island-panel": [
+  "wordy div.hub-island-side ul.hold-key li.front b"
  ],
- "82-mod-floor": [
-  "contrast #bag-cards div.bag-card div.bp-row span.bp-name"
+ "80-board-strength": [
+  "contrast div.quest.contract div small span",
+  "wordy div.board div.quest.contract div small",
+  "wordy div.quest.contract div div.strength p.asks",
+  "wordy div.quest.contract div div.strength p.gives"
+ ],
+ "83-results-analysis": [
+  "wordy #home div.analyse button.mod small"
+ ],
+ "84-results-analysed": [
+  "wordy #home div.analyse button.mod small"
  ],
  "91-panel-factory": [
   "contrast div.gain-row span.delta span.was small",
@@ -115,18 +143,57 @@
   "contrast li.later span span.gauge small",
   "contrast li.later span span.gauge.up small"
  ],
+ "m0-panel-stash": [
+  "ghost #hub-stash div.item span i"
+ ],
  "m0-title": [
   "tap #title div.title-inner p.note a",
-  "tap #vol"
+  "tap #vol",
+  "wordy #title div.title-inner p.lede"
  ],
  "m1-pause": [
   "tap #vol2"
  ],
+ "m11-hideout-module": [
+  "wordy div.mod-body div.mod-cost div.req small"
+ ],
+ "m12-map-intel": [
+  "wordy div.hub-island-side ul.hold-key li.front b"
+ ],
+ "m14-depart-over": [
+  "wordy #depart-hint span"
+ ],
+ "m16-board": [
+  "wordy #hub-side details.told p"
+ ],
+ "m16-board-story": [
+  "wordy #hub-side details.told p"
+ ],
  "m2-fight": [
   "contrast #obj-stealth"
  ],
- "m24-storm": [
-  "ghost #mate b"
+ "m20-island-results": [
+  "offscreen #stats span",
+  "offscreen #stats span b"
+ ],
+ "m21-island-panel": [
+  "wordy div.hub-island-side ul.hold-key li.front b"
+ ],
+ "m30-board-strength": [
+  "wordy div.board div.quest.contract div small",
+  "wordy div.quest.contract div div.strength p.asks",
+  "wordy div.quest.contract div div.strength p.gives"
+ ],
+ "m31-hud-mods": [
+  "ghost #bag-cards div.bag-card div.bp-row span.bp-name",
+  "ghost #mate b",
+  "ghost #mods i"
+ ],
+ "m33-results-analysis": [
+  "wordy #home div.analyse button.mod small"
+ ],
+ "m34-results-analysed": [
+  "wordy #home div.analyse button.mod small"
  ],
  "m41-panel-factory": [
   "contrast div.gain-row span.delta span.was small",
@@ -137,6 +204,12 @@
   "contrast div.mod-body ol.ladder li.later b",
   "contrast li.later span span.gauge small",
   "contrast li.later span span.gauge.up small"
+ ],
+ "m7-depart-locked-city": [
+  "wordy #depart-hint span"
+ ],
+ "m7-depart-locked-entry": [
+  "wordy #depart-hint span"
  ],
  "m84-depot-risk": [
   "offscreen #compass-strip span"

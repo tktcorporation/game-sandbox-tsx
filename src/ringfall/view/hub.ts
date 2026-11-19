@@ -55,7 +55,7 @@ export function weaponStats(kind: WeaponKind, rarity: Rarity): string {
   const dmg = Math.round(w.dmg * RARITY.dmg[rarity]);
   const rate = Math.round(60 / w.interval);
   const mag = Math.round(w.mag * RARITY.mag[rarity]);
-  const g = (mark: string, v: number, full: number, text: string, label: string) => `<span class="g" title="${label}" style="--v:${Math.min(1, v / full).toFixed(2)}">${mark}<i></i><b>${text}</b></span>`;
+  const g = (mark: string, v: number, full: number, text: string, label: string) => `<span class="g" title="${label}" style="--v:${Math.min(1, v / full).toFixed(2)}">${mark}<i></i><span class="n">${text}</span></span>`;
   return `<span class="wstats">${g(dmgIcon(), dmg * w.pellets, STAT_FULL.dmg, `${dmg}${w.pellets > 1 ? `×${w.pellets}` : ""}`, "威力")}${g(rateIcon(), rate, STAT_FULL.rate, `${rate}`, "毎分")}${g(magIcon(), mag, STAT_FULL.mag, `${mag}`, "弾倉")}</span>`;
 }
 

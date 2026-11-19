@@ -4008,10 +4008,9 @@ body.touch #obj-raid .short {
 }
 .hub-list .quest.contract.dim {
   opacity: 0.72;
-  filter: saturate(0.3);
 }
 .hub-list .quest.contract.dim:hover {
-  opacity: 0.7;
+  opacity: 1;
 }
 .hub-list .quest.contract .pin {
   position: absolute;
@@ -5022,7 +5021,7 @@ body.touch .bag-card:nth-last-child(n + 3) {
   height: 5px;
   background: linear-gradient(to right, var(--white) calc(var(--v) * 100%), rgb(var(--white-rgb) / 0.2) 0);
 }
-.wstats .g b {
+.wstats .g .n {
   min-width: 2.6em;
   font-size: 13px;
   font-weight: 600;
@@ -5030,6 +5029,13 @@ body.touch .bag-card:nth-last-child(n + 3) {
 }
 .wclass {
   margin-right: 10px;
+}
+/* The class and the gauges share the line under a weapon's name, and wrap together on a narrow column. */
+#hub .item small:has(.wstats) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 0;
 }
 /* The kit as marks: weapons by name in their rarity's colour, then armour, heals and keys as a mark and a count. */
 .kit {
