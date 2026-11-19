@@ -81,12 +81,6 @@
  "82-mod-floor": [
   "contrast #bag-cards div.bag-card div.bp-row span.bp-name"
  ],
- "83-results-analysis": [
-  "wordy #home div.analyse button.mod small"
- ],
- "84-results-analysed": [
-  "wordy #home div.analyse button.mod small"
- ],
  "91-panel-factory": [
   "contrast div.gain-row span.delta span.was small",
   "contrast div.mod-body ol.ladder li.later b",
@@ -170,11 +164,8 @@
  "m31-climb": [
   "ghost #mate b"
  ],
- "m33-results-analysis": [
-  "wordy #home div.analyse button.mod small"
- ],
- "m34-results-analysed": [
-  "wordy #home div.analyse button.mod small"
+ "m31-hud-mods": [
+  "contrast #bag-cards div.bag-card div.bp-row span.bp-name"
  ],
  "m41-panel-factory": [
   "contrast div.gain-row span.delta span.was small",
