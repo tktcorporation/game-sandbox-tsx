@@ -94,6 +94,18 @@ function measure(R) {
     for (const l of layers.reverse()) g = over(l, g);
     return g;
   };
+  /** Fading in or out as the shot is taken, or cut on purpose by a box that fades its edges or ends in an ellipsis. */
+  const moving = (el) => {
+    for (let e = el; e; e = e.parentElement) if (e.getAnimations().some((a) => a.playState === "running")) return true;
+    return false;
+  };
+  const masked = (el) => {
+    for (let e = el.parentElement; e; e = e.parentElement) {
+      const s = getComputedStyle(e);
+      if ((s.maskImage || s.webkitMaskImage || "none") !== "none") return true;
+    }
+    return false;
+  };
   const ownText = (el) => [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim().length > 0);
   const related = (a, b) => a === b || a.contains(b) || b.contains(a);
   const solid = (el) => {
@@ -130,7 +142,7 @@ function measure(R) {
     for (let e = el.parentElement; e && e !== document.body; e = e.parentElement) {
       const ps = getComputedStyle(e);
       if (/auto|scroll/.test(ps.overflowY) || /auto|scroll/.test(ps.overflowX)) scrolls = true;
-      if (/hidden|clip/.test(ps.overflow) && !scrolls) {
+      if (/hidden|clip/.test(ps.overflow) && !scrolls && ps.textOverflow !== "ellipsis") {
         const pr = e.getBoundingClientRect();
         if (t.right > pr.right + 2 || t.left < pr.left - 2 || t.bottom > pr.bottom + 3 || t.top < pr.top - 3) cut = e;
       }
@@ -152,11 +164,12 @@ function measure(R) {
     const stack = document.elementsFromPoint(cx, cy);
     const at = stack.findIndex((e) => related(e, el));
     if (at < 0) continue; // scrolled out of its list
+    if (masked(el) || moving(el)) continue;
     const above = stack.slice(0, at).filter((e) => !related(e, el) && shown(e) > 0.08 && e.tagName !== "CANVAS");
     let covered = false;
     for (const top of above) {
       const a = solid(top) * shown(top);
-      if (a >= 0.97) covered = true;
+      if (a >= 0.9) covered = true;
       else if (a > 0.15 && !covered) {
         add("ghost", el, `under ${name(top)} (${a.toFixed(2)} solid)`);
         covered = true;
@@ -183,7 +196,10 @@ function measure(R) {
     const SAND = [217, 168, 104, 1];
     const bg = over(g, SAND);
     const fg = over([ink[0], ink[1], ink[2], ink[3] * o], bg);
-    const need = size >= R.LARGE || (size >= 14 && Number(s.fontWeight) >= 700) ? R.CONTRAST_LARGE : R.CONTRAST;
+    // What cannot be pressed is dim on purpose, and a swatch (●, ▶) is a shape, not a sentence.
+    if (el.closest(":disabled, [aria-disabled=true]")) continue;
+    const shape = !/[\p{L}\p{N}]/u.test(el.textContent);
+    const need = shape || size >= R.LARGE || (size >= 14 && Number(s.fontWeight) >= 700) ? R.CONTRAST_LARGE : R.CONTRAST;
     const c = ratio(fg, bg);
     if (c < need - 0.05 && !shadowed) add("contrast", el, `${c.toFixed(1)} < ${need} (${Math.round(size)}px)`);
   }

@@ -516,6 +516,9 @@ body.touch #obj-raid .why {
 #obj-contract,
 #obj-story {
   grid-column: 1 / -1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   font-size: 13px;
   font-weight: 800;
   color: var(--r3);
@@ -1013,7 +1016,6 @@ body.touch #obj-raid .why {
   padding: 6px 12px;
   min-width: 190px;
   justify-content: space-between;
-  opacity: 0.85;
 }
 .slot.active {
   opacity: 1;
@@ -3149,7 +3151,7 @@ body.touch #camp-prompt {
   left: max(18px, env(safe-area-inset-left));
   width: min(360px, 42vw);
   padding: 8px 12px;
-  background: rgb(var(--ink-rgb) / 0.62);
+  background: var(--plate);
   border-left: 4px solid var(--hot);
 }
 #camp-plan h3 {
