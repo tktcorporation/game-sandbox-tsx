@@ -5002,6 +5002,7 @@ body.touch .bag-card:nth-last-child(n + 3) {
 /* A weapon's numbers: three gauges, each a mark, a bar as long as its share of the longest, and the number. */
 .wstats {
   display: inline-flex;
+  flex-wrap: wrap;
   gap: 2px 12px;
   vertical-align: middle;
 }
