@@ -1,5 +1,5 @@
 import { PLAYER } from "../sim/config";
-import { armorIcon, binPicture, dmgIcon, magIcon, rateIcon, checkIcon, coreIcon, factoryIcon, flagIcon, hideoutIcon, clockIcon, crossIcon, depotIcon, gunIcon, healIcon, issueIcon, keyIcon, lockIcon, modIcon, pinIcon, pouchIcon, radioIcon, robotIcon, routeIcon, SIDE, stashIcon, turretIcon, upIcon, workbenchIcon } from "./icons";
+import { armorIcon, binPicture, coinIcon, dmgIcon, magIcon, rateIcon, checkIcon, coreIcon, factoryIcon, flagIcon, hideoutIcon, clockIcon, crossIcon, depotIcon, gunIcon, healIcon, issueIcon, keyIcon, lockIcon, modIcon, pinIcon, pouchIcon, radioIcon, robotIcon, routeIcon, SIDE, stashIcon, turretIcon, upIcon, workbenchIcon } from "./icons";
 import { ALLY, FACTORY, FACTORY_TOP, HEALS as HEAL_SPECS, HIDEOUT, MOD_KINDS, PLATE, RARITY, THREAT, TOOLS, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
 import { boostFor, raidClock, strengthFor, type Kit } from "../sim/state";
 import { CAMP, DEPOTS, ENTRIES, entryOf, HOME_REGION, NODES, nodeIndex, POIS, UNLOCKS, poiIndex, poiRegion, REGIONS, regionOf, ROUTES, type EntryId, type PoiId, type RegionId, type StationId } from "../sim/map";
@@ -305,8 +305,9 @@ export function whereLine(kind: ValuableKind): string {
   const all = sources(kind);
   const bins = all.filter((s) => s.from === "bin").slice(0, 3);
   const other = all.find((s) => s.from !== "bin");
-  const say = (s: Source) => `${s.where}${s.region ? `（${s.region}）` : ""} ${Math.round(Math.min(1, s.share) * 100)}%`;
-  return [...bins, ...(other ? [other] : [])].map(say).join("・");
+  // A place and its share each, as HTML: a place's name tells where it is.
+  const say = (s: Source) => `<span class="src">${esc(s.where)}<b>${Math.round(Math.min(1, s.share) * 100)}%</b></span>`;
+  return [...bins, ...(other ? [other] : [])].map(say).join("");
 }
 
 /**
@@ -766,7 +767,7 @@ export class Hub {
     const p = this.profile;
     const have = (k: ValuableKind) => p.stash.filter((i) => i.t === "valuable" && i.kind === k).length;
     const rows = items
-      .map(([k, n]) => `<div class="req${have(k) >= n ? " ok" : ""}"><span style="color:${RARITY_CSS[VALUABLES[k].rarity]}">${esc(VALUABLES[k].label)}</span><b>${Math.min(have(k), n)} / ${n}</b><small>${esc(whereLine(k))}</small></div>`)
+      .map(([k, n]) => `<div class="req${have(k) >= n ? " ok" : ""}"><span style="color:${RARITY_CSS[VALUABLES[k].rarity]}">${esc(VALUABLES[k].label)}</span><b>${Math.min(have(k), n)} / ${n}</b><small class="srcs">${whereLine(k)}</small></div>`)
       .join("");
     const credits = `<div class="req${p.cash >= cash ? " ok" : ""}"><span>クレジット</span><b>${yen(Math.min(p.cash, cash))} / ${yen(cash)}</b></div>`;
     return `<div class="mod-cost"><small>必要</small>${rows}${credits}${button}</div>`;
@@ -882,7 +883,7 @@ export class Hub {
 
   /** A reward, in a line: the credits, then the items counted. */
   private reward(r: Reward): string {
-    return [...(r.cash ? [`${yen(r.cash)} クレジット`] : []), ...rewardList({ reward: r }).map(([i, n]) => `<span style="color:${itemColor(i)}">${esc(itemName(i))}${n > 1 ? ` × ${n}` : ""}</span>`)].join("・");
+    return [...(r.cash ? [`<b class="cash">${coinIcon()}${yen(r.cash)}</b>`] : []), ...rewardList({ reward: r }).map(([i, n]) => `<span class="chip" style="--c:${itemColor(i)}">${esc(itemName(i))}${n > 1 ? `<b>${n}</b>` : ""}</span>`)].join("");
   }
 
   /**
@@ -900,7 +901,7 @@ export class Hub {
     const pay = this.reward({ ...c.reward, cash: threatPay(c.reward.cash, n) });
     return (
       `<div class="quest contract${on ? " taken" : ""}${dim ? " dim" : ""}" data-type="${c.t}"><i class="pin"></i><div><strong><em>${CONTRACT_NAME[c.t]}</em>${on ? `<i class="taken-tag">${checkIcon()}${n ? `強度 ${n}` : ""}</i>` : ""}</strong><span>${contractMarks(c)}</span>` +
-      `<small>${where}・報酬 ${pay}</small>${on ? this.strengthRow(c) : ""}</div>${btn}</div>`
+      `<small class="pay"><span>${where}</span>${pay}</small>${on ? this.strengthRow(c) : ""}</div>${btn}</div>`
     );
   }
 
@@ -918,8 +919,9 @@ export class Hub {
     const pct = (k: number) => `${Math.round((1 - k) * 100)}%`;
     const buttons = Array.from({ length: THREAT.max + 1 - base }, (_, k) => k + base).map((i) => `<button type="button" data-act="strength" data-arg="${c.id}:${i - base}"${i === n ? ' class="on"' : ""}>${i ? i : "通常"}</button>`).join("");
     // What the chosen 強度 gives (gold) and asks (red), each a name and a number; nothing at 通常.
-    const gives = n ? `${upIcon()}報酬 ×${t.reward}・改造パーツ ×${t.mods}` : "";
-    const asks = n ? `増援 −${pct(t.reinforce)}・レイダー −${pct(t.raiders)}・装甲板 +${Math.round(t.plate * 100)}%・射程 ×${t.range}` : "";
+    const each = (items: [string, string][]) => items.map(([k, v]) => `<span>${k}<b>${v}</b></span>`).join("");
+    const gives = n ? `${upIcon()}${each([["報酬", `×${t.reward}`], ["改造パーツ", `×${t.mods}`]])}` : "";
+    const asks = n ? each([["増援", `−${pct(t.reinforce)}`], ["レイダー", `−${pct(t.raiders)}`], ["装甲板", `+${Math.round(t.plate * 100)}%`], ["射程", `×${t.range}`]]) : "";
     const best = POIS.filter((o) => (p.freedAt[o.id] ?? 0) > 0).map((o) => `${o.name} ${p.freedAt[o.id]}`);
     return (
       `<div class="strength"><small>強度</small><div class="row">${buttons}</div>${gives ? `<p class="gives">${gives}</p>` : ""}${asks ? `<p class="asks">${asks}</p>` : ""}` +
@@ -1016,7 +1018,7 @@ export class Hub {
       // Another player only once one holds a node of the island.
       (holds.some((h) => rivalOf(h) !== null) ? `<li><i style="background:${RIVAL_CSS}"></i>他のプレイヤー</li>` : "") +
       `<li><i class="titan" style="background:${TITAN_CSS}"></i>タイタン</li>` +
-      `<li class="front"><i></i>前線<b>${NODES.filter((_, i) => front[i]).map((n) => esc(n.name)).join("・") || "—"}</b></li>` +
+      `<li class="front"><i></i>前線<b class="names">${NODES.filter((_, i) => front[i]).map((n) => `<span>${esc(n.name)}</span>`).join("") || "—"}</b></li>` +
       `<li class="locked">${lockIcon(UI.paper)}制圧不可<b>錠を押すと理由</b></li>` +
       `<li class="income">収入<b>${frontIncome(p).toLocaleString()} クレジット</b></li>`;
     return (

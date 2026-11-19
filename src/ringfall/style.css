@@ -5069,3 +5069,31 @@ body.touch .bag-card:nth-last-child(n + 3) {
   margin: 0 0 0 8px;
   color: var(--peach);
 }
+
+/* Lists that were sentences: each thing its own piece, a name and a number. */
+.srcs,
+.names,
+.quest .pay,
+.strength .gives,
+.strength .asks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 12px;
+}
+.srcs b,
+.strength .gives b,
+.strength .asks b {
+  margin-left: 4px;
+  font-family: var(--num);
+  color: var(--white);
+}
+/* Credits: the number in the confirm's yellow, wherever it is a price or a pay. */
+.cash {
+  font-family: var(--num);
+  color: var(--hot);
+}
+.cash .ico {
+  margin-right: 3px;
+  vertical-align: -2px;
+}
