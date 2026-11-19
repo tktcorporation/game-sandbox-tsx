@@ -3608,6 +3608,10 @@ body.touch #hub-close,
 body.touch #results #restart {
   min-height: 40px;
 }
+/* A list scrolls; its rows never shrink to fit (a min-height above replaces the automatic one that kept a button as tall as what is in it). */
+.hub-list > * {
+  flex-shrink: 0;
+}
 body.touch #hub .strength button {
   min-width: 40px;
 }

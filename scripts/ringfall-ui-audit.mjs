@@ -107,6 +107,10 @@ function measure(R) {
     }
     return false;
   };
+  const scroller = (el) => {
+    for (let e = el.parentElement; e && e !== document.body; e = e.parentElement) if (/auto|scroll/.test(getComputedStyle(e).overflowY)) return e;
+    return null;
+  };
   const ownText = (el) => [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim().length > 0);
   const related = (a, b) => a === b || a.contains(b) || b.contains(a);
   const solid = (el) => {
@@ -182,7 +186,12 @@ function measure(R) {
     let covered = false;
     for (const top of above) {
       const a = solid(top) * shown(top);
-      if (a >= 0.9) covered = true;
+      if (a >= 0.9) {
+        // Hidden under a solid thing is no finding, unless both are rows of one scrolling list: rows laid over one another.
+        const list = scroller(el);
+        if (!covered && list && list === scroller(top) && !top.contains(list)) add("overlap", el, `under ${name(top)}, a row of the same list`);
+        covered = true;
+      }
       else if (a > 0.15 && !covered) {
         add("ghost", el, `under ${name(top)} (${a.toFixed(2)} solid)`);
         covered = true;

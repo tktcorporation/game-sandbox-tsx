@@ -47,12 +47,6 @@
  "32-stagger": [
   "contrast #obj-stealth"
  ],
- "41-hideout-needs": [
-  "wordy div.mod-body div.mod-cost div.req small"
- ],
- "42-hideout-built": [
-  "wordy div.mod-body div.mod-cost div.req small"
- ],
  "46-depart-depot-shut": [
   "wordy #depart-hint span"
  ],
@@ -63,35 +57,16 @@
   "contrast #hub-foot-note span.kit span b"
  ],
  "50-board": [
-  "contrast div.quest.contract div small span",
-  "contrast span span.ask span.chip b",
   "wordy #hub-side details.told p"
  ],
  "50-board-story": [
-  "contrast div.quest.contract div small span",
-  "contrast span span.ask span.chip b",
   "wordy #hub-side details.told p"
  ],
  "58-debris": [
   "contrast #obj-stealth"
  ],
- "60-storm": [
-  "ghost #obj-exits div b",
-  "ghost #obj-exits div span",
-  "ghost #obj-exits div.locked.near b",
-  "ghost #obj-exits div.locked.near span"
- ],
  "61-crew-loot": [
   "contrast #obj-stealth"
- ],
- "71-island-panel": [
-  "wordy div.hub-island-side ul.hold-key li.front b"
- ],
- "80-board-strength": [
-  "contrast div.quest.contract div small span",
-  "wordy div.board div.quest.contract div small",
-  "wordy div.quest.contract div div.strength p.asks",
-  "wordy div.quest.contract div div.strength p.gives"
  ],
  "83-results-analysis": [
   "wordy #home div.analyse button.mod small"
@@ -154,12 +129,6 @@
  "m1-pause": [
   "tap #vol2"
  ],
- "m11-hideout-module": [
-  "wordy div.mod-body div.mod-cost div.req small"
- ],
- "m12-map-intel": [
-  "wordy div.hub-island-side ul.hold-key li.front b"
- ],
  "m14-depart-over": [
   "wordy #depart-hint span"
  ],
@@ -176,18 +145,8 @@
   "offscreen #stats span",
   "offscreen #stats span b"
  ],
- "m21-island-panel": [
-  "wordy div.hub-island-side ul.hold-key li.front b"
- ],
- "m30-board-strength": [
-  "wordy div.board div.quest.contract div small",
-  "wordy div.quest.contract div div.strength p.asks",
-  "wordy div.quest.contract div div.strength p.gives"
- ],
  "m31-hud-mods": [
-  "ghost #bag-cards div.bag-card div.bp-row span.bp-name",
-  "ghost #mate b",
-  "ghost #mods i"
+  "contrast #bag-cards div.bag-card div.bp-row span.bp-name"
  ],
  "m33-results-analysis": [
   "wordy #home div.analyse button.mod small"
