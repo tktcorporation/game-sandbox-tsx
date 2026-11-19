@@ -1,7 +1,8 @@
 /*
  * A mod part's effect as a name and a number, not a sentence (docs/ringfall/ui.md): what it
  * changes, and by how much, read off the part's own value in `MODS` so the two cannot drift. A
- * part that pays for a kind of kill names the kill first. The full sentence (`MODS[k].note`) stays
+ * part that pays for a kind of kill names the kill first, with every way of making it (`killMods()`
+ * in sim/mods.ts: from behind or unseen; sliding or in the air, which is not the leap's glide). The full sentence (`MODS[k].note`) stays
  * as the hover text.
  */
 import { MODS, type ModKind } from "../sim/config";
@@ -29,9 +30,9 @@ const GIST: Record<ModKind, { what: string; form: Form; when?: string }> = {
   mender: { what: "自然回復", form: "times" },
   stride: { what: "速さ", form: "more" },
   stock: { what: "反動", form: "less" },
-  slipstream: { when: "背後で撃破", what: "速さ", form: "more" },
-  recharge: { when: "滑空で撃破", what: "アーク", form: "none" },
-  reloader: { when: "背後で撃破", what: "装填", form: "none" },
+  slipstream: { when: "背後か奇襲で撃破", what: "速さ", form: "more" },
+  recharge: { when: "滑りか空中で撃破", what: "アーク", form: "none" },
+  reloader: { when: "背後か奇襲で撃破", what: "装填", form: "none" },
 };
 
 const amount = (v: number, form: Form): string => {
