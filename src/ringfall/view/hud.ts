@@ -1,6 +1,6 @@
 import { pouchKeep, type Settlement } from "../meta/profile";
 import type { ModKind } from "../sim/config";
-import { itemColor, itemName, rewardList } from "./hub";
+import { contractMarks, itemColor, itemName, rewardList } from "./hub";
 import { ALLY, AWARE, BAG, META, DEPOT, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, TACTICAL, TOOL_KINDS, TOOLS, VALUABLES, WEAPONS, type Flank } from "../sim/config";
 import { eyePos, magSize } from "../sim/combat";
 import { atRisk, countered, heldUnlocks } from "../sim/battle";
@@ -1371,7 +1371,7 @@ export class Hud {
     // The contract taken for the raid: done and paid, or not done (it goes with the day).
     const c = settled?.contract;
     const contract = c
-      ? `<h3>依頼${settled?.threat ? `（強度 ${settled.threat}）` : ""}</h3><p><span class="contract ${c.done ? "done" : "failed"}">${CONTRACT_NAME[c.c.t]}：${contractText(c.c)}<b>${c.done ? `${checkIcon()}${c.cash ?? c.c.reward.cash} クレジット${rewardList(c.c).map(([i, n]) => `・${itemName(i)}${n > 1 ? ` × ${n}` : ""}`).join("")}` : crossIcon()}</b></span></p>`
+      ? `<h3>依頼${settled?.threat ? `（強度 ${settled.threat}）` : ""}</h3><p><span class="contract ${c.done ? "done" : "failed"}"><span><em class="ask-kind">${CONTRACT_NAME[c.c.t]}</em>${contractMarks(c.c)}</span><b>${c.done ? `${checkIcon()}${c.cash ?? c.c.reward.cash} クレジット${rewardList(c.c).map(([i, n]) => `・${itemName(i)}${n > 1 ? ` × ${n}` : ""}`).join("")}` : crossIcon()}</b></span></p>`
       : "";
     // The day's event and how it went: the salvage crews met.
     const ev = settled?.event ?? s.event;

@@ -2159,16 +2159,16 @@ body.touch #hub-close kbd {
   height: 20px;
 }
 /* A thing brought home: its name on its rarity's colour, counted. */
-#home .chip {
+.chip {
   padding: 2px 8px;
   border-left: 4px solid var(--c, var(--r0));
   background: rgb(var(--white-rgb) / 0.08);
   font-size: 14px;
 }
-#home .chip b {
+.chip b {
   margin-left: 6px;
   font-family: var(--num);
-  color: var(--c, var(--white));
+  color: var(--white);
 }
 #home p {
   margin: 0;
@@ -3608,6 +3608,10 @@ body.touch #hub-close,
 body.touch #results #restart {
   min-height: 40px;
 }
+/* A list scrolls; its rows never shrink to fit (a min-height above replaces the automatic one that kept a button as tall as what is in it). */
+.hub-list > * {
+  flex-shrink: 0;
+}
 body.touch #hub .strength button {
   min-width: 40px;
 }
@@ -4008,10 +4012,9 @@ body.touch #obj-raid .short {
 }
 .hub-list .quest.contract.dim {
   opacity: 0.72;
-  filter: saturate(0.3);
 }
 .hub-list .quest.contract.dim:hover {
-  opacity: 0.7;
+  opacity: 1;
 }
 .hub-list .quest.contract .pin {
   position: absolute;
@@ -4998,4 +5001,144 @@ body.touch .bag-card:nth-last-child(n + 3) {
   margin-left: 6px;
   color: var(--r3);
   white-space: nowrap;
+}
+
+/* A weapon's numbers: three gauges, each a mark, a bar as long as its share of the longest, and the number. */
+.wstats {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  vertical-align: middle;
+}
+.wstats .g {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--num);
+  font-weight: 600;
+}
+.wstats .g .ico {
+  opacity: 0.8;
+}
+.wstats .g .bar {
+  flex: none;
+  width: 34px;
+  height: 5px;
+  background: linear-gradient(to right, var(--white) calc(var(--v) * 100%), rgb(var(--white-rgb) / 0.2) 0);
+}
+.wstats .g .n {
+  min-width: 2.6em;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--white);
+}
+.wclass {
+  margin-right: 10px;
+}
+/* The class and the gauges share the line under a weapon's name, and wrap together on a narrow column. */
+#hub .item small:has(.wstats) {
+  display: block;
+}
+.wclass {
+  display: inline-block;
+}
+/* The kit as marks: weapons by name in their rarity's colour, then armour, heals and keys as a mark and a count. */
+.kit {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 12px;
+  font-family: var(--num);
+  font-weight: 800;
+}
+.kit span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.kit .none {
+  opacity: 0.35;
+}
+
+/* A contract's ask in marks: its kind as a tag, then the place, the thing and the count. */
+.ask {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+}
+.ask-kind,
+.ask-threat,
+.hub-taken em {
+  font-style: normal;
+  font-size: 12px;
+  padding: 1px 7px;
+  margin-right: 8px;
+  background: rgb(var(--white-rgb) / 0.14);
+}
+.ask-threat {
+  margin: 0 0 0 8px;
+  color: var(--peach);
+}
+
+/* Lists that were sentences: each thing its own piece, a name and a number. */
+.srcs,
+.names,
+.quest .pay,
+.strength .gives,
+.strength .asks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 12px;
+}
+.mod-body .req .srcs b,
+.strength .gives b,
+.strength .asks b {
+  margin-left: 4px;
+  font-family: var(--num);
+  color: var(--white);
+}
+/* Credits: the number in the confirm's yellow, wherever it is a price or a pay. */
+.cash {
+  font-family: var(--num);
+  color: var(--hot);
+}
+.cash .ico {
+  margin-right: 3px;
+  vertical-align: -2px;
+}
+
+/*
+ * The objective card says one thing: what to do now. Under it only what changes as the raid goes:
+ * the bag, the clock, whether the robots know. The goal's own name is on the camp's card and the
+ * departure, the record's line gives way to a contract's, and a way off shows when it is news (a
+ * craft called, a flare in hand); every way off is on the map (docs/ringfall/ui.md, 1 画面 1 つ).
+ */
+#obj-title {
+  display: none;
+}
+#obj-contract:not([hidden]) ~ #obj-story {
+  display: none;
+}
+#obj-exits div:not(.live) {
+  display: none;
+}
+#obj-exits:not(:has(.live)) {
+  display: none;
+}
+/* On a phone the three gauges share one line beside the row's button. */
+body.touch .wstats {
+  gap: 2px 8px;
+}
+body.touch .wstats .g .bar {
+  width: 26px;
+}
+body.touch .wstats .g .n {
+  min-width: 2em;
+}
+/* A panel or the departure covers the phone's buttons: they would show through its plate. */
+body:has(#hub:not([hidden])) #touch,
+body:has(#depart:not([hidden])) #touch {
+  visibility: hidden;
 }

@@ -1,10 +1,10 @@
 import { PLAYER } from "../sim/config";
-import { armorIcon, binPicture, checkIcon, coreIcon, factoryIcon, flagIcon, hideoutIcon, clockIcon, crossIcon, depotIcon, gunIcon, healIcon, issueIcon, keyIcon, lockIcon, modIcon, pinIcon, pouchIcon, radioIcon, robotIcon, routeIcon, SIDE, stashIcon, turretIcon, upIcon, workbenchIcon } from "./icons";
+import { armorIcon, binPicture, coinIcon, dmgIcon, magIcon, rateIcon, checkIcon, coreIcon, factoryIcon, flagIcon, hideoutIcon, clockIcon, crossIcon, depotIcon, gunIcon, healIcon, issueIcon, keyIcon, lockIcon, modIcon, pinIcon, pouchIcon, radioIcon, robotIcon, routeIcon, SIDE, stashIcon, turretIcon, upIcon, workbenchIcon } from "./icons";
 import { ALLY, FACTORY, FACTORY_TOP, HEALS as HEAL_SPECS, HIDEOUT, MOD_KINDS, PLATE, RARITY, THREAT, TOOLS, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
 import { boostFor, raidClock, strengthFor, type Kit } from "../sim/state";
 import { CAMP, DEPOTS, ENTRIES, entryOf, HOME_REGION, NODES, nodeIndex, POIS, UNLOCKS, poiIndex, poiRegion, REGIONS, regionOf, ROUTES, type EntryId, type PoiId, type RegionId, type StationId } from "../sim/map";
 import { armed, build, buildFactory, buildState, buy, buyPrice, canBuild, canBuildFactory, factoryNeeded, nextFactory, canStartIn, deliver, deliverable, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, isStarter, issuedHeals, itemCost, HEALS, healCount, healRoom, keyName, kitPicks, loadoutCost, stashUsed, price, raidThreat, recallLoadout, roundThreat, sell, sellPrice, setThreat, startsIn, STORY_TAKEN, takenStory, threatPay, take, takeKit, takenContract, wanted, wares, type Item, type Loadout, type Profile } from "../meta/profile";
-import { CONTRACT_NAME, contractMark, contractRegion, contractText, type Contract, type Reward } from "../meta/contracts";
+import { CONTRACT_NAME, contractMark, contractRegion, targetName, type Contract, type Reward } from "../meta/contracts";
 import { currentStory, STORIES, storyOf, storyWhere } from "../meta/story";
 import { materialRarity, maxLevel, MODULES, nextLevel, pouchSlots, sources, stashCap, stillNeeded, type Hideout, type Source } from "../meta/hideout";
 import { need, offered, type Quest, type RewardItem } from "../meta/quests";
@@ -42,11 +42,21 @@ export function itemName(i: Item | RewardItem): string {
   }
 }
 
-/** A weapon's numbers at a rarity, from its spec: damage a hit (pellets a shot), shots a minute, the magazine. */
+/** The gauges' full lengths: a shot's damage, shots a minute, the magazine. */
+const STAT_FULL = { dmg: 100, rate: 900, mag: 30 };
+
+/**
+ * A weapon's numbers at a rarity, from its spec, as three gauges with their marks: damage a shot
+ * (pellets together), shots a minute, the magazine. The number stands beside each bar, so two
+ * weapons compare by length and read exactly.
+ */
 export function weaponStats(kind: WeaponKind, rarity: Rarity): string {
   const w = WEAPONS[kind];
   const dmg = Math.round(w.dmg * RARITY.dmg[rarity]);
-  return `威力 ${dmg}${w.pellets > 1 ? `×${w.pellets}` : ""}・毎分 ${Math.round(60 / w.interval)} 発・弾倉 ${Math.round(w.mag * RARITY.mag[rarity])}`;
+  const rate = Math.round(60 / w.interval);
+  const mag = Math.round(w.mag * RARITY.mag[rarity]);
+  const g = (mark: string, v: number, full: number, text: string, label: string) => `<span class="g" title="${label}" style="--v:${Math.min(1, v / full).toFixed(2)}">${mark}<span class="bar"></span><span class="n">${text}</span></span>`;
+  return `<span class="wstats">${g(dmgIcon(), dmg * w.pellets, STAT_FULL.dmg, `${dmg}${w.pellets > 1 ? `×${w.pellets}` : ""}`, "威力")}${g(rateIcon(), rate, STAT_FULL.rate, `${rate}`, "毎分")}${g(magIcon(), mag, STAT_FULL.mag, `${mag}`, "弾倉")}</span>`;
 }
 
 /** What the hideout's unbuilt levels and the factory's still ask for, by kind. */
@@ -63,7 +73,7 @@ interface Needs {
 function itemNote(i: Item, need?: Needs): string {
   switch (i.t) {
     case "weapon":
-      return `${WEAPONS[i.kind].label}・${weaponStats(i.kind, i.rarity)}`;
+      return `<span class="wclass">${WEAPONS[i.kind].label}</span>${weaponStats(i.kind, i.rarity)}`;
     case "valuable": {
       const h = need?.hideout[i.kind] ?? 0;
       const f = need?.factory[i.kind] ?? 0;
@@ -194,6 +204,22 @@ const boardKey = (p: Profile) => `${p.board.day}:${p.board.contracts.map((c) => 
 /** An item as its mark in its colour: a gun, armour or a key. */
 /** A starter weapon's mark before its name: a pin, since it stays in the stash. "" for anything else. */
 const starterMark = (i: Item | undefined) => (isStarter(i) ? `<i class="starter">${pinIcon()}</i>` : "");
+/**
+ * A contract's ask as marks, not a sentence: the enemy's core and the node to take; the POI and the
+ * valuable to bring from its bins, as a chip with the count; a robot and the squad to destroy.
+ */
+export function contractMarks(c: Contract): string {
+  const poi = (id: PoiId) => `<b>${esc(POIS[poiIndex(id)].name)}</b>`;
+  switch (c.t) {
+    case "free":
+      return `<span class="ask">${coreIcon(SIDE.enemy)}${poi(c.poi)}</span>`;
+    case "fetch":
+      return `<span class="ask">${poi(c.poi)}<span class="chip" style="--c:${RARITY_CSS[VALUABLES[c.kind].rarity]}">${VALUABLES[c.kind].label}<b>${c.n}</b></span></span>`;
+    case "intercept":
+      return `<span class="ask">${robotIcon(SIDE.enemy)}<b>${esc(targetName(c.target))}</b></span>`;
+  }
+}
+
 const itemMark = (i: Item) => `<span style="color:${itemColor(i)}">${i.t === "weapon" ? gunIcon() : i.t === "armor" ? armorIcon() : keyIcon()}</span>`;
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
 const yen = (n: number) => n.toLocaleString("ja-JP");
@@ -279,8 +305,9 @@ export function whereLine(kind: ValuableKind): string {
   const all = sources(kind);
   const bins = all.filter((s) => s.from === "bin").slice(0, 3);
   const other = all.find((s) => s.from !== "bin");
-  const say = (s: Source) => `${s.where}${s.region ? `（${s.region}）` : ""} ${Math.round(Math.min(1, s.share) * 100)}%`;
-  return [...bins, ...(other ? [other] : [])].map(say).join("・");
+  // A place and its share each, as HTML: a place's name tells where it is.
+  const say = (s: Source) => `<span class="src">${esc(s.where)}<b>${Math.round(Math.min(1, s.share) * 100)}%</b></span>`;
+  return [...bins, ...(other ? [other] : [])].map(say).join("");
 }
 
 /**
@@ -740,7 +767,7 @@ export class Hub {
     const p = this.profile;
     const have = (k: ValuableKind) => p.stash.filter((i) => i.t === "valuable" && i.kind === k).length;
     const rows = items
-      .map(([k, n]) => `<div class="req${have(k) >= n ? " ok" : ""}"><span style="color:${RARITY_CSS[VALUABLES[k].rarity]}">${esc(VALUABLES[k].label)}</span><b>${Math.min(have(k), n)} / ${n}</b><small>${esc(whereLine(k))}</small></div>`)
+      .map(([k, n]) => `<div class="req${have(k) >= n ? " ok" : ""}"><span style="color:${RARITY_CSS[VALUABLES[k].rarity]}">${esc(VALUABLES[k].label)}</span><b>${Math.min(have(k), n)} / ${n}</b>${have(k) >= n ? "" : `<small class="srcs">${whereLine(k)}</small>`}</div>`)
       .join("");
     const credits = `<div class="req${p.cash >= cash ? " ok" : ""}"><span>クレジット</span><b>${yen(Math.min(p.cash, cash))} / ${yen(cash)}</b></div>`;
     return `<div class="mod-cost"><small>必要</small>${rows}${credits}${button}</div>`;
@@ -856,7 +883,7 @@ export class Hub {
 
   /** A reward, in a line: the credits, then the items counted. */
   private reward(r: Reward): string {
-    return [...(r.cash ? [`${yen(r.cash)} クレジット`] : []), ...rewardList({ reward: r }).map(([i, n]) => `<span style="color:${itemColor(i)}">${esc(itemName(i))}${n > 1 ? ` × ${n}` : ""}</span>`)].join("・");
+    return [...(r.cash ? [`<b class="cash">${coinIcon()}${yen(r.cash)}</b>`] : []), ...rewardList({ reward: r }).map(([i, n]) => `<span class="chip" style="--c:${itemColor(i)}">${esc(itemName(i))}${n > 1 ? `<b>${n}</b>` : ""}</span>`)].join("");
   }
 
   /**
@@ -873,8 +900,8 @@ export class Hub {
     const n = on ? raidThreat(this.profile) : roundThreat(this.profile);
     const pay = this.reward({ ...c.reward, cash: threatPay(c.reward.cash, n) });
     return (
-      `<div class="quest contract${on ? " taken" : ""}${dim ? " dim" : ""}" data-type="${c.t}"><i class="pin"></i><div><strong><em>${CONTRACT_NAME[c.t]}</em>${on ? `<i class="taken-tag">${checkIcon()}${n ? `強度 ${n}` : ""}</i>` : ""}</strong><span>${esc(contractText(c))}</span>` +
-      `<small>${where}・報酬 ${pay}</small>${on ? this.strengthRow(c) : ""}</div>${btn}</div>`
+      `<div class="quest contract${on ? " taken" : ""}${dim ? " dim" : ""}" data-type="${c.t}"><i class="pin"></i><div><strong><em>${CONTRACT_NAME[c.t]}</em>${on ? `<i class="taken-tag">${checkIcon()}${n ? `強度 ${n}` : ""}</i>` : ""}</strong><span>${contractMarks(c)}</span>` +
+      `<small class="pay"><span>${where}</span>${pay}</small>${on ? this.strengthRow(c) : ""}</div>${btn}</div>`
     );
   }
 
@@ -892,8 +919,9 @@ export class Hub {
     const pct = (k: number) => `${Math.round((1 - k) * 100)}%`;
     const buttons = Array.from({ length: THREAT.max + 1 - base }, (_, k) => k + base).map((i) => `<button type="button" data-act="strength" data-arg="${c.id}:${i - base}"${i === n ? ' class="on"' : ""}>${i ? i : "通常"}</button>`).join("");
     // What the chosen 強度 gives (gold) and asks (red), each a name and a number; nothing at 通常.
-    const gives = n ? `${upIcon()}報酬 ×${t.reward}・改造パーツ ×${t.mods}` : "";
-    const asks = n ? `増援 −${pct(t.reinforce)}・レイダー −${pct(t.raiders)}・装甲板 +${Math.round(t.plate * 100)}%・射程 ×${t.range}` : "";
+    const each = (items: [string, string][]) => items.map(([k, v]) => `<span>${k}<b>${v}</b></span>`).join("");
+    const gives = n ? `${upIcon()}${each([["報酬", `×${t.reward}`], ["改造パーツ", `×${t.mods}`]])}` : "";
+    const asks = n ? each([["増援", `−${pct(t.reinforce)}`], ["レイダー", `−${pct(t.raiders)}`], ["装甲板", `+${Math.round(t.plate * 100)}%`], ["射程", `×${t.range}`]]) : "";
     const best = POIS.filter((o) => (p.freedAt[o.id] ?? 0) > 0).map((o) => `${o.name} ${p.freedAt[o.id]}`);
     return (
       `<div class="strength"><small>強度</small><div class="row">${buttons}</div>${gives ? `<p class="gives">${gives}</p>` : ""}${asks ? `<p class="asks">${asks}</p>` : ""}` +
@@ -984,24 +1012,23 @@ export class Hub {
     const taken = takenContract(p);
     const holds = islandHolds(p);
     const front = frontNodes(holds);
-    // How much of the island is the player's is the row of six marks above; the key only names the colours.
+    // The map says who holds what (blue and red, as the row above) and where the front is (its rings):
+    // beside it stand only what the map cannot say, the nodes to strike next by name and the day's income.
     const key =
-      (["freed", "held"] as const).map((h) => `<li><i style="background:${HOLD_CSS[h]}"></i>${h === "freed" ? "自分" : "敵"}</li>`).join("") +
-      // Another player only once one holds a node of the island.
+      // Another player only once one holds a node of the island: a colour the row above does not explain.
       (holds.some((h) => rivalOf(h) !== null) ? `<li><i style="background:${RIVAL_CSS}"></i>他のプレイヤー</li>` : "") +
-      `<li><i class="titan" style="background:${TITAN_CSS}"></i>タイタン</li>` +
-      `<li class="front"><i></i>前線<b>${NODES.filter((_, i) => front[i]).map((n) => esc(n.name)).join("・") || "—"}</b></li>` +
-      `<li class="locked">${lockIcon(UI.paper)}制圧不可<b>錠を押すと理由</b></li>` +
-      `<li class="income">収入<b>${frontIncome(p).toLocaleString()} クレジット</b></li>`;
+      `<li class="front"><i></i><b class="names">${NODES.filter((_, i) => front[i]).map((n) => `<span>${esc(n.name)}</span>`).join("") || "—"}</b></li>` +
+      (frontIncome(p) ? `<li class="income"><b class="cash">${coinIcon()}${frontIncome(p).toLocaleString()}</b></li>` : "");
     return (
       `<div class="hub-island"><canvas id="hub-island-map"></canvas><div class="hub-island-side">` +
       `<div class="hub-day"><small>島の日</small><b>${p.day}</b><small>日目</small></div>` +
       `<div class="hub-row">${nodeRow(holds)}</div>` +
-      `<small>島の出来事</small><ul class="events"><li><small>今日</small>${eventRow(p.events[0])}</li><li><small>明日</small>${eventRow(p.events[1])}</li></ul>` +
+      // A quiet day and a quiet tomorrow say nothing.
+      (p.events[0] || p.events[1] ? `<ul class="events"><li><small>今日</small>${eventRow(p.events[0])}</li><li><small>明日</small>${eventRow(p.events[1])}</li></ul>` : "") +
       `<ul class="hold-key">${key}</ul>` +
       (p.incoming.length ? `<small>来る遠征（地図の緑の矢印）</small><ul class="island-news incoming">${p.incoming.map((e) => `<li>${coreIcon(SIDE.rival)}${esc(incomingLine(e, Date.now()))}</li>`).join("")}</ul>` : "") +
       (this.news.length ? `<small>島の知らせ</small><ul class="island-news">${this.news.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>` : "") +
-      (taken ? `<small>依頼　${esc(regionOf(contractRegion(taken)).name)}<i class="taken-line"></i></small><p class="hub-taken">${CONTRACT_NAME[taken.t]}：${esc(contractText(taken))}</p>` : "") +
+      (taken ? `<small>依頼　${esc(regionOf(contractRegion(taken)).name)}<i class="taken-line"></i></small><p class="hub-taken"><em>${CONTRACT_NAME[taken.t]}</em>${contractMarks(taken)}</p>` : "") +
       `</div></div>`
     );
   }
@@ -1036,35 +1063,48 @@ export class Hub {
     const slot = (label: string, n: number | null | undefined, extra = "") => `<div class="slot"><small>${label}</small><span${n == null ? ' class="none"' : ` style="color:${itemColor(p.stash[n])}"`}>${n == null ? "なし" : starterMark(p.stash[n]) + esc(itemName(p.stash[n]))}</span>${extra}</div>`;
     const stat = (n: number | undefined) => {
       const i = n === undefined ? undefined : p.stash[n];
-      return i?.t === "weapon" ? `<small class="stat">${esc(weaponStats(i.kind, i.rarity))}</small>` : "";
+      return i?.t === "weapon" ? `<small class="stat">${weaponStats(i.kind, i.rarity)}</small>` : "";
     };
     const heal = (k: (typeof HEALS)[number]) =>
       `<div class="slot count"><small>${HEAL_SPECS[k].label}</small><button type="button" data-act="heal-" data-arg="${k}">−</button><b>${this.load.heals[k] + issued[k]}</b><button type="button" data-act="heal+" data-arg="${k}">+</button><small>倉庫 ${this.load.heals[k]}/${healCount(p, k)}${issued[k] ? `<span class="issued">${issueIcon()}${issued[k]}</span>` : ""}</small></div>`;
     const keys = this.load.keys.map((n) => esc(itemName(p.stash[n]))).join("・");
     const weapons = slot("武器 1", this.load.weapons[0], stat(this.load.weapons[0])) + slot("武器 2", this.load.weapons[1], stat(this.load.weapons[1]));
+    // A row stands only for what the stash can fill: no armour, no key and no heal of a kind means no row for it.
+    const has = (t: Item["t"]) => p.stash.some((i) => i.t === t);
     return (
       this.depotSlot() +
       weapons +
-      slot("アーマー", this.load.armor) +
-      `<div class="slot"><small>鍵</small><span${keys ? ` style="color:${RARITY_CSS[3]}"` : ' class="none"'}>${keys || "なし"}</span></div>` +
-      HEALS.map(heal).join("") +
+      (has("armor") ? slot("アーマー", this.load.armor) : "") +
+      (has("key") ? `<div class="slot"><small>鍵</small><span${keys ? ` style="color:${RARITY_CSS[3]}"` : ' class="none"'}>${keys || "なし"}</span></div>` : "") +
+      HEALS.filter((k) => healCount(p, k) + issued[k] > 0)
+        .map(heal)
+        .join("") +
       // The pouch: the slots of valuables a wipe leaves the player.
       `<div class="slot pouch"><small>${pouchIcon()}ポーチ</small><span class="boxes">${Array.from({ length: pouchSlots(p.hideout) }, () => `<i class="seg pouch" style="--n:1"></i>`).join("")}</span><b>${pouchSlots(p.hideout)}</b></div>`
     );
   }
 
-  /** The next raid's kit in words, for the departure's check and the camp's card: weapons, armour, heals, keys. */
-  kitLines(): { weapons: string; armor: string; heals: string; keys: string } {
+  /** The contract taken, in a line of marks: its kind, its ask, and its 強度 when raised. */
+  private askLine(c: Contract): string {
+    const n = raidThreat(this.profile);
+    return `<em class="ask-kind">${CONTRACT_NAME[c.t]}</em>${contractMarks(c)}${n ? `<em class="ask-threat">強度 ${n}</em>` : ""}`;
+  }
+
+  /**
+   * The next raid's kit as marks, for the departure, the camp's card and the shelves' foot: each
+   * weapon's name in its rarity's colour, armour's mark with its level (dim with none), each heal's
+   * mark with its count, the keys' mark with theirs.
+   */
+  kitMarks(): string {
     const p = this.profile;
     const l = this.load;
     const issued = issuedHeals(p);
-    const weapons = l.weapons.map((n) => itemName(p.stash[n])).join("・");
-    const armor = l.armor === null ? "なし" : itemName(p.stash[l.armor]);
-    const heals = HEALS.filter((k) => l.heals[k] + issued[k] > 0)
-      .map((k) => `${HEAL_SPECS[k].label} ${l.heals[k] + issued[k]}`)
-      .join("・");
-    const keys = l.keys.map((n) => itemName(p.stash[n])).join("・") || "なし";
-    return { weapons, armor, heals: heals || "なし", keys };
+    const weapons = l.weapons.map((n) => p.stash[n]).map((i) => (i.t === "weapon" ? `<b style="color:${itemColor(i)}">${WEAPONS[i.kind].name}</b>` : ""));
+    const worn = l.armor === null ? null : p.stash[l.armor];
+    const armor = worn?.t === "armor" ? `<span style="color:${itemColor(worn)}">${armorIcon()}<b>${worn.tier}</b></span>` : `<span class="none">${armorIcon()}</span>`;
+    const heals = HEALS.filter((k) => l.heals[k] + issued[k] > 0).map((k) => `<span>${healIcon(HEAL_SPECS[k].shield)}<b>${l.heals[k] + issued[k]}</b></span>`);
+    const keys = l.keys.length ? `<span style="color:${RARITY_CSS[3]}">${keyIcon()}<b>${l.keys.length}</b></span>` : "";
+    return `<span class="kit">${[...weapons, armor, ...heals, keys].join("")}</span>`;
   }
 
   /**
@@ -1074,20 +1114,17 @@ export class Hub {
   departure(): { rows: [string, string][]; warn: string[] } {
     this.fixStart();
     const p = this.profile;
-    const k = this.kitLines();
     const c = takenContract(p);
     const story = takenStory(p) ? currentStory(p.records) : null;
     const front = this.frontPick();
-    const goal = c ? `${CONTRACT_NAME[c.t]}：${contractText(c)}${raidThreat(p) ? `（強度 ${raidThreat(p)}）` : ""}` : story ? `記録：${story.title}` : front ? `前線：${front.name}` : "探索";
+    const goal = c ? this.askLine(c) : esc(story ? `記録：${story.title}` : front ? `前線：${front.name}` : "探索");
+    // Each row's value is HTML: marks, and names escaped here.
     const rows: [string, string][] = [
-      ["武器", k.weapons],
-      ["アーマー", k.armor],
-      ["回復", k.heals],
-      ["鍵", k.keys],
+      ["装備", this.kitMarks()],
       ["目的", goal],
     ];
     // Other players' expeditions sent at this island land in this raid: where, whose, and what to do about it.
-    if (p.incoming.length) rows.push(["来る遠征", `${p.incoming.map((e) => `${NODES[nodeIndex(e.node)]?.name ?? e.node}（${e.by.name || e.by.code}）`).join("・")}　核を守ると固められる`]);
+    if (p.incoming.length) rows.push(["来る遠征", esc(`${p.incoming.map((e) => `${NODES[nodeIndex(e.node)]?.name ?? e.node}（${e.by.name || e.by.code}）`).join("・")}　核を守ると固められる`)]);
     const warn: string[] = [];
 
     return { rows, warn };
@@ -1119,12 +1156,12 @@ export class Hub {
     const pick = this.frontPick();
     const c = takenContract(p);
     const story = takenStory(p) ? currentStory(p.records) : null;
-    const k = this.kitLines();
+    // Each value is HTML: marks, and names escaped here.
     const plan: [string, string][] = [
       // The pad open to the decisive battle comes before any node.
-      final ? ["決戦", POIS.find((o) => o.boss)!.name] : ["攻める拠点", pick ? pick.name : "なし"],
-      ["依頼", c ? `${CONTRACT_NAME[c.t]}：${contractText(c)}${raidThreat(p) ? `（強度 ${raidThreat(p)}）` : ""}` : story ? `記録：${story.title}` : "なし"],
-      ["装備", `${k.weapons}・アーマー ${k.armor}`],
+      final ? ["決戦", esc(POIS.find((o) => o.boss)!.name)] : ["攻める拠点", pick ? esc(pick.name) : "—"],
+      ["依頼", c ? this.askLine(c) : esc(story ? `記録：${story.title}` : "—")],
+      ["装備", this.kitMarks()],
     ];
     return { head, row: nodeRow(islandHolds(p)), plan };
   }
@@ -1199,8 +1236,7 @@ export class Hub {
     // The shelves' footer: what the next raid takes out, in a line.
     $("hub-foot").hidden = !kit;
     if (kit) {
-      const k = this.kitLines();
-      $("hub-foot-note").textContent = `${k.weapons}・アーマー ${k.armor}・${k.heals}`;
+      $("hub-foot-note").innerHTML = this.kitMarks();
     }
   }
 }

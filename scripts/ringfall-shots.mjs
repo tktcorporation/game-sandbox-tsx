@@ -294,7 +294,7 @@ const confirmDepart = async (pg, { touch = false, shot = "", pick = null } = {})
   if (pick) await pickStart(pg, pick[0], pick[1], touch);
   const st = await readPage(pg);
   const text = await pg.textContent("#depart");
-  if (!st.camp?.depart || !/武器/.test(text) || !/回復/.test(text) || !/目的/.test(text)) errors.push(`depart: the check reads ${JSON.stringify(st.camp?.depart)} "${text}"`);
+  if (!st.camp?.depart || !/装備/.test(text) || !/目的/.test(text) || !(await pg.locator("#depart-list .kit").count())) errors.push(`depart: the check reads ${JSON.stringify(st.camp?.depart)} "${text}"`);
   if (shot) await pg.screenshot({ path: `${out}/${shot}.png` });
   await (touch ? pg.tap("#depart-go") : pg.keyboard.press("Enter"));
   return st.camp?.depart;
@@ -831,8 +831,9 @@ const read = async () => JSON.parse(await page.evaluate(() => window.render_game
   await page.locator("#hub-stash [data-act=pick]", { hasText: "LANCE" }).click();
   await page.locator("#hub-stash [data-act=pick]", { hasText: "HORNET" }).click();
   // Each weapon shows its numbers, in the stash's list and in the picked slots.
-  const stats = await page.locator("#hub-side .slot .stat").allTextContents();
-  if (stats.length !== 2 || !stats.every((t) => /威力 \d+.*毎分 \d+ 発.*弾倉 \d+/.test(t)) || !(await page.locator("#hub-stash .item small", { hasText: "毎分" }).count())) errors.push(`camp: the shelves' weapons show ${JSON.stringify(stats)}`);
+  // Three gauges a weapon (a shot's damage, shots a minute, the magazine), each with its number.
+  const stats = await page.locator("#hub-side .slot .stat").evaluateAll((els) => els.map((e) => [...e.querySelectorAll(".wstats .g .n")].map((n) => n.textContent)));
+  if (stats.length !== 2 || !stats.every((t) => t.length === 3 && t.every((n) => /^\d+(×\d+)?$/.test(n))) || !(await page.locator("#hub-stash .item small .wstats").count())) errors.push(`camp: the shelves' weapons show ${JSON.stringify(stats)}`);
   await page.screenshot({ path: `${out}/00-panel-stash.png` });
   await closePanel(page);
   await seen("vehicle");
@@ -1945,7 +1946,7 @@ lap("island");
     await pg.waitForTimeout(100);
     const c1 = await readOf(pg);
     const text = await pg.textContent("#hub-side .quest.contract.taken");
-    if (c1.profile.threat !== 3 || !c1.camp.taken || /網/.test(text) || !/補給所 3/.test(text) || !/報酬 ×/.test(text)) errors.push(`threat: the board's 強度 left ${c1.profile.threat} (taken ${c1.camp.taken}) and reads "${text}"`);
+    if (c1.profile.threat !== 3 || !c1.camp.taken || /網/.test(text) || !/補給所 3/.test(text) || !/報酬\s*×/.test(text)) errors.push(`threat: the board's 強度 left ${c1.profile.threat} (taken ${c1.camp.taken}) and reads "${text}"`);
     const fit = await spills(pg);
     if (fit.length) errors.push(`board 強度${phone ? " on a phone" : ""}: ${[...new Set(fit)].join(", ")}`);
     await pg.locator("#hub-side .quest.contract.taken").scrollIntoViewIfNeeded();

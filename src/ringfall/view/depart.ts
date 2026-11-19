@@ -34,6 +34,8 @@ export class DepartPicker {
   ) {
     const canvas = $("depart-map") as HTMLCanvasElement;
     this.map = new IslandMap(canvas);
+    // The departure chooses a start: the map shows who holds what and the nodes' names; the starts are the buttons laid over it.
+    this.map.plain = true;
     this.map.whole = true;
     $("depart-board").style.setProperty("--world-aspect", `${(WORLD.x1 - WORLD.x0) / (WORLD.z1 - WORLD.z0)}`);
     $("depart-points").addEventListener("click", (e) => {
@@ -108,7 +110,7 @@ export class DepartPicker {
     const how = $("depart-hint");
     how.hidden = !hint;
     how.innerHTML = hint ? hint.how.map((l) => `<span>${esc(l)}</span>`).join("") : "";
-    $("depart-list").innerHTML = d.rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("");
+    $("depart-list").innerHTML = d.rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join("");
     // A depot start's allowance as its boxes: what fills them, and what goes free beside them.
     $("depart-carry").innerHTML = hub.departBoxes();
     const w = $("depart-warn");

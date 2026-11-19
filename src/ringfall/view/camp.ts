@@ -102,7 +102,7 @@ export class CampView {
       row.dataset.html = o.today.row;
       row.innerHTML = o.today.row;
     }
-    const plan = o.today.plan.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("");
+    const plan = o.today.plan.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join("");
     const list = $("camp-plan-list");
     if (list.dataset.html !== plan) {
       list.dataset.html = plan;

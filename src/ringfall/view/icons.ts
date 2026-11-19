@@ -172,3 +172,11 @@ export const radioIcon = (c: string = UI.sky) =>
 /** A squad of the factory's out at once: the map's blue flag on a white pole (a node that adds one carries the same flag). */
 export const flagIcon = (c: string = SIDE.own) =>
   svg(`<path d="M3.5 15 V1.5" stroke="${UI.paper}" stroke-width="1.6" stroke-linecap="round"/><path d="M3.5 1.8 L14 5.4 L3.5 9 Z" fill="${c}"/>`, "flag");
+
+/** A weapon's three numbers, each with its mark: the damage of a shot (a burst), shots a minute (three rounds flying), the magazine. */
+export const dmgIcon = (c = "currentColor") => svg(`<path d="M8 1 L9.8 5.6 L14.6 4 L11.6 8 L14.6 12 L9.8 10.4 L8 15 L6.2 10.4 L1.4 12 L4.4 8 L1.4 4 L6.2 5.6 Z" fill="${c}"/>`, "i-dmg", 12);
+export const rateIcon = (c = "currentColor") => svg(`<path d="M1 4 H6 L8 5.5 L6 7 H1 Z M5 9 H10 L12 10.5 L10 12 H5 Z M9 4 H13 L15 5.5 L13 7 H9 Z" fill="${c}"/>`, "i-rate", 12);
+export const magIcon = (c = "currentColor") => svg(`<path d="M5 1.5 H11 V11 L9.5 14.5 H4.5 L5 11 Z" fill="${c}"/><path d="M5.6 4 H10.4 M5.6 6.5 H10.4 M5.6 9 H10.4" stroke="${alpha(UI.night, 0.7)}" stroke-width="1"/>`, "i-mag", 12);
+
+/** Credits: a coin in the confirm's yellow, before a price or a pay. */
+export const coinIcon = (c: string = UI.hot) => svg(`<circle cx="8" cy="8" r="6.2" fill="${c}"/><circle cx="8" cy="8" r="3.4" fill="none" stroke="${alpha(UI.night, 0.55)}" stroke-width="1.4"/>`, "coin", 12);

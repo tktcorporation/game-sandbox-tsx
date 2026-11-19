@@ -107,6 +107,10 @@ function measure(R) {
     }
     return false;
   };
+  const scroller = (el) => {
+    for (let e = el.parentElement; e && e !== document.body; e = e.parentElement) if (/auto|scroll/.test(getComputedStyle(e).overflowY)) return e;
+    return null;
+  };
   const ownText = (el) => [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim().length > 0);
   const related = (a, b) => a === b || a.contains(b) || b.contains(a);
   const solid = (el) => {
@@ -115,7 +119,9 @@ function measure(R) {
   };
   const texts = [];
   for (const el of document.body.querySelectorAll("*")) {
-    if (el.closest("svg, canvas, script, style, #touch, select")) continue;
+    if (el.closest("svg, canvas, script, style, select")) continue;
+    // The phone's buttons float on the world by design: only what covers them is measured.
+    const pad = !!el.closest("#touch");
     const r = el.getBoundingClientRect();
     if (r.width < 1 || r.height < 1) continue;
     const s = getComputedStyle(el);
@@ -127,6 +133,11 @@ function measure(R) {
     const o = shown(el);
     if (o < 0.08) continue;
     const size = parseFloat(s.fontSize);
+    if (pad) {
+      const b = el.getBoundingClientRect();
+      if (b.right > 0 && b.left < vw && b.bottom > 0 && b.top < vh) texts.push({ el, t: b, o, s, size, pad });
+      continue;
+    }
     if (size < R.MIN_TEXT - 0.01) add("small", el, `${size}px`);
     // A sentence: the screens say things with names, numbers, marks and where they stand (brief, 使わないもの).
     for (const n of el.childNodes) {
@@ -163,7 +174,7 @@ function measure(R) {
     if (t.right <= 0 || t.left >= vw || t.bottom <= 0 || t.top >= vh) continue;
     texts.push({ el, t, o, s, size });
   }
-  for (const { el, t, o, s, size } of texts) {
+  for (const { el, t, o, s, size, pad } of texts) {
     // What is painted over the middle of the text.
     const cx = Math.min(vw - 1, Math.max(0, t.left + t.width / 2));
     const cy = Math.min(vh - 1, Math.max(0, t.top + t.height / 2));
@@ -175,7 +186,12 @@ function measure(R) {
     let covered = false;
     for (const top of above) {
       const a = solid(top) * shown(top);
-      if (a >= 0.9) covered = true;
+      if (a >= 0.9) {
+        // Hidden under a solid thing is no finding, unless both are rows of one scrolling list: rows laid over one another.
+        const list = scroller(el);
+        if (!covered && list && list === scroller(top) && !top.contains(list)) add("overlap", el, `under ${name(top)}, a row of the same list`);
+        covered = true;
+      }
       else if (a > 0.15 && !covered) {
         add("ghost", el, `under ${name(top)} (${a.toFixed(2)} solid)`);
         covered = true;
@@ -188,7 +204,7 @@ function measure(R) {
         if (w > 2 && h > 2 && (w * h) / Math.min(t.width * t.height, u.width * u.height) > 0.25) add("overlap", el, `with ${name(top)}`);
       }
     }
-    if (covered) continue;
+    if (covered || pad) continue;
     // Read against its ground.
     const g = ground(el);
     if (!g) continue;
