@@ -516,6 +516,8 @@ export class IslandMap {
   private proj: { m: number; ox: number; oy: number } | null = null;
   /** Whether the enemy's nodes off the front carry a padlock; the results' small map, which tells the day's changes, leaves them out. */
   locks = true;
+  /** Who holds each node and what changed, and nothing else: no names but the scene's, no ways off, depots, routes or what a node opens. The results' map. */
+  plain = false;
   /** The node whose padlock was picked, its note drawn beside it; -1 with none. */
   picked = -1;
   /** The padlocks at the last draw, each with its node's mark, in CSS pixels from the canvas's top left. */
@@ -788,6 +790,7 @@ export class IslandMap {
 
   draw(s: MapScene) {
     this.last = s;
+    const plain = this.plain;
     if (shared?.key !== worldKey()) shared = { key: worldKey(), image: this.build() };
     const base = shared.image;
     const g = this.canvas.getContext("2d")!;
@@ -928,7 +931,7 @@ export class IslandMap {
       return spot;
     });
     // Districts and landmarks between the POIs, small and muted under everything else.
-    for (const d of LANDMARKS) {
+    for (const d of plain ? [] : LANDMARKS) {
       // A district's name is learnt by going there.
       if (!s.seen[cellOf(d.x, d.z)]) continue;
       const p = at(d.x, d.z);
@@ -939,7 +942,7 @@ export class IslandMap {
     }
     // The ways in: a ring each, where a raid that does not start at a depot begins. One the base
     // does not offer yet, and this raid has not walked to, is faint and dashed: somewhere to aim for.
-    for (const e of ENTRIES) {
+    for (const e of plain ? [] : ENTRIES) {
       const p = at(e.x, e.z);
       const known = !this.known || this.known.includes(e.id) || s.found.includes(e.id);
       const ink = known ? UI.parch : alpha(UI.parch, 0.5);
@@ -964,14 +967,14 @@ export class IslandMap {
       taken.push(r);
       label(text, p.x, p.y + 11 * dpr, known ? ink : UI.parchDim, 9);
     }
-    for (const r of REGIONS) {
+    for (const r of plain ? [] : REGIONS) {
       const p = at(r.label.x, r.label.z);
       if (!free(box(r.name, p.x, p.y, 15, true))) continue;
       g.textAlign = "left";
       label(r.name, p.x, p.y, alpha(UI.parch, 0.55), 15, false);
       g.textAlign = "center";
     }
-    EXTRACTS.forEach((x, i) => {
+    (plain ? [] : EXTRACTS).forEach((x, i) => {
       const p = at(x.x, x.z);
       const r = 6 * dpr;
       g.fillStyle = css(PAL.hot);
@@ -989,12 +992,12 @@ export class IslandMap {
     });
     // Where the flares lie: the same mark on the tall buildings' top floors, grey once searched.
     const flares = s.bins ? s.bins.filter((b) => b.flare) : EXTRA_BINS.filter((b) => b.flare).map((b) => ({ ...b, open: false }));
-    for (const b of flares) {
+    for (const b of plain ? [] : flares) {
       const p = at(b.x, b.z);
       drawFlare(g, p.x, p.y, 6.5 * dpr, !b.open);
     }
     // The routes a tool opens: open ones a solid line, closed ones dashed with a cross at each obstacle.
-    for (const r of ROUTES) {
+    for (const r of plain ? [] : ROUTES) {
       const open = s.routes.includes(r.id);
       g.save();
       g.lineWidth = 3 * dpr;
@@ -1035,7 +1038,7 @@ export class IslandMap {
     }
     this.drawContract(g, at, dpr, label);
     // Depots that are on: a teal square each, a place a later raid can start from.
-    DEPOTS.forEach((d, i) => {
+    (plain ? [] : DEPOTS).forEach((d, i) => {
       if (!s.depots[i]) return;
       const p = at(d.x, d.z);
       const r = 3.5 * dpr;
@@ -1044,7 +1047,7 @@ export class IslandMap {
       g.fillRect(p.x - r, p.y - r, r * 2, r * 2);
     });
     // The debris crate: a gold shard, grey once opened.
-    if (s.debris) {
+    if (s.debris && !plain) {
       const p = at(s.debris.x, s.debris.z);
       const d = 7 * dpr;
       g.save();
@@ -1068,7 +1071,7 @@ export class IslandMap {
       }
     }
     // Salvage crew members in sight: small rust squares.
-    for (const c of s.crews ?? []) {
+    for (const c of plain ? [] : (s.crews ?? [])) {
       const p = at(c.x, c.z);
       const r = 3 * dpr;
       g.fillStyle = UI.crews;
@@ -1078,7 +1081,7 @@ export class IslandMap {
       g.fillRect(p.x - r, p.y - r, r * 2, r * 2);
     }
     // The outposts: a small grey square, a place to loot that is no node of the front.
-    for (const o of OUTPOST_SITES) {
+    for (const o of plain ? [] : OUTPOST_SITES) {
       const p = at(o.x, o.z);
       const r = 3.5 * dpr;
       g.save();
@@ -1091,7 +1094,7 @@ export class IslandMap {
     }
     // Squads seen or heard out between the POIs, fading over `FACTION.keep`: a dot in their
     // faction's colour where they were, and a burst where the factions were heard fighting.
-    for (const c of s.contacts ?? []) {
+    for (const c of plain ? [] : (s.contacts ?? [])) {
       const age = (s.time ?? c.t) - c.t;
       const p = at(c.x, c.z);
       g.save();
@@ -1148,9 +1151,9 @@ export class IslandMap {
       g.stroke();
       if (!poi.boss) {
         // The garrison's plate: a shield in the colour of the rarity that pierces it.
-        drawShield(g, p.x, p.y + r * 0.06, r * 0.62, RARITY_CSS[TIER[poi.id as NodeId] ?? 0]);
+        if (!plain) drawShield(g, p.x, p.y + r * 0.06, r * 0.62, RARITY_CSS[TIER[poi.id as NodeId] ?? 0]);
         // What holding it opens, as small marks beside it: dim while the enemy holds it.
-        drawUnlocks(g, p.x + r * 1.45, p.y - r * 0.95, poi.id as NodeId, dpr, hold(i) === "freed");
+        if (!plain) drawUnlocks(g, p.x + r * 1.45, p.y - r * 0.95, poi.id as NodeId, dpr, hold(i) === "freed");
         // Marked by the enemy for the coming night: a red crescent at its foot; blue once fortified.
         const night = s.night ?? (s.battle ? { targets: s.battle.targets, fortified: s.battle.fortified } : null);
         const k = nodeIndex(poi.id as NodeId);
@@ -1178,7 +1181,7 @@ export class IslandMap {
       }
       // The highest threat it was freed at, as a gold number on a dark tab at the mark's lower right.
       const best = s.best?.[i] ?? 0;
-      if (best > 0) {
+      if (best > 0 && !plain) {
         g.font = `900 ${10 * dpr}px system-ui, sans-serif`;
         g.textAlign = "center";
         g.textBaseline = "middle";

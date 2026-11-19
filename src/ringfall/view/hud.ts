@@ -1,6 +1,6 @@
 import { pouchKeep, type Settlement } from "../meta/profile";
 import type { ModKind } from "../sim/config";
-import { itemName, rewardList } from "./hub";
+import { itemColor, itemName, rewardList } from "./hub";
 import { ALLY, AWARE, BAG, META, DEPOT, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, TACTICAL, TOOL_KINDS, TOOLS, VALUABLES, WEAPONS, type Flank } from "../sim/config";
 import { eyePos, magSize } from "../sim/combat";
 import { atRisk, countered, heldUnlocks } from "../sim/battle";
@@ -1212,6 +1212,7 @@ export class Hud {
     const map = new IslandMap(canvas);
     map.whole = true;
     map.locks = false;
+    map.plain = true;
     // Ways in the raid learned are dashed as the day began, and turn solid with a ring at its end.
     const learned = settled.learned;
     map.known = settled.profile.entries.filter((e) => !learned.includes(e));
@@ -1268,7 +1269,7 @@ export class Hud {
     const gap = (window as { ringfallBeatGap?: number }).ringfallBeatGap ?? 1600;
     // Drawn once the results are shown, so the map is drawn at the canvas's size on screen.
     this.dayFrame = requestAnimationFrame(() => {
-      map.draw(scene(start, atStart));
+      map.draw({ ...scene(start, atStart), names: [] });
       bar(start, atStart, start);
       mark("start", "");
       // The ways in the raid learned turn solid with the first beat (or alone, when nothing changed hands).
@@ -1290,7 +1291,7 @@ export class Hud {
         this.dayTimers.push(
           window.setTimeout(() => {
             learn();
-            map.draw({ ...scene(night, atEnd), learned });
+            map.draw({ ...scene(night, atEnd), learned, names: [] });
           }, 900),
         );
       this.dayTimers.push(
@@ -1353,9 +1354,10 @@ export class Hud {
       (lost && sentValue ? `<span>倉庫へ送った<b>${sentValue}</b></span>` : "") +
       (lost ? split.join("") : "");
     const count = (items: typeof all) => {
-      const counted = new Map<string, number>();
-      for (const i of items) counted.set(itemName(i), (counted.get(itemName(i)) ?? 0) + 1);
-      return [...counted].map(([n, c]) => `<span>${n}${c > 1 ? ` × ${c}` : ""}</span>`).join("");
+      // A chip a kind, in its rarity's colour, counted.
+      const counted = new Map<string, { n: number; c: string }>();
+      for (const i of items) counted.set(itemName(i), { n: (counted.get(itemName(i))?.n ?? 0) + 1, c: itemColor(i) });
+      return [...counted].map(([n, { n: c, c: col }]) => `<span class="chip" style="--c:${col}">${n}${c > 1 ? `<b>${c}</b>` : ""}</span>`).join("");
     };
     const quests = settled?.quests ?? [];
     // A record of a raid kept from before ways in were learned has walked to none.
@@ -1389,9 +1391,9 @@ export class Hud {
       story +
       (quests.length ? `<h3>済んだ依頼</h3><p>${quests.map((q) => `<span>${q.title}（${q.reward.cash} クレジット${rewardList(q).map(([i, n]) => `・${itemName(i)}${n > 1 ? ` × ${n}` : ""}`).join("")}）</span>`).join("")}</p>` : "") +
       (settled
-        ? (sent.length ? `<h3>中継ボックスから倉庫へ送った物</h3><p>${count(sent)}</p>` : "") +
+        ? (sent.length ? `<h3 class="mark">${depotIcon()}</h3><p>${count(sent)}</p>` : "") +
           // A wipe's pouch is on the haul's line above, beside what was lost.
-          (lost ? "" : `<h3>持ち帰った物</h3><p>${home.length ? count(home) : "<span>なし</span>"}</p>`) +
+          (lost || !home.length ? "" : `<h3 class="mark">${bagIcon()}</h3><p>${count(home)}</p>`) +
           // Ways in: learned ones as the map's ring, ones found on a raid that did not come home struck through.
           (settled.learned.length || (lost && forgot.length)
             ? `<h3>入口</h3><p>${settled.learned.map((id) => `<span class="learned"><span class="turn">${entryIcon(false)}${entryIcon()}</span>${entryOf(id).name}（${regionOf(entryOf(id).region).name}）</span>`).join("")}${lost ? forgot.map((id) => `<span class="lost">${entryOf(id).name}</span>`).join("") : ""}</p>`
