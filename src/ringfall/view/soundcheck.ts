@@ -167,6 +167,69 @@ export interface CueReport {
   nan: number;
   /** Samples at or above full scale. */
   clipped: number;
+  /** How loud it sounds: the loudest 400 ms, K-weighted as broadcast loudness is (BS.1770), in LUFS. */
+  lufs: number;
+  /** Seconds until it falls for good under -60 dBFS. */
+  len: number;
+}
+
+/** A biquad's coefficients from the cookbook formulas, normalised by a0. */
+function biquad(kind: "shelf" | "highpass", f: number, q: number, gainDb: number, sr: number): number[] {
+  const w = (2 * Math.PI * f) / sr;
+  const cw = Math.cos(w);
+  const al = Math.sin(w) / (2 * q);
+  if (kind === "highpass") {
+    const a0 = 1 + al;
+    return [(1 + cw) / 2 / a0, -(1 + cw) / a0, (1 + cw) / 2 / a0, (-2 * cw) / a0, (1 - al) / a0];
+  }
+  const A = Math.pow(10, gainDb / 40);
+  const sq = 2 * Math.sqrt(A) * al;
+  const a0 = A + 1 - (A - 1) * cw + sq;
+  return [(A * (A + 1 + (A - 1) * cw + sq)) / a0, (-2 * A * (A - 1 + (A + 1) * cw)) / a0, (A * (A + 1 + (A - 1) * cw - sq)) / a0, (2 * (A - 1 - (A + 1) * cw)) / a0, (A + 1 - (A - 1) * cw - sq) / a0];
+}
+
+function filter(d: ArrayLike<number>, [b0, b1, b2, a1, a2]: number[]): Float32Array {
+  const o = new Float32Array(d.length);
+  let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+  for (let i = 0; i < d.length; i++) {
+    const x = Number.isFinite(d[i]) ? d[i] : 0;
+    const y = b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+    x2 = x1;
+    x1 = x;
+    y2 = y1;
+    y1 = y;
+    o[i] = y;
+  }
+  return o;
+}
+
+/** The loudest momentary loudness (400 ms windows, 100 ms apart) of a render, in LUFS. */
+export function momentary(buf: AudioBuffer): number {
+  const sr = buf.sampleRate;
+  const k = [biquad("shelf", 1500, Math.SQRT1_2, 4, sr), biquad("highpass", 38, 0.5, 0, sr)];
+  const ch = Array.from({ length: buf.numberOfChannels }, (_, c) => k.reduce<ArrayLike<number>>((d, f) => filter(d, f), buf.getChannelData(c)) as Float32Array);
+  const win = Math.floor(sr * 0.4);
+  const hop = Math.floor(sr * 0.1);
+  let best = 0;
+  for (let i = 0; i + win <= buf.length; i += hop) {
+    let z = 0;
+    for (const d of ch) for (let j = i; j < i + win; j++) z += d[j] * d[j];
+    best = Math.max(best, z / win);
+  }
+  return best > 0 ? -0.691 + 10 * Math.log10(best) : -Infinity;
+}
+
+/** Seconds until a render falls for good under -60 dBFS. */
+export function tail(buf: AudioBuffer): number {
+  let last = 0;
+  for (let c = 0; c < buf.numberOfChannels; c++) {
+    const d = buf.getChannelData(c);
+    for (let i = d.length - 1; i > last; i--) if (Math.abs(d[i]) > 0.001) {
+      last = i;
+      break;
+    }
+  }
+  return last / buf.sampleRate;
 }
 
 /** Renders one cue offline through a fresh mixer at full volume. */
@@ -210,7 +273,7 @@ async function render(cue: Cue, secs = 3.2): Promise<CueReport> {
       sum += x * x;
     }
   }
-  return { id: cue.id, peak, rms: Math.sqrt(sum / (buf.length * buf.numberOfChannels)), loud, nan, clipped };
+  return { id: cue.id, peak, rms: Math.sqrt(sum / (buf.length * buf.numberOfChannels)), loud, nan, clipped, lufs: momentary(buf), len: tail(buf) };
 }
 
 /** Every cue rendered, plus the voice cap under a burst of 80 enemy shots. */

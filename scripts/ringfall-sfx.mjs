@@ -54,6 +54,33 @@ if (!panel.shown) errors.push("the sound check panel did not appear with ?sfx");
 for (const id of ["shot-talon", "demo-circle-fire", "hit-crit"]) await page.click(`[data-cue="${id}"]`);
 await page.waitForTimeout(400);
 
+/**
+ * Each cue's tier and the loudness its tier keeps to (docs/ringfall/sound.md): the loudest 400 ms,
+ * K-weighted, in LUFS. A cue whose id matches no tier fails, so a new cue is given one.
+ */
+const TIERS = [
+  { name: "big", lufs: [-24, -12], ids: /^(kill|kill-crit|shield-break-\d|my-shield-break|leap|landing-.*|touchdown-.*|care-land|stomp|telegraph-big|victory|extracted|lost|arrive.*|spawn|core-taken)$/ },
+  { name: "shot", lufs: [-30, -12], ids: /^shot-/ },
+  { name: "hit", lufs: [-36, -26], ids: /^(hit.*|plate-break-\d)$/ },
+  { name: "hand", lufs: [-46, -32], ids: /^(reload-.*|reloaded-.*|dry-.*|bag-peek|search|bin|locked|zip-on|zip-off|zip-cut|shard)$/ },
+  { name: "body", lufs: [-42, -26], ids: /^(jump|land|land-hop|slide|slide-jump|mantle|climb|climb-top|hurt|hurt-shield|leap-land|heal-(cell|battery|syringe|medkit))$/ },
+  { name: "signal", lufs: [-42, -20], ids: /^(heal-done|suspect|engage|reinforce|raiders|banner|ult-ready|tactical|tactical-miss|threat|alarm|down|revive|ally-down|ally-up|pickup-\d|depot-on|deposit|gate|depot-out)$/ },
+  { name: "robot", lufs: [-44, -20], ids: /^(enemy-fire-.*|far-fire|telegraph|lunge|step-.*|swarm|collapse.*|stagger.*|ally-shot|wreck|care-drop)$/ },
+  { name: "camp", lufs: [-46, -22], ids: /^(tab|click|buy|sell|deliver|deploy)$/ },
+  { name: "air", lufs: [-48, -34], ids: /^(creak|machinery|gull)$/ },
+  { name: "demo", lufs: null, ids: /^demo-/ },
+];
+/** Which cue keeps under which, by how many LU: what is heard first stays loudest. */
+const UNDER = [
+  ...["pike", "hornet", "maul", "lance", "talon"].flatMap((k) => [[`reload-${k}`, `shot-${k}`, 4], [`reloaded-${k}`, `shot-${k}`, 4]]),
+  ["hit", "kill", 10],
+  ["hit-crit", "kill-crit", 6],
+  ["hit", "hit-crit", 3],
+  ["climb", "shot-pike", 3],
+  ["click", "buy", 3],
+  ["step-grunt", "enemy-fire-grunt", 6],
+];
+const tierOf = (id) => TIERS.find((t) => t.ids.test(id));
 const report = await page.evaluate(() => window.ringfallSfxCheck());
 const bad = [];
 for (const c of report.cues) {
@@ -62,12 +89,17 @@ for (const c of report.cues) {
   if (c.loud < SILENT) why.push(`silent (loudest 20 ms ${db(c.loud)} dBFS)`);
   if (c.peak > 1) why.push(`peak ${c.peak.toFixed(3)} > 1`);
   if (c.clipped > 0) why.push(`${c.clipped} samples at full scale`);
+  const tier = tierOf(c.id);
+  if (!tier) why.push("no tier (TIERS)");
+  else if (tier.lufs && (c.lufs < tier.lufs[0] || c.lufs > tier.lufs[1])) why.push(`${c.lufs.toFixed(1)} LUFS outside ${tier.name} ${tier.lufs[0]}..${tier.lufs[1]}`);
   if (why.length) bad.push(`${c.id}: ${why.join(", ")}`);
 }
+const lufsOf = Object.fromEntries(report.cues.map((c) => [c.id, c.lufs]));
+for (const [a, b, gap] of UNDER) if (!(lufsOf[a] <= lufsOf[b] - gap)) bad.push(`${a} (${lufsOf[a]?.toFixed(1)}) is not ${gap} LU under ${b} (${lufsOf[b]?.toFixed(1)})`);
 if (report.burstVoices > MAX_VOICES) errors.push(`80 shots at once left ${report.burstVoices} voices playing (cap ${MAX_VOICES})`);
 
-console.log("cue                       peak dBFS  loudest 20 ms dBFS");
-for (const c of report.cues) console.log(`${c.id.padEnd(24)} ${db(c.peak).padStart(9)}  ${db(c.loud).padStart(9)}`);
+console.log("cue                       tier    peak dBFS   LUFS   len s");
+for (const c of report.cues) console.log(`${c.id.padEnd(24)} ${(tierOf(c.id)?.name ?? "-").padEnd(7)} ${db(c.peak).padStart(9)}  ${c.lufs.toFixed(1).padStart(6)}  ${c.len.toFixed(2).padStart(6)}`);
 console.log(`\n${report.cues.length} cues, ${panel.buttons} buttons; voices after a burst of 80 shots: ${report.burstVoices}`);
 
 // The pause screen's sliders, shown without starting a raid.
@@ -91,4 +123,4 @@ server.close();
 for (const b of bad) console.log(`FAIL ${b}`);
 for (const e of errors) console.log(`FAIL ${e}`);
 if (bad.length || errors.length) process.exit(1);
-console.log("sound check passed: no silent, NaN or clipping cue, voice cap holds, no console errors");
+console.log("sound check passed: no silent, NaN or clipping cue, every cue in its tier (docs/ringfall/sound.md), voice cap holds, no console errors");

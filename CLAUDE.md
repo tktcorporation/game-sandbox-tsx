@@ -744,7 +744,9 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   puts the listener at the camera, tests walls with a few `los()` rays a frame, plays nearby robots'
   steps, the wind, the extraction craft and the ambience, and turns `state.events` into cues.
   `soundcheck.ts` is the `?sfx` panel; `npm run sfx:ringfall` renders every cue offline and fails on
-  silent, NaN or clipping ones. `src/ringfall/main.ts` wires input and the fixed-step loop, and
+  silent, NaN or clipping ones, and on a cue outside its tier's loudness (`TIERS`, LUFS) or out of
+  order (`UNDER`; docs/ringfall/sound.md). A voice's `level` only ranks it for the voice cap; its
+  `gain` sets how loud it is. `src/ringfall/main.ts` wires input and the fixed-step loop, and
   exposes `window.render_game_to_text()`, `window.advanceTime(ms)`, `window.ringfallBot(skill)`,
   `window.ringfallFrameCost(frames)` (draw calls, triangles, time per frame with and without
   waiting for the GPU, the tier and the pixel ratio, for the shots gate) and

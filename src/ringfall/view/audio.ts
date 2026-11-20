@@ -212,6 +212,7 @@ export class Mixer {
       out.connect(pan).connect(lp);
       tail = lp;
     }
+    if (o.gain !== undefined) out.gain.value *= o.gain;
     tail.connect(this.buses[o.bus]);
     // Distant and walled-off sounds are heard more through the space than direct.
     const send = (o.send ?? (o.pos ? 0.3 : 0.12)) * (o.pos ? 1 + Math.min(1.5, dist / 40) + (occluded ? 0.8 : 0) : 1);
@@ -237,7 +238,10 @@ export interface VoiceOpts {
   pos?: P3;
   /** Distance at which the panner starts to attenuate. Loud sources get a larger one. */
   ref?: number;
+  /** How loud it is heard, for the voice cap and the falloff with distance (not a gain). */
   level?: number;
+  /** A gain on the whole voice: a cue's trim to keep its tier's loudness (docs/ringfall/sound.md). */
+  gain?: number;
   /** Reverb send, 0..1. */
   send?: number;
   /** Beyond this the voice is not played at all. */
