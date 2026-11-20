@@ -2,6 +2,7 @@ import { FACTORY_TOP } from "../src/ringfall/sim/config";
 import { newIslandCode, parseIslandCode } from "../src/ringfall/meta/island-code";
 import { parseHolds, parseLent, parseRetaken, squadKinds, type IslandOp } from "./island";
 import type { ApiError } from "../src/ringfall/meta/island-errors";
+import { ensureSchema, type Migration } from "./schema";
 
 /*
  * RINGFALL's API under /api/ (docs/ringfall/multiplayer.md, サーバー). A plain handler of a request
@@ -40,6 +41,8 @@ export interface IslandNamespace {
 
 export interface ApiEnv {
   DB?: Db;
+  /** The migrations the Worker brings the database up to before it is used (worker/schema.ts); absent, the schema is left as it is. */
+  MIGRATIONS?: readonly Migration[];
   /** The islands: one IslandDO (worker/island-do.ts) for each, by its code; absent until bound. */
   ISLAND?: IslandNamespace;
 }
@@ -367,6 +370,15 @@ export async function handleApi(request: Request, env: ApiEnv, now = Date.now(),
   const { pathname } = url;
   if (pathname === "/api/health") return json(200, { ok: true });
   if (pathname !== "/api" && !pathname.startsWith("/api/")) return null;
+  // The database brought up to the migrations before anything reads or writes it: a merge that
+  // adds one applies it on the deploy's first request. A failure leaves the tables as they were,
+  // and the routes below answer as they do without them.
+  if (env.DB && env.MIGRATIONS)
+    try {
+      await ensureSchema(env.DB, env.MIGRATIONS);
+    } catch {
+      // Tried again on the next request.
+    }
   if (pathname === "/api/islands" || pathname.startsWith("/api/islands/")) return handleIslands(request, env, now, url, draw);
   if (pathname === "/api/neighbours") {
     if (request.method !== "GET") return notAllowed("GET");

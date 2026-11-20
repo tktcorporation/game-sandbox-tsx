@@ -84,7 +84,7 @@
 
 お隣はサーバーの答えの写しで、セーブには入れず、ブラウザに置く（`ringfall.neighbours.v1`、`cachedNeighbours()`）。同期のたびと工場の欄を開いたときに読み直す。
 
-島の番号とその持ち主の対応は、D1 の `islands` の表（`migrations/0002_islands.sql`）に持つ。書くのはサーバーだけで、島を渡したとき（`POST /api/islands`）と、島が持ち主の報告を受け取ったとき（`PUT /api/islands/:code` が 200）に書く。端末が自分の番号だと名乗るだけでは書かれない。表が無い間（移行を当てる前）は書かずに続け、お隣は空になる。
+島の番号とその持ち主の対応は、D1 の `islands` の表（`migrations/0002_islands.sql`）に持つ。書くのはサーバーだけで、島を渡したとき（`POST /api/islands`）と、島が持ち主の報告を受け取ったとき（`PUT /api/islands/:code` が 200）に書く。端末が自分の番号だと名乗るだけでは書かれない。表は Worker がデプロイの後の最初の要求で作る（`worker/schema.ts`）。それまでの間は書かずに続け、お隣は空になる。
 
 ## 予告と固め
 

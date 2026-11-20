@@ -1,7 +1,7 @@
 -- RINGFALL players and their islands' summaries (docs/ringfall/multiplayer.md, サーバー).
 -- Times are epoch milliseconds.
 
-CREATE TABLE players (
+CREATE TABLE IF NOT EXISTS players (
   id TEXT PRIMARY KEY,          -- the anonymous UUID the browser made
   name TEXT NOT NULL,           -- display name, 1 to 24 characters
   created_at INTEGER NOT NULL,
@@ -9,7 +9,7 @@ CREATE TABLE players (
 );
 
 -- The island as of the player's last settled raid: one row a player.
-CREATE TABLE island_summaries (
+CREATE TABLE IF NOT EXISTS island_summaries (
   player_id TEXT PRIMARY KEY REFERENCES players(id),
   day INTEGER NOT NULL,         -- the island's day after the raid
   held INTEGER NOT NULL,        -- nodes the player holds
@@ -20,7 +20,7 @@ CREATE TABLE island_summaries (
   updated_at INTEGER NOT NULL
 );
 
-CREATE TABLE raids (
+CREATE TABLE IF NOT EXISTS raids (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   player_id TEXT NOT NULL REFERENCES players(id),
   day INTEGER NOT NULL,         -- the island's day the raid was played on
@@ -29,4 +29,4 @@ CREATE TABLE raids (
   at INTEGER NOT NULL
 );
 
-CREATE INDEX raids_player_at ON raids (player_id, at);
+CREATE INDEX IF NOT EXISTS raids_player_at ON raids (player_id, at);

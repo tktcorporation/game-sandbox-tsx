@@ -117,6 +117,32 @@ async function answer(env: ApiEnv, req: Request, now?: number) {
   check(a.status === 503 && (a.body as { error?: string }).error === "db-error", "no tables: /api/island did not answer 503 db-error");
 }
 
+// --- the Worker brings a database up itself (worker/schema.ts): every migration on a bare one, the
+// rest on one whose first tables were made by hand at the SQL console (as Preview's and production's
+// were), each recorded once; and its list is the migrations folder's
+{
+  const dir = new URL("../migrations/", import.meta.url);
+  const files = readdirSync(dir).filter((f) => f.endsWith(".sql")).sort();
+  const MIGRATIONS = files.map((name) => ({ name, sql: readFileSync(new URL(name, dir), "utf8") }));
+  const listed = [...readFileSync(new URL("../worker/migrations.ts", import.meta.url), "utf8").matchAll(/name: "([^"]+\.sql)"/g)].map((m) => m[1]);
+  check(listed.join() === files.join(), `migrations: worker/migrations.ts lists ${listed.join()}, the folder holds ${files.join()}`);
+  const tables = (db: DatabaseSync) => (db.prepare("SELECT name FROM sqlite_schema WHERE type = 'table' ORDER BY name").all() as { name: string }[]).map((r) => r.name).join();
+  const recorded = (db: DatabaseSync) => (db.prepare("SELECT name FROM schema_migrations ORDER BY name").all() as { name: string }[]).map((r) => r.name).join();
+  const bare = new DatabaseSync(":memory:");
+  const a = await answer({ DB: new SqliteD1(bare), MIGRATIONS }, post(valid("ねこ", 3)));
+  console.log(`migrations: a bare database -> ${a.status}; tables ${tables(bare)}; recorded ${recorded(bare)}`);
+  check(a.status === 200, `migrations: a bare database answered ${a.status}, not 200`);
+  check(recorded(bare) === files.join(), "migrations: a bare database did not record every migration");
+  const byHand = new DatabaseSync(":memory:");
+  byHand.exec(readFileSync(new URL(files[0], dir), "utf8").replaceAll("IF NOT EXISTS ", ""));
+  const b = await answer({ DB: new SqliteD1(byHand), MIGRATIONS }, post(valid("ねこ", 3)));
+  console.log(`migrations: ${files[0]} made by hand -> ${b.status}; tables ${tables(byHand)}; recorded ${recorded(byHand)}`);
+  check(b.status === 200 && tables(byHand).includes("islands") && recorded(byHand) === files.join(), "migrations: a database whose first tables were made by hand was not brought up to the rest");
+  const again = new SqliteD1(byHand);
+  const c = await answer({ DB: again, MIGRATIONS }, post(valid("ねこ", 4)));
+  check(c.status === 200 && recorded(byHand) === files.join(), "migrations: a second isolate applying them again failed or recorded twice");
+}
+
 // --- a database with the migrations applied in order
 const sqlite = new DatabaseSync(":memory:");
 sqlite.exec("PRAGMA foreign_keys = ON");

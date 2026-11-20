@@ -1,6 +1,7 @@
 /// <reference types="@cloudflare/workers-types" />
 
 import { handleApi } from "./api";
+import { MIGRATIONS } from "./migrations";
 export { IslandDO } from "./island-do";
 
 interface Env {
@@ -13,6 +14,6 @@ interface Env {
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    return (await handleApi(request, env)) ?? env.ASSETS.fetch(request);
+    return (await handleApi(request, { ...env, MIGRATIONS })) ?? env.ASSETS.fetch(request);
   },
 } satisfies ExportedHandler<Env>;
