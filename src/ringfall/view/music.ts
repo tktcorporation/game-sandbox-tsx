@@ -208,10 +208,6 @@ export class Music {
     this.leadTone.type = "lowpass";
     this.leadTone.frequency.value = 2600;
     this.leadTone.connect(this.out.lead);
-    // A little of the open air's reverb, after the master so it fades with the music.
-    const send = ctx.createGain();
-    send.gain.value = 0.2;
-    this.master.connect(send).connect(m.verbIn);
   }
 
   /** The mood and the region now; the layers fade to the mood's mix, the tune follows at the next bar. */

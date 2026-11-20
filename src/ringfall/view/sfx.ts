@@ -258,7 +258,7 @@ export const sfx = {
     me(0.15, () => {
       hiss(0.08, { freq: 500, vol: 0.35 });
       hiss(0.07, { brown: true, type: "lowpass", freq: 400, vol: 0.8 });
-    }, 0.1, 1.6);
+    }, 0.1, 2.2);
   },
   mantle() {
     me(0.2, () => {

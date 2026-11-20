@@ -95,6 +95,13 @@ export class Mixer {
     this.musicVolume = ctx.createGain();
     this.musicVolume.gain.value = loadMusic();
     this.musicVolume.connect(this.ambDuck);
+    // The music's own touch of open-air reverb, after its volume and before the duck, so the
+    // slider and the big moments take the wet with the dry.
+    const musicVerb = ctx.createConvolver();
+    musicVerb.buffer = openAir(ctx, lowPower ? 1.4 : 2.6);
+    const musicSend = ctx.createGain();
+    musicSend.gain.value = 0.2;
+    this.musicVolume.connect(musicSend).connect(musicVerb).connect(this.ambDuck);
     this.buses = { weapons: bus(1), world: bus(1), ui: bus(0.85), amb, music: this.musicVolume };
 
     // Reverb: two convolvers, crossfaded by how enclosed the listener is.

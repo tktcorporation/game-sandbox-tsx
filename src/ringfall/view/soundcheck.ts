@@ -285,12 +285,12 @@ const RAID_MOODS: Exclude<Mood, "off">[] = ["explore", "alert", "fight", "extrac
 const MOOD_NAMES: Record<Mood, string> = { off: "止める", title: "タイトル", camp: "野営地", explore: "探索", alert: "警戒", fight: "交戦", extract: "脱出待ち", result: "結果" };
 
 /** A mood rendered offline through a fresh mixer at full volume. */
-async function moodBuffer(mood: Exclude<Mood, "off">, secs: number, region: RegionId = "reservoir"): Promise<AudioBuffer> {
+async function moodBuffer(mood: Exclude<Mood, "off">, secs: number, region: RegionId = "reservoir", volume = 1): Promise<AudioBuffer> {
   const sr = 44100;
   const off = new OfflineAudioContext(2, Math.floor(sr * secs), sr);
   const m = new Mixer(off, false);
   m.volume.gain.value = 1;
-  m.musicVolume.gain.value = 1;
+  m.musicVolume.gain.value = volume;
   const music = new Music(m);
   music.set(mood, region, 0.01);
   music.schedule(secs - 0.5);
@@ -332,7 +332,10 @@ async function checkAll() {
   } finally {
     swapMixer(prev);
   }
-  return { cues, burstVoices: m.active };
+  // The music's slider at zero leaves nothing of it, the reverb included.
+  let mutedPeak = 0;
+  for (const d of [(await moodBuffer("fight", 4, "reservoir", 0)).getChannelData(0)]) for (const x of d) mutedPeak = Math.max(mutedPeak, Math.abs(x));
+  return { cues, burstVoices: m.active, mutedPeak };
 }
 
 declare global {

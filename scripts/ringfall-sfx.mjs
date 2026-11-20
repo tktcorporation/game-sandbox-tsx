@@ -102,6 +102,7 @@ for (const c of report.cues) {
 }
 const lufsOf = Object.fromEntries(report.cues.map((c) => [c.id, c.lufs]));
 for (const [a, b, gap] of UNDER) if (!(lufsOf[a] <= lufsOf[b] - gap)) bad.push(`${a} (${lufsOf[a]?.toFixed(1)}) is not ${gap} LU under ${b} (${lufsOf[b]?.toFixed(1)})`);
+if (!(report.mutedPeak < 1e-4)) errors.push(`the music with its slider at zero still peaks at ${db(report.mutedPeak)} dBFS`);
 if (report.burstVoices > MAX_VOICES) errors.push(`80 shots at once left ${report.burstVoices} voices playing (cap ${MAX_VOICES})`);
 
 console.log("cue                       tier    peak dBFS   LUFS   len s");
