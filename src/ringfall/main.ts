@@ -324,6 +324,8 @@ function syncIsland(p: Settlement["profile"], settled: State) {
     }
     const { profile, news } = takeSync(hub.profile, r.body);
     if (profile !== hub.profile) hub.update(profile);
+    // The sync read the neighbours again: the horizon shows them as they now stand.
+    world.setNeighbours(cachedNeighbours().map((n) => n.slot));
     if (!news.length) return;
     hub.takeNews(news);
     islandNews = news.map(logLine);

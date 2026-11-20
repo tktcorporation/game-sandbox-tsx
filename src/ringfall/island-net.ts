@@ -230,6 +230,8 @@ export async function syncOwn(p: Profile, report: boolean, raid?: RaidReport): P
     synced.incoming = incomingOf(view.body);
   }
   if (!log.ok && !view.ok && !report) return view;
+  // The neighbours read again with every sync, so the camp's maps and the horizon show them without the factory's panel opened.
+  await readNeighbours();
   return { ok: true, body: { code: who.code!, view: view.ok ? view.body : null, synced, ticket } };
 }
 
