@@ -552,7 +552,7 @@ body.touch #obj-raid .why {
 
 #obj-stealth {
   grid-column: 1 / -1;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 800;
   color: rgb(var(--white-rgb) / 0.9);
 }
