@@ -327,8 +327,8 @@ export class Hud {
       case "allyRescue":
         this.banner(`${ALLY.name}に起こされた`, "", true, 1.8);
         break;
+      // Down: the downed card under the crosshair says it, with its bar; no banner over it.
       case "awaitAlly":
-        this.banner("ダウン");
         break;
       case "hurt": {
         this.hurtT = 0.5;
@@ -386,7 +386,6 @@ export class Hud {
         this.banner("補給ポッド", "", true);
         break;
       case "down":
-        if (!s.player.awaitAlly) this.banner("ダウン");
         break;
       case "wipe":
         this.banner("行方不明");

@@ -74,6 +74,8 @@ function measure(R) {
   };
   /** Shown at all: laid out, not hidden, not faded out by itself or anything round it. */
   const shown = (el) => {
+    // A closed <details> hides its contents without display: none (content-visibility).
+    if (el.checkVisibility && !el.checkVisibility({ contentVisibilityAuto: true, visibilityProperty: true })) return 0;
     let o = 1;
     for (let e = el; e; e = e.parentElement) {
       const s = getComputedStyle(e);

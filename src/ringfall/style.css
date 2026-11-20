@@ -1197,9 +1197,14 @@ body.touch .mate-bars {
   font-family: var(--jp);
   font-weight: 800;
 }
+#downed {
+  padding: 6px 18px 10px;
+  background: var(--plate-strong);
+  border-bottom: 4px solid var(--danger);
+}
 #downed b {
   font-size: 30px;
-  color: var(--danger);
+  color: var(--white);
 }
 #downed i,
 #battery i {
