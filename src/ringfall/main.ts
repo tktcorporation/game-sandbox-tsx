@@ -258,6 +258,7 @@ const sound = new Soundscape();
 function onEvent(e: GameEvent, s: State) {
   hud.event(e, s);
   sound.event(e, s);
+  if (e.t === "coreTaken") music?.music.phrase("capture");
   if (e.t === "done") {
     // Settle and save at once; only the results screen waits for the moment to play out.
     knownBefore = [...hub.profile.known];
@@ -579,7 +580,7 @@ function openCamp() {
   paused = false;
   fading = false;
   fire = ads = adsLatch = false;
-  world.setNeighbours(cachedNeighbours().length);
+  world.setNeighbours(cachedNeighbours().map((n) => n.slot));
   unlock();
   world.reset();
   sound.reset();
@@ -694,10 +695,7 @@ function campTick() {
   stepCamp(state, inp, prevCrouch);
   prevCrouch = inp.crouch;
   world.handle(state, state.events);
-  for (const e of state.events) {
-    sound.event(e, state);
-    if (e.t === "coreTaken") music?.music.phrase("capture");
-  }
+  for (const e of state.events) sound.event(e, state);
   if (inp.interact) useInCamp();
   // Out of the gate: the departure, then the raid starts where the player stands when its start is the gate's own way in.
   else if (outOfCamp(state)) askDepart(true);
@@ -753,7 +751,7 @@ function start(go: Launch, from?: State) {
   governor.settle();
   acc = hitstop = slowmo = 0;
   running = true;
-  world.setNeighbours(cachedNeighbours().length);
+  world.setNeighbours(cachedNeighbours().map((n) => n.slot));
   paused = false;
   $("title").hidden = true;
   $("results").hidden = true;

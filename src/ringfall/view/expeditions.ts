@@ -285,7 +285,8 @@ export class ExpeditionPanel {
     const mine = new Set<string>(playerNodes(p));
     const near = this.neighbours.length
       ? `<div class="exp-near">${this.neighbours
-          .map((n, k) => {
+          .map((n) => {
+            const k = n.slot;
             const open = routeOpen(k, (id) => mine.has(id));
             const held = `<span class="exp-held" style="--w:${Math.round((100 * n.held) / Math.max(1, n.total))}%"></span>`;
             const foot = open ? `<small>${coreIcon(SIDE.rival)}${n.held}/${n.total}</small>` : `<small class="shut">${lockIcon()}${esc(nodeName(NEIGHBOUR_SLOTS[k].shore))}</small>`;

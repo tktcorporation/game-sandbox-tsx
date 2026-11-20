@@ -1171,9 +1171,9 @@ export class World {
   }
 
   /** Per-frame sync and draw. `dt` is real seconds since the last frame. */
-  /** How many neighbours' islands stand on the horizon: the server's neighbours as last read (none hides them). */
-  setNeighbours(count: number) {
-    this.isles.set(count);
+  /** Which slots at sea have a neighbour's island on the horizon: the server's neighbours as last read (none hides them). */
+  setNeighbours(slots: readonly number[]) {
+    this.isles.set(slots);
   }
 
   render(s: State, dt: number) {

@@ -937,9 +937,10 @@ export class IslandMap {
     });
     // The neighbours: other players' islands out at sea, each at a slot of its own, in their green,
     // with whose it is and how many of its nodes its owner holds.
-    for (const [k, n] of (plain ? [] : this.neighbours).entries()) {
+    for (const n of plain ? [] : this.neighbours) {
+      const k = n.slot;
       const slot = NEIGHBOUR_SLOTS[k];
-      if (!slot) break;
+      if (!slot) continue;
       const p = at(slot.x, slot.z);
       const r = 13 * dpr;
       if (p.x < -r || p.y < -r || p.x > g.canvas.width + r || p.y > g.canvas.height + r) continue;

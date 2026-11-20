@@ -222,6 +222,8 @@ export interface Neighbour {
   /** That raid's cores captured and how it ended; null with no raid recorded. */
   captured: number | null;
   outcome: string | null;
+  /** The slot at sea it stands in for the week (NEIGHBOUR_SLOTS), which sets the sea route to it. */
+  slot?: number;
 }
 
 const mix32 = (s: string) => {
@@ -233,34 +235,61 @@ const mix32 = (s: string) => {
 /**
  * The owner's neighbours (`GET /api/neighbours`, the owner's id in the header): islands whose owners
  * played in the last two weeks, nearest in nodes held to the owner's, a few of the nearest drawn by
- * a hash of the owner, the island and the week, so the same neighbours stay for the week.
+ * a hash of the owner, the island and the week. The draw is kept for the week, each pick in its slot
+ * at sea (`neighbour_picks`), so nodes changing hands in the week neither swap a neighbour nor move
+ * one onto another sea route; what is shown of each (nodes held, its last raid) is read live.
  */
 async function neighbours(env: ApiEnv, player: string, now: number): Promise<Response> {
-  if (!env.DB) return fail(202, "no-database");
+  const db = env.DB;
+  if (!db) return fail(202, "no-database");
   try {
-    const mine = (await env.DB.prepare("SELECT i.code AS code, s.held AS held FROM islands i LEFT JOIN island_summaries s ON s.player_id = i.player_id WHERE i.player_id = ?1").bind(player).all<{ code: string; held: number | null }>()).results[0];
+    const mine = (await db.prepare("SELECT i.code AS code, s.held AS held FROM islands i LEFT JOIN island_summaries s ON s.player_id = i.player_id WHERE i.player_id = ?1").bind(player).all<{ code: string; held: number | null }>()).results[0];
     if (!mine) return json(200, { ok: true, neighbours: [] });
-    const held = mine.held ?? 0;
-    const rows = (
-      await env.DB.prepare(
-        "SELECT i.code AS code, p.name AS name, s.held AS held, s.held + s.enemy + s.rival AS total, s.day AS day, s.updated_at AS seen, " +
-          "(SELECT r.captured FROM raids r WHERE r.player_id = i.player_id ORDER BY r.at DESC LIMIT 1) AS captured, " +
-          "(SELECT r.outcome FROM raids r WHERE r.player_id = i.player_id ORDER BY r.at DESC LIMIT 1) AS outcome " +
-          "FROM islands i JOIN players p ON p.id = i.player_id JOIN island_summaries s ON s.player_id = i.player_id " +
-          "WHERE i.player_id != ?1 AND s.updated_at > ?2 ORDER BY abs(s.held - ?3), s.updated_at DESC LIMIT ?4",
-      )
-        .bind(player, now - NEIGHBOURS.activeMs, held, NEIGHBOURS.pool)
+    const week = Math.floor(now / NEIGHBOURS.weekMs);
+    const kept = async () => (await db.prepare("SELECT slot, code FROM neighbour_picks WHERE player_id = ?1 AND week = ?2 ORDER BY slot").bind(player, week).all<{ slot: number; code: string }>()).results;
+    let picks = await kept();
+    if (!picks.length) {
+      // The week's draw: nearness in nodes held first; the week's hash shuffles only islands within a couple of nodes of each other.
+      const held = mine.held ?? 0;
+      const rows = (
+        await db
+          .prepare(
+            "SELECT i.code AS code, s.held AS held FROM islands i JOIN players p ON p.id = i.player_id JOIN island_summaries s ON s.player_id = i.player_id " +
+              "WHERE i.player_id != ?1 AND s.updated_at > ?2 ORDER BY abs(s.held - ?3), s.updated_at DESC LIMIT ?4",
+          )
+          .bind(player, now - NEIGHBOURS.activeMs, held, NEIGHBOURS.pool)
+          .all<{ code: string; held: number }>()
+      ).results;
+      const drawn = rows
+        .map((r) => ({ r, key: Math.abs(r.held - held) + ((mix32(`${mine.code}:${r.code}:${week}`) % 1000) / 1000) * 2 }))
+        .sort((a, b) => a.key - b.key)
+        .slice(0, NEIGHBOURS.count);
+      // Kept for the week (a draw that raced another keeps the first), and last weeks' let go.
+      await db.batch([
+        db.prepare("DELETE FROM neighbour_picks WHERE player_id = ?1 AND week < ?2").bind(player, week),
+        ...drawn.map(({ r }, slot) => db.prepare("INSERT OR IGNORE INTO neighbour_picks (player_id, week, slot, code) VALUES (?1, ?2, ?3, ?4)").bind(player, week, slot, r.code)),
+      ]);
+      picks = await kept();
+    }
+    if (!picks.length) return json(200, { ok: true, neighbours: [] });
+    // Each pick as it stands now: whose island, how much of it they hold, what they did last.
+    const live = (
+      await db
+        .prepare(
+          "SELECT i.code AS code, p.name AS name, s.held AS held, s.held + s.enemy + s.rival AS total, s.day AS day, s.updated_at AS seen, " +
+            "(SELECT r.captured FROM raids r WHERE r.player_id = i.player_id ORDER BY r.at DESC LIMIT 1) AS captured, " +
+            "(SELECT r.outcome FROM raids r WHERE r.player_id = i.player_id ORDER BY r.at DESC LIMIT 1) AS outcome " +
+            `FROM islands i JOIN players p ON p.id = i.player_id JOIN island_summaries s ON s.player_id = i.player_id WHERE i.code IN (${picks.map((_, k) => `?${k + 1}`).join(", ")})`,
+        )
+        .bind(...picks.map((q) => q.code))
         .all<Neighbour>()
     ).results;
-    const week = Math.floor(now / NEIGHBOURS.weekMs);
-    const picked = rows
-      // Nearness in nodes held first; the week's hash shuffles only islands within a couple of nodes of each other.
-      .map((r) => ({ r, key: Math.abs(r.held - held) + ((mix32(`${mine.code}:${r.code}:${week}`) % 1000) / 1000) * 2 }))
-      .sort((a, b) => a.key - b.key)
-      .slice(0, NEIGHBOURS.count)
-      .map(({ r }) => r)
-      .sort((a, b) => a.code.localeCompare(b.code));
-    return json(200, { ok: true, neighbours: picked });
+    const byCode = new Map(live.map((r) => [r.code, r]));
+    const out = picks.flatMap((q) => {
+      const r = byCode.get(q.code);
+      return r ? [{ ...r, slot: q.slot }] : [];
+    });
+    return json(200, { ok: true, neighbours: out });
   } catch {
     return json(200, { ok: true, neighbours: [] });
   }

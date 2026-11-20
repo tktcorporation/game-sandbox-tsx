@@ -31,9 +31,9 @@ const SAVE = {
 };
 
 const NEAR = [
-  { code: "Z3P9TR", name: "となり", held: 7, total: 21, day: 15 },
-  { code: "K7M2QX", name: "みなと", held: 4, total: 21, day: 9 },
-  { code: "H4N8WD", name: "砂丘の人", held: 11, total: 21, day: 22 },
+  { code: "Z3P9TR", name: "となり", held: 7, total: 21, day: 15, slot: 0 },
+  { code: "K7M2QX", name: "みなと", held: 4, total: 21, day: 9, slot: 1 },
+  { code: "H4N8WD", name: "砂丘の人", held: 11, total: 21, day: 22, slot: 2 },
 ];
 
 export async function expeditionShots({ browser, port, out, errors }) {

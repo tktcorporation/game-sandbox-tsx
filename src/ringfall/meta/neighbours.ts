@@ -14,6 +14,8 @@ export interface Neighbour {
   held: number;
   total: number;
   day: number;
+  /** The slot at sea it stands in (`NEIGHBOUR_SLOTS`), which sets the sea route to it. */
+  slot: number;
   /** What its owner did last, for a sign of life: when they last played, and that raid's cores taken and whether they got home. */
   last?: { at: number; captured: number; home: boolean };
 }
@@ -45,12 +47,15 @@ const count = (v: unknown, hi: number): v is number => Number.isInteger(v) && (v
 export function parseNeighbours(raw: unknown): Neighbour[] | null {
   if (!isObj(raw) || !Array.isArray(raw.neighbours)) return null;
   const out: Neighbour[] = [];
-  for (const n of raw.neighbours.slice(0, NEIGHBOUR_MAX)) {
+  for (const [k, n] of raw.neighbours.slice(0, NEIGHBOUR_MAX).entries()) {
     if (!isObj(n) || !isIslandCode(n.code) || typeof n.name !== "string" || !count(n.total, 64) || !count(n.held, n.total as number) || !count(n.day, 100000)) continue;
     const name = n.name.trim().slice(0, 24);
     if (!name) continue;
     const last = Number.isFinite(n.seen) && (n.seen as number) > 0 && count(n.captured, 64) ? { at: n.seen as number, captured: n.captured, home: n.outcome === "extracted" } : undefined;
-    out.push({ code: n.code, name, held: n.held, total: n.total, day: n.day, ...(last ? { last } : {}) });
+    // An answer from before slots were kept places each in the slot of its place in the list.
+    const slot = Number.isInteger(n.slot) && (n.slot as number) >= 0 && (n.slot as number) < NEIGHBOUR_MAX ? (n.slot as number) : k;
+    if (out.some((o) => o.slot === slot)) continue;
+    out.push({ code: n.code, name, held: n.held, total: n.total, day: n.day, slot, ...(last ? { last } : {}) });
   }
   return out;
 }

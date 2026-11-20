@@ -274,6 +274,16 @@ const count = (table: string) => Number((sqlite.prepare(`SELECT COUNT(*) AS n FR
   check(parseNeighbours({ neighbours: [{ code: "bad", name: "x", held: 1, total: 21, day: 1 }] })?.length === 0, "neighbours: the browser took a neighbour with a bad code");
   const again = await ask(ids[0], T + DAY);
   check(JSON.stringify(again.body) === JSON.stringify(a.body), "neighbours: the list changed within the week");
+  check(list.every((n, k) => (n as { slot?: number }).slot === k), "neighbours: the picks do not carry their slots at sea in order");
+  // A picked neighbour takes many nodes mid-week: the week's picks and their slots stay as drawn.
+  const moved = list[1].code;
+  const owner = ids[Number(moved.slice(2))];
+  await answer(env, post({ player: { id: owner, name: "島" }, island: { day: 4, held: 18, enemy: 3, rival: 0, factory: 1, strength: 2 } }), T + DAY);
+  const later = await ask(ids[0], T + 2 * DAY);
+  const slots = (b: unknown) => ((b as { neighbours?: { code: string; slot: number }[] }).neighbours ?? []).map((n) => `${n.slot}:${n.code}`).join();
+  console.log(`neighbours: after ${moved} took nodes: ${slots(later.body)}`);
+  check(slots(later.body) === slots(a.body), "neighbours: a neighbour taking nodes mid-week changed the week's picks or their slots");
+  check(((later.body as { neighbours?: { code: string; held: number }[] }).neighbours ?? []).find((n) => n.code === moved)?.held === 18, "neighbours: a kept neighbour's nodes are not read live");
   const none = await ask("0f8fad5b-d9cb-469f-a165-999999999999");
   check(none.status === 200 && ((none.body as { neighbours?: unknown[] }).neighbours ?? [1]).length === 0, "neighbours: a player with no island was offered some");
   const anon = await ask(null);

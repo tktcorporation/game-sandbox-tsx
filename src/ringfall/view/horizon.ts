@@ -27,6 +27,7 @@ interface Isle {
 export class NeighbourIslands {
   readonly group = new THREE.Group();
   private isles: Isle[] = [];
+  private shown: number[] = [];
   private readonly land: THREE.MeshBasicMaterial;
   private readonly tower: THREE.MeshBasicMaterial;
   private readonly beamMat: THREE.MeshBasicMaterial;
@@ -43,13 +44,14 @@ export class NeighbourIslands {
     this.group.visible = false;
   }
 
-  /** Shows the first `count` neighbours' islands (none hides them). */
-  set(count: number) {
-    const n = Math.min(count, NEIGHBOUR_SLOTS.length);
-    if (n === this.isles.length) return;
+  /** Shows the islands in these slots at sea (none hides them). */
+  set(slots: readonly number[]) {
+    const keep = slots.filter((k) => NEIGHBOUR_SLOTS[k]).sort((a, b) => a - b);
+    if (keep.join() === this.shown.join()) return;
     for (const i of this.isles) this.group.remove(i.root);
-    this.isles = NEIGHBOUR_SLOTS.slice(0, n).map((slot, k) => this.build(slot, k));
-    this.group.visible = n > 0;
+    this.shown = keep;
+    this.isles = keep.map((k) => this.build(NEIGHBOUR_SLOTS[k], k));
+    this.group.visible = keep.length > 0;
   }
 
   private build(slot: { x: number; z: number }, k: number): Isle {
