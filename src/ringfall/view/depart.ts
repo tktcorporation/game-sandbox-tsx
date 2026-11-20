@@ -1,6 +1,6 @@
 import { sfx } from "./sfx";
 import { WORLD } from "../sim/config";
-import { REGIONS, regionOf } from "../sim/map";
+import { POIS, REGIONS, regionOf, type RegionId } from "../sim/map";
 import type { Hub, LockedPick, StartPoint } from "./hub";
 import { depotIcon, entryIcon, lockIcon, startIcon } from "./icons";
 import { IslandMap, islandScene } from "./map";
@@ -21,6 +21,8 @@ const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
 
 /** At most this many allowance boxes under a depot's mark; a larger allowance shows its number instead. */
 const MINI_BOXES = 6;
+/** How far, in CSS pixels, a shut region's padlock keeps from every POI's mark and name (across counts 0.6). */
+const LOCK_CLEAR = 34;
 
 export class DepartPicker {
   private map: IslandMap;
@@ -173,13 +175,39 @@ export class DepartPicker {
       const pin = q.on && !peek ? `<span class="pin">${startIcon()}</span>` : "";
       return `<button type="button" class="${cls}" data-kind="${q.kind}" data-id="${q.id}" style="left:${x.toFixed(1)}px;top:${y.toFixed(1)}px" aria-label="${esc(q.name)}">${icon}${lock}${pin}${q.kind === "depot" && q.open ? this.mini(q) : ""}</button>`;
     });
-    // A region no raid may start in yet: a padlock just before its name (which the map writes from its label's point on).
+    // A region no raid may start in yet: a padlock in it, clear of its POIs' names.
     const locks = REGIONS.filter((r) => locked.includes(r.id)).map((r) => {
-      const at = this.map.screenAt(regionOf(r.id).label.x, regionOf(r.id).label.z) ?? { x: 0, y: 0 };
+      const at = this.lockSpot(r.id);
       const cls = `region-lock shut${peek?.kind === "region" && peek.id === r.id ? " peek" : ""}`;
       return `<button type="button" class="${cls}" data-kind="region" data-id="${r.id}" style="left:${(at.x - size / 2 - 3).toFixed(1)}px;top:${at.y.toFixed(1)}px" aria-label="${esc(r.name)}">${lockIcon()}</button>`;
     });
     root.innerHTML = `<svg class="tethers" width="${box.width}" height="${box.height}" aria-hidden="true">${tethers}</svg>${locks.join("")}${buttons.join("")}`;
+  }
+
+  /**
+   * Where a shut region's padlock stands: its label's point, or the nearest point in the region
+   * clear of every POI's mark and the name over it, so the padlock covers no name.
+   */
+  private lockSpot(id: RegionId): { x: number; y: number } {
+    const r = regionOf(id);
+    const marks = POIS.flatMap((o) => this.map.screenAt(o.x, o.z) ?? []);
+    const clear = (p: { x: number; y: number }) => Math.min(...marks.map((m) => Math.hypot((p.x - m.x) * 0.6, p.y - (m.y - 8))));
+    const home = this.map.screenAt(r.label.x, r.label.z) ?? { x: 0, y: 0 };
+    if (clear(home) >= LOCK_CLEAR) return home;
+    let best = home;
+    let score = Infinity;
+    const b = r.bounds;
+    for (let dx = -240; dx <= 240; dx += 30)
+      for (let dz = -240; dz <= 240; dz += 30) {
+        const x = r.label.x + dx;
+        const z = r.label.z + dz;
+        if (x < b.x0 || x > b.x1 || z < b.z0 || z > b.z1) continue;
+        const p = this.map.screenAt(x, z);
+        if (!p || clear(p) < LOCK_CLEAR) continue;
+        const d = Math.hypot(dx, dz);
+        if (d < score) [best, score] = [p, d];
+      }
+    return best;
   }
 
   /** A depot's allowance under its mark: a box a point, filled by what the loadout costs, red past it. */

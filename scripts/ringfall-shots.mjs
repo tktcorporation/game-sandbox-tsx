@@ -1103,6 +1103,10 @@ for (let i = 0; i < 25 * 60 * 10; i++) {
     const line = await page.evaluate(() => document.getElementById("obj-title").textContent + "｜" + document.getElementById("obj-text").textContent + "｜" + document.getElementById("obj-n").textContent);
     if (!/迎撃/.test(line) || !/1\/3/.test(line) || s.contract?.t !== "intercept") errors.push(`contract: the objective card reads "${line}" for ${JSON.stringify(s.contract)}`);
     await page.locator("#objective").screenshot({ path: `${out}/02-objective-contract.png` });
+    // A hunting party with no spot out of the player's sight at the start beams in a few seconds on
+    // (the profile's seed is the page's clock): the objective's first step has a place once it is out.
+    await stepWhile(page, 500, 60, (st) => !st.objective?.steps?.[st.objective.current]?.at);
+    await draw(page);
     // The compass's one marker, at the objective step's place, with its distance.
     const mark = await page.evaluate(() => ({ hidden: document.getElementById("compass-mark").hidden, text: document.getElementById("compass-mark").textContent }));
     if (mark.hidden || !/\d+m/.test(mark.text)) errors.push(`objective: the compass marker is ${JSON.stringify(mark)}`);

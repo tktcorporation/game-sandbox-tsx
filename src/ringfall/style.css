@@ -3469,6 +3469,11 @@ body.touch #camp-prompt {
 #depart-hint[hidden] {
   display: none;
 }
+/* A refused confirm reads its reason on one line: the reason is a name and two numbers. */
+#depart-go:disabled {
+  white-space: nowrap;
+  font-size: 16px;
+}
 #depart-go .ico {
   width: 18px;
   height: 18px;
