@@ -168,7 +168,8 @@ function measure(R) {
     }
     // A box that fades its edges out (the compass) cuts on purpose.
     if (cut && (getComputedStyle(cut).maskImage || getComputedStyle(cut).webkitMaskImage || "none") === "none") add("clip", el, `by ${name(cut)}`);
-    if (!scrolls && (t.right > vw + 2 || t.left < -2 || t.bottom > vh + 2 || t.top < -2)) {
+    // Text a box already cuts (said above, or faded on purpose) never reaches the window's edge.
+    if (!scrolls && !cut && (t.right > vw + 2 || t.left < -2 || t.bottom > vh + 2 || t.top < -2)) {
       // Wholly outside is a thing parked off the screen, not a thing cut.
       if (t.left < vw && t.right > 0 && t.top < vh && t.bottom > 0) add("offscreen", el, `${Math.round(t.left)},${Math.round(t.top)} ${Math.round(t.width)}x${Math.round(t.height)} in ${vw}x${vh}`);
       continue;

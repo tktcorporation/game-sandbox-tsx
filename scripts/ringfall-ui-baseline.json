@@ -1,15 +1,9 @@
 {
- "00-depart-locked-harbor": [
-  "wordy #depart-hint span"
- ],
  "00-title": [
   "wordy #title div.title-inner p.lede"
  ],
  "06-care-package": [
   "contrast #obj-stealth"
- ],
- "107-war-rally": [
-  "offscreen #compass-strip span"
  ],
  "11-downed": [
   "contrast #downed b",
@@ -32,36 +26,8 @@
  "153-expeditions-depart": [
   "wordy #depart-list dd"
  ],
- "16-flank-hit": [
-  "contrast #obj-stealth"
- ],
  "18-teammate-down": [
   "contrast #mate-state"
- ],
- "19-teammate-fight": [
-  "contrast #obj-stealth",
-  "offscreen #compass-strip span"
- ],
- "24-search": [
-  "offscreen #compass-strip span"
- ],
- "30-map-harbor": [
-  "offscreen #compass-strip span"
- ],
- "31-harbor-fight": [
-  "contrast #obj-stealth"
- ],
- "32-stagger": [
-  "contrast #obj-stealth"
- ],
- "33-wreck": [
-  "contrast #obj-stealth"
- ],
- "46-depart-depot-shut": [
-  "wordy #depart-hint span"
- ],
- "46-depart-over": [
-  "wordy #depart-hint span"
  ],
  "46-stash-depot-over": [
   "contrast #hub-foot-note span.kit span b"
@@ -71,15 +37,6 @@
  ],
  "50-board-story": [
   "wordy #hub-side details.told p"
- ],
- "58-debris": [
-  "contrast #obj-stealth"
- ],
- "61-crew-loot": [
-  "contrast #obj-stealth"
- ],
- "82-mod-floor": [
-  "contrast #bag-cards div.bag-card div.bp-row span.bp-name"
  ],
  "91-panel-factory": [
   "contrast div.gain-row span.delta span.was small",
@@ -145,9 +102,6 @@
  "m1-pause": [
   "tap #vol2"
  ],
- "m14-depart-over": [
-  "wordy #depart-hint span"
- ],
  "m16-board": [
   "wordy #hub-side details.told p"
  ],
@@ -157,15 +111,8 @@
  "m2-fight": [
   "contrast #obj-stealth"
  ],
- "m20-island-results": [
-  "offscreen #stats span",
-  "offscreen #stats span b"
- ],
  "m31-climb": [
   "ghost #mate b"
- ],
- "m31-hud-mods": [
-  "contrast #bag-cards div.bag-card div.bp-row span.bp-name"
  ],
  "m41-panel-factory": [
   "contrast div.gain-row span.delta span.was small",
@@ -183,9 +130,6 @@
  "m7-depart-locked-entry": [
   "wordy #depart-hint span"
  ],
- "m84-depot-risk": [
-  "offscreen #compass-strip span"
- ],
  "m85-results-raid": [
   "offscreen #stats span",
   "offscreen #stats span b"
@@ -199,14 +143,7 @@
   "offscreen #stats span b"
  ],
  "m9-results": [
-  "offscreen #stats span",
-  "offscreen #stats span b"
- ],
- "plates-2-deflect": [
-  "contrast #obj-stealth"
- ],
- "plates-3-broken": [
-  "contrast #obj-stealth"
+  "wordy #home p span"
  ],
  "rules-4-analyse": [
   "wordy #home div.analyse button.mod small"
