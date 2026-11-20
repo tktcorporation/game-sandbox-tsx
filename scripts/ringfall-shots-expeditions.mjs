@@ -31,9 +31,9 @@ const SAVE = {
 };
 
 const NEAR = [
-  { code: "Z3P9TR", name: "となり", held: 7, total: 21, day: 15, slot: 0 },
+  { code: "Z3P9TR", name: "となり", held: 7, total: 21, day: 15, slot: 0, last: { at: Date.now() - 3 * 3600_000, captured: 2, home: true } },
   { code: "K7M2QX", name: "みなと", held: 4, total: 21, day: 9, slot: 1 },
-  { code: "H4N8WD", name: "砂丘の人", held: 11, total: 21, day: 22, slot: 2 },
+  { code: "H4N8WD", name: "砂丘の人", held: 11, total: 21, day: 22, slot: 2, last: { at: Date.now() - 26 * 3600_000, captured: 0, home: false } },
 ];
 
 export async function expeditionShots({ browser, port, out, errors }) {
@@ -74,8 +74,11 @@ export async function expeditionShots({ browser, port, out, errors }) {
     ]),
   );
   await open("map");
-  const answer = await pg.evaluate(() => ({ items: document.querySelectorAll(".island-news:not(.incoming) li").length, buttons: document.querySelectorAll(".island-news .revenge").length }));
+  const answer = await pg.evaluate(() => ({ items: document.querySelectorAll(".island-news:not(.incoming):not(.near) li").length, buttons: document.querySelectorAll(".island-news .revenge").length }));
   if (answer.items !== 2 || answer.buttons !== 1) errors.push(`expeditions: the map table's news shows ${answer.items} items and ${answer.buttons} 仕返し, not 2 and 1`);
+  // The neighbours beside the news: whose, how much they hold, what they did last (the kept list's last raid read back).
+  const near = await pg.evaluate(() => [...document.querySelectorAll(".island-news.near li")].map((li) => li.textContent));
+  if (near.length !== 3 || !/となり.*7\/21.*3h.*\+2/.test(near[0] ?? "")) errors.push(`expeditions: the map table's neighbours read ${JSON.stringify(near)}`);
   await pg.screenshot({ path: `${out}/150-expeditions-news.png` });
   await pg.click(".island-news .revenge");
   await pg.evaluate(() => window.advanceTime(200));

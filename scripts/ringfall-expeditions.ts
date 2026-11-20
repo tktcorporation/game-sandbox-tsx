@@ -30,7 +30,9 @@
  * Run alone: `npx tsx scripts/ringfall-expeditions.ts`; it ends with "expeditions ok".
  */
 import { readFileSync, writeFileSync } from "node:fs";
-import { CLAIM_TRIES, handleApi, type ApiEnv, type IslandNamespace } from "../worker/api";
+import { DatabaseSync } from "node:sqlite";
+import { CLAIM_TRIES, handleApi, type ApiEnv, type Db, type DbStatement, type IslandNamespace } from "../worker/api";
+import { NEIGHBOUR_SLOTS } from "../src/ringfall/meta/neighbours";
 import { advance, EXPEDITION, islandOp, nextAlarm, NODE_IDS, type IslandOp, type IslandState } from "../worker/island";
 import { CONQUEST, FACTORY, FACTORY_TOP } from "../src/ringfall/sim/config";
 import { isIslandCode, newIslandCode } from "../src/ringfall/meta/island-code";
@@ -167,6 +169,27 @@ const HOUR_ON = (EXPEDITION.notice + 3600) * 1000;
     console.log(`refused: ${what} -> ${r.status} ${err(r)}`);
     check(r.status === status && err(r) === error, `refused: ${what} answered ${r.status} ${err(r)}, not ${status} ${error}`);
   }
+  // A neighbour of the sender's this week is reached only by its sea route: B's week names A's island
+  // in the slot facing the observatory (NEIGHBOUR_SLOTS[0]), which B does not hold, so the server
+  // refuses; with no pick (A named by its code) the same send goes through the rules above.
+  const sqlite = new DatabaseSync(":memory:");
+  sqlite.exec(readFileSync(new URL("../migrations/0002_islands.sql", import.meta.url), "utf8"));
+  sqlite.prepare("INSERT INTO neighbour_picks (player_id, week, slot, code) VALUES (?1, ?2, 0, ?3)").run(B.id, Math.floor(T1 / (7 * DAY)), A.code);
+  const db: Db = {
+    prepare: (sql) => {
+      let args: (string | number | null)[] = [];
+      const st: DbStatement = {
+        bind: (...v) => ((args = v as typeof args), st),
+        run: async () => sqlite.prepare(sql).run(...args),
+        all: async <R>() => ({ results: sqlite.prepare(sql).all(...args) as R[] }),
+      };
+      return st;
+    },
+    batch: async () => [],
+  };
+  const shut = await call("POST", `/api/islands/${A.code}/expeditions`, { from: B, target: "quarry", units: 7 }, T1, { ...env, DB: db });
+  console.log(`refused: to a neighbour whose sea route is shut -> ${shut.status} ${err(shut)}`);
+  check(shut.status === 403 && err(shut) === "route-shut" && NEIGHBOUR_SLOTS[0].shore === "station", `refused: to a neighbour whose sea route is shut answered ${shut.status} ${err(shut)}, not 403 route-shut`);
   check(islands.get(A.code)!.expeditions.length === 0, "refused: a refused expedition was kept");
 }
 
@@ -192,6 +215,31 @@ let cursor = 0;
   const back = await report(A, holdsWith({ supply: "freed", quarry: "held" }), 0, 5, T1 + 400_000);
   console.log(`capture: the owner's report of the quarry as the enemy's -> ${back.status}, quarry ${holdOf(A.code, "quarry")}`);
   check(holdOf(A.code, "quarry") === `rival:${B.code}`, "capture: the owner's report erased a node given to another player");
+}
+
+// --- answering an attack: B's expedition took A's quarry, so A may answer B past a shut sea route
+{
+  const sqlite = new DatabaseSync(":memory:");
+  sqlite.exec(readFileSync(new URL("../migrations/0002_islands.sql", import.meta.url), "utf8"));
+  // A's week names B's island in the slot facing the observatory, which A does not hold.
+  sqlite.prepare("INSERT INTO neighbour_picks (player_id, week, slot, code) VALUES (?1, ?2, 0, ?3)").run(A.id, Math.floor(T1 / (7 * DAY)), B.code);
+  const db: Db = {
+    prepare: (sql) => {
+      let args: (string | number | null)[] = [];
+      const st: DbStatement = {
+        bind: (...v) => ((args = v as typeof args), st),
+        run: async () => sqlite.prepare(sql).run(...args),
+        all: async <R>() => ({ results: sqlite.prepare(sql).all(...args) as R[] }),
+      };
+      return st;
+    },
+    batch: async () => [],
+  };
+  // Sent at B's titan pad, the island itself refuses it (closed-node), so nothing is left on B's
+  // island; the answer it gives shows the route check let the attack's answer through.
+  const back = await call("POST", `/api/islands/${B.code}/expeditions`, { from: A, target: "pad", units: 2 }, T1 + 1000, { ...env, DB: db });
+  console.log(`answer: A at B, who took A's quarry, past a shut route -> ${back.status} ${err(back)}`);
+  check(back.status === 403 && err(back) === "closed-node", `answer: answering an attack past a shut route answered ${back.status} ${err(back)}, not the island's own closed-node`);
 }
 
 // --- the day's limit, the island's limit, and a lightly garrisoned node of the enemy's

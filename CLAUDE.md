@@ -97,7 +97,7 @@ shows no markers or distances but one: the current objective step's destination,
 beacon in the world and a marker with its distance on the compass (the steps come from
 `objectiveSteps()` in `sim/objective.ts`, which the HUD, the bot and the sim gate all read). It
 lists only the ways off of the region the player is in
-(`regionHere()`); the world map (`view/map.ts`, M) is where the POIs and exits of every region are; it opens framed
+(`regionHere()`); the world map (`view/map.ts`, M; the phone's button sits in the bottom row by the bag's) is where the POIs and exits of every region are, and on a screen wide enough a minimap in the top right corner (`IslandMap.mini`, drawn a few times a second by `hud.ts`) shows the ground 180 m round the player north up, without names, and opens the map when clicked; it opens framed
 on the region the player is in (`Region.bounds`) and N switches it to the whole world.
 A wipe ends the raid and loses the haul (`haulValue()` in `results.ts` is its worth). The results
 screen gives no grade or score: it leads with the day (the island's map and its tug-of-war bar, in

@@ -3,6 +3,7 @@ import { newIslandCode, parseIslandCode } from "../src/ringfall/meta/island-code
 import { parseHolds, parseLent, parseRetaken, squadKinds, type IslandOp } from "./island";
 import type { ApiError } from "../src/ringfall/meta/island-errors";
 import { ensureSchema, type Migration } from "./schema";
+import { NEIGHBOUR_SLOTS } from "../src/ringfall/meta/neighbours";
 
 /*
  * RINGFALL's API under /api/ (docs/ringfall/multiplayer.md, サーバー). A plain handler of a request
@@ -210,6 +211,22 @@ async function ownCode(env: ApiEnv, code: string, player: string, now: number) {
   }
 }
 
+/**
+ * Whether the island `code` is one of `player`'s neighbours this week whose sea route is shut: its
+ * slot's coastal node (`NEIGHBOUR_SLOTS[].shore`) not among the nodes the sender holds. An island
+ * that is no neighbour of theirs (named by its code: a friend's, an attacker's answered) is open,
+ * as is any when the database cannot be read.
+ */
+async function routeShut(env: ApiEnv, player: string, code: string, held: readonly string[], now: number): Promise<boolean> {
+  try {
+    const pick = (await env.DB?.prepare("SELECT slot FROM neighbour_picks WHERE player_id = ?1 AND week = ?2 AND code = ?3").bind(player, Math.floor(now / NEIGHBOURS.weekMs), code).all<{ slot: number }>())?.results[0];
+    const shore = pick ? NEIGHBOUR_SLOTS[pick.slot]?.shore : undefined;
+    return !!shore && !held.includes(shore);
+  } catch {
+    return false;
+  }
+}
+
 /** How many neighbours an island is offered, and how long a set of them lasts before it is drawn again. */
 export const NEIGHBOURS = { count: 4, pool: 24, weekMs: 7 * 24 * 3600 * 1000, activeMs: 14 * 24 * 3600 * 1000 } as const;
 
@@ -355,10 +372,13 @@ async function handleIslands(request: Request, env: ApiEnv, now: number, url: UR
   if (who.status === 404) return fail(403, "no-own-island");
   if (who.status !== 200) return who.status === 403 ? fail(403, "not-owner") : who;
   // The name others see is the one the sender's island keeps, not one the request names.
-  const { factory, name } = (await who.json()) as { factory: number; name: string };
+  const { factory, name, held, attackers } = (await who.json()) as { factory: number; name: string; held?: string[]; attackers?: string[] };
   // A recall: the sender, shown to own the island the expedition came from, calls it home.
   if (one !== null) return ask(ns, code, { t: "recall", from: fromCode, id: one }, now);
   if (typeof raw.target !== "string" || !int(raw.units, 1, 64)) return fail(400, "bad-request");
+  // A neighbour of the sender's this week is reached only by its sea route (the sender holds the node
+  // facing it), unless it attacked the sender's island lately: an attack is answered by any way (仕返し).
+  if (!attackers?.includes(code) && (await routeShut(env, from.id, code, held ?? [], now))) return fail(403, "route-shut");
   const kinds = squadKinds(factory);
   if (raw.units > kinds.length) return fail(400, "too-many-units");
   return ask(ns, code, { t: "expedition", from: { code: fromCode, name }, target: raw.target, kinds: kinds.slice(0, raw.units) }, now);

@@ -1,4 +1,5 @@
 import { BAG, HIDEOUT, MODS, TOOLS, VALUABLES, type ModKind, type ToolKind, type ValuableKind } from "../sim/config";
+import { rarityText, UI } from "./palette";
 import { POIS, poiIndex, recordSpot, ROUTES, type RecordId } from "../sim/map";
 import type { State } from "../sim/state";
 import { factoryNeeded, newProfile, nextFactory, pouchKeep, takenContract, wanted, type Profile } from "../meta/profile";
@@ -101,7 +102,7 @@ function row(e: Entry, one = false): string {
   const value = one ? e.value / e.n : e.value;
   const cells = Array.from({ length: e.size }, () => `<i${kept ? ' class="p"' : ""}></i>`).join("");
   const pouch = kept ? `<span class="bp-pouch">${pouchIcon()}${kept > 1 || (kept && n > 1) ? `<b>${kept}</b>` : ""}</span>` : "";
-  return `<div class="bp-row${kept ? " kept" : ""}"><span class="bp-pic" style="--c:${e.color}">${cells}</span><span class="bp-name" style="color:${e.color}">${esc(e.name)}${n > 1 ? `<i>×${n}</i>` : ""}</span>${pouch}<b class="bp-val">${value || ""}</b><span class="bp-uses">${e.uses}</span></div>`;
+  return `<div class="bp-row${kept ? " kept" : ""}"><span class="bp-pic" style="--c:${e.color}">${cells}</span><span class="bp-name" style="color:${rarityText(e.color)}">${esc(e.name)}${n > 1 ? `<i>×${n}</i>` : ""}</span>${pouch}<b class="bp-val">${value || ""}</b><span class="bp-uses">${e.uses}</span></div>`;
 }
 
 /** What the player has on them outside the bag's slots: keys and mod parts worn. */
@@ -220,7 +221,7 @@ export class BagView {
         ? row(e, true)
         : t === "k"
           ? `<div class="bp-row"><span class="bp-pic icon" style="color:${RARITY_CSS[3]}">${keyIcon()}</span><span class="bp-name" style="color:${RARITY_CSS[3]}">${esc(POIS[Number(k)].name)}</span></div>`
-          : `<div class="bp-row"><span class="bp-pic icon">${modIcon()}</span><span class="bp-name" style="color:${RARITY_CSS[2]}">${esc(MODS[k as ModKind].name)}</span></div>`;
+          : `<div class="bp-row"><span class="bp-pic icon">${modIcon()}</span><span class="bp-name" style="color:${UI.r2Text}">${esc(MODS[k as ModKind].name)}</span></div>`;
       const out = went.length ? `<div class="bp-lost">${crossIcon()}${went.map((w) => `<s>${esc(lostName(w))}</s>`).join("")}</div>` : "";
       const el = document.createElement("div");
       el.className = "bag-card";

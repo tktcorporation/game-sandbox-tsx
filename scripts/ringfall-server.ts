@@ -298,6 +298,9 @@ const count = (table: string) => Number((sqlite.prepare(`SELECT COUNT(*) AS n FR
   console.log(`neighbours: last raids ${JSON.stringify(lasts)}`);
   check(lasts.every(([c, l]) => (c === "AB0003" ? l?.captured === 2 && l.home : l === undefined)), "neighbours: a neighbour's last raid is not the one its owner played");
   check(parseNeighbours({ neighbours: [{ code: "bad", name: "x", held: 1, total: 21, day: 1 }] })?.length === 0, "neighbours: the browser took a neighbour with a bad code");
+  // The browser keeps the list it read and reads it back as it was, the last raids included.
+  const kept = parseNeighbours(a.body)!;
+  check(JSON.stringify(parseNeighbours({ neighbours: kept })) === JSON.stringify(kept), "neighbours: the browser's kept list does not read back as it was");
   const again = await ask(ids[0], T + DAY);
   check(JSON.stringify(again.body) === JSON.stringify(a.body), "neighbours: the list changed within the week");
   check(list.every((n, k) => (n as { slot?: number }).slot === k), "neighbours: the picks do not carry their slots at sea in order");
