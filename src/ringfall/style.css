@@ -554,7 +554,7 @@ body.touch #obj-raid .why {
   grid-column: 1 / -1;
   font-size: 13px;
   font-weight: 800;
-  color: var(--muted);
+  color: rgb(var(--white-rgb) / 0.9);
 }
 #obj-stealth:empty {
   display: none;
@@ -4643,7 +4643,7 @@ body.touch .bag-card:nth-last-child(n + 3) {
   color: var(--hot);
 }
 .ladder li.later {
-  opacity: 0.45;
+  opacity: 0.7;
 }
 /* Only the next level's gain is lit in the ladder: the others are history or later. */
 .ladder li:not(.next) b.n.gain,
@@ -5141,4 +5141,17 @@ body.touch .wstats .g .n {
 body:has(#hub:not([hidden])) #touch,
 body:has(#depart:not([hidden])) #touch {
   visibility: hidden;
+}
+
+/* A mod part's effect: when it applies, what it changes, and by how much. */
+.gist em {
+  font-style: normal;
+  margin-right: 6px;
+  padding: 0 5px;
+  background: rgb(var(--white-rgb) / 0.14);
+}
+.gist b {
+  margin-left: 5px;
+  font-family: var(--num);
+  color: var(--white);
 }

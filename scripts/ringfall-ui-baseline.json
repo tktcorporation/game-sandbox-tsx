@@ -78,11 +78,8 @@
  "61-crew-loot": [
   "contrast #obj-stealth"
  ],
- "83-results-analysis": [
-  "wordy #home div.analyse button.mod small"
- ],
- "84-results-analysed": [
-  "wordy #home div.analyse button.mod small"
+ "82-mod-floor": [
+  "contrast #bag-cards div.bag-card div.bp-row span.bp-name"
  ],
  "91-panel-factory": [
   "contrast div.gain-row span.delta span.was small",
@@ -138,9 +135,7 @@
   "contrast div.mod-body ol.ladder li.later b",
   "contrast li span span.gauge small",
   "contrast li.later span span.gauge small",
-  "contrast li.later span span.gauge.up small",
-  "ghost #t-crouch b",
-  "ghost #t-jump b"
+  "contrast li.later span span.gauge.up small"
  ],
  "m0-title": [
   "tap #title div.title-inner p.note a",
@@ -166,14 +161,11 @@
   "offscreen #stats span",
   "offscreen #stats span b"
  ],
- "m24-storm": [
+ "m31-climb": [
   "ghost #mate b"
  ],
- "m33-results-analysis": [
-  "wordy #home div.analyse button.mod small"
- ],
- "m34-results-analysed": [
-  "wordy #home div.analyse button.mod small"
+ "m31-hud-mods": [
+  "contrast #bag-cards div.bag-card div.bp-row span.bp-name"
  ],
  "m41-panel-factory": [
   "contrast div.gain-row span.delta span.was small",
