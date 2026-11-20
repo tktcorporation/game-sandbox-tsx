@@ -2522,9 +2522,9 @@ body.touch #obj-stealth {
   order: 2;
   font-size: 11px;
 }
-/* At 11 px the engaged red is not large text: the lighter red reads on the card. */
+/* At 11 px the engaged red is not large text: the warning's light red reads on the card. */
 body.touch #obj-stealth.engaged {
-  color: var(--foe-soft);
+  color: var(--peach);
 }
 /* A thumb's reach on the settings' sliders and the title's link. */
 body.touch .settings input[type="range"] {
