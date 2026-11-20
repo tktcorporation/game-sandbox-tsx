@@ -5026,7 +5026,7 @@ body.touch .bag-card:nth-last-child(n + 3) {
   padding: 4px 10px;
   border: 0;
   background: var(--rival);
-  color: var(--white);
+  color: var(--ink);
   font-size: 12px;
   font-weight: 800;
 }

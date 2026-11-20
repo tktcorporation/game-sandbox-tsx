@@ -1,55 +1,9 @@
 {
- "00-title": [
-  "wordy #title div.title-inner p.lede"
- ],
- "06-care-package": [
-  "contrast #obj-stealth"
- ],
- "11-downed": [
-  "contrast #downed b",
-  "contrast #obj-stealth"
- ],
- "150-expeditions-map": [
-  "wordy div.hub-island div.hub-island-side ul.island-news.incoming li"
- ],
- "151-expeditions-factory": [
-  "contrast div.mod-body ol.ladder li.later b",
-  "contrast li.later span span.gauge small",
-  "contrast li.later span span.gauge.up small"
- ],
- "152-expeditions-recalled": [
-  "contrast div.mod-body div.exp-list div.req.exp-out small",
-  "contrast div.mod-body ol.ladder li.later b",
-  "contrast li.later span span.gauge small",
-  "contrast li.later span span.gauge.up small"
- ],
- "153-expeditions-depart": [
-  "wordy #depart-list dd"
- ],
- "18-teammate-down": [
-  "contrast #mate-state"
- ],
  "46-stash-depot-over": [
   "contrast #hub-foot-note span.kit span b"
  ],
- "50-board": [
-  "wordy #hub-side details.told p"
- ],
- "50-board-story": [
-  "wordy #hub-side details.told p"
- ],
- "91-panel-factory": [
-  "contrast div.gain-row span.delta span.was small",
-  "contrast div.mod-body ol.ladder li.later b",
-  "contrast li span span.gauge small",
-  "contrast li span span.gauge.up small",
-  "contrast li.later span span.gauge small",
-  "contrast li.later span span.gauge.up small"
- ],
- "91-panel-factory-expeditions": [
-  "contrast div.mod-body ol.ladder li.later b",
-  "contrast li.later span span.gauge small",
-  "contrast li.later span span.gauge.up small"
+ "82-mod-floor": [
+  "contrast #bag-cards div.bag-card div.bp-row span.bp-name"
  ],
  "bag-1-peek": [
   "contrast #bag-peek div.bp-extra span.bp-x.mod"
@@ -61,84 +15,5 @@
  "m-bag-1-peek-844": [
   "contrast #bag-peek div.bp-extra span.bp-x.mod",
   "contrast #bag-peek div.bp-rows div.bp-row span.bp-name"
- ],
- "m-rules-2-pouch-wipe": [
-  "offscreen #stats span",
-  "offscreen #stats span b"
- ],
- "m-rules-4-analyse": [
-  "wordy #home div.analyse button.mod small"
- ],
- "m-rules-4-analysed": [
-  "wordy #home div.analyse button.mod small"
- ],
- "m-rules-5-board-new-sliding": [
-  "ghost #t-crouch b"
- ],
- "m-rules-6-learn-dashed": [
-  "wordy #home div.analyse button.mod small"
- ],
- "m-rules-6-learn-solid": [
-  "wordy #home div.analyse button.mod small"
- ],
- "m-up-2-workshop-infirmary": [
-  "contrast div.mod-body ol.ladder li.later b",
-  "contrast li span span.gauge small",
-  "contrast li.later span span.gauge small",
-  "contrast li.later span span.gauge.up small"
- ],
- "m-up-4-factory": [
-  "contrast div.gain-row span.delta span.was small",
-  "contrast div.mod-body ol.ladder li.later b",
-  "contrast li span span.gauge small",
-  "contrast li.later span span.gauge small",
-  "contrast li.later span span.gauge.up small"
- ],
- "m0-title": [
-  "wordy #title div.title-inner p.lede"
- ],
- "m16-board": [
-  "wordy #hub-side details.told p"
- ],
- "m16-board-story": [
-  "wordy #hub-side details.told p"
- ],
- "m31-climb": [
-  "ghost #mate b"
- ],
- "m41-panel-factory": [
-  "contrast div.gain-row span.delta span.was small",
-  "contrast li span span.gauge small",
-  "contrast li span span.gauge.up small"
- ],
- "m41-panel-factory-expeditions": [
-  "contrast div.mod-body ol.ladder li.later b",
-  "contrast li.later span span.gauge small",
-  "contrast li.later span span.gauge.up small"
- ],
- "rules-4-analyse": [
-  "wordy #home div.analyse button.mod small"
- ],
- "rules-4-analysed": [
-  "wordy #home div.analyse button.mod small"
- ],
- "rules-6-learn-dashed": [
-  "wordy #home div.analyse button.mod small"
- ],
- "rules-6-learn-solid": [
-  "wordy #home div.analyse button.mod small"
- ],
- "up-2-workshop-infirmary": [
-  "contrast div.mod-body ol.ladder li.later b",
-  "contrast li span span.gauge small",
-  "contrast li.later span span.gauge small",
-  "contrast li.later span span.gauge.up small"
- ],
- "up-4-factory": [
-  "contrast div.gain-row span.delta span.was small",
-  "contrast div.mod-body ol.ladder li.later b",
-  "contrast li span span.gauge small",
-  "contrast li.later span span.gauge small",
-  "contrast li.later span span.gauge.up small"
  ]
 }

@@ -972,9 +972,9 @@ export class IslandMap {
       g.stroke();
       g.restore();
       g.textAlign = "center";
-      label(n.name, p.x, p.y - r - 4 * dpr, UI.paper, 11);
-      label(`${n.held}/${n.total}`, p.x, p.y + r + 10 * dpr, UI.rivalLight, 10);
-      taken.push({ x0: p.x - r * 1.6, y0: p.y - r - 12 * dpr, x1: p.x + r * 1.6, y1: p.y + r + 14 * dpr });
+      // Whose island and how much of it they hold, in one line over it: a slot near the map's edge keeps it whole.
+      label(`${n.name} ${n.held}/${n.total}`, p.x, p.y - r - 4 * dpr, UI.paper, 11);
+      taken.push({ x0: p.x - r * 1.6, y0: p.y - r - 12 * dpr, x1: p.x + r * 1.6, y1: p.y + r });
     }
     // Districts and landmarks between the POIs, small and muted under everything else.
     for (const d of plain ? [] : LANDMARKS) {
