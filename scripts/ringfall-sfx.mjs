@@ -84,6 +84,7 @@ const UNDER = [
   ["music-fight", "shot-pike", 3],
   ["music-explore", "enemy-fire-grunt", 3],
   ["music-explore", "music-fight", 3],
+  ...["harbor", "city", "launch"].flatMap((r) => [[`music-${r}-fight`, "shot-pike", 3], [`music-${r}-explore`, "enemy-fire-grunt", 3], [`music-${r}-explore`, `music-${r}-fight`, 3]]),
 ];
 const tierOf = (id) => TIERS.find((t) => t.ids.test(id));
 const report = await page.evaluate(() => window.ringfallSfxCheck());

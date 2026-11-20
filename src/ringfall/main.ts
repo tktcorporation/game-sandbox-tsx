@@ -4,7 +4,7 @@ import { Bot, SKILLS } from "./sim/bot";
 import { collide, groundAt } from "./sim/geom";
 import { terrainHeight } from "./sim/terrain";
 import { callLeft, starterKit, idleInput, newRun, type GameEvent, type Input, type Kit, type State } from "./sim/state";
-import { CAMP, DEPOTS, entryOf, FRAMES, HOME_REGION, NODES, POIS, poiIndex, QUARRY_EXITS, ZIPS, type CampSpot, type PoiId, type RecordId, type RegionId, type StationId } from "./sim/map";
+import { CAMP, DEPOTS, entryOf, FRAMES, HOME_REGION, NODES, POIS, poiIndex, QUARRY_EXITS, regionHere, ZIPS, type CampSpot, type PoiId, type RecordId, type RegionId, type StationId } from "./sim/map";
 import { grabZip } from "./sim/zips";
 import { POI_AT } from "./sim/areas";
 import { frontNodes, garrisonOf, takeNode, useCore } from "./sim/front";
@@ -445,7 +445,12 @@ let sinceFight = Infinity;
 let sinceAlert = Infinity;
 /** A mood the sound check (`?sfx`) asked to hear, until another is asked for. */
 let musicTry: Mood | null = null;
-addEventListener("ringfall-music", (e) => (musicTry = (e as CustomEvent<Mood>).detail));
+let musicTryRegion: RegionId | null = null;
+addEventListener("ringfall-music", (e) => {
+  const d = (e as CustomEvent<{ mood?: Mood; region?: RegionId }>).detail;
+  if (d.mood) musicTry = d.mood;
+  if (d.region) musicTryRegion = d.region;
+});
 function musicMood(): Mood {
   if (musicTry) return musicTry;
   if (running) {
@@ -462,13 +467,24 @@ function musicMood(): Mood {
   if (!$("title").hidden) return "title";
   return "off";
 }
+/** The region the music plays, and one the player has been in a moment, so a border walked along does not flip it. */
+let musicRegion: RegionId = "reservoir";
+let regionNext: { id: RegionId; t: number } | null = null;
+function musicRegionNow(dt: number): RegionId {
+  if (!running) return camping ? "reservoir" : musicRegion;
+  const here = regionHere(state.player.pos).id;
+  if (here === musicRegion) regionNext = null;
+  else if (regionNext?.id !== here) regionNext = { id: here, t: 0 };
+  else if ((regionNext.t += dt) > 3) [musicRegion, regionNext] = [here, null];
+  return musicRegion;
+}
 function playMusic(dt: number) {
   const mixer = getMixer();
   if (!mixer) return;
   if (music?.mixer !== mixer) music = { mixer, music: new Music(mixer) };
   sinceFight += dt;
   sinceAlert += dt;
-  music.music.set(automated ? "off" : musicMood());
+  music.music.set(automated ? "off" : musicMood(), musicTryRegion ?? musicRegionNow(dt));
   music.music.schedule();
 }
 

@@ -2,6 +2,7 @@ import type { EnemyKind, Rarity, WeaponKind } from "../sim/config";
 import { Mixer, getMixer, swapMixer, unlock, type P3 } from "./audio";
 import { sfx } from "./sfx";
 import { Music, type Mood } from "./music";
+import { REGIONS, type RegionId } from "../sim/map";
 
 /*
  * The sound check (`?sfx` on the RINGFALL page): a panel on the title screen with
@@ -279,24 +280,25 @@ async function render(cue: Cue, secs = 3.2): Promise<CueReport> {
 
 /** The music's moods, each rendered for four bars through a fresh mixer, measured as a cue is. */
 export const MOODS: Exclude<Mood, "off">[] = ["title", "camp", "explore", "alert", "fight", "extract", "result"];
+const RAID_MOODS: Exclude<Mood, "off">[] = ["explore", "alert", "fight", "extract"];
 
 const MOOD_NAMES: Record<Mood, string> = { off: "止める", title: "タイトル", camp: "野営地", explore: "探索", alert: "警戒", fight: "交戦", extract: "脱出待ち", result: "結果" };
 
 /** A mood rendered offline through a fresh mixer at full volume. */
-async function moodBuffer(mood: Exclude<Mood, "off">, secs: number): Promise<AudioBuffer> {
+async function moodBuffer(mood: Exclude<Mood, "off">, secs: number, region: RegionId = "reservoir"): Promise<AudioBuffer> {
   const sr = 44100;
   const off = new OfflineAudioContext(2, Math.floor(sr * secs), sr);
   const m = new Mixer(off, false);
   m.volume.gain.value = 1;
   m.musicVolume.gain.value = 1;
   const music = new Music(m);
-  music.set(mood, 0.01);
+  music.set(mood, region, 0.01);
   music.schedule(secs - 0.5);
   return off.startRendering();
 }
 
-async function renderMood(mood: Exclude<Mood, "off">, secs = 10.6): Promise<CueReport> {
-  const buf = await moodBuffer(mood, secs);
+async function renderMood(mood: Exclude<Mood, "off">, region: RegionId = "reservoir", secs = 10.6): Promise<CueReport> {
+  const buf = await moodBuffer(mood, secs, region);
   let peak = 0;
   let nan = 0;
   let clipped = 0;
@@ -312,7 +314,7 @@ async function renderMood(mood: Exclude<Mood, "off">, secs = 10.6): Promise<CueR
       sum += x * x;
     }
   const rms = Math.sqrt(sum / (buf.length * buf.numberOfChannels));
-  return { id: `music-${mood}`, peak, rms, loud: rms, nan, clipped, lufs: momentary(buf), len: tail(buf) };
+  return { id: region === "reservoir" ? `music-${mood}` : `music-${region}-${mood}`, peak, rms, loud: rms, nan, clipped, lufs: momentary(buf), len: tail(buf) };
 }
 
 /** Every cue rendered, plus the voice cap under a burst of 80 enemy shots. */
@@ -320,6 +322,8 @@ async function checkAll() {
   const cues: CueReport[] = [];
   for (const c of CUES) cues.push(await render(c));
   for (const mood of MOODS) cues.push(await renderMood(mood));
+  // Each other region's tune, in the moods of a raid.
+  for (const r of ["harbor", "city", "launch"] as RegionId[]) for (const mood of RAID_MOODS) cues.push(await renderMood(mood, r));
   const off = new OfflineAudioContext(2, 44100, 44100);
   const m = new Mixer(off, false);
   const prev = swapMixer(m);
@@ -334,7 +338,7 @@ async function checkAll() {
 declare global {
   interface Window {
     ringfallSfxCheck?: typeof checkAll;
-    ringfallMusicRender?: (mood: Exclude<Mood, "off">, secs?: number) => Promise<number[]>;
+    ringfallMusicRender?: (mood: Exclude<Mood, "off">, secs?: number, region?: RegionId) => Promise<number[]>;
   }
 }
 
@@ -343,8 +347,8 @@ export function setupSoundCheck() {
   if (!new URLSearchParams(location.search).has("sfx")) return;
   window.ringfallSfxCheck = checkAll;
   // A mood's left channel at 22 kHz, for listening to or drawing outside the page.
-  window.ringfallMusicRender = async (mood: Exclude<Mood, "off">, secs = 21) => {
-    const d = (await moodBuffer(mood, secs)).getChannelData(0);
+  window.ringfallMusicRender = async (mood: Exclude<Mood, "off">, secs = 21, region: RegionId = "reservoir") => {
+    const d = (await moodBuffer(mood, secs, region)).getChannelData(0);
     return Array.from({ length: Math.floor(d.length / 2) }, (_, i) => Math.round(d[i * 2] * 32767));
   };
   const panel = document.createElement("aside");
@@ -354,12 +358,13 @@ export function setupSoundCheck() {
     .map((g) => `<h4>${g}</h4><div class="sfx-grid">${CUES.filter((c) => c.group === g)
       .map((c) => `<button type="button" data-cue="${c.id}">${c.label}</button>`)
       .join("")}</div>`)
-    .join("")}<h4>曲</h4><div class="sfx-grid">${["off", ...MOODS].map((m) => `<button type="button" data-mood="${m}">${MOOD_NAMES[m as Mood]}</button>`).join("")}</div>`;
+    .join("")}<h4>曲</h4><div class="sfx-grid">${["off", ...MOODS].map((m) => `<button type="button" data-mood="${m}">${MOOD_NAMES[m as Mood]}</button>`).join("")}</div><div class="sfx-grid">${REGIONS.map((r) => `<button type="button" data-region="${r.id}">${r.name}</button>`).join("")}</div>`;
   panel.addEventListener("click", (e) => {
     const mood = (e.target as HTMLElement).closest<HTMLElement>("[data-mood]")?.dataset.mood;
-    if (mood) {
+    const region = (e.target as HTMLElement).closest<HTMLElement>("[data-region]")?.dataset.region;
+    if (mood || region) {
       unlock();
-      dispatchEvent(new CustomEvent("ringfall-music", { detail: mood }));
+      dispatchEvent(new CustomEvent("ringfall-music", { detail: { mood, region } }));
       return;
     }
     const b = (e.target as HTMLElement).closest<HTMLElement>("[data-cue]");
