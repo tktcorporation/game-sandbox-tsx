@@ -1,4 +1,5 @@
 import { PLAYER } from "../sim/config";
+import { cachedNeighbours } from "../island-net";
 import { armorIcon, binPicture, fightIcon, entryIcon, coinIcon, dmgIcon, magIcon, rateIcon, checkIcon, coreIcon, factoryIcon, flagIcon, hideoutIcon, clockIcon, crossIcon, depotIcon, gunIcon, healIcon, issueIcon, keyIcon, lockIcon, modIcon, pinIcon, pouchIcon, radioIcon, robotIcon, routeIcon, SIDE, stashIcon, turretIcon, upIcon, workbenchIcon } from "./icons";
 import { ALLY, FACTORY, FACTORY_TOP, HEALS as HEAL_SPECS, HIDEOUT, MOD_KINDS, PLATE, RARITY, THREAT, TOOLS, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
 import { boostFor, raidClock, strengthFor, type Kit } from "../sim/state";
@@ -1057,6 +1058,7 @@ export class Hub {
     map.region = this.from ? poiRegion(this.from).id : this.region;
     const c = takenContract(this.profile);
     map.contract = c && contractMark(c);
+    map.neighbours = cachedNeighbours();
     map.draw(islandScene(this.profile));
   }
 

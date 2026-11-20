@@ -14,6 +14,7 @@ import { DAM_FACE, floorLevel, groundOf, highGround, LEVEL, steepAt, surfaceAt, 
 import { cellOf, decodeSeen, exploreSize, type Ally, type Contact, type Enemy, type Player, type State } from "../sim/state";
 import { PAL, RARITY_CSS } from "./models";
 import type { ContractMark } from "../meta/contracts";
+import { NEIGHBOUR_SLOTS, type Neighbour } from "../meta/neighbours";
 import { UI, alpha } from "./palette";
 
 /*
@@ -518,6 +519,8 @@ export class IslandMap {
   locks = true;
   /** Who holds each node and what changed, and nothing else: no names but the scene's, no ways off, depots, routes or what a node opens. The results' map. */
   plain = false;
+  /** Other players' islands the server offers this one (meta/neighbours.ts), drawn out at sea on the camp's maps. */
+  neighbours: readonly Neighbour[] = [];
   /** What holding each node opens, as small marks beside it: the camp's map table's (a raid's map leaves them out, to read at a glance). */
   unlocks = true;
   /** The node whose padlock was picked, its note drawn beside it; -1 with none. */
@@ -932,6 +935,34 @@ export class IslandMap {
       taken.push(box(x.short, spot.x, spot.y, 10));
       return spot;
     });
+    // The neighbours: other players' islands out at sea, each at a slot of its own, in their green,
+    // with whose it is and how many of its nodes its owner holds.
+    for (const [k, n] of (plain ? [] : this.neighbours).entries()) {
+      const slot = NEIGHBOUR_SLOTS[k];
+      if (!slot) break;
+      const p = at(slot.x, slot.z);
+      const r = 13 * dpr;
+      if (p.x < -r || p.y < -r || p.x > g.canvas.width + r || p.y > g.canvas.height + r) continue;
+      g.save();
+      g.fillStyle = alpha(UI.rival, 0.55);
+      g.strokeStyle = UI.rivalLight;
+      g.lineWidth = 1.5 * dpr;
+      g.beginPath();
+      // A low island: three overlapping rounds, the same shape for every neighbour.
+      for (const [dx, dy, rr] of [
+        [-0.55, 0.1, 0.7],
+        [0.2, -0.15, 0.85],
+        [0.75, 0.2, 0.6],
+      ])
+        g.ellipse(p.x + dx * r, p.y + dy * r, rr * r, rr * r * 0.7, 0, 0, Math.PI * 2);
+      g.fill();
+      g.stroke();
+      g.restore();
+      g.textAlign = "center";
+      label(n.name, p.x, p.y - r - 4 * dpr, UI.paper, 11);
+      label(`${n.held}/${n.total}`, p.x, p.y + r + 10 * dpr, UI.rivalLight, 10);
+      taken.push({ x0: p.x - r * 1.6, y0: p.y - r - 12 * dpr, x1: p.x + r * 1.6, y1: p.y + r + 14 * dpr });
+    }
     // Districts and landmarks between the POIs, small and muted under everything else.
     for (const d of plain ? [] : LANDMARKS) {
       // A district's name is learnt by going there.

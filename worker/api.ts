@@ -18,6 +18,7 @@ import type { ApiError } from "../src/ringfall/meta/island-errors";
 export interface DbStatement {
   bind(...values: unknown[]): DbStatement;
   run(): Promise<unknown>;
+  all<T = Record<string, unknown>>(): Promise<{ results: T[] }>;
 }
 
 /** The part of a D1 database the API uses: `D1Database` satisfies it. */
@@ -179,7 +180,7 @@ export const CLAIM_TRIES = 8;
  * the player as its owner, drawing again while the code is someone's. A client never names the code
  * of the island it claims, so nobody can claim another's.
  */
-async function claimIsland(request: Request, ns: IslandNamespace, now: number, draw: () => string): Promise<Response> {
+async function claimIsland(request: Request, env: ApiEnv, ns: IslandNamespace, now: number, draw: () => string): Promise<Response> {
   const body = await readJson(request);
   if (body instanceof Response) return body;
   const player = isObj(body.raw) ? parsePlayer(body.raw.player) : null;
@@ -187,9 +188,74 @@ async function claimIsland(request: Request, ns: IslandNamespace, now: number, d
   for (let k = 0; k < CLAIM_TRIES; k++) {
     const code = draw();
     const r = await ask(ns, code, { t: "claim", player, code }, now);
+    if (r.status === 201) await ownCode(env, code, player.id, now);
     if (r.status !== 409) return r;
   }
   return fail(503, "no-free-code");
+}
+
+/**
+ * Records that `player` owns island `code`, for the neighbours' list. Only the server calls it, on
+ * a claim it made and on a report the island took from its owner, so no client can name a code as
+ * theirs. Without the database, or before its migration ran, nothing is kept and nothing fails.
+ */
+async function ownCode(env: ApiEnv, code: string, player: string, now: number) {
+  try {
+    await env.DB?.prepare("INSERT INTO islands (code, player_id, created_at) VALUES (?1, ?2, ?3) ON CONFLICT(code) DO UPDATE SET player_id = excluded.player_id").bind(code, player, now).run();
+  } catch {
+    // The table is not there yet (docs/ringfall/infrastructure.md): the neighbours' list stays empty.
+  }
+}
+
+/** How many neighbours an island is offered, and how long a set of them lasts before it is drawn again. */
+export const NEIGHBOURS = { count: 4, pool: 24, weekMs: 7 * 24 * 3600 * 1000, activeMs: 14 * 24 * 3600 * 1000 } as const;
+
+/** A neighbour as the owner's camp shows it: whose island, its code, and how far its owner has come. */
+export interface Neighbour {
+  code: string;
+  name: string;
+  held: number;
+  total: number;
+  day: number;
+}
+
+const mix32 = (s: string) => {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
+  return h >>> 0;
+};
+
+/**
+ * The owner's neighbours (`GET /api/neighbours`, the owner's id in the header): islands whose owners
+ * played in the last two weeks, nearest in nodes held to the owner's, a few of the nearest drawn by
+ * a hash of the owner, the island and the week, so the same neighbours stay for the week.
+ */
+async function neighbours(env: ApiEnv, player: string, now: number): Promise<Response> {
+  if (!env.DB) return fail(202, "no-database");
+  try {
+    const mine = (await env.DB.prepare("SELECT i.code AS code, s.held AS held FROM islands i LEFT JOIN island_summaries s ON s.player_id = i.player_id WHERE i.player_id = ?1").bind(player).all<{ code: string; held: number | null }>()).results[0];
+    if (!mine) return json(200, { ok: true, neighbours: [] });
+    const held = mine.held ?? 0;
+    const rows = (
+      await env.DB.prepare(
+        "SELECT i.code AS code, p.name AS name, s.held AS held, s.held + s.enemy + s.rival AS total, s.day AS day FROM islands i JOIN players p ON p.id = i.player_id JOIN island_summaries s ON s.player_id = i.player_id " +
+          "WHERE i.player_id != ?1 AND s.updated_at > ?2 ORDER BY abs(s.held - ?3), s.updated_at DESC LIMIT ?4",
+      )
+        .bind(player, now - NEIGHBOURS.activeMs, held, NEIGHBOURS.pool)
+        .all<Neighbour>()
+    ).results;
+    const week = Math.floor(now / NEIGHBOURS.weekMs);
+    const picked = rows
+      // Nearness in nodes held first; the week's hash shuffles only islands within a couple of nodes of each other.
+      .map((r) => ({ r, key: Math.abs(r.held - held) + ((mix32(`${mine.code}:${r.code}:${week}`) % 1000) / 1000) * 2 }))
+      .sort((a, b) => a.key - b.key)
+      .slice(0, NEIGHBOURS.count)
+      .map(({ r }) => r)
+      .sort((a, b) => a.code.localeCompare(b.code));
+    return json(200, { ok: true, neighbours: picked });
+  } catch {
+    return json(200, { ok: true, neighbours: [] });
+  }
 }
 
 /**
@@ -201,7 +267,7 @@ async function claimIsland(request: Request, ns: IslandNamespace, now: number, d
 async function handleIslands(request: Request, env: ApiEnv, now: number, url: URL, draw: () => string): Promise<Response> {
   if (url.pathname === "/api/islands") {
     if (request.method !== "POST") return notAllowed("POST");
-    return env.ISLAND ? claimIsland(request, env.ISLAND, now, draw) : fail(202, "no-island-server");
+    return env.ISLAND ? claimIsland(request, env, env.ISLAND, now, draw) : fail(202, "no-island-server");
   }
   const parts = url.pathname.split("/").slice(3);
   const code = parseIslandCode(parts[0]);
@@ -236,7 +302,9 @@ async function handleIslands(request: Request, env: ApiEnv, now: number, url: UR
     const lent = parseLent(raw.lent);
     const fortified = parseRetaken(raw.fortified);
     if (!player || !holds || !retaken || !lent || !fortified || !int(raw.factory, 0, FACTORY_TOP) || !int(raw.day, 0, DAY_MAX)) return fail(400, "bad-request");
-    return ask(ns, code, { t: "report", player, holds, retaken, factory: raw.factory, day: raw.day, lent, fortified }, now);
+    const r = await ask(ns, code, { t: "report", player, holds, retaken, factory: raw.factory, day: raw.day, lent, fortified }, now);
+    if (r.status === 200) await ownCode(env, code, player.id, now);
+    return r;
   }
   // An expedition: the sender proves their own island with their id, whose factory sets the squad they may send.
   const from = parsePlayer(raw.from);
@@ -263,6 +331,12 @@ export async function handleApi(request: Request, env: ApiEnv, now = Date.now(),
   if (pathname === "/api/health") return json(200, { ok: true });
   if (pathname !== "/api" && !pathname.startsWith("/api/")) return null;
   if (pathname === "/api/islands" || pathname.startsWith("/api/islands/")) return handleIslands(request, env, now, url, draw);
+  if (pathname === "/api/neighbours") {
+    if (request.method !== "GET") return notAllowed("GET");
+    const player = /^Bearer (\S+)$/.exec(request.headers.get("authorization") ?? "")?.[1] ?? "";
+    if (!UUID.test(player)) return fail(401, "unauthorized");
+    return neighbours(env, player, now);
+  }
   if (pathname !== "/api/island") return fail(404, "not-found");
   if (request.method !== "POST") return notAllowed("POST");
   if (!env.DB) return fail(202, "no-database");

@@ -26,6 +26,7 @@ import { holds } from "../src/ringfall/meta/island";
 import { newProfile, settle, type Profile } from "../src/ringfall/meta/profile";
 import { islandPost } from "../src/ringfall/meta/summary";
 import { defaultName, loadIdentity, parseIdentity } from "../src/ringfall/meta/identity";
+import { parseNeighbours } from "../src/ringfall/meta/neighbours";
 
 /** D1's statement over node:sqlite: bind, then run / first / all. */
 class Statement implements DbStatement {
@@ -240,6 +241,41 @@ const count = (table: string) => Number((sqlite.prepare(`SELECT COUNT(*) AS n FR
   console.log(`refused: rows ${before} -> ${after}; streamed chunks pulled ${pulled} of 8`);
   check(pulled < 8, "refused: the streamed body was read past the cap");
   check(before === after, "refused: a refused post wrote rows");
+}
+
+// --- neighbours: islands whose owners played lately, nearest in nodes held, the same all week
+{
+  const DAY = 24 * 3600 * 1000;
+  const T = 1_800_000_000_000;
+  const ids = Array.from({ length: 9 }, (_, k) => `0f8fad5b-d9cb-469f-a165-${String(700000000000 + k).padStart(12, "0")}`);
+  const held = [5, 4, 6, 5, 9, 1, 5, 5, 6];
+  for (const [k, id] of ids.entries()) {
+    const at = k === 8 ? T - 20 * DAY : T - DAY;
+    const r = await answer(env, post({ player: { id, name: `島${k}` }, island: { day: 3, held: held[k], enemy: 21 - held[k], rival: 0, factory: 1, strength: 1 } }), at);
+    check(r.status === 200, `neighbours: the summary of island ${k} was not taken`);
+    sqlite.prepare("INSERT INTO islands (code, player_id, created_at) VALUES (?1, ?2, ?3)").run(`AB${String(k).padStart(4, "0")}`, id, at);
+  }
+  const ask = (id: string | null, now = T, method = "GET") => answer(env, new Request(BASE + "/api/neighbours", { method, headers: id ? { authorization: `Bearer ${id}` } : {} }), now);
+  const a = await ask(ids[0]);
+  const list = (a.body as { neighbours?: { code: string; name: string; held: number; total: number }[] }).neighbours ?? [];
+  console.log(`neighbours: ${a.status} ${list.map((n) => `${n.code} ${n.name} ${n.held}/${n.total}`).join(", ")}`);
+  check(a.status === 200 && list.length === 4, `neighbours: the owner was offered ${list.length}, not 4`);
+  check(!list.some((n) => n.code === "AB0000"), "neighbours: the owner's own island was offered");
+  check(!list.some((n) => n.code === "AB0008"), "neighbours: an island not played for 20 days was offered");
+  check(!list.some((n) => n.code === "AB0004" || n.code === "AB0005"), "neighbours: an island far from the owner's in nodes held was offered over nearer ones");
+  check(list.every((n) => n.total === 21), "neighbours: an island's node count is not its summary's");
+  check(parseNeighbours(a.body)?.length === 4, "neighbours: the browser does not read the server's answer back");
+  check(parseNeighbours({ neighbours: [{ code: "bad", name: "x", held: 1, total: 21, day: 1 }] })?.length === 0, "neighbours: the browser took a neighbour with a bad code");
+  const again = await ask(ids[0], T + DAY);
+  check(JSON.stringify(again.body) === JSON.stringify(a.body), "neighbours: the list changed within the week");
+  const none = await ask("0f8fad5b-d9cb-469f-a165-999999999999");
+  check(none.status === 200 && ((none.body as { neighbours?: unknown[] }).neighbours ?? [1]).length === 0, "neighbours: a player with no island was offered some");
+  const anon = await ask(null);
+  check(anon.status === 401, `neighbours: a request without the owner's id answered ${anon.status}, not 401`);
+  const put = await ask(ids[0], T, "POST");
+  check(put.status === 405, `neighbours: a POST answered ${put.status}, not 405`);
+  const bare = await answer({}, new Request(BASE + "/api/neighbours", { headers: { authorization: `Bearer ${ids[0]}` } }));
+  check(bare.status === 202, `neighbours: no database answered ${bare.status}, not 202`);
 }
 
 if (errors.length) {

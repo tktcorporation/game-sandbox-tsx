@@ -9,6 +9,7 @@
 import { loadIdentity, rememberCode, type Identity } from "./meta/identity";
 import { isApiError, type ApiError, type NetError } from "./meta/island-errors";
 import { isIslandCode } from "./meta/island-code";
+import { parseNeighbours, type Neighbour } from "./meta/neighbours";
 import { answerRecall, applySync, incomingOf, parseLease, parseLog, parseView, reportedHolds, reportHolds, type IslandLogEntry, type IslandView, type LentIn, type Synced } from "./meta/expeditions";
 import type { Profile } from "./meta/profile";
 import type { NodeId } from "./sim/map";
@@ -64,6 +65,32 @@ const player = (who: Identity) => ({ id: who.id, name: who.name });
 let claiming: Promise<Answer<Identity>> | null = null;
 
 /** Claims an island for this player (`POST /api/islands`) and keeps its code with the identity. */
+const NEIGHBOURS_KEY = "ringfall.neighbours.v1";
+
+/** The neighbours last read from the server, kept in the browser (not the save: they are the server's, read again at each sync). */
+export function cachedNeighbours(): Neighbour[] {
+  try {
+    return parseNeighbours(JSON.parse(localStorage.getItem(NEIGHBOURS_KEY) ?? "null")) ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/** This island's neighbours, read from the server and kept; the kept list when the server cannot be asked. */
+export async function readNeighbours(): Promise<Neighbour[]> {
+  const who = loadIdentity();
+  if (!who.code) return cachedNeighbours();
+  const r = await call("/api/neighbours", { headers: { authorization: `Bearer ${who.id}` } });
+  const list = r.ok ? parseNeighbours(r.body) : null;
+  if (!list) return cachedNeighbours();
+  try {
+    localStorage.setItem(NEIGHBOURS_KEY, JSON.stringify({ neighbours: list }));
+  } catch {
+    // Storage blocked: the list lasts for this page.
+  }
+  return list;
+}
+
 export function claimIsland(): Promise<Answer<Identity>> {
   claiming ??= claimOnce().finally(() => {
     claiming = null;

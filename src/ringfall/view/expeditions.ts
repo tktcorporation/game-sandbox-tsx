@@ -5,7 +5,8 @@
  * so a request's answer redraws it without touching the panel around it or the code being typed.
  * With no server it says so in one line and nothing else changes.
  */
-import { flushRecalls, readView, SEND_TIMEOUT_MS, sendExpedition, syncOwn, takeReport, takeSync } from "../island-net";
+import { cachedNeighbours, flushRecalls, readNeighbours, readView, SEND_TIMEOUT_MS, sendExpedition, syncOwn, takeReport, takeSync } from "../island-net";
+import type { Neighbour } from "../meta/neighbours";
 import { alive, numbered, answerSend, recallAll, sentKey, canSend, dropStale, factoryAhead, factorySquads, homeSquads, refreshOutgoing, sendingEntry, sendKinds, squadsAway, STATE_NAME, type IslandLogEntry, type IslandView } from "../meta/expeditions";
 import { parseIslandCode } from "../meta/island-code";
 import { errorText } from "../meta/island-errors";
@@ -32,6 +33,8 @@ export class ExpeditionPanel {
   private copied = false;
   /** Bumped by each open, so a late answer to an earlier one is dropped. */
   private ask = 0;
+  /** The islands the server offers as neighbours: a tap looks one up, as typing its code does. */
+  private neighbours: Neighbour[] = cachedNeighbours();
 
   constructor(
     private get: () => Profile,
@@ -84,6 +87,11 @@ export class ExpeditionPanel {
     if (profile !== this.get()) this.put(profile);
     if (news.length) this.news(news);
     this.paint();
+    const near = await readNeighbours();
+    if (ask === this.ask) {
+      this.neighbours = near;
+      this.paint();
+    }
     await flushRecalls(this.get, this.put);
     await this.refresh(r.body.code, ask);
     if (ask === this.ask) this.paint();
@@ -116,6 +124,10 @@ export class ExpeditionPanel {
     if (act === "exp-retry") void this.connect();
     else if (act === "exp-copy") void this.copy();
     else if (act === "exp-look") void this.look();
+    else if (act === "exp-island") {
+      this.typed = arg;
+      void this.look();
+    }
     else if (act === "exp-node") {
       this.pick = this.pick === arg ? null : arg;
       this.paint();
@@ -255,7 +267,13 @@ export class ExpeditionPanel {
   /** The form that sends one: the other island's code, its nodes that take an expedition, and the button. */
   private sendForm(p: Profile): string {
     const dis = this.busy ? " disabled" : "";
-    const form = `<div class="exp-send"><input id="exp-code" type="text" inputmode="text" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="相手の島の番号" value="${esc(this.typed)}"><button type="button" data-act="exp-look"${dis}>見る</button></div>`;
+    // The neighbours first: whose island, how much of it its owner holds; a tap opens it below.
+    const near = this.neighbours.length
+      ? `<div class="exp-near">${this.neighbours
+          .map((n) => `<button type="button" class="${this.target?.code === n.code ? "on" : ""}" data-act="exp-island" data-arg="${esc(n.code)}"${dis}><b>${esc(n.name)}</b><span class="exp-held" style="--w:${Math.round((100 * n.held) / Math.max(1, n.total))}%"></span><small>${coreIcon(SIDE.rival)}${n.held}/${n.total}</small></button>`)
+          .join("")}</div>`
+      : "";
+    const form = near + `<div class="exp-send"><input id="exp-code" type="text" inputmode="text" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="相手の島の番号" value="${esc(this.typed)}"><button type="button" data-act="exp-look"${dis}>見る</button></div>`;
     const t = this.target;
     let pick = "";
     if (t) {

@@ -30,12 +30,20 @@ const SAVE = {
   logSeq: 0, retaken: [],
 };
 
+const NEAR = [
+  { code: "Z3P9TR", name: "となり", held: 7, total: 21, day: 15 },
+  { code: "K7M2QX", name: "みなと", held: 4, total: 21, day: 9 },
+  { code: "H4N8WD", name: "砂丘の人", held: 11, total: 21, day: 22 },
+];
+
 export async function expeditionShots({ browser, port, out, errors }) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
   const pg = await ctx.newPage();
   pg.on("pageerror", (e) => errors.push(`expeditions pageerror: ${e.message}`));
   pg.on("console", (m) => m.type() === "error" && !/fonts\.g|ERR_TUNNEL|net::/.test(m.text()) && errors.push(`expeditions console: ${m.text()}`));
   await pg.addInitScript(([k, v]) => localStorage.getItem(k) || localStorage.setItem(k, v), [KEY, JSON.stringify({ ...SAVE, incoming: SAVE.incoming.map((e) => ({ ...e, arriveAt: Date.now() + 5.4 * 3_600_000 })) })]);
+  // The neighbours the server offered at the last sync, as the browser keeps them (island-net.ts): drawn out at sea on the camp's maps.
+  await pg.addInitScript((v) => localStorage.setItem("ringfall.neighbours.v1", v), JSON.stringify({ neighbours: NEAR }));
   // The landing is 5.4 hours from when these screens are shot, not from when the gate started: the map table rounds it up to 6.
   await pg.goto(`http://localhost:${port}/ringfall/`, { waitUntil: "load" });
   await pg.waitForTimeout(300);
