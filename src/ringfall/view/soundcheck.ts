@@ -1,6 +1,8 @@
 import type { EnemyKind, Rarity, WeaponKind } from "../sim/config";
 import { Mixer, getMixer, swapMixer, unlock, type P3 } from "./audio";
 import { sfx } from "./sfx";
+import { Music, type Mood } from "./music";
+import { REGIONS, type RegionId } from "../sim/map";
 
 /*
  * The sound check (`?sfx` on the RINGFALL page): a panel on the title screen with
@@ -167,6 +169,69 @@ export interface CueReport {
   nan: number;
   /** Samples at or above full scale. */
   clipped: number;
+  /** How loud it sounds: the loudest 400 ms, K-weighted as broadcast loudness is (BS.1770), in LUFS. */
+  lufs: number;
+  /** Seconds until it falls for good under -60 dBFS. */
+  len: number;
+}
+
+/** A biquad's coefficients from the cookbook formulas, normalised by a0. */
+function biquad(kind: "shelf" | "highpass", f: number, q: number, gainDb: number, sr: number): number[] {
+  const w = (2 * Math.PI * f) / sr;
+  const cw = Math.cos(w);
+  const al = Math.sin(w) / (2 * q);
+  if (kind === "highpass") {
+    const a0 = 1 + al;
+    return [(1 + cw) / 2 / a0, -(1 + cw) / a0, (1 + cw) / 2 / a0, (-2 * cw) / a0, (1 - al) / a0];
+  }
+  const A = Math.pow(10, gainDb / 40);
+  const sq = 2 * Math.sqrt(A) * al;
+  const a0 = A + 1 - (A - 1) * cw + sq;
+  return [(A * (A + 1 + (A - 1) * cw + sq)) / a0, (-2 * A * (A - 1 + (A + 1) * cw)) / a0, (A * (A + 1 + (A - 1) * cw - sq)) / a0, (2 * (A - 1 - (A + 1) * cw)) / a0, (A + 1 - (A - 1) * cw - sq) / a0];
+}
+
+function filter(d: ArrayLike<number>, [b0, b1, b2, a1, a2]: number[]): Float32Array {
+  const o = new Float32Array(d.length);
+  let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+  for (let i = 0; i < d.length; i++) {
+    const x = Number.isFinite(d[i]) ? d[i] : 0;
+    const y = b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+    x2 = x1;
+    x1 = x;
+    y2 = y1;
+    y1 = y;
+    o[i] = y;
+  }
+  return o;
+}
+
+/** The loudest momentary loudness (400 ms windows, 100 ms apart) of a render, in LUFS. */
+export function momentary(buf: AudioBuffer): number {
+  const sr = buf.sampleRate;
+  const k = [biquad("shelf", 1500, Math.SQRT1_2, 4, sr), biquad("highpass", 38, 0.5, 0, sr)];
+  const ch = Array.from({ length: buf.numberOfChannels }, (_, c) => k.reduce<ArrayLike<number>>((d, f) => filter(d, f), buf.getChannelData(c)) as Float32Array);
+  const win = Math.floor(sr * 0.4);
+  const hop = Math.floor(sr * 0.1);
+  let best = 0;
+  for (let i = 0; i + win <= buf.length; i += hop) {
+    let z = 0;
+    for (const d of ch) for (let j = i; j < i + win; j++) z += d[j] * d[j];
+    best = Math.max(best, z / win);
+  }
+  return best > 0 ? -0.691 + 10 * Math.log10(best) : -Infinity;
+}
+
+/** Seconds until a render falls for good under -60 dBFS. */
+export function tail(buf: AudioBuffer): number {
+  let last = 0;
+  for (let c = 0; c < buf.numberOfChannels; c++) {
+    const d = buf.getChannelData(c);
+    for (let i = d.length - 1; i > last; i--) if (Math.abs(d[i]) > 0.001) {
+      last = i;
+      break;
+    }
+  }
+  return last / buf.sampleRate;
 }
 
 /** Renders one cue offline through a fresh mixer at full volume. */
@@ -210,13 +275,55 @@ async function render(cue: Cue, secs = 3.2): Promise<CueReport> {
       sum += x * x;
     }
   }
-  return { id: cue.id, peak, rms: Math.sqrt(sum / (buf.length * buf.numberOfChannels)), loud, nan, clipped };
+  return { id: cue.id, peak, rms: Math.sqrt(sum / (buf.length * buf.numberOfChannels)), loud, nan, clipped, lufs: momentary(buf), len: tail(buf) };
+}
+
+/** The music's moods, each rendered for four bars through a fresh mixer, measured as a cue is. */
+export const MOODS: Exclude<Mood, "off">[] = ["title", "camp", "explore", "alert", "fight", "extract", "result"];
+const RAID_MOODS: Exclude<Mood, "off">[] = ["explore", "alert", "fight", "extract"];
+
+const MOOD_NAMES: Record<Mood, string> = { off: "止める", title: "タイトル", camp: "野営地", explore: "探索", alert: "警戒", fight: "交戦", extract: "脱出待ち", result: "結果" };
+
+/** A mood rendered offline through a fresh mixer at full volume. */
+async function moodBuffer(mood: Exclude<Mood, "off">, secs: number, region: RegionId = "reservoir", volume = 1): Promise<AudioBuffer> {
+  const sr = 44100;
+  const off = new OfflineAudioContext(2, Math.floor(sr * secs), sr);
+  const m = new Mixer(off, false);
+  m.volume.gain.value = 1;
+  m.musicVolume.gain.value = volume;
+  const music = new Music(m);
+  music.set(mood, region, 0.01);
+  music.schedule(secs - 0.5);
+  return off.startRendering();
+}
+
+async function renderMood(mood: Exclude<Mood, "off">, region: RegionId = "reservoir", secs = 10.6): Promise<CueReport> {
+  const buf = await moodBuffer(mood, secs, region);
+  let peak = 0;
+  let nan = 0;
+  let clipped = 0;
+  let sum = 0;
+  for (let c = 0; c < buf.numberOfChannels; c++)
+    for (const x of buf.getChannelData(c)) {
+      if (!Number.isFinite(x)) {
+        nan++;
+        continue;
+      }
+      peak = Math.max(peak, Math.abs(x));
+      if (Math.abs(x) >= 0.999) clipped++;
+      sum += x * x;
+    }
+  const rms = Math.sqrt(sum / (buf.length * buf.numberOfChannels));
+  return { id: region === "reservoir" ? `music-${mood}` : `music-${region}-${mood}`, peak, rms, loud: rms, nan, clipped, lufs: momentary(buf), len: tail(buf) };
 }
 
 /** Every cue rendered, plus the voice cap under a burst of 80 enemy shots. */
 async function checkAll() {
   const cues: CueReport[] = [];
   for (const c of CUES) cues.push(await render(c));
+  for (const mood of MOODS) cues.push(await renderMood(mood));
+  // Each other region's tune, in the moods of a raid.
+  for (const r of ["harbor", "city", "launch"] as RegionId[]) for (const mood of RAID_MOODS) cues.push(await renderMood(mood, r));
   const off = new OfflineAudioContext(2, 44100, 44100);
   const m = new Mixer(off, false);
   const prev = swapMixer(m);
@@ -225,12 +332,16 @@ async function checkAll() {
   } finally {
     swapMixer(prev);
   }
-  return { cues, burstVoices: m.active };
+  // The music's slider at zero leaves nothing of it, the reverb included.
+  let mutedPeak = 0;
+  for (const d of [(await moodBuffer("fight", 4, "reservoir", 0)).getChannelData(0)]) for (const x of d) mutedPeak = Math.max(mutedPeak, Math.abs(x));
+  return { cues, burstVoices: m.active, mutedPeak };
 }
 
 declare global {
   interface Window {
     ringfallSfxCheck?: typeof checkAll;
+    ringfallMusicRender?: (mood: Exclude<Mood, "off">, secs?: number, region?: RegionId) => Promise<number[]>;
   }
 }
 
@@ -238,6 +349,11 @@ declare global {
 export function setupSoundCheck() {
   if (!new URLSearchParams(location.search).has("sfx")) return;
   window.ringfallSfxCheck = checkAll;
+  // A mood's left channel at 22 kHz, for listening to or drawing outside the page.
+  window.ringfallMusicRender = async (mood: Exclude<Mood, "off">, secs = 21, region: RegionId = "reservoir") => {
+    const d = (await moodBuffer(mood, secs, region)).getChannelData(0);
+    return Array.from({ length: Math.floor(d.length / 2) }, (_, i) => Math.round(d[i * 2] * 32767));
+  };
   const panel = document.createElement("aside");
   panel.id = "sfx-panel";
   const groups = [...new Set(CUES.map((c) => c.group))];
@@ -245,8 +361,15 @@ export function setupSoundCheck() {
     .map((g) => `<h4>${g}</h4><div class="sfx-grid">${CUES.filter((c) => c.group === g)
       .map((c) => `<button type="button" data-cue="${c.id}">${c.label}</button>`)
       .join("")}</div>`)
-    .join("")}`;
+    .join("")}<h4>曲</h4><div class="sfx-grid">${["off", ...MOODS].map((m) => `<button type="button" data-mood="${m}">${MOOD_NAMES[m as Mood]}</button>`).join("")}</div><div class="sfx-grid">${REGIONS.map((r) => `<button type="button" data-region="${r.id}">${r.name}</button>`).join("")}</div>`;
   panel.addEventListener("click", (e) => {
+    const mood = (e.target as HTMLElement).closest<HTMLElement>("[data-mood]")?.dataset.mood;
+    const region = (e.target as HTMLElement).closest<HTMLElement>("[data-region]")?.dataset.region;
+    if (mood || region) {
+      unlock();
+      dispatchEvent(new CustomEvent("ringfall-music", { detail: { mood, region } }));
+      return;
+    }
     const b = (e.target as HTMLElement).closest<HTMLElement>("[data-cue]");
     const cue = b && CUES.find((c) => c.id === b.dataset.cue);
     if (!cue) return;

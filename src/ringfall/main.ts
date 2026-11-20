@@ -4,7 +4,7 @@ import { Bot, SKILLS } from "./sim/bot";
 import { collide, groundAt } from "./sim/geom";
 import { terrainHeight } from "./sim/terrain";
 import { callLeft, starterKit, idleInput, newRun, type GameEvent, type Input, type Kit, type State } from "./sim/state";
-import { CAMP, DEPOTS, entryOf, FRAMES, HOME_REGION, NODES, POIS, poiIndex, QUARRY_EXITS, ZIPS, type CampSpot, type PoiId, type RecordId, type RegionId, type StationId } from "./sim/map";
+import { CAMP, DEPOTS, entryOf, FRAMES, HOME_REGION, NODES, POIS, poiIndex, QUARRY_EXITS, regionHere, ZIPS, type CampSpot, type PoiId, type RecordId, type RegionId, type StationId } from "./sim/map";
 import { grabZip } from "./sim/zips";
 import { POI_AT } from "./sim/areas";
 import { frontNodes, garrisonOf, takeNode, useCore } from "./sim/front";
@@ -30,7 +30,8 @@ import { step } from "./sim/step";
 import { hurtAlly, placeAlly } from "./sim/ally";
 import { haulValue } from "./sim/results";
 import { bagLoad } from "./sim/world";
-import { preferLowPower, savedVolume, setVolume, unlock } from "./view/audio";
+import { getMixer, preferLowPower, savedMusic, savedVolume, setMusicVolume, setVolume, unlock, type Mixer } from "./view/audio";
+import { Music, type Mood } from "./view/music";
 import { sfx } from "./view/sfx";
 import { Soundscape } from "./view/soundscape";
 import { setupSoundCheck } from "./view/soundcheck";
@@ -432,9 +433,60 @@ function frame(now: number) {
     capDue = !governor.level.cap30 ? 0 : now - capDue > CAP_MS ? now + CAP_MS : capDue + CAP_MS;
   } else if (manual) drawDt = 0;
   sound.frame(state, world.camera, dt, (running || camping) && !paused);
+  playMusic(dt);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
+
+// --- music: the mood of the moment (view/music.ts)
+let music: { mixer: Mixer; music: Music } | null = null;
+/** Seconds since a squad last fought the player: the fight's music outlasts the fight a little. */
+let sinceFight = Infinity;
+let sinceAlert = Infinity;
+/** A mood the sound check (`?sfx`) asked to hear, until another is asked for. */
+let musicTry: Mood | null = null;
+let musicTryRegion: RegionId | null = null;
+addEventListener("ringfall-music", (e) => {
+  const d = (e as CustomEvent<{ mood?: Mood; region?: RegionId }>).detail;
+  if (d.mood) musicTry = d.mood;
+  if (d.region) musicTryRegion = d.region;
+});
+function musicMood(): Mood {
+  if (musicTry) return musicTry;
+  if (running) {
+    if (state.phase === "done") return "result";
+    if (state.squads.some((q) => q.engaged)) sinceFight = 0;
+    if (state.enemies.some((e) => e.aware !== "idle")) sinceAlert = 0;
+    if (sinceFight < 8) return "fight";
+    if (Object.keys(state.calls).length) return "extract";
+    if (sinceAlert < 5) return "alert";
+    return "explore";
+  }
+  if (camping) return "camp";
+  if (!$("results").hidden) return "result";
+  if (!$("title").hidden) return "title";
+  return "off";
+}
+/** The region the music plays, and one the player has been in a moment, so a border walked along does not flip it. */
+let musicRegion: RegionId = "reservoir";
+let regionNext: { id: RegionId; t: number } | null = null;
+function musicRegionNow(dt: number): RegionId {
+  if (!running) return camping ? "reservoir" : musicRegion;
+  const here = regionHere(state.player.pos).id;
+  if (here === musicRegion) regionNext = null;
+  else if (regionNext?.id !== here) regionNext = { id: here, t: 0 };
+  else if ((regionNext.t += dt) > 3) [musicRegion, regionNext] = [here, null];
+  return musicRegion;
+}
+function playMusic(dt: number) {
+  const mixer = getMixer();
+  if (!mixer) return;
+  if (music?.mixer !== mixer) music = { mixer, music: new Music(mixer) };
+  sinceFight += dt;
+  sinceAlert += dt;
+  music.music.set(automated ? "off" : musicMood(), musicTryRegion ?? musicRegionNow(dt));
+  music.music.schedule();
+}
 
 // --- screens
 function lock() {
@@ -770,6 +822,15 @@ stage.addEventListener("click", () => !touchMode && (running || (camping && !cam
 // Browsers start sound only after a gesture; any press on the page counts.
 addEventListener("pointerdown", unlock);
 addEventListener("keydown", unlock);
+for (const id of ["music", "music2"]) {
+  const el = $(id) as HTMLInputElement;
+  el.value = String(savedMusic());
+  el.addEventListener("input", () => {
+    setMusicVolume(Number(el.value));
+    ($("music") as HTMLInputElement).value = el.value;
+    ($("music2") as HTMLInputElement).value = el.value;
+  });
+}
 for (const id of ["vol", "vol2"]) {
   const el = $(id) as HTMLInputElement;
   el.value = String(savedVolume());

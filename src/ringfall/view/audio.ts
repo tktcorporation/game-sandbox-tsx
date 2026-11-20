@@ -15,7 +15,7 @@ export interface P3 {
   y: number;
   z: number;
 }
-export type Bus = "weapons" | "world" | "ui" | "amb";
+export type Bus = "weapons" | "world" | "ui" | "amb" | "music";
 
 interface Voice {
   out: GainNode;
@@ -28,6 +28,7 @@ interface Voice {
 export type Occluder = (from: P3, to: P3) => boolean;
 
 const VOL_KEY = "ringfall.volume.v1";
+const MUSIC_KEY = "ringfall.music.v1";
 
 export class Mixer {
   readonly ctx: BaseAudioContext;
@@ -42,6 +43,8 @@ export class Mixer {
   private readonly sendOpen: GainNode;
   private readonly sendRoom: GainNode;
   readonly volume: GainNode;
+  /** The music's own volume (the settings' 曲), under the same duck as the ambience. */
+  readonly musicVolume: GainNode;
   readonly ear: P3 = { x: 0, y: 0, z: 0 };
   readonly fwd: P3 = { x: 0, y: 0, z: -1 };
   /** 0 in the open .. 1 under a roof. */
@@ -89,7 +92,17 @@ export class Mixer {
     const amb = ctx.createGain();
     amb.gain.value = 0.8;
     amb.connect(this.ambDuck);
-    this.buses = { weapons: bus(1), world: bus(1), ui: bus(0.85), amb };
+    this.musicVolume = ctx.createGain();
+    this.musicVolume.gain.value = loadMusic();
+    this.musicVolume.connect(this.ambDuck);
+    // The music's own touch of open-air reverb, after its volume and before the duck, so the
+    // slider and the big moments take the wet with the dry.
+    const musicVerb = ctx.createConvolver();
+    musicVerb.buffer = openAir(ctx, lowPower ? 1.4 : 2.6);
+    const musicSend = ctx.createGain();
+    musicSend.gain.value = 0.2;
+    this.musicVolume.connect(musicSend).connect(musicVerb).connect(this.ambDuck);
+    this.buses = { weapons: bus(1), world: bus(1), ui: bus(0.85), amb, music: this.musicVolume };
 
     // Reverb: two convolvers, crossfaded by how enclosed the listener is.
     this.verbIn = ctx.createGain();
@@ -212,6 +225,7 @@ export class Mixer {
       out.connect(pan).connect(lp);
       tail = lp;
     }
+    if (o.gain !== undefined) out.gain.value *= o.gain;
     tail.connect(this.buses[o.bus]);
     // Distant and walled-off sounds are heard more through the space than direct.
     const send = (o.send ?? (o.pos ? 0.3 : 0.12)) * (o.pos ? 1 + Math.min(1.5, dist / 40) + (occluded ? 0.8 : 0) : 1);
@@ -237,7 +251,10 @@ export interface VoiceOpts {
   pos?: P3;
   /** Distance at which the panner starts to attenuate. Loud sources get a larger one. */
   ref?: number;
+  /** How loud it is heard, for the voice cap and the falloff with distance (not a gain). */
   level?: number;
+  /** A gain on the whole voice: a cue's trim to keep its tier's loudness (docs/ringfall/sound.md). */
+  gain?: number;
   /** Reverb send, 0..1. */
   send?: number;
   /** Beyond this the voice is not played at all. */
@@ -290,6 +307,33 @@ export function setVolume(v: number) {
     // Private windows and blocked storage: the setting lasts for this page only.
   }
   if (mix) mix.volume.gain.setTargetAtTime(x * x, mix.ctx.currentTime, 0.02);
+}
+
+export function setMusicVolume(v: number) {
+  const x = Math.max(0, Math.min(1, v));
+  try {
+    localStorage.setItem(MUSIC_KEY, String(x));
+  } catch {
+    // As for the volume.
+  }
+  if (mix) mix.musicVolume.gain.setTargetAtTime(x * x, mix.ctx.currentTime, 0.05);
+}
+
+/** The saved music volume as its slider shows it (0..1). */
+export function savedMusic(): number {
+  try {
+    const raw = localStorage.getItem(MUSIC_KEY);
+    const v = raw === null ? NaN : Number(raw);
+    if (Number.isFinite(v)) return Math.max(0, Math.min(1, v));
+  } catch {
+    // As for the volume.
+  }
+  return 0.7;
+}
+
+function loadMusic() {
+  const v = savedMusic();
+  return v * v;
 }
 
 /** The saved volume as the slider shows it (0..1). */

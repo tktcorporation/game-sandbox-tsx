@@ -95,12 +95,7 @@
   "contrast li.later span span.gauge.up small"
  ],
  "m0-title": [
-  "tap #title div.title-inner p.note a",
-  "tap #vol",
   "wordy #title div.title-inner p.lede"
- ],
- "m1-pause": [
-  "tap #vol2"
  ],
  "m16-board": [
   "wordy #hub-side details.told p"
@@ -120,18 +115,6 @@
   "contrast div.mod-body ol.ladder li.later b",
   "contrast li.later span span.gauge small",
   "contrast li.later span span.gauge.up small"
- ],
- "m85-results-raid": [
-  "offscreen #stats span",
-  "offscreen #stats span b"
- ],
- "m86-results-after-leaving": [
-  "offscreen #stats span",
-  "offscreen #stats span b"
- ],
- "m87-results-night": [
-  "offscreen #stats span",
-  "offscreen #stats span b"
  ],
  "rules-4-analyse": [
   "wordy #home div.analyse button.mod small"

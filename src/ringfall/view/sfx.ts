@@ -12,9 +12,10 @@ import { getMixer, hiss, play, tone, vary, type P3, type VoiceOpts } from "./aud
 const room = () => getMixer()?.room ?? 0;
 const duck = (depth: number, hold: number) => getMixer()?.duck(depth, hold);
 
-const own = (level: number, body: () => void, send = 0.12) => play({ bus: "weapons", level, send }, body);
-const ui = (level: number, body: () => void) => play({ bus: "ui", level, send: 0.04 }, body);
-const me = (level: number, body: () => void, send = 0.1) => play({ bus: "world", level, send }, body);
+// `level` ranks a voice for the voice cap; `gain` trims a cue into its tier's loudness (sound.md).
+const own = (level: number, body: () => void, send = 0.12, gain = 1) => play({ bus: "weapons", level, send, gain }, body);
+const ui = (level: number, body: () => void, gain = 1) => play({ bus: "ui", level, send: 0.04, gain }, body);
+const me = (level: number, body: () => void, send = 0.1, gain = 1) => play({ bus: "world", level, send, gain }, body);
 const at = (pos: P3, o: Partial<VoiceOpts>, body: () => void) => play({ bus: "world", level: 0.5, ref: 5, ...o, pos }, body);
 
 // --- guns: a mechanical click, a body thump, a high crack and a tail that rings
@@ -96,9 +97,10 @@ const BOLT: Record<EnemyKind, [number, number]> = { drone: [760, 380], grunt: [5
 
 export const sfx = {
   shot(kind: WeaponKind) {
-    own(kind === "talon" ? 1 : kind === "hornet" ? 0.5 : 0.8, () => gun(GUNS[kind]), kind === "talon" || kind === "lance" ? 0.35 : 0.2);
+    own(kind === "talon" ? 1 : kind === "hornet" ? 0.5 : 0.8, () => gun(GUNS[kind]), kind === "talon" || kind === "lance" ? 0.35 : 0.2, kind === "hornet" ? 1.8 : kind === "pike" ? 1.4 : 1);
   },
   hit(crit: boolean, shield: boolean, flank = false, plate = false) {
+    // A plain hit is the tick heard most often: over the gun's tail, under a weak point's dink.
     ui(0.4, () => {
       // A hit from behind rings a little brighter on top of the usual sound.
       if (flank) tone(1760, 0.07, { type: "triangle", vol: 0.2, to: 2640 });
@@ -125,7 +127,7 @@ export const sfx = {
         hiss(0.045, { freq: vary(2600, 0.06), vol: 0.7, q: 1.5 });
         tone(vary(620, 0.05), 0.035, { type: "square", vol: 0.12, to: 300 });
       }
-    });
+    }, crit || plate ? 1 : 2.4);
   },
   shieldBreak(tier: Rarity) {
     duck(0.35, 0.15);
@@ -234,7 +236,7 @@ export const sfx = {
         hiss(0.07, { freq: 1300, q: 3, vol: 0.1, at: 0.12 }); // back
         latch(time * 0.5, 1800, 0.18);
       }
-    });
+    }, 0.12, 0.5);
   },
   reloaded(kind: WeaponKind = "pike") {
     own(0.3, () => {
@@ -247,7 +249,7 @@ export const sfx = {
         tone(1600, 0.03, { type: "square", vol: 0.12, at: 0.02 });
         hiss(0.03, { freq: 2200, q: 3, vol: 0.32, at: 0.09 });
       }
-    });
+    }, 0.12, 0.66);
   },
   slide() {
     me(0.3, () => hiss(0.55, { freq: 900, to: 300, vol: 0.17, q: 0.6, attack: 0.03 }));
@@ -256,7 +258,7 @@ export const sfx = {
     me(0.15, () => {
       hiss(0.08, { freq: 500, vol: 0.35 });
       hiss(0.07, { brown: true, type: "lowpass", freq: 400, vol: 0.8 });
-    });
+    }, 0.1, 2.2);
   },
   mantle() {
     me(0.2, () => {
@@ -289,7 +291,7 @@ export const sfx = {
         hiss(0.09, { freq: vary(1400, 0.2), to: 700, q: 1.6, vol: 0.09, at: 0.08 + i * 0.19 });
         tone(vary(110, 0.15), 0.05, { type: "sine", vol: 0.12, at: 0.12 + i * 0.19 });
       }
-    });
+    }, 0.1, 0.5);
   },
   /** Over the top: the heave and the knee on the ledge. */
   climbTop() {
@@ -311,7 +313,7 @@ export const sfx = {
     me(0.3, () => {
       hiss(0.12, { freq: 2400, to: 900, q: 2, vol: 0.12 });
       if (cut) tone(260, 0.4, { type: "sawtooth", vol: 0.05, to: 70 });
-    });
+    }, 0.1, cut ? 1 : 3.2);
   },
   pickup(rarity: Rarity) {
     ui(0.3, () => {
@@ -410,7 +412,7 @@ export const sfx = {
         hiss(d * 0.6, { freq: 3000, q: 1, vol: 0.03, at: 0.2, attack: 0.1 });
         tone(260, 0.06, { type: "triangle", vol: 0.05, at: d * 0.75 });
       }
-    });
+    }, 0.1, kind === "battery" ? 0.45 : kind === "cell" ? 0.6 : 1);
   },
   healDone() {
     ui(0.3, () => {
@@ -698,7 +700,7 @@ export const sfx = {
     ui(0.4, () => {
       [659, 784, 988, 1319].forEach((f, i) => tone(f, 0.22, { type: "triangle", vol: 0.11, at: i * 0.09 }));
       tone(1976, 0.5, { type: "sine", vol: 0.04, at: 0.36 });
-    });
+    }, 0.7);
   },
   deploy() {
     ui(0.4, () => {
@@ -721,7 +723,7 @@ export const sfx = {
   },
   // --- ambience one-shots (soundscape.ts places them)
   creak(pos: P3) {
-    at(pos, { bus: "amb", level: 0.12, ref: 20, maxDist: 300, send: 0.6, occluded: false }, () => {
+    at(pos, { bus: "amb", level: 0.12, ref: 20, maxDist: 300, send: 0.6, occluded: false, gain: 0.6 }, () => {
       const f = vary(170, 0.25);
       tone(f, 1.1, { type: "sawtooth", to: f * vary(1.3, 0.1), vol: 0.035, attack: 0.3, wobble: [7, 25] });
       tone(f * 2.7, 0.8, { type: "triangle", to: f * 3.1, vol: 0.012, attack: 0.3 });
