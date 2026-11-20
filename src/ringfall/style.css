@@ -4999,6 +4999,38 @@ body.touch .bag-card:nth-last-child(n + 3) {
   font-size: 13px;
   font-weight: 800;
 }
+/* A piece of news as marks: whose, what happened, where; an attack answered from here. */
+.hub-island ul.island-news:not(.incoming) li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.island-news .who {
+  color: var(--rival-light);
+}
+.island-news em {
+  font-style: normal;
+  font-size: 12px;
+  padding: 0 4px;
+}
+.island-news em.foe {
+  color: var(--white);
+  background: rgb(var(--foe-rgb) / 0.7);
+}
+.island-news em.own {
+  color: var(--white);
+  background: rgb(var(--own-rgb) / 0.7);
+}
+#hub .island-news .revenge {
+  margin: 0 0 0 auto;
+  padding: 4px 10px;
+  border: 0;
+  background: var(--rival);
+  color: var(--white);
+  font-size: 12px;
+  font-weight: 800;
+}
+
 #island-news:empty {
   display: none;
 }

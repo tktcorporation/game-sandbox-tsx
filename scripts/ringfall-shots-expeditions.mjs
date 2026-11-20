@@ -66,6 +66,22 @@ export async function expeditionShots({ browser, port, out, errors }) {
   if (!/となり.*中継塔.*6h/.test(news)) errors.push(`expeditions: the map table's warning reads "${news}"`);
   await pg.screenshot({ path: `${out}/150-expeditions-map.png` });
   await close();
+  // The island's news as marks: someone's attack offers 仕返し, which opens the factory on their island.
+  await pg.evaluate(() =>
+    window.ringfallNews([
+      { seq: 2, at: 0, t: "taken", node: "yard", by: { code: "Z3P9TR", name: "となり" } },
+      { seq: 1, at: 0, t: "wiped", node: "quarry", by: { code: "K7M2QX", name: "みなと" } },
+    ]),
+  );
+  await open("map");
+  const answer = await pg.evaluate(() => ({ items: document.querySelectorAll(".island-news:not(.incoming) li").length, buttons: document.querySelectorAll(".island-news .revenge").length }));
+  if (answer.items !== 2 || answer.buttons !== 1) errors.push(`expeditions: the map table's news shows ${answer.items} items and ${answer.buttons} 仕返し, not 2 and 1`);
+  await pg.screenshot({ path: `${out}/150-expeditions-news.png` });
+  await pg.click(".island-news .revenge");
+  await pg.evaluate(() => window.advanceTime(200));
+  const panel = await pg.evaluate(() => JSON.parse(window.render_game_to_text()).camp?.panel ?? null);
+  if (panel !== "factory") errors.push(`expeditions: 仕返し opened ${panel}, not the factory`);
+  await close();
   // The factory's panel: the expeditions out, each with its state and its recall.
   await open("factory");
   const list = () =>

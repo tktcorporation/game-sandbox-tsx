@@ -1,4 +1,5 @@
 import { pouchKeep, type Settlement } from "../meta/profile";
+import { cachedNeighbours } from "../island-net";
 import type { ModKind } from "../sim/config";
 import { modGist } from "./modgist";
 import { contractMarks, itemColor, itemName, rewardList } from "./hub";
@@ -128,7 +129,11 @@ export class Hud {
     this.mapOpen = force ?? !this.mapOpen;
     $("map").hidden = !this.mapOpen;
     $("hud").classList.toggle("map-open", this.mapOpen);
-    if (this.mapOpen) this.showWhole(false);
+    if (this.mapOpen) {
+      // The neighbours out at sea show on the whole world's view (N), as on the camp's maps.
+      this.map.neighbours = cachedNeighbours();
+      this.showWhole(false);
+    }
     this.map.picked = -1;
   }
 

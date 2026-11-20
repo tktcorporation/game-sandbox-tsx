@@ -21,8 +21,8 @@ import { bodyCenter, eyePos, fireRay, kill } from "./sim/combat";
 import { squadKey } from "./sim/state";
 import { loadProfile, saveProfile } from "./meta/storage";
 import { sendIsland } from "./net";
-import { flushRecalls, leaseOwn, releaseLease, syncOwn, takeReport, takeSync } from "./island-net";
-import { dropStale, fortifiedNodes, LEASE_LATE, lentResults, lentRivals, logLine, squadsAway, type LentIn } from "./meta/expeditions";
+import { cachedNeighbours, flushRecalls, leaseOwn, releaseLease, syncOwn, takeReport, takeSync } from "./island-net";
+import { dropStale, fortifiedNodes, LEASE_LATE, lentResults, lentRivals, logLine, squadsAway, type IslandLogEntry, type LentIn } from "./meta/expeditions";
 import { Hub, type Launch } from "./view/hub";
 import { CampView } from "./view/camp";
 import { DepartPicker } from "./view/depart";
@@ -579,6 +579,7 @@ function openCamp() {
   paused = false;
   fading = false;
   fire = ads = adsLatch = false;
+  world.setNeighbours(cachedNeighbours().length);
   unlock();
   world.reset();
   sound.reset();
@@ -752,6 +753,7 @@ function start(go: Launch, from?: State) {
   governor.settle();
   acc = hitstop = slowmo = 0;
   running = true;
+  world.setNeighbours(cachedNeighbours().length);
   paused = false;
   $("title").hidden = true;
   $("results").hidden = true;
@@ -930,6 +932,7 @@ declare global {
       take: (type: string) => string | null;
       destroyTarget: () => number;
     };
+    ringfallNews: (entries: IslandLogEntry[]) => void;
     ringfallBag: (haul: string[], more?: { at?: (string | null)[]; tools?: string[]; records?: string[]; keys?: string[] }) => void;
     ringfallEnd: (how: "dead" | "extracted", haul?: string[], found?: string[]) => boolean;
     ringfallMods: {
@@ -1274,6 +1277,9 @@ window.ringfallBot = (skill: string) => {
  * camp (its id, or null with none); `destroyTarget` destroys every robot of the taken intercept
  * contract's squad in the raid under way, as the player's shots would (the robots destroyed).
  */
+/** Automation only: the island's news as a sync would bring it (the map table lists it, attacks with 仕返し). */
+window.ringfallNews = (entries) => hub.takeNews(entries);
+
 window.ringfallContract = {
   take: (type) => {
     const c = hub.profile.board.contracts.find((o) => o.t === type);

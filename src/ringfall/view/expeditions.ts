@@ -34,6 +34,8 @@ export class ExpeditionPanel {
   private copied = false;
   /** Bumped by each open, so a late answer to an earlier one is dropped. */
   private ask = 0;
+  /** An island to look up as soon as the panel is connected: one whose attack is being answered (仕返し). */
+  private answering: string | null = null;
   /** The islands the server offers as neighbours: a tap looks one up, as typing its code does. */
   private neighbours: Neighbour[] = cachedNeighbours();
 
@@ -84,6 +86,10 @@ export class ExpeditionPanel {
       return this.paint();
     }
     this.conn = { t: "ok", code: r.body.code, view: r.body.view };
+    if (this.answering) {
+      this.answering = null;
+      void this.look();
+    }
     const { profile, news } = takeSync(this.get(), r.body);
     if (profile !== this.get()) this.put(profile);
     if (news.length) this.news(news);
@@ -96,6 +102,12 @@ export class ExpeditionPanel {
     await flushRecalls(this.get, this.put);
     await this.refresh(r.body.code, ask);
     if (ask === this.ask) this.paint();
+  }
+
+  /** Answers an attack from island `code`: the panel, opened next, looks it up as if its code were typed. */
+  revenge(code: string) {
+    this.answering = code;
+    this.typed = code;
   }
 
   /** The panel closed: answers to its open still in flight are dropped (a raid may start meanwhile; the next open reads the island again). */

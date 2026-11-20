@@ -15,7 +15,7 @@ import { eventRow } from "./events";
 import { rivalOf } from "../sim/holds";
 import { HOLD_CSS, IslandMap, islandScene, RIVAL_CSS, TITAN_CSS } from "./map";
 import { ExpeditionPanel } from "./expeditions";
-import { incomingLine, logLine, type Incoming, type IslandLogEntry } from "../meta/expeditions";
+import { answerable, incomingLine, LOG_WORD, logLine, type Incoming, type IslandLogEntry } from "../meta/expeditions";
 import { enemyNodes, frontNodes, ownNodes } from "../sim/front";
 import { nodeRow } from "./row";
 import { sfx } from "./sfx";
@@ -352,7 +352,7 @@ export class Hub {
   /** The factory's expeditions section, which draws itself (`#hub-exped`). */
   private exped: ExpeditionPanel;
   /** The island's news from the server (its log), as lines for the map table, and whether the map table has shown them. */
-  private news: string[] = [];
+  private news: IslandLogEntry[] = [];
   private newsSeen = true;
 
   constructor(
@@ -387,10 +387,22 @@ export class Hub {
     if (station === "factory") this.exped.open();
   }
 
+  /**
+   * A log entry as marks: whose, what happened in a word, where; someone's attack also offers to
+   * answer it (仕返し), which opens the factory's expeditions on their island.
+   */
+  private newsMarks(n: IslandLogEntry): string {
+    const who = n.by.name || n.by.code;
+    const node = NODES[nodeIndex(n.node)]?.name ?? n.node;
+    const mine = n.t === "wiped" || n.t === "retaken";
+    const back = answerable(n) ? `<button type="button" class="revenge" data-act="exp-revenge" data-arg="${esc(n.by.code)}">${flagIcon()}仕返し</button>` : "";
+    return `<li title="${esc(logLine(n))}"><b class="who">${esc(who)}</b><em class="${mine ? "own" : "foe"}">${LOG_WORD[n.t]}</em>${esc(node)}${back}</li>`;
+  }
+
   /** Takes the island's news from the server (its log's new entries): the map table lists them and its mark tells of them until it is opened. */
   takeNews(entries: readonly IslandLogEntry[]) {
     if (!entries.length) return;
-    this.news = [...entries.map(logLine), ...this.news].slice(0, 8);
+    this.news = [...entries, ...this.news].slice(0, 8);
     this.newsSeen = this.station === "map";
   }
 
@@ -461,6 +473,11 @@ export class Hub {
   }
 
   private act(act: string, arg: string) {
+    if (act === "exp-revenge") {
+      // Answering an attack: the factory's panel opens on the island it came from.
+      this.exped.revenge(arg);
+      return this.open("factory");
+    }
     if (act.startsWith("exp-")) {
       sfx.click();
       return this.exped.act(act, arg);
@@ -1042,7 +1059,7 @@ export class Hub {
       (p.events[0] || p.events[1] ? `<ul class="events"><li><small>今日</small>${eventRow(p.events[0])}</li><li><small>明日</small>${eventRow(p.events[1])}</li></ul>` : "") +
       `<ul class="hold-key">${key}</ul>` +
       (p.incoming.length ? `<small>来る遠征</small><ul class="island-news incoming">${p.incoming.map((e) => `<li title="${esc(incomingLine(e, Date.now()))}">${incomingMarks(e, Date.now())}</li>`).join("")}</ul>` : "") +
-      (this.news.length ? `<small>島の知らせ</small><ul class="island-news">${this.news.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>` : "") +
+      (this.news.length ? `<small>島の知らせ</small><ul class="island-news">${this.news.map((n) => this.newsMarks(n)).join("")}</ul>` : "") +
       (taken ? `<small>依頼　${esc(regionOf(contractRegion(taken)).name)}<i class="taken-line"></i></small><p class="hub-taken"><em>${CONTRACT_NAME[taken.t]}</em>${contractMarks(taken)}</p>` : "") +
       `</div></div>`
     );
