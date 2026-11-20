@@ -74,8 +74,11 @@ export async function expeditionShots({ browser, port, out, errors }) {
     ]),
   );
   await open("map");
-  const answer = await pg.evaluate(() => ({ items: document.querySelectorAll(".island-news:not(.incoming) li").length, buttons: document.querySelectorAll(".island-news .revenge").length }));
+  const answer = await pg.evaluate(() => ({ items: document.querySelectorAll(".island-news:not(.incoming):not(.near) li").length, buttons: document.querySelectorAll(".island-news .revenge").length }));
   if (answer.items !== 2 || answer.buttons !== 1) errors.push(`expeditions: the map table's news shows ${answer.items} items and ${answer.buttons} 仕返し, not 2 and 1`);
+  // The neighbours beside the news: whose, how much they hold, what they did last (the kept list's last raid read back).
+  const near = await pg.evaluate(() => [...document.querySelectorAll(".island-news.near li")].map((li) => li.textContent));
+  if (near.length !== 3 || !/となり.*7\/21.*3h.*\+2/.test(near[0] ?? "")) errors.push(`expeditions: the map table's neighbours read ${JSON.stringify(near)}`);
   await pg.screenshot({ path: `${out}/150-expeditions-news.png` });
   await pg.click(".island-news .revenge");
   await pg.evaluate(() => window.advanceTime(200));

@@ -4,16 +4,5 @@
  ],
  "82-mod-floor": [
   "contrast #bag-cards div.bag-card div.bp-row span.bp-name"
- ],
- "bag-1-peek": [
-  "contrast #bag-peek div.bp-extra span.bp-x.mod"
- ],
- "m-bag-1-peek-740": [
-  "contrast #bag-peek div.bp-extra span.bp-x.mod",
-  "contrast #bag-peek div.bp-rows div.bp-row span.bp-name"
- ],
- "m-bag-1-peek-844": [
-  "contrast #bag-peek div.bp-extra span.bp-x.mod",
-  "contrast #bag-peek div.bp-rows div.bp-row span.bp-name"
  ]
 }
