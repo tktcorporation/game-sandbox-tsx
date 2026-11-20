@@ -137,6 +137,8 @@ interface MoodDef {
 
 /** The whole music's gain: it sits under the guns and the robots (sound.md, tier music). */
 const MASTER = 0.07;
+/** The short phrases' gain: over the explore's pulse, under the core's own cue. */
+const STING = 0.09;
 
 const _ = null;
 const PHRASE_HOME: (number | null)[] = [
@@ -176,6 +178,8 @@ export class Music {
   /** The pad's and the lead's shared filters. */
   private readonly padTone: BiquadFilterNode;
   private readonly leadTone: BiquadFilterNode;
+  /** The short phrases' own gain, straight to the music's bus: they sound whatever the mood's mix. */
+  private readonly sting: GainNode;
   private mood: Mood = "off";
   private region: RegionId = "reservoir";
   /** The mood and the region the current bar plays. */
@@ -208,6 +212,9 @@ export class Music {
     this.leadTone.type = "lowpass";
     this.leadTone.frequency.value = 2600;
     this.leadTone.connect(this.out.lead);
+    this.sting = ctx.createGain();
+    this.sting.gain.value = STING;
+    this.sting.connect(m.bus("music"));
   }
 
   /** The mood and the region now; the layers fade to the mood's mix, the tune follows at the next bar. */
@@ -227,6 +234,30 @@ export class Music {
     const roam = mood !== "off" && MOODS[mood].role === "roam" ? (TUNES[region].roamLevel ?? 1) : 1;
     this.master.gain.setTargetAtTime(mood === "off" ? 0 : MASTER * MOODS[mood].level * roam, t, fade / 3);
     if (mood !== "off") this.padTone.frequency.setTargetAtTime(MOODS[mood].bright * TUNES[region].bright, t, fade);
+  }
+
+  /**
+   * A short phrase in the region's key on the next beat, over whatever plays: a core taken (rising
+   * to the fifth and the octave), or a raid got off alive (falling home to the tonic, held).
+   */
+  phrase(kind: "capture" | "home") {
+    if (this.mood === "off" && kind === "capture") return;
+    const tune = TUNES[this.mood === "off" ? this.region : this.barRegion];
+    const beat = 60 / tune.bpm;
+    const now = this.m.ctx.currentTime;
+    const t0 = this.mood === "off" ? now + 0.05 : this.next + ((4 - (this.step % 4)) % 4) * (beat / 4);
+    const degrees = kind === "capture" ? [0, 2, 3, 5] : [5, 4, 2, 0];
+    const s = tune.scale;
+    degrees.forEach((d, i) => {
+      const midi = tune.tonic + 12 * Math.floor(d / s.length) + s[d % s.length];
+      const len = i === degrees.length - 1 ? beat * 2 : beat / 2;
+      const t = t0 + (i * beat) / 2;
+      this.osc("triangle", hz(midi), t, len, this.sting, 0.1, 0.01, 0.4);
+      this.osc("sine", hz(midi + 12), t, len * 0.6, this.sting, 0.035, 0.01, 0.3);
+    });
+    // The last note's chord under it: the tonic's fifth and the octave below.
+    const last = t0 + ((degrees.length - 1) * beat) / 2;
+    for (const k of [-12, -5]) this.osc("sawtooth", hz(tune.tonic + k), last, beat * 2, this.sting, 0.02, 0.05, 0.6);
   }
 
   get current(): Mood {

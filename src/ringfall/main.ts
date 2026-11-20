@@ -693,7 +693,10 @@ function campTick() {
   stepCamp(state, inp, prevCrouch);
   prevCrouch = inp.crouch;
   world.handle(state, state.events);
-  for (const e of state.events) sound.event(e, state);
+  for (const e of state.events) {
+    sound.event(e, state);
+    if (e.t === "coreTaken") music?.music.phrase("capture");
+  }
   if (inp.interact) useInCamp();
   // Out of the gate: the departure, then the raid starts where the player stands when its start is the gate's own way in.
   else if (outOfCamp(state)) askDepart(true);
@@ -770,7 +773,10 @@ function finish() {
   $("banner").className = "";
   hud.show(false);
   hud.results(state, settlement ?? undefined, knownBefore, analysed, islandNews);
-  if (state.outcome === "extracted") sfx.extracted();
+  if (state.outcome === "extracted") {
+    sfx.extracted();
+    music?.music.phrase("home");
+  }
   else sfx.lost();
   sound.reset();
   $("results").hidden = false;

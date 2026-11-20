@@ -737,6 +737,55 @@ export const sfx = {
       }
     });
   },
+  /** The harbor: a buoy's bell out on the old sea floor, rocked by the wind. */
+  buoy(pos: P3) {
+    at(pos, { bus: "amb", level: 0.12, ref: 40, maxDist: 500, send: 0.8, occluded: false, gain: 0.38 }, () => {
+      const f = vary(520, 0.04);
+      for (const [k, v, d] of [
+        [1, 0.05, 2.2],
+        [2.76, 0.02, 1.2],
+        [5.4, 0.008, 0.6],
+      ] as const)
+        tone(f * k, d, { type: "sine", vol: v });
+      if (Math.random() < 0.6) tone(f, 1.6, { type: "sine", vol: 0.03, at: 1.3 });
+    });
+  },
+  /** The harbor: a hull lying on the sand groaning as it cools. */
+  groan(pos: P3) {
+    at(pos, { bus: "amb", level: 0.12, ref: 25, maxDist: 300, send: 0.7, occluded: false, gain: 0.5 }, () => {
+      const f = vary(70, 0.2);
+      tone(f, 1.6, { type: "sawtooth", to: f * vary(0.8, 0.08), vol: 0.06, attack: 0.4, wobble: [4, 40] });
+      hiss(0.8, { type: "lowpass", freq: 300, vol: 0.05, attack: 0.3, brown: true });
+    });
+  },
+  /** The machine city: a siren's wail somewhere over the roofs. */
+  siren(pos: P3) {
+    at(pos, { bus: "amb", level: 0.12, ref: 60, maxDist: 600, send: 0.9, occluded: false, gain: 0.5 }, () => {
+      for (let i = 0; i < 2; i++) tone(440, 1.6, { type: "triangle", to: 660, vol: 0.03, at: i * 1.7, attack: 0.5, wobble: [5, 15] });
+    });
+  },
+  /** The machine city: a transformer's arc, a crackle and a hum that dies. */
+  zap(pos: P3) {
+    at(pos, { bus: "amb", level: 0.12, ref: 15, maxDist: 200, send: 0.5, occluded: false, gain: 0.6 }, () => {
+      for (let i = 0; i < 4; i++) hiss(0.03, { freq: vary(5000, 0.3), q: 2, vol: 0.08, at: i * vary(0.06, 0.4) });
+      tone(100, 0.7, { type: "square", vol: 0.02, at: 0.05, to: 98 });
+    });
+  },
+  /** The launch site: a tracking radar's ping across the plateau. */
+  ping(pos: P3) {
+    at(pos, { bus: "amb", level: 0.12, ref: 40, maxDist: 500, send: 0.9, occluded: false, gain: 0.6 }, () => {
+      tone(880, 0.22, { type: "sine", vol: 0.06 });
+      tone(880, 0.22, { type: "sine", vol: 0.02, at: 0.9 });
+    });
+  },
+  /** The launch site: the wind singing in a steel tower's guy wires. */
+  harp(pos: P3) {
+    at(pos, { bus: "amb", level: 0.12, ref: 40, maxDist: 400, send: 0.8, occluded: false, gain: 0.22 }, () => {
+      const f = vary(220, 0.1);
+      tone(f, 2.8, { type: "sine", vol: 0.04, attack: 1.0, wobble: [3, 12] });
+      tone(f * 1.5, 2.2, { type: "sine", vol: 0.015, attack: 1.2, at: 0.3 });
+    });
+  },
   gull(pos: P3) {
     at(pos, { bus: "amb", level: 0.12, ref: 25, maxDist: 400, send: 0.5, occluded: false }, () => {
       const n = 2 + Math.floor(Math.random() * 3);

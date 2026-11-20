@@ -67,7 +67,7 @@ const TIERS = [
   { name: "signal", lufs: [-42, -20], ids: /^(heal-done|suspect|engage|reinforce|raiders|banner|ult-ready|tactical|tactical-miss|threat|alarm|down|revive|ally-down|ally-up|pickup-\d|depot-on|deposit|gate|depot-out)$/ },
   { name: "robot", lufs: [-44, -20], ids: /^(enemy-fire-.*|far-fire|telegraph|lunge|step-.*|swarm|collapse.*|stagger.*|ally-shot|wreck|care-drop)$/ },
   { name: "camp", lufs: [-46, -22], ids: /^(tab|click|buy|sell|deliver|deploy)$/ },
-  { name: "air", lufs: [-48, -34], ids: /^(creak|machinery|gull)$/ },
+  { name: "air", lufs: [-48, -34], ids: /^(creak|machinery|gull|buoy|groan|siren|zap|ping|harp)$/ },
   { name: "music", lufs: [-40, -22], ids: /^music-/ },
   { name: "demo", lufs: null, ids: /^demo-/ },
 ];
@@ -84,6 +84,9 @@ const UNDER = [
   ["music-fight", "shot-pike", 3],
   ["music-explore", "enemy-fire-grunt", 3],
   ["music-explore", "music-fight", 3],
+  // A phrase stands out of the explore's pulse, and under the cue it answers.
+  ["music-explore", "music-phrase-capture", 3],
+  ["music-phrase-capture", "core-taken", 3],
   ...["harbor", "city", "launch"].flatMap((r) => [[`music-${r}-fight`, "shot-pike", 3], [`music-${r}-explore`, "enemy-fire-grunt", 3], [`music-${r}-explore`, `music-${r}-fight`, 3]]),
 ];
 const tierOf = (id) => TIERS.find((t) => t.ids.test(id));
