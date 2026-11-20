@@ -4903,6 +4903,13 @@ body.touch .bag-card:nth-last-child(n + 3) {
   font-size: 12px;
   color: var(--rival-light);
 }
+#hub .exp-near button.shut {
+  border-left-color: var(--slate);
+  background: rgb(var(--white-rgb) / 0.05);
+}
+.exp-near small.shut {
+  color: var(--muted);
+}
 .exp-held {
   height: 4px;
   background: linear-gradient(90deg, var(--rival) var(--w), rgb(var(--white-rgb) / 0.15) var(--w));

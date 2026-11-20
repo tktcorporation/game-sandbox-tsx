@@ -5,7 +5,7 @@ import { zipUp } from "../sim/zips";
 import { frontNodes, NEIGHBOURS, nodeHolds, type NodeHold } from "../sim/front";
 import { atRisk, battleMarks, meterOf, type Battle, type Side } from "../sim/battle";
 import { offshore } from "../sim/terrain";
-import { BOXES, CAMP, DEBRIS_SPOTS, NODES, nodeIndex, TIER, UNLOCKS, debrisIndex, DEPOTS, ENTRIES, EXTRA_BINS, EXTRACTS, HOME_REGION, LANDMARKS, OUTPOST_SITES, POIS, REGIONS, regionOf, ROUTES, regionHere, type EntryId, type NodeId, type PoiId, type RegionId, type RouteId } from "../sim/map";
+import { BOXES, CAMP, DEBRIS_SPOTS, NODES, nodeIndex, poiIndex, TIER, UNLOCKS, debrisIndex, DEPOTS, ENTRIES, EXTRA_BINS, EXTRACTS, HOME_REGION, LANDMARKS, OUTPOST_SITES, POIS, REGIONS, regionOf, ROUTES, regionHere, type EntryId, type NodeId, type PoiId, type RegionId, type RouteId } from "../sim/map";
 import type { IslandEvent, PoiHold } from "../sim/island";
 import { rivalOf } from "../sim/holds";
 import { STREETS } from "../sim/streets";
@@ -14,7 +14,7 @@ import { DAM_FACE, floorLevel, groundOf, highGround, LEVEL, steepAt, surfaceAt, 
 import { cellOf, decodeSeen, exploreSize, type Ally, type Contact, type Enemy, type Player, type State } from "../sim/state";
 import { PAL, RARITY_CSS } from "./models";
 import type { ContractMark } from "../meta/contracts";
-import { NEIGHBOUR_SLOTS, type Neighbour } from "../meta/neighbours";
+import { NEIGHBOUR_SLOTS, routeOpen, type Neighbour } from "../meta/neighbours";
 import { UI, alpha } from "./palette";
 
 /*
@@ -943,9 +943,22 @@ export class IslandMap {
       const p = at(slot.x, slot.z);
       const r = 13 * dpr;
       if (p.x < -r || p.y < -r || p.x > g.canvas.width + r || p.y > g.canvas.height + r) continue;
+      // The sea route from the coast's node: lit while the player holds that node, faint and dashed till then.
+      const open = routeOpen(k, (id) => hold(poiIndex(id)) === "freed");
+      const shore = POIS[poiIndex(slot.shore)];
+      const q = at(shore.x, shore.z);
       g.save();
-      g.fillStyle = alpha(UI.rival, 0.55);
-      g.strokeStyle = UI.rivalLight;
+      g.strokeStyle = open ? UI.rivalLight : alpha(UI.paper, 0.3);
+      g.lineWidth = (open ? 2 : 1.5) * dpr;
+      g.setLineDash(open ? [] : [4 * dpr, 5 * dpr]);
+      g.beginPath();
+      g.moveTo(q.x, q.y);
+      g.lineTo(p.x, p.y);
+      g.stroke();
+      g.restore();
+      g.save();
+      g.fillStyle = alpha(UI.rival, open ? 0.6 : 0.3);
+      g.strokeStyle = open ? UI.rivalLight : alpha(UI.rivalLight, 0.5);
       g.lineWidth = 1.5 * dpr;
       g.beginPath();
       // A low island: three overlapping rounds, the same shape for every neighbour.

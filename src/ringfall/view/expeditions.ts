@@ -6,7 +6,8 @@
  * With no server it says so in one line and nothing else changes.
  */
 import { cachedNeighbours, flushRecalls, readNeighbours, readView, SEND_TIMEOUT_MS, sendExpedition, syncOwn, takeReport, takeSync } from "../island-net";
-import type { Neighbour } from "../meta/neighbours";
+import { NEIGHBOUR_SLOTS, routeOpen, type Neighbour } from "../meta/neighbours";
+import { playerNodes } from "../meta/island";
 import { alive, numbered, answerSend, recallAll, sentKey, canSend, dropStale, factoryAhead, factorySquads, homeSquads, refreshOutgoing, sendingEntry, sendKinds, squadsAway, STATE_NAME, type IslandLogEntry, type IslandView } from "../meta/expeditions";
 import { parseIslandCode } from "../meta/island-code";
 import { errorText } from "../meta/island-errors";
@@ -267,10 +268,17 @@ export class ExpeditionPanel {
   /** The form that sends one: the other island's code, its nodes that take an expedition, and the button. */
   private sendForm(p: Profile): string {
     const dis = this.busy ? " disabled" : "";
-    // The neighbours first: whose island, how much of it its owner holds; a tap opens it below.
+    // The neighbours first: whose island, how much of it its owner holds; a tap opens it below. One
+    // whose sea route is shut (the node facing it not held) shows that node, padlocked.
+    const mine = new Set<string>(playerNodes(p));
     const near = this.neighbours.length
       ? `<div class="exp-near">${this.neighbours
-          .map((n) => `<button type="button" class="${this.target?.code === n.code ? "on" : ""}" data-act="exp-island" data-arg="${esc(n.code)}"${dis}><b>${esc(n.name)}</b><span class="exp-held" style="--w:${Math.round((100 * n.held) / Math.max(1, n.total))}%"></span><small>${coreIcon(SIDE.rival)}${n.held}/${n.total}</small></button>`)
+          .map((n, k) => {
+            const open = routeOpen(k, (id) => mine.has(id));
+            const held = `<span class="exp-held" style="--w:${Math.round((100 * n.held) / Math.max(1, n.total))}%"></span>`;
+            const foot = open ? `<small>${coreIcon(SIDE.rival)}${n.held}/${n.total}</small>` : `<small class="shut">${lockIcon()}${esc(nodeName(NEIGHBOUR_SLOTS[k].shore))}</small>`;
+            return `<button type="button" class="${this.target?.code === n.code ? "on" : ""}${open ? "" : " shut"}" data-act="exp-island" data-arg="${esc(n.code)}"${open ? dis : " disabled"}><b>${esc(n.name)}</b>${held}${foot}</button>`;
+          })
           .join("")}</div>`
       : "";
     const form = near + `<div class="exp-send"><input id="exp-code" type="text" inputmode="text" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="相手の島の番号" value="${esc(this.typed)}"><button type="button" data-act="exp-look"${dis}>見る</button></div>`;

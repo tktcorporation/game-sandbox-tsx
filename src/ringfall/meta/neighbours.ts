@@ -5,6 +5,7 @@
  * Pure: the answer read here, the requests in island-net.ts.
  */
 import { isIslandCode } from "./island-code";
+import type { NodeId } from "../sim/map";
 
 /** A neighbour as the server tells it: whose island, its code, how far its owner has come. */
 export interface Neighbour {
@@ -19,16 +20,21 @@ export interface Neighbour {
 export const NEIGHBOUR_MAX = 4;
 
 /**
- * Where on the camp's maps each neighbour's island lies, in world metres: out on the open sea round
- * the island (north-west beyond the harbor and the plateau, north-east beyond the city, south-east
- * past the city's coast, south between the plateau and the dune coast).
+ * Where on the camp's maps each neighbour's island lies, in world metres, out on the open sea, and
+ * the node on the coast facing it: holding that node opens the sea route there, so an expedition
+ * goes only to the neighbours the player's ground reaches. In the order a raid usually takes them:
+ * the observatory by the camp faces the south, the waterworks the south-east, the robot works the
+ * north-east beyond the city, the tracking radar the north-west beyond the plateau.
  */
-export const NEIGHBOUR_SLOTS: readonly { x: number; z: number }[] = [
-  { x: -980, z: -940 },
-  { x: 860, z: -1150 },
-  { x: 860, z: 540 },
-  { x: -420, z: 590 },
+export const NEIGHBOUR_SLOTS: readonly { x: number; z: number; shore: NodeId }[] = [
+  { x: -420, z: 590, shore: "station" },
+  { x: 860, z: 540, shore: "waterworks" },
+  { x: 860, z: -1150, shore: "robotworks" },
+  { x: -980, z: -940, shore: "radar" },
 ];
+
+/** Whether the sea route to neighbour slot `k` is open: the player holds the node facing it. */
+export const routeOpen = (k: number, holds: (id: NodeId) => boolean): boolean => !!NEIGHBOUR_SLOTS[k] && holds(NEIGHBOUR_SLOTS[k].shore);
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 const count = (v: unknown, hi: number): v is number => Number.isInteger(v) && (v as number) >= 0 && (v as number) <= hi;
