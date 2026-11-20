@@ -292,6 +292,12 @@ export function logLine(e: IslandLogEntry): string {
   }
 }
 
+/** What happened in a log entry, in a word, for the map table's marks. */
+export const LOG_WORD: Record<IslandLogEntry["t"], string> = { noticed: "遠征", landed: "上陸", taken: "奪取", wiped: "全滅", retaken: "奪還", released: "手放し", recalled: "撤収" };
+
+/** Whether an entry is someone's attack on this island, answered by sending one back (仕返し). */
+export const answerable = (e: IslandLogEntry): boolean => (e.t === "noticed" || e.t === "landed" || e.t === "taken") && isIslandCode(e.by.code);
+
 /** Expeditions sent and still out (not gone, not called home). */
 export const alive = (p: { expeditions: readonly Outgoing[] }) => p.expeditions.filter((e) => e.state !== "gone" && e.state !== "recalling");
 

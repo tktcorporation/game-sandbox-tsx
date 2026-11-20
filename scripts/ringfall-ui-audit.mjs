@@ -142,7 +142,8 @@ function measure(R) {
     }
     if (size < R.MIN_TEXT - 0.01) add("small", el, `${size}px`);
     // A sentence: the screens say things with names, numbers, marks and where they stand (brief, 使わないもの).
-    for (const n of el.childNodes) {
+    // The story's records are the one place written to be read (`.prose`), behind a fold the player opens.
+    if (!el.closest(".prose")) for (const n of el.childNodes) {
       const text = n.nodeType === 3 ? n.textContent.trim() : "";
       if (text.length > R.WORDY) add("wordy", el, `${text.length}: ${text.slice(0, 28)}`);
     }

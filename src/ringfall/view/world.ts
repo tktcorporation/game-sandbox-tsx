@@ -17,6 +17,7 @@ import { trimBox, type TrimPiece, type TrimSite } from "./trim";
 import { PAL, RARITY_COLOR, SCOPE_IN, buildAlly, buildBeacon, buildBin, buildCore, buildBoat, buildStatic, buildDepot, buildEntryMark, buildRingDebris, mergeChunk, mergeTrim, type ChunkShade, buildCare, buildDropship, buildEnemy, buildFlareSmoke, buildGun, buildHands, buildLootItem, addPlates, flat, glow, haloSprite, still, type EnemyModel } from "./models";
 import { streetMeshes } from "./streets";
 import { BattleView, CHANNEL } from "./battle";
+import { NeighbourIslands } from "./horizon";
 
 /*
  * Renders a State in first person. It reads the state and the tick's events and
@@ -270,6 +271,8 @@ export class World {
   private built = "";
   private boat: THREE.Group | null = null;
   private readonly skyDome = this.sky();
+  /** The neighbours' islands on the horizon (horizon.ts). */
+  private readonly isles = new NeighbourIslands(LIGHT.haze, haloSprite);
   private dummy = new THREE.Object3D();
   private boulderGeo = new THREE.DodecahedronGeometry(1, 0);
   /** The day's battle seen from afar: the enemy's landings, the squads out to the fog, the gate and depots the factory's squads leave by. */
@@ -323,6 +326,7 @@ export class World {
     this.scene.matrixAutoUpdate = false;
     this.scene.fog = new THREE.Fog(LIGHT.haze, QUALITY.high.fogNear, QUALITY.high.fogFar);
     this.scene.add(this.skyDome);
+    this.scene.add(this.isles.group);
     this.scene.add(this.hemi);
     this.sun.position.set(-40, 80, 30);
     this.sun.castShadow = true;
@@ -1167,6 +1171,11 @@ export class World {
   }
 
   /** Per-frame sync and draw. `dt` is real seconds since the last frame. */
+  /** Which slots at sea have a neighbour's island on the horizon: the server's neighbours as last read (none hides them). */
+  setNeighbours(slots: readonly number[]) {
+    this.isles.set(slots);
+  }
+
   render(s: State, dt: number) {
     this.sync(s, dt);
     this.draw();
@@ -1227,6 +1236,7 @@ export class World {
 
     // The sky stays centred on the camera; shadows follow it.
     this.skyDome.position.copy(this.camera.position);
+    this.isles.frame(this.camera, this.time);
     const fx = this.camera.position.x;
     const fz = this.camera.position.z;
     this.sun.position.set(fx - 40, 80, fz + 30);

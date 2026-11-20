@@ -21,8 +21,8 @@ import { bodyCenter, eyePos, fireRay, kill } from "./sim/combat";
 import { squadKey } from "./sim/state";
 import { loadProfile, saveProfile } from "./meta/storage";
 import { sendIsland } from "./net";
-import { flushRecalls, leaseOwn, releaseLease, syncOwn, takeReport, takeSync } from "./island-net";
-import { dropStale, fortifiedNodes, LEASE_LATE, lentResults, lentRivals, logLine, squadsAway, type LentIn } from "./meta/expeditions";
+import { cachedNeighbours, flushRecalls, leaseOwn, releaseLease, syncOwn, takeReport, takeSync } from "./island-net";
+import { dropStale, fortifiedNodes, LEASE_LATE, lentResults, lentRivals, logLine, squadsAway, type IslandLogEntry, type LentIn } from "./meta/expeditions";
 import { Hub, type Launch } from "./view/hub";
 import { CampView } from "./view/camp";
 import { DepartPicker } from "./view/depart";
@@ -258,6 +258,7 @@ const sound = new Soundscape();
 function onEvent(e: GameEvent, s: State) {
   hud.event(e, s);
   sound.event(e, s);
+  if (e.t === "coreTaken") music?.music.phrase("capture");
   if (e.t === "done") {
     // Settle and save at once; only the results screen waits for the moment to play out.
     knownBefore = [...hub.profile.known];
@@ -323,6 +324,8 @@ function syncIsland(p: Settlement["profile"], settled: State) {
     }
     const { profile, news } = takeSync(hub.profile, r.body);
     if (profile !== hub.profile) hub.update(profile);
+    // The sync read the neighbours again: the horizon shows them as they now stand.
+    world.setNeighbours(cachedNeighbours().map((n) => n.slot));
     if (!news.length) return;
     hub.takeNews(news);
     islandNews = news.map(logLine);
@@ -579,6 +582,7 @@ function openCamp() {
   paused = false;
   fading = false;
   fire = ads = adsLatch = false;
+  world.setNeighbours(cachedNeighbours().map((n) => n.slot));
   unlock();
   world.reset();
   sound.reset();
@@ -749,6 +753,7 @@ function start(go: Launch, from?: State) {
   governor.settle();
   acc = hitstop = slowmo = 0;
   running = true;
+  world.setNeighbours(cachedNeighbours().map((n) => n.slot));
   paused = false;
   $("title").hidden = true;
   $("results").hidden = true;
@@ -770,7 +775,10 @@ function finish() {
   $("banner").className = "";
   hud.show(false);
   hud.results(state, settlement ?? undefined, knownBefore, analysed, islandNews);
-  if (state.outcome === "extracted") sfx.extracted();
+  if (state.outcome === "extracted") {
+    sfx.extracted();
+    music?.music.phrase("home");
+  }
   else sfx.lost();
   sound.reset();
   $("results").hidden = false;
@@ -924,6 +932,7 @@ declare global {
       take: (type: string) => string | null;
       destroyTarget: () => number;
     };
+    ringfallNews: (entries: IslandLogEntry[]) => void;
     ringfallBag: (haul: string[], more?: { at?: (string | null)[]; tools?: string[]; records?: string[]; keys?: string[] }) => void;
     ringfallEnd: (how: "dead" | "extracted", haul?: string[], found?: string[]) => boolean;
     ringfallMods: {
@@ -1268,6 +1277,9 @@ window.ringfallBot = (skill: string) => {
  * camp (its id, or null with none); `destroyTarget` destroys every robot of the taken intercept
  * contract's squad in the raid under way, as the player's shots would (the robots destroyed).
  */
+/** Automation only: the island's news as a sync would bring it (the map table lists it, attacks with 仕返し). */
+window.ringfallNews = (entries) => hub.takeNews(entries);
+
 window.ringfallContract = {
   take: (type) => {
     const c = hub.profile.board.contracts.find((o) => o.t === type);

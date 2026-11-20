@@ -2333,8 +2333,11 @@ if (part("push")) for (const phone of [false, true]) {
     await pg.screenshot({ path: tag(2, "counter-map") });
     await pg.keyboard.press("KeyM");
   }
-  // The results' beats slowed, so each is shot while it is up.
-  await pg.evaluate(() => (window.ringfallBeatGap = 5000));
+  // The results' beats held, and stepped one by one below, so each is shot while it is up however slow a screenshot is.
+  await pg.evaluate(() => {
+    window.ringfallBeatGap = 0;
+    window.ringfallBeat = undefined;
+  });
   // 2. At the waterworks' depot with the counter-attack on its way: the bar pulses as the player leaves.
   const dep = st.depotSpots.find((d) => d.poi === "waterworks");
   await stand(dep.x + Math.sin(dep.yaw) * 1.2, dep.z - Math.cos(dep.yaw) * 1.2, dep.yaw + Math.PI);
@@ -2358,7 +2361,10 @@ if (part("push")) for (const phone of [false, true]) {
   if (r.screen !== "results" || !set || !set.raid.gained.includes("waterworks") || !set.after.lost.includes("waterworks")) errors.push(`push-pull: the results read ${r.screen}, raid ${JSON.stringify(set?.raid)}, after ${JSON.stringify(set?.after)}`);
   if (!set?.night.lost.length) errors.push(`push-pull: the night took nothing (${JSON.stringify(set?.night)})`);
   // The beats, each shot as it comes up (`data-beat` on the beat's mark): the raid's change, the battle after leaving, the night.
-  const beatOf = (b) => pg.waitForFunction((x) => document.getElementById("day-beat")?.dataset.beat === x, b, { timeout: 25000 }).then(() => true, () => false);
+  const beatOf = async (b) => {
+    const ready = await pg.waitForFunction(() => typeof window.ringfallBeat === "function", null, { timeout: 25000 }).then(() => true, () => false);
+    return ready && (await pg.evaluate(() => window.ringfallBeat())) === b;
+  };
   if (!(await beatOf("raid"))) errors.push("push-pull: the results never showed the raid's beat");
   await pg.waitForTimeout(1200);
   await pg.screenshot({ path: tag(5, "results-raid") });

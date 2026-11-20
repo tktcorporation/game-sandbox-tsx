@@ -4867,6 +4867,53 @@ body.touch .bag-card:nth-last-child(n + 3) {
   font-family: var(--num);
   font-size: 16px;
 }
+/* The neighbours: a card each, whose island and a bar of the nodes its owner holds. */
+.exp-near {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 6px;
+  margin-top: 6px;
+}
+#hub .exp-near button {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 0;
+  border-left: 3px solid var(--rival);
+  background: rgb(var(--rival-rgb) / 0.14);
+  color: var(--white);
+  text-align: left;
+}
+#hub .exp-near button.on {
+  background: rgb(var(--rival-rgb) / 0.32);
+  box-shadow: inset 0 0 0 2px var(--rival-light);
+}
+.exp-near b {
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.exp-near small {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--num);
+  font-size: 12px;
+  color: var(--rival-light);
+}
+#hub .exp-near button.shut {
+  border-left-color: var(--slate);
+  background: rgb(var(--white-rgb) / 0.05);
+}
+.exp-near small.shut {
+  color: var(--muted);
+}
+.exp-held {
+  height: 4px;
+  background: linear-gradient(90deg, var(--rival) var(--w), rgb(var(--white-rgb) / 0.15) var(--w));
+}
 .exp-send {
   display: flex;
   gap: 8px;
@@ -4952,6 +4999,38 @@ body.touch .bag-card:nth-last-child(n + 3) {
   font-size: 13px;
   font-weight: 800;
 }
+/* A piece of news as marks: whose, what happened, where; an attack answered from here. */
+.hub-island ul.island-news:not(.incoming) li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.island-news .who {
+  color: var(--rival-light);
+}
+.island-news em {
+  font-style: normal;
+  font-size: 12px;
+  padding: 0 4px;
+}
+.island-news em.foe {
+  color: var(--white);
+  background: rgb(var(--foe-rgb) / 0.7);
+}
+.island-news em.own {
+  color: var(--white);
+  background: rgb(var(--own-rgb) / 0.7);
+}
+#hub .island-news .revenge {
+  margin: 0 0 0 auto;
+  padding: 4px 10px;
+  border: 0;
+  background: var(--rival);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 800;
+}
+
 #island-news:empty {
   display: none;
 }

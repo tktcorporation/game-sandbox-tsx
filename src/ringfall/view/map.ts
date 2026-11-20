@@ -5,7 +5,7 @@ import { zipUp } from "../sim/zips";
 import { frontNodes, NEIGHBOURS, nodeHolds, type NodeHold } from "../sim/front";
 import { atRisk, battleMarks, meterOf, type Battle, type Side } from "../sim/battle";
 import { offshore } from "../sim/terrain";
-import { BOXES, CAMP, DEBRIS_SPOTS, NODES, nodeIndex, TIER, UNLOCKS, debrisIndex, DEPOTS, ENTRIES, EXTRA_BINS, EXTRACTS, HOME_REGION, LANDMARKS, OUTPOST_SITES, POIS, REGIONS, regionOf, ROUTES, regionHere, type EntryId, type NodeId, type PoiId, type RegionId, type RouteId } from "../sim/map";
+import { BOXES, CAMP, DEBRIS_SPOTS, NODES, nodeIndex, poiIndex, TIER, UNLOCKS, debrisIndex, DEPOTS, ENTRIES, EXTRA_BINS, EXTRACTS, HOME_REGION, LANDMARKS, OUTPOST_SITES, POIS, REGIONS, regionOf, ROUTES, regionHere, type EntryId, type NodeId, type PoiId, type RegionId, type RouteId } from "../sim/map";
 import type { IslandEvent, PoiHold } from "../sim/island";
 import { rivalOf } from "../sim/holds";
 import { STREETS } from "../sim/streets";
@@ -14,6 +14,7 @@ import { DAM_FACE, floorLevel, groundOf, highGround, LEVEL, steepAt, surfaceAt, 
 import { cellOf, decodeSeen, exploreSize, type Ally, type Contact, type Enemy, type Player, type State } from "../sim/state";
 import { PAL, RARITY_CSS } from "./models";
 import type { ContractMark } from "../meta/contracts";
+import { NEIGHBOUR_SLOTS, routeOpen, type Neighbour } from "../meta/neighbours";
 import { UI, alpha } from "./palette";
 
 /*
@@ -518,6 +519,10 @@ export class IslandMap {
   locks = true;
   /** Who holds each node and what changed, and nothing else: no names but the scene's, no ways off, depots, routes or what a node opens. The results' map. */
   plain = false;
+  /** Other players' islands the server offers this one (meta/neighbours.ts), drawn out at sea on the camp's maps. */
+  neighbours: readonly Neighbour[] = [];
+  /** What holding each node opens, as small marks beside it: the camp's map table's (a raid's map leaves them out, to read at a glance). */
+  unlocks = true;
   /** The node whose padlock was picked, its note drawn beside it; -1 with none. */
   picked = -1;
   /** The padlocks at the last draw, each with its node's mark, in CSS pixels from the canvas's top left. */
@@ -930,6 +935,48 @@ export class IslandMap {
       taken.push(box(x.short, spot.x, spot.y, 10));
       return spot;
     });
+    // The neighbours: other players' islands out at sea, each at a slot of its own, in their green,
+    // with whose it is and how many of its nodes its owner holds.
+    for (const n of plain ? [] : this.neighbours) {
+      const k = n.slot;
+      const slot = NEIGHBOUR_SLOTS[k];
+      if (!slot) continue;
+      const p = at(slot.x, slot.z);
+      const r = 13 * dpr;
+      if (p.x < -r || p.y < -r || p.x > g.canvas.width + r || p.y > g.canvas.height + r) continue;
+      // The sea route from the coast's node: lit while the player holds that node, faint and dashed till then.
+      const open = routeOpen(k, (id) => hold(poiIndex(id)) === "freed");
+      const shore = POIS[poiIndex(slot.shore)];
+      const q = at(shore.x, shore.z);
+      g.save();
+      g.strokeStyle = open ? UI.rivalLight : alpha(UI.paper, 0.3);
+      g.lineWidth = (open ? 2 : 1.5) * dpr;
+      g.setLineDash(open ? [] : [4 * dpr, 5 * dpr]);
+      g.beginPath();
+      g.moveTo(q.x, q.y);
+      g.lineTo(p.x, p.y);
+      g.stroke();
+      g.restore();
+      g.save();
+      g.fillStyle = alpha(UI.rival, open ? 0.6 : 0.3);
+      g.strokeStyle = open ? UI.rivalLight : alpha(UI.rivalLight, 0.5);
+      g.lineWidth = 1.5 * dpr;
+      g.beginPath();
+      // A low island: three overlapping rounds, the same shape for every neighbour.
+      for (const [dx, dy, rr] of [
+        [-0.55, 0.1, 0.7],
+        [0.2, -0.15, 0.85],
+        [0.75, 0.2, 0.6],
+      ])
+        g.ellipse(p.x + dx * r, p.y + dy * r, rr * r, rr * r * 0.7, 0, 0, Math.PI * 2);
+      g.fill();
+      g.stroke();
+      g.restore();
+      g.textAlign = "center";
+      // Whose island and how much of it they hold, in one line over it: a slot near the map's edge keeps it whole.
+      label(`${n.name} ${n.held}/${n.total}`, p.x, p.y - r - 4 * dpr, UI.paper, 11);
+      taken.push({ x0: p.x - r * 1.6, y0: p.y - r - 12 * dpr, x1: p.x + r * 1.6, y1: p.y + r });
+    }
     // Districts and landmarks between the POIs, small and muted under everything else.
     for (const d of plain ? [] : LANDMARKS) {
       // A district's name is learnt by going there.
@@ -1153,7 +1200,7 @@ export class IslandMap {
         // The garrison's plate: a shield in the colour of the rarity that pierces it.
         if (!plain) drawShield(g, p.x, p.y + r * 0.06, r * 0.62, RARITY_CSS[TIER[poi.id as NodeId] ?? 0]);
         // What holding it opens, as small marks beside it: dim while the enemy holds it.
-        if (!plain) drawUnlocks(g, p.x + r * 1.45, p.y - r * 0.95, poi.id as NodeId, dpr, hold(i) === "freed");
+        if (!plain && this.unlocks) drawUnlocks(g, p.x + r * 1.45, p.y - r * 0.95, poi.id as NodeId, dpr, hold(i) === "freed");
         // Marked by the enemy for the coming night: a red crescent at its foot; blue once fortified.
         const night = s.night ?? (s.battle ? { targets: s.battle.targets, fortified: s.battle.fortified } : null);
         const k = nodeIndex(poi.id as NodeId);

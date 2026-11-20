@@ -142,6 +142,12 @@ export const CUES: Cue[] = [
   { id: "creak", label: "金属のきしみ（遠く）", group: "世界", run: () => sfx.creak(around(200, 40, 2)) },
   { id: "machinery", label: "遠くの機械", group: "世界", run: () => sfx.machinery(around(100, 90)) },
   { id: "gull", label: "カモメ", group: "世界", run: () => sfx.gull(around(320, 60, 15)) },
+  { id: "buoy", label: "ブイの鐘（港湾）", group: "世界", run: () => sfx.buoy(around(40, 120, 0)) },
+  { id: "groan", label: "船体のうなり（港湾）", group: "世界", run: () => sfx.groan(around(300, 60, 2)) },
+  { id: "siren", label: "遠いサイレン（機械都市）", group: "世界", run: () => sfx.siren(around(80, 200, 20)) },
+  { id: "zap", label: "変圧器の放電（機械都市）", group: "世界", run: () => sfx.zap(around(200, 30, 4)) },
+  { id: "ping", label: "レーダーの音（発射場）", group: "世界", run: () => sfx.ping(around(30, 80, 14)) },
+  { id: "harp", label: "鉄塔のワイヤーが鳴る（発射場）", group: "世界", run: () => sfx.harp(around(250, 80, 30)) },
   { id: "tab", label: "板を開く", group: "野営地", run: () => sfx.tab() },
   { id: "click", label: "選ぶ", group: "野営地", run: () => sfx.click() },
   { id: "buy", label: "買う", group: "野営地", run: () => sfx.buy() },
@@ -297,6 +303,38 @@ async function moodBuffer(mood: Exclude<Mood, "off">, secs: number, region: Regi
   return off.startRendering();
 }
 
+/** A short phrase over the explore's music, measured as a cue. */
+async function renderPhrase(kind: "capture" | "home"): Promise<CueReport> {
+  const sr = 44100;
+  const secs = 4;
+  const off = new OfflineAudioContext(2, Math.floor(sr * secs), sr);
+  const m = new Mixer(off, false);
+  m.volume.gain.value = 1;
+  m.musicVolume.gain.value = 1;
+  const music = new Music(m);
+  music.set("explore", "reservoir", 0.01);
+  music.schedule(0.3);
+  music.phrase(kind);
+  music.schedule(secs - 0.5);
+  const buf = await off.startRendering();
+  return { id: `music-phrase-${kind}`, rms: 0, loud: 1, lufs: momentary(buf), len: tail(buf), ...peaks(buf) };
+}
+
+function peaks(buf: AudioBuffer) {
+  let peak = 0;
+  let nan = 0;
+  let clipped = 0;
+  for (let c = 0; c < buf.numberOfChannels; c++)
+    for (const x of buf.getChannelData(c)) {
+      if (!Number.isFinite(x)) nan++;
+      else {
+        peak = Math.max(peak, Math.abs(x));
+        if (Math.abs(x) >= 0.999) clipped++;
+      }
+    }
+  return { peak, nan, clipped };
+}
+
 async function renderMood(mood: Exclude<Mood, "off">, region: RegionId = "reservoir", secs = 10.6): Promise<CueReport> {
   const buf = await moodBuffer(mood, secs, region);
   let peak = 0;
@@ -322,6 +360,7 @@ async function checkAll() {
   const cues: CueReport[] = [];
   for (const c of CUES) cues.push(await render(c));
   for (const mood of MOODS) cues.push(await renderMood(mood));
+  for (const kind of ["capture", "home"] as const) cues.push(await renderPhrase(kind));
   // Each other region's tune, in the moods of a raid.
   for (const r of ["harbor", "city", "launch"] as RegionId[]) for (const mood of RAID_MOODS) cues.push(await renderMood(mood, r));
   const off = new OfflineAudioContext(2, 44100, 44100);

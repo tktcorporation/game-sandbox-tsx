@@ -30,12 +30,20 @@ const SAVE = {
   logSeq: 0, retaken: [],
 };
 
+const NEAR = [
+  { code: "Z3P9TR", name: "となり", held: 7, total: 21, day: 15, slot: 0 },
+  { code: "K7M2QX", name: "みなと", held: 4, total: 21, day: 9, slot: 1 },
+  { code: "H4N8WD", name: "砂丘の人", held: 11, total: 21, day: 22, slot: 2 },
+];
+
 export async function expeditionShots({ browser, port, out, errors }) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
   const pg = await ctx.newPage();
   pg.on("pageerror", (e) => errors.push(`expeditions pageerror: ${e.message}`));
   pg.on("console", (m) => m.type() === "error" && !/fonts\.g|ERR_TUNNEL|net::/.test(m.text()) && errors.push(`expeditions console: ${m.text()}`));
   await pg.addInitScript(([k, v]) => localStorage.getItem(k) || localStorage.setItem(k, v), [KEY, JSON.stringify({ ...SAVE, incoming: SAVE.incoming.map((e) => ({ ...e, arriveAt: Date.now() + 5.4 * 3_600_000 })) })]);
+  // The neighbours the server offered at the last sync, as the browser keeps them (island-net.ts): drawn out at sea on the camp's maps.
+  await pg.addInitScript((v) => localStorage.setItem("ringfall.neighbours.v1", v), JSON.stringify({ neighbours: NEAR }));
   // The landing is 5.4 hours from when these screens are shot, not from when the gate started: the map table rounds it up to 6.
   await pg.goto(`http://localhost:${port}/ringfall/`, { waitUntil: "load" });
   await pg.waitForTimeout(300);
@@ -57,6 +65,22 @@ export async function expeditionShots({ browser, port, out, errors }) {
   const news = await pg.evaluate(() => document.querySelector(".island-news.incoming")?.textContent ?? "");
   if (!/となり.*中継塔.*6h/.test(news)) errors.push(`expeditions: the map table's warning reads "${news}"`);
   await pg.screenshot({ path: `${out}/150-expeditions-map.png` });
+  await close();
+  // The island's news as marks: someone's attack offers 仕返し, which opens the factory on their island.
+  await pg.evaluate(() =>
+    window.ringfallNews([
+      { seq: 2, at: 0, t: "taken", node: "yard", by: { code: "Z3P9TR", name: "となり" } },
+      { seq: 1, at: 0, t: "wiped", node: "quarry", by: { code: "K7M2QX", name: "みなと" } },
+    ]),
+  );
+  await open("map");
+  const answer = await pg.evaluate(() => ({ items: document.querySelectorAll(".island-news:not(.incoming) li").length, buttons: document.querySelectorAll(".island-news .revenge").length }));
+  if (answer.items !== 2 || answer.buttons !== 1) errors.push(`expeditions: the map table's news shows ${answer.items} items and ${answer.buttons} 仕返し, not 2 and 1`);
+  await pg.screenshot({ path: `${out}/150-expeditions-news.png` });
+  await pg.click(".island-news .revenge");
+  await pg.evaluate(() => window.advanceTime(200));
+  const panel = await pg.evaluate(() => JSON.parse(window.render_game_to_text()).camp?.panel ?? null);
+  if (panel !== "factory") errors.push(`expeditions: 仕返し opened ${panel}, not the factory`);
   await close();
   // The factory's panel: the expeditions out, each with its state and its recall.
   await open("factory");

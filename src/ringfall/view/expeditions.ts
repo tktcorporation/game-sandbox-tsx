@@ -5,7 +5,9 @@
  * so a request's answer redraws it without touching the panel around it or the code being typed.
  * With no server it says so in one line and nothing else changes.
  */
-import { flushRecalls, readView, SEND_TIMEOUT_MS, sendExpedition, syncOwn, takeReport, takeSync } from "../island-net";
+import { cachedNeighbours, flushRecalls, readNeighbours, readView, SEND_TIMEOUT_MS, sendExpedition, syncOwn, takeReport, takeSync } from "../island-net";
+import { NEIGHBOUR_SLOTS, routeOpen, type Neighbour } from "../meta/neighbours";
+import { playerNodes } from "../meta/island";
 import { alive, numbered, answerSend, recallAll, sentKey, canSend, dropStale, factoryAhead, factorySquads, homeSquads, refreshOutgoing, sendingEntry, sendKinds, squadsAway, STATE_NAME, type IslandLogEntry, type IslandView } from "../meta/expeditions";
 import { parseIslandCode } from "../meta/island-code";
 import { errorText } from "../meta/island-errors";
@@ -32,6 +34,10 @@ export class ExpeditionPanel {
   private copied = false;
   /** Bumped by each open, so a late answer to an earlier one is dropped. */
   private ask = 0;
+  /** An island to look up as soon as the panel is connected: one whose attack is being answered (仕返し). */
+  private answering: string | null = null;
+  /** The islands the server offers as neighbours: a tap looks one up, as typing its code does. */
+  private neighbours: Neighbour[] = cachedNeighbours();
 
   constructor(
     private get: () => Profile,
@@ -80,13 +86,28 @@ export class ExpeditionPanel {
       return this.paint();
     }
     this.conn = { t: "ok", code: r.body.code, view: r.body.view };
+    if (this.answering) {
+      this.answering = null;
+      void this.look();
+    }
     const { profile, news } = takeSync(this.get(), r.body);
     if (profile !== this.get()) this.put(profile);
     if (news.length) this.news(news);
     this.paint();
+    const near = await readNeighbours();
+    if (ask === this.ask) {
+      this.neighbours = near;
+      this.paint();
+    }
     await flushRecalls(this.get, this.put);
     await this.refresh(r.body.code, ask);
     if (ask === this.ask) this.paint();
+  }
+
+  /** Answers an attack from island `code`: the panel, opened next, looks it up as if its code were typed. */
+  revenge(code: string) {
+    this.answering = code;
+    this.typed = code;
   }
 
   /** The panel closed: answers to its open still in flight are dropped (a raid may start meanwhile; the next open reads the island again). */
@@ -116,6 +137,10 @@ export class ExpeditionPanel {
     if (act === "exp-retry") void this.connect();
     else if (act === "exp-copy") void this.copy();
     else if (act === "exp-look") void this.look();
+    else if (act === "exp-island") {
+      this.typed = arg;
+      void this.look();
+    }
     else if (act === "exp-node") {
       this.pick = this.pick === arg ? null : arg;
       this.paint();
@@ -255,7 +280,21 @@ export class ExpeditionPanel {
   /** The form that sends one: the other island's code, its nodes that take an expedition, and the button. */
   private sendForm(p: Profile): string {
     const dis = this.busy ? " disabled" : "";
-    const form = `<div class="exp-send"><input id="exp-code" type="text" inputmode="text" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="相手の島の番号" value="${esc(this.typed)}"><button type="button" data-act="exp-look"${dis}>見る</button></div>`;
+    // The neighbours first: whose island, how much of it its owner holds; a tap opens it below. One
+    // whose sea route is shut (the node facing it not held) shows that node, padlocked.
+    const mine = new Set<string>(playerNodes(p));
+    const near = this.neighbours.length
+      ? `<div class="exp-near">${this.neighbours
+          .map((n) => {
+            const k = n.slot;
+            const open = routeOpen(k, (id) => mine.has(id));
+            const held = `<span class="exp-held" style="--w:${Math.round((100 * n.held) / Math.max(1, n.total))}%"></span>`;
+            const foot = open ? `<small>${coreIcon(SIDE.rival)}${n.held}/${n.total}</small>` : `<small class="shut">${lockIcon()}${esc(nodeName(NEIGHBOUR_SLOTS[k].shore))}</small>`;
+            return `<button type="button" class="${this.target?.code === n.code ? "on" : ""}${open ? "" : " shut"}" data-act="exp-island" data-arg="${esc(n.code)}"${open ? dis : " disabled"}><b>${esc(n.name)}</b>${held}${foot}</button>`;
+          })
+          .join("")}</div>`
+      : "";
+    const form = near + `<div class="exp-send"><input id="exp-code" type="text" inputmode="text" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="相手の島の番号" value="${esc(this.typed)}"><button type="button" data-act="exp-look"${dis}>見る</button></div>`;
     const t = this.target;
     let pick = "";
     if (t) {

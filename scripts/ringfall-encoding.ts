@@ -35,6 +35,9 @@ class Statement implements DbStatement {
     return this.runNow();
   }
   runNow() { return this.sqlite.prepare(this.sql).run(...this.args); }
+  async all<T = Record<string, unknown>>() {
+    return { results: this.sqlite.prepare(this.sql).all(...this.args) as T[] };
+  }
 }
 
 const sqlite = new DatabaseSync(":memory:");

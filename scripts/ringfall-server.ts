@@ -26,6 +26,7 @@ import { holds } from "../src/ringfall/meta/island";
 import { newProfile, settle, type Profile } from "../src/ringfall/meta/profile";
 import { islandPost } from "../src/ringfall/meta/summary";
 import { defaultName, loadIdentity, parseIdentity } from "../src/ringfall/meta/identity";
+import { parseNeighbours } from "../src/ringfall/meta/neighbours";
 
 /** D1's statement over node:sqlite: bind, then run / first / all. */
 class Statement implements DbStatement {
@@ -114,6 +115,32 @@ async function answer(env: ApiEnv, req: Request, now?: number) {
   const a = await answer({ DB: bare }, post(valid("ねこ", 3)));
   console.log(`no tables: /api/island ${a.status} ${JSON.stringify(a.body)}`);
   check(a.status === 503 && (a.body as { error?: string }).error === "db-error", "no tables: /api/island did not answer 503 db-error");
+}
+
+// --- the Worker brings a database up itself (worker/schema.ts): every migration on a bare one, the
+// rest on one whose first tables were made by hand at the SQL console (as Preview's and production's
+// were), each recorded once; and its list is the migrations folder's
+{
+  const dir = new URL("../migrations/", import.meta.url);
+  const files = readdirSync(dir).filter((f) => f.endsWith(".sql")).sort();
+  const MIGRATIONS = files.map((name) => ({ name, sql: readFileSync(new URL(name, dir), "utf8") }));
+  const listed = [...readFileSync(new URL("../worker/migrations.ts", import.meta.url), "utf8").matchAll(/name: "([^"]+\.sql)"/g)].map((m) => m[1]);
+  check(listed.join() === files.join(), `migrations: worker/migrations.ts lists ${listed.join()}, the folder holds ${files.join()}`);
+  const tables = (db: DatabaseSync) => (db.prepare("SELECT name FROM sqlite_schema WHERE type = 'table' ORDER BY name").all() as { name: string }[]).map((r) => r.name).join();
+  const recorded = (db: DatabaseSync) => (db.prepare("SELECT name FROM schema_migrations ORDER BY name").all() as { name: string }[]).map((r) => r.name).join();
+  const bare = new DatabaseSync(":memory:");
+  const a = await answer({ DB: new SqliteD1(bare), MIGRATIONS }, post(valid("ねこ", 3)));
+  console.log(`migrations: a bare database -> ${a.status}; tables ${tables(bare)}; recorded ${recorded(bare)}`);
+  check(a.status === 200, `migrations: a bare database answered ${a.status}, not 200`);
+  check(recorded(bare) === files.join(), "migrations: a bare database did not record every migration");
+  const byHand = new DatabaseSync(":memory:");
+  byHand.exec(readFileSync(new URL(files[0], dir), "utf8").replaceAll("IF NOT EXISTS ", ""));
+  const b = await answer({ DB: new SqliteD1(byHand), MIGRATIONS }, post(valid("ねこ", 3)));
+  console.log(`migrations: ${files[0]} made by hand -> ${b.status}; tables ${tables(byHand)}; recorded ${recorded(byHand)}`);
+  check(b.status === 200 && tables(byHand).includes("islands") && recorded(byHand) === files.join(), "migrations: a database whose first tables were made by hand was not brought up to the rest");
+  const again = new SqliteD1(byHand);
+  const c = await answer({ DB: again, MIGRATIONS }, post(valid("ねこ", 4)));
+  check(c.status === 200 && recorded(byHand) === files.join(), "migrations: a second isolate applying them again failed or recorded twice");
 }
 
 // --- a database with the migrations applied in order
@@ -240,6 +267,57 @@ const count = (table: string) => Number((sqlite.prepare(`SELECT COUNT(*) AS n FR
   console.log(`refused: rows ${before} -> ${after}; streamed chunks pulled ${pulled} of 8`);
   check(pulled < 8, "refused: the streamed body was read past the cap");
   check(before === after, "refused: a refused post wrote rows");
+}
+
+// --- neighbours: islands whose owners played lately, nearest in nodes held, the same all week
+{
+  const DAY = 24 * 3600 * 1000;
+  const T = 1_800_000_000_000;
+  const ids = Array.from({ length: 9 }, (_, k) => `0f8fad5b-d9cb-469f-a165-${String(700000000000 + k).padStart(12, "0")}`);
+  const held = [5, 4, 6, 5, 9, 1, 5, 5, 6];
+  for (const [k, id] of ids.entries()) {
+    const at = k === 8 ? T - 20 * DAY : T - DAY;
+    const r = await answer(env, post({ player: { id, name: `島${k}` }, island: { day: 3, held: held[k], enemy: 21 - held[k], rival: 0, factory: 1, strength: 1 } }), at);
+    check(r.status === 200, `neighbours: the summary of island ${k} was not taken`);
+    sqlite.prepare("INSERT INTO islands (code, player_id, created_at) VALUES (?1, ?2, ?3)").run(`AB${String(k).padStart(4, "0")}`, id, at);
+  }
+  // One neighbour's owner has played a raid since: it shows as their last.
+  sqlite.prepare("INSERT INTO raids (player_id, day, outcome, captured, at) VALUES (?1, 3, 'extracted', 2, ?2)").run(ids[3], T - 3600_000);
+  const ask = (id: string | null, now = T, method = "GET") => answer(env, new Request(BASE + "/api/neighbours", { method, headers: id ? { authorization: `Bearer ${id}` } : {} }), now);
+  const a = await ask(ids[0]);
+  const list = (a.body as { neighbours?: { code: string; name: string; held: number; total: number }[] }).neighbours ?? [];
+  console.log(`neighbours: ${a.status} ${list.map((n) => `${n.code} ${n.name} ${n.held}/${n.total}`).join(", ")}`);
+  check(a.status === 200 && list.length === 4, `neighbours: the owner was offered ${list.length}, not 4`);
+  check(!list.some((n) => n.code === "AB0000"), "neighbours: the owner's own island was offered");
+  check(!list.some((n) => n.code === "AB0008"), "neighbours: an island not played for 20 days was offered");
+  check(!list.some((n) => n.code === "AB0004" || n.code === "AB0005"), "neighbours: an island far from the owner's in nodes held was offered over nearer ones");
+  check(list.every((n) => n.total === 21), "neighbours: an island's node count is not its summary's");
+  check(parseNeighbours(a.body)?.length === 4, "neighbours: the browser does not read the server's answer back");
+  // Each neighbour carries what its owner did last: the island summaries were posted without a raid, so none yet.
+  const lasts = parseNeighbours(a.body)!.map((n) => [n.code, n.last] as const);
+  console.log(`neighbours: last raids ${JSON.stringify(lasts)}`);
+  check(lasts.every(([c, l]) => (c === "AB0003" ? l?.captured === 2 && l.home : l === undefined)), "neighbours: a neighbour's last raid is not the one its owner played");
+  check(parseNeighbours({ neighbours: [{ code: "bad", name: "x", held: 1, total: 21, day: 1 }] })?.length === 0, "neighbours: the browser took a neighbour with a bad code");
+  const again = await ask(ids[0], T + DAY);
+  check(JSON.stringify(again.body) === JSON.stringify(a.body), "neighbours: the list changed within the week");
+  check(list.every((n, k) => (n as { slot?: number }).slot === k), "neighbours: the picks do not carry their slots at sea in order");
+  // A picked neighbour takes many nodes mid-week: the week's picks and their slots stay as drawn.
+  const moved = list[1].code;
+  const owner = ids[Number(moved.slice(2))];
+  await answer(env, post({ player: { id: owner, name: "島" }, island: { day: 4, held: 18, enemy: 3, rival: 0, factory: 1, strength: 2 } }), T + DAY);
+  const later = await ask(ids[0], T + 2 * DAY);
+  const slots = (b: unknown) => ((b as { neighbours?: { code: string; slot: number }[] }).neighbours ?? []).map((n) => `${n.slot}:${n.code}`).join();
+  console.log(`neighbours: after ${moved} took nodes: ${slots(later.body)}`);
+  check(slots(later.body) === slots(a.body), "neighbours: a neighbour taking nodes mid-week changed the week's picks or their slots");
+  check(((later.body as { neighbours?: { code: string; held: number }[] }).neighbours ?? []).find((n) => n.code === moved)?.held === 18, "neighbours: a kept neighbour's nodes are not read live");
+  const none = await ask("0f8fad5b-d9cb-469f-a165-999999999999");
+  check(none.status === 200 && ((none.body as { neighbours?: unknown[] }).neighbours ?? [1]).length === 0, "neighbours: a player with no island was offered some");
+  const anon = await ask(null);
+  check(anon.status === 401, `neighbours: a request without the owner's id answered ${anon.status}, not 401`);
+  const put = await ask(ids[0], T, "POST");
+  check(put.status === 405, `neighbours: a POST answered ${put.status}, not 405`);
+  const bare = await answer({}, new Request(BASE + "/api/neighbours", { headers: { authorization: `Bearer ${ids[0]}` } }));
+  check(bare.status === 202, `neighbours: no database answered ${bare.status}, not 202`);
 }
 
 if (errors.length) {

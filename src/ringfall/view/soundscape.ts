@@ -1,7 +1,7 @@
 import { Vector3, type Camera } from "three";
 import { ENEMIES, PLAYER } from "../sim/config";
 import { ceilingAt, los } from "../sim/geom";
-import { EXTRACTS, type ExtractId } from "../sim/map";
+import { EXTRACTS, regionHere, type ExtractId, type RegionId } from "../sim/map";
 import { callLeft, type GameEvent, type State } from "../sim/state";
 import { terrainHeight } from "../sim/terrain";
 import { getMixer, loop, placeLoop, type Loop, type P3 } from "./audio";
@@ -54,6 +54,8 @@ export class Soundscape {
   private breeze: Loop | null = null;
   private gust: Loop | null = null;
   private rush: Loop | null = null;
+  /** Each region's own bed under the wind: the harbor's surf, the city's hum, the plateau's high wind. */
+  private beds: Partial<Record<RegionId, Loop | null>> = {};
   /** Engines of the extraction craft that have been called: the dropship, the boat. */
   private crafts = new Map<ExtractId, { loop: Loop; y: number }>();
   /** The engines of the enemy's dropships and boats landing squads in the battle, by landing; and the landings heard touching down. */
@@ -91,6 +93,7 @@ export class Soundscape {
 
     const play = running && s.phase !== "done";
     this.wind(s, ear, play);
+    this.regionBed(ear, play);
     this.craft(s, play, ear);
     this.landings(s, play, ear);
     if (play && s.phase === "play") {
@@ -122,6 +125,27 @@ export class Soundscape {
     const level = s.player.leap ? 0.16 + 0.12 * fall : Math.min(0.24, 0.04 + 0.2 * fall);
     this.rush?.gain.gain.setTargetAtTime(falling ? level : 0, t, 0.12);
     this.rush?.filter.frequency.setTargetAtTime(500 + 1600 * fall, t, 0.15);
+  }
+
+  /** The bed of the region the listener is in, faded in over a couple of seconds; the others out. */
+  private regionBed(ear: P3, play: boolean) {
+    const m = getMixer()!;
+    const t = m.ctx.currentTime;
+    const here = play ? regionHere(ear).id : null;
+    const open = 1 - m.room * 0.7;
+    this.beds.harbor ??= loop({ bus: "amb", brown: true, type: "lowpass", freq: 520, q: 0.4 });
+    this.beds.city ??= loop({ bus: "amb", type: "bandpass", freq: 130, q: 1.2, hum: 50 });
+    this.beds.launch ??= loop({ bus: "amb", type: "bandpass", freq: 1900, q: 3 });
+    // The surf swells and draws back; the city's hum is steady; the plateau's wind whistles in gusts.
+    const surf = 0.5 + 0.5 * Math.sin(this.time * 0.45);
+    const gust = Math.max(0, Math.sin(this.time * 0.23) * Math.sin(this.time * 0.07 + 2));
+    const want: Record<"harbor" | "city" | "launch", number> = {
+      harbor: here === "harbor" ? (0.05 + 0.07 * surf) * open : 0,
+      city: here === "city" ? 0.035 * open : 0,
+      launch: here === "launch" ? (0.015 + 0.05 * gust) * open : 0,
+    };
+    for (const r of ["harbor", "city", "launch"] as const) this.beds[r]?.gain.gain.setTargetAtTime(want[r], t, 0.8);
+    this.beds.launch?.filter.frequency.setTargetAtTime(1500 + 900 * gust, t, 0.6);
   }
 
   /** Where a called craft is: the dropship drops onto its pad, the boat comes up the channel to the quay. */
@@ -270,8 +294,20 @@ export class Soundscape {
       }
     }
     const r = Math.random();
-    if (cliff && r < 0.45) sfx.gull(cliff);
-    else if (r < 0.75) sfx.creak(far(35 + Math.random() * 30, 2));
+    // Each region keeps its own distant sounds; the gulls keep to the cliffs anywhere.
+    const region = regionHere(ear).id;
+    if (cliff && r < (region === "harbor" ? 0.35 : 0.45) && region !== "city") sfx.gull(cliff);
+    else if (region === "harbor") {
+      if (r < 0.7) sfx.buoy(far(120 + Math.random() * 80, 0));
+      else sfx.groan(far(50 + Math.random() * 40, 2));
+    } else if (region === "city") {
+      if (r < 0.35) sfx.siren(far(200 + Math.random() * 150, 20));
+      else if (r < 0.7) sfx.zap(far(25 + Math.random() * 20, 4));
+      else sfx.machinery(far(60 + Math.random() * 40, 0));
+    } else if (region === "launch") {
+      if (r < 0.55) sfx.ping(far(60 + Math.random() * 40, 14));
+      else sfx.harp(far(70 + Math.random() * 40, 30));
+    } else if (r < 0.75) sfx.creak(far(35 + Math.random() * 30, 2));
     else sfx.machinery(far(80 + Math.random() * 40, 0));
   }
 

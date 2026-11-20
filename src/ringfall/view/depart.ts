@@ -1,4 +1,5 @@
 import { sfx } from "./sfx";
+import { cachedNeighbours } from "../island-net";
 import { WORLD } from "../sim/config";
 import { POIS, REGIONS, regionOf, type RegionId } from "../sim/map";
 import type { Hub, LockedPick, StartPoint } from "./hub";
@@ -96,6 +97,7 @@ export class DepartPicker {
     const p = hub.profile;
     this.map.known = p.entries;
     this.map.contract = null;
+    this.map.neighbours = cachedNeighbours();
     this.map.draw(islandScene(p));
     const pts = hub.startPoints();
     const hint = hub.departHint();
