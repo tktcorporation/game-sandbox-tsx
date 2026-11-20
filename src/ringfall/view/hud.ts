@@ -327,8 +327,8 @@ export class Hud {
       case "allyRescue":
         this.banner(`${ALLY.name}に起こされた`, "", true, 1.8);
         break;
+      // Down: the downed card under the crosshair says it, with its bar; no banner over it.
       case "awaitAlly":
-        this.banner("ダウン");
         break;
       case "hurt": {
         this.hurtT = 0.5;
@@ -386,7 +386,6 @@ export class Hud {
         this.banner("補給ポッド", "", true);
         break;
       case "down":
-        if (!s.player.awaitAlly) this.banner("ダウン");
         break;
       case "wipe":
         this.banner("行方不明");
@@ -1390,7 +1389,7 @@ export class Hud {
       events +
       contract +
       story +
-      (quests.length ? `<h3>済んだ依頼</h3><p>${quests.map((q) => `<span>${q.title}（${q.reward.cash} クレジット${rewardList(q).map(([i, n]) => `・${itemName(i)}${n > 1 ? ` × ${n}` : ""}`).join("")}）</span>`).join("")}</p>` : "") +
+      (quests.length ? `<h3>済んだ依頼</h3><p>${quests.map((q) => `<span>${q.title}<b>${q.reward.cash} クレジット${rewardList(q).map(([i, n]) => `・${itemName(i)}${n > 1 ? ` × ${n}` : ""}`).join("")}</b></span>`).join("")}</p>` : "") +
       (settled
         ? (sent.length ? `<h3 class="mark">${depotIcon()}</h3><p>${count(sent)}</p>` : "") +
           // A wipe's pouch is on the haul's line above, beside what was lost.

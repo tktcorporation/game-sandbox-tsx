@@ -273,11 +273,19 @@ const SHEETS: Sheet[] = [
     title: "Loot on the ground from 3 m",
     rows: () => {
       const near = (label: string, make: () => THREE.Object3D) => worldCell(label, make, { dist: 3, yaw: 0.5, w: 240, h: 200 });
+      const far = (label: string, make: () => THREE.Object3D) => worldCell(`${label}, 12 m`, make, { dist: 12, yaw: 0.5, w: 30, h: 40, zoom: 4, pad: 8 });
       const keys = <T extends object>(o: T) => Object.keys(o) as (keyof T & string)[];
       return [
         GUNS.map((w, i) => worldCell(`weapon ${w}`, () => buildLootItem("weapon", (i % 4) as Rarity, w), { dist: 3, yaw: 0.5, w: 420, h: 200 })),
         [...(["armor", "key", "record", "mod", "flare", "shard"] as const).map((k) => near(k, () => buildLootItem(k, 1))), ...keys(HEALS).map((h) => near(h, () => buildLootItem("heal", 0, undefined, h)))],
         [...keys(VALUABLES).map((v) => near(v, () => buildLootItem("valuable", 3, undefined, undefined, v))), ...keys(TOOLS).map((t) => near(t, () => buildLootItem("tool", 0, undefined, undefined, undefined, t)))],
+        // The same at 12 m, drawn at the game's pixels and enlarged 4 times: what is told apart from across a room.
+        [
+          ...(["armor", "key", "record", "mod", "flare"] as const).map((k) => far(k, () => buildLootItem(k, 1))),
+          ...keys(HEALS).map((h) => far(h, () => buildLootItem("heal", 1, undefined, h))),
+          ...keys(VALUABLES).map((v) => far(v, () => buildLootItem("valuable", VALUABLES[v].rarity, undefined, undefined, v))),
+          ...keys(TOOLS).map((t) => far(t, () => buildLootItem("tool", 3, undefined, undefined, undefined, t))),
+        ],
       ];
     },
   },

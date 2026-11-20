@@ -101,7 +101,7 @@
 :root {
   --plate: rgb(var(--ink-rgb) / 0.76);
   --plate-strong: rgb(var(--ink-rgb) / 0.85);
-  --muted: rgb(var(--white-rgb) / 0.7);
+  --muted: rgb(var(--white-rgb) / 0.82);
   --num: "Saira Condensed", "M PLUS 1p", system-ui, sans-serif;
   --jp: "M PLUS 1p", system-ui, sans-serif;
 }
@@ -552,7 +552,7 @@ body.touch #obj-raid .why {
 
 #obj-stealth {
   grid-column: 1 / -1;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 800;
   color: rgb(var(--white-rgb) / 0.9);
 }
@@ -1124,7 +1124,9 @@ body.touch #obj-raid .why {
   white-space: nowrap;
 }
 #mate.down #mate-state {
-  color: var(--danger);
+  padding: 0 4px;
+  background: var(--blood);
+  color: var(--white);
   font-weight: 800;
 }
 .mate-bars {
@@ -1197,9 +1199,14 @@ body.touch .mate-bars {
   font-family: var(--jp);
   font-weight: 800;
 }
+#downed {
+  padding: 6px 18px 10px;
+  background: var(--plate-strong);
+  border-bottom: 4px solid var(--danger);
+}
 #downed b {
   font-size: 30px;
-  color: var(--danger);
+  color: var(--white);
 }
 #downed i,
 #battery i {
@@ -2515,6 +2522,18 @@ body.touch #obj-stealth {
   order: 2;
   font-size: 11px;
 }
+/* At 11 px the engaged red is not large text: the lighter red reads on the card. */
+body.touch #obj-stealth.engaged {
+  color: var(--foe-soft);
+}
+/* A thumb's reach on the settings' sliders and the title's link. */
+body.touch .settings input[type="range"] {
+  height: 40px;
+}
+body.touch .note a {
+  display: inline-block;
+  padding: 11px 0;
+}
 /*
  * On a phone the contract shares the second row with the bag and the clock, shortened to its
  * progress, so the card still ends above the vitals; the story record takes that place only
@@ -3463,6 +3482,11 @@ body.touch #camp-prompt {
 }
 #depart-hint[hidden] {
   display: none;
+}
+/* A refused confirm reads its reason on one line: the reason is a name and two numbers. */
+#depart-go:disabled {
+  white-space: nowrap;
+  font-size: 16px;
 }
 #depart-go .ico {
   width: 18px;
@@ -4496,7 +4520,7 @@ body.touch .bag-card:nth-last-child(n + 3) {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  opacity: 0.5;
+  opacity: 0.75;
 }
 .delta .to {
   width: 0;
@@ -4643,7 +4667,7 @@ body.touch .bag-card:nth-last-child(n + 3) {
   color: var(--hot);
 }
 .ladder li.later {
-  opacity: 0.7;
+  opacity: 0.85;
 }
 /* Only the next level's gain is lit in the ladder: the others are history or later. */
 .ladder li:not(.next) b.n.gain,
@@ -5154,4 +5178,17 @@ body:has(#depart:not([hidden])) #touch {
   margin-left: 5px;
   font-family: var(--num);
   color: var(--white);
+}
+
+/* How a shut start opens: a line of marks, an arrow between each step. */
+.how {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 4px;
+}
+.how .to {
+  font-style: normal;
+  opacity: 0.6;
+  margin: 0 2px;
 }
