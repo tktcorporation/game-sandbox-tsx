@@ -51,11 +51,21 @@ export function parseNeighbours(raw: unknown): Neighbour[] | null {
     if (!isObj(n) || !isIslandCode(n.code) || typeof n.name !== "string" || !count(n.total, 64) || !count(n.held, n.total as number) || !count(n.day, 100000)) continue;
     const name = n.name.trim().slice(0, 24);
     if (!name) continue;
-    const last = Number.isFinite(n.seen) && (n.seen as number) > 0 && count(n.captured, 64) ? { at: n.seen as number, captured: n.captured, home: n.outcome === "extracted" } : undefined;
+    // The server names the last raid by its fields (seen, captured, outcome); the browser's kept copy as `last`.
+    const kept = isObj(n.last) && Number.isFinite(n.last.at) && count(n.last.captured, 64) && typeof n.last.home === "boolean" ? { at: n.last.at as number, captured: n.last.captured, home: n.last.home } : undefined;
+    const last = kept ?? (Number.isFinite(n.seen) && (n.seen as number) > 0 && count(n.captured, 64) ? { at: n.seen as number, captured: n.captured, home: n.outcome === "extracted" } : undefined);
     // An answer from before slots were kept places each in the slot of its place in the list.
     const slot = Number.isInteger(n.slot) && (n.slot as number) >= 0 && (n.slot as number) < NEIGHBOUR_MAX ? (n.slot as number) : k;
     if (out.some((o) => o.slot === slot)) continue;
     out.push({ code: n.code, name, held: n.held, total: n.total, day: n.day, slot, ...(last ? { last } : {}) });
   }
   return out;
+}
+
+/** How long ago, in its largest unit and a letter: 5m, 3h, 2d (the marks beside a neighbour). */
+export function ago(at: number, now: number): string {
+  const m = Math.max(0, Math.floor((now - at) / 60000));
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  return h < 24 ? `${h}h` : `${Math.floor(h / 24)}d`;
 }

@@ -592,7 +592,8 @@ export function islandOp(state: IslandState | null, op: IslandOp, now: number): 
   }
   if (op.t === "recall") return recall(s, op.from, op.id, now) ? done(200, { ok: true }, true) : done(404, fail("no-expedition"));
   if (op.t === "view") return done(200, publicView(s, now));
-  if (op.t === "whois") return s.owner.id === op.player ? done(200, { ok: true, factory: s.factory, name: s.owner.name }) : done(403, fail("not-owner"));
+  // Who the sender is, their factory, and the nodes they hold (a neighbour's sea route opens from one of them).
+  if (op.t === "whois") return s.owner.id === op.player ? done(200, { ok: true, factory: s.factory, name: s.owner.name, held: NODE_IDS.filter((_, i) => s.holds[i] === "freed") }) : done(403, fail("not-owner"));
   if (op.t === "log") {
     if (s.owner.id !== op.player) return done(403, fail("not-owner"));
     const entries = s.log.filter((e) => e.seq > op.after);

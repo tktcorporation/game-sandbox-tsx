@@ -6,17 +6,24 @@
  * With no server it says so in one line and nothing else changes.
  */
 import { cachedNeighbours, flushRecalls, readNeighbours, readView, SEND_TIMEOUT_MS, sendExpedition, syncOwn, takeReport, takeSync } from "../island-net";
-import { NEIGHBOUR_SLOTS, routeOpen, type Neighbour } from "../meta/neighbours";
+import { ago, NEIGHBOUR_SLOTS, routeOpen, type Neighbour } from "../meta/neighbours";
 import { playerNodes } from "../meta/island";
 import { alive, numbered, answerSend, recallAll, sentKey, canSend, dropStale, factoryAhead, factorySquads, homeSquads, refreshOutgoing, sendingEntry, sendKinds, squadsAway, STATE_NAME, type IslandLogEntry, type IslandView } from "../meta/expeditions";
 import { parseIslandCode } from "../meta/island-code";
 import { errorText } from "../meta/island-errors";
 import type { Profile } from "../meta/profile";
 import { NODES, nodeIndex, type NodeId } from "../sim/map";
-import { coreIcon, flagIcon, lockIcon, robotIcon, SIDE } from "./icons";
+import { checkIcon, clockIcon, coreIcon, crossIcon, flagIcon, lockIcon, robotIcon, SIDE } from "./icons";
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
 const nodeName = (id: string) => NODES[nodeIndex(id)]?.name ?? id;
+
+/** What a neighbour's owner did last, as marks: how long ago, and that raid's cores taken (✓ home, ✗ wiped); nothing before a raid is known. */
+export function lastMarks(n: Neighbour, now: number): string {
+  if (!n.last) return "";
+  const cores = n.last.captured ? `<span class="cores">${coreIcon(SIDE.rival)}+${n.last.captured}</span>` : "";
+  return `<span class="last">${clockIcon()}${ago(n.last.at, now)}${cores}${n.last.home ? checkIcon() : crossIcon()}</span>`;
+}
 
 /** Where the section stands with the server: asking, no server, a failure, or connected. */
 type Conn = { t: "wait" } | { t: "none" } | { t: "error"; error: string } | { t: "ok"; code: string; view: IslandView | null };
@@ -289,7 +296,7 @@ export class ExpeditionPanel {
             const k = n.slot;
             const open = routeOpen(k, (id) => mine.has(id));
             const held = `<span class="exp-held" style="--w:${Math.round((100 * n.held) / Math.max(1, n.total))}%"></span>`;
-            const foot = open ? `<small>${coreIcon(SIDE.rival)}${n.held}/${n.total}</small>` : `<small class="shut">${lockIcon()}${esc(nodeName(NEIGHBOUR_SLOTS[k].shore))}</small>`;
+            const foot = open ? `<small>${coreIcon(SIDE.rival)}${n.held}/${n.total}${lastMarks(n, Date.now())}</small>` : `<small class="shut">${lockIcon()}${esc(nodeName(NEIGHBOUR_SLOTS[k].shore))}</small>`;
             return `<button type="button" class="${this.target?.code === n.code ? "on" : ""}${open ? "" : " shut"}" data-act="exp-island" data-arg="${esc(n.code)}"${open ? dis : " disabled"}><b>${esc(n.name)}</b>${held}${foot}</button>`;
           })
           .join("")}</div>`

@@ -87,6 +87,8 @@ export const UI = {
   r1: "#45a6ff",
   r2: "#b65cff",
   r3: "#ffc93a",
+  /** The epic purple in a line of small text: `r2` reads too dark on a plate at 12 to 14 px. */
+  r2Text: "#c993ff",
   /** The pouch: what comes home even from a wipe. */
   pouch: "#e8b07a",
 
@@ -107,3 +109,6 @@ export function alpha(hex: string, a: number): string {
 
 /** Loot's colours by rarity. */
 export const RARITY_UI = [UI.r0, UI.r1, UI.r2, UI.r3] as const;
+
+/** A rarity's colour for a name in small text: the epic's lighter purple, the others as they are. */
+export const rarityText = (css: string): string => (css.toLowerCase() === UI.r2 ? UI.r2Text : css);

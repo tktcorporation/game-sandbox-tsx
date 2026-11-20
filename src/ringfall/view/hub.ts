@@ -14,12 +14,12 @@ import { departDepots, eventName, finaleOpen, frontIncome, islandHolds, playerNo
 import { eventRow } from "./events";
 import { rivalOf } from "../sim/holds";
 import { HOLD_CSS, IslandMap, islandScene, RIVAL_CSS, TITAN_CSS } from "./map";
-import { ExpeditionPanel } from "./expeditions";
+import { ExpeditionPanel, lastMarks } from "./expeditions";
 import { answerable, incomingLine, LOG_WORD, logLine, type Incoming, type IslandLogEntry } from "../meta/expeditions";
 import { enemyNodes, frontNodes, ownNodes } from "../sim/front";
 import { nodeRow } from "./row";
 import { sfx } from "./sfx";
-import { UI } from "./palette";
+import { UI, rarityText } from "./palette";
 
 const RARITY_CSS = ["var(--r0)", "var(--r1)", "var(--r2)", "var(--r3)"];
 
@@ -111,6 +111,10 @@ function shelfTiers(p: Profile): string {
 
 /** An item's colour: its rarity's, gold for a key or a tool, white for a heal. */
 export const itemColor = (i: Item | RewardItem) =>
+  rarityText(itemShade(i));
+
+/** An item's rarity colour as it stands (the epic's own purple); `itemColor()` is it for a name in text. */
+const itemShade = (i: Item | RewardItem) =>
   i.t === "weapon" ? RARITY_CSS[i.rarity] : i.t === "armor" ? RARITY_CSS[i.tier] : i.t === "valuable" ? RARITY_CSS[VALUABLES[i.kind].rarity] : i.t === "key" || i.t === "tool" ? RARITY_CSS[3] : "var(--white)";
 
 /** Weapons, armour and keys are listed one by one; heals and valuables are counted. */
@@ -1041,6 +1045,7 @@ export class Hub {
    */
   private islandPanel(): string {
     const p = this.profile;
+    const near = cachedNeighbours();
     const taken = takenContract(p);
     const holds = islandHolds(p);
     const front = frontNodes(holds);
@@ -1058,6 +1063,7 @@ export class Hub {
       // A quiet day and a quiet tomorrow say nothing.
       (p.events[0] || p.events[1] ? `<ul class="events"><li><small>今日</small>${eventRow(p.events[0])}</li><li><small>明日</small>${eventRow(p.events[1])}</li></ul>` : "") +
       `<ul class="hold-key">${key}</ul>` +
+      (near.length ? `<small>お隣</small><ul class="island-news near">${near.map((n) => `<li><b class="who">${esc(n.name)}</b><span class="held">${coreIcon(SIDE.rival)}${n.held}/${n.total}</span>${lastMarks(n, Date.now())}</li>`).join("")}</ul>` : "") +
       (p.incoming.length ? `<small>来る遠征</small><ul class="island-news incoming">${p.incoming.map((e) => `<li title="${esc(incomingLine(e, Date.now()))}">${incomingMarks(e, Date.now())}</li>`).join("")}</ul>` : "") +
       (this.news.length ? `<small>島の知らせ</small><ul class="island-news">${this.news.map((n) => this.newsMarks(n)).join("")}</ul>` : "") +
       (taken ? `<small>依頼　${esc(regionOf(contractRegion(taken)).name)}<i class="taken-line"></i></small><p class="hub-taken"><em>${CONTRACT_NAME[taken.t]}</em>${contractMarks(taken)}</p>` : "") +

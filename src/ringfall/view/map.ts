@@ -937,7 +937,8 @@ export class IslandMap {
     });
     // The neighbours: other players' islands out at sea, each at a slot of its own, in their green,
     // with whose it is and how many of its nodes its owner holds.
-    for (const n of plain ? [] : this.neighbours) {
+    // Drawn on any map handed them (the camp's two, the raid's), the departure's plain one included.
+    for (const n of this.neighbours) {
       const k = n.slot;
       const slot = NEIGHBOUR_SLOTS[k];
       if (!slot) continue;

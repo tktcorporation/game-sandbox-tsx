@@ -30,7 +30,9 @@
  * Run alone: `npx tsx scripts/ringfall-expeditions.ts`; it ends with "expeditions ok".
  */
 import { readFileSync, writeFileSync } from "node:fs";
-import { CLAIM_TRIES, handleApi, type ApiEnv, type IslandNamespace } from "../worker/api";
+import { DatabaseSync } from "node:sqlite";
+import { CLAIM_TRIES, handleApi, type ApiEnv, type Db, type DbStatement, type IslandNamespace } from "../worker/api";
+import { NEIGHBOUR_SLOTS } from "../src/ringfall/meta/neighbours";
 import { advance, EXPEDITION, islandOp, nextAlarm, NODE_IDS, type IslandOp, type IslandState } from "../worker/island";
 import { CONQUEST, FACTORY, FACTORY_TOP } from "../src/ringfall/sim/config";
 import { isIslandCode, newIslandCode } from "../src/ringfall/meta/island-code";
@@ -167,6 +169,27 @@ const HOUR_ON = (EXPEDITION.notice + 3600) * 1000;
     console.log(`refused: ${what} -> ${r.status} ${err(r)}`);
     check(r.status === status && err(r) === error, `refused: ${what} answered ${r.status} ${err(r)}, not ${status} ${error}`);
   }
+  // A neighbour of the sender's this week is reached only by its sea route: B's week names A's island
+  // in the slot facing the observatory (NEIGHBOUR_SLOTS[0]), which B does not hold, so the server
+  // refuses; with no pick (A named by its code) the same send goes through the rules above.
+  const sqlite = new DatabaseSync(":memory:");
+  sqlite.exec(readFileSync(new URL("../migrations/0002_islands.sql", import.meta.url), "utf8"));
+  sqlite.prepare("INSERT INTO neighbour_picks (player_id, week, slot, code) VALUES (?1, ?2, 0, ?3)").run(B.id, Math.floor(T1 / (7 * DAY)), A.code);
+  const db: Db = {
+    prepare: (sql) => {
+      let args: (string | number | null)[] = [];
+      const st: DbStatement = {
+        bind: (...v) => ((args = v as typeof args), st),
+        run: async () => sqlite.prepare(sql).run(...args),
+        all: async <R>() => ({ results: sqlite.prepare(sql).all(...args) as R[] }),
+      };
+      return st;
+    },
+    batch: async () => [],
+  };
+  const shut = await call("POST", `/api/islands/${A.code}/expeditions`, { from: B, target: "quarry", units: 7 }, T1, { ...env, DB: db });
+  console.log(`refused: to a neighbour whose sea route is shut -> ${shut.status} ${err(shut)}`);
+  check(shut.status === 403 && err(shut) === "route-shut" && NEIGHBOUR_SLOTS[0].shore === "station", `refused: to a neighbour whose sea route is shut answered ${shut.status} ${err(shut)}, not 403 route-shut`);
   check(islands.get(A.code)!.expeditions.length === 0, "refused: a refused expedition was kept");
 }
 

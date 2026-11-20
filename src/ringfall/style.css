@@ -88,6 +88,8 @@
   --r2-rgb: 182 92 255;
   --r3: #ffc93a;
   --r3-rgb: 255 201 58;
+  --r2-text: #c993ff;
+  --r2-text-rgb: 201 147 255;
   --pouch: #e8b07a;
   --pouch-rgb: 232 176 122;
   --debris: #e0a33a;
@@ -4340,7 +4342,7 @@ body.touch #obj-raid .short {
   align-items: center;
 }
 .bp-x.mod {
-  color: var(--r2);
+  color: var(--r2-text);
 }
 #bag-cards {
   position: absolute;
@@ -5007,6 +5009,26 @@ body.touch .bag-card:nth-last-child(n + 3) {
 }
 .island-news .who {
   color: var(--rival-light);
+}
+/* A neighbour on the map table: whose, how much they hold, and what they did last. */
+.island-news .held,
+.island-news .last,
+.exp-near .last {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--num);
+  font-size: 12px;
+  color: var(--muted);
+}
+.island-news .last .cores,
+.exp-near .last .cores {
+  display: inline-flex;
+  align-items: center;
+  color: var(--rival-light);
+}
+.exp-near .last {
+  margin-left: 6px;
 }
 .island-news em {
   font-style: normal;

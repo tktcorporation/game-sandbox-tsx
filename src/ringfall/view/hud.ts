@@ -1118,7 +1118,7 @@ export class Hud {
       const off = p.mods.length >= MOD.slots ? p.mods[0] : null;
       // One of a core's parts: what it does is on the prompt, since taking it gives up the others.
       const note = t.loot.choice !== undefined ? ` <small>${modGist(k)}</small>` : "";
-      return `${key("E")}<span class="r" style="color:${RARITY_CSS[2]}">${MODS[k].name}</span>${note}${off ? struck([MODS[off].name]) : ""}`;
+      return `${key("E")}<span class="r" style="color:${UI.r2Text}">${MODS[k].name}</span>${note}${off ? struck([MODS[off].name]) : ""}`;
     }
     if (t.kind === "ally") return s.ally.helped > 0 ? `${reviveIcon()}${ALLY.name} <b>${Math.floor((s.ally.helped / helpTime(p)) * 100)}%</b>` : `${key("E")}${reviveIcon()}${ALLY.name}`;
     if (t.kind === "bin") {
