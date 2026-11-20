@@ -108,9 +108,6 @@
  "m16-board-story": [
   "wordy #hub-side details.told p"
  ],
- "m2-fight": [
-  "contrast #obj-stealth"
- ],
  "m31-climb": [
   "ghost #mate b"
  ],
@@ -124,12 +121,6 @@
   "contrast li.later span span.gauge small",
   "contrast li.later span span.gauge.up small"
  ],
- "m7-depart-locked-city": [
-  "wordy #depart-hint span"
- ],
- "m7-depart-locked-entry": [
-  "wordy #depart-hint span"
- ],
  "m85-results-raid": [
   "offscreen #stats span",
   "offscreen #stats span b"
@@ -141,9 +132,6 @@
  "m87-results-night": [
   "offscreen #stats span",
   "offscreen #stats span b"
- ],
- "m9-results": [
-  "wordy #home p span"
  ],
  "rules-4-analyse": [
   "wordy #home div.analyse button.mod small"
