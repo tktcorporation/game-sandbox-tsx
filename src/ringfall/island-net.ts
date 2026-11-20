@@ -67,8 +67,12 @@ let claiming: Promise<Answer<Identity>> | null = null;
 /** Claims an island for this player (`POST /api/islands`) and keeps its code with the identity. */
 const NEIGHBOURS_KEY = "ringfall.neighbours.v1";
 
+/** The neighbours last read in this page, which outlast storage that is blocked or full. */
+let lastNeighbours: Neighbour[] | null = null;
+
 /** The neighbours last read from the server, kept in the browser (not the save: they are the server's, read again at each sync). */
 export function cachedNeighbours(): Neighbour[] {
+  if (lastNeighbours) return lastNeighbours;
   try {
     return parseNeighbours(JSON.parse(localStorage.getItem(NEIGHBOURS_KEY) ?? "null")) ?? [];
   } catch {
@@ -83,6 +87,7 @@ export async function readNeighbours(): Promise<Neighbour[]> {
   const r = await call("/api/neighbours", { headers: { authorization: `Bearer ${who.id}` } });
   const list = r.ok ? parseNeighbours(r.body) : null;
   if (!list) return cachedNeighbours();
+  lastNeighbours = list;
   try {
     localStorage.setItem(NEIGHBOURS_KEY, JSON.stringify({ neighbours: list }));
   } catch {
