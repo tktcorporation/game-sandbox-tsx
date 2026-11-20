@@ -68,6 +68,7 @@ const TIERS = [
   { name: "robot", lufs: [-44, -20], ids: /^(enemy-fire-.*|far-fire|telegraph|lunge|step-.*|swarm|collapse.*|stagger.*|ally-shot|wreck|care-drop)$/ },
   { name: "camp", lufs: [-46, -22], ids: /^(tab|click|buy|sell|deliver|deploy)$/ },
   { name: "air", lufs: [-48, -34], ids: /^(creak|machinery|gull)$/ },
+  { name: "music", lufs: [-40, -22], ids: /^music-/ },
   { name: "demo", lufs: null, ids: /^demo-/ },
 ];
 /** Which cue keeps under which, by how many LU: what is heard first stays loudest. */
@@ -79,6 +80,10 @@ const UNDER = [
   ["climb", "shot-pike", 3],
   ["click", "buy", 3],
   ["step-grunt", "enemy-fire-grunt", 6],
+  // The music sits under the guns, and out on the island under the robots too.
+  ["music-fight", "shot-pike", 3],
+  ["music-explore", "enemy-fire-grunt", 3],
+  ["music-explore", "music-fight", 3],
 ];
 const tierOf = (id) => TIERS.find((t) => t.ids.test(id));
 const report = await page.evaluate(() => window.ringfallSfxCheck());
