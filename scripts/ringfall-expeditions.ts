@@ -217,6 +217,31 @@ let cursor = 0;
   check(holdOf(A.code, "quarry") === `rival:${B.code}`, "capture: the owner's report erased a node given to another player");
 }
 
+// --- answering an attack: B's expedition took A's quarry, so A may answer B past a shut sea route
+{
+  const sqlite = new DatabaseSync(":memory:");
+  sqlite.exec(readFileSync(new URL("../migrations/0002_islands.sql", import.meta.url), "utf8"));
+  // A's week names B's island in the slot facing the observatory, which A does not hold.
+  sqlite.prepare("INSERT INTO neighbour_picks (player_id, week, slot, code) VALUES (?1, ?2, 0, ?3)").run(A.id, Math.floor(T1 / (7 * DAY)), B.code);
+  const db: Db = {
+    prepare: (sql) => {
+      let args: (string | number | null)[] = [];
+      const st: DbStatement = {
+        bind: (...v) => ((args = v as typeof args), st),
+        run: async () => sqlite.prepare(sql).run(...args),
+        all: async <R>() => ({ results: sqlite.prepare(sql).all(...args) as R[] }),
+      };
+      return st;
+    },
+    batch: async () => [],
+  };
+  // Sent at B's titan pad, the island itself refuses it (closed-node), so nothing is left on B's
+  // island; the answer it gives shows the route check let the attack's answer through.
+  const back = await call("POST", `/api/islands/${B.code}/expeditions`, { from: A, target: "pad", units: 2 }, T1 + 1000, { ...env, DB: db });
+  console.log(`answer: A at B, who took A's quarry, past a shut route -> ${back.status} ${err(back)}`);
+  check(back.status === 403 && err(back) === "closed-node", `answer: answering an attack past a shut route answered ${back.status} ${err(back)}, not the island's own closed-node`);
+}
+
 // --- the day's limit, the island's limit, and a lightly garrisoned node of the enemy's
 const T2 = T1 + 400_000;
 {

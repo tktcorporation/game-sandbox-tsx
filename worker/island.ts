@@ -57,6 +57,9 @@ export interface Owner {
 }
 
 /** An attacker as others see them: their island's code and name, never their id. */
+/** How long an attack may be answered (仕返し) by any way, the sea route shut or not. */
+export const ANSWER_MS = 7 * 24 * 3600 * 1000;
+
 export interface Attacker {
   code: string;
   name: string;
@@ -593,7 +596,14 @@ export function islandOp(state: IslandState | null, op: IslandOp, now: number): 
   if (op.t === "recall") return recall(s, op.from, op.id, now) ? done(200, { ok: true }, true) : done(404, fail("no-expedition"));
   if (op.t === "view") return done(200, publicView(s, now));
   // Who the sender is, their factory, and the nodes they hold (a neighbour's sea route opens from one of them).
-  if (op.t === "whois") return s.owner.id === op.player ? done(200, { ok: true, factory: s.factory, name: s.owner.name, held: NODE_IDS.filter((_, i) => s.holds[i] === "freed") }) : done(403, fail("not-owner"));
+  // Who the sender is, their factory, the nodes they hold (a neighbour's sea route opens from one of
+  // them), and the islands that have attacked theirs in the last week, which they may answer by any way.
+  if (op.t === "whois") {
+    if (s.owner.id !== op.player) return done(403, fail("not-owner"));
+    const since = now - ANSWER_MS;
+    const attackers = [...new Set([...s.expeditions.map((e) => e.by.code), ...s.log.filter((e) => e.at >= since && (e.t === "noticed" || e.t === "landed" || e.t === "taken")).map((e) => e.by.code)])];
+    return done(200, { ok: true, factory: s.factory, name: s.owner.name, held: NODE_IDS.filter((_, i) => s.holds[i] === "freed"), attackers });
+  }
   if (op.t === "log") {
     if (s.owner.id !== op.player) return done(403, fail("not-owner"));
     const entries = s.log.filter((e) => e.seq > op.after);
