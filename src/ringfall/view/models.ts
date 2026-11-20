@@ -149,6 +149,8 @@ export const PAL = {
   beacon: 0xfff2b0,
   /** The flame under a dropship's engines. */
   thrust: 0xffb050,
+  /** Bare copper: the coil on a spool of wire, apart from the rust of old steel. */
+  copper: 0xc8763a,
 } as const;
 
 /** Aim amount past which a scoped weapon shows its sight instead of the gun. */
@@ -1507,9 +1509,56 @@ export function buildHands(kind: WeaponKind): THREE.Group {
   return g;
 }
 
+/**
+ * Builds small things out of boxes and cylinders into `g`, each at (x, y, z) turned by (rx, ry, rz)
+ * about its own middle: the loot, the bins, the depot and the craft are written with these. A
+ * cylinder stands along y; `r2` makes it a cone's frustum.
+ */
+function parts(g: THREE.Object3D, shadow = false) {
+  const put = <T extends THREE.BufferGeometry>(geo: T, m: THREE.Material, x: number, y: number, z: number, rx = 0, ry = 0, rz = 0) => {
+    const o = mesh(geo, m, x, y, z, shadow);
+    o.rotation.set(rx, ry, rz);
+    g.add(o);
+    return o;
+  };
+  return {
+    put,
+    box: (m: THREE.Material, w: number, h: number, d: number, x: number, y: number, z: number, rx = 0, ry = 0, rz = 0) => put(new THREE.BoxGeometry(w, h, d), m, x, y, z, rx, ry, rz),
+    cyl: (m: THREE.Material, r: number, h: number, x: number, y: number, z: number, seg = 8, rx = 0, ry = 0, rz = 0, r2 = r) => put(new THREE.CylinderGeometry(r2, r, h, seg), m, x, y, z, rx, ry, rz),
+  };
+}
+
+/** Moves `t`'s children into `g` with `t`'s own turn and place baked into each: a piece built level, then leant as a whole. */
+function lean(t: THREE.Group, g: THREE.Object3D): void {
+  t.updateMatrix();
+  for (const c of [...t.children]) {
+    c.applyMatrix4(t.matrix);
+    g.add(c);
+  }
+}
+
+/**
+ * A thing on the ground to pick up, turning slowly over its rarity's beam. Each kind is told by its
+ * outline and colours, not by a label (docs/ringfall/models.md, 拾える物): a dropped gun is its own
+ * model; armour a plate carrier in its rarity's colour, its neck scooped out between the shoulder
+ * straps, pouches on its front; the shield cell a caged canister lit blue and the shield battery a
+ * square pack with three lit windows; the syringe a long barrel with a plunger and needle; the
+ * medkit a white case with a red cross and a handle; each valuable its own object (a cartridge
+ * fuse with blades, a gear on its block, a spool of copper, a board leant over, an upright drive,
+ * a gimbal round a lit core, a lit column between two plates, a lit drum in a cage); the vault's key
+ * a real key in its rarity's gold; the tools, the recorder, the mod part and the flares their own
+ * shapes. The valuables, the armour, the key, the recorder and the mod part carry a part in their
+ * rarity's colour, so the item itself says what the beam says. Parts of one material are merged.
+ */
 export function buildLootItem(kind: LootKind, rarity: Rarity, weapon?: WeaponKind, heal?: HealKind, valuable?: ValuableKind, tool?: ToolKind): THREE.Group {
   const g = new THREE.Group();
   const color = RARITY_COLOR[rarity];
+  const { box, cyl, put } = parts(g);
+  const dark = flat(PAL.gun);
+  const mid = flat(PAL.gunLight);
+  const steel = flat(PAL.gunSteel);
+  const lit = glow(color);
+  const X = Math.PI / 2;
   if (kind === "weapon" && weapon) {
     const gun = buildGun(weapon, rarity);
     gun.scale.setScalar(1.1);
@@ -1517,88 +1566,192 @@ export function buildLootItem(kind: LootKind, rarity: Rarity, weapon?: WeaponKin
     gun.position.y = 0.45;
     g.add(gun);
   } else if (kind === "armor") {
-    g.add(mesh(new THREE.BoxGeometry(0.55, 0.6, 0.25), flat(color), 0, 0.45, 0, false));
-    g.add(mesh(new THREE.BoxGeometry(0.35, 0.18, 0.27), flat(PAL.gun), 0, 0.68, 0, false));
+    // A plate carrier facing -z: front and back plates in the rarity's colour, the neck scooped out
+    // between the shoulders, straps over them, the side bands, three magazine pouches and a patch.
+    const plate = flat(color);
+    for (const z of [-0.09, 0.09]) {
+      box(plate, 0.44, 0.34, 0.06, 0, 0.36, z);
+      for (const x of [-0.15, 0.15]) box(plate, 0.13, 0.15, 0.06, x, 0.605, z);
+    }
+    for (const x of [-0.15, 0.15]) box(dark, 0.1, 0.045, 0.25, x, 0.7, 0);
+    for (const x of [-0.235, 0.235]) box(dark, 0.06, 0.2, 0.2, x, 0.3, 0);
+    for (const x of [-0.14, 0, 0.14]) {
+      box(mid, 0.115, 0.15, 0.06, x, 0.29, -0.15);
+      box(dark, 0.12, 0.035, 0.065, x, 0.375, -0.152);
+    }
+    box(mid, 0.2, 0.08, 0.04, 0, 0.47, -0.135);
   } else if (kind === "heal") {
-    // Shield items glow blue, health items are white with a red band; big ones are bigger.
-    const big = heal === "battery" || heal === "medkit";
-    const band = heal === "cell" || heal === "battery" ? RARITY_COLOR[1] : PAL.healRed;
-    if (heal === "medkit") {
-      g.add(mesh(new THREE.BoxGeometry(0.5, 0.3, 0.36), flat(PAL.medical), 0, 0.3, 0, false));
-      g.add(mesh(new THREE.BoxGeometry(0.52, 0.08, 0.38), flat(band), 0, 0.3, 0, false));
+    // Shield items are dark cases lit blue; health items are medical white with red.
+    const blue = glow(RARITY_COLOR[1]);
+    const white = flat(PAL.medical);
+    const red = flat(PAL.healRed);
+    if (heal === "cell") {
+      // A small canister standing up: a lit cell in a cage of four bars between two caps, a contact on top.
+      cyl(dark, 0.09, 0.05, 0, 0.2, 0);
+      cyl(blue, 0.065, 0.15, 0, 0.3, 0);
+      for (let i = 0; i < 4; i++) box(mid, 0.03, 0.15, 0.03, Math.cos(i * X + X / 2) * 0.075, 0.3, Math.sin(i * X + X / 2) * 0.075);
+      cyl(dark, 0.09, 0.05, 0, 0.4, 0);
+      cyl(steel, 0.03, 0.05, 0, 0.45, 0, 6);
+    } else if (heal === "battery") {
+      // A tall square pack, the cell's big brother: two lit windows through it, a base, a lid with a carrying handle.
+      box(mid, 0.26, 0.36, 0.2, 0, 0.41, 0);
+      for (const x of [-0.065, 0.065]) box(blue, 0.07, 0.28, 0.21, x, 0.41, 0);
+      box(dark, 0.28, 0.06, 0.22, 0, 0.2, 0);
+      box(dark, 0.28, 0.06, 0.22, 0, 0.62, 0);
+      for (const x of [-0.08, 0.08]) box(steel, 0.04, 0.08, 0.04, x, 0.69, 0);
+      box(steel, 0.2, 0.04, 0.05, 0, 0.74, 0);
+    } else if (heal === "syringe") {
+      // A syringe lying along x and leant up: the white barrel with its red dose, the flange, the plunger, the hub and needle.
+      const t = new THREE.Group();
+      const s = parts(t);
+      s.cyl(white, 0.045, 0.28, 0, 0, 0, 8, 0, 0, X);
+      s.cyl(red, 0.048, 0.13, -0.03, 0, 0, 8, 0, 0, X);
+      s.box(dark, 0.03, 0.05, 0.17, 0.155, 0, 0);
+      s.box(steel, 0.11, 0.025, 0.025, 0.22, 0, 0);
+      s.cyl(dark, 0.05, 0.025, 0.285, 0, 0, 8, 0, 0, X);
+      s.cyl(dark, 0.028, 0.05, -0.165, 0, 0, 6, 0, 0, X);
+      s.box(steel, 0.1, 0.01, 0.01, -0.24, 0, 0);
+      t.position.y = 0.34;
+      t.rotation.z = 0.35;
+      lean(t, g);
     } else {
-      const r = big ? 0.16 : 0.1;
-      const h = big ? 0.42 : 0.3;
-      g.add(mesh(new THREE.CylinderGeometry(r, r, h, 8), flat(heal === "syringe" ? PAL.medical : PAL.gunLight), 0, 0.35, 0, false));
-      g.add(mesh(new THREE.CylinderGeometry(r + 0.01, r + 0.01, h * 0.45, 8), heal === "syringe" ? flat(band) : glow(band), 0, 0.35, 0, false));
+      // The medkit: an upright white case with a red cross on both faces, a dark seam, a handle and two latches.
+      box(white, 0.46, 0.32, 0.15, 0, 0.34, 0);
+      for (const z of [-0.078, 0.078]) {
+        box(red, 0.17, 0.055, 0.012, 0, 0.33, z);
+        box(red, 0.055, 0.17, 0.012, 0, 0.33, z);
+      }
+      box(dark, 0.47, 0.03, 0.16, 0, 0.45, 0);
+      for (const x of [-0.08, 0.08]) box(dark, 0.035, 0.07, 0.04, x, 0.53, 0);
+      box(dark, 0.2, 0.035, 0.05, 0, 0.575, 0);
+      for (const x of [-0.17, 0.17]) box(steel, 0.05, 0.06, 0.17, x, 0.45, 0);
     }
   } else if (kind === "valuable") {
-    // Parts: a gear on a scrap block. Circuit board: a flat green card with chips. Data core: a glowing cube in a frame.
-    if (valuable === "reactor") {
-      // A reactor: a fat glowing cylinder in a cage.
-      g.add(mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.5, 10), flat(PAL.gun), 0, 0.42, 0, false));
-      g.add(mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.54, 10), glow(color), 0, 0.42, 0, false));
-    } else if (valuable === "drive") {
-      g.add(mesh(new THREE.BoxGeometry(0.3, 0.06, 0.2), flat(PAL.gunLight), 0, 0.25, 0, false));
-      g.add(mesh(new THREE.BoxGeometry(0.08, 0.065, 0.08), glow(color), 0.08, 0.26, 0, false));
-    } else if (valuable === "gyro") {
-      const ring = mesh(new THREE.TorusGeometry(0.2, 0.04, 6, 14), flat(PAL.gunLight), 0, 0.42, 0, false);
-      g.add(ring);
-      g.add(mesh(new THREE.SphereGeometry(0.1, 10, 8), glow(color), 0, 0.42, 0, false));
+    const tint = flat(color);
+    if (valuable === "fuse") {
+      // A cartridge fuse lying along x: the ceramic body, a lit window round its middle, steel caps and knife blades.
+      cyl(flat(PAL.medical), 0.06, 0.24, 0, 0.3, 0, 8, 0, 0, X);
+      cyl(lit, 0.064, 0.06, 0, 0.3, 0, 8, 0, 0, X);
+      for (const s of [-1, 1]) {
+        cyl(steel, 0.07, 0.05, s * 0.135, 0.3, 0, 8, 0, 0, X);
+        box(steel, 0.09, 0.06, 0.018, s * 0.2, 0.3, 0);
+      }
+    } else if (valuable === "parts") {
+      // A gear stood on its axle in a block: a toothed wheel in the rarity's colour, a dark hub and the bracket.
+      box(dark, 0.28, 0.1, 0.18, 0, 0.17, 0);
+      for (const z of [-0.06, 0.06]) box(mid, 0.06, 0.2, 0.03, 0, 0.3, z);
+      cyl(tint, 0.13, 0.05, 0, 0.42, 0, 10, X);
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        box(tint, 0.055, 0.05, 0.05, Math.cos(a) * 0.155, 0.42 + Math.sin(a) * 0.155, 0, 0, 0, a);
+      }
+      cyl(dark, 0.045, 0.16, 0, 0.42, 0, 6, X);
     } else if (valuable === "wire") {
-      g.add(mesh(new THREE.TorusGeometry(0.18, 0.07, 6, 12).rotateX(Math.PI / 2), flat(PAL.rust), 0, 0.25, 0, false));
-    } else if (valuable === "fuse") {
-      g.add(mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.3, 8).rotateZ(Math.PI / 2), flat(PAL.medical), 0, 0.22, 0, false));
-      for (const x of [-0.16, 0.16]) g.add(mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.05, 8).rotateZ(Math.PI / 2), flat(PAL.gun), x, 0.22, 0, false));
-    } else if (valuable === "core") {
-      g.add(mesh(new THREE.BoxGeometry(0.34, 0.34, 0.34), flat(PAL.gun), 0, 0.4, 0, false));
-      g.add(mesh(new THREE.BoxGeometry(0.24, 0.36, 0.24), glow(color), 0, 0.4, 0, false));
+      // A spool stood on edge, round from one side: the copper coil wound nearly to the rims of its two
+      // grey flanges, the hub through them, its loose end, a tag in the rarity's colour.
+      for (const z of [-0.12, 0.12]) cyl(mid, 0.19, 0.03, 0, 0.36, z, 10, X);
+      cyl(flat(PAL.copper), 0.165, 0.21, 0, 0.36, 0, 10, X);
+      box(flat(PAL.copper), 0.025, 0.025, 0.2, 0.17, 0.22, 0.02, 0, 0.5, 0.6);
+      cyl(dark, 0.05, 0.3, 0, 0.36, 0, 6, X);
+      box(lit, 0.1, 0.07, 0.012, 0, 0.6, -0.14, 0.3, 0, 0.2);
     } else if (valuable === "board") {
-      g.add(mesh(new THREE.BoxGeometry(0.5, 0.04, 0.34), flat(PAL.board), 0, 0.3, 0, false));
-      for (const [x, z] of [[-0.12, 0.05], [0.1, -0.06], [0.14, 0.09]]) g.add(mesh(new THREE.BoxGeometry(0.1, 0.05, 0.08), flat(PAL.gun), x, 0.34, z, false));
-    } else {
-      g.add(mesh(new THREE.BoxGeometry(0.3, 0.16, 0.26), flat(PAL.gunLight), 0, 0.24, 0, false));
-      const gear = mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.06, 8), flat(PAL.gun), 0, 0.36, 0, false);
-      g.add(gear);
+      // A circuit board leant over: chips, a finned heat sink, two capacitors, its edge connector in the rarity's colour.
+      const t = new THREE.Group();
+      const s = parts(t);
+      s.box(flat(PAL.board), 0.46, 0.03, 0.32, 0, 0, 0);
+      s.box(lit, 0.05, 0.035, 0.28, -0.24, 0, 0);
+      for (const [x, z] of [[-0.12, -0.08], [-0.12, 0.08], [0.03, 0.09]]) s.box(dark, 0.09, 0.03, 0.08, x, 0.03, z);
+      for (let i = 0; i < 4; i++) s.box(steel, 0.12, 0.07, 0.02, 0.13, 0.05, -0.12 + i * 0.045);
+      for (const z of [-0.02, 0.06]) s.cyl(mid, 0.025, 0.07, 0.03, 0.05, z, 6);
+      t.position.y = 0.36;
+      t.rotation.set(0.5, 0, 0.25);
+      lean(t, g);
+    } else if (valuable === "drive") {
+      // A rugged drive stood on end: its grey case, rubber corners, a lit strip, a label and the connector on top.
+      box(mid, 0.2, 0.28, 0.07, 0, 0.34, 0);
+      for (const x of [-0.1, 0.1]) for (const y of [0.2, 0.48]) box(dark, 0.05, 0.05, 0.085, x, y, 0);
+      box(lit, 0.03, 0.18, 0.08, -0.05, 0.34, 0);
+      box(flat(PAL.paint), 0.08, 0.1, 0.075, 0.04, 0.36, 0);
+      box(steel, 0.09, 0.035, 0.045, 0, 0.5, 0);
+    } else if (valuable === "gyro") {
+      // A gimbal on a stand: an outer steel ring, an inner one turned across it, the lit rotor at the middle.
+      cyl(dark, 0.14, 0.04, 0, 0.14, 0, 8);
+      box(dark, 0.05, 0.12, 0.05, 0, 0.22, 0);
+      put(new THREE.TorusGeometry(0.2, 0.026, 4, 12), steel, 0, 0.48, 0);
+      put(new THREE.TorusGeometry(0.14, 0.024, 4, 10), mid, 0, 0.48, 0, 0, X, 0);
+      put(new THREE.IcosahedronGeometry(0.085, 0), lit, 0, 0.48, 0);
+    } else if (valuable === "core") {
+      // A data core: a lit column between a dark base and top, four posts at the corners, the socket on top.
+      box(dark, 0.3, 0.05, 0.3, 0, 0.17, 0);
+      box(dark, 0.3, 0.05, 0.3, 0, 0.53, 0);
+      for (const x of [-0.12, 0.12]) for (const z of [-0.12, 0.12]) box(mid, 0.05, 0.31, 0.05, x, 0.35, z);
+      cyl(lit, 0.09, 0.31, 0, 0.35, 0, 6);
+      box(steel, 0.12, 0.05, 0.12, 0, 0.58, 0);
+    } else if (valuable === "reactor") {
+      // A small reactor: a lit drum in a cage of six bars between dark rings, a hazard band, a cap and two handles.
+      cyl(dark, 0.27, 0.07, 0, 0.16, 0, 10);
+      cyl(dark, 0.27, 0.07, 0, 0.6, 0, 10);
+      cyl(flat(PAL.hazard), 0.275, 0.03, 0, 0.53, 0, 10);
+      cyl(lit, 0.16, 0.38, 0, 0.38, 0, 10);
+      for (let i = 0; i < 6; i++) box(steel, 0.04, 0.37, 0.04, Math.cos((i * Math.PI) / 3) * 0.23, 0.38, Math.sin((i * Math.PI) / 3) * 0.23);
+      cyl(dark, 0.12, 0.07, 0, 0.67, 0, 8);
+      for (const x of [-0.2, 0.2]) box(steel, 0.04, 0.09, 0.14, x, 0.68, 0);
     }
   } else if (kind === "key") {
-    // A key card: a gold card with a dark stripe.
-    g.add(mesh(new THREE.BoxGeometry(0.34, 0.03, 0.22), glow(color), 0, 0.3, 0, false));
-    g.add(mesh(new THREE.BoxGeometry(0.34, 0.035, 0.05), flat(PAL.gun), 0, 0.3, 0.05, false));
+    // The vault's key standing on its tip: the bow a ring, the collar, the shank, two bits, and a dark tag on the ring.
+    const metal = flat(color);
+    put(new THREE.TorusGeometry(0.08, 0.032, 4, 10), metal, 0, 0.62, 0);
+    box(metal, 0.09, 0.045, 0.05, 0, 0.51, 0);
+    box(metal, 0.05, 0.3, 0.045, 0, 0.34, 0);
+    box(metal, 0.09, 0.055, 0.045, 0.065, 0.24, 0);
+    box(metal, 0.06, 0.045, 0.045, 0.05, 0.32, 0);
+    box(dark, 0.1, 0.13, 0.018, -0.13, 0.55, 0, 0, 0, 0.5);
   } else if (kind === "tool" && tool === "cutter") {
-    // Bolt cutters: two long red-gripped handles meeting at short steel jaws.
-    for (const z of [-0.05, 0.05]) {
-      g.add(mesh(new THREE.BoxGeometry(0.62, 0.035, 0.035), flat(PAL.steel), -0.05, 0.12, z, false));
-      g.add(mesh(new THREE.BoxGeometry(0.26, 0.05, 0.05), flat(PAL.healRed), -0.27, 0.12, z * 1.4, false));
+    // Bolt cutters lying open: two long handles with red grips, the pivot plate, the short dark jaws.
+    for (const s of [-1, 1]) {
+      box(steel, 0.5, 0.045, 0.045, -0.02, 0.14, s * 0.05, 0, s * 0.08, 0);
+      box(flat(PAL.healRed), 0.24, 0.065, 0.065, -0.3, 0.14, s * 0.075, 0, s * 0.08, 0);
+      box(dark, 0.16, 0.05, 0.05, 0.33, 0.14, s * 0.025, 0, -s * 0.18, 0);
     }
-    g.add(mesh(new THREE.BoxGeometry(0.16, 0.06, 0.14), flat(PAL.gun), 0.3, 0.12, 0, false));
+    box(mid, 0.12, 0.08, 0.1, 0.22, 0.14, 0);
   } else if (kind === "tool") {
-    // A breaching charge: a squat orange case with a black detonator on top.
-    g.add(mesh(new THREE.BoxGeometry(0.44, 0.26, 0.3), flat(PAL.hazard), 0, 0.2, 0, false));
-    g.add(mesh(new THREE.BoxGeometry(0.46, 0.05, 0.32), flat(PAL.gun), 0, 0.26, 0, false));
-    g.add(mesh(new THREE.BoxGeometry(0.12, 0.1, 0.1), flat(PAL.gun), 0.1, 0.38, 0, false));
-    g.add(mesh(new THREE.SphereGeometry(0.03, 6, 4), glow(PAL.healRed), 0.1, 0.45, 0, false));
+    // A breaching charge: a squat orange case under two dark straps, the detonator on top with its red light and aerial.
+    box(flat(PAL.hazard), 0.44, 0.24, 0.3, 0, 0.22, 0);
+    for (const x of [-0.13, 0.13]) box(dark, 0.06, 0.26, 0.32, x, 0.22, 0);
+    box(dark, 0.14, 0.1, 0.12, 0.05, 0.39, 0);
+    put(new THREE.SphereGeometry(0.035, 6, 4), glow(PAL.healRed), 0.08, 0.46, 0);
+    box(steel, 0.015, 0.22, 0.015, 0.0, 0.55, 0);
   } else if (kind === "record") {
-    // A story record: a battered orange recorder case with a lit read-out on its face.
-    g.add(mesh(new THREE.BoxGeometry(0.36, 0.26, 0.24), flat(PAL.hazard), 0, 0.22, 0, false));
-    g.add(mesh(new THREE.BoxGeometry(0.38, 0.05, 0.26), flat(PAL.gun), 0, 0.12, 0, false));
-    g.add(mesh(new THREE.BoxGeometry(0.16, 0.08, 0.02), glow(color), 0, 0.26, 0.125, false));
+    // A story record: an orange recorder case with dark bumpers at both ends, a carrying handle, a band of white tape and a lit read-out.
+    box(flat(PAL.hazard), 0.36, 0.24, 0.22, 0, 0.3, 0);
+    for (const x of [-0.195, 0.195]) box(dark, 0.045, 0.27, 0.25, x, 0.3, 0);
+    for (const x of [-0.1, 0.1]) box(dark, 0.04, 0.07, 0.04, x, 0.455, 0);
+    box(dark, 0.25, 0.04, 0.05, 0, 0.505, 0);
+    box(flat(PAL.paint), 0.36, 0.045, 0.225, 0, 0.23, 0);
+    box(lit, 0.16, 0.07, 0.02, 0, 0.34, -0.115);
   } else if (kind === "mod") {
-    // A mod part: a flat hexagonal chip in a dark frame, its core lit in the rarity's colour.
-    g.add(mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.06, 6), flat(PAL.gun), 0, 0.32, 0, false));
-    g.add(mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.08, 6), glow(color), 0, 0.32, 0, false));
-    for (const a of [0, (Math.PI * 2) / 3, (Math.PI * 4) / 3]) g.add(mesh(new THREE.BoxGeometry(0.06, 0.03, 0.12), flat(PAL.steel), Math.cos(a) * 0.25, 0.32, Math.sin(a) * 0.25, false));
+    // A mod part: a hexagonal chip in a dark frame, its core lit in the rarity's colour, three steel clips,
+    // stood up on edge so its face is seen from eye height, not only its rim.
+    const t = new THREE.Group();
+    const s = parts(t);
+    s.cyl(dark, 0.22, 0.06, 0, 0, 0, 6);
+    s.cyl(lit, 0.15, 0.08, 0, 0, 0, 6);
+    for (const a of [0, (Math.PI * 2) / 3, (Math.PI * 4) / 3]) s.box(steel, 0.06, 0.03, 0.12, Math.cos(a) * 0.25, 0, Math.sin(a) * 0.25, 0, -a, 0);
+    t.position.y = 0.4;
+    t.rotation.x = 1.1;
+    lean(t, g);
   } else if (kind === "flare") {
-    // A road flare: a red tube with a cap.
-    const tube = mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.42, 8), flat(PAL.healRed), 0, 0.3, 0, false);
-    tube.rotation.z = Math.PI / 2;
-    g.add(tube);
-    const cap = mesh(new THREE.CylinderGeometry(0.065, 0.065, 0.08, 8), flat(PAL.gun), 0.22, 0.3, 0, false);
-    cap.rotation.z = Math.PI / 2;
-    g.add(cap);
+    // Two road flares taped together: red tubes, dark striker caps, white end plugs, a band of tape.
+    for (const z of [-0.05, 0.05]) {
+      cyl(flat(PAL.healRed), 0.045, 0.4, 0, 0.3, z, 8, 0, 0, X);
+      cyl(dark, 0.05, 0.07, 0.235, 0.3, z, 8, 0, 0, X);
+      cyl(flat(PAL.paint), 0.047, 0.03, -0.215, 0.3, z, 8, 0, 0, X);
+    }
+    box(dark, 0.06, 0.105, 0.2, -0.05, 0.3, 0);
   } else {
-    g.add(new THREE.Mesh(new THREE.OctahedronGeometry(0.16, 0), glow(RARITY_COLOR[1])));
+    put(new THREE.OctahedronGeometry(0.16, 0), glow(RARITY_COLOR[1]), 0, 0, 0);
   }
+  compact(g);
   if (kind !== "shard") {
     // The loot beam: visible from across the map, coloured by rarity.
     const beam = new THREE.Mesh(
@@ -1614,18 +1767,40 @@ export function buildLootItem(kind: LootKind, rarity: Rarity, weapon?: WeaponKin
   return g;
 }
 
-/** A supply bin; a vault is a darker, banded crate with a gold lock. */
+/**
+ * A supply bin: a teal crate on two skids, steel at its corners, a band round it, handles at its
+ * ends and a stencilled panel on its face, under a concrete lid with a raised panel, hinges at the
+ * back and two latches at the front. A vault is the same crate in dark steel with bright bands, a
+ * gold lock plate and a dial. The lid swings about its back edge (`lid`); the seam under it is lit
+ * while the bin is shut (`seam`).
+ */
 export function buildBin(vault = false): { root: THREE.Group; lid: THREE.Object3D; seam: THREE.Mesh } {
   const root = new THREE.Group();
-  root.add(mesh(new THREE.BoxGeometry(1.4, 0.7, 0.8), flat(vault ? PAL.gun : PAL.teal), 0, 0.35, 0));
+  const { box, cyl } = parts(root, true);
+  const body = flat(vault ? PAL.gun : PAL.teal);
+  const trim = flat(vault ? PAL.gunSteel : PAL.concreteDark);
+  const dark = flat(PAL.gun);
+  box(body, 1.3, 0.62, 0.72, 0, 0.39, 0);
+  for (const z of [-0.28, 0.28]) box(dark, 1.36, 0.08, 0.12, 0, 0.04, z);
+  for (const x of [-0.66, 0.66]) for (const z of [-0.37, 0.37]) box(trim, 0.08, 0.64, 0.08, x, 0.39, z);
+  box(trim, 1.34, 0.06, 0.76, 0, 0.36, 0);
+  for (const x of [-0.69, 0.69]) box(dark, 0.05, 0.06, 0.3, x, 0.55, 0);
   if (vault) {
-    for (const x of [-0.45, 0.45]) root.add(mesh(new THREE.BoxGeometry(0.12, 0.72, 0.82), flat(PAL.gunLight), x, 0.36, 0, false));
-    root.add(mesh(new THREE.BoxGeometry(0.22, 0.24, 0.06), glow(RARITY_COLOR[3]), 0, 0.42, 0.42, false));
+    for (const x of [-0.42, 0.42]) box(trim, 0.1, 0.64, 0.76, x, 0.39, 0);
+    box(glow(RARITY_COLOR[3]), 0.24, 0.26, 0.06, 0, 0.46, -0.37);
+    cyl(dark, 0.07, 0.04, 0, 0.47, -0.41, 8, Math.PI / 2);
+  } else {
+    box(flat(PAL.paint), 0.34, 0.14, 0.02, -0.34, 0.52, -0.365);
   }
-  root.add(mesh(new THREE.BoxGeometry(1.42, 0.14, 0.82), flat(PAL.concrete), 0, 0.1, 0, false));
+  compact(root);
   const lid = new THREE.Group();
   lid.position.set(0, 0.72, 0.4);
-  lid.add(mesh(new THREE.BoxGeometry(1.44, 0.16, 0.84), flat(PAL.concrete), 0, 0.08, -0.42));
+  const l = parts(lid, true);
+  l.box(flat(PAL.concrete), 1.44, 0.1, 0.84, 0, 0.05, -0.42);
+  l.box(flat(PAL.concreteDark), 1.1, 0.05, 0.56, 0, 0.12, -0.42);
+  for (const x of [-0.45, 0.45]) l.box(dark, 0.16, 0.06, 0.06, x, 0.02, 0.01);
+  for (const x of [-0.45, 0.45]) l.box(dark, 0.1, 0.12, 0.04, x, -0.02, -0.86);
+  compact(lid);
   root.add(lid);
   const seam = new THREE.Mesh(new THREE.BoxGeometry(1.46, 0.05, 0.86), glow(0xffffff));
   seam.position.y = 0.71;
@@ -1634,21 +1809,34 @@ export function buildBin(vault = false): { root: THREE.Group; lid: THREE.Object3
 }
 
 /**
- * A depot by a POI's road: a squat steel locker with a slot facing the road and a lamp on a short
- * mast. The lamp and slot are dark until the depot is switched on, then lit in the teammate's
- * teal, the colour that means "ours" on the HUD; nothing else on it glows.
+ * A depot by a POI's road: a squat steel locker on a plinth, a teal cap and a teal band round it,
+ * vents along its sides, a door with a handle under the slot the bag goes into, a cable run down
+ * its back, a short aerial, and a lamp in a hood on a mast. The lamp and slot are dark until the
+ * depot is switched on, then lit in the teammate's teal, the colour that means "ours" on the HUD;
+ * nothing else on it glows.
  */
 export function buildDepot(): { root: THREE.Group; lamp: THREE.Mesh; slot: THREE.Mesh } {
   const root = new THREE.Group();
-  root.add(mesh(new THREE.BoxGeometry(1.3, 0.16, 1.0), flat(PAL.concreteDark), 0, 0.08, 0));
-  root.add(mesh(new THREE.BoxGeometry(1.1, 0.95, 0.8), flat(PAL.steel), 0, 0.62, 0));
-  root.add(mesh(new THREE.BoxGeometry(1.16, 0.12, 0.86), flat(PAL.teal), 0, 1.15, 0, false));
-  // The front (-z, turned away from the POI, along the road) carries the slot the bag goes into.
-  root.add(mesh(new THREE.BoxGeometry(0.7, 0.36, 0.06), flat(PAL.gun), 0, 0.72, -0.42, false));
+  const { box, cyl } = parts(root, true);
+  const dark = flat(PAL.gun);
+  const teal = flat(PAL.teal);
+  box(flat(PAL.concreteDark), 1.3, 0.16, 1.0, 0, 0.08, 0);
+  box(flat(PAL.steel), 1.1, 0.95, 0.8, 0, 0.635, 0);
+  box(teal, 1.16, 0.12, 0.86, 0, 1.17, 0);
+  box(teal, 1.12, 0.1, 0.82, 0, 0.3, 0);
+  // The front (-z, turned away from the POI, along the road) carries the slot the bag goes into, and the door under it.
+  box(dark, 0.7, 0.3, 0.06, 0, 0.8, -0.42);
+  box(flat(PAL.gunLight), 0.7, 0.34, 0.03, 0, 0.53, -0.41);
+  box(dark, 0.16, 0.05, 0.05, 0.22, 0.55, -0.44);
+  for (const s of [-1, 1]) for (let i = 0; i < 3; i++) box(dark, 0.03, 0.05, 0.5, s * 0.56, 0.72 + i * 0.1, 0);
+  box(dark, 0.08, 0.95, 0.06, -0.35, 0.68, 0.42);
+  cyl(flat(PAL.steel), 0.012, 0.7, -0.4, 1.58, 0.25, 4);
+  cyl(dark, 0.04, 0.5, 0.38, 1.46, 0.2, 6);
+  box(dark, 0.26, 0.05, 0.26, 0.38, 1.87, 0.2);
+  compact(root);
   const slot = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.06, 0.04), glow(PAL.gunLight));
   slot.position.set(0, 0.8, -0.46);
   root.add(slot);
-  root.add(mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.5, 6), flat(PAL.gun), 0.38, 1.46, 0.2, false));
   const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 0.16), glow(PAL.gunLight));
   lamp.position.set(0.38, 1.76, 0.2);
   root.add(lamp);
@@ -1690,28 +1878,103 @@ export function buildCare(): THREE.Group {
   return g;
 }
 
-/** The boat that comes up the harbor's channel to the quay: a low hull, a wheelhouse, a rust stripe. */
+/** A hull's plan, pointed at -x, `len` long and `beam` wide, as a prism from `y0` up to `y1`. */
+function hullPrism(len: number, beam: number, bow: number, y0: number, y1: number): THREE.BufferGeometry {
+  const h = len / 2;
+  const b = beam / 2;
+  const s = new THREE.Shape();
+  s.moveTo(-h, 0);
+  s.lineTo(-h + bow, b);
+  s.lineTo(h - 0.3, b);
+  s.lineTo(h, b - 0.3);
+  s.lineTo(h, -b + 0.3);
+  s.lineTo(h - 0.3, -b);
+  s.lineTo(-h + bow, -b);
+  s.closePath();
+  // Extruded along z, then stood up: the plan's y becomes the world's z, the extrusion its height.
+  return new THREE.ExtrudeGeometry(s, { depth: y1 - y0, bevelEnabled: false }).rotateX(-Math.PI / 2).translate(0, y0, 0);
+}
+
+/**
+ * The boat that comes up the harbor's channel to the quay, its bow at -x (the way it comes in): a
+ * work boat 10 m long, its hull dark red under the waterline and white above it with a rust boot
+ * stripe, a raised bow, rails along its deck and tyres hung over its sides; the wheelhouse with a
+ * band of windows, a teal roof, a mast and radar, the exhaust behind it; on the open after deck two
+ * crates and the A-frame over the stern.
+ */
 export function buildBoat(): THREE.Group {
   const g = new THREE.Group();
-  g.add(mesh(new THREE.BoxGeometry(9, 1.4, 3.4), flat(PAL.concrete), 0, 0.5, 0));
-  g.add(mesh(new THREE.BoxGeometry(9.1, 0.3, 3.5), flat(PAL.rust), 0, 0.05, 0, false));
-  g.add(mesh(new THREE.BoxGeometry(2, 1.4, 2.4), flat(PAL.concrete), -1.8, 1.9, 0));
-  g.add(mesh(new THREE.BoxGeometry(2.1, 0.5, 2.5), flat(PAL.teal), -1.8, 2.3, 0, false));
-  g.add(mesh(new THREE.BoxGeometry(1.4, 0.8, 3.4), flat(PAL.gun), 4.6, 0.9, 0));
+  const { box, cyl, put } = parts(g, true);
+  const white = flat(PAL.concrete);
+  const dark = flat(PAL.gun);
+  const steel = flat(PAL.steel);
+  put(hullPrism(10, 3.2, 2.4, -0.5, 0.1), flat(PAL.hull), 0, 0, 0);
+  put(hullPrism(10.06, 3.26, 2.4, 0.05, 0.3), flat(PAL.rust), 0, 0, 0);
+  put(hullPrism(10, 3.4, 2.4, 0.3, 1.0), white, 0, 0, 0);
+  put(hullPrism(3.2, 3.0, 2.0, 1.0, 1.45), white, -3.4, 0, 0);
+  // Rails along both sides of the after deck: a top rail on posts.
+  for (const z of [-1.55, 1.55]) {
+    box(steel, 6.2, 0.08, 0.08, 1.7, 1.9, z);
+    for (let x = -1.2; x <= 4.6; x += 1.45) box(steel, 0.08, 0.9, 0.08, x, 1.45, z);
+    for (const x of [-2.2, -0.2, 1.8, 3.6]) cyl(flat(PROP_PAL.tyre), 0.28, 0.22, x, 0.7, z * 1.17, 8, Math.PI / 2);
+  }
+  // The wheelhouse, its windows all round, its roof, the mast with its radar bar, the exhaust behind.
+  box(white, 2.4, 1.7, 2.6, -0.8, 1.85, 0);
+  box(flat(PAL.glass), 2.46, 0.5, 2.66, -0.8, 2.3, 0);
+  box(flat(PAL.teal), 2.8, 0.16, 3.0, -0.8, 2.78, 0);
+  cyl(steel, 0.07, 1.6, -0.6, 3.6, 0, 6);
+  box(dark, 1.3, 0.12, 0.2, -0.6, 4.0, 0);
+  cyl(dark, 0.2, 1.4, 0.7, 2.6, 0.7, 8);
+  put(new THREE.TorusGeometry(0.32, 0.07, 4, 10), flat(PAL.healRed), -0.8, 1.6, -1.34);
+  // The after deck: two crates and the A-frame over the stern.
+  box(flat(PAL.crate), 1.2, 0.9, 1.2, 2.2, 1.45, -0.6);
+  box(flat(PAL.crate), 0.9, 0.7, 0.9, 2.4, 1.35, 0.7);
+  for (const z of [-1.3, 1.3]) box(flat(PAL.rust), 0.18, 2.4, 0.18, 4.5, 2.1, z, 0, 0, -0.25);
+  box(flat(PAL.rust), 0.2, 0.2, 2.8, 4.2, 3.25, 0);
+  compact(g);
   return g;
 }
 
+/**
+ * The dropship called down onto a pad or a runway, its nose at -z: a pale fuselage with a rust band,
+ * a tapered nose under a slanted windscreen, a tail boom with two canted fins and a tailplane, a dark
+ * stub wing across it with an engine pod at each tip (intake rim on top, nozzle under, the flame
+ * below as a sprite), skids on struts, the rear ramp and a side door. Mostly seen from below as it
+ * comes down, so the wing, the pods and the skids carry its outline.
+ */
 export function buildDropship(): THREE.Group {
   const g = new THREE.Group();
-  g.add(mesh(new THREE.BoxGeometry(3.4, 2.2, 9), flat(PAL.concrete), 0, 0, 0));
-  g.add(mesh(new THREE.BoxGeometry(3.0, 1.0, 3), flat(PAL.gun), 0, 0.9, -4.6));
+  const { box, cyl, put } = parts(g, true);
+  const hull = flat(PAL.concrete);
+  const dark = flat(PAL.gun);
+  const mid = flat(PAL.gunLight);
+  const steel = flat(PAL.steel);
+  box(hull, 3.2, 2.2, 6.2, 0, 0, 0);
+  box(flat(PAL.rust), 3.26, 0.35, 6.26, 0, 0.35, 0);
+  // The nose: a frustum of the fuselage's section, flattened to its height, the windscreen leant over it.
+  put(new THREE.CylinderGeometry(0.9, 2.26, 2.2, 4, 1).rotateY(Math.PI / 4).rotateX(-Math.PI / 2).scale(1, 0.69, 1), hull, 0, -0.1, -4.2);
+  box(flat(PAL.glass), 1.9, 0.08, 1.5, 0, 0.72, -3.9, -0.42);
+  // The tail boom, two canted fins and the tailplane.
+  box(hull, 1.3, 1.1, 4.4, 0, 0.45, 5.2);
+  for (const s of [-1, 1]) box(dark, 0.16, 1.8, 1.5, s * 0.75, 1.6, 6.7, 0, 0, s * 0.3);
+  box(dark, 3.6, 0.14, 1.1, 0, 1.0, 6.8);
+  // The rear ramp's outline under the boom and the side doors.
+  box(dark, 2.7, 1.5, 0.08, 0, -0.3, 3.12);
+  for (const s of [-1, 1]) box(dark, 0.06, 1.3, 1.5, s * 1.61, -0.15, -0.9);
+  // The stub wing and its engine pods.
+  box(dark, 10.4, 0.28, 2.4, 0, 0.75, 0.3);
   for (const s of [-1, 1]) {
-    g.add(mesh(new THREE.BoxGeometry(5, 0.3, 2.6), flat(PAL.rust), s * 3.8, 0.4, 0.5));
-    g.add(mesh(new THREE.CylinderGeometry(0.9, 0.9, 1.6, 10), flat(PAL.gunLight), s * 6.2, 0.4, 0.5));
+    cyl(mid, 1.0, 2.0, s * 5.8, 0.5, 0.3, 10);
+    cyl(dark, 1.08, 0.25, s * 5.8, 1.55, 0.3, 10);
+    cyl(dark, 0.75, 0.5, s * 5.8, -0.75, 0.3, 10, 0, 0, 0, 0.9);
     const flame = haloSprite(PAL.thrust, 2.2, 0.9);
-    flame.position.set(s * 6.2, -0.9, 0.5);
+    flame.position.set(s * 5.8, -1.3, 0.3);
     g.add(flame);
+    // Skids on two struts.
+    box(steel, 0.18, 0.18, 5.2, s * 1.25, -1.75, -0.2);
+    for (const z of [-1.8, 1.4]) box(steel, 0.14, 0.6, 0.14, s * 1.25, -1.35, z);
   }
+  compact(g);
   return g;
 }
 
@@ -1769,14 +2032,24 @@ export function buildRingDebris(): { root: THREE.Group; vents: THREE.Vector3[] }
  */
 export function buildCore(height: number, half: number): { root: THREE.Group; band: THREE.Mesh; halo: THREE.Sprite; flag: THREE.Group; cloth: THREE.Mesh; shield: THREE.Mesh } {
   const root = new THREE.Group();
-  const band = mesh(new THREE.BoxGeometry(half * 2 + 0.12, 0.5, half * 2 + 0.12), glow(PAL.held), 0, height - 0.6, 0, false);
+  const lit = glow(PAL.held);
+  const band = mesh(new THREE.BoxGeometry(half * 2 + 0.12, 0.5, half * 2 + 0.12), lit, 0, height - 0.6, 0, false);
   root.add(band);
-  root.add(mesh(new THREE.BoxGeometry(half * 2 + 0.12, 0.18, half * 2 + 0.12), glow(PAL.held), 0, 1.0, 0, false));
+  // The low ring shares the band's material, so it turns with the band to the holder's colour.
+  root.add(mesh(new THREE.BoxGeometry(half * 2 + 0.12, 0.18, half * 2 + 0.12), lit, 0, 1.0, 0, false));
+  // Dark steel collars frame the band above and below, so it reads as a lit ring set in the pillar.
+  const { box } = parts(root);
+  for (const y of [height - 0.92, height - 0.28]) box(flat(PAL.gun), half * 2 + 0.3, 0.14, half * 2 + 0.3, 0, y, 0);
   const halo = haloSprite(PAL.held, 7, 0.75);
   halo.position.y = height + 0.6;
   root.add(halo);
   const flag = new THREE.Group();
-  flag.add(mesh(new THREE.CylinderGeometry(0.06, 0.07, 7, 6), flat(PAL.steel), 0, 3.5, 0));
+  const f = parts(flag, true);
+  f.cyl(flat(PAL.steel), 0.07, 7, 0, 3.5, 0, 6, 0, 0, 0, 0.06);
+  f.box(flat(PAL.concreteDark), 0.6, 0.3, 0.6, 0, 0.15, 0);
+  f.put(new THREE.IcosahedronGeometry(0.13, 0), flat(PAL.steel), 0, 7.05, 0);
+  f.box(flat(PAL.steel), 1.9, 0.06, 0.06, 0.95, 6.85, 0);
+  compact(flag);
   const cloth = mesh(new THREE.BoxGeometry(1.8, 1.1, 0.05), flat(PAL.flag), 0.95, 6.3, 0, false);
   flag.add(cloth);
   flag.position.set(-2, 0, 0.6);

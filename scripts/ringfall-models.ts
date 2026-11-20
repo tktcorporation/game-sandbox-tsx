@@ -45,7 +45,10 @@ const BUDGET: Record<Entry["group"], { tris: number; meshes: number; materials: 
   ally: { tris: 900, meshes: 22, materials: 8 },
   gun: { tris: 1000, meshes: 7, materials: 8 },
   loot: { tris: 400, meshes: 8, materials: 7 },
-  world: { tris: 200, meshes: 13, materials: 7 },
+  // The bins and the depot are walked up to and used many times a raid, seen from a few metres.
+  world: { tris: 360, meshes: 13, materials: 7 },
+  // The boat and the dropship: one or two in the world at a time, seen from far off and as a way out.
+  craft: { tris: 1000, meshes: 14, materials: 12 },
   wreck: { tris: 600, meshes: 36, materials: 5 },
 };
 const ROBOT_FLOOR = { hitShareFront: 0.6, hitShareSide: 0.7, airShareFrontMax: 0.4 };
@@ -54,7 +57,7 @@ const PALETTE = new Set<number>([...Object.values(M.PAL).filter((v): v is number
 
 interface Entry {
   id: string;
-  group: "robot" | "boss" | "ally" | "gun" | "loot" | "world" | "wreck";
+  group: "robot" | "boss" | "ally" | "gun" | "loot" | "world" | "craft" | "wreck";
   root: Object3D;
   robot?: EnemyKind;
 }
@@ -79,8 +82,8 @@ const entries: Entry[] = [
   { id: "vault", group: "world", root: M.buildBin(true).root },
   { id: "depot", group: "world", root: M.buildDepot().root },
   { id: "care", group: "world", root: M.buildCare() },
-  { id: "boat", group: "world", root: M.buildBoat() },
-  { id: "dropship", group: "world", root: M.buildDropship() },
+  { id: "boat", group: "craft", root: M.buildBoat() },
+  { id: "dropship", group: "craft", root: M.buildDropship() },
   { id: "core", group: "world", root: M.buildCore(6, 0.6).root },
   { id: "entry-fire", group: "world", root: M.buildEntryMark().fire },
   { id: "entry-sign", group: "world", root: M.buildEntryMark().sign },
@@ -599,6 +602,42 @@ const sameFrame = (a: Raster, b: Raster) => {
 };
 const gunPairs = pairs(entries.filter((e) => e.group === "gun" && !e.id.includes(":")), ["side"], () => 0.004, (e, axis, cell) => silhouette(solidOf(e), axis, GUN_FRAME, cell), sameFrame);
 
+// --- loot on the ground: told by its shape and colour from a few metres to twenty, never by a label.
+/** The loot kinds that must not be taken for one another: those that do the same job in the bag, or lie beside each other in the same bins. */
+const LOOT_SETS: Record<string, readonly string[]> = {
+  heal: keys(HEALS).map((h) => `loot:${String(h)}`),
+  valuable: keys(VALUABLES).map((v) => `loot:${String(v)}`),
+  tool: keys(TOOLS).map((t) => `loot:${String(t)}`),
+  gear: ["loot:armor", "loot:key", "loot:record", "loot:mod", "loot:flare"],
+};
+/** Where loot is mostly told apart from (the middle of models.md's "a few metres to 20 m"): outlines are compared on this distance's pixels. */
+const LOOT_DIST = 10;
+/** Where loot is first seen to be worth walking to: its parts and its rarity are counted on this distance's pixels. */
+const LOOT_FAR = 20;
+/**
+ * Two loot kinds of one set differ by at least this (1 - overlap / union of their outlines, feet
+ * and middles aligned, on LOOT_DIST's pixels; the lesser of front and side, since loot turns as it
+ * lies): two heals or two valuables are never the same blob.
+ */
+const LOOT_APART = 0.3;
+/** Each loot kind (but the shield shard, a lone glint by design) has at least this many parts of READ_PX pixels or more at LOOT_FAR: a shape, not a block. */
+const LOOT_PARTS = 4;
+/** The kinds whose rarity the item itself shows (beside the beam): a part in the rarity's colour READ_PX pixels or more at LOOT_FAR. */
+const LOOT_RARITY: Record<string, number> = { "loot:armor": 0, "loot:key": 0, "loot:record": 0, "loot:mod": 0, ...Object.fromEntries(keys(VALUABLES).map((v) => [`loot:${String(v)}`, 3])) };
+
+const lootPairs = Object.entries(LOOT_SETS).flatMap(([set, ids]) =>
+  pairs(ids.map((id) => entries.find((e) => e.id === id)!), ["front", "side"], () => LOOT_DIST / PIXEL_PER_M, outline, outlinesApart).map((p) => ({ ...p, set })),
+);
+const lootLooks = entries
+  .filter((e) => e.group === "loot" && e.id !== "loot:shard")
+  .map((e) => {
+    const px = (f: number) => (f * PIXEL_PER_M) / LOOT_FAR;
+    const parts = solidOf(e).flatMap((m) => partFeatures(m).map((p) => ({ px: px(p.feature), col: (m.material as { color?: import("three").Color }).color?.getHex() })));
+    const rarity = LOOT_RARITY[e.id];
+    const lit = rarity === undefined ? null : Math.max(0, ...parts.filter((p) => p.col === M.RARITY_COLOR[rarity]).map((p) => p.px));
+    return { id: e.id, readable: parts.filter((p) => p.px >= READ_PX).length, parts: parts.length, lit };
+  });
+
 /** A rule's breach unless `KNOWN` allows the value; an allowance no longer needed is a breach too, so the list stays true. */
 function floor(out: string[], key: string, value: number, least: number, what: string) {
   const k = KNOWN[key];
@@ -627,6 +666,11 @@ function readingViolations(): string[] {
   for (const [coat, c] of Object.entries(COATS)) if (c.foe) check(`${coat} coat: eye apart from its armour`, apart(c.eye, c.armor), EYE_APART, "OKLab");
   for (const p of kindPairs) check(`${p.a} and ${p.b}: outlines apart`, p.apart, KINDS_APART, "at range");
   for (const p of gunPairs) check(`${p.a} and ${p.b}: outlines apart`, p.apart, GUNS_APART, "in the hand");
+  for (const p of lootPairs) check(`${p.a} and ${p.b}: outlines apart`, p.apart, LOOT_APART, `at ${LOOT_DIST} m`);
+  for (const l of lootLooks) {
+    check(`${l.id}: readable parts`, l.readable, LOOT_PARTS, `parts of ${READ_PX} px or more at ${LOOT_FAR} m`);
+    if (l.lit !== null) check(`${l.id}: rarity shown`, l.lit, READ_PX, `px of its rarity's colour at ${LOOT_FAR} m`);
+  }
   for (const key of Object.keys(KNOWN)) if (!seen.has(key)) out.push(`KNOWN names "${key}", which no check measures`);
   return out;
 }
@@ -674,6 +718,10 @@ if (process.argv.includes("--json")) {
   };
   matrix("outlines apart at range (the lesser of front and side)", kindPairs);
   matrix("guns' side outlines apart in the hand", gunPairs);
+  for (const set of Object.keys(LOOT_SETS)) matrix(`${set}: loot outlines apart at ${LOOT_DIST} m`, lootPairs.filter((p) => p.set === set));
+  console.log(`\n| loot | parts of ${READ_PX} px or more at ${LOOT_FAR} m / all | its rarity's colour, px at ${LOOT_FAR} m |`);
+  console.log("| --- | --: | --: |");
+  for (const l of lootLooks) console.log(`| ${l.id} | ${l.readable} / ${l.parts} | ${l.lit === null ? "—" : l.lit.toFixed(1)} |`);
   console.log("\n| gun | parts | tris per m² | colours | top 3 share |");
   console.log("| --- | --: | --: | --: | --: |");
   for (const r of readings.filter((x) => !figure(x) && !x.id.includes(":"))) console.log(`| ${r.id} | ${r.parts} | ${r.trisPerM2.toFixed(0)} | ${r.colours} | ${r.top3.toFixed(2)} |`);
