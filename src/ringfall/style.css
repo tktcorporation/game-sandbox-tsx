@@ -2448,12 +2448,10 @@ body.touch.playing #touch {
 #t-use[hidden] {
   display: none;
 }
+/* The map button in the bottom row beside the bag's, under the right thumb with the other buttons that look. */
 #t-map {
-  left: 50%;
-  top: 46px;
-  margin-left: 118px;
-  width: 52px;
-  height: 40px;
+  right: calc(var(--edge-r) + 344px);
+  bottom: calc(var(--edge-b) + 7px);
 }
 
 /* HUD rearranged around the thumbs. */
@@ -4344,10 +4342,34 @@ body.touch #obj-raid .short {
 .bp-x.mod {
   color: var(--r2-text);
 }
+/*
+ * The minimap: the ground round the player in the top right corner, north up, where the screen has
+ * room for it; a phone on its side keeps that corner for its weapons and opens the map by its button.
+ */
+#minimap {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  width: 184px;
+  height: 184px;
+  border: 2px solid var(--ink);
+  box-shadow: 0 4px 14px rgb(var(--shade-rgb) / 0.4);
+  cursor: pointer;
+  pointer-events: auto;
+}
+body.touch #minimap,
+#hud.map-open #minimap {
+  display: none;
+}
+@media (max-width: 999px), (max-height: 599px) {
+  #minimap {
+    display: none;
+  }
+}
 #bag-cards {
   position: absolute;
   right: 18px;
-  top: 120px;
+  top: 220px;
   display: flex;
   flex-direction: column;
   align-items: flex-end;

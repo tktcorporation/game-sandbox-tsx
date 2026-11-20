@@ -118,6 +118,9 @@ export class Hud {
   private compassHalf = 0;
 
   private map = Object.assign(new IslandMap($<HTMLCanvasElement>("map-canvas")), { unlocks: false });
+  /** The minimap in the corner, where the screen has room for it (style.css): the ground round the player, drawn a few times a second; a click opens the map. */
+  private minimap = Object.assign(new IslandMap($<HTMLCanvasElement>("minimap")), { mini: 180, unlocks: false });
+  private miniT = 0;
   /** The bag peek and the pickups' cards (view/bag.ts). */
   readonly bag = new BagView();
   private mapOpen = false;
@@ -151,6 +154,7 @@ export class Hud {
 
   constructor() {
     $("map-close").addEventListener("click", () => this.toggleMap(false));
+    $("minimap").addEventListener("click", () => this.toggleMap(true));
     $("map-zoom").addEventListener("click", () => this.toggleMapView());
     // The open map takes no input of its own, so the game's controls under it keep working; a tap
     // (or a click with the pointer free) on a padlock still shows why that node cannot be taken.
@@ -498,6 +502,11 @@ export class Hud {
 
   frame(s: State, view: World, dt: number, w: number, h: number) {
     const p = s.player;
+    // The minimap, while the map is shut and the corner shows it (offsetParent is null while display: none).
+    if (!this.mapOpen && (this.miniT -= dt) <= 0 && $("minimap").offsetParent) {
+      this.miniT = 0.2;
+      this.minimap.draw({ ...s, names: [] });
+    }
     if (this.mapOpen) {
       if (s.phase === "done") this.toggleMap(false);
       // The debris crate is marked; a salvage crew only while the player can see one of it.

@@ -521,6 +521,12 @@ export class IslandMap {
   plain = false;
   /** Other players' islands the server offers this one (meta/neighbours.ts), drawn out at sea on the camp's maps. */
   neighbours: readonly Neighbour[] = [];
+  /**
+   * The minimap (the HUD's corner): half the side of the square it shows round the player, in metres,
+   * and 0 for a map. It draws who holds the ground, the nodes, the ways off as marks, the teammate and
+   * the player, and no names: the map (M) is where they are read.
+   */
+  mini = 0;
   /** What holding each node opens, as small marks beside it: the camp's map table's (a raid's map leaves them out, to read at a glance). */
   unlocks = true;
   /** The node whose padlock was picked, its note drawn beside it; -1 with none. */
@@ -568,6 +574,10 @@ export class IslandMap {
    * grows to take in the player, who may stand on the way between the regions outside it.
    */
   view(s: MapScene): View {
+    if (this.mini && s.player) {
+      const { x, z } = s.player.pos;
+      return { x0: x - this.mini, z0: z - this.mini, x1: x + this.mini, z1: z + this.mini };
+    }
     if (this.whole) return WHOLE;
     if (!s.player) return regionOf(this.region).bounds;
     const b = regionHere(s.player.pos).bounds;
@@ -795,7 +805,8 @@ export class IslandMap {
 
   draw(s: MapScene) {
     this.last = s;
-    const plain = this.plain;
+    // The minimap draws as plainly as the results' map, but keeps the ways off (as marks) and the player.
+    const plain = this.plain || this.mini > 0;
     if (shared?.key !== worldKey()) shared = { key: worldKey(), image: this.build() };
     const base = shared.image;
     const g = this.canvas.getContext("2d")!;
@@ -1022,7 +1033,7 @@ export class IslandMap {
       label(r.name, p.x, p.y, alpha(UI.parch, 0.55), 15, false);
       g.textAlign = "center";
     }
-    (plain ? [] : EXTRACTS).forEach((x, i) => {
+    (plain && !this.mini ? [] : EXTRACTS).forEach((x, i) => {
       const p = at(x.x, x.z);
       const r = 6 * dpr;
       g.fillStyle = css(PAL.hot);
@@ -1034,7 +1045,7 @@ export class IslandMap {
       g.closePath();
       g.fill();
       g.stroke();
-      label(x.short, exitAt[i].x, exitAt[i].y, css(PAL.hot), 10);
+      if (!this.mini) label(x.short, exitAt[i].x, exitAt[i].y, css(PAL.hot), 10);
       // The plateau's pickup wants a flare: the flare's mark rides on its diamond's shoulder.
       if (x.needsFlare) drawFlare(g, p.x + r * 1.6, p.y - r * 1.2, 7 * dpr, true);
     });
@@ -1303,7 +1314,7 @@ export class IslandMap {
         g.restore();
       }
     // POI names go on top, a little above their mark, so an exit nearby does not hide them.
-    for (const i of named) {
+    for (const i of this.mini ? [] : named) {
       const p = at(POIS[i].x, POIS[i].z);
       label(poiText(i), p.x, p.y - 15 * dpr, dim(i) ? UI.mist : UI.white, 12);
     }
