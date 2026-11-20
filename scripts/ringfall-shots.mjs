@@ -620,12 +620,12 @@ if (part("phone")) {
   if (fit.length) errors.push(`mobile departure (844x390): ${fit.join(", ")}`);
   await page.screenshot({ path: `${out}/m7-depart-locked.png` });
   // The city's padlock tapped: the city shown with its two strait bridges, the confirm shut with its reason.
-  await peekLocked(page, "#depart-points .region-lock[data-id=city]", { tag: "mobile locked city", name: "機械都市", why: "道を知らない", how: /道路橋.*橋のたもと.*鉄道橋.*貨物ヤード.*生きて帰る/, touch: true });
+  await peekLocked(page, "#depart-points .region-lock[data-id=city]", { tag: "mobile locked city", name: "機械都市", why: "道を知らない", how: /道路橋.*橋のたもと.*鉄道橋.*貨物ヤード.*生還/, touch: true });
   const fitL = await departFits(page);
   if (fitL.length) errors.push(`mobile departure with a locked region shown (844x390): ${fitL.join(", ")}`);
   await page.screenshot({ path: `${out}/m7-depart-locked-city.png` });
   // A shut way in of the harbor tapped: not found yet, and the harbor's crossings.
-  await peekLocked(page, "#depart-points button.pick.entry[data-id=quay]", { tag: "mobile shut way in", name: "埠頭の東の道", why: "道を知らない", how: /まだ見つけていない.*峠道.*港町の外れ/, touch: true });
+  await peekLocked(page, "#depart-points button.pick.entry[data-id=quay]", { tag: "mobile shut way in", name: "埠頭の東の道", why: "道を知らない", how: /港湾地帯.*峠道.*港町の外れ/, touch: true });
   await page.screenshot({ path: `${out}/m7-depart-locked-entry.png` });
   // The chosen start tapped again: the hint goes and the confirm opens.
   await pickStart(page, "entry", "beach", true);
@@ -817,7 +817,7 @@ const read = async () => JSON.parse(await page.evaluate(() => window.render_game
   await clickLock(page, "#depart-map", "camp departure", (x, y) => page.mouse.click(x, y), starts);
   await page.screenshot({ path: `${out}/00-depart-lock-note.png` });
   // The harbor's padlock clicked: the harbor shown with the pass and the railway bridge, the confirm shut and saying why.
-  await peekLocked(page, "#depart-points .region-lock[data-id=harbor]", { tag: "camp locked harbor", name: "港湾地帯", why: "道を知らない", how: /峠道.*港町の外れ.*鉄橋.*生きて帰る.*コンテナヤード.*峠の宿舎.*中継ボックス/ });
+  await peekLocked(page, "#depart-points .region-lock[data-id=harbor]", { tag: "camp locked harbor", name: "港湾地帯", why: "道を知らない", how: /峠道.*港町の外れ.*鉄橋.*生還.*コンテナヤード.*峠の宿舎/ });
   await page.screenshot({ path: `${out}/00-depart-locked-harbor.png` });
   // The arrows step back to a start that may be chosen.
   await page.keyboard.press("ArrowRight");
@@ -1553,7 +1553,7 @@ if (part("meta")) {
   await departUp(pg);
   const overD = (await readOf(pg)).camp.depart;
   const red = await pg.locator("#depart-points button.pick.on.over .mini i.over").count();
-  if (!/減らす/.test(overD?.hint?.how?.join("") ?? "") || !/荷を送る/.test(await pg.textContent("#depart-hint"))) errors.push(`depot: over the allowance the hint reads ${JSON.stringify(overD?.hint)}`);
+  if (!/stash/.test(overD?.hint?.how?.join("") ?? "") || !(await pg.locator("#depart-hint .ico.depot").count())) errors.push(`depot: over the allowance the hint reads ${JSON.stringify(overD?.hint)}`);
   if (overD?.start?.id !== "supply" || !overD.refused || red !== 2 || !(await pg.locator("#depart-go:disabled").count()) || !(await pg.locator("#depart-carry .depart-carry.over").count())) errors.push(`depot: over the allowance the departure reads ${JSON.stringify(overD?.start)} refused "${overD?.refused}", ${red} red boxes`);
   await pg.screenshot({ path: `${out}/46-depart-over.png` });
   await pg.keyboard.press("Enter");
@@ -1664,7 +1664,7 @@ if (part("meta")) {
   await toCamp(pg);
   await useStation(pg, "vehicle");
   await departUp(pg);
-  await peekLocked(pg, "#depart-points button.pick.depot[data-id=lodge]", { tag: "shut depot", name: "峠の宿舎の中継ボックス", why: "未制圧", how: /峠の宿舎を制圧/ });
+  await peekLocked(pg, "#depart-points button.pick.depot[data-id=lodge]", { tag: "shut depot", name: "峠の宿舎の中継ボックス", why: "未制圧", how: /峠の宿舎/ });
   await pg.screenshot({ path: `${out}/46-depart-depot-shut.png` });
   await pg.keyboard.press("Escape");
   await ctx.close();

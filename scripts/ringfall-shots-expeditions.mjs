@@ -55,7 +55,7 @@ export async function expeditionShots({ browser, port, out, errors }) {
   // The map table: who is coming at which node, and how long there is.
   await open("map");
   const news = await pg.evaluate(() => document.querySelector(".island-news.incoming")?.textContent ?? "");
-  if (!/となりの遠征隊が.+を狙っている.+あと約 6 時間/.test(news)) errors.push(`expeditions: the map table's warning reads "${news}"`);
+  if (!/となり.+中継塔.+6h/.test(news)) errors.push(`expeditions: the map table's warning reads "${news}"`);
   await pg.screenshot({ path: `${out}/150-expeditions-map.png` });
   await close();
   // The factory's panel: the expeditions out, each with its state and its recall.

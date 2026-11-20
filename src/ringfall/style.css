@@ -5155,3 +5155,16 @@ body:has(#depart:not([hidden])) #touch {
   font-family: var(--num);
   color: var(--white);
 }
+
+/* How a shut start opens: a line of marks, an arrow between each step. */
+.how {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 4px;
+}
+.how .to {
+  font-style: normal;
+  opacity: 0.6;
+  margin: 0 2px;
+}

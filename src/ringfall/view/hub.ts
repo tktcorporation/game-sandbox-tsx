@@ -1,5 +1,5 @@
 import { PLAYER } from "../sim/config";
-import { armorIcon, binPicture, coinIcon, dmgIcon, magIcon, rateIcon, checkIcon, coreIcon, factoryIcon, flagIcon, hideoutIcon, clockIcon, crossIcon, depotIcon, gunIcon, healIcon, issueIcon, keyIcon, lockIcon, modIcon, pinIcon, pouchIcon, radioIcon, robotIcon, routeIcon, SIDE, stashIcon, turretIcon, upIcon, workbenchIcon } from "./icons";
+import { armorIcon, binPicture, fightIcon, entryIcon, coinIcon, dmgIcon, magIcon, rateIcon, checkIcon, coreIcon, factoryIcon, flagIcon, hideoutIcon, clockIcon, crossIcon, depotIcon, gunIcon, healIcon, issueIcon, keyIcon, lockIcon, modIcon, pinIcon, pouchIcon, radioIcon, robotIcon, routeIcon, SIDE, stashIcon, turretIcon, upIcon, workbenchIcon } from "./icons";
 import { ALLY, FACTORY, FACTORY_TOP, HEALS as HEAL_SPECS, HIDEOUT, MOD_KINDS, PLATE, RARITY, THREAT, TOOLS, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
 import { boostFor, raidClock, strengthFor, type Kit } from "../sim/state";
 import { CAMP, DEPOTS, ENTRIES, entryOf, HOME_REGION, NODES, nodeIndex, POIS, UNLOCKS, poiIndex, poiRegion, REGIONS, regionOf, ROUTES, type EntryId, type PoiId, type RegionId, type StationId } from "../sim/map";
@@ -14,7 +14,7 @@ import { eventRow } from "./events";
 import { rivalOf } from "../sim/holds";
 import { HOLD_CSS, IslandMap, islandScene, RIVAL_CSS, TITAN_CSS } from "./map";
 import { ExpeditionPanel } from "./expeditions";
-import { incomingLine, logLine, type IslandLogEntry } from "../meta/expeditions";
+import { incomingLine, logLine, type Incoming, type IslandLogEntry } from "../meta/expeditions";
 import { enemyNodes, frontNodes, ownNodes } from "../sim/front";
 import { nodeRow } from "./row";
 import { sfx } from "./sfx";
@@ -268,6 +268,7 @@ export interface LockedPick {
 export interface LockHint {
   name: string;
   why: string;
+  /** Each line as HTML: marks, and names escaped. */
   how: string[];
 }
 
@@ -278,15 +279,27 @@ const departNodesIn = (region: RegionId): PoiId[] => regionOf(region).pois.filte
  * How a region with no start opens, a line each: walking in a raid over each of its crossings
  * (`Region.reach`) to one of its ways in and getting off alive, or a depot opened by a node held.
  */
+/** The way to a way in, as marks: a region, the crossing, the way in dashed (not known yet). */
+const ARROW = `<i class="to">›</i>`;
+/** Reaching a way in and coming home alive: the dashed ring turns solid. */
+const LEARN = `<span class="how">${entryIcon(false)}到着${ARROW}生還${ARROW}${entryIcon()}</span>`;
+
+/**
+ * Another player's expedition coming at a node of the player's, as marks: whose flag and name, the
+ * node, and the hours left (or that it waits or attacks there). The sentence is `incomingLine()`.
+ */
+function incomingMarks(e: Incoming, now: number): string {
+  const head = `${flagIcon(SIDE.rival)}${esc(e.by.name || e.by.code)}${ARROW}${coreIcon(SIDE.own)}${esc(NODES[nodeIndex(e.node)]?.name ?? e.node)}`;
+  const tail = e.state === "waiting" ? "足止め" : e.state === "attacking" ? fightIcon(UI.alert) : `${clockIcon()}<b>${Math.max(1, Math.ceil((e.arriveAt - now) / 3_600_000))}h</b>`;
+  return `<span class="how">${head}${tail}</span>`;
+}
+
+/** How a region with no start opens, as HTML lines of marks: each crossing walked, then the depots that open a start there. */
 function regionHow(region: RegionId): string[] {
   const r = regionOf(region);
-  const walks = (r.reach ?? []).map((c) => `${regionOf(c.from).name}から${c.by}を越えて${entryOf(c.to).name}へ`);
-  const depots = departNodesIn(region).map((d) => POIS[poiIndex(d)].name);
-  return [
-    ...walks,
-    ...(walks.length ? ["出撃中に歩いて着き、生きて帰ると選べる"] : []),
-    ...(depots.length ? [`または${depots.join("・")}を制圧し、中継ボックスに触れる`] : []),
-  ];
+  const walks = (r.reach ?? []).map((c) => `<span class="how">${esc(regionOf(c.from).name)}${ARROW}${esc(c.by)}${ARROW}${entryIcon(false)}${esc(entryOf(c.to).name)}</span>`);
+  const depots = departNodesIn(region).map((d) => esc(POIS[poiIndex(d)].name));
+  return [...walks, ...(walks.length ? [LEARN] : []), ...(depots.length ? [`<span class="how">${coreIcon(SIDE.own)}${depots.join("・")}${ARROW}${depotIcon()}</span>`] : [])];
 }
 /** A raid the camp hands over to start: the kit taken, where, and from which start. */
 export interface Launch {
@@ -625,13 +638,13 @@ export class Hub {
     if (at.kind === "entry") {
       const e = ENTRIES.find((w) => w.id === at.id);
       if (!e || (p.entries.includes(e.id) && canStartIn(p, e.region))) return null;
-      if (!canStartIn(p, e.region)) return { name: e.name, why: "道を知らない", how: [`${regionOf(e.region).name}の入口。まだ見つけていない`, ...regionHow(e.region)] };
-      return { name: e.name, why: "まだ見つけていない", how: ["出撃中にここまで歩いて着き、生きて帰ると選べる"] };
+      if (!canStartIn(p, e.region)) return { name: e.name, why: "道を知らない", how: [`<span class="how">${entryIcon(false)}${esc(regionOf(e.region).name)}</span>`, ...regionHow(e.region)] };
+      return { name: e.name, why: "まだ見つけていない", how: [LEARN] };
     }
     const d = at.id as PoiId;
     if (departDepots(p).includes(d)) return null;
     const node = POIS[poiIndex(d)].name;
-    return { name: `${node}の中継ボックス`, why: "未制圧", how: [`${node}を制圧すると、ここから出撃できる`] };
+    return { name: `${node}の中継ボックス`, why: "未制圧", how: [`<span class="how">${coreIcon(SIDE.enemy)}${esc(node)}${ARROW}${coreIcon(SIDE.own)}</span>`] };
   }
 
   /** Shows a shut start beside the departure's map without choosing it; false (and nothing shown) for one that is open. */
@@ -658,8 +671,9 @@ export class Hub {
     }
     const a = this.allowance();
     if (!a || !this.from || fitsStart(this.profile, this.startLoad(), this.from)) return null;
-    const grow = a.next === null ? "枠は最大" : `ここから荷を送るほど枠が増える（次の Lv まであと ${yen(a.next)}）`;
-    return { name: `${POIS[poiIndex(this.from)].name}の中継ボックス`, why: `持ち込み枠 ${a.cost} / ${a.budget}`, how: ["倉庫で持っていく物を減らす", grow], at: { kind: "depot", id: this.from } };
+    // Take less, or send more home through this depot to raise its level: a coin and the credits still to send.
+    const grow = a.next === null ? "" : `<span class="how">${depotIcon()}${ARROW}<b class="cash">${coinIcon()}${yen(a.next)}</b>${ARROW}${upIcon()}Lv</span>`;
+    return { name: `${POIS[poiIndex(this.from)].name}の中継ボックス`, why: `持ち込み枠 ${a.cost} / ${a.budget}`, how: [`<span class="how">${stashIcon()}−</span>`, ...(grow ? [grow] : [])], at: { kind: "depot", id: this.from } };
   }
 
   /** Chooses where the next raid starts: a way in known, or a depot that opens a start. False when it may not start there. */
@@ -1026,7 +1040,7 @@ export class Hub {
       // A quiet day and a quiet tomorrow say nothing.
       (p.events[0] || p.events[1] ? `<ul class="events"><li><small>今日</small>${eventRow(p.events[0])}</li><li><small>明日</small>${eventRow(p.events[1])}</li></ul>` : "") +
       `<ul class="hold-key">${key}</ul>` +
-      (p.incoming.length ? `<small>来る遠征（地図の緑の矢印）</small><ul class="island-news incoming">${p.incoming.map((e) => `<li>${coreIcon(SIDE.rival)}${esc(incomingLine(e, Date.now()))}</li>`).join("")}</ul>` : "") +
+      (p.incoming.length ? `<small>来る遠征</small><ul class="island-news incoming">${p.incoming.map((e) => `<li title="${esc(incomingLine(e, Date.now()))}">${incomingMarks(e, Date.now())}</li>`).join("")}</ul>` : "") +
       (this.news.length ? `<small>島の知らせ</small><ul class="island-news">${this.news.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>` : "") +
       (taken ? `<small>依頼　${esc(regionOf(contractRegion(taken)).name)}<i class="taken-line"></i></small><p class="hub-taken"><em>${CONTRACT_NAME[taken.t]}</em>${contractMarks(taken)}</p>` : "") +
       `</div></div>`
@@ -1124,7 +1138,7 @@ export class Hub {
       ["目的", goal],
     ];
     // Other players' expeditions sent at this island land in this raid: where, whose, and what to do about it.
-    if (p.incoming.length) rows.push(["来る遠征", esc(`${p.incoming.map((e) => `${NODES[nodeIndex(e.node)]?.name ?? e.node}（${e.by.name || e.by.code}）`).join("・")}　核を守ると固められる`)]);
+    if (p.incoming.length) rows.push(["来る遠征", `${p.incoming.map((e) => incomingMarks(e, Date.now())).join("")}<em class="ask-kind">核で固める</em>`]);
     const warn: string[] = [];
 
     return { rows, warn };
