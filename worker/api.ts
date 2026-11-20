@@ -210,13 +210,18 @@ async function ownCode(env: ApiEnv, code: string, player: string, now: number) {
 /** How many neighbours an island is offered, and how long a set of them lasts before it is drawn again. */
 export const NEIGHBOURS = { count: 4, pool: 24, weekMs: 7 * 24 * 3600 * 1000, activeMs: 14 * 24 * 3600 * 1000 } as const;
 
-/** A neighbour as the owner's camp shows it: whose island, its code, and how far its owner has come. */
+/** A neighbour as the owner's camp shows it: whose island, its code, how far its owner has come, and what they did last. */
 export interface Neighbour {
   code: string;
   name: string;
   held: number;
   total: number;
   day: number;
+  /** When its owner last settled a raid (epoch ms). */
+  seen: number;
+  /** That raid's cores captured and how it ended; null with no raid recorded. */
+  captured: number | null;
+  outcome: string | null;
 }
 
 const mix32 = (s: string) => {
@@ -238,7 +243,10 @@ async function neighbours(env: ApiEnv, player: string, now: number): Promise<Res
     const held = mine.held ?? 0;
     const rows = (
       await env.DB.prepare(
-        "SELECT i.code AS code, p.name AS name, s.held AS held, s.held + s.enemy + s.rival AS total, s.day AS day FROM islands i JOIN players p ON p.id = i.player_id JOIN island_summaries s ON s.player_id = i.player_id " +
+        "SELECT i.code AS code, p.name AS name, s.held AS held, s.held + s.enemy + s.rival AS total, s.day AS day, s.updated_at AS seen, " +
+          "(SELECT r.captured FROM raids r WHERE r.player_id = i.player_id ORDER BY r.at DESC LIMIT 1) AS captured, " +
+          "(SELECT r.outcome FROM raids r WHERE r.player_id = i.player_id ORDER BY r.at DESC LIMIT 1) AS outcome " +
+          "FROM islands i JOIN players p ON p.id = i.player_id JOIN island_summaries s ON s.player_id = i.player_id " +
           "WHERE i.player_id != ?1 AND s.updated_at > ?2 ORDER BY abs(s.held - ?3), s.updated_at DESC LIMIT ?4",
       )
         .bind(player, now - NEIGHBOURS.activeMs, held, NEIGHBOURS.pool)

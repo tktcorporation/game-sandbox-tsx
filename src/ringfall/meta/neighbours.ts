@@ -14,6 +14,8 @@ export interface Neighbour {
   held: number;
   total: number;
   day: number;
+  /** What its owner did last, for a sign of life: when they last played, and that raid's cores taken and whether they got home. */
+  last?: { at: number; captured: number; home: boolean };
 }
 
 /** The most the server offers, and so the slots out at sea. */
@@ -46,7 +48,9 @@ export function parseNeighbours(raw: unknown): Neighbour[] | null {
   for (const n of raw.neighbours.slice(0, NEIGHBOUR_MAX)) {
     if (!isObj(n) || !isIslandCode(n.code) || typeof n.name !== "string" || !count(n.total, 64) || !count(n.held, n.total as number) || !count(n.day, 100000)) continue;
     const name = n.name.trim().slice(0, 24);
-    if (name) out.push({ code: n.code, name, held: n.held, total: n.total, day: n.day });
+    if (!name) continue;
+    const last = Number.isFinite(n.seen) && (n.seen as number) > 0 && count(n.captured, 64) ? { at: n.seen as number, captured: n.captured, home: n.outcome === "extracted" } : undefined;
+    out.push({ code: n.code, name, held: n.held, total: n.total, day: n.day, ...(last ? { last } : {}) });
   }
   return out;
 }

@@ -255,6 +255,8 @@ const count = (table: string) => Number((sqlite.prepare(`SELECT COUNT(*) AS n FR
     check(r.status === 200, `neighbours: the summary of island ${k} was not taken`);
     sqlite.prepare("INSERT INTO islands (code, player_id, created_at) VALUES (?1, ?2, ?3)").run(`AB${String(k).padStart(4, "0")}`, id, at);
   }
+  // One neighbour's owner has played a raid since: it shows as their last.
+  sqlite.prepare("INSERT INTO raids (player_id, day, outcome, captured, at) VALUES (?1, 3, 'extracted', 2, ?2)").run(ids[3], T - 3600_000);
   const ask = (id: string | null, now = T, method = "GET") => answer(env, new Request(BASE + "/api/neighbours", { method, headers: id ? { authorization: `Bearer ${id}` } : {} }), now);
   const a = await ask(ids[0]);
   const list = (a.body as { neighbours?: { code: string; name: string; held: number; total: number }[] }).neighbours ?? [];
@@ -265,6 +267,10 @@ const count = (table: string) => Number((sqlite.prepare(`SELECT COUNT(*) AS n FR
   check(!list.some((n) => n.code === "AB0004" || n.code === "AB0005"), "neighbours: an island far from the owner's in nodes held was offered over nearer ones");
   check(list.every((n) => n.total === 21), "neighbours: an island's node count is not its summary's");
   check(parseNeighbours(a.body)?.length === 4, "neighbours: the browser does not read the server's answer back");
+  // Each neighbour carries what its owner did last: the island summaries were posted without a raid, so none yet.
+  const lasts = parseNeighbours(a.body)!.map((n) => [n.code, n.last] as const);
+  console.log(`neighbours: last raids ${JSON.stringify(lasts)}`);
+  check(lasts.every(([c, l]) => (c === "AB0003" ? l?.captured === 2 && l.home : l === undefined)), "neighbours: a neighbour's last raid is not the one its owner played");
   check(parseNeighbours({ neighbours: [{ code: "bad", name: "x", held: 1, total: 21, day: 1 }] })?.length === 0, "neighbours: the browser took a neighbour with a bad code");
   const again = await ask(ids[0], T + DAY);
   check(JSON.stringify(again.body) === JSON.stringify(a.body), "neighbours: the list changed within the week");
