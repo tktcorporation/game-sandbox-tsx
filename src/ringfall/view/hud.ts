@@ -116,7 +116,7 @@ export class Hud {
    */
   private compassHalf = 0;
 
-  private map = new IslandMap($<HTMLCanvasElement>("map-canvas"));
+  private map = Object.assign(new IslandMap($<HTMLCanvasElement>("map-canvas")), { unlocks: false });
   /** The bag peek and the pickups' cards (view/bag.ts). */
   readonly bag = new BagView();
   private mapOpen = false;
@@ -1265,8 +1265,11 @@ export class Hud {
       { beat: "after", ids: battle, rivals: atEnd, moved: rivalMoved(atLeft, atEnd), prev: left, c: settled.after, icon: depotIcon() },
       { beat: "night", ids: night, rivals: atEnd, moved: [], prev: battle, c: settled.night, icon: nightIcon() },
     ].filter((b) => b.c.gained.length || b.c.lost.length || b.moved.length);
-    // Milliseconds between the beats; automation may slow them (`window.ringfallBeatGap`) to shoot each.
-    const gap = (window as { ringfallBeatGap?: number }).ringfallBeatGap ?? 1600;
+    // Milliseconds between the beats. Automation may set the gap to 0 and step them itself with
+    // `window.ringfallBeat()`, so a slow screenshot never misses one.
+    const auto = window as { ringfallBeatGap?: number; ringfallBeat?: () => string };
+    const gap = auto.ringfallBeatGap ?? 1600;
+    const manual = gap === 0;
     // Drawn once the results are shown, so the map is drawn at the canvas's size on screen.
     this.dayFrame = requestAnimationFrame(() => {
       map.draw({ ...scene(start, atStart), names: [] });
@@ -1276,17 +1279,24 @@ export class Hud {
       const learn = () => {
         map.known = settled.profile.entries;
       };
-      beats.forEach((b, k) =>
-        this.dayTimers.push(
-          window.setTimeout(() => {
-            if (k === 0) learn();
-            // A beat names only the nodes that changed hands in it: the results' map is small.
-            map.draw({ ...scene(b.ids, b.rivals, b.moved.length ? { ...b.c, moved: b.moved } : b.c), learned, names: [...b.c.gained, ...b.c.lost, ...b.moved] });
-            bar(b.ids, b.rivals, b.prev);
-            mark(b.beat, b.icon);
-          }, 900 + k * gap),
-        ),
-      );
+      const show = (k: number) => {
+        const b = beats[k];
+        if (k === 0) learn();
+        // A beat names only the nodes that changed hands in it: the results' map is small.
+        map.draw({ ...scene(b.ids, b.rivals, b.moved.length ? { ...b.c, moved: b.moved } : b.c), learned, names: [...b.c.gained, ...b.c.lost, ...b.moved] });
+        bar(b.ids, b.rivals, b.prev);
+        mark(b.beat, b.icon);
+      };
+      if (manual && beats.length) {
+        let k = 0;
+        auto.ringfallBeat = () => {
+          if (k < beats.length) show(k++);
+          else mark("done", document.getElementById("day-beat")?.innerHTML ?? "");
+          return document.getElementById("day-beat")?.dataset.beat ?? "";
+        };
+        return;
+      }
+      beats.forEach((_, k) => this.dayTimers.push(window.setTimeout(() => show(k), 900 + k * gap)));
       if (!beats.length && learned.length)
         this.dayTimers.push(
           window.setTimeout(() => {

@@ -518,6 +518,8 @@ export class IslandMap {
   locks = true;
   /** Who holds each node and what changed, and nothing else: no names but the scene's, no ways off, depots, routes or what a node opens. The results' map. */
   plain = false;
+  /** What holding each node opens, as small marks beside it: the camp's map table's (a raid's map leaves them out, to read at a glance). */
+  unlocks = true;
   /** The node whose padlock was picked, its note drawn beside it; -1 with none. */
   picked = -1;
   /** The padlocks at the last draw, each with its node's mark, in CSS pixels from the canvas's top left. */
@@ -1153,7 +1155,7 @@ export class IslandMap {
         // The garrison's plate: a shield in the colour of the rarity that pierces it.
         if (!plain) drawShield(g, p.x, p.y + r * 0.06, r * 0.62, RARITY_CSS[TIER[poi.id as NodeId] ?? 0]);
         // What holding it opens, as small marks beside it: dim while the enemy holds it.
-        if (!plain) drawUnlocks(g, p.x + r * 1.45, p.y - r * 0.95, poi.id as NodeId, dpr, hold(i) === "freed");
+        if (!plain && this.unlocks) drawUnlocks(g, p.x + r * 1.45, p.y - r * 0.95, poi.id as NodeId, dpr, hold(i) === "freed");
         // Marked by the enemy for the coming night: a red crescent at its foot; blue once fortified.
         const night = s.night ?? (s.battle ? { targets: s.battle.targets, fortified: s.battle.fortified } : null);
         const k = nodeIndex(poi.id as NodeId);

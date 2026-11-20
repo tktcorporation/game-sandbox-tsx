@@ -956,7 +956,7 @@ export class Hub {
       .reverse()
       .map((id) => {
         const t = storyOf(id);
-        return `<details class="told"${id === p.records.at(-1) ? " open" : ""}><summary>${esc(t.title)}<small>${esc(storyWhere(t))}</small></summary>${t.told.map((l) => `<p>${esc(l)}</p>`).join("")}</details>`;
+        return `<details class="told prose"${id === p.records.at(-1) ? " open" : ""}><summary>${esc(t.title)}<small>${esc(storyWhere(t))}</small></summary>${t.told.map((l) => `<p>${esc(l)}</p>`).join("")}</details>`;
       })
       .join("");
     return `<h3 class="hub-sub">物語の依頼</h3>${cur}${told}`;
