@@ -366,15 +366,41 @@ function stepBody(e: Enemy, vx: number, vz: number): boolean {
 /** A tick's decay of the damage counted toward a stagger (see STAGGER.window). */
 const STAGGER_DECAY = Math.exp(-TICK / STAGGER.window);
 
-/** Reused SoA extras for WASM: hunt vias + fromCover skip (same robot order as syncRobots). */
+/** Calm prep flags mirrored in Rust `kind.rs`. */
+const CALM_ADVANCE = 1;
+const CALM_LOOK_ALERT = 2;
+const CALM_LOOK_PARTY = 4;
+const CALM_LOOK_HOME = 8;
+const CALM_LOOK_AMBUSH = 16;
+const CALM_BOSS = 32;
+
+/** Reused SoA extras for WASM (same robot order as syncRobots). */
 let prepViaX = new Float32Array(0);
 let prepViaZ = new Float32Array(0);
 let prepHasVia = new Uint8Array(0);
 let prepSkip = new Uint8Array(0);
+let prepFoeIdx = new Int32Array(0);
+let prepCalmSpeed = new Float32Array(0);
+let prepCalmFlags = new Uint8Array(0);
+let prepFace = new Float32Array(0);
+let prepHasFace = new Uint8Array(0);
+
+function setPrepVia(i: number, x: number, z: number, speed: number, flags = 0) {
+  prepViaX[i] = x;
+  prepViaZ[i] = z;
+  prepHasVia[i] = 1;
+  prepCalmSpeed[i] = speed;
+  prepCalmFlags[i] = flags;
+}
+
+function setPrepFace(i: number, yaw: number) {
+  prepFace[i] = yaw;
+  prepHasFace[i] = 1;
+}
 
 /**
- * Before a WASM tick: fromCover for engaged grunts (sets skip) and hunt vias for engaged
- * robots without live LOS, so WASM move follows the ground field like TypeScript.
+ * Before a WASM tick: fromCover skip + hunt vias for engaged; foe index + calm vias/speed/flags
+ * for non-engaged (pathfinding stays TypeScript; WASM walks/fights).
  */
 function prepareWasmTick(s: State) {
   const list = s.friends.length ? [...s.enemies, ...s.friends] : s.enemies;
@@ -384,104 +410,184 @@ function prepareWasmTick(s: State) {
     prepViaZ = new Float32Array(n);
     prepHasVia = new Uint8Array(n);
     prepSkip = new Uint8Array(n);
+    prepFoeIdx = new Int32Array(n);
+    prepCalmSpeed = new Float32Array(n);
+    prepCalmFlags = new Uint8Array(n);
+    prepFace = new Float32Array(n);
+    prepHasFace = new Uint8Array(n);
   } else {
     prepHasVia.fill(0, 0, n);
     prepSkip.fill(0, 0, n);
+    prepFoeIdx.fill(-1, 0, n);
+    prepCalmSpeed.fill(0, 0, n);
+    prepCalmFlags.fill(0, 0, n);
+    prepHasFace.fill(0, 0, n);
   }
+  const idToIdx = new Map<number, number>();
+  for (let i = 0; i < n; i++) idToIdx.set(list[i].id, i);
+  const byId = { get: (id: number) => {
+    const idx = idToIdx.get(id);
+    return idx === undefined ? undefined : list[idx];
+  } };
   const p = s.player;
   for (let i = 0; i < n; i++) {
     const e = list[i];
-    if (e.friend || e.aware !== "engaged") continue;
+    if (e.friend) continue;
     if (e.mode === "spawning" || e.mode === "stunned" || e.mode === "staggered") continue;
-    if (e.kind === "titan") continue;
-    chooseTarget(s, e);
-    if (e.target === "friend") continue; // fightFoe path stays TS-only after pull
-    const atAlly = e.target === "ally";
-    const tPos = atAlly ? s.ally.pos : p.pos;
-    const tChest = atAlly ? allyChest(s.ally) : chest(s);
-    const tUp = atAlly ? allyUp(s) : p.downed <= 0;
-    const tVel = atAlly ? s.ally.vel : p.vel;
-    const known = atAlly ? { x: tPos.x, z: tPos.z, live: true as const } : knownSpot(s, e);
-    const round = atAlly ? null : pinchSpot(s, e, known);
-    if (e.kind === "grunt" && !e.elite && !round && fromCover(s, e, known, tChest, tUp, tVel)) {
-      prepSkip[i] = 1;
+    if (e.aware === "engaged") {
+      if (e.kind === "titan") continue;
+      chooseTarget(s, e);
+      if (e.target === "friend") continue;
+      const atAlly = e.target === "ally";
+      const tPos = atAlly ? s.ally.pos : p.pos;
+      const tChest = atAlly ? allyChest(s.ally) : chest(s);
+      const tUp = atAlly ? allyUp(s) : p.downed <= 0;
+      const tVel = atAlly ? s.ally.vel : p.vel;
+      const known = atAlly ? { x: tPos.x, z: tPos.z, live: true as const } : knownSpot(s, e);
+      const round = atAlly ? null : pinchSpot(s, e, known);
+      if (e.kind === "grunt" && !e.elite && !round && fromCover(s, e, known, tChest, tUp, tVel)) {
+        prepSkip[i] = 1;
+        continue;
+      }
+      const sees = known.live && facing(e, tPos) && los(muzzle(e), tChest);
+      if (sees && !fenceBetween(e.pos, tPos)) continue;
+      const after = known.live || round ? null : pursuitSpot(s, e, known);
+      const afterVia = after && dist2d(e.pos, after) > 1.5 ? sideStep(s, e, after, known, PURSUE.spread) : null;
+      const via = afterVia ?? (after ? after : huntStep(s, e, known));
+      if (after && !afterVia) {
+        prepViaX[i] = e.pos.x;
+        prepViaZ[i] = e.pos.z;
+      } else {
+        prepViaX[i] = via.x;
+        prepViaZ[i] = via.z;
+      }
+      prepHasVia[i] = 1;
       continue;
     }
-    const sees = known.live && facing(e, tPos) && los(muzzle(e), tChest);
-    if (sees && !fenceBetween(e.pos, tPos)) continue; // WASM walks toward known
-    const after = known.live || round ? null : pursuitSpot(s, e, known);
-    const afterVia = after && dist2d(e.pos, after) > 1.5 ? sideStep(s, e, after, known, PURSUE.spread) : null;
-    const via = afterVia ?? (after ? after : huntStep(s, e, known));
-    // Standing at the search spot: via ≈ self so WASM along stays 0.
-    if (after && !afterVia) {
-      prepViaX[i] = e.pos.x;
-      prepViaZ[i] = e.pos.z;
-    } else {
-      prepViaX[i] = via.x;
-      prepViaZ[i] = via.z;
+    // Non-engaged: foe duel or calm walk — feed vias / foe index for WASM.
+    const foe = foeOf(s, e, byId);
+    if (foe) {
+      const fi = idToIdx.get(foe.id);
+      if (fi === undefined) continue;
+      prepFoeIdx[i] = fi;
+      const at = bodyCenter(foe);
+      const sees = facing(e, foe.pos) && los(muzzle(e), at);
+      if (!sees) {
+        const sq = s.squads[e.squad];
+        const goal = sq?.foeAt ?? foe.pos;
+        const to = dist2d(e.pos, goal) > 3 ? homeStep(s, e, goal) : goal;
+        prepViaX[i] = to.x;
+        prepViaZ[i] = to.z;
+        prepHasVia[i] = 1;
+      }
+      continue;
     }
-    prepHasVia[i] = 1;
+    prepCalmDest(s, e, i);
   }
-  setTickPrep(n, prepViaX, prepViaZ, prepHasVia, prepSkip);
+  setTickPrep(n, prepViaX, prepViaZ, prepHasVia, prepSkip, prepFoeIdx, prepCalmSpeed, prepCalmFlags, prepFace, prepHasFace);
 }
 
-/**
- * After a WASM tick: calm / fightFoe for robots WASM left alone (non-engaged). Sense,
- * spawning, stunned and engaged combat already ran in WASM; do not re-decay timers.
- */
-function tickNonEngaged(s: State) {
-  markNear(s);
-  const tick = Math.round(s.time / TICK);
-  const p = s.player;
-  const start = s.enemies;
-  const friendsAt = s.friends;
-  const startLen = start.length;
-  const friendsLen = friendsAt.length;
-  let byIdMap: Map<number, Enemy> | null = null;
-  const byId = {
-    get(id: number): Enemy | undefined {
-      if (!byIdMap) {
-        byIdMap = new Map();
-        for (let i = 0; i < startLen; i++) byIdMap.set(start[i].id, start[i]);
-        for (let i = 0; i < friendsLen; i++) byIdMap.set(friendsAt[i].id, friendsAt[i]);
+/** Mirror of `calm()` destinations into SoA vias (pathfinding in TS, walk in WASM). */
+function prepCalmDest(s: State, e: Enemy, i: number) {
+  const k = ENEMIES[e.kind];
+  const slow = k.speed * AWARE.idleSpeed;
+  if (e.aware === "alert" && e.poi >= 0 && POIS[e.poi].boss) {
+    prepCalmFlags[i] = CALM_BOSS | CALM_LOOK_HOME;
+    if (dist2d(e.pos, e.home) > 0.8) setPrepVia(i, e.home.x, e.home.z, slow, CALM_BOSS | CALM_LOOK_HOME);
+    return;
+  }
+  if (e.aware === "alert") {
+    prepCalmFlags[i] = CALM_LOOK_ALERT;
+    if (e.goal && dist2d(e.pos, e.goal) > 2.5) {
+      const via = huntStep(s, e, e.goal);
+      const pace = s.squads[e.squad]?.sweep ? k.speed * SWEEP.pace : slow * 1.4;
+      setPrepVia(i, via.x, via.z, pace, CALM_LOOK_ALERT);
+    }
+    return;
+  }
+  const sq = s.squads[e.squad];
+  if (sq?.walk) {
+    const members = squadMembers(s, e.squad);
+    const slot = members.indexOf(e);
+    const to = { x: sq.walk.x + (slot % 2 ? 1.6 : -1.6) * Math.min(slot, 1), z: sq.walk.z + slot * 1.4 };
+    const pace = slowest(members) * (sq.crew ? CREW.pace : PARTY.pace);
+    prepCalmFlags[i] = CALM_LOOK_PARTY;
+    if (dist2d(e.pos, to) > 0.8) {
+      const via = tripStep(e, to);
+      setPrepVia(i, via.x, via.z, pace, CALM_LOOK_PARTY);
+    }
+    return;
+  }
+  if (sq?.party) {
+    const members = squadMembers(s, e.squad);
+    const slot = members.indexOf(e);
+    const stop = PARTY_STOPS[sq.party.region][sq.party.stop];
+    const to = { x: stop.x + (slot % 2 ? 1.6 : -1.6) * Math.min(slot, 1), z: stop.z + slot * 1.4 };
+    const pace = slowest(members) * PARTY.pace;
+    prepCalmFlags[i] = CALM_LOOK_PARTY;
+    if (dist2d(e.pos, to) > 0.8) {
+      const via = tripStep(e, to);
+      setPrepVia(i, via.x, via.z, pace, CALM_LOOK_PARTY);
+    }
+    return;
+  }
+  if (sq?.ambush) {
+    const members = squadMembers(s, e.squad);
+    const slot = members.indexOf(e);
+    const to = { x: sq.ambush.at.x + (slot % 2 ? 2.2 : -2.2) * Math.min(slot, 1), z: sq.ambush.at.z + slot * 1.8 };
+    prepCalmFlags[i] = CALM_LOOK_AMBUSH;
+    setPrepFace(i, sq.ambush.face);
+    if (dist2d(e.pos, to) > 1) {
+      const via = dist2d(e.pos, to) > STRAY ? homeStep(s, e, to) : to;
+      setPrepVia(i, via.x, via.z, slow * 1.6, CALM_LOOK_AMBUSH);
+    }
+    return;
+  }
+  if (sq && sq.patrol.length && e.kind !== "titan") {
+    const members = squadMembers(s, e.squad);
+    const slot = members.indexOf(e);
+    if (sq.battle !== undefined && sq.patrol.length > 1 && slot > 0) {
+      const ahead = members[slot - 1];
+      const dx = e.pos.x - ahead.pos.x;
+      const dz = e.pos.z - ahead.pos.z;
+      const l = hypot2(dx, dz) || 1;
+      if (l <= CONQUEST.column + 0.3) {
+        prepCalmFlags[i] = CALM_LOOK_HOME;
+        setPrepFace(i, ahead.yaw);
+        return;
       }
-      return byIdMap.get(id);
-    },
-  };
-  const gone = (e: Enemy) => (e.friend ? s.friends !== friendsAt && !s.friends.includes(e) : s.enemies !== start && !s.enemies.includes(e));
-  for (let at = 0; at < startLen; at++) {
-    const e = start[at];
-    if (gone(e)) continue;
-    if (s.phase === "done") return;
-    if (e.aware === "engaged") continue;
-    if (e.mode === "spawning" || e.mode === "stunned" || e.mode === "staggered") continue;
-    // Titan wake is handled in WASM; if still not engaged, mirror TS.
-    if (e.kind === "titan" && dist2d(e.pos, p.pos) < 24 && p.downed <= 0 && s.phase === "play") {
-      engageSquad(s, e.squad, e);
-      continue;
+      const to = { x: ahead.pos.x + (dx / l) * CONQUEST.column, z: ahead.pos.z + (dz / l) * CONQUEST.column };
+      const via = l > STRAY ? homeStep(s, e, to) : to;
+      const pace = slow * PATROL.pace * (l > CONQUEST.column * 2 ? 1.25 : 1);
+      setPrepVia(i, via.x, via.z, pace, 0);
+      return;
     }
-    const foe = foeOf(s, e, byId);
-    if (foe && !gone(foe)) fightFoe(s, e, foe);
-    else if (e.squad < 0 || nearSquads[e.squad]) calm(s, e);
-    else if ((tick + e.squad) % FAR_THINK.every === 0) {
-      dt = TICK * FAR_THINK.every;
-      calm(s, e);
-      dt = TICK;
-    }
+    const wp = sq.patrol[sq.leg % sq.patrol.length];
+    const to = { x: wp.x + (slot % 2 ? 1.6 : -1.6) * Math.min(slot, 1), z: wp.z + slot * 1.4 };
+    const prev = sq.patrol[(sq.leg + sq.patrol.length - 1) % sq.patrol.length];
+    const diverted = toSegment(e.pos, prev, to) > STRAY;
+    const via = diverted ? homeStep(s, e, to) : to;
+    const pace = sq.pack ? k.speed * PACK.pace : sq.mobile || sq.battle !== undefined ? slow * PATROL.pace : slow;
+    const flags = !diverted && slot === 0 ? CALM_ADVANCE : 0;
+    setPrepVia(i, via.x, via.z, pace, flags);
+    return;
+  }
+  prepCalmFlags[i] = CALM_LOOK_HOME;
+  if (dist2d(e.pos, e.home) > 0.8) {
+    const via = dist2d(e.pos, e.home) > STRAY ? homeStep(s, e, e.home) : e.home;
+    setPrepVia(i, via.x, via.z, slow, CALM_LOOK_HOME);
   }
 }
 
 export function stepEnemies(s: State) {
   const p = s.player;
   stepSquads(s);
-  // WASM owns sense + engaged combat + orbs when the tick host is ready.
-  // Calm / fightFoe / patrols stay in TypeScript after the tick (`tickNonEngaged`).
+  // WASM owns the full enemy tick (sense + calm + fightFoe + engaged + orbs) when ready.
   if (TICK_WASM) {
     uploadGeom(worldVersion, s.routes);
     prepareWasmTick(s);
     if (stepTick(s)) {
       markTickDone();
-      tickNonEngaged(s);
       return;
     }
   }

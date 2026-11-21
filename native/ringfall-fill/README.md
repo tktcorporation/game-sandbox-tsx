@@ -12,4 +12,4 @@ npm run fill:ringfall
 - A* opt-in: `RINGFALL_ASTAR=1`
 - Tick SoA: `RINGFALL_TICK=1` (orbs stay TS; hash kept)
 - WASM orbs: `RINGFALL_ORBS=1` (drifts hash today)
-- ABI: `ringfall_sim_abi_version()` = 2
+- ABI: `ringfall_sim_abi_version()` = 5

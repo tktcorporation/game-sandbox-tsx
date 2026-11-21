@@ -32,6 +32,21 @@ pub const SQUAD_ENGAGED: u8 = 1;
 pub const SQUAD_MOBILE: u8 = 2;
 pub const SQUAD_RETREAT: u8 = 4;
 pub const SQUAD_PACK: u8 = 8;
+pub const SQUAD_BATTLE: u8 = 16;
+pub const SQUAD_CREW: u8 = 32;
+pub const SQUAD_SWEEP: u8 = 64;
+
+/// Turret: never leaves its post (`Enemy.post`).
+pub const ROBOT_POST: u8 = 32;
+
+/// Calm prep flags (TypeScript → WASM). `CALM_FOE_SHOT` is set by Rust when fightFoe fires.
+pub const CALM_ADVANCE: u8 = 1;
+pub const CALM_LOOK_ALERT: u8 = 2;
+pub const CALM_LOOK_PARTY: u8 = 4;
+pub const CALM_LOOK_HOME: u8 = 8;
+pub const CALM_LOOK_AMBUSH: u8 = 16;
+pub const CALM_BOSS: u8 = 32;
+pub const CALM_FOE_SHOT: u8 = 128;
 
 #[derive(Clone, Copy)]
 pub struct KindSpec {
