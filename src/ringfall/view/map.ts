@@ -986,7 +986,7 @@ export class IslandMap {
       g.restore();
       g.textAlign = "center";
       // Whose island and how much of it they hold, in one line over it: a slot near the map's edge keeps it whole.
-      label(`${n.name} ${n.held}/${n.total}`, p.x, p.y - r - 4 * dpr, UI.paper, 11);
+      label(`${n.name}${n.ai ? " AI" : ""} ${n.held}/${n.total}`, p.x, p.y - r - 4 * dpr, UI.paper, 11);
       taken.push({ x0: p.x - r * 1.6, y0: p.y - r - 12 * dpr, x1: p.x + r * 1.6, y1: p.y + r });
     }
     // Districts and landmarks between the POIs, small and muted under everything else.

@@ -115,6 +115,8 @@ export interface RivalExpedition {
   target: NodeId;
   kinds: readonly EnemyKind[];
   at: number;
+  /** Lands by dropship at its node itself rather than at the pad or the north shore (the game's own islands, meta/ai-islands.ts). */
+  near?: true;
 }
 
 /** What a raid of the island brings to its battle: the factory's level, and the other players' expeditions coming. */
@@ -907,12 +909,13 @@ function counterAttack(s: State, b: Battle) {
 /**
  * Other players' expeditions come due: each sets off on a dropship to the pad or a boat to the
  * north shore (the enemy's own ways in, `landingPlan()`), whichever lands it the shorter walk from
- * its target, and walks there across whoever's nodes lie between. Its squad takes that node and holds it.
+ * its target, and walks there across whoever's nodes lie between; one marked `near` comes down by
+ * dropship at its node itself. Its squad takes that node and holds it.
  */
 function rivalsLand(s: State, b: Battle) {
   while (b.rivals.length && b.rivals[0].at <= b.now) {
     const x = b.rivals.shift()!;
-    const plan = rivalRoute(s, nodeIndex(x.target));
+    const plan = x.near ? { from: nodeIndex(x.target), to: nodeIndex(x.target), via: [] } : rivalRoute(s, nodeIndex(x.target));
     if (!plan) continue;
     const q = addSquad(b, 3, x.kinds, plan.from, plan.to, "attack");
     q.owner = x.owner;

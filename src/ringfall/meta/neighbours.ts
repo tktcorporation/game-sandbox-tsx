@@ -18,6 +18,8 @@ export interface Neighbour {
   slot: number;
   /** What its owner did last, for a sign of life: when they last played, and that raid's cores taken and whether they got home. */
   last?: { at: number; captured: number; home: boolean };
+  /** An island the game runs itself (meta/ai-islands.ts), filling a slot the server left free: marked AI wherever it is shown. */
+  ai?: true;
 }
 
 /** The most the server offers, and so the slots out at sea. */

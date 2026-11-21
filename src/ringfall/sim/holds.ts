@@ -21,3 +21,12 @@ export function parseHold(raw: unknown): PoiHold | null {
   if (raw === "held" || raw === "freed") return raw;
   return typeof raw === "string" && /^rival:[A-Za-z0-9_-]{1,64}$/.test(raw) ? (raw as RivalHold) : null;
 }
+
+/**
+ * The owner id of an island the game itself runs (meta/ai-islands.ts, AI の島): `ai-` and its code.
+ * A server's island code never has a `-`, so such an owner is never a real player's.
+ */
+export const aiOwner = (code: string): string => `ai-${code}`;
+
+/** Whether `owner` (a `RivalHold`'s id, or a battle squad's owner) is an island the game runs. */
+export const isAiOwner = (owner: string | null): boolean => !!owner && owner.startsWith("ai-");

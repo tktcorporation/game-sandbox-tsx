@@ -7,7 +7,7 @@
  */
 import { ENEMIES, FACTORY, FACTORY_TOP, FRONT, type EnemyKind } from "../sim/config";
 import type { Battle, RivalExpedition } from "../sim/battle";
-import { parseHold, rivalOf, type PoiHold } from "../sim/holds";
+import { isAiOwner, parseHold, rivalOf, type PoiHold } from "../sim/holds";
 import { NODES, nodeIndex, type NodeId } from "../sim/map";
 import { isIslandCode } from "./island-code";
 import { unfreeable, unlocked, type Island } from "./island";
@@ -102,7 +102,12 @@ export function parseLog(raw: unknown): { entries: IslandLogEntry[]; next: numbe
 }
 
 /** The holds of an owner's report (`PUT /api/islands/:code`): each node's in the server's order (`ISLAND_TABLE`). */
-export const reportHolds = (p: { poiState: Island }): PoiHold[] => ISLAND_TABLE.nodes.map((n) => p.poiState[n.id as NodeId]?.state ?? "held");
+export const reportHolds = (p: { poiState: Island }): PoiHold[] =>
+  ISLAND_TABLE.nodes.map((n) => {
+    const h = p.poiState[n.id as NodeId]?.state ?? "held";
+    // A node one of the game's own islands holds (meta/ai-islands.ts) is no player's to the server: the enemy's.
+    return isAiOwner(rivalOf(h)) ? "held" : h;
+  });
 
 /**
  * The nodes an owner's report names as taken back in the raid (`retaken` of `PUT /api/islands/:code`):
@@ -142,6 +147,8 @@ export function mergeHolds(poiState: Island, server: readonly { id: string; hold
   for (const { id, hold } of server) {
     if (nodeIndex(id) < 0 || unfreeable(id as NodeId) || pending.includes(id)) continue;
     const cur = poiState[id as NodeId]?.state;
+    // The game's own islands are the browser's, never the server's: a node one holds stays so until the player takes it back.
+    if (cur !== undefined && isAiOwner(rivalOf(cur)) && rivalOf(hold) === null) continue;
     const next = rivalOf(hold) !== null ? hold : cur !== undefined && rivalOf(cur) !== null ? hold : cur;
     if (next === undefined || next === cur) continue;
     if (out === poiState) out = { ...poiState };
@@ -198,6 +205,7 @@ export function incomingLine(e: Incoming, now: number): string {
   const at = nodeName(e.node);
   if (e.state === "waiting") return `${who}の遠征隊が${at}の前で足止めされている`;
   if (e.state === "attacking") return `${who}の遠征隊が${at}を攻めている`;
+  if (e.arriveAt <= 0) return `${who}の遠征隊が${at}を狙っている（次のレイドに上陸）`;
   const hours = Math.max(1, Math.ceil((e.arriveAt - now) / 3_600_000));
   return `${who}の遠征隊が${at}を狙っている（次のレイドに上陸。留守ならあと約 ${hours} 時間）`;
 }

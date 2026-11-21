@@ -1,5 +1,5 @@
 import { sfx } from "./sfx";
-import { cachedNeighbours } from "../island-net";
+import { incomingFor, neighboursFor } from "../island-net";
 import { WORLD } from "../sim/config";
 import { POIS, REGIONS, regionOf, type RegionId } from "../sim/map";
 import type { Hub, LockedPick, StartPoint } from "./hub";
@@ -97,8 +97,8 @@ export class DepartPicker {
     const p = hub.profile;
     this.map.known = p.entries;
     this.map.contract = null;
-    this.map.neighbours = cachedNeighbours();
-    this.map.draw(islandScene(p));
+    this.map.neighbours = neighboursFor(p);
+    this.map.draw(islandScene({ ...p, incoming: incomingFor(p) }));
     const pts = hub.startPoints();
     const hint = hub.departHint();
     const peek = hint && pts.every((q) => !(q.on && q.kind === hint.at.kind && q.id === hint.at.id)) ? hint.at : null;
