@@ -132,6 +132,10 @@ for (let k = 1; k <= 60; k++) {
 if (held < 15 || held > 50) fail(`${held} of 60 expeditions took their node`);
 const out: Outgoing[] = [{ ...sent, sentAt: NOW }];
 if (aiView(first, SALT, 10, out, "MINE00", NOW + 60_000).expeditions.length !== 1) fail("the island's view does not show the expedition on its way");
+const busyView = aiView(first, SALT, 10, out, "MINE00", NOW + 60_000);
+if (busyView.nodes.find((n) => n.id === sent.node)?.open) fail("a node the player's expedition is on still takes another");
+const after2 = aiView(first, SALT, 10, out, "MINE00", NOW + (AI.coming + AI.fighting + (AI.hold[1] + 2) * 60) * 60_000);
+if (!after2.nodes.find((n) => n.id === sent.node)?.open && aiView(first, SALT, 10, [], "", NOW).nodes.find((n) => n.id === sent.node)?.open) fail("a node stays shut after the expedition on it is gone");
 const fresh = aiRefresh(out, SALT, [], NOW + (AI.coming + 1) * 60_000);
 if (fresh === out || fresh[0].state !== "attacking") fail("the refresh does not bring the expedition up to the clock");
 if (aiRefresh(fresh, SALT, [], NOW + (AI.coming + 2) * 60_000) !== fresh) fail("a refresh with nothing changed made a new list");

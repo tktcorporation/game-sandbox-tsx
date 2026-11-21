@@ -264,8 +264,9 @@ function onEvent(e: GameEvent, s: State) {
     // Settle and save at once; only the results screen waits for the moment to play out.
     knownBefore = [...hub.profile.known];
     analysed = null;
-    const before = hub.profile;
-    settlement = settle(hub.profile, s);
+    // The expeditions on the game's own islands brought up to the clock first: the settle pays the nodes they hold now.
+    const before = refreshAi(hub.profile);
+    settlement = settle(before, s);
     hub.reload(settlement.profile);
     saveProfile(hub.profile);
     sendIsland(settlement, s);

@@ -10,7 +10,7 @@ import { loadIdentity, rememberCode, type Identity } from "./meta/identity";
 import { isApiError, type ApiError, type NetError } from "./meta/island-errors";
 import { isIslandCode } from "./meta/island-code";
 import { parseNeighbours, type Neighbour } from "./meta/neighbours";
-import { aiByCode, aiChanges, aiIncoming, aiLent, aiNextId, aiRefresh, aiView, withAi } from "./meta/ai-islands";
+import { aiBusy, aiByCode, aiChanges, aiIncoming, aiLent, aiNextId, aiRefresh, aiView, withAi } from "./meta/ai-islands";
 import { answerRecall, applySync, incomingOf, parseLease, parseLog, parseView, reportedHolds, reportHolds, type Incoming, type IslandLogEntry, type IslandView, type LentIn, type Synced } from "./meta/expeditions";
 import type { Profile } from "./meta/profile";
 import type { NodeId } from "./sim/map";
@@ -177,8 +177,13 @@ export async function readView(code: string, timeout?: number): Promise<Answer<I
 
 /** Sends an expedition of `units` from this island's factory to node `node` of island `code` (`POST …/expeditions`): its number on that island. Gives up as `network` after `timeout` ms. */
 export async function sendExpedition(code: string, node: string, units: number, timeout = SEND_TIMEOUT_MS): Promise<Answer<{ id: number }>> {
-  // The game's own islands take one at once, numbered as their server would.
-  if (aiSource && aiByCode(aiSalt(), code, serverSlots())) return { ok: true, body: { id: aiNextId(aiSource().expeditions, code) } };
+  // The game's own islands take one at once, numbered as their server would; a node one of the player's expeditions is on already refuses it.
+  const ai = aiSource && aiByCode(aiSalt(), code, serverSlots());
+  if (ai) {
+    const sent = aiSource!().expeditions;
+    if (sent.some((o) => o.code === code && o.node === node && o.id > 0 && aiBusy(ai, aiSalt(), o, Date.now()))) return failed("node-busy");
+    return { ok: true, body: { id: aiNextId(sent, code) } };
+  }
   const who = loadIdentity();
   if (!who.code) return failed("no-own-island");
   const r = await call(`/api/islands/${encodeURIComponent(code)}/expeditions`, { method: "POST", body: JSON.stringify({ from: { ...player(who), code: who.code }, target: node, units }) }, timeout);

@@ -153,8 +153,10 @@ export function aiChanges(a: AiIsland, salt: number, day: number): { took: NodeI
  */
 export function aiView(a: AiIsland, salt: number, day: number, sent: readonly Outgoing[], mine: string, now: number): IslandView {
   const own = new Set<string>(aiNodes(a, salt, day));
+  // A node one of the player's expeditions is on or holds takes no other (`node-busy` on the server).
+  const busy = new Set<string>(sent.filter((o) => o.code === a.code && aiBusy(a, salt, o, now)).map((o) => o.node));
   const near = new Set<string>(FRONT_LINKS.flatMap((l) => (l[0] === "camp" ? [] : own.has(l[0]) && !own.has(l[1]) ? [l[1]] : own.has(l[1]) && !own.has(l[0]) ? [l[0]] : [])));
-  const nodes = NODES.map((n) => ({ id: n.id as string, hold: (own.has(n.id) ? "freed" : "held") as PoiHold, open: own.has(n.id) || near.has(n.id) }));
+  const nodes = NODES.map((n) => ({ id: n.id as string, hold: (own.has(n.id) ? "freed" : "held") as PoiHold, open: (own.has(n.id) || near.has(n.id)) && !busy.has(n.id) }));
   const expeditions = sent
     .filter((o) => o.code === a.code && o.id > 0)
     .flatMap((o) => {
@@ -181,6 +183,12 @@ export function aiOutcome(a: AiIsland, salt: number, o: Outgoing, now: number): 
   const hours = lo + (hash(salt, a.slot, o.id, 77) % (hi - lo + 1));
   return t < AI.coming + AI.fighting + hours * 60 ? "holding" : "gone";
 }
+
+/** Whether the player's expedition `o` on island `a` still takes up its node at `now`: being sent, on its way, fighting or holding. */
+export const aiBusy = (a: AiIsland, salt: number, o: Outgoing, now: number): boolean => {
+  const state = aiOutcome(a, salt, o, now);
+  return state !== "gone" && state !== "recalling";
+};
 
 /** The player's expeditions with those on the game's islands brought up to `now`; the list itself when none changes. */
 export function aiRefresh(list: Outgoing[], salt: number, taken: readonly number[], now: number): Outgoing[] {
