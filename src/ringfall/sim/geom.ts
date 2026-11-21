@@ -365,13 +365,19 @@ function rayTerrain(o: Vec3, d: Vec3, maxT: number): number {
 }
 
 /** Clear sight from a to b. `paths`: as path finding sees the world, without the closed routes' obstacles (see `rayWorld`). */
+/** Scratch direction for `los()`: rewritten each call, never retained. */
+const losDir: Vec3 = { x: 0, y: 0, z: 0 };
+
 export function los(a: Vec3, b: Vec3, paths = false): boolean {
   const dx = b.x - a.x;
   const dy = b.y - a.y;
   const dz = b.z - a.z;
   const len = hypot3(dx, dy, dz);
   if (len < 1e-6) return true;
-  return rayWorld(a, { x: dx / len, y: dy / len, z: dz / len }, len, paths) >= len - 0.05;
+  losDir.x = dx / len;
+  losDir.y = dy / len;
+  losDir.z = dz / len;
+  return rayWorld(a, losDir, len, paths) >= len - 0.05;
 }
 
 /** Whether a fence stands between a and b (at a's knee height): a robot that sees through one cannot walk through it. */
