@@ -355,6 +355,8 @@ export class Hub {
   private armed = "";
   /** The contract board last put up on the board panel; a new day's board slides its papers in once. */
   private boardSeen: string;
+  /** Whether the factory's ladder of every level is unfolded. */
+  private factoryLadder = false;
   /** The factory's expeditions section, which draws itself (`#hub-exped`). */
   private exped: ExpeditionPanel;
   /** The island's news from the server (its log), as lines for the map table, and whether the map table has shown them. */
@@ -425,6 +427,7 @@ export class Hub {
     if (this.station === null) return;
     this.station = null;
     this.module = null;
+    this.factoryLadder = false;
     this.armed = "";
     this.exped.cancel();
     // A field typed in (the factory's island code) gives up the keys with the panel.
@@ -508,6 +511,9 @@ export class Hub {
         this.keepPicks(next);
         sfx.deliver();
       }
+    } else if (act === "factory-ladder") {
+      this.factoryLadder = !this.factoryLadder;
+      sfx.click();
     } else if (act === "factory") {
       const next = buildFactory(this.profile);
       if (next) {
@@ -799,9 +805,9 @@ export class Hub {
         n: squad(k)(lv),
         show: (n: number, was = n) => `<span class="bots">${Array.from({ length: n }, (_, i) => `<i class="${i >= was ? "gain" : ""}">${robotIcon(SIDE.own)}</i>`).join("") || `<b class="n none">0</b>`}</span>`,
       })),
-      { key: "every", mark: clockIcon(), n: FACTORY.levels[lv].every, show: (n: number, was?: number) => `${num(n, was)}<small>秒</small>` },
-      { key: "max", mark: flagIcon(), n: FACTORY.levels[lv].max + extra, show: num },
-      { key: "turrets", mark: turretIcon(SIDE.own), n: FACTORY.levels[lv].turrets, show: num, hideZero: true },
+      { key: "every", mark: clockIcon(), label: "間隔", n: FACTORY.levels[lv].every, show: (n: number, was?: number) => `${num(n, was)}<small>秒</small>` },
+      { key: "max", mark: flagIcon(), label: "部隊", n: FACTORY.levels[lv].max + extra, show: num },
+      { key: "turrets", mark: turretIcon(SIDE.own), label: "砲台", n: FACTORY.levels[lv].turrets, show: num, hideZero: true },
     ];
   }
 
@@ -817,9 +823,10 @@ export class Hub {
   }
 
   /**
-   * The factory's panel: its level with what it makes now, the next level's gain (was → now, lit),
-   * the ladder of its levels, then what the next one takes and the button that builds it. The nodes
-   * held add squads (their flag) and arm its robots as the trader's shelf (the gun's colour).
+   * The factory's panel, in three parts read top to bottom: what it makes now (the squad, how often,
+   * how many squads at once, the turrets, and what the nodes held add), the next level (what grows,
+   * lit, then what it takes and the button that builds it), and the ladder of every level, folded
+   * away until asked for.
    */
   private factoryPanel(): string {
     const p = this.profile;
@@ -829,13 +836,18 @@ export class Hub {
     const pips = Array.from({ length: FACTORY_TOP }, (_, n) => `<i class="${n < lv ? "on" : ""}"></i>`).join("");
     const u = unlocked(p);
     const arms = Math.max(PLATE.robots, u.shop);
-    // What the nodes held add: a node's core in the player's blue, then their squads' flags and the gun's colour (the trader's shelf).
-    const nodes = `<div class="from-nodes">${coreIcon(SIDE.own)}${u.squad ? `<span>${flagIcon()}<b>+${u.squad}</b></span>` : ""}<span style="color:${RARITY_CSS[arms]}">${gunIcon()}<small>${RARITY.names[arms]}</small></span></div>`;
-    const gain = next ? `<div class="gain-row">${upIcon()}<b>Lv${lv + 1}</b>${deltaHtml(levels[lv], levels[lv + 1])}</div>` : `<div class="gain-row max">MAX</div>`;
-    const cost = next ? this.cost(next.items, next.cash, `<button type="button" data-act="factory" ${canBuildFactory(p) ? "" : "disabled"}>Lv${lv + 1}</button>`) : "";
+    // What it makes now, each with its word.
+    const now = `<div class="fac-now">${levels[lv].map((g) => gaugeHtml(g)).join("")}</div>`;
+    // What the nodes held add: their squads' flags and the gun's colour (the trader's shelf), under the node's core.
+    const nodes = `<div class="from-nodes"><small>拠点から</small>${coreIcon(SIDE.own)}${u.squad ? `<span>${flagIcon()}<b>+${u.squad}</b></span>` : ""}<span style="color:${RARITY_CSS[arms]}">${gunIcon()}<small>${RARITY.names[arms]}</small></span></div>`;
+    const gain = next ? `<div class="gain-row">${upIcon()}<b>Lv${lv + 1}</b>${deltaHtml(levels[lv], levels[lv + 1])}</div>` : `<div class="gain-row max"><b>MAX</b></div>`;
+    const cost = next ? this.cost(next.items, next.cash, `<button type="button" data-act="factory" ${canBuildFactory(p) ? "" : "disabled"}>Lv${lv + 1} を建てる</button>`) : "";
+    const fold = `<button type="button" class="fac-fold${this.factoryLadder ? " open" : ""}" data-act="factory-ladder">${this.factoryLadder ? "段の一覧を閉じる" : "全部の段を見る"}</button>`;
     return (
-      `<div class="mod open up-card factory-card"><div class="mod-head"><strong>${factoryIcon()}工場</strong><span class="pips">${pips}</span><b>Lv${lv}${next ? "" : " MAX"}</b>${gain}</div>` +
-      `<div class="mod-body">${nodes}${ladder(levels, lv)}${cost}</div></div>` +
+      `<div class="mod open up-card factory-card"><div class="mod-head"><strong>${factoryIcon()}工場</strong><span class="pips">${pips}</span><b>Lv${lv}${next ? "" : " MAX"}</b></div>` +
+      `<div class="mod-body"><h4 class="fac-sub">今の工場</h4>${now}${nodes}` +
+      `<h4 class="fac-sub">${next ? "次の段" : "最後の段"}</h4>${gain}${cost}` +
+      `${fold}${this.factoryLadder ? ladder(levels, lv) : ""}</div></div>` +
       // The squads the expeditions took (sent from the signal station) are not here: how many, in a line.
       (squadsAway(p) ? `<p class="factory-away">${flagIcon()}島の守り <b>${homeSquads(p)}</b>　${flagIcon()}遠征 <b>${squadsAway(p)}</b><small>信号所から</small></p>` : "")
     );

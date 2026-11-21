@@ -113,17 +113,25 @@ export async function upgradeShots({ browser, port, out, errors }) {
     }
     await close(pg, phone);
 
-    // The factory: its card with the squad it makes, the next level's gain, and the ladder; the quarry held adds a flag.
+    // The factory: what it makes now (with the quarry's flag), the next level's gain and its build, the ladder folded away until asked for.
     await station(pg, "factory", cdp);
     const factory = await pg.evaluate(() => ({
+      now: document.querySelectorAll("#hub-side .fac-now .gauge").length,
       flag: document.querySelectorAll("#hub-side .from-nodes .ico.flag").length,
       gains: document.querySelectorAll("#hub-side .gain-row .delta").length,
-      ladder: [...document.querySelectorAll("#hub-side .ladder li")].map((l) => l.className),
+      ladder: document.querySelectorAll("#hub-side .ladder li").length,
       build: document.querySelector("#hub-side [data-act=factory]")?.textContent,
     }));
-    if (!factory.flag || !factory.gains || factory.ladder.length !== 9 || factory.ladder[1] !== "cur" || factory.build !== "Lv2") errors.push(`upgrades: the factory reads ${JSON.stringify(factory)}`);
+    if (factory.now < 3 || !factory.flag || !factory.gains || factory.ladder || factory.build !== "Lv2 を建てる") errors.push(`upgrades: the factory reads ${JSON.stringify(factory)}`);
     await check(pg, `${where} factory`);
     await shot("4-factory");
+    await tap("#hub-side [data-act=factory-ladder]");
+    await pg.waitForTimeout(100);
+    const ladder = await pg.evaluate(() => [...document.querySelectorAll("#hub-side .ladder li")].map((l) => l.className));
+    if (ladder.length !== 9 || ladder[1] !== "cur") errors.push(`upgrades: the factory's ladder unfolded reads ${JSON.stringify(ladder)}`);
+    await pg.evaluate(() => document.querySelector("#hub-side .ladder")?.scrollIntoView({ block: "end" }));
+    await check(pg, `${where} factory ladder`);
+    await shot("4-factory-ladder");
     await close(pg, phone);
 
     // Where the marks stand again: the shelves' issued heals beside the infirmary's case, the pouch, the stash's crate.
