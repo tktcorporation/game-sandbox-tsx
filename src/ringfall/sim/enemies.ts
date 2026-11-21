@@ -1,7 +1,7 @@
 import { ALLY, AWARE, CHARGER, CONQUEST, COVER, CREW, DEG, DODGE, DUCK, ELITE, ENEMIES, FALLBACK, FAR_THINK, PACK, PARTY, PATROL, PINCH, SPLIT, SWEEP, PLAYER, PURSUE, SHOT, SIGHT, STAGGER, SUPPORT, TICK, TITAN, TURN, WORLD, type EnemyKind, type Rarity } from "./config";
 import { clampToWorld, collide, dist2d, fenceBetween, groundAt, groundLevel, los, lookAngles, onTerrain, solidAt, worldVersion, wrapAngle } from "./geom";
 import { steepAt, terrainHeight } from "./terrain";
-import { engageSquad, fireRange, headOf, knownSpot, located, pursuitSpot, sense, stepSquads } from "./awareness";
+import { engageSquad, fireRange, headOf, knownSpot, located, pursuitSpot, sense, senseUnseen, stepSquads } from "./awareness";
 import { coversNear, type CoverPoint } from "./cover";
 import { fieldTo, forgetFields, nextStep, onMainGround, routeLength } from "./hunt";
 
@@ -413,7 +413,17 @@ export function stepEnemies(s: State) {
       }
       continue;
     }
-    sense(s, e);
+    // Past FAR_THINK.dist no robot can see the player (config.ts): the cone and los do nothing, so
+    // only detection decay remains. Stunned / staggered / engaged robots still run the full sense.
+    if (
+      e.aware !== "engaged" &&
+      e.mode !== "stunned" &&
+      e.mode !== "staggered" &&
+      e.squad >= 0 &&
+      !nearSquads[e.squad]
+    )
+      senseUnseen(s, e, TICK);
+    else sense(s, e);
     if (e.mode === "stunned" || e.mode === "staggered") {
       // Reeling: the knock-back it was given dies away; then it fights on, a beat before its next attack.
       e.timer -= TICK;
