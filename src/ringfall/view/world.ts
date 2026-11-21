@@ -282,6 +282,8 @@ export class World {
   campMode = false;
   /** The robot standing by the camp's factory, shown while the camp is drawn. */
   private factoryBot: THREE.Object3D | null = null;
+  /** The camp's signal station: a mast with a cabinet and a green lamp that blinks (scenery, no box). */
+  private signalMast: { root: THREE.Object3D; lamp: THREE.Sprite } | null = null;
 
   /** Automation only: a fixed camera that replaces the player's view. */
   cameraOverride: { x: number; y: number; z: number; yaw: number; pitch: number } | null = null;
@@ -1297,6 +1299,43 @@ export class World {
       }
     }
     if (this.factoryBot) this.factoryBot.visible = this.campMode;
+
+    // --- the camp's signal station: a steel mast against the west fence, its lamp in the other islands' green
+    if (this.campMode && !this.signalMast) {
+      const spot = CAMP.spots.find((c) => c.id === "signal");
+      if (spot) {
+        const root = new THREE.Group();
+        const steel = new THREE.MeshLambertMaterial({ color: PAL.steel });
+        const dark = new THREE.MeshLambertMaterial({ color: new THREE.Color(PAL.steel).multiplyScalar(0.55) });
+        const part = (w: number, h: number, d: number, x: number, y: number, z: number, m: THREE.Material) => {
+          const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
+          b.position.set(x, y, z);
+          b.castShadow = true;
+          root.add(b);
+        };
+        // The mast, two cross-arms with their aerials, and the radio cabinet at its foot.
+        part(0.16, 4.4, 0.16, 0, 2.2, 0, steel);
+        part(1.4, 0.08, 0.08, 0, 3.4, 0, steel);
+        part(0.9, 0.08, 0.08, 0, 4.0, 0, steel);
+        for (const x of [-0.65, 0.65]) part(0.05, 0.7, 0.05, x, 3.75, 0, steel);
+        part(0.7, 1.1, 0.5, 0.55, 0.55, 0.3, steel);
+        part(0.72, 0.12, 0.52, 0.55, 1.12, 0.3, dark);
+        // Its face lit in the other islands' green: the set is on, listening out to sea.
+        const face = new THREE.Mesh(new THREE.PlaneGeometry(0.46, 0.3), new THREE.MeshBasicMaterial({ color: PAL.rivalHeld, toneMapped: false }));
+        face.position.set(0.55, 0.78, 0.56);
+        root.add(face);
+        const lamp = haloSprite(PAL.rivalHeld, 1.4, 0.9);
+        lamp.position.set(0, 4.55, 0);
+        root.add(lamp);
+        root.position.set(spot.x - 1.6, spot.y, spot.z);
+        this.scene.add(root);
+        this.signalMast = { root, lamp };
+      }
+    }
+    if (this.signalMast) {
+      this.signalMast.root.visible = this.campMode;
+      (this.signalMast.lamp.material as THREE.SpriteMaterial).opacity = 0.3 + 0.65 * Math.max(0, Math.sin(this.time * 2.2));
+    }
 
     // --- enemies, and the player's own robots among them
     const robots = s.friends.length ? [...s.enemies, ...s.friends] : s.enemies;

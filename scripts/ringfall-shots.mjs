@@ -2183,15 +2183,22 @@ if (part("battle")) for (const phone of [false, true]) {
   const fit = await spills(pg);
   if (fit.length) errors.push(`battle factory panel (${phone ? "phone" : "1280x720"}): ${fit.join(", ")}`);
   await pg.screenshot({ path: tag(1, "panel-factory") });
-  // The factory's expeditions under the card: with no island server (the gate sends no request) it says so in one line, and nothing else.
+  // The factory's panel is the factory's alone: the other islands are the signal station's.
+  if (await pg.evaluate(() => !!document.querySelector("#hub-exped"))) errors.push("battle: the factory's panel still holds the expeditions");
+  await closePanel(pg, phone);
+  // The signal station: with no island server (the gate sends no request) it says so in one line and offers no code to type;
+  // the game's own islands still fill the neighbours' slots.
+  await useStation(pg, "signal", cdp);
+  await pg.waitForTimeout(200);
   const exped = await pg.evaluate(() => {
     const el = document.querySelector("#hub-exped");
-    el?.scrollIntoView({ block: "end" });
-    return { text: el?.textContent ?? "", form: !!document.querySelector("#exp-code") };
+    return { text: el?.textContent ?? "", form: !!document.querySelector("#exp-code"), near: document.querySelectorAll("#hub-exped .exp-near button").length, ai: document.querySelectorAll("#hub-exped .exp-near .ai-tag").length };
   });
-  if (!exped.text.includes("島のサーバーにつながっていません") || exped.form) errors.push(`battle: the factory's expeditions read "${exped.text.slice(0, 120)}"${exped.form ? " with the send form" : ""}`);
+  if (!exped.text.includes("島のサーバーにつながっていません") || exped.form || exped.near !== 4 || exped.ai !== 4) errors.push(`battle: the signal station reads "${exped.text.slice(0, 120)}" (${JSON.stringify({ form: exped.form, near: exped.near, ai: exped.ai })})`);
+  const fitSignal = await spills(pg);
+  if (fitSignal.length) errors.push(`battle signal panel (${phone ? "phone" : "1280x720"}): ${fitSignal.join(", ")}`);
   await pg.waitForTimeout(100);
-  await pg.screenshot({ path: tag(1, "panel-factory-expeditions") });
+  await pg.screenshot({ path: tag(1, "panel-signal") });
   await closePanel(pg, phone);
   // The trader's shelf by the nodes held: the supply depot and the quarry light common, rare and epic.
   await useStation(pg, "shop", cdp);
