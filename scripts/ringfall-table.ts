@@ -104,6 +104,9 @@ export function playRaid(region: RegionId, skillName: string, r: number): RaidRe
   return playState(newRun(1000 + r * 7919, starterKit(), region, { entry: ways[r % ways.length] }), skillName, r);
 }
 
+/** Squads counted toward `peakSq` this tick: cleared and reused so a tick allocates none. */
+const peakSquads = new Set<number>();
+
 /** A bot of `skillName` plays the raid `s` to its end (its own numbers drawn from `r`); `s` is left as the raid ended. */
 export function playState(s: State, skillName: string, r: number): RaidResult {
   const region = s.region;
@@ -131,14 +134,25 @@ export function playState(s: State, skillName: string, r: number): RaidResult {
           met.add(e.squad);
         }
       }
-      if (s.enemies.some((e) => e.aware === "engaged" && e.mode !== "spawning")) {
+      // One pass over the robots: who is fighting, whether the titan is in it, and the peak crowd.
+      // Same numbers as the earlier `.some` / `.filter` / `Set` form, without allocating each tick.
+      let fighting = 0;
+      let titanEngaged = false;
+      peakSquads.clear();
+      for (const e of s.enemies) {
+        if (e.kind === "titan" && e.aware === "engaged") titanEngaged = true;
+        if (e.aware === "engaged" && e.mode !== "spawning") {
+          fighting++;
+          peakSquads.add(e.squad);
+        }
+      }
+      if (fighting) {
         quiet = Math.max(quiet, s.time - fightAt);
         fightAt = s.time;
       }
-      if (!s.enemies.some((e) => e.kind === "titan" && e.aware === "engaged")) {
-        const fighting = s.enemies.filter((e) => e.aware === "engaged" && e.mode !== "spawning");
-        peakBots = Math.max(peakBots, fighting.length);
-        peakSq = Math.max(peakSq, new Set(fighting.map((e) => e.squad)).size);
+      if (!titanEngaged) {
+        peakBots = Math.max(peakBots, fighting);
+        peakSq = Math.max(peakSq, peakSquads.size);
       }
       if (Math.round(s.time / TICK) % 30 === 0) check(s, `${region} ${skill.name}#${r} t=${s.time.toFixed(1)}`);
     }

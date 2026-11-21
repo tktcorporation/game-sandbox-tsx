@@ -170,6 +170,8 @@ export class Bot {
   private post: { x: number; z: number; id: number; until: number } | null = null;
   /** Where it glides to on the leap: away from the robots fighting it. */
   private escape: { x: number; z: number } | null = null;
+  /** Per-`input()` cache of whether a robot is in sight within 60 m (same answer as a fresh `los`). */
+  private seeCache = new Map<number, boolean>();
   crouch = false;
 
   constructor(
@@ -221,13 +223,23 @@ export class Bot {
     // no titan there, round the nearest garrison it leaves standing.
     const titan = s.enemies.find((e) => e.kind === "titan" && e.hp > 0 && e.aware !== "engaged" && regionHere(e.pos).id === s.region);
     this.avoid = titan && !(aim >= 0 && POIS[aim].boss) ? titanSight(titan) : titan ? undefined : garrisonGround(s, pierce(s) + 1, aim);
-    const sees = (e: Enemy) => dist2d(e.pos, p.pos) < 60 && los(eye, bodyCenter(e));
+    // `los` is the same for a robot for the whole of this `input()`: remember it, so the many
+    // filters below do not cast the same ray again. Named apart from the fight's `sees` boolean.
+    this.seeCache.clear();
+    const inSight = (e: Enemy) => {
+      let v = this.seeCache.get(e.id);
+      if (v === undefined) {
+        v = dist2d(e.pos, p.pos) < 60 && los(eye, bodyCenter(e));
+        this.seeCache.set(e.id, v);
+      }
+      return v;
+    };
     // Robots coming to look ("?") in plain sight are worth the first shot before they find it.
-    const coming = (e: Enemy) => e.aware === "alert" && dist2d(e.pos, p.pos) < 45 && sees(e);
+    const coming = (e: Enemy) => e.aware === "alert" && dist2d(e.pos, p.pos) < 45 && inSight(e);
     // A fighting robot out of sight for long is one that will not come (the titan on its pad
     // above the lakebed): stop waiting for it, as a player would, until it shows itself again.
     for (const e of live)
-      if (e.aware !== "engaged" || sees(e)) this.unseen.delete(e.id);
+      if (e.aware !== "engaged" || inSight(e)) this.unseen.delete(e.id);
       else this.unseen.set(e.id, (this.unseen.get(e.id) ?? 0) + TICK);
     const given = (e: Enemy) => (this.unseen.get(e.id) ?? 0) > GIVE_UP;
     // A POI whose last robots went off after it and have long been out of sight (the titan
@@ -245,8 +257,10 @@ export class Bot {
     // Finish the squads already fighting before opening on a new one, as a careful player would.
     const engaged = relevant.filter((e) => e.aware === "engaged");
     const objective = relevant.filter((e) => (aim >= 0 && e.poi === aim) || coming(e));
-    const engagedSeen = engaged.filter(sees);
-    const pool = engagedSeen.length ? engagedSeen : engaged.length ? engaged : objective.filter(sees).length ? objective.filter(sees) : objective;
+    const engagedSeen = engaged.filter(inSight);
+    // One filter for the objective's robots in sight: the earlier form ran the same filter twice.
+    const objectiveSeen = objective.filter(inSight);
+    const pool = engagedSeen.length ? engagedSeen : engaged.length ? engaged : objectiveSeen.length ? objectiveSeen : objective;
     // A flank in progress keeps its robot; otherwise the nearest one.
     const flanked = this.flank && live.find((e) => e.id === this.flank?.id);
     // Robots that have not noticed it yet are walked up to one at a time: taken up afresh each
@@ -267,7 +281,7 @@ export class Bot {
     if (guard >= 0) this.guarded += TICK;
     if (guard >= 0 && (!tgt || dist2d(tgt.pos, p.pos) > 70)) {
       goal = standBy(guard);
-    } else if (aim < 0 && core < 0 && (callLeft(s, this.exit(s).id) === 0 || !tgt || dist2d(tgt.pos, p.pos) > 70 || this.slipAway(s, live))) {
+    } else if (aim < 0 && core < 0 && (callLeft(s, this.exit(s).id) === 0 || !tgt || dist2d(tgt.pos, p.pos) > 70 || this.slipAway(s, live, inSight))) {
       // On its way out with nothing fighting it and no pickup called yet, it still searches the
       // bins in reach: the last POI it cleared is otherwise left unsearched, since leaving starts
       // as its last robot falls. In a region with one POI in its reach that is the whole haul.
@@ -332,7 +346,8 @@ export class Bot {
         this.sideT = 0.8 + this.rnd() * 1.2;
       }
       // The robots fighting it that it can see, and so can see it.
-      const watching = live.filter((e) => e.aware === "engaged" && e.kind !== "titan" && dist2d(e.pos, p.pos) < 50 && los(eye, bodyCenter(e)));
+      // Within 50 m, `inSight` is the same los as a fresh cast (its range is 60 m).
+      const watching = live.filter((e) => e.aware === "engaged" && e.kind !== "titan" && dist2d(e.pos, p.pos) < 50 && inSight(e));
       // A wind-up in sight: get down behind something before it fires (a sidestep in the open does not help).
       for (const e of watching) {
         const key = e.id * 1000 + Math.floor(s.time / 2);
@@ -562,7 +577,7 @@ export class Bot {
       if (w && w.mag < magSize(w) * 0.6 && p.reload <= 0) inp.reload = true;
       const max = PLAYER.shieldByTier[p.armor];
       // Not in sight of a robot that is fighting it: healing is slow and heard.
-      const watched = live.some((e) => e.aware === "engaged" && dist2d(e.pos, p.pos) < 50 && los(eye, bodyCenter(e)));
+      const watched = live.some((e) => e.aware === "engaged" && dist2d(e.pos, p.pos) < 50 && inSight(e));
       if ((p.shield < max * 0.6 || p.hp < 75) && !p.healing && !watched && pickHeal(s)) inp.heal = true;
       if (p.healing) inp.moveZ = Math.min(inp.moveZ, 0.6);
       // Walk toward the waypoint itself, not where the view points: the view lags in a turn and
@@ -813,11 +828,11 @@ export class Bot {
    * no robot it has not dealt with standing in the way: slip off toward the exit rather than
    * go back into the fight.
    */
-  private slipAway(s: State, live: Enemy[]): boolean {
+  private slipAway(s: State, live: Enemy[], inSight: (e: Enemy) => boolean): boolean {
     const p = s.player;
-    const eye = eyePos(s);
     if (this.retreat && dist2d(this.retreat, p.pos) > 1.5) return false;
-    return !live.some((e) => e.aware === "engaged" && dist2d(e.pos, p.pos) < 50 && los(eye, bodyCenter(e)));
+    // Within 50 m, `inSight` is the same line of sight as a fresh cast (its range is 60 m).
+    return !live.some((e) => e.aware === "engaged" && dist2d(e.pos, p.pos) < 50 && inSight(e));
   }
 
   /**

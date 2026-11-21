@@ -12,29 +12,34 @@ import { hypot2 } from "./hypot";
  */
 
 const RES = 0.5;
-const NX = Math.ceil((WORLD.x1 - WORLD.x0) / RES);
-const NZ = Math.ceil((WORLD.z1 - WORLD.z0) / RES);
+/** World's corners as locals: every cell centre and index would otherwise re-read the import binding. */
+const WX0 = WORLD.x0;
+const WZ0 = WORLD.z0;
+const NX = Math.ceil((WORLD.x1 - WX0) / RES);
+const NZ = Math.ceil((WORLD.z1 - WZ0) / RES);
 /** Blocked cells, filled by `blockedCells()` on first use. */
 let grid = new Uint8Array(0);
-const cellX = (v: number) => Math.max(0, Math.min(NX - 1, Math.floor((v - WORLD.x0) / RES)));
-const cellZ = (v: number) => Math.max(0, Math.min(NZ - 1, Math.floor((v - WORLD.z0) / RES)));
-const centerX = (i: number) => WORLD.x0 + (i + 0.5) * RES;
-const centerZ = (j: number) => WORLD.z0 + (j + 0.5) * RES;
+const cellX = (v: number) => Math.max(0, Math.min(NX - 1, Math.floor((v - WX0) / RES)));
+const cellZ = (v: number) => Math.max(0, Math.min(NZ - 1, Math.floor((v - WZ0) / RES)));
+const centerX = (i: number) => WX0 + (i + 0.5) * RES;
+const centerZ = (j: number) => WZ0 + (j + 0.5) * RES;
 
 function blockedCells(): Uint8Array {
   if (grid.length) return grid;
+  if (tryLoadNav()) return grid;
   const blocked = new Uint8Array(NX * NZ);
   // A cell is blocked when any part of it is within a body radius of a box, so a
   // body standing in a free cell never overlaps a wall.
   const r = PLAYER.radius + 0.02;
+  const stepUp = WORLD.stepUp;
   for (const b of [...BOXES, ...routeBoxesOpen]) {
     // Only what stops a body standing on the ground: low steps and high floors do not.
     const t = terrainHeight((b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2);
-    if (b.h - t <= WORLD.stepUp || b.y0 - t >= 1.75) continue;
+    if (b.h - t <= stepUp || b.y0 - t >= 1.75) continue;
     for (let i = cellX(b.x0 - r); i <= cellX(b.x1 + r); i++)
       for (let j = cellZ(b.z0 - r); j <= cellZ(b.z1 + r); j++) {
-        const x0 = WORLD.x0 + i * RES;
-        const z0 = WORLD.z0 + j * RES;
+        const x0 = WX0 + i * RES;
+        const z0 = WZ0 + j * RES;
         if (x0 + RES > b.x0 - r && x0 < b.x1 + r && z0 + RES > b.z0 - r && z0 < b.z1 + r) blocked[j * NX + i] = 1;
       }
   }
@@ -112,6 +117,78 @@ export function resetNav() {
   landmarkCells = null;
   searched.clear();
   clearance = new Uint8Array(0);
+  navLoaded = false;
+  navSaved = false;
+}
+
+/**
+ * A pack of the walkers' grids and the landmarks' plain fields, as the sim gate's store keeps
+ * them between processes: every worker would otherwise build the same grids and the same fills.
+ * Weighted fields (a walk round a disk) depend on where the disk sits and are not kept.
+ */
+export type NavFieldPack = { d: Uint16Array; j0: number; lo: Int32Array; hi: Int32Array; off: Int32Array };
+export type NavArrays = {
+  grid: Uint8Array;
+  moves: Uint8Array;
+  /** 2 when `area` is Uint16, 4 when Int32. */
+  areaBytes: 2 | 4;
+  area: Uint8Array;
+  clearance: Uint8Array;
+  landmarkCells: Int32Array;
+  /** One entry per landmark: null when that landmark has no free cell. */
+  fields: (NavFieldPack | null)[];
+};
+export interface NavStore {
+  load(): NavArrays | null;
+  save(built: NavArrays): void;
+}
+let navStore: NavStore | null = null;
+let navLoaded = false;
+let navSaved = false;
+/** Sets the store the walkers' grids and landmarks' fields are read from and written to. */
+export const useNavStore = (s: NavStore) => {
+  navStore = s;
+};
+
+/** Applies a packed store to the live grids; the next search uses them as if built here. */
+function applyNav(kept: NavArrays) {
+  // Fresh buffers: the store's slices may share a file's ArrayBuffer.
+  grid = new Uint8Array(kept.grid);
+  moves = new Uint8Array(kept.moves);
+  clearance = new Uint8Array(kept.clearance);
+  landmarkCells = new Int32Array(kept.landmarkCells);
+  area = kept.areaBytes === 2 ? new Uint16Array(kept.area.buffer.slice(kept.area.byteOffset, kept.area.byteOffset + kept.area.byteLength)) : new Int32Array(kept.area.buffer.slice(kept.area.byteOffset, kept.area.byteOffset + kept.area.byteLength));
+  fields = kept.fields.map((f) => (f ? { d: new Uint16Array(f.d), j0: f.j0, lo: new Int32Array(f.lo), hi: new Int32Array(f.hi), off: new Int32Array(f.off) } : null));
+  navLoaded = true;
+  navSaved = true;
+}
+
+/** Tries the store once, when the grid is first needed and no route's boxes are open. */
+function tryLoadNav(): boolean {
+  if (navLoaded || !navStore || routeBoxesOpen.length) return false;
+  navLoaded = true;
+  const kept = navStore.load();
+  if (!kept || kept.grid.length !== NX * NZ || kept.fields.length !== LANDMARKS.length) return false;
+  applyNav(kept);
+  return true;
+}
+
+/** Writes the grids and every landmark's plain field once they are all built. */
+function trySaveNav() {
+  if (navSaved || !navStore || routeBoxesOpen.length || !grid.length || !moves.length || !area.length || !clearance.length || !landmarkCells) return;
+  if (fields.length < LANDMARKS.length) return;
+  for (let n = 0; n < LANDMARKS.length; n++) if (fields[n] === undefined) return;
+  navSaved = true;
+  const areaBytes = (area.BYTES_PER_ELEMENT === 2 ? 2 : 4) as 2 | 4;
+  navStore.save({
+    grid,
+    moves,
+    areaBytes,
+    area: new Uint8Array(area.buffer, area.byteOffset, area.byteLength),
+    clearance,
+    landmarkCells,
+    fields: fields.map((f) => (f ? { d: f.d, j0: f.j0, lo: f.lo, hi: f.hi, off: f.off } : null)),
+  });
 }
 function areas(): Uint16Array | Int32Array {
   if (area.length) return area;
@@ -344,6 +421,8 @@ function fill(from: number, disk: { x: number; z: number; r: number } | null): F
   let j0 = NZ;
   let j1 = -1;
   const r2 = disk ? disk.r * disk.r : 0;
+  const diskX = disk ? disk.x : 0;
+  const diskZ = disk ? disk.z : 0;
   const head = new Int32Array(BUCKETS).fill(-1);
   let used = 0;
   let spare = -1;
@@ -382,16 +461,16 @@ function fill(from: number, disk: { x: number; z: number; r: number } | null): F
       node = after;
       // A cell is in a bucket once for each time its distance went down; only the last counts.
       if (f[cur] !== d + 1) continue;
-      const ci = cur % NX;
       const cj = (cur / NX) | 0;
+      const ci = cur - cj * NX;
       if (ci < i0) i0 = ci;
       if (ci > i1) i1 = ci;
       if (cj < j0) j0 = cj;
       if (cj > j1) j1 = cj;
       let times = 1;
       if (disk) {
-        const dx = centerX(cur % NX) - disk.x;
-        const dz = centerZ((cur / NX) | 0) - disk.z;
+        const dx = centerX(ci) - diskX;
+        const dz = centerZ(cj) - diskZ;
         if (dx * dx + dz * dz < r2) times = AVOID;
       }
       const bits = mv[cur];
@@ -436,10 +515,29 @@ function fill(from: number, disk: { x: number; z: number; r: number } | null): F
 }
 
 function field(n: number): Field | null {
-  const known = fields[n];
-  if (known !== undefined) return known;
-  const from = landmarkCell(n);
-  return (fields[n] = from < 0 ? null : fill(from, null));
+  warmLandmarkFields();
+  return fields[n]!;
+}
+
+/**
+ * Builds every landmark's plain field once: a search only needs a few, but the store keeps
+ * them all, and building them together means one process pays for every worker.
+ */
+function warmLandmarkFields() {
+  if (fields.length >= LANDMARKS.length) {
+    let all = true;
+    for (let n = 0; n < LANDMARKS.length; n++) if (fields[n] === undefined) {
+      all = false;
+      break;
+    }
+    if (all) return;
+  }
+  for (let n = 0; n < LANDMARKS.length; n++) {
+    if (fields[n] !== undefined) continue;
+    const from = landmarkCell(n);
+    fields[n] = from < 0 ? null : fill(from, null);
+  }
+  trySaveNav();
 }
 
 /** Landmark n's walk round `disk`, kept for that disk (another disk starts the set again). */
@@ -463,22 +561,48 @@ type Landmark = { f: Field; round: boolean };
  * one nearest the start, on the goal's stretch of ground and reaching it. With `disk` (ground
  * the search's `avoid` covers) near the way, the two by the goal give their walks round it.
  */
+/** Scratch for sorting landmarks by distance: same order as allocating `{k,d}` and sorting. */
+const nearK = new Int32Array(64);
+const nearD = new Float64Array(64);
+
 function landmarksFor(start: number, goal: number, disk: { x: number; z: number; r: number } | null): Landmark[] {
   const label = areas();
-  const near = (c: number) => {
+  const goalArea = label[goal];
+  /** Landmark indices nearest `c` on the goal's stretch, nearest first (ties by index). */
+  const near = (c: number): number[] => {
     const x = c % NX;
     const z = (c / NX) | 0;
-    const ks: { k: number; d: number }[] = [];
+    let n = 0;
     for (let k = 0; k < LANDMARKS.length; k++) {
       const lc = landmarkCell(k);
-      if (lc < 0 || label[lc] !== label[goal]) continue;
-      ks.push({ k, d: ((lc % NX) - x) ** 2 + (((lc / NX) | 0) - z) ** 2 });
+      if (lc < 0 || label[lc] !== goalArea) continue;
+      const lx = lc % NX;
+      const lz = (lc / NX) | 0;
+      nearK[n] = k;
+      nearD[n] = (lx - x) * (lx - x) + (lz - z) * (lz - z);
+      n++;
     }
-    return ks.sort((a, b) => a.d - b.d || a.k - b.k).map((e) => e.k);
+    // Insertion sort: few landmarks, same order as `sort((a,b) => a.d - b.d || a.k - b.k)`.
+    for (let i = 1; i < n; i++) {
+      const kd = nearD[i];
+      const kk = nearK[i];
+      let j = i;
+      while (j > 0 && (nearD[j - 1] > kd || (nearD[j - 1] === kd && nearK[j - 1] > kk))) {
+        nearD[j] = nearD[j - 1];
+        nearK[j] = nearK[j - 1];
+        j--;
+      }
+      nearD[j] = kd;
+      nearK[j] = kk;
+    }
+    const out: number[] = [];
+    for (let i = 0; i < n; i++) out.push(nearK[i]);
+    return out;
   };
-  const gi = goal % NX;
   const gj = (goal / NX) | 0;
-  const ks = near(goal).slice(0, 2);
+  const gi = goal - gj * NX;
+  const byGoal = near(goal);
+  const ks = byGoal.length > 2 ? byGoal.slice(0, 2) : byGoal;
   const s0 = near(start).find((k) => !ks.includes(k));
   const out: Landmark[] = [];
   for (const k of ks) {
@@ -654,14 +778,19 @@ function searchCells(s: [number, number], g: [number, number], start: number, go
   touch(goal);
   const mv = moveMask();
   heapSize = 0;
+  const lmN = lms.length;
   const lmF = lms.map((l) => l.f);
-  const lmGoal = lms.map((l) => fieldAt(l.f, gi, gj));
-  const lmRound = lms.map((l) => l.round);
-  const h = (i: number, j: number, k: number) => {
+  const lmGoal = new Float64Array(lmN);
+  const lmRound = new Uint8Array(lmN);
+  for (let n = 0; n < lmN; n++) {
+    lmGoal[n] = fieldAt(lmF[n], gi, gj);
+    lmRound[n] = lms[n].round ? 1 : 0;
+  }
+  const h = (i: number, j: number, _k: number) => {
     const dx = Math.abs(i - gi);
     const dz = Math.abs(j - gj);
     let est = Math.max(dx, dz) + 0.414 * Math.min(dx, dz);
-    for (let n = 0; n < lmF.length; n++) {
+    for (let n = 0; n < lmN; n++) {
       const v = fieldAt(lmF[n], i, j);
       // A cell the field does not reach is further than REACH from its landmark. A walk round a
       // disk is not the same both ways, so its field bounds only the way toward the landmark.
