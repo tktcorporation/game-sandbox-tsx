@@ -19,10 +19,18 @@ const DIR = fileURLToPath(new URL("../node_modules/.cache/ringfall-terrain/", im
 const NAV_DIR = fileURLToPath(new URL("../node_modules/.cache/ringfall-nav/", import.meta.url));
 const NAMES = ["field", "floors", "shapes", "bases", "steep", "between"] as const;
 
-/** The sim's sources, hashed once per process. */
+/** The sim's sources, hashed once per process (includes `native/` when present). */
 const source = (() => {
   const h = createHash("sha256");
-  for (const f of readdirSync(SIM).filter((n) => n.endsWith(".ts")).sort()) h.update(f).update(readFileSync(join(SIM, f)));
+  const walk = (dir: string, prefix: string) => {
+    for (const n of readdirSync(dir).sort()) {
+      const p = join(dir, n);
+      const name = prefix + n;
+      if (n.endsWith(".ts") || n.endsWith(".wasm")) h.update(name).update(readFileSync(p));
+      else if (!n.includes(".") && n === "native") walk(p, name + "/");
+    }
+  };
+  walk(SIM, "");
   return h.digest("hex");
 })();
 const fileOf = (flat: FlatShape[]) => join(DIR, `${createHash("sha256").update(source).update(JSON.stringify(flat)).digest("hex").slice(0, 32)}.bin`);

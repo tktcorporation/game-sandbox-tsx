@@ -3,6 +3,7 @@ import { los, routeBoxesOpen } from "./geom";
 import { BOXES, DECKS, EXTRACTS, POIS } from "./map";
 import { steepAt, terrainHeight } from "./terrain";
 import { hypot2 } from "./hypot";
+import { fillCheckMode, wasmFill } from "./native/fill";
 
 /*
  * Ground-level path finding for the bot only (the game never uses it). A 0.5 m grid
@@ -86,6 +87,8 @@ const MOVE_DJ = [-1, 0, 1, -1, 1, -1, 0, 1];
 const MOVE_OFF = MOVE_DI.map((di, n) => MOVE_DJ[n] * NX + di);
 const MOVE_COST = MOVE_DI.map((di, n) => (di && MOVE_DJ[n] ? 1.414 : 1));
 let moves = new Uint8Array(0);
+/** Bumped when `moves` is rebuilt so the WASM fill re-uploads the mask. */
+let movesEpoch = 0;
 function moveMask(): Uint8Array {
   if (moves.length) return moves;
   blockedCells();
@@ -104,6 +107,7 @@ function moveMask(): Uint8Array {
       m[cj * NX + ci] = bits;
     }
   moves = m;
+  movesEpoch++;
   return m;
 }
 
@@ -112,6 +116,7 @@ export function resetNav() {
   grid = new Uint8Array(0);
   area = new Uint16Array(0);
   moves = new Uint8Array(0);
+  movesEpoch++;
   fields = [];
   weighted = { disk: null, fields: [] };
   landmarkCells = null;
@@ -155,6 +160,7 @@ function applyNav(kept: NavArrays) {
   // Fresh buffers: the store's slices may share a file's ArrayBuffer.
   grid = new Uint8Array(kept.grid);
   moves = new Uint8Array(kept.moves);
+  movesEpoch++;
   clearance = new Uint8Array(kept.clearance);
   landmarkCells = new Int32Array(kept.landmarkCells);
   area = kept.areaBytes === 2 ? new Uint16Array(kept.area.buffer.slice(kept.area.byteOffset, kept.area.byteOffset + kept.area.byteLength)) : new Int32Array(kept.area.buffer.slice(kept.area.byteOffset, kept.area.byteOffset + kept.area.byteLength));
@@ -411,8 +417,16 @@ let poolNext = new Int32Array(1 << 16);
  * Fills `f` with each cell's walk to `from` (plus one). A move costs AVOID times as much when
  * it ends within `disk`, as A* charges it, so the walk is searched backwards from `from`: a
  * cell is reached from its neighbour by the move from the cell into the neighbour.
+ * Prefers the WASM Dial kernel when it loads; otherwise the TypeScript path below (same packed field).
  */
-function fill(from: number, disk: { x: number; z: number; r: number } | null): Field {
+function fieldEqual(a: Field, b: Field): boolean {
+  if (a.j0 !== b.j0 || a.d.length !== b.d.length || a.lo.length !== b.lo.length) return false;
+  for (let i = 0; i < a.lo.length; i++) if (a.lo[i] !== b.lo[i] || a.hi[i] !== b.hi[i] || a.off[i] !== b.off[i]) return false;
+  for (let i = 0; i < a.d.length; i++) if (a.d[i] !== b.d[i]) return false;
+  return true;
+}
+
+function fillTs(from: number, disk: { x: number; z: number; r: number } | null): Field {
   const mv = moveMask();
   if (scratch.length !== NX * NZ) scratch = new Uint16Array(NX * NZ);
   const f = scratch;
@@ -512,6 +526,22 @@ function fill(from: number, disk: { x: number; z: number; r: number } | null): F
     f.fill(0, row + lo[r], row + hi[r] + 1);
   }
   return { d, j0, lo, hi, off };
+}
+
+function fill(from: number, disk: { x: number; z: number; r: number } | null): Field {
+  const mv = moveMask();
+  const native = wasmFill(NX, NZ, mv, movesEpoch, from, REACH, disk, { x0: WX0, z0: WZ0, res: RES });
+  if (fillCheckMode()) {
+    const ts = fillTs(from, disk);
+    if (!native || !fieldEqual(native, ts)) {
+      throw new Error(
+        `ringfall fill mismatch: from=${from} disk=${disk ? `${disk.x},${disk.z},${disk.r}` : "-"} wasm=${native ? `j0=${native.j0} n=${native.d.length}` : "null"} ts=j0=${ts.j0} n=${ts.d.length}`,
+      );
+    }
+    return ts;
+  }
+  if (native) return native;
+  return fillTs(from, disk);
 }
 
 function field(n: number): Field | null {

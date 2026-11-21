@@ -1,0 +1,16 @@
+[package]
+name = "ringfall-fill"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Dial/bucket landmark fill for RINGFALL nav.ts (WASM)"
+
+[lib]
+crate-type = ["cdylib"]
+
+[profile.release]
+lto = true
+opt-level = 3
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
