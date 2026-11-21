@@ -1,7 +1,10 @@
 /**
- * Optional WASM Dial fill + A* for nav.ts (Node sim / bench only). Instantiates the committed
- * module in `fill-wasm.ts`. Browser keeps TypeScript. `RINGFALL_FILL=ts` / `RINGFALL_ASTAR=ts`
- * force TS. Weighted (avoid-disk) fills stay on TS — WASM was slower on warm raids.
+ * Shared WASM nav kernel for browser + Node (docs/ringfall/native.md).
+ * Instantiates the committed embed in `fill-wasm.ts`. State (moves, fields, A* scratch, path)
+ * lives in WASM linear memory; JS calls coarse fill / find-path entry points.
+ *
+ * Disable: `?ringfallNative=0`, localStorage `ringfallNative=0`, or `RINGFALL_FILL=ts`.
+ * A* opt-in: `?ringfallAstar=1` / `RINGFALL_ASTAR=1`. Weighted Dial fills stay on TypeScript.
  */
 import { RINGFALL_FILL_WASM_BASE64 } from "./fill-wasm";
 
@@ -59,6 +62,8 @@ type Exports = {
   ): number;
   ringfall_nav_path_len(e: number): number;
   ringfall_nav_path_ptr(e: number): number;
+  ringfall_sim_abi_version(): number;
+  ringfall_step_tick(dt: number): number;
 };
 
 let exportsRef: Exports | null = null;
@@ -72,27 +77,61 @@ let worldSet = false;
 
 type NodeProcess = { env?: Record<string, string | undefined>; versions?: { node?: string } };
 const nodeProcess = (): NodeProcess | undefined => (globalThis as { process?: NodeProcess }).process;
-const fillMode = () => nodeProcess()?.env?.RINGFALL_FILL;
-const astarMode = () => nodeProcess()?.env?.RINGFALL_ASTAR;
-const isNode = () => !!nodeProcess()?.versions?.node;
 
-function envDisabled(): boolean {
-  if (!isNode()) return true;
-  const v = fillMode();
+function queryFlag(name: string): string | undefined {
+  try {
+    if (typeof location === "undefined") return undefined;
+    return new URLSearchParams(location.search).get(name) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function storageFlag(name: string): string | undefined {
+  try {
+    if (typeof localStorage === "undefined") return undefined;
+    return localStorage.getItem(name) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Unified switch: URL → localStorage → env (Node). */
+function flag(name: string, envNames: string[]): string | undefined {
+  const q = queryFlag(name);
+  if (q != null) return q;
+  const s = storageFlag(name);
+  if (s != null) return s;
+  const env = nodeProcess()?.env;
+  if (!env) return undefined;
+  for (const k of envNames) if (env[k] != null) return env[k];
+  return undefined;
+}
+
+function isOff(v: string | undefined): boolean {
   return v === "0" || v === "ts" || v === "off" || v === "false";
 }
 
-export const fillCheckMode = () => fillMode() === "check";
-export const astarCheckMode = () => astarMode() === "check";
+function nativeDisabled(): boolean {
+  return isOff(flag("ringfallNative", ["RINGFALL_NATIVE", "RINGFALL_FILL"]));
+}
+
+export const fillCheckMode = () => flag("ringfallNative", ["RINGFALL_FILL"]) === "check";
+export const astarCheckMode = () => flag("ringfallAstar", ["RINGFALL_ASTAR"]) === "check";
+
+function decodeWasm(): Uint8Array {
+  const bin = atob(RINGFALL_FILL_WASM_BASE64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
 
 function tryLoad(): boolean {
   if (loadTried) return loadOk;
   loadTried = true;
-  if (envDisabled()) return (loadOk = false);
+  if (nativeDisabled()) return (loadOk = false);
   try {
-    const bin = atob(RINGFALL_FILL_WASM_BASE64);
-    const bytes = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const bytes = decodeWasm();
     const copy = new Uint8Array(bytes.byteLength);
     copy.set(bytes);
     exportsRef = new WebAssembly.Instance(new WebAssembly.Module(copy.buffer), {}).exports as unknown as Exports;
@@ -135,11 +174,32 @@ export function syncFillMoves(nx: number, nz: number, moves: Uint8Array, epoch: 
 }
 
 export const wasmFillAvailable = () => tryLoad();
-/** A* WASM is opt-in: set `RINGFALL_ASTAR=1` (or `wasm` / `check`). Default stays TypeScript — warm profiles showed WASM A* slower once field uploads and the scratch grid are counted. */
+
+/**
+ * A* WASM is opt-in (`?ringfallAstar=1` / `RINGFALL_ASTAR=1` / `wasm` / `check`).
+ * Warm bench is ~1.3× slower with WASM A* vs TS (field uploads + scratch); keep the
+ * in-WASM path for identity checks and the future tick host, default stays TypeScript.
+ */
 export function wasmAstarAvailable(): boolean {
-  const v = astarMode();
+  const v = flag("ringfallAstar", ["RINGFALL_ASTAR"]);
   if (v !== "1" && v !== "wasm" && v !== "on" && v !== "check") return false;
   return tryLoad();
+}
+
+export function nativeStatus(): {
+  wasm: boolean;
+  astar: boolean;
+  abi: number | null;
+  stepTick: number | null;
+} {
+  const wasm = tryLoad();
+  let abi: number | null = null;
+  let stepTick: number | null = null;
+  if (wasm && exportsRef) {
+    abi = exportsRef.ringfall_sim_abi_version();
+    stepTick = exportsRef.ringfall_step_tick(0);
+  }
+  return { wasm, astar: wasmAstarAvailable(), abi, stepTick };
 }
 
 export function setNavWorld(nx: number, nz: number, world: { x0: number; z0: number; res: number }, reach: number): boolean {
@@ -149,7 +209,7 @@ export function setNavWorld(nx: number, nz: number, world: { x0: number; z0: num
   return true;
 }
 
-/** Upload a packed field into a WASM slot for A* heuristics. */
+/** Upload a packed field into a WASM slot for A* heuristics (stays in linear memory). */
 export function uploadNavField(nx: number, nz: number, slot: number, field: FillField): boolean {
   if (!ensureEngine(nx, nz) || !exportsRef || slot < 0 || slot >= 64) return false;
   const rows = field.lo.length;
@@ -164,6 +224,7 @@ export function uploadNavField(nx: number, nz: number, slot: number, field: Fill
 
 /**
  * Plain landmark Dial fill (no avoid-disk). Weighted fills return null → TypeScript path.
+ * Packed result is also stored in-WASM when `slot >= 0` (no second upload needed for A*).
  */
 export function wasmFill(
   nx: number,
@@ -183,6 +244,7 @@ export function wasmFill(
   const rows = exportsRef.ringfall_fill_rows(engine);
   const size = exportsRef.ringfall_fill_size(engine);
   const j0 = exportsRef.ringfall_fill_j0(engine);
+  // Copy once for JS NavStore / fieldAt; engine also keeps the slot for A*.
   const lo = Int32Array.from(viewI32(exportsRef.ringfall_fill_lo_ptr(engine), rows));
   const hi = Int32Array.from(viewI32(exportsRef.ringfall_fill_hi_ptr(engine), rows));
   const off = Int32Array.from(viewI32(exportsRef.ringfall_fill_off_ptr(engine), rows));
@@ -192,8 +254,8 @@ export function wasmFill(
 }
 
 /**
- * Cell path. `undefined` = WASM not used (caller should run TS);
- * `null` = unreachable; array = path.
+ * Cell path. `undefined` = WASM not used; `null` = unreachable; array = path
+ * (copied once out of WASM path buffer).
  */
 export function wasmAstar(
   nx: number,

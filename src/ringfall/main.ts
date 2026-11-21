@@ -31,6 +31,7 @@ import { step } from "./sim/step";
 import { hurtAlly, placeAlly } from "./sim/ally";
 import { haulValue } from "./sim/results";
 import { bagLoad } from "./sim/world";
+import { nativeStatus } from "./sim/native/fill";
 import { getMixer, preferLowPower, savedMusic, savedVolume, setMusicVolume, setVolume, unlock, type Mixer } from "./view/audio";
 import { Music, type Mood } from "./view/music";
 import { sfx } from "./view/sfx";
@@ -924,6 +925,8 @@ declare global {
     ringfallStep: (ms: number) => void;
     ringfallDraw: () => void;
     ringfallBot: (skill: string) => void;
+    /** Shared WASM nav/sim kernel status (docs/ringfall/native.md). */
+    ringfallNative: () => { wasm: boolean; astar: boolean; abi: number | null; stepTick: number | null };
     ringfallYaw: () => number;
     ringfallDownAlly: () => void;
     ringfallChargeUlt: () => void;
@@ -1300,6 +1303,8 @@ window.ringfallShoot = (id, rarity) => {
 window.ringfallBot = (skill: string) => {
   bot = new Bot(SKILLS.find((k) => k.name === skill) ?? SKILLS[1], 31);
 };
+
+window.ringfallNative = () => nativeStatus();
 
 /**
  * Automation only: the contract board. `take` takes the day's first contract of `type` in the

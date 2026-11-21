@@ -531,8 +531,8 @@ function fillTs(from: number, disk: { x: number; z: number; r: number } | null):
 /** Weighted landmark fields sit in WASM slots `WEIGHT_SLOT + n`. */
 const WEIGHT_SLOT = 32;
 
+/** Upload a TS-built field into WASM for A* (plain WASM fill already `store_last`s). */
 function rememberField(slot: number, f: Field) {
-  // Only upload when A* WASM is enabled; plain WASM fill already `store_last`s into the slot.
   if (slot >= 0 && wasmAstarAvailable()) uploadNavField(NX, NZ, slot, f);
 }
 
@@ -554,10 +554,7 @@ function fill(from: number, disk: { x: number; z: number; r: number } | null, sl
     rememberField(slot, ts);
     return ts;
   }
-  if (native) {
-    rememberField(slot, native);
-    return native;
-  }
+  if (native) return native; // slot already stored in WASM
   const ts = fillTs(from, disk);
   rememberField(slot, ts);
   return ts;

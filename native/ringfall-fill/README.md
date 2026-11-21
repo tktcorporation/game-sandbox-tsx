@@ -1,11 +1,12 @@
-# ringfall-fill / nav
+# ringfall-fill (shared WASM)
 
-Dial/bucket landmark `fill` and optional A* (`searchCells`) for `src/ringfall/sim/nav.ts`, as WASM.
+Dial/bucket landmark `fill` and A* for `src/ringfall/sim/nav.ts`, compiled to WASM for **browser and Node**. See `docs/ringfall/native.md`.
 
-- Rebuild (needs Rust): `npm run build:native`
-- Without Rust: committed `src/ringfall/sim/native/fill-wasm.ts` embed is used
-- Force TypeScript fill: `RINGFALL_FILL=ts` (weighted / avoid-disk fills always use TS)
-- Byte-compare fills: `RINGFALL_FILL=check` or `npm run fill:ringfall`
-- Opt-in A*: `RINGFALL_ASTAR=1` (default off — warm raids were not faster); `RINGFALL_ASTAR=check` compares paths
+- Rebuild: `npm run build:native` (needs Rust; otherwise the committed embed is kept)
+- Smoke: `node scripts/ringfall-native-smoke.mjs`
+- Identity: `npm run fill:ringfall`, `RINGFALL_ASTAR=check`
+- Disable: `?ringfallNative=0` / `RINGFALL_FILL=ts`
+- A* on (opt-in): `?ringfallAstar=1` / `RINGFALL_ASTAR=1`
+- Future tick host: `ringfall_step_tick` (stub −1 until sim state lives in WASM)
 
-Node sim/bench only; the browser keeps the TypeScript path.
+napi-rs is not used here (Node-only). Optional later for multi-threaded Node sim only.

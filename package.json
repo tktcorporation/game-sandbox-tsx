@@ -28,6 +28,7 @@
     "sim:ringfall": "tsx scripts/ringfall-sim.ts",
     "bench:ringfall": "tsx scripts/ringfall-bench.ts",
     "build:native": "node scripts/ringfall-native-build.mjs",
+    "smoke:native": "node scripts/ringfall-native-smoke.mjs",
     "fill:ringfall": "node scripts/ringfall-fill-ab.mjs",
     "months:ringfall": "tsx scripts/ringfall-months.ts",
     "shots:ringfall": "node scripts/ringfall-shots.mjs",

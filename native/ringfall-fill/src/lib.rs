@@ -1,4 +1,7 @@
-//! Dial/bucket fill matching `src/ringfall/sim/nav.ts` `fill` bit-for-bit on the packed field.
+//! Shared RINGFALL nav/sim WASM (browser + Node). Dial fill + A* today; `step_tick` is the
+//! future coarse API (state stays in linear memory). See docs/ringfall/native.md.
+//!
+//! Dial/bucket fill matches `src/ringfall/sim/nav.ts` `fill` on the packed field.
 //! Integer Dial path; optional avoid-disk uses the same f64 centres as the TS (`WORLD` + `RES`).
 
 #![allow(clippy::missing_safety_doc)]
@@ -812,4 +815,18 @@ pub unsafe extern "C" fn ringfall_nav_path_len(e: *mut Engine) -> u32 {
 pub unsafe extern "C" fn ringfall_nav_path_ptr(e: *mut Engine) -> *const i32 {
     if e.is_null() { return std::ptr::null(); }
     (*e).path.as_ptr()
+}
+
+/// Bump when the coarse tick / memory layout contract changes (docs/ringfall/native.md).
+pub const SIM_ABI_VERSION: u32 = 1;
+
+#[no_mangle]
+pub extern "C" fn ringfall_sim_abi_version() -> u32 {
+    SIM_ABI_VERSION
+}
+
+/// Future: advance the in-WASM sim by `dt` seconds. Returns -1 until implemented.
+#[no_mangle]
+pub extern "C" fn ringfall_step_tick(_dt: f32) -> i32 {
+    -1
 }
