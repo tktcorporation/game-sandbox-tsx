@@ -11,7 +11,7 @@ import { bodyY } from "../state";
 import { robotSide } from "../battle";
 import { allyUp, hurtAlly } from "../ally";
 import { hurtPlayer } from "../player";
-import { damageRobot, fightHeard } from "../factions";
+import { damageRobot } from "../factions";
 import { threatOf } from "../mods";
 import { nativeExports } from "./fill";
 import { ORBS_WASM, TICK_CHECK, TICK_WASM } from "./tick-flag";
@@ -31,15 +31,8 @@ const SQUAD_ENGAGED = 1;
 const SQUAD_MOBILE = 2;
 const SQUAD_RETREAT = 4;
 const SQUAD_PACK = 8;
-const SQUAD_BATTLE = 16;
-const SQUAD_CREW = 32;
-const SQUAD_SWEEP = 64;
 
-const ROBOT_POST = 32;
-
-const CALM_FOE_SHOT = 128;
-
-const ABI_MIN = 5;
+const ABI_MIN = 4;
 
 type Ex = NonNullable<ReturnType<typeof nativeExports>>;
 
@@ -66,41 +59,26 @@ function u8(e: Ex, ptr: number, n: number): Uint8Array {
 let geomEpoch = -1;
 let routesKey = "";
 
-/** Pre-tick extras from TypeScript: hunt vias, fromCover skip, foe idx, calm speed/flags. */
+/** Pre-tick extras from TypeScript: hunt vias + fromCover skip (same order as syncRobots). */
 let prepN = 0;
 let prepViaX: Float32Array | null = null;
 let prepViaZ: Float32Array | null = null;
 let prepHasVia: Uint8Array | null = null;
 let prepSkip: Uint8Array | null = null;
-let prepFoeIdx: Int32Array | null = null;
-let prepCalmSpeed: Float32Array | null = null;
-let prepCalmFlags: Uint8Array | null = null;
-let prepFace: Float32Array | null = null;
-let prepHasFace: Uint8Array | null = null;
 
-/** Fill SoA extras before `stepTick` (vias + skip + foe + calm). */
+/** Fill SoA extras before `stepTick` (hunt vias + fromCover skip). */
 export function setTickPrep(
   n: number,
   viaX: Float32Array,
   viaZ: Float32Array,
   hasVia: Uint8Array,
   skip: Uint8Array,
-  foeIdx: Int32Array,
-  calmSpeed: Float32Array,
-  calmFlags: Uint8Array,
-  face?: Float32Array,
-  hasFace?: Uint8Array,
 ): void {
   prepN = n;
   prepViaX = viaX;
   prepViaZ = viaZ;
   prepHasVia = hasVia;
   prepSkip = skip;
-  prepFoeIdx = foeIdx;
-  prepCalmSpeed = calmSpeed;
-  prepCalmFlags = calmFlags;
-  prepFace = face ?? null;
-  prepHasFace = hasFace ?? null;
 }
 
 function packBoxes(): Float32Array {
@@ -271,11 +249,6 @@ export function syncRobots(s: State): RobotViews | null {
   const viaZ = f32(e, e.ringfall_sim_robot_via_z_ptr!(), n);
   const hasVia = u8(e, e.ringfall_sim_robot_has_via_ptr!(), n);
   const skip = u8(e, e.ringfall_sim_robot_skip_ptr!(), n);
-  const lookT = f32(e, e.ringfall_sim_robot_look_t_ptr!(), n);
-  const face = f32(e, e.ringfall_sim_robot_face_ptr!(), n);
-  const foeIdx = i32(e, e.ringfall_sim_robot_foe_idx_ptr!(), n);
-  const calmSpeed = f32(e, e.ringfall_sim_robot_calm_speed_ptr!(), n);
-  const calmFlags = u8(e, e.ringfall_sim_robot_calm_flags_ptr!(), n);
   for (let i = 0; i < n; i++) {
     const en = list[i];
     x[i] = en.pos.x;
@@ -297,7 +270,6 @@ export function syncRobots(s: State): RobotViews | null {
     if (en.poi >= 0) f |= ROBOT_POI;
     if (en.kind === "titan") f |= ROBOT_TITAN;
     if (en.mode === "spawning") f |= ROBOT_SPAWNING;
-    if (en.post) f |= ROBOT_POST;
     flags[i] = f;
     radius[i] = ENEMIES[en.kind].radius;
     bodyH[i] = bodyHeight(en);
@@ -346,22 +318,14 @@ export function syncRobots(s: State): RobotViews | null {
       hasGoal[i] = 0;
     }
     searchT[i] = en.searchT;
-    lookT[i] = en.lookT;
-    face[i] = prepHasFace && i < prepN && prepHasFace[i] ? prepFace![i] : en.face;
     if (prepHasVia && i < prepN) {
       viaX[i] = prepViaX![i];
       viaZ[i] = prepViaZ![i];
       hasVia[i] = prepHasVia[i];
       skip[i] = prepSkip![i];
-      foeIdx[i] = prepFoeIdx![i];
-      calmSpeed[i] = prepCalmSpeed![i];
-      calmFlags[i] = prepCalmFlags![i];
     } else {
       hasVia[i] = 0;
       skip[i] = 0;
-      foeIdx[i] = -1;
-      calmSpeed[i] = 0;
-      calmFlags[i] = 0;
     }
   }
   return { n, x, y, z, yaw, vx, vz, hp, shield, duck, id, kind, mode };
@@ -381,7 +345,6 @@ function syncSquads(e: Ex, s: State): void {
   const pinT = f32(e, e.ringfall_sim_squad_pin_t_ptr!(), n);
   const sight = f32(e, e.ringfall_sim_squad_sight_ptr!(), n);
   const flags = u8(e, e.ringfall_sim_squad_flags_ptr!(), n);
-  const leg = i32(e, e.ringfall_sim_squad_leg_ptr!(), n);
   for (let i = 0; i < n; i++) {
     const sq = s.squads[i];
     since[i] = sq.sinceSeen;
@@ -398,15 +361,11 @@ function syncSquads(e: Ex, s: State): void {
     chaseT[i] = sq.chaseT ?? 0;
     pinT[i] = sq.pinT ?? 0;
     sight[i] = sq.sight ?? 0;
-    leg[i] = sq.leg;
     let f = 0;
     if (sq.engaged) f |= SQUAD_ENGAGED;
     if (sq.mobile) f |= SQUAD_MOBILE;
     if (sq.retreat !== undefined) f |= SQUAD_RETREAT;
     if (sq.pack) f |= SQUAD_PACK;
-    if (sq.battle !== undefined) f |= SQUAD_BATTLE;
-    if (sq.crew) f |= SQUAD_CREW;
-    if (sq.sweep) f |= SQUAD_SWEEP;
     flags[i] = f;
   }
 }
@@ -511,9 +470,6 @@ function pullRobots(e: Ex, s: State): void {
   const goalZ = f32(e, e.ringfall_sim_robot_goal_z_ptr!(), n);
   const hasGoal = u8(e, e.ringfall_sim_robot_has_goal_ptr!(), n);
   const searchT = f32(e, e.ringfall_sim_robot_search_t_ptr!(), n);
-  const lookT = f32(e, e.ringfall_sim_robot_look_t_ptr!(), n);
-  const calmFlags = u8(e, e.ringfall_sim_robot_calm_flags_ptr!(), n);
-  const foeShot: Enemy[] = [];
   for (let i = 0; i < n; i++) {
     const en = list[i];
     if (en.friend) continue; // friends stepped in TS
@@ -553,11 +509,7 @@ function pullRobots(e: Ex, s: State): void {
     en.allyHit = allyHit[i];
     en.goal = hasGoal[i] ? { x: goalX[i], z: goalZ[i] } : null;
     en.searchT = searchT[i];
-    en.lookT = lookT[i];
-    if (calmFlags[i] & CALM_FOE_SHOT) foeShot.push(en);
   }
-  // fightHeard stays TypeScript (alerts neighbouring roam squads / map contacts).
-  for (const en of foeShot) fightHeard(s, en);
 }
 
 function pullSquads(e: Ex, s: State, wasEngaged: boolean[]): void {
@@ -573,7 +525,6 @@ function pullSquads(e: Ex, s: State, wasEngaged: boolean[]): void {
   const chaseT = f32(e, e.ringfall_sim_squad_chase_t_ptr!(), n);
   const pinT = f32(e, e.ringfall_sim_squad_pin_t_ptr!(), n);
   const flags = u8(e, e.ringfall_sim_squad_flags_ptr!(), n);
-  const leg = i32(e, e.ringfall_sim_squad_leg_ptr!(), n);
   for (let i = 0; i < n; i++) {
     const sq = s.squads[i];
     sq.sinceSeen = since[i];
@@ -582,7 +533,6 @@ function pullSquads(e: Ex, s: State, wasEngaged: boolean[]): void {
     sq.chase = hasChase[i] ? { x: chaseX[i], z: chaseZ[i] } : undefined;
     sq.chaseT = chaseT[i] || undefined;
     sq.pinT = pinT[i] || undefined;
-    sq.leg = leg[i];
     const now = (flags[i] & SQUAD_ENGAGED) !== 0;
     // Mirror engageSquad's event so met / firstMeet count WASM engages.
     if (!wasEngaged[i] && now) {

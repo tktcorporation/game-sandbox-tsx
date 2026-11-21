@@ -157,11 +157,6 @@ type Exports = {
   ringfall_sim_robot_via_z_ptr?(): number;
   ringfall_sim_robot_has_via_ptr?(): number;
   ringfall_sim_robot_skip_ptr?(): number;
-  ringfall_sim_robot_look_t_ptr?(): number;
-  ringfall_sim_robot_face_ptr?(): number;
-  ringfall_sim_robot_foe_idx_ptr?(): number;
-  ringfall_sim_robot_calm_speed_ptr?(): number;
-  ringfall_sim_robot_calm_flags_ptr?(): number;
   ringfall_sim_squad_since_seen_ptr?(): number;
   ringfall_sim_squad_shot_t_ptr?(): number;
   ringfall_sim_squad_last_x_ptr?(): number;
@@ -173,7 +168,6 @@ type Exports = {
   ringfall_sim_squad_pin_t_ptr?(): number;
   ringfall_sim_squad_sight_ptr?(): number;
   ringfall_sim_squad_flags_ptr?(): number;
-  ringfall_sim_squad_leg_ptr?(): number;
   ringfall_sim_orbs_begin?(n: number): number;
   ringfall_sim_orb_x_ptr?(): number;
   ringfall_sim_orb_y_ptr?(): number;

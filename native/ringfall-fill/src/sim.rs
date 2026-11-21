@@ -1,5 +1,5 @@
 //! Coarse per-tick sim host: enemy/orb SoA + world geom (boxes + terrain) in WASM linear
-//! memory. `step_tick` advances enemies (sense + calm + fightFoe + engaged) then orbs.
+//! memory. `step_tick` advances enemies (sense + engaged FSM) then orbs.
 //! See docs/ringfall/native.md.
 
 #![allow(dead_code)]
@@ -29,7 +29,6 @@ const ROBOT_BATTLE: u8 = 2;
 const ROBOT_POI: u8 = 4;
 const ROBOT_TITAN: u8 = 8;
 const ROBOT_SPAWNING: u8 = 16;
-// ROBOT_POST = 32 in kind.rs
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -153,21 +152,14 @@ pub struct Sim {
     pub robot_goal_z: Vec<f32>,
     pub robot_has_goal: Vec<u8>,
     pub robot_search_t: Vec<f32>,
-    /// Hunt waypoint from TypeScript (`huntStep` / calm trip/home); when set, walk toward it.
+    /// Hunt waypoint from TypeScript (`huntStep`); when set, engaged move walks toward it.
     pub robot_via_x: Vec<f32>,
     pub robot_via_z: Vec<f32>,
     pub robot_has_via: Vec<u8>,
     /// TypeScript `fromCover` already stepped this robot; WASM `step_engaged` no-ops.
     pub robot_skip: Vec<u8>,
-    /// Idle look phase (`Enemy.lookT`) and post face yaw (`Enemy.face`).
-    pub robot_look_t: Vec<f32>,
-    pub robot_face: Vec<f32>,
-    /// SoA index of faction foe this tick (`foeOf`); -1 = none. Calm speed + flags from TS prep.
-    pub robot_foe_idx: Vec<i32>,
-    pub robot_calm_speed: Vec<f32>,
-    pub robot_calm_flags: Vec<u8>,
 
-    // --- squads (subset for sense / knownSpot / engage / calm patrol) ---
+    // --- squads (subset for sense / knownSpot / engage) ---
     pub n_squads: u32,
     pub squad_since_seen: Vec<f32>,
     pub squad_shot_t: Vec<f32>,
@@ -180,7 +172,6 @@ pub struct Sim {
     pub squad_pin_t: Vec<f32>,
     pub squad_sight: Vec<f32>,
     pub squad_flags: Vec<u8>,
-    pub squad_leg: Vec<i32>,
 
     // --- orbs ---
     pub n_orbs: u32,
@@ -303,11 +294,6 @@ impl Sim {
             robot_via_z: Vec::new(),
             robot_has_via: Vec::new(),
             robot_skip: Vec::new(),
-            robot_look_t: Vec::new(),
-            robot_face: Vec::new(),
-            robot_foe_idx: Vec::new(),
-            robot_calm_speed: Vec::new(),
-            robot_calm_flags: Vec::new(),
             n_squads: 0,
             squad_since_seen: Vec::new(),
             squad_shot_t: Vec::new(),
@@ -320,7 +306,6 @@ impl Sim {
             squad_pin_t: Vec::new(),
             squad_sight: Vec::new(),
             squad_flags: Vec::new(),
-            squad_leg: Vec::new(),
             n_orbs: 0,
             orb_x: Vec::new(),
             orb_y: Vec::new(),
@@ -400,11 +385,6 @@ impl Sim {
         self.robot_via_z.resize(n, 0.0);
         self.robot_has_via.resize(n, 0);
         self.robot_skip.resize(n, 0);
-        self.robot_look_t.resize(n, 0.0);
-        self.robot_face.resize(n, 0.0);
-        self.robot_foe_idx.resize(n, -1);
-        self.robot_calm_speed.resize(n, 0.0);
-        self.robot_calm_flags.resize(n, 0);
     }
 
     fn ensure_squads(&mut self, n: usize) {
@@ -419,7 +399,6 @@ impl Sim {
         self.squad_pin_t.resize(n, 0.0);
         self.squad_sight.resize(n, 0.0);
         self.squad_flags.resize(n, 0);
-        self.squad_leg.resize(n, 0);
     }
 
     fn ensure_orbs(&mut self, n: usize) {
@@ -1277,26 +1256,6 @@ pub unsafe extern "C" fn ringfall_sim_robot_has_via_ptr() -> *mut u8 {
 pub unsafe extern "C" fn ringfall_sim_robot_skip_ptr() -> *mut u8 {
     sim().robot_skip.as_mut_ptr()
 }
-#[no_mangle]
-pub unsafe extern "C" fn ringfall_sim_robot_look_t_ptr() -> *mut f32 {
-    sim().robot_look_t.as_mut_ptr()
-}
-#[no_mangle]
-pub unsafe extern "C" fn ringfall_sim_robot_face_ptr() -> *mut f32 {
-    sim().robot_face.as_mut_ptr()
-}
-#[no_mangle]
-pub unsafe extern "C" fn ringfall_sim_robot_foe_idx_ptr() -> *mut i32 {
-    sim().robot_foe_idx.as_mut_ptr()
-}
-#[no_mangle]
-pub unsafe extern "C" fn ringfall_sim_robot_calm_speed_ptr() -> *mut f32 {
-    sim().robot_calm_speed.as_mut_ptr()
-}
-#[no_mangle]
-pub unsafe extern "C" fn ringfall_sim_robot_calm_flags_ptr() -> *mut u8 {
-    sim().robot_calm_flags.as_mut_ptr()
-}
 
 #[no_mangle]
 pub unsafe extern "C" fn ringfall_sim_squad_since_seen_ptr() -> *mut f32 {
@@ -1341,10 +1300,6 @@ pub unsafe extern "C" fn ringfall_sim_squad_sight_ptr() -> *mut f32 {
 #[no_mangle]
 pub unsafe extern "C" fn ringfall_sim_squad_flags_ptr() -> *mut u8 {
     sim().squad_flags.as_mut_ptr()
-}
-#[no_mangle]
-pub unsafe extern "C" fn ringfall_sim_squad_leg_ptr() -> *mut i32 {
-    sim().squad_leg.as_mut_ptr()
 }
 
 #[no_mangle]

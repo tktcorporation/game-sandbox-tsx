@@ -52,14 +52,6 @@ if (
   console.error("ringfall-native-smoke: missing ABI 4 via/skip exports");
   process.exit(1);
 }
-if (
-  typeof ex.ringfall_sim_robot_foe_idx_ptr !== "function" ||
-  typeof ex.ringfall_sim_robot_calm_flags_ptr !== "function" ||
-  typeof ex.ringfall_sim_squad_leg_ptr !== "function"
-) {
-  console.error("ringfall-native-smoke: missing ABI 5 calm/foe exports");
-  process.exit(1);
-}
 // Without geom, step_tick returns -1 (not ready).
 const stub = ex.ringfall_step_tick(0);
 if (stub !== -1) {
