@@ -113,6 +113,8 @@ const synced = mergeHolds(after.poiState, NODES.map((n) => ({ id: n.id, hold: n.
 if (synced[shore].state !== after.poiState[shore].state) fail("a sync from the server undid the island's node");
 const next = aiLent(after, SALT, []);
 if (!next.some((l) => l.target === shore && l.state === "holding")) fail("the next raid stands no squad of the island at the station");
+// A player's island the server offers in that slot later: the node stays the AI island's, and its squad still stands there.
+if (!aiLent(after, SALT, [0]).some((l) => l.target === shore && l.state === "holding")) fail("the island's squad leaves the station once a player's island takes its slot");
 const ns = newRun(22, starterKit(), "reservoir", { island: holds(after), battle: { factory: 0, rivals: aiRivals(next) } });
 if (!ns.battle!.squads.some((q) => q.side === 3 && q.owner === aiOwner(first.code) && q.to === STATION && q.task === "hold")) fail("the island's squad does not hold the station in the next raid");
 console.log("battle: kept overnight, reported as the enemy's, kept through a sync, held in the next raid");

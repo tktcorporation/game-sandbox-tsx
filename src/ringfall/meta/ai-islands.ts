@@ -243,7 +243,8 @@ export function aiLent(p: Seen, salt: number, taken: readonly number[]): LentIn[
   const out: LentIn[] = [];
   for (const n of NODES) {
     const owner = rivalOf(p.poiState[n.id]?.state ?? "held");
-    const a = aiByOwner(salt, owner, taken);
+    // Every slot's: an island whose slot a player's island has since taken still holds what it took, and stands its squad there.
+    const a = aiByOwner(salt, owner);
     if (a) out.push({ id: 0, by: { code: aiOwner(a.code), name: a.name }, target: n.id, kinds: aiKinds(p.day), state: "holding" });
   }
   const x = aiAttack(p, salt, taken);
@@ -269,7 +270,7 @@ export function aiRaidNews(before: Seen, after: { poiState: Island }, salt: numb
   for (const n of NODES) {
     const was = rivalOf(before.poiState[n.id]?.state ?? "held");
     const is = rivalOf(after.poiState[n.id]?.state ?? "held");
-    const a = aiByOwner(salt, is, taken);
+    const a = aiByOwner(salt, is);
     if (a && is !== was) out.push({ seq: 0, at: now, t: "taken", node: n.id, by: by(a) });
   }
   const x = aiAttack(before, salt, taken);
