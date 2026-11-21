@@ -316,7 +316,7 @@ valuables and credits taken from the stash, each level needing only the module's
 (`build()` in `profile.ts`; levels and costs in `HIDEOUT`, effects in `HIDEOUT_EFFECT`, both in `config.ts`; `meta/hideout.ts` holds the pure
 helpers). The workshop's cards and the factory's show each level's effect as was → now with what
 grows lit, and a ladder of the levels when opened (`moduleGauges()`, `factoryGauges()` in
-`view/hub.ts`); each module's mark (`MODULE_ICON`, drawn in `view/icons.ts`) also stands where its
+`view/hub.ts`; the factory's panel reads 今の工場, then 次の段 with its build, its ladder folded under 全部の段を見る); each module's mark (`MODULE_ICON`, drawn in `view/icons.ts`) also stands where its
 effect shows (the shelves' issued heals, the stash's count, the trader's materials, the map table's
 report, the pouch). Their benefits act in the meta: `takeKit()` lends the infirmary's heals, the workbench
 raises the valuables the trader sells (`materialRarity()`), `stashCap()` and `pouchSlots()` grow, and the radio reports the next raid's

@@ -4751,6 +4751,44 @@ body.touch .bag-card:nth-last-child(n + 3) {
 .factory-card {
   background: var(--plate);
 }
+/* The factory's parts: what it makes now, the next level, and the ladder folded away. */
+.fac-sub {
+  margin: 10px 0 4px;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--muted);
+}
+.mod-body > .fac-sub:first-child {
+  margin-top: 2px;
+}
+.fac-now {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  padding: 6px 8px;
+  background: rgb(var(--white-rgb) / 0.05);
+}
+.fac-now .gauge small {
+  margin-right: 2px;
+}
+.from-nodes > small {
+  color: var(--muted);
+}
+#hub .fac-fold {
+  display: block;
+  width: 100%;
+  margin: 10px 0 0;
+  padding: 6px 10px;
+  border: 1px dashed rgb(var(--white-rgb) / 0.28);
+  background: none;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+#hub .fac-fold.open {
+  margin-bottom: 6px;
+}
 #hub .factory-card .mod-head {
   cursor: default;
 }
