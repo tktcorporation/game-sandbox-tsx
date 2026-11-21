@@ -4894,11 +4894,13 @@ body.touch .bag-card:nth-last-child(n + 3) {
 /* The neighbours: a card each, whose island and a bar of the nodes its owner holds. */
 .exp-near {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   gap: 6px;
   margin-top: 6px;
 }
 #hub .exp-near button {
+  min-width: 0;
+  overflow: hidden;
   display: grid;
   gap: 4px;
   margin: 0;
@@ -4921,6 +4923,7 @@ body.touch .bag-card:nth-last-child(n + 3) {
 }
 .exp-near small {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 4px;
   font-family: var(--num);
