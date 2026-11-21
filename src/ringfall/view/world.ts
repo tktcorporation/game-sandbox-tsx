@@ -18,6 +18,7 @@ import { PAL, RARITY_COLOR, SCOPE_IN, buildAlly, buildBeacon, buildBin, buildCor
 import { streetMeshes } from "./streets";
 import { BattleView, CHANNEL } from "./battle";
 import { NeighbourIslands } from "./horizon";
+import { syncRobots } from "../sim/native/tick";
 
 /*
  * Renders a State in first person. It reads the state and the tick's events and
@@ -1340,8 +1341,15 @@ export class World {
     }
 
     // --- enemies, and the player's own robots among them
+    // Prefer WASM SoA views when the tick host has geom (typed arrays in linear memory).
     const robots = s.friends.length ? [...s.enemies, ...s.friends] : s.enemies;
-    for (const e of robots) {
+    const soa = syncRobots(s);
+    for (let ri = 0; ri < robots.length; ri++) {
+      const e = robots[ri];
+      const px = soa ? soa.x[ri] : e.pos.x;
+      const py = soa ? soa.y[ri] : e.pos.y;
+      const pz = soa ? soa.z[ri] : e.pos.z;
+      const yaw = soa ? soa.yaw[ri] : e.yaw;
       let v = this.enemies.get(e.id);
       if (!v) {
         const m = buildEnemy(e.kind);
@@ -1378,7 +1386,7 @@ export class World {
           new THREE.CylinderGeometry(0.06, ENEMIES[e.kind].radius * 0.45, 40, 8, 1, true),
           new THREE.MeshBasicMaterial({ toneMapped: false, color: e.friend ? PAL.friendEye : PAL.eye, transparent: true, opacity: 0.3, depthWrite: false, blending: THREE.AdditiveBlending }),
         );
-        beam.position.set(e.pos.x, e.pos.y + 20, e.pos.z);
+        beam.position.set(px, py + 20, pz);
         this.scene.add(beam);
         m.body.rotation.order = "YXZ";
         v = { m, kind: e.kind, flash: 0, flinch: 0, pushYaw: 0, smoke: 0, shieldFlash: 0, walk: 0, spawnBeam: beam, lane: null, plates };
@@ -1386,7 +1394,7 @@ export class World {
       }
       const k = ENEMIES[e.kind];
       const m = v.m;
-      m.root.position.set(e.pos.x, e.pos.y + (k.fly > 0 ? Math.sin(this.time * 3 + e.id) * 0.12 : 0), e.pos.z);
+      m.root.position.set(px, py + (k.fly > 0 ? Math.sin(this.time * 3 + e.id) * 0.12 : 0), pz);
       // The arrival beam goes once the robot is down, near or far; a far one's is not drawn.
       const close = near(m.root);
       // Out of range a robot is not drawn, so it leaves the scene: its parts are not worked out each frame for nothing.
@@ -1404,20 +1412,20 @@ export class World {
       v.flinch *= Math.exp(-dt * 12);
       const staggered = e.mode === "staggered";
       const tip = staggered ? 0.32 + Math.sin(this.time * 26) * 0.06 : v.flinch * (e.kind === "heavy" ? 0.1 : 0.2);
-      lean(m.body, e.yaw, v.pushYaw, tip);
+      lean(m.body, yaw, v.pushYaw, tip);
       if (staggered) m.root.position.y -= 0.08;
       // Below half its health and shield it smokes, and now and then spits sparks.
       const k0 = ENEMIES[e.kind];
       if (e.kind !== "titan" && e.hp + e.shield < (k0.hp + k0.shield) * 0.5 && (v.smoke -= dt) <= 0) {
         v.smoke = 0.12 + Math.random() * 0.1;
-        const top = { x: e.pos.x, y: e.pos.y + k0.bodyY + k0.radius * 0.6, z: e.pos.z };
+        const top = { x: px, y: py + k0.bodyY + k0.radius * 0.6, z: pz };
         this.burst(top, SMOKE, 1, 0.6, 0.22, -1.6, 1.1);
         if (Math.random() < 0.25) this.burst(top, 0xffc070, 3, 3, 0.04, 9, 0.25);
       }
       if (e.mode === "spawning") {
         const t = Math.max(0, 1 - e.timer / (e.kind === "titan" ? 2.2 : 0.9));
         m.root.scale.setScalar(0.2 + 0.8 * t);
-        if (k.fly > 0) m.root.position.y = e.pos.y + (1 - t) * 10;
+        if (k.fly > 0) m.root.position.y = py + (1 - t) * 10;
       } else {
         m.root.scale.setScalar(1);
       }

@@ -1141,8 +1141,10 @@ AI の島の遠征が、拠点のそばに降りられるようにした変更�
 
 ウォームな計測では目印の平らな場はほぼ建たないので、全体は機械の揺れの範囲。効くのはプロセスが初めて場を建てるとき。
 
-続けてウォーム帯のプロファイル（2 本目のダム湖初心者、Inspector）では `searchCells`+`heapPop` 約 14%、`stepEnemies` 一式約 15%、`bot.input` 約 5.5%、`sense`/`los` 約 8%。A* も同じクレートに載せ（平坦化した目印場、`RINGFALL_ASTAR=check` で経路一致）たが、ウォーム全体では WASM A* オンが **77.6 s**・TS A*（fill のみ WASM）が **57.9 s**（どちらもハッシュ 83b7a1d3bcf8）なので A* は opt-in。重み付き fill は TypeScript のまま。コールド `findPath` はこの機械で TS 約 8.0 s・WASM 約 8.8 s（同一性一致、揺れあり）。設計は `docs/ringfall/native.md`: **ブラウザと Node で同じ WASM**、状態は線形メモリに置き、将来は `ringfall_step_tick` で粗い境界にする（いまは stub −1）。既定のウォーム bench（plain fill WASM、A* TS）はハッシュ 83b7a1d3bcf8。
+続けてウォーム帯のプロファイル（2 本目のダム湖初心者、Inspector）では `searchCells`+`heapPop` 約 14%、`stepEnemies` 一式約 15%、`bot.input` 約 5.5%、`sense`/`los` 約 8%。A* も同じクレートに載せ（平坦化した目印場、`RINGFALL_ASTAR=check` で経路一致）たが、ウォーム全体では WASM A* オンが **77.6 s**・TS A*（fill のみ WASM）が **57.9 s**（どちらもハッシュ 83b7a1d3bcf8）なので A* は opt-in。重み付き fill は TypeScript のまま。
 
-ブラウザ本番ビルドは `/ringfall/` が同じ埋め込み WASM を読み、`window.ringfallNative()` が `{ wasm: true, abi: 1, stepTick: -1 }` を返すことを確認済み。
+ティックホスト（ABI 2）: 敵/弾の SoA・地形/箱・`los`・`step_tick`（弾）を同じ WASM に載せた。既定は TS の `stepEnemies`/`stepOrbs`（ハッシュ維持）。`RINGFALL_TICK=1` で弾だけ WASM。view は `syncRobots()` の typed array を読む。この機械の既定ウォーム bench は CPU **69.3 s**、壁時計約 60 s、ハッシュ **83b7a1d3bcf8**。
 
-次の本丸はティック単位で `stepEnemies` などを Rust に閉じること（見込みウォーム **1.1〜1.3×**、工数大）。napi は本番には使わず、必要なら Node 専用の並列 sim 用に後から。
+ブラウザ本番ビルドは `/ringfall/` が同じ埋め込み WASM を読み、`ringfallNative()` が `abi: 2` と tick 状態を返す。
+
+残り: `stepEnemies` / `sense` / combat を `step_tick` へ。napi は本番に使わず、必要なら Node 専用の並列 sim 用に後から。

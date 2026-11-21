@@ -1399,6 +1399,12 @@ export function carveTerrain(carves: readonly Carve[]) {
 }
 
 /** Ground height at (x, z). Outside the world's bounds it is the rim's horizon. */
+/** Snapshot of the cached height field for the shared WASM tick host (docs/ringfall/native.md). */
+export function terrainFieldSnapshot(): { field: Float32Array; nx: number; nz: number; x0: number; z0: number; res: number } | null {
+  if (!field) return null;
+  return { field, nx: NX, nz: NZ, x0: WORLD.x0, z0: WORLD.z0, res: RES };
+}
+
 export function terrainHeight(x: number, z: number): number {
   const fx = (x - WORLD.x0) / RES;
   const fz = (z - WORLD.z0) / RES;

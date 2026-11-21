@@ -8,18 +8,28 @@ import type { Input, State } from "./state";
 import { useRoutes } from "./routes";
 import { stepFront, useZones } from "./front";
 import { stepAmbush, stepContacts, stepFactions, stepMobiles, stepSweep } from "./factions";
+import { worldVersion } from "./geom";
+import { stepTickOrbs, uploadGeom } from "./native/tick";
 
 /** Read afresh: each system may have ended the raid. */
 const ended = (s: State) => s.phase === "done";
 
+/** Orbs: WASM `step_tick` when opted in; else TypeScript (default — bench hash). */
+function stepOrbsMaybe(s: State) {
+  if (stepTickOrbs(s)) return;
+  stepOrbs(s);
+}
+
 /** The systems of a tick, in order, around the player's (first) and the loot's, which read the input. */
-const BEFORE_LOOT: ((s: State) => void)[] = [tickReveal, stepAlly, stepFactions, stepEnemies, stepFriends, stepOrbs, stepWaves];
+const BEFORE_LOOT: ((s: State) => void)[] = [tickReveal, stepAlly, stepFactions, stepEnemies, stepFriends, stepOrbsMaybe, stepWaves];
 const AFTER_LOOT: ((s: State) => void)[] = [stepPoi, stepFront, stepBattle, stepReinforce, stepParties, stepMobiles, stepAmbush, stepSweep, stepCrews, stepExtract, stepDepots, stepHome, stepEntries, stepContacts];
 
 /** Advance the run by one fixed 1/60 s tick. Pure: no DOM, no clock, no Math.random. */
 export function step(s: State, input: Input, prevCrouch: boolean) {
   useRoutes(s.routes);
   useZones(s);
+  // Lazy: first tick (or after a route change) packs terrain/boxes into WASM for los/orbs/view.
+  uploadGeom(worldVersion, s.routes);
   s.events = [];
   if (s.phase === "done") return;
   s.time += TICK;

@@ -33,13 +33,18 @@ for (const n of need) {
   }
 }
 const abi = ex.ringfall_sim_abi_version();
-const stub = ex.ringfall_step_tick(0);
-if (abi !== 1) {
-  console.error(`ringfall-native-smoke: unexpected abi ${abi}`);
+if (abi < 2) {
+  console.error(`ringfall-native-smoke: unexpected abi ${abi} (want >= 2)`);
   process.exit(1);
 }
+if (typeof ex.ringfall_sim_step_tick !== "function" || typeof ex.ringfall_sim_los !== "function") {
+  console.error("ringfall-native-smoke: missing tick host exports");
+  process.exit(1);
+}
+// Without geom, step_tick returns -1 (not ready).
+const stub = ex.ringfall_step_tick(0);
 if (stub !== -1) {
-  console.error(`ringfall-native-smoke: step_tick stub should be -1, got ${stub}`);
+  console.error(`ringfall-native-smoke: step_tick without geom should be -1, got ${stub}`);
   process.exit(1);
 }
 const eng = ex.ringfall_fill_new(32, 32);
@@ -48,4 +53,4 @@ if (!eng) {
   process.exit(1);
 }
 ex.ringfall_fill_free(eng);
-console.log(`ringfall-native-smoke: ok abi=${abi} step_tick=${stub} bytes=${bytes.length}`);
+console.log(`ringfall-native-smoke: ok abi=${abi} step_tick_unready=${stub} bytes=${bytes.length}`);

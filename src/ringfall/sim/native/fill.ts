@@ -64,6 +64,61 @@ type Exports = {
   ringfall_nav_path_ptr(e: number): number;
   ringfall_sim_abi_version(): number;
   ringfall_step_tick(dt: number): number;
+  // Tick host (sim module) — present from ABI 2.
+  ringfall_sim_reset?(): void;
+  ringfall_sim_terrain_begin?(nx: number, nz: number, x0: number, z0: number, res: number): number;
+  ringfall_sim_terrain_commit?(): void;
+  ringfall_sim_boxes_begin?(n: number): number;
+  ringfall_sim_boxes_commit?(): void;
+  ringfall_sim_set_player?(
+    x: number,
+    y: number,
+    z: number,
+    crouch: number,
+    sliding: number,
+    ax: number,
+    ay: number,
+    az: number,
+    ally_up: number,
+    wipes: number,
+  ): void;
+  ringfall_sim_robots_begin?(n: number): number;
+  ringfall_sim_robot_x_ptr?(): number;
+  ringfall_sim_robot_y_ptr?(): number;
+  ringfall_sim_robot_z_ptr?(): number;
+  ringfall_sim_robot_yaw_ptr?(): number;
+  ringfall_sim_robot_vx_ptr?(): number;
+  ringfall_sim_robot_vz_ptr?(): number;
+  ringfall_sim_robot_hp_ptr?(): number;
+  ringfall_sim_robot_shield_ptr?(): number;
+  ringfall_sim_robot_duck_ptr?(): number;
+  ringfall_sim_robot_id_ptr?(): number;
+  ringfall_sim_robot_kind_ptr?(): number;
+  ringfall_sim_robot_mode_ptr?(): number;
+  ringfall_sim_robot_flags_ptr?(): number;
+  ringfall_sim_robot_radius_ptr?(): number;
+  ringfall_sim_robot_body_h_ptr?(): number;
+  ringfall_sim_robot_side_ptr?(): number;
+  ringfall_sim_orbs_begin?(n: number): number;
+  ringfall_sim_orb_x_ptr?(): number;
+  ringfall_sim_orb_y_ptr?(): number;
+  ringfall_sim_orb_z_ptr?(): number;
+  ringfall_sim_orb_vx_ptr?(): number;
+  ringfall_sim_orb_vy_ptr?(): number;
+  ringfall_sim_orb_vz_ptr?(): number;
+  ringfall_sim_orb_r_ptr?(): number;
+  ringfall_sim_orb_dmg_ptr?(): number;
+  ringfall_sim_orb_life_ptr?(): number;
+  ringfall_sim_orb_flags_ptr?(): number;
+  ringfall_sim_orb_by_ptr?(): number;
+  ringfall_sim_orb_side_ptr?(): number;
+  ringfall_sim_orb_alive_ptr?(): number;
+  ringfall_sim_set_ready?(ready: number): void;
+  ringfall_sim_n_robots?(): number;
+  ringfall_sim_hits_len?(): number;
+  ringfall_sim_hits_ptr?(): number;
+  ringfall_sim_los?(ax: number, ay: number, az: number, bx: number, by: number, bz: number, paths: number): number;
+  ringfall_sim_step_tick?(dt: number): number;
 };
 
 let exportsRef: Exports | null = null;
@@ -184,6 +239,11 @@ export function wasmAstarAvailable(): boolean {
   const v = flag("ringfallAstar", ["RINGFALL_ASTAR"]);
   if (v !== "1" && v !== "wasm" && v !== "on" && v !== "check") return false;
   return tryLoad();
+}
+
+/** Shared WASM exports (nav + tick). One Instance for browser and Node. */
+export function nativeExports(): Exports | null {
+  return tryLoad() ? exportsRef : null;
 }
 
 export function nativeStatus(): {
