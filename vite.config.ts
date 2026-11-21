@@ -6,7 +6,7 @@ export default defineConfig({
   environments: {
     client: {
       build: {
-        rollupOptions: {
+        rolldownOptions: {
           input: { main: "index.html", hitmark: "hitmark/index.html", ringfall: "ringfall/index.html" },
         },
       },
