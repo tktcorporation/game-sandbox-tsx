@@ -1281,9 +1281,13 @@ const SEP_CELL = 8;
 /** Each walker's cell for `separate()`, kept between ticks so a tick allocates none. */
 let sepX = new Int32Array(256);
 let sepZ = new Int32Array(256);
+/** Grounded walkers for `separate()`, reused so a tick does not allocate a filtered list. */
+const sepList: Enemy[] = [];
 /** Keep walkers from stacking into one blob. */
 function separate(s: State) {
-  const list = s.enemies.filter((e) => ENEMIES[e.kind].fly === 0 && e.mode !== "spawning");
+  sepList.length = 0;
+  for (const e of s.enemies) if (ENEMIES[e.kind].fly === 0 && e.mode !== "spawning") sepList.push(e);
+  const list = sepList;
   const pair = (a: Enemy, b: Enemy) => {
     const r = ENEMIES[a.kind].radius + ENEMIES[b.kind].radius;
     const dx = b.pos.x - a.pos.x;
