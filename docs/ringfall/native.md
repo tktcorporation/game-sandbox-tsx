@@ -1,48 +1,52 @@
 # RINGFALL native (Rust → WASM)
 
-One Rust crate (`native/ringfall-fill/`) compiles to **WASM for both the browser game and the Node sim**. napi-rs is not used for production (Node-only); it remains an optional later path for multi-threaded Node sim (e.g. rayon).
+One Rust crate (`native/ringfall-fill/`) compiles to **WASM for both the browser game and the Node sim**. napi-rs is not used for production.
 
-## Goal architecture
+## Architecture
 
-Keep sim/game state in WASM linear memory. Cross the JS↔Rust boundary **once per tick** (or a short batch), not once per helper:
-
-| Today | Target |
+| Layer | Role |
 | --- | --- |
-| Nav Dial `fill` + opt-in A*; tick host holds enemy/orb SoA + world geom | Same + full `stepEnemies` / combat FSM in Rust |
-| `ringfall_step_tick` advances **orbs** when `RINGFALL_TICK=1` (default still TS) | `step_tick` owns enemies + orbs + awareness; view reads typed-array views only |
-| View syncs robot SoA each frame (`syncRobots`) and reads `x/y/z/yaw` views | No AoS copy for poses |
-| TS `stepEnemies` / `sense` / combat still own AI | Port behind `step_tick` |
+| Nav (`fill` / opt-in A*) | Landmark Dial fields; default fill WASM, A* TypeScript |
+| Tick host (ABI **2**) | Enemy/orb SoA + terrain/boxes + `los` + `step_tick` (orbs) |
+| Default sim path | TypeScript `stepEnemies` / `stepOrbs` — **no** per-tick SoA/geom work |
 
-ABI version: `ringfall_sim_abi_version()` = **2** (bump when the tick contract changes).  
-Without geom uploaded, `ringfall_step_tick` returns **-1**.
+`ringfall_step_tick` returns **-1** until geom is uploaded; **0** after a successful orb step.
 
-## What runs where
+## Switches
 
-| Surface | WASM | Fallback |
+| Flag | Effect |
+| --- | --- |
+| `RINGFALL_FILL=ts` / `?ringfallNative=0` | Disable WASM (nav + tick) |
+| `RINGFALL_ASTAR=1` | Opt-in WASM A* (warm is slower) |
+| `RINGFALL_TICK=1` | Upload geom + sync robot SoA each tick (orbs still TS) |
+| `RINGFALL_ORBS=1` | Also run WASM `step_orbs` (**breaks** bench hash today — ~1 ULP/tick los drift) |
+
+## Identity / speed (measured)
+
+Bench aggregate hash must stay **`83b7a1d3bcf8`** on the default path.
+
+| Path | Warm CPU (this machine) | Hash |
 | --- | --- | --- |
-| Browser (`/ringfall/`) | fill + SoA views; orbs if `?ringfallTick=1` | TypeScript |
-| Node `sim` / `bench` | Same embed; tick off by default | `RINGFALL_FILL=ts` / omit `RINGFALL_TICK` |
+| Default (fill WASM, tick off) | ~72–75 s | `83b7a1d3bcf8` |
+| `RINGFALL_TICK=1` (SoA sync, TS orbs) | ~73 s | `83b7a1d3bcf8` |
+| `RINGFALL_TICK=1 RINGFALL_ORBS=1` | ~61 s | **`61c0935e28ab`** (divergent — not a fair speedup) |
 
-Disable native: `?ringfallNative=0`, `localStorage.ringfallNative=0`, or `RINGFALL_FILL=ts`.  
-A* WASM opt-in: `?ringfallAstar=1` / `RINGFALL_ASTAR=1`.  
-Tick (orbs) opt-in: `?ringfallTick=1` / `RINGFALL_TICK=1` (`check` reserved).
+Back-to-back vs #153 tip (`f5eb313`) on the same machine: no default-path regression (both ~70–85 s depending on load; earlier 57.9 vs 69.3 was machine noise).
 
-Weighted (avoid-disk) Dial fills stay on TypeScript for now.
+Cold `findPath`: TS ≈ WASM within noise; identity match (`npm run fill:ringfall`).
+
+## Remaining (full per-tick port)
+
+1. **Bit-identical `los` / terrain rays** (or accept fixed-point) so WASM orbs keep hash `83b7a1d3bcf8`.
+2. Port **`stepEnemies` / `sense` / combat FSM** into `step_tick` (hunt fields, collide, factions, RNG order).
+3. **Drop AoS `Enemy` objects** — State holds indices into WASM SoA; view already can read typed arrays when tick is on.
+4. Until (1)–(3): do **not** expect `RINGFALL_TICK=1` to beat TypeScript on a fair identical-hash comparison. Sync-only tax is noise; divergent orbs look “faster” only because raids take different branches.
 
 ## Rebuild
 
 ```bash
-npm run build:native   # needs rustc; otherwise the committed embed is kept
+npm run build:native
 npm run smoke:native
-npm run fill:ringfall  # TS vs WASM fill identity
+npm run fill:ringfall
+npm run bench:ringfall   # hash 83b7a1d3bcf8
 ```
-
-Identity for raids: `npm run bench:ringfall` aggregate hash must stay `83b7a1d3bcf8` while results are unchanged (default path: fill WASM, A* TS, tick TS).
-
-## Remaining for a full tick port
-
-1. Port `stepEnemies` FSM (`calm`, cover, fire, hunt) into `step_tick` with bit-identical order.
-2. Port `sense` / squad awareness (engage/alert side effects) using in-WASM `los`.
-3. Player combat (`damageEnemy`) and faction fights fully inside the host.
-4. Drop dual AoS: State holds indices into WASM SoA (or view-only sync out).
-5. Optional: napi + rayon for Node-only parallel sim workers — never required for the browser.

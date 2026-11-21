@@ -14,6 +14,7 @@ import { allyUp, hurtAlly } from "../ally";
 import { hurtPlayer } from "../player";
 import { damageRobot } from "../factions";
 import { nativeExports } from "./fill";
+import { ORBS_WASM, TICK_CHECK, TICK_WASM } from "./tick-flag";
 
 const FLAG_FENCE = 1;
 const FLAG_OBSTACLE = 2;
@@ -27,46 +28,6 @@ const ROBOT_TITAN = 8;
 const ROBOT_SPAWNING = 16;
 
 type Ex = NonNullable<ReturnType<typeof nativeExports>>;
-
-type NodeProcess = { env?: Record<string, string | undefined> };
-const nodeProcess = (): NodeProcess | undefined => (globalThis as { process?: NodeProcess }).process;
-
-function queryFlag(name: string): string | undefined {
-  try {
-    if (typeof location === "undefined") return undefined;
-    return new URLSearchParams(location.search).get(name) ?? undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function storageFlag(name: string): string | undefined {
-  try {
-    if (typeof localStorage === "undefined") return undefined;
-    return localStorage.getItem(name) ?? undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function flag(name: string, envNames: string[]): string | undefined {
-  const q = queryFlag(name);
-  if (q != null) return q;
-  const s = storageFlag(name);
-  if (s != null) return s;
-  const env = nodeProcess()?.env;
-  if (!env) return undefined;
-  for (const k of envNames) if (env[k] != null) return env[k];
-  return undefined;
-}
-
-function isOn(v: string | undefined): boolean {
-  return v === "1" || v === "wasm" || v === "on" || v === "true";
-}
-
-function isCheck(v: string | undefined): boolean {
-  return v === "check";
-}
 
 function ex(): Ex | null {
   const e = nativeExports();
@@ -112,10 +73,9 @@ function packBoxes(): Float32Array {
   return out;
 }
 
-/** True when the browser view or an opted-in tick needs geom in WASM. */
+/** True when an opted-in tick needs geom in WASM (browser SoA is opt-in via TICK too). */
 function geomWanted(): boolean {
-  if (tickMode() !== "off") return true;
-  return typeof document !== "undefined";
+  return TICK_WASM;
 }
 
 /** Upload terrain + boxes once per world/routes (browser view / RINGFALL_TICK). */
@@ -312,9 +272,8 @@ function pullOrbs(e: Ex, s: State): void {
 }
 
 export function tickMode(): "off" | "wasm" | "check" {
-  const v = flag("ringfallTick", ["RINGFALL_TICK"]);
-  if (isCheck(v)) return "check";
-  if (isOn(v)) return "wasm";
+  if (TICK_CHECK) return "check";
+  if (TICK_WASM) return "wasm";
   return "off";
 }
 
@@ -323,13 +282,13 @@ export function tickAvailable(): boolean {
 }
 
 /**
- * Run WASM `step_tick` for orbs. Returns true if WASM handled orbs (skip TS stepOrbs).
+ * Tick-host entry from `step.ts`. Syncs robot SoA when `RINGFALL_TICK` is on.
+ * Returns true only when WASM also stepped orbs (`RINGFALL_ORBS=1`).
  */
 export function stepTickOrbs(s: State): boolean {
+  if (!TICK_WASM) return false;
   const e = ex();
   if (!e || geomEpoch < 0) return false;
-  const mode = tickMode();
-  if (mode === "off") return false;
   syncRobots(s);
   const p = s.player;
   e.ringfall_sim_set_player!(
@@ -344,12 +303,15 @@ export function stepTickOrbs(s: State): boolean {
     allyUp(s) ? 1 : 0,
     s.stats.wipes,
   );
+  // stepEnemies / sense / combat still TypeScript. Orbs stay TS unless RINGFALL_ORBS=1
+  // (WASM los drifts ~1 ULP/tick and changes the bench hash).
+  if (!ORBS_WASM) return false;
   syncOrbs(e, s);
   const rc = e.ringfall_step_tick(TICK);
   if (rc !== 0) return false;
   applyHits(e, s);
   pullOrbs(e, s);
-  return mode === "wasm";
+  return true;
 }
 
 export function robotViews(): RobotViews | null {
@@ -380,12 +342,13 @@ export function wasmLos(ax: number, ay: number, az: number, bx: number, by: numb
   return e.ringfall_sim_los(ax, ay, az, bx, by, bz, paths ? 1 : 0) !== 0;
 }
 
-export function tickStatus(): { tick: boolean; abi: number | null; geom: boolean; mode: string } {
+export function tickStatus(): { tick: boolean; abi: number | null; geom: boolean; mode: string; orbs: boolean } {
   const e = ex();
   return {
     tick: !!e,
     abi: e ? e.ringfall_sim_abi_version() : null,
     geom: geomEpoch >= 0,
     mode: tickMode(),
+    orbs: ORBS_WASM,
   };
 }

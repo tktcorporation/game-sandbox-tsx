@@ -9,14 +9,21 @@ import { useRoutes } from "./routes";
 import { stepFront, useZones } from "./front";
 import { stepAmbush, stepContacts, stepFactions, stepMobiles, stepSweep } from "./factions";
 import { worldVersion } from "./geom";
+import { TICK_WASM } from "./native/tick-flag";
 import { stepTickOrbs, uploadGeom } from "./native/tick";
 
 /** Read afresh: each system may have ended the raid. */
 const ended = (s: State) => s.phase === "done";
 
-/** Orbs: WASM `step_tick` when opted in; else TypeScript (default — bench hash). */
+/**
+ * Default: TypeScript orbs only — tick helpers are not called (bench path).
+ * `RINGFALL_TICK=1`: geom + SoA sync; WASM orbs only with `RINGFALL_ORBS=1`.
+ */
 function stepOrbsMaybe(s: State) {
-  if (stepTickOrbs(s)) return;
+  if (TICK_WASM) {
+    uploadGeom(worldVersion, s.routes);
+    if (stepTickOrbs(s)) return;
+  }
   stepOrbs(s);
 }
 
@@ -28,8 +35,6 @@ const AFTER_LOOT: ((s: State) => void)[] = [stepPoi, stepFront, stepBattle, step
 export function step(s: State, input: Input, prevCrouch: boolean) {
   useRoutes(s.routes);
   useZones(s);
-  // Lazy: first tick (or after a route change) packs terrain/boxes into WASM for los/orbs/view.
-  uploadGeom(worldVersion, s.routes);
   s.events = [];
   if (s.phase === "done") return;
   s.time += TICK;

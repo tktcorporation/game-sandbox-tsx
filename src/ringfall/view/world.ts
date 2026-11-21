@@ -18,6 +18,7 @@ import { PAL, RARITY_COLOR, SCOPE_IN, buildAlly, buildBeacon, buildBin, buildCor
 import { streetMeshes } from "./streets";
 import { BattleView, CHANNEL } from "./battle";
 import { NeighbourIslands } from "./horizon";
+import { TICK_WASM } from "../sim/native/tick-flag";
 import { syncRobots } from "../sim/native/tick";
 
 /*
@@ -1343,7 +1344,7 @@ export class World {
     // --- enemies, and the player's own robots among them
     // Prefer WASM SoA views when the tick host has geom (typed arrays in linear memory).
     const robots = s.friends.length ? [...s.enemies, ...s.friends] : s.enemies;
-    const soa = syncRobots(s);
+    const soa = TICK_WASM ? syncRobots(s) : null;
     for (let ri = 0; ri < robots.length; ri++) {
       const e = robots[ri];
       const px = soa ? soa.x[ri] : e.pos.x;
