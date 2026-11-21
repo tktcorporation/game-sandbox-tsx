@@ -1,6 +1,6 @@
 import { AWARE, BAG, DEG, ENEMIES, FLANK, INTERCEPT, NOISE, PATROL, PINCH, PURSUE, RETURN, SIGHT, TICK, VALUABLES } from "./config";
 import { EXTRACTS, POIS, regionHere } from "./map";
-import { dist2d, los, lookAngles, solidAt, wrapAngle } from "./geom";
+import { dist2d, los, solidAt, wrapAngle } from "./geom";
 import { steepAt, terrainHeight } from "./terrain";
 import { sightScale, weakY, type Enemy, type Point, type State, type Vec3 } from "./state";
 import { modScale, threatOf } from "./mods";
@@ -9,6 +9,10 @@ import { squadMembers } from "./members";
 
 /** How far a robot answers shots from afar (see RETURN): further at a higher threat, less in a storm. */
 const returnRange = (s: State, e: Enemy) => RETURN.range[e.kind] * threatOf(s).range * sightScale(s);
+
+/** Scratch ends for `sense()`'s line of sight: rewritten each call, never retained. */
+const senseFrom: Vec3 = { x: 0, y: 0, z: 0 };
+const senseTo: Vec3 = { x: 0, y: 0, z: 0 };
 
 /*
  * What robots know about the player: sight that fills slowly, sounds that make
@@ -232,9 +236,19 @@ export function sense(s: State, e: Enemy): boolean {
     let inView = d < AWARE.closeSense;
     if (!inView && d < range) {
       const fov = sight.fov * (engaged ? AWARE.engagedFov : 1);
-      inView = Math.abs(wrapAngle(lookAngles(e.pos, { x: p.pos.x, y: ty, z: p.pos.z }).yaw - e.yaw)) < (fov / 2) * DEG;
+      // Yaw toward the player is atan2 of the same dx, dz already found: same as lookAngles().yaw.
+      inView = Math.abs(wrapAngle(Math.atan2(dx, -dz) - e.yaw)) < (fov / 2) * DEG;
     }
-    seen = inView && los({ x: e.pos.x, y: ey, z: e.pos.z }, { x: p.pos.x, y: ty, z: p.pos.z });
+    if (inView) {
+      // Scratch points for the line of sight: same numbers as allocating two Vec3s each call.
+      senseFrom.x = e.pos.x;
+      senseFrom.y = ey;
+      senseFrom.z = e.pos.z;
+      senseTo.x = p.pos.x;
+      senseTo.y = ty;
+      senseTo.z = p.pos.z;
+      seen = los(senseFrom, senseTo);
+    }
     // A fighting robot that has lost the player, or never had them itself, takes a moment
     // to find them again; one that is not fighting yet is filling its detection instead.
     // A glimpse broken for a moment (a post, its own strafe) keeps most of what it had found.
