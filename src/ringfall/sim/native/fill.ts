@@ -82,12 +82,30 @@ type Exports = {
     ally_up: number,
     wipes: number,
   ): void;
+  ringfall_sim_set_combat?(
+    pvx: number,
+    pvy: number,
+    pvz: number,
+    avx: number,
+    avy: number,
+    avz: number,
+    player_downed: number,
+    phase_play: number,
+    sight_scale: number,
+    threat_range: number,
+    rng: number,
+    next_id: number,
+  ): void;
+  ringfall_sim_get_rng?(): number;
+  ringfall_sim_get_next_id?(): number;
+  ringfall_sim_squads_begin?(n: number): number;
   ringfall_sim_robots_begin?(n: number): number;
   ringfall_sim_robot_x_ptr?(): number;
   ringfall_sim_robot_y_ptr?(): number;
   ringfall_sim_robot_z_ptr?(): number;
   ringfall_sim_robot_yaw_ptr?(): number;
   ringfall_sim_robot_vx_ptr?(): number;
+  ringfall_sim_robot_vy_ptr?(): number;
   ringfall_sim_robot_vz_ptr?(): number;
   ringfall_sim_robot_hp_ptr?(): number;
   ringfall_sim_robot_shield_ptr?(): number;
@@ -99,6 +117,53 @@ type Exports = {
   ringfall_sim_robot_radius_ptr?(): number;
   ringfall_sim_robot_body_h_ptr?(): number;
   ringfall_sim_robot_side_ptr?(): number;
+  ringfall_sim_robot_aware_ptr?(): number;
+  ringfall_sim_robot_detect_ptr?(): number;
+  ringfall_sim_robot_finding_ptr?(): number;
+  ringfall_sim_robot_blind_ptr?(): number;
+  ringfall_sim_robot_saw_x_ptr?(): number;
+  ringfall_sim_robot_saw_z_ptr?(): number;
+  ringfall_sim_robot_has_saw_ptr?(): number;
+  ringfall_sim_robot_timer_ptr?(): number;
+  ringfall_sim_robot_cooldown_ptr?(): number;
+  ringfall_sim_robot_shots_left_ptr?(): number;
+  ringfall_sim_robot_strafe_ptr?(): number;
+  ringfall_sim_robot_strafe_t_ptr?(): number;
+  ringfall_sim_robot_jink_ptr?(): number;
+  ringfall_sim_robot_steady_ptr?(): number;
+  ringfall_sim_robot_stagger_ptr?(): number;
+  ringfall_sim_robot_aim_yaw_ptr?(): number;
+  ringfall_sim_robot_aim_pitch_ptr?(): number;
+  ringfall_sim_robot_opener_ptr?(): number;
+  ringfall_sim_robot_peek_side_ptr?(): number;
+  ringfall_sim_robot_cover_t_ptr?(): number;
+  ringfall_sim_robot_elite_ptr?(): number;
+  ringfall_sim_robot_target_ptr?(): number;
+  ringfall_sim_robot_target_t_ptr?(): number;
+  ringfall_sim_robot_squad_ptr?(): number;
+  ringfall_sim_robot_friend_id_ptr?(): number;
+  ringfall_sim_robot_poi_ptr?(): number;
+  ringfall_sim_robot_last_hit_ptr?(): number;
+  ringfall_sim_robot_fired_ptr?(): number;
+  ringfall_sim_robot_ally_hit_ptr?(): number;
+  ringfall_sim_robot_home_x_ptr?(): number;
+  ringfall_sim_robot_home_y_ptr?(): number;
+  ringfall_sim_robot_home_z_ptr?(): number;
+  ringfall_sim_robot_goal_x_ptr?(): number;
+  ringfall_sim_robot_goal_z_ptr?(): number;
+  ringfall_sim_robot_has_goal_ptr?(): number;
+  ringfall_sim_robot_search_t_ptr?(): number;
+  ringfall_sim_squad_since_seen_ptr?(): number;
+  ringfall_sim_squad_shot_t_ptr?(): number;
+  ringfall_sim_squad_last_x_ptr?(): number;
+  ringfall_sim_squad_last_z_ptr?(): number;
+  ringfall_sim_squad_chase_x_ptr?(): number;
+  ringfall_sim_squad_chase_z_ptr?(): number;
+  ringfall_sim_squad_has_chase_ptr?(): number;
+  ringfall_sim_squad_chase_t_ptr?(): number;
+  ringfall_sim_squad_pin_t_ptr?(): number;
+  ringfall_sim_squad_sight_ptr?(): number;
+  ringfall_sim_squad_flags_ptr?(): number;
   ringfall_sim_orbs_begin?(n: number): number;
   ringfall_sim_orb_x_ptr?(): number;
   ringfall_sim_orb_y_ptr?(): number;
@@ -115,6 +180,7 @@ type Exports = {
   ringfall_sim_orb_alive_ptr?(): number;
   ringfall_sim_set_ready?(ready: number): void;
   ringfall_sim_n_robots?(): number;
+  ringfall_sim_n_orbs?(): number;
   ringfall_sim_hits_len?(): number;
   ringfall_sim_hits_ptr?(): number;
   ringfall_sim_los?(ax: number, ay: number, az: number, bx: number, by: number, bz: number, paths: number): number;

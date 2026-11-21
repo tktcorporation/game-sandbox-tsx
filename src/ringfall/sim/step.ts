@@ -8,22 +8,16 @@ import type { Input, State } from "./state";
 import { useRoutes } from "./routes";
 import { stepFront, useZones } from "./front";
 import { stepAmbush, stepContacts, stepFactions, stepMobiles, stepSweep } from "./factions";
-import { worldVersion } from "./geom";
-import { TICK_WASM } from "./native/tick-flag";
-import { stepTickOrbs, uploadGeom } from "./native/tick";
+import { consumeTickDone } from "./native/tick";
 
 /** Read afresh: each system may have ended the raid. */
 const ended = (s: State) => s.phase === "done";
 
 /**
- * Default: TypeScript orbs only — tick helpers are not called (bench path).
- * `RINGFALL_TICK=1`: geom + SoA sync; WASM orbs only with `RINGFALL_ORBS=1`.
+ * Default: TypeScript orbs. When `RINGFALL_TICK` ran enemies+orbs in `stepEnemies`, skip.
  */
 function stepOrbsMaybe(s: State) {
-  if (TICK_WASM) {
-    uploadGeom(worldVersion, s.routes);
-    if (stepTickOrbs(s)) return;
-  }
+  if (consumeTickDone()) return;
   stepOrbs(s);
 }
 

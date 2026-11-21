@@ -6,6 +6,7 @@
 
 #![allow(clippy::missing_safety_doc)]
 
+mod kind;
 mod sim;
 
 const AVOID: u32 = 5;
@@ -820,7 +821,7 @@ pub unsafe extern "C" fn ringfall_nav_path_ptr(e: *mut Engine) -> *const i32 {
 }
 
 /// Bump when the coarse tick / memory layout contract changes (docs/ringfall/native.md).
-pub const SIM_ABI_VERSION: u32 = 2;
+pub const SIM_ABI_VERSION: u32 = 3;
 
 #[no_mangle]
 pub extern "C" fn ringfall_sim_abi_version() -> u32 {

@@ -1143,4 +1143,4 @@ AI の島の遠征が、拠点のそばに降りられるようにした変更�
 
 続けてウォーム帯のプロファイル（2 本目のダム湖初心者、Inspector）では `searchCells`+`heapPop` 約 14%、`stepEnemies` 一式約 15%、`bot.input` 約 5.5%、`sense`/`los` 約 8%。A* も同じクレートに載せ（平坦化した目印場、`RINGFALL_ASTAR=check` で経路一致）たが、ウォーム全体では WASM A* オンが **77.6 s**・TS A*（fill のみ WASM）が **57.9 s**（どちらもハッシュ 83b7a1d3bcf8）なので A* は opt-in。重み付き fill は TypeScript のまま。
 
-ティックホスト（ABI 2）: 敵/弾の SoA・地形/箱・`los`・`step_tick`（弾）を同じ WASM に載せた。既定パスは tick を呼ばない（#153 と続けて測って退行なし。以前の 57.9→69.3 は機械揺れ）。`RINGFALL_TICK=1` は SoA 同期のみでハッシュ維持；`RINGFALL_ORBS=1` は弾も WASM だが los が毎ティック ~1 ULP ずれてハッシュが変わる（見かけの短縮は別分岐）。`stepEnemies` / sense / combat の移植と AoS 廃止は未完了。詳細は `docs/ringfall/native.md`。
+ティックホスト（ABI 3）: `sense` + 交戦 FSM + 弾を `step_tick` に載せた（`RINGFALL_TICK=1`、弾は tick に同梱）。ビット一致ハッシュは要求しない（los の ~1 ULP ずれは可）。等価は `npm run equiv:ringfall`（N=30×10、Welch）。抽出率・downs は近いが、`met` / `metAway` に BIAS（WASM の遭遇が少ない：hunt/cover/`fightFoe` 未移植）。固定 90 s シミュは CPU ×2.8（刻み単価は速い）。ウォーム bench: TS ~60–64 s / tick オン ~52–56 s、ハッシュ既定 **83b7a1d3bcf8**。ブラウザ既定 tick オン。詳細は `docs/ringfall/native.md`。

@@ -1,5 +1,7 @@
 import { ALLY, AWARE, CHARGER, CONQUEST, COVER, CREW, DEG, DODGE, DUCK, ELITE, ENEMIES, FALLBACK, FAR_THINK, PACK, PARTY, PATROL, PINCH, SPLIT, SWEEP, PLAYER, PURSUE, SHOT, SIGHT, STAGGER, SUPPORT, TICK, TITAN, TURN, WORLD, type EnemyKind, type Rarity } from "./config";
 import { clampToWorld, collide, dist2d, fenceBetween, groundAt, groundLevel, los, lookAngles, onTerrain, solidAt, worldVersion, wrapAngle } from "./geom";
+import { TICK_WASM } from "./native/tick-flag";
+import { markTickDone, stepTick, uploadGeom } from "./native/tick";
 import { steepAt, terrainHeight } from "./terrain";
 import { engageSquad, fireRange, headOf, knownSpot, located, pursuitSpot, sense, stepSquads } from "./awareness";
 import { coversNear, type CoverPoint } from "./cover";
@@ -367,6 +369,15 @@ const STAGGER_DECAY = Math.exp(-TICK / STAGGER.window);
 export function stepEnemies(s: State) {
   const p = s.player;
   stepSquads(s);
+  // WASM owns sense + engaged combat + orbs when the tick host is ready.
+  // Squad bookkeeping above still runs in TypeScript every tick.
+  if (TICK_WASM) {
+    uploadGeom(worldVersion, s.routes);
+    if (stepTick(s)) {
+      markTickDone();
+      return;
+    }
+  }
   markNear(s);
   const tick = Math.round(s.time / TICK);
   // A robot destroyed takes a new list (`kill()`, `fall()`): only then are the rest looked up in it.

@@ -1,7 +1,10 @@
 //! Coarse per-tick sim host: enemy/orb SoA + world geom (boxes + terrain) in WASM linear
-//! memory. `step_tick` advances orbs (and later enemies) without per-call marshaling.
+//! memory. `step_tick` advances enemies (sense + engaged FSM) then orbs.
 //! See docs/ringfall/native.md.
 
+#![allow(dead_code)]
+
+use crate::kind::*;
 use std::f64::consts::PI;
 
 const CELL: f64 = 8.0;
@@ -75,14 +78,26 @@ pub struct Sim {
     px: f64,
     py: f64,
     pz: f64,
+    pvx: f64,
+    pvy: f64,
+    pvz: f64,
     crouch: u8,
     sliding: u8,
+    player_downed: u8,
+    phase_play: u8,
     ax: f64,
     ay: f64,
     az: f64,
+    avx: f64,
+    avy: f64,
+    avz: f64,
     ally_up: u8,
+    sight_scale: f64,
+    threat_range: f64,
+    rng: u32,
+    next_id: u32,
 
-    // --- enemy / friend robots (SoA for view + orb hits) ---
+    // --- enemy / friend robots (SoA for view + orb hits + combat) ---
     pub n_robots: u32,
     pub robot_id: Vec<i32>,
     pub robot_x: Vec<f32>,
@@ -90,6 +105,7 @@ pub struct Sim {
     pub robot_z: Vec<f32>,
     pub robot_yaw: Vec<f32>,
     pub robot_vx: Vec<f32>,
+    pub robot_vy: Vec<f32>,
     pub robot_vz: Vec<f32>,
     pub robot_hp: Vec<f32>,
     pub robot_shield: Vec<f32>,
@@ -99,7 +115,57 @@ pub struct Sim {
     pub robot_flags: Vec<u8>,
     pub robot_radius: Vec<f32>,
     pub robot_body_h: Vec<f32>,
-    pub robot_side: Vec<u8>, // 0 foe-ish, 1 friend, 2 rival-ish (orbSide compare)
+    pub robot_side: Vec<u8>,
+    pub robot_aware: Vec<u8>,
+    pub robot_detect: Vec<f32>,
+    pub robot_finding: Vec<f32>,
+    pub robot_blind: Vec<f32>,
+    pub robot_saw_x: Vec<f32>,
+    pub robot_saw_z: Vec<f32>,
+    pub robot_has_saw: Vec<u8>,
+    pub robot_timer: Vec<f32>,
+    pub robot_cooldown: Vec<f32>,
+    pub robot_shots_left: Vec<i32>,
+    pub robot_strafe: Vec<f32>,
+    pub robot_strafe_t: Vec<f32>,
+    pub robot_jink: Vec<f32>,
+    pub robot_steady: Vec<f32>,
+    pub robot_stagger: Vec<f32>,
+    pub robot_aim_yaw: Vec<f32>,
+    pub robot_aim_pitch: Vec<f32>,
+    pub robot_opener: Vec<u8>,
+    pub robot_peek_side: Vec<f32>,
+    pub robot_cover_t: Vec<f32>,
+    pub robot_elite: Vec<u8>,
+    pub robot_target: Vec<u8>,
+    pub robot_target_t: Vec<f32>,
+    pub robot_squad: Vec<i32>,
+    pub robot_friend_id: Vec<i32>,
+    pub robot_poi: Vec<i32>,
+    pub robot_last_hit: Vec<f32>,
+    pub robot_fired: Vec<f32>,
+    pub robot_ally_hit: Vec<f32>,
+    pub robot_home_x: Vec<f32>,
+    pub robot_home_y: Vec<f32>,
+    pub robot_home_z: Vec<f32>,
+    pub robot_goal_x: Vec<f32>,
+    pub robot_goal_z: Vec<f32>,
+    pub robot_has_goal: Vec<u8>,
+    pub robot_search_t: Vec<f32>,
+
+    // --- squads (subset for sense / knownSpot / engage) ---
+    pub n_squads: u32,
+    pub squad_since_seen: Vec<f32>,
+    pub squad_shot_t: Vec<f32>,
+    pub squad_last_x: Vec<f32>,
+    pub squad_last_z: Vec<f32>,
+    pub squad_chase_x: Vec<f32>,
+    pub squad_chase_z: Vec<f32>,
+    pub squad_has_chase: Vec<u8>,
+    pub squad_chase_t: Vec<f32>,
+    pub squad_pin_t: Vec<f32>,
+    pub squad_sight: Vec<f32>,
+    pub squad_flags: Vec<u8>,
 
     // --- orbs ---
     pub n_orbs: u32,
@@ -146,12 +212,24 @@ impl Sim {
             px: 0.0,
             py: 0.0,
             pz: 0.0,
+            pvx: 0.0,
+            pvy: 0.0,
+            pvz: 0.0,
             crouch: 0,
             sliding: 0,
+            player_downed: 0,
+            phase_play: 1,
             ax: 0.0,
             ay: 0.0,
             az: 0.0,
+            avx: 0.0,
+            avy: 0.0,
+            avz: 0.0,
             ally_up: 0,
+            sight_scale: 1.0,
+            threat_range: 1.0,
+            rng: 1,
+            next_id: 1,
             n_robots: 0,
             robot_id: Vec::new(),
             robot_x: Vec::new(),
@@ -159,6 +237,7 @@ impl Sim {
             robot_z: Vec::new(),
             robot_yaw: Vec::new(),
             robot_vx: Vec::new(),
+            robot_vy: Vec::new(),
             robot_vz: Vec::new(),
             robot_hp: Vec::new(),
             robot_shield: Vec::new(),
@@ -169,6 +248,54 @@ impl Sim {
             robot_radius: Vec::new(),
             robot_body_h: Vec::new(),
             robot_side: Vec::new(),
+            robot_aware: Vec::new(),
+            robot_detect: Vec::new(),
+            robot_finding: Vec::new(),
+            robot_blind: Vec::new(),
+            robot_saw_x: Vec::new(),
+            robot_saw_z: Vec::new(),
+            robot_has_saw: Vec::new(),
+            robot_timer: Vec::new(),
+            robot_cooldown: Vec::new(),
+            robot_shots_left: Vec::new(),
+            robot_strafe: Vec::new(),
+            robot_strafe_t: Vec::new(),
+            robot_jink: Vec::new(),
+            robot_steady: Vec::new(),
+            robot_stagger: Vec::new(),
+            robot_aim_yaw: Vec::new(),
+            robot_aim_pitch: Vec::new(),
+            robot_opener: Vec::new(),
+            robot_peek_side: Vec::new(),
+            robot_cover_t: Vec::new(),
+            robot_elite: Vec::new(),
+            robot_target: Vec::new(),
+            robot_target_t: Vec::new(),
+            robot_squad: Vec::new(),
+            robot_friend_id: Vec::new(),
+            robot_poi: Vec::new(),
+            robot_last_hit: Vec::new(),
+            robot_fired: Vec::new(),
+            robot_ally_hit: Vec::new(),
+            robot_home_x: Vec::new(),
+            robot_home_y: Vec::new(),
+            robot_home_z: Vec::new(),
+            robot_goal_x: Vec::new(),
+            robot_goal_z: Vec::new(),
+            robot_has_goal: Vec::new(),
+            robot_search_t: Vec::new(),
+            n_squads: 0,
+            squad_since_seen: Vec::new(),
+            squad_shot_t: Vec::new(),
+            squad_last_x: Vec::new(),
+            squad_last_z: Vec::new(),
+            squad_chase_x: Vec::new(),
+            squad_chase_z: Vec::new(),
+            squad_has_chase: Vec::new(),
+            squad_chase_t: Vec::new(),
+            squad_pin_t: Vec::new(),
+            squad_sight: Vec::new(),
+            squad_flags: Vec::new(),
             n_orbs: 0,
             orb_x: Vec::new(),
             orb_y: Vec::new(),
@@ -197,16 +324,67 @@ impl Sim {
         self.robot_z.resize(n, 0.0);
         self.robot_yaw.resize(n, 0.0);
         self.robot_vx.resize(n, 0.0);
+        self.robot_vy.resize(n, 0.0);
         self.robot_vz.resize(n, 0.0);
         self.robot_hp.resize(n, 0.0);
         self.robot_shield.resize(n, 0.0);
         self.robot_duck.resize(n, 0.0);
         self.robot_kind.resize(n, 0);
-        self.robot_mode.resize(n, 0);
+        self.robot_mode.resize(n, MODE_MOVE);
         self.robot_flags.resize(n, 0);
         self.robot_radius.resize(n, 0.4);
         self.robot_body_h.resize(n, 1.7);
         self.robot_side.resize(n, 0);
+        self.robot_aware.resize(n, AWARE_IDLE);
+        self.robot_detect.resize(n, 0.0);
+        self.robot_finding.resize(n, 0.0);
+        self.robot_blind.resize(n, 0.0);
+        self.robot_saw_x.resize(n, 0.0);
+        self.robot_saw_z.resize(n, 0.0);
+        self.robot_has_saw.resize(n, 0);
+        self.robot_timer.resize(n, 0.0);
+        self.robot_cooldown.resize(n, 0.0);
+        self.robot_shots_left.resize(n, 0);
+        self.robot_strafe.resize(n, 1.0);
+        self.robot_strafe_t.resize(n, 0.0);
+        self.robot_jink.resize(n, 0.0);
+        self.robot_steady.resize(n, 0.0);
+        self.robot_stagger.resize(n, 0.0);
+        self.robot_aim_yaw.resize(n, 0.0);
+        self.robot_aim_pitch.resize(n, 0.0);
+        self.robot_opener.resize(n, 0);
+        self.robot_peek_side.resize(n, 1.0);
+        self.robot_cover_t.resize(n, 0.0);
+        self.robot_elite.resize(n, 0);
+        self.robot_target.resize(n, TARGET_PLAYER);
+        self.robot_target_t.resize(n, 0.0);
+        self.robot_squad.resize(n, -1);
+        self.robot_friend_id.resize(n, -1);
+        self.robot_poi.resize(n, -1);
+        self.robot_last_hit.resize(n, 99.0);
+        self.robot_fired.resize(n, 99.0);
+        self.robot_ally_hit.resize(n, 99.0);
+        self.robot_home_x.resize(n, 0.0);
+        self.robot_home_y.resize(n, 0.0);
+        self.robot_home_z.resize(n, 0.0);
+        self.robot_goal_x.resize(n, 0.0);
+        self.robot_goal_z.resize(n, 0.0);
+        self.robot_has_goal.resize(n, 0);
+        self.robot_search_t.resize(n, 0.0);
+    }
+
+    fn ensure_squads(&mut self, n: usize) {
+        self.squad_since_seen.resize(n, 0.0);
+        self.squad_shot_t.resize(n, 0.0);
+        self.squad_last_x.resize(n, 0.0);
+        self.squad_last_z.resize(n, 0.0);
+        self.squad_chase_x.resize(n, 0.0);
+        self.squad_chase_z.resize(n, 0.0);
+        self.squad_has_chase.resize(n, 0);
+        self.squad_chase_t.resize(n, 0.0);
+        self.squad_pin_t.resize(n, 0.0);
+        self.squad_sight.resize(n, 0.0);
+        self.squad_flags.resize(n, 0);
     }
 
     fn ensure_orbs(&mut self, n: usize) {
@@ -678,17 +856,19 @@ impl Sim {
         }
     }
 
-    /// Advance one (or a short batch of) sim ticks. Returns 0 on success, -1 if not ready.
+    /// Advance one sim tick: enemies (sense + combat) then orbs. Returns 0 on success, -1 if not ready.
     pub fn step_tick(&mut self, dt: f32) -> i32 {
         if !self.geom_ready || !self.tick_ready {
             return -1;
         }
         let dt = if dt <= 0.0 { TICK } else { dt as f64 };
-        // Orbs first (matches step.ts order after enemies). Enemy AI still TS.
+        self.step_enemies(dt);
         self.step_orbs(dt);
         0
     }
 }
+
+include!("enemies_tick.rs");
 
 static mut SIM: Option<Sim> = None;
 
@@ -777,6 +957,55 @@ pub extern "C" fn ringfall_sim_set_player(
     s.wipes = wipes;
 }
 
+/// Extra player/ally/raid params for combat (ABI 3).
+#[no_mangle]
+pub extern "C" fn ringfall_sim_set_combat(
+    pvx: f32,
+    pvy: f32,
+    pvz: f32,
+    avx: f32,
+    avy: f32,
+    avz: f32,
+    player_downed: u8,
+    phase_play: u8,
+    sight_scale: f32,
+    threat_range: f32,
+    rng: u32,
+    next_id: u32,
+) {
+    let s = sim();
+    s.pvx = pvx as f64;
+    s.pvy = pvy as f64;
+    s.pvz = pvz as f64;
+    s.avx = avx as f64;
+    s.avy = avy as f64;
+    s.avz = avz as f64;
+    s.player_downed = player_downed;
+    s.phase_play = phase_play;
+    s.sight_scale = sight_scale as f64;
+    s.threat_range = threat_range as f64;
+    s.rng = if rng == 0 { 1 } else { rng };
+    s.next_id = next_id;
+}
+
+#[no_mangle]
+pub extern "C" fn ringfall_sim_get_rng() -> u32 {
+    sim().rng
+}
+
+#[no_mangle]
+pub extern "C" fn ringfall_sim_get_next_id() -> u32 {
+    sim().next_id
+}
+
+#[no_mangle]
+pub extern "C" fn ringfall_sim_squads_begin(n: u32) -> i32 {
+    let s = sim();
+    s.ensure_squads(n as usize);
+    s.n_squads = n;
+    0
+}
+
 #[no_mangle]
 pub extern "C" fn ringfall_sim_robots_begin(n: u32) -> i32 {
     let s = sim();
@@ -848,6 +1077,204 @@ pub unsafe extern "C" fn ringfall_sim_robot_body_h_ptr() -> *mut f32 {
 #[no_mangle]
 pub unsafe extern "C" fn ringfall_sim_robot_side_ptr() -> *mut u8 {
     sim().robot_side.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_vy_ptr() -> *mut f32 {
+    sim().robot_vy.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_aware_ptr() -> *mut u8 {
+    sim().robot_aware.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_detect_ptr() -> *mut f32 {
+    sim().robot_detect.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_finding_ptr() -> *mut f32 {
+    sim().robot_finding.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_blind_ptr() -> *mut f32 {
+    sim().robot_blind.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_saw_x_ptr() -> *mut f32 {
+    sim().robot_saw_x.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_saw_z_ptr() -> *mut f32 {
+    sim().robot_saw_z.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_has_saw_ptr() -> *mut u8 {
+    sim().robot_has_saw.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_timer_ptr() -> *mut f32 {
+    sim().robot_timer.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_cooldown_ptr() -> *mut f32 {
+    sim().robot_cooldown.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_shots_left_ptr() -> *mut i32 {
+    sim().robot_shots_left.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_strafe_ptr() -> *mut f32 {
+    sim().robot_strafe.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_strafe_t_ptr() -> *mut f32 {
+    sim().robot_strafe_t.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_jink_ptr() -> *mut f32 {
+    sim().robot_jink.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_steady_ptr() -> *mut f32 {
+    sim().robot_steady.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_stagger_ptr() -> *mut f32 {
+    sim().robot_stagger.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_aim_yaw_ptr() -> *mut f32 {
+    sim().robot_aim_yaw.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_aim_pitch_ptr() -> *mut f32 {
+    sim().robot_aim_pitch.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_opener_ptr() -> *mut u8 {
+    sim().robot_opener.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_peek_side_ptr() -> *mut f32 {
+    sim().robot_peek_side.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_cover_t_ptr() -> *mut f32 {
+    sim().robot_cover_t.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_elite_ptr() -> *mut u8 {
+    sim().robot_elite.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_target_ptr() -> *mut u8 {
+    sim().robot_target.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_target_t_ptr() -> *mut f32 {
+    sim().robot_target_t.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_squad_ptr() -> *mut i32 {
+    sim().robot_squad.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_friend_id_ptr() -> *mut i32 {
+    sim().robot_friend_id.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_poi_ptr() -> *mut i32 {
+    sim().robot_poi.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_last_hit_ptr() -> *mut f32 {
+    sim().robot_last_hit.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_fired_ptr() -> *mut f32 {
+    sim().robot_fired.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_ally_hit_ptr() -> *mut f32 {
+    sim().robot_ally_hit.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_home_x_ptr() -> *mut f32 {
+    sim().robot_home_x.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_home_y_ptr() -> *mut f32 {
+    sim().robot_home_y.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_home_z_ptr() -> *mut f32 {
+    sim().robot_home_z.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_goal_x_ptr() -> *mut f32 {
+    sim().robot_goal_x.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_goal_z_ptr() -> *mut f32 {
+    sim().robot_goal_z.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_has_goal_ptr() -> *mut u8 {
+    sim().robot_has_goal.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_search_t_ptr() -> *mut f32 {
+    sim().robot_search_t.as_mut_ptr()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_squad_since_seen_ptr() -> *mut f32 {
+    sim().squad_since_seen.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_squad_shot_t_ptr() -> *mut f32 {
+    sim().squad_shot_t.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_squad_last_x_ptr() -> *mut f32 {
+    sim().squad_last_x.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_squad_last_z_ptr() -> *mut f32 {
+    sim().squad_last_z.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_squad_chase_x_ptr() -> *mut f32 {
+    sim().squad_chase_x.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_squad_chase_z_ptr() -> *mut f32 {
+    sim().squad_chase_z.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_squad_has_chase_ptr() -> *mut u8 {
+    sim().squad_has_chase.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_squad_chase_t_ptr() -> *mut f32 {
+    sim().squad_chase_t.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_squad_pin_t_ptr() -> *mut f32 {
+    sim().squad_pin_t.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_squad_sight_ptr() -> *mut f32 {
+    sim().squad_sight.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_squad_flags_ptr() -> *mut u8 {
+    sim().squad_flags.as_mut_ptr()
+}
+
+#[no_mangle]
+pub extern "C" fn ringfall_sim_n_orbs() -> u32 {
+    sim().n_orbs
 }
 
 #[no_mangle]

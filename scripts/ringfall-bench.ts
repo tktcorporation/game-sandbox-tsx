@@ -14,11 +14,7 @@
  */
 import { createHash } from "node:crypto";
 import "./ringfall-terrain-store";
-import { playRaid, playState, type RaidResult } from "./ringfall-table";
-import { NODES, REGIONS, type NodeId } from "../src/ringfall/sim/map";
-import { newRun, starterKit } from "../src/ringfall/sim/state";
-import { holds } from "../src/ringfall/meta/island";
-import { newProfile } from "../src/ringfall/meta/profile";
+import { BENCH_ONCE } from "./ringfall-bench-jobs";
 
 const cpu = () => {
   const u = process.cpuUsage();
@@ -26,19 +22,7 @@ const cpu = () => {
 };
 const hash = (v: unknown) => createHash("sha256").update(JSON.stringify(v)).digest("hex").slice(0, 12);
 
-/** A raid of an island holding `freed`, with its battle at factory level `factory`, as a day of the campaign is. */
-function battleRaid(freed: NodeId[], factory: number, skill: string, r: number): RaidResult {
-  const p = newProfile(7);
-  const poiState = { ...p.poiState };
-  for (const id of freed) poiState[id] = { state: "freed" };
-  return playState(newRun(4000 + r * 7919, starterKit(), "reservoir", { island: holds({ ...p, poiState }), battle: { factory } }), skill, r);
-}
-
-const jobs: [string, () => RaidResult][] = [
-  ...REGIONS.flatMap((g) => ["beginner", "good"].map((skill): [string, () => RaidResult] => [`${g.id} ${skill}`, () => playRaid(g.id, skill, 0)])),
-  ["battle, 2 nodes, casual", () => battleRaid(["supply", "quarry"], 1, "casual", 0)],
-  ["battle, 8 nodes, good", () => battleRaid(NODES.slice(0, 8).map((n) => n.id), 3, "good", 1)],
-];
+const jobs = BENCH_ONCE;
 
 const loaded = cpu();
 const hashes: string[] = [];
