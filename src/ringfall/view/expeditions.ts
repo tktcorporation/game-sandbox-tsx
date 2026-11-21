@@ -1,11 +1,12 @@
 /*
- * The factory's expeditions (docs/ringfall/multiplayer.md, 工場の遠征): this island's code, the
- * expeditions out and how they stand, and sending one to another player's island by its code. A
- * section of the factory's panel that draws itself apart from the rest of the hub (`#hub-exped`),
- * so a request's answer redraws it without touching the panel around it or the code being typed.
- * With no server it says so in one line and nothing else changes.
+ * The signal station's section (docs/ringfall/multiplayer.md, 信号所): everything to do with the
+ * other islands, apart from the factory. The neighbours out at sea first (a tap opens one, its nodes
+ * and the send), then the expeditions out and how they stand, and at the foot this island's code
+ * and a friend's code to look up. It draws itself apart from the rest of the hub (`#hub-exped`), so a
+ * request's answer redraws it without touching the panel around it or the code being typed. With
+ * no server it says so in one line, and only the game's own islands answer.
  */
-import { flushRecalls, isAi, neighboursFor, readNeighbours, readView, refreshAi, SEND_TIMEOUT_MS, sendExpedition, syncOwn, takeReport, takeSync } from "../island-net";
+import { aiOvernight, flushRecalls, isAi, neighboursFor, readNeighbours, readView, refreshAi, SEND_TIMEOUT_MS, sendExpedition, syncOwn, takeReport, takeSync } from "../island-net";
 import { ago, NEIGHBOUR_SLOTS, routeOpen, type Neighbour } from "../meta/neighbours";
 import { playerNodes } from "../meta/island";
 import { alive, numbered, answerSend, recallAll, sentKey, canSend, dropStale, factoryAhead, factorySquads, homeSquads, refreshOutgoing, sendingEntry, sendKinds, squadsAway, STATE_NAME, type IslandLogEntry, type IslandView } from "../meta/expeditions";
@@ -23,6 +24,13 @@ export function lastMarks(n: Neighbour, now: number): string {
   if (!n.last) return "";
   const cores = n.last.captured ? `<span class="cores">${coreIcon(SIDE.rival)}+${n.last.captured}</span>` : "";
   return `<span class="last">${clockIcon()}${ago(n.last.at, now)}${cores}${n.last.home ? checkIcon() : crossIcon()}</span>`;
+}
+
+/** What changed overnight on one of the game's own islands, as marks: the nodes it took (+) and lost (−), by name; nothing for a player's. */
+function overnight(n: Neighbour, day: number): string {
+  const c = aiOvernight(n, day);
+  if (!c || (!c.took.length && !c.lost.length)) return "";
+  return `<small class="overnight">${c.took.map((id) => `<b class="took">+${esc(nodeName(id))}</b>`).join("")}${c.lost.map((id) => `<b class="lost">−${esc(nodeName(id))}</b>`).join("")}</small>`;
 }
 
 /** Where the section stands with the server: asking, no server, a failure, or connected. */
@@ -294,24 +302,30 @@ export class ExpeditionPanel {
   html(): string {
     const p = this.get();
     const away = squadsAway(p);
-    const head = `<div class="mod-head"><strong>${flagIcon()}遠征</strong><span></span><b>${flagIcon()}${away} / ${factorySquads(p)}</b></div>`;
     const c = this.conn;
-    const status =
+    // The head: the neighbours, and the factory's squads out on expeditions of all it keeps out.
+    const head = `<div class="mod-head"><strong>${flagIcon()}お隣の島</strong><span></span><b>${flagIcon()}遠征 ${away} / ${factorySquads(p)}</b></div>`;
+    // Without the server only the game's own islands answer; with none of them either, nothing can be sent.
+    const send = c.t === "ok" || this.neighbours.some((n) => n.ai) ? this.sendForm(p) : "";
+    const out = p.expeditions.length
+      ? `<h4 class="exp-sub">出ている遠征</h4><div class="exp-list">${p.expeditions
+          .map((e) => `<div class="req exp-out ${e.state}"><span><b class="exp-code">${esc(e.code)}</b>${esc(nodeName(e.node))}</span><b>${STATE_NAME[e.state]}</b><small>${robotIcon(SIDE.own)}${e.units}</small>${e.id > 0 && (e.state === "coming" || e.state === "attacking" || e.state === "waiting" || e.state === "holding") ? `<button type="button" class="exp-recall" data-act="exp-recall" data-arg="${esc(sentKey(e))}">引き上げる</button>` : ""}</div>`)
+          .join("")}</div>`
+      : "";
+    // What sending costs: each expedition out (one being sent too) keeps one squad fewer out on this island.
+    const cost = away ? `<div class="exp-cost"><span>${flagIcon()}島の守り<b>${homeSquads(p)}</b></span><span>${flagIcon()}遠征<b>${away}</b></span></div>` : "";
+    // This island on the server, last: its code to hand a friend and a friend's code to look up, or why there is none.
+    const dis = this.busy ? " disabled" : "";
+    const own =
       c.t === "wait"
         ? `<p class="exp-wait">…</p>`
         : c.t === "none"
           ? `<p class="lock-note">${lockIcon()}${errorText("no-island-server")}</p>`
           : c.t === "error"
             ? `<p class="lock-note">${lockIcon()}${esc(errorText(c.error))}<button type="button" data-act="exp-retry">もう一度</button></p>`
-            : `<div class="exp-own"><small>自分の島</small><b class="exp-code">${esc(c.code)}</b><button type="button" data-act="exp-copy">${this.copied ? "コピーした" : "コピー"}</button>${c.view?.expeditions.length ? `<small class="exp-in">${coreIcon(SIDE.rival)}来ている遠征 <b>${c.view.expeditions.length}</b></small>` : ""}</div>`;
-    const out = p.expeditions.length
-      ? `<div class="exp-list">${p.expeditions
-          .map((e) => `<div class="req exp-out ${e.state}"><span><b class="exp-code">${esc(e.code)}</b>${esc(nodeName(e.node))}</span><b>${STATE_NAME[e.state]}</b><small>${robotIcon(SIDE.own)}${e.units}</small>${e.id > 0 && (e.state === "coming" || e.state === "attacking" || e.state === "waiting" || e.state === "holding") ? `<button type="button" class="exp-recall" data-act="exp-recall" data-arg="${esc(sentKey(e))}">引き上げる</button>` : ""}</div>`)
-          .join("")}</div>`
-      : "";
-    // What sending costs: each expedition out (one being sent too) keeps one squad fewer out on this island.
-    const cost = away ? `<div class="exp-cost"><span>${flagIcon()}島の守り<b>${homeSquads(p)}</b></span><span>${flagIcon()}遠征<b>${away}</b></span></div>` : "";
-    return `<div class="mod open up-card exp-card">${head}<div class="mod-body">${status}${out}${cost}${c.t === "ok" || this.neighbours.some((n) => n.ai) ? this.sendForm(p) : ""}</div></div>`;
+            : `<div class="exp-own"><small>自分の島</small><b class="exp-code">${esc(c.code)}</b><button type="button" data-act="exp-copy">${this.copied ? "コピーした" : "コピー"}</button>${c.view?.expeditions.length ? `<small class="exp-in">${coreIcon(SIDE.rival)}来ている遠征 <b>${c.view.expeditions.length}</b></small>` : ""}</div>` +
+              `<div class="exp-send"><input id="exp-code" type="text" inputmode="text" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="友達の島の番号" value="${esc(this.typed)}"><button type="button" data-act="exp-look"${dis}>見る</button></div>`;
+    return `<div class="mod open up-card exp-card">${head}<div class="mod-body">${send}${out}${cost}<div class="exp-foot">${own}</div></div></div>`;
   }
 
   /** The form that sends one: the other island's code, its nodes that take an expedition, and the button. */
@@ -329,11 +343,11 @@ export class ExpeditionPanel {
             const foot = open ? `<small>${coreIcon(SIDE.rival)}${n.held}/${n.total}${lastMarks(n, Date.now())}</small>` : `<small class="shut">${lockIcon()}${esc(nodeName(NEIGHBOUR_SLOTS[k].shore))}</small>`;
             // Without the server only the game's own islands answer.
             const reach = open && (this.conn.t === "ok" || n.ai);
-            return `<button type="button" class="${this.target?.code === n.code ? "on" : ""}${open ? "" : " shut"}" data-act="exp-island" data-arg="${esc(n.code)}"${reach ? dis : " disabled"}><b>${esc(n.name)}${n.ai ? `<span class="ai-tag">AI</span>` : ""}</b>${held}${foot}</button>`;
+            return `<button type="button" class="${this.target?.code === n.code ? "on" : ""}${open ? "" : " shut"}" data-act="exp-island" data-arg="${esc(n.code)}"${reach ? dis : " disabled"}><b>${esc(n.name)}${n.ai ? `<span class="ai-tag">AI</span>` : ""}</b>${held}${foot}${overnight(n, p.day)}</button>`;
           })
           .join("")}</div>`
       : "";
-    const form = near + (this.conn.t !== "ok" ? "" : `<div class="exp-send"><input id="exp-code" type="text" inputmode="text" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="相手の島の番号" value="${esc(this.typed)}"><button type="button" data-act="exp-look"${dis}>見る</button></div>`);
+    const form = near;
     const t = this.target;
     let pick = "";
     if (t) {

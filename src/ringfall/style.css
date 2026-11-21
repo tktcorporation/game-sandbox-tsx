@@ -1231,16 +1231,18 @@ body.touch .mate-bars {
   display: flex;
 }
 
+/* The banner's box hugs its plate in the middle of the screen, so it lies over nothing beside it (the teammate's card). */
 #banner {
   position: fixed;
   z-index: 2;
-  left: 0;
-  right: 0;
+  left: 50%;
   top: 22%;
+  width: max-content;
+  max-width: 90vw;
   text-align: center;
   pointer-events: none;
   opacity: 0;
-  transform: translateY(8px);
+  transform: translate(-50%, 8px);
   transition:
     opacity 0.25s,
     transform 0.25s;
@@ -1248,7 +1250,7 @@ body.touch .mate-bars {
 }
 #banner.on {
   opacity: 1;
-  transform: none;
+  transform: translate(-50%, 0);
 }
 #banner b {
   display: inline-block;
@@ -4787,6 +4789,59 @@ body.touch .bag-card:nth-last-child(n + 3) {
 .exp-code {
   font-family: var(--num);
   letter-spacing: 0.12em;
+}
+/* The signal station's section: what is out under its own heading, this island's code at the foot. */
+.exp-sub {
+  margin: 12px 0 4px;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--muted);
+}
+.exp-foot {
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid rgb(var(--white-rgb) / 0.12);
+}
+/* The factory's line for the squads out on expeditions: they are sent from the signal station. */
+.factory-away {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 8px 0 0;
+  font-size: 13px;
+  font-weight: 800;
+}
+.factory-away b {
+  font-family: var(--num);
+  font-size: 16px;
+}
+.factory-away small {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--muted);
+}
+/* The island's news on the signal station: a line each, an attack with its 仕返し. */
+#hub ul.island-news.signal-news {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+#hub ul.island-news.signal-news li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  font-size: 13px;
+  font-weight: 800;
+}
+.exp-near .overnight {
+  gap: 4px;
+}
+.exp-near .overnight .took {
+  color: var(--rival-light);
+}
+.exp-near .overnight .lost {
+  color: var(--muted);
 }
 .exp-own {
   display: flex;

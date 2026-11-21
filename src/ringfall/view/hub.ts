@@ -1,6 +1,5 @@
 import { PLAYER } from "../sim/config";
-import type { Neighbour } from "../meta/neighbours";
-import { aiOvernight, incomingFor, neighboursFor } from "../island-net";
+import { incomingFor, neighboursFor } from "../island-net";
 import { armorIcon, binPicture, fightIcon, entryIcon, coinIcon, dmgIcon, magIcon, rateIcon, checkIcon, coreIcon, factoryIcon, flagIcon, hideoutIcon, clockIcon, crossIcon, depotIcon, gunIcon, healIcon, issueIcon, keyIcon, lockIcon, modIcon, pinIcon, pouchIcon, radioIcon, robotIcon, routeIcon, SIDE, stashIcon, turretIcon, upIcon, workbenchIcon } from "./icons";
 import { ALLY, FACTORY, FACTORY_TOP, HEALS as HEAL_SPECS, HIDEOUT, MOD_KINDS, PLATE, RARITY, THREAT, TOOLS, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
 import { boostFor, raidClock, strengthFor, type Kit } from "../sim/state";
@@ -15,8 +14,8 @@ import { departDepots, eventName, finaleOpen, frontIncome, islandHolds, playerNo
 import { eventRow } from "./events";
 import { rivalOf } from "../sim/holds";
 import { HOLD_CSS, IslandMap, islandScene, RIVAL_CSS, TITAN_CSS } from "./map";
-import { ExpeditionPanel, lastMarks } from "./expeditions";
-import { answerable, incomingLine, LOG_WORD, logLine, type Incoming, type IslandLogEntry } from "../meta/expeditions";
+import { ExpeditionPanel } from "./expeditions";
+import { answerable, homeSquads, incomingLine, LOG_WORD, logLine, squadsAway, type Incoming, type IslandLogEntry } from "../meta/expeditions";
 import { enemyNodes, frontNodes, ownNodes } from "../sim/front";
 import { nodeRow } from "./row";
 import { sfx } from "./sfx";
@@ -238,6 +237,7 @@ const PANELS: Record<StationId, { title: string; stash: boolean }> = {
   shop: { title: "商人の屋台", stash: true },
   workshop: { title: "作業場", stash: false },
   factory: { title: "工場", stash: false },
+  signal: { title: "信号所", stash: false },
 };
 
 /**
@@ -388,9 +388,9 @@ export class Hub {
     $("hub-side").scrollTop = 0;
     $("hub-stash").scrollTop = 0;
     sfx.tab();
-    if (station === "map") this.newsSeen = true;
+    if (station === "signal") this.newsSeen = true;
     this.render();
-    if (station === "factory") this.exped.open();
+    if (station === "signal") this.exped.open();
   }
 
   /**
@@ -409,7 +409,10 @@ export class Hub {
   takeNews(entries: readonly IslandLogEntry[]) {
     if (!entries.length) return;
     this.news = [...entries, ...this.news].slice(0, 8);
-    this.newsSeen = this.station === "map";
+    this.newsSeen = this.station === "signal";
+    // News that comes while the signal station is open is drawn at once, apart from the expeditions' section (and the code being typed there).
+    const el = this.station === "signal" ? document.getElementById("hub-signal-news") : null;
+    if (el) el.innerHTML = this.signalNews();
   }
 
   /** Takes a profile the server's answer changed (the holds, the log read, the expeditions), keeping the loadout. */
@@ -480,9 +483,9 @@ export class Hub {
 
   private act(act: string, arg: string) {
     if (act === "exp-revenge") {
-      // Answering an attack: the factory's panel opens on the island it came from.
+      // Answering an attack: the signal station opens on the island it came from.
       this.exped.revenge(arg);
-      return this.open("factory");
+      return this.open("signal");
     }
     if (act.startsWith("exp-")) {
       sfx.click();
@@ -749,10 +752,12 @@ export class Hub {
     const buildable = MODULES.filter((m) => canBuild(p, m)).length;
     // Tomorrow's event is announced here a day ahead.
     const coming = p.events[1];
-    const map = [!this.newsSeen && this.news.length ? `知らせ ${this.news.length}` : "", coming ? `明日 ${eventName(coming)}` : "", p.hideout.radio ? "無線" : ""].filter(Boolean).join("・");
+    const map = [coming ? `明日 ${eventName(coming)}` : "", p.hideout.radio ? "無線" : ""].filter(Boolean).join("・");
+    // The signal station wants looking at while news of the other islands is unread.
+    const signal = !this.newsSeen && this.news.length ? `知らせ ${this.news.length}` : "";
     // The board wants looking at while it has contracts and none is taken.
     const open = !takenContract(p) && !takenStory(p) && p.board.contracts.length ? `依頼 ${p.board.contracts.length}` : "";
-    return { map, quests: [ready ? `納品 ${ready}` : "", open].filter(Boolean).join("・"), stash: "", shop: "", workshop: buildable ? `▲ ${buildable}` : "", factory: canBuildFactory(p) ? `▲ Lv${p.factory + 1}` : "" };
+    return { map, quests: [ready ? `納品 ${ready}` : "", open].filter(Boolean).join("・"), stash: "", shop: "", workshop: buildable ? `▲ ${buildable}` : "", factory: canBuildFactory(p) ? `▲ Lv${p.factory + 1}` : "", signal };
   }
 
   private item(item: Item, body: { act?: string; arg?: string; on?: boolean; right?: string; count?: number; need?: Needs; warn?: boolean }) {
@@ -831,8 +836,23 @@ export class Hub {
     return (
       `<div class="mod open up-card factory-card"><div class="mod-head"><strong>${factoryIcon()}工場</strong><span class="pips">${pips}</span><b>Lv${lv}${next ? "" : " MAX"}</b>${gain}</div>` +
       `<div class="mod-body">${nodes}${ladder(levels, lv)}${cost}</div></div>` +
-      `<div id="hub-exped">${this.exped.html()}</div>`
+      // The squads the expeditions took (sent from the signal station) are not here: how many, in a line.
+      (squadsAway(p) ? `<p class="factory-away">${flagIcon()}島の守り <b>${homeSquads(p)}</b>　${flagIcon()}遠征 <b>${squadsAway(p)}</b><small>信号所から</small></p>` : "")
     );
+  }
+
+  /**
+   * The signal station's panel (信号所): everything to do with the other islands, apart from the
+   * factory. The expeditions' section (the neighbours, sending, the expeditions out, this island's
+   * code) draws itself (`#hub-exped`); under it the island's news, each attack with its 仕返し.
+   */
+  private signalPanel(): string {
+    return `<div id="hub-exped">${this.exped.html()}</div><div id="hub-signal-news">${this.signalNews()}</div>`;
+  }
+
+  /** The island's news on the signal station, each attack with its 仕返し; nothing with none. */
+  private signalNews(): string {
+    return this.news.length ? `<h3 class="hub-sub">島の知らせ</h3><ul class="island-news signal-news">${this.news.map((n) => this.newsMarks(n)).join("")}</ul>` : "";
   }
 
   /** The routes a tool opens: open or closed, and for a closed one, the tool and where it lies. */
@@ -1047,7 +1067,6 @@ export class Hub {
    */
   private islandPanel(): string {
     const p = this.profile;
-    const near = neighboursFor(p);
     const incoming = incomingFor(p);
     const taken = takenContract(p);
     const holds = islandHolds(p);
@@ -1066,20 +1085,10 @@ export class Hub {
       // A quiet day and a quiet tomorrow say nothing.
       (p.events[0] || p.events[1] ? `<ul class="events"><li><small>今日</small>${eventRow(p.events[0])}</li><li><small>明日</small>${eventRow(p.events[1])}</li></ul>` : "") +
       `<ul class="hold-key">${key}</ul>` +
-      (near.length ? `<small>お隣</small><ul class="island-news near">${near.map((n) => `<li><b class="who">${esc(n.name)}</b>${n.ai ? `<span class="ai-tag">AI</span>` : ""}<span class="held">${coreIcon(SIDE.rival)}${n.held}/${n.total}</span>${lastMarks(n, Date.now())}${this.overnight(n)}</li>`).join("")}</ul>` : "") +
       (incoming.length ? `<small>来る遠征</small><ul class="island-news incoming">${incoming.map((e) => `<li title="${esc(incomingLine(e, Date.now()))}">${incomingMarks(e, Date.now())}</li>`).join("")}</ul>` : "") +
-      (this.news.length ? `<small>島の知らせ</small><ul class="island-news">${this.news.map((n) => this.newsMarks(n)).join("")}</ul>` : "") +
       (taken ? `<small>依頼　${esc(regionOf(contractRegion(taken)).name)}<i class="taken-line"></i></small><p class="hub-taken"><em>${CONTRACT_NAME[taken.t]}</em>${contractMarks(taken)}</p>` : "") +
       `</div></div>`
     );
-  }
-
-  /** What changed overnight on one of the game's own islands, as marks: the nodes it took (+) and lost (−), by name. */
-  private overnight(n: Neighbour): string {
-    const c = aiOvernight(n, this.profile.day);
-    if (!c || (!c.took.length && !c.lost.length)) return "";
-    const name = (id: NodeId) => esc(NODES[nodeIndex(id)]?.name ?? id);
-    return `<span class="overnight">${c.took.map((id) => `<b class="took">+${name(id)}</b>`).join("")}${c.lost.map((id) => `<b class="lost">−${name(id)}</b>`).join("")}</span>`;
   }
 
   /** Draws the map table's island into its canvas, framed on the region the last start was in. */
@@ -1252,8 +1261,9 @@ export class Hub {
           })
           .join("") || `<p class="empty">0 / ${stashCap(p.hideout)}</p>`;
     }
-    $("hub-side-title").textContent = shop ? "売り物" : st === "quests" ? "依頼と記録" : st === "workshop" ? "隠れ家" : st === "factory" ? "自軍のロボット" : st === "map" ? "島" : "持っていく物";
+    $("hub-side-title").textContent = shop ? "売り物" : st === "quests" ? "依頼と記録" : st === "workshop" ? "隠れ家" : st === "factory" ? "自軍のロボット" : st === "signal" ? "海の向こうの島" : st === "map" ? "島" : "持っていく物";
     if (st === "factory") $("hub-side").innerHTML = this.factoryPanel();
+    else if (st === "signal") $("hub-side").innerHTML = this.signalPanel();
     else if (st === "workshop") {
       $("hub-side").innerHTML =
         MODULES.map((m) => this.moduleCard(m)).join("") + this.routes();

@@ -2,9 +2,11 @@
  * The expeditions' screenshots for the shots gate (scripts/ringfall-shots.mjs runs them;
  * `node scripts/ringfall-shots-expeditions.mjs` runs them alone against the build): a profile
  * another player's expedition is sent at (`Profile.incoming`) with expeditions of its own out. The
- * map table marks the node sent at with a green arrow and lists who is coming; the factory's panel
- * lists the expeditions out, each that can be called home with its button, and calling one home
- * gives its squad back at once; the departure's map carries the arrow too, and its side names the node and what to do. No island server
+ * map table marks the node sent at with a green arrow and lists who is coming; the other islands
+ * are the signal station's (信号所): its mark tells of the island's news, its panel lists the
+ * neighbours (one of the game's own, marked AI), the news with 仕返し and the expeditions out, each
+ * that can be called home with its button, and calling one home gives its squad back at once; the
+ * factory's panel says only how many squads are out; the departure's map carries the arrow too, and its side names the node and what to do. No island server
  * answers under a browser driver, so the profile is the save's.
  */
 import { createServer } from "node:http";
@@ -73,22 +75,43 @@ export async function expeditionShots({ browser, port, out, errors }) {
       { seq: 1, at: 0, t: "wiped", node: "quarry", by: { code: "K7M2QX", name: "みなと" } },
     ]),
   );
+  // The other islands are the signal station's (信号所), not the map table's: its mark tells of the news until it is opened.
+  const mark = await pg.evaluate(() => JSON.parse(window.render_game_to_text()).camp?.marks?.signal ?? "");
+  if (!/知らせ 2/.test(mark)) errors.push(`expeditions: the signal station's mark reads "${mark}"`);
   await open("map");
-  const answer = await pg.evaluate(() => ({ items: document.querySelectorAll(".island-news:not(.incoming):not(.near) li").length, buttons: document.querySelectorAll(".island-news .revenge").length }));
-  if (answer.items !== 2 || answer.buttons !== 1) errors.push(`expeditions: the map table's news shows ${answer.items} items and ${answer.buttons} 仕返し, not 2 and 1`);
-  // The neighbours beside the news: whose, how much they hold, what they did last (the kept list's last raid read back).
-  const near = await pg.evaluate(() => [...document.querySelectorAll(".island-news.near li")].map((li) => li.textContent));
+  const onMap = await pg.evaluate(() => document.querySelectorAll("#hub-side .island-news:not(.incoming), #hub-side .revenge").length);
+  if (onMap) errors.push(`expeditions: the map table still lists ${onMap} pieces of the other islands' news`);
+  await close();
+  // The station itself in the yard: its mast and green lamp, its name and mark over it.
+  if (!(await pg.evaluate(() => window.ringfallCamp.walkTo("signal")))) errors.push("expeditions: could not stand at the signal station");
+  await pg.evaluate(() => window.advanceTime(300));
+  await pg.screenshot({ path: `${out}/156-camp-signal.png` });
+  await open("signal");
+  const answer = await pg.evaluate(() => ({ items: document.querySelectorAll(".island-news.signal-news li").length, buttons: document.querySelectorAll(".island-news .revenge").length }));
+  if (answer.items !== 2 || answer.buttons !== 1) errors.push(`expeditions: the signal station's news shows ${answer.items} items and ${answer.buttons} 仕返し, not 2 and 1`);
+  // News that comes while the station is open shows at once.
+  await pg.evaluate(() => window.ringfallNews([{ seq: 3, at: 0, t: "landed", node: "relay", by: { code: "H4N8WD", name: "砂丘の人" } }]));
+  const more = await pg.evaluate(() => document.querySelectorAll(".island-news.signal-news li").length);
+  if (more !== 3) errors.push(`expeditions: news that came with the signal station open shows ${more} items, not 3`);
+  // The neighbours first: whose, how much they hold, what they did last (the kept list's last raid read back).
+  const near = await pg.evaluate(() => [...document.querySelectorAll("#hub-exped .exp-near button")].map((b) => b.textContent));
   // Slot 1 (the waterworks' sea) is left free by the server: one of the game's own islands stands there, marked AI.
-  const ai = await pg.evaluate(() => [...document.querySelectorAll(".island-news.near li")].filter((li) => li.querySelector(".ai-tag")).length);
-  if (near.length !== 4 || ai !== 1 || !/となり.*7\/21.*3h.*\+2/.test(near[0] ?? "")) errors.push(`expeditions: the map table's neighbours read ${JSON.stringify(near)}, ${ai} marked AI`);
+  const ai = await pg.evaluate(() => document.querySelectorAll("#hub-exped .exp-near .ai-tag").length);
+  if (near.length !== 4 || ai !== 1 || !/となり.*7\/21.*3h.*\+2/.test(near[0] ?? "")) errors.push(`expeditions: the signal station's neighbours read ${JSON.stringify(near)}, ${ai} marked AI`);
   await pg.screenshot({ path: `${out}/150-expeditions-news.png` });
   await pg.click(".island-news .revenge");
   await pg.evaluate(() => window.advanceTime(200));
   const panel = await pg.evaluate(() => JSON.parse(window.render_game_to_text()).camp?.panel ?? null);
-  if (panel !== "factory") errors.push(`expeditions: 仕返し opened ${panel}, not the factory`);
+  if (panel !== "signal") errors.push(`expeditions: 仕返し opened ${panel}, not the signal station`);
   await close();
-  // The factory's panel: the expeditions out, each with its state and its recall.
+  // The factory's panel is the factory's alone: the squads out on expeditions in a line, nothing to send from.
   await open("factory");
+  const factory = await pg.evaluate(() => ({ exped: !!document.querySelector("#hub-exped"), away: document.querySelector(".factory-away")?.textContent ?? "" }));
+  if (factory.exped || !/遠征\s*2/.test(factory.away)) errors.push(`expeditions: the factory's panel reads ${JSON.stringify(factory)}`);
+  await pg.screenshot({ path: `${out}/155-expeditions-factory-only.png` });
+  await close();
+  // The signal station: the expeditions out, each with its state and its recall.
+  await open("signal");
   const list = () =>
     pg.evaluate(() => {
       document.querySelector("#hub-exped")?.scrollIntoView({ block: "end" });
@@ -97,13 +120,13 @@ export async function expeditionShots({ browser, port, out, errors }) {
   const before = await list();
   if (before.length !== 2 || !before.every((e) => e.recall) || !/保持中/.test(before[0].text) || !/足止め/.test(before[1].text)) errors.push(`expeditions: the factory lists ${JSON.stringify(before)}`);
   await pg.waitForTimeout(100);
-  await pg.screenshot({ path: `${out}/151-expeditions-factory.png` });
+  await pg.screenshot({ path: `${out}/151-expeditions-signal.png` });
   // Called home: its squad is back at once, and it waits for its island to be told.
   await pg.click("#hub-exped .exp-out .exp-recall");
   await pg.waitForTimeout(200);
   const after = await list();
   const away = await pg.evaluate(() => document.querySelector("#hub-exped .mod-head b")?.textContent ?? "");
-  if (!/引き上げ中/.test(after[0]?.text ?? "") || after[0].recall || !/^1 \//.test(away.trim())) errors.push(`expeditions: after a recall the factory lists ${JSON.stringify(after)} with ${away} away`);
+  if (!/引き上げ中/.test(after[0]?.text ?? "") || after[0].recall || !/遠征 1 \//.test(away.trim())) errors.push(`expeditions: after a recall the factory lists ${JSON.stringify(after)} with ${away} away`);
   await pg.screenshot({ path: `${out}/152-expeditions-recalled.png` });
   // The game's own island facing the waterworks answers with no server: its nodes open, and one sent goes on its way.
   await pg.click("#hub-exped .exp-near button:has(.ai-tag)");

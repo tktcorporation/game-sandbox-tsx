@@ -6338,7 +6338,7 @@ const CAMP_HALF = { x: 17, z: 14 };
 /** Half the gate's width, in the middle of the north fence. */
 const CAMP_GATE = 4.25;
 
-export type StationId = "map" | "quests" | "stash" | "shop" | "workshop" | "factory";
+export type StationId = "map" | "quests" | "stash" | "shop" | "workshop" | "factory" | "signal";
 
 /** A place in the camp the use key acts at: a station's panel, or the truck. */
 export interface CampSpot {
@@ -6426,6 +6426,8 @@ export const CAMP = {
     campSpot("workshop", "作業場", -10, 10.5, 2.6, 2.0),
     // The factory: the parts container on the south fence, where the camp's own robots are put together.
     campSpot("factory", "工場", -1.5, 10.4, 2.4, 3.2),
+    // The signal station by the west fence: a mast with a green lamp, where the camp talks to the other islands out at sea (drawn by the view, no box).
+    campSpot("signal", "信号所", -14.2, 6.6, 2.6, 4.6),
     campSpot("vehicle", "車両", 9.8, -9.5, 3.4, 3.5),
   ] satisfies CampSpot[],
 };
