@@ -410,6 +410,9 @@ export class Hub {
     if (!entries.length) return;
     this.news = [...entries, ...this.news].slice(0, 8);
     this.newsSeen = this.station === "signal";
+    // News that comes while the signal station is open is drawn at once, apart from the expeditions' section (and the code being typed there).
+    const el = this.station === "signal" ? document.getElementById("hub-signal-news") : null;
+    if (el) el.innerHTML = this.signalNews();
   }
 
   /** Takes a profile the server's answer changed (the holds, the log read, the expeditions), keeping the loadout. */
@@ -844,8 +847,12 @@ export class Hub {
    * code) draws itself (`#hub-exped`); under it the island's news, each attack with its 仕返し.
    */
   private signalPanel(): string {
-    const news = this.news.length ? `<h3 class="hub-sub">島の知らせ</h3><ul class="island-news signal-news">${this.news.map((n) => this.newsMarks(n)).join("")}</ul>` : "";
-    return `<div id="hub-exped">${this.exped.html()}</div>${news}`;
+    return `<div id="hub-exped">${this.exped.html()}</div><div id="hub-signal-news">${this.signalNews()}</div>`;
+  }
+
+  /** The island's news on the signal station, each attack with its 仕返し; nothing with none. */
+  private signalNews(): string {
+    return this.news.length ? `<h3 class="hub-sub">島の知らせ</h3><ul class="island-news signal-news">${this.news.map((n) => this.newsMarks(n)).join("")}</ul>` : "";
   }
 
   /** The routes a tool opens: open or closed, and for a closed one, the tool and where it lies. */

@@ -89,6 +89,10 @@ export async function expeditionShots({ browser, port, out, errors }) {
   await open("signal");
   const answer = await pg.evaluate(() => ({ items: document.querySelectorAll(".island-news.signal-news li").length, buttons: document.querySelectorAll(".island-news .revenge").length }));
   if (answer.items !== 2 || answer.buttons !== 1) errors.push(`expeditions: the signal station's news shows ${answer.items} items and ${answer.buttons} 仕返し, not 2 and 1`);
+  // News that comes while the station is open shows at once.
+  await pg.evaluate(() => window.ringfallNews([{ seq: 3, at: 0, t: "landed", node: "relay", by: { code: "H4N8WD", name: "砂丘の人" } }]));
+  const more = await pg.evaluate(() => document.querySelectorAll(".island-news.signal-news li").length);
+  if (more !== 3) errors.push(`expeditions: news that came with the signal station open shows ${more} items, not 3`);
   // The neighbours first: whose, how much they hold, what they did last (the kept list's last raid read back).
   const near = await pg.evaluate(() => [...document.querySelectorAll("#hub-exped .exp-near button")].map((b) => b.textContent));
   // Slot 1 (the waterworks' sea) is left free by the server: one of the game's own islands stands there, marked AI.
