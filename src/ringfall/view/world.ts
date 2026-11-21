@@ -1322,7 +1322,9 @@ export class World {
         part(0.72, 0.12, 0.52, 0.55, 1.12, 0.3, dark);
         // Its face lit in the other islands' green: the set is on, listening out to sea.
         const face = new THREE.Mesh(new THREE.PlaneGeometry(0.46, 0.3), new THREE.MeshBasicMaterial({ color: PAL.rivalHeld, toneMapped: false }));
-        face.position.set(0.55, 0.78, 0.56);
+        // On the side facing the yard (east, +x), where the player comes to it from.
+        face.position.set(0.91, 0.78, 0.3);
+        face.rotation.y = Math.PI / 2;
         root.add(face);
         const lamp = haloSprite(PAL.rivalHeld, 1.4, 0.9);
         lamp.position.set(0, 4.55, 0);

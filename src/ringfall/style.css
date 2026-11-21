@@ -1231,16 +1231,18 @@ body.touch .mate-bars {
   display: flex;
 }
 
+/* The banner's box hugs its plate in the middle of the screen, so it lies over nothing beside it (the teammate's card). */
 #banner {
   position: fixed;
   z-index: 2;
-  left: 0;
-  right: 0;
+  left: 50%;
   top: 22%;
+  width: max-content;
+  max-width: 90vw;
   text-align: center;
   pointer-events: none;
   opacity: 0;
-  transform: translateY(8px);
+  transform: translate(-50%, 8px);
   transition:
     opacity 0.25s,
     transform 0.25s;
@@ -1248,7 +1250,7 @@ body.touch .mate-bars {
 }
 #banner.on {
   opacity: 1;
-  transform: none;
+  transform: translate(-50%, 0);
 }
 #banner b {
   display: inline-block;
