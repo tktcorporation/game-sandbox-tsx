@@ -758,6 +758,9 @@ function start(go: Launch, from?: State) {
   // A lease with less than the battle's length left would run out under the raid: the island reckons those expeditions itself.
   const lent = lease && leaseLasts(lease, null) ? lease : null;
   raidLent = lent?.expeditions ?? [];
+  // The expeditions on the game's own islands brought up to the clock: one that has ended gives its squad back to this raid.
+  const fresh = refreshAi(hub.profile);
+  if (fresh !== hub.profile) hub.update(fresh);
   // The game's own islands' expedition of the day and their squads holding nodes here join it as the server's do.
   const aiLent = aiLentFor(hub.profile);
   raidAi = { lent: aiLent, slots: neighboursFor(hub.profile).filter((n) => !n.ai).map((n) => n.slot) };
