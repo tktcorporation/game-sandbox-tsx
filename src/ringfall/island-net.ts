@@ -10,7 +10,8 @@ import { loadIdentity, rememberCode, type Identity } from "./meta/identity";
 import { isApiError, type ApiError, type NetError } from "./meta/island-errors";
 import { isIslandCode } from "./meta/island-code";
 import { parseNeighbours, type Neighbour } from "./meta/neighbours";
-import { answerRecall, applySync, incomingOf, parseLease, parseLog, parseView, reportedHolds, reportHolds, type IslandLogEntry, type IslandView, type LentIn, type Synced } from "./meta/expeditions";
+import { aiByCode, aiChanges, aiIncoming, aiLent, aiNextId, aiRefresh, aiView, withAi } from "./meta/ai-islands";
+import { answerRecall, applySync, incomingOf, parseLease, parseLog, parseView, reportedHolds, reportHolds, type Incoming, type IslandLogEntry, type IslandView, type LentIn, type Synced } from "./meta/expeditions";
 import type { Profile } from "./meta/profile";
 import type { NodeId } from "./sim/map";
 
@@ -96,6 +97,56 @@ export async function readNeighbours(): Promise<Neighbour[]> {
   return list;
 }
 
+/**
+ * The game's own islands (meta/ai-islands.ts, AI の島) are answered here from the profile the page
+ * plays, as their server would answer: `useAi()` names it (main.ts). Their salt is this browser's
+ * player, so each player meets their own; under a browser driver it is 0, so the shots gate sees
+ * the same islands on any run.
+ */
+let aiSource: (() => Profile) | null = null;
+export const useAi = (get: () => Profile) => {
+  aiSource = get;
+};
+
+/** The salt of this browser's AI islands. */
+export function aiSalt(): number {
+  if (navigator.webdriver) return 0;
+  let h = 0;
+  for (const c of loadIdentity().id) h = (Math.imul(h, 31) + c.charCodeAt(0)) >>> 0;
+  return h;
+}
+
+/** The slots at sea the server's neighbours hold: the game's islands take the rest. */
+const serverSlots = () => cachedNeighbours().map((n) => n.slot);
+
+/** The neighbours as the camp's maps, the horizon and the factory's panel show them: the server's, and the game's own in the slots left free. */
+export const neighboursFor = (p: Pick<Profile, "day">): Neighbour[] => withAi(cachedNeighbours(), aiSalt(), p.day, Date.now());
+
+/** The neighbours now, of the profile the page plays (`useAi()`); the server's alone before it is named. */
+export const neighboursNow = (): Neighbour[] => (aiSource ? neighboursFor(aiSource()) : cachedNeighbours());
+
+/** The expeditions coming at this island: the server's warnings, and the game's islands' for the next raid. */
+export const incomingFor = (p: Profile): Incoming[] => [...p.incoming, ...aiIncoming(p, aiSalt(), serverSlots())];
+
+/** What the game's islands bring to the next raid of `p` (their expedition, their squads holding nodes of this island). */
+export const aiLentFor = (p: Profile): LentIn[] => aiLent(p, aiSalt(), serverSlots());
+
+/** The expeditions with those on the game's islands brought up to now: the profile itself when none changes. */
+export function refreshAi(p: Profile): Profile {
+  // Every slot's: an island the server's neighbour has since replaced still ends its expeditions on their clock.
+  const expeditions = aiRefresh(p.expeditions, aiSalt(), [], Date.now());
+  return expeditions === p.expeditions ? p : { ...p, expeditions };
+}
+
+/** What changed overnight on neighbour `n` if it is one of the game's own islands (its nodes taken and lost on day `day`); null for a player's. */
+export function aiOvernight(n: Neighbour, day: number): { took: NodeId[]; lost: NodeId[] } | null {
+  const a = n.ai ? aiByCode(aiSalt(), n.code) : null;
+  return a ? aiChanges(a, aiSalt(), day) : null;
+}
+
+/** Whether `code` is one of the game's own islands now. */
+export const isAi = (code: string): boolean => !!aiByCode(aiSalt(), code, serverSlots());
+
 export function claimIsland(): Promise<Answer<Identity>> {
   claiming ??= claimOnce().finally(() => {
     claiming = null;
@@ -113,6 +164,11 @@ async function claimOnce(): Promise<Answer<Identity>> {
 
 /** Any island as anyone sees it (`GET /api/islands/:code`). */
 export async function readView(code: string, timeout?: number): Promise<Answer<IslandView>> {
+  const ai = aiSource && aiByCode(aiSalt(), code, serverSlots());
+  if (ai) {
+    const p = aiSource!();
+    return { ok: true, body: aiView(ai, aiSalt(), p.day, p.expeditions, loadIdentity().code ?? "", Date.now()) };
+  }
   const r = await call(`/api/islands/${encodeURIComponent(code)}`, {}, timeout);
   if (!r.ok) return r;
   const v = parseView(r.body);
@@ -121,6 +177,8 @@ export async function readView(code: string, timeout?: number): Promise<Answer<I
 
 /** Sends an expedition of `units` from this island's factory to node `node` of island `code` (`POST …/expeditions`): its number on that island. Gives up as `network` after `timeout` ms. */
 export async function sendExpedition(code: string, node: string, units: number, timeout = SEND_TIMEOUT_MS): Promise<Answer<{ id: number }>> {
+  // The game's own islands take one at once, numbered as their server would.
+  if (aiSource && aiByCode(aiSalt(), code, serverSlots())) return { ok: true, body: { id: aiNextId(aiSource().expeditions, code) } };
   const who = loadIdentity();
   if (!who.code) return failed("no-own-island");
   const r = await call(`/api/islands/${encodeURIComponent(code)}/expeditions`, { method: "POST", body: JSON.stringify({ from: { ...player(who), code: who.code }, target: node, units }) }, timeout);
@@ -168,6 +226,8 @@ let releasing: Promise<void> = Promise.resolve();
 
 /** Calls expedition `id` on island `code` home (`DELETE …/expeditions/<id>`), as its sender. */
 export async function recallExpedition(code: string, id: number): Promise<Answer<unknown>> {
+  // Every slot's: an island the server's neighbour has since replaced still lets its expeditions go.
+  if (aiSource && aiByCode(aiSalt(), code)) return { ok: true, body: { ok: true } };
   const who = loadIdentity();
   if (!who.code) return failed("no-own-island");
   return call(`/api/islands/${encodeURIComponent(code)}/expeditions/${id}`, { method: "DELETE", body: JSON.stringify({ from: { ...player(who), code: who.code } }) }, SEND_TIMEOUT_MS);

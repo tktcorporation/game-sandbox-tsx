@@ -5052,6 +5052,33 @@ body.touch .bag-card:nth-last-child(n + 3) {
 .exp-near .last {
   margin-left: 6px;
 }
+/* An island the game runs itself (AI の島): said so beside its name, wherever it is listed. */
+.ai-tag {
+  margin-left: 4px;
+  padding: 0 3px;
+  border: 1px solid var(--rival-light);
+  font-family: var(--num);
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--rival-light);
+  vertical-align: middle;
+}
+.hub-island ul.island-news.near li {
+  flex-wrap: wrap;
+}
+/* What changed overnight on its island: the nodes it took, and those it lost. */
+.island-news .overnight {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: 12px;
+}
+.island-news .overnight .took {
+  color: var(--rival-light);
+}
+.island-news .overnight .lost {
+  color: var(--muted);
+}
 .island-news em {
   font-style: normal;
   font-size: 12px;

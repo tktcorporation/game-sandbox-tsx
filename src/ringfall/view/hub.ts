@@ -1,9 +1,10 @@
 import { PLAYER } from "../sim/config";
-import { cachedNeighbours } from "../island-net";
+import type { Neighbour } from "../meta/neighbours";
+import { aiOvernight, incomingFor, neighboursFor } from "../island-net";
 import { armorIcon, binPicture, fightIcon, entryIcon, coinIcon, dmgIcon, magIcon, rateIcon, checkIcon, coreIcon, factoryIcon, flagIcon, hideoutIcon, clockIcon, crossIcon, depotIcon, gunIcon, healIcon, issueIcon, keyIcon, lockIcon, modIcon, pinIcon, pouchIcon, radioIcon, robotIcon, routeIcon, SIDE, stashIcon, turretIcon, upIcon, workbenchIcon } from "./icons";
 import { ALLY, FACTORY, FACTORY_TOP, HEALS as HEAL_SPECS, HIDEOUT, MOD_KINDS, PLATE, RARITY, THREAT, TOOLS, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
 import { boostFor, raidClock, strengthFor, type Kit } from "../sim/state";
-import { CAMP, DEPOTS, ENTRIES, entryOf, HOME_REGION, NODES, nodeIndex, POIS, UNLOCKS, poiIndex, poiRegion, REGIONS, regionOf, ROUTES, type EntryId, type PoiId, type RegionId, type StationId } from "../sim/map";
+import { CAMP, DEPOTS, ENTRIES, entryOf, HOME_REGION, NODES, nodeIndex, POIS, UNLOCKS, poiIndex, poiRegion, REGIONS, regionOf, ROUTES, type EntryId, type NodeId, type PoiId, type RegionId, type StationId } from "../sim/map";
 import { armed, build, buildFactory, buildState, buy, buyPrice, canBuild, canBuildFactory, factoryNeeded, nextFactory, canStartIn, deliver, deliverable, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, isStarter, issuedHeals, itemCost, HEALS, healCount, healRoom, keyName, kitPicks, loadoutCost, stashUsed, price, raidThreat, recallLoadout, roundThreat, sell, sellPrice, setThreat, startsIn, STORY_TAKEN, takenStory, threatPay, take, takeKit, takenContract, wanted, wares, type Item, type Loadout, type Profile } from "../meta/profile";
 import { CONTRACT_NAME, contractMark, contractRegion, targetName, type Contract, type Reward } from "../meta/contracts";
 import { currentStory, STORIES, storyOf, storyWhere } from "../meta/story";
@@ -295,7 +296,8 @@ const LEARN = `<span class="how">${entryIcon(false)}到着${ARROW}生還${ARROW}
  */
 function incomingMarks(e: Incoming, now: number): string {
   const head = `${flagIcon(SIDE.rival)}${esc(e.by.name || e.by.code)}${ARROW}${coreIcon(SIDE.own)}${esc(NODES[nodeIndex(e.node)]?.name ?? e.node)}`;
-  const tail = e.state === "waiting" ? "足止め" : e.state === "attacking" ? fightIcon(UI.alert) : `${clockIcon()}<b>${Math.max(1, Math.ceil((e.arriveAt - now) / 3_600_000))}h</b>`;
+  // One with no clock (the game's own islands: it waits for the raid) says only that it comes in the next.
+  const tail = e.state === "waiting" ? "足止め" : e.state === "attacking" ? fightIcon(UI.alert) : e.arriveAt > 0 ? `${clockIcon()}<b>${Math.max(1, Math.ceil((e.arriveAt - now) / 3_600_000))}h</b>` : `<b>次のレイド</b>`;
   return `<span class="how">${head}${tail}</span>`;
 }
 
@@ -1045,7 +1047,8 @@ export class Hub {
    */
   private islandPanel(): string {
     const p = this.profile;
-    const near = cachedNeighbours();
+    const near = neighboursFor(p);
+    const incoming = incomingFor(p);
     const taken = takenContract(p);
     const holds = islandHolds(p);
     const front = frontNodes(holds);
@@ -1063,12 +1066,20 @@ export class Hub {
       // A quiet day and a quiet tomorrow say nothing.
       (p.events[0] || p.events[1] ? `<ul class="events"><li><small>今日</small>${eventRow(p.events[0])}</li><li><small>明日</small>${eventRow(p.events[1])}</li></ul>` : "") +
       `<ul class="hold-key">${key}</ul>` +
-      (near.length ? `<small>お隣</small><ul class="island-news near">${near.map((n) => `<li><b class="who">${esc(n.name)}</b><span class="held">${coreIcon(SIDE.rival)}${n.held}/${n.total}</span>${lastMarks(n, Date.now())}</li>`).join("")}</ul>` : "") +
-      (p.incoming.length ? `<small>来る遠征</small><ul class="island-news incoming">${p.incoming.map((e) => `<li title="${esc(incomingLine(e, Date.now()))}">${incomingMarks(e, Date.now())}</li>`).join("")}</ul>` : "") +
+      (near.length ? `<small>お隣</small><ul class="island-news near">${near.map((n) => `<li><b class="who">${esc(n.name)}</b>${n.ai ? `<span class="ai-tag">AI</span>` : ""}<span class="held">${coreIcon(SIDE.rival)}${n.held}/${n.total}</span>${lastMarks(n, Date.now())}${this.overnight(n)}</li>`).join("")}</ul>` : "") +
+      (incoming.length ? `<small>来る遠征</small><ul class="island-news incoming">${incoming.map((e) => `<li title="${esc(incomingLine(e, Date.now()))}">${incomingMarks(e, Date.now())}</li>`).join("")}</ul>` : "") +
       (this.news.length ? `<small>島の知らせ</small><ul class="island-news">${this.news.map((n) => this.newsMarks(n)).join("")}</ul>` : "") +
       (taken ? `<small>依頼　${esc(regionOf(contractRegion(taken)).name)}<i class="taken-line"></i></small><p class="hub-taken"><em>${CONTRACT_NAME[taken.t]}</em>${contractMarks(taken)}</p>` : "") +
       `</div></div>`
     );
+  }
+
+  /** What changed overnight on one of the game's own islands, as marks: the nodes it took (+) and lost (−), by name. */
+  private overnight(n: Neighbour): string {
+    const c = aiOvernight(n, this.profile.day);
+    if (!c || (!c.took.length && !c.lost.length)) return "";
+    const name = (id: NodeId) => esc(NODES[nodeIndex(id)]?.name ?? id);
+    return `<span class="overnight">${c.took.map((id) => `<b class="took">+${name(id)}</b>`).join("")}${c.lost.map((id) => `<b class="lost">−${name(id)}</b>`).join("")}</span>`;
   }
 
   /** Draws the map table's island into its canvas, framed on the region the last start was in. */
@@ -1081,8 +1092,8 @@ export class Hub {
     map.region = this.from ? poiRegion(this.from).id : this.region;
     const c = takenContract(this.profile);
     map.contract = c && contractMark(c);
-    map.neighbours = cachedNeighbours();
-    map.draw(islandScene(this.profile));
+    map.neighbours = neighboursFor(this.profile);
+    map.draw(islandScene({ ...this.profile, incoming: incomingFor(this.profile) }));
   }
 
   /** The map table's radio report on the next raid, as a slot, or "" without a radio. */
@@ -1163,7 +1174,8 @@ export class Hub {
       ["目的", goal],
     ];
     // Other players' expeditions sent at this island land in this raid: where, whose, and what to do about it.
-    if (p.incoming.length) rows.push(["来る遠征", `${p.incoming.map((e) => incomingMarks(e, Date.now())).join("")}<em class="ask-kind">核で固める</em>`]);
+    const incoming = incomingFor(p);
+    if (incoming.length) rows.push(["来る遠征", `${incoming.map((e) => incomingMarks(e, Date.now())).join("")}<em class="ask-kind">核で固める</em>`]);
     const warn: string[] = [];
 
     return { rows, warn };

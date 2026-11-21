@@ -32,8 +32,8 @@ const SAVE = {
 
 const NEAR = [
   { code: "Z3P9TR", name: "となり", held: 7, total: 21, day: 15, slot: 0, last: { at: Date.now() - 3 * 3600_000, captured: 2, home: true } },
-  { code: "K7M2QX", name: "みなと", held: 4, total: 21, day: 9, slot: 1 },
-  { code: "H4N8WD", name: "砂丘の人", held: 11, total: 21, day: 22, slot: 2, last: { at: Date.now() - 26 * 3600_000, captured: 0, home: false } },
+  { code: "K7M2QX", name: "みなと", held: 4, total: 21, day: 9, slot: 2 },
+  { code: "H4N8WD", name: "砂丘の人", held: 11, total: 21, day: 22, slot: 3, last: { at: Date.now() - 26 * 3600_000, captured: 0, home: false } },
 ];
 
 export async function expeditionShots({ browser, port, out, errors }) {
@@ -78,7 +78,9 @@ export async function expeditionShots({ browser, port, out, errors }) {
   if (answer.items !== 2 || answer.buttons !== 1) errors.push(`expeditions: the map table's news shows ${answer.items} items and ${answer.buttons} 仕返し, not 2 and 1`);
   // The neighbours beside the news: whose, how much they hold, what they did last (the kept list's last raid read back).
   const near = await pg.evaluate(() => [...document.querySelectorAll(".island-news.near li")].map((li) => li.textContent));
-  if (near.length !== 3 || !/となり.*7\/21.*3h.*\+2/.test(near[0] ?? "")) errors.push(`expeditions: the map table's neighbours read ${JSON.stringify(near)}`);
+  // Slot 1 (the waterworks' sea) is left free by the server: one of the game's own islands stands there, marked AI.
+  const ai = await pg.evaluate(() => [...document.querySelectorAll(".island-news.near li")].filter((li) => li.querySelector(".ai-tag")).length);
+  if (near.length !== 4 || ai !== 1 || !/となり.*7\/21.*3h.*\+2/.test(near[0] ?? "")) errors.push(`expeditions: the map table's neighbours read ${JSON.stringify(near)}, ${ai} marked AI`);
   await pg.screenshot({ path: `${out}/150-expeditions-news.png` });
   await pg.click(".island-news .revenge");
   await pg.evaluate(() => window.advanceTime(200));
@@ -103,6 +105,19 @@ export async function expeditionShots({ browser, port, out, errors }) {
   const away = await pg.evaluate(() => document.querySelector("#hub-exped .mod-head b")?.textContent ?? "");
   if (!/引き上げ中/.test(after[0]?.text ?? "") || after[0].recall || !/^1 \//.test(away.trim())) errors.push(`expeditions: after a recall the factory lists ${JSON.stringify(after)} with ${away} away`);
   await pg.screenshot({ path: `${out}/152-expeditions-recalled.png` });
+  // The game's own island facing the waterworks answers with no server: its nodes open, and one sent goes on its way.
+  await pg.click("#hub-exped .exp-near button:has(.ai-tag)");
+  await pg.waitForTimeout(200);
+  const nodes = await pg.evaluate(() => document.querySelectorAll("#hub-exped .exp-target .exp-nodes button").length);
+  if (!nodes) errors.push("expeditions: the game's own island shows no node to send to");
+  else {
+    await pg.click("#hub-exped .exp-target .exp-nodes button");
+    await pg.click("#hub-exped .exp-go");
+    await pg.waitForTimeout(300);
+    const sent = await list();
+    if (sent.length !== 3 || !/向かっている/.test(sent[2]?.text ?? "")) errors.push(`expeditions: after sending to the game's own island the factory lists ${JSON.stringify(sent)}`);
+  }
+  await pg.screenshot({ path: `${out}/154-expeditions-ai.png` });
   await close();
   // The departure's map carries the arrow.
   await pg.evaluate(() => window.ringfallCamp.toGate());

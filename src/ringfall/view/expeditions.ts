@@ -5,7 +5,7 @@
  * so a request's answer redraws it without touching the panel around it or the code being typed.
  * With no server it says so in one line and nothing else changes.
  */
-import { cachedNeighbours, flushRecalls, readNeighbours, readView, SEND_TIMEOUT_MS, sendExpedition, syncOwn, takeReport, takeSync } from "../island-net";
+import { flushRecalls, isAi, neighboursFor, readNeighbours, readView, refreshAi, SEND_TIMEOUT_MS, sendExpedition, syncOwn, takeReport, takeSync } from "../island-net";
 import { ago, NEIGHBOUR_SLOTS, routeOpen, type Neighbour } from "../meta/neighbours";
 import { playerNodes } from "../meta/island";
 import { alive, numbered, answerSend, recallAll, sentKey, canSend, dropStale, factoryAhead, factorySquads, homeSquads, refreshOutgoing, sendingEntry, sendKinds, squadsAway, STATE_NAME, type IslandLogEntry, type IslandView } from "../meta/expeditions";
@@ -44,7 +44,7 @@ export class ExpeditionPanel {
   /** An island to look up as soon as the panel is connected: one whose attack is being answered (仕返し). */
   private answering: string | null = null;
   /** The islands the server offers as neighbours: a tap looks one up, as typing its code does. */
-  private neighbours: Neighbour[] = cachedNeighbours();
+  private neighbours: Neighbour[] = [];
 
   constructor(
     private get: () => Profile,
@@ -74,9 +74,11 @@ export class ExpeditionPanel {
   private async connect() {
     const ask = ++this.ask;
     // A send whose answer never came (a tab closed while it was out) gives its squad back.
-    const p0 = this.get();
+    const p0 = refreshAi(this.get());
     const kept = dropStale(p0.expeditions, Date.now());
-    if (kept !== p0.expeditions) this.put({ ...p0, expeditions: kept });
+    if (kept !== p0.expeditions || p0 !== this.get()) this.put({ ...p0, expeditions: kept });
+    // The neighbours as last read, and the game's own islands in the slots they leave, before the server answers.
+    this.neighbours = neighboursFor(this.get());
     if (this.conn.t !== "ok") this.conn = { t: "wait" };
     this.paint();
     const r = await syncOwn(this.get(), false);
@@ -90,6 +92,12 @@ export class ExpeditionPanel {
     }
     if (!r.ok) {
       this.conn = r.error === "no-island-server" || r.error === "no-database" ? { t: "none" } : { t: "error", error: r.error };
+      // The game's own islands answer without the server: their recalls go through at once.
+      await flushRecalls(this.get, this.put);
+      if (this.answering && isAi(this.answering)) {
+        this.answering = null;
+        void this.look();
+      }
       return this.paint();
     }
     this.conn = { t: "ok", code: r.body.code, view: r.body.view };
@@ -101,9 +109,9 @@ export class ExpeditionPanel {
     if (profile !== this.get()) this.put(profile);
     if (news.length) this.news(news);
     this.paint();
-    const near = await readNeighbours();
+    await readNeighbours();
     if (ask === this.ask) {
-      this.neighbours = near;
+      this.neighbours = neighboursFor(this.get());
       this.paint();
     }
     await flushRecalls(this.get, this.put);
@@ -168,15 +176,16 @@ export class ExpeditionPanel {
   }
 
   private async look() {
-    if (this.conn.t !== "ok") return;
     const code = parseIslandCode(this.typed);
+    // The game's own islands are looked at without the server; any other needs it.
+    if (this.conn.t !== "ok" && !(code && isAi(code))) return;
     this.target = null;
     this.pick = null;
     if (!code) {
       this.note = { text: "島の番号は英数字 6 文字", good: false };
       return this.paint();
     }
-    if (code === this.conn.code) {
+    if (this.conn.t === "ok" && code === this.conn.code) {
       this.note = { text: errorText("own-island"), good: false };
       return this.paint();
     }
@@ -219,7 +228,9 @@ export class ExpeditionPanel {
     const t = this.target;
     const node = this.pick;
     const c = this.conn;
-    if (!t || !node || c.t !== "ok" || !canSend(this.get())) return;
+    if (!t || !node || !canSend(this.get())) return;
+    if (isAi(t.code)) return this.sendAi(t, node as NodeId);
+    if (c.t !== "ok") return;
     const p0 = this.get();
     const pending = sendingEntry(t.code, node as NodeId, sendKinds(this.serverFactory() ?? p0.factory).length, Date.now());
     this.put({ ...p0, expeditions: [...p0.expeditions, pending] });
@@ -247,6 +258,25 @@ export class ExpeditionPanel {
       const again = await readView(t.code);
       if (again.ok && this.target?.code === t.code) this.target = again.body;
     } else this.note = { text: errorText(r.error), good: false };
+    this.paint();
+  }
+
+  /**
+   * Sends one to the game's own island `t`: it takes it at once (island-net.ts answers for it), the
+   * squad the camp's factory makes now, with no report to wait for.
+   */
+  private async sendAi(t: IslandView, node: NodeId) {
+    const p0 = this.get();
+    const units = sendKinds(p0.factory).length;
+    const pending = sendingEntry(t.code, node, units, Date.now());
+    this.put({ ...p0, expeditions: [...p0.expeditions, pending] });
+    const r = await sendExpedition(t.code, node, units);
+    const p = this.get();
+    this.put({ ...p, expeditions: answerSend(p.expeditions, pending, r.ok ? r.body.id : null, units) });
+    this.note = r.ok ? { text: `${nodeName(node)}へ送った`, good: true } : { text: errorText(r.error), good: false };
+    if (r.ok) this.pick = null;
+    const again = await readView(t.code);
+    if (again.ok && this.target?.code === t.code) this.target = again.body;
     this.paint();
   }
 
@@ -281,7 +311,7 @@ export class ExpeditionPanel {
       : "";
     // What sending costs: each expedition out (one being sent too) keeps one squad fewer out on this island.
     const cost = away ? `<div class="exp-cost"><span>${flagIcon()}島の守り<b>${homeSquads(p)}</b></span><span>${flagIcon()}遠征<b>${away}</b></span></div>` : "";
-    return `<div class="mod open up-card exp-card">${head}<div class="mod-body">${status}${out}${cost}${c.t === "ok" ? this.sendForm(p) : ""}</div></div>`;
+    return `<div class="mod open up-card exp-card">${head}<div class="mod-body">${status}${out}${cost}${c.t === "ok" || this.neighbours.some((n) => n.ai) ? this.sendForm(p) : ""}</div></div>`;
   }
 
   /** The form that sends one: the other island's code, its nodes that take an expedition, and the button. */
@@ -297,11 +327,13 @@ export class ExpeditionPanel {
             const open = routeOpen(k, (id) => mine.has(id));
             const held = `<span class="exp-held" style="--w:${Math.round((100 * n.held) / Math.max(1, n.total))}%"></span>`;
             const foot = open ? `<small>${coreIcon(SIDE.rival)}${n.held}/${n.total}${lastMarks(n, Date.now())}</small>` : `<small class="shut">${lockIcon()}${esc(nodeName(NEIGHBOUR_SLOTS[k].shore))}</small>`;
-            return `<button type="button" class="${this.target?.code === n.code ? "on" : ""}${open ? "" : " shut"}" data-act="exp-island" data-arg="${esc(n.code)}"${open ? dis : " disabled"}><b>${esc(n.name)}</b>${held}${foot}</button>`;
+            // Without the server only the game's own islands answer.
+            const reach = open && (this.conn.t === "ok" || n.ai);
+            return `<button type="button" class="${this.target?.code === n.code ? "on" : ""}${open ? "" : " shut"}" data-act="exp-island" data-arg="${esc(n.code)}"${reach ? dis : " disabled"}><b>${esc(n.name)}${n.ai ? `<span class="ai-tag">AI</span>` : ""}</b>${held}${foot}</button>`;
           })
           .join("")}</div>`
       : "";
-    const form = near + `<div class="exp-send"><input id="exp-code" type="text" inputmode="text" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="相手の島の番号" value="${esc(this.typed)}"><button type="button" data-act="exp-look"${dis}>見る</button></div>`;
+    const form = near + (this.conn.t !== "ok" ? "" : `<div class="exp-send"><input id="exp-code" type="text" inputmode="text" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="相手の島の番号" value="${esc(this.typed)}"><button type="button" data-act="exp-look"${dis}>見る</button></div>`);
     const t = this.target;
     let pick = "";
     if (t) {
