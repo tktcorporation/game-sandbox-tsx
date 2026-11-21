@@ -3,7 +3,7 @@ import { los, routeBoxesOpen } from "./geom";
 import { BOXES, DECKS, EXTRACTS, POIS } from "./map";
 import { steepAt, terrainHeight } from "./terrain";
 import { hypot2 } from "./hypot";
-import { fillCheckMode, wasmFill } from "./native/fill";
+import { astarCheckMode, fillCheckMode, uploadNavField, wasmAstar, wasmAstarAvailable, wasmFill } from "./native/fill";
 
 /*
  * Ground-level path finding for the bot only (the game never uses it). A 0.5 m grid
@@ -528,20 +528,39 @@ function fillTs(from: number, disk: { x: number; z: number; r: number } | null):
   return { d, j0, lo, hi, off };
 }
 
-function fill(from: number, disk: { x: number; z: number; r: number } | null): Field {
+/** Weighted landmark fields sit in WASM slots `WEIGHT_SLOT + n`. */
+const WEIGHT_SLOT = 32;
+
+function rememberField(slot: number, f: Field) {
+  // Only upload when A* WASM is enabled; plain WASM fill already `store_last`s into the slot.
+  if (slot >= 0 && wasmAstarAvailable()) uploadNavField(NX, NZ, slot, f);
+}
+
+function fill(from: number, disk: { x: number; z: number; r: number } | null, slot = -1): Field {
   const mv = moveMask();
-  const native = wasmFill(NX, NZ, mv, movesEpoch, from, REACH, disk, { x0: WX0, z0: WZ0, res: RES });
+  const native = wasmFill(NX, NZ, mv, movesEpoch, from, REACH, disk, { x0: WX0, z0: WZ0, res: RES }, slot);
   if (fillCheckMode()) {
     const ts = fillTs(from, disk);
+    if (disk) {
+      // Weighted fills are TS-only; still upload for A*.
+      rememberField(slot, ts);
+      return ts;
+    }
     if (!native || !fieldEqual(native, ts)) {
       throw new Error(
-        `ringfall fill mismatch: from=${from} disk=${disk ? `${disk.x},${disk.z},${disk.r}` : "-"} wasm=${native ? `j0=${native.j0} n=${native.d.length}` : "null"} ts=j0=${ts.j0} n=${ts.d.length}`,
+        `ringfall fill mismatch: from=${from} plain wasm=${native ? `j0=${native.j0} n=${native.d.length}` : "null"} ts=j0=${ts.j0} n=${ts.d.length}`,
       );
     }
+    rememberField(slot, ts);
     return ts;
   }
-  if (native) return native;
-  return fillTs(from, disk);
+  if (native) {
+    rememberField(slot, native);
+    return native;
+  }
+  const ts = fillTs(from, disk);
+  rememberField(slot, ts);
+  return ts;
 }
 
 function field(n: number): Field | null {
@@ -565,7 +584,7 @@ function warmLandmarkFields() {
   for (let n = 0; n < LANDMARKS.length; n++) {
     if (fields[n] !== undefined) continue;
     const from = landmarkCell(n);
-    fields[n] = from < 0 ? null : fill(from, null);
+    fields[n] = from < 0 ? null : fill(from, null, n);
   }
   trySaveNav();
 }
@@ -580,11 +599,11 @@ function weightedField(n: number, disk: { x: number; z: number; r: number }): Fi
   const known = w.fields[n];
   if (known !== undefined) return known;
   const from = landmarkCell(n);
-  return (w.fields[n] = from < 0 ? null : fill(from, w.disk));
+  return (w.fields[n] = from < 0 ? null : fill(from, w.disk, WEIGHT_SLOT + n));
 }
 
 /** A landmark's field for a search, and whether it is a walk round a disk (good only for the bound toward the landmark). */
-type Landmark = { f: Field; round: boolean };
+type Landmark = { f: Field; round: boolean; slot: number };
 
 /**
  * The landmarks a search from `start` to `goal` (cells) uses: the two nearest the goal and the
@@ -637,11 +656,11 @@ function landmarksFor(start: number, goal: number, disk: { x: number; z: number;
   const out: Landmark[] = [];
   for (const k of ks) {
     const f = disk ? weightedField(k, disk) : field(k);
-    if (f && fieldAt(f, gi, gj)) out.push({ f, round: !!disk });
+    if (f && fieldAt(f, gi, gj)) out.push({ f, round: !!disk, slot: disk ? WEIGHT_SLOT + k : k });
   }
   if (s0 !== undefined) {
     const f = field(s0);
-    if (f && fieldAt(f, gi, gj)) out.push({ f, round: false });
+    if (f && fieldAt(f, gi, gj)) out.push({ f, round: false, slot: s0 });
   }
   return out;
 }
@@ -790,10 +809,9 @@ const searchKey = (start: number, goal: number, avoid: Avoid | undefined) =>
   avoid ? `${start} ${goal} ${avoid.x} ${avoid.z} ${avoid.r} ${avoid.home ? `${avoid.home.x} ${avoid.home.z} ${avoid.home.r}` : "-"}` : `${start} ${goal}`;
 
 /** A* from cell `start` to cell `goal`: the cells of a shortest way, or null if the search found none. */
-function searchCells(s: [number, number], g: [number, number], start: number, goal: number, avoid: Avoid | undefined): number[] | null {
+function searchCellsTs(s: [number, number], g: [number, number], start: number, goal: number, avoid: Avoid | undefined, lms: Landmark[]): number[] | null {
   const gi = g[0];
   const gj = g[1];
-  const lms = Math.max(Math.abs(s[0] - gi), Math.abs(s[1] - gj)) >= LANDMARK_MIN ? landmarksFor(start, goal, diskFor(avoid, centerX(s[0]), centerZ(s[1]), centerX(gi), centerZ(gj))) : [];
   if (rec.length !== NX * NZ * 8) {
     const buf = new ArrayBuffer(NX * NZ * 8);
     gScore = new Float32Array(buf);
@@ -867,6 +885,51 @@ function searchCells(s: [number, number], g: [number, number], start: number, go
   const cells: number[] = [goal];
   for (let c = goal; c !== start; c -= MOVE_OFF[rec[c * 8 + 6]]) cells.push(c - MOVE_OFF[rec[c * 8 + 6]]);
   return cells.reverse();
+}
+
+function pathEqual(a: number[] | null, b: number[] | null): boolean {
+  if (a === null || b === null) return a === b;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+/** A* from cell `start` to cell `goal`: the cells of a shortest way, or null if the search found none. */
+function searchCells(s: [number, number], g: [number, number], start: number, goal: number, avoid: Avoid | undefined): number[] | null {
+  const gi = g[0];
+  const gj = g[1];
+  const lms =
+    Math.max(Math.abs(s[0] - gi), Math.abs(s[1] - gj)) >= LANDMARK_MIN
+      ? landmarksFor(start, goal, diskFor(avoid, centerX(s[0]), centerZ(s[1]), centerX(gi), centerZ(gj)))
+      : [];
+  const mv = moveMask();
+  const native = wasmAstar(
+    NX,
+    NZ,
+    mv,
+    movesEpoch,
+    start,
+    goal,
+    s[0],
+    s[1],
+    gi,
+    gj,
+    avoid ?? null,
+    lms.map((l) => ({ slot: l.slot, round: l.round })),
+    { x0: WX0, z0: WZ0, res: RES },
+    REACH,
+  );
+  if (astarCheckMode()) {
+    const ts = searchCellsTs(s, g, start, goal, avoid, lms);
+    if (native === undefined || !pathEqual(native, ts)) {
+      throw new Error(
+        `ringfall astar mismatch: start=${start} goal=${goal} wasm=${native === undefined ? "undef" : native ? native.length : "null"} ts=${ts ? ts.length : "null"}`,
+      );
+    }
+    return ts;
+  }
+  if (native !== undefined) return native;
+  return searchCellsTs(s, g, start, goal, avoid, lms);
 }
 
 /** Waypoints along `cells` from (ax, az) to (bx, bz): only the cells where a straight walk would be blocked. */
