@@ -1,7 +1,7 @@
 import { ALLY, AWARE, CHARGER, CONQUEST, COVER, CREW, DEG, DODGE, DUCK, ELITE, ENEMIES, FALLBACK, FAR_THINK, PACK, PARTY, PATROL, PINCH, SPLIT, SWEEP, PLAYER, PURSUE, SHOT, SIGHT, STAGGER, SUPPORT, TICK, TITAN, TURN, WORLD, type EnemyKind, type Rarity } from "./config";
 import { clampToWorld, collide, dist2d, fenceBetween, groundAt, groundLevel, los, lookAngles, onTerrain, solidAt, worldVersion, wrapAngle } from "./geom";
 import { TICK_WASM } from "./native/tick-flag";
-import { markTickDone, stepTick, uploadGeom } from "./native/tick";
+import { markTickDone, setTickPrep, stepTick, uploadGeom } from "./native/tick";
 import { steepAt, terrainHeight } from "./terrain";
 import { engageSquad, fireRange, headOf, knownSpot, located, pursuitSpot, sense, stepSquads } from "./awareness";
 import { coversNear, type CoverPoint } from "./cover";
@@ -366,15 +366,122 @@ function stepBody(e: Enemy, vx: number, vz: number): boolean {
 /** A tick's decay of the damage counted toward a stagger (see STAGGER.window). */
 const STAGGER_DECAY = Math.exp(-TICK / STAGGER.window);
 
+/** Reused SoA extras for WASM: hunt vias + fromCover skip (same robot order as syncRobots). */
+let prepViaX = new Float32Array(0);
+let prepViaZ = new Float32Array(0);
+let prepHasVia = new Uint8Array(0);
+let prepSkip = new Uint8Array(0);
+
+/**
+ * Before a WASM tick: fromCover for engaged grunts (sets skip) and hunt vias for engaged
+ * robots without live LOS, so WASM move follows the ground field like TypeScript.
+ */
+function prepareWasmTick(s: State) {
+  const list = s.friends.length ? [...s.enemies, ...s.friends] : s.enemies;
+  const n = list.length;
+  if (prepViaX.length < n) {
+    prepViaX = new Float32Array(n);
+    prepViaZ = new Float32Array(n);
+    prepHasVia = new Uint8Array(n);
+    prepSkip = new Uint8Array(n);
+  } else {
+    prepHasVia.fill(0, 0, n);
+    prepSkip.fill(0, 0, n);
+  }
+  const p = s.player;
+  for (let i = 0; i < n; i++) {
+    const e = list[i];
+    if (e.friend || e.aware !== "engaged") continue;
+    if (e.mode === "spawning" || e.mode === "stunned" || e.mode === "staggered") continue;
+    if (e.kind === "titan") continue;
+    chooseTarget(s, e);
+    if (e.target === "friend") continue; // fightFoe path stays TS-only after pull
+    const atAlly = e.target === "ally";
+    const tPos = atAlly ? s.ally.pos : p.pos;
+    const tChest = atAlly ? allyChest(s.ally) : chest(s);
+    const tUp = atAlly ? allyUp(s) : p.downed <= 0;
+    const tVel = atAlly ? s.ally.vel : p.vel;
+    const known = atAlly ? { x: tPos.x, z: tPos.z, live: true as const } : knownSpot(s, e);
+    const round = atAlly ? null : pinchSpot(s, e, known);
+    if (e.kind === "grunt" && !e.elite && !round && fromCover(s, e, known, tChest, tUp, tVel)) {
+      prepSkip[i] = 1;
+      continue;
+    }
+    const sees = known.live && facing(e, tPos) && los(muzzle(e), tChest);
+    if (sees && !fenceBetween(e.pos, tPos)) continue; // WASM walks toward known
+    const after = known.live || round ? null : pursuitSpot(s, e, known);
+    const afterVia = after && dist2d(e.pos, after) > 1.5 ? sideStep(s, e, after, known, PURSUE.spread) : null;
+    const via = afterVia ?? (after ? after : huntStep(s, e, known));
+    // Standing at the search spot: via ≈ self so WASM along stays 0.
+    if (after && !afterVia) {
+      prepViaX[i] = e.pos.x;
+      prepViaZ[i] = e.pos.z;
+    } else {
+      prepViaX[i] = via.x;
+      prepViaZ[i] = via.z;
+    }
+    prepHasVia[i] = 1;
+  }
+  setTickPrep(n, prepViaX, prepViaZ, prepHasVia, prepSkip);
+}
+
+/**
+ * After a WASM tick: calm / fightFoe for robots WASM left alone (non-engaged). Sense,
+ * spawning, stunned and engaged combat already ran in WASM; do not re-decay timers.
+ */
+function tickNonEngaged(s: State) {
+  markNear(s);
+  const tick = Math.round(s.time / TICK);
+  const p = s.player;
+  const start = s.enemies;
+  const friendsAt = s.friends;
+  const startLen = start.length;
+  const friendsLen = friendsAt.length;
+  let byIdMap: Map<number, Enemy> | null = null;
+  const byId = {
+    get(id: number): Enemy | undefined {
+      if (!byIdMap) {
+        byIdMap = new Map();
+        for (let i = 0; i < startLen; i++) byIdMap.set(start[i].id, start[i]);
+        for (let i = 0; i < friendsLen; i++) byIdMap.set(friendsAt[i].id, friendsAt[i]);
+      }
+      return byIdMap.get(id);
+    },
+  };
+  const gone = (e: Enemy) => (e.friend ? s.friends !== friendsAt && !s.friends.includes(e) : s.enemies !== start && !s.enemies.includes(e));
+  for (let at = 0; at < startLen; at++) {
+    const e = start[at];
+    if (gone(e)) continue;
+    if (s.phase === "done") return;
+    if (e.aware === "engaged") continue;
+    if (e.mode === "spawning" || e.mode === "stunned" || e.mode === "staggered") continue;
+    // Titan wake is handled in WASM; if still not engaged, mirror TS.
+    if (e.kind === "titan" && dist2d(e.pos, p.pos) < 24 && p.downed <= 0 && s.phase === "play") {
+      engageSquad(s, e.squad, e);
+      continue;
+    }
+    const foe = foeOf(s, e, byId);
+    if (foe && !gone(foe)) fightFoe(s, e, foe);
+    else if (e.squad < 0 || nearSquads[e.squad]) calm(s, e);
+    else if ((tick + e.squad) % FAR_THINK.every === 0) {
+      dt = TICK * FAR_THINK.every;
+      calm(s, e);
+      dt = TICK;
+    }
+  }
+}
+
 export function stepEnemies(s: State) {
   const p = s.player;
   stepSquads(s);
   // WASM owns sense + engaged combat + orbs when the tick host is ready.
-  // Squad bookkeeping above still runs in TypeScript every tick.
+  // Calm / fightFoe / patrols stay in TypeScript after the tick (`tickNonEngaged`).
   if (TICK_WASM) {
     uploadGeom(worldVersion, s.routes);
+    prepareWasmTick(s);
     if (stepTick(s)) {
       markTickDone();
+      tickNonEngaged(s);
       return;
     }
   }

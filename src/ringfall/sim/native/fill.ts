@@ -153,6 +153,10 @@ type Exports = {
   ringfall_sim_robot_goal_z_ptr?(): number;
   ringfall_sim_robot_has_goal_ptr?(): number;
   ringfall_sim_robot_search_t_ptr?(): number;
+  ringfall_sim_robot_via_x_ptr?(): number;
+  ringfall_sim_robot_via_z_ptr?(): number;
+  ringfall_sim_robot_has_via_ptr?(): number;
+  ringfall_sim_robot_skip_ptr?(): number;
   ringfall_sim_squad_since_seen_ptr?(): number;
   ringfall_sim_squad_shot_t_ptr?(): number;
   ringfall_sim_squad_last_x_ptr?(): number;

@@ -152,6 +152,12 @@ pub struct Sim {
     pub robot_goal_z: Vec<f32>,
     pub robot_has_goal: Vec<u8>,
     pub robot_search_t: Vec<f32>,
+    /// Hunt waypoint from TypeScript (`huntStep`); when set, engaged move walks toward it.
+    pub robot_via_x: Vec<f32>,
+    pub robot_via_z: Vec<f32>,
+    pub robot_has_via: Vec<u8>,
+    /// TypeScript `fromCover` already stepped this robot; WASM `step_engaged` no-ops.
+    pub robot_skip: Vec<u8>,
 
     // --- squads (subset for sense / knownSpot / engage) ---
     pub n_squads: u32,
@@ -284,6 +290,10 @@ impl Sim {
             robot_goal_z: Vec::new(),
             robot_has_goal: Vec::new(),
             robot_search_t: Vec::new(),
+            robot_via_x: Vec::new(),
+            robot_via_z: Vec::new(),
+            robot_has_via: Vec::new(),
+            robot_skip: Vec::new(),
             n_squads: 0,
             squad_since_seen: Vec::new(),
             squad_shot_t: Vec::new(),
@@ -371,6 +381,10 @@ impl Sim {
         self.robot_goal_z.resize(n, 0.0);
         self.robot_has_goal.resize(n, 0);
         self.robot_search_t.resize(n, 0.0);
+        self.robot_via_x.resize(n, 0.0);
+        self.robot_via_z.resize(n, 0.0);
+        self.robot_has_via.resize(n, 0);
+        self.robot_skip.resize(n, 0);
     }
 
     fn ensure_squads(&mut self, n: usize) {
@@ -1225,6 +1239,22 @@ pub unsafe extern "C" fn ringfall_sim_robot_has_goal_ptr() -> *mut u8 {
 #[no_mangle]
 pub unsafe extern "C" fn ringfall_sim_robot_search_t_ptr() -> *mut f32 {
     sim().robot_search_t.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_via_x_ptr() -> *mut f32 {
+    sim().robot_via_x.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_via_z_ptr() -> *mut f32 {
+    sim().robot_via_z.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_has_via_ptr() -> *mut u8 {
+    sim().robot_has_via.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_skip_ptr() -> *mut u8 {
+    sim().robot_skip.as_mut_ptr()
 }
 
 #[no_mangle]

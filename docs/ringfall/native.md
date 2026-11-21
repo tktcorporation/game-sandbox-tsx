@@ -7,9 +7,9 @@ One Rust crate (`native/ringfall-fill/`) compiles to **WASM for both the browser
 | Layer | Role |
 | --- | --- |
 | Nav (`fill` / opt-in A*) | Landmark Dial fields; default fill WASM, A* TypeScript |
-| Tick host (ABI **3**) | Enemy/orb SoA + terrain/boxes + `los` + `step_tick` (sense + engaged combat + orbs) |
-| Default sim path (Node) | TypeScript `stepEnemies` / `stepOrbs` — **no** per-tick SoA/geom work |
-| Browser default | Tick **on** (same WASM module as Node) |
+| Tick host (ABI **4**) | Enemy/orb SoA + terrain/boxes + `los` + `step_tick` (sense + engaged combat + orbs); hunt vias + fromCover skip from TS |
+| Default sim path | TypeScript `stepEnemies` / `stepOrbs` — **no** per-tick SoA/geom work |
+| Browser default | Tick **off** until statistical equivalence passes (same as Node) |
 
 `ringfall_step_tick` returns **-1** until geom is uploaded; **0** after enemies then orbs.
 
@@ -21,7 +21,7 @@ One Rust crate (`native/ringfall-fill/`) compiles to **WASM for both the browser
 | `RINGFALL_ASTAR=1` | Opt-in WASM A* (warm is slower) |
 | `RINGFALL_TICK=1` | Geom + sync → WASM **enemies + orbs** (orbs folded into tick) |
 | `RINGFALL_TICK=0` / `?ringfallTick=0` | Force TypeScript enemies + orbs (fallback) |
-| Browser default | Tick **on** unless explicitly `0` |
+| Browser default | Tick **off** until equiv passes |
 | Node default | Tick **off** (bench hash stays on TypeScript) |
 
 ## Equivalence criterion (tick on)
@@ -33,11 +33,12 @@ Validation is **statistical**:
 ```bash
 npm run equiv:ringfall          # N=30 per bench job × 10 jobs, TS ∥ WASM
 npm run equiv:ringfall -- 10    # shorter
+RINGFALL_EQUIV_N=3 npm run equiv:ringfall
 ```
 
 Compares pooled means/SD of raid aggregates with a Welch t-test. **BIAS** when p&lt;0.05 and |Δ| &gt; pooled SD; `~` when p&lt;0.05 with a material but smaller gap. Exit 0 even when hashes differ; real crashes fail. Raids stuck at the 30‑minute LIMIT are soft-counted as wipes.
 
-### Latest N=30 pool (300 raids/mode)
+### Latest N=30 pool (300 raids/mode) — before hybrid calm/vias
 
 | metric | mean TS | mean WASM | Δ | flag |
 | --- | ---: | ---: | ---: | --- |
@@ -52,7 +53,9 @@ Compares pooled means/SD of raid aggregates with a Welch t-test. **BIAS** when p
 | firstMeet | 34 s | 104 s | −70 | ~ |
 | quiet | 71 s | 102 s | −31 | ~ |
 
-**Plain reading:** extract rate / downs / haul are close. WASM combat meets fewer squads and deals less damage (hunt / cover / `fightFoe` / full calm still TypeScript; sense+FSM+orbs are WASM). Not yet “no systematic bias” on engagement metrics — keep iterating or keep tick opt-in for balance-sensitive work.
+**Root cause (fixed in hybrid path):** WASM engages did not emit `{t:"engage"}` (met undercount); Rust `calm` was a stub (roamers never walked → metAway collapse); engaged move was straight-line (no hunt vias); no `fightFoe` for non-engaged.
+
+**Hybrid now (ABI 4):** engage events on pull; skip Rust calm → TS `tickNonEngaged` (calm + fightFoe); hunt vias + fromCover skip synced into SoA. Browser stays opt-in until a fresh N=30 pool clears met/metAway BIAS.
 
 Per-tick cost (fixed sim time):
 
@@ -61,11 +64,11 @@ npm run tick-cost:ringfall -- 90
 ```
 
 | | CPU | wall | speedup |
-| --- | ---: | ---: | ---: |
+| --- | ---: | ---: | --- |
 | TS (90 s sim) | 14.9 s | 10.2 s | — |
 | WASM tick | 5.3 s | 3.2 s | CPU **×2.8**, wall **×3.2** |
 
-So the tick host **is** faster per sim-second. Equiv wall is higher for WASM because raids run longer / quieter with weaker engagement — not because each tick is slower.
+So the tick host **is** faster per sim-second. Equiv wall is higher for WASM when engagement is weaker — not because each tick is slower.
 
 ## Identity / speed (bench)
 
@@ -83,17 +86,19 @@ Cold `findPath`: TS ≈ WASM within noise; identity match (`npm run fill:ringfal
 - Engaged combat FSM: move / telegraph / fire / lunge / recover (+ stunned/staggered/spawning)
 - Orb spawn + `step_orbs` (hits via hit buffer)
 - Simple `moveBody` (terrain + AABB)
-- Calm: walk toward goal / home (no full patrol / hunt fields)
+- Engaged move toward TS-supplied hunt vias (`robot_via_*`) when set
+- Skip engaged step when TS `fromCover` already moved (`robot_skip`)
 
-**Still TypeScript (AoS mirror kept for these):**
+**Still TypeScript (hybrid after / before WASM):**
 - `stepSquads` (before WASM tick)
-- Cover peeking (`fromCover`), pinch / flank / hunt distance fields
-- `fightFoe` / faction fights
+- `tickNonEngaged`: full `calm` (patrol / party / ambush / hunt fields) + `fightFoe`
+- `prepareWasmTick`: `fromCover` + hunt/pursuit vias written into SoA
+- Engage `{t:"engage"}` events emitted on pull when WASM newly engages a squad
 - Titan special AI (WASM holds + turns only)
 - Friends (`stepFriends`), waves, player, loot, battle reckon
 - View metadata (plate, rogue colours); poses can read SoA when tick is on
 
-`Enemy` AoS objects remain the store for TS systems; during a tick the WASM SoA is authoritative and is pulled back. Full drop of AoS (indices-only State) is not done yet.
+`Enemy` AoS objects remain the store for TS systems; during a tick the WASM SoA is authoritative for engaged combat and is pulled back. Full drop of AoS (indices-only State) is not done yet.
 
 ## Rebuild / check
 

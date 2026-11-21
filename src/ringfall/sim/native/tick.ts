@@ -32,7 +32,7 @@ const SQUAD_MOBILE = 2;
 const SQUAD_RETREAT = 4;
 const SQUAD_PACK = 8;
 
-const ABI_MIN = 3;
+const ABI_MIN = 4;
 
 type Ex = NonNullable<ReturnType<typeof nativeExports>>;
 
@@ -58,6 +58,28 @@ function u8(e: Ex, ptr: number, n: number): Uint8Array {
 
 let geomEpoch = -1;
 let routesKey = "";
+
+/** Pre-tick extras from TypeScript: hunt vias + fromCover skip (same order as syncRobots). */
+let prepN = 0;
+let prepViaX: Float32Array | null = null;
+let prepViaZ: Float32Array | null = null;
+let prepHasVia: Uint8Array | null = null;
+let prepSkip: Uint8Array | null = null;
+
+/** Fill SoA extras before `stepTick` (hunt vias + fromCover skip). */
+export function setTickPrep(
+  n: number,
+  viaX: Float32Array,
+  viaZ: Float32Array,
+  hasVia: Uint8Array,
+  skip: Uint8Array,
+): void {
+  prepN = n;
+  prepViaX = viaX;
+  prepViaZ = viaZ;
+  prepHasVia = hasVia;
+  prepSkip = skip;
+}
 
 function packBoxes(): Float32Array {
   const closed = new Set(ROUTES.flatMap((r) => r.closed));
@@ -223,6 +245,10 @@ export function syncRobots(s: State): RobotViews | null {
   const goalZ = f32(e, e.ringfall_sim_robot_goal_z_ptr!(), n);
   const hasGoal = u8(e, e.ringfall_sim_robot_has_goal_ptr!(), n);
   const searchT = f32(e, e.ringfall_sim_robot_search_t_ptr!(), n);
+  const viaX = f32(e, e.ringfall_sim_robot_via_x_ptr!(), n);
+  const viaZ = f32(e, e.ringfall_sim_robot_via_z_ptr!(), n);
+  const hasVia = u8(e, e.ringfall_sim_robot_has_via_ptr!(), n);
+  const skip = u8(e, e.ringfall_sim_robot_skip_ptr!(), n);
   for (let i = 0; i < n; i++) {
     const en = list[i];
     x[i] = en.pos.x;
@@ -292,6 +318,15 @@ export function syncRobots(s: State): RobotViews | null {
       hasGoal[i] = 0;
     }
     searchT[i] = en.searchT;
+    if (prepHasVia && i < prepN) {
+      viaX[i] = prepViaX![i];
+      viaZ[i] = prepViaZ![i];
+      hasVia[i] = prepHasVia[i];
+      skip[i] = prepSkip![i];
+    } else {
+      hasVia[i] = 0;
+      skip[i] = 0;
+    }
   }
   return { n, x, y, z, yaw, vx, vz, hp, shield, duck, id, kind, mode };
 }
@@ -477,7 +512,7 @@ function pullRobots(e: Ex, s: State): void {
   }
 }
 
-function pullSquads(e: Ex, s: State): void {
+function pullSquads(e: Ex, s: State, wasEngaged: boolean[]): void {
   const n = s.squads.length;
   if (!n) return;
   const since = f32(e, e.ringfall_sim_squad_since_seen_ptr!(), n);
@@ -498,7 +533,21 @@ function pullSquads(e: Ex, s: State): void {
     sq.chase = hasChase[i] ? { x: chaseX[i], z: chaseZ[i] } : undefined;
     sq.chaseT = chaseT[i] || undefined;
     sq.pinT = pinT[i] || undefined;
-    sq.engaged = (flags[i] & SQUAD_ENGAGED) !== 0;
+    const now = (flags[i] & SQUAD_ENGAGED) !== 0;
+    // Mirror engageSquad's event so met / firstMeet count WASM engages.
+    if (!wasEngaged[i] && now) {
+      let id = -1;
+      for (const en of s.enemies) {
+        if (en.squad !== i) continue;
+        if (en.aware === "engaged") {
+          id = en.id;
+          break;
+        }
+        if (id < 0) id = en.id;
+      }
+      s.events.push({ t: "engage", squad: i, id });
+    }
+    sq.engaged = now;
   }
 }
 
@@ -581,6 +630,7 @@ export function stepTick(s: State): boolean {
   if (!TICK_WASM) return false;
   const e = ex();
   if (!e || geomEpoch < 0) return false;
+  const wasEngaged = s.squads.map((sq) => !!sq.engaged);
   syncRobots(s);
   syncSquads(e, s);
   syncOrbs(e, s);
@@ -614,7 +664,7 @@ export function stepTick(s: State): boolean {
   const rc = e.ringfall_step_tick(TICK);
   if (rc !== 0) return false;
   pullRobots(e, s);
-  pullSquads(e, s);
+  pullSquads(e, s, wasEngaged);
   applyHits(e, s);
   pullOrbs(e, s);
   if (e.ringfall_sim_get_rng) s.rng = e.ringfall_sim_get_rng() || 1;

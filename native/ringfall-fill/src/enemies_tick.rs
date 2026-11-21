@@ -685,6 +685,7 @@ impl Sim {
         n
     }
 
+    #[allow(dead_code)] // kept for a later calm port; non-engaged walks run in TypeScript
     fn calm(&mut self, i: usize, dt: f64) {
         let k = self.kind_of(i);
         let slow = k.speed * AWARE_IDLE_SPEED;
@@ -757,6 +758,9 @@ impl Sim {
 
     /// Engaged combat FSM (move / telegraph / fire / lunge / recover). Titan: hold + turn.
     fn step_engaged(&mut self, i: usize, dt: f64) {
+        if self.robot_skip[i] != 0 {
+            return;
+        }
         if self.robot_kind[i] == KIND_TITAN {
             let (yaw, _) = Self::look_angles(
                 (self.robot_x[i] as f64, 0.0, self.robot_z[i] as f64),
@@ -829,10 +833,26 @@ impl Sim {
                         let m = self.muzzle(i);
                         self.los(m, t_chest, false)
                     };
-                let ux = dx / d;
-                let uz = dz / d;
+                // TypeScript hunt via when out of live LOS; else walk toward known.
+                let (tx, tz, vd) = if self.robot_has_via[i] != 0 {
+                    let tx = self.robot_via_x[i] as f64;
+                    let tz = self.robot_via_z[i] as f64;
+                    let vd = Self::hypot2(
+                        tx - self.robot_x[i] as f64,
+                        tz - self.robot_z[i] as f64,
+                    )
+                    .max(1e-3);
+                    (tx, tz, vd)
+                } else {
+                    (known_x, known_z, d)
+                };
+                let ux = (tx - self.robot_x[i] as f64) / vd;
+                let uz = (tz - self.robot_z[i] as f64) / vd;
                 let mut along = 0.0;
-                if !sees || d > k.range + 4.0 {
+                // At a hunt/search waypoint with nobody in view: stand (TS `after && !afterVia`).
+                if self.robot_has_via[i] != 0 && vd < 1.5 && !sees {
+                    along = 0.0;
+                } else if !sees || d > k.range + 4.0 {
                     along = 1.0;
                 } else if !at_ally && !self.located(i) && self.robot_finding[i] <= 0.0 {
                     along = 1.0;
@@ -1084,7 +1104,7 @@ impl Sim {
                 {
                     self.engage_squad(self.robot_squad[i], i);
                 } else {
-                    self.calm(i, dt);
+                    // Calm / fightFoe / patrol / parties stay in TypeScript (`tickNonEngaged`).
                     continue;
                 }
             }
