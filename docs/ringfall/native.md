@@ -1,8 +1,10 @@
 # RINGFALL native（Rust → WASM）
 
-`native/ringfall-fill/` は **ブラウザと Node の両方**で同じ WASM を使う。本番に napi-rs は使わない。
+この文書は **実験結果の記録**（なぜ遅かったか／偏ったか）である。本文の数値は実装 PR 上で測ったもの。
 
-ナビの Dial `fill` は粗い単位で速い（後述）。ティックホスト（敵・弾・`step_tick`）は [#153](https://github.com/tktcorporation/game-sandbox-tsx/pull/153) / [#155](https://github.com/tktcorporation/game-sandbox-tsx/pull/155) で積み上げ中。**既定は TypeScript**（bench ハッシュ `83b7a1d3bcf8`）。WASM tick は等価かつウォーム bench で勝つまで **OFF**。
+`native/ringfall-fill/` と関連スクリプトは [#153](https://github.com/tktcorporation/game-sandbox-tsx/pull/153) / [#155](https://github.com/tktcorporation/game-sandbox-tsx/pull/155) で積み上げ中。**このドキュメント単独の checkout（`main`）にはクレートも `build:native` 等の npm スクリプトもまだ無い。** 本番に napi-rs は使わない。ブラウザと Node で同じ WASM を使う設計。
+
+ナビの Dial `fill` は粗い単位で速い（後述）。ティックホスト（敵・弾・`step_tick`）は上記 PR 上。**既定は TypeScript**（bench ハッシュ `83b7a1d3bcf8`）。WASM tick は等価かつウォーム bench で勝つまで **OFF**。
 
 ## なぜこれまでの WASM は遅いか／偏るか
 
@@ -20,7 +22,7 @@ RINGFALL でも、`ringfall_step_tick` を 1 回叩くこと自体は問題に�
 
 ### fill が速い理由（粗い粒度）
 
-Landmark Dial の距離場 `fill` は、ワールド格子を **一度に** WASM 線形メモリへ載せ、長い探索を中で回す。プロセスをまたいでも同じ答え（`npm run fill:ringfall`）。ウォームなレイドでは場はほぼ建たないので全体時間は揺れの範囲だが、**コールドの単発探索**では TS より速いことがある。成功パターンは「大きな仕事を 1 回の境界の向こうでやる」こと。
+Landmark Dial の距離場 `fill` は、ワールド格子を **一度に** WASM 線形メモリへ載せ、長い探索を中で回す。プロセスをまたいでも同じ答え（実装 PR 上の `npm run fill:ringfall`）。ウォームなレイドでは場はほぼ建たないので全体時間は揺れの範囲だが、**コールドの単発探索**では TS より速いことがある。成功パターンは「大きな仕事を 1 回の境界の向こうでやる」こと。
 
 ### A*（opt-in）がウォームで約 1.34× 遅かった理由
 
@@ -52,7 +54,7 @@ Landmark Dial の距離場 `fill` は、ワールド格子を **一度に** WASM
 - 交戦前に TS が hunt via / `fromCover` skip を SoA に書く（`prepareWasmTick`）
 - WASM のあと TS が完全な `calm` + `fightFoe`（`tickNonEngaged`）
 
-`npm run equiv:ringfall`（N=30×10）では **BIAS なし**（met 7.87→7.13、kills/damage もノイズ内）。一方ウォーム bench はおよそ **CPU 58 s → 64 s**、wall も同様に悪化した。
+実装 PR 上の `npm run equiv:ringfall`（N=30×10）では **BIAS なし**（met 7.87→7.13、kills/damage もノイズ内）。一方ウォーム bench はおよそ **CPU 58 s → 64 s**、wall も同様に悪化した。
 
 コード上の税（`tick.ts` を数えた値）:
 
@@ -77,7 +79,9 @@ Landmark Dial の距離場 `fill` は、ワールド格子を **一度に** WASM
 
 統計的等価（ビット一致ハッシュは WASM パスでは不要）と、ウォーム bench の CPU・wall で TS を上回ることの両方が揃うまで、**既定は TypeScript のまま**。
 
-## スイッチ（現行）
+## スイッチと検証コマンド（実装 PR 上）
+
+以下のフラグと npm スクリプトは **#153 / #155 がマージされたあとのツリー**（またはそれらのブランチ）で使える。この lessons 文書だけの checkout では `npm run build:native` 等は未定義。
 
 | フラグ | 効果 |
 | --- | --- |
@@ -86,6 +90,7 @@ Landmark Dial の距離場 `fill` は、ワールド格子を **一度に** WASM
 | `RINGFALL_TICK=1` | ティックホスト opt-in（既定 OFF） |
 
 ```bash
+# 実装 PR（#153 / #155）上でのみ:
 npm run build:native
 npm run smoke:native
 npm run fill:ringfall
