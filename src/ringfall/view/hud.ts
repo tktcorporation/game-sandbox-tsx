@@ -1185,7 +1185,7 @@ export class Hud {
   private prompt(s: State): string {
     const p = s.player;
     if (p.downed > 0 || s.phase !== "play") return "";
-    if (s.leaving) return `${depotIcon()}<b>${Math.max(0, s.leaving.t).toFixed(1)}</b>`;
+    if (s.leaving) return `${depotIcon()}中継ボックス · 生還まで <b>${Math.max(0, s.leaving.t).toFixed(1)}</b>`;
     // On a cable: where it goes and the metres left.
     if (p.zip) {
       const l = ZIPS[p.zip.line];
@@ -1206,7 +1206,7 @@ export class Hud {
     // The same choice the use key acts on (sim/world.ts useTarget), so the prompt never promises something else.
     if (!t) {
       // At a depot that is on, which useTarget passes over while a squad is fighting: the depot, crossed, and the fight.
-      if (depotBlocked(s) && depotInReach(s) >= 0) return `${depotIcon()}${crossIcon()}${fightIcon(UI.foeBright)}`;
+      if (depotBlocked(s) && depotInReach(s) >= 0) return `${depotIcon()}中継ボックス${crossIcon()}${fightIcon(UI.foeBright)}`;
       // Back in the camp's yard with a fight close by: it takes the player home once that is over.
       if (homeReady(s) && depotBlocked(s)) return `野営地${crossIcon()}${fightIcon(UI.foeBright)}`;
       // Standing on something that will not go in: a mod part already worn, or a full bag.
@@ -1255,9 +1255,13 @@ export class Hud {
     }
     if (t.kind === "care") return tip(`${key("E")}補給ポッド`);
     if (t.kind === "depot") {
-      if (!p.haul.length && !p.tools.length && !p.records.length) return tip(`${key("E")}${depotIcon()}切り上げる ${clockIcon()}${DEPOT.leave} 秒`);
-      const value = p.haul.reduce((n, k) => n + VALUABLES[k].value, 0);
-      return tip(`${key("E")}${depotIcon()}${upIcon()}${p.haul.length + p.tools.length + p.records.length} 点・${value}`);
+      // One place, one line: what it is + what happens (brief: 中継ボックス). No internal jargon.
+      if (!p.haul.length && !p.tools.length && !p.records.length) {
+        return tip(`${key("E")}${depotIcon()}中継ボックス · 切り上げて生還 ${clockIcon()}${DEPOT.leave} 秒`);
+      }
+      const n = p.haul.length + p.tools.length + p.records.length;
+      const value = p.haul.reduce((v, k) => v + VALUABLES[k].value, 0);
+      return tip(`${key("E")}${depotIcon()}中継ボックス · 倉庫へ送る ${n}点・${value}`);
     }
     if (t.kind === "armor") return tip(`${key("E")}<span class="r" style="color:${RARITY_CSS[t.loot.rarity]}">アーマー Lv${t.loot.rarity}</span>${struck([`Lv${p.armor}`])}`);
     if (t.kind === "core") {
