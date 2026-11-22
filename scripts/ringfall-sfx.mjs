@@ -69,6 +69,8 @@ const TIERS = [
   { name: "camp", lufs: [-46, -22], ids: /^(tab|click|buy|sell|deliver|deploy)$/ },
   { name: "air", lufs: [-48, -34], ids: /^(creak|machinery|gull|buoy|groan|siren|zap|ping|harp)$/ },
   { name: "music", lufs: [-40, -22], ids: /^music-/ },
+  // The beds that never stop: wide, so the report names their levels; the relations below hold them under the music.
+  { name: "bed", lufs: [-70, -10], ids: /^bed-/ },
   { name: "demo", lufs: null, ids: /^demo-/ },
 ];
 /** Which cue keeps under which, by how many LU: what is heard first stays loudest. */
@@ -88,6 +90,14 @@ const UNDER = [
   ["music-explore", "music-phrase-capture", 3],
   ["music-phrase-capture", "core-taken", 3],
   ...["harbor", "city", "launch"].flatMap((r) => [[`music-${r}-fight`, "shot-pike", 3], [`music-${r}-explore`, "enemy-fire-grunt", 3], [`music-${r}-explore`, `music-${r}-fight`, 3]]),
+  // The beds that never stop sit under the music and the robots' steps, so the island is heard through them:
+  // the wind on the ground well under the explore's music, the wind high up and each region's bed under its tune.
+  ["bed-wind-ground", "music-explore", 6],
+  ["bed-wind-ground", "step-grunt", 2],
+  ["bed-wind-high", "music-explore", 2],
+  ["bed-harbor", "music-harbor-explore", 4],
+  ["bed-city", "music-city-explore", 4],
+  ["bed-launch", "music-launch-explore", 4],
 ];
 const tierOf = (id) => TIERS.find((t) => t.ids.test(id));
 const report = await page.evaluate(() => window.ringfallSfxCheck());

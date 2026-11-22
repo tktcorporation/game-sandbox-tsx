@@ -1,5 +1,6 @@
 import type { EnemyKind, Rarity, WeaponKind } from "../sim/config";
-import { Mixer, getMixer, swapMixer, unlock, type P3 } from "./audio";
+import { Mixer, getMixer, loop, swapMixer, unlock, type P3 } from "./audio";
+import { BEDS, windGain } from "./soundscape";
 import { sfx } from "./sfx";
 import { Music, type Mood } from "./music";
 import { REGIONS, type RegionId } from "../sim/map";
@@ -355,6 +356,35 @@ async function renderMood(mood: Exclude<Mood, "off">, region: RegionId = "reserv
   return { id: region === "reservoir" ? `music-${mood}` : `music-${region}-${mood}`, peak, rms, loud: rms, nan, clipped, lufs: momentary(buf), len: tail(buf) };
 }
 
+/**
+ * The beds that never stop, at the levels the soundscape gives them (soundscape.ts `WIND`, `BEDS`),
+ * measured as cues are: the breeze on the ground in the open (where most of a raid is walked), the
+ * breeze thirty metres up, and each region's bed at its loudest. The check holds them under the music.
+ */
+async function renderBed(id: string, o: Parameters<typeof loop>[0], gain: number, secs = 6): Promise<CueReport> {
+  const sr = 44100;
+  const off = new OfflineAudioContext(2, Math.floor(sr * secs), sr);
+  const m = new Mixer(off, false);
+  m.volume.gain.value = 1;
+  const prev = swapMixer(m);
+  try {
+    const l = loop(o);
+    if (l) l.gain.gain.value = gain;
+  } finally {
+    swapMixer(prev);
+  }
+  const buf = await off.startRendering();
+  return { id, rms: 0, loud: 1, lufs: momentary(buf), len: tail(buf), ...peaks(buf) };
+}
+
+const BED_RENDERS: [string, Parameters<typeof loop>[0], number][] = [
+  ["bed-wind-ground", { bus: "amb", brown: true, freq: 420, q: 0.5 }, windGain(0.25, 0)],
+  ["bed-wind-high", { bus: "amb", brown: true, freq: 420, q: 0.5 }, windGain(1, 30)],
+  ["bed-harbor", { bus: "amb", brown: true, type: "lowpass", freq: 520, q: 0.4 }, BEDS.harbor[0] + BEDS.harbor[1]],
+  ["bed-city", { bus: "amb", type: "bandpass", freq: 130, q: 1.2, hum: 50 }, BEDS.city],
+  ["bed-launch", { bus: "amb", type: "bandpass", freq: 1900, q: 3 }, BEDS.launch[0] + BEDS.launch[1]],
+];
+
 /** Every cue rendered, plus the voice cap under a burst of 80 enemy shots. */
 async function checkAll() {
   const cues: CueReport[] = [];
@@ -363,6 +393,7 @@ async function checkAll() {
   for (const kind of ["capture", "home"] as const) cues.push(await renderPhrase(kind));
   // Each other region's tune, in the moods of a raid.
   for (const r of ["harbor", "city", "launch"] as RegionId[]) for (const mood of RAID_MOODS) cues.push(await renderMood(mood, r));
+  for (const [id, o, gain] of BED_RENDERS) cues.push(await renderBed(id, o, gain));
   const off = new OfflineAudioContext(2, 44100, 44100);
   const m = new Mixer(off, false);
   const prev = swapMixer(m);

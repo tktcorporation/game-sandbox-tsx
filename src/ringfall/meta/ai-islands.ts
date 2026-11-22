@@ -228,12 +228,16 @@ export function aiAttack(p: Seen, salt: number, taken: readonly number[], scoute
     if (a) return { island: a, node: NEIGHBOUR_SLOTS[a.slot].shore, scout: true };
   }
   if (p.day < AI.start) return null;
-  for (const a of aiIslands(salt, taken).sort((x, y) => hash(salt, p.day, x.slot) - hash(salt, p.day, y.slot))) {
-    if (!routeOpen(a.slot, holds)) continue;
-    const answering = p.expeditions.some((o) => o.code === a.code && o.state !== "gone" && o.state !== "recalling");
-    if (unit(salt, p.day, a.slot, 13) < (answering ? AI.answer : AI.attack)) return { island: a, node: NEIGHBOUR_SLOTS[a.slot].shore };
-  }
-  return null;
+  // One draw a day for all of them, however many face the player's ground: about one day in five,
+  // one in two while the player's expedition is on one of them; then the island it falls to (one
+  // being answered first).
+  const open = aiIslands(salt, taken).filter((a) => routeOpen(a.slot, holds));
+  if (!open.length) return null;
+  const answered = open.filter((a) => p.expeditions.some((o) => o.code === a.code && o.state !== "gone" && o.state !== "recalling"));
+  if (unit(salt, p.day, 13) >= (answered.length ? AI.answer : AI.attack)) return null;
+  const pool = answered.length ? answered : open;
+  const a = pool[hash(salt, p.day, 17) % pool.length];
+  return { island: a, node: NEIGHBOUR_SLOTS[a.slot].shore };
 }
 
 /** That expedition as the warning the camp shows (来る遠征): it lands in the next raid (no clock: the island waits for the raid). */
