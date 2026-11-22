@@ -791,6 +791,11 @@ export interface State {
    * prompt and the press stay on one thing while several overlap; null when nothing is in reach.
    */
   useFocus: string | null;
+  /**
+   * The focus was chosen with the cycle key: keep it until it leaves reach or the player cycles
+   * again, so a HUD frame's ordinary `useTarget` does not snap back to the best-scoring candidate.
+   */
+  useHeld: boolean;
   events: GameEvent[];
   stats: Stats;
 }
@@ -1121,6 +1126,7 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
     seen: start.seen ? decodeSeen(start.seen) : emptySeen(),
     cell: -1,
     useFocus: null,
+    useHeld: false,
     events: [],
     stats: { kills: 0, damage: 0, shots: 0, hits: 0, crits: 0, flankHits: 0, titanHits: 0, downs: 0, wipes: 0, cleared: [], allyDamage: 0, allyKills: 0, allyDowns: 0, allyRescues: 0, allyHelped: 0, killsBy: { drone: 0, grunt: 0, charger: 0, heavy: 0, titan: 0 }, vaults: [], wiped: [], crewsIn: 0, crewsDown: 0, crewsOut: 0, crewBins: 0, captured: [] },
   };

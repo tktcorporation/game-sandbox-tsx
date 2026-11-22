@@ -893,20 +893,27 @@ export function useCandidates(s: State, armor = true, tools = true, mods = true,
 /**
  * The one thing the use key acts on: sticky focus with facing and priority (`USE`), optional
  * cycle among candidates. Updates `State.useFocus`. The HUD calls the same function so the
- * prompt never promises something else.
+ * prompt never promises something else. A focus chosen with the cycle key (`useHeld`) stays
+ * until it leaves reach or the player cycles again, so a later ordinary read does not snap back.
  */
 export function useTarget(s: State, armor = true, tools = true, mods = true, zips = true, cycle = false): UseTarget | null {
   const cands = useCandidates(s, armor, tools, mods, zips);
   if (!cands.length) {
     s.useFocus = null;
+    s.useHeld = false;
     return null;
   }
   let i = cands.findIndex((c) => c.id === s.useFocus);
   if (cycle && cands.length > 1) {
     i = i < 0 ? 0 : (i + 1) % cands.length;
-  } else if (i < 0 || cands[0].score + USE.stick < cands[i].score) {
-    // No stick, or another candidate beats the stick by the hysteresis margin.
+    s.useHeld = true;
+  } else if (i < 0) {
     i = 0;
+    s.useHeld = false;
+  } else if (!s.useHeld && cands[0].score + USE.stick < cands[i].score) {
+    // Automatic stick only: a held (cycled) focus is not stolen by score alone.
+    i = 0;
+    s.useHeld = false;
   }
   s.useFocus = cands[i].id;
   return cands[i].t;

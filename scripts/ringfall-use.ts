@@ -64,6 +64,7 @@ if (gunCand!.score + USE.stick < binCand!.score) {
 
 // Cycle walks every candidate then wraps.
 s.useFocus = null;
+s.useHeld = false;
 const ordered = useCandidates(s).map((c) => c.id);
 assert.ok(ordered.length >= 2);
 const seen: string[] = [];
@@ -74,6 +75,15 @@ for (let i = 0; i < ordered.length; i++) {
 assert.deepEqual(seen, ordered, "cycle follows score order");
 useTarget(s, true, true, true, true, true);
 assert.equal(s.useFocus, ordered[0], "cycle wraps");
+
+// A cycled focus must survive the next ordinary HUD read even when the best scores far better.
+useTarget(s, true, true, true, true, true);
+const held = s.useFocus!;
+assert.equal(s.useHeld, true);
+assert.notEqual(held, ordered[0], "cycled off the best");
+useTarget(s);
+assert.equal(s.useFocus, held, "held focus survives ordinary useTarget");
+assert.equal(s.useHeld, true);
 
 // Ally hard-first: a downed teammate beats any loot.
 s.ally.active = true;
