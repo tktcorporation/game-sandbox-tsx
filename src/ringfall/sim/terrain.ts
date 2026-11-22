@@ -1422,10 +1422,16 @@ export function steepAt(x: number, z: number): boolean {
   return steep[j * NX + i] === 1;
 }
 
+/** Scratch for `terrainGrad()`: rewritten each call; callers must read `.x`/`.z` before the next call. */
+const gradOut = { x: 0, z: 0 };
+
 /** Uphill direction scaled by the rise per metre. */
 export function terrainGrad(x: number, z: number): { x: number; z: number } {
   const e = 0.5;
-  return { x: (terrainHeight(x + e, z) - terrainHeight(x - e, z)) / (2 * e), z: (terrainHeight(x, z + e) - terrainHeight(x, z - e)) / (2 * e) };
+  // Same numbers as allocating `{ x, z }` each call; the return is only read immediately by every caller.
+  gradOut.x = (terrainHeight(x + e, z) - terrainHeight(x - e, z)) / (2 * e);
+  gradOut.z = (terrainHeight(x, z + e) - terrainHeight(x, z - e)) / (2 * e);
+  return gradOut;
 }
 
 /**

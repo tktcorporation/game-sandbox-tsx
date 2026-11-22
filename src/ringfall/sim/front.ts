@@ -65,19 +65,42 @@ export function garrisonOf(s: State, i: number, squad: number): boolean {
  * (`inZone()`). Set from the raid's nodes by `useZones()`, as `useRoutes()` sets the world's routes.
  */
 let zones: { x: number; z: number }[] = [];
-let zoneKey = "";
+/** 1 when node i is freed in the zones last put in place; compared in place so a tick allocates none. */
+const zoneBits = new Uint8Array(NODES.length);
+let zonesReady = false;
 
 /** Puts the raid's freed nodes in place as the zones robots keep out of. */
 export function useZones(s: Pick<State, "nodes">) {
-  const key = s.nodes.map((h) => (h === "freed" ? 1 : 0)).join("");
-  if (key === zoneKey) return;
-  zoneKey = key;
-  zones = NODES.filter((_, i) => s.nodes[i] === "freed").map((n) => ({ x: n.core.x, z: n.core.z }));
+  const nodes = s.nodes;
+  let changed = !zonesReady;
+  if (!changed) {
+    for (let i = 0; i < NODES.length; i++) {
+      if (zoneBits[i] !== (nodes[i] === "freed" ? 1 : 0)) {
+        changed = true;
+        break;
+      }
+    }
+  }
+  if (!changed) return;
+  zonesReady = true;
+  zones = [];
+  for (let i = 0; i < NODES.length; i++) {
+    const bit = nodes[i] === "freed" ? 1 : 0;
+    zoneBits[i] = bit;
+    if (bit) zones.push({ x: NODES[i].core.x, z: NODES[i].core.z });
+  }
 }
 
 /** Whether (x, z) lies within `FRONT.zone` (plus `r`) of a node the player holds. */
 export function inZone(x: number, z: number, r = 0): boolean {
-  for (const q of zones) if (hypot2(x - q.x, z - q.z) < FRONT.zone + r) return true;
+  // Same as `hypot2(dx, dz) < lim` for non-negative lim (checked on the bench hash).
+  const lim = FRONT.zone + r;
+  const lim2 = lim * lim;
+  for (const q of zones) {
+    const dx = x - q.x;
+    const dz = z - q.z;
+    if (dx * dx + dz * dz < lim2) return true;
+  }
   return false;
 }
 

@@ -11,7 +11,7 @@ const LEDGE = 1.0;
 const CLIMB = 1.2;
 const bodyHeight = (k: { bodyY: number; radius: number }) => k.bodyY + k.radius;
 import { inZone } from "./front";
-import { inCamp, MOBILES, PARTY_STOPS, POIS, ROAMERS, type Mobile, type Squad } from "./map";
+import { inCampAt, MOBILES, PARTY_STOPS, POIS, ROAMERS, type Mobile, type Squad } from "./map";
 import { beatOf, damageRobot, fightHeard, foeOf, hostile, mobileWalks, placeMobile } from "./factions";
 import { robotSide, type Side } from "./battle";
 import { bodyCenter, weakPoint } from "./combat";
@@ -323,7 +323,7 @@ function stepBody(e: Enemy, vx: number, vz: number): boolean {
   e.pos.z += e.vel.z * dt;
   // No robot comes into the camp, over its fence or through its gate, nor onto a node the player holds.
   // A battle's squads (sim/battle.ts) come onto the player's nodes to take them.
-  if ((inCamp(e.pos, k.radius + 0.5) && !inCamp({ x: bx, z: bz }, k.radius + 0.5)) || (!e.battle && inZone(e.pos.x, e.pos.z, k.radius) && !inZone(bx, bz, k.radius))) {
+  if ((inCampAt(e.pos.x, e.pos.z, k.radius + 0.5) && !inCampAt(bx, bz, k.radius + 0.5)) || (!e.battle && inZone(e.pos.x, e.pos.z, k.radius) && !inZone(bx, bz, k.radius))) {
     e.pos.x = bx;
     e.pos.z = bz;
     e.vel.x = e.vel.z = 0;
@@ -1404,7 +1404,7 @@ function nudge(e: Enemy, dx: number, dz: number) {
   e.pos.z += dz;
   collide(e.pos, k.radius, bodyHeight(k));
   // A crowd at the camp's gate does not shove its front robot in (the same line as `moveBody()`).
-  const intoCamp = (inCamp(e.pos, k.radius + 0.5) && !inCamp({ x: bx, z: bz }, k.radius + 0.5)) || (inZone(e.pos.x, e.pos.z, k.radius) && !inZone(bx, bz, k.radius));
+  const intoCamp = (inCampAt(e.pos.x, e.pos.z, k.radius + 0.5) && !inCampAt(bx, bz, k.radius + 0.5)) || (inZone(e.pos.x, e.pos.z, k.radius) && !inZone(bx, bz, k.radius));
   if (intoCamp || Math.abs(groundAt(e.pos.x, e.pos.z, k.radius, e.pos.y) - e.pos.y) > 0.3) {
     e.pos.x = bx;
     e.pos.z = bz;
@@ -1608,6 +1608,11 @@ export function stepFriends(s: State) {
   }
 }
 
+/** Scratch ends for `stepOrbs()`'s wall tests: rewritten per orb / `clear` call, never retained. */
+const orbFrom: Vec3 = { x: 0, y: 0, z: 0 };
+const orbFromLow: Vec3 = { x: 0, y: 0, z: 0 };
+const orbToLow: Vec3 = { x: 0, y: 0, z: 0 };
+
 export function stepOrbs(s: State) {
   const p = s.player;
   const c = chest(s);
@@ -1655,12 +1660,23 @@ export function stepOrbs(s: State) {
     // stretch the orb covered this tick (a fast bolt moves further than a body is wide), before
     // the ground or a wall ends it: a body is hit only if neither stands between where the orb was
     // and where it enters the body, so a bolt that meets a body and then the ground in one tick hits.
-    const from = { x: o.pos.x - o.vel.x * TICK, y: o.pos.y - o.vel.y * TICK, z: o.pos.z - o.vel.z * TICK };
-    const clear = (to: Vec3) => los(from, to) && los({ ...from, y: from.y - o.r }, { ...to, y: to.y - o.r });
+    orbFrom.x = o.pos.x - o.vel.x * TICK;
+    orbFrom.y = o.pos.y - o.vel.y * TICK;
+    orbFrom.z = o.pos.z - o.vel.z * TICK;
+    // Same two los casts as allocating `{...from,y}` / `{...to,y}` each time `clear` runs.
+    const clear = (to: Vec3) => {
+      orbFromLow.x = orbFrom.x;
+      orbFromLow.y = orbFrom.y - o.r;
+      orbFromLow.z = orbFrom.z;
+      orbToLow.x = to.x;
+      orbToLow.y = to.y - o.r;
+      orbToLow.z = to.z;
+      return los(orbFrom, to) && los(orbFromLow, orbToLow);
+    };
     // Whichever body the orb enters first along its way this tick takes the hit.
     // The player's own robots' shots pass the player and the teammate.
-    const onPlayer = o.friend ? null : sweptHit(from, o.pos, o.r + PLAYER.radius, p.pos, p.crouch || p.sliding ? 1.1 : 1.7);
-    const onAlly = allyUp(s) && !o.friend ? sweptHit(from, o.pos, o.r + ALLY.radius, s.ally.pos, 1.7) : null;
+    const onPlayer = o.friend ? null : sweptHit(orbFrom, o.pos, o.r + PLAYER.radius, p.pos, p.crouch || p.sliding ? 1.1 : 1.7);
+    const onAlly = allyUp(s) && !o.friend ? sweptHit(orbFrom, o.pos, o.r + ALLY.radius, s.ally.pos, 1.7) : null;
     const playerHit = onPlayer && clear(onPlayer.at) ? onPlayer : null;
     const allyHit = onAlly && clear(onAlly.at) ? onAlly : null;
     // A shot at the other faction hits its robots too: the first body along the way takes it.
@@ -1673,7 +1689,7 @@ export function stepOrbs(s: State) {
         // A garrison's robot is hit only by a battle's or the player's own robots' shots (see `hostile()`).
         if (v.poi >= 0 && !o.friend && !by()?.battle) continue;
         const k = ENEMIES[v.kind];
-        const h = sweptHit(from, o.pos, o.r + k.radius, v.pos, bodyHeight(k));
+        const h = sweptHit(orbFrom, o.pos, o.r + k.radius, v.pos, bodyHeight(k));
         if (h && (!robot || h.s < robot.s) && clear(h.at)) robot = { v, s: h.s };
       }
       if (robot && (!playerHit || robot.s < playerHit.s) && (!allyHit || robot.s < allyHit.s)) {

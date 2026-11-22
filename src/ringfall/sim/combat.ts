@@ -19,9 +19,16 @@ export function weakPoint(e: Enemy): Vec3 {
   return { x: e.pos.x + Math.sin(e.yaw) * k.weakFwd, y: e.pos.y + weakY(e), z: e.pos.z - Math.cos(e.yaw) * k.weakFwd };
 }
 
+/** Scratch for `eyePos()`: rewritten each call; callers must read it before the next `eyePos()`. */
+const eyeOut: Vec3 = { x: 0, y: 0, z: 0 };
+
 export const eyePos = (s: State): Vec3 => {
   const p = s.player;
-  return { x: p.pos.x, y: p.pos.y + (p.crouch || p.sliding || p.downed > 0 ? PLAYER.eyeCrouch : PLAYER.eye), z: p.pos.z };
+  // Same numbers as allocating a Vec3; every caller only reads the return for this tick's work.
+  eyeOut.x = p.pos.x;
+  eyeOut.y = p.pos.y + (p.crouch || p.sliding || p.downed > 0 ? PLAYER.eyeCrouch : PLAYER.eye);
+  eyeOut.z = p.pos.z;
+  return eyeOut;
 };
 
 export const magSize = (w: Weapon) => Math.round(WEAPONS[w.kind].mag * RARITY.mag[w.rarity]);

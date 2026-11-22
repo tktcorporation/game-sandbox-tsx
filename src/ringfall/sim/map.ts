@@ -6433,7 +6433,9 @@ export const CAMP = {
 };
 
 /** Whether (x, z) lies in the camp's yard, or within `r` of its fence. */
-export const inCamp = (at: { x: number; z: number }, r = 0) => at.x > CAMP.x0 - r && at.x < CAMP.x1 + r && at.z > CAMP.z0 - r && at.z < CAMP.z1 + r;
+export const inCampAt = (x: number, z: number, r = 0) => x > CAMP.x0 - r && x < CAMP.x1 + r && z > CAMP.z0 - r && z < CAMP.z1 + r;
+/** Whether `at` lies in the camp's yard, or within `r` of its fence. */
+export const inCamp = (at: { x: number; z: number }, r = 0) => inCampAt(at.x, at.z, r);
 
 const KEEP = authoredKeep();
 // Hand-built things keep flat ground around them, at their level.

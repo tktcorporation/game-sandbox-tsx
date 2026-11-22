@@ -203,7 +203,20 @@ export function stepFactions(s: State) {
   // While a battle's squads are in the world, the garrisons look for them too, and the player's own robots look for everyone else.
   const battling = s.friends.length > 0 || (!!s.battle && s.enemies.some((e) => e.battle));
   const list = (s.friends.length ? [...s.enemies, ...s.friends] : s.enemies).filter((e) => (e.poi < 0 || battling) && e.kind !== "titan" && e.mode !== "spawning");
-  if (new Set(list.map(robotSide)).size < 2) return;
+  // Same as `new Set(list.map(robotSide)).size < 2`, without allocating the set or the mapped array.
+  let side0: ReturnType<typeof robotSide> | null = null;
+  let sides = 0;
+  for (const e of list) {
+    const side = robotSide(e);
+    if (side0 === null) {
+      side0 = side;
+      sides = 1;
+    } else if (side !== side0) {
+      sides = 2;
+      break;
+    }
+  }
+  if (sides < 2) return;
   const b = buckets(list);
   const scale = sightScale(s) * FACTION.sight;
   const bySquad = new Map<number, Enemy[]>();

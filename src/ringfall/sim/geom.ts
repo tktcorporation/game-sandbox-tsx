@@ -196,11 +196,18 @@ export function collide(p: Vec3, r: number, height = 1.75): boolean {
       p.z = cz + (dz / d) * r;
     } else {
       // Centre inside the box: leave along the shortest side.
-      const out = [p.x - b.x0 + r, b.x1 - p.x + r, p.z - b.z0 + r, b.z1 - p.z + r];
-      const m = Math.min(...out);
-      if (m === out[0]) p.x = b.x0 - r;
-      else if (m === out[1]) p.x = b.x1 + r;
-      else if (m === out[2]) p.z = b.z0 - r;
+      // Same choice as `Math.min(...[o0,o1,o2,o3])` then matching the first equal side, without allocating.
+      const o0 = p.x - b.x0 + r;
+      const o1 = b.x1 - p.x + r;
+      const o2 = p.z - b.z0 + r;
+      const o3 = b.z1 - p.z + r;
+      let m = o0;
+      if (o1 < m) m = o1;
+      if (o2 < m) m = o2;
+      if (o3 < m) m = o3;
+      if (m === o0) p.x = b.x0 - r;
+      else if (m === o1) p.x = b.x1 + r;
+      else if (m === o2) p.z = b.z0 - r;
       else p.z = b.z1 + r;
     }
   }
