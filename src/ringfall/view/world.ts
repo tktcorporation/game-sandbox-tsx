@@ -717,12 +717,18 @@ export class World {
     // Emptying only when the camera enters another CHUNK cell: the drop radius is large, and a
     // full scan of every built chunk every frame was pure overhead while standing or strafing.
     const cell = `${Math.floor(x / CHUNK)},${Math.floor(z / CHUNK)}`;
+    const trimFar = this.q.trimFar;
+    const trimDrop = trimFar * DROP_AT;
     if (cell !== this.streamCell) {
       this.streamCell = cell;
       for (const c of this.chunks) {
         if (!c.built) continue;
-        if (World.away(c, x, z) > drop) this.emptyChunk(c);
+        const d = World.away(c, x, z);
+        if (d > drop) this.emptyChunk(c);
+        else if (c.trim && (trimFar <= 0 || d > trimDrop)) this.emptyTrim(c);
       }
+    } else if (trimFar <= 0) {
+      for (const c of this.chunks) if (c.trim) this.emptyTrim(c);
     }
     this.nearChunks(x, z, far, (c, d) => {
       if (c.built) return;
@@ -739,21 +745,19 @@ export class World {
       this.fillChunk(fogNeed[i].c);
       if (performance.now() - t0 >= budget) break;
     }
-    for (const { c } of waiting) {
-      this.fillChunk(c);
+    // Beyond-fog fills share the same budget; skip them entirely once fog work already spent it.
+    for (let i = 0; i < waiting.length && performance.now() - t0 < budget; i++) {
+      this.fillChunk(waiting[i].c);
       if (performance.now() - t0 >= budget) break;
     }
     // Trim follows within `trimFar`, nearest first, in what is left of the frame's time (one at least).
-    const trimFar = this.q.trimFar;
+    // Far trim is dropped when the camera cell moves (above); nearChunks only gathers what to build.
     const trims: { c: Chunk; d: number }[] = [];
     if (trimFar > 0) {
-      this.nearChunks(x, z, Math.max(trimFar, trimFar * DROP_AT), (c, d) => {
-        if (!c.built) return;
-        if (c.trim && d > trimFar * DROP_AT) this.emptyTrim(c);
-        else if (!c.trim && !c.trimless && d < trimFar) trims.push({ c, d });
+      this.nearChunks(x, z, trimFar, (c, d) => {
+        if (!c.built || c.trim || c.trimless) return;
+        trims.push({ c, d });
       });
-    } else {
-      for (const c of this.chunks) if (c.trim) this.emptyTrim(c);
     }
     trims.sort((a, b) => a.d - b.d);
     const t1 = performance.now();

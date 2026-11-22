@@ -859,14 +859,39 @@ export class IslandMap {
       g.restore();
     }
     // The ziplines up, thin blue lines along their cables (the quarry's lifts in grey): the
-    // network the nodes held join. The minimap only strokes cables that cross its view.
+    // network the nodes held join. The minimap only strokes cables that cross its view (a long
+    // span can pass through without either endpoint inside the square).
+    const segHits = (a: { x: number; z: number }, b: { x: number; z: number }) => {
+      // Liang–Barsky clip of the segment against the view: any surviving parameter range means it crosses.
+      let t0 = 0;
+      let t1 = 1;
+      const dx = b.x - a.x;
+      const dz = b.z - a.z;
+      const clip = (p: number, q: number) => {
+        if (p === 0) return q >= 0;
+        const r = q / p;
+        if (p < 0) {
+          if (r > t1) return false;
+          if (r > t0) t0 = r;
+        } else {
+          if (r < t0) return false;
+          if (r < t1) t1 = r;
+        }
+        return true;
+      };
+      return clip(-dx, a.x - v.x0) && clip(dx, v.x1 - a.x) && clip(-dz, a.z - v.z0) && clip(dz, v.z1 - a.z) && t0 <= t1;
+    };
     g.save();
     g.lineCap = "round";
     ZIPS.forEach((l, i) => {
       if (!zipUp({ nodes: s.nodes ?? [] }, i)) return;
       if (this.mini) {
-        const inView = l.pts.some((q) => q.x >= v.x0 && q.x <= v.x1 && q.z >= v.z0 && q.z <= v.z1);
-        if (!inView) return;
+        let hit = false;
+        for (let k = 1; k < l.pts.length; k++) if (segHits(l.pts[k - 1], l.pts[k])) {
+          hit = true;
+          break;
+        }
+        if (!hit) return;
       }
       g.strokeStyle = l.fixed ? alpha(UI.mist, 0.9) : UI.ownLight;
       g.lineWidth = (l.fixed ? 1.2 : 1.6) * dpr;
