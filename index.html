@@ -8,13 +8,18 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@900&family=Saira+Condensed:wght@800&family=M+PLUS+1p:wght@500;800&display=swap" rel="stylesheet" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 fill=%27%2311142a%27/%3E%3Crect x=%275%27 y=%275%27 width=%2710%27 height=%2722%27 fill=%27%232034d6%27/%3E%3Crect x=%2717%27 y=%275%27 width=%2710%27 height=%2722%27 fill=%27%23ff5a2a%27/%3E%3C/svg%3E" />
-    <title>ゲームを選ぶ</title>
+    <title>RINGFALL</title>
+    <meta name="description" content="環が落ちた島で、ロボットから拠点を取り返す一人用のシューター。対人なし。降りて、漁って、生きて帰る。" />
+    <meta property="og:title" content="RINGFALL" />
+    <meta property="og:description" content="環が落ちた島で、ロボットから拠点を取り返す一人用のシューター。対人なし。" />
+    <meta property="og:type" content="website" />
     <style>
       :root {
         color-scheme: dark;
         --bg: #11142a;
         --ink: #f2f4fb;
         --dim: #a6acc8;
+        --accent: #ff5a2a;
       }
       * {
         box-sizing: border-box;
@@ -22,101 +27,80 @@
       body {
         margin: 0;
         min-height: 100dvh;
-        background: var(--bg);
+        background: radial-gradient(120% 80% at 70% 10%, #2a1a26 0%, var(--bg) 60%);
         color: var(--ink);
         font-family: "M PLUS 1p", system-ui, sans-serif;
         display: flex;
         flex-direction: column;
         justify-content: center;
-        padding: 24px 16px;
+        padding: 32px 16px;
       }
       main {
         width: 100%;
-        max-width: 960px;
+        max-width: 720px;
         margin: 0 auto;
-      }
-      h1 {
-        margin: 0 0 20px;
-        font-size: 15px;
-        font-weight: 800;
-        letter-spacing: 0.12em;
-        color: var(--dim);
-      }
-      .games {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-        gap: 16px;
-      }
-      .game {
         display: flex;
         flex-direction: column;
-        gap: 10px;
-        min-height: 220px;
-        padding: 24px;
-        border-radius: 6px;
-        color: var(--ink);
-        text-decoration: none;
-        border: 2px solid transparent;
-        transition: transform 120ms ease, border-color 120ms ease;
+        gap: 18px;
       }
-      .game:hover,
-      .game:focus-visible {
-        transform: translateY(-2px);
-        border-color: var(--accent);
-        outline: none;
-      }
-      .game b {
-        font-size: 56px;
-        line-height: 0.9;
-        color: var(--accent);
-      }
-      .game p {
+      h1 {
         margin: 0;
-        line-height: 1.6;
-      }
-      .game .lede {
-        font-weight: 800;
-      }
-      .game small {
-        margin-top: auto;
-        color: var(--dim);
-        font-size: 13px;
-      }
-      .hitmark {
-        --accent: #ffe23d;
-        background: #0b1240;
-      }
-      .hitmark b {
-        font-family: "Big Shoulders Display", sans-serif;
-        font-weight: 900;
-      }
-      .ringfall {
-        --accent: #ff5a2a;
-        background: #262d52;
-      }
-      .ringfall b {
         font-family: "Saira Condensed", sans-serif;
         font-weight: 800;
+        font-size: clamp(56px, 14vw, 112px);
+        line-height: 0.9;
+        letter-spacing: 0.02em;
+        color: var(--accent);
+      }
+      p.lede {
+        margin: 0;
+        font-size: 20px;
+        font-weight: 800;
+        color: var(--ink);
+      }
+      p {
+        margin: 0;
+        line-height: 1.7;
+        color: var(--dim);
+      }
+      .play {
+        align-self: flex-start;
+        margin-top: 8px;
+        padding: 14px 36px;
+        background: var(--accent);
+        color: #11142a;
+        font-size: 20px;
+        font-weight: 800;
+        text-decoration: none;
+        border-radius: 4px;
+        transition: transform 120ms ease;
+      }
+      .play:hover,
+      .play:focus-visible {
+        transform: translateY(-2px);
+        outline: 2px solid var(--ink);
+        outline-offset: 3px;
+      }
+      ul {
+        margin: 8px 0 0;
+        padding-left: 1.2em;
+        color: var(--dim);
+        line-height: 1.8;
+        font-size: 14px;
       }
     </style>
   </head>
   <body>
     <main>
-      <h1>ゲームを選ぶ</h1>
-      <nav class="games">
-        <a class="game hitmark" href="/hitmark/">
-          <b>HITMARK</b>
-          <p class="lede">対人なし。撃って、当てて、全部倒す。</p>
-          <p>部屋ごとに敵を全滅させるシューター。見下ろしの 2D と一人称の 3D を選べる。</p>
-          <small>マウスとキーボード、またはスマホ</small>
-        </a>
-        <a class="game ringfall" href="/ringfall/">
-          <b>RINGFALL</b>
-          <p class="lede">降りて、漁って、生きて帰れ。相手はロボットだけ。</p>
-          <p>島に降りて回収品を集め、脱出地点から生きて帰る。拠点で隠れ家を作り、脱出艇を直す。</p>
-          <small>マウスとキーボード、またはスマホを横向きに</small>
-        </a>
-      </nav>
+      <h1>RINGFALL</h1>
+      <p class="lede">島を取り返せ。相手はロボットだけ。</p>
+      <p>軌道環を支えた地上基地の島に、環が落ちた。持ち場を守り続けるロボットから拠点を一つずつ取り返し、回収品を持って生きて帰る。海の向こうには、ほかの島が見える。</p>
+      <a class="play" href="/ringfall/">遊ぶ</a>
+      <ul>
+        <li>マウスとキーボード、またはスマホを横向きに</li>
+        <li>一人用。対人戦はありません</li>
+        <li>進み具合はこのブラウザに保存されます。島の様子（持っている拠点の数など）は、匿名で他のプレイヤーとのつながりに使います</li>
+      </ul>
     </main>
   </body>
 </html>
