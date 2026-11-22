@@ -331,9 +331,20 @@ async function handleIslands(request: Request, env: ApiEnv, now: number, url: UR
   // …/expeditions/<n> names one expedition by the number the island gave it (a recall).
   const one = parts.length === 3 && parts[1] === "expeditions" && /^[1-9]\d{0,8}$/.test(parts[2]) ? Number(parts[2]) : null;
   const sub = one !== null ? "expedition" : parts.slice(1).join("/");
-  if (!code || (sub !== "" && sub !== "log" && sub !== "lease" && sub !== "expeditions" && sub !== "expedition" && sub !== "pings")) return fail(404, "not-found");
+  if (!code || (sub !== "" && sub !== "log" && sub !== "lease" && sub !== "expeditions" && sub !== "expedition" && sub !== "pings" && sub !== "aid")) return fail(404, "not-found");
   const method = request.method;
-  const allow = sub === "" ? "GET, PUT" : sub === "log" ? "GET" : sub === "expedition" ? "DELETE" : sub === "lease" ? "POST, DELETE" : sub === "pings" ? "POST" : "POST";
+  const allow =
+    sub === ""
+      ? "GET, PUT"
+      : sub === "log"
+        ? "GET"
+        : sub === "expedition"
+          ? "DELETE"
+          : sub === "lease"
+            ? "POST, DELETE"
+            : sub === "pings" || sub === "aid"
+              ? "POST"
+              : "POST";
   if (!allow.split(", ").includes(method)) return notAllowed(allow);
   const ns = env.ISLAND;
   if (!ns) return fail(202, "no-island-server");
@@ -372,10 +383,10 @@ async function handleIslands(request: Request, env: ApiEnv, now: number, url: UR
     if (r.status === 200) await ownCode(env, code, player.id, now);
     return r;
   }
-  // An expedition: the sender proves their own island with their id, whose factory sets the squad they may send.
+  // Aid or an expedition: the sender proves their own island with their id.
   const from = parsePlayer(raw.from);
   const fromCode = isObj(raw.from) ? parseIslandCode(raw.from.code) : null;
-  if (!from || !fromCode || (one === null && (typeof raw.target !== "string" || !int(raw.units, 1, 64)))) return fail(400, "bad-request");
+  if (!from || !fromCode) return fail(400, "bad-request");
   if (fromCode === code) return fail(403, "own-island");
   const who = await ask(ns, fromCode, { t: "whois", player: from.id }, now);
   if (who.status === 404) return fail(403, "no-own-island");
@@ -384,6 +395,12 @@ async function handleIslands(request: Request, env: ApiEnv, now: number, url: UR
   const { factory, name, held, attackers } = (await who.json()) as { factory: number; name: string; held?: string[]; attackers?: string[] };
   // A recall: the sender, shown to own the island the expedition came from, calls it home.
   if (one !== null) return ask(ns, code, { t: "recall", from: fromCode, id: one }, now);
+  // Aid donation (ux-design C2): a valuable left at a depot on the target island for offline defence.
+  if (sub === "aid") {
+    if (typeof raw.kind !== "string" || !raw.kind || typeof raw.poi !== "string") return fail(400, "bad-request");
+    if (!attackers?.includes(code) && (await routeShut(env, from.id, code, held ?? [], now))) return fail(403, "route-shut");
+    return ask(ns, code, { t: "aid", from: { code: fromCode, name }, poi: raw.poi, kind: raw.kind }, now);
+  }
   if (typeof raw.target !== "string" || !int(raw.units, 1, 64)) return fail(400, "bad-request");
   // A neighbour of the sender's this week is reached only by its sea route (the sender holds the node
   // facing it), unless it attacked the sender's island lately: an attack is answered by any way (仕返し).

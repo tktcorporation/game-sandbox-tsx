@@ -86,7 +86,7 @@ export const USE = {
     tool: 0.3,
     mod: 0.3,
     swap: 0.25,
-    /** A parcel at a depot (ux-design C2): ahead of sending the bag home. */
+    /** An aid parcel at a depot (ux-design C2): ahead of sending the bag home. */
     parcel: 0.2,
     armor: -0.25,
     core: 0.15,

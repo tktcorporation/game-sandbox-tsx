@@ -11,7 +11,7 @@ import { built, creditRaid, emptyLog, need, offered, QUEST_IDS, type Quest, type
 import { currentStory, STORIES, type Story } from "./story";
 import { rivalOf } from "../sim/holds";
 import { addRetaken, awayIncome, parseIncoming, parseOutgoing, parseRetaken, recallAll, retakenNodes, type Incoming, type Outgoing } from "./expeditions";
-import { parseParcels, type Parcel } from "./parcels";
+import { LOCAL_AID, parseParcels, type Parcel } from "./parcels";
 import { capturedIds, momentum } from "../sim/front";
 
 /**
@@ -672,12 +672,16 @@ export function settle(p: Profile, s: State): Settlement {
   const kept = STORIES.map((t) => t.id).filter((id) => p.records.includes(id) || told?.id === id);
   const freedAt = { ...p.freedAt };
   for (const id of change.freed) freedAt[id] = Math.max(freedAt[id] ?? 0, threat);
-  // Parcels left / taken this raid (ux-design C2): keep local until the island server answers.
+  // Aid parcels left / taken this raid (ux-design C2): keep local until the island server answers.
+  // `LOCAL_AID` survives parseProfile when sync never ran (Codex: empty code was dropped).
   const takenIds = new Set(s.takenParcels ?? []);
   let parcels = (p.parcels ?? []).filter((q) => !takenIds.has(q.id));
   const nextParcelId = () => 1 + parcels.reduce((n, q) => Math.max(n, q.id), 0);
   for (const left of s.leftParcels ?? []) {
-    parcels = [...parcels.filter((q) => q.poi !== left.poi || q.kind !== left.kind), { id: nextParcelId(), poi: left.poi, kind: left.kind, from: { code: "", name: "" }, at: Date.now() }];
+    parcels = [
+      ...parcels.filter((q) => q.poi !== left.poi || q.kind !== left.kind),
+      { id: nextParcelId(), poi: left.poi, kind: left.kind, from: { code: LOCAL_AID, name: "" }, at: Date.now() },
+    ];
   }
   const settled = { ...profile, freedAt, entries, quests: log, raids: p.raids + 1, extracted: p.extracted + (s.outcome === "extracted" ? 1 : 0), time: p.time + s.time, seed: nextSeed(p.seed), depots, depotSent, seen: encodeSeen(s.seen), records: kept, parcels };
   const { profile: night } = advanceDay(settled, day);

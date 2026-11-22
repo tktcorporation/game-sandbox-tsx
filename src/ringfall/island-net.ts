@@ -221,9 +221,9 @@ export async function sendExpedition(code: string, node: string, units: number, 
 export interface RaidReport {
   lent: { id: number; left: number; waiting?: true }[];
   fortified: string[];
-  /** Parcels left at depots this raid (ux-design C2). */
+  /** Aid parcels left at depots this raid (ux-design C2). */
   parcels?: { poi: string; kind: string; from: { code: string; name: string } }[];
-  /** Parcel ids taken this raid. */
+  /** Aid parcel ids taken this raid. */
   takenParcels?: number[];
 }
 
@@ -258,9 +258,11 @@ export function releaseLease(): Promise<void> {
  */
 let releasing: Promise<void> = Promise.resolve();
 
-/** Calls expedition `id` on island `code` home (`DELETE …/expeditions/<id>`), as its sender. */
-/** Posts a short look-ping on this player's island (ux-design M6). No-op without a code / server. */
-export async function postPing(at: { x: number; z: number }): Promise<Answer<unknown>> {
+/**
+ * Leaves an async look-mark on this player's island (ux-design M6). Meant for after a raid settles,
+ * not a live ping every keypress. No-op without a code / server.
+ */
+export async function postMark(at: { x: number; z: number }): Promise<Answer<unknown>> {
   const who = loadIdentity();
   if (!who.code) return failed("no-own-island");
   return call(`/api/islands/${encodeURIComponent(who.code)}/pings`, {
@@ -268,6 +270,23 @@ export async function postPing(at: { x: number; z: number }): Promise<Answer<unk
     headers: { authorization: `Bearer ${who.id}` },
     body: JSON.stringify({ name: who.name, x: at.x, z: at.z }),
   }, SEND_TIMEOUT_MS);
+}
+
+/** @deprecated Prefer `postMark` — live sync is not the CoC direction. */
+export const postPing = postMark;
+
+/**
+ * Sends one stash valuable as aid to island `code` at depot POI `poi` (ux-design C2, CoC donation).
+ * The recipient's offline defence can spend it as an extra grunt.
+ */
+export async function sendAid(code: string, poi: string, kind: string, timeout = SEND_TIMEOUT_MS): Promise<Answer<unknown>> {
+  const who = loadIdentity();
+  if (!who.code) return failed("no-own-island");
+  if (aiSource && aiByCode(aiSalt(), code)) return { ok: true, body: { ok: true } };
+  return call(`/api/islands/${encodeURIComponent(code)}/aid`, {
+    method: "POST",
+    body: JSON.stringify({ from: { ...player(who), code: who.code }, poi, kind }),
+  }, timeout);
 }
 
 /** Calls expedition `id` on island `code` home (`DELETE …/expeditions/<id>`), as its sender. */

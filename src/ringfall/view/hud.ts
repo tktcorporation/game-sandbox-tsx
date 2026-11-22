@@ -233,13 +233,13 @@ export class Hud {
     this.toast(`${flagIcon(SIDE.own)}印`, 1, 1600);
   }
 
-  /** Other players' look-pings from the island (M6); expired ones are dropped by the caller. */
+  /** Async look-marks from the island (M6); expired ones are dropped by the caller. */
   setRemotePings(list: readonly { x: number; z: number }[]) {
     this.map.remotePings = list;
   }
 
-  /** Other players' traces on bins/roads (M5), set once as the raid starts. */
-  setTraces(list: readonly { x: number; z: number; t: "bin" | "road" }[]) {
+  /** Async attack/defence traces on bins/roads (M5), set once as the raid starts. */
+  setTraces(list: readonly { x: number; z: number; t: "bin" | "road"; mode: "raid" | "hold" }[]) {
     this.map.traces = list;
   }
 
@@ -1251,12 +1251,13 @@ export class Hud {
     if (t.kind === "parcel") {
       const q = s.parcels[t.index];
       if (!q || q.taken) return "";
-      return tip(`${key("E")}${flagIcon(SIDE.rival)}${esc(VALUABLES[q.kind].label)}`);
+      return tip(`${key("E")}${flagIcon(SIDE.rival)}援軍 · ${esc(VALUABLES[q.kind].label)}`);
     }
     if (t.kind === "depot") {
       if (!p.haul.length && !p.tools.length && !p.records.length) return tip(`${key("E")}${depotIcon()}切り上げる ${clockIcon()}${DEPOT.leave} 秒`);
       const value = p.haul.reduce((n, k) => n + VALUABLES[k].value, 0);
-      return tip(`${key("E")}${depotIcon()}${upIcon()}${p.haul.length + p.tools.length + p.records.length} 点・${value}`);
+      const leave = p.haul.length ? `${key("⇧E")}援助` : "";
+      return tip(`${key("E")}${depotIcon()}${upIcon()}${p.haul.length + p.tools.length + p.records.length} 点・${value}${leave ? ` · ${leave}` : ""}`);
     }
     if (t.kind === "armor") return tip(`${key("E")}<span class="r" style="color:${RARITY_CSS[t.loot.rarity]}">アーマー Lv${t.loot.rarity}</span>${struck([`Lv${p.armor}`])}`);
     if (t.kind === "core") {

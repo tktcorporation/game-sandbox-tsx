@@ -947,8 +947,9 @@ export function depotInReach(s: State): number {
 
 /**
  * The use key at a depot: a bag with anything in it goes home; an empty one means leaving the
- * raid there. With `leaveParcel` and at least one valuable, the first valuable stays at the
- * depot for other players (ux-design C2) and the rest go home as usual. Bots never leave parcels.
+ * raid there. With `leaveParcel` and at least one valuable, the first valuable stays as **aid**
+ * (ux-design C2, CoC-style 援軍の寄付) for the next offline defence / an ally's sortie; the rest
+ * go home as usual. Bots never leave parcels.
  */
 function useDepot(s: State, index: number, leaveParcel = false) {
   const p = s.player;
@@ -984,7 +985,7 @@ function useDepot(s: State, index: number, leaveParcel = false) {
   }
 }
 
-/** Takes a parcel at a depot into the bag (ux-design C2). */
+/** Takes an aid parcel at a depot into the bag (ux-design C2). */
 function takeParcel(s: State, index: number) {
   const q = s.parcels[index];
   if (!q || q.taken) return;
@@ -996,6 +997,12 @@ function takeParcel(s: State, index: number) {
   bagIn(s.player, q.kind, poiIndex(q.poi));
   q.taken = true;
   if (q.id > 0) s.takenParcels.push(q.id);
+  else {
+    // Left this raid (negative id): cancel the pending `leftParcels` entry so settle/sync do not
+    // re-create the parcel after the valuable is already back in the bag.
+    const i = s.leftParcels.findIndex((l) => l.poi === q.poi && l.kind === q.kind);
+    if (i >= 0) s.leftParcels.splice(i, 1);
+  }
   s.events.push({ t: "pickup", kind: "valuable", rarity: VALUABLES[q.kind].rarity, label: VALUABLES[q.kind].label });
 }
 

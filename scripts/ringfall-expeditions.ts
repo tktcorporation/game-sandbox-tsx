@@ -33,7 +33,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { CLAIM_TRIES, handleApi, type ApiEnv, type Db, type DbStatement, type IslandNamespace } from "../worker/api";
 import { NEIGHBOUR_SLOTS } from "../src/ringfall/meta/neighbours";
-import { advance, EXPEDITION, islandOp, nextAlarm, NODE_IDS, type IslandOp, type IslandState } from "../worker/island";
+import { advance, DEPOT_POIS, EXPEDITION, islandOp, nextAlarm, NODE_IDS, parseParcels, type IslandOp, type IslandState } from "../worker/island";
 import { CONQUEST, FACTORY, FACTORY_TOP } from "../src/ringfall/sim/config";
 import { isIslandCode, newIslandCode } from "../src/ringfall/meta/island-code";
 import { loadIdentity, parseIdentity, rememberCode } from "../src/ringfall/meta/identity";
@@ -571,6 +571,23 @@ const T2 = T1 + 400_000;
   check(notTheirs.status === 404 && err(notTheirs) === "no-expedition" && ok.status === 200 && twice.status === 404, "recall: an expedition was called home by someone not its sender, or twice");
   check(lease401.status === 401 && lease200.status === 200 && (lease200.body.expeditions as unknown[]).length === 0, "lease: the API took a lease without the owner's id");
   check(heldBy === `rival:${B.code}` && home.status === 200 && holdOf(A.code, "relay") === "held" && tail === "released" && islands.get(A.code)!.expeditions.length === 0, "recall: a node whose holders were called home did not go back to the enemy");
+
+  // Aid parcels (ux-design C2): pad depot is accepted; aid donation joins offline defence as grunts.
+  const padOk = parseParcels([{ poi: "pad", kind: "scrap", from: B }]);
+  const nodeBad = parseParcels([{ poi: "not-a-poi", kind: "scrap", from: B }]);
+  check(!!padOk && padOk.length === 1 && nodeBad === null, "parcels: pad depot refused or a bad poi accepted");
+  check(DEPOT_POIS.includes("pad") && DEPOT_POIS.includes("supply"), "parcels: depot list misses pad or supply");
+  const aidIsle = island({ quarry: "freed", supply: "freed" }, 0);
+  op(aidIsle, { t: "aid", from: B, poi: "supply", kind: "scrap" }, T1);
+  op(aidIsle, { t: "aid", from: B, poi: "pad", kind: "scrap" }, T1 + 1);
+  check((aidIsle.parcels ?? []).length === 2, "aid: donation did not land on the island");
+  op(aidIsle, { t: "expedition", from: B, target: "quarry", kinds: top }, T1 + 2);
+  const beforeAid = (aidIsle.parcels ?? []).length;
+  run(aidIsle, T1 + 2 + NOTICE + 5000);
+  const spent = beforeAid - (aidIsle.parcels ?? []).length;
+  const aidBots = aidIsle.defenders.filter((d) => d.task === "defend" && d.units.some((u) => u.kind === "grunt")).length;
+  console.log(`aid: ${beforeAid} parcels before defence, spent ${spent}, defend grunts ${aidBots}; pad parse ${padOk?.length}`);
+  check(spent >= 1 && spent <= EXPEDITION.aidPerFight && aidBots >= 1, "aid: offline defence did not spend parcels as defenders");
 }
 
 if (errors.length) {

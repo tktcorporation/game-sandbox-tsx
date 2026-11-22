@@ -513,10 +513,10 @@ export class IslandMap {
   contract: ContractMark | null = null;
   /** A short local look-ping (P): a pulse on the map until the HUD clears it. */
   ping: { x: number; z: number } | null = null;
-  /** Other players' look-pings from the island DO (ux-design M6), drawn faint in rival green. */
+  /** Async look-marks from the island DO (ux-design M6), drawn faint in rival green. */
   remotePings: readonly { x: number; z: number }[] = [];
-  /** Other players' traces on bins/roads (ux-design M5), view-only. */
-  traces: readonly { x: number; z: number; t: "bin" | "road" }[] = [];
+  /** Async attack/defence traces on bins/roads (ux-design M5), view-only. */
+  traces: readonly { x: number; z: number; t: "bin" | "road"; mode?: "raid" | "hold" }[] = [];
   /** The shape last given to the page, which sizes the map by it. */
   private aspect = 0;
   /** The last draw's scale and offset in CSS pixels, for `screenAt()`. */
@@ -1373,27 +1373,38 @@ export class IslandMap {
       g.arc(a.x, a.y, 4 * dpr, 0, Math.PI * 2);
       g.fill();
     }
-    // Other players' traces (M5): faint rival marks on bins (square) and roads (dash).
+    // Async traces (M5): raid = square/cross, hold = diamond — “誰かが先に攻めた／守った”.
     if (!plain && !this.mini)
       for (const tr of this.traces) {
         const q = at(tr.x, tr.z);
         g.save();
-        g.globalAlpha = 0.45;
+        g.globalAlpha = tr.mode === "hold" ? 0.4 : 0.5;
         g.strokeStyle = RIVAL_CSS;
         g.fillStyle = alpha(RIVAL_CSS, 0.35);
         g.lineWidth = 1.2 * dpr;
-        if (tr.t === "bin") {
+        if (tr.mode === "hold") {
+          const r = 4 * dpr;
+          g.beginPath();
+          g.moveTo(q.x, q.y - r);
+          g.lineTo(q.x + r, q.y);
+          g.lineTo(q.x, q.y + r);
+          g.lineTo(q.x - r, q.y);
+          g.closePath();
+          g.stroke();
+        } else if (tr.t === "bin") {
           const r = 3.5 * dpr;
           g.strokeRect(q.x - r, q.y - r, r * 2, r * 2);
         } else {
           g.beginPath();
           g.moveTo(q.x - 5 * dpr, q.y);
           g.lineTo(q.x + 5 * dpr, q.y);
+          g.moveTo(q.x, q.y - 4 * dpr);
+          g.lineTo(q.x, q.y + 4 * dpr);
           g.stroke();
         }
         g.restore();
       }
-    // Synced look-pings from the island (M6): rival green, under the local cyan pulse.
+    // Async look-marks from the island (M6): rival green, under the local cyan pulse.
     if (!plain)
       for (const rp of this.remotePings) {
         const q = at(rp.x, rp.z);

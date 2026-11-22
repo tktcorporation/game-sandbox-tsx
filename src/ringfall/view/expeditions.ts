@@ -6,7 +6,9 @@
  * request's answer redraws it without touching the panel around it or the code being typed. With
  * no server it says so in one line, and only the game's own islands answer.
  */
-import { aiOvernight, flushRecalls, isAi, neighboursFor, readNeighbours, readView, refreshAi, SEND_TIMEOUT_MS, sendExpedition, syncOwn, takeReport, takeSync } from "../island-net";
+import { aiOvernight, flushRecalls, isAi, neighboursFor, readNeighbours, readView, refreshAi, SEND_TIMEOUT_MS, sendAid, sendExpedition, syncOwn, takeReport, takeSync } from "../island-net";
+import { VALUABLES, type ValuableKind } from "../sim/config";
+import { ISLAND_TABLE } from "../meta/island-table";
 import { ago, NEIGHBOUR_SLOTS, routeOpen, type Neighbour } from "../meta/neighbours";
 import { playerNodes } from "../meta/island";
 import { alive, numbered, answerSend, recallAll, sentKey, canSend, dropStale, factoryAhead, factorySquads, homeSquads, refreshOutgoing, sendingEntry, sendKinds, squadsAway, STATE_NAME, type IslandLogEntry, type IslandView } from "../meta/expeditions";
@@ -168,7 +170,40 @@ export class ExpeditionPanel {
       this.pick = this.pick === arg ? null : arg;
       this.paint();
     } else if (act === "exp-send") void this.send();
+    else if (act === "exp-aid") void this.aid();
     else if (act === "exp-recall") void this.recall(arg);
+  }
+
+  /**
+   * Sends one stash valuable as aid to the looked-up island (CoC-style 援軍の寄付): sits at their
+   * supply depot and joins their next offline defence as a grunt.
+   */
+  private async aid() {
+    const t = this.target;
+    if (!t || this.busy) return;
+    const p0 = this.get();
+    const idx = p0.stash.findIndex((i) => i.t === "valuable");
+    if (idx < 0) {
+      this.note = { text: "倉庫に送る物資がない", good: false };
+      return this.paint();
+    }
+    const item = p0.stash[idx];
+    if (item.t !== "valuable") return;
+    const kind = item.kind as ValuableKind;
+    const poi = ISLAND_TABLE.campNext[0] ?? "supply";
+    this.busy = true;
+    this.note = null;
+    this.paint();
+    const r = await sendAid(t.code, poi, kind);
+    this.busy = false;
+    if (r.ok) {
+      const cur = this.get();
+      // Re-find the same valuable: a late sync may have reordered the stash.
+      const at = cur.stash.findIndex((i) => i.t === "valuable" && i.kind === kind);
+      if (at >= 0) this.put({ ...cur, stash: cur.stash.filter((_, n) => n !== at) });
+      this.note = { text: `${t.owner}へ物資を送った（${VALUABLES[kind].label}）`, good: true };
+    } else this.note = { text: errorText(r.error), good: false };
+    this.paint();
   }
 
   private async copy() {
@@ -375,7 +410,10 @@ export class ExpeditionPanel {
               .join("")}</span></button>` + (factoryAhead(p, this.serverFactory() ?? p.factory) ? `<p class="exp-wait">工場の段は次のレイドの後に島へ届く</p>` : "")
           : `<p class="lock-note">${lockIcon()}部隊が出払っている</p>`
         : "";
-      pick = `<div class="exp-target"><small><b>${esc(t.owner)}</b>の島 <b class="exp-code">${esc(t.code)}</b></small>${nodes}${go}</div>`;
+      // CoC-style aid: one stash valuable → their depot; helps their next offline defence.
+      const hasAid = p.stash.some((i) => i.t === "valuable");
+      const aid = `<button type="button" class="exp-aid" data-act="exp-aid"${this.busy || !hasAid ? " disabled" : ""}>物資を送る</button>`;
+      pick = `<div class="exp-target"><small><b>${esc(t.owner)}</b>の島 <b class="exp-code">${esc(t.code)}</b></small>${nodes}${go}${aid}</div>`;
     }
     const note = this.note ? `<p class="exp-note${this.note.good ? " good" : ""}">${esc(this.note.text)}</p>` : "";
     return form + pick + note;

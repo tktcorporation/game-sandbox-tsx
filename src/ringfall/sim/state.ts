@@ -738,8 +738,9 @@ export interface State {
   /** Credits' worth sent home through each depot this raid, by place in `DEPOTS`: it levels that depot (`DEPOT.levels`). */
   sentVia: number[];
   /**
-   * Parcels at depots this raid (ux-design C2): from `Start.parcels`, plus those left with
-   * `Input.leaveParcel`. The sim gate never starts with any, so the bench hash is unchanged.
+   * Aid parcels at depots this raid (ux-design C2, CoC-style donation): from `Start.parcels`,
+   * plus those left with `Input.leaveParcel`. The sim gate never starts with any, so the bench
+   * hash is unchanged.
    */
   parcels: WorldParcel[];
   /** Parcels left at depots this raid (to report / keep on the island). */

@@ -33,12 +33,17 @@ export const EXPEDITION = {
   lease: CONQUEST.time + 1800,
   /** Seconds a node the owner fortified in a raid is shut to expeditions: one at it stands off (固め). */
   fortify: 24 * 3600,
-  /** Seconds a look-ping the owner posts stays on the island (ux-design M6). */
-  pingTtl: 180,
-  /** Look-pings kept at once; the oldest drop first. */
+  /**
+   * Seconds an async look-mark the owner leaves stays on the island (ux-design M6).
+   * Long on purpose: CoC-style async presence, not a live ping sync.
+   */
+  pingTtl: 24 * 3600,
+  /** Look-marks kept at once; the oldest drop first. */
   pingMax: 8,
-  /** Parcels left at depots for visitors (ux-design C2); oldest drop first. */
+  /** Aid parcels at depots (ux-design C2, 援軍の寄付); oldest drop first. */
   parcelMax: 12,
+  /** Aid parcels spent as extra defenders when a freed node is attacked (async). */
+  aidPerFight: 2,
   /** Milliseconds between the reckonings of an island with expeditions on it. */
   alarmMs: 60_000,
   /** Ticks one reckoning runs at most; an island further behind is reckoned again at once. */
@@ -54,6 +59,9 @@ const SPREAD = 10_000;
 
 /** The node ids in `NODES` order. */
 export const NODE_IDS: readonly string[] = ISLAND_TABLE.nodes.map((n) => n.id);
+
+/** Depot POIs a parcel may sit at: every front node, plus closed POIs that still have a depot (e.g. pad). */
+export const DEPOT_POIS: readonly string[] = [...NODE_IDS, ...ISLAND_TABLE.closed];
 
 /** Who owns an island: the player's secret id, the name others see and the island's code. */
 export interface Owner {
@@ -142,9 +150,9 @@ export interface IslandState {
   lease?: { until: number; ids: number[] } | null;
   /** Until when each node is shut to expeditions, fortified by the owner in a raid; 0 or left out, open. */
   fort?: number[];
-  /** Short look-pings the owner posted (ux-design M6); pruned past `until`. Optional on older islands. */
+  /** Async look-marks the owner left (ux-design M6); pruned past `until`. Optional on older islands. */
   pings?: IslandPing[];
-  /** Valuables left at depots for other players' raids (ux-design C2). Optional on older islands. */
+  /** Aid parcels at depots (ux-design C2, CoC-style donation). Optional on older islands. */
   parcels?: IslandParcel[];
 }
 
@@ -185,7 +193,8 @@ export type IslandOp =
   | { t: "log"; player: string; after: number }
   | { t: "whois"; player: string }
   | { t: "expedition"; from: Attacker; target: string; kinds: EnemyKind[] }
-  | { t: "ping"; player: string; name: string; x: number; z: number };
+  | { t: "ping"; player: string; name: string; x: number; z: number }
+  | { t: "aid"; from: Attacker; poi: string; kind: string };
 
 /** The answer to an op: the HTTP status and body, and the island as it is after it (null while nobody has claimed it). */
 export interface OpResult {
@@ -281,11 +290,27 @@ export function publicView(s: IslandState, now: number) {
   };
 }
 
+/**
+ * Spends up to `n` aid parcels as extra defenders at node `i` (CoC clan-castle style): each parcel
+ * becomes one grunt on defend, then is gone. Offline help for the next attack.
+ */
+function spendAid(s: IslandState, i: number, n = EXPEDITION.aidPerFight) {
+  if (!s.parcels?.length || n <= 0) return;
+  const take = Math.min(n, s.parcels.length);
+  for (let k = 0; k < take; k++) {
+    s.parcels.shift();
+    s.defenders.push({ id: s.nextId++, to: i, units: [unit("grunt")], task: "defend" });
+  }
+}
+
 /** A fight begins at node `i`: a node of the enemy's stands its whole garrison (as it stands since the last report), one of the owner's its turrets. */
 function startFight(s: IslandState, i: number) {
   if (s.holds[i] === "held") s.guards[i] ??= garrisonGuards(s.owner.code, i);
-  if (s.holds[i] === "freed" && !s.defenders.some((d) => d.to === i && d.task === "post"))
+  if (s.holds[i] === "freed" && !s.defenders.some((d) => d.to === i && d.task === "post")) {
     for (let k = 0; k < FACTORY.levels[s.factory].turrets; k++) s.defenders.push({ id: s.nextId++, to: i, units: [unit("heavy")], task: "post" });
+    // Aid left at depots (own Shift+E or a neighbour's donation) joins this defence.
+    spendAid(s, i);
+  }
 }
 
 /**
@@ -561,7 +586,7 @@ function report(s: IslandState, op: Extract<IslandOp, { t: "report" }>, now: num
     s.parcels = (s.parcels ?? []).filter((p) => !gone.has(p.id));
   }
   for (const p of op.parcels ?? []) {
-    if (!NODE_IDS.includes(p.poi) || typeof p.kind !== "string" || !p.from?.code) continue;
+    if (!DEPOT_POIS.includes(p.poi) || typeof p.kind !== "string" || !p.from?.code) continue;
     s.parcels ??= [];
     s.parcels.push({ id: s.nextId++, poi: p.poi, kind: p.kind, from: { ...p.from }, at: now });
   }
@@ -660,7 +685,7 @@ export function islandOp(state: IslandState | null, op: IslandOp, now: number): 
     const entries = s.log.filter((e) => e.seq > op.after);
     return done(200, { ok: true, entries, next: s.seq });
   }
-  // A short look-ping on the island map (ux-design M6): the owner only.
+  // An async look-mark on the island map (ux-design M6): the owner only; left after a raid, not live.
   if (op.t === "ping") {
     if (s.owner.id !== op.player) return done(403, fail("not-owner"));
     if (!Number.isFinite(op.x) || !Number.isFinite(op.z)) return done(400, fail("bad-request"));
@@ -669,6 +694,15 @@ export function islandOp(state: IslandState | null, op: IslandOp, now: number): 
     s.pings.push({ id: s.nextId++, x: op.x, z: op.z, by: op.name, until: now + EXPEDITION.pingTtl * 1000 });
     prunePings(s, now);
     return done(200, { ok: true, pings: s.pings }, true);
+  }
+  // Aid donation to this island (ux-design C2): a neighbour leaves a parcel at a depot.
+  if (op.t === "aid") {
+    if (op.from.code === s.owner.code) return done(403, fail("own-island"));
+    if (!DEPOT_POIS.includes(op.poi) || typeof op.kind !== "string" || !op.kind) return done(400, fail("bad-request"));
+    s.parcels ??= [];
+    s.parcels.push({ id: s.nextId++, poi: op.poi, kind: op.kind, from: { ...op.from }, at: now });
+    if (s.parcels.length > EXPEDITION.parcelMax) s.parcels = s.parcels.slice(s.parcels.length - EXPEDITION.parcelMax);
+    return done(200, { ok: true }, true);
   }
   // An expedition.
   if (op.from.code === s.owner.code) return done(403, fail("own-island"));
@@ -701,7 +735,7 @@ export function parseHolds(raw: unknown): PoiHold[] | null {
 /** The units an attacker at factory level `factory` may send: its factory's squad (`FACTORY.levels[].kinds`). */
 export const squadKinds = (factory: number): readonly EnemyKind[] => FACTORY.levels[Math.max(0, Math.min(FACTORY_TOP, factory))].kinds;
 
-/** Parcels left in a raid report, or null when unreadable. Left out, none. */
+/** Aid parcels left in a raid report, or null when unreadable. Left out, none. Depot POIs, not only front nodes. */
 export function parseParcels(raw: unknown): IslandParcel[] | null {
   if (raw === undefined) return [];
   if (!Array.isArray(raw) || raw.length > EXPEDITION.parcelMax) return null;
@@ -711,7 +745,7 @@ export function parseParcels(raw: unknown): IslandParcel[] | null {
     const o = r as Record<string, unknown>;
     const from = o.from && typeof o.from === "object" ? (o.from as Attacker) : null;
     if (!from || typeof from.code !== "string" || typeof from.name !== "string" || typeof o.poi !== "string" || typeof o.kind !== "string") return null;
-    if (!NODE_IDS.includes(o.poi)) return null;
+    if (!DEPOT_POIS.includes(o.poi)) return null;
     out.push({ id: 0, poi: o.poi, kind: o.kind, from: { code: from.code, name: from.name }, at: 0 });
   }
   return out;
