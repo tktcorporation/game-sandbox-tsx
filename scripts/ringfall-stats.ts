@@ -28,13 +28,21 @@ export function meanInterval(xs: number[], z = Z95): Interval {
   return { lo: mean - half, hi: mean + half, half, n, mean };
 }
 
-/** Wald CI for a Bernoulli proportion (alive rate). */
+/**
+ * Wilson score CI for a Bernoulli proportion (alive rate). Unlike Wald, unanimous samples
+ * (0/n or n/n) keep a nonzero half-width, so sequential stopping does not treat eight
+ * identical outcomes as exact 0% or 100%.
+ */
 export function proportionInterval(successes: number, n: number, z = Z95): Interval {
   if (n <= 0) return { lo: NaN, hi: NaN, half: NaN, n: 0, mean: NaN };
   const mean = successes / n;
-  const se = Math.sqrt((mean * (1 - mean)) / n);
-  const half = z * se;
-  return { lo: Math.max(0, mean - half), hi: Math.min(1, mean + half), half, n, mean };
+  const z2 = z * z;
+  const denom = 1 + z2 / n;
+  const centre = (mean + z2 / (2 * n)) / denom;
+  const rad = (z * Math.sqrt((mean * (1 - mean)) / n + z2 / (4 * n * n))) / denom;
+  const lo = Math.max(0, centre - rad);
+  const hi = Math.min(1, centre + rad);
+  return { lo, hi, half: (hi - lo) / 2, n, mean };
 }
 
 export type StopTarget = {

@@ -4639,6 +4639,10 @@ if (flags.compare) {
     failed = true;
     console.error("compare: raidSeed(r) check failed — pairing is invalid");
   }
+  if (rep.failures.length) {
+    failed = true;
+    console.error(`compare: ${rep.failures.length} raid(s) failed on an arm and were dropped from pairing`);
+  }
 } else if (flags.stop) {
   const head = ["skill    ", "alive", "time(med)", "cleared", "haul(med)", "downs", "acc", "crit", "leap", "crowd", "flank", "waves", "meet".padEnd(18), "c/min", "ally".padEnd(18), "exit"];
   console.log(
@@ -4670,7 +4674,7 @@ if (flags.compare) {
     }
   }
   console.log("");
-  console.log("sequential stop report (95% Wald CI half-width vs targets):");
+  console.log("sequential stop report (95% CI half-width vs targets; alive=Wilson, means=Wald):");
   let used = 0;
   for (const s of stopped) {
     used += s.decision.n;

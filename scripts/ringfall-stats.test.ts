@@ -26,6 +26,10 @@ for (let r = 0; r < 40; r++) assert.equal(raidSeed(r), 1000 + r * 7919);
   assert.ok(preciseEnough(iv, { abs: 0.08, rel: 0.4 }), "OR: rel alone can pass when abs fails");
   const tight = proportionInterval(100, 200);
   assert.ok(preciseEnough(tight, { abs: 0.08 }), "n=200 at 50% is within ±8pp");
+  // Wilson keeps uncertainty when every raid lives (Wald would be ±0 and stop too early).
+  const allLive = proportionInterval(8, 8);
+  assert.ok(allLive.half > 0.1, `unanimous n=8 must keep width, got ${allLive.half}`);
+  assert.ok(!preciseEnough(allLive, { abs: 0.08 }), "unanimous n=8 is not ±8pp precise");
 }
 
 {

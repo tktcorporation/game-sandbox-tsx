@@ -1135,7 +1135,7 @@ AI の島の遠征が、拠点のそばに降りられるようにした変更�
 
 **ぶれの前提（既存の記録）:** 30 周ずつの生還率は乱数の組だけで 10〜20 ポイント動く。60 周でも同程度残る。固定 N を増やすほど半幅は `1/√n` で縮むが、CPU はほぼ線形に増える。
 
-**逐次停止**（`--stop` または `RINGFALL_SIM_STOP=1`）: 地域×腕前ごとにバッチ（既定 4）で周を足し、主指標（生還率・ダウン）の 95% Wald 半幅が目標（既定: 生還 ±20pp または相対 25%、ダウン ±0.5）に入るか `max`（既定は位置引数の周数）に達したらその表を止める。`min`（既定 8）未満では止めない。`RINGFALL_SIM_JOBS` / `--jobs` のワーカー並列と併用できる。報告に各指標の CI・使用周数・固定 max に対する割合を出す。
+**逐次停止**（`--stop` または `RINGFALL_SIM_STOP=1`）: 地域×腕前ごとにバッチ（既定 4）で周を足し、主指標（生還率・ダウン）の 95% CI 半幅（生還は Wilson、ダウンは Wald）が目標（既定: 生還 ±20pp または相対 25%、ダウン ±0.5）に入るか `max`（既定は位置引数の周数）に達したらその表を止める。`min`（既定 8）未満では止めない。全滅／全生還でも Wilson は半幅 0 にならない。`RINGFALL_SIM_JOBS` / `--jobs` のワーカー並列と併用できる。報告に各指標の CI・使用周数・固定 max に対する割合を出す。
 
 ```bash
 npm run sim:ringfall -- 30 --stop
@@ -1160,7 +1160,7 @@ npm run sim:ringfall -- 30 harbor --stop --stop-min=8 --stop-max=30 --stop-batch
 
 検証（`npx tsx scripts/ringfall-stop-validate.ts harbor casual 30`）: 停止側 n=24 の接頭は固定 30 の周 0..23 と同一。停止の生還 67% は固定 30 の 95% CI（50〜84%）に入る。null パッチの CRN 対の差は exact 0。
 
-**共通乱数の A/B**（`--compare` または `RINGFALL_SIM_COMPARE=1`）: 同じ `raidSeed(r)` で A（現行）と B（`--patch PATH=VALUE`、例 `REINFORCE.first=450`）を対にして周を遊び、対の差の CI を出す。独立 2 群より少ない周で変化を検出しやすい。シード式は `raidSeed` で固定されているので対は妥当。パッチは B のあいだだけ `config` の数値を書き換え、終わると戻す。
+**共通乱数の A/B**（`--compare` または `RINGFALL_SIM_COMPARE=1`）: 同じ `raidSeed(r)` で A（現行）と B（`--patch PATH=VALUE`、例 `REINFORCE.first=450`）を対にして周を遊び、対の差の CI を出す。独立 2 群より少ない周で変化を検出しやすい。シード式は `raidSeed` で固定されているので対は妥当。どちらかの腕がエラー／時間切れの周は対から外し、失敗として報告する（インデックスずれを防ぐ）。パッチは B のあいだだけ `config` の数値を書き換え、終わると戻す。
 
 ```bash
 npm run sim:ringfall -- --compare --runs=16 --region=harbor --skill=casual
