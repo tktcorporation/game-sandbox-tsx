@@ -737,6 +737,15 @@ export interface State {
   sentRecords: RecordId[];
   /** Credits' worth sent home through each depot this raid, by place in `DEPOTS`: it levels that depot (`DEPOT.levels`). */
   sentVia: number[];
+  /**
+   * Defence stock queued this raid when the player deposits at a depot (`leftParcels` only;
+   * not world pickups). The sim gate never deposits, so the bench hash is unchanged.
+   */
+  parcels: WorldParcel[];
+  /** Parcels left at depots this raid (to report / keep on the island). */
+  leftParcels: { poi: PoiId; kind: ValuableKind }[];
+  /** Parcel ids taken this raid (cleared from the island on report). */
+  takenParcels: number[];
   /** Leaving at a depot: which one, and the seconds still to stand there. */
   leaving: { depot: number; t: number } | null;
   /** The depot the raid ended at, if it ended at one. */
@@ -947,6 +956,24 @@ export interface Start {
   noMods?: boolean;
   /** The day's battle (陣取り戦) and what the player brings to it; left out, the raid has none. */
   battle?: BattleStart;
+  /**
+   * Parcels at depots from the island / profile (ux-design C2). Left out, none — the sim gate
+   * and campaigns omit them, so their hashes stay put.
+   */
+  parcels?: readonly { id: number; poi: PoiId; kind: ValuableKind; from: { code: string; name: string } }[];
+}
+
+/** A parcel on the ground by a depot this raid. */
+export interface WorldParcel {
+  id: number;
+  poi: PoiId;
+  kind: ValuableKind;
+  from: { code: string; name: string };
+  x: number;
+  y: number;
+  z: number;
+  /** Taken into the bag this raid. */
+  taken: boolean;
 }
 
 /** What the enemy's strength sets in a raid. */
@@ -1107,6 +1134,10 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
     sentAt: [],
     sentRecords: [],
     sentVia: DEPOTS.map(() => 0),
+    // Parcels are island-DO defence stock, not in-raid pickups (ux-design: one primary at the depot).
+    parcels: [],
+    leftParcels: [],
+    takenParcels: [],
     leaving: null,
     leftAt: null,
     away: 0,

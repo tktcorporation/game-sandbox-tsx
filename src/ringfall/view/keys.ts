@@ -29,6 +29,8 @@ export const BIND = {
   bag: ["Tab"],
   map: ["KeyM"],
   mapView: ["KeyN"],
+  /** Drop a short local ping where the player looks (map + compass; view only). */
+  ping: ["KeyP"],
 } as const satisfies Record<string, readonly string[]>;
 export type Action = keyof typeof BIND;
 
@@ -60,11 +62,13 @@ export const KEYS: Row[] = [
   { name: "アーク", of: ["tactical"], raid: true },
   { name: "離脱ジャンプ", of: ["ult"], raid: true },
   { name: "回復", of: ["heal"], raid: true },
-  { name: "調べる・拾う", of: ["use"] },
-  { name: "対象切替", of: ["cycleUse"], raid: true },
+  { name: "使う", of: ["use"] },
+  { name: "対象を切り替える", of: ["cycleUse"], raid: true },
   { name: "バッグ", of: ["bag"], raid: true },
   { name: "地図", of: ["map"], raid: true },
   { name: "全体地図", of: ["mapView"], raid: true },
+  /** Local look-ping on the map and compass (view only; no sim). */
+  { name: "印を置く", of: ["ping"], raid: true },
   { name: "一時停止", caps: ["Esc"] },
 ];
 

@@ -2,7 +2,7 @@ import { ALLY, AWARE, BAG, BIN_GEAR, CREW, DEBRIS, DEPOT, ENEMIES, ENTRY, FRONT,
 import { grabZip, zipInReach, zipPoint } from "./zips";
 import { dist2d, groundAt, los, solidAt, worldVersion } from "./geom";
 import { highGround, steepAt, terrainHeight } from "./terrain";
-import { DEPOTS, ENTRIES, EXTRACTS, inCamp, NODES, PARTY_STOPS, POIS, recordSpot, REGIONS, regionOf, ZIPS, type ExtractPoint, type RecordId } from "./map";
+import { DEPOTS, ENTRIES, EXTRACTS, inCamp, NODES, PARTY_STOPS, POIS, poiIndex, recordSpot, REGIONS, regionOf, ZIPS, type ExtractPoint, type RecordId } from "./map";
 import { spawnEnemy, spawnSpot } from "./enemies";
 import { cellsAround, fieldTo, nextStep, onMainGround, routeLength } from "./hunt";
 import type { CrewTrip, SquadState } from "./state";
@@ -938,7 +938,11 @@ export function depotInReach(s: State): number {
   return DEPOTS.findIndex((d, i) => s.depots[i] && dist2d(d, p.pos) < PLAYER.interactRange + 1 && Math.abs(d.y - p.pos.y) < 1.5);
 }
 
-/** The use key at a depot: a bag with anything in it goes home; an empty one means leaving the raid there. */
+/**
+ * The use key at a depot (primary: 納める): a bag with anything in it goes home; an empty one
+ * means leaving the raid there. When valuables are sent home, one kind is also stocked silently
+ * for this island's next offline defence (ux-design C2) — no separate verb or prompt.
+ */
 function useDepot(s: State, index: number) {
   const p = s.player;
   if (p.haul.length || p.tools.length || p.records.length) {
@@ -948,6 +952,7 @@ function useDepot(s: State, index: number) {
       s.events.push({ t: "leaveCancel" });
     }
     const value = p.haul.reduce((n, k) => n + VALUABLES[k].value, 0);
+    const stock = p.haul[0];
     s.events.push({ t: "deposit", n: p.haul.length + p.tools.length + p.records.length, value });
     s.sentAt.push(...haulOrigins(p));
     s.sent.push(...p.haul);
@@ -958,6 +963,11 @@ function useDepot(s: State, index: number) {
     p.haulAt = [];
     p.tools = [];
     p.records = [];
+    // Silent defence stock: the island DO spends these while the owner is away. Not a world pickup.
+    if (stock) {
+      const d = DEPOTS[index];
+      if (!s.leftParcels.some((l) => l.poi === d.poi)) s.leftParcels.push({ poi: d.poi, kind: stock });
+    }
   } else if (!s.leaving) {
     s.leaving = { depot: index, t: DEPOT.leave };
     s.events.push({ t: "leaveStart" });

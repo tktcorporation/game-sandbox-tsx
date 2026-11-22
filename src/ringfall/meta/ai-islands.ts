@@ -166,7 +166,7 @@ export function aiView(a: AiIsland, salt: number, day: number, sent: readonly Ou
       const state = aiOutcome(a, salt, o, now);
       return state === "gone" || state === "sending" || state === "recalling" ? [] : [{ id: o.id, by: { code: mine, name: "" }, target: o.node as string, units: o.units, state: state as "coming" | "attacking" | "holding", arriveAt: o.sentAt + AI.coming * 60_000 }];
     });
-  return { code: a.code, owner: a.name, day, factory: aiFactory(day), protectedUntil: 0, nodes, expeditions };
+  return { code: a.code, owner: a.name, day, factory: aiFactory(day), protectedUntil: 0, nodes, expeditions, pings: [], parcels: [] };
 }
 
 /**

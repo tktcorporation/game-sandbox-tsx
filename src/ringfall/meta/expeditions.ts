@@ -12,6 +12,7 @@ import { NODES, nodeIndex, type NodeId } from "../sim/map";
 import { isIslandCode } from "./island-code";
 import { unfreeable, unlocked, type Island } from "./island";
 import { ISLAND_TABLE } from "./island-table";
+import { parseParcels, parsePings, type Parcel } from "./parcels";
 
 /**
  * How an expedition stands: still being sent (its request unanswered; its squad already taken from
@@ -43,6 +44,10 @@ export interface IslandView {
   nodes: { id: string; hold: PoiHold; open: boolean }[];
   /** The expeditions on the island; `id` is the number the island gave each when it took it. */
   expeditions: { id: number; by: { code: string; name: string }; target: string; units: number; state: ServerState; arriveAt: number }[];
+  /** Live look-pings (ux-design M6). */
+  pings: { id: number; x: number; z: number; by: string; until: number }[];
+  /** Parcels at depots (ux-design C2). */
+  parcels: Parcel[];
 }
 
 /**
@@ -88,7 +93,17 @@ export function parseView(raw: unknown): IslandView | null {
     return isObj(e) && by && count(e.id) && typeof e.target === "string" && count(e.units) && STATES.includes(e.state as never) ? [{ id: e.id, by, target: e.target, units: e.units, state: e.state as ServerState, arriveAt: typeof e.arriveAt === "number" && Number.isFinite(e.arriveAt) ? e.arriveAt : 0 }] : [];
   });
   const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
-  return { code: raw.code, owner: raw.owner, day: num(raw.day), factory: num(raw.factory), protectedUntil: num(raw.protectedUntil), nodes, expeditions };
+  return {
+    code: raw.code,
+    owner: raw.owner,
+    day: num(raw.day),
+    factory: num(raw.factory),
+    protectedUntil: num(raw.protectedUntil),
+    nodes,
+    expeditions,
+    pings: parsePings(raw.pings),
+    parcels: parseParcels(raw.parcels),
+  };
 }
 
 /** The owner's log as the server answered it: the entries it can read, and the number to read after next time; null when unreadable. */
@@ -168,6 +183,8 @@ export interface Synced {
   incoming?: readonly Incoming[];
   log?: { entries: IslandLogEntry[]; next: number };
   reported?: readonly string[];
+  /** Parcels as the island last showed them (ux-design C2). */
+  parcels?: readonly Parcel[];
 }
 
 /**
@@ -175,14 +192,15 @@ export interface Synced {
  * report landed for leave the pending list; the holds are merged around those still pending. The
  * profile itself when nothing changes.
  */
-export function applySync<P extends { poiState: Island; logSeq: number; retaken: NodeId[]; incoming: Incoming[] }>(p: P, s: Synced): { profile: P; news: IslandLogEntry[] } {
+export function applySync<P extends { poiState: Island; logSeq: number; retaken: NodeId[]; incoming: Incoming[]; parcels?: Parcel[] }>(p: P, s: Synced): { profile: P; news: IslandLogEntry[] } {
   const retaken = s.reported ? p.retaken.filter((id) => !s.reported!.includes(id)) : p.retaken;
   const poiState = s.holds ? mergeHolds(p.poiState, s.holds, retaken) : p.poiState;
   const news = s.log ? s.log.entries.filter((e) => e.seq > p.logSeq).sort((a, b) => a.seq - b.seq) : [];
   const logSeq = s.log ? Math.max(p.logSeq, s.log.next) : p.logSeq;
   const incoming = s.incoming && JSON.stringify(s.incoming) !== JSON.stringify(p.incoming) ? [...s.incoming] : p.incoming;
-  if (poiState === p.poiState && logSeq === p.logSeq && retaken.length === p.retaken.length && incoming === p.incoming) return { profile: p, news };
-  return { profile: { ...p, poiState, logSeq, retaken, incoming }, news };
+  const parcels = s.parcels ? [...s.parcels] : p.parcels;
+  if (poiState === p.poiState && logSeq === p.logSeq && retaken.length === p.retaken.length && incoming === p.incoming && parcels === p.parcels) return { profile: p, news };
+  return { profile: { ...p, poiState, logSeq, retaken, incoming, parcels }, news };
 }
 
 /** The other players' expeditions on an island's view that hold nothing yet, at nodes the game knows: what its owner is warned of. */

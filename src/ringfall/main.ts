@@ -21,7 +21,9 @@ import { bodyCenter, eyePos, fireRay, kill } from "./sim/combat";
 import { squadKey } from "./sim/state";
 import { loadProfile, saveProfile } from "./meta/storage";
 import { sendIsland } from "./net";
-import { aiLentFor, aiSalt, aiScouted, markScouted, flushRecalls, leaseOwn, neighboursFor, refreshAi, releaseLease, syncOwn, takeReport, takeSync, useAi } from "./island-net";
+import { aiLentFor, aiSalt, aiScouted, incomingFor, markScouted, flushRecalls, leaseOwn, neighboursFor, refreshAi, releaseLease, syncOwn, takeReport, takeSync, useAi } from "./island-net";
+import { loadIdentity } from "./meta/identity";
+import { raidTraces } from "./view/traces";
 import { aiRaidNews, aiRivals } from "./meta/ai-islands";
 import { dropStale, fortifiedNodes, LEASE_LATE, lentResults, lentRivals, logLine, squadsAway, type IslandLogEntry, type LentIn } from "./meta/expeditions";
 import { Hub, type Launch } from "./view/hub";
@@ -188,6 +190,7 @@ addEventListener("keydown", (e) => {
   // The map opens over the game straight from the key, whoever is at the controls.
   if (bound("map", e.code) && running) hud.toggleMap();
   if (bound("mapView", e.code) && running) hud.toggleMapView();
+  if (bound("ping", e.code) && running && !paused) dropLookPing();
   if (bound("bag", e.code)) peekBag(true);
   keys.add(e.code);
   edges.add(e.code);
@@ -316,7 +319,6 @@ let raidLent: LentIn[] = [];
 let raidAi: { lent: LentIn[]; slots: number[]; scouted: boolean } | null = null;
 /** The game's own islands' news from the raid just settled, before the server's. */
 let aiNews: string[] = [];
-
 /**
  * Syncs the island with the server after a settled raid (island-net.ts): the owner's report, then
  * the log and the holds, taken into the profile as it stands when they come. Nothing waits on it;
@@ -329,7 +331,15 @@ function syncIsland(p: Settlement["profile"], settled: State) {
   islandNews = [];
   aiNews = [];
   // What the raid made of the other players' expeditions it took in goes with the report.
-  const raid = { lent: lentResults(raidLent, settled.battle), fortified: fortifiedNodes(settled.battle) };
+  const who = loadIdentity();
+  const from = who.code ? { code: who.code, name: who.name } : { code: "local", name: who.name };
+  const raid = {
+    lent: lentResults(raidLent, settled.battle),
+    fortified: fortifiedNodes(settled.battle),
+    // Defence stock from deposits this raid (silent; no separate "aid" verb).
+    parcels: who.code ? (settled.leftParcels ?? []).map((q) => ({ poi: q.poi, kind: q.kind, from })) : [],
+    takenParcels: settled.takenParcels ?? [],
+  };
   raidLent = [];
   void syncOwn(p, true, raid).then((r) => {
     // The islands of expeditions called home (a liberation, or the factory's panel) are told, now or at the next sync.
@@ -738,7 +748,28 @@ function campTick() {
 
 function campFrame() {
   const near = campFrozen() ? null : campSpotAt({ ...state.player.pos, yaw: state.player.yaw });
-  campView.frame(state, world, dims.w, dims.h, { near, marks: hub.marks(), cash: hub.profile.cash.toLocaleString("ja-JP"), touch: touchMode, today: hub.today(), panel: hub.station !== null || departing !== null });
+  const p = hub.profile;
+  const tip = incomingFor(p).length ? "来る遠征 · 地図で固める" : p.raids === 0 ? "車両か門から出撃" : "";
+  campView.frame(state, world, dims.w, dims.h, { near, marks: hub.marks(), cash: p.cash.toLocaleString("ja-JP"), touch: touchMode, today: hub.today(), panel: hub.station !== null || departing !== null, tip });
+}
+
+/** Ground under the look ray, for a local ping (view only). */
+function dropLookPing() {
+  const p = state.player;
+  const fx = Math.sin(p.yaw) * Math.cos(p.pitch);
+  const fy = Math.sin(p.pitch);
+  const fz = -Math.cos(p.yaw) * Math.cos(p.pitch);
+  let at = { x: p.pos.x + fx * 28, z: p.pos.z + fz * 28 };
+  for (let t = 6; t < 90; t += 2) {
+    const x = p.pos.x + fx * t;
+    const z = p.pos.z + fz * t;
+    const y = p.pos.y + 1.55 + fy * t;
+    if (y <= terrainHeight(x, z) + 0.4) {
+      at = { x, z };
+      break;
+    }
+  }
+  hud.dropPing(at);
 }
 
 /** `from`: the camp the player walked out of, carried over into the raid where they stand. */
@@ -776,7 +807,21 @@ function start(go: Launch, from?: State) {
   hud.setRivalNames([...raidLent, ...aiLent].map((l) => [l.by.code, l.by.name] as [string, string]));
   raidAi = { lent: aiLent, slots: neighboursFor(hub.profile).filter((n) => !n.ai).map((n) => n.slot), scouted: aiScouted() };
   lease = null;
-  state = newRun(go.seed, kit, region, { depots: hub.profile.depots, seen: hub.profile.seen, from: go.from, entry: go.entry, routes: hub.profile.routes, island: holds(hub.profile), record, fetch, event: hub.profile.events[0], threat: raidThreat(hub.profile), known: hub.profile.known, battle: { factory: hub.profile.factory, away: squadsAway(hub.profile), targets: tonight(hub.profile), rivals: [...lentRivals(raidLent), ...aiRivals(aiLent)], shut: lent?.shut }, finale: finaleOpen(hub.profile) });
+  state = newRun(go.seed, kit, region, {
+    depots: hub.profile.depots,
+    seen: hub.profile.seen,
+    from: go.from,
+    entry: go.entry,
+    routes: hub.profile.routes,
+    island: holds(hub.profile),
+    record,
+    fetch,
+    event: hub.profile.events[0],
+    threat: raidThreat(hub.profile),
+    known: hub.profile.known,
+    battle: { factory: hub.profile.factory, away: squadsAway(hub.profile), targets: tonight(hub.profile), rivals: [...lentRivals(raidLent), ...aiRivals(aiLent)], shut: lent?.shut },
+    finale: finaleOpen(hub.profile),
+  });
   // A lease still on its way joins this raid if it comes in its first seconds.
   if (leaseReq?.on === "open") {
     if (lent) leaseReq = null;
@@ -786,6 +831,11 @@ function start(go: Launch, from?: State) {
     }
   }
   hud.setContract(hub.contract(), record ?? null, takenStory(hub.profile));
+  hud.setRaidsDone(hub.profile.raids);
+  // Passive traces only: rivals / incoming, no legend or new noun (ux-design M5).
+  const owners = [...new Set([...raidLent, ...aiLent].map((l) => l.by.code).concat(incomingFor(hub.profile).map((e) => e.by.code)))];
+  hud.setTraces(raidTraces(go.seed, state.bins, owners));
+  hud.setRemotePings([]);
   world.campMode = false;
   if (from) walkOut(state, from);
   // The ground round where the raid starts is built before its first frame.

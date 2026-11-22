@@ -1,6 +1,6 @@
 import { FACTORY_TOP } from "../src/ringfall/sim/config";
 import { newIslandCode, parseIslandCode } from "../src/ringfall/meta/island-code";
-import { parseHolds, parseLent, parseRetaken, squadKinds, type IslandOp } from "./island";
+import { parseHolds, parseLent, parseParcels, parseRetaken, parseTakenParcels, squadKinds, type IslandOp } from "./island";
 import type { ApiError } from "../src/ringfall/meta/island-errors";
 import { ensureSchema, type Migration } from "./schema";
 import { NEIGHBOUR_SLOTS } from "../src/ringfall/meta/neighbours";
@@ -331,19 +331,37 @@ async function handleIslands(request: Request, env: ApiEnv, now: number, url: UR
   // …/expeditions/<n> names one expedition by the number the island gave it (a recall).
   const one = parts.length === 3 && parts[1] === "expeditions" && /^[1-9]\d{0,8}$/.test(parts[2]) ? Number(parts[2]) : null;
   const sub = one !== null ? "expedition" : parts.slice(1).join("/");
-  if (!code || (sub !== "" && sub !== "log" && sub !== "lease" && sub !== "expeditions" && sub !== "expedition")) return fail(404, "not-found");
+  if (!code || (sub !== "" && sub !== "log" && sub !== "lease" && sub !== "expeditions" && sub !== "expedition" && sub !== "pings" && sub !== "aid")) return fail(404, "not-found");
   const method = request.method;
-  const allow = sub === "" ? "GET, PUT" : sub === "log" ? "GET" : sub === "expedition" ? "DELETE" : sub === "lease" ? "POST, DELETE" : "POST";
+  const allow =
+    sub === ""
+      ? "GET, PUT"
+      : sub === "log"
+        ? "GET"
+        : sub === "expedition"
+          ? "DELETE"
+          : sub === "lease"
+            ? "POST, DELETE"
+            : sub === "pings" || sub === "aid"
+              ? "POST"
+              : "POST";
   if (!allow.split(", ").includes(method)) return notAllowed(allow);
   const ns = env.ISLAND;
   if (!ns) return fail(202, "no-island-server");
   if (sub === "" && method === "GET") return ask(ns, code, { t: "view" }, now);
-  if (sub === "log" || sub === "lease") {
+  if (sub === "log" || sub === "lease" || sub === "pings") {
     // The owner's secret id goes in a header, never in the URL, where logs and histories keep it.
     const player = /^Bearer (\S+)$/.exec(request.headers.get("authorization") ?? "")?.[1] ?? "";
     if (!UUID.test(player)) return fail(401, "unauthorized");
     // A raid of the owner's takes the island's expeditions in.
     if (sub === "lease") return ask(ns, code, { t: method === "DELETE" ? "unlease" : "lease", player }, now);
+    if (sub === "pings") {
+      const body = await readJson(request);
+      if (body instanceof Response) return body;
+      const raw = body.raw;
+      if (!isObj(raw) || typeof raw.name !== "string" || !Number.isFinite(raw.x) || !Number.isFinite(raw.z)) return fail(400, "bad-request");
+      return ask(ns, code, { t: "ping", player, name: raw.name.slice(0, 32), x: Number(raw.x), z: Number(raw.z) }, now);
+    }
     const after = Number(url.searchParams.get("after") ?? 0);
     if (!int(after, 0, Number.MAX_SAFE_INTEGER)) return fail(400, "bad-request");
     return ask(ns, code, { t: "log", player, after }, now);
@@ -358,15 +376,17 @@ async function handleIslands(request: Request, env: ApiEnv, now: number, url: UR
     const retaken = parseRetaken(raw.retaken);
     const lent = parseLent(raw.lent);
     const fortified = parseRetaken(raw.fortified);
-    if (!player || !holds || !retaken || !lent || !fortified || !int(raw.factory, 0, FACTORY_TOP) || !int(raw.day, 0, DAY_MAX)) return fail(400, "bad-request");
-    const r = await ask(ns, code, { t: "report", player, holds, retaken, factory: raw.factory, day: raw.day, lent, fortified }, now);
+    const parcels = parseParcels(raw.parcels);
+    const takenParcels = parseTakenParcels(raw.takenParcels);
+    if (!player || !holds || !retaken || !lent || !fortified || !parcels || !takenParcels || !int(raw.factory, 0, FACTORY_TOP) || !int(raw.day, 0, DAY_MAX)) return fail(400, "bad-request");
+    const r = await ask(ns, code, { t: "report", player, holds, retaken, factory: raw.factory, day: raw.day, lent, fortified, parcels, takenParcels }, now);
     if (r.status === 200) await ownCode(env, code, player.id, now);
     return r;
   }
-  // An expedition: the sender proves their own island with their id, whose factory sets the squad they may send.
+  // Aid or an expedition: the sender proves their own island with their id.
   const from = parsePlayer(raw.from);
   const fromCode = isObj(raw.from) ? parseIslandCode(raw.from.code) : null;
-  if (!from || !fromCode || (one === null && (typeof raw.target !== "string" || !int(raw.units, 1, 64)))) return fail(400, "bad-request");
+  if (!from || !fromCode) return fail(400, "bad-request");
   if (fromCode === code) return fail(403, "own-island");
   const who = await ask(ns, fromCode, { t: "whois", player: from.id }, now);
   if (who.status === 404) return fail(403, "no-own-island");
@@ -375,6 +395,12 @@ async function handleIslands(request: Request, env: ApiEnv, now: number, url: UR
   const { factory, name, held, attackers } = (await who.json()) as { factory: number; name: string; held?: string[]; attackers?: string[] };
   // A recall: the sender, shown to own the island the expedition came from, calls it home.
   if (one !== null) return ask(ns, code, { t: "recall", from: fromCode, id: one }, now);
+  // Aid donation (ux-design C2): a valuable left at a depot on the target island for offline defence.
+  if (sub === "aid") {
+    if (typeof raw.kind !== "string" || !raw.kind || typeof raw.poi !== "string") return fail(400, "bad-request");
+    if (!attackers?.includes(code) && (await routeShut(env, from.id, code, held ?? [], now))) return fail(403, "route-shut");
+    return ask(ns, code, { t: "aid", from: { code: fromCode, name }, poi: raw.poi, kind: raw.kind }, now);
+  }
   if (typeof raw.target !== "string" || !int(raw.units, 1, 64)) return fail(400, "bad-request");
   // A neighbour of the sender's this week is reached only by its sea route (the sender holds the node
   // facing it), unless it attacked the sender's island lately: an attack is answered by any way (仕返し).

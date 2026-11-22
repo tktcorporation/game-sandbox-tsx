@@ -511,6 +511,12 @@ export class IslandMap {
   region: RegionId = HOME_REGION.id;
   /** Where the contract taken for the raid points, marked in the loot's gold; null with none taken. */
   contract: ContractMark | null = null;
+  /** A short local look-ping (P): a pulse on the map until the HUD clears it. */
+  ping: { x: number; z: number } | null = null;
+  /** Async look-marks from the island DO (ux-design M6), drawn faint in rival green. */
+  remotePings: readonly { x: number; z: number }[] = [];
+  /** Async attack/defence traces on bins/roads (ux-design M5), view-only. */
+  traces: readonly { x: number; z: number; t: "bin" | "road"; mode?: "raid" | "hold" }[] = [];
   /** The shape last given to the page, which sizes the map by it. */
   private aspect = 0;
   /** The last draw's scale and offset in CSS pixels, for `screenAt()`. */
@@ -1187,6 +1193,7 @@ export class IslandMap {
     }
     // Squads seen or heard out between the POIs, fading over `FACTION.keep`: a dot in their
     // faction's colour where they were, and a burst where the factions were heard fighting.
+    // Rival contacts read as another player's trace (ux-design M3): a thin ring around the dot.
     for (const c of plain ? [] : (s.contacts ?? [])) {
       const age = (s.time ?? c.t) - c.t;
       const p = at(c.x, c.z);
@@ -1209,6 +1216,13 @@ export class IslandMap {
       } else g.arc(p.x, p.y, 3 * dpr, 0, Math.PI * 2);
       g.fill();
       g.stroke();
+      if (c.rival) {
+        g.beginPath();
+        g.arc(p.x, p.y, 6 * dpr, 0, Math.PI * 2);
+        g.strokeStyle = alpha(RIVAL_CSS, 0.7);
+        g.lineWidth = 1.2 * dpr;
+        g.stroke();
+      }
       g.restore();
       if (c.fight && age < 20) {
         const spot = box("交戦", p.x, p.y - 11 * dpr, 9);
@@ -1358,6 +1372,66 @@ export class IslandMap {
       g.beginPath();
       g.arc(a.x, a.y, 4 * dpr, 0, Math.PI * 2);
       g.fill();
+    }
+    // Async traces (M5): raid = square/cross, hold = diamond — “誰かが先に攻めた／守った”.
+    if (!plain && !this.mini)
+      for (const tr of this.traces) {
+        const q = at(tr.x, tr.z);
+        g.save();
+        g.globalAlpha = tr.mode === "hold" ? 0.4 : 0.5;
+        g.strokeStyle = RIVAL_CSS;
+        g.fillStyle = alpha(RIVAL_CSS, 0.35);
+        g.lineWidth = 1.2 * dpr;
+        if (tr.mode === "hold") {
+          const r = 4 * dpr;
+          g.beginPath();
+          g.moveTo(q.x, q.y - r);
+          g.lineTo(q.x + r, q.y);
+          g.lineTo(q.x, q.y + r);
+          g.lineTo(q.x - r, q.y);
+          g.closePath();
+          g.stroke();
+        } else if (tr.t === "bin") {
+          const r = 3.5 * dpr;
+          g.strokeRect(q.x - r, q.y - r, r * 2, r * 2);
+        } else {
+          g.beginPath();
+          g.moveTo(q.x - 5 * dpr, q.y);
+          g.lineTo(q.x + 5 * dpr, q.y);
+          g.moveTo(q.x, q.y - 4 * dpr);
+          g.lineTo(q.x, q.y + 4 * dpr);
+          g.stroke();
+        }
+        g.restore();
+      }
+    // Async look-marks from the island (M6): rival green, under the local cyan pulse.
+    if (!plain)
+      for (const rp of this.remotePings) {
+        const q = at(rp.x, rp.z);
+        g.save();
+        g.strokeStyle = RIVAL_CSS;
+        g.lineWidth = 1.5 * dpr;
+        g.globalAlpha = 0.7;
+        g.beginPath();
+        g.arc(q.x, q.y, 7 * dpr, 0, Math.PI * 2);
+        g.stroke();
+        g.restore();
+      }
+    // A local look-ping (P): a cyan pulse, view-only.
+    if (this.ping && !plain) {
+      const q = at(this.ping.x, this.ping.z);
+      g.save();
+      g.strokeStyle = UI.ownLight;
+      g.lineWidth = 2 * dpr;
+      g.globalAlpha = 0.85;
+      g.beginPath();
+      g.arc(q.x, q.y, 8 * dpr, 0, Math.PI * 2);
+      g.stroke();
+      g.beginPath();
+      g.arc(q.x, q.y, 3 * dpr, 0, Math.PI * 2);
+      g.fillStyle = UI.ownLight;
+      g.fill();
+      g.restore();
     }
     // The player: an arrow pointing the way they face.
     const p = s.player;

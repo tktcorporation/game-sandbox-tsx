@@ -527,6 +527,10 @@ export class Hub {
   }
 
   private act(act: string, arg: string) {
+    if (act === "open-signal") {
+      sfx.click();
+      return this.open("signal");
+    }
     if (act === "exp-revenge") {
       // Answering an attack: the signal station opens on the island it came from.
       this.exped.revenge(arg);
@@ -891,8 +895,10 @@ export class Hub {
       `<div class="mod-body"><h4 class="fac-sub">今の工場</h4>${now}${nodes}` +
       `<h4 class="fac-sub">${next ? "次の段" : "最後の段"}</h4>${gain}${cost}` +
       `${fold}${this.factoryLadder ? ladder(levels, lv) : ""}</div></div>` +
-      // The squads the expeditions took (sent from the signal station) are not here: how many, in a line.
-      (squadsAway(p) ? `<p class="factory-away">${flagIcon()}島の守り <b>${homeSquads(p)}</b>　${flagIcon()}遠征 <b>${squadsAway(p)}</b><small>信号所から</small></p>` : "")
+      // Always a path to the signal station: expeditions live there, not on this panel.
+      `<p class="factory-away"><button type="button" class="factory-signal" data-act="open-signal">${flagIcon()}遠征・島の番号へ` +
+      (squadsAway(p) ? `<span>守り <b>${homeSquads(p)}</b>　遠征 <b>${squadsAway(p)}</b></span>` : `<span>信号所</span>`) +
+      `</button></p>`
     );
   }
 
@@ -1282,6 +1288,9 @@ export class Hub {
       ["依頼", c ? this.askLine(c) : esc(story ? `記録：${story.title}` : "—")],
       ["装備", this.kitMarks()],
     ];
+    // Other players' expeditions land in the next raid: same marks as the departure / map table.
+    const incoming = incomingFor(p);
+    if (incoming.length) plan.push(["来る遠征", `${incoming.map((e) => incomingMarks(e, Date.now())).join("")}<em class="ask-kind">核で固める</em>`]);
     return { head, row: nodeRow(islandHolds(p)), plan };
   }
 

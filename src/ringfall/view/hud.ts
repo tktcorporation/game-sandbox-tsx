@@ -215,6 +215,34 @@ export class Hud {
     this.scout = null;
   }
 
+  /** Settled raids before this one: the secondary story line stays quiet on the first raid. */
+  private raidsDone = 0;
+  setRaidsDone(n: number) {
+    this.raidsDone = n;
+  }
+
+  /**
+   * A short local ping where the player looks (P): view-only mark on the compass and map for a
+   * few seconds. Does not touch the sim (docs/ringfall/ux-design.md, M4). Optional `sync` posts
+   * it to the island DO (M6) from `main.ts`.
+   */
+  private ping: { x: number; z: number; until: number } | null = null;
+  dropPing(at: { x: number; z: number }) {
+    this.ping = { x: at.x, z: at.z, until: performance.now() + 8000 };
+    this.map.ping = { x: at.x, z: at.z };
+    this.toast(`${flagIcon(SIDE.own)}印`, 1, 1600);
+  }
+
+  /** Async look-marks from the island (M6); expired ones are dropped by the caller. */
+  setRemotePings(list: readonly { x: number; z: number }[]) {
+    this.map.remotePings = list;
+  }
+
+  /** Async attack/defence traces on bins/roads (M5), set once as the raid starts. */
+  setTraces(list: readonly { x: number; z: number; t: "bin" | "road"; mode: "raid" | "hold" }[]) {
+    this.map.traces = list;
+  }
+
   /** The ways in the base offers, for the raid about to start: the HUD and the map tell the others apart. */
   /** Bag slots the pouch keeps through a wipe (the hideout's pouch). */
   private pouch: number = META.pouch;
@@ -523,6 +551,8 @@ export class Hud {
       el.dataset.html = row;
       el.innerHTML = row;
     }
+    // Calm days: the bar stays readable but does not compete with the objective (ux-design I4).
+    el.classList.toggle("calm", !risk && !contested);
   }
 
   frame(s: State, view: World, dt: number, w: number, h: number) {
@@ -586,15 +616,17 @@ export class Hud {
       setHtml(oc, `${mark}${esc(poi.name)}${cleared}${taking && s.capture ? `<b>${Math.floor(s.capture.t)}/${FRONT.capture}</b>` : ""}`);
       oc.classList.toggle("met", own);
     }
-    // The story record has a line of its own unless it is the objective.
+    // The story record has a line of its own unless it is the objective. On the first raid it stays
+    // hidden until the player has taken that record (or made it the objective), so the card says
+    // one next step (ux-design I5).
     const os = $("obj-story");
-    const recordLine = !!this.record && this.task?.t !== "record";
+    const heldRecord = !!this.record && (p.records.includes(this.record) || s.sentRecords.includes(this.record));
+    const recordLine = !!this.record && this.task?.t !== "record" && (this.raidsDone > 0 || heldRecord);
     os.hidden = !recordLine;
     if (this.record && recordLine) {
       const r = recordSpot(this.record);
-      const held = p.records.includes(this.record) || s.sentRecords.includes(this.record);
-      setHtml(os, `<span class="lead">記録</span>${esc(r.name)}${held ? checkIcon() : `<span class="at">${esc(r.place)}</span>`}`);
-      os.classList.toggle("met", held);
+      setHtml(os, `<span class="lead">記録</span>${esc(r.name)}${heldRecord ? checkIcon() : `<span class="at">${esc(r.place)}</span>`}`);
+      os.classList.toggle("met", heldRecord);
     }
     const oe = $("obj-event");
     oe.hidden = !s.event;
@@ -622,6 +654,7 @@ export class Hud {
     $("compass-strip").style.transform = `translateX(${half - (heading + 360) * 2}px)`;
     this.placeMark(heading, half);
     this.placeScout(s, heading, half);
+    this.placePing(s, heading, half);
     this.exits(s);
 
     // Vitals.
@@ -706,7 +739,13 @@ export class Hud {
     const prompt = this.prompt(s);
     setHtml($("prompt"), prompt);
     // On a cable the prompt only tells where it goes: the jump button lets go, the use button has nothing to do.
-    $("t-use").hidden = prompt === "" || !!s.player.zip;
+    const useBtn = $("t-use");
+    useBtn.hidden = prompt === "" || !!s.player.zip;
+    const cycleBtn = $("t-cycle");
+    if (cycleBtn) {
+      const many = !!useTarget(s) && useCandCount(s) > 1 && !s.player.zip && s.phase === "play" && s.player.downed <= 0;
+      cycleBtn.hidden = !many || useBtn.hidden;
+    }
 
     // Damage numbers.
     this.nums = this.nums.filter((n) => {
@@ -1084,8 +1123,8 @@ export class Hud {
   }
 
   /**
-   * The compass's one marker: the current objective step's bearing, held at the strip's edge when
-   * it is behind, with its distance. It is the only marker or distance the HUD shows.
+   * The compass's objective marker: the current step's bearing, held at the strip's edge when
+   * behind, with its distance. A local ping (P) is a separate faint mark (`placePing`).
    */
   private placeMark(heading: number, half: number) {
     const el = $("compass-mark");
@@ -1098,6 +1137,30 @@ export class Hud {
     el.classList.toggle("edge", off !== rel);
     const label = `${Math.round(this.mark.d)}m`;
     if (el.firstElementChild!.textContent !== label) el.firstElementChild!.textContent = label;
+  }
+
+  /** The local look-ping on the compass strip; cleared when its timer ends. */
+  private placePing(s: State, heading: number, half: number) {
+    const el = $("compass-ping");
+    const live = this.ping && performance.now() < this.ping.until ? this.ping : null;
+    if (!live) {
+      this.ping = null;
+      this.map.ping = null;
+      el.hidden = true;
+      return;
+    }
+    if (s.phase !== "play") {
+      el.hidden = true;
+      return;
+    }
+    const p = s.player.pos;
+    const bearing = ((((Math.atan2(live.x - p.x, -(live.z - p.z)) * 180) / Math.PI) % 360) + 360) % 360;
+    const rel = ((bearing - heading + 540) % 360) - 180;
+    const max = (half * 0.62) / 2;
+    const off = Math.max(-max, Math.min(max, rel));
+    el.hidden = false;
+    el.style.left = `${half + off * 2}px`;
+    el.classList.toggle("edge", off !== rel);
   }
 
   /**
@@ -1122,7 +1185,7 @@ export class Hud {
   private prompt(s: State): string {
     const p = s.player;
     if (p.downed > 0 || s.phase !== "play") return "";
-    if (s.leaving) return `${depotIcon()}<b>${Math.max(0, s.leaving.t).toFixed(1)}</b>`;
+    if (s.leaving) return `${depotIcon()}中継ボックス · 生還まで <b>${Math.max(0, s.leaving.t).toFixed(1)}</b>`;
     // On a cable: where it goes and the metres left.
     if (p.zip) {
       const l = ZIPS[p.zip.line];
@@ -1130,9 +1193,9 @@ export class Hud {
     }
     // The use key comes first: picking the teammate up or opening a bin works inside an extraction point too.
     const t = useTarget(s);
-    // When several overlap, T cycles the sticky focus; one prompt, one mark (docs/ringfall/ux-design.md).
-    const many = !!t && useCandCount(s) > 1 && !isTouch();
-    const tip = (html: string) => (many ? `${html}<i class="cycle"><kbd>T</kbd></i>` : html);
+    // When several overlap, T (or the touch cycle button) cycles the sticky focus.
+    const many = !!t && useCandCount(s) > 1;
+    const tip = (html: string) => (many ? `${html}<i class="cycle">${isTouch() ? "切替" : "<kbd>T</kbd>"}</i>` : html);
     const x = t ? null : extractHere(s);
     if (x) {
       if (x.call && callLeft(s, x.id) > 0) return `${exitIcon()}${x.short} ${clockIcon()}<b>${Math.ceil(callLeft(s, x.id))}</b>`;
@@ -1143,7 +1206,7 @@ export class Hud {
     // The same choice the use key acts on (sim/world.ts useTarget), so the prompt never promises something else.
     if (!t) {
       // At a depot that is on, which useTarget passes over while a squad is fighting: the depot, crossed, and the fight.
-      if (depotBlocked(s) && depotInReach(s) >= 0) return `${depotIcon()}${crossIcon()}${fightIcon(UI.foeBright)}`;
+      if (depotBlocked(s) && depotInReach(s) >= 0) return `${depotIcon()}中継ボックス${crossIcon()}${fightIcon(UI.foeBright)}`;
       // Back in the camp's yard with a fight close by: it takes the player home once that is over.
       if (homeReady(s) && depotBlocked(s)) return `野営地${crossIcon()}${fightIcon(UI.foeBright)}`;
       // Standing on something that will not go in: a mod part already worn, or a full bag.
@@ -1192,9 +1255,13 @@ export class Hud {
     }
     if (t.kind === "care") return tip(`${key("E")}補給ポッド`);
     if (t.kind === "depot") {
-      if (!p.haul.length && !p.tools.length && !p.records.length) return tip(`${key("E")}${depotIcon()}切り上げる ${clockIcon()}${DEPOT.leave} 秒`);
-      const value = p.haul.reduce((n, k) => n + VALUABLES[k].value, 0);
-      return tip(`${key("E")}${depotIcon()}${upIcon()}${p.haul.length + p.tools.length + p.records.length} 点・${value}`);
+      // One place, one line: what it is + what happens (brief: 中継ボックス). No internal jargon.
+      if (!p.haul.length && !p.tools.length && !p.records.length) {
+        return tip(`${key("E")}${depotIcon()}中継ボックス · 切り上げて生還 ${clockIcon()}${DEPOT.leave} 秒`);
+      }
+      const n = p.haul.length + p.tools.length + p.records.length;
+      const value = p.haul.reduce((v, k) => v + VALUABLES[k].value, 0);
+      return tip(`${key("E")}${depotIcon()}中継ボックス · 倉庫へ送る ${n}点・${value}`);
     }
     if (t.kind === "armor") return tip(`${key("E")}<span class="r" style="color:${RARITY_CSS[t.loot.rarity]}">アーマー Lv${t.loot.rarity}</span>${struck([`Lv${p.armor}`])}`);
     if (t.kind === "core") {

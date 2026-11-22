@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { idleInput, newRun } from "../src/ringfall/sim/state";
 import { USE } from "../src/ringfall/sim/config";
 import { useCandCount, useCandidates, useFocusMark, useTarget } from "../src/ringfall/sim/world";
-import { POIS } from "../src/ringfall/sim/map";
+import { DEPOTS, POIS } from "../src/ringfall/sim/map";
 import { groundAt } from "../src/ringfall/sim/geom";
 import { terrainHeight } from "../src/ringfall/sim/terrain";
 
@@ -103,5 +103,20 @@ assert.notEqual(s.useFocus, before);
 
 // Idle input still carries cycleUse: false (determinism of the default).
 assert.equal(idleInput().cycleUse, false);
+assert.equal("leaveParcel" in idleInput(), false);
 
-console.log(`use targeting ok: ${POIS[0].name} bin+weapon, facing, stick=${USE.stick}, cycle, ally`);
+// Depot has one primary only: send / leave — no separate aid or parcel candidates.
+s.ally.active = false;
+s.useFocus = null;
+s.useHeld = false;
+s.loot = [];
+s.depots[0] = true;
+const d = DEPOTS[0];
+p.pos = { x: d.x, y: d.y, z: d.z };
+p.haul = [];
+p.haulAt = [];
+const depotOnly = useCandidates(s).filter((c) => c.t.kind === "depot" || (c.t as { kind: string }).kind === "aid" || (c.t as { kind: string }).kind === "parcel");
+assert.equal(depotOnly.length, 1, `depot should be the only depot-related candidate, got ${depotOnly.map((c) => c.t.kind).join(",")}`);
+assert.equal(depotOnly[0].t.kind, "depot");
+
+console.log(`use targeting ok: ${POIS[0].name} bin+weapon, facing, stick=${USE.stick}, cycle, ally, depot-primary`);

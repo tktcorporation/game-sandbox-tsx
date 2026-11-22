@@ -221,6 +221,10 @@ export async function sendExpedition(code: string, node: string, units: number, 
 export interface RaidReport {
   lent: { id: number; left: number; waiting?: true }[];
   fortified: string[];
+  /** Aid parcels left at depots this raid (ux-design C2). */
+  parcels?: { poi: string; kind: string; from: { code: string; name: string } }[];
+  /** Aid parcel ids taken this raid. */
+  takenParcels?: number[];
 }
 
 /**
@@ -253,6 +257,9 @@ export function releaseLease(): Promise<void> {
  * that departure's lease and take it away from the raid that uses it.
  */
 let releasing: Promise<void> = Promise.resolve();
+
+/* postMark / sendAid removed from the player-facing loop (ux-design Round 3 simplify).
+ * Island DO may still accept report parcels from deposits; defence spend stays server-side. */
 
 /** Calls expedition `id` on island `code` home (`DELETE …/expeditions/<id>`), as its sender. */
 export async function recallExpedition(code: string, id: number): Promise<Answer<unknown>> {
@@ -312,7 +319,20 @@ export async function syncOwn(p: Profile, report: boolean, raid?: RaidReport): P
   const synced: Synced = {};
   if (report) {
     const retaken = [...p.retaken];
-    const r = await call(`/api/islands/${code}`, { method: "PUT", body: JSON.stringify({ player: player(who), holds: reportHolds(p), retaken, factory: p.factory, day: p.day, ...(raid?.lent.length ? { lent: raid.lent } : {}), ...(raid?.fortified.length ? { fortified: raid.fortified } : {}) }) });
+    const r = await call(`/api/islands/${code}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        player: player(who),
+        holds: reportHolds(p),
+        retaken,
+        factory: p.factory,
+        day: p.day,
+        ...(raid?.lent.length ? { lent: raid.lent } : {}),
+        ...(raid?.fortified.length ? { fortified: raid.fortified } : {}),
+        ...(raid?.parcels?.length ? { parcels: raid.parcels } : {}),
+        ...(raid?.takenParcels?.length ? { takenParcels: raid.takenParcels } : {}),
+      }),
+    });
     if (!r.ok) return r;
     synced.reported = retaken;
     synced.holds = reportedHolds(r.body) ?? undefined;
@@ -323,6 +343,7 @@ export async function syncOwn(p: Profile, report: boolean, raid?: RaidReport): P
   if (view.ok) {
     synced.holds = view.body.nodes;
     synced.incoming = incomingOf(view.body);
+    synced.parcels = view.body.parcels;
   }
   if (!log.ok && !view.ok && !report) return view;
   // The neighbours read again with every sync, so the camp's maps and the horizon show them without the factory's panel opened.

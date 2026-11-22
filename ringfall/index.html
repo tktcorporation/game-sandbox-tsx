@@ -24,7 +24,7 @@
 
     <div id="hud" hidden>
       <canvas id="minimap" aria-label="地図" title="地図（M）"></canvas>
-      <div id="compass"><div id="compass-strip"></div><b id="compass-deg">0</b><i id="compass-mark" hidden><span></span></i><i id="compass-scout" hidden></i></div>
+      <div id="compass"><div id="compass-strip"></div><b id="compass-deg">0</b><i id="compass-mark" hidden><span></span></i><i id="compass-scout" hidden></i><i id="compass-ping" hidden></i></div>
       <div id="island-row"></div>
       <div id="map" hidden><canvas id="map-canvas"></canvas><p><span class="map-key hold freed">●</span> 自分 <span class="map-key hold held">●</span> 敵 <span class="map-rival" hidden><span class="map-key hold rival">●</span> 他のプレイヤー </span><span class="map-key">◆</span> 脱出<span class="map-close">　<kbd>N</kbd> <span id="map-view-key">全体</span>　<kbd>M</kbd> 閉じる</span></p><span class="map-buttons"><button id="map-zoom" type="button">全体</button><button id="map-close" type="button">閉じる</button><button id="map-pause" type="button">一時停止</button></span></div>
       <div id="objective"><span id="obj-head"><em id="obj-title"></em><i id="obj-n"></i></span><span id="obj-text"></span><small id="obj-until"></small><small id="obj-contract" hidden></small><small id="obj-story" hidden></small><small id="obj-event" hidden></small><small id="obj-bag"></small><small id="obj-raid"></small><small id="obj-stealth"></small><small id="obj-exits"></small></div>
@@ -72,7 +72,8 @@
       <button type="button" class="tb ab-btn" id="t-tac" data-act="KeyQ" aria-label="アーク"><b>アーク</b></button>
       <button type="button" class="tb ab-btn ult" id="t-ult" data-act="KeyZ" aria-label="離脱ジャンプ"><b id="t-ult-pct">0%</b></button>
       <button type="button" class="tb small" id="t-battery" data-act="KeyH" aria-label="回復"><b>回復 <span id="t-cells">0</span></b></button>
-      <button type="button" class="tb pill" id="t-use" data-act="KeyE" hidden><b>拾う・調べる</b></button>
+      <button type="button" class="tb pill" id="t-use" data-act="KeyE" hidden><b>使う</b></button>
+      <button type="button" class="tb small" id="t-cycle" data-act="KeyT" hidden aria-label="対象を切り替える"><b>切替</b></button>
       <button type="button" class="tb small" id="t-map" data-act="map" aria-label="地図"><b>地図</b></button>
       <button type="button" class="tb small" id="t-bag" data-act="bag" aria-label="バッグ"><svg viewBox="0 0 16 16" width="22" height="22" aria-hidden="true"><path d="M3 6 H13 L12 15 H4 Z" fill="currentColor"/><path d="M5.5 6 V4.5 a2.5 2.5 0 0 1 5 0 V6" stroke="currentColor" stroke-width="1.6" fill="none"/></svg></button>
     </div>
