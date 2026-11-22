@@ -28,6 +28,7 @@
     "perf:ringfall": "node scripts/ringfall-perf.mjs",
     "test:ringfall-quality": "tsx scripts/ringfall-quality.ts",
     "test:ringfall-stats": "tsx scripts/ringfall-stats.test.ts",
+    "test:ringfall-use": "tsx scripts/ringfall-use.ts",
     "validate:ringfall-stop": "tsx scripts/ringfall-stop-validate.ts",
     "months:ringfall": "tsx scripts/ringfall-months.ts",
     "shots:ringfall": "node scripts/ringfall-shots.mjs",

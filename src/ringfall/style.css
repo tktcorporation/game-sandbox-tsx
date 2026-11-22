@@ -833,6 +833,15 @@ body.touch #obj-raid .why {
 #prompt .r {
   font-family: var(--num);
 }
+/* Cycle hint when several interactables overlap: quieter than the E key. */
+#prompt .cycle {
+  margin-left: 6px;
+  opacity: 0.55;
+  font-style: normal;
+}
+#prompt .cycle kbd {
+  font-size: 12px;
+}
 
 #vitals {
   position: absolute;

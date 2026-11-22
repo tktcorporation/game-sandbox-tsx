@@ -52,15 +52,26 @@ export function stepCamp(s: State, input: Input, prevCrouch: boolean) {
 /** Whether the player has left the camp's yard: through the gate, or over the fence. */
 export const outOfCamp = (s: State) => !inCamp(s.player.pos);
 
-/** The station or truck the use key acts on where the player stands: the nearest within its reach, else null. */
-export function campSpotAt(at: { x: number; z: number }): CampSpot | null {
+/**
+ * The station or truck the use key acts on where the player stands: among those in reach,
+ * the one looked at more beats a closer one behind the back (same facing cut as `USE.face`).
+ */
+export function campSpotAt(at: { x: number; z: number; yaw?: number }): CampSpot | null {
   let best: CampSpot | null = null;
-  let bestD = Infinity;
+  let bestScore = Infinity;
+  const yaw = at.yaw;
+  const fx = yaw !== undefined ? Math.sin(yaw) : 0;
+  const fz = yaw !== undefined ? -Math.cos(yaw) : 0;
   for (const c of CAMP.spots) {
-    const d = hypot2(c.x - at.x, c.z - at.z);
-    if (d < c.reach && d < bestD) {
+    const dx = c.x - at.x;
+    const dz = c.z - at.z;
+    const d = hypot2(dx, dz);
+    if (d >= c.reach) continue;
+    const face = yaw !== undefined && d > 0.05 ? Math.max(0, (fx * dx + fz * dz) / d) * 0.9 : 0;
+    const score = d - face;
+    if (score < bestScore) {
       best = c;
-      bestD = d;
+      bestScore = score;
     }
   }
   return best;

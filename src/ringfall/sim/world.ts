@@ -1,18 +1,16 @@
-import { ALLY, AWARE, BAG, BIN_GEAR, CREW, DEBRIS, DEPOT, ENEMIES, ENTRY, HEALS, HOME, PARTY, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, TICK, TOOL_KINDS, TOOLS, TOP_BINS, VALUABLES, VAULT, WORLD, type HealKind, type ToolKind } from "./config";
-import { grabZip, zipInReach } from "./zips";
+import { ALLY, AWARE, BAG, BIN_GEAR, CREW, DEBRIS, DEPOT, ENEMIES, ENTRY, FRONT, HEALS, HOME, MOD, PARTY, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, TICK, TOOL_KINDS, TOOLS, TOP_BINS, USE, VALUABLES, VAULT, WORLD, type EnemyKind, type HealKind, type ToolKind, type ValuableKind } from "./config";
+import { grabZip, zipInReach, zipPoint } from "./zips";
 import { dist2d, groundAt, los, solidAt, worldVersion } from "./geom";
 import { highGround, steepAt, terrainHeight } from "./terrain";
-import { DEPOTS, ENTRIES, EXTRACTS, inCamp, PARTY_STOPS, POIS, recordSpot, REGIONS, regionOf, type ExtractPoint, type RecordId } from "./map";
+import { DEPOTS, ENTRIES, EXTRACTS, inCamp, NODES, PARTY_STOPS, POIS, recordSpot, REGIONS, regionOf, ZIPS, type ExtractPoint, type RecordId } from "./map";
 import { spawnEnemy, spawnSpot } from "./enemies";
 import { cellsAround, fieldTo, nextStep, onMainGround, routeLength } from "./hunt";
 import type { CrewTrip, SquadState } from "./state";
 import { raiseAlly, startHelp } from "./ally";
 import { boosted, callLeft, crewRand, strengthLevel, raidClock, cellOf, exploreSize, mix, rand, roamRand, type Bin, type Input, type Loot, type PartySlot, type PartyTrip, type Player, type Point, type State, type Weapon } from "./state";
-import type { EnemyKind, ValuableKind } from "./config";
 import { interceptSpot, located, makeNoise } from "./awareness";
 import { hasMod, modScale, spillBinMod, wearMod } from "./mods";
-import { MOD } from "./config";
-import { coreInReach, inZone, useCore } from "./front";
+import { fortifiable, inZone, useCore } from "./front";
 import { hypot2, hypot3 } from "./hypot";
 import { squadMembers } from "./members";
 
@@ -641,7 +639,10 @@ export function stepLoot(s: State, input: Input) {
   for (const l of worn) if (p.mods.length < MOD.slots) wearMod(s, l);
 
   stepSearch(s, alive);
-  if (!input.interact || !alive) return;
+  if (!alive) return;
+  // Cycle the sticky focus even when not pressing use, so the prompt moves before the next press.
+  if (input.cycleUse) useTarget(s, !input.keepArmor, !input.leaveTools, !input.leaveMods, !input.noClimb, true);
+  if (!input.interact) return;
   const t = useTarget(s, !input.keepArmor, !input.leaveTools, !input.leaveMods, !input.noClimb);
   if (t?.kind === "ally") startHelp(s);
   else if (t?.kind === "mod") wearMod(s, t.loot);
@@ -814,43 +815,118 @@ export type UseTarget =
   | { kind: "core"; node: number }
   | { kind: "zip"; line: number; at: number };
 
+/** One candidate for the use key: a stable id, a score (lower wins), the target, and where to draw its mark. */
+export type UseCand = { id: string; score: number; t: UseTarget; x: number; y: number; z: number };
+
+/** How much looking at `(x,z)` cuts the score: 0 behind the player, up to `USE.face` straight ahead. */
+const faceCut = (yaw: number, from: { x: number; z: number }, x: number, z: number) => {
+  const dx = x - from.x;
+  const dz = z - from.z;
+  const len = Math.hypot(dx, dz);
+  if (len < 0.05) return USE.face;
+  return Math.max(0, (Math.sin(yaw) * dx + -Math.cos(yaw) * dz) / len) * USE.face;
+};
+
 /**
- * A downed teammate within reach comes first, however close any loot is; otherwise
- * the closest of bin, care package or weapon within reach; and only when none of those
- * is, a depot that is on, so a press meant for loot never sends the bag home or ends the raid.
+ * Everything the use key could act on right now, sorted best-first (lowest score). A downed
+ * teammate is listed alone when in reach; otherwise bins, loot, cores, zips and depots compete
+ * by distance, facing and `USE.prefer`. The HUD and the press both read this list through
+ * `useTarget`, so the prompt never promises something else.
  */
-export function useTarget(s: State, armor = true, tools = true, mods = true, zips = true): UseTarget | null {
+export function useCandidates(s: State, armor = true, tools = true, mods = true, zips = true): UseCand[] {
   const p = s.player;
   const level = (y: number) => Math.abs(y - p.pos.y) < 1.5;
   const a = s.ally;
-  if (a.active && a.down > 0 && dist2d(a.pos, p.pos) < PLAYER.interactRange + 1 && level(a.pos.y)) return { kind: "ally" };
-  const picks: { d: number; t: UseTarget }[] = [];
+  if (a.active && a.down > 0 && dist2d(a.pos, p.pos) < PLAYER.interactRange + 1 && level(a.pos.y)) {
+    return [{ id: "ally", score: -100, t: { kind: "ally" }, x: a.pos.x, y: a.pos.y, z: a.pos.z }];
+  }
+  const out: UseCand[] = [];
+  const push = (id: string, dist: number, prefer: number, t: UseTarget, x: number, y: number, z: number, reach = PLAYER.interactRange) => {
+    if (dist >= reach) return;
+    out.push({ id, score: dist - faceCut(p.yaw, p.pos, x, z) - prefer, t, x, y, z });
+  };
   s.bins.forEach((b, index) => {
-    if (!b.open && level(b.y)) picks.push({ d: dist2d(b, p.pos), t: { kind: "bin", index } });
+    if (!b.open && level(b.y)) push(`bin:${b.id}`, dist2d(b, p.pos), USE.prefer.bin, { kind: "bin", index }, b.x, b.y, b.z);
   });
   const care = s.care;
-  if (care && care.landed && !care.open && level(care.y)) picks.push({ d: dist2d(care, p.pos) - 0.6, t: { kind: "care" } });
+  if (care && care.landed && !care.open && level(care.y)) {
+    push("care", dist2d(care, p.pos), USE.prefer.care, { kind: "care" }, care.x, care.y, care.z);
+  }
   for (const l of s.loot) {
     if (l.age < 0.4 || !level(l.pos.y)) continue;
-    if (l.kind === "weapon" && l.weapon) picks.push({ d: dist2d(l.pos, p.pos) - 0.3, t: { kind: "weapon", loot: l } });
-    // Armour the player took off can go back on; fresh armour is only ever an upgrade, put on by walking over it.
-    // It yields to a bin or a weapon at the same distance, since it lies where the upgrade was found.
-    else if (armor && l.kind === "armor" && l.worn && l.rarity !== p.armor) picks.push({ d: dist2d(l.pos, p.pos) + 0.3, t: { kind: "armor", loot: l } });
-    // A valuable that does not fit is worth a press when something cheaper can make way.
-    else if (l.kind === "valuable" && l.valuable && makeRoom(p.haul, l.valuable, p.tools, p.records.length)?.length) picks.push({ d: dist2d(l.pos, p.pos) - 0.3, t: { kind: "swap", loot: l } });
-    // A tool is taken by the use key, throwing cheaper things out of a full bag.
-    else if (tools && l.kind === "tool" && l.tool && roomForTool(p, l.tool)) picks.push({ d: dist2d(l.pos, p.pos) - 0.3, t: { kind: "tool", loot: l } });
-    // A part of a kind not worn goes on with the use key, in place of the one worn longest when every slot is taken.
-    else if (mods && l.kind === "mod" && l.mod && !hasMod(p, l.mod)) picks.push({ d: dist2d(l.pos, p.pos) - 0.3, t: { kind: "mod", loot: l } });
+    const d = dist2d(l.pos, p.pos);
+    if (l.kind === "weapon" && l.weapon) push(`loot:${l.id}`, d, USE.prefer.weapon, { kind: "weapon", loot: l }, l.pos.x, l.pos.y, l.pos.z);
+    else if (armor && l.kind === "armor" && l.worn && l.rarity !== p.armor) push(`loot:${l.id}`, d, USE.prefer.armor, { kind: "armor", loot: l }, l.pos.x, l.pos.y, l.pos.z);
+    else if (l.kind === "valuable" && l.valuable && makeRoom(p.haul, l.valuable, p.tools, p.records.length)?.length) {
+      push(`loot:${l.id}`, d, USE.prefer.swap, { kind: "swap", loot: l }, l.pos.x, l.pos.y, l.pos.z);
+    } else if (tools && l.kind === "tool" && l.tool && roomForTool(p, l.tool)) {
+      push(`loot:${l.id}`, d, USE.prefer.tool, { kind: "tool", loot: l }, l.pos.x, l.pos.y, l.pos.z);
+    } else if (mods && l.kind === "mod" && l.mod && !hasMod(p, l.mod)) {
+      push(`loot:${l.id}`, d, USE.prefer.mod, { kind: "mod", loot: l }, l.pos.x, l.pos.y, l.pos.z);
+    }
   }
-  const pick = picks.filter((k) => k.d < PLAYER.interactRange).sort((x, y) => x.d - y.d)[0]?.t;
-  if (pick) return pick;
-  const core = coreInReach(s);
-  if (core >= 0) return { kind: "core", node: core };
-  const zip = zips ? zipInReach(s) : null;
-  if (zip) return { kind: "zip", line: zip.line, at: zip.at };
+  // Every reachable core, nearest-facing first (not `NODES` order).
+  const coreReach = PLAYER.interactRange + FRONT.half + 0.5;
+  NODES.forEach((n, i) => {
+    if (s.nodes[i] === "freed" && !fortifiable(s, i)) return;
+    const d = dist2d(n.core, p.pos);
+    if (d >= coreReach) return;
+    if (p.pos.y <= n.core.y - 1.5 || p.pos.y >= n.core.y + 2) return;
+    push(`core:${i}`, d, USE.prefer.core, { kind: "core", node: i }, n.core.x, n.core.y, n.core.z, coreReach);
+  });
+  if (zips) {
+    const zip = zipInReach(s);
+    if (zip) {
+      const { p: pt } = zipPoint(ZIPS[zip.line], zip.at);
+      push(`zip:${zip.line}`, dist2d(pt, p.pos), USE.prefer.zip, { kind: "zip", line: zip.line, at: zip.at }, pt.x, pt.y, pt.z, PLAYER.interactRange + 2);
+    }
+  }
   const depot = depotInReach(s);
-  return depot >= 0 && !depotBlocked(s) ? { kind: "depot", index: depot } : null;
+  if (depot >= 0 && !depotBlocked(s)) {
+    const d = DEPOTS[depot];
+    push(`depot:${depot}`, dist2d(d, p.pos), USE.prefer.depot, { kind: "depot", index: depot }, d.x, d.y, d.z, PLAYER.interactRange + 1);
+  }
+  out.sort((a, b) => a.score - b.score || a.id.localeCompare(b.id));
+  return out;
+}
+
+/**
+ * The one thing the use key acts on: sticky focus with facing and priority (`USE`), optional
+ * cycle among candidates. Updates `State.useFocus`. The HUD calls the same function so the
+ * prompt never promises something else. A focus chosen with the cycle key (`useHeld`) stays
+ * until it leaves reach or the player cycles again, so a later ordinary read does not snap back.
+ */
+export function useTarget(s: State, armor = true, tools = true, mods = true, zips = true, cycle = false): UseTarget | null {
+  const cands = useCandidates(s, armor, tools, mods, zips);
+  if (!cands.length) {
+    s.useFocus = null;
+    s.useHeld = false;
+    return null;
+  }
+  let i = cands.findIndex((c) => c.id === s.useFocus);
+  if (cycle && cands.length > 1) {
+    i = i < 0 ? 0 : (i + 1) % cands.length;
+    s.useHeld = true;
+  } else if (i < 0) {
+    i = 0;
+    s.useHeld = false;
+  } else if (!s.useHeld && cands[0].score + USE.stick < cands[i].score) {
+    // Automatic stick only: a held (cycled) focus is not stolen by score alone.
+    i = 0;
+    s.useHeld = false;
+  }
+  s.useFocus = cands[i].id;
+  return cands[i].t;
+}
+
+/** How many use candidates are in reach (for the prompt's cycle hint). */
+export const useCandCount = (s: State, armor = true, tools = true, mods = true, zips = true) => useCandidates(s, armor, tools, mods, zips).length;
+
+/** Where the focused use target stands, for the world's highlight ring; null when none. */
+export function useFocusMark(s: State): { x: number; y: number; z: number } | null {
+  if (!s.useFocus) return null;
+  const c = useCandidates(s).find((k) => k.id === s.useFocus);
+  return c ? { x: c.x, y: c.y, z: c.z } : null;
 }
 
 /** A depot cannot be used with a robot that fights the player nearby: neither the bag nor the player leaves under fire. */
