@@ -4939,11 +4939,15 @@ body.touch .bag-card:nth-last-child(n + 3) {
 .mod-body .exp-out.holding > b {
   color: var(--hot);
 }
-.mod-body .exp-out.gone {
-  opacity: 0.5;
-}
+/* An expedition gone or being called home is drawn in the muted colour, not faded: its words stay readable. */
+.mod-body .exp-out.gone,
 .mod-body .exp-out.recalling {
-  opacity: 0.6;
+  background: rgb(var(--white-rgb) / 0.03);
+}
+.mod-body .exp-out.gone *,
+.mod-body .exp-out.recalling * {
+  color: var(--muted) !important;
+  border-color: var(--muted);
 }
 .mod-body .exp-out.waiting > b {
   color: var(--muted);

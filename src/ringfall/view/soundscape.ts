@@ -49,6 +49,19 @@ class Occlusion {
   };
 }
 
+/**
+ * The wind's levels (the gain of its breeze loop): a floor, more with height over the world (0 on
+ * the lakebed's floor, 1 thirty metres up) and with the drop under the listener. The sound check
+ * (soundcheck.ts) renders the breeze at these levels and holds it under the music.
+ */
+export const WIND = { base: 0.0096, height: 0.007, above: 0.003 };
+
+/** Each region's bed's level: the surf's floor and swell, the city's hum, the plateau's whistle's floor and gust. */
+export const BEDS = { harbor: [0.0055, 0.0078], city: 0.025, launch: [0.003, 0.0098] } as const;
+
+/** The breeze's gain at `height` (0..1) and `above` metres over the ground, out in the open. */
+export const windGain = (height: number, above: number) => WIND.base + WIND.height * height + Math.min(WIND.above, above * 0.0004);
+
 export class Soundscape {
   private occ = new Occlusion();
   private breeze: Loop | null = null;
@@ -116,13 +129,14 @@ export class Soundscape {
     // The rush comes with the leap's fall, a cable's ride, and any run past a sprint's speed.
     const pace = Math.hypot(s.player.vel.x, s.player.vel.z);
     const falling = play && (!!s.player.leap || !!s.player.zip || pace > PLAYER.sprint + 1);
-    const base = play ? (0.07 + 0.12 * height + Math.min(0.08, above * 0.004)) * open : 0;
+    const base = play ? windGain(height, above) * open : 0;
     const swell = 0.6 + 0.4 * Math.sin(this.time * 0.37) * Math.sin(this.time * 0.11 + 1);
     this.breeze?.gain.gain.setTargetAtTime(base * (0.8 + 0.4 * swell), t, 0.4);
     this.gust?.gain.gain.setTargetAtTime(base * 0.35 * Math.max(0, swell - 0.5) * 2, t, 0.5);
     this.gust?.filter.frequency.setTargetAtTime(700 + 900 * swell, t, 0.6);
     const fall = falling ? Math.min(1, Math.hypot(s.player.vel.x, s.player.vel.y, s.player.vel.z) / 30) : 0;
-    const level = s.player.leap ? 0.16 + 0.12 * fall : Math.min(0.24, 0.04 + 0.2 * fall);
+    // Half what it was: a ride or a fall is heard, without burying the guns and the music under it.
+    const level = s.player.leap ? 0.08 + 0.06 * fall : Math.min(0.12, 0.02 + 0.1 * fall);
     this.rush?.gain.gain.setTargetAtTime(falling ? level : 0, t, 0.12);
     this.rush?.filter.frequency.setTargetAtTime(500 + 1600 * fall, t, 0.15);
   }
@@ -140,9 +154,9 @@ export class Soundscape {
     const surf = 0.5 + 0.5 * Math.sin(this.time * 0.45);
     const gust = Math.max(0, Math.sin(this.time * 0.23) * Math.sin(this.time * 0.07 + 2));
     const want: Record<"harbor" | "city" | "launch", number> = {
-      harbor: here === "harbor" ? (0.05 + 0.07 * surf) * open : 0,
-      city: here === "city" ? 0.035 * open : 0,
-      launch: here === "launch" ? (0.015 + 0.05 * gust) * open : 0,
+      harbor: here === "harbor" ? (BEDS.harbor[0] + BEDS.harbor[1] * surf) * open : 0,
+      city: here === "city" ? BEDS.city * open : 0,
+      launch: here === "launch" ? (BEDS.launch[0] + BEDS.launch[1] * gust) * open : 0,
     };
     for (const r of ["harbor", "city", "launch"] as const) this.beds[r]?.gain.gain.setTargetAtTime(want[r], t, 0.8);
     this.beds.launch?.filter.frequency.setTargetAtTime(1500 + 900 * gust, t, 0.6);

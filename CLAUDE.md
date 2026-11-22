@@ -766,7 +766,8 @@ npm run shots:ringfall   # gate 3: the build played in Chromium (a reservoir rai
   and the factory's level at days 5, 10, 20 and 30 of a month on one profile per skill, the first
   day each tier was held, and the nodes held, the best gun carried and the nodes changing hands by
   day; the campaign's bot builds the factory, then buys the best rifle and armour the trader's shelf
-  holds and carries them).
+  holds and carries them; the game's own islands come at it as in a browser with no island server,
+  their first scout included, and the `ai islands` lines count the days one came and the nodes they took).
   Change a number in `config.ts` or `map.ts` only together with a re-run and an update to that file.
   While tuning, `npm run sim:ringfall -- 10` (10 raids per skill and region, about a third of the
   time) is enough to see which way a change moves the tables; the record in that file is 30.
