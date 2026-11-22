@@ -737,6 +737,15 @@ export interface State {
   sentRecords: RecordId[];
   /** Credits' worth sent home through each depot this raid, by place in `DEPOTS`: it levels that depot (`DEPOT.levels`). */
   sentVia: number[];
+  /**
+   * Parcels at depots this raid (ux-design C2): from `Start.parcels`, plus those left with
+   * `Input.leaveParcel`. The sim gate never starts with any, so the bench hash is unchanged.
+   */
+  parcels: WorldParcel[];
+  /** Parcels left at depots this raid (to report / keep on the island). */
+  leftParcels: { poi: PoiId; kind: ValuableKind }[];
+  /** Parcel ids taken this raid (cleared from the island on report). */
+  takenParcels: number[];
   /** Leaving at a depot: which one, and the seconds still to stand there. */
   leaving: { depot: number; t: number } | null;
   /** The depot the raid ended at, if it ended at one. */
@@ -828,6 +837,11 @@ export interface Input {
   keepArmor?: boolean;
   /** The use key never takes up a tool: the bot plays the gate's raids as they stand without tools. */
   leaveTools?: boolean;
+  /**
+   * At a depot with a bag: leave the first valuable as a parcel for other players and send the
+   * rest home (ux-design C2). The bot never sets this, so the gate's raids play as without it.
+   */
+  leaveParcel?: boolean;
   /** Mod parts are neither put on by walking over them nor by the use key: the bot plays without them. */
   leaveMods?: boolean;
   /**
@@ -947,6 +961,24 @@ export interface Start {
   noMods?: boolean;
   /** The day's battle (陣取り戦) and what the player brings to it; left out, the raid has none. */
   battle?: BattleStart;
+  /**
+   * Parcels at depots from the island / profile (ux-design C2). Left out, none — the sim gate
+   * and campaigns omit them, so their hashes stay put.
+   */
+  parcels?: readonly { id: number; poi: PoiId; kind: ValuableKind; from: { code: string; name: string } }[];
+}
+
+/** A parcel on the ground by a depot this raid. */
+export interface WorldParcel {
+  id: number;
+  poi: PoiId;
+  kind: ValuableKind;
+  from: { code: string; name: string };
+  x: number;
+  y: number;
+  z: number;
+  /** Taken into the bag this raid. */
+  taken: boolean;
 }
 
 /** What the enemy's strength sets in a raid. */
@@ -1107,6 +1139,12 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
     sentAt: [],
     sentRecords: [],
     sentVia: DEPOTS.map(() => 0),
+    parcels: (start.parcels ?? []).flatMap((p) => {
+      const d = DEPOTS.find((q) => q.poi === p.poi);
+      return d ? [{ id: p.id, poi: p.poi, kind: p.kind, from: p.from, x: d.x, y: d.y, z: d.z, taken: false }] : [];
+    }),
+    leftParcels: [],
+    takenParcels: [],
     leaving: null,
     leftAt: null,
     away: 0,

@@ -221,6 +221,10 @@ export async function sendExpedition(code: string, node: string, units: number, 
 export interface RaidReport {
   lent: { id: number; left: number; waiting?: true }[];
   fortified: string[];
+  /** Parcels left at depots this raid (ux-design C2). */
+  parcels?: { poi: string; kind: string; from: { code: string; name: string } }[];
+  /** Parcel ids taken this raid. */
+  takenParcels?: number[];
 }
 
 /**
@@ -253,6 +257,18 @@ export function releaseLease(): Promise<void> {
  * that departure's lease and take it away from the raid that uses it.
  */
 let releasing: Promise<void> = Promise.resolve();
+
+/** Calls expedition `id` on island `code` home (`DELETE …/expeditions/<id>`), as its sender. */
+/** Posts a short look-ping on this player's island (ux-design M6). No-op without a code / server. */
+export async function postPing(at: { x: number; z: number }): Promise<Answer<unknown>> {
+  const who = loadIdentity();
+  if (!who.code) return failed("no-own-island");
+  return call(`/api/islands/${encodeURIComponent(who.code)}/pings`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${who.id}` },
+    body: JSON.stringify({ name: who.name, x: at.x, z: at.z }),
+  }, SEND_TIMEOUT_MS);
+}
 
 /** Calls expedition `id` on island `code` home (`DELETE …/expeditions/<id>`), as its sender. */
 export async function recallExpedition(code: string, id: number): Promise<Answer<unknown>> {
@@ -312,7 +328,20 @@ export async function syncOwn(p: Profile, report: boolean, raid?: RaidReport): P
   const synced: Synced = {};
   if (report) {
     const retaken = [...p.retaken];
-    const r = await call(`/api/islands/${code}`, { method: "PUT", body: JSON.stringify({ player: player(who), holds: reportHolds(p), retaken, factory: p.factory, day: p.day, ...(raid?.lent.length ? { lent: raid.lent } : {}), ...(raid?.fortified.length ? { fortified: raid.fortified } : {}) }) });
+    const r = await call(`/api/islands/${code}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        player: player(who),
+        holds: reportHolds(p),
+        retaken,
+        factory: p.factory,
+        day: p.day,
+        ...(raid?.lent.length ? { lent: raid.lent } : {}),
+        ...(raid?.fortified.length ? { fortified: raid.fortified } : {}),
+        ...(raid?.parcels?.length ? { parcels: raid.parcels } : {}),
+        ...(raid?.takenParcels?.length ? { takenParcels: raid.takenParcels } : {}),
+      }),
+    });
     if (!r.ok) return r;
     synced.reported = retaken;
     synced.holds = reportedHolds(r.body) ?? undefined;
@@ -323,6 +352,7 @@ export async function syncOwn(p: Profile, report: boolean, raid?: RaidReport): P
   if (view.ok) {
     synced.holds = view.body.nodes;
     synced.incoming = incomingOf(view.body);
+    synced.parcels = view.body.parcels;
   }
   if (!log.ok && !view.ok && !report) return view;
   // The neighbours read again with every sync, so the camp's maps and the horizon show them without the factory's panel opened.

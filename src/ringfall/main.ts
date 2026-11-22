@@ -21,7 +21,9 @@ import { bodyCenter, eyePos, fireRay, kill } from "./sim/combat";
 import { squadKey } from "./sim/state";
 import { loadProfile, saveProfile } from "./meta/storage";
 import { sendIsland } from "./net";
-import { aiLentFor, aiSalt, aiScouted, incomingFor, markScouted, flushRecalls, leaseOwn, neighboursFor, refreshAi, releaseLease, syncOwn, takeReport, takeSync, useAi } from "./island-net";
+import { aiLentFor, aiSalt, aiScouted, incomingFor, markScouted, flushRecalls, leaseOwn, neighboursFor, postPing, refreshAi, releaseLease, syncOwn, takeReport, takeSync, useAi } from "./island-net";
+import { loadIdentity } from "./meta/identity";
+import { raidTraces } from "./view/traces";
 import { aiRaidNews, aiRivals } from "./meta/ai-islands";
 import { dropStale, fortifiedNodes, LEASE_LATE, lentResults, lentRivals, logLine, squadsAway, type IslandLogEntry, type LentIn } from "./meta/expeditions";
 import { Hub, type Launch } from "./view/hub";
@@ -248,6 +250,8 @@ function readInput(): Input {
   inp.tactical = pressed("tactical");
   inp.ult = pressed("ult");
   inp.interact = pressed("use");
+  // Shift+E at a depot leaves one valuable as a parcel (ux-design C2); bots never set this.
+  inp.leaveParcel = inp.interact && (keys.has("ShiftLeft") || keys.has("ShiftRight"));
   inp.cycleUse = pressed("cycleUse");
   inp.heal = pressed("heal");
   inp.swap = pressed("swap");
@@ -317,6 +321,8 @@ let raidLent: LentIn[] = [];
 let raidAi: { lent: LentIn[]; slots: number[]; scouted: boolean } | null = null;
 /** The game's own islands' news from the raid just settled, before the server's. */
 let aiNews: string[] = [];
+/** Look-pings last read from the island's view (ux-design M6); the next raid draws them. */
+let islandPings: { x: number; z: number; until: number }[] = [];
 
 /**
  * Syncs the island with the server after a settled raid (island-net.ts): the owner's report, then
@@ -330,7 +336,14 @@ function syncIsland(p: Settlement["profile"], settled: State) {
   islandNews = [];
   aiNews = [];
   // What the raid made of the other players' expeditions it took in goes with the report.
-  const raid = { lent: lentResults(raidLent, settled.battle), fortified: fortifiedNodes(settled.battle) };
+  const who = loadIdentity();
+  const from = who.code ? { code: who.code, name: who.name } : { code: "local", name: who.name };
+  const raid = {
+    lent: lentResults(raidLent, settled.battle),
+    fortified: fortifiedNodes(settled.battle),
+    parcels: (settled.leftParcels ?? []).map((q) => ({ poi: q.poi, kind: q.kind, from })),
+    takenParcels: settled.takenParcels ?? [],
+  };
   raidLent = [];
   void syncOwn(p, true, raid).then((r) => {
     // The islands of expeditions called home (a liberation, or the factory's panel) are told, now or at the next sync.
@@ -349,6 +362,7 @@ function syncIsland(p: Settlement["profile"], settled: State) {
     }
     const { profile, news } = takeSync(hub.profile, r.body);
     if (profile !== hub.profile) hub.update(profile);
+    if (r.body.view?.pings) islandPings = r.body.view.pings.map((q) => ({ x: q.x, z: q.z, until: q.until }));
     // The sync read the neighbours again: the horizon shows them as they now stand.
     world.setNeighbours(neighboursFor(hub.profile).map((n) => n.slot));
     if (!news.length) return;
@@ -761,6 +775,7 @@ function dropLookPing() {
     }
   }
   hud.dropPing(at);
+  void postPing(at);
 }
 
 /** `from`: the camp the player walked out of, carried over into the raid where they stand. */
@@ -798,7 +813,22 @@ function start(go: Launch, from?: State) {
   hud.setRivalNames([...raidLent, ...aiLent].map((l) => [l.by.code, l.by.name] as [string, string]));
   raidAi = { lent: aiLent, slots: neighboursFor(hub.profile).filter((n) => !n.ai).map((n) => n.slot), scouted: aiScouted() };
   lease = null;
-  state = newRun(go.seed, kit, region, { depots: hub.profile.depots, seen: hub.profile.seen, from: go.from, entry: go.entry, routes: hub.profile.routes, island: holds(hub.profile), record, fetch, event: hub.profile.events[0], threat: raidThreat(hub.profile), known: hub.profile.known, battle: { factory: hub.profile.factory, away: squadsAway(hub.profile), targets: tonight(hub.profile), rivals: [...lentRivals(raidLent), ...aiRivals(aiLent)], shut: lent?.shut }, finale: finaleOpen(hub.profile) });
+  state = newRun(go.seed, kit, region, {
+    depots: hub.profile.depots,
+    seen: hub.profile.seen,
+    from: go.from,
+    entry: go.entry,
+    routes: hub.profile.routes,
+    island: holds(hub.profile),
+    record,
+    fetch,
+    event: hub.profile.events[0],
+    threat: raidThreat(hub.profile),
+    known: hub.profile.known,
+    battle: { factory: hub.profile.factory, away: squadsAway(hub.profile), targets: tonight(hub.profile), rivals: [...lentRivals(raidLent), ...aiRivals(aiLent)], shut: lent?.shut },
+    finale: finaleOpen(hub.profile),
+    parcels: hub.profile.parcels,
+  });
   // A lease still on its way joins this raid if it comes in its first seconds.
   if (leaseReq?.on === "open") {
     if (lent) leaseReq = null;
@@ -809,6 +839,11 @@ function start(go: Launch, from?: State) {
   }
   hud.setContract(hub.contract(), record ?? null, takenStory(hub.profile));
   hud.setRaidsDone(hub.profile.raids);
+  // Other players' traces (M5) and look-pings (M6): view-only; owners from this raid's rivals + incoming.
+  const owners = [...new Set([...raidLent, ...aiLent].map((l) => l.by.code).concat(incomingFor(hub.profile).map((e) => e.by.code)))];
+  hud.setTraces(raidTraces(go.seed, state.bins, owners));
+  const pingAt = Date.now();
+  hud.setRemotePings(islandPings.filter((q) => q.until > pingAt).map((q) => ({ x: q.x, z: q.z })));
   world.campMode = false;
   if (from) walkOut(state, from);
   // The ground round where the raid starts is built before its first frame.

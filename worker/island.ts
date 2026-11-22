@@ -33,6 +33,12 @@ export const EXPEDITION = {
   lease: CONQUEST.time + 1800,
   /** Seconds a node the owner fortified in a raid is shut to expeditions: one at it stands off (固め). */
   fortify: 24 * 3600,
+  /** Seconds a look-ping the owner posts stays on the island (ux-design M6). */
+  pingTtl: 180,
+  /** Look-pings kept at once; the oldest drop first. */
+  pingMax: 8,
+  /** Parcels left at depots for visitors (ux-design C2); oldest drop first. */
+  parcelMax: 12,
   /** Milliseconds between the reckonings of an island with expeditions on it. */
   alarmMs: 60_000,
   /** Ticks one reckoning runs at most; an island further behind is reckoned again at once. */
@@ -136,6 +142,28 @@ export interface IslandState {
   lease?: { until: number; ids: number[] } | null;
   /** Until when each node is shut to expeditions, fortified by the owner in a raid; 0 or left out, open. */
   fort?: number[];
+  /** Short look-pings the owner posted (ux-design M6); pruned past `until`. Optional on older islands. */
+  pings?: IslandPing[];
+  /** Valuables left at depots for other players' raids (ux-design C2). Optional on older islands. */
+  parcels?: IslandParcel[];
+}
+
+/** A look-ping on the island map: where, whose name, and when it expires. */
+export interface IslandPing {
+  id: number;
+  x: number;
+  z: number;
+  by: string;
+  until: number;
+}
+
+/** A parcel at a depot POI: one valuable, who left it, and when. */
+export interface IslandParcel {
+  id: number;
+  poi: string;
+  kind: string;
+  from: Attacker;
+  at: number;
 }
 
 /** What a report says of an expedition its raid took in: the island's number for it and the members it has left (0: wiped out). */
@@ -149,14 +177,15 @@ export interface LentResult {
 /** What one request asks of an island. */
 export type IslandOp =
   | { t: "claim"; player: { id: string; name: string }; code: string }
-  | { t: "report"; player: { id: string; name: string }; holds: PoiHold[]; retaken: string[]; factory: number; day: number; lent?: LentResult[]; fortified?: string[] }
+  | { t: "report"; player: { id: string; name: string }; holds: PoiHold[]; retaken: string[]; factory: number; day: number; lent?: LentResult[]; fortified?: string[]; parcels?: IslandParcel[]; takenParcels?: number[] }
   | { t: "lease"; player: string }
   | { t: "unlease"; player: string }
   | { t: "recall"; from: string; id: number }
   | { t: "view" }
   | { t: "log"; player: string; after: number }
   | { t: "whois"; player: string }
-  | { t: "expedition"; from: Attacker; target: string; kinds: EnemyKind[] };
+  | { t: "expedition"; from: Attacker; target: string; kinds: EnemyKind[] }
+  | { t: "ping"; player: string; name: string; x: number; z: number };
 
 /** The answer to an op: the HTTP status and body, and the island as it is after it (null while nobody has claimed it). */
 export interface OpResult {
@@ -221,8 +250,16 @@ function closedWhy(s: IslandState, i: number, now: number): { status: number; er
   return null;
 }
 
+/** Drop expired look-pings; keeps the list small. */
+function prunePings(s: IslandState, now: number) {
+  if (!s.pings?.length) return;
+  s.pings = s.pings.filter((p) => p.until > now);
+  if (s.pings.length > EXPEDITION.pingMax) s.pings = s.pings.slice(s.pings.length - EXPEDITION.pingMax);
+}
+
 /** The island's state as anyone may see it: no player's id. */
 export function publicView(s: IslandState, now: number) {
+  prunePings(s, now);
   return {
     ok: true,
     code: s.owner.code,
@@ -239,6 +276,8 @@ export function publicView(s: IslandState, now: number) {
       state: e.holding ? "holding" : !e.arrived ? "coming" : heldBack(s, e, now) ? "waiting" : "attacking",
       arriveAt: e.arriveAt,
     })),
+    pings: (s.pings ?? []).map((p) => ({ id: p.id, x: p.x, z: p.z, by: p.by, until: p.until })),
+    parcels: (s.parcels ?? []).map((p) => ({ id: p.id, poi: p.poi, kind: p.kind, from: { ...p.from }, at: p.at })),
   };
 }
 
@@ -399,6 +438,7 @@ function quietUntil(s: IslandState, t: number): number {
  * the tick before the next thing that happens, which comes out as ticking through it would.
  */
 export function advance(s: IslandState, now: number, maxTicks = EXPEDITION.maxTicks): { behind: boolean; moved: boolean } {
+  prunePings(s, now);
   const every = FACTORY.levels[s.factory].every;
   let n = 0;
   for (;;) {
@@ -515,6 +555,17 @@ function report(s: IslandState, op: Extract<IslandOp, { t: "report" }>, now: num
     }
   }
   s.lease = null;
+  // Parcels left or taken in the raid (ux-design C2): take before add so a round-trip is one report.
+  if (op.takenParcels?.length) {
+    const gone = new Set(op.takenParcels);
+    s.parcels = (s.parcels ?? []).filter((p) => !gone.has(p.id));
+  }
+  for (const p of op.parcels ?? []) {
+    if (!NODE_IDS.includes(p.poi) || typeof p.kind !== "string" || !p.from?.code) continue;
+    s.parcels ??= [];
+    s.parcels.push({ id: s.nextId++, poi: p.poi, kind: p.kind, from: { ...p.from }, at: now });
+  }
+  if (s.parcels && s.parcels.length > EXPEDITION.parcelMax) s.parcels = s.parcels.slice(s.parcels.length - EXPEDITION.parcelMax);
   // The nodes fortified in the raid are shut to expeditions for a day: only the owner's, and only one an expedition is at or coming to.
   for (const id of op.fortified ?? []) {
     const i = NODE_IDS.indexOf(id);
@@ -609,6 +660,16 @@ export function islandOp(state: IslandState | null, op: IslandOp, now: number): 
     const entries = s.log.filter((e) => e.seq > op.after);
     return done(200, { ok: true, entries, next: s.seq });
   }
+  // A short look-ping on the island map (ux-design M6): the owner only.
+  if (op.t === "ping") {
+    if (s.owner.id !== op.player) return done(403, fail("not-owner"));
+    if (!Number.isFinite(op.x) || !Number.isFinite(op.z)) return done(400, fail("bad-request"));
+    prunePings(s, now);
+    s.pings ??= [];
+    s.pings.push({ id: s.nextId++, x: op.x, z: op.z, by: op.name, until: now + EXPEDITION.pingTtl * 1000 });
+    prunePings(s, now);
+    return done(200, { ok: true, pings: s.pings }, true);
+  }
   // An expedition.
   if (op.from.code === s.owner.code) return done(403, fail("own-island"));
   if (ISLAND_TABLE.closed.includes(op.target)) return done(403, fail("closed-node"));
@@ -639,6 +700,30 @@ export function parseHolds(raw: unknown): PoiHold[] | null {
 
 /** The units an attacker at factory level `factory` may send: its factory's squad (`FACTORY.levels[].kinds`). */
 export const squadKinds = (factory: number): readonly EnemyKind[] => FACTORY.levels[Math.max(0, Math.min(FACTORY_TOP, factory))].kinds;
+
+/** Parcels left in a raid report, or null when unreadable. Left out, none. */
+export function parseParcels(raw: unknown): IslandParcel[] | null {
+  if (raw === undefined) return [];
+  if (!Array.isArray(raw) || raw.length > EXPEDITION.parcelMax) return null;
+  const out: IslandParcel[] = [];
+  for (const r of raw) {
+    if (!r || typeof r !== "object") return null;
+    const o = r as Record<string, unknown>;
+    const from = o.from && typeof o.from === "object" ? (o.from as Attacker) : null;
+    if (!from || typeof from.code !== "string" || typeof from.name !== "string" || typeof o.poi !== "string" || typeof o.kind !== "string") return null;
+    if (!NODE_IDS.includes(o.poi)) return null;
+    out.push({ id: 0, poi: o.poi, kind: o.kind, from: { code: from.code, name: from.name }, at: 0 });
+  }
+  return out;
+}
+
+/** Parcel ids taken in a raid report, or null. Left out, none. */
+export function parseTakenParcels(raw: unknown): number[] | null {
+  if (raw === undefined) return [];
+  if (!Array.isArray(raw) || raw.length > EXPEDITION.parcelMax) return null;
+  if (!raw.every((id, k) => Number.isInteger(id) && (id as number) > 0 && raw.indexOf(id) === k)) return null;
+  return raw as number[];
+}
 
 /** What a report says became of the expeditions its raid took in, or null: each the island's number and the members left, each number once. Left out, none. */
 export function parseLent(raw: unknown): LentResult[] | null {

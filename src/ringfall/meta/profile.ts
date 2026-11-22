@@ -11,6 +11,7 @@ import { built, creditRaid, emptyLog, need, offered, QUEST_IDS, type Quest, type
 import { currentStory, STORIES, type Story } from "./story";
 import { rivalOf } from "../sim/holds";
 import { addRetaken, awayIncome, parseIncoming, parseOutgoing, parseRetaken, recallAll, retakenNodes, type Incoming, type Outgoing } from "./expeditions";
+import { parseParcels, type Parcel } from "./parcels";
 import { capturedIds, momentum } from "../sim/front";
 
 /**
@@ -28,7 +29,7 @@ export type Item =
 
 /** What persists between raids. */
 export interface Profile {
-  v: 29;
+  v: 30;
   cash: number;
   stash: Item[];
   raids: number;
@@ -95,6 +96,11 @@ export interface Profile {
   retaken: NodeId[];
   /** Other players' expeditions on this island that hold nothing yet, as the server last showed them (予告): the camp's maps mark their nodes, and the next raid takes them in. */
   incoming: Incoming[];
+  /**
+   * Parcels at this island's depots (ux-design C2): from the server when one answers, else those
+   * left in raids while offline / on AI islands. v29 and older saves hold none.
+   */
+  parcels: Parcel[];
 }
 
 /** A loadout by what it holds rather than by stash index: what `Profile.lastKit` keeps. */
@@ -155,7 +161,7 @@ export const stashUsed = (p: Pick<Profile, "stash">) => p.stash.filter((i) => !i
 export function newProfile(seed = 1): Profile {
   const stash: Item[] = [...starterItems(), ...META.start.weapons.map((w): Item => ({ t: "weapon", ...w }))];
   for (const k of HEALS) for (let i = 0; i < META.start.heals[k]; i++) stash.push({ t: "heal", kind: k });
-  const p: Omit<Profile, "board"> = { v: 29, cash: META.start.cash, stash, raids: 0, extracted: 0, time: 0, quests: emptyLog(), region: HOME_REGION.id, entry: FIRST_ENTRY, entries: [FIRST_ENTRY], hideout: emptyHideout(), seed: seed & 0xffff, depots: [], depotSent: {}, seen: "", routes: [], day: 1, poiState: newIsland(), taken: null, records: [], events: firstEvents(seed & 0xffff), known: [...MOD_START], threat: 0, freedAt: {}, factory: 0, cycle: 0, cycleDay: 1, liberations: [], lastKit: null, expeditions: [], logSeq: 0, retaken: [], incoming: [] };
+  const p: Omit<Profile, "board"> = { v: 30, cash: META.start.cash, stash, raids: 0, extracted: 0, time: 0, quests: emptyLog(), region: HOME_REGION.id, entry: FIRST_ENTRY, entries: [FIRST_ENTRY], hideout: emptyHideout(), seed: seed & 0xffff, depots: [], depotSent: {}, seen: "", routes: [], day: 1, poiState: newIsland(), taken: null, records: [], events: firstEvents(seed & 0xffff), known: [...MOD_START], threat: 0, freedAt: {}, factory: 0, cycle: 0, cycleDay: 1, liberations: [], lastKit: null, expeditions: [], logSeq: 0, retaken: [], incoming: [], parcels: [] };
   return { ...p, board: makeBoard(p) };
 }
 
@@ -666,7 +672,14 @@ export function settle(p: Profile, s: State): Settlement {
   const kept = STORIES.map((t) => t.id).filter((id) => p.records.includes(id) || told?.id === id);
   const freedAt = { ...p.freedAt };
   for (const id of change.freed) freedAt[id] = Math.max(freedAt[id] ?? 0, threat);
-  const settled = { ...profile, freedAt, entries, quests: log, raids: p.raids + 1, extracted: p.extracted + (s.outcome === "extracted" ? 1 : 0), time: p.time + s.time, seed: nextSeed(p.seed), depots, depotSent, seen: encodeSeen(s.seen), records: kept };
+  // Parcels left / taken this raid (ux-design C2): keep local until the island server answers.
+  const takenIds = new Set(s.takenParcels ?? []);
+  let parcels = (p.parcels ?? []).filter((q) => !takenIds.has(q.id));
+  const nextParcelId = () => 1 + parcels.reduce((n, q) => Math.max(n, q.id), 0);
+  for (const left of s.leftParcels ?? []) {
+    parcels = [...parcels.filter((q) => q.poi !== left.poi || q.kind !== left.kind), { id: nextParcelId(), poi: left.poi, kind: left.kind, from: { code: "", name: "" }, at: Date.now() }];
+  }
+  const settled = { ...profile, freedAt, entries, quests: log, raids: p.raids + 1, extracted: p.extracted + (s.outcome === "extracted" ? 1 : 0), time: p.time + s.time, seed: nextSeed(p.seed), depots, depotSent, seen: encodeSeen(s.seen), records: kept, parcels };
   const { profile: night } = advanceDay(settled, day);
   // The nodes the player holds once the night is over pay their day's credits.
   const income = frontIncome(night);
@@ -818,11 +831,12 @@ const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
  * Before v27 no expedition went out from the factory: such a profile has none out, has read none
  * of its island's log, and has no node taken back to report.
  * Before v29 no expedition was announced: such a profile knows of none coming.
+ * Before v30 no parcel lay at a depot: such a profile holds none.
  */
 export function parseProfile(raw: unknown, seed = 1): Profile | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
+  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
   const old = o.v === 1 || o.v === 2;
   const migrate = (i: unknown): unknown => {
     if (!old || !i || typeof i !== "object" || (i as Record<string, unknown>).t !== "key") return i;
@@ -871,7 +885,7 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   const v27 = typeof o.v === "number" && o.v >= 27;
   const v28 = typeof o.v === "number" && o.v >= 28;
   const out: Omit<Profile, "board" | "taken" | "events"> = {
-    v: 29,
+    v: 30,
     cash: Math.max(0, Math.floor(o.cash)),
     stash,
     raids,
@@ -895,7 +909,8 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     expeditions: v27 ? parseOutgoing(o.expeditions) : [],
     logSeq: v27 && Number.isInteger(o.logSeq) && (o.logSeq as number) >= 0 ? (o.logSeq as number) : 0,
     retaken: v27 ? parseRetaken(o.retaken) : [],
-    incoming: o.v === 29 ? parseIncoming(o.incoming) : [],
+    incoming: typeof o.v === "number" && o.v >= 29 ? parseIncoming(o.incoming) : [],
+    parcels: o.v === 30 ? parseParcels(o.parcels) : [],
     // A save from before the island had an ending is on its first round, begun on day 1.
     cycle: v28 && Number.isInteger(o.cycle) && (o.cycle as number) >= 0 ? (o.cycle as number) : 0,
     cycleDay: v28 && Number.isInteger(o.cycleDay) && (o.cycleDay as number) >= 1 ? Math.min(day, o.cycleDay as number) : 1,

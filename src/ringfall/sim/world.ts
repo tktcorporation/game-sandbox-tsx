@@ -2,7 +2,7 @@ import { ALLY, AWARE, BAG, BIN_GEAR, CREW, DEBRIS, DEPOT, ENEMIES, ENTRY, FRONT,
 import { grabZip, zipInReach, zipPoint } from "./zips";
 import { dist2d, groundAt, los, solidAt, worldVersion } from "./geom";
 import { highGround, steepAt, terrainHeight } from "./terrain";
-import { DEPOTS, ENTRIES, EXTRACTS, inCamp, NODES, PARTY_STOPS, POIS, recordSpot, REGIONS, regionOf, ZIPS, type ExtractPoint, type RecordId } from "./map";
+import { DEPOTS, ENTRIES, EXTRACTS, inCamp, NODES, PARTY_STOPS, POIS, poiIndex, recordSpot, REGIONS, regionOf, ZIPS, type ExtractPoint, type RecordId } from "./map";
 import { spawnEnemy, spawnSpot } from "./enemies";
 import { cellsAround, fieldTo, nextStep, onMainGround, routeLength } from "./hunt";
 import type { CrewTrip, SquadState } from "./state";
@@ -651,7 +651,8 @@ export function stepLoot(s: State, input: Input) {
   else if (t?.kind === "care") openCare(s);
   else if (t?.kind === "weapon") takeWeapon(s, t.loot);
   else if (t?.kind === "swap") swapInto(s, t.loot);
-  else if (t?.kind === "depot") useDepot(s, t.index);
+  else if (t?.kind === "depot") useDepot(s, t.index, !!input.leaveParcel);
+  else if (t?.kind === "parcel") takeParcel(s, t.index);
   else if (t?.kind === "core") useCore(s, t.node);
   else if (t?.kind === "zip") grabZip(s, t.line, t.at);
   else if (t?.kind === "armor") {
@@ -810,6 +811,7 @@ export type UseTarget =
   | { kind: "swap"; loot: Loot }
   | { kind: "armor"; loot: Loot }
   | { kind: "depot"; index: number }
+  | { kind: "parcel"; index: number }
   | { kind: "tool"; loot: Loot }
   | { kind: "mod"; loot: Loot }
   | { kind: "core"; node: number }
@@ -881,6 +883,11 @@ export function useCandidates(s: State, armor = true, tools = true, mods = true,
       push(`zip:${zip.line}`, dist2d(pt, p.pos), USE.prefer.zip, { kind: "zip", line: zip.line, at: zip.at }, pt.x, pt.y, pt.z, PLAYER.interactRange + 2);
     }
   }
+  s.parcels.forEach((q, index) => {
+    if (q.taken || !level(q.y)) return;
+    if (!makeRoom(p.haul, q.kind, p.tools, p.records.length)) return;
+    push(`parcel:${q.id}`, dist2d(q, p.pos), USE.prefer.parcel, { kind: "parcel", index }, q.x, q.y, q.z);
+  });
   const depot = depotInReach(s);
   if (depot >= 0 && !depotBlocked(s)) {
     const d = DEPOTS[depot];
@@ -938,14 +945,27 @@ export function depotInReach(s: State): number {
   return DEPOTS.findIndex((d, i) => s.depots[i] && dist2d(d, p.pos) < PLAYER.interactRange + 1 && Math.abs(d.y - p.pos.y) < 1.5);
 }
 
-/** The use key at a depot: a bag with anything in it goes home; an empty one means leaving the raid there. */
-function useDepot(s: State, index: number) {
+/**
+ * The use key at a depot: a bag with anything in it goes home; an empty one means leaving the
+ * raid there. With `leaveParcel` and at least one valuable, the first valuable stays at the
+ * depot for other players (ux-design C2) and the rest go home as usual. Bots never leave parcels.
+ */
+function useDepot(s: State, index: number, leaveParcel = false) {
   const p = s.player;
   if (p.haul.length || p.tools.length || p.records.length) {
     // Something picked up while leaving breaks the leaving off, even when it is sent at once.
     if (s.leaving) {
       s.leaving = null;
       s.events.push({ t: "leaveCancel" });
+    }
+    if (leaveParcel && p.haul.length) {
+      const kind = p.haul[0];
+      bagOut(p, [0]);
+      const d = DEPOTS[index];
+      s.leftParcels.push({ poi: d.poi, kind });
+      s.parcels.push({ id: -(s.leftParcels.length), poi: d.poi, kind, from: { code: "", name: "" }, x: d.x, y: d.y, z: d.z, taken: false });
+      s.events.push({ t: "deposit", n: 1, value: 0 });
+      if (!p.haul.length && !p.tools.length && !p.records.length) return;
     }
     const value = p.haul.reduce((n, k) => n + VALUABLES[k].value, 0);
     s.events.push({ t: "deposit", n: p.haul.length + p.tools.length + p.records.length, value });
@@ -962,6 +982,21 @@ function useDepot(s: State, index: number) {
     s.leaving = { depot: index, t: DEPOT.leave };
     s.events.push({ t: "leaveStart" });
   }
+}
+
+/** Takes a parcel at a depot into the bag (ux-design C2). */
+function takeParcel(s: State, index: number) {
+  const q = s.parcels[index];
+  if (!q || q.taken) return;
+  const out = makeRoom(s.player.haul, q.kind, s.player.tools, s.player.records.length);
+  if (!out) return;
+  if (out.length) {
+    for (const g of bagOut(s.player, out)) spillValuable(s, s.player.pos, g.kind, g.from);
+  }
+  bagIn(s.player, q.kind, poiIndex(q.poi));
+  q.taken = true;
+  if (q.id > 0) s.takenParcels.push(q.id);
+  s.events.push({ t: "pickup", kind: "valuable", rarity: VALUABLES[q.kind].rarity, label: VALUABLES[q.kind].label });
 }
 
 /**

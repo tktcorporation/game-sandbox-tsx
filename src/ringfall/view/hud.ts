@@ -223,13 +223,24 @@ export class Hud {
 
   /**
    * A short local ping where the player looks (P): view-only mark on the compass and map for a
-   * few seconds. Does not touch the sim (docs/ringfall/ux-design.md, M4).
+   * few seconds. Does not touch the sim (docs/ringfall/ux-design.md, M4). Optional `sync` posts
+   * it to the island DO (M6) from `main.ts`.
    */
   private ping: { x: number; z: number; until: number } | null = null;
   dropPing(at: { x: number; z: number }) {
     this.ping = { x: at.x, z: at.z, until: performance.now() + 8000 };
     this.map.ping = { x: at.x, z: at.z };
     this.toast(`${flagIcon(SIDE.own)}印`, 1, 1600);
+  }
+
+  /** Other players' look-pings from the island (M6); expired ones are dropped by the caller. */
+  setRemotePings(list: readonly { x: number; z: number }[]) {
+    this.map.remotePings = list;
+  }
+
+  /** Other players' traces on bins/roads (M5), set once as the raid starts. */
+  setTraces(list: readonly { x: number; z: number; t: "bin" | "road" }[]) {
+    this.map.traces = list;
   }
 
   /** The ways in the base offers, for the raid about to start: the HUD and the map tell the others apart. */
@@ -1237,6 +1248,11 @@ export class Hud {
       return tip(`${key("E")}${esc(VALUABLES[v].label)}${struck(out)}`);
     }
     if (t.kind === "care") return tip(`${key("E")}補給ポッド`);
+    if (t.kind === "parcel") {
+      const q = s.parcels[t.index];
+      if (!q || q.taken) return "";
+      return tip(`${key("E")}${flagIcon(SIDE.rival)}${esc(VALUABLES[q.kind].label)}`);
+    }
     if (t.kind === "depot") {
       if (!p.haul.length && !p.tools.length && !p.records.length) return tip(`${key("E")}${depotIcon()}切り上げる ${clockIcon()}${DEPOT.leave} 秒`);
       const value = p.haul.reduce((n, k) => n + VALUABLES[k].value, 0);
