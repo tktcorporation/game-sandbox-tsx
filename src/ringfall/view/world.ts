@@ -570,8 +570,12 @@ export class World {
         const z0 = WORLD.z0 + j * CHUNK;
         const x1 = Math.min(WORLD.x1, x0 + CHUNK);
         const z1 = Math.min(WORLD.z1, z0 + CHUNK);
+        const group = still(new THREE.Group());
+        // Hidden until streamChunks puts the camera's neighbourhood into shownChunks; otherwise the
+        // prebuild ring past the fog would draw before the first visibility pass.
+        group.visible = false;
         this.chunks.push({
-          group: still(new THREE.Group()),
+          group,
           x0,
           z0,
           x1,
@@ -861,8 +865,12 @@ export class World {
     this.routesCache = ROUTES.flatMap((r) => (open.includes(r.id) ? r.open : r.closed));
     this.shadowAt = -Infinity;
     this.scatter.invalidate();
+    // Route-touched chunks are rebuilt fully; other pending merges must still finish, or they stay
+    // as ground-only with no buildings until the chunk is emptied far away.
+    const orphan = this.pendingMerge.filter((c) => !reached(c));
     this.pendingMerge.length = 0;
     for (const c of this.chunks) if (c.built && reached(c)) this.fillChunk(c);
+    for (const c of orphan) if (c.built && c.pending) this.fillChunkMerge(c);
   }
 
   /**
@@ -2082,7 +2090,11 @@ export class World {
     this.particles = [];
     this.shadowAt = -Infinity;
     this.streamCell = "";
+    // Drop unfinished merges so the next raid does not keep ground-only chunks that streamChunks
+    // would skip (built === true). The next prebuild / stream fills them again.
+    for (const c of [...this.pendingMerge]) this.emptyChunk(c);
     this.pendingMerge.length = 0;
+    for (const c of this.shownChunks) c.group.visible = false;
     this.shownChunks.length = 0;
     this.battleView.reset();
   }
