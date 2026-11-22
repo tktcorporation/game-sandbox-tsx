@@ -15,7 +15,7 @@ import { eventRow } from "./events";
 import { rivalOf } from "../sim/holds";
 import { HOLD_CSS, IslandMap, islandScene, RIVAL_CSS, TITAN_CSS } from "./map";
 import { ExpeditionPanel } from "./expeditions";
-import { answerable, homeSquads, incomingLine, LOG_WORD, logLine, squadsAway, type Incoming, type IslandLogEntry } from "../meta/expeditions";
+import { answerable, homeSquads, incomingLine, LOG_WORD, logLine, squadsAway, type Incoming, type IslandLogEntry, type Outgoing } from "../meta/expeditions";
 import { enemyNodes, frontNodes, ownNodes } from "../sim/front";
 import { nodeRow } from "./row";
 import { sfx } from "./sfx";
@@ -225,6 +225,20 @@ export function contractMarks(c: Contract): string {
   }
 }
 
+/** What became of one of this island's expeditions out: it holds its node (held), was wiped out attacking it (wiped), or lost the node it held (lost). */
+interface ExpNews {
+  t: "held" | "wiped" | "lost";
+  code: string;
+  name: string;
+  node: NodeId;
+}
+
+/** That as a sentence, for its title. */
+export function expLine(n: ExpNews): string {
+  const at = NODES[nodeIndex(n.node)]?.name ?? n.node;
+  return n.t === "held" ? `${n.name}の島の${at}を遠征隊が取った` : n.t === "wiped" ? `${n.name}の島の${at}で遠征隊が全滅した` : `${n.name}の島の${at}を取り返された`;
+}
+
 const itemMark = (i: Item) => `<span style="color:${itemColor(i)}">${i.t === "weapon" ? gunIcon() : i.t === "armor" ? armorIcon() : keyIcon()}</span>`;
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
 const yen = (n: number) => n.toLocaleString("ja-JP");
@@ -355,6 +369,8 @@ export class Hub {
   private armed = "";
   /** The contract board last put up on the board panel; a new day's board slides its papers in once. */
   private boardSeen: string;
+  /** What became of this island's expeditions out (each that took its node, or was wiped out or lost it), newest first, for the signal station. */
+  private expNews: ExpNews[] = [];
   /** Whether the factory's ladder of every level is unfolded. */
   private factoryLadder = false;
   /** The factory's expeditions section, which draws itself (`#hub-exped`). */
@@ -417,9 +433,33 @@ export class Hub {
     if (el) el.innerHTML = this.signalNews();
   }
 
+  /**
+   * Notes what became of the expeditions out between profile `prev` and `next`: one that came to
+   * hold its node, and one that was gone after attacking (wiped out) or after holding (its node
+   * taken back). One called home, or one never sent, says nothing. The signal station's mark tells
+   * of them until it is opened.
+   */
+  private noteOutgoing(prev: readonly Outgoing[], next: readonly Outgoing[]) {
+    const names = new Map(neighboursFor(this.profile).map((n) => [n.code, n.name]));
+    const fresh: ExpNews[] = [];
+    for (const o of next) {
+      const was = o.id > 0 ? prev.find((x) => x.code === o.code && x.id === o.id) : undefined;
+      if (!was || was.state === o.state) continue;
+      const t = o.state === "holding" ? "held" : o.state === "gone" && was.state === "holding" ? "lost" : o.state === "gone" && (was.state === "attacking" || was.state === "coming" || was.state === "waiting") ? "wiped" : null;
+      if (t) fresh.push({ t, code: o.code, name: names.get(o.code) ?? o.code, node: o.node });
+    }
+    if (!fresh.length) return;
+    this.expNews = [...fresh, ...this.expNews].slice(0, 6);
+    this.newsSeen = this.station === "signal";
+    const el = this.station === "signal" ? document.getElementById("hub-signal-news") : null;
+    if (el) el.innerHTML = this.signalNews();
+  }
+
   /** Takes a profile the server's answer changed (the holds, the log read, the expeditions), keeping the loadout. */
   update(p: Profile) {
     this.set(p);
+    // The signal station open shows the expeditions out as they now stand.
+    if (this.station === "signal") this.exped.redraw();
   }
 
   /** `tell`: let the camp know, so it takes the controls back. */
@@ -437,6 +477,7 @@ export class Hub {
   }
 
   private set(p: Profile) {
+    this.noteOutgoing(this.profile.expeditions, p.expeditions);
     this.profile = p;
     saveProfile(p);
     this.load = this.fit(this.load);
@@ -444,6 +485,7 @@ export class Hub {
 
   /** Takes a profile settled after a raid: the last loadout picked again from the stash, the start kept where the profile allows it. */
   reload(p: Profile) {
+    this.noteOutgoing(this.profile.expeditions, p.expeditions);
     this.profile = p;
     this.load = recallLoadout(p);
     this.fixStart();
@@ -760,7 +802,8 @@ export class Hub {
     const coming = p.events[1];
     const map = [coming ? `明日 ${eventName(coming)}` : "", p.hideout.radio ? "無線" : ""].filter(Boolean).join("・");
     // The signal station wants looking at while news of the other islands is unread.
-    const signal = !this.newsSeen && this.news.length ? `知らせ ${this.news.length}` : "";
+    const unread = this.news.length + this.expNews.length;
+    const signal = !this.newsSeen && unread ? `知らせ ${unread}` : "";
     // The board wants looking at while it has contracts and none is taken.
     const open = !takenContract(p) && !takenStory(p) && p.board.contracts.length ? `依頼 ${p.board.contracts.length}` : "";
     return { map, quests: [ready ? `納品 ${ready}` : "", open].filter(Boolean).join("・"), stash: "", shop: "", workshop: buildable ? `▲ ${buildable}` : "", factory: canBuildFactory(p) ? `▲ Lv${p.factory + 1}` : "", signal };
@@ -864,7 +907,11 @@ export class Hub {
 
   /** The island's news on the signal station, each attack with its 仕返し; nothing with none. */
   private signalNews(): string {
-    return this.news.length ? `<h3 class="hub-sub">島の知らせ</h3><ul class="island-news signal-news">${this.news.map((n) => this.newsMarks(n)).join("")}</ul>` : "";
+    const word = { held: "保持", wiped: "全滅", lost: "奪還された" } as const;
+    const exp = this.expNews.length
+      ? `<h3 class="hub-sub">遠征の知らせ</h3><ul class="island-news signal-news exp-news">${this.expNews.map((n) => `<li title="${esc(expLine(n))}"><b class="who">${esc(n.name)}</b><em class="${n.t === "held" ? "own" : "foe"}">${word[n.t]}</em>${esc(NODES[nodeIndex(n.node)]?.name ?? n.node)}</li>`).join("")}</ul>`
+      : "";
+    return exp + (this.news.length ? `<h3 class="hub-sub">島の知らせ</h3><ul class="island-news signal-news">${this.news.map((n) => this.newsMarks(n)).join("")}</ul>` : "");
   }
 
   /** The routes a tool opens: open or closed, and for a closed one, the tool and where it lies. */

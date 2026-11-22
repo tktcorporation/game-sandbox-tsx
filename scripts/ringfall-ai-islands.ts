@@ -62,6 +62,14 @@ const at = (day: number, freed: NodeId[], expeditions: Outgoing[] = []): Profile
 const shore = NEIGHBOUR_SLOTS[0].shore;
 if (aiAttack(at(AI.start - 1, ["supply", shore]), SALT, []) !== null) fail("an island attacked before its first day");
 for (let d = AI.start; d < AI.start + 40; d++) if (aiAttack(at(d, ["supply"]), SALT, []) !== null) fail(`an island attacked on day ${d} with no sea route open`);
+// The first scout: once, as soon as the player's ground faces an island (day 2 on), whatever the day's draw; a small squad.
+const scout = aiAttack(at(AI.scoutDay, ["supply", shore]), SALT, [], false);
+if (!scout?.scout || scout.node !== shore) fail(`the first scout reads ${JSON.stringify(scout)}`);
+if (aiAttack(at(AI.scoutDay, ["supply"]), SALT, [], false) !== null) fail("a scout came with no sea route open");
+if (aiAttack(at(AI.scoutDay - 1, ["supply", shore]), SALT, [], false) !== null) fail("a scout came on the first day");
+const scoutLent = aiLent(at(AI.scoutDay, ["supply", shore]), SALT, [], false);
+if (scoutLent.length !== 1 || scoutLent[0].kinds.join() !== AI.scout.join()) fail(`the scout lent reads ${JSON.stringify(scoutLent)}`);
+console.log(`scout: ${scout.island.name} on day ${AI.scoutDay}, ${AI.scout.length} robots`);
 let days = 0;
 let answered = 0;
 const first = aiIslands(SALT)[0];

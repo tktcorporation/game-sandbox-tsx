@@ -21,7 +21,7 @@ import { bodyCenter, eyePos, fireRay, kill } from "./sim/combat";
 import { squadKey } from "./sim/state";
 import { loadProfile, saveProfile } from "./meta/storage";
 import { sendIsland } from "./net";
-import { aiLentFor, aiSalt, flushRecalls, leaseOwn, neighboursFor, refreshAi, releaseLease, syncOwn, takeReport, takeSync, useAi } from "./island-net";
+import { aiLentFor, aiSalt, aiScouted, markScouted, flushRecalls, leaseOwn, neighboursFor, refreshAi, releaseLease, syncOwn, takeReport, takeSync, useAi } from "./island-net";
 import { aiRaidNews, aiRivals } from "./meta/ai-islands";
 import { dropStale, fortifiedNodes, LEASE_LATE, lentResults, lentRivals, logLine, squadsAway, type IslandLogEntry, type LentIn } from "./meta/expeditions";
 import { Hub, type Launch } from "./view/hub";
@@ -265,7 +265,10 @@ function onEvent(e: GameEvent, s: State) {
     knownBefore = [...hub.profile.known];
     analysed = null;
     // The expeditions on the game's own islands brought up to the clock first: the settle pays the nodes they hold now.
-    const before = refreshAi(hub.profile);
+    // (through the hub, which tells of each expedition that took its node or was lost).
+    const fresh = refreshAi(hub.profile);
+    if (fresh !== hub.profile) hub.update(fresh);
+    const before = hub.profile;
     settlement = settle(before, s);
     hub.reload(settlement.profile);
     saveProfile(hub.profile);
@@ -273,7 +276,9 @@ function onEvent(e: GameEvent, s: State) {
     syncIsland(settlement.profile, s);
     // The game's own islands' part in the raid, as their log would tell it: on the results and the map table.
     if (raidAi) {
-      const news = aiRaidNews(before, settlement.profile, aiSalt(), raidAi.slots, Date.now());
+      const news = aiRaidNews(before, settlement.profile, aiSalt(), raidAi.slots, Date.now(), raidAi.scouted);
+      // The first scout has come once an island's expedition was in a raid: it does not come again.
+      if (!raidAi.scouted && raidAi.lent.some((l) => l.state === "coming")) markScouted();
       raidAi = null;
       if (news.length) {
         hub.takeNews(news);
@@ -307,7 +312,7 @@ const leaseLasts = (l: Lease, s: State | null) => l.until - Date.now() > (CONQUE
 /** The expeditions the raid under way took in: its report says what became of them. */
 let raidLent: LentIn[] = [];
 /** What the game's own islands brought to the raid under way, and the slots they stood in as it started (meta/ai-islands.ts); null with none. */
-let raidAi: { lent: LentIn[]; slots: number[] } | null = null;
+let raidAi: { lent: LentIn[]; slots: number[]; scouted: boolean } | null = null;
 /** The game's own islands' news from the raid just settled, before the server's. */
 let aiNews: string[] = [];
 
@@ -645,7 +650,10 @@ function askDepart(walk: boolean) {
     // A newer departure asks for itself, and the island answers it with the same lease.
     if (!r.ok || leaseReq !== req) return;
     if (req.on === "open") lease = r.body;
-    else if (req.on === "raid" && running && state === req.raid && !!state.battle && state.battle.now < LEASE_LATE && leaseLasts(r.body, state) && takeRivals(state, lentRivals(r.body.expeditions), r.body.shut)) raidLent = r.body.expeditions;
+    else if (req.on === "raid" && running && state === req.raid && !!state.battle && state.battle.now < LEASE_LATE && leaseLasts(r.body, state) && takeRivals(state, lentRivals(r.body.expeditions), r.body.shut)) {
+      raidLent = r.body.expeditions;
+      hud.addRivalNames(raidLent.map((l) => [l.by.code, l.by.name] as [string, string]));
+    }
     else if (r.body.expeditions.length) void releaseLease();
   });
   keys.clear();
@@ -763,7 +771,9 @@ function start(go: Launch, from?: State) {
   if (fresh !== hub.profile) hub.update(fresh);
   // The game's own islands' expedition of the day and their squads holding nodes here join it as the server's do.
   const aiLent = aiLentFor(hub.profile);
-  raidAi = { lent: aiLent, slots: neighboursFor(hub.profile).filter((n) => !n.ai).map((n) => n.slot) };
+  // The names of the islands whose squads come or stand in this raid, for its banners.
+  hud.setRivalNames([...raidLent, ...aiLent].map((l) => [l.by.code, l.by.name] as [string, string]));
+  raidAi = { lent: aiLent, slots: neighboursFor(hub.profile).filter((n) => !n.ai).map((n) => n.slot), scouted: aiScouted() };
   lease = null;
   state = newRun(go.seed, kit, region, { depots: hub.profile.depots, seen: hub.profile.seen, from: go.from, entry: go.entry, routes: hub.profile.routes, island: holds(hub.profile), record, fetch, event: hub.profile.events[0], threat: raidThreat(hub.profile), known: hub.profile.known, battle: { factory: hub.profile.factory, away: squadsAway(hub.profile), targets: tonight(hub.profile), rivals: [...lentRivals(raidLent), ...aiRivals(aiLent)], shut: lent?.shut }, finale: finaleOpen(hub.profile) });
   // A lease still on its way joins this raid if it comes in its first seconds.
@@ -962,6 +972,7 @@ declare global {
       destroyTarget: () => number;
     };
     ringfallNews: (entries: IslandLogEntry[]) => void;
+    ringfallAge: (ms: number) => void;
     ringfallBag: (haul: string[], more?: { at?: (string | null)[]; tools?: string[]; records?: string[]; keys?: string[] }) => void;
     ringfallEnd: (how: "dead" | "extracted", haul?: string[], found?: string[]) => boolean;
     ringfallMods: {
@@ -1308,6 +1319,11 @@ window.ringfallBot = (skill: string) => {
  */
 /** Automation only: the island's news as a sync would bring it (the map table lists it, attacks with 仕返し). */
 window.ringfallNews = (entries) => hub.takeNews(entries);
+/** Automation only: the expeditions out sent `ms` earlier, those on the game's own islands brought up to that clock (as a sync would, through the hub). */
+window.ringfallAge = (ms) => {
+  const p = hub.profile;
+  hub.update(refreshAi({ ...p, expeditions: p.expeditions.map((o) => ({ ...o, sentAt: o.sentAt - ms })) }));
+};
 
 window.ringfallContract = {
   take: (type) => {

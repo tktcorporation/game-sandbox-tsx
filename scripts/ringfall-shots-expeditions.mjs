@@ -141,6 +141,13 @@ export async function expeditionShots({ browser, port, out, errors }) {
     if (sent.length !== 3 || !/向かっている/.test(sent[2]?.text ?? "")) errors.push(`expeditions: after sending to the game's own island the factory lists ${JSON.stringify(sent)}`);
   }
   await pg.screenshot({ path: `${out}/154-expeditions-ai.png` });
+  // Two hours on, the expedition on the game's own island has taken its node or been lost: the signal station tells of it.
+  await pg.evaluate(() => window.ringfallAge(2 * 3_600_000));
+  await pg.waitForTimeout(100);
+  const told = await pg.evaluate(() => [...document.querySelectorAll(".exp-news li")].map((li) => li.textContent));
+  if (told.length !== 1 || !/保持|全滅/.test(told[0])) errors.push(`expeditions: what became of the expedition reads ${JSON.stringify(told)}`);
+  await pg.evaluate(() => document.querySelector("#hub-signal-news")?.scrollIntoView({ block: "start" }));
+  await pg.screenshot({ path: `${out}/157-expeditions-told.png` });
   await close();
   // The departure's map carries the arrow.
   await pg.evaluate(() => window.ringfallCamp.toGate());
@@ -151,7 +158,22 @@ export async function expeditionShots({ browser, port, out, errors }) {
   if (!st.camp?.depart) errors.push("expeditions: the departure did not open");
   const row = st.camp?.depart?.rows?.find((r) => r[0] === "来る遠征")?.[1] ?? "";
   if (!/となり/.test(row) || !/固め/.test(row)) errors.push(`expeditions: the departure's warning reads "${row}"`);
+  // The game's own island facing the waterworks sends its first scout (this browser has seen none): it is warned of too.
+  if (!/ツバキ|アサギ|シオン/.test(row)) errors.push(`expeditions: the departure does not warn of the first scout: "${row}"`);
   await pg.screenshot({ path: `${out}/153-expeditions-depart.png` });
+  // Into the raid: the scout comes down by the waterworks, named, a few minutes into the battle.
+  await pg.keyboard.press("Enter");
+  let raid = null;
+  for (let i = 0; i < 40 && !raid?.battle; i++) raid = JSON.parse(await pg.evaluate(() => (window.ringfallStep(200), window.render_game_to_text())));
+  if (!raid?.battle) errors.push("expeditions: the raid did not start");
+  else {
+    let head = "";
+    for (let t = 0; t < 260 && !/遠征隊/.test(head); t += 2) head = await pg.evaluate(() => (window.ringfallStep(2000), document.getElementById("banner-head")?.textContent ?? ""));
+    const sub = await pg.evaluate(() => document.getElementById("banner-sub")?.textContent ?? "");
+    if (!/(ツバキ|アサギ|シオン)の遠征隊/.test(head) || !/浄水場/.test(sub)) errors.push(`expeditions: the scout's landing reads "${head}" "${sub}"`);
+    await pg.evaluate(() => window.ringfallDraw?.());
+    await pg.screenshot({ path: `${out}/158-expeditions-landing.png` });
+  }
   await ctx.close();
 }
 

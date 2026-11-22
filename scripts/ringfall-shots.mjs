@@ -2279,6 +2279,8 @@ const pushDay = {
 };
 if (part("push")) for (const phone of [false, true]) {
   const ctx = phone ? await browser.newContext({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true }) : await browser.newContext({ viewport: { width: 1280, height: 720 } });
+  // The game's first scout has come in this browser (the expeditions' shots show it): this day is the push and the night's, and the scout would take the observatory the night falls on.
+  await ctx.addInitScript(() => localStorage.setItem("ringfall.ai.scouted.v1", "1"));
   const pg = await withProfile(ctx, pushDay);
   if (phone) await pg.evaluate(() => Object.defineProperty(screen, "orientation", { value: undefined, configurable: true }));
   const tag = (n, name) => `${out}/${phone ? `m${80 + n}` : `${120 + n}`}-${name}.png`;
