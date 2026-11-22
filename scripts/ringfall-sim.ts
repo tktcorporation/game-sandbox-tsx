@@ -14,6 +14,10 @@
  * them; RINGFALL_SIM_JOBS or `--jobs N` sets how many workers play the tables (1 plays
  * everything in this process, in turn). With neither set, workers follow physical cores
  * (scripts/ringfall-parallelism.ts), not logical threads.
+ *
+ * Opt-in (default unchanged — fixed N, same seeds and table lines):
+ *   --stop / RINGFALL_SIM_STOP=1 — sequential stopping per region×skill (docs/ringfall/balance.md)
+ *   --compare / RINGFALL_SIM_COMPARE=1 — CRN A/B with optional --patch PATH=VALUE
  */
 import "./ringfall-terrain-store";
 import { CONTRACT, FRONT, STRENGTH, ALLY, BAG, DEPOT, ELITE, HOME, ENEMIES, HEALS, NOISE, PACK, PARTY, PLATE, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, SIGHT, STAGGER, TACTICAL, TICK, VALUABLES, VAULT, WEAPONS, WORLD } from "../src/ringfall/sim/config";
@@ -88,27 +92,19 @@ import { interceptSpot } from "../src/ringfall/sim/awareness";
 import { campaignLines, campaigns, DAYS } from "./ringfall-campaign";
 import { playTable, summarize, type RaidResult, type TableResult } from "./ringfall-table";
 import type { RaidJob } from "./ringfall-table-worker";
+import { parseSimFlags } from "./ringfall-sim-flags";
+import { playTablesStopping, stopReportLines } from "./ringfall-stop-play";
+import { compareReportLines, runCompare } from "./ringfall-compare";
 import { fork, type ChildProcess } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { setPriority } from "node:os";
 import { fileURLToPath } from "node:url";
 import { defaultSimJobs } from "./ringfall-parallelism";
 
-/** Positional args after stripping `--jobs N` / `--jobs=N` (count, optional region). */
-function gateArgs(argv: string[]): { runs: number; only?: string; jobsOpt?: string } {
-  let jobsOpt: string | undefined;
-  const rest: string[] = [];
-  for (let i = 0; i < argv.length; i++) {
-    const a = argv[i]!;
-    if (a === "--jobs" || a.startsWith("--jobs=")) {
-      jobsOpt = a.includes("=") ? a.slice("--jobs=".length) : argv[++i];
-      continue;
-    }
-    rest.push(a);
-  }
-  return { runs: Number(rest[0] ?? 12), only: rest[1], jobsOpt };
-}
-const { runs, only, jobsOpt } = gateArgs(process.argv.slice(2));
+const flags = parseSimFlags(process.argv.slice(2));
+const runs = flags.runs;
+const only = flags.only;
+const jobsOpt = flags.jobsOpt;
 /**
  * The regions whose raids take longest to play, longest first: the reservoir's (about 20 s of a
  * core each), the machine city's (about 13 s), the harbor's (about 7 s), then the launch
@@ -122,6 +118,9 @@ const LONGEST_FIRST: RegionId[] = ["reservoir", "city", "harbor", "launch"];
  * while the checks below do. Raids rather than whole tables go to the workers: a table of
  * long raids would otherwise keep one worker busy long after the others ran out of work.
  * The results are printed in table order, the same as when played in turn.
+ *
+ * Sequential stopping (`--stop`) and CRN compare (`--compare`) skip this eager queue: stopping
+ * schedules batches as CIs allow, and compare plays one region×skill pair after the checks.
  */
 const jobs = Math.max(1, Number(jobsOpt ?? process.env.RINGFALL_SIM_JOBS ?? defaultSimJobs()) || 1);
 /*
@@ -131,12 +130,17 @@ const jobs = Math.max(1, Number(jobsOpt ?? process.env.RINGFALL_SIM_JOBS ?? defa
  * cores they need and the tables' raids, short pieces, fill the rest. The campaign table is
  * still printed last.
  */
-const months = jobs > 1 && runs > 0 && !only ? campaigns(DAYS, SKILLS.length) : null;
+const months = jobs > 1 && runs > 0 && !only && !flags.compare && !flags.stop ? campaigns(DAYS, SKILLS.length) : null;
 // A month that fails is reported where its table is printed, not when it fails.
 months?.catch(() => {});
 const TABLES = REGIONS.filter((r) => !only || r.id === only).flatMap((r) => SKILLS.map((k) => ({ region: r.id, skill: k.name })));
 const tableIndex = (region: RegionId, skill: string) => TABLES.findIndex((t) => t.region === region && t.skill === skill);
-const tables: (() => Promise<TableResult>)[] = jobs === 1 ? TABLES.map((t) => async () => playTable(t.region, t.skill, runs)) : playInWorkers(Math.min(jobs, TABLES.length * runs));
+const tables: (() => Promise<TableResult>)[] =
+  flags.compare || flags.stop
+    ? []
+    : jobs === 1
+      ? TABLES.map((t) => async () => playTable(t.region, t.skill, runs))
+      : playInWorkers(Math.min(jobs, TABLES.length * Math.max(runs, 1)));
 
 function playInWorkers(n: number): (() => Promise<TableResult>)[] {
   const raids = TABLES.map(() => Array.from({ length: runs }, () => Promise.withResolvers<RaidResult>()));
@@ -4615,50 +4619,137 @@ if (duels.errors.length) {
 for (const l of duels.lines) console.log(l);
 
 let failed = false;
-const head = ["skill    ", "alive", "time(med)", "cleared", "haul(med)", "downs", "acc", "crit", "leap", "crowd", "flank", "waves", "meet".padEnd(18), "c/min", "ally".padEnd(18), "exit"];
-console.log(`${runs} runs per skill and region. alive: share of raids that got off (the rest were wiped out)`);
-console.log("time: minutes from the start to leaving; cleared: median POIs whose garrison was wiped out; haul: median over raids that got off");
-console.log("flank: share of hits from behind a robot or before it noticed or located the player (the titan, hit alike from every side, not counted)");
-console.log("waves: median reinforcement squads that beamed in during a raid");
-console.log("meet: medians of the seconds to the first squad engaging the player and of the longest stretch with no robot fighting them; squads that engaged per run / of them belonging to no POI");
-console.log("c/min: contacts per minute, squads that engaged the player over the minutes of every raid");
-console.log("ally: teammate's share of the damage, its downs, times it picked the player up (r) and was picked up (h), per run");
-console.log("exit: raids that left by each extraction point of the region (the bot's choice depends on skill)");
-console.log("crowd: median over runs of the most squads / robots fighting the player at once outside the titan fight");
-const pool: Pool = {};
-for (const region of REGIONS.filter((r) => !only || r.id === only)) {
-  console.log("");
-  console.log(`region: ${region.id} (${region.name})`);
-  console.log(head.join(" "));
-  for (const skill of SKILLS) {
-    const t = await tables[tableIndex(region.id, skill.name)]();
-    for (const l of t.lines) (l.err ? console.error : console.log)(l.text);
-    for (const rec of t.records) ((pool[skill.name] ??= {})[region.id] ??= []).push(rec);
-    if (t.failed) failed = true;
-  }
-}
 
-if (process.env.RINGFALL_POOL) writeFileSync(process.env.RINGFALL_POOL, JSON.stringify(pool));
-// The hideout's pacing, from the raids above (every region is needed to plan the drops).
-if (runs > 0 && !only) {
-  console.log("");
-  console.log("hideout pacing: the meta played with these raids, greedy spending (scripts/ringfall-pacing.ts)");
-  const { lines, unreached } = pacing(pool);
-  for (const l of lines) console.log(l);
-  if (unreached.length) {
+if (flags.compare) {
+  console.log("compare mode (CRN): same raidSeed(r) on A then B; default config is unchanged after the run");
+  const cpu0 = process.cpuUsage();
+  const wall0 = Date.now();
+  const rep = runCompare({
+    region: flags.compareRegion,
+    skill: flags.compareSkill,
+    runs: flags.compareRuns,
+    patches: flags.patches,
+  });
+  for (const l of compareReportLines(rep)) console.log(l);
+  const cpu = process.cpuUsage(cpu0);
+  console.log(
+    `compare wall ${(Date.now() - wall0) / 1000}s, CPU ${((cpu.user + cpu.system) / 1e6).toFixed(1)}s (${flags.compareRuns}×2 raids)`,
+  );
+  if (!rep.seedsOk) {
     failed = true;
-    console.error(`hideout pacing: never built within the cap: ${unreached.join(", ")}`);
+    console.error("compare: raidSeed(r) check failed — pairing is invalid");
   }
-}
-// The island over a month: the network and the POIs carried from raid to raid, one profile per skill.
-if (runs > 0 && !only) {
-  console.log("");
-  console.log("island campaign: a month on one profile per skill, the network carried (scripts/ringfall-campaign.ts)");
-  const month = await (months ?? campaigns(DAYS, 1));
-  for (const l of campaignLines(month)) console.log(l);
-  for (const e of month.flatMap((c) => c.errors)) {
+  if (rep.failures.length) {
     failed = true;
-    console.error(e);
+    console.error(`compare: ${rep.failures.length} raid(s) failed on an arm and were dropped from pairing`);
+  }
+} else if (flags.stop) {
+  const head = ["skill    ", "alive", "time(med)", "cleared", "haul(med)", "downs", "acc", "crit", "leap", "crowd", "flank", "waves", "meet".padEnd(18), "c/min", "ally".padEnd(18), "exit"];
+  console.log(
+    `sequential stop: min ${flags.stopOpts.min}, max ${flags.stopOpts.max}, batch ${flags.stopOpts.batch}; alive abs±${flags.stopOpts.metrics[0]!.target.abs} rel ${flags.stopOpts.metrics[0]!.target.rel}`,
+  );
+  console.log("alive: share of raids that got off (the rest were wiped out)");
+  console.log("time: minutes from the start to leaving; cleared: median POIs whose garrison was wiped out; haul: median over raids that got off");
+  console.log("flank: share of hits from behind a robot or before it noticed or located the player (the titan, hit alike from every side, not counted)");
+  console.log("waves: median reinforcement squads that beamed in during a raid");
+  console.log("meet: medians of the seconds to the first squad engaging the player and of the longest stretch with no robot fighting them; squads that engaged per run / of them belonging to no POI");
+  console.log("c/min: contacts per minute, squads that engaged the player over the minutes of every raid");
+  console.log("ally: teammate's share of the damage, its downs, times it picked the player up (r) and was picked up (h), per run");
+  console.log("exit: raids that left by each extraction point of the region (the bot's choice depends on skill)");
+  console.log("crowd: median over runs of the most squads / robots fighting the player at once outside the titan fight");
+  const wall0 = Date.now();
+  const cpu0 = process.cpuUsage();
+  const stopped = await playTablesStopping(TABLES, flags.stopOpts, jobs, LONGEST_FIRST);
+  const pool: Pool = {};
+  for (const region of REGIONS.filter((r) => !only || r.id === only)) {
+    console.log("");
+    console.log(`region: ${region.id} (${region.name})`);
+    console.log(head.join(" "));
+    for (const skill of SKILLS) {
+      const s = stopped.find((x) => x.key.region === region.id && x.key.skill === skill.name);
+      if (!s) continue;
+      for (const l of s.result.lines) (l.err ? console.error : console.log)(l.text);
+      for (const rec of s.result.records) ((pool[skill.name] ??= {})[region.id] ??= []).push(rec);
+      if (s.result.failed) failed = true;
+    }
+  }
+  console.log("");
+  console.log("sequential stop report (95% CI half-width vs targets; alive=Wilson, means=Wald):");
+  let used = 0;
+  for (const s of stopped) {
+    used += s.decision.n;
+    for (const l of stopReportLines(s, flags.stopOpts.max)) console.log(l);
+  }
+  const fixed = TABLES.length * flags.stopOpts.max;
+  const cpu = process.cpuUsage(cpu0);
+  console.log(
+    `stop summary: ${used}/${fixed} raids (${((100 * used) / Math.max(fixed, 1)).toFixed(0)}% of fixed max), wall ${((Date.now() - wall0) / 1000).toFixed(0)}s, parent CPU ${((cpu.user + cpu.system) / 1e6).toFixed(1)}s${jobs > 1 ? " (workers play the raids)" : ""}`,
+  );
+  if (process.env.RINGFALL_POOL) writeFileSync(process.env.RINGFALL_POOL, JSON.stringify(pool));
+  if (runs > 0 && !only) {
+    console.log("");
+    console.log("hideout pacing: the meta played with these raids, greedy spending (scripts/ringfall-pacing.ts)");
+    const { lines, unreached } = pacing(pool);
+    for (const l of lines) console.log(l);
+    if (unreached.length) {
+      failed = true;
+      console.error(`hideout pacing: never built within the cap: ${unreached.join(", ")}`);
+    }
+    console.log("");
+    console.log("island campaign: a month on one profile per skill, the network carried (scripts/ringfall-campaign.ts)");
+    const month = await campaigns(DAYS, 1);
+    for (const l of campaignLines(month)) console.log(l);
+    for (const e of month.flatMap((c) => c.errors)) {
+      failed = true;
+      console.error(e);
+    }
+  }
+} else {
+  const head = ["skill    ", "alive", "time(med)", "cleared", "haul(med)", "downs", "acc", "crit", "leap", "crowd", "flank", "waves", "meet".padEnd(18), "c/min", "ally".padEnd(18), "exit"];
+  console.log(`${runs} runs per skill and region. alive: share of raids that got off (the rest were wiped out)`);
+  console.log("time: minutes from the start to leaving; cleared: median POIs whose garrison was wiped out; haul: median over raids that got off");
+  console.log("flank: share of hits from behind a robot or before it noticed or located the player (the titan, hit alike from every side, not counted)");
+  console.log("waves: median reinforcement squads that beamed in during a raid");
+  console.log("meet: medians of the seconds to the first squad engaging the player and of the longest stretch with no robot fighting them; squads that engaged per run / of them belonging to no POI");
+  console.log("c/min: contacts per minute, squads that engaged the player over the minutes of every raid");
+  console.log("ally: teammate's share of the damage, its downs, times it picked the player up (r) and was picked up (h), per run");
+  console.log("exit: raids that left by each extraction point of the region (the bot's choice depends on skill)");
+  console.log("crowd: median over runs of the most squads / robots fighting the player at once outside the titan fight");
+  const pool: Pool = {};
+  for (const region of REGIONS.filter((r) => !only || r.id === only)) {
+    console.log("");
+    console.log(`region: ${region.id} (${region.name})`);
+    console.log(head.join(" "));
+    for (const skill of SKILLS) {
+      const t = await tables[tableIndex(region.id, skill.name)]!();
+      for (const l of t.lines) (l.err ? console.error : console.log)(l.text);
+      for (const rec of t.records) ((pool[skill.name] ??= {})[region.id] ??= []).push(rec);
+      if (t.failed) failed = true;
+    }
+  }
+
+  if (process.env.RINGFALL_POOL) writeFileSync(process.env.RINGFALL_POOL, JSON.stringify(pool));
+  // The hideout's pacing, from the raids above (every region is needed to plan the drops).
+  if (runs > 0 && !only) {
+    console.log("");
+    console.log("hideout pacing: the meta played with these raids, greedy spending (scripts/ringfall-pacing.ts)");
+    const { lines, unreached } = pacing(pool);
+    for (const l of lines) console.log(l);
+    if (unreached.length) {
+      failed = true;
+      console.error(`hideout pacing: never built within the cap: ${unreached.join(", ")}`);
+    }
+  }
+  // The island over a month: the network and the POIs carried from raid to raid, one profile per skill.
+  if (runs > 0 && !only) {
+    console.log("");
+    console.log("island campaign: a month on one profile per skill, the network carried (scripts/ringfall-campaign.ts)");
+    const month = await (months ?? campaigns(DAYS, 1));
+    for (const l of campaignLines(month)) console.log(l);
+    for (const e of month.flatMap((c) => c.errors)) {
+      failed = true;
+      console.error(e);
+    }
   }
 }
 if (failed) {

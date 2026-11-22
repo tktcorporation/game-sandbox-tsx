@@ -97,11 +97,29 @@ const skillNamed = (name: string): Skill => {
   return skill;
 };
 
+export { raidSeed } from "./ringfall-stats";
+import { raidSeed } from "./ringfall-stats";
+
 /** Raid `r` of a table: fixed by its seed, the same wherever and after whatever it is played. */
 export function playRaid(region: RegionId, skillName: string, r: number): RaidResult {
   // Each raid starts at one of the region's ways in, in turn.
   const ways = regionOf(region).entries;
-  return playState(newRun(1000 + r * 7919, starterKit(), region, { entry: ways[r % ways.length] }), skillName, r);
+  return playState(newRun(raidSeed(r), starterKit(), region, { entry: ways[r % ways.length] }), skillName, r);
+}
+
+/** Compact metrics for sequential stopping / paired compare (from a finished raid). */
+export function stopRaidOf(raid: RaidResult): import("./ringfall-stats").StopRaid | null {
+  const e = raid.ended;
+  if (!e) return null;
+  const bodyHits = Math.max(e.hits - e.titanHits, 0);
+  return {
+    alive: !!e.got,
+    downs: e.downs,
+    cleared: e.cleared,
+    minutes: e.minutes,
+    flankShare: bodyHits ? e.flanks / bodyHits : 0,
+    critShare: e.hits ? e.crits / e.hits : 0,
+  };
 }
 
 /** Squads counted toward `peakSq` this tick: cleared and reused so a tick allocates none. */
