@@ -535,7 +535,8 @@ export class Soundscape {
         sfx.deposit();
         break;
       case "leaveStart":
-        sfx.click();
+        // Same family as 倉庫へ送る: committing at the 中継ボックス.
+        sfx.deposit();
         break;
       case "leaveCancel":
         sfx.tacticalMiss();
@@ -559,7 +560,7 @@ export class Soundscape {
         sfx.victory();
         break;
       case "done":
-        if (s.outcome === "extracted") sfx.victory();
+        // 生還 SE plays once in finish() as extracted(); avoid a double with victory().
         break;
     }
   }

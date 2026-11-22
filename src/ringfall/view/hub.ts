@@ -26,6 +26,29 @@ const RARITY_CSS = ["var(--r0)", "var(--r1)", "var(--r2)", "var(--r3)"];
 /** The robots' kinds by name, for the factory. */
 const ENEMY_NAME: Record<EnemyKind, string> = { grunt: "グラント", heavy: "ヘビー", drone: "ドローン", charger: "チャージャー", titan: "タイタン" };
 
+/** The front node nearest the camp (same pick as the objective with no contract). */
+export function frontPickFor(p: Profile): { name: string } | null {
+  const front = frontNodes(islandHolds(p));
+  const near = NODES.map((n, i) => ({ n, i }))
+    .filter(({ i }) => front[i])
+    .sort((a, b) => Math.hypot(a.n.x - CAMP.wake.x, a.n.z - CAMP.wake.z) - Math.hypot(b.n.x - CAMP.wake.x, b.n.z - CAMP.wake.z))[0];
+  return near ? { name: near.n.name } : null;
+}
+
+/**
+ * The one next action after a raid or while idle in camp: grow the base if something can be
+ * built or delivered, else go out again. Player-facing station names only.
+ */
+export function nextHandFor(p: Profile): string {
+  if (incomingFor(p).length) return "次：地図の机 · 来る遠征を固める";
+  if (canBuildFactory(p)) return "次：工場 · 次の段を上げる";
+  if (MODULES.some((m) => canBuild(p, m))) return "次：工房 · 次の段を上げる";
+  if (offered(p.quests).some((q) => deliverable(p, q))) return "次：依頼板 · 納品する";
+  if (!takenContract(p) && !takenStory(p) && p.board.contracts.length) return "次：依頼板 · 依頼を選ぶ";
+  const pick = frontPickFor(p);
+  return pick ? `次：車両から出撃 · 前線：${pick.name}` : "次：車両か門から出撃";
+}
+
 export function itemName(i: Item | RewardItem): string {
   switch (i.t) {
     case "weapon":
@@ -1261,12 +1284,15 @@ export class Hub {
    * no node on the front.
    */
   frontPick(): { name: string } | null {
-    const p = this.profile;
-    const front = frontNodes(islandHolds(p));
-    const near = NODES.map((n, i) => ({ n, i }))
-      .filter(({ i }) => front[i])
-      .sort((a, b) => Math.hypot(a.n.x - CAMP.wake.x, a.n.z - CAMP.wake.z) - Math.hypot(b.n.x - CAMP.wake.x, b.n.z - CAMP.wake.z))[0];
-    return near ? { name: near.n.name } : null;
+    return frontPickFor(this.profile);
+  }
+
+  /**
+   * One line for the camp tip and the results: the next place on the experience line
+   * (出撃 → … → 拠点が育つ → 次の出撃). Existing station names only.
+   */
+  nextHand(): string {
+    return nextHandFor(this.profile);
   }
 
   /**

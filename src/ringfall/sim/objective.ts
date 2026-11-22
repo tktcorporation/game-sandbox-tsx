@@ -190,7 +190,7 @@ function taskSteps(s: State, task: Task): Objective {
       const bin = bins.sort((a, b) => dist2d(a, p) - dist2d(b, p))[0];
       return settle(`${VALUABLES[task.kind].label}の回収`, [
         { kind: "go", label: `${poi.name}へ向かう`, until: `${poi.name}に入る`, at: ground(poi.x, poi.z), done: got > 0 || dist2d(p, poi) < poi.trigger },
-        { kind: "act", label: `${poi.name}の補給箱を開ける`, until: `${VALUABLES[task.kind].label}を ${task.n} 個見つける`, progress: `${Math.min(got, task.n)}/${task.n}`, at: bin ? ground(bin.x, bin.z, bin.y) : null, done: got >= task.n, near: "補給箱を調べる" },
+        { kind: "act", label: `${poi.name}の補給箱を開ける`, until: `${VALUABLES[task.kind].label}を ${task.n} 個見つける`, progress: `${Math.min(got, task.n)}/${task.n}`, at: bin ? ground(bin.x, bin.z, bin.y) : null, done: got >= task.n, near: "補給箱を使う" },
         extractStep(s),
       ]);
     }
@@ -212,7 +212,7 @@ function taskSteps(s: State, task: Task): Objective {
       const at = ground(r.x, r.z, r.y);
       return settle(`記録：${r.name}`, [
         { kind: "go", label: `${r.place}へ向かう`, until: `${ARRIVE} m 以内に着く`, at, done: held || dist2d(p, at) < ARRIVE },
-        { kind: "act", label: `${r.name}を拾う`, until: "記録に重なって拾う（バッグ 1 枠）", at, done: held, near: `${r.name}を拾う` },
+        { kind: "act", label: `${r.name}を使う`, until: "記録を使う（バッグ 1 枠）", at, done: held, near: `${r.name}を使う` },
         extractStep(s),
       ]);
     }

@@ -10,7 +10,7 @@ import { POI_AT } from "./sim/areas";
 import { frontNodes, garrisonOf, takeNode, useCore } from "./sim/front";
 import { atRisk, battleMarks, departNow, landNow, marchSquad, nodePoint, placeBattleSquad, takeRivals, warmLinks } from "./sim/battle";
 import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
-import { analyse, raidThreat, settle, takenStory, type Settlement } from "./meta/profile";
+import { analyse, raidThreat, settle, takenStory, type Profile, type Settlement } from "./meta/profile";
 import { pouchSlots } from "./meta/hideout";
 import { MOD, MODS, TOOLS, type ModKind, type ToolKind } from "./sim/config";
 import { departDepots, finaleOpen, holds, islandHolds, tonight } from "./meta/island";
@@ -273,6 +273,7 @@ function onEvent(e: GameEvent, s: State) {
     const fresh = refreshAi(hub.profile);
     if (fresh !== hub.profile) hub.update(fresh);
     const before = hub.profile;
+    profileBefore = before;
     settlement = settle(before, s);
     hub.reload(settlement.profile);
     saveProfile(hub.profile);
@@ -544,6 +545,8 @@ function lock() {
 let kit: Kit = starterKit();
 let region: RegionId = HOME_REGION.id;
 let settlement: Settlement | null = null;
+/** Profile snapshot just before settle — results show how the haul fed the base. */
+let profileBefore: Profile | null = null;
 /** The mod kinds known when the raid ended, and the one analysed on its results (one at most). */
 let knownBefore: ModKind[] = [];
 let analysed: ModKind | null = null;
@@ -749,7 +752,8 @@ function campTick() {
 function campFrame() {
   const near = campFrozen() ? null : campSpotAt({ ...state.player.pos, yaw: state.player.yaw });
   const p = hub.profile;
-  const tip = incomingFor(p).length ? "来る遠征 · 地図で固める" : p.raids === 0 ? "車両か門から出撃" : "";
+  // One next hand on the line (design-direction): grow the base if ready, else sortie.
+  const tip = p.raids === 0 ? "車両か門から出撃" : hub.nextHand().replace(/^次：/, "");
   campView.frame(state, world, dims.w, dims.h, { near, marks: hub.marks(), cash: p.cash.toLocaleString("ja-JP"), touch: touchMode, today: hub.today(), panel: hub.station !== null || departing !== null, tip });
 }
 
@@ -777,6 +781,7 @@ function start(go: Launch, from?: State) {
   kit = go.kit;
   region = go.region;
   settlement = null;
+  profileBefore = null;
   unlock();
   if (touchMode) {
     // Full screen and landscape where the browser allows it; the game runs either way.
@@ -864,8 +869,10 @@ function finish() {
   fire = ads = adsLatch = false;
   $("banner").className = "";
   hud.show(false);
-  hud.results(state, settlement ?? undefined, knownBefore, analysed, islandNews);
+  const next = settlement ? hub.nextHand() : "";
+  hud.results(state, settlement ?? undefined, knownBefore, analysed, islandNews, profileBefore, next);
   if (state.outcome === "extracted") {
+    // One SE for 生還: finish owns it (soundscape skips victory on `done` to avoid a double).
     sfx.extracted();
     music?.music.phrase("home");
   }
@@ -885,7 +892,7 @@ $("home").addEventListener("click", (e) => {
   hub.reload(next);
   saveProfile(hub.profile);
   sfx.click();
-  hud.results(state, settlement, knownBefore, analysed, islandNews);
+  hud.results(state, settlement, knownBefore, analysed, islandNews, profileBefore, hub.nextHand());
 });
 
 function setPaused(on: boolean) {
