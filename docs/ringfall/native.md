@@ -99,31 +99,44 @@ Landmark Dial の距離場 `fill` は、ワールド格子を **一度に** WASM
 
 つまり **等価は取れたが、速くはならなかった**。既定 ON の条件（ウォーム CPU・wall で TS を上回る）は満たしていない。
 
-#### なぜフル移植でも遅いか（読み取り）
+#### なぜフル移植でも遅いか（読み取り）— 区間プロファイルで更新
 
-境界の「呼ぶ回数」や「フルミラー」は ABI 4 よりかなり減ったのに、ウォームで約 1.6×、長い equiv では約 3.7× 遅い。主因の候補を重い順に書く。
+境界の「呼ぶ回数」や「フルミラー」は ABI 4 よりかなり減ったのに、**ウォームな全レイド**では約 1.6×、長い equiv では約 3.7× 遅い。一方 **固定 30 s の tick-cost**（レイド長のドリフトを除く）では、同期を安くしたあとほぼ互角（TS ~3.5 s / WASM ~3.6 s CPU）まで寄った。区間タイマー（#155、`tick-prof:ringfall`）で内訳を切ると、以前の「計算そのものが遅い」仮説は半分だけ正しい。
 
-1. **hunt 距離場のコストが tick の中心に残った**  
-   calm の巡回・パーティ・帰り道は `trip_step` / sticky via で格子を読む。ABI 5 直後に reach を `Infinity` 相当で全ワールド Dijkstra にすると、都市・発射場のウォームが百秒台に爆発した（その後 reach 上限 + `VIA_REFRESH=12` の sticky で ~90 s 台まで戻した）。TS 側の hunt も同じ格子だが、**ウォームな V8 の上で長年回ってきた経路**と、WASM 内の素直な実装では定数倍が違う。 sticky は焼き直しを減らすが、calm が多いレイドでは場の構築・走査がまだ支配的。
+##### 区間比較（30 s 固定、reservoir good、seed 1000；`RINGFALL_TICK_PROF=2`）
 
-2. **毎ティック残る squad sync + robot pull**  
-   部隊の目的地・交戦フラグはまだ TS の `stepSquads` が決め、SoA に書く。描画・イベント用にロボット SoA を読む。フル AoS 押しよりは軽いが、レイド中のロボット数百・毎ティックでは無視できない。squad と friends / titan 特殊も境界の外なので、「1 回の `step_tick` で閉じる」にはなっていない。
+| 区間 | TS (ms) | WASM (ms) | 読み |
+| --- | ---: | ---: | --- |
+| sense | ~106–120 | ~46–49 | **Rust が速い**（×2+） |
+| calm* | ~149–158 | ~153–157 | ほぼ互角（中に hunt） |
+| fightFoe | ~48–51 | ~9–11 | **Rust が速い**（×5） |
+| cover* | ~3–4 | ~0.4 | Rust が速い |
+| hunt* | ~27–32 | ~38–46 | WASM がやや遅い |
+| enemies 合計 | ~573–612 | ~492–507 | **Rust 計算は速い** |
+| orbs | ~37–41 | ~1 | **Rust が速い** |
+| syncSquads | — | ~150–160（改善後；以前 ~320–380） | 同期の主因 |
+| pullRobots | — | ~84 | AoS がボットに必要 |
+| Σ sync | — | ~320–330 | 計算の得を打ち消す |
 
-3. **アルゴリズム差と安全側の切り捨て**  
-   全ワールド場を hot path から外したのは正しさより速度のためで、TS の `Infinity` reach と完全同一ではない。sticky via は目標が動くまで古い via を使う。等価のノイズ（flanks 多め、quiet 長め、kills やや少なめ）はここに触れている可能性が高い。**等価ゲートは通るが、速くするための近似がさらに場を触る**とまた偏る、というトレードオフが残る。
+\* hunt/cover は calm/engaged の内側にも入る（二重加算しないこと）。Rust 側はホスト時計 `env.ringfall_now_ns`；JS 側は `process.hrtime`。`node --cpu-prof` でも WASM パスの自己時間は sync / tick 付近に集中。
 
-4. **このワークロードでは TS の JIT が十分強い**  
-   敵ティックは「巨大な密行列」ではなく、分岐の多い短いループ・浮動小数・格子の読み書きの積み重ね。V8 はホットな TS をインライン・型特化できる一方、WASM はポータブルな線形メモリ演算で勝つ設計。fill のような **一度に長い探索**では WASM が効き、**毎フレーム細かく回る AI** では「Rust にしたから速い」が自動では出ない、というのが今回の empirically な結論に近い。
+##### 同期ゼロの上限
 
-5. **二重の世界観の税がゼロにはならない**  
-   プロファイル・ハブ・描画・ボット・ゲートは AoS の `State` を前提にする。正本を WASM に寄せても、採用・パッチ・pull・ビューの変換層は残る。ゲーム全体を SoA / WASM 前提に書き直すなら別だが、**既存 TS シミュの上にティックだけ載せる**範囲では、その層の固定費がウォーム差の一部を説明する。
+- **区間タイマー**: WASM `enemies+orbs` + leftover（`stepSquads` 等）≈ 550 ms 前後 vs TS 敵経路 ≈ 610 ms → **わずかに勝つ見込み**（同期を完全に消せた場合）。
+- **`RINGFALL_TICK_NOSYNC=1`**（挙動不正・天井専用）: 30 s bare CPU が TS ~3.5 s → nosync ~2.5 s。ただし AoS が更新されないのでボットの仕事量が減り、**楽観的すぎる**。区間タイマー側の見積もりを正とする。
+- 結論: **計算そのものは既に Rust が速い区間が多い**。ウォーム全体で負けている主因は (1) 残同期、(2) レイド長・遭遇のずれ（equiv で BIAS なしでもハッシュは違う）、(3) hunt が TS よりやや高い、の合成。
 
-#### 実験としての結論
+##### 残同期を減らした結果
+
+`syncSquads` 内の boss 走査が部隊×敵の二重ループだったのを **敵一回走査**に直し、Σ sync が約 550 ms → 約 320 ms。固定 30 s tick-cost は WASM が TS にほぼ並んだ。これ以上の大きな得は **`stepSquads` 自体を Rust に移して syncSquads を消す**か、ボットが SoA/`robotViews()` を直接読むようにして `pullRobots` を薄くする必要がある。どちらも「ティック移植の延長」ではなく、TS 側の世界観を変える作業。
+
+#### 実験としての結論（更新）
 
 - **粗い単位（fill）**: 得になりうる。  
-- **細かい毎ティック AI を境界ごと移植**: 等価は取れる（ABI 6）が、この規模・このマシンでは **TS より速いとは言えない**。  
-- 呼び出し境界は安く、フル sync を減らしても、**hunt と残同期と JIT 差**で負けが残る。  
-- 既定を TypeScript に戻し、WASM tick は opt-in のまま置くのが妥当。これ以上の最適化は「別プロダクトとしてシミュを書き直す」か「hunt を根本的に安くする」領域で、今回のポートの延長だけでは回収しにくい。
+- **敵 AI の計算**: sense / fightFoe / orbs、および enemies 合計では **Rust の方が速い**（区間タイマー）。「WASM は本来速いはず」は計算部分については正しい。  
+- **それでも既定 ON にできない理由**: 毎ティックの `syncSquads` + `pullRobots` が計算の得を食べ、ウォームな全レイドではまだ遅い。同期ゼロでも僅差の見込みで、squad AI と AoS ボットを残したままでは頭打ち。  
+- hunt は WASM がやや遅く、Infinity reach を hot path から外した近似も残る。  
+- 既定は TypeScript、`RINGFALL_TICK=1` は opt-in のまま。計測は `tick-prof:ringfall` / `tick-cost:ringfall`（実装 PR #155）。
 
 ## スイッチと検証コマンド（実装 PR 上）
 
@@ -134,6 +147,8 @@ Landmark Dial の距離場 `fill` は、ワールド格子を **一度に** WASM
 | `RINGFALL_FILL=ts` / `?ringfallNative=0` | WASM 全体オフ（ナビ含む） |
 | `RINGFALL_ASTAR=1` | WASM A*（ウォームでは遅い） |
 | `RINGFALL_TICK=1` | ティックホスト opt-in（既定 OFF） |
+| `RINGFALL_TICK_PROF=1` / `=2` | 区間タイマー（2=細かい TS 区間も） |
+| `RINGFALL_TICK_NOSYNC=1` | 同期スキップ（天井計測専用・挙動不正） |
 
 ```bash
 # 実装 PR（#153 / #155）上でのみ:
@@ -143,4 +158,6 @@ npm run fill:ringfall
 npm run bench:ringfall          # 既定 → ハッシュ 83b7a1d3bcf8
 npm run equiv:ringfall          # TS vs WASM tick の統計等価
 npm run tick-cost:ringfall -- 90
+npm run tick-prof:ringfall -- 30
+RINGFALL_TICK_PROF=2 npm run tick-prof:ringfall -- 30
 ```
