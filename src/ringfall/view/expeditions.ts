@@ -288,6 +288,17 @@ export class ExpeditionPanel {
     this.paint();
   }
 
+  /** An island as the list names it: its owner's name when it is a neighbour (the game's own marked AI), and its code. */
+  private islandName(code: string): string {
+    const n = this.neighbours.find((x) => x.code === code);
+    return n ? `<b>${esc(n.name)}${n.ai ? `<span class="ai-tag">AI</span>` : ""}</b><b class="exp-code">${esc(code)}</b>` : `<b class="exp-code">${esc(code)}</b>`;
+  }
+
+  /** Redraws the section from the profile as it now stands (the hub took a change in from elsewhere). */
+  redraw() {
+    this.paint();
+  }
+
   /** Redraws the section where the factory's panel holds it, keeping the code being typed and its focus. */
   private paint() {
     const el = document.getElementById("hub-exped");
@@ -309,7 +320,7 @@ export class ExpeditionPanel {
     const send = c.t === "ok" || this.neighbours.some((n) => n.ai) ? this.sendForm(p) : "";
     const out = p.expeditions.length
       ? `<h4 class="exp-sub">出ている遠征</h4><div class="exp-list">${p.expeditions
-          .map((e) => `<div class="req exp-out ${e.state}"><span><b class="exp-code">${esc(e.code)}</b>${esc(nodeName(e.node))}</span><b>${STATE_NAME[e.state]}</b><small>${robotIcon(SIDE.own)}${e.units}</small>${e.id > 0 && (e.state === "coming" || e.state === "attacking" || e.state === "waiting" || e.state === "holding") ? `<button type="button" class="exp-recall" data-act="exp-recall" data-arg="${esc(sentKey(e))}">引き上げる</button>` : ""}</div>`)
+          .map((e) => `<div class="req exp-out ${e.state}"><span>${this.islandName(e.code)}${esc(nodeName(e.node))}</span><b>${STATE_NAME[e.state]}</b><small>${robotIcon(SIDE.own)}${e.units}</small>${e.id > 0 && (e.state === "coming" || e.state === "attacking" || e.state === "waiting" || e.state === "holding") ? `<button type="button" class="exp-recall" data-act="exp-recall" data-arg="${esc(sentKey(e))}">引き上げる</button>` : ""}</div>`)
           .join("")}</div>`
       : "";
     // What sending costs: each expedition out (one being sent too) keeps one squad fewer out on this island.

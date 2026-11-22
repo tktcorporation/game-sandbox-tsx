@@ -245,6 +245,15 @@ export class Hud {
     return `<span class="bag-cells">${cells.map((c, n) => `<i class="${n < this.pouch ? "p" : ""}${c === "k" ? " k" : ""}"${c && c !== "k" ? ` style="--c:${c}"` : ""}></i>`).join("")}</span>`;
   }
 
+  /** Other islands' owners by the id their squads and holds carry (a player's island code, or `ai-` and a game island's): their names in the raid's banners. */
+  private rivalNames = new Map<string, string>();
+  setRivalNames(names: Iterable<[string, string]>) {
+    this.rivalNames = new Map(names);
+  }
+  addRivalNames(names: Iterable<[string, string]>) {
+    for (const [k, v] of names) this.rivalNames.set(k, v);
+  }
+
   setKnown(known: EntryId[]) {
     this.known = [...known];
     this.map.known = this.known;
@@ -454,9 +463,19 @@ export class Hud {
         // The enemy sets off to take back a node: its landing's mark and the node's blue core.
         this.toast(`${reinforceIcon()}${coreIcon(SIDE.own)}${NODES[e.node].name}`, 0, 4000);
         break;
+      case "landing": {
+        // Another island's expedition coming down: whose, and the node it is sent at.
+        const q = s.battle?.squads.find((x) => x.side === 3 && Math.abs(x.x - e.x) < 0.5 && Math.abs(x.z - e.z) < 0.5);
+        if (!q) break;
+        const who = this.rivalNames.get(q.owner ?? "") ?? "他のプレイヤー";
+        const to = NODES[q.via.length ? q.via[q.via.length - 1] : q.to]?.name ?? "";
+        this.banner(`${who}の遠征隊`, `${coreIcon(SIDE.rival)}${esc(to)}へ${e.boat ? "上陸" : "降下"}`);
+        break;
+      }
       case "nodeTaken": {
         const name = NODES[e.node].name;
-        if (e.side === 3) this.toast(`${coreIcon(SIDE.rival)}${name}<span class="toast-sub">他のプレイヤーが制圧</span>`, 0, 4000);
+        const owner = rivalOf(s.nodes[e.node] ?? "held");
+        if (e.side === 3) this.toast(`${coreIcon(SIDE.rival)}${name}<span class="toast-sub">${esc(owner !== null ? (this.rivalNames.get(owner) ?? "他のプレイヤー") : "他のプレイヤー")}が制圧</span>`, 0, 4000);
         else this.toast(`${coreIcon(e.side === 0 ? SIDE.own : SIDE.enemy)}${name}`, e.side === 0 ? 1 : 0, 4000);
         break;
       }

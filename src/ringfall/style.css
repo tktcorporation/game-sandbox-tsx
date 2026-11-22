@@ -4923,6 +4923,10 @@ body.touch .bag-card:nth-last-child(n + 3) {
   align-items: baseline;
   gap: 8px;
 }
+/* The island an expedition is out on: its owner's name in the other islands' green, then its code. */
+.mod-body .exp-out span > b:not(.exp-code) {
+  color: var(--rival-light);
+}
 .mod-body .exp-out span b.exp-code {
   font-size: 16px;
   color: var(--muted);

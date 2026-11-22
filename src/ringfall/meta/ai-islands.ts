@@ -24,6 +24,9 @@ import type { Island } from "./island";
 export const AI = {
   /** Seconds into the raid's battle the day's expedition comes down by its node: time to read the warning and get there. */
   landAt: 240,
+  /** The first day of the player's on which the first island the player's ground faces sends its scout, and the scout's squad. */
+  scoutDay: 2,
+  scout: ["grunt", "grunt"] as EnemyKind[],
   /** The first day of the player's on which one may send an expedition. */
   start: 4,
   /** The chance a day that an island whose sea route is open sends one, and the more while the player's expedition is on it (仕返し). */
@@ -214,11 +217,17 @@ type Seen = { day: number; poiState: Island; expeditions: readonly Outgoing[] };
  * The game's island sending an expedition at the player for the raid of day `p.day`, or none: of the
  * islands whose sea route the player has opened (holding the node facing it), the first a hash of
  * the day lets go, the more often while the player's expedition is on its island. It is sent at that
- * facing node. At most one a day, none before `AI.start`.
+ * facing node. At most one a day, none before `AI.start`; but while the player has not `scouted` (the
+ * browser keeps it), the first island the player's ground faces sends its scout (`AI.scout`) at once.
  */
-export function aiAttack(p: Seen, salt: number, taken: readonly number[]): { island: AiIsland; node: NodeId } | null {
-  if (p.day < AI.start) return null;
+export function aiAttack(p: Seen, salt: number, taken: readonly number[], scouted = true): { island: AiIsland; node: NodeId; scout?: true } | null {
   const holds = (id: NodeId) => p.poiState[id]?.state === "freed";
+  // The first time the player's ground reaches the sea facing one of them, that island sends a scout at once (from day 2 on).
+  if (!scouted && p.day >= AI.scoutDay) {
+    const a = aiIslands(salt, taken).find((x) => routeOpen(x.slot, holds));
+    if (a) return { island: a, node: NEIGHBOUR_SLOTS[a.slot].shore, scout: true };
+  }
+  if (p.day < AI.start) return null;
   for (const a of aiIslands(salt, taken).sort((x, y) => hash(salt, p.day, x.slot) - hash(salt, p.day, y.slot))) {
     if (!routeOpen(a.slot, holds)) continue;
     const answering = p.expeditions.some((o) => o.code === a.code && o.state !== "gone" && o.state !== "recalling");
@@ -228,8 +237,8 @@ export function aiAttack(p: Seen, salt: number, taken: readonly number[]): { isl
 }
 
 /** That expedition as the warning the camp shows (来る遠征): it lands in the next raid (no clock: the island waits for the raid). */
-export function aiIncoming(p: Seen, salt: number, taken: readonly number[]): Incoming[] {
-  const x = aiAttack(p, salt, taken);
+export function aiIncoming(p: Seen, salt: number, taken: readonly number[], scouted = true): Incoming[] {
+  const x = aiAttack(p, salt, taken, scouted);
   return x ? [{ id: 0, by: { code: x.island.code, name: x.island.name }, node: x.node, arriveAt: 0, state: "coming" }] : [];
 }
 
@@ -239,7 +248,7 @@ export function aiIncoming(p: Seen, salt: number, taken: readonly number[]): Inc
  * player's island one of them holds. Its owner is `aiOwner()` of the island's code, so a node it
  * takes is held as `rival:ai-…`.
  */
-export function aiLent(p: Seen, salt: number, taken: readonly number[]): LentIn[] {
+export function aiLent(p: Seen, salt: number, taken: readonly number[], scouted = true): LentIn[] {
   const out: LentIn[] = [];
   for (const n of NODES) {
     const owner = rivalOf(p.poiState[n.id]?.state ?? "held");
@@ -247,8 +256,8 @@ export function aiLent(p: Seen, salt: number, taken: readonly number[]): LentIn[
     const a = aiByOwner(salt, owner);
     if (a) out.push({ id: 0, by: { code: aiOwner(a.code), name: a.name }, target: n.id, kinds: aiKinds(p.day), state: "holding" });
   }
-  const x = aiAttack(p, salt, taken);
-  if (x && p.poiState[x.node]?.state === "freed") out.push({ id: 0, by: { code: aiOwner(x.island.code), name: x.island.name }, target: x.node, kinds: aiKinds(p.day), state: "coming" });
+  const x = aiAttack(p, salt, taken, scouted);
+  if (x && p.poiState[x.node]?.state === "freed") out.push({ id: 0, by: { code: aiOwner(x.island.code), name: x.island.name }, target: x.node, kinds: x.scout ? [...AI.scout] : aiKinds(p.day), state: "coming" });
   return out;
 }
 
@@ -264,7 +273,7 @@ export const aiRivals = (lent: readonly LentIn[]): RivalExpedition[] => lentRiva
  * node of the player's one of them took in the raid, and the day's expedition wiped out (it took
  * nothing). `before` is the profile the raid started from, `after` the settled one.
  */
-export function aiRaidNews(before: Seen, after: { poiState: Island }, salt: number, taken: readonly number[], now: number): IslandLogEntry[] {
+export function aiRaidNews(before: Seen, after: { poiState: Island }, salt: number, taken: readonly number[], now: number, scouted = true): IslandLogEntry[] {
   const out: IslandLogEntry[] = [];
   const by = (a: AiIsland) => ({ code: a.code, name: a.name });
   for (const n of NODES) {
@@ -273,7 +282,7 @@ export function aiRaidNews(before: Seen, after: { poiState: Island }, salt: numb
     const a = aiByOwner(salt, is);
     if (a && is !== was) out.push({ seq: 0, at: now, t: "taken", node: n.id, by: by(a) });
   }
-  const x = aiAttack(before, salt, taken);
+  const x = aiAttack(before, salt, taken, scouted);
   if (x && before.poiState[x.node]?.state === "freed" && !out.some((e) => e.node === x.node)) out.push({ seq: 0, at: now, t: "wiped", node: x.node, by: by(x.island) });
   return out;
 }
