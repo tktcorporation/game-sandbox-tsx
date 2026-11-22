@@ -11,8 +11,8 @@
  *
  * With a region id after the count, only that region's table is played. The tables' raids
  * are played in one worker process per core, and the campaign's months in a worker each beside
- * them; RINGFALL_SIM_JOBS sets how many workers play the tables (1 plays everything in this
- * process, in turn).
+ * them; RINGFALL_SIM_JOBS or `--jobs N` sets how many workers play the tables (1 plays
+ * everything in this process, in turn).
  */
 import "./ringfall-terrain-store";
 import { CONTRACT, FRONT, STRENGTH, ALLY, BAG, DEPOT, ELITE, HOME, ENEMIES, HEALS, NOISE, PACK, PARTY, PLATE, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, SIGHT, STAGGER, TACTICAL, TICK, VALUABLES, VAULT, WEAPONS, WORLD } from "../src/ringfall/sim/config";
@@ -92,8 +92,21 @@ import { writeFileSync } from "node:fs";
 import { availableParallelism, setPriority } from "node:os";
 import { fileURLToPath } from "node:url";
 
-const runs = Number(process.argv[2] ?? 12);
-const only = process.argv[3];
+/** Positional args after stripping `--jobs N` / `--jobs=N` (count, optional region). */
+function gateArgs(argv: string[]): { runs: number; only?: string; jobsOpt?: string } {
+  let jobsOpt: string | undefined;
+  const rest: string[] = [];
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]!;
+    if (a === "--jobs" || a.startsWith("--jobs=")) {
+      jobsOpt = a.includes("=") ? a.slice("--jobs=".length) : argv[++i];
+      continue;
+    }
+    rest.push(a);
+  }
+  return { runs: Number(rest[0] ?? 12), only: rest[1], jobsOpt };
+}
+const { runs, only, jobsOpt } = gateArgs(process.argv.slice(2));
 /**
  * The regions whose raids take longest to play, longest first: the reservoir's (about 20 s of a
  * core each), the machine city's (about 13 s), the harbor's (about 7 s), then the launch
@@ -108,7 +121,7 @@ const LONGEST_FIRST: RegionId[] = ["reservoir", "city", "harbor", "launch"];
  * long raids would otherwise keep one worker busy long after the others ran out of work.
  * The results are printed in table order, the same as when played in turn.
  */
-const jobs = Math.max(1, Number(process.env.RINGFALL_SIM_JOBS ?? availableParallelism()) || 1);
+const jobs = Math.max(1, Number(jobsOpt ?? process.env.RINGFALL_SIM_JOBS ?? availableParallelism()) || 1);
 /*
  * The island campaign does not use the tables' raids, and each skill's month is a chain of raids
  * played one after another, the longest single piece of the gate. With workers, its months start
