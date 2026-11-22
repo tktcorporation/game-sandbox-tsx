@@ -33,8 +33,8 @@ for (const n of need) {
   }
 }
 const abi = ex.ringfall_sim_abi_version();
-if (abi < 4) {
-  console.error(`ringfall-native-smoke: unexpected abi ${abi} (want >= 4)`);
+if (abi < 6) {
+  console.error(`ringfall-native-smoke: unexpected abi ${abi} (want >= 6)`);
   process.exit(1);
 }
 if (typeof ex.ringfall_sim_step_tick !== "function" || typeof ex.ringfall_sim_los !== "function") {
@@ -46,10 +46,12 @@ if (typeof ex.ringfall_sim_set_combat !== "function" || typeof ex.ringfall_sim_s
   process.exit(1);
 }
 if (
-  typeof ex.ringfall_sim_robot_via_x_ptr !== "function" ||
-  typeof ex.ringfall_sim_robot_skip_ptr !== "function"
+  typeof ex.ringfall_sim_covers_begin !== "function" ||
+  typeof ex.ringfall_sim_squad_foe_id_ptr !== "function" ||
+  typeof ex.ringfall_sim_squad_has_patrol_ptr !== "function" ||
+  typeof ex.ringfall_sim_set_tick !== "function"
 ) {
-  console.error("ringfall-native-smoke: missing ABI 4 via/skip exports");
+  console.error("ringfall-native-smoke: missing ABI 6 cover/calm squad exports");
   process.exit(1);
 }
 // Without geom, step_tick returns -1 (not ready).

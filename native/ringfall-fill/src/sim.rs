@@ -1,9 +1,14 @@
 //! Coarse per-tick sim host: enemy/orb SoA + world geom (boxes + terrain) in WASM linear
-//! memory. `step_tick` advances enemies (sense + engaged FSM) then orbs.
+//! memory. `step_tick` advances enemies (sense + calm + fightFoe + engaged FSM) then orbs.
+//! ABI 6: cover grid, squad calm destinations, hunt vias in-WASM.
 //! See docs/ringfall/native.md.
 
 #![allow(dead_code)]
 
+use crate::cover_grid::{
+    CoverGrid, COVER_LEVEL, COVER_MAX_FROM_PLAYER, COVER_MIN_FROM_PLAYER, COVER_PEEK_DIST,
+    COVER_SEARCH, COVER_STUCK_PROGRESS, COVER_STUCK_TIME, COVER_TALL_Y,
+};
 use crate::hunt_grid::{HuntGrid, PURSUE_REACH};
 use crate::kind::*;
 use std::f64::consts::PI;
@@ -157,10 +162,18 @@ pub struct Sim {
     pub robot_via_x: Vec<f32>,
     pub robot_via_z: Vec<f32>,
     pub robot_has_via: Vec<u8>,
-    /// TypeScript `fromCover` already stepped this robot; WASM `step_engaged` no-ops.
-    pub robot_skip: Vec<u8>,
+    pub robot_look_t: Vec<f32>,
+    pub robot_face: Vec<f32>,
+    pub robot_cover_spot_x: Vec<f32>,
+    pub robot_cover_spot_z: Vec<f32>,
+    pub robot_peek_x: Vec<f32>,
+    pub robot_peek_z: Vec<f32>,
+    pub robot_has_cover: Vec<u8>,
+    pub robot_stuck_x: Vec<f32>,
+    pub robot_stuck_z: Vec<f32>,
+    pub robot_stuck_t: Vec<f32>,
 
-    // --- squads (subset for sense / knownSpot / engage) ---
+    // --- squads (subset for sense / knownSpot / engage / calm) ---
     pub n_squads: u32,
     pub squad_since_seen: Vec<f32>,
     pub squad_shot_t: Vec<f32>,
@@ -173,6 +186,26 @@ pub struct Sim {
     pub squad_pin_t: Vec<f32>,
     pub squad_sight: Vec<f32>,
     pub squad_flags: Vec<u8>,
+    pub squad_leg: Vec<i32>,
+    pub squad_foe_id: Vec<i32>,
+    pub squad_walk_x: Vec<f32>,
+    pub squad_walk_z: Vec<f32>,
+    pub squad_has_walk: Vec<u8>,
+    pub squad_ambush_x: Vec<f32>,
+    pub squad_ambush_z: Vec<f32>,
+    pub squad_ambush_face: Vec<f32>,
+    pub squad_has_ambush: Vec<u8>,
+    pub squad_party_x: Vec<f32>,
+    pub squad_party_z: Vec<f32>,
+    pub squad_has_party: Vec<u8>,
+    pub squad_patrol_x: Vec<f32>,
+    pub squad_patrol_z: Vec<f32>,
+    pub squad_patrol_prev_x: Vec<f32>,
+    pub squad_patrol_prev_z: Vec<f32>,
+    pub squad_has_patrol: Vec<u8>,
+    pub squad_patrol_pace: Vec<f32>,
+    pub squad_near: Vec<u8>,
+    pub squad_boss: Vec<u8>,
 
     // --- orbs ---
     pub n_orbs: u32,
@@ -197,6 +230,9 @@ pub struct Sim {
     box_stage: Vec<f32>,
     /// Engaged walker vias (hunt.ts grid uploaded once per world).
     pub hunt: HuntGrid,
+    pub covers: CoverGrid,
+    /// Raid tick index (TypeScript `Math.round(time / TICK)`) for FAR_THINK.
+    pub world_tick: u32,
 }
 
 impl Sim {
@@ -296,7 +332,16 @@ impl Sim {
             robot_via_x: Vec::new(),
             robot_via_z: Vec::new(),
             robot_has_via: Vec::new(),
-            robot_skip: Vec::new(),
+            robot_look_t: Vec::new(),
+            robot_face: Vec::new(),
+            robot_cover_spot_x: Vec::new(),
+            robot_cover_spot_z: Vec::new(),
+            robot_peek_x: Vec::new(),
+            robot_peek_z: Vec::new(),
+            robot_has_cover: Vec::new(),
+            robot_stuck_x: Vec::new(),
+            robot_stuck_z: Vec::new(),
+            robot_stuck_t: Vec::new(),
             n_squads: 0,
             squad_since_seen: Vec::new(),
             squad_shot_t: Vec::new(),
@@ -309,6 +354,26 @@ impl Sim {
             squad_pin_t: Vec::new(),
             squad_sight: Vec::new(),
             squad_flags: Vec::new(),
+            squad_leg: Vec::new(),
+            squad_foe_id: Vec::new(),
+            squad_walk_x: Vec::new(),
+            squad_walk_z: Vec::new(),
+            squad_has_walk: Vec::new(),
+            squad_ambush_x: Vec::new(),
+            squad_ambush_z: Vec::new(),
+            squad_ambush_face: Vec::new(),
+            squad_has_ambush: Vec::new(),
+            squad_party_x: Vec::new(),
+            squad_party_z: Vec::new(),
+            squad_has_party: Vec::new(),
+            squad_patrol_x: Vec::new(),
+            squad_patrol_z: Vec::new(),
+            squad_patrol_prev_x: Vec::new(),
+            squad_patrol_prev_z: Vec::new(),
+            squad_has_patrol: Vec::new(),
+            squad_patrol_pace: Vec::new(),
+            squad_near: Vec::new(),
+            squad_boss: Vec::new(),
             n_orbs: 0,
             orb_x: Vec::new(),
             orb_y: Vec::new(),
@@ -328,6 +393,8 @@ impl Sim {
             tick_ready: false,
             box_stage: Vec::new(),
             hunt: HuntGrid::new(),
+            covers: CoverGrid::new(),
+            world_tick: 0,
         }
     }
 
@@ -388,7 +455,16 @@ impl Sim {
         self.robot_via_x.resize(n, 0.0);
         self.robot_via_z.resize(n, 0.0);
         self.robot_has_via.resize(n, 0);
-        self.robot_skip.resize(n, 0);
+        self.robot_look_t.resize(n, 0.0);
+        self.robot_face.resize(n, 0.0);
+        self.robot_cover_spot_x.resize(n, 0.0);
+        self.robot_cover_spot_z.resize(n, 0.0);
+        self.robot_peek_x.resize(n, 0.0);
+        self.robot_peek_z.resize(n, 0.0);
+        self.robot_has_cover.resize(n, 0);
+        self.robot_stuck_x.resize(n, 0.0);
+        self.robot_stuck_z.resize(n, 0.0);
+        self.robot_stuck_t.resize(n, 0.0);
     }
 
     fn ensure_squads(&mut self, n: usize) {
@@ -403,6 +479,26 @@ impl Sim {
         self.squad_pin_t.resize(n, 0.0);
         self.squad_sight.resize(n, 0.0);
         self.squad_flags.resize(n, 0);
+        self.squad_leg.resize(n, 0);
+        self.squad_foe_id.resize(n, -1);
+        self.squad_walk_x.resize(n, 0.0);
+        self.squad_walk_z.resize(n, 0.0);
+        self.squad_has_walk.resize(n, 0);
+        self.squad_ambush_x.resize(n, 0.0);
+        self.squad_ambush_z.resize(n, 0.0);
+        self.squad_ambush_face.resize(n, 0.0);
+        self.squad_has_ambush.resize(n, 0);
+        self.squad_party_x.resize(n, 0.0);
+        self.squad_party_z.resize(n, 0.0);
+        self.squad_has_party.resize(n, 0);
+        self.squad_patrol_x.resize(n, 0.0);
+        self.squad_patrol_z.resize(n, 0.0);
+        self.squad_patrol_prev_x.resize(n, 0.0);
+        self.squad_patrol_prev_z.resize(n, 0.0);
+        self.squad_has_patrol.resize(n, 0);
+        self.squad_patrol_pace.resize(n, 1.0);
+        self.squad_near.resize(n, 0);
+        self.squad_boss.resize(n, 0);
     }
 
     fn ensure_orbs(&mut self, n: usize) {
@@ -1288,8 +1384,44 @@ pub unsafe extern "C" fn ringfall_sim_robot_has_via_ptr() -> *mut u8 {
     sim().robot_has_via.as_mut_ptr()
 }
 #[no_mangle]
-pub unsafe extern "C" fn ringfall_sim_robot_skip_ptr() -> *mut u8 {
-    sim().robot_skip.as_mut_ptr()
+pub unsafe extern "C" fn ringfall_sim_robot_look_t_ptr() -> *mut f32 {
+    sim().robot_look_t.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_face_ptr() -> *mut f32 {
+    sim().robot_face.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_cover_spot_x_ptr() -> *mut f32 {
+    sim().robot_cover_spot_x.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_cover_spot_z_ptr() -> *mut f32 {
+    sim().robot_cover_spot_z.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_peek_x_ptr() -> *mut f32 {
+    sim().robot_peek_x.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_peek_z_ptr() -> *mut f32 {
+    sim().robot_peek_z.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_has_cover_ptr() -> *mut u8 {
+    sim().robot_has_cover.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_stuck_x_ptr() -> *mut f32 {
+    sim().robot_stuck_x.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_stuck_z_ptr() -> *mut f32 {
+    sim().robot_stuck_z.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_robot_stuck_t_ptr() -> *mut f32 {
+    sim().robot_stuck_t.as_mut_ptr()
 }
 
 #[no_mangle]
@@ -1335,6 +1467,107 @@ pub unsafe extern "C" fn ringfall_sim_squad_sight_ptr() -> *mut f32 {
 #[no_mangle]
 pub unsafe extern "C" fn ringfall_sim_squad_flags_ptr() -> *mut u8 {
     sim().squad_flags.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_squad_leg_ptr() -> *mut i32 {
+    sim().squad_leg.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_squad_foe_id_ptr() -> *mut i32 {
+    sim().squad_foe_id.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_squad_walk_x_ptr() -> *mut f32 {
+    sim().squad_walk_x.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_squad_walk_z_ptr() -> *mut f32 {
+    sim().squad_walk_z.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_squad_has_walk_ptr() -> *mut u8 {
+    sim().squad_has_walk.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_squad_ambush_x_ptr() -> *mut f32 {
+    sim().squad_ambush_x.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_squad_ambush_z_ptr() -> *mut f32 {
+    sim().squad_ambush_z.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_squad_ambush_face_ptr() -> *mut f32 {
+    sim().squad_ambush_face.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_squad_has_ambush_ptr() -> *mut u8 {
+    sim().squad_has_ambush.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_squad_party_x_ptr() -> *mut f32 {
+    sim().squad_party_x.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_squad_party_z_ptr() -> *mut f32 {
+    sim().squad_party_z.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_squad_has_party_ptr() -> *mut u8 {
+    sim().squad_has_party.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_squad_patrol_x_ptr() -> *mut f32 {
+    sim().squad_patrol_x.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_squad_patrol_z_ptr() -> *mut f32 {
+    sim().squad_patrol_z.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_squad_patrol_prev_x_ptr() -> *mut f32 {
+    sim().squad_patrol_prev_x.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_squad_patrol_prev_z_ptr() -> *mut f32 {
+    sim().squad_patrol_prev_z.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_squad_has_patrol_ptr() -> *mut u8 {
+    sim().squad_has_patrol.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_squad_patrol_pace_ptr() -> *mut f32 {
+    sim().squad_patrol_pace.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_squad_near_ptr() -> *mut u8 {
+    sim().squad_near.as_mut_ptr()
+}
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_squad_boss_ptr() -> *mut u8 {
+    sim().squad_boss.as_mut_ptr()
+}
+
+#[no_mangle]
+pub extern "C" fn ringfall_sim_covers_begin(n: u32) -> i32 {
+    sim().covers.begin(n as usize);
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_covers_ptr() -> *mut f32 {
+    sim().covers.stage_ptr()
+}
+
+#[no_mangle]
+pub extern "C" fn ringfall_sim_covers_commit() {
+    sim().covers.commit();
+}
+
+#[no_mangle]
+pub extern "C" fn ringfall_sim_set_tick(tick: u32) {
+    sim().world_tick = tick;
 }
 
 #[no_mangle]

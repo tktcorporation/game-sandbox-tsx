@@ -1,5 +1,4 @@
-// Sense + engaged combat FSM for step_tick (included into sim.rs).
-// Cover/fightFoe/calm stay TS; hunt vias compute in-WASM when the hunt grid is ready.
+// Sense + calm + fightFoe + cover + engaged combat FSM (included into sim.rs, ABI 6).
 
 const DEG: f64 = PI / 180.0;
 const LEDGE: f64 = 1.0;
@@ -67,6 +66,14 @@ const DODGE_JINK_SPEED: f64 = 1.5;
 const DUCK_RATE: f64 = 5.0;
 const PATROL_SIGHT: f64 = 0.6;
 const STAGGER_WINDOW: f64 = 0.7;
+const STRAY: f64 = 12.0;
+const SWEEP_PACE: f64 = 1.2;
+const CREW_PACE: f64 = 0.7;
+const PARTY_PACE: f64 = 0.7;
+const PACK_PACE: f64 = 0.9;
+const PATROL_PACE: f64 = 1.35;
+const CONQUEST_COLUMN: f64 = 2.8;
+const FAR_THINK_EVERY: u32 = 4;
 
 impl Sim {
     fn hypot2(x: f64, z: f64) -> f64 {
@@ -647,7 +654,7 @@ impl Sim {
         seen
     }
 
-    fn spawn_orb(&mut self, i: usize, yaw_off: f64, wide: f64) {
+    fn spawn_orb(&mut self, i: usize, yaw_off: f64, wide: f64, foe: bool) {
         let k = self.kind_of(i);
         if k.orb_speed <= 0.0 || k.orb_r <= 0.0 {
             return;
@@ -675,8 +682,13 @@ impl Sim {
         self.orb_r[n] = k.orb_r as f32;
         self.orb_dmg[n] = (k.orb_dmg * elite) as f32;
         self.orb_life[n] = 5.0;
-        self.orb_flags[n] = 0;
-        self.orb_by[n] = -1; // player/ally orbs from robots: by undefined in TS unless foe
+        if foe {
+            self.orb_flags[n] = ORB_HAS_BY;
+            self.orb_by[n] = self.robot_id[i];
+        } else {
+            self.orb_flags[n] = 0;
+            self.orb_by[n] = -1;
+        }
         self.orb_side[n] = if self.robot_flags[i] & ROBOT_FRIEND != 0 {
             0
         } else {
@@ -709,51 +721,6 @@ impl Sim {
         n
     }
 
-    #[allow(dead_code)] // kept for a later calm port; non-engaged walks run in TypeScript
-    fn calm(&mut self, i: usize, dt: f64) {
-        let k = self.kind_of(i);
-        let slow = k.speed * AWARE_IDLE_SPEED;
-        let mode = self.robot_mode[i];
-        if mode != MODE_MOVE && mode != MODE_SPAWNING {
-            self.robot_mode[i] = MODE_MOVE;
-        }
-        if self.robot_aware[i] == AWARE_ALERT {
-            self.robot_search_t[i] = (self.robot_search_t[i] as f64 - dt) as f32;
-            if self.robot_has_goal[i] != 0 {
-                let gx = self.robot_goal_x[i] as f64;
-                let gz = self.robot_goal_z[i] as f64;
-                let d = Self::hypot2(gx - self.robot_x[i] as f64, gz - self.robot_z[i] as f64);
-                if d > 2.5 {
-                    let ux = (gx - self.robot_x[i] as f64) / d;
-                    let uz = (gz - self.robot_z[i] as f64) / d;
-                    self.turn_at(i, ux.atan2(-uz), 2.0, dt);
-                    self.move_body(i, ux * slow * 1.4, uz * slow * 1.4, dt);
-                } else {
-                    self.move_body(i, 0.0, 0.0, dt);
-                }
-            } else {
-                self.move_body(i, 0.0, 0.0, dt);
-            }
-            if self.robot_search_t[i] <= 0.0 {
-                self.robot_aware[i] = AWARE_IDLE;
-                self.robot_has_goal[i] = 0;
-            }
-            return;
-        }
-        // Idle: hold / walk home a little.
-        let hx = self.robot_home_x[i] as f64;
-        let hz = self.robot_home_z[i] as f64;
-        let d = Self::hypot2(hx - self.robot_x[i] as f64, hz - self.robot_z[i] as f64);
-        if d > 0.8 {
-            let ux = (hx - self.robot_x[i] as f64) / d;
-            let uz = (hz - self.robot_z[i] as f64) / d;
-            self.turn_at(i, ux.atan2(-uz), 2.0, dt);
-            self.move_body(i, ux * slow, uz * slow, dt);
-        } else {
-            self.move_body(i, 0.0, 0.0, dt);
-        }
-    }
-
     fn choose_target(&mut self, i: usize, dt: f64) {
         if self.ally_up == 0 {
             self.robot_target[i] = TARGET_PLAYER;
@@ -782,9 +749,6 @@ impl Sim {
 
     /// Engaged combat FSM (move / telegraph / fire / lunge / recover). Titan: hold + turn.
     fn step_engaged(&mut self, i: usize, dt: f64) {
-        if self.robot_skip[i] != 0 {
-            return;
-        }
         if self.robot_kind[i] == KIND_TITAN {
             let (yaw, _) = Self::look_angles(
                 (self.robot_x[i] as f64, 0.0, self.robot_z[i] as f64),
@@ -836,6 +800,23 @@ impl Sim {
         } else {
             self.known_spot(i)
         };
+        if !at_ally
+            && self.robot_kind[i] == KIND_GRUNT
+            && self.robot_elite[i] == 0
+            && self.from_cover(
+                i,
+                known_x,
+                known_z,
+                live,
+                t_chest,
+                t_up,
+                t_vx,
+                t_vz,
+                dt,
+            )
+        {
+            return;
+        }
         let dx = known_x - self.robot_x[i] as f64;
         let dz = known_z - self.robot_z[i] as f64;
         let d = Self::hypot2(dx, dz).max(1e-3);
@@ -857,17 +838,8 @@ impl Sim {
                         let m = self.muzzle(i);
                         self.los(m, t_chest, false)
                     };
-                // Hunt via: host prep (pinch/pursuit/fromCover leftovers) or in-WASM field.
-                let (tx, tz, vd, has_via) = if self.robot_has_via[i] != 0 {
-                    let tx = self.robot_via_x[i] as f64;
-                    let tz = self.robot_via_z[i] as f64;
-                    let vd = Self::hypot2(
-                        tx - self.robot_x[i] as f64,
-                        tz - self.robot_z[i] as f64,
-                    )
-                    .max(1e-3);
-                    (tx, tz, vd, true)
-                } else if !sees {
+                // Hunt via: in-WASM field toward known / pursuit goal.
+                let (tx, tz, vd, has_via) = if !sees {
                     let (tx, tz) = self.engaged_via(i, known_x, known_z);
                     let vd = Self::hypot2(
                         tx - self.robot_x[i] as f64,
@@ -985,11 +957,11 @@ impl Sim {
                         let shots = k.shots;
                         for s in 0..shots {
                             let off = ((s as f64 - (shots as f64 - 1.0) / 2.0) * fan * PI) / 180.0;
-                            self.spawn_orb(i, off, wide);
+                            self.spawn_orb(i, off, wide, false);
                         }
                         self.robot_shots_left[i] = 0;
                     } else {
-                        self.spawn_orb(i, 0.0, wide);
+                        self.spawn_orb(i, 0.0, wide, false);
                         self.robot_shots_left[i] -= 1;
                         self.robot_timer[i] = k.shot_gap as f32;
                     }
@@ -1136,7 +1108,21 @@ impl Sim {
                 {
                     self.engage_squad(self.robot_squad[i], i);
                 } else {
-                    // Calm / fightFoe / patrol / parties stay in TypeScript (`tickNonEngaged`).
+                    let sq = self.robot_squad[i];
+                    if sq >= 0
+                        && (sq as usize) < self.n_squads as usize
+                        && self.squad_near[sq as usize] == 0
+                        && (self.world_tick.wrapping_add(sq as u32)) % FAR_THINK_EVERY != 0
+                    {
+                        self.move_body(i, 0.0, 0.0, dt);
+                        continue;
+                    }
+                    let foe = self.foe_index(i);
+                    if foe >= 0 {
+                        self.fight_foe(i, foe as usize, dt);
+                    } else {
+                        self.calm(i, dt);
+                    }
                     continue;
                 }
             }
@@ -1145,4 +1131,731 @@ impl Sim {
             }
         }
     }
-}
+    fn walk_to(
+        &mut self,
+        i: usize,
+        tx: f64,
+        tz: f64,
+        speed: f64,
+        face: bool,
+        dt: f64,
+    ) -> bool {
+        let dx = tx - self.robot_x[i] as f64;
+        let dz = tz - self.robot_z[i] as f64;
+        let d = Self::hypot2(dx, dz);
+        if d < 0.35 {
+            self.move_body(i, 0.0, 0.0, dt);
+            return true;
+        }
+        if face {
+            let yaw = dx.atan2(-dz);
+            let cur = self.robot_yaw[i] as f64;
+            self.robot_yaw[i] =
+                (cur + Self::wrap_angle(yaw - cur) * (dt * 4.0).min(1.0)) as f32;
+        }
+        if self.move_body(i, (dx / d) * speed, (dz / d) * speed, dt) {
+            self.robot_strafe[i] = -self.robot_strafe[i];
+        }
+        false
+    }
+
+    fn on_walkable(&self, i: usize) -> bool {
+        let k = self.kind_of(i);
+        k.fly == 0.0 && self.hunt.on_main(self.robot_x[i] as f64, self.robot_z[i] as f64)
+    }
+
+    fn hunt_step(&mut self, i: usize, gx: f64, gz: f64, reach: f64) -> (f64, f64) {
+        if !self.on_walkable(i) {
+            return (gx, gz);
+        }
+        self.hunt.next_via(self.robot_x[i] as f64, self.robot_z[i] as f64, gx, gz, reach)
+    }
+
+    fn trip_step(&mut self, i: usize, gx: f64, gz: f64) -> (f64, f64) {
+        let x = self.robot_x[i] as f64;
+        let z = self.robot_z[i] as f64;
+        let beside = self.hunt.on_main(x + 2.0, z)
+            || self.hunt.on_main(x - 2.0, z)
+            || self.hunt.on_main(x, z + 2.0)
+            || self.hunt.on_main(x, z - 2.0);
+        if !self.on_walkable(i) && !beside {
+            return (gx, gz);
+        }
+        self.hunt.next_via(x, z, gx, gz, f64::INFINITY)
+    }
+
+    fn home_step(&mut self, i: usize, gx: f64, gz: f64) -> (f64, f64) {
+        let sq = self.robot_squad[i];
+        if sq >= 0
+            && (sq as usize) < self.n_squads as usize
+            && self.squad_flags[sq as usize] & SQUAD_ROUTED != 0
+        {
+            return (gx, gz);
+        }
+        if !self.on_walkable(i) {
+            return (gx, gz);
+        }
+        self.hunt.next_via(
+            self.robot_x[i] as f64,
+            self.robot_z[i] as f64,
+            gx,
+            gz,
+            PURSUE_REACH,
+        )
+    }
+
+    fn to_segment(px: f64, pz: f64, ax: f64, az: f64, bx: f64, bz: f64) -> f64 {
+        let dx = bx - ax;
+        let dz = bz - az;
+        let l2 = dx * dx + dz * dz;
+        let t = if l2 > 0.0 {
+            ((px - ax) * dx + (pz - az) * dz) / l2
+        } else {
+            0.0
+        }
+        .clamp(0.0, 1.0);
+        Self::hypot2(px - ax - dx * t, pz - az - dz * t)
+    }
+
+    fn squad_slot(&self, i: usize) -> usize {
+        let sq = self.robot_squad[i];
+        if sq < 0 {
+            return 0;
+        }
+        let mut slot = 0usize;
+        for j in 0..i {
+            if self.robot_squad[j] != sq {
+                continue;
+            }
+            if self.robot_flags[j] & ROBOT_FRIEND != 0 {
+                continue;
+            }
+            if self.robot_hp[j] > 0.0 {
+                slot += 1;
+            }
+        }
+        slot
+    }
+
+    fn foe_index(&self, i: usize) -> i32 {
+        let sq = self.robot_squad[i];
+        if sq < 0 || (sq as usize) >= self.n_squads as usize {
+            return -1;
+        }
+        let foe_id = self.squad_foe_id[sq as usize];
+        if foe_id < 0 {
+            return -1;
+        }
+        for j in 0..self.n_robots as usize {
+            if self.robot_id[j] == foe_id && self.robot_hp[j] > 0.0 {
+                return j as i32;
+            }
+        }
+        -1
+    }
+
+    fn calm_look(&mut self, i: usize, flags: u8, dt: f64) {
+        let look = self.robot_look_t[i] as f64;
+        if flags & CALM_LOOK_ALERT != 0 {
+            self.robot_yaw[i] = (self.robot_yaw[i] as f64 + look.sin() * 1.3 * dt * 1.6) as f32;
+        } else if flags & CALM_LOOK_PARTY != 0 {
+            self.robot_yaw[i] = (self.robot_yaw[i] as f64 + look.sin() * 0.7 * dt * 0.9) as f32;
+        } else if flags & CALM_LOOK_AMBUSH != 0 {
+            let face = self.robot_face[i] as f64 + look.sin() * 0.5 * 0.4;
+            let cur = self.robot_yaw[i] as f64;
+            self.robot_yaw[i] =
+                (cur + Self::wrap_angle(face - cur) * (dt * 2.0).min(1.0)) as f32;
+        } else if flags & CALM_LOOK_HOME != 0 {
+            let face = self.robot_face[i] as f64 + look.sin() * 0.45 * 0.7;
+            let cur = self.robot_yaw[i] as f64;
+            self.robot_yaw[i] =
+                (cur + Self::wrap_angle(face - cur) * (dt * 1.5).min(1.0)) as f32;
+        }
+    }
+
+    fn calm_flags_for(&self, sq: usize) -> u8 {
+        if self.squad_boss[sq] != 0 {
+            return CALM_BOSS | CALM_LOOK_HOME;
+        }
+        if self.squad_has_walk[sq] != 0 || self.squad_has_party[sq] != 0 {
+            return CALM_LOOK_PARTY;
+        }
+        if self.squad_has_ambush[sq] != 0 {
+            return CALM_LOOK_AMBUSH;
+        }
+        CALM_LOOK_HOME
+    }
+
+    fn calm(&mut self, i: usize, dt: f64) {
+        self.robot_look_t[i] = (self.robot_look_t[i] as f64 + dt) as f32;
+        let mode = self.robot_mode[i];
+        if mode != MODE_MOVE && mode != MODE_SPAWNING {
+            self.robot_mode[i] = MODE_MOVE;
+        }
+        let k = self.kind_of(i);
+        let slow = k.speed * AWARE_IDLE_SPEED;
+        let sq_i = self.robot_squad[i];
+        let flags = if sq_i >= 0 && (sq_i as usize) < self.n_squads as usize {
+            self.calm_flags_for(sq_i as usize)
+        } else {
+            CALM_LOOK_HOME
+        };
+
+        if self.robot_aware[i] == AWARE_ALERT {
+            self.robot_search_t[i] = (self.robot_search_t[i] as f64 - dt) as f32;
+            if flags & CALM_BOSS != 0 {
+                if self.robot_has_goal[i] != 0 {
+                    let gx = self.robot_goal_x[i] as f64;
+                    let gz = self.robot_goal_z[i] as f64;
+                    let yaw = (gx - self.robot_x[i] as f64).atan2(-(gz - self.robot_z[i] as f64));
+                    let cur = self.robot_yaw[i] as f64;
+                    self.robot_yaw[i] =
+                        (cur + Self::wrap_angle(yaw - cur) * (dt * 2.0).min(1.0)) as f32;
+                }
+                let hx = self.robot_home_x[i] as f64;
+                let hz = self.robot_home_z[i] as f64;
+                if Self::hypot2(hx - self.robot_x[i] as f64, hz - self.robot_z[i] as f64) > 0.8 {
+                    self.walk_to(i, hx, hz, slow, true, dt);
+                } else {
+                    self.move_body(i, 0.0, 0.0, dt);
+                }
+            } else if self.robot_has_goal[i] != 0 {
+                let gx = self.robot_goal_x[i] as f64;
+                let gz = self.robot_goal_z[i] as f64;
+                let d = Self::hypot2(gx - self.robot_x[i] as f64, gz - self.robot_z[i] as f64);
+                if d > 2.5 {
+                    let sweep = sq_i >= 0
+                        && (sq_i as usize) < self.n_squads as usize
+                        && self.squad_flags[sq_i as usize] & SQUAD_SWEEP != 0;
+                    let sp = if sweep {
+                        k.speed * SWEEP_PACE
+                    } else {
+                        slow * 1.4
+                    };
+                    let (vx, vz) = self.hunt_step(i, gx, gz, PURSUE_REACH);
+                    self.walk_to(i, vx, vz, sp, true, dt);
+                } else {
+                    self.move_body(i, 0.0, 0.0, dt);
+                    self.calm_look(i, CALM_LOOK_ALERT, dt);
+                }
+            } else {
+                self.move_body(i, 0.0, 0.0, dt);
+                self.calm_look(i, CALM_LOOK_ALERT, dt);
+            }
+            if self.robot_search_t[i] <= 0.0 {
+                self.robot_aware[i] = AWARE_IDLE;
+                self.robot_has_goal[i] = 0;
+            }
+            return;
+        }
+
+        if sq_i < 0 || (sq_i as usize) >= self.n_squads as usize {
+            if Self::hypot2(
+                self.robot_home_x[i] as f64 - self.robot_x[i] as f64,
+                self.robot_home_z[i] as f64 - self.robot_z[i] as f64,
+            ) > 0.8
+            {
+                let (hx, hz) = (
+                    self.robot_home_x[i] as f64,
+                    self.robot_home_z[i] as f64,
+                );
+                let via = if Self::hypot2(hx - self.robot_x[i] as f64, hz - self.robot_z[i] as f64)
+                    > STRAY
+                {
+                    self.home_step(i, hx, hz)
+                } else {
+                    (hx, hz)
+                };
+                self.walk_to(i, via.0, via.1, slow, true, dt);
+            } else {
+                self.move_body(i, 0.0, 0.0, dt);
+                self.calm_look(i, CALM_LOOK_HOME, dt);
+            }
+            return;
+        }
+
+        let sq = sq_i as usize;
+        let slot = self.squad_slot(i);
+
+        if self.squad_has_walk[sq] != 0 {
+            let wx = self.squad_walk_x[sq] as f64;
+            let wz = self.squad_walk_z[sq] as f64;
+            let to_x = wx + (if slot % 2 == 1 { 1.6 } else { -1.6 }) * (slot.min(1) as f64);
+            let to_z = wz + slot as f64 * 1.4;
+            let pace = slow
+                * if self.squad_flags[sq] & SQUAD_CREW != 0 {
+                    CREW_PACE
+                } else {
+                    PARTY_PACE
+                };
+            if Self::hypot2(to_x - self.robot_x[i] as f64, to_z - self.robot_z[i] as f64) > 0.8 {
+                let via = self.trip_step(i, to_x, to_z);
+                self.walk_to(i, via.0, via.1, pace, true, dt);
+            } else {
+                self.move_body(i, 0.0, 0.0, dt);
+                self.calm_look(i, CALM_LOOK_PARTY, dt);
+            }
+            return;
+        }
+
+        if self.squad_has_party[sq] != 0 {
+            let px = self.squad_party_x[sq] as f64;
+            let pz = self.squad_party_z[sq] as f64;
+            let to_x = px + (if slot % 2 == 1 { 1.6 } else { -1.6 }) * (slot.min(1) as f64);
+            let to_z = pz + slot as f64 * 1.4;
+            if Self::hypot2(to_x - self.robot_x[i] as f64, to_z - self.robot_z[i] as f64) > 0.8 {
+                let via = self.trip_step(i, to_x, to_z);
+                self.walk_to(i, via.0, via.1, slow * PARTY_PACE, true, dt);
+            } else {
+                self.move_body(i, 0.0, 0.0, dt);
+                self.calm_look(i, CALM_LOOK_PARTY, dt);
+            }
+            return;
+        }
+
+        if self.squad_has_ambush[sq] != 0 {
+            let ax = self.squad_ambush_x[sq] as f64;
+            let az = self.squad_ambush_z[sq] as f64;
+            let to_x = ax + (if slot % 2 == 1 { 2.2 } else { -2.2 }) * (slot.min(1) as f64);
+            let to_z = az + slot as f64 * 1.8;
+            self.robot_face[i] = self.squad_ambush_face[sq];
+            if Self::hypot2(to_x - self.robot_x[i] as f64, to_z - self.robot_z[i] as f64) > 1.0 {
+                let via = if Self::hypot2(to_x - self.robot_x[i] as f64, to_z - self.robot_z[i] as f64)
+                    > STRAY
+                {
+                    self.home_step(i, to_x, to_z)
+                } else {
+                    (to_x, to_z)
+                };
+                self.walk_to(i, via.0, via.1, slow * 1.6, true, dt);
+            } else {
+                self.move_body(i, 0.0, 0.0, dt);
+                self.calm_look(i, CALM_LOOK_AMBUSH, dt);
+            }
+            return;
+        }
+
+        if self.squad_has_patrol[sq] != 0 && self.robot_kind[i] != KIND_TITAN {
+            let wx = self.squad_patrol_x[sq] as f64;
+            let wz = self.squad_patrol_z[sq] as f64;
+            let to_x = wx + (if slot % 2 == 1 { 1.6 } else { -1.6 }) * (slot.min(1) as f64);
+            let to_z = wz + slot as f64 * 1.4;
+            let prev_x = self.squad_patrol_prev_x[sq] as f64;
+            let prev_z = self.squad_patrol_prev_z[sq] as f64;
+            let diverted = Self::to_segment(
+                self.robot_x[i] as f64,
+                self.robot_z[i] as f64,
+                prev_x,
+                prev_z,
+                wx,
+                wz,
+            ) > STRAY;
+            let via = if diverted {
+                self.home_step(i, to_x, to_z)
+            } else {
+                (to_x, to_z)
+            };
+            let mut pace = self.squad_patrol_pace[sq] as f64;
+            if pace <= 0.0 {
+                pace = if self.squad_flags[sq] & SQUAD_PACK != 0 {
+                    k.speed * PACK_PACE
+                } else if self.squad_flags[sq] & (SQUAD_MOBILE | SQUAD_BATTLE) != 0 {
+                    slow * PATROL_PACE
+                } else {
+                    slow
+                };
+            }
+            let arrived = self.walk_to(i, via.0, via.1, pace, true, dt);
+            if arrived && !diverted && slot == 0 {
+                self.squad_leg[sq] = self.squad_leg[sq].wrapping_add(1);
+            }
+            return;
+        }
+
+        let hx = self.robot_home_x[i] as f64;
+        let hz = self.robot_home_z[i] as f64;
+        if Self::hypot2(hx - self.robot_x[i] as f64, hz - self.robot_z[i] as f64) > 0.8 {
+            let via = if Self::hypot2(hx - self.robot_x[i] as f64, hz - self.robot_z[i] as f64) > STRAY
+            {
+                self.home_step(i, hx, hz)
+            } else {
+                (hx, hz)
+            };
+            self.walk_to(i, via.0, via.1, slow, true, dt);
+        } else {
+            self.move_body(i, 0.0, 0.0, dt);
+            self.calm_look(i, CALM_LOOK_HOME, dt);
+        }
+    }
+
+    fn fight_foe(&mut self, i: usize, foe: usize, dt: f64) {
+        if foe >= self.n_robots as usize || self.robot_hp[foe] <= 0.0 {
+            return;
+        }
+        let k = self.kind_of(i);
+        let fx = self.robot_x[foe] as f64;
+        let fy = self.robot_y[foe] as f64;
+        let fz = self.robot_z[foe] as f64;
+        let at = (fx, fy + self.body_y_of(foe), fz);
+        let dx = fx - self.robot_x[i] as f64;
+        let dz = fz - self.robot_z[i] as f64;
+        let d = Self::hypot2(dx, dz).max(1e-3);
+        let ux = dx / d;
+        let uz = dz / d;
+        let mode = self.robot_mode[i];
+        if mode != MODE_TELEGRAPH && mode != MODE_FIRE {
+            self.robot_mode[i] = MODE_MOVE;
+        }
+        self.turn_at(i, dx.atan2(-dz), k.turn, dt);
+        let sees = self.sight_on(i, fx, fz, at);
+        let fvx = self.robot_vx[foe] as f64;
+        let fvz = self.robot_vz[foe] as f64;
+        match self.robot_mode[i] {
+            MODE_MOVE => {
+                let (vx, vz) = if !sees {
+                    if d > 3.0 {
+                        let (tx, tz) = self.home_step(i, fx, fz);
+                        let td = Self::hypot2(
+                            tx - self.robot_x[i] as f64,
+                            tz - self.robot_z[i] as f64,
+                        )
+                        .max(1e-3);
+                        (
+                            ((tx - self.robot_x[i] as f64) / td) * k.speed,
+                            ((tz - self.robot_z[i] as f64) / td) * k.speed,
+                        )
+                    } else {
+                        (ux * k.speed, uz * k.speed)
+                    }
+                } else {
+                    let along = if self.robot_kind[i] == KIND_CHARGER || d > k.range + 4.0 {
+                        1.0
+                    } else if d < k.range - 4.0 {
+                        -0.7
+                    } else {
+                        0.0
+                    };
+                    let side = if self.robot_kind[i] == KIND_CHARGER {
+                        0.3
+                    } else {
+                        DODGE_STRAFE
+                    };
+                    let strafe = self.robot_strafe[i] as f64;
+                    (
+                        (ux * along - uz * strafe * side) * k.speed,
+                        (uz * along + ux * strafe * side) * k.speed,
+                    )
+                };
+                if self.robot_flags[i] & ROBOT_POST != 0 {
+                    self.move_body(i, 0.0, 0.0, dt);
+                } else if self.move_body(i, vx, vz, dt) {
+                    self.robot_strafe[i] = -self.robot_strafe[i];
+                } else {
+                    self.robot_strafe_t[i] = (self.robot_strafe_t[i] as f64 - dt) as f32;
+                    if self.robot_strafe_t[i] <= 0.0 {
+                        self.robot_strafe_t[i] =
+                            (DODGE_EVERY0 + self.draw() * (DODGE_EVERY1 - DODGE_EVERY0)) as f32;
+                        if self.draw() < DODGE_FLIP {
+                            self.robot_strafe[i] = -self.robot_strafe[i];
+                        }
+                    }
+                }
+                self.robot_cooldown[i] = (self.robot_cooldown[i] as f64 - dt) as f32;
+                if self.robot_kind[i] == KIND_CHARGER {
+                    let foe_r = self.robot_radius[foe] as f64;
+                    if self.robot_cooldown[i] <= 0.0
+                        && d < CHARGER_HIT_R + foe_r + 0.4
+                        && (fy - self.robot_y[i] as f64).abs() < 1.6
+                    {
+                        self.robot_cooldown[i] = k.cooldown as f32;
+                        self.hits.push(HitEvent {
+                            orb: 0,
+                            kind: HIT_ROBOT,
+                            _pad: [0; 3],
+                            target_id: self.robot_id[foe],
+                            dmg: k.orb_dmg as f32,
+                            from_x: self.robot_x[i],
+                            from_z: self.robot_z[i],
+                        });
+                    }
+                    return;
+                }
+                let eye = self.head_of(i);
+                let reach = Self::hypot3(at.0 - eye.0, at.1 - eye.1, at.2 - eye.2);
+                let far = k.sight_range * self.sight_scale * AWARE_ENGAGED_RANGE;
+                if self.robot_cooldown[i] <= 0.0 && sees && reach < far {
+                    self.robot_mode[i] = MODE_TELEGRAPH;
+                    self.robot_timer[i] = k.telegraph as f32;
+                    self.lead_aim(i, at, (fvx, 0.0, fvz));
+                }
+            }
+            MODE_TELEGRAPH => {
+                self.windup_step(i, ux, uz, false, dt);
+                self.robot_timer[i] = (self.robot_timer[i] as f64 - dt) as f32;
+                if sees {
+                    self.lead_aim(i, at, (fvx, 0.0, fvz));
+                }
+                if self.robot_timer[i] <= 0.0 {
+                    if sees {
+                        self.robot_mode[i] = MODE_FIRE;
+                        self.robot_timer[i] = 0.0;
+                        self.robot_shots_left[i] = k.shots;
+                    } else {
+                        self.robot_mode[i] = MODE_MOVE;
+                        self.robot_cooldown[i] = 0.5;
+                    }
+                }
+            }
+            MODE_FIRE => {
+                self.windup_step(i, ux, uz, false, dt);
+                self.robot_timer[i] = (self.robot_timer[i] as f64 - dt) as f32;
+                if self.robot_timer[i] <= 0.0 && self.robot_shots_left[i] > 0 {
+                    if sees {
+                        self.lead_aim(i, at, (fvx, 0.0, fvz));
+                    }
+                    if k.spread > 0.0 {
+                        let shots = k.shots;
+                        for s in 0..shots {
+                            let off = ((s as f64 - (shots as f64 - 1.0) / 2.0) * k.spread * PI)
+                                / 180.0;
+                            self.spawn_orb(i, off, 1.0, true);
+                        }
+                        self.robot_shots_left[i] = 0;
+                    } else {
+                        self.spawn_orb(i, 0.0, 1.0, true);
+                        self.robot_shots_left[i] -= 1;
+                        self.robot_timer[i] = k.shot_gap as f32;
+                    }
+                }
+                if self.robot_shots_left[i] <= 0 {
+                    self.robot_mode[i] = MODE_MOVE;
+                    self.robot_cooldown[i] = (k.cooldown * (0.8 + self.draw() * 0.4)) as f32;
+                }
+            }
+            _ => {
+                self.move_body(i, 0.0, 0.0, dt);
+            }
+        }
+    }
+
+    fn same_floor(&self, from_x: f64, from_y: f64, from_z: f64, c: crate::cover_grid::CoverPt) -> bool {
+        let t_ground = self.terrain_height(from_x, from_z);
+        if (c.y - t_ground).abs() < 0.3 {
+            return true;
+        }
+        let d = Self::hypot2(c.x - from_x, c.z - from_z);
+        let n = (d / 0.5).ceil() as i32;
+        for step in 1..n {
+            let t = step as f64 / n as f64;
+            let x = from_x + (c.x - from_x) * t;
+            let z = from_z + (c.z - from_z) * t;
+            let g = self.ground_at(x, z, 0.3, c.y + 0.3);
+            if (g - c.y).abs() > COVER_LEVEL {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn solid_at_y(&self, x: f64, y: f64, z: f64) -> bool {
+        let feet = y;
+        let g = self.ground_at(x, z, 0.3, feet + 0.5);
+        g > feet + 0.8
+    }
+
+    fn find_cover(
+        &mut self,
+        i: usize,
+        threat_x: f64,
+        threat_z: f64,
+        threat_y: f64,
+    ) -> Option<(f64, f64, f64, f64)> {
+        if !self.covers.ready() {
+            return None;
+        }
+        let search = COVER_SEARCH;
+        let head_y = threat_y + 1.5;
+        let chest_y = threat_y + 1.1;
+        let ex = self.robot_x[i] as f64;
+        let ez = self.robot_z[i] as f64;
+        let ey = self.robot_y[i] as f64;
+        let mut cands: Vec<(u32, f64, f64)> = Vec::new();
+        for idx in self.covers.near(ex, ez, search) {
+            let c = self.covers.get(idx);
+            let d = Self::hypot2(c.x - ex, c.z - ez);
+            let dp = Self::hypot2(c.x - threat_x, c.z - threat_z);
+            if d >= search || (c.y - ey).abs() > COVER_LEVEL {
+                continue;
+            }
+            if dp <= COVER_MIN_FROM_PLAYER || dp >= COVER_MAX_FROM_PLAYER {
+                continue;
+            }
+            let mut taken = false;
+            for j in 0..self.n_robots as usize {
+                if j == i || self.robot_has_cover[j] == 0 {
+                    continue;
+                }
+                if Self::hypot2(
+                    self.robot_cover_spot_x[j] as f64 - c.x,
+                    self.robot_cover_spot_z[j] as f64 - c.z,
+                ) < 1.5
+                {
+                    taken = true;
+                    break;
+                }
+            }
+            if taken {
+                continue;
+            }
+            cands.push((idx, d, dp));
+        }
+        cands.sort_by(|a, b| {
+            let sa = a.1 + (a.2 - 16.0).abs() * 0.3;
+            let sb = b.1 + (b.2 - 16.0).abs() * 0.3;
+            sa.partial_cmp(&sb).unwrap_or(std::cmp::Ordering::Equal)
+        });
+        cands.truncate(14);
+        for &(idx, _, _) in &cands {
+            let c = self.covers.get(idx);
+            if self.los((c.x, c.y + COVER_TALL_Y, c.z), (threat_x, head_y, threat_z), false) {
+                continue;
+            }
+            if !self.same_floor(ex, ey, ez, c) {
+                continue;
+            }
+            for sign in [self.robot_peek_side[i] as f64, -self.robot_peek_side[i] as f64] {
+                let peek_x = c.x + c.tx * sign * COVER_PEEK_DIST;
+                let peek_z = c.z + c.tz * sign * COVER_PEEK_DIST;
+                let pg = c.y;
+                if (self.ground_at(peek_x, peek_z, 0.3, pg + 0.3) - pg).abs() > 0.3 {
+                    continue;
+                }
+                if self.solid_at_y(peek_x, pg + 1.0, peek_z) {
+                    continue;
+                }
+                if self.los((peek_x, pg + 1.6, peek_z), (threat_x, chest_y, threat_z), false) {
+                    return Some((c.x, c.z, peek_x, peek_z));
+                }
+            }
+        }
+        None
+    }
+
+    /// Returns true when the grunt spent the tick in cover FSM (skip engaged move).
+    fn from_cover(
+        &mut self,
+        i: usize,
+        known_x: f64,
+        known_z: f64,
+        live: bool,
+        t_chest: (f64, f64, f64),
+        t_up: bool,
+        t_vx: f64,
+        t_vz: f64,
+        dt: f64,
+    ) -> bool {
+        let k = self.kind_of(i);
+        if self.robot_mode[i] != MODE_MOVE {
+            return false;
+        }
+        if self.robot_target[i] == TARGET_PLAYER && !self.located(i) {
+            return false;
+        }
+        if self.robot_opener[i] != 0
+            && live
+            && t_up
+            && self.facing(i, t_chest.0, t_chest.2)
+            && self.los(self.muzzle(i), t_chest, false)
+        {
+            return false;
+        }
+        self.robot_cover_t[i] = (self.robot_cover_t[i] as f64 - dt) as f32;
+        if self.robot_cover_t[i] <= 0.0 || (self.robot_last_hit[i] as f64) < TICK * 1.5 {
+            if let Some((cx, cz, px, pz)) =
+                self.find_cover(i, known_x, known_z, t_chest.1 - 1.1)
+            {
+                self.robot_cover_spot_x[i] = cx as f32;
+                self.robot_cover_spot_z[i] = cz as f32;
+                self.robot_peek_x[i] = px as f32;
+                self.robot_peek_z[i] = pz as f32;
+                self.robot_has_cover[i] = 1;
+            } else {
+                self.robot_has_cover[i] = 0;
+            }
+            self.robot_cover_t[i] = 2.5;
+        }
+        if self.robot_has_cover[i] == 0 {
+            return false;
+        }
+        self.robot_cooldown[i] = (self.robot_cooldown[i] as f64 - dt) as f32;
+        let out = self.robot_cooldown[i] <= 0.0;
+        let to_x = if out {
+            self.robot_peek_x[i] as f64
+        } else {
+            self.robot_cover_spot_x[i] as f64
+        };
+        let to_z = if out {
+            self.robot_peek_z[i] as f64
+        } else {
+            self.robot_cover_spot_z[i] as f64
+        };
+        if self.robot_stuck_x[i] as f64 != to_x || self.robot_stuck_z[i] as f64 != to_z {
+            self.robot_stuck_x[i] = to_x as f32;
+            self.robot_stuck_z[i] = to_z as f32;
+            self.robot_stuck_t[i] = 0.0;
+        }
+        let before = Self::hypot2(
+            self.robot_x[i] as f64 - to_x,
+            self.robot_z[i] as f64 - to_z,
+        );
+        let arrived = self.walk_to(i, to_x, to_z, k.speed, false, dt);
+        let after = Self::hypot2(
+            self.robot_x[i] as f64 - to_x,
+            self.robot_z[i] as f64 - to_z,
+        );
+        if before - after < k.speed * TICK * COVER_STUCK_PROGRESS {
+            self.robot_stuck_t[i] = (self.robot_stuck_t[i] as f64 + dt) as f32;
+        } else {
+            self.robot_stuck_t[i] = 0.0;
+        }
+        let there = arrived || (self.robot_stuck_t[i] as f64) >= COVER_STUCK_TIME;
+        if !out && there {
+            self.robot_duck[i] =
+                (self.robot_duck[i] as f64 + 2.0 * DUCK_RATE * dt).min(1.0) as f32;
+        }
+        let shows = out
+            && live
+            && t_up
+            && self.facing(i, t_chest.0, t_chest.2)
+            && self.los(
+                (
+                    self.robot_x[i] as f64,
+                    self.robot_y[i] as f64 + self.weak_y(i),
+                    self.robot_z[i] as f64,
+                ),
+                t_chest,
+                false,
+            );
+        if out && (there || shows) {
+            if shows {
+                self.robot_mode[i] = MODE_TELEGRAPH;
+                self.robot_timer[i] = k.telegraph as f32;
+                let ox = self.robot_peek_x[i] as f64 - self.robot_cover_spot_x[i] as f64;
+                let oz = self.robot_peek_z[i] as f64 - self.robot_cover_spot_z[i] as f64;
+                self.robot_strafe[i] = if -(t_chest.2 - self.robot_z[i] as f64) * ox
+                    + (t_chest.0 - self.robot_x[i] as f64) * oz
+                    >= 0.0
+                {
+                    1.0
+                } else {
+                    -1.0
+                };
+                self.lead_aim(i, t_chest, (t_vx, 0.0, t_vz));
+            } else {
+                self.robot_peek_side[i] = -self.robot_peek_side[i];
+                self.robot_cover_t[i] = 0.0;
+                self.robot_cooldown[i] = 0.4;
+            }
+        }
+        true
+    }}
