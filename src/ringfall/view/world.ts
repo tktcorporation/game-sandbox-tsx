@@ -310,6 +310,8 @@ export class World {
   private trimmed = { n: 0, ms: 0 };
   /** Stones, stains, cracks and tufts on the ground near the camera. */
   private scatter = new GroundScatter();
+  /** Camera chunk cell last streamed from: emptying far chunks only when this moves. */
+  private streamCell = "";
 
   /** `tier` and `ratio`: what the page starts drawing at; the tier's antialiasing is fixed from then on. */
   constructor(container: HTMLElement, opts: { tier: Tier; ratio: number }) {
@@ -681,36 +683,77 @@ export class World {
   }
 
   /**
-   * Builds the chunks round (x, z) that are not built yet: those inside the fog at once, so
-   * nothing drawn is ever missing, and those out to `streamFar()` within the tier's time; lets go those past
-   * DROP_AT times that.
+   * Chunks whose squares meet the circle of radius `reach` round (x, z). The world is a grid of
+   * CHUNK squares, so only a neighbourhood is visited instead of every chunk each frame.
+   */
+  private nearChunks(x: number, z: number, reach: number, visit: (c: Chunk, d: number) => void) {
+    const nx = Math.ceil((WORLD.x1 - WORLD.x0) / CHUNK);
+    const nz = Math.ceil((WORLD.z1 - WORLD.z0) / CHUNK);
+    const i0 = Math.max(0, Math.floor((x - reach - WORLD.x0) / CHUNK));
+    const i1 = Math.min(nx - 1, Math.floor((x + reach - WORLD.x0) / CHUNK));
+    const j0 = Math.max(0, Math.floor((z - reach - WORLD.z0) / CHUNK));
+    const j1 = Math.min(nz - 1, Math.floor((z + reach - WORLD.z0) / CHUNK));
+    for (let j = j0; j <= j1; j++)
+      for (let i = i0; i <= i1; i++) {
+        const c = this.chunks[j * nx + i];
+        const d = World.away(c, x, z);
+        if (d <= reach) visit(c, d);
+      }
+  }
+
+  /**
+   * Builds the chunks round (x, z) that are not built yet: those inside the fog nearest-first
+   * within a short budget (so a walk into unloaded ground cannot hitch a whole frame), then those
+   * out to `streamFar()` within the tier's time; lets go those past DROP_AT times that. A hole at
+   * the fog's edge for a frame or two is preferred to a multi-hundred-millisecond stall that
+   * forces the quality governor down.
    */
   private streamChunks(x: number, z: number) {
     const fogFar = this.q.fogFar;
     const far = this.streamFar();
+    const drop = far * DROP_AT;
+    const fogNeed: { c: Chunk; d: number }[] = [];
     const waiting: { c: Chunk; d: number }[] = [];
-    for (const c of this.chunks) {
-      const d = World.away(c, x, z);
-      if (c.built) {
-        if (d > far * DROP_AT) this.emptyChunk(c);
-      } else if (d < fogFar) this.fillChunk(c);
-      else if (d < far) waiting.push({ c, d });
+    // Emptying only when the camera enters another CHUNK cell: the drop radius is large, and a
+    // full scan of every built chunk every frame was pure overhead while standing or strafing.
+    const cell = `${Math.floor(x / CHUNK)},${Math.floor(z / CHUNK)}`;
+    if (cell !== this.streamCell) {
+      this.streamCell = cell;
+      for (const c of this.chunks) {
+        if (!c.built) continue;
+        if (World.away(c, x, z) > drop) this.emptyChunk(c);
+      }
     }
+    this.nearChunks(x, z, far, (c, d) => {
+      if (c.built) return;
+      if (d < fogFar) fogNeed.push({ c, d });
+      else waiting.push({ c, d });
+    });
+    fogNeed.sort((a, b) => a.d - b.d);
     waiting.sort((a, b) => a.d - b.d);
+    const budget = Math.max(this.q.streamMs, 4);
     const t0 = performance.now();
+    // Nearest fog chunk fills first; further fog fills stop once the frame's budget is spent, so
+    // several heavy chunks cannot land in one hitch (a brief hole at the fog edge is preferred).
+    for (let i = 0; i < fogNeed.length; i++) {
+      this.fillChunk(fogNeed[i].c);
+      if (performance.now() - t0 >= budget) break;
+    }
     for (const { c } of waiting) {
       this.fillChunk(c);
-      if (performance.now() - t0 >= this.q.streamMs) break;
+      if (performance.now() - t0 >= budget) break;
     }
     // Trim follows within `trimFar`, nearest first, in what is left of the frame's time (one at least).
     const trimFar = this.q.trimFar;
     const trims: { c: Chunk; d: number }[] = [];
-    for (const c of this.chunks) {
-      if (!c.built) continue;
-      const d = World.away(c, x, z);
-      // A tier with no trim drops it everywhere, the camera's own chunk too (d is 0 there).
-      if (c.trim && (trimFar <= 0 || d > trimFar * DROP_AT)) this.emptyTrim(c);
-      else if (!c.trim && !c.trimless && d < trimFar) trims.push({ c, d });
+    if (trimFar > 0) {
+      this.nearChunks(x, z, Math.max(trimFar, trimFar * DROP_AT), (c, d) => {
+        if (!c.built) return;
+        if (c.trim && d > trimFar * DROP_AT) this.emptyTrim(c);
+        else if (!c.trim && !c.trimless && d < trimFar) trims.push({ c, d });
+      });
+    } else {
+      for (const c of this.chunks) if (c.trim) this.emptyTrim(c);
     }
     trims.sort((a, b) => a.d - b.d);
     const t1 = performance.now();
@@ -1340,8 +1383,10 @@ export class World {
     }
 
     // --- enemies, and the player's own robots among them
-    const robots = s.friends.length ? [...s.enemies, ...s.friends] : s.enemies;
+    const robots = s.friends.length ? s.enemies.concat(s.friends) : s.enemies;
+    const liveIds = new Set<number>();
     for (const e of robots) {
+      liveIds.add(e.id);
       let v = this.enemies.get(e.id);
       if (!v) {
         const m = buildEnemy(e.kind);
@@ -1478,14 +1523,14 @@ export class World {
       }
     }
     for (const [id, v] of this.enemies) {
-      if (!robots.some((e) => e.id === id)) {
+      if (!liveIds.has(id)) {
         this.scene.remove(v.m.root);
         if (v.lane) this.scene.remove(v.lane);
         if (v.spawnBeam) this.scene.remove(v.spawnBeam);
         this.enemies.delete(id);
       }
     }
-    if (!s.enemies.some((e) => e.kind === "titan" && e.mode === "stomp")) this.stompRing.visible = false;
+    if (this.stompRing.visible && !s.enemies.some((e) => e.kind === "titan" && e.mode === "stomp")) this.stompRing.visible = false;
     this.stepWrecks(dt, fx, fz);
     this.battleView.update(s, dt, fx, fz, thingsFar, fogFar);
 
@@ -1956,6 +2001,7 @@ export class World {
     this.boat = null;
     this.particles = [];
     this.shadowAt = -Infinity;
+    this.streamCell = "";
     this.battleView.reset();
   }
 }

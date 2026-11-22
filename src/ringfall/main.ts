@@ -939,6 +939,45 @@ declare global {
     ringfallChargeUlt: () => void;
     ringfallCamera: (x?: number, y?: number, z?: number, yaw?: number, pitch?: number) => void;
     ringfallFrameCost: (frames: number) => { ms: number; syncMs: number; calls: number; triangles: number; chunks: number; built: number; of: number; tier: Tier; ratio: number; fillMs: number; trimMs: number; trims: number; layMs: number };
+    ringfallPerf: (opts?: {
+      steps?: number;
+      stepMs?: number;
+      place?: { x: number; z: number; yaw: number };
+      path?: { dx: number; dz: number };
+      quality?: Tier;
+      govern?: boolean;
+    }) => {
+      steps: number;
+      stepMs: number;
+      tier: Tier;
+      ratio: number;
+      calls: number;
+      triangles: number;
+      built: number;
+      builtDelta: number;
+      qualityChanges: number;
+      levels: { i: number; tier: Tier; ratio: number; cap30: boolean }[];
+      gaps: number;
+      sim: { mean: number; p50: number; p95: number; max: number };
+      sync: { mean: number; p50: number; p95: number; max: number };
+      draw: { mean: number; p50: number; p95: number; max: number };
+      ui: { mean: number; p50: number; p95: number; max: number };
+      total: { mean: number; p50: number; p95: number; max: number };
+      steady: {
+        frames: number;
+        sim: { mean: number; p50: number; p95: number; max: number };
+        sync: { mean: number; p50: number; p95: number; max: number };
+        draw: { mean: number; p50: number; p95: number; max: number };
+        ui: { mean: number; p50: number; p95: number; max: number };
+        total: { mean: number; p50: number; p95: number; max: number };
+      };
+      chunks: number;
+      of: number;
+      fillMs: number;
+      trimMs: number;
+      trims: number;
+      layMs: number;
+    };
     ringfallQuality: (tier?: Tier) => { tier: Tier; ratio: number };
     ringfallTerrain: (x: number, z: number) => number;
     ringfallFrames: () => Record<string, { x: number; z: number }>;
@@ -1128,6 +1167,123 @@ window.ringfallFrameCost = (frames: number) => {
   gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
   const t2 = performance.now();
   return { ...world.stats(), ms: +((t1 - t0) / frames).toFixed(1), syncMs: +((t2 - t0) / frames).toFixed(1), calls: Math.round(calls / frames), triangles: Math.round(triangles / frames) };
+};
+
+/**
+ * Automation only: a walk of fixed steps that times the main thread the way a real frame does —
+ * sim ticks, world sync, world draw, HUD — and records draw cost and quality-governor reactions to
+ * the measured frame times. Used by `scripts/ringfall-perf.mjs`.
+ */
+window.ringfallPerf = (opts = {}) => {
+  const steps = Math.max(1, opts.steps ?? 180);
+  const stepMs = Math.max(1, opts.stepMs ?? 16);
+  const dt = stepMs / 1000;
+  if (opts.quality) {
+    governor = new Governor(opts.quality, devicePixelRatio, true);
+    applyLevel(governor.level);
+  }
+  if (opts.place) {
+    const p = state.player;
+    p.pos = { x: opts.place.x, y: groundAt(opts.place.x, opts.place.z, 0.4, terrainHeight(opts.place.x, opts.place.z) + 1), z: opts.place.z };
+    p.vel = { x: 0, y: 0, z: 0 };
+    p.yaw = opts.place.yaw;
+    p.pitch = 0;
+    p.onGround = true;
+    p.mantle = null;
+    p.zip = null;
+    world.prebuild([p.pos]);
+  }
+  const path = opts.path ?? { dx: 0.55, dz: 0.15 };
+  const govern = !!opts.govern;
+  if (govern) governor.settle(0.5);
+  const sim: number[] = [];
+  const sync: number[] = [];
+  const draw: number[] = [];
+  const ui: number[] = [];
+  const total: number[] = [];
+  const levels: { i: number; tier: Tier; ratio: number; cap30: boolean }[] = [];
+  let calls = 0;
+  let triangles = 0;
+  const built0 = world.stats().built;
+  for (let i = 0; i < steps; i++) {
+    const p = state.player;
+    p.pos = { x: p.pos.x + path.dx, y: groundAt(p.pos.x + path.dx, p.pos.z + path.dz, 0.4, terrainHeight(p.pos.x + path.dx, p.pos.z + path.dz) + 1), z: p.pos.z + path.dz };
+    p.yaw = Math.atan2(path.dx, -path.dz);
+    const t0 = performance.now();
+    if (running) {
+      const n = Math.max(1, Math.round(dt / TICK));
+      for (let k = 0; k < n; k++) tick();
+    }
+    const t1 = performance.now();
+    world.sync(state, dt);
+    const t2 = performance.now();
+    world.draw();
+    const t3 = performance.now();
+    if (running) hud.frame(state, world, dt, dims.w, dims.h);
+    const t4 = performance.now();
+    sim.push(t1 - t0);
+    sync.push(t2 - t1);
+    draw.push(t3 - t2);
+    ui.push(t4 - t3);
+    total.push(t4 - t0);
+    const st = world.stats();
+    calls += st.calls;
+    triangles += st.triangles;
+    if (govern) {
+      const next = governor.frame(t4 - t0);
+      if (next) {
+        applyLevel(next);
+        levels.push({ i, tier: next.tier, ratio: next.ratio, cap30: next.cap30 });
+      }
+    }
+  }
+  const pct = (xs: number[], p: number) => {
+    if (!xs.length) return 0;
+    const a = [...xs].sort((u, v) => u - v);
+    const i = Math.min(a.length - 1, Math.max(0, Math.round((p / 100) * (a.length - 1))));
+    return +a[i].toFixed(2);
+  };
+  const mean = (xs: number[]) => (xs.length ? +(xs.reduce((a, b) => a + b, 0) / xs.length).toFixed(2) : 0);
+  const summary = (xs: number[]) => ({ mean: mean(xs), p50: pct(xs, 50), p95: pct(xs, 95), max: pct(xs, 100) });
+  // Software GL can stall for seconds on a single frame; those gaps are reported separately so the
+  // steady main-thread cost of play stays comparable across runs.
+  const GAP = 100;
+  const steadyIdx = total.map((t, i) => (t < GAP ? i : -1)).filter((i) => i >= 0);
+  const pick = (xs: number[]) => steadyIdx.map((i) => xs[i]);
+  const built1 = world.stats().built;
+  const st = world.stats();
+  return {
+    steps,
+    stepMs,
+    tier: world.tier,
+    ratio: world.renderer.getPixelRatio(),
+    calls: Math.round(calls / steps),
+    triangles: Math.round(triangles / steps),
+    built: built1,
+    builtDelta: built1 - built0,
+    qualityChanges: levels.length,
+    levels,
+    gaps: steps - steadyIdx.length,
+    sim: summary(sim),
+    sync: summary(sync),
+    draw: summary(draw),
+    ui: summary(ui),
+    total: summary(total),
+    steady: {
+      frames: steadyIdx.length,
+      sim: summary(pick(sim)),
+      sync: summary(pick(sync)),
+      draw: summary(pick(draw)),
+      ui: summary(pick(ui)),
+      total: summary(pick(total)),
+    },
+    chunks: st.chunks,
+    of: st.of,
+    fillMs: st.fillMs,
+    trimMs: st.trimMs,
+    trims: st.trims,
+    layMs: st.layMs,
+  };
 };
 
 /** Automation only: draws at `tier` from now on, its resolution pinned at its start (the governor stays off under automation). */
