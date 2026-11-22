@@ -1,5 +1,6 @@
 import { PLAYER } from "../sim/config";
 import { incomingFor, neighboursFor } from "../island-net";
+import { LOCAL_AID, type Parcel } from "../meta/parcels";
 import { armorIcon, binPicture, fightIcon, entryIcon, coinIcon, dmgIcon, magIcon, rateIcon, checkIcon, coreIcon, factoryIcon, flagIcon, hideoutIcon, clockIcon, crossIcon, depotIcon, gunIcon, healIcon, issueIcon, keyIcon, lockIcon, modIcon, pinIcon, pouchIcon, radioIcon, robotIcon, routeIcon, SIDE, stashIcon, turretIcon, upIcon, workbenchIcon } from "./icons";
 import { ALLY, FACTORY, FACTORY_TOP, HEALS as HEAL_SPECS, HIDEOUT, MOD_KINDS, PLATE, RARITY, THREAT, TOOLS, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
 import { boostFor, raidClock, strengthFor, type Kit } from "../sim/state";
@@ -26,6 +27,11 @@ const RARITY_CSS = ["var(--r0)", "var(--r1)", "var(--r2)", "var(--r3)"];
 /** The robots' kinds by name, for the factory. */
 const ENEMY_NAME: Record<EnemyKind, string> = { grunt: "グラント", heavy: "ヘビー", drone: "ドローン", charger: "チャージャー", titan: "タイタン" };
 
+/** Aid left at a 中継ボックス by someone the player can name (other islands / neighbours). */
+export function namedAid(p: Pick<Profile, "parcels">): Parcel[] {
+  return (p.parcels ?? []).filter((q) => q.from.name.trim() && q.from.code !== LOCAL_AID && q.from.code !== "");
+}
+
 /** The front node nearest the camp (same pick as the objective with no contract). */
 export function frontPickFor(p: Profile): { name: string } | null {
   const front = frontNodes(islandHolds(p));
@@ -35,12 +41,25 @@ export function frontPickFor(p: Profile): { name: string } | null {
   return near ? { name: near.n.name } : null;
 }
 
+/** A front node held by another player — the reason to sortie and take it back. */
+export function rivalFrontPick(p: Profile): { name: string } | null {
+  const holds = islandHolds(p);
+  const front = frontNodes(holds);
+  const near = NODES.map((n, i) => ({ n, i }))
+    .filter(({ i }) => front[i] && rivalOf(holds[i]) !== null)
+    .sort((a, b) => Math.hypot(a.n.x - CAMP.wake.x, a.n.z - CAMP.wake.z) - Math.hypot(b.n.x - CAMP.wake.x, b.n.z - CAMP.wake.z))[0];
+  return near ? { name: near.n.name } : null;
+}
+
 /**
  * The one next action after a raid or while idle in camp: grow the base if something can be
- * built or delivered, else go out again. Player-facing station names only.
+ * built or delivered, else go out again. Player-facing station names only. Incoming expeditions
+ * and rival holds sit on the same line (defend / take back) — no separate multiplayer mode.
  */
 export function nextHandFor(p: Profile): string {
   if (incomingFor(p).length) return "次：地図の机 · 来る遠征を固める";
+  const rival = rivalFrontPick(p);
+  if (rival) return `次：車両から出撃 · ${rival.name}を取り返す`;
   if (canBuildFactory(p)) return "次：工場 · 次の段を上げる";
   if (MODULES.some((m) => canBuild(p, m))) return "次：工房 · 次の段を上げる";
   if (offered(p.quests).some((q) => deliverable(p, q))) return "次：依頼板 · 納品する";
@@ -827,10 +846,14 @@ export class Hub {
     const buildable = MODULES.filter((m) => canBuild(p, m)).length;
     // Tomorrow's event is announced here a day ahead.
     const coming = p.events[1];
-    const map = [coming ? `明日 ${eventName(coming)}` : "", p.hideout.radio ? "無線" : ""].filter(Boolean).join("・");
-    // The signal station wants looking at while news of the other islands is unread.
-    const unread = this.news.length + this.expNews.length;
-    const signal = !this.newsSeen && unread ? `知らせ ${unread}` : "";
+    // 来る遠征 sits on the map table's mark — same place the tip sends the player to fortify.
+    const incoming = incomingFor(p).length;
+    const map = [incoming ? `来る遠征 ${incoming}` : "", coming ? `明日 ${eventName(coming)}` : "", p.hideout.radio ? "無線" : ""].filter(Boolean).join("・");
+    // The signal station wants looking at while news of the other islands is unread, or while
+    // someone else's delivery still sits at a 中継ボックス.
+    const aid = namedAid(p).length;
+    const unread = this.news.length + this.expNews.length + aid;
+    const signal = !this.newsSeen && unread ? `知らせ ${unread}` : aid ? `届け ${aid}` : "";
     // The board wants looking at while it has contracts and none is taken.
     const open = !takenContract(p) && !takenStory(p) && p.board.contracts.length ? `依頼 ${p.board.contracts.length}` : "";
     return { map, quests: [ready ? `納品 ${ready}` : "", open].filter(Boolean).join("・"), stash: "", shop: "", workshop: buildable ? `▲ ${buildable}` : "", factory: canBuildFactory(p) ? `▲ Lv${p.factory + 1}` : "", signal };
@@ -940,7 +963,21 @@ export class Hub {
     const exp = this.expNews.length
       ? `<h3 class="hub-sub">遠征の知らせ</h3><ul class="island-news signal-news exp-news">${this.expNews.map((n) => `<li title="${esc(expLine(n))}"><b class="who">${esc(n.name)}</b><em class="${n.t === "held" ? "own" : "foe"}">${word[n.t]}</em>${esc(NODES[nodeIndex(n.node)]?.name ?? n.node)}</li>`).join("")}</ul>`
       : "";
-    return exp + (this.news.length ? `<h3 class="hub-sub">島の知らせ</h3><ul class="island-news signal-news">${this.news.map((n) => this.newsMarks(n)).join("")}</ul>` : "");
+    // Who left stock at a 中継ボックス (CoC-style help): names the player already sees, no new noun.
+    const aid = namedAid(this.profile);
+    const help = aid.length
+      ? `<h3 class="hub-sub">島の守り</h3><ul class="island-news signal-news">${aid
+          .slice(0, 4)
+          .map((q) => `<li><b class="who">${esc(q.from.name)}</b>が${esc(POIS[poiIndex(q.poi)].name)}の中継ボックスへ届けた</li>`)
+          .join("")}</ul>`
+      : "";
+    return exp + help + (this.news.length ? `<h3 class="hub-sub">島の知らせ</h3><ul class="island-news signal-news">${this.news.map((n) => this.newsMarks(n)).join("")}</ul>` : "");
+  }
+
+  /** Lines of 遠征の知らせ for the results screen (same words as the signal station). */
+  expeditionNews(): string[] {
+    const word = { held: "保持", wiped: "全滅", lost: "奪還された" } as const;
+    return this.expNews.map((n) => `${n.name} ${word[n.t]} ${NODES[nodeIndex(n.node)]?.name ?? n.node}`);
   }
 
   /** The routes a tool opens: open or closed, and for a closed one, the tool and where it lies. */
@@ -1308,9 +1345,10 @@ export class Hub {
     const c = takenContract(p);
     const story = takenStory(p) ? currentStory(p.records) : null;
     // Each value is HTML: marks, and names escaped here.
+    const rival = rivalFrontPick(p);
     const plan: [string, string][] = [
-      // The pad open to the decisive battle comes before any node.
-      final ? ["決戦", esc(POIS.find((o) => o.boss)!.name)] : ["攻める拠点", pick ? esc(pick.name) : "—"],
+      // The pad open to the decisive battle comes before any node. A rival on the front is why to sortie.
+      final ? ["決戦", esc(POIS.find((o) => o.boss)!.name)] : ["攻める拠点", rival ? `${flagIcon(SIDE.rival)}${esc(rival.name)}を取り返す` : pick ? esc(pick.name) : "—"],
       ["依頼", c ? this.askLine(c) : esc(story ? `記録：${story.title}` : "—")],
       ["装備", this.kitMarks()],
     ];

@@ -870,7 +870,8 @@ function finish() {
   $("banner").className = "";
   hud.show(false);
   const next = settlement ? hub.nextHand() : "";
-  hud.results(state, settlement ?? undefined, knownBefore, analysed, islandNews, profileBefore, next);
+  // 遠征の知らせ closes on the return screen (my help mattered) — same heading as the signal station.
+  hud.results(state, settlement ?? undefined, knownBefore, analysed, islandNews, profileBefore, next, hub.expeditionNews());
   if (state.outcome === "extracted") {
     // One SE for 生還: finish owns it (soundscape skips victory on `done` to avoid a double).
     sfx.extracted();
@@ -892,7 +893,7 @@ $("home").addEventListener("click", (e) => {
   hub.reload(next);
   saveProfile(hub.profile);
   sfx.click();
-  hud.results(state, settlement, knownBefore, analysed, islandNews, profileBefore, hub.nextHand());
+  hud.results(state, settlement, knownBefore, analysed, islandNews, profileBefore, hub.nextHand(), hub.expeditionNews());
 });
 
 function setPaused(on: boolean) {

@@ -3,7 +3,7 @@ import { MODULES, nextLevel, stashCap, stillNeeded } from "../meta/hideout";
 import { neighboursNow } from "../island-net";
 import type { ModKind, ValuableKind } from "../sim/config";
 import { modGist } from "./modgist";
-import { contractMarks, itemColor, itemName, nextHandFor, rewardList } from "./hub";
+import { contractMarks, itemColor, itemName, namedAid, nextHandFor, rewardList } from "./hub";
 import { ALLY, AWARE, BAG, HIDEOUT, META, DEPOT, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, TACTICAL, TOOL_KINDS, TOOLS, VALUABLES, WEAPONS, type Flank } from "../sim/config";
 import { eyePos, magSize } from "../sim/combat";
 import { atRisk, countered, heldUnlocks } from "../sim/battle";
@@ -474,9 +474,16 @@ export class Hud {
       case "depotOn":
         this.toast(`${depotIcon()}中継ボックス · 起動した<span class="toast-sub">${esc(POIS[poiIndex(e.poi)].name)}</span>`, 1);
         break;
-      case "deposit":
-        this.toast(`${depotIcon()}中継ボックス · 倉庫へ送る ${e.n}点・${e.value}`, 3);
+      case "deposit": {
+        // Same use as 倉庫へ送る: island defence stock is automatic — show the result on the line.
+        const i = depotInReach(s);
+        const place = i >= 0 ? POIS[poiIndex(DEPOTS[i].poi)].name : "";
+        this.toast(
+          `${depotIcon()}中継ボックス · 倉庫へ送る ${e.n}点・${e.value}${place ? `<span class="toast-sub">${esc(place)}の島の守りに回る</span>` : ""}`,
+          3,
+        );
         break;
+      }
       case "leaveStart":
         this.toast(`${depotIcon()}中継ボックス · 生還中`, 1, 2500);
         break;
@@ -496,9 +503,16 @@ export class Hud {
         // The raid's momentum rose: that many marks, and what the next node pays.
         this.toast(`${upIcon().repeat(e.level)}<b>${MOMENTUM.spoils[Math.min(e.level, MOMENTUM.spoils.length) - 1].toLocaleString()}</b>`, 3, 4000);
         break;
-      case "fortified":
-        this.toast(`${coreIcon(SIDE.own)}${nightIcon(UI.ownBright)}${checkIcon()}${NODES[e.node].name}`, 1, 4000);
+      case "fortified": {
+        // Night targets vs 来る遠征: same fortify verb, different why (existing words only).
+        const vsIncoming = !(s.battle?.targets.includes(e.node) ?? false);
+        this.toast(
+          `${coreIcon(SIDE.own)}固めた · ${esc(NODES[e.node].name)}<span class="toast-sub">${vsIncoming ? "来る遠征をはねる" : "夜の襲撃をはねる"}</span>`,
+          1,
+          4000,
+        );
         break;
+      }
       case "coreTaken":
         this.toast(`${coreIcon(SIDE.own)}制圧した · ${esc(NODES[e.node].name)}`, 1, 5000);
         break;
@@ -1278,11 +1292,11 @@ export class Hud {
       // A node of the player's marked for the night: the use key fortifies it (the moon turns from red to blue).
       if (s.nodes[t.node] === "freed") {
         if (s.fortify?.node === t.node) {
-          return tip(`${coreIcon(SIDE.own)}${nightIcon(UI.ownBright)}${esc(n.name)} <b class="${s.fortify.held ? "" : "paused"}">${Math.floor((s.fortify.t / FORTIFY.time) * 100)}%</b>`);
+          return tip(`${coreIcon(SIDE.own)}核 · 固める ${esc(n.name)} <b class="${s.fortify.held ? "" : "paused"}">${Math.floor((s.fortify.t / FORTIFY.time) * 100)}%</b>`);
         }
         // Marked by another player's expedition and not by the night: their colour's flag in the moon's place.
         const sent = !s.battle?.targets.includes(t.node);
-        return tip(`${key("E")}${coreIcon(SIDE.own)}${sent ? flagIcon(SIDE.rival) : nightIcon(UI.alert)}${esc(n.name)}`);
+        return tip(`${key("E")}${coreIcon(SIDE.own)}${sent ? flagIcon(SIDE.rival) : nightIcon(UI.alert)}核 · 固める ${esc(n.name)}`);
       }
       const c = foeSide(s.nodes[t.node]);
       if (!capturable(s, t.node)) return tip(`${coreIcon(c, true)}${esc(n.name)} <small>▸ 先に${esc(shieldedBy(s.nodes, t.node))}</small>`);
@@ -1461,7 +1475,7 @@ export class Hud {
    * Results after a raid. `before` is the profile just before settle — used only to show how the
    * haul fed the base (wanted / buildable). `next` is the one-line hand into the next sortie.
    */
-  results(s: State, settled?: Settlement, known: readonly ModKind[] = [], analysed: ModKind | null = null, news: readonly string[] = [], before: Profile | null = null, next = "") {
+  results(s: State, settled?: Settlement, known: readonly ModKind[] = [], analysed: ModKind | null = null, news: readonly string[] = [], before: Profile | null = null, next = "", expNews: readonly string[] = []) {
     $("result-title").textContent = s.home ? "帰った" : s.outcome === "extracted" ? "生還" : "行方不明";
     $("day-result").innerHTML = this.dayResult(s, settled);
     this.drawDay(settled);
@@ -1535,6 +1549,7 @@ export class Hud {
     const events = ev || outcome.length ? `<h3>島の出来事</h3><p>${ev ? eventRow(ev) : ""}${outcome.join("")}</p>` : "";
     const story = settled?.story ? `<h3>記録を持ち帰った</h3><p><span class="contract done">${storyOf(settled.story.id).title}：${recordSpot(settled.story.id).name}<b>${settled.story.cash} クレジット</b></span></p>` : "";
     const growth = settled && before ? this.baseGrowth(before, settled) : "";
+    const defence = this.defenceLines(s, settled);
     const tip = next || (settled ? nextHandFor(settled.profile) : "");
     const nextEl = $("next-hand");
     if (nextEl) {
@@ -1545,6 +1560,8 @@ export class Hud {
     $("home").innerHTML =
       island +
       growth +
+      defence +
+      (expNews.length ? `<h3>遠征の知らせ</h3><p>${expNews.map((n) => `<span>${esc(n)}</span>`).join("")}</p>` : "") +
       `<div id="island-news">${newsBlock(news)}</div>` +
       events +
       contract +
@@ -1564,6 +1581,23 @@ export class Hud {
             : "")
         : "") +
       this.analysis(s, settled, known, analysed);
+  }
+
+  /**
+   * Multiplayer motivation on the return screen: what this raid put into 島の守り at a 中継ボックス,
+   * and who else's delivery still sits there. Existing place names only.
+   */
+  private defenceLines(s: State, settled?: Settlement): string {
+    const left = s.leftParcels ?? [];
+    const mine = left
+      .map((q) => `<span>${depotIcon()}${esc(POIS[poiIndex(q.poi)].name)}の島の守りに回った</span>`)
+      .join("");
+    const help = namedAid(settled?.profile ?? { parcels: [] })
+      .slice(0, 3)
+      .map((q) => `<span><b>${esc(q.from.name)}</b>が${esc(POIS[poiIndex(q.poi)].name)}の中継ボックスへ届けた</span>`)
+      .join("");
+    if (!mine && !help) return "";
+    return `<h3>島の守り</h3><p>${mine}${help}</p>`;
   }
 
   /**
