@@ -215,6 +215,23 @@ export class Hud {
     this.scout = null;
   }
 
+  /** Settled raids before this one: the secondary story line stays quiet on the first raid. */
+  private raidsDone = 0;
+  setRaidsDone(n: number) {
+    this.raidsDone = n;
+  }
+
+  /**
+   * A short local ping where the player looks (P): view-only mark on the compass and map for a
+   * few seconds. Does not touch the sim (docs/ringfall/ux-design.md, M4).
+   */
+  private ping: { x: number; z: number; until: number } | null = null;
+  dropPing(at: { x: number; z: number }) {
+    this.ping = { x: at.x, z: at.z, until: performance.now() + 8000 };
+    this.map.ping = { x: at.x, z: at.z };
+    this.toast(`${flagIcon(SIDE.own)}ピン`, 1, 1600);
+  }
+
   /** The ways in the base offers, for the raid about to start: the HUD and the map tell the others apart. */
   /** Bag slots the pouch keeps through a wipe (the hideout's pouch). */
   private pouch: number = META.pouch;
@@ -523,6 +540,8 @@ export class Hud {
       el.dataset.html = row;
       el.innerHTML = row;
     }
+    // Calm days: the bar stays readable but does not compete with the objective (ux-design I4).
+    el.classList.toggle("calm", !risk && !contested);
   }
 
   frame(s: State, view: World, dt: number, w: number, h: number) {
@@ -586,15 +605,17 @@ export class Hud {
       setHtml(oc, `${mark}${esc(poi.name)}${cleared}${taking && s.capture ? `<b>${Math.floor(s.capture.t)}/${FRONT.capture}</b>` : ""}`);
       oc.classList.toggle("met", own);
     }
-    // The story record has a line of its own unless it is the objective.
+    // The story record has a line of its own unless it is the objective. On the first raid it stays
+    // hidden until the player has taken that record (or made it the objective), so the card says
+    // one next step (ux-design I5).
     const os = $("obj-story");
-    const recordLine = !!this.record && this.task?.t !== "record";
+    const heldRecord = !!this.record && (p.records.includes(this.record) || s.sentRecords.includes(this.record));
+    const recordLine = !!this.record && this.task?.t !== "record" && (this.raidsDone > 0 || heldRecord);
     os.hidden = !recordLine;
     if (this.record && recordLine) {
       const r = recordSpot(this.record);
-      const held = p.records.includes(this.record) || s.sentRecords.includes(this.record);
-      setHtml(os, `<span class="lead">記録</span>${esc(r.name)}${held ? checkIcon() : `<span class="at">${esc(r.place)}</span>`}`);
-      os.classList.toggle("met", held);
+      setHtml(os, `<span class="lead">記録</span>${esc(r.name)}${heldRecord ? checkIcon() : `<span class="at">${esc(r.place)}</span>`}`);
+      os.classList.toggle("met", heldRecord);
     }
     const oe = $("obj-event");
     oe.hidden = !s.event;
@@ -622,6 +643,7 @@ export class Hud {
     $("compass-strip").style.transform = `translateX(${half - (heading + 360) * 2}px)`;
     this.placeMark(heading, half);
     this.placeScout(s, heading, half);
+    this.placePing(s, heading, half);
     this.exits(s);
 
     // Vitals.
@@ -1084,8 +1106,8 @@ export class Hud {
   }
 
   /**
-   * The compass's one marker: the current objective step's bearing, held at the strip's edge when
-   * it is behind, with its distance. It is the only marker or distance the HUD shows.
+   * The compass's objective marker: the current step's bearing, held at the strip's edge when
+   * behind, with its distance. A local ping (P) is a separate faint mark (`placePing`).
    */
   private placeMark(heading: number, half: number) {
     const el = $("compass-mark");
@@ -1098,6 +1120,30 @@ export class Hud {
     el.classList.toggle("edge", off !== rel);
     const label = `${Math.round(this.mark.d)}m`;
     if (el.firstElementChild!.textContent !== label) el.firstElementChild!.textContent = label;
+  }
+
+  /** The local look-ping on the compass strip; cleared when its timer ends. */
+  private placePing(s: State, heading: number, half: number) {
+    const el = $("compass-ping");
+    const live = this.ping && performance.now() < this.ping.until ? this.ping : null;
+    if (!live) {
+      this.ping = null;
+      this.map.ping = null;
+      el.hidden = true;
+      return;
+    }
+    if (s.phase !== "play") {
+      el.hidden = true;
+      return;
+    }
+    const p = s.player.pos;
+    const bearing = ((((Math.atan2(live.x - p.x, -(live.z - p.z)) * 180) / Math.PI) % 360) + 360) % 360;
+    const rel = ((bearing - heading + 540) % 360) - 180;
+    const max = (half * 0.62) / 2;
+    const off = Math.max(-max, Math.min(max, rel));
+    el.hidden = false;
+    el.style.left = `${half + off * 2}px`;
+    el.classList.toggle("edge", off !== rel);
   }
 
   /**

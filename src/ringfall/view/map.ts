@@ -511,6 +511,8 @@ export class IslandMap {
   region: RegionId = HOME_REGION.id;
   /** Where the contract taken for the raid points, marked in the loot's gold; null with none taken. */
   contract: ContractMark | null = null;
+  /** A short local look-ping (P): a pulse on the map until the HUD clears it. */
+  ping: { x: number; z: number } | null = null;
   /** The shape last given to the page, which sizes the map by it. */
   private aspect = 0;
   /** The last draw's scale and offset in CSS pixels, for `screenAt()`. */
@@ -1187,6 +1189,7 @@ export class IslandMap {
     }
     // Squads seen or heard out between the POIs, fading over `FACTION.keep`: a dot in their
     // faction's colour where they were, and a burst where the factions were heard fighting.
+    // Rival contacts read as another player's trace (ux-design M3): a thin ring around the dot.
     for (const c of plain ? [] : (s.contacts ?? [])) {
       const age = (s.time ?? c.t) - c.t;
       const p = at(c.x, c.z);
@@ -1209,6 +1212,13 @@ export class IslandMap {
       } else g.arc(p.x, p.y, 3 * dpr, 0, Math.PI * 2);
       g.fill();
       g.stroke();
+      if (c.rival) {
+        g.beginPath();
+        g.arc(p.x, p.y, 6 * dpr, 0, Math.PI * 2);
+        g.strokeStyle = alpha(RIVAL_CSS, 0.7);
+        g.lineWidth = 1.2 * dpr;
+        g.stroke();
+      }
       g.restore();
       if (c.fight && age < 20) {
         const spot = box("交戦", p.x, p.y - 11 * dpr, 9);
@@ -1358,6 +1368,22 @@ export class IslandMap {
       g.beginPath();
       g.arc(a.x, a.y, 4 * dpr, 0, Math.PI * 2);
       g.fill();
+    }
+    // A local look-ping (P): a cyan pulse, view-only.
+    if (this.ping && !plain) {
+      const q = at(this.ping.x, this.ping.z);
+      g.save();
+      g.strokeStyle = UI.ownLight;
+      g.lineWidth = 2 * dpr;
+      g.globalAlpha = 0.85;
+      g.beginPath();
+      g.arc(q.x, q.y, 8 * dpr, 0, Math.PI * 2);
+      g.stroke();
+      g.beginPath();
+      g.arc(q.x, q.y, 3 * dpr, 0, Math.PI * 2);
+      g.fillStyle = UI.ownLight;
+      g.fill();
+      g.restore();
     }
     // The player: an arrow pointing the way they face.
     const p = s.player;

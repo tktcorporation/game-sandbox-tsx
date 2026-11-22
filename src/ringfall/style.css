@@ -262,9 +262,14 @@ kbd {
   padding: 4px 8px;
   background: var(--plate);
   pointer-events: none;
+  transition: opacity 0.35s ease;
 }
 #island-row:empty {
   display: none;
+}
+/* Calm raid: readable but quiet so the objective leads (ux-design I4). */
+#island-row.calm {
+  opacity: 0.42;
 }
 /* The tug of war: the player's blue from the left, the enemy's red from the right, a segment a node. */
 .tug {
@@ -494,6 +499,26 @@ body.touch #obj-raid .why {
 }
 #compass-scout.edge {
   border-top-color: var(--foe);
+}
+/* Local look-ping (P): faint cyan chevron, apart from the objective mark (ux-design M4). */
+#compass-ping {
+  position: absolute;
+  top: 4px;
+  width: 0;
+  height: 0;
+  transform: translateX(-50%);
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 8px solid var(--own-light);
+  filter: drop-shadow(0 1px 1px rgb(var(--shade-rgb) / 0.7));
+  pointer-events: none;
+  opacity: 0.85;
+}
+#compass-ping[hidden] {
+  display: none;
+}
+#compass-ping.edge {
+  opacity: 0.45;
 }
 #obj-bag {
   grid-column: 1 / -1;
@@ -3136,6 +3161,12 @@ body:not(.playing) #banner {
 #camp-prompt .warn {
   color: var(--ring);
 }
+#camp-prompt .tip {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--mist);
+  letter-spacing: 0.02em;
+}
 /* The truck's fade to a raid, and waking in the camp. */
 #fade {
   position: fixed;
@@ -4849,23 +4880,39 @@ body.touch .bag-card:nth-last-child(n + 3) {
   padding-top: 8px;
   border-top: 1px solid rgb(var(--white-rgb) / 0.12);
 }
-/* The factory's line for the squads out on expeditions: they are sent from the signal station. */
+/* The factory's path to the signal station (ux-design M2): expeditions live there. */
 .factory-away {
+  margin: 8px 0 0;
+}
+button.factory-signal {
   display: flex;
   align-items: center;
-  gap: 4px;
-  margin: 8px 0 0;
+  gap: 8px;
+  width: 100%;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid rgb(var(--own-rgb) / 0.35);
+  background: rgb(var(--own-rgb) / 0.12);
+  color: var(--own-light);
+  font: inherit;
   font-size: 13px;
   font-weight: 800;
+  text-align: left;
+  cursor: pointer;
 }
-.factory-away b {
-  font-family: var(--num);
-  font-size: 16px;
+button.factory-signal:hover {
+  background: rgb(var(--own-rgb) / 0.2);
 }
-.factory-away small {
+button.factory-signal span {
   margin-left: auto;
   font-size: 12px;
-  color: var(--muted);
+  color: var(--mist);
+  font-weight: 800;
+}
+button.factory-signal b {
+  font-family: var(--num);
+  font-size: 16px;
+  color: var(--own-light);
 }
 /* The island's news on the signal station: a line each, an attack with its 仕返し. */
 #hub ul.island-news.signal-news {

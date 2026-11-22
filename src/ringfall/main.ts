@@ -21,7 +21,7 @@ import { bodyCenter, eyePos, fireRay, kill } from "./sim/combat";
 import { squadKey } from "./sim/state";
 import { loadProfile, saveProfile } from "./meta/storage";
 import { sendIsland } from "./net";
-import { aiLentFor, aiSalt, aiScouted, markScouted, flushRecalls, leaseOwn, neighboursFor, refreshAi, releaseLease, syncOwn, takeReport, takeSync, useAi } from "./island-net";
+import { aiLentFor, aiSalt, aiScouted, incomingFor, markScouted, flushRecalls, leaseOwn, neighboursFor, refreshAi, releaseLease, syncOwn, takeReport, takeSync, useAi } from "./island-net";
 import { aiRaidNews, aiRivals } from "./meta/ai-islands";
 import { dropStale, fortifiedNodes, LEASE_LATE, lentResults, lentRivals, logLine, squadsAway, type IslandLogEntry, type LentIn } from "./meta/expeditions";
 import { Hub, type Launch } from "./view/hub";
@@ -188,6 +188,7 @@ addEventListener("keydown", (e) => {
   // The map opens over the game straight from the key, whoever is at the controls.
   if (bound("map", e.code) && running) hud.toggleMap();
   if (bound("mapView", e.code) && running) hud.toggleMapView();
+  if (bound("ping", e.code) && running && !paused) dropLookPing();
   if (bound("bag", e.code)) peekBag(true);
   keys.add(e.code);
   edges.add(e.code);
@@ -738,7 +739,28 @@ function campTick() {
 
 function campFrame() {
   const near = campFrozen() ? null : campSpotAt({ ...state.player.pos, yaw: state.player.yaw });
-  campView.frame(state, world, dims.w, dims.h, { near, marks: hub.marks(), cash: hub.profile.cash.toLocaleString("ja-JP"), touch: touchMode, today: hub.today(), panel: hub.station !== null || departing !== null });
+  const p = hub.profile;
+  const tip = incomingFor(p).length ? "来る遠征あり · 地図の机" : p.raids === 0 ? "車両か門から出撃" : "";
+  campView.frame(state, world, dims.w, dims.h, { near, marks: hub.marks(), cash: p.cash.toLocaleString("ja-JP"), touch: touchMode, today: hub.today(), panel: hub.station !== null || departing !== null, tip });
+}
+
+/** Ground under the look ray, for a local ping (view only). */
+function dropLookPing() {
+  const p = state.player;
+  const fx = Math.sin(p.yaw) * Math.cos(p.pitch);
+  const fy = Math.sin(p.pitch);
+  const fz = -Math.cos(p.yaw) * Math.cos(p.pitch);
+  let at = { x: p.pos.x + fx * 28, z: p.pos.z + fz * 28 };
+  for (let t = 6; t < 90; t += 2) {
+    const x = p.pos.x + fx * t;
+    const z = p.pos.z + fz * t;
+    const y = p.pos.y + 1.55 + fy * t;
+    if (y <= terrainHeight(x, z) + 0.4) {
+      at = { x, z };
+      break;
+    }
+  }
+  hud.dropPing(at);
 }
 
 /** `from`: the camp the player walked out of, carried over into the raid where they stand. */
@@ -786,6 +808,7 @@ function start(go: Launch, from?: State) {
     }
   }
   hud.setContract(hub.contract(), record ?? null, takenStory(hub.profile));
+  hud.setRaidsDone(hub.profile.raids);
   world.campMode = false;
   if (from) walkOut(state, from);
   // The ground round where the raid starts is built before its first frame.
