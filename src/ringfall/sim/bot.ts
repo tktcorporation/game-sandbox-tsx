@@ -172,6 +172,8 @@ export class Bot {
   private escape: { x: number; z: number } | null = null;
   /** Per-`input()` cache of whether a robot is in sight within 60 m (same answer as a fresh `los`). */
   private seeCache = new Map<number, boolean>();
+  /** Reused each `input()`: same fields as a fresh `idleInput()`, without allocating. */
+  private inp: Input = idleInput();
   crouch = false;
 
   constructor(
@@ -196,7 +198,23 @@ export class Bot {
   input(s: State): Input {
     const sk = this.skill;
     const p = s.player;
-    const inp = idleInput();
+    const inp = this.inp;
+    inp.moveX = 0;
+    inp.moveZ = 0;
+    inp.lookX = 0;
+    inp.lookY = 0;
+    inp.fire = false;
+    inp.ads = false;
+    inp.jump = false;
+    inp.crouch = false;
+    inp.reload = false;
+    inp.tactical = false;
+    inp.ult = false;
+    inp.interact = false;
+    inp.swap = false;
+    inp.slot = -1;
+    inp.heal = false;
+    inp.touch = false;
     inp.keepArmor = true;
     inp.leaveTools = true;
     inp.leaveMods = true;

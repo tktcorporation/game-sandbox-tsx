@@ -23,6 +23,12 @@ const cellX = (v: number) => Math.max(0, Math.min(NX - 1, Math.floor((v - WX0) /
 const cellZ = (v: number) => Math.max(0, Math.min(NZ - 1, Math.floor((v - WZ0) / RES)));
 const centerX = (i: number) => WX0 + (i + 0.5) * RES;
 const centerZ = (j: number) => WZ0 + (j + 0.5) * RES;
+/** Cell count of the walkers' grid: a plain search's key is `start * CELLS + goal` (fits in a safe integer). */
+const CELLS = NX * NZ;
+/** Path searches kept lately: declared early so `resetNav()` can clear them. */
+const SEARCHED_KEPT = 512;
+const searchedPlain = new Map<number, number[] | null>();
+const searchedAvoid = new Map<string, number[] | null>();
 
 function blockedCells(): Uint8Array {
   if (grid.length) return grid;
@@ -115,7 +121,8 @@ export function resetNav() {
   fields = [];
   weighted = { disk: null, fields: [] };
   landmarkCells = null;
-  searched.clear();
+  searchedPlain.clear();
+  searchedAvoid.clear();
   clearance = new Uint8Array(0);
   navLoaded = false;
   navSaved = false;
@@ -713,6 +720,29 @@ function heapPop(): number {
   return top;
 }
 
+/** Landmark fields and goal for the search under way: filled by `searchCells`, read by `searchH`. */
+let searchLmF: Field[] = [];
+let searchLmGoal = new Float64Array(0);
+let searchLmRound = new Uint8Array(0);
+let searchLmN = 0;
+let searchGi = 0;
+let searchGj = 0;
+
+/** A*'s heuristic for the search under way: same formula as the earlier closure over landmarks. */
+function searchH(i: number, j: number): number {
+  const dx = Math.abs(i - searchGi);
+  const dz = Math.abs(j - searchGj);
+  let est = Math.max(dx, dz) + 0.414 * Math.min(dx, dz);
+  for (let n = 0; n < searchLmN; n++) {
+    const v = fieldAt(searchLmF[n], i, j);
+    // A cell the field does not reach is further than REACH from its landmark. A walk round a
+    // disk is not the same both ways, so its field bounds only the way toward the landmark.
+    const diff = !v ? REACH + 1 - searchLmGoal[n] : searchLmRound[n] ? v - searchLmGoal[n] : Math.abs(v - searchLmGoal[n]);
+    if (diff > est * PER_CELL) est = diff / PER_CELL;
+  }
+  return est;
+}
+
 /**
  * Ground a search goes round where the way round is not much longer: a disk whose cells cost
  * AVOID times as much to cross. `home` is a disk inside it that stays where it is (the titan's
@@ -735,12 +765,38 @@ export function findPath(
   const start = s[1] * NX + s[0];
   const goal = g[1] * NX + g[0];
   if (areas()[start] !== area[goal]) return null;
-  const key = searchKey(start, goal, avoid);
-  let cells = searched.get(key);
-  if (cells === undefined) {
-    cells = searchCells(s, g, start, goal, avoid);
-    if (searched.size >= SEARCHED_KEPT) searched.delete(searched.keys().next().value!);
-    searched.set(key, cells);
+  let cells: number[] | null | undefined;
+  if (!avoid) {
+    // Plain searches are the common case: a number key avoids building a string each look-up.
+    const key = start * CELLS + goal;
+    cells = searchedPlain.get(key);
+    if (cells === undefined) {
+      cells = searchCells(s, g, start, goal, avoid);
+      if (searchedPlain.size + searchedAvoid.size >= SEARCHED_KEPT) {
+        const drop = searchedPlain.keys().next().value;
+        if (drop !== undefined) searchedPlain.delete(drop);
+        else {
+          const a = searchedAvoid.keys().next().value;
+          if (a !== undefined) searchedAvoid.delete(a);
+        }
+      }
+      searchedPlain.set(key, cells);
+    }
+  } else {
+    const key = searchKeyAvoid(start, goal, avoid);
+    cells = searchedAvoid.get(key);
+    if (cells === undefined) {
+      cells = searchCells(s, g, start, goal, avoid);
+      if (searchedPlain.size + searchedAvoid.size >= SEARCHED_KEPT) {
+        const drop = searchedAvoid.keys().next().value;
+        if (drop !== undefined) searchedAvoid.delete(drop);
+        else {
+          const p = searchedPlain.keys().next().value;
+          if (p !== undefined) searchedPlain.delete(p);
+        }
+      }
+      searchedAvoid.set(key, cells);
+    }
   }
   return cells && smooth(cells, ax, az, bx, bz, avoid);
 }
@@ -754,10 +810,8 @@ export function findPath(
  * back past it), so several hundred are kept, across raids too. resetNav() forgets them with
  * the grid.
  */
-const SEARCHED_KEPT = 512;
-const searched = new Map<string, number[] | null>();
-const searchKey = (start: number, goal: number, avoid: Avoid | undefined) =>
-  avoid ? `${start} ${goal} ${avoid.x} ${avoid.z} ${avoid.r} ${avoid.home ? `${avoid.home.x} ${avoid.home.z} ${avoid.home.r}` : "-"}` : `${start} ${goal}`;
+const searchKeyAvoid = (start: number, goal: number, avoid: Avoid) =>
+  `${start} ${goal} ${avoid.x} ${avoid.z} ${avoid.r} ${avoid.home ? `${avoid.home.x} ${avoid.home.z} ${avoid.home.r}` : "-"}`;
 
 /** A* from cell `start` to cell `goal`: the cells of a shortest way, or null if the search found none. */
 function searchCells(s: [number, number], g: [number, number], start: number, goal: number, avoid: Avoid | undefined): number[] | null {
@@ -779,28 +833,22 @@ function searchCells(s: [number, number], g: [number, number], start: number, go
   const mv = moveMask();
   heapSize = 0;
   const lmN = lms.length;
-  const lmF = lms.map((l) => l.f);
-  const lmGoal = new Float64Array(lmN);
-  const lmRound = new Uint8Array(lmN);
-  for (let n = 0; n < lmN; n++) {
-    lmGoal[n] = fieldAt(lmF[n], gi, gj);
-    lmRound[n] = lms[n].round ? 1 : 0;
+  // Landmark fields for this search, kept in module scratch so A* does not allocate a map each time.
+  if (searchLmF.length < lmN) searchLmF = new Array(Math.max(lmN, 8));
+  if (searchLmGoal.length < lmN) {
+    searchLmGoal = new Float64Array(Math.max(lmN, 8));
+    searchLmRound = new Uint8Array(Math.max(lmN, 8));
   }
-  const h = (i: number, j: number, _k: number) => {
-    const dx = Math.abs(i - gi);
-    const dz = Math.abs(j - gj);
-    let est = Math.max(dx, dz) + 0.414 * Math.min(dx, dz);
-    for (let n = 0; n < lmN; n++) {
-      const v = fieldAt(lmF[n], i, j);
-      // A cell the field does not reach is further than REACH from its landmark. A walk round a
-      // disk is not the same both ways, so its field bounds only the way toward the landmark.
-      const diff = !v ? REACH + 1 - lmGoal[n] : lmRound[n] ? v - lmGoal[n] : Math.abs(v - lmGoal[n]);
-      if (diff > est * PER_CELL) est = diff / PER_CELL;
-    }
-    return est;
-  };
+  for (let n = 0; n < lmN; n++) {
+    searchLmF[n] = lms[n].f;
+    searchLmGoal[n] = fieldAt(lms[n].f, gi, gj);
+    searchLmRound[n] = lms[n].round ? 1 : 0;
+  }
+  searchLmN = lmN;
+  searchGi = gi;
+  searchGj = gj;
   gScore[start * 2] = 0;
-  heapPush(h(s[0], s[1], start), start);
+  heapPush(searchH(s[0], s[1]), start);
   let expanded = 0;
   const ar2 = avoid ? avoid.r * avoid.r : 0;
   while (heapSize && expanded < 1_500_000) {
@@ -829,7 +877,7 @@ function searchCells(s: [number, number], g: [number, number], start: number, go
       if (ng < gScore[nIdx * 2]) {
         gScore[nIdx * 2] = ng;
         rec[nIdx * 8 + 6] = n;
-        heapPush(ng + h(ni, nj, nIdx), nIdx);
+        heapPush(ng + searchH(ni, nj), nIdx);
       }
     }
   }

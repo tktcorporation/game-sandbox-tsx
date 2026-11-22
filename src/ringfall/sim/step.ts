@@ -20,7 +20,8 @@ const AFTER_LOOT: ((s: State) => void)[] = [stepPoi, stepFront, stepBattle, step
 export function step(s: State, input: Input, prevCrouch: boolean) {
   useRoutes(s.routes);
   useZones(s);
-  s.events = [];
+  // Clear in place: same list the view and the gate read after the tick, without a fresh array each time.
+  s.events.length = 0;
   if (s.phase === "done") return;
   s.time += TICK;
   // A wipe or an extraction ends the raid mid-tick; nothing after it may fire, score or move.

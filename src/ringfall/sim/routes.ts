@@ -20,12 +20,17 @@ import type { Vec3 } from "./state";
 
 /** The open routes of the world now in place, as their ids joined in `ROUTES` order. */
 let current = "";
+/** Last `open` array handed to `useRoutes()`: a raid keeps one for its whole life, so a tick can skip. */
+let lastOpen: readonly RouteId[] | null = null;
 
 /** The open routes in `ROUTES` order, without repeats or unknown ids. */
 export const openRoutes = (open: readonly string[]): RouteId[] => ROUTES.filter((r) => open.includes(r.id)).map((r) => r.id);
 
 /** Puts in place the world with exactly the routes in `open` open; nothing to do when it already is. */
 export function useRoutes(open: readonly RouteId[]) {
+  // Same array as last time (a raid's `State.routes`): nothing to build or compare.
+  if (open === lastOpen) return;
+  lastOpen = open;
   const on = ROUTES.filter((r) => open.includes(r.id));
   const k = on.map((r) => r.id).join(",");
   if (k === current) return;

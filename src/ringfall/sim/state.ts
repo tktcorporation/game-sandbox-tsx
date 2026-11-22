@@ -1250,8 +1250,14 @@ export const enemyHp = (e: Enemy) => ENEMIES[e.kind].hp * (e.elite ? ELITE.hp : 
 export const enemyShield = (e: Enemy) => ENEMIES[e.kind].shield * (e.elite ? ELITE.hp : 1);
 export const enemyMax = (e: Enemy) => enemyHp(e) + enemyShield(e);
 
+/** Scratch for `forward()`: rewritten each call; callers must read it before the next `forward()`. */
+const forwardOut: Vec3 = { x: 0, y: 0, z: 0 };
+
 /** Unit vector the player looks along. yaw 0 = -z, yaw +π/2 = +x. */
 export function forward(yaw: number, pitch: number): Vec3 {
   const c = Math.cos(pitch);
-  return { x: Math.sin(yaw) * c, y: Math.sin(pitch), z: -Math.cos(yaw) * c };
+  forwardOut.x = Math.sin(yaw) * c;
+  forwardOut.y = Math.sin(pitch);
+  forwardOut.z = -Math.cos(yaw) * c;
+  return forwardOut;
 }
