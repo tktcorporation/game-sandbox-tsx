@@ -1054,6 +1054,11 @@ impl Sim {
 
     /// Advance all enemy robots one tick (friends skipped). Orbs may be spawned.
     pub fn step_enemies(&mut self, dt: f64) {
+        use crate::tick_prof::{
+            now_ns, CNT_CALM, CNT_COVER, CNT_ENGAGED, CNT_FIGHT, CNT_SENSE, SEC_CALM, SEC_COVER,
+            SEC_ENGAGED, SEC_FIGHT_FOE, SEC_SENSE,
+        };
+        let on = self.prof.enabled != 0;
         let stagger_decay = (-TICK / STAGGER_WINDOW).exp();
         let n = self.n_robots as usize;
         for i in 0..n {
@@ -1082,7 +1087,14 @@ impl Sim {
                 }
                 continue;
             }
-            self.sense(i, dt);
+            {
+                let t0 = if on { now_ns() } else { 0.0 };
+                self.sense(i, dt);
+                if on {
+                    self.prof.add(SEC_SENSE, now_ns() - t0);
+                    self.prof.count(CNT_SENSE, 1);
+                }
+            }
             let mode = self.robot_mode[i];
             if mode == MODE_STUNNED || mode == MODE_STAGGERED {
                 self.robot_timer[i] = (self.robot_timer[i] as f64 - dt) as f32;
@@ -1119,16 +1131,32 @@ impl Sim {
                     }
                     let foe = self.foe_index(i);
                     if foe >= 0 {
+                        let t0 = if on { now_ns() } else { 0.0 };
                         self.fight_foe(i, foe as usize, dt);
+                        if on {
+                            self.prof.add(SEC_FIGHT_FOE, now_ns() - t0);
+                            self.prof.count(CNT_FIGHT, 1);
+                        }
                     } else {
+                        let t0 = if on { now_ns() } else { 0.0 };
                         self.calm(i, dt);
+                        if on {
+                            self.prof.add(SEC_CALM, now_ns() - t0);
+                            self.prof.count(CNT_CALM, 1);
+                        }
                     }
                     continue;
                 }
             }
             if self.robot_aware[i] == AWARE_ENGAGED {
+                let t0 = if on { now_ns() } else { 0.0 };
                 self.step_engaged(i, dt);
+                if on {
+                    self.prof.add(SEC_ENGAGED, now_ns() - t0);
+                    self.prof.count(CNT_ENGAGED, 1);
+                }
             }
+            let _ = (SEC_COVER, CNT_COVER);
         }
     }
     fn walk_to(
@@ -1168,6 +1196,7 @@ impl Sim {
     const VIA_REFRESH: u32 = 12;
 
     fn sticky_via(&mut self, i: usize, gx: f64, gz: f64, reach: f64) -> (f64, f64) {
+        use crate::tick_prof::{now_ns, CNT_HUNT_BUILDS, CNT_HUNT_CELLS, SEC_HUNT};
         let x = self.robot_x[i] as f64;
         let z = self.robot_z[i] as f64;
         // Refresh sparsely — full Dijkstra every tick is what blew warm bench.
@@ -1182,7 +1211,18 @@ impl Sim {
                 return (self.robot_via_x[i] as f64, self.robot_via_z[i] as f64);
             }
         }
+        let on = self.prof.enabled != 0;
+        let builds0 = self.hunt.builds;
+        let cells0 = self.hunt.cells_touched;
+        let t0 = if on { now_ns() } else { 0.0 };
         let (vx, vz) = self.hunt.next_via(x, z, gx, gz, reach);
+        if on {
+            self.prof.add(SEC_HUNT, now_ns() - t0);
+            self.prof
+                .count(CNT_HUNT_BUILDS, self.hunt.builds.saturating_sub(builds0));
+            self.prof
+                .count(CNT_HUNT_CELLS, self.hunt.cells_touched.saturating_sub(cells0));
+        }
         self.robot_via_x[i] = vx as f32;
         self.robot_via_z[i] = vz as f32;
         self.robot_has_via[i] = 1;
@@ -1686,6 +1726,24 @@ impl Sim {
     }
 
     fn find_cover(
+        &mut self,
+        i: usize,
+        threat_x: f64,
+        threat_z: f64,
+        threat_y: f64,
+    ) -> Option<(f64, f64, f64, f64)> {
+        use crate::tick_prof::{now_ns, CNT_COVER, SEC_COVER};
+        let on = self.prof.enabled != 0;
+        let t0 = if on { now_ns() } else { 0.0 };
+        let out = self.find_cover_inner(i, threat_x, threat_z, threat_y);
+        if on {
+            self.prof.add(SEC_COVER, now_ns() - t0);
+            self.prof.count(CNT_COVER, 1);
+        }
+        out
+    }
+
+    fn find_cover_inner(
         &mut self,
         i: usize,
         threat_x: f64,

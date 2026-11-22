@@ -3,6 +3,7 @@ import { BOXES, DECKS, inCamp } from "./map";
 import { routeBoxesOpen } from "./geom";
 import { highGround, offshore, steepAt, terrainHeight } from "./terrain";
 import { hypot2 } from "./hypot";
+import { PROF_FINE, profAdd, profCount, profNowNs } from "./native/tick-prof-host";
 
 /*
  * How hunting squads (reinforcements and raiders), and fighting squads that have lost the
@@ -537,6 +538,15 @@ function keep(name: string, dist: Float32Array, order: Int32Array, count: number
  * recent ones are kept (see `cache`); a kept field serves any reach up to its own.
  */
 export function fieldTo(x: number, z: number, reach = Infinity): Field | null {
+  if (!PROF_FINE) return fieldToBody(x, z, reach);
+  const t0 = profNowNs();
+  const f = fieldToBody(x, z, reach);
+  profAdd("hunt", profNowNs() - t0);
+  profCount("hunt");
+  return f;
+}
+
+function fieldToBody(x: number, z: number, reach = Infinity): Field | null {
   fieldUses++;
   const target = openCell(x, z);
   if (target < 0) return null;

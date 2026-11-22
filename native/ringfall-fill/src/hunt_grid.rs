@@ -25,6 +25,9 @@ struct Field {
 
 pub struct HuntGrid {
     pub ready: bool,
+    /// Profiling counters (field rebuilds / cells written).
+    pub builds: u64,
+    pub cells_touched: u64,
     nx: i32,
     nz: i32,
     x0: f64,
@@ -57,6 +60,8 @@ impl HuntGrid {
         });
         Self {
             ready: false,
+            builds: 0,
+            cells_touched: 0,
             nx: 0,
             nz: 0,
             x0: 0.0,
@@ -318,6 +323,8 @@ impl HuntGrid {
                 break;
             }
         }
+        self.builds = self.builds.saturating_add(1);
+        self.cells_touched = self.cells_touched.saturating_add(f.touched.len() as u64);
         f
     }
 

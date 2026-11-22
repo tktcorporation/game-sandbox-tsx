@@ -9,6 +9,7 @@ import { useRoutes } from "./routes";
 import { stepFront, useZones } from "./front";
 import { stepAmbush, stepContacts, stepFactions, stepMobiles, stepSweep } from "./factions";
 import { consumeTickDone } from "./native/tick";
+import { beginScope } from "./native/tick-prof-host";
 
 /** Read afresh: each system may have ended the raid. */
 const ended = (s: State) => s.phase === "done";
@@ -18,11 +19,25 @@ const ended = (s: State) => s.phase === "done";
  */
 function stepOrbsMaybe(s: State) {
   if (consumeTickDone()) return;
+  const end = beginScope("tsOrbs");
   stepOrbs(s);
+  end();
+}
+
+function stepFactionsTimed(s: State) {
+  const end = beginScope("stepFactions");
+  stepFactions(s);
+  end();
+}
+
+function stepFriendsTimed(s: State) {
+  const end = beginScope("stepFriends");
+  stepFriends(s);
+  end();
 }
 
 /** The systems of a tick, in order, around the player's (first) and the loot's, which read the input. */
-const BEFORE_LOOT: ((s: State) => void)[] = [tickReveal, stepAlly, stepFactions, stepEnemies, stepFriends, stepOrbsMaybe, stepWaves];
+const BEFORE_LOOT: ((s: State) => void)[] = [tickReveal, stepAlly, stepFactionsTimed, stepEnemies, stepFriendsTimed, stepOrbsMaybe, stepWaves];
 const AFTER_LOOT: ((s: State) => void)[] = [stepPoi, stepFront, stepBattle, stepReinforce, stepParties, stepMobiles, stepAmbush, stepSweep, stepCrews, stepExtract, stepDepots, stepHome, stepEntries, stepContacts];
 
 /** Advance the run by one fixed 1/60 s tick. Pure: no DOM, no clock, no Math.random. */

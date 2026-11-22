@@ -2,6 +2,7 @@ import { ALLY, AWARE, CHARGER, CONQUEST, COVER, CREW, DEG, DODGE, DUCK, ELITE, E
 import { clampToWorld, collide, dist2d, fenceBetween, groundAt, groundLevel, los, lookAngles, onTerrain, solidAt, worldVersion, wrapAngle } from "./geom";
 import { TICK_WASM } from "./native/tick-flag";
 import { markTickDone, stepTick, uploadGeom } from "./native/tick";
+import { PROF_FINE, beginScope, profAdd, profCount, profNowNs } from "./native/tick-prof-host";
 import { steepAt, terrainHeight } from "./terrain";
 import { engageSquad, fireRange, headOf, knownSpot, located, pursuitSpot, sense, stepSquads } from "./awareness";
 import { coversNear, type CoverPoint } from "./cover";
@@ -370,7 +371,11 @@ const STAGGER_DECAY = Math.exp(-TICK / STAGGER.window);
 
 export function stepEnemies(s: State) {
   const p = s.player;
-  stepSquads(s);
+  {
+    const end = beginScope("stepSquads");
+    stepSquads(s);
+    end();
+  }
   // WASM owns the full enemy tick (sense + cover + calm + fightFoe + engaged + orbs).
   if (TICK_WASM) {
     uploadGeom(worldVersion, s.routes);
@@ -379,6 +384,7 @@ export function stepEnemies(s: State) {
       return;
     }
   }
+  const tsEnd = beginScope("tsEnemies");
   markNear(s);
   const tick = Math.round(s.time / TICK);
   // A robot destroyed takes a new list (`kill()`, `fall()`): only then are the rest looked up in it.
@@ -425,7 +431,12 @@ export function stepEnemies(s: State) {
       }
       continue;
     }
-    sense(s, e);
+    if (PROF_FINE) {
+      const t0 = profNowNs();
+      sense(s, e);
+      profAdd("sense", profNowNs() - t0);
+      profCount("sense");
+    } else sense(s, e);
     if (e.mode === "stunned" || e.mode === "staggered") {
       // Reeling: the knock-back it was given dies away; then it fights on, a beat before its next attack.
       e.timer -= TICK;
@@ -442,12 +453,29 @@ export function stepEnemies(s: State) {
       else {
         // Not fighting the player: it fights the other faction's robot its squad is on, if any (see FACTION).
         const foe = foeOf(s, e, byId);
-        if (foe && !gone(foe)) fightFoe(s, e, foe);
-        else if (e.squad < 0 || nearSquads[e.squad]) calm(s, e);
-        else if ((tick + e.squad) % FAR_THINK.every === 0) {
+        if (foe && !gone(foe)) {
+          if (PROF_FINE) {
+            const t0 = profNowNs();
+            fightFoe(s, e, foe);
+            profAdd("fightFoe", profNowNs() - t0);
+            profCount("fightFoe");
+          } else fightFoe(s, e, foe);
+        } else if (e.squad < 0 || nearSquads[e.squad]) {
+          if (PROF_FINE) {
+            const t0 = profNowNs();
+            calm(s, e);
+            profAdd("calm", profNowNs() - t0);
+            profCount("calm");
+          } else calm(s, e);
+        } else if ((tick + e.squad) % FAR_THINK.every === 0) {
           // A far squad thinks on its turn, over the ticks since its last (see FAR_THINK).
           dt = TICK * FAR_THINK.every;
-          calm(s, e);
+          if (PROF_FINE) {
+            const t0 = profNowNs();
+            calm(s, e);
+            profAdd("calm", profNowNs() - t0);
+            profCount("calm");
+          } else calm(s, e);
           dt = TICK;
         }
         continue;
@@ -492,7 +520,16 @@ export function stepEnemies(s: State) {
     const lz = look.z - e.pos.z;
     if (e.mode !== "lunge" && hypot2(lx, lz) > 0.5) turnAt(e, Math.atan2(lx, -lz), TURN[e.kind] * (e.elite ? ELITE.turn : 1));
     // Raiders do not hide: they press in and go round. Nor does a grunt on its way round a pinned player.
-    if (e.kind === "grunt" && !e.elite && !round && fromCover(s, e, known, tChest, tUp, tVel)) continue;
+    if (e.kind === "grunt" && !e.elite && !round) {
+      let hid = false;
+      if (PROF_FINE) {
+        const t0 = profNowNs();
+        hid = fromCover(s, e, known, tChest, tUp, tVel);
+        profAdd("cover", profNowNs() - t0);
+        profCount("cover");
+      } else hid = fromCover(s, e, known, tChest, tUp, tVel);
+      if (hid) continue;
+    }
     switch (e.mode) {
       case "move": {
         const sees = known.live && facing(e, tPos) && los(muzzle(e), tChest);
@@ -652,6 +689,7 @@ export function stepEnemies(s: State) {
     }
   }
   separate(s);
+  tsEnd();
 }
 
 /**

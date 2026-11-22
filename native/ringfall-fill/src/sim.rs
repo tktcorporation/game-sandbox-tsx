@@ -11,6 +11,7 @@ use crate::cover_grid::{
 };
 use crate::hunt_grid::{HuntGrid, PURSUE_REACH};
 use crate::kind::*;
+use crate::tick_prof::{self, TickProf, SEC_ENEMIES, SEC_ORBS, SEC_TICK};
 use std::f64::consts::PI;
 
 const CELL: f64 = 8.0;
@@ -233,6 +234,10 @@ pub struct Sim {
     pub covers: CoverGrid,
     /// Raid tick index (TypeScript `Math.round(time / TICK)`) for FAR_THINK.
     pub world_tick: u32,
+    /// Section timers (opt-in via `ringfall_sim_prof_enable`).
+    pub prof: TickProf,
+    prof_ms_scratch: [f64; tick_prof::SEC_N],
+    prof_cnt_scratch: [u64; tick_prof::CNT_N],
 }
 
 impl Sim {
@@ -395,6 +400,9 @@ impl Sim {
             hunt: HuntGrid::new(),
             covers: CoverGrid::new(),
             world_tick: 0,
+            prof: TickProf::new(),
+            prof_ms_scratch: [0.0; tick_prof::SEC_N],
+            prof_cnt_scratch: [0; tick_prof::CNT_N],
         }
     }
 
@@ -976,8 +984,21 @@ impl Sim {
             return -1;
         }
         let dt = if dt <= 0.0 { TICK } else { dt as f64 };
+        let on = self.prof.enabled != 0;
+        let t0 = if on { tick_prof::now_ns() } else { 0.0 };
+        let te0 = t0;
         self.step_enemies(dt);
-        self.step_orbs(dt);
+        if on {
+            let t1 = tick_prof::now_ns();
+            self.prof.add(SEC_ENEMIES, t1 - te0);
+            let to0 = t1;
+            self.step_orbs(dt);
+            let t2 = tick_prof::now_ns();
+            self.prof.add(SEC_ORBS, t2 - to0);
+            self.prof.add(SEC_TICK, t2 - t0);
+        } else {
+            self.step_orbs(dt);
+        }
         0
     }
 }
@@ -1674,6 +1695,51 @@ pub extern "C" fn ringfall_sim_los(ax: f32, ay: f32, az: f32, bx: f32, by: f32, 
 #[no_mangle]
 pub extern "C" fn ringfall_sim_step_tick(dt: f32) -> i32 {
     sim().step_tick(dt)
+}
+
+#[no_mangle]
+pub extern "C" fn ringfall_sim_prof_enable(on: u8) {
+    sim().prof.enabled = if on != 0 { 1 } else { 0 };
+    if on != 0 {
+        sim().prof.reset();
+        sim().hunt.builds = 0;
+        sim().hunt.cells_touched = 0;
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn ringfall_sim_prof_reset() {
+    sim().prof.reset();
+    sim().hunt.builds = 0;
+    sim().hunt.cells_touched = 0;
+}
+
+#[no_mangle]
+pub extern "C" fn ringfall_sim_prof_ms_len() -> u32 {
+    tick_prof::SEC_N as u32
+}
+
+#[no_mangle]
+pub extern "C" fn ringfall_sim_prof_ms_ptr() -> *const f64 {
+    let s = sim();
+    for i in 0..tick_prof::SEC_N {
+        s.prof_ms_scratch[i] = s.prof.ns[i] * 1e-6;
+    }
+    s.prof_ms_scratch.as_ptr()
+}
+
+#[no_mangle]
+pub extern "C" fn ringfall_sim_prof_counts_len() -> u32 {
+    tick_prof::CNT_N as u32
+}
+
+#[no_mangle]
+pub extern "C" fn ringfall_sim_prof_counts_ptr() -> *const u64 {
+    let s = sim();
+    for i in 0..tick_prof::CNT_N {
+        s.prof_cnt_scratch[i] = s.prof.counts[i];
+    }
+    s.prof_cnt_scratch.as_ptr()
 }
 
 // silence unused import warning if PI unused

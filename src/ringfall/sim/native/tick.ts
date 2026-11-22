@@ -18,6 +18,7 @@ import { damageRobot } from "../factions";
 import { threatOf } from "../mods";
 import { nativeExports } from "./fill";
 import { ORBS_WASM, TICK_CHECK, TICK_WASM } from "./tick-flag";
+import { PROF_ON, beginScope, pullWasmProf } from "./tick-prof-host";
 
 const FLAG_FENCE = 1;
 const FLAG_OBSTACLE = 2;
@@ -466,13 +467,17 @@ function syncSquads(e: Ex, s: State): void {
 
   const r2 = FAR_THINK.dist * FAR_THINK.dist;
   const nearBuf = new Uint8Array(n);
+  const bossBuf = boss ? new Uint8Array(n) : null;
   for (const en of s.enemies) {
-    if (en.squad < 0 || en.squad >= n || nearBuf[en.squad]) continue;
-    const px = en.pos.x - s.player.pos.x;
-    const pz = en.pos.z - s.player.pos.z;
-    const ax = en.pos.x - s.ally.pos.x;
-    const az = en.pos.z - s.ally.pos.z;
-    if (px * px + pz * pz < r2 || ax * ax + az * az < r2) nearBuf[en.squad] = 1;
+    if (en.squad < 0 || en.squad >= n) continue;
+    if (!nearBuf[en.squad]) {
+      const px = en.pos.x - s.player.pos.x;
+      const pz = en.pos.z - s.player.pos.z;
+      const ax = en.pos.x - s.ally.pos.x;
+      const az = en.pos.z - s.ally.pos.z;
+      if (px * px + pz * pz < r2 || ax * ax + az * az < r2) nearBuf[en.squad] = 1;
+    }
+    if (bossBuf && !bossBuf[en.squad] && en.poi >= 0 && POIS[en.poi]?.boss) bossBuf[en.squad] = 1;
   }
 
   for (let i = 0; i < n; i++) {
@@ -504,16 +509,7 @@ function syncSquads(e: Ex, s: State): void {
     if (leg) leg[i] = sq.leg;
     if (foeId) foeId[i] = sq.foe ?? -1;
     if (near) near[i] = nearBuf[i];
-    if (boss) {
-      let b = 0;
-      for (const en of s.enemies) {
-        if (en.squad === i && en.poi >= 0 && POIS[en.poi]?.boss) {
-          b = 1;
-          break;
-        }
-      }
-      boss[i] = b;
-    }
+    if (boss && bossBuf) boss[i] = bossBuf[i];
     if (hasWalk && walkX && walkZ) {
       if (sq.walk) {
         hasWalk[i] = 1;
@@ -882,50 +878,98 @@ function adoptRobotsIfNeeded(s: State): void {
  * WASM tick: adopt robots once, sync squad destinations + orbs, step, pull outputs.
  * No per-tick full AoS→SoA robot mirror when the roster is stable.
  */
+/** Timing-only: skip JS↔WASM sync/pull (behavior wrong — for sync-zero ceiling). */
+const NOSYNC =
+  typeof process !== "undefined" &&
+  (process.env?.RINGFALL_TICK_NOSYNC === "1" || process.env?.RINGFALL_TICK_NOSYNC === "on");
+
 export function stepTick(s: State): boolean {
   if (!TICK_WASM) return false;
   const e = ex();
   if (!e || geomEpoch < 0) return false;
   const wasEngaged = s.squads.map((sq) => !!sq.engaged);
-  adoptRobotsIfNeeded(s);
-  syncSquads(e, s);
-  syncOrbs(e, s);
+  if (!NOSYNC) {
+    {
+      const end = beginScope("syncAdopt");
+      adoptRobotsIfNeeded(s);
+      end();
+    }
+    {
+      const end = beginScope("syncSquads");
+      syncSquads(e, s);
+      end();
+    }
+    {
+      const end = beginScope("syncOrbs");
+      syncOrbs(e, s);
+      end();
+    }
+  } else if (!robotsOwned) {
+    adoptRobotsIfNeeded(s);
+  }
   if (e.ringfall_sim_set_tick) e.ringfall_sim_set_tick(Math.round(s.time / TICK));
   const p = s.player;
-  e.ringfall_sim_set_player!(
-    p.pos.x,
-    p.pos.y,
-    p.pos.z,
-    p.crouch || p.sliding ? 1 : 0,
-    p.sliding ? 1 : 0,
-    s.ally.pos.x,
-    s.ally.pos.y,
-    s.ally.pos.z,
-    allyUp(s) ? 1 : 0,
-    s.stats.wipes,
-  );
-  e.ringfall_sim_set_combat!(
-    p.vel.x,
-    p.vel.y,
-    p.vel.z,
-    s.ally.vel.x,
-    s.ally.vel.y,
-    s.ally.vel.z,
-    p.downed > 0 ? 1 : 0,
-    s.phase === "play" ? 1 : 0,
-    sightScale(s),
-    threatOf(s).range,
-    s.rng >>> 0,
-    s.nextId >>> 0,
-  );
-  const rc = e.ringfall_step_tick(TICK);
-  if (rc !== 0) return false;
-  pullRobots(e, s);
-  pullSquads(e, s, wasEngaged);
-  applyHits(e, s);
-  pullOrbs(e, s);
-  if (e.ringfall_sim_get_rng) s.rng = e.ringfall_sim_get_rng() || 1;
-  if (e.ringfall_sim_get_next_id) s.nextId = e.ringfall_sim_get_next_id();
+  {
+    const end = beginScope("setPlayer");
+    e.ringfall_sim_set_player!(
+      p.pos.x,
+      p.pos.y,
+      p.pos.z,
+      p.crouch || p.sliding ? 1 : 0,
+      p.sliding ? 1 : 0,
+      s.ally.pos.x,
+      s.ally.pos.y,
+      s.ally.pos.z,
+      allyUp(s) ? 1 : 0,
+      s.stats.wipes,
+    );
+    e.ringfall_sim_set_combat!(
+      p.vel.x,
+      p.vel.y,
+      p.vel.z,
+      s.ally.vel.x,
+      s.ally.vel.y,
+      s.ally.vel.z,
+      p.downed > 0 ? 1 : 0,
+      s.phase === "play" ? 1 : 0,
+      sightScale(s),
+      threatOf(s).range,
+      s.rng >>> 0,
+      s.nextId >>> 0,
+    );
+    end();
+  }
+  {
+    const end = beginScope("tick");
+    const rc = e.ringfall_step_tick(TICK);
+    end();
+    if (rc !== 0) return false;
+  }
+  if (!NOSYNC) {
+    {
+      const end = beginScope("pullRobots");
+      pullRobots(e, s);
+      end();
+    }
+    {
+      const end = beginScope("pullSquads");
+      pullSquads(e, s, wasEngaged);
+      end();
+    }
+    {
+      const end = beginScope("applyHits");
+      applyHits(e, s);
+      end();
+    }
+    {
+      const end = beginScope("pullOrbs");
+      pullOrbs(e, s);
+      end();
+    }
+    if (e.ringfall_sim_get_rng) s.rng = e.ringfall_sim_get_rng() || 1;
+    if (e.ringfall_sim_get_next_id) s.nextId = e.ringfall_sim_get_next_id();
+  }
+  if (PROF_ON) pullWasmProf();
   return true;
 }
 

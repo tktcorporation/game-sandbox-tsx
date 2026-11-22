@@ -10,6 +10,7 @@ mod cover_grid;
 mod hunt_grid;
 mod kind;
 mod sim;
+mod tick_prof;
 
 const AVOID: u32 = 5;
 const PER_CELL: u32 = 17;

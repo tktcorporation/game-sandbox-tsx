@@ -29,6 +29,7 @@
     "bench:ringfall": "tsx scripts/ringfall-bench.ts",
     "equiv:ringfall": "tsx scripts/ringfall-tick-equiv.ts",
     "tick-cost:ringfall": "tsx scripts/ringfall-tick-cost.ts",
+    "tick-prof:ringfall": "RINGFALL_TICK_PROF=1 tsx scripts/ringfall-tick-prof.ts",
     "build:native": "node scripts/ringfall-native-build.mjs",
     "smoke:native": "node scripts/ringfall-native-smoke.mjs",
     "fill:ringfall": "node scripts/ringfall-fill-ab.mjs",

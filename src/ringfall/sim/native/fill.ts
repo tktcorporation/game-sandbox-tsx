@@ -228,6 +228,12 @@ type Exports = {
   ringfall_sim_hits_ptr?(): number;
   ringfall_sim_los?(ax: number, ay: number, az: number, bx: number, by: number, bz: number, paths: number): number;
   ringfall_sim_step_tick?(dt: number): number;
+  ringfall_sim_prof_enable?(on: number): void;
+  ringfall_sim_prof_reset?(): void;
+  ringfall_sim_prof_ms_len?(): number;
+  ringfall_sim_prof_ms_ptr?(): number;
+  ringfall_sim_prof_counts_len?(): number;
+  ringfall_sim_prof_counts_ptr?(): number;
 };
 
 let exportsRef: Exports | null = null;
@@ -290,6 +296,15 @@ function decodeWasm(): Uint8Array {
   return out;
 }
 
+/** Host clock for optional Rust section timers (`env.ringfall_now_ns`). */
+function hostNowNs(): number {
+  const p = nodeProcess() as NodeProcess & { hrtime?: { bigint?: () => bigint } } | undefined;
+  const ht = p && (p as { hrtime?: { bigint?: () => bigint } }).hrtime;
+  if (ht?.bigint) return Number(ht.bigint());
+  if (typeof performance !== "undefined" && performance.now) return performance.now() * 1e6;
+  return Date.now() * 1e6;
+}
+
 function tryLoad(): boolean {
   if (loadTried) return loadOk;
   loadTried = true;
@@ -298,7 +313,9 @@ function tryLoad(): boolean {
     const bytes = decodeWasm();
     const copy = new Uint8Array(bytes.byteLength);
     copy.set(bytes);
-    exportsRef = new WebAssembly.Instance(new WebAssembly.Module(copy.buffer), {}).exports as unknown as Exports;
+    exportsRef = new WebAssembly.Instance(new WebAssembly.Module(copy.buffer), {
+      env: { ringfall_now_ns: hostNowNs },
+    }).exports as unknown as Exports;
     loadOk = true;
   } catch {
     loadOk = false;
