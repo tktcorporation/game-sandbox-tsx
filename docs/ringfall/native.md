@@ -52,12 +52,12 @@ kills/damage are within noise (no BIAS / no `~`). Earlier BIAS on `met`/`metAway
 
 | Measurement | TS | WASM tick | Notes |
 | --- | ---: | ---: | --- |
-| Warm bench CPU | ~56–66 s | ~89–98 s | WASM **still slower** (~1.5×) |
-| Warm bench wall | ~48 s | ~83 s | same |
-| Fixed 90 s sim CPU | ~6.6 s | ~8.0 s | ×0.82 |
-| Default path hash | `83b7a1d3bcf8` | — | must hold with tick off |
+| Warm bench CPU | 55.5 s | 89.7 s | WASM **still slower** (~1.62×) |
+| Warm bench wall | 47.6 s | 82.6 s | same pass as equiv N=30 |
+| Equiv N=30 CPU | 1239 s | 4635 s | pooled 10 jobs; no BIAS |
+| Default path hash | `83b7a1d3bcf8` | `372dee3422fc` | default OFF keeps TS hash |
 
-**Plain reading:** cover/calm/fightFoe are in WASM and robots are adopted once, but **do not turn tick on by default** — warm bench still loses. Remaining cost is hunt fields for calm walks (sticky vias help; whole-world Dijkstra is banned) and squad destination sync + pull. An earlier ABI 5 calm port with per-tick TS via prep was worse and reverted.
+**Plain reading:** cover/calm/fightFoe are in WASM and robots are adopted once; `equiv:ringfall` N=30 has **no systematic bias**. Still **do not turn tick on by default** — warm bench loses ~1.6× and full equiv wall is ~3.8×. Remaining tax is hunt fields for calm walks (sticky vias; whole-world Dijkstra banned) and per-tick squad destination sync + robot pull. An earlier ABI 5 calm port with per-tick TS via prep was worse and reverted.
 
 ## Ported vs still TypeScript
 
