@@ -738,3 +738,29 @@ export function walkLine(a: { x: number; z: number }, b: { x: number; z: number 
   out.push({ x: b.x, z: b.z });
   return out;
 }
+
+/** Open/height/main/mask for WASM hunt vias (same cells as `grid()` + `stepMask()`). */
+export function huntGridSnapshot(): {
+  nx: number;
+  nz: number;
+  x0: number;
+  z0: number;
+  res: number;
+  open: Uint8Array;
+  height: Float32Array;
+  main: Uint8Array;
+  mask: Uint8Array;
+} {
+  const g = grid();
+  return {
+    nx: NX,
+    nz: NZ,
+    x0: WORLD.x0,
+    z0: WORLD.z0,
+    res: RES,
+    open: g.open,
+    height: g.height,
+    main: g.main,
+    mask: stepMask(),
+  };
+}

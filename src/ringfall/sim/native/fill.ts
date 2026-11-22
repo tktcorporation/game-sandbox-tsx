@@ -70,6 +70,12 @@ type Exports = {
   ringfall_sim_terrain_commit?(): void;
   ringfall_sim_boxes_begin?(n: number): number;
   ringfall_sim_boxes_commit?(): void;
+  ringfall_sim_hunt_begin?(nx: number, nz: number, x0: number, z0: number, res: number): void;
+  ringfall_sim_hunt_open_ptr?(): number;
+  ringfall_sim_hunt_height_ptr?(): number;
+  ringfall_sim_hunt_main_ptr?(): number;
+  ringfall_sim_hunt_mask_ptr?(): number;
+  ringfall_sim_hunt_commit?(): void;
   ringfall_sim_set_player?(
     x: number,
     y: number,

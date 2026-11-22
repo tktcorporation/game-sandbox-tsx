@@ -19,7 +19,7 @@ import { streetMeshes } from "./streets";
 import { BattleView, CHANNEL } from "./battle";
 import { NeighbourIslands } from "./horizon";
 import { TICK_WASM } from "../sim/native/tick-flag";
-import { syncRobots } from "../sim/native/tick";
+import { robotViews } from "../sim/native/tick";
 
 /*
  * Renders a State in first person. It reads the state and the tick's events and
@@ -1344,7 +1344,8 @@ export class World {
     // --- enemies, and the player's own robots among them
     // Prefer WASM SoA views when the tick host has geom (typed arrays in linear memory).
     const robots = s.friends.length ? [...s.enemies, ...s.friends] : s.enemies;
-    const soa = TICK_WASM ? syncRobots(s) : null;
+    // Read-only SoA after the sim tick — never re-push AoS (that was a full sync tax per frame).
+    const soa = TICK_WASM ? robotViews() : null;
     for (let ri = 0; ri < robots.length; ri++) {
       const e = robots[ri];
       const px = soa ? soa.x[ri] : e.pos.x;

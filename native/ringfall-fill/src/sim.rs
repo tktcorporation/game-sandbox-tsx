@@ -4,6 +4,7 @@
 
 #![allow(dead_code)]
 
+use crate::hunt_grid::{HuntGrid, PURSUE_REACH};
 use crate::kind::*;
 use std::f64::consts::PI;
 
@@ -194,6 +195,8 @@ pub struct Sim {
     tick_ready: bool,
     /// Staging for box upload (n*7 f32: x0,z0,x1,z1,y0,h,flags).
     box_stage: Vec<f32>,
+    /// Engaged walker vias (hunt.ts grid uploaded once per world).
+    pub hunt: HuntGrid,
 }
 
 impl Sim {
@@ -324,6 +327,7 @@ impl Sim {
             wipes: 0,
             tick_ready: false,
             box_stage: Vec::new(),
+            hunt: HuntGrid::new(),
         }
     }
 
@@ -943,6 +947,37 @@ pub extern "C" fn ringfall_sim_boxes_commit() {
     }
     s.box_stage.clear();
     s.rebuild_grid();
+}
+
+/// Upload hunt.ts open/height grid (same WORLD + RES=2 cells). Call after boxes_commit.
+#[no_mangle]
+pub extern "C" fn ringfall_sim_hunt_begin(nx: i32, nz: i32, x0: f64, z0: f64, res: f64) {
+    sim().hunt.begin(nx, nz, x0, z0, res);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_hunt_open_ptr() -> *mut u8 {
+    sim().hunt.open_ptr()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_hunt_height_ptr() -> *mut f32 {
+    sim().hunt.height_ptr()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_hunt_main_ptr() -> *mut u8 {
+    sim().hunt.main_ptr()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ringfall_sim_hunt_mask_ptr() -> *mut u8 {
+    sim().hunt.mask_ptr()
+}
+
+#[no_mangle]
+pub extern "C" fn ringfall_sim_hunt_commit() {
+    sim().hunt.commit();
 }
 
 #[no_mangle]

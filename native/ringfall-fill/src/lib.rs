@@ -6,6 +6,7 @@
 
 #![allow(clippy::missing_safety_doc)]
 
+mod hunt_grid;
 mod kind;
 mod sim;
 

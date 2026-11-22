@@ -32,6 +32,7 @@ pub const SQUAD_ENGAGED: u8 = 1;
 pub const SQUAD_MOBILE: u8 = 2;
 pub const SQUAD_RETREAT: u8 = 4;
 pub const SQUAD_PACK: u8 = 8;
+pub const SQUAD_ROUTED: u8 = 16;
 
 #[derive(Clone, Copy)]
 pub struct KindSpec {

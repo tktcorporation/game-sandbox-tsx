@@ -5,6 +5,7 @@
  */
 import { ENEMIES, TICK, THREAT } from "../config";
 import { BOXES, ROUTES } from "../map";
+import { huntGridSnapshot } from "../hunt";
 import { terrainFieldSnapshot } from "../terrain";
 import { sightScale, type Enemy, type Orb, type State } from "../state";
 import { bodyY } from "../state";
@@ -31,6 +32,7 @@ const SQUAD_ENGAGED = 1;
 const SQUAD_MOBILE = 2;
 const SQUAD_RETREAT = 4;
 const SQUAD_PACK = 8;
+const SQUAD_ROUTED = 16;
 
 const ABI_MIN = 4;
 
@@ -46,14 +48,58 @@ function mem(e: Ex): WebAssembly.Memory {
   return e.memory;
 }
 
+/** TypedArray views on WASM memory — recreate only when the buffer grows or SoA begins. */
+let viewBufLen = -1;
+const viewF32 = new Map<string, Float32Array>();
+const viewI32 = new Map<string, Int32Array>();
+const viewU8 = new Map<string, Uint8Array>();
+
+function bumpViews(e: Ex): void {
+  const len = mem(e).buffer.byteLength;
+  if (len !== viewBufLen) {
+    viewBufLen = len;
+    viewF32.clear();
+    viewI32.clear();
+    viewU8.clear();
+  }
+}
+
+function invalidateViews(): void {
+  viewF32.clear();
+  viewI32.clear();
+  viewU8.clear();
+  viewBufLen = -1;
+}
+
 function f32(e: Ex, ptr: number, n: number): Float32Array {
-  return new Float32Array(mem(e).buffer, ptr, n);
+  bumpViews(e);
+  const key = `${ptr}:${n}`;
+  let v = viewF32.get(key);
+  const buf = mem(e).buffer;
+  if (v && v.buffer === buf) return v;
+  v = new Float32Array(buf, ptr, n);
+  viewF32.set(key, v);
+  return v;
 }
 function i32(e: Ex, ptr: number, n: number): Int32Array {
-  return new Int32Array(mem(e).buffer, ptr, n);
+  bumpViews(e);
+  const key = `${ptr}:${n}`;
+  let v = viewI32.get(key);
+  const buf = mem(e).buffer;
+  if (v && v.buffer === buf) return v;
+  v = new Int32Array(buf, ptr, n);
+  viewI32.set(key, v);
+  return v;
 }
 function u8(e: Ex, ptr: number, n: number): Uint8Array {
-  return new Uint8Array(mem(e).buffer, ptr, n);
+  bumpViews(e);
+  const key = `${ptr}:${n}`;
+  let v = viewU8.get(key);
+  const buf = mem(e).buffer;
+  if (v && v.buffer === buf) return v;
+  v = new Uint8Array(buf, ptr, n);
+  viewU8.set(key, v);
+  return v;
 }
 
 let geomEpoch = -1;
@@ -116,6 +162,7 @@ export function uploadGeom(epoch: number, routes: readonly string[]): boolean {
   const snap = terrainFieldSnapshot();
   if (!snap) return false;
   e.ringfall_sim_reset!();
+  invalidateViews();
   const tPtr = e.ringfall_sim_terrain_begin!(snap.nx, snap.nz, snap.x0, snap.z0, snap.res);
   f32(e, tPtr, snap.field.length).set(snap.field);
   e.ringfall_sim_terrain_commit!();
@@ -123,6 +170,23 @@ export function uploadGeom(epoch: number, routes: readonly string[]): boolean {
   const bPtr = e.ringfall_sim_boxes_begin!(boxes.length / 7);
   f32(e, bPtr, boxes.length).set(boxes);
   e.ringfall_sim_boxes_commit!();
+  // Hunt walkability once per world (TS grid + mask) — engaged vias compute inside WASM.
+  if (
+    e.ringfall_sim_hunt_begin &&
+    e.ringfall_sim_hunt_open_ptr &&
+    e.ringfall_sim_hunt_height_ptr &&
+    e.ringfall_sim_hunt_main_ptr &&
+    e.ringfall_sim_hunt_mask_ptr &&
+    e.ringfall_sim_hunt_commit
+  ) {
+    const h = huntGridSnapshot();
+    e.ringfall_sim_hunt_begin(h.nx, h.nz, h.x0, h.z0, h.res);
+    u8(e, e.ringfall_sim_hunt_open_ptr(), h.open.length).set(h.open);
+    f32(e, e.ringfall_sim_hunt_height_ptr(), h.height.length).set(h.height);
+    u8(e, e.ringfall_sim_hunt_main_ptr(), h.main.length).set(h.main);
+    u8(e, e.ringfall_sim_hunt_mask_ptr(), h.mask.length).set(h.mask);
+    e.ringfall_sim_hunt_commit();
+  }
   geomEpoch = epoch;
   routesKey = key;
   e.ringfall_sim_set_ready!(1);
@@ -366,6 +430,7 @@ function syncSquads(e: Ex, s: State): void {
     if (sq.mobile) f |= SQUAD_MOBILE;
     if (sq.retreat !== undefined) f |= SQUAD_RETREAT;
     if (sq.pack) f |= SQUAD_PACK;
+    if (sq.routed) f |= SQUAD_ROUTED;
     flags[i] = f;
   }
 }

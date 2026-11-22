@@ -1,4 +1,5 @@
-// Sense + engaged combat FSM for step_tick (included into sim.rs). Hunt/cover/fightFoe stay TS.
+// Sense + engaged combat FSM for step_tick (included into sim.rs).
+// Cover/fightFoe/calm stay TS; hunt vias compute in-WASM when the hunt grid is ready.
 
 const DEG: f64 = PI / 180.0;
 const LEDGE: f64 = 1.0;
@@ -70,6 +71,29 @@ const STAGGER_WINDOW: f64 = 0.7;
 impl Sim {
     fn hypot2(x: f64, z: f64) -> f64 {
         (x * x + z * z).sqrt()
+    }
+
+    /// Engaged walker next waypoint (hunt.ts `huntStep`), or the goal when flying / off ground.
+    fn engaged_via(&mut self, i: usize, gx: f64, gz: f64) -> (f64, f64) {
+        let kind = self.kind_of(i);
+        if kind.fly > 0.0 {
+            return (gx, gz);
+        }
+        let sq = self.robot_squad[i];
+        let routed = sq >= 0
+            && (sq as usize) < self.n_squads as usize
+            && self.squad_flags[sq as usize] & SQUAD_ROUTED != 0;
+        let x = self.robot_x[i] as f64;
+        let z = self.robot_z[i] as f64;
+        if !routed && !self.hunt.on_main(x, z) {
+            return (gx, gz);
+        }
+        let reach = if routed {
+            f64::INFINITY
+        } else {
+            PURSUE_REACH
+        };
+        self.hunt.next_via(x, z, gx, gz, reach)
     }
 
     fn wrap_angle(a: f64) -> f64 {
@@ -833,8 +857,8 @@ impl Sim {
                         let m = self.muzzle(i);
                         self.los(m, t_chest, false)
                     };
-                // TypeScript hunt via when out of live LOS; else walk toward known.
-                let (tx, tz, vd) = if self.robot_has_via[i] != 0 {
+                // Hunt via: host prep (pinch/pursuit/fromCover leftovers) or in-WASM field.
+                let (tx, tz, vd, has_via) = if self.robot_has_via[i] != 0 {
                     let tx = self.robot_via_x[i] as f64;
                     let tz = self.robot_via_z[i] as f64;
                     let vd = Self::hypot2(
@@ -842,15 +866,23 @@ impl Sim {
                         tz - self.robot_z[i] as f64,
                     )
                     .max(1e-3);
-                    (tx, tz, vd)
+                    (tx, tz, vd, true)
+                } else if !sees {
+                    let (tx, tz) = self.engaged_via(i, known_x, known_z);
+                    let vd = Self::hypot2(
+                        tx - self.robot_x[i] as f64,
+                        tz - self.robot_z[i] as f64,
+                    )
+                    .max(1e-3);
+                    (tx, tz, vd, true)
                 } else {
-                    (known_x, known_z, d)
+                    (known_x, known_z, d, false)
                 };
                 let ux = (tx - self.robot_x[i] as f64) / vd;
                 let uz = (tz - self.robot_z[i] as f64) / vd;
                 let mut along = 0.0;
                 // At a hunt/search waypoint with nobody in view: stand (TS `after && !afterVia`).
-                if self.robot_has_via[i] != 0 && vd < 1.5 && !sees {
+                if has_via && vd < 1.5 && !sees {
                     along = 0.0;
                 } else if !sees || d > k.range + 4.0 {
                     along = 1.0;

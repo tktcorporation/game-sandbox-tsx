@@ -373,8 +373,8 @@ let prepHasVia = new Uint8Array(0);
 let prepSkip = new Uint8Array(0);
 
 /**
- * Before a WASM tick: fromCover for engaged grunts (sets skip) and hunt vias for engaged
- * robots without live LOS, so WASM move follows the ground field like TypeScript.
+ * Before a WASM tick: fromCover skip + pinch/pursuit vias only.
+ * Plain hunt vias are computed inside WASM from the uploaded hunt grid.
  */
 function prepareWasmTick(s: State) {
   const list = s.friends.length ? [...s.enemies, ...s.friends] : s.enemies;
@@ -403,22 +403,23 @@ function prepareWasmTick(s: State) {
     const tVel = atAlly ? s.ally.vel : p.vel;
     const known = atAlly ? { x: tPos.x, z: tPos.z, live: true as const } : knownSpot(s, e);
     const round = atAlly ? null : pinchSpot(s, e, known);
+    // Pinch (`round`) only blocks fromCover here; WASM walk uses hunt-to-known (same as prior hybrid via).
     if (e.kind === "grunt" && !e.elite && !round && fromCover(s, e, known, tChest, tUp, tVel)) {
       prepSkip[i] = 1;
       continue;
     }
-    const sees = known.live && facing(e, tPos) && los(muzzle(e), tChest);
-    if (sees && !fenceBetween(e.pos, tPos)) continue; // WASM walks toward known
-    const after = known.live || round ? null : pursuitSpot(s, e, known);
-    const afterVia = after && dist2d(e.pos, after) > 1.5 ? sideStep(s, e, after, known, PURSUE.spread) : null;
-    const via = afterVia ?? (after ? after : huntStep(s, e, known));
-    // Standing at the search spot: via ≈ self so WASM along stays 0.
-    if (after && !afterVia) {
+    // Pursuit still needs host vias (search stand / sideStep). Plain hunt is WASM-side when has_via stays 0.
+    if (known.live || round) continue;
+    const after = pursuitSpot(s, e, known);
+    if (!after) continue;
+    const afterVia = dist2d(e.pos, after) > 1.5 ? sideStep(s, e, after, known, PURSUE.spread) : null;
+    if (afterVia) {
+      prepViaX[i] = afterVia.x;
+      prepViaZ[i] = afterVia.z;
+    } else {
+      // Standing at the search spot: via ≈ self so WASM along stays 0.
       prepViaX[i] = e.pos.x;
       prepViaZ[i] = e.pos.z;
-    } else {
-      prepViaX[i] = via.x;
-      prepViaZ[i] = via.z;
     }
     prepHasVia[i] = 1;
   }
