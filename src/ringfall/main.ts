@@ -250,8 +250,6 @@ function readInput(): Input {
   inp.tactical = pressed("tactical");
   inp.ult = pressed("ult");
   inp.interact = pressed("use");
-  // Shift+E at a depot leaves one valuable as a parcel (ux-design C2); bots never set this.
-  inp.leaveParcel = inp.interact && (keys.has("ShiftLeft") || keys.has("ShiftRight"));
   inp.cycleUse = pressed("cycleUse");
   inp.heal = pressed("heal");
   inp.swap = pressed("swap");

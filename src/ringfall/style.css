@@ -2484,6 +2484,20 @@ body.touch.playing #touch {
 #t-use[hidden] {
   display: none;
 }
+/* Cycle use focus when several targets overlap (same action as T); sits beside 使う. */
+#t-cycle {
+  right: calc(var(--edge-r) + 266px);
+  bottom: calc(var(--edge-b) + 204px);
+  width: auto;
+  min-width: 52px;
+  height: 40px;
+  border-radius: 999px;
+  padding: 0 12px;
+  font-size: 13px;
+}
+#t-cycle[hidden] {
+  display: none;
+}
 /* The map button in the bottom row beside the bag's, under the right thumb with the other buttons that look. */
 #t-map {
   right: calc(var(--edge-r) + 344px);
@@ -3191,6 +3205,7 @@ body.touch.camp #t-battery,
 body.touch.camp #t-map {
   display: none;
 }
+body.touch.camp #t-cycle,
 body.touch.camp #t-use {
   right: calc(var(--edge-r) + 20px);
   bottom: calc(var(--edge-b) + 96px);

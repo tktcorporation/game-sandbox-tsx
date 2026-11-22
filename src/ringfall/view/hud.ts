@@ -739,7 +739,13 @@ export class Hud {
     const prompt = this.prompt(s);
     setHtml($("prompt"), prompt);
     // On a cable the prompt only tells where it goes: the jump button lets go, the use button has nothing to do.
-    $("t-use").hidden = prompt === "" || !!s.player.zip;
+    const useBtn = $("t-use");
+    useBtn.hidden = prompt === "" || !!s.player.zip;
+    const cycleBtn = $("t-cycle");
+    if (cycleBtn) {
+      const many = !!useTarget(s) && useCandCount(s) > 1 && !s.player.zip && s.phase === "play" && s.player.downed <= 0;
+      cycleBtn.hidden = !many || useBtn.hidden;
+    }
 
     // Damage numbers.
     this.nums = this.nums.filter((n) => {
@@ -1187,9 +1193,9 @@ export class Hud {
     }
     // The use key comes first: picking the teammate up or opening a bin works inside an extraction point too.
     const t = useTarget(s);
-    // When several overlap, T cycles the sticky focus; one prompt, one mark (docs/ringfall/ux-design.md).
-    const many = !!t && useCandCount(s) > 1 && !isTouch();
-    const tip = (html: string) => (many ? `${html}<i class="cycle"><kbd>T</kbd></i>` : html);
+    // When several overlap, T (or the touch cycle button) cycles the sticky focus.
+    const many = !!t && useCandCount(s) > 1;
+    const tip = (html: string) => (many ? `${html}<i class="cycle">${isTouch() ? "切替" : "<kbd>T</kbd>"}</i>` : html);
     const x = t ? null : extractHere(s);
     if (x) {
       if (x.call && callLeft(s, x.id) > 0) return `${exitIcon()}${x.short} ${clockIcon()}<b>${Math.ceil(callLeft(s, x.id))}</b>`;
@@ -1253,11 +1259,15 @@ export class Hud {
       if (!q || q.taken) return "";
       return tip(`${key("E")}${flagIcon(SIDE.rival)}援軍 · ${esc(VALUABLES[q.kind].label)}`);
     }
+    if (t.kind === "aid") {
+      const kind = p.haul[0];
+      if (!kind) return "";
+      return tip(`${key("E")}${flagIcon(SIDE.own)}援助を残す · ${esc(VALUABLES[kind].label)}`);
+    }
     if (t.kind === "depot") {
       if (!p.haul.length && !p.tools.length && !p.records.length) return tip(`${key("E")}${depotIcon()}切り上げる ${clockIcon()}${DEPOT.leave} 秒`);
       const value = p.haul.reduce((n, k) => n + VALUABLES[k].value, 0);
-      const leave = p.haul.length ? `${key("⇧E")}援助` : "";
-      return tip(`${key("E")}${depotIcon()}${upIcon()}${p.haul.length + p.tools.length + p.records.length} 点・${value}${leave ? ` · ${leave}` : ""}`);
+      return tip(`${key("E")}${depotIcon()}${upIcon()}${p.haul.length + p.tools.length + p.records.length} 点・${value}`);
     }
     if (t.kind === "armor") return tip(`${key("E")}<span class="r" style="color:${RARITY_CSS[t.loot.rarity]}">アーマー Lv${t.loot.rarity}</span>${struck([`Lv${p.armor}`])}`);
     if (t.kind === "core") {

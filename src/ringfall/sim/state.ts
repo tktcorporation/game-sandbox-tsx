@@ -739,7 +739,7 @@ export interface State {
   sentVia: number[];
   /**
    * Aid parcels at depots this raid (ux-design C2, CoC-style donation): from `Start.parcels`,
-   * plus those left with `Input.leaveParcel`. The sim gate never starts with any, so the bench
+   * plus those left via the `aid` use target. The sim gate never starts with any, so the bench
    * hash is unchanged.
    */
   parcels: WorldParcel[];
@@ -838,11 +838,6 @@ export interface Input {
   keepArmor?: boolean;
   /** The use key never takes up a tool: the bot plays the gate's raids as they stand without tools. */
   leaveTools?: boolean;
-  /**
-   * At a depot with a bag: leave the first valuable as a parcel for other players and send the
-   * rest home (ux-design C2). The bot never sets this, so the gate's raids play as without it.
-   */
-  leaveParcel?: boolean;
   /** Mod parts are neither put on by walking over them nor by the use key: the bot plays without them. */
   leaveMods?: boolean;
   /**

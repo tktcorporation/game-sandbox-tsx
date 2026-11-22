@@ -651,7 +651,8 @@ export function stepLoot(s: State, input: Input) {
   else if (t?.kind === "care") openCare(s);
   else if (t?.kind === "weapon") takeWeapon(s, t.loot);
   else if (t?.kind === "swap") swapInto(s, t.loot);
-  else if (t?.kind === "depot") useDepot(s, t.index, !!input.leaveParcel);
+  else if (t?.kind === "depot") useDepot(s, t.index);
+  else if (t?.kind === "aid") leaveAid(s, t.index);
   else if (t?.kind === "parcel") takeParcel(s, t.index);
   else if (t?.kind === "core") useCore(s, t.node);
   else if (t?.kind === "zip") grabZip(s, t.line, t.at);
@@ -811,6 +812,8 @@ export type UseTarget =
   | { kind: "swap"; loot: Loot }
   | { kind: "armor"; loot: Loot }
   | { kind: "depot"; index: number }
+  /** Leave the first haul valuable as aid at this depot (ux-design C2); does not send the rest. */
+  | { kind: "aid"; index: number }
   | { kind: "parcel"; index: number }
   | { kind: "tool"; loot: Loot }
   | { kind: "mod"; loot: Loot }
@@ -891,7 +894,12 @@ export function useCandidates(s: State, armor = true, tools = true, mods = true,
   const depot = depotInReach(s);
   if (depot >= 0 && !depotBlocked(s)) {
     const d = DEPOTS[depot];
-    push(`depot:${depot}`, dist2d(d, p.pos), USE.prefer.depot, { kind: "depot", index: depot }, d.x, d.y, d.z, PLAYER.interactRange + 1);
+    const reach = PLAYER.interactRange + 1;
+    push(`depot:${depot}`, dist2d(d, p.pos), USE.prefer.depot, { kind: "depot", index: depot }, d.x, d.y, d.z, reach);
+    // Aid is its own candidate (E / touch), not Shift+E: cycle when send-home also competes.
+    if (p.haul.length) {
+      push(`aid:${depot}`, dist2d(d, p.pos), USE.prefer.aid, { kind: "aid", index: depot }, d.x, d.y, d.z, reach);
+    }
   }
   out.sort((a, b) => a.score - b.score || a.id.localeCompare(b.id));
   return out;
@@ -947,26 +955,15 @@ export function depotInReach(s: State): number {
 
 /**
  * The use key at a depot: a bag with anything in it goes home; an empty one means leaving the
- * raid there. With `leaveParcel` and at least one valuable, the first valuable stays as **aid**
- * (ux-design C2, CoC-style 援軍の寄付) for the next offline defence / an ally's sortie; the rest
- * go home as usual. Bots never leave parcels.
+ * raid there. Leaving aid is a separate use target (`aid` / `leaveAid`), not a modifier on this.
  */
-function useDepot(s: State, index: number, leaveParcel = false) {
+function useDepot(s: State, index: number) {
   const p = s.player;
   if (p.haul.length || p.tools.length || p.records.length) {
     // Something picked up while leaving breaks the leaving off, even when it is sent at once.
     if (s.leaving) {
       s.leaving = null;
       s.events.push({ t: "leaveCancel" });
-    }
-    if (leaveParcel && p.haul.length) {
-      const kind = p.haul[0];
-      bagOut(p, [0]);
-      const d = DEPOTS[index];
-      s.leftParcels.push({ poi: d.poi, kind });
-      s.parcels.push({ id: -(s.leftParcels.length), poi: d.poi, kind, from: { code: "", name: "" }, x: d.x, y: d.y, z: d.z, taken: false });
-      s.events.push({ t: "deposit", n: 1, value: 0 });
-      if (!p.haul.length && !p.tools.length && !p.records.length) return;
     }
     const value = p.haul.reduce((n, k) => n + VALUABLES[k].value, 0);
     s.events.push({ t: "deposit", n: p.haul.length + p.tools.length + p.records.length, value });
@@ -983,6 +980,25 @@ function useDepot(s: State, index: number, leaveParcel = false) {
     s.leaving = { depot: index, t: DEPOT.leave };
     s.events.push({ t: "leaveStart" });
   }
+}
+
+/**
+ * Leaves the first haul valuable as aid at the depot (ux-design C2, CoC-style 援軍の寄付).
+ * Does not send the rest home — that stays the `depot` use target. Bots never focus `aid`.
+ */
+function leaveAid(s: State, index: number) {
+  const p = s.player;
+  if (!p.haul.length || depotBlocked(s)) return;
+  if (s.leaving) {
+    s.leaving = null;
+    s.events.push({ t: "leaveCancel" });
+  }
+  const kind = p.haul[0];
+  bagOut(p, [0]);
+  const d = DEPOTS[index];
+  s.leftParcels.push({ poi: d.poi, kind });
+  s.parcels.push({ id: -(s.leftParcels.length), poi: d.poi, kind, from: { code: "", name: "" }, x: d.x, y: d.y, z: d.z, taken: false });
+  s.events.push({ t: "deposit", n: 1, value: 0 });
 }
 
 /** Takes an aid parcel at a depot into the bag (ux-design C2). */

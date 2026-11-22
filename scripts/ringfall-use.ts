@@ -5,9 +5,9 @@
  */
 import assert from "node:assert/strict";
 import { idleInput, newRun } from "../src/ringfall/sim/state";
-import { USE } from "../src/ringfall/sim/config";
+import { USE, VALUABLES, type ValuableKind } from "../src/ringfall/sim/config";
 import { useCandCount, useCandidates, useFocusMark, useTarget } from "../src/ringfall/sim/world";
-import { POIS } from "../src/ringfall/sim/map";
+import { DEPOTS, POIS } from "../src/ringfall/sim/map";
 import { groundAt } from "../src/ringfall/sim/geom";
 import { terrainHeight } from "../src/ringfall/sim/terrain";
 
@@ -103,5 +103,41 @@ assert.notEqual(s.useFocus, before);
 
 // Idle input still carries cycleUse: false (determinism of the default).
 assert.equal(idleInput().cycleUse, false);
+assert.equal("leaveParcel" in idleInput(), false, "leaveParcel must stay removed (aid is a use target)");
 
-console.log(`use targeting ok: ${POIS[0].name} bin+weapon, facing, stick=${USE.stick}, cycle, ally`);
+// Aid at a depot: own candidate beside send-home; cycle reaches it; default stays 送る.
+s.ally.active = false;
+s.ally.down = 0;
+s.useFocus = null;
+s.useHeld = false;
+s.loot = [];
+const depot = 0;
+assert.ok(s.depots.length > depot);
+s.depots[depot] = true;
+const d = DEPOTS[depot];
+p.pos = { x: d.x, y: d.y, z: d.z };
+p.yaw = 0;
+const kind = Object.keys(VALUABLES)[0] as ValuableKind;
+p.haul = [kind];
+p.haulAt = [null];
+const atDepot = useCandidates(s);
+const send = atDepot.find((c) => c.t.kind === "depot");
+const aid = atDepot.find((c) => c.t.kind === "aid");
+assert.ok(send && aid, `depot should offer send+aid, got ${atDepot.map((c) => c.t.kind).join(",")}`);
+assert.ok(send!.score <= aid!.score, "send-home should outrank leave-aid by default");
+s.useFocus = null;
+s.useHeld = false;
+assert.equal(useTarget(s)?.kind, "depot");
+// Cycle until aid (other candidates may sit between).
+let foundAid = false;
+for (let n = 0; n < atDepot.length; n++) {
+  useTarget(s, true, true, true, true, true);
+  if (s.useFocus === aid!.id) {
+    foundAid = true;
+    break;
+  }
+}
+assert.equal(foundAid, true, "cycle reaches aid");
+assert.equal(useTarget(s)?.kind, "aid");
+
+console.log(`use targeting ok: ${POIS[0].name} bin+weapon, facing, stick=${USE.stick}, cycle, ally, aid`);

@@ -308,7 +308,7 @@ function startFight(s: IslandState, i: number) {
   if (s.holds[i] === "held") s.guards[i] ??= garrisonGuards(s.owner.code, i);
   if (s.holds[i] === "freed" && !s.defenders.some((d) => d.to === i && d.task === "post")) {
     for (let k = 0; k < FACTORY.levels[s.factory].turrets; k++) s.defenders.push({ id: s.nextId++, to: i, units: [unit("heavy")], task: "post" });
-    // Aid left at depots (own Shift+E or a neighbour's donation) joins this defence.
+    // Aid left at depots (own leave-aid use, or a neighbour's donation) joins this defence.
     spendAid(s, i);
   }
 }

@@ -45,6 +45,8 @@ export class CampView {
     if (!on) {
       $("t-use").querySelector("b")!.textContent = this.useLabel;
       $("t-use").hidden = true;
+      const cycle = $("t-cycle");
+      if (cycle) cycle.hidden = true;
     }
   }
 
