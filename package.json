@@ -1,5 +1,5 @@
 {
-  "name": "game-sandbox-tsx",
+  "name": "ringfall",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -23,8 +23,6 @@
     "test:tofu-ignore": "node scripts/ringfall-tofu-ignore.test.mjs",
     "test:preview-auth-contract": "node scripts/ringfall-preview-auth-contract.test.mjs",
     "cf-typegen": "cf workers types",
-    "sim": "tsx scripts/sim.ts",
-    "shots": "node scripts/shots.mjs",
     "sim:ringfall": "tsx scripts/ringfall-sim.ts",
     "bench:ringfall": "tsx scripts/ringfall-bench.ts",
     "perf:ringfall": "node scripts/ringfall-perf.mjs",
@@ -51,7 +49,6 @@
     "vite": "8.3.6"
   },
   "dependencies": {
-    "phaser": "4.2.1",
     "three": "0.187.0"
   },
   "overrides": {
