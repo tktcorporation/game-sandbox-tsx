@@ -56,6 +56,12 @@ const setHtml = (el: HTMLElement, html: string) => {
   el.dataset.html = html;
   el.innerHTML = html;
 };
+/** Same for plain text: assigning textContent every frame still dirties layout when nothing changed. */
+const setText = (el: HTMLElement, text: string) => {
+  if (el.dataset.text === text) return;
+  el.dataset.text = text;
+  el.textContent = text;
+};
 const clock = (t: number) => `${Math.floor(Math.max(0, t) / 60)}:${String(Math.floor(Math.max(0, t) % 60)).padStart(2, "0")}`;
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 /** Wording follows the controls in use: keys on a PC, on-screen buttons on a phone. */
@@ -553,9 +559,9 @@ export class Hud {
     if (p.leap) text = isTouch() ? "滑空中：スティックで着地点を選ぶ" : "滑空中：WASD で着地点を選ぶ";
     else if (s.phase === "done") text = s.home ? "帰った" : s.outcome === "extracted" ? "生還" : "行方不明";
     else text = step?.label ?? "探索して脱出せよ";
-    $("obj-text").textContent = text;
-    $("obj-title").textContent = obj.title;
-    $("obj-n").textContent = `${Math.min(obj.current + 1, obj.steps.length)}/${obj.steps.length}`;
+    setText($("obj-text"), text);
+    setText($("obj-title"), obj.title);
+    setText($("obj-n"), `${Math.min(obj.current + 1, obj.steps.length)}/${obj.steps.length}`);
     // Under the step only how far it has gone, as a number; what the step asks is its label and the beacon.
     setHtml($("obj-until"), s.phase === "play" && step ? this.stepProgress(s, step) : "");
     // A step done moves the card on to the next, told with a short toast.
@@ -591,8 +597,9 @@ export class Hud {
     const oe = $("obj-event");
     oe.hidden = !s.event;
     if (s.event) setHtml(oe, raidEventLine(s));
-    this.bag.frame(s, dt, this.bagCells(p));
-    setHtml($("obj-bag"), `バッグ ${this.bagCells(p)}${bagLoad(p)}/${BAG.slots}<span class="worth">・回収 ${haulValue(s)}</span>`);
+    const bagCells = this.bagCells(p);
+    this.bag.frame(s, dt, bagCells);
+    setHtml($("obj-bag"), `バッグ ${bagCells}${bagLoad(p)}/${BAG.slots}<span class="worth">・回収 ${haulValue(s)}</span>`);
     // The raid's deadline is the battle's end (past it the raid ends as a wipe), as a clock; the next
     // reinforcements as their mark and seconds; a raid above 強度 0 says so first.
     const left = s.battle ? Math.max(0, s.battle.end - s.time) : null;
@@ -633,7 +640,7 @@ export class Hud {
     this.shieldCells.forEach((f, i) => (f.style.width = `${Math.max(0, Math.min(1, (p.shield - i * 25) / 25)) * 100}%`));
     $("hp-fill").style.width = `${(p.hp / PLAYER.hp) * 100}%`;
     $("hp").className = p.hp < 35 ? "low" : "";
-    for (const k of HEAL_KINDS) $(`n-${k}`).textContent = String(p.heals[k]);
+    for (const k of HEAL_KINDS) setText($(`n-${k}`), String(p.heals[k]));
     // The mod parts worn, oldest first (the one a full set swaps out), with an empty frame per free slot.
     setHtml($("mods"), Array.from({ length: MOD.slots }, (_, i) => (p.mods[i] ? `<i title="${esc(MODS[p.mods[i]].note)}">${esc(MODS[p.mods[i]].short)}</i>` : `<i class="free"></i>`)).join(""));
 
@@ -644,7 +651,8 @@ export class Hud {
     const ult = $("ab-ult");
     ult.style.setProperty("--p", String(p.ult));
     ult.className = p.ult >= 1 ? "ab ult ready" : "ab ult";
-    $("ult-pct").textContent = p.ult >= 1 ? "離脱" : `${Math.floor(p.ult * 100)}%`;
+    const ultPct = p.ult >= 1 ? "離脱" : `${Math.floor(p.ult * 100)}%`;
+    setText($("ult-pct"), ultPct);
     $("fx-ult").style.opacity = p.leap ? "1" : "0";
     // Streaks at the edges past a sprint's speed: a slide-jump faintly, a zipline fully; calmer on a phone.
     const fast = Math.max(0, Math.min(1, (Math.hypot(p.vel.x, p.vel.y * (p.zip ? 1 : 0), p.vel.z) - PLAYER.sprint - 1) / 9));
@@ -656,8 +664,8 @@ export class Hud {
     const tUlt = $("t-ult");
     tUlt.style.setProperty("--p", String(p.ult));
     tUlt.classList.toggle("ready", p.ult >= 1);
-    $("t-ult-pct").textContent = $("ult-pct").textContent;
-    $("t-cells").textContent = pickHeal(s) ? String(HEAL_KINDS.reduce((n, k) => n + p.heals[k], 0)) : "-";
+    setText($("t-ult-pct"), ultPct);
+    setText($("t-cells"), pickHeal(s) ? String(HEAL_KINDS.reduce((n, k) => n + p.heals[k], 0)) : "-");
 
     // Weapons.
     p.weapons.forEach((wpn, i) => {
@@ -670,10 +678,9 @@ export class Hud {
       const mag = wpn.mag < 0 ? size : wpn.mag;
       el.className = `slot${i === p.slot ? " active" : ""}${mag <= size * 0.25 ? " low" : ""}`;
       el.style.setProperty("--rc", RARITY_CSS[wpn.rarity]);
-      (el.querySelector(".name") as HTMLElement).textContent = `${i + 1}  ${WEAPONS[wpn.kind].name}`;
-      const ammo = el.querySelector(".ammo b") as HTMLElement;
-      ammo.textContent = p.reload > 0 && i === p.slot ? "…" : String(mag);
-      (el.querySelector(".ammo small") as HTMLElement).textContent = `/${size}`;
+      setText(el.querySelector(".name") as HTMLElement, `${i + 1}  ${WEAPONS[wpn.kind].name}`);
+      setText(el.querySelector(".ammo b") as HTMLElement, p.reload > 0 && i === p.slot ? "…" : String(mag));
+      setText(el.querySelector(".ammo small") as HTMLElement, `/${size}`);
     });
 
     // Crosshair spreads with movement and hip fire.
@@ -693,7 +700,7 @@ export class Hud {
 
     // Interaction prompt.
     const prompt = this.prompt(s);
-    $("prompt").innerHTML = prompt;
+    setHtml($("prompt"), prompt);
     // On a cable the prompt only tells where it goes: the jump button lets go, the use button has nothing to do.
     $("t-use").hidden = prompt === "" || !!s.player.zip;
 
@@ -946,7 +953,7 @@ export class Hud {
   private exits(s: State) {
     const p = s.player;
     if (s.phase !== "play") {
-      $("obj-exits").innerHTML = "";
+      setHtml($("obj-exits"), "");
       return;
     }
     const lines: string[] = [];
@@ -974,7 +981,7 @@ export class Hud {
       const cls = [locked && "locked", i === nearest && "near", live && "live"].filter(Boolean).join(" ");
       lines.push(`<div class="${cls}">${exitIcon()}<b>${x.short}</b><span>${state}</span></div>`);
     });
-    $("obj-exits").innerHTML = lines.join("");
+    setHtml($("obj-exits"), lines.join(""));
   }
 
   /** The teammate's row on the vitals plate and the tag over its head. */

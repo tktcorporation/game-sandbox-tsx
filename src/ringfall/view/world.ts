@@ -138,6 +138,12 @@ interface Chunk {
   /** Its ground and its merged statics, as built for the world in place (`built`); null while not built. */
   ground: THREE.Mesh | null;
   merged: THREE.Group | null;
+  /**
+   * Ground is up but the merged statics are still waiting: filled across frames so a dense chunk
+   * cannot spend tens of milliseconds in one hitch. Cleared once `merged` is built or the chunk
+   * is emptied.
+   */
+  pending: boolean;
   /** Its architectural trim, built only while the chunk is within the tier's `trimFar` (trim.ts). */
   trim: THREE.Mesh | null;
   /** Built and found to have no trim at all: not tried again until the chunk is built again. */
@@ -146,6 +152,9 @@ interface Chunk {
   /** Indices into BOXES of the map's boxes whose middle lies in it, in BOXES order. */
   boxes: number[];
   boulders: Boulder[];
+  /** Ground grid ticks that fall in this chunk, prefiltered once when the world is cut up. */
+  xs: number[];
+  zs: number[];
   x0: number;
   z0: number;
   x1: number;
@@ -312,6 +321,14 @@ export class World {
   private scatter = new GroundScatter();
   /** Camera chunk cell last streamed from: emptying far chunks only when this moves. */
   private streamCell = "";
+  /** Routes' boxes for the world in place, rebuilt only when `worldKey()` changes. */
+  private routesCache: Box[] = [];
+  /** Chunks whose ground is up but whose merged statics still wait (nearest finished first). */
+  private pendingMerge: Chunk[] = [];
+  /** Boulder materials by colour hex, shared so filling a chunk does not allocate one per rock. */
+  private boulderMats = new Map<number, THREE.MeshLambertMaterial>();
+  /** Chunks currently marked visible; only these need hiding when the camera moves on. */
+  private shownChunks: Chunk[] = [];
 
   /** `tier` and `ratio`: what the page starts drawing at; the tier's antialiasing is fixed from then on. */
   constructor(container: HTMLElement, opts: { tier: Tier; ratio: number }) {
@@ -553,7 +570,23 @@ export class World {
         const z0 = WORLD.z0 + j * CHUNK;
         const x1 = Math.min(WORLD.x1, x0 + CHUNK);
         const z1 = Math.min(WORLD.z1, z0 + CHUNK);
-        this.chunks.push({ group: still(new THREE.Group()), x0, z0, x1, z1, ground: null, merged: null, trim: null, trimless: false, built: false, boxes: [], boulders: [] });
+        this.chunks.push({
+          group: still(new THREE.Group()),
+          x0,
+          z0,
+          x1,
+          z1,
+          ground: null,
+          merged: null,
+          pending: false,
+          trim: null,
+          trimless: false,
+          built: false,
+          boxes: [],
+          boulders: [],
+          xs: xs.filter((v) => v >= x0 && v <= x1),
+          zs: zs.filter((v) => v >= z0 && v <= z1),
+        });
       }
     BOXES.forEach((b, n) => this.chunkOf(b).boxes.push(n));
     // Boulders along the foot of the coast's cliffs, where a land's coast is the world's.
@@ -602,8 +635,13 @@ export class World {
 
   /** The routes' boxes standing in the world now in place: closed routes' obstacles, open routes' roofs and gangways. */
   private routeBoxes(): Box[] {
-    const open = this.built.split(",");
-    return ROUTES.flatMap((r) => (open.includes(r.id) ? r.open : r.closed));
+    return this.routesCache;
+  }
+
+  private boulderMat(color: number) {
+    let m = this.boulderMats.get(color);
+    if (!m) this.boulderMats.set(color, (m = flat(color)));
+    return m;
   }
 
   /** Lets a chunk's meshes go: it holds only its data until it is built again. */
@@ -616,28 +654,41 @@ export class World {
       }
     c.ground = c.merged = null;
     c.built = false;
+    c.pending = false;
     c.trimless = false;
+    const i = this.pendingMerge.indexOf(c);
+    if (i >= 0) this.pendingMerge.splice(i, 1);
   }
 
-  /** (Re)builds a chunk's ground and merged statics for the world now in place, with the routes' boxes in it. */
-  private fillChunk(c: Chunk) {
+  /**
+   * Puts the ground under a chunk so the fog never shows a hole, and queues its merged statics for
+   * a later frame when the chunk is dense. Sparse chunks (no boxes) finish in one go.
+   */
+  private fillChunkGround(c: Chunk) {
     const t0 = performance.now();
     this.emptyChunk(c);
     c.built = true;
     const routes = this.routeBoxes();
-    c.ground = this.groundMesh(
-      this.ticks.xs.filter((v) => v >= c.x0 && v <= c.x1),
-      this.ticks.zs.filter((v) => v >= c.z0 && v <= c.z1),
-      () => true,
-      (x, y, z) => coverAt(x, y + 0.2, z) * contactAt(x, y, z, routes),
-    );
+    c.ground = this.groundMesh(c.xs, c.zs, () => true, (x, y, z) => coverAt(x, y + 0.2, z) * contactAt(x, y, z, routes));
     c.group.add(still(c.ground));
-    // The map's boxes and the boulders first, then the routes', merged in that order.
+    this.filled.n++;
+    this.filled.ms += performance.now() - t0;
+    // Nothing to merge: done. Otherwise the heavy merge waits for a free slice of the budget.
+    if (!c.boxes.length && !c.boulders.length && !routes.some((b) => this.chunkOf(b) === c)) return;
+    c.pending = true;
+    this.pendingMerge.push(c);
+  }
+
+  /** Merges the statics of a chunk whose ground is already up. */
+  private fillChunkMerge(c: Chunk) {
+    if (!c.built || !c.pending) return;
+    const t0 = performance.now();
+    const routes = this.routeBoxes();
     const statics = new THREE.Group();
     for (const n of c.boxes) statics.add(buildStatic(BOXES[n], n));
     for (const m of streetMeshes(c)) statics.add(m);
     for (const b of c.boulders) {
-      const m = new THREE.Mesh(this.boulderGeo, flat(b.color));
+      const m = new THREE.Mesh(this.boulderGeo, this.boulderMat(b.color));
       m.scale.set(b.sc, b.sy, b.sc);
       m.rotation.set(b.rot[0], b.rot[1], b.rot[2]);
       m.position.set(b.x, b.y, b.z);
@@ -648,12 +699,24 @@ export class World {
     routes.forEach((b, n) => {
       if (this.chunkOf(b) === c) root.add(buildStatic(b, BOXES.length + n));
     });
+    if (c.merged) {
+      c.group.remove(c.merged);
+      c.merged.traverse((m) => m instanceof THREE.Mesh && m.geometry.dispose());
+    }
     c.merged = statics.children.length || root.children.length > 1 ? mergeChunk(root, CHUNK_SHADE) : null;
-    // The meshes built for the merge are let go; only their geometry's copies in the merge stay.
     root.traverse((m) => m instanceof THREE.Mesh && m.geometry !== this.boulderGeo && m.geometry.dispose());
     if (c.merged) c.group.add(still(c.merged));
+    c.pending = false;
+    const i = this.pendingMerge.indexOf(c);
+    if (i >= 0) this.pendingMerge.splice(i, 1);
     this.filled.n++;
     this.filled.ms += performance.now() - t0;
+  }
+
+  /** (Re)builds a chunk fully: used by prebuild and route rebuilds, where a hitch is acceptable. */
+  private fillChunk(c: Chunk) {
+    this.fillChunkGround(c);
+    if (c.pending) this.fillChunkMerge(c);
   }
 
   /** Lets a chunk's trim go. */
@@ -739,23 +802,26 @@ export class World {
     waiting.sort((a, b) => a.d - b.d);
     const budget = Math.max(this.q.streamMs, 4);
     const t0 = performance.now();
-    // Nearest fog chunk fills first; further fog fills stop once the frame's budget is spent, so
-    // several heavy chunks cannot land in one hitch (a brief hole at the fog edge is preferred).
+    // Ground first (closes fog holes cheaply); merges of pending chunks share the same budget so a
+    // dense building chunk cannot land its full cost in one hitch.
     for (let i = 0; i < fogNeed.length; i++) {
-      this.fillChunk(fogNeed[i].c);
+      this.fillChunkGround(fogNeed[i].c);
       if (performance.now() - t0 >= budget) break;
     }
-    // Beyond-fog fills share the same budget; skip them entirely once fog work already spent it.
     for (let i = 0; i < waiting.length && performance.now() - t0 < budget; i++) {
-      this.fillChunk(waiting[i].c);
+      this.fillChunkGround(waiting[i].c);
       if (performance.now() - t0 >= budget) break;
     }
+    // At most one pending merge per frame: a dense building chunk's merge is the expensive half of
+    // fillChunk, and finishing several in one hitch undoes the ground/merge split.
+    if (this.pendingMerge.length > 1) this.pendingMerge.sort((a, b) => World.away(a, x, z) - World.away(b, x, z));
+    if (this.pendingMerge.length && performance.now() - t0 < budget) this.fillChunkMerge(this.pendingMerge[0]);
     // Trim follows within `trimFar`, nearest first, in what is left of the frame's time (one at least).
     // Far trim is dropped when the camera cell moves (above); nearChunks only gathers what to build.
     const trims: { c: Chunk; d: number }[] = [];
     if (trimFar > 0) {
       this.nearChunks(x, z, trimFar, (c, d) => {
-        if (!c.built || c.trim || c.trimless) return;
+        if (!c.built || c.trim || c.trimless || c.pending) return;
         trims.push({ c, d });
       });
     }
@@ -788,10 +854,14 @@ export class World {
    * raid's): their ground is carved or not, their obstacles or roofs stand or not.
    */
   private syncRoutes() {
-    if (worldKey() === this.built) return;
-    this.built = worldKey();
+    const key = worldKey();
+    if (key === this.built && this.routesCache.length) return;
+    this.built = key;
+    const open = key.split(",");
+    this.routesCache = ROUTES.flatMap((r) => (open.includes(r.id) ? r.open : r.closed));
     this.shadowAt = -Infinity;
     this.scatter.invalidate();
+    this.pendingMerge.length = 0;
     for (const c of this.chunks) if (c.built && reached(c)) this.fillChunk(c);
   }
 
@@ -1302,10 +1372,16 @@ export class World {
     this.streamChunks(fx, fz);
     this.scatter.update(fx, fz, this.q.scatterFar);
     // Chunks wholly past the fog are skipped (the camera's view culls the rest), and so are
-    // robots, bins and loot far off.
+    // robots, bins and loot far off. Only the previously shown set is hidden; the neighbourhood
+    // is turned on — avoiding a full 1170-chunk scan every frame.
     const fogFar = this.q.fogFar;
     const thingsFar = this.q.thingsFar;
-    for (const c of this.chunks) c.group.visible = World.away(c, fx, fz) < fogFar;
+    for (const c of this.shownChunks) c.group.visible = false;
+    this.shownChunks.length = 0;
+    this.nearChunks(fx, fz, fogFar, (c) => {
+      c.group.visible = true;
+      this.shownChunks.push(c);
+    });
     const near = (o: THREE.Object3D) => (o.visible = Math.hypot(o.position.x - fx, o.position.z - fz) < thingsFar);
 
     // --- teammate
@@ -2006,6 +2082,8 @@ export class World {
     this.particles = [];
     this.shadowAt = -Infinity;
     this.streamCell = "";
+    this.pendingMerge.length = 0;
+    this.shownChunks.length = 0;
     this.battleView.reset();
   }
 }
