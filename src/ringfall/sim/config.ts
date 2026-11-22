@@ -86,17 +86,10 @@ export const USE = {
     tool: 0.3,
     mod: 0.3,
     swap: 0.25,
-    /** An aid parcel already at a depot (ux-design C2): ahead of sending the bag home. */
-    parcel: 0.2,
     armor: -0.25,
     core: 0.15,
     zip: 0.05,
     depot: -0.35,
-    /**
-     * Leaving aid at a depot (ux-design C2): behind sending home so E defaults to 送る;
-     * cycle (T / touch) reaches 援助を残す.
-     */
-    aid: -0.5,
   } as const,
 };
 

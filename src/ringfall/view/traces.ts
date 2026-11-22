@@ -1,7 +1,7 @@
 /*
- * Async traces of attack / defence (ux-design M5, CoC-style): faint marks that someone fought
- * here while you were away. View-only from a hash of the raid's seed and a stable id — never
- * draws on `rand(s)`, so the sim gate's hash stays put.
+ * Passive traces when other players are in the loop (ux-design M5): faint marks only, no legend
+ * or player-facing name. View-only from a hash of the raid's seed and a stable id — never draws
+ * on `rand(s)`, so the sim gate's hash stays put.
  */
 import { mix } from "../sim/state";
 import { STREETS } from "../sim/streets";

@@ -1254,16 +1254,6 @@ export class Hud {
       return tip(`${key("E")}${esc(VALUABLES[v].label)}${struck(out)}`);
     }
     if (t.kind === "care") return tip(`${key("E")}補給ポッド`);
-    if (t.kind === "parcel") {
-      const q = s.parcels[t.index];
-      if (!q || q.taken) return "";
-      return tip(`${key("E")}${flagIcon(SIDE.rival)}援軍 · ${esc(VALUABLES[q.kind].label)}`);
-    }
-    if (t.kind === "aid") {
-      const kind = p.haul[0];
-      if (!kind) return "";
-      return tip(`${key("E")}${flagIcon(SIDE.own)}援助を残す · ${esc(VALUABLES[kind].label)}`);
-    }
     if (t.kind === "depot") {
       if (!p.haul.length && !p.tools.length && !p.records.length) return tip(`${key("E")}${depotIcon()}切り上げる ${clockIcon()}${DEPOT.leave} 秒`);
       const value = p.haul.reduce((n, k) => n + VALUABLES[k].value, 0);

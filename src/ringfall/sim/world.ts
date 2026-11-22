@@ -652,8 +652,6 @@ export function stepLoot(s: State, input: Input) {
   else if (t?.kind === "weapon") takeWeapon(s, t.loot);
   else if (t?.kind === "swap") swapInto(s, t.loot);
   else if (t?.kind === "depot") useDepot(s, t.index);
-  else if (t?.kind === "aid") leaveAid(s, t.index);
-  else if (t?.kind === "parcel") takeParcel(s, t.index);
   else if (t?.kind === "core") useCore(s, t.node);
   else if (t?.kind === "zip") grabZip(s, t.line, t.at);
   else if (t?.kind === "armor") {
@@ -812,9 +810,6 @@ export type UseTarget =
   | { kind: "swap"; loot: Loot }
   | { kind: "armor"; loot: Loot }
   | { kind: "depot"; index: number }
-  /** Leave the first haul valuable as aid at this depot (ux-design C2); does not send the rest. */
-  | { kind: "aid"; index: number }
-  | { kind: "parcel"; index: number }
   | { kind: "tool"; loot: Loot }
   | { kind: "mod"; loot: Loot }
   | { kind: "core"; node: number }
@@ -886,20 +881,10 @@ export function useCandidates(s: State, armor = true, tools = true, mods = true,
       push(`zip:${zip.line}`, dist2d(pt, p.pos), USE.prefer.zip, { kind: "zip", line: zip.line, at: zip.at }, pt.x, pt.y, pt.z, PLAYER.interactRange + 2);
     }
   }
-  s.parcels.forEach((q, index) => {
-    if (q.taken || !level(q.y)) return;
-    if (!makeRoom(p.haul, q.kind, p.tools, p.records.length)) return;
-    push(`parcel:${q.id}`, dist2d(q, p.pos), USE.prefer.parcel, { kind: "parcel", index }, q.x, q.y, q.z);
-  });
   const depot = depotInReach(s);
   if (depot >= 0 && !depotBlocked(s)) {
     const d = DEPOTS[depot];
-    const reach = PLAYER.interactRange + 1;
-    push(`depot:${depot}`, dist2d(d, p.pos), USE.prefer.depot, { kind: "depot", index: depot }, d.x, d.y, d.z, reach);
-    // Aid is its own candidate (E / touch), not Shift+E: cycle when send-home also competes.
-    if (p.haul.length) {
-      push(`aid:${depot}`, dist2d(d, p.pos), USE.prefer.aid, { kind: "aid", index: depot }, d.x, d.y, d.z, reach);
-    }
+    push(`depot:${depot}`, dist2d(d, p.pos), USE.prefer.depot, { kind: "depot", index: depot }, d.x, d.y, d.z, PLAYER.interactRange + 1);
   }
   out.sort((a, b) => a.score - b.score || a.id.localeCompare(b.id));
   return out;
@@ -954,8 +939,9 @@ export function depotInReach(s: State): number {
 }
 
 /**
- * The use key at a depot: a bag with anything in it goes home; an empty one means leaving the
- * raid there. Leaving aid is a separate use target (`aid` / `leaveAid`), not a modifier on this.
+ * The use key at a depot (primary: 納める): a bag with anything in it goes home; an empty one
+ * means leaving the raid there. When valuables are sent home, one kind is also stocked silently
+ * for this island's next offline defence (ux-design C2) — no separate verb or prompt.
  */
 function useDepot(s: State, index: number) {
   const p = s.player;
@@ -966,6 +952,7 @@ function useDepot(s: State, index: number) {
       s.events.push({ t: "leaveCancel" });
     }
     const value = p.haul.reduce((n, k) => n + VALUABLES[k].value, 0);
+    const stock = p.haul[0];
     s.events.push({ t: "deposit", n: p.haul.length + p.tools.length + p.records.length, value });
     s.sentAt.push(...haulOrigins(p));
     s.sent.push(...p.haul);
@@ -976,50 +963,15 @@ function useDepot(s: State, index: number) {
     p.haulAt = [];
     p.tools = [];
     p.records = [];
+    // Silent defence stock: the island DO spends these while the owner is away. Not a world pickup.
+    if (stock) {
+      const d = DEPOTS[index];
+      if (!s.leftParcels.some((l) => l.poi === d.poi)) s.leftParcels.push({ poi: d.poi, kind: stock });
+    }
   } else if (!s.leaving) {
     s.leaving = { depot: index, t: DEPOT.leave };
     s.events.push({ t: "leaveStart" });
   }
-}
-
-/**
- * Leaves the first haul valuable as aid at the depot (ux-design C2, CoC-style 援軍の寄付).
- * Does not send the rest home — that stays the `depot` use target. Bots never focus `aid`.
- */
-function leaveAid(s: State, index: number) {
-  const p = s.player;
-  if (!p.haul.length || depotBlocked(s)) return;
-  if (s.leaving) {
-    s.leaving = null;
-    s.events.push({ t: "leaveCancel" });
-  }
-  const kind = p.haul[0];
-  bagOut(p, [0]);
-  const d = DEPOTS[index];
-  s.leftParcels.push({ poi: d.poi, kind });
-  s.parcels.push({ id: -(s.leftParcels.length), poi: d.poi, kind, from: { code: "", name: "" }, x: d.x, y: d.y, z: d.z, taken: false });
-  s.events.push({ t: "deposit", n: 1, value: 0 });
-}
-
-/** Takes an aid parcel at a depot into the bag (ux-design C2). */
-function takeParcel(s: State, index: number) {
-  const q = s.parcels[index];
-  if (!q || q.taken) return;
-  const out = makeRoom(s.player.haul, q.kind, s.player.tools, s.player.records.length);
-  if (!out) return;
-  if (out.length) {
-    for (const g of bagOut(s.player, out)) spillValuable(s, s.player.pos, g.kind, g.from);
-  }
-  bagIn(s.player, q.kind, poiIndex(q.poi));
-  q.taken = true;
-  if (q.id > 0) s.takenParcels.push(q.id);
-  else {
-    // Left this raid (negative id): cancel the pending `leftParcels` entry so settle/sync do not
-    // re-create the parcel after the valuable is already back in the bag.
-    const i = s.leftParcels.findIndex((l) => l.poi === q.poi && l.kind === q.kind);
-    if (i >= 0) s.leftParcels.splice(i, 1);
-  }
-  s.events.push({ t: "pickup", kind: "valuable", rarity: VALUABLES[q.kind].rarity, label: VALUABLES[q.kind].label });
 }
 
 /**

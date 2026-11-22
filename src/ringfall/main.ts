@@ -21,7 +21,7 @@ import { bodyCenter, eyePos, fireRay, kill } from "./sim/combat";
 import { squadKey } from "./sim/state";
 import { loadProfile, saveProfile } from "./meta/storage";
 import { sendIsland } from "./net";
-import { aiLentFor, aiSalt, aiScouted, incomingFor, markScouted, flushRecalls, leaseOwn, neighboursFor, postMark, refreshAi, releaseLease, syncOwn, takeReport, takeSync, useAi } from "./island-net";
+import { aiLentFor, aiSalt, aiScouted, incomingFor, markScouted, flushRecalls, leaseOwn, neighboursFor, refreshAi, releaseLease, syncOwn, takeReport, takeSync, useAi } from "./island-net";
 import { loadIdentity } from "./meta/identity";
 import { raidTraces } from "./view/traces";
 import { aiRaidNews, aiRivals } from "./meta/ai-islands";
@@ -319,11 +319,6 @@ let raidLent: LentIn[] = [];
 let raidAi: { lent: LentIn[]; slots: number[]; scouted: boolean } | null = null;
 /** The game's own islands' news from the raid just settled, before the server's. */
 let aiNews: string[] = [];
-/** Async look-marks last read from the island's view (ux-design M6); the next raid draws them. */
-let islandPings: { x: number; z: number; until: number }[] = [];
-/** Last local P mark this raid; posted once on settle as an async 目印 (not live sync). */
-let raidMark: { x: number; z: number } | null = null;
-
 /**
  * Syncs the island with the server after a settled raid (island-net.ts): the owner's report, then
  * the log and the holds, taken into the profile as it stands when they come. Nothing waits on it;
@@ -341,13 +336,10 @@ function syncIsland(p: Settlement["profile"], settled: State) {
   const raid = {
     lent: lentResults(raidLent, settled.battle),
     fortified: fortifiedNodes(settled.battle),
+    // Defence stock from deposits this raid (silent; no separate "aid" verb).
     parcels: who.code ? (settled.leftParcels ?? []).map((q) => ({ poi: q.poi, kind: q.kind, from })) : [],
     takenParcels: settled.takenParcels ?? [],
   };
-  // Async look-mark (M6): leave the last P of the raid on the island for a day, not a live ping.
-  const mark = raidMark;
-  raidMark = null;
-  if (mark && who.code) void postMark(mark);
   raidLent = [];
   void syncOwn(p, true, raid).then((r) => {
     // The islands of expeditions called home (a liberation, or the factory's panel) are told, now or at the next sync.
@@ -366,7 +358,6 @@ function syncIsland(p: Settlement["profile"], settled: State) {
     }
     const { profile, news } = takeSync(hub.profile, r.body);
     if (profile !== hub.profile) hub.update(profile);
-    if (r.body.view?.pings) islandPings = r.body.view.pings.map((q) => ({ x: q.x, z: q.z, until: q.until }));
     // The sync read the neighbours again: the horizon shows them as they now stand.
     world.setNeighbours(neighboursFor(hub.profile).map((n) => n.slot));
     if (!news.length) return;
@@ -779,7 +770,6 @@ function dropLookPing() {
     }
   }
   hud.dropPing(at);
-  raidMark = at;
 }
 
 /** `from`: the camp the player walked out of, carried over into the raid where they stand. */
@@ -831,7 +821,6 @@ function start(go: Launch, from?: State) {
     known: hub.profile.known,
     battle: { factory: hub.profile.factory, away: squadsAway(hub.profile), targets: tonight(hub.profile), rivals: [...lentRivals(raidLent), ...aiRivals(aiLent)], shut: lent?.shut },
     finale: finaleOpen(hub.profile),
-    parcels: hub.profile.parcels,
   });
   // A lease still on its way joins this raid if it comes in its first seconds.
   if (leaseReq?.on === "open") {
@@ -843,13 +832,10 @@ function start(go: Launch, from?: State) {
   }
   hud.setContract(hub.contract(), record ?? null, takenStory(hub.profile));
   hud.setRaidsDone(hub.profile.raids);
-  // Async traces (M5) and look-marks (M6): view-only. Owners = rivals, incoming, and who left aid.
-  const aidFrom = hub.profile.parcels.map((q) => q.from.code).filter((c) => c && c !== "local");
-  const owners = [...new Set([...raidLent, ...aiLent].map((l) => l.by.code).concat(incomingFor(hub.profile).map((e) => e.by.code), aidFrom))];
+  // Passive traces only: rivals / incoming, no legend or new noun (ux-design M5).
+  const owners = [...new Set([...raidLent, ...aiLent].map((l) => l.by.code).concat(incomingFor(hub.profile).map((e) => e.by.code)))];
   hud.setTraces(raidTraces(go.seed, state.bins, owners));
-  const pingAt = Date.now();
-  hud.setRemotePings(islandPings.filter((q) => q.until > pingAt).map((q) => ({ x: q.x, z: q.z })));
-  raidMark = null;
+  hud.setRemotePings([]);
   world.campMode = false;
   if (from) walkOut(state, from);
   // The ground round where the raid starts is built before its first frame.

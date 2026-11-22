@@ -738,9 +738,8 @@ export interface State {
   /** Credits' worth sent home through each depot this raid, by place in `DEPOTS`: it levels that depot (`DEPOT.levels`). */
   sentVia: number[];
   /**
-   * Aid parcels at depots this raid (ux-design C2, CoC-style donation): from `Start.parcels`,
-   * plus those left via the `aid` use target. The sim gate never starts with any, so the bench
-   * hash is unchanged.
+   * Defence stock queued this raid when the player deposits at a depot (`leftParcels` only;
+   * not world pickups). The sim gate never deposits, so the bench hash is unchanged.
    */
   parcels: WorldParcel[];
   /** Parcels left at depots this raid (to report / keep on the island). */
@@ -1135,10 +1134,8 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
     sentAt: [],
     sentRecords: [],
     sentVia: DEPOTS.map(() => 0),
-    parcels: (start.parcels ?? []).flatMap((p) => {
-      const d = DEPOTS.find((q) => q.poi === p.poi);
-      return d ? [{ id: p.id, poi: p.poi, kind: p.kind, from: p.from, x: d.x, y: d.y, z: d.z, taken: false }] : [];
-    }),
+    // Parcels are island-DO defence stock, not in-raid pickups (ux-design: one primary at the depot).
+    parcels: [],
     leftParcels: [],
     takenParcels: [],
     leaving: null,

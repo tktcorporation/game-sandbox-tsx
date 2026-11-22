@@ -258,36 +258,8 @@ export function releaseLease(): Promise<void> {
  */
 let releasing: Promise<void> = Promise.resolve();
 
-/**
- * Leaves an async look-mark on this player's island (ux-design M6). Meant for after a raid settles,
- * not a live ping every keypress. No-op without a code / server.
- */
-export async function postMark(at: { x: number; z: number }): Promise<Answer<unknown>> {
-  const who = loadIdentity();
-  if (!who.code) return failed("no-own-island");
-  return call(`/api/islands/${encodeURIComponent(who.code)}/pings`, {
-    method: "POST",
-    headers: { authorization: `Bearer ${who.id}` },
-    body: JSON.stringify({ name: who.name, x: at.x, z: at.z }),
-  }, SEND_TIMEOUT_MS);
-}
-
-/** @deprecated Prefer `postMark` — live sync is not the CoC direction. */
-export const postPing = postMark;
-
-/**
- * Sends one stash valuable as aid to island `code` at depot POI `poi` (ux-design C2, CoC donation).
- * The recipient's offline defence can spend it as an extra grunt.
- */
-export async function sendAid(code: string, poi: string, kind: string, timeout = SEND_TIMEOUT_MS): Promise<Answer<unknown>> {
-  const who = loadIdentity();
-  if (!who.code) return failed("no-own-island");
-  if (aiSource && aiByCode(aiSalt(), code)) return { ok: true, body: { ok: true } };
-  return call(`/api/islands/${encodeURIComponent(code)}/aid`, {
-    method: "POST",
-    body: JSON.stringify({ from: { ...player(who), code: who.code }, poi, kind }),
-  }, timeout);
-}
+/* postMark / sendAid removed from the player-facing loop (ux-design Round 3 simplify).
+ * Island DO may still accept report parcels from deposits; defence spend stays server-side. */
 
 /** Calls expedition `id` on island `code` home (`DELETE …/expeditions/<id>`), as its sender. */
 export async function recallExpedition(code: string, id: number): Promise<Answer<unknown>> {
