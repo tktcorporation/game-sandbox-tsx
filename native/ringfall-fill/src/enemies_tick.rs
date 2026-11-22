@@ -1164,11 +1164,36 @@ impl Sim {
         k.fly == 0.0 && self.hunt.on_main(self.robot_x[i] as f64, self.robot_z[i] as f64)
     }
 
+    /// Sticky hunt vias: rebuild at most every VIA_REFRESH ticks unless the goal moved.
+    const VIA_REFRESH: u32 = 12;
+
+    fn sticky_via(&mut self, i: usize, gx: f64, gz: f64, reach: f64) -> (f64, f64) {
+        let x = self.robot_x[i] as f64;
+        let z = self.robot_z[i] as f64;
+        // Refresh sparsely — full Dijkstra every tick is what blew warm bench.
+        if self.robot_has_via[i] != 0
+            && self.world_tick.wrapping_add(i as u32) % Self::VIA_REFRESH != 0
+        {
+            let vd = Self::hypot2(
+                self.robot_via_x[i] as f64 - x,
+                self.robot_via_z[i] as f64 - z,
+            );
+            if vd > 0.4 {
+                return (self.robot_via_x[i] as f64, self.robot_via_z[i] as f64);
+            }
+        }
+        let (vx, vz) = self.hunt.next_via(x, z, gx, gz, reach);
+        self.robot_via_x[i] = vx as f32;
+        self.robot_via_z[i] = vz as f32;
+        self.robot_has_via[i] = 1;
+        (vx, vz)
+    }
+
     fn hunt_step(&mut self, i: usize, gx: f64, gz: f64, reach: f64) -> (f64, f64) {
         if !self.on_walkable(i) {
             return (gx, gz);
         }
-        self.hunt.next_via(self.robot_x[i] as f64, self.robot_z[i] as f64, gx, gz, reach)
+        self.sticky_via(i, gx, gz, reach)
     }
 
     fn trip_step(&mut self, i: usize, gx: f64, gz: f64) -> (f64, f64) {
@@ -1181,7 +1206,10 @@ impl Sim {
         if !self.on_walkable(i) && !beside {
             return (gx, gz);
         }
-        self.hunt.next_via(x, z, gx, gz, f64::INFINITY)
+        // Never build a whole-world field on the hot path (ABI5 warm regression).
+        let d = Self::hypot2(gx - x, gz - z);
+        let reach = (d * 3.0 + 40.0).max(80.0).min(220.0);
+        self.sticky_via(i, gx, gz, reach)
     }
 
     fn home_step(&mut self, i: usize, gx: f64, gz: f64) -> (f64, f64) {
@@ -1195,13 +1223,7 @@ impl Sim {
         if !self.on_walkable(i) {
             return (gx, gz);
         }
-        self.hunt.next_via(
-            self.robot_x[i] as f64,
-            self.robot_z[i] as f64,
-            gx,
-            gz,
-            PURSUE_REACH,
-        )
+        self.sticky_via(i, gx, gz, PURSUE_REACH)
     }
 
     fn to_segment(px: f64, pz: f64, ax: f64, az: f64, bx: f64, bz: f64) -> f64 {

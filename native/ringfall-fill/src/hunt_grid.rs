@@ -8,7 +8,7 @@ const INV_RES: f64 = 0.5;
 const STEP: f64 = 1.4;
 const AHEAD: usize = 2;
 const NEAR: i32 = 3;
-const CACHE: usize = 8;
+const CACHE: usize = 24;
 /// PURSUE.reach in config.ts
 pub const PURSUE_REACH: f64 = 90.0;
 

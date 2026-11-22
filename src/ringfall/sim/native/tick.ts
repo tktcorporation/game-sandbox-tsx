@@ -1,10 +1,12 @@
 /**
  * Coarse WASM tick host: enemy/orb SoA + world geom in linear memory.
- * With `RINGFALL_TICK` on: sync → `step_tick` (enemies then orbs) → pull + applyHits.
- * Default (Node / tick off) keeps TypeScript `stepOrbs` / `stepEnemies`. See docs/ringfall/native.md.
+ * With `RINGFALL_TICK` on (ABI 6): adopt robots once, sync squad destinations + orbs,
+ * `step_tick` (sense+cover+calm+fightFoe+engaged+orbs) → pull views/events/hits.
+ * Default (Node / tick off) keeps TypeScript. See docs/ringfall/native.md.
  */
-import { ENEMIES, TICK, THREAT } from "../config";
-import { BOXES, ROUTES } from "../map";
+import { CREW, ENEMIES, FAR_THINK, PACK, PARTY, PATROL, TICK, THREAT } from "../config";
+import { BOXES, PARTY_STOPS, POIS, ROUTES } from "../map";
+import { COVERS } from "../cover";
 import { huntGridSnapshot } from "../hunt";
 import { terrainFieldSnapshot } from "../terrain";
 import { sightScale, type Enemy, type Orb, type State } from "../state";
@@ -27,14 +29,18 @@ const ROBOT_BATTLE = 2;
 const ROBOT_POI = 4;
 const ROBOT_TITAN = 8;
 const ROBOT_SPAWNING = 16;
+const ROBOT_POST = 32;
 
 const SQUAD_ENGAGED = 1;
 const SQUAD_MOBILE = 2;
 const SQUAD_RETREAT = 4;
 const SQUAD_PACK = 8;
 const SQUAD_ROUTED = 16;
+const SQUAD_BATTLE = 32;
+const SQUAD_CREW = 64;
+const SQUAD_SWEEP = 128;
 
-const ABI_MIN = 4;
+const ABI_MIN = 6;
 
 type Ex = NonNullable<ReturnType<typeof nativeExports>>;
 
@@ -104,28 +110,10 @@ function u8(e: Ex, ptr: number, n: number): Uint8Array {
 
 let geomEpoch = -1;
 let routesKey = "";
-
-/** Pre-tick extras from TypeScript: hunt vias + fromCover skip (same order as syncRobots). */
-let prepN = 0;
-let prepViaX: Float32Array | null = null;
-let prepViaZ: Float32Array | null = null;
-let prepHasVia: Uint8Array | null = null;
-let prepSkip: Uint8Array | null = null;
-
-/** Fill SoA extras before `stepTick` (hunt vias + fromCover skip). */
-export function setTickPrep(
-  n: number,
-  viaX: Float32Array,
-  viaZ: Float32Array,
-  hasVia: Uint8Array,
-  skip: Uint8Array,
-): void {
-  prepN = n;
-  prepViaX = viaX;
-  prepViaZ = viaZ;
-  prepHasVia = hasVia;
-  prepSkip = skip;
-}
+/** When true, WASM owns robot SoA; only re-adopt on roster change (no full AoS push each tick). */
+let robotsOwned = false;
+let ownedN = -1;
+let ownedIdSig = "";
 
 function packBoxes(): Float32Array {
   const closed = new Set(ROUTES.flatMap((r) => r.closed));
@@ -187,6 +175,23 @@ export function uploadGeom(epoch: number, routes: readonly string[]): boolean {
     u8(e, e.ringfall_sim_hunt_mask_ptr(), h.mask.length).set(h.mask);
     e.ringfall_sim_hunt_commit();
   }
+  if (e.ringfall_sim_covers_begin && e.ringfall_sim_covers_ptr && e.ringfall_sim_covers_commit) {
+    const n = COVERS.length;
+    e.ringfall_sim_covers_begin(n);
+    const buf = f32(e, e.ringfall_sim_covers_ptr(), n * 5);
+    for (let i = 0; i < n; i++) {
+      const c = COVERS[i];
+      const o = i * 5;
+      buf[o] = c.x;
+      buf[o + 1] = c.y;
+      buf[o + 2] = c.z;
+      buf[o + 3] = c.tx;
+      buf[o + 4] = c.tz;
+    }
+    e.ringfall_sim_covers_commit();
+  }
+  robotsOwned = false;
+  ownedN = -1;
   geomEpoch = epoch;
   routesKey = key;
   e.ringfall_sim_set_ready!(1);
@@ -312,7 +317,6 @@ export function syncRobots(s: State): RobotViews | null {
   const viaX = f32(e, e.ringfall_sim_robot_via_x_ptr!(), n);
   const viaZ = f32(e, e.ringfall_sim_robot_via_z_ptr!(), n);
   const hasVia = u8(e, e.ringfall_sim_robot_has_via_ptr!(), n);
-  const skip = u8(e, e.ringfall_sim_robot_skip_ptr!(), n);
   for (let i = 0; i < n; i++) {
     const en = list[i];
     x[i] = en.pos.x;
@@ -334,6 +338,7 @@ export function syncRobots(s: State): RobotViews | null {
     if (en.poi >= 0) f |= ROBOT_POI;
     if (en.kind === "titan") f |= ROBOT_TITAN;
     if (en.mode === "spawning") f |= ROBOT_SPAWNING;
+    if (en.post) f |= ROBOT_POST;
     flags[i] = f;
     radius[i] = ENEMIES[en.kind].radius;
     bodyH[i] = bodyHeight(en);
@@ -382,16 +387,45 @@ export function syncRobots(s: State): RobotViews | null {
       hasGoal[i] = 0;
     }
     searchT[i] = en.searchT;
-    if (prepHasVia && i < prepN) {
-      viaX[i] = prepViaX![i];
-      viaZ[i] = prepViaZ![i];
-      hasVia[i] = prepHasVia[i];
-      skip[i] = prepSkip![i];
-    } else {
-      hasVia[i] = 0;
-      skip[i] = 0;
+    hasVia[i] = 0;
+  }
+  // Optional face / look / cover / post when ABI 6 exports exist.
+  if (e.ringfall_sim_robot_look_t_ptr && e.ringfall_sim_robot_face_ptr) {
+    const lookT = f32(e, e.ringfall_sim_robot_look_t_ptr(), n);
+    const face = f32(e, e.ringfall_sim_robot_face_ptr(), n);
+    for (let i = 0; i < n; i++) {
+      lookT[i] = list[i].lookT;
+      face[i] = list[i].face;
     }
   }
+  if (e.ringfall_sim_robot_has_cover_ptr) {
+    const hasCover = u8(e, e.ringfall_sim_robot_has_cover_ptr(), n);
+    const cx = f32(e, e.ringfall_sim_robot_cover_spot_x_ptr!(), n);
+    const cz = f32(e, e.ringfall_sim_robot_cover_spot_z_ptr!(), n);
+    const px = f32(e, e.ringfall_sim_robot_peek_x_ptr!(), n);
+    const pz = f32(e, e.ringfall_sim_robot_peek_z_ptr!(), n);
+    const sx = f32(e, e.ringfall_sim_robot_stuck_x_ptr!(), n);
+    const sz = f32(e, e.ringfall_sim_robot_stuck_z_ptr!(), n);
+    const st = f32(e, e.ringfall_sim_robot_stuck_t_ptr!(), n);
+    for (let i = 0; i < n; i++) {
+      const en = list[i];
+      if (en.cover && en.peek) {
+        hasCover[i] = 1;
+        cx[i] = en.cover.x;
+        cz[i] = en.cover.z;
+        px[i] = en.peek.x;
+        pz[i] = en.peek.z;
+      } else hasCover[i] = 0;
+      if (en.stuckTo) {
+        sx[i] = en.stuckTo.x;
+        sz[i] = en.stuckTo.z;
+        st[i] = en.stuckT;
+      } else st[i] = 0;
+    }
+  }
+  robotsOwned = true;
+  ownedN = n;
+  ownedIdSig = list.map((en) => en.id).join(",");
   return { n, x, y, z, yaw, vx, vz, hp, shield, duck, id, kind, mode };
 }
 
@@ -409,6 +443,38 @@ function syncSquads(e: Ex, s: State): void {
   const pinT = f32(e, e.ringfall_sim_squad_pin_t_ptr!(), n);
   const sight = f32(e, e.ringfall_sim_squad_sight_ptr!(), n);
   const flags = u8(e, e.ringfall_sim_squad_flags_ptr!(), n);
+  const leg = e.ringfall_sim_squad_leg_ptr ? i32(e, e.ringfall_sim_squad_leg_ptr(), n) : null;
+  const foeId = e.ringfall_sim_squad_foe_id_ptr ? i32(e, e.ringfall_sim_squad_foe_id_ptr(), n) : null;
+  const walkX = e.ringfall_sim_squad_walk_x_ptr ? f32(e, e.ringfall_sim_squad_walk_x_ptr(), n) : null;
+  const walkZ = e.ringfall_sim_squad_walk_z_ptr ? f32(e, e.ringfall_sim_squad_walk_z_ptr(), n) : null;
+  const hasWalk = e.ringfall_sim_squad_has_walk_ptr ? u8(e, e.ringfall_sim_squad_has_walk_ptr(), n) : null;
+  const ambX = e.ringfall_sim_squad_ambush_x_ptr ? f32(e, e.ringfall_sim_squad_ambush_x_ptr(), n) : null;
+  const ambZ = e.ringfall_sim_squad_ambush_z_ptr ? f32(e, e.ringfall_sim_squad_ambush_z_ptr(), n) : null;
+  const ambFace = e.ringfall_sim_squad_ambush_face_ptr ? f32(e, e.ringfall_sim_squad_ambush_face_ptr(), n) : null;
+  const hasAmb = e.ringfall_sim_squad_has_ambush_ptr ? u8(e, e.ringfall_sim_squad_has_ambush_ptr(), n) : null;
+  const partyX = e.ringfall_sim_squad_party_x_ptr ? f32(e, e.ringfall_sim_squad_party_x_ptr(), n) : null;
+  const partyZ = e.ringfall_sim_squad_party_z_ptr ? f32(e, e.ringfall_sim_squad_party_z_ptr(), n) : null;
+  const hasParty = e.ringfall_sim_squad_has_party_ptr ? u8(e, e.ringfall_sim_squad_has_party_ptr(), n) : null;
+  const patX = e.ringfall_sim_squad_patrol_x_ptr ? f32(e, e.ringfall_sim_squad_patrol_x_ptr(), n) : null;
+  const patZ = e.ringfall_sim_squad_patrol_z_ptr ? f32(e, e.ringfall_sim_squad_patrol_z_ptr(), n) : null;
+  const prevX = e.ringfall_sim_squad_patrol_prev_x_ptr ? f32(e, e.ringfall_sim_squad_patrol_prev_x_ptr(), n) : null;
+  const prevZ = e.ringfall_sim_squad_patrol_prev_z_ptr ? f32(e, e.ringfall_sim_squad_patrol_prev_z_ptr(), n) : null;
+  const hasPat = e.ringfall_sim_squad_has_patrol_ptr ? u8(e, e.ringfall_sim_squad_has_patrol_ptr(), n) : null;
+  const pace = e.ringfall_sim_squad_patrol_pace_ptr ? f32(e, e.ringfall_sim_squad_patrol_pace_ptr(), n) : null;
+  const near = e.ringfall_sim_squad_near_ptr ? u8(e, e.ringfall_sim_squad_near_ptr(), n) : null;
+  const boss = e.ringfall_sim_squad_boss_ptr ? u8(e, e.ringfall_sim_squad_boss_ptr(), n) : null;
+
+  const r2 = FAR_THINK.dist * FAR_THINK.dist;
+  const nearBuf = new Uint8Array(n);
+  for (const en of s.enemies) {
+    if (en.squad < 0 || en.squad >= n || nearBuf[en.squad]) continue;
+    const px = en.pos.x - s.player.pos.x;
+    const pz = en.pos.z - s.player.pos.z;
+    const ax = en.pos.x - s.ally.pos.x;
+    const az = en.pos.z - s.ally.pos.z;
+    if (px * px + pz * pz < r2 || ax * ax + az * az < r2) nearBuf[en.squad] = 1;
+  }
+
   for (let i = 0; i < n; i++) {
     const sq = s.squads[i];
     since[i] = sq.sinceSeen;
@@ -431,7 +497,62 @@ function syncSquads(e: Ex, s: State): void {
     if (sq.retreat !== undefined) f |= SQUAD_RETREAT;
     if (sq.pack) f |= SQUAD_PACK;
     if (sq.routed) f |= SQUAD_ROUTED;
+    if (sq.battle) f |= SQUAD_BATTLE;
+    if (sq.crew) f |= SQUAD_CREW;
+    if (sq.sweep) f |= SQUAD_SWEEP;
     flags[i] = f;
+    if (leg) leg[i] = sq.leg;
+    if (foeId) foeId[i] = sq.foe ?? -1;
+    if (near) near[i] = nearBuf[i];
+    if (boss) {
+      let b = 0;
+      for (const en of s.enemies) {
+        if (en.squad === i && en.poi >= 0 && POIS[en.poi]?.boss) {
+          b = 1;
+          break;
+        }
+      }
+      boss[i] = b;
+    }
+    if (hasWalk && walkX && walkZ) {
+      if (sq.walk) {
+        hasWalk[i] = 1;
+        walkX[i] = sq.walk.x;
+        walkZ[i] = sq.walk.z;
+      } else hasWalk[i] = 0;
+    }
+    if (hasAmb && ambX && ambZ && ambFace) {
+      if (sq.ambush) {
+        hasAmb[i] = 1;
+        ambX[i] = sq.ambush.at.x;
+        ambZ[i] = sq.ambush.at.z;
+        ambFace[i] = sq.ambush.face;
+      } else hasAmb[i] = 0;
+    }
+    if (hasParty && partyX && partyZ) {
+      if (sq.party) {
+        const stop = PARTY_STOPS[sq.party.region]?.[sq.party.stop];
+        if (stop) {
+          hasParty[i] = 1;
+          partyX[i] = stop.x;
+          partyZ[i] = stop.z;
+        } else hasParty[i] = 0;
+      } else hasParty[i] = 0;
+    }
+    if (hasPat && patX && patZ && prevX && prevZ) {
+      if (sq.patrol.length) {
+        const wp = sq.patrol[sq.leg % sq.patrol.length];
+        const prev = sq.patrol[(sq.leg + sq.patrol.length - 1) % sq.patrol.length];
+        hasPat[i] = 1;
+        patX[i] = wp.x;
+        patZ[i] = wp.z;
+        prevX[i] = prev.x;
+        prevZ[i] = prev.z;
+      } else hasPat[i] = 0;
+    }
+    if (pace) {
+      pace[i] = sq.pack ? PACK.pace : sq.crew ? CREW.pace : sq.party || sq.walk ? PARTY.pace : PATROL.pace;
+    }
   }
 }
 
@@ -575,6 +696,31 @@ function pullRobots(e: Ex, s: State): void {
     en.goal = hasGoal[i] ? { x: goalX[i], z: goalZ[i] } : null;
     en.searchT = searchT[i];
   }
+  if (e.ringfall_sim_robot_look_t_ptr && e.ringfall_sim_robot_face_ptr) {
+    const lookT = f32(e, e.ringfall_sim_robot_look_t_ptr(), n);
+    const face = f32(e, e.ringfall_sim_robot_face_ptr(), n);
+    for (let i = 0; i < n; i++) {
+      if (list[i].friend) continue;
+      list[i].lookT = lookT[i];
+      list[i].face = face[i];
+    }
+  }
+  if (e.ringfall_sim_robot_has_cover_ptr) {
+    const hasCover = u8(e, e.ringfall_sim_robot_has_cover_ptr(), n);
+    const cx = f32(e, e.ringfall_sim_robot_cover_spot_x_ptr!(), n);
+    const cz = f32(e, e.ringfall_sim_robot_cover_spot_z_ptr!(), n);
+    const px = f32(e, e.ringfall_sim_robot_peek_x_ptr!(), n);
+    const pz = f32(e, e.ringfall_sim_robot_peek_z_ptr!(), n);
+    for (let i = 0; i < n; i++) {
+      if (list[i].friend) continue;
+      if (hasCover[i]) {
+        list[i].cover = { x: cx[i], z: cz[i] };
+        list[i].peek = { x: px[i], z: pz[i] };
+      } else {
+        list[i].cover = list[i].peek = null;
+      }
+    }
+  }
 }
 
 function pullSquads(e: Ex, s: State, wasEngaged: boolean[]): void {
@@ -590,6 +736,7 @@ function pullSquads(e: Ex, s: State, wasEngaged: boolean[]): void {
   const chaseT = f32(e, e.ringfall_sim_squad_chase_t_ptr!(), n);
   const pinT = f32(e, e.ringfall_sim_squad_pin_t_ptr!(), n);
   const flags = u8(e, e.ringfall_sim_squad_flags_ptr!(), n);
+  const leg = e.ringfall_sim_squad_leg_ptr ? i32(e, e.ringfall_sim_squad_leg_ptr(), n) : null;
   for (let i = 0; i < n; i++) {
     const sq = s.squads[i];
     sq.sinceSeen = since[i];
@@ -598,6 +745,7 @@ function pullSquads(e: Ex, s: State, wasEngaged: boolean[]): void {
     sq.chase = hasChase[i] ? { x: chaseX[i], z: chaseZ[i] } : undefined;
     sq.chaseT = chaseT[i] || undefined;
     sq.pinT = pinT[i] || undefined;
+    if (leg) sq.leg = leg[i];
     const now = (flags[i] & SQUAD_ENGAGED) !== 0;
     // Mirror engageSquad's event so met / firstMeet count WASM engages.
     if (!wasEngaged[i] && now) {
@@ -687,18 +835,62 @@ export function consumeTickDone(): boolean {
   return v;
 }
 
+/** Patch hp/shield from TypeScript combat into WASM without a full robot re-push. */
+function patchRobotHp(e: Ex, s: State): void {
+  const list = s.friends.length ? [...s.enemies, ...s.friends] : s.enemies;
+  const n = Math.min(list.length, e.ringfall_sim_n_robots?.() ?? 0);
+  if (!n) return;
+  const hp = f32(e, e.ringfall_sim_robot_hp_ptr!(), n);
+  const shield = f32(e, e.ringfall_sim_robot_shield_ptr!(), n);
+  const aware = u8(e, e.ringfall_sim_robot_aware_ptr!(), n);
+  const detect = f32(e, e.ringfall_sim_robot_detect_ptr!(), n);
+  const goalX = f32(e, e.ringfall_sim_robot_goal_x_ptr!(), n);
+  const goalZ = f32(e, e.ringfall_sim_robot_goal_z_ptr!(), n);
+  const hasGoal = u8(e, e.ringfall_sim_robot_has_goal_ptr!(), n);
+  const searchT = f32(e, e.ringfall_sim_robot_search_t_ptr!(), n);
+  const AWARE_I_LOCAL: Record<string, number> = { idle: 0, alert: 1, engaged: 2 };
+  for (let i = 0; i < n; i++) {
+    const en = list[i];
+    hp[i] = en.hp;
+    shield[i] = en.shield;
+    // stepSquads may flip aware/goal on calm-down; push those edges.
+    aware[i] = AWARE_I_LOCAL[en.aware] ?? aware[i];
+    detect[i] = en.detect;
+    searchT[i] = en.searchT;
+    if (en.goal) {
+      goalX[i] = en.goal.x;
+      goalZ[i] = en.goal.z;
+      hasGoal[i] = 1;
+    } else {
+      hasGoal[i] = 0;
+    }
+  }
+}
+
+function adoptRobotsIfNeeded(s: State): void {
+  const list = s.friends.length ? [...s.enemies, ...s.friends] : s.enemies;
+  const sig = list.map((en) => en.id).join(",");
+  if (!robotsOwned || list.length !== ownedN || sig !== ownedIdSig) {
+    syncRobots(s);
+  } else {
+    const e = ex();
+    if (e) patchRobotHp(e, s);
+  }
+}
+
 /**
- * Full WASM tick: sync robots+squads+orbs → step_tick (enemies then orbs) → pull + hits.
- * Returns true when WASM ran (TS should skip stepEnemies combat and stepOrbs).
+ * WASM tick: adopt robots once, sync squad destinations + orbs, step, pull outputs.
+ * No per-tick full AoS→SoA robot mirror when the roster is stable.
  */
 export function stepTick(s: State): boolean {
   if (!TICK_WASM) return false;
   const e = ex();
   if (!e || geomEpoch < 0) return false;
   const wasEngaged = s.squads.map((sq) => !!sq.engaged);
-  syncRobots(s);
+  adoptRobotsIfNeeded(s);
   syncSquads(e, s);
   syncOrbs(e, s);
+  if (e.ringfall_sim_set_tick) e.ringfall_sim_set_tick(Math.round(s.time / TICK));
   const p = s.player;
   e.ringfall_sim_set_player!(
     p.pos.x,
