@@ -12,7 +12,8 @@
  * With a region id after the count, only that region's table is played. The tables' raids
  * are played in one worker process per core, and the campaign's months in a worker each beside
  * them; RINGFALL_SIM_JOBS or `--jobs N` sets how many workers play the tables (1 plays
- * everything in this process, in turn).
+ * everything in this process, in turn). With neither set, workers follow physical cores
+ * (scripts/ringfall-parallelism.ts), not logical threads.
  */
 import "./ringfall-terrain-store";
 import { CONTRACT, FRONT, STRENGTH, ALLY, BAG, DEPOT, ELITE, HOME, ENEMIES, HEALS, NOISE, PACK, PARTY, PLATE, PLAYER, RAIDERS, REINFORCE, SEARCH, SHIP_WAVES, SIGHT, STAGGER, TACTICAL, TICK, VALUABLES, VAULT, WEAPONS, WORLD } from "../src/ringfall/sim/config";
@@ -89,8 +90,9 @@ import { playTable, summarize, type RaidResult, type TableResult } from "./ringf
 import type { RaidJob } from "./ringfall-table-worker";
 import { fork, type ChildProcess } from "node:child_process";
 import { writeFileSync } from "node:fs";
-import { availableParallelism, setPriority } from "node:os";
+import { setPriority } from "node:os";
 import { fileURLToPath } from "node:url";
+import { defaultSimJobs } from "./ringfall-parallelism";
 
 /** Positional args after stripping `--jobs N` / `--jobs=N` (count, optional region). */
 function gateArgs(argv: string[]): { runs: number; only?: string; jobsOpt?: string } {
@@ -121,7 +123,7 @@ const LONGEST_FIRST: RegionId[] = ["reservoir", "city", "harbor", "launch"];
  * long raids would otherwise keep one worker busy long after the others ran out of work.
  * The results are printed in table order, the same as when played in turn.
  */
-const jobs = Math.max(1, Number(jobsOpt ?? process.env.RINGFALL_SIM_JOBS ?? availableParallelism()) || 1);
+const jobs = Math.max(1, Number(jobsOpt ?? process.env.RINGFALL_SIM_JOBS ?? defaultSimJobs()) || 1);
 /*
  * The island campaign does not use the tables' raids, and each skill's month is a chain of raids
  * played one after another, the longest single piece of the gate. With workers, its months start
