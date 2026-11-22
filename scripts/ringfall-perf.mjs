@@ -104,6 +104,30 @@ const hitch = await page.evaluate((quality) => {
   });
 }, quality);
 
+// Combat load: several faction fights around the player while walking through fog.
+const combat = await page.evaluate((quality) => {
+  window.ringfallQuality(quality);
+  const f = window.ringfallFrames();
+  const at = f.supply ?? { x: 0, z: 200 };
+  const x = at.x + 20;
+  const z = at.z + 40;
+  for (const [dx, dz] of [
+    [0, 0],
+    [40, -30],
+    [-35, 25],
+    [55, 40],
+  ])
+    window.ringfallFight(x + dx, z + dz, 28);
+  return window.ringfallPerf({
+    steps: 200,
+    stepMs: 16,
+    place: { x, z, yaw: 0.3 },
+    path: { dx: 0.9, dz: -0.35 },
+    quality,
+    govern: true,
+  });
+}, quality);
+
 const still = await page.evaluate((q) => {
   window.ringfallQuality(q);
   return window.ringfallFrameCost(30);
@@ -116,6 +140,7 @@ const report = {
   steps,
   sample,
   hitch,
+  combat,
   still,
   errors,
 };
