@@ -3,7 +3,7 @@
  * fresh profiles (each from its own seed) play `days` consecutive days as the gate's campaign
  * does (`playCampaign()` in scripts/ringfall-campaign.ts): raids that are the day's battle, the
  * factory raised from what they bring home, the nodes carried from day to day. One month is one
- * job, and the jobs share the machine's cores.
+ * job, and the jobs share the machine's physical cores.
  *
  *   npx tsx scripts/ringfall-months.ts [months] [days]      (npm run months:ringfall -- 4 30)
  *
@@ -12,12 +12,12 @@
  */
 import "./ringfall-terrain-store";
 import { fork } from "node:child_process";
-import { availableParallelism } from "node:os";
 import { fileURLToPath } from "node:url";
 import { SKILLS } from "../src/ringfall/sim/bot";
 import { NODES } from "../src/ringfall/sim/map";
 import { FACTORY_TOP } from "../src/ringfall/sim/config";
 import { DAYS, type Campaign } from "./ringfall-campaign";
+import { defaultSimJobs } from "./ringfall-parallelism";
 
 const months = Math.max(1, Number(process.argv[2] ?? 4) || 1);
 const days = Math.max(1, Number(process.argv[3] ?? DAYS) || DAYS);
@@ -30,13 +30,13 @@ const results = new Map<string, Campaign>();
 const key = (j: Job) => `${j.skill}/${j.month}`;
 
 /**
- * The jobs on one worker per core, each worker playing month after month, so a process builds
- * the map, the terrain and the walkers' grids once rather than once a month.
+ * The jobs on one worker per physical core, each worker playing month after month, so a process
+ * builds the map, the terrain and the walkers' grids once rather than once a month.
  */
 async function runAll(): Promise<void> {
   const worker = fileURLToPath(new URL("./ringfall-campaign-worker.ts", import.meta.url));
   let next = 0;
-  const lanes = Array.from({ length: Math.min(jobs.length, availableParallelism()) }, () =>
+  const lanes = Array.from({ length: Math.min(jobs.length, defaultSimJobs()) }, () =>
     new Promise<void>((done, fail) => {
       const w = fork(worker, { serialization: "advanced" });
       const stop = () => w.kill();
@@ -71,7 +71,7 @@ const med = (v: number[]) => {
 
 const t0 = performance.now();
 await runAll();
-console.log(`${months} months of ${days} days per skill (scripts/ringfall-months.ts), ${((performance.now() - t0) / 1000).toFixed(0)} s on ${Math.min(jobs.length, availableParallelism())} processes`);
+console.log(`${months} months of ${days} days per skill (scripts/ringfall-months.ts), ${((performance.now() - t0) / 1000).toFixed(0)} s on ${Math.min(jobs.length, defaultSimJobs())} processes`);
 console.log(`n: nodes of the ${NODES.length} the player holds at the month's end; f: the factory's level at its end (of ${FACTORY_TOP}); alive: raids got off alive`);
 console.log(["skill    ", "n min/med/max".padEnd(14), "f min/med/max".padEnd(14), "alive".padEnd(6), `first day at factory level 1-${FACTORY_TOP} (median, - never)`].join(" "));
 const errors: string[] = [];

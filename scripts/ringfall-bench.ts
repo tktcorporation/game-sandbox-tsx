@@ -4,9 +4,10 @@
  * raids of an island with its battle as the campaign plays them. It prints each raid's CPU time
  * and a hash of what the raid came to, then the total and the hash of all of them.
  *
- * With more than one job the raids run in worker processes (one process per core by default), and
- * the lines are still printed in the same order as a single process. RINGFALL_SIM_JOBS or the
- * first argument sets how many workers (1 plays everything in this process, in turn):
+ * With more than one job the raids run in worker processes (one process per physical core by
+ * default; see scripts/ringfall-parallelism.ts), and the lines are still printed in the same
+ * order as a single process. RINGFALL_SIM_JOBS or the first argument sets how many workers
+ * (1 plays everything in this process, in turn):
  *
  *   npm run bench:ringfall
  *   npm run bench:ringfall -- 1
@@ -19,17 +20,17 @@
  */
 import { createHash } from "node:crypto";
 import { fork, type ChildProcess } from "node:child_process";
-import { availableParallelism } from "node:os";
 import { fileURLToPath } from "node:url";
 import "./ringfall-terrain-store";
 import { playRaid, playState, type RaidResult } from "./ringfall-table";
 import type { BenchJob } from "./ringfall-bench-worker";
+import { defaultSimJobs } from "./ringfall-parallelism";
 import { NODES, REGIONS, type NodeId, type RegionId } from "../src/ringfall/sim/map";
 import { newRun, starterKit } from "../src/ringfall/sim/state";
 import { holds } from "../src/ringfall/meta/island";
 import { newProfile } from "../src/ringfall/meta/profile";
 
-const workers = Math.max(1, Number(process.argv[2] ?? process.env.RINGFALL_SIM_JOBS ?? availableParallelism()) || 1);
+const workers = Math.max(1, Number(process.argv[2] ?? process.env.RINGFALL_SIM_JOBS ?? defaultSimJobs()) || 1);
 
 const cpu = () => {
   const u = process.cpuUsage();

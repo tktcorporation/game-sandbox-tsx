@@ -1148,3 +1148,13 @@ AI の島の遠征が、拠点のそばに降りられるようにした変更�
 | `npm run bench:ringfall`（既定並列、温まり） | wall 32.4 s、CPU 合計 94.8 s、hash 一致 | — |
 
 `separate` の掃引強化・SoA・bot の経路メモ・`coversNear` の再利用などは、同一ハッシュのまま測ると数％の改善に届かないか、むしろ遅くなったので入れてない。`fill` / `findPath` / `los` の中身は触っていない。
+
+sim / bench の既定ワーカー数を論理スレッド（`os.availableParallelism`）ではなく物理コアにした後（`scripts/ringfall-parallelism.ts`。Linux は `/proc/cpuinfo` の physical id+core id、だめなら `lscpu`、macOS は `sysctl hw.physicalcpu`、取れなければ論理。`RINGFALL_SIM_JOBS` / `--jobs` は従来どおり上書き。この CI/VM は Thread(s) per core=1 なので **物理=論理=4**。続けて測った。ハッシュはすべて `83b7a1d3bcf8`）:
+
+| jobs | 意味 | wall | CPU 合計 | レイド CPU の中央（対 jobs=1） |
+| ---- | ---- | ---: | -------: | -----------------------------: |
+| 1 | 逐次 | 56.7 s | 65.3 s | 1.00× |
+| 4 | 物理（=論理） | **40.0 s**（計測内 33.8 s） | 100.0 s | 1.63× |
+| 5 | 物理+1 | 42.5 s（計測内 36.1 s） | 104.3 s | 2.02× |
+
+壁時計は jobs=4 が最速（対逐次 1.42×）。jobs=5 は過密で遅くなる。この機械では物理と論理が同じなので論理既定との差は出ないが、SMT のある機械では論理数まで上げるとコア共有で伸びやすいので、既定は物理のままにする。
