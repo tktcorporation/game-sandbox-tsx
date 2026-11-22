@@ -229,7 +229,7 @@ export class Hud {
   dropPing(at: { x: number; z: number }) {
     this.ping = { x: at.x, z: at.z, until: performance.now() + 8000 };
     this.map.ping = { x: at.x, z: at.z };
-    this.toast(`${flagIcon(SIDE.own)}ピン`, 1, 1600);
+    this.toast(`${flagIcon(SIDE.own)}印`, 1, 1600);
   }
 
   /** The ways in the base offers, for the raid about to start: the HUD and the map tell the others apart. */

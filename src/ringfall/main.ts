@@ -740,7 +740,7 @@ function campTick() {
 function campFrame() {
   const near = campFrozen() ? null : campSpotAt({ ...state.player.pos, yaw: state.player.yaw });
   const p = hub.profile;
-  const tip = incomingFor(p).length ? "来る遠征あり · 地図の机" : p.raids === 0 ? "車両か門から出撃" : "";
+  const tip = incomingFor(p).length ? "来る遠征 · 地図で固める" : p.raids === 0 ? "車両か門から出撃" : "";
   campView.frame(state, world, dims.w, dims.h, { near, marks: hub.marks(), cash: p.cash.toLocaleString("ja-JP"), touch: touchMode, today: hub.today(), panel: hub.station !== null || departing !== null, tip });
 }
 

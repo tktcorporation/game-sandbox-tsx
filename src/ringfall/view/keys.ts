@@ -63,12 +63,12 @@ export const KEYS: Row[] = [
   { name: "離脱ジャンプ", of: ["ult"], raid: true },
   { name: "回復", of: ["heal"], raid: true },
   { name: "使う", of: ["use"] },
-  { name: "対象切替", of: ["cycleUse"], raid: true },
+  { name: "対象を切り替える", of: ["cycleUse"], raid: true },
   { name: "バッグ", of: ["bag"], raid: true },
   { name: "地図", of: ["map"], raid: true },
   { name: "全体地図", of: ["mapView"], raid: true },
   /** Local look-ping on the map and compass (view only; no sim). */
-  { name: "ピン", of: ["ping"], raid: true },
+  { name: "印を置く", of: ["ping"], raid: true },
   { name: "一時停止", caps: ["Esc"] },
 ];
 

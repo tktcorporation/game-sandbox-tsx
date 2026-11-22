@@ -896,8 +896,8 @@ export class Hub {
       `<h4 class="fac-sub">${next ? "次の段" : "最後の段"}</h4>${gain}${cost}` +
       `${fold}${this.factoryLadder ? ladder(levels, lv) : ""}</div></div>` +
       // Always a path to the signal station: expeditions live there, not on this panel.
-      `<p class="factory-away"><button type="button" class="factory-signal" data-act="open-signal">${flagIcon()}信号所へ` +
-      (squadsAway(p) ? `<span>守り <b>${homeSquads(p)}</b>　遠征 <b>${squadsAway(p)}</b></span>` : `<span>遠征・島の番号</span>`) +
+      `<p class="factory-away"><button type="button" class="factory-signal" data-act="open-signal">${flagIcon()}遠征・島の番号へ` +
+      (squadsAway(p) ? `<span>守り <b>${homeSquads(p)}</b>　遠征 <b>${squadsAway(p)}</b></span>` : `<span>信号所</span>`) +
       `</button></p>`
     );
   }
