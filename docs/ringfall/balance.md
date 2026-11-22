@@ -1140,10 +1140,11 @@ AI の島の遠征が、拠点のそばに降りられるようにした変更�
 
 壁時計は **1.43×**（58.8→41.2 s）。ワーカーごとに世界読み込みとナビの初回構築が入るので CPU 合計は増える。重さの前後比較はこれまでどおり `npm run bench:ringfall -- 1`（または `RINGFALL_SIM_JOBS=1`）で測る。
 
-遠方部隊の `sense` を減衰だけに落とした後（`senseUnseen`。`FAR_THINK.dist` より遠くでは視線が届かないので、コーンと los はもともと空振り。ベンチ並列 `#152` 取り込み後の `origin/main` の上で測った。ハッシュは同じ 83b7a1d3bcf8）:
+遠方部隊の `sense` を減衰だけに落とした後（`senseUnseen`。`FAR_THINK.dist` より遠くでは視線が届かないので、コーンと los はもともと空振り。ベンチ並列 `#152` 取り込み後の `origin/main` の上で、main と交互に 3 組測った。ハッシュは同じ 83b7a1d3bcf8）:
 
 | 何を | 値 | 変える前（交互の main） |
 | ---- | -- | ------------------------ |
-| `npm run bench:ringfall -- 1`（温まり、jobs=1） | （再測） | （再測） |
+| `npm run bench:ringfall -- 1`（温まり、3 組の平均） | CPU 55.7 秒 | 57.2 秒 |
+| `npm run bench:ringfall`（既定並列、温まり） | wall 32.4 s、CPU 合計 94.8 s、hash 一致 | — |
 
 `separate` の掃引強化・SoA・bot の経路メモ・`coversNear` の再利用などは、同一ハッシュのまま測ると数％の改善に届かないか、むしろ遅くなったので入れてない。`fill` / `findPath` / `los` の中身は触っていない。
