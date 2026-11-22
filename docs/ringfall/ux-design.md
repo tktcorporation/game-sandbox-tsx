@@ -2,6 +2,8 @@
 
 プレイヤーが画面を見て「次に何をすればいいか」分かり、触れるほど仕組みが分かるようにするための設計メモ。
 
+**設計方針（先に読む）:** [design-direction.md](design-direction.md) — 拠点育成が主役・非同期の対人・線に溶けるマルチ・名前と操作を増やさない、など判断の基準。
+
 関連: [brief.md](brief.md)、[ui.md](ui.md)、[island-v2.md](island-v2.md)、[multiplayer.md](multiplayer.md)。
 
 実装履歴: Round 1 = PR #167。Round 2 = PR #168。Round 3 = 本枝（簡素化：線に乗らない操作・名詞を削る）。
@@ -11,6 +13,8 @@
 ---
 
 ## 原則（最優先）
+
+設計方針の要約。迷ったら [design-direction.md](design-direction.md) のチェックリストへ。
 
 1. **体験は1本の線:** 出撃 → 島で前線を押す → 持ち帰る → 拠点が育つ。
 2. **各場所のプライマリ操作は1つ。** 同じ場所に覚える動詞を並べない。
