@@ -66,6 +66,34 @@ export const PLAYER = {
 };
 
 /**
+ * How the use key picks one thing among several in reach (sim/world.ts `useTarget`):
+ * lower score wins. Facing the thing cuts its score; the last focus sticks until another
+ * beats it by `stick`; `T` cycles when more than one is in reach.
+ */
+export const USE = {
+  /** Metres of score cut when looking straight at a candidate (0 when behind). */
+  face: 1.1,
+  /** Keep the focused candidate unless another scores this many metres better. */
+  stick: 0.55,
+  /**
+   * Soft priority as metres of score cut (ally is hard-first, not here): a bin beats a
+   * weapon at the same spot, a depot yields to loot, and so on.
+   */
+  prefer: {
+    care: 0.7,
+    bin: 0.45,
+    weapon: 0.3,
+    tool: 0.3,
+    mod: 0.3,
+    swap: 0.25,
+    armor: -0.25,
+    core: 0.15,
+    zip: 0.05,
+    depot: -0.35,
+  } as const,
+};
+
+/**
  * Climbing over a ledge in the air while pushing toward it. Hands reach `reach`
  * above the feet, so a jump clears about 2.9 m: crates, containers, low walls and
  * rock shelves, but not a storey (3.4 m).

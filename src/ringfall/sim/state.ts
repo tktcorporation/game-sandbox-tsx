@@ -786,6 +786,11 @@ export interface State {
   seen: number[];
   /** The cell the player was last marked in, so the map is marked only when they cross into another. */
   cell: number;
+  /**
+   * The use key's sticky focus (`useTarget`): a stable id (`bin:3`, `loot:12`, `core:1`…) so the
+   * prompt and the press stay on one thing while several overlap; null when nothing is in reach.
+   */
+  useFocus: string | null;
   events: GameEvent[];
   stats: Stats;
 }
@@ -803,6 +808,11 @@ export interface Input {
   tactical: boolean;
   ult: boolean;
   interact: boolean;
+  /**
+   * Cycle the use key's sticky focus among candidates in reach (`USE`, `useTarget`): edge-triggered
+   * on the keyboard (`cycleUse` in view/keys.ts).
+   */
+  cycleUse: boolean;
   swap: boolean;
   slot: number; // -1 none, 0 / 1 select
   /** Use the item that fits best: shield first when it is lower, big items for big gaps. */
@@ -835,6 +845,7 @@ export const idleInput = (): Input => ({
   tactical: false,
   ult: false,
   interact: false,
+  cycleUse: false,
   swap: false,
   slot: -1,
   heal: false,
@@ -1109,6 +1120,7 @@ export function newRun(seed = 1, kit: Kit = starterKit(), region: RegionId = HOM
     battle: null,
     seen: start.seen ? decodeSeen(start.seen) : emptySeen(),
     cell: -1,
+    useFocus: null,
     events: [],
     stats: { kills: 0, damage: 0, shots: 0, hits: 0, crits: 0, flankHits: 0, titanHits: 0, downs: 0, wipes: 0, cleared: [], allyDamage: 0, allyKills: 0, allyDowns: 0, allyRescues: 0, allyHelped: 0, killsBy: { drone: 0, grunt: 0, charger: 0, heavy: 0, titan: 0 }, vaults: [], wiped: [], crewsIn: 0, crewsDown: 0, crewsOut: 0, crewBins: 0, captured: [] },
   };

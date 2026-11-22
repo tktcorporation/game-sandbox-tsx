@@ -24,6 +24,8 @@ export const BIND = {
   ult: ["KeyZ"],
   heal: ["KeyH"],
   use: ["KeyE"],
+  /** Cycle the use key's focus when several interactables overlap (`USE` in config.ts). */
+  cycleUse: ["KeyT"],
   bag: ["Tab"],
   map: ["KeyM"],
   mapView: ["KeyN"],
@@ -59,6 +61,7 @@ export const KEYS: Row[] = [
   { name: "離脱ジャンプ", of: ["ult"], raid: true },
   { name: "回復", of: ["heal"], raid: true },
   { name: "調べる・拾う", of: ["use"] },
+  { name: "対象切替", of: ["cycleUse"], raid: true },
   { name: "バッグ", of: ["bag"], raid: true },
   { name: "地図", of: ["map"], raid: true },
   { name: "全体地図", of: ["mapView"], raid: true },

@@ -260,6 +260,9 @@ export class World {
   /** The objective's beacon (`setBeacon()`), and where it stands; null for none. */
   private beacon: THREE.Mesh;
   private beaconAt: { x: number; y: number; z: number } | null = null;
+  /** The use key's focused target (`setUseMark()`): a ring on the ground under it. */
+  private useMark: THREE.Mesh;
+  private useMarkAt: { x: number; y: number; z: number } | null = null;
   /** The craft of each pickup that is called down from the air (all but the boat), by exit id. */
   private craft = new Map<string, THREE.Group>();
   private extractRings: THREE.Mesh[] = [];
@@ -445,6 +448,11 @@ export class World {
     this.beacon = buildBeacon();
     this.beacon.visible = false;
     this.scene.add(this.beacon);
+    // Soft cyan ring under the focused interactable: one mark for one prompt.
+    this.useMark = new THREE.Mesh(new THREE.RingGeometry(0.55, 0.78, 28), glow(PAL.friendEye, 0.85));
+    this.useMark.rotation.x = -Math.PI / 2;
+    this.useMark.visible = false;
+    this.scene.add(this.useMark);
     this.scene.add(this.battleView.group);
 
     for (const x of EXTRACTS) {
@@ -1837,6 +1845,13 @@ export class World {
       const near = 1 - Math.max(0, Math.min(1, (wave.at - s.time) / FRONT.siege.warn));
       (this.siegeBeam.material as THREE.MeshBasicMaterial).opacity = (0.34 + 0.3 * near) * (0.75 + 0.25 * Math.sin(this.time * (5 + 9 * near)));
     }
+    // --- the use key's focused target
+    this.useMark.visible = !!this.useMarkAt && s.phase === "play";
+    if (this.useMarkAt) {
+      this.useMark.position.set(this.useMarkAt.x, this.useMarkAt.y + 0.08, this.useMarkAt.z);
+      const mat = this.useMark.material as THREE.MeshBasicMaterial;
+      mat.opacity = 0.45 + 0.25 * Math.sin(this.time * 3.2);
+    }
     // --- the objective's beacon
     this.beacon.visible = !!this.beaconAt && s.phase === "play";
     if (this.beaconAt) {
@@ -2058,9 +2073,15 @@ export class World {
     this.beaconAt = at;
   }
 
+  /** Stands the use key's focus ring at `at`, or takes it down. */
+  setUseMark(at: { x: number; y: number; z: number } | null) {
+    this.useMarkAt = at;
+  }
+
   /** Drop everything that belongs to a run, before starting another. */
   reset() {
     this.beaconAt = null;
+    this.useMarkAt = null;
     for (const v of this.enemies.values()) {
       this.scene.remove(v.m.root);
       if (v.lane) this.scene.remove(v.lane);

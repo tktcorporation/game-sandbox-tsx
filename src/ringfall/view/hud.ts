@@ -11,7 +11,7 @@ import { DEPOTS, entryOf, EXTRACTS, nodeIndex, NODES, POIS, poiIndex, regionHere
 import { routeBefore } from "../sim/routes";
 import { islandHolds } from "../meta/island";
 import { rivalHold, rivalOf, type PoiHold } from "../sim/holds";
-import { bagLoad, canOpen, crewsInSight, depotBlocked, depotInReach, extractHere, extractReady, homeReady, makeRoom, poiAt, roomForTool, searchFor, useTarget } from "../sim/world";
+import { bagLoad, canOpen, crewsInSight, depotBlocked, depotInReach, extractHere, extractReady, homeReady, makeRoom, poiAt, roomForTool, searchFor, useCandCount, useFocusMark, useTarget } from "../sim/world";
 import { healTime, tacticalCooldown } from "../sim/player";
 import { helpTime, reviveTime } from "../sim/ally";
 import { callLeft, debrisBin, enemyHp, enemyShield, weakY, type GameEvent, type State, type Vec3 } from "../sim/state";
@@ -569,6 +569,8 @@ export class Hud {
     if (this.lastStep && key !== this.lastStep && s.phase === "play" && step && this.lastStep.split("|")[0] === obj.title) this.toast(`次：${step.label}`, 3, 2600);
     this.lastStep = key;
     view.setBeacon(s.phase === "play" ? (step?.at ?? null) : null);
+    // The use key's focused target: one ring in the world, matching the prompt.
+    view.setUseMark(s.phase === "play" ? useFocusMark(s) : null);
     this.compassMark(s, step?.at ?? null);
     // The POI the player is in, after its core's mark: the side that holds it, padlocked while it is
     // not on the front; a tick once its garrison is cleared, and the capture's seconds while it runs.
@@ -599,7 +601,9 @@ export class Hud {
     if (s.event) setHtml(oe, raidEventLine(s));
     const bagCells = this.bagCells(p);
     this.bag.frame(s, dt, bagCells);
-    setHtml($("obj-bag"), `バッグ ${bagCells}${bagLoad(p)}/${BAG.slots}<span class="worth">・回収 ${haulValue(s)}</span>`);
+    // Worth only once something is carried: an empty "回収 0" is noise on a fresh spawn.
+    const worth = haulValue(s);
+    setHtml($("obj-bag"), `バッグ ${bagCells}${bagLoad(p)}/${BAG.slots}${worth ? `<span class="worth">・回収 ${worth}</span>` : ""}`);
     // The raid's deadline is the battle's end (past it the raid ends as a wipe), as a clock; the next
     // reinforcements as their mark and seconds; a raid above 強度 0 says so first.
     const left = s.battle ? Math.max(0, s.battle.end - s.time) : null;
@@ -939,10 +943,20 @@ export class Hud {
         this.awEls.delete(id);
       }
 
-    // One line under the objective: how hidden the player is right now, by the eye's colour and a word.
+    // One line under the objective: how hidden the player is, only once a robot has noticed them.
+    // "未発見" while calm is noise; empty means calm (docs/ringfall/ux-design.md).
     const st = $("obj-stealth");
-    const word = s.phase !== "play" || !near ? "" : worst === 3 && !tracked && anyLost ? "見失わせた" : worst === 3 ? "交戦" : worst === 2 ? "警戒" : worst === 1 ? "見られている" : "未発見";
-    setHtml(st, word ? `${eyeIcon("currentColor", worst === 0 || (worst === 3 && !tracked && anyLost))}${word}` : "");
+    const word =
+      s.phase !== "play" || !near || worst === 0
+        ? ""
+        : worst === 3 && !tracked && anyLost
+          ? "見失わせた"
+          : worst === 3
+            ? "交戦"
+            : worst === 2
+              ? "警戒"
+              : "見られている";
+    setHtml(st, word ? `${eyeIcon("currentColor", worst === 3 && !tracked && anyLost)}${word}` : "");
     st.className = worst === 3 && !tracked && anyLost ? "lost" : worst === 3 ? "engaged" : worst === 2 ? "alert" : "";
   }
 
@@ -1116,6 +1130,9 @@ export class Hud {
     }
     // The use key comes first: picking the teammate up or opening a bin works inside an extraction point too.
     const t = useTarget(s);
+    // When several overlap, T cycles the sticky focus; one prompt, one mark (docs/ringfall/ux-design.md).
+    const many = !!t && useCandCount(s) > 1 && !isTouch();
+    const tip = (html: string) => (many ? `${html}<i class="cycle"><kbd>T</kbd></i>` : html);
     const x = t ? null : extractHere(s);
     if (x) {
       if (x.call && callLeft(s, x.id) > 0) return `${exitIcon()}${x.short} ${clockIcon()}<b>${Math.ceil(callLeft(s, x.id))}</b>`;
@@ -1147,61 +1164,65 @@ export class Hud {
     if (t.kind === "tool") {
       const k = t.loot.tool!;
       const out = (roomForTool(p, k) ?? []).map((i) => VALUABLES[p.haul[i]].label);
-      return `${key("E")}<span class="r" style="color:${RARITY_CSS[3]}">${TOOLS[k].label}</span> ${bagIcon()}${TOOLS[k].size}${struck(out)}`;
+      return tip(`${key("E")}<span class="r" style="color:${RARITY_CSS[3]}">${TOOLS[k].label}</span> ${bagIcon()}${TOOLS[k].size}${struck(out)}`);
     }
     if (t.kind === "mod") {
       const k = t.loot.mod!;
       const off = p.mods.length >= MOD.slots ? p.mods[0] : null;
       // One of a core's parts: what it does is on the prompt, since taking it gives up the others.
       const note = t.loot.choice !== undefined ? ` <small>${modGist(k)}</small>` : "";
-      return `${key("E")}<span class="r" style="color:${UI.r2Text}">${MODS[k].name}</span>${note}${off ? struck([MODS[off].name]) : ""}`;
+      return tip(`${key("E")}<span class="r" style="color:${UI.r2Text}">${MODS[k].name}</span>${note}${off ? struck([MODS[off].name]) : ""}`);
     }
-    if (t.kind === "ally") return s.ally.helped > 0 ? `${reviveIcon()}${ALLY.name} <b>${Math.floor((s.ally.helped / helpTime(p)) * 100)}%</b>` : `${key("E")}${reviveIcon()}${ALLY.name}`;
+    if (t.kind === "ally") {
+      return tip(s.ally.helped > 0 ? `${reviveIcon()}${ALLY.name} <b>${Math.floor((s.ally.helped / helpTime(p)) * 100)}%</b>` : `${key("E")}${reviveIcon()}${ALLY.name}`);
+    }
     if (t.kind === "bin") {
       const q = p.search;
       const b = s.bins[t.index];
       const what = b.vault ? "保管庫" : "補給箱";
-      if (q?.bin === t.index) return `${what} <b>${Math.floor((q.t / searchFor(p, b)) * 100)}%</b>`;
+      if (q?.bin === t.index) return tip(`${what} <b>${Math.floor((q.t / searchFor(p, b)) * 100)}%</b>`);
       // Shut: whose key opens it, and the POI whose bins hold that key.
-      if (!canOpen(s, b)) return `${what} ${lockIcon()}${keyIcon(RARITY_CSS[3])}${esc(POIS[b.poi].name)} <small>▸ ${esc(keySource(b.poi))}の補給箱</small>`;
-      return `${key("E")}${what} ${noiseIcon()}`;
+      if (!canOpen(s, b)) return tip(`${what} ${lockIcon()}${keyIcon(RARITY_CSS[3])}${esc(POIS[b.poi].name)} <small>▸ ${esc(keySource(b.poi))}の補給箱</small>`);
+      return tip(`${key("E")}${what} ${noiseIcon()}`);
     }
     if (t.kind === "swap") {
       const v = t.loot.valuable!;
       const out = (makeRoom(p.haul, v, p.tools, p.records.length) ?? []).map((i) => VALUABLES[p.haul[i]].label);
-      return `${key("E")}${esc(VALUABLES[v].label)}${struck(out)}`;
+      return tip(`${key("E")}${esc(VALUABLES[v].label)}${struck(out)}`);
     }
-    if (t.kind === "care") return `${key("E")}補給ポッド`;
+    if (t.kind === "care") return tip(`${key("E")}補給ポッド`);
     if (t.kind === "depot") {
-      if (!p.haul.length && !p.tools.length && !p.records.length) return `${key("E")}${depotIcon()}切り上げる ${clockIcon()}${DEPOT.leave} 秒`;
+      if (!p.haul.length && !p.tools.length && !p.records.length) return tip(`${key("E")}${depotIcon()}切り上げる ${clockIcon()}${DEPOT.leave} 秒`);
       const value = p.haul.reduce((n, k) => n + VALUABLES[k].value, 0);
-      return `${key("E")}${depotIcon()}${upIcon()}${p.haul.length + p.tools.length + p.records.length} 点・${value}`;
+      return tip(`${key("E")}${depotIcon()}${upIcon()}${p.haul.length + p.tools.length + p.records.length} 点・${value}`);
     }
-    if (t.kind === "armor") return `${key("E")}<span class="r" style="color:${RARITY_CSS[t.loot.rarity]}">アーマー Lv${t.loot.rarity}</span>${struck([`Lv${p.armor}`])}`;
+    if (t.kind === "armor") return tip(`${key("E")}<span class="r" style="color:${RARITY_CSS[t.loot.rarity]}">アーマー Lv${t.loot.rarity}</span>${struck([`Lv${p.armor}`])}`);
     if (t.kind === "core") {
       const n = NODES[t.node];
       // A node of the player's marked for the night: the use key fortifies it (the moon turns from red to blue).
       if (s.nodes[t.node] === "freed") {
-        if (s.fortify?.node === t.node) return `${coreIcon(SIDE.own)}${nightIcon(UI.ownBright)}${esc(n.name)} <b class="${s.fortify.held ? "" : "paused"}">${Math.floor((s.fortify.t / FORTIFY.time) * 100)}%</b>`;
+        if (s.fortify?.node === t.node) {
+          return tip(`${coreIcon(SIDE.own)}${nightIcon(UI.ownBright)}${esc(n.name)} <b class="${s.fortify.held ? "" : "paused"}">${Math.floor((s.fortify.t / FORTIFY.time) * 100)}%</b>`);
+        }
         // Marked by another player's expedition and not by the night: their colour's flag in the moon's place.
         const sent = !s.battle?.targets.includes(t.node);
-        return `${key("E")}${coreIcon(SIDE.own)}${sent ? flagIcon(SIDE.rival) : nightIcon(UI.alert)}${esc(n.name)}`;
+        return tip(`${key("E")}${coreIcon(SIDE.own)}${sent ? flagIcon(SIDE.rival) : nightIcon(UI.alert)}${esc(n.name)}`);
       }
       const c = foeSide(s.nodes[t.node]);
-      if (!capturable(s, t.node)) return `${coreIcon(c, true)}${esc(n.name)} <small>▸ 先に${esc(shieldedBy(s.nodes, t.node))}</small>`;
-      if (s.capture?.node === t.node) return `${coreIcon(c)}${esc(n.name)} <b>${Math.floor((s.capture.t / FRONT.capture) * 100)}%</b>`;
-      return `${key("E")}${coreIcon(c)}${esc(n.name)} ${noiseIcon()}`;
+      if (!capturable(s, t.node)) return tip(`${coreIcon(c, true)}${esc(n.name)} <small>▸ 先に${esc(shieldedBy(s.nodes, t.node))}</small>`);
+      if (s.capture?.node === t.node) return tip(`${coreIcon(c)}${esc(n.name)} <b>${Math.floor((s.capture.t / FRONT.capture) * 100)}%</b>`);
+      return tip(`${key("E")}${coreIcon(c)}${esc(n.name)} ${noiseIcon()}`);
     }
     if (t.kind === "zip") {
       // The way the rider would go: the end the player faces, and how far along the cable it is.
       const l = ZIPS[t.line];
       const at = zipPoint(l, t.at);
       const toB = Math.sin(p.yaw) * at.dx - Math.cos(p.yaw) * at.dz >= 0;
-      return `${key("E")}${zipIcon(l.fixed ? UI.mist : undefined)}${esc(zipEndName(toB ? l.b : l.a))} <b>${Math.round(toB ? l.length - t.at : t.at)}</b> m`;
+      return tip(`${key("E")}${zipIcon(l.fixed ? UI.mist : undefined)}${esc(zipEndName(toB ? l.b : l.a))} <b>${Math.round(toB ? l.length - t.at : t.at)}</b> m`);
     }
     const wl = t.loot;
     const swap = p.weapons.includes(null) ? "" : struck([WEAPONS[p.weapons[p.slot]!.kind].name]);
-    return `${key("E")}<span class="r" style="color:${RARITY_CSS[wl.rarity]}">${WEAPONS[wl.weapon!.kind].name}</span> ${RARITY.names[wl.rarity]}${swap}`;
+    return tip(`${key("E")}<span class="r" style="color:${RARITY_CSS[wl.rarity]}">${WEAPONS[wl.weapon!.kind].name}</span> ${RARITY.names[wl.rarity]}${swap}`);
   }
 
   /**

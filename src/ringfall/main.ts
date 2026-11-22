@@ -247,6 +247,7 @@ function readInput(): Input {
   inp.tactical = pressed("tactical");
   inp.ult = pressed("ult");
   inp.interact = pressed("use");
+  inp.cycleUse = pressed("cycleUse");
   inp.heal = pressed("heal");
   inp.swap = pressed("swap");
   inp.slot = pressed("slot1") ? 0 : pressed("slot2") ? 1 : -1;
@@ -717,7 +718,7 @@ function ride() {
 
 /** The use key in the camp: the panel of the station in reach, or the truck. */
 function useInCamp() {
-  const spot = campSpotAt(state.player.pos);
+  const spot = campSpotAt({ ...state.player.pos, yaw: state.player.yaw });
   if (!spot) return;
   if (spot.id === "vehicle") askDepart(false);
   else openPanel(spot.id);
@@ -736,7 +737,7 @@ function campTick() {
 }
 
 function campFrame() {
-  const near = campFrozen() ? null : campSpotAt(state.player.pos);
+  const near = campFrozen() ? null : campSpotAt({ ...state.player.pos, yaw: state.player.yaw });
   campView.frame(state, world, dims.w, dims.h, { near, marks: hub.marks(), cash: hub.profile.cash.toLocaleString("ja-JP"), touch: touchMode, today: hub.today(), panel: hub.station !== null || departing !== null });
 }
 
@@ -1034,7 +1035,7 @@ window.render_game_to_text = () => {
   const p = s.player;
   return JSON.stringify({
     screen: running ? "game" : !$("results").hidden ? "results" : camping ? "camp" : "title",
-    camp: camping ? { panel: hub.station, depart: departing && { walk: departing.walk, ...hub.departure(), start: hub.startPoints().find((q) => q.on) ?? null, starts: hub.startPoints().map((q) => ({ kind: q.kind, id: q.id, region: q.region, open: q.open, over: q.over })), refused: hub.rideRefused(), hint: hub.departHint() }, today: hub.today(), near: campSpotAt(p.pos)?.id ?? null, weapons: hub.pickedWeapons(), ride: { to: hub.rideTo(), refused: hub.rideRefused() }, marks: hub.marks(), fading, board: hub.profile.board.contracts.map((c) => ({ id: c.id, t: c.t })), taken: hub.profile.taken, story: currentStory(hub.profile.records)?.id ?? null } : null,
+    camp: camping ? { panel: hub.station, depart: departing && { walk: departing.walk, ...hub.departure(), start: hub.startPoints().find((q) => q.on) ?? null, starts: hub.startPoints().map((q) => ({ kind: q.kind, id: q.id, region: q.region, open: q.open, over: q.over })), refused: hub.rideRefused(), hint: hub.departHint() }, today: hub.today(), near: campSpotAt({ ...p.pos, yaw: p.yaw })?.id ?? null, weapons: hub.pickedWeapons(), ride: { to: hub.rideTo(), refused: hub.rideRefused() }, marks: hub.marks(), fading, board: hub.profile.board.contracts.map((c) => ({ id: c.id, t: c.t })), taken: hub.profile.taken, story: currentStory(hub.profile.records)?.id ?? null } : null,
     profile: { events: hub.profile.events, cash: hub.profile.cash, stash: hub.profile.stash.length, raids: hub.profile.raids, hideout: hub.profile.hideout, seed: hub.profile.seed, routes: hub.profile.routes, entries: hub.profile.entries, day: hub.profile.day, poiState: hub.profile.poiState, threat: hub.profile.threat, known: hub.profile.known, freedAt: hub.profile.freedAt, factory: hub.profile.factory },
     boost: { ...s.boost, name: POIS[s.boost.poi].name },
     strength: s.strength,
