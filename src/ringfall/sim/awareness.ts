@@ -206,6 +206,17 @@ function headedFor(s: State): Point | null {
 }
 
 /**
+ * Detection decay as `sense` applies over `dt` seconds when the robot does not see the player.
+ * Used for squads past `FAR_THINK.dist` (beyond every robot's sight): the cone and los never
+ * fire there, so only this decay remains, and the same numbers as calling `sense` each tick.
+ */
+export function senseUnseen(s: State, e: Enemy, dt: number) {
+  if (s.squads[e.squad]?.retreat !== undefined) return;
+  if (visibleNow(s)) e.finding = Math.max(0, e.finding - dt / AWARE.findKeep);
+  if (e.aware !== "engaged") e.detect = Math.max(0, e.detect - AWARE.decay * dt);
+}
+
+/**
  * Update one robot's view of the player. Returns true if it sees the player now.
  * Idle and alert robots fill their detection; at full the squad engages.
  */
