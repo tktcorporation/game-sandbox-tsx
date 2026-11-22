@@ -513,9 +513,16 @@ export class Hud {
         );
         break;
       }
-      case "coreTaken":
-        this.toast(`${coreIcon(SIDE.own)}制圧した · ${esc(NODES[e.node].name)}`, 1, 5000);
+      case "coreTaken": {
+        // e.node is a NODES index; s.hold is per POI. Rival at raid start → loot in 倉庫へ届いた.
+        const holdAt = s.hold ? rivalOf(s.hold[poiIndex(NODES[e.node].id)] ?? "held") !== null : false;
+        this.toast(
+          `${coreIcon(SIDE.own)}制圧した · ${esc(NODES[e.node].name)}${holdAt ? `<span class="toast-sub">倉庫へ届く</span>` : ""}`,
+          1,
+          5000,
+        );
         break;
+      }
       case "counter":
         // The enemy sets off to take back a node: its landing's mark and the node's blue core.
         this.toast(`${reinforceIcon()}${coreIcon(SIDE.own)}${NODES[e.node].name}`, 0, 4000);
@@ -1608,9 +1615,20 @@ export class Hud {
     const after = settled.profile;
     const wantB = wanted(before);
     const bits: string[] = [];
+    // Only what actually entered the stash (Codex P2): stash after − before, not Settlement.home (which still lists sold overflow).
+    const countVal = (p: Profile) => {
+      const m = new Map<ValuableKind, number>();
+      for (const i of p.stash) if (i.t === "valuable") m.set(i.kind, (m.get(i.kind) ?? 0) + 1);
+      return m;
+    };
+    const beforeN = countVal(before);
+    const afterN = countVal(after);
     const kinds = new Map<ValuableKind, number>();
-    for (const i of settled.home) if (i.t === "valuable") kinds.set(i.kind, (kinds.get(i.kind) ?? 0) + 1);
-    for (const [k, n] of kinds) {
+    for (const [k, n] of afterN) {
+      const d = n - (beforeN.get(k) ?? 0);
+      if (d > 0) kinds.set(k, d);
+    }
+    for (const [k, kept] of kinds) {
       if (wantB[k] <= 0) continue;
       const uses: string[] = [];
       for (const m of MODULES) {
@@ -1623,17 +1641,20 @@ export class Hud {
       else if (factoryNeeded(before)[k] > 0) uses.push(`${factoryIcon()}工場<b>${factoryNeeded(before)[k]}</b>`);
       if (!uses.length) continue;
       const done = wanted(after)[k] <= 0;
-      bits.push(`<span class="growth-item${done ? " done" : ""}"><span class="chip" style="--c:${itemColor({ t: "valuable", kind: k })}">${esc(VALUABLES[k].label)}${n > 1 ? `<b>${n}</b>` : ""}</span>${uses.join("")}${done ? checkIcon() : ""}</span>`);
+      bits.push(`<span class="growth-item${done ? " done" : ""}"><span class="chip" style="--c:${itemColor({ t: "valuable", kind: k })}">${esc(VALUABLES[k].label)}${kept > 1 ? `<b>${kept}</b>` : ""}</span>${uses.join("")}${done ? checkIcon() : ""}</span>`);
     }
     const ready: string[] = [];
     if (canBuildFactory(after) && !canBuildFactory(before)) ready.push(`${factoryIcon()}工場 · 次の段を上げられる`);
     for (const m of MODULES) {
       if (canBuild(after, m) && !canBuild(before, m)) ready.push(`${hideoutIcon()}${esc(HIDEOUT[m].name)} · 次の段を上げられる`);
     }
-    if (!bits.length && !ready.length && !settled.home.length) return "";
+    const seized = (settled.seized ?? [])
+      .map((q) => `<span class="growth-ready">${coreIcon(SIDE.own)}制圧した · ${esc(POIS[poiIndex(q.poi)].name)}から${q.kinds.map((k) => esc(VALUABLES[k].label)).join("・")}</span>`)
+      .join("");
+    if (!bits.length && !ready.length && !seized && !kinds.size) return "";
     const stash = `<span>${stashIcon()}倉庫 ${stashUsed(after)} / ${stashCap(after.hideout)}</span>`;
     return (
-      `<h3>倉庫へ届いた</h3><p class="growth">${bits.join("") || "<span>拠点の材料ではない</span>"}${stash}${ready.map((r) => `<span class="growth-ready">${r}</span>`).join("")}</p>`
+      `<h3>倉庫へ届いた</h3><p class="growth">${bits.join("") || (seized || kinds.size ? "" : "<span>拠点の材料ではない</span>")}${seized}${stash}${ready.map((r) => `<span class="growth-ready">${r}</span>`).join("")}</p>`
     );
   }
 }

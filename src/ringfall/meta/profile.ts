@@ -533,6 +533,11 @@ export interface Settlement {
   threat: number;
   /** The mod parts worn when the raid ended, which may be analysed (`analyse()`): none unless the player got off alive. */
   analysable: ModKind[];
+  /**
+   * CoC-style raid loot from 制圧 of another player's nodes this raid: valuables that went into
+   * `home` from that node's 中継ボックス stock (or a small reserve when empty). View-only detail.
+   */
+  seized?: { poi: PoiId; kinds: ValuableKind[] }[];
 }
 
 /** Mod kinds as a known list: real ones only, once each, in `MOD_KINDS` order, always with `MOD_START`. */
@@ -639,6 +644,11 @@ export function settle(p: Profile, s: State): Settlement {
     for (const n of kept.at) fetched.push({ kind: pl.haul[n], from: origins[n] });
     records.push(...kept.records);
   }
+  // CoC-style: 制圧 of another player's node seizes that 中継ボックス's 島の守り into the haul.
+  // Only when the raid started with island holds (gate / no-island raids never hit this).
+  const seized = seizeRivalLoot(p, s);
+  if (seized.ids.length) s.takenParcels = [...(s.takenParcels ?? []), ...seized.ids];
+  for (const it of seized.items) home.push(it);
   // Each tool home opens the first of its routes still closed, and is spent on it.
   const opened: RouteId[] = [];
   const spent = new Set<Item>();
@@ -705,7 +715,69 @@ export function settle(p: Profile, s: State): Settlement {
   const started = { poiState: Object.fromEntries(POIS.map((o, i) => [o.id, { state: s.hold?.[i] ?? "held" }])) as Island };
   const fresh = { ...claimed.profile, stash: withStarters(claimed.profile.stash), taken: null, board: makeBoard(claimed.profile) };
   fresh.retaken = addRetaken(p.retaken, retakenNodes(started, fresh, capturedIds(s)));
-  return { profile: fresh, home, opened, learned, quests: [...finished, ...claimed.quests], sold: [...sold, ...claimed.sold], soldFor: soldFor + claimed.soldFor, day: p.day, ...change, income, ...(liberated && { liberated }), ...(spoils > 0 && { spoils }), ...(away > 0 && { awayIncome: away }), event: s.event ?? null, contract, story: told, threat, analysable: s.outcome === "extracted" ? [...(pl.mods ?? [])] : [] };
+  return {
+    profile: fresh,
+    home,
+    opened,
+    learned,
+    quests: [...finished, ...claimed.quests],
+    sold: [...sold, ...claimed.sold],
+    soldFor: soldFor + claimed.soldFor,
+    day: p.day,
+    ...change,
+    income,
+    ...(liberated && { liberated }),
+    ...(spoils > 0 && { spoils }),
+    ...(away > 0 && { awayIncome: away }),
+    event: s.event ?? null,
+    contract,
+    story: told,
+    threat,
+    analysable: s.outcome === "extracted" ? [...(pl.mods ?? [])] : [],
+    ...(seized.at.length ? { seized: seized.at } : {}),
+  };
+}
+
+/**
+ * Raid loot from 制圧 of rival-held nodes (CoC-style): the 島の守り stock at that node's
+ * 中継ボックス comes into the warehouse. With none stacked, a small reserve from the node's
+ * seed still arrives so the capture feeds 拠点が育つ. No new verb — same 核 as enemy nodes.
+ * Empty when the raid had no island / no rivals (sim gate path unchanged).
+ */
+export function seizeRivalLoot(p: Pick<Profile, "parcels" | "seed">, s: Pick<State, "hold" | "stats" | "seed">): { items: Item[]; ids: number[]; at: { poi: PoiId; kinds: ValuableKind[] }[] } {
+  const items: Item[] = [];
+  const ids: number[] = [];
+  const at: { poi: PoiId; kinds: ValuableKind[] }[] = [];
+  const hold = s.hold;
+  if (!hold) return { items, ids, at };
+  const taken = new Set<number>();
+  for (const id of capturedIds(s)) {
+    const i = poiIndex(id);
+    if (i < 0 || rivalOf(hold[i] ?? "held") === null) continue;
+    const kinds: ValuableKind[] = [];
+    for (const q of p.parcels ?? []) {
+      if (q.poi !== id || taken.has(q.id)) continue;
+      taken.add(q.id);
+      ids.push(q.id);
+      items.push({ t: "valuable", kind: q.kind });
+      kinds.push(q.kind);
+    }
+    // Empty depot: a single common material so 制圧 still grows the base (deterministic).
+    if (!kinds.length) {
+      const kind = raidReserveKind(s.seed ?? p.seed, id);
+      items.push({ t: "valuable", kind });
+      kinds.push(kind);
+    }
+    at.push({ poi: id, kinds });
+  }
+  return { items, ids, at };
+}
+
+/** A common material for an empty rival 中継ボックス, hashed from the raid seed and the POI. */
+function raidReserveKind(seed: number, poi: PoiId): ValuableKind {
+  const pool: ValuableKind[] = ["parts", "fuse", "board"];
+  const h = (Math.imul(seed ^ 0x9e3779b9, poiIndex(poi) + 1) >>> 0) % pool.length;
+  return pool[h]!;
 }
 
 /** Finishes and pays every offered build quest the hideout already meets, and those they open. */
