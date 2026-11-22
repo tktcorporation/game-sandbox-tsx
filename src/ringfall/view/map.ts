@@ -718,7 +718,10 @@ export class IslandMap {
   private fogImage(seen: number[]): HTMLCanvasElement {
     const { cols, rows } = exploreSize();
     const c = (this.fog ??= Object.assign(document.createElement("canvas"), { width: cols, height: rows }));
-    const count = seen.reduce((n, v) => n + v, 0);
+    // Cells are only ever uncovered, so the count of seen cells says whether the fog changed —
+    // without scanning the whole grid for a sum when nothing moved.
+    let count = 0;
+    for (let i = 0; i < seen.length; i++) count += seen[i];
     if (count === this.fogSeen) return c;
     this.fogSeen = count;
     const g = c.getContext("2d")!;
@@ -815,11 +818,13 @@ export class IslandMap {
     // The page sizes the map by this, so it keeps the shape of what it shows.
     if (aspect !== this.aspect) this.canvas.style.setProperty("--map-aspect", `${(this.aspect = aspect)}`);
     // Drawn at the size it is shown, so names stay readable however tall the world is.
+    // Reassigning canvas.width clears the buffer and reallocates GPU memory: skip when unchanged
+    // (the minimap redraws a few times a second and was paying this every time).
     const dpr = Math.min(devicePixelRatio || 1, 2);
     const w = Math.round((this.canvas.clientWidth || this.width) * dpr);
     const h = Math.round((this.canvas.clientHeight || this.height) * dpr);
-    this.canvas.width = w;
-    this.canvas.height = h;
+    if (this.canvas.width !== w) this.canvas.width = w;
+    if (this.canvas.height !== h) this.canvas.height = h;
     // Screen pixels per metre, the view centred in the canvas (whose shape follows it a frame late when it changes).
     const m = Math.min(w / (v.x1 - v.x0), h / (v.z1 - v.z0));
     const ox = (w - (v.x1 - v.x0) * m) / 2 - (v.x0 - WORLD.x0) * m;
@@ -854,11 +859,40 @@ export class IslandMap {
       g.restore();
     }
     // The ziplines up, thin blue lines along their cables (the quarry's lifts in grey): the
-    // network the nodes held join.
+    // network the nodes held join. The minimap only strokes cables that cross its view (a long
+    // span can pass through without either endpoint inside the square).
+    const segHits = (a: { x: number; z: number }, b: { x: number; z: number }) => {
+      // Liang–Barsky clip of the segment against the view: any surviving parameter range means it crosses.
+      let t0 = 0;
+      let t1 = 1;
+      const dx = b.x - a.x;
+      const dz = b.z - a.z;
+      const clip = (p: number, q: number) => {
+        if (p === 0) return q >= 0;
+        const r = q / p;
+        if (p < 0) {
+          if (r > t1) return false;
+          if (r > t0) t0 = r;
+        } else {
+          if (r < t0) return false;
+          if (r < t1) t1 = r;
+        }
+        return true;
+      };
+      return clip(-dx, a.x - v.x0) && clip(dx, v.x1 - a.x) && clip(-dz, a.z - v.z0) && clip(dz, v.z1 - a.z) && t0 <= t1;
+    };
     g.save();
     g.lineCap = "round";
     ZIPS.forEach((l, i) => {
       if (!zipUp({ nodes: s.nodes ?? [] }, i)) return;
+      if (this.mini) {
+        let hit = false;
+        for (let k = 1; k < l.pts.length; k++) if (segHits(l.pts[k - 1], l.pts[k])) {
+          hit = true;
+          break;
+        }
+        if (!hit) return;
+      }
       g.strokeStyle = l.fixed ? alpha(UI.mist, 0.9) : UI.ownLight;
       g.lineWidth = (l.fixed ? 1.2 : 1.6) * dpr;
       g.beginPath();

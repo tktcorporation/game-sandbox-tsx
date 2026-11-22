@@ -522,8 +522,9 @@ export class Hud {
   frame(s: State, view: World, dt: number, w: number, h: number) {
     const p = s.player;
     // The minimap, while the map is shut and the corner shows it (offsetParent is null while display: none).
+    // About 3 Hz is enough to track the player; redrawing the 2D island more often only costs the main thread.
     if (!this.mapOpen && (this.miniT -= dt) <= 0 && $("minimap").offsetParent) {
-      this.miniT = 0.2;
+      this.miniT = 0.35;
       this.minimap.draw({ ...s, names: [] });
     }
     if (this.mapOpen) {

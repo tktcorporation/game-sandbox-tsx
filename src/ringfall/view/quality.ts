@@ -45,7 +45,9 @@ export interface Quality {
 }
 
 export const QUALITY: Record<Tier, Quality> = {
-  high: { maxRatio: 2, minRatio: 1, antialias: true, shadowSize: 2048, shadowSpan: 55, shadowHz: Infinity, fogNear: 160, fogFar: 420, thingsFar: 220, streamMs: 6, trimFar: 150, scatterFar: 34 },
+  // Shadows at 60 Hz: on a 60 Hz display this matches every frame; on a faster display it caps the
+  // shadow pass so the GPU is not redrawing the map 120 times a second for no visible gain.
+  high: { maxRatio: 2, minRatio: 1, antialias: true, shadowSize: 2048, shadowSpan: 55, shadowHz: 60, fogNear: 160, fogFar: 420, thingsFar: 220, streamMs: 6, trimFar: 150, scatterFar: 34 },
   medium: { maxRatio: 1.5, minRatio: 0.75, antialias: false, shadowSize: 1024, shadowSpan: 50, shadowHz: 30, fogNear: 130, fogFar: 320, thingsFar: 180, streamMs: 4, trimFar: 80, scatterFar: 24 },
   low: { maxRatio: 1.25, minRatio: 0.6, antialias: false, shadowSize: 1024, shadowSpan: 42, shadowHz: 15, fogNear: 100, fogFar: 240, thingsFar: 150, streamMs: 3, trimFar: 0, scatterFar: 14 },
 };
@@ -145,12 +147,17 @@ const TAU = 1;
 const GAP_MS = 250;
 /** This many long intervals running are slow frames, not gaps, and are judged as `GAP_MS` each. */
 const GAPS = 3;
+/**
+ * A single frame's contribution to the smoothed average is capped at this many times the budget, so
+ * one hitch (a chunk fill, a GC pause) cannot pull the average over the downgrade line by itself.
+ */
+const SPIKE = 2.2;
 /** Over budget when the smoothed interval passes it by this much, for `OVER_FOR` seconds running. */
-const OVER = 1.2;
-const OVER_FOR = 2;
+const OVER = 1.25;
+const OVER_FOR = 2.5;
 /** Holding the budget means staying within this of it; after `HOLD_FOR` seconds of that, a step up is tried. */
-const HOLD = 1.1;
-const HOLD_FOR = 12;
+const HOLD = 1.05;
+const HOLD_FOR = 8;
 /** Seconds of readings ignored after any change, so its own hitch and settling are not judged. */
 const COOLDOWN = 3;
 /** After a level fails, seconds before it is tried again; doubled each time it fails, up to `BLOCK_MAX`. */
@@ -162,9 +169,11 @@ const BLOCK_MAX = 600;
  * or 30 on the capped rungs), up after `HOLD_FOR` s within it; every change is followed by
  * `COOLDOWN` s of ignored readings. A level that was left for being too slow is not tried again
  * for `BLOCK` s, then twice as long each further time, so a device on the edge of two levels
- * settles on the lower one instead of swinging between them. Intervals come in whole display
- * refreshes, so a step that lightens the GPU may show no change until it crosses one; the governor
- * judges only the budget, never the gain of a single step.
+ * settles on the lower one instead of swinging between them. One-off spikes are capped at
+ * `SPIKE` times the budget before they enter the average, so a single chunk fill or GC pause does
+ * not by itself force a downgrade. Intervals come in whole display refreshes, so a step that
+ * lightens the GPU may show no change until it crosses one; the governor judges only the budget,
+ * never the gain of a single step.
  */
 export class Governor {
   readonly levels: Level[];
@@ -207,8 +216,10 @@ export class Governor {
       this.wait -= s;
       return null;
     }
-    this.avg = this.avg ? this.avg + (ms - this.avg) * Math.min(1, s / TAU) : ms;
     const budget = this.level.cap30 ? 1000 / 30 : 1000 / 60;
+    // Cap a lone hitch so it cannot yank the average over the downgrade line by itself.
+    const sample = Math.min(ms, budget * SPIKE);
+    this.avg = this.avg ? this.avg + (sample - this.avg) * Math.min(1, s / TAU) : sample;
     if (this.avg > budget * OVER) {
       this.overT += s;
       this.holdT = 0;
