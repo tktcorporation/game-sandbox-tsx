@@ -879,9 +879,9 @@ function adoptRobotsIfNeeded(s: State): void {
  * No per-tick full AoS→SoA robot mirror when the roster is stable.
  */
 /** Timing-only: skip JS↔WASM sync/pull (behavior wrong — for sync-zero ceiling). */
-const NOSYNC =
-  typeof process !== "undefined" &&
-  (process.env?.RINGFALL_TICK_NOSYNC === "1" || process.env?.RINGFALL_TICK_NOSYNC === "on");
+const _nosync = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env
+  ?.RINGFALL_TICK_NOSYNC;
+const NOSYNC = _nosync === "1" || _nosync === "on";
 
 export function stepTick(s: State): boolean {
   if (!TICK_WASM) return false;

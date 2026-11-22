@@ -4,8 +4,11 @@
  */
 import { nativeExports } from "./fill";
 
+type NodeProcess = { env?: Record<string, string | undefined>; hrtime?: { bigint?: () => bigint } };
+const nodeProcess = (): NodeProcess | undefined => (globalThis as { process?: NodeProcess }).process;
+
 /** `1` = coarse (sync + totals); `2` / `fine` = also time every sense/calm/hunt call (slow). */
-const _prof = typeof process !== "undefined" ? process.env?.RINGFALL_TICK_PROF : undefined;
+const _prof = nodeProcess()?.env?.RINGFALL_TICK_PROF;
 export const PROF_ON = _prof === "1" || _prof === "on" || _prof === "2" || _prof === "fine";
 export const PROF_FINE = _prof === "2" || _prof === "fine";
 
@@ -27,7 +30,8 @@ const ms: Record<string, number> = Object.create(null);
 const counts: Record<string, number> = Object.create(null);
 
 function nowNs(): number {
-  if (typeof process !== "undefined" && process.hrtime?.bigint) return Number(process.hrtime.bigint());
+  const ht = nodeProcess()?.hrtime;
+  if (ht?.bigint) return Number(ht.bigint());
   if (typeof performance !== "undefined") return performance.now() * 1e6;
   return Date.now() * 1e6;
 }
