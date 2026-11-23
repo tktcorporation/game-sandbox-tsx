@@ -14,6 +14,7 @@ import { DAM_FACE, floorLevel, groundOf, highGround, LEVEL, steepAt, surfaceAt, 
 import { cellOf, decodeSeen, exploreSize, type Ally, type Contact, type Enemy, type Player, type State } from "../sim/state";
 import { PAL, RARITY_CSS } from "./models";
 import type { ContractMark } from "../meta/contracts";
+import { neighbourFronts } from "../meta/neighbour-front";
 import { NEIGHBOUR_SLOTS, routeOpen, type Neighbour } from "../meta/neighbours";
 import { UI, alpha } from "./palette";
 
@@ -1040,6 +1041,28 @@ export class IslandMap {
       // Whose island and how much of it they hold, in one line over it: a slot near the map's edge keeps it whole.
       label(`${n.name}${n.ai ? " AI" : ""} ${n.held}/${n.total}`, p.x, p.y - r - 4 * dpr, UI.paper, 11);
       taken.push({ x0: p.x - r * 1.6, y0: p.y - r - 12 * dpr, x1: p.x + r * 1.6, y1: p.y + r });
+    }
+    // Gap A: open route, no foothold yet → ○○の前線 mark on the coast approach (攻められる印).
+    if (!plain && !this.mini && s.hold) {
+      for (const f of neighbourFronts(s.hold, this.neighbours)) {
+        const p = at(f.x, f.z);
+        const r = 8 * dpr;
+        g.save();
+        g.lineWidth = 2 * dpr;
+        g.strokeStyle = UI.rivalLight;
+        g.setLineDash([3 * dpr, 3 * dpr]);
+        g.beginPath();
+        g.arc(p.x, p.y, r, 0, Math.PI * 2);
+        g.stroke();
+        g.setLineDash([]);
+        g.fillStyle = alpha(UI.rival, 0.45);
+        g.beginPath();
+        g.arc(p.x, p.y, r * 0.45, 0, Math.PI * 2);
+        g.fill();
+        g.restore();
+        label(f.name, p.x, p.y - r - 5 * dpr, UI.rivalLight, 10);
+        taken.push({ x0: p.x - r * 1.4, y0: p.y - r - 14 * dpr, x1: p.x + r * 1.4, y1: p.y + r });
+      }
     }
     // Districts and landmarks between the POIs, small and muted under everything else.
     for (const d of plain ? [] : LANDMARKS) {

@@ -3,6 +3,7 @@ import { incomingFor, neighboursFor } from "../island-net";
 import { WORLD } from "../sim/config";
 import { POIS, REGIONS, regionOf, type RegionId } from "../sim/map";
 import { PHRASE } from "./copy";
+import { neighbourFrontPick } from "../meta/neighbour-front";
 import { frontPickFor, rivalFrontPick, type Hub, type LockedPick, type StartPoint } from "./hub";
 import { depotIcon, entryIcon, lockIcon, startIcon } from "./icons";
 import { IslandMap, islandScene } from "./map";
@@ -175,7 +176,8 @@ export class DepartPicker {
       if (!chosen) return "";
       const p = this.hub.profile;
       const at = { x: chosen.q.x, z: chosen.q.z };
-      const toward = rivalFrontPick(p, at) ?? frontPickFor(p, at);
+      const gap = neighbourFrontPick(p.poiState, neighboursFor(p), at);
+      const toward = rivalFrontPick(p, at) ?? (gap ? { name: gap.name, x: gap.x, z: gap.z } : null) ?? frontPickFor(p, at);
       if (!toward) return "";
       const end = this.map.screenAt(toward.x, toward.z);
       if (!end) return "";
