@@ -26,6 +26,8 @@
  * - **fortified**: a node the report names as fortified is shut for a day; the expedition stands off.
  * - **recall**: only its sender calls an expedition home; a node it held goes back to the enemy.
  * - **steady**: the island reckoned in one alarm or in many small ones ends the same.
+ * - **x2**: a short-raid notice (`x2: true`) stands as 来る遠征, skips numeric fights and the
+ *   owner's lease, and `assault` after the notice takes or wipes the node (fortify refused).
  *
  * Run alone: `npx tsx scripts/ringfall-expeditions.ts`; it ends with "expeditions ok".
  */
@@ -588,6 +590,60 @@ const T2 = T1 + 400_000;
   const aidBots = aidIsle.defenders.filter((d) => d.task === "defend" && d.units.some((u) => u.kind === "grunt")).length;
   console.log(`aid: ${beforeAid} parcels before defence, spent ${spent}, defend grunts ${aidBots}; pad parse ${padOk?.length}`);
   check(spent >= 1 && spent <= EXPEDITION.aidPerFight && aidBots >= 1, "aid: offline defence did not spend parcels as defenders");
+
+  // X2 short raid (§5.8): notice as 来る遠征, no numeric fight, assault report takes or wipes.
+  const x2Isle = island({ quarry: "freed", supply: "freed" }, 0);
+  const x2Early = op(x2Isle, { t: "expedition", from: B, target: "quarry", kinds: top.slice(0, 1), x2: true }, T1);
+  check(x2Early.status === 201 && (x2Early.body as { x2?: boolean }).x2 === true, "x2: notice not accepted");
+  const x2Id = (x2Early.body as { id: number }).id;
+  const x2View = op(x2Isle, { t: "view" }, T1).body as { expeditions: { id: number; state: string; x2?: boolean }[] };
+  check(x2View.expeditions.some((e) => e.id === x2Id && e.state === "coming" && e.x2), "x2: view missing coming notice");
+  const x2TooSoon = op(x2Isle, { t: "assault", from: B.code, id: x2Id, won: true }, T1 + 1000);
+  check(x2TooSoon.status === 409 && (x2TooSoon.body as { error?: string }).error === "assault-not-ready", "x2: assault before notice");
+  run(x2Isle, T1 + NOTICE + 5000);
+  check(x2Isle.expeditions[0]?.arrived && x2Isle.expeditions[0]?.x2 && !x2Isle.expeditions[0]?.holding && x2Isle.holds[quarry] === "freed", "x2: numeric fight took the node");
+  const x2Lease = op(x2Isle, { t: "lease", player: A.id }, T1 + NOTICE + 6000).body as { expeditions: unknown[] };
+  check(x2Lease.expeditions.length === 0, "x2: lease lent the short-raid notice as robots");
+  op(x2Isle, { t: "unlease", player: A.id }, T1 + NOTICE + 7000);
+  // Fortify during notice, then assault refused.
+  const x2Fort = island({ quarry: "freed", supply: "freed" }, 0);
+  op(x2Fort, { t: "expedition", from: B, target: "quarry", kinds: top.slice(0, 1), x2: true }, T1);
+  const x2Fid = x2Fort.expeditions[0]!.id;
+  op(x2Fort, { t: "report", player: A, retaken: [], holds: holdsWith({ quarry: "freed", supply: "freed" }) as IslandState["holds"], factory: 0, day: 2, fortified: ["quarry"] }, T1 + 1000);
+  const x2FortAssault = op(x2Fort, { t: "assault", from: B.code, id: x2Fid, won: true }, T1 + NOTICE + 1000);
+  check(x2FortAssault.status === 409 && (x2FortAssault.body as { error?: string }).error === "fortified", "x2: assault ignored fortify");
+  check(x2Fort.holds[quarry] === "freed", "x2: fortified node still fell");
+  // Win and loss.
+  const x2Win = island({ quarry: "freed", supply: "freed" }, 0);
+  op(x2Win, { t: "expedition", from: B, target: "quarry", kinds: top.slice(0, 1), x2: true }, T1);
+  const x2Wid = x2Win.expeditions[0]!.id;
+  const x2Won = op(x2Win, { t: "assault", from: B.code, id: x2Wid, won: true }, T1 + NOTICE + 1000);
+  check(x2Won.status === 200 && x2Win.holds[quarry] === `rival:${B.code}` && x2Win.expeditions[0]?.holding && x2Win.log.some((e) => e.t === "taken"), "x2: win did not take the node");
+  const x2Again = op(x2Win, { t: "assault", from: B.code, id: x2Wid, won: true }, T1 + NOTICE + 2000);
+  check(x2Again.status === 200, "x2: idempotent win refused");
+  const x2Fake = op(x2Win, { t: "assault", from: B.code, id: x2Wid, won: false }, T1 + NOTICE + 3000);
+  check(x2Fake.status === 409 && (x2Fake.body as { error?: string }).error === "already-resolved", "x2: loss after win accepted");
+  const x2Lose = island({ quarry: "freed", supply: "freed" }, 0);
+  op(x2Lose, { t: "expedition", from: B, target: "quarry", kinds: top.slice(0, 1), x2: true }, T1);
+  const x2Lid = x2Lose.expeditions[0]!.id;
+  const x2Lost = op(x2Lose, { t: "assault", from: B.code, id: x2Lid, won: false }, T1 + NOTICE + 1000);
+  check(x2Lost.status === 200 && x2Lose.expeditions.length === 0 && x2Lose.holds[quarry] === "freed" && x2Lose.log.some((e) => e.t === "wiped"), "x2: loss left the notice");
+  // Enemy-held node refuses X2; plain expedition still may go there.
+  const x2Held = island({ quarry: "held", supply: "freed" }, 0);
+  const x2OnHeld = op(x2Held, { t: "expedition", from: B, target: "quarry", kinds: top.slice(0, 1), x2: true }, T1);
+  check(x2OnHeld.status === 409 && (x2OnHeld.body as { error?: string }).error === "node-not-open", "x2: enemy node accepted");
+  // API path.
+  const T10 = T1 + 50 * DAY;
+  await report(A, holdsWith({ quarry: "freed", supply: "freed", relay: "freed" }), 0, 40, T10, ["quarry", "station"]);
+  islands.get(A.code)!.expeditions = [];
+  const x2Api = await call("POST", `/api/islands/${A.code}/expeditions`, { from: B, target: "quarry", units: 1, x2: true }, T10 + 1000);
+  check(x2Api.status === 201 && (x2Api.body as { x2?: boolean }).x2 === true, "x2 api: notice refused");
+  const x2ApiId = x2Api.body.id as number;
+  const x2ApiEarly = await call("POST", `/api/islands/${A.code}/assault`, { from: B, id: x2ApiId, won: true }, T10 + 2000);
+  check(x2ApiEarly.status === 409 && err(x2ApiEarly) === "assault-not-ready", "x2 api: early assault ok");
+  const x2ApiWin = await call("POST", `/api/islands/${A.code}/assault`, { from: B, id: x2ApiId, won: true }, T10 + NOTICE + 1000);
+  check(x2ApiWin.status === 200 && holdOf(A.code, "quarry") === `rival:${B.code}`, "x2 api: win did not sync hold");
+  console.log(`x2: notice ${NOTICE / 3_600_000}h; win hold ${holdOf(A.code, "quarry")}; fortified refused; loss wiped`);
 }
 
 if (errors.length) {

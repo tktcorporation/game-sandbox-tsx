@@ -5,7 +5,7 @@
  * Run: `npx tsx scripts/ringfall-x2.ts`; ends with "x2 ok".
  */
 import { assaultNoticeSec, assaultOf, assaultReady, scheduleAssault } from "../src/ringfall/meta/assault";
-import { planIncursion, planShortRaid, SHORT_RAID_EXTRA, stageNodes } from "../src/ringfall/meta/incursion";
+import { assaultTarget, planIncursion, planShortRaid, SHORT_RAID_EXTRA, stageNodes } from "../src/ringfall/meta/incursion";
 import { aiIsland, aiNodes, aiView, aiNextId } from "../src/ringfall/meta/ai-islands";
 import { newProfile, settle, type Profile } from "../src/ringfall/meta/profile";
 import { TROPHY } from "../src/ringfall/meta/trophies";
@@ -14,8 +14,11 @@ import { takeNode } from "../src/ringfall/sim/front";
 import { NODES, nodeIndex, type NodeId } from "../src/ringfall/sim/map";
 import { rivalOf } from "../src/ringfall/sim/holds";
 import { step } from "../src/ringfall/sim/step";
-import { isPlayableFront } from "../src/ringfall/view/hub";
+import { isAiFront, isPlayableFront } from "../src/ringfall/view/hub";
 import type { NeighbourFront } from "../src/ringfall/meta/neighbour-front";
+import { applySync, type IslandView } from "../src/ringfall/meta/expeditions";
+import { holdsOf } from "../src/ringfall/meta/neighbour-front";
+import { trophyDelta } from "../src/ringfall/meta/trophies";
 
 const errors: string[] = [];
 const check = (ok: boolean, what: string) => {
@@ -62,12 +65,65 @@ check(fullRival, "full plan still mirrors all owner nodes");
   check(!!planShortRaid(withNotice, target, { ai: true }), "notice: plan blocked by own x2");
 }
 
-// Real-neighbour fronts are not playable entrances (Codex #195 P2 — hide until wired).
+// Real and AI neighbour fronts are both playable X2 entrances (§5.8 wired).
 {
   const real: NeighbourFront = { name: "となりの前線", x: 0, z: 0, shore: target, code: "ZZZZZZ" };
   const aiFront: NeighbourFront = { name: `${a.name}の前線`, x: 0, z: 0, shore: target, code: a.code, ai: true };
-  check(!isPlayableFront(real), "playable: real neighbour allowed");
+  check(isPlayableFront(real), "playable: real neighbour refused");
   check(isPlayableFront(aiFront), "playable: AI front refused");
+  check(!isAiFront(real) && isAiFront(aiFront), "playable: ai/real clock split wrong");
+}
+
+// Real-island target pick: shore preferred when open; else nearest freed open node.
+{
+  const shutShore: IslandView = {
+    code: "AAAAAA",
+    owner: "相手",
+    day: 3,
+    factory: 0,
+    protectedUntil: 0,
+    nodes: NODES.map((n) => ({
+      id: n.id,
+      hold: n.id === target ? "held" : held.includes(n.id) ? "freed" : "held",
+      open: n.id !== target && held.includes(n.id),
+    })),
+    expeditions: [],
+    pings: [],
+    parcels: [],
+  };
+  const pick = assaultTarget(shutShore, target);
+  check(!!pick && pick !== target, "assaultTarget: did not fall back from shut shore");
+  const busy: IslandView = {
+    ...shutShore,
+    nodes: shutShore.nodes.map((n) => (n.id === pick ? { ...n, open: false } : n.id === target ? { ...n, hold: "freed", open: true } : n)),
+  };
+  check(assaultTarget(busy, target) === target, "assaultTarget: preferred shore not chosen when open");
+  // Own X2 busy: plan with ignoreBusy.
+  const occupied = {
+    ...view,
+    nodes: view.nodes.map((n) => (n.id === target ? { ...n, open: false } : n)),
+  };
+  check(!planShortRaid(occupied, target, { ai: false }), "plan: busy without ignoreBusy");
+  check(!!planShortRaid(occupied, target, { ai: false, ignoreBusy: true }), "plan: ignoreBusy refused own notice");
+}
+
+// Defender sync: hold change deducts trophies once (no double with attacker's settle).
+{
+  const base = newProfile(17);
+  const def: Profile = {
+    ...base,
+    trophies: TROPHY.start,
+    poiState: { ...base.poiState, [target]: { state: "freed" } },
+  };
+  const before = holdsOf(def.poiState);
+  const after = before.map((h, i) => (NODES[i]!.id === target ? (`rival:ATTACK` as const) : h));
+  const server = NODES.map((n, i) => ({ id: n.id, hold: after[i]! }));
+  const { profile } = applySync(def, { holds: server, incoming: [] });
+  const lost = TROPHY.start - (profile.trophies ?? TROPHY.start);
+  check(lost > 0, "defender sync: trophies did not fall when node taken");
+  const again = applySync(profile, { holds: server, incoming: [] });
+  check(again.profile.trophies === profile.trophies, "defender sync: trophies double-counted");
+  check(trophyDelta(TROPHY.start, before, after).lost === lost, "defender sync: trophyDelta mismatch");
 }
 
 // Holding assault is not "ready" — need a fresh notice (Codex #197 P2).

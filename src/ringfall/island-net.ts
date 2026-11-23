@@ -218,6 +218,43 @@ export async function sendExpedition(code: string, node: string, units: number, 
   return Number.isInteger(id) ? { ok: true, body: { id: id as number } } : failed("bad-response");
 }
 
+/**
+ * X2 assault notice on a real neighbour (`POST …/expeditions` with `x2: true`): same 来る遠征
+ * window as a factory expedition; the short raid reports via `reportAssault` after it.
+ */
+export async function sendAssault(code: string, node: string, units: number, timeout = SEND_TIMEOUT_MS): Promise<Answer<{ id: number; arriveAt: number }>> {
+  const ai = aiSource && aiByCode(aiSalt(), code, serverSlots());
+  if (ai) {
+    const sent = aiSource!().expeditions;
+    return { ok: true, body: { id: aiNextId(sent, code), arriveAt: Date.now() } };
+  }
+  const who = loadIdentity();
+  if (!who.code) return failed("no-own-island");
+  const r = await call(
+    `/api/islands/${encodeURIComponent(code)}/expeditions`,
+    { method: "POST", body: JSON.stringify({ from: { ...player(who), code: who.code }, target: node, units, x2: true }) },
+    timeout,
+  );
+  if (!r.ok) return r;
+  const id = (r.body as { id?: unknown }).id;
+  const arriveAt = (r.body as { arriveAt?: unknown }).arriveAt;
+  return Number.isInteger(id) && typeof arriveAt === "number" && Number.isFinite(arriveAt)
+    ? { ok: true, body: { id: id as number, arriveAt } }
+    : failed("bad-response");
+}
+
+/** X2 short-raid result (`POST …/assault`): server takes or wipes the notice; both sides sync holds/trophies from it. */
+export async function reportAssault(code: string, id: number, won: boolean, timeout = SEND_TIMEOUT_MS): Promise<Answer<unknown>> {
+  if (aiSource && aiByCode(aiSalt(), code, serverSlots())) return { ok: true, body: { ok: true } };
+  const who = loadIdentity();
+  if (!who.code) return failed("no-own-island");
+  return call(
+    `/api/islands/${encodeURIComponent(code)}/assault`,
+    { method: "POST", body: JSON.stringify({ from: { ...player(who), code: who.code }, id, won }) },
+    timeout,
+  );
+}
+
 /** What a raid's report says beside the island's holds: what became of the expeditions it took in, and the nodes sent at that it fortified. */
 export interface RaidReport {
   lent: { id: number; left: number; waiting?: true }[];

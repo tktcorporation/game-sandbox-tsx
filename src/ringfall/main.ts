@@ -21,7 +21,7 @@ import { bodyCenter, eyePos, fireRay, kill } from "./sim/combat";
 import { squadKey } from "./sim/state";
 import { loadProfile, saveProfile } from "./meta/storage";
 import { sendIsland } from "./net";
-import { aiLentFor, aiSalt, aiScouted, incomingFor, markScouted, flushRecalls, leaseOwn, neighboursFor, refreshAi, releaseLease, syncOwn, takeReport, takeSync, useAi } from "./island-net";
+import { aiLentFor, aiSalt, aiScouted, incomingFor, isAi, markScouted, flushRecalls, leaseOwn, neighboursFor, refreshAi, releaseLease, reportAssault, syncOwn, takeReport, takeSync, useAi } from "./island-net";
 import { loadIdentity } from "./meta/identity";
 import { raidTraces } from "./view/traces";
 import { aiRaidNews, aiRivals } from "./meta/ai-islands";
@@ -276,11 +276,18 @@ function onEvent(e: GameEvent, s: State) {
     if (fresh !== hub.profile) hub.update(fresh);
     const before = hub.profile;
     profileBefore = before;
-    settlement = settle(before, s);
-    hub.reload(settlement.profile);
+    const settled = settle(before, s);
+    settlement = settled;
+    hub.reload(settled.profile);
     saveProfile(hub.profile);
-    sendIsland(settlement, s);
-    syncIsland(settlement.profile, s);
+    // X2 on a real neighbour: server confirms the node move so both sides sync (trophies via applySync).
+    if (settled.incursion && !isAi(settled.incursion.code)) {
+      const inc = settled.incursion;
+      const out = settled.profile.expeditions.find((e) => e.code === inc.code && e.x2 && e.id > 0);
+      if (out) void reportAssault(inc.code, out.id, !!inc.won);
+    }
+    sendIsland(settled, s);
+    syncIsland(settled.profile, s);
     // The game's own islands' part in the raid, as their log would tell it: on the results and the map table.
     if (raidAi) {
       const news = aiRaidNews(before, settlement.profile, aiSalt(), raidAi.slots, Date.now(), raidAi.scouted);
@@ -685,7 +692,7 @@ function askDepart(walk: boolean) {
  * start at the gate's own way in walks out where the player stands; any other start, or one from
  * the truck, comes after a fade. A depot the loadout does not fit cannot be departed from.
  */
-function answerDepart(go: boolean) {
+async function answerDepart(go: boolean) {
   const d = departing;
   if (!d || !camping) return;
   if (go && hub.rideRefused()) return;
@@ -700,7 +707,7 @@ function answerDepart(go: boolean) {
   }
   if (go) {
     // Gap A / X2: schedule 来る遠征 notice, wait, or short-raid — before a home walk-out.
-    const gap = hub.gapDepart();
+    const gap = await hub.gapDepart();
     if (gap?.t === "scheduled" || gap?.t === "waiting") {
       hud.toast(gap.toast, 1, 2800);
       lock();

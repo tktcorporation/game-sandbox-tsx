@@ -15,6 +15,24 @@ import type { AiIsland } from "./ai-islands";
 /** How many nodes beside the target may stay on the short-raid stage (X2). */
 export const SHORT_RAID_EXTRA = 2;
 
+/**
+ * Node to aim an X2 notice at: prefer `prefer` when the owner holds it open, else the nearest
+ * open freed node (real islands may not hold the coastal id that opened the attacker's route).
+ */
+export function assaultTarget(view: Pick<IslandView, "nodes" | "protectedUntil">, prefer: NodeId, now = Date.now()): NodeId | null {
+  if (islandProtected(view, now)) return null;
+  const open = view.nodes.filter((n) => n.hold === "freed" && n.open && nodeIndex(n.id) >= 0);
+  if (!open.length) return null;
+  if (open.some((n) => n.id === prefer)) return prefer;
+  const t = NODES[nodeIndex(prefer)];
+  open.sort((a, b) => {
+    const na = NODES[nodeIndex(a.id)];
+    const nb = NODES[nodeIndex(b.id)];
+    return Math.hypot(na.x - t.x, na.z - t.z) - Math.hypot(nb.x - t.x, nb.z - t.z);
+  });
+  return open[0]!.id as NodeId;
+}
+
 /** What a short / lead-incursion raid needs to start: the copy's holds, the target, and defence stock. */
 export interface IncursionPlan {
   code: string;
@@ -59,8 +77,10 @@ export function viewToRaidIsland(view: Pick<IslandView, "code" | "nodes">, owner
  * X2 stage: the target plus up to `SHORT_RAID_EXTRA` FRONT_LINKS neighbours the owner still holds,
  * nearest first. Only these stay rival-held on the copy.
  */
-export function stageNodes(view: Pick<IslandView, "nodes">, target: NodeId, extra = SHORT_RAID_EXTRA): NodeId[] {
-  const ownerHeld = new Set(view.nodes.filter((n) => n.hold === "freed" && n.open).map((n) => n.id));
+export function stageNodes(view: Pick<IslandView, "nodes">, target: NodeId, extra = SHORT_RAID_EXTRA, forceOpen?: NodeId): NodeId[] {
+  const ownerHeld = new Set(
+    view.nodes.filter((n) => n.hold === "freed" && (n.open || n.id === forceOpen)).map((n) => n.id),
+  );
   if (!ownerHeld.has(target)) return [];
   const t = NODES[nodeIndex(target)];
   const linked = FRONT_LINKS.flatMap(([a, b]) => {
@@ -165,14 +185,16 @@ export function planIncursion(
 export function planShortRaid(
   view: IslandView,
   target: string,
-  opts: { ai: boolean; known?: readonly EntryId[]; extra?: number } = { ai: false },
+  opts: { ai: boolean; known?: readonly EntryId[]; extra?: number; /** Own X2 notice already occupies the target — still plan. */ ignoreBusy?: boolean } = { ai: false },
 ): IncursionPlan | null {
   if (islandProtected(view)) return null;
   const node = NODES.find((n) => n.id === target);
   if (!node) return null;
   const slot = view.nodes.find((n) => n.id === target);
-  if (!slot?.open || slot.hold !== "freed") return null;
-  const stage = stageNodes(view, node.id, opts.extra ?? SHORT_RAID_EXTRA);
+  if (!slot || slot.hold !== "freed") return null;
+  // Real islands mark a node closed while any expedition (including our own X2) is on it.
+  if (!slot.open && !opts.ignoreBusy) return null;
+  const stage = stageNodes(view, node.id, opts.extra ?? SHORT_RAID_EXTRA, opts.ignoreBusy ? node.id : undefined);
   if (!stage.length) return null;
   const ownerId = incursionOwnerId(view.code, opts.ai);
   const island = viewToShortRaidIsland(ownerId, stage);
