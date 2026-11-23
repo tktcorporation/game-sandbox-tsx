@@ -295,5 +295,6 @@ T2（アリーナ床）・旧解放日数ランキング・日次「遠征に出
 | multiplayer-experience.md | マルチ一本化。攻めは E4＋X2（短い他島レイド） |
 | balance.md | 数値の記録 |
 | **game-design-review.md（本紙）** | §5 の判定記録。§5.8 は X2 確定 |
+| simplify-candidates.md | 体験目的に対する簡素化の候補（実装なし） |
 | glossary.md | **攻める**／遠征ボタン廃止／X2 に合わせて更新 |
 | ux-design.md | 画面の線と Round |
