@@ -33,6 +33,11 @@ export interface Outgoing {
   id: number;
   units: number;
   state: ExpeditionState;
+  /**
+   * X2 player-led short raid notice (§5.8): stays `coming` until settle; does not busy the
+   * target node or auto-resolve via `aiOutcome` (the player raids the subset themselves).
+   */
+  x2?: true;
 }
 
 /** An island as anyone sees it (`GET /api/islands/:code`, `publicView()` in worker/island.ts). */
@@ -431,8 +436,18 @@ const KEPT = 12;
 export function parseOutgoing(raw: unknown): Outgoing[] {
   if (!Array.isArray(raw)) return [];
   const all = raw
-    .filter((o): o is Outgoing => isObj(o) && isIslandCode(o.code) && typeof o.node === "string" && nodeIndex(o.node) >= 0 && typeof o.sentAt === "number" && count(o.id) && count(o.units) && (o.state === "gone" || o.state === "sending" || o.state === "recalling" || STATES.includes(o.state as never)))
-    .map((o) => ({ code: o.code, node: o.node, sentAt: o.sentAt, id: o.id, units: o.units, state: o.state }));
+    .filter((o): o is Record<string, unknown> => isObj(o) && isIslandCode(o.code) && typeof o.node === "string" && nodeIndex(o.node) >= 0 && typeof o.sentAt === "number" && count(o.id) && count(o.units) && (o.state === "gone" || o.state === "sending" || o.state === "recalling" || STATES.includes(o.state as never)))
+    .map(
+      (o): Outgoing => ({
+        code: o.code as string,
+        node: o.node as NodeId,
+        sentAt: o.sentAt as number,
+        id: o.id as number,
+        units: o.units as number,
+        state: o.state as ExpeditionState,
+        ...(o.x2 === true ? { x2: true as const } : {}),
+      }),
+    );
   let over = all.length - KEPT;
   const kept = over > 0 ? all.filter((o) => !(o.state === "gone" && over-- > 0)) : all;
   return kept.slice(-KEPT);

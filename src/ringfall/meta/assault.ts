@@ -47,6 +47,7 @@ export function scheduleAssault(
     id: opts.id,
     units: opts.units,
     state: "coming",
+    x2: true,
   };
   return { list: [...list, created], created };
 }

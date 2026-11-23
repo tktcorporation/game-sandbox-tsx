@@ -14,6 +14,8 @@ import { takeNode } from "../src/ringfall/sim/front";
 import { NODES, nodeIndex, type NodeId } from "../src/ringfall/sim/map";
 import { rivalOf } from "../src/ringfall/sim/holds";
 import { step } from "../src/ringfall/sim/step";
+import { isPlayableFront } from "../src/ringfall/view/hub";
+import type { NeighbourFront } from "../src/ringfall/meta/neighbour-front";
 
 const errors: string[] = [];
 const check = (ok: boolean, what: string) => {
@@ -49,9 +51,23 @@ check(fullRival, "full plan still mirrors all owner nodes");
   const now = 1_700_000_000_000;
   const { list, created } = scheduleAssault([], { code: a.code, node: target, units: 2, id: 1, now });
   check(!!created, "schedule: not created");
+  check(created?.x2 === true, "schedule: not marked x2");
   check(assaultOf(list, a.code)?.state === "coming", "schedule: not coming");
   check(!assaultReady(created!, true, now + 1000), "notice: ready too early");
   check(assaultReady(created!, true, now + assaultNoticeSec(true) * 1000), "notice: not ready after window");
+  // Own X2 notice must not close the target (Codex P1 busy).
+  const withNotice = aiView(a, salt, day, list, "", now + assaultNoticeSec(true) * 1000, []);
+  const slot = withNotice.nodes.find((n) => n.id === target);
+  check(!!slot?.open, "notice: target busy from own x2");
+  check(!!planShortRaid(withNotice, target, { ai: true }), "notice: plan blocked by own x2");
+}
+
+// Real-neighbour fronts are not playable entrances (Codex #195 P2 — hide until wired).
+{
+  const real: NeighbourFront = { name: "となりの前線", x: 0, z: 0, shore: target, code: "ZZZZZZ" };
+  const aiFront: NeighbourFront = { name: `${a.name}の前線`, x: 0, z: 0, shore: target, code: a.code, ai: true };
+  check(!isPlayableFront(real), "playable: real neighbour allowed");
+  check(isPlayableFront(aiFront), "playable: AI front refused");
 }
 
 // Gate path: settle without incursion must not invent X2 fields.
