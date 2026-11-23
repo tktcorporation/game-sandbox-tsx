@@ -3,6 +3,7 @@
  *   npx tsx scripts/ringfall-trophies.ts
  */
 import assert from "node:assert/strict";
+import { applySync } from "../src/ringfall/meta/expeditions";
 import { newProfile, parseProfile } from "../src/ringfall/meta/profile";
 import { TROPHY, clampTrophies, trophyDelta, trophySwap } from "../src/ringfall/meta/trophies";
 import { rivalHold } from "../src/ringfall/sim/holds";
@@ -54,6 +55,19 @@ assert.equal(clampTrophies(99999), TROPHY.max);
   assert.ok(old);
   assert.equal(old.v, 32);
   assert.equal(old.trophies, TROPHY.start);
+}
+
+// Sync that transfers a freed node to a rival deducts trophies (Codex P2).
+{
+  const p = newProfile(3);
+  const id = NODES[0].id;
+  p.poiState = { ...p.poiState, [id]: { state: "freed" } };
+  const before = p.trophies;
+  const { profile } = applySync(p, { holds: [{ id, hold: rivalHold("ZZZZZZ") }] });
+  assert.ok(profile.trophies! < before);
+  // A second sync with the same hold does not deduct again.
+  const again = applySync(profile, { holds: [{ id, hold: rivalHold("ZZZZZZ") }] });
+  assert.equal(again.profile.trophies, profile.trophies);
 }
 
 console.log("trophies ok");

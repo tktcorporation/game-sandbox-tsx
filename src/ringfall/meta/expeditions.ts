@@ -12,7 +12,9 @@ import { NODES, nodeIndex, type NodeId } from "../sim/map";
 import { isIslandCode } from "./island-code";
 import { unfreeable, unlocked, type Island } from "./island";
 import { ISLAND_TABLE } from "./island-table";
+import { holdsOf } from "./neighbour-front";
 import { parseParcels, parsePings, type Parcel } from "./parcels";
+import { trophyDelta } from "./trophies";
 
 /**
  * How an expedition stands: still being sent (its request unanswered; its squad already taken from
@@ -192,15 +194,22 @@ export interface Synced {
  * report landed for leave the pending list; the holds are merged around those still pending. The
  * profile itself when nothing changes.
  */
-export function applySync<P extends { poiState: Island; logSeq: number; retaken: NodeId[]; incoming: Incoming[]; parcels?: Parcel[] }>(p: P, s: Synced): { profile: P; news: IslandLogEntry[] } {
+export function applySync<P extends { poiState: Island; logSeq: number; retaken: NodeId[]; incoming: Incoming[]; parcels?: Parcel[]; trophies?: number }>(p: P, s: Synced): { profile: P; news: IslandLogEntry[] } {
   const retaken = s.reported ? p.retaken.filter((id) => !s.reported!.includes(id)) : p.retaken;
   const poiState = s.holds ? mergeHolds(p.poiState, s.holds, retaken) : p.poiState;
   const news = s.log ? s.log.entries.filter((e) => e.seq > p.logSeq).sort((a, b) => a.seq - b.seq) : [];
   const logSeq = s.log ? Math.max(p.logSeq, s.log.next) : p.logSeq;
   const incoming = s.incoming && JSON.stringify(s.incoming) !== JSON.stringify(p.incoming) ? [...s.incoming] : p.incoming;
   const parcels = s.parcels ? [...s.parcels] : p.parcels;
-  if (poiState === p.poiState && logSeq === p.logSeq && retaken.length === p.retaken.length && incoming === p.incoming && parcels === p.parcels) return { profile: p, news };
-  return { profile: { ...p, poiState, logSeq, retaken, incoming, parcels }, news };
+  // T1: ownership that changed while away (mergeHolds) moves trophies once here — settle will not
+  // see the same freed→rival transition again because `p.poiState` already matches.
+  let trophies = p.trophies;
+  if (poiState !== p.poiState && typeof p.trophies === "number") {
+    const next = trophyDelta(p.trophies, holdsOf(p.poiState), holdsOf(poiState)).next;
+    if (next !== p.trophies) trophies = next;
+  }
+  if (poiState === p.poiState && logSeq === p.logSeq && retaken.length === p.retaken.length && incoming === p.incoming && parcels === p.parcels && trophies === p.trophies) return { profile: p, news };
+  return { profile: { ...p, poiState, logSeq, retaken, incoming, parcels, ...(trophies !== p.trophies ? { trophies } : {}) }, news };
 }
 
 /** The other players' expeditions on an island's view that hold nothing yet, at nodes the game knows: what its owner is warned of. */
