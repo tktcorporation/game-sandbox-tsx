@@ -16,6 +16,7 @@ import { eventRow } from "./events";
 import { rivalOf } from "../sim/holds";
 import { HOLD_CSS, IslandMap, islandScene, RIVAL_CSS, TITAN_CSS } from "./map";
 import { ExpeditionPanel } from "./expeditions";
+import type { IncursionPlan } from "../meta/incursion";
 import { answerable, homeSquads, incomingLine, LOG_WORD, logLine, squadsAway, type Incoming, type IslandLogEntry, type Outgoing } from "../meta/expeditions";
 import { enemyNodes, frontNodes, ownNodes } from "../sim/front";
 import { nodeRow } from "./row";
@@ -371,6 +372,10 @@ export interface Launch {
   seed: number;
   from?: PoiId;
   entry: EntryId;
+  /**
+   * Lead-incursion onto another island's copy (raid-loot stage 6). Left out, a normal home raid.
+   */
+  incursion?: IncursionPlan;
 }
 
 /**
@@ -421,6 +426,9 @@ export class Hub {
   private news: IslandLogEntry[] = [];
   private newsSeen = true;
 
+  /** Starts a lead-incursion Launch from the signal station (main wires this). */
+  private startIncursion: ((go: Launch) => void) | null = null;
+
   constructor(
     public profile: Profile,
     private closed: () => void,
@@ -434,6 +442,7 @@ export class Hub {
       () => this.profile,
       (p) => this.set(p),
       (n) => this.takeNews(n),
+      (plan) => this.launchIncursion(plan),
     );
     $("hub").addEventListener("click", (e) => {
       const el = (e.target as HTMLElement).closest<HTMLElement>("[data-act]");
@@ -832,6 +841,32 @@ export class Hub {
     this.set({ ...profile, region: this.region, entry });
     this.load = emptyLoadout();
     return { kit, region: this.region, seed: this.profile.seed, from: from ?? undefined, entry };
+  }
+
+  /**
+   * Lead-incursion from the signal station: take the shelves' kit and hand the Launch to main.
+   * Same 出撃 verb as the gate — no departure map (the target is already picked).
+   */
+  private launchIncursion(plan: IncursionPlan) {
+    if (!this.startIncursion) return;
+    const taken = takeKit(this.profile, this.startLoad(), null);
+    if (!taken) return;
+    const { profile, kit } = taken;
+    this.set({ ...profile, region: plan.region, entry: plan.entry });
+    this.load = emptyLoadout();
+    this.close(false);
+    this.startIncursion({
+      kit,
+      region: plan.region,
+      seed: this.profile.seed,
+      entry: plan.entry,
+      incursion: plan,
+    });
+  }
+
+  /** Wires main's raid start for a lead-incursion from the signal station. */
+  setIncursionStart(fn: (go: Launch) => void) {
+    this.startIncursion = fn;
   }
 
   /** The contract taken for the next raid, or null. */

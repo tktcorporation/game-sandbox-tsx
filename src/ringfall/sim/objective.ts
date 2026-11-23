@@ -1,7 +1,7 @@
 import { CONQUEST, FRONT, VALUABLES, type ValuableKind } from "./config";
 import { attacking, battleFocus, meterOf } from "./battle";
 import { dist2d } from "./geom";
-import { CAMP, DEPOTS, EXTRACTS, NODES, POIS, poiIndex, recordSpot, regionHere, type PoiId, type RecordId, type RegionId } from "./map";
+import { CAMP, DEPOTS, EXTRACTS, NODES, POIS, nodeIndex, poiIndex, recordSpot, regionHere, type PoiId, type RecordId, type RegionId } from "./map";
 import { frontNodes } from "./front";
 import { haulOrigins } from "./world";
 import { squadKey, type State } from "./state";
@@ -93,7 +93,7 @@ function captureSteps(s: State, i: number, title: string): Objective {
   const freed = s.nodes[i] === "freed";
   const under = s.capture?.node === i;
   const c = under ? s.capture : null;
-  const front = frontNodes(s.nodes)[i];
+  const front = frontNodes(s.nodes)[i] || (!!s.incursion && nodeIndex(s.incursion.target) === i);
   return settle(title, [
     { kind: "go", label: `${n.name}へ向かう`, until: `核の ${ARRIVE} m 以内に着く`, at: core, done: freed || under || dist2d(s.player.pos, core) < ARRIVE },
     { kind: "start", label: "核を起動する", until: front || freed ? "核に触れて使用キー（警報が鳴る）" : "前線の拠点ではない：敵に守られている", at: core, done: freed || under, near: "核に触れて制圧を始める" },

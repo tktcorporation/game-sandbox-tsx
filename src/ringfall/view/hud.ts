@@ -216,6 +216,16 @@ export class Hud {
     this.scout = null;
   }
 
+  /** Lead-incursion objective: take this node by its 核 · 制圧 (raid-loot stage 6). */
+  setCaptureTask(node: number) {
+    this.contract = null;
+    this.record = null;
+    this.task = { t: "capture", node };
+    this.lastStep = "";
+    this.map.contract = null;
+    this.scout = null;
+  }
+
   /** Settled raids before this one: the secondary story line stays quiet on the first raid. */
   private raidsDone = 0;
   setRaidsDone(n: number) {
