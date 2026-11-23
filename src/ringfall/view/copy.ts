@@ -91,11 +91,11 @@ export const TERM = {
   arrivedAtWarehouse: "倉庫へ届いた",
   takeBack: "取り返す",
   /**
-   * Signal-station verb (also answers an attack — was 仕返し).
-   * Rename pending: 【元】送る 【案】遠征に出す — docs/ringfall/glossary.md; PENDING_SYNONYMS.
-   * Do not change this value until the rename is approved.
+   * Signal-station verb (also answers an attack — was 仕返し / 送る).
+   * 【元】送る 【案】遠征に出す — docs/ringfall/glossary.md (adopted).
+   * 倉庫へ送る is TERM.sendToWarehouse (中継ボックス); BANNED 「送る」 is exact-match only.
    */
-  sendExpedition: "送る",
+  sendExpedition: "遠征に出す",
   backToCamp: "野営地に戻る",
   /** Modules collectively (医務室・作業台…). Not the station name. */
   hideout: "隠れ家",
@@ -125,6 +125,11 @@ export const PHRASE = {
   /** Live capture prompt — 「を始める」 is part of the line today. */
   captureStart: `${TERM.captureCore}を始める`,
 } as const;
+
+/** Toast after confirming 遠征に出す (past of TERM.sendExpedition). */
+export function expeditionSentTo(place: string): string {
+  return `${place}へ遠征に出した`;
+}
 
 export function nextFront(name: string): string {
   return `${TERM.nextHand}${TERM.vehicle}から${TERM.sortie} · ${TERM.front}：${name}`;
@@ -162,17 +167,19 @@ export const BANNED: { bad: string; keep: TermId; note: string }[] = [
   { bad: "次の段を上げられる", keep: "raiseLevelReady", note: "レベルを上げられる" },
   { bad: "段を上げる", keep: "raiseLevel", note: "レベルを上げる" },
   { bad: "遠征の知らせ", keep: "islandNews", note: "島の知らせに統合" },
-  { bad: "仕返し", keep: "sendExpedition", note: "送る／取り返すに揃える" },
+  { bad: "仕返し", keep: "sendExpedition", note: "遠征に出す／取り返すに揃える" },
+  /**
+   * Exact match only in lint (送る ⊂ 倉庫へ送る). 中継ボックスの「倉庫へ送る」は別 TERM.
+   */
+  { bad: "送る", keep: "sendExpedition", note: "遠征に出す（来る遠征と対）。倉庫へ送るは別語" },
 ];
 
 /**
  * Pending renames (glossary 【元/案/理由】). Lint warns only after TERM[keep] no longer equals
- * `bad` (so the live SoT can keep the old word until approval). One-line swap: change
- * TERM.sendExpedition, then move the entry to BANNED (exact match — 倉庫へ送る is another TERM).
+ * `bad` (so the live SoT can keep the old word until approval). Nested-in-other-TERM bad
+ * words use exact match (same as BANNED) so 倉庫へ送る is never flagged for 送る.
  */
-export const PENDING_SYNONYMS: { bad: string; keep: TermId; note: string }[] = [
-  { bad: "送る", keep: "sendExpedition", note: "案：遠征に出す（来る遠征と対）。倉庫へ送るは別語" },
-];
+export const PENDING_SYNONYMS: { bad: string; keep: TermId; note: string }[] = [];
 
 /** TERM + PHRASE string values, longest first — for lint. */
 export const COPY_VALUES = [...Object.values(TERM), ...Object.values(PHRASE)].sort((a, b) => b.length - a.length);

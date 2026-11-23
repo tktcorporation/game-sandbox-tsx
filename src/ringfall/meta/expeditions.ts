@@ -302,7 +302,7 @@ export function logLine(e: IslandLogEntry): string {
   const who = e.by.name || e.by.code;
   switch (e.t) {
     case "noticed":
-      return `${who}が${at}へ遠征隊を送った`;
+      return `${who}が${at}へ遠征に出した`;
     case "landed":
       return `${who}の遠征隊が${at}に来た`;
     case "taken":

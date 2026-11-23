@@ -490,7 +490,7 @@ export class Hub {
 
   /**
    * A log entry as marks: whose, what happened in a word, where; someone's attack also offers to
-   * answer it with 送る (opens the signal station on their island).
+   * answer it with 遠征に出す (opens the signal station on their island).
    */
   private newsMarks(n: IslandLogEntry): string {
     const who = n.by.name || n.by.code;
@@ -980,7 +980,7 @@ export class Hub {
   }
 
   /**
-   * The signal station's panel (信号所): 送る and 島の知らせの控え.
+   * The signal station's panel (信号所): 遠征に出す and 島の知らせの控え.
    * The expeditions' section draws itself (`#hub-exped`); under it one 島の知らせ list.
    */
   private signalPanel(): string {

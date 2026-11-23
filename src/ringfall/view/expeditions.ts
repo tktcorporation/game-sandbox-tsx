@@ -15,6 +15,7 @@ import { parseIslandCode } from "../meta/island-code";
 import { errorText } from "../meta/island-errors";
 import type { Profile } from "../meta/profile";
 import { NODES, nodeIndex, type NodeId } from "../sim/map";
+import { expeditionSentTo, TERM } from "./copy";
 import { checkIcon, clockIcon, coreIcon, crossIcon, flagIcon, lockIcon, robotIcon, SIDE } from "./icons";
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -50,7 +51,7 @@ export class ExpeditionPanel {
   private copied = false;
   /** Bumped by each open, so a late answer to an earlier one is dropped. */
   private ask = 0;
-  /** An island to look up as soon as the panel is connected: answering an attack with 送る. */
+  /** An island to look up as soon as the panel is connected: answering an attack with 遠征に出す. */
   private answering: string | null = null;
   /** The islands the server offers as neighbours: a tap looks one up, as typing its code does. */
   private neighbours: Neighbour[] = [];
@@ -262,7 +263,7 @@ export class ExpeditionPanel {
     this.put({ ...p, expeditions: answerSend(p.expeditions, pending, r.ok ? r.body.id : null, units) });
     this.busy = false;
     if (r.ok) {
-      this.note = { text: `${nodeName(node)}へ送った`, good: true };
+      this.note = { text: expeditionSentTo(nodeName(node)), good: true };
       this.pick = null;
       const again = await readView(t.code);
       if (again.ok && this.target?.code === t.code) this.target = again.body;
@@ -282,7 +283,7 @@ export class ExpeditionPanel {
     const r = await sendExpedition(t.code, node, units);
     const p = this.get();
     this.put({ ...p, expeditions: answerSend(p.expeditions, pending, r.ok ? r.body.id : null, units) });
-    this.note = r.ok ? { text: `${nodeName(node)}へ送った`, good: true } : { text: errorText(r.error), good: false };
+    this.note = r.ok ? { text: expeditionSentTo(nodeName(node)), good: true } : { text: errorText(r.error), good: false };
     if (r.ok) this.pick = null;
     const again = await readView(t.code);
     if (again.ok && this.target?.code === t.code) this.target = again.body;
@@ -326,7 +327,7 @@ export class ExpeditionPanel {
       : "";
     // What sending costs: each expedition out (one being sent too) keeps one squad fewer out on this island.
     const cost = away ? `<div class="exp-cost"><span>${flagIcon()}島の守り<b>${homeSquads(p)}</b></span><span>${flagIcon()}遠征<b>${away}</b></span></div>` : "";
-    // Island codes: folded away from daily entry (お隣 cards are the primary). Open when answering 送る.
+    // Island codes: folded away from daily entry (お隣 cards are the primary). Open when answering 遠征に出す.
     const dis = this.busy ? " disabled" : "";
     const openCodes = this.answering || this.typed ? " open" : "";
     const own =
@@ -372,9 +373,9 @@ export class ExpeditionPanel {
         : `<p class="lock-note">${lockIcon()}遠征を受ける拠点なし</p>`;
       const room = canSend(p);
       const protectedIsle = islandProtected(t);
-      // Option A: signal station only 送る (lead 出撃 removed).
+      // Option A: signal station only 遠征に出す (lead 出撃 removed).
       const sendBtn = room
-        ? `<button type="button" class="exp-go" data-act="exp-send"${this.pick && !this.busy ? "" : " disabled"}>送る<span class="bots">${sendKinds(this.serverFactory() ?? p.factory)
+        ? `<button type="button" class="exp-go" data-act="exp-send"${this.pick && !this.busy ? "" : " disabled"}>${TERM.sendExpedition}<span class="bots">${sendKinds(this.serverFactory() ?? p.factory)
             .map(() => robotIcon(SIDE.own))
             .join("")}</span></button>` + (factoryAhead(p, this.serverFactory() ?? p.factory) ? `<p class="exp-wait">工場のレベルは次のレイドの後に島へ届く</p>` : "")
         : `<p class="lock-note">${lockIcon()}部隊が出払っている</p>`;
