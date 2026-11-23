@@ -1618,7 +1618,7 @@ export class Hud {
     // The day's income from the nodes the player holds.
     // With the nodes this island's expeditions hold on other islands, theirs on a line of its own.
     const island =
-      settled?.income || settled?.awayIncome || settled?.spoils || settled?.liberated
+      settled?.income || settled?.awayIncome || settled?.spoils || settled?.liberated || settled?.trophies
         ? `<h3 class="day-end">${settled.day} 日目</h3><p>${settled.income ? `<span>拠点の収入<b>${settled.income.toLocaleString()} クレジット</b></span>` : ""}${settled.liberated ? `<span>島を解放した<b>${settled.liberated.days} 日</b></span><span>${settled.liberated.cycle + 1} 周目<b>強度 +${FINALE.threat}</b></span>` : ""}${settled.spoils ? `<span>戦果<b>${settled.spoils.toLocaleString()} クレジット</b></span>` : ""}${settled.awayIncome ? `<span>遠征の拠点の収入<b>${settled.awayIncome.toLocaleString()} クレジット</b></span>` : ""}${settled.trophies ? `<span>${TERM.trophy}<b>${settled.trophies.before} → ${settled.trophies.after}</b></span>` : ""}</p>`
         : "";
     // The contract taken for the raid: done and paid, or not done (it goes with the day).
