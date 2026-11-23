@@ -2,6 +2,7 @@ import { sfx } from "./sfx";
 import { incomingFor, neighboursFor } from "../island-net";
 import { WORLD } from "../sim/config";
 import { POIS, REGIONS, regionOf, type RegionId } from "../sim/map";
+import { PHRASE } from "./copy";
 import { frontPickFor, rivalFrontPick, type Hub, type LockedPick, type StartPoint } from "./hub";
 import { depotIcon, entryIcon, lockIcon, startIcon } from "./icons";
 import { IslandMap, islandScene } from "./map";
@@ -124,7 +125,7 @@ export class DepartPicker {
     const refused = hub.rideRefused();
     const go = $("depart-go") as HTMLButtonElement;
     go.disabled = !!refused;
-    go.innerHTML = refused ? `${lockIcon()}${esc(refused)}` : `出撃する<kbd>Enter</kbd>`;
+    go.innerHTML = refused ? `${lockIcon()}${esc(refused)}` : `${PHRASE.sortieDo}<kbd>Enter</kbd>`;
   }
 
   /**

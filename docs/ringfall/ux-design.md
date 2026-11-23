@@ -3,6 +3,7 @@
 プレイヤーが画面を見て「次に何をすればいいか」分かり、触れるほど仕組みが分かるようにするための設計メモ。
 
 **設計方針（先に読む）:** [design-direction.md](design-direction.md) — 拠点育成が主役・非同期の対人・線に溶けるマルチ・名前と操作を増やさない、など判断の基準。  
+**用語の正本:** [glossary.md](glossary.md) / `src/ringfall/view/copy.ts` — 1 概念 1 語。UI 文言はここから。  
 **制圧の戦利品:** [raid-loot.md](raid-loot.md) — 他プレイヤー拠点の核を制圧すると倉庫へ届く（CoC 型）。
 
 関連: [brief.md](brief.md)、[ui.md](ui.md)、[island-v2.md](island-v2.md)、[multiplayer.md](multiplayer.md)。

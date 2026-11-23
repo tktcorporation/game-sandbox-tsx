@@ -38,6 +38,7 @@ import { Music, type Mood } from "./view/music";
 import { sfx } from "./view/sfx";
 import { Soundscape } from "./view/soundscape";
 import { setupSoundCheck } from "./view/soundcheck";
+import { PHRASE, TERM } from "./view/copy";
 import { Hud } from "./view/hud";
 import { sightZoom, World } from "./view/world";
 import { Governor, loadChoice, pickTier, QUALITY, saveChoice, type Level, type QualityChoice, type Tier } from "./view/quality";
@@ -946,7 +947,10 @@ document.addEventListener("visibilitychange", () => {
 $("start").addEventListener("click", openCamp);
 $("depart-go").addEventListener("click", () => answerDepart(true));
 $("depart-cancel").addEventListener("click", () => answerDepart(false));
+$("restart").textContent = TERM.backToCamp;
 $("restart").addEventListener("click", openCamp);
+// HTML fallback still says 出撃する; depart render overwrites from PHRASE.sortieDo.
+($("depart-go") as HTMLButtonElement).dataset.copy = PHRASE.sortieDo;
 $("resume").addEventListener("click", () => {
   unlock();
   governor.settle();

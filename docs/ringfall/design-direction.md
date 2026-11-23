@@ -2,9 +2,9 @@
 
 この文書は、RINGFALL の体験をどう組み立てるかの判断基準である。機能仕様（brief・island・multiplayer）や画面の細部（ui・ux-design）より先に読む。迷ったときはここへ戻る。
 
-関連: [ux-design.md](ux-design.md)（体験の線と場所のプライマリ）、[raid-loot.md](raid-loot.md)（他プレイヤー拠点の制圧戦利品）、[brief.md](brief.md)、[ui.md](ui.md)、[multiplayer.md](multiplayer.md)、[island-v2.md](island-v2.md)。
+関連: [ux-design.md](ux-design.md)（体験の線と場所のプライマリ）、[glossary.md](glossary.md)（プレイヤー向け用語の正本）、[raid-loot.md](raid-loot.md)（他プレイヤー拠点の制圧戦利品）、[brief.md](brief.md)、[ui.md](ui.md)、[multiplayer.md](multiplayer.md)、[island-v2.md](island-v2.md)。
 
-用語の約束: プレイヤーが画面で見ない内部名（depot / pad / parcel など）を、UI・PR・報告・この文書のプレイヤー向け説明に使わない。荷物を送る場所は brief どおり **中継ボックス**。
+用語の約束: プレイヤーが画面で見ない内部名（depot / pad / parcel など）を、UI・PR・報告・この文書のプレイヤー向け説明に使わない。荷物を送る場所は brief どおり **中継ボックス**。画面に出す語は [`src/ringfall/view/copy.ts`](../src/ringfall/view/copy.ts) と [glossary.md](glossary.md) を正とする（`npm run lint:ringfall-copy`）。
 
 ---
 
