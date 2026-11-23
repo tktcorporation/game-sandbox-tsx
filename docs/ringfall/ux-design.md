@@ -6,9 +6,9 @@
 **用語の正本:** [glossary.md](glossary.md) / `src/ringfall/view/copy.ts` — 1 概念 1 語。UI 文言はここから。  
 **制圧の戦利品:** [raid-loot.md](raid-loot.md) — 他プレイヤー拠点の核を制圧すると倉庫へ届く（CoC 型）。
 
-関連: [brief.md](brief.md)、[ui.md](ui.md)、[island-v2.md](island-v2.md)、[multiplayer.md](multiplayer.md)。
+関連: [brief.md](brief.md)、[ui.md](ui.md)、[island-v2.md](island-v2.md)、[multiplayer.md](multiplayer.md)、[warehouse.md](warehouse.md)（倉庫のレベルと容量）。
 
-実装履歴: Round 1 = PR #167。Round 2 = PR #168。Round 3 = PR #169。Round 4 = #171。Round 5 = #172（AI島への率いる遠征）。Round 6 = 倉庫満杯時の「倉庫へ届いた」訂正ほか。
+実装履歴: Round 1 = PR #167。Round 2 = PR #168。Round 3 = PR #169。Round 4 = #171。Round 5 = #172（AI島への率いる遠征）。Round 6 = 倉庫満杯時の「倉庫へ届いた」訂正ほか。倉庫の棚から倉庫レベルを上げる入口は [warehouse.md](warehouse.md)。
 
 **用語:** 設計・PR・UI・報告では、プレイヤーが画面で見ない内部名（depot / pad / parcel など）を使わない。荷物を送る場所は brief どおり **中継ボックス**。
 
