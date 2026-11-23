@@ -1,6 +1,7 @@
 import type { EnemyKind, ModuleId, ValuableKind } from "../sim/config";
 import { POIS, type ExtractId, type NodeId, type PoiId } from "../sim/map";
 import type { State } from "../sim/state";
+import { questBoardOn } from "./features";
 
 /**
  * What a quest asks for. Kills and clears count even on a wipe; leaving needs getting off. A
@@ -68,10 +69,16 @@ export const emptyLog = (): QuestLog => ({ progress: {}, done: [] });
 /** The ids of every quest there is: a save's log keeps only these. */
 export const QUEST_IDS = new Set(QUESTS.map((q) => q.id));
 
-/** Quests offered now: not done, with everything they come after done. */
-export const offered = (log: QuestLog) => QUESTS.filter((q) => !log.done.includes(q.id) && q.after.every((a) => log.done.includes(a)));
+/**
+ * Quests offered now: not done, with everything they come after done.
+ * Empty while the 依頼板 is off (`FEATURES.questBoard`) so settle / bag / tips earn nothing from them.
+ */
+export const offered = (log: QuestLog) => (questBoardOn() ? QUESTS.filter((q) => !log.done.includes(q.id) && q.after.every((a) => log.done.includes(a))) : []);
 
-/** The front intro is still open: first sessions put 前線の核 · 制圧 on the next hand. */
+/**
+ * The front intro is still open: first sessions put 前線の核 · 制圧 on the next hand.
+ * When the board is off this is always false — use `teachFrontCapture()` in the hub instead.
+ */
 export const introFrontOpen = (log: QuestLog) => offered(log).some((q) => q.id === "front");
 
 /**

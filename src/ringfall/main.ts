@@ -9,8 +9,9 @@ import { grabZip } from "./sim/zips";
 import { POI_AT } from "./sim/areas";
 import { frontNodes, garrisonOf, takeNode, useCore } from "./sim/front";
 import { atRisk, battleMarks, departNow, landNow, marchSquad, nodePoint, placeBattleSquad, takeRivals, warmLinks } from "./sim/battle";
-import { campSpotAt, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
-import { analyse, raidThreat, settle, takenStory, type Profile, type Settlement } from "./meta/profile";
+import { campSpotAt, campSpotLive, newCamp, outOfCamp, stepCamp, walkOut } from "./sim/camp";
+import { FEATURES } from "./meta/features";
+import { analyse, raidThreat, settle, take, takenStory, type Profile, type Settlement } from "./meta/profile";
 import { pouchSlots } from "./meta/hideout";
 import { MOD, MODS, TOOLS, type ModKind, type ToolKind } from "./sim/config";
 import { departDepots, finaleOpen, holds, islandHolds, tonight } from "./meta/island";
@@ -659,11 +660,13 @@ function openCamp() {
 
 /** Opens a station's panel: the camp stands still and the pointer is let go. */
 function openPanel(id: StationId) {
+  if (!campSpotLive(id)) return false;
   keys.clear();
   stick.x = stick.z = 0;
   fire = ads = adsLatch = false;
   hub.open(id);
   if (document.pointerLockElement) document.exitPointerLock();
+  return true;
 }
 
 /** Puts up the departure: the island with every start on it (the last one chosen), the kit and the objective. */
@@ -1116,12 +1119,14 @@ declare global {
       wear: (kinds: string[]) => void;
       drop: (kind: string, ahead: number) => void;
     };
+    /** Flip `questBoard` to revive the 依頼板 in tests / local revival. */
+    ringfallFeatures: { questBoard: boolean };
     ringfallCamp: {
       spots: () => CampSpot[];
       walkTo: (id: CampSpot["id"]) => boolean;
       toGate: () => void;
       use: () => void;
-      open: (id: StationId) => void;
+      open: (id: StationId) => boolean;
       close: () => void;
     };
   }
@@ -1581,9 +1586,11 @@ window.ringfallAge = (ms) => {
 
 window.ringfallContract = {
   take: (type) => {
+    if (!camping || !FEATURES.questBoard) return null;
     const c = hub.profile.board.contracts.find((o) => o.t === type);
-    if (!camping || !c) return null;
-    hub.profile = { ...hub.profile, taken: c.id };
+    if (!c) return null;
+    // Same path as the board's 受ける button (`take()` clears leftover 強度).
+    hub.profile = take(hub.profile, c.id);
     saveProfile(hub.profile);
     if (hub.station) hub.render();
     return c.id;
@@ -1653,6 +1660,9 @@ window.ringfallEnd = (how, haul = [], found = []) => {
  * just inside the gate facing out; `use` presses the use key where they stand; `open` and `close`
  * open and close a station's panel.
  */
+/** Tests / revival: flip `FEATURES.questBoard` (docs/ringfall/simplify-candidates.md). */
+window.ringfallFeatures = FEATURES;
+
 window.ringfallCamp = {
   spots: () => CAMP.spots,
   walkTo: (id) => {

@@ -15,6 +15,7 @@ import { armed, build, buildFactory, buildState, buy, buyPrice, canBuild, canBui
 import { CONTRACT_NAME, contractMark, contractRegion, targetName, type Contract, type Reward } from "../meta/contracts";
 import { currentStory, STORIES, storyOf, storyWhere } from "../meta/story";
 import { materialRarity, maxLevel, MODULES, nextLevel, pouchSlots, sources, stashCap, stillNeeded, type Hideout, type Source } from "../meta/hideout";
+import { questBoardOn } from "../meta/features";
 import { introFrontOpen, need, offered, type Quest, type RewardItem } from "../meta/quests";
 import { saveProfile } from "../meta/storage";
 import { departDepots, eventName, finaleOpen, frontIncome, islandHolds, playerNodes, shopRarity, unfreeable, unlocked } from "../meta/island";
@@ -46,6 +47,15 @@ export function frontPickFor(p: Profile, from: { x: number; z: number } = CAMP.w
     .filter(({ i }) => front[i])
     .sort((a, b) => Math.hypot(a.n.x - from.x, a.n.z - from.z) - Math.hypot(b.n.x - from.x, b.n.z - from.z))[0];
   return near ? { name: near.n.name, x: near.n.x, z: near.n.z } : null;
+}
+
+/**
+ * First sessions name 核 · 制圧 on the next hand / 今日の作戦.
+ * With the 依頼板 on: the front intro quest. Off: until the player holds a node.
+ */
+export function teachFrontCapture(p: Profile): boolean {
+  if (questBoardOn()) return introFrontOpen(p.quests);
+  return ownNodes(islandHolds(p)) === 0;
 }
 
 /** A front node held by another player — the reason to sortie and take it back. */
@@ -96,7 +106,7 @@ export function nextHandFor(p: Profile): string {
     return nextAttack(gap.name);
   }
   // First sessions: 前線の核 · 制圧 before workshop shopping (game-design-review A).
-  if (introFrontOpen(p.quests)) {
+  if (teachFrontCapture(p)) {
     const pick = frontPickFor(p);
     return pick ? nextFrontCapture(pick.name) : PHRASE.nextVehicleOrGate;
   }
@@ -104,8 +114,8 @@ export function nextHandFor(p: Profile): string {
   // 倉庫 capacity is raised at the shelves; tip there when that level is ready.
   if (canBuild(p, "storage")) return PHRASE.nextStashRaise;
   if (MODULES.some((m) => canBuild(p, m))) return PHRASE.nextWorkshopRaise;
-  if (offered(p.quests).some((q) => deliverable(p, q))) return PHRASE.nextQuestDeliver;
-  if (!takenContract(p) && !takenStory(p) && p.board.contracts.length) return PHRASE.nextQuestPick;
+  if (questBoardOn() && offered(p.quests).some((q) => deliverable(p, q))) return PHRASE.nextQuestDeliver;
+  if (questBoardOn() && !takenContract(p) && !takenStory(p) && p.board.contracts.length) return PHRASE.nextQuestPick;
   const pick = frontPickFor(p);
   return pick ? nextFront(pick.name) : PHRASE.nextVehicleOrGate;
 }
@@ -1042,11 +1052,12 @@ export class Hub {
     const aid = namedAid(p).length;
     const unread = this.news.length + this.expNews.length + aid;
     const signal = !this.newsSeen && unread ? `知らせ ${unread}` : aid ? `届け ${aid}` : "";
-    // The board wants looking at while it has contracts and none is taken.
-    const open = !takenContract(p) && !takenStory(p) && p.board.contracts.length ? `依頼 ${p.board.contracts.length}` : "";
+    // The board wants looking at while it has contracts and none is taken (hidden while off).
+    const open = questBoardOn() && !takenContract(p) && !takenStory(p) && p.board.contracts.length ? `依頼 ${p.board.contracts.length}` : "";
     // Shelves mark when the warehouse can grow (same ▲ as the workshop / factory).
     const stashUp = canBuild(p, "storage") ? `▲ Lv${p.hideout.storage + 1}` : "";
-    return { map, quests: [ready ? `納品 ${ready}` : "", open].filter(Boolean).join("・"), stash: stashUp, shop: "", workshop: buildable ? `▲ ${buildable}` : "", factory: canBuildFactory(p) ? `▲ Lv${p.factory + 1}` : "", signal };
+    const questMark = questBoardOn() ? [ready ? `納品 ${ready}` : "", open].filter(Boolean).join("・") : "";
+    return { map, quests: questMark, stash: stashUp, shop: "", workshop: buildable ? `▲ ${buildable}` : "", factory: canBuildFactory(p) ? `▲ Lv${p.factory + 1}` : "", signal };
   }
 
   private item(item: Item, body: { act?: string; arg?: string; on?: boolean; right?: string; count?: number; need?: Needs; warn?: boolean }) {
@@ -1493,7 +1504,7 @@ export class Hub {
     const c = takenContract(p);
     const story = takenStory(p) ? currentStory(p.records) : null;
     const front = this.frontPick();
-    const teach = !c && !story && introFrontOpen(p.quests) && front;
+    const teach = !c && !story && teachFrontCapture(p) && front;
     const goal = c
       ? this.askLine(c)
       : esc(story ? `記録：${story.title}` : teach ? `${TERM.front}：${front!.name} · ${TERM.captureCore}` : front ? `${TERM.front}：${front.name}` : "探索");
@@ -1542,7 +1553,7 @@ export class Hub {
     // Each value is HTML: marks, and names escaped here.
     const rival = rivalFrontPick(p);
     const gap = !rival ? playableFrontPick(p) : null;
-    const frontQ = offered(p.quests).find((q) => q.id === "front");
+    const teach = teachFrontCapture(p);
     const plan: [string, string][] = [
       // The pad open to the decisive battle comes before any node. A rival on the front is why to sortie.
       // Gap A / X2: AI neighbour front only (playable short raid).
@@ -1556,14 +1567,18 @@ export class Hub {
               : gap
                 ? `${flagIcon(SIDE.rival)}${esc(gap.name)}を${TERM.attack}`
                 : pick
-                  ? frontQ
+                  ? teach
                     ? `${esc(pick.name)} · ${TERM.captureCore}`
                     : esc(pick.name)
                   : "—",
           ],
-      ["依頼", frontQ ? esc(frontQ.text) : c ? this.askLine(c) : esc(story ? `記録：${story.title}` : "—")],
       ["装備", this.kitMarks()],
     ];
+    // 依頼板 off: no 依頼 row — the line is 攻める拠点 → 装備 only.
+    if (questBoardOn()) {
+      const frontQ = offered(p.quests).find((q) => q.id === "front");
+      plan.splice(1, 0, ["依頼", frontQ ? esc(frontQ.text) : c ? this.askLine(c) : esc(story ? `記録：${story.title}` : "—")]);
+    }
     // Other players' expeditions land in the next raid: same marks as the departure / map table.
     const incoming = incomingFor(p);
     if (incoming.length) plan.push([TERM.incomingExpedition, `${incoming.map((e) => incomingMarks(e, Date.now())).join("")}<em class="ask-kind">${TERM.core}で${TERM.fortify}</em>`]);

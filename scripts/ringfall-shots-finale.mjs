@@ -48,7 +48,10 @@ export async function finaleShots({ browser, port, out, errors }) {
   await pg.screenshot({ path: `${out}/141-finale-map.png` });
   await pg.keyboard.press("Escape");
   await pg.evaluate(() => window.advanceTime(200));
-  // The quest board on the second round: a contract taken starts at the round's 強度, and its row offers no 通常.
+  // Revival path: 依頼板 on — a contract taken starts at the round's 強度, and its row offers no 通常.
+  await pg.evaluate(() => {
+    window.ringfallFeatures.questBoard = true;
+  });
   if (!(await pg.evaluate(() => window.ringfallCamp.walkTo("quests")))) errors.push("finale: could not stand at the quest board");
   await pg.evaluate(() => window.advanceTime(100));
   await pg.keyboard.press("KeyE");
@@ -62,6 +65,9 @@ export async function finaleShots({ browser, port, out, errors }) {
   await pg.evaluate(() => window.advanceTime(200));
   await pg.keyboard.press("Escape");
   await pg.evaluate(() => window.advanceTime(200));
+  await pg.evaluate(() => {
+    window.ringfallFeatures.questBoard = false;
+  });
   // Out of the gate: the raid's objective is the titan.
   await pg.evaluate(() => window.ringfallCamp.toGate());
   await pg.keyboard.down("KeyW");
