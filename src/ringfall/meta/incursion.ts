@@ -93,7 +93,7 @@ const nodeSalt = (id: string) => {
 export function planIncursion(
   view: IslandView,
   target: string,
-  opts: { ai: boolean; salt?: number; day?: number; taken?: readonly number[]; known?: readonly EntryId[] } = { ai: false },
+  opts: { ai: boolean; known?: readonly EntryId[] } = { ai: false },
 ): IncursionPlan | null {
   if (islandProtected(view)) return null;
   const node = NODES.find((n) => n.id === target);
@@ -102,11 +102,9 @@ export function planIncursion(
   if (!slot?.open) return null;
   const ownerId = incursionOwnerId(view.code, opts.ai);
   const island = viewToRaidIsland(view, ownerId);
-  let parcels = parcelsAt(view, node.id);
-  if (!parcels.length && opts.ai && opts.salt != null && opts.day != null) {
-    const held = view.nodes.filter((n) => n.hold === "freed").map((n) => n.id as NodeId);
-    parcels = aiDefenceParcels({ slot: 0, code: view.code, name: view.owner }, opts.salt, opts.day, held, opts.taken).filter((q) => q.poi === node.id);
-  }
+  // Use the view's parcels only — never regenerate (IDs would drift from aiView / taken bookkeeping).
+  // Empty stock still yields the settle reserve via seizeRivalLoot.
+  const parcels = parcelsAt(view, node.id);
   return {
     code: view.code,
     owner: view.owner,

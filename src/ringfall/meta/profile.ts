@@ -658,7 +658,9 @@ export function settle(p: Profile, s: State): Settlement {
   // CoC-style: 制圧 of another player's node seizes that 中継ボックス's 島の守り into the haul.
   // Only when the raid started with island holds (gate / no-island raids never hit this).
   const seized = seizeRivalLoot(p, s);
-  if (seized.ids.length) s.takenParcels = [...(s.takenParcels ?? []), ...seized.ids];
+  // Home-island report must not clear the defender's parcel ids from *this* island's DO.
+  // Lead-incursion stock is tracked in `incursionTaken` / Settlement.incursion instead.
+  if (seized.ids.length && !s.incursion) s.takenParcels = [...(s.takenParcels ?? []), ...seized.ids];
   for (const it of seized.items) home.push(it);
   // Each tool home opens the first of its routes still closed, and is spent on it.
   const opened: RouteId[] = [];

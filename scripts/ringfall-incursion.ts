@@ -28,7 +28,7 @@ const view = aiView(a, salt, day, [], "", Date.now(), []);
 check(view.parcels.length > 0, "ai view: no defence parcels");
 check(parcels.some((q) => q.poi === target), "ai parcels: target node has no stock");
 
-const plan = planIncursion(view, target, { ai: true, salt, day, taken: [], known: [] });
+const plan = planIncursion(view, target, { ai: true, known: [] });
 check(!!plan, "plan: refused an open AI node");
 check(plan?.target === target, "plan: wrong target");
 check(rivalOf(plan!.island[target] ?? "held") !== null, "plan: target is not rival-held on the copy");

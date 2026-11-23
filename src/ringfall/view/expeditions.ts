@@ -6,7 +6,7 @@
  * request's answer redraws it without touching the panel around it or the code being typed. With
  * no server it says so in one line, and only the game's own islands answer.
  */
-import { aiOvernight, aiSalt, flushRecalls, isAi, neighboursFor, readNeighbours, readView, refreshAi, SEND_TIMEOUT_MS, sendExpedition, syncOwn, takeReport, takeSync } from "../island-net";
+import { aiOvernight, flushRecalls, isAi, neighboursFor, readNeighbours, readView, refreshAi, SEND_TIMEOUT_MS, sendExpedition, syncOwn, takeReport, takeSync } from "../island-net";
 import { ago, NEIGHBOUR_SLOTS, routeOpen, type Neighbour } from "../meta/neighbours";
 import { playerNodes } from "../meta/island";
 import { alive, numbered, answerSend, recallAll, sentKey, canSend, dropStale, factoryAhead, factorySquads, homeSquads, refreshOutgoing, sendingEntry, sendKinds, squadsAway, STATE_NAME, type IslandLogEntry, type IslandView } from "../meta/expeditions";
@@ -198,13 +198,7 @@ export class ExpeditionPanel {
       this.note = { text: `${AI.start}日目から出撃できる`, good: false };
       return this.paint();
     }
-    const plan = planIncursion(t, node, {
-      ai: true,
-      salt: aiSalt(),
-      day: p.day,
-      taken: (p.incursionTaken ?? []).filter((e) => e.code === t.code).flatMap((e) => e.ids),
-      known: p.entries,
-    });
+    const plan = planIncursion(t, node, { ai: true, known: p.entries });
     if (!plan) {
       this.note = { text: "遠征を受ける拠点なし", good: false };
       return this.paint();
