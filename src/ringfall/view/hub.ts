@@ -5,7 +5,7 @@ import { armorIcon, binPicture, fightIcon, entryIcon, coinIcon, dmgIcon, magIcon
 import { ALLY, FACTORY, FACTORY_TOP, HEALS as HEAL_SPECS, HIDEOUT, MOD_KINDS, PLATE, RARITY, THREAT, TOOLS, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
 import { boostFor, raidClock, strengthFor, type Kit } from "../sim/state";
 import { CAMP, DEPOTS, ENTRIES, entryOf, HOME_REGION, NODES, nodeIndex, POIS, UNLOCKS, poiIndex, poiRegion, REGIONS, regionOf, ROUTES, type EntryId, type NodeId, type PoiId, type RegionId, type StationId } from "../sim/map";
-import { armed, build, buildFactory, buildState, buy, buyPrice, canBuild, canBuildFactory, factoryNeeded, nextFactory, canStartIn, deliver, deliverable, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, isStarter, issuedHeals, itemCost, HEALS, healCount, healRoom, keyName, kitPicks, loadoutCost, stashUsed, price, raidThreat, recallLoadout, roundThreat, sell, sellPrice, setThreat, startsIn, STORY_TAKEN, takenStory, threatPay, take, takeKit, takenContract, wanted, wares, type Item, type Loadout, type Profile } from "../meta/profile";
+import { armed, build, buildFactory, buildState, buy, buyPrice, canBuild, canBuildFactory, factoryNeeded, nextFactory, canStartIn, deliver, deliverable, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, isStarter, issuedHeals, itemCost, HEALS, healCount, healRoom, keyName, kitPicks, loadoutCost, stashUsed, price, raidThreat, recallLoadout, roundThreat, sell, sellPrice, setThreat, startsIn, STORY_TAKEN, takenStory, threatPay, take, takeKit, takenContract, wanted, wares, type Item, type Loadout, type Profile, type Settlement } from "../meta/profile";
 import { CONTRACT_NAME, contractMark, contractRegion, targetName, type Contract, type Reward } from "../meta/contracts";
 import { currentStory, STORIES, storyOf, storyWhere } from "../meta/story";
 import { materialRarity, maxLevel, MODULES, nextLevel, pouchSlots, sources, stashCap, stillNeeded, type Hideout, type Source } from "../meta/hideout";
@@ -68,6 +68,35 @@ export function nextHandFor(p: Profile): string {
   const pick = frontPickFor(p);
   return pick ? `次：車両から出撃 · 前線：${pick.name}` : "次：車両か門から出撃";
 }
+
+/** Battle fields overnightDefence reads (fortify toast vocabulary). */
+export type OvernightBattle = { fortified: readonly number[]; targets: readonly number[] } | null;
+
+/**
+ * Overnight defence closed on return (ux-design Round 7): short 島の知らせ lines.
+ * Same words as the fortified toast and the signal station's taken line — no new nouns.
+ */
+export function overnightDefence(s: { battle: OvernightBattle }, settled?: Pick<Settlement, "night">): string[] {
+  if (!settled) return [];
+  const lines: string[] = [];
+  const lost = new Set(settled.night.lost);
+  for (const id of settled.night.lost) {
+    const n = NODES[nodeIndex(id)];
+    if (n) lines.push(`${n.name}を取られた · 島の守りが削られた`);
+  }
+  const b = s.battle;
+  if (!b) return lines;
+  for (const i of b.fortified) {
+    const n = NODES[i];
+    if (!n || lost.has(n.id)) continue;
+    const vsIncoming = !b.targets.includes(i);
+    lines.push(vsIncoming ? `固めた · ${n.name} · 来る遠征をはねる` : `固めた · ${n.name} · 夜の襲撃をはねる`);
+  }
+  return lines;
+}
+
+/** Whether the camp tip is a defend / take-back hand (one beat of juice, no new key). */
+export const tipIsDefence = (tip: string) => /来る遠征|取り返す/.test(tip);
 
 export function itemName(i: Item | RewardItem): string {
   switch (i.t) {

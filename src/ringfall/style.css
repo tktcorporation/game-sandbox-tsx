@@ -2839,6 +2839,28 @@ body.touch .map-buttons button {
 #results .next-hand[hidden] {
   display: none;
 }
+/* Defence closed on return: one soft beat on the next hand (ux-design Round 7). */
+#results .next-hand.defence-beat {
+  animation: next-hand-beat 1.1s ease-out 1;
+}
+@keyframes next-hand-beat {
+  0% {
+    opacity: 0.35;
+    transform: translateY(4px);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  #results .next-hand.defence-beat {
+    animation: none;
+  }
+}
 #home .growth {
   flex-wrap: wrap;
   gap: 6px 10px;
@@ -3211,6 +3233,25 @@ body:not(.playing) #banner {
   font-weight: 800;
   color: var(--mist);
   letter-spacing: 0.02em;
+}
+/* Defend / take-back tip: one soft pulse so the next hand is felt (Round 7). */
+#camp-prompt .tip.tip-beat {
+  color: var(--own);
+  animation: tip-beat 1.4s ease-in-out 2;
+}
+@keyframes tip-beat {
+  0%,
+  100% {
+    opacity: 0.75;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  #camp-prompt .tip.tip-beat {
+    animation: none;
+  }
 }
 /* The truck's fade to a raid, and waking in the camp. */
 #fade {

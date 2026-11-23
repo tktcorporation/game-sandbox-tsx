@@ -1,4 +1,5 @@
 import { CAMP, type CampSpot, type StationId } from "../sim/map";
+import { tipIsDefence } from "./hub";
 import { startIcon } from "./icons";
 import type { State } from "../sim/state";
 import type { World } from "./world";
@@ -124,7 +125,11 @@ export class CampView {
     if (o.near?.id === "vehicle") prompt = `${key}${startIcon()}出撃`;
     else if (o.near) prompt = `${key}${esc(o.near.name)}`;
     // No station in reach: a short next-step tip (first day / incoming), not a second card.
-    else if (!o.panel && o.tip) prompt = `<span class="tip">${esc(o.tip)}</span>`;
+    else if (!o.panel && o.tip) {
+      // One beat when the tip is defend / take-back (来る遠征・取り返す) — juice only.
+      const beat = tipIsDefence(o.tip) ? " tip-beat" : "";
+      prompt = `<span class="tip${beat}">${esc(o.tip)}</span>`;
+    }
     $("camp-prompt").innerHTML = prompt;
     const use = $("t-use");
     use.hidden = !o.near;

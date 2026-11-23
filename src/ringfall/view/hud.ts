@@ -3,7 +3,7 @@ import { MODULES, nextLevel, stashCap, stillNeeded } from "../meta/hideout";
 import { neighboursNow } from "../island-net";
 import type { ModKind, ValuableKind } from "../sim/config";
 import { modGist } from "./modgist";
-import { contractMarks, itemColor, itemName, namedAid, nextHandFor, rewardList } from "./hub";
+import { contractMarks, itemColor, itemName, namedAid, nextHandFor, overnightDefence, rewardList } from "./hub";
 import { ALLY, AWARE, BAG, HIDEOUT, META, DEPOT, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, TACTICAL, TOOL_KINDS, TOOLS, VALUABLES, WEAPONS, type Flank } from "../sim/config";
 import { eyePos, magSize } from "../sim/combat";
 import { atRisk, countered, heldUnlocks } from "../sim/battle";
@@ -1567,19 +1567,24 @@ export class Hud {
     const story = settled?.story ? `<h3>記録を持ち帰った</h3><p><span class="contract done">${storyOf(settled.story.id).title}：${recordSpot(settled.story.id).name}<b>${settled.story.cash} クレジット</b></span></p>` : "";
     const growth = settled && before ? this.baseGrowth(before, settled) : "";
     const defence = this.defenceLines(s, settled);
+    const overnight = overnightDefence(s, settled);
     const tip = next || (settled ? nextHandFor(settled.profile) : "");
     const nextEl = $("next-hand");
     if (nextEl) {
       nextEl.hidden = !tip;
       nextEl.textContent = tip;
+      // One beat when the return closed a defence result (design-direction juice, no new noun).
+      nextEl.classList.toggle("defence-beat", !!overnight.length);
     }
+    // Overnight defence closes into 島の知らせ (same words as the signal station / toast).
+    const allNews = [...overnight, ...news];
     // The day's outcome is in the headline; the right column holds what comes of it, then the parts to analyse.
     $("home").innerHTML =
       island +
       growth +
       defence +
       (expNews.length ? `<h3>遠征の知らせ</h3><p>${expNews.map((n) => `<span>${esc(n)}</span>`).join("")}</p>` : "") +
-      `<div id="island-news">${newsBlock(news)}</div>` +
+      `<div id="island-news">${newsBlock(allNews)}</div>` +
       events +
       contract +
       story +
@@ -1616,6 +1621,7 @@ export class Hud {
     if (!mine && !help) return "";
     return `<h3>島の守り</h3><p>${mine}${help}</p>`;
   }
+
 
   /**
    * How the haul fed the base: valuables that still matter for 工房／工場, and anything newly buildable.
