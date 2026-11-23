@@ -540,8 +540,8 @@ export interface Settlement {
   /** The mod parts worn when the raid ended, which may be analysed (`analyse()`): none unless the player got off alive. */
   analysable: ModKind[];
   /**
-   * CoC-style raid loot from 制圧 of another player's nodes this raid: valuables that went into
-   * `home` from that node's 中継ボックス stock (or a small reserve when empty). View-only detail.
+   * CoC-style raid loot from 制圧 that actually entered the stash this settle (not sold for room).
+   * View-only: 「倉庫へ届いた」 must not claim overflow that 「倉庫に入らなかった」 already lists.
    */
   seized?: { poi: PoiId; kinds: ValuableKind[] }[];
   /**
@@ -687,6 +687,8 @@ export function settle(p: Profile, s: State): Settlement {
   const rewards = [...finished.map((q) => q.reward), ...paid].flatMap((r) => r.items.map((i): Item => ({ ...i })));
   const cash = [...finished.map((q) => q.reward), ...paid].reduce((n, r) => n + r.cash, 0) + (told?.cash ?? 0);
   const { profile, sold, soldFor } = store({ ...p, cash: p.cash + cash, routes: openRoutes([...p.routes, ...opened]) }, [...home.filter((i) => !spent.has(i)), ...rewards]);
+  // 倉庫へ届いた must list only what store kept — sold overflow stays in 「倉庫に入らなかった」 alone.
+  const seizedKept = keptSeized(seized.at, p, profile);
   const depots = DEPOTS.map((d) => d.poi).filter((id, i) => p.depots.includes(id) || s.depots[i]);
   const depotSent = Object.fromEntries(depots.map((id) => [id, (p.depotSent[id] ?? 0) + (s.sentVia[depotIndex(id)] ?? 0)]));
   // A record of a raid kept from before ways in were learned has walked to none.
@@ -761,11 +763,47 @@ export function settle(p: Profile, s: State): Settlement {
     story: told,
     threat,
     analysable: s.outcome === "extracted" ? [...(pl.mods ?? [])] : [],
-    ...(seized.at.length ? { seized: seized.at } : {}),
+    ...(seizedKept.length ? { seized: seizedKept } : {}),
     ...(s.incursion
       ? { incursion: { code: s.incursion.code, owner: s.incursion.owner, target: s.incursion.target, ids: seized.ids, won: incursionWon } }
       : {}),
   };
+}
+
+/**
+ * Of the valuables seized this raid, those that actually entered the stash after `store()`
+ * (stash after − before budget). Sold overflow is dropped so the results' 「倉庫へ届いた」 and
+ * 「倉庫に入らなかった」 never claim the same item.
+ */
+export function keptSeized(
+  seized: readonly { poi: PoiId; kinds: ValuableKind[] }[],
+  before: Pick<Profile, "stash">,
+  afterStore: Pick<Profile, "stash">,
+): { poi: PoiId; kinds: ValuableKind[] }[] {
+  const count = (stash: readonly Item[]) => {
+    const m = new Map<ValuableKind, number>();
+    for (const i of stash) if (i.t === "valuable") m.set(i.kind, (m.get(i.kind) ?? 0) + 1);
+    return m;
+  };
+  const beforeN = count(before.stash);
+  const afterN = count(afterStore.stash);
+  const budget = new Map<ValuableKind, number>();
+  for (const [k, n] of afterN) {
+    const d = n - (beforeN.get(k) ?? 0);
+    if (d > 0) budget.set(k, d);
+  }
+  const out: { poi: PoiId; kinds: ValuableKind[] }[] = [];
+  for (const q of seized) {
+    const kinds: ValuableKind[] = [];
+    for (const k of q.kinds) {
+      const left = budget.get(k) ?? 0;
+      if (left <= 0) continue;
+      budget.set(k, left - 1);
+      kinds.push(k);
+    }
+    if (kinds.length) out.push({ poi: q.poi, kinds });
+  }
+  return out;
 }
 
 /**

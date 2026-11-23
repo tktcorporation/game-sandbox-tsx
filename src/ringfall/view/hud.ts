@@ -1658,6 +1658,7 @@ export class Hud {
     for (const m of MODULES) {
       if (canBuild(after, m) && !canBuild(before, m)) ready.push(`${hideoutIcon()}${esc(HIDEOUT[m].name)} · 次の段を上げられる`);
     }
+    // Settlement.seized is already stash-kept only (keptSeized); sold overflow stays under 倉庫に入らなかった.
     const seized = (settled.seized ?? [])
       .map((q) => `<span class="growth-ready">${coreIcon(SIDE.own)}制圧した · ${esc(POIS[poiIndex(q.poi)].name)}から${q.kinds.map((k) => esc(VALUABLES[k].label)).join("・")}</span>`)
       .join("");
