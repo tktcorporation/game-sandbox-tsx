@@ -114,6 +114,11 @@ export class Hud {
   private dirs: { el: HTMLElement; x: number; z: number; t: number }[] = [];
   private shieldCells: HTMLElement[] = [];
   private lastCells = -1;
+  /**
+   * Lines kept at the head of 島の知らせ on results (overnight defence + outgoing expeditions).
+   * Late server news via setNews() must not drop these (Option A unified list).
+   */
+  private newsKeep: string[] = [];
   private awareLayer = $("aware-layer");
   private awEls = new Map<number, HTMLElement>();
   /** A red mark per node of the player's the enemy's robots have come to, by its place in `NODES`. */
@@ -1542,10 +1547,13 @@ export class Hud {
     });
   }
 
-  /** The island's news from the server, come in while the results are up: put in their place there, the rest of the results as they are. */
+  /**
+   * The island's news from the server, come in while the results are up: put in their place there,
+   * keeping overnight / outgoing expedition lines already on the unified list.
+   */
   setNews(news: readonly string[]) {
     const el = document.getElementById("island-news");
-    if (el) el.innerHTML = newsBlock(news);
+    if (el) el.innerHTML = newsBlock([...this.newsKeep, ...news]);
   }
 
   /**
@@ -1638,8 +1646,9 @@ export class Hud {
       // One beat when the return closed a defence result (design-direction juice, no new noun).
       nextEl.classList.toggle("defence-beat", !!overnight.length);
     }
-    // Overnight defence + outgoing expeditions close into one 島の知らせ.
-    const allNews = [...overnight, ...expNews, ...news];
+    // Overnight defence + outgoing expeditions close into one 島の知らせ; keep them if late sync updates news.
+    this.newsKeep = [...overnight, ...expNews];
+    const allNews = [...this.newsKeep, ...news];
     // The day's outcome is in the headline; the right column holds what comes of it, then the parts to analyse.
     $("home").innerHTML =
       island +
