@@ -944,8 +944,14 @@ function setPaused(on: boolean) {
 
 document.addEventListener("pointerlockerror", () => (noLock = true));
 document.addEventListener("pointerlockchange", () => {
+  // The raid map unlocks the pointer so wheel/drag work; do not treat that as a pause.
+  if ($("hud").classList.contains("map-open")) return;
   if (document.pointerLockElement !== stage && ((running && state.phase !== "done") || camping)) setPaused(true);
 });
+// Closing the map takes the look lock again (hud.toggleMap releases it on open).
+hud.onMapClosed = () => {
+  if (running && !paused && state.phase !== "done" && !touchMode && !bot && !manual) lock();
+};
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) setPaused(true);
   // The system drops the wake lock while the page is hidden.

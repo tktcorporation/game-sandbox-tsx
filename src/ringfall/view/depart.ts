@@ -6,7 +6,7 @@ import { PHRASE } from "./copy";
 import { neighbourFrontPick } from "../meta/neighbour-front";
 import { frontPickFor, rivalFrontPick, type Hub, type LockedPick, type StartPoint } from "./hub";
 import { depotIcon, entryIcon, flagIcon, lockIcon, SIDE, startIcon } from "./icons";
-import { IslandMap, islandScene } from "./map";
+import { IslandMap, islandScene, VIEW_PAD } from "./map";
 
 /*
  * The departure (DOM, `#depart`): the island drawn whole, every place a raid may start set on it,
@@ -40,9 +40,11 @@ export class DepartPicker {
     const canvas = $("depart-map") as HTMLCanvasElement;
     this.map = new IslandMap(canvas);
     // The departure chooses a start: the map shows who holds what and the nodes' names; the starts are the buttons laid over it.
+    // No pan/zoom here: the starts' layer covers the map; fit-to-content padding keeps edge marks whole.
     this.map.plain = true;
     this.map.whole = true;
-    $("depart-board").style.setProperty("--world-aspect", `${(WORLD.x1 - WORLD.x0) / (WORLD.z1 - WORLD.z0)}`);
+    // Same pad as IslandMap.fitView so the board's box matches what is drawn (edge names stay inside).
+    $("depart-board").style.setProperty("--world-aspect", `${(WORLD.x1 - WORLD.x0 + VIEW_PAD * 2) / (WORLD.z1 - WORLD.z0 + VIEW_PAD * 2)}`);
     $("depart-points").addEventListener("click", (e) => {
       const el = (e.target as HTMLElement).closest<HTMLButtonElement>("button[data-kind]");
       // The starts' layer covers the map, so a click between the starts goes to the map's padlocks.
@@ -74,6 +76,7 @@ export class DepartPicker {
     $("depart-points").innerHTML = "";
     this.hub.unpeek();
     this.map.picked = -1;
+    this.map.resetCam();
     if (on) requestAnimationFrame(() => this.render());
   }
 
