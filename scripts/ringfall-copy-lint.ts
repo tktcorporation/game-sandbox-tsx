@@ -164,9 +164,14 @@ function checkChunk(file: string, n: number, lit: string): void {
     if (hit) problems.push(`${file}:${n}  [banned]  「${b.bad}」→ TERM.${b.keep}（${b.note}）`);
   }
   for (const p of PENDING_SYNONYMS) {
-    if (text === p.bad || lit === p.bad || (p.bad.length >= 2 && (text.includes(p.bad) || lit.includes(p.bad)))) {
-      warns.push(`${file}:${n}  [pending-synonym]  「${p.bad}」→ TERM.${p.keep}（${p.note}）`);
-    }
+    // Still the live SoT value: rename not applied yet — do not warn on the current TERM word.
+    if (TERM[p.keep] === p.bad) continue;
+    // Exact match only when `bad` is a substring of another COPY_VALUE (e.g. 送る ⊂ 倉庫へ送る).
+    const nestedInOtherTerm = COPY_VALUES.some((v) => v !== p.bad && v.includes(p.bad));
+    const hit = nestedInOtherTerm
+      ? text === p.bad || lit === p.bad
+      : text === p.bad || lit === p.bad || (p.bad.length >= 2 && (text.includes(p.bad) || lit.includes(p.bad)));
+    if (hit) warns.push(`${file}:${n}  [pending-synonym]  「${p.bad}」→ TERM.${p.keep}（${p.note}）`);
   }
   // Exact match of a SoT value as a whole literal / static segment → must reference copy.ts.
   const trimmed = lit.trim();

@@ -90,7 +90,11 @@ export const TERM = {
   returningAlive: "生還中",
   arrivedAtWarehouse: "倉庫へ届いた",
   takeBack: "取り返す",
-  /** Signal-station verb (also answers an attack — was 仕返し). */
+  /**
+   * Signal-station verb (also answers an attack — was 仕返し).
+   * Rename pending: 【元】送る 【案】遠征に出す — docs/ringfall/glossary.md; PENDING_SYNONYMS.
+   * Do not change this value until the rename is approved.
+   */
   sendExpedition: "送る",
   backToCamp: "野営地に戻る",
   /** Modules collectively (医務室・作業台…). Not the station name. */
@@ -156,8 +160,14 @@ export const BANNED: { bad: string; keep: TermId; note: string }[] = [
   { bad: "仕返し", keep: "sendExpedition", note: "送る／取り返すに揃える" },
 ];
 
-/** No pending synonyms — adopted ones moved to BANNED. */
-export const PENDING_SYNONYMS: { bad: string; keep: TermId; note: string }[] = [];
+/**
+ * Pending renames (glossary 【元/案/理由】). Lint warns only after TERM[keep] no longer equals
+ * `bad` (so the live SoT can keep the old word until approval). One-line swap: change
+ * TERM.sendExpedition, then move the entry to BANNED (exact match — 倉庫へ送る is another TERM).
+ */
+export const PENDING_SYNONYMS: { bad: string; keep: TermId; note: string }[] = [
+  { bad: "送る", keep: "sendExpedition", note: "案：遠征に出す（来る遠征と対）。倉庫へ送るは別語" },
+];
 
 /** TERM + PHRASE string values, longest first — for lint. */
 export const COPY_VALUES = [...Object.values(TERM), ...Object.values(PHRASE)].sort((a, b) => b.length - a.length);
