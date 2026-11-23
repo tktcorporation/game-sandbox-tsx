@@ -33,23 +33,23 @@ export function namedAid(p: Pick<Profile, "parcels">): Parcel[] {
   return (p.parcels ?? []).filter((q) => q.from.name.trim() && q.from.code !== LOCAL_AID && q.from.code !== "");
 }
 
-/** The front node nearest the camp (same pick as the objective with no contract). */
-export function frontPickFor(p: Profile): { name: string } | null {
+/** The front node nearest `from` (camp wake by default — same pick as the objective with no contract). */
+export function frontPickFor(p: Profile, from: { x: number; z: number } = CAMP.wake): { name: string; x: number; z: number } | null {
   const front = frontNodes(islandHolds(p));
   const near = NODES.map((n, i) => ({ n, i }))
     .filter(({ i }) => front[i])
-    .sort((a, b) => Math.hypot(a.n.x - CAMP.wake.x, a.n.z - CAMP.wake.z) - Math.hypot(b.n.x - CAMP.wake.x, b.n.z - CAMP.wake.z))[0];
-  return near ? { name: near.n.name } : null;
+    .sort((a, b) => Math.hypot(a.n.x - from.x, a.n.z - from.z) - Math.hypot(b.n.x - from.x, b.n.z - from.z))[0];
+  return near ? { name: near.n.name, x: near.n.x, z: near.n.z } : null;
 }
 
 /** A front node held by another player — the reason to sortie and take it back. */
-export function rivalFrontPick(p: Profile): { name: string } | null {
+export function rivalFrontPick(p: Profile, from: { x: number; z: number } = CAMP.wake): { name: string; x: number; z: number } | null {
   const holds = islandHolds(p);
   const front = frontNodes(holds);
   const near = NODES.map((n, i) => ({ n, i }))
     .filter(({ i }) => front[i] && rivalOf(holds[i]) !== null)
-    .sort((a, b) => Math.hypot(a.n.x - CAMP.wake.x, a.n.z - CAMP.wake.z) - Math.hypot(b.n.x - CAMP.wake.x, b.n.z - CAMP.wake.z))[0];
-  return near ? { name: near.n.name } : null;
+    .sort((a, b) => Math.hypot(a.n.x - from.x, a.n.z - from.z) - Math.hypot(b.n.x - from.x, b.n.z - from.z))[0];
+  return near ? { name: near.n.name, x: near.n.x, z: near.n.z } : null;
 }
 
 /**

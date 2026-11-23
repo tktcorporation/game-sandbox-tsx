@@ -2,7 +2,7 @@ import { sfx } from "./sfx";
 import { incomingFor, neighboursFor } from "../island-net";
 import { WORLD } from "../sim/config";
 import { POIS, REGIONS, regionOf, type RegionId } from "../sim/map";
-import type { Hub, LockedPick, StartPoint } from "./hub";
+import { frontPickFor, rivalFrontPick, type Hub, type LockedPick, type StartPoint } from "./hub";
 import { depotIcon, entryIcon, lockIcon, startIcon } from "./icons";
 import { IslandMap, islandScene } from "./map";
 
@@ -168,6 +168,18 @@ export class DepartPicker {
       .filter((m) => Math.hypot(m.x - m.x0, m.y - m.y0) > 4)
       .map((m) => `<line x1="${m.x0.toFixed(1)}" y1="${m.y0.toFixed(1)}" x2="${m.x.toFixed(1)}" y2="${m.y.toFixed(1)}"/><circle cx="${m.x0.toFixed(1)}" cy="${m.y0.toFixed(1)}" r="2"/>`)
       .join("");
+    // Thin pull from the chosen start toward today's front (ux-design Round 9) — no new noun.
+    const chosen = marks.find((m) => m.q.on);
+    const frontPull = (() => {
+      if (!chosen) return "";
+      const p = this.hub.profile;
+      const at = { x: chosen.q.x, z: chosen.q.z };
+      const toward = rivalFrontPick(p, at) ?? frontPickFor(p, at);
+      if (!toward) return "";
+      const end = this.map.screenAt(toward.x, toward.z);
+      if (!end) return "";
+      return `<line class="front-pull" x1="${chosen.x0.toFixed(1)}" y1="${chosen.y0.toFixed(1)}" x2="${end.x.toFixed(1)}" y2="${end.y.toFixed(1)}"/>`;
+    })();
     const buttons = marks.map(({ q, x, y }) => {
       // While a shut start is shown, it is ringed and the chosen one stands unlit.
       const shown = peek?.kind === q.kind && peek.id === q.id;
@@ -183,7 +195,7 @@ export class DepartPicker {
       const cls = `region-lock shut${peek?.kind === "region" && peek.id === r.id ? " peek" : ""}`;
       return `<button type="button" class="${cls}" data-kind="region" data-id="${r.id}" style="left:${(at.x - size / 2 - 3).toFixed(1)}px;top:${at.y.toFixed(1)}px" aria-label="${esc(r.name)}">${lockIcon()}</button>`;
     });
-    root.innerHTML = `<svg class="tethers" width="${box.width}" height="${box.height}" aria-hidden="true">${tethers}</svg>${locks.join("")}${buttons.join("")}`;
+    root.innerHTML = `<svg class="tethers" width="${box.width}" height="${box.height}" aria-hidden="true">${tethers}${frontPull}</svg>${locks.join("")}${buttons.join("")}`;
   }
 
   /**

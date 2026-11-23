@@ -3428,6 +3428,13 @@ body.touch #camp-prompt {
   stroke-width: 1.2;
   fill: rgb(var(--paper-rgb) / 0.85);
 }
+/* Chosen start → today's front (Round 9). Thin own-colour pull, no new mark. */
+#depart-points .tethers .front-pull {
+  stroke: rgb(var(--own-rgb) / 0.55);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 4;
+  fill: none;
+}
 /* A start on the map: a round button over its place, its mark in the middle. */
 .screen #depart-points button.pick {
   position: absolute;
