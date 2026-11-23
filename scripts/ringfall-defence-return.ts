@@ -3,6 +3,7 @@
  * close into 島の知らせ with existing words only.
  */
 import assert from "node:assert/strict";
+import { FEATURES } from "../src/ringfall/meta/features";
 import { overnightDefence, tipIsDefence } from "../src/ringfall/view/hub";
 import { NODES, nodeIndex } from "../src/ringfall/sim/map";
 
@@ -29,14 +30,20 @@ assert.ok(supply && quarry);
   assert.deepEqual(lines, [`固めた · ${supply.name} · 夜の襲撃をはねる`]);
 }
 
-// Fortified for 来る遠征 (noticed, not a night target).
+// Fortified for 来る遠征 (noticed, not a night target): only while reactive defence is on.
 {
   const i = nodeIndex(quarry.id);
-  const lines = overnightDefence(
-    { battle: { fortified: [i], targets: [] } },
-    { night: { gained: [], lost: [] } },
+  FEATURES.reactiveDefense = false;
+  assert.deepEqual(
+    overnightDefence({ battle: { fortified: [i], targets: [] } }, { night: { gained: [], lost: [] } }),
+    [],
   );
-  assert.deepEqual(lines, [`固めた · ${quarry.name} · 来る遠征をはねる`]);
+  FEATURES.reactiveDefense = true;
+  assert.deepEqual(
+    overnightDefence({ battle: { fortified: [i], targets: [] } }, { night: { gained: [], lost: [] } }),
+    [`固めた · ${quarry.name} · 来る遠征をはねる`],
+  );
+  FEATURES.reactiveDefense = false;
 }
 
 // Lost overnight: fortified does not also claim 固めた.

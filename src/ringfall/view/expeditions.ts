@@ -234,7 +234,8 @@ export class ExpeditionPanel {
     const c = this.conn;
     // The head: the neighbours, and the factory's squads out on expeditions of all it keeps out.
     const trop = `<span class="exp-trophy">${TERM.trophy} <b>${p.trophies ?? 0}</b></span>`;
-    const head = `<div class="mod-head"><strong>${flagIcon()}お隣の島</strong>${trop}<b>${flagIcon()}遠征 ${away} / ${factorySquads(p)}</b></div>`;
+    // No 「遠征 n/m」 in the head — that looked like an attack entry (CoC: 信号所 is news / お隣 / トロフィー only).
+    const head = `<div class="mod-head"><strong>${flagIcon()}お隣の島</strong>${trop}</div>`;
     // Without the server only the game's own islands answer; with none of them either, nothing can be sent.
     const send = c.t === "ok" || this.neighbours.some((n) => n.ai) ? this.sendForm(p) : "";
     const out = p.expeditions.length
@@ -255,7 +256,7 @@ export class ExpeditionPanel {
           : c.t === "error"
             ? `<p class="lock-note">${lockIcon()}${esc(errorText(c.error))}<button type="button" data-act="exp-retry">もう一度</button></p>`
             : `<details class="exp-codes${openCodes}"${openCodes ? " open" : ""}><summary>島の番号</summary>` +
-              `<div class="exp-own"><small>自分の島</small><b class="exp-code">${esc(c.code)}</b><button type="button" data-act="exp-copy">${this.copied ? "コピーした" : "コピー"}</button>${c.view?.expeditions.length ? `<small class="exp-in">${coreIcon(SIDE.rival)}来ている遠征 <b>${c.view.expeditions.length}</b></small>` : ""}</div>` +
+              `<div class="exp-own"><small>自分の島</small><b class="exp-code">${esc(c.code)}</b><button type="button" data-act="exp-copy">${this.copied ? "コピーした" : "コピー"}</button></div>` +
               `<div class="exp-send"><input id="exp-code" type="text" inputmode="text" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="友達の島の番号" value="${esc(this.typed)}"><button type="button" data-act="exp-look"${dis}>見る</button></div></details>`;
     return `<div class="mod open up-card exp-card">${head}<div class="mod-body">${send}${out}${cost}<div class="exp-foot">${own}</div></div></div>`;
   }
