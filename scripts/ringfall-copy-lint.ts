@@ -187,12 +187,14 @@ for (const file of files) {
   });
 }
 
-// Sanity: SoT itself defines the tip alias and side title.
-if (PHRASE.nextWorkshopRaise !== "次：工房 · 次の段を上げる") {
-  problems.push("copy.ts: PHRASE.nextWorkshopRaise must stay live「次：工房 · 次の段を上げる」until rename approved");
+// Sanity: adopted glossary values (Option A + glossary renames).
+if (TERM.workshop !== "作業場") problems.push("copy.ts: TERM.workshop must be 作業場");
+if (PHRASE.sideWorkshop !== TERM.workshop) problems.push("copy.ts: PHRASE.sideWorkshop must be TERM.workshop");
+if (PHRASE.sideFactory !== TERM.factory) problems.push("copy.ts: PHRASE.sideFactory must be TERM.factory");
+if (TERM.raiseLevel !== "レベルを上げる") problems.push("copy.ts: TERM.raiseLevel must be レベルを上げる (glossary; one-line revert if disagreed)");
+if (!PHRASE.nextWorkshopRaise.includes(TERM.workshop) || !PHRASE.nextWorkshopRaise.includes(TERM.raiseLevel)) {
+  problems.push("copy.ts: PHRASE.nextWorkshopRaise must use 作業場 · レベルを上げる");
 }
-if (TERM.workshop !== "作業場") problems.push("copy.ts: TERM.workshop must be 作業場 (world label)");
-if (PHRASE.sideWorkshop !== "隠れ家") problems.push("copy.ts: PHRASE.sideWorkshop must stay 隠れ家 until rename approved");
 
 if (warns.length) {
   console.warn(`RINGFALL COPY LINT warnings (${warns.length}):`);

@@ -2,8 +2,7 @@
  * Player-visible copy — single source of truth (docs/ringfall/glossary.md).
  *
  * Every UI string for a defined term must come from here (or helpers below).
- * Live wording is unchanged until a 【元/案/理由】 rename is approved; proposals
- * are documented in glossary.md only.
+ * Renames go through 【元/案/理由】 in glossary.md, then change values here.
  *
  * Lint: `npm run lint:ringfall-copy` — fails on banned synonyms and on raw
  * literals of TERM / PHRASE values outside this file and the allowlist.
@@ -32,6 +31,8 @@ export type TermId =
   | "nextHand"
   | "raiseLevel"
   | "raiseLevelReady"
+  | "nextLevel"
+  | "lastLevel"
   | "fortify"
   | "fortifyCore"
   | "captureCore"
@@ -40,9 +41,9 @@ export type TermId =
   | "returningAlive"
   | "arrivedAtWarehouse"
   | "takeBack"
+  | "sendExpedition"
   | "backToCamp"
   | "hideout"
-  | "ownRobots"
   | "islandNews"
   | "nightRaid"
   | "wares"
@@ -52,9 +53,8 @@ export type TermId =
   | "island";
 
 /**
- * Canonical place / action words as the game shows them today.
- * Prefer these in new UI. Synonym cleanups are proposals in glossary.md —
- * do not change a value here without an approved 【元/案/理由】.
+ * Canonical place / action words as the game shows them.
+ * Prefer these in new UI. Change a value only with an approved 【元/案/理由】.
  */
 export const TERM = {
   camp: "野営地",
@@ -62,7 +62,7 @@ export const TERM = {
   questBoard: "依頼板",
   stashShelf: "倉庫の棚",
   traderStall: "商人の屋台",
-  /** World label + panel head for the hideout station. */
+  /** World label + panel head/side for the hideout station. */
   workshop: "作業場",
   factory: "工場",
   signal: "信号所",
@@ -77,8 +77,11 @@ export const TERM = {
   front: "前線",
   sortie: "出撃",
   nextHand: "次：",
-  raiseLevel: "次の段を上げる",
-  raiseLevelReady: "次の段を上げられる",
+  /** One-line change if the user prefers another verb (glossary). */
+  raiseLevel: "レベルを上げる",
+  raiseLevelReady: "レベルを上げられる",
+  nextLevel: "次のレベル",
+  lastLevel: "最後のレベル",
   fortify: "固める",
   fortifyCore: "核 · 固める",
   captureCore: "核 · 制圧",
@@ -87,10 +90,11 @@ export const TERM = {
   returningAlive: "生還中",
   arrivedAtWarehouse: "倉庫へ届いた",
   takeBack: "取り返す",
+  /** Signal-station verb (also answers an attack — was 仕返し). */
+  sendExpedition: "送る",
   backToCamp: "野営地に戻る",
   /** Modules collectively (医務室・作業台…). Not the station name. */
   hideout: "隠れ家",
-  ownRobots: "自軍のロボット",
   islandNews: "島の知らせ",
   nightRaid: "夜の襲撃",
   wares: "売り物",
@@ -100,13 +104,9 @@ export const TERM = {
   island: "島",
 } as const satisfies Record<TermId, string>;
 
-/**
- * Full live phrases as shown today (including known inconsistencies).
- * Wiring UI through these keeps pixels identical until renames are approved.
- */
+/** Full live phrases built from TERM. */
 export const PHRASE = {
-  /** Live tip still says 工房 — proposal: 作業場 (glossary). */
-  nextWorkshopRaise: "次：工房 · 次の段を上げる",
+  nextWorkshopRaise: `${TERM.nextHand}${TERM.workshop} · ${TERM.raiseLevel}`,
   nextFactoryRaise: `${TERM.nextHand}${TERM.factory} · ${TERM.raiseLevel}`,
   nextMapFortifyIncoming: `${TERM.nextHand}${TERM.mapTable} · ${TERM.incomingExpedition}を${TERM.fortify}`,
   nextVehicleOrGate: `${TERM.nextHand}${TERM.vehicle}か${TERM.gate}から${TERM.sortie}`,
@@ -114,9 +114,8 @@ export const PHRASE = {
   nextQuestDeliver: `${TERM.nextHand}${TERM.questBoard} · 納品する`,
   sortieDo: `${TERM.sortie}する`,
   factoryRaiseReady: `${TERM.factory} · ${TERM.raiseLevelReady}`,
-  /** Side column title when workshop is open — proposal: 作業場. */
-  sideWorkshop: "隠れ家",
-  sideFactory: TERM.ownRobots,
+  sideWorkshop: TERM.workshop,
+  sideFactory: TERM.factory,
   islandGuardVia: `の${TERM.islandGuard}に回る`,
   islandGuardWent: `の${TERM.islandGuard}に回った`,
   /** Live capture prompt — 「を始める」 is part of the line today. */
@@ -140,22 +139,23 @@ export function relayOf(poiName: string): string {
 }
 
 /**
- * Hard-banned in UI sources: internal jargon / English. Lint fails.
+ * Hard-banned in UI sources. Lint fails.
+ * Adopted synonyms from glossary live here (not in PENDING).
  */
 export const BANNED: { bad: string; keep: TermId; note: string }[] = [
   { bad: "デポ", keep: "relayBox", note: "brief は中継ボックス" },
   { bad: "depot", keep: "relayBox", note: "内部英名をプレイヤーに出さない" },
   { bad: "parcel", keep: "islandGuard", note: "島の守り" },
   { bad: "pad", keep: "core", note: "発着場は拠点名で出す" },
+  { bad: "工房", keep: "workshop", note: "画面ラベルは作業場" },
+  { bad: "自軍のロボット", keep: "factory", note: "側タイトルも工場" },
+  { bad: "次の段を上げる", keep: "raiseLevel", note: "レベルを上げる" },
+  { bad: "次の段を上げられる", keep: "raiseLevelReady", note: "レベルを上げられる" },
+  { bad: "段を上げる", keep: "raiseLevel", note: "レベルを上げる" },
 ];
 
-/**
- * Known synonyms still live in PHRASE / elsewhere until a rename is approved.
- * Lint warns (does not fail) when these appear as raw literals outside copy.ts.
- */
-export const PENDING_SYNONYMS: { bad: string; keep: TermId; note: string }[] = [
-  { bad: "工房", keep: "workshop", note: "tip のみ。世界印は作業場" },
-];
+/** No pending synonyms — adopted ones moved to BANNED. */
+export const PENDING_SYNONYMS: { bad: string; keep: TermId; note: string }[] = [];
 
 /** TERM + PHRASE string values, longest first — for lint. */
 export const COPY_VALUES = [...Object.values(TERM), ...Object.values(PHRASE)].sort((a, b) => b.length - a.length);
