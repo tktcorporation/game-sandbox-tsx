@@ -1,6 +1,5 @@
 import { PLAYER } from "../sim/config";
 import { incomingFor, neighboursFor } from "../island-net";
-import { neighbourFrontPick } from "../meta/neighbour-front";
 import { LOCAL_AID, type Parcel } from "../meta/parcels";
 import { armorIcon, binPicture, fightIcon, entryIcon, coinIcon, dmgIcon, magIcon, rateIcon, checkIcon, coreIcon, factoryIcon, flagIcon, hideoutIcon, clockIcon, crossIcon, depotIcon, gunIcon, healIcon, issueIcon, keyIcon, lockIcon, modIcon, pinIcon, pouchIcon, radioIcon, robotIcon, routeIcon, SIDE, stashIcon, turretIcon, upIcon, workbenchIcon } from "./icons";
 import { ALLY, FACTORY, FACTORY_TOP, HEALS as HEAL_SPECS, HIDEOUT, MOD_KINDS, PLATE, RARITY, THREAT, TOOLS, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
@@ -62,9 +61,8 @@ export function nextHandFor(p: Profile): string {
   if (incomingFor(p).length) return PHRASE.nextMapFortifyIncoming;
   const rival = rivalFrontPick(p);
   if (rival) return nextAttack(rival.name);
-  // Gap A: no rival hold yet — open sea route to a neighbour with no foothold → 攻める their 前線.
-  const gap = neighbourFrontPick(p.poiState, neighboursFor(p), CAMP.wake);
-  if (gap) return nextAttack(gap.name);
+  // Gap A marks stay on the map only here: recommending them before a playable raid (X2) would
+  // point at a coast with no核 · 制圧. X2 (stacked) re-adds the line for AI fronts that can raid.
   // First sessions: 前線の核 · 制圧 before workshop shopping (game-design-review A).
   if (introFrontOpen(p.quests)) {
     const pick = frontPickFor(p);
@@ -1374,11 +1372,10 @@ export class Hub {
     const story = takenStory(p) ? currentStory(p.records) : null;
     // Each value is HTML: marks, and names escaped here.
     const rival = rivalFrontPick(p);
-    const gap = !rival ? neighbourFrontPick(p.poiState, neighboursFor(p), CAMP.wake) : null;
     const frontQ = offered(p.quests).find((q) => q.id === "front");
     const plan: [string, string][] = [
       // The pad open to the decisive battle comes before any node. A rival on the front is why to sortie.
-      // Gap A: open neighbour with no foothold shows as ○○の前線.
+      // Gap A map marks are not listed here until a playable raid exists (X2).
       // First sessions name 核 · 制圧 on the node so the line's middle is the day's ask.
       final
         ? ["決戦", esc(POIS.find((o) => o.boss)!.name)]
@@ -1386,13 +1383,11 @@ export class Hub {
             "攻める拠点",
             rival
               ? `${flagIcon(SIDE.rival)}${esc(rival.name)}を${TERM.attack}`
-              : gap
-                ? `${flagIcon(SIDE.rival)}${esc(gap.name)}を${TERM.attack}`
-                : pick
-                  ? frontQ
-                    ? `${esc(pick.name)} · ${TERM.captureCore}`
-                    : esc(pick.name)
-                  : "—",
+              : pick
+                ? frontQ
+                  ? `${esc(pick.name)} · ${TERM.captureCore}`
+                  : esc(pick.name)
+                : "—",
           ],
       ["依頼", frontQ ? esc(frontQ.text) : c ? this.askLine(c) : esc(story ? `記録：${story.title}` : "—")],
       ["装備", this.kitMarks()],

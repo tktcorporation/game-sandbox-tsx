@@ -1043,8 +1043,9 @@ export class IslandMap {
       taken.push({ x0: p.x - r * 1.6, y0: p.y - r - 12 * dpr, x1: p.x + r * 1.6, y1: p.y + r });
     }
     // Gap A: open route, no foothold yet → ○○の前線 mark on the coast approach (攻められる印).
-    if (!plain && !this.mini && s.hold) {
-      for (const f of neighbourFronts(s.hold, this.neighbours)) {
+    // Use `nodes` (NODES order), never `hold` (POIS order — includes `pad` and shifts coastal slots).
+    if (!plain && !this.mini && s.nodes) {
+      for (const f of neighbourFronts(s.nodes, this.neighbours)) {
         const p = at(f.x, f.z);
         const r = 8 * dpr;
         g.save();

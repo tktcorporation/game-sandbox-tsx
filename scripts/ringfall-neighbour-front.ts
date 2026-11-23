@@ -8,7 +8,7 @@ import { NEIGHBOUR_SLOTS } from "../src/ringfall/meta/neighbours";
 import type { Neighbour } from "../src/ringfall/meta/neighbours";
 import { newIsland } from "../src/ringfall/meta/island";
 import { rivalHold } from "../src/ringfall/sim/holds";
-import { NODES, nodeIndex } from "../src/ringfall/sim/map";
+import { NODES, POIS, nodeIndex } from "../src/ringfall/sim/map";
 import { aiOwner } from "../src/ringfall/sim/holds";
 
 const neighbours: Neighbour[] = [
@@ -54,6 +54,23 @@ const neighbours: Neighbour[] = [
   const other = NODES.find((n) => n.id !== shore && nodeIndex(n.id) >= 0)!;
   island[other.id] = { state: rivalHold(aiOwner("BBBBBB")) };
   assert.equal(neighbourFronts(island, neighbours).some((f) => f.code === "BBBBBB"), false);
+}
+
+// NODES-order holds (map `nodes`) match Island; POIS-order (map `hold`) shifts coastal slots.
+{
+  const island = newIsland();
+  const shore = NEIGHBOUR_SLOTS[0].shore;
+  island[shore] = { state: "freed" };
+  const nodes = NODES.map((n) => island[n.id]?.state ?? ("held" as const));
+  const right = neighbourFronts(nodes, neighbours);
+  assert.equal(right.length, 1);
+  assert.equal(right[0].code, "AAAAAA");
+  // POIS order includes `pad` before coastal nodes — holding station opens waterworks' slot instead.
+  const poisOrder = POIS.map((o) => island[o.id]?.state ?? ("held" as const));
+  assert.notEqual(poisOrder.length, nodes.length);
+  const wrong = neighbourFronts(poisOrder as typeof nodes, neighbours);
+  assert.equal(wrong.length, 1);
+  assert.equal(wrong[0].code, "BBBBBB");
 }
 
 console.log("neighbour front ok");
