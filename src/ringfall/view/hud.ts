@@ -141,6 +141,12 @@ export class Hud {
   /** The ways in the profile knew when the raid began: one walked to that is not among them is news. */
   private known: EntryId[] = [];
 
+  /**
+   * Called when the raid map closes, so the page can take the look lock again (main.ts).
+   * Opening releases the lock first so wheel/drag reach the canvas under desktop pointer lock.
+   */
+  onMapClosed: (() => void) | null = null;
+
   /** Open or close the island map; it is redrawn every frame while open, and opens on the region the player is in. */
   toggleMap(force?: boolean) {
     this.mapOpen = force ?? !this.mapOpen;
@@ -152,6 +158,10 @@ export class Hud {
       this.map.resetCam();
       this.map.bindNav();
       this.showWhole(false);
+      // Mark map-open before unlocking so pointerlockchange does not open the pause screen.
+      if (document.pointerLockElement) document.exitPointerLock();
+    } else {
+      this.onMapClosed?.();
     }
     this.map.picked = -1;
   }

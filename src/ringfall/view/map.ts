@@ -594,11 +594,12 @@ export class IslandMap {
         this.clampCam(this.last);
         this.draw(this.last);
         // Keep the cursor's world point under the cursor after zooming in.
+        // Subtract: a larger cam.ox shifts the view +x and moves drawn points left on screen.
         if (old && this.proj && next > 1) {
           const after = this.screenAt(wx, wz);
           if (after) {
-            this.cam.ox += (e.clientX - r.left - after.x) / this.proj.m;
-            this.cam.oz += (e.clientY - r.top - after.y) / this.proj.m;
+            this.cam.ox -= (e.clientX - r.left - after.x) / this.proj.m;
+            this.cam.oz -= (e.clientY - r.top - after.y) / this.proj.m;
             this.clampCam(this.last);
             this.draw(this.last);
           }
