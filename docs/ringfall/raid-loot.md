@@ -58,6 +58,8 @@ RINGFALL では **他プレイヤーの拠点は前線の一種** とする。�
 
 実装残骸や [multiplayer.md](multiplayer.md) の段階表に「率いる」が残っていても、体験の正は案 A。片付けは別 PR。
 
+他の人の島へ攻めに行く再検討（写し／短いレイド／非同期防衛）は [game-design-review.md](game-design-review.md) §5.8（**提案・未決**）。段階 6 の入口分裂は繰り返さない。
+
 ---
 
 ## やらないこと
