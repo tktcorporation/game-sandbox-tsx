@@ -1,31 +1,36 @@
 /*
- * Lead-incursion (docs/ringfall/raid-loot.md stage 6, multiplayer.md 率いる遠征): the player
- * raids a copy of another island, takes a node by its 核 · 制圧, and the node's 中継ボックス
- * 島の守り arrives as 倉庫へ届いた — same vocabulary as a home-island retake. Pure helpers;
- * the sim gate never starts an incursion, so its hash stays put.
+ * Other-island short raid X2 (docs/ringfall/game-design-review.md §5.8): the player raids a
+ * *subset* of another island's nodes (not the full mirror of abolished stage 6), takes the
+ * target by 核 · 制圧, and 島の守り arrives as 倉庫へ届いた. Helpers stay pure; the sim gate's
+ * home-island tables never set Start.incursion, so their hash stays put.
  */
 import type { ValuableKind } from "../sim/config";
 import { rivalHold, type PoiHold } from "../sim/holds";
-import { DEPOTS, ENTRIES, NODES, POIS, poiRegion, regionOf, type EntryId, type NodeId, type PoiId, type RegionId } from "../sim/map";
+import { DEPOTS, ENTRIES, FRONT_LINKS, NODES, POIS, nodeIndex, poiRegion, regionOf, type EntryId, type NodeId, type PoiId, type RegionId } from "../sim/map";
 import type { IslandView } from "./expeditions";
 import type { Parcel } from "./parcels";
 import { LOCAL_AID } from "./parcels";
 import type { AiIsland } from "./ai-islands";
 
-/** What a lead-incursion raid needs to start: the copy's holds, the target, and defence stock. */
+/** How many nodes beside the target may stay on the short-raid stage (X2). */
+export const SHORT_RAID_EXTRA = 2;
+
+/** What a short / lead-incursion raid needs to start: the copy's holds, the target, and defence stock. */
 export interface IncursionPlan {
   code: string;
   owner: string;
   target: NodeId;
   region: RegionId;
   entry: EntryId;
-  /** Who holds each POI on the copy: the owner's nodes as `rival:…`, the rest the enemy's. */
+  /** Who holds each POI on the copy: stage nodes as `rival:…`, the rest cleared (X2) or enemy-held (legacy full). */
   island: Partial<Record<PoiId, PoiHold>>;
   /** Defence stock on the copy (at least the target's); seized on 制圧 into 倉庫へ届いた. */
   parcels: Parcel[];
+  /** Nodes on the short stage (target first). Empty when the plan is a legacy full mirror. */
+  stage: NodeId[];
 }
 
-/** Whether the island still blocks expeditions / lead-incursions (新規島の保護). */
+/** Whether the island still blocks expeditions / short raids (新規島の保護). */
 export const islandProtected = (v: Pick<IslandView, "protectedUntil">, now = Date.now()): boolean =>
   !!v.protectedUntil && v.protectedUntil > now;
 
@@ -35,6 +40,7 @@ export const incursionOwnerId = (code: string, ai: boolean): string => (ai ? `ai
 /**
  * An island view as a raid's `Start.island`: every node the owner holds becomes another player's
  * (`rival:owner`), so 核 · 制圧 and seizeRivalLoot work as on the home front; the rest stay held.
+ * Legacy full-mirror helper — X2 uses `viewToShortRaidIsland` instead.
  */
 export function viewToRaidIsland(view: Pick<IslandView, "code" | "nodes">, ownerId: string): Partial<Record<PoiId, PoiHold>> {
   const out: Partial<Record<PoiId, PoiHold>> = {};
@@ -45,6 +51,44 @@ export function viewToRaidIsland(view: Pick<IslandView, "code" | "nodes">, owner
     }
     const n = view.nodes.find((x) => x.id === p.id);
     out[p.id] = n?.hold === "freed" ? rivalHold(ownerId) : "held";
+  }
+  return out;
+}
+
+/**
+ * X2 stage: the target plus up to `SHORT_RAID_EXTRA` FRONT_LINKS neighbours the owner still holds,
+ * nearest first. Only these stay rival-held on the copy.
+ */
+export function stageNodes(view: Pick<IslandView, "nodes">, target: NodeId, extra = SHORT_RAID_EXTRA): NodeId[] {
+  const ownerHeld = new Set(view.nodes.filter((n) => n.hold === "freed" && n.open).map((n) => n.id));
+  if (!ownerHeld.has(target)) return [];
+  const t = NODES[nodeIndex(target)];
+  const linked = FRONT_LINKS.flatMap(([a, b]) => {
+    if (a === target && typeof b === "string" && ownerHeld.has(b as NodeId)) return [b as NodeId];
+    if (b === target && a !== "camp" && ownerHeld.has(a as NodeId)) return [a as NodeId];
+    return [];
+  });
+  linked.sort((a, b) => {
+    const na = NODES[nodeIndex(a)];
+    const nb = NODES[nodeIndex(b)];
+    return Math.hypot(na.x - t.x, na.z - t.z) - Math.hypot(nb.x - t.x, nb.z - t.z);
+  });
+  return [target, ...linked.slice(0, Math.max(0, extra))];
+}
+
+/**
+ * X2 copy: only `stage` nodes are rival-held; every other freeable POI is freed (no garrison), so
+ * the raid stays on a few nodes. The titan pad stays held.
+ */
+export function viewToShortRaidIsland(ownerId: string, stage: readonly NodeId[]): Partial<Record<PoiId, PoiHold>> {
+  const on = new Set(stage);
+  const out: Partial<Record<PoiId, PoiHold>> = {};
+  for (const p of POIS) {
+    if (p.boss) {
+      out[p.id] = "held";
+      continue;
+    }
+    out[p.id] = on.has(p.id as NodeId) ? rivalHold(ownerId) : "freed";
   }
   return out;
 }
@@ -63,7 +107,7 @@ export function parcelsAt(view: Pick<IslandView, "parcels">, poi: PoiId): Parcel
 
 /**
  * Defence stock the game's islands show at their held nodes: one common material per held node,
- * hashed so a day is stable. `taken` drops ids already seized in a lead-incursion.
+ * hashed so a day is stable. `taken` drops ids already seized in a short raid.
  */
 export function aiDefenceParcels(a: AiIsland, salt: number, day: number, held: readonly NodeId[], taken: readonly number[] = []): Parcel[] {
   const gone = new Set(taken);
@@ -87,8 +131,7 @@ const nodeSalt = (id: string) => {
 };
 
 /**
- * A lead-incursion from an island view onto `target`: null when the node is shut, the island is
- * protected, or the target is not a node.
+ * Legacy full-mirror plan (stage 6 shape). Prefer `planShortRaid` for X2.
  */
 export function planIncursion(
   view: IslandView,
@@ -102,8 +145,6 @@ export function planIncursion(
   if (!slot?.open) return null;
   const ownerId = incursionOwnerId(view.code, opts.ai);
   const island = viewToRaidIsland(view, ownerId);
-  // Use the view's parcels only — never regenerate (IDs would drift from aiView / taken bookkeeping).
-  // Empty stock still yields the settle reserve via seizeRivalLoot.
   const parcels = parcelsAt(view, node.id);
   return {
     code: view.code,
@@ -113,15 +154,47 @@ export function planIncursion(
     entry: entryForTarget(node.id, opts.known),
     island,
     parcels,
+    stage: [],
   };
 }
 
-/** Ids already seized from island `code` in earlier lead-incursions (profile bookkeeping). */
+/**
+ * X2 short raid: only a few of the owner's open nodes stay on the stage. Null when protected,
+ * the target is shut, or the owner does not hold it.
+ */
+export function planShortRaid(
+  view: IslandView,
+  target: string,
+  opts: { ai: boolean; known?: readonly EntryId[]; extra?: number } = { ai: false },
+): IncursionPlan | null {
+  if (islandProtected(view)) return null;
+  const node = NODES.find((n) => n.id === target);
+  if (!node) return null;
+  const slot = view.nodes.find((n) => n.id === target);
+  if (!slot?.open || slot.hold !== "freed") return null;
+  const stage = stageNodes(view, node.id, opts.extra ?? SHORT_RAID_EXTRA);
+  if (!stage.length) return null;
+  const ownerId = incursionOwnerId(view.code, opts.ai);
+  const island = viewToShortRaidIsland(ownerId, stage);
+  const parcels = stage.flatMap((id) => parcelsAt(view, id));
+  return {
+    code: view.code,
+    owner: view.owner,
+    target: node.id,
+    region: regionOf(node.region).id,
+    entry: entryForTarget(node.id, opts.known),
+    island,
+    parcels,
+    stage,
+  };
+}
+
+/** Ids already seized from island `code` in earlier short raids (profile bookkeeping). */
 export function takenOn(list: readonly { code: string; ids: number[] }[] | undefined, code: string): number[] {
   return list?.filter((e) => e.code === code).flatMap((e) => e.ids) ?? [];
 }
 
-/** Merges newly seized parcel ids for island `code` into the profile's lead-incursion book. */
+/** Merges newly seized parcel ids for island `code` into the profile's short-raid book. */
 export function withTaken(
   list: readonly { code: string; ids: number[] }[] | undefined,
   code: string,

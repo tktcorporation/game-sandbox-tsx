@@ -14,6 +14,9 @@ import { addRetaken, awayIncome, parseIncoming, parseOutgoing, parseRetaken, rec
 import { LOCAL_AID, parseParcels, type Parcel } from "./parcels";
 import { withTaken } from "./incursion";
 import { capturedIds, momentum } from "../sim/front";
+import { assaultLost, assaultWon } from "./assault";
+import { TROPHY, clampTrophies, trophyDelta, trophySwap } from "./trophies";
+import { holdsOf } from "./neighbour-front";
 
 /**
  * One thing in the stash. Heals are one entry per unit, so the stash cap counts them. A weapon
@@ -30,7 +33,7 @@ export type Item =
 
 /** What persists between raids. */
 export interface Profile {
-  v: 31;
+  v: 32;
   cash: number;
   stash: Item[];
   raids: number;
@@ -107,6 +110,11 @@ export interface Profile {
    * them so the defender's 島の守り stays partially lost. Soft-default empty on older saves.
    */
   incursionTaken: { code: string; ids: number[] }[];
+  /**
+   * Trophy ranking T1 (game-design-review §5.5): rises when a rival / AI node is taken in a raid,
+   * falls when a node is lost to another player. v31 and older saves start at `TROPHY.start`.
+   */
+  trophies: number;
 }
 
 /** A loadout by what it holds rather than by stash index: what `Profile.lastKit` keeps. */
@@ -167,7 +175,7 @@ export const stashUsed = (p: Pick<Profile, "stash">) => p.stash.filter((i) => !i
 export function newProfile(seed = 1): Profile {
   const stash: Item[] = [...starterItems(), ...META.start.weapons.map((w): Item => ({ t: "weapon", ...w }))];
   for (const k of HEALS) for (let i = 0; i < META.start.heals[k]; i++) stash.push({ t: "heal", kind: k });
-  const p: Omit<Profile, "board"> = { v: 31, cash: META.start.cash, stash, raids: 0, extracted: 0, time: 0, quests: emptyLog(), region: HOME_REGION.id, entry: FIRST_ENTRY, entries: [FIRST_ENTRY], hideout: emptyHideout(), seed: seed & 0xffff, depots: [], depotSent: {}, seen: "", routes: [], day: 1, poiState: newIsland(), taken: null, records: [], events: firstEvents(seed & 0xffff), known: [...MOD_START], threat: 0, freedAt: {}, factory: 0, cycle: 0, cycleDay: 1, liberations: [], lastKit: null, expeditions: [], logSeq: 0, retaken: [], incoming: [], parcels: [], incursionTaken: [] };
+  const p: Omit<Profile, "board"> = { v: 32, cash: META.start.cash, stash, raids: 0, extracted: 0, time: 0, quests: emptyLog(), region: HOME_REGION.id, entry: FIRST_ENTRY, entries: [FIRST_ENTRY], hideout: emptyHideout(), seed: seed & 0xffff, depots: [], depotSent: {}, seen: "", routes: [], day: 1, poiState: newIsland(), taken: null, records: [], events: firstEvents(seed & 0xffff), known: [...MOD_START], threat: 0, freedAt: {}, factory: 0, cycle: 0, cycleDay: 1, liberations: [], lastKit: null, expeditions: [], logSeq: 0, retaken: [], incoming: [], parcels: [], incursionTaken: [], trophies: TROPHY.start };
   return { ...p, board: makeBoard(p) };
 }
 
@@ -539,6 +547,8 @@ export interface Settlement {
   threat: number;
   /** The mod parts worn when the raid ended, which may be analysed (`analyse()`): none unless the player got off alive. */
   analysable: ModKind[];
+  /** Trophy T1 change this settle (`gained` / `lost` counts); left out when none moved. */
+  trophies?: { before: number; after: number; gained: number; lost: number };
   /**
    * CoC-style raid loot from 制圧 that actually entered the stash this settle (not sold for room).
    * View-only: 「倉庫へ届いた」 must not claim overflow that 「倉庫に入らなかった」 already lists.
@@ -689,8 +699,12 @@ export function settle(p: Profile, s: State): Settlement {
   const { profile, sold, soldFor } = store({ ...p, cash: p.cash + cash, routes: openRoutes([...p.routes, ...opened]) }, [...home.filter((i) => !spent.has(i)), ...rewards]);
   // 倉庫へ届いた must list only what store kept — sold overflow stays in 「倉庫に入らなかった」 alone.
   const seizedKept = keptSeized(seized.at, p, profile);
-  const depots = DEPOTS.map((d) => d.poi).filter((id, i) => p.depots.includes(id) || s.depots[i]);
-  const depotSent = Object.fromEntries(depots.map((id) => [id, (p.depotSent[id] ?? 0) + (s.sentVia[depotIndex(id)] ?? 0)]));
+  // X2 / lead-incursion: the copy frees non-stage POIs for a short battlefield — never unlock
+  // those depots (or credit sentVia) on the home profile (Codex #197 P2).
+  const depots = s.incursion ? [...p.depots] : DEPOTS.map((d) => d.poi).filter((id, i) => p.depots.includes(id) || s.depots[i]);
+  const depotSent = s.incursion
+    ? { ...p.depotSent }
+    : Object.fromEntries(depots.map((id) => [id, (p.depotSent[id] ?? 0) + (s.sentVia[depotIndex(id)] ?? 0)]));
   // A record of a raid kept from before ways in were learned has walked to none.
   const learned = s.outcome === "extracted" ? knownEntries(s.found ?? []).filter((e) => !p.entries.includes(e)) : [];
   const entries = knownEntries([...p.entries, ...learned]);
@@ -713,6 +727,23 @@ export function settle(p: Profile, s: State): Settlement {
   if (s.incursion && seized.ids.length) incursionTaken = withTaken(incursionTaken, s.incursion.code, seized.ids);
   const settled = { ...profile, freedAt, entries, quests: log, raids: p.raids + 1, extracted: p.extracted + (s.outcome === "extracted" ? 1 : 0), time: p.time + s.time, seed: nextSeed(p.seed), depots, depotSent, seen: encodeSeen(s.seen), records: kept, parcels, incursionTaken };
   const { profile: night } = advanceDay(settled, day);
+  // Trophy T1: rival nodes taken in the raid / lost overnight to another player.
+  // X2 short-raid wins do not rewrite home holds — award the same swap once here (no double count).
+  const beforeHolds = holdsOf(p.poiState);
+  const afterHolds = holdsOf(night.poiState);
+  let trop = trophyDelta(p.trophies ?? TROPHY.start, beforeHolds, afterHolds);
+  const incursionWonEarly = !!s.incursion && capturedIds(s).includes(s.incursion.target as NodeId);
+  if (incursionWonEarly && !trop.taken.length) {
+    const self = p.trophies ?? TROPHY.start;
+    const { gain } = trophySwap(self, self);
+    trop = { next: clampTrophies(self + gain), gained: trop.gained + gain, lost: trop.lost, taken: [s.incursion!.target as NodeId], dropped: trop.dropped };
+  }
+  if (trop.next !== (p.trophies ?? TROPHY.start)) Object.assign(night, { trophies: trop.next });
+  // X2: the outbound assault becomes holding on a win, gone on a miss (same list as 来る遠征 notice).
+  if (s.incursion) {
+    const expeditions = incursionWonEarly ? assaultWon(night.expeditions, s.incursion.code) : assaultLost(night.expeditions, s.incursion.code);
+    if (expeditions !== night.expeditions) Object.assign(night, { expeditions });
+  }
   // Defender partial loss: a node that left the player's overnight drops its 中継ボックス stock
   // (same line as 「取られた · 島の守りが削られた」).
   let nightParcels = night.parcels ?? parcels;
@@ -743,7 +774,7 @@ export function settle(p: Profile, s: State): Settlement {
   const fresh = { ...claimed.profile, stash: withStarters(claimed.profile.stash), taken: null, board: makeBoard(claimed.profile) };
   // Lead-incursion captures are on the copy — never pending retakes on the home island.
   fresh.retaken = s.incursion ? [...p.retaken] : addRetaken(p.retaken, retakenNodes(started, fresh, capturedIds(s)));
-  const incursionWon = !!s.incursion && capturedIds(s).includes(s.incursion.target as NodeId);
+  const incursionWon = incursionWonEarly;
   return {
     profile: fresh,
     home,
@@ -763,6 +794,9 @@ export function settle(p: Profile, s: State): Settlement {
     story: told,
     threat,
     analysable: s.outcome === "extracted" ? [...(pl.mods ?? [])] : [],
+    ...(trop.gained || trop.lost
+      ? { trophies: { before: p.trophies ?? TROPHY.start, after: trop.next, gained: trop.gained, lost: trop.lost } }
+      : {}),
     ...(seizedKept.length ? { seized: seizedKept } : {}),
     ...(s.incursion
       ? { incursion: { code: s.incursion.code, owner: s.incursion.owner, target: s.incursion.target, ids: seized.ids, won: incursionWon } }
@@ -999,11 +1033,12 @@ const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
  * counts front done (unless front progress is under way).
  * Before v31 the front intro quest did not exist: such a profile that already finished another
  * intro counts front done (`withFrontMigrated()`). v31+ keeps front progress as saved.
+ * Before v32 no trophies: such a profile starts at `TROPHY.start`.
  */
 export function parseProfile(raw: unknown, seed = 1): Profile | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
+  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
   const old = o.v === 1 || o.v === 2;
   const migrate = (i: unknown): unknown => {
     if (!old || !i || typeof i !== "object" || (i as Record<string, unknown>).t !== "key") return i;
@@ -1054,8 +1089,10 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   const doneRaw = Array.isArray(q.done) ? [...new Set(q.done.map((d) => (d === "power" ? "medbay" : d)))].filter((d): d is string => typeof d === "string" && QUEST_IDS.has(d)) : [];
   // Before v31 the front intro did not exist: finish it for mid-game saves. v31+ keeps progress as saved.
   const done = typeof o.v === "number" && o.v < 31 ? withFrontMigrated(doneRaw, progress) : doneRaw;
+  const v32 = typeof o.v === "number" && o.v >= 32;
+  const trophies = v32 && Number.isFinite(o.trophies) ? Math.max(TROPHY.min, Math.min(TROPHY.max, Math.floor(o.trophies as number))) : TROPHY.start;
   const out: Omit<Profile, "board" | "taken" | "events"> = {
-    v: 31,
+    v: 32,
     cash: Math.max(0, Math.floor(o.cash)),
     stash,
     raids,
@@ -1082,6 +1119,7 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     incoming: typeof o.v === "number" && o.v >= 29 ? parseIncoming(o.incoming) : [],
     parcels: typeof o.v === "number" && o.v >= 30 ? parseParcels(o.parcels) : [],
     incursionTaken: parseIncursionTaken(o.incursionTaken),
+    trophies,
     // A save from before the island had an ending is on its first round, begun on day 1.
     cycle: v28 && Number.isInteger(o.cycle) && (o.cycle as number) >= 0 ? (o.cycle as number) : 0,
     cycleDay: v28 && Number.isInteger(o.cycleDay) && (o.cycleDay as number) >= 1 ? Math.min(day, o.cycleDay as number) : 1,

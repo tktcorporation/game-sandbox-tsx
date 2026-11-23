@@ -50,7 +50,9 @@ export type TermId =
   | "questsAndRecords"
   | "loadout"
   | "seaIslands"
-  | "island";
+  | "island"
+  | "trophy"
+  | "shortRaid";
 
 /**
  * Canonical place / action words as the game shows them.
@@ -110,6 +112,13 @@ export const TERM = {
   loadout: "持っていく物",
   seaIslands: "海の向こうの島",
   island: "島",
+  /** Ranking T1 — signal station / map table. */
+  trophy: "トロフィー",
+  /**
+   * X2 short raid onto a neighbour island's subset (§5.8).
+   * 【元】（なし・写し全体） 【案】短いレイド 【理由】段階6を避けつつ他島へ攻めに行く感。
+   */
+  shortRaid: "短いレイド",
 } as const satisfies Record<TermId, string>;
 
 /** Full live phrases built from TERM. */
@@ -147,6 +156,26 @@ export function nextFrontCapture(name: string): string {
 /** Next-hand line for a rival hold on the front (E4: 攻める). */
 export function nextAttack(name: string): string {
   return `${TERM.nextHand}${TERM.vehicle}から${TERM.sortie} · ${name}を${TERM.attack}`;
+}
+
+/** Gap A / X2: notice posted (same vocabulary as 来る遠征). */
+export function assaultNoticeTo(name: string): string {
+  return `${name}へ${TERM.incomingExpedition}の予告を立てた`;
+}
+
+/** Gap A / X2: still inside the notice window. */
+export function assaultWaitHours(name: string, hours: number): string {
+  return `${name}を${TERM.attack} · あと約 ${hours} 時間（${TERM.incomingExpedition}と同じ予告）`;
+}
+
+/** Next-hand while an X2 assault is in its notice window. */
+export function nextAssaultWait(name: string, hours: number): string {
+  return `${TERM.nextHand}${name}を${TERM.attack} · 予告 あと約 ${hours} 時間`;
+}
+
+/** Next-hand when the X2 short raid may start. */
+export function nextShortRaid(name: string): string {
+  return `${TERM.nextHand}${TERM.vehicle}から${TERM.shortRaid} · ${name}を${TERM.attack}`;
 }
 
 export function moduleRaiseReady(moduleName: string): string {
