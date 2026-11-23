@@ -1,6 +1,6 @@
 /**
- * X2 short raid (§5.8): neighbour subset stage → notice → 核 · 制圧 → trophies; home poiState
- * unchanged. Gate path (no Start.incursion) must keep settle identical.
+ * X2 short raid (§5.8): neighbour subset stage → notice (`Outgoing.x2`) → 核 · 制圧 → trophies;
+ * home poiState unchanged. Gate path (no Start.incursion) must keep settle identical.
  *
  * Run: `npx tsx scripts/ringfall-x2.ts`; ends with "x2 ok".
  */
