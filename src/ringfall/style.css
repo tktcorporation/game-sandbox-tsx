@@ -1866,6 +1866,29 @@ body.touch #hub-close kbd {
   font-size: 30px;
   line-height: 1;
 }
+.hub-trophy {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-top: 4px;
+}
+.hub-trophy small {
+  color: var(--muted);
+  font-size: 13px;
+}
+.hub-trophy b {
+  font-family: var(--num);
+  font-size: 18px;
+}
+.exp-trophy {
+  font-size: 13px;
+  color: var(--muted);
+}
+.exp-trophy b {
+  font-family: var(--num);
+  color: var(--white);
+  margin-left: 4px;
+}
 /* The network's meter on the map table: a cell per level, lit up to the current one; red from 3. */
 
 .hub-island ul {

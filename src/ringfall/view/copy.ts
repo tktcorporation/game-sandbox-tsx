@@ -50,7 +50,8 @@ export type TermId =
   | "questsAndRecords"
   | "loadout"
   | "seaIslands"
-  | "island";
+  | "island"
+  | "trophy";
 
 /**
  * Canonical place / action words as the game shows them.
@@ -110,6 +111,8 @@ export const TERM = {
   loadout: "持っていく物",
   seaIslands: "海の向こうの島",
   island: "島",
+  /** Ranking T1 — signal station / map table. */
+  trophy: "トロフィー",
 } as const satisfies Record<TermId, string>;
 
 /** Full live phrases built from TERM. */

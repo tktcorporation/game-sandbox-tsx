@@ -1231,6 +1231,7 @@ export class Hub {
     return (
       `<div class="hub-island"><canvas id="hub-island-map"></canvas><div class="hub-island-side">` +
       `<div class="hub-day"><small>島の日</small><b>${p.day}</b><small>日目</small></div>` +
+      `<div class="hub-trophy"><small>${TERM.trophy}</small><b>${p.trophies ?? 0}</b></div>` +
       `<div class="hub-row">${nodeRow(holds)}</div>` +
       // A quiet day and a quiet tomorrow say nothing.
       (p.events[0] || p.events[1] ? `<ul class="events"><li><small>今日</small>${eventRow(p.events[0])}</li><li><small>明日</small>${eventRow(p.events[1])}</li></ul>` : "") +
