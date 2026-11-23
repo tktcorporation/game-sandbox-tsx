@@ -7,6 +7,7 @@ import { contractDone, makeBoard, parseBoard, sentOrigins, type Board, type Cont
 import { emptyHideout, infirmaryHeals, MODULES, nextLevel, onSale, pouchSlots, stashCap, stillNeeded, type Hideout } from "./hideout";
 import { advanceDay, departDepots, unlocked, type DayChange, type FrontChange, eventFor, firstEvents, frontIncome, newIsland, parseEvent, parseIsland, raidDay, shopRarity, type DayEvents, type Island } from "./island";
 import type { IslandEvent } from "../sim/island";
+import { questBoardOn } from "./features";
 import { built, creditRaid, emptyLog, need, offered, QUEST_IDS, withFrontMigrated, type Quest, type QuestLog } from "./quests";
 import { currentStory, STORIES, type Story } from "./story";
 import { rivalOf } from "../sim/holds";
@@ -182,17 +183,22 @@ export function newProfile(seed = 1): Profile {
 /** What `Profile.taken` holds when the story record under way is taken from the board instead of a contract. */
 export const STORY_TAKEN = "story";
 
-/** The board's contract taken for the next raid, or null. */
-export const takenContract = (p: Pick<Profile, "board" | "taken" | "day">): Contract | null => (p.board.day === p.day ? (p.board.contracts.find((c) => c.id === p.taken) ?? null) : null);
+/** The board's contract taken for the next raid, or null. Null while the 依頼板 is off. */
+export const takenContract = (p: Pick<Profile, "board" | "taken" | "day">): Contract | null => {
+  if (!questBoardOn()) return null;
+  return p.board.day === p.day ? (p.board.contracts.find((c) => c.id === p.taken) ?? null) : null;
+};
 
-/** Whether the board's story record is what the next raid is out for (its objective), rather than a contract or the front. */
-export const takenStory = (p: Pick<Profile, "taken" | "records">): boolean => p.taken === STORY_TAKEN && !!currentStory(p.records);
+/** Whether the board's story record is what the next raid is out for. False while the 依頼板 is off. */
+export const takenStory = (p: Pick<Profile, "taken" | "records">): boolean => questBoardOn() && p.taken === STORY_TAKEN && !!currentStory(p.records);
 
 /**
  * Takes a contract of the day's board for the next raid (null takes none, `STORY_TAKEN` the story
  * record under way); one not on the board takes none. A contract taken anew starts at 強度 0.
+ * No-op while the 依頼板 is off (clears a leftover `taken`).
  */
 export const take = (p: Profile, id: string | null): Profile => {
+  if (!questBoardOn()) return { ...p, taken: null, threat: 0 };
   const taken = p.board.contracts.some((c) => c.id === id) || (id === STORY_TAKEN && !!currentStory(p.records)) ? id : null;
   return { ...p, taken, threat: taken === p.taken ? p.threat : 0 };
 };

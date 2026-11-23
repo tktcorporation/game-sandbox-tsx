@@ -209,6 +209,12 @@ const useStation = async (pg, id, cdp) => {
   if (id !== "vehicle" && st.camp?.panel !== id) errors.push(`camp: the use key at ${id} opened ${st.camp?.panel}`);
   return st;
 };
+/** Revival / board shots: turn the 依頼板 on for this page (default play keeps it off). */
+const setQuestBoard = async (pg, on) => {
+  await pg.evaluate((v) => {
+    window.ringfallFeatures.questBoard = v;
+  }, on);
+};
 /** Closes the station's panel open now by its close button. */
 const closePanel = async (pg, touch = false) => {
   await (touch ? pg.tap("#hub-close") : pg.click("#hub-close"));
@@ -405,7 +411,10 @@ if (part("phone")) {
   if (panelFit.length) errors.push(`mobile: the shelves' panel ${panelFit.join(", ")} (844x390)`);
   await page.screenshot({ path: `${out}/m0-panel-stash.png` });
   await closePanel(page, true);
-  // The board by the use button: it fits the screen, and a tap takes the day's fetch.
+  // 依頼板 is off in play; revival path still opens when the flag is on.
+  if ((await read()).camp.marks.quests) errors.push(`mobile: 依頼板 mark shows while the board is off (${JSON.stringify((await read()).camp.marks)})`);
+  if (await page.evaluate(() => window.ringfallCamp.open("quests"))) errors.push("mobile: open(quests) worked while the board is off");
+  await setQuestBoard(page, true);
   await useStation(page, "quests", cdp);
   const boardFit = await spills(page);
   if (boardFit.length) errors.push(`mobile: the board's panel ${boardFit.join(", ")} (844x390)`);
@@ -416,6 +425,7 @@ if (part("phone")) {
   await page.locator("#hub-side .quest.contract.taken").scrollIntoViewIfNeeded();
   await page.screenshot({ path: `${out}/m0-panel-quests-taken.png` });
   await closePanel(page, true);
+  await setQuestBoard(page, false);
   // Out of the gate on the stick: the raid starts where the player walks out.
   await page.evaluate(() => window.ringfallCamp.toGate());
   await step(100);
@@ -767,6 +777,11 @@ const read = async () => JSON.parse(await page.evaluate(() => window.render_game
   // Esc closes a panel, and the camp walks on.
   await page.keyboard.press("Escape");
   if ((await read()).camp?.panel) errors.push("camp: Esc did not close the trader's panel");
+  // Default play: 依頼板 is off (no label mark, open refused).
+  if ((await read()).camp.marks.quests) errors.push(`camp: 依頼板 mark shows while the board is off (${JSON.stringify((await read()).camp.marks)})`);
+  if (await page.evaluate(() => window.ringfallCamp.open("quests"))) errors.push("camp: open(quests) worked while the board is off");
+  // Revival path: flag on → board still works (shots keep covering the panel).
+  await setQuestBoard(page, true);
   await seen("quests");
   if (!/依頼/.test((await read()).camp.marks.quests)) errors.push(`camp: the board carries no mark with contracts on it and none taken (${JSON.stringify((await read()).camp.marks)})`);
   await useStation(page, "quests");
@@ -783,6 +798,7 @@ const read = async () => JSON.parse(await page.evaluate(() => window.render_game
   await page.locator("#hub-side .quest.story").scrollIntoViewIfNeeded();
   await page.screenshot({ path: `${out}/00-panel-quests-story.png` });
   await closePanel(page);
+  await setQuestBoard(page, false);
   await seen("workshop");
   await useStation(page, "workshop");
   await page.screenshot({ path: `${out}/00-panel-workshop.png` });
@@ -1494,6 +1510,7 @@ if (part("meta")) {
     const ctx = await browser.newContext(phone ? { viewport: { width: 740, height: 360 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true } : { viewport: { width: 1280, height: 720 } });
     const pg = await withProfile(ctx, storyGame);
     await toCamp(pg, phone);
+    await setQuestBoard(pg, true);
     const cdp = phone ? await ctx.newCDPSession(pg) : undefined;
     await useStation(pg, "quests", cdp);
     const intro = await pg.locator("#hub-side .quest:not(.contract):not(.story)").count();
@@ -1940,6 +1957,7 @@ lap("island");
     const ctx = await browser.newContext(phone ? { viewport: { width: 740, height: 360 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true } : { viewport: { width: 1280, height: 720 } });
     const pg = await withProfile(ctx, modGame);
     await toCamp(pg, phone);
+    await setQuestBoard(pg, true);
     const cdp = phone ? await ctx.newCDPSession(pg) : undefined;
     // The 強度 is chosen for a contract on the board: the taken card offers it, what it gives first.
     await useStation(pg, "quests", cdp);
@@ -2225,9 +2243,9 @@ if (part("battle")) for (const phone of [false, true]) {
   if (!run.battle || run.battle.factory !== 3) errors.push(`battle: the raid out of the gate has ${JSON.stringify(run.battle && { factory: run.battle.factory })}`);
   // The way in's banner has gone; the turrets stand at the nodes the player holds.
   await pg.evaluate(() => window.ringfallStep(4000));
-  // With no contract taken, the objective is the front, not the story record, which has a line of its own.
+  // With no contract taken (依頼板 off), the objective is the front; the story line stays hidden.
   const card = await pg.evaluate(() => ({ title: document.getElementById("obj-title").textContent, story: document.getElementById("obj-story").hidden ? "" : document.getElementById("obj-story").textContent }));
-  if (/記録/.test(card.title) || !/(前線|陣取り戦|制圧)/.test(card.title) || !/記録/.test(card.story)) errors.push(`battle: with no contract the objective card reads ${JSON.stringify(card)}`);
+  if (/記録/.test(card.title) || !/(前線|陣取り戦|制圧)/.test(card.title) || card.story !== "") errors.push(`battle: with no contract the objective card reads ${JSON.stringify(card)}`);
   await draw(pg);
   await pg.screenshot({ path: tag(7, "objective-front") });
   const hud = await pg.evaluate(() => ({ own: Number(document.querySelector("#island-row .tug-n.own")?.textContent), all: document.querySelector("#island-row .tug")?.getAttribute("aria-label"), text: document.getElementById("island-row").textContent }));
@@ -2429,7 +2447,8 @@ if (part("rules")) for (const phone of [false, true]) {
   await snap("1-carry-depart");
   await pg.keyboard.press("Escape");
   await pg.waitForTimeout(200);
-  // One contract a raid: taking one pales the rest.
+  // One contract a raid: taking one pales the rest (revival path: board on).
+  await setQuestBoard(pg, true);
   await useStation(pg, "quests");
   await pg.locator("#hub-side .quest.contract [data-act=take]").first().click();
   const papers = await pg.evaluate(() => ({ all: document.querySelectorAll("#hub-side .quest.contract").length, dim: document.querySelectorAll("#hub-side .quest.contract.dim").length }));
@@ -2473,6 +2492,7 @@ if (part("rules")) for (const phone of [false, true]) {
   // The next day's board: its papers slide in.
   await pg.click("#restart");
   await faded(pg);
+  await setQuestBoard(pg, true);
   await useStation(pg, "quests");
   if (!(await pg.locator("#hub-side .board.fresh").count())) errors.push(`${why}: the next day's board did not put up new papers`);
   await pg.waitForTimeout(150);
@@ -2504,6 +2524,7 @@ if (part("rules")) for (const phone of [false, true]) {
   // The board's strength row: the bin's mod parts, one more known.
   await pg.click("#restart");
   await faded(pg);
+  await setQuestBoard(pg, true);
   await useStation(pg, "quests");
   await pg.locator("#hub-side .quest.contract [data-act=take]").first().click();
   const known = await pg.textContent("#hub-side .strength p.bins");

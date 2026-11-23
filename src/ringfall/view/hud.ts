@@ -24,6 +24,7 @@ import { IslandMap, islandScene, shieldedBy } from "./map";
 import { sfx } from "./sfx";
 import { nodeRow } from "./row";
 import { CONTRACT_NAME, contractMark, contractTask, contractText, type Contract } from "../meta/contracts";
+import { questBoardOn } from "../meta/features";
 import { currentStep, objectiveSteps, type Objective, type Step, type Task } from "../sim/objective";
 import { storyOf } from "../meta/story";
 import { recordSpot, type RecordId } from "../sim/map";
@@ -664,10 +665,10 @@ export class Hud {
     }
     // The story record has a line of its own unless it is the objective. On the first raid it stays
     // hidden until the player has taken that record (or made it the objective), so the card says
-    // one next step (ux-design I5).
+    // one next step (ux-design I5). Off with the 依頼板.
     const os = $("obj-story");
     const heldRecord = !!this.record && (p.records.includes(this.record) || s.sentRecords.includes(this.record));
-    const recordLine = !!this.record && this.task?.t !== "record" && (this.raidsDone > 0 || heldRecord);
+    const recordLine = questBoardOn() && !!this.record && this.task?.t !== "record" && (this.raidsDone > 0 || heldRecord);
     os.hidden = !recordLine;
     if (this.record && recordLine) {
       const r = recordSpot(this.record);

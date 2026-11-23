@@ -91,12 +91,13 @@ for (const m of ["infirmary", "workbench", "storage", "radio", "pouch"] as const
   }
 }
 
-// next-hand tips at the shelves when storage can be built (intro front done; nothing higher).
+// next-hand tips at the shelves when storage can be built (a node held so 核 · 制圧 teach is done).
 const tipBase = {
   ...newProfile(),
   cash: HIDEOUT.storage.levels[0]!.cash,
+  poiState: { ...newProfile().poiState, supply: { state: "freed" as const } },
   quests: { progress: {}, done: ["front"] },
-  taken: "x" as string | null, // board has contracts; mark as taken so quest-pick does not win
+  taken: null as string | null,
   board: { ...newProfile().board, contracts: [] },
 };
 const funded = give(tipBase, HIDEOUT.storage.levels[0]!.items);

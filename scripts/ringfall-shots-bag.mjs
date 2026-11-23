@@ -37,6 +37,10 @@ export async function bagShots({ browser, port, out, errors }) {
   const raid = async (pg, touch) => {
     await (touch ? pg.tap("#start") : pg.click("#start"));
     await pg.waitForFunction(() => getComputedStyle(document.getElementById("fade")).opacity === "0", null, { timeout: 8000 }).catch(() => errors.push("bag: the fade never cleared"));
+    // Bag marks for a fetch contract need the 依頼板 revival path.
+    await pg.evaluate(() => {
+      window.ringfallFeatures.questBoard = true;
+    });
     const id = await pg.evaluate(() => window.ringfallContract.take("fetch"));
     const fetch = id ? await pg.evaluate(([k, i]) => JSON.parse(localStorage.getItem(k)).board.contracts.find((c) => c.id === i), [KEY, id]) : null;
     await pg.evaluate(() => window.ringfallCamp.toGate());
