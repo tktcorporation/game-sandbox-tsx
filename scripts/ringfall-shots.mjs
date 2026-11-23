@@ -1351,7 +1351,7 @@ console.log(`screens: ${[...taken].join(", ")}`);
 const bag = (list) => list.flatMap(([kind, n]) => Array.from({ length: n }, () => ({ t: "valuable", kind })));
 const midGame = {
   v: 6, cash: 6400, raids: 14, extracted: 11, time: 9000, region: "reservoir", seed: 777, depots: ["quarry", "wreck"], seen: "",
-  quests: { progress: {}, done: ["grunts", "village", "medbay", "parts"] },
+  quests: { progress: {}, done: ["front", "grunts", "village", "medbay", "parts"] },
   hideout: { infirmary: 1, workbench: 1, storage: 1, radio: 1, pouch: 1 },
   stash: [{ t: "weapon", kind: "pike", rarity: 1 }, { t: "heal", kind: "cell" }, ...bag([["fuse", 5], ["parts", 4], ["wire", 5], ["board", 4], ["drive", 1], ["gyro", 1]])],
 };
@@ -1486,7 +1486,7 @@ if (part("meta")) {
 {
   const storyGame = {
     v: 14, cash: 3200, stash: [], raids: 8, extracted: 6, time: 4000, region: "reservoir", entry: "beach", entries: ["beach", "checkpoint", "jetty", "outskirts", "quay", "shore"], seed: 4321, day: 9,
-    quests: { progress: {}, done: ["grunts", "village", "power", "parts"] },
+    quests: { progress: {}, done: ["front", "grunts", "village", "power", "parts"] },
     hideout: { generator: 1, infirmary: 1, workbench: 0, storage: 0, radio: 0, pouch: 0, craft: 0 },
     records: ["tether", "dam"],
   };
@@ -1816,7 +1816,7 @@ lap("island");
   const evGame = (events) => ({
     v: 16, cash: 2400, stash: [], raids: 8, extracted: 6, time: 5000, region: "reservoir", entry: "beach", entries: ["beach", "checkpoint", "jetty", "outskirts", "quay", "shore"], seed: 2468, day: 9,
     network: 2, pressure: 0.5, depots: ["supply"], events,
-    quests: { progress: {}, done: ["grunts", "village", "power", "parts"] },
+    quests: { progress: {}, done: ["front", "grunts", "village", "power", "parts"] },
     hideout: { generator: 1, infirmary: 1, workbench: 0, storage: 0, radio: 0, pouch: 0, craft: 0 },
     records: [],
     poiState: { supply: { state: "freed", lastVisit: 8, since: 0 } },
@@ -1919,7 +1919,7 @@ lap("island");
   const modGame = {
     v: 17, cash: 2400, stash: [], raids: 8, extracted: 6, time: 5000, region: "reservoir", entry: "beach", entries: ["beach", "checkpoint", "jetty", "outskirts", "quay", "shore"], seed: 2468, day: 9,
     network: 2, pressure: 0.5, depots: ["supply"], events: [null, null], threat: 0, known: ["leech", "hush", "grip", "medic", "probe", "damper"], freedAt: { supply: 3 },
-    quests: { progress: {}, done: ["grunts", "village", "power", "parts"] },
+    quests: { progress: {}, done: ["front", "grunts", "village", "power", "parts"] },
     hideout: { generator: 1, infirmary: 1, workbench: 0, storage: 0, radio: 0, pouch: 0, craft: 0 },
     records: [],
     poiState: { supply: { state: "freed", lastVisit: 8, since: 0 } },

@@ -40,7 +40,7 @@ export type TermId =
   | "cutAndExtract"
   | "returningAlive"
   | "arrivedAtWarehouse"
-  | "takeBack"
+  | "attack"
   | "sendExpedition"
   | "backToCamp"
   | "hideout"
@@ -50,7 +50,9 @@ export type TermId =
   | "questsAndRecords"
   | "loadout"
   | "seaIslands"
-  | "island";
+  | "island"
+  | "trophy"
+  | "shortRaid";
 
 /**
  * Canonical place / action words as the game shows them.
@@ -89,9 +91,17 @@ export const TERM = {
   cutAndExtract: "切り上げて生還",
   returningAlive: "生還中",
   arrivedAtWarehouse: "倉庫へ届いた",
-  takeBack: "取り返す",
-  /** Signal-station verb (also answers an attack — was 仕返し). */
-  sendExpedition: "送る",
+  /**
+   * Map attack on a rival hold / neighbour front (E4). Was 取り返す.
+   * 【元】取り返す 【案】攻める — docs/ringfall/glossary.md (adopted).
+   */
+  attack: "攻める",
+  /**
+   * Legacy expedition verb (signal-station button removed under E4).
+   * 【元】送る 【案】遠征に出す — adopted, then button abolished.
+   * 倉庫へ送る is TERM.sendToWarehouse; BANNED 「送る」 is exact-match only.
+   */
+  sendExpedition: "遠征に出す",
   backToCamp: "野営地に戻る",
   /** Modules collectively (医務室・作業台…). Not the station name. */
   hideout: "隠れ家",
@@ -102,6 +112,13 @@ export const TERM = {
   loadout: "持っていく物",
   seaIslands: "海の向こうの島",
   island: "島",
+  /** Ranking T1 — signal station / map table. */
+  trophy: "トロフィー",
+  /**
+   * X2 short raid onto a neighbour island's subset (§5.8).
+   * 【元】（なし・写し全体） 【案】短いレイド 【理由】段階6を避けつつ他島へ攻めに行く感。
+   */
+  shortRaid: "短いレイド",
 } as const satisfies Record<TermId, string>;
 
 /** Full live phrases built from TERM. */
@@ -122,12 +139,43 @@ export const PHRASE = {
   captureStart: `${TERM.captureCore}を始める`,
 } as const;
 
+/** Toast after confirming 遠征に出す (past of TERM.sendExpedition). */
+export function expeditionSentTo(place: string): string {
+  return `${place}へ遠征に出した`;
+}
+
 export function nextFront(name: string): string {
   return `${TERM.nextHand}${TERM.vehicle}から${TERM.sortie} · ${TERM.front}：${name}`;
 }
 
-export function nextTakeBack(name: string): string {
-  return `${TERM.nextHand}${TERM.vehicle}から${TERM.sortie} · ${name}を${TERM.takeBack}`;
+/** First sessions: same as nextFront, with 核 · 制圧 so the line's middle is named. */
+export function nextFrontCapture(name: string): string {
+  return `${TERM.nextHand}${TERM.vehicle}から${TERM.sortie} · ${TERM.front}：${name} · ${TERM.captureCore}`;
+}
+
+/** Next-hand line for a rival hold on the front (E4: 攻める). */
+export function nextAttack(name: string): string {
+  return `${TERM.nextHand}${TERM.vehicle}から${TERM.sortie} · ${name}を${TERM.attack}`;
+}
+
+/** Gap A / X2: notice posted (same vocabulary as 来る遠征). */
+export function assaultNoticeTo(name: string): string {
+  return `${name}へ${TERM.incomingExpedition}の予告を立てた`;
+}
+
+/** Gap A / X2: still inside the notice window. */
+export function assaultWaitHours(name: string, hours: number): string {
+  return `${name}を${TERM.attack} · あと約 ${hours} 時間（${TERM.incomingExpedition}と同じ予告）`;
+}
+
+/** Next-hand while an X2 assault is in its notice window. */
+export function nextAssaultWait(name: string, hours: number): string {
+  return `${TERM.nextHand}${name}を${TERM.attack} · 予告 あと約 ${hours} 時間`;
+}
+
+/** Next-hand when the X2 short raid may start. */
+export function nextShortRaid(name: string): string {
+  return `${TERM.nextHand}${TERM.vehicle}から${TERM.shortRaid} · ${name}を${TERM.attack}`;
 }
 
 export function moduleRaiseReady(moduleName: string): string {
@@ -153,10 +201,19 @@ export const BANNED: { bad: string; keep: TermId; note: string }[] = [
   { bad: "次の段を上げられる", keep: "raiseLevelReady", note: "レベルを上げられる" },
   { bad: "段を上げる", keep: "raiseLevel", note: "レベルを上げる" },
   { bad: "遠征の知らせ", keep: "islandNews", note: "島の知らせに統合" },
-  { bad: "仕返し", keep: "sendExpedition", note: "送る／取り返すに揃える" },
+  { bad: "仕返し", keep: "attack", note: "地図で攻める（E4）。信号所ボタンは置かない" },
+  { bad: "取り返す", keep: "attack", note: "攻めるに統合（E4）" },
+  /**
+   * Exact match only in lint (送る ⊂ 倉庫へ送る). 中継ボックスの「倉庫へ送る」は別 TERM.
+   */
+  { bad: "送る", keep: "sendExpedition", note: "旧・遠征に出す。倉庫へ送るは別語。ボタンは廃止" },
 ];
 
-/** No pending synonyms — adopted ones moved to BANNED. */
+/**
+ * Pending renames (glossary 【元/案/理由】). Lint warns only after TERM[keep] no longer equals
+ * `bad` (so the live SoT can keep the old word until approval). Nested-in-other-TERM bad
+ * words use exact match (same as BANNED) so 倉庫へ送る is never flagged for 送る.
+ */
 export const PENDING_SYNONYMS: { bad: string; keep: TermId; note: string }[] = [];
 
 /** TERM + PHRASE string values, longest first — for lint. */

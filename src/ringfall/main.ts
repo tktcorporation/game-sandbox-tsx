@@ -26,6 +26,7 @@ import { loadIdentity } from "./meta/identity";
 import { raidTraces } from "./view/traces";
 import { aiRaidNews, aiRivals } from "./meta/ai-islands";
 import { dropStale, fortifiedNodes, LEASE_LATE, lentResults, lentRivals, logLine, squadsAway, type IslandLogEntry, type LentIn } from "./meta/expeditions";
+import type { IncursionPlan } from "./meta/incursion";
 import { Hub, type Launch } from "./view/hub";
 import { CampView } from "./view/camp";
 import { DepartPicker } from "./view/depart";
@@ -698,13 +699,20 @@ function answerDepart(go: boolean) {
     lease = null;
   }
   if (go) {
-    if (d.walk && hub.walksOut()) {
+    // Gap A / X2: schedule 来る遠征 notice, wait, or short-raid — before a home walk-out.
+    const gap = hub.gapDepart();
+    if (gap?.t === "scheduled" || gap?.t === "waiting") {
+      hud.toast(gap.toast, 1, 2800);
+      lock();
+      return;
+    }
+    if (d.walk && hub.walksOut() && !gap) {
       const launch = hub.launch();
       if (launch) {
         sfx.deploy();
         start(launch, state);
       }
-    } else ride();
+    } else ride(gap?.t === "ready" ? gap.plan : undefined);
     return;
   }
   if (d.walk && d.back) {
@@ -718,13 +726,13 @@ function answerDepart(go: boolean) {
 }
 
 /** A start away from the gate: a fade, then the raid at the start chosen on the departure's map. */
-function ride() {
+function ride(incursion?: IncursionPlan) {
   if (fading || hub.rideRefused()) return;
   fading = true;
   sfx.deploy();
   fade(true);
   setTimeout(() => {
-    const go = hub.launch();
+    const go = hub.launch(incursion);
     fading = false;
     if (go) start(go);
     requestAnimationFrame(() => fade(false));
@@ -814,21 +822,29 @@ function start(go: Launch, from?: State) {
   hud.setRivalNames([...raidLent, ...aiLent].map((l) => [l.by.code, l.by.name] as [string, string]));
   raidAi = { lent: aiLent, slots: neighboursFor(hub.profile).filter((n) => !n.ai).map((n) => n.slot), scouted: aiScouted() };
   lease = null;
+  const x2 = go.incursion;
   state = newRun(go.seed, kit, region, {
-    depots: hub.profile.depots,
+    depots: x2 ? [] : hub.profile.depots,
     seen: hub.profile.seen,
     from: go.from,
     entry: go.entry,
     routes: hub.profile.routes,
-    island: holds(hub.profile),
-    record,
-    fetch,
+    island: x2 ? x2.island : holds(hub.profile),
+    record: x2 ? undefined : record,
+    fetch: x2 ? undefined : fetch,
     event: hub.profile.events[0],
     threat: raidThreat(hub.profile),
     known: hub.profile.known,
-    battle: { factory: hub.profile.factory, away: squadsAway(hub.profile), targets: tonight(hub.profile), rivals: [...lentRivals(raidLent), ...aiRivals(aiLent)], shut: lent?.shut },
-    finale: finaleOpen(hub.profile),
+    // X2 short raid: no home battle — the stage is a few rival nodes on the copy.
+    battle: x2
+      ? undefined
+      : { factory: hub.profile.factory, away: squadsAway(hub.profile), targets: tonight(hub.profile), rivals: [...lentRivals(raidLent), ...aiRivals(aiLent)], shut: lent?.shut },
+    finale: x2 ? false : finaleOpen(hub.profile),
+    ...(x2
+      ? { incursion: { code: x2.code, owner: x2.owner, target: x2.target, parcels: x2.parcels } }
+      : {}),
   });
+  if (x2) hud.setCaptureTask(nodeIndex(x2.target));
   // A lease still on its way joins this raid if it comes in its first seconds.
   if (leaseReq?.on === "open") {
     if (lent) leaseReq = null;

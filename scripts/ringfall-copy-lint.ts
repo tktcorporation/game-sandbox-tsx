@@ -152,21 +152,32 @@ function readable(chunk: string): string {
   return chunk.replace(/<[^>]*>/g, " ");
 }
 
+/** Exact match when `bad` is nested in another COPY_VALUE (e.g. 送る ⊂ 倉庫へ送る). */
+function nestedInOtherTerm(bad: string): boolean {
+  return COPY_VALUES.some((v) => v !== bad && v.includes(bad));
+}
+
 function checkChunk(file: string, n: number, lit: string): void {
   if (!lit) return;
   const text = readable(lit);
   for (const b of BANNED) {
-    // Japanese banned: any chunk. English banned: only inside player-facing JP strings
-    // (not code kinds like kind:"depot").
+    // English banned: only inside player-facing JP strings (not kind:"depot").
+    // Japanese: substring match, except when `bad` is nested in another TERM — then exact only
+    // so 「倉庫へ送る」 is never flagged for banned 「送る」.
     const hit = /[a-zA-Z]/.test(b.bad)
       ? hasJp(text) && text.toLowerCase().includes(b.bad.toLowerCase())
-      : text === b.bad || text.includes(b.bad) || lit === b.bad || lit.includes(b.bad);
+      : nestedInOtherTerm(b.bad)
+        ? text === b.bad || lit === b.bad
+        : text === b.bad || text.includes(b.bad) || lit === b.bad || lit.includes(b.bad);
     if (hit) problems.push(`${file}:${n}  [banned]  「${b.bad}」→ TERM.${b.keep}（${b.note}）`);
   }
   for (const p of PENDING_SYNONYMS) {
-    if (text === p.bad || lit === p.bad || (p.bad.length >= 2 && (text.includes(p.bad) || lit.includes(p.bad)))) {
-      warns.push(`${file}:${n}  [pending-synonym]  「${p.bad}」→ TERM.${p.keep}（${p.note}）`);
-    }
+    // Still the live SoT value: rename not applied yet — do not warn on the current TERM word.
+    if (TERM[p.keep] === p.bad) continue;
+    const hit = nestedInOtherTerm(p.bad)
+      ? text === p.bad || lit === p.bad
+      : text === p.bad || lit === p.bad || (p.bad.length >= 2 && (text.includes(p.bad) || lit.includes(p.bad)));
+    if (hit) warns.push(`${file}:${n}  [pending-synonym]  「${p.bad}」→ TERM.${p.keep}（${p.note}）`);
   }
   // Exact match of a SoT value as a whole literal / static segment → must reference copy.ts.
   const trimmed = lit.trim();
@@ -192,6 +203,9 @@ if (TERM.workshop !== "作業場") problems.push("copy.ts: TERM.workshop must be
 if (PHRASE.sideWorkshop !== TERM.workshop) problems.push("copy.ts: PHRASE.sideWorkshop must be TERM.workshop");
 if (PHRASE.sideFactory !== TERM.factory) problems.push("copy.ts: PHRASE.sideFactory must be TERM.factory");
 if (TERM.raiseLevel !== "レベルを上げる") problems.push("copy.ts: TERM.raiseLevel must be レベルを上げる (glossary; one-line revert if disagreed)");
+if (TERM.attack !== "攻める") problems.push("copy.ts: TERM.attack must be 攻める (E4; glossary adopted)");
+if (TERM.sendExpedition !== "遠征に出す") problems.push("copy.ts: TERM.sendExpedition must be 遠征に出す (legacy term; button removed under E4)");
+if (TERM.sendToWarehouse !== "倉庫へ送る") problems.push("copy.ts: TERM.sendToWarehouse must stay 倉庫へ送る (中継ボックス; distinct from expedition verb)");
 if (!PHRASE.nextWorkshopRaise.includes(TERM.workshop) || !PHRASE.nextWorkshopRaise.includes(TERM.raiseLevel)) {
   problems.push("copy.ts: PHRASE.nextWorkshopRaise must use 作業場 · レベルを上げる");
 }

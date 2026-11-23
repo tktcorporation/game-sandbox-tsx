@@ -127,7 +127,7 @@ export class CampView {
     else if (o.near) prompt = `${key}${esc(o.near.name)}`;
     // No station in reach: a short next-step tip (first day / incoming), not a second card.
     else if (!o.panel && o.tip) {
-      // One beat when the tip is defend / take-back (来る遠征・取り返す) — juice only.
+      // One beat when the tip is defend / attack (来る遠征・攻める) — juice only.
       const beat = tipIsDefence(o.tip) ? " tip-beat" : "";
       prompt = `<span class="tip${beat}">${esc(o.tip)}</span>`;
     }
