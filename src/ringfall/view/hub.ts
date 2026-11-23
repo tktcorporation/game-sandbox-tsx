@@ -814,7 +814,7 @@ export class Hub {
       const a = depotAllowance(p, d.poi);
       return { kind: "depot", id: d.poi, name: POIS[poiIndex(d.poi)].name, x: d.x, z: d.z, region: poiRegion(d.poi).id, open, on: !this.assaultAim && this.from === d.poi, over: open && !fitsStart(p, this.startLoad(), d.poi), budget: a.budget, cost, level: a.level };
     });
-    // Gap A / X2: AI fronts only — no entrance for real neighbours until the server path exists.
+    // Gap A / X2: neighbour fronts (AI and real) — map entrance only, no signal-station button.
     const assaults: StartPoint[] = playableFronts(p, CAMP.wake).map((f) => ({
       kind: "assault" as const,
       id: f.code,
@@ -846,9 +846,9 @@ export class Hub {
       return canStartIn(p, id) ? null : { name: regionOf(id).name, why: "道を知らない", how: regionHow(id) };
     }
     if (at.kind === "assault") {
-      // Real-neighbour assaults are not listed; anything still peeked is not playable.
+      // Listed only while the Gap A front is open; a stale peek is shut.
       const f = playableFronts(p).find((n) => n.code === at.id);
-      return f ? null : { name: TERM.shortRaid, why: "短いレイドはAIの島のみ", how: [`<span class="how">${flagIcon(SIDE.rival)}${TERM.shortRaid}</span>`] };
+      return f ? null : { name: TERM.shortRaid, why: `${TERM.front}が開いていない`, how: [`<span class="how">${flagIcon(SIDE.rival)}${TERM.shortRaid}</span>`] };
     }
     if (at.kind === "entry") {
       const e = ENTRIES.find((w) => w.id === at.id);
