@@ -75,11 +75,12 @@ export const offered = (log: QuestLog) => QUESTS.filter((q) => !log.done.include
 export const introFrontOpen = (log: QuestLog) => offered(log).some((q) => q.id === "front");
 
 /**
- * A save from before the front intro: if it already finished another intro, count front done so
- * mid-game players are not sent back to the first lesson.
+ * A save from before the front intro (Profile.v < 31): if it already finished another intro,
+ * count front done so mid-game players are not sent back to the first lesson. Never apply when
+ * `front` is already in progress — that is a current profile's tutorial state.
  */
-export function withFrontMigrated(done: string[]): string[] {
-  if (done.includes("front")) return done;
+export function withFrontMigrated(done: string[], progress: Record<string, number> = {}): string[] {
+  if (done.includes("front") || progress.front !== undefined) return done;
   if (done.some((id) => id === "grunts" || id === "village" || id === "medbay" || id === "parts")) return [...done, "front"];
   return done;
 }

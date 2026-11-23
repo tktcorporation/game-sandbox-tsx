@@ -30,7 +30,7 @@ export type Item =
 
 /** What persists between raids. */
 export interface Profile {
-  v: 30;
+  v: 31;
   cash: number;
   stash: Item[];
   raids: number;
@@ -167,7 +167,7 @@ export const stashUsed = (p: Pick<Profile, "stash">) => p.stash.filter((i) => !i
 export function newProfile(seed = 1): Profile {
   const stash: Item[] = [...starterItems(), ...META.start.weapons.map((w): Item => ({ t: "weapon", ...w }))];
   for (const k of HEALS) for (let i = 0; i < META.start.heals[k]; i++) stash.push({ t: "heal", kind: k });
-  const p: Omit<Profile, "board"> = { v: 30, cash: META.start.cash, stash, raids: 0, extracted: 0, time: 0, quests: emptyLog(), region: HOME_REGION.id, entry: FIRST_ENTRY, entries: [FIRST_ENTRY], hideout: emptyHideout(), seed: seed & 0xffff, depots: [], depotSent: {}, seen: "", routes: [], day: 1, poiState: newIsland(), taken: null, records: [], events: firstEvents(seed & 0xffff), known: [...MOD_START], threat: 0, freedAt: {}, factory: 0, cycle: 0, cycleDay: 1, liberations: [], lastKit: null, expeditions: [], logSeq: 0, retaken: [], incoming: [], parcels: [], incursionTaken: [] };
+  const p: Omit<Profile, "board"> = { v: 31, cash: META.start.cash, stash, raids: 0, extracted: 0, time: 0, quests: emptyLog(), region: HOME_REGION.id, entry: FIRST_ENTRY, entries: [FIRST_ENTRY], hideout: emptyHideout(), seed: seed & 0xffff, depots: [], depotSent: {}, seen: "", routes: [], day: 1, poiState: newIsland(), taken: null, records: [], events: firstEvents(seed & 0xffff), known: [...MOD_START], threat: 0, freedAt: {}, factory: 0, cycle: 0, cycleDay: 1, liberations: [], lastKit: null, expeditions: [], logSeq: 0, retaken: [], incoming: [], parcels: [], incursionTaken: [] };
   return { ...p, board: makeBoard(p) };
 }
 
@@ -995,11 +995,15 @@ const V2_POIS: PoiId[] = ["supply", "quarry", "relay", "pad"];
  * of its island's log, and has no node taken back to report.
  * Before v29 no expedition was announced: such a profile knows of none coming.
  * Before v30 no parcel lay at a depot: such a profile holds none.
+ * Before v31 the front intro quest did not exist: a save that already finished another intro
+ * counts front done (unless front progress is under way).
+ * Before v31 the front intro quest did not exist: such a profile that already finished another
+ * intro counts front done (`withFrontMigrated()`). v31+ keeps front progress as saved.
  */
 export function parseProfile(raw: unknown, seed = 1): Profile | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
+  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31].includes(o.v as number) || typeof o.cash !== "number" || !Array.isArray(o.stash)) return null;
   const old = o.v === 1 || o.v === 2;
   const migrate = (i: unknown): unknown => {
     if (!old || !i || typeof i !== "object" || (i as Record<string, unknown>).t !== "key") return i;
@@ -1047,16 +1051,18 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
   const stash = withStarters(items.filter((i) => isStarter(i) || room-- > 0));
   const v27 = typeof o.v === "number" && o.v >= 27;
   const v28 = typeof o.v === "number" && o.v >= 28;
+  const doneRaw = Array.isArray(q.done) ? [...new Set(q.done.map((d) => (d === "power" ? "medbay" : d)))].filter((d): d is string => typeof d === "string" && QUEST_IDS.has(d)) : [];
+  // Before v31 the front intro did not exist: finish it for mid-game saves. v31+ keeps progress as saved.
+  const done = typeof o.v === "number" && o.v < 31 ? withFrontMigrated(doneRaw, progress) : doneRaw;
   const out: Omit<Profile, "board" | "taken" | "events"> = {
-    v: 30,
+    v: 31,
     cash: Math.max(0, Math.floor(o.cash)),
     stash,
     raids,
     extracted: num(o.extracted),
     time: num(o.time),
     // The intro quest to build the generator, done, counts as the one to build the infirmary.
-    // A save from before the front intro that already finished another intro counts front done.
-    quests: { progress, done: withFrontMigrated(Array.isArray(q.done) ? [...new Set(q.done.map((d) => (d === "power" ? "medbay" : d)))].filter((d): d is string => typeof d === "string" && QUEST_IDS.has(d)) : []) },
+    quests: { progress, done },
     region,
     entry,
     entries,
@@ -1074,7 +1080,7 @@ export function parseProfile(raw: unknown, seed = 1): Profile | null {
     logSeq: v27 && Number.isInteger(o.logSeq) && (o.logSeq as number) >= 0 ? (o.logSeq as number) : 0,
     retaken: v27 ? parseRetaken(o.retaken) : [],
     incoming: typeof o.v === "number" && o.v >= 29 ? parseIncoming(o.incoming) : [],
-    parcels: o.v === 30 ? parseParcels(o.parcels) : [],
+    parcels: typeof o.v === "number" && o.v >= 30 ? parseParcels(o.parcels) : [],
     incursionTaken: parseIncursionTaken(o.incursionTaken),
     // A save from before the island had an ending is on its first round, begun on day 1.
     cycle: v28 && Number.isInteger(o.cycle) && (o.cycle as number) >= 0 ? (o.cycle as number) : 0,
