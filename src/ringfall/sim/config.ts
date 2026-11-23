@@ -876,6 +876,10 @@ export const HIDEOUT: Record<ModuleId, { name: string; note: string; levels: Mod
       { items: [["parts", 3], ["wire", 2]], cash: 300, does: "倉庫 +10" },
       { items: [["wire", 3], ["board", 3], ["fuse", 2]], cash: 1000, does: "倉庫 +10" },
       { items: [["board", 3], ["drive", 2], ["gyro", 2], ["core", 1]], cash: 3000, does: "倉庫 +10" },
+      // Late-game room: after the other hideout tops (cores), then reactors (docs/ringfall/warehouse.md).
+      { items: [["drive", 3], ["gyro", 3], ["core", 2]], cash: 6000, does: "倉庫 +10" },
+      { items: [["gyro", 2], ["core", 2], ["reactor", 1]], cash: 10000, does: "倉庫 +10" },
+      { items: [["core", 3], ["reactor", 2]], cash: 16000, does: "倉庫 +10" },
     ],
   },
   radio: {
@@ -902,8 +906,8 @@ export const HIDEOUT_EFFECT = {
   infirmary: [{}, { syringe: 1 }, { syringe: 1, cell: 2 }, { syringe: 2, cell: 2, medkit: 1 }] as Partial<Record<HealKind, number>>[],
   /** Steps of rarity of the valuables the trader sells above `META.materials.rarity`. */
   workbench: [0, 1, 2],
-  /** Room in the stash above `META.stash`. */
-  storage: [0, 10, 20, 30],
+  /** Room in the stash above `META.stash` (index = 倉庫 level). */
+  storage: [0, 10, 20, 30, 40, 50, 60],
   /** Pouch slots above `META.pouch`. */
   pouch: [0, 1, 2],
 };
