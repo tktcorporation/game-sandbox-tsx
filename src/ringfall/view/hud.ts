@@ -637,7 +637,7 @@ export class Hud {
     setHtml($("obj-until"), s.phase === "play" && step ? this.stepProgress(s, step) : "");
     // A step done moves the card on to the next, told with a short toast.
     const key = `${obj.title}|${obj.current}`;
-    if (this.lastStep && key !== this.lastStep && s.phase === "play" && step && this.lastStep.split("|")[0] === obj.title) this.toast(`次：${step.label}`, 3, 2600);
+    if (this.lastStep && key !== this.lastStep && s.phase === "play" && step && this.lastStep.split("|")[0] === obj.title) this.toast(`${TERM.nextHand}${step.label}`, 3, 2600);
     this.lastStep = key;
     view.setBeacon(s.phase === "play" ? (step?.at ?? null) : null);
     // The use key's focused target: one ring in the world, matching the prompt.
@@ -1255,7 +1255,7 @@ export class Hud {
       // At a depot that is on, which useTarget passes over while a squad is fighting: the depot, crossed, and the fight.
       if (depotBlocked(s) && depotInReach(s) >= 0) return `${depotIcon()}${TERM.relayBox}${crossIcon()}${fightIcon(UI.foeBright)}`;
       // Back in the camp's yard with a fight close by: it takes the player home once that is over.
-      if (homeReady(s) && depotBlocked(s)) return `野営地${crossIcon()}${fightIcon(UI.foeBright)}`;
+      if (homeReady(s) && depotBlocked(s)) return `${TERM.camp}${crossIcon()}${fightIcon(UI.foeBright)}`;
       // Standing on something that will not go in: a mod part already worn, or a full bag.
       const left = s.loot.find((l) => (l.kind === "valuable" || l.kind === "tool" || l.kind === "record" || l.kind === "mod") && l.age >= 0.4 && dist2d(l.pos, p.pos) < PLAYER.pickupRange && Math.abs(l.pos.y - p.pos.y) < 2);
       if (left?.mod) return `${esc(MODS[left.mod].name)} ${checkIcon()}`;
