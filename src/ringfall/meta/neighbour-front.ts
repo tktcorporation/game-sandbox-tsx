@@ -5,7 +5,7 @@
  */
 import { aiOwner, rivalOf, type PoiHold } from "../sim/holds";
 import { NODES, nodeIndex, type NodeId } from "../sim/map";
-import { playerNodes, type Island } from "./island";
+import { type Island } from "./island";
 import { NEIGHBOUR_SLOTS, routeOpen, type Neighbour } from "./neighbours";
 
 /** A neighbour-front mark: whose, where to draw it, and the shore node that opened the route. */
@@ -21,6 +21,9 @@ export type NeighbourFront = {
 
 /** Node holds in NODES order from an island save. */
 export const holdsOf = (poiState: Island): PoiHold[] => NODES.map((n) => poiState[n.id]?.state ?? "held");
+
+/** Whether `v` is a holds array (NODES order), not an Island record. */
+const isHolds = (v: readonly PoiHold[] | Island): v is readonly PoiHold[] => Array.isArray(v);
 
 /** Owners who already hold a node on this island (`rival:` ids). */
 function footholdOwners(holds: readonly PoiHold[]): Set<string> {
@@ -41,24 +44,20 @@ function hasFoothold(n: Neighbour, owners: Set<string>): boolean {
 
 /**
  * Neighbour fronts to show (Gap A): route open, no foothold yet.
- * Ordered nearest to `from` when given. `holds` is NODES order (or built from `poiState`).
+ * Ordered nearest to `from` when given. Accepts NODES-order holds or an Island save.
  */
 export function neighbourFronts(
   holdsOrIsland: readonly PoiHold[] | Island,
   neighbours: readonly Neighbour[],
   from?: { x: number; z: number },
 ): NeighbourFront[] {
-  const holds = Array.isArray(holdsOrIsland) ? holdsOrIsland : holdsOf(holdsOrIsland);
+  const holds: readonly PoiHold[] = isHolds(holdsOrIsland) ? holdsOrIsland : holdsOf(holdsOrIsland);
   const mine = (id: NodeId) => holds[nodeIndex(id)] === "freed";
-  // When given an Island, prefer playerNodes (depots / unlocks stay consistent with the camp).
-  const routeOk = Array.isArray(holdsOrIsland)
-    ? (k: number) => routeOpen(k, mine)
-    : (k: number) => routeOpen(k, (id) => playerNodes({ poiState: holdsOrIsland }).includes(id));
   const owners = footholdOwners(holds);
   const out: NeighbourFront[] = [];
   for (const n of neighbours) {
     const k = n.slot;
-    if (!routeOk(k)) continue;
+    if (!routeOpen(k, mine)) continue;
     if (hasFoothold(n, owners)) continue;
     const slot = NEIGHBOUR_SLOTS[k];
     if (!slot) continue;
