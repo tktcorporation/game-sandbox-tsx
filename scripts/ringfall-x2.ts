@@ -1,8 +1,10 @@
 /**
  * X2 short raid (§5.8): neighbour subset stage → notice (`Outgoing.x2`) → 核 · 制圧 → trophies;
  * home poiState unchanged. Gate path (no Start.incursion) must keep settle identical.
+ * Also covers AI 「○○の前線」 departure: home shore is not the raid target (#201).
  *
  * Run: `npx tsx scripts/ringfall-x2.ts`; ends with "x2 ok".
+ * Full start-point matrix: `npx tsx scripts/ringfall-depart-bruteforce.ts`.
  */
 import { assaultAcked, assaultNoticeSec, assaultOf, assaultReady, assaultWinRejected, assaultWon, scheduleAssault } from "../src/ringfall/meta/assault";
 import { fortifiable } from "../src/ringfall/sim/front";
@@ -12,10 +14,11 @@ import { newProfile, settle, type Profile } from "../src/ringfall/meta/profile";
 import { TROPHY } from "../src/ringfall/meta/trophies";
 import { idleInput, newRun, starterKit } from "../src/ringfall/sim/state";
 import { takeNode } from "../src/ringfall/sim/front";
-import { NODES, nodeIndex, type NodeId } from "../src/ringfall/sim/map";
+import { ENTRIES, NODES, nodeIndex, type NodeId } from "../src/ringfall/sim/map";
+import { NEIGHBOUR_SLOTS } from "../src/ringfall/meta/neighbours";
 import { rivalOf } from "../src/ringfall/sim/holds";
 import { step } from "../src/ringfall/sim/step";
-import { isAiFront, isPlayableFront } from "../src/ringfall/view/hub";
+import { Hub, isAiFront, isPlayableFront } from "../src/ringfall/view/hub";
 import type { NeighbourFront } from "../src/ringfall/meta/neighbour-front";
 import { applySync, type IslandView } from "../src/ringfall/meta/expeditions";
 import { holdsOf } from "../src/ringfall/meta/neighbour-front";
@@ -221,9 +224,73 @@ check(fullRival, "full plan still mirrors all owner nodes");
   check(s.incursion?.target === target, "smoke: incursion cleared mid-raid");
 }
 
-console.log(`x2: target ${target}, stage ${stage.join(",")}, notice ${assaultNoticeSec(true)}s`);
-if (errors.length) {
-  for (const e of errors) console.error(`FAIL ${e}`);
-  process.exit(1);
+async function checkDepartAi() {
+  const store: Record<string, any> = {};
+  (globalThis as any).document ??= {
+    getElementById: (id: string) =>
+      (store[id] ??= {
+        style: { setProperty() {} },
+        hidden: true,
+        textContent: "",
+        innerHTML: "",
+        classList: { toggle() {}, add() {}, remove() {}, contains: () => false },
+        dataset: {},
+        addEventListener() {},
+        scrollTop: 0,
+      }),
+    body: { classList: { contains: () => false } },
+    createElement: () => ({ getContext: () => null, style: {} }),
+  };
+  (globalThis as any).matchMedia ??= () => ({ matches: false });
+  (globalThis as any).localStorage ??= { getItem: () => null, setItem() {}, removeItem() {} };
+
+  const shores = NEIGHBOUR_SLOTS.map((s) => s.shore);
+  const poiState = { ...newProfile(17).poiState };
+  for (const id of shores) poiState[id] = { state: "freed" };
+  const p: Profile = {
+    ...newProfile(17),
+    day,
+    seed: 17,
+    entries: ENTRIES.map((e) => e.id),
+    depots: [...shores],
+    poiState,
+  };
+  const hub = new Hub(p, () => {});
+  const mark = hub.startPoints().find((q) => q.kind === "assault" && q.open);
+  check(!!mark, "depart: AI front mark missing");
+  if (!mark) return;
+  check(!!hub.choose("assault", mark.id), "depart: choose assault failed");
+  const first = await hub.gapDepart(1_700_000_000_000);
+  check(first?.t === "scheduled", "depart: first confirm not scheduled");
+  const notice = assaultOf(hub.profile.expeditions, mark.id);
+  check(!!notice?.node, "depart: notice missing node");
+  // Stale notice that stored a home shore must still become ready.
+  const stale = scheduleAssault([], {
+    code: mark.id,
+    node: shores[0]!,
+    units: 2,
+    id: 9,
+    now: 1_700_000_000_000 - assaultNoticeSec(true) * 1000 - 1000,
+  });
+  const hub2 = new Hub({ ...p, expeditions: stale.list }, () => {});
+  hub2.choose("assault", mark.id);
+  const ready = await hub2.gapDepart(1_700_000_000_000);
+  check(ready?.t === "ready", `depart: stale shore notice not ready (${ready?.t})`);
+  if (ready?.t === "ready") check(ready.plan.stage.length > 0, "depart: ready plan empty");
+  hub2.choose("entry", "beach");
+  check((await hub2.gapDepart()) === null, "depart: entry still gapDepart");
 }
-console.log("x2 ok");
+
+void checkDepartAi()
+  .then(() => {
+    console.log(`x2: target ${target}, stage ${stage.join(",")}, notice ${assaultNoticeSec(true)}s`);
+    if (errors.length) {
+      for (const e of errors) console.error(`FAIL ${e}`);
+      process.exit(1);
+    }
+    console.log("x2 ok");
+  })
+  .catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });

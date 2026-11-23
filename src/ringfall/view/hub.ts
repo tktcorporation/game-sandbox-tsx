@@ -929,6 +929,9 @@ export class Hub {
    * Gap A / X2: only when the departure map's assault mark is chosen (`assaultAim`). Schedules a
    * 来る遠征-shaped notice (AI local / real via island API), then unlocks a short raid.
    * Null = ordinary home depart.
+   *
+   * The home shore that opened the route (`gap.shore`) is only a preference: both AI and real
+   * paths pick via `assaultTarget`. A stale notice that still names the shore is re-picked at ready.
    */
   async gapDepart(now = Date.now()): Promise<GapDepart | null> {
     const gap = this.assaultAim;
@@ -938,8 +941,12 @@ export class Hub {
     if (!existing) {
       const units = Math.max(1, homeSquads(this.profile) || 1);
       let id = aiNextId(this.profile.expeditions, gap.code);
-      let node: NodeId = gap.shore;
-      if (!ai) {
+      let node: NodeId;
+      if (ai) {
+        const pick = this.aiAssaultNode(gap.code, gap.shore, now);
+        if (!pick) return { t: "waiting", toast: assaultFortified(gap.name) };
+        node = pick;
+      } else {
         const view = await readView(gap.code);
         if (!view.ok) return { t: "waiting", toast: errorText(view.error) };
         const pick = assaultTarget(view.body, gap.shore, now);
@@ -957,9 +964,29 @@ export class Hub {
       const hours = Math.max(1, Math.ceil(assaultLeft(existing, ai, now) / 3600));
       return { t: "waiting", toast: assaultWaitHours(gap.name, hours) };
     }
-    const plan = await this.shortRaidPlan(gap.code, existing.node, ai);
+    let plan = await this.shortRaidPlan(gap.code, existing.node, ai);
+    // Older notices may still store the home shore — re-pick when that node is not raidable.
+    if (!plan) {
+      const retry = ai ? this.aiAssaultNode(gap.code, gap.shore, now) : await this.realAssaultNode(gap.code, gap.shore, now);
+      if (retry && retry !== existing.node) plan = await this.shortRaidPlan(gap.code, retry, ai);
+    }
     if (!plan) return { t: "waiting", toast: assaultFortified(gap.name) };
     return { t: "ready", plan };
+  }
+
+  /** AI neighbour node to raid: prefer `prefer` when open on their view, else nearest open foothold. */
+  private aiAssaultNode(code: string, prefer: NodeId, now = Date.now()): NodeId | null {
+    const a = aiByCode(aiSalt(), code);
+    if (!a) return null;
+    const seized = takenOn(this.profile.incursionTaken, code);
+    const view = aiView(a, aiSalt(), this.profile.day, this.profile.expeditions, "", now, seized);
+    return assaultTarget(view, prefer, now);
+  }
+
+  /** Real-neighbour assaultTarget via the island API (null when the view cannot be read). */
+  private async realAssaultNode(code: string, prefer: NodeId, now = Date.now()): Promise<NodeId | null> {
+    const view = await readView(code);
+    return view.ok ? assaultTarget(view.body, prefer, now) : null;
   }
 
   /** Build an X2 plan: AI view locally, real neighbour via `GET /api/islands/:code`. */
