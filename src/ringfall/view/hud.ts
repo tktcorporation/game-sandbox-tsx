@@ -149,6 +149,8 @@ export class Hud {
     if (this.mapOpen) {
       // The neighbours out at sea show on the whole world's view (N), as on the camp's maps.
       this.map.neighbours = neighboursNow();
+      this.map.resetCam();
+      this.map.bindNav();
       this.showWhole(false);
     }
     this.map.picked = -1;
@@ -161,6 +163,7 @@ export class Hud {
 
   private showWhole(whole: boolean) {
     this.map.whole = whole;
+    this.map.resetCam();
     const to = whole ? "地域" : "全体";
     $("map-zoom").textContent = to;
     $("map-view-key").textContent = to;
@@ -170,9 +173,7 @@ export class Hud {
     $("map-close").addEventListener("click", () => this.toggleMap(false));
     $("minimap").addEventListener("click", () => this.toggleMap(true));
     $("map-zoom").addEventListener("click", () => this.toggleMapView());
-    // The open map takes no input of its own, so the game's controls under it keep working; a tap
-    // (or a click with the pointer free) on a padlock still shows why that node cannot be taken.
-    // Heard on the way down, since the touch zones stop the press from rising past them.
+    // Padlock pick on capture; pan/zoom bind on the canvas itself (pointer-events on #map-canvas).
     addEventListener(
       "pointerdown",
       (e) => {

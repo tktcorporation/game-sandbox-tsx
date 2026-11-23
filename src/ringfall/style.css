@@ -1829,18 +1829,30 @@ body.touch #hub-close kbd {
   color: var(--ring);
   font-weight: 800;
 }
-/* The map table's island: the map coloured by who holds each POI, the day and 明日の島 beside it. */
+/* The map table's island: the map coloured by who holds each POI, the day and 明日の島 beside it.
+ * Aspect follows the framed view (--map-aspect from view/map.ts) so the island is not letterboxed
+ * into a wide empty box (docs/ringfall/map-readability.md). */
 .hub-island {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(220px, 300px);
   gap: 12px;
   margin-bottom: 8px;
+  align-items: start;
 }
 #hub-island-map {
-  width: 100%;
-  height: min(46vh, 400px);
+  /* Width capped so height from aspect-ratio stays under max-height (no letterbox bars). */
+  width: min(100%, calc(min(56vh, 560px) * var(--map-aspect, 1.3)));
+  max-width: 100%;
+  max-height: min(56vh, 560px);
+  height: auto;
+  aspect-ratio: var(--map-aspect, 1.3);
   background: var(--board);
   box-shadow: 0 0 0 2px rgb(var(--white-rgb) / 0.12);
+  touch-action: none;
+  cursor: grab;
+}
+#hub-island-map:active {
+  cursor: grabbing;
 }
 .hub-island-side {
   display: flex;
@@ -1957,7 +1969,8 @@ body.touch #hub-close kbd {
     gap: 8px;
   }
   #hub-island-map {
-    height: 54vh;
+    width: min(100%, calc(min(62vh, 420px) * var(--map-aspect, 1.3)));
+    max-height: min(62vh, 420px);
   }
   .hub-day b {
     font-size: 24px;
@@ -1966,6 +1979,10 @@ body.touch #hub-close kbd {
 @media (orientation: portrait) and (max-width: 600px) {
   .hub-island {
     grid-template-columns: 1fr;
+  }
+  #hub-island-map {
+    width: min(100%, calc(min(42vh, 360px) * var(--map-aspect, 1.3)));
+    max-height: min(42vh, 360px);
   }
 }
 /* What a pick costs of a depot start's allowance. */
@@ -2718,6 +2735,8 @@ body.touch #title h1 {
   align-items: center;
   justify-content: center;
   gap: 6px;
+  padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+  box-sizing: border-box;
   background: rgb(var(--deep-rgb) / 0.8);
   pointer-events: none;
   z-index: 5;
@@ -2726,12 +2745,21 @@ body.touch #title h1 {
   display: none;
 }
 #map-canvas {
-  /* --map-aspect (width / height) is set from the world's bounds by view/map.ts. */
-  height: min(82vh, calc(82vw / var(--map-aspect, 1)));
+  /* --map-aspect (width / height) is set from the framed view by view/map.ts. */
+  height: min(
+    calc(100dvh - 72px - env(safe-area-inset-top) - env(safe-area-inset-bottom)),
+    calc((100dvw - 24px - env(safe-area-inset-left) - env(safe-area-inset-right)) / var(--map-aspect, 1))
+  );
   aspect-ratio: var(--map-aspect, 1);
   border: 2px solid var(--ink);
   box-shadow: 0 6px 24px rgb(var(--shade-rgb) / 0.45);
   image-rendering: auto;
+  pointer-events: auto;
+  touch-action: none;
+  cursor: grab;
+}
+#map-canvas:active {
+  cursor: grabbing;
 }
 #map p {
   margin: 0;
@@ -2929,6 +2957,8 @@ body.touch .map-buttons button {
 #day-map {
   align-self: flex-start;
   width: min(100%, 420px);
+  max-height: min(48vh, 420px);
+  height: auto;
   aspect-ratio: var(--map-aspect, 1.3);
   background: var(--board);
   box-shadow: 0 0 0 2px rgb(var(--white-rgb) / 0.12);
@@ -3027,7 +3057,8 @@ body:not(.playing) #banner {
   }
   #day-map {
     width: auto;
-    height: 40vh;
+    max-height: 40vh;
+    height: auto;
   }
   #day-result p {
     font-size: 12px;
@@ -3431,12 +3462,17 @@ body.touch #camp-prompt {
   border-left: 5px solid var(--hot);
   font-family: var(--jp);
 }
+/* Largest world-aspect box that fits in the panel height and 55vw — avoids a tall empty
+ * letterbox when height:100% fights max-width on a portrait phone (map-readability.md). */
 .depart-board {
   position: relative;
-  flex: 0 0 auto;
-  height: 100%;
-  aspect-ratio: var(--world-aspect, 0.53);
+  flex: 0 1 auto;
+  align-self: center;
+  width: min(55vw, calc((100dvh - 48px) * var(--world-aspect, 1.3)));
   max-width: 55vw;
+  max-height: min(100%, calc(100dvh - 48px));
+  aspect-ratio: var(--world-aspect, 1.3);
+  height: auto;
 }
 #depart-map {
   position: absolute;

@@ -1411,17 +1411,19 @@ export class Hub {
     );
   }
 
-  /** Draws the map table's island into its canvas, framed on the region the last start was in. */
+  /** Draws the map table's island into its canvas: the whole island, fit with a pad (map-readability.md). */
   private drawIsland() {
     const canvas = document.getElementById("hub-island-map") as HTMLCanvasElement | null;
     if (!canvas) return;
     const map = new IslandMap(canvas);
     canvas.addEventListener("click", (e) => map.pick(e.clientX, e.clientY) && sfx.locked());
     map.known = this.profile.entries;
+    map.whole = true;
     map.region = this.from ? poiRegion(this.from).id : this.region;
     const c = takenContract(this.profile);
     map.contract = c && contractMark(c);
     map.neighbours = neighboursFor(this.profile);
+    map.bindNav();
     map.draw(islandScene({ ...this.profile, incoming: incomingFor(this.profile) }));
   }
 

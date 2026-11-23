@@ -27,14 +27,22 @@ import { UI, alpha } from "./palette";
  * the compass. Ground the player has not walked near (`State.seen`) lies under fog; the
  * POIs and exits show through it, since the map is how a first raid finds its way.
  *
- * The world is tall and narrow, so a map of all of it leaves each region small on a wide
- * screen. It opens framed on the region the player is in (`Region.bounds`), and switches to
- * the whole world and back (N, or its button on a phone).
+ * Framing (docs/ringfall/map-readability.md): fit the framed bounds with a pad so edge
+ * names stay whole; the raid map opens on the region the player is in and switches to the
+ * whole world (N); the camp's map table and the departure open on the whole island. Wheel
+ * and pinch zoom, drag to pan, within the fitted frame; off-screen goals get an edge arrow.
  */
 
 /** A rectangle of the world in metres. */
 type View = { x0: number; z0: number; x1: number; z1: number };
 const WHOLE: View = { x0: WORLD.x0, z0: WORLD.z0, x1: WORLD.x1, z1: WORLD.z1 };
+
+/** Metres of empty margin around a fitted view so names and marks near the edge stay whole. */
+export const VIEW_PAD = 110;
+/** Closest zoom: fitted view divided by this. */
+const ZOOM_MAX = 4;
+/** Screen-edge inset for off-screen goal arrows, in CSS pixels. */
+const EDGE_INSET = 18;
 
 /** Metres per map pixel of the ground image. */
 const CELL = 1.5;
@@ -542,8 +550,142 @@ export class IslandMap {
   private lockAt: { node: number; x: number; y: number; cx: number; cy: number }[] = [];
   /** The scene last drawn, drawn again when a pick changes the note. */
   private last: MapScene | null = null;
+  /**
+   * Zoom and pan over the fitted frame: zoom 1 is fit-to-content, higher is closer; ox/oz shift
+   * the centre in metres. The minimap ignores it.
+   */
+  cam = { zoom: 1, ox: 0, oz: 0 };
+  /** Called after a pan or zoom so a host (the departure) can re-lay marks. */
+  private onNav: (() => void) | null = null;
+  private navBound = false;
+  private drag: { x: number; y: number; ox: number; oz: number } | null = null;
+  private pinch: { dist: number; zoom: number } | null = null;
 
   constructor(private readonly canvas: HTMLCanvasElement) {}
+
+  /** Back to the fitted view (zoom 1, no pan). */
+  resetCam() {
+    this.cam = { zoom: 1, ox: 0, oz: 0 };
+  }
+
+  /**
+   * Wheel, drag and pinch on this canvas. Safe to call more than once. `onNav` runs after a change
+   * (the departure re-lays its starts). The minimap does not bind.
+   */
+  bindNav(onNav?: () => void) {
+    if (this.mini) return;
+    if (onNav) this.onNav = onNav;
+    if (this.navBound) return;
+    this.navBound = true;
+    const el = this.canvas;
+    el.style.touchAction = "none";
+    el.addEventListener(
+      "wheel",
+      (e) => {
+        if (!this.last) return;
+        e.preventDefault();
+        const r = el.getBoundingClientRect();
+        const old = this.proj;
+        const wx = old ? WORLD.x0 + (e.clientX - r.left - old.ox) / old.m : 0;
+        const wz = old ? WORLD.z0 + (e.clientY - r.top - old.oy) / old.m : 0;
+        const next = Math.min(ZOOM_MAX, Math.max(1, this.cam.zoom * (e.deltaY < 0 ? 1.12 : 1 / 1.12)));
+        if (next === this.cam.zoom) return;
+        this.cam.zoom = next;
+        this.clampCam(this.last);
+        this.draw(this.last);
+        // Keep the cursor's world point under the cursor after zooming in.
+        if (old && this.proj && next > 1) {
+          const after = this.screenAt(wx, wz);
+          if (after) {
+            this.cam.ox += (e.clientX - r.left - after.x) / this.proj.m;
+            this.cam.oz += (e.clientY - r.top - after.y) / this.proj.m;
+            this.clampCam(this.last);
+            this.draw(this.last);
+          }
+        }
+        this.onNav?.();
+      },
+      { passive: false },
+    );
+    el.addEventListener("pointerdown", (e) => {
+      if (!this.last || e.button !== 0) return;
+      // Two fingers: pinch; one finger / mouse: pan (padlock pick still runs on the page's capture).
+      if (e.pointerType === "touch" && (el as HTMLElement & { _pts?: Map<number, PointerEvent> })._pts?.size) {
+        return;
+      }
+      this.drag = { x: e.clientX, y: e.clientY, ox: this.cam.ox, oz: this.cam.oz };
+      el.setPointerCapture(e.pointerId);
+      el.style.cursor = "grabbing";
+    });
+    el.addEventListener("pointermove", (e) => {
+      if (!this.drag || !this.last || !this.proj) return;
+      this.cam.ox = this.drag.ox - (e.clientX - this.drag.x) / this.proj.m;
+      this.cam.oz = this.drag.oz - (e.clientY - this.drag.y) / this.proj.m;
+      this.clampCam(this.last);
+      this.draw(this.last);
+      this.onNav?.();
+    });
+    const endDrag = () => {
+      this.drag = null;
+      el.style.cursor = "";
+    };
+    el.addEventListener("pointerup", endDrag);
+    el.addEventListener("pointercancel", endDrag);
+    el.addEventListener("dblclick", () => {
+      if (!this.last) return;
+      this.resetCam();
+      this.draw(this.last);
+      this.onNav?.();
+    });
+    // Pinch: track active touch points on the element.
+    const pts = new Map<number, PointerEvent>();
+    (el as HTMLElement & { _pts?: Map<number, PointerEvent> })._pts = pts;
+    el.addEventListener("pointerdown", (e) => {
+      if (e.pointerType !== "touch") return;
+      pts.set(e.pointerId, e);
+      if (pts.size === 2) {
+        const [a, b] = [...pts.values()];
+        this.pinch = { dist: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY), zoom: this.cam.zoom };
+        this.drag = null;
+      }
+    });
+    el.addEventListener("pointermove", (e) => {
+      if (e.pointerType !== "touch" || !pts.has(e.pointerId)) return;
+      pts.set(e.pointerId, e);
+      if (pts.size === 2 && this.pinch && this.last) {
+        const [a, b] = [...pts.values()];
+        const dist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+        if (this.pinch.dist > 0) {
+          this.cam.zoom = Math.min(ZOOM_MAX, Math.max(1, this.pinch.zoom * (dist / this.pinch.dist)));
+          this.clampCam(this.last);
+          this.draw(this.last);
+          this.onNav?.();
+        }
+      }
+    });
+    const endTouch = (e: PointerEvent) => {
+      pts.delete(e.pointerId);
+      if (pts.size < 2) this.pinch = null;
+    };
+    el.addEventListener("pointerup", endTouch);
+    el.addEventListener("pointercancel", endTouch);
+  }
+
+  /** Keeps pan so the zoomed window stays over the fitted frame. */
+  private clampCam(s: MapScene) {
+    const fit = this.fitView(s);
+    const z = this.cam.zoom;
+    if (z <= 1) {
+      this.cam.zoom = 1;
+      this.cam.ox = 0;
+      this.cam.oz = 0;
+      return;
+    }
+    const maxX = ((fit.x1 - fit.x0) / 2) * (1 - 1 / z);
+    const maxZ = ((fit.z1 - fit.z0) / 2) * (1 - 1 / z);
+    this.cam.ox = Math.max(-maxX, Math.min(maxX, this.cam.ox));
+    this.cam.oz = Math.max(-maxZ, Math.min(maxZ, this.cam.oz));
+  }
 
   /**
    * A click or tap at (clientX, clientY): on a padlock or its node's mark it shows that node's note
@@ -577,25 +719,45 @@ export class IslandMap {
   }
 
   /**
-   * The part of the world on show: the region the player is in, or all of it. The region's frame
-   * grows to take in the player, who may stand on the way between the regions outside it.
+   * The fitted part of the world (before zoom/pan), with a pad so edge names stay whole. The
+   * region's frame grows to take in the player, who may stand on the way between the regions.
    */
-  view(s: MapScene): View {
+  fitView(s: MapScene): View {
     if (this.mini && s.player) {
       const { x, z } = s.player.pos;
       return { x0: x - this.mini, z0: z - this.mini, x1: x + this.mini, z1: z + this.mini };
     }
-    if (this.whole) return WHOLE;
-    if (!s.player) return regionOf(this.region).bounds;
-    const b = regionHere(s.player.pos).bounds;
-    const { x, z } = s.player.pos;
-    const pad = 40;
-    return {
-      x0: Math.max(WORLD.x0, Math.min(b.x0, x - pad)),
-      z0: Math.max(WORLD.z0, Math.min(b.z0, z - pad)),
-      x1: Math.min(WORLD.x1, Math.max(b.x1, x + pad)),
-      z1: Math.min(WORLD.z1, Math.max(b.z1, z + pad)),
-    };
+    let v: View;
+    if (this.whole) v = { ...WHOLE };
+    else if (!s.player) v = { ...regionOf(this.region).bounds };
+    else {
+      const b = regionHere(s.player.pos).bounds;
+      const { x, z } = s.player.pos;
+      const pad = 40;
+      v = {
+        x0: Math.min(b.x0, x - pad),
+        z0: Math.min(b.z0, z - pad),
+        x1: Math.max(b.x1, x + pad),
+        z1: Math.max(b.z1, z + pad),
+      };
+    }
+    const p = VIEW_PAD;
+    return { x0: v.x0 - p, z0: v.z0 - p, x1: v.x1 + p, z1: v.z1 + p };
+  }
+
+  /**
+   * The part of the world on show: the fitted frame, then zoom and pan. The minimap stays a
+   * square round the player.
+   */
+  view(s: MapScene): View {
+    const fit = this.fitView(s);
+    if (this.mini || this.cam.zoom <= 1) return fit;
+    const z = this.cam.zoom;
+    const cx = (fit.x0 + fit.x1) / 2 + this.cam.ox;
+    const cz = (fit.z0 + fit.z1) / 2 + this.cam.oz;
+    const hw = (fit.x1 - fit.x0) / 2 / z;
+    const hh = (fit.z1 - fit.z0) / 2 / z;
+    return { x0: cx - hw, z0: cz - hh, x1: cx + hw, z1: cz + hh };
   }
 
   /**
@@ -917,14 +1079,23 @@ export class IslandMap {
     g.lineJoin = "round";
     g.strokeStyle = alpha(UI.night, 0.85);
     const font = (size: number) => `800 ${size * dpr}px system-ui, sans-serif`;
-    // A centred name near the world's edge is moved in so it stays whole on the canvas.
-    const inside = (text: string, x: number) => {
+    // A point still on (or just past) the canvas: off-view names are skipped, not pinned to the edge.
+    const onScreen = (x: number, y: number, margin = 20 * dpr) => x >= -margin && y >= -margin && x <= g.canvas.width + margin && y <= g.canvas.height + margin;
+    // A centred name near the framed edge is moved in so it stays whole — only for points already on screen.
+    const inside = (text: string, x: number, y: number) => {
+      g.font = font(12);
       const half = g.measureText(text).width / 2 + 4 * dpr;
-      return Math.max(half, Math.min(g.canvas.width - half, x));
+      const yy = Math.max(10 * dpr, Math.min(g.canvas.height - 10 * dpr, y));
+      return { x: Math.max(half, Math.min(g.canvas.width - half, x)), y: yy };
     };
     const label = (text: string, x: number, y: number, color: string, size: number, stroke = true) => {
+      if (!onScreen(x, y)) return;
       g.font = font(size);
-      if (g.textAlign === "center") x = inside(text, x);
+      if (g.textAlign === "center") {
+        const p = inside(text, x, y);
+        x = p.x;
+        y = p.y;
+      }
       if (stroke) g.strokeText(text, x, y);
       g.fillStyle = color;
       g.fillText(text, x, y);
@@ -935,8 +1106,9 @@ export class IslandMap {
       g.font = font(size);
       const w = g.measureText(text).width;
       const hh = size * dpr * 0.6;
-      const x0 = left ? x : inside(text, x) - w / 2;
-      return { x0, y0: y - hh, x1: x0 + w, y1: y + hh };
+      const p = left ? { x, y } : inside(text, x, y);
+      const x0 = left ? x : p.x - w / 2;
+      return { x0, y0: p.y - hh, x1: x0 + w, y1: p.y + hh };
     };
     const taken: Rect[] = [];
     const free = (r: Rect) => !taken.some((t) => r.x0 < t.x1 && r.x1 > t.x0 && r.y0 < t.y1 && r.y1 > t.y0);
@@ -965,6 +1137,8 @@ export class IslandMap {
     for (const i of order) {
       if (s.names && !s.names.includes(POIS[i].id)) continue;
       const p = at(POIS[i].x, POIS[i].z);
+      // Off the framed view: leave the name out (an edge arrow points at goals instead).
+      if (!onScreen(p.x, p.y)) continue;
       const r = box(poiText(i), p.x, p.y - 15 * dpr, 12);
       if (named.some((j) => {
         const q = at(POIS[j].x, POIS[j].z);
@@ -1070,6 +1244,7 @@ export class IslandMap {
       // A district's name is learnt by going there.
       if (!s.seen[cellOf(d.x, d.z)]) continue;
       const p = at(d.x, d.z);
+      if (!onScreen(p.x, p.y)) continue;
       const r = box(d.name, p.x, p.y, 10);
       if (!free(r)) continue;
       taken.push(r);
@@ -1079,6 +1254,7 @@ export class IslandMap {
     // does not offer yet, and this raid has not walked to, is faint and dashed: somewhere to aim for.
     for (const e of plain ? [] : ENTRIES) {
       const p = at(e.x, e.z);
+      if (!onScreen(p.x, p.y)) continue;
       const known = !this.known || this.known.includes(e.id) || s.found.includes(e.id);
       const ink = known ? UI.parch : alpha(UI.parch, 0.5);
       g.save();
@@ -1104,6 +1280,7 @@ export class IslandMap {
     }
     for (const r of plain ? [] : REGIONS) {
       const p = at(r.label.x, r.label.z);
+      if (!onScreen(p.x, p.y)) continue;
       if (!free(box(r.name, p.x, p.y, 15, true))) continue;
       g.textAlign = "left";
       label(r.name, p.x, p.y, alpha(UI.parch, 0.55), 15, false);
@@ -1494,6 +1671,8 @@ export class IslandMap {
     }
     const reason = this.picked >= 0 && s.nodes ? lockReason(s.nodes, this.picked) : "";
     if (reason) this.drawNote(g, at(NODES[this.picked].x, NODES[this.picked].z), reason, dpr);
+    // Off-screen goals: an arrow at the canvas edge (Into the Breach / Pokémon GO style).
+    if (!plain && !this.mini) this.drawEdgeArrows(g, s, at, dpr);
     // For automation: where the padlocks stand and the note on show.
     const marks = JSON.stringify(this.lockAt.map((q) => [NODES[q.node].id, Math.round(q.x), Math.round(q.y)]));
     if (this.canvas.dataset.locks !== marks) this.canvas.dataset.locks = marks;
@@ -1501,6 +1680,62 @@ export class IslandMap {
     const ringed = s.nodes ? frontNodes(s.nodes) : [];
     const front = NODES.filter((_, i) => ringed[i]).map((n) => n.id).join(",");
     if (this.canvas.dataset.front !== front) this.canvas.dataset.front = front;
+  }
+
+  /**
+   * Chevrons at the canvas edge toward goals that sit off the framed view: the player (when
+   * panned away), the taken contract, night targets, a coming expedition, and a node under threat.
+   */
+  private drawEdgeArrows(g: CanvasRenderingContext2D, s: MapScene, at: (x: number, z: number) => { x: number; y: number }, dpr: number) {
+    const goals: { x: number; z: number; color: string }[] = [];
+    if (s.player) goals.push({ x: s.player.pos.x, z: s.player.pos.z, color: UI.white });
+    const c = this.contract;
+    if (c?.t === "poi") goals.push({ x: c.x, z: c.z, color: UI.r3 });
+    else if (c?.t === "loop" && c.points[0]) goals.push({ x: c.points[0].x, z: c.points[0].z, color: UI.r3 });
+    const night = s.night ?? (s.battle ? { targets: s.battle.targets, fortified: s.battle.fortified } : null);
+    if (night) for (const i of night.targets) goals.push({ x: NODES[i].x, z: NODES[i].z, color: UI.alert });
+    if (s.noticed) for (const i of s.noticed) goals.push({ x: NODES[i].x, z: NODES[i].z, color: UI.rival });
+    if (s.battle?.threat) s.battle.threat.forEach((hot, i) => hot && goals.push({ x: NODES[i].x, z: NODES[i].z, color: UI.alert }));
+    // Front nodes only once the player has zoomed or panned: the fitted region already shows its own.
+    if (!this.whole && this.cam.zoom > 1 && s.nodes) {
+      const front = frontNodes(s.nodes);
+      NODES.forEach((n, i) => front[i] && goals.push({ x: n.x, z: n.z, color: UI.paper }));
+    }
+    const inset = EDGE_INSET * dpr;
+    const w = g.canvas.width;
+    const h = g.canvas.height;
+    for (const goal of goals) {
+      const p = at(goal.x, goal.z);
+      if (p.x >= inset && p.y >= inset && p.x <= w - inset && p.y <= h - inset) continue;
+      const cx = w / 2;
+      const cy = h / 2;
+      const dx = p.x - cx;
+      const dy = p.y - cy;
+      if (dx === 0 && dy === 0) continue;
+      // Clamp the ray from the centre to the inset rectangle.
+      const sx = dx !== 0 ? ((dx > 0 ? w - inset : inset) - cx) / dx : Infinity;
+      const sy = dy !== 0 ? ((dy > 0 ? h - inset : inset) - cy) / dy : Infinity;
+      const t = Math.min(Math.abs(sx), Math.abs(sy));
+      const x = cx + dx * t;
+      const y = cy + dy * t;
+      const ang = Math.atan2(dy, dx);
+      const r = 7 * dpr;
+      g.save();
+      g.translate(x, y);
+      g.rotate(ang);
+      g.beginPath();
+      g.moveTo(r, 0);
+      g.lineTo(-r * 0.75, r * 0.7);
+      g.lineTo(-r * 0.35, 0);
+      g.lineTo(-r * 0.75, -r * 0.7);
+      g.closePath();
+      g.fillStyle = goal.color;
+      g.strokeStyle = alpha(UI.night, 0.95);
+      g.lineWidth = 1.5 * dpr;
+      g.fill();
+      g.stroke();
+      g.restore();
+    }
   }
 
   /** A picked padlock's note under its node's mark, on top of everything: a padlock and how to open the core. */

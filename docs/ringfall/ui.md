@@ -1,6 +1,6 @@
 # RINGFALL の画面の決めごと
 
-HUD、野営地の板、出撃画面、地図、結果画面（`src/ringfall/style.css`、`view/hud.ts`、`view/hub.ts`、`view/map.ts` ほか）を、先に決めた枠の中で作るための決めごと。モデルの決めごと（[models.md](models.md)）と同じく、色・字の大きさ・押せる大きさを先に決め、検査がそれを測る。
+HUD、野営地の板、出撃画面、地図、結果画面（`src/ringfall/style.css`、`view/hud.ts`、`view/hub.ts`、`view/map.ts` ほか）を、先に決めた枠の中で作るための決めごと。モデルの決めごと（[models.md](models.md)）と同じく、色・字の大きさ・押せる大きさを先に決め、検査がそれを測る。地図のフィット・ズーム・端矢印は [map-readability.md](map-readability.md)。
 
 検査は 2 つある。
 
