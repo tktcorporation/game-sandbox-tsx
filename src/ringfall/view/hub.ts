@@ -1,6 +1,10 @@
 import { PLAYER } from "../sim/config";
-import { incomingFor, neighboursFor } from "../island-net";
+import { aiSalt, incomingFor, isAi, neighboursFor } from "../island-net";
+import { assaultLeft, assaultOf, assaultReady, scheduleAssault } from "../meta/assault";
+import { aiByCode, aiNextId, aiView } from "../meta/ai-islands";
+import { planShortRaid, takenOn, type IncursionPlan } from "../meta/incursion";
 import { neighbourFrontPick } from "../meta/neighbour-front";
+import { homeSquads } from "../meta/expeditions";
 import { LOCAL_AID, type Parcel } from "../meta/parcels";
 import { armorIcon, binPicture, fightIcon, entryIcon, coinIcon, dmgIcon, magIcon, rateIcon, checkIcon, coreIcon, factoryIcon, flagIcon, hideoutIcon, clockIcon, crossIcon, depotIcon, gunIcon, healIcon, issueIcon, keyIcon, lockIcon, modIcon, pinIcon, pouchIcon, radioIcon, robotIcon, routeIcon, SIDE, stashIcon, turretIcon, upIcon, workbenchIcon } from "./icons";
 import { ALLY, FACTORY, FACTORY_TOP, HEALS as HEAL_SPECS, HIDEOUT, MOD_KINDS, PLATE, RARITY, THREAT, TOOLS, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
@@ -22,7 +26,7 @@ import { enemyNodes, frontNodes, ownNodes } from "../sim/front";
 import { nodeRow } from "./row";
 import { sfx } from "./sfx";
 import { UI, rarityText } from "./palette";
-import { PHRASE, TERM, nextAttack, nextFront, nextFrontCapture, relayOf } from "./copy";
+import { PHRASE, TERM, assaultNoticeTo, assaultWaitHours, nextAssaultWait, nextAttack, nextFront, nextFrontCapture, nextShortRaid, relayOf } from "./copy";
 
 const RARITY_CSS = ["var(--r0)", "var(--r1)", "var(--r2)", "var(--r3)"];
 
@@ -62,9 +66,18 @@ export function nextHandFor(p: Profile): string {
   if (incomingFor(p).length) return PHRASE.nextMapFortifyIncoming;
   const rival = rivalFrontPick(p);
   if (rival) return nextAttack(rival.name);
-  // Gap A: no rival hold yet — open sea route to a neighbour with no foothold → 攻める their 前線.
+  // Gap A / X2: neighbour front — schedule notice, then short raid (not a signal-station button).
   const gap = neighbourFrontPick(p.poiState, neighboursFor(p), CAMP.wake);
-  if (gap) return nextAttack(gap.name);
+  if (gap) {
+    const out = assaultOf(p.expeditions, gap.code);
+    const ai = !!gap.ai || isAi(gap.code);
+    if (out && !assaultReady(out, ai)) {
+      const hours = Math.max(1, Math.ceil(assaultLeft(out, ai) / 3600));
+      return nextAssaultWait(gap.name, hours);
+    }
+    if (out && assaultReady(out, ai)) return nextShortRaid(gap.name);
+    return nextAttack(gap.name);
+  }
   // First sessions: 前線の核 · 制圧 before workshop shopping (game-design-review A).
   if (introFrontOpen(p.quests)) {
     const pick = frontPickFor(p);
@@ -410,7 +423,15 @@ export interface Launch {
   seed: number;
   from?: PoiId;
   entry: EntryId;
+  /** X2 short raid onto another island's node subset (§5.8). */
+  incursion?: IncursionPlan;
 }
+
+/**
+ * Gap A / X2 depart outcome before a normal launch: schedule the 来る遠征-shaped notice,
+ * wait through it, or hand back a short-raid plan.
+ */
+export type GapDepart = { t: "scheduled"; toast: string } | { t: "waiting"; toast: string } | { t: "ready"; plan: IncursionPlan };
 
 /**
  * Where a valuable is found, as a line: the POIs whose bins hold it most often (with the
@@ -851,20 +872,58 @@ export class Hub {
   }
 
   /**
+   * Gap A / X2: when there is no home rival to 攻める, the neighbour front schedules a
+   * 来る遠征-shaped notice, then unlocks a short raid. Null when this depart is a normal home raid.
+   */
+  gapDepart(now = Date.now()): GapDepart | null {
+    if (rivalFrontPick(this.profile)) return null;
+    const gap = neighbourFrontPick(this.profile.poiState, neighboursFor(this.profile), CAMP.wake);
+    if (!gap) return null;
+    const ai = !!gap.ai || isAi(gap.code);
+    const existing = assaultOf(this.profile.expeditions, gap.code);
+    if (!existing) {
+      // X2 is player-led: the Outgoing is the 来る遠征-shaped notice, not a factory send button.
+      const units = Math.max(1, homeSquads(this.profile) || 1);
+      const id = ai ? aiNextId(this.profile.expeditions, gap.code) : 0;
+      const { list, created } = scheduleAssault(this.profile.expeditions, { code: gap.code, node: gap.shore, units, id, now });
+      if (created) this.set({ ...this.profile, expeditions: list });
+      return { t: "scheduled", toast: assaultNoticeTo(gap.name) };
+    }
+    if (!assaultReady(existing, ai, now)) {
+      const hours = Math.max(1, Math.ceil(assaultLeft(existing, ai, now) / 3600));
+      return { t: "waiting", toast: assaultWaitHours(gap.name, hours) };
+    }
+    const plan = this.shortRaidPlan(gap.code, gap.shore, ai);
+    return plan ? { t: "ready", plan } : { t: "waiting", toast: `${gap.name}はいま攻められない` };
+  }
+
+  /** Build an X2 plan for an AI neighbour (sync). Real islands need a fetched view — null until then. */
+  private shortRaidPlan(code: string, target: NodeId, ai: boolean): IncursionPlan | null {
+    if (!ai) return null;
+    const a = aiByCode(aiSalt(), code);
+    if (!a) return null;
+    const seized = takenOn(this.profile.incursionTaken, code);
+    const view = aiView(a, aiSalt(), this.profile.day, this.profile.expeditions, "", Date.now(), seized);
+    return planShortRaid(view, target, { ai: true, known: this.profile.entries });
+  }
+
+  /**
    * Takes the loadout out of the stash for a raid from the start chosen on the departure's map.
    * Null when the loadout does not fit a depot's allowance (`rideRefused()`).
+   * Pass `incursion` for an X2 short raid (Gap A ready).
    */
-  launch(): Launch | null {
+  launch(incursion?: IncursionPlan): Launch | null {
     this.fixStart();
-    const from = this.from;
-    const entry = this.entry ?? this.profile.entry;
-    const taken = takeKit(this.profile, this.startLoad(), from);
+    const from = incursion ? undefined : this.from;
+    const entry = incursion?.entry ?? this.entry ?? this.profile.entry;
+    const region = incursion?.region ?? this.region;
+    const taken = takeKit(this.profile, this.startLoad(), from ?? null);
     if (!taken) return null;
     const { profile, kit } = taken;
-    // The start is remembered for the next departure, which opens on it.
-    this.set({ ...profile, region: this.region, entry });
+    // The start is remembered for the next departure, which opens on it (home raids only).
+    this.set(incursion ? profile : { ...profile, region: this.region, entry });
     this.load = emptyLoadout();
-    return { kit, region: this.region, seed: this.profile.seed, from: from ?? undefined, entry };
+    return { kit, region, seed: this.profile.seed, from: from ?? undefined, entry, ...(incursion ? { incursion } : {}) };
   }
 
   /** The contract taken for the next raid, or null. */

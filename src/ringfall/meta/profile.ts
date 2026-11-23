@@ -14,7 +14,8 @@ import { addRetaken, awayIncome, parseIncoming, parseOutgoing, parseRetaken, rec
 import { LOCAL_AID, parseParcels, type Parcel } from "./parcels";
 import { withTaken } from "./incursion";
 import { capturedIds, momentum } from "../sim/front";
-import { TROPHY, trophyDelta } from "./trophies";
+import { assaultLost, assaultWon } from "./assault";
+import { TROPHY, clampTrophies, trophyDelta, trophySwap } from "./trophies";
 import { holdsOf } from "./neighbour-front";
 
 /**
@@ -723,10 +724,22 @@ export function settle(p: Profile, s: State): Settlement {
   const settled = { ...profile, freedAt, entries, quests: log, raids: p.raids + 1, extracted: p.extracted + (s.outcome === "extracted" ? 1 : 0), time: p.time + s.time, seed: nextSeed(p.seed), depots, depotSent, seen: encodeSeen(s.seen), records: kept, parcels, incursionTaken };
   const { profile: night } = advanceDay(settled, day);
   // Trophy T1: rival nodes taken in the raid / lost overnight to another player.
+  // X2 short-raid wins do not rewrite home holds — award the same swap once here (no double count).
   const beforeHolds = holdsOf(p.poiState);
   const afterHolds = holdsOf(night.poiState);
-  const trop = trophyDelta(p.trophies ?? TROPHY.start, beforeHolds, afterHolds);
+  let trop = trophyDelta(p.trophies ?? TROPHY.start, beforeHolds, afterHolds);
+  const incursionWonEarly = !!s.incursion && capturedIds(s).includes(s.incursion.target as NodeId);
+  if (incursionWonEarly && !trop.taken.length) {
+    const self = p.trophies ?? TROPHY.start;
+    const { gain } = trophySwap(self, self);
+    trop = { next: clampTrophies(self + gain), gained: trop.gained + gain, lost: trop.lost, taken: [s.incursion!.target as NodeId], dropped: trop.dropped };
+  }
   if (trop.next !== (p.trophies ?? TROPHY.start)) Object.assign(night, { trophies: trop.next });
+  // X2: the outbound assault becomes holding on a win, gone on a miss (same list as 来る遠征 notice).
+  if (s.incursion) {
+    const expeditions = incursionWonEarly ? assaultWon(night.expeditions, s.incursion.code) : assaultLost(night.expeditions, s.incursion.code);
+    if (expeditions !== night.expeditions) Object.assign(night, { expeditions });
+  }
   // Defender partial loss: a node that left the player's overnight drops its 中継ボックス stock
   // (same line as 「取られた · 島の守りが削られた」).
   let nightParcels = night.parcels ?? parcels;
@@ -757,7 +770,7 @@ export function settle(p: Profile, s: State): Settlement {
   const fresh = { ...claimed.profile, stash: withStarters(claimed.profile.stash), taken: null, board: makeBoard(claimed.profile) };
   // Lead-incursion captures are on the copy — never pending retakes on the home island.
   fresh.retaken = s.incursion ? [...p.retaken] : addRetaken(p.retaken, retakenNodes(started, fresh, capturedIds(s)));
-  const incursionWon = !!s.incursion && capturedIds(s).includes(s.incursion.target as NodeId);
+  const incursionWon = incursionWonEarly;
   return {
     profile: fresh,
     home,
