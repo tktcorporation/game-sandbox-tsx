@@ -96,6 +96,8 @@ export function nextHandFor(p: Profile): string {
     return pick ? nextFrontCapture(pick.name) : PHRASE.nextVehicleOrGate;
   }
   if (canBuildFactory(p)) return PHRASE.nextFactoryRaise;
+  // 倉庫 capacity is raised at the shelves; tip there when that level is ready.
+  if (canBuild(p, "storage")) return PHRASE.nextStashRaise;
   if (MODULES.some((m) => canBuild(p, m))) return PHRASE.nextWorkshopRaise;
   if (offered(p.quests).some((q) => deliverable(p, q))) return PHRASE.nextQuestDeliver;
   if (!takenContract(p) && !takenStory(p) && p.board.contracts.length) return PHRASE.nextQuestPick;
@@ -526,6 +528,8 @@ export class Hub {
     $("hub-side").scrollTop = 0;
     $("hub-stash").scrollTop = 0;
     sfx.tab();
+    // Shelves show the warehouse card open so capacity can be raised where the count is.
+    if (station === "stash") this.module = "storage";
     if (station === "signal") this.newsSeen = true;
     this.render();
     if (station === "signal") this.exped.open();
@@ -990,7 +994,9 @@ export class Hub {
     const signal = !this.newsSeen && unread ? `知らせ ${unread}` : aid ? `届け ${aid}` : "";
     // The board wants looking at while it has contracts and none is taken.
     const open = !takenContract(p) && !takenStory(p) && p.board.contracts.length ? `依頼 ${p.board.contracts.length}` : "";
-    return { map, quests: [ready ? `納品 ${ready}` : "", open].filter(Boolean).join("・"), stash: "", shop: "", workshop: buildable ? `▲ ${buildable}` : "", factory: canBuildFactory(p) ? `▲ Lv${p.factory + 1}` : "", signal };
+    // Shelves mark when the warehouse can grow (same ▲ as the workshop / factory).
+    const stashUp = canBuild(p, "storage") ? `▲ Lv${p.hideout.storage + 1}` : "";
+    return { map, quests: [ready ? `納品 ${ready}` : "", open].filter(Boolean).join("・"), stash: stashUp, shop: "", workshop: buildable ? `▲ ${buildable}` : "", factory: canBuildFactory(p) ? `▲ Lv${p.factory + 1}` : "", signal };
   }
 
   private item(item: Item, body: { act?: string; arg?: string; on?: boolean; right?: string; count?: number; need?: Needs; warn?: boolean }) {
@@ -1179,7 +1185,8 @@ export class Hub {
     const next = nextLevel(p.hideout, m);
     const pips = Array.from({ length: maxLevel(m) }, (_, n) => `<i class="${n < lv ? "on" : ""}"></i>`).join("");
     const state = buildState(p, m);
-    const open = this.module === m;
+    // Shelves keep the warehouse card open (capacity is why the player opened them).
+    const open = this.module === m || (this.station === "stash" && m === "storage");
     const levels = Array.from({ length: maxLevel(m) + 1 }, (_, n) => this.moduleGauges(m, n));
     const gain = next ? `<div class="gain-row">${upIcon()}<b>Lv${lv + 1}</b>${deltaHtml(levels[lv], levels[lv + 1])}</div>` : `<div class="gain-row max">${levels[lv].map((g) => gaugeHtml(g)).join("")}<b>MAX</b></div>`;
     const body = open ? `<div class="mod-body">${ladder(levels, lv)}${next ? this.cost(next.items, next.cash, `<button type="button" data-act="build" data-arg="${m}" ${canBuild(p, m) ? "" : "disabled"}>Lv${lv + 1}</button>`) : ""}</div>` : "";
@@ -1368,6 +1375,10 @@ export class Hub {
    * picked) with their numbers, the armour, keys and heals to take (the issued heals always come
    * too), and the truck's allowance when it drives to a depot.
    */
+  /**
+   * Shelves' side column: the warehouse card (raise capacity where the count is seen), then the
+   * next raid's kit. The workshop still lists every hideout module, warehouse included.
+   */
   private kitPanel(): string {
     const p = this.profile;
     const issued = issuedHeals(p);
@@ -1382,7 +1393,11 @@ export class Hub {
     const weapons = slot("武器 1", this.load.weapons[0], stat(this.load.weapons[0])) + slot("武器 2", this.load.weapons[1], stat(this.load.weapons[1]));
     // A row stands only for what the stash can fill: no armour, no key and no heal of a kind means no row for it.
     const has = (t: Item["t"]) => p.stash.some((i) => i.t === t);
-    return (
+    const full = stashUsed(p) >= stashCap(p.hideout);
+    const room = full
+      ? `<p class="lock-note">${lockIcon()}${nextLevel(p.hideout, "storage") ? PHRASE.warehouseFullRaise : PHRASE.warehouseFullSell}</p>`
+      : "";
+    const kit =
       this.depotSlot() +
       weapons +
       (has("armor") ? slot("アーマー", this.load.armor) : "") +
@@ -1391,8 +1406,8 @@ export class Hub {
         .map(heal)
         .join("") +
       // The pouch: the slots of valuables a wipe leaves the player.
-      `<div class="slot pouch"><small>${pouchIcon()}ポーチ</small><span class="boxes">${Array.from({ length: pouchSlots(p.hideout) }, () => `<i class="seg pouch" style="--n:1"></i>`).join("")}</span><b>${pouchSlots(p.hideout)}</b></div>`
-    );
+      `<div class="slot pouch"><small>${pouchIcon()}ポーチ</small><span class="boxes">${Array.from({ length: pouchSlots(p.hideout) }, () => `<i class="seg pouch" style="--n:1"></i>`).join("")}</span><b>${pouchSlots(p.hideout)}</b></div>`;
+    return `${room}${this.moduleCard("storage")}<h3 class="hub-sub">${TERM.loadout}</h3>${kit}`;
   }
 
   /** The contract taken, in a line of marks: its kind, its ask, and its 強度 when raised. */
@@ -1562,7 +1577,9 @@ export class Hub {
     } else if (shop) {
       const full = stashUsed(p) >= stashCap(p.hideout);
       // Every buy is shut while the stash is full: the shelf says so, and what makes room.
-      const room = full ? `<p class="lock-note">${lockIcon()}${TERM.warehouse}が満杯：売るか、${TERM.workshop}で${esc(HIDEOUT.storage.name)}を上げる</p>` : "";
+      const room = full
+        ? `<p class="lock-note">${lockIcon()}${nextLevel(p.hideout, "storage") ? PHRASE.warehouseFullRaise : PHRASE.warehouseFullSell}</p>`
+        : "";
       $("hub-side").innerHTML = room + shelfTiers(p) + wares(p)
         .map((item, n) => `<button type="button" class="item" data-act="buy" data-arg="${n}" ${p.cash < buyPrice(item) || full ? "disabled" : ""}><span style="color:${itemColor(item)}">${esc(itemName(item))}</span><small${item.t === "valuable" && want[item.kind] > 0 ? ' class="need"' : ""}>${item.t === "valuable" ? (want[item.kind] > 0 ? `${upIcon()}${want[item.kind]}` : need.hideout[item.kind] + need.factory[item.kind] > 0 ? checkIcon() : "") : itemNote(item)}</small><b>${yen(buyPrice(item))}</b></button>`)
         .join("");

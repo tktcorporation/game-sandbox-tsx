@@ -124,6 +124,8 @@ export const TERM = {
 /** Full live phrases built from TERM. */
 export const PHRASE = {
   nextWorkshopRaise: `${TERM.nextHand}${TERM.workshop} · ${TERM.raiseLevel}`,
+  /** 倉庫 capacity: raise from the shelves where the count is seen. */
+  nextStashRaise: `${TERM.nextHand}${TERM.stashShelf} · ${TERM.raiseLevel}`,
   nextFactoryRaise: `${TERM.nextHand}${TERM.factory} · ${TERM.raiseLevel}`,
   nextMapFortifyIncoming: `${TERM.nextHand}${TERM.mapTable} · ${TERM.incomingExpedition}を${TERM.fortify}`,
   nextVehicleOrGate: `${TERM.nextHand}${TERM.vehicle}か${TERM.gate}から${TERM.sortie}`,
@@ -137,6 +139,15 @@ export const PHRASE = {
   islandGuardWent: `の${TERM.islandGuard}に回った`,
   /** Live capture prompt — 「を始める」 is part of the line today. */
   captureStart: `${TERM.captureCore}を始める`,
+  /**
+   * Trader / shelves when the warehouse is full and another level exists.
+   * 【元】倉庫が満杯：売るか、作業場で倉庫を上げる
+   * 【案】倉庫が満杯：売るか、倉庫の棚で倉庫を上げる
+   * 【理由】容量を上げる入口を、枠数が見える倉庫の棚に寄せた
+   */
+  warehouseFullRaise: `${TERM.warehouse}が満杯：売るか、${TERM.stashShelf}で${TERM.warehouse}を上げる`,
+  /** Shelves when full at the top warehouse level (sell only). */
+  warehouseFullSell: `${TERM.warehouse}が満杯：売る`,
 } as const;
 
 /** Toast after confirming 遠征に出す (past of TERM.sendExpedition). */

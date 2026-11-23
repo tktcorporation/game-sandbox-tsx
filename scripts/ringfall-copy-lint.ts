@@ -209,6 +209,12 @@ if (TERM.sendToWarehouse !== "倉庫へ送る") problems.push("copy.ts: TERM.sen
 if (!PHRASE.nextWorkshopRaise.includes(TERM.workshop) || !PHRASE.nextWorkshopRaise.includes(TERM.raiseLevel)) {
   problems.push("copy.ts: PHRASE.nextWorkshopRaise must use 作業場 · レベルを上げる");
 }
+if (!PHRASE.nextStashRaise.includes(TERM.stashShelf) || !PHRASE.nextStashRaise.includes(TERM.raiseLevel)) {
+  problems.push("copy.ts: PHRASE.nextStashRaise must use 倉庫の棚 · レベルを上げる");
+}
+if (!PHRASE.warehouseFullRaise.includes(TERM.stashShelf) || !PHRASE.warehouseFullRaise.includes(TERM.warehouse)) {
+  problems.push("copy.ts: PHRASE.warehouseFullRaise must point at 倉庫の棚 for 倉庫");
+}
 
 if (warns.length) {
   console.warn(`RINGFALL COPY LINT warnings (${warns.length}):`);
