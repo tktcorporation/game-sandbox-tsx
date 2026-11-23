@@ -1373,13 +1373,34 @@ export class Hud {
   /** Seconds after the results open at which the map turns to the day's end. */
   private dayTimers: number[] = [];
   private dayFrame = 0;
+  /** Jump the island beat to its end (tap the day map); null once done or cleared. */
+  private daySkip: (() => void) | null = null;
+
+  /** Stops the day's beat timers (leaving the results, or skipping to the end). */
+  private clearDayTimers() {
+    for (const t of this.dayTimers) clearTimeout(t);
+    this.dayTimers = [];
+    cancelAnimationFrame(this.dayFrame);
+  }
+
+  /** Leaves the results: drop beat timers so they do not fire over the camp. */
+  endResults() {
+    this.clearDayTimers();
+    this.daySkip = null;
+    const day = document.getElementById("day-result");
+    if (day) day.classList.remove("skippable");
+  }
+
+  /** Tap the day map / row: jump to the day's end without waiting out the beats (Round 10). */
+  skipDayBeat() {
+    this.daySkip?.();
+  }
 
   /** Draws the results' map and bar beat by beat: as the day began, after the raid, after the battle the player left, after the night. */
   private drawDay(settled?: Settlement) {
     const canvas = document.getElementById("day-map") as HTMLCanvasElement | null;
-    for (const t of this.dayTimers) clearTimeout(t);
-    this.dayTimers = [];
-    cancelAnimationFrame(this.dayFrame);
+    this.clearDayTimers();
+    this.daySkip = null;
     if (!canvas || !settled) {
       if (canvas) canvas.hidden = true;
       return;
@@ -1462,11 +1483,42 @@ export class Hud {
         bar(b.ids, b.rivals, b.prev);
         mark(b.beat, b.icon);
       };
+      const dayEl = document.getElementById("day-result");
+      const finish = () => {
+        this.clearDayTimers();
+        this.daySkip = null;
+        learn();
+        if (beats.length) {
+          const last = beats[beats.length - 1];
+          map.draw({
+            ...scene(night, atEnd, last.moved.length ? { ...last.c, moved: last.moved } : last.c),
+            learned,
+            names: [...last.c.gained, ...last.c.lost, ...last.moved],
+          });
+          bar(night, atEnd, last.prev);
+          mark("done", last.icon);
+        } else {
+          map.draw({ ...scene(night, atEnd), learned, names: [] });
+          bar(night, atEnd, night);
+          mark("done", "");
+        }
+        dayEl?.classList.remove("skippable");
+      };
+      // Tap the day map to skip the wait (same gesture as reading the results — no new key).
+      this.daySkip = () => {
+        if (document.getElementById("day-beat")?.dataset.beat === "done") return;
+        finish();
+      };
+      dayEl?.classList.add("skippable");
       if (manual && beats.length) {
         let k = 0;
         auto.ringfallBeat = () => {
           if (k < beats.length) show(k++);
-          else mark("done", document.getElementById("day-beat")?.innerHTML ?? "");
+          else {
+            mark("done", document.getElementById("day-beat")?.innerHTML ?? "");
+            dayEl?.classList.remove("skippable");
+            this.daySkip = null;
+          }
           return document.getElementById("day-beat")?.dataset.beat ?? "";
         };
         return;
@@ -1481,8 +1533,9 @@ export class Hud {
         );
       this.dayTimers.push(
         window.setTimeout(() => {
-          const el = document.getElementById("day-beat");
-          if (el) el.dataset.beat = "done";
+          mark("done", document.getElementById("day-beat")?.innerHTML ?? "");
+          dayEl?.classList.remove("skippable");
+          this.daySkip = null;
         }, 900 + beats.length * gap),
       );
     });
@@ -1501,6 +1554,8 @@ export class Hud {
   results(s: State, settled?: Settlement, known: readonly ModKind[] = [], analysed: ModKind | null = null, news: readonly string[] = [], before: Profile | null = null, next = "", expNews: readonly string[] = []) {
     $("result-title").textContent = s.home ? "帰った" : s.outcome === "extracted" ? "生還" : "行方不明";
     $("day-result").innerHTML = this.dayResult(s, settled);
+    // Tap the day's map to skip the beat wait (Round 10); 野営地に戻る still leaves as before.
+    $("day-result").onclick = () => this.skipDayBeat();
     this.drawDay(settled);
     const st = s.stats;
     const acc = st.shots ? Math.round((st.hits / st.shots) * 100) : 0;

@@ -2895,6 +2895,13 @@ body.touch .map-buttons button {
   flex-direction: column;
   gap: 6px;
 }
+/* While the island beat plays: tap jumps to the day's end (Round 10). No new button. */
+#day-result.skippable {
+  cursor: pointer;
+}
+#day-result.skippable #day-map {
+  box-shadow: 0 0 0 2px rgb(var(--own-rgb) / 0.35);
+}
 /* As tall as the island is long: the map frames the whole island with no empty sides. */
 #day-map {
   align-self: flex-start;

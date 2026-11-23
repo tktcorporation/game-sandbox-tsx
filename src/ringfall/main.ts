@@ -627,6 +627,7 @@ function openCamp() {
   if (fresh !== hub.profile) hub.update(fresh);
   departing = inside = null;
   picker.show(false);
+  hud.endResults();
   $("title").hidden = true;
   $("results").hidden = true;
   $("pause").hidden = true;
