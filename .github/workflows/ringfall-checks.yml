@@ -5,7 +5,9 @@ name: ringfall-checks
 on:
   pull_request:
   push:
-    branches: [main]
+    # Feature branches too: stacked PRs sometimes never get a merge ref, and GitHub then
+    # skips pull_request workflows entirely (no synchronize / reopen runs). Push covers tip.
+    branches: [main, "cursor/**"]
 permissions:
   contents: read
 jobs:
