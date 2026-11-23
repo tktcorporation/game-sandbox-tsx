@@ -2,9 +2,9 @@
 
 この文書は、RINGFALL の体験をどう組み立てるかの判断基準である。機能仕様（brief・island・multiplayer）や画面の細部（ui・ux-design）より先に読む。迷ったときはここへ戻る。
 
-関連: [ux-design.md](ux-design.md)（体験の線と場所のプライマリ）、[raid-loot.md](raid-loot.md)（他プレイヤー拠点の制圧戦利品）、[brief.md](brief.md)、[ui.md](ui.md)、[multiplayer.md](multiplayer.md)、[island-v2.md](island-v2.md)。
+関連: [ux-design.md](ux-design.md)（体験の線と場所のプライマリ）、[glossary.md](glossary.md)（プレイヤー向け用語の正本）、[multiplayer-experience.md](multiplayer-experience.md)（マルチ体験の一本化）、[raid-loot.md](raid-loot.md)（他プレイヤー拠点の制圧戦利品）、[brief.md](brief.md)、[ui.md](ui.md)、[multiplayer.md](multiplayer.md)、[island-v2.md](island-v2.md)。
 
-用語の約束: プレイヤーが画面で見ない内部名（depot / pad / parcel など）を、UI・PR・報告・この文書のプレイヤー向け説明に使わない。荷物を送る場所は brief どおり **中継ボックス**。
+用語の約束: プレイヤーが画面で見ない内部名（depot / pad / parcel など）を、UI・PR・報告・この文書のプレイヤー向け説明に使わない。荷物を送る場所は brief どおり **中継ボックス**。画面に出す語は [`src/ringfall/view/copy.ts`](../src/ringfall/view/copy.ts) と [glossary.md](glossary.md) を正とする（`npm run lint:ringfall-copy`）。
 
 ---
 
@@ -81,9 +81,10 @@ RINGFALL は一人称の PvE レイドを持つが、長期の軸は「島の前
 | --- | --- |
 | 中継ボックスは「倉庫へ送る」か「切り上げて生還」のどちらか（バッグの状態で決まる） | 同じ箱で送る／援助／拾う／印を付けるを並べる |
 | 核は制圧（と、自分の拠点なら固める） | 核の周りにマルチ専用の別操作を足す |
+| 信号所のプライマリは「送る」（島の知らせの控え）。出撃は車両／門だけ | 信号所に「出撃」を並べて攻める入口を分裂させる |
 | 場所ごとに「表示名／できること／結果」が言える | 「ここは便利なハブ」として機能を詰め込む |
 
-詳細な場所表は [ux-design.md](ux-design.md)。
+詳細な場所表は [ux-design.md](ux-design.md)。マルチの一本化は [multiplayer-experience.md](multiplayer-experience.md)（**案 A 採用**）。
 
 ### 6. 覚えさせる名前と操作を増やさない
 

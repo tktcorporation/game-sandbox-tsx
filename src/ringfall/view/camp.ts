@@ -1,4 +1,6 @@
 import { CAMP, type CampSpot, type StationId } from "../sim/map";
+import { TERM } from "./copy";
+import { tipIsDefence } from "./hub";
 import { startIcon } from "./icons";
 import type { State } from "../sim/state";
 import type { World } from "./world";
@@ -121,13 +123,17 @@ export class CampView {
     const key = o.touch ? "" : "<kbd>E</kbd>";
     let prompt = "";
     // The truck opens the departure, as the gate does.
-    if (o.near?.id === "vehicle") prompt = `${key}${startIcon()}出撃`;
+    if (o.near?.id === "vehicle") prompt = `${key}${startIcon()}${TERM.sortie}`;
     else if (o.near) prompt = `${key}${esc(o.near.name)}`;
     // No station in reach: a short next-step tip (first day / incoming), not a second card.
-    else if (!o.panel && o.tip) prompt = `<span class="tip">${esc(o.tip)}</span>`;
+    else if (!o.panel && o.tip) {
+      // One beat when the tip is defend / take-back (来る遠征・取り返す) — juice only.
+      const beat = tipIsDefence(o.tip) ? " tip-beat" : "";
+      prompt = `<span class="tip${beat}">${esc(o.tip)}</span>`;
+    }
     $("camp-prompt").innerHTML = prompt;
     const use = $("t-use");
     use.hidden = !o.near;
-    if (o.near) use.querySelector("b")!.textContent = o.near.id === "vehicle" ? "出撃" : o.near.name;
+    if (o.near) use.querySelector("b")!.textContent = o.near.id === "vehicle" ? TERM.sortie : o.near.name;
   }
 }

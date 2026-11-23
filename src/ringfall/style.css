@@ -639,7 +639,7 @@ body.touch #obj-raid .why {
   opacity: 1;
 }
 
-/* Extraction points: a line each on the objective card. */
+/* Extraction points: only live ones (called craft / flare ready). The map holds the list (ui.md). */
 #obj-exits {
   grid-column: 1 / -1;
   display: flex;
@@ -648,6 +648,9 @@ body.touch #obj-raid .why {
   font-size: 13px;
 }
 #obj-exits:empty {
+  display: none;
+}
+#obj-exits div:not(.live) {
   display: none;
 }
 #obj-exits span {
@@ -659,6 +662,11 @@ body.touch #obj-raid .why {
 }
 #obj-exits .locked b {
   color: var(--muted);
+}
+/* Calm raid: the card breathes — primary step stays, secondary lines already empty. */
+#objective.calm {
+  border-left-color: var(--mist);
+  padding-bottom: 6px;
 }
 
 .ebar {
@@ -2616,13 +2624,7 @@ body.touch #obj-exits {
   font-size: 11px;
   gap: 0;
 }
-/* On a phone the step's line takes the row the nearest exit had: the exit shows only when it is news (a pickup called, a flare in hand). */
-body.touch #obj-exits div:not(.live) {
-  display: none;
-}
-body.touch #obj-exits div:not(.live) span {
-  display: none;
-}
+/* Live-only exits apply on every layout (Round 8); phone keeps the tighter type. */
 body.touch #weapons {
   top: 10px;
   bottom: auto;
@@ -2839,6 +2841,28 @@ body.touch .map-buttons button {
 #results .next-hand[hidden] {
   display: none;
 }
+/* Defence closed on return: one soft beat on the next hand (ux-design Round 7). */
+#results .next-hand.defence-beat {
+  animation: next-hand-beat 1.1s ease-out 1;
+}
+@keyframes next-hand-beat {
+  0% {
+    opacity: 0.35;
+    transform: translateY(4px);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  #results .next-hand.defence-beat {
+    animation: none;
+  }
+}
 #home .growth {
   flex-wrap: wrap;
   gap: 6px 10px;
@@ -2870,6 +2894,13 @@ body.touch .map-buttons button {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+/* While the island beat plays: tap jumps to the day's end (Round 10). No new button. */
+#day-result.skippable {
+  cursor: pointer;
+}
+#day-result.skippable #day-map {
+  box-shadow: 0 0 0 2px rgb(var(--own-rgb) / 0.35);
 }
 /* As tall as the island is long: the map frames the whole island with no empty sides. */
 #day-map {
@@ -3212,6 +3243,25 @@ body:not(.playing) #banner {
   color: var(--mist);
   letter-spacing: 0.02em;
 }
+/* Defend / take-back tip: one soft pulse so the next hand is felt (Round 7). */
+#camp-prompt .tip.tip-beat {
+  color: var(--own);
+  animation: tip-beat 1.4s ease-in-out 2;
+}
+@keyframes tip-beat {
+  0%,
+  100% {
+    opacity: 0.75;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  #camp-prompt .tip.tip-beat {
+    animation: none;
+  }
+}
 /* The truck's fade to a raid, and waking in the camp. */
 #fade {
   position: fixed;
@@ -3384,6 +3434,13 @@ body.touch #camp-prompt {
   stroke: rgb(var(--paper-rgb) / 0.7);
   stroke-width: 1.2;
   fill: rgb(var(--paper-rgb) / 0.85);
+}
+/* Chosen start → today's front (Round 9). Thin own-colour pull, no new mark. */
+#depart-points .tethers .front-pull {
+  stroke: rgb(var(--own-rgb) / 0.55);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 4;
+  fill: none;
 }
 /* A start on the map: a round button over its place, its mark in the middle. */
 .screen #depart-points button.pick {
@@ -4926,41 +4983,25 @@ body.touch .bag-card:nth-last-child(n + 3) {
   padding-top: 8px;
   border-top: 1px solid rgb(var(--white-rgb) / 0.12);
 }
-/* The factory's path to the signal station (ux-design M2): expeditions live there. */
-.factory-away {
-  margin: 8px 0 0;
-}
-button.factory-signal {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
+/* Island codes folded away from daily entry (Option A); お隣 cards are primary. */
+.exp-codes {
   margin: 0;
-  padding: 8px 10px;
-  border: 1px solid rgb(var(--own-rgb) / 0.35);
-  background: rgb(var(--own-rgb) / 0.12);
-  color: var(--own-light);
-  font: inherit;
+}
+.exp-codes > summary {
+  cursor: pointer;
+  color: var(--muted);
   font-size: 13px;
   font-weight: 800;
-  text-align: left;
-  cursor: pointer;
+  list-style: none;
 }
-button.factory-signal:hover {
-  background: rgb(var(--own-rgb) / 0.2);
+.exp-codes > summary::-webkit-details-marker {
+  display: none;
 }
-button.factory-signal span {
-  margin-left: auto;
-  font-size: 12px;
+.exp-codes[open] > summary {
+  margin-bottom: 6px;
   color: var(--mist);
-  font-weight: 800;
 }
-button.factory-signal b {
-  font-family: var(--num);
-  font-size: 16px;
-  color: var(--own-light);
-}
-/* The island's news on the signal station: a line each, an attack with its 仕返し. */
+/* The island's news on the signal station: one list; an attack offers 送る. */
 #hub ul.island-news.signal-news {
   margin: 0;
   padding: 0;
@@ -5214,10 +5255,6 @@ button.factory-signal b {
   display: inline-flex;
   margin-left: 8px;
   vertical-align: -2px;
-}
-/* Lead-incursion 出撃 beside 送る (raid-loot stage 6). */
-#hub .exp-go.exp-raid {
-  margin-left: 8px;
 }
 .exp-target .exp-go {
   margin-top: 8px;

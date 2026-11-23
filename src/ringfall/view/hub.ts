@@ -5,7 +5,7 @@ import { armorIcon, binPicture, fightIcon, entryIcon, coinIcon, dmgIcon, magIcon
 import { ALLY, FACTORY, FACTORY_TOP, HEALS as HEAL_SPECS, HIDEOUT, MOD_KINDS, PLATE, RARITY, THREAT, TOOLS, VALUABLES, WEAPONS, type EnemyKind, type ModuleId, type Rarity, type ValuableKind, type WeaponKind } from "../sim/config";
 import { boostFor, raidClock, strengthFor, type Kit } from "../sim/state";
 import { CAMP, DEPOTS, ENTRIES, entryOf, HOME_REGION, NODES, nodeIndex, POIS, UNLOCKS, poiIndex, poiRegion, REGIONS, regionOf, ROUTES, type EntryId, type NodeId, type PoiId, type RegionId, type StationId } from "../sim/map";
-import { armed, build, buildFactory, buildState, buy, buyPrice, canBuild, canBuildFactory, factoryNeeded, nextFactory, canStartIn, deliver, deliverable, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, isStarter, issuedHeals, itemCost, HEALS, healCount, healRoom, keyName, kitPicks, loadoutCost, stashUsed, price, raidThreat, recallLoadout, roundThreat, sell, sellPrice, setThreat, startsIn, STORY_TAKEN, takenStory, threatPay, take, takeKit, takenContract, wanted, wares, type Item, type Loadout, type Profile } from "../meta/profile";
+import { armed, build, buildFactory, buildState, buy, buyPrice, canBuild, canBuildFactory, factoryNeeded, nextFactory, canStartIn, deliver, deliverable, depotAllowance, emptyLoadout, FIRST_ENTRY, fitsStart, isStarter, issuedHeals, itemCost, HEALS, healCount, healRoom, keyName, kitPicks, loadoutCost, stashUsed, price, raidThreat, recallLoadout, roundThreat, sell, sellPrice, setThreat, startsIn, STORY_TAKEN, takenStory, threatPay, take, takeKit, takenContract, wanted, wares, type Item, type Loadout, type Profile, type Settlement } from "../meta/profile";
 import { CONTRACT_NAME, contractMark, contractRegion, targetName, type Contract, type Reward } from "../meta/contracts";
 import { currentStory, STORIES, storyOf, storyWhere } from "../meta/story";
 import { materialRarity, maxLevel, MODULES, nextLevel, pouchSlots, sources, stashCap, stillNeeded, type Hideout, type Source } from "../meta/hideout";
@@ -16,12 +16,12 @@ import { eventRow } from "./events";
 import { rivalOf } from "../sim/holds";
 import { HOLD_CSS, IslandMap, islandScene, RIVAL_CSS, TITAN_CSS } from "./map";
 import { ExpeditionPanel } from "./expeditions";
-import type { IncursionPlan } from "../meta/incursion";
-import { answerable, homeSquads, incomingLine, LOG_WORD, logLine, squadsAway, type Incoming, type IslandLogEntry, type Outgoing } from "../meta/expeditions";
+import { answerable, incomingLine, LOG_WORD, logLine, type Incoming, type IslandLogEntry, type Outgoing } from "../meta/expeditions";
 import { enemyNodes, frontNodes, ownNodes } from "../sim/front";
 import { nodeRow } from "./row";
 import { sfx } from "./sfx";
 import { UI, rarityText } from "./palette";
+import { PHRASE, TERM, nextFront, nextTakeBack, relayOf } from "./copy";
 
 const RARITY_CSS = ["var(--r0)", "var(--r1)", "var(--r2)", "var(--r3)"];
 
@@ -33,23 +33,23 @@ export function namedAid(p: Pick<Profile, "parcels">): Parcel[] {
   return (p.parcels ?? []).filter((q) => q.from.name.trim() && q.from.code !== LOCAL_AID && q.from.code !== "");
 }
 
-/** The front node nearest the camp (same pick as the objective with no contract). */
-export function frontPickFor(p: Profile): { name: string } | null {
+/** The front node nearest `from` (camp wake by default — same pick as the objective with no contract). */
+export function frontPickFor(p: Profile, from: { x: number; z: number } = CAMP.wake): { name: string; x: number; z: number } | null {
   const front = frontNodes(islandHolds(p));
   const near = NODES.map((n, i) => ({ n, i }))
     .filter(({ i }) => front[i])
-    .sort((a, b) => Math.hypot(a.n.x - CAMP.wake.x, a.n.z - CAMP.wake.z) - Math.hypot(b.n.x - CAMP.wake.x, b.n.z - CAMP.wake.z))[0];
-  return near ? { name: near.n.name } : null;
+    .sort((a, b) => Math.hypot(a.n.x - from.x, a.n.z - from.z) - Math.hypot(b.n.x - from.x, b.n.z - from.z))[0];
+  return near ? { name: near.n.name, x: near.n.x, z: near.n.z } : null;
 }
 
 /** A front node held by another player — the reason to sortie and take it back. */
-export function rivalFrontPick(p: Profile): { name: string } | null {
+export function rivalFrontPick(p: Profile, from: { x: number; z: number } = CAMP.wake): { name: string; x: number; z: number } | null {
   const holds = islandHolds(p);
   const front = frontNodes(holds);
   const near = NODES.map((n, i) => ({ n, i }))
     .filter(({ i }) => front[i] && rivalOf(holds[i]) !== null)
-    .sort((a, b) => Math.hypot(a.n.x - CAMP.wake.x, a.n.z - CAMP.wake.z) - Math.hypot(b.n.x - CAMP.wake.x, b.n.z - CAMP.wake.z))[0];
-  return near ? { name: near.n.name } : null;
+    .sort((a, b) => Math.hypot(a.n.x - from.x, a.n.z - from.z) - Math.hypot(b.n.x - from.x, b.n.z - from.z))[0];
+  return near ? { name: near.n.name, x: near.n.x, z: near.n.z } : null;
 }
 
 /**
@@ -58,16 +58,45 @@ export function rivalFrontPick(p: Profile): { name: string } | null {
  * and rival holds sit on the same line (defend / take back) — no separate multiplayer mode.
  */
 export function nextHandFor(p: Profile): string {
-  if (incomingFor(p).length) return "次：地図の机 · 来る遠征を固める";
+  if (incomingFor(p).length) return PHRASE.nextMapFortifyIncoming;
   const rival = rivalFrontPick(p);
-  if (rival) return `次：車両から出撃 · ${rival.name}を取り返す`;
-  if (canBuildFactory(p)) return "次：工場 · 次の段を上げる";
-  if (MODULES.some((m) => canBuild(p, m))) return "次：工房 · 次の段を上げる";
-  if (offered(p.quests).some((q) => deliverable(p, q))) return "次：依頼板 · 納品する";
-  if (!takenContract(p) && !takenStory(p) && p.board.contracts.length) return "次：依頼板 · 依頼を選ぶ";
+  if (rival) return nextTakeBack(rival.name);
+  if (canBuildFactory(p)) return PHRASE.nextFactoryRaise;
+  if (MODULES.some((m) => canBuild(p, m))) return PHRASE.nextWorkshopRaise;
+  if (offered(p.quests).some((q) => deliverable(p, q))) return PHRASE.nextQuestDeliver;
+  if (!takenContract(p) && !takenStory(p) && p.board.contracts.length) return PHRASE.nextQuestPick;
   const pick = frontPickFor(p);
-  return pick ? `次：車両から出撃 · 前線：${pick.name}` : "次：車両か門から出撃";
+  return pick ? nextFront(pick.name) : PHRASE.nextVehicleOrGate;
 }
+
+/** Battle fields overnightDefence reads (fortify toast vocabulary). */
+export type OvernightBattle = { fortified: readonly number[]; targets: readonly number[] } | null;
+
+/**
+ * Overnight defence closed on return (ux-design Round 7): short 島の知らせ lines.
+ * Same words as the fortified toast and the signal station's taken line — no new nouns.
+ */
+export function overnightDefence(s: { battle: OvernightBattle }, settled?: Pick<Settlement, "night">): string[] {
+  if (!settled) return [];
+  const lines: string[] = [];
+  const lost = new Set(settled.night.lost);
+  for (const id of settled.night.lost) {
+    const n = NODES[nodeIndex(id)];
+    if (n) lines.push(`${n.name}を取られた · 島の守りが削られた`);
+  }
+  const b = s.battle;
+  if (!b) return lines;
+  for (const i of b.fortified) {
+    const n = NODES[i];
+    if (!n || lost.has(n.id)) continue;
+    const vsIncoming = !b.targets.includes(i);
+    lines.push(vsIncoming ? `固めた · ${n.name} · 来る遠征をはねる` : `固めた · ${n.name} · 夜の襲撃をはねる`);
+  }
+  return lines;
+}
+
+/** Whether the camp tip is a defend / take-back hand (one beat of juice, no new key). */
+export const tipIsDefence = (tip: string) => /来る遠征|取り返す/.test(tip);
 
 export function itemName(i: Item | RewardItem): string {
   switch (i.t) {
@@ -121,7 +150,7 @@ function itemNote(i: Item, need?: Needs): string {
     case "valuable": {
       const h = need?.hideout[i.kind] ?? 0;
       const f = need?.factory[i.kind] ?? 0;
-      return [h ? `${hideoutIcon()}隠れ家 ${h}` : "", f ? `${factoryIcon()}工場 ${f}` : ""].filter(Boolean).join("・");
+      return [h ? `${hideoutIcon()}${TERM.hideout} ${h}` : "", f ? `${factoryIcon()}${TERM.factory} ${f}` : ""].filter(Boolean).join("・");
     }
     case "armor":
       return `シールド ${PLAYER.shieldByTier[i.tier]}`;
@@ -288,13 +317,13 @@ const yen = (n: number) => n.toLocaleString("ja-JP");
 
 /** The panel each camp station opens: the panel's title and whether the stash's column stands beside its own. */
 const PANELS: Record<StationId, { title: string; stash: boolean }> = {
-  map: { title: "地図の机", stash: false },
-  quests: { title: "依頼板", stash: false },
-  stash: { title: "倉庫の棚", stash: true },
-  shop: { title: "商人の屋台", stash: true },
-  workshop: { title: "作業場", stash: false },
-  factory: { title: "工場", stash: false },
-  signal: { title: "信号所", stash: false },
+  map: { title: TERM.mapTable, stash: false },
+  quests: { title: TERM.questBoard, stash: false },
+  stash: { title: TERM.stashShelf, stash: true },
+  shop: { title: TERM.traderStall, stash: true },
+  workshop: { title: TERM.workshop, stash: false },
+  factory: { title: TERM.factory, stash: false },
+  signal: { title: TERM.signal, stash: false },
 };
 
 /**
@@ -372,10 +401,6 @@ export interface Launch {
   seed: number;
   from?: PoiId;
   entry: EntryId;
-  /**
-   * Lead-incursion onto another island's copy (raid-loot stage 6). Left out, a normal home raid.
-   */
-  incursion?: IncursionPlan;
 }
 
 /**
@@ -426,9 +451,6 @@ export class Hub {
   private news: IslandLogEntry[] = [];
   private newsSeen = true;
 
-  /** Starts a lead-incursion Launch from the signal station (main wires this). */
-  private startIncursion: ((go: Launch) => void) | null = null;
-
   constructor(
     public profile: Profile,
     private closed: () => void,
@@ -442,7 +464,6 @@ export class Hub {
       () => this.profile,
       (p) => this.set(p),
       (n) => this.takeNews(n),
-      (plan) => this.launchIncursion(plan),
     );
     $("hub").addEventListener("click", (e) => {
       const el = (e.target as HTMLElement).closest<HTMLElement>("[data-act]");
@@ -464,13 +485,13 @@ export class Hub {
 
   /**
    * A log entry as marks: whose, what happened in a word, where; someone's attack also offers to
-   * answer it (仕返し), which opens the factory's expeditions on their island.
+   * answer it with 送る (opens the signal station on their island).
    */
   private newsMarks(n: IslandLogEntry): string {
     const who = n.by.name || n.by.code;
     const node = NODES[nodeIndex(n.node)]?.name ?? n.node;
     const mine = n.t === "wiped" || n.t === "retaken";
-    const back = answerable(n) ? `<button type="button" class="revenge" data-act="exp-revenge" data-arg="${esc(n.by.code)}">${flagIcon()}仕返し</button>` : "";
+    const back = answerable(n) ? `<button type="button" class="revenge" data-act="exp-revenge" data-arg="${esc(n.by.code)}">${flagIcon()}${TERM.sendExpedition}</button>` : "";
     return `<li title="${esc(logLine(n))}"><b class="who">${esc(who)}</b><em class="${mine ? "own" : "foe"}">${LOG_WORD[n.t]}</em>${esc(node)}${back}</li>`;
   }
 
@@ -711,7 +732,7 @@ export class Hub {
   /** Where the raid starts, as a name. */
   rideTo(): string {
     this.fixStart();
-    return this.from ? `${POIS[poiIndex(this.from)].name}の中継ボックス` : entryOf(this.entry ?? this.profile.entry).name;
+    return this.from ? relayOf(POIS[poiIndex(this.from)].name) : entryOf(this.entry ?? this.profile.entry).name;
   }
 
   /** Why the chosen start cannot be departed from now (the loadout over the depot's allowance), or "" when it can. */
@@ -774,7 +795,7 @@ export class Hub {
     const d = at.id as PoiId;
     if (departDepots(p).includes(d)) return null;
     const node = POIS[poiIndex(d)].name;
-    return { name: `${node}の中継ボックス`, why: "未制圧", how: [`<span class="how">${coreIcon(SIDE.enemy)}${esc(node)}${ARROW}${coreIcon(SIDE.own)}</span>`] };
+    return { name: relayOf(node), why: "未制圧", how: [`<span class="how">${coreIcon(SIDE.enemy)}${esc(node)}${ARROW}${coreIcon(SIDE.own)}</span>`] };
   }
 
   /** Shows a shut start beside the departure's map without choosing it; false (and nothing shown) for one that is open. */
@@ -803,7 +824,7 @@ export class Hub {
     if (!a || !this.from || fitsStart(this.profile, this.startLoad(), this.from)) return null;
     // Take less, or send more home through this depot to raise its level: a coin and the credits still to send.
     const grow = a.next === null ? "" : `<span class="how">${depotIcon()}${ARROW}<b class="cash">${coinIcon()}${yen(a.next)}</b>${ARROW}${upIcon()}Lv</span>`;
-    return { name: `${POIS[poiIndex(this.from)].name}の中継ボックス`, why: `持ち込み枠 ${a.cost} / ${a.budget}`, how: [`<span class="how">${stashIcon()}−</span>`, ...(grow ? [grow] : [])], at: { kind: "depot", id: this.from } };
+    return { name: relayOf(POIS[poiIndex(this.from)].name), why: `持ち込み枠 ${a.cost} / ${a.budget}`, how: [`<span class="how">${stashIcon()}−</span>`, ...(grow ? [grow] : [])], at: { kind: "depot", id: this.from } };
   }
 
   /** Chooses where the next raid starts: a way in known, or a depot that opens a start. False when it may not start there. */
@@ -843,32 +864,6 @@ export class Hub {
     return { kit, region: this.region, seed: this.profile.seed, from: from ?? undefined, entry };
   }
 
-  /**
-   * Lead-incursion from the signal station: take the shelves' kit and hand the Launch to main.
-   * Same 出撃 verb as the gate — no departure map (the target is already picked).
-   */
-  private launchIncursion(plan: IncursionPlan) {
-    if (!this.startIncursion) return;
-    const taken = takeKit(this.profile, this.startLoad(), null);
-    if (!taken) return;
-    const { profile, kit } = taken;
-    this.set({ ...profile, region: plan.region, entry: plan.entry });
-    this.load = emptyLoadout();
-    this.close(false);
-    this.startIncursion({
-      kit,
-      region: plan.region,
-      seed: this.profile.seed,
-      entry: plan.entry,
-      incursion: plan,
-    });
-  }
-
-  /** Wires main's raid start for a lead-incursion from the signal station. */
-  setIncursionStart(fn: (go: Launch) => void) {
-    this.startIncursion = fn;
-  }
-
   /** The contract taken for the next raid, or null. */
   contract(): Contract | null {
     return takenContract(this.profile);
@@ -883,7 +878,7 @@ export class Hub {
     const coming = p.events[1];
     // 来る遠征 sits on the map table's mark — same place the tip sends the player to fortify.
     const incoming = incomingFor(p).length;
-    const map = [incoming ? `来る遠征 ${incoming}` : "", coming ? `明日 ${eventName(coming)}` : "", p.hideout.radio ? "無線" : ""].filter(Boolean).join("・");
+    const map = [incoming ? `${TERM.incomingExpedition} ${incoming}` : "", coming ? `明日 ${eventName(coming)}` : "", p.hideout.radio ? "無線" : ""].filter(Boolean).join("・");
     // The signal station wants looking at while news of the other islands is unread, or while
     // someone else's delivery still sits at a 中継ボックス.
     const aid = namedAid(p).length;
@@ -970,46 +965,38 @@ export class Hub {
     const nodes = `<div class="from-nodes"><small>拠点から</small>${coreIcon(SIDE.own)}${u.squad ? `<span>${flagIcon()}<b>+${u.squad}</b></span>` : ""}<span style="color:${RARITY_CSS[arms]}">${gunIcon()}<small>${RARITY.names[arms]}</small></span></div>`;
     const gain = next ? `<div class="gain-row">${upIcon()}<b>Lv${lv + 1}</b>${deltaHtml(levels[lv], levels[lv + 1])}</div>` : `<div class="gain-row max"><b>MAX</b></div>`;
     const cost = next ? this.cost(next.items, next.cash, `<button type="button" data-act="factory" ${canBuildFactory(p) ? "" : "disabled"}>Lv${lv + 1} を建てる</button>`) : "";
-    const fold = `<button type="button" class="fac-fold${this.factoryLadder ? " open" : ""}" data-act="factory-ladder">${this.factoryLadder ? "段の一覧を閉じる" : "全部の段を見る"}</button>`;
+    const fold = `<button type="button" class="fac-fold${this.factoryLadder ? " open" : ""}" data-act="factory-ladder">${this.factoryLadder ? "レベルの一覧を閉じる" : "全部のレベルを見る"}</button>`;
     return (
-      `<div class="mod open up-card factory-card"><div class="mod-head"><strong>${factoryIcon()}工場</strong><span class="pips">${pips}</span><b>Lv${lv}${next ? "" : " MAX"}</b></div>` +
-      `<div class="mod-body"><h4 class="fac-sub">今の工場</h4>${now}${nodes}` +
-      `<h4 class="fac-sub">${next ? "次の段" : "最後の段"}</h4>${gain}${cost}` +
-      `${fold}${this.factoryLadder ? ladder(levels, lv) : ""}</div></div>` +
-      // Always a path to the signal station: expeditions live there, not on this panel.
-      `<p class="factory-away"><button type="button" class="factory-signal" data-act="open-signal">${flagIcon()}遠征・島の番号へ` +
-      (squadsAway(p) ? `<span>守り <b>${homeSquads(p)}</b>　遠征 <b>${squadsAway(p)}</b></span>` : `<span>信号所</span>`) +
-      `</button></p>`
+      `<div class="mod open up-card factory-card"><div class="mod-head"><strong>${factoryIcon()}${TERM.factory}</strong><span class="pips">${pips}</span><b>Lv${lv}${next ? "" : " MAX"}</b></div>` +
+      `<div class="mod-body"><h4 class="fac-sub">今の${TERM.factory}</h4>${now}${nodes}` +
+      `<h4 class="fac-sub">${next ? TERM.nextLevel : TERM.lastLevel}</h4>${gain}${cost}` +
+      `${fold}${this.factoryLadder ? ladder(levels, lv) : ""}</div></div>`
     );
   }
 
   /**
-   * The signal station's panel (信号所): everything to do with the other islands, apart from the
-   * factory. The expeditions' section (the neighbours, sending, the expeditions out, this island's
-   * code) draws itself (`#hub-exped`); under it the island's news, each attack with its 仕返し.
+   * The signal station's panel (信号所): 送る and 島の知らせの控え.
+   * The expeditions' section draws itself (`#hub-exped`); under it one 島の知らせ list.
    */
   private signalPanel(): string {
     return `<div id="hub-exped">${this.exped.html()}</div><div id="hub-signal-news">${this.signalNews()}</div>`;
   }
 
-  /** The island's news on the signal station, each attack with its 仕返し; nothing with none. */
+  /** One 島の知らせ on the signal station (outgoing + incoming + 島の守り), nothing with none. */
   private signalNews(): string {
     const word = { held: "保持", wiped: "全滅", lost: "奪還された" } as const;
-    const exp = this.expNews.length
-      ? `<h3 class="hub-sub">遠征の知らせ</h3><ul class="island-news signal-news exp-news">${this.expNews.map((n) => `<li title="${esc(expLine(n))}"><b class="who">${esc(n.name)}</b><em class="${n.t === "held" ? "own" : "foe"}">${word[n.t]}</em>${esc(NODES[nodeIndex(n.node)]?.name ?? n.node)}</li>`).join("")}</ul>`
-      : "";
-    // Who left stock at a 中継ボックス (CoC-style help): names the player already sees, no new noun.
-    const aid = namedAid(this.profile);
-    const help = aid.length
-      ? `<h3 class="hub-sub">島の守り</h3><ul class="island-news signal-news">${aid
-          .slice(0, 4)
-          .map((q) => `<li><b class="who">${esc(q.from.name)}</b>が${esc(POIS[poiIndex(q.poi)].name)}の中継ボックスへ届けた</li>`)
-          .join("")}</ul>`
-      : "";
-    return exp + help + (this.news.length ? `<h3 class="hub-sub">島の知らせ</h3><ul class="island-news signal-news">${this.news.map((n) => this.newsMarks(n)).join("")}</ul>` : "");
+    const out = this.expNews.map(
+      (n) => `<li title="${esc(expLine(n))}"><b class="who">${esc(n.name)}</b><em class="${n.t === "held" ? "own" : "foe"}">${word[n.t]}</em>${esc(NODES[nodeIndex(n.node)]?.name ?? n.node)}</li>`,
+    );
+    const aid = namedAid(this.profile).slice(0, 4).map(
+      (q) => `<li><b class="who">${esc(q.from.name)}</b>が${esc(relayOf(POIS[poiIndex(q.poi)].name))}へ届けた</li>`,
+    );
+    const incoming = this.news.map((n) => this.newsMarks(n));
+    const items = [...out, ...aid, ...incoming];
+    return items.length ? `<h3 class="hub-sub">${TERM.islandNews}</h3><ul class="island-news signal-news">${items.join("")}</ul>` : "";
   }
 
-  /** Lines of 遠征の知らせ for the results screen (same words as the signal station). */
+  /** Lines of 島の知らせ for the results screen (outgoing expeditions, same words as the signal station). */
   expeditionNews(): string[] {
     const word = { held: "保持", wiped: "全滅", lost: "奪還された" } as const;
     return this.expNews.map((n) => `${n.name} ${word[n.t]} ${NODES[nodeIndex(n.node)]?.name ?? n.node}`);
@@ -1174,7 +1161,7 @@ export class Hub {
     let state: string;
     if (g.t === "deliver") {
       const have = p.stash.filter((i) => i.t === "valuable" && i.kind === g.valuable).length;
-      state = deliverable(p, q) ? `<button type="button" data-act="deliver" data-arg="${q.id}">納品する</button>` : `<b>倉庫 ${have} / ${g.n}</b>`;
+      state = deliverable(p, q) ? `<button type="button" data-act="deliver" data-arg="${q.id}">納品する</button>` : `<b>${TERM.warehouse} ${have} / ${g.n}</b>`;
     } else state = `<b>${got} / ${need(g)}</b>`;
     return `<div class="quest"><div><strong>${esc(q.title)}</strong><span>${esc(q.text)}</span><small>報酬 ${reward}</small></div>${state}</div>`;
   }
@@ -1245,7 +1232,7 @@ export class Hub {
       // A quiet day and a quiet tomorrow say nothing.
       (p.events[0] || p.events[1] ? `<ul class="events"><li><small>今日</small>${eventRow(p.events[0])}</li><li><small>明日</small>${eventRow(p.events[1])}</li></ul>` : "") +
       `<ul class="hold-key">${key}</ul>` +
-      (incoming.length ? `<small>来る遠征</small><ul class="island-news incoming">${incoming.map((e) => `<li title="${esc(incomingLine(e, Date.now()))}">${incomingMarks(e, Date.now())}</li>`).join("")}</ul>` : "") +
+      (incoming.length ? `<small>${TERM.incomingExpedition}</small><ul class="island-news incoming">${incoming.map((e) => `<li title="${esc(incomingLine(e, Date.now()))}">${incomingMarks(e, Date.now())}</li>`).join("")}</ul>` : "") +
       (taken ? `<small>依頼　${esc(regionOf(contractRegion(taken)).name)}<i class="taken-line"></i></small><p class="hub-taken"><em>${CONTRACT_NAME[taken.t]}</em>${contractMarks(taken)}</p>` : "") +
       `</div></div>`
     );
@@ -1285,7 +1272,7 @@ export class Hub {
       return i?.t === "weapon" ? `<small class="stat">${weaponStats(i.kind, i.rarity)}</small>` : "";
     };
     const heal = (k: (typeof HEALS)[number]) =>
-      `<div class="slot count"><small>${HEAL_SPECS[k].label}</small><button type="button" data-act="heal-" data-arg="${k}">−</button><b>${this.load.heals[k] + issued[k]}</b><button type="button" data-act="heal+" data-arg="${k}">+</button><small>倉庫 ${this.load.heals[k]}/${healCount(p, k)}${issued[k] ? `<span class="issued">${issueIcon()}${issued[k]}</span>` : ""}</small></div>`;
+      `<div class="slot count"><small>${HEAL_SPECS[k].label}</small><button type="button" data-act="heal-" data-arg="${k}">−</button><b>${this.load.heals[k] + issued[k]}</b><button type="button" data-act="heal+" data-arg="${k}">+</button><small>${TERM.warehouse} ${this.load.heals[k]}/${healCount(p, k)}${issued[k] ? `<span class="issued">${issueIcon()}${issued[k]}</span>` : ""}</small></div>`;
     const keys = this.load.keys.map((n) => esc(itemName(p.stash[n]))).join("・");
     const weapons = slot("武器 1", this.load.weapons[0], stat(this.load.weapons[0])) + slot("武器 2", this.load.weapons[1], stat(this.load.weapons[1]));
     // A row stands only for what the stash can fill: no armour, no key and no heal of a kind means no row for it.
@@ -1336,7 +1323,7 @@ export class Hub {
     const c = takenContract(p);
     const story = takenStory(p) ? currentStory(p.records) : null;
     const front = this.frontPick();
-    const goal = c ? this.askLine(c) : esc(story ? `記録：${story.title}` : front ? `前線：${front.name}` : "探索");
+    const goal = c ? this.askLine(c) : esc(story ? `記録：${story.title}` : front ? `${TERM.front}：${front.name}` : "探索");
     // Each row's value is HTML: marks, and names escaped here.
     const rows: [string, string][] = [
       ["装備", this.kitMarks()],
@@ -1344,7 +1331,7 @@ export class Hub {
     ];
     // Other players' expeditions sent at this island land in this raid: where, whose, and what to do about it.
     const incoming = incomingFor(p);
-    if (incoming.length) rows.push(["来る遠征", `${incoming.map((e) => incomingMarks(e, Date.now())).join("")}<em class="ask-kind">核で固める</em>`]);
+    if (incoming.length) rows.push([TERM.incomingExpedition, `${incoming.map((e) => incomingMarks(e, Date.now())).join("")}<em class="ask-kind">${TERM.core}で${TERM.fortify}</em>`]);
     const warn: string[] = [];
 
     return { rows, warn };
@@ -1389,7 +1376,7 @@ export class Hub {
     ];
     // Other players' expeditions land in the next raid: same marks as the departure / map table.
     const incoming = incomingFor(p);
-    if (incoming.length) plan.push(["来る遠征", `${incoming.map((e) => incomingMarks(e, Date.now())).join("")}<em class="ask-kind">核で固める</em>`]);
+    if (incoming.length) plan.push([TERM.incomingExpedition, `${incoming.map((e) => incomingMarks(e, Date.now())).join("")}<em class="ask-kind">${TERM.core}で${TERM.fortify}</em>`]);
     return { head, row: nodeRow(islandHolds(p)), plan };
   }
 
@@ -1400,7 +1387,7 @@ export class Hub {
     const panel = PANELS[st];
     $("hub-title").textContent = panel.title;
     $("hub-cash").textContent = yen(p.cash);
-    $("hub-record").textContent = `出撃 ${p.raids} ・ 生還 ${p.extracted}`;
+    $("hub-record").textContent = `${TERM.sortie} ${p.raids} ・ 生還 ${p.extracted}`;
     // The storage's crate: the room it gives is the count's right side.
     $("hub-stash-count").innerHTML = `${stashIcon()}${stashUsed(p)} / ${stashCap(p.hideout)}`;
     $("hub").dataset.station = st;
@@ -1428,7 +1415,19 @@ export class Hub {
           })
           .join("") || `<p class="empty">0 / ${stashCap(p.hideout)}</p>`;
     }
-    $("hub-side-title").textContent = shop ? "売り物" : st === "quests" ? "依頼と記録" : st === "workshop" ? "隠れ家" : st === "factory" ? "自軍のロボット" : st === "signal" ? "海の向こうの島" : st === "map" ? "島" : "持っていく物";
+    $("hub-side-title").textContent = shop
+      ? TERM.wares
+      : st === "quests"
+        ? TERM.questsAndRecords
+        : st === "workshop"
+          ? PHRASE.sideWorkshop
+          : st === "factory"
+            ? PHRASE.sideFactory
+            : st === "signal"
+              ? TERM.seaIslands
+              : st === "map"
+                ? TERM.island
+                : TERM.loadout;
     if (st === "factory") $("hub-side").innerHTML = this.factoryPanel();
     else if (st === "signal") $("hub-side").innerHTML = this.signalPanel();
     else if (st === "workshop") {
@@ -1438,7 +1437,7 @@ export class Hub {
     } else if (shop) {
       const full = stashUsed(p) >= stashCap(p.hideout);
       // Every buy is shut while the stash is full: the shelf says so, and what makes room.
-      const room = full ? `<p class="lock-note">${lockIcon()}倉庫が満杯：売るか、作業場で${esc(HIDEOUT.storage.name)}を上げる</p>` : "";
+      const room = full ? `<p class="lock-note">${lockIcon()}${TERM.warehouse}が満杯：売るか、${TERM.workshop}で${esc(HIDEOUT.storage.name)}を上げる</p>` : "";
       $("hub-side").innerHTML = room + shelfTiers(p) + wares(p)
         .map((item, n) => `<button type="button" class="item" data-act="buy" data-arg="${n}" ${p.cash < buyPrice(item) || full ? "disabled" : ""}><span style="color:${itemColor(item)}">${esc(itemName(item))}</span><small${item.t === "valuable" && want[item.kind] > 0 ? ' class="need"' : ""}>${item.t === "valuable" ? (want[item.kind] > 0 ? `${upIcon()}${want[item.kind]}` : need.hideout[item.kind] + need.factory[item.kind] > 0 ? checkIcon() : "") : itemNote(item)}</small><b>${yen(buyPrice(item))}</b></button>`)
         .join("");

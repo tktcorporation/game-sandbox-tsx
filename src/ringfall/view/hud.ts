@@ -3,7 +3,8 @@ import { MODULES, nextLevel, stashCap, stillNeeded } from "../meta/hideout";
 import { neighboursNow } from "../island-net";
 import type { ModKind, ValuableKind } from "../sim/config";
 import { modGist } from "./modgist";
-import { contractMarks, itemColor, itemName, namedAid, nextHandFor, rewardList } from "./hub";
+import { PHRASE, TERM, moduleRaiseReady, relayOf } from "./copy";
+import { contractMarks, itemColor, itemName, namedAid, nextHandFor, overnightDefence, rewardList } from "./hub";
 import { ALLY, AWARE, BAG, HIDEOUT, META, DEPOT, ENEMIES, HEAL_KINDS, HEALS, PLAYER, RARITY, REVEAL, TACTICAL, TOOL_KINDS, TOOLS, VALUABLES, WEAPONS, type Flank } from "../sim/config";
 import { eyePos, magSize } from "../sim/combat";
 import { atRisk, countered, heldUnlocks } from "../sim/battle";
@@ -50,7 +51,7 @@ import { UI } from "./palette";
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
 
 /** The island's news from the server (its log), as the results show it: nothing when there is none. */
-const newsBlock = (news: readonly string[]) => (news.length ? `<h3>島の知らせ</h3><p>${news.map((n) => `<span>${esc(n)}</span>`).join("")}</p>` : "");
+const newsBlock = (news: readonly string[]) => (news.length ? `<h3>${TERM.islandNews}</h3><p>${news.map((n) => `<span>${esc(n)}</span>`).join("")}</p>` : "");
 /** Replaces an element's markup only when it changes: the objective card is redrawn every frame. */
 const setHtml = (el: HTMLElement, html: string) => {
   if (el.dataset.html === html) return;
@@ -68,7 +69,7 @@ const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getEleme
 /** Wording follows the controls in use: keys on a PC, on-screen buttons on a phone. */
 const isTouch = () => document.body.classList.contains("touch");
 /** A cable's end by name: a node's, the camp's, or for a lift the quarry's floor or rim. */
-const zipEndName = (id: string) => (id === "camp" ? "野営地" : id === "lift:quarry" ? "採掘場の底" : id.startsWith("lift:") ? "採掘場の縁" : (NODES.find((n) => n.id === id)?.name ?? ""));
+const zipEndName = (id: string) => (id === "camp" ? TERM.camp : id === "lift:quarry" ? "採掘場の底" : id.startsWith("lift:") ? "採掘場の縁" : (NODES.find((n) => n.id === id)?.name ?? ""));
 const key = (k: string) => (isTouch() ? "" : `<kbd>${k}</kbd> `);
 
 interface DmgNum {
@@ -113,6 +114,11 @@ export class Hud {
   private dirs: { el: HTMLElement; x: number; z: number; t: number }[] = [];
   private shieldCells: HTMLElement[] = [];
   private lastCells = -1;
+  /**
+   * Lines kept at the head of 島の知らせ on results (overnight defence + outgoing expeditions).
+   * Late server news via setNews() must not drop these (Option A unified list).
+   */
+  private newsKeep: string[] = [];
   private awareLayer = $("aware-layer");
   private awEls = new Map<number, HTMLElement>();
   /** A red mark per node of the player's the enemy's robots have come to, by its place in `NODES`. */
@@ -482,26 +488,26 @@ export class Hud {
           this.toast(`${entryIcon(false)}${entryOf(e.id).name}<span class="toast-sub">${entryIcon(false)}▸${entryIcon(true)}生還で出撃地点に</span>`, 1, 6500);
         break;
       case "depotOn":
-        this.toast(`${depotIcon()}中継ボックス · 起動した<span class="toast-sub">${esc(POIS[poiIndex(e.poi)].name)}</span>`, 1);
+        this.toast(`${depotIcon()}${TERM.relayBox} · 起動した<span class="toast-sub">${esc(POIS[poiIndex(e.poi)].name)}</span>`, 1);
         break;
       case "deposit": {
         // Same use as 倉庫へ送る: island defence stock is automatic — show the result on the line.
         const i = depotInReach(s);
         const place = i >= 0 ? POIS[poiIndex(DEPOTS[i].poi)].name : "";
         this.toast(
-          `${depotIcon()}中継ボックス · 倉庫へ送る ${e.n}点・${e.value}${place ? `<span class="toast-sub">${esc(place)}の島の守りに回る</span>` : ""}`,
+          `${depotIcon()}${TERM.relayBox} · ${TERM.sendToWarehouse} ${e.n}点・${e.value}${place ? `<span class="toast-sub">${esc(place)}${PHRASE.islandGuardVia}</span>` : ""}`,
           3,
         );
         break;
       }
       case "leaveStart":
-        this.toast(`${depotIcon()}中継ボックス · 生還中`, 1, 2500);
+        this.toast(`${depotIcon()}${TERM.relayBox} · ${TERM.returningAlive}`, 1, 2500);
         break;
       case "leaveCancel":
-        this.toast(`${depotIcon()}中継ボックス${crossIcon()}`, 0);
+        this.toast(`${depotIcon()}${TERM.relayBox}${crossIcon()}`, 0);
         break;
       case "coreStart":
-        this.toast(`${coreIcon(foeSide(s.nodes[e.node]))}核 · 制圧 ${esc(NODES[e.node].name)}`, 0, 3000);
+        this.toast(`${coreIcon(foeSide(s.nodes[e.node]))}${TERM.captureCore} ${esc(NODES[e.node].name)}`, 0, 3000);
         break;
       case "coreShielded":
         this.toast(`${coreIcon(foeSide(s.nodes[e.node]), true)}${NODES[e.node].name}<span class="toast-sub">先に${esc(shieldedBy(s.nodes, e.node))}を制圧</span>`, 0, 4000);
@@ -517,7 +523,7 @@ export class Hud {
         // Night targets vs 来る遠征: same fortify verb, different why (existing words only).
         const vsIncoming = !(s.battle?.targets.includes(e.node) ?? false);
         this.toast(
-          `${coreIcon(SIDE.own)}固めた · ${esc(NODES[e.node].name)}<span class="toast-sub">${vsIncoming ? "来る遠征をはねる" : "夜の襲撃をはねる"}</span>`,
+          `${coreIcon(SIDE.own)}${TERM.fortify}た · ${esc(NODES[e.node].name)}<span class="toast-sub">${vsIncoming ? `${TERM.incomingExpedition}をはねる` : `${TERM.nightRaid}をはねる`}</span>`,
           1,
           4000,
         );
@@ -636,7 +642,7 @@ export class Hud {
     setHtml($("obj-until"), s.phase === "play" && step ? this.stepProgress(s, step) : "");
     // A step done moves the card on to the next, told with a short toast.
     const key = `${obj.title}|${obj.current}`;
-    if (this.lastStep && key !== this.lastStep && s.phase === "play" && step && this.lastStep.split("|")[0] === obj.title) this.toast(`次：${step.label}`, 3, 2600);
+    if (this.lastStep && key !== this.lastStep && s.phase === "play" && step && this.lastStep.split("|")[0] === obj.title) this.toast(`${TERM.nextHand}${step.label}`, 3, 2600);
     this.lastStep = key;
     view.setBeacon(s.phase === "play" ? (step?.at ?? null) : null);
     // The use key's focused target: one ring in the world, matching the prompt.
@@ -1037,6 +1043,9 @@ export class Hud {
               : "見られている";
     setHtml(st, word ? `${eyeIcon("currentColor", worst === 3 && !tracked && anyLost)}${word}` : "");
     st.className = worst === 3 && !tracked && anyLost ? "lost" : worst === 3 ? "engaged" : worst === 2 ? "alert" : "";
+    // Calm fold (ux-design Round 8): primary step stays; exits / stealth already empty when quiet.
+    const late = s.battle ? s.battle.end - s.time < 120 : false;
+    $("objective").classList.toggle("calm", s.phase === "play" && !word && !$("obj-exits").innerHTML && !late);
   }
 
   /**
@@ -1056,6 +1065,7 @@ export class Hud {
     // Each way off by how it works, in a mark and seconds: a craft to call (the seconds it takes,
     // counting down once called, a tick once landed), a flare (lit when carried) and the seconds to
     // wait, or only the wait.
+    let anyLive = false;
     exits.forEach((x, i) => {
       const ready = extractReady(s, x);
       const left = callLeft(s, x.id);
@@ -1069,12 +1079,14 @@ export class Hud {
           ? `${flareIcon(p.flares > 0)}${x.hold} 秒`
           : `${clockIcon()}${x.hold} 秒`;
       const locked = x.needsFlare && !ready;
-      // A called ship or a flare in hand is news worth a line even on the phone.
+      // A called ship or a flare in hand is news (ui.md): calm days hide the rest (Round 8 fold).
       const live = (x.call && left >= 0) || (x.needsFlare && ready);
+      if (live) anyLive = true;
       const cls = [locked && "locked", i === nearest && "near", live && "live"].filter(Boolean).join(" ");
       lines.push(`<div class="${cls}">${exitIcon()}<b>${x.short}</b><span>${state}</span></div>`);
     });
-    setHtml($("obj-exits"), lines.join(""));
+    // Fold: only live exits stay on the card; the map (M) holds the rest.
+    setHtml($("obj-exits"), anyLive ? lines.join("") : "");
   }
 
   /** The teammate's row on the vitals plate and the tag over its head. */
@@ -1225,7 +1237,7 @@ export class Hud {
   private prompt(s: State): string {
     const p = s.player;
     if (p.downed > 0 || s.phase !== "play") return "";
-    if (s.leaving) return `${depotIcon()}中継ボックス · 生還まで <b>${Math.max(0, s.leaving.t).toFixed(1)}</b>`;
+    if (s.leaving) return `${depotIcon()}${TERM.relayBox} · 生還まで <b>${Math.max(0, s.leaving.t).toFixed(1)}</b>`;
     // On a cable: where it goes and the metres left.
     if (p.zip) {
       const l = ZIPS[p.zip.line];
@@ -1246,9 +1258,9 @@ export class Hud {
     // The same choice the use key acts on (sim/world.ts useTarget), so the prompt never promises something else.
     if (!t) {
       // At a depot that is on, which useTarget passes over while a squad is fighting: the depot, crossed, and the fight.
-      if (depotBlocked(s) && depotInReach(s) >= 0) return `${depotIcon()}中継ボックス${crossIcon()}${fightIcon(UI.foeBright)}`;
+      if (depotBlocked(s) && depotInReach(s) >= 0) return `${depotIcon()}${TERM.relayBox}${crossIcon()}${fightIcon(UI.foeBright)}`;
       // Back in the camp's yard with a fight close by: it takes the player home once that is over.
-      if (homeReady(s) && depotBlocked(s)) return `野営地${crossIcon()}${fightIcon(UI.foeBright)}`;
+      if (homeReady(s) && depotBlocked(s)) return `${TERM.camp}${crossIcon()}${fightIcon(UI.foeBright)}`;
       // Standing on something that will not go in: a mod part already worn, or a full bag.
       const left = s.loot.find((l) => (l.kind === "valuable" || l.kind === "tool" || l.kind === "record" || l.kind === "mod") && l.age >= 0.4 && dist2d(l.pos, p.pos) < PLAYER.pickupRange && Math.abs(l.pos.y - p.pos.y) < 2);
       if (left?.mod) return `${esc(MODS[left.mod].name)} ${checkIcon()}`;
@@ -1297,11 +1309,11 @@ export class Hud {
     if (t.kind === "depot") {
       // One place, one line: what it is + what happens (brief: 中継ボックス). No internal jargon.
       if (!p.haul.length && !p.tools.length && !p.records.length) {
-        return tip(`${key("E")}${depotIcon()}中継ボックス · 切り上げて生還 ${clockIcon()}${DEPOT.leave} 秒`);
+        return tip(`${key("E")}${depotIcon()}${TERM.relayBox} · ${TERM.cutAndExtract} ${clockIcon()}${DEPOT.leave} 秒`);
       }
       const n = p.haul.length + p.tools.length + p.records.length;
       const value = p.haul.reduce((v, k) => v + VALUABLES[k].value, 0);
-      return tip(`${key("E")}${depotIcon()}中継ボックス · 倉庫へ送る ${n}点・${value}`);
+      return tip(`${key("E")}${depotIcon()}${TERM.relayBox} · ${TERM.sendToWarehouse} ${n}点・${value}`);
     }
     if (t.kind === "armor") return tip(`${key("E")}<span class="r" style="color:${RARITY_CSS[t.loot.rarity]}">アーマー Lv${t.loot.rarity}</span>${struck([`Lv${p.armor}`])}`);
     if (t.kind === "core") {
@@ -1309,16 +1321,16 @@ export class Hud {
       // A node of the player's marked for the night: the use key fortifies it (the moon turns from red to blue).
       if (s.nodes[t.node] === "freed") {
         if (s.fortify?.node === t.node) {
-          return tip(`${coreIcon(SIDE.own)}核 · 固める ${esc(n.name)} <b class="${s.fortify.held ? "" : "paused"}">${Math.floor((s.fortify.t / FORTIFY.time) * 100)}%</b>`);
+          return tip(`${coreIcon(SIDE.own)}${TERM.fortifyCore} ${esc(n.name)} <b class="${s.fortify.held ? "" : "paused"}">${Math.floor((s.fortify.t / FORTIFY.time) * 100)}%</b>`);
         }
         // Marked by another player's expedition and not by the night: their colour's flag in the moon's place.
         const sent = !s.battle?.targets.includes(t.node);
-        return tip(`${key("E")}${coreIcon(SIDE.own)}${sent ? flagIcon(SIDE.rival) : nightIcon(UI.alert)}核 · 固める ${esc(n.name)}`);
+        return tip(`${key("E")}${coreIcon(SIDE.own)}${sent ? flagIcon(SIDE.rival) : nightIcon(UI.alert)}${TERM.fortifyCore} ${esc(n.name)}`);
       }
       const c = foeSide(s.nodes[t.node]);
       if (!capturable(s, t.node)) return tip(`${coreIcon(c, true)}${esc(n.name)} <small>▸ 先に${esc(shieldedBy(s.nodes, t.node))}</small>`);
-      if (s.capture?.node === t.node) return tip(`${coreIcon(c)}核 · 制圧 ${esc(n.name)} <b>${Math.floor((s.capture.t / FRONT.capture) * 100)}%</b>`);
-      return tip(`${key("E")}${coreIcon(c)}核 · 制圧を始める ${esc(n.name)} ${noiseIcon()}`);
+      if (s.capture?.node === t.node) return tip(`${coreIcon(c)}${TERM.captureCore} ${esc(n.name)} <b>${Math.floor((s.capture.t / FRONT.capture) * 100)}%</b>`);
+      return tip(`${key("E")}${coreIcon(c)}${PHRASE.captureStart} ${esc(n.name)} ${noiseIcon()}`);
     }
     if (t.kind === "zip") {
       // The way the rider would go: the end the player faces, and how far along the cable it is.
@@ -1367,13 +1379,34 @@ export class Hud {
   /** Seconds after the results open at which the map turns to the day's end. */
   private dayTimers: number[] = [];
   private dayFrame = 0;
+  /** Jump the island beat to its end (tap the day map); null once done or cleared. */
+  private daySkip: (() => void) | null = null;
+
+  /** Stops the day's beat timers (leaving the results, or skipping to the end). */
+  private clearDayTimers() {
+    for (const t of this.dayTimers) clearTimeout(t);
+    this.dayTimers = [];
+    cancelAnimationFrame(this.dayFrame);
+  }
+
+  /** Leaves the results: drop beat timers so they do not fire over the camp. */
+  endResults() {
+    this.clearDayTimers();
+    this.daySkip = null;
+    const day = document.getElementById("day-result");
+    if (day) day.classList.remove("skippable");
+  }
+
+  /** Tap the day map / row: jump to the day's end without waiting out the beats (Round 10). */
+  skipDayBeat() {
+    this.daySkip?.();
+  }
 
   /** Draws the results' map and bar beat by beat: as the day began, after the raid, after the battle the player left, after the night. */
   private drawDay(settled?: Settlement) {
     const canvas = document.getElementById("day-map") as HTMLCanvasElement | null;
-    for (const t of this.dayTimers) clearTimeout(t);
-    this.dayTimers = [];
-    cancelAnimationFrame(this.dayFrame);
+    this.clearDayTimers();
+    this.daySkip = null;
     if (!canvas || !settled) {
       if (canvas) canvas.hidden = true;
       return;
@@ -1456,11 +1489,42 @@ export class Hud {
         bar(b.ids, b.rivals, b.prev);
         mark(b.beat, b.icon);
       };
+      const dayEl = document.getElementById("day-result");
+      const finish = () => {
+        this.clearDayTimers();
+        this.daySkip = null;
+        learn();
+        if (beats.length) {
+          const last = beats[beats.length - 1];
+          map.draw({
+            ...scene(night, atEnd, last.moved.length ? { ...last.c, moved: last.moved } : last.c),
+            learned,
+            names: [...last.c.gained, ...last.c.lost, ...last.moved],
+          });
+          bar(night, atEnd, last.prev);
+          mark("done", last.icon);
+        } else {
+          map.draw({ ...scene(night, atEnd), learned, names: [] });
+          bar(night, atEnd, night);
+          mark("done", "");
+        }
+        dayEl?.classList.remove("skippable");
+      };
+      // Tap the day map to skip the wait (same gesture as reading the results — no new key).
+      this.daySkip = () => {
+        if (document.getElementById("day-beat")?.dataset.beat === "done") return;
+        finish();
+      };
+      dayEl?.classList.add("skippable");
       if (manual && beats.length) {
         let k = 0;
         auto.ringfallBeat = () => {
           if (k < beats.length) show(k++);
-          else mark("done", document.getElementById("day-beat")?.innerHTML ?? "");
+          else {
+            mark("done", document.getElementById("day-beat")?.innerHTML ?? "");
+            dayEl?.classList.remove("skippable");
+            this.daySkip = null;
+          }
           return document.getElementById("day-beat")?.dataset.beat ?? "";
         };
         return;
@@ -1475,17 +1539,21 @@ export class Hud {
         );
       this.dayTimers.push(
         window.setTimeout(() => {
-          const el = document.getElementById("day-beat");
-          if (el) el.dataset.beat = "done";
+          mark("done", document.getElementById("day-beat")?.innerHTML ?? "");
+          dayEl?.classList.remove("skippable");
+          this.daySkip = null;
         }, 900 + beats.length * gap),
       );
     });
   }
 
-  /** The island's news from the server, come in while the results are up: put in their place there, the rest of the results as they are. */
+  /**
+   * The island's news from the server, come in while the results are up: put in their place there,
+   * keeping overnight / outgoing expedition lines already on the unified list.
+   */
   setNews(news: readonly string[]) {
     const el = document.getElementById("island-news");
-    if (el) el.innerHTML = newsBlock(news);
+    if (el) el.innerHTML = newsBlock([...this.newsKeep, ...news]);
   }
 
   /**
@@ -1495,6 +1563,8 @@ export class Hud {
   results(s: State, settled?: Settlement, known: readonly ModKind[] = [], analysed: ModKind | null = null, news: readonly string[] = [], before: Profile | null = null, next = "", expNews: readonly string[] = []) {
     $("result-title").textContent = s.home ? "帰った" : s.outcome === "extracted" ? "生還" : "行方不明";
     $("day-result").innerHTML = this.dayResult(s, settled);
+    // Tap the day's map to skip the beat wait (Round 10); 野営地に戻る still leaves as before.
+    $("day-result").onclick = () => this.skipDayBeat();
     this.drawDay(settled);
     const st = s.stats;
     const acc = st.shots ? Math.round((st.hits / st.shots) * 100) : 0;
@@ -1506,7 +1576,7 @@ export class Hud {
       ["弱点命中", `${crit}%`],
       ["ダウン", st.downs],
       ["レイド時間", clock(s.time)],
-      ["脱出", s.home ? "野営地" : s.leftAt ? `${POIS[poiIndex(s.leftAt)].name}の中継ボックス` : (EXTRACTS.find((x) => x.id === s.extractedAt)?.short ?? "-")],
+      ["脱出", s.home ? TERM.camp : s.leftAt ? relayOf(POIS[poiIndex(s.leftAt)].name) : (EXTRACTS.find((x) => x.id === s.extractedAt)?.short ?? "-")],
       [`${ALLY.name}の撃破`, st.allyKills],
       [`${ALLY.name}に救助`, st.allyRescues],
     ]
@@ -1567,25 +1637,30 @@ export class Hud {
     const story = settled?.story ? `<h3>記録を持ち帰った</h3><p><span class="contract done">${storyOf(settled.story.id).title}：${recordSpot(settled.story.id).name}<b>${settled.story.cash} クレジット</b></span></p>` : "";
     const growth = settled && before ? this.baseGrowth(before, settled) : "";
     const defence = this.defenceLines(s, settled);
+    const overnight = overnightDefence(s, settled);
     const tip = next || (settled ? nextHandFor(settled.profile) : "");
     const nextEl = $("next-hand");
     if (nextEl) {
       nextEl.hidden = !tip;
       nextEl.textContent = tip;
+      // One beat when the return closed a defence result (design-direction juice, no new noun).
+      nextEl.classList.toggle("defence-beat", !!overnight.length);
     }
+    // Overnight defence + outgoing expeditions close into one 島の知らせ; keep them if late sync updates news.
+    this.newsKeep = [...overnight, ...expNews];
+    const allNews = [...this.newsKeep, ...news];
     // The day's outcome is in the headline; the right column holds what comes of it, then the parts to analyse.
     $("home").innerHTML =
       island +
       growth +
       defence +
-      (expNews.length ? `<h3>遠征の知らせ</h3><p>${expNews.map((n) => `<span>${esc(n)}</span>`).join("")}</p>` : "") +
-      `<div id="island-news">${newsBlock(news)}</div>` +
+      `<div id="island-news">${newsBlock(allNews)}</div>` +
       events +
       contract +
       story +
       (quests.length ? `<h3>済んだ依頼</h3><p>${quests.map((q) => `<span>${q.title}<b>${q.reward.cash} クレジット${rewardList(q).map(([i, n]) => `・${itemName(i)}${n > 1 ? ` × ${n}` : ""}`).join("")}</b></span>`).join("")}</p>` : "") +
       (settled
-        ? (sent.length ? `<h3 class="mark">${depotIcon()}中継ボックス</h3><p>${count(sent)}</p>` : "") +
+        ? (sent.length ? `<h3 class="mark">${depotIcon()}${TERM.relayBox}</h3><p>${count(sent)}</p>` : "") +
           // A wipe's pouch is on the haul's line above, beside what was lost.
           (lost || !home.length ? "" : `<h3 class="mark">${bagIcon()}持ち帰った</h3><p>${count(home)}</p>`) +
           // Ways in: learned ones as the map's ring, ones found on a raid that did not come home struck through.
@@ -1607,15 +1682,16 @@ export class Hud {
   private defenceLines(s: State, settled?: Settlement): string {
     const left = s.leftParcels ?? [];
     const mine = left
-      .map((q) => `<span>${depotIcon()}${esc(POIS[poiIndex(q.poi)].name)}の島の守りに回った</span>`)
+      .map((q) => `<span>${depotIcon()}${esc(POIS[poiIndex(q.poi)].name)}${PHRASE.islandGuardWent}</span>`)
       .join("");
     const help = namedAid(settled?.profile ?? { parcels: [] })
       .slice(0, 3)
-      .map((q) => `<span><b>${esc(q.from.name)}</b>が${esc(POIS[poiIndex(q.poi)].name)}の中継ボックスへ届けた</span>`)
+      .map((q) => `<span><b>${esc(q.from.name)}</b>が${esc(relayOf(POIS[poiIndex(q.poi)].name))}へ届けた</span>`)
       .join("");
     if (!mine && !help) return "";
-    return `<h3>島の守り</h3><p>${mine}${help}</p>`;
+    return `<h3>${TERM.islandGuard}</h3><p>${mine}${help}</p>`;
   }
+
 
   /**
    * How the haul fed the base: valuables that still matter for 工房／工場, and anything newly buildable.
@@ -1654,17 +1730,18 @@ export class Hud {
       bits.push(`<span class="growth-item${done ? " done" : ""}"><span class="chip" style="--c:${itemColor({ t: "valuable", kind: k })}">${esc(VALUABLES[k].label)}${kept > 1 ? `<b>${kept}</b>` : ""}</span>${uses.join("")}${done ? checkIcon() : ""}</span>`);
     }
     const ready: string[] = [];
-    if (canBuildFactory(after) && !canBuildFactory(before)) ready.push(`${factoryIcon()}工場 · 次の段を上げられる`);
+    if (canBuildFactory(after) && !canBuildFactory(before)) ready.push(`${factoryIcon()}${PHRASE.factoryRaiseReady}`);
     for (const m of MODULES) {
-      if (canBuild(after, m) && !canBuild(before, m)) ready.push(`${hideoutIcon()}${esc(HIDEOUT[m].name)} · 次の段を上げられる`);
+      if (canBuild(after, m) && !canBuild(before, m)) ready.push(`${hideoutIcon()}${moduleRaiseReady(HIDEOUT[m].name)}`);
     }
+    // Settlement.seized is already stash-kept only (keptSeized); sold overflow stays under 倉庫に入らなかった.
     const seized = (settled.seized ?? [])
       .map((q) => `<span class="growth-ready">${coreIcon(SIDE.own)}制圧した · ${esc(POIS[poiIndex(q.poi)].name)}から${q.kinds.map((k) => esc(VALUABLES[k].label)).join("・")}</span>`)
       .join("");
     if (!bits.length && !ready.length && !seized && !kinds.size) return "";
     const stash = `<span>${stashIcon()}倉庫 ${stashUsed(after)} / ${stashCap(after.hideout)}</span>`;
     return (
-      `<h3>倉庫へ届いた</h3><p class="growth">${bits.join("") || (seized || kinds.size ? "" : "<span>拠点の材料ではない</span>")}${seized}${stash}${ready.map((r) => `<span class="growth-ready">${r}</span>`).join("")}</p>`
+      `<h3>${TERM.arrivedAtWarehouse}</h3><p class="growth">${bits.join("") || (seized || kinds.size ? "" : "<span>拠点の材料ではない</span>")}${seized}${stash}${ready.map((r) => `<span class="growth-ready">${r}</span>`).join("")}</p>`
     );
   }
 }
